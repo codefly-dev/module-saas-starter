@@ -1,0 +1,961 @@
+syntax = "proto3";
+package customers;
+
+import "google/api/annotations.proto";
+import "google/protobuf/timestamp.proto";
+import "google/protobuf/empty.proto";
+import "google/protobuf/field_mask.proto";
+import "buf/validate/validate.proto";
+
+// ============================================================================
+// Core messages
+// ============================================================================
+
+message VersionRequest {}
+
+message VersionResponse {
+    string version = 1 [(buf.validate.field).string.min_len = 1];
+}
+
+// User represents a user in the system
+message User {
+  string uuid = 1 [(buf.validate.field).string.uuid = true];
+  string primary_email = 2 [(buf.validate.field).string.email = true];
+  google.protobuf.Timestamp created_at = 3;
+  google.protobuf.Timestamp updated_at = 4;
+  google.protobuf.Timestamp last_login = 5;
+  UserStatus status = 6;
+  map<string, string> profile = 7;
+  bool email_verified = 8;
+}
+
+// UserIdentity represents a user's authentication method
+message UserIdentity {
+  string uuid = 1;
+  string user_uuid = 2;
+  string provider = 3 [(buf.validate.field).string = {
+    min_len: 1,
+    max_len: 50,
+    pattern: "^[a-zA-Z0-9_-]+$"
+  }];
+  string provider_id = 4 [(buf.validate.field).string = {
+    min_len: 1,
+    max_len: 255
+  }];
+  string provider_email = 5 [(buf.validate.field).string.email = true];
+  google.protobuf.Timestamp created_at = 6;
+  google.protobuf.Timestamp last_used = 7;
+  map<string, string> provider_data = 8;
+  bool email_verified = 9;
+}
+
+enum UserStatus {
+  USER_STATUS_UNSPECIFIED = 0;
+  USER_STATUS_ACTIVE = 1;
+  USER_STATUS_INACTIVE = 2;
+  USER_STATUS_SUSPENDED = 3;
+  USER_STATUS_DELETED = 4;
+}
+
+// ============================================================================
+// Organization
+// ============================================================================
+
+message Organization {
+  string id = 1 [(buf.validate.field).string.uuid = true];
+  string name = 2 [(buf.validate.field).string.min_len = 1];
+  string slug = 3 [(buf.validate.field).string = {
+    min_len: 1,
+    max_len: 63,
+    pattern: "^[a-z0-9][a-z0-9-]*[a-z0-9]$"
+  }];
+  string owner_id = 4 [(buf.validate.field).string.uuid = true];
+  google.protobuf.Timestamp created_at = 5;
+}
+
+message OrgMembership {
+  string org_id = 1;
+  string user_id = 2;
+  OrgRole role = 3;
+  google.protobuf.Timestamp joined_at = 4;
+}
+
+enum OrgRole {
+  ORG_ROLE_UNSPECIFIED = 0;
+  ORG_ROLE_MEMBER = 1;
+  ORG_ROLE_ADMIN = 2;
+  ORG_ROLE_OWNER = 3;
+}
+
+// ============================================================================
+// Team
+// ============================================================================
+
+message Team {
+  string id = 1 [(buf.validate.field).string.uuid = true];
+  string org_id = 2 [(buf.validate.field).string.uuid = true];
+  string name = 3 [(buf.validate.field).string.min_len = 1];
+  string description = 4;
+  google.protobuf.Timestamp created_at = 5;
+}
+
+message TeamMembership {
+  string team_id = 1;
+  string user_id = 2;
+  TeamRole role = 3;
+  google.protobuf.Timestamp joined_at = 4;
+}
+
+enum TeamRole {
+  TEAM_ROLE_UNSPECIFIED = 0;
+  TEAM_ROLE_MEMBER = 1;
+  TEAM_ROLE_ADMIN = 2;
+  TEAM_ROLE_OWNER = 3;
+}
+
+// ============================================================================
+// Roles & Permissions (generic resource:action model)
+// ============================================================================
+
+message Permission {
+  string resource = 1 [(buf.validate.field).string.min_len = 1];
+  string action = 2 [(buf.validate.field).string.min_len = 1];
+}
+
+message Role {
+  string id = 1 [(buf.validate.field).string.uuid = true];
+  string name = 2 [(buf.validate.field).string.min_len = 1];
+  string description = 3;
+  repeated Permission permissions = 4;
+  bool built_in = 5;
+  string org_id = 6;  // empty = global
+}
+
+message RoleAssignment {
+  string id = 1;
+  string subject_id = 2 [(buf.validate.field).string.uuid = true];
+  SubjectKind subject_kind = 3;
+  string role_id = 4 [(buf.validate.field).string.uuid = true];
+  string org_id = 5;
+  string scope = 6;     // optional fine-grained scope
+  google.protobuf.Timestamp assigned_at = 7;
+}
+
+enum SubjectKind {
+  SUBJECT_KIND_UNSPECIFIED = 0;
+  SUBJECT_KIND_USER = 1;
+  SUBJECT_KIND_TEAM = 2;
+}
+
+// ============================================================================
+// Request / Response messages
+// ============================================================================
+
+// --- User ---
+
+message RegisterUserRequest {
+  string primary_email = 1 [(buf.validate.field).string.email = true];
+  map<string, string> profile = 2;
+  UserIdentity identity = 3;
+}
+
+message RegisterUserResponse {
+  User user = 1;
+  UserIdentity identity = 2;
+}
+
+message GetUserRequest {
+  oneof identifier {
+    option (buf.validate.oneof).required = true;
+    string uuid = 1 [(buf.validate.field).string.uuid = true];
+    string email = 2 [(buf.validate.field).string.email = true];
+  }
+}
+
+message GetSelfRequest {}
+
+message GetSelfResponse {
+  User user = 1;
+  repeated UserIdentity identities = 2;
+  repeated Organization organizations = 3;
+  repeated RoleAssignment role_assignments = 4;
+}
+
+message ListUsersRequest {
+  int32 page_size = 1 [(buf.validate.field).int32 = { gt: 0, lte: 100 }];
+  string page_token = 2;
+  UserStatus status = 3;
+}
+
+message ListUsersResponse {
+  repeated User users = 1;
+  string next_page_token = 2;
+}
+
+message UpdateUserRequest {
+  string uuid = 1 [(buf.validate.field).string.uuid = true];
+  User user = 2;
+  google.protobuf.FieldMask update_mask = 3;
+}
+
+message AddIdentityRequest {
+  string user_uuid = 1 [(buf.validate.field).string.uuid = true];
+  UserIdentity identity = 2;
+}
+
+message FindUserByIdentityRequest {
+  string provider = 1 [(buf.validate.field).string = {
+    min_len: 1,
+    max_len: 50,
+    pattern: "^[a-zA-Z0-9_-]+$"
+  }];
+  string provider_id = 2 [(buf.validate.field).string = { min_len: 1, max_len: 255 }];
+}
+
+message ListUserIdentitiesRequest {
+  string user_uuid = 1 [(buf.validate.field).string.uuid = true];
+}
+
+message ListUserIdentitiesResponse {
+  repeated UserIdentity identities = 1;
+}
+
+// --- Organization ---
+
+message CreateOrganizationRequest {
+  string name = 1 [(buf.validate.field).string.min_len = 1];
+  string slug = 2 [(buf.validate.field).string = {
+    min_len: 1,
+    max_len: 63,
+    pattern: "^[a-z0-9][a-z0-9-]*[a-z0-9]$"
+  }];
+}
+
+message CreateOrganizationResponse {
+  Organization organization = 1;
+}
+
+message GetOrganizationRequest {
+  string id = 1 [(buf.validate.field).string.uuid = true];
+}
+
+message ListOrganizationsRequest {}
+
+message ListOrganizationsResponse {
+  repeated Organization organizations = 1;
+}
+
+message AddOrgMemberRequest {
+  string org_id = 1 [(buf.validate.field).string.uuid = true];
+  string user_id = 2 [(buf.validate.field).string.uuid = true];
+  OrgRole role = 3;
+}
+
+message RemoveOrgMemberRequest {
+  string org_id = 1 [(buf.validate.field).string.uuid = true];
+  string user_id = 2 [(buf.validate.field).string.uuid = true];
+}
+
+message ListOrgMembersRequest {
+  string org_id = 1 [(buf.validate.field).string.uuid = true];
+}
+
+message ListOrgMembersResponse {
+  repeated OrgMembership members = 1;
+}
+
+// --- Team ---
+
+message CreateTeamRequest {
+  string org_id = 1 [(buf.validate.field).string.uuid = true];
+  string name = 2 [(buf.validate.field).string.min_len = 1];
+  string description = 3;
+}
+
+message CreateTeamResponse {
+  Team team = 1;
+}
+
+message ListTeamsRequest {
+  string org_id = 1 [(buf.validate.field).string.uuid = true];
+}
+
+message ListTeamsResponse {
+  repeated Team teams = 1;
+}
+
+message AddTeamMemberRequest {
+  string team_id = 1 [(buf.validate.field).string.uuid = true];
+  string user_id = 2 [(buf.validate.field).string.uuid = true];
+  TeamRole role = 3;
+}
+
+message RemoveTeamMemberRequest {
+  string team_id = 1 [(buf.validate.field).string.uuid = true];
+  string user_id = 2 [(buf.validate.field).string.uuid = true];
+}
+
+message ListTeamMembersRequest {
+  string team_id = 1 [(buf.validate.field).string.uuid = true];
+}
+
+message ListTeamMembersResponse {
+  repeated TeamMembership members = 1;
+}
+
+// --- Roles & Permissions ---
+
+message CreateRoleRequest {
+  string name = 1 [(buf.validate.field).string.min_len = 1];
+  string description = 2;
+  repeated Permission permissions = 3;
+  string org_id = 4;  // empty = global
+}
+
+message CreateRoleResponse {
+  Role role = 1;
+}
+
+message ListRolesRequest {
+  string org_id = 1;  // empty = list global roles
+}
+
+message ListRolesResponse {
+  repeated Role roles = 1;
+}
+
+message DeleteRoleRequest {
+  string id = 1 [(buf.validate.field).string.uuid = true];
+}
+
+message AssignRoleRequest {
+  string subject_id = 1 [(buf.validate.field).string.uuid = true];
+  SubjectKind subject_kind = 2;
+  string role_id = 3 [(buf.validate.field).string.uuid = true];
+  string org_id = 4;
+  string scope = 5;
+}
+
+message AssignRoleResponse {
+  RoleAssignment assignment = 1;
+}
+
+message RevokeRoleRequest {
+  string subject_id = 1 [(buf.validate.field).string.uuid = true];
+  string role_id = 2 [(buf.validate.field).string.uuid = true];
+  string org_id = 3;
+  string scope = 4;
+}
+
+message CheckPermissionRequest {
+  string subject_id = 1 [(buf.validate.field).string.uuid = true];
+  SubjectKind subject_kind = 2;
+  string resource = 3 [(buf.validate.field).string.min_len = 1];
+  string action = 4 [(buf.validate.field).string.min_len = 1];
+  string org_id = 5;
+  string scope = 6;
+}
+
+message CheckPermissionResponse {
+  bool allowed = 1;
+  string reason = 2;
+}
+
+// --- Identity resolution (for auth sidecar) ---
+
+message ResolveIdentityRequest {
+  string provider = 1 [(buf.validate.field).string = {
+    min_len: 1,
+    max_len: 50,
+    pattern: "^[a-zA-Z0-9_-]+$"
+  }];
+  string provider_id = 2 [(buf.validate.field).string = { min_len: 1, max_len: 255 }];
+}
+
+message ResolveIdentityResponse {
+  string user_id = 1;
+  string org_id = 2;
+  repeated string roles = 3;      // deprecated, kept for backward compat
+  bool found = 4;
+  string org_role = 5;            // "owner"|"admin"|"member"
+  string platform_role = 6;       // "super_admin"|"support"|"billing"|absent
+}
+
+// ============================================================================
+// Services
+// ============================================================================
+
+// UserService — user CRUD and identity management
+service UserService {
+
+  rpc Version(VersionRequest) returns (VersionResponse) {
+    option (google.api.http) = { get: "/v1/version" };
+  }
+
+  rpc GetSelf(GetSelfRequest) returns (GetSelfResponse) {
+    option (google.api.http) = { get: "/v1/users/self" };
+  }
+
+  rpc RegisterUser(RegisterUserRequest) returns (RegisterUserResponse) {
+    option (google.api.http) = { post: "/v1/users" body: "*" };
+  }
+
+  rpc GetUser(GetUserRequest) returns (User) {
+    option (google.api.http) = {
+      get: "/v1/users/{uuid}"
+      additional_bindings { get: "/v1/users:byEmail" }
+    };
+  }
+
+  rpc ListUsers(ListUsersRequest) returns (ListUsersResponse) {
+    option (google.api.http) = { get: "/v1/users" };
+  }
+
+  rpc UpdateUser(UpdateUserRequest) returns (User) {
+    option (google.api.http) = { patch: "/v1/users/{uuid}" body: "user" };
+  }
+
+  rpc DeleteUser(GetUserRequest) returns (google.protobuf.Empty) {
+    option (google.api.http) = { delete: "/v1/users/{uuid}" };
+  }
+
+  rpc AddIdentity(AddIdentityRequest) returns (UserIdentity) {
+    option (google.api.http) = { post: "/v1/users/{user_uuid}/identities" body: "identity" };
+  }
+
+  rpc FindUserByIdentity(FindUserByIdentityRequest) returns (User) {
+    option (google.api.http) = { get: "/v1/users:findByIdentity" };
+  }
+
+  rpc ListUserIdentities(ListUserIdentitiesRequest) returns (ListUserIdentitiesResponse) {
+    option (google.api.http) = { get: "/v1/users/{user_uuid}/identities" };
+  }
+}
+
+// OrganizationService — org and membership management
+service OrganizationService {
+
+  rpc CreateOrganization(CreateOrganizationRequest) returns (CreateOrganizationResponse) {
+    option (google.api.http) = { post: "/v1/organizations" body: "*" };
+  }
+
+  rpc GetOrganization(GetOrganizationRequest) returns (Organization) {
+    option (google.api.http) = { get: "/v1/organizations/{id}" };
+  }
+
+  rpc ListOrganizations(ListOrganizationsRequest) returns (ListOrganizationsResponse) {
+    option (google.api.http) = { get: "/v1/organizations" };
+  }
+
+  rpc AddMember(AddOrgMemberRequest) returns (google.protobuf.Empty) {
+    option (google.api.http) = { post: "/v1/organizations/{org_id}/members" body: "*" };
+  }
+
+  rpc RemoveMember(RemoveOrgMemberRequest) returns (google.protobuf.Empty) {
+    option (google.api.http) = { delete: "/v1/organizations/{org_id}/members/{user_id}" };
+  }
+
+  rpc ListMembers(ListOrgMembersRequest) returns (ListOrgMembersResponse) {
+    option (google.api.http) = { get: "/v1/organizations/{org_id}/members" };
+  }
+}
+
+// TeamService — team and membership management
+service TeamService {
+
+  rpc CreateTeam(CreateTeamRequest) returns (CreateTeamResponse) {
+    option (google.api.http) = { post: "/v1/organizations/{org_id}/teams" body: "*" };
+  }
+
+  rpc ListTeams(ListTeamsRequest) returns (ListTeamsResponse) {
+    option (google.api.http) = { get: "/v1/organizations/{org_id}/teams" };
+  }
+
+  rpc AddMember(AddTeamMemberRequest) returns (google.protobuf.Empty) {
+    option (google.api.http) = { post: "/v1/teams/{team_id}/members" body: "*" };
+  }
+
+  rpc RemoveMember(RemoveTeamMemberRequest) returns (google.protobuf.Empty) {
+    option (google.api.http) = { delete: "/v1/teams/{team_id}/members/{user_id}" };
+  }
+
+  rpc ListMembers(ListTeamMembersRequest) returns (ListTeamMembersResponse) {
+    option (google.api.http) = { get: "/v1/teams/{team_id}/members" };
+  }
+}
+
+// PermissionService — RBAC management and enforcement
+service PermissionService {
+
+  rpc CreateRole(CreateRoleRequest) returns (CreateRoleResponse) {
+    option (google.api.http) = { post: "/v1/roles" body: "*" };
+  }
+
+  rpc ListRoles(ListRolesRequest) returns (ListRolesResponse) {
+    option (google.api.http) = { get: "/v1/roles" };
+  }
+
+  rpc DeleteRole(DeleteRoleRequest) returns (google.protobuf.Empty) {
+    option (google.api.http) = { delete: "/v1/roles/{id}" };
+  }
+
+  rpc AssignRole(AssignRoleRequest) returns (AssignRoleResponse) {
+    option (google.api.http) = { post: "/v1/role-assignments" body: "*" };
+  }
+
+  rpc RevokeRole(RevokeRoleRequest) returns (google.protobuf.Empty) {
+    option (google.api.http) = { delete: "/v1/role-assignments" };
+  }
+
+  rpc CheckPermission(CheckPermissionRequest) returns (CheckPermissionResponse) {
+    option (google.api.http) = { post: "/v1/permissions:check" body: "*" };
+  }
+}
+
+// IdentityService — auth provider ID resolution (used by auth sidecar)
+service IdentityService {
+
+  rpc ResolveIdentity(ResolveIdentityRequest) returns (ResolveIdentityResponse) {
+    option (google.api.http) = { post: "/v1/identity:resolve" body: "*" };
+  }
+}
+
+// ============================================================================
+// API Keys
+// ============================================================================
+
+enum APIKeyEnvironment {
+  API_KEY_ENVIRONMENT_UNSPECIFIED = 0;
+  API_KEY_ENVIRONMENT_LIVE = 1;
+  API_KEY_ENVIRONMENT_TEST = 2;
+}
+
+message APIKey {
+  string id = 1;
+  string organization_id = 2;
+  string user_id = 3;
+  string name = 4;
+  string prefix = 5;
+  repeated Permission scopes = 6;
+  APIKeyEnvironment environment = 7;
+  google.protobuf.Timestamp created_at = 8;
+  google.protobuf.Timestamp expires_at = 9;
+  google.protobuf.Timestamp last_used_at = 10;
+  google.protobuf.Timestamp revoked_at = 11;
+}
+
+message CreateAPIKeyRequest {
+  string organization_id = 1 [(buf.validate.field).string.uuid = true];
+  string name = 2 [(buf.validate.field).string = { min_len: 1, max_len: 255 }];
+  repeated Permission scopes = 3;
+  APIKeyEnvironment environment = 4;
+  google.protobuf.Timestamp expires_at = 5;
+}
+
+message CreateAPIKeyResponse {
+  APIKey key = 1;
+  string plaintext_key = 2;
+}
+
+message ListAPIKeysRequest {
+  string organization_id = 1 [(buf.validate.field).string.uuid = true];
+  int32 page_size = 2 [(buf.validate.field).int32 = { gt: 0, lte: 100 }];
+  string page_token = 3;
+}
+
+message ListAPIKeysResponse {
+  repeated APIKey keys = 1;
+  string next_page_token = 2;
+}
+
+message RevokeAPIKeyRequest {
+  string id = 1 [(buf.validate.field).string.uuid = true];
+}
+
+message ValidateAPIKeyRequest {
+  string key_hash = 1 [(buf.validate.field).string.min_len = 1];
+}
+
+message ValidateAPIKeyResponse {
+  bool valid = 1;
+  string user_id = 2;
+  string organization_id = 3;
+  repeated string scopes = 4;
+}
+
+// APIKeyService — programmatic access management
+service APIKeyService {
+
+  rpc CreateAPIKey(CreateAPIKeyRequest) returns (CreateAPIKeyResponse) {
+    option (google.api.http) = { post: "/v1/api-keys" body: "*" };
+  }
+
+  rpc ListAPIKeys(ListAPIKeysRequest) returns (ListAPIKeysResponse) {
+    option (google.api.http) = { get: "/v1/api-keys" };
+  }
+
+  rpc RevokeAPIKey(RevokeAPIKeyRequest) returns (google.protobuf.Empty) {
+    option (google.api.http) = { delete: "/v1/api-keys/{id}" };
+  }
+
+  rpc ValidateAPIKey(ValidateAPIKeyRequest) returns (ValidateAPIKeyResponse);
+}
+
+// ============================================================================
+// Authentication (JWT token issuance)
+// ============================================================================
+
+message AuthenticateRequest {
+  string provider = 1 [(buf.validate.field).string = {
+    min_len: 1,
+    max_len: 50,
+    pattern: "^[a-zA-Z0-9_-]+$"
+  }];
+  string provider_id = 2 [(buf.validate.field).string = { min_len: 1, max_len: 255 }];
+  string provider_email = 3;
+  bool email_verified = 4;
+  map<string, string> profile = 5;
+  string device_info = 6;
+}
+
+message AuthenticateResponse {
+  string access_token = 1;
+  string refresh_token = 2;
+  int64 expires_in = 3;
+  User user = 4;
+}
+
+message RefreshTokenRequest {
+  string refresh_token = 1 [(buf.validate.field).string.min_len = 1];
+}
+
+message RefreshTokenResponse {
+  string access_token = 1;
+  string refresh_token = 2;
+  int64 expires_in = 3;
+}
+
+message LogoutRequest {
+  string refresh_token = 1 [(buf.validate.field).string.min_len = 1];
+}
+
+message JWKSResponse {
+  string keys_json = 1;
+}
+
+// AuthService — JWT token issuance and session management
+service AuthService {
+
+  rpc Authenticate(AuthenticateRequest) returns (AuthenticateResponse) {
+    option (google.api.http) = { post: "/v1/auth/authenticate" body: "*" };
+  }
+
+  rpc RefreshToken(RefreshTokenRequest) returns (RefreshTokenResponse) {
+    option (google.api.http) = { post: "/v1/auth/refresh" body: "*" };
+  }
+
+  rpc Logout(LogoutRequest) returns (google.protobuf.Empty) {
+    option (google.api.http) = { post: "/v1/auth/logout" body: "*" };
+  }
+
+  rpc GetJWKS(google.protobuf.Empty) returns (JWKSResponse) {
+    option (google.api.http) = { get: "/v1/auth/.well-known/jwks.json" };
+  }
+}
+
+// ============================================================================
+// Audit Log
+// ============================================================================
+
+message AuditEvent {
+  string id = 1;
+  string actor_id = 2;
+  string actor_type = 3;
+  string action = 4;
+  string resource = 5;
+  string resource_id = 6;
+  string org_id = 7;
+  map<string, string> metadata = 8;
+  string ip_address = 9;
+  google.protobuf.Timestamp created_at = 10;
+}
+
+message QueryAuditLogRequest {
+  string org_id = 1;
+  string actor_id = 2;
+  string action = 3;
+  string resource = 4;
+  string resource_id = 5;
+  google.protobuf.Timestamp from = 6;
+  google.protobuf.Timestamp to = 7;
+  int32 page_size = 8 [(buf.validate.field).int32 = { gt: 0, lte: 100 }];
+  string page_token = 9;
+}
+
+message QueryAuditLogResponse {
+  repeated AuditEvent events = 1;
+  string next_page_token = 2;
+  int32 total_count = 3;
+}
+
+// AuditService — append-only audit event log
+service AuditService {
+  rpc QueryAuditLog(QueryAuditLogRequest) returns (QueryAuditLogResponse) {
+    option (google.api.http) = { get: "/v1/audit-log" };
+  }
+}
+
+// ============================================================================
+// Invitations
+// ============================================================================
+
+enum InvitationStatus {
+  INVITATION_STATUS_UNSPECIFIED = 0;
+  INVITATION_STATUS_PENDING = 1;
+  INVITATION_STATUS_ACCEPTED = 2;
+  INVITATION_STATUS_REVOKED = 3;
+  INVITATION_STATUS_EXPIRED = 4;
+}
+
+message Invitation {
+  string id = 1;
+  string org_id = 2;
+  string inviter_id = 3;
+  string email = 4;
+  string role = 5;
+  InvitationStatus status = 6;
+  google.protobuf.Timestamp expires_at = 7;
+  google.protobuf.Timestamp created_at = 8;
+}
+
+message CreateInvitationRequest {
+  string org_id = 1 [(buf.validate.field).string.uuid = true];
+  string email = 2 [(buf.validate.field).string.email = true];
+  string role = 3;
+}
+
+message CreateInvitationResponse {
+  Invitation invitation = 1;
+  string invite_token = 2;
+}
+
+message AcceptInvitationRequest {
+  string token = 1 [(buf.validate.field).string.min_len = 1];
+}
+
+message AcceptInvitationResponse {
+  Organization organization = 1;
+}
+
+message ListInvitationsRequest {
+  string org_id = 1 [(buf.validate.field).string.uuid = true];
+  InvitationStatus status = 2;
+}
+
+message ListInvitationsResponse {
+  repeated Invitation invitations = 1;
+}
+
+message RevokeInvitationRequest {
+  string id = 1 [(buf.validate.field).string.uuid = true];
+}
+
+// ============================================================================
+// Admin Service (requires admin role)
+// ============================================================================
+
+message SearchUsersRequest {
+  string query = 1;
+  int32 page_size = 2 [(buf.validate.field).int32 = { gt: 0, lte: 100 }];
+  string page_token = 3;
+}
+
+message SearchUsersResponse {
+  repeated User users = 1;
+  string next_page_token = 2;
+  int32 total_count = 3;
+}
+
+message SuspendUserRequest {
+  string user_id = 1 [(buf.validate.field).string.uuid = true];
+  string reason = 2;
+}
+
+message UnsuspendUserRequest {
+  string user_id = 1 [(buf.validate.field).string.uuid = true];
+}
+
+message ImpersonateUserRequest {
+  string user_id = 1 [(buf.validate.field).string.uuid = true];
+}
+
+message ImpersonateUserResponse {
+  string access_token = 1;
+  int64 expires_in = 2;
+}
+
+message ListActiveSessionsRequest {
+  string user_id = 1;
+  int32 page_size = 2 [(buf.validate.field).int32 = { gt: 0, lte: 100 }];
+  string page_token = 3;
+}
+
+message SessionInfo {
+  string id = 1;
+  string user_id = 2;
+  string ip_address = 3;
+  map<string, string> device_info = 4;
+  google.protobuf.Timestamp created_at = 5;
+  google.protobuf.Timestamp last_active_at = 6;
+  google.protobuf.Timestamp expires_at = 7;
+}
+
+message ListActiveSessionsResponse {
+  repeated SessionInfo sessions = 1;
+  string next_page_token = 2;
+}
+
+message GetOrgEntitlementsRequest {
+  string org_id = 1 [(buf.validate.field).string.uuid = true];
+}
+
+message GetOrgEntitlementsResponse {
+  string plan_name = 1;
+  repeated EntitlementInfo entitlements = 2;
+}
+
+message EntitlementInfo {
+  string feature = 1;
+  int64 limit = 2;      // -1 = unlimited, 0 = disabled
+  int64 used = 3;
+  bool has_override = 4;
+}
+
+message OverrideEntitlementRequest {
+  string org_id = 1 [(buf.validate.field).string.uuid = true];
+  string feature = 2 [(buf.validate.field).string.min_len = 1];
+  int64 limit_value = 3;
+  string reason = 4;
+}
+
+message OverrideEntitlementResponse {
+  string id = 1;
+}
+
+// ── Platform admin management messages ──────────────────────────
+
+message GrantPlatformRoleRequest {
+  string user_id = 1 [(buf.validate.field).string.uuid = true];
+  string platform_role = 2 [(buf.validate.field).string = {in: ["super_admin", "support", "billing"]}];
+}
+
+message RevokePlatformRoleRequest {
+  string user_id = 1 [(buf.validate.field).string.uuid = true];
+}
+
+message ListPlatformAdminsRequest {}
+
+message PlatformAdminEntry {
+  string user_id = 1;
+  string platform_role = 2;
+  string granted_by = 3;
+  google.protobuf.Timestamp granted_at = 4;
+}
+
+message ListPlatformAdminsResponse {
+  repeated PlatformAdminEntry admins = 1;
+}
+
+// ── Feature flag messages ───────────────────────────────────────
+
+message ListFeatureFlagsRequest {}
+
+message FeatureFlagEntry {
+  string name = 1;
+  string description = 2;
+  bool enabled = 3;
+  int32 rollout_percent = 4;
+  repeated string target_org_ids = 5;
+}
+
+message ListFeatureFlagsResponse {
+  repeated FeatureFlagEntry flags = 1;
+}
+
+message UpsertFeatureFlagRequest {
+  string name = 1 [(buf.validate.field).string.min_len = 1];
+  string description = 2;
+  bool enabled = 3;
+  int32 rollout_percent = 4;
+  repeated string target_org_ids = 5;
+}
+
+message UpsertFeatureFlagResponse {
+  string name = 1;
+}
+
+// PlatformAdminService — cross-tenant operations for platform operators.
+// All RPCs require a platform_role in the JWT claims.
+service PlatformAdminService {
+  // User management (cross-tenant)
+  rpc SearchUsers(SearchUsersRequest) returns (SearchUsersResponse) {
+    option (google.api.http) = { get: "/v1/platform/users" };
+  }
+  rpc SuspendUser(SuspendUserRequest) returns (google.protobuf.Empty) {
+    option (google.api.http) = { post: "/v1/platform/users/{user_id}:suspend" body: "*" };
+  }
+  rpc UnsuspendUser(UnsuspendUserRequest) returns (google.protobuf.Empty) {
+    option (google.api.http) = { post: "/v1/platform/users/{user_id}:unsuspend" body: "*" };
+  }
+  rpc ImpersonateUser(ImpersonateUserRequest) returns (ImpersonateUserResponse) {
+    option (google.api.http) = { post: "/v1/platform/users/{user_id}:impersonate" body: "*" };
+  }
+
+  // Session visibility
+  rpc ListActiveSessions(ListActiveSessionsRequest) returns (ListActiveSessionsResponse) {
+    option (google.api.http) = { get: "/v1/platform/sessions" };
+  }
+
+  // Entitlements & billing
+  rpc GetOrgEntitlements(GetOrgEntitlementsRequest) returns (GetOrgEntitlementsResponse) {
+    option (google.api.http) = { get: "/v1/platform/organizations/{org_id}/entitlements" };
+  }
+  rpc OverrideEntitlement(OverrideEntitlementRequest) returns (OverrideEntitlementResponse) {
+    option (google.api.http) = { post: "/v1/platform/organizations/{org_id}/entitlements" body: "*" };
+  }
+
+  // Platform admin management (super_admin only)
+  rpc GrantPlatformRole(GrantPlatformRoleRequest) returns (google.protobuf.Empty) {
+    option (google.api.http) = { post: "/v1/platform/admins" body: "*" };
+  }
+  rpc RevokePlatformRole(RevokePlatformRoleRequest) returns (google.protobuf.Empty) {
+    option (google.api.http) = { delete: "/v1/platform/admins/{user_id}" };
+  }
+  rpc ListPlatformAdmins(ListPlatformAdminsRequest) returns (ListPlatformAdminsResponse) {
+    option (google.api.http) = { get: "/v1/platform/admins" };
+  }
+
+  // Feature flags (platform-only)
+  rpc ListFeatureFlags(ListFeatureFlagsRequest) returns (ListFeatureFlagsResponse) {
+    option (google.api.http) = { get: "/v1/platform/feature-flags" };
+  }
+  rpc UpsertFeatureFlag(UpsertFeatureFlagRequest) returns (UpsertFeatureFlagResponse) {
+    option (google.api.http) = { put: "/v1/platform/feature-flags/{name}" body: "*" };
+  }
+}
+
+// InvitationService — org member invitation management
+service InvitationService {
+  rpc CreateInvitation(CreateInvitationRequest) returns (CreateInvitationResponse) {
+    option (google.api.http) = { post: "/v1/invitations" body: "*" };
+  }
+  rpc AcceptInvitation(AcceptInvitationRequest) returns (AcceptInvitationResponse) {
+    option (google.api.http) = { post: "/v1/invitations:accept" body: "*" };
+  }
+  rpc ListInvitations(ListInvitationsRequest) returns (ListInvitationsResponse) {
+    option (google.api.http) = { get: "/v1/invitations" };
+  }
+  rpc RevokeInvitation(RevokeInvitationRequest) returns (google.protobuf.Empty) {
+    option (google.api.http) = { delete: "/v1/invitations/{id}" };
+  }
+}

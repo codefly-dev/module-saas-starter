@@ -1,0 +1,50 @@
+syntax = "proto3";
+package authsidecar;
+
+import "google/api/annotations.proto";
+import "buf/validate/validate.proto";
+
+// ResolveRequest is sent by the API gateway (Krakend, Envoy ext_authz, etc.)
+// with the auth provider's user ID extracted from the JWT.
+message ResolveRequest {
+  string provider = 1 [(buf.validate.field).string.min_len = 1];
+  string provider_id = 2 [(buf.validate.field).string.min_len = 1];
+}
+
+// ResolveResponse contains the internal user identity to inject as headers.
+// Standard headers:
+//   X-User-Id:  internal UUID
+//   X-Org-Id:   primary organization UUID
+//   X-Roles:    comma-separated role names
+message ResolveResponse {
+  bool   found = 1;
+  string user_id = 2;
+  string org_id = 3;
+  repeated string roles = 4;
+}
+
+// HealthRequest/Response for readiness checks.
+message HealthRequest {}
+message HealthResponse {
+  string status = 1;
+}
+
+// AuthSidecar resolves external auth identities to internal user context.
+// Deploy alongside your API gateway. The gateway extracts the JWT sub claim
+// and provider, calls Resolve, then injects the response as HTTP headers
+// for downstream services.
+service AuthSidecarService {
+
+  rpc Resolve(ResolveRequest) returns (ResolveResponse) {
+    option (google.api.http) = {
+      post: "/v1/resolve"
+      body: "*"
+    };
+  }
+
+  rpc Health(HealthRequest) returns (HealthResponse) {
+    option (google.api.http) = {
+      get: "/healthz"
+    };
+  }
+}

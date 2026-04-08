@@ -1,0 +1,3 @@
+- endpoint: tcp
+  host: host.docker.internal # Because we are inside k8s
+  port: 9160

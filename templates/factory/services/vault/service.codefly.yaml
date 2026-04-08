@@ -1,0 +1,13 @@
+name: vault
+version: 0.0.0
+agent:
+    kind: codefly:service
+    name: external-vault
+    version: 0.0.1
+    publisher: codefly.dev
+endpoints:
+    - name: http
+      api: http
+      visibility: module
+spec:
+    transit-key: api-keys

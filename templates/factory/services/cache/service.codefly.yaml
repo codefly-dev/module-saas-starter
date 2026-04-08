@@ -1,0 +1,15 @@
+name: cache
+version: 0.0.0
+agent:
+    kind: codefly:service
+    name: redis
+    version: 0.0.56
+    publisher: codefly.dev
+endpoints:
+    - name: write
+      api: tcp
+    - name: read
+      api: tcp
+spec:
+    watch: false
+    with-read-replicas: true

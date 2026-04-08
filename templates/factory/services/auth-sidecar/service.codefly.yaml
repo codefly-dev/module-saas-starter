@@ -1,0 +1,17 @@
+name: auth-sidecar
+description: Identity resolver — maps auth provider IDs to internal user/org/roles
+agent:
+  kind: codefly:service
+  name: go-grpc
+  version: 0.0.146
+  publisher: codefly.dev
+service-dependencies:
+  - name: api
+#  - name: cache  # Optional: enable for Redis identity caching
+endpoints:
+  - name: grpc
+    visibility: module
+    api: grpc
+spec:
+  hot-reload: true
+  rest-endpoint: false

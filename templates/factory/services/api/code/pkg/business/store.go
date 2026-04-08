@@ -1,0 +1,168 @@
+package business
+
+import (
+	"context"
+	"time"
+
+	"backend/pkg/gen"
+)
+
+type Store interface {
+	// Transactions
+	RunInTransaction(ctx context.Context, fn func(ctx context.Context) error) error
+
+	// Users
+	RegisterUser(ctx context.Context, user *gen.User, identity *gen.UserIdentity) error
+	GetUserByIdentity(ctx context.Context, id *gen.UserIdentity) (*gen.User, error)
+	GetUser(ctx context.Context, id string) (*gen.User, error)
+	GetUserByEmail(ctx context.Context, email string) (*gen.User, error)
+	ListUsers(ctx context.Context, orgID string, statusFilter string, pageSize int32, pageToken string) ([]*gen.User, string, error)
+	UpdateUser(ctx context.Context, userID string, updates map[string]any) (*gen.User, error)
+	DeleteUser(ctx context.Context, userID string) error
+
+	// Identities
+	AddIdentity(ctx context.Context, identity *gen.UserIdentity) error
+	FindUserByIdentity(ctx context.Context, provider, providerID string) (*gen.User, error)
+	ListUserIdentities(ctx context.Context, userID string) ([]*gen.UserIdentity, error)
+
+	// Organizations
+	CreateOrganization(ctx context.Context, org *gen.Organization) error
+	GetOrganization(ctx context.Context, id string) (*gen.Organization, error)
+	ListOrganizationsForUser(ctx context.Context, userID string) ([]*gen.Organization, error)
+	AddOrgMember(ctx context.Context, orgID string, userID string, role string) error
+	RemoveOrgMember(ctx context.Context, orgID string, userID string) error
+	ListOrgMembers(ctx context.Context, orgID string) ([]*gen.OrgMembership, error)
+
+	// Teams
+	CreateTeam(ctx context.Context, team *gen.Team) error
+	ListTeams(ctx context.Context, orgID string) ([]*gen.Team, error)
+	AddTeamMember(ctx context.Context, teamID string, userID string, role string) error
+	RemoveTeamMember(ctx context.Context, teamID string, userID string) error
+	ListTeamMembers(ctx context.Context, teamID string) ([]*gen.TeamMembership, error)
+
+	// Roles
+	CreateRole(ctx context.Context, role *gen.Role) error
+	ListRoles(ctx context.Context, orgID string) ([]*gen.Role, error)
+	DeleteRole(ctx context.Context, roleID string) error
+
+	// Role assignments
+	AssignRole(ctx context.Context, assignment *gen.RoleAssignment) error
+	RevokeRole(ctx context.Context, subjectID string, roleID string, orgID string, scope string) error
+
+	// Permission checking
+	CheckPermission(ctx context.Context, subjectID string, subjectKind gen.SubjectKind, resource string, action string, orgID string, scope string) (bool, string, error)
+
+	// Identity resolution
+	ResolveIdentity(ctx context.Context, provider string, providerID string) (*ResolvedIdentity, error)
+
+	// Platform admin
+	GetPlatformRole(ctx context.Context, userID string) (string, error)
+	GrantPlatformRole(ctx context.Context, userID, role, grantedBy string) error
+	RevokePlatformRole(ctx context.Context, userID string) error
+	ListPlatformAdmins(ctx context.Context) ([]PlatformAdmin, error)
+
+	// API Keys
+	CreateAPIKey(ctx context.Context, key *gen.APIKey, keyHash string) error
+	GetAPIKeyByHash(ctx context.Context, keyHash string) (*gen.APIKey, error)
+	ListAPIKeys(ctx context.Context, orgID string, pageSize int32, pageToken string) ([]*gen.APIKey, string, error)
+	RevokeAPIKey(ctx context.Context, keyID string) error
+	TouchAPIKeyUsage(ctx context.Context, keyID string, ip string) error
+
+	// Audit
+	InsertAuditEvent(ctx context.Context, entry AuditEntry) error
+	QueryAuditLog(ctx context.Context, orgID, actorID, action, resource, resourceID string,
+		from, to *time.Time, pageSize int32, pageToken string) ([]AuditEntry, string, int32, error)
+
+	// Invitations
+	CreateInvitation(ctx context.Context, inv *Invitation) error
+	GetInvitationByTokenHash(ctx context.Context, hash string) (*Invitation, error)
+	ListInvitations(ctx context.Context, orgID string, status string) ([]*Invitation, error)
+	UpdateInvitationStatus(ctx context.Context, id string, status string, acceptedBy string) error
+	CountPendingInvitations(ctx context.Context, orgID string) (int32, error)
+
+	// Entitlements
+	GetOrgPlanID(ctx context.Context, orgID string) (string, error)
+	GetPlanEntitlement(ctx context.Context, planID string, feature string) (int64, error)
+	GetEntitlementOverride(ctx context.Context, orgID string, feature string) (*EntitlementOverride, error)
+	CreateEntitlementOverride(ctx context.Context, override *EntitlementOverride) error
+	GetUsageForPeriod(ctx context.Context, orgID string, feature string, period string) (int64, error)
+	RecordUsage(ctx context.Context, orgID string, feature string, quantity int64, period string) error
+	GetSubscription(ctx context.Context, orgID string) (*Subscription, error)
+	CreateSubscription(ctx context.Context, sub *Subscription) error
+	UpdateSubscription(ctx context.Context, sub *Subscription) error
+
+	// Feature Flags
+	GetFeatureFlag(ctx context.Context, name string) (*FeatureFlag, error)
+	ListFeatureFlags(ctx context.Context) ([]*FeatureFlag, error)
+	UpsertFeatureFlag(ctx context.Context, flag *FeatureFlag) error
+
+	// Platform admin - user operations
+	SearchUsers(ctx context.Context, query string, pageSize int32, pageToken string) ([]*gen.User, string, error)
+	UpdateUserStatus(ctx context.Context, userID string, status string) error
+	ListActiveSessions(ctx context.Context, userID string, pageSize int32) ([]*Session, error)
+
+	// Sessions
+	CreateSession(ctx context.Context, session *Session) error
+	GetSessionByRefreshTokenHash(ctx context.Context, hash string) (*Session, error)
+	RevokeSession(ctx context.Context, sessionID string, reason string) error
+	RevokeSessionFamily(ctx context.Context, familyID string, reason string) error
+	RevokeAllUserSessions(ctx context.Context, userID string, reason string) error
+	UpdateSessionActivity(ctx context.Context, sessionID string) error
+}
+
+type StoreErrorType string
+
+const (
+	ErrTypeNotFound StoreErrorType = "not_found"
+	ErrTypeConflict StoreErrorType = "conflict"
+	ErrTypeInternal StoreErrorType = "internal"
+)
+
+type StoreError struct {
+	Err error
+	StoreErrorType
+}
+
+func (e *StoreError) Error() string {
+	return e.Err.Error()
+}
+
+func NewStoreError(err error, t StoreErrorType) *StoreError {
+	return &StoreError{
+		Err:            err,
+		StoreErrorType: t,
+	}
+}
+
+// ResolvedIdentity is the result of mapping an auth provider identity to internal user/org/roles.
+type ResolvedIdentity struct {
+	UserID       string
+	OrgID        string
+	OrgRole      string // "owner"|"admin"|"member"
+	PlatformRole string // "super_admin"|"support"|"billing"|""
+	Roles        []string
+	Found        bool
+}
+
+// PlatformAdmin represents a user with platform-level privileges.
+type PlatformAdmin struct {
+	UserID       string
+	PlatformRole string
+	GrantedBy    string
+	GrantedAt    time.Time
+}
+
+// Session represents a refresh token session.
+type Session struct {
+	ID               string
+	UserID           string
+	RefreshTokenHash string
+	FamilyID         string
+	DeviceInfo       map[string]string
+	IPAddress        string
+	CreatedAt        time.Time
+	LastActiveAt     time.Time
+	ExpiresAt        time.Time
+	RevokedAt        *time.Time
+	RevokedReason    string
+}

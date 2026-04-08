@@ -1,0 +1,51 @@
+# dev-admin fixture — seeds a complete dev environment
+# Used with: codefly run service frontend --fixture dev-admin
+# This file is shared across all services in the module.
+
+users:
+  - email: admin@acme.com
+    name: Sarah Chen
+    role: super_admin
+    provider: email
+    provider_id: dev-admin
+
+  - email: alice@acme.com
+    name: Alice Johnson
+    role: admin
+    provider: email
+    provider_id: dev-alice
+
+  - email: bob@acme.com
+    name: Bob Williams
+    role: member
+    provider: email
+    provider_id: dev-bob
+
+  - email: carol@acme.com
+    name: Carol Davis
+    role: member
+    provider: email
+    provider_id: dev-carol
+
+organizations:
+  - name: Acme Corp
+    owner: admin@acme.com
+    members:
+      - email: alice@acme.com
+        role: admin
+      - email: bob@acme.com
+        role: member
+      - email: carol@acme.com
+        role: member
+
+teams:
+  - name: Engineering
+    org: Acme Corp
+    members:
+      - alice@acme.com
+      - bob@acme.com
+
+  - name: Design
+    org: Acme Corp
+    members:
+      - carol@acme.com

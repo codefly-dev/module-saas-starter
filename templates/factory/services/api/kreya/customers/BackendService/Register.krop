@@ -1,0 +1,27 @@
+{
+  "details": {
+    "methodFqn": "customers.BackendService.Register",
+    "metadata": [
+      {
+        "key": "codefly.user.auth.id",
+        "value": "blah"
+      },
+      {
+        "key": "codefly.user.email",
+        "value": "antoine.toussaint@codefly.ai"
+      },
+      {
+        "key": "codefly.user.name",
+        "value": "Antoine"
+      }
+    ]
+  },
+  "requests": [
+    {
+      "location": "Register-request.json"
+    }
+  ],
+  "operationType": "unary",
+  "invokerName": "grpc",
+  "importStreamId": "36a25113-0eeb-4f9c-bb75-e8f2f8b682a2"
+}

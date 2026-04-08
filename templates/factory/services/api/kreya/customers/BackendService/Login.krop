@@ -1,0 +1,13 @@
+{
+  "details": {
+    "methodFqn": "customers.BackendService.Login"
+  },
+  "requests": [
+    {
+      "location": "Login-request.json"
+    }
+  ],
+  "operationType": "unary",
+  "invokerName": "grpc",
+  "importStreamId": "36a25113-0eeb-4f9c-bb75-e8f2f8b682a2"
+}

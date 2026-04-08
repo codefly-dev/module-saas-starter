@@ -1,0 +1,17 @@
+name: store
+version: 0.0.0
+agent:
+    kind: codefly:service
+    name: external-postgres
+    version: 0.0.65
+    publisher: codefly.dev
+endpoints:
+    - name: tcp
+      visibility: external
+spec:
+    database-name: users
+    debug: false
+    persist: true
+    silent: true
+    watch: true
+    without-ssl: false

@@ -1,0 +1,10 @@
+This directory is populated by `codefly sync`.
+
+It contains the generated gRPC client code for the backend service
+(IdentityService, UserService, etc.) auto-generated from the backend's
+proto definitions because auth-sidecar declares:
+
+  service-dependencies:
+    - name: backend
+
+Run `codefly sync` to generate the client stubs.

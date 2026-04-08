@@ -1,0 +1,5 @@
+publisher: codefly.dev
+kind: codefly:module
+name: saas-starter
+version: 0.0.1
+description: "Complete SaaS foundation — auth, multi-tenancy, RBAC, OPA gateway, impersonation, audit, billing-ready"

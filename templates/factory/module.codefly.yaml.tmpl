@@ -1,0 +1,21 @@
+kind: module
+name: {{.Name}}
+description: "SaaS foundation — auth, multi-tenancy, RBAC, OPA gateway, impersonation, audit"
+interface:
+    endpoints:
+        - service: api
+          endpoint: grpc
+          visibility: module
+        - service: auth-sidecar
+          endpoint: grpc
+          visibility: module
+        - service: frontend
+          endpoint: http
+          visibility: public
+services:
+    - name: store
+    - name: vault
+    - name: api
+    - name: auth-sidecar
+    - name: cache
+    - name: frontend

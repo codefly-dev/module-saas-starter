@@ -1,0 +1,4 @@
+{
+  "name": "{{ faker.name.last_name }}",
+  "domain": "Dominican Republic parsing index"
+}
