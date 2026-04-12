@@ -44,10 +44,12 @@ import {
   FileText,
   UserSearch,
   ShieldCheck,
+  Globe,
   LogOut,
   ChevronUp,
   type LucideIcon,
 } from "lucide-react";
+import { NotificationBell } from "@/features/notifications/ui/notification-bell";
 
 const iconMap: Record<string, LucideIcon> = {
   Users,
@@ -63,6 +65,7 @@ const iconMap: Record<string, LucideIcon> = {
   FileText,
   UserSearch,
   ShieldCheck,
+  Globe,
 };
 
 export function AdminLayout({ children }: { children: React.ReactNode }) {
@@ -234,6 +237,9 @@ export function AdminLayout({ children }: { children: React.ReactNode }) {
                   .map((s) => s.charAt(0).toUpperCase() + s.slice(1))
                   .join(" / ")}
           </span>
+          <div className="ml-auto flex items-center gap-2">
+            <NotificationBell />
+          </div>
         </header>
         <main className="flex-1 p-6">{children}</main>
       </SidebarInset>

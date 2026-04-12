@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { Providers } from "@/lib/providers";
 import { AdminLayout } from "@/components/admin-layout";
 import { ImpersonationBanner } from "@/components/impersonation-banner";
+import { OnboardingGate } from "@/features/onboarding/ui/onboarding-gate";
 import "./globals.css";
 import { Geist } from "next/font/google";
 import { cn } from "@/lib/utils";
@@ -23,7 +24,9 @@ export default function RootLayout({
       <body className="bg-gray-50 dark:bg-gray-950 text-gray-900 dark:text-gray-100 antialiased">
         <Providers>
           <ImpersonationBanner />
-          <AdminLayout>{children}</AdminLayout>
+          <OnboardingGate>
+            <AdminLayout>{children}</AdminLayout>
+          </OnboardingGate>
         </Providers>
       </body>
     </html>

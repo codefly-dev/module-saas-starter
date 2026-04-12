@@ -56,9 +56,11 @@ function CallbackHandler() {
               <AlertCircle className="h-4 w-4 shrink-0" />
               {error}
             </div>
-            <Button variant="outline" className="w-full" asChild>
-              <a href="/auth/login">Try again</a>
-            </Button>
+            <a href="/auth/login" className="w-full">
+              <Button variant="outline" className="w-full">
+                Try again
+              </Button>
+            </a>
           </CardContent>
         </Card>
       </div>

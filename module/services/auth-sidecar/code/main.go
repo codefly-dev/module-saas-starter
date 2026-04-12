@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"log"
 	"net"
+	"net/http"
 	"os"
 	"os/signal"
 	"syscall"
@@ -22,7 +23,7 @@ import (
 	"google.golang.org/grpc/reflection"
 	"google.golang.org/protobuf/types/known/emptypb"
 
-	backend "backend/pkg/gen"
+	apigen "api/pkg/gen"
 )
 
 func main() {
@@ -35,51 +36,115 @@ func main() {
 	}
 
 	grpcPort := codefly.For(ctx).WithDefaultNetwork().API(standards.GRPC).NetworkInstance().Port
-
-	backendNet := codefly.For(ctx).Service("backend").API("grpc").NetworkInstance()
-	if backendNet == nil {
-		panic("backend gRPC endpoint not available")
+	var httpPort uint16
+	if httpNet := codefly.For(ctx).WithDefaultNetwork().API(standards.REST).NetworkInstance(); httpNet != nil {
+		httpPort = httpNet.Port
 	}
-	backendAddr := fmt.Sprintf("%s:%d", backendNet.Hostname, backendNet.Port)
 
-	backendConn, err := grpc.NewClient(backendAddr, grpc.WithTransportCredentials(insecure.NewCredentials()))
+	apiNet := codefly.For(ctx).Service("api").API("grpc").NetworkInstance()
+	if apiNet == nil {
+		panic("api gRPC endpoint not available")
+	}
+	apiAddr := fmt.Sprintf("%s:%d", apiNet.Hostname, apiNet.Port)
+
+	// Upstream HTTP URLs used by the gateway listener.
+	apiRestNet := codefly.For(ctx).Service("api").API("rest").NetworkInstance()
+	apiHTTPURL := ""
+	if apiRestNet != nil {
+		apiHTTPURL = fmt.Sprintf("http://%s:%d", apiRestNet.Hostname, apiRestNet.Port)
+	}
+	apiConnectNet := codefly.For(ctx).Service("api").API("connect").NetworkInstance()
+	apiConnectURL := ""
+	if apiConnectNet != nil {
+		apiConnectURL = fmt.Sprintf("http://%s:%d", apiConnectNet.Hostname, apiConnectNet.Port)
+	}
+	frontendNet := codefly.For(ctx).Service("frontend").API("http").NetworkInstance()
+	frontendURL := ""
+	if frontendNet != nil {
+		frontendURL = fmt.Sprintf("http://%s:%d", frontendNet.Hostname, frontendNet.Port)
+	}
+
+	apiConn, err := grpc.NewClient(apiAddr, grpc.WithTransportCredentials(insecure.NewCredentials()))
 	if err != nil {
-		panic(fmt.Sprintf("cannot connect to backend at %s: %v", backendAddr, err))
+		panic(fmt.Sprintf("cannot connect to api at %s: %v", apiAddr, err))
 	}
-	defer backendConn.Close()
+	defer apiConn.Close()
 
-	publicKey := fetchPublicKey(ctx, backendConn)
+	publicKey := fetchPublicKey(ctx, apiConn)
 
-	sidecar := NewSidecar(backendConn, publicKey)
+	sidecar := NewSidecar(apiConn, publicKey)
 
 	grpcServer := grpc.NewServer()
 	authv3.RegisterAuthorizationServer(grpcServer, sidecar)
 	reflection.Register(grpcServer)
 
-	lis, err := net.Listen("tcp", fmt.Sprintf(":%d", grpcPort))
+	grpcLis, err := net.Listen("tcp", fmt.Sprintf(":%d", grpcPort))
 	if err != nil {
-		panic(fmt.Sprintf("failed to listen: %v", err))
+		panic(fmt.Sprintf("failed to listen on grpc port: %v", err))
 	}
 
-	fmt.Printf("auth-sidecar listening on :%d (backend: %s, jwt: %v)\n",
-		grpcPort, backendAddr, publicKey != nil)
+	fmt.Printf("auth-sidecar gRPC (ext_authz) listening on :%d (api: %s, jwt: %v)\n",
+		grpcPort, apiAddr, publicKey != nil)
+
+	// HTTP gateway listener — the single public ingress in dev.
+	var httpServer *http.Server
+	if httpPort > 0 && (apiHTTPURL != "" || frontendURL != "") {
+		routes := []RouteRule{}
+		if apiHTTPURL != "" {
+			// API routes are always protected. The sidecar's public-path
+			// allowlist lets /v1/auth/* through for login/refresh/logout.
+			routes = append(routes, RouteRule{Prefix: "/v1/", Upstream: MustURL(apiHTTPURL), Protected: true})
+			routes = append(routes, RouteRule{Prefix: "/api/", Upstream: MustURL(apiHTTPURL), Protected: true})
+		}
+		if apiConnectURL != "" {
+			// Connect RPC routes — paths like /api.UserService/GetUser.
+			// These are always protected; auth is enforced by the sidecar.
+			routes = append(routes, RouteRule{Prefix: "/api.", Upstream: MustURL(apiConnectURL), Protected: true})
+		}
+		if frontendURL != "" {
+			// Frontend is non-protected at the gateway: Next.js handles
+			// page-level auth internally. If the caller presents a token
+			// it's validated and X-User-ID is forwarded; without a token
+			// the frontend still serves public pages.
+			routes = append(routes, RouteRule{Prefix: "/", Upstream: MustURL(frontendURL), Protected: false})
+		}
+		rateLimiter := NewRateLimiter(1000) // 1000 req/min per org (or IP)
+		defer rateLimiter.Stop()
+		gateway := NewGateway(sidecar, routes, rateLimiter)
+		httpServer = &http.Server{
+			Addr:    fmt.Sprintf(":%d", httpPort),
+			Handler: gateway,
+		}
+		go func() {
+			fmt.Printf("auth-sidecar gateway (HTTP) listening on :%d (api: %s, frontend: %s)\n",
+				httpPort, apiHTTPURL, frontendURL)
+			if err := httpServer.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+				fmt.Fprintf(os.Stderr, "gateway http server error: %v\n", err)
+			}
+		}()
+	}
 
 	go func() {
 		<-ctx.Done()
 		grpcServer.GracefulStop()
+		if httpServer != nil {
+			shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+			defer cancel()
+			_ = httpServer.Shutdown(shutdownCtx)
+		}
 	}()
 
-	if err := grpcServer.Serve(lis); err != nil {
-		fmt.Fprintf(os.Stderr, "server error: %v\n", err)
+	if err := grpcServer.Serve(grpcLis); err != nil {
+		fmt.Fprintf(os.Stderr, "grpc server error: %v\n", err)
 	}
 }
 
-// fetchPublicKey calls backend's GetJWKS to get the Ed25519 public key.
+// fetchPublicKey calls api's GetJWKS to get the Ed25519 public key.
 func fetchPublicKey(ctx context.Context, conn *grpc.ClientConn) ed25519.PublicKey {
-	client := backend.NewAuthServiceClient(conn)
+	client := apigen.NewAuthServiceClient(conn)
 
-	// Retry — backend may still be starting
-	var resp *backend.JWKSResponse
+	// Retry — api may still be starting
+	var resp *apigen.JWKSResponse
 	var err error
 	for i := 0; i < 30; i++ {
 		resp, err = client.GetJWKS(ctx, &emptypb.Empty{})
