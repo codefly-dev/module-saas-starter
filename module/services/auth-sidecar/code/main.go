@@ -9,6 +9,7 @@ import (
 	"log"
 	"net"
 	"net/http"
+	"net/url"
 	"os"
 	"os/signal"
 	"syscall"
@@ -86,38 +87,48 @@ func main() {
 	fmt.Printf("auth-sidecar gRPC (ext_authz) listening on :%d (api: %s, jwt: %v)\n",
 		grpcPort, apiAddr, publicKey != nil)
 
+	// Load route config.
+	routeConfigPath := os.Getenv("ROUTE_CONFIG_PATH")
+	routeConfig, err := LoadRouteConfig(routeConfigPath)
+	if err != nil {
+		panic(fmt.Sprintf("failed to load route config: %v", err))
+	}
+	matcher := NewRouteMatcher(routeConfig)
+
 	// HTTP gateway listener — the single public ingress in dev.
 	var httpServer *http.Server
-	if httpPort > 0 && (apiHTTPURL != "" || frontendURL != "") {
-		routes := []RouteRule{}
+	if httpPort > 0 {
+		// Build upstream map from codefly network mappings.
+		upstreams := make(map[string]*url.URL)
 		if apiHTTPURL != "" {
-			// API routes are always protected. The sidecar's public-path
-			// allowlist lets /v1/auth/* through for login/refresh/logout.
-			routes = append(routes, RouteRule{Prefix: "/v1/", Upstream: MustURL(apiHTTPURL), Protected: true})
-			routes = append(routes, RouteRule{Prefix: "/api/", Upstream: MustURL(apiHTTPURL), Protected: true})
+			upstreams["api"] = MustURL(apiHTTPURL)
 		}
+		// If Connect URL is available, use it for api Connect paths;
+		// otherwise fall back to the REST URL.
 		if apiConnectURL != "" {
-			// Connect RPC routes — paths like /api.UserService/GetUser.
-			// These are always protected; auth is enforced by the sidecar.
-			routes = append(routes, RouteRule{Prefix: "/api.", Upstream: MustURL(apiConnectURL), Protected: true})
+			// Connect routes also target "api" service — the matcher
+			// resolves both REST and Connect to the same service name.
+			// We prefer the Connect URL when available.
+			// Note: both REST and Connect map to "api" in the route config.
+			// The gateway uses the same upstream for both.
+			if _, ok := upstreams["api"]; !ok {
+				upstreams["api"] = MustURL(apiConnectURL)
+			}
 		}
 		if frontendURL != "" {
-			// Frontend is non-protected at the gateway: Next.js handles
-			// page-level auth internally. If the caller presents a token
-			// it's validated and X-User-ID is forwarded; without a token
-			// the frontend still serves public pages.
-			routes = append(routes, RouteRule{Prefix: "/", Upstream: MustURL(frontendURL), Protected: false})
+			upstreams["frontend"] = MustURL(frontendURL)
 		}
+
 		rateLimiter := NewRateLimiter(1000) // 1000 req/min per org (or IP)
 		defer rateLimiter.Stop()
-		gateway := NewGateway(sidecar, routes, rateLimiter)
+		gateway := NewGateway(sidecar, matcher, upstreams, rateLimiter)
 		httpServer = &http.Server{
 			Addr:    fmt.Sprintf(":%d", httpPort),
 			Handler: gateway,
 		}
 		go func() {
-			fmt.Printf("auth-sidecar gateway (HTTP) listening on :%d (api: %s, frontend: %s)\n",
-				httpPort, apiHTTPURL, frontendURL)
+			fmt.Printf("auth-sidecar gateway (HTTP) listening on :%d (api: %s, frontend: %s, routes: %d)\n",
+				httpPort, apiHTTPURL, frontendURL, len(routeConfig.Routes))
 			if err := httpServer.ListenAndServe(); err != nil && err != http.ErrServerClosed {
 				fmt.Fprintf(os.Stderr, "gateway http server error: %v\n", err)
 			}

@@ -5,7 +5,6 @@ import (
 	"crypto/ed25519"
 	"fmt"
 	"log"
-	"os"
 	"strings"
 
 	corev3 "github.com/envoyproxy/go-control-plane/envoy/config/core/v3"
@@ -18,51 +17,6 @@ import (
 
 	apigen "api/pkg/gen"
 )
-
-// defaultPublicPaths are the built-in paths that skip JWT validation.
-// These can be extended via GATEWAY_PUBLIC_PATHS env var (comma-separated).
-//
-// Everything NOT in this list requires a valid access token.
-var defaultPublicPaths = []string{
-	// Auth — must be unauthenticated by definition
-	"/v1/auth/authenticate",
-	"/v1/auth/refresh",
-	"/v1/auth/logout",
-	"/v1/auth/.well-known/jwks.json",
-	// MFA verify — user has mfa_token but not a full JWT yet
-	"/v1/mfa/totp/verify",
-	// Connect equivalents for auth
-	"/customers.AuthService/Authenticate",
-	"/customers.AuthService/RefreshToken",
-	"/customers.AuthService/Logout",
-	"/customers.AuthService/GetJWKS",
-	"/customers.MFAService/VerifyTOTP",
-	// Billing webhooks — Stripe sends HMAC-signed requests, no Bearer token
-	"/v1/billing/webhook",
-	// Health checks
-	"/health",
-	"/healthz",
-	"/ready",
-	"/readyz",
-}
-
-// publicPaths is the effective allowlist, combining defaults + env config.
-var publicPaths = initPublicPaths()
-
-func initPublicPaths() []string {
-	paths := make([]string, len(defaultPublicPaths))
-	copy(paths, defaultPublicPaths)
-	// Allow extending via env var (comma-separated paths)
-	if extra := os.Getenv("GATEWAY_PUBLIC_PATHS"); extra != "" {
-		for _, p := range strings.Split(extra, ",") {
-			p = strings.TrimSpace(p)
-			if p != "" {
-				paths = append(paths, p)
-			}
-		}
-	}
-	return paths
-}
 
 // accessClaims mirrors the shape minted by pkg/auth/ed25519.
 // Field names use short JSON keys matching the backend minter.
@@ -77,10 +31,12 @@ type accessClaims struct {
 
 // Sidecar implements Envoy ext_authz with two auth paths:
 //
-//  1. Our own Ed25519-signed access token → local crypto verify, no network.
-//  2. API key (cfly_sk_ prefix) → backend RPC.
+//  1. Our own Ed25519-signed access token -> local crypto verify, no network.
+//  2. API key (cfly_sk_ prefix) -> backend RPC.
 //
-// Public routes under /v1/auth/* and /health bypass both.
+// Auth requirements (public/required/mfa_pending) are determined by the
+// gateway from the route config — the sidecar no longer maintains its own
+// public-path allowlist.
 //
 // On success, the sidecar forwards canonical internal identity headers:
 //
@@ -109,17 +65,12 @@ func NewSidecar(backendConn *grpc.ClientConn, publicKey ed25519.PublicKey) *Side
 }
 
 // Check is the Envoy ext_authz hot path.
+// The gateway calls this after route matching. The sidecar validates
+// credentials and returns identity headers on success.
 func (s *Sidecar) Check(ctx context.Context, req *authv3.CheckRequest) (*authv3.CheckResponse, error) {
-	http := req.GetAttributes().GetRequest().GetHttp()
-	headers := http.GetHeaders()
-	path := http.GetPath()
+	headers := req.GetAttributes().GetRequest().GetHttp().GetHeaders()
 
-	// 1. Public routes skip all validation.
-	if isPublicPath(path) {
-		return allow(nil), nil
-	}
-
-	// 2. API key path.
+	// Try Bearer token.
 	if auth := headers["authorization"]; auth != "" {
 		token := strings.TrimPrefix(auth, "Bearer ")
 		if token != auth {
@@ -130,7 +81,8 @@ func (s *Sidecar) Check(ctx context.Context, req *authv3.CheckRequest) (*authv3.
 		}
 	}
 
-	// 3. No credentials on a protected route → deny.
+	// No credentials — deny. The gateway decides whether to enforce
+	// or skip based on the route's auth requirement.
 	return deny(401, "authentication required"), nil
 }
 
@@ -188,15 +140,6 @@ func (s *Sidecar) checkAPIKey(ctx context.Context, key string) (*authv3.CheckRes
 		hdr("x-org-id", resp.OrganizationId),
 		hdr("x-scopes", strings.Join(resp.Scopes, ",")),
 	}), nil
-}
-
-func isPublicPath(path string) bool {
-	for _, p := range publicPaths {
-		if strings.HasPrefix(path, p) {
-			return true
-		}
-	}
-	return false
 }
 
 // --- envoy helpers ---

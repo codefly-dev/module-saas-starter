@@ -7,20 +7,13 @@ package main
 // equivalent for local iteration — it calls Sidecar.Check in-process (zero
 // gRPC round-trip) and does the same header injection + routing.
 //
-// Routing is path-prefix based:
-//
-//	/v1/*           → api backend  (gRPC-gateway REST endpoints)
-//	/api/*          → api backend
-//	/*              → frontend (Next.js SSR)
-//
-// Every request flows through Sidecar.Check first. Rejected requests never
-// touch the upstream; allowed requests are forwarded with the canonical
-// X-User-ID / X-Org-ID / X-Session-ID headers injected.
+// Routing is WHITELIST-ONLY: every endpoint must be explicitly listed in
+// routes.codefly.yaml. Unlisted paths return 404. Zero prefix matching.
 
 import (
-	"context"
 	"fmt"
 	"io"
+	"log"
 	"net/http"
 	"net/http/httputil"
 	"net/url"
@@ -31,65 +24,115 @@ import (
 	"google.golang.org/grpc/codes"
 )
 
-// RouteRule maps a request path prefix to an upstream URL.
-//
-// Protected routes require a valid access token (or match the sidecar's
-// explicit public-path allowlist). Non-protected routes are forwarded
-// without auth — used for the Next.js frontend which handles its own
-// page-level auth via AuthKit, and still receives X-User-ID from the
-// sidecar when a token is present.
-type RouteRule struct {
-	Prefix    string
-	Upstream  *url.URL
-	Protected bool
-}
-
 // Gateway is an HTTP reverse proxy that delegates auth decisions to a
-// Sidecar (in-process) and forwards allowed requests to one of several
-// upstream services by path prefix.
+// Sidecar (in-process) and forwards allowed requests to upstream services.
+// Route matching is driven entirely by the static RouteMatcher — no prefix
+// matching, no implicit exposure.
 type Gateway struct {
 	sidecar     *Sidecar
-	routes      []RouteRule
+	matcher     *RouteMatcher
+	upstreams   map[string]*url.URL // service name → upstream URL
+	selfHandler http.Handler        // handler for "self" routes (health checks)
 	rateLimiter *RateLimiter
 }
 
-// NewGateway constructs a gateway. Routes are tried in order; the first
-// matching prefix wins. Catch-all should be last. rateLimiter may be nil
-// to disable rate limiting.
-func NewGateway(sidecar *Sidecar, routes []RouteRule, rateLimiter *RateLimiter) *Gateway {
-	return &Gateway{sidecar: sidecar, routes: routes, rateLimiter: rateLimiter}
+// NewGateway constructs a gateway with explicit route matching.
+// upstreams maps service names (from routes.codefly.yaml) to their URLs.
+// rateLimiter may be nil to disable rate limiting.
+func NewGateway(sidecar *Sidecar, matcher *RouteMatcher, upstreams map[string]*url.URL, rateLimiter *RateLimiter) *Gateway {
+	return &Gateway{
+		sidecar:     sidecar,
+		matcher:     matcher,
+		upstreams:   upstreams,
+		selfHandler: http.HandlerFunc(selfHealthHandler),
+		rateLimiter: rateLimiter,
+	}
 }
 
-// ServeHTTP runs one request through: route match → ext_authz (if
-// protected) → reverse proxy.
+// selfHealthHandler handles health/readiness checks for the sidecar itself.
+func selfHealthHandler(w http.ResponseWriter, _ *http.Request) {
+	w.Header().Set("Content-Type", "text/plain; charset=utf-8")
+	w.WriteHeader(http.StatusOK)
+	_, _ = io.WriteString(w, "ok")
+}
+
+// ServeHTTP runs one request through: route match → auth check → reverse proxy.
+// Unlisted paths are rejected with 404. Every request must match an explicit
+// entry in the route config.
 func (g *Gateway) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	rule := g.matchRoute(r.URL.Path)
-	if rule == nil {
-		httpError(w, http.StatusNotFound, "no route for "+r.URL.Path)
+	entry := g.matcher.Match(r.Method, r.URL.Path)
+	if entry == nil {
+		log.Printf("WARN: blocked request: method=%s path=%s reason=no_matching_route", r.Method, r.URL.Path)
+		httpError(w, http.StatusNotFound, "endpoint not exposed")
 		return
 	}
 
-	// Always call Check — the sidecar knows the full public-path allowlist,
-	// and even protected routes may be allowlisted by path. The rule's
-	// Protected flag is an additional "this route always requires auth"
-	// signal that overrides the sidecar's public-path allowlist for API
-	// prefixes. Concretely:
-	//   - Protected route → token must be present AND the sidecar must
-	//     accept it. Deny on failure.
-	//   - Non-protected route (frontend) → token is optional. If present
-	//     and valid, headers are forwarded. If invalid, we still deny
-	//     (don't leak access). If absent, we forward without identity.
-	checkResp, err := g.sidecar.Check(r.Context(), buildCheckRequest(r))
-	if err != nil {
-		httpError(w, http.StatusInternalServerError, "auth check failed")
+	// Self-service routes (health checks) — no auth, no proxy.
+	if entry.Service == "self" {
+		g.selfHandler.ServeHTTP(w, r)
 		return
 	}
 
-	hasAuth := r.Header.Get("authorization") != ""
+	// Resolve upstream.
+	upstream, ok := g.upstreams[entry.Service]
+	if !ok {
+		log.Printf("WARN: blocked request: method=%s path=%s reason=no_upstream_for_service_%s", r.Method, r.URL.Path, entry.Service)
+		httpError(w, http.StatusBadGateway, "upstream not configured for service")
+		return
+	}
 
-	if denied := checkResp.GetDeniedResponse(); denied != nil {
-		if rule.Protected || hasAuth {
-			// Protected route, or caller presented a bad token on any route.
+	// Auth check based on the route's auth requirement.
+	switch entry.Auth {
+	case "public":
+		// Public route: call Check to get identity headers if a token is present,
+		// but don't reject if no token.
+		checkResp, err := g.sidecar.Check(r.Context(), buildCheckRequest(r))
+		if err != nil {
+			httpError(w, http.StatusInternalServerError, "auth check failed")
+			return
+		}
+
+		hasAuth := r.Header.Get("authorization") != ""
+
+		if denied := checkResp.GetDeniedResponse(); denied != nil {
+			if hasAuth {
+				// Caller presented a bad token — reject even on public routes.
+				code := int(denied.GetStatus().GetCode())
+				if code == 0 {
+					code = http.StatusForbidden
+				}
+				httpError(w, code, denied.GetBody())
+				return
+			}
+			// No token on public route — forward without identity.
+			stripAllIdentityHeaders(r)
+			g.rateLimitThenProxy(w, r, upstream)
+			return
+		}
+
+		if int(checkResp.GetStatus().GetCode()) != int(codes.OK) {
+			if hasAuth {
+				httpError(w, http.StatusForbidden, "forbidden")
+				return
+			}
+			stripAllIdentityHeaders(r)
+			g.rateLimitThenProxy(w, r, upstream)
+			return
+		}
+
+		// Token present and valid — inject identity headers.
+		injectHeaders(r, checkResp.GetOkResponse().GetHeaders())
+		g.rateLimitThenProxy(w, r, upstream)
+
+	case "required":
+		// Protected route: must have valid auth.
+		checkResp, err := g.sidecar.Check(r.Context(), buildCheckRequest(r))
+		if err != nil {
+			httpError(w, http.StatusInternalServerError, "auth check failed")
+			return
+		}
+
+		if denied := checkResp.GetDeniedResponse(); denied != nil {
 			code := int(denied.GetStatus().GetCode())
 			if code == 0 {
 				code = http.StatusForbidden
@@ -97,27 +140,46 @@ func (g *Gateway) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			httpError(w, code, denied.GetBody())
 			return
 		}
-		// Non-protected route, no token → forward without identity.
-		stripAllIdentityHeaders(r)
-		g.rateLimitThenProxy(w, r, rule.Upstream)
-		return
-	}
 
-	if int(checkResp.GetStatus().GetCode()) != int(codes.OK) {
-		if rule.Protected || hasAuth {
+		if int(checkResp.GetStatus().GetCode()) != int(codes.OK) {
 			httpError(w, http.StatusForbidden, "forbidden")
 			return
 		}
-		stripAllIdentityHeaders(r)
-		g.rateLimitThenProxy(w, r, rule.Upstream)
-		return
+
+		injectHeaders(r, checkResp.GetOkResponse().GetHeaders())
+		g.rateLimitThenProxy(w, r, upstream)
+
+	case "mfa_pending":
+		// MFA pending route: sidecar handles mfa_token validation.
+		// For now, delegate to the same Check flow — the sidecar accepts
+		// mfa_token on these paths.
+		checkResp, err := g.sidecar.Check(r.Context(), buildCheckRequest(r))
+		if err != nil {
+			httpError(w, http.StatusInternalServerError, "auth check failed")
+			return
+		}
+
+		if denied := checkResp.GetDeniedResponse(); denied != nil {
+			code := int(denied.GetStatus().GetCode())
+			if code == 0 {
+				code = http.StatusForbidden
+			}
+			httpError(w, code, denied.GetBody())
+			return
+		}
+
+		if int(checkResp.GetStatus().GetCode()) != int(codes.OK) {
+			httpError(w, http.StatusForbidden, "forbidden")
+			return
+		}
+
+		injectHeaders(r, checkResp.GetOkResponse().GetHeaders())
+		g.rateLimitThenProxy(w, r, upstream)
+
+	default:
+		log.Printf("WARN: blocked request: method=%s path=%s reason=unknown_auth_type_%s", r.Method, r.URL.Path, entry.Auth)
+		httpError(w, http.StatusInternalServerError, "unknown auth type")
 	}
-
-	// Allowed. Inject headers from the sidecar response.
-	injectHeaders(r, checkResp.GetOkResponse().GetHeaders())
-
-	// Rate limit AFTER auth so we can use the org ID as the key.
-	g.rateLimitThenProxy(w, r, rule.Upstream)
 }
 
 // rateLimitThenProxy applies rate limiting (if configured) then proxies.
@@ -137,16 +199,6 @@ func (g *Gateway) proxyTo(w http.ResponseWriter, r *http.Request, upstream *url.
 		httpError(w, http.StatusBadGateway, "upstream error: "+err.Error())
 	}
 	proxy.ServeHTTP(w, r)
-}
-
-// matchRoute picks the first rule whose prefix is a prefix of path.
-func (g *Gateway) matchRoute(path string) *RouteRule {
-	for i := range g.routes {
-		if strings.HasPrefix(path, g.routes[i].Prefix) {
-			return &g.routes[i]
-		}
-	}
-	return nil
 }
 
 // buildCheckRequest translates an incoming *http.Request into an Envoy
@@ -207,8 +259,8 @@ func stripIfAbsent(r *http.Request, headers []*corev3.HeaderValueOption, key str
 }
 
 // stripAllIdentityHeaders removes every identity header from the request.
-// Used on non-protected routes when no auth was presented — prevents a
-// caller from spoofing identity by setting headers directly.
+// Used on public routes when no auth was presented — prevents a caller
+// from spoofing identity by setting headers directly.
 func stripAllIdentityHeaders(r *http.Request) {
 	for _, k := range []string{
 		"x-user-id", "x-org-id", "x-org-role", "x-platform-role",
@@ -235,6 +287,3 @@ func MustURL(s string) *url.URL {
 	}
 	return u
 }
-
-// noCopy ensures Context is used for cancel; kept to avoid a dead import.
-var _ = context.Background
