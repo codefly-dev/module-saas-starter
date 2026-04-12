@@ -1,0 +1,9 @@
+# simple fixture — minimal admin user for quick dev
+# Used with: codefly run service frontend --fixture simple
+
+users:
+  - email: admin@localhost
+    name: Local Admin
+    role: super_admin
+    provider: email
+    provider_id: local-admin
