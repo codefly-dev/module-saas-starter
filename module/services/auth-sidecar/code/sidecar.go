@@ -8,120 +8,121 @@ import (
 	"os"
 	"strings"
 
-	"github.com/golang-jwt/jwt/v5"
-
 	corev3 "github.com/envoyproxy/go-control-plane/envoy/config/core/v3"
 	authv3 "github.com/envoyproxy/go-control-plane/envoy/service/auth/v3"
 	typev3 "github.com/envoyproxy/go-control-plane/envoy/type/v3"
+	"github.com/golang-jwt/jwt/v5"
 	"google.golang.org/genproto/googleapis/rpc/status"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 
-	backend "backend/pkg/gen"
+	apigen "api/pkg/gen"
 )
 
-// isDevMode returns true when running with a dev fixture.
-// Usage: codefly run service api --fixture dev-admin
-// Enables X-Dev-Role header bypass in the auth sidecar.
-func isDevMode() bool {
-	fixture := os.Getenv("CODEFLY__FIXTURE")
-	return strings.HasPrefix(fixture, "dev")
+// defaultPublicPaths are the built-in paths that skip JWT validation.
+// These can be extended via GATEWAY_PUBLIC_PATHS env var (comma-separated).
+//
+// Everything NOT in this list requires a valid access token.
+var defaultPublicPaths = []string{
+	// Auth — must be unauthenticated by definition
+	"/v1/auth/authenticate",
+	"/v1/auth/refresh",
+	"/v1/auth/logout",
+	"/v1/auth/.well-known/jwks.json",
+	// MFA verify — user has mfa_token but not a full JWT yet
+	"/v1/mfa/totp/verify",
+	// Connect equivalents for auth
+	"/customers.AuthService/Authenticate",
+	"/customers.AuthService/RefreshToken",
+	"/customers.AuthService/Logout",
+	"/customers.AuthService/GetJWKS",
+	"/customers.MFAService/VerifyTOTP",
+	// Billing webhooks — Stripe sends HMAC-signed requests, no Bearer token
+	"/v1/billing/webhook",
+	// Health checks
+	"/health",
+	"/healthz",
+	"/ready",
+	"/readyz",
 }
 
-// AccessClaims mirrors the JWT claims from the backend's TokenService.
-// Supports both regular sessions and WorkOS impersonation (RFC 8693 `act` claim).
-type AccessClaims struct {
+// publicPaths is the effective allowlist, combining defaults + env config.
+var publicPaths = initPublicPaths()
+
+func initPublicPaths() []string {
+	paths := make([]string, len(defaultPublicPaths))
+	copy(paths, defaultPublicPaths)
+	// Allow extending via env var (comma-separated paths)
+	if extra := os.Getenv("GATEWAY_PUBLIC_PATHS"); extra != "" {
+		for _, p := range strings.Split(extra, ",") {
+			p = strings.TrimSpace(p)
+			if p != "" {
+				paths = append(paths, p)
+			}
+		}
+	}
+	return paths
+}
+
+// accessClaims mirrors the shape minted by pkg/auth/ed25519.
+// Field names use short JSON keys matching the backend minter.
+type accessClaims struct {
 	jwt.RegisteredClaims
-	OrgID          string    `json:"org,omitempty"`
-	OrgRole        string    `json:"org_role,omitempty"`
-	PlatformRole   string    `json:"platform_role,omitempty"`
-	Act            *ActClaim `json:"act,omitempty"`            // RFC 8693: provider impersonation
-	ImpersonatedBy string    `json:"impersonated_by,omitempty"` // local mode impersonation
+	OrgID          string `json:"org,omitempty"`
+	OrgRole        string `json:"or,omitempty"`
+	PlatformRole   string `json:"pr,omitempty"`
+	SessionID      string `json:"sid"`
+	ActingAsUserID string `json:"acting,omitempty"`
 }
 
-// ActClaim represents the actor in an impersonation session (RFC 8693 Section 4.1).
-// When present, `sub` is the impersonated user and `act.sub` is the admin performing impersonation.
-// Used by WorkOS, Clerk, Frontegg, and any RFC 8693-compliant provider.
-type ActClaim struct {
-	Sub string `json:"sub"`
-}
-
-// ImpersonationInfo extracts impersonation context from JWT claims.
-// Supports two sources:
-//  1. RFC 8693 `act` claim (WorkOS, Clerk, standard providers)
-//  2. Custom `impersonated_by` claim (our own PlatformAdminService local mode)
-type ImpersonationInfo struct {
-	IsImpersonated bool
-	ImpersonatedBy string // admin user ID
-}
-
-func detectImpersonation(claims *AccessClaims) ImpersonationInfo {
-	// RFC 8693: act claim (provider-issued impersonation)
-	if claims.Act != nil && claims.Act.Sub != "" {
-		return ImpersonationInfo{
-			IsImpersonated: true,
-			ImpersonatedBy: claims.Act.Sub,
-		}
-	}
-	// Custom claim: our PlatformAdminService local impersonation
-	if claims.ImpersonatedBy != "" {
-		return ImpersonationInfo{
-			IsImpersonated: true,
-			ImpersonatedBy: claims.ImpersonatedBy,
-		}
-	}
-	return ImpersonationInfo{}
-}
-
-// Sidecar implements envoy ext_authz with two auth paths:
-//  1. JWT (local Ed25519 validation, no network call)
-//  2. API key (cfly_sk_ prefix, validated via backend RPC)
+// Sidecar implements Envoy ext_authz with two auth paths:
+//
+//  1. Our own Ed25519-signed access token → local crypto verify, no network.
+//  2. API key (cfly_sk_ prefix) → backend RPC.
+//
+// Public routes under /v1/auth/* and /health bypass both.
+//
+// On success, the sidecar forwards canonical internal identity headers:
+//
+//	x-user-id, x-org-id, x-org-role, x-platform-role, x-session-id,
+//	x-acting-as-user-id (only during impersonation)
+//
+// Provider-specific values (WorkOS sub, WorkOS org id, tokens) NEVER leave
+// the sidecar — downstream services see only canonical UUIDs.
 type Sidecar struct {
-	apiKey    backend.APIKeyServiceClient
+	apiKey    apigen.APIKeyServiceClient
 	publicKey ed25519.PublicKey
+	issuer    string
+	audience  string
 }
 
-// NewSidecar creates a sidecar with JWT and API key validation.
+// NewSidecar constructs a Sidecar. publicKey is the Ed25519 key the backend
+// minter uses to sign access tokens; issuer/audience must match the backend
+// minter config.
 func NewSidecar(backendConn *grpc.ClientConn, publicKey ed25519.PublicKey) *Sidecar {
 	return &Sidecar{
-		apiKey:    backend.NewAPIKeyServiceClient(backendConn),
+		apiKey:    apigen.NewAPIKeyServiceClient(backendConn),
 		publicKey: publicKey,
+		issuer:    "saas-starter",
+		audience:  "saas-starter",
 	}
 }
 
-// Check implements envoy.service.auth.v3.Authorization.
-//
-// Auth paths:
-//  1. Authorization: Bearer <jwt> → local JWT validation (fast, no network)
-//  2. Authorization: Bearer cfly_sk_... → API key validation (backend RPC)
-//  3. No auth → pass through (public endpoint)
+// Check is the Envoy ext_authz hot path.
 func (s *Sidecar) Check(ctx context.Context, req *authv3.CheckRequest) (*authv3.CheckResponse, error) {
-	headers := req.GetAttributes().GetRequest().GetHttp().GetHeaders()
+	http := req.GetAttributes().GetRequest().GetHttp()
+	headers := http.GetHeaders()
+	path := http.GetPath()
 
-	// Dev mode bypass: X-Dev-Role header skips real auth.
-	// Only active when CODEFLY_DEV_MODE=true (set by codefly run in local dev).
-	if devRole := headers["x-dev-role"]; devRole != "" && isDevMode() {
-		devUser := headers["x-dev-user-id"]
-		if devUser == "" {
-			devUser = "dev-user-00000000"
-		}
-		devOrg := headers["x-dev-org-id"]
-		if devOrg == "" {
-			devOrg = "dev-org-00000000"
-		}
-		log.Printf("[dev-mode] bypassing auth: role=%s user=%s org=%s", devRole, devUser, devOrg)
-		return allow([]*corev3.HeaderValueOption{
-			hdr("x-user-id", devUser),
-			hdr("x-org-id", devOrg),
-			hdr("x-org-role", devRole),
-			hdr("x-platform-role", devRole),
-			hdr("x-dev-mode", "true"),
-		}), nil
+	// 1. Public routes skip all validation.
+	if isPublicPath(path) {
+		return allow(nil), nil
 	}
 
+	// 2. API key path.
 	if auth := headers["authorization"]; auth != "" {
 		token := strings.TrimPrefix(auth, "Bearer ")
-		if token != auth { // had "Bearer " prefix
+		if token != auth {
 			if strings.HasPrefix(token, "cfly_sk_") {
 				return s.checkAPIKey(ctx, token)
 			}
@@ -129,27 +130,31 @@ func (s *Sidecar) Check(ctx context.Context, req *authv3.CheckRequest) (*authv3.
 		}
 	}
 
-	// No auth → pass through (public endpoint)
-	return allow(nil), nil
+	// 3. No credentials on a protected route → deny.
+	return deny(401, "authentication required"), nil
 }
 
-// checkJWT validates a JWT locally using the Ed25519 public key.
-// No network call — just crypto verification.
+// checkJWT runs full alg-locked Ed25519 validation plus iss/aud/exp, then
+// projects the claims onto forwarded headers.
 func (s *Sidecar) checkJWT(tokenString string) (*authv3.CheckResponse, error) {
 	if s.publicKey == nil {
-		return deny(500, "JWT validation not configured"), nil
+		return deny(503, "JWT validation not configured"), nil
 	}
 
-	claims := &AccessClaims{}
-	token, err := jwt.ParseWithClaims(tokenString, claims, func(token *jwt.Token) (any, error) {
-		if _, ok := token.Method.(*jwt.SigningMethodEd25519); !ok {
-			return nil, fmt.Errorf("unexpected signing method: %v", token.Header["alg"])
+	claims := &accessClaims{}
+	parser := jwt.NewParser(
+		jwt.WithValidMethods([]string{"EdDSA"}),
+		jwt.WithIssuer(s.issuer),
+		jwt.WithAudience(s.audience),
+		jwt.WithExpirationRequired(),
+		jwt.WithLeeway(60),
+	)
+	token, err := parser.ParseWithClaims(tokenString, claims, func(t *jwt.Token) (any, error) {
+		if t.Method.Alg() != "EdDSA" {
+			return nil, fmt.Errorf("alg forbidden: %s", t.Method.Alg())
 		}
 		return s.publicKey, nil
-	},
-		jwt.WithValidMethods([]string{"EdDSA"}),
-		jwt.WithExpirationRequired(),
-	)
+	})
 	if err != nil || !token.Valid {
 		return deny(401, "invalid or expired token"), nil
 	}
@@ -159,35 +164,25 @@ func (s *Sidecar) checkJWT(tokenString string) (*authv3.CheckResponse, error) {
 		hdr("x-org-id", claims.OrgID),
 		hdr("x-org-role", claims.OrgRole),
 		hdr("x-platform-role", claims.PlatformRole),
+		hdr("x-session-id", claims.SessionID),
 	}
-
-	// Detect impersonation from either RFC 8693 `act` claim or custom `impersonated_by`
-	imp := detectImpersonation(claims)
-	if imp.IsImpersonated {
-		hdrs = append(hdrs,
-			hdr("x-is-impersonated", "true"),
-			hdr("x-impersonated-by", imp.ImpersonatedBy),
-		)
-	} else {
-		hdrs = append(hdrs, hdr("x-is-impersonated", "false"))
+	if claims.ActingAsUserID != "" {
+		hdrs = append(hdrs, hdr("x-acting-as-user-id", claims.ActingAsUserID))
 	}
-
 	return allow(hdrs), nil
 }
 
-// checkAPIKey validates an API key by calling the backend.
+// checkAPIKey delegates to the backend for api-key validation.
+// The backend does the argon2id verify, we just thread the result.
 func (s *Sidecar) checkAPIKey(ctx context.Context, key string) (*authv3.CheckResponse, error) {
-	resp, err := s.apiKey.ValidateAPIKey(ctx, &backend.ValidateAPIKeyRequest{
-		KeyHash: key,
-	})
+	resp, err := s.apiKey.ValidateAPIKey(ctx, &apigen.ValidateAPIKeyRequest{KeyHash: key})
 	if err != nil {
-		log.Printf("ERROR validating API key: %v", err)
-		return deny(500, "API key validation failed"), nil
+		log.Printf("api key validate error: %v", err)
+		return deny(503, "api key validation failed"), nil
 	}
 	if !resp.Valid {
-		return deny(401, "invalid API key"), nil
+		return deny(401, "invalid api key"), nil
 	}
-
 	return allow([]*corev3.HeaderValueOption{
 		hdr("x-user-id", resp.UserId),
 		hdr("x-org-id", resp.OrganizationId),
@@ -195,7 +190,16 @@ func (s *Sidecar) checkAPIKey(ctx context.Context, key string) (*authv3.CheckRes
 	}), nil
 }
 
-// --- helpers ---
+func isPublicPath(path string) bool {
+	for _, p := range publicPaths {
+		if strings.HasPrefix(path, p) {
+			return true
+		}
+	}
+	return false
+}
+
+// --- envoy helpers ---
 
 func allow(headers []*corev3.HeaderValueOption) *authv3.CheckResponse {
 	return &authv3.CheckResponse{
