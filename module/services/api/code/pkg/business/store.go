@@ -4,7 +4,7 @@ import (
 	"context"
 	"time"
 
-	"backend/pkg/gen"
+	"api/pkg/gen"
 )
 
 type Store interface {
@@ -91,6 +91,12 @@ type Store interface {
 	CreateSubscription(ctx context.Context, sub *Subscription) error
 	UpdateSubscription(ctx context.Context, sub *Subscription) error
 
+	// Billing — Stripe customer + plan-by-name lookups used by the
+	// StartCheckout / OpenBillingPortal flows.
+	GetOrgStripeCustomerID(ctx context.Context, orgID string) (string, error)
+	SetOrgStripeCustomerID(ctx context.Context, orgID, stripeCustomerID string) error
+	GetPlanByName(ctx context.Context, name string) (*PlanFull, error)
+
 	// Feature Flags
 	GetFeatureFlag(ctx context.Context, name string) (*FeatureFlag, error)
 	ListFeatureFlags(ctx context.Context) ([]*FeatureFlag, error)
@@ -108,6 +114,28 @@ type Store interface {
 	RevokeSessionFamily(ctx context.Context, familyID string, reason string) error
 	RevokeAllUserSessions(ctx context.Context, userID string, reason string) error
 	UpdateSessionActivity(ctx context.Context, sessionID string) error
+
+	// Webhooks
+	CreateWebhookSubscription(ctx context.Context, sub *WebhookSubscription) error
+	DeleteWebhookSubscription(ctx context.Context, id string) error
+	ListWebhookSubscriptions(ctx context.Context, orgID string) ([]*WebhookSubscription, error)
+	GetActiveWebhookSubscriptions(ctx context.Context, eventType string) ([]*WebhookSubscription, error)
+	CreateWebhookDelivery(ctx context.Context, delivery *WebhookDelivery) error
+	UpdateWebhookDelivery(ctx context.Context, delivery *WebhookDelivery) error
+	ListWebhookDeliveries(ctx context.Context, subscriptionID string, pageSize int) ([]*WebhookDelivery, error)
+	GetPendingDeliveries(ctx context.Context, limit int) ([]*WebhookDelivery, error)
+
+	// Notifications
+	CreateNotification(ctx context.Context, n *Notification) error
+	ListNotifications(ctx context.Context, userID string, pageSize int, pageToken string) ([]*Notification, string, error)
+	GetUnreadCount(ctx context.Context, userID string) (int, error)
+	MarkNotificationRead(ctx context.Context, id string) error
+	MarkAllNotificationsRead(ctx context.Context, userID string) error
+	DeleteNotification(ctx context.Context, id string) error
+
+	// Onboarding
+	GetOnboardingProgress(ctx context.Context, userID string) ([]*OnboardingStep, error)
+	UpsertOnboardingStep(ctx context.Context, userID string, stepName string, status string) error
 }
 
 type StoreErrorType string

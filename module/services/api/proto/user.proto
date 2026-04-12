@@ -623,6 +623,8 @@ message AuthenticateResponse {
   string refresh_token = 2;
   int64 expires_in = 3;
   User user = 4;
+  bool mfa_required = 5;
+  string mfa_token = 6;
 }
 
 message RefreshTokenRequest {
@@ -957,5 +959,329 @@ service InvitationService {
   }
   rpc RevokeInvitation(RevokeInvitationRequest) returns (google.protobuf.Empty) {
     option (google.api.http) = { delete: "/v1/invitations/{id}" };
+  }
+}
+
+// ============================================================================
+// Webhooks
+// ============================================================================
+
+enum WebhookDeliveryStatus {
+  WEBHOOK_DELIVERY_STATUS_UNSPECIFIED = 0;
+  WEBHOOK_DELIVERY_STATUS_PENDING = 1;
+  WEBHOOK_DELIVERY_STATUS_SUCCESS = 2;
+  WEBHOOK_DELIVERY_STATUS_FAILED = 3;
+}
+
+message WebhookSubscription {
+  string id = 1 [(buf.validate.field).string.uuid = true];
+  string org_id = 2 [(buf.validate.field).string.uuid = true];
+  string url = 3 [(buf.validate.field).string.uri = true];
+  repeated string events = 4;
+  bool active = 5;
+  string description = 6;
+  google.protobuf.Timestamp created_at = 7;
+}
+
+message WebhookDelivery {
+  string id = 1 [(buf.validate.field).string.uuid = true];
+  string subscription_id = 2 [(buf.validate.field).string.uuid = true];
+  string event_type = 3;
+  string payload = 4;
+  WebhookDeliveryStatus status = 5;
+  int32 attempts = 6;
+  int32 http_status = 7;
+  google.protobuf.Timestamp created_at = 8;
+  google.protobuf.Timestamp delivered_at = 9;
+}
+
+message CreateWebhookSubscriptionRequest {
+  string org_id = 1 [(buf.validate.field).string.uuid = true];
+  string url = 2 [(buf.validate.field).string.uri = true];
+  repeated string events = 3;
+  string description = 4;
+}
+
+message DeleteWebhookSubscriptionRequest {
+  string id = 1 [(buf.validate.field).string.uuid = true];
+}
+
+message ListWebhookSubscriptionsRequest {
+  string org_id = 1 [(buf.validate.field).string.uuid = true];
+  int32 page_size = 2 [(buf.validate.field).int32 = { gt: 0, lte: 100 }];
+  string page_token = 3;
+}
+
+message ListWebhookSubscriptionsResponse {
+  repeated WebhookSubscription subscriptions = 1;
+  string next_page_token = 2;
+}
+
+message ListWebhookDeliveriesRequest {
+  string subscription_id = 1 [(buf.validate.field).string.uuid = true];
+  int32 page_size = 2 [(buf.validate.field).int32 = { gt: 0, lte: 100 }];
+  string page_token = 3;
+}
+
+message ListWebhookDeliveriesResponse {
+  repeated WebhookDelivery deliveries = 1;
+  string next_page_token = 2;
+}
+
+message TestWebhookRequest {
+  string id = 1 [(buf.validate.field).string.uuid = true];
+}
+
+// WebhookService — webhook subscription and delivery management
+service WebhookService {
+  rpc CreateSubscription(CreateWebhookSubscriptionRequest) returns (WebhookSubscription) {
+    option (google.api.http) = { post: "/v1/webhooks" body: "*" };
+  }
+  rpc DeleteSubscription(DeleteWebhookSubscriptionRequest) returns (google.protobuf.Empty) {
+    option (google.api.http) = { delete: "/v1/webhooks/{id}" };
+  }
+  rpc ListSubscriptions(ListWebhookSubscriptionsRequest) returns (ListWebhookSubscriptionsResponse) {
+    option (google.api.http) = { get: "/v1/webhooks" };
+  }
+  rpc ListDeliveries(ListWebhookDeliveriesRequest) returns (ListWebhookDeliveriesResponse) {
+    option (google.api.http) = { get: "/v1/webhooks/{subscription_id}/deliveries" };
+  }
+  rpc TestWebhook(TestWebhookRequest) returns (WebhookDelivery) {
+    option (google.api.http) = { post: "/v1/webhooks/{id}:test" body: "*" };
+  }
+}
+
+// ============================================================================
+// Notifications
+// ============================================================================
+
+message Notification {
+  string id = 1 [(buf.validate.field).string.uuid = true];
+  string user_id = 2 [(buf.validate.field).string.uuid = true];
+  string org_id = 3 [(buf.validate.field).string.uuid = true];
+  string title = 4;
+  string body = 5;
+  string type = 6;
+  string action_url = 7;
+  google.protobuf.Timestamp read_at = 8;
+  google.protobuf.Timestamp created_at = 9;
+}
+
+message ListNotificationsRequest {
+  int32 page_size = 1 [(buf.validate.field).int32 = { gt: 0, lte: 100 }];
+  string page_token = 2;
+}
+
+message ListNotificationsResponse {
+  repeated Notification notifications = 1;
+  string next_page_token = 2;
+}
+
+message GetUnreadCountRequest {}
+
+message GetUnreadCountResponse {
+  int32 count = 1;
+}
+
+message MarkNotificationReadRequest {
+  string id = 1 [(buf.validate.field).string.uuid = true];
+}
+
+message MarkAllNotificationsReadRequest {}
+
+message DeleteNotificationRequest {
+  string id = 1 [(buf.validate.field).string.uuid = true];
+}
+
+// NotificationService — user notification management
+service NotificationService {
+  rpc ListNotifications(ListNotificationsRequest) returns (ListNotificationsResponse) {
+    option (google.api.http) = { get: "/v1/notifications" };
+  }
+  rpc GetUnreadCount(GetUnreadCountRequest) returns (GetUnreadCountResponse) {
+    option (google.api.http) = { get: "/v1/notifications/unread-count" };
+  }
+  rpc MarkRead(MarkNotificationReadRequest) returns (google.protobuf.Empty) {
+    option (google.api.http) = { post: "/v1/notifications/{id}:read" body: "*" };
+  }
+  rpc MarkAllRead(MarkAllNotificationsReadRequest) returns (google.protobuf.Empty) {
+    option (google.api.http) = { post: "/v1/notifications:read-all" body: "*" };
+  }
+  rpc DeleteNotification(DeleteNotificationRequest) returns (google.protobuf.Empty) {
+    option (google.api.http) = { delete: "/v1/notifications/{id}" };
+  }
+}
+
+// ============================================================================
+// Onboarding
+// ============================================================================
+
+enum OnboardingStepStatus {
+  ONBOARDING_STEP_STATUS_UNSPECIFIED = 0;
+  ONBOARDING_STEP_STATUS_PENDING = 1;
+  ONBOARDING_STEP_STATUS_COMPLETED = 2;
+  ONBOARDING_STEP_STATUS_SKIPPED = 3;
+}
+
+message OnboardingStep {
+  string step_name = 1 [(buf.validate.field).string.min_len = 1];
+  OnboardingStepStatus status = 2;
+  google.protobuf.Timestamp completed_at = 3;
+}
+
+message OnboardingProgress {
+  repeated OnboardingStep steps = 1;
+  bool completed = 2;
+}
+
+message GetOnboardingProgressRequest {}
+
+message CompleteOnboardingStepRequest {
+  string step_name = 1 [(buf.validate.field).string.min_len = 1];
+}
+
+message SkipOnboardingStepRequest {
+  string step_name = 1 [(buf.validate.field).string.min_len = 1];
+}
+
+// OnboardingService — user onboarding flow management
+service OnboardingService {
+  rpc GetProgress(GetOnboardingProgressRequest) returns (OnboardingProgress) {
+    option (google.api.http) = { get: "/v1/onboarding" };
+  }
+  rpc CompleteStep(CompleteOnboardingStepRequest) returns (OnboardingProgress) {
+    option (google.api.http) = { post: "/v1/onboarding/{step_name}:complete" body: "*" };
+  }
+  rpc SkipStep(SkipOnboardingStepRequest) returns (OnboardingProgress) {
+    option (google.api.http) = { post: "/v1/onboarding/{step_name}:skip" body: "*" };
+  }
+}
+
+// ============================================================================
+// GDPR (Data Privacy)
+// ============================================================================
+
+enum GDPRRequestType {
+  GDPR_REQUEST_TYPE_UNSPECIFIED = 0;
+  GDPR_REQUEST_TYPE_EXPORT = 1;
+  GDPR_REQUEST_TYPE_DELETION = 2;
+}
+
+enum GDPRRequestStatus {
+  GDPR_REQUEST_STATUS_UNSPECIFIED = 0;
+  GDPR_REQUEST_STATUS_PENDING = 1;
+  GDPR_REQUEST_STATUS_PROCESSING = 2;
+  GDPR_REQUEST_STATUS_COMPLETED = 3;
+  GDPR_REQUEST_STATUS_FAILED = 4;
+}
+
+message GDPRRequest {
+  string id = 1 [(buf.validate.field).string.uuid = true];
+  string user_id = 2 [(buf.validate.field).string.uuid = true];
+  GDPRRequestType type = 3;
+  GDPRRequestStatus status = 4;
+  string download_url = 5;
+  google.protobuf.Timestamp expires_at = 6;
+  google.protobuf.Timestamp created_at = 7;
+  google.protobuf.Timestamp completed_at = 8;
+}
+
+message RequestDataExportRequest {}
+
+message GetExportStatusRequest {
+  string id = 1 [(buf.validate.field).string.uuid = true];
+}
+
+message RequestDeletionRequest {}
+
+message GetDeletionStatusRequest {
+  string id = 1 [(buf.validate.field).string.uuid = true];
+}
+
+// GDPRService — GDPR data export and deletion requests
+service GDPRService {
+  rpc RequestExport(RequestDataExportRequest) returns (GDPRRequest) {
+    option (google.api.http) = { post: "/v1/gdpr/export" body: "*" };
+  }
+  rpc GetExportStatus(GetExportStatusRequest) returns (GDPRRequest) {
+    option (google.api.http) = { get: "/v1/gdpr/export/{id}" };
+  }
+  rpc RequestDeletion(RequestDeletionRequest) returns (GDPRRequest) {
+    option (google.api.http) = { post: "/v1/gdpr/delete" body: "*" };
+  }
+  rpc GetDeletionStatus(GetDeletionStatusRequest) returns (GDPRRequest) {
+    option (google.api.http) = { get: "/v1/gdpr/delete/{id}" };
+  }
+}
+
+// ============================================================================
+// MFA (Multi-Factor Authentication)
+// ============================================================================
+
+enum MFADeviceType {
+  MFA_DEVICE_TYPE_UNSPECIFIED = 0;
+  MFA_DEVICE_TYPE_TOTP = 1;
+  MFA_DEVICE_TYPE_WEBAUTHN = 2;
+}
+
+message MFADevice {
+  string id = 1 [(buf.validate.field).string.uuid = true];
+  string user_id = 2 [(buf.validate.field).string.uuid = true];
+  MFADeviceType device_type = 3;
+  string name = 4;
+  google.protobuf.Timestamp verified_at = 5;
+  google.protobuf.Timestamp last_used_at = 6;
+  google.protobuf.Timestamp created_at = 7;
+}
+
+message SetupTOTPRequest {}
+
+message SetupTOTPResponse {
+  string secret = 1;
+  string provisioning_uri = 2;
+  repeated string backup_codes = 3;
+}
+
+message VerifyTOTPRequest {
+  string code = 1 [(buf.validate.field).string = { min_len: 6, max_len: 6, pattern: "^[0-9]+$" }];
+}
+
+message VerifyTOTPResponse {
+  bool valid = 1;
+  MFADevice device = 2;
+}
+
+message ListMFADevicesRequest {}
+
+message ListMFADevicesResponse {
+  repeated MFADevice devices = 1;
+}
+
+message RevokeMFADeviceRequest {
+  string id = 1 [(buf.validate.field).string.uuid = true];
+}
+
+message GenerateBackupCodesRequest {}
+
+message GenerateBackupCodesResponse {
+  repeated string backup_codes = 1;
+}
+
+// MFAService — multi-factor authentication device and TOTP management
+service MFAService {
+  rpc SetupTOTP(SetupTOTPRequest) returns (SetupTOTPResponse) {
+    option (google.api.http) = { post: "/v1/mfa/totp/setup" body: "*" };
+  }
+  rpc VerifyTOTP(VerifyTOTPRequest) returns (VerifyTOTPResponse) {
+    option (google.api.http) = { post: "/v1/mfa/totp/verify" body: "*" };
+  }
+  rpc ListDevices(ListMFADevicesRequest) returns (ListMFADevicesResponse) {
+    option (google.api.http) = { get: "/v1/mfa/devices" };
+  }
+  rpc RevokeDevice(RevokeMFADeviceRequest) returns (google.protobuf.Empty) {
+    option (google.api.http) = { delete: "/v1/mfa/devices/{id}" };
+  }
+  rpc GenerateBackupCodes(GenerateBackupCodesRequest) returns (GenerateBackupCodesResponse) {
+    option (google.api.http) = { post: "/v1/mfa/backup-codes" body: "*" };
   }
 }
