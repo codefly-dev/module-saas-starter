@@ -7,10 +7,13 @@ agent:
     publisher: codefly.dev
 service-dependencies:
     - name: api
+workspace-configuration-dependencies:
+    - workos
 endpoints:
     - name: http
       api: http
-      visibility: public
+      # Internal only — public traffic enters via auth-sidecar gateway.
+      visibility: module
 spec:
     hot-reload: true
     auth-provider: workos
