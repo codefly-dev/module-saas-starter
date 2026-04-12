@@ -29,6 +29,27 @@ export function useRevokePlatformRole() {
   });
 }
 
+export function useImpersonateUser() {
+  const svc = usePlatformAdminService();
+  return useMutation({
+    mutationFn: (userId: string) => svc.impersonateUser({ userId }),
+  });
+}
+
+export function useOverrideEntitlement() {
+  const svc = usePlatformAdminService();
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ orgId, feature, limitValue, reason }: {
+      orgId: string;
+      feature: string;
+      limitValue: bigint;
+      reason?: string;
+    }) => svc.overrideEntitlement({ orgId, feature, limitValue, reason: reason ?? "" }),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["entitlements"] }),
+  });
+}
+
 export function useFeatureFlags() {
   const svc = usePlatformAdminService();
   return useQuery({

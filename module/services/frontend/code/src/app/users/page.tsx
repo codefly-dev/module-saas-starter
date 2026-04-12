@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { useUsers, useSuspendUser, useUnsuspendUser } from "@/lib/hooks";
+import { useUsers, useSuspendUser, useUnsuspendUser, useImpersonateUser } from "@/lib/hooks";
 import { DataTable, type Column } from "@/components/data-table";
 import { StatusBadge } from "@/components/status-badge";
 import { formatDate } from "@/lib/admin-core";
@@ -28,9 +28,11 @@ const columns: Column<UserRow>[] = [
 
 export default function UsersPage() {
   const [query, setQuery] = useState("");
+  const [impersonationToken, setImpersonationToken] = useState<string | null>(null);
   const { data: users = [], isLoading } = useUsers(query);
   const suspendUser = useSuspendUser();
   const unsuspendUser = useUnsuspendUser();
+  const impersonateUser = useImpersonateUser();
 
   const actionsColumn: Column<UserRow> = {
     key: "uuid",
@@ -56,6 +58,21 @@ export default function UsersPage() {
               Unsuspend
             </button>
           )}
+          <button
+            onClick={(e) => {
+              e.stopPropagation();
+              impersonateUser.mutate(uuid, {
+                onSuccess: (data) => {
+                  const token = (data as Record<string, unknown>).accessToken as string | undefined;
+                  if (token) setImpersonationToken(token);
+                },
+              });
+            }}
+            disabled={impersonateUser.isPending}
+            className="text-purple-600 hover:text-purple-800 text-sm font-medium"
+          >
+            Impersonate
+          </button>
         </div>
       );
     },
@@ -73,6 +90,26 @@ export default function UsersPage() {
           className="px-4 py-2 border border-gray-300 dark:border-gray-700 dark:bg-gray-800 rounded-lg w-80 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
         />
       </div>
+
+      {impersonationToken && (
+        <div className="mb-6 p-4 border border-purple-300 dark:border-purple-700 bg-purple-50 dark:bg-purple-900/20 rounded-lg">
+          <div className="flex items-center justify-between mb-2">
+            <span className="text-sm font-medium text-purple-800 dark:text-purple-300">
+              Impersonation Token
+            </span>
+            <button
+              onClick={() => setImpersonationToken(null)}
+              className="text-purple-600 hover:text-purple-800 text-sm"
+            >
+              Dismiss
+            </button>
+          </div>
+          <code className="block text-xs font-mono break-all text-purple-700 dark:text-purple-400 bg-purple-100 dark:bg-purple-900/40 p-2 rounded">
+            {impersonationToken}
+          </code>
+        </div>
+      )}
+
       <DataTable
         columns={[...columns, actionsColumn]}
         data={users as UserRow[]}

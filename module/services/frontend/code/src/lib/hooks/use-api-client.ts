@@ -6,6 +6,8 @@ import { apiTransport } from "@/lib/connect/transport";
 import {
   UserService,
   OrganizationService,
+  TeamService,
+  PermissionService,
   AuthService,
   AuditService,
   APIKeyService,
@@ -19,6 +21,14 @@ export function useUserService() {
 
 export function useOrganizationService() {
   return useMemo(() => createClient(OrganizationService, apiTransport), []);
+}
+
+export function useTeamService() {
+  return useMemo(() => createClient(TeamService, apiTransport), []);
+}
+
+export function usePermissionService() {
+  return useMemo(() => createClient(PermissionService, apiTransport), []);
 }
 
 export function useAuthService() {

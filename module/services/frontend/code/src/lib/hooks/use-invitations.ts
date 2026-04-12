@@ -21,6 +21,13 @@ export function useCreateInvitation() {
   });
 }
 
+export function useAcceptInvitation() {
+  const svc = useInvitationService();
+  return useMutation({
+    mutationFn: (token: string) => svc.acceptInvitation({ token }),
+  });
+}
+
 export function useRevokeInvitation() {
   const svc = useInvitationService();
   const queryClient = useQueryClient();

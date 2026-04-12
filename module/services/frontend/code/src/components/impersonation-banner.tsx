@@ -3,18 +3,11 @@
 import { useState } from "react";
 import { useAuth } from "@/lib/auth";
 
-/**
- * Impersonation banner — renders only when an impersonation session is active.
- * Provider-agnostic: works with WorkOS (act claim), Clerk, or local impersonation.
- *
- * If using WorkOS AuthKit, prefer their built-in <Impersonation /> component.
- * This component is the fallback for non-WorkOS setups or custom styling.
- */
 export function ImpersonationBanner() {
   const { impersonation, user, logout } = useAuth();
   const [minimized, setMinimized] = useState(false);
 
-  if (!impersonation.isImpersonated) return null;
+  if (!impersonation.isImpersonating) return null;
 
   if (minimized) {
     return (
@@ -37,9 +30,11 @@ export function ImpersonationBanner() {
           <span>
             Viewing as <strong>{user?.email || user?.id}</strong>
           </span>
-          <span className="text-amber-700">
-            (by {impersonation.impersonatedBy})
-          </span>
+          {impersonation.impersonatorId && (
+            <span className="text-amber-700">
+              (by {impersonation.impersonatorId})
+            </span>
+          )}
         </div>
         <div className="flex items-center gap-2">
           <button

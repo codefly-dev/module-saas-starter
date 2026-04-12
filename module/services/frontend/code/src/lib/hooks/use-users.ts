@@ -14,7 +14,7 @@ export function useUser(uuid: string) {
   const svc = useUserService();
   return useQuery({
     queryKey: ["users", uuid],
-    queryFn: () => svc.getUser({ uuid }),
+    queryFn: () => svc.getUser({ identifier: { case: "uuid", value: uuid } }),
     enabled: !!uuid,
   });
 }

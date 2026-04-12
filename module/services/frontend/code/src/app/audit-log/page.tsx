@@ -50,7 +50,7 @@ export default function AuditLogPage() {
   const [actionFilter, setActionFilter] = useState("");
   const { data, isLoading } = useAuditLog({
     action: actionFilter || undefined,
-    page_size: 100,
+    pageSize: 100,
   });
 
   return (

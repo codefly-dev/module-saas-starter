@@ -12,7 +12,7 @@ export const platformAdminPlugin: AdminPlugin = {
     },
     {
       label: "Sessions",
-      href: "/platform/sessions",
+      href: "/sessions",
       icon: "Activity",
       group: "Platform",
       requiredRole: "support",
@@ -33,7 +33,7 @@ export const platformAdminPlugin: AdminPlugin = {
     },
     {
       label: "Entitlements",
-      href: "/platform/entitlements",
+      href: "/entitlements",
       icon: "CreditCard",
       group: "Platform",
       requiredRole: "billing",
