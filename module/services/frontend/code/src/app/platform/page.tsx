@@ -1,45 +1,71 @@
 "use client";
 
 import Link from "next/link";
+import {
+  Card,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "@/shared/ui";
+import { ShieldCheck, Flag, Activity, CreditCard } from "lucide-react";
 
 const sections = [
   {
     title: "Platform Admins",
     description: "Manage platform-level admin roles and permissions.",
     href: "/platform/admins",
+    icon: ShieldCheck,
   },
   {
     title: "Feature Flags",
     description: "Create and toggle feature flags for gradual rollouts.",
     href: "/platform/feature-flags",
+    icon: Flag,
   },
   {
     title: "Sessions",
     description: "View and manage active user sessions.",
     href: "/sessions",
+    icon: Activity,
   },
   {
     title: "Entitlements",
     description: "View and override organization entitlements and plan limits.",
     href: "/entitlements",
+    icon: CreditCard,
   },
 ];
 
 export default function PlatformPage() {
   return (
-    <div>
-      <h2 className="text-2xl font-bold mb-6">Platform Management</h2>
-      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-        {sections.map((s) => (
-          <Link
-            key={s.href}
-            href={s.href}
-            className="block p-6 border border-gray-200 dark:border-gray-800 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-900/50 transition-colors"
-          >
-            <h3 className="text-lg font-semibold mb-1">{s.title}</h3>
-            <p className="text-sm text-gray-500">{s.description}</p>
-          </Link>
-        ))}
+    <div className="space-y-6">
+      <div>
+        <h1 className="text-2xl font-bold tracking-tight">
+          Platform Management
+        </h1>
+        <p className="text-muted-foreground">
+          Manage platform-wide settings and monitoring.
+        </p>
+      </div>
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+        {sections.map((s) => {
+          const Icon = s.icon;
+          return (
+            <Link key={s.href} href={s.href}>
+              <Card className="hover:bg-accent/50 transition-colors cursor-pointer">
+                <CardHeader>
+                  <div className="flex items-center gap-3">
+                    <Icon className="h-5 w-5 text-muted-foreground" />
+                    <div>
+                      <CardTitle className="text-base">{s.title}</CardTitle>
+                      <CardDescription>{s.description}</CardDescription>
+                    </div>
+                  </div>
+                </CardHeader>
+              </Card>
+            </Link>
+          );
+        })}
       </div>
     </div>
   );
