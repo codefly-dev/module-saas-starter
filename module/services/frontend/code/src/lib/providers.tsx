@@ -1,21 +1,16 @@
 "use client";
 
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { ThemeProvider } from "next-themes";
 import { createContext, useContext, useState, type ReactNode } from "react";
 import { AuthProvider } from "./auth";
 import { adminConfig } from "./admin-config";
 import type { AdminConfig } from "./admin-core";
-
-// ── Admin Config Context ────────────────────────────────────
 
 const AdminConfigContext = createContext<AdminConfig>(adminConfig);
 
 export function useAdminConfigContext(): AdminConfig {
   return useContext(AdminConfigContext);
 }
-
-// ── Root Providers ──────────────────────────────────────────
 
 export function Providers({ children }: { children: ReactNode }) {
   const [queryClient] = useState(
@@ -31,19 +26,12 @@ export function Providers({ children }: { children: ReactNode }) {
   );
 
   return (
-    <ThemeProvider
-      attribute="class"
-      defaultTheme="dark"
-      enableSystem
-      disableTransitionOnChange
-    >
-      <QueryClientProvider client={queryClient}>
-        <AuthProvider>
-          <AdminConfigContext.Provider value={adminConfig}>
-            {children}
-          </AdminConfigContext.Provider>
-        </AuthProvider>
-      </QueryClientProvider>
-    </ThemeProvider>
+    <QueryClientProvider client={queryClient}>
+      <AuthProvider>
+        <AdminConfigContext.Provider value={adminConfig}>
+          {children}
+        </AdminConfigContext.Provider>
+      </AuthProvider>
+    </QueryClientProvider>
   );
 }
