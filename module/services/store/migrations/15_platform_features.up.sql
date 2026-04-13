@@ -43,7 +43,7 @@ CREATE INDEX idx_webhook_deliveries_retry ON webhook_deliveries(next_retry_at) W
 
 CREATE TABLE notifications (
     id          UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    user_id     UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    user_id     UUID NOT NULL REFERENCES users(uuid) ON DELETE CASCADE,
     org_id      UUID REFERENCES organizations(id) ON DELETE CASCADE,
     title       TEXT NOT NULL,
     body        TEXT NOT NULL DEFAULT '',
@@ -62,7 +62,7 @@ CREATE INDEX idx_notifications_user ON notifications(user_id, created_at DESC);
 
 CREATE TABLE onboarding_progress (
     id           UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    user_id      UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    user_id      UUID NOT NULL REFERENCES users(uuid) ON DELETE CASCADE,
     step_name    TEXT NOT NULL CHECK (step_name IN ('create_org', 'invite_team', 'choose_plan', 'setup_api_key')),
     status       TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending', 'completed', 'skipped')),
     completed_at TIMESTAMPTZ,
@@ -75,7 +75,7 @@ CREATE TABLE onboarding_progress (
 
 CREATE TABLE gdpr_requests (
     id           UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    user_id      UUID NOT NULL REFERENCES users(id),
+    user_id      UUID NOT NULL REFERENCES users(uuid),
     type         TEXT NOT NULL CHECK (type IN ('export', 'deletion')),
     status       TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending', 'processing', 'completed', 'failed')),
     download_url TEXT,
@@ -93,7 +93,7 @@ CREATE INDEX idx_gdpr_requests_user ON gdpr_requests(user_id, created_at DESC);
 
 CREATE TABLE mfa_devices (
     id               UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    user_id          UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    user_id          UUID NOT NULL REFERENCES users(uuid) ON DELETE CASCADE,
     device_type      TEXT NOT NULL DEFAULT 'totp' CHECK (device_type IN ('totp', 'webauthn')),
     name             TEXT NOT NULL DEFAULT 'Authenticator',
     secret_encrypted TEXT NOT NULL,  -- TOTP secret, encrypted at rest
@@ -106,7 +106,7 @@ CREATE INDEX idx_mfa_devices_user ON mfa_devices(user_id);
 
 CREATE TABLE mfa_backup_codes (
     id        UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    user_id   UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    user_id   UUID NOT NULL REFERENCES users(uuid) ON DELETE CASCADE,
     code_hash TEXT NOT NULL,  -- bcrypt hash of the backup code
     used_at   TIMESTAMPTZ,
     created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
