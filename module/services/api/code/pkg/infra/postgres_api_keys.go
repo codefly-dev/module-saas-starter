@@ -8,7 +8,7 @@ import (
 	"github.com/jackc/pgx/v5"
 	"google.golang.org/protobuf/types/known/timestamppb"
 
-	"backend/pkg/gen"
+	"api/pkg/gen"
 )
 
 func (s *PostgresStore) CreateAPIKey(ctx context.Context, key *gen.APIKey, keyHash string) error {

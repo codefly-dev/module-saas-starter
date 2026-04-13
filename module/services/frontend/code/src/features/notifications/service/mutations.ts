@@ -1,25 +1,16 @@
-// TODO: Replace with real Connect RPC client when NotificationService is generated
-// import { createClient } from "@connectrpc/connect";
-// import { apiTransport } from "@/lib/connect/transport";
-// import { NotificationService } from "@/gen/user_pb";
-// const client = createClient(NotificationService, apiTransport);
+import { createClient } from "@connectrpc/connect";
+import { apiTransport } from "@/lib/connect/transport";
+import { NotificationService } from "@/gen/user_pb";
+
+const client = createClient(NotificationService, apiTransport);
 
 export const notificationMutations = {
-  markRead: async (notificationId: string) => {
-    // TODO: Replace with real RPC call
-    // return client.markRead({ notificationId });
-    return { notificationId };
-  },
+  markRead: (id: string) =>
+    client.markRead({ id }),
 
-  markAllRead: async () => {
-    // TODO: Replace with real RPC call
-    // return client.markAllRead({});
-    return {};
-  },
+  markAllRead: () =>
+    client.markAllRead({}),
 
-  delete: async (notificationId: string) => {
-    // TODO: Replace with real RPC call
-    // return client.deleteNotification({ notificationId });
-    return {};
-  },
+  delete: (id: string) =>
+    client.deleteNotification({ id }),
 };

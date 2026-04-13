@@ -7,9 +7,11 @@ import (
 	"os/signal"
 	"syscall"
 
-	"backend/pkg/adapters"
-	"backend/pkg/business"
-	"backend/pkg/infra"
+	"api/pkg/adapters"
+	ed25519minter "api/pkg/auth/ed25519"
+	pgauth "api/pkg/auth/pg"
+	"api/pkg/business"
+	"api/pkg/infra"
 )
 
 func env(key, fallback string) string {
@@ -48,13 +50,29 @@ func main() {
 	vaultClient := infra.NewVaultClientDirect(vaultAddr, vaultToken)
 	service.SetHasher(vaultClient)
 
-	// JWT (ephemeral key for local dev)
-	tokenService, err := infra.NewTokenServiceLocal()
+	// Auth pipeline: pg-backed resolver + ed25519 minter. The signing
+	// key is loaded from Vault when available so sessions survive a
+	// restart; otherwise we fall back to an ephemeral key with a warning.
+	sessionStore := pgauth.NewSessionStore(store.Pool())
+	resolver := pgauth.NewResolver(store.Pool())
+	priv, err := ed25519minter.LoadKeyFromVault(ctx, ed25519minter.VaultKeyLoaderConfig{
+		Address: vaultAddr,
+		Token:   vaultToken,
+	})
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "jwt: %v\n", err)
-		os.Exit(1)
+		fmt.Fprintf(os.Stderr, "WARNING: vault key load failed (%v) — using ephemeral key\n", err)
+		_, priv, err = ed25519minter.GenerateKey()
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "ed25519: %v\n", err)
+			os.Exit(1)
+		}
 	}
-	service.SetTokenSigner(tokenService)
+	minter := ed25519minter.New(ed25519minter.Config{
+		Issuer:   "saas-starter-local",
+		Audience: "saas-starter-local",
+	}, priv, sessionStore)
+	service.SetIdentityResolver(resolver)
+	service.SetJWTMinter(minter)
 
 	// Audit (async, in-process)
 	auditEmitter := business.NewAsyncAuditEmitter(store, 1024)

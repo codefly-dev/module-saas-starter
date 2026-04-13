@@ -4,9 +4,8 @@ import (
 	"context"
 
 	"github.com/codefly-dev/core/wool"
-	"github.com/google/uuid"
 
-	"backend/pkg/gen"
+	"api/pkg/gen"
 )
 
 // GetSelf returns the full profile for the authenticated user.
@@ -129,7 +128,7 @@ func (s *Service) AddIdentity(ctx context.Context, req *gen.AddIdentityRequest) 
 	w := wool.Get(ctx).In("AddIdentity")
 
 	identity := &gen.UserIdentity{
-		Uuid:          uuid.New().String(),
+		Uuid:          NewIDString(),
 		UserUuid:      req.UserUuid,
 		Provider:      req.Identity.Provider,
 		ProviderId:    req.Identity.ProviderId,

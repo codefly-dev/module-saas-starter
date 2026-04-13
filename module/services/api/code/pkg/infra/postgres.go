@@ -13,13 +13,13 @@ import (
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/types/known/timestamppb"
 
-	"backend/pkg/gen"
+	"api/pkg/gen"
 
 	"github.com/codefly-dev/core/wool"
 
 	"github.com/jackc/pgx/v5/pgxpool"
 
-	"backend/pkg/business"
+	"api/pkg/business"
 )
 
 type Close func()
@@ -58,6 +58,11 @@ func NewPostgresStoreFromURL(ctx context.Context, connectionURL string) (*Postgr
 }
 
 var _ business.Store = (*PostgresStore)(nil)
+
+// Pool exposes the underlying pgxpool for callers that need direct access
+// (e.g. the pkg/auth/pg package which implements its own interfaces over
+// raw SQL). Prefer using the Store methods when possible.
+func (s *PostgresStore) Pool() *pgxpool.Pool { return s.pool }
 
 func (s *PostgresStore) RunInTransaction(ctx context.Context, fn func(ctx context.Context) error) error {
 	// Begin transaction

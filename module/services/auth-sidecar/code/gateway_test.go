@@ -297,7 +297,7 @@ func TestGateway_HealthCheck_Self(t *testing.T) {
 			gw.ServeHTTP(w, req)
 
 			require.Equal(t, 200, w.Code)
-			require.Equal(t, "ok", w.Body.String())
+			require.Contains(t, w.Body.String(), `"status":"ok"`)
 		})
 	}
 }

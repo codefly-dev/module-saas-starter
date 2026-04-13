@@ -54,7 +54,7 @@ export function MFASetup({ open, onClose }: MFASetupProps) {
     onSuccess: async () => {
       toast.success("MFA enabled successfully");
       const result = await mfaMutations.generateBackupCodes();
-      setBackupCodes(result.codes);
+      setBackupCodes(result.backupCodes);
       setStep("backup");
       queryClient.invalidateQueries({ queryKey: ["mfa"] });
     },

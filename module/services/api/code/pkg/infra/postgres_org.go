@@ -4,7 +4,7 @@ import (
 	"context"
 	"errors"
 
-	"backend/pkg/gen"
+	"api/pkg/gen"
 
 	"github.com/codefly-dev/core/wool"
 	"github.com/jackc/pgx/v5"

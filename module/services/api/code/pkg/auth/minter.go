@@ -1,0 +1,52 @@
+package auth
+
+import "context"
+
+// TokenPair is the output of a successful login/signup/refresh.
+//
+// AccessToken is a short-lived (15 min) signed JWT carrying the Identity as
+// claims. Clients send it on every request and the sidecar validates it.
+//
+// RefreshToken is a long-lived (7 days) opaque token whose hash is stored in
+// sessions.refresh_token_hash. Clients send it only to /auth/refresh. Each
+// refresh rotates the token — the previous refresh becomes invalid, and
+// reuse triggers family revocation.
+type TokenPair struct {
+	AccessToken  string
+	RefreshToken string
+}
+
+// JWTMinter owns the creation and verification of our own access + refresh
+// tokens. One implementation backed by an Ed25519 keypair loaded from Vault
+// (pkg/auth/ed25519). Any second implementation is a test fake.
+//
+// The sidecar uses a separate, simpler validator (just signature + exp check)
+// and does NOT depend on JWTMinter — this interface lives in the backend and
+// deals with session state, key rotation, and replay protection.
+type JWTMinter interface {
+	// Mint issues a fresh access+refresh pair for an Identity, inserting the
+	// refresh hash into sessions inside the provided context.
+	//
+	// On refresh rotation, the previous refresh's sessions row is marked
+	// revoked and a new row inserted with the same family_id.
+	Mint(ctx context.Context, identity *Identity) (*TokenPair, error)
+
+	// VerifyRefresh accepts an opaque refresh token, looks it up in sessions
+	// by hash (constant-time compare), enforces not-revoked/not-expired, and
+	// rotates the token: revokes the submitted refresh and mints a new
+	// access+refresh pair in the same family. The returned TokenPair is
+	// what /auth/refresh hands back to the client.
+	//
+	// If the submitted token hashes to a row that is already revoked, the
+	// entire family is revoked and ErrRefreshReuse is returned — OWASP
+	// refresh-token-rotation reuse detection.
+	VerifyRefresh(ctx context.Context, refreshToken string) (*TokenPair, error)
+
+	// Revoke marks all sessions in a family as revoked. Called by /auth/logout.
+	Revoke(ctx context.Context, refreshToken string) error
+
+	// JWKS returns the public portion of the signing key as a JSON Web Key
+	// Set for external tooling. The sidecar loads its key from Vault
+	// directly; this endpoint is non-authoritative.
+	JWKS() (string, error)
+}

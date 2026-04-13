@@ -1,20 +1,44 @@
 package business
 
 import (
-	"backend/pkg/gen"
+	"api/pkg/auth"
+	"api/pkg/email"
+	"api/pkg/gen"
 	"context"
 
 	"github.com/codefly-dev/core/wool"
-	"github.com/google/uuid"
 )
 
 type Service struct {
 	store        Store
 	hasher       KeyHasher
-	tokenSigner  TokenSigner
+	validator    auth.TokenValidator // optional: validates provider tokens at login
+	exchanger    CodeExchanger       // optional: exchanges OAuth codes for provider tokens
+	resolver     auth.IdentityResolver
+	minter       auth.JWTMinter
+	mail         email.Sender          // optional: transactional email for invites et al
+	templateMail *email.TemplateSender // optional: template-backed email sender
+	billing      BillingClient         // optional: Stripe client for checkout/portal
+	appBaseURL   string                // public URL of the frontend, used in email bodies
+	fromAddress  string                // "From" header for outgoing email
 	audit        AuditEmitter
 	entitlements EntitlementChecker
 	features     FeatureChecker
+}
+
+// CodeExchanger abstracts the OAuth 2.0 code-for-token exchange so the
+// business layer doesn't depend on the concrete oidc package. In
+// production this is *oidc.Exchanger; tests use a fake.
+type CodeExchanger interface {
+	Exchange(ctx context.Context, code, redirectURI string) (ExchangedTokens, error)
+}
+
+// ExchangedTokens is the subset of an OAuth token response the backend
+// cares about. Mirrors oidc.TokenResponse without creating an import
+// cycle on the auth package.
+type ExchangedTokens struct {
+	AccessToken string
+	IDToken     string
 }
 
 func NewService(store Store) (*Service, error) {
@@ -25,8 +49,54 @@ func (s *Service) SetHasher(h KeyHasher) {
 	s.hasher = h
 }
 
-func (s *Service) SetTokenSigner(t TokenSigner) {
-	s.tokenSigner = t
+// SetIdentityResolver wires the JIT provisioning + bootstrap layer.
+// Required for /auth/login and /auth/signup flows.
+func (s *Service) SetIdentityResolver(r auth.IdentityResolver) {
+	s.resolver = r
+}
+
+// SetJWTMinter wires the token signing + refresh rotation layer.
+// Required for every /auth/* endpoint.
+func (s *Service) SetJWTMinter(m auth.JWTMinter) {
+	s.minter = m
+}
+
+// SetTokenValidator wires a provider-specific TokenValidator. When set,
+// incoming Authenticate requests carrying an OAuth `code` in their
+// profile map get routed through Exchanger → Validator → Resolver.
+// Optional: if unset, Authenticate trusts the request's provider+sub
+// directly (dev path).
+func (s *Service) SetTokenValidator(v auth.TokenValidator) {
+	s.validator = v
+}
+
+// SetCodeExchanger wires the OAuth code-for-token exchange used in
+// production login flows. Optional: if unset, Authenticate cannot
+// process OAuth `code` payloads.
+func (s *Service) SetCodeExchanger(e CodeExchanger) {
+	s.exchanger = e
+}
+
+// SetEmailSender wires the transactional email provider used for
+// invitations, password reset links, etc. Optional: if unset, email
+// sends are skipped and logged at warn level — the underlying
+// invitation/session row is still created.
+func (s *Service) SetEmailSender(sender email.Sender, fromAddress, appBaseURL string) {
+	s.mail = sender
+	s.fromAddress = fromAddress
+	s.appBaseURL = appBaseURL
+}
+
+// SetTemplateSender wires the template-backed email sender. When set,
+// business methods prefer SendTemplate over raw Send for emails that
+// match a seeded template (invitation, billing notifications, etc.).
+func (s *Service) SetTemplateSender(ts *email.TemplateSender) {
+	s.templateMail = ts
+}
+
+// TemplateSender returns the template email sender, or nil if not wired.
+func (s *Service) TemplateSender() *email.TemplateSender {
+	return s.templateMail
 }
 
 func (s *Service) SetAuditEmitter(a AuditEmitter) {
@@ -60,8 +130,8 @@ func (s *Service) RegisterUser(ctx context.Context, input *gen.RegisterUserReque
 		return nil, w.NewError("user already exists with this identity")
 	}
 
-	userID := uuid.New().String()
-	identityID := uuid.New().String()
+	userID := NewIDString()
+	identityID := NewIDString()
 
 	user := &gen.User{
 		Uuid:         userID,
@@ -83,11 +153,13 @@ func (s *Service) RegisterUser(ctx context.Context, input *gen.RegisterUserReque
 	}
 
 	// Create a default personal organization
-	orgID := uuid.New().String()
+	orgID := NewIDString()
 	org := &gen.Organization{
 		Id:      orgID,
 		Name:    "Personal",
-		Slug:    "personal-" + userID[:8],
+		// Use the tail of the uuid (random bits) not the head (v7 timestamp prefix)
+		// so two users created in the same millisecond get distinct slugs.
+		Slug:    "personal-" + userID[len(userID)-12:],
 		OwnerId: userID,
 	}
 	if err := s.store.CreateOrganization(ctx, org); err != nil {
@@ -102,7 +174,7 @@ func (s *Service) RegisterUser(ctx context.Context, input *gen.RegisterUserReque
 	for _, role := range roles {
 		if role.Name == "admin" && role.BuiltIn {
 			assignment := &gen.RoleAssignment{
-				Id:          uuid.New().String(),
+				Id:          NewIDString(),
 				SubjectId:   userID,
 				SubjectKind: gen.SubjectKind_SUBJECT_KIND_USER,
 				RoleId:      role.Id,
@@ -151,7 +223,7 @@ func (s *Service) ResolveIdentity(ctx context.Context, req *gen.ResolveIdentityR
 // CreateOrganization creates a new org with the requesting user as owner.
 func (s *Service) CreateOrganization(ctx context.Context, ownerID string, req *gen.CreateOrganizationRequest) (*gen.CreateOrganizationResponse, error) {
 	org := &gen.Organization{
-		Id:      uuid.New().String(),
+		Id:      NewIDString(),
 		Name:    req.Name,
 		Slug:    req.Slug,
 		OwnerId: ownerID,
@@ -166,7 +238,7 @@ func (s *Service) CreateOrganization(ctx context.Context, ownerID string, req *g
 // CreateTeam creates a new team within an org.
 func (s *Service) CreateTeam(ctx context.Context, req *gen.CreateTeamRequest) (*gen.CreateTeamResponse, error) {
 	team := &gen.Team{
-		Id:          uuid.New().String(),
+		Id:          NewIDString(),
 		OrgId:       req.OrgId,
 		Name:        req.Name,
 		Description: req.Description,
@@ -180,7 +252,7 @@ func (s *Service) CreateTeam(ctx context.Context, req *gen.CreateTeamRequest) (*
 // CreateRole creates a new custom role.
 func (s *Service) CreateRole(ctx context.Context, req *gen.CreateRoleRequest) (*gen.CreateRoleResponse, error) {
 	role := &gen.Role{
-		Id:          uuid.New().String(),
+		Id:          NewIDString(),
 		Name:        req.Name,
 		Description: req.Description,
 		Permissions: req.Permissions,
@@ -196,7 +268,7 @@ func (s *Service) CreateRole(ctx context.Context, req *gen.CreateRoleRequest) (*
 // AssignRole assigns a role to a user or team.
 func (s *Service) AssignRole(ctx context.Context, req *gen.AssignRoleRequest) (*gen.AssignRoleResponse, error) {
 	assignment := &gen.RoleAssignment{
-		Id:          uuid.New().String(),
+		Id:          NewIDString(),
 		SubjectId:   req.SubjectId,
 		SubjectKind: req.SubjectKind,
 		RoleId:      req.RoleId,

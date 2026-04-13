@@ -23,6 +23,14 @@ type Plan struct {
 	SortOrder   int
 }
 
+// PlanFull adds the Stripe mapping columns. Returned by GetPlanByName
+// for the billing.StartCheckout flow.
+type PlanFull struct {
+	Plan
+	StripeProductID string
+	StripePriceID   string
+}
+
 // Subscription links an org to a plan.
 type Subscription struct {
 	ID                   string

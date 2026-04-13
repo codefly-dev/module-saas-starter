@@ -656,15 +656,7 @@
             "in": "body",
             "required": true,
             "schema": {
-              "type": "object",
-              "properties": {
-                "userId": {
-                  "type": "string"
-                },
-                "role": {
-                  "$ref": "#/definitions/customersOrgRole"
-                }
-              }
+              "$ref": "#/definitions/customersOrganizationServiceAddMemberBody"
             }
           }
         ],
@@ -767,15 +759,7 @@
             "in": "body",
             "required": true,
             "schema": {
-              "type": "object",
-              "properties": {
-                "name": {
-                  "type": "string"
-                },
-                "description": {
-                  "type": "string"
-                }
-              }
+              "$ref": "#/definitions/TeamServiceCreateTeamBody"
             }
           }
         ],
@@ -953,25 +937,7 @@
             "in": "body",
             "required": true,
             "schema": {
-              "type": "object",
-              "properties": {
-                "description": {
-                  "type": "string"
-                },
-                "enabled": {
-                  "type": "boolean"
-                },
-                "rolloutPercent": {
-                  "type": "integer",
-                  "format": "int32"
-                },
-                "targetOrgIds": {
-                  "type": "array",
-                  "items": {
-                    "type": "string"
-                  }
-                }
-              }
+              "$ref": "#/definitions/PlatformAdminServiceUpsertFeatureFlagBody"
             }
           }
         ],
@@ -1038,19 +1004,7 @@
             "in": "body",
             "required": true,
             "schema": {
-              "type": "object",
-              "properties": {
-                "feature": {
-                  "type": "string"
-                },
-                "limitValue": {
-                  "type": "string",
-                  "format": "int64"
-                },
-                "reason": {
-                  "type": "string"
-                }
-              }
+              "$ref": "#/definitions/PlatformAdminServiceOverrideEntitlementBody"
             }
           }
         ],
@@ -1176,7 +1130,7 @@
             "in": "body",
             "required": true,
             "schema": {
-              "type": "object"
+              "$ref": "#/definitions/PlatformAdminServiceImpersonateUserBody"
             }
           }
         ],
@@ -1215,12 +1169,7 @@
             "in": "body",
             "required": true,
             "schema": {
-              "type": "object",
-              "properties": {
-                "reason": {
-                  "type": "string"
-                }
-              }
+              "$ref": "#/definitions/PlatformAdminServiceSuspendUserBody"
             }
           }
         ],
@@ -1259,7 +1208,7 @@
             "in": "body",
             "required": true,
             "schema": {
-              "type": "object"
+              "$ref": "#/definitions/PlatformAdminServiceUnsuspendUserBody"
             }
           }
         ],
@@ -1497,15 +1446,7 @@
             "in": "body",
             "required": true,
             "schema": {
-              "type": "object",
-              "properties": {
-                "userId": {
-                  "type": "string"
-                },
-                "role": {
-                  "$ref": "#/definitions/customersTeamRole"
-                }
-              }
+              "$ref": "#/definitions/customersTeamServiceAddMemberBody"
             }
           }
         ],
@@ -1923,6 +1864,67 @@
     }
   },
   "definitions": {
+    "PlatformAdminServiceImpersonateUserBody": {
+      "type": "object"
+    },
+    "PlatformAdminServiceOverrideEntitlementBody": {
+      "type": "object",
+      "properties": {
+        "feature": {
+          "type": "string"
+        },
+        "limitValue": {
+          "type": "string",
+          "format": "int64"
+        },
+        "reason": {
+          "type": "string"
+        }
+      }
+    },
+    "PlatformAdminServiceSuspendUserBody": {
+      "type": "object",
+      "properties": {
+        "reason": {
+          "type": "string"
+        }
+      }
+    },
+    "PlatformAdminServiceUnsuspendUserBody": {
+      "type": "object"
+    },
+    "PlatformAdminServiceUpsertFeatureFlagBody": {
+      "type": "object",
+      "properties": {
+        "description": {
+          "type": "string"
+        },
+        "enabled": {
+          "type": "boolean"
+        },
+        "rolloutPercent": {
+          "type": "integer",
+          "format": "int32"
+        },
+        "targetOrgIds": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "TeamServiceCreateTeamBody": {
+      "type": "object",
+      "properties": {
+        "name": {
+          "type": "string"
+        },
+        "description": {
+          "type": "string"
+        }
+      }
+    },
     "customersAPIKey": {
       "type": "object",
       "properties": {
@@ -2628,6 +2630,17 @@
         }
       }
     },
+    "customersOrganizationServiceAddMemberBody": {
+      "type": "object",
+      "properties": {
+        "userId": {
+          "type": "string"
+        },
+        "role": {
+          "$ref": "#/definitions/customersOrgRole"
+        }
+      }
+    },
     "customersOverrideEntitlementResponse": {
       "type": "object",
       "properties": {
@@ -2940,6 +2953,17 @@
       ],
       "default": "TEAM_ROLE_UNSPECIFIED"
     },
+    "customersTeamServiceAddMemberBody": {
+      "type": "object",
+      "properties": {
+        "userId": {
+          "type": "string"
+        },
+        "role": {
+          "$ref": "#/definitions/customersTeamRole"
+        }
+      }
+    },
     "customersUpsertFeatureFlagResponse": {
       "type": "object",
       "properties": {
@@ -3032,26 +3056,6 @@
         "USER_STATUS_DELETED"
       ],
       "default": "USER_STATUS_UNSPECIFIED"
-    },
-    "customersValidateAPIKeyResponse": {
-      "type": "object",
-      "properties": {
-        "valid": {
-          "type": "boolean"
-        },
-        "userId": {
-          "type": "string"
-        },
-        "organizationId": {
-          "type": "string"
-        },
-        "scopes": {
-          "type": "array",
-          "items": {
-            "type": "string"
-          }
-        }
-      }
     },
     "customersVersionResponse": {
       "type": "object",

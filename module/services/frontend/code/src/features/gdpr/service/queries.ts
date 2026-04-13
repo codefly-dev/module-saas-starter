@@ -1,19 +1,22 @@
 import { queryOptions } from "@tanstack/react-query";
+import { createClient } from "@connectrpc/connect";
+import { apiTransport } from "@/lib/connect/transport";
+import { GDPRService } from "@/gen/user_pb";
 
-// TODO: Replace with real Connect RPC client when GDPRService is generated
-// import { createClient } from "@connectrpc/connect";
-// import { apiTransport } from "@/lib/connect/transport";
-// import { GDPRService } from "@/gen/user_pb";
-// const client = createClient(GDPRService, apiTransport);
+const client = createClient(GDPRService, apiTransport);
 
 export const gdprQueries = {
-  requests: () =>
+  exportStatus: (id: string) =>
     queryOptions({
-      queryKey: ["gdpr", "requests"],
-      queryFn: async () => {
-        // TODO: Replace with real RPC call
-        // return client.listGDPRRequests({});
-        return { requests: [] as never[] };
-      },
+      queryKey: ["gdpr", "export", id],
+      queryFn: () => client.getExportStatus({ id }),
+      enabled: !!id,
+    }),
+
+  deletionStatus: (id: string) =>
+    queryOptions({
+      queryKey: ["gdpr", "deletion", id],
+      queryFn: () => client.getDeletionStatus({ id }),
+      enabled: !!id,
     }),
 };

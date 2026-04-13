@@ -1,5 +1,9 @@
 name: auth-sidecar
-description: Identity resolver — maps auth provider IDs to internal user/org/roles
+description: |
+  Single ingress + auth brain. Hosts two listeners:
+    - gRPC ext_authz (for Envoy in production)
+    - HTTP reverse proxy (for local dev via codefly run)
+  Every request to the module goes through this service.
 agent:
   kind: codefly:service
   name: go-grpc
@@ -7,11 +11,13 @@ agent:
   publisher: codefly.dev
 service-dependencies:
   - name: api
-#  - name: cache  # Optional: enable for Redis identity caching
+  - name: frontend
 endpoints:
   - name: grpc
     visibility: module
     api: grpc
+  - name: http
+    visibility: public
 spec:
   hot-reload: true
-  rest-endpoint: false
+  rest-endpoint: true

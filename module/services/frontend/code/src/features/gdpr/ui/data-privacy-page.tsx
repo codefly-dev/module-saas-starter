@@ -1,6 +1,6 @@
 "use client";
 
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { Download, Trash2, FileArchive, Loader2 } from "lucide-react";
 import { toast } from "sonner";
 import {
@@ -13,7 +13,6 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
   AlertDialogTrigger,
-  Badge,
   Button,
   Card,
   CardContent,
@@ -21,19 +20,11 @@ import {
   CardFooter,
   CardHeader,
   CardTitle,
-  Skeleton,
 } from "@/shared/ui";
-import { formatDate } from "@/shared/lib/utils";
-import { gdprQueries } from "../service/queries";
 import { gdprMutations } from "../service/mutations";
-import type { GDPRRequest } from "../model/types";
-import { formatGDPRStatus, formatRequestType } from "../model/transforms";
 
 export function DataPrivacyPage() {
   const queryClient = useQueryClient();
-  const { data, isLoading } = useQuery(gdprQueries.requests());
-  const requests: GDPRRequest[] =
-    (data as { requests?: GDPRRequest[] } | undefined)?.requests ?? [];
 
   const exportMutation = useMutation({
     mutationFn: () => gdprMutations.requestExport(),
@@ -160,65 +151,15 @@ export function DataPrivacyPage() {
         </Card>
       </div>
 
-      {/* Request History */}
+      {/* Request Status Info */}
       <Card>
         <CardHeader>
-          <CardTitle className="text-lg">Request History</CardTitle>
+          <CardTitle className="text-lg">Request Status</CardTitle>
           <CardDescription>
-            Past data privacy requests and their status.
+            After submitting a request, you can check its status on this page.
+            Export requests typically complete within a few minutes.
           </CardDescription>
         </CardHeader>
-        <CardContent>
-          {isLoading ? (
-            <div className="space-y-2">
-              {Array.from({ length: 3 }).map((_, i) => (
-                <Skeleton key={i} className="h-12 w-full" />
-              ))}
-            </div>
-          ) : requests.length === 0 ? (
-            <p className="py-4 text-center text-sm text-muted-foreground">
-              No requests yet.
-            </p>
-          ) : (
-            <div className="space-y-2">
-              {requests.map((request) => {
-                const { label, variant } = formatGDPRStatus(request.status);
-                return (
-                  <div
-                    key={request.id}
-                    className="flex items-center justify-between rounded-md border p-3 text-sm"
-                  >
-                    <div className="flex items-center gap-3">
-                      <Badge variant={variant}>{label}</Badge>
-                      <span>{formatRequestType(request.type)}</span>
-                    </div>
-                    <div className="flex items-center gap-4">
-                      <span className="text-xs text-muted-foreground">
-                        {formatDate(request.createdAt)}
-                      </span>
-                      {request.downloadUrl && (
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          render={
-                            <a
-                              href={request.downloadUrl}
-                              download
-                              rel="noopener"
-                            />
-                          }
-                        >
-                          <Download className="mr-1 h-3 w-3" />
-                          Download
-                        </Button>
-                      )}
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-          )}
-        </CardContent>
       </Card>
     </div>
   );

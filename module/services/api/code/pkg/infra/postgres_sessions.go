@@ -7,7 +7,7 @@ import (
 
 	"github.com/jackc/pgx/v5"
 
-	"backend/pkg/business"
+	"api/pkg/business"
 )
 
 func (s *PostgresStore) CreateSession(ctx context.Context, session *business.Session) error {

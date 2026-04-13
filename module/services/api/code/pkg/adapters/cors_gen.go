@@ -1,7 +1,8 @@
 package adapters
 
 import (
-	"fmt"
+	"os"
+	"strings"
 
 	"github.com/rs/cors"
 )
@@ -12,11 +13,38 @@ import (
 
 ----------------------------------------------------------------- */
 
+// defaultAllowedOrigins is used when CORS_ALLOWED_ORIGINS is not set.
+var defaultAllowedOrigins = []string{
+	"http://localhost:3000",
+	"http://localhost:21931",
+}
+
 func Cors() *cors.Cors {
-	fmt.Println("setting up cors: TODO")
+	origins := defaultAllowedOrigins
+	if env := os.Getenv("CORS_ALLOWED_ORIGINS"); env != "" {
+		origins = nil
+		for _, o := range strings.Split(env, ",") {
+			o = strings.TrimSpace(o)
+			if o != "" {
+				origins = append(origins, o)
+			}
+		}
+	}
+
 	return cors.New(cors.Options{
-		AllowedOrigins: []string{"*"},
+		AllowedOrigins: origins,
 		AllowedMethods: []string{"GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"},
-		AllowedHeaders: []string{"*"},
+		AllowedHeaders: []string{
+			"Authorization",
+			"Content-Type",
+			"Accept",
+			"Origin",
+			"X-Requested-With",
+			"X-Request-ID",
+		},
+		AllowCredentials: true,
+		// Handle preflight: rs/cors automatically responds to OPTIONS
+		// with the correct Access-Control-Allow-* headers when
+		// OptionsPassthrough is false (the default).
 	})
 }

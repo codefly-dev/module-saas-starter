@@ -5,7 +5,7 @@ import (
 
 	"github.com/codefly-dev/core/wool"
 
-	"backend/pkg/gen"
+	"api/pkg/gen"
 )
 
 // ListRoles returns global built-in roles + org-specific custom roles.

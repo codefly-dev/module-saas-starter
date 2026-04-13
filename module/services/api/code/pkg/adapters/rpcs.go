@@ -10,9 +10,9 @@ import (
 
 	"github.com/codefly-dev/core/wool"
 
-	"backend/pkg/business"
-	"backend/pkg/gen"
-	"backend/pkg/infra"
+	"api/pkg/business"
+	"api/pkg/gen"
+	"api/pkg/infra"
 )
 
 var service *business.Service

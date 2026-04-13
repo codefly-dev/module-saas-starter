@@ -16,6 +16,7 @@ import (
 	"context"
 	ed25519core "crypto/ed25519"
 	"fmt"
+	"log"
 	"os"
 
 	codefly "github.com/codefly-dev/sdk-go"
@@ -95,10 +96,18 @@ func doWork(ctx context.Context) (Clean, error) {
 			return nil, fmt.Errorf("billing: %w", err)
 		}
 		billingStore := pgbilling.New(store.Pool())
+
+		// Build the billing email notifier if templates are available.
+		var billingNotifier billing.EmailNotifier
+		if service.TemplateSender() != nil {
+			billingNotifier = &billingEmailNotifier{ts: service.TemplateSender()}
+		}
+
 		adapters.RegisterHTTPRoute("/v1/billing/webhook", billing.NewHandler(billing.HandlerDeps{
 			Store:         billingStore,
 			Client:        stripeClient,
 			WebhookSecret: whSecret,
+			Notifier:      billingNotifier,
 		}))
 		service.SetBillingClient(stripeClient)
 		adapters.RegisterHTTPRoute("/v1/billing/checkout", adapters.NewBillingHTTPHandler(service))
@@ -118,6 +127,14 @@ func doWork(ctx context.Context) (Clean, error) {
 			appBase = "http://localhost:21931"
 		}
 		service.SetEmailSender(sender, fromAddr, appBase)
+
+		// Template-backed email: wraps the raw Sender with the DB-backed
+		// template store so business logic can use SendTemplate for the
+		// seeded templates (welcome, invitation, payment_failed,
+		// invoice_ready, trial_ending, gdpr_export_ready).
+		templateStore := infra.NewPostgresTemplateStore(store)
+		templateSender := email.NewTemplateSender(sender, templateStore)
+		service.SetTemplateSender(templateSender)
 	}
 
 	if codefly.WithFixture("simple") {
@@ -135,7 +152,12 @@ func doWork(ctx context.Context) (Clean, error) {
 	}
 
 	return func() {
+		log.Println("api shutdown: closing audit emitter...")
+		auditEmitter.Close()
+		log.Println("api shutdown: audit emitter closed")
+		log.Println("api shutdown: closing store...")
 		store.Close()
+		log.Println("api shutdown: store closed")
 	}, nil
 }
 
@@ -305,4 +327,16 @@ func loadSigningKey(ctx context.Context) (ed25519core.PrivateKey, error) {
 	}
 	_, priv, err := ed25519minter.GenerateKey()
 	return priv, err
+}
+
+// billingEmailNotifier adapts the email.TemplateSender to the
+// billing.EmailNotifier interface so webhook handlers can send
+// templated emails without depending on the business package.
+type billingEmailNotifier struct {
+	ts *email.TemplateSender
+}
+
+func (n *billingEmailNotifier) SendBillingEmail(ctx context.Context, templateName, toEmail string, vars map[string]string) error {
+	_, err := n.ts.SendTemplate(ctx, templateName, toEmail, vars)
+	return err
 }

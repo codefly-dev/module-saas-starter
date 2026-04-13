@@ -36,7 +36,7 @@ export function MFAChallenge({ onVerified, onCancel }: MFAChallengeProps) {
   const verifyMutation = useMutation({
     mutationFn: (code: string) => mfaMutations.verifyTOTP(code),
     onSuccess: (data) => {
-      if (data.verified) {
+      if (data.valid) {
         onVerified();
       } else {
         toast.error("Invalid code. Please try again.");

@@ -6791,8 +6791,8 @@ const file_user_proto_rawDesc = "" +
 	"\x10CreateInvitation\x12\".customers.CreateInvitationRequest\x1a#.customers.CreateInvitationResponse\"\x1a\x82\xd3\xe4\x93\x02\x14:\x01*\"\x0f/v1/invitations\x12~\n" +
 	"\x10AcceptInvitation\x12\".customers.AcceptInvitationRequest\x1a#.customers.AcceptInvitationResponse\"!\x82\xd3\xe4\x93\x02\x1b:\x01*\"\x16/v1/invitations:accept\x12q\n" +
 	"\x0fListInvitations\x12!.customers.ListInvitationsRequest\x1a\".customers.ListInvitationsResponse\"\x17\x82\xd3\xe4\x93\x02\x11\x12\x0f/v1/invitations\x12l\n" +
-	"\x10RevokeInvitation\x12\".customers.RevokeInvitationRequest\x1a\x16.google.protobuf.Empty\"\x1c\x82\xd3\xe4\x93\x02\x16*\x14/v1/invitations/{id}Bo\n" +
-	"\rcom.customersB\tUserProtoP\x01Z\x0fbackend/pkg/gen\xa2\x02\x03CXX\xaa\x02\tCustomers\xca\x02\tCustomers\xe2\x02\x15Customers\\GPBMetadata\xea\x02\tCustomersb\x06proto3"
+	"\x10RevokeInvitation\x12\".customers.RevokeInvitationRequest\x1a\x16.google.protobuf.Empty\"\x1c\x82\xd3\xe4\x93\x02\x16*\x14/v1/invitations/{id}Bk\n" +
+	"\rcom.customersB\tUserProtoP\x01Z\vapi/pkg/gen\xa2\x02\x03CXX\xaa\x02\tCustomers\xca\x02\tCustomers\xe2\x02\x15Customers\\GPBMetadata\xea\x02\tCustomersb\x06proto3"
 
 var (
 	file_user_proto_rawDescOnce sync.Once

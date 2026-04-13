@@ -6,8 +6,8 @@ import (
 	"fmt"
 	"time"
 
-	"backend/pkg/business"
-	"backend/pkg/gen"
+	"api/pkg/business"
+	"api/pkg/gen"
 
 	"github.com/codefly-dev/core/wool"
 	"github.com/jackc/pgx/v5"

@@ -14,10 +14,12 @@ import (
 	"fmt"
 	"io"
 	"log"
+	"net"
 	"net/http"
 	"net/http/httputil"
 	"net/url"
 	"strings"
+	"time"
 
 	corev3 "github.com/envoyproxy/go-control-plane/envoy/config/core/v3"
 	authv3 "github.com/envoyproxy/go-control-plane/envoy/service/auth/v3"
@@ -40,20 +42,82 @@ type Gateway struct {
 // upstreams maps service names (from routes.codefly.yaml) to their URLs.
 // rateLimiter may be nil to disable rate limiting.
 func NewGateway(sidecar *Sidecar, matcher *RouteMatcher, upstreams map[string]*url.URL, rateLimiter *RateLimiter) *Gateway {
-	return &Gateway{
+	g := &Gateway{
 		sidecar:     sidecar,
 		matcher:     matcher,
 		upstreams:   upstreams,
-		selfHandler: http.HandlerFunc(selfHealthHandler),
 		rateLimiter: rateLimiter,
 	}
+	mux := http.NewServeMux()
+	mux.HandleFunc("/health", g.healthHandler)
+	mux.HandleFunc("/ready", g.readyHandler)
+	// Backwards compat: any other self-route returns basic OK.
+	mux.HandleFunc("/", func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		_, _ = io.WriteString(w, `{"status":"ok"}`)
+	})
+	g.selfHandler = mux
+	return g
 }
 
-// selfHealthHandler handles health/readiness checks for the sidecar itself.
-func selfHealthHandler(w http.ResponseWriter, _ *http.Request) {
-	w.Header().Set("Content-Type", "text/plain; charset=utf-8")
+// healthHandler returns 200 with {"status":"ok"} when the sidecar is
+// running, or 503 if the gRPC auth server is not wired.
+func (g *Gateway) healthHandler(w http.ResponseWriter, _ *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+
+	if g.sidecar == nil {
+		w.WriteHeader(http.StatusServiceUnavailable)
+		_, _ = io.WriteString(w, `{"status":"unhealthy","reason":"sidecar not initialized"}`)
+		return
+	}
+
 	w.WriteHeader(http.StatusOK)
-	_, _ = io.WriteString(w, "ok")
+	_, _ = io.WriteString(w, `{"status":"ok"}`)
+}
+
+// readyHandler returns 200 when the sidecar is ready to serve traffic.
+// In addition to the basic health check it verifies that at least one
+// upstream is configured (so we can actually proxy requests).
+func (g *Gateway) readyHandler(w http.ResponseWriter, _ *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+
+	if g.sidecar == nil {
+		w.WriteHeader(http.StatusServiceUnavailable)
+		_, _ = io.WriteString(w, `{"status":"not ready","reason":"sidecar not initialized"}`)
+		return
+	}
+
+	if len(g.upstreams) == 0 {
+		w.WriteHeader(http.StatusServiceUnavailable)
+		_, _ = io.WriteString(w, `{"status":"not ready","reason":"no upstreams configured"}`)
+		return
+	}
+
+	// Verify at least one upstream is reachable (non-blocking TCP dial).
+	anyReachable := false
+	for name, u := range g.upstreams {
+		addr := u.Host
+		if addr == "" {
+			continue
+		}
+		conn, err := net.DialTimeout("tcp", addr, 2*time.Second)
+		if err != nil {
+			log.Printf("readiness: upstream %s (%s) unreachable: %v", name, addr, err)
+			continue
+		}
+		conn.Close()
+		anyReachable = true
+		break
+	}
+	if !anyReachable {
+		w.WriteHeader(http.StatusServiceUnavailable)
+		_, _ = io.WriteString(w, `{"status":"not ready","reason":"no upstream reachable"}`)
+		return
+	}
+
+	w.WriteHeader(http.StatusOK)
+	_, _ = io.WriteString(w, `{"status":"ok"}`)
 }
 
 // ServeHTTP runs one request through: route match → auth check → reverse proxy.

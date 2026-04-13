@@ -2,8 +2,8 @@ name: store
 version: 0.0.0
 agent:
     kind: codefly:service
-    name: external-postgres
-    version: 0.0.65
+    name: postgres
+    version: 0.0.1
     publisher: codefly.dev
 endpoints:
     - name: tcp

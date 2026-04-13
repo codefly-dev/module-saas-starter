@@ -9,8 +9,8 @@ import (
 
 	"google.golang.org/protobuf/types/known/timestamppb"
 
-	"backend/pkg/business"
-	"backend/pkg/gen"
+	"api/pkg/business"
+	"api/pkg/gen"
 )
 
 func (s *PostgresStore) InsertAuditEvent(ctx context.Context, entry business.AuditEntry) error {

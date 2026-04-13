@@ -106,6 +106,7 @@ func main() {
 
 	// HTTP gateway listener — the single public ingress in dev.
 	var httpServer *http.Server
+	var rateLimiter *RateLimiter
 	if httpPort > 0 {
 		// Build upstream map from codefly network mappings.
 		upstreams := make(map[string]*url.URL)
@@ -128,8 +129,7 @@ func main() {
 			upstreams["frontend"] = MustURL(frontendURL)
 		}
 
-		rateLimiter := NewRateLimiter(1000) // 1000 req/min per org (or IP)
-		defer rateLimiter.Stop()
+		rateLimiter = NewRateLimiter(1000) // 1000 req/min per org (or IP)
 		gateway := NewGateway(sidecar, matcher, upstreams, rateLimiter)
 		httpServer = &http.Server{
 			Addr:    fmt.Sprintf(":%d", httpPort),
@@ -146,12 +146,33 @@ func main() {
 
 	go func() {
 		<-ctx.Done()
-		grpcServer.GracefulStop()
+		log.Println("shutdown: signal received, draining connections...")
+
+		// 1. Stop accepting new HTTP connections and drain existing ones (30s).
 		if httpServer != nil {
-			shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-			defer cancel()
-			_ = httpServer.Shutdown(shutdownCtx)
+			log.Println("shutdown: draining HTTP gateway connections (30s timeout)...")
+			drainCtx, drainCancel := context.WithTimeout(context.Background(), 30*time.Second)
+			if err := httpServer.Shutdown(drainCtx); err != nil {
+				log.Printf("shutdown: HTTP gateway drain error: %v", err)
+			} else {
+				log.Println("shutdown: HTTP gateway drained")
+			}
+			drainCancel()
 		}
+
+		// 2. Gracefully stop gRPC server (finishes in-flight RPCs).
+		log.Println("shutdown: stopping gRPC server...")
+		grpcServer.GracefulStop()
+		log.Println("shutdown: gRPC server stopped")
+
+		// 3. Stop rate limiter cleanup goroutine and close Redis if open.
+		if rateLimiter != nil {
+			log.Println("shutdown: stopping rate limiter...")
+			rateLimiter.Stop()
+			log.Println("shutdown: rate limiter stopped")
+		}
+
+		log.Println("shutdown: complete")
 	}()
 
 	if err := grpcServer.Serve(grpcLis); err != nil {

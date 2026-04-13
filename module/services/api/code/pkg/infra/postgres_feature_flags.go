@@ -5,7 +5,7 @@ import (
 
 	"github.com/jackc/pgx/v5"
 
-	"backend/pkg/business"
+	"api/pkg/business"
 )
 
 func (s *PostgresStore) GetFeatureFlag(ctx context.Context, name string) (*business.FeatureFlag, error) {

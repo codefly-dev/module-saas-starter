@@ -6,7 +6,7 @@ import (
 
 	"github.com/jackc/pgx/v5"
 
-	"backend/pkg/business"
+	"api/pkg/business"
 )
 
 func (s *PostgresStore) CreateInvitation(ctx context.Context, inv *business.Invitation) error {

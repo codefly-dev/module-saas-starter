@@ -6,7 +6,7 @@ import (
 
 	"github.com/jackc/pgx/v5"
 
-	"backend/pkg/business"
+	"api/pkg/business"
 )
 
 // GetOrgPlanID returns the plan ID for an org's active subscription.

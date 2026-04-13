@@ -5,7 +5,7 @@ import (
 
 	"github.com/codefly-dev/core/wool"
 
-	"backend/pkg/gen"
+	"api/pkg/gen"
 )
 
 // ListTeams returns all teams in an organization.

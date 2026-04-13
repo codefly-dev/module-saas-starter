@@ -7,9 +7,8 @@ import (
 	"time"
 
 	"github.com/codefly-dev/core/wool"
-	"github.com/google/uuid"
 
-	"backend/pkg/gen"
+	"api/pkg/gen"
 )
 
 // KeyHasher hashes API key plaintext into a storable hash.
@@ -57,7 +56,7 @@ func (s *Service) CreateAPIKey(ctx context.Context, userID string, req *gen.Crea
 		return nil, w.Wrapf(err, "cannot hash key")
 	}
 
-	keyID := uuid.New().String()
+	keyID := NewIDString()
 	key := &gen.APIKey{
 		Id:             keyID,
 		OrganizationId: req.OrganizationId,

@@ -4,7 +4,7 @@ import (
 	"context"
 	"time"
 
-	"backend/pkg/gen"
+	"api/pkg/gen"
 
 	"github.com/codefly-dev/core/wool"
 	"google.golang.org/protobuf/types/known/timestamppb"

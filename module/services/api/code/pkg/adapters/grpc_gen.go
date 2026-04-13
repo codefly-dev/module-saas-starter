@@ -10,7 +10,7 @@ implement your APIs there.
 ----------------------------------------------------------------- */
 
 import (
-	"backend/pkg/gen"
+	"api/pkg/gen"
 	"context"
 	"fmt"
 	"net"
@@ -47,8 +47,9 @@ func Validate(req proto.Message) error {
 }
 
 type Configuration struct {
-	EndpointGrpcPort uint16
-	EndpointHttpPort *uint16
+	EndpointGrpcPort    uint16
+	EndpointHttpPort    *uint16
+	EndpointConnectPort *uint16
 }
 
 // UserServer handles UserService RPCs.

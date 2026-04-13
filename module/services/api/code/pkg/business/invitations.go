@@ -6,13 +6,14 @@ import (
 	"crypto/sha256"
 	"encoding/base64"
 	"encoding/hex"
+	"fmt"
 	"time"
 
 	"github.com/codefly-dev/core/wool"
-	"github.com/google/uuid"
 	"google.golang.org/protobuf/types/known/timestamppb"
 
-	"backend/pkg/gen"
+	"api/pkg/email"
+	"api/pkg/gen"
 )
 
 const invitationTTL = 7 * 24 * time.Hour
@@ -62,7 +63,7 @@ func (s *Service) CreateInvitation(ctx context.Context, inviterID string, req *g
 	}
 
 	inv := &Invitation{
-		ID:        uuid.New().String(),
+		ID:        NewIDString(),
 		OrgID:     req.OrgId,
 		InviterID: inviterID,
 		Email:     req.Email,
@@ -78,10 +79,84 @@ func (s *Service) CreateInvitation(ctx context.Context, inviterID string, req *g
 
 	s.emit(ctx, inviterID, "user", "invitation.created", "invitation", inv.ID, req.OrgId)
 
+	// Best-effort email delivery. Failures are logged but do NOT fail
+	// the invite creation — the inviter can always resend or copy the
+	// link manually.
+	if s.mail != nil {
+		if _, err := s.sendInvitationEmail(ctx, inv, plaintext); err != nil {
+			w.Debug("invitation email send failed", wool.ErrField(err))
+		}
+	}
+
 	return &gen.CreateInvitationResponse{
 		Invitation:  invitationToProto(inv),
 		InviteToken: plaintext,
 	}, nil
+}
+
+// sendInvitationEmail renders and delivers the invite message.
+// The accept link includes the plaintext token as a query param;
+// the frontend's /auth/accept page extracts it and calls AcceptInvitation.
+//
+// Prefers the "invitation" template from the template store when the
+// TemplateSender is wired; falls back to the hardcoded HTML/text render
+// when templates are unavailable.
+func (s *Service) sendInvitationEmail(ctx context.Context, inv *Invitation, plainToken string) (string, error) {
+	appBase := s.appBaseURL
+	if appBase == "" {
+		appBase = "http://localhost:21931"
+	}
+
+	acceptURL := fmt.Sprintf("%s/invitations/accept?token=%s", appBase, plainToken)
+
+	// Prefer the template system when available.
+	if s.templateMail != nil {
+		return s.templateMail.SendTemplate(ctx, "invitation", inv.Email, map[string]string{
+			"accept_url": acceptURL,
+			"role":       inv.Role,
+			"email":      inv.Email,
+		})
+	}
+
+	// Fallback: raw Send with inline HTML.
+	from := s.fromAddress
+	if from == "" {
+		from = "no-reply@localhost"
+	}
+	msg := &email.Message{
+		From:     from,
+		To:       []string{inv.Email},
+		Subject:  "You're invited",
+		HTMLBody: renderInviteHTML(acceptURL, inv.Role),
+		TextBody: renderInviteText(acceptURL, inv.Role),
+		Tags:     map[string]string{"type": "invitation", "org_id": inv.OrgID},
+	}
+	return s.mail.Send(ctx, msg)
+}
+
+func renderInviteHTML(acceptURL, role string) string {
+	return fmt.Sprintf(`<!doctype html>
+<html>
+<body style="font-family: system-ui, sans-serif; max-width: 560px; margin: 40px auto; padding: 24px;">
+<h2>You're invited</h2>
+<p>You've been invited to join as <strong>%s</strong>.</p>
+<p>
+  <a href="%s" style="display:inline-block; padding:12px 24px; background:#0066cc; color:white; text-decoration:none; border-radius:6px;">
+    Accept invitation
+  </a>
+</p>
+<p style="color:#666; font-size:14px;">This link expires in 7 days. If you didn't expect this invitation, you can safely ignore this email.</p>
+</body>
+</html>`, role, acceptURL)
+}
+
+func renderInviteText(acceptURL, role string) string {
+	return fmt.Sprintf(`You're invited to join as %s.
+
+Accept the invitation: %s
+
+This link expires in 7 days. If you didn't expect this invitation, you can safely ignore this email.
+`, role, acceptURL)
 }
 
 // AcceptInvitation accepts an invitation by token, adding the user to the org.

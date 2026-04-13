@@ -5,9 +5,11 @@ import (
 	"fmt"
 
 	"github.com/codefly-dev/core/wool"
+	"github.com/google/uuid"
 	"google.golang.org/protobuf/types/known/timestamppb"
 
-	"backend/pkg/gen"
+	"api/pkg/auth"
+	"api/pkg/gen"
 )
 
 // Platform role hierarchy for authorization checks (defense-in-depth, OPA is primary).
@@ -87,13 +89,15 @@ func (s *Service) UnsuspendUser(ctx context.Context, actorID string, req *gen.Un
 }
 
 // ImpersonateUser issues a token as another user (support+ only).
+// UserID on the minted Identity stays as the actor (for audit), ActingAsUserID
+// points at the target — downstream business logic authorises against the
+// target, audit logs against the actor.
 func (s *Service) ImpersonateUser(ctx context.Context, actorID string, req *gen.ImpersonateUserRequest) (*gen.ImpersonateUserResponse, error) {
 	w := wool.Get(ctx).In("ImpersonateUser")
 
-	if s.tokenSigner == nil {
-		return nil, w.NewError("token signer not configured")
+	if s.minter == nil {
+		return nil, w.NewError("auth path not wired: minter missing")
 	}
-
 	if err := s.requirePlatformRole(ctx, actorID, "support"); err != nil {
 		return nil, w.Wrapf(err, "permission denied")
 	}
@@ -120,22 +124,48 @@ func (s *Service) ImpersonateUser(ctx context.Context, actorID string, req *gen.
 		}
 	}
 
-	// Check if target is also a platform admin
 	targetPlatformRole, err := s.store.GetPlatformRole(ctx, req.UserId)
 	if err != nil {
 		return nil, w.Wrapf(err, "cannot get target platform role")
 	}
 
-	token, err := s.tokenSigner.SignImpersonationToken(req.UserId, orgID, orgRole, targetPlatformRole, actorID)
+	actorUUID, err := ParseID(actorID)
 	if err != nil {
-		return nil, w.Wrapf(err, "cannot sign impersonation token")
+		return nil, w.Wrapf(err, "parse actor id")
+	}
+	targetUUID, err := ParseID(req.UserId)
+	if err != nil {
+		return nil, w.Wrapf(err, "parse target id")
+	}
+	var orgUUID uuid.UUID
+	if orgID != "" {
+		orgUUID, err = ParseID(orgID)
+		if err != nil {
+			return nil, w.Wrapf(err, "parse org id")
+		}
+	}
+
+	// The minted Identity names the actor as UserID (audit correlation) and
+	// the target via ActingAsUserID. Downstream services read ActingAsUserID
+	// for authz decisions when present.
+	identity := &auth.Identity{
+		UserID:         actorUUID,
+		OrgID:          orgUUID,
+		OrgRole:        orgRole,
+		PlatformRole:   targetPlatformRole,
+		SessionID:      NewID(),
+		ActingAsUserID: targetUUID,
+	}
+	pair, err := s.minter.Mint(ctx, identity)
+	if err != nil {
+		return nil, w.Wrapf(err, "mint impersonation token")
 	}
 
 	s.emit(ctx, actorID, "user", "platform.user_impersonated", "user", req.UserId, "")
 
 	return &gen.ImpersonateUserResponse{
-		AccessToken: token,
-		ExpiresIn:   900,
+		AccessToken: pair.AccessToken,
+		ExpiresIn:   int64(AccessTokenLifetime.Seconds()),
 	}, nil
 }
 

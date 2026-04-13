@@ -5,8 +5,8 @@ import (
 	"errors"
 	"time"
 
-	"backend/pkg/business"
-	"backend/pkg/gen"
+	"api/pkg/business"
+	"api/pkg/gen"
 
 	"encoding/json"
 

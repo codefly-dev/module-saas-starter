@@ -8,14 +8,15 @@ package adapters
 ----------------------------------------------------------------- */
 
 import (
-	"backend/plugins"
+	"api/plugins"
 	"context"
 	"fmt"
 )
 
 type Server struct {
-	Grpc *GrpcServer
-	Rest *RestServer
+	Grpc    *GrpcServer
+	Rest    *RestServer
+	Connect *ConnectServer
 }
 
 func NewServer(config *Configuration) (*Server, error) {
@@ -37,9 +38,19 @@ func NewServer(config *Configuration) (*Server, error) {
 			return nil, err
 		}
 	}
+
+	var conn *ConnectServer
+	if config.EndpointConnectPort != nil {
+		conn, err = NewConnectServer(config)
+		if err != nil {
+			return nil, err
+		}
+	}
+
 	return &Server{
-		Grpc: grpc,
-		Rest: rest,
+		Grpc:    grpc,
+		Rest:    rest,
+		Connect: conn,
 	}, nil
 }
 
@@ -47,6 +58,14 @@ func (server *Server) Start(ctx context.Context) error {
 	if server.Rest != nil {
 		go func() {
 			err := server.Rest.Run(ctx)
+			if err != nil {
+				panic(err)
+			}
+		}()
+	}
+	if server.Connect != nil {
+		go func() {
+			err := server.Connect.Run(ctx)
 			if err != nil {
 				panic(err)
 			}

@@ -1,9 +1,11 @@
 package business_test
 
 import (
-	"backend/pkg/business"
-	"backend/pkg/gen"
-	"backend/pkg/infra"
+	ed25519minter "api/pkg/auth/ed25519"
+	pgauth "api/pkg/auth/pg"
+	"api/pkg/business"
+	"api/pkg/gen"
+	"api/pkg/infra"
 	"context"
 	"fmt"
 	"os"
@@ -64,10 +66,20 @@ func TestMain(m *testing.M) {
 		service.SetHasher(vaultClient)
 	}
 
-	tokenService, err := infra.NewTokenService(ctx)
-	if err == nil {
-		service.SetTokenSigner(tokenService)
+	// New auth pipeline: IdentityResolver + JWTMinter both backed by Postgres.
+	sessionStore := pgauth.NewSessionStore(store.Pool())
+	resolver := pgauth.NewResolver(store.Pool())
+	_, priv, err := ed25519minter.GenerateKey()
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "GenerateKey failed: %v\n", err)
+		os.Exit(1)
 	}
+	minter := ed25519minter.New(ed25519minter.Config{
+		Issuer:   "saas-starter-test",
+		Audience: "saas-starter-test",
+	}, priv, sessionStore)
+	service.SetIdentityResolver(resolver)
+	service.SetJWTMinter(minter)
 
 	auditEmitter := business.NewAsyncAuditEmitter(store, 1024)
 	service.SetAuditEmitter(auditEmitter)
