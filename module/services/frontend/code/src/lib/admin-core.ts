@@ -90,8 +90,8 @@ export function extractRoles(accessToken: string): {
 } {
   const payload = decodeJWTPayload(accessToken);
   return {
-    platformRole: payload.platform_role as PlatformRole | undefined,
-    orgRole: payload.org_role as OrgRole | undefined,
+    platformRole: (payload.pr ?? payload.platform_role) as PlatformRole | undefined,
+    orgRole: (payload.or ?? payload.org_role) as OrgRole | undefined,
   };
 }
 

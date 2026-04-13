@@ -181,42 +181,7 @@ export function AdminLayout({ children }: { children: React.ReactNode }) {
             </>
           )}
 
-          {/* Settings — always visible */}
-          <Separator />
-          <SidebarGroup>
-            <SidebarGroupLabel>Settings</SidebarGroupLabel>
-            <SidebarGroupContent>
-              <SidebarMenu>
-                <SidebarMenuItem>
-                  <SidebarMenuButton
-                    render={<Link href="/settings/mfa" />}
-                    isActive={pathname.startsWith("/settings/mfa")}
-                  >
-                    <Shield className="h-4 w-4" />
-                    <span>Security (MFA)</span>
-                  </SidebarMenuButton>
-                </SidebarMenuItem>
-                <SidebarMenuItem>
-                  <SidebarMenuButton
-                    render={<Link href="/settings/notifications" />}
-                    isActive={pathname.startsWith("/settings/notifications")}
-                  >
-                    <Bell className="h-4 w-4" />
-                    <span>Notifications</span>
-                  </SidebarMenuButton>
-                </SidebarMenuItem>
-                <SidebarMenuItem>
-                  <SidebarMenuButton
-                    render={<Link href="/settings/data" />}
-                    isActive={pathname.startsWith("/settings/data")}
-                  >
-                    <FileText className="h-4 w-4" />
-                    <span>Data & Privacy</span>
-                  </SidebarMenuButton>
-                </SidebarMenuItem>
-              </SidebarMenu>
-            </SidebarGroupContent>
-          </SidebarGroup>
+          {/* Settings moved to user avatar dropdown */}
         </SidebarContent>
 
         <SidebarFooter>
@@ -242,6 +207,24 @@ export function AdminLayout({ children }: { children: React.ReactNode }) {
                   </SidebarMenuButton>
                 </DropdownMenuTrigger>
                 <DropdownMenuContent side="top" align="start" className="w-56">
+                  <DropdownMenuItem asChild>
+                    <Link href="/settings/mfa">
+                      <Shield className="mr-2 h-4 w-4" />
+                      Security
+                    </Link>
+                  </DropdownMenuItem>
+                  <DropdownMenuItem asChild>
+                    <Link href="/settings/notifications">
+                      <Bell className="mr-2 h-4 w-4" />
+                      Notifications
+                    </Link>
+                  </DropdownMenuItem>
+                  <DropdownMenuItem asChild>
+                    <Link href="/settings/data">
+                      <FileText className="mr-2 h-4 w-4" />
+                      Data & Privacy
+                    </Link>
+                  </DropdownMenuItem>
                   <DropdownMenuSeparator />
                   <DropdownMenuItem onClick={logout}>
                     <LogOut className="mr-2 h-4 w-4" />
