@@ -9,8 +9,10 @@ export const coreUsersPlugin: AdminPlugin = {
     { label: "Invitations", href: "/invitations", icon: "Mail", requiredRole: "admin" },
     { label: "API Keys", href: "/api-keys", icon: "Key", requiredRole: "admin" },
     { label: "Roles", href: "/roles", icon: "Shield", requiredRole: "admin" },
+    { label: "Org Settings", href: "/organizations/settings", icon: "Building2", group: "Organizations" },
     { label: "Webhooks", href: "/webhooks", icon: "Globe", group: "Integrations" },
     { label: "MFA", href: "/settings/mfa", icon: "Shield", group: "Settings" },
+    { label: "Notifications", href: "/settings/notifications", icon: "Bell", group: "Settings" },
     { label: "Data Privacy", href: "/settings/data", icon: "FileText", group: "Settings" },
   ],
   resources: [

@@ -12,6 +12,8 @@ import (
 	pgauth "api/pkg/auth/pg"
 	"api/pkg/business"
 	"api/pkg/infra"
+
+	"google.golang.org/grpc"
 )
 
 func env(key, fallback string) string {
@@ -86,15 +88,23 @@ func main() {
 	featureChecker := business.NewDefaultFeatureChecker(store, entitlementChecker)
 	service.SetFeatureChecker(featureChecker)
 
+	// Slack notifications (optional)
+	slackURL := os.Getenv("SLACK_WEBHOOK_URL")
+	if slackURL != "" {
+		service.SetSlackNotifier(business.NewSlackNotifier(slackURL))
+	}
+
 	// Wire adapters
 	adapters.WithService(service)
 
-	// Server
+	// Server with quota enforcement
 	config := &adapters.Configuration{
 		EndpointGrpcPort: grpcPort,
 		EndpointHttpPort: &httpPort,
 	}
-	server, err := adapters.NewServer(config)
+	server, err := adapters.NewServer(config,
+		grpc.UnaryInterceptor(adapters.QuotaInterceptor(entitlementChecker)),
+	)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "server: %v\n", err)
 		os.Exit(1)

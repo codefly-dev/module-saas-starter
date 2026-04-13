@@ -69,6 +69,7 @@ func (s *Service) SuspendUser(ctx context.Context, actorID string, req *gen.Susp
 	_ = s.store.RevokeAllUserSessions(ctx, req.UserId, "user_suspended")
 
 	s.emit(ctx, actorID, "user", "user.suspended", "user", req.UserId, "")
+	s.notifySlack(ctx, fmt.Sprintf("Security: user %s suspended by %s (reason: %s)", req.UserId, actorID, req.Reason))
 	return nil
 }
 
@@ -209,6 +210,11 @@ func (s *Service) GrantPlatformRole(ctx context.Context, actorID string, req *ge
 	}
 
 	s.emit(ctx, actorID, "user", "platform.role_granted", "user", req.UserId, "")
+
+	// Notify the user about their new platform role
+	_ = s.NotifyUser(ctx, req.UserId, "Platform role granted", fmt.Sprintf("You've been granted %s role", req.PlatformRole))
+	s.notifySlack(ctx, fmt.Sprintf("Platform role granted: user %s → %s (by %s)", req.UserId, req.PlatformRole, actorID))
+
 	return nil
 }
 

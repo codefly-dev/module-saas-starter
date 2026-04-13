@@ -134,6 +134,30 @@ func (s *Service) OpenBillingPortal(ctx context.Context, in OpenBillingPortalInp
 	return session.URL, nil
 }
 
+// HandlePaymentFailed is called when a Stripe webhook reports a failed payment.
+// It notifies the org owner and sends a critical alert to Slack.
+func (s *Service) HandlePaymentFailed(ctx context.Context, orgID string) error {
+	w := wool.Get(ctx).In("HandlePaymentFailed")
+
+	org, err := s.store.GetOrganization(ctx, orgID)
+	if err != nil {
+		return w.Wrapf(err, "cannot get organization")
+	}
+	if org == nil {
+		return w.NewError("organization not found: %s", orgID)
+	}
+
+	// Notify the org owner
+	_ = s.NotifyUser(ctx, org.OwnerId, "Payment failed", fmt.Sprintf("Payment failed for %s. Please update your payment method.", org.Name))
+
+	// Critical event: also notify via Slack
+	s.notifySlack(ctx, fmt.Sprintf(":rotating_light: Payment failed for org %s (%s)", org.Name, orgID))
+
+	s.emit(ctx, "system", "system", "billing.payment_failed", "organization", orgID, orgID)
+
+	return nil
+}
+
 // ensureStripeCustomer loads or creates the Stripe customer for an org.
 // Runs on the first StartCheckout; subsequent calls hit the fast path.
 func (s *Service) ensureStripeCustomer(ctx context.Context, orgID string) (string, error) {

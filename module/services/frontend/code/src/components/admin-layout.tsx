@@ -45,6 +45,7 @@ import {
   UserSearch,
   ShieldCheck,
   Globe,
+  Bell,
   LogOut,
   ChevronUp,
   type LucideIcon,
@@ -66,6 +67,7 @@ const iconMap: Record<string, LucideIcon> = {
   UserSearch,
   ShieldCheck,
   Globe,
+  Bell,
 };
 
 export function AdminLayout({ children }: { children: React.ReactNode }) {

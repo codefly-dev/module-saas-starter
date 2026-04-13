@@ -125,6 +125,10 @@ type Store interface {
 	ListWebhookDeliveries(ctx context.Context, subscriptionID string, pageSize int) ([]*WebhookDelivery, error)
 	GetPendingDeliveries(ctx context.Context, limit int) ([]*WebhookDelivery, error)
 
+	// Organization Settings (branding)
+	GetOrgSettings(ctx context.Context, orgID string) (*OrgSettings, error)
+	UpsertOrgSettings(ctx context.Context, settings *OrgSettings) error
+
 	// Notifications
 	CreateNotification(ctx context.Context, n *Notification) error
 	ListNotifications(ctx context.Context, userID string, pageSize int, pageToken string) ([]*Notification, string, error)

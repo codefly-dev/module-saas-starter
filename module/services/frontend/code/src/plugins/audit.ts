@@ -9,5 +9,17 @@ export const auditPlugin: AdminPlugin = {
       icon: "FileText",
       requiredRole: "admin",
     },
+    {
+      label: "API Docs",
+      href: "/docs",
+      icon: "FileText",
+      group: "Developer",
+    },
+    {
+      label: "SDKs",
+      href: "/docs/sdks",
+      icon: "FileText",
+      group: "Developer",
+    },
   ],
 };

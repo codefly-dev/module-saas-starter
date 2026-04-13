@@ -1,8 +1,9 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useRef, useEffect } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Bell } from "lucide-react";
+import { toast } from "sonner";
 import { Button } from "@/shared/ui";
 import { notificationQueries } from "../service/queries";
 import { NotificationPanel } from "./notification-panel";
@@ -11,6 +12,19 @@ export function NotificationBell() {
   const [open, setOpen] = useState(false);
   const { data } = useQuery(notificationQueries.unreadCount());
   const unreadCount = (data as { count?: number } | undefined)?.count ?? 0;
+  const prevCountRef = useRef(unreadCount);
+
+  useEffect(() => {
+    if (unreadCount > prevCountRef.current && prevCountRef.current >= 0) {
+      const diff = unreadCount - prevCountRef.current;
+      toast.info(
+        diff === 1
+          ? "You have a new notification"
+          : `You have ${diff} new notifications`,
+      );
+    }
+    prevCountRef.current = unreadCount;
+  }, [unreadCount]);
 
   return (
     <div className="relative">

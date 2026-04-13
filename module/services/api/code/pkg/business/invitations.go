@@ -79,6 +79,17 @@ func (s *Service) CreateInvitation(ctx context.Context, inviterID string, req *g
 
 	s.emit(ctx, inviterID, "user", "invitation.created", "invitation", inv.ID, req.OrgId)
 
+	// Notify the invitee (by email lookup — they may not have an account yet,
+	// so we look up by email). Best-effort.
+	if invitee, err := s.store.GetUserByEmail(ctx, req.Email); err == nil && invitee != nil {
+		org, _ := s.store.GetOrganization(ctx, req.OrgId)
+		orgName := req.OrgId
+		if org != nil {
+			orgName = org.Name
+		}
+		_ = s.NotifyUser(ctx, invitee.Uuid, "You've been invited", fmt.Sprintf("You've been invited to %s", orgName))
+	}
+
 	// Best-effort email delivery. Failures are logged but do NOT fail
 	// the invite creation — the inviter can always resend or copy the
 	// link manually.

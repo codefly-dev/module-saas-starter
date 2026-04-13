@@ -11,6 +11,8 @@ import (
 	"api/plugins"
 	"context"
 	"fmt"
+
+	"google.golang.org/grpc"
 )
 
 type Server struct {
@@ -19,9 +21,9 @@ type Server struct {
 	Connect *ConnectServer
 }
 
-func NewServer(config *Configuration) (*Server, error) {
+func NewServer(config *Configuration, grpcOpts ...grpc.ServerOption) (*Server, error) {
 
-	grpc, err := NewGrpServer(config)
+	grpc, err := NewGrpServer(config, grpcOpts...)
 	if err != nil {
 		return nil, err
 	}

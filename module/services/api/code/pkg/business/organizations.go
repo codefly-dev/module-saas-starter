@@ -2,6 +2,7 @@ package business
 
 import (
 	"context"
+	"fmt"
 
 	"github.com/codefly-dev/core/wool"
 
@@ -51,6 +52,15 @@ func (s *Service) AddOrgMember(ctx context.Context, actorID string, req *gen.Add
 	}
 
 	s.emit(ctx, actorID, "user", "org.member_added", "organization", req.OrgId, req.OrgId)
+
+	// Notify the added user
+	org, _ := s.store.GetOrganization(ctx, req.OrgId)
+	orgName := req.OrgId
+	if org != nil {
+		orgName = org.Name
+	}
+	_ = s.NotifyUser(ctx, req.UserId, "Organization membership", fmt.Sprintf("You were added to %s", orgName))
+
 	return nil
 }
 

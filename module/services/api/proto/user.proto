@@ -220,6 +220,28 @@ message ListUserIdentitiesResponse {
   repeated UserIdentity identities = 1;
 }
 
+// --- Organization Settings (branding) ---
+
+message OrgSettings {
+  string org_id = 1;
+  string logo_url = 2;
+  string primary_color = 3;
+  string custom_domain = 4;
+  string favicon_url = 5;
+}
+
+message GetOrgSettingsRequest {
+  string org_id = 1 [(buf.validate.field).string.uuid = true];
+}
+
+message UpdateOrgSettingsRequest {
+  string org_id = 1 [(buf.validate.field).string.uuid = true];
+  string logo_url = 2;
+  string primary_color = 3;
+  string custom_domain = 4;
+  string favicon_url = 5;
+}
+
 // --- Organization ---
 
 message CreateOrganizationRequest {
@@ -457,6 +479,14 @@ service OrganizationService {
 
   rpc ListMembers(ListOrgMembersRequest) returns (ListOrgMembersResponse) {
     option (google.api.http) = { get: "/v1/organizations/{org_id}/members" };
+  }
+
+  rpc GetOrgSettings(GetOrgSettingsRequest) returns (OrgSettings) {
+    option (google.api.http) = { get: "/v1/organizations/{org_id}/settings" };
+  }
+
+  rpc UpdateOrgSettings(UpdateOrgSettingsRequest) returns (OrgSettings) {
+    option (google.api.http) = { put: "/v1/organizations/{org_id}/settings" body: "*" };
   }
 }
 
@@ -700,10 +730,26 @@ message QueryAuditLogResponse {
   int32 total_count = 3;
 }
 
+message ExportAuditLogRequest {
+  string org_id = 1;
+  string format = 2; // "csv" or "json"
+  string actor_id = 3;
+  string action = 4;
+}
+
+message ExportAuditLogResponse {
+  bytes data = 1;
+  string content_type = 2;
+  string filename = 3;
+}
+
 // AuditService — append-only audit event log
 service AuditService {
   rpc QueryAuditLog(QueryAuditLogRequest) returns (QueryAuditLogResponse) {
     option (google.api.http) = { get: "/v1/audit-log" };
+  }
+  rpc ExportAuditLog(ExportAuditLogRequest) returns (ExportAuditLogResponse) {
+    option (google.api.http) = { post: "/v1/audit-log:export" body: "*" };
   }
 }
 

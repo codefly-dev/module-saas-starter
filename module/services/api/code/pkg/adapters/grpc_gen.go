@@ -129,8 +129,8 @@ func (s *UserServer) Version(ctx context.Context, req *gen.VersionRequest) (*gen
 	}, nil
 }
 
-func NewGrpServer(c *Configuration) (*GrpcServer, error) {
-	grpcServer := grpc.NewServer()
+func NewGrpServer(c *Configuration, opts ...grpc.ServerOption) (*GrpcServer, error) {
+	grpcServer := grpc.NewServer(opts...)
 	v, err := protovalidate.New()
 	if err != nil {
 		return nil, fmt.Errorf("failed to create validator: %w", err)

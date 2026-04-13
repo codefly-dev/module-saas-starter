@@ -29,6 +29,7 @@ type AsyncWebhookDispatcher struct {
 	store  Store
 	client *http.Client
 	ch     chan dispatchWork
+	done   chan struct{} // closed on Close() to stop the retry ticker
 }
 
 type dispatchWork struct {
@@ -43,11 +44,13 @@ func NewAsyncWebhookDispatcher(store Store, bufferSize, workers int) *AsyncWebho
 		client: &http.Client{
 			Timeout: 10 * time.Second,
 		},
-		ch: make(chan dispatchWork, bufferSize),
+		ch:   make(chan dispatchWork, bufferSize),
+		done: make(chan struct{}),
 	}
 	for i := 0; i < workers; i++ {
 		go d.worker()
 	}
+	go d.retryLoop()
 	return d
 }
 
@@ -167,6 +170,17 @@ func (d *AsyncWebhookDispatcher) deliver(ctx context.Context, sub *WebhookSubscr
 	}
 }
 
+// retryBackoffs defines the delay before each retry attempt.
+// attempt 1 → 1min, 2 → 5min, 3 → 30min, 4 → 2h, 5 → fail permanently.
+var retryBackoffs = []time.Duration{
+	1 * time.Minute,
+	5 * time.Minute,
+	30 * time.Minute,
+	2 * time.Hour,
+}
+
+const maxAttempts = 5
+
 // markFailed sets the delivery as retrying with exponential backoff, or failed
 // if max attempts reached.
 func (d *AsyncWebhookDispatcher) markFailed(ctx context.Context, delivery *WebhookDelivery, httpStatus int, responseBody string) {
@@ -176,14 +190,18 @@ func (d *AsyncWebhookDispatcher) markFailed(ctx context.Context, delivery *Webho
 	delivery.ResponseBody = responseBody
 	delivery.AttemptCount++
 
-	const maxAttempts = 5
 	if delivery.AttemptCount >= maxAttempts {
 		delivery.Status = "failed"
 	} else {
 		delivery.Status = "retrying"
-		// Exponential backoff: 30s, 2m, 8m, 32m
-		backoff := time.Duration(1<<uint(delivery.AttemptCount)) * 30 * time.Second
-		nextRetry := time.Now().Add(backoff)
+		idx := delivery.AttemptCount - 1
+		if idx < 0 {
+			idx = 0
+		}
+		if idx >= len(retryBackoffs) {
+			idx = len(retryBackoffs) - 1
+		}
+		nextRetry := time.Now().Add(retryBackoffs[idx])
 		delivery.NextRetryAt = &nextRetry
 	}
 
@@ -192,8 +210,23 @@ func (d *AsyncWebhookDispatcher) markFailed(ctx context.Context, delivery *Webho
 	}
 }
 
+// retryLoop runs RetryPending every 30 seconds until the dispatcher is closed.
+func (d *AsyncWebhookDispatcher) retryLoop() {
+	ticker := time.NewTicker(30 * time.Second)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ticker.C:
+			_ = d.RetryPending(context.Background(), 100)
+		case <-d.done:
+			return
+		}
+	}
+}
+
 // Close stops the dispatcher and drains remaining work.
 func (d *AsyncWebhookDispatcher) Close() {
+	close(d.done)
 	close(d.ch)
 }
 

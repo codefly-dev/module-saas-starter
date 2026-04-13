@@ -24,6 +24,7 @@ type Service struct {
 	audit        AuditEmitter
 	entitlements EntitlementChecker
 	features     FeatureChecker
+	slack        *SlackNotifier // optional: sends critical notifications to Slack
 }
 
 // CodeExchanger abstracts the OAuth 2.0 code-for-token exchange so the
@@ -109,6 +110,18 @@ func (s *Service) SetEntitlementChecker(e EntitlementChecker) {
 
 func (s *Service) SetFeatureChecker(f FeatureChecker) {
 	s.features = f
+}
+
+// SetSlackNotifier wires an optional Slack webhook notifier for critical events.
+func (s *Service) SetSlackNotifier(n *SlackNotifier) {
+	s.slack = n
+}
+
+// notifySlack sends a message to Slack if the notifier is configured. Best-effort.
+func (s *Service) notifySlack(ctx context.Context, text string) {
+	if s.slack != nil {
+		_ = s.slack.Send(ctx, "", text)
+	}
 }
 
 func (s *Service) SetStore(store Store) {
