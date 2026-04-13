@@ -18,6 +18,7 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"time"
 
 	codefly "github.com/codefly-dev/sdk-go"
 )
@@ -137,9 +138,46 @@ func doWork(ctx context.Context) (Clean, error) {
 		service.SetTemplateSender(templateSender)
 	}
 
+	// Start background data retention goroutine. Runs once on startup and
+	// then every 24 hours, deleting records older than their configured
+	// retention period.
+	retentionCtx, retentionCancel := context.WithCancel(ctx)
+	go func() {
+		// Run once immediately on startup.
+		if deleted, err := service.RunRetention(retentionCtx); err != nil {
+			log.Printf("retention startup run: %v", err)
+		} else {
+			for k, v := range deleted {
+				if v > 0 {
+					log.Printf("retention: deleted %d %s records", v, k)
+				}
+			}
+		}
+
+		ticker := time.NewTicker(24 * time.Hour)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-retentionCtx.Done():
+				return
+			case <-ticker.C:
+				if deleted, err := service.RunRetention(retentionCtx); err != nil {
+					log.Printf("retention run: %v", err)
+				} else {
+					for k, v := range deleted {
+						if v > 0 {
+							log.Printf("retention: deleted %d %s records", v, k)
+						}
+					}
+				}
+			}
+		}
+	}()
+
 	if codefly.WithFixture("simple") {
 		err = fixtures.Simple(ctx, service)
 		if err != nil {
+			retentionCancel()
 			return nil, err
 		}
 	}
@@ -147,11 +185,14 @@ func doWork(ctx context.Context) (Clean, error) {
 	if codefly.WithFixture("dev-admin") {
 		err = fixtures.DevAdmin(ctx, service)
 		if err != nil {
+			retentionCancel()
 			return nil, err
 		}
 	}
 
 	return func() {
+		log.Println("api shutdown: stopping retention goroutine...")
+		retentionCancel()
 		log.Println("api shutdown: closing audit emitter...")
 		auditEmitter.Close()
 		log.Println("api shutdown: audit emitter closed")

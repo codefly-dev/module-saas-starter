@@ -88,6 +88,7 @@ func (s *Service) StartCheckout(ctx context.Context, in StartCheckoutInput) (str
 		CancelURL:  in.CancelURL,
 		OrgID:      in.OrgID,
 		TrialDays:  in.TrialDays,
+		Currency:   plan.Currency,
 	})
 	if err != nil {
 		return "", w.Wrapf(err, "create checkout session")

@@ -113,6 +113,9 @@ interface AuthContextType extends AuthState {
   // backend, stores the returned tokens, redirects to the post-login
   // destination (or "/").
   completeOAuth: (code: string, state: string) => Promise<void>;
+  // Stores tokens received from magic link verification. The caller is
+  // responsible for redirecting after this call.
+  setTokensFromMagicLink: (accessToken: string, refreshToken: string, userId?: string) => void;
   logout: () => Promise<void>;
   getToken: () => string | null;
 }
@@ -267,9 +270,16 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       .catch(() => { clearRefreshToken(); setState((s) => ({ ...s, isLoading: false })); });
   }, [setTokens]);
 
+  const setTokensFromMagicLink = useCallback(
+    (accessToken: string, refreshToken: string, userId?: string) => {
+      setTokens(accessToken, refreshToken, userId);
+    },
+    [setTokens],
+  );
+
   const value = useMemo<AuthContextType>(
-    () => ({ ...state, login, signInWith, completeOAuth, logout, getToken }),
-    [state, login, signInWith, completeOAuth, logout, getToken],
+    () => ({ ...state, login, signInWith, completeOAuth, setTokensFromMagicLink, logout, getToken }),
+    [state, login, signInWith, completeOAuth, setTokensFromMagicLink, logout, getToken],
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

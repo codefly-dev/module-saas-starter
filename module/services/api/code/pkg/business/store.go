@@ -140,6 +140,18 @@ type Store interface {
 	// Onboarding
 	GetOnboardingProgress(ctx context.Context, userID string) ([]*OnboardingStep, error)
 	UpsertOnboardingStep(ctx context.Context, userID string, stepName string, status string) error
+
+	// Magic Links
+	CreateMagicLink(ctx context.Context, ml *MagicLink) error
+	GetMagicLinkByTokenHash(ctx context.Context, tokenHash string) (*MagicLink, error)
+	MarkMagicLinkUsed(ctx context.Context, id string) error
+
+	// Data Retention
+	GetRetentionPolicies(ctx context.Context) ([]*RetentionPolicy, error)
+	DeleteOldAuditEvents(ctx context.Context, before time.Time) (int64, error)
+	DeleteOldSessions(ctx context.Context, before time.Time) (int64, error)
+	DeleteOldWebhookDeliveries(ctx context.Context, before time.Time) (int64, error)
+	DeleteOldNotifications(ctx context.Context, before time.Time) (int64, error)
 }
 
 type StoreErrorType string
@@ -182,6 +194,14 @@ type PlatformAdmin struct {
 	PlatformRole string
 	GrantedBy    string
 	GrantedAt    time.Time
+}
+
+// RetentionPolicy defines how long records of a given type should be kept.
+type RetentionPolicy struct {
+	ID            string
+	ResourceType  string
+	RetentionDays int
+	CreatedAt     time.Time
 }
 
 // Session represents a refresh token session.

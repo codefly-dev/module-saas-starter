@@ -54,18 +54,18 @@ func (s *PostgresStore) SetOrgStripeCustomerID(ctx context.Context, orgID, strip
 func (s *PostgresStore) GetPlanByName(ctx context.Context, name string) (*business.PlanFull, error) {
 	q := s.getQueryExecutor(ctx)
 	var (
-		p              business.PlanFull
+		p               business.PlanFull
 		stripeProductID *string
 		stripePriceID   *string
 	)
 	err := q.QueryRow(ctx, `
 		SELECT id::text, name, display_name, is_default, sort_order,
-		       stripe_product_id, stripe_price_id
+		       stripe_product_id, stripe_price_id, currency
 		FROM plans
 		WHERE name = $1`,
 		name,
 	).Scan(&p.ID, &p.Name, &p.DisplayName, &p.IsDefault, &p.SortOrder,
-		&stripeProductID, &stripePriceID)
+		&stripeProductID, &stripePriceID, &p.Currency)
 	if err != nil {
 		return nil, err
 	}

@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { useAuth, availableProviders } from "@/lib/auth";
+import { useSendMagicLink } from "@/features/auth/service/mutations";
 import type { FixtureUser } from "@/lib/fixtures/types";
 import {
   Card,
@@ -14,7 +15,7 @@ import {
   Label,
   Separator,
 } from "@/shared/ui";
-import { LogIn, Mail, User, AlertCircle } from "lucide-react";
+import { LogIn, Mail, User, AlertCircle, CheckCircle2, Loader2 } from "lucide-react";
 
 interface FixtureResponse {
   name: string;
@@ -58,6 +59,11 @@ export function LoginPage() {
   const [fixtureUsers, setFixtureUsers] = useState<FixtureUser[]>([]);
   const [fixtureName, setFixtureName] = useState<string | null>(null);
 
+  // Magic link state
+  const [magicEmail, setMagicEmail] = useState("");
+  const [magicSent, setMagicSent] = useState(false);
+  const sendMagicLink = useSendMagicLink();
+
   // Dev fallback fields
   const [devIdentity, setDevIdentity] = useState("");
   const [devEmail, setDevEmail] = useState("");
@@ -86,6 +92,17 @@ export function LoginPage() {
       window.location.href = "/";
     } catch (err) {
       setError(err instanceof Error ? err.message : "Login failed");
+    }
+  }
+
+  async function handleMagicLink(e: React.FormEvent) {
+    e.preventDefault();
+    setError(null);
+    try {
+      await sendMagicLink.mutateAsync({ email: magicEmail });
+      setMagicSent(true);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to send magic link");
     }
   }
 
@@ -138,6 +155,45 @@ export function LoginPage() {
                 </Button>
               ))}
             </div>
+          )}
+
+          {/* Magic link sign-in */}
+          {providers.length > 0 && <Separator />}
+          {magicSent ? (
+            <div className="flex items-center gap-2 rounded-md border border-green-500/50 bg-green-500/10 p-3 text-sm text-green-700 dark:text-green-400">
+              <CheckCircle2 className="h-4 w-4 shrink-0" />
+              Check your email for a sign-in link
+            </div>
+          ) : (
+            <form onSubmit={handleMagicLink} className="space-y-3">
+              <p className="text-sm font-medium text-center text-muted-foreground">
+                Sign in with email
+              </p>
+              <div className="space-y-2">
+                <Label htmlFor="magic-email">Email address</Label>
+                <Input
+                  id="magic-email"
+                  type="email"
+                  placeholder="you@example.com"
+                  value={magicEmail}
+                  onChange={(e) => setMagicEmail(e.target.value)}
+                  required
+                />
+              </div>
+              <Button
+                type="submit"
+                variant="outline"
+                className="w-full gap-2"
+                disabled={sendMagicLink.isPending}
+              >
+                {sendMagicLink.isPending ? (
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                ) : (
+                  <Mail className="h-4 w-4" />
+                )}
+                Send magic link
+              </Button>
+            </form>
           )}
 
           {/* Fixture users (dev mode) */}

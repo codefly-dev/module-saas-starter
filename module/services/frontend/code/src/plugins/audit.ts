@@ -21,5 +21,11 @@ export const auditPlugin: AdminPlugin = {
       icon: "FileText",
       group: "Developer",
     },
+    {
+      label: "Compliance",
+      href: "/docs/compliance",
+      icon: "ShieldCheck",
+      group: "Developer",
+    },
   ],
 };

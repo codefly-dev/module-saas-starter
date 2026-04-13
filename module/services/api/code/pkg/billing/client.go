@@ -150,6 +150,7 @@ type CheckoutParams struct {
 	CancelURL  string // where Stripe redirects on cancel
 	OrgID      string // our internal org id, threaded through metadata
 	TrialDays  int    // optional trial days; 0 = no trial
+	Currency   string // ISO 4217 currency code (e.g. "usd", "eur"); empty = plan default
 }
 
 // CreateCheckoutSession starts a Stripe Checkout flow for a subscription.
@@ -167,6 +168,9 @@ func (c *Client) CreateCheckoutSession(ctx context.Context, p CheckoutParams) (*
 	form.Set("line_items[0][quantity]", "1")
 	form.Set("metadata[org_id]", p.OrgID)
 	form.Set("subscription_data[metadata][org_id]", p.OrgID)
+	if p.Currency != "" {
+		form.Set("currency", p.Currency)
+	}
 	if p.TrialDays > 0 {
 		form.Set("subscription_data[trial_period_days]", fmt.Sprintf("%d", p.TrialDays))
 	}

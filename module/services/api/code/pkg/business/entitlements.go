@@ -29,6 +29,7 @@ type PlanFull struct {
 	Plan
 	StripeProductID string
 	StripePriceID   string
+	Currency        string // ISO 4217, e.g. "usd", "eur"
 }
 
 // Subscription links an org to a plan.

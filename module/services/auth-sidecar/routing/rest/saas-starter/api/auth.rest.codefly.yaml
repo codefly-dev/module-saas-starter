@@ -20,3 +20,13 @@ routes:
       extension:
         exposed: true
         protected: false
+    - path: /v1/auth/magic-link
+      method: POST
+      extension:
+        exposed: true
+        protected: false
+    - path: /v1/auth/magic-link/verify
+      method: POST
+      extension:
+        exposed: true
+        protected: false
