@@ -1,0 +1,17 @@
+path: /v1/onboarding
+routes:
+    - path: /v1/onboarding
+      method: GET
+      extension:
+        exposed: true
+        protected: true
+    - path: /v1/onboarding/{step_name}:complete
+      method: POST
+      extension:
+        exposed: true
+        protected: true
+    - path: /v1/onboarding/{step_name}:skip
+      method: POST
+      extension:
+        exposed: true
+        protected: true

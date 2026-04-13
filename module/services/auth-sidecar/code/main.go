@@ -12,6 +12,8 @@ import (
 	"net/url"
 	"os"
 	"os/signal"
+	"strconv"
+	"strings"
 	"syscall"
 	"time"
 
@@ -28,6 +30,13 @@ import (
 )
 
 func main() {
+	// Envoy config generation mode — produces envoy.yaml and exits.
+	// Triggered by GENERATE_ENVOY_CONFIG env var or --generate-envoy flag.
+	if shouldGenerateEnvoy() {
+		generateEnvoyAndExit()
+		return
+	}
+
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
 
@@ -87,13 +96,13 @@ func main() {
 	fmt.Printf("auth-sidecar gRPC (ext_authz) listening on :%d (api: %s, jwt: %v)\n",
 		grpcPort, apiAddr, publicKey != nil)
 
-	// Load route config.
-	routeConfigPath := os.Getenv("ROUTE_CONFIG_PATH")
-	routeConfig, err := LoadRouteConfig(routeConfigPath)
+	// Load route config from folder-based *.rest.codefly.yaml files.
+	routingDir := DefaultRoutingDir()
+	routeEntries, err := LoadRoutesFromDir(ctx, routingDir)
 	if err != nil {
-		panic(fmt.Sprintf("failed to load route config: %v", err))
+		panic(fmt.Sprintf("failed to load routes from %s: %v", routingDir, err))
 	}
-	matcher := NewRouteMatcher(routeConfig)
+	matcher := NewRouteMatcher(routeEntries)
 
 	// HTTP gateway listener — the single public ingress in dev.
 	var httpServer *http.Server
@@ -128,7 +137,7 @@ func main() {
 		}
 		go func() {
 			fmt.Printf("auth-sidecar gateway (HTTP) listening on :%d (api: %s, frontend: %s, routes: %d)\n",
-				httpPort, apiHTTPURL, frontendURL, len(routeConfig.Routes))
+				httpPort, apiHTTPURL, frontendURL, len(routeEntries))
 			if err := httpServer.ListenAndServe(); err != nil && err != http.ErrServerClosed {
 				fmt.Fprintf(os.Stderr, "gateway http server error: %v\n", err)
 			}
@@ -196,4 +205,117 @@ func fetchPublicKey(ctx context.Context, conn *grpc.ClientConn) ed25519.PublicKe
 
 	log.Printf("WARNING: no Ed25519 key found in JWKS (JWT validation disabled)")
 	return nil
+}
+
+// shouldGenerateEnvoy returns true if the binary should generate Envoy config
+// instead of starting the server.
+func shouldGenerateEnvoy() bool {
+	if os.Getenv("GENERATE_ENVOY_CONFIG") != "" {
+		return true
+	}
+	for _, arg := range os.Args[1:] {
+		if arg == "--generate-envoy" {
+			return true
+		}
+	}
+	return false
+}
+
+// generateEnvoyAndExit reads folder-based route configs, builds an Envoy config,
+// and writes it to stdout (or a file if ENVOY_CONFIG_OUTPUT is set).
+func generateEnvoyAndExit() {
+	routingDir := DefaultRoutingDir()
+	entries, err := LoadRoutesFromDir(context.Background(), routingDir)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "error loading routes from %s: %v\n", routingDir, err)
+		os.Exit(1)
+	}
+
+	// Parse upstream definitions from environment variables.
+	// Format: ENVOY_UPSTREAM_<SERVICE>=<host>:<port>
+	// Example: ENVOY_UPSTREAM_API=api:5962
+	upstreams := parseUpstreamsFromEnv("ENVOY_UPSTREAM_")
+	connectUpstreams := parseUpstreamsFromEnv("ENVOY_CONNECT_UPSTREAM_")
+
+	// ext_authz cluster — the sidecar itself.
+	extAuthz := Upstream{Address: "127.0.0.1", Port: 9000}
+	if v := os.Getenv("ENVOY_EXT_AUTHZ"); v != "" {
+		u, parseErr := parseHostPort(v)
+		if parseErr != nil {
+			fmt.Fprintf(os.Stderr, "error parsing ENVOY_EXT_AUTHZ=%q: %v\n", v, parseErr)
+			os.Exit(1)
+		}
+		extAuthz = u
+	}
+
+	listenPort := uint32(8080)
+	if v := os.Getenv("ENVOY_LISTEN_PORT"); v != "" {
+		p, parseErr := strconv.ParseUint(v, 10, 32)
+		if parseErr != nil {
+			fmt.Fprintf(os.Stderr, "error parsing ENVOY_LISTEN_PORT=%q: %v\n", v, parseErr)
+			os.Exit(1)
+		}
+		listenPort = uint32(p)
+	}
+
+	// Default upstreams if none provided (sensible defaults for the module).
+	if len(upstreams) == 0 {
+		upstreams = map[string]Upstream{
+			"api":      {Address: "api", Port: 5962},
+			"frontend": {Address: "frontend", Port: 3000},
+		}
+	}
+
+	yamlBytes, err := GenerateEnvoyConfig(ToEnvoyConfig(entries), upstreams, connectUpstreams, extAuthz, listenPort)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "error generating envoy config: %v\n", err)
+		os.Exit(1)
+	}
+
+	output := os.Getenv("ENVOY_CONFIG_OUTPUT")
+	if output != "" {
+		if writeErr := os.WriteFile(output, yamlBytes, 0644); writeErr != nil {
+			fmt.Fprintf(os.Stderr, "error writing to %s: %v\n", output, writeErr)
+			os.Exit(1)
+		}
+		fmt.Printf("envoy config written to %s (%d routes)\n", output, len(entries))
+	} else {
+		fmt.Print(string(yamlBytes))
+	}
+}
+
+// parseUpstreamsFromEnv reads all environment variables with the given prefix
+// and parses them as host:port upstream definitions.
+func parseUpstreamsFromEnv(prefix string) map[string]Upstream {
+	result := make(map[string]Upstream)
+	for _, env := range os.Environ() {
+		if !strings.HasPrefix(env, prefix) {
+			continue
+		}
+		parts := strings.SplitN(env, "=", 2)
+		if len(parts) != 2 {
+			continue
+		}
+		name := strings.ToLower(strings.TrimPrefix(parts[0], prefix))
+		u, err := parseHostPort(parts[1])
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "warning: ignoring %s: %v\n", parts[0], err)
+			continue
+		}
+		result[name] = u
+	}
+	return result
+}
+
+// parseHostPort parses "host:port" into an Upstream.
+func parseHostPort(s string) (Upstream, error) {
+	parts := strings.SplitN(s, ":", 2)
+	if len(parts) != 2 {
+		return Upstream{}, fmt.Errorf("expected host:port, got %q", s)
+	}
+	port, err := strconv.ParseUint(parts[1], 10, 32)
+	if err != nil {
+		return Upstream{}, fmt.Errorf("invalid port in %q: %w", s, err)
+	}
+	return Upstream{Address: parts[0], Port: uint32(port)}, nil
 }

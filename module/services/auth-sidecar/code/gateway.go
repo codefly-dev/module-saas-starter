@@ -82,7 +82,7 @@ func (g *Gateway) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Auth check based on the route's auth requirement.
-	switch entry.Auth {
+	switch authMode(entry) {
 	case "public":
 		// Public route: call Check to get identity headers if a token is present,
 		// but don't reject if no token.
@@ -177,7 +177,7 @@ func (g *Gateway) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		g.rateLimitThenProxy(w, r, upstream)
 
 	default:
-		log.Printf("WARN: blocked request: method=%s path=%s reason=unknown_auth_type_%s", r.Method, r.URL.Path, entry.Auth)
+		log.Printf("WARN: blocked request: method=%s path=%s reason=unknown_auth_type_%s", r.Method, r.URL.Path, authMode(entry))
 		httpError(w, http.StatusInternalServerError, "unknown auth type")
 	}
 }

@@ -1,0 +1,22 @@
+path: /v1/gdpr
+routes:
+    - path: /v1/gdpr/export
+      method: POST
+      extension:
+        exposed: true
+        protected: true
+    - path: /v1/gdpr/export/{id}
+      method: GET
+      extension:
+        exposed: true
+        protected: true
+    - path: /v1/gdpr/delete
+      method: POST
+      extension:
+        exposed: true
+        protected: true
+    - path: /v1/gdpr/delete/{id}
+      method: GET
+      extension:
+        exposed: true
+        protected: true

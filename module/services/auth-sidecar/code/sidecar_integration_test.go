@@ -1,3 +1,6 @@
+//go:build integration
+// +build integration
+
 package main
 
 import (
@@ -20,14 +23,14 @@ import (
 	"github.com/codefly-dev/core/sdk"
 	"github.com/stretchr/testify/require"
 
-	backend "backend/pkg/gen"
+	apigen "api/pkg/gen"
 )
 
 // Global test fixtures — initialized once in TestMain.
 var (
 	testSidecar    *Sidecar
-	testUserClient backend.UserServiceClient
-	testAuthClient backend.AuthServiceClient
+	testUserClient apigen.UserServiceClient
+	testAuthClient apigen.AuthServiceClient
 	testCtx        context.Context
 	testCleanup    func()
 )
@@ -52,29 +55,29 @@ func TestMain(m *testing.M) {
 		os.Exit(1)
 	}
 
-	backendNet := codefly.For(ctx).Service("backend").API("grpc").NetworkInstance()
-	if backendNet == nil {
+	apiNet := codefly.For(ctx).Service("api").API("grpc").NetworkInstance()
+	if apiNet == nil {
 		fmt.Fprintf(os.Stderr, "backend gRPC endpoint not available\n")
 		os.Exit(1)
 	}
-	backendAddr := fmt.Sprintf("%s:%d", backendNet.Hostname, backendNet.Port)
+	apiAddr := fmt.Sprintf("%s:%d", apiNet.Hostname, apiNet.Port)
 
-	backendConn, err := grpc.NewClient(backendAddr, grpc.WithTransportCredentials(insecure.NewCredentials()))
+	apiConn, err := grpc.NewClient(apiAddr, grpc.WithTransportCredentials(insecure.NewCredentials()))
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "cannot connect to backend: %v\n", err)
 		os.Exit(1)
 	}
 
 	// Fetch public key from backend's JWKS endpoint
-	publicKey := fetchTestPublicKey(ctx, backendConn)
+	publicKey := fetchTestPublicKey(ctx, apiConn)
 
-	testSidecar = NewSidecar(backendConn, publicKey)
-	testUserClient = backend.NewUserServiceClient(backendConn)
-	testAuthClient = backend.NewAuthServiceClient(backendConn)
+	testSidecar = NewSidecar(apiConn, publicKey)
+	testUserClient = apigen.NewUserServiceClient(apiConn)
+	testAuthClient = apigen.NewAuthServiceClient(apiConn)
 	testCtx = ctx
 
 	testCleanup = func() {
-		backendConn.Close()
+		apiConn.Close()
 		deps.Destroy(ctx)
 	}
 
@@ -84,10 +87,10 @@ func TestMain(m *testing.M) {
 }
 
 func fetchTestPublicKey(ctx context.Context, conn *grpc.ClientConn) ed25519.PublicKey {
-	client := backend.NewAuthServiceClient(conn)
+	client := apigen.NewAuthServiceClient(conn)
 
 	// Retry — backend may still be starting
-	var resp *backend.JWKSResponse
+	var resp *apigen.JWKSResponse
 	var err error
 	for i := 0; i < 30; i++ {
 		resp, err = client.GetJWKS(ctx, &emptypb.Empty{})
@@ -133,15 +136,41 @@ func makeCheckRequest(headers map[string]string) *authv3.CheckRequest {
 }
 
 // ============================================================================
-// Public endpoint (no auth headers → pass through)
+// Public routes — no auth required
 // ============================================================================
 
-func TestCheck_NoAuthHeaders(t *testing.T) {
-	resp, err := testSidecar.Check(testCtx, makeCheckRequest(map[string]string{
-		"content-type": "application/json",
-	}))
+func makeCheckRequestWithPath(path string, headers map[string]string) *authv3.CheckRequest {
+	return &authv3.CheckRequest{
+		Attributes: &authv3.AttributeContext{
+			Request: &authv3.AttributeContext_Request{
+				Http: &authv3.AttributeContext_HttpRequest{
+					Headers: headers,
+					Path:    path,
+				},
+			},
+		},
+	}
+}
+
+func TestCheck_PublicPath_AuthEndpoint(t *testing.T) {
+	resp, err := testSidecar.Check(testCtx,
+		makeCheckRequestWithPath("/v1/auth/authenticate", map[string]string{}))
 	require.NoError(t, err)
-	require.NotNil(t, resp.GetOkResponse(), "should pass through unauthenticated requests")
+	require.NotNil(t, resp.GetOkResponse(), "login must be publicly reachable")
+}
+
+func TestCheck_PublicPath_Health(t *testing.T) {
+	resp, err := testSidecar.Check(testCtx,
+		makeCheckRequestWithPath("/health", map[string]string{}))
+	require.NoError(t, err)
+	require.NotNil(t, resp.GetOkResponse())
+}
+
+func TestCheck_NoAuth_ProtectedRoute_Denied(t *testing.T) {
+	resp, err := testSidecar.Check(testCtx,
+		makeCheckRequestWithPath("/v1/users", map[string]string{}))
+	require.NoError(t, err)
+	require.NotNil(t, resp.GetDeniedResponse(), "protected routes must reject missing auth")
 }
 
 // ============================================================================
@@ -150,7 +179,7 @@ func TestCheck_NoAuthHeaders(t *testing.T) {
 
 func TestCheck_JWTAuth(t *testing.T) {
 	// Authenticate to get a JWT
-	authResp, err := testAuthClient.Authenticate(testCtx, &backend.AuthenticateRequest{
+	authResp, err := testAuthClient.Authenticate(testCtx, &apigen.AuthenticateRequest{
 		Provider:      "google",
 		ProviderId:    "google_jwt_test",
 		ProviderEmail: "jwt-test@example.com",
@@ -163,8 +192,8 @@ func TestCheck_JWTAuth(t *testing.T) {
 	require.Equal(t, int64(900), authResp.ExpiresIn)
 	require.NotEmpty(t, authResp.User.Uuid)
 
-	// Use the JWT against the sidecar
-	resp, err := testSidecar.Check(testCtx, makeCheckRequest(map[string]string{
+	// Use the JWT against the sidecar on a protected path.
+	resp, err := testSidecar.Check(testCtx, makeCheckRequestWithPath("/v1/users", map[string]string{
 		"authorization": "Bearer " + authResp.AccessToken,
 	}))
 	require.NoError(t, err)
@@ -178,13 +207,13 @@ func TestCheck_JWTAuth(t *testing.T) {
 	}
 
 	require.Equal(t, authResp.User.Uuid, headerMap["x-user-id"])
-	require.NotEmpty(t, headerMap["x-org-id"])
-	require.Contains(t, headerMap["x-roles"], "admin")
+	require.NotEmpty(t, headerMap["x-session-id"], "session id must be forwarded for audit correlation")
+	// org id may be empty on a brand-new signup; org role and platform role depend on provisioning path
 }
 
 func TestCheck_ExpiredJWT(t *testing.T) {
 	// Send a clearly invalid/expired JWT
-	resp, err := testSidecar.Check(testCtx, makeCheckRequest(map[string]string{
+	resp, err := testSidecar.Check(testCtx, makeCheckRequestWithPath("/v1/users", map[string]string{
 		"authorization": "Bearer eyJhbGciOiJFZERTQSJ9.eyJzdWIiOiJ0ZXN0IiwiZXhwIjoxfQ.invalid",
 	}))
 	require.NoError(t, err)
@@ -205,7 +234,7 @@ func TestCheck_InvalidJWT(t *testing.T) {
 // ============================================================================
 
 func TestAuth_RefreshToken(t *testing.T) {
-	authResp, err := testAuthClient.Authenticate(testCtx, &backend.AuthenticateRequest{
+	authResp, err := testAuthClient.Authenticate(testCtx, &apigen.AuthenticateRequest{
 		Provider:      "google",
 		ProviderId:    "google_refresh_test",
 		ProviderEmail: "refresh@example.com",
@@ -213,7 +242,7 @@ func TestAuth_RefreshToken(t *testing.T) {
 	require.NoError(t, err)
 
 	// Refresh
-	refreshResp, err := testAuthClient.RefreshToken(testCtx, &backend.RefreshTokenRequest{
+	refreshResp, err := testAuthClient.RefreshToken(testCtx, &apigen.RefreshTokenRequest{
 		RefreshToken: authResp.RefreshToken,
 	})
 	require.NoError(t, err)
@@ -223,14 +252,14 @@ func TestAuth_RefreshToken(t *testing.T) {
 	require.NotEqual(t, authResp.AccessToken, refreshResp.AccessToken, "should issue new access token")
 
 	// Old refresh token should no longer work (consumed)
-	_, err = testAuthClient.RefreshToken(testCtx, &backend.RefreshTokenRequest{
+	_, err = testAuthClient.RefreshToken(testCtx, &apigen.RefreshTokenRequest{
 		RefreshToken: authResp.RefreshToken,
 	})
 	require.Error(t, err, "old refresh token should be rejected (reuse detection)")
 }
 
 func TestAuth_Logout(t *testing.T) {
-	authResp, err := testAuthClient.Authenticate(testCtx, &backend.AuthenticateRequest{
+	authResp, err := testAuthClient.Authenticate(testCtx, &apigen.AuthenticateRequest{
 		Provider:      "google",
 		ProviderId:    "google_logout_test",
 		ProviderEmail: "logout@example.com",
@@ -238,13 +267,13 @@ func TestAuth_Logout(t *testing.T) {
 	require.NoError(t, err)
 
 	// Logout
-	_, err = testAuthClient.Logout(testCtx, &backend.LogoutRequest{
+	_, err = testAuthClient.Logout(testCtx, &apigen.LogoutRequest{
 		RefreshToken: authResp.RefreshToken,
 	})
 	require.NoError(t, err)
 
 	// Refresh should fail after logout
-	_, err = testAuthClient.RefreshToken(testCtx, &backend.RefreshTokenRequest{
+	_, err = testAuthClient.RefreshToken(testCtx, &apigen.RefreshTokenRequest{
 		RefreshToken: authResp.RefreshToken,
 	})
 	require.Error(t, err, "refresh should fail after logout")

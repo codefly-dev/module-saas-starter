@@ -1,0 +1,22 @@
+path: /v1/invitations
+routes:
+    - path: /v1/invitations
+      method: POST
+      extension:
+        exposed: true
+        protected: true
+    - path: /v1/invitations:accept
+      method: POST
+      extension:
+        exposed: true
+        protected: true
+    - path: /v1/invitations
+      method: GET
+      extension:
+        exposed: true
+        protected: true
+    - path: /v1/invitations/{id}
+      method: DELETE
+      extension:
+        exposed: true
+        protected: true

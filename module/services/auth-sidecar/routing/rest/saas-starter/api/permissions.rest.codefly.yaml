@@ -1,0 +1,17 @@
+path: /v1/roles
+routes:
+    - path: /v1/roles
+      method: POST
+      extension:
+        exposed: true
+        protected: true
+    - path: /v1/roles
+      method: GET
+      extension:
+        exposed: true
+        protected: true
+    - path: /v1/roles/{id}
+      method: DELETE
+      extension:
+        exposed: true
+        protected: true

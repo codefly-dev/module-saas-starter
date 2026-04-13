@@ -1,0 +1,27 @@
+path: /v1/webhooks
+routes:
+    - path: /v1/webhooks
+      method: POST
+      extension:
+        exposed: true
+        protected: true
+    - path: /v1/webhooks/{id}
+      method: DELETE
+      extension:
+        exposed: true
+        protected: true
+    - path: /v1/webhooks
+      method: GET
+      extension:
+        exposed: true
+        protected: true
+    - path: /v1/webhooks/{subscription_id}/deliveries
+      method: GET
+      extension:
+        exposed: true
+        protected: true
+    - path: /v1/webhooks/{id}:test
+      method: POST
+      extension:
+        exposed: true
+        protected: true

@@ -1,0 +1,17 @@
+path: /v1/billing
+routes:
+    - path: /v1/billing/webhook
+      method: POST
+      extension:
+        exposed: true
+        protected: false
+    - path: /v1/billing/checkout
+      method: POST
+      extension:
+        exposed: true
+        protected: true
+    - path: /v1/billing/portal
+      method: POST
+      extension:
+        exposed: true
+        protected: true

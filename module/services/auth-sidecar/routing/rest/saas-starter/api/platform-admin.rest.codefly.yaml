@@ -1,0 +1,62 @@
+path: /v1/platform
+routes:
+    - path: /v1/platform/users
+      method: GET
+      extension:
+        exposed: true
+        protected: true
+    - path: /v1/platform/users/{user_id}:suspend
+      method: POST
+      extension:
+        exposed: true
+        protected: true
+    - path: /v1/platform/users/{user_id}:unsuspend
+      method: POST
+      extension:
+        exposed: true
+        protected: true
+    - path: /v1/platform/users/{user_id}:impersonate
+      method: POST
+      extension:
+        exposed: true
+        protected: true
+    - path: /v1/platform/sessions
+      method: GET
+      extension:
+        exposed: true
+        protected: true
+    - path: /v1/platform/organizations/{org_id}/entitlements
+      method: GET
+      extension:
+        exposed: true
+        protected: true
+    - path: /v1/platform/organizations/{org_id}/entitlements
+      method: POST
+      extension:
+        exposed: true
+        protected: true
+    - path: /v1/platform/admins
+      method: POST
+      extension:
+        exposed: true
+        protected: true
+    - path: /v1/platform/admins/{user_id}
+      method: DELETE
+      extension:
+        exposed: true
+        protected: true
+    - path: /v1/platform/admins
+      method: GET
+      extension:
+        exposed: true
+        protected: true
+    - path: /v1/platform/feature-flags
+      method: GET
+      extension:
+        exposed: true
+        protected: true
+    - path: /v1/platform/feature-flags/{name}
+      method: PUT
+      extension:
+        exposed: true
+        protected: true

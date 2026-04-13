@@ -1,0 +1,32 @@
+path: /v1/organizations
+routes:
+    - path: /v1/organizations
+      method: POST
+      extension:
+        exposed: true
+        protected: true
+    - path: /v1/organizations/{id}
+      method: GET
+      extension:
+        exposed: true
+        protected: true
+    - path: /v1/organizations
+      method: GET
+      extension:
+        exposed: true
+        protected: true
+    - path: /v1/organizations/{org_id}/members
+      method: POST
+      extension:
+        exposed: true
+        protected: true
+    - path: /v1/organizations/{org_id}/members/{user_id}
+      method: DELETE
+      extension:
+        exposed: true
+        protected: true
+    - path: /v1/organizations/{org_id}/members
+      method: GET
+      extension:
+        exposed: true
+        protected: true

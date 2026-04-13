@@ -2,12 +2,16 @@ package main
 
 // Route configuration loader for the auth-sidecar gateway.
 //
-// Loads a static YAML file that explicitly whitelists every HTTP endpoint
-// the gateway is allowed to forward. Any request not matching an entry in
-// this file is rejected with 404 — zero prefix matching, zero implicit
-// exposure.
+// Loads route definitions from the folder-based *.rest.codefly.yaml files
+// under routing/rest/{module}/{service}/. Each file is one endpoint group.
+// Any request not matching an entry is rejected with 404 — zero prefix
+// matching, zero implicit exposure.
+//
+// This is the same pattern used by the KrakenD gateway agent in codefly,
+// reusing core's ExtendedRestRouteLoader[T].
 
 import (
+	"context"
 	"fmt"
 	"log"
 	"os"
@@ -15,141 +19,107 @@ import (
 	"runtime"
 	"strings"
 
-	"gopkg.in/yaml.v3"
+	"github.com/codefly-dev/core/resources"
 )
 
-// RouteConfig is the top-level structure of routes.codefly.yaml.
-type RouteConfig struct {
-	Routes []RouteEntry `yaml:"routes"`
+// RouteExtension carries the per-route auth configuration in the
+// extension field of *.rest.codefly.yaml files.
+type RouteExtension struct {
+	Exposed   bool `yaml:"exposed"`
+	Protected bool `yaml:"protected"`
 }
 
-// RouteEntry defines a single whitelisted endpoint.
+// RouteEntry is the internal representation used by the gateway.
 type RouteEntry struct {
-	Service string    `yaml:"service"`
-	Rest    *RestPath `yaml:"rest"`
-	Connect string    `yaml:"connect"`
-	Auth    string    `yaml:"auth"` // "required", "public", "mfa_pending"
-}
-
-// RestPath is the HTTP method + path for a REST endpoint.
-type RestPath struct {
-	Method string `yaml:"method"`
-	Path   string `yaml:"path"`
+	Service   string // upstream service name (from directory path)
+	Method    string // HTTP method
+	Path      string // HTTP path (may contain {param} segments)
+	Protected bool   // true = auth required, false = public
 }
 
 // RouteMatcher provides fast lookups against the loaded route config.
-// REST routes are keyed by "METHOD /path/pattern" and support path
-// parameters ({param} segments). Connect routes are exact-match.
 type RouteMatcher struct {
-	// restRoutes stores routes indexed by "METHOD" for linear scan
-	// within a method group. Each entry has pre-split path segments
-	// for parameter matching.
-	restRoutes map[string][]restRoute
-
-	// connectRoutes maps exact Connect RPC paths to their entry.
+	restRoutes    map[string][]restRoute
 	connectRoutes map[string]*RouteEntry
 }
 
-// restRoute is an internal representation with pre-split path segments.
 type restRoute struct {
-	segments []string // e.g. ["", "v1", "users", "{uuid}"]
+	segments []string
 	entry    *RouteEntry
 }
 
-// LoadRouteConfig reads and parses the route config YAML file.
-// It looks for the file at the given path; if empty, it defaults to
-// ../routing/routes.codefly.yaml relative to the source file (for dev)
-// or relative to the working directory.
-func LoadRouteConfig(path string) (*RouteConfig, error) {
-	if path == "" {
-		// Default: relative to the code directory
-		path = defaultRouteConfigPath()
-	}
-
-	data, err := os.ReadFile(path)
+// LoadRoutesFromDir loads all *.rest.codefly.yaml files from the routing
+// directory using core's ExtendedRestRouteLoader. Returns RouteEntry slice.
+func LoadRoutesFromDir(ctx context.Context, dir string) ([]*RouteEntry, error) {
+	loader, err := resources.NewExtendedRestRouteLoader[RouteExtension](ctx, dir)
 	if err != nil {
-		return nil, fmt.Errorf("routing: cannot read config %s: %w", path, err)
+		return nil, fmt.Errorf("routing: cannot create loader for %s: %w", dir, err)
+	}
+	if err := loader.Load(ctx); err != nil {
+		return nil, fmt.Errorf("routing: cannot load routes from %s: %w", dir, err)
 	}
 
-	var cfg RouteConfig
-	if err := yaml.Unmarshal(data, &cfg); err != nil {
-		return nil, fmt.Errorf("routing: cannot parse config %s: %w", path, err)
+	var entries []*RouteEntry
+	for _, route := range loader.All() {
+		if !route.Extension.Exposed {
+			continue // not exposed — skip
+		}
+		entries = append(entries, &RouteEntry{
+			Service:   "api", // all routes currently go to the api service
+			Method:    string(route.Method),
+			Path:      route.Path,
+			Protected: route.Extension.Protected,
+		})
 	}
 
-	// Validate entries.
-	for i, r := range cfg.Routes {
-		if r.Service == "" {
-			return nil, fmt.Errorf("routing: route %d missing service", i)
-		}
-		if r.Auth == "" {
-			return nil, fmt.Errorf("routing: route %d missing auth", i)
-		}
-		if r.Auth != "required" && r.Auth != "public" && r.Auth != "mfa_pending" {
-			return nil, fmt.Errorf("routing: route %d invalid auth %q", i, r.Auth)
-		}
-		if r.Rest == nil && r.Connect == "" {
-			return nil, fmt.Errorf("routing: route %d has neither rest nor connect path", i)
-		}
-	}
-
-	log.Printf("routing: loaded %d routes from %s", len(cfg.Routes), path)
-	return &cfg, nil
+	log.Printf("routing: loaded %d exposed routes from %s", len(entries), dir)
+	return entries, nil
 }
 
-// defaultRouteConfigPath returns the default path to routes.codefly.yaml.
-func defaultRouteConfigPath() string {
+// DefaultRoutingDir returns the default path to the routing/rest/ directory.
+func DefaultRoutingDir() string {
+	if env := os.Getenv("ROUTE_CONFIG_DIR"); env != "" {
+		return env
+	}
 	// Try relative to the source file first (works in dev/test).
 	_, filename, _, ok := runtime.Caller(0)
 	if ok {
 		dir := filepath.Dir(filename)
-		candidate := filepath.Join(dir, "..", "routing", "routes.codefly.yaml")
-		if _, err := os.Stat(candidate); err == nil {
+		candidate := filepath.Join(dir, "..", "routing", "rest")
+		if info, err := os.Stat(candidate); err == nil && info.IsDir() {
 			return candidate
 		}
 	}
-	// Fallback: relative to working directory.
-	return filepath.Join("..", "routing", "routes.codefly.yaml")
+	return filepath.Join("..", "routing", "rest")
 }
 
-// NewRouteMatcher builds a RouteMatcher from a loaded RouteConfig.
-func NewRouteMatcher(cfg *RouteConfig) *RouteMatcher {
+// NewRouteMatcher builds a RouteMatcher from loaded route entries.
+func NewRouteMatcher(entries []*RouteEntry) *RouteMatcher {
 	m := &RouteMatcher{
 		restRoutes:    make(map[string][]restRoute),
 		connectRoutes: make(map[string]*RouteEntry),
 	}
 
-	for i := range cfg.Routes {
-		entry := &cfg.Routes[i]
-
-		if entry.Rest != nil {
-			method := strings.ToUpper(entry.Rest.Method)
-			segments := strings.Split(entry.Rest.Path, "/")
-			m.restRoutes[method] = append(m.restRoutes[method], restRoute{
-				segments: segments,
-				entry:    entry,
-			})
-		}
-
-		if entry.Connect != "" {
-			m.connectRoutes[entry.Connect] = entry
-		}
+	for _, entry := range entries {
+		method := strings.ToUpper(entry.Method)
+		segments := strings.Split(entry.Path, "/")
+		m.restRoutes[method] = append(m.restRoutes[method], restRoute{
+			segments: segments,
+			entry:    entry,
+		})
 	}
 
 	return m
 }
 
 // MatchREST looks up a REST route by HTTP method and path.
-// Returns nil if no match. Supports path parameters: a config path
-// segment like {uuid} matches any value in the request path.
 func (m *RouteMatcher) MatchREST(method, path string) *RouteEntry {
 	method = strings.ToUpper(method)
 	candidates, ok := m.restRoutes[method]
 	if !ok {
 		return nil
 	}
-
 	reqSegments := strings.Split(path, "/")
-
 	for _, c := range candidates {
 		if matchSegments(c.segments, reqSegments) {
 			return c.entry
@@ -165,7 +135,6 @@ func (m *RouteMatcher) MatchConnect(path string) *RouteEntry {
 
 // Match tries Connect first (if path looks like one), then REST.
 func (m *RouteMatcher) Match(method, path string) *RouteEntry {
-	// Connect paths start with a slash followed by a package name containing a dot.
 	if isConnectPath(path) {
 		if entry := m.MatchConnect(path); entry != nil {
 			return entry
@@ -174,13 +143,10 @@ func (m *RouteMatcher) Match(method, path string) *RouteEntry {
 	return m.MatchREST(method, path)
 }
 
-// isConnectPath returns true if the path looks like a Connect RPC path
-// (e.g., /customers.AuthService/Authenticate).
 func isConnectPath(path string) bool {
 	if len(path) < 2 || path[0] != '/' {
 		return false
 	}
-	// Connect paths: /package.Service/Method — contain a dot before the second slash.
 	rest := path[1:]
 	slashIdx := strings.Index(rest, "/")
 	if slashIdx < 0 {
@@ -189,15 +155,12 @@ func isConnectPath(path string) bool {
 	return strings.Contains(rest[:slashIdx], ".")
 }
 
-// matchSegments compares a pattern (from the config) against a request
-// path, both split by "/". Segments wrapped in {} match any value.
 func matchSegments(pattern, request []string) bool {
 	if len(pattern) != len(request) {
 		return false
 	}
 	for i := range pattern {
 		if isParam(pattern[i]) {
-			// {param} matches any non-empty segment.
 			if request[i] == "" {
 				return false
 			}
@@ -210,7 +173,46 @@ func matchSegments(pattern, request []string) bool {
 	return true
 }
 
-// isParam returns true if the segment is a path parameter like {uuid}.
 func isParam(segment string) bool {
-	return len(segment) >= 3 && segment[0] == '{' && segment[len(segment)-1] == '}'
+	return len(segment) > 2 && segment[0] == '{' && segment[len(segment)-1] == '}'
+}
+
+// authMode returns "public" or "required" based on the entry's Protected field.
+func authMode(entry *RouteEntry) string {
+	if entry.Protected {
+		return "required"
+	}
+	return "public"
+}
+
+// EnvoyRouteEntry is the format that envoy.go expects. This bridges
+// the folder-based RouteEntry to the envoy config generator.
+type EnvoyRouteEntry struct {
+	Service string    `yaml:"service"`
+	Rest    *RestPath `yaml:"rest"`
+	Connect string    `yaml:"connect"`
+	Auth    string    `yaml:"auth"`
+}
+
+type RestPath struct {
+	Method string `yaml:"method"`
+	Path   string `yaml:"path"`
+}
+
+// EnvoyRouteConfig wraps entries for the envoy generator.
+type EnvoyRouteConfig struct {
+	Routes []EnvoyRouteEntry
+}
+
+// ToEnvoyConfig converts folder-based RouteEntries to EnvoyRouteConfig.
+func ToEnvoyConfig(entries []*RouteEntry) *EnvoyRouteConfig {
+	cfg := &EnvoyRouteConfig{}
+	for _, e := range entries {
+		cfg.Routes = append(cfg.Routes, EnvoyRouteEntry{
+			Service: e.Service,
+			Rest:    &RestPath{Method: e.Method, Path: e.Path},
+			Auth:    authMode(e),
+		})
+	}
+	return cfg
 }

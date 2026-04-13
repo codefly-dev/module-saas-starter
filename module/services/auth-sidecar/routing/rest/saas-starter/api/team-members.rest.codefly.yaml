@@ -1,0 +1,17 @@
+path: /v1/teams
+routes:
+    - path: /v1/teams/{team_id}/members
+      method: POST
+      extension:
+        exposed: true
+        protected: true
+    - path: /v1/teams/{team_id}/members/{user_id}
+      method: DELETE
+      extension:
+        exposed: true
+        protected: true
+    - path: /v1/teams/{team_id}/members
+      method: GET
+      extension:
+        exposed: true
+        protected: true

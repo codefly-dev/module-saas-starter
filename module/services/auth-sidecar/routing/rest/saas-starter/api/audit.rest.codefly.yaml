@@ -1,0 +1,7 @@
+path: /v1/audit-log
+routes:
+    - path: /v1/audit-log
+      method: GET
+      extension:
+        exposed: true
+        protected: true

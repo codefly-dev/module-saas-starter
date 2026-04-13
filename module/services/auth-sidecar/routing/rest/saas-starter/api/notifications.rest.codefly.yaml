@@ -1,0 +1,27 @@
+path: /v1/notifications
+routes:
+    - path: /v1/notifications
+      method: GET
+      extension:
+        exposed: true
+        protected: true
+    - path: /v1/notifications/unread-count
+      method: GET
+      extension:
+        exposed: true
+        protected: true
+    - path: /v1/notifications/{id}:read
+      method: POST
+      extension:
+        exposed: true
+        protected: true
+    - path: /v1/notifications:read-all
+      method: POST
+      extension:
+        exposed: true
+        protected: true
+    - path: /v1/notifications/{id}
+      method: DELETE
+      extension:
+        exposed: true
+        protected: true

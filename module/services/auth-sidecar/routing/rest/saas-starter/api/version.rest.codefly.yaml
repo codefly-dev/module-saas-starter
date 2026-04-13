@@ -1,0 +1,7 @@
+path: /v1/version
+routes:
+    - path: /v1/version
+      method: GET
+      extension:
+        exposed: true
+        protected: false

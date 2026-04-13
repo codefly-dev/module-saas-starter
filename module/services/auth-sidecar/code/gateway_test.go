@@ -38,36 +38,34 @@ func (f *fakeUpstream) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	_, _ = io.WriteString(w, f.body)
 }
 
-// testRouteConfig returns a minimal RouteConfig for testing.
-func testRouteConfig() *RouteConfig {
-	return &RouteConfig{
-		Routes: []RouteEntry{
-			// Public auth routes
-			{Service: "api", Rest: &RestPath{Method: "POST", Path: "/v1/auth/authenticate"}, Connect: "/customers.AuthService/Authenticate", Auth: "public"},
-			{Service: "api", Rest: &RestPath{Method: "POST", Path: "/v1/auth/refresh"}, Connect: "/customers.AuthService/RefreshToken", Auth: "public"},
-			{Service: "api", Rest: &RestPath{Method: "POST", Path: "/v1/auth/logout"}, Connect: "/customers.AuthService/Logout", Auth: "public"},
-			{Service: "api", Rest: &RestPath{Method: "GET", Path: "/v1/auth/.well-known/jwks.json"}, Connect: "/customers.AuthService/GetJWKS", Auth: "public"},
-			// MFA pending
-			{Service: "api", Rest: &RestPath{Method: "POST", Path: "/v1/mfa/totp/verify"}, Connect: "/customers.MFAService/VerifyTOTP", Auth: "mfa_pending"},
-			// Protected routes
-			{Service: "api", Rest: &RestPath{Method: "GET", Path: "/v1/users"}, Connect: "/customers.UserService/ListUsers", Auth: "required"},
-			{Service: "api", Rest: &RestPath{Method: "GET", Path: "/v1/users/{uuid}"}, Connect: "/customers.UserService/GetUser", Auth: "required"},
-			{Service: "api", Rest: &RestPath{Method: "GET", Path: "/v1/users/self"}, Connect: "/customers.UserService/GetSelf", Auth: "required"},
-			{Service: "api", Rest: &RestPath{Method: "POST", Path: "/v1/users"}, Connect: "/customers.UserService/RegisterUser", Auth: "required"},
-			{Service: "api", Rest: &RestPath{Method: "DELETE", Path: "/v1/users/{uuid}"}, Connect: "/customers.UserService/DeleteUser", Auth: "required"},
-			{Service: "api", Rest: &RestPath{Method: "POST", Path: "/v1/users/{user_uuid}/identities"}, Connect: "/customers.UserService/AddIdentity", Auth: "required"},
-			{Service: "api", Rest: &RestPath{Method: "GET", Path: "/v1/users/{user_uuid}/identities"}, Connect: "/customers.UserService/ListUserIdentities", Auth: "required"},
-			{Service: "api", Rest: &RestPath{Method: "DELETE", Path: "/v1/mfa/devices/{id}"}, Connect: "/customers.MFAService/RevokeDevice", Auth: "required"},
-			{Service: "api", Rest: &RestPath{Method: "GET", Path: "/v1/version"}, Auth: "public"},
-			// Billing webhook (public)
-			{Service: "api", Rest: &RestPath{Method: "POST", Path: "/v1/billing/webhook"}, Auth: "public"},
-			// Frontend
-			{Service: "frontend", Rest: &RestPath{Method: "GET", Path: "/"}, Auth: "public"},
-			// Health checks
-			{Service: "self", Rest: &RestPath{Method: "GET", Path: "/health"}, Auth: "public"},
-			{Service: "self", Rest: &RestPath{Method: "GET", Path: "/healthz"}, Auth: "public"},
-			{Service: "self", Rest: &RestPath{Method: "GET", Path: "/ready"}, Auth: "public"},
-		},
+// testRouteEntries returns a minimal set of RouteEntry for testing.
+func testRouteEntries() []*RouteEntry {
+	return []*RouteEntry{
+		// Public auth routes
+		{Service: "api", Method: "POST", Path: "/v1/auth/authenticate", Protected: false},
+		{Service: "api", Method: "POST", Path: "/v1/auth/refresh", Protected: false},
+		{Service: "api", Method: "POST", Path: "/v1/auth/logout", Protected: false},
+		{Service: "api", Method: "GET", Path: "/v1/auth/.well-known/jwks.json", Protected: false},
+		// MFA pending (treated as protected for gateway purposes)
+		{Service: "api", Method: "POST", Path: "/v1/mfa/totp/verify", Protected: true},
+		// Protected routes
+		{Service: "api", Method: "GET", Path: "/v1/users", Protected: true},
+		{Service: "api", Method: "GET", Path: "/v1/users/{uuid}", Protected: true},
+		{Service: "api", Method: "GET", Path: "/v1/users/self", Protected: true},
+		{Service: "api", Method: "POST", Path: "/v1/users", Protected: true},
+		{Service: "api", Method: "DELETE", Path: "/v1/users/{uuid}", Protected: true},
+		{Service: "api", Method: "POST", Path: "/v1/users/{user_uuid}/identities", Protected: true},
+		{Service: "api", Method: "GET", Path: "/v1/users/{user_uuid}/identities", Protected: true},
+		{Service: "api", Method: "DELETE", Path: "/v1/mfa/devices/{id}", Protected: true},
+		{Service: "api", Method: "GET", Path: "/v1/version", Protected: false},
+		// Billing webhook (public)
+		{Service: "api", Method: "POST", Path: "/v1/billing/webhook", Protected: false},
+		// Frontend
+		{Service: "frontend", Method: "GET", Path: "/", Protected: false},
+		// Health checks
+		{Service: "self", Method: "GET", Path: "/health", Protected: false},
+		{Service: "self", Method: "GET", Path: "/healthz", Protected: false},
+		{Service: "self", Method: "GET", Path: "/ready", Protected: false},
 	}
 }
 
@@ -94,8 +92,7 @@ func newGatewayHarness(t *testing.T) (*Gateway, *fakeUpstream, *fakeUpstream, ed
 	apiURL, _ := url.Parse(apiSrv.URL)
 	frontendURL, _ := url.Parse(frontendSrv.URL)
 
-	cfg := testRouteConfig()
-	matcher := NewRouteMatcher(cfg)
+	matcher := NewRouteMatcher(testRouteEntries())
 	upstreams := map[string]*url.URL{
 		"api":      apiURL,
 		"frontend": frontendURL,
@@ -255,32 +252,9 @@ func TestGateway_PathParameterMatching(t *testing.T) {
 // ============================================================================
 // Connect RPC path matching
 // ============================================================================
-
-func TestGateway_ConnectRPC_ExactMatch(t *testing.T) {
-	gw, apiFake, _, priv := newGatewayHarness(t)
-
-	token := signValidToken(t, priv)
-
-	// Valid Connect path — should match.
-	req := httptest.NewRequest(http.MethodPost, "/customers.UserService/ListUsers", nil)
-	req.Header.Set("authorization", "Bearer "+token)
-	w := httptest.NewRecorder()
-	gw.ServeHTTP(w, req)
-
-	require.Equal(t, 200, w.Code)
-	require.Equal(t, "/customers.UserService/ListUsers", apiFake.lastPath)
-}
-
-func TestGateway_ConnectRPC_PublicPath(t *testing.T) {
-	gw, apiFake, _, _ := newGatewayHarness(t)
-
-	req := httptest.NewRequest(http.MethodPost, "/customers.AuthService/Authenticate", nil)
-	w := httptest.NewRecorder()
-	gw.ServeHTTP(w, req)
-
-	require.Equal(t, 200, w.Code)
-	require.Equal(t, "/customers.AuthService/Authenticate", apiFake.lastPath)
-}
+// NOTE: Connect RPC routing is now handled by Envoy only (via EnvoyRouteEntry).
+// The Go gateway's RouteMatcher uses RouteEntry which has no Connect field.
+// Connect paths that don't match a REST route correctly return 404.
 
 func TestGateway_ConnectRPC_UnlistedMethod_404(t *testing.T) {
 	gw, _, _, _ := newGatewayHarness(t)
@@ -397,8 +371,7 @@ func TestGateway_NoRoute_404(t *testing.T) {
 	}
 
 	// Empty route config — nothing is whitelisted.
-	cfg := &RouteConfig{Routes: []RouteEntry{}}
-	matcher := NewRouteMatcher(cfg)
+	matcher := NewRouteMatcher([]*RouteEntry{})
 	gateway := NewGateway(sidecar, matcher, map[string]*url.URL{}, nil)
 
 	req := httptest.NewRequest(http.MethodGet, "/health", nil)
