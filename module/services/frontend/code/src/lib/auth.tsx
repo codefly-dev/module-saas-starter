@@ -21,7 +21,12 @@ import {
 } from "./admin-core";
 import { setToken as setConnectToken } from "./connect/token-store";
 
-const API_BASE = process.env.NEXT_PUBLIC_BACKEND_URL || "http://localhost:8080";
+// API REST endpoint injected by codefly via NEXT_PUBLIC_API_REST.
+// Falls back to direct API port for local dev without gateway.
+const API_BASE =
+  process.env.NEXT_PUBLIC_API_REST ||
+  process.env.NEXT_PUBLIC_BACKEND_URL ||
+  "http://localhost:5962";
 
 // OAuth provider configuration — read from env at build time. Add new
 // providers here as presets; the sign-in button takes a provider id.
