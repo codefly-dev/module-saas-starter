@@ -42,6 +42,16 @@ const (
 	PlatformAdminServiceName = "customers.PlatformAdminService"
 	// InvitationServiceName is the fully-qualified name of the InvitationService service.
 	InvitationServiceName = "customers.InvitationService"
+	// WebhookServiceName is the fully-qualified name of the WebhookService service.
+	WebhookServiceName = "customers.WebhookService"
+	// NotificationServiceName is the fully-qualified name of the NotificationService service.
+	NotificationServiceName = "customers.NotificationService"
+	// OnboardingServiceName is the fully-qualified name of the OnboardingService service.
+	OnboardingServiceName = "customers.OnboardingService"
+	// GDPRServiceName is the fully-qualified name of the GDPRService service.
+	GDPRServiceName = "customers.GDPRService"
+	// MFAServiceName is the fully-qualified name of the MFAService service.
+	MFAServiceName = "customers.MFAService"
 )
 
 // These constants are the fully-qualified names of the RPCs defined in this package. They're
@@ -93,6 +103,12 @@ const (
 	// OrganizationServiceListMembersProcedure is the fully-qualified name of the OrganizationService's
 	// ListMembers RPC.
 	OrganizationServiceListMembersProcedure = "/customers.OrganizationService/ListMembers"
+	// OrganizationServiceGetOrgSettingsProcedure is the fully-qualified name of the
+	// OrganizationService's GetOrgSettings RPC.
+	OrganizationServiceGetOrgSettingsProcedure = "/customers.OrganizationService/GetOrgSettings"
+	// OrganizationServiceUpdateOrgSettingsProcedure is the fully-qualified name of the
+	// OrganizationService's UpdateOrgSettings RPC.
+	OrganizationServiceUpdateOrgSettingsProcedure = "/customers.OrganizationService/UpdateOrgSettings"
 	// TeamServiceCreateTeamProcedure is the fully-qualified name of the TeamService's CreateTeam RPC.
 	TeamServiceCreateTeamProcedure = "/customers.TeamService/CreateTeam"
 	// TeamServiceListTeamsProcedure is the fully-qualified name of the TeamService's ListTeams RPC.
@@ -150,6 +166,9 @@ const (
 	// AuditServiceQueryAuditLogProcedure is the fully-qualified name of the AuditService's
 	// QueryAuditLog RPC.
 	AuditServiceQueryAuditLogProcedure = "/customers.AuditService/QueryAuditLog"
+	// AuditServiceExportAuditLogProcedure is the fully-qualified name of the AuditService's
+	// ExportAuditLog RPC.
+	AuditServiceExportAuditLogProcedure = "/customers.AuditService/ExportAuditLog"
 	// PlatformAdminServiceSearchUsersProcedure is the fully-qualified name of the
 	// PlatformAdminService's SearchUsers RPC.
 	PlatformAdminServiceSearchUsersProcedure = "/customers.PlatformAdminService/SearchUsers"
@@ -198,6 +217,68 @@ const (
 	// InvitationServiceRevokeInvitationProcedure is the fully-qualified name of the InvitationService's
 	// RevokeInvitation RPC.
 	InvitationServiceRevokeInvitationProcedure = "/customers.InvitationService/RevokeInvitation"
+	// WebhookServiceCreateSubscriptionProcedure is the fully-qualified name of the WebhookService's
+	// CreateSubscription RPC.
+	WebhookServiceCreateSubscriptionProcedure = "/customers.WebhookService/CreateSubscription"
+	// WebhookServiceDeleteSubscriptionProcedure is the fully-qualified name of the WebhookService's
+	// DeleteSubscription RPC.
+	WebhookServiceDeleteSubscriptionProcedure = "/customers.WebhookService/DeleteSubscription"
+	// WebhookServiceListSubscriptionsProcedure is the fully-qualified name of the WebhookService's
+	// ListSubscriptions RPC.
+	WebhookServiceListSubscriptionsProcedure = "/customers.WebhookService/ListSubscriptions"
+	// WebhookServiceListDeliveriesProcedure is the fully-qualified name of the WebhookService's
+	// ListDeliveries RPC.
+	WebhookServiceListDeliveriesProcedure = "/customers.WebhookService/ListDeliveries"
+	// WebhookServiceTestWebhookProcedure is the fully-qualified name of the WebhookService's
+	// TestWebhook RPC.
+	WebhookServiceTestWebhookProcedure = "/customers.WebhookService/TestWebhook"
+	// NotificationServiceListNotificationsProcedure is the fully-qualified name of the
+	// NotificationService's ListNotifications RPC.
+	NotificationServiceListNotificationsProcedure = "/customers.NotificationService/ListNotifications"
+	// NotificationServiceGetUnreadCountProcedure is the fully-qualified name of the
+	// NotificationService's GetUnreadCount RPC.
+	NotificationServiceGetUnreadCountProcedure = "/customers.NotificationService/GetUnreadCount"
+	// NotificationServiceMarkReadProcedure is the fully-qualified name of the NotificationService's
+	// MarkRead RPC.
+	NotificationServiceMarkReadProcedure = "/customers.NotificationService/MarkRead"
+	// NotificationServiceMarkAllReadProcedure is the fully-qualified name of the NotificationService's
+	// MarkAllRead RPC.
+	NotificationServiceMarkAllReadProcedure = "/customers.NotificationService/MarkAllRead"
+	// NotificationServiceDeleteNotificationProcedure is the fully-qualified name of the
+	// NotificationService's DeleteNotification RPC.
+	NotificationServiceDeleteNotificationProcedure = "/customers.NotificationService/DeleteNotification"
+	// OnboardingServiceGetProgressProcedure is the fully-qualified name of the OnboardingService's
+	// GetProgress RPC.
+	OnboardingServiceGetProgressProcedure = "/customers.OnboardingService/GetProgress"
+	// OnboardingServiceCompleteStepProcedure is the fully-qualified name of the OnboardingService's
+	// CompleteStep RPC.
+	OnboardingServiceCompleteStepProcedure = "/customers.OnboardingService/CompleteStep"
+	// OnboardingServiceSkipStepProcedure is the fully-qualified name of the OnboardingService's
+	// SkipStep RPC.
+	OnboardingServiceSkipStepProcedure = "/customers.OnboardingService/SkipStep"
+	// GDPRServiceRequestExportProcedure is the fully-qualified name of the GDPRService's RequestExport
+	// RPC.
+	GDPRServiceRequestExportProcedure = "/customers.GDPRService/RequestExport"
+	// GDPRServiceGetExportStatusProcedure is the fully-qualified name of the GDPRService's
+	// GetExportStatus RPC.
+	GDPRServiceGetExportStatusProcedure = "/customers.GDPRService/GetExportStatus"
+	// GDPRServiceRequestDeletionProcedure is the fully-qualified name of the GDPRService's
+	// RequestDeletion RPC.
+	GDPRServiceRequestDeletionProcedure = "/customers.GDPRService/RequestDeletion"
+	// GDPRServiceGetDeletionStatusProcedure is the fully-qualified name of the GDPRService's
+	// GetDeletionStatus RPC.
+	GDPRServiceGetDeletionStatusProcedure = "/customers.GDPRService/GetDeletionStatus"
+	// MFAServiceSetupTOTPProcedure is the fully-qualified name of the MFAService's SetupTOTP RPC.
+	MFAServiceSetupTOTPProcedure = "/customers.MFAService/SetupTOTP"
+	// MFAServiceVerifyTOTPProcedure is the fully-qualified name of the MFAService's VerifyTOTP RPC.
+	MFAServiceVerifyTOTPProcedure = "/customers.MFAService/VerifyTOTP"
+	// MFAServiceListDevicesProcedure is the fully-qualified name of the MFAService's ListDevices RPC.
+	MFAServiceListDevicesProcedure = "/customers.MFAService/ListDevices"
+	// MFAServiceRevokeDeviceProcedure is the fully-qualified name of the MFAService's RevokeDevice RPC.
+	MFAServiceRevokeDeviceProcedure = "/customers.MFAService/RevokeDevice"
+	// MFAServiceGenerateBackupCodesProcedure is the fully-qualified name of the MFAService's
+	// GenerateBackupCodes RPC.
+	MFAServiceGenerateBackupCodesProcedure = "/customers.MFAService/GenerateBackupCodes"
 )
 
 // UserServiceClient is a client for the customers.UserService service.
@@ -512,6 +593,8 @@ type OrganizationServiceClient interface {
 	AddMember(context.Context, *connect.Request[gen.AddOrgMemberRequest]) (*connect.Response[emptypb.Empty], error)
 	RemoveMember(context.Context, *connect.Request[gen.RemoveOrgMemberRequest]) (*connect.Response[emptypb.Empty], error)
 	ListMembers(context.Context, *connect.Request[gen.ListOrgMembersRequest]) (*connect.Response[gen.ListOrgMembersResponse], error)
+	GetOrgSettings(context.Context, *connect.Request[gen.GetOrgSettingsRequest]) (*connect.Response[gen.OrgSettings], error)
+	UpdateOrgSettings(context.Context, *connect.Request[gen.UpdateOrgSettingsRequest]) (*connect.Response[gen.OrgSettings], error)
 }
 
 // NewOrganizationServiceClient constructs a client for the customers.OrganizationService service.
@@ -561,6 +644,18 @@ func NewOrganizationServiceClient(httpClient connect.HTTPClient, baseURL string,
 			connect.WithSchema(organizationServiceMethods.ByName("ListMembers")),
 			connect.WithClientOptions(opts...),
 		),
+		getOrgSettings: connect.NewClient[gen.GetOrgSettingsRequest, gen.OrgSettings](
+			httpClient,
+			baseURL+OrganizationServiceGetOrgSettingsProcedure,
+			connect.WithSchema(organizationServiceMethods.ByName("GetOrgSettings")),
+			connect.WithClientOptions(opts...),
+		),
+		updateOrgSettings: connect.NewClient[gen.UpdateOrgSettingsRequest, gen.OrgSettings](
+			httpClient,
+			baseURL+OrganizationServiceUpdateOrgSettingsProcedure,
+			connect.WithSchema(organizationServiceMethods.ByName("UpdateOrgSettings")),
+			connect.WithClientOptions(opts...),
+		),
 	}
 }
 
@@ -572,6 +667,8 @@ type organizationServiceClient struct {
 	addMember          *connect.Client[gen.AddOrgMemberRequest, emptypb.Empty]
 	removeMember       *connect.Client[gen.RemoveOrgMemberRequest, emptypb.Empty]
 	listMembers        *connect.Client[gen.ListOrgMembersRequest, gen.ListOrgMembersResponse]
+	getOrgSettings     *connect.Client[gen.GetOrgSettingsRequest, gen.OrgSettings]
+	updateOrgSettings  *connect.Client[gen.UpdateOrgSettingsRequest, gen.OrgSettings]
 }
 
 // CreateOrganization calls customers.OrganizationService.CreateOrganization.
@@ -604,6 +701,16 @@ func (c *organizationServiceClient) ListMembers(ctx context.Context, req *connec
 	return c.listMembers.CallUnary(ctx, req)
 }
 
+// GetOrgSettings calls customers.OrganizationService.GetOrgSettings.
+func (c *organizationServiceClient) GetOrgSettings(ctx context.Context, req *connect.Request[gen.GetOrgSettingsRequest]) (*connect.Response[gen.OrgSettings], error) {
+	return c.getOrgSettings.CallUnary(ctx, req)
+}
+
+// UpdateOrgSettings calls customers.OrganizationService.UpdateOrgSettings.
+func (c *organizationServiceClient) UpdateOrgSettings(ctx context.Context, req *connect.Request[gen.UpdateOrgSettingsRequest]) (*connect.Response[gen.OrgSettings], error) {
+	return c.updateOrgSettings.CallUnary(ctx, req)
+}
+
 // OrganizationServiceHandler is an implementation of the customers.OrganizationService service.
 type OrganizationServiceHandler interface {
 	CreateOrganization(context.Context, *connect.Request[gen.CreateOrganizationRequest]) (*connect.Response[gen.CreateOrganizationResponse], error)
@@ -612,6 +719,8 @@ type OrganizationServiceHandler interface {
 	AddMember(context.Context, *connect.Request[gen.AddOrgMemberRequest]) (*connect.Response[emptypb.Empty], error)
 	RemoveMember(context.Context, *connect.Request[gen.RemoveOrgMemberRequest]) (*connect.Response[emptypb.Empty], error)
 	ListMembers(context.Context, *connect.Request[gen.ListOrgMembersRequest]) (*connect.Response[gen.ListOrgMembersResponse], error)
+	GetOrgSettings(context.Context, *connect.Request[gen.GetOrgSettingsRequest]) (*connect.Response[gen.OrgSettings], error)
+	UpdateOrgSettings(context.Context, *connect.Request[gen.UpdateOrgSettingsRequest]) (*connect.Response[gen.OrgSettings], error)
 }
 
 // NewOrganizationServiceHandler builds an HTTP handler from the service implementation. It returns
@@ -657,6 +766,18 @@ func NewOrganizationServiceHandler(svc OrganizationServiceHandler, opts ...conne
 		connect.WithSchema(organizationServiceMethods.ByName("ListMembers")),
 		connect.WithHandlerOptions(opts...),
 	)
+	organizationServiceGetOrgSettingsHandler := connect.NewUnaryHandler(
+		OrganizationServiceGetOrgSettingsProcedure,
+		svc.GetOrgSettings,
+		connect.WithSchema(organizationServiceMethods.ByName("GetOrgSettings")),
+		connect.WithHandlerOptions(opts...),
+	)
+	organizationServiceUpdateOrgSettingsHandler := connect.NewUnaryHandler(
+		OrganizationServiceUpdateOrgSettingsProcedure,
+		svc.UpdateOrgSettings,
+		connect.WithSchema(organizationServiceMethods.ByName("UpdateOrgSettings")),
+		connect.WithHandlerOptions(opts...),
+	)
 	return "/customers.OrganizationService/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case OrganizationServiceCreateOrganizationProcedure:
@@ -671,6 +792,10 @@ func NewOrganizationServiceHandler(svc OrganizationServiceHandler, opts ...conne
 			organizationServiceRemoveMemberHandler.ServeHTTP(w, r)
 		case OrganizationServiceListMembersProcedure:
 			organizationServiceListMembersHandler.ServeHTTP(w, r)
+		case OrganizationServiceGetOrgSettingsProcedure:
+			organizationServiceGetOrgSettingsHandler.ServeHTTP(w, r)
+		case OrganizationServiceUpdateOrgSettingsProcedure:
+			organizationServiceUpdateOrgSettingsHandler.ServeHTTP(w, r)
 		default:
 			http.NotFound(w, r)
 		}
@@ -702,6 +827,14 @@ func (UnimplementedOrganizationServiceHandler) RemoveMember(context.Context, *co
 
 func (UnimplementedOrganizationServiceHandler) ListMembers(context.Context, *connect.Request[gen.ListOrgMembersRequest]) (*connect.Response[gen.ListOrgMembersResponse], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("customers.OrganizationService.ListMembers is not implemented"))
+}
+
+func (UnimplementedOrganizationServiceHandler) GetOrgSettings(context.Context, *connect.Request[gen.GetOrgSettingsRequest]) (*connect.Response[gen.OrgSettings], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("customers.OrganizationService.GetOrgSettings is not implemented"))
+}
+
+func (UnimplementedOrganizationServiceHandler) UpdateOrgSettings(context.Context, *connect.Request[gen.UpdateOrgSettingsRequest]) (*connect.Response[gen.OrgSettings], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("customers.OrganizationService.UpdateOrgSettings is not implemented"))
 }
 
 // TeamServiceClient is a client for the customers.TeamService service.
@@ -1447,6 +1580,7 @@ func (UnimplementedAuthServiceHandler) GetJWKS(context.Context, *connect.Request
 // AuditServiceClient is a client for the customers.AuditService service.
 type AuditServiceClient interface {
 	QueryAuditLog(context.Context, *connect.Request[gen.QueryAuditLogRequest]) (*connect.Response[gen.QueryAuditLogResponse], error)
+	ExportAuditLog(context.Context, *connect.Request[gen.ExportAuditLogRequest]) (*connect.Response[gen.ExportAuditLogResponse], error)
 }
 
 // NewAuditServiceClient constructs a client for the customers.AuditService service. By default, it
@@ -1466,12 +1600,19 @@ func NewAuditServiceClient(httpClient connect.HTTPClient, baseURL string, opts .
 			connect.WithSchema(auditServiceMethods.ByName("QueryAuditLog")),
 			connect.WithClientOptions(opts...),
 		),
+		exportAuditLog: connect.NewClient[gen.ExportAuditLogRequest, gen.ExportAuditLogResponse](
+			httpClient,
+			baseURL+AuditServiceExportAuditLogProcedure,
+			connect.WithSchema(auditServiceMethods.ByName("ExportAuditLog")),
+			connect.WithClientOptions(opts...),
+		),
 	}
 }
 
 // auditServiceClient implements AuditServiceClient.
 type auditServiceClient struct {
-	queryAuditLog *connect.Client[gen.QueryAuditLogRequest, gen.QueryAuditLogResponse]
+	queryAuditLog  *connect.Client[gen.QueryAuditLogRequest, gen.QueryAuditLogResponse]
+	exportAuditLog *connect.Client[gen.ExportAuditLogRequest, gen.ExportAuditLogResponse]
 }
 
 // QueryAuditLog calls customers.AuditService.QueryAuditLog.
@@ -1479,9 +1620,15 @@ func (c *auditServiceClient) QueryAuditLog(ctx context.Context, req *connect.Req
 	return c.queryAuditLog.CallUnary(ctx, req)
 }
 
+// ExportAuditLog calls customers.AuditService.ExportAuditLog.
+func (c *auditServiceClient) ExportAuditLog(ctx context.Context, req *connect.Request[gen.ExportAuditLogRequest]) (*connect.Response[gen.ExportAuditLogResponse], error) {
+	return c.exportAuditLog.CallUnary(ctx, req)
+}
+
 // AuditServiceHandler is an implementation of the customers.AuditService service.
 type AuditServiceHandler interface {
 	QueryAuditLog(context.Context, *connect.Request[gen.QueryAuditLogRequest]) (*connect.Response[gen.QueryAuditLogResponse], error)
+	ExportAuditLog(context.Context, *connect.Request[gen.ExportAuditLogRequest]) (*connect.Response[gen.ExportAuditLogResponse], error)
 }
 
 // NewAuditServiceHandler builds an HTTP handler from the service implementation. It returns the
@@ -1497,10 +1644,18 @@ func NewAuditServiceHandler(svc AuditServiceHandler, opts ...connect.HandlerOpti
 		connect.WithSchema(auditServiceMethods.ByName("QueryAuditLog")),
 		connect.WithHandlerOptions(opts...),
 	)
+	auditServiceExportAuditLogHandler := connect.NewUnaryHandler(
+		AuditServiceExportAuditLogProcedure,
+		svc.ExportAuditLog,
+		connect.WithSchema(auditServiceMethods.ByName("ExportAuditLog")),
+		connect.WithHandlerOptions(opts...),
+	)
 	return "/customers.AuditService/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case AuditServiceQueryAuditLogProcedure:
 			auditServiceQueryAuditLogHandler.ServeHTTP(w, r)
+		case AuditServiceExportAuditLogProcedure:
+			auditServiceExportAuditLogHandler.ServeHTTP(w, r)
 		default:
 			http.NotFound(w, r)
 		}
@@ -1512,6 +1667,10 @@ type UnimplementedAuditServiceHandler struct{}
 
 func (UnimplementedAuditServiceHandler) QueryAuditLog(context.Context, *connect.Request[gen.QueryAuditLogRequest]) (*connect.Response[gen.QueryAuditLogResponse], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("customers.AuditService.QueryAuditLog is not implemented"))
+}
+
+func (UnimplementedAuditServiceHandler) ExportAuditLog(context.Context, *connect.Request[gen.ExportAuditLogRequest]) (*connect.Response[gen.ExportAuditLogResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("customers.AuditService.ExportAuditLog is not implemented"))
 }
 
 // PlatformAdminServiceClient is a client for the customers.PlatformAdminService service.
@@ -2026,4 +2185,796 @@ func (UnimplementedInvitationServiceHandler) ListInvitations(context.Context, *c
 
 func (UnimplementedInvitationServiceHandler) RevokeInvitation(context.Context, *connect.Request[gen.RevokeInvitationRequest]) (*connect.Response[emptypb.Empty], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("customers.InvitationService.RevokeInvitation is not implemented"))
+}
+
+// WebhookServiceClient is a client for the customers.WebhookService service.
+type WebhookServiceClient interface {
+	CreateSubscription(context.Context, *connect.Request[gen.CreateWebhookSubscriptionRequest]) (*connect.Response[gen.WebhookSubscription], error)
+	DeleteSubscription(context.Context, *connect.Request[gen.DeleteWebhookSubscriptionRequest]) (*connect.Response[emptypb.Empty], error)
+	ListSubscriptions(context.Context, *connect.Request[gen.ListWebhookSubscriptionsRequest]) (*connect.Response[gen.ListWebhookSubscriptionsResponse], error)
+	ListDeliveries(context.Context, *connect.Request[gen.ListWebhookDeliveriesRequest]) (*connect.Response[gen.ListWebhookDeliveriesResponse], error)
+	TestWebhook(context.Context, *connect.Request[gen.TestWebhookRequest]) (*connect.Response[gen.WebhookDelivery], error)
+}
+
+// NewWebhookServiceClient constructs a client for the customers.WebhookService service. By default,
+// it uses the Connect protocol with the binary Protobuf Codec, asks for gzipped responses, and
+// sends uncompressed requests. To use the gRPC or gRPC-Web protocols, supply the connect.WithGRPC()
+// or connect.WithGRPCWeb() options.
+//
+// The URL supplied here should be the base URL for the Connect or gRPC server (for example,
+// http://api.acme.com or https://acme.com/grpc).
+func NewWebhookServiceClient(httpClient connect.HTTPClient, baseURL string, opts ...connect.ClientOption) WebhookServiceClient {
+	baseURL = strings.TrimRight(baseURL, "/")
+	webhookServiceMethods := gen.File_user_proto.Services().ByName("WebhookService").Methods()
+	return &webhookServiceClient{
+		createSubscription: connect.NewClient[gen.CreateWebhookSubscriptionRequest, gen.WebhookSubscription](
+			httpClient,
+			baseURL+WebhookServiceCreateSubscriptionProcedure,
+			connect.WithSchema(webhookServiceMethods.ByName("CreateSubscription")),
+			connect.WithClientOptions(opts...),
+		),
+		deleteSubscription: connect.NewClient[gen.DeleteWebhookSubscriptionRequest, emptypb.Empty](
+			httpClient,
+			baseURL+WebhookServiceDeleteSubscriptionProcedure,
+			connect.WithSchema(webhookServiceMethods.ByName("DeleteSubscription")),
+			connect.WithClientOptions(opts...),
+		),
+		listSubscriptions: connect.NewClient[gen.ListWebhookSubscriptionsRequest, gen.ListWebhookSubscriptionsResponse](
+			httpClient,
+			baseURL+WebhookServiceListSubscriptionsProcedure,
+			connect.WithSchema(webhookServiceMethods.ByName("ListSubscriptions")),
+			connect.WithClientOptions(opts...),
+		),
+		listDeliveries: connect.NewClient[gen.ListWebhookDeliveriesRequest, gen.ListWebhookDeliveriesResponse](
+			httpClient,
+			baseURL+WebhookServiceListDeliveriesProcedure,
+			connect.WithSchema(webhookServiceMethods.ByName("ListDeliveries")),
+			connect.WithClientOptions(opts...),
+		),
+		testWebhook: connect.NewClient[gen.TestWebhookRequest, gen.WebhookDelivery](
+			httpClient,
+			baseURL+WebhookServiceTestWebhookProcedure,
+			connect.WithSchema(webhookServiceMethods.ByName("TestWebhook")),
+			connect.WithClientOptions(opts...),
+		),
+	}
+}
+
+// webhookServiceClient implements WebhookServiceClient.
+type webhookServiceClient struct {
+	createSubscription *connect.Client[gen.CreateWebhookSubscriptionRequest, gen.WebhookSubscription]
+	deleteSubscription *connect.Client[gen.DeleteWebhookSubscriptionRequest, emptypb.Empty]
+	listSubscriptions  *connect.Client[gen.ListWebhookSubscriptionsRequest, gen.ListWebhookSubscriptionsResponse]
+	listDeliveries     *connect.Client[gen.ListWebhookDeliveriesRequest, gen.ListWebhookDeliveriesResponse]
+	testWebhook        *connect.Client[gen.TestWebhookRequest, gen.WebhookDelivery]
+}
+
+// CreateSubscription calls customers.WebhookService.CreateSubscription.
+func (c *webhookServiceClient) CreateSubscription(ctx context.Context, req *connect.Request[gen.CreateWebhookSubscriptionRequest]) (*connect.Response[gen.WebhookSubscription], error) {
+	return c.createSubscription.CallUnary(ctx, req)
+}
+
+// DeleteSubscription calls customers.WebhookService.DeleteSubscription.
+func (c *webhookServiceClient) DeleteSubscription(ctx context.Context, req *connect.Request[gen.DeleteWebhookSubscriptionRequest]) (*connect.Response[emptypb.Empty], error) {
+	return c.deleteSubscription.CallUnary(ctx, req)
+}
+
+// ListSubscriptions calls customers.WebhookService.ListSubscriptions.
+func (c *webhookServiceClient) ListSubscriptions(ctx context.Context, req *connect.Request[gen.ListWebhookSubscriptionsRequest]) (*connect.Response[gen.ListWebhookSubscriptionsResponse], error) {
+	return c.listSubscriptions.CallUnary(ctx, req)
+}
+
+// ListDeliveries calls customers.WebhookService.ListDeliveries.
+func (c *webhookServiceClient) ListDeliveries(ctx context.Context, req *connect.Request[gen.ListWebhookDeliveriesRequest]) (*connect.Response[gen.ListWebhookDeliveriesResponse], error) {
+	return c.listDeliveries.CallUnary(ctx, req)
+}
+
+// TestWebhook calls customers.WebhookService.TestWebhook.
+func (c *webhookServiceClient) TestWebhook(ctx context.Context, req *connect.Request[gen.TestWebhookRequest]) (*connect.Response[gen.WebhookDelivery], error) {
+	return c.testWebhook.CallUnary(ctx, req)
+}
+
+// WebhookServiceHandler is an implementation of the customers.WebhookService service.
+type WebhookServiceHandler interface {
+	CreateSubscription(context.Context, *connect.Request[gen.CreateWebhookSubscriptionRequest]) (*connect.Response[gen.WebhookSubscription], error)
+	DeleteSubscription(context.Context, *connect.Request[gen.DeleteWebhookSubscriptionRequest]) (*connect.Response[emptypb.Empty], error)
+	ListSubscriptions(context.Context, *connect.Request[gen.ListWebhookSubscriptionsRequest]) (*connect.Response[gen.ListWebhookSubscriptionsResponse], error)
+	ListDeliveries(context.Context, *connect.Request[gen.ListWebhookDeliveriesRequest]) (*connect.Response[gen.ListWebhookDeliveriesResponse], error)
+	TestWebhook(context.Context, *connect.Request[gen.TestWebhookRequest]) (*connect.Response[gen.WebhookDelivery], error)
+}
+
+// NewWebhookServiceHandler builds an HTTP handler from the service implementation. It returns the
+// path on which to mount the handler and the handler itself.
+//
+// By default, handlers support the Connect, gRPC, and gRPC-Web protocols with the binary Protobuf
+// and JSON codecs. They also support gzip compression.
+func NewWebhookServiceHandler(svc WebhookServiceHandler, opts ...connect.HandlerOption) (string, http.Handler) {
+	webhookServiceMethods := gen.File_user_proto.Services().ByName("WebhookService").Methods()
+	webhookServiceCreateSubscriptionHandler := connect.NewUnaryHandler(
+		WebhookServiceCreateSubscriptionProcedure,
+		svc.CreateSubscription,
+		connect.WithSchema(webhookServiceMethods.ByName("CreateSubscription")),
+		connect.WithHandlerOptions(opts...),
+	)
+	webhookServiceDeleteSubscriptionHandler := connect.NewUnaryHandler(
+		WebhookServiceDeleteSubscriptionProcedure,
+		svc.DeleteSubscription,
+		connect.WithSchema(webhookServiceMethods.ByName("DeleteSubscription")),
+		connect.WithHandlerOptions(opts...),
+	)
+	webhookServiceListSubscriptionsHandler := connect.NewUnaryHandler(
+		WebhookServiceListSubscriptionsProcedure,
+		svc.ListSubscriptions,
+		connect.WithSchema(webhookServiceMethods.ByName("ListSubscriptions")),
+		connect.WithHandlerOptions(opts...),
+	)
+	webhookServiceListDeliveriesHandler := connect.NewUnaryHandler(
+		WebhookServiceListDeliveriesProcedure,
+		svc.ListDeliveries,
+		connect.WithSchema(webhookServiceMethods.ByName("ListDeliveries")),
+		connect.WithHandlerOptions(opts...),
+	)
+	webhookServiceTestWebhookHandler := connect.NewUnaryHandler(
+		WebhookServiceTestWebhookProcedure,
+		svc.TestWebhook,
+		connect.WithSchema(webhookServiceMethods.ByName("TestWebhook")),
+		connect.WithHandlerOptions(opts...),
+	)
+	return "/customers.WebhookService/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case WebhookServiceCreateSubscriptionProcedure:
+			webhookServiceCreateSubscriptionHandler.ServeHTTP(w, r)
+		case WebhookServiceDeleteSubscriptionProcedure:
+			webhookServiceDeleteSubscriptionHandler.ServeHTTP(w, r)
+		case WebhookServiceListSubscriptionsProcedure:
+			webhookServiceListSubscriptionsHandler.ServeHTTP(w, r)
+		case WebhookServiceListDeliveriesProcedure:
+			webhookServiceListDeliveriesHandler.ServeHTTP(w, r)
+		case WebhookServiceTestWebhookProcedure:
+			webhookServiceTestWebhookHandler.ServeHTTP(w, r)
+		default:
+			http.NotFound(w, r)
+		}
+	})
+}
+
+// UnimplementedWebhookServiceHandler returns CodeUnimplemented from all methods.
+type UnimplementedWebhookServiceHandler struct{}
+
+func (UnimplementedWebhookServiceHandler) CreateSubscription(context.Context, *connect.Request[gen.CreateWebhookSubscriptionRequest]) (*connect.Response[gen.WebhookSubscription], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("customers.WebhookService.CreateSubscription is not implemented"))
+}
+
+func (UnimplementedWebhookServiceHandler) DeleteSubscription(context.Context, *connect.Request[gen.DeleteWebhookSubscriptionRequest]) (*connect.Response[emptypb.Empty], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("customers.WebhookService.DeleteSubscription is not implemented"))
+}
+
+func (UnimplementedWebhookServiceHandler) ListSubscriptions(context.Context, *connect.Request[gen.ListWebhookSubscriptionsRequest]) (*connect.Response[gen.ListWebhookSubscriptionsResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("customers.WebhookService.ListSubscriptions is not implemented"))
+}
+
+func (UnimplementedWebhookServiceHandler) ListDeliveries(context.Context, *connect.Request[gen.ListWebhookDeliveriesRequest]) (*connect.Response[gen.ListWebhookDeliveriesResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("customers.WebhookService.ListDeliveries is not implemented"))
+}
+
+func (UnimplementedWebhookServiceHandler) TestWebhook(context.Context, *connect.Request[gen.TestWebhookRequest]) (*connect.Response[gen.WebhookDelivery], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("customers.WebhookService.TestWebhook is not implemented"))
+}
+
+// NotificationServiceClient is a client for the customers.NotificationService service.
+type NotificationServiceClient interface {
+	ListNotifications(context.Context, *connect.Request[gen.ListNotificationsRequest]) (*connect.Response[gen.ListNotificationsResponse], error)
+	GetUnreadCount(context.Context, *connect.Request[gen.GetUnreadCountRequest]) (*connect.Response[gen.GetUnreadCountResponse], error)
+	MarkRead(context.Context, *connect.Request[gen.MarkNotificationReadRequest]) (*connect.Response[emptypb.Empty], error)
+	MarkAllRead(context.Context, *connect.Request[gen.MarkAllNotificationsReadRequest]) (*connect.Response[emptypb.Empty], error)
+	DeleteNotification(context.Context, *connect.Request[gen.DeleteNotificationRequest]) (*connect.Response[emptypb.Empty], error)
+}
+
+// NewNotificationServiceClient constructs a client for the customers.NotificationService service.
+// By default, it uses the Connect protocol with the binary Protobuf Codec, asks for gzipped
+// responses, and sends uncompressed requests. To use the gRPC or gRPC-Web protocols, supply the
+// connect.WithGRPC() or connect.WithGRPCWeb() options.
+//
+// The URL supplied here should be the base URL for the Connect or gRPC server (for example,
+// http://api.acme.com or https://acme.com/grpc).
+func NewNotificationServiceClient(httpClient connect.HTTPClient, baseURL string, opts ...connect.ClientOption) NotificationServiceClient {
+	baseURL = strings.TrimRight(baseURL, "/")
+	notificationServiceMethods := gen.File_user_proto.Services().ByName("NotificationService").Methods()
+	return &notificationServiceClient{
+		listNotifications: connect.NewClient[gen.ListNotificationsRequest, gen.ListNotificationsResponse](
+			httpClient,
+			baseURL+NotificationServiceListNotificationsProcedure,
+			connect.WithSchema(notificationServiceMethods.ByName("ListNotifications")),
+			connect.WithClientOptions(opts...),
+		),
+		getUnreadCount: connect.NewClient[gen.GetUnreadCountRequest, gen.GetUnreadCountResponse](
+			httpClient,
+			baseURL+NotificationServiceGetUnreadCountProcedure,
+			connect.WithSchema(notificationServiceMethods.ByName("GetUnreadCount")),
+			connect.WithClientOptions(opts...),
+		),
+		markRead: connect.NewClient[gen.MarkNotificationReadRequest, emptypb.Empty](
+			httpClient,
+			baseURL+NotificationServiceMarkReadProcedure,
+			connect.WithSchema(notificationServiceMethods.ByName("MarkRead")),
+			connect.WithClientOptions(opts...),
+		),
+		markAllRead: connect.NewClient[gen.MarkAllNotificationsReadRequest, emptypb.Empty](
+			httpClient,
+			baseURL+NotificationServiceMarkAllReadProcedure,
+			connect.WithSchema(notificationServiceMethods.ByName("MarkAllRead")),
+			connect.WithClientOptions(opts...),
+		),
+		deleteNotification: connect.NewClient[gen.DeleteNotificationRequest, emptypb.Empty](
+			httpClient,
+			baseURL+NotificationServiceDeleteNotificationProcedure,
+			connect.WithSchema(notificationServiceMethods.ByName("DeleteNotification")),
+			connect.WithClientOptions(opts...),
+		),
+	}
+}
+
+// notificationServiceClient implements NotificationServiceClient.
+type notificationServiceClient struct {
+	listNotifications  *connect.Client[gen.ListNotificationsRequest, gen.ListNotificationsResponse]
+	getUnreadCount     *connect.Client[gen.GetUnreadCountRequest, gen.GetUnreadCountResponse]
+	markRead           *connect.Client[gen.MarkNotificationReadRequest, emptypb.Empty]
+	markAllRead        *connect.Client[gen.MarkAllNotificationsReadRequest, emptypb.Empty]
+	deleteNotification *connect.Client[gen.DeleteNotificationRequest, emptypb.Empty]
+}
+
+// ListNotifications calls customers.NotificationService.ListNotifications.
+func (c *notificationServiceClient) ListNotifications(ctx context.Context, req *connect.Request[gen.ListNotificationsRequest]) (*connect.Response[gen.ListNotificationsResponse], error) {
+	return c.listNotifications.CallUnary(ctx, req)
+}
+
+// GetUnreadCount calls customers.NotificationService.GetUnreadCount.
+func (c *notificationServiceClient) GetUnreadCount(ctx context.Context, req *connect.Request[gen.GetUnreadCountRequest]) (*connect.Response[gen.GetUnreadCountResponse], error) {
+	return c.getUnreadCount.CallUnary(ctx, req)
+}
+
+// MarkRead calls customers.NotificationService.MarkRead.
+func (c *notificationServiceClient) MarkRead(ctx context.Context, req *connect.Request[gen.MarkNotificationReadRequest]) (*connect.Response[emptypb.Empty], error) {
+	return c.markRead.CallUnary(ctx, req)
+}
+
+// MarkAllRead calls customers.NotificationService.MarkAllRead.
+func (c *notificationServiceClient) MarkAllRead(ctx context.Context, req *connect.Request[gen.MarkAllNotificationsReadRequest]) (*connect.Response[emptypb.Empty], error) {
+	return c.markAllRead.CallUnary(ctx, req)
+}
+
+// DeleteNotification calls customers.NotificationService.DeleteNotification.
+func (c *notificationServiceClient) DeleteNotification(ctx context.Context, req *connect.Request[gen.DeleteNotificationRequest]) (*connect.Response[emptypb.Empty], error) {
+	return c.deleteNotification.CallUnary(ctx, req)
+}
+
+// NotificationServiceHandler is an implementation of the customers.NotificationService service.
+type NotificationServiceHandler interface {
+	ListNotifications(context.Context, *connect.Request[gen.ListNotificationsRequest]) (*connect.Response[gen.ListNotificationsResponse], error)
+	GetUnreadCount(context.Context, *connect.Request[gen.GetUnreadCountRequest]) (*connect.Response[gen.GetUnreadCountResponse], error)
+	MarkRead(context.Context, *connect.Request[gen.MarkNotificationReadRequest]) (*connect.Response[emptypb.Empty], error)
+	MarkAllRead(context.Context, *connect.Request[gen.MarkAllNotificationsReadRequest]) (*connect.Response[emptypb.Empty], error)
+	DeleteNotification(context.Context, *connect.Request[gen.DeleteNotificationRequest]) (*connect.Response[emptypb.Empty], error)
+}
+
+// NewNotificationServiceHandler builds an HTTP handler from the service implementation. It returns
+// the path on which to mount the handler and the handler itself.
+//
+// By default, handlers support the Connect, gRPC, and gRPC-Web protocols with the binary Protobuf
+// and JSON codecs. They also support gzip compression.
+func NewNotificationServiceHandler(svc NotificationServiceHandler, opts ...connect.HandlerOption) (string, http.Handler) {
+	notificationServiceMethods := gen.File_user_proto.Services().ByName("NotificationService").Methods()
+	notificationServiceListNotificationsHandler := connect.NewUnaryHandler(
+		NotificationServiceListNotificationsProcedure,
+		svc.ListNotifications,
+		connect.WithSchema(notificationServiceMethods.ByName("ListNotifications")),
+		connect.WithHandlerOptions(opts...),
+	)
+	notificationServiceGetUnreadCountHandler := connect.NewUnaryHandler(
+		NotificationServiceGetUnreadCountProcedure,
+		svc.GetUnreadCount,
+		connect.WithSchema(notificationServiceMethods.ByName("GetUnreadCount")),
+		connect.WithHandlerOptions(opts...),
+	)
+	notificationServiceMarkReadHandler := connect.NewUnaryHandler(
+		NotificationServiceMarkReadProcedure,
+		svc.MarkRead,
+		connect.WithSchema(notificationServiceMethods.ByName("MarkRead")),
+		connect.WithHandlerOptions(opts...),
+	)
+	notificationServiceMarkAllReadHandler := connect.NewUnaryHandler(
+		NotificationServiceMarkAllReadProcedure,
+		svc.MarkAllRead,
+		connect.WithSchema(notificationServiceMethods.ByName("MarkAllRead")),
+		connect.WithHandlerOptions(opts...),
+	)
+	notificationServiceDeleteNotificationHandler := connect.NewUnaryHandler(
+		NotificationServiceDeleteNotificationProcedure,
+		svc.DeleteNotification,
+		connect.WithSchema(notificationServiceMethods.ByName("DeleteNotification")),
+		connect.WithHandlerOptions(opts...),
+	)
+	return "/customers.NotificationService/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case NotificationServiceListNotificationsProcedure:
+			notificationServiceListNotificationsHandler.ServeHTTP(w, r)
+		case NotificationServiceGetUnreadCountProcedure:
+			notificationServiceGetUnreadCountHandler.ServeHTTP(w, r)
+		case NotificationServiceMarkReadProcedure:
+			notificationServiceMarkReadHandler.ServeHTTP(w, r)
+		case NotificationServiceMarkAllReadProcedure:
+			notificationServiceMarkAllReadHandler.ServeHTTP(w, r)
+		case NotificationServiceDeleteNotificationProcedure:
+			notificationServiceDeleteNotificationHandler.ServeHTTP(w, r)
+		default:
+			http.NotFound(w, r)
+		}
+	})
+}
+
+// UnimplementedNotificationServiceHandler returns CodeUnimplemented from all methods.
+type UnimplementedNotificationServiceHandler struct{}
+
+func (UnimplementedNotificationServiceHandler) ListNotifications(context.Context, *connect.Request[gen.ListNotificationsRequest]) (*connect.Response[gen.ListNotificationsResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("customers.NotificationService.ListNotifications is not implemented"))
+}
+
+func (UnimplementedNotificationServiceHandler) GetUnreadCount(context.Context, *connect.Request[gen.GetUnreadCountRequest]) (*connect.Response[gen.GetUnreadCountResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("customers.NotificationService.GetUnreadCount is not implemented"))
+}
+
+func (UnimplementedNotificationServiceHandler) MarkRead(context.Context, *connect.Request[gen.MarkNotificationReadRequest]) (*connect.Response[emptypb.Empty], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("customers.NotificationService.MarkRead is not implemented"))
+}
+
+func (UnimplementedNotificationServiceHandler) MarkAllRead(context.Context, *connect.Request[gen.MarkAllNotificationsReadRequest]) (*connect.Response[emptypb.Empty], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("customers.NotificationService.MarkAllRead is not implemented"))
+}
+
+func (UnimplementedNotificationServiceHandler) DeleteNotification(context.Context, *connect.Request[gen.DeleteNotificationRequest]) (*connect.Response[emptypb.Empty], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("customers.NotificationService.DeleteNotification is not implemented"))
+}
+
+// OnboardingServiceClient is a client for the customers.OnboardingService service.
+type OnboardingServiceClient interface {
+	GetProgress(context.Context, *connect.Request[gen.GetOnboardingProgressRequest]) (*connect.Response[gen.OnboardingProgress], error)
+	CompleteStep(context.Context, *connect.Request[gen.CompleteOnboardingStepRequest]) (*connect.Response[gen.OnboardingProgress], error)
+	SkipStep(context.Context, *connect.Request[gen.SkipOnboardingStepRequest]) (*connect.Response[gen.OnboardingProgress], error)
+}
+
+// NewOnboardingServiceClient constructs a client for the customers.OnboardingService service. By
+// default, it uses the Connect protocol with the binary Protobuf Codec, asks for gzipped responses,
+// and sends uncompressed requests. To use the gRPC or gRPC-Web protocols, supply the
+// connect.WithGRPC() or connect.WithGRPCWeb() options.
+//
+// The URL supplied here should be the base URL for the Connect or gRPC server (for example,
+// http://api.acme.com or https://acme.com/grpc).
+func NewOnboardingServiceClient(httpClient connect.HTTPClient, baseURL string, opts ...connect.ClientOption) OnboardingServiceClient {
+	baseURL = strings.TrimRight(baseURL, "/")
+	onboardingServiceMethods := gen.File_user_proto.Services().ByName("OnboardingService").Methods()
+	return &onboardingServiceClient{
+		getProgress: connect.NewClient[gen.GetOnboardingProgressRequest, gen.OnboardingProgress](
+			httpClient,
+			baseURL+OnboardingServiceGetProgressProcedure,
+			connect.WithSchema(onboardingServiceMethods.ByName("GetProgress")),
+			connect.WithClientOptions(opts...),
+		),
+		completeStep: connect.NewClient[gen.CompleteOnboardingStepRequest, gen.OnboardingProgress](
+			httpClient,
+			baseURL+OnboardingServiceCompleteStepProcedure,
+			connect.WithSchema(onboardingServiceMethods.ByName("CompleteStep")),
+			connect.WithClientOptions(opts...),
+		),
+		skipStep: connect.NewClient[gen.SkipOnboardingStepRequest, gen.OnboardingProgress](
+			httpClient,
+			baseURL+OnboardingServiceSkipStepProcedure,
+			connect.WithSchema(onboardingServiceMethods.ByName("SkipStep")),
+			connect.WithClientOptions(opts...),
+		),
+	}
+}
+
+// onboardingServiceClient implements OnboardingServiceClient.
+type onboardingServiceClient struct {
+	getProgress  *connect.Client[gen.GetOnboardingProgressRequest, gen.OnboardingProgress]
+	completeStep *connect.Client[gen.CompleteOnboardingStepRequest, gen.OnboardingProgress]
+	skipStep     *connect.Client[gen.SkipOnboardingStepRequest, gen.OnboardingProgress]
+}
+
+// GetProgress calls customers.OnboardingService.GetProgress.
+func (c *onboardingServiceClient) GetProgress(ctx context.Context, req *connect.Request[gen.GetOnboardingProgressRequest]) (*connect.Response[gen.OnboardingProgress], error) {
+	return c.getProgress.CallUnary(ctx, req)
+}
+
+// CompleteStep calls customers.OnboardingService.CompleteStep.
+func (c *onboardingServiceClient) CompleteStep(ctx context.Context, req *connect.Request[gen.CompleteOnboardingStepRequest]) (*connect.Response[gen.OnboardingProgress], error) {
+	return c.completeStep.CallUnary(ctx, req)
+}
+
+// SkipStep calls customers.OnboardingService.SkipStep.
+func (c *onboardingServiceClient) SkipStep(ctx context.Context, req *connect.Request[gen.SkipOnboardingStepRequest]) (*connect.Response[gen.OnboardingProgress], error) {
+	return c.skipStep.CallUnary(ctx, req)
+}
+
+// OnboardingServiceHandler is an implementation of the customers.OnboardingService service.
+type OnboardingServiceHandler interface {
+	GetProgress(context.Context, *connect.Request[gen.GetOnboardingProgressRequest]) (*connect.Response[gen.OnboardingProgress], error)
+	CompleteStep(context.Context, *connect.Request[gen.CompleteOnboardingStepRequest]) (*connect.Response[gen.OnboardingProgress], error)
+	SkipStep(context.Context, *connect.Request[gen.SkipOnboardingStepRequest]) (*connect.Response[gen.OnboardingProgress], error)
+}
+
+// NewOnboardingServiceHandler builds an HTTP handler from the service implementation. It returns
+// the path on which to mount the handler and the handler itself.
+//
+// By default, handlers support the Connect, gRPC, and gRPC-Web protocols with the binary Protobuf
+// and JSON codecs. They also support gzip compression.
+func NewOnboardingServiceHandler(svc OnboardingServiceHandler, opts ...connect.HandlerOption) (string, http.Handler) {
+	onboardingServiceMethods := gen.File_user_proto.Services().ByName("OnboardingService").Methods()
+	onboardingServiceGetProgressHandler := connect.NewUnaryHandler(
+		OnboardingServiceGetProgressProcedure,
+		svc.GetProgress,
+		connect.WithSchema(onboardingServiceMethods.ByName("GetProgress")),
+		connect.WithHandlerOptions(opts...),
+	)
+	onboardingServiceCompleteStepHandler := connect.NewUnaryHandler(
+		OnboardingServiceCompleteStepProcedure,
+		svc.CompleteStep,
+		connect.WithSchema(onboardingServiceMethods.ByName("CompleteStep")),
+		connect.WithHandlerOptions(opts...),
+	)
+	onboardingServiceSkipStepHandler := connect.NewUnaryHandler(
+		OnboardingServiceSkipStepProcedure,
+		svc.SkipStep,
+		connect.WithSchema(onboardingServiceMethods.ByName("SkipStep")),
+		connect.WithHandlerOptions(opts...),
+	)
+	return "/customers.OnboardingService/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case OnboardingServiceGetProgressProcedure:
+			onboardingServiceGetProgressHandler.ServeHTTP(w, r)
+		case OnboardingServiceCompleteStepProcedure:
+			onboardingServiceCompleteStepHandler.ServeHTTP(w, r)
+		case OnboardingServiceSkipStepProcedure:
+			onboardingServiceSkipStepHandler.ServeHTTP(w, r)
+		default:
+			http.NotFound(w, r)
+		}
+	})
+}
+
+// UnimplementedOnboardingServiceHandler returns CodeUnimplemented from all methods.
+type UnimplementedOnboardingServiceHandler struct{}
+
+func (UnimplementedOnboardingServiceHandler) GetProgress(context.Context, *connect.Request[gen.GetOnboardingProgressRequest]) (*connect.Response[gen.OnboardingProgress], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("customers.OnboardingService.GetProgress is not implemented"))
+}
+
+func (UnimplementedOnboardingServiceHandler) CompleteStep(context.Context, *connect.Request[gen.CompleteOnboardingStepRequest]) (*connect.Response[gen.OnboardingProgress], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("customers.OnboardingService.CompleteStep is not implemented"))
+}
+
+func (UnimplementedOnboardingServiceHandler) SkipStep(context.Context, *connect.Request[gen.SkipOnboardingStepRequest]) (*connect.Response[gen.OnboardingProgress], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("customers.OnboardingService.SkipStep is not implemented"))
+}
+
+// GDPRServiceClient is a client for the customers.GDPRService service.
+type GDPRServiceClient interface {
+	RequestExport(context.Context, *connect.Request[gen.RequestDataExportRequest]) (*connect.Response[gen.GDPRRequest], error)
+	GetExportStatus(context.Context, *connect.Request[gen.GetExportStatusRequest]) (*connect.Response[gen.GDPRRequest], error)
+	RequestDeletion(context.Context, *connect.Request[gen.RequestDeletionRequest]) (*connect.Response[gen.GDPRRequest], error)
+	GetDeletionStatus(context.Context, *connect.Request[gen.GetDeletionStatusRequest]) (*connect.Response[gen.GDPRRequest], error)
+}
+
+// NewGDPRServiceClient constructs a client for the customers.GDPRService service. By default, it
+// uses the Connect protocol with the binary Protobuf Codec, asks for gzipped responses, and sends
+// uncompressed requests. To use the gRPC or gRPC-Web protocols, supply the connect.WithGRPC() or
+// connect.WithGRPCWeb() options.
+//
+// The URL supplied here should be the base URL for the Connect or gRPC server (for example,
+// http://api.acme.com or https://acme.com/grpc).
+func NewGDPRServiceClient(httpClient connect.HTTPClient, baseURL string, opts ...connect.ClientOption) GDPRServiceClient {
+	baseURL = strings.TrimRight(baseURL, "/")
+	gDPRServiceMethods := gen.File_user_proto.Services().ByName("GDPRService").Methods()
+	return &gDPRServiceClient{
+		requestExport: connect.NewClient[gen.RequestDataExportRequest, gen.GDPRRequest](
+			httpClient,
+			baseURL+GDPRServiceRequestExportProcedure,
+			connect.WithSchema(gDPRServiceMethods.ByName("RequestExport")),
+			connect.WithClientOptions(opts...),
+		),
+		getExportStatus: connect.NewClient[gen.GetExportStatusRequest, gen.GDPRRequest](
+			httpClient,
+			baseURL+GDPRServiceGetExportStatusProcedure,
+			connect.WithSchema(gDPRServiceMethods.ByName("GetExportStatus")),
+			connect.WithClientOptions(opts...),
+		),
+		requestDeletion: connect.NewClient[gen.RequestDeletionRequest, gen.GDPRRequest](
+			httpClient,
+			baseURL+GDPRServiceRequestDeletionProcedure,
+			connect.WithSchema(gDPRServiceMethods.ByName("RequestDeletion")),
+			connect.WithClientOptions(opts...),
+		),
+		getDeletionStatus: connect.NewClient[gen.GetDeletionStatusRequest, gen.GDPRRequest](
+			httpClient,
+			baseURL+GDPRServiceGetDeletionStatusProcedure,
+			connect.WithSchema(gDPRServiceMethods.ByName("GetDeletionStatus")),
+			connect.WithClientOptions(opts...),
+		),
+	}
+}
+
+// gDPRServiceClient implements GDPRServiceClient.
+type gDPRServiceClient struct {
+	requestExport     *connect.Client[gen.RequestDataExportRequest, gen.GDPRRequest]
+	getExportStatus   *connect.Client[gen.GetExportStatusRequest, gen.GDPRRequest]
+	requestDeletion   *connect.Client[gen.RequestDeletionRequest, gen.GDPRRequest]
+	getDeletionStatus *connect.Client[gen.GetDeletionStatusRequest, gen.GDPRRequest]
+}
+
+// RequestExport calls customers.GDPRService.RequestExport.
+func (c *gDPRServiceClient) RequestExport(ctx context.Context, req *connect.Request[gen.RequestDataExportRequest]) (*connect.Response[gen.GDPRRequest], error) {
+	return c.requestExport.CallUnary(ctx, req)
+}
+
+// GetExportStatus calls customers.GDPRService.GetExportStatus.
+func (c *gDPRServiceClient) GetExportStatus(ctx context.Context, req *connect.Request[gen.GetExportStatusRequest]) (*connect.Response[gen.GDPRRequest], error) {
+	return c.getExportStatus.CallUnary(ctx, req)
+}
+
+// RequestDeletion calls customers.GDPRService.RequestDeletion.
+func (c *gDPRServiceClient) RequestDeletion(ctx context.Context, req *connect.Request[gen.RequestDeletionRequest]) (*connect.Response[gen.GDPRRequest], error) {
+	return c.requestDeletion.CallUnary(ctx, req)
+}
+
+// GetDeletionStatus calls customers.GDPRService.GetDeletionStatus.
+func (c *gDPRServiceClient) GetDeletionStatus(ctx context.Context, req *connect.Request[gen.GetDeletionStatusRequest]) (*connect.Response[gen.GDPRRequest], error) {
+	return c.getDeletionStatus.CallUnary(ctx, req)
+}
+
+// GDPRServiceHandler is an implementation of the customers.GDPRService service.
+type GDPRServiceHandler interface {
+	RequestExport(context.Context, *connect.Request[gen.RequestDataExportRequest]) (*connect.Response[gen.GDPRRequest], error)
+	GetExportStatus(context.Context, *connect.Request[gen.GetExportStatusRequest]) (*connect.Response[gen.GDPRRequest], error)
+	RequestDeletion(context.Context, *connect.Request[gen.RequestDeletionRequest]) (*connect.Response[gen.GDPRRequest], error)
+	GetDeletionStatus(context.Context, *connect.Request[gen.GetDeletionStatusRequest]) (*connect.Response[gen.GDPRRequest], error)
+}
+
+// NewGDPRServiceHandler builds an HTTP handler from the service implementation. It returns the path
+// on which to mount the handler and the handler itself.
+//
+// By default, handlers support the Connect, gRPC, and gRPC-Web protocols with the binary Protobuf
+// and JSON codecs. They also support gzip compression.
+func NewGDPRServiceHandler(svc GDPRServiceHandler, opts ...connect.HandlerOption) (string, http.Handler) {
+	gDPRServiceMethods := gen.File_user_proto.Services().ByName("GDPRService").Methods()
+	gDPRServiceRequestExportHandler := connect.NewUnaryHandler(
+		GDPRServiceRequestExportProcedure,
+		svc.RequestExport,
+		connect.WithSchema(gDPRServiceMethods.ByName("RequestExport")),
+		connect.WithHandlerOptions(opts...),
+	)
+	gDPRServiceGetExportStatusHandler := connect.NewUnaryHandler(
+		GDPRServiceGetExportStatusProcedure,
+		svc.GetExportStatus,
+		connect.WithSchema(gDPRServiceMethods.ByName("GetExportStatus")),
+		connect.WithHandlerOptions(opts...),
+	)
+	gDPRServiceRequestDeletionHandler := connect.NewUnaryHandler(
+		GDPRServiceRequestDeletionProcedure,
+		svc.RequestDeletion,
+		connect.WithSchema(gDPRServiceMethods.ByName("RequestDeletion")),
+		connect.WithHandlerOptions(opts...),
+	)
+	gDPRServiceGetDeletionStatusHandler := connect.NewUnaryHandler(
+		GDPRServiceGetDeletionStatusProcedure,
+		svc.GetDeletionStatus,
+		connect.WithSchema(gDPRServiceMethods.ByName("GetDeletionStatus")),
+		connect.WithHandlerOptions(opts...),
+	)
+	return "/customers.GDPRService/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case GDPRServiceRequestExportProcedure:
+			gDPRServiceRequestExportHandler.ServeHTTP(w, r)
+		case GDPRServiceGetExportStatusProcedure:
+			gDPRServiceGetExportStatusHandler.ServeHTTP(w, r)
+		case GDPRServiceRequestDeletionProcedure:
+			gDPRServiceRequestDeletionHandler.ServeHTTP(w, r)
+		case GDPRServiceGetDeletionStatusProcedure:
+			gDPRServiceGetDeletionStatusHandler.ServeHTTP(w, r)
+		default:
+			http.NotFound(w, r)
+		}
+	})
+}
+
+// UnimplementedGDPRServiceHandler returns CodeUnimplemented from all methods.
+type UnimplementedGDPRServiceHandler struct{}
+
+func (UnimplementedGDPRServiceHandler) RequestExport(context.Context, *connect.Request[gen.RequestDataExportRequest]) (*connect.Response[gen.GDPRRequest], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("customers.GDPRService.RequestExport is not implemented"))
+}
+
+func (UnimplementedGDPRServiceHandler) GetExportStatus(context.Context, *connect.Request[gen.GetExportStatusRequest]) (*connect.Response[gen.GDPRRequest], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("customers.GDPRService.GetExportStatus is not implemented"))
+}
+
+func (UnimplementedGDPRServiceHandler) RequestDeletion(context.Context, *connect.Request[gen.RequestDeletionRequest]) (*connect.Response[gen.GDPRRequest], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("customers.GDPRService.RequestDeletion is not implemented"))
+}
+
+func (UnimplementedGDPRServiceHandler) GetDeletionStatus(context.Context, *connect.Request[gen.GetDeletionStatusRequest]) (*connect.Response[gen.GDPRRequest], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("customers.GDPRService.GetDeletionStatus is not implemented"))
+}
+
+// MFAServiceClient is a client for the customers.MFAService service.
+type MFAServiceClient interface {
+	SetupTOTP(context.Context, *connect.Request[gen.SetupTOTPRequest]) (*connect.Response[gen.SetupTOTPResponse], error)
+	VerifyTOTP(context.Context, *connect.Request[gen.VerifyTOTPRequest]) (*connect.Response[gen.VerifyTOTPResponse], error)
+	ListDevices(context.Context, *connect.Request[gen.ListMFADevicesRequest]) (*connect.Response[gen.ListMFADevicesResponse], error)
+	RevokeDevice(context.Context, *connect.Request[gen.RevokeMFADeviceRequest]) (*connect.Response[emptypb.Empty], error)
+	GenerateBackupCodes(context.Context, *connect.Request[gen.GenerateBackupCodesRequest]) (*connect.Response[gen.GenerateBackupCodesResponse], error)
+}
+
+// NewMFAServiceClient constructs a client for the customers.MFAService service. By default, it uses
+// the Connect protocol with the binary Protobuf Codec, asks for gzipped responses, and sends
+// uncompressed requests. To use the gRPC or gRPC-Web protocols, supply the connect.WithGRPC() or
+// connect.WithGRPCWeb() options.
+//
+// The URL supplied here should be the base URL for the Connect or gRPC server (for example,
+// http://api.acme.com or https://acme.com/grpc).
+func NewMFAServiceClient(httpClient connect.HTTPClient, baseURL string, opts ...connect.ClientOption) MFAServiceClient {
+	baseURL = strings.TrimRight(baseURL, "/")
+	mFAServiceMethods := gen.File_user_proto.Services().ByName("MFAService").Methods()
+	return &mFAServiceClient{
+		setupTOTP: connect.NewClient[gen.SetupTOTPRequest, gen.SetupTOTPResponse](
+			httpClient,
+			baseURL+MFAServiceSetupTOTPProcedure,
+			connect.WithSchema(mFAServiceMethods.ByName("SetupTOTP")),
+			connect.WithClientOptions(opts...),
+		),
+		verifyTOTP: connect.NewClient[gen.VerifyTOTPRequest, gen.VerifyTOTPResponse](
+			httpClient,
+			baseURL+MFAServiceVerifyTOTPProcedure,
+			connect.WithSchema(mFAServiceMethods.ByName("VerifyTOTP")),
+			connect.WithClientOptions(opts...),
+		),
+		listDevices: connect.NewClient[gen.ListMFADevicesRequest, gen.ListMFADevicesResponse](
+			httpClient,
+			baseURL+MFAServiceListDevicesProcedure,
+			connect.WithSchema(mFAServiceMethods.ByName("ListDevices")),
+			connect.WithClientOptions(opts...),
+		),
+		revokeDevice: connect.NewClient[gen.RevokeMFADeviceRequest, emptypb.Empty](
+			httpClient,
+			baseURL+MFAServiceRevokeDeviceProcedure,
+			connect.WithSchema(mFAServiceMethods.ByName("RevokeDevice")),
+			connect.WithClientOptions(opts...),
+		),
+		generateBackupCodes: connect.NewClient[gen.GenerateBackupCodesRequest, gen.GenerateBackupCodesResponse](
+			httpClient,
+			baseURL+MFAServiceGenerateBackupCodesProcedure,
+			connect.WithSchema(mFAServiceMethods.ByName("GenerateBackupCodes")),
+			connect.WithClientOptions(opts...),
+		),
+	}
+}
+
+// mFAServiceClient implements MFAServiceClient.
+type mFAServiceClient struct {
+	setupTOTP           *connect.Client[gen.SetupTOTPRequest, gen.SetupTOTPResponse]
+	verifyTOTP          *connect.Client[gen.VerifyTOTPRequest, gen.VerifyTOTPResponse]
+	listDevices         *connect.Client[gen.ListMFADevicesRequest, gen.ListMFADevicesResponse]
+	revokeDevice        *connect.Client[gen.RevokeMFADeviceRequest, emptypb.Empty]
+	generateBackupCodes *connect.Client[gen.GenerateBackupCodesRequest, gen.GenerateBackupCodesResponse]
+}
+
+// SetupTOTP calls customers.MFAService.SetupTOTP.
+func (c *mFAServiceClient) SetupTOTP(ctx context.Context, req *connect.Request[gen.SetupTOTPRequest]) (*connect.Response[gen.SetupTOTPResponse], error) {
+	return c.setupTOTP.CallUnary(ctx, req)
+}
+
+// VerifyTOTP calls customers.MFAService.VerifyTOTP.
+func (c *mFAServiceClient) VerifyTOTP(ctx context.Context, req *connect.Request[gen.VerifyTOTPRequest]) (*connect.Response[gen.VerifyTOTPResponse], error) {
+	return c.verifyTOTP.CallUnary(ctx, req)
+}
+
+// ListDevices calls customers.MFAService.ListDevices.
+func (c *mFAServiceClient) ListDevices(ctx context.Context, req *connect.Request[gen.ListMFADevicesRequest]) (*connect.Response[gen.ListMFADevicesResponse], error) {
+	return c.listDevices.CallUnary(ctx, req)
+}
+
+// RevokeDevice calls customers.MFAService.RevokeDevice.
+func (c *mFAServiceClient) RevokeDevice(ctx context.Context, req *connect.Request[gen.RevokeMFADeviceRequest]) (*connect.Response[emptypb.Empty], error) {
+	return c.revokeDevice.CallUnary(ctx, req)
+}
+
+// GenerateBackupCodes calls customers.MFAService.GenerateBackupCodes.
+func (c *mFAServiceClient) GenerateBackupCodes(ctx context.Context, req *connect.Request[gen.GenerateBackupCodesRequest]) (*connect.Response[gen.GenerateBackupCodesResponse], error) {
+	return c.generateBackupCodes.CallUnary(ctx, req)
+}
+
+// MFAServiceHandler is an implementation of the customers.MFAService service.
+type MFAServiceHandler interface {
+	SetupTOTP(context.Context, *connect.Request[gen.SetupTOTPRequest]) (*connect.Response[gen.SetupTOTPResponse], error)
+	VerifyTOTP(context.Context, *connect.Request[gen.VerifyTOTPRequest]) (*connect.Response[gen.VerifyTOTPResponse], error)
+	ListDevices(context.Context, *connect.Request[gen.ListMFADevicesRequest]) (*connect.Response[gen.ListMFADevicesResponse], error)
+	RevokeDevice(context.Context, *connect.Request[gen.RevokeMFADeviceRequest]) (*connect.Response[emptypb.Empty], error)
+	GenerateBackupCodes(context.Context, *connect.Request[gen.GenerateBackupCodesRequest]) (*connect.Response[gen.GenerateBackupCodesResponse], error)
+}
+
+// NewMFAServiceHandler builds an HTTP handler from the service implementation. It returns the path
+// on which to mount the handler and the handler itself.
+//
+// By default, handlers support the Connect, gRPC, and gRPC-Web protocols with the binary Protobuf
+// and JSON codecs. They also support gzip compression.
+func NewMFAServiceHandler(svc MFAServiceHandler, opts ...connect.HandlerOption) (string, http.Handler) {
+	mFAServiceMethods := gen.File_user_proto.Services().ByName("MFAService").Methods()
+	mFAServiceSetupTOTPHandler := connect.NewUnaryHandler(
+		MFAServiceSetupTOTPProcedure,
+		svc.SetupTOTP,
+		connect.WithSchema(mFAServiceMethods.ByName("SetupTOTP")),
+		connect.WithHandlerOptions(opts...),
+	)
+	mFAServiceVerifyTOTPHandler := connect.NewUnaryHandler(
+		MFAServiceVerifyTOTPProcedure,
+		svc.VerifyTOTP,
+		connect.WithSchema(mFAServiceMethods.ByName("VerifyTOTP")),
+		connect.WithHandlerOptions(opts...),
+	)
+	mFAServiceListDevicesHandler := connect.NewUnaryHandler(
+		MFAServiceListDevicesProcedure,
+		svc.ListDevices,
+		connect.WithSchema(mFAServiceMethods.ByName("ListDevices")),
+		connect.WithHandlerOptions(opts...),
+	)
+	mFAServiceRevokeDeviceHandler := connect.NewUnaryHandler(
+		MFAServiceRevokeDeviceProcedure,
+		svc.RevokeDevice,
+		connect.WithSchema(mFAServiceMethods.ByName("RevokeDevice")),
+		connect.WithHandlerOptions(opts...),
+	)
+	mFAServiceGenerateBackupCodesHandler := connect.NewUnaryHandler(
+		MFAServiceGenerateBackupCodesProcedure,
+		svc.GenerateBackupCodes,
+		connect.WithSchema(mFAServiceMethods.ByName("GenerateBackupCodes")),
+		connect.WithHandlerOptions(opts...),
+	)
+	return "/customers.MFAService/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case MFAServiceSetupTOTPProcedure:
+			mFAServiceSetupTOTPHandler.ServeHTTP(w, r)
+		case MFAServiceVerifyTOTPProcedure:
+			mFAServiceVerifyTOTPHandler.ServeHTTP(w, r)
+		case MFAServiceListDevicesProcedure:
+			mFAServiceListDevicesHandler.ServeHTTP(w, r)
+		case MFAServiceRevokeDeviceProcedure:
+			mFAServiceRevokeDeviceHandler.ServeHTTP(w, r)
+		case MFAServiceGenerateBackupCodesProcedure:
+			mFAServiceGenerateBackupCodesHandler.ServeHTTP(w, r)
+		default:
+			http.NotFound(w, r)
+		}
+	})
+}
+
+// UnimplementedMFAServiceHandler returns CodeUnimplemented from all methods.
+type UnimplementedMFAServiceHandler struct{}
+
+func (UnimplementedMFAServiceHandler) SetupTOTP(context.Context, *connect.Request[gen.SetupTOTPRequest]) (*connect.Response[gen.SetupTOTPResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("customers.MFAService.SetupTOTP is not implemented"))
+}
+
+func (UnimplementedMFAServiceHandler) VerifyTOTP(context.Context, *connect.Request[gen.VerifyTOTPRequest]) (*connect.Response[gen.VerifyTOTPResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("customers.MFAService.VerifyTOTP is not implemented"))
+}
+
+func (UnimplementedMFAServiceHandler) ListDevices(context.Context, *connect.Request[gen.ListMFADevicesRequest]) (*connect.Response[gen.ListMFADevicesResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("customers.MFAService.ListDevices is not implemented"))
+}
+
+func (UnimplementedMFAServiceHandler) RevokeDevice(context.Context, *connect.Request[gen.RevokeMFADeviceRequest]) (*connect.Response[emptypb.Empty], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("customers.MFAService.RevokeDevice is not implemented"))
+}
+
+func (UnimplementedMFAServiceHandler) GenerateBackupCodes(context.Context, *connect.Request[gen.GenerateBackupCodesRequest]) (*connect.Response[gen.GenerateBackupCodesResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("customers.MFAService.GenerateBackupCodes is not implemented"))
 }

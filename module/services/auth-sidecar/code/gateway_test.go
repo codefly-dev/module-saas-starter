@@ -92,7 +92,7 @@ func newGatewayHarness(t *testing.T) (*Gateway, *fakeUpstream, *fakeUpstream, ed
 	apiURL, _ := url.Parse(apiSrv.URL)
 	frontendURL, _ := url.Parse(frontendSrv.URL)
 
-	matcher := NewRouteMatcher(testRouteEntries())
+	matcher := NewRouteMatcher(testRouteEntries(), nil)
 	upstreams := map[string]*url.URL{
 		"api":      apiURL,
 		"frontend": frontendURL,
@@ -371,7 +371,7 @@ func TestGateway_NoRoute_404(t *testing.T) {
 	}
 
 	// Empty route config — nothing is whitelisted.
-	matcher := NewRouteMatcher([]*RouteEntry{})
+	matcher := NewRouteMatcher([]*RouteEntry{}, nil)
 	gateway := NewGateway(sidecar, matcher, map[string]*url.URL{}, nil)
 
 	req := httptest.NewRequest(http.MethodGet, "/health", nil)

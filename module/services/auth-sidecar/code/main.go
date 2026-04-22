@@ -96,34 +96,38 @@ func main() {
 	fmt.Printf("auth-sidecar gRPC (ext_authz) listening on :%d (api: %s, jwt: %v)\n",
 		grpcPort, apiAddr, publicKey != nil)
 
-	// Load route config from folder-based *.rest.codefly.yaml files.
+	// Load REST routes from folder-based *.rest.codefly.yaml files.
 	routingDir := DefaultRoutingDir()
-	routeEntries, err := LoadRoutesFromDir(ctx, routingDir)
+	restEntries, err := LoadRoutesFromDir(ctx, routingDir)
 	if err != nil {
 		panic(fmt.Sprintf("failed to load routes from %s: %v", routingDir, err))
 	}
-	matcher := NewRouteMatcher(routeEntries)
+	// Discover Connect RPC paths from the customers proto package.
+	connectEntries, err := LoadConnectRoutesFromProto(ctx, "customers")
+	if err != nil {
+		panic(fmt.Sprintf("failed to load connect routes: %v", err))
+	}
+	matcher := NewRouteMatcher(restEntries, connectEntries)
+	routeEntries := append(restEntries, connectEntries...)
 
 	// HTTP gateway listener — the single public ingress in dev.
 	var httpServer *http.Server
 	var rateLimiter *RateLimiter
 	if httpPort > 0 {
 		// Build upstream map from codefly network mappings.
+		// REST and Connect live on different ports of the api binary, so they
+		// get distinct upstream keys matching the Service field on RouteEntry.
 		upstreams := make(map[string]*url.URL)
 		if apiHTTPURL != "" {
 			upstreams["api"] = MustURL(apiHTTPURL)
 		}
-		// If Connect URL is available, use it for api Connect paths;
-		// otherwise fall back to the REST URL.
 		if apiConnectURL != "" {
-			// Connect routes also target "api" service — the matcher
-			// resolves both REST and Connect to the same service name.
-			// We prefer the Connect URL when available.
-			// Note: both REST and Connect map to "api" in the route config.
-			// The gateway uses the same upstream for both.
-			if _, ok := upstreams["api"]; !ok {
-				upstreams["api"] = MustURL(apiConnectURL)
-			}
+			upstreams["api_connect"] = MustURL(apiConnectURL)
+		} else if apiHTTPURL != "" {
+			// Fall back to the REST upstream so Connect paths at least hit the
+			// api binary; grpc-gateway's REST server won't serve them but it's
+			// better than a bad gateway error during partial rollouts.
+			upstreams["api_connect"] = MustURL(apiHTTPURL)
 		}
 		if frontendURL != "" {
 			upstreams["frontend"] = MustURL(frontendURL)

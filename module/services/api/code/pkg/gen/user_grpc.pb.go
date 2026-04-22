@@ -474,6 +474,8 @@ const (
 	OrganizationService_AddMember_FullMethodName          = "/customers.OrganizationService/AddMember"
 	OrganizationService_RemoveMember_FullMethodName       = "/customers.OrganizationService/RemoveMember"
 	OrganizationService_ListMembers_FullMethodName        = "/customers.OrganizationService/ListMembers"
+	OrganizationService_GetOrgSettings_FullMethodName     = "/customers.OrganizationService/GetOrgSettings"
+	OrganizationService_UpdateOrgSettings_FullMethodName  = "/customers.OrganizationService/UpdateOrgSettings"
 )
 
 // OrganizationServiceClient is the client API for OrganizationService service.
@@ -488,6 +490,8 @@ type OrganizationServiceClient interface {
 	AddMember(ctx context.Context, in *AddOrgMemberRequest, opts ...grpc.CallOption) (*emptypb.Empty, error)
 	RemoveMember(ctx context.Context, in *RemoveOrgMemberRequest, opts ...grpc.CallOption) (*emptypb.Empty, error)
 	ListMembers(ctx context.Context, in *ListOrgMembersRequest, opts ...grpc.CallOption) (*ListOrgMembersResponse, error)
+	GetOrgSettings(ctx context.Context, in *GetOrgSettingsRequest, opts ...grpc.CallOption) (*OrgSettings, error)
+	UpdateOrgSettings(ctx context.Context, in *UpdateOrgSettingsRequest, opts ...grpc.CallOption) (*OrgSettings, error)
 }
 
 type organizationServiceClient struct {
@@ -558,6 +562,26 @@ func (c *organizationServiceClient) ListMembers(ctx context.Context, in *ListOrg
 	return out, nil
 }
 
+func (c *organizationServiceClient) GetOrgSettings(ctx context.Context, in *GetOrgSettingsRequest, opts ...grpc.CallOption) (*OrgSettings, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(OrgSettings)
+	err := c.cc.Invoke(ctx, OrganizationService_GetOrgSettings_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *organizationServiceClient) UpdateOrgSettings(ctx context.Context, in *UpdateOrgSettingsRequest, opts ...grpc.CallOption) (*OrgSettings, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(OrgSettings)
+	err := c.cc.Invoke(ctx, OrganizationService_UpdateOrgSettings_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // OrganizationServiceServer is the server API for OrganizationService service.
 // All implementations must embed UnimplementedOrganizationServiceServer
 // for forward compatibility.
@@ -570,6 +594,8 @@ type OrganizationServiceServer interface {
 	AddMember(context.Context, *AddOrgMemberRequest) (*emptypb.Empty, error)
 	RemoveMember(context.Context, *RemoveOrgMemberRequest) (*emptypb.Empty, error)
 	ListMembers(context.Context, *ListOrgMembersRequest) (*ListOrgMembersResponse, error)
+	GetOrgSettings(context.Context, *GetOrgSettingsRequest) (*OrgSettings, error)
+	UpdateOrgSettings(context.Context, *UpdateOrgSettingsRequest) (*OrgSettings, error)
 	mustEmbedUnimplementedOrganizationServiceServer()
 }
 
@@ -597,6 +623,12 @@ func (UnimplementedOrganizationServiceServer) RemoveMember(context.Context, *Rem
 }
 func (UnimplementedOrganizationServiceServer) ListMembers(context.Context, *ListOrgMembersRequest) (*ListOrgMembersResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method ListMembers not implemented")
+}
+func (UnimplementedOrganizationServiceServer) GetOrgSettings(context.Context, *GetOrgSettingsRequest) (*OrgSettings, error) {
+	return nil, status.Error(codes.Unimplemented, "method GetOrgSettings not implemented")
+}
+func (UnimplementedOrganizationServiceServer) UpdateOrgSettings(context.Context, *UpdateOrgSettingsRequest) (*OrgSettings, error) {
+	return nil, status.Error(codes.Unimplemented, "method UpdateOrgSettings not implemented")
 }
 func (UnimplementedOrganizationServiceServer) mustEmbedUnimplementedOrganizationServiceServer() {}
 func (UnimplementedOrganizationServiceServer) testEmbeddedByValue()                             {}
@@ -727,6 +759,42 @@ func _OrganizationService_ListMembers_Handler(srv interface{}, ctx context.Conte
 	return interceptor(ctx, in, info, handler)
 }
 
+func _OrganizationService_GetOrgSettings_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(GetOrgSettingsRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(OrganizationServiceServer).GetOrgSettings(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: OrganizationService_GetOrgSettings_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(OrganizationServiceServer).GetOrgSettings(ctx, req.(*GetOrgSettingsRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _OrganizationService_UpdateOrgSettings_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(UpdateOrgSettingsRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(OrganizationServiceServer).UpdateOrgSettings(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: OrganizationService_UpdateOrgSettings_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(OrganizationServiceServer).UpdateOrgSettings(ctx, req.(*UpdateOrgSettingsRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // OrganizationService_ServiceDesc is the grpc.ServiceDesc for OrganizationService service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -757,6 +825,14 @@ var OrganizationService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "ListMembers",
 			Handler:    _OrganizationService_ListMembers_Handler,
+		},
+		{
+			MethodName: "GetOrgSettings",
+			Handler:    _OrganizationService_GetOrgSettings_Handler,
+		},
+		{
+			MethodName: "UpdateOrgSettings",
+			Handler:    _OrganizationService_UpdateOrgSettings_Handler,
 		},
 	},
 	Streams:  []grpc.StreamDesc{},
@@ -1864,7 +1940,8 @@ var AuthService_ServiceDesc = grpc.ServiceDesc{
 }
 
 const (
-	AuditService_QueryAuditLog_FullMethodName = "/customers.AuditService/QueryAuditLog"
+	AuditService_QueryAuditLog_FullMethodName  = "/customers.AuditService/QueryAuditLog"
+	AuditService_ExportAuditLog_FullMethodName = "/customers.AuditService/ExportAuditLog"
 )
 
 // AuditServiceClient is the client API for AuditService service.
@@ -1874,6 +1951,7 @@ const (
 // AuditService — append-only audit event log
 type AuditServiceClient interface {
 	QueryAuditLog(ctx context.Context, in *QueryAuditLogRequest, opts ...grpc.CallOption) (*QueryAuditLogResponse, error)
+	ExportAuditLog(ctx context.Context, in *ExportAuditLogRequest, opts ...grpc.CallOption) (*ExportAuditLogResponse, error)
 }
 
 type auditServiceClient struct {
@@ -1894,6 +1972,16 @@ func (c *auditServiceClient) QueryAuditLog(ctx context.Context, in *QueryAuditLo
 	return out, nil
 }
 
+func (c *auditServiceClient) ExportAuditLog(ctx context.Context, in *ExportAuditLogRequest, opts ...grpc.CallOption) (*ExportAuditLogResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ExportAuditLogResponse)
+	err := c.cc.Invoke(ctx, AuditService_ExportAuditLog_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // AuditServiceServer is the server API for AuditService service.
 // All implementations must embed UnimplementedAuditServiceServer
 // for forward compatibility.
@@ -1901,6 +1989,7 @@ func (c *auditServiceClient) QueryAuditLog(ctx context.Context, in *QueryAuditLo
 // AuditService — append-only audit event log
 type AuditServiceServer interface {
 	QueryAuditLog(context.Context, *QueryAuditLogRequest) (*QueryAuditLogResponse, error)
+	ExportAuditLog(context.Context, *ExportAuditLogRequest) (*ExportAuditLogResponse, error)
 	mustEmbedUnimplementedAuditServiceServer()
 }
 
@@ -1913,6 +2002,9 @@ type UnimplementedAuditServiceServer struct{}
 
 func (UnimplementedAuditServiceServer) QueryAuditLog(context.Context, *QueryAuditLogRequest) (*QueryAuditLogResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method QueryAuditLog not implemented")
+}
+func (UnimplementedAuditServiceServer) ExportAuditLog(context.Context, *ExportAuditLogRequest) (*ExportAuditLogResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method ExportAuditLog not implemented")
 }
 func (UnimplementedAuditServiceServer) mustEmbedUnimplementedAuditServiceServer() {}
 func (UnimplementedAuditServiceServer) testEmbeddedByValue()                      {}
@@ -1953,6 +2045,24 @@ func _AuditService_QueryAuditLog_Handler(srv interface{}, ctx context.Context, d
 	return interceptor(ctx, in, info, handler)
 }
 
+func _AuditService_ExportAuditLog_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ExportAuditLogRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(AuditServiceServer).ExportAuditLog(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: AuditService_ExportAuditLog_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(AuditServiceServer).ExportAuditLog(ctx, req.(*ExportAuditLogRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // AuditService_ServiceDesc is the grpc.ServiceDesc for AuditService service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -1963,6 +2073,10 @@ var AuditService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "QueryAuditLog",
 			Handler:    _AuditService_QueryAuditLog_Handler,
+		},
+		{
+			MethodName: "ExportAuditLog",
+			Handler:    _AuditService_ExportAuditLog_Handler,
 		},
 	},
 	Streams:  []grpc.StreamDesc{},
@@ -2719,6 +2833,1182 @@ var InvitationService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "RevokeInvitation",
 			Handler:    _InvitationService_RevokeInvitation_Handler,
+		},
+	},
+	Streams:  []grpc.StreamDesc{},
+	Metadata: "user.proto",
+}
+
+const (
+	WebhookService_CreateSubscription_FullMethodName = "/customers.WebhookService/CreateSubscription"
+	WebhookService_DeleteSubscription_FullMethodName = "/customers.WebhookService/DeleteSubscription"
+	WebhookService_ListSubscriptions_FullMethodName  = "/customers.WebhookService/ListSubscriptions"
+	WebhookService_ListDeliveries_FullMethodName     = "/customers.WebhookService/ListDeliveries"
+	WebhookService_TestWebhook_FullMethodName        = "/customers.WebhookService/TestWebhook"
+)
+
+// WebhookServiceClient is the client API for WebhookService service.
+//
+// For semantics around ctx use and closing/ending streaming RPCs, please refer to https://pkg.go.dev/google.golang.org/grpc/?tab=doc#ClientConn.NewStream.
+//
+// WebhookService — webhook subscription and delivery management
+type WebhookServiceClient interface {
+	CreateSubscription(ctx context.Context, in *CreateWebhookSubscriptionRequest, opts ...grpc.CallOption) (*WebhookSubscription, error)
+	DeleteSubscription(ctx context.Context, in *DeleteWebhookSubscriptionRequest, opts ...grpc.CallOption) (*emptypb.Empty, error)
+	ListSubscriptions(ctx context.Context, in *ListWebhookSubscriptionsRequest, opts ...grpc.CallOption) (*ListWebhookSubscriptionsResponse, error)
+	ListDeliveries(ctx context.Context, in *ListWebhookDeliveriesRequest, opts ...grpc.CallOption) (*ListWebhookDeliveriesResponse, error)
+	TestWebhook(ctx context.Context, in *TestWebhookRequest, opts ...grpc.CallOption) (*WebhookDelivery, error)
+}
+
+type webhookServiceClient struct {
+	cc grpc.ClientConnInterface
+}
+
+func NewWebhookServiceClient(cc grpc.ClientConnInterface) WebhookServiceClient {
+	return &webhookServiceClient{cc}
+}
+
+func (c *webhookServiceClient) CreateSubscription(ctx context.Context, in *CreateWebhookSubscriptionRequest, opts ...grpc.CallOption) (*WebhookSubscription, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(WebhookSubscription)
+	err := c.cc.Invoke(ctx, WebhookService_CreateSubscription_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *webhookServiceClient) DeleteSubscription(ctx context.Context, in *DeleteWebhookSubscriptionRequest, opts ...grpc.CallOption) (*emptypb.Empty, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(emptypb.Empty)
+	err := c.cc.Invoke(ctx, WebhookService_DeleteSubscription_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *webhookServiceClient) ListSubscriptions(ctx context.Context, in *ListWebhookSubscriptionsRequest, opts ...grpc.CallOption) (*ListWebhookSubscriptionsResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ListWebhookSubscriptionsResponse)
+	err := c.cc.Invoke(ctx, WebhookService_ListSubscriptions_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *webhookServiceClient) ListDeliveries(ctx context.Context, in *ListWebhookDeliveriesRequest, opts ...grpc.CallOption) (*ListWebhookDeliveriesResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ListWebhookDeliveriesResponse)
+	err := c.cc.Invoke(ctx, WebhookService_ListDeliveries_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *webhookServiceClient) TestWebhook(ctx context.Context, in *TestWebhookRequest, opts ...grpc.CallOption) (*WebhookDelivery, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(WebhookDelivery)
+	err := c.cc.Invoke(ctx, WebhookService_TestWebhook_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+// WebhookServiceServer is the server API for WebhookService service.
+// All implementations must embed UnimplementedWebhookServiceServer
+// for forward compatibility.
+//
+// WebhookService — webhook subscription and delivery management
+type WebhookServiceServer interface {
+	CreateSubscription(context.Context, *CreateWebhookSubscriptionRequest) (*WebhookSubscription, error)
+	DeleteSubscription(context.Context, *DeleteWebhookSubscriptionRequest) (*emptypb.Empty, error)
+	ListSubscriptions(context.Context, *ListWebhookSubscriptionsRequest) (*ListWebhookSubscriptionsResponse, error)
+	ListDeliveries(context.Context, *ListWebhookDeliveriesRequest) (*ListWebhookDeliveriesResponse, error)
+	TestWebhook(context.Context, *TestWebhookRequest) (*WebhookDelivery, error)
+	mustEmbedUnimplementedWebhookServiceServer()
+}
+
+// UnimplementedWebhookServiceServer must be embedded to have
+// forward compatible implementations.
+//
+// NOTE: this should be embedded by value instead of pointer to avoid a nil
+// pointer dereference when methods are called.
+type UnimplementedWebhookServiceServer struct{}
+
+func (UnimplementedWebhookServiceServer) CreateSubscription(context.Context, *CreateWebhookSubscriptionRequest) (*WebhookSubscription, error) {
+	return nil, status.Error(codes.Unimplemented, "method CreateSubscription not implemented")
+}
+func (UnimplementedWebhookServiceServer) DeleteSubscription(context.Context, *DeleteWebhookSubscriptionRequest) (*emptypb.Empty, error) {
+	return nil, status.Error(codes.Unimplemented, "method DeleteSubscription not implemented")
+}
+func (UnimplementedWebhookServiceServer) ListSubscriptions(context.Context, *ListWebhookSubscriptionsRequest) (*ListWebhookSubscriptionsResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method ListSubscriptions not implemented")
+}
+func (UnimplementedWebhookServiceServer) ListDeliveries(context.Context, *ListWebhookDeliveriesRequest) (*ListWebhookDeliveriesResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method ListDeliveries not implemented")
+}
+func (UnimplementedWebhookServiceServer) TestWebhook(context.Context, *TestWebhookRequest) (*WebhookDelivery, error) {
+	return nil, status.Error(codes.Unimplemented, "method TestWebhook not implemented")
+}
+func (UnimplementedWebhookServiceServer) mustEmbedUnimplementedWebhookServiceServer() {}
+func (UnimplementedWebhookServiceServer) testEmbeddedByValue()                        {}
+
+// UnsafeWebhookServiceServer may be embedded to opt out of forward compatibility for this service.
+// Use of this interface is not recommended, as added methods to WebhookServiceServer will
+// result in compilation errors.
+type UnsafeWebhookServiceServer interface {
+	mustEmbedUnimplementedWebhookServiceServer()
+}
+
+func RegisterWebhookServiceServer(s grpc.ServiceRegistrar, srv WebhookServiceServer) {
+	// If the following call panics, it indicates UnimplementedWebhookServiceServer was
+	// embedded by pointer and is nil.  This will cause panics if an
+	// unimplemented method is ever invoked, so we test this at initialization
+	// time to prevent it from happening at runtime later due to I/O.
+	if t, ok := srv.(interface{ testEmbeddedByValue() }); ok {
+		t.testEmbeddedByValue()
+	}
+	s.RegisterService(&WebhookService_ServiceDesc, srv)
+}
+
+func _WebhookService_CreateSubscription_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(CreateWebhookSubscriptionRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(WebhookServiceServer).CreateSubscription(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: WebhookService_CreateSubscription_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(WebhookServiceServer).CreateSubscription(ctx, req.(*CreateWebhookSubscriptionRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _WebhookService_DeleteSubscription_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(DeleteWebhookSubscriptionRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(WebhookServiceServer).DeleteSubscription(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: WebhookService_DeleteSubscription_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(WebhookServiceServer).DeleteSubscription(ctx, req.(*DeleteWebhookSubscriptionRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _WebhookService_ListSubscriptions_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ListWebhookSubscriptionsRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(WebhookServiceServer).ListSubscriptions(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: WebhookService_ListSubscriptions_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(WebhookServiceServer).ListSubscriptions(ctx, req.(*ListWebhookSubscriptionsRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _WebhookService_ListDeliveries_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ListWebhookDeliveriesRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(WebhookServiceServer).ListDeliveries(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: WebhookService_ListDeliveries_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(WebhookServiceServer).ListDeliveries(ctx, req.(*ListWebhookDeliveriesRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _WebhookService_TestWebhook_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(TestWebhookRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(WebhookServiceServer).TestWebhook(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: WebhookService_TestWebhook_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(WebhookServiceServer).TestWebhook(ctx, req.(*TestWebhookRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+// WebhookService_ServiceDesc is the grpc.ServiceDesc for WebhookService service.
+// It's only intended for direct use with grpc.RegisterService,
+// and not to be introspected or modified (even as a copy)
+var WebhookService_ServiceDesc = grpc.ServiceDesc{
+	ServiceName: "customers.WebhookService",
+	HandlerType: (*WebhookServiceServer)(nil),
+	Methods: []grpc.MethodDesc{
+		{
+			MethodName: "CreateSubscription",
+			Handler:    _WebhookService_CreateSubscription_Handler,
+		},
+		{
+			MethodName: "DeleteSubscription",
+			Handler:    _WebhookService_DeleteSubscription_Handler,
+		},
+		{
+			MethodName: "ListSubscriptions",
+			Handler:    _WebhookService_ListSubscriptions_Handler,
+		},
+		{
+			MethodName: "ListDeliveries",
+			Handler:    _WebhookService_ListDeliveries_Handler,
+		},
+		{
+			MethodName: "TestWebhook",
+			Handler:    _WebhookService_TestWebhook_Handler,
+		},
+	},
+	Streams:  []grpc.StreamDesc{},
+	Metadata: "user.proto",
+}
+
+const (
+	NotificationService_ListNotifications_FullMethodName  = "/customers.NotificationService/ListNotifications"
+	NotificationService_GetUnreadCount_FullMethodName     = "/customers.NotificationService/GetUnreadCount"
+	NotificationService_MarkRead_FullMethodName           = "/customers.NotificationService/MarkRead"
+	NotificationService_MarkAllRead_FullMethodName        = "/customers.NotificationService/MarkAllRead"
+	NotificationService_DeleteNotification_FullMethodName = "/customers.NotificationService/DeleteNotification"
+)
+
+// NotificationServiceClient is the client API for NotificationService service.
+//
+// For semantics around ctx use and closing/ending streaming RPCs, please refer to https://pkg.go.dev/google.golang.org/grpc/?tab=doc#ClientConn.NewStream.
+//
+// NotificationService — user notification management
+type NotificationServiceClient interface {
+	ListNotifications(ctx context.Context, in *ListNotificationsRequest, opts ...grpc.CallOption) (*ListNotificationsResponse, error)
+	GetUnreadCount(ctx context.Context, in *GetUnreadCountRequest, opts ...grpc.CallOption) (*GetUnreadCountResponse, error)
+	MarkRead(ctx context.Context, in *MarkNotificationReadRequest, opts ...grpc.CallOption) (*emptypb.Empty, error)
+	MarkAllRead(ctx context.Context, in *MarkAllNotificationsReadRequest, opts ...grpc.CallOption) (*emptypb.Empty, error)
+	DeleteNotification(ctx context.Context, in *DeleteNotificationRequest, opts ...grpc.CallOption) (*emptypb.Empty, error)
+}
+
+type notificationServiceClient struct {
+	cc grpc.ClientConnInterface
+}
+
+func NewNotificationServiceClient(cc grpc.ClientConnInterface) NotificationServiceClient {
+	return &notificationServiceClient{cc}
+}
+
+func (c *notificationServiceClient) ListNotifications(ctx context.Context, in *ListNotificationsRequest, opts ...grpc.CallOption) (*ListNotificationsResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ListNotificationsResponse)
+	err := c.cc.Invoke(ctx, NotificationService_ListNotifications_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *notificationServiceClient) GetUnreadCount(ctx context.Context, in *GetUnreadCountRequest, opts ...grpc.CallOption) (*GetUnreadCountResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(GetUnreadCountResponse)
+	err := c.cc.Invoke(ctx, NotificationService_GetUnreadCount_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *notificationServiceClient) MarkRead(ctx context.Context, in *MarkNotificationReadRequest, opts ...grpc.CallOption) (*emptypb.Empty, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(emptypb.Empty)
+	err := c.cc.Invoke(ctx, NotificationService_MarkRead_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *notificationServiceClient) MarkAllRead(ctx context.Context, in *MarkAllNotificationsReadRequest, opts ...grpc.CallOption) (*emptypb.Empty, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(emptypb.Empty)
+	err := c.cc.Invoke(ctx, NotificationService_MarkAllRead_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *notificationServiceClient) DeleteNotification(ctx context.Context, in *DeleteNotificationRequest, opts ...grpc.CallOption) (*emptypb.Empty, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(emptypb.Empty)
+	err := c.cc.Invoke(ctx, NotificationService_DeleteNotification_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+// NotificationServiceServer is the server API for NotificationService service.
+// All implementations must embed UnimplementedNotificationServiceServer
+// for forward compatibility.
+//
+// NotificationService — user notification management
+type NotificationServiceServer interface {
+	ListNotifications(context.Context, *ListNotificationsRequest) (*ListNotificationsResponse, error)
+	GetUnreadCount(context.Context, *GetUnreadCountRequest) (*GetUnreadCountResponse, error)
+	MarkRead(context.Context, *MarkNotificationReadRequest) (*emptypb.Empty, error)
+	MarkAllRead(context.Context, *MarkAllNotificationsReadRequest) (*emptypb.Empty, error)
+	DeleteNotification(context.Context, *DeleteNotificationRequest) (*emptypb.Empty, error)
+	mustEmbedUnimplementedNotificationServiceServer()
+}
+
+// UnimplementedNotificationServiceServer must be embedded to have
+// forward compatible implementations.
+//
+// NOTE: this should be embedded by value instead of pointer to avoid a nil
+// pointer dereference when methods are called.
+type UnimplementedNotificationServiceServer struct{}
+
+func (UnimplementedNotificationServiceServer) ListNotifications(context.Context, *ListNotificationsRequest) (*ListNotificationsResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method ListNotifications not implemented")
+}
+func (UnimplementedNotificationServiceServer) GetUnreadCount(context.Context, *GetUnreadCountRequest) (*GetUnreadCountResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method GetUnreadCount not implemented")
+}
+func (UnimplementedNotificationServiceServer) MarkRead(context.Context, *MarkNotificationReadRequest) (*emptypb.Empty, error) {
+	return nil, status.Error(codes.Unimplemented, "method MarkRead not implemented")
+}
+func (UnimplementedNotificationServiceServer) MarkAllRead(context.Context, *MarkAllNotificationsReadRequest) (*emptypb.Empty, error) {
+	return nil, status.Error(codes.Unimplemented, "method MarkAllRead not implemented")
+}
+func (UnimplementedNotificationServiceServer) DeleteNotification(context.Context, *DeleteNotificationRequest) (*emptypb.Empty, error) {
+	return nil, status.Error(codes.Unimplemented, "method DeleteNotification not implemented")
+}
+func (UnimplementedNotificationServiceServer) mustEmbedUnimplementedNotificationServiceServer() {}
+func (UnimplementedNotificationServiceServer) testEmbeddedByValue()                             {}
+
+// UnsafeNotificationServiceServer may be embedded to opt out of forward compatibility for this service.
+// Use of this interface is not recommended, as added methods to NotificationServiceServer will
+// result in compilation errors.
+type UnsafeNotificationServiceServer interface {
+	mustEmbedUnimplementedNotificationServiceServer()
+}
+
+func RegisterNotificationServiceServer(s grpc.ServiceRegistrar, srv NotificationServiceServer) {
+	// If the following call panics, it indicates UnimplementedNotificationServiceServer was
+	// embedded by pointer and is nil.  This will cause panics if an
+	// unimplemented method is ever invoked, so we test this at initialization
+	// time to prevent it from happening at runtime later due to I/O.
+	if t, ok := srv.(interface{ testEmbeddedByValue() }); ok {
+		t.testEmbeddedByValue()
+	}
+	s.RegisterService(&NotificationService_ServiceDesc, srv)
+}
+
+func _NotificationService_ListNotifications_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ListNotificationsRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(NotificationServiceServer).ListNotifications(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: NotificationService_ListNotifications_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(NotificationServiceServer).ListNotifications(ctx, req.(*ListNotificationsRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _NotificationService_GetUnreadCount_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(GetUnreadCountRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(NotificationServiceServer).GetUnreadCount(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: NotificationService_GetUnreadCount_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(NotificationServiceServer).GetUnreadCount(ctx, req.(*GetUnreadCountRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _NotificationService_MarkRead_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(MarkNotificationReadRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(NotificationServiceServer).MarkRead(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: NotificationService_MarkRead_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(NotificationServiceServer).MarkRead(ctx, req.(*MarkNotificationReadRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _NotificationService_MarkAllRead_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(MarkAllNotificationsReadRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(NotificationServiceServer).MarkAllRead(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: NotificationService_MarkAllRead_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(NotificationServiceServer).MarkAllRead(ctx, req.(*MarkAllNotificationsReadRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _NotificationService_DeleteNotification_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(DeleteNotificationRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(NotificationServiceServer).DeleteNotification(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: NotificationService_DeleteNotification_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(NotificationServiceServer).DeleteNotification(ctx, req.(*DeleteNotificationRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+// NotificationService_ServiceDesc is the grpc.ServiceDesc for NotificationService service.
+// It's only intended for direct use with grpc.RegisterService,
+// and not to be introspected or modified (even as a copy)
+var NotificationService_ServiceDesc = grpc.ServiceDesc{
+	ServiceName: "customers.NotificationService",
+	HandlerType: (*NotificationServiceServer)(nil),
+	Methods: []grpc.MethodDesc{
+		{
+			MethodName: "ListNotifications",
+			Handler:    _NotificationService_ListNotifications_Handler,
+		},
+		{
+			MethodName: "GetUnreadCount",
+			Handler:    _NotificationService_GetUnreadCount_Handler,
+		},
+		{
+			MethodName: "MarkRead",
+			Handler:    _NotificationService_MarkRead_Handler,
+		},
+		{
+			MethodName: "MarkAllRead",
+			Handler:    _NotificationService_MarkAllRead_Handler,
+		},
+		{
+			MethodName: "DeleteNotification",
+			Handler:    _NotificationService_DeleteNotification_Handler,
+		},
+	},
+	Streams:  []grpc.StreamDesc{},
+	Metadata: "user.proto",
+}
+
+const (
+	OnboardingService_GetProgress_FullMethodName  = "/customers.OnboardingService/GetProgress"
+	OnboardingService_CompleteStep_FullMethodName = "/customers.OnboardingService/CompleteStep"
+	OnboardingService_SkipStep_FullMethodName     = "/customers.OnboardingService/SkipStep"
+)
+
+// OnboardingServiceClient is the client API for OnboardingService service.
+//
+// For semantics around ctx use and closing/ending streaming RPCs, please refer to https://pkg.go.dev/google.golang.org/grpc/?tab=doc#ClientConn.NewStream.
+//
+// OnboardingService — user onboarding flow management
+type OnboardingServiceClient interface {
+	GetProgress(ctx context.Context, in *GetOnboardingProgressRequest, opts ...grpc.CallOption) (*OnboardingProgress, error)
+	CompleteStep(ctx context.Context, in *CompleteOnboardingStepRequest, opts ...grpc.CallOption) (*OnboardingProgress, error)
+	SkipStep(ctx context.Context, in *SkipOnboardingStepRequest, opts ...grpc.CallOption) (*OnboardingProgress, error)
+}
+
+type onboardingServiceClient struct {
+	cc grpc.ClientConnInterface
+}
+
+func NewOnboardingServiceClient(cc grpc.ClientConnInterface) OnboardingServiceClient {
+	return &onboardingServiceClient{cc}
+}
+
+func (c *onboardingServiceClient) GetProgress(ctx context.Context, in *GetOnboardingProgressRequest, opts ...grpc.CallOption) (*OnboardingProgress, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(OnboardingProgress)
+	err := c.cc.Invoke(ctx, OnboardingService_GetProgress_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *onboardingServiceClient) CompleteStep(ctx context.Context, in *CompleteOnboardingStepRequest, opts ...grpc.CallOption) (*OnboardingProgress, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(OnboardingProgress)
+	err := c.cc.Invoke(ctx, OnboardingService_CompleteStep_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *onboardingServiceClient) SkipStep(ctx context.Context, in *SkipOnboardingStepRequest, opts ...grpc.CallOption) (*OnboardingProgress, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(OnboardingProgress)
+	err := c.cc.Invoke(ctx, OnboardingService_SkipStep_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+// OnboardingServiceServer is the server API for OnboardingService service.
+// All implementations must embed UnimplementedOnboardingServiceServer
+// for forward compatibility.
+//
+// OnboardingService — user onboarding flow management
+type OnboardingServiceServer interface {
+	GetProgress(context.Context, *GetOnboardingProgressRequest) (*OnboardingProgress, error)
+	CompleteStep(context.Context, *CompleteOnboardingStepRequest) (*OnboardingProgress, error)
+	SkipStep(context.Context, *SkipOnboardingStepRequest) (*OnboardingProgress, error)
+	mustEmbedUnimplementedOnboardingServiceServer()
+}
+
+// UnimplementedOnboardingServiceServer must be embedded to have
+// forward compatible implementations.
+//
+// NOTE: this should be embedded by value instead of pointer to avoid a nil
+// pointer dereference when methods are called.
+type UnimplementedOnboardingServiceServer struct{}
+
+func (UnimplementedOnboardingServiceServer) GetProgress(context.Context, *GetOnboardingProgressRequest) (*OnboardingProgress, error) {
+	return nil, status.Error(codes.Unimplemented, "method GetProgress not implemented")
+}
+func (UnimplementedOnboardingServiceServer) CompleteStep(context.Context, *CompleteOnboardingStepRequest) (*OnboardingProgress, error) {
+	return nil, status.Error(codes.Unimplemented, "method CompleteStep not implemented")
+}
+func (UnimplementedOnboardingServiceServer) SkipStep(context.Context, *SkipOnboardingStepRequest) (*OnboardingProgress, error) {
+	return nil, status.Error(codes.Unimplemented, "method SkipStep not implemented")
+}
+func (UnimplementedOnboardingServiceServer) mustEmbedUnimplementedOnboardingServiceServer() {}
+func (UnimplementedOnboardingServiceServer) testEmbeddedByValue()                           {}
+
+// UnsafeOnboardingServiceServer may be embedded to opt out of forward compatibility for this service.
+// Use of this interface is not recommended, as added methods to OnboardingServiceServer will
+// result in compilation errors.
+type UnsafeOnboardingServiceServer interface {
+	mustEmbedUnimplementedOnboardingServiceServer()
+}
+
+func RegisterOnboardingServiceServer(s grpc.ServiceRegistrar, srv OnboardingServiceServer) {
+	// If the following call panics, it indicates UnimplementedOnboardingServiceServer was
+	// embedded by pointer and is nil.  This will cause panics if an
+	// unimplemented method is ever invoked, so we test this at initialization
+	// time to prevent it from happening at runtime later due to I/O.
+	if t, ok := srv.(interface{ testEmbeddedByValue() }); ok {
+		t.testEmbeddedByValue()
+	}
+	s.RegisterService(&OnboardingService_ServiceDesc, srv)
+}
+
+func _OnboardingService_GetProgress_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(GetOnboardingProgressRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(OnboardingServiceServer).GetProgress(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: OnboardingService_GetProgress_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(OnboardingServiceServer).GetProgress(ctx, req.(*GetOnboardingProgressRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _OnboardingService_CompleteStep_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(CompleteOnboardingStepRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(OnboardingServiceServer).CompleteStep(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: OnboardingService_CompleteStep_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(OnboardingServiceServer).CompleteStep(ctx, req.(*CompleteOnboardingStepRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _OnboardingService_SkipStep_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(SkipOnboardingStepRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(OnboardingServiceServer).SkipStep(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: OnboardingService_SkipStep_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(OnboardingServiceServer).SkipStep(ctx, req.(*SkipOnboardingStepRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+// OnboardingService_ServiceDesc is the grpc.ServiceDesc for OnboardingService service.
+// It's only intended for direct use with grpc.RegisterService,
+// and not to be introspected or modified (even as a copy)
+var OnboardingService_ServiceDesc = grpc.ServiceDesc{
+	ServiceName: "customers.OnboardingService",
+	HandlerType: (*OnboardingServiceServer)(nil),
+	Methods: []grpc.MethodDesc{
+		{
+			MethodName: "GetProgress",
+			Handler:    _OnboardingService_GetProgress_Handler,
+		},
+		{
+			MethodName: "CompleteStep",
+			Handler:    _OnboardingService_CompleteStep_Handler,
+		},
+		{
+			MethodName: "SkipStep",
+			Handler:    _OnboardingService_SkipStep_Handler,
+		},
+	},
+	Streams:  []grpc.StreamDesc{},
+	Metadata: "user.proto",
+}
+
+const (
+	GDPRService_RequestExport_FullMethodName     = "/customers.GDPRService/RequestExport"
+	GDPRService_GetExportStatus_FullMethodName   = "/customers.GDPRService/GetExportStatus"
+	GDPRService_RequestDeletion_FullMethodName   = "/customers.GDPRService/RequestDeletion"
+	GDPRService_GetDeletionStatus_FullMethodName = "/customers.GDPRService/GetDeletionStatus"
+)
+
+// GDPRServiceClient is the client API for GDPRService service.
+//
+// For semantics around ctx use and closing/ending streaming RPCs, please refer to https://pkg.go.dev/google.golang.org/grpc/?tab=doc#ClientConn.NewStream.
+//
+// GDPRService — GDPR data export and deletion requests
+type GDPRServiceClient interface {
+	RequestExport(ctx context.Context, in *RequestDataExportRequest, opts ...grpc.CallOption) (*GDPRRequest, error)
+	GetExportStatus(ctx context.Context, in *GetExportStatusRequest, opts ...grpc.CallOption) (*GDPRRequest, error)
+	RequestDeletion(ctx context.Context, in *RequestDeletionRequest, opts ...grpc.CallOption) (*GDPRRequest, error)
+	GetDeletionStatus(ctx context.Context, in *GetDeletionStatusRequest, opts ...grpc.CallOption) (*GDPRRequest, error)
+}
+
+type gDPRServiceClient struct {
+	cc grpc.ClientConnInterface
+}
+
+func NewGDPRServiceClient(cc grpc.ClientConnInterface) GDPRServiceClient {
+	return &gDPRServiceClient{cc}
+}
+
+func (c *gDPRServiceClient) RequestExport(ctx context.Context, in *RequestDataExportRequest, opts ...grpc.CallOption) (*GDPRRequest, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(GDPRRequest)
+	err := c.cc.Invoke(ctx, GDPRService_RequestExport_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *gDPRServiceClient) GetExportStatus(ctx context.Context, in *GetExportStatusRequest, opts ...grpc.CallOption) (*GDPRRequest, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(GDPRRequest)
+	err := c.cc.Invoke(ctx, GDPRService_GetExportStatus_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *gDPRServiceClient) RequestDeletion(ctx context.Context, in *RequestDeletionRequest, opts ...grpc.CallOption) (*GDPRRequest, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(GDPRRequest)
+	err := c.cc.Invoke(ctx, GDPRService_RequestDeletion_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *gDPRServiceClient) GetDeletionStatus(ctx context.Context, in *GetDeletionStatusRequest, opts ...grpc.CallOption) (*GDPRRequest, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(GDPRRequest)
+	err := c.cc.Invoke(ctx, GDPRService_GetDeletionStatus_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+// GDPRServiceServer is the server API for GDPRService service.
+// All implementations must embed UnimplementedGDPRServiceServer
+// for forward compatibility.
+//
+// GDPRService — GDPR data export and deletion requests
+type GDPRServiceServer interface {
+	RequestExport(context.Context, *RequestDataExportRequest) (*GDPRRequest, error)
+	GetExportStatus(context.Context, *GetExportStatusRequest) (*GDPRRequest, error)
+	RequestDeletion(context.Context, *RequestDeletionRequest) (*GDPRRequest, error)
+	GetDeletionStatus(context.Context, *GetDeletionStatusRequest) (*GDPRRequest, error)
+	mustEmbedUnimplementedGDPRServiceServer()
+}
+
+// UnimplementedGDPRServiceServer must be embedded to have
+// forward compatible implementations.
+//
+// NOTE: this should be embedded by value instead of pointer to avoid a nil
+// pointer dereference when methods are called.
+type UnimplementedGDPRServiceServer struct{}
+
+func (UnimplementedGDPRServiceServer) RequestExport(context.Context, *RequestDataExportRequest) (*GDPRRequest, error) {
+	return nil, status.Error(codes.Unimplemented, "method RequestExport not implemented")
+}
+func (UnimplementedGDPRServiceServer) GetExportStatus(context.Context, *GetExportStatusRequest) (*GDPRRequest, error) {
+	return nil, status.Error(codes.Unimplemented, "method GetExportStatus not implemented")
+}
+func (UnimplementedGDPRServiceServer) RequestDeletion(context.Context, *RequestDeletionRequest) (*GDPRRequest, error) {
+	return nil, status.Error(codes.Unimplemented, "method RequestDeletion not implemented")
+}
+func (UnimplementedGDPRServiceServer) GetDeletionStatus(context.Context, *GetDeletionStatusRequest) (*GDPRRequest, error) {
+	return nil, status.Error(codes.Unimplemented, "method GetDeletionStatus not implemented")
+}
+func (UnimplementedGDPRServiceServer) mustEmbedUnimplementedGDPRServiceServer() {}
+func (UnimplementedGDPRServiceServer) testEmbeddedByValue()                     {}
+
+// UnsafeGDPRServiceServer may be embedded to opt out of forward compatibility for this service.
+// Use of this interface is not recommended, as added methods to GDPRServiceServer will
+// result in compilation errors.
+type UnsafeGDPRServiceServer interface {
+	mustEmbedUnimplementedGDPRServiceServer()
+}
+
+func RegisterGDPRServiceServer(s grpc.ServiceRegistrar, srv GDPRServiceServer) {
+	// If the following call panics, it indicates UnimplementedGDPRServiceServer was
+	// embedded by pointer and is nil.  This will cause panics if an
+	// unimplemented method is ever invoked, so we test this at initialization
+	// time to prevent it from happening at runtime later due to I/O.
+	if t, ok := srv.(interface{ testEmbeddedByValue() }); ok {
+		t.testEmbeddedByValue()
+	}
+	s.RegisterService(&GDPRService_ServiceDesc, srv)
+}
+
+func _GDPRService_RequestExport_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(RequestDataExportRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(GDPRServiceServer).RequestExport(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: GDPRService_RequestExport_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(GDPRServiceServer).RequestExport(ctx, req.(*RequestDataExportRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _GDPRService_GetExportStatus_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(GetExportStatusRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(GDPRServiceServer).GetExportStatus(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: GDPRService_GetExportStatus_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(GDPRServiceServer).GetExportStatus(ctx, req.(*GetExportStatusRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _GDPRService_RequestDeletion_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(RequestDeletionRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(GDPRServiceServer).RequestDeletion(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: GDPRService_RequestDeletion_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(GDPRServiceServer).RequestDeletion(ctx, req.(*RequestDeletionRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _GDPRService_GetDeletionStatus_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(GetDeletionStatusRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(GDPRServiceServer).GetDeletionStatus(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: GDPRService_GetDeletionStatus_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(GDPRServiceServer).GetDeletionStatus(ctx, req.(*GetDeletionStatusRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+// GDPRService_ServiceDesc is the grpc.ServiceDesc for GDPRService service.
+// It's only intended for direct use with grpc.RegisterService,
+// and not to be introspected or modified (even as a copy)
+var GDPRService_ServiceDesc = grpc.ServiceDesc{
+	ServiceName: "customers.GDPRService",
+	HandlerType: (*GDPRServiceServer)(nil),
+	Methods: []grpc.MethodDesc{
+		{
+			MethodName: "RequestExport",
+			Handler:    _GDPRService_RequestExport_Handler,
+		},
+		{
+			MethodName: "GetExportStatus",
+			Handler:    _GDPRService_GetExportStatus_Handler,
+		},
+		{
+			MethodName: "RequestDeletion",
+			Handler:    _GDPRService_RequestDeletion_Handler,
+		},
+		{
+			MethodName: "GetDeletionStatus",
+			Handler:    _GDPRService_GetDeletionStatus_Handler,
+		},
+	},
+	Streams:  []grpc.StreamDesc{},
+	Metadata: "user.proto",
+}
+
+const (
+	MFAService_SetupTOTP_FullMethodName           = "/customers.MFAService/SetupTOTP"
+	MFAService_VerifyTOTP_FullMethodName          = "/customers.MFAService/VerifyTOTP"
+	MFAService_ListDevices_FullMethodName         = "/customers.MFAService/ListDevices"
+	MFAService_RevokeDevice_FullMethodName        = "/customers.MFAService/RevokeDevice"
+	MFAService_GenerateBackupCodes_FullMethodName = "/customers.MFAService/GenerateBackupCodes"
+)
+
+// MFAServiceClient is the client API for MFAService service.
+//
+// For semantics around ctx use and closing/ending streaming RPCs, please refer to https://pkg.go.dev/google.golang.org/grpc/?tab=doc#ClientConn.NewStream.
+//
+// MFAService — multi-factor authentication device and TOTP management
+type MFAServiceClient interface {
+	SetupTOTP(ctx context.Context, in *SetupTOTPRequest, opts ...grpc.CallOption) (*SetupTOTPResponse, error)
+	VerifyTOTP(ctx context.Context, in *VerifyTOTPRequest, opts ...grpc.CallOption) (*VerifyTOTPResponse, error)
+	ListDevices(ctx context.Context, in *ListMFADevicesRequest, opts ...grpc.CallOption) (*ListMFADevicesResponse, error)
+	RevokeDevice(ctx context.Context, in *RevokeMFADeviceRequest, opts ...grpc.CallOption) (*emptypb.Empty, error)
+	GenerateBackupCodes(ctx context.Context, in *GenerateBackupCodesRequest, opts ...grpc.CallOption) (*GenerateBackupCodesResponse, error)
+}
+
+type mFAServiceClient struct {
+	cc grpc.ClientConnInterface
+}
+
+func NewMFAServiceClient(cc grpc.ClientConnInterface) MFAServiceClient {
+	return &mFAServiceClient{cc}
+}
+
+func (c *mFAServiceClient) SetupTOTP(ctx context.Context, in *SetupTOTPRequest, opts ...grpc.CallOption) (*SetupTOTPResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(SetupTOTPResponse)
+	err := c.cc.Invoke(ctx, MFAService_SetupTOTP_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *mFAServiceClient) VerifyTOTP(ctx context.Context, in *VerifyTOTPRequest, opts ...grpc.CallOption) (*VerifyTOTPResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(VerifyTOTPResponse)
+	err := c.cc.Invoke(ctx, MFAService_VerifyTOTP_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *mFAServiceClient) ListDevices(ctx context.Context, in *ListMFADevicesRequest, opts ...grpc.CallOption) (*ListMFADevicesResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ListMFADevicesResponse)
+	err := c.cc.Invoke(ctx, MFAService_ListDevices_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *mFAServiceClient) RevokeDevice(ctx context.Context, in *RevokeMFADeviceRequest, opts ...grpc.CallOption) (*emptypb.Empty, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(emptypb.Empty)
+	err := c.cc.Invoke(ctx, MFAService_RevokeDevice_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *mFAServiceClient) GenerateBackupCodes(ctx context.Context, in *GenerateBackupCodesRequest, opts ...grpc.CallOption) (*GenerateBackupCodesResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(GenerateBackupCodesResponse)
+	err := c.cc.Invoke(ctx, MFAService_GenerateBackupCodes_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+// MFAServiceServer is the server API for MFAService service.
+// All implementations must embed UnimplementedMFAServiceServer
+// for forward compatibility.
+//
+// MFAService — multi-factor authentication device and TOTP management
+type MFAServiceServer interface {
+	SetupTOTP(context.Context, *SetupTOTPRequest) (*SetupTOTPResponse, error)
+	VerifyTOTP(context.Context, *VerifyTOTPRequest) (*VerifyTOTPResponse, error)
+	ListDevices(context.Context, *ListMFADevicesRequest) (*ListMFADevicesResponse, error)
+	RevokeDevice(context.Context, *RevokeMFADeviceRequest) (*emptypb.Empty, error)
+	GenerateBackupCodes(context.Context, *GenerateBackupCodesRequest) (*GenerateBackupCodesResponse, error)
+	mustEmbedUnimplementedMFAServiceServer()
+}
+
+// UnimplementedMFAServiceServer must be embedded to have
+// forward compatible implementations.
+//
+// NOTE: this should be embedded by value instead of pointer to avoid a nil
+// pointer dereference when methods are called.
+type UnimplementedMFAServiceServer struct{}
+
+func (UnimplementedMFAServiceServer) SetupTOTP(context.Context, *SetupTOTPRequest) (*SetupTOTPResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method SetupTOTP not implemented")
+}
+func (UnimplementedMFAServiceServer) VerifyTOTP(context.Context, *VerifyTOTPRequest) (*VerifyTOTPResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method VerifyTOTP not implemented")
+}
+func (UnimplementedMFAServiceServer) ListDevices(context.Context, *ListMFADevicesRequest) (*ListMFADevicesResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method ListDevices not implemented")
+}
+func (UnimplementedMFAServiceServer) RevokeDevice(context.Context, *RevokeMFADeviceRequest) (*emptypb.Empty, error) {
+	return nil, status.Error(codes.Unimplemented, "method RevokeDevice not implemented")
+}
+func (UnimplementedMFAServiceServer) GenerateBackupCodes(context.Context, *GenerateBackupCodesRequest) (*GenerateBackupCodesResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method GenerateBackupCodes not implemented")
+}
+func (UnimplementedMFAServiceServer) mustEmbedUnimplementedMFAServiceServer() {}
+func (UnimplementedMFAServiceServer) testEmbeddedByValue()                    {}
+
+// UnsafeMFAServiceServer may be embedded to opt out of forward compatibility for this service.
+// Use of this interface is not recommended, as added methods to MFAServiceServer will
+// result in compilation errors.
+type UnsafeMFAServiceServer interface {
+	mustEmbedUnimplementedMFAServiceServer()
+}
+
+func RegisterMFAServiceServer(s grpc.ServiceRegistrar, srv MFAServiceServer) {
+	// If the following call panics, it indicates UnimplementedMFAServiceServer was
+	// embedded by pointer and is nil.  This will cause panics if an
+	// unimplemented method is ever invoked, so we test this at initialization
+	// time to prevent it from happening at runtime later due to I/O.
+	if t, ok := srv.(interface{ testEmbeddedByValue() }); ok {
+		t.testEmbeddedByValue()
+	}
+	s.RegisterService(&MFAService_ServiceDesc, srv)
+}
+
+func _MFAService_SetupTOTP_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(SetupTOTPRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(MFAServiceServer).SetupTOTP(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: MFAService_SetupTOTP_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(MFAServiceServer).SetupTOTP(ctx, req.(*SetupTOTPRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _MFAService_VerifyTOTP_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(VerifyTOTPRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(MFAServiceServer).VerifyTOTP(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: MFAService_VerifyTOTP_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(MFAServiceServer).VerifyTOTP(ctx, req.(*VerifyTOTPRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _MFAService_ListDevices_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ListMFADevicesRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(MFAServiceServer).ListDevices(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: MFAService_ListDevices_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(MFAServiceServer).ListDevices(ctx, req.(*ListMFADevicesRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _MFAService_RevokeDevice_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(RevokeMFADeviceRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(MFAServiceServer).RevokeDevice(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: MFAService_RevokeDevice_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(MFAServiceServer).RevokeDevice(ctx, req.(*RevokeMFADeviceRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _MFAService_GenerateBackupCodes_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(GenerateBackupCodesRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(MFAServiceServer).GenerateBackupCodes(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: MFAService_GenerateBackupCodes_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(MFAServiceServer).GenerateBackupCodes(ctx, req.(*GenerateBackupCodesRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+// MFAService_ServiceDesc is the grpc.ServiceDesc for MFAService service.
+// It's only intended for direct use with grpc.RegisterService,
+// and not to be introspected or modified (even as a copy)
+var MFAService_ServiceDesc = grpc.ServiceDesc{
+	ServiceName: "customers.MFAService",
+	HandlerType: (*MFAServiceServer)(nil),
+	Methods: []grpc.MethodDesc{
+		{
+			MethodName: "SetupTOTP",
+			Handler:    _MFAService_SetupTOTP_Handler,
+		},
+		{
+			MethodName: "VerifyTOTP",
+			Handler:    _MFAService_VerifyTOTP_Handler,
+		},
+		{
+			MethodName: "ListDevices",
+			Handler:    _MFAService_ListDevices_Handler,
+		},
+		{
+			MethodName: "RevokeDevice",
+			Handler:    _MFAService_RevokeDevice_Handler,
+		},
+		{
+			MethodName: "GenerateBackupCodes",
+			Handler:    _MFAService_GenerateBackupCodes_Handler,
 		},
 	},
 	Streams:  []grpc.StreamDesc{},

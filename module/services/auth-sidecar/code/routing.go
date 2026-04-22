@@ -93,20 +93,26 @@ func DefaultRoutingDir() string {
 	return filepath.Join("..", "routing", "rest")
 }
 
-// NewRouteMatcher builds a RouteMatcher from loaded route entries.
-func NewRouteMatcher(entries []*RouteEntry) *RouteMatcher {
+// NewRouteMatcher builds a RouteMatcher from REST and Connect entries.
+// REST entries come from folder-based *.rest.codefly.yaml files; Connect
+// entries come from LoadConnectRoutesFromProto and are keyed by exact path.
+func NewRouteMatcher(restEntries, connectEntries []*RouteEntry) *RouteMatcher {
 	m := &RouteMatcher{
 		restRoutes:    make(map[string][]restRoute),
 		connectRoutes: make(map[string]*RouteEntry),
 	}
 
-	for _, entry := range entries {
+	for _, entry := range restEntries {
 		method := strings.ToUpper(entry.Method)
 		segments := strings.Split(entry.Path, "/")
 		m.restRoutes[method] = append(m.restRoutes[method], restRoute{
 			segments: segments,
 			entry:    entry,
 		})
+	}
+
+	for _, entry := range connectEntries {
+		m.connectRoutes[entry.Path] = entry
 	}
 
 	return m

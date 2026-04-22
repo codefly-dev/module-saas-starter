@@ -34,6 +34,21 @@
     },
     {
       "name": "InvitationService"
+    },
+    {
+      "name": "WebhookService"
+    },
+    {
+      "name": "NotificationService"
+    },
+    {
+      "name": "OnboardingService"
+    },
+    {
+      "name": "GDPRService"
+    },
+    {
+      "name": "MFAService"
     }
   ],
   "consumes": [
@@ -228,6 +243,38 @@
         ]
       }
     },
+    "/v1/audit-log:export": {
+      "post": {
+        "operationId": "AuditService_ExportAuditLog",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/customersExportAuditLogResponse"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/rpcStatus"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "body",
+            "in": "body",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/customersExportAuditLogRequest"
+            }
+          }
+        ],
+        "tags": [
+          "AuditService"
+        ]
+      }
+    },
     "/v1/auth/.well-known/jwks.json": {
       "get": {
         "operationId": "AuthService_GetJWKS",
@@ -344,6 +391,130 @@
         ],
         "tags": [
           "AuthService"
+        ]
+      }
+    },
+    "/v1/gdpr/delete": {
+      "post": {
+        "operationId": "GDPRService_RequestDeletion",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/customersGDPRRequest"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/rpcStatus"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "body",
+            "in": "body",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/customersRequestDeletionRequest"
+            }
+          }
+        ],
+        "tags": [
+          "GDPRService"
+        ]
+      }
+    },
+    "/v1/gdpr/delete/{id}": {
+      "get": {
+        "operationId": "GDPRService_GetDeletionStatus",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/customersGDPRRequest"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/rpcStatus"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "type": "string"
+          }
+        ],
+        "tags": [
+          "GDPRService"
+        ]
+      }
+    },
+    "/v1/gdpr/export": {
+      "post": {
+        "operationId": "GDPRService_RequestExport",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/customersGDPRRequest"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/rpcStatus"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "body",
+            "in": "body",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/customersRequestDataExportRequest"
+            }
+          }
+        ],
+        "tags": [
+          "GDPRService"
+        ]
+      }
+    },
+    "/v1/gdpr/export/{id}": {
+      "get": {
+        "operationId": "GDPRService_GetExportStatus",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/customersGDPRRequest"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/rpcStatus"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "type": "string"
+          }
+        ],
+        "tags": [
+          "GDPRService"
         ]
       }
     },
@@ -513,6 +684,415 @@
         ],
         "tags": [
           "InvitationService"
+        ]
+      }
+    },
+    "/v1/mfa/backup-codes": {
+      "post": {
+        "operationId": "MFAService_GenerateBackupCodes",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/customersGenerateBackupCodesResponse"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/rpcStatus"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "body",
+            "in": "body",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/customersGenerateBackupCodesRequest"
+            }
+          }
+        ],
+        "tags": [
+          "MFAService"
+        ]
+      }
+    },
+    "/v1/mfa/devices": {
+      "get": {
+        "operationId": "MFAService_ListDevices",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/customersListMFADevicesResponse"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/rpcStatus"
+            }
+          }
+        },
+        "tags": [
+          "MFAService"
+        ]
+      }
+    },
+    "/v1/mfa/devices/{id}": {
+      "delete": {
+        "operationId": "MFAService_RevokeDevice",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "type": "object",
+              "properties": {}
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/rpcStatus"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "type": "string"
+          }
+        ],
+        "tags": [
+          "MFAService"
+        ]
+      }
+    },
+    "/v1/mfa/totp/setup": {
+      "post": {
+        "operationId": "MFAService_SetupTOTP",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/customersSetupTOTPResponse"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/rpcStatus"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "body",
+            "in": "body",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/customersSetupTOTPRequest"
+            }
+          }
+        ],
+        "tags": [
+          "MFAService"
+        ]
+      }
+    },
+    "/v1/mfa/totp/verify": {
+      "post": {
+        "operationId": "MFAService_VerifyTOTP",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/customersVerifyTOTPResponse"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/rpcStatus"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "body",
+            "in": "body",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/customersVerifyTOTPRequest"
+            }
+          }
+        ],
+        "tags": [
+          "MFAService"
+        ]
+      }
+    },
+    "/v1/notifications": {
+      "get": {
+        "operationId": "NotificationService_ListNotifications",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/customersListNotificationsResponse"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/rpcStatus"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "pageSize",
+            "in": "query",
+            "required": false,
+            "type": "integer",
+            "format": "int32"
+          },
+          {
+            "name": "pageToken",
+            "in": "query",
+            "required": false,
+            "type": "string"
+          }
+        ],
+        "tags": [
+          "NotificationService"
+        ]
+      }
+    },
+    "/v1/notifications/unread-count": {
+      "get": {
+        "operationId": "NotificationService_GetUnreadCount",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/customersGetUnreadCountResponse"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/rpcStatus"
+            }
+          }
+        },
+        "tags": [
+          "NotificationService"
+        ]
+      }
+    },
+    "/v1/notifications/{id}": {
+      "delete": {
+        "operationId": "NotificationService_DeleteNotification",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "type": "object",
+              "properties": {}
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/rpcStatus"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "type": "string"
+          }
+        ],
+        "tags": [
+          "NotificationService"
+        ]
+      }
+    },
+    "/v1/notifications/{id}:read": {
+      "post": {
+        "operationId": "NotificationService_MarkRead",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "type": "object",
+              "properties": {}
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/rpcStatus"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "type": "string"
+          },
+          {
+            "name": "body",
+            "in": "body",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/NotificationServiceMarkReadBody"
+            }
+          }
+        ],
+        "tags": [
+          "NotificationService"
+        ]
+      }
+    },
+    "/v1/notifications:read-all": {
+      "post": {
+        "operationId": "NotificationService_MarkAllRead",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "type": "object",
+              "properties": {}
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/rpcStatus"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "body",
+            "in": "body",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/customersMarkAllNotificationsReadRequest"
+            }
+          }
+        ],
+        "tags": [
+          "NotificationService"
+        ]
+      }
+    },
+    "/v1/onboarding": {
+      "get": {
+        "operationId": "OnboardingService_GetProgress",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/customersOnboardingProgress"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/rpcStatus"
+            }
+          }
+        },
+        "tags": [
+          "OnboardingService"
+        ]
+      }
+    },
+    "/v1/onboarding/{stepName}:complete": {
+      "post": {
+        "operationId": "OnboardingService_CompleteStep",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/customersOnboardingProgress"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/rpcStatus"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "stepName",
+            "in": "path",
+            "required": true,
+            "type": "string"
+          },
+          {
+            "name": "body",
+            "in": "body",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/OnboardingServiceCompleteStepBody"
+            }
+          }
+        ],
+        "tags": [
+          "OnboardingService"
+        ]
+      }
+    },
+    "/v1/onboarding/{stepName}:skip": {
+      "post": {
+        "operationId": "OnboardingService_SkipStep",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/customersOnboardingProgress"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/rpcStatus"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "stepName",
+            "in": "path",
+            "required": true,
+            "type": "string"
+          },
+          {
+            "name": "body",
+            "in": "body",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/OnboardingServiceSkipStepBody"
+            }
+          }
+        ],
+        "tags": [
+          "OnboardingService"
         ]
       }
     },
@@ -695,6 +1275,72 @@
             "in": "path",
             "required": true,
             "type": "string"
+          }
+        ],
+        "tags": [
+          "OrganizationService"
+        ]
+      }
+    },
+    "/v1/organizations/{orgId}/settings": {
+      "get": {
+        "operationId": "OrganizationService_GetOrgSettings",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/customersOrgSettings"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/rpcStatus"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "orgId",
+            "in": "path",
+            "required": true,
+            "type": "string"
+          }
+        ],
+        "tags": [
+          "OrganizationService"
+        ]
+      },
+      "put": {
+        "operationId": "OrganizationService_UpdateOrgSettings",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/customersOrgSettings"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/rpcStatus"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "orgId",
+            "in": "path",
+            "required": true,
+            "type": "string"
+          },
+          {
+            "name": "body",
+            "in": "body",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/OrganizationServiceUpdateOrgSettingsBody"
+            }
           }
         ],
         "tags": [
@@ -1861,9 +2507,220 @@
           "UserService"
         ]
       }
+    },
+    "/v1/webhooks": {
+      "get": {
+        "operationId": "WebhookService_ListSubscriptions",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/customersListWebhookSubscriptionsResponse"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/rpcStatus"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "orgId",
+            "in": "query",
+            "required": false,
+            "type": "string"
+          },
+          {
+            "name": "pageSize",
+            "in": "query",
+            "required": false,
+            "type": "integer",
+            "format": "int32"
+          },
+          {
+            "name": "pageToken",
+            "in": "query",
+            "required": false,
+            "type": "string"
+          }
+        ],
+        "tags": [
+          "WebhookService"
+        ]
+      },
+      "post": {
+        "operationId": "WebhookService_CreateSubscription",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/customersWebhookSubscription"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/rpcStatus"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "body",
+            "in": "body",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/customersCreateWebhookSubscriptionRequest"
+            }
+          }
+        ],
+        "tags": [
+          "WebhookService"
+        ]
+      }
+    },
+    "/v1/webhooks/{id}": {
+      "delete": {
+        "operationId": "WebhookService_DeleteSubscription",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "type": "object",
+              "properties": {}
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/rpcStatus"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "type": "string"
+          }
+        ],
+        "tags": [
+          "WebhookService"
+        ]
+      }
+    },
+    "/v1/webhooks/{id}:test": {
+      "post": {
+        "operationId": "WebhookService_TestWebhook",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/customersWebhookDelivery"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/rpcStatus"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "type": "string"
+          },
+          {
+            "name": "body",
+            "in": "body",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/WebhookServiceTestWebhookBody"
+            }
+          }
+        ],
+        "tags": [
+          "WebhookService"
+        ]
+      }
+    },
+    "/v1/webhooks/{subscriptionId}/deliveries": {
+      "get": {
+        "operationId": "WebhookService_ListDeliveries",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/customersListWebhookDeliveriesResponse"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/rpcStatus"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "subscriptionId",
+            "in": "path",
+            "required": true,
+            "type": "string"
+          },
+          {
+            "name": "pageSize",
+            "in": "query",
+            "required": false,
+            "type": "integer",
+            "format": "int32"
+          },
+          {
+            "name": "pageToken",
+            "in": "query",
+            "required": false,
+            "type": "string"
+          }
+        ],
+        "tags": [
+          "WebhookService"
+        ]
+      }
     }
   },
   "definitions": {
+    "NotificationServiceMarkReadBody": {
+      "type": "object"
+    },
+    "OnboardingServiceCompleteStepBody": {
+      "type": "object"
+    },
+    "OnboardingServiceSkipStepBody": {
+      "type": "object"
+    },
+    "OrganizationServiceUpdateOrgSettingsBody": {
+      "type": "object",
+      "properties": {
+        "logoUrl": {
+          "type": "string"
+        },
+        "primaryColor": {
+          "type": "string"
+        },
+        "customDomain": {
+          "type": "string"
+        },
+        "faviconUrl": {
+          "type": "string"
+        }
+      }
+    },
     "PlatformAdminServiceImpersonateUserBody": {
       "type": "object"
     },
@@ -1924,6 +2781,9 @@
           "type": "string"
         }
       }
+    },
+    "WebhookServiceTestWebhookBody": {
+      "type": "object"
     },
     "customersAPIKey": {
       "type": "object",
@@ -2104,6 +2964,12 @@
         },
         "user": {
           "$ref": "#/definitions/customersUser"
+        },
+        "mfaRequired": {
+          "type": "boolean"
+        },
+        "mfaToken": {
+          "type": "string"
         }
       }
     },
@@ -2259,6 +3125,26 @@
         }
       }
     },
+    "customersCreateWebhookSubscriptionRequest": {
+      "type": "object",
+      "properties": {
+        "orgId": {
+          "type": "string"
+        },
+        "url": {
+          "type": "string"
+        },
+        "events": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "description": {
+          "type": "string"
+        }
+      }
+    },
     "customersEntitlementInfo": {
       "type": "object",
       "properties": {
@@ -2279,6 +3165,39 @@
         }
       }
     },
+    "customersExportAuditLogRequest": {
+      "type": "object",
+      "properties": {
+        "orgId": {
+          "type": "string"
+        },
+        "format": {
+          "type": "string",
+          "title": "\"csv\" or \"json\""
+        },
+        "actorId": {
+          "type": "string"
+        },
+        "action": {
+          "type": "string"
+        }
+      }
+    },
+    "customersExportAuditLogResponse": {
+      "type": "object",
+      "properties": {
+        "data": {
+          "type": "string",
+          "format": "byte"
+        },
+        "contentType": {
+          "type": "string"
+        },
+        "filename": {
+          "type": "string"
+        }
+      }
+    },
     "customersFeatureFlagEntry": {
       "type": "object",
       "properties": {
@@ -2296,6 +3215,72 @@
           "format": "int32"
         },
         "targetOrgIds": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "customersGDPRRequest": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "userId": {
+          "type": "string"
+        },
+        "type": {
+          "$ref": "#/definitions/customersGDPRRequestType"
+        },
+        "status": {
+          "$ref": "#/definitions/customersGDPRRequestStatus"
+        },
+        "downloadUrl": {
+          "type": "string"
+        },
+        "expiresAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "completedAt": {
+          "type": "string",
+          "format": "date-time"
+        }
+      }
+    },
+    "customersGDPRRequestStatus": {
+      "type": "string",
+      "enum": [
+        "GDPR_REQUEST_STATUS_UNSPECIFIED",
+        "GDPR_REQUEST_STATUS_PENDING",
+        "GDPR_REQUEST_STATUS_PROCESSING",
+        "GDPR_REQUEST_STATUS_COMPLETED",
+        "GDPR_REQUEST_STATUS_FAILED"
+      ],
+      "default": "GDPR_REQUEST_STATUS_UNSPECIFIED"
+    },
+    "customersGDPRRequestType": {
+      "type": "string",
+      "enum": [
+        "GDPR_REQUEST_TYPE_UNSPECIFIED",
+        "GDPR_REQUEST_TYPE_EXPORT",
+        "GDPR_REQUEST_TYPE_DELETION"
+      ],
+      "default": "GDPR_REQUEST_TYPE_UNSPECIFIED"
+    },
+    "customersGenerateBackupCodesRequest": {
+      "type": "object"
+    },
+    "customersGenerateBackupCodesResponse": {
+      "type": "object",
+      "properties": {
+        "backupCodes": {
           "type": "array",
           "items": {
             "type": "string"
@@ -2344,6 +3329,15 @@
             "type": "object",
             "$ref": "#/definitions/customersRoleAssignment"
           }
+        }
+      }
+    },
+    "customersGetUnreadCountResponse": {
+      "type": "object",
+      "properties": {
+        "count": {
+          "type": "integer",
+          "format": "int32"
         }
       }
     },
@@ -2474,6 +3468,33 @@
         }
       }
     },
+    "customersListMFADevicesResponse": {
+      "type": "object",
+      "properties": {
+        "devices": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "$ref": "#/definitions/customersMFADevice"
+          }
+        }
+      }
+    },
+    "customersListNotificationsResponse": {
+      "type": "object",
+      "properties": {
+        "notifications": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "$ref": "#/definitions/customersNotification"
+          }
+        },
+        "nextPageToken": {
+          "type": "string"
+        }
+      }
+    },
     "customersListOrgMembersResponse": {
       "type": "object",
       "properties": {
@@ -2573,6 +3594,36 @@
         }
       }
     },
+    "customersListWebhookDeliveriesResponse": {
+      "type": "object",
+      "properties": {
+        "deliveries": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "$ref": "#/definitions/customersWebhookDelivery"
+          }
+        },
+        "nextPageToken": {
+          "type": "string"
+        }
+      }
+    },
+    "customersListWebhookSubscriptionsResponse": {
+      "type": "object",
+      "properties": {
+        "subscriptions": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "$ref": "#/definitions/customersWebhookSubscription"
+          }
+        },
+        "nextPageToken": {
+          "type": "string"
+        }
+      }
+    },
     "customersLogoutRequest": {
       "type": "object",
       "properties": {
@@ -2580,6 +3631,121 @@
           "type": "string"
         }
       }
+    },
+    "customersMFADevice": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "userId": {
+          "type": "string"
+        },
+        "deviceType": {
+          "$ref": "#/definitions/customersMFADeviceType"
+        },
+        "name": {
+          "type": "string"
+        },
+        "verifiedAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "lastUsedAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time"
+        }
+      }
+    },
+    "customersMFADeviceType": {
+      "type": "string",
+      "enum": [
+        "MFA_DEVICE_TYPE_UNSPECIFIED",
+        "MFA_DEVICE_TYPE_TOTP",
+        "MFA_DEVICE_TYPE_WEBAUTHN"
+      ],
+      "default": "MFA_DEVICE_TYPE_UNSPECIFIED"
+    },
+    "customersMarkAllNotificationsReadRequest": {
+      "type": "object"
+    },
+    "customersNotification": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "userId": {
+          "type": "string"
+        },
+        "orgId": {
+          "type": "string"
+        },
+        "title": {
+          "type": "string"
+        },
+        "body": {
+          "type": "string"
+        },
+        "type": {
+          "type": "string"
+        },
+        "actionUrl": {
+          "type": "string"
+        },
+        "readAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time"
+        }
+      }
+    },
+    "customersOnboardingProgress": {
+      "type": "object",
+      "properties": {
+        "steps": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "$ref": "#/definitions/customersOnboardingStep"
+          }
+        },
+        "completed": {
+          "type": "boolean"
+        }
+      }
+    },
+    "customersOnboardingStep": {
+      "type": "object",
+      "properties": {
+        "stepName": {
+          "type": "string"
+        },
+        "status": {
+          "$ref": "#/definitions/customersOnboardingStepStatus"
+        },
+        "completedAt": {
+          "type": "string",
+          "format": "date-time"
+        }
+      }
+    },
+    "customersOnboardingStepStatus": {
+      "type": "string",
+      "enum": [
+        "ONBOARDING_STEP_STATUS_UNSPECIFIED",
+        "ONBOARDING_STEP_STATUS_PENDING",
+        "ONBOARDING_STEP_STATUS_COMPLETED",
+        "ONBOARDING_STEP_STATUS_SKIPPED"
+      ],
+      "default": "ONBOARDING_STEP_STATUS_UNSPECIFIED"
     },
     "customersOrgMembership": {
       "type": "object",
@@ -2608,6 +3774,26 @@
         "ORG_ROLE_OWNER"
       ],
       "default": "ORG_ROLE_UNSPECIFIED"
+    },
+    "customersOrgSettings": {
+      "type": "object",
+      "properties": {
+        "orgId": {
+          "type": "string"
+        },
+        "logoUrl": {
+          "type": "string"
+        },
+        "primaryColor": {
+          "type": "string"
+        },
+        "customDomain": {
+          "type": "string"
+        },
+        "faviconUrl": {
+          "type": "string"
+        }
+      }
     },
     "customersOrganization": {
       "type": "object",
@@ -2747,6 +3933,12 @@
           "$ref": "#/definitions/customersUserIdentity"
         }
       }
+    },
+    "customersRequestDataExportRequest": {
+      "type": "object"
+    },
+    "customersRequestDeletionRequest": {
+      "type": "object"
     },
     "customersResolveIdentityRequest": {
       "type": "object",
@@ -2892,6 +4084,26 @@
         "expiresAt": {
           "type": "string",
           "format": "date-time"
+        }
+      }
+    },
+    "customersSetupTOTPRequest": {
+      "type": "object"
+    },
+    "customersSetupTOTPResponse": {
+      "type": "object",
+      "properties": {
+        "secret": {
+          "type": "string"
+        },
+        "provisioningUri": {
+          "type": "string"
+        },
+        "backupCodes": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
         }
       }
     },
@@ -3057,11 +4269,106 @@
       ],
       "default": "USER_STATUS_UNSPECIFIED"
     },
+    "customersVerifyTOTPRequest": {
+      "type": "object",
+      "properties": {
+        "code": {
+          "type": "string"
+        }
+      }
+    },
+    "customersVerifyTOTPResponse": {
+      "type": "object",
+      "properties": {
+        "valid": {
+          "type": "boolean"
+        },
+        "device": {
+          "$ref": "#/definitions/customersMFADevice"
+        }
+      }
+    },
     "customersVersionResponse": {
       "type": "object",
       "properties": {
         "version": {
           "type": "string"
+        }
+      }
+    },
+    "customersWebhookDelivery": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "subscriptionId": {
+          "type": "string"
+        },
+        "eventType": {
+          "type": "string"
+        },
+        "payload": {
+          "type": "string"
+        },
+        "status": {
+          "$ref": "#/definitions/customersWebhookDeliveryStatus"
+        },
+        "attempts": {
+          "type": "integer",
+          "format": "int32"
+        },
+        "httpStatus": {
+          "type": "integer",
+          "format": "int32"
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "deliveredAt": {
+          "type": "string",
+          "format": "date-time"
+        }
+      }
+    },
+    "customersWebhookDeliveryStatus": {
+      "type": "string",
+      "enum": [
+        "WEBHOOK_DELIVERY_STATUS_UNSPECIFIED",
+        "WEBHOOK_DELIVERY_STATUS_PENDING",
+        "WEBHOOK_DELIVERY_STATUS_SUCCESS",
+        "WEBHOOK_DELIVERY_STATUS_FAILED"
+      ],
+      "default": "WEBHOOK_DELIVERY_STATUS_UNSPECIFIED"
+    },
+    "customersWebhookSubscription": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "orgId": {
+          "type": "string"
+        },
+        "url": {
+          "type": "string"
+        },
+        "events": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "active": {
+          "type": "boolean"
+        },
+        "description": {
+          "type": "string"
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time"
         }
       }
     },
