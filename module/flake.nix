@@ -1,5 +1,5 @@
 {
-  description = "{{.Name}} module development environment";
+  description = "saas-starter module development environment";
 
   inputs = {
     nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";

@@ -3,3 +3,14 @@ dist/
 *.dll
 *.so
 *.dylib
+
+# agent binary
+/saas-starter
+
+# macOS
+.DS_Store
+
+# build artifacts inside embedded module
+module/services/*/code/backend
+module/services/*/code/local
+module/services/*/.cache/

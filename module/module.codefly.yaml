@@ -1,17 +1,25 @@
 kind: module
-name: {{.Name}}
+name: saas-starter
 description: "SaaS foundation — auth, multi-tenancy, RBAC, OPA gateway, impersonation, audit"
 interface:
     endpoints:
-        - service: api
-          endpoint: grpc
-          visibility: module
+        # Public ingress — every external request enters through the gateway
+        # hosted by auth-sidecar. Frontend and api are internal only.
+        - service: auth-sidecar
+          endpoint: http
+          visibility: public
         - service: auth-sidecar
           endpoint: grpc
           visibility: module
+        - service: api
+          endpoint: grpc
+          visibility: module
+        - service: api
+          endpoint: connect
+          visibility: module
         - service: frontend
           endpoint: http
-          visibility: public
+          visibility: module
 services:
     - name: store
     - name: vault
