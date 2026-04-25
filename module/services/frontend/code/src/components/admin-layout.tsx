@@ -46,6 +46,7 @@ import {
   ShieldCheck,
   Globe,
   HardDriveDownload,
+  KeyRound,
   Bell,
   LogOut,
   ChevronUp,
@@ -88,6 +89,7 @@ const adminNav = [
     items: [
       { label: "Webhooks", href: "/admin/webhooks", icon: Globe },
       { label: "Audit Export", href: "/admin/audit-export", icon: HardDriveDownload },
+      { label: "Single Sign-On", href: "/admin/sso", icon: KeyRound },
     ],
   },
   {
