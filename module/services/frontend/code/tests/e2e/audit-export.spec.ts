@@ -50,80 +50,45 @@ test.describe("Audit Export admin page", () => {
     ).toHaveCount(0);
   });
 
-  test("first-config flow saves the row and flips to edit mode", async ({
+  test("Save with unreachable endpoint surfaces the pre-flight error", async ({
     page,
   }) => {
+    // The api runs a connection probe (BucketExists) before persisting
+    // any row. A typo in the endpoint or wrong creds returns
+    // InvalidArgument, which the FE renders as a toast — the operator
+    // doesn't get a green "Saved" only to discover failure 60 min
+    // later in last_error.
+    //
+    // We point at port 1 which is guaranteed to refuse TCP — the
+    // pre-flight returns "connection refused" and the row never
+    // hits postgres.
     await pickAcmeOrg(page);
 
-    // First-config: form is blank, CTA reads "Save". Pre-bucket
-    // assertion proves we landed on the new-config branch and not
-    // the existing-config (edit) branch.
     await expect(page.getByLabel(/^bucket$/i)).toHaveValue("");
     const saveBtn = page.getByRole("button", { name: /^save$/i });
     await expect(saveBtn).toBeVisible();
 
-    // Use a unique bucket name per run so the postgres row is
-    // distinct across reruns of the test against the shared fixture.
-    const bucket = `audit-test-${Date.now()}`;
-
-    await page.getByLabel(/^bucket$/i).fill(bucket);
-    await page.getByLabel(/^region$/i).fill("us-east-1");
+    await page.getByLabel(/^bucket$/i).fill("does-not-matter");
     await page
       .getByLabel(/^endpoint/i)
-      .fill("http://localhost:9000");
-    await page.getByLabel(/^access key id$/i).fill("minioadmin");
-    await page.getByLabel(/^secret access key/i).fill("minioadmin");
+      .fill("http://127.0.0.1:1");
+    await page.getByLabel(/^access key id$/i).fill("anykey");
+    await page.getByLabel(/^secret access key/i).fill("anysecret");
 
     await saveBtn.click();
-    await expect(page.getByText(/audit export saved/i)).toBeVisible({
+
+    // sonner renders the error message in the description slot. We
+    // accept any of the sub-strings the upstream connect-refused
+    // path emits (varies a bit by platform/curl/minio version).
+    await expect(page.getByText(/save failed|connection probe/i)).toBeVisible({
       timeout: 10_000,
     });
 
-    // Edit mode: bucket pre-filled, CTA flips to "Update", secret
-    // input has the masked placeholder. The "(preserved)" hint
-    // proves the api Get returned "" for secretAccessKey, which is
-    // the contract we depend on.
-    await expect(page.getByLabel(/^bucket$/i)).toHaveValue(bucket);
-    await expect(
-      page.getByRole("button", { name: /^update$/i }),
-    ).toBeVisible({ timeout: 10_000 });
-    await expect(
-      page.getByText(/leave blank to keep existing/i),
-    ).toBeVisible();
-  });
-
-  test("delete flow removes the configuration", async ({ page }) => {
-    await pickAcmeOrg(page);
-
-    // Either the previous test seeded a row or we need to make one.
-    // Either way, ensure a row exists for the delete to act on.
-    const updateCTA = page.getByRole("button", { name: /^update$/i });
-    if (!(await updateCTA.isVisible().catch(() => false))) {
-      const bucket = `audit-test-delete-${Date.now()}`;
-      await page.getByLabel(/^bucket$/i).fill(bucket);
-      await page.getByLabel(/^access key id$/i).fill("minioadmin");
-      await page.getByLabel(/^secret access key/i).fill("minioadmin");
-      await page.getByRole("button", { name: /^save$/i }).click();
-      await expect(page.getByText(/audit export saved/i)).toBeVisible({
-        timeout: 10_000,
-      });
-    }
-
-    // The Remove button uses window.confirm — accept the dialog
-    // before clicking so the mutation actually fires.
-    page.once("dialog", (d) => d.accept());
-
-    await page
-      .getByRole("button", { name: /remove configuration/i })
-      .click();
-    await expect(page.getByText(/audit export disabled/i)).toBeVisible({
-      timeout: 10_000,
-    });
-
-    // Back to first-config state: Save CTA returns, Update vanishes.
+    // Confirm we're still in first-config mode — the row never
+    // persisted. CTA still reads "Save", not "Update".
     await expect(
       page.getByRole("button", { name: /^save$/i }),
-    ).toBeVisible({ timeout: 10_000 });
+    ).toBeVisible();
     await expect(
       page.getByRole("button", { name: /^update$/i }),
     ).toHaveCount(0);

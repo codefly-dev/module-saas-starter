@@ -3,6 +3,9 @@ package business
 import (
 	"context"
 	"time"
+
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 )
 
 // AuditExportConfig carries everything the S3 exporter needs to hand
@@ -33,6 +36,13 @@ type AuditExportConfig struct {
 // secretAccessKey is empty the existing secret is preserved — the
 // FE submits "" rather than echoing the masked secret back.
 //
+// Pre-flight: before persisting, the resolved (creds + endpoint)
+// MUST authenticate against the configured S3. A typo in the access
+// key id or a wrong region would otherwise sit silently in the row
+// and only surface in last_error a full cadence later (default 60
+// min). Failing fast at Save time gives the operator a tight
+// feedback loop in the admin form's toast.
+//
 // Authz expectation: caller is org-admin, enforced at the adapter.
 func (s *Service) SaveAuditExportConfig(ctx context.Context, orgID string, in *AuditExportConfig) error {
 	if in.CadenceMinutes < 5 {
@@ -47,6 +57,15 @@ func (s *Service) SaveAuditExportConfig(ctx context.Context, orgID string, in *A
 		if existing != nil {
 			in.SecretAccessKey = existing.SecretAccessKey
 		}
+	}
+	// Pre-flight against the resolved config — this is what the
+	// exporter goroutine will use too, so a successful verify here
+	// means the next exporter tick will succeed. Wrap as
+	// InvalidArgument so the FE form's toast surfaces a proper 400
+	// (and not a generic 500) with the upstream cause as the message.
+	if err := VerifyAuditExportConnection(ctx, in); err != nil {
+		return status.Errorf(codes.InvalidArgument,
+			"connection probe failed: %v", err)
 	}
 	if err := s.store.UpsertAuditExportConfig(ctx, in); err != nil {
 		return err

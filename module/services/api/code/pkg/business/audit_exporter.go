@@ -192,6 +192,48 @@ func (e *AuditExporter) upload(ctx context.Context, cfg *AuditExportConfig, ts t
 	return nil
 }
 
+// VerifyAuditExportConnection probes the configured S3 endpoint with
+// the supplied creds, returning nil if the bucket either exists or
+// can be created. Used by SaveAuditExportConfig as a pre-flight
+// check so a typo in the access key or a wrong region surfaces in
+// the operator's Save toast — not silently in last_error a minute
+// later.
+//
+// Side-effect-free against existing buckets: only calls BucketExists.
+// We deliberately do NOT call MakeBucket here — the exporter does
+// that on its first real upload. Validating "I can authenticate +
+// the bucket exists OR I have permission to make it" is the contract
+// we want to assert at config-save time without leaving an empty
+// bucket behind if the operator changes their mind before exports
+// actually run.
+func VerifyAuditExportConnection(ctx context.Context, cfg *AuditExportConfig) error {
+	endpoint, useSSL := resolveEndpoint(cfg.Endpoint, cfg.Region)
+	client, err := minio.New(endpoint, &minio.Options{
+		Creds:  credentials.NewStaticV4(cfg.AccessKeyID, cfg.SecretAccessKey, ""),
+		Secure: useSSL,
+		Region: cfg.Region,
+	})
+	if err != nil {
+		return fmt.Errorf("s3 client: %w", err)
+	}
+	// BucketExists is HEAD on the bucket — minimal cost, surfaces
+	// 401/403 on bad creds, 404 on missing bucket (which is fine —
+	// it just means the exporter will create it on first upload),
+	// and network errors on a typo'd endpoint.
+	if _, err := client.BucketExists(ctx, cfg.Bucket); err != nil {
+		errResp := minio.ToErrorResponse(err)
+		// 404 / NoSuchBucket = bucket missing. That's not a failure
+		// for the verify step — ensureBucket will create it on the
+		// first export. The operator just needs to know auth + endpoint
+		// are valid.
+		if errResp.Code == "NoSuchBucket" || errResp.StatusCode == 404 {
+			return nil
+		}
+		return fmt.Errorf("bucket probe: %w", err)
+	}
+	return nil
+}
+
 // resolveEndpoint converts a user-entered endpoint string into the
 // (host, useSSL) pair minio-go needs. Accepts:
 //   ""                    → AWS S3 in `region`, TLS on
