@@ -54,6 +54,8 @@ const (
 	OnboardingServiceName = "customers.OnboardingService"
 	// GDPRServiceName is the fully-qualified name of the GDPRService service.
 	GDPRServiceName = "customers.GDPRService"
+	// SSOAdminServiceName is the fully-qualified name of the SSOAdminService service.
+	SSOAdminServiceName = "customers.SSOAdminService"
 	// MFAServiceName is the fully-qualified name of the MFAService service.
 	MFAServiceName = "customers.MFAService"
 )
@@ -297,6 +299,13 @@ const (
 	// GDPRServiceGetDeletionStatusProcedure is the fully-qualified name of the GDPRService's
 	// GetDeletionStatus RPC.
 	GDPRServiceGetDeletionStatusProcedure = "/customers.GDPRService/GetDeletionStatus"
+	// SSOAdminServiceGetSSOProcedure is the fully-qualified name of the SSOAdminService's GetSSO RPC.
+	SSOAdminServiceGetSSOProcedure = "/customers.SSOAdminService/GetSSO"
+	// SSOAdminServiceStartSetupProcedure is the fully-qualified name of the SSOAdminService's
+	// StartSetup RPC.
+	SSOAdminServiceStartSetupProcedure = "/customers.SSOAdminService/StartSetup"
+	// SSOAdminServiceDisableProcedure is the fully-qualified name of the SSOAdminService's Disable RPC.
+	SSOAdminServiceDisableProcedure = "/customers.SSOAdminService/Disable"
 	// MFAServiceSetupTOTPProcedure is the fully-qualified name of the MFAService's SetupTOTP RPC.
 	MFAServiceSetupTOTPProcedure = "/customers.MFAService/SetupTOTP"
 	// MFAServiceVerifyTOTPProcedure is the fully-qualified name of the MFAService's VerifyTOTP RPC.
@@ -3160,6 +3169,128 @@ func (UnimplementedGDPRServiceHandler) RequestDeletion(context.Context, *connect
 
 func (UnimplementedGDPRServiceHandler) GetDeletionStatus(context.Context, *connect.Request[gen.GetDeletionStatusRequest]) (*connect.Response[gen.GDPRRequest], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("customers.GDPRService.GetDeletionStatus is not implemented"))
+}
+
+// SSOAdminServiceClient is a client for the customers.SSOAdminService service.
+type SSOAdminServiceClient interface {
+	GetSSO(context.Context, *connect.Request[gen.GetOrgSSORequest]) (*connect.Response[gen.OrgSSOConfig], error)
+	StartSetup(context.Context, *connect.Request[gen.StartSSOSetupRequest]) (*connect.Response[gen.StartSSOSetupResponse], error)
+	Disable(context.Context, *connect.Request[gen.DisableSSORequest]) (*connect.Response[emptypb.Empty], error)
+}
+
+// NewSSOAdminServiceClient constructs a client for the customers.SSOAdminService service. By
+// default, it uses the Connect protocol with the binary Protobuf Codec, asks for gzipped responses,
+// and sends uncompressed requests. To use the gRPC or gRPC-Web protocols, supply the
+// connect.WithGRPC() or connect.WithGRPCWeb() options.
+//
+// The URL supplied here should be the base URL for the Connect or gRPC server (for example,
+// http://api.acme.com or https://acme.com/grpc).
+func NewSSOAdminServiceClient(httpClient connect.HTTPClient, baseURL string, opts ...connect.ClientOption) SSOAdminServiceClient {
+	baseURL = strings.TrimRight(baseURL, "/")
+	sSOAdminServiceMethods := gen.File_api_proto.Services().ByName("SSOAdminService").Methods()
+	return &sSOAdminServiceClient{
+		getSSO: connect.NewClient[gen.GetOrgSSORequest, gen.OrgSSOConfig](
+			httpClient,
+			baseURL+SSOAdminServiceGetSSOProcedure,
+			connect.WithSchema(sSOAdminServiceMethods.ByName("GetSSO")),
+			connect.WithClientOptions(opts...),
+		),
+		startSetup: connect.NewClient[gen.StartSSOSetupRequest, gen.StartSSOSetupResponse](
+			httpClient,
+			baseURL+SSOAdminServiceStartSetupProcedure,
+			connect.WithSchema(sSOAdminServiceMethods.ByName("StartSetup")),
+			connect.WithClientOptions(opts...),
+		),
+		disable: connect.NewClient[gen.DisableSSORequest, emptypb.Empty](
+			httpClient,
+			baseURL+SSOAdminServiceDisableProcedure,
+			connect.WithSchema(sSOAdminServiceMethods.ByName("Disable")),
+			connect.WithClientOptions(opts...),
+		),
+	}
+}
+
+// sSOAdminServiceClient implements SSOAdminServiceClient.
+type sSOAdminServiceClient struct {
+	getSSO     *connect.Client[gen.GetOrgSSORequest, gen.OrgSSOConfig]
+	startSetup *connect.Client[gen.StartSSOSetupRequest, gen.StartSSOSetupResponse]
+	disable    *connect.Client[gen.DisableSSORequest, emptypb.Empty]
+}
+
+// GetSSO calls customers.SSOAdminService.GetSSO.
+func (c *sSOAdminServiceClient) GetSSO(ctx context.Context, req *connect.Request[gen.GetOrgSSORequest]) (*connect.Response[gen.OrgSSOConfig], error) {
+	return c.getSSO.CallUnary(ctx, req)
+}
+
+// StartSetup calls customers.SSOAdminService.StartSetup.
+func (c *sSOAdminServiceClient) StartSetup(ctx context.Context, req *connect.Request[gen.StartSSOSetupRequest]) (*connect.Response[gen.StartSSOSetupResponse], error) {
+	return c.startSetup.CallUnary(ctx, req)
+}
+
+// Disable calls customers.SSOAdminService.Disable.
+func (c *sSOAdminServiceClient) Disable(ctx context.Context, req *connect.Request[gen.DisableSSORequest]) (*connect.Response[emptypb.Empty], error) {
+	return c.disable.CallUnary(ctx, req)
+}
+
+// SSOAdminServiceHandler is an implementation of the customers.SSOAdminService service.
+type SSOAdminServiceHandler interface {
+	GetSSO(context.Context, *connect.Request[gen.GetOrgSSORequest]) (*connect.Response[gen.OrgSSOConfig], error)
+	StartSetup(context.Context, *connect.Request[gen.StartSSOSetupRequest]) (*connect.Response[gen.StartSSOSetupResponse], error)
+	Disable(context.Context, *connect.Request[gen.DisableSSORequest]) (*connect.Response[emptypb.Empty], error)
+}
+
+// NewSSOAdminServiceHandler builds an HTTP handler from the service implementation. It returns the
+// path on which to mount the handler and the handler itself.
+//
+// By default, handlers support the Connect, gRPC, and gRPC-Web protocols with the binary Protobuf
+// and JSON codecs. They also support gzip compression.
+func NewSSOAdminServiceHandler(svc SSOAdminServiceHandler, opts ...connect.HandlerOption) (string, http.Handler) {
+	sSOAdminServiceMethods := gen.File_api_proto.Services().ByName("SSOAdminService").Methods()
+	sSOAdminServiceGetSSOHandler := connect.NewUnaryHandler(
+		SSOAdminServiceGetSSOProcedure,
+		svc.GetSSO,
+		connect.WithSchema(sSOAdminServiceMethods.ByName("GetSSO")),
+		connect.WithHandlerOptions(opts...),
+	)
+	sSOAdminServiceStartSetupHandler := connect.NewUnaryHandler(
+		SSOAdminServiceStartSetupProcedure,
+		svc.StartSetup,
+		connect.WithSchema(sSOAdminServiceMethods.ByName("StartSetup")),
+		connect.WithHandlerOptions(opts...),
+	)
+	sSOAdminServiceDisableHandler := connect.NewUnaryHandler(
+		SSOAdminServiceDisableProcedure,
+		svc.Disable,
+		connect.WithSchema(sSOAdminServiceMethods.ByName("Disable")),
+		connect.WithHandlerOptions(opts...),
+	)
+	return "/customers.SSOAdminService/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case SSOAdminServiceGetSSOProcedure:
+			sSOAdminServiceGetSSOHandler.ServeHTTP(w, r)
+		case SSOAdminServiceStartSetupProcedure:
+			sSOAdminServiceStartSetupHandler.ServeHTTP(w, r)
+		case SSOAdminServiceDisableProcedure:
+			sSOAdminServiceDisableHandler.ServeHTTP(w, r)
+		default:
+			http.NotFound(w, r)
+		}
+	})
+}
+
+// UnimplementedSSOAdminServiceHandler returns CodeUnimplemented from all methods.
+type UnimplementedSSOAdminServiceHandler struct{}
+
+func (UnimplementedSSOAdminServiceHandler) GetSSO(context.Context, *connect.Request[gen.GetOrgSSORequest]) (*connect.Response[gen.OrgSSOConfig], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("customers.SSOAdminService.GetSSO is not implemented"))
+}
+
+func (UnimplementedSSOAdminServiceHandler) StartSetup(context.Context, *connect.Request[gen.StartSSOSetupRequest]) (*connect.Response[gen.StartSSOSetupResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("customers.SSOAdminService.StartSetup is not implemented"))
+}
+
+func (UnimplementedSSOAdminServiceHandler) Disable(context.Context, *connect.Request[gen.DisableSSORequest]) (*connect.Response[emptypb.Empty], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("customers.SSOAdminService.Disable is not implemented"))
 }
 
 // MFAServiceClient is a client for the customers.MFAService service.

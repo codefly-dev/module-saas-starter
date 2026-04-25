@@ -4234,6 +4234,196 @@ var GDPRService_ServiceDesc = grpc.ServiceDesc{
 }
 
 const (
+	SSOAdminService_GetSSO_FullMethodName     = "/customers.SSOAdminService/GetSSO"
+	SSOAdminService_StartSetup_FullMethodName = "/customers.SSOAdminService/StartSetup"
+	SSOAdminService_Disable_FullMethodName    = "/customers.SSOAdminService/Disable"
+)
+
+// SSOAdminServiceClient is the client API for SSOAdminService service.
+//
+// For semantics around ctx use and closing/ending streaming RPCs, please refer to https://pkg.go.dev/google.golang.org/grpc/?tab=doc#ClientConn.NewStream.
+//
+// SSOAdminService — org-admin-gated. Lets paying customers wire up
+// SAML / OIDC themselves through the WorkOS Admin Portal without a
+// support ticket. Stub-mode (no WORKOS_API_KEY env) returns a
+// placeholder portal link pointing back at /admin/sso?demo=1 so dev
+// environments can exercise the FE flow.
+type SSOAdminServiceClient interface {
+	GetSSO(ctx context.Context, in *GetOrgSSORequest, opts ...grpc.CallOption) (*OrgSSOConfig, error)
+	StartSetup(ctx context.Context, in *StartSSOSetupRequest, opts ...grpc.CallOption) (*StartSSOSetupResponse, error)
+	Disable(ctx context.Context, in *DisableSSORequest, opts ...grpc.CallOption) (*emptypb.Empty, error)
+}
+
+type sSOAdminServiceClient struct {
+	cc grpc.ClientConnInterface
+}
+
+func NewSSOAdminServiceClient(cc grpc.ClientConnInterface) SSOAdminServiceClient {
+	return &sSOAdminServiceClient{cc}
+}
+
+func (c *sSOAdminServiceClient) GetSSO(ctx context.Context, in *GetOrgSSORequest, opts ...grpc.CallOption) (*OrgSSOConfig, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(OrgSSOConfig)
+	err := c.cc.Invoke(ctx, SSOAdminService_GetSSO_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *sSOAdminServiceClient) StartSetup(ctx context.Context, in *StartSSOSetupRequest, opts ...grpc.CallOption) (*StartSSOSetupResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(StartSSOSetupResponse)
+	err := c.cc.Invoke(ctx, SSOAdminService_StartSetup_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *sSOAdminServiceClient) Disable(ctx context.Context, in *DisableSSORequest, opts ...grpc.CallOption) (*emptypb.Empty, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(emptypb.Empty)
+	err := c.cc.Invoke(ctx, SSOAdminService_Disable_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+// SSOAdminServiceServer is the server API for SSOAdminService service.
+// All implementations must embed UnimplementedSSOAdminServiceServer
+// for forward compatibility.
+//
+// SSOAdminService — org-admin-gated. Lets paying customers wire up
+// SAML / OIDC themselves through the WorkOS Admin Portal without a
+// support ticket. Stub-mode (no WORKOS_API_KEY env) returns a
+// placeholder portal link pointing back at /admin/sso?demo=1 so dev
+// environments can exercise the FE flow.
+type SSOAdminServiceServer interface {
+	GetSSO(context.Context, *GetOrgSSORequest) (*OrgSSOConfig, error)
+	StartSetup(context.Context, *StartSSOSetupRequest) (*StartSSOSetupResponse, error)
+	Disable(context.Context, *DisableSSORequest) (*emptypb.Empty, error)
+	mustEmbedUnimplementedSSOAdminServiceServer()
+}
+
+// UnimplementedSSOAdminServiceServer must be embedded to have
+// forward compatible implementations.
+//
+// NOTE: this should be embedded by value instead of pointer to avoid a nil
+// pointer dereference when methods are called.
+type UnimplementedSSOAdminServiceServer struct{}
+
+func (UnimplementedSSOAdminServiceServer) GetSSO(context.Context, *GetOrgSSORequest) (*OrgSSOConfig, error) {
+	return nil, status.Error(codes.Unimplemented, "method GetSSO not implemented")
+}
+func (UnimplementedSSOAdminServiceServer) StartSetup(context.Context, *StartSSOSetupRequest) (*StartSSOSetupResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method StartSetup not implemented")
+}
+func (UnimplementedSSOAdminServiceServer) Disable(context.Context, *DisableSSORequest) (*emptypb.Empty, error) {
+	return nil, status.Error(codes.Unimplemented, "method Disable not implemented")
+}
+func (UnimplementedSSOAdminServiceServer) mustEmbedUnimplementedSSOAdminServiceServer() {}
+func (UnimplementedSSOAdminServiceServer) testEmbeddedByValue()                         {}
+
+// UnsafeSSOAdminServiceServer may be embedded to opt out of forward compatibility for this service.
+// Use of this interface is not recommended, as added methods to SSOAdminServiceServer will
+// result in compilation errors.
+type UnsafeSSOAdminServiceServer interface {
+	mustEmbedUnimplementedSSOAdminServiceServer()
+}
+
+func RegisterSSOAdminServiceServer(s grpc.ServiceRegistrar, srv SSOAdminServiceServer) {
+	// If the following call panics, it indicates UnimplementedSSOAdminServiceServer was
+	// embedded by pointer and is nil.  This will cause panics if an
+	// unimplemented method is ever invoked, so we test this at initialization
+	// time to prevent it from happening at runtime later due to I/O.
+	if t, ok := srv.(interface{ testEmbeddedByValue() }); ok {
+		t.testEmbeddedByValue()
+	}
+	s.RegisterService(&SSOAdminService_ServiceDesc, srv)
+}
+
+func _SSOAdminService_GetSSO_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(GetOrgSSORequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(SSOAdminServiceServer).GetSSO(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: SSOAdminService_GetSSO_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(SSOAdminServiceServer).GetSSO(ctx, req.(*GetOrgSSORequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _SSOAdminService_StartSetup_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(StartSSOSetupRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(SSOAdminServiceServer).StartSetup(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: SSOAdminService_StartSetup_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(SSOAdminServiceServer).StartSetup(ctx, req.(*StartSSOSetupRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _SSOAdminService_Disable_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(DisableSSORequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(SSOAdminServiceServer).Disable(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: SSOAdminService_Disable_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(SSOAdminServiceServer).Disable(ctx, req.(*DisableSSORequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+// SSOAdminService_ServiceDesc is the grpc.ServiceDesc for SSOAdminService service.
+// It's only intended for direct use with grpc.RegisterService,
+// and not to be introspected or modified (even as a copy)
+var SSOAdminService_ServiceDesc = grpc.ServiceDesc{
+	ServiceName: "customers.SSOAdminService",
+	HandlerType: (*SSOAdminServiceServer)(nil),
+	Methods: []grpc.MethodDesc{
+		{
+			MethodName: "GetSSO",
+			Handler:    _SSOAdminService_GetSSO_Handler,
+		},
+		{
+			MethodName: "StartSetup",
+			Handler:    _SSOAdminService_StartSetup_Handler,
+		},
+		{
+			MethodName: "Disable",
+			Handler:    _SSOAdminService_Disable_Handler,
+		},
+	},
+	Streams:  []grpc.StreamDesc{},
+	Metadata: "api.proto",
+}
+
+const (
 	MFAService_SetupTOTP_FullMethodName           = "/customers.MFAService/SetupTOTP"
 	MFAService_VerifyTOTP_FullMethodName          = "/customers.MFAService/VerifyTOTP"
 	MFAService_ListDevices_FullMethodName         = "/customers.MFAService/ListDevices"

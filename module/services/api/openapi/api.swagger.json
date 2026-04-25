@@ -54,6 +54,9 @@
       "name": "GDPRService"
     },
     {
+      "name": "SSOAdminService"
+    },
+    {
       "name": "MFAService"
     }
   ],
@@ -2219,6 +2222,102 @@
         ]
       }
     },
+    "/v1/sso/disable": {
+      "post": {
+        "operationId": "SSOAdminService_Disable",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "type": "object",
+              "properties": {}
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/rpcStatus"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "body",
+            "in": "body",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/customersDisableSSORequest"
+            }
+          }
+        ],
+        "tags": [
+          "SSOAdminService"
+        ]
+      }
+    },
+    "/v1/sso/setup": {
+      "post": {
+        "operationId": "SSOAdminService_StartSetup",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/customersStartSSOSetupResponse"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/rpcStatus"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "body",
+            "description": "StartSSOSetupRequest kicks off the admin portal flow. The backend\n(a) ensures a WorkOS Organization exists for the saas-starter org,\n(b) mints a portal link, (c) returns it for browser redirect.",
+            "in": "body",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/customersStartSSOSetupRequest"
+            }
+          }
+        ],
+        "tags": [
+          "SSOAdminService"
+        ]
+      }
+    },
+    "/v1/sso/{orgId}": {
+      "get": {
+        "operationId": "SSOAdminService_GetSSO",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/customersOrgSSOConfig"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/rpcStatus"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "orgId",
+            "in": "path",
+            "required": true,
+            "type": "string"
+          }
+        ],
+        "tags": [
+          "SSOAdminService"
+        ]
+      }
+    },
     "/v1/teams/{teamId}/members": {
       "get": {
         "operationId": "TeamService_ListMembers",
@@ -3551,6 +3650,14 @@
         }
       }
     },
+    "customersDisableSSORequest": {
+      "type": "object",
+      "properties": {
+        "orgId": {
+          "type": "string"
+        }
+      }
+    },
     "customersEntitlementInfo": {
       "type": "object",
       "properties": {
@@ -4181,6 +4288,35 @@
       ],
       "default": "ORG_ROLE_UNSPECIFIED"
     },
+    "customersOrgSSOConfig": {
+      "type": "object",
+      "properties": {
+        "orgId": {
+          "type": "string"
+        },
+        "provider": {
+          "type": "string",
+          "title": "e.g. \"workos\""
+        },
+        "connectionId": {
+          "type": "string",
+          "title": "WorkOS Connection id, when linked"
+        },
+        "organizationId": {
+          "type": "string",
+          "title": "WorkOS Organization id (the customer's tenant on WorkOS)"
+        },
+        "status": {
+          "type": "string",
+          "title": "\"linked\" | \"active\" | \"disabled\" | \"\""
+        },
+        "configuredAt": {
+          "type": "string",
+          "format": "date-time"
+        }
+      },
+      "title": "OrgSSOConfig is the per-org SSO state. Empty connection_id means\nSSO is not configured. status mirrors WorkOS Connections lifecycle:\n  \"\"             — not configured\n  \"linked\"       — admin portal link issued, IdP setup pending\n  \"active\"       — connection live; email-domain users SSO-routed\n  \"disabled\"     — connection exists but admin paused it"
+    },
     "customersOrgSettings": {
       "type": "object",
       "properties": {
@@ -4531,6 +4667,28 @@
           "items": {
             "type": "string"
           }
+        }
+      }
+    },
+    "customersStartSSOSetupRequest": {
+      "type": "object",
+      "properties": {
+        "orgId": {
+          "type": "string"
+        },
+        "returnUrl": {
+          "type": "string",
+          "description": "return_url is where WorkOS redirects the admin after they\nfinish IdP setup. Typically the saas-starter /admin/sso page."
+        }
+      },
+      "description": "StartSSOSetupRequest kicks off the admin portal flow. The backend\n(a) ensures a WorkOS Organization exists for the saas-starter org,\n(b) mints a portal link, (c) returns it for browser redirect."
+    },
+    "customersStartSSOSetupResponse": {
+      "type": "object",
+      "properties": {
+        "portalLink": {
+          "type": "string",
+          "description": "portal_link is the one-shot URL the FE redirects the browser\nto. Expires per WorkOS policy (15 min default). Re-callable to\nmint a fresh one if the operator needs to re-enter the portal."
         }
       }
     },

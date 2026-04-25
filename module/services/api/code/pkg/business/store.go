@@ -80,6 +80,10 @@ type Store interface {
 	UpdateInvitationStatus(ctx context.Context, id string, status string, acceptedBy string) error
 	CountPendingInvitations(ctx context.Context, orgID string) (int32, error)
 
+	// SSO
+	GetOrgSSO(ctx context.Context, orgID string) (*OrgSSOConfig, error)
+	UpsertOrgSSO(ctx context.Context, cfg *OrgSSOConfig) error
+
 	// Entitlements
 	GetOrgPlanID(ctx context.Context, orgID string) (string, error)
 	GetPlanByID(ctx context.Context, planID string) (*Plan, error)
