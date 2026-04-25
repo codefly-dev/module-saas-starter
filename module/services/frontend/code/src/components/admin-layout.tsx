@@ -56,6 +56,7 @@ import {
 import { NotificationBell } from "@/features/notifications/ui/notification-bell";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { ThemeSync } from "@/features/user-settings/ui/theme-sync";
+import { RateLimitBanner } from "@/components/rate-limit-banner";
 
 // Regular user nav — visible to all authenticated users
 const userNav = [
@@ -258,6 +259,7 @@ export function AdminLayout({ children }: { children: React.ReactNode }) {
 
       <Toaster />
       <ThemeSync />
+      <RateLimitBanner />
     </SidebarProvider>
   );
 }

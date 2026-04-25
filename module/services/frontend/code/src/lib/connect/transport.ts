@@ -1,6 +1,7 @@
 import { createConnectTransport } from "@connectrpc/connect-web";
 import type { Interceptor } from "@connectrpc/connect";
 import { getToken } from "./token-store";
+import { rateLimitInterceptor } from "./rate-limit-tracker";
 
 /**
  * Connect transport for the API backend, going through the auth-sidecar
@@ -22,5 +23,8 @@ const authInterceptor: Interceptor = (next) => async (req) => {
 
 export const apiTransport = createConnectTransport({
   baseUrl: GATEWAY_URL,
-  interceptors: [authInterceptor],
+  // Order matters: auth runs first (sets Authorization), rate-limit
+  // tracker runs second so it sees the response headers from the
+  // auth'd call. Both are unary-only — no streaming wrapping needed.
+  interceptors: [authInterceptor, rateLimitInterceptor],
 });

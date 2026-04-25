@@ -119,6 +119,14 @@ func (s *ConnectServer) Run(ctx context.Context) error {
 			"Grpc-Status",
 			"Grpc-Message",
 			"Grpc-Status-Details-Bin",
+			// RateLimit headers — exposed so well-behaved Connect-Web
+			// clients can self-throttle before they hit the wall.
+			// Without this in CORS, the browser fetch can't read them
+			// even though the server sets them.
+			"X-RateLimit-Limit",
+			"X-RateLimit-Remaining",
+			"X-RateLimit-Reset",
+			"Retry-After",
 		},
 		AllowCredentials: true,
 		MaxAge:           7200,
