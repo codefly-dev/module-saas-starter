@@ -10,6 +10,7 @@ implement your APIs there.
 ----------------------------------------------------------------- */
 
 import (
+	"api/pkg/auth"
 	"api/pkg/gen"
 	"context"
 	"fmt"
@@ -130,6 +131,24 @@ func (s *UserServer) Version(ctx context.Context, req *gen.VersionRequest) (*gen
 }
 
 func NewGrpServer(c *Configuration, opts ...grpc.ServerOption) (*GrpcServer, error) {
+	// Auth interceptor (mirror of the Connect one in connect_gen.go).
+	// Defense-in-depth: even when an auth-sidecar is in front and
+	// already stamped X-User-Id headers, the api re-validates any
+	// `Authorization: Bearer …` it sees so a direct gRPC connection
+	// (dev, debugging, misconfig) cannot bypass auth. Late-bound
+	// because business.Service is wired after NewGrpServer runs.
+	authIc := grpcAuthInterceptor(func() auth.JWTMinter {
+		if service == nil {
+			return nil
+		}
+		return service.JWTMinter()
+	})
+	// gRPC rate-limit twin of the Connect interceptor. Same package-
+	// level limiter, same key derivation (rateLimitKey reads the
+	// wool context after authIc has stamped it).
+	rateIc := grpcRateLimitInterceptor()
+	opts = append(opts, grpc.ChainUnaryInterceptor(authIc, rateIc))
+
 	grpcServer := grpc.NewServer(opts...)
 	v, err := protovalidate.New()
 	if err != nil {

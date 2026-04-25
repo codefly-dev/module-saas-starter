@@ -43,7 +43,7 @@ func NewServer(config *Configuration, grpcOpts ...grpc.ServerOption) (*Server, e
 
 	var conn *ConnectServer
 	if config.EndpointConnectPort != nil {
-		conn, err = NewConnectServer(config)
+		conn, err = NewConnectServer(config, grpc)
 		if err != nil {
 			return nil, err
 		}

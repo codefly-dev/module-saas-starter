@@ -332,6 +332,11 @@ func (s *PostgresStore) ClearAll(ctx context.Context) error {
 
 	// Clean all user data but preserve built-in roles.
 	// Use DELETE instead of TRUNCATE to avoid CASCADE wiping roles table.
+	// Errors are intentionally swallowed per-statement: ClearAll runs
+	// in test cleanup against a possibly partial schema, and we want
+	// best-effort even if some tables haven't been migrated yet. The
+	// previous `var err error; if err != nil` block was a leftover
+	// from refactoring — never set, never tripped.
 	for _, stmt := range []string{
 		"DELETE FROM role_assignments",
 		"DELETE FROM role_permissions WHERE role_id IN (SELECT id FROM roles WHERE NOT built_in)",
@@ -343,15 +348,15 @@ func (s *PostgresStore) ClearAll(ctx context.Context) error {
 		"DELETE FROM user_identities",
 		"DELETE FROM users",
 	} {
-		_, _ = executor.Exec(ctx, stmt)
+		if _, err := executor.Exec(ctx, stmt); err != nil {
+			// Log + continue: missing tables in dev are expected; real
+			// failures (constraint violations, connection lost) get a
+			// debug breadcrumb without aborting the cleanup loop.
+			w.Debug("ClearAll statement failed (continuing)",
+				wool.Field("stmt", stmt), wool.ErrField(err))
+		}
 	}
-	var err error
-	if err != nil {
-		return w.Wrapf(err, "failed to truncate tables")
-	}
-
 	return nil
-
 }
 
 // Helper functions for status conversion

@@ -53,7 +53,7 @@ func TestExchanger_Happy(t *testing.T) {
 	})
 	require.NoError(t, err)
 
-	resp, err := ex.Exchange(ctx, "test-code", "https://app.acme.com/auth/callback")
+	resp, err := ex.Exchange(ctx, "test-code", "https://app.acme.com/auth/callback", "")
 	require.NoError(t, err)
 	require.Equal(t, "opaque-access-token", resp.AccessToken)
 	require.Equal(t, "eyJidToken", resp.IDToken)
@@ -74,7 +74,7 @@ func TestExchanger_NonOKResponse(t *testing.T) {
 		ClientID:     "id",
 		ClientSecret: "secret",
 	})
-	_, err := ex.Exchange(ctx, "bad-code", "https://x")
+	_, err := ex.Exchange(ctx, "bad-code", "https://x", "")
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "invalid_grant")
 }
@@ -92,7 +92,7 @@ func TestExchanger_MissingAccessToken(t *testing.T) {
 		ClientID:     "id",
 		ClientSecret: "secret",
 	})
-	_, err := ex.Exchange(ctx, "code", "https://x")
+	_, err := ex.Exchange(ctx, "code", "https://x", "")
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "missing access_token")
 }

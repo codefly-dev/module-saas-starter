@@ -124,6 +124,8 @@ func (s *Service) DeleteUser(ctx context.Context, userID string, req *gen.GetUse
 }
 
 // AddIdentity adds a new identity to a user.
+// Audited with action "user.identity_added" — adding identities is a
+// security-relevant event (the user can now log in via a new provider).
 func (s *Service) AddIdentity(ctx context.Context, req *gen.AddIdentityRequest) (*gen.UserIdentity, error) {
 	w := wool.Get(ctx).In("AddIdentity")
 
@@ -140,6 +142,7 @@ func (s *Service) AddIdentity(ctx context.Context, req *gen.AddIdentityRequest) 
 		return nil, w.Wrapf(err, "cannot add identity")
 	}
 
+	s.emit(ctx, req.UserUuid, "user", "user.identity_added", "identity", identity.Uuid, "")
 	return identity, nil
 }
 

@@ -52,22 +52,27 @@ func (s *PostgresStore) ListRoles(ctx context.Context, orgID string) ([]*gen.Rol
 	w := wool.Get(ctx).In("ListRoles")
 	executor := s.getQueryExecutor(ctx)
 
-	// List global built-in roles + org-specific roles
+	// Single LEFT JOIN query replaces the N+1 "one SELECT per role" pattern
+	// that was flagged in the audit. We group by role_id on the client side
+	// since pg's array_agg would require aligning Permission's two columns
+	// into a single aggregated type and the client-side fold is simpler.
 	var rows pgx.Rows
 	var err error
+	const baseQuery = `
+		SELECT r.id, r.name, r.description, r.built_in, r.org_id, r.created_at,
+		       rp.resource, rp.action
+		FROM roles r
+		LEFT JOIN role_permissions rp ON rp.role_id = r.id
+		`
 	if orgID == "" {
-		rows, err = executor.Query(ctx, `
-			SELECT r.id, r.name, r.description, r.built_in, r.org_id, r.created_at
-			FROM roles r
+		rows, err = executor.Query(ctx, baseQuery+`
 			WHERE r.org_id IS NULL
-			ORDER BY r.built_in DESC, r.name`,
+			ORDER BY r.built_in DESC, r.name, rp.resource, rp.action`,
 		)
 	} else {
-		rows, err = executor.Query(ctx, `
-			SELECT r.id, r.name, r.description, r.built_in, r.org_id, r.created_at
-			FROM roles r
+		rows, err = executor.Query(ctx, baseQuery+`
 			WHERE r.org_id IS NULL OR r.org_id = $1
-			ORDER BY r.built_in DESC, r.name`, orgID,
+			ORDER BY r.built_in DESC, r.name, rp.resource, rp.action`, orgID,
 		)
 	}
 	if err != nil {
@@ -75,36 +80,41 @@ func (s *PostgresStore) ListRoles(ctx context.Context, orgID string) ([]*gen.Rol
 	}
 	defer rows.Close()
 
-	var roles []*gen.Role
+	// Fold rows by role id; LEFT JOIN means a role with no perms returns
+	// exactly one row with NULL resource/action.
+	byID := make(map[string]*gen.Role)
+	var order []string
 	for rows.Next() {
-		var r gen.Role
-		var createdAt time.Time
-		var orgIDVal *string
-		if err := rows.Scan(&r.Id, &r.Name, &r.Description, &r.BuiltIn, &orgIDVal, &createdAt); err != nil {
-			return nil, w.Wrapf(err, "failed to scan role")
-		}
-		if orgIDVal != nil {
-			r.OrgId = *orgIDVal
-		}
-
-		// Load permissions for this role
-		permRows, err := executor.Query(ctx, `
-			SELECT resource, action FROM role_permissions WHERE role_id = $1`, r.Id,
+		var (
+			rid, rname, rdesc string
+			builtIn           bool
+			orgIDVal          *string
+			createdAt         time.Time
+			resource, action  *string
 		)
-		if err != nil {
-			return nil, w.Wrapf(err, "failed to list role permissions")
+		if err := rows.Scan(&rid, &rname, &rdesc, &builtIn, &orgIDVal, &createdAt, &resource, &action); err != nil {
+			return nil, w.Wrapf(err, "failed to scan role row")
 		}
-		for permRows.Next() {
-			var p gen.Permission
-			if err := permRows.Scan(&p.Resource, &p.Action); err != nil {
-				permRows.Close()
-				return nil, w.Wrapf(err, "failed to scan permission")
+		r, seen := byID[rid]
+		if !seen {
+			r = &gen.Role{Id: rid, Name: rname, Description: rdesc, BuiltIn: builtIn}
+			if orgIDVal != nil {
+				r.OrgId = *orgIDVal
 			}
-			r.Permissions = append(r.Permissions, &p)
+			byID[rid] = r
+			order = append(order, rid)
 		}
-		permRows.Close()
+		if resource != nil && action != nil {
+			r.Permissions = append(r.Permissions, &gen.Permission{Resource: *resource, Action: *action})
+		}
+	}
+	if err := rows.Err(); err != nil {
+		return nil, w.Wrapf(err, "failed iterating role rows")
+	}
 
-		roles = append(roles, &r)
+	roles := make([]*gen.Role, 0, len(order))
+	for _, id := range order {
+		roles = append(roles, byID[id])
 	}
 	return roles, nil
 }
@@ -165,12 +175,30 @@ func (s *PostgresStore) RevokeRole(ctx context.Context, subjectID string, roleID
 	w := wool.Get(ctx).In("RevokeRole")
 	executor := s.getQueryExecutor(ctx)
 
+	// PostgreSQL comparisons against NULL yield NULL (unknown), not false —
+	// so `org_id = '' OR ...` silently misses NULL org_id rows. Pass NULL
+	// explicitly via sql.NullString when the caller passed an empty string
+	// so the `IS NOT DISTINCT FROM` semantic works in a single expression.
+	var orgArg, scopeArg any
+	if orgID == "" {
+		orgArg = nil
+	} else {
+		orgArg = orgID
+	}
+	if scope == "" {
+		scopeArg = nil
+	} else {
+		scopeArg = scope
+	}
+
+	// IS NOT DISTINCT FROM treats NULL = NULL as true; works with both
+	// NULL rows and concrete values, and keeps the query parameterized.
 	_, err := executor.Exec(ctx, `
 		DELETE FROM role_assignments
 		WHERE subject_id = $1 AND role_id = $2
-		  AND (org_id = $3 OR ($3 = '' AND org_id IS NULL))
-		  AND (scope = $4 OR ($4 = '' AND scope IS NULL))`,
-		subjectID, roleID, orgID, scope,
+		  AND org_id IS NOT DISTINCT FROM $3
+		  AND scope IS NOT DISTINCT FROM $4`,
+		subjectID, roleID, orgArg, scopeArg,
 	)
 	if err != nil {
 		return w.Wrapf(err, "failed to revoke role")

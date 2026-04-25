@@ -63,6 +63,13 @@ func doWork(ctx context.Context) (Clean, error) {
 	service.SetIdentityResolver(resolver)
 	service.SetJWTMinter(minter)
 
+	// Server-side OAuth state signer. Seeded from the JWT private key so
+	// state survives across api restarts and is consistent across
+	// instances. Without this, OAuth callbacks rely solely on the FE's
+	// sessionStorage check — fine for single-page-app threat models but
+	// not defense-in-depth.
+	service.SetOAuthStateSigner(auth.NewOAuthStateSigner(priv))
+
 	// Provider validator + exchanger based on AUTH_PROVIDER. For
 	// AUTH_PROVIDER=workos|auth0|google we build an oidc.Validator with
 	// the matching preset plus a matching Exchanger. When unset we stay
@@ -94,6 +101,13 @@ func doWork(ctx context.Context) (Clean, error) {
 		orgCache := cache.NewOrgMembershipCache(redisCache)
 		adapters.WithOrgMembershipCache(orgCache)
 		service.SetMembershipInvalidator(adapters.NewCacheInvalidator())
+		// Wire Redis-backed access-token revocation. Without this,
+		// Logout only kills the refresh chain — old access tokens
+		// remain valid until natural expiry (15 min default).
+		minter.SetRevoker(cache.NewTokenRevoker(redisCache))
+		// Per-org / per-API-key rate limiting. Falls back to
+		// allow-all if redisCache is nil (no Redis available).
+		adapters.WithRateLimiter(cache.NewRateLimiter(redisCache))
 		closeCache = c
 	}
 

@@ -675,8 +675,31 @@ message JWKSResponse {
   string keys_json = 1;
 }
 
+// BeginOAuthRequest is the FE's first hop on the authorization-code
+// flow. Server returns a server-signed `state` token bound to
+// (provider, redirect_uri); the FE embeds it in the provider's
+// authorize URL alongside its own PKCE code_challenge. Authenticate
+// later verifies the state before exchanging the code.
+message BeginOAuthRequest {
+  string provider = 1 [(buf.validate.field).string.min_len = 1];
+  string redirect_uri = 2 [(buf.validate.field).string.min_len = 1];
+}
+
+message BeginOAuthResponse {
+  // state is opaque to the FE — pass it back unchanged in the
+  // authorize URL and again in the Authenticate request.
+  string state = 1;
+}
+
 // AuthService — JWT token issuance and session management
 service AuthService {
+
+  // BeginOAuth issues a server-signed `state` for the OAuth code flow.
+  // Public RPC: callable without authentication (this is the start of
+  // the login flow).
+  rpc BeginOAuth(BeginOAuthRequest) returns (BeginOAuthResponse) {
+    option (google.api.http) = { post: "/v1/auth/oauth/begin" body: "*" };
+  }
 
   rpc Authenticate(AuthenticateRequest) returns (AuthenticateResponse) {
     option (google.api.http) = { post: "/v1/auth/authenticate" body: "*" };

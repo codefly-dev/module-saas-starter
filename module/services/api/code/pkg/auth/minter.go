@@ -31,6 +31,14 @@ type JWTMinter interface {
 	// revoked and a new row inserted with the same family_id.
 	Mint(ctx context.Context, identity *Identity) (*TokenPair, error)
 
+	// VerifyAccess parses and validates a previously-minted access token,
+	// returning the embedded Identity (UserID, OrgID, OrgRole, PlatformRole,
+	// SessionID, ActingAsUserID). Used by the in-process Connect auth
+	// interceptor when there is no upstream sidecar to translate the
+	// `Authorization: Bearer …` header into the X-User-Id / X-Org-Id /
+	// X-Roles headers that callerID() reads.
+	VerifyAccess(tokenString string) (*Identity, error)
+
 	// VerifyRefresh accepts an opaque refresh token, looks it up in sessions
 	// by hash (constant-time compare), enforces not-revoked/not-expired, and
 	// rotates the token: revokes the submitted refresh and mints a new
@@ -44,6 +52,13 @@ type JWTMinter interface {
 
 	// Revoke marks all sessions in a family as revoked. Called by /auth/logout.
 	Revoke(ctx context.Context, refreshToken string) error
+
+	// RevokeAccess adds the given access token's jti to the revocation
+	// list with TTL = remaining lifetime. Pairs with Revoke() on logout
+	// to invalidate BOTH halves of the pair — without this, the old
+	// access token stays valid until natural expiry (15 min default).
+	// No-op when the token cannot be parsed (already invalid).
+	RevokeAccess(ctx context.Context, accessToken string) error
 
 	// JWKS returns the public portion of the signing key as a JSON Web Key
 	// Set for external tooling. The sidecar loads its key from Vault

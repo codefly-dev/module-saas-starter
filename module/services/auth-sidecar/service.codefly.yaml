@@ -1,4 +1,5 @@
 name: auth-sidecar
+version: 0.0.0
 description: |
   Single ingress + auth brain. Hosts two listeners:
     - gRPC ext_authz (for Envoy in production)
@@ -20,4 +21,6 @@ endpoints:
     visibility: public
 spec:
   hot-reload: true
-  rest-endpoint: true
+  # Auth-sidecar is itself the HTTP ingress; it doesn't need grpc-gateway
+  # to expose a REST facade of its internal proto.
+  rest-endpoint: false

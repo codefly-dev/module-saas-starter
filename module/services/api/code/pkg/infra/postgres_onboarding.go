@@ -7,13 +7,18 @@ import (
 	"api/pkg/business"
 )
 
+// Table name is `onboarding_progress` (see migration 15). The code used
+// to reference `onboarding_steps` which doesn't exist — that broke all
+// GetOnboardingProgress / UpsertOnboardingStep tests with "relation does
+// not exist".
+
 func (s *PostgresStore) GetOnboardingProgress(ctx context.Context, userID string) ([]*business.OnboardingStep, error) {
 	q := s.getQueryExecutor(ctx)
 	rows, err := q.Query(ctx, `
 		SELECT step_name, status, completed_at
-		FROM onboarding_steps
+		FROM onboarding_progress
 		WHERE user_id = $1
-		ORDER BY created_at ASC`, userID)
+		ORDER BY step_name ASC`, userID)
 	if err != nil {
 		return nil, err
 	}
@@ -44,7 +49,7 @@ func (s *PostgresStore) UpsertOnboardingStep(ctx context.Context, userID string,
 	}
 
 	_, err := q.Exec(ctx, `
-		INSERT INTO onboarding_steps (id, user_id, step_name, status, completed_at)
+		INSERT INTO onboarding_progress (id, user_id, step_name, status, completed_at)
 		VALUES ($1, $2, $3, $4, $5)
 		ON CONFLICT (user_id, step_name) DO UPDATE
 		SET status = EXCLUDED.status, completed_at = EXCLUDED.completed_at`,

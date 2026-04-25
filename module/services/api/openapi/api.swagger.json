@@ -1,7 +1,7 @@
 {
   "swagger": "2.0",
   "info": {
-    "title": "user.proto",
+    "title": "api.proto",
     "version": "version not set"
   },
   "tags": [
@@ -354,6 +354,40 @@
             "required": true,
             "schema": {
               "$ref": "#/definitions/customersLogoutRequest"
+            }
+          }
+        ],
+        "tags": [
+          "AuthService"
+        ]
+      }
+    },
+    "/v1/auth/oauth/begin": {
+      "post": {
+        "summary": "BeginOAuth issues a server-signed `state` for the OAuth code flow.\nPublic RPC: callable without authentication (this is the start of\nthe login flow).",
+        "operationId": "AuthService_BeginOAuth",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/customersBeginOAuthResponse"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/rpcStatus"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "body",
+            "description": "BeginOAuthRequest is the FE's first hop on the authorization-code\nflow. Server returns a server-signed `state` token bound to\n(provider, redirect_uri); the FE embeds it in the provider's\nauthorize URL alongside its own PKCE code_challenge. Authenticate\nlater verifies the state before exchanging the code.",
+            "in": "body",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/customersBeginOAuthRequest"
             }
           }
         ],
@@ -2970,6 +3004,27 @@
         },
         "mfaToken": {
           "type": "string"
+        }
+      }
+    },
+    "customersBeginOAuthRequest": {
+      "type": "object",
+      "properties": {
+        "provider": {
+          "type": "string"
+        },
+        "redirectUri": {
+          "type": "string"
+        }
+      },
+      "description": "BeginOAuthRequest is the FE's first hop on the authorization-code\nflow. Server returns a server-signed `state` token bound to\n(provider, redirect_uri); the FE embeds it in the provider's\nauthorize URL alongside its own PKCE code_challenge. Authenticate\nlater verifies the state before exchanging the code."
+    },
+    "customersBeginOAuthResponse": {
+      "type": "object",
+      "properties": {
+        "state": {
+          "type": "string",
+          "description": "state is opaque to the FE — pass it back unchanged in the\nauthorize URL and again in the Authenticate request."
         }
       }
     },

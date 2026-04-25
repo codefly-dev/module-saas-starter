@@ -48,6 +48,11 @@ type Config struct {
 	Audience string
 	// AccessTokenTTL is the lifetime of an access token. Default 15 min.
 	AccessTokenTTL time.Duration
+	// ImpersonationTokenTTL caps the lifetime of access tokens minted
+	// for impersonation sessions (acting claim non-empty). Default 5 min.
+	// Falls back to AccessTokenTTL when zero. Belt-and-suspenders against
+	// admin "view-as" sessions left open in a forgotten tab.
+	ImpersonationTokenTTL time.Duration
 	// RefreshTokenTTL is the lifetime of a refresh token. Default 7 days.
 	RefreshTokenTTL time.Duration
 	// ClockSkew is the tolerance allowed when validating exp/nbf. Default 60s.
@@ -63,6 +68,9 @@ func (c *Config) withDefaults() {
 	}
 	if c.AccessTokenTTL == 0 {
 		c.AccessTokenTTL = 15 * time.Minute
+	}
+	if c.ImpersonationTokenTTL == 0 {
+		c.ImpersonationTokenTTL = 5 * time.Minute
 	}
 	if c.RefreshTokenTTL == 0 {
 		c.RefreshTokenTTL = 7 * 24 * time.Hour
@@ -82,6 +90,11 @@ type accessClaims struct {
 	PlatformRole   string `json:"pr,omitempty"`
 	SessionID      string `json:"sid"`
 	ActingAsUserID string `json:"acting,omitempty"`
+	// MFASatisfied marks tokens minted after a successful MFA challenge
+	// (or by users who haven't enrolled MFA — the gate is "no enrolled
+	// device" OR "satisfied this session", not "always satisfied"). When
+	// false, requireMFA(ctx) blocks sensitive operations.
+	MFASatisfied bool `json:"mfa,omitempty"`
 }
 
 // Minter is the concrete JWTMinter. Construct via New.
@@ -91,12 +104,17 @@ type Minter struct {
 	publicKey  ed25519.PublicKey
 	keyID      string
 	store      auth.SessionStore
+	revoker    auth.TokenRevoker
 	now        func() time.Time // injectable clock for tests
 }
 
 // New constructs a Minter. The priv key is used for signing and the pub key
 // for verifying locally-minted tokens (Mint → VerifyAccess roundtrip). The
 // sidecar runs its own verifier with a different lifecycle.
+//
+// revoker may be nil — falls back to NoopTokenRevoker (TTL-only revocation,
+// matching the pre-Redis behaviour). Wire it in production for real
+// access-token revocation on logout.
 func New(cfg Config, priv ed25519.PrivateKey, store auth.SessionStore) *Minter {
 	cfg.withDefaults()
 	pub := priv.Public().(ed25519.PublicKey)
@@ -108,7 +126,17 @@ func New(cfg Config, priv ed25519.PrivateKey, store auth.SessionStore) *Minter {
 		publicKey:  pub,
 		keyID:      keyID,
 		store:      store,
+		revoker:    auth.NoopTokenRevoker{},
 		now:        time.Now,
+	}
+}
+
+// SetRevoker wires an access-token revocation list. Required for real
+// logout (otherwise old access tokens stay valid until natural expiry).
+// Pass auth.NoopTokenRevoker (the default) to opt out.
+func (m *Minter) SetRevoker(r auth.TokenRevoker) {
+	if r != nil {
+		m.revoker = r
 	}
 }
 
@@ -331,6 +359,14 @@ func (m *Minter) VerifyAccess(tokenString string) (*auth.Identity, error) {
 		}
 	}
 
+	// Access-token revocation (logout / explicit kill). Checked AFTER
+	// signature + claim validation so an unsigned/expired token still
+	// fails fast without a backing-store call. NoopTokenRevoker returns
+	// false here so the dev path is unchanged.
+	if claims.ID != "" && m.revoker.IsRevoked(context.Background(), claims.ID) {
+		return nil, auth.ErrTokenRevoked
+	}
+
 	return &auth.Identity{
 		UserID:         userID,
 		OrgID:          orgID,
@@ -338,13 +374,54 @@ func (m *Minter) VerifyAccess(tokenString string) (*auth.Identity, error) {
 		PlatformRole:   claims.PlatformRole,
 		SessionID:      sessionID,
 		ActingAsUserID: actingAs,
+		MFASatisfied:   claims.MFASatisfied,
 	}, nil
+}
+
+// RevokeAccess parses the given access token (signature + claim
+// validation included) and adds its jti to the revocation list with
+// TTL = remaining lifetime. Returns nil for tokens that are already
+// expired or otherwise unparseable — logout is best-effort, never
+// fails the request because the access half couldn't be revoked.
+func (m *Minter) RevokeAccess(ctx context.Context, accessToken string) error {
+	identity, err := m.VerifyAccess(accessToken)
+	if err != nil {
+		return nil //nolint:nilerr // best-effort revocation
+	}
+	_ = identity // identity is built but not needed here
+
+	// Re-parse just to grab jti + exp without re-verifying signature.
+	// VerifyAccess above already validated; this parse is unverified
+	// but safe — claim values are advisory at this point.
+	parser := jwt.NewParser(jwt.WithoutClaimsValidation())
+	claims := &accessClaims{}
+	if _, _, perr := parser.ParseUnverified(accessToken, claims); perr != nil {
+		return nil //nolint:nilerr // already validated; fall through silently
+	}
+	if claims.ID == "" || claims.ExpiresAt == nil {
+		return nil
+	}
+	ttl := time.Until(claims.ExpiresAt.Time)
+	if ttl <= 0 {
+		return nil
+	}
+	return m.revoker.Revoke(ctx, claims.ID, ttl)
 }
 
 func (m *Minter) signAccess(identity *auth.Identity, sessionID uuid.UUID, now time.Time) (string, error) {
 	jti, err := randHex(16)
 	if err != nil {
 		return "", err
+	}
+	// Impersonation sessions get a shorter TTL — the worst-case window
+	// for an admin walking away from a "viewing as customer" session is
+	// capped at 5 min, vs 15 min for normal sessions. The impersonation
+	// banner makes the state visible; this is belt-and-suspenders.
+	ttl := m.cfg.AccessTokenTTL
+	if identity.ActingAsUserID != uuid.Nil {
+		if impTTL := m.cfg.ImpersonationTokenTTL; impTTL > 0 && impTTL < ttl {
+			ttl = impTTL
+		}
 	}
 	claims := accessClaims{
 		RegisteredClaims: jwt.RegisteredClaims{
@@ -353,7 +430,7 @@ func (m *Minter) signAccess(identity *auth.Identity, sessionID uuid.UUID, now ti
 			Audience:  jwt.ClaimStrings{m.cfg.Audience},
 			IssuedAt:  jwt.NewNumericDate(now),
 			NotBefore: jwt.NewNumericDate(now.Add(-1 * time.Second)),
-			ExpiresAt: jwt.NewNumericDate(now.Add(m.cfg.AccessTokenTTL)),
+			ExpiresAt: jwt.NewNumericDate(now.Add(ttl)),
 			ID:        jti,
 		},
 		SessionID: sessionID.String(),
@@ -366,6 +443,7 @@ func (m *Minter) signAccess(identity *auth.Identity, sessionID uuid.UUID, now ti
 	if identity.ActingAsUserID != uuid.Nil {
 		claims.ActingAsUserID = identity.ActingAsUserID.String()
 	}
+	claims.MFASatisfied = identity.MFASatisfied
 
 	token := jwt.NewWithClaims(jwt.SigningMethodEdDSA, claims)
 	token.Header["kid"] = m.keyID

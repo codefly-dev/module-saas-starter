@@ -211,7 +211,10 @@ func TestCreateAndListWebhookDeliveries(t *testing.T) {
 	require.Len(t, deliveries, 1)
 	require.Equal(t, delivery.ID, deliveries[0].ID)
 	require.Equal(t, "user.registered", deliveries[0].EventType)
-	require.Equal(t, `{"user_id":"123"}`, deliveries[0].Payload)
+	// JSONB re-serializes with a space after the colon. Compare by JSON
+	// semantics, not string equality, so this test isn't brittle to pg's
+	// formatting.
+	require.JSONEq(t, `{"user_id":"123"}`, deliveries[0].Payload)
 	require.Equal(t, "pending", deliveries[0].Status)
 }
 

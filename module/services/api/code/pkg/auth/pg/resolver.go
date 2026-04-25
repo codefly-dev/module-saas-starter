@@ -174,11 +174,18 @@ func (r *Resolver) ensureOrg(
 	var orgID uuid.UUID
 	var orgRole string
 
+	// Most-recent membership wins. A user can be in multiple orgs (e.g.
+	// their auto-created "Personal" org from RegisterUser PLUS shared
+	// orgs they were added to later); ASC by joined_at would always
+	// pick Personal and lock the session into the wrong tenant.
+	// DESC reflects "currently active" semantics — the last context the
+	// user was added to. A future iteration can replace this with an
+	// explicit users.default_org_id column / org switcher.
 	err := tx.QueryRow(ctx, `
 		SELECT org_id, role
 		FROM organization_members
 		WHERE user_id = $1
-		ORDER BY joined_at ASC
+		ORDER BY joined_at DESC
 		LIMIT 1`,
 		userID,
 	).Scan(&orgID, &orgRole)

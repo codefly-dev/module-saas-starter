@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"time"
 
 	"api/pkg/business"
@@ -26,7 +27,7 @@ func (s *PostgresStore) GetUser(ctx context.Context, id string) (*gen.User, erro
 
 	err := executor.QueryRow(ctx, `
 		SELECT uuid, primary_email, status, profile, created_at, updated_at
-		FROM users WHERE uuid = $1`, id,
+		FROM users WHERE uuid = $1 AND status != 'deleted'`, id,
 	).Scan(&u.Uuid, &u.PrimaryEmail, &statusStr, &profile, &createdAt, &updatedAt)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
@@ -57,7 +58,7 @@ func (s *PostgresStore) GetUserByEmail(ctx context.Context, email string) (*gen.
 
 	err := executor.QueryRow(ctx, `
 		SELECT uuid, primary_email, status, profile, created_at, updated_at
-		FROM users WHERE LOWER(primary_email) = LOWER($1)`, email,
+		FROM users WHERE LOWER(primary_email) = LOWER($1) AND status != 'deleted'`, email,
 	).Scan(&u.Uuid, &u.PrimaryEmail, &statusStr, &profile, &createdAt, &updatedAt)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
@@ -97,13 +98,20 @@ func (s *PostgresStore) ListUsers(ctx context.Context, orgID string, statusFilte
 		query += ` WHERE 1=1`
 	}
 
+	// Soft-delete filter: deleted users must not appear in listings.
+	query += ` AND u.status != 'deleted'`
+
 	if statusFilter != "" {
-		query += ` AND u.status = $` + string(rune('0'+argIdx))
+		// Previous code used `string(rune('0'+argIdx))` which silently
+		// breaks for argIdx > 9 (produces e.g. "$:" instead of "$10") —
+		// fmt.Sprintf is safer and the correct builder for numeric
+		// placeholders regardless of size.
+		query += fmt.Sprintf(` AND u.status = $%d`, argIdx)
 		args = append(args, statusFilter)
 		argIdx++
 	}
 
-	query += ` ORDER BY u.created_at DESC LIMIT $` + string(rune('0'+argIdx))
+	query += fmt.Sprintf(` ORDER BY u.created_at DESC LIMIT $%d`, argIdx)
 	args = append(args, pageSize+1)
 
 	rows, err := executor.Query(ctx, query, args...)

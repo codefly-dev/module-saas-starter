@@ -134,9 +134,15 @@ func (s *Service) ListAPIKeys(ctx context.Context, req *gen.ListAPIKeysRequest) 
 	return &gen.ListAPIKeysResponse{Keys: keys, NextPageToken: nextToken}, nil
 }
 
-// RevokeAPIKey marks a key as revoked.
-func (s *Service) RevokeAPIKey(ctx context.Context, req *gen.RevokeAPIKeyRequest) error {
-	return s.store.RevokeAPIKey(ctx, req.Id)
+// RevokeAPIKey marks a key as revoked. Audit-logged with the key id so
+// "which keys got revoked, by whom, when" is queryable from the audit
+// trail.
+func (s *Service) RevokeAPIKey(ctx context.Context, actorID string, req *gen.RevokeAPIKeyRequest) error {
+	if err := s.store.RevokeAPIKey(ctx, req.Id); err != nil {
+		return err
+	}
+	s.emit(ctx, actorID, "user", "api_key.revoked", "api_key", req.Id, "")
+	return nil
 }
 
 // base62Encode encodes bytes to a base62 string (alphanumeric).

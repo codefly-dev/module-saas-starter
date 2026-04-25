@@ -14,28 +14,34 @@ import (
 
 func (s *PostgresStore) CreateOrganization(ctx context.Context, org *gen.Organization) error {
 	w := wool.Get(ctx).In("CreateOrganization")
-	executor := s.getQueryExecutor(ctx)
 
-	_, err := executor.Exec(ctx, `
-		INSERT INTO organizations (id, name, slug, owner_id, created_at, updated_at)
-		VALUES ($1, $2, $3, $4, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)`,
-		org.Id, org.Name, org.Slug, org.OwnerId,
-	)
-	if err != nil {
-		return w.Wrapf(err, "failed to insert organization")
-	}
+	// Wrap both inserts in a single transaction so a failure on the
+	// membership insert rolls back the org — previously we'd end up with
+	// an ownerless organization that could never be managed again.
+	return pgx.BeginTxFunc(ctx, s.pool, pgx.TxOptions{
+		IsoLevel: pgx.Serializable,
+	}, func(tx pgx.Tx) error {
+		ctx = context.WithValue(ctx, "tx", tx) //nolint:staticcheck // matches existing postgres.go pattern
+		executor := s.getQueryExecutor(ctx)
 
-	// Add owner as org member with 'owner' role
-	_, err = executor.Exec(ctx, `
-		INSERT INTO organization_members (org_id, user_id, role)
-		VALUES ($1, $2, 'owner')`,
-		org.Id, org.OwnerId,
-	)
-	if err != nil {
-		return w.Wrapf(err, "failed to add owner as org member")
-	}
+		if _, err := executor.Exec(ctx, `
+			INSERT INTO organizations (id, name, slug, owner_id, created_at, updated_at)
+			VALUES ($1, $2, $3, $4, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)`,
+			org.Id, org.Name, org.Slug, org.OwnerId,
+		); err != nil {
+			return w.Wrapf(err, "failed to insert organization")
+		}
 
-	return nil
+		if _, err := executor.Exec(ctx, `
+			INSERT INTO organization_members (org_id, user_id, role)
+			VALUES ($1, $2, 'owner')`,
+			org.Id, org.OwnerId,
+		); err != nil {
+			return w.Wrapf(err, "failed to add owner as org member")
+		}
+
+		return nil
+	})
 }
 
 func (s *PostgresStore) GetOrganization(ctx context.Context, id string) (*gen.Organization, error) {

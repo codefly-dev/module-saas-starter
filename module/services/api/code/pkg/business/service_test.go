@@ -272,7 +272,7 @@ func TestTeamInheritedPermissions(t *testing.T) {
 	err = testService.Store().AddOrgMember(testCtx, orgID, bob.User.Uuid, "member")
 	require.NoError(t, err)
 
-	teamResp, err := testService.CreateTeam(testCtx, &gen.CreateTeamRequest{
+	teamResp, err := testService.CreateTeam(testCtx, "test-actor", &gen.CreateTeamRequest{
 		OrgId: orgID, Name: "engineering", Description: "The engineering team",
 	})
 	require.NoError(t, err)
@@ -281,7 +281,7 @@ func TestTeamInheritedPermissions(t *testing.T) {
 	require.NoError(t, err)
 
 	// Create deployer role, assign to team
-	customRole, err := testService.CreateRole(testCtx, &gen.CreateRoleRequest{
+	customRole, err := testService.CreateRole(testCtx, "test-actor", &gen.CreateRoleRequest{
 		Name: "deployer", Description: "Can deploy", OrgId: orgID,
 		Permissions: []*gen.Permission{{Resource: "deployments", Action: "write"}},
 	})
@@ -393,7 +393,7 @@ func TestLogout(t *testing.T) {
 	})
 	require.NoError(t, err)
 
-	err = testService.Logout(testCtx, &gen.LogoutRequest{RefreshToken: authResp.RefreshToken})
+	err = testService.Logout(testCtx, &gen.LogoutRequest{RefreshToken: authResp.RefreshToken}, "")
 	require.NoError(t, err)
 
 	_, err = testService.RefreshToken(testCtx, &gen.RefreshTokenRequest{

@@ -7,6 +7,7 @@ import (
 	"encoding/base64"
 	"encoding/hex"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/codefly-dev/core/wool"
@@ -171,6 +172,12 @@ This link expires in 7 days. If you didn't expect this invitation, you can safel
 }
 
 // AcceptInvitation accepts an invitation by token, adding the user to the org.
+//
+// Security: the caller MUST be the invited email holder. A leaked/shared
+// token cannot be used by a different account — we look up the caller's
+// user record and match the primary_email against inv.Email (case-
+// insensitive). This closes the "token replay from another account" hole
+// flagged as CRITICAL in the audit.
 func (s *Service) AcceptInvitation(ctx context.Context, userID string, req *gen.AcceptInvitationRequest) (*gen.AcceptInvitationResponse, error) {
 	w := wool.Get(ctx).In("AcceptInvitation")
 
@@ -192,19 +199,42 @@ func (s *Service) AcceptInvitation(ctx context.Context, userID string, req *gen.
 		return nil, w.NewError("invitation has expired")
 	}
 
-	// Add user to org
-	if err := s.store.AddOrgMember(ctx, inv.OrgID, userID, inv.Role); err != nil {
-		return nil, w.Wrapf(err, "cannot add member to org")
-	}
-
-	// Mark accepted
-	if err := s.store.UpdateInvitationStatus(ctx, inv.ID, "accepted", userID); err != nil {
-		return nil, w.Wrapf(err, "cannot update invitation status")
-	}
-
-	org, err := s.store.GetOrganization(ctx, inv.OrgID)
+	// Verify the caller is the invited email holder.
+	caller, err := s.store.GetUser(ctx, userID)
 	if err != nil {
-		return nil, w.Wrapf(err, "cannot get organization")
+		return nil, w.Wrapf(err, "cannot resolve caller")
+	}
+	if caller == nil || !strings.EqualFold(caller.PrimaryEmail, inv.Email) {
+		return nil, w.NewError("invitation was addressed to a different email")
+	}
+
+	// Acceptance is transactional: a second concurrent call must not be
+	// able to observe a still-"pending" invitation after we've begun
+	// accepting it. We re-check status INSIDE the transaction so the
+	// check-and-act race (flagged as HIGH in the audit) is closed.
+	var org *gen.Organization
+	if txErr := s.store.RunInTransaction(ctx, func(txCtx context.Context) error {
+		fresh, err := s.store.GetInvitationByTokenHash(txCtx, tokenHash)
+		if err != nil {
+			return w.Wrapf(err, "cannot re-read invitation")
+		}
+		if fresh == nil || fresh.Status != "pending" {
+			return w.NewError("invitation is no longer pending")
+		}
+		if err := s.store.AddOrgMember(txCtx, inv.OrgID, userID, inv.Role); err != nil {
+			return w.Wrapf(err, "cannot add member to org")
+		}
+		if err := s.store.UpdateInvitationStatus(txCtx, inv.ID, "accepted", userID); err != nil {
+			return w.Wrapf(err, "cannot update invitation status")
+		}
+		o, err := s.store.GetOrganization(txCtx, inv.OrgID)
+		if err != nil {
+			return w.Wrapf(err, "cannot get organization")
+		}
+		org = o
+		return nil
+	}); txErr != nil {
+		return nil, txErr
 	}
 
 	s.emit(ctx, userID, "user", "invitation.accepted", "invitation", inv.ID, inv.OrgID)

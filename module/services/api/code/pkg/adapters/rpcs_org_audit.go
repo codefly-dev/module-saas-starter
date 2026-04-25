@@ -3,11 +3,6 @@ package adapters
 import (
 	"context"
 
-	"google.golang.org/grpc/codes"
-	"google.golang.org/grpc/status"
-
-	"github.com/codefly-dev/core/wool"
-
 	"api/pkg/business"
 	"api/pkg/gen"
 )
@@ -31,6 +26,13 @@ func (s *OrgServer) GetOrgSettings(ctx context.Context, req *gen.GetOrgSettingsR
 	if err := Validate(req); err != nil {
 		return nil, err
 	}
+	actorID, err := requireAuth(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if err := requireOrgMember(ctx, actorID, req.OrgId); err != nil {
+		return nil, err
+	}
 	settings, err := service.GetOrgSettings(ctx, req.OrgId)
 	if err != nil {
 		return nil, err
@@ -42,11 +44,14 @@ func (s *OrgServer) UpdateOrgSettings(ctx context.Context, req *gen.UpdateOrgSet
 	if err := Validate(req); err != nil {
 		return nil, err
 	}
-	w := wool.Get(ctx).In("UpdateOrgSettings")
-	w.GRPC().Inject()
-	actorID, found := w.UserAuthID()
-	if !found {
-		return nil, status.Error(codes.Unauthenticated, "user id not found")
+	actorID, err := requireAuth(ctx)
+	if err != nil {
+		return nil, err
+	}
+	// Branding edits are an admin-scoped operation — plain members can't
+	// redesign their org's customer-facing appearance.
+	if err := requireOrgAdmin(ctx, actorID, req.OrgId); err != nil {
+		return nil, err
 	}
 	updated, err := service.UpdateOrgSettings(ctx, actorID, &business.OrgSettings{
 		OrgID:        req.OrgId,
@@ -64,6 +69,26 @@ func (s *OrgServer) UpdateOrgSettings(ctx context.Context, req *gen.UpdateOrgSet
 func (s *AuditServer) ExportAuditLog(ctx context.Context, req *gen.ExportAuditLogRequest) (*gen.ExportAuditLogResponse, error) {
 	if err := Validate(req); err != nil {
 		return nil, err
+	}
+	actorID, err := requireAuth(ctx)
+	if err != nil {
+		return nil, err
+	}
+	// Export is a higher-privilege op than Query (it emits a file). Org
+	// members get their own org; cross-org export needs platform admin.
+	if req.OrgId == "" {
+		if err := requirePlatformAdmin(ctx, actorID); err != nil {
+			return nil, err
+		}
+	} else {
+		if err := requireOrgAdmin(ctx, actorID, req.OrgId); err != nil {
+			if !IsPermissionDenied(err) {
+				return nil, err
+			}
+			if paErr := requirePlatformAdmin(ctx, actorID); paErr != nil {
+				return nil, err
+			}
+		}
 	}
 	data, contentType, filename, err := service.ExportAuditLog(ctx, req.OrgId, req.Format, req.ActorId, req.Action)
 	if err != nil {

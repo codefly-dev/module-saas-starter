@@ -22,6 +22,7 @@ var (
 	ErrTokenWrongAudience = errors.New("auth: token audience mismatch")
 	ErrTokenAlgForbidden  = errors.New("auth: token alg not allowed")
 	ErrTokenReplay        = errors.New("auth: token jti already used")
+	ErrTokenRevoked       = errors.New("auth: token revoked")
 
 	// Identity resolution
 	ErrUnknownIdentity  = errors.New("auth: identity not found")

@@ -106,9 +106,17 @@ func orgRoleFromString(s string, w *wool.Wool) gen.OrgRole {
 }
 
 // seedUsers creates users from the fixture, idempotently. Returns a map of
-// email -> user UUID. Uses the store directly for GrantPlatformRole to avoid
-// the bootstrap chicken-and-egg problem (no admin exists to authorize the
-// first grant).
+// email -> user UUID. Uses the store directly for both RegisterUser and
+// GrantPlatformRole:
+//   - GrantPlatformRole bypasses the auth check that requires an existing
+//     admin to authorize the grant — bootstrap chicken-and-egg.
+//   - RegisterUser bypasses business.Service.RegisterUser's side effect
+//     of auto-creating a "Personal" organization with the user as owner.
+//     Without this, every fixture user ends up in TWO orgs (Personal,
+//     plus the shared Acme Corp), and ensureOrg picks the OLDEST by
+//     joined_at — so Bob (a "member" in the fixture intent) logs in as
+//     OWNER of his Personal org and the role-gate UI grants him admin
+//     surface he should not see.
 func seedUsers(ctx context.Context, w *wool.Wool, service *business.Service, users []fixtureUser) (map[string]string, error) {
 	userIDs := make(map[string]string, len(users))
 	for _, u := range users {
@@ -123,26 +131,35 @@ func seedUsers(ctx context.Context, w *wool.Wool, service *business.Service, use
 			continue
 		}
 
-		resp, err := service.RegisterUser(ctx, &gen.RegisterUserRequest{
+		userID := business.NewIDString()
+		identityID := business.NewIDString()
+		user := &gen.User{
+			Uuid:         userID,
 			PrimaryEmail: u.Email,
+			Status:       gen.UserStatus_USER_STATUS_ACTIVE,
 			Profile:      map[string]string{"name": u.Name},
-			Identity: &gen.UserIdentity{
-				Provider:      u.Provider,
-				ProviderId:    u.ProviderID,
-				ProviderEmail: u.Email,
-				EmailVerified: true,
-			},
-		})
-		if err != nil {
+		}
+		identity := &gen.UserIdentity{
+			Uuid:          identityID,
+			UserUuid:      userID,
+			Provider:      u.Provider,
+			ProviderId:    u.ProviderID,
+			ProviderEmail: u.Email,
+			EmailVerified: true,
+		}
+		if err := service.Store().RegisterUser(ctx, user, identity); err != nil {
 			return nil, w.Wrapf(err, "cannot seed user %s", u.Email)
 		}
-		userIDs[u.Email] = resp.User.Uuid
+		userIDs[u.Email] = userID
 		w.Info("seeded user", wool.Field("email", u.Email))
 
 		// Grant platform role via store directly (bypasses auth check for
 		// bootstrap — no admin exists yet to authorize the first grant).
+		// granted_by is a nullable uuid column referencing users(uuid);
+		// pass the user's own uuid so the row represents a self-grant at
+		// fixture time. "fixture-seed" as a string fails the uuid cast.
 		if u.Role == "super_admin" {
-			if err := service.Store().GrantPlatformRole(ctx, resp.User.Uuid, u.Role, "fixture-seed"); err != nil {
+			if err := service.Store().GrantPlatformRole(ctx, userID, u.Role, userID); err != nil {
 				w.Warn("cannot grant platform role", wool.Field("email", u.Email), wool.Field("error", err.Error()))
 			}
 		}
@@ -214,7 +231,7 @@ func seedTeams(ctx context.Context, w *wool.Wool, service *business.Service, tea
 			w.Warn("team org not found, skipping", wool.Field("org", team.Org))
 			continue
 		}
-		teamResp, err := service.CreateTeam(ctx, &gen.CreateTeamRequest{OrgId: orgID, Name: team.Name})
+		teamResp, err := service.CreateTeam(ctx, "seed", &gen.CreateTeamRequest{OrgId: orgID, Name: team.Name})
 		if err != nil {
 			w.Warn("team may already exist, skipping", wool.Field("name", team.Name), wool.Field("error", err.Error()))
 			continue

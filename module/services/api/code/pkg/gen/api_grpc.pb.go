@@ -2,7 +2,7 @@
 // versions:
 // - protoc-gen-go-grpc v1.6.1
 // - protoc             (unknown)
-// source: user.proto
+// source: api.proto
 
 package gen
 
@@ -464,7 +464,7 @@ var UserService_ServiceDesc = grpc.ServiceDesc{
 		},
 	},
 	Streams:  []grpc.StreamDesc{},
-	Metadata: "user.proto",
+	Metadata: "api.proto",
 }
 
 const (
@@ -836,7 +836,7 @@ var OrganizationService_ServiceDesc = grpc.ServiceDesc{
 		},
 	},
 	Streams:  []grpc.StreamDesc{},
-	Metadata: "user.proto",
+	Metadata: "api.proto",
 }
 
 const (
@@ -1094,7 +1094,7 @@ var TeamService_ServiceDesc = grpc.ServiceDesc{
 		},
 	},
 	Streams:  []grpc.StreamDesc{},
-	Metadata: "user.proto",
+	Metadata: "api.proto",
 }
 
 const (
@@ -1390,7 +1390,7 @@ var PermissionService_ServiceDesc = grpc.ServiceDesc{
 		},
 	},
 	Streams:  []grpc.StreamDesc{},
-	Metadata: "user.proto",
+	Metadata: "api.proto",
 }
 
 const (
@@ -1496,7 +1496,7 @@ var IdentityService_ServiceDesc = grpc.ServiceDesc{
 		},
 	},
 	Streams:  []grpc.StreamDesc{},
-	Metadata: "user.proto",
+	Metadata: "api.proto",
 }
 
 const (
@@ -1716,10 +1716,11 @@ var APIKeyService_ServiceDesc = grpc.ServiceDesc{
 		},
 	},
 	Streams:  []grpc.StreamDesc{},
-	Metadata: "user.proto",
+	Metadata: "api.proto",
 }
 
 const (
+	AuthService_BeginOAuth_FullMethodName   = "/customers.AuthService/BeginOAuth"
 	AuthService_Authenticate_FullMethodName = "/customers.AuthService/Authenticate"
 	AuthService_RefreshToken_FullMethodName = "/customers.AuthService/RefreshToken"
 	AuthService_Logout_FullMethodName       = "/customers.AuthService/Logout"
@@ -1732,6 +1733,10 @@ const (
 //
 // AuthService — JWT token issuance and session management
 type AuthServiceClient interface {
+	// BeginOAuth issues a server-signed `state` for the OAuth code flow.
+	// Public RPC: callable without authentication (this is the start of
+	// the login flow).
+	BeginOAuth(ctx context.Context, in *BeginOAuthRequest, opts ...grpc.CallOption) (*BeginOAuthResponse, error)
 	Authenticate(ctx context.Context, in *AuthenticateRequest, opts ...grpc.CallOption) (*AuthenticateResponse, error)
 	RefreshToken(ctx context.Context, in *RefreshTokenRequest, opts ...grpc.CallOption) (*RefreshTokenResponse, error)
 	Logout(ctx context.Context, in *LogoutRequest, opts ...grpc.CallOption) (*emptypb.Empty, error)
@@ -1744,6 +1749,16 @@ type authServiceClient struct {
 
 func NewAuthServiceClient(cc grpc.ClientConnInterface) AuthServiceClient {
 	return &authServiceClient{cc}
+}
+
+func (c *authServiceClient) BeginOAuth(ctx context.Context, in *BeginOAuthRequest, opts ...grpc.CallOption) (*BeginOAuthResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(BeginOAuthResponse)
+	err := c.cc.Invoke(ctx, AuthService_BeginOAuth_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
 }
 
 func (c *authServiceClient) Authenticate(ctx context.Context, in *AuthenticateRequest, opts ...grpc.CallOption) (*AuthenticateResponse, error) {
@@ -1792,6 +1807,10 @@ func (c *authServiceClient) GetJWKS(ctx context.Context, in *emptypb.Empty, opts
 //
 // AuthService — JWT token issuance and session management
 type AuthServiceServer interface {
+	// BeginOAuth issues a server-signed `state` for the OAuth code flow.
+	// Public RPC: callable without authentication (this is the start of
+	// the login flow).
+	BeginOAuth(context.Context, *BeginOAuthRequest) (*BeginOAuthResponse, error)
 	Authenticate(context.Context, *AuthenticateRequest) (*AuthenticateResponse, error)
 	RefreshToken(context.Context, *RefreshTokenRequest) (*RefreshTokenResponse, error)
 	Logout(context.Context, *LogoutRequest) (*emptypb.Empty, error)
@@ -1806,6 +1825,9 @@ type AuthServiceServer interface {
 // pointer dereference when methods are called.
 type UnimplementedAuthServiceServer struct{}
 
+func (UnimplementedAuthServiceServer) BeginOAuth(context.Context, *BeginOAuthRequest) (*BeginOAuthResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method BeginOAuth not implemented")
+}
 func (UnimplementedAuthServiceServer) Authenticate(context.Context, *AuthenticateRequest) (*AuthenticateResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method Authenticate not implemented")
 }
@@ -1837,6 +1859,24 @@ func RegisterAuthServiceServer(s grpc.ServiceRegistrar, srv AuthServiceServer) {
 		t.testEmbeddedByValue()
 	}
 	s.RegisterService(&AuthService_ServiceDesc, srv)
+}
+
+func _AuthService_BeginOAuth_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(BeginOAuthRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(AuthServiceServer).BeginOAuth(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: AuthService_BeginOAuth_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(AuthServiceServer).BeginOAuth(ctx, req.(*BeginOAuthRequest))
+	}
+	return interceptor(ctx, in, info, handler)
 }
 
 func _AuthService_Authenticate_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
@@ -1919,6 +1959,10 @@ var AuthService_ServiceDesc = grpc.ServiceDesc{
 	HandlerType: (*AuthServiceServer)(nil),
 	Methods: []grpc.MethodDesc{
 		{
+			MethodName: "BeginOAuth",
+			Handler:    _AuthService_BeginOAuth_Handler,
+		},
+		{
 			MethodName: "Authenticate",
 			Handler:    _AuthService_Authenticate_Handler,
 		},
@@ -1936,7 +1980,7 @@ var AuthService_ServiceDesc = grpc.ServiceDesc{
 		},
 	},
 	Streams:  []grpc.StreamDesc{},
-	Metadata: "user.proto",
+	Metadata: "api.proto",
 }
 
 const (
@@ -2080,7 +2124,7 @@ var AuditService_ServiceDesc = grpc.ServiceDesc{
 		},
 	},
 	Streams:  []grpc.StreamDesc{},
-	Metadata: "user.proto",
+	Metadata: "api.proto",
 }
 
 const (
@@ -2616,7 +2660,7 @@ var PlatformAdminService_ServiceDesc = grpc.ServiceDesc{
 		},
 	},
 	Streams:  []grpc.StreamDesc{},
-	Metadata: "user.proto",
+	Metadata: "api.proto",
 }
 
 const (
@@ -2836,7 +2880,7 @@ var InvitationService_ServiceDesc = grpc.ServiceDesc{
 		},
 	},
 	Streams:  []grpc.StreamDesc{},
-	Metadata: "user.proto",
+	Metadata: "api.proto",
 }
 
 const (
@@ -3094,7 +3138,7 @@ var WebhookService_ServiceDesc = grpc.ServiceDesc{
 		},
 	},
 	Streams:  []grpc.StreamDesc{},
-	Metadata: "user.proto",
+	Metadata: "api.proto",
 }
 
 const (
@@ -3352,7 +3396,7 @@ var NotificationService_ServiceDesc = grpc.ServiceDesc{
 		},
 	},
 	Streams:  []grpc.StreamDesc{},
-	Metadata: "user.proto",
+	Metadata: "api.proto",
 }
 
 const (
@@ -3534,7 +3578,7 @@ var OnboardingService_ServiceDesc = grpc.ServiceDesc{
 		},
 	},
 	Streams:  []grpc.StreamDesc{},
-	Metadata: "user.proto",
+	Metadata: "api.proto",
 }
 
 const (
@@ -3754,7 +3798,7 @@ var GDPRService_ServiceDesc = grpc.ServiceDesc{
 		},
 	},
 	Streams:  []grpc.StreamDesc{},
-	Metadata: "user.proto",
+	Metadata: "api.proto",
 }
 
 const (
@@ -4012,5 +4056,5 @@ var MFAService_ServiceDesc = grpc.ServiceDesc{
 		},
 	},
 	Streams:  []grpc.StreamDesc{},
-	Metadata: "user.proto",
+	Metadata: "api.proto",
 }

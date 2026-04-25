@@ -75,7 +75,7 @@ func (s *PostgresStore) GetActiveWebhookSubscriptions(ctx context.Context, event
 func (s *PostgresStore) CreateWebhookDelivery(ctx context.Context, delivery *business.WebhookDelivery) error {
 	q := s.getQueryExecutor(ctx)
 	_, err := q.Exec(ctx, `
-		INSERT INTO webhook_deliveries (id, subscription_id, event_type, payload, status, attempt_count)
+		INSERT INTO webhook_deliveries (id, subscription_id, event_type, payload, status, attempts)
 		VALUES ($1, $2, $3, $4, $5, $6)`,
 		delivery.ID, delivery.SubscriptionID, delivery.EventType,
 		delivery.Payload, delivery.Status, delivery.AttemptCount)
@@ -87,7 +87,7 @@ func (s *PostgresStore) UpdateWebhookDelivery(ctx context.Context, delivery *bus
 	_, err := q.Exec(ctx, `
 		UPDATE webhook_deliveries
 		SET status = $2, http_status = $3, response_body = $4,
-		    attempt_count = $5, next_retry_at = $6, delivered_at = $7
+		    attempts = $5, next_retry_at = $6, delivered_at = $7
 		WHERE id = $1`,
 		delivery.ID, delivery.Status, delivery.HTTPStatus, delivery.ResponseBody,
 		delivery.AttemptCount, delivery.NextRetryAt, delivery.DeliveredAt)
@@ -98,7 +98,7 @@ func (s *PostgresStore) ListWebhookDeliveries(ctx context.Context, subscriptionI
 	q := s.getQueryExecutor(ctx)
 	rows, err := q.Query(ctx, `
 		SELECT id, subscription_id, event_type, payload, status, http_status,
-		       response_body, attempt_count, next_retry_at, created_at, delivered_at
+		       response_body, attempts, next_retry_at, created_at, delivered_at
 		FROM webhook_deliveries
 		WHERE subscription_id = $1
 		ORDER BY created_at DESC
@@ -115,7 +115,7 @@ func (s *PostgresStore) GetPendingDeliveries(ctx context.Context, limit int) ([]
 	q := s.getQueryExecutor(ctx)
 	rows, err := q.Query(ctx, `
 		SELECT id, subscription_id, event_type, payload, status, http_status,
-		       response_body, attempt_count, next_retry_at, created_at, delivered_at
+		       response_body, attempts, next_retry_at, created_at, delivered_at
 		FROM webhook_deliveries
 		WHERE status = 'retrying' AND (next_retry_at IS NULL OR next_retry_at <= NOW())
 		ORDER BY created_at ASC

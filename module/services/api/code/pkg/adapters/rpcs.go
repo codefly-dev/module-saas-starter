@@ -2,9 +2,11 @@ package adapters
 
 import (
 	"context"
+	"strings"
 	"time"
 
 	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/types/known/emptypb"
 
@@ -46,10 +48,38 @@ func (s *UserServer) GetUser(ctx context.Context, req *gen.GetUserRequest) (*gen
 	if err := Validate(req); err != nil {
 		return nil, err
 	}
-	return service.GetUser(ctx, req)
+	actorID, err := requireAuth(ctx)
+	if err != nil {
+		return nil, err
+	}
+	// GetUser is callable on self (any user) or on any user by a platform
+	// admin. Resolve the target's id from the oneof uuid/email before the
+	// self check — otherwise an email lookup can't be authorized.
+	u, err := service.GetUser(ctx, req)
+	if err != nil {
+		return nil, err
+	}
+	if err := requireSelfOrPlatformAdmin(ctx, actorID, u.Uuid); err != nil {
+		return nil, err
+	}
+	return u, nil
 }
 
 func (s *UserServer) ListUsers(ctx context.Context, req *gen.ListUsersRequest) (*gen.ListUsersResponse, error) {
+	actorID, err := requireAuth(ctx)
+	if err != nil {
+		return nil, err
+	}
+	// API-key path also needs `users:read`. JWT (interactive) callers
+	// bypass via requireScope's empty-context fast path.
+	if err := requireScope(ctx, "users:read"); err != nil {
+		return nil, err
+	}
+	// Platform-wide user listing is a platform-admin-only operation. Scoped
+	// per-org listings should go through OrgServer.ListMembers, not here.
+	if err := requirePlatformAdmin(ctx, actorID); err != nil {
+		return nil, err
+	}
 	return service.ListUsers(ctx, req)
 }
 
@@ -63,6 +93,9 @@ func (s *UserServer) UpdateUser(ctx context.Context, req *gen.UpdateUserRequest)
 	if !found {
 		return nil, status.Error(codes.Unauthenticated, "user id not found")
 	}
+	if err := requireScope(ctx, "users:write"); err != nil {
+		return nil, err
+	}
 	return service.UpdateUser(ctx, userID, req)
 }
 
@@ -70,34 +103,78 @@ func (s *UserServer) DeleteUser(ctx context.Context, req *gen.GetUserRequest) (*
 	if err := Validate(req); err != nil {
 		return nil, err
 	}
-	w := wool.Get(ctx).In("DeleteUser")
-	w.GRPC().Inject()
-	userID, found := w.UserAuthID()
-	if !found {
-		return nil, status.Error(codes.Unauthenticated, "user id not found")
+	actorID, err := requireAuth(ctx)
+	if err != nil {
+		return nil, err
 	}
-	if err := service.DeleteUser(ctx, userID, req); err != nil {
+	// Resolve the target first so we can authorize against the real uuid
+	// (GetUserRequest is a uuid/email oneof; email lookups must be authz'd
+	// against the resolved id, not the email string).
+	target, err := service.GetUser(ctx, req)
+	if err != nil {
+		return nil, err
+	}
+	if err := requireSelfOrPlatformAdmin(ctx, actorID, target.Uuid); err != nil {
+		return nil, err
+	}
+	if err := requireScope(ctx, "users:write"); err != nil {
+		return nil, err
+	}
+	if err := service.DeleteUser(ctx, actorID, req); err != nil {
 		return nil, err
 	}
 	return &emptypb.Empty{}, nil
 }
 
+// AddIdentity links a provider identity (e.g. WorkOS sub) to an existing
+// user. Only the user themselves OR a platform admin can do this — without
+// the gate, any caller knowing a target user UUID could attach an identity
+// they control and take over the account.
 func (s *UserServer) AddIdentity(ctx context.Context, req *gen.AddIdentityRequest) (*gen.UserIdentity, error) {
 	if err := Validate(req); err != nil {
+		return nil, err
+	}
+	actorID, err := requireAuth(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if err := requireSelfOrPlatformAdmin(ctx, actorID, req.UserUuid); err != nil {
 		return nil, err
 	}
 	return service.AddIdentity(ctx, req)
 }
 
+// FindUserByIdentity resolves (provider, provider_id) → user. This is
+// an internal admin lookup — exposing it to authenticated end users
+// would let any caller enumerate "is account X registered with provider
+// Y?". Restricted to platform admins.
 func (s *UserServer) FindUserByIdentity(ctx context.Context, req *gen.FindUserByIdentityRequest) (*gen.User, error) {
 	if err := Validate(req); err != nil {
+		return nil, err
+	}
+	actorID, err := requireAuth(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if err := requirePlatformAdmin(ctx, actorID); err != nil {
 		return nil, err
 	}
 	return service.FindUserByIdentity(ctx, req)
 }
 
+// ListUserIdentities returns all linked providers for a user. Same
+// gating as AddIdentity — the user themselves or a platform admin.
+// Without this, any caller could enumerate the auth providers any user
+// has connected (a subtle privacy leak useful for targeted phishing).
 func (s *UserServer) ListUserIdentities(ctx context.Context, req *gen.ListUserIdentitiesRequest) (*gen.ListUserIdentitiesResponse, error) {
 	if err := Validate(req); err != nil {
+		return nil, err
+	}
+	actorID, err := requireAuth(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if err := requireSelfOrPlatformAdmin(ctx, actorID, req.UserUuid); err != nil {
 		return nil, err
 	}
 	return service.ListUserIdentities(ctx, req)
@@ -123,6 +200,20 @@ func (s *OrgServer) CreateOrganization(ctx context.Context, req *gen.CreateOrgan
 func (s *OrgServer) GetOrganization(ctx context.Context, req *gen.GetOrganizationRequest) (*gen.Organization, error) {
 	if err := Validate(req); err != nil {
 		return nil, err
+	}
+	actorID, err := requireAuth(ctx)
+	if err != nil {
+		return nil, err
+	}
+	// Cross-org read leak fix: only members of the target org (or platform
+	// admins) can view its data.
+	if err := requireOrgMember(ctx, actorID, req.Id); err != nil {
+		if !IsPermissionDenied(err) {
+			return nil, err
+		}
+		if paErr := requirePlatformAdmin(ctx, actorID); paErr != nil {
+			return nil, err
+		}
 	}
 	return service.GetOrganization(ctx, req)
 }
@@ -173,6 +264,13 @@ func (s *OrgServer) ListMembers(ctx context.Context, req *gen.ListOrgMembersRequ
 	if err := Validate(req); err != nil {
 		return nil, err
 	}
+	actorID, err := requireAuth(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if err := requireOrgMember(ctx, actorID, req.OrgId); err != nil {
+		return nil, err
+	}
 	return service.ListOrgMembers(ctx, req)
 }
 
@@ -184,11 +282,26 @@ func (s *TeamServer) CreateTeam(ctx context.Context, req *gen.CreateTeamRequest)
 	if err := Validate(req); err != nil {
 		return nil, err
 	}
-	return service.CreateTeam(ctx, req)
+	actorID, err := requireAuth(ctx)
+	if err != nil {
+		return nil, err
+	}
+	// Only org admins/owners (or platform super_admin) can create teams.
+	if err := requireOrgAdmin(ctx, actorID, req.OrgId); err != nil {
+		return nil, err
+	}
+	return service.CreateTeam(ctx, actorID, req)
 }
 
 func (s *TeamServer) ListTeams(ctx context.Context, req *gen.ListTeamsRequest) (*gen.ListTeamsResponse, error) {
 	if err := Validate(req); err != nil {
+		return nil, err
+	}
+	actorID, err := requireAuth(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if err := requireOrgMember(ctx, actorID, req.OrgId); err != nil {
 		return nil, err
 	}
 	return service.ListTeams(ctx, req)
@@ -198,11 +311,12 @@ func (s *TeamServer) AddMember(ctx context.Context, req *gen.AddTeamMemberReques
 	if err := Validate(req); err != nil {
 		return nil, err
 	}
-	w := wool.Get(ctx).In("AddTeamMember")
-	w.GRPC().Inject()
-	actorID, found := w.UserAuthID()
-	if !found {
-		return nil, status.Error(codes.Unauthenticated, "user id not found")
+	actorID, err := requireAuth(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if err := requireTeamAdmin(ctx, actorID, req.TeamId); err != nil {
+		return nil, err
 	}
 	if err := service.AddTeamMember(ctx, actorID, req); err != nil {
 		return nil, err
@@ -214,11 +328,16 @@ func (s *TeamServer) RemoveMember(ctx context.Context, req *gen.RemoveTeamMember
 	if err := Validate(req); err != nil {
 		return nil, err
 	}
-	w := wool.Get(ctx).In("RemoveTeamMember")
-	w.GRPC().Inject()
-	actorID, found := w.UserAuthID()
-	if !found {
-		return nil, status.Error(codes.Unauthenticated, "user id not found")
+	actorID, err := requireAuth(ctx)
+	if err != nil {
+		return nil, err
+	}
+	// A user removing themselves from a team is allowed; otherwise require
+	// team admin.
+	if req.UserId != actorID {
+		if err := requireTeamAdmin(ctx, actorID, req.TeamId); err != nil {
+			return nil, err
+		}
 	}
 	if err := service.RemoveTeamMember(ctx, actorID, req); err != nil {
 		return nil, err
@@ -237,14 +356,42 @@ func (s *TeamServer) ListMembers(ctx context.Context, req *gen.ListTeamMembersRe
 // PermissionService RPCs (on PermServer)
 // ============================================================================
 
+// requireRoleScope gates mutations on a role scope. Global roles (OrgId
+// empty) require platform super_admin; org-scoped roles require org admin
+// on the target org (or platform super_admin bypass).
+func requireRoleScope(ctx context.Context, actorID, orgID string) error {
+	if orgID == "" {
+		return requirePlatformAdmin(ctx, actorID)
+	}
+	return requireOrgAdmin(ctx, actorID, orgID)
+}
+
 func (s *PermServer) CreateRole(ctx context.Context, req *gen.CreateRoleRequest) (*gen.CreateRoleResponse, error) {
 	if err := Validate(req); err != nil {
 		return nil, err
 	}
-	return service.CreateRole(ctx, req)
+	actorID, err := requireAuth(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if err := requireRoleScope(ctx, actorID, req.OrgId); err != nil {
+		return nil, err
+	}
+	return service.CreateRole(ctx, actorID, req)
 }
 
 func (s *PermServer) ListRoles(ctx context.Context, req *gen.ListRolesRequest) (*gen.ListRolesResponse, error) {
+	actorID, err := requireAuth(ctx)
+	if err != nil {
+		return nil, err
+	}
+	// Global roles are visible to any authed caller (they're the "standard
+	// roles" menu). Org-scoped roles require org membership.
+	if req.OrgId != "" {
+		if err := requireOrgMember(ctx, actorID, req.OrgId); err != nil {
+			return nil, err
+		}
+	}
 	return service.ListRoles(ctx, req)
 }
 
@@ -252,11 +399,17 @@ func (s *PermServer) DeleteRole(ctx context.Context, req *gen.DeleteRoleRequest)
 	if err := Validate(req); err != nil {
 		return nil, err
 	}
-	w := wool.Get(ctx).In("DeleteRole")
-	w.GRPC().Inject()
-	actorID, found := w.UserAuthID()
-	if !found {
-		return nil, status.Error(codes.Unauthenticated, "user id not found")
+	actorID, err := requireAuth(ctx)
+	if err != nil {
+		return nil, err
+	}
+	// DeleteRole only carries the role id — we can't resolve its org scope
+	// cheaply here, so require platform admin as the safe default. Org-scoped
+	// role deletion can be added once the proto is extended with org_id.
+	// TODO(saas-starter): add org_id to DeleteRoleRequest + regen for finer
+	// authz.
+	if err := requirePlatformAdmin(ctx, actorID); err != nil {
+		return nil, err
 	}
 	if err := service.DeleteRole(ctx, actorID, req); err != nil {
 		return nil, err
@@ -268,6 +421,13 @@ func (s *PermServer) AssignRole(ctx context.Context, req *gen.AssignRoleRequest)
 	if err := Validate(req); err != nil {
 		return nil, err
 	}
+	actorID, err := requireAuth(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if err := requireRoleScope(ctx, actorID, req.OrgId); err != nil {
+		return nil, err
+	}
 	return service.AssignRole(ctx, req)
 }
 
@@ -275,11 +435,12 @@ func (s *PermServer) RevokeRole(ctx context.Context, req *gen.RevokeRoleRequest)
 	if err := Validate(req); err != nil {
 		return nil, err
 	}
-	w := wool.Get(ctx).In("RevokeRole")
-	w.GRPC().Inject()
-	actorID, found := w.UserAuthID()
-	if !found {
-		return nil, status.Error(codes.Unauthenticated, "user id not found")
+	actorID, err := requireAuth(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if err := requireRoleScope(ctx, actorID, req.OrgId); err != nil {
+		return nil, err
 	}
 	if err := service.RevokeRole(ctx, actorID, req); err != nil {
 		return nil, err
@@ -291,6 +452,10 @@ func (s *PermServer) CheckPermission(ctx context.Context, req *gen.CheckPermissi
 	if err := Validate(req); err != nil {
 		return nil, err
 	}
+	// CheckPermission is an authorization decision gate called BY internal
+	// services (auth-sidecar middleware). We don't require user auth on
+	// the caller — the sidecar is trusted by network boundary. If the
+	// endpoint is ever exposed publicly, this needs to be tightened.
 	return service.CheckPermission(ctx, req)
 }
 
@@ -326,6 +491,13 @@ func (s *APIKeyServer) ListAPIKeys(ctx context.Context, req *gen.ListAPIKeysRequ
 	if err := Validate(req); err != nil {
 		return nil, err
 	}
+	actorID, err := requireAuth(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if err := requireOrgMember(ctx, actorID, req.OrganizationId); err != nil {
+		return nil, err
+	}
 	return service.ListAPIKeys(ctx, req)
 }
 
@@ -333,7 +505,18 @@ func (s *APIKeyServer) RevokeAPIKey(ctx context.Context, req *gen.RevokeAPIKeyRe
 	if err := Validate(req); err != nil {
 		return nil, err
 	}
-	if err := service.RevokeAPIKey(ctx, req); err != nil {
+	actorID, err := requireAuth(ctx)
+	if err != nil {
+		return nil, err
+	}
+	// RevokeAPIKeyRequest carries only Id — the owning org isn't on the
+	// request. For now require platform_admin; a proper fix is to extend
+	// the proto with organization_id and enforce requireOrgAdmin on that.
+	// TODO(saas-starter): add org_id to RevokeAPIKeyRequest + regen.
+	if err := requirePlatformAdmin(ctx, actorID); err != nil {
+		return nil, err
+	}
+	if err := service.RevokeAPIKey(ctx, actorID, req); err != nil {
 		return nil, err
 	}
 	return &emptypb.Empty{}, nil
@@ -364,14 +547,51 @@ func (s *AuthServer) RefreshToken(ctx context.Context, req *gen.RefreshTokenRequ
 	return service.RefreshToken(ctx, req)
 }
 
+// BeginOAuth issues the server-signed state token for the OAuth code
+// flow. Public — no auth required (this IS the login). Returns
+// FailedPrecondition if the operator hasn't wired the state signer.
+func (s *AuthServer) BeginOAuth(ctx context.Context, req *gen.BeginOAuthRequest) (*gen.BeginOAuthResponse, error) {
+	if err := Validate(req); err != nil {
+		return nil, err
+	}
+	state, err := service.BeginOAuth(ctx, req.Provider, req.RedirectUri)
+	if err != nil {
+		return nil, status.Errorf(codes.FailedPrecondition, "cannot mint oauth state: %v", err)
+	}
+	return &gen.BeginOAuthResponse{State: state}, nil
+}
+
 func (s *AuthServer) Logout(ctx context.Context, req *gen.LogoutRequest) (*emptypb.Empty, error) {
 	if err := Validate(req); err != nil {
 		return nil, err
 	}
-	if err := service.Logout(ctx, req); err != nil {
+	// Pull the caller's access token from the Authorization header so
+	// the business layer can revoke its jti alongside the refresh
+	// family. Empty when called from a non-authenticated context (e.g.
+	// the FE only forwards the refresh, never the access).
+	accessToken := bearerFromContext(ctx)
+	if err := service.Logout(ctx, req, accessToken); err != nil {
 		return nil, err
 	}
 	return &emptypb.Empty{}, nil
+}
+
+// bearerFromContext extracts the bearer token from the incoming
+// Authorization header (gRPC metadata or Connect-mapped HTTP header).
+// Returns "" when absent or malformed.
+func bearerFromContext(ctx context.Context) string {
+	md, ok := metadata.FromIncomingContext(ctx)
+	if !ok {
+		return ""
+	}
+	v := md.Get("authorization")
+	if len(v) == 0 {
+		return ""
+	}
+	if t, ok := strings.CutPrefix(v[0], "Bearer "); ok {
+		return t
+	}
+	return ""
 }
 
 func (s *AuthServer) GetJWKS(ctx context.Context, _ *emptypb.Empty) (*gen.JWKSResponse, error) {
@@ -389,6 +609,27 @@ func (s *AuthServer) GetJWKS(ctx context.Context, _ *emptypb.Empty) (*gen.JWKSRe
 func (s *AuditServer) QueryAuditLog(ctx context.Context, req *gen.QueryAuditLogRequest) (*gen.QueryAuditLogResponse, error) {
 	if err := Validate(req); err != nil {
 		return nil, err
+	}
+	actorID, err := requireAuth(ctx)
+	if err != nil {
+		return nil, err
+	}
+	// Audit log is read-through-membership: org members see their own org's
+	// audit trail; platform admins see anything. No org_id means platform
+	// admin scope is required.
+	if req.OrgId == "" {
+		if err := requirePlatformAdmin(ctx, actorID); err != nil {
+			return nil, err
+		}
+	} else {
+		if err := requireOrgMember(ctx, actorID, req.OrgId); err != nil {
+			if !IsPermissionDenied(err) {
+				return nil, err
+			}
+			if paErr := requirePlatformAdmin(ctx, actorID); paErr != nil {
+				return nil, err
+			}
+		}
 	}
 
 	var from, to *time.Time
@@ -428,13 +669,16 @@ func (s *InvitationServer) CreateInvitation(ctx context.Context, req *gen.Create
 	if err := Validate(req); err != nil {
 		return nil, err
 	}
-	w := wool.Get(ctx).In("CreateInvitation")
-	w.GRPC().Inject()
-	userID, found := w.UserAuthID()
-	if !found {
-		return nil, status.Error(codes.Unauthenticated, "user id not found")
+	actorID, err := requireAuth(ctx)
+	if err != nil {
+		return nil, err
 	}
-	return service.CreateInvitation(ctx, userID, req)
+	// Only org admins can invite — plain members shouldn't be able to
+	// pull strangers into someone else's org.
+	if err := requireOrgAdmin(ctx, actorID, req.OrgId); err != nil {
+		return nil, err
+	}
+	return service.CreateInvitation(ctx, actorID, req)
 }
 
 func (s *InvitationServer) AcceptInvitation(ctx context.Context, req *gen.AcceptInvitationRequest) (*gen.AcceptInvitationResponse, error) {
@@ -452,6 +696,13 @@ func (s *InvitationServer) AcceptInvitation(ctx context.Context, req *gen.Accept
 
 func (s *InvitationServer) ListInvitations(ctx context.Context, req *gen.ListInvitationsRequest) (*gen.ListInvitationsResponse, error) {
 	if err := Validate(req); err != nil {
+		return nil, err
+	}
+	actorID, err := requireAuth(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if err := requireOrgAdmin(ctx, actorID, req.OrgId); err != nil {
 		return nil, err
 	}
 	return service.ListInvitations(ctx, req)
@@ -532,6 +783,9 @@ func (s *PlatformAdminServer) ImpersonateUser(ctx context.Context, req *gen.Impe
 	if !found {
 		return nil, status.Error(codes.Unauthenticated, "user id not found")
 	}
+	if err := requireMFA(ctx, actorID); err != nil {
+		return nil, err
+	}
 	return service.ImpersonateUser(ctx, actorID, req)
 }
 
@@ -572,6 +826,9 @@ func (s *PlatformAdminServer) GrantPlatformRole(ctx context.Context, req *gen.Gr
 	if !found {
 		return nil, status.Error(codes.Unauthenticated, "user id not found")
 	}
+	if err := requireMFA(ctx, actorID); err != nil {
+		return nil, err
+	}
 	if err := service.GrantPlatformRole(ctx, actorID, req); err != nil {
 		return nil, err
 	}
@@ -587,6 +844,9 @@ func (s *PlatformAdminServer) RevokePlatformRole(ctx context.Context, req *gen.R
 	actorID, found := w.UserAuthID()
 	if !found {
 		return nil, status.Error(codes.Unauthenticated, "user id not found")
+	}
+	if err := requireMFA(ctx, actorID); err != nil {
+		return nil, err
 	}
 	if err := service.RevokePlatformRole(ctx, actorID, req); err != nil {
 		return nil, err

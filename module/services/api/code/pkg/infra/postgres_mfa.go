@@ -48,6 +48,19 @@ func (s *PostgresStore) GetMFADevice(ctx context.Context, id string) (*business.
 	return &device, nil
 }
 
+// CountMFADevices returns the number of VERIFIED MFA devices for a
+// user. Used by requireMFA to decide whether enforcement applies —
+// users with zero verified devices skip the gate (can't challenge).
+// Unverified devices (just-set-up but not yet confirmed) don't count.
+func (s *PostgresStore) CountMFADevices(ctx context.Context, userID string) (int, error) {
+	q := s.getQueryExecutor(ctx)
+	var n int
+	err := q.QueryRow(ctx,
+		`SELECT COUNT(*) FROM mfa_devices WHERE user_id = $1 AND verified_at IS NOT NULL`,
+		userID).Scan(&n)
+	return n, err
+}
+
 func (s *PostgresStore) ListMFADevices(ctx context.Context, userID string) ([]*business.MFADevice, error) {
 	q := s.getQueryExecutor(ctx)
 

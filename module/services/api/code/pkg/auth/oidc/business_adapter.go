@@ -15,8 +15,8 @@ func AsBusinessExchanger(ex *Exchanger) business.CodeExchanger {
 
 type businessExchangerAdapter struct{ ex *Exchanger }
 
-func (a *businessExchangerAdapter) Exchange(ctx context.Context, code, redirectURI string) (business.ExchangedTokens, error) {
-	resp, err := a.ex.Exchange(ctx, code, redirectURI)
+func (a *businessExchangerAdapter) Exchange(ctx context.Context, code, redirectURI, codeVerifier string) (business.ExchangedTokens, error) {
+	resp, err := a.ex.Exchange(ctx, code, redirectURI, codeVerifier)
 	if err != nil {
 		return business.ExchangedTokens{}, err
 	}

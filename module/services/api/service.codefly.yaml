@@ -8,7 +8,7 @@ agent:
 service-dependencies:
     - name: store
     - name: vault
-#    - name: cache
+    - name: cache
 workspace-configuration-dependencies:
     - workos
 endpoints:

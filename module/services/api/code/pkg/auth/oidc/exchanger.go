@@ -79,13 +79,23 @@ type TokenResponse struct {
 //
 // redirectURI MUST match the one originally passed in the authorize URL;
 // providers reject the exchange otherwise.
-func (e *Exchanger) Exchange(ctx context.Context, code, redirectURI string) (*TokenResponse, error) {
+//
+// codeVerifier is the PKCE secret the FE generated; empty means the FE
+// did not use PKCE (legacy clients). When non-empty, it is forwarded
+// as the standard `code_verifier` form parameter — the provider hashes
+// it and compares with the `code_challenge` sent in the authorize URL.
+// Including code_verifier alongside client_secret is harmless and is
+// the recommended belt-and-suspenders for confidential clients.
+func (e *Exchanger) Exchange(ctx context.Context, code, redirectURI, codeVerifier string) (*TokenResponse, error) {
 	form := url.Values{}
 	form.Set("grant_type", "authorization_code")
 	form.Set("code", code)
 	form.Set("redirect_uri", redirectURI)
 	form.Set("client_id", e.clientID)
 	form.Set("client_secret", e.clientSecret)
+	if codeVerifier != "" {
+		form.Set("code_verifier", codeVerifier)
+	}
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, e.tokenURL,
 		strings.NewReader(form.Encode()))

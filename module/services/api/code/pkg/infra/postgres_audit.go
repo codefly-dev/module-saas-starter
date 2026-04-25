@@ -24,8 +24,8 @@ func (s *PostgresStore) InsertAuditEvent(ctx context.Context, entry business.Aud
 	_, err = q.Exec(ctx, `
 		INSERT INTO audit_events (actor_id, actor_type, action, resource, resource_id, org_id, metadata, ip_address)
 		VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
-		nilIfEmpty(entry.ActorID), entry.ActorType, entry.Action,
-		entry.Resource, nilIfEmpty(entry.ResourceID), nilIfEmpty(entry.OrgID),
+		nilIfNotUUID(entry.ActorID), entry.ActorType, entry.Action,
+		entry.Resource, nilIfNotUUID(entry.ResourceID), nilIfNotUUID(entry.OrgID),
 		metadata, nilIfEmpty(entry.IPAddress))
 	return err
 }
@@ -148,6 +148,24 @@ func AuditEntryToProto(e business.AuditEntry) *gen.AuditEvent {
 
 func nilIfEmpty(s string) *string {
 	if s == "" {
+		return nil
+	}
+	return &s
+}
+
+// nilIfNotUUID returns nil when s is not a valid UUID, else a pointer to
+// s. The audit_events.actor_id column is typed UUID (nullable); system
+// or fixture-seed actors don't have a real user id. Feeding postgres a
+// non-UUID string fails with 22P02 "invalid input syntax for type uuid";
+// treating them as nil preserves the audit entry but records the actor
+// via actor_type alone.
+func nilIfNotUUID(s string) *string {
+	if s == "" {
+		return nil
+	}
+	// UUID v4 string length is always 36 with 4 hyphens in fixed
+	// positions. A cheap shape check avoids importing uuid just here.
+	if len(s) != 36 || s[8] != '-' || s[13] != '-' || s[18] != '-' || s[23] != '-' {
 		return nil
 	}
 	return &s

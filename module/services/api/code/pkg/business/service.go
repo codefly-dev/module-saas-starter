@@ -24,14 +24,22 @@ type Service struct {
 	audit        AuditEmitter
 	entitlements EntitlementChecker
 	features     FeatureChecker
+	membership   MembershipInvalidator
 	slack        *SlackNotifier // optional: sends critical notifications to Slack
+	oauthState   *auth.OAuthStateSigner
 }
 
 // CodeExchanger abstracts the OAuth 2.0 code-for-token exchange so the
 // business layer doesn't depend on the concrete oidc package. In
 // production this is *oidc.Exchanger; tests use a fake.
+//
+// codeVerifier is the PKCE secret the FE generated for THIS sign-in
+// attempt — empty when the FE didn't use PKCE (legacy flow). When
+// non-empty, it is forwarded to the provider's token endpoint as
+// `code_verifier`; the provider re-hashes it and compares with the
+// `code_challenge` originally sent in the authorize URL.
 type CodeExchanger interface {
-	Exchange(ctx context.Context, code, redirectURI string) (ExchangedTokens, error)
+	Exchange(ctx context.Context, code, redirectURI, codeVerifier string) (ExchangedTokens, error)
 }
 
 // ExchangedTokens is the subset of an OAuth token response the backend
@@ -60,6 +68,24 @@ func (s *Service) SetIdentityResolver(r auth.IdentityResolver) {
 // Required for every /auth/* endpoint.
 func (s *Service) SetJWTMinter(m auth.JWTMinter) {
 	s.minter = m
+}
+
+// SetOAuthStateSigner wires the server-side state signer used by
+// BeginOAuth and verified in Authenticate. Optional: when nil, the
+// FE-only state validation (sessionStorage) remains the sole defense.
+// Production deployments SHOULD wire this with a stable seed (the
+// JWT signing key works) so state survives api restarts and
+// multi-instance deployments.
+func (s *Service) SetOAuthStateSigner(signer *auth.OAuthStateSigner) {
+	s.oauthState = signer
+}
+
+// JWTMinter returns the configured minter so adapters (e.g. the
+// Connect auth interceptor) can verify access tokens. Nil if the
+// minter has not been wired — callers should treat that as "auth
+// disabled" rather than crashing.
+func (s *Service) JWTMinter() auth.JWTMinter {
+	return s.minter
 }
 
 // SetTokenValidator wires a provider-specific TokenValidator. When set,
@@ -110,6 +136,31 @@ func (s *Service) SetEntitlementChecker(e EntitlementChecker) {
 
 func (s *Service) SetFeatureChecker(f FeatureChecker) {
 	s.features = f
+}
+
+// MembershipInvalidator is called by the business layer on every mutation
+// that changes (orgID, userID) membership — add/remove/role-change. A
+// nil invalidator (SetMembershipInvalidator never called) is a no-op,
+// which is the correct fallback when Redis caching is disabled.
+//
+// The implementation lives in adapters; this interface keeps the
+// business layer from importing adapters or cache directly, matching
+// the SetAuditEmitter / SetEntitlementChecker pattern.
+type MembershipInvalidator interface {
+	InvalidateMembership(ctx context.Context, orgID, userID string)
+}
+
+func (s *Service) SetMembershipInvalidator(i MembershipInvalidator) {
+	s.membership = i
+}
+
+// invalidateMembership is the internal helper Service methods call after
+// mutating membership. Nil-safe so non-cache-wired setups keep working.
+func (s *Service) invalidateMembership(ctx context.Context, orgID, userID string) {
+	if s.membership == nil {
+		return
+	}
+	s.membership.InvalidateMembership(ctx, orgID, userID)
 }
 
 // SetSlackNotifier wires an optional Slack webhook notifier for critical events.
@@ -249,7 +300,9 @@ func (s *Service) CreateOrganization(ctx context.Context, ownerID string, req *g
 }
 
 // CreateTeam creates a new team within an org.
-func (s *Service) CreateTeam(ctx context.Context, req *gen.CreateTeamRequest) (*gen.CreateTeamResponse, error) {
+// actorID is the authenticated caller — recorded in the audit log so we
+// know who stood up the team.
+func (s *Service) CreateTeam(ctx context.Context, actorID string, req *gen.CreateTeamRequest) (*gen.CreateTeamResponse, error) {
 	team := &gen.Team{
 		Id:          NewIDString(),
 		OrgId:       req.OrgId,
@@ -259,11 +312,14 @@ func (s *Service) CreateTeam(ctx context.Context, req *gen.CreateTeamRequest) (*
 	if err := s.store.CreateTeam(ctx, team); err != nil {
 		return nil, err
 	}
+	s.emit(ctx, actorID, "user", "team.created", "team", team.Id, req.OrgId)
 	return &gen.CreateTeamResponse{Team: team}, nil
 }
 
 // CreateRole creates a new custom role.
-func (s *Service) CreateRole(ctx context.Context, req *gen.CreateRoleRequest) (*gen.CreateRoleResponse, error) {
+// Audit trail records actorID so role additions are traceable — these are
+// security-relevant changes (a new role = a new set of permissions).
+func (s *Service) CreateRole(ctx context.Context, actorID string, req *gen.CreateRoleRequest) (*gen.CreateRoleResponse, error) {
 	role := &gen.Role{
 		Id:          NewIDString(),
 		Name:        req.Name,
@@ -275,6 +331,7 @@ func (s *Service) CreateRole(ctx context.Context, req *gen.CreateRoleRequest) (*
 	if err := s.store.CreateRole(ctx, role); err != nil {
 		return nil, err
 	}
+	s.emit(ctx, actorID, "user", "role.created", "role", role.Id, req.OrgId)
 	return &gen.CreateRoleResponse{Role: role}, nil
 }
 

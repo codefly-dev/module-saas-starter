@@ -51,6 +51,11 @@ func (s *Service) AddOrgMember(ctx context.Context, actorID string, req *gen.Add
 		return w.Wrapf(err, "cannot add member")
 	}
 
+	// Tell the cache the old "not a member" entry is stale — without this,
+	// the first request from the newly-added user would spend 30s hitting
+	// the cache with the wrong negative answer. No-op when caching is off.
+	s.invalidateMembership(ctx, req.OrgId, req.UserId)
+
 	s.emit(ctx, actorID, "user", "org.member_added", "organization", req.OrgId, req.OrgId)
 
 	// Notify the added user
@@ -65,11 +70,52 @@ func (s *Service) AddOrgMember(ctx context.Context, actorID string, req *gen.Add
 }
 
 // RemoveOrgMember removes a member from an organization.
+//
+// Guards:
+//   - Last-owner guard: if the target is the only remaining owner/admin,
+//     reject. Otherwise we'd leave the org with no one who can manage it.
+//   - Cascade: also remove the target's team memberships within the org,
+//     otherwise a removed user still holds team access via orphaned rows.
 func (s *Service) RemoveOrgMember(ctx context.Context, actorID string, req *gen.RemoveOrgMemberRequest) error {
 	w := wool.Get(ctx).In("RemoveOrgMember")
 
+	// Fetch current members once; use for both the last-admin check and
+	// (implicitly) the emit audit.
+	members, err := s.store.ListOrgMembers(ctx, req.OrgId)
+	if err != nil {
+		return w.Wrapf(err, "cannot load org members for guard")
+	}
+	var adminCount int
+	targetIsAdmin := false
+	for _, m := range members {
+		if m.Role != gen.OrgRole_ORG_ROLE_ADMIN && m.Role != gen.OrgRole_ORG_ROLE_OWNER {
+			continue
+		}
+		adminCount++
+		if m.UserId == req.UserId {
+			targetIsAdmin = true
+		}
+	}
+	if targetIsAdmin && adminCount <= 1 {
+		return w.NewError("cannot remove the last admin/owner from the organization")
+	}
+
 	if err := s.store.RemoveOrgMember(ctx, req.OrgId, req.UserId); err != nil {
 		return w.Wrapf(err, "cannot remove member")
+	}
+
+	// Invalidate the membership cache — otherwise the removed user
+	// keeps passing authorization checks for up to 30s while their
+	// cached entry is still "admin" or "member".
+	s.invalidateMembership(ctx, req.OrgId, req.UserId)
+
+	// Cascade: unwind team memberships in this org for the removed user.
+	// Store may or may not expose a bulk delete; iterate teams best-effort.
+	teams, tErr := s.store.ListTeams(ctx, req.OrgId)
+	if tErr == nil {
+		for _, t := range teams {
+			_ = s.store.RemoveTeamMember(ctx, t.Id, req.UserId)
+		}
 	}
 
 	s.emit(ctx, actorID, "user", "org.member_removed", "organization", req.OrgId, req.OrgId)

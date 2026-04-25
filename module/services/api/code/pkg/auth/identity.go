@@ -38,6 +38,12 @@ type Identity struct {
 	// Business logic authorises against ActingAsUserID; audit logs against
 	// UserID.
 	ActingAsUserID uuid.UUID
+
+	// MFASatisfied is true when this session has cleared the MFA gate
+	// (either the user never enrolled MFA, or they completed a TOTP /
+	// backup-code challenge during this login). Sensitive operations
+	// reject sessions where this is false via requireMFA(ctx).
+	MFASatisfied bool
 }
 
 // IdentityResolver translates provider Claims into an internal Identity.

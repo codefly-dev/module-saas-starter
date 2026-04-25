@@ -53,6 +53,10 @@ func handleCheckout(svc *business.Service, w http.ResponseWriter, r *http.Reques
 		writeJSONError(w, http.StatusUnauthorized, "missing X-User-ID or X-Org-ID")
 		return
 	}
+	if err := requireHTTPMFA(svc, r, userID); err != nil {
+		writeJSONError(w, http.StatusPreconditionFailed, err.Error())
+		return
+	}
 
 	var req checkoutRequest
 	body, err := io.ReadAll(http.MaxBytesReader(w, r.Body, 1<<16))
@@ -97,6 +101,10 @@ func handlePortal(svc *business.Service, w http.ResponseWriter, r *http.Request)
 	orgID := r.Header.Get("X-Org-ID")
 	if userID == "" || orgID == "" {
 		writeJSONError(w, http.StatusUnauthorized, "missing X-User-ID or X-Org-ID")
+		return
+	}
+	if err := requireHTTPMFA(svc, r, userID); err != nil {
+		writeJSONError(w, http.StatusPreconditionFailed, err.Error())
 		return
 	}
 

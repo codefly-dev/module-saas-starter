@@ -137,6 +137,10 @@ type Store interface {
 	MarkAllNotificationsRead(ctx context.Context, userID string) error
 	DeleteNotification(ctx context.Context, id string) error
 
+	// MFA — exposed on the main Store interface so the auth layer's
+	// requireMFA gate can check enrollment without casting to MFAStore.
+	HasVerifiedMFA(ctx context.Context, userID string) (bool, error)
+
 	// Onboarding
 	GetOnboardingProgress(ctx context.Context, userID string) ([]*OnboardingStep, error)
 	UpsertOnboardingStep(ctx context.Context, userID string, stepName string, status string) error
