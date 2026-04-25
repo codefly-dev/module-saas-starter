@@ -158,13 +158,14 @@ func encodeJSONL(events []AuditEntry) ([]byte, error) {
 // runs multiple times in the same second (e.g. two api instances
 // fighting over the same row — which the lock should prevent but
 // the suffix is belt-and-suspenders).
+//
+// Bucket auto-create: if the bucket doesn't exist on first upload,
+// create it. Most production deployments pre-create the bucket with
+// IAM/lifecycle/encryption policies; the auto-create branch is for
+// dev (local MinIO) where the operator just typed in a name. Errors
+// other than "already exists" are surfaced.
 func (e *AuditExporter) upload(ctx context.Context, cfg *AuditExportConfig, ts time.Time, body []byte) error {
-	endpoint := cfg.Endpoint
-	useSSL := true
-	if endpoint == "" {
-		// Real AWS S3 — minio-go expects host without scheme.
-		endpoint = "s3." + cfg.Region + ".amazonaws.com"
-	}
+	endpoint, useSSL := resolveEndpoint(cfg.Endpoint, cfg.Region)
 
 	client, err := minio.New(endpoint, &minio.Options{
 		Creds:  credentials.NewStaticV4(cfg.AccessKeyID, cfg.SecretAccessKey, ""),
@@ -175,6 +176,10 @@ func (e *AuditExporter) upload(ctx context.Context, cfg *AuditExportConfig, ts t
 		return fmt.Errorf("s3 client: %w", err)
 	}
 
+	if err := e.ensureBucket(ctx, client, cfg.Bucket, cfg.Region); err != nil {
+		return fmt.Errorf("ensure bucket: %w", err)
+	}
+
 	day := ts.UTC().Format("2006-01-02")
 	objectKey := joinPath(cfg.Prefix, day, fmt.Sprintf("%d.jsonl", ts.UnixMilli()))
 
@@ -183,6 +188,57 @@ func (e *AuditExporter) upload(ctx context.Context, cfg *AuditExportConfig, ts t
 		minio.PutObjectOptions{ContentType: "application/x-ndjson"})
 	if err != nil {
 		return fmt.Errorf("put: %w", err)
+	}
+	return nil
+}
+
+// resolveEndpoint converts a user-entered endpoint string into the
+// (host, useSSL) pair minio-go needs. Accepts:
+//   ""                    → AWS S3 in `region`, TLS on
+//   "host:port"           → TLS on  (production-shaped)
+//   "https://host:port"   → TLS on
+//   "http://host:port"    → TLS OFF (local MinIO / non-prod)
+//
+// Letting the operator opt into HTTP via the http:// prefix avoids a
+// separate use_tls field on the config (and the migration / proto
+// churn that comes with it). The scheme is the cleanest place to put
+// this signal since "http://" already MEANS no TLS to anyone reading
+// the form.
+func resolveEndpoint(endpoint, region string) (string, bool) {
+	if endpoint == "" {
+		return "s3." + region + ".amazonaws.com", true
+	}
+	switch {
+	case len(endpoint) > 8 && endpoint[:8] == "https://":
+		return endpoint[8:], true
+	case len(endpoint) > 7 && endpoint[:7] == "http://":
+		return endpoint[7:], false
+	default:
+		return endpoint, true
+	}
+}
+
+// ensureBucket creates the bucket if it doesn't exist. minio-go's
+// MakeBucket returns an error wrapped as ErrorResponse with
+// Code=BucketAlreadyOwnedByYou (or BucketAlreadyExists) on a re-run;
+// those are not failures. Anything else (NoSuchEndpoint, AccessDenied,
+// network) propagates so the exporter surfaces it as last_error.
+func (e *AuditExporter) ensureBucket(ctx context.Context, client *minio.Client, bucket, region string) error {
+	exists, err := client.BucketExists(ctx, bucket)
+	if err != nil {
+		return err
+	}
+	if exists {
+		return nil
+	}
+	if err := client.MakeBucket(ctx, bucket, minio.MakeBucketOptions{Region: region}); err != nil {
+		// Race: another exporter created it between our check and our
+		// create. Treat as success.
+		errResp := minio.ToErrorResponse(err)
+		if errResp.Code == "BucketAlreadyOwnedByYou" || errResp.Code == "BucketAlreadyExists" {
+			return nil
+		}
+		return err
 	}
 	return nil
 }
