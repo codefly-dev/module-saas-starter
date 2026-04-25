@@ -64,11 +64,17 @@ export function APIKeysTable({
       }),
       col.accessor("lastUsedAt", {
         header: "Last Used",
-        cell: (info) => (
-          <span className="text-muted-foreground">
-            {formatDate(info.getValue())}
-          </span>
-        ),
+        cell: (info) => {
+          const v = info.getValue();
+          // "Never" for keys that have been issued but not used yet —
+          // distinguishes from a load-time gap. formatDate("-") would
+          // be ambiguous with an unknown timestamp.
+          return (
+            <span className={v ? "text-muted-foreground" : "italic text-muted-foreground/70"}>
+              {v ? formatDate(v) : "Never"}
+            </span>
+          );
+        },
       }),
       col.accessor("createdAt", {
         header: "Created",
@@ -93,7 +99,13 @@ export function APIKeysTable({
           return (
             <AlertDialog>
               <AlertDialogTrigger
-                render={<Button variant="ghost" size="sm" />}
+                render={
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    aria-label={`Revoke ${key.name}`}
+                  />
+                }
               >
                 <Ban className="h-4 w-4 text-destructive" />
               </AlertDialogTrigger>
@@ -129,8 +141,17 @@ export function APIKeysTable({
     [revokeKey],
   );
 
+  // Active keys first, revoked keys at the bottom — same end-state
+  // a Stripe-style table reaches by default. Within each group the
+  // backend's createdAt-desc ordering is preserved.
+  const orderedKeys = useMemo(() => {
+    const active = keys.filter((k) => !k.revokedAt);
+    const revoked = keys.filter((k) => k.revokedAt);
+    return [...active, ...revoked];
+  }, [keys]);
+
   const table = useReactTable({
-    data: keys,
+    data: orderedKeys,
     columns,
     getCoreRowModel: getCoreRowModel(),
     getSortedRowModel: getSortedRowModel(),

@@ -1,10 +1,12 @@
 "use client";
 
 import { useState } from "react";
+import { Key } from "lucide-react";
 import { useAPIKeys } from "../service/queries";
 import { APIKeysTable } from "./api-keys-table";
 import { APIKeyForm } from "./api-key-form";
 import { OrgSelector } from "@/components/org-selector";
+import { EmptyState } from "@/components/empty-state";
 import type { APIKey } from "../model/types";
 
 export function APIKeysPage() {
@@ -26,10 +28,15 @@ export function APIKeysPage() {
         </div>
       </div>
 
-      <APIKeysTable
-        keys={keys as APIKey[]}
-        isLoading={orgId ? isLoading : false}
-      />
+      {!orgId ? (
+        <EmptyState
+          icon={Key}
+          title="Select an organization to view API keys"
+          description="API keys are scoped to one tenant at a time. Pick an org from the selector above to see (or create) its keys."
+        />
+      ) : (
+        <APIKeysTable keys={keys as APIKey[]} isLoading={isLoading} />
+      )}
     </div>
   );
 }

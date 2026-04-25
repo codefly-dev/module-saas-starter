@@ -60,11 +60,17 @@ export function APIKeyForm({ orgId }: { orgId: string }) {
 
   function handleCopy() {
     if (!plaintextKey) return;
-    navigator.clipboard.writeText(plaintextKey).then(() => {
-      setCopied(true);
-      toast.success("Key copied to clipboard");
-      setTimeout(() => setCopied(false), 2000);
-    });
+    navigator.clipboard
+      .writeText(plaintextKey)
+      .then(() => {
+        // Stays true once set — gates the Done button below. Resetting
+        // it on a timeout (the old behaviour) would re-disable Done a
+        // few seconds later, which is the wrong UX: once the operator
+        // has the secret, that's done forever.
+        setCopied(true);
+        toast.success("Key copied to clipboard");
+      })
+      .catch(() => toast.error("Copy failed — copy it manually"));
   }
 
   function handleClose() {
@@ -109,7 +115,9 @@ export function APIKeyForm({ orgId }: { orgId: string }) {
               </p>
             </div>
             <DialogFooter>
-              <Button onClick={handleClose}>Done</Button>
+              <Button onClick={handleClose} disabled={!copied}>
+                {copied ? "Done" : "Copy the key first"}
+              </Button>
             </DialogFooter>
           </>
         ) : (
