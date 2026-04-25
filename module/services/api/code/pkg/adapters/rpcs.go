@@ -829,7 +829,17 @@ func (s *PlatformAdminServer) OverrideEntitlement(ctx context.Context, req *gen.
 	if err := Validate(req); err != nil {
 		return nil, err
 	}
-	return nil, status.Error(codes.Unimplemented, "OverrideEntitlement not yet implemented")
+	w := wool.Get(ctx).In("OverrideEntitlement")
+	w.GRPC().Inject()
+	actorID, found := w.UserAuthID()
+	if !found {
+		return nil, status.Error(codes.Unauthenticated, "user id not found")
+	}
+	id, err := service.OverrideEntitlement(ctx, actorID, req)
+	if err != nil {
+		return nil, status.Error(codes.Internal, err.Error())
+	}
+	return &gen.OverrideEntitlementResponse{Id: id}, nil
 }
 
 func (s *PlatformAdminServer) GrantPlatformRole(ctx context.Context, req *gen.GrantPlatformRoleRequest) (*emptypb.Empty, error) {

@@ -284,6 +284,46 @@ func (s *Service) resolveUsage(ctx context.Context, orgID, feature, period strin
 	}
 }
 
+// OverrideEntitlement creates or refreshes a per-org override for a
+// feature limit. Used by the platform-admin dashboard to grant a
+// customer extra capacity (or revoke it) without changing their plan.
+//
+// limitValue semantics:
+//   -1  → unlimited (stored as NULL via LimitValue=nil)
+//    0  → disabled
+//   >0  → the new metered cap
+//
+// Authz expectation: caller is platform-admin, gated by the adapter.
+// Emits an audit event for the operator trail.
+func (s *Service) OverrideEntitlement(ctx context.Context, actorID string, req interface {
+	GetOrgId() string
+	GetFeature() string
+	GetLimitValue() int64
+	GetReason() string
+}) (string, error) {
+	override := &EntitlementOverride{
+		ID:        NewIDString(),
+		OrgID:     req.GetOrgId(),
+		Feature:   req.GetFeature(),
+		Reason:    req.GetReason(),
+		CreatedBy: actorID,
+	}
+	limit := req.GetLimitValue()
+	if limit == -1 {
+		// nil = unlimited (matches NULL in DB column).
+		override.LimitValue = nil
+	} else {
+		v := limit
+		override.LimitValue = &v
+	}
+	if err := s.store.CreateEntitlementOverride(ctx, override); err != nil {
+		return "", fmt.Errorf("create override: %w", err)
+	}
+	s.emit(ctx, req.GetOrgId(), "user", "entitlement.override",
+		"entitlement_override", override.ID, req.GetOrgId())
+	return override.ID, nil
+}
+
 func planNameOrFallback(p *Plan) string {
 	if p == nil {
 		return "Free"
