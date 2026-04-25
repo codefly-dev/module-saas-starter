@@ -416,6 +416,9 @@ type webhookConnectHandler struct{ svc *business.Service }
 
 func (h *webhookConnectHandler) CreateSubscription(ctx context.Context, req *connect.Request[gen.CreateWebhookSubscriptionRequest]) (*connect.Response[gen.WebhookSubscription], error) {
 	ctx = connectCtx(ctx, req.Header())
+	if err := requireScope(ctx, "webhooks:write"); err != nil {
+		return nil, translateGRPCError(err)
+	}
 	sub, err := h.svc.CreateSubscription(ctx, req.Msg.OrgId, req.Msg.Url, "", req.Msg.Events, req.Msg.Description)
 	if err != nil {
 		return nil, err
@@ -425,6 +428,9 @@ func (h *webhookConnectHandler) CreateSubscription(ctx context.Context, req *con
 
 func (h *webhookConnectHandler) DeleteSubscription(ctx context.Context, req *connect.Request[gen.DeleteWebhookSubscriptionRequest]) (*connect.Response[emptypb.Empty], error) {
 	ctx = connectCtx(ctx, req.Header())
+	if err := requireScope(ctx, "webhooks:write"); err != nil {
+		return nil, translateGRPCError(err)
+	}
 	if err := h.svc.DeleteSubscription(ctx, callerOrg(ctx), req.Msg.Id); err != nil {
 		return nil, err
 	}
@@ -433,6 +439,9 @@ func (h *webhookConnectHandler) DeleteSubscription(ctx context.Context, req *con
 
 func (h *webhookConnectHandler) ListSubscriptions(ctx context.Context, req *connect.Request[gen.ListWebhookSubscriptionsRequest]) (*connect.Response[gen.ListWebhookSubscriptionsResponse], error) {
 	ctx = connectCtx(ctx, req.Header())
+	if err := requireScope(ctx, "webhooks:read"); err != nil {
+		return nil, translateGRPCError(err)
+	}
 	subs, err := h.svc.ListSubscriptions(ctx, req.Msg.OrgId)
 	if err != nil {
 		return nil, err
@@ -446,6 +455,9 @@ func (h *webhookConnectHandler) ListSubscriptions(ctx context.Context, req *conn
 
 func (h *webhookConnectHandler) ListDeliveries(ctx context.Context, req *connect.Request[gen.ListWebhookDeliveriesRequest]) (*connect.Response[gen.ListWebhookDeliveriesResponse], error) {
 	ctx = connectCtx(ctx, req.Header())
+	if err := requireScope(ctx, "webhooks:read"); err != nil {
+		return nil, translateGRPCError(err)
+	}
 	pageSize := int(req.Msg.PageSize)
 	if pageSize == 0 {
 		pageSize = 50
@@ -463,6 +475,9 @@ func (h *webhookConnectHandler) ListDeliveries(ctx context.Context, req *connect
 
 func (h *webhookConnectHandler) TestWebhook(ctx context.Context, req *connect.Request[gen.TestWebhookRequest]) (*connect.Response[gen.WebhookDelivery], error) {
 	ctx = connectCtx(ctx, req.Header())
+	if err := requireScope(ctx, "webhooks:write"); err != nil {
+		return nil, translateGRPCError(err)
+	}
 	d, err := h.svc.TestWebhook(ctx, req.Msg.Id, req.Msg.EventType)
 	if err != nil {
 		return nil, err
@@ -476,6 +491,9 @@ func (h *webhookConnectHandler) TestWebhook(ctx context.Context, req *connect.Re
 // the FE wants a fresh read after a replay or a status change.
 func (h *webhookConnectHandler) GetDelivery(ctx context.Context, req *connect.Request[gen.GetWebhookDeliveryRequest]) (*connect.Response[gen.WebhookDelivery], error) {
 	ctx = connectCtx(ctx, req.Header())
+	if err := requireScope(ctx, "webhooks:read"); err != nil {
+		return nil, translateGRPCError(err)
+	}
 	d, err := h.svc.GetWebhookDelivery(ctx, req.Msg.Id)
 	if err != nil {
 		return nil, err
@@ -489,6 +507,9 @@ func (h *webhookConnectHandler) GetDelivery(ctx context.Context, req *connect.Re
 // the original delivery's subscription org.
 func (h *webhookConnectHandler) ReplayDelivery(ctx context.Context, req *connect.Request[gen.ReplayWebhookDeliveryRequest]) (*connect.Response[gen.WebhookDelivery], error) {
 	ctx = connectCtx(ctx, req.Header())
+	if err := requireScope(ctx, "webhooks:write"); err != nil {
+		return nil, translateGRPCError(err)
+	}
 	d, err := h.svc.ReplayWebhookDelivery(ctx, req.Msg.Id)
 	if err != nil {
 		return nil, err
@@ -505,6 +526,9 @@ func (h *webhookConnectHandler) ReplayDelivery(ctx context.Context, req *connect
 // rotating an API key).
 func (h *webhookConnectHandler) RotateSecret(ctx context.Context, req *connect.Request[gen.RotateWebhookSecretRequest]) (*connect.Response[gen.RotateWebhookSecretResponse], error) {
 	ctx = connectCtx(ctx, req.Header())
+	if err := requireScope(ctx, "webhooks:write"); err != nil {
+		return nil, translateGRPCError(err)
+	}
 	actorID, err := callerID(ctx)
 	if err != nil {
 		return nil, err

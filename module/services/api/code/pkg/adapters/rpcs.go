@@ -478,6 +478,9 @@ func (s *APIKeyServer) CreateAPIKey(ctx context.Context, req *gen.CreateAPIKeyRe
 	if err := Validate(req); err != nil {
 		return nil, err
 	}
+	if err := requireScope(ctx, "api_keys:write"); err != nil {
+		return nil, err
+	}
 	w := wool.Get(ctx).In("CreateAPIKey")
 	w.GRPC().Inject()
 	userID, found := w.UserAuthID()
@@ -489,6 +492,9 @@ func (s *APIKeyServer) CreateAPIKey(ctx context.Context, req *gen.CreateAPIKeyRe
 
 func (s *APIKeyServer) ListAPIKeys(ctx context.Context, req *gen.ListAPIKeysRequest) (*gen.ListAPIKeysResponse, error) {
 	if err := Validate(req); err != nil {
+		return nil, err
+	}
+	if err := requireScope(ctx, "api_keys:read"); err != nil {
 		return nil, err
 	}
 	actorID, err := requireAuth(ctx)
@@ -503,6 +509,9 @@ func (s *APIKeyServer) ListAPIKeys(ctx context.Context, req *gen.ListAPIKeysRequ
 
 func (s *APIKeyServer) RevokeAPIKey(ctx context.Context, req *gen.RevokeAPIKeyRequest) (*emptypb.Empty, error) {
 	if err := Validate(req); err != nil {
+		return nil, err
+	}
+	if err := requireScope(ctx, "api_keys:write"); err != nil {
 		return nil, err
 	}
 	actorID, err := requireAuth(ctx)
