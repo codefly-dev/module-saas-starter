@@ -463,11 +463,60 @@ func (h *webhookConnectHandler) ListDeliveries(ctx context.Context, req *connect
 
 func (h *webhookConnectHandler) TestWebhook(ctx context.Context, req *connect.Request[gen.TestWebhookRequest]) (*connect.Response[gen.WebhookDelivery], error) {
 	ctx = connectCtx(ctx, req.Header())
-	d, err := h.svc.TestWebhook(ctx, req.Msg.Id)
+	d, err := h.svc.TestWebhook(ctx, req.Msg.Id, req.Msg.EventType)
 	if err != nil {
 		return nil, err
 	}
 	return connect.NewResponse(webhookDeliveryToProto(d)), nil
+}
+
+// GetDelivery returns the full delivery row including response body
+// — used by the deliveries detail panel on row-click. List endpoint
+// returns the same shape so this is mostly an explicit fetch when
+// the FE wants a fresh read after a replay or a status change.
+func (h *webhookConnectHandler) GetDelivery(ctx context.Context, req *connect.Request[gen.GetWebhookDeliveryRequest]) (*connect.Response[gen.WebhookDelivery], error) {
+	ctx = connectCtx(ctx, req.Header())
+	d, err := h.svc.GetWebhookDelivery(ctx, req.Msg.Id)
+	if err != nil {
+		return nil, err
+	}
+	return connect.NewResponse(webhookDeliveryToProto(d)), nil
+}
+
+// ReplayDelivery re-fires an existing delivery's payload at the
+// current subscription URL. Returns the new delivery row so the FE
+// can show outcome immediately. Authz: caller must be org-admin on
+// the original delivery's subscription org.
+func (h *webhookConnectHandler) ReplayDelivery(ctx context.Context, req *connect.Request[gen.ReplayWebhookDeliveryRequest]) (*connect.Response[gen.WebhookDelivery], error) {
+	ctx = connectCtx(ctx, req.Header())
+	d, err := h.svc.ReplayWebhookDelivery(ctx, req.Msg.Id)
+	if err != nil {
+		return nil, err
+	}
+	return connect.NewResponse(webhookDeliveryToProto(d)), nil
+}
+
+// RotateSecret generates a new HMAC signing secret. The secret is
+// returned ONCE in the response — the FE shows it with a copy
+// button and a warning that this is the last chance to grab it.
+//
+// Sensitive op: gated by requireMFA (consumer endpoints can be
+// hijacked if an attacker rotates and re-signs; same blast radius as
+// rotating an API key).
+func (h *webhookConnectHandler) RotateSecret(ctx context.Context, req *connect.Request[gen.RotateWebhookSecretRequest]) (*connect.Response[gen.RotateWebhookSecretResponse], error) {
+	ctx = connectCtx(ctx, req.Header())
+	actorID, err := callerID(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if err := requireMFA(ctx, actorID); err != nil {
+		return nil, err
+	}
+	secret, err := h.svc.RotateWebhookSecret(ctx, req.Msg.Id)
+	if err != nil {
+		return nil, err
+	}
+	return connect.NewResponse(&gen.RotateWebhookSecretResponse{Secret: secret}), nil
 }
 
 // ============================================================================
@@ -751,6 +800,10 @@ func webhookDeliveryToProto(d *business.WebhookDelivery) *gen.WebhookDelivery {
 		Attempts:       int32(d.AttemptCount),
 		HttpStatus:     int32(d.HTTPStatus),
 		Status:         webhookDeliveryStatusToProto(d.Status),
+		ResponseBody:   d.ResponseBody,
+	}
+	if d.NextRetryAt != nil && !d.NextRetryAt.IsZero() {
+		out.NextRetryAt = timestamppb.New(*d.NextRetryAt)
 	}
 	if !d.CreatedAt.IsZero() {
 		out.CreatedAt = timestamppb.New(d.CreatedAt)

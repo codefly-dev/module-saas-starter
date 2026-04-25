@@ -30,6 +30,13 @@ var OnboardingStepNames = []string{
 
 // GetProgress returns the onboarding progress for a user, auto-detecting
 // steps that have already been completed by normal product usage.
+//
+// Auto-detection beats requiring callers to remember a `CompleteStep`
+// call from every place the underlying action can happen: a user who
+// creates their first org through the API never visits the onboarding
+// page, but their progress should still reflect reality. Each
+// detection is best-effort — failures don't abort the call, the worst
+// case is the step keeps showing as pending until next refresh.
 func (s *Service) GetProgress(ctx context.Context, userID string) (*OnboardingProgress, error) {
 	w := wool.Get(ctx).In("GetProgress")
 
@@ -38,30 +45,91 @@ func (s *Service) GetProgress(ctx context.Context, userID string) (*OnboardingPr
 		return nil, w.Wrapf(err, "cannot get onboarding progress")
 	}
 
-	// Build a lookup map of existing steps
 	stepMap := make(map[string]*OnboardingStep, len(steps))
 	for _, step := range steps {
 		stepMap[step.StepName] = step
 	}
 
-	// Auto-detect: if user has an org (beyond the default personal one), mark create_org completed
-	if _, ok := stepMap["create_org"]; !ok || stepMap["create_org"].Status == "pending" {
-		orgs, err := s.store.ListOrganizationsForUser(ctx, userID)
-		if err == nil && len(orgs) > 0 {
-			// User has at least one org — auto-complete
+	autoComplete := func(name string, detected bool) {
+		if detected {
 			now := time.Now()
-			step := &OnboardingStep{
-				StepName:    "create_org",
+			stepMap[name] = &OnboardingStep{
+				StepName:    name,
 				Status:      "completed",
 				CompletedAt: &now,
 			}
-			stepMap["create_org"] = step
-			// Best-effort persist
-			_ = s.store.UpsertOnboardingStep(ctx, userID, "create_org", "completed")
+			_ = s.store.UpsertOnboardingStep(ctx, userID, name, "completed")
 		}
 	}
 
-	// Build the complete ordered list, filling in missing steps as pending
+	pending := func(name string) bool {
+		st, ok := stepMap[name]
+		return !ok || st.Status == "pending"
+	}
+
+	// create_org — user belongs to at least one org. Set is the trigger;
+	// our resolver auto-creates a personal org on first login so this
+	// completes immediately for fixture users (which is fine — the wizard
+	// step is "you have an org", not "you created one through the wizard").
+	if pending("create_org") {
+		orgs, oerr := s.store.ListOrganizationsForUser(ctx, userID)
+		autoComplete("create_org", oerr == nil && len(orgs) > 0)
+	}
+
+	// invite_team — any invitation has been issued from any org the
+	// user is a member of. Inviting a teammate is the user-visible
+	// action; we detect by counting invitations across their orgs.
+	if pending("invite_team") {
+		orgs, _ := s.store.ListOrganizationsForUser(ctx, userID)
+		invited := false
+		for _, o := range orgs {
+			n, _ := s.store.CountPendingInvitations(ctx, o.Id)
+			if n > 0 {
+				invited = true
+				break
+			}
+			// Pending may have all been accepted — also consider any
+			// status counts as "they've used invitations".
+			invs, _ := s.store.ListInvitations(ctx, o.Id, "")
+			if len(invs) > 0 {
+				invited = true
+				break
+			}
+		}
+		autoComplete("invite_team", invited)
+	}
+
+	// choose_plan — user's primary org has any non-zero subscription.
+	// We don't gate on plan tier; any active subscription means the
+	// billing flow ran end-to-end at least once.
+	if pending("choose_plan") {
+		orgs, _ := s.store.ListOrganizationsForUser(ctx, userID)
+		picked := false
+		for _, o := range orgs {
+			sub, serr := s.store.GetSubscription(ctx, o.Id)
+			if serr == nil && sub != nil && sub.Status != "" {
+				picked = true
+				break
+			}
+		}
+		autoComplete("choose_plan", picked)
+	}
+
+	// setup_api_key — at least one API key exists in any of the
+	// user's orgs.
+	if pending("setup_api_key") {
+		orgs, _ := s.store.ListOrganizationsForUser(ctx, userID)
+		hasKey := false
+		for _, o := range orgs {
+			keys, _, _ := s.store.ListAPIKeys(ctx, o.Id, 1, "")
+			if len(keys) > 0 {
+				hasKey = true
+				break
+			}
+		}
+		autoComplete("setup_api_key", hasKey)
+	}
+
 	var result []*OnboardingStep
 	allDone := true
 	for _, name := range OnboardingStepNames {

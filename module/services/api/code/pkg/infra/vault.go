@@ -47,6 +47,30 @@ func NewVaultClientDirect(address, token string) *VaultClient {
 	}
 }
 
+// Health hits Vault's /v1/sys/health endpoint and returns nil only on
+// the canonical 200 / 429 / 472 / 473 codes that signal a reachable
+// + un-sealed vault. Used by the /v1/status probe — needs to be
+// fast enough for the 2s budget.
+func (v *VaultClient) Health(ctx context.Context) error {
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, v.address+"/v1/sys/health", nil)
+	if err != nil {
+		return err
+	}
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+	// Vault docs: 200 standby/active OK, 429 standby (still up),
+	// 472/473 disaster-recovery secondary. Anything else = unhealthy.
+	switch resp.StatusCode {
+	case http.StatusOK, http.StatusTooManyRequests, 472, 473:
+		return nil
+	default:
+		return fmt.Errorf("vault unhealthy: HTTP %d", resp.StatusCode)
+	}
+}
+
 // HashKey hashes an API key using vault transit HMAC.
 // Falls back to local SHA-256 if vault is unavailable.
 func (v *VaultClient) HashKey(ctx context.Context, plaintext string) (string, error) {

@@ -7025,8 +7025,14 @@ type WebhookDelivery struct {
 	HttpStatus     int32                  `protobuf:"varint,7,opt,name=http_status,json=httpStatus,proto3" json:"http_status,omitempty"`
 	CreatedAt      *timestamppb.Timestamp `protobuf:"bytes,8,opt,name=created_at,json=createdAt,proto3" json:"created_at,omitempty"`
 	DeliveredAt    *timestamppb.Timestamp `protobuf:"bytes,9,opt,name=delivered_at,json=deliveredAt,proto3" json:"delivered_at,omitempty"`
-	unknownFields  protoimpl.UnknownFields
-	sizeCache      protoimpl.SizeCache
+	// response_body — captured upstream response (truncated server-side
+	// to 64KiB). Empty when the request never connected.
+	ResponseBody string `protobuf:"bytes,10,opt,name=response_body,json=responseBody,proto3" json:"response_body,omitempty"`
+	// next_retry_at — only set when status=FAILED and attempts <
+	// max_attempts; means the dispatcher will pick this up at that time.
+	NextRetryAt   *timestamppb.Timestamp `protobuf:"bytes,11,opt,name=next_retry_at,json=nextRetryAt,proto3" json:"next_retry_at,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
 }
 
 func (x *WebhookDelivery) Reset() {
@@ -7118,6 +7124,20 @@ func (x *WebhookDelivery) GetCreatedAt() *timestamppb.Timestamp {
 func (x *WebhookDelivery) GetDeliveredAt() *timestamppb.Timestamp {
 	if x != nil {
 		return x.DeliveredAt
+	}
+	return nil
+}
+
+func (x *WebhookDelivery) GetResponseBody() string {
+	if x != nil {
+		return x.ResponseBody
+	}
+	return ""
+}
+
+func (x *WebhookDelivery) GetNextRetryAt() *timestamppb.Timestamp {
+	if x != nil {
+		return x.NextRetryAt
 	}
 	return nil
 }
@@ -7459,8 +7479,12 @@ func (x *ListWebhookDeliveriesResponse) GetNextPageToken() string {
 }
 
 type TestWebhookRequest struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Id            string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
+	state protoimpl.MessageState `protogen:"open.v1"`
+	Id    string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
+	// event_type to send. Empty defaults to "webhook.test"; otherwise
+	// any string the FE picked from the supported events list. The
+	// payload itself is server-generated sample JSON.
+	EventType     string `protobuf:"bytes,2,opt,name=event_type,json=eventType,proto3" json:"event_type,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -7502,6 +7526,214 @@ func (x *TestWebhookRequest) GetId() string {
 	return ""
 }
 
+func (x *TestWebhookRequest) GetEventType() string {
+	if x != nil {
+		return x.EventType
+	}
+	return ""
+}
+
+type GetWebhookDeliveryRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Id            string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *GetWebhookDeliveryRequest) Reset() {
+	*x = GetWebhookDeliveryRequest{}
+	mi := &file_api_proto_msgTypes[117]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *GetWebhookDeliveryRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*GetWebhookDeliveryRequest) ProtoMessage() {}
+
+func (x *GetWebhookDeliveryRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_api_proto_msgTypes[117]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use GetWebhookDeliveryRequest.ProtoReflect.Descriptor instead.
+func (*GetWebhookDeliveryRequest) Descriptor() ([]byte, []int) {
+	return file_api_proto_rawDescGZIP(), []int{117}
+}
+
+func (x *GetWebhookDeliveryRequest) GetId() string {
+	if x != nil {
+		return x.Id
+	}
+	return ""
+}
+
+type ReplayWebhookDeliveryRequest struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// Replay the existing delivery's payload to its subscription's
+	// current URL with current secret. Result is a NEW delivery row
+	// (full audit trail of the replay). The original row is unchanged.
+	Id            string `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ReplayWebhookDeliveryRequest) Reset() {
+	*x = ReplayWebhookDeliveryRequest{}
+	mi := &file_api_proto_msgTypes[118]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ReplayWebhookDeliveryRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ReplayWebhookDeliveryRequest) ProtoMessage() {}
+
+func (x *ReplayWebhookDeliveryRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_api_proto_msgTypes[118]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ReplayWebhookDeliveryRequest.ProtoReflect.Descriptor instead.
+func (*ReplayWebhookDeliveryRequest) Descriptor() ([]byte, []int) {
+	return file_api_proto_rawDescGZIP(), []int{118}
+}
+
+func (x *ReplayWebhookDeliveryRequest) GetId() string {
+	if x != nil {
+		return x.Id
+	}
+	return ""
+}
+
+type RotateWebhookSecretRequest struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	Id    string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
+	// grace_period_seconds — how long the OLD secret stays valid for
+	// signature verification on incoming replays. 0 = revoke
+	// immediately; 86400 (24h) is the recommended default for staged
+	// rollouts. Bound to a 7-day max server-side.
+	GracePeriodSeconds int32 `protobuf:"varint,2,opt,name=grace_period_seconds,json=gracePeriodSeconds,proto3" json:"grace_period_seconds,omitempty"`
+	unknownFields      protoimpl.UnknownFields
+	sizeCache          protoimpl.SizeCache
+}
+
+func (x *RotateWebhookSecretRequest) Reset() {
+	*x = RotateWebhookSecretRequest{}
+	mi := &file_api_proto_msgTypes[119]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *RotateWebhookSecretRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*RotateWebhookSecretRequest) ProtoMessage() {}
+
+func (x *RotateWebhookSecretRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_api_proto_msgTypes[119]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use RotateWebhookSecretRequest.ProtoReflect.Descriptor instead.
+func (*RotateWebhookSecretRequest) Descriptor() ([]byte, []int) {
+	return file_api_proto_rawDescGZIP(), []int{119}
+}
+
+func (x *RotateWebhookSecretRequest) GetId() string {
+	if x != nil {
+		return x.Id
+	}
+	return ""
+}
+
+func (x *RotateWebhookSecretRequest) GetGracePeriodSeconds() int32 {
+	if x != nil {
+		return x.GracePeriodSeconds
+	}
+	return 0
+}
+
+type RotateWebhookSecretResponse struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// The new signing secret, returned ONCE on rotation. Show + copy
+	// in the FE; not retrievable again.
+	Secret             string                 `protobuf:"bytes,1,opt,name=secret,proto3" json:"secret,omitempty"`
+	OldSecretExpiresAt *timestamppb.Timestamp `protobuf:"bytes,2,opt,name=old_secret_expires_at,json=oldSecretExpiresAt,proto3" json:"old_secret_expires_at,omitempty"`
+	unknownFields      protoimpl.UnknownFields
+	sizeCache          protoimpl.SizeCache
+}
+
+func (x *RotateWebhookSecretResponse) Reset() {
+	*x = RotateWebhookSecretResponse{}
+	mi := &file_api_proto_msgTypes[120]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *RotateWebhookSecretResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*RotateWebhookSecretResponse) ProtoMessage() {}
+
+func (x *RotateWebhookSecretResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_api_proto_msgTypes[120]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use RotateWebhookSecretResponse.ProtoReflect.Descriptor instead.
+func (*RotateWebhookSecretResponse) Descriptor() ([]byte, []int) {
+	return file_api_proto_rawDescGZIP(), []int{120}
+}
+
+func (x *RotateWebhookSecretResponse) GetSecret() string {
+	if x != nil {
+		return x.Secret
+	}
+	return ""
+}
+
+func (x *RotateWebhookSecretResponse) GetOldSecretExpiresAt() *timestamppb.Timestamp {
+	if x != nil {
+		return x.OldSecretExpiresAt
+	}
+	return nil
+}
+
 type Notification struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Id            string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
@@ -7519,7 +7751,7 @@ type Notification struct {
 
 func (x *Notification) Reset() {
 	*x = Notification{}
-	mi := &file_api_proto_msgTypes[117]
+	mi := &file_api_proto_msgTypes[121]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -7531,7 +7763,7 @@ func (x *Notification) String() string {
 func (*Notification) ProtoMessage() {}
 
 func (x *Notification) ProtoReflect() protoreflect.Message {
-	mi := &file_api_proto_msgTypes[117]
+	mi := &file_api_proto_msgTypes[121]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -7544,7 +7776,7 @@ func (x *Notification) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Notification.ProtoReflect.Descriptor instead.
 func (*Notification) Descriptor() ([]byte, []int) {
-	return file_api_proto_rawDescGZIP(), []int{117}
+	return file_api_proto_rawDescGZIP(), []int{121}
 }
 
 func (x *Notification) GetId() string {
@@ -7620,7 +7852,7 @@ type ListNotificationsRequest struct {
 
 func (x *ListNotificationsRequest) Reset() {
 	*x = ListNotificationsRequest{}
-	mi := &file_api_proto_msgTypes[118]
+	mi := &file_api_proto_msgTypes[122]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -7632,7 +7864,7 @@ func (x *ListNotificationsRequest) String() string {
 func (*ListNotificationsRequest) ProtoMessage() {}
 
 func (x *ListNotificationsRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_api_proto_msgTypes[118]
+	mi := &file_api_proto_msgTypes[122]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -7645,7 +7877,7 @@ func (x *ListNotificationsRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListNotificationsRequest.ProtoReflect.Descriptor instead.
 func (*ListNotificationsRequest) Descriptor() ([]byte, []int) {
-	return file_api_proto_rawDescGZIP(), []int{118}
+	return file_api_proto_rawDescGZIP(), []int{122}
 }
 
 func (x *ListNotificationsRequest) GetPageSize() int32 {
@@ -7672,7 +7904,7 @@ type ListNotificationsResponse struct {
 
 func (x *ListNotificationsResponse) Reset() {
 	*x = ListNotificationsResponse{}
-	mi := &file_api_proto_msgTypes[119]
+	mi := &file_api_proto_msgTypes[123]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -7684,7 +7916,7 @@ func (x *ListNotificationsResponse) String() string {
 func (*ListNotificationsResponse) ProtoMessage() {}
 
 func (x *ListNotificationsResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_api_proto_msgTypes[119]
+	mi := &file_api_proto_msgTypes[123]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -7697,7 +7929,7 @@ func (x *ListNotificationsResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListNotificationsResponse.ProtoReflect.Descriptor instead.
 func (*ListNotificationsResponse) Descriptor() ([]byte, []int) {
-	return file_api_proto_rawDescGZIP(), []int{119}
+	return file_api_proto_rawDescGZIP(), []int{123}
 }
 
 func (x *ListNotificationsResponse) GetNotifications() []*Notification {
@@ -7722,7 +7954,7 @@ type GetUnreadCountRequest struct {
 
 func (x *GetUnreadCountRequest) Reset() {
 	*x = GetUnreadCountRequest{}
-	mi := &file_api_proto_msgTypes[120]
+	mi := &file_api_proto_msgTypes[124]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -7734,7 +7966,7 @@ func (x *GetUnreadCountRequest) String() string {
 func (*GetUnreadCountRequest) ProtoMessage() {}
 
 func (x *GetUnreadCountRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_api_proto_msgTypes[120]
+	mi := &file_api_proto_msgTypes[124]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -7747,7 +7979,7 @@ func (x *GetUnreadCountRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetUnreadCountRequest.ProtoReflect.Descriptor instead.
 func (*GetUnreadCountRequest) Descriptor() ([]byte, []int) {
-	return file_api_proto_rawDescGZIP(), []int{120}
+	return file_api_proto_rawDescGZIP(), []int{124}
 }
 
 type GetUnreadCountResponse struct {
@@ -7759,7 +7991,7 @@ type GetUnreadCountResponse struct {
 
 func (x *GetUnreadCountResponse) Reset() {
 	*x = GetUnreadCountResponse{}
-	mi := &file_api_proto_msgTypes[121]
+	mi := &file_api_proto_msgTypes[125]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -7771,7 +8003,7 @@ func (x *GetUnreadCountResponse) String() string {
 func (*GetUnreadCountResponse) ProtoMessage() {}
 
 func (x *GetUnreadCountResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_api_proto_msgTypes[121]
+	mi := &file_api_proto_msgTypes[125]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -7784,7 +8016,7 @@ func (x *GetUnreadCountResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetUnreadCountResponse.ProtoReflect.Descriptor instead.
 func (*GetUnreadCountResponse) Descriptor() ([]byte, []int) {
-	return file_api_proto_rawDescGZIP(), []int{121}
+	return file_api_proto_rawDescGZIP(), []int{125}
 }
 
 func (x *GetUnreadCountResponse) GetCount() int32 {
@@ -7803,7 +8035,7 @@ type MarkNotificationReadRequest struct {
 
 func (x *MarkNotificationReadRequest) Reset() {
 	*x = MarkNotificationReadRequest{}
-	mi := &file_api_proto_msgTypes[122]
+	mi := &file_api_proto_msgTypes[126]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -7815,7 +8047,7 @@ func (x *MarkNotificationReadRequest) String() string {
 func (*MarkNotificationReadRequest) ProtoMessage() {}
 
 func (x *MarkNotificationReadRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_api_proto_msgTypes[122]
+	mi := &file_api_proto_msgTypes[126]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -7828,7 +8060,7 @@ func (x *MarkNotificationReadRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use MarkNotificationReadRequest.ProtoReflect.Descriptor instead.
 func (*MarkNotificationReadRequest) Descriptor() ([]byte, []int) {
-	return file_api_proto_rawDescGZIP(), []int{122}
+	return file_api_proto_rawDescGZIP(), []int{126}
 }
 
 func (x *MarkNotificationReadRequest) GetId() string {
@@ -7846,7 +8078,7 @@ type MarkAllNotificationsReadRequest struct {
 
 func (x *MarkAllNotificationsReadRequest) Reset() {
 	*x = MarkAllNotificationsReadRequest{}
-	mi := &file_api_proto_msgTypes[123]
+	mi := &file_api_proto_msgTypes[127]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -7858,7 +8090,7 @@ func (x *MarkAllNotificationsReadRequest) String() string {
 func (*MarkAllNotificationsReadRequest) ProtoMessage() {}
 
 func (x *MarkAllNotificationsReadRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_api_proto_msgTypes[123]
+	mi := &file_api_proto_msgTypes[127]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -7871,7 +8103,7 @@ func (x *MarkAllNotificationsReadRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use MarkAllNotificationsReadRequest.ProtoReflect.Descriptor instead.
 func (*MarkAllNotificationsReadRequest) Descriptor() ([]byte, []int) {
-	return file_api_proto_rawDescGZIP(), []int{123}
+	return file_api_proto_rawDescGZIP(), []int{127}
 }
 
 type DeleteNotificationRequest struct {
@@ -7883,7 +8115,7 @@ type DeleteNotificationRequest struct {
 
 func (x *DeleteNotificationRequest) Reset() {
 	*x = DeleteNotificationRequest{}
-	mi := &file_api_proto_msgTypes[124]
+	mi := &file_api_proto_msgTypes[128]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -7895,7 +8127,7 @@ func (x *DeleteNotificationRequest) String() string {
 func (*DeleteNotificationRequest) ProtoMessage() {}
 
 func (x *DeleteNotificationRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_api_proto_msgTypes[124]
+	mi := &file_api_proto_msgTypes[128]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -7908,7 +8140,7 @@ func (x *DeleteNotificationRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use DeleteNotificationRequest.ProtoReflect.Descriptor instead.
 func (*DeleteNotificationRequest) Descriptor() ([]byte, []int) {
-	return file_api_proto_rawDescGZIP(), []int{124}
+	return file_api_proto_rawDescGZIP(), []int{128}
 }
 
 func (x *DeleteNotificationRequest) GetId() string {
@@ -7929,7 +8161,7 @@ type OnboardingStep struct {
 
 func (x *OnboardingStep) Reset() {
 	*x = OnboardingStep{}
-	mi := &file_api_proto_msgTypes[125]
+	mi := &file_api_proto_msgTypes[129]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -7941,7 +8173,7 @@ func (x *OnboardingStep) String() string {
 func (*OnboardingStep) ProtoMessage() {}
 
 func (x *OnboardingStep) ProtoReflect() protoreflect.Message {
-	mi := &file_api_proto_msgTypes[125]
+	mi := &file_api_proto_msgTypes[129]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -7954,7 +8186,7 @@ func (x *OnboardingStep) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use OnboardingStep.ProtoReflect.Descriptor instead.
 func (*OnboardingStep) Descriptor() ([]byte, []int) {
-	return file_api_proto_rawDescGZIP(), []int{125}
+	return file_api_proto_rawDescGZIP(), []int{129}
 }
 
 func (x *OnboardingStep) GetStepName() string {
@@ -7988,7 +8220,7 @@ type OnboardingProgress struct {
 
 func (x *OnboardingProgress) Reset() {
 	*x = OnboardingProgress{}
-	mi := &file_api_proto_msgTypes[126]
+	mi := &file_api_proto_msgTypes[130]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -8000,7 +8232,7 @@ func (x *OnboardingProgress) String() string {
 func (*OnboardingProgress) ProtoMessage() {}
 
 func (x *OnboardingProgress) ProtoReflect() protoreflect.Message {
-	mi := &file_api_proto_msgTypes[126]
+	mi := &file_api_proto_msgTypes[130]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -8013,7 +8245,7 @@ func (x *OnboardingProgress) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use OnboardingProgress.ProtoReflect.Descriptor instead.
 func (*OnboardingProgress) Descriptor() ([]byte, []int) {
-	return file_api_proto_rawDescGZIP(), []int{126}
+	return file_api_proto_rawDescGZIP(), []int{130}
 }
 
 func (x *OnboardingProgress) GetSteps() []*OnboardingStep {
@@ -8038,7 +8270,7 @@ type GetOnboardingProgressRequest struct {
 
 func (x *GetOnboardingProgressRequest) Reset() {
 	*x = GetOnboardingProgressRequest{}
-	mi := &file_api_proto_msgTypes[127]
+	mi := &file_api_proto_msgTypes[131]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -8050,7 +8282,7 @@ func (x *GetOnboardingProgressRequest) String() string {
 func (*GetOnboardingProgressRequest) ProtoMessage() {}
 
 func (x *GetOnboardingProgressRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_api_proto_msgTypes[127]
+	mi := &file_api_proto_msgTypes[131]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -8063,7 +8295,7 @@ func (x *GetOnboardingProgressRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetOnboardingProgressRequest.ProtoReflect.Descriptor instead.
 func (*GetOnboardingProgressRequest) Descriptor() ([]byte, []int) {
-	return file_api_proto_rawDescGZIP(), []int{127}
+	return file_api_proto_rawDescGZIP(), []int{131}
 }
 
 type CompleteOnboardingStepRequest struct {
@@ -8075,7 +8307,7 @@ type CompleteOnboardingStepRequest struct {
 
 func (x *CompleteOnboardingStepRequest) Reset() {
 	*x = CompleteOnboardingStepRequest{}
-	mi := &file_api_proto_msgTypes[128]
+	mi := &file_api_proto_msgTypes[132]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -8087,7 +8319,7 @@ func (x *CompleteOnboardingStepRequest) String() string {
 func (*CompleteOnboardingStepRequest) ProtoMessage() {}
 
 func (x *CompleteOnboardingStepRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_api_proto_msgTypes[128]
+	mi := &file_api_proto_msgTypes[132]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -8100,7 +8332,7 @@ func (x *CompleteOnboardingStepRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CompleteOnboardingStepRequest.ProtoReflect.Descriptor instead.
 func (*CompleteOnboardingStepRequest) Descriptor() ([]byte, []int) {
-	return file_api_proto_rawDescGZIP(), []int{128}
+	return file_api_proto_rawDescGZIP(), []int{132}
 }
 
 func (x *CompleteOnboardingStepRequest) GetStepName() string {
@@ -8119,7 +8351,7 @@ type SkipOnboardingStepRequest struct {
 
 func (x *SkipOnboardingStepRequest) Reset() {
 	*x = SkipOnboardingStepRequest{}
-	mi := &file_api_proto_msgTypes[129]
+	mi := &file_api_proto_msgTypes[133]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -8131,7 +8363,7 @@ func (x *SkipOnboardingStepRequest) String() string {
 func (*SkipOnboardingStepRequest) ProtoMessage() {}
 
 func (x *SkipOnboardingStepRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_api_proto_msgTypes[129]
+	mi := &file_api_proto_msgTypes[133]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -8144,7 +8376,7 @@ func (x *SkipOnboardingStepRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SkipOnboardingStepRequest.ProtoReflect.Descriptor instead.
 func (*SkipOnboardingStepRequest) Descriptor() ([]byte, []int) {
-	return file_api_proto_rawDescGZIP(), []int{129}
+	return file_api_proto_rawDescGZIP(), []int{133}
 }
 
 func (x *SkipOnboardingStepRequest) GetStepName() string {
@@ -8170,7 +8402,7 @@ type GDPRRequest struct {
 
 func (x *GDPRRequest) Reset() {
 	*x = GDPRRequest{}
-	mi := &file_api_proto_msgTypes[130]
+	mi := &file_api_proto_msgTypes[134]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -8182,7 +8414,7 @@ func (x *GDPRRequest) String() string {
 func (*GDPRRequest) ProtoMessage() {}
 
 func (x *GDPRRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_api_proto_msgTypes[130]
+	mi := &file_api_proto_msgTypes[134]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -8195,7 +8427,7 @@ func (x *GDPRRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GDPRRequest.ProtoReflect.Descriptor instead.
 func (*GDPRRequest) Descriptor() ([]byte, []int) {
-	return file_api_proto_rawDescGZIP(), []int{130}
+	return file_api_proto_rawDescGZIP(), []int{134}
 }
 
 func (x *GDPRRequest) GetId() string {
@@ -8262,7 +8494,7 @@ type RequestDataExportRequest struct {
 
 func (x *RequestDataExportRequest) Reset() {
 	*x = RequestDataExportRequest{}
-	mi := &file_api_proto_msgTypes[131]
+	mi := &file_api_proto_msgTypes[135]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -8274,7 +8506,7 @@ func (x *RequestDataExportRequest) String() string {
 func (*RequestDataExportRequest) ProtoMessage() {}
 
 func (x *RequestDataExportRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_api_proto_msgTypes[131]
+	mi := &file_api_proto_msgTypes[135]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -8287,7 +8519,7 @@ func (x *RequestDataExportRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RequestDataExportRequest.ProtoReflect.Descriptor instead.
 func (*RequestDataExportRequest) Descriptor() ([]byte, []int) {
-	return file_api_proto_rawDescGZIP(), []int{131}
+	return file_api_proto_rawDescGZIP(), []int{135}
 }
 
 type GetExportStatusRequest struct {
@@ -8299,7 +8531,7 @@ type GetExportStatusRequest struct {
 
 func (x *GetExportStatusRequest) Reset() {
 	*x = GetExportStatusRequest{}
-	mi := &file_api_proto_msgTypes[132]
+	mi := &file_api_proto_msgTypes[136]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -8311,7 +8543,7 @@ func (x *GetExportStatusRequest) String() string {
 func (*GetExportStatusRequest) ProtoMessage() {}
 
 func (x *GetExportStatusRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_api_proto_msgTypes[132]
+	mi := &file_api_proto_msgTypes[136]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -8324,7 +8556,7 @@ func (x *GetExportStatusRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetExportStatusRequest.ProtoReflect.Descriptor instead.
 func (*GetExportStatusRequest) Descriptor() ([]byte, []int) {
-	return file_api_proto_rawDescGZIP(), []int{132}
+	return file_api_proto_rawDescGZIP(), []int{136}
 }
 
 func (x *GetExportStatusRequest) GetId() string {
@@ -8342,7 +8574,7 @@ type RequestDeletionRequest struct {
 
 func (x *RequestDeletionRequest) Reset() {
 	*x = RequestDeletionRequest{}
-	mi := &file_api_proto_msgTypes[133]
+	mi := &file_api_proto_msgTypes[137]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -8354,7 +8586,7 @@ func (x *RequestDeletionRequest) String() string {
 func (*RequestDeletionRequest) ProtoMessage() {}
 
 func (x *RequestDeletionRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_api_proto_msgTypes[133]
+	mi := &file_api_proto_msgTypes[137]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -8367,7 +8599,7 @@ func (x *RequestDeletionRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RequestDeletionRequest.ProtoReflect.Descriptor instead.
 func (*RequestDeletionRequest) Descriptor() ([]byte, []int) {
-	return file_api_proto_rawDescGZIP(), []int{133}
+	return file_api_proto_rawDescGZIP(), []int{137}
 }
 
 type GetDeletionStatusRequest struct {
@@ -8379,7 +8611,7 @@ type GetDeletionStatusRequest struct {
 
 func (x *GetDeletionStatusRequest) Reset() {
 	*x = GetDeletionStatusRequest{}
-	mi := &file_api_proto_msgTypes[134]
+	mi := &file_api_proto_msgTypes[138]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -8391,7 +8623,7 @@ func (x *GetDeletionStatusRequest) String() string {
 func (*GetDeletionStatusRequest) ProtoMessage() {}
 
 func (x *GetDeletionStatusRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_api_proto_msgTypes[134]
+	mi := &file_api_proto_msgTypes[138]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -8404,7 +8636,7 @@ func (x *GetDeletionStatusRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetDeletionStatusRequest.ProtoReflect.Descriptor instead.
 func (*GetDeletionStatusRequest) Descriptor() ([]byte, []int) {
-	return file_api_proto_rawDescGZIP(), []int{134}
+	return file_api_proto_rawDescGZIP(), []int{138}
 }
 
 func (x *GetDeletionStatusRequest) GetId() string {
@@ -8429,7 +8661,7 @@ type MFADevice struct {
 
 func (x *MFADevice) Reset() {
 	*x = MFADevice{}
-	mi := &file_api_proto_msgTypes[135]
+	mi := &file_api_proto_msgTypes[139]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -8441,7 +8673,7 @@ func (x *MFADevice) String() string {
 func (*MFADevice) ProtoMessage() {}
 
 func (x *MFADevice) ProtoReflect() protoreflect.Message {
-	mi := &file_api_proto_msgTypes[135]
+	mi := &file_api_proto_msgTypes[139]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -8454,7 +8686,7 @@ func (x *MFADevice) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use MFADevice.ProtoReflect.Descriptor instead.
 func (*MFADevice) Descriptor() ([]byte, []int) {
-	return file_api_proto_rawDescGZIP(), []int{135}
+	return file_api_proto_rawDescGZIP(), []int{139}
 }
 
 func (x *MFADevice) GetId() string {
@@ -8514,7 +8746,7 @@ type SetupTOTPRequest struct {
 
 func (x *SetupTOTPRequest) Reset() {
 	*x = SetupTOTPRequest{}
-	mi := &file_api_proto_msgTypes[136]
+	mi := &file_api_proto_msgTypes[140]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -8526,7 +8758,7 @@ func (x *SetupTOTPRequest) String() string {
 func (*SetupTOTPRequest) ProtoMessage() {}
 
 func (x *SetupTOTPRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_api_proto_msgTypes[136]
+	mi := &file_api_proto_msgTypes[140]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -8539,7 +8771,7 @@ func (x *SetupTOTPRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SetupTOTPRequest.ProtoReflect.Descriptor instead.
 func (*SetupTOTPRequest) Descriptor() ([]byte, []int) {
-	return file_api_proto_rawDescGZIP(), []int{136}
+	return file_api_proto_rawDescGZIP(), []int{140}
 }
 
 type SetupTOTPResponse struct {
@@ -8553,7 +8785,7 @@ type SetupTOTPResponse struct {
 
 func (x *SetupTOTPResponse) Reset() {
 	*x = SetupTOTPResponse{}
-	mi := &file_api_proto_msgTypes[137]
+	mi := &file_api_proto_msgTypes[141]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -8565,7 +8797,7 @@ func (x *SetupTOTPResponse) String() string {
 func (*SetupTOTPResponse) ProtoMessage() {}
 
 func (x *SetupTOTPResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_api_proto_msgTypes[137]
+	mi := &file_api_proto_msgTypes[141]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -8578,7 +8810,7 @@ func (x *SetupTOTPResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SetupTOTPResponse.ProtoReflect.Descriptor instead.
 func (*SetupTOTPResponse) Descriptor() ([]byte, []int) {
-	return file_api_proto_rawDescGZIP(), []int{137}
+	return file_api_proto_rawDescGZIP(), []int{141}
 }
 
 func (x *SetupTOTPResponse) GetSecret() string {
@@ -8611,7 +8843,7 @@ type VerifyTOTPRequest struct {
 
 func (x *VerifyTOTPRequest) Reset() {
 	*x = VerifyTOTPRequest{}
-	mi := &file_api_proto_msgTypes[138]
+	mi := &file_api_proto_msgTypes[142]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -8623,7 +8855,7 @@ func (x *VerifyTOTPRequest) String() string {
 func (*VerifyTOTPRequest) ProtoMessage() {}
 
 func (x *VerifyTOTPRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_api_proto_msgTypes[138]
+	mi := &file_api_proto_msgTypes[142]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -8636,7 +8868,7 @@ func (x *VerifyTOTPRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use VerifyTOTPRequest.ProtoReflect.Descriptor instead.
 func (*VerifyTOTPRequest) Descriptor() ([]byte, []int) {
-	return file_api_proto_rawDescGZIP(), []int{138}
+	return file_api_proto_rawDescGZIP(), []int{142}
 }
 
 func (x *VerifyTOTPRequest) GetCode() string {
@@ -8656,7 +8888,7 @@ type VerifyTOTPResponse struct {
 
 func (x *VerifyTOTPResponse) Reset() {
 	*x = VerifyTOTPResponse{}
-	mi := &file_api_proto_msgTypes[139]
+	mi := &file_api_proto_msgTypes[143]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -8668,7 +8900,7 @@ func (x *VerifyTOTPResponse) String() string {
 func (*VerifyTOTPResponse) ProtoMessage() {}
 
 func (x *VerifyTOTPResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_api_proto_msgTypes[139]
+	mi := &file_api_proto_msgTypes[143]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -8681,7 +8913,7 @@ func (x *VerifyTOTPResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use VerifyTOTPResponse.ProtoReflect.Descriptor instead.
 func (*VerifyTOTPResponse) Descriptor() ([]byte, []int) {
-	return file_api_proto_rawDescGZIP(), []int{139}
+	return file_api_proto_rawDescGZIP(), []int{143}
 }
 
 func (x *VerifyTOTPResponse) GetValid() bool {
@@ -8706,7 +8938,7 @@ type ListMFADevicesRequest struct {
 
 func (x *ListMFADevicesRequest) Reset() {
 	*x = ListMFADevicesRequest{}
-	mi := &file_api_proto_msgTypes[140]
+	mi := &file_api_proto_msgTypes[144]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -8718,7 +8950,7 @@ func (x *ListMFADevicesRequest) String() string {
 func (*ListMFADevicesRequest) ProtoMessage() {}
 
 func (x *ListMFADevicesRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_api_proto_msgTypes[140]
+	mi := &file_api_proto_msgTypes[144]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -8731,7 +8963,7 @@ func (x *ListMFADevicesRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListMFADevicesRequest.ProtoReflect.Descriptor instead.
 func (*ListMFADevicesRequest) Descriptor() ([]byte, []int) {
-	return file_api_proto_rawDescGZIP(), []int{140}
+	return file_api_proto_rawDescGZIP(), []int{144}
 }
 
 type ListMFADevicesResponse struct {
@@ -8743,7 +8975,7 @@ type ListMFADevicesResponse struct {
 
 func (x *ListMFADevicesResponse) Reset() {
 	*x = ListMFADevicesResponse{}
-	mi := &file_api_proto_msgTypes[141]
+	mi := &file_api_proto_msgTypes[145]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -8755,7 +8987,7 @@ func (x *ListMFADevicesResponse) String() string {
 func (*ListMFADevicesResponse) ProtoMessage() {}
 
 func (x *ListMFADevicesResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_api_proto_msgTypes[141]
+	mi := &file_api_proto_msgTypes[145]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -8768,7 +9000,7 @@ func (x *ListMFADevicesResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListMFADevicesResponse.ProtoReflect.Descriptor instead.
 func (*ListMFADevicesResponse) Descriptor() ([]byte, []int) {
-	return file_api_proto_rawDescGZIP(), []int{141}
+	return file_api_proto_rawDescGZIP(), []int{145}
 }
 
 func (x *ListMFADevicesResponse) GetDevices() []*MFADevice {
@@ -8787,7 +9019,7 @@ type RevokeMFADeviceRequest struct {
 
 func (x *RevokeMFADeviceRequest) Reset() {
 	*x = RevokeMFADeviceRequest{}
-	mi := &file_api_proto_msgTypes[142]
+	mi := &file_api_proto_msgTypes[146]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -8799,7 +9031,7 @@ func (x *RevokeMFADeviceRequest) String() string {
 func (*RevokeMFADeviceRequest) ProtoMessage() {}
 
 func (x *RevokeMFADeviceRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_api_proto_msgTypes[142]
+	mi := &file_api_proto_msgTypes[146]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -8812,7 +9044,7 @@ func (x *RevokeMFADeviceRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RevokeMFADeviceRequest.ProtoReflect.Descriptor instead.
 func (*RevokeMFADeviceRequest) Descriptor() ([]byte, []int) {
-	return file_api_proto_rawDescGZIP(), []int{142}
+	return file_api_proto_rawDescGZIP(), []int{146}
 }
 
 func (x *RevokeMFADeviceRequest) GetId() string {
@@ -8830,7 +9062,7 @@ type GenerateBackupCodesRequest struct {
 
 func (x *GenerateBackupCodesRequest) Reset() {
 	*x = GenerateBackupCodesRequest{}
-	mi := &file_api_proto_msgTypes[143]
+	mi := &file_api_proto_msgTypes[147]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -8842,7 +9074,7 @@ func (x *GenerateBackupCodesRequest) String() string {
 func (*GenerateBackupCodesRequest) ProtoMessage() {}
 
 func (x *GenerateBackupCodesRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_api_proto_msgTypes[143]
+	mi := &file_api_proto_msgTypes[147]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -8855,7 +9087,7 @@ func (x *GenerateBackupCodesRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GenerateBackupCodesRequest.ProtoReflect.Descriptor instead.
 func (*GenerateBackupCodesRequest) Descriptor() ([]byte, []int) {
-	return file_api_proto_rawDescGZIP(), []int{143}
+	return file_api_proto_rawDescGZIP(), []int{147}
 }
 
 type GenerateBackupCodesResponse struct {
@@ -8867,7 +9099,7 @@ type GenerateBackupCodesResponse struct {
 
 func (x *GenerateBackupCodesResponse) Reset() {
 	*x = GenerateBackupCodesResponse{}
-	mi := &file_api_proto_msgTypes[144]
+	mi := &file_api_proto_msgTypes[148]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -8879,7 +9111,7 @@ func (x *GenerateBackupCodesResponse) String() string {
 func (*GenerateBackupCodesResponse) ProtoMessage() {}
 
 func (x *GenerateBackupCodesResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_api_proto_msgTypes[144]
+	mi := &file_api_proto_msgTypes[148]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -8892,7 +9124,7 @@ func (x *GenerateBackupCodesResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GenerateBackupCodesResponse.ProtoReflect.Descriptor instead.
 func (*GenerateBackupCodesResponse) Descriptor() ([]byte, []int) {
-	return file_api_proto_rawDescGZIP(), []int{144}
+	return file_api_proto_rawDescGZIP(), []int{148}
 }
 
 func (x *GenerateBackupCodesResponse) GetBackupCodes() []string {
@@ -9410,7 +9642,7 @@ const file_api_proto_rawDesc = "" +
 	"\x06active\x18\x05 \x01(\bR\x06active\x12 \n" +
 	"\vdescription\x18\x06 \x01(\tR\vdescription\x129\n" +
 	"\n" +
-	"created_at\x18\a \x01(\v2\x1a.google.protobuf.TimestampR\tcreatedAt\"\x88\x03\n" +
+	"created_at\x18\a \x01(\v2\x1a.google.protobuf.TimestampR\tcreatedAt\"\xed\x03\n" +
 	"\x0fWebhookDelivery\x12\x18\n" +
 	"\x02id\x18\x01 \x01(\tB\b\xbaH\x05r\x03\xb0\x01\x01R\x02id\x121\n" +
 	"\x0fsubscription_id\x18\x02 \x01(\tB\b\xbaH\x05r\x03\xb0\x01\x01R\x0esubscriptionId\x12\x1d\n" +
@@ -9423,7 +9655,10 @@ const file_api_proto_rawDesc = "" +
 	"httpStatus\x129\n" +
 	"\n" +
 	"created_at\x18\b \x01(\v2\x1a.google.protobuf.TimestampR\tcreatedAt\x12=\n" +
-	"\fdelivered_at\x18\t \x01(\v2\x1a.google.protobuf.TimestampR\vdeliveredAt\"\x99\x01\n" +
+	"\fdelivered_at\x18\t \x01(\v2\x1a.google.protobuf.TimestampR\vdeliveredAt\x12#\n" +
+	"\rresponse_body\x18\n" +
+	" \x01(\tR\fresponseBody\x12>\n" +
+	"\rnext_retry_at\x18\v \x01(\v2\x1a.google.protobuf.TimestampR\vnextRetryAt\"\x99\x01\n" +
 	" CreateWebhookSubscriptionRequest\x12\x1f\n" +
 	"\x06org_id\x18\x01 \x01(\tB\b\xbaH\x05r\x03\xb0\x01\x01R\x05orgId\x12\x1a\n" +
 	"\x03url\x18\x02 \x01(\tB\b\xbaH\x05r\x03\x88\x01\x01R\x03url\x12\x16\n" +
@@ -9448,9 +9683,21 @@ const file_api_proto_rawDesc = "" +
 	"\n" +
 	"deliveries\x18\x01 \x03(\v2\x1a.customers.WebhookDeliveryR\n" +
 	"deliveries\x12&\n" +
-	"\x0fnext_page_token\x18\x02 \x01(\tR\rnextPageToken\".\n" +
+	"\x0fnext_page_token\x18\x02 \x01(\tR\rnextPageToken\"M\n" +
 	"\x12TestWebhookRequest\x12\x18\n" +
-	"\x02id\x18\x01 \x01(\tB\b\xbaH\x05r\x03\xb0\x01\x01R\x02id\"\xb9\x02\n" +
+	"\x02id\x18\x01 \x01(\tB\b\xbaH\x05r\x03\xb0\x01\x01R\x02id\x12\x1d\n" +
+	"\n" +
+	"event_type\x18\x02 \x01(\tR\teventType\"5\n" +
+	"\x19GetWebhookDeliveryRequest\x12\x18\n" +
+	"\x02id\x18\x01 \x01(\tB\b\xbaH\x05r\x03\xb0\x01\x01R\x02id\"8\n" +
+	"\x1cReplayWebhookDeliveryRequest\x12\x18\n" +
+	"\x02id\x18\x01 \x01(\tB\b\xbaH\x05r\x03\xb0\x01\x01R\x02id\"h\n" +
+	"\x1aRotateWebhookSecretRequest\x12\x18\n" +
+	"\x02id\x18\x01 \x01(\tB\b\xbaH\x05r\x03\xb0\x01\x01R\x02id\x120\n" +
+	"\x14grace_period_seconds\x18\x02 \x01(\x05R\x12gracePeriodSeconds\"\x84\x01\n" +
+	"\x1bRotateWebhookSecretResponse\x12\x16\n" +
+	"\x06secret\x18\x01 \x01(\tR\x06secret\x12M\n" +
+	"\x15old_secret_expires_at\x18\x02 \x01(\v2\x1a.google.protobuf.TimestampR\x12oldSecretExpiresAt\"\xb9\x02\n" +
 	"\fNotification\x12\x18\n" +
 	"\x02id\x18\x01 \x01(\tB\b\xbaH\x05r\x03\xb0\x01\x01R\x02id\x12!\n" +
 	"\auser_id\x18\x02 \x01(\tB\b\xbaH\x05r\x03\xb0\x01\x01R\x06userId\x12\x1f\n" +
@@ -9666,13 +9913,16 @@ const file_api_proto_rawDesc = "" +
 	"\x10CreateInvitation\x12\".customers.CreateInvitationRequest\x1a#.customers.CreateInvitationResponse\"\x1a\x82\xd3\xe4\x93\x02\x14:\x01*\"\x0f/v1/invitations\x12~\n" +
 	"\x10AcceptInvitation\x12\".customers.AcceptInvitationRequest\x1a#.customers.AcceptInvitationResponse\"!\x82\xd3\xe4\x93\x02\x1b:\x01*\"\x16/v1/invitations:accept\x12q\n" +
 	"\x0fListInvitations\x12!.customers.ListInvitationsRequest\x1a\".customers.ListInvitationsResponse\"\x17\x82\xd3\xe4\x93\x02\x11\x12\x0f/v1/invitations\x12l\n" +
-	"\x10RevokeInvitation\x12\".customers.RevokeInvitationRequest\x1a\x16.google.protobuf.Empty\"\x1c\x82\xd3\xe4\x93\x02\x16*\x14/v1/invitations/{id}2\x8d\x05\n" +
+	"\x10RevokeInvitation\x12\".customers.RevokeInvitationRequest\x1a\x16.google.protobuf.Empty\"\x1c\x82\xd3\xe4\x93\x02\x16*\x14/v1/invitations/{id}2\x97\b\n" +
 	"\x0eWebhookService\x12z\n" +
 	"\x12CreateSubscription\x12+.customers.CreateWebhookSubscriptionRequest\x1a\x1e.customers.WebhookSubscription\"\x17\x82\xd3\xe4\x93\x02\x11:\x01*\"\f/v1/webhooks\x12t\n" +
 	"\x12DeleteSubscription\x12+.customers.DeleteWebhookSubscriptionRequest\x1a\x16.google.protobuf.Empty\"\x19\x82\xd3\xe4\x93\x02\x13*\x11/v1/webhooks/{id}\x12\x82\x01\n" +
 	"\x11ListSubscriptions\x12*.customers.ListWebhookSubscriptionsRequest\x1a+.customers.ListWebhookSubscriptionsResponse\"\x14\x82\xd3\xe4\x93\x02\x0e\x12\f/v1/webhooks\x12\x96\x01\n" +
-	"\x0eListDeliveries\x12'.customers.ListWebhookDeliveriesRequest\x1a(.customers.ListWebhookDeliveriesResponse\"1\x82\xd3\xe4\x93\x02+\x12)/v1/webhooks/{subscription_id}/deliveries\x12k\n" +
-	"\vTestWebhook\x12\x1d.customers.TestWebhookRequest\x1a\x1a.customers.WebhookDelivery\"!\x82\xd3\xe4\x93\x02\x1b:\x01*\"\x16/v1/webhooks/{id}:test2\xf1\x04\n" +
+	"\x0eListDeliveries\x12'.customers.ListWebhookDeliveriesRequest\x1a(.customers.ListWebhookDeliveriesResponse\"1\x82\xd3\xe4\x93\x02+\x12)/v1/webhooks/{subscription_id}/deliveries\x12u\n" +
+	"\vGetDelivery\x12$.customers.GetWebhookDeliveryRequest\x1a\x1a.customers.WebhookDelivery\"$\x82\xd3\xe4\x93\x02\x1e\x12\x1c/v1/webhooks/deliveries/{id}\x12\x85\x01\n" +
+	"\x0eReplayDelivery\x12'.customers.ReplayWebhookDeliveryRequest\x1a\x1a.customers.WebhookDelivery\".\x82\xd3\xe4\x93\x02(:\x01*\"#/v1/webhooks/deliveries/{id}:replay\x12k\n" +
+	"\vTestWebhook\x12\x1d.customers.TestWebhookRequest\x1a\x1a.customers.WebhookDelivery\"!\x82\xd3\xe4\x93\x02\x1b:\x01*\"\x16/v1/webhooks/{id}:test\x12\x88\x01\n" +
+	"\fRotateSecret\x12%.customers.RotateWebhookSecretRequest\x1a&.customers.RotateWebhookSecretResponse\")\x82\xd3\xe4\x93\x02#:\x01*\"\x1e/v1/webhooks/{id}:rotateSecret2\xf1\x04\n" +
 	"\x13NotificationService\x12y\n" +
 	"\x11ListNotifications\x12#.customers.ListNotificationsRequest\x1a$.customers.ListNotificationsResponse\"\x19\x82\xd3\xe4\x93\x02\x13\x12\x11/v1/notifications\x12}\n" +
 	"\x0eGetUnreadCount\x12 .customers.GetUnreadCountRequest\x1a!.customers.GetUnreadCountResponse\"&\x82\xd3\xe4\x93\x02 \x12\x1e/v1/notifications/unread-count\x12r\n" +
@@ -9711,7 +9961,7 @@ func file_api_proto_rawDescGZIP() []byte {
 }
 
 var file_api_proto_enumTypes = make([]protoimpl.EnumInfo, 11)
-var file_api_proto_msgTypes = make([]protoimpl.MessageInfo, 151)
+var file_api_proto_msgTypes = make([]protoimpl.MessageInfo, 155)
 var file_api_proto_goTypes = []any{
 	(UserStatus)(0),                          // 0: customers.UserStatus
 	(OrgRole)(0),                             // 1: customers.OrgRole
@@ -9841,63 +10091,67 @@ var file_api_proto_goTypes = []any{
 	(*ListWebhookDeliveriesRequest)(nil),     // 125: customers.ListWebhookDeliveriesRequest
 	(*ListWebhookDeliveriesResponse)(nil),    // 126: customers.ListWebhookDeliveriesResponse
 	(*TestWebhookRequest)(nil),               // 127: customers.TestWebhookRequest
-	(*Notification)(nil),                     // 128: customers.Notification
-	(*ListNotificationsRequest)(nil),         // 129: customers.ListNotificationsRequest
-	(*ListNotificationsResponse)(nil),        // 130: customers.ListNotificationsResponse
-	(*GetUnreadCountRequest)(nil),            // 131: customers.GetUnreadCountRequest
-	(*GetUnreadCountResponse)(nil),           // 132: customers.GetUnreadCountResponse
-	(*MarkNotificationReadRequest)(nil),      // 133: customers.MarkNotificationReadRequest
-	(*MarkAllNotificationsReadRequest)(nil),  // 134: customers.MarkAllNotificationsReadRequest
-	(*DeleteNotificationRequest)(nil),        // 135: customers.DeleteNotificationRequest
-	(*OnboardingStep)(nil),                   // 136: customers.OnboardingStep
-	(*OnboardingProgress)(nil),               // 137: customers.OnboardingProgress
-	(*GetOnboardingProgressRequest)(nil),     // 138: customers.GetOnboardingProgressRequest
-	(*CompleteOnboardingStepRequest)(nil),    // 139: customers.CompleteOnboardingStepRequest
-	(*SkipOnboardingStepRequest)(nil),        // 140: customers.SkipOnboardingStepRequest
-	(*GDPRRequest)(nil),                      // 141: customers.GDPRRequest
-	(*RequestDataExportRequest)(nil),         // 142: customers.RequestDataExportRequest
-	(*GetExportStatusRequest)(nil),           // 143: customers.GetExportStatusRequest
-	(*RequestDeletionRequest)(nil),           // 144: customers.RequestDeletionRequest
-	(*GetDeletionStatusRequest)(nil),         // 145: customers.GetDeletionStatusRequest
-	(*MFADevice)(nil),                        // 146: customers.MFADevice
-	(*SetupTOTPRequest)(nil),                 // 147: customers.SetupTOTPRequest
-	(*SetupTOTPResponse)(nil),                // 148: customers.SetupTOTPResponse
-	(*VerifyTOTPRequest)(nil),                // 149: customers.VerifyTOTPRequest
-	(*VerifyTOTPResponse)(nil),               // 150: customers.VerifyTOTPResponse
-	(*ListMFADevicesRequest)(nil),            // 151: customers.ListMFADevicesRequest
-	(*ListMFADevicesResponse)(nil),           // 152: customers.ListMFADevicesResponse
-	(*RevokeMFADeviceRequest)(nil),           // 153: customers.RevokeMFADeviceRequest
-	(*GenerateBackupCodesRequest)(nil),       // 154: customers.GenerateBackupCodesRequest
-	(*GenerateBackupCodesResponse)(nil),      // 155: customers.GenerateBackupCodesResponse
-	nil,                                      // 156: customers.User.ProfileEntry
-	nil,                                      // 157: customers.UserIdentity.ProviderDataEntry
-	nil,                                      // 158: customers.RegisterUserRequest.ProfileEntry
-	nil,                                      // 159: customers.AuthenticateRequest.ProfileEntry
-	nil,                                      // 160: customers.AuditEvent.MetadataEntry
-	nil,                                      // 161: customers.SessionInfo.DeviceInfoEntry
-	(*timestamppb.Timestamp)(nil),            // 162: google.protobuf.Timestamp
-	(*fieldmaskpb.FieldMask)(nil),            // 163: google.protobuf.FieldMask
-	(*emptypb.Empty)(nil),                    // 164: google.protobuf.Empty
+	(*GetWebhookDeliveryRequest)(nil),        // 128: customers.GetWebhookDeliveryRequest
+	(*ReplayWebhookDeliveryRequest)(nil),     // 129: customers.ReplayWebhookDeliveryRequest
+	(*RotateWebhookSecretRequest)(nil),       // 130: customers.RotateWebhookSecretRequest
+	(*RotateWebhookSecretResponse)(nil),      // 131: customers.RotateWebhookSecretResponse
+	(*Notification)(nil),                     // 132: customers.Notification
+	(*ListNotificationsRequest)(nil),         // 133: customers.ListNotificationsRequest
+	(*ListNotificationsResponse)(nil),        // 134: customers.ListNotificationsResponse
+	(*GetUnreadCountRequest)(nil),            // 135: customers.GetUnreadCountRequest
+	(*GetUnreadCountResponse)(nil),           // 136: customers.GetUnreadCountResponse
+	(*MarkNotificationReadRequest)(nil),      // 137: customers.MarkNotificationReadRequest
+	(*MarkAllNotificationsReadRequest)(nil),  // 138: customers.MarkAllNotificationsReadRequest
+	(*DeleteNotificationRequest)(nil),        // 139: customers.DeleteNotificationRequest
+	(*OnboardingStep)(nil),                   // 140: customers.OnboardingStep
+	(*OnboardingProgress)(nil),               // 141: customers.OnboardingProgress
+	(*GetOnboardingProgressRequest)(nil),     // 142: customers.GetOnboardingProgressRequest
+	(*CompleteOnboardingStepRequest)(nil),    // 143: customers.CompleteOnboardingStepRequest
+	(*SkipOnboardingStepRequest)(nil),        // 144: customers.SkipOnboardingStepRequest
+	(*GDPRRequest)(nil),                      // 145: customers.GDPRRequest
+	(*RequestDataExportRequest)(nil),         // 146: customers.RequestDataExportRequest
+	(*GetExportStatusRequest)(nil),           // 147: customers.GetExportStatusRequest
+	(*RequestDeletionRequest)(nil),           // 148: customers.RequestDeletionRequest
+	(*GetDeletionStatusRequest)(nil),         // 149: customers.GetDeletionStatusRequest
+	(*MFADevice)(nil),                        // 150: customers.MFADevice
+	(*SetupTOTPRequest)(nil),                 // 151: customers.SetupTOTPRequest
+	(*SetupTOTPResponse)(nil),                // 152: customers.SetupTOTPResponse
+	(*VerifyTOTPRequest)(nil),                // 153: customers.VerifyTOTPRequest
+	(*VerifyTOTPResponse)(nil),               // 154: customers.VerifyTOTPResponse
+	(*ListMFADevicesRequest)(nil),            // 155: customers.ListMFADevicesRequest
+	(*ListMFADevicesResponse)(nil),           // 156: customers.ListMFADevicesResponse
+	(*RevokeMFADeviceRequest)(nil),           // 157: customers.RevokeMFADeviceRequest
+	(*GenerateBackupCodesRequest)(nil),       // 158: customers.GenerateBackupCodesRequest
+	(*GenerateBackupCodesResponse)(nil),      // 159: customers.GenerateBackupCodesResponse
+	nil,                                      // 160: customers.User.ProfileEntry
+	nil,                                      // 161: customers.UserIdentity.ProviderDataEntry
+	nil,                                      // 162: customers.RegisterUserRequest.ProfileEntry
+	nil,                                      // 163: customers.AuthenticateRequest.ProfileEntry
+	nil,                                      // 164: customers.AuditEvent.MetadataEntry
+	nil,                                      // 165: customers.SessionInfo.DeviceInfoEntry
+	(*timestamppb.Timestamp)(nil),            // 166: google.protobuf.Timestamp
+	(*fieldmaskpb.FieldMask)(nil),            // 167: google.protobuf.FieldMask
+	(*emptypb.Empty)(nil),                    // 168: google.protobuf.Empty
 }
 var file_api_proto_depIdxs = []int32{
-	162, // 0: customers.User.created_at:type_name -> google.protobuf.Timestamp
-	162, // 1: customers.User.updated_at:type_name -> google.protobuf.Timestamp
-	162, // 2: customers.User.last_login:type_name -> google.protobuf.Timestamp
+	166, // 0: customers.User.created_at:type_name -> google.protobuf.Timestamp
+	166, // 1: customers.User.updated_at:type_name -> google.protobuf.Timestamp
+	166, // 2: customers.User.last_login:type_name -> google.protobuf.Timestamp
 	0,   // 3: customers.User.status:type_name -> customers.UserStatus
-	156, // 4: customers.User.profile:type_name -> customers.User.ProfileEntry
-	162, // 5: customers.UserIdentity.created_at:type_name -> google.protobuf.Timestamp
-	162, // 6: customers.UserIdentity.last_used:type_name -> google.protobuf.Timestamp
-	157, // 7: customers.UserIdentity.provider_data:type_name -> customers.UserIdentity.ProviderDataEntry
-	162, // 8: customers.Organization.created_at:type_name -> google.protobuf.Timestamp
+	160, // 4: customers.User.profile:type_name -> customers.User.ProfileEntry
+	166, // 5: customers.UserIdentity.created_at:type_name -> google.protobuf.Timestamp
+	166, // 6: customers.UserIdentity.last_used:type_name -> google.protobuf.Timestamp
+	161, // 7: customers.UserIdentity.provider_data:type_name -> customers.UserIdentity.ProviderDataEntry
+	166, // 8: customers.Organization.created_at:type_name -> google.protobuf.Timestamp
 	1,   // 9: customers.OrgMembership.role:type_name -> customers.OrgRole
-	162, // 10: customers.OrgMembership.joined_at:type_name -> google.protobuf.Timestamp
-	162, // 11: customers.Team.created_at:type_name -> google.protobuf.Timestamp
+	166, // 10: customers.OrgMembership.joined_at:type_name -> google.protobuf.Timestamp
+	166, // 11: customers.Team.created_at:type_name -> google.protobuf.Timestamp
 	2,   // 12: customers.TeamMembership.role:type_name -> customers.TeamRole
-	162, // 13: customers.TeamMembership.joined_at:type_name -> google.protobuf.Timestamp
+	166, // 13: customers.TeamMembership.joined_at:type_name -> google.protobuf.Timestamp
 	19,  // 14: customers.Role.permissions:type_name -> customers.Permission
 	3,   // 15: customers.RoleAssignment.subject_kind:type_name -> customers.SubjectKind
-	162, // 16: customers.RoleAssignment.assigned_at:type_name -> google.protobuf.Timestamp
-	158, // 17: customers.RegisterUserRequest.profile:type_name -> customers.RegisterUserRequest.ProfileEntry
+	166, // 16: customers.RoleAssignment.assigned_at:type_name -> google.protobuf.Timestamp
+	162, // 17: customers.RegisterUserRequest.profile:type_name -> customers.RegisterUserRequest.ProfileEntry
 	14,  // 18: customers.RegisterUserRequest.identity:type_name -> customers.UserIdentity
 	13,  // 19: customers.RegisterUserResponse.user:type_name -> customers.User
 	14,  // 20: customers.RegisterUserResponse.identity:type_name -> customers.UserIdentity
@@ -9908,7 +10162,7 @@ var file_api_proto_depIdxs = []int32{
 	0,   // 25: customers.ListUsersRequest.status:type_name -> customers.UserStatus
 	13,  // 26: customers.ListUsersResponse.users:type_name -> customers.User
 	13,  // 27: customers.UpdateUserRequest.user:type_name -> customers.User
-	163, // 28: customers.UpdateUserRequest.update_mask:type_name -> google.protobuf.FieldMask
+	167, // 28: customers.UpdateUserRequest.update_mask:type_name -> google.protobuf.FieldMask
 	14,  // 29: customers.AddIdentityRequest.identity:type_name -> customers.UserIdentity
 	14,  // 30: customers.ListUserIdentitiesResponse.identities:type_name -> customers.UserIdentity
 	15,  // 31: customers.CreateOrganizationResponse.organization:type_name -> customers.Organization
@@ -9927,225 +10181,233 @@ var file_api_proto_depIdxs = []int32{
 	3,   // 44: customers.CheckPermissionRequest.subject_kind:type_name -> customers.SubjectKind
 	19,  // 45: customers.APIKey.scopes:type_name -> customers.Permission
 	4,   // 46: customers.APIKey.environment:type_name -> customers.APIKeyEnvironment
-	162, // 47: customers.APIKey.created_at:type_name -> google.protobuf.Timestamp
-	162, // 48: customers.APIKey.expires_at:type_name -> google.protobuf.Timestamp
-	162, // 49: customers.APIKey.last_used_at:type_name -> google.protobuf.Timestamp
-	162, // 50: customers.APIKey.revoked_at:type_name -> google.protobuf.Timestamp
+	166, // 47: customers.APIKey.created_at:type_name -> google.protobuf.Timestamp
+	166, // 48: customers.APIKey.expires_at:type_name -> google.protobuf.Timestamp
+	166, // 49: customers.APIKey.last_used_at:type_name -> google.protobuf.Timestamp
+	166, // 50: customers.APIKey.revoked_at:type_name -> google.protobuf.Timestamp
 	19,  // 51: customers.CreateAPIKeyRequest.scopes:type_name -> customers.Permission
 	4,   // 52: customers.CreateAPIKeyRequest.environment:type_name -> customers.APIKeyEnvironment
-	162, // 53: customers.CreateAPIKeyRequest.expires_at:type_name -> google.protobuf.Timestamp
+	166, // 53: customers.CreateAPIKeyRequest.expires_at:type_name -> google.protobuf.Timestamp
 	66,  // 54: customers.CreateAPIKeyResponse.key:type_name -> customers.APIKey
 	66,  // 55: customers.ListAPIKeysResponse.keys:type_name -> customers.APIKey
-	159, // 56: customers.AuthenticateRequest.profile:type_name -> customers.AuthenticateRequest.ProfileEntry
+	163, // 56: customers.AuthenticateRequest.profile:type_name -> customers.AuthenticateRequest.ProfileEntry
 	13,  // 57: customers.AuthenticateResponse.user:type_name -> customers.User
-	160, // 58: customers.AuditEvent.metadata:type_name -> customers.AuditEvent.MetadataEntry
-	162, // 59: customers.AuditEvent.created_at:type_name -> google.protobuf.Timestamp
-	162, // 60: customers.QueryAuditLogRequest.from:type_name -> google.protobuf.Timestamp
-	162, // 61: customers.QueryAuditLogRequest.to:type_name -> google.protobuf.Timestamp
+	164, // 58: customers.AuditEvent.metadata:type_name -> customers.AuditEvent.MetadataEntry
+	166, // 59: customers.AuditEvent.created_at:type_name -> google.protobuf.Timestamp
+	166, // 60: customers.QueryAuditLogRequest.from:type_name -> google.protobuf.Timestamp
+	166, // 61: customers.QueryAuditLogRequest.to:type_name -> google.protobuf.Timestamp
 	82,  // 62: customers.QueryAuditLogResponse.events:type_name -> customers.AuditEvent
 	5,   // 63: customers.Invitation.status:type_name -> customers.InvitationStatus
-	162, // 64: customers.Invitation.expires_at:type_name -> google.protobuf.Timestamp
-	162, // 65: customers.Invitation.created_at:type_name -> google.protobuf.Timestamp
+	166, // 64: customers.Invitation.expires_at:type_name -> google.protobuf.Timestamp
+	166, // 65: customers.Invitation.created_at:type_name -> google.protobuf.Timestamp
 	87,  // 66: customers.CreateInvitationResponse.invitation:type_name -> customers.Invitation
 	15,  // 67: customers.AcceptInvitationResponse.organization:type_name -> customers.Organization
 	5,   // 68: customers.ListInvitationsRequest.status:type_name -> customers.InvitationStatus
 	87,  // 69: customers.ListInvitationsResponse.invitations:type_name -> customers.Invitation
 	13,  // 70: customers.SearchUsersResponse.users:type_name -> customers.User
-	161, // 71: customers.SessionInfo.device_info:type_name -> customers.SessionInfo.DeviceInfoEntry
-	162, // 72: customers.SessionInfo.created_at:type_name -> google.protobuf.Timestamp
-	162, // 73: customers.SessionInfo.last_active_at:type_name -> google.protobuf.Timestamp
-	162, // 74: customers.SessionInfo.expires_at:type_name -> google.protobuf.Timestamp
+	165, // 71: customers.SessionInfo.device_info:type_name -> customers.SessionInfo.DeviceInfoEntry
+	166, // 72: customers.SessionInfo.created_at:type_name -> google.protobuf.Timestamp
+	166, // 73: customers.SessionInfo.last_active_at:type_name -> google.protobuf.Timestamp
+	166, // 74: customers.SessionInfo.expires_at:type_name -> google.protobuf.Timestamp
 	102, // 75: customers.ListActiveSessionsResponse.sessions:type_name -> customers.SessionInfo
 	106, // 76: customers.GetOrgEntitlementsResponse.entitlements:type_name -> customers.EntitlementInfo
-	162, // 77: customers.PlatformAdminEntry.granted_at:type_name -> google.protobuf.Timestamp
+	166, // 77: customers.PlatformAdminEntry.granted_at:type_name -> google.protobuf.Timestamp
 	112, // 78: customers.ListPlatformAdminsResponse.admins:type_name -> customers.PlatformAdminEntry
 	115, // 79: customers.ListFeatureFlagsResponse.flags:type_name -> customers.FeatureFlagEntry
-	162, // 80: customers.WebhookSubscription.created_at:type_name -> google.protobuf.Timestamp
+	166, // 80: customers.WebhookSubscription.created_at:type_name -> google.protobuf.Timestamp
 	6,   // 81: customers.WebhookDelivery.status:type_name -> customers.WebhookDeliveryStatus
-	162, // 82: customers.WebhookDelivery.created_at:type_name -> google.protobuf.Timestamp
-	162, // 83: customers.WebhookDelivery.delivered_at:type_name -> google.protobuf.Timestamp
-	119, // 84: customers.ListWebhookSubscriptionsResponse.subscriptions:type_name -> customers.WebhookSubscription
-	120, // 85: customers.ListWebhookDeliveriesResponse.deliveries:type_name -> customers.WebhookDelivery
-	162, // 86: customers.Notification.read_at:type_name -> google.protobuf.Timestamp
-	162, // 87: customers.Notification.created_at:type_name -> google.protobuf.Timestamp
-	128, // 88: customers.ListNotificationsResponse.notifications:type_name -> customers.Notification
-	7,   // 89: customers.OnboardingStep.status:type_name -> customers.OnboardingStepStatus
-	162, // 90: customers.OnboardingStep.completed_at:type_name -> google.protobuf.Timestamp
-	136, // 91: customers.OnboardingProgress.steps:type_name -> customers.OnboardingStep
-	8,   // 92: customers.GDPRRequest.type:type_name -> customers.GDPRRequestType
-	9,   // 93: customers.GDPRRequest.status:type_name -> customers.GDPRRequestStatus
-	162, // 94: customers.GDPRRequest.expires_at:type_name -> google.protobuf.Timestamp
-	162, // 95: customers.GDPRRequest.created_at:type_name -> google.protobuf.Timestamp
-	162, // 96: customers.GDPRRequest.completed_at:type_name -> google.protobuf.Timestamp
-	10,  // 97: customers.MFADevice.device_type:type_name -> customers.MFADeviceType
-	162, // 98: customers.MFADevice.verified_at:type_name -> google.protobuf.Timestamp
-	162, // 99: customers.MFADevice.last_used_at:type_name -> google.protobuf.Timestamp
-	162, // 100: customers.MFADevice.created_at:type_name -> google.protobuf.Timestamp
-	146, // 101: customers.VerifyTOTPResponse.device:type_name -> customers.MFADevice
-	146, // 102: customers.ListMFADevicesResponse.devices:type_name -> customers.MFADevice
-	11,  // 103: customers.UserService.Version:input_type -> customers.VersionRequest
-	25,  // 104: customers.UserService.GetSelf:input_type -> customers.GetSelfRequest
-	22,  // 105: customers.UserService.RegisterUser:input_type -> customers.RegisterUserRequest
-	24,  // 106: customers.UserService.GetUser:input_type -> customers.GetUserRequest
-	27,  // 107: customers.UserService.ListUsers:input_type -> customers.ListUsersRequest
-	29,  // 108: customers.UserService.UpdateUser:input_type -> customers.UpdateUserRequest
-	24,  // 109: customers.UserService.DeleteUser:input_type -> customers.GetUserRequest
-	30,  // 110: customers.UserService.AddIdentity:input_type -> customers.AddIdentityRequest
-	31,  // 111: customers.UserService.FindUserByIdentity:input_type -> customers.FindUserByIdentityRequest
-	32,  // 112: customers.UserService.ListUserIdentities:input_type -> customers.ListUserIdentitiesRequest
-	37,  // 113: customers.OrganizationService.CreateOrganization:input_type -> customers.CreateOrganizationRequest
-	39,  // 114: customers.OrganizationService.GetOrganization:input_type -> customers.GetOrganizationRequest
-	40,  // 115: customers.OrganizationService.ListOrganizations:input_type -> customers.ListOrganizationsRequest
-	42,  // 116: customers.OrganizationService.AddMember:input_type -> customers.AddOrgMemberRequest
-	43,  // 117: customers.OrganizationService.RemoveMember:input_type -> customers.RemoveOrgMemberRequest
-	44,  // 118: customers.OrganizationService.ListMembers:input_type -> customers.ListOrgMembersRequest
-	35,  // 119: customers.OrganizationService.GetOrgSettings:input_type -> customers.GetOrgSettingsRequest
-	36,  // 120: customers.OrganizationService.UpdateOrgSettings:input_type -> customers.UpdateOrgSettingsRequest
-	46,  // 121: customers.TeamService.CreateTeam:input_type -> customers.CreateTeamRequest
-	48,  // 122: customers.TeamService.ListTeams:input_type -> customers.ListTeamsRequest
-	50,  // 123: customers.TeamService.AddMember:input_type -> customers.AddTeamMemberRequest
-	51,  // 124: customers.TeamService.RemoveMember:input_type -> customers.RemoveTeamMemberRequest
-	52,  // 125: customers.TeamService.ListMembers:input_type -> customers.ListTeamMembersRequest
-	54,  // 126: customers.PermissionService.CreateRole:input_type -> customers.CreateRoleRequest
-	56,  // 127: customers.PermissionService.ListRoles:input_type -> customers.ListRolesRequest
-	58,  // 128: customers.PermissionService.DeleteRole:input_type -> customers.DeleteRoleRequest
-	59,  // 129: customers.PermissionService.AssignRole:input_type -> customers.AssignRoleRequest
-	61,  // 130: customers.PermissionService.RevokeRole:input_type -> customers.RevokeRoleRequest
-	62,  // 131: customers.PermissionService.CheckPermission:input_type -> customers.CheckPermissionRequest
-	64,  // 132: customers.IdentityService.ResolveIdentity:input_type -> customers.ResolveIdentityRequest
-	67,  // 133: customers.APIKeyService.CreateAPIKey:input_type -> customers.CreateAPIKeyRequest
-	69,  // 134: customers.APIKeyService.ListAPIKeys:input_type -> customers.ListAPIKeysRequest
-	71,  // 135: customers.APIKeyService.RevokeAPIKey:input_type -> customers.RevokeAPIKeyRequest
-	72,  // 136: customers.APIKeyService.ValidateAPIKey:input_type -> customers.ValidateAPIKeyRequest
-	80,  // 137: customers.AuthService.BeginOAuth:input_type -> customers.BeginOAuthRequest
-	74,  // 138: customers.AuthService.Authenticate:input_type -> customers.AuthenticateRequest
-	76,  // 139: customers.AuthService.RefreshToken:input_type -> customers.RefreshTokenRequest
-	78,  // 140: customers.AuthService.Logout:input_type -> customers.LogoutRequest
-	164, // 141: customers.AuthService.GetJWKS:input_type -> google.protobuf.Empty
-	83,  // 142: customers.AuditService.QueryAuditLog:input_type -> customers.QueryAuditLogRequest
-	85,  // 143: customers.AuditService.ExportAuditLog:input_type -> customers.ExportAuditLogRequest
-	95,  // 144: customers.PlatformAdminService.SearchUsers:input_type -> customers.SearchUsersRequest
-	97,  // 145: customers.PlatformAdminService.SuspendUser:input_type -> customers.SuspendUserRequest
-	98,  // 146: customers.PlatformAdminService.UnsuspendUser:input_type -> customers.UnsuspendUserRequest
-	99,  // 147: customers.PlatformAdminService.ImpersonateUser:input_type -> customers.ImpersonateUserRequest
-	101, // 148: customers.PlatformAdminService.ListActiveSessions:input_type -> customers.ListActiveSessionsRequest
-	104, // 149: customers.PlatformAdminService.GetOrgEntitlements:input_type -> customers.GetOrgEntitlementsRequest
-	107, // 150: customers.PlatformAdminService.OverrideEntitlement:input_type -> customers.OverrideEntitlementRequest
-	109, // 151: customers.PlatformAdminService.GrantPlatformRole:input_type -> customers.GrantPlatformRoleRequest
-	110, // 152: customers.PlatformAdminService.RevokePlatformRole:input_type -> customers.RevokePlatformRoleRequest
-	111, // 153: customers.PlatformAdminService.ListPlatformAdmins:input_type -> customers.ListPlatformAdminsRequest
-	114, // 154: customers.PlatformAdminService.ListFeatureFlags:input_type -> customers.ListFeatureFlagsRequest
-	117, // 155: customers.PlatformAdminService.UpsertFeatureFlag:input_type -> customers.UpsertFeatureFlagRequest
-	88,  // 156: customers.InvitationService.CreateInvitation:input_type -> customers.CreateInvitationRequest
-	90,  // 157: customers.InvitationService.AcceptInvitation:input_type -> customers.AcceptInvitationRequest
-	92,  // 158: customers.InvitationService.ListInvitations:input_type -> customers.ListInvitationsRequest
-	94,  // 159: customers.InvitationService.RevokeInvitation:input_type -> customers.RevokeInvitationRequest
-	121, // 160: customers.WebhookService.CreateSubscription:input_type -> customers.CreateWebhookSubscriptionRequest
-	122, // 161: customers.WebhookService.DeleteSubscription:input_type -> customers.DeleteWebhookSubscriptionRequest
-	123, // 162: customers.WebhookService.ListSubscriptions:input_type -> customers.ListWebhookSubscriptionsRequest
-	125, // 163: customers.WebhookService.ListDeliveries:input_type -> customers.ListWebhookDeliveriesRequest
-	127, // 164: customers.WebhookService.TestWebhook:input_type -> customers.TestWebhookRequest
-	129, // 165: customers.NotificationService.ListNotifications:input_type -> customers.ListNotificationsRequest
-	131, // 166: customers.NotificationService.GetUnreadCount:input_type -> customers.GetUnreadCountRequest
-	133, // 167: customers.NotificationService.MarkRead:input_type -> customers.MarkNotificationReadRequest
-	134, // 168: customers.NotificationService.MarkAllRead:input_type -> customers.MarkAllNotificationsReadRequest
-	135, // 169: customers.NotificationService.DeleteNotification:input_type -> customers.DeleteNotificationRequest
-	138, // 170: customers.OnboardingService.GetProgress:input_type -> customers.GetOnboardingProgressRequest
-	139, // 171: customers.OnboardingService.CompleteStep:input_type -> customers.CompleteOnboardingStepRequest
-	140, // 172: customers.OnboardingService.SkipStep:input_type -> customers.SkipOnboardingStepRequest
-	142, // 173: customers.GDPRService.RequestExport:input_type -> customers.RequestDataExportRequest
-	143, // 174: customers.GDPRService.GetExportStatus:input_type -> customers.GetExportStatusRequest
-	144, // 175: customers.GDPRService.RequestDeletion:input_type -> customers.RequestDeletionRequest
-	145, // 176: customers.GDPRService.GetDeletionStatus:input_type -> customers.GetDeletionStatusRequest
-	147, // 177: customers.MFAService.SetupTOTP:input_type -> customers.SetupTOTPRequest
-	149, // 178: customers.MFAService.VerifyTOTP:input_type -> customers.VerifyTOTPRequest
-	151, // 179: customers.MFAService.ListDevices:input_type -> customers.ListMFADevicesRequest
-	153, // 180: customers.MFAService.RevokeDevice:input_type -> customers.RevokeMFADeviceRequest
-	154, // 181: customers.MFAService.GenerateBackupCodes:input_type -> customers.GenerateBackupCodesRequest
-	12,  // 182: customers.UserService.Version:output_type -> customers.VersionResponse
-	26,  // 183: customers.UserService.GetSelf:output_type -> customers.GetSelfResponse
-	23,  // 184: customers.UserService.RegisterUser:output_type -> customers.RegisterUserResponse
-	13,  // 185: customers.UserService.GetUser:output_type -> customers.User
-	28,  // 186: customers.UserService.ListUsers:output_type -> customers.ListUsersResponse
-	13,  // 187: customers.UserService.UpdateUser:output_type -> customers.User
-	164, // 188: customers.UserService.DeleteUser:output_type -> google.protobuf.Empty
-	14,  // 189: customers.UserService.AddIdentity:output_type -> customers.UserIdentity
-	13,  // 190: customers.UserService.FindUserByIdentity:output_type -> customers.User
-	33,  // 191: customers.UserService.ListUserIdentities:output_type -> customers.ListUserIdentitiesResponse
-	38,  // 192: customers.OrganizationService.CreateOrganization:output_type -> customers.CreateOrganizationResponse
-	15,  // 193: customers.OrganizationService.GetOrganization:output_type -> customers.Organization
-	41,  // 194: customers.OrganizationService.ListOrganizations:output_type -> customers.ListOrganizationsResponse
-	164, // 195: customers.OrganizationService.AddMember:output_type -> google.protobuf.Empty
-	164, // 196: customers.OrganizationService.RemoveMember:output_type -> google.protobuf.Empty
-	45,  // 197: customers.OrganizationService.ListMembers:output_type -> customers.ListOrgMembersResponse
-	34,  // 198: customers.OrganizationService.GetOrgSettings:output_type -> customers.OrgSettings
-	34,  // 199: customers.OrganizationService.UpdateOrgSettings:output_type -> customers.OrgSettings
-	47,  // 200: customers.TeamService.CreateTeam:output_type -> customers.CreateTeamResponse
-	49,  // 201: customers.TeamService.ListTeams:output_type -> customers.ListTeamsResponse
-	164, // 202: customers.TeamService.AddMember:output_type -> google.protobuf.Empty
-	164, // 203: customers.TeamService.RemoveMember:output_type -> google.protobuf.Empty
-	53,  // 204: customers.TeamService.ListMembers:output_type -> customers.ListTeamMembersResponse
-	55,  // 205: customers.PermissionService.CreateRole:output_type -> customers.CreateRoleResponse
-	57,  // 206: customers.PermissionService.ListRoles:output_type -> customers.ListRolesResponse
-	164, // 207: customers.PermissionService.DeleteRole:output_type -> google.protobuf.Empty
-	60,  // 208: customers.PermissionService.AssignRole:output_type -> customers.AssignRoleResponse
-	164, // 209: customers.PermissionService.RevokeRole:output_type -> google.protobuf.Empty
-	63,  // 210: customers.PermissionService.CheckPermission:output_type -> customers.CheckPermissionResponse
-	65,  // 211: customers.IdentityService.ResolveIdentity:output_type -> customers.ResolveIdentityResponse
-	68,  // 212: customers.APIKeyService.CreateAPIKey:output_type -> customers.CreateAPIKeyResponse
-	70,  // 213: customers.APIKeyService.ListAPIKeys:output_type -> customers.ListAPIKeysResponse
-	164, // 214: customers.APIKeyService.RevokeAPIKey:output_type -> google.protobuf.Empty
-	73,  // 215: customers.APIKeyService.ValidateAPIKey:output_type -> customers.ValidateAPIKeyResponse
-	81,  // 216: customers.AuthService.BeginOAuth:output_type -> customers.BeginOAuthResponse
-	75,  // 217: customers.AuthService.Authenticate:output_type -> customers.AuthenticateResponse
-	77,  // 218: customers.AuthService.RefreshToken:output_type -> customers.RefreshTokenResponse
-	164, // 219: customers.AuthService.Logout:output_type -> google.protobuf.Empty
-	79,  // 220: customers.AuthService.GetJWKS:output_type -> customers.JWKSResponse
-	84,  // 221: customers.AuditService.QueryAuditLog:output_type -> customers.QueryAuditLogResponse
-	86,  // 222: customers.AuditService.ExportAuditLog:output_type -> customers.ExportAuditLogResponse
-	96,  // 223: customers.PlatformAdminService.SearchUsers:output_type -> customers.SearchUsersResponse
-	164, // 224: customers.PlatformAdminService.SuspendUser:output_type -> google.protobuf.Empty
-	164, // 225: customers.PlatformAdminService.UnsuspendUser:output_type -> google.protobuf.Empty
-	100, // 226: customers.PlatformAdminService.ImpersonateUser:output_type -> customers.ImpersonateUserResponse
-	103, // 227: customers.PlatformAdminService.ListActiveSessions:output_type -> customers.ListActiveSessionsResponse
-	105, // 228: customers.PlatformAdminService.GetOrgEntitlements:output_type -> customers.GetOrgEntitlementsResponse
-	108, // 229: customers.PlatformAdminService.OverrideEntitlement:output_type -> customers.OverrideEntitlementResponse
-	164, // 230: customers.PlatformAdminService.GrantPlatformRole:output_type -> google.protobuf.Empty
-	164, // 231: customers.PlatformAdminService.RevokePlatformRole:output_type -> google.protobuf.Empty
-	113, // 232: customers.PlatformAdminService.ListPlatformAdmins:output_type -> customers.ListPlatformAdminsResponse
-	116, // 233: customers.PlatformAdminService.ListFeatureFlags:output_type -> customers.ListFeatureFlagsResponse
-	118, // 234: customers.PlatformAdminService.UpsertFeatureFlag:output_type -> customers.UpsertFeatureFlagResponse
-	89,  // 235: customers.InvitationService.CreateInvitation:output_type -> customers.CreateInvitationResponse
-	91,  // 236: customers.InvitationService.AcceptInvitation:output_type -> customers.AcceptInvitationResponse
-	93,  // 237: customers.InvitationService.ListInvitations:output_type -> customers.ListInvitationsResponse
-	164, // 238: customers.InvitationService.RevokeInvitation:output_type -> google.protobuf.Empty
-	119, // 239: customers.WebhookService.CreateSubscription:output_type -> customers.WebhookSubscription
-	164, // 240: customers.WebhookService.DeleteSubscription:output_type -> google.protobuf.Empty
-	124, // 241: customers.WebhookService.ListSubscriptions:output_type -> customers.ListWebhookSubscriptionsResponse
-	126, // 242: customers.WebhookService.ListDeliveries:output_type -> customers.ListWebhookDeliveriesResponse
-	120, // 243: customers.WebhookService.TestWebhook:output_type -> customers.WebhookDelivery
-	130, // 244: customers.NotificationService.ListNotifications:output_type -> customers.ListNotificationsResponse
-	132, // 245: customers.NotificationService.GetUnreadCount:output_type -> customers.GetUnreadCountResponse
-	164, // 246: customers.NotificationService.MarkRead:output_type -> google.protobuf.Empty
-	164, // 247: customers.NotificationService.MarkAllRead:output_type -> google.protobuf.Empty
-	164, // 248: customers.NotificationService.DeleteNotification:output_type -> google.protobuf.Empty
-	137, // 249: customers.OnboardingService.GetProgress:output_type -> customers.OnboardingProgress
-	137, // 250: customers.OnboardingService.CompleteStep:output_type -> customers.OnboardingProgress
-	137, // 251: customers.OnboardingService.SkipStep:output_type -> customers.OnboardingProgress
-	141, // 252: customers.GDPRService.RequestExport:output_type -> customers.GDPRRequest
-	141, // 253: customers.GDPRService.GetExportStatus:output_type -> customers.GDPRRequest
-	141, // 254: customers.GDPRService.RequestDeletion:output_type -> customers.GDPRRequest
-	141, // 255: customers.GDPRService.GetDeletionStatus:output_type -> customers.GDPRRequest
-	148, // 256: customers.MFAService.SetupTOTP:output_type -> customers.SetupTOTPResponse
-	150, // 257: customers.MFAService.VerifyTOTP:output_type -> customers.VerifyTOTPResponse
-	152, // 258: customers.MFAService.ListDevices:output_type -> customers.ListMFADevicesResponse
-	164, // 259: customers.MFAService.RevokeDevice:output_type -> google.protobuf.Empty
-	155, // 260: customers.MFAService.GenerateBackupCodes:output_type -> customers.GenerateBackupCodesResponse
-	182, // [182:261] is the sub-list for method output_type
-	103, // [103:182] is the sub-list for method input_type
-	103, // [103:103] is the sub-list for extension type_name
-	103, // [103:103] is the sub-list for extension extendee
-	0,   // [0:103] is the sub-list for field type_name
+	166, // 82: customers.WebhookDelivery.created_at:type_name -> google.protobuf.Timestamp
+	166, // 83: customers.WebhookDelivery.delivered_at:type_name -> google.protobuf.Timestamp
+	166, // 84: customers.WebhookDelivery.next_retry_at:type_name -> google.protobuf.Timestamp
+	119, // 85: customers.ListWebhookSubscriptionsResponse.subscriptions:type_name -> customers.WebhookSubscription
+	120, // 86: customers.ListWebhookDeliveriesResponse.deliveries:type_name -> customers.WebhookDelivery
+	166, // 87: customers.RotateWebhookSecretResponse.old_secret_expires_at:type_name -> google.protobuf.Timestamp
+	166, // 88: customers.Notification.read_at:type_name -> google.protobuf.Timestamp
+	166, // 89: customers.Notification.created_at:type_name -> google.protobuf.Timestamp
+	132, // 90: customers.ListNotificationsResponse.notifications:type_name -> customers.Notification
+	7,   // 91: customers.OnboardingStep.status:type_name -> customers.OnboardingStepStatus
+	166, // 92: customers.OnboardingStep.completed_at:type_name -> google.protobuf.Timestamp
+	140, // 93: customers.OnboardingProgress.steps:type_name -> customers.OnboardingStep
+	8,   // 94: customers.GDPRRequest.type:type_name -> customers.GDPRRequestType
+	9,   // 95: customers.GDPRRequest.status:type_name -> customers.GDPRRequestStatus
+	166, // 96: customers.GDPRRequest.expires_at:type_name -> google.protobuf.Timestamp
+	166, // 97: customers.GDPRRequest.created_at:type_name -> google.protobuf.Timestamp
+	166, // 98: customers.GDPRRequest.completed_at:type_name -> google.protobuf.Timestamp
+	10,  // 99: customers.MFADevice.device_type:type_name -> customers.MFADeviceType
+	166, // 100: customers.MFADevice.verified_at:type_name -> google.protobuf.Timestamp
+	166, // 101: customers.MFADevice.last_used_at:type_name -> google.protobuf.Timestamp
+	166, // 102: customers.MFADevice.created_at:type_name -> google.protobuf.Timestamp
+	150, // 103: customers.VerifyTOTPResponse.device:type_name -> customers.MFADevice
+	150, // 104: customers.ListMFADevicesResponse.devices:type_name -> customers.MFADevice
+	11,  // 105: customers.UserService.Version:input_type -> customers.VersionRequest
+	25,  // 106: customers.UserService.GetSelf:input_type -> customers.GetSelfRequest
+	22,  // 107: customers.UserService.RegisterUser:input_type -> customers.RegisterUserRequest
+	24,  // 108: customers.UserService.GetUser:input_type -> customers.GetUserRequest
+	27,  // 109: customers.UserService.ListUsers:input_type -> customers.ListUsersRequest
+	29,  // 110: customers.UserService.UpdateUser:input_type -> customers.UpdateUserRequest
+	24,  // 111: customers.UserService.DeleteUser:input_type -> customers.GetUserRequest
+	30,  // 112: customers.UserService.AddIdentity:input_type -> customers.AddIdentityRequest
+	31,  // 113: customers.UserService.FindUserByIdentity:input_type -> customers.FindUserByIdentityRequest
+	32,  // 114: customers.UserService.ListUserIdentities:input_type -> customers.ListUserIdentitiesRequest
+	37,  // 115: customers.OrganizationService.CreateOrganization:input_type -> customers.CreateOrganizationRequest
+	39,  // 116: customers.OrganizationService.GetOrganization:input_type -> customers.GetOrganizationRequest
+	40,  // 117: customers.OrganizationService.ListOrganizations:input_type -> customers.ListOrganizationsRequest
+	42,  // 118: customers.OrganizationService.AddMember:input_type -> customers.AddOrgMemberRequest
+	43,  // 119: customers.OrganizationService.RemoveMember:input_type -> customers.RemoveOrgMemberRequest
+	44,  // 120: customers.OrganizationService.ListMembers:input_type -> customers.ListOrgMembersRequest
+	35,  // 121: customers.OrganizationService.GetOrgSettings:input_type -> customers.GetOrgSettingsRequest
+	36,  // 122: customers.OrganizationService.UpdateOrgSettings:input_type -> customers.UpdateOrgSettingsRequest
+	46,  // 123: customers.TeamService.CreateTeam:input_type -> customers.CreateTeamRequest
+	48,  // 124: customers.TeamService.ListTeams:input_type -> customers.ListTeamsRequest
+	50,  // 125: customers.TeamService.AddMember:input_type -> customers.AddTeamMemberRequest
+	51,  // 126: customers.TeamService.RemoveMember:input_type -> customers.RemoveTeamMemberRequest
+	52,  // 127: customers.TeamService.ListMembers:input_type -> customers.ListTeamMembersRequest
+	54,  // 128: customers.PermissionService.CreateRole:input_type -> customers.CreateRoleRequest
+	56,  // 129: customers.PermissionService.ListRoles:input_type -> customers.ListRolesRequest
+	58,  // 130: customers.PermissionService.DeleteRole:input_type -> customers.DeleteRoleRequest
+	59,  // 131: customers.PermissionService.AssignRole:input_type -> customers.AssignRoleRequest
+	61,  // 132: customers.PermissionService.RevokeRole:input_type -> customers.RevokeRoleRequest
+	62,  // 133: customers.PermissionService.CheckPermission:input_type -> customers.CheckPermissionRequest
+	64,  // 134: customers.IdentityService.ResolveIdentity:input_type -> customers.ResolveIdentityRequest
+	67,  // 135: customers.APIKeyService.CreateAPIKey:input_type -> customers.CreateAPIKeyRequest
+	69,  // 136: customers.APIKeyService.ListAPIKeys:input_type -> customers.ListAPIKeysRequest
+	71,  // 137: customers.APIKeyService.RevokeAPIKey:input_type -> customers.RevokeAPIKeyRequest
+	72,  // 138: customers.APIKeyService.ValidateAPIKey:input_type -> customers.ValidateAPIKeyRequest
+	80,  // 139: customers.AuthService.BeginOAuth:input_type -> customers.BeginOAuthRequest
+	74,  // 140: customers.AuthService.Authenticate:input_type -> customers.AuthenticateRequest
+	76,  // 141: customers.AuthService.RefreshToken:input_type -> customers.RefreshTokenRequest
+	78,  // 142: customers.AuthService.Logout:input_type -> customers.LogoutRequest
+	168, // 143: customers.AuthService.GetJWKS:input_type -> google.protobuf.Empty
+	83,  // 144: customers.AuditService.QueryAuditLog:input_type -> customers.QueryAuditLogRequest
+	85,  // 145: customers.AuditService.ExportAuditLog:input_type -> customers.ExportAuditLogRequest
+	95,  // 146: customers.PlatformAdminService.SearchUsers:input_type -> customers.SearchUsersRequest
+	97,  // 147: customers.PlatformAdminService.SuspendUser:input_type -> customers.SuspendUserRequest
+	98,  // 148: customers.PlatformAdminService.UnsuspendUser:input_type -> customers.UnsuspendUserRequest
+	99,  // 149: customers.PlatformAdminService.ImpersonateUser:input_type -> customers.ImpersonateUserRequest
+	101, // 150: customers.PlatformAdminService.ListActiveSessions:input_type -> customers.ListActiveSessionsRequest
+	104, // 151: customers.PlatformAdminService.GetOrgEntitlements:input_type -> customers.GetOrgEntitlementsRequest
+	107, // 152: customers.PlatformAdminService.OverrideEntitlement:input_type -> customers.OverrideEntitlementRequest
+	109, // 153: customers.PlatformAdminService.GrantPlatformRole:input_type -> customers.GrantPlatformRoleRequest
+	110, // 154: customers.PlatformAdminService.RevokePlatformRole:input_type -> customers.RevokePlatformRoleRequest
+	111, // 155: customers.PlatformAdminService.ListPlatformAdmins:input_type -> customers.ListPlatformAdminsRequest
+	114, // 156: customers.PlatformAdminService.ListFeatureFlags:input_type -> customers.ListFeatureFlagsRequest
+	117, // 157: customers.PlatformAdminService.UpsertFeatureFlag:input_type -> customers.UpsertFeatureFlagRequest
+	88,  // 158: customers.InvitationService.CreateInvitation:input_type -> customers.CreateInvitationRequest
+	90,  // 159: customers.InvitationService.AcceptInvitation:input_type -> customers.AcceptInvitationRequest
+	92,  // 160: customers.InvitationService.ListInvitations:input_type -> customers.ListInvitationsRequest
+	94,  // 161: customers.InvitationService.RevokeInvitation:input_type -> customers.RevokeInvitationRequest
+	121, // 162: customers.WebhookService.CreateSubscription:input_type -> customers.CreateWebhookSubscriptionRequest
+	122, // 163: customers.WebhookService.DeleteSubscription:input_type -> customers.DeleteWebhookSubscriptionRequest
+	123, // 164: customers.WebhookService.ListSubscriptions:input_type -> customers.ListWebhookSubscriptionsRequest
+	125, // 165: customers.WebhookService.ListDeliveries:input_type -> customers.ListWebhookDeliveriesRequest
+	128, // 166: customers.WebhookService.GetDelivery:input_type -> customers.GetWebhookDeliveryRequest
+	129, // 167: customers.WebhookService.ReplayDelivery:input_type -> customers.ReplayWebhookDeliveryRequest
+	127, // 168: customers.WebhookService.TestWebhook:input_type -> customers.TestWebhookRequest
+	130, // 169: customers.WebhookService.RotateSecret:input_type -> customers.RotateWebhookSecretRequest
+	133, // 170: customers.NotificationService.ListNotifications:input_type -> customers.ListNotificationsRequest
+	135, // 171: customers.NotificationService.GetUnreadCount:input_type -> customers.GetUnreadCountRequest
+	137, // 172: customers.NotificationService.MarkRead:input_type -> customers.MarkNotificationReadRequest
+	138, // 173: customers.NotificationService.MarkAllRead:input_type -> customers.MarkAllNotificationsReadRequest
+	139, // 174: customers.NotificationService.DeleteNotification:input_type -> customers.DeleteNotificationRequest
+	142, // 175: customers.OnboardingService.GetProgress:input_type -> customers.GetOnboardingProgressRequest
+	143, // 176: customers.OnboardingService.CompleteStep:input_type -> customers.CompleteOnboardingStepRequest
+	144, // 177: customers.OnboardingService.SkipStep:input_type -> customers.SkipOnboardingStepRequest
+	146, // 178: customers.GDPRService.RequestExport:input_type -> customers.RequestDataExportRequest
+	147, // 179: customers.GDPRService.GetExportStatus:input_type -> customers.GetExportStatusRequest
+	148, // 180: customers.GDPRService.RequestDeletion:input_type -> customers.RequestDeletionRequest
+	149, // 181: customers.GDPRService.GetDeletionStatus:input_type -> customers.GetDeletionStatusRequest
+	151, // 182: customers.MFAService.SetupTOTP:input_type -> customers.SetupTOTPRequest
+	153, // 183: customers.MFAService.VerifyTOTP:input_type -> customers.VerifyTOTPRequest
+	155, // 184: customers.MFAService.ListDevices:input_type -> customers.ListMFADevicesRequest
+	157, // 185: customers.MFAService.RevokeDevice:input_type -> customers.RevokeMFADeviceRequest
+	158, // 186: customers.MFAService.GenerateBackupCodes:input_type -> customers.GenerateBackupCodesRequest
+	12,  // 187: customers.UserService.Version:output_type -> customers.VersionResponse
+	26,  // 188: customers.UserService.GetSelf:output_type -> customers.GetSelfResponse
+	23,  // 189: customers.UserService.RegisterUser:output_type -> customers.RegisterUserResponse
+	13,  // 190: customers.UserService.GetUser:output_type -> customers.User
+	28,  // 191: customers.UserService.ListUsers:output_type -> customers.ListUsersResponse
+	13,  // 192: customers.UserService.UpdateUser:output_type -> customers.User
+	168, // 193: customers.UserService.DeleteUser:output_type -> google.protobuf.Empty
+	14,  // 194: customers.UserService.AddIdentity:output_type -> customers.UserIdentity
+	13,  // 195: customers.UserService.FindUserByIdentity:output_type -> customers.User
+	33,  // 196: customers.UserService.ListUserIdentities:output_type -> customers.ListUserIdentitiesResponse
+	38,  // 197: customers.OrganizationService.CreateOrganization:output_type -> customers.CreateOrganizationResponse
+	15,  // 198: customers.OrganizationService.GetOrganization:output_type -> customers.Organization
+	41,  // 199: customers.OrganizationService.ListOrganizations:output_type -> customers.ListOrganizationsResponse
+	168, // 200: customers.OrganizationService.AddMember:output_type -> google.protobuf.Empty
+	168, // 201: customers.OrganizationService.RemoveMember:output_type -> google.protobuf.Empty
+	45,  // 202: customers.OrganizationService.ListMembers:output_type -> customers.ListOrgMembersResponse
+	34,  // 203: customers.OrganizationService.GetOrgSettings:output_type -> customers.OrgSettings
+	34,  // 204: customers.OrganizationService.UpdateOrgSettings:output_type -> customers.OrgSettings
+	47,  // 205: customers.TeamService.CreateTeam:output_type -> customers.CreateTeamResponse
+	49,  // 206: customers.TeamService.ListTeams:output_type -> customers.ListTeamsResponse
+	168, // 207: customers.TeamService.AddMember:output_type -> google.protobuf.Empty
+	168, // 208: customers.TeamService.RemoveMember:output_type -> google.protobuf.Empty
+	53,  // 209: customers.TeamService.ListMembers:output_type -> customers.ListTeamMembersResponse
+	55,  // 210: customers.PermissionService.CreateRole:output_type -> customers.CreateRoleResponse
+	57,  // 211: customers.PermissionService.ListRoles:output_type -> customers.ListRolesResponse
+	168, // 212: customers.PermissionService.DeleteRole:output_type -> google.protobuf.Empty
+	60,  // 213: customers.PermissionService.AssignRole:output_type -> customers.AssignRoleResponse
+	168, // 214: customers.PermissionService.RevokeRole:output_type -> google.protobuf.Empty
+	63,  // 215: customers.PermissionService.CheckPermission:output_type -> customers.CheckPermissionResponse
+	65,  // 216: customers.IdentityService.ResolveIdentity:output_type -> customers.ResolveIdentityResponse
+	68,  // 217: customers.APIKeyService.CreateAPIKey:output_type -> customers.CreateAPIKeyResponse
+	70,  // 218: customers.APIKeyService.ListAPIKeys:output_type -> customers.ListAPIKeysResponse
+	168, // 219: customers.APIKeyService.RevokeAPIKey:output_type -> google.protobuf.Empty
+	73,  // 220: customers.APIKeyService.ValidateAPIKey:output_type -> customers.ValidateAPIKeyResponse
+	81,  // 221: customers.AuthService.BeginOAuth:output_type -> customers.BeginOAuthResponse
+	75,  // 222: customers.AuthService.Authenticate:output_type -> customers.AuthenticateResponse
+	77,  // 223: customers.AuthService.RefreshToken:output_type -> customers.RefreshTokenResponse
+	168, // 224: customers.AuthService.Logout:output_type -> google.protobuf.Empty
+	79,  // 225: customers.AuthService.GetJWKS:output_type -> customers.JWKSResponse
+	84,  // 226: customers.AuditService.QueryAuditLog:output_type -> customers.QueryAuditLogResponse
+	86,  // 227: customers.AuditService.ExportAuditLog:output_type -> customers.ExportAuditLogResponse
+	96,  // 228: customers.PlatformAdminService.SearchUsers:output_type -> customers.SearchUsersResponse
+	168, // 229: customers.PlatformAdminService.SuspendUser:output_type -> google.protobuf.Empty
+	168, // 230: customers.PlatformAdminService.UnsuspendUser:output_type -> google.protobuf.Empty
+	100, // 231: customers.PlatformAdminService.ImpersonateUser:output_type -> customers.ImpersonateUserResponse
+	103, // 232: customers.PlatformAdminService.ListActiveSessions:output_type -> customers.ListActiveSessionsResponse
+	105, // 233: customers.PlatformAdminService.GetOrgEntitlements:output_type -> customers.GetOrgEntitlementsResponse
+	108, // 234: customers.PlatformAdminService.OverrideEntitlement:output_type -> customers.OverrideEntitlementResponse
+	168, // 235: customers.PlatformAdminService.GrantPlatformRole:output_type -> google.protobuf.Empty
+	168, // 236: customers.PlatformAdminService.RevokePlatformRole:output_type -> google.protobuf.Empty
+	113, // 237: customers.PlatformAdminService.ListPlatformAdmins:output_type -> customers.ListPlatformAdminsResponse
+	116, // 238: customers.PlatformAdminService.ListFeatureFlags:output_type -> customers.ListFeatureFlagsResponse
+	118, // 239: customers.PlatformAdminService.UpsertFeatureFlag:output_type -> customers.UpsertFeatureFlagResponse
+	89,  // 240: customers.InvitationService.CreateInvitation:output_type -> customers.CreateInvitationResponse
+	91,  // 241: customers.InvitationService.AcceptInvitation:output_type -> customers.AcceptInvitationResponse
+	93,  // 242: customers.InvitationService.ListInvitations:output_type -> customers.ListInvitationsResponse
+	168, // 243: customers.InvitationService.RevokeInvitation:output_type -> google.protobuf.Empty
+	119, // 244: customers.WebhookService.CreateSubscription:output_type -> customers.WebhookSubscription
+	168, // 245: customers.WebhookService.DeleteSubscription:output_type -> google.protobuf.Empty
+	124, // 246: customers.WebhookService.ListSubscriptions:output_type -> customers.ListWebhookSubscriptionsResponse
+	126, // 247: customers.WebhookService.ListDeliveries:output_type -> customers.ListWebhookDeliveriesResponse
+	120, // 248: customers.WebhookService.GetDelivery:output_type -> customers.WebhookDelivery
+	120, // 249: customers.WebhookService.ReplayDelivery:output_type -> customers.WebhookDelivery
+	120, // 250: customers.WebhookService.TestWebhook:output_type -> customers.WebhookDelivery
+	131, // 251: customers.WebhookService.RotateSecret:output_type -> customers.RotateWebhookSecretResponse
+	134, // 252: customers.NotificationService.ListNotifications:output_type -> customers.ListNotificationsResponse
+	136, // 253: customers.NotificationService.GetUnreadCount:output_type -> customers.GetUnreadCountResponse
+	168, // 254: customers.NotificationService.MarkRead:output_type -> google.protobuf.Empty
+	168, // 255: customers.NotificationService.MarkAllRead:output_type -> google.protobuf.Empty
+	168, // 256: customers.NotificationService.DeleteNotification:output_type -> google.protobuf.Empty
+	141, // 257: customers.OnboardingService.GetProgress:output_type -> customers.OnboardingProgress
+	141, // 258: customers.OnboardingService.CompleteStep:output_type -> customers.OnboardingProgress
+	141, // 259: customers.OnboardingService.SkipStep:output_type -> customers.OnboardingProgress
+	145, // 260: customers.GDPRService.RequestExport:output_type -> customers.GDPRRequest
+	145, // 261: customers.GDPRService.GetExportStatus:output_type -> customers.GDPRRequest
+	145, // 262: customers.GDPRService.RequestDeletion:output_type -> customers.GDPRRequest
+	145, // 263: customers.GDPRService.GetDeletionStatus:output_type -> customers.GDPRRequest
+	152, // 264: customers.MFAService.SetupTOTP:output_type -> customers.SetupTOTPResponse
+	154, // 265: customers.MFAService.VerifyTOTP:output_type -> customers.VerifyTOTPResponse
+	156, // 266: customers.MFAService.ListDevices:output_type -> customers.ListMFADevicesResponse
+	168, // 267: customers.MFAService.RevokeDevice:output_type -> google.protobuf.Empty
+	159, // 268: customers.MFAService.GenerateBackupCodes:output_type -> customers.GenerateBackupCodesResponse
+	187, // [187:269] is the sub-list for method output_type
+	105, // [105:187] is the sub-list for method input_type
+	105, // [105:105] is the sub-list for extension type_name
+	105, // [105:105] is the sub-list for extension extendee
+	0,   // [0:105] is the sub-list for field type_name
 }
 
 func init() { file_api_proto_init() }
@@ -10163,7 +10425,7 @@ func file_api_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_api_proto_rawDesc), len(file_api_proto_rawDesc)),
 			NumEnums:      11,
-			NumMessages:   151,
+			NumMessages:   155,
 			NumExtensions: 0,
 			NumServices:   15,
 		},

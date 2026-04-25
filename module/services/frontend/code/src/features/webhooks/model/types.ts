@@ -22,6 +22,11 @@ export interface WebhookDelivery {
   attempts: number;
   lastAttemptAt: string | undefined;
   createdAt: string | undefined;
+  // payload (request body) and responseBody (consumer's reply, capped
+  // at 4KiB server-side). Both are populated for any delivery that
+  // actually attempted an HTTP round-trip; empty for "pending" rows.
+  payload: string;
+  responseBody: string;
 }
 
 export const WEBHOOK_EVENT_TYPES = [

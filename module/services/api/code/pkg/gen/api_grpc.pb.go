@@ -2888,7 +2888,10 @@ const (
 	WebhookService_DeleteSubscription_FullMethodName = "/customers.WebhookService/DeleteSubscription"
 	WebhookService_ListSubscriptions_FullMethodName  = "/customers.WebhookService/ListSubscriptions"
 	WebhookService_ListDeliveries_FullMethodName     = "/customers.WebhookService/ListDeliveries"
+	WebhookService_GetDelivery_FullMethodName        = "/customers.WebhookService/GetDelivery"
+	WebhookService_ReplayDelivery_FullMethodName     = "/customers.WebhookService/ReplayDelivery"
 	WebhookService_TestWebhook_FullMethodName        = "/customers.WebhookService/TestWebhook"
+	WebhookService_RotateSecret_FullMethodName       = "/customers.WebhookService/RotateSecret"
 )
 
 // WebhookServiceClient is the client API for WebhookService service.
@@ -2901,7 +2904,10 @@ type WebhookServiceClient interface {
 	DeleteSubscription(ctx context.Context, in *DeleteWebhookSubscriptionRequest, opts ...grpc.CallOption) (*emptypb.Empty, error)
 	ListSubscriptions(ctx context.Context, in *ListWebhookSubscriptionsRequest, opts ...grpc.CallOption) (*ListWebhookSubscriptionsResponse, error)
 	ListDeliveries(ctx context.Context, in *ListWebhookDeliveriesRequest, opts ...grpc.CallOption) (*ListWebhookDeliveriesResponse, error)
+	GetDelivery(ctx context.Context, in *GetWebhookDeliveryRequest, opts ...grpc.CallOption) (*WebhookDelivery, error)
+	ReplayDelivery(ctx context.Context, in *ReplayWebhookDeliveryRequest, opts ...grpc.CallOption) (*WebhookDelivery, error)
 	TestWebhook(ctx context.Context, in *TestWebhookRequest, opts ...grpc.CallOption) (*WebhookDelivery, error)
+	RotateSecret(ctx context.Context, in *RotateWebhookSecretRequest, opts ...grpc.CallOption) (*RotateWebhookSecretResponse, error)
 }
 
 type webhookServiceClient struct {
@@ -2952,10 +2958,40 @@ func (c *webhookServiceClient) ListDeliveries(ctx context.Context, in *ListWebho
 	return out, nil
 }
 
+func (c *webhookServiceClient) GetDelivery(ctx context.Context, in *GetWebhookDeliveryRequest, opts ...grpc.CallOption) (*WebhookDelivery, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(WebhookDelivery)
+	err := c.cc.Invoke(ctx, WebhookService_GetDelivery_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *webhookServiceClient) ReplayDelivery(ctx context.Context, in *ReplayWebhookDeliveryRequest, opts ...grpc.CallOption) (*WebhookDelivery, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(WebhookDelivery)
+	err := c.cc.Invoke(ctx, WebhookService_ReplayDelivery_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 func (c *webhookServiceClient) TestWebhook(ctx context.Context, in *TestWebhookRequest, opts ...grpc.CallOption) (*WebhookDelivery, error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(WebhookDelivery)
 	err := c.cc.Invoke(ctx, WebhookService_TestWebhook_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *webhookServiceClient) RotateSecret(ctx context.Context, in *RotateWebhookSecretRequest, opts ...grpc.CallOption) (*RotateWebhookSecretResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(RotateWebhookSecretResponse)
+	err := c.cc.Invoke(ctx, WebhookService_RotateSecret_FullMethodName, in, out, cOpts...)
 	if err != nil {
 		return nil, err
 	}
@@ -2972,7 +3008,10 @@ type WebhookServiceServer interface {
 	DeleteSubscription(context.Context, *DeleteWebhookSubscriptionRequest) (*emptypb.Empty, error)
 	ListSubscriptions(context.Context, *ListWebhookSubscriptionsRequest) (*ListWebhookSubscriptionsResponse, error)
 	ListDeliveries(context.Context, *ListWebhookDeliveriesRequest) (*ListWebhookDeliveriesResponse, error)
+	GetDelivery(context.Context, *GetWebhookDeliveryRequest) (*WebhookDelivery, error)
+	ReplayDelivery(context.Context, *ReplayWebhookDeliveryRequest) (*WebhookDelivery, error)
 	TestWebhook(context.Context, *TestWebhookRequest) (*WebhookDelivery, error)
+	RotateSecret(context.Context, *RotateWebhookSecretRequest) (*RotateWebhookSecretResponse, error)
 	mustEmbedUnimplementedWebhookServiceServer()
 }
 
@@ -2995,8 +3034,17 @@ func (UnimplementedWebhookServiceServer) ListSubscriptions(context.Context, *Lis
 func (UnimplementedWebhookServiceServer) ListDeliveries(context.Context, *ListWebhookDeliveriesRequest) (*ListWebhookDeliveriesResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method ListDeliveries not implemented")
 }
+func (UnimplementedWebhookServiceServer) GetDelivery(context.Context, *GetWebhookDeliveryRequest) (*WebhookDelivery, error) {
+	return nil, status.Error(codes.Unimplemented, "method GetDelivery not implemented")
+}
+func (UnimplementedWebhookServiceServer) ReplayDelivery(context.Context, *ReplayWebhookDeliveryRequest) (*WebhookDelivery, error) {
+	return nil, status.Error(codes.Unimplemented, "method ReplayDelivery not implemented")
+}
 func (UnimplementedWebhookServiceServer) TestWebhook(context.Context, *TestWebhookRequest) (*WebhookDelivery, error) {
 	return nil, status.Error(codes.Unimplemented, "method TestWebhook not implemented")
+}
+func (UnimplementedWebhookServiceServer) RotateSecret(context.Context, *RotateWebhookSecretRequest) (*RotateWebhookSecretResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method RotateSecret not implemented")
 }
 func (UnimplementedWebhookServiceServer) mustEmbedUnimplementedWebhookServiceServer() {}
 func (UnimplementedWebhookServiceServer) testEmbeddedByValue()                        {}
@@ -3091,6 +3139,42 @@ func _WebhookService_ListDeliveries_Handler(srv interface{}, ctx context.Context
 	return interceptor(ctx, in, info, handler)
 }
 
+func _WebhookService_GetDelivery_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(GetWebhookDeliveryRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(WebhookServiceServer).GetDelivery(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: WebhookService_GetDelivery_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(WebhookServiceServer).GetDelivery(ctx, req.(*GetWebhookDeliveryRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _WebhookService_ReplayDelivery_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ReplayWebhookDeliveryRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(WebhookServiceServer).ReplayDelivery(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: WebhookService_ReplayDelivery_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(WebhookServiceServer).ReplayDelivery(ctx, req.(*ReplayWebhookDeliveryRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 func _WebhookService_TestWebhook_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
 	in := new(TestWebhookRequest)
 	if err := dec(in); err != nil {
@@ -3105,6 +3189,24 @@ func _WebhookService_TestWebhook_Handler(srv interface{}, ctx context.Context, d
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
 		return srv.(WebhookServiceServer).TestWebhook(ctx, req.(*TestWebhookRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _WebhookService_RotateSecret_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(RotateWebhookSecretRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(WebhookServiceServer).RotateSecret(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: WebhookService_RotateSecret_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(WebhookServiceServer).RotateSecret(ctx, req.(*RotateWebhookSecretRequest))
 	}
 	return interceptor(ctx, in, info, handler)
 }
@@ -3133,8 +3235,20 @@ var WebhookService_ServiceDesc = grpc.ServiceDesc{
 			Handler:    _WebhookService_ListDeliveries_Handler,
 		},
 		{
+			MethodName: "GetDelivery",
+			Handler:    _WebhookService_GetDelivery_Handler,
+		},
+		{
+			MethodName: "ReplayDelivery",
+			Handler:    _WebhookService_ReplayDelivery_Handler,
+		},
+		{
 			MethodName: "TestWebhook",
 			Handler:    _WebhookService_TestWebhook_Handler,
+		},
+		{
+			MethodName: "RotateSecret",
+			Handler:    _WebhookService_RotateSecret_Handler,
 		},
 	},
 	Streams:  []grpc.StreamDesc{},

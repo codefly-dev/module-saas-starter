@@ -1,8 +1,9 @@
 "use client";
 
-import { useQuery } from "@tanstack/react-query";
-import { ChevronDown, ChevronUp } from "lucide-react";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { ChevronDown, ChevronUp, RotateCcw, Clipboard, ClipboardCheck } from "lucide-react";
 import { useState } from "react";
+import { toast } from "sonner";
 import {
   Badge,
   Button,
@@ -14,7 +15,8 @@ import {
 } from "@/shared/ui";
 import { formatDate } from "@/shared/lib/utils";
 import { webhookQueries } from "../service/queries";
-import type { WebhookDelivery, WebhookSubscription } from "../model/types";
+import { webhookMutations } from "../service/mutations";
+import type { WebhookSubscription } from "../model/types";
 import { formatDeliveryStatus, formatEventType } from "../model/transforms";
 
 interface WebhookDeliveriesPanelProps {
@@ -22,18 +24,66 @@ interface WebhookDeliveriesPanelProps {
   onClose: () => void;
 }
 
+/**
+ * WebhookDeliveriesPanel — Stripe-style two-column inspector:
+ *   left rail = list of recent attempts, ordered newest first.
+ *   right rail = detail for the selected row (defaults to newest):
+ *     event type, status, attempt count, request payload (pretty
+ *     JSON), captured response body, replay button, copy buttons.
+ *
+ * Status mapping mirrors Stripe: green for 2xx, amber for retrying,
+ * red for permanent failures. Replay creates a new delivery row at
+ * the subscription's CURRENT URL — recovers from the common "wrong
+ * endpoint at delivery time, fixed since" failure mode.
+ */
 export function WebhookDeliveriesPanel({
   subscription,
   onClose,
 }: WebhookDeliveriesPanelProps) {
   const [expanded, setExpanded] = useState(true);
+  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const queryClient = useQueryClient();
+
   const { data, isLoading } = useQuery(
     webhookQueries.deliveries(subscription.id),
   );
 
-  const deliveries: WebhookDelivery[] = (
-    data as { deliveries?: WebhookDelivery[] } | undefined
-  )?.deliveries ?? [];
+  // Connect-ES returns the proto message verbatim — `eventType` /
+  // `httpStatus` / `responseBody` come through camelCased; we don't
+  // run a domain transform here so this view stays in sync if the
+  // proto evolves.
+  type RawDelivery = {
+    id: string;
+    eventType: string;
+    status: number; // proto enum: 1 PENDING, 2 SUCCESS, 3 FAILED
+    httpStatus: number;
+    attempts: number;
+    payload: string;
+    responseBody: string;
+    createdAt?: { seconds: bigint };
+    deliveredAt?: { seconds: bigint };
+  };
+
+  const deliveries: RawDelivery[] =
+    (data as { deliveries?: RawDelivery[] } | undefined)?.deliveries ?? [];
+  const selected = selectedId
+    ? deliveries.find((d) => d.id === selectedId)
+    : deliveries[0];
+
+  const replay = useMutation({
+    mutationFn: (deliveryId: string) => webhookMutations.replay(deliveryId),
+    onSuccess: () => {
+      toast.success("Replayed delivery", {
+        description:
+          "A new attempt was created. List refreshing — check the top row for the result.",
+      });
+      void queryClient.invalidateQueries({
+        queryKey: ["webhook-deliveries", subscription.id],
+      });
+    },
+    onError: (err) =>
+      toast.error("Replay failed", { description: err.message }),
+  });
 
   return (
     <Card>
@@ -69,45 +119,257 @@ export function WebhookDeliveriesPanel({
               ))}
             </div>
           ) : deliveries.length === 0 ? (
-            <p className="text-sm text-muted-foreground py-4 text-center">
-              No deliveries yet.
+            <p className="text-sm text-muted-foreground py-8 text-center">
+              No deliveries yet. Use{" "}
+              <span className="font-medium">Test</span> on the subscription to
+              fire a sample event.
             </p>
           ) : (
-            <div className="space-y-2">
-              {deliveries.map((delivery) => {
-                const { label, variant } = formatDeliveryStatus(
-                  delivery.status,
-                );
-                return (
-                  <div
-                    key={delivery.id}
-                    className="flex items-center justify-between rounded-md border p-3 text-sm"
-                  >
-                    <div className="flex items-center gap-3">
-                      <Badge variant={variant}>{label}</Badge>
-                      <span>{formatEventType(delivery.event)}</span>
-                    </div>
-                    <div className="flex items-center gap-4 text-muted-foreground">
-                      {delivery.httpStatus != null && (
-                        <span className="font-mono text-xs">
-                          HTTP {delivery.httpStatus}
-                        </span>
-                      )}
-                      <span className="text-xs">
-                        {delivery.attempts} attempt
-                        {delivery.attempts !== 1 ? "s" : ""}
-                      </span>
-                      <span className="text-xs">
-                        {formatDate(delivery.lastAttemptAt)}
-                      </span>
-                    </div>
-                  </div>
-                );
-              })}
+            <div className="grid gap-4 lg:grid-cols-[260px_1fr]">
+              {/* LEFT — list */}
+              <div className="space-y-1.5 lg:max-h-[480px] lg:overflow-y-auto pr-1">
+                {deliveries.map((d) => (
+                  <DeliveryRow
+                    key={d.id}
+                    delivery={d}
+                    selected={selected?.id === d.id}
+                    onClick={() => setSelectedId(d.id)}
+                  />
+                ))}
+              </div>
+
+              {/* RIGHT — detail */}
+              {selected ? (
+                <DeliveryDetail
+                  delivery={selected}
+                  onReplay={() => replay.mutate(selected.id)}
+                  isReplaying={replay.isPending}
+                />
+              ) : (
+                <div className="text-sm text-muted-foreground py-8 text-center">
+                  Select a delivery to inspect.
+                </div>
+              )}
             </div>
           )}
         </CardContent>
       )}
     </Card>
   );
+}
+
+interface RowDelivery {
+  id: string;
+  eventType: string;
+  status: number;
+  httpStatus: number;
+  attempts: number;
+  createdAt?: { seconds: bigint };
+}
+
+function DeliveryRow({
+  delivery,
+  selected,
+  onClick,
+}: {
+  delivery: RowDelivery;
+  selected: boolean;
+  onClick: () => void;
+}) {
+  const status = statusFromProto(delivery.status);
+  const { label, variant } = formatDeliveryStatus(status);
+  return (
+    <button
+      onClick={onClick}
+      className={`w-full text-left rounded-md border p-2.5 text-xs transition-colors ${
+        selected ? "border-primary/60 bg-accent/40" : "hover:bg-accent/20"
+      }`}
+    >
+      <div className="flex items-center justify-between gap-2">
+        <Badge variant={variant} className="shrink-0 text-[10px]">
+          {label}
+        </Badge>
+        {delivery.httpStatus > 0 && (
+          <span
+            className={`font-mono ${
+              delivery.httpStatus >= 200 && delivery.httpStatus < 300
+                ? "text-emerald-600 dark:text-emerald-400"
+                : "text-red-600 dark:text-red-400"
+            }`}
+          >
+            {delivery.httpStatus}
+          </span>
+        )}
+      </div>
+      <div className="mt-1 truncate font-medium">
+        {formatEventType(delivery.eventType)}
+      </div>
+      <div className="mt-0.5 text-muted-foreground">
+        {formatDate(timestampToISO(delivery.createdAt))}
+      </div>
+    </button>
+  );
+}
+
+interface DetailDelivery extends RowDelivery {
+  payload: string;
+  responseBody: string;
+  deliveredAt?: { seconds: bigint };
+}
+
+function DeliveryDetail({
+  delivery,
+  onReplay,
+  isReplaying,
+}: {
+  delivery: DetailDelivery;
+  onReplay: () => void;
+  isReplaying: boolean;
+}) {
+  return (
+    <div className="space-y-4">
+      {/* Header — id + replay */}
+      <div className="flex items-center justify-between">
+        <div>
+          <div className="text-xs text-muted-foreground">Delivery ID</div>
+          <div className="font-mono text-xs">{delivery.id}</div>
+        </div>
+        <Button
+          size="sm"
+          variant="outline"
+          onClick={onReplay}
+          disabled={isReplaying}
+        >
+          <RotateCcw className="mr-2 h-3.5 w-3.5" />
+          {isReplaying ? "Replaying…" : "Replay"}
+        </Button>
+      </div>
+
+      {/* Quick facts */}
+      <dl className="grid grid-cols-2 gap-x-4 gap-y-2 text-xs">
+        <dt className="text-muted-foreground">Event</dt>
+        <dd className="font-mono">{delivery.eventType}</dd>
+        <dt className="text-muted-foreground">HTTP status</dt>
+        <dd className="font-mono">
+          {delivery.httpStatus || (
+            <span className="text-muted-foreground">—</span>
+          )}
+        </dd>
+        <dt className="text-muted-foreground">Attempts</dt>
+        <dd>{delivery.attempts}</dd>
+        <dt className="text-muted-foreground">Created</dt>
+        <dd>{formatDate(timestampToISO(delivery.createdAt))}</dd>
+        {delivery.deliveredAt && (
+          <>
+            <dt className="text-muted-foreground">Delivered</dt>
+            <dd>{formatDate(timestampToISO(delivery.deliveredAt))}</dd>
+          </>
+        )}
+      </dl>
+
+      {/* Request payload */}
+      <Section
+        title="Request payload"
+        body={delivery.payload || ""}
+        prettyJson
+      />
+
+      {/* Response body */}
+      <Section
+        title="Response body"
+        body={delivery.responseBody || ""}
+        emptyHint="Endpoint returned no body, or no attempt has been made yet."
+      />
+    </div>
+  );
+}
+
+function Section({
+  title,
+  body,
+  emptyHint,
+  prettyJson,
+}: {
+  title: string;
+  body: string;
+  emptyHint?: string;
+  prettyJson?: boolean;
+}) {
+  const [copied, setCopied] = useState(false);
+  const formatted = prettyJson ? tryPrettyJson(body) : body;
+  const empty = !body;
+
+  async function copy() {
+    try {
+      await navigator.clipboard.writeText(body);
+      setCopied(true);
+      toast.success("Copied");
+      window.setTimeout(() => setCopied(false), 1500);
+    } catch {
+      toast.error("Copy failed");
+    }
+  }
+
+  return (
+    <div>
+      <div className="flex items-center justify-between mb-1.5">
+        <div className="text-xs font-medium uppercase tracking-wider text-muted-foreground">
+          {title}
+        </div>
+        {!empty && (
+          <Button
+            variant="ghost"
+            size="sm"
+            className="h-7 px-2"
+            onClick={copy}
+          >
+            {copied ? (
+              <ClipboardCheck className="h-3.5 w-3.5" />
+            ) : (
+              <Clipboard className="h-3.5 w-3.5" />
+            )}
+            <span className="ml-1.5 text-xs">Copy</span>
+          </Button>
+        )}
+      </div>
+      {empty ? (
+        <div className="text-xs text-muted-foreground italic">
+          {emptyHint ?? "Empty."}
+        </div>
+      ) : (
+        <pre className="max-h-64 overflow-auto rounded-md border bg-muted/30 p-3 text-[11px] font-mono leading-relaxed whitespace-pre-wrap break-all">
+          {formatted}
+        </pre>
+      )}
+    </div>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────
+
+function statusFromProto(s: number): "pending" | "success" | "failed" | "retrying" {
+  // WebhookDeliveryStatus enum (api.proto):
+  //   0 UNSPECIFIED, 1 PENDING, 2 SUCCESS, 3 FAILED.
+  switch (s) {
+    case 2:
+      return "success";
+    case 3:
+      return "failed";
+    default:
+      return "pending";
+  }
+}
+
+function tryPrettyJson(s: string): string {
+  if (!s) return "";
+  try {
+    return JSON.stringify(JSON.parse(s), null, 2);
+  } catch {
+    return s;
+  }
+}
+
+function timestampToISO(t?: { seconds: bigint }): string | undefined {
+  if (!t) return undefined;
+  return new Date(Number(t.seconds) * 1000).toISOString();
 }

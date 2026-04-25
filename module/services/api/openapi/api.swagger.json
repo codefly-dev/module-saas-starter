@@ -2615,6 +2615,75 @@
         ]
       }
     },
+    "/v1/webhooks/deliveries/{id}": {
+      "get": {
+        "operationId": "WebhookService_GetDelivery",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/customersWebhookDelivery"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/rpcStatus"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "type": "string"
+          }
+        ],
+        "tags": [
+          "WebhookService"
+        ]
+      }
+    },
+    "/v1/webhooks/deliveries/{id}:replay": {
+      "post": {
+        "operationId": "WebhookService_ReplayDelivery",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/customersWebhookDelivery"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/rpcStatus"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "id",
+            "description": "Replay the existing delivery's payload to its subscription's\ncurrent URL with current secret. Result is a NEW delivery row\n(full audit trail of the replay). The original row is unchanged.",
+            "in": "path",
+            "required": true,
+            "type": "string"
+          },
+          {
+            "name": "body",
+            "in": "body",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/WebhookServiceReplayDeliveryBody"
+            }
+          }
+        ],
+        "tags": [
+          "WebhookService"
+        ]
+      }
+    },
     "/v1/webhooks/{id}": {
       "delete": {
         "operationId": "WebhookService_DeleteSubscription",
@@ -2639,6 +2708,44 @@
             "in": "path",
             "required": true,
             "type": "string"
+          }
+        ],
+        "tags": [
+          "WebhookService"
+        ]
+      }
+    },
+    "/v1/webhooks/{id}:rotateSecret": {
+      "post": {
+        "operationId": "WebhookService_RotateSecret",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/customersRotateWebhookSecretResponse"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/rpcStatus"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "type": "string"
+          },
+          {
+            "name": "body",
+            "in": "body",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/WebhookServiceRotateSecretBody"
+            }
           }
         ],
         "tags": [
@@ -2816,8 +2923,27 @@
         }
       }
     },
-    "WebhookServiceTestWebhookBody": {
+    "WebhookServiceReplayDeliveryBody": {
       "type": "object"
+    },
+    "WebhookServiceRotateSecretBody": {
+      "type": "object",
+      "properties": {
+        "gracePeriodSeconds": {
+          "type": "integer",
+          "format": "int32",
+          "description": "grace_period_seconds — how long the OLD secret stays valid for\nsignature verification on incoming replays. 0 = revoke\nimmediately; 86400 (24h) is the recommended default for staged\nrollouts. Bound to a 7-day max server-side."
+        }
+      }
+    },
+    "WebhookServiceTestWebhookBody": {
+      "type": "object",
+      "properties": {
+        "eventType": {
+          "type": "string",
+          "description": "event_type to send. Empty defaults to \"webhook.test\"; otherwise\nany string the FE picked from the supported events list. The\npayload itself is server-generated sample JSON."
+        }
+      }
     },
     "customersAPIKey": {
       "type": "object",
@@ -4091,6 +4217,19 @@
         }
       }
     },
+    "customersRotateWebhookSecretResponse": {
+      "type": "object",
+      "properties": {
+        "secret": {
+          "type": "string",
+          "description": "The new signing secret, returned ONCE on rotation. Show + copy\nin the FE; not retrievable again."
+        },
+        "oldSecretExpiresAt": {
+          "type": "string",
+          "format": "date-time"
+        }
+      }
+    },
     "customersSearchUsersResponse": {
       "type": "object",
       "properties": {
@@ -4384,6 +4523,15 @@
         "deliveredAt": {
           "type": "string",
           "format": "date-time"
+        },
+        "responseBody": {
+          "type": "string",
+          "description": "response_body — captured upstream response (truncated server-side\nto 64KiB). Empty when the request never connected."
+        },
+        "nextRetryAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "next_retry_at — only set when status=FAILED and attempts \u003c\nmax_attempts; means the dispatcher will pick this up at that time."
         }
       }
     },

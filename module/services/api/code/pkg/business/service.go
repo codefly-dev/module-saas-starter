@@ -25,8 +25,9 @@ type Service struct {
 	entitlements EntitlementChecker
 	features     FeatureChecker
 	membership   MembershipInvalidator
-	slack        *SlackNotifier // optional: sends critical notifications to Slack
-	oauthState   *auth.OAuthStateSigner
+	slack         *SlackNotifier // optional: sends critical notifications to Slack
+	oauthState    *auth.OAuthStateSigner
+	webhookSender *WebhookSender // synchronous send path for Test + Replay
 }
 
 // CodeExchanger abstracts the OAuth 2.0 code-for-token exchange so the
@@ -78,6 +79,24 @@ func (s *Service) SetJWTMinter(m auth.JWTMinter) {
 // multi-instance deployments.
 func (s *Service) SetOAuthStateSigner(signer *auth.OAuthStateSigner) {
 	s.oauthState = signer
+}
+
+// SetWebhookSender wires the synchronous send path used by the
+// TestWebhook + ReplayDelivery RPCs. Defaults lazily to a sender
+// constructed from s.store on first use, so tests don't need to wire
+// it explicitly; production calls this so the sender shares the
+// configured HTTP client + timeout.
+func (s *Service) SetWebhookSender(sender *WebhookSender) {
+	s.webhookSender = sender
+}
+
+// webhookSenderOrDefault returns the wired sender or lazily creates
+// one. Centralizes the fallback so callers don't repeat the pattern.
+func (s *Service) webhookSenderOrDefault() *WebhookSender {
+	if s.webhookSender == nil {
+		s.webhookSender = NewWebhookSender(s.store)
+	}
+	return s.webhookSender
 }
 
 // JWTMinter returns the configured minter so adapters (e.g. the

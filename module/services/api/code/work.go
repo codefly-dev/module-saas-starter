@@ -84,6 +84,12 @@ func doWork(ctx context.Context) (Clean, error) {
 	auditEmitter := business.NewAsyncAuditEmitter(store, 1024)
 	service.SetAuditEmitter(auditEmitter)
 
+	// Synchronous webhook send path used by TestWebhook + ReplayDelivery.
+	// Distinct from the async dispatcher (audit-driven outbound webhooks)
+	// — this one is request-scoped so the FE shows immediate outcome
+	// after a click.
+	service.SetWebhookSender(business.NewWebhookSender(store))
+
 	entitlementChecker := business.NewDefaultEntitlementChecker(store)
 	service.SetEntitlementChecker(entitlementChecker)
 
@@ -112,6 +118,23 @@ func doWork(ctx context.Context) (Clean, error) {
 	}
 
 	adapters.WithService(service)
+
+	// /v1/status — public health probe surface. Probes run in parallel
+	// with a 2s budget each; overall status is the worst result. The
+	// FE /status page reads this; k8s liveness/readiness can too.
+	adapters.RegisterStatusProbe(adapters.StatusProbe{
+		Name: "postgres",
+		Check: func(ctx context.Context) error {
+			return store.Pool().Ping(ctx)
+		},
+	})
+	if vaultClient != nil {
+		adapters.RegisterStatusProbe(adapters.StatusProbe{
+			Name:  "vault",
+			Check: vaultClient.Health,
+		})
+	}
+	adapters.RegisterHTTPRoute("/v1/status", adapters.NewStatusHTTPHandler(service))
 
 	// Billing: wire Stripe webhook handler at /v1/billing/webhook AND
 	// the authenticated /v1/billing/checkout + /v1/billing/portal

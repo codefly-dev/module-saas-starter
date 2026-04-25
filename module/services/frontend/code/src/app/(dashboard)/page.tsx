@@ -5,6 +5,7 @@ import { RoleGate } from "@/components/auth/role-gate";
 import { Shield, Bell, FileText, ShieldCheck, ArrowUpRight, Activity } from "lucide-react";
 import Link from "next/link";
 import { Sparkline } from "@/components/sparkline";
+import { ActivityFeed } from "@/components/activity-feed";
 import { useAuth } from "@/lib/auth";
 
 /**
@@ -98,6 +99,12 @@ export default function DashboardPage() {
           is a placeholder — wire to ListAuditEvents once the
           aggregate-by-day query lands.
           ─────────────────────────────────────────────────────── */}
+      {/* ── ACTIVITY FEED ───────────────────────────────────
+          Read-only view of recent audit events scoped to the user's
+          primary org. Hides itself when there are no events so a
+          fresh account doesn't see "nothing here yet". */}
+      <ActivityFeed />
+
       <RoleGate require="admin">
         <div>
           <h2 className="text-lg font-semibold tracking-tight mb-3">

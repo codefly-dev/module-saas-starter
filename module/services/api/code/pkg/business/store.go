@@ -117,10 +117,13 @@ type Store interface {
 
 	// Webhooks
 	CreateWebhookSubscription(ctx context.Context, sub *WebhookSubscription) error
+	GetWebhookSubscription(ctx context.Context, id string) (*WebhookSubscription, error)
+	UpdateWebhookSubscription(ctx context.Context, sub *WebhookSubscription) error
 	DeleteWebhookSubscription(ctx context.Context, id string) error
 	ListWebhookSubscriptions(ctx context.Context, orgID string) ([]*WebhookSubscription, error)
 	GetActiveWebhookSubscriptions(ctx context.Context, eventType string) ([]*WebhookSubscription, error)
 	CreateWebhookDelivery(ctx context.Context, delivery *WebhookDelivery) error
+	GetWebhookDelivery(ctx context.Context, id string) (*WebhookDelivery, error)
 	UpdateWebhookDelivery(ctx context.Context, delivery *WebhookDelivery) error
 	ListWebhookDeliveries(ctx context.Context, subscriptionID string, pageSize int) ([]*WebhookDelivery, error)
 	GetPendingDeliveries(ctx context.Context, limit int) ([]*WebhookDelivery, error)

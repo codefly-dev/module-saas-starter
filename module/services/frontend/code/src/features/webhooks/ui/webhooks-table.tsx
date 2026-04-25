@@ -9,7 +9,7 @@ import {
   useReactTable,
   type SortingState,
 } from "@tanstack/react-table";
-import { MoreHorizontal, Send, Trash2 } from "lucide-react";
+import { MoreHorizontal, Send, Trash2, Key } from "lucide-react";
 import { DataTable } from "@/shared/ui/data-table";
 import {
   Badge,
@@ -33,6 +33,7 @@ interface WebhooksTableProps {
   onTest: (webhook: WebhookSubscription) => void;
   onDelete: (webhook: WebhookSubscription) => void;
   onSelect: (webhook: WebhookSubscription) => void;
+  onRotateSecret: (webhook: WebhookSubscription) => void;
 }
 
 export function WebhooksTable({
@@ -41,6 +42,7 @@ export function WebhooksTable({
   onTest,
   onDelete,
   onSelect,
+  onRotateSecret,
 }: WebhooksTableProps) {
   const [sorting, setSorting] = useState<SortingState>([]);
 
@@ -106,6 +108,11 @@ export function WebhooksTable({
                   <Send className="mr-2 h-4 w-4" />
                   Test
                 </DropdownMenuItem>
+                <DropdownMenuItem onClick={() => onRotateSecret(webhook)}>
+                  <Key className="mr-2 h-4 w-4" />
+                  Rotate secret
+                </DropdownMenuItem>
+                <DropdownMenuSeparator />
                 <DropdownMenuItem
                   onClick={() => onDelete(webhook)}
                   className="text-destructive"
@@ -119,7 +126,7 @@ export function WebhooksTable({
         },
       }),
     ],
-    [onTest, onDelete],
+    [onTest, onDelete, onRotateSecret],
   );
 
   const table = useReactTable({

@@ -128,12 +128,27 @@ func (d *AsyncWebhookDispatcher) deliver(ctx context.Context, sub *WebhookSubscr
 		return
 	}
 
-	// Compute HMAC-SHA256 signature
+	d.dispatchHTTP(ctx, sub, delivery, payloadBytes)
+}
+
+// dispatchHTTP performs the actual HTTP POST + result write for a
+// previously-created delivery row. Extracted so deliver / TestWebhook
+// / ReplayDelivery share the exact transport semantics — same headers,
+// same signature, same response capture rules. The delivery row MUST
+// already exist in the store (created by the caller) so a partial
+// failure leaves an audit trail.
+func (d *AsyncWebhookDispatcher) dispatchHTTP(
+	ctx context.Context,
+	sub *WebhookSubscription,
+	delivery *WebhookDelivery,
+	payloadBytes []byte,
+) {
+	w := wool.Get(ctx).In("WebhookDispatcher.dispatchHTTP")
+
 	mac := hmac.New(sha256.New, []byte(sub.Secret))
 	mac.Write(payloadBytes)
 	signature := "sha256=" + hex.EncodeToString(mac.Sum(nil))
 
-	// Send HTTP POST
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, sub.URL, bytes.NewReader(payloadBytes))
 	if err != nil {
 		d.markFailed(ctx, delivery, 0, err.Error())
@@ -141,7 +156,8 @@ func (d *AsyncWebhookDispatcher) deliver(ctx context.Context, sub *WebhookSubscr
 	}
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("X-Webhook-Signature", signature)
-	req.Header.Set("X-Webhook-Delivery-ID", deliveryID)
+	req.Header.Set("X-Webhook-Delivery-ID", delivery.ID)
+	req.Header.Set("X-Webhook-Event", delivery.EventType)
 
 	resp, err := d.client.Do(req)
 	if err != nil {
@@ -168,6 +184,19 @@ func (d *AsyncWebhookDispatcher) deliver(ctx context.Context, sub *WebhookSubscr
 	if err := d.store.UpdateWebhookDelivery(ctx, delivery); err != nil {
 		w.Debug("failed to update webhook delivery", wool.ErrField(err))
 	}
+}
+
+// SendOnce is the public entry point used by TestWebhook + ReplayDelivery.
+// Caller pre-builds the WebhookDelivery row (which must already exist in
+// the store) and the raw payload bytes; we sign + POST + record the
+// result inline (no goroutine, returns when the HTTP round-trip finishes).
+func (d *AsyncWebhookDispatcher) SendOnce(
+	ctx context.Context,
+	sub *WebhookSubscription,
+	delivery *WebhookDelivery,
+	payloadBytes []byte,
+) {
+	d.dispatchHTTP(ctx, sub, delivery, payloadBytes)
 }
 
 // retryBackoffs defines the delay before each retry attempt.

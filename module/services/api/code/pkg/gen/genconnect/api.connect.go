@@ -231,9 +231,18 @@ const (
 	// WebhookServiceListDeliveriesProcedure is the fully-qualified name of the WebhookService's
 	// ListDeliveries RPC.
 	WebhookServiceListDeliveriesProcedure = "/customers.WebhookService/ListDeliveries"
+	// WebhookServiceGetDeliveryProcedure is the fully-qualified name of the WebhookService's
+	// GetDelivery RPC.
+	WebhookServiceGetDeliveryProcedure = "/customers.WebhookService/GetDelivery"
+	// WebhookServiceReplayDeliveryProcedure is the fully-qualified name of the WebhookService's
+	// ReplayDelivery RPC.
+	WebhookServiceReplayDeliveryProcedure = "/customers.WebhookService/ReplayDelivery"
 	// WebhookServiceTestWebhookProcedure is the fully-qualified name of the WebhookService's
 	// TestWebhook RPC.
 	WebhookServiceTestWebhookProcedure = "/customers.WebhookService/TestWebhook"
+	// WebhookServiceRotateSecretProcedure is the fully-qualified name of the WebhookService's
+	// RotateSecret RPC.
+	WebhookServiceRotateSecretProcedure = "/customers.WebhookService/RotateSecret"
 	// NotificationServiceListNotificationsProcedure is the fully-qualified name of the
 	// NotificationService's ListNotifications RPC.
 	NotificationServiceListNotificationsProcedure = "/customers.NotificationService/ListNotifications"
@@ -2227,7 +2236,10 @@ type WebhookServiceClient interface {
 	DeleteSubscription(context.Context, *connect.Request[gen.DeleteWebhookSubscriptionRequest]) (*connect.Response[emptypb.Empty], error)
 	ListSubscriptions(context.Context, *connect.Request[gen.ListWebhookSubscriptionsRequest]) (*connect.Response[gen.ListWebhookSubscriptionsResponse], error)
 	ListDeliveries(context.Context, *connect.Request[gen.ListWebhookDeliveriesRequest]) (*connect.Response[gen.ListWebhookDeliveriesResponse], error)
+	GetDelivery(context.Context, *connect.Request[gen.GetWebhookDeliveryRequest]) (*connect.Response[gen.WebhookDelivery], error)
+	ReplayDelivery(context.Context, *connect.Request[gen.ReplayWebhookDeliveryRequest]) (*connect.Response[gen.WebhookDelivery], error)
 	TestWebhook(context.Context, *connect.Request[gen.TestWebhookRequest]) (*connect.Response[gen.WebhookDelivery], error)
+	RotateSecret(context.Context, *connect.Request[gen.RotateWebhookSecretRequest]) (*connect.Response[gen.RotateWebhookSecretResponse], error)
 }
 
 // NewWebhookServiceClient constructs a client for the customers.WebhookService service. By default,
@@ -2265,10 +2277,28 @@ func NewWebhookServiceClient(httpClient connect.HTTPClient, baseURL string, opts
 			connect.WithSchema(webhookServiceMethods.ByName("ListDeliveries")),
 			connect.WithClientOptions(opts...),
 		),
+		getDelivery: connect.NewClient[gen.GetWebhookDeliveryRequest, gen.WebhookDelivery](
+			httpClient,
+			baseURL+WebhookServiceGetDeliveryProcedure,
+			connect.WithSchema(webhookServiceMethods.ByName("GetDelivery")),
+			connect.WithClientOptions(opts...),
+		),
+		replayDelivery: connect.NewClient[gen.ReplayWebhookDeliveryRequest, gen.WebhookDelivery](
+			httpClient,
+			baseURL+WebhookServiceReplayDeliveryProcedure,
+			connect.WithSchema(webhookServiceMethods.ByName("ReplayDelivery")),
+			connect.WithClientOptions(opts...),
+		),
 		testWebhook: connect.NewClient[gen.TestWebhookRequest, gen.WebhookDelivery](
 			httpClient,
 			baseURL+WebhookServiceTestWebhookProcedure,
 			connect.WithSchema(webhookServiceMethods.ByName("TestWebhook")),
+			connect.WithClientOptions(opts...),
+		),
+		rotateSecret: connect.NewClient[gen.RotateWebhookSecretRequest, gen.RotateWebhookSecretResponse](
+			httpClient,
+			baseURL+WebhookServiceRotateSecretProcedure,
+			connect.WithSchema(webhookServiceMethods.ByName("RotateSecret")),
 			connect.WithClientOptions(opts...),
 		),
 	}
@@ -2280,7 +2310,10 @@ type webhookServiceClient struct {
 	deleteSubscription *connect.Client[gen.DeleteWebhookSubscriptionRequest, emptypb.Empty]
 	listSubscriptions  *connect.Client[gen.ListWebhookSubscriptionsRequest, gen.ListWebhookSubscriptionsResponse]
 	listDeliveries     *connect.Client[gen.ListWebhookDeliveriesRequest, gen.ListWebhookDeliveriesResponse]
+	getDelivery        *connect.Client[gen.GetWebhookDeliveryRequest, gen.WebhookDelivery]
+	replayDelivery     *connect.Client[gen.ReplayWebhookDeliveryRequest, gen.WebhookDelivery]
 	testWebhook        *connect.Client[gen.TestWebhookRequest, gen.WebhookDelivery]
+	rotateSecret       *connect.Client[gen.RotateWebhookSecretRequest, gen.RotateWebhookSecretResponse]
 }
 
 // CreateSubscription calls customers.WebhookService.CreateSubscription.
@@ -2303,9 +2336,24 @@ func (c *webhookServiceClient) ListDeliveries(ctx context.Context, req *connect.
 	return c.listDeliveries.CallUnary(ctx, req)
 }
 
+// GetDelivery calls customers.WebhookService.GetDelivery.
+func (c *webhookServiceClient) GetDelivery(ctx context.Context, req *connect.Request[gen.GetWebhookDeliveryRequest]) (*connect.Response[gen.WebhookDelivery], error) {
+	return c.getDelivery.CallUnary(ctx, req)
+}
+
+// ReplayDelivery calls customers.WebhookService.ReplayDelivery.
+func (c *webhookServiceClient) ReplayDelivery(ctx context.Context, req *connect.Request[gen.ReplayWebhookDeliveryRequest]) (*connect.Response[gen.WebhookDelivery], error) {
+	return c.replayDelivery.CallUnary(ctx, req)
+}
+
 // TestWebhook calls customers.WebhookService.TestWebhook.
 func (c *webhookServiceClient) TestWebhook(ctx context.Context, req *connect.Request[gen.TestWebhookRequest]) (*connect.Response[gen.WebhookDelivery], error) {
 	return c.testWebhook.CallUnary(ctx, req)
+}
+
+// RotateSecret calls customers.WebhookService.RotateSecret.
+func (c *webhookServiceClient) RotateSecret(ctx context.Context, req *connect.Request[gen.RotateWebhookSecretRequest]) (*connect.Response[gen.RotateWebhookSecretResponse], error) {
+	return c.rotateSecret.CallUnary(ctx, req)
 }
 
 // WebhookServiceHandler is an implementation of the customers.WebhookService service.
@@ -2314,7 +2362,10 @@ type WebhookServiceHandler interface {
 	DeleteSubscription(context.Context, *connect.Request[gen.DeleteWebhookSubscriptionRequest]) (*connect.Response[emptypb.Empty], error)
 	ListSubscriptions(context.Context, *connect.Request[gen.ListWebhookSubscriptionsRequest]) (*connect.Response[gen.ListWebhookSubscriptionsResponse], error)
 	ListDeliveries(context.Context, *connect.Request[gen.ListWebhookDeliveriesRequest]) (*connect.Response[gen.ListWebhookDeliveriesResponse], error)
+	GetDelivery(context.Context, *connect.Request[gen.GetWebhookDeliveryRequest]) (*connect.Response[gen.WebhookDelivery], error)
+	ReplayDelivery(context.Context, *connect.Request[gen.ReplayWebhookDeliveryRequest]) (*connect.Response[gen.WebhookDelivery], error)
 	TestWebhook(context.Context, *connect.Request[gen.TestWebhookRequest]) (*connect.Response[gen.WebhookDelivery], error)
+	RotateSecret(context.Context, *connect.Request[gen.RotateWebhookSecretRequest]) (*connect.Response[gen.RotateWebhookSecretResponse], error)
 }
 
 // NewWebhookServiceHandler builds an HTTP handler from the service implementation. It returns the
@@ -2348,10 +2399,28 @@ func NewWebhookServiceHandler(svc WebhookServiceHandler, opts ...connect.Handler
 		connect.WithSchema(webhookServiceMethods.ByName("ListDeliveries")),
 		connect.WithHandlerOptions(opts...),
 	)
+	webhookServiceGetDeliveryHandler := connect.NewUnaryHandler(
+		WebhookServiceGetDeliveryProcedure,
+		svc.GetDelivery,
+		connect.WithSchema(webhookServiceMethods.ByName("GetDelivery")),
+		connect.WithHandlerOptions(opts...),
+	)
+	webhookServiceReplayDeliveryHandler := connect.NewUnaryHandler(
+		WebhookServiceReplayDeliveryProcedure,
+		svc.ReplayDelivery,
+		connect.WithSchema(webhookServiceMethods.ByName("ReplayDelivery")),
+		connect.WithHandlerOptions(opts...),
+	)
 	webhookServiceTestWebhookHandler := connect.NewUnaryHandler(
 		WebhookServiceTestWebhookProcedure,
 		svc.TestWebhook,
 		connect.WithSchema(webhookServiceMethods.ByName("TestWebhook")),
+		connect.WithHandlerOptions(opts...),
+	)
+	webhookServiceRotateSecretHandler := connect.NewUnaryHandler(
+		WebhookServiceRotateSecretProcedure,
+		svc.RotateSecret,
+		connect.WithSchema(webhookServiceMethods.ByName("RotateSecret")),
 		connect.WithHandlerOptions(opts...),
 	)
 	return "/customers.WebhookService/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -2364,8 +2433,14 @@ func NewWebhookServiceHandler(svc WebhookServiceHandler, opts ...connect.Handler
 			webhookServiceListSubscriptionsHandler.ServeHTTP(w, r)
 		case WebhookServiceListDeliveriesProcedure:
 			webhookServiceListDeliveriesHandler.ServeHTTP(w, r)
+		case WebhookServiceGetDeliveryProcedure:
+			webhookServiceGetDeliveryHandler.ServeHTTP(w, r)
+		case WebhookServiceReplayDeliveryProcedure:
+			webhookServiceReplayDeliveryHandler.ServeHTTP(w, r)
 		case WebhookServiceTestWebhookProcedure:
 			webhookServiceTestWebhookHandler.ServeHTTP(w, r)
+		case WebhookServiceRotateSecretProcedure:
+			webhookServiceRotateSecretHandler.ServeHTTP(w, r)
 		default:
 			http.NotFound(w, r)
 		}
@@ -2391,8 +2466,20 @@ func (UnimplementedWebhookServiceHandler) ListDeliveries(context.Context, *conne
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("customers.WebhookService.ListDeliveries is not implemented"))
 }
 
+func (UnimplementedWebhookServiceHandler) GetDelivery(context.Context, *connect.Request[gen.GetWebhookDeliveryRequest]) (*connect.Response[gen.WebhookDelivery], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("customers.WebhookService.GetDelivery is not implemented"))
+}
+
+func (UnimplementedWebhookServiceHandler) ReplayDelivery(context.Context, *connect.Request[gen.ReplayWebhookDeliveryRequest]) (*connect.Response[gen.WebhookDelivery], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("customers.WebhookService.ReplayDelivery is not implemented"))
+}
+
 func (UnimplementedWebhookServiceHandler) TestWebhook(context.Context, *connect.Request[gen.TestWebhookRequest]) (*connect.Response[gen.WebhookDelivery], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("customers.WebhookService.TestWebhook is not implemented"))
+}
+
+func (UnimplementedWebhookServiceHandler) RotateSecret(context.Context, *connect.Request[gen.RotateWebhookSecretRequest]) (*connect.Response[gen.RotateWebhookSecretResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("customers.WebhookService.RotateSecret is not implemented"))
 }
 
 // NotificationServiceClient is a client for the customers.NotificationService service.

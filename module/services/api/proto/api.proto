@@ -1062,6 +1062,12 @@ message WebhookDelivery {
   int32 http_status = 7;
   google.protobuf.Timestamp created_at = 8;
   google.protobuf.Timestamp delivered_at = 9;
+  // response_body — captured upstream response (truncated server-side
+  // to 64KiB). Empty when the request never connected.
+  string response_body = 10;
+  // next_retry_at — only set when status=FAILED and attempts <
+  // max_attempts; means the dispatcher will pick this up at that time.
+  google.protobuf.Timestamp next_retry_at = 11;
 }
 
 message CreateWebhookSubscriptionRequest {
@@ -1099,6 +1105,37 @@ message ListWebhookDeliveriesResponse {
 
 message TestWebhookRequest {
   string id = 1 [(buf.validate.field).string.uuid = true];
+  // event_type to send. Empty defaults to "webhook.test"; otherwise
+  // any string the FE picked from the supported events list. The
+  // payload itself is server-generated sample JSON.
+  string event_type = 2;
+}
+
+message GetWebhookDeliveryRequest {
+  string id = 1 [(buf.validate.field).string.uuid = true];
+}
+
+message ReplayWebhookDeliveryRequest {
+  // Replay the existing delivery's payload to its subscription's
+  // current URL with current secret. Result is a NEW delivery row
+  // (full audit trail of the replay). The original row is unchanged.
+  string id = 1 [(buf.validate.field).string.uuid = true];
+}
+
+message RotateWebhookSecretRequest {
+  string id = 1 [(buf.validate.field).string.uuid = true];
+  // grace_period_seconds — how long the OLD secret stays valid for
+  // signature verification on incoming replays. 0 = revoke
+  // immediately; 86400 (24h) is the recommended default for staged
+  // rollouts. Bound to a 7-day max server-side.
+  int32 grace_period_seconds = 2;
+}
+
+message RotateWebhookSecretResponse {
+  // The new signing secret, returned ONCE on rotation. Show + copy
+  // in the FE; not retrievable again.
+  string secret = 1;
+  google.protobuf.Timestamp old_secret_expires_at = 2;
 }
 
 // WebhookService — webhook subscription and delivery management
@@ -1115,8 +1152,17 @@ service WebhookService {
   rpc ListDeliveries(ListWebhookDeliveriesRequest) returns (ListWebhookDeliveriesResponse) {
     option (google.api.http) = { get: "/v1/webhooks/{subscription_id}/deliveries" };
   }
+  rpc GetDelivery(GetWebhookDeliveryRequest) returns (WebhookDelivery) {
+    option (google.api.http) = { get: "/v1/webhooks/deliveries/{id}" };
+  }
+  rpc ReplayDelivery(ReplayWebhookDeliveryRequest) returns (WebhookDelivery) {
+    option (google.api.http) = { post: "/v1/webhooks/deliveries/{id}:replay" body: "*" };
+  }
   rpc TestWebhook(TestWebhookRequest) returns (WebhookDelivery) {
     option (google.api.http) = { post: "/v1/webhooks/{id}:test" body: "*" };
+  }
+  rpc RotateSecret(RotateWebhookSecretRequest) returns (RotateWebhookSecretResponse) {
+    option (google.api.http) = { post: "/v1/webhooks/{id}:rotateSecret" body: "*" };
   }
 }
 
