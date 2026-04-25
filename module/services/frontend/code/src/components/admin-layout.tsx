@@ -54,6 +54,7 @@ import {
   Monitor,
 } from "lucide-react";
 import { NotificationBell } from "@/features/notifications/ui/notification-bell";
+import { ThemeToggle } from "@/components/theme-toggle";
 
 // Regular user nav — visible to all authenticated users
 const userNav = [
@@ -236,6 +237,7 @@ export function AdminLayout({ children }: { children: React.ReactNode }) {
           <SidebarTrigger />
           <Separator orientation="vertical" className="h-6" />
           <div className="flex-1" />
+          <ThemeToggle />
           <NotificationBell />
         </header>
         {/* Route-content fade-in. The key={pathname} forces React

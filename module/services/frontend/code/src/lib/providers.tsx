@@ -1,6 +1,7 @@
 "use client";
 
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { ThemeProvider } from "next-themes";
 import { createContext, useContext, useState, type ReactNode } from "react";
 import { AuthProvider } from "./auth";
 import { adminConfig } from "./admin-config";
@@ -26,12 +27,23 @@ export function Providers({ children }: { children: ReactNode }) {
   );
 
   return (
-    <QueryClientProvider client={queryClient}>
-      <AuthProvider>
-        <AdminConfigContext.Provider value={adminConfig}>
-          {children}
-        </AdminConfigContext.Provider>
-      </AuthProvider>
-    </QueryClientProvider>
+    // ThemeProvider wraps everything so cmd+K, toasts, and the
+    // admin chrome all read the same theme. attribute="class"
+    // matches the .dark CSS variant in globals.css. defaultTheme
+    // "system" honours the OS preference until the user picks one.
+    <ThemeProvider
+      attribute="class"
+      defaultTheme="system"
+      enableSystem
+      disableTransitionOnChange
+    >
+      <QueryClientProvider client={queryClient}>
+        <AuthProvider>
+          <AdminConfigContext.Provider value={adminConfig}>
+            {children}
+          </AdminConfigContext.Provider>
+        </AuthProvider>
+      </QueryClientProvider>
+    </ThemeProvider>
   );
 }
