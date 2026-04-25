@@ -27,3 +27,9 @@ services:
     - name: auth-sidecar
     - name: cache
     - name: frontend
+    # object-storage runs MinIO via the s3 plugin — declared as a
+    # service-dependency by api for the audit-log → S3 export feature.
+    # Must be listed here too, otherwise the dependency-graph resolver
+    # in `codefly run` (and the test-time WithDependencies harness)
+    # errors with "resource <object-storage> not found".
+    - name: object-storage

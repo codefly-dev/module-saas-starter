@@ -1,0 +1,241 @@
+# Dogfooding the saas-starter
+
+> A scripted walk-through of every shipped feature, organized by what
+> you need wired (nothing → fixture → real Stripe → real WorkOS).
+> Tick boxes as you go; report regressions inline as commits or
+> issues.
+
+---
+
+## Pre-flight
+
+Run **once** to make sure the agents and module are aligned with the
+current source.
+
+```bash
+# 1. Build agents (s3 plugin v0.0.2 must be installed locally)
+cd ~/Development/deus/codefly.dev/agents/services/s3 && codefly agent build
+
+# 2. Sync the module so codefly picks up the new object-storage entry
+cd ~/Development/deus/codefly.dev/agents/modules/saas-starter
+codefly sync service       # for each: api, frontend, object-storage
+
+# 3. Boot the stack
+codefly run service frontend --fixture dev-admin
+```
+
+Expected boot order: `vault → store → cache → object-storage (s3 plugin
+→ MinIO at port 9xxx) → api → auth-sidecar → frontend`. If any service
+hangs at "waiting for ready", check that step's `--debug` output.
+
+The TUI shows green dots when each service is up. Wait for **frontend**
+to report a URL — typically `http://localhost:21931`.
+
+---
+
+## Tier 1 — fixture-only (no external creds needed)
+
+These exercise everything that doesn't need Stripe / WorkOS / a real
+SMTP. Every box should pass cleanly with just the dev-admin fixture.
+
+### Login + identity
+
+- [ ] `/auth/login` shows the four fixture users (Sarah / Alice / Bob / Carol).
+- [ ] Click **Sarah Chen** (super_admin). Lands on `/`. "Welcome back" hero visible.
+- [ ] Sidebar shows admin groups: Users & Access · Platform · Billing · Integrations · Developer.
+- [ ] Open `/admin` — every nav link returns 200, no 403/404.
+- [ ] Logout (avatar dropdown). Lands on `/auth/login`. Browser cookie cleared.
+
+### Theme toggle (new)
+
+- [ ] Header has a sun/moon/monitor icon next to the bell.
+- [ ] Click it — three options: Light · Dark · System. Selected gets a check.
+- [ ] Pick **Dark**. Page repaints immediately. Reload — still dark.
+- [ ] Pick **System**. macOS dark-mode toggle now drives the page.
+
+### General settings (new)
+
+- [ ] Visit `/settings`. Three cards: Appearance · Time & date · Email preferences.
+- [ ] Change theme dropdown to **Light** + click "Save appearance" — toast "Settings saved".
+- [ ] Reload — theme is light.
+- [ ] **Open in another browser** (or incognito) → log in as Sarah → /settings reflects light. ThemeSync working cross-device.
+- [ ] Set timezone to `Europe/Paris`, time format `24h` — Save. Reload — preserved.
+- [ ] Toggle off Marketing email — Save. Reload — toggle stays off. Security alerts checkbox is **disabled-checked** (forced on).
+
+### Org admin chrome
+
+- [ ] `/admin/users` — 4 fixture users, table renders, can sort by columns.
+- [ ] `/admin/organizations` — 1+ orgs (Acme Corp).
+- [ ] `/admin/organizations/settings` — change logo URL → save → toast.
+- [ ] `/admin/teams` — empty or seeded team.
+- [ ] `/admin/roles` — system + custom roles list.
+- [ ] `/admin/sessions` — current session shown.
+- [ ] `/admin/audit-log` — events from the seeding flow + your logins.
+
+### API keys + scopes (new picker)
+
+- [ ] `/admin/api-keys` — pick **Acme Corp** in the org-selector → empty table or seeded keys.
+- [ ] Click **Create Key** — dialog opens.
+- [ ] Form has Name + Environment (Live/Test) + **Scopes** section (NEW).
+- [ ] Scopes radio offers: Read-only · Read & write · Webhook management · No scopes.
+- [ ] Pick "Read-only", name it `dogfood-readonly`, Live, Save.
+- [ ] Plaintext key shown once. **"Copy the key first"** button is disabled until you click Copy.
+- [ ] Click Copy → "Done" enables → click Done. Key visible in table with `cfly_sk_…` prefix mask.
+- [ ] Revoke that key — confirmation dialog → Revoke → row tagged "Revoked", sinks to bottom of list.
+
+### Webhooks v2
+
+- [ ] `/admin/webhooks` — pick Acme Corp.
+- [ ] Click **Create Webhook** — dialog. Fill `https://example.com/dogfood` + tick `User Created` → Create.
+- [ ] Toast "Webhook created". Row appears.
+- [ ] Row actions menu (⋮) → **Test**. Toast "Test delivery sent".
+- [ ] Click the row — Deliveries panel opens (right rail). At least 1 row showing 404 or connection-refused.
+- [ ] Click **Replay** in the detail pane. Toast "Replayed delivery". List grows by one.
+- [ ] Row actions menu → **Rotate secret**. window.confirm → OK → New-Secret dialog.
+- [ ] Dialog shows the new `whsec_…`. **"I've saved it" button is disabled until you Copy.** Click Copy → enable → I've saved it → dialog closes.
+- [ ] Delete the webhook. Toast.
+
+### Audit-export (new admin form)
+
+- [ ] `/admin/audit-export` — pick Acme Corp. EmptyState gone, form visible.
+- [ ] Fill bucket=`dogfood`, accessKeyId=`minioadmin`, secret=`minioadmin`, endpoint=`http://localhost:<minio-port>` (read the port from the codefly run TUI; it's the object-storage TCP endpoint).
+- [ ] **Save** with the right port. Toast "Audit export saved". Form flips to Update mode. Hint "(preserved)" appears next to secret input.
+- [ ] **Save with wrong port** (e.g. `http://localhost:1`). Toast "Save failed: connection probe failed: ...". Row NOT persisted. Page stays in first-config mode.
+- [ ] Save with the right port again. After ~60s an export tick should fire. Audit-log surface shows `audit_export.configured`. ExporterStatus banner flips to green "Last exported …".
+- [ ] **Verify in MinIO**: `mc alias set local http://localhost:<port> minioadmin minioadmin && mc ls --recursive local/dogfood` — see `<yyyy-mm-dd>/<unix-ms>.jsonl` objects with audit events.
+- [ ] Click **Remove configuration**. Confirm. Form returns to first-config state.
+
+### SSO admin — stub mode (new)
+
+- [ ] Ensure WORKOS_API_KEY is **unset**.
+- [ ] `/admin/sso` — pick Acme Corp. Status = "Not configured", "Set up SSO" CTA visible.
+- [ ] Click "Set up SSO". Same-tab redirect to `/admin/sso?demo=1`.
+- [ ] After redirect, status = "Setup pending". "Continue setup" + "Disable SSO" buttons.
+- [ ] Click **Disable SSO** → confirm → toast "SSO disabled". Status = "Disabled". "Re-enable SSO" button.
+- [ ] Click "Re-enable SSO". Goes through the same flow. Status returns to "Setup pending".
+- [ ] Audit log shows `sso.setup.started` + `sso.disabled` events.
+
+### Billing admin — no-Stripe-key callout (new)
+
+- [ ] Ensure STRIPE_API_KEY is **unset**.
+- [ ] `/admin/billing` — pick Acme Corp.
+- [ ] Plan card shows "Free" badge + "X features included" + Manage subscription button + Compare plans button.
+- [ ] Click **Manage subscription** → toast "Couldn't open portal: billing not configured". (Expected.)
+- [ ] Usage card shows top-3 by % used (likely just `seats` since others are 0-used).
+- [ ] Invoices card shows the friendly "Stripe not configured" callout pointing at the `STRIPE_API_KEY` codefly secret.
+- [ ] Click **Compare plans** → routes to `/pricing`. Three plan cards (Free / Pro / Enterprise). Buttons rendered (will fail without Stripe — covered in Tier 3).
+
+### Entitlements
+
+- [ ] `/admin/entitlements` (super_admin only) — pick Acme. Free plan rows: seats, api_keys, api_calls_monthly, sso, audit_log.
+- [ ] Click **Override** on `seats` → set to `999` + reason "dogfood test" → Apply. Row updates, **Override** badge appears.
+- [ ] Verify `/admin/billing` usage card now shows seats out of 999.
+
+### Rate-limit visibility (new)
+
+- [ ] Open browser devtools Network tab on any /admin page. Refresh.
+- [ ] On any RPC call, response headers include `X-RateLimit-Limit`, `X-RateLimit-Remaining`, `X-RateLimit-Reset`.
+- [ ] (Hard to trigger the banner without 900+ requests in 60s — skip unless you have a load script handy. Or temporarily lower `defaultLimit` to 5 in `pkg/adapters/rate_limit_interceptor.go` and refresh a few times to see the bottom-center amber pill.)
+
+### MFA
+
+- [ ] `/settings/mfa` — TOTP setup dialog. Scan QR with Authenticator app, enter code → "MFA enabled".
+- [ ] Logout, log back in → access granted (cookie still trusted from this device for now).
+- [ ] Try a sensitive op that requires MFA (e.g. webhook RotateSecret) — should now succeed because mfa_satisfied=true on the JWT.
+
+### GDPR + consent
+
+- [ ] `/settings/data` — export request → kicks off export. Should land in a downloadable URL (or queue notification).
+- [ ] Visit any page in incognito (logged out) → ConsentBanner appears bottom-right. Click Accept → banner gone, localStorage key set.
+- [ ] Log in (any user) → after a moment ConsentBanner reappears (because terms version on server > stored). Click Accept → server records acceptance. Reload → banner stays gone. Audit log has `consent.accepted`.
+
+### Status page
+
+- [ ] `/status` (publicly reachable, no auth) — JSON probe table: postgres, redis, vault green dots. Latency in ms.
+
+### Command palette
+
+- [ ] Cmd+K (or Ctrl+K) opens the palette.
+- [ ] Type `web` → "Webhooks" appears, click → routes to /admin/webhooks.
+- [ ] Type a fixture user email → matches via super_admin search.
+- [ ] Esc closes.
+
+---
+
+## Tier 2 — with `STRIPE_API_KEY` (test mode)
+
+Set `STRIPE_API_KEY=sk_test_...` in your codefly secret for the api
+service. Use a Stripe test-mode key.
+
+```bash
+codefly secret set api STRIPE_API_KEY sk_test_xxxxxxxxxxxx
+codefly run service frontend --fixture dev-admin
+```
+
+- [ ] `/pricing` — click **Upgrade to Pro** on a plan. Redirects to Stripe Checkout. Use Stripe test card `4242 4242 4242 4242`. After payment, lands on `/admin/billing/success`.
+- [ ] `/admin/billing` — Plan card shows **Pro** badge.
+- [ ] Click **Manage subscription** — redirects to Stripe-hosted billing portal.
+- [ ] Update card / cancel subscription → return → status reflects.
+- [ ] **Invoices card** — shows the test invoice. Click invoice number → opens hosted detail. Click PDF icon → downloads.
+
+---
+
+## Tier 3 — with `WORKOS_API_KEY` (real SSO)
+
+Set `WORKOS_API_KEY` in your api secret.
+
+```bash
+codefly secret set api WORKOS_API_KEY sk_live_or_test_xxxxxx
+```
+
+- [ ] `/admin/sso` — pick Acme Corp. Click "Set up SSO".
+- [ ] Browser redirects to `https://api.workos.com/portal/...` admin portal.
+- [ ] Configure a connection (SAML or OIDC) using your test IdP.
+- [ ] After the portal flow, redirect back to `/admin/sso`. Status = "Active". connection_id populated.
+- [ ] (Optional, big spend) Configure your IdP to allow a test user with email matching Acme's domain. Log out, attempt login with that email — auth-sidecar should route to WorkOS via the connection_id.
+
+---
+
+## Test status
+
+| Surface | Test layer | Count |
+|---|---|---|
+| Backend (Go) | unit + integration | 30 files · 206 funcs across 12 packages |
+| Backend (key new code) | unit | s3 plugin (6) · audit-exporter resolveEndpoint (5 cases) · sso_admin stub-mode (3) · user_settings (3) · scope (5) |
+| FE (Vitest) | unit | 26 files · 210 tests |
+| FE (Playwright) | e2e | 9 specs · 39 tests (login, navigation, admin-flow, auth-boundary, command-palette, revocation, webhooks, audit-export, sso-admin) |
+
+Run them:
+
+```bash
+# Backend — full pkg/business suite spins up the dependency graph
+# via WithDependencies. ~30s warm; first cold run pulls images.
+cd module/services/api/code && go test ./...
+
+# FE unit
+cd module/services/frontend/code && npm test
+
+# FE e2e (heavy — boots the whole stack)
+cd module/services/frontend/code && npx playwright test
+```
+
+---
+
+## Known gaps you'll hit during dogfood
+
+- **API key auth direct-to-api in dev**: scope enforcement is wired
+  on the handlers but the Connect interceptor in dev-mode (no auth
+  sidecar) doesn't validate `cfly_sk_*` keys. Dogfood with JWT auth.
+- **Email-send flows**: magic links / verification emails / transactional
+  notifications log only in dev. Real Resend integration is wired but
+  not exercised in fixture mode.
+- **Per-org subdomains**: not yet wired. Acme is reached at the same
+  origin as everyone else.
+- **i18n**: locale picker stores the preference, but UI text is
+  English-only — no translation files yet.
+- **API-key Revoke gating**: still requires platform_admin per a
+  TODO in `pkg/adapters/rpcs.go`. Org admins can't revoke their org's
+  own keys today; they can create them. Fix is in the backlog.
+
+If anything in Tier 1 is broken, **stop and report** — that's the
+fixture-only happy path that should never need creds.
