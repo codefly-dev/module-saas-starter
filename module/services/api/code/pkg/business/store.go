@@ -153,6 +153,14 @@ type Store interface {
 	GetMagicLinkByTokenHash(ctx context.Context, tokenHash string) (*MagicLink, error)
 	MarkMagicLinkUsed(ctx context.Context, id string) error
 
+	// Audit log → S3 export — per-org config + cursor + error tracking.
+	GetAuditExportConfig(ctx context.Context, orgID string) (*AuditExportConfig, error)
+	UpsertAuditExportConfig(ctx context.Context, cfg *AuditExportConfig) error
+	DeleteAuditExportConfig(ctx context.Context, orgID string) error
+	ListDueAuditExportConfigs(ctx context.Context, now time.Time) ([]*AuditExportConfig, error)
+	MarkAuditExportSucceeded(ctx context.Context, orgID string, exportedAt time.Time) error
+	RecordAuditExportError(ctx context.Context, orgID, message string) error
+
 	// Data Retention
 	GetRetentionPolicies(ctx context.Context) ([]*RetentionPolicy, error)
 	DeleteOldAuditEvents(ctx context.Context, before time.Time) (int64, error)
