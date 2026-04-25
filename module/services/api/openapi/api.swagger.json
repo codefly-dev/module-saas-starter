@@ -27,6 +27,9 @@
       "name": "AuditExportService"
     },
     {
+      "name": "ConsentService"
+    },
+    {
       "name": "AuthService"
     },
     {
@@ -519,6 +522,60 @@
         ],
         "tags": [
           "AuthService"
+        ]
+      }
+    },
+    "/v1/consent/accept": {
+      "post": {
+        "operationId": "ConsentService_Accept",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/customersConsentStatus"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/rpcStatus"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "body",
+            "in": "body",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/customersAcceptConsentRequest"
+            }
+          }
+        ],
+        "tags": [
+          "ConsentService"
+        ]
+      }
+    },
+    "/v1/consent/status": {
+      "get": {
+        "operationId": "ConsentService_GetStatus",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/customersConsentStatus"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/rpcStatus"
+            }
+          }
+        },
+        "tags": [
+          "ConsentService"
         ]
       }
     },
@@ -3094,6 +3151,14 @@
       ],
       "default": "API_KEY_ENVIRONMENT_UNSPECIFIED"
     },
+    "customersAcceptConsentRequest": {
+      "type": "object",
+      "properties": {
+        "version": {
+          "type": "string"
+        }
+      }
+    },
     "customersAcceptInvitationRequest": {
       "type": "object",
       "properties": {
@@ -3328,6 +3393,23 @@
         },
         "reason": {
           "type": "string"
+        }
+      }
+    },
+    "customersConsentStatus": {
+      "type": "object",
+      "properties": {
+        "acceptedVersion": {
+          "type": "string",
+          "description": "accepted_version is the CONSENT_VERSION string the user clicked\nAccept on. Empty when the user has never accepted."
+        },
+        "acceptedAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "currentVersion": {
+          "type": "string",
+          "description": "current_version is the version the api considers active. The FE\nshows the banner whenever accepted_version != current_version."
         }
       }
     },

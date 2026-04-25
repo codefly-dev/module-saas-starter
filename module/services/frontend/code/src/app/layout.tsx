@@ -20,8 +20,10 @@ export default function RootLayout({
   return (
     <html lang="en" suppressHydrationWarning className={cn("font-sans", geist.variable)}>
       <body className="antialiased">
-        <Providers>{children}</Providers>
-        <ConsentBanner />
+        <Providers>
+          {children}
+          <ConsentBanner />
+        </Providers>
       </body>
     </html>
   );

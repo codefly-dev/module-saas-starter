@@ -83,6 +83,7 @@ func (s *ConnectServer) Run(ctx context.Context) error {
 	// Services backed directly by business.Service.
 	mux.Handle(genconnect.NewWebhookServiceHandler(&webhookConnectHandler{svc: s.service}, auth))
 	mux.Handle(genconnect.NewAuditExportServiceHandler(&auditExportConnectHandler{svc: s.service}, auth))
+	mux.Handle(genconnect.NewConsentServiceHandler(&consentConnectHandler{svc: s.service}, auth))
 	mux.Handle(genconnect.NewNotificationServiceHandler(&notificationConnectHandler{svc: s.service}, auth))
 	mux.Handle(genconnect.NewOnboardingServiceHandler(&onboardingConnectHandler{svc: s.service}, auth))
 	mux.Handle(genconnect.NewGDPRServiceHandler(&gdprConnectHandler{svc: s.service}, auth))

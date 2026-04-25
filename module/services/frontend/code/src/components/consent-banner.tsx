@@ -1,63 +1,120 @@
 "use client";
 
 /**
- * ConsentBanner — cookie + TOS acceptance banner. Appears on first
- * visit + on every TOS version bump (operator increments
- * CONSENT_VERSION below). Localized to the bottom-right of the
- * viewport so it doesn't block content.
+ * ConsentBanner — cookie + TOS acceptance banner. Two-tier flow:
  *
- * Tradeoff vs full server-side audit trail: this records acceptance
- * in localStorage (per browser, per device), not in the user_id row
- * on the api. That's enough for "did the user see + click accept"
- * on a marketing site / B2C app, and most regulators accept it.
+ *  - Authenticated users: source of truth is the api
+ *    (ConsentService.GetStatus / Accept). Records userID + version +
+ *    timestamp + IP server-side and emits an audit event. This is the
+ *    SOC 2 / enterprise-compliant path.
  *
- * Enterprise compliance (SOC 2, signed-off acceptance per user with
- * timestamp + version + IP) wants the api-side flow:
- *    users.terms_accepted_at + terms_version columns,
- *    /v1/consent/accept RPC that records both.
- * That's tracked as a roadmap item; this component swaps to it by
- * reading from useAuth + posting to the RPC instead of localStorage.
+ *  - Anonymous visitors: localStorage fallback (per-browser). Good
+ *    enough for marketing pages where there's no user row to attach
+ *    to. On login we re-check via the server, so a marketing-page
+ *    "Accept" doesn't override the authoritative server record.
+ *
+ * The api owns the current TOS version (CurrentTermsVersion in
+ * pkg/business/consent.go). For the anonymous path we keep a local
+ * constant — bumped together with the api — so we can decide whether
+ * to show the banner before any RPC fires.
  */
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
+import { createClient } from "@connectrpc/connect";
+import { apiTransport } from "@/lib/connect/transport";
+import { ConsentService } from "@/gen/saas-starter_api_grpc_pb";
+import { useAuth } from "@/lib/auth";
 import { Button } from "@/components/ui/button";
 import { X, Cookie } from "lucide-react";
 
-// Bump this when the TOS / privacy policy changes — every browser
-// that accepted an older version gets the banner again.
-const CONSENT_VERSION = "2026-04-25";
+// Anonymous-fallback version. Should match
+// pkg/business/consent.go:CurrentTermsVersion. Drift is harmless —
+// authenticated users never read this constant.
+const ANON_CONSENT_VERSION = "2026-04-25";
 const STORAGE_KEY = "saas-starter:consent-version";
 
+const consentClient = createClient(ConsentService, apiTransport);
+
+type BannerState = "loading" | "stale" | "current";
+
 export function ConsentBanner() {
-  // Three-state: undefined (not yet checked — render nothing to avoid
-  // a flash), "stale" (banner needed), "current" (accepted).
-  const [state, setState] = useState<"loading" | "stale" | "current">("loading");
+  const { isAuthenticated, isLoading: authLoading } = useAuth();
+  const [state, setState] = useState<BannerState>("loading");
 
   useEffect(() => {
-    try {
-      const accepted = window.localStorage.getItem(STORAGE_KEY);
-      setState(accepted === CONSENT_VERSION ? "current" : "stale");
-    } catch {
-      // SSR / private mode → don't show the banner. We'd prefer a
-      // false-negative (no banner) over crashing the page.
-      setState("current");
+    // While auth is resolving (refresh-token round-trip on cold load)
+    // we render nothing — picking a tier early would either flash the
+    // banner for users who already accepted server-side, or skip it
+    // for someone whose server record disagrees with localStorage.
+    if (authLoading) {
+      setState("loading");
+      return;
     }
-  }, []);
 
-  function accept() {
+    let cancelled = false;
+
+    if (isAuthenticated) {
+      consentClient
+        .getStatus({})
+        .then((status) => {
+          if (cancelled) return;
+          const accepted =
+            status.acceptedVersion !== "" &&
+            status.acceptedVersion === status.currentVersion;
+          setState(accepted ? "current" : "stale");
+        })
+        .catch(() => {
+          // Server unreachable → fall back to "current" so a transient
+          // outage doesn't pop the banner over real content. Next page
+          // load retries.
+          if (!cancelled) setState("current");
+        });
+    } else {
+      try {
+        const accepted = window.localStorage.getItem(STORAGE_KEY);
+        setState(accepted === ANON_CONSENT_VERSION ? "current" : "stale");
+      } catch {
+        // SSR / private mode → no banner.
+        setState("current");
+      }
+    }
+
+    return () => {
+      cancelled = true;
+    };
+  }, [isAuthenticated, authLoading]);
+
+  async function accept() {
+    if (isAuthenticated) {
+      try {
+        const status = await consentClient.accept({
+          version: ANON_CONSENT_VERSION,
+        });
+        // Server echoes the version it actually persisted; trust that.
+        if (status.acceptedVersion === status.currentVersion) {
+          setState("current");
+          return;
+        }
+      } catch {
+        // Don't strand the user in a banner loop on a transient error
+        // — close it locally; they'll re-see it on next page load if
+        // the server still has no record.
+      }
+      setState("current");
+      return;
+    }
     try {
-      window.localStorage.setItem(STORAGE_KEY, CONSENT_VERSION);
+      window.localStorage.setItem(STORAGE_KEY, ANON_CONSENT_VERSION);
     } catch {
-      // ignore
+      // ignore — SSR / private mode
     }
     setState("current");
   }
 
   function dismiss() {
-    // Dismissing without accepting = treat as not-accepted yet so the
-    // banner returns next visit. We don't want to silently consent on
-    // X click.
+    // Dismissing is NOT acceptance — banner returns next visit. We
+    // close it locally for this session only; nothing is persisted.
     setState("current");
   }
 

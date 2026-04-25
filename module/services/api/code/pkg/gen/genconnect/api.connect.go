@@ -36,6 +36,8 @@ const (
 	APIKeyServiceName = "customers.APIKeyService"
 	// AuditExportServiceName is the fully-qualified name of the AuditExportService service.
 	AuditExportServiceName = "customers.AuditExportService"
+	// ConsentServiceName is the fully-qualified name of the ConsentService service.
+	ConsentServiceName = "customers.ConsentService"
 	// AuthServiceName is the fully-qualified name of the AuthService service.
 	AuthServiceName = "customers.AuthService"
 	// AuditServiceName is the fully-qualified name of the AuditService service.
@@ -164,6 +166,11 @@ const (
 	// AuditExportServiceDeleteConfigProcedure is the fully-qualified name of the AuditExportService's
 	// DeleteConfig RPC.
 	AuditExportServiceDeleteConfigProcedure = "/customers.AuditExportService/DeleteConfig"
+	// ConsentServiceGetStatusProcedure is the fully-qualified name of the ConsentService's GetStatus
+	// RPC.
+	ConsentServiceGetStatusProcedure = "/customers.ConsentService/GetStatus"
+	// ConsentServiceAcceptProcedure is the fully-qualified name of the ConsentService's Accept RPC.
+	ConsentServiceAcceptProcedure = "/customers.ConsentService/Accept"
 	// AuthServiceBeginOAuthProcedure is the fully-qualified name of the AuthService's BeginOAuth RPC.
 	AuthServiceBeginOAuthProcedure = "/customers.AuthService/BeginOAuth"
 	// AuthServiceAuthenticateProcedure is the fully-qualified name of the AuthService's Authenticate
@@ -1571,6 +1578,102 @@ func (UnimplementedAuditExportServiceHandler) SaveConfig(context.Context, *conne
 
 func (UnimplementedAuditExportServiceHandler) DeleteConfig(context.Context, *connect.Request[gen.DeleteAuditExportConfigRequest]) (*connect.Response[emptypb.Empty], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("customers.AuditExportService.DeleteConfig is not implemented"))
+}
+
+// ConsentServiceClient is a client for the customers.ConsentService service.
+type ConsentServiceClient interface {
+	GetStatus(context.Context, *connect.Request[gen.GetConsentStatusRequest]) (*connect.Response[gen.ConsentStatus], error)
+	Accept(context.Context, *connect.Request[gen.AcceptConsentRequest]) (*connect.Response[gen.ConsentStatus], error)
+}
+
+// NewConsentServiceClient constructs a client for the customers.ConsentService service. By default,
+// it uses the Connect protocol with the binary Protobuf Codec, asks for gzipped responses, and
+// sends uncompressed requests. To use the gRPC or gRPC-Web protocols, supply the connect.WithGRPC()
+// or connect.WithGRPCWeb() options.
+//
+// The URL supplied here should be the base URL for the Connect or gRPC server (for example,
+// http://api.acme.com or https://acme.com/grpc).
+func NewConsentServiceClient(httpClient connect.HTTPClient, baseURL string, opts ...connect.ClientOption) ConsentServiceClient {
+	baseURL = strings.TrimRight(baseURL, "/")
+	consentServiceMethods := gen.File_api_proto.Services().ByName("ConsentService").Methods()
+	return &consentServiceClient{
+		getStatus: connect.NewClient[gen.GetConsentStatusRequest, gen.ConsentStatus](
+			httpClient,
+			baseURL+ConsentServiceGetStatusProcedure,
+			connect.WithSchema(consentServiceMethods.ByName("GetStatus")),
+			connect.WithClientOptions(opts...),
+		),
+		accept: connect.NewClient[gen.AcceptConsentRequest, gen.ConsentStatus](
+			httpClient,
+			baseURL+ConsentServiceAcceptProcedure,
+			connect.WithSchema(consentServiceMethods.ByName("Accept")),
+			connect.WithClientOptions(opts...),
+		),
+	}
+}
+
+// consentServiceClient implements ConsentServiceClient.
+type consentServiceClient struct {
+	getStatus *connect.Client[gen.GetConsentStatusRequest, gen.ConsentStatus]
+	accept    *connect.Client[gen.AcceptConsentRequest, gen.ConsentStatus]
+}
+
+// GetStatus calls customers.ConsentService.GetStatus.
+func (c *consentServiceClient) GetStatus(ctx context.Context, req *connect.Request[gen.GetConsentStatusRequest]) (*connect.Response[gen.ConsentStatus], error) {
+	return c.getStatus.CallUnary(ctx, req)
+}
+
+// Accept calls customers.ConsentService.Accept.
+func (c *consentServiceClient) Accept(ctx context.Context, req *connect.Request[gen.AcceptConsentRequest]) (*connect.Response[gen.ConsentStatus], error) {
+	return c.accept.CallUnary(ctx, req)
+}
+
+// ConsentServiceHandler is an implementation of the customers.ConsentService service.
+type ConsentServiceHandler interface {
+	GetStatus(context.Context, *connect.Request[gen.GetConsentStatusRequest]) (*connect.Response[gen.ConsentStatus], error)
+	Accept(context.Context, *connect.Request[gen.AcceptConsentRequest]) (*connect.Response[gen.ConsentStatus], error)
+}
+
+// NewConsentServiceHandler builds an HTTP handler from the service implementation. It returns the
+// path on which to mount the handler and the handler itself.
+//
+// By default, handlers support the Connect, gRPC, and gRPC-Web protocols with the binary Protobuf
+// and JSON codecs. They also support gzip compression.
+func NewConsentServiceHandler(svc ConsentServiceHandler, opts ...connect.HandlerOption) (string, http.Handler) {
+	consentServiceMethods := gen.File_api_proto.Services().ByName("ConsentService").Methods()
+	consentServiceGetStatusHandler := connect.NewUnaryHandler(
+		ConsentServiceGetStatusProcedure,
+		svc.GetStatus,
+		connect.WithSchema(consentServiceMethods.ByName("GetStatus")),
+		connect.WithHandlerOptions(opts...),
+	)
+	consentServiceAcceptHandler := connect.NewUnaryHandler(
+		ConsentServiceAcceptProcedure,
+		svc.Accept,
+		connect.WithSchema(consentServiceMethods.ByName("Accept")),
+		connect.WithHandlerOptions(opts...),
+	)
+	return "/customers.ConsentService/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case ConsentServiceGetStatusProcedure:
+			consentServiceGetStatusHandler.ServeHTTP(w, r)
+		case ConsentServiceAcceptProcedure:
+			consentServiceAcceptHandler.ServeHTTP(w, r)
+		default:
+			http.NotFound(w, r)
+		}
+	})
+}
+
+// UnimplementedConsentServiceHandler returns CodeUnimplemented from all methods.
+type UnimplementedConsentServiceHandler struct{}
+
+func (UnimplementedConsentServiceHandler) GetStatus(context.Context, *connect.Request[gen.GetConsentStatusRequest]) (*connect.Response[gen.ConsentStatus], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("customers.ConsentService.GetStatus is not implemented"))
+}
+
+func (UnimplementedConsentServiceHandler) Accept(context.Context, *connect.Request[gen.AcceptConsentRequest]) (*connect.Response[gen.ConsentStatus], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("customers.ConsentService.Accept is not implemented"))
 }
 
 // AuthServiceClient is a client for the customers.AuthService service.

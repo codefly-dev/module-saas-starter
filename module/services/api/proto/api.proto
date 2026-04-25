@@ -738,6 +738,35 @@ service AuditExportService {
   }
 }
 
+// ============================================================================
+// Consent / TOS acceptance — server-side audit trail
+// ============================================================================
+
+message ConsentStatus {
+  // accepted_version is the CONSENT_VERSION string the user clicked
+  // Accept on. Empty when the user has never accepted.
+  string accepted_version = 1;
+  google.protobuf.Timestamp accepted_at = 2;
+  // current_version is the version the api considers active. The FE
+  // shows the banner whenever accepted_version != current_version.
+  string current_version = 3;
+}
+
+message GetConsentStatusRequest {}
+
+message AcceptConsentRequest {
+  string version = 1 [(buf.validate.field).string.min_len = 1];
+}
+
+service ConsentService {
+  rpc GetStatus(GetConsentStatusRequest) returns (ConsentStatus) {
+    option (google.api.http) = { get: "/v1/consent/status" };
+  }
+  rpc Accept(AcceptConsentRequest) returns (ConsentStatus) {
+    option (google.api.http) = { post: "/v1/consent/accept" body: "*" };
+  }
+}
+
 // AuthService — JWT token issuance and session management
 service AuthService {
 

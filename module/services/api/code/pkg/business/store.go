@@ -161,6 +161,10 @@ type Store interface {
 	MarkAuditExportSucceeded(ctx context.Context, orgID string, exportedAt time.Time) error
 	RecordAuditExportError(ctx context.Context, orgID, message string) error
 
+	// User consent — server-side TOS/privacy acceptance trail.
+	GetUserConsent(ctx context.Context, userID string) (version string, acceptedAt *time.Time, err error)
+	SetUserConsent(ctx context.Context, userID, version string, acceptedAt time.Time) error
+
 	// Data Retention
 	GetRetentionPolicies(ctx context.Context) ([]*RetentionPolicy, error)
 	DeleteOldAuditEvents(ctx context.Context, before time.Time) (int64, error)

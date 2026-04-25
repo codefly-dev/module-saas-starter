@@ -1898,6 +1898,146 @@ var AuditExportService_ServiceDesc = grpc.ServiceDesc{
 }
 
 const (
+	ConsentService_GetStatus_FullMethodName = "/customers.ConsentService/GetStatus"
+	ConsentService_Accept_FullMethodName    = "/customers.ConsentService/Accept"
+)
+
+// ConsentServiceClient is the client API for ConsentService service.
+//
+// For semantics around ctx use and closing/ending streaming RPCs, please refer to https://pkg.go.dev/google.golang.org/grpc/?tab=doc#ClientConn.NewStream.
+type ConsentServiceClient interface {
+	GetStatus(ctx context.Context, in *GetConsentStatusRequest, opts ...grpc.CallOption) (*ConsentStatus, error)
+	Accept(ctx context.Context, in *AcceptConsentRequest, opts ...grpc.CallOption) (*ConsentStatus, error)
+}
+
+type consentServiceClient struct {
+	cc grpc.ClientConnInterface
+}
+
+func NewConsentServiceClient(cc grpc.ClientConnInterface) ConsentServiceClient {
+	return &consentServiceClient{cc}
+}
+
+func (c *consentServiceClient) GetStatus(ctx context.Context, in *GetConsentStatusRequest, opts ...grpc.CallOption) (*ConsentStatus, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ConsentStatus)
+	err := c.cc.Invoke(ctx, ConsentService_GetStatus_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *consentServiceClient) Accept(ctx context.Context, in *AcceptConsentRequest, opts ...grpc.CallOption) (*ConsentStatus, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ConsentStatus)
+	err := c.cc.Invoke(ctx, ConsentService_Accept_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+// ConsentServiceServer is the server API for ConsentService service.
+// All implementations must embed UnimplementedConsentServiceServer
+// for forward compatibility.
+type ConsentServiceServer interface {
+	GetStatus(context.Context, *GetConsentStatusRequest) (*ConsentStatus, error)
+	Accept(context.Context, *AcceptConsentRequest) (*ConsentStatus, error)
+	mustEmbedUnimplementedConsentServiceServer()
+}
+
+// UnimplementedConsentServiceServer must be embedded to have
+// forward compatible implementations.
+//
+// NOTE: this should be embedded by value instead of pointer to avoid a nil
+// pointer dereference when methods are called.
+type UnimplementedConsentServiceServer struct{}
+
+func (UnimplementedConsentServiceServer) GetStatus(context.Context, *GetConsentStatusRequest) (*ConsentStatus, error) {
+	return nil, status.Error(codes.Unimplemented, "method GetStatus not implemented")
+}
+func (UnimplementedConsentServiceServer) Accept(context.Context, *AcceptConsentRequest) (*ConsentStatus, error) {
+	return nil, status.Error(codes.Unimplemented, "method Accept not implemented")
+}
+func (UnimplementedConsentServiceServer) mustEmbedUnimplementedConsentServiceServer() {}
+func (UnimplementedConsentServiceServer) testEmbeddedByValue()                        {}
+
+// UnsafeConsentServiceServer may be embedded to opt out of forward compatibility for this service.
+// Use of this interface is not recommended, as added methods to ConsentServiceServer will
+// result in compilation errors.
+type UnsafeConsentServiceServer interface {
+	mustEmbedUnimplementedConsentServiceServer()
+}
+
+func RegisterConsentServiceServer(s grpc.ServiceRegistrar, srv ConsentServiceServer) {
+	// If the following call panics, it indicates UnimplementedConsentServiceServer was
+	// embedded by pointer and is nil.  This will cause panics if an
+	// unimplemented method is ever invoked, so we test this at initialization
+	// time to prevent it from happening at runtime later due to I/O.
+	if t, ok := srv.(interface{ testEmbeddedByValue() }); ok {
+		t.testEmbeddedByValue()
+	}
+	s.RegisterService(&ConsentService_ServiceDesc, srv)
+}
+
+func _ConsentService_GetStatus_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(GetConsentStatusRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(ConsentServiceServer).GetStatus(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: ConsentService_GetStatus_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(ConsentServiceServer).GetStatus(ctx, req.(*GetConsentStatusRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _ConsentService_Accept_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(AcceptConsentRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(ConsentServiceServer).Accept(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: ConsentService_Accept_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(ConsentServiceServer).Accept(ctx, req.(*AcceptConsentRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+// ConsentService_ServiceDesc is the grpc.ServiceDesc for ConsentService service.
+// It's only intended for direct use with grpc.RegisterService,
+// and not to be introspected or modified (even as a copy)
+var ConsentService_ServiceDesc = grpc.ServiceDesc{
+	ServiceName: "customers.ConsentService",
+	HandlerType: (*ConsentServiceServer)(nil),
+	Methods: []grpc.MethodDesc{
+		{
+			MethodName: "GetStatus",
+			Handler:    _ConsentService_GetStatus_Handler,
+		},
+		{
+			MethodName: "Accept",
+			Handler:    _ConsentService_Accept_Handler,
+		},
+	},
+	Streams:  []grpc.StreamDesc{},
+	Metadata: "api.proto",
+}
+
+const (
 	AuthService_BeginOAuth_FullMethodName   = "/customers.AuthService/BeginOAuth"
 	AuthService_Authenticate_FullMethodName = "/customers.AuthService/Authenticate"
 	AuthService_RefreshToken_FullMethodName = "/customers.AuthService/RefreshToken"
