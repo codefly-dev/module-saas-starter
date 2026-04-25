@@ -47,12 +47,22 @@ export function BillingAdminPage() {
 
   const { data: entitlements, isLoading } = useOrgEntitlements(orgId || null);
 
-  const { data: invoicesResp, isLoading: invoicesLoading } = useQuery({
+  const { data: invoicesResp, isLoading: invoicesLoading, error: invoicesError } = useQuery({
     queryKey: ["billing", "invoices", orgId],
     queryFn: () => billingClient.listInvoices({ orgId, limit: 12 }),
     enabled: !!orgId,
+    // Don't retry on the "billing not configured" path — we'll
+    // render a friendlier callout. Default 1 retry would just
+    // delay that callout by 30s.
+    retry: false,
   });
   const invoices = invoicesResp?.invoices ?? [];
+  // The api returns "billing not configured" when STRIPE_API_KEY
+  // isn't wired (typical dev / dogfood). Detect by message so we
+  // can surface a helpful callout instead of a generic error.
+  const stripeMissing =
+    !!invoicesError &&
+    /billing not configured/i.test((invoicesError as Error).message);
 
   const portal = useMutation({
     mutationFn: () =>
@@ -195,6 +205,15 @@ export function BillingAdminPage() {
                   <Skeleton className="h-10 w-full" />
                   <Skeleton className="h-10 w-full" />
                   <Skeleton className="h-10 w-full" />
+                </div>
+              ) : stripeMissing ? (
+                <div className="rounded-md border bg-muted/30 p-4 text-sm space-y-1">
+                  <div className="font-medium">Stripe not configured</div>
+                  <div className="text-xs text-muted-foreground">
+                    Set <code className="font-mono">STRIPE_API_KEY</code> in
+                    your codefly secret to enable invoices and the Manage-
+                    subscription portal. Plan + usage display works without it.
+                  </div>
                 </div>
               ) : invoices.length === 0 ? (
                 <div className="text-sm text-muted-foreground py-6 text-center">

@@ -815,6 +815,17 @@ func (s *PlatformAdminServer) GetOrgEntitlements(ctx context.Context, req *gen.G
 	if err := Validate(req); err != nil {
 		return nil, err
 	}
+	// Any member of the org can read the org's entitlements (powers
+	// the org-side /admin/billing usage card). Platform admins
+	// implicitly satisfy this since they're members. Bare-JWT
+	// callers from outside the org get PermissionDenied.
+	actorID, err := requireAuth(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if err := requireOrgMember(ctx, actorID, req.OrgId); err != nil {
+		return nil, err
+	}
 	view, err := service.GetOrgEntitlements(ctx, req.OrgId)
 	if err != nil {
 		return nil, status.Error(codes.Internal, err.Error())
@@ -843,6 +854,12 @@ func (s *PlatformAdminServer) OverrideEntitlement(ctx context.Context, req *gen.
 	actorID, found := w.UserAuthID()
 	if !found {
 		return nil, status.Error(codes.Unauthenticated, "user id not found")
+	}
+	// Override is privileged — only platform admins. Org admins
+	// can't bump their own caps; that's the whole point of the
+	// override mechanism.
+	if err := requirePlatformAdmin(ctx, actorID); err != nil {
+		return nil, err
 	}
 	id, err := service.OverrideEntitlement(ctx, actorID, req)
 	if err != nil {

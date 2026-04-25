@@ -344,10 +344,10 @@ starters, and large-scale enterprise SaaS expectations.
 | Sidebar navigation + breadcrumbs               | ✅          | Same              |
 | Onboarding checklist                           | 🟡          | ✅                |
 | Org-scoped subdomains (`acme.example.com`)     | ❌          | ✅ (multi-tenant best practice for B2B) |
-| Custom SSO (SAML / OIDC dynamic clients)       | 🟡          | ✅ (WorkOS handles SAML behind the scenes; we'd need explicit "add SSO connection" UI) |
-| Webhooks UI (test event, replay, signing key)  | 🟡          | ✅ (Stripe-style)  |
-| API rate limiting per org/key                  | ✅          | ✅ (2026-04-25 fix: Redis-backed fixed-window limiter on Connect + gRPC; per API-key > per-org > per-user fallback) |
-| Usage-based billing UI                         | 🟡          | ✅ (Linear/Vercel style) |
+| Custom SSO (SAML / OIDC dynamic clients)       | ✅          | ✅ (2026-04-25: SSOAdminService + /admin/sso self-serve WorkOS Admin Portal flow with stub-mode for dev) |
+| Webhooks UI (test event, replay, signing key)  | ✅          | ✅ (Stripe-style; v2 added 2026-04-25: replay, rotate-secret, deliveries inspector) |
+| API rate limiting per org/key                  | ✅          | ✅ (2026-04-25: Redis-backed fixed-window limiter on Connect + gRPC; X-RateLimit-* headers exposed via CORS + low-budget banner on FE) |
+| Usage-based billing UI                         | ✅          | ✅ (2026-04-25: GetOrgEntitlements RPC + /admin/entitlements + /admin/billing with plan / usage / Stripe-portal / invoices) |
 | Status page / system health                    | ❌          | ✅                |
 | Internationalization (i18n)                    | ❌          | 🟡                |
 | Mobile-responsive admin                        | 🟡          | ✅                |
@@ -390,6 +390,20 @@ Severity: 🔴 critical · 🟠 important · 🟡 hardening
 ### Open
 
 _All previously-open gaps closed 2026-04-25._
+
+### Resolved 2026-04-26
+
+- ✅ **GetOrgEntitlements had no authz** — any authenticated user could read any org's plan + usage. Now gated by `requireOrgMember` (platform admins implicitly satisfy via membership).
+- ✅ **OverrideEntitlement had no authz** — implicit JWT-only. Now requires `platformAdmin`.
+- ✅ **API key scopes enforced on more endpoints** — webhooks (Create/Delete/List/Test/GetDelivery/ReplayDelivery/RotateSecret) and api-keys (Create/List/Revoke). 5 new unit tests pin the wildcard semantics + the JWT pass-through.
+- ✅ **Self-serve SSO admin (WorkOS Connections)** — proto SSOAdminService + business / handler / WorkOS HTTP client + migration 21 + /admin/sso FE. Stub-mode when no `WORKOS_API_KEY` so dev exercises the full flow.
+- ✅ **Audit-export FE admin form** — was backend-only; /admin/audit-export now lets org admins configure their bucket through the UI. Pre-flight connection probe at Save time so bad creds fail fast.
+- ✅ **s3 plugin now actually runs MinIO** — was a redis-template scaffold (port 6379, redis ping readiness); now real (port 9000, /minio/health/live, structured conn keys, agent v0.0.2).
+- ✅ **User settings API** — JSONB-backed (`users.settings`) + UserSettingsService + /settings hub (theme / locale / timezone / date-time format / email opt-ins).
+- ✅ **Theme toggle** — next-themes wired with system / light / dark, persists per user via the settings API, syncs across devices.
+- ✅ **Stripe billing portal in /admin/billing** — Connect-RPC `BillingService.OpenPortal` works without sidecar.
+- ✅ **Stripe invoices list** — last 12 invoices on /admin/billing with hosted-detail link + PDF download.
+- ✅ **Rate-limit visibility** — X-RateLimit-* exposed via CORS; FE captures every response, banner appears at <10% remaining.
 
 ### Resolved 2026-04-25
 
