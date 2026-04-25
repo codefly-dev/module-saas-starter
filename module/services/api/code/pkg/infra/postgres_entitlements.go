@@ -33,6 +33,86 @@ func (s *PostgresStore) GetOrgPlanID(ctx context.Context, orgID string) (string,
 	return planID, nil
 }
 
+// GetPlanByID resolves a plan row by id. Used by GetOrgEntitlements
+// to surface the human-readable plan name on the dashboard.
+func (s *PostgresStore) GetPlanByID(ctx context.Context, planID string) (*business.Plan, error) {
+	q := s.getQueryExecutor(ctx)
+	var p business.Plan
+	err := q.QueryRow(ctx, `
+		SELECT id, name, display_name, is_default, sort_order
+		FROM plans WHERE id = $1`, planID,
+	).Scan(&p.ID, &p.Name, &p.DisplayName, &p.IsDefault, &p.SortOrder)
+	if err != nil {
+		if err == pgx.ErrNoRows {
+			return nil, nil
+		}
+		return nil, err
+	}
+	return &p, nil
+}
+
+// ListPlanEntitlements returns every (feature, limit) row for a plan.
+// Limit is -1 for unlimited (NULL in DB), 0 for disabled, >0 for a
+// metered cap. Used by GetOrgEntitlements to enumerate features.
+func (s *PostgresStore) ListPlanEntitlements(ctx context.Context, planID string) ([]business.PlanFeatureLimit, error) {
+	q := s.getQueryExecutor(ctx)
+	rows, err := q.Query(ctx, `
+		SELECT feature, limit_value FROM plan_entitlements
+		WHERE plan_id = $1
+		ORDER BY feature`, planID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []business.PlanFeatureLimit
+	for rows.Next() {
+		var fl business.PlanFeatureLimit
+		var limit *int64
+		if err := rows.Scan(&fl.Feature, &limit); err != nil {
+			return nil, err
+		}
+		if limit == nil {
+			fl.Limit = -1 // unlimited
+		} else {
+			fl.Limit = *limit
+		}
+		out = append(out, fl)
+	}
+	return out, nil
+}
+
+// ListEntitlementOverrides returns every per-org override. Used so
+// GetOrgEntitlements can stamp has_override = true on the resolved
+// rows without N+1 lookups against GetEntitlementOverride.
+func (s *PostgresStore) ListEntitlementOverrides(ctx context.Context, orgID string) ([]*business.EntitlementOverride, error) {
+	q := s.getQueryExecutor(ctx)
+	rows, err := q.Query(ctx, `
+		SELECT id, org_id, feature, limit_value, reason, created_by, expires_at
+		FROM entitlement_overrides WHERE org_id = $1`, orgID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []*business.EntitlementOverride
+	for rows.Next() {
+		var o business.EntitlementOverride
+		var limitValue *int64
+		var expiresAt *time.Time
+		var createdBy *string
+		if err := rows.Scan(&o.ID, &o.OrgID, &o.Feature, &limitValue,
+			&o.Reason, &createdBy, &expiresAt); err != nil {
+			return nil, err
+		}
+		o.LimitValue = limitValue
+		o.ExpiresAt = expiresAt
+		if createdBy != nil {
+			o.CreatedBy = *createdBy
+		}
+		out = append(out, &o)
+	}
+	return out, nil
+}
+
 // GetPlanEntitlement returns the limit for a feature in a plan.
 // Returns -1 for unlimited (NULL in DB), 0 if feature not in plan.
 func (s *PostgresStore) GetPlanEntitlement(ctx context.Context, planID string, feature string) (int64, error) {

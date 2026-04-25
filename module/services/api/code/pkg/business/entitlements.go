@@ -54,6 +54,31 @@ type EntitlementOverride struct {
 	ExpiresAt  *time.Time
 }
 
+// PlanFeatureLimit — one row from plan_entitlements. Limit is -1 for
+// unlimited (NULL in DB), 0 for disabled, positive for a metered cap.
+type PlanFeatureLimit struct {
+	Feature string
+	Limit   int64
+}
+
+// OrgEntitlement is the resolved view a single feature for an org —
+// limit (after override), current usage, and whether an override is
+// in play. Returned by Service.GetOrgEntitlements; consumed by the
+// admin Entitlements page and the billing/usage dashboard.
+type OrgEntitlement struct {
+	Feature     string
+	Limit       int64 // -1 unlimited, 0 disabled, >0 metered cap
+	Used        int64
+	HasOverride bool
+}
+
+// OrgEntitlementsView packages plan name + per-feature entitlements
+// for the FE in one shot. Saves a round-trip per feature.
+type OrgEntitlementsView struct {
+	PlanName     string
+	Entitlements []OrgEntitlement
+}
+
 // DefaultEntitlementChecker resolves entitlements from plan + overrides.
 type DefaultEntitlementChecker struct {
 	store Store
@@ -156,4 +181,115 @@ func (c *DefaultEntitlementChecker) RecordUsage(ctx context.Context, orgID strin
 
 func currentPeriod() string {
 	return fmt.Sprintf("%d-%02d", time.Now().Year(), time.Now().Month())
+}
+
+// GetOrgEntitlements returns the resolved view (plan name + per-
+// feature limit/used/has_override) for the org. Powers both the
+// platform-admin Entitlements page and the org-side Usage dashboard.
+//
+// Resolution order per feature:
+//   1. plan_entitlements row gives the base limit
+//   2. entitlement_overrides row replaces it (unless expired)
+//   3. usage is read from usage_records for metered features, or
+//      computed from cardinality (seats = members + pending invites,
+//      api_keys = ListAPIKeys count) for the two non-metered ones
+//      that the EntitlementChecker already knows about.
+//
+// Authz expectation: caller is org-admin OR platform-admin, gated by
+// the adapter — this method trusts its inputs.
+func (s *Service) GetOrgEntitlements(ctx context.Context, orgID string) (*OrgEntitlementsView, error) {
+	planID, err := s.store.GetOrgPlanID(ctx, orgID)
+	if err != nil {
+		return nil, fmt.Errorf("resolve plan: %w", err)
+	}
+	plan, err := s.store.GetPlanByID(ctx, planID)
+	if err != nil {
+		return nil, fmt.Errorf("load plan: %w", err)
+	}
+
+	planFeatures, err := s.store.ListPlanEntitlements(ctx, planID)
+	if err != nil {
+		return nil, fmt.Errorf("list plan entitlements: %w", err)
+	}
+
+	overrides, err := s.store.ListEntitlementOverrides(ctx, orgID)
+	if err != nil {
+		return nil, fmt.Errorf("list overrides: %w", err)
+	}
+	overrideMap := make(map[string]*EntitlementOverride, len(overrides))
+	now := time.Now()
+	for _, o := range overrides {
+		// Expired overrides fall through to the plan limit.
+		if o.ExpiresAt != nil && o.ExpiresAt.Before(now) {
+			continue
+		}
+		overrideMap[o.Feature] = o
+	}
+
+	period := currentPeriod()
+	out := &OrgEntitlementsView{
+		PlanName:     planNameOrFallback(plan),
+		Entitlements: make([]OrgEntitlement, 0, len(planFeatures)),
+	}
+
+	for _, fl := range planFeatures {
+		limit := fl.Limit
+		hasOverride := false
+		if o, ok := overrideMap[fl.Feature]; ok {
+			hasOverride = true
+			if o.LimitValue == nil {
+				limit = -1 // override → unlimited
+			} else {
+				limit = *o.LimitValue
+			}
+		}
+		used, err := s.resolveUsage(ctx, orgID, fl.Feature, period)
+		if err != nil {
+			return nil, fmt.Errorf("usage for %s: %w", fl.Feature, err)
+		}
+		out.Entitlements = append(out.Entitlements, OrgEntitlement{
+			Feature:     fl.Feature,
+			Limit:       limit,
+			Used:        used,
+			HasOverride: hasOverride,
+		})
+	}
+
+	return out, nil
+}
+
+// resolveUsage mirrors DefaultEntitlementChecker.CheckQuota's branch:
+// non-metered features (seats, api_keys) are computed from
+// cardinality, metered features come from usage_records.
+func (s *Service) resolveUsage(ctx context.Context, orgID, feature, period string) (int64, error) {
+	switch feature {
+	case "seats":
+		members, err := s.store.ListOrgMembers(ctx, orgID)
+		if err != nil {
+			return 0, err
+		}
+		pending, err := s.store.CountPendingInvitations(ctx, orgID)
+		if err != nil {
+			return 0, err
+		}
+		return int64(len(members)) + int64(pending), nil
+	case "api_keys":
+		keys, _, err := s.store.ListAPIKeys(ctx, orgID, 1000, "")
+		if err != nil {
+			return 0, err
+		}
+		return int64(len(keys)), nil
+	default:
+		return s.store.GetUsageForPeriod(ctx, orgID, feature, period)
+	}
+}
+
+func planNameOrFallback(p *Plan) string {
+	if p == nil {
+		return "Free"
+	}
+	if p.DisplayName != "" {
+		return p.DisplayName
+	}
+	return p.Name
 }

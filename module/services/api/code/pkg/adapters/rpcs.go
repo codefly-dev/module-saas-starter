@@ -806,7 +806,23 @@ func (s *PlatformAdminServer) GetOrgEntitlements(ctx context.Context, req *gen.G
 	if err := Validate(req); err != nil {
 		return nil, err
 	}
-	return nil, status.Error(codes.Unimplemented, "GetOrgEntitlements not yet implemented")
+	view, err := service.GetOrgEntitlements(ctx, req.OrgId)
+	if err != nil {
+		return nil, status.Error(codes.Internal, err.Error())
+	}
+	out := &gen.GetOrgEntitlementsResponse{
+		PlanName:     view.PlanName,
+		Entitlements: make([]*gen.EntitlementInfo, 0, len(view.Entitlements)),
+	}
+	for _, e := range view.Entitlements {
+		out.Entitlements = append(out.Entitlements, &gen.EntitlementInfo{
+			Feature:     e.Feature,
+			Limit:       e.Limit,
+			Used:        e.Used,
+			HasOverride: e.HasOverride,
+		})
+	}
+	return out, nil
 }
 
 func (s *PlatformAdminServer) OverrideEntitlement(ctx context.Context, req *gen.OverrideEntitlementRequest) (*gen.OverrideEntitlementResponse, error) {

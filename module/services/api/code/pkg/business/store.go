@@ -82,8 +82,11 @@ type Store interface {
 
 	// Entitlements
 	GetOrgPlanID(ctx context.Context, orgID string) (string, error)
+	GetPlanByID(ctx context.Context, planID string) (*Plan, error)
 	GetPlanEntitlement(ctx context.Context, planID string, feature string) (int64, error)
+	ListPlanEntitlements(ctx context.Context, planID string) ([]PlanFeatureLimit, error)
 	GetEntitlementOverride(ctx context.Context, orgID string, feature string) (*EntitlementOverride, error)
+	ListEntitlementOverrides(ctx context.Context, orgID string) ([]*EntitlementOverride, error)
 	CreateEntitlementOverride(ctx context.Context, override *EntitlementOverride) error
 	GetUsageForPeriod(ctx context.Context, orgID string, feature string, period string) (int64, error)
 	RecordUsage(ctx context.Context, orgID string, feature string, quantity int64, period string) error
