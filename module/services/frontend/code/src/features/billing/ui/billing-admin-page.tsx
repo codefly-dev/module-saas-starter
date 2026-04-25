@@ -8,7 +8,10 @@ import {
   CreditCard,
   ExternalLink,
   TrendingUp,
+  FileText,
+  Download,
 } from "lucide-react";
+import Link from "next/link";
 import { toast } from "sonner";
 import {
   Badge,
@@ -43,6 +46,13 @@ export function BillingAdminPage() {
   const [orgId, setOrgId] = useState("");
 
   const { data: entitlements, isLoading } = useOrgEntitlements(orgId || null);
+
+  const { data: invoicesResp, isLoading: invoicesLoading } = useQuery({
+    queryKey: ["billing", "invoices", orgId],
+    queryFn: () => billingClient.listInvoices({ orgId, limit: 12 }),
+    enabled: !!orgId,
+  });
+  const invoices = invoicesResp?.invoices ?? [];
 
   const portal = useMutation({
     mutationFn: () =>
@@ -83,7 +93,8 @@ export function BillingAdminPage() {
           description="Plans and billing are scoped per org. Pick an organization above to see its current plan and manage subscription."
         />
       ) : (
-        <div className="grid gap-6 md:grid-cols-2">
+        <div className="space-y-6">
+          <div className="grid gap-6 md:grid-cols-2">
           {/* ── Plan card ── */}
           <Card>
             <CardHeader>
@@ -164,10 +175,130 @@ export function BillingAdminPage() {
               )}
             </CardContent>
           </Card>
+          </div>
+
+          {/* ── Invoices card ── */}
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2 text-base">
+                <FileText className="h-4 w-4" />
+                Invoices
+              </CardTitle>
+              <CardDescription>
+                Last 12 invoices from Stripe. Click an invoice number to view
+                the hosted detail page or download the PDF.
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              {invoicesLoading ? (
+                <div className="space-y-2">
+                  <Skeleton className="h-10 w-full" />
+                  <Skeleton className="h-10 w-full" />
+                  <Skeleton className="h-10 w-full" />
+                </div>
+              ) : invoices.length === 0 ? (
+                <div className="text-sm text-muted-foreground py-6 text-center">
+                  No invoices yet — start a checkout to enable billing.
+                </div>
+              ) : (
+                <div className="overflow-x-auto">
+                  <table className="w-full text-sm">
+                    <thead>
+                      <tr className="border-b text-xs text-muted-foreground">
+                        <th className="text-left py-2 font-medium">Number</th>
+                        <th className="text-left py-2 font-medium">Date</th>
+                        <th className="text-left py-2 font-medium">Status</th>
+                        <th className="text-right py-2 font-medium">Amount</th>
+                        <th className="py-2"></th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {invoices.map((inv) => (
+                        <tr key={inv.id} className="border-b last:border-0">
+                          <td className="py-2.5 font-mono text-xs">
+                            {inv.hostedInvoiceUrl ? (
+                              <Link
+                                href={inv.hostedInvoiceUrl}
+                                target="_blank"
+                                className="underline underline-offset-2 hover:text-foreground"
+                              >
+                                {inv.number || inv.id.slice(0, 12)}
+                              </Link>
+                            ) : (
+                              <span>{inv.number || inv.id.slice(0, 12)}</span>
+                            )}
+                          </td>
+                          <td className="py-2.5 text-muted-foreground">
+                            {inv.created
+                              ? new Date(
+                                  Number(inv.created.seconds) * 1000,
+                                ).toLocaleDateString()
+                              : "—"}
+                          </td>
+                          <td className="py-2.5">
+                            <InvoiceStatusBadge status={inv.status} />
+                          </td>
+                          <td className="py-2.5 text-right font-mono text-xs">
+                            {formatMoney(Number(inv.amountPaid || inv.amountDue), inv.currency)}
+                          </td>
+                          <td className="py-2.5 text-right">
+                            {inv.invoicePdf && (
+                              <Link
+                                href={inv.invoicePdf}
+                                target="_blank"
+                                aria-label="Download PDF"
+                                className="inline-flex h-7 w-7 items-center justify-center rounded text-muted-foreground hover:bg-accent hover:text-foreground"
+                              >
+                                <Download className="h-3.5 w-3.5" />
+                              </Link>
+                            )}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </CardContent>
+          </Card>
         </div>
       )}
     </div>
   );
+}
+
+function InvoiceStatusBadge({ status }: { status: string }) {
+  const variant: "default" | "secondary" | "destructive" | "outline" = (() => {
+    switch (status) {
+      case "paid":
+        return "default";
+      case "open":
+        return "secondary";
+      case "void":
+      case "uncollectible":
+        return "destructive";
+      default:
+        return "outline";
+    }
+  })();
+  return (
+    <Badge variant={variant} className="text-[10px] capitalize">
+      {status || "draft"}
+    </Badge>
+  );
+}
+
+function formatMoney(amount: number, currency: string): string {
+  // Stripe amounts are in the smallest currency unit (cents for USD/EUR).
+  const major = amount / 100;
+  try {
+    return new Intl.NumberFormat("en-US", {
+      style: "currency",
+      currency: (currency || "usd").toUpperCase(),
+    }).format(major);
+  } catch {
+    return `${major.toFixed(2)} ${currency.toUpperCase()}`;
+  }
 }
 
 interface E {

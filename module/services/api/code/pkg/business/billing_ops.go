@@ -30,6 +30,7 @@ type BillingClient interface {
 	CreateCustomer(ctx context.Context, email, orgID string) (*billing.Customer, error)
 	CreateCheckoutSession(ctx context.Context, p billing.CheckoutParams) (*billing.CheckoutSession, error)
 	CreateBillingPortalSession(ctx context.Context, customerID, returnURL string) (*billing.BillingPortalSession, error)
+	ListInvoices(ctx context.Context, customerID string, limit int) ([]billing.Invoice, error)
 }
 
 // SetBillingClient wires the Stripe client used by StartCheckout and
@@ -133,6 +134,32 @@ func (s *Service) OpenBillingPortal(ctx context.Context, in OpenBillingPortalInp
 
 	s.emit(ctx, in.UserID, "user", "billing.portal_opened", "customer", customerID, in.OrgID)
 	return session.URL, nil
+}
+
+// ListInvoices returns the org's recent Stripe invoices. Empty slice
+// when the org has never started a checkout (no stripe customer id).
+// limit clamps via the billing client; pass 0 for the default 12.
+//
+// Authz expectation: caller is org-admin, gated by the adapter.
+func (s *Service) ListInvoices(ctx context.Context, orgID string, limit int) ([]billing.Invoice, error) {
+	w := wool.Get(ctx).In("ListInvoices")
+	if s.billing == nil {
+		return nil, w.NewError("billing not configured")
+	}
+	customerID, err := s.store.GetOrgStripeCustomerID(ctx, orgID)
+	if err != nil {
+		return nil, w.Wrapf(err, "get org stripe customer")
+	}
+	if customerID == "" {
+		// Org never paid → no invoices. Empty list is the right answer
+		// here; surfacing an error would noise the FE empty-state.
+		return nil, nil
+	}
+	invoices, err := s.billing.ListInvoices(ctx, customerID, limit)
+	if err != nil {
+		return nil, w.Wrapf(err, "stripe list invoices")
+	}
+	return invoices, nil
 }
 
 // HandlePaymentFailed is called when a Stripe webhook reports a failed payment.

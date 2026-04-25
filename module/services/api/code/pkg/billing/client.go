@@ -23,6 +23,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"strconv"
 	"net/http"
 	"net/url"
 	"strings"
@@ -202,6 +203,52 @@ func (c *Client) CreateBillingPortalSession(ctx context.Context, customerID, ret
 		return nil, err
 	}
 	return &out, nil
+}
+
+// ============================================================================
+// Invoice list — for the org-side billing page
+// ============================================================================
+
+// Invoice is the trimmed view of Stripe's Invoice object — just the
+// fields the operator dashboard renders. Amount is in the smallest
+// currency unit (cents for USD/EUR) — the FE divides by 100.
+type Invoice struct {
+	ID                string `json:"id"`
+	Number            string `json:"number"`
+	Status            string `json:"status"` // paid | open | void | uncollectible | draft
+	AmountDue         int64  `json:"amount_due"`
+	AmountPaid        int64  `json:"amount_paid"`
+	Currency          string `json:"currency"` // lowercase ISO 4217
+	Created           int64  `json:"created"`  // unix seconds
+	HostedInvoiceURL  string `json:"hosted_invoice_url"`
+	InvoicePDF        string `json:"invoice_pdf"`
+	PeriodStart       int64  `json:"period_start"`
+	PeriodEnd         int64  `json:"period_end"`
+}
+
+type invoiceList struct {
+	Data []Invoice `json:"data"`
+}
+
+// ListInvoices returns up to `limit` invoices for `customerID`,
+// newest-first (Stripe default ordering). limit < 1 → 12 (the
+// FE renders ~the last year of monthly invoices).
+func (c *Client) ListInvoices(ctx context.Context, customerID string, limit int) ([]Invoice, error) {
+	if customerID == "" {
+		return nil, fmt.Errorf("billing: ListInvoices requires customerID")
+	}
+	if limit < 1 || limit > 100 {
+		limit = 12
+	}
+	q := url.Values{}
+	q.Set("customer", customerID)
+	q.Set("limit", strconv.Itoa(limit))
+
+	var out invoiceList
+	if err := c.get(ctx, "/v1/invoices?"+q.Encode(), &out); err != nil {
+		return nil, err
+	}
+	return out.Data, nil
 }
 
 // ============================================================================

@@ -566,6 +566,44 @@
         ]
       }
     },
+    "/v1/billing/invoices/{orgId}": {
+      "get": {
+        "operationId": "BillingService_ListInvoices",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/customersListInvoicesResponse"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/rpcStatus"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "orgId",
+            "in": "path",
+            "required": true,
+            "type": "string"
+          },
+          {
+            "name": "limit",
+            "description": "0 → server default (12)",
+            "in": "query",
+            "required": false,
+            "type": "integer",
+            "format": "int32"
+          }
+        ],
+        "tags": [
+          "BillingService"
+        ]
+      }
+    },
     "/v1/consent/accept": {
       "post": {
         "operationId": "ConsentService_Accept",
@@ -4009,6 +4047,51 @@
       ],
       "default": "INVITATION_STATUS_UNSPECIFIED"
     },
+    "customersInvoice": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "number": {
+          "type": "string"
+        },
+        "status": {
+          "type": "string",
+          "title": "paid | open | void | uncollectible | draft"
+        },
+        "amountDue": {
+          "type": "string",
+          "format": "int64"
+        },
+        "amountPaid": {
+          "type": "string",
+          "format": "int64"
+        },
+        "currency": {
+          "type": "string"
+        },
+        "created": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "hostedInvoiceUrl": {
+          "type": "string"
+        },
+        "invoicePdf": {
+          "type": "string"
+        },
+        "periodStart": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "periodEnd": {
+          "type": "string",
+          "format": "date-time"
+        }
+      },
+      "description": "Invoice — trimmed view of Stripe's invoice object. Amounts are in\nthe smallest currency unit (cents for USD/EUR); FE divides by 100."
+    },
     "customersJWKSResponse": {
       "type": "object",
       "properties": {
@@ -4067,6 +4150,18 @@
           "items": {
             "type": "object",
             "$ref": "#/definitions/customersInvitation"
+          }
+        }
+      }
+    },
+    "customersListInvoicesResponse": {
+      "type": "object",
+      "properties": {
+        "invoices": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "$ref": "#/definitions/customersInvoice"
           }
         }
       }

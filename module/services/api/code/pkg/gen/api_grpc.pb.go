@@ -4424,7 +4424,8 @@ var SSOAdminService_ServiceDesc = grpc.ServiceDesc{
 }
 
 const (
-	BillingService_OpenPortal_FullMethodName = "/customers.BillingService/OpenPortal"
+	BillingService_OpenPortal_FullMethodName   = "/customers.BillingService/OpenPortal"
+	BillingService_ListInvoices_FullMethodName = "/customers.BillingService/ListInvoices"
 )
 
 // BillingServiceClient is the client API for BillingService service.
@@ -4432,6 +4433,7 @@ const (
 // For semantics around ctx use and closing/ending streaming RPCs, please refer to https://pkg.go.dev/google.golang.org/grpc/?tab=doc#ClientConn.NewStream.
 type BillingServiceClient interface {
 	OpenPortal(ctx context.Context, in *OpenBillingPortalRequest, opts ...grpc.CallOption) (*OpenBillingPortalResponse, error)
+	ListInvoices(ctx context.Context, in *ListInvoicesRequest, opts ...grpc.CallOption) (*ListInvoicesResponse, error)
 }
 
 type billingServiceClient struct {
@@ -4452,11 +4454,22 @@ func (c *billingServiceClient) OpenPortal(ctx context.Context, in *OpenBillingPo
 	return out, nil
 }
 
+func (c *billingServiceClient) ListInvoices(ctx context.Context, in *ListInvoicesRequest, opts ...grpc.CallOption) (*ListInvoicesResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ListInvoicesResponse)
+	err := c.cc.Invoke(ctx, BillingService_ListInvoices_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // BillingServiceServer is the server API for BillingService service.
 // All implementations must embed UnimplementedBillingServiceServer
 // for forward compatibility.
 type BillingServiceServer interface {
 	OpenPortal(context.Context, *OpenBillingPortalRequest) (*OpenBillingPortalResponse, error)
+	ListInvoices(context.Context, *ListInvoicesRequest) (*ListInvoicesResponse, error)
 	mustEmbedUnimplementedBillingServiceServer()
 }
 
@@ -4469,6 +4482,9 @@ type UnimplementedBillingServiceServer struct{}
 
 func (UnimplementedBillingServiceServer) OpenPortal(context.Context, *OpenBillingPortalRequest) (*OpenBillingPortalResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method OpenPortal not implemented")
+}
+func (UnimplementedBillingServiceServer) ListInvoices(context.Context, *ListInvoicesRequest) (*ListInvoicesResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method ListInvoices not implemented")
 }
 func (UnimplementedBillingServiceServer) mustEmbedUnimplementedBillingServiceServer() {}
 func (UnimplementedBillingServiceServer) testEmbeddedByValue()                        {}
@@ -4509,6 +4525,24 @@ func _BillingService_OpenPortal_Handler(srv interface{}, ctx context.Context, de
 	return interceptor(ctx, in, info, handler)
 }
 
+func _BillingService_ListInvoices_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ListInvoicesRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(BillingServiceServer).ListInvoices(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: BillingService_ListInvoices_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(BillingServiceServer).ListInvoices(ctx, req.(*ListInvoicesRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // BillingService_ServiceDesc is the grpc.ServiceDesc for BillingService service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -4519,6 +4553,10 @@ var BillingService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "OpenPortal",
 			Handler:    _BillingService_OpenPortal_Handler,
+		},
+		{
+			MethodName: "ListInvoices",
+			Handler:    _BillingService_ListInvoices_Handler,
 		},
 	},
 	Streams:  []grpc.StreamDesc{},

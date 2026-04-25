@@ -313,6 +313,9 @@ const (
 	// BillingServiceOpenPortalProcedure is the fully-qualified name of the BillingService's OpenPortal
 	// RPC.
 	BillingServiceOpenPortalProcedure = "/customers.BillingService/OpenPortal"
+	// BillingServiceListInvoicesProcedure is the fully-qualified name of the BillingService's
+	// ListInvoices RPC.
+	BillingServiceListInvoicesProcedure = "/customers.BillingService/ListInvoices"
 	// UserSettingsServiceGetProcedure is the fully-qualified name of the UserSettingsService's Get RPC.
 	UserSettingsServiceGetProcedure = "/customers.UserSettingsService/Get"
 	// UserSettingsServiceUpdateProcedure is the fully-qualified name of the UserSettingsService's
@@ -3308,6 +3311,7 @@ func (UnimplementedSSOAdminServiceHandler) Disable(context.Context, *connect.Req
 // BillingServiceClient is a client for the customers.BillingService service.
 type BillingServiceClient interface {
 	OpenPortal(context.Context, *connect.Request[gen.OpenBillingPortalRequest]) (*connect.Response[gen.OpenBillingPortalResponse], error)
+	ListInvoices(context.Context, *connect.Request[gen.ListInvoicesRequest]) (*connect.Response[gen.ListInvoicesResponse], error)
 }
 
 // NewBillingServiceClient constructs a client for the customers.BillingService service. By default,
@@ -3327,12 +3331,19 @@ func NewBillingServiceClient(httpClient connect.HTTPClient, baseURL string, opts
 			connect.WithSchema(billingServiceMethods.ByName("OpenPortal")),
 			connect.WithClientOptions(opts...),
 		),
+		listInvoices: connect.NewClient[gen.ListInvoicesRequest, gen.ListInvoicesResponse](
+			httpClient,
+			baseURL+BillingServiceListInvoicesProcedure,
+			connect.WithSchema(billingServiceMethods.ByName("ListInvoices")),
+			connect.WithClientOptions(opts...),
+		),
 	}
 }
 
 // billingServiceClient implements BillingServiceClient.
 type billingServiceClient struct {
-	openPortal *connect.Client[gen.OpenBillingPortalRequest, gen.OpenBillingPortalResponse]
+	openPortal   *connect.Client[gen.OpenBillingPortalRequest, gen.OpenBillingPortalResponse]
+	listInvoices *connect.Client[gen.ListInvoicesRequest, gen.ListInvoicesResponse]
 }
 
 // OpenPortal calls customers.BillingService.OpenPortal.
@@ -3340,9 +3351,15 @@ func (c *billingServiceClient) OpenPortal(ctx context.Context, req *connect.Requ
 	return c.openPortal.CallUnary(ctx, req)
 }
 
+// ListInvoices calls customers.BillingService.ListInvoices.
+func (c *billingServiceClient) ListInvoices(ctx context.Context, req *connect.Request[gen.ListInvoicesRequest]) (*connect.Response[gen.ListInvoicesResponse], error) {
+	return c.listInvoices.CallUnary(ctx, req)
+}
+
 // BillingServiceHandler is an implementation of the customers.BillingService service.
 type BillingServiceHandler interface {
 	OpenPortal(context.Context, *connect.Request[gen.OpenBillingPortalRequest]) (*connect.Response[gen.OpenBillingPortalResponse], error)
+	ListInvoices(context.Context, *connect.Request[gen.ListInvoicesRequest]) (*connect.Response[gen.ListInvoicesResponse], error)
 }
 
 // NewBillingServiceHandler builds an HTTP handler from the service implementation. It returns the
@@ -3358,10 +3375,18 @@ func NewBillingServiceHandler(svc BillingServiceHandler, opts ...connect.Handler
 		connect.WithSchema(billingServiceMethods.ByName("OpenPortal")),
 		connect.WithHandlerOptions(opts...),
 	)
+	billingServiceListInvoicesHandler := connect.NewUnaryHandler(
+		BillingServiceListInvoicesProcedure,
+		svc.ListInvoices,
+		connect.WithSchema(billingServiceMethods.ByName("ListInvoices")),
+		connect.WithHandlerOptions(opts...),
+	)
 	return "/customers.BillingService/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case BillingServiceOpenPortalProcedure:
 			billingServiceOpenPortalHandler.ServeHTTP(w, r)
+		case BillingServiceListInvoicesProcedure:
+			billingServiceListInvoicesHandler.ServeHTTP(w, r)
 		default:
 			http.NotFound(w, r)
 		}
@@ -3373,6 +3398,10 @@ type UnimplementedBillingServiceHandler struct{}
 
 func (UnimplementedBillingServiceHandler) OpenPortal(context.Context, *connect.Request[gen.OpenBillingPortalRequest]) (*connect.Response[gen.OpenBillingPortalResponse], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("customers.BillingService.OpenPortal is not implemented"))
+}
+
+func (UnimplementedBillingServiceHandler) ListInvoices(context.Context, *connect.Request[gen.ListInvoicesRequest]) (*connect.Response[gen.ListInvoicesResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("customers.BillingService.ListInvoices is not implemented"))
 }
 
 // UserSettingsServiceClient is a client for the customers.UserSettingsService service.
