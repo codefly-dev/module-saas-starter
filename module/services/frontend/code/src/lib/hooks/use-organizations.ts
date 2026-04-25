@@ -1,4 +1,5 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { toast } from "sonner";
 import { useOrganizationService, usePlatformAdminService } from "./use-api-client";
 
 export function useOrganizations() {
@@ -24,7 +25,12 @@ export function useCreateOrganization() {
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: (name: string) => svc.createOrganization({ name }),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["organizations"] }),
+    onSuccess: (_data, name) => {
+      queryClient.invalidateQueries({ queryKey: ["organizations"] });
+      toast.success(`Created “${name}”`);
+    },
+    onError: (err) =>
+      toast.error("Couldn't create organization", { description: err.message }),
   });
 }
 
@@ -44,7 +50,11 @@ export function useAddOrgMember() {
   return useMutation({
     mutationFn: ({ orgId, userId, role }: { orgId: string; userId: string; role?: number }) =>
       svc.addMember({ orgId, userId, role: role ?? 1 }),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["org-members"] }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["org-members"] });
+      toast.success("Member added");
+    },
+    onError: (err) => toast.error("Couldn't add member", { description: err.message }),
   });
 }
 
@@ -54,7 +64,11 @@ export function useRemoveOrgMember() {
   return useMutation({
     mutationFn: ({ orgId, userId }: { orgId: string; userId: string }) =>
       svc.removeMember({ orgId, userId }),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["org-members"] }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["org-members"] });
+      toast.success("Member removed");
+    },
+    onError: (err) => toast.error("Couldn't remove member", { description: err.message }),
   });
 }
 

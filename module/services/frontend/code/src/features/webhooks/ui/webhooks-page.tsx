@@ -2,10 +2,11 @@
 
 import { useState, useCallback } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { Plus } from "lucide-react";
+import { Plus, Webhook as WebhookIcon } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/shared/ui";
 import { OrgSelector } from "@/components/org-selector";
+import { EmptyState } from "@/components/empty-state";
 import { webhookQueries } from "../service/queries";
 import { webhookMutations } from "../service/mutations";
 import type { WebhookSubscription } from "../model/types";
@@ -88,11 +89,11 @@ export function WebhooksPage() {
       </div>
 
       {!orgId ? (
-        <div className="flex h-48 items-center justify-center rounded-md border border-dashed">
-          <p className="text-muted-foreground">
-            Select an organization to view webhooks.
-          </p>
-        </div>
+        <EmptyState
+          icon={WebhookIcon}
+          title="Select an organization to view webhooks"
+          description="Webhooks are scoped to one tenant at a time. Pick an org from the selector above to see (or create) its subscriptions."
+        />
       ) : (
         <WebhooksTable
           data={subscriptions}

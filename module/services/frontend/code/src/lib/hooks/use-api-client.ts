@@ -13,7 +13,7 @@ import {
   APIKeyService,
   PlatformAdminService,
   InvitationService,
-} from "@/gen/user_pb";
+} from "@/gen/saas-starter_api_grpc_pb";
 
 export function useUserService() {
   return useMemo(() => createClient(UserService, apiTransport), []);

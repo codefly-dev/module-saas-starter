@@ -1,6 +1,6 @@
 import { createClient } from "@connectrpc/connect";
 import { apiTransport } from "@/lib/connect/transport";
-import { TeamService } from "@/gen/user_pb";
+import { TeamService } from "@/gen/saas-starter_api_grpc_pb";
 
 const client = createClient(TeamService, apiTransport);
 

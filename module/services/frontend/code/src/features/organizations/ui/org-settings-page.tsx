@@ -21,48 +21,32 @@ import {
   defaultOrgSettings,
   type OrgSettingsValues,
 } from "../model/settings-schema";
-
-/**
- * Organization branding & settings page.
- *
- * The OrganizationService does not yet have a dedicated settings RPC,
- * so we scaffold the UI with local state and a placeholder mutation that
- * will call the real endpoint once it exists.
- */
-
-const SETTINGS_STORAGE_KEY = "org_settings_draft";
+import { orgQueries } from "../service/queries";
+import { orgMutations } from "../service/mutations";
 
 function useOrgSettings(orgId: string) {
   return useQuery({
-    queryKey: ["org-settings", orgId],
-    queryFn: async (): Promise<OrgSettingsValues> => {
-      // Placeholder: load from localStorage until backend RPC exists
-      if (typeof window === "undefined") return defaultOrgSettings;
-      const stored = localStorage.getItem(`${SETTINGS_STORAGE_KEY}_${orgId}`);
-      return stored ? (JSON.parse(stored) as OrgSettingsValues) : defaultOrgSettings;
-    },
-    enabled: !!orgId,
+    ...orgQueries.settings(orgId),
+    select: (data): OrgSettingsValues => ({
+      logoUrl: data.logoUrl ?? "",
+      primaryColor: data.primaryColor ?? defaultOrgSettings.primaryColor,
+      customDomain: data.customDomain ?? "",
+      faviconUrl: data.faviconUrl ?? "",
+    }),
   });
 }
 
 function useUpdateOrgSettings(orgId: string) {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: async (values: OrgSettingsValues) => {
-      // Placeholder: persist to localStorage until backend RPC exists
-      // Replace with: client.updateOrgSettings({ orgId, ...values })
-      localStorage.setItem(
-        `${SETTINGS_STORAGE_KEY}_${orgId}`,
-        JSON.stringify(values),
-      );
-      return values;
-    },
+    mutationFn: (values: OrgSettingsValues) =>
+      orgMutations.updateSettings(orgId, values),
     onSuccess: () => {
       toast.success("Organization settings saved");
       queryClient.invalidateQueries({ queryKey: ["org-settings", orgId] });
     },
-    onError: () => {
-      toast.error("Failed to save settings");
+    onError: (err: Error) => {
+      toast.error(err.message || "Failed to save settings");
     },
   });
 }

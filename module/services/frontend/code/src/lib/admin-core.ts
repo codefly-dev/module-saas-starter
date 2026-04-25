@@ -108,6 +108,7 @@ export function detectImpersonation(accessToken: string): ImpersonationInfo {
 }
 
 const REFRESH_TOKEN_KEY = "codefly_refresh_token";
+const USER_EMAIL_KEY = "codefly_user_email";
 
 export function getStoredRefreshToken(): string | null {
   if (typeof window === "undefined") return null;
@@ -122,6 +123,22 @@ export function storeRefreshToken(token: string): void {
 export function clearRefreshToken(): void {
   if (typeof window === "undefined") return;
   localStorage.removeItem(REFRESH_TOKEN_KEY);
+  localStorage.removeItem(USER_EMAIL_KEY);
+}
+
+// Persist the user's email at login so the post-reload refresh-token
+// flow can restore it. The JWT carries the user's UUID but not email
+// (PII tradeoff), and the refresh-token response is just the token
+// pair — no user details. Without this, the sidebar footer renders
+// the raw UUID after every page reload.
+export function getStoredUserEmail(): string | null {
+  if (typeof window === "undefined") return null;
+  return localStorage.getItem(USER_EMAIL_KEY);
+}
+
+export function storeUserEmail(email: string): void {
+  if (typeof window === "undefined") return;
+  localStorage.setItem(USER_EMAIL_KEY, email);
 }
 
 // ============================================================================

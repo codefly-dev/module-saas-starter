@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useAuth } from "@/lib/auth";
+import { isAdmin } from "@/lib/permissions";
 import {
   SidebarProvider,
   Sidebar,
@@ -63,28 +64,28 @@ const adminNav = [
   {
     group: "Users & Access",
     items: [
-      { label: "Users", href: "/users", icon: Users },
-      { label: "Organizations", href: "/organizations", icon: Building2 },
-      { label: "Teams", href: "/teams", icon: UsersRound },
-      { label: "Roles", href: "/roles", icon: Shield },
-      { label: "Invitations", href: "/invitations", icon: Mail },
-      { label: "API Keys", href: "/api-keys", icon: Key },
+      { label: "Users", href: "/admin/users", icon: Users },
+      { label: "Organizations", href: "/admin/organizations", icon: Building2 },
+      { label: "Teams", href: "/admin/teams", icon: UsersRound },
+      { label: "Roles", href: "/admin/roles", icon: Shield },
+      { label: "Invitations", href: "/admin/invitations", icon: Mail },
+      { label: "API Keys", href: "/admin/api-keys", icon: Key },
     ],
   },
   {
     group: "Platform",
     items: [
-      { label: "Platform Users", href: "/platform/admins", icon: UserSearch },
-      { label: "Feature Flags", href: "/platform/feature-flags", icon: Flag },
-      { label: "Sessions", href: "/sessions", icon: Monitor },
-      { label: "Entitlements", href: "/entitlements", icon: ShieldCheck },
-      { label: "Audit Log", href: "/audit-log", icon: Activity },
+      { label: "Platform Users", href: "/admin/platform/admins", icon: UserSearch },
+      { label: "Feature Flags", href: "/admin/platform/feature-flags", icon: Flag },
+      { label: "Sessions", href: "/admin/sessions", icon: Monitor },
+      { label: "Entitlements", href: "/admin/entitlements", icon: ShieldCheck },
+      { label: "Audit Log", href: "/admin/audit-log", icon: Activity },
     ],
   },
   {
     group: "Integrations",
     items: [
-      { label: "Webhooks", href: "/webhooks", icon: Globe },
+      { label: "Webhooks", href: "/admin/webhooks", icon: Globe },
     ],
   },
   {
@@ -97,11 +98,8 @@ const adminNav = [
   },
 ];
 
-function isAdmin(platformRole?: string, orgRole?: string): boolean {
-  if (platformRole === "super_admin" || platformRole === "billing" || platformRole === "support") return true;
-  if (orgRole === "admin" || orgRole === "owner") return true;
-  return false;
-}
+// isAdmin lives in @/lib/permissions and is imported above — the sidebar
+// uses the same predicate <RoleGate> uses so role semantics stay unified.
 
 export function AdminLayout({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
@@ -188,42 +186,34 @@ export function AdminLayout({ children }: { children: React.ReactNode }) {
           <SidebarMenu>
             <SidebarMenuItem>
               <DropdownMenu>
-                <DropdownMenuTrigger asChild>
-                  <SidebarMenuButton size="lg">
-                    <Avatar className="h-8 w-8">
-                      <AvatarFallback>{userInitials}</AvatarFallback>
-                    </Avatar>
-                    <div className="flex flex-col gap-0.5 leading-none">
-                      <span className="text-sm font-medium">
-                        {user?.email || user?.id}
+                <DropdownMenuTrigger render={<SidebarMenuButton size="lg" />}>
+                  <Avatar className="h-8 w-8">
+                    <AvatarFallback>{userInitials}</AvatarFallback>
+                  </Avatar>
+                  <div className="flex flex-col gap-0.5 leading-none">
+                    <span className="text-sm font-medium">
+                      {user?.email || user?.id}
+                    </span>
+                    {platformRole && (
+                      <span className="text-xs text-muted-foreground">
+                        {platformRole}
                       </span>
-                      {platformRole && (
-                        <span className="text-xs text-muted-foreground">
-                          {platformRole}
-                        </span>
-                      )}
-                    </div>
-                    <ChevronUp className="ml-auto h-4 w-4" />
-                  </SidebarMenuButton>
+                    )}
+                  </div>
+                  <ChevronUp className="ml-auto h-4 w-4" />
                 </DropdownMenuTrigger>
                 <DropdownMenuContent side="top" align="start" className="w-56">
-                  <DropdownMenuItem asChild>
-                    <Link href="/settings/mfa">
-                      <Shield className="mr-2 h-4 w-4" />
-                      Security
-                    </Link>
+                  <DropdownMenuItem render={<Link href="/settings/mfa" />}>
+                    <Shield className="mr-2 h-4 w-4" />
+                    Security
                   </DropdownMenuItem>
-                  <DropdownMenuItem asChild>
-                    <Link href="/settings/notifications">
-                      <Bell className="mr-2 h-4 w-4" />
-                      Notifications
-                    </Link>
+                  <DropdownMenuItem render={<Link href="/settings/notifications" />}>
+                    <Bell className="mr-2 h-4 w-4" />
+                    Notifications
                   </DropdownMenuItem>
-                  <DropdownMenuItem asChild>
-                    <Link href="/settings/data">
-                      <FileText className="mr-2 h-4 w-4" />
-                      Data & Privacy
-                    </Link>
+                  <DropdownMenuItem render={<Link href="/settings/data" />}>
+                    <FileText className="mr-2 h-4 w-4" />
+                    Data & Privacy
                   </DropdownMenuItem>
                   <DropdownMenuSeparator />
                   <DropdownMenuItem onClick={logout}>
@@ -244,7 +234,13 @@ export function AdminLayout({ children }: { children: React.ReactNode }) {
           <div className="flex-1" />
           <NotificationBell />
         </header>
-        <main className="flex-1 p-6">{children}</main>
+        {/* Route-content fade-in. The key={pathname} forces React
+            to remount the wrapper on every navigation, replaying the
+            CSS animation. Snappy (200ms) so it feels like polish, not
+            a delay. */}
+        <main key={pathname} className="flex-1 p-6 animate-in fade-in slide-in-from-bottom-1 duration-200">
+          {children}
+        </main>
       </SidebarInset>
 
       <Toaster />

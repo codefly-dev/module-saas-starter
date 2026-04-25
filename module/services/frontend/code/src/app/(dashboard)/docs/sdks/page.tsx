@@ -19,7 +19,7 @@ const sdks = [
     install: `npm install @connectrpc/connect @connectrpc/connect-web @bufbuild/protobuf`,
     usage: `import { createClient } from "@connectrpc/connect";
 import { createConnectTransport } from "@connectrpc/connect-web";
-import { UserService, AuthService, OrganizationService } from "./gen/user_pb";
+import { UserService, AuthService, OrganizationService } from "./gen/saas-starter_api_grpc_pb";
 
 const transport = createConnectTransport({
   baseUrl: "https://api.yourapp.com",
@@ -58,14 +58,14 @@ const { organization } = await orgs.createOrganization({
     label: "Python",
     install: `pip install grpcio grpcio-tools`,
     usage: `import grpc
-from gen import user_pb2, user_pb2_grpc
+from gen import api_pb2, api_pb2_grpc
 
 # Connect to the API gateway
 channel = grpc.insecure_channel("api.yourapp.com:443")
 
 # Authenticate
-auth = user_pb2_grpc.AuthServiceStub(channel)
-resp = auth.LoginWithPassword(user_pb2.LoginWithPasswordRequest(
+auth = api_pb2_grpc.AuthServiceStub(channel)
+resp = auth.LoginWithPassword(api_pb2.LoginWithPasswordRequest(
     email="user@example.com",
     password="secret",
 ))
@@ -74,18 +74,18 @@ resp = auth.LoginWithPassword(user_pb2.LoginWithPasswordRequest(
 metadata = [("authorization", f"Bearer {resp.access_token}")]
 
 # List users
-users_svc = user_pb2_grpc.UserServiceStub(channel)
+users_svc = api_pb2_grpc.UserServiceStub(channel)
 users = users_svc.ListUsers(
-    user_pb2.ListUsersRequest(page_size=20),
+    api_pb2.ListUsersRequest(page_size=20),
     metadata=metadata,
 )
 for user in users.users:
     print(user.primary_email)
 
 # Create organization
-orgs_svc = user_pb2_grpc.OrganizationServiceStub(channel)
+orgs_svc = api_pb2_grpc.OrganizationServiceStub(channel)
 org = orgs_svc.CreateOrganization(
-    user_pb2.CreateOrganizationRequest(
+    api_pb2.CreateOrganizationRequest(
         name="Acme Inc",
         slug="acme-inc",
     ),

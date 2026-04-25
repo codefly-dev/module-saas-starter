@@ -27,8 +27,12 @@ test.describe("Webhooks admin page", () => {
     await page.getByRole("link", { name: "Webhooks" }).click();
     await page.waitForURL(/\/admin\/webhooks/);
 
-    // Heading visible.
-    await expect(page.getByRole("heading", { name: "Webhooks" })).toBeVisible();
+    // Heading visible. exact: true — the EmptyState title also
+    // contains "Webhooks" ("Select an organization to view webhooks"),
+    // so a non-exact match would trigger a strict-mode violation.
+    await expect(
+      page.getByRole("heading", { name: "Webhooks", exact: true }),
+    ).toBeVisible();
 
     // OrgSelector is the same trigger pattern other admin pages use —
     // pre-selection it shows a placeholder, not a chosen org name.
@@ -47,15 +51,13 @@ test.describe("Webhooks admin page", () => {
   test("picking an org reveals the table + Create button", async ({ page }) => {
     await page.goto("/admin/webhooks");
 
-    // Open the OrgSelector dropdown. It's a Radix Select trigger —
-    // the role-based locator is portable across the design-system
-    // updates.
+    // OrgSelector is a Radix Select (shadcn primitive) — opens an
+    // in-page popover, options arrive once useOrganizations resolves.
     const trigger = page.getByRole("combobox").first();
     await trigger.click();
-
-    // dev-admin fixture seeds Acme Corp as the only org, so its name
-    // is the only option to pick.
-    await page.getByRole("option", { name: /acme corp/i }).click();
+    await page
+      .getByRole("option", { name: /acme corp/i })
+      .click({ timeout: 15_000 });
 
     // Empty state goes away, Create button appears.
     await expect(

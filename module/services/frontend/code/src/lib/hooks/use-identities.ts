@@ -1,7 +1,7 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useUserService } from "./use-api-client";
 import { create } from "@bufbuild/protobuf";
-import { UserIdentitySchema } from "@/gen/user_pb";
+import { UserIdentitySchema } from "@/gen/saas-starter_api_grpc_pb";
 
 export function useUserIdentities(userUuid: string | null) {
   const svc = useUserService();

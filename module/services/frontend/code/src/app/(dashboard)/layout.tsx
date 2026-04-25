@@ -2,6 +2,7 @@
 
 import { useAuth } from "@/lib/auth";
 import { AdminLayout } from "@/components/admin-layout";
+import { CommandPalette } from "@/components/command-palette";
 import { ImpersonationBanner } from "@/components/impersonation-banner";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useRouter } from "next/navigation";
@@ -37,6 +38,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
   return (
     <>
       <ImpersonationBanner />
+      <CommandPalette />
       <AdminLayout>{children}</AdminLayout>
     </>
   );

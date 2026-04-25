@@ -1,4 +1,5 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { toast } from "sonner";
 import { useAPIKeyService } from "./use-api-client";
 
 export function useAPIKeys(orgId: string | null) {
@@ -21,7 +22,14 @@ export function useCreateAPIKey() {
       scopes?: { resource: string; action: string }[];
       environment?: number;
     }) => svc.createAPIKey({ organizationId, name, scopes: scopes ?? [], environment: environment ?? 1 }),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["api-keys"] }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["api-keys"] });
+      toast.success("API key created", {
+        description: "Copy the secret now — it won't be shown again.",
+      });
+    },
+    onError: (err) =>
+      toast.error("Couldn't create API key", { description: err.message }),
   });
 }
 
@@ -30,6 +38,11 @@ export function useRevokeAPIKey() {
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: (id: string) => svc.revokeAPIKey({ id }),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["api-keys"] }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["api-keys"] });
+      toast.success("API key revoked");
+    },
+    onError: (err) =>
+      toast.error("Couldn't revoke API key", { description: err.message }),
   });
 }

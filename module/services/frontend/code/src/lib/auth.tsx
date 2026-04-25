@@ -17,6 +17,8 @@ import {
   getStoredRefreshToken,
   storeRefreshToken,
   clearRefreshToken,
+  getStoredUserEmail,
+  storeUserEmail,
   type ImpersonationInfo,
 } from "./admin-core";
 import { setToken as setConnectToken } from "./connect/token-store";
@@ -72,8 +74,15 @@ export function availableProviders(): ProviderPreset[] {
 }
 
 // Build the provider's authorize URL for the authorization-code flow.
-// State is a random opaque value the callback page verifies on return.
-export function buildAuthorizeURL(preset: ProviderPreset, redirectURI: string, state: string): string {
+// State is the server-signed nonce from BeginOAuth (or a client-only
+// random fallback in offline dev). codeChallenge is the SHA-256 of the
+// PKCE verifier — empty disables PKCE for callers that don't need it.
+export function buildAuthorizeURL(
+  preset: ProviderPreset,
+  redirectURI: string,
+  state: string,
+  codeChallenge?: string,
+): string {
   const params = new URLSearchParams({
     response_type: "code",
     client_id: preset.clientID,
@@ -81,18 +90,49 @@ export function buildAuthorizeURL(preset: ProviderPreset, redirectURI: string, s
     scope: preset.scope,
     state,
   });
+  if (codeChallenge) {
+    params.set("code_challenge", codeChallenge);
+    params.set("code_challenge_method", "S256");
+  }
   const joiner = preset.authorizeURL.includes("?") ? "&" : "?";
   return `${preset.authorizeURL}${joiner}${params.toString()}`;
 }
 
 // Generates a cryptographically random state token for CSRF protection
-// on the OAuth redirect. Stored in sessionStorage, verified on callback.
+// on the OAuth redirect. Used as a fallback when the backend's BeginOAuth
+// is unreachable (offline dev). Production flow prefers the
+// server-signed state from BeginOAuth — see signInWith.
 export function newState(): string {
   const bytes = new Uint8Array(16);
   if (typeof window !== "undefined" && window.crypto) {
     window.crypto.getRandomValues(bytes);
   }
   return Array.from(bytes).map((b) => b.toString(16).padStart(2, "0")).join("");
+}
+
+// PKCE: cryptographically random verifier + SHA-256 challenge.
+// The verifier stays on the client (sessionStorage); the challenge is
+// sent to the provider in the authorize URL. On the token-exchange
+// hop we hand the verifier to the backend, which forwards it to the
+// provider's token endpoint as `code_verifier`. The provider re-hashes
+// it and compares — this binds the code redemption to the original
+// authorize request and blocks a stolen-code replay.
+async function newPkce(): Promise<{ verifier: string; challenge: string }> {
+  // 64 bytes → 86 char base64url, well within the 43–128 RFC range.
+  const bytes = new Uint8Array(64);
+  if (typeof window !== "undefined" && window.crypto) {
+    window.crypto.getRandomValues(bytes);
+  }
+  const verifier = base64urlEncode(bytes);
+  const digest = await window.crypto.subtle.digest("SHA-256", bytes);
+  const challenge = base64urlEncode(new Uint8Array(digest));
+  return { verifier, challenge };
+}
+
+function base64urlEncode(bytes: Uint8Array): string {
+  let s = "";
+  for (let i = 0; i < bytes.length; i++) s += String.fromCharCode(bytes[i]);
+  return btoa(s).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
 }
 
 interface AuthState {
@@ -112,8 +152,9 @@ interface AuthContextType extends AuthState {
   login: (provider: string, providerId: string, email: string) => Promise<void>;
   // Kicks off the OAuth authorization-code flow by redirecting the
   // browser to the provider's hosted login. The callback page completes
-  // the handshake.
-  signInWith: (providerID: string) => void;
+  // the handshake. Async because we mint a server-signed state via
+  // BeginOAuth before the redirect.
+  signInWith: (providerID: string) => Promise<void>;
   // Completes the OAuth flow from /auth/callback: POSTs the code to the
   // backend, stores the returned tokens, redirects to the post-login
   // destination (or "/").
@@ -139,7 +180,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const getToken = useCallback(() => state.accessToken, [state.accessToken]);
 
   const setTokens = useCallback(
-    (accessToken: string, refreshToken: string, userId?: string) => {
+    (accessToken: string, refreshToken: string, userId?: string, email?: string) => {
       const { platformRole, orgRole } = extractRoles(accessToken);
       const impersonation = detectImpersonation(accessToken);
       storeRefreshToken(refreshToken);
@@ -151,8 +192,22 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       if (typeof document !== "undefined") {
         document.cookie = "codefly_session=1; path=/; SameSite=Lax";
       }
+      const payload = decodeJWTPayload(accessToken);
+      // Resolve email: explicit arg (login flow) > JWT email claim
+      // (future-proofing) > previously-stored value (refresh-token
+      // round-trip after page reload). Persist the resolved email so
+      // the next reload finds it.
+      const resolvedEmail =
+        email ||
+        (typeof payload.email === "string" ? payload.email : undefined) ||
+        getStoredUserEmail() ||
+        undefined;
+      if (resolvedEmail) storeUserEmail(resolvedEmail);
       setState({
-        user: { id: userId || String(decodeJWTPayload(accessToken).sub ?? "") },
+        user: {
+          id: userId || String(payload.sub ?? ""),
+          email: resolvedEmail,
+        },
         accessToken,
         platformRole,
         orgRole,
@@ -173,33 +228,60 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       });
       if (!res.ok) throw new Error("Authentication failed");
       const data = await res.json();
-      setTokens(data.accessToken, data.refreshToken, data.user?.uuid);
+      setTokens(data.accessToken, data.refreshToken, data.user?.uuid, email);
     },
     [setTokens],
   );
 
-  // OAuth redirect kickoff. Generates a CSRF state, stores it in
-  // sessionStorage, and sends the browser to the provider's hosted
-  // login. The callback page will verify the state and POST the code
-  // to the backend.
-  const signInWith = useCallback((providerID: string) => {
+  // OAuth redirect kickoff. Asks the backend for a server-signed state,
+  // generates a PKCE verifier+challenge, and sends the browser to the
+  // provider's hosted login. The callback page completes the handshake.
+  //
+  // Two-layer CSRF protection: server validates state signature on
+  // callback (defense in depth even if sessionStorage is compromised),
+  // and PKCE binds the code redemption to this specific browser session
+  // (so a stolen code can't be redeemed elsewhere).
+  //
+  // If BeginOAuth fails (backend down, dev disconnect), falls back to a
+  // client-only random state — same security posture we had before this
+  // RPC existed, so offline dev is not blocked.
+  const signInWith = useCallback(async (providerID: string) => {
     const presets = availableProviders();
     const preset = presets.find((p) => p.id === providerID);
     if (!preset) {
       throw new Error(`OAuth provider not configured: ${providerID}`);
     }
-    const state = newState();
     const redirectURI = `${window.location.origin}/auth/callback`;
+    const pkce = await newPkce();
+
+    // Try to mint a server-signed state. Fall back to client-only on
+    // failure — the FE's existing sessionStorage check still applies.
+    let state: string;
+    try {
+      const res = await fetch(`${API_BASE}/v1/auth/oauth/begin`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ provider: providerID, redirect_uri: redirectURI }),
+      });
+      if (!res.ok) throw new Error(`BeginOAuth failed: ${res.status}`);
+      const data = await res.json();
+      state = data.state ?? newState();
+    } catch {
+      state = newState();
+    }
+
     sessionStorage.setItem(`oauth_state_${providerID}`, state);
+    sessionStorage.setItem(`oauth_pkce_${providerID}`, pkce.verifier);
     sessionStorage.setItem("oauth_provider", providerID);
     sessionStorage.setItem("oauth_redirect_uri", redirectURI);
     sessionStorage.setItem("post_login_destination", window.location.pathname + window.location.search);
-    window.location.href = buildAuthorizeURL(preset, redirectURI, state);
+    window.location.href = buildAuthorizeURL(preset, redirectURI, state, pkce.challenge);
   }, []);
 
-  // OAuth callback completion. Verifies state, POSTs code to the
-  // backend /v1/auth/authenticate endpoint, stores the returned
-  // tokens, and navigates to the post-login destination.
+  // OAuth callback completion. Verifies state client-side, then POSTs
+  // {code, redirect_uri, state, code_verifier} to /v1/auth/authenticate.
+  // Server independently re-validates state (signature + binding) and
+  // forwards code_verifier to the provider's token endpoint for PKCE.
   const completeOAuth = useCallback(
     async (code: string, state: string) => {
       const providerID = sessionStorage.getItem("oauth_provider");
@@ -211,13 +293,22 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       if (!expectedState || expectedState !== state) {
         throw new Error("OAuth state mismatch — possible CSRF attack");
       }
+      const codeVerifier = sessionStorage.getItem(`oauth_pkce_${providerID}`) ?? "";
 
       const res = await fetch(`${API_BASE}/v1/auth/authenticate`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           provider: providerID,
-          profile: { code, redirect_uri: redirectURI },
+          profile: {
+            code,
+            redirect_uri: redirectURI,
+            // state is forwarded so the server can repeat the
+            // sessionStorage-only check. The code_verifier is the PKCE
+            // secret — server forwards it to the provider unchanged.
+            state,
+            code_verifier: codeVerifier,
+          },
         }),
       });
       if (!res.ok) {
@@ -230,6 +321,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       // Clean up the one-shot state tokens so a later refresh doesn't
       // accidentally replay them.
       sessionStorage.removeItem(`oauth_state_${providerID}`);
+      sessionStorage.removeItem(`oauth_pkce_${providerID}`);
       sessionStorage.removeItem("oauth_provider");
       sessionStorage.removeItem("oauth_redirect_uri");
 

@@ -48,17 +48,38 @@ test.describe("Login flow", () => {
     await page.getByText("Sarah Chen").click();
     await page.waitForURL("/", { timeout: 15000 });
 
-    // Admin nav sections should be visible for super_admin
-    await expect(page.getByText("Users & Access")).toBeVisible();
-    await expect(page.getByText("Platform")).toBeVisible();
+    // Admin nav sections should be visible for super_admin. Use exact
+    // matching to pin to the sidebar group headers — without `exact`,
+    // "Platform" also matches the "Platform Users" link and trips
+    // Playwright's strict-mode violation.
+    await expect(page.getByText("Users & Access", { exact: true })).toBeVisible();
+    await expect(page.getByText("Platform", { exact: true })).toBeVisible();
   });
 
   test("unauthenticated user redirected to login", async ({ page }) => {
-    // Try to access a dashboard page directly
-    await page.goto("/users");
+    // Try to access an admin page directly. The (admin) route group's
+    // layout redirects unauthenticated callers to /auth/login; non-admin
+    // signed-in users get sent back to /.
+    await page.goto("/admin/users");
 
     // Should redirect to login
     await page.waitForURL(/\/auth\/login/, { timeout: 10000 });
     await expect(page.getByText("Sign in")).toBeVisible();
+  });
+
+  test("non-admin user redirected away from /admin", async ({ page }) => {
+    // Log in as a regular member (Bob), then try to access an admin URL.
+    // The (admin) layout should bounce us back to the main dashboard —
+    // this is the UI-side enforcement of the module-only admin surface.
+    await page.goto("/auth/login");
+    await expect(page.getByText("Bob Williams")).toBeVisible({ timeout: 10000 });
+    await page.getByText("Bob Williams").click();
+    await page.waitForURL("/", { timeout: 15000 });
+
+    // Direct navigation to an admin URL should land back on /, not
+    // /admin/users. Confirms the (admin)/layout.tsx redirect works.
+    await page.goto("/admin/users");
+    await page.waitForURL("/", { timeout: 10000 });
+    await expect(page.getByText("Welcome back")).toBeVisible();
   });
 });

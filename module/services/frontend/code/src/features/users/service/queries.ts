@@ -1,7 +1,7 @@
 import { queryOptions } from "@tanstack/react-query";
 import { createClient } from "@connectrpc/connect";
 import { apiTransport } from "@/lib/connect/transport";
-import { PlatformAdminService, UserService } from "@/gen/user_pb";
+import { PlatformAdminService, UserService } from "@/gen/saas-starter_api_grpc_pb";
 
 const adminClient = createClient(PlatformAdminService, apiTransport);
 const userClient = createClient(UserService, apiTransport);

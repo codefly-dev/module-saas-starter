@@ -5,7 +5,7 @@ export const auditPlugin: AdminPlugin = {
   navItems: [
     {
       label: "Audit Log",
-      href: "/audit-log",
+      href: "/admin/audit-log",
       icon: "FileText",
       requiredRole: "admin",
     },

@@ -13,25 +13,25 @@ const sections = [
   {
     title: "Platform Admins",
     description: "Manage platform-level admin roles and permissions.",
-    href: "/platform/admins",
+    href: "/admin/platform/admins",
     icon: ShieldCheck,
   },
   {
     title: "Feature Flags",
     description: "Create and toggle feature flags for gradual rollouts.",
-    href: "/platform/feature-flags",
+    href: "/admin/platform/feature-flags",
     icon: Flag,
   },
   {
     title: "Sessions",
     description: "View and manage active user sessions.",
-    href: "/sessions",
+    href: "/admin/sessions",
     icon: Activity,
   },
   {
     title: "Entitlements",
     description: "View and override organization entitlements and plan limits.",
-    href: "/entitlements",
+    href: "/admin/entitlements",
     icon: CreditCard,
   },
 ];
