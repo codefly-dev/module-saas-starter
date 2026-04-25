@@ -2,7 +2,6 @@ package main
 
 import (
 	"context"
-	"fmt"
 	"os"
 	"os/signal"
 	"syscall"
@@ -13,6 +12,7 @@ import (
 	"api/pkg/business"
 	"api/pkg/infra"
 
+	"github.com/codefly-dev/core/wool"
 	"google.golang.org/grpc"
 )
 
@@ -26,6 +26,7 @@ func env(key, fallback string) string {
 func main() {
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
+	w := wool.Get(ctx).In("cmd.local")
 
 	grpcPort := uint16(9090)
 	httpPort := uint16(8080)
@@ -34,7 +35,7 @@ func main() {
 	pgURL := env("POSTGRES_URL", "postgres://postgres:postgres@localhost:5432/user_management?sslmode=disable")
 	store, err := infra.NewPostgresStoreFromURL(ctx, pgURL)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "postgres: %v\n", err)
+		w.Error("postgres connect failed", wool.ErrField(err))
 		os.Exit(1)
 	}
 	defer store.Close()
@@ -42,7 +43,7 @@ func main() {
 	// Business service
 	service, err := business.NewService(store)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "business: %v\n", err)
+		w.Error("business service init failed", wool.ErrField(err))
 		os.Exit(1)
 	}
 
@@ -62,10 +63,10 @@ func main() {
 		Token:   vaultToken,
 	})
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "WARNING: vault key load failed (%v) — using ephemeral key\n", err)
+		w.Warn("vault key load failed — using ephemeral key", wool.ErrField(err))
 		_, priv, err = ed25519minter.GenerateKey()
 		if err != nil {
-			fmt.Fprintf(os.Stderr, "ed25519: %v\n", err)
+			w.Error("ed25519 generate failed", wool.ErrField(err))
 			os.Exit(1)
 		}
 	}
@@ -106,21 +107,23 @@ func main() {
 		grpc.UnaryInterceptor(adapters.QuotaInterceptor(entitlementChecker)),
 	)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "server: %v\n", err)
+		w.Error("server init failed", wool.ErrField(err))
 		os.Exit(1)
 	}
 
 	go func() {
 		if err := server.Start(ctx); err != nil {
-			fmt.Fprintf(os.Stderr, "server error: %v\n", err)
+			w.Error("server runtime failed", wool.ErrField(err))
 			os.Exit(1)
 		}
 	}()
 
-	fmt.Println("saas-starter API running — gRPC :9090, REST :8080")
-	fmt.Println("postgres:", pgURL)
+	w.Info("saas-starter API running",
+		wool.Field("grpc_port", grpcPort),
+		wool.Field("http_port", httpPort),
+		wool.Field("postgres", pgURL))
 
 	<-ctx.Done()
 	server.Stop()
-	fmt.Println("shutdown complete")
+	w.Info("shutdown complete")
 }

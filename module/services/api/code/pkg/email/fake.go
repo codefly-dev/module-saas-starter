@@ -70,7 +70,10 @@ type LogSender struct {
 }
 
 // NewLogSender returns a LogSender using the given log function.
-// Pass log.Printf for stdlib-style output.
+// Project policy is wool everywhere; the canonical caller wraps a
+// wool.Get(ctx) Info call so dev-mode email previews land in the
+// same structured stream as the rest of the service's logs (see
+// pickEmailSender in work.go).
 func NewLogSender(logger func(format string, args ...any)) *LogSender {
 	return &LogSender{Logger: logger}
 }

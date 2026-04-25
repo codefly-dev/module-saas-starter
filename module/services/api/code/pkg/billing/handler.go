@@ -35,9 +35,10 @@ import (
 	"encoding/json"
 	"errors"
 	"io"
-	"log"
 	"net/http"
 	"time"
+
+	"github.com/codefly-dev/core/wool"
 )
 
 // EmailNotifier is the optional email integration the webhook handler
@@ -60,18 +61,13 @@ type HandlerDeps struct {
 	// Notifier is optional; when set, billing events trigger email
 	// notifications via the template system.
 	Notifier EmailNotifier
-	// Logger is optional; defaults to stdlib log.Printf. Replace with
-	// a structured logger in production wiring.
-	Logger func(format string, args ...any)
 }
 
 // NewHandler returns an http.Handler that processes Stripe webhooks.
 // Mount it at a PUBLIC path (typically /v1/billing/webhook) — the
-// gateway's public-path allowlist should include it.
+// gateway's public-path allowlist should include it. Logging goes
+// through wool (project policy) keyed off the incoming request ctx.
 func NewHandler(deps HandlerDeps) http.Handler {
-	if deps.Logger == nil {
-		deps.Logger = log.Printf
-	}
 	return &handler{deps: deps}
 }
 
@@ -97,7 +93,7 @@ func (h *handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		// Signature or decode failure — do NOT leak details to the
 		// caller. Stripe will retry on 400.
-		h.deps.Logger("billing: webhook verify failed: %v", err)
+		wool.Get(r.Context()).In("billing.handler").Warn("webhook verify failed", wool.ErrField(err))
 		writeError(w, http.StatusBadRequest, "invalid signature")
 		return
 	}
@@ -107,7 +103,7 @@ func (h *handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	// Idempotency: short-circuit if we've seen this event id before.
 	seen, err := h.deps.Store.WebhookAlreadyProcessed(ctx, ev.ID)
 	if err != nil {
-		h.deps.Logger("billing: check idempotency: %v", err)
+		wool.Get(ctx).In("billing.handler").Warn("check idempotency failed", wool.ErrField(err))
 		writeError(w, http.StatusInternalServerError, "internal")
 		return
 	}
@@ -129,14 +125,17 @@ func (h *handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			writeJSON(w, http.StatusOK, map[string]string{"status": "duplicate"})
 			return
 		}
-		h.deps.Logger("billing: record webhook: %v", err)
+		wool.Get(ctx).In("billing.handler").Warn("record webhook failed", wool.ErrField(err))
 		writeError(w, http.StatusInternalServerError, "internal")
 		return
 	}
 
 	// Dispatch.
 	if err := h.dispatch(ctx, ev, body); err != nil {
-		h.deps.Logger("billing: dispatch %s (%s): %v", ev.Type, ev.ID, err)
+		wool.Get(ctx).In("billing.handler").Warn("dispatch failed",
+			wool.Field("event_type", ev.Type),
+			wool.Field("event_id", ev.ID),
+			wool.ErrField(err))
 		_ = h.deps.Store.MarkWebhookFailed(ctx, ev.ID, err.Error())
 		// Some errors are worth retrying (transient DB), some aren't
 		// (unknown plan). We return 500 to trigger Stripe retry only
@@ -176,7 +175,7 @@ func (h *handler) dispatch(ctx context.Context, ev *Event, body []byte) error {
 	default:
 		// Logged and ack'd — we don't fail on unknown types because
 		// Stripe can add new events at any time.
-		h.deps.Logger("billing: ignoring event type: %s", ev.Type)
+		wool.Get(ctx).In("billing.handler").Info("ignoring event type", wool.Field("event_type", ev.Type))
 		return nil
 	}
 }
@@ -331,7 +330,9 @@ func (h *handler) notifyByCustomer(ctx context.Context, stripeCustomerID, templa
 	}
 	email, err := h.deps.Store.OwnerEmailByStripeCustomerID(ctx, stripeCustomerID)
 	if err != nil || email == "" {
-		h.deps.Logger("billing: cannot resolve email for customer %s: %v", stripeCustomerID, err)
+		wool.Get(ctx).In("billing.handler.notifyByCustomer").Warn("cannot resolve email",
+			wool.Field("stripe_customer_id", stripeCustomerID),
+			wool.ErrField(err))
 		return
 	}
 	vars := map[string]string{"email": email}
@@ -339,7 +340,10 @@ func (h *handler) notifyByCustomer(ctx context.Context, stripeCustomerID, templa
 		vars[k] = v
 	}
 	if err := h.deps.Notifier.SendBillingEmail(ctx, templateName, email, vars); err != nil {
-		h.deps.Logger("billing: email %q to %s failed: %v", templateName, email, err)
+		wool.Get(ctx).In("billing.handler.notifyByCustomer").Warn("email send failed",
+			wool.Field("template", templateName),
+			wool.Field("to", email),
+			wool.ErrField(err))
 	}
 }
 
