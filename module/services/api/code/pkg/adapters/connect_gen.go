@@ -89,6 +89,7 @@ func (s *ConnectServer) Run(ctx context.Context) error {
 	mux.Handle(genconnect.NewGDPRServiceHandler(&gdprConnectHandler{svc: s.service}, auth))
 	mux.Handle(genconnect.NewMFAServiceHandler(&mfaConnectHandler{svc: s.service}, auth))
 	mux.Handle(genconnect.NewSSOAdminServiceHandler(&ssoAdminConnectHandler{svc: s.service}, auth))
+	mux.Handle(genconnect.NewUserSettingsServiceHandler(&userSettingsConnectHandler{svc: s.service}, auth))
 
 	// CORS — required when the FE talks directly to this api (no
 	// auth-sidecar in front). Connect-Web preflights every POST

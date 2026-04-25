@@ -55,6 +55,7 @@ import {
 } from "lucide-react";
 import { NotificationBell } from "@/features/notifications/ui/notification-bell";
 import { ThemeToggle } from "@/components/theme-toggle";
+import { ThemeSync } from "@/features/user-settings/ui/theme-sync";
 
 // Regular user nav — visible to all authenticated users
 const userNav = [
@@ -250,6 +251,7 @@ export function AdminLayout({ children }: { children: React.ReactNode }) {
       </SidebarInset>
 
       <Toaster />
+      <ThemeSync />
     </SidebarProvider>
   );
 }

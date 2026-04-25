@@ -57,6 +57,9 @@
       "name": "SSOAdminService"
     },
     {
+      "name": "UserSettingsService"
+    },
+    {
       "name": "MFAService"
     }
   ],
@@ -2422,6 +2425,58 @@
         ]
       }
     },
+    "/v1/user/settings": {
+      "get": {
+        "operationId": "UserSettingsService_Get",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/customersUserSettings"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/rpcStatus"
+            }
+          }
+        },
+        "tags": [
+          "UserSettingsService"
+        ]
+      },
+      "post": {
+        "operationId": "UserSettingsService_Update",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/customersUserSettings"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/rpcStatus"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "body",
+            "in": "body",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/customersUpdateUserSettingsRequest"
+            }
+          }
+        ],
+        "tags": [
+          "UserSettingsService"
+        ]
+      }
+    },
     "/v1/users": {
       "get": {
         "operationId": "UserService_ListUsers",
@@ -4761,6 +4816,15 @@
         }
       }
     },
+    "customersUpdateUserSettingsRequest": {
+      "type": "object",
+      "properties": {
+        "patch": {
+          "$ref": "#/definitions/customersUserSettings",
+          "description": "Partial — only the keys to change. Nested objects are replaced\nwholesale (the FE always sends the full nested object)."
+        }
+      }
+    },
     "customersUpsertFeatureFlagResponse": {
       "type": "object",
       "properties": {
@@ -4805,6 +4869,24 @@
       },
       "title": "User represents a user in the system"
     },
+    "customersUserEmailSettings": {
+      "type": "object",
+      "properties": {
+        "product": {
+          "type": "boolean"
+        },
+        "marketing": {
+          "type": "boolean"
+        },
+        "security": {
+          "type": "boolean"
+        },
+        "weeklyDigest": {
+          "type": "boolean"
+        }
+      },
+      "description": "UserEmailSettings — top-level transactional email opt-ins.\n`security` is forced-on server-side but exposed here so the\nunsubscribe page can reflect that to the user."
+    },
     "customersUserIdentity": {
       "type": "object",
       "properties": {
@@ -4842,6 +4924,52 @@
         }
       },
       "title": "UserIdentity represents a user's authentication method"
+    },
+    "customersUserNotificationSettings": {
+      "type": "object",
+      "properties": {
+        "inApp": {
+          "type": "boolean"
+        },
+        "push": {
+          "type": "boolean"
+        },
+        "sound": {
+          "type": "boolean"
+        }
+      }
+    },
+    "customersUserSettings": {
+      "type": "object",
+      "properties": {
+        "theme": {
+          "type": "string",
+          "title": "\"light\" | \"dark\" | \"system\""
+        },
+        "locale": {
+          "type": "string",
+          "description": "IETF tag: \"en\", \"fr\", \"es-419\", etc."
+        },
+        "timezone": {
+          "type": "string",
+          "description": "IANA tz: \"America/New_York\", \"UTC\"."
+        },
+        "dateFormat": {
+          "type": "string",
+          "title": "\"iso\" | \"us\" | \"eu\""
+        },
+        "timeFormat": {
+          "type": "string",
+          "title": "\"12h\" | \"24h\""
+        },
+        "email": {
+          "$ref": "#/definitions/customersUserEmailSettings"
+        },
+        "notifications": {
+          "$ref": "#/definitions/customersUserNotificationSettings"
+        }
+      },
+      "description": "UserSettings — per-user preferences. All fields optional. The\nFE submits ONLY changed keys; the api jsonb-merges onto the row.\nAdding a field is a no-op (FE bumps + new key flows through)."
     },
     "customersUserStatus": {
       "type": "string",

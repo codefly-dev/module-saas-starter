@@ -56,6 +56,8 @@ const (
 	GDPRServiceName = "customers.GDPRService"
 	// SSOAdminServiceName is the fully-qualified name of the SSOAdminService service.
 	SSOAdminServiceName = "customers.SSOAdminService"
+	// UserSettingsServiceName is the fully-qualified name of the UserSettingsService service.
+	UserSettingsServiceName = "customers.UserSettingsService"
 	// MFAServiceName is the fully-qualified name of the MFAService service.
 	MFAServiceName = "customers.MFAService"
 )
@@ -306,6 +308,11 @@ const (
 	SSOAdminServiceStartSetupProcedure = "/customers.SSOAdminService/StartSetup"
 	// SSOAdminServiceDisableProcedure is the fully-qualified name of the SSOAdminService's Disable RPC.
 	SSOAdminServiceDisableProcedure = "/customers.SSOAdminService/Disable"
+	// UserSettingsServiceGetProcedure is the fully-qualified name of the UserSettingsService's Get RPC.
+	UserSettingsServiceGetProcedure = "/customers.UserSettingsService/Get"
+	// UserSettingsServiceUpdateProcedure is the fully-qualified name of the UserSettingsService's
+	// Update RPC.
+	UserSettingsServiceUpdateProcedure = "/customers.UserSettingsService/Update"
 	// MFAServiceSetupTOTPProcedure is the fully-qualified name of the MFAService's SetupTOTP RPC.
 	MFAServiceSetupTOTPProcedure = "/customers.MFAService/SetupTOTP"
 	// MFAServiceVerifyTOTPProcedure is the fully-qualified name of the MFAService's VerifyTOTP RPC.
@@ -3291,6 +3298,102 @@ func (UnimplementedSSOAdminServiceHandler) StartSetup(context.Context, *connect.
 
 func (UnimplementedSSOAdminServiceHandler) Disable(context.Context, *connect.Request[gen.DisableSSORequest]) (*connect.Response[emptypb.Empty], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("customers.SSOAdminService.Disable is not implemented"))
+}
+
+// UserSettingsServiceClient is a client for the customers.UserSettingsService service.
+type UserSettingsServiceClient interface {
+	Get(context.Context, *connect.Request[gen.GetUserSettingsRequest]) (*connect.Response[gen.UserSettings], error)
+	Update(context.Context, *connect.Request[gen.UpdateUserSettingsRequest]) (*connect.Response[gen.UserSettings], error)
+}
+
+// NewUserSettingsServiceClient constructs a client for the customers.UserSettingsService service.
+// By default, it uses the Connect protocol with the binary Protobuf Codec, asks for gzipped
+// responses, and sends uncompressed requests. To use the gRPC or gRPC-Web protocols, supply the
+// connect.WithGRPC() or connect.WithGRPCWeb() options.
+//
+// The URL supplied here should be the base URL for the Connect or gRPC server (for example,
+// http://api.acme.com or https://acme.com/grpc).
+func NewUserSettingsServiceClient(httpClient connect.HTTPClient, baseURL string, opts ...connect.ClientOption) UserSettingsServiceClient {
+	baseURL = strings.TrimRight(baseURL, "/")
+	userSettingsServiceMethods := gen.File_api_proto.Services().ByName("UserSettingsService").Methods()
+	return &userSettingsServiceClient{
+		get: connect.NewClient[gen.GetUserSettingsRequest, gen.UserSettings](
+			httpClient,
+			baseURL+UserSettingsServiceGetProcedure,
+			connect.WithSchema(userSettingsServiceMethods.ByName("Get")),
+			connect.WithClientOptions(opts...),
+		),
+		update: connect.NewClient[gen.UpdateUserSettingsRequest, gen.UserSettings](
+			httpClient,
+			baseURL+UserSettingsServiceUpdateProcedure,
+			connect.WithSchema(userSettingsServiceMethods.ByName("Update")),
+			connect.WithClientOptions(opts...),
+		),
+	}
+}
+
+// userSettingsServiceClient implements UserSettingsServiceClient.
+type userSettingsServiceClient struct {
+	get    *connect.Client[gen.GetUserSettingsRequest, gen.UserSettings]
+	update *connect.Client[gen.UpdateUserSettingsRequest, gen.UserSettings]
+}
+
+// Get calls customers.UserSettingsService.Get.
+func (c *userSettingsServiceClient) Get(ctx context.Context, req *connect.Request[gen.GetUserSettingsRequest]) (*connect.Response[gen.UserSettings], error) {
+	return c.get.CallUnary(ctx, req)
+}
+
+// Update calls customers.UserSettingsService.Update.
+func (c *userSettingsServiceClient) Update(ctx context.Context, req *connect.Request[gen.UpdateUserSettingsRequest]) (*connect.Response[gen.UserSettings], error) {
+	return c.update.CallUnary(ctx, req)
+}
+
+// UserSettingsServiceHandler is an implementation of the customers.UserSettingsService service.
+type UserSettingsServiceHandler interface {
+	Get(context.Context, *connect.Request[gen.GetUserSettingsRequest]) (*connect.Response[gen.UserSettings], error)
+	Update(context.Context, *connect.Request[gen.UpdateUserSettingsRequest]) (*connect.Response[gen.UserSettings], error)
+}
+
+// NewUserSettingsServiceHandler builds an HTTP handler from the service implementation. It returns
+// the path on which to mount the handler and the handler itself.
+//
+// By default, handlers support the Connect, gRPC, and gRPC-Web protocols with the binary Protobuf
+// and JSON codecs. They also support gzip compression.
+func NewUserSettingsServiceHandler(svc UserSettingsServiceHandler, opts ...connect.HandlerOption) (string, http.Handler) {
+	userSettingsServiceMethods := gen.File_api_proto.Services().ByName("UserSettingsService").Methods()
+	userSettingsServiceGetHandler := connect.NewUnaryHandler(
+		UserSettingsServiceGetProcedure,
+		svc.Get,
+		connect.WithSchema(userSettingsServiceMethods.ByName("Get")),
+		connect.WithHandlerOptions(opts...),
+	)
+	userSettingsServiceUpdateHandler := connect.NewUnaryHandler(
+		UserSettingsServiceUpdateProcedure,
+		svc.Update,
+		connect.WithSchema(userSettingsServiceMethods.ByName("Update")),
+		connect.WithHandlerOptions(opts...),
+	)
+	return "/customers.UserSettingsService/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case UserSettingsServiceGetProcedure:
+			userSettingsServiceGetHandler.ServeHTTP(w, r)
+		case UserSettingsServiceUpdateProcedure:
+			userSettingsServiceUpdateHandler.ServeHTTP(w, r)
+		default:
+			http.NotFound(w, r)
+		}
+	})
+}
+
+// UnimplementedUserSettingsServiceHandler returns CodeUnimplemented from all methods.
+type UnimplementedUserSettingsServiceHandler struct{}
+
+func (UnimplementedUserSettingsServiceHandler) Get(context.Context, *connect.Request[gen.GetUserSettingsRequest]) (*connect.Response[gen.UserSettings], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("customers.UserSettingsService.Get is not implemented"))
+}
+
+func (UnimplementedUserSettingsServiceHandler) Update(context.Context, *connect.Request[gen.UpdateUserSettingsRequest]) (*connect.Response[gen.UserSettings], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("customers.UserSettingsService.Update is not implemented"))
 }
 
 // MFAServiceClient is a client for the customers.MFAService service.

@@ -84,6 +84,10 @@ type Store interface {
 	GetOrgSSO(ctx context.Context, orgID string) (*OrgSSOConfig, error)
 	UpsertOrgSSO(ctx context.Context, cfg *OrgSSOConfig) error
 
+	// User settings (JSONB blob — see business/user_settings.go)
+	GetUserSettings(ctx context.Context, userID string) ([]byte, error)
+	UpdateUserSettings(ctx context.Context, userID string, patch []byte) error
+
 	// Entitlements
 	GetOrgPlanID(ctx context.Context, orgID string) (string, error)
 	GetPlanByID(ctx context.Context, planID string) (*Plan, error)
