@@ -84,6 +84,12 @@ func doWork(ctx context.Context) (Clean, error) {
 	auditEmitter := business.NewAsyncAuditEmitter(store, 1024)
 	service.SetAuditEmitter(auditEmitter)
 
+	// Audit S3 exporter — polls audit_export_configs every 1 min,
+	// uploads new events to each org's bucket as JSONL. No-op until
+	// an org configures one via the /admin/audit-export form.
+	auditExporter := business.NewAuditExporter(store)
+	auditExporter.Start()
+
 	// Synchronous webhook send path used by TestWebhook + ReplayDelivery.
 	// Distinct from the async dispatcher (audit-driven outbound webhooks)
 	// — this one is request-scoped so the FE shows immediate outcome
@@ -252,6 +258,8 @@ func doWork(ctx context.Context) (Clean, error) {
 		sw.Info("closing audit emitter")
 		auditEmitter.Close()
 		sw.Info("audit emitter closed")
+		sw.Info("stopping audit exporter")
+		auditExporter.Close()
 		if closeCache != nil {
 			sw.Info("closing redis cache")
 			if err := closeCache(); err != nil {

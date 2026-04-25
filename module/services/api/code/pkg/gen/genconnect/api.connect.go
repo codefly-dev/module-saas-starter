@@ -34,6 +34,8 @@ const (
 	IdentityServiceName = "customers.IdentityService"
 	// APIKeyServiceName is the fully-qualified name of the APIKeyService service.
 	APIKeyServiceName = "customers.APIKeyService"
+	// AuditExportServiceName is the fully-qualified name of the AuditExportService service.
+	AuditExportServiceName = "customers.AuditExportService"
 	// AuthServiceName is the fully-qualified name of the AuthService service.
 	AuthServiceName = "customers.AuthService"
 	// AuditServiceName is the fully-qualified name of the AuditService service.
@@ -153,6 +155,15 @@ const (
 	// APIKeyServiceValidateAPIKeyProcedure is the fully-qualified name of the APIKeyService's
 	// ValidateAPIKey RPC.
 	APIKeyServiceValidateAPIKeyProcedure = "/customers.APIKeyService/ValidateAPIKey"
+	// AuditExportServiceGetConfigProcedure is the fully-qualified name of the AuditExportService's
+	// GetConfig RPC.
+	AuditExportServiceGetConfigProcedure = "/customers.AuditExportService/GetConfig"
+	// AuditExportServiceSaveConfigProcedure is the fully-qualified name of the AuditExportService's
+	// SaveConfig RPC.
+	AuditExportServiceSaveConfigProcedure = "/customers.AuditExportService/SaveConfig"
+	// AuditExportServiceDeleteConfigProcedure is the fully-qualified name of the AuditExportService's
+	// DeleteConfig RPC.
+	AuditExportServiceDeleteConfigProcedure = "/customers.AuditExportService/DeleteConfig"
 	// AuthServiceBeginOAuthProcedure is the fully-qualified name of the AuthService's BeginOAuth RPC.
 	AuthServiceBeginOAuthProcedure = "/customers.AuthService/BeginOAuth"
 	// AuthServiceAuthenticateProcedure is the fully-qualified name of the AuthService's Authenticate
@@ -1438,6 +1449,128 @@ func (UnimplementedAPIKeyServiceHandler) RevokeAPIKey(context.Context, *connect.
 
 func (UnimplementedAPIKeyServiceHandler) ValidateAPIKey(context.Context, *connect.Request[gen.ValidateAPIKeyRequest]) (*connect.Response[gen.ValidateAPIKeyResponse], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("customers.APIKeyService.ValidateAPIKey is not implemented"))
+}
+
+// AuditExportServiceClient is a client for the customers.AuditExportService service.
+type AuditExportServiceClient interface {
+	GetConfig(context.Context, *connect.Request[gen.GetAuditExportConfigRequest]) (*connect.Response[gen.AuditExportConfig], error)
+	SaveConfig(context.Context, *connect.Request[gen.SaveAuditExportConfigRequest]) (*connect.Response[gen.AuditExportConfig], error)
+	DeleteConfig(context.Context, *connect.Request[gen.DeleteAuditExportConfigRequest]) (*connect.Response[emptypb.Empty], error)
+}
+
+// NewAuditExportServiceClient constructs a client for the customers.AuditExportService service. By
+// default, it uses the Connect protocol with the binary Protobuf Codec, asks for gzipped responses,
+// and sends uncompressed requests. To use the gRPC or gRPC-Web protocols, supply the
+// connect.WithGRPC() or connect.WithGRPCWeb() options.
+//
+// The URL supplied here should be the base URL for the Connect or gRPC server (for example,
+// http://api.acme.com or https://acme.com/grpc).
+func NewAuditExportServiceClient(httpClient connect.HTTPClient, baseURL string, opts ...connect.ClientOption) AuditExportServiceClient {
+	baseURL = strings.TrimRight(baseURL, "/")
+	auditExportServiceMethods := gen.File_api_proto.Services().ByName("AuditExportService").Methods()
+	return &auditExportServiceClient{
+		getConfig: connect.NewClient[gen.GetAuditExportConfigRequest, gen.AuditExportConfig](
+			httpClient,
+			baseURL+AuditExportServiceGetConfigProcedure,
+			connect.WithSchema(auditExportServiceMethods.ByName("GetConfig")),
+			connect.WithClientOptions(opts...),
+		),
+		saveConfig: connect.NewClient[gen.SaveAuditExportConfigRequest, gen.AuditExportConfig](
+			httpClient,
+			baseURL+AuditExportServiceSaveConfigProcedure,
+			connect.WithSchema(auditExportServiceMethods.ByName("SaveConfig")),
+			connect.WithClientOptions(opts...),
+		),
+		deleteConfig: connect.NewClient[gen.DeleteAuditExportConfigRequest, emptypb.Empty](
+			httpClient,
+			baseURL+AuditExportServiceDeleteConfigProcedure,
+			connect.WithSchema(auditExportServiceMethods.ByName("DeleteConfig")),
+			connect.WithClientOptions(opts...),
+		),
+	}
+}
+
+// auditExportServiceClient implements AuditExportServiceClient.
+type auditExportServiceClient struct {
+	getConfig    *connect.Client[gen.GetAuditExportConfigRequest, gen.AuditExportConfig]
+	saveConfig   *connect.Client[gen.SaveAuditExportConfigRequest, gen.AuditExportConfig]
+	deleteConfig *connect.Client[gen.DeleteAuditExportConfigRequest, emptypb.Empty]
+}
+
+// GetConfig calls customers.AuditExportService.GetConfig.
+func (c *auditExportServiceClient) GetConfig(ctx context.Context, req *connect.Request[gen.GetAuditExportConfigRequest]) (*connect.Response[gen.AuditExportConfig], error) {
+	return c.getConfig.CallUnary(ctx, req)
+}
+
+// SaveConfig calls customers.AuditExportService.SaveConfig.
+func (c *auditExportServiceClient) SaveConfig(ctx context.Context, req *connect.Request[gen.SaveAuditExportConfigRequest]) (*connect.Response[gen.AuditExportConfig], error) {
+	return c.saveConfig.CallUnary(ctx, req)
+}
+
+// DeleteConfig calls customers.AuditExportService.DeleteConfig.
+func (c *auditExportServiceClient) DeleteConfig(ctx context.Context, req *connect.Request[gen.DeleteAuditExportConfigRequest]) (*connect.Response[emptypb.Empty], error) {
+	return c.deleteConfig.CallUnary(ctx, req)
+}
+
+// AuditExportServiceHandler is an implementation of the customers.AuditExportService service.
+type AuditExportServiceHandler interface {
+	GetConfig(context.Context, *connect.Request[gen.GetAuditExportConfigRequest]) (*connect.Response[gen.AuditExportConfig], error)
+	SaveConfig(context.Context, *connect.Request[gen.SaveAuditExportConfigRequest]) (*connect.Response[gen.AuditExportConfig], error)
+	DeleteConfig(context.Context, *connect.Request[gen.DeleteAuditExportConfigRequest]) (*connect.Response[emptypb.Empty], error)
+}
+
+// NewAuditExportServiceHandler builds an HTTP handler from the service implementation. It returns
+// the path on which to mount the handler and the handler itself.
+//
+// By default, handlers support the Connect, gRPC, and gRPC-Web protocols with the binary Protobuf
+// and JSON codecs. They also support gzip compression.
+func NewAuditExportServiceHandler(svc AuditExportServiceHandler, opts ...connect.HandlerOption) (string, http.Handler) {
+	auditExportServiceMethods := gen.File_api_proto.Services().ByName("AuditExportService").Methods()
+	auditExportServiceGetConfigHandler := connect.NewUnaryHandler(
+		AuditExportServiceGetConfigProcedure,
+		svc.GetConfig,
+		connect.WithSchema(auditExportServiceMethods.ByName("GetConfig")),
+		connect.WithHandlerOptions(opts...),
+	)
+	auditExportServiceSaveConfigHandler := connect.NewUnaryHandler(
+		AuditExportServiceSaveConfigProcedure,
+		svc.SaveConfig,
+		connect.WithSchema(auditExportServiceMethods.ByName("SaveConfig")),
+		connect.WithHandlerOptions(opts...),
+	)
+	auditExportServiceDeleteConfigHandler := connect.NewUnaryHandler(
+		AuditExportServiceDeleteConfigProcedure,
+		svc.DeleteConfig,
+		connect.WithSchema(auditExportServiceMethods.ByName("DeleteConfig")),
+		connect.WithHandlerOptions(opts...),
+	)
+	return "/customers.AuditExportService/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case AuditExportServiceGetConfigProcedure:
+			auditExportServiceGetConfigHandler.ServeHTTP(w, r)
+		case AuditExportServiceSaveConfigProcedure:
+			auditExportServiceSaveConfigHandler.ServeHTTP(w, r)
+		case AuditExportServiceDeleteConfigProcedure:
+			auditExportServiceDeleteConfigHandler.ServeHTTP(w, r)
+		default:
+			http.NotFound(w, r)
+		}
+	})
+}
+
+// UnimplementedAuditExportServiceHandler returns CodeUnimplemented from all methods.
+type UnimplementedAuditExportServiceHandler struct{}
+
+func (UnimplementedAuditExportServiceHandler) GetConfig(context.Context, *connect.Request[gen.GetAuditExportConfigRequest]) (*connect.Response[gen.AuditExportConfig], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("customers.AuditExportService.GetConfig is not implemented"))
+}
+
+func (UnimplementedAuditExportServiceHandler) SaveConfig(context.Context, *connect.Request[gen.SaveAuditExportConfigRequest]) (*connect.Response[gen.AuditExportConfig], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("customers.AuditExportService.SaveConfig is not implemented"))
+}
+
+func (UnimplementedAuditExportServiceHandler) DeleteConfig(context.Context, *connect.Request[gen.DeleteAuditExportConfigRequest]) (*connect.Response[emptypb.Empty], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("customers.AuditExportService.DeleteConfig is not implemented"))
 }
 
 // AuthServiceClient is a client for the customers.AuthService service.

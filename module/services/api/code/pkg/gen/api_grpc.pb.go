@@ -1720,6 +1720,184 @@ var APIKeyService_ServiceDesc = grpc.ServiceDesc{
 }
 
 const (
+	AuditExportService_GetConfig_FullMethodName    = "/customers.AuditExportService/GetConfig"
+	AuditExportService_SaveConfig_FullMethodName   = "/customers.AuditExportService/SaveConfig"
+	AuditExportService_DeleteConfig_FullMethodName = "/customers.AuditExportService/DeleteConfig"
+)
+
+// AuditExportServiceClient is the client API for AuditExportService service.
+//
+// For semantics around ctx use and closing/ending streaming RPCs, please refer to https://pkg.go.dev/google.golang.org/grpc/?tab=doc#ClientConn.NewStream.
+type AuditExportServiceClient interface {
+	GetConfig(ctx context.Context, in *GetAuditExportConfigRequest, opts ...grpc.CallOption) (*AuditExportConfig, error)
+	SaveConfig(ctx context.Context, in *SaveAuditExportConfigRequest, opts ...grpc.CallOption) (*AuditExportConfig, error)
+	DeleteConfig(ctx context.Context, in *DeleteAuditExportConfigRequest, opts ...grpc.CallOption) (*emptypb.Empty, error)
+}
+
+type auditExportServiceClient struct {
+	cc grpc.ClientConnInterface
+}
+
+func NewAuditExportServiceClient(cc grpc.ClientConnInterface) AuditExportServiceClient {
+	return &auditExportServiceClient{cc}
+}
+
+func (c *auditExportServiceClient) GetConfig(ctx context.Context, in *GetAuditExportConfigRequest, opts ...grpc.CallOption) (*AuditExportConfig, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(AuditExportConfig)
+	err := c.cc.Invoke(ctx, AuditExportService_GetConfig_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *auditExportServiceClient) SaveConfig(ctx context.Context, in *SaveAuditExportConfigRequest, opts ...grpc.CallOption) (*AuditExportConfig, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(AuditExportConfig)
+	err := c.cc.Invoke(ctx, AuditExportService_SaveConfig_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *auditExportServiceClient) DeleteConfig(ctx context.Context, in *DeleteAuditExportConfigRequest, opts ...grpc.CallOption) (*emptypb.Empty, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(emptypb.Empty)
+	err := c.cc.Invoke(ctx, AuditExportService_DeleteConfig_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+// AuditExportServiceServer is the server API for AuditExportService service.
+// All implementations must embed UnimplementedAuditExportServiceServer
+// for forward compatibility.
+type AuditExportServiceServer interface {
+	GetConfig(context.Context, *GetAuditExportConfigRequest) (*AuditExportConfig, error)
+	SaveConfig(context.Context, *SaveAuditExportConfigRequest) (*AuditExportConfig, error)
+	DeleteConfig(context.Context, *DeleteAuditExportConfigRequest) (*emptypb.Empty, error)
+	mustEmbedUnimplementedAuditExportServiceServer()
+}
+
+// UnimplementedAuditExportServiceServer must be embedded to have
+// forward compatible implementations.
+//
+// NOTE: this should be embedded by value instead of pointer to avoid a nil
+// pointer dereference when methods are called.
+type UnimplementedAuditExportServiceServer struct{}
+
+func (UnimplementedAuditExportServiceServer) GetConfig(context.Context, *GetAuditExportConfigRequest) (*AuditExportConfig, error) {
+	return nil, status.Error(codes.Unimplemented, "method GetConfig not implemented")
+}
+func (UnimplementedAuditExportServiceServer) SaveConfig(context.Context, *SaveAuditExportConfigRequest) (*AuditExportConfig, error) {
+	return nil, status.Error(codes.Unimplemented, "method SaveConfig not implemented")
+}
+func (UnimplementedAuditExportServiceServer) DeleteConfig(context.Context, *DeleteAuditExportConfigRequest) (*emptypb.Empty, error) {
+	return nil, status.Error(codes.Unimplemented, "method DeleteConfig not implemented")
+}
+func (UnimplementedAuditExportServiceServer) mustEmbedUnimplementedAuditExportServiceServer() {}
+func (UnimplementedAuditExportServiceServer) testEmbeddedByValue()                            {}
+
+// UnsafeAuditExportServiceServer may be embedded to opt out of forward compatibility for this service.
+// Use of this interface is not recommended, as added methods to AuditExportServiceServer will
+// result in compilation errors.
+type UnsafeAuditExportServiceServer interface {
+	mustEmbedUnimplementedAuditExportServiceServer()
+}
+
+func RegisterAuditExportServiceServer(s grpc.ServiceRegistrar, srv AuditExportServiceServer) {
+	// If the following call panics, it indicates UnimplementedAuditExportServiceServer was
+	// embedded by pointer and is nil.  This will cause panics if an
+	// unimplemented method is ever invoked, so we test this at initialization
+	// time to prevent it from happening at runtime later due to I/O.
+	if t, ok := srv.(interface{ testEmbeddedByValue() }); ok {
+		t.testEmbeddedByValue()
+	}
+	s.RegisterService(&AuditExportService_ServiceDesc, srv)
+}
+
+func _AuditExportService_GetConfig_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(GetAuditExportConfigRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(AuditExportServiceServer).GetConfig(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: AuditExportService_GetConfig_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(AuditExportServiceServer).GetConfig(ctx, req.(*GetAuditExportConfigRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _AuditExportService_SaveConfig_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(SaveAuditExportConfigRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(AuditExportServiceServer).SaveConfig(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: AuditExportService_SaveConfig_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(AuditExportServiceServer).SaveConfig(ctx, req.(*SaveAuditExportConfigRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _AuditExportService_DeleteConfig_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(DeleteAuditExportConfigRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(AuditExportServiceServer).DeleteConfig(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: AuditExportService_DeleteConfig_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(AuditExportServiceServer).DeleteConfig(ctx, req.(*DeleteAuditExportConfigRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+// AuditExportService_ServiceDesc is the grpc.ServiceDesc for AuditExportService service.
+// It's only intended for direct use with grpc.RegisterService,
+// and not to be introspected or modified (even as a copy)
+var AuditExportService_ServiceDesc = grpc.ServiceDesc{
+	ServiceName: "customers.AuditExportService",
+	HandlerType: (*AuditExportServiceServer)(nil),
+	Methods: []grpc.MethodDesc{
+		{
+			MethodName: "GetConfig",
+			Handler:    _AuditExportService_GetConfig_Handler,
+		},
+		{
+			MethodName: "SaveConfig",
+			Handler:    _AuditExportService_SaveConfig_Handler,
+		},
+		{
+			MethodName: "DeleteConfig",
+			Handler:    _AuditExportService_DeleteConfig_Handler,
+		},
+	},
+	Streams:  []grpc.StreamDesc{},
+	Metadata: "api.proto",
+}
+
+const (
 	AuthService_BeginOAuth_FullMethodName   = "/customers.AuthService/BeginOAuth"
 	AuthService_Authenticate_FullMethodName = "/customers.AuthService/Authenticate"
 	AuthService_RefreshToken_FullMethodName = "/customers.AuthService/RefreshToken"

@@ -24,6 +24,9 @@
       "name": "APIKeyService"
     },
     {
+      "name": "AuditExportService"
+    },
+    {
       "name": "AuthService"
     },
     {
@@ -159,6 +162,97 @@
         ],
         "tags": [
           "APIKeyService"
+        ]
+      }
+    },
+    "/v1/audit-export": {
+      "post": {
+        "operationId": "AuditExportService_SaveConfig",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/customersAuditExportConfig"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/rpcStatus"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "body",
+            "in": "body",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/customersSaveAuditExportConfigRequest"
+            }
+          }
+        ],
+        "tags": [
+          "AuditExportService"
+        ]
+      }
+    },
+    "/v1/audit-export/{orgId}": {
+      "get": {
+        "operationId": "AuditExportService_GetConfig",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/customersAuditExportConfig"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/rpcStatus"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "orgId",
+            "in": "path",
+            "required": true,
+            "type": "string"
+          }
+        ],
+        "tags": [
+          "AuditExportService"
+        ]
+      },
+      "delete": {
+        "operationId": "AuditExportService_DeleteConfig",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "type": "object",
+              "properties": {}
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/rpcStatus"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "orgId",
+            "in": "path",
+            "required": true,
+            "type": "string"
+          }
+        ],
+        "tags": [
+          "AuditExportService"
         ]
       }
     },
@@ -3083,6 +3177,55 @@
         }
       }
     },
+    "customersAuditExportConfig": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "orgId": {
+          "type": "string"
+        },
+        "bucket": {
+          "type": "string"
+        },
+        "region": {
+          "type": "string"
+        },
+        "endpoint": {
+          "type": "string",
+          "description": "endpoint empty = real AWS S3; non-empty points at MinIO / R2 / etc."
+        },
+        "prefix": {
+          "type": "string"
+        },
+        "accessKeyId": {
+          "type": "string"
+        },
+        "secretAccessKey": {
+          "type": "string",
+          "description": "Get returns \"\" for secret_access_key so the FE can't echo a\nstored secret. Save with \"\" preserves the existing one."
+        },
+        "cadenceMinutes": {
+          "type": "integer",
+          "format": "int32"
+        },
+        "enabled": {
+          "type": "boolean"
+        },
+        "lastExportedAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "lastError": {
+          "type": "string"
+        },
+        "lastErrorAt": {
+          "type": "string",
+          "format": "date-time"
+        }
+      }
+    },
     "customersAuthenticateRequest": {
       "type": "object",
       "properties": {
@@ -4227,6 +4370,14 @@
         "oldSecretExpiresAt": {
           "type": "string",
           "format": "date-time"
+        }
+      }
+    },
+    "customersSaveAuditExportConfigRequest": {
+      "type": "object",
+      "properties": {
+        "config": {
+          "$ref": "#/definitions/customersAuditExportConfig"
         }
       }
     },

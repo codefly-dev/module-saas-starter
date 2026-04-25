@@ -691,6 +691,53 @@ message BeginOAuthResponse {
   string state = 1;
 }
 
+// ============================================================================
+// Audit log → S3 export config (per-org)
+// ============================================================================
+
+message AuditExportConfig {
+  string id = 1;
+  string org_id = 2 [(buf.validate.field).string.uuid = true];
+  string bucket = 3 [(buf.validate.field).string.min_len = 1];
+  string region = 4;
+  // endpoint empty = real AWS S3; non-empty points at MinIO / R2 / etc.
+  string endpoint = 5;
+  string prefix = 6;
+  string access_key_id = 7;
+  // Get returns "" for secret_access_key so the FE can't echo a
+  // stored secret. Save with "" preserves the existing one.
+  string secret_access_key = 8;
+  int32 cadence_minutes = 9 [(buf.validate.field).int32.gte = 5];
+  bool enabled = 10;
+  google.protobuf.Timestamp last_exported_at = 11;
+  string last_error = 12;
+  google.protobuf.Timestamp last_error_at = 13;
+}
+
+message GetAuditExportConfigRequest {
+  string org_id = 1 [(buf.validate.field).string.uuid = true];
+}
+
+message SaveAuditExportConfigRequest {
+  AuditExportConfig config = 1;
+}
+
+message DeleteAuditExportConfigRequest {
+  string org_id = 1 [(buf.validate.field).string.uuid = true];
+}
+
+service AuditExportService {
+  rpc GetConfig(GetAuditExportConfigRequest) returns (AuditExportConfig) {
+    option (google.api.http) = { get: "/v1/audit-export/{org_id}" };
+  }
+  rpc SaveConfig(SaveAuditExportConfigRequest) returns (AuditExportConfig) {
+    option (google.api.http) = { post: "/v1/audit-export" body: "*" };
+  }
+  rpc DeleteConfig(DeleteAuditExportConfigRequest) returns (google.protobuf.Empty) {
+    option (google.api.http) = { delete: "/v1/audit-export/{org_id}" };
+  }
+}
+
 // AuthService — JWT token issuance and session management
 service AuthService {
 
