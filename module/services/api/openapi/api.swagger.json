@@ -57,6 +57,9 @@
       "name": "SSOAdminService"
     },
     {
+      "name": "BillingService"
+    },
+    {
       "name": "UserSettingsService"
     },
     {
@@ -528,6 +531,38 @@
         ],
         "tags": [
           "AuthService"
+        ]
+      }
+    },
+    "/v1/billing/connect/portal": {
+      "post": {
+        "operationId": "BillingService_OpenPortal",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/customersOpenBillingPortalResponse"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/rpcStatus"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "body",
+            "in": "body",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/customersOpenBillingPortalRequest"
+            }
+          }
+        ],
+        "tags": [
+          "BillingService"
         ]
       }
     },
@@ -4314,6 +4349,27 @@
         "ONBOARDING_STEP_STATUS_SKIPPED"
       ],
       "default": "ONBOARDING_STEP_STATUS_UNSPECIFIED"
+    },
+    "customersOpenBillingPortalRequest": {
+      "type": "object",
+      "properties": {
+        "orgId": {
+          "type": "string"
+        },
+        "returnUrl": {
+          "type": "string",
+          "description": "return_url is where Stripe redirects after the operator closes\nthe portal. Typically /admin/billing."
+        }
+      }
+    },
+    "customersOpenBillingPortalResponse": {
+      "type": "object",
+      "properties": {
+        "url": {
+          "type": "string",
+          "description": "Stripe-hosted billing portal URL — one-shot."
+        }
+      }
     },
     "customersOrgMembership": {
       "type": "object",

@@ -56,6 +56,8 @@ const (
 	GDPRServiceName = "customers.GDPRService"
 	// SSOAdminServiceName is the fully-qualified name of the SSOAdminService service.
 	SSOAdminServiceName = "customers.SSOAdminService"
+	// BillingServiceName is the fully-qualified name of the BillingService service.
+	BillingServiceName = "customers.BillingService"
 	// UserSettingsServiceName is the fully-qualified name of the UserSettingsService service.
 	UserSettingsServiceName = "customers.UserSettingsService"
 	// MFAServiceName is the fully-qualified name of the MFAService service.
@@ -308,6 +310,9 @@ const (
 	SSOAdminServiceStartSetupProcedure = "/customers.SSOAdminService/StartSetup"
 	// SSOAdminServiceDisableProcedure is the fully-qualified name of the SSOAdminService's Disable RPC.
 	SSOAdminServiceDisableProcedure = "/customers.SSOAdminService/Disable"
+	// BillingServiceOpenPortalProcedure is the fully-qualified name of the BillingService's OpenPortal
+	// RPC.
+	BillingServiceOpenPortalProcedure = "/customers.BillingService/OpenPortal"
 	// UserSettingsServiceGetProcedure is the fully-qualified name of the UserSettingsService's Get RPC.
 	UserSettingsServiceGetProcedure = "/customers.UserSettingsService/Get"
 	// UserSettingsServiceUpdateProcedure is the fully-qualified name of the UserSettingsService's
@@ -3298,6 +3303,76 @@ func (UnimplementedSSOAdminServiceHandler) StartSetup(context.Context, *connect.
 
 func (UnimplementedSSOAdminServiceHandler) Disable(context.Context, *connect.Request[gen.DisableSSORequest]) (*connect.Response[emptypb.Empty], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("customers.SSOAdminService.Disable is not implemented"))
+}
+
+// BillingServiceClient is a client for the customers.BillingService service.
+type BillingServiceClient interface {
+	OpenPortal(context.Context, *connect.Request[gen.OpenBillingPortalRequest]) (*connect.Response[gen.OpenBillingPortalResponse], error)
+}
+
+// NewBillingServiceClient constructs a client for the customers.BillingService service. By default,
+// it uses the Connect protocol with the binary Protobuf Codec, asks for gzipped responses, and
+// sends uncompressed requests. To use the gRPC or gRPC-Web protocols, supply the connect.WithGRPC()
+// or connect.WithGRPCWeb() options.
+//
+// The URL supplied here should be the base URL for the Connect or gRPC server (for example,
+// http://api.acme.com or https://acme.com/grpc).
+func NewBillingServiceClient(httpClient connect.HTTPClient, baseURL string, opts ...connect.ClientOption) BillingServiceClient {
+	baseURL = strings.TrimRight(baseURL, "/")
+	billingServiceMethods := gen.File_api_proto.Services().ByName("BillingService").Methods()
+	return &billingServiceClient{
+		openPortal: connect.NewClient[gen.OpenBillingPortalRequest, gen.OpenBillingPortalResponse](
+			httpClient,
+			baseURL+BillingServiceOpenPortalProcedure,
+			connect.WithSchema(billingServiceMethods.ByName("OpenPortal")),
+			connect.WithClientOptions(opts...),
+		),
+	}
+}
+
+// billingServiceClient implements BillingServiceClient.
+type billingServiceClient struct {
+	openPortal *connect.Client[gen.OpenBillingPortalRequest, gen.OpenBillingPortalResponse]
+}
+
+// OpenPortal calls customers.BillingService.OpenPortal.
+func (c *billingServiceClient) OpenPortal(ctx context.Context, req *connect.Request[gen.OpenBillingPortalRequest]) (*connect.Response[gen.OpenBillingPortalResponse], error) {
+	return c.openPortal.CallUnary(ctx, req)
+}
+
+// BillingServiceHandler is an implementation of the customers.BillingService service.
+type BillingServiceHandler interface {
+	OpenPortal(context.Context, *connect.Request[gen.OpenBillingPortalRequest]) (*connect.Response[gen.OpenBillingPortalResponse], error)
+}
+
+// NewBillingServiceHandler builds an HTTP handler from the service implementation. It returns the
+// path on which to mount the handler and the handler itself.
+//
+// By default, handlers support the Connect, gRPC, and gRPC-Web protocols with the binary Protobuf
+// and JSON codecs. They also support gzip compression.
+func NewBillingServiceHandler(svc BillingServiceHandler, opts ...connect.HandlerOption) (string, http.Handler) {
+	billingServiceMethods := gen.File_api_proto.Services().ByName("BillingService").Methods()
+	billingServiceOpenPortalHandler := connect.NewUnaryHandler(
+		BillingServiceOpenPortalProcedure,
+		svc.OpenPortal,
+		connect.WithSchema(billingServiceMethods.ByName("OpenPortal")),
+		connect.WithHandlerOptions(opts...),
+	)
+	return "/customers.BillingService/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case BillingServiceOpenPortalProcedure:
+			billingServiceOpenPortalHandler.ServeHTTP(w, r)
+		default:
+			http.NotFound(w, r)
+		}
+	})
+}
+
+// UnimplementedBillingServiceHandler returns CodeUnimplemented from all methods.
+type UnimplementedBillingServiceHandler struct{}
+
+func (UnimplementedBillingServiceHandler) OpenPortal(context.Context, *connect.Request[gen.OpenBillingPortalRequest]) (*connect.Response[gen.OpenBillingPortalResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("customers.BillingService.OpenPortal is not implemented"))
 }
 
 // UserSettingsServiceClient is a client for the customers.UserSettingsService service.

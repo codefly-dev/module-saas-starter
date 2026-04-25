@@ -1520,6 +1520,30 @@ service SSOAdminService {
 }
 
 // ============================================================================
+// Billing — Connect-RPC surface (the REST endpoint exists too, used
+// by the auth-sidecar passthrough in production. The Connect path
+// works without the sidecar so direct-to-api dev/test setups can
+// hit billing flows from the FE.)
+// ============================================================================
+
+message OpenBillingPortalRequest {
+  string org_id     = 1 [(buf.validate.field).string.uuid = true];
+  // return_url is where Stripe redirects after the operator closes
+  // the portal. Typically /admin/billing.
+  string return_url = 2 [(buf.validate.field).string.uri = true];
+}
+
+message OpenBillingPortalResponse {
+  string url = 1; // Stripe-hosted billing portal URL — one-shot.
+}
+
+service BillingService {
+  rpc OpenPortal(OpenBillingPortalRequest) returns (OpenBillingPortalResponse) {
+    option (google.api.http) = { post: "/v1/billing/connect/portal" body: "*" };
+  }
+}
+
+// ============================================================================
 // User Settings — per-user preferences blob, JSONB-backed
 // ============================================================================
 

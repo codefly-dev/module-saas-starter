@@ -87,6 +87,12 @@ const adminNav = [
     ],
   },
   {
+    group: "Billing",
+    items: [
+      { label: "Subscription", href: "/admin/billing", icon: CreditCard },
+    ],
+  },
+  {
     group: "Integrations",
     items: [
       { label: "Webhooks", href: "/admin/webhooks", icon: Globe },
