@@ -11,16 +11,17 @@ import (
 	"api/pkg/billing"
 	pgbilling "api/pkg/billing/pg"
 	"api/pkg/business"
+	"api/pkg/cache"
 	"api/pkg/email"
 	"api/pkg/infra"
 	"context"
 	ed25519core "crypto/ed25519"
 	"fmt"
-	"log"
 	"os"
 	"time"
 
 	codefly "github.com/codefly-dev/sdk-go"
+	"github.com/codefly-dev/core/wool"
 )
 
 func init() {
@@ -28,6 +29,8 @@ func init() {
 }
 
 func doWork(ctx context.Context) (Clean, error) {
+	w := wool.Get(ctx).In("doWork")
+
 	store, err := infra.NewPostgresStore(ctx)
 	if err != nil {
 		return nil, err
@@ -64,7 +67,7 @@ func doWork(ctx context.Context) (Clean, error) {
 	// AUTH_PROVIDER=workos|auth0|google we build an oidc.Validator with
 	// the matching preset plus a matching Exchanger. When unset we stay
 	// on the dev / pre-validated path.
-	if v, ex := buildProviderStack(); v != nil {
+	if v, ex := buildProviderStack(ctx); v != nil {
 		service.SetTokenValidator(v)
 		if ex != nil {
 			service.SetCodeExchanger(oidc.AsBusinessExchanger(ex))
@@ -80,6 +83,20 @@ func doWork(ctx context.Context) (Clean, error) {
 	featureChecker := business.NewDefaultFeatureChecker(store, entitlementChecker)
 	service.SetFeatureChecker(featureChecker)
 
+	// Cache wiring — optional. When the `cache` dependency is declared in
+	// service.codefly.yaml and Redis is reachable, org-membership lookups
+	// get a 30s TTL cache backed by Redis (per-tenant keyed as
+	// "orgmember:<orgID>:<userID>"). When the dep is absent or Redis is
+	// unreachable, NewRedisCache returns nil and the app runs without
+	// caching — zero behavior change, just slower auth checks.
+	var closeCache func() error
+	if redisCache, c, rerr := infra.NewRedisCache(ctx); rerr == nil && redisCache != nil {
+		orgCache := cache.NewOrgMembershipCache(redisCache)
+		adapters.WithOrgMembershipCache(orgCache)
+		service.SetMembershipInvalidator(adapters.NewCacheInvalidator())
+		closeCache = c
+	}
+
 	adapters.WithService(service)
 
 	// Billing: wire Stripe webhook handler at /v1/billing/webhook AND
@@ -90,7 +107,7 @@ func doWork(ctx context.Context) (Clean, error) {
 	if stripeKey := os.Getenv("STRIPE_API_KEY"); stripeKey != "" {
 		whSecret := os.Getenv("STRIPE_WEBHOOK_SECRET")
 		if whSecret == "" {
-			fmt.Fprintln(os.Stderr, "WARNING: STRIPE_API_KEY set but STRIPE_WEBHOOK_SECRET missing — webhooks will be rejected")
+			w.Warn("STRIPE_API_KEY set but STRIPE_WEBHOOK_SECRET missing — webhooks will be rejected")
 		}
 		stripeClient, err := billing.New(billing.Config{APIKey: stripeKey})
 		if err != nil {
@@ -117,7 +134,7 @@ func doWork(ctx context.Context) (Clean, error) {
 
 	// Email sender selection: Resend if RESEND_API_KEY is set, log-only
 	// otherwise (so dev still sees what would be sent without setup).
-	sender := pickEmailSender()
+	sender := pickEmailSender(ctx)
 	if sender != nil {
 		fromAddr := os.Getenv("EMAIL_FROM")
 		if fromAddr == "" {
@@ -143,13 +160,14 @@ func doWork(ctx context.Context) (Clean, error) {
 	// retention period.
 	retentionCtx, retentionCancel := context.WithCancel(ctx)
 	go func() {
+		rw := wool.Get(retentionCtx).In("retention")
 		// Run once immediately on startup.
 		if deleted, err := service.RunRetention(retentionCtx); err != nil {
-			log.Printf("retention startup run: %v", err)
+			rw.Warn("startup run failed", wool.ErrField(err))
 		} else {
 			for k, v := range deleted {
 				if v > 0 {
-					log.Printf("retention: deleted %d %s records", v, k)
+					rw.Info("deleted records", wool.Field("count", v), wool.Field("kind", k))
 				}
 			}
 		}
@@ -162,11 +180,11 @@ func doWork(ctx context.Context) (Clean, error) {
 				return
 			case <-ticker.C:
 				if deleted, err := service.RunRetention(retentionCtx); err != nil {
-					log.Printf("retention run: %v", err)
+					rw.Warn("scheduled run failed", wool.ErrField(err))
 				} else {
 					for k, v := range deleted {
 						if v > 0 {
-							log.Printf("retention: deleted %d %s records", v, k)
+							rw.Info("deleted records", wool.Field("count", v), wool.Field("kind", k))
 						}
 					}
 				}
@@ -191,14 +209,23 @@ func doWork(ctx context.Context) (Clean, error) {
 	}
 
 	return func() {
-		log.Println("api shutdown: stopping retention goroutine...")
+		sw := wool.Get(ctx).In("shutdown")
+		sw.Info("stopping retention goroutine")
 		retentionCancel()
-		log.Println("api shutdown: closing audit emitter...")
+		sw.Info("closing audit emitter")
 		auditEmitter.Close()
-		log.Println("api shutdown: audit emitter closed")
-		log.Println("api shutdown: closing store...")
+		sw.Info("audit emitter closed")
+		if closeCache != nil {
+			sw.Info("closing redis cache")
+			if err := closeCache(); err != nil {
+				sw.Warn("redis cache close failed", wool.ErrField(err))
+			} else {
+				sw.Info("redis cache closed")
+			}
+		}
+		sw.Info("closing store")
 		store.Close()
-		log.Println("api shutdown: store closed")
+		sw.Info("store closed")
 	}, nil
 }
 
@@ -230,7 +257,8 @@ func workosEnv(key string) string {
 	return os.Getenv(key)
 }
 
-func buildProviderStack() (auth.TokenValidator, *oidc.Exchanger) {
+func buildProviderStack(ctx context.Context) (auth.TokenValidator, *oidc.Exchanger) {
+	w := wool.Get(ctx).In("buildProviderStack")
 	switch workosEnv("AUTH_PROVIDER") {
 	case "dev", "":
 		v, err := devvalidator.New("")
@@ -243,7 +271,7 @@ func buildProviderStack() (auth.TokenValidator, *oidc.Exchanger) {
 		clientID := workosEnv("WORKOS_CLIENT_ID")
 		clientSecret := workosEnv("WORKOS_CLIENT_SECRET")
 		if clientID == "" || clientSecret == "" {
-			fmt.Fprintln(os.Stderr, "WARNING: AUTH_PROVIDER=workos but WORKOS_CLIENT_ID / WORKOS_CLIENT_SECRET missing")
+			w.Warn("AUTH_PROVIDER=workos but WORKOS_CLIENT_ID / WORKOS_CLIENT_SECRET missing")
 			return nil, nil
 		}
 		cfg := oidc.WorkOSConfig(clientID)
@@ -256,7 +284,7 @@ func buildProviderStack() (auth.TokenValidator, *oidc.Exchanger) {
 		}
 		v, err := oidc.New(cfg)
 		if err != nil {
-			fmt.Fprintf(os.Stderr, "WARNING: workos validator: %v\n", err)
+			w.Warn("workos validator init failed", wool.ErrField(err))
 			return nil, nil
 		}
 		tokenURL := workosEnv("WORKOS_TOKEN_URL")
@@ -269,7 +297,7 @@ func buildProviderStack() (auth.TokenValidator, *oidc.Exchanger) {
 			ClientSecret: clientSecret,
 		})
 		if err != nil {
-			fmt.Fprintf(os.Stderr, "WARNING: workos exchanger: %v\n", err)
+			w.Warn("workos exchanger init failed", wool.ErrField(err))
 			return v, nil
 		}
 		return v, ex
@@ -280,12 +308,12 @@ func buildProviderStack() (auth.TokenValidator, *oidc.Exchanger) {
 		clientID := os.Getenv("AUTH0_CLIENT_ID")
 		clientSecret := os.Getenv("AUTH0_CLIENT_SECRET")
 		if domain == "" || clientID == "" || clientSecret == "" {
-			fmt.Fprintln(os.Stderr, "WARNING: AUTH_PROVIDER=auth0 but AUTH0_DOMAIN / AUTH0_CLIENT_ID / AUTH0_CLIENT_SECRET missing")
+			w.Warn("AUTH_PROVIDER=auth0 but AUTH0_DOMAIN / AUTH0_CLIENT_ID / AUTH0_CLIENT_SECRET missing")
 			return nil, nil
 		}
 		v, err := oidc.New(oidc.Auth0Config(domain, audience))
 		if err != nil {
-			fmt.Fprintf(os.Stderr, "WARNING: auth0 validator: %v\n", err)
+			w.Warn("auth0 validator init failed", wool.ErrField(err))
 			return nil, nil
 		}
 		ex, err := oidc.NewExchanger(oidc.ExchangerConfig{
@@ -294,6 +322,7 @@ func buildProviderStack() (auth.TokenValidator, *oidc.Exchanger) {
 			ClientSecret: clientSecret,
 		})
 		if err != nil {
+			w.Warn("auth0 exchanger init failed", wool.ErrField(err))
 			return v, nil
 		}
 		return v, ex
@@ -302,11 +331,12 @@ func buildProviderStack() (auth.TokenValidator, *oidc.Exchanger) {
 		clientID := os.Getenv("GOOGLE_CLIENT_ID")
 		clientSecret := os.Getenv("GOOGLE_CLIENT_SECRET")
 		if clientID == "" || clientSecret == "" {
-			fmt.Fprintln(os.Stderr, "WARNING: AUTH_PROVIDER=google but GOOGLE_CLIENT_ID / GOOGLE_CLIENT_SECRET missing")
+			w.Warn("AUTH_PROVIDER=google but GOOGLE_CLIENT_ID / GOOGLE_CLIENT_SECRET missing")
 			return nil, nil
 		}
 		v, err := oidc.New(oidc.GoogleConfig(clientID))
 		if err != nil {
+			w.Warn("google validator init failed", wool.ErrField(err))
 			return nil, nil
 		}
 		ex, err := oidc.NewExchanger(oidc.ExchangerConfig{
@@ -315,12 +345,13 @@ func buildProviderStack() (auth.TokenValidator, *oidc.Exchanger) {
 			ClientSecret: clientSecret,
 		})
 		if err != nil {
+			w.Warn("google exchanger init failed", wool.ErrField(err))
 			return v, nil
 		}
 		return v, ex
 
 	default:
-		fmt.Fprintf(os.Stderr, "WARNING: unknown AUTH_PROVIDER=%q\n", os.Getenv("AUTH_PROVIDER"))
+		w.Warn("unknown AUTH_PROVIDER", wool.Field("value", os.Getenv("AUTH_PROVIDER")))
 		return nil, nil
 	}
 }
@@ -328,21 +359,21 @@ func buildProviderStack() (auth.TokenValidator, *oidc.Exchanger) {
 // pickEmailSender chooses a Sender based on environment.
 //
 //	RESEND_API_KEY set → ResendSender (production)
-//	otherwise          → LogSender writing to stderr (dev)
-func pickEmailSender() email.Sender {
+//	otherwise          → LogSender writing through wool (dev)
+func pickEmailSender(ctx context.Context) email.Sender {
+	w := wool.Get(ctx).In("pickEmailSender")
+	logFn := func(format string, args ...any) {
+		w.Info(fmt.Sprintf(format, args...))
+	}
 	if key := os.Getenv("RESEND_API_KEY"); key != "" {
 		s, err := email.NewResendSender(email.ResendConfig{APIKey: key})
 		if err != nil {
-			fmt.Fprintf(os.Stderr, "WARNING: resend init failed: %v — falling back to log sender\n", err)
-			return email.NewLogSender(func(format string, args ...any) {
-				fmt.Fprintf(os.Stderr, format, args...)
-			})
+			w.Warn("resend init failed — falling back to log sender", wool.ErrField(err))
+			return email.NewLogSender(logFn)
 		}
 		return s
 	}
-	return email.NewLogSender(func(format string, args ...any) {
-		fmt.Fprintf(os.Stderr, format, args...)
-	})
+	return email.NewLogSender(logFn)
 }
 
 // loadSigningKey returns the Ed25519 private key used to sign access and
@@ -364,7 +395,7 @@ func loadSigningKey(ctx context.Context) (ed25519core.PrivateKey, error) {
 		if err == nil {
 			return priv, nil
 		}
-		fmt.Fprintf(os.Stderr, "WARNING: could not load signing key from Vault (%v) — falling back to ephemeral\n", err)
+		wool.Get(ctx).In("loadSigningKey").Warn("could not load signing key from Vault — falling back to ephemeral", wool.ErrField(err))
 	}
 	_, priv, err := ed25519minter.GenerateKey()
 	return priv, err

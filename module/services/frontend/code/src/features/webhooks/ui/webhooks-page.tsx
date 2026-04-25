@@ -5,6 +5,7 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Plus } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/shared/ui";
+import { OrgSelector } from "@/components/org-selector";
 import { webhookQueries } from "../service/queries";
 import { webhookMutations } from "../service/mutations";
 import type { WebhookSubscription } from "../model/types";
@@ -12,18 +13,17 @@ import { WebhooksTable } from "./webhooks-table";
 import { WebhookForm } from "./webhook-form";
 import { WebhookDeliveriesPanel } from "./webhook-deliveries-panel";
 
-// TODO: Replace with real org selector when org context is available
-const DEFAULT_ORG_ID = "default";
-
 export function WebhooksPage() {
   const queryClient = useQueryClient();
+  const [orgId, setOrgId] = useState("");
   const [showCreate, setShowCreate] = useState(false);
   const [selectedWebhook, setSelectedWebhook] =
     useState<WebhookSubscription | null>(null);
 
-  const { data: raw, isLoading } = useQuery(
-    webhookQueries.subscriptions(DEFAULT_ORG_ID),
-  );
+  const { data: raw, isLoading } = useQuery({
+    ...webhookQueries.subscriptions(orgId),
+    enabled: !!orgId,
+  });
   const subscriptions: WebhookSubscription[] =
     (raw as { subscriptions?: WebhookSubscription[] } | undefined)
       ?.subscriptions ?? [];
@@ -37,7 +37,7 @@ export function WebhooksPage() {
       url: string;
       events: string[];
       description?: string;
-    }) => webhookMutations.create(DEFAULT_ORG_ID, url, events, description),
+    }) => webhookMutations.create(orgId, url, events, description),
     onSuccess: () => {
       toast.success("Webhook created");
       queryClient.invalidateQueries({ queryKey: ["webhooks"] });
@@ -76,19 +76,32 @@ export function WebhooksPage() {
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <h2 className="text-2xl font-bold tracking-tight">Webhooks</h2>
-        <Button onClick={() => setShowCreate(true)}>
-          <Plus className="mr-2 h-4 w-4" />
-          Create Webhook
-        </Button>
+        <div className="flex items-center gap-3">
+          <OrgSelector value={orgId} onChange={setOrgId} />
+          {orgId && (
+            <Button onClick={() => setShowCreate(true)}>
+              <Plus className="mr-2 h-4 w-4" />
+              Create Webhook
+            </Button>
+          )}
+        </div>
       </div>
 
-      <WebhooksTable
-        data={subscriptions}
-        isLoading={isLoading}
-        onTest={handleTest}
-        onDelete={handleDelete}
-        onSelect={setSelectedWebhook}
-      />
+      {!orgId ? (
+        <div className="flex h-48 items-center justify-center rounded-md border border-dashed">
+          <p className="text-muted-foreground">
+            Select an organization to view webhooks.
+          </p>
+        </div>
+      ) : (
+        <WebhooksTable
+          data={subscriptions}
+          isLoading={isLoading}
+          onTest={handleTest}
+          onDelete={handleDelete}
+          onSelect={setSelectedWebhook}
+        />
+      )}
 
       {selectedWebhook && (
         <WebhookDeliveriesPanel
@@ -97,7 +110,7 @@ export function WebhooksPage() {
         />
       )}
 
-      {showCreate && (
+      {showCreate && orgId && (
         <WebhookForm
           open
           onSubmit={(vals) => createMutation.mutate(vals)}
