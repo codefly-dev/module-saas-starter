@@ -245,11 +245,18 @@ func (s *Service) RegisterUser(ctx context.Context, input *gen.RegisterUserReque
 		Slug:    "personal-" + userID[len(userID)-12:],
 		OwnerId: userID,
 	}
-	if err := s.store.CreateOrganization(ctx, org); err != nil {
+	// Personal-org bootstrap: see CreateOrganization comment — at
+	// this moment the org doesn't exist; WithBypass is correct.
+	if err := s.store.WithBypass(ctx, func(ctx context.Context) error {
+		return s.store.CreateOrganization(ctx, org)
+	}); err != nil {
 		return nil, w.Wrapf(err, "cannot create default organization")
 	}
 
-	// Assign admin role to user in their org
+	// Assign admin role to user in their org. ListRoles reads
+	// built-in (org_id=NULL) roles + per-tenant roles; under RLS
+	// it'll need bypass once roles is RLS-protected (Phase 3). For
+	// now roles is unprotected.
 	roles, err := s.store.ListRoles(ctx, "")
 	if err != nil {
 		return nil, w.Wrapf(err, "cannot list roles")
@@ -288,6 +295,18 @@ func (s *Service) CheckPermission(ctx context.Context, req *gen.CheckPermissionR
 }
 
 // ResolveIdentity maps an auth provider ID to internal user/org/roles.
+//
+// Auth-flow read: at login we don't yet know the user's tenant. The
+// store.ResolveIdentity SQL joins organization_members (now RLS-
+// protected) to find org membership. We open a pool connection +
+// SET LOCAL ROLE NONE (bypass) inline rather than going through
+// WithBypass because the latter's nested-tx semantics interact
+// badly with multi-statement reads via getQueryExecutor — the
+// commit returns "rollback" even on success-path queries.
+//
+// The auth interceptor stamps the resolved OrgID on every
+// subsequent ctx so downstream queries run properly scoped via
+// WithOrgTx.
 func (s *Service) ResolveIdentity(ctx context.Context, req *gen.ResolveIdentityRequest) (*gen.ResolveIdentityResponse, error) {
 	resolved, err := s.store.ResolveIdentity(ctx, req.Provider, req.ProviderId)
 	if err != nil {
@@ -304,6 +323,14 @@ func (s *Service) ResolveIdentity(ctx context.Context, req *gen.ResolveIdentityR
 }
 
 // CreateOrganization creates a new org with the requesting user as owner.
+//
+// Bootstrap path: at this moment the tenant doesn't exist yet, so
+// there's no org context to set. WithBypass (which keeps the
+// connection's session_user role) is correct here — the role-switch
+// in WithOrgTx would put us as app_tenant with no app.current_org_id,
+// and the WITH CHECK on organization_members would reject the insert.
+// User authz is at the handler — only authenticated users can create
+// orgs; abuse is rate-limited.
 func (s *Service) CreateOrganization(ctx context.Context, ownerID string, req *gen.CreateOrganizationRequest) (*gen.CreateOrganizationResponse, error) {
 	org := &gen.Organization{
 		Id:      NewIDString(),
@@ -311,7 +338,9 @@ func (s *Service) CreateOrganization(ctx context.Context, ownerID string, req *g
 		Slug:    req.Slug,
 		OwnerId: ownerID,
 	}
-	if err := s.store.CreateOrganization(ctx, org); err != nil {
+	if err := s.store.WithBypass(ctx, func(ctx context.Context) error {
+		return s.store.CreateOrganization(ctx, org)
+	}); err != nil {
 		return nil, err
 	}
 	s.emit(ctx, ownerID, "user", "org.created", "organization", org.Id, org.Id)

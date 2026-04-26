@@ -15,15 +15,14 @@ import (
 func (s *PostgresStore) CreateOrganization(ctx context.Context, org *gen.Organization) error {
 	w := wool.Get(ctx).In("CreateOrganization")
 
-	// Wrap both inserts in a single transaction so a failure on the
-	// membership insert rolls back the org — previously we'd end up with
-	// an ownerless organization that could never be managed again.
-	return pgx.BeginTxFunc(ctx, s.pool, pgx.TxOptions{
-		IsoLevel: pgx.Serializable,
-	}, func(tx pgx.Tx) error {
-		ctx = context.WithValue(ctx, "tx", tx) //nolint:staticcheck // matches existing postgres.go pattern
+	// Two inserts share atomicity (an ownerless org can't be managed,
+	// so the org row WITHOUT the membership row is a leak). Reuse the
+	// caller's tx if one is on context — that's where WithOrgTx /
+	// WithBypass put it, and stacking a fresh BeginTxFunc would lose
+	// the SET LOCAL ROLE / app.current_org_id state. If no tx, open
+	// our own.
+	exec := func(ctx context.Context) error {
 		executor := s.getQueryExecutor(ctx)
-
 		if _, err := executor.Exec(ctx, `
 			INSERT INTO organizations (id, name, slug, owner_id, created_at, updated_at)
 			VALUES ($1, $2, $3, $4, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)`,
@@ -31,7 +30,6 @@ func (s *PostgresStore) CreateOrganization(ctx context.Context, org *gen.Organiz
 		); err != nil {
 			return w.Wrapf(err, "failed to insert organization")
 		}
-
 		if _, err := executor.Exec(ctx, `
 			INSERT INTO organization_members (org_id, user_id, role)
 			VALUES ($1, $2, 'owner')`,
@@ -39,8 +37,19 @@ func (s *PostgresStore) CreateOrganization(ctx context.Context, org *gen.Organiz
 		); err != nil {
 			return w.Wrapf(err, "failed to add owner as org member")
 		}
-
 		return nil
+	}
+
+	// If a tx is already on context (caller wrapped us in WithOrgTx
+	// or WithBypass), reuse it.
+	if _, hasTx := ctx.Value("tx").(pgx.Tx); hasTx {
+		return exec(ctx)
+	}
+	return pgx.BeginTxFunc(ctx, s.pool, pgx.TxOptions{
+		IsoLevel: pgx.Serializable,
+	}, func(tx pgx.Tx) error {
+		ctx = context.WithValue(ctx, "tx", tx) //nolint:staticcheck // matches existing postgres.go pattern
+		return exec(ctx)
 	})
 }
 

@@ -275,11 +275,26 @@ func (s *PostgresStore) CheckPermission(ctx context.Context, subjectID string, s
 // Returns org_role (from organization_members) and platform_role (from platform_admins).
 func (s *PostgresStore) ResolveIdentity(ctx context.Context, provider string, providerID string) (*business.ResolvedIdentity, error) {
 	w := wool.Get(ctx).In("ResolveIdentity")
-	executor := s.getQueryExecutor(ctx)
+
+	// Auth-flow read: organization_members is RLS-protected and we
+	// don't yet have a tenant on context (the whole point of resolving
+	// is to FIND the tenant). Open a tx + SET LOCAL ROLE NONE inline
+	// so the SELECTs see all tenants regardless of the policy. The
+	// defer handles release; queries are read-only so commit-vs-
+	// rollback semantics don't matter for data correctness.
+	tx, err := s.pool.Begin(ctx)
+	if err != nil {
+		return nil, w.Wrapf(err, "begin tx for resolve")
+	}
+	defer tx.Rollback(ctx) //nolint:errcheck // read-only tx; rollback at end
+	if _, err := tx.Exec(ctx, "SET LOCAL ROLE NONE"); err != nil {
+		return nil, w.Wrapf(err, "elevate role for resolve")
+	}
+	executor := tx
 
 	// Step 1: Find user by provider identity
 	var userID string
-	err := executor.QueryRow(ctx, `
+	err = executor.QueryRow(ctx, `
 		SELECT u.uuid FROM users u
 		JOIN user_identities ui ON u.uuid = ui.user_uuid
 		WHERE ui.provider = $1 AND ui.provider_id = $2`,

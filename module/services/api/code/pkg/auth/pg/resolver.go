@@ -56,6 +56,16 @@ func (r *Resolver) Resolve(ctx context.Context, c *auth.Claims, orgNameOnSignup 
 	}
 	defer tx.Rollback(ctx) //nolint:errcheck // rollback on early return is best-effort
 
+	// Auth-flow tx: at this moment we're pre-tenant — the pool's
+	// BeforeAcquire put us as app_tenant, but we don't yet have an
+	// org context. INSERT INTO organization_members (the JIT-org
+	// path below) would fail RLS WITH CHECK. SET LOCAL ROLE NONE
+	// elevates to session_user (the codefly superuser) for this tx
+	// only; auto-unwinds on commit/rollback.
+	if _, err := tx.Exec(ctx, "SET LOCAL ROLE NONE"); err != nil {
+		return nil, fmt.Errorf("pgauth: elevate role: %w", err)
+	}
+
 	identity, err := r.resolveInTx(ctx, tx, c, orgNameOnSignup)
 	if err != nil {
 		return nil, err

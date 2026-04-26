@@ -268,8 +268,12 @@ func TestTeamInheritedPermissions(t *testing.T) {
 	require.NoError(t, err)
 	orgID := aliceResolved.OrgId
 
-	// Add Bob to Alice's org, create team, add Bob to team
-	err = testService.Store().AddOrgMember(testCtx, orgID, bob.User.Uuid, "member")
+	// Add Bob to Alice's org, create team, add Bob to team.
+	// AddOrgMember writes to organization_members which is RLS-
+	// protected; wrap in WithOrgTx so the policy passes.
+	err = testStore.WithOrgTx(testCtx, orgID, func(ctx context.Context) error {
+		return testService.Store().AddOrgMember(ctx, orgID, bob.User.Uuid, "member")
+	})
 	require.NoError(t, err)
 
 	teamResp, err := testService.CreateTeam(testCtx, "test-actor", &gen.CreateTeamRequest{
@@ -309,7 +313,9 @@ func TestTeamInheritedPermissions(t *testing.T) {
 		},
 	})
 	require.NoError(t, err)
-	err = testService.Store().AddOrgMember(testCtx, orgID, charlie.User.Uuid, "member")
+	err = testStore.WithOrgTx(testCtx, orgID, func(ctx context.Context) error {
+		return testService.Store().AddOrgMember(ctx, orgID, charlie.User.Uuid, "member")
+	})
 	require.NoError(t, err)
 
 	check, err = testService.CheckPermission(testCtx, &gen.CheckPermissionRequest{
