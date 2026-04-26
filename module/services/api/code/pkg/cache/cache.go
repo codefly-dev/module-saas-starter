@@ -25,6 +25,7 @@ package cache
 import (
 	"context"
 	"errors"
+	"strings"
 	"sync"
 	"time"
 
@@ -139,4 +140,65 @@ func (m *memoryCache) Delete(_ context.Context, keys ...string) error {
 		delete(m.data, k)
 	}
 	return nil
+}
+
+// ==================== Scoped wrapper ====================
+
+// Scoped returns a Cache view that auto-prefixes every key with the
+// given namespace. Use to enforce keyspace isolation:
+//
+//	tenantCache := Scoped(redisCache, TenantPrefix(orgID))
+//	tenantCache.Get(ctx, "members:user-1")    // → reads "t:<orgID>:members:user-1"
+//	userCache   := Scoped(tenantCache, UserPrefix(userID))
+//	userCache.Get(ctx, "settings")            // → reads "t:<orgID>:u:<userID>:settings"
+//
+// Defense-in-depth: even if a typed cache's key format has a bug
+// that omits the tenant or user id, the Scoped wrapper keeps reads
+// and writes confined to the right namespace. Composable — chained
+// Scoped() calls just concatenate prefixes.
+//
+// The trailing ":" is auto-added if missing so callers can write
+// `Scoped(c, "t:org-a")` or `Scoped(c, "t:org-a:")` interchangeably.
+func Scoped(c Cache, prefix string) Cache {
+	if !strings.HasSuffix(prefix, ":") {
+		prefix += ":"
+	}
+	return &scopedCache{inner: c, prefix: prefix}
+}
+
+// TenantPrefix is the canonical namespace marker for per-tenant
+// cache keys. Use everywhere instead of hand-rolling `"t:"+orgID+":"`
+// so the tenant boundary is grep-able and consistent.
+func TenantPrefix(orgID string) string { return "t:" + orgID }
+
+// UserPrefix is the canonical namespace marker for per-user keys.
+// Compose with TenantPrefix when both dimensions matter:
+//
+//	Scoped(Scoped(c, TenantPrefix(orgID)), UserPrefix(userID))
+//
+// → "t:<orgID>:u:<userID>:..."
+func UserPrefix(userID string) string { return "u:" + userID }
+
+type scopedCache struct {
+	inner  Cache
+	prefix string
+}
+
+func (s *scopedCache) Get(ctx context.Context, key string) ([]byte, error) {
+	return s.inner.Get(ctx, s.prefix+key)
+}
+
+func (s *scopedCache) Set(ctx context.Context, key string, value []byte, ttl time.Duration) error {
+	return s.inner.Set(ctx, s.prefix+key, value, ttl)
+}
+
+func (s *scopedCache) Delete(ctx context.Context, keys ...string) error {
+	if len(keys) == 0 {
+		return nil
+	}
+	prefixed := make([]string, len(keys))
+	for i, k := range keys {
+		prefixed[i] = s.prefix + k
+	}
+	return s.inner.Delete(ctx, prefixed...)
 }

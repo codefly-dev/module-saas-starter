@@ -34,8 +34,18 @@ func NewOrgMembershipCache(c Cache) *OrgMembershipCache {
 	return &OrgMembershipCache{c: c, ttl: 30 * time.Second}
 }
 
+// key encodes the (org, user) tuple as a fully-qualified scoped path.
+// Format: "t:<orgID>:u:<userID>:orgmember"
+//
+// Why both prefixes (and at the front): the typed-cache layer is the
+// last-mile defense for tenant + user isolation. Putting the tenant
+// AND user identifiers at the start of every key means a bug
+// elsewhere can't read or write into the wrong tenant's keyspace,
+// and TenantPrefix / UserPrefix are the same constants used by the
+// generic Scoped() wrapper, so the boundary is grep-able and
+// consistent across all per-tenant typed caches.
 func (o *OrgMembershipCache) key(orgID, userID string) string {
-	return "orgmember:" + orgID + ":" + userID
+	return TenantPrefix(orgID) + ":" + UserPrefix(userID) + ":orgmember"
 }
 
 // Get returns the cached membership. ErrNotFound means "not in cache,

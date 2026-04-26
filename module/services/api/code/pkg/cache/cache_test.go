@@ -116,3 +116,103 @@ func TestOrgMembershipCache_InvalidateOrg(t *testing.T) {
 func TestErrNotFoundIsStable(t *testing.T) {
 	require.True(t, errors.Is(cache.ErrNotFound, cache.ErrNotFound))
 }
+
+// TestScoped_Get_PrefixesKeys — the wrapper must read/write only at
+// the prefixed location, never the bare key.
+func TestScoped_Get_PrefixesKeys(t *testing.T) {
+	c := cache.NewMemory()
+	scoped := cache.Scoped(c, "t:org-A")
+	require.NoError(t, scoped.Set(t.Context(), "members:user-1", []byte("admin"), time.Minute))
+
+	// Reading the bare key on the underlying cache MUST miss — the
+	// scoped writer never touched it. Reading via the scoped wrapper
+	// hits.
+	_, err := c.Get(t.Context(), "members:user-1")
+	require.ErrorIs(t, err, cache.ErrNotFound)
+
+	got, err := c.Get(t.Context(), "t:org-A:members:user-1")
+	require.NoError(t, err)
+	require.Equal(t, []byte("admin"), got)
+
+	got2, err := scoped.Get(t.Context(), "members:user-1")
+	require.NoError(t, err)
+	require.Equal(t, []byte("admin"), got2)
+}
+
+// TestScoped_TenantIsolation — the safety property the wrapper buys
+// us. Two scoped caches over the same underlying store, scoped to
+// different tenants, MUST NOT see each other's data even when the
+// inner-cache key (after the prefix) is identical.
+//
+// This is the bug class we're defending against: a future caller
+// uses just `members:user-1` without including the tenant id; the
+// scoped wrapper adds it transparently, and tenant A's lookup can't
+// return tenant B's value.
+func TestScoped_TenantIsolation(t *testing.T) {
+	c := cache.NewMemory()
+	a := cache.Scoped(c, cache.TenantPrefix("org-A"))
+	b := cache.Scoped(c, cache.TenantPrefix("org-B"))
+
+	require.NoError(t, a.Set(t.Context(), "members:user-1", []byte("from-A"), time.Minute))
+	require.NoError(t, b.Set(t.Context(), "members:user-1", []byte("from-B"), time.Minute))
+
+	gotA, err := a.Get(t.Context(), "members:user-1")
+	require.NoError(t, err)
+	require.Equal(t, []byte("from-A"), gotA)
+
+	gotB, err := b.Get(t.Context(), "members:user-1")
+	require.NoError(t, err)
+	require.Equal(t, []byte("from-B"), gotB)
+}
+
+// TestScoped_Compose — Scoped(Scoped(c, t), u) is the canonical
+// per-(tenant,user) namespace. Nested wrappers concatenate prefixes
+// in the obvious way; nothing weird happens.
+func TestScoped_Compose(t *testing.T) {
+	c := cache.NewMemory()
+	tenant := cache.Scoped(c, cache.TenantPrefix("org-A"))
+	tenantUser := cache.Scoped(tenant, cache.UserPrefix("user-1"))
+
+	require.NoError(t, tenantUser.Set(t.Context(), "settings", []byte("v1"), time.Minute))
+
+	// Underlying key is "t:org-A:u:user-1:settings" — verify by
+	// reading at that exact path with the raw cache.
+	got, err := c.Get(t.Context(), "t:org-A:u:user-1:settings")
+	require.NoError(t, err)
+	require.Equal(t, []byte("v1"), got)
+}
+
+// TestScoped_DeleteHonorsPrefix — Delete must prefix every supplied
+// key; otherwise an explicit Delete call would skip the scoped data
+// (and worst case, delete unscoped data with the same bare name).
+func TestScoped_DeleteHonorsPrefix(t *testing.T) {
+	c := cache.NewMemory()
+	scoped := cache.Scoped(c, "t:org-A")
+	require.NoError(t, scoped.Set(t.Context(), "k", []byte("v"), time.Minute))
+	require.NoError(t, c.Set(t.Context(), "k", []byte("unscoped-v"), time.Minute)) // bare key
+
+	require.NoError(t, scoped.Delete(t.Context(), "k"))
+
+	// Scoped value gone, bare value untouched.
+	_, err := scoped.Get(t.Context(), "k")
+	require.ErrorIs(t, err, cache.ErrNotFound)
+	got, err := c.Get(t.Context(), "k")
+	require.NoError(t, err)
+	require.Equal(t, []byte("unscoped-v"), got)
+}
+
+// TestOrgMembershipCache_KeyIncludesTenantAndUserPrefixes — pins the
+// key format so a future change can't accidentally drop the
+// scope-marker prefixes (which would break the safety this layer
+// buys us). The exact bytes matter: tooling, dashboards, and Redis
+// SCAN policies depend on the "t:..." / "u:..." conventions.
+func TestOrgMembershipCache_KeyIncludesTenantAndUserPrefixes(t *testing.T) {
+	c := cache.NewMemory()
+	mc := cache.NewOrgMembershipCache(c)
+	require.NoError(t, mc.Set(t.Context(), "org-A", "user-1", &cache.OrgMembership{Role: "admin"}))
+
+	// The key format under the hood — verify by raw read.
+	got, err := c.Get(t.Context(), "t:org-A:u:user-1:orgmember")
+	require.NoError(t, err)
+	require.Equal(t, []byte("admin"), got)
+}
