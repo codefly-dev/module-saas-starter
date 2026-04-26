@@ -33,6 +33,15 @@ func (f *fakeStore) UpdateWebhookDelivery(_ context.Context, d *business.Webhook
 	return nil
 }
 
+// WithOrgTx — pass-through for the fake. Real impl begins a pgx tx
+// + SET LOCAL app.current_org_id; here we just invoke fn with the
+// same ctx so production's wrap-pattern works through the fake.
+// orgID isn't checked — the fake models the storage interface,
+// not the policy.
+func (f *fakeStore) WithOrgTx(ctx context.Context, _ string, fn func(ctx context.Context) error) error {
+	return fn(ctx)
+}
+
 func TestWebhookSender_DeliveredOn200(t *testing.T) {
 	var got struct {
 		body      []byte

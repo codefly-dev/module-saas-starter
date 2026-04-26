@@ -69,7 +69,11 @@ func (s *Service) CreateSubscription(ctx context.Context, orgID, rawURL, secret 
 		Active:      true,
 	}
 
-	if err := s.store.CreateWebhookSubscription(ctx, sub); err != nil {
+	// RLS: write goes through WithOrgTx so the policy WITH CHECK
+	// passes (org_id matches the current_org_id setting).
+	if err := s.store.WithOrgTx(ctx, orgID, func(ctx context.Context) error {
+		return s.store.CreateWebhookSubscription(ctx, sub)
+	}); err != nil {
 		return nil, w.Wrapf(err, "cannot create webhook subscription")
 	}
 
@@ -79,28 +83,30 @@ func (s *Service) CreateSubscription(ctx context.Context, orgID, rawURL, secret 
 }
 
 // DeleteSubscription verifies ownership and deletes a webhook subscription.
+//
+// RLS does the ownership check for us: the DELETE inside WithOrgTx
+// only finds rows belonging to this org. If the id is from a
+// different tenant, the DELETE simply affects 0 rows and we report
+// "not found" without leaking the existence of cross-tenant data.
 func (s *Service) DeleteSubscription(ctx context.Context, orgID, id string) error {
 	w := wool.Get(ctx).In("DeleteSubscription")
 
-	// Verify ownership by listing org subscriptions and checking membership
-	subs, err := s.store.ListWebhookSubscriptions(ctx, orgID)
-	if err != nil {
-		return w.Wrapf(err, "cannot list subscriptions")
-	}
-
-	found := false
-	for _, sub := range subs {
-		if sub.ID == id {
-			found = true
-			break
+	if err := s.store.WithOrgTx(ctx, orgID, func(ctx context.Context) error {
+		// Confirm row exists in THIS org first — RLS makes the lookup
+		// safe; a cross-tenant id returns nil, not the other org's row.
+		sub, err := s.store.GetWebhookSubscription(ctx, id)
+		if err != nil {
+			return w.Wrapf(err, "cannot load subscription")
 		}
-	}
-	if !found {
-		return w.NewError("webhook subscription not found or does not belong to this organization")
-	}
-
-	if err := s.store.DeleteWebhookSubscription(ctx, id); err != nil {
-		return w.Wrapf(err, "cannot delete webhook subscription")
+		if sub == nil {
+			return w.NewError("webhook subscription not found")
+		}
+		if err := s.store.DeleteWebhookSubscription(ctx, id); err != nil {
+			return w.Wrapf(err, "cannot delete webhook subscription")
+		}
+		return nil
+	}); err != nil {
+		return err
 	}
 
 	s.emit(ctx, orgID, "system", "webhook.deleted", "webhook_subscription", id, orgID)
@@ -110,15 +116,33 @@ func (s *Service) DeleteSubscription(ctx context.Context, orgID, id string) erro
 
 // ListSubscriptions returns all active webhook subscriptions for an org.
 func (s *Service) ListSubscriptions(ctx context.Context, orgID string) ([]*WebhookSubscription, error) {
-	return s.store.ListWebhookSubscriptions(ctx, orgID)
+	var out []*WebhookSubscription
+	err := s.store.WithOrgTx(ctx, orgID, func(ctx context.Context) error {
+		subs, err := s.store.ListWebhookSubscriptions(ctx, orgID)
+		out = subs
+		return err
+	})
+	return out, err
 }
 
 // ListDeliveries returns recent deliveries for a webhook subscription.
-func (s *Service) ListDeliveries(ctx context.Context, subscriptionID string, pageSize int) ([]*WebhookDelivery, error) {
+//
+// orgID is the caller's org from the auth context. Required: under
+// RLS, ListWebhookDeliveries needs the tx's app.current_org_id set
+// or it returns zero rows. The subscription_id alone isn't enough —
+// the policy on webhook_deliveries joins to webhook_subscriptions to
+// check the parent's org_id matches.
+func (s *Service) ListDeliveries(ctx context.Context, orgID, subscriptionID string, pageSize int) ([]*WebhookDelivery, error) {
 	if pageSize <= 0 {
 		pageSize = 50
 	}
-	return s.store.ListWebhookDeliveries(ctx, subscriptionID, pageSize)
+	var out []*WebhookDelivery
+	err := s.store.WithOrgTx(ctx, orgID, func(ctx context.Context) error {
+		ds, err := s.store.ListWebhookDeliveries(ctx, subscriptionID, pageSize)
+		out = ds
+		return err
+	})
+	return out, err
 }
 
 // TestWebhook fires a synthetic event at the subscription's URL and
@@ -129,21 +153,24 @@ func (s *Service) ListDeliveries(ctx context.Context, subscriptionID string, pag
 // "webhook.test". The payload data is server-generated sample JSON
 // matching the same envelope the async dispatcher uses, so consumer-
 // side validation logic can treat tests identically to real events.
-func (s *Service) TestWebhook(ctx context.Context, subscriptionID, eventType string) (*WebhookDelivery, error) {
+// TestWebhook fires a synthetic event at the subscription's URL.
+// orgID is the caller's tenant — required so the lookup, the
+// delivery insert, and the row re-load all happen inside WithOrgTx
+// and the RLS policies on webhook_subscriptions / webhook_deliveries
+// scope to the right tenant. A subscription_id from a different
+// tenant returns "not found" via the policy, never the cross-tenant
+// row.
+//
+// The HTTP-send to the customer's endpoint runs OUTSIDE the
+// WithOrgTx (after we exit the closure) — keeping a tx open during
+// a network round-trip would tie up a connection for up to 10s.
+// A separate WithOrgTx wraps the post-send re-load.
+func (s *Service) TestWebhook(ctx context.Context, orgID, subscriptionID, eventType string) (*WebhookDelivery, error) {
 	w := wool.Get(ctx).In("TestWebhook")
-
-	sub, err := s.store.GetWebhookSubscription(ctx, subscriptionID)
-	if err != nil {
-		return nil, w.Wrapf(err, "cannot load subscription")
-	}
-	if sub == nil {
-		return nil, w.NewError("subscription not found")
-	}
 
 	if eventType == "" {
 		eventType = "webhook.test"
 	}
-
 	deliveryID := NewIDString()
 	envelope := webhookPayload{
 		EventType:  eventType,
@@ -164,29 +191,53 @@ func (s *Service) TestWebhook(ctx context.Context, subscriptionID, eventType str
 		Status:         "pending",
 		AttemptCount:   0,
 	}
-	if err := s.store.CreateWebhookDelivery(ctx, delivery); err != nil {
-		return nil, w.Wrapf(err, "cannot create test webhook delivery")
+
+	var sub *WebhookSubscription
+	if err := s.store.WithOrgTx(ctx, orgID, func(ctx context.Context) error {
+		s2, err := s.store.GetWebhookSubscription(ctx, subscriptionID)
+		if err != nil {
+			return w.Wrapf(err, "cannot load subscription")
+		}
+		if s2 == nil {
+			return w.NewError("subscription not found")
+		}
+		sub = s2
+		return s.store.CreateWebhookDelivery(ctx, delivery)
+	}); err != nil {
+		return nil, err
 	}
 
+	// Send (HTTP) outside the tx — long-running.
 	s.webhookSenderOrDefault().Send(ctx, sub, delivery, payloadBytes)
 
-	// Re-load — Send() mutates the row in-place but the store has the
-	// most reliable answer after the round trip.
-	updated, gerr := s.store.GetWebhookDelivery(ctx, deliveryID)
-	if gerr != nil || updated == nil {
-		return delivery, nil // best-effort fallback to the in-memory copy
+	// Re-load the row (Send mutates in-place, but DB has the source of
+	// truth post-round-trip).
+	var updated *WebhookDelivery
+	_ = s.store.WithOrgTx(ctx, orgID, func(ctx context.Context) error {
+		u, err := s.store.GetWebhookDelivery(ctx, deliveryID)
+		updated = u
+		return err
+	})
+	if updated != nil {
+		return updated, nil
 	}
-	return updated, nil
+	return delivery, nil
 }
 
 // GetWebhookDelivery fetches a single delivery row including the
 // captured response body and retry timing. Used by the Stripe-style
-// "deliveries" detail panel; the list endpoint returns the same
-// shape but the FE pulls the full record again on row click to get
-// the latest state.
-func (s *Service) GetWebhookDelivery(ctx context.Context, deliveryID string) (*WebhookDelivery, error) {
+// "deliveries" detail panel.
+//
+// orgID gates the lookup via RLS — a delivery from another tenant
+// returns "not found" instead of leaking.
+func (s *Service) GetWebhookDelivery(ctx context.Context, orgID, deliveryID string) (*WebhookDelivery, error) {
 	w := wool.Get(ctx).In("GetWebhookDelivery")
-	d, err := s.store.GetWebhookDelivery(ctx, deliveryID)
+	var d *WebhookDelivery
+	err := s.store.WithOrgTx(ctx, orgID, func(ctx context.Context) error {
+		got, err := s.store.GetWebhookDelivery(ctx, deliveryID)
+		d = got
+		return err
+	})
 	if err != nil {
 		return nil, w.Wrapf(err, "cannot load delivery")
 	}
@@ -204,46 +255,58 @@ func (s *Service) GetWebhookDelivery(ctx context.Context, deliveryID string) (*W
 //
 // Authz expectation: caller must already be org-admin on the
 // subscription's org — enforced at the adapter layer.
-func (s *Service) ReplayWebhookDelivery(ctx context.Context, originalID string) (*WebhookDelivery, error) {
+func (s *Service) ReplayWebhookDelivery(ctx context.Context, orgID, originalID string) (*WebhookDelivery, error) {
 	w := wool.Get(ctx).In("ReplayWebhookDelivery")
 
-	original, err := s.store.GetWebhookDelivery(ctx, originalID)
-	if err != nil {
-		return nil, w.Wrapf(err, "cannot load original delivery")
-	}
-	if original == nil {
-		return nil, w.NewError("original delivery not found")
-	}
-
-	sub, err := s.store.GetWebhookSubscription(ctx, original.SubscriptionID)
-	if err != nil {
-		return nil, w.Wrapf(err, "cannot load subscription")
-	}
-	if sub == nil {
-		return nil, w.NewError("subscription not found (deleted?)")
-	}
-
+	var original *WebhookDelivery
+	var sub *WebhookSubscription
 	replay := &WebhookDelivery{
-		ID:             NewIDString(),
-		SubscriptionID: original.SubscriptionID,
-		EventType:      original.EventType,
-		Payload:        original.Payload,
-		Status:         "pending",
-		AttemptCount:   0,
+		ID:           NewIDString(),
+		Status:       "pending",
+		AttemptCount: 0,
 	}
-	if err := s.store.CreateWebhookDelivery(ctx, replay); err != nil {
-		return nil, w.Wrapf(err, "cannot create replay row")
+
+	if err := s.store.WithOrgTx(ctx, orgID, func(ctx context.Context) error {
+		o, err := s.store.GetWebhookDelivery(ctx, originalID)
+		if err != nil {
+			return w.Wrapf(err, "cannot load original delivery")
+		}
+		if o == nil {
+			return w.NewError("original delivery not found")
+		}
+		original = o
+
+		sb, err := s.store.GetWebhookSubscription(ctx, o.SubscriptionID)
+		if err != nil {
+			return w.Wrapf(err, "cannot load subscription")
+		}
+		if sb == nil {
+			return w.NewError("subscription not found (deleted?)")
+		}
+		sub = sb
+
+		replay.SubscriptionID = o.SubscriptionID
+		replay.EventType = o.EventType
+		replay.Payload = o.Payload
+		return s.store.CreateWebhookDelivery(ctx, replay)
+	}); err != nil {
+		return nil, err
 	}
 
 	s.webhookSenderOrDefault().Send(ctx, sub, replay, []byte(original.Payload))
 
-	updated, gerr := s.store.GetWebhookDelivery(ctx, replay.ID)
-	if gerr != nil || updated == nil {
-		return replay, nil
-	}
+	var updated *WebhookDelivery
+	_ = s.store.WithOrgTx(ctx, orgID, func(ctx context.Context) error {
+		u, err := s.store.GetWebhookDelivery(ctx, replay.ID)
+		updated = u
+		return err
+	})
 
 	s.emit(ctx, sub.OrgID, "system", "webhook.replayed", "webhook_delivery", replay.ID, sub.OrgID)
-	return updated, nil
+	if updated != nil {
+		return updated, nil
+	}
+	return replay, nil
 }
 
 // RotateWebhookSecret generates a new HMAC secret for the
@@ -252,16 +315,8 @@ func (s *Service) ReplayWebhookDelivery(ctx context.Context, originalID string) 
 // the caller already has both old and new at this moment (the API
 // just returned the new one), so they can flip their verifier at
 // their own pace.
-func (s *Service) RotateWebhookSecret(ctx context.Context, subscriptionID string) (string, error) {
+func (s *Service) RotateWebhookSecret(ctx context.Context, orgID, subscriptionID string) (string, error) {
 	w := wool.Get(ctx).In("RotateWebhookSecret")
-
-	sub, err := s.store.GetWebhookSubscription(ctx, subscriptionID)
-	if err != nil {
-		return "", w.Wrapf(err, "cannot load subscription")
-	}
-	if sub == nil {
-		return "", w.NewError("subscription not found")
-	}
 
 	raw := make([]byte, 32)
 	if _, err := rand.Read(raw); err != nil {
@@ -269,12 +324,22 @@ func (s *Service) RotateWebhookSecret(ctx context.Context, subscriptionID string
 	}
 	newSecret := "whsec_" + base64.RawURLEncoding.EncodeToString(raw)
 
-	sub.Secret = newSecret
-	if err := s.store.UpdateWebhookSubscription(ctx, sub); err != nil {
-		return "", w.Wrapf(err, "cannot persist new secret")
+	if err := s.store.WithOrgTx(ctx, orgID, func(ctx context.Context) error {
+		sub, err := s.store.GetWebhookSubscription(ctx, subscriptionID)
+		if err != nil {
+			return w.Wrapf(err, "cannot load subscription")
+		}
+		if sub == nil {
+			return w.NewError("subscription not found")
+		}
+		sub.Secret = newSecret
+		return s.store.UpdateWebhookSubscription(ctx, sub)
+	}); err != nil {
+		return "", err
 	}
 
-	s.emit(ctx, sub.OrgID, "system", "webhook.secret_rotated", "webhook_subscription", sub.ID, sub.OrgID)
+	s.emit(ctx, orgID, "system", "webhook.secret_rotated", "webhook_subscription", subscriptionID, orgID)
 	return newSecret, nil
 }
+
 

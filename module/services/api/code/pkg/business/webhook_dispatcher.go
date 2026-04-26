@@ -74,9 +74,16 @@ func (d *AsyncWebhookDispatcher) processEntry(entry AuditEntry) {
 	ctx := context.Background()
 	w := wool.Get(ctx).In("WebhookDispatcher.processEntry")
 
-	// Find active subscriptions matching this event type
-	subs, err := d.store.GetActiveWebhookSubscriptions(ctx, entry.Action)
-	if err != nil {
+	// Cross-tenant scan: find every org's subscriptions matching
+	// this event. RLS would otherwise hide them all (no
+	// app.current_org_id set on a worker context). WithBypass
+	// elevates to session_user for the read.
+	var subs []*WebhookSubscription
+	if err := d.store.WithBypass(ctx, func(ctx context.Context) error {
+		s, err := d.store.GetActiveWebhookSubscriptions(ctx, entry.Action)
+		subs = s
+		return err
+	}); err != nil {
 		w.Debug("failed to get webhook subscriptions", wool.ErrField(err))
 		return
 	}
@@ -123,7 +130,12 @@ func (d *AsyncWebhookDispatcher) deliver(ctx context.Context, sub *WebhookSubscr
 		AttemptCount:   0,
 	}
 
-	if err := d.store.CreateWebhookDelivery(ctx, delivery); err != nil {
+	// Per-tenant write — wrap in WithOrgTx so RLS lets the insert
+	// through (webhook_deliveries' policy joins to webhook_subscriptions
+	// for org_id; the policy passes when app.current_org_id matches).
+	if err := d.store.WithOrgTx(ctx, sub.OrgID, func(ctx context.Context) error {
+		return d.store.CreateWebhookDelivery(ctx, delivery)
+	}); err != nil {
 		w.Debug("failed to create webhook delivery record", wool.ErrField(err))
 		return
 	}
@@ -151,7 +163,7 @@ func (d *AsyncWebhookDispatcher) dispatchHTTP(
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, sub.URL, bytes.NewReader(payloadBytes))
 	if err != nil {
-		d.markFailed(ctx, delivery, 0, err.Error())
+		d.markFailed(ctx, sub, delivery, 0, err.Error())
 		return
 	}
 	req.Header.Set("Content-Type", "application/json")
@@ -161,7 +173,7 @@ func (d *AsyncWebhookDispatcher) dispatchHTTP(
 
 	resp, err := d.client.Do(req)
 	if err != nil {
-		d.markFailed(ctx, delivery, 0, err.Error())
+		d.markFailed(ctx, sub, delivery, 0, err.Error())
 		return
 	}
 	defer resp.Body.Close()
@@ -177,11 +189,13 @@ func (d *AsyncWebhookDispatcher) dispatchHTTP(
 		delivery.Status = "delivered"
 		delivery.DeliveredAt = &now
 	} else {
-		d.markFailed(ctx, delivery, resp.StatusCode, string(body))
+		d.markFailed(ctx, sub, delivery, resp.StatusCode, string(body))
 		return
 	}
 
-	if err := d.store.UpdateWebhookDelivery(ctx, delivery); err != nil {
+	if err := d.store.WithOrgTx(ctx, sub.OrgID, func(ctx context.Context) error {
+		return d.store.UpdateWebhookDelivery(ctx, delivery)
+	}); err != nil {
 		w.Debug("failed to update webhook delivery", wool.ErrField(err))
 	}
 }
@@ -211,8 +225,10 @@ var retryBackoffs = []time.Duration{
 const maxAttempts = 5
 
 // markFailed sets the delivery as retrying with exponential backoff, or failed
-// if max attempts reached.
-func (d *AsyncWebhookDispatcher) markFailed(ctx context.Context, delivery *WebhookDelivery, httpStatus int, responseBody string) {
+// if max attempts reached. sub provides the orgID for the WithOrgTx
+// scope so the RLS-policied UPDATE on webhook_deliveries lets the
+// write through.
+func (d *AsyncWebhookDispatcher) markFailed(ctx context.Context, sub *WebhookSubscription, delivery *WebhookDelivery, httpStatus int, responseBody string) {
 	w := wool.Get(ctx).In("WebhookDispatcher.markFailed")
 
 	delivery.HTTPStatus = httpStatus
@@ -234,7 +250,9 @@ func (d *AsyncWebhookDispatcher) markFailed(ctx context.Context, delivery *Webho
 		delivery.NextRetryAt = &nextRetry
 	}
 
-	if err := d.store.UpdateWebhookDelivery(ctx, delivery); err != nil {
+	if err := d.store.WithOrgTx(ctx, sub.OrgID, func(ctx context.Context) error {
+		return d.store.UpdateWebhookDelivery(ctx, delivery)
+	}); err != nil {
 		w.Debug("failed to update failed webhook delivery", wool.ErrField(err))
 	}
 }
@@ -264,8 +282,15 @@ func (d *AsyncWebhookDispatcher) Close() {
 func (d *AsyncWebhookDispatcher) RetryPending(ctx context.Context, limit int) error {
 	w := wool.Get(ctx).In("WebhookDispatcher.RetryPending")
 
-	deliveries, err := d.store.GetPendingDeliveries(ctx, limit)
-	if err != nil {
+	// Cross-tenant scan: GetPendingDeliveries returns deliveries
+	// across all orgs. WithBypass elevates so RLS doesn't filter
+	// the worker's poll.
+	var deliveries []*WebhookDelivery
+	if err := d.store.WithBypass(ctx, func(ctx context.Context) error {
+		ds, err := d.store.GetPendingDeliveries(ctx, limit)
+		deliveries = ds
+		return err
+	}); err != nil {
 		return fmt.Errorf("failed to get pending deliveries: %w", err)
 	}
 
@@ -282,9 +307,15 @@ func (d *AsyncWebhookDispatcher) RetryPending(ctx context.Context, limit int) er
 func (d *AsyncWebhookDispatcher) redeliverFromRecord(ctx context.Context, delivery *WebhookDelivery) {
 	w := wool.Get(ctx).In("WebhookDispatcher.redeliver")
 
-	// Look up the subscription to get URL + secret
-	subs, err := d.store.GetActiveWebhookSubscriptions(ctx, delivery.EventType)
-	if err != nil {
+	// Cross-tenant lookup: we don't yet know the delivery's tenant
+	// (it could be any org). Bypass to find the matching subscription
+	// (which carries org_id), then per-tenant ops use sub.OrgID.
+	var subs []*WebhookSubscription
+	if err := d.store.WithBypass(ctx, func(ctx context.Context) error {
+		s, err := d.store.GetActiveWebhookSubscriptions(ctx, delivery.EventType)
+		subs = s
+		return err
+	}); err != nil {
 		w.Debug("failed to get subscriptions for retry", wool.ErrField(err))
 		return
 	}
@@ -302,7 +333,7 @@ func (d *AsyncWebhookDispatcher) redeliverFromRecord(ctx context.Context, delive
 
 		req, err := http.NewRequestWithContext(ctx, http.MethodPost, sub.URL, bytes.NewReader(payloadBytes))
 		if err != nil {
-			d.markFailed(ctx, delivery, 0, err.Error())
+			d.markFailed(ctx, sub, delivery, 0, err.Error())
 			return
 		}
 		req.Header.Set("Content-Type", "application/json")
@@ -311,7 +342,7 @@ func (d *AsyncWebhookDispatcher) redeliverFromRecord(ctx context.Context, delive
 
 		resp, err := d.client.Do(req)
 		if err != nil {
-			d.markFailed(ctx, delivery, 0, err.Error())
+			d.markFailed(ctx, sub, delivery, 0, err.Error())
 			return
 		}
 		defer resp.Body.Close()
@@ -326,17 +357,22 @@ func (d *AsyncWebhookDispatcher) redeliverFromRecord(ctx context.Context, delive
 			now := time.Now()
 			delivery.Status = "delivered"
 			delivery.DeliveredAt = &now
-			if err := d.store.UpdateWebhookDelivery(ctx, delivery); err != nil {
+			if err := d.store.WithOrgTx(ctx, sub.OrgID, func(ctx context.Context) error {
+				return d.store.UpdateWebhookDelivery(ctx, delivery)
+			}); err != nil {
 				w.Debug("failed to update delivery after retry", wool.ErrField(err))
 			}
 		} else {
-			d.markFailed(ctx, delivery, resp.StatusCode, string(body))
+			d.markFailed(ctx, sub, delivery, resp.StatusCode, string(body))
 		}
 		return
 	}
 
-	// Subscription no longer active — mark as failed
+	// Subscription no longer active — mark as failed via bypass since
+	// we don't have a sub.OrgID to scope to.
 	delivery.Status = "failed"
 	delivery.ResponseBody = "subscription no longer active"
-	_ = d.store.UpdateWebhookDelivery(ctx, delivery)
+	_ = d.store.WithBypass(ctx, func(ctx context.Context) error {
+		return d.store.UpdateWebhookDelivery(ctx, delivery)
+	})
 }

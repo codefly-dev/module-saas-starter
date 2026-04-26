@@ -57,7 +57,7 @@ func (s *WebhookSender) Send(
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, sub.URL, bytes.NewReader(payloadBytes))
 	if err != nil {
-		s.markFailed(ctx, delivery, 0, err.Error())
+		s.markFailed(ctx, sub, delivery, 0, err.Error())
 		return
 	}
 	req.Header.Set("Content-Type", "application/json")
@@ -67,7 +67,7 @@ func (s *WebhookSender) Send(
 
 	resp, err := s.client.Do(req)
 	if err != nil {
-		s.markFailed(ctx, delivery, 0, err.Error())
+		s.markFailed(ctx, sub, delivery, 0, err.Error())
 		return
 	}
 	defer resp.Body.Close()
@@ -86,18 +86,28 @@ func (s *WebhookSender) Send(
 		delivery.Status = "failed"
 	}
 
-	if err := s.store.UpdateWebhookDelivery(ctx, delivery); err != nil {
+	if err := s.persistDelivery(ctx, sub, delivery); err != nil {
 		w.Debug("failed to update webhook delivery", wool.ErrField(err))
 	}
 }
 
-func (s *WebhookSender) markFailed(ctx context.Context, delivery *WebhookDelivery, httpStatus int, responseBody string) {
+func (s *WebhookSender) markFailed(ctx context.Context, sub *WebhookSubscription, delivery *WebhookDelivery, httpStatus int, responseBody string) {
 	w := wool.Get(ctx).In("WebhookSender.markFailed")
 	delivery.HTTPStatus = httpStatus
 	delivery.ResponseBody = responseBody
 	delivery.AttemptCount = 1
 	delivery.Status = "failed"
-	if err := s.store.UpdateWebhookDelivery(ctx, delivery); err != nil {
+	if err := s.persistDelivery(ctx, sub, delivery); err != nil {
 		w.Debug("failed to update webhook delivery on failure path", wool.ErrField(err))
 	}
+}
+
+// persistDelivery wraps UpdateWebhookDelivery in WithOrgTx so the
+// RLS policy on webhook_deliveries (joins to webhook_subscriptions
+// for tenant scope) lets the write through. Sub.OrgID is the
+// authoritative source of tenant.
+func (s *WebhookSender) persistDelivery(ctx context.Context, sub *WebhookSubscription, delivery *WebhookDelivery) error {
+	return s.store.WithOrgTx(ctx, sub.OrgID, func(ctx context.Context) error {
+		return s.store.UpdateWebhookDelivery(ctx, delivery)
+	})
 }

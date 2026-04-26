@@ -462,7 +462,7 @@ func (h *webhookConnectHandler) ListDeliveries(ctx context.Context, req *connect
 	if pageSize == 0 {
 		pageSize = 50
 	}
-	deliveries, err := h.svc.ListDeliveries(ctx, req.Msg.SubscriptionId, pageSize)
+	deliveries, err := h.svc.ListDeliveries(ctx, callerOrg(ctx), req.Msg.SubscriptionId, pageSize)
 	if err != nil {
 		return nil, err
 	}
@@ -478,7 +478,7 @@ func (h *webhookConnectHandler) TestWebhook(ctx context.Context, req *connect.Re
 	if err := requireScope(ctx, "webhooks:write"); err != nil {
 		return nil, translateGRPCError(err)
 	}
-	d, err := h.svc.TestWebhook(ctx, req.Msg.Id, req.Msg.EventType)
+	d, err := h.svc.TestWebhook(ctx, callerOrg(ctx), req.Msg.Id, req.Msg.EventType)
 	if err != nil {
 		return nil, err
 	}
@@ -494,7 +494,7 @@ func (h *webhookConnectHandler) GetDelivery(ctx context.Context, req *connect.Re
 	if err := requireScope(ctx, "webhooks:read"); err != nil {
 		return nil, translateGRPCError(err)
 	}
-	d, err := h.svc.GetWebhookDelivery(ctx, req.Msg.Id)
+	d, err := h.svc.GetWebhookDelivery(ctx, callerOrg(ctx), req.Msg.Id)
 	if err != nil {
 		return nil, err
 	}
@@ -510,7 +510,7 @@ func (h *webhookConnectHandler) ReplayDelivery(ctx context.Context, req *connect
 	if err := requireScope(ctx, "webhooks:write"); err != nil {
 		return nil, translateGRPCError(err)
 	}
-	d, err := h.svc.ReplayWebhookDelivery(ctx, req.Msg.Id)
+	d, err := h.svc.ReplayWebhookDelivery(ctx, callerOrg(ctx), req.Msg.Id)
 	if err != nil {
 		return nil, err
 	}
@@ -536,7 +536,7 @@ func (h *webhookConnectHandler) RotateSecret(ctx context.Context, req *connect.R
 	if err := requireMFA(ctx, actorID); err != nil {
 		return nil, err
 	}
-	secret, err := h.svc.RotateWebhookSecret(ctx, req.Msg.Id)
+	secret, err := h.svc.RotateWebhookSecret(ctx, callerOrg(ctx), req.Msg.Id)
 	if err != nil {
 		return nil, err
 	}
