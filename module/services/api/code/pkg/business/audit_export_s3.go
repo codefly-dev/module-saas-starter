@@ -44,6 +44,8 @@ type AuditExportConfig struct {
 // feedback loop in the admin form's toast.
 //
 // Authz expectation: caller is org-admin, enforced at the adapter.
+// RLS: the read + upsert run inside WithOrgTx so the policy on
+// audit_export_configs filters to this org's row.
 func (s *Service) SaveAuditExportConfig(ctx context.Context, orgID string, in *AuditExportConfig) error {
 	if in.CadenceMinutes < 5 {
 		in.CadenceMinutes = 60
@@ -52,22 +54,28 @@ func (s *Service) SaveAuditExportConfig(ctx context.Context, orgID string, in *A
 	if in.ID == "" {
 		in.ID = NewIDString()
 	}
+	// Pre-flight against the resolved config (network call to
+	// customer's S3) — DON'T wrap this in WithOrgTx, no DB involved.
+	// We need the existing secret first if the FE submitted "".
 	if in.SecretAccessKey == "" {
-		existing, _ := s.store.GetAuditExportConfig(ctx, orgID)
-		if existing != nil {
-			in.SecretAccessKey = existing.SecretAccessKey
+		err := s.store.WithOrgTx(ctx, orgID, func(ctx context.Context) error {
+			existing, _ := s.store.GetAuditExportConfig(ctx, orgID)
+			if existing != nil {
+				in.SecretAccessKey = existing.SecretAccessKey
+			}
+			return nil
+		})
+		if err != nil {
+			return err
 		}
 	}
-	// Pre-flight against the resolved config — this is what the
-	// exporter goroutine will use too, so a successful verify here
-	// means the next exporter tick will succeed. Wrap as
-	// InvalidArgument so the FE form's toast surfaces a proper 400
-	// (and not a generic 500) with the upstream cause as the message.
 	if err := VerifyAuditExportConnection(ctx, in); err != nil {
 		return status.Errorf(codes.InvalidArgument,
 			"connection probe failed: %v", err)
 	}
-	if err := s.store.UpsertAuditExportConfig(ctx, in); err != nil {
+	if err := s.store.WithOrgTx(ctx, orgID, func(ctx context.Context) error {
+		return s.store.UpsertAuditExportConfig(ctx, in)
+	}); err != nil {
 		return err
 	}
 	s.emit(ctx, orgID, "system", "audit_export.configured", "audit_export_config", in.ID, orgID)
@@ -78,7 +86,12 @@ func (s *Service) SaveAuditExportConfig(ctx context.Context, orgID string, in *A
 // secret_access_key masked to "" — never echo a stored secret to a
 // client. Returns (nil, nil) when the org has no config yet.
 func (s *Service) GetAuditExportConfig(ctx context.Context, orgID string) (*AuditExportConfig, error) {
-	cfg, err := s.store.GetAuditExportConfig(ctx, orgID)
+	var cfg *AuditExportConfig
+	err := s.store.WithOrgTx(ctx, orgID, func(ctx context.Context) error {
+		c, err := s.store.GetAuditExportConfig(ctx, orgID)
+		cfg = c
+		return err
+	})
 	if err != nil || cfg == nil {
 		return nil, err
 	}
@@ -89,7 +102,9 @@ func (s *Service) GetAuditExportConfig(ctx context.Context, orgID string) (*Audi
 // DeleteAuditExportConfig removes the config; exports stop on the
 // next exporter scheduler tick.
 func (s *Service) DeleteAuditExportConfig(ctx context.Context, orgID string) error {
-	if err := s.store.DeleteAuditExportConfig(ctx, orgID); err != nil {
+	if err := s.store.WithOrgTx(ctx, orgID, func(ctx context.Context) error {
+		return s.store.DeleteAuditExportConfig(ctx, orgID)
+	}); err != nil {
 		return err
 	}
 	s.emit(ctx, orgID, "system", "audit_export.deleted", "audit_export_config", orgID, orgID)

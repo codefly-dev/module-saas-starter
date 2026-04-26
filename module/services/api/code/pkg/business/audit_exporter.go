@@ -75,8 +75,17 @@ func (e *AuditExporter) loop() {
 
 func (e *AuditExporter) tick(ctx context.Context) {
 	w := wool.Get(ctx).In("AuditExporter.tick")
-	configs, err := e.store.ListDueAuditExportConfigs(ctx, time.Now())
-	if err != nil {
+	// Cross-tenant scan: ListDueAuditExportConfigs must see every
+	// org's row to decide who's due. WithBypass disables the RLS
+	// policy on audit_export_configs for this read. Below, exportOne
+	// re-enters WithOrgTx for each per-tenant operation so writes
+	// (MarkSucceeded / RecordError) are tenant-scoped.
+	var configs []*AuditExportConfig
+	if err := e.store.WithBypass(ctx, func(ctx context.Context) error {
+		c, err := e.store.ListDueAuditExportConfigs(ctx, time.Now())
+		configs = c
+		return err
+	}); err != nil {
 		w.Debug("ListDueAuditExportConfigs failed", wool.ErrField(err))
 		return
 	}
@@ -105,33 +114,57 @@ func (e *AuditExporter) exportOne(ctx context.Context, cfg *AuditExportConfig) {
 	}
 	to := time.Now()
 
-	events, _, _, err := e.store.QueryAuditLog(
-		ctx, cfg.OrgID, "", "", "", "", &from, &to, 50_000, "")
-	if err != nil {
-		_ = e.store.RecordAuditExportError(ctx, cfg.OrgID, err.Error())
+	// All per-org reads + writes for this cycle run inside a single
+	// WithOrgTx so the RLS policy on audit_export_configs scopes
+	// MarkSucceeded / RecordError to this org. QueryAuditLog goes
+	// through too even though audit_events doesn't yet have RLS — when
+	// it does (Phase 2), this code path will Just Work.
+	var events []AuditEntry
+	if err := e.store.WithOrgTx(ctx, cfg.OrgID, func(ctx context.Context) error {
+		ev, _, _, qerr := e.store.QueryAuditLog(
+			ctx, cfg.OrgID, "", "", "", "", &from, &to, 50_000, "")
+		events = ev
+		return qerr
+	}); err != nil {
+		_ = e.recordError(ctx, cfg.OrgID, err.Error())
 		w.Debug("query failed", wool.ErrField(err))
 		return
 	}
 	if len(events) == 0 {
 		// Nothing to export — still advance the cursor so we don't
 		// requery the same empty window next tick.
-		_ = e.store.MarkAuditExportSucceeded(ctx, cfg.OrgID, to)
+		_ = e.markSucceeded(ctx, cfg.OrgID, to)
 		return
 	}
 
 	body, err := encodeJSONL(events)
 	if err != nil {
-		_ = e.store.RecordAuditExportError(ctx, cfg.OrgID, err.Error())
+		_ = e.recordError(ctx, cfg.OrgID, err.Error())
 		return
 	}
 
 	if err := e.upload(ctx, cfg, to, body); err != nil {
-		_ = e.store.RecordAuditExportError(ctx, cfg.OrgID, err.Error())
+		_ = e.recordError(ctx, cfg.OrgID, err.Error())
 		w.Debug("upload failed", wool.ErrField(err))
 		return
 	}
 
-	_ = e.store.MarkAuditExportSucceeded(ctx, cfg.OrgID, to)
+	_ = e.markSucceeded(ctx, cfg.OrgID, to)
+}
+
+// markSucceeded / recordError — small wrappers so the per-tenant
+// state mutations land inside WithOrgTx, satisfying the RLS policy
+// on audit_export_configs.
+func (e *AuditExporter) markSucceeded(ctx context.Context, orgID string, exportedAt time.Time) error {
+	return e.store.WithOrgTx(ctx, orgID, func(ctx context.Context) error {
+		return e.store.MarkAuditExportSucceeded(ctx, orgID, exportedAt)
+	})
+}
+
+func (e *AuditExporter) recordError(ctx context.Context, orgID, message string) error {
+	return e.store.WithOrgTx(ctx, orgID, func(ctx context.Context) error {
+		return e.store.RecordAuditExportError(ctx, orgID, message)
+	})
 }
 
 // encodeJSONL serializes audit entries one-per-line (the standard

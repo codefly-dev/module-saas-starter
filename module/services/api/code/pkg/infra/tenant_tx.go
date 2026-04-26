@@ -52,6 +52,15 @@ func (s *PostgresStore) WithOrgTx(ctx context.Context, orgID string, fn func(ctx
 	}
 	defer tx.Rollback(ctx) //nolint:errcheck // rollback after commit is a no-op
 
+	// SET LOCAL ROLE app_tenant — postgres SUPERUSERS bypass RLS
+	// unconditionally even with FORCE, and codefly's Postgres plugin
+	// connects the api as a superuser. Switching to a non-superuser
+	// non-BYPASSRLS role for the duration of this tx makes RLS
+	// actually fire. SET LOCAL scopes the role-switch to this tx;
+	// commit/rollback restores the original role.
+	if _, err := tx.Exec(ctx, "SET LOCAL ROLE app_tenant"); err != nil {
+		return err
+	}
 	// SET LOCAL is parameterized via pgx; the value is properly
 	// quoted and not a SQL-injection vector even if orgID came from
 	// user input (which it shouldn't — orgID is always validated as
@@ -84,3 +93,34 @@ const errEmptyOrgID errString = "WithOrgTx: orgID is required"
 // interactions transitively but the linter doesn't see it from this
 // file alone.
 var _ pgx.Tx = (pgx.Tx)(nil)
+
+// WithBypass runs `fn` inside a transaction with `app.bypass = '1'`
+// set, which RLS policies treat as "no tenant filter". Use ONLY for:
+//
+//   - Background workers that legitimately scan across tenants
+//     (audit-exporter polling, webhook dispatcher, billing
+//     reconciliation, scheduled cleanup jobs).
+//   - Platform-admin endpoints that present a cross-org view.
+//
+// Treat it like sudo — every call site should be deliberate, with a
+// comment explaining why it can't use WithOrgTx. Invariant: a
+// WithBypass-wrapped function MUST NOT use user-supplied input as a
+// filter without explicit SQL — the policy isn't there to catch
+// you.
+func (s *PostgresStore) WithBypass(ctx context.Context, fn func(ctx context.Context) error) error {
+	tx, err := s.pool.Begin(ctx)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback(ctx) //nolint:errcheck // rollback after commit is a no-op
+
+	if _, err := tx.Exec(ctx, "SELECT set_config('app.bypass', '1', true)"); err != nil {
+		return err
+	}
+
+	txCtx := context.WithValue(ctx, "tx", tx) //nolint:staticcheck // intentional shared-key
+	if err := fn(txCtx); err != nil {
+		return err
+	}
+	return tx.Commit(ctx)
+}

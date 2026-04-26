@@ -11,6 +11,18 @@ type Store interface {
 	// Transactions
 	RunInTransaction(ctx context.Context, fn func(ctx context.Context) error) error
 
+	// WithOrgTx wraps fn in a transaction that has app.current_org_id
+	// set, so RLS policies on per-tenant tables filter to that org.
+	// Empty orgID is rejected (loud, fail-closed). Wrap every
+	// per-tenant Service path in this — see AUTHZ.md.
+	WithOrgTx(ctx context.Context, orgID string, fn func(ctx context.Context) error) error
+
+	// WithBypass wraps fn in a transaction that has app.bypass='1'
+	// so RLS policies allow cross-tenant access. Use only for
+	// background workers + platform-admin views; every call site is
+	// deliberate.
+	WithBypass(ctx context.Context, fn func(ctx context.Context) error) error
+
 	// Users
 	RegisterUser(ctx context.Context, user *gen.User, identity *gen.UserIdentity) error
 	GetUserByIdentity(ctx context.Context, id *gen.UserIdentity) (*gen.User, error)

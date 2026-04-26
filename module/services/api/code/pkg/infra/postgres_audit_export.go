@@ -98,7 +98,7 @@ func (s *PostgresStore) ListDueAuditExportConfigs(ctx context.Context, now time.
 		FROM audit_export_configs
 		WHERE enabled = TRUE
 		  AND (last_exported_at IS NULL
-		       OR last_exported_at <= $1 - (cadence_minutes || ' minutes')::interval)`, now)
+		       OR last_exported_at <= $1::timestamptz - make_interval(mins => cadence_minutes))`, now)
 	if err != nil {
 		return nil, err
 	}
