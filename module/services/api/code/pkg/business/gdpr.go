@@ -8,6 +8,8 @@ import (
 	"time"
 
 	"github.com/codefly-dev/core/wool"
+
+	"api/pkg/gen"
 )
 
 // ── GDPR domain types ──────────────────────────────────────────
@@ -161,13 +163,17 @@ func (s *Service) processExport(ctx context.Context, gdprStore GDPRStore, req *G
 		export["sessions"] = sessions
 	}
 
-	// Collect API keys.
-	apiKeys, _, err := s.store.ListAPIKeys(ctx, "" /* all orgs */, 1000, "")
-	if err != nil {
-		w.Warn("failed to list api keys for export", wool.ErrField(err))
+	// Collect API keys. GDPR export spans every org the user is a
+	// member of; under RLS the cross-org scan needs WithBypass —
+	// the platform-level GDPR flow is privileged-by-policy.
+	var apiKeys []*gen.APIKey
+	if berr := s.store.WithBypass(ctx, func(ctx context.Context) error {
+		ks, _, err := s.store.ListAPIKeys(ctx, "" /* all orgs */, 1000, "")
+		apiKeys = ks
+		return err
+	}); berr != nil {
+		w.Warn("failed to list api keys for export", wool.ErrField(berr))
 	} else {
-		// Filter to user's keys — ListAPIKeys is org-scoped, so we
-		// export whatever was returned.
 		export["api_keys"] = apiKeys
 	}
 

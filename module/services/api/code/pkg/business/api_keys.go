@@ -68,7 +68,9 @@ func (s *Service) CreateAPIKey(ctx context.Context, userID string, req *gen.Crea
 		ExpiresAt:      req.ExpiresAt,
 	}
 
-	if err := s.store.CreateAPIKey(ctx, key, keyHash); err != nil {
+	if err := s.store.WithOrgTx(ctx, req.OrganizationId, func(ctx context.Context) error {
+		return s.store.CreateAPIKey(ctx, key, keyHash)
+	}); err != nil {
 		return nil, w.Wrapf(err, "cannot store API key")
 	}
 
@@ -81,6 +83,13 @@ func (s *Service) CreateAPIKey(ctx context.Context, userID string, req *gen.Crea
 }
 
 // ValidateAPIKey checks a hashed key against the store.
+//
+// Cross-tenant lookup: the plaintext key is presented by an
+// unauthenticated request — we don't yet know which tenant it
+// belongs to. WithBypass elevates so the GetAPIKeyByHash scan can
+// match across all orgs. The returned key carries OrganizationId
+// which the auth interceptor stamps on the request context, so
+// every subsequent op runs as the right tenant.
 func (s *Service) ValidateAPIKey(ctx context.Context, plaintextKey string) (*gen.ValidateAPIKeyResponse, error) {
 	w := wool.Get(ctx).In("ValidateAPIKey")
 
@@ -93,8 +102,12 @@ func (s *Service) ValidateAPIKey(ctx context.Context, plaintextKey string) (*gen
 		return nil, w.Wrapf(err, "cannot hash key")
 	}
 
-	key, err := s.store.GetAPIKeyByHash(ctx, keyHash)
-	if err != nil {
+	var key *gen.APIKey
+	if err := s.store.WithBypass(ctx, func(ctx context.Context) error {
+		k, err := s.store.GetAPIKeyByHash(ctx, keyHash)
+		key = k
+		return err
+	}); err != nil {
 		return nil, w.Wrapf(err, "cannot look up key")
 	}
 	if key == nil {
@@ -127,7 +140,13 @@ func (s *Service) ValidateAPIKey(ctx context.Context, plaintextKey string) (*gen
 
 // ListAPIKeys returns non-revoked API keys for an org.
 func (s *Service) ListAPIKeys(ctx context.Context, req *gen.ListAPIKeysRequest) (*gen.ListAPIKeysResponse, error) {
-	keys, nextToken, err := s.store.ListAPIKeys(ctx, req.OrganizationId, req.PageSize, req.PageToken)
+	var keys []*gen.APIKey
+	var nextToken string
+	err := s.store.WithOrgTx(ctx, req.OrganizationId, func(ctx context.Context) error {
+		ks, nt, err := s.store.ListAPIKeys(ctx, req.OrganizationId, req.PageSize, req.PageToken)
+		keys, nextToken = ks, nt
+		return err
+	})
 	if err != nil {
 		return nil, err
 	}
@@ -137,8 +156,19 @@ func (s *Service) ListAPIKeys(ctx context.Context, req *gen.ListAPIKeysRequest) 
 // RevokeAPIKey marks a key as revoked. Audit-logged with the key id so
 // "which keys got revoked, by whom, when" is queryable from the audit
 // trail.
+//
+// req only carries Id; we don't know the org. The handler gates on
+// platform-admin (rpcs.go RevokeAPIKey requires `requirePlatformAdmin`),
+// so the caller is privileged-by-policy. WithBypass lets the UPDATE
+// hit the row regardless of its tenant.
+//
+// Phase 3 idea: thread orgID into the proto so the WithBypass step
+// goes away and org-admins can revoke their own keys without
+// platform-admin perms.
 func (s *Service) RevokeAPIKey(ctx context.Context, actorID string, req *gen.RevokeAPIKeyRequest) error {
-	if err := s.store.RevokeAPIKey(ctx, req.Id); err != nil {
+	if err := s.store.WithBypass(ctx, func(ctx context.Context) error {
+		return s.store.RevokeAPIKey(ctx, req.Id)
+	}); err != nil {
 		return err
 	}
 	s.emit(ctx, actorID, "user", "api_key.revoked", "api_key", req.Id, "")

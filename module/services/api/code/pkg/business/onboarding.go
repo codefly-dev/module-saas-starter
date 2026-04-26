@@ -121,9 +121,14 @@ func (s *Service) GetProgress(ctx context.Context, userID string) (*OnboardingPr
 		orgs, _ := s.store.ListOrganizationsForUser(ctx, userID)
 		hasKey := false
 		for _, o := range orgs {
-			keys, _, _ := s.store.ListAPIKeys(ctx, o.Id, 1, "")
-			if len(keys) > 0 {
-				hasKey = true
+			_ = s.store.WithOrgTx(ctx, o.Id, func(ctx context.Context) error {
+				keys, _, _ := s.store.ListAPIKeys(ctx, o.Id, 1, "")
+				if len(keys) > 0 {
+					hasKey = true
+				}
+				return nil
+			})
+			if hasKey {
 				break
 			}
 		}

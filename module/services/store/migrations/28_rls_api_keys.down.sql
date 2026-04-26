@@ -1,0 +1,2 @@
+DROP POLICY IF EXISTS api_keys_tenant ON api_keys;
+ALTER TABLE api_keys DISABLE ROW LEVEL SECURITY;
