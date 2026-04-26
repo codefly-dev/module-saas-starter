@@ -52,15 +52,10 @@ func (s *PostgresStore) WithOrgTx(ctx context.Context, orgID string, fn func(ctx
 	}
 	defer tx.Rollback(ctx) //nolint:errcheck // rollback after commit is a no-op
 
-	// SET LOCAL ROLE app_tenant — postgres SUPERUSERS bypass RLS
-	// unconditionally even with FORCE, and codefly's Postgres plugin
-	// connects the api as a superuser. Switching to a non-superuser
-	// non-BYPASSRLS role for the duration of this tx makes RLS
-	// actually fire. SET LOCAL scopes the role-switch to this tx;
-	// commit/rollback restores the original role.
-	if _, err := tx.Exec(ctx, "SET LOCAL ROLE app_tenant"); err != nil {
-		return err
-	}
+	// The connection is already running as app_tenant via the
+	// pool's BeforeAcquire hook (see NewPostgresStoreFromURL).
+	// We just need to set app.current_org_id for the policy.
+	//
 	// SET LOCAL is parameterized via pgx; the value is properly
 	// quoted and not a SQL-injection vector even if orgID came from
 	// user input (which it shouldn't — orgID is always validated as
@@ -94,13 +89,25 @@ const errEmptyOrgID errString = "WithOrgTx: orgID is required"
 // file alone.
 var _ pgx.Tx = (pgx.Tx)(nil)
 
-// WithBypass runs `fn` inside a transaction with `app.bypass = '1'`
-// set, which RLS policies treat as "no tenant filter". Use ONLY for:
+// WithBypass runs `fn` inside a transaction that elevates back to
+// the connection's session_user (the codefly-managed superuser),
+// bypassing RLS for the tx duration. Used ONLY for:
 //
 //   - Background workers that legitimately scan across tenants
 //     (audit-exporter polling, webhook dispatcher, billing
 //     reconciliation, scheduled cleanup jobs).
 //   - Platform-admin endpoints that present a cross-org view.
+//
+// Mechanism: the pool's BeforeAcquire hook stamps every checked-out
+// connection with `SET ROLE app_tenant`. Inside this tx we run
+// `SET LOCAL ROLE NONE`, which reverts current_user to session_user
+// for the tx duration. On commit/rollback the SET LOCAL unwinds and
+// the connection resumes as app_tenant for any subsequent caller.
+//
+// We also set `app.bypass = '1'` for policies that key off it
+// (defense in depth; today the role switch alone is enough since
+// session_user is a superuser, but a future codefly Postgres plugin
+// that drops superuser would still be safe via the GUC).
 //
 // Treat it like sudo — every call site should be deliberate, with a
 // comment explaining why it can't use WithOrgTx. Invariant: a
@@ -114,6 +121,11 @@ func (s *PostgresStore) WithBypass(ctx context.Context, fn func(ctx context.Cont
 	}
 	defer tx.Rollback(ctx) //nolint:errcheck // rollback after commit is a no-op
 
+	// Elevate from app_tenant back to the connection's session_user
+	// (the codefly-provided superuser) for the duration of this tx.
+	if _, err := tx.Exec(ctx, "SET LOCAL ROLE NONE"); err != nil {
+		return err
+	}
 	if _, err := tx.Exec(ctx, "SELECT set_config('app.bypass', '1', true)"); err != nil {
 		return err
 	}

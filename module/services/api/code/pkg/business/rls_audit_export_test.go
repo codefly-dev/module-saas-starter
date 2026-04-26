@@ -92,13 +92,13 @@ func TestRLS_AuditExportConfigs_CrossTenantBlocked(t *testing.T) {
 // see all enabled rows regardless of which org's context is on the
 // caller.
 //
-// Note on the un-wrapped path: the codefly Postgres plugin connects
-// the api as a superuser, which bypasses RLS unconditionally. So
-// an un-wrapped call ALSO returns all rows (not zero) — fail-OPEN,
-// not fail-closed. This is a known gap (see AUTHZ.md "fail-closed
-// gap" section). When codefly's Postgres plugin grows a non-superuser
-// app role, the un-wrapped path becomes fail-closed and we'll add
-// a "MUST return 0 rows" assertion here.
+// Companion assertion: an un-wrapped Store call (no WithOrgTx, no
+// WithBypass) MUST return zero rows. The pool's BeforeAcquire hook
+// SET ROLEs every connection to app_tenant before handing it out,
+// so a forgotten wrapper means current_user is app_tenant and the
+// missing app.current_org_id GUC means the policy filters out
+// everything — fail-closed. This is the load-bearing safety
+// property the BeforeAcquire pattern delivers.
 func TestRLS_AuditExporter_BypassWorks(t *testing.T) {
 	clearData(t)
 	ctx := testCtx
@@ -132,12 +132,14 @@ func TestRLS_AuditExporter_BypassWorks(t *testing.T) {
 	require.GreaterOrEqual(t, len(withBypass), 2,
 		"WithBypass must see all orgs' due configs (saw %d)", len(withBypass))
 
-	// (We don't assert WithOrgTx-from-org-A returns just 1 row here:
-	// the ListDue query uses interval arithmetic on cadence_minutes
-	// which doesn't compose well under app_tenant role privileges
-	// — to be addressed in Phase 2 when the SQL is rewritten to
-	// avoid the implicit cast. The cross-tenant SELECT path is
-	// already proven by TestRLS_AuditExportConfigs_CrossTenantBlocked.)
+	// Un-wrapped path: no WithOrgTx, no WithBypass → connection
+	// runs as app_tenant (via BeforeAcquire), no app.current_org_id
+	// set → policy filters out everything → ZERO ROWS. This is the
+	// fail-closed property the role-downgrade pattern delivers.
+	noWrap, err := testStore.ListDueAuditExportConfigs(context.Background(), time.Now())
+	require.NoError(t, err)
+	require.Len(t, noWrap, 0,
+		"un-wrapped ListDue must return ZERO rows (fail-closed via BeforeAcquire role downgrade)")
 }
 
 // helpers

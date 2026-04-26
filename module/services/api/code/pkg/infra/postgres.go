@@ -39,12 +39,60 @@ func NewPostgresStore(ctx context.Context) (*PostgresStore, error) {
 }
 
 // NewPostgresStoreFromURL creates a store from an explicit connection URL (for local/test use).
+//
+// Connection-level role downgrade: codefly's Postgres plugin connects
+// the api as a superuser, which would bypass RLS unconditionally. We
+// install a BeforeAcquire hook that SET ROLEs every checked-out
+// connection to `app_tenant` (a non-superuser, non-BYPASSRLS role
+// created by migration 24). After this:
+//
+//   - Default queries on the connection run as app_tenant. RLS fires.
+//     Un-wrapped Store calls on per-tenant tables return zero rows
+//     when no app.current_org_id is set — fail-closed.
+//   - WithOrgTx adds `SET LOCAL app.current_org_id = $orgID` inside
+//     a tx so the policy filters to the right tenant.
+//   - WithBypass does `SET LOCAL ROLE NONE` inside its tx, reverting
+//     to the connection's session_user (the original superuser) for
+//     just that tx — workers / cross-tenant scans get superuser
+//     bypass without needing a separate connection.
+//
+// AfterRelease is the safety net: when the connection returns to the
+// pool we run RESET ROLE in case any caller somehow left the role
+// in an unexpected state. BeforeAcquire re-applies SET ROLE on the
+// next checkout.
+//
+// If `app_tenant` doesn't exist (e.g., migration 24 hasn't run yet
+// because we're calling this from a tooling path), the SET ROLE in
+// BeforeAcquire fails and the checkout returns an error. That's the
+// loud-failure mode we want — silent fallback to superuser would
+// re-introduce the gap.
 func NewPostgresStoreFromURL(ctx context.Context, connectionURL string) (*PostgresStore, error) {
 	w := wool.Get(ctx).In("NewPostgresStore")
 
 	poolConfig, err := pgxpool.ParseConfig(connectionURL)
 	if err != nil {
 		return nil, w.Wrapf(err, "failed to parse connection string")
+	}
+
+	poolConfig.BeforeAcquire = func(ctx context.Context, conn *pgx.Conn) bool {
+		// SET ROLE app_tenant — persists for the life of the user's
+		// hold on this connection. Tx-scoped overrides (SET LOCAL
+		// ROLE NONE inside WithBypass) layer on top and revert on
+		// commit/rollback automatically.
+		if _, err := conn.Exec(ctx, "SET ROLE app_tenant"); err != nil {
+			wool.Get(ctx).In("BeforeAcquire").Debug("SET ROLE app_tenant failed", wool.ErrField(err))
+			return false // reject this connection
+		}
+		return true
+	}
+	poolConfig.AfterRelease = func(conn *pgx.Conn) bool {
+		// Best-effort RESET ROLE before returning to pool, in case a
+		// caller left the role in an odd state. Failure here just
+		// drops the connection — pool will re-create.
+		if _, err := conn.Exec(context.Background(), "RESET ROLE"); err != nil {
+			return false
+		}
+		return true
 	}
 
 	pool, err := pgxpool.NewWithConfig(ctx, poolConfig)

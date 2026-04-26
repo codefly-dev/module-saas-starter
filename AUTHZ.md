@@ -159,41 +159,49 @@ making it grep-able.
 |---|---|
 | L1 Policy gates | ✅ Live. All admin RPCs gated. Webhook + api-key handlers added scope checks 2026-04-26. |
 | L2 Permissions | ✅ Live. `CheckPermission` + RBAC tables. Wildcard + team inheritance. |
-| L3 RLS | 🟡 Phase 1 live on `audit_export_configs` (migration 23 + 24, `WithOrgTx` / `WithBypass` helpers, `app_tenant` role). 4 integration tests prove cross-tenant blocking. Phase 2+ extends to ~13 more tables. |
+| L3 RLS | ✅ Phase 1 live on `audit_export_configs`, **fail-closed** end-to-end. Connection-level role downgrade (`BeforeAcquire` SET ROLE app_tenant) makes un-wrapped Store calls return zero rows by default. Migrations 23-26, `WithOrgTx` / `WithBypass` helpers, `app_tenant` role. 4 integration tests prove cross-tenant blocking + fail-closed-on-unwrapped. Phase 2+ extends to ~13 more tables. |
 
-## Known gap: superuser-bypass on the un-wrapped path
+## How the role-downgrade works
 
-Codefly's Postgres plugin connects the api as a **superuser** by
-default. Postgres superusers bypass RLS unconditionally, even with
-FORCE ROW LEVEL SECURITY. So:
+Codefly's Postgres plugin connects the api as a superuser. Postgres
+superusers bypass RLS unconditionally, even with FORCE ROW LEVEL
+SECURITY — so naive RLS is silently defeated. We solve this without
+changing codefly's Postgres plugin:
 
-- `WithOrgTx`-wrapped queries → SET LOCAL ROLE switches to
-  `app_tenant` (non-superuser) → **RLS fires correctly**,
-  fail-closed.
-- `WithBypass`-wrapped queries → no role switch → run as superuser →
-  bypass RLS naturally.
-- **Un-wrapped Store calls on per-tenant tables** → run as superuser
-  → silently bypass RLS too. **This is the gap.**
+```
+                     pgxpool.Config.BeforeAcquire
+                              ↓
+   superuser conn ────► SET ROLE app_tenant ────► caller
+                                                     │
+                              ┌──────────────────────┤
+                              ▼                      ▼
+                       ┌─────────────┐         ┌─────────────┐
+                       │ WithOrgTx   │         │ WithBypass  │
+                       └─────────────┘         └─────────────┘
+                              │                      │
+                              ▼                      ▼
+              SET LOCAL                  SET LOCAL ROLE NONE
+              app.current_org_id = X     (revert to session_user
+              (still app_tenant —         = the original superuser
+               policy filters by org)     for this tx)
 
-The cross-tenant safety on un-wrapped paths is currently fail-OPEN,
-not fail-closed: a Store method that forgot to wrap in `WithOrgTx`
-returns all tenants' rows instead of zero. L1+L2 are still in front
-so a hostile request gets blocked at the handler — but the L3 belt
-isn't tightened on accidental misuse.
+                              ↓                      ↓
+                       RLS applies            RLS bypassed
+                       fail-closed            (intentional)
+```
 
-Closing this gap requires either:
-- codefly's Postgres plugin to expose a non-superuser default
-  connection (cleanest), OR
-- a connection-pool wrapper that does `SET ROLE app_tenant` at
-  checkout time and `RESET ROLE` only on explicit superuser opt-in.
+`BeforeAcquire` runs on every connection checkout — every operation
+the api performs (request-path or worker) starts as `app_tenant`.
+`WithOrgTx` adds the org filter; `WithBypass` elevates back to
+session_user via `SET LOCAL ROLE NONE` for the tx duration. Both
+unwind on commit/rollback. `AfterRelease` does `RESET ROLE` as a
+safety net before the connection returns to the pool.
 
-When that lands, the un-wrapped test asserts switch from "see all
-rows" to "MUST return 0 rows" and L3 becomes defense-in-depth in the
-strict sense.
-
-Until then, treat L3 RLS as **defense-in-depth on the wrapped path**
-(every request handler must use `WithOrgTx`), not full fail-closed
-across every code path.
+The fail-closed property: a Store method called WITHOUT either
+wrapper runs as `app_tenant` with no `app.current_org_id` set.
+RLS policies see neither match, return zero rows. A bug that forgot
+to wrap surfaces in tests as "expected 1 row, got 0" — loud, not
+silent.
 
 ## Anti-patterns to avoid
 
