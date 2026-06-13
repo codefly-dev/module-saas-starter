@@ -253,12 +253,16 @@ func (s *Service) RegisterUser(ctx context.Context, input *gen.RegisterUserReque
 		return nil, w.Wrapf(err, "cannot create default organization")
 	}
 
-	// Assign admin role to user in their org. ListRoles reads
-	// built-in (org_id=NULL) roles + per-tenant roles; under RLS
-	// it'll need bypass once roles is RLS-protected (Phase 3). For
-	// now roles is unprotected.
-	roles, err := s.store.ListRoles(ctx, "")
-	if err != nil {
+	// Assign admin role to user in their org. The built-in roles are
+	// org_id=NULL — RLS-protected as of Phase 2E, so the read needs
+	// bypass (built-ins are global). The assignment row carries
+	// concrete orgID so it goes through WithOrgTx.
+	var roles []*gen.Role
+	if err := s.store.WithBypass(ctx, func(ctx context.Context) error {
+		rs, err := s.store.ListRoles(ctx, "")
+		roles = rs
+		return err
+	}); err != nil {
 		return nil, w.Wrapf(err, "cannot list roles")
 	}
 	for _, role := range roles {
@@ -270,7 +274,9 @@ func (s *Service) RegisterUser(ctx context.Context, input *gen.RegisterUserReque
 				RoleId:      role.Id,
 				OrgId:       orgID,
 			}
-			if err := s.store.AssignRole(ctx, assignment); err != nil {
+			if err := s.store.WithOrgTx(ctx, orgID, func(ctx context.Context) error {
+				return s.store.AssignRole(ctx, assignment)
+			}); err != nil {
 				return nil, w.Wrapf(err, "cannot assign admin role")
 			}
 			break
@@ -283,11 +289,30 @@ func (s *Service) RegisterUser(ctx context.Context, input *gen.RegisterUserReque
 }
 
 // CheckPermission checks if a subject has permission to perform an action on a resource.
+//
+// The query JOINs role_assignments + roles + role_permissions
+// (+ team_members for team inheritance). All but role_permissions
+// are RLS-protected (Phase 2E + 2C); a tenant-scoped check needs
+// WithOrgTx so the JOIN sees the right rows. Global checks
+// (req.OrgId == "") run under bypass — only platform-internal
+// callers exercise that path.
 func (s *Service) CheckPermission(ctx context.Context, req *gen.CheckPermissionRequest) (*gen.CheckPermissionResponse, error) {
-	allowed, reason, err := s.store.CheckPermission(
-		ctx, req.SubjectId, req.SubjectKind,
-		req.Resource, req.Action, req.OrgId, req.Scope,
-	)
+	var allowed bool
+	var reason string
+	wrap := func(ctx context.Context) error {
+		a, r, err := s.store.CheckPermission(
+			ctx, req.SubjectId, req.SubjectKind,
+			req.Resource, req.Action, req.OrgId, req.Scope,
+		)
+		allowed, reason = a, r
+		return err
+	}
+	var err error
+	if req.OrgId == "" {
+		err = s.store.WithBypass(ctx, wrap)
+	} else {
+		err = s.store.WithOrgTx(ctx, req.OrgId, wrap)
+	}
 	if err != nil {
 		return nil, err
 	}
@@ -297,12 +322,10 @@ func (s *Service) CheckPermission(ctx context.Context, req *gen.CheckPermissionR
 // ResolveIdentity maps an auth provider ID to internal user/org/roles.
 //
 // Auth-flow read: at login we don't yet know the user's tenant. The
-// store.ResolveIdentity SQL joins organization_members (now RLS-
-// protected) to find org membership. We open a pool connection +
-// SET LOCAL ROLE NONE (bypass) inline rather than going through
-// WithBypass because the latter's nested-tx semantics interact
-// badly with multi-statement reads via getQueryExecutor — the
-// commit returns "rollback" even on success-path queries.
+// Store implementation (postgres_permissions.go:ResolveIdentity)
+// opens its own tx + SET LOCAL ROLE NONE + app.bypass='1' inline so
+// the JOINs against organization_members + role_assignments (both
+// RLS-protected) see all tenants.
 //
 // The auth interceptor stamps the resolved OrgID on every
 // subsequent ctx so downstream queries run properly scoped via
@@ -349,7 +372,8 @@ func (s *Service) CreateOrganization(ctx context.Context, ownerID string, req *g
 
 // CreateTeam creates a new team within an org.
 // actorID is the authenticated caller — recorded in the audit log so we
-// know who stood up the team.
+// know who stood up the team. teams is RLS-protected (Phase 2C) so
+// the insert runs inside WithOrgTx scoped to the target org.
 func (s *Service) CreateTeam(ctx context.Context, actorID string, req *gen.CreateTeamRequest) (*gen.CreateTeamResponse, error) {
 	team := &gen.Team{
 		Id:          NewIDString(),
@@ -357,7 +381,9 @@ func (s *Service) CreateTeam(ctx context.Context, actorID string, req *gen.Creat
 		Name:        req.Name,
 		Description: req.Description,
 	}
-	if err := s.store.CreateTeam(ctx, team); err != nil {
+	if err := s.store.WithOrgTx(ctx, req.OrgId, func(ctx context.Context) error {
+		return s.store.CreateTeam(ctx, team)
+	}); err != nil {
 		return nil, err
 	}
 	s.emit(ctx, actorID, "user", "team.created", "team", team.Id, req.OrgId)
@@ -367,6 +393,12 @@ func (s *Service) CreateTeam(ctx context.Context, actorID string, req *gen.Creat
 // CreateRole creates a new custom role.
 // Audit trail records actorID so role additions are traceable — these are
 // security-relevant changes (a new role = a new set of permissions).
+//
+// roles is RLS-protected (Phase 2E). req.OrgId == "" means a global
+// built-in role write — only platform admin can do this (handler authz
+// enforces requirePlatformAdmin in adapters/rpcs.go), and the WITH
+// CHECK on roles requires either bypass or a concrete org. Use bypass
+// for the global path and WithOrgTx for tenant roles.
 func (s *Service) CreateRole(ctx context.Context, actorID string, req *gen.CreateRoleRequest) (*gen.CreateRoleResponse, error) {
 	role := &gen.Role{
 		Id:          NewIDString(),
@@ -376,14 +408,24 @@ func (s *Service) CreateRole(ctx context.Context, actorID string, req *gen.Creat
 		BuiltIn:     false,
 		OrgId:       req.OrgId,
 	}
-	if err := s.store.CreateRole(ctx, role); err != nil {
+	wrap := func(ctx context.Context) error { return s.store.CreateRole(ctx, role) }
+	var err error
+	if req.OrgId == "" {
+		err = s.store.WithBypass(ctx, wrap)
+	} else {
+		err = s.store.WithOrgTx(ctx, req.OrgId, wrap)
+	}
+	if err != nil {
 		return nil, err
 	}
 	s.emit(ctx, actorID, "user", "role.created", "role", role.Id, req.OrgId)
 	return &gen.CreateRoleResponse{Role: role}, nil
 }
 
-// AssignRole assigns a role to a user or team.
+// AssignRole assigns a role to a user or team. role_assignments is
+// RLS-protected (Phase 2E). Empty OrgId means a platform-level
+// assignment (super_admin etc.) — handler authz already required
+// platform_admin; the write goes through bypass.
 func (s *Service) AssignRole(ctx context.Context, req *gen.AssignRoleRequest) (*gen.AssignRoleResponse, error) {
 	assignment := &gen.RoleAssignment{
 		Id:          NewIDString(),
@@ -393,7 +435,14 @@ func (s *Service) AssignRole(ctx context.Context, req *gen.AssignRoleRequest) (*
 		OrgId:       req.OrgId,
 		Scope:       req.Scope,
 	}
-	if err := s.store.AssignRole(ctx, assignment); err != nil {
+	wrap := func(ctx context.Context) error { return s.store.AssignRole(ctx, assignment) }
+	var err error
+	if req.OrgId == "" {
+		err = s.store.WithBypass(ctx, wrap)
+	} else {
+		err = s.store.WithOrgTx(ctx, req.OrgId, wrap)
+	}
+	if err != nil {
 		return nil, err
 	}
 	s.emit(ctx, req.SubjectId, "user", "role.assigned", "role", req.RoleId, req.OrgId)

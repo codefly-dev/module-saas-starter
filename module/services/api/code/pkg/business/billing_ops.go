@@ -22,6 +22,7 @@ import (
 	"github.com/codefly-dev/core/wool"
 
 	"api/pkg/billing"
+	"api/pkg/gen"
 )
 
 // BillingClient is the subset of billing.Client we need here. Kept
@@ -119,8 +120,13 @@ func (s *Service) OpenBillingPortal(ctx context.Context, in OpenBillingPortalInp
 		return "", w.NewError("OpenBillingPortal requires OrgID and ReturnURL")
 	}
 
-	customerID, err := s.store.GetOrgStripeCustomerID(ctx, in.OrgID)
-	if err != nil {
+	// stripe_customer_id is on organizations (RLS-protected, Phase 2F).
+	var customerID string
+	if err := s.store.WithOrgTx(ctx, in.OrgID, func(ctx context.Context) error {
+		c, err := s.store.GetOrgStripeCustomerID(ctx, in.OrgID)
+		customerID = c
+		return err
+	}); err != nil {
 		return "", w.Wrapf(err, "get org stripe customer")
 	}
 	if customerID == "" {
@@ -146,8 +152,12 @@ func (s *Service) ListInvoices(ctx context.Context, orgID string, limit int) ([]
 	if s.billing == nil {
 		return nil, w.NewError("billing not configured")
 	}
-	customerID, err := s.store.GetOrgStripeCustomerID(ctx, orgID)
-	if err != nil {
+	var customerID string
+	if err := s.store.WithOrgTx(ctx, orgID, func(ctx context.Context) error {
+		c, err := s.store.GetOrgStripeCustomerID(ctx, orgID)
+		customerID = c
+		return err
+	}); err != nil {
 		return nil, w.Wrapf(err, "get org stripe customer")
 	}
 	if customerID == "" {
@@ -164,11 +174,20 @@ func (s *Service) ListInvoices(ctx context.Context, orgID string, limit int) ([]
 
 // HandlePaymentFailed is called when a Stripe webhook reports a failed payment.
 // It notifies the org owner and sends a critical alert to Slack.
+//
+// Stripe webhooks arrive without a tenant context (the webhook handler
+// is unauthenticated by network boundary; the orgID comes from the
+// Stripe customer mapping). Wrap the org read in WithOrgTx so RLS
+// (Phase 2F) lets us resolve the owner.
 func (s *Service) HandlePaymentFailed(ctx context.Context, orgID string) error {
 	w := wool.Get(ctx).In("HandlePaymentFailed")
 
-	org, err := s.store.GetOrganization(ctx, orgID)
-	if err != nil {
+	var org *gen.Organization
+	if err := s.store.WithOrgTx(ctx, orgID, func(ctx context.Context) error {
+		o, err := s.store.GetOrganization(ctx, orgID)
+		org = o
+		return err
+	}); err != nil {
 		return w.Wrapf(err, "cannot get organization")
 	}
 	if org == nil {
@@ -188,31 +207,39 @@ func (s *Service) HandlePaymentFailed(ctx context.Context, orgID string) error {
 
 // ensureStripeCustomer loads or creates the Stripe customer for an org.
 // Runs on the first StartCheckout; subsequent calls hit the fast path.
+//
+// Both reads (Get + GetOrganization) and the write (Set) hit
+// organizations (RLS-protected, Phase 2F) — bracket the whole flow
+// in a single WithOrgTx so the SET LOCAL stays valid across reads
+// AND writes. The Stripe API call itself is outside the tx since we
+// don't want to hold a DB connection during a remote round-trip.
 func (s *Service) ensureStripeCustomer(ctx context.Context, orgID string) (string, error) {
-	existing, err := s.store.GetOrgStripeCustomerID(ctx, orgID)
-	if err != nil {
+	var existing, ownerEmail string
+	if err := s.store.WithOrgTx(ctx, orgID, func(ctx context.Context) error {
+		c, err := s.store.GetOrgStripeCustomerID(ctx, orgID)
+		if err != nil {
+			return err
+		}
+		existing = c
+		if existing != "" {
+			return nil
+		}
+		org, err := s.store.GetOrganization(ctx, orgID)
+		if err != nil {
+			return err
+		}
+		if org != nil {
+			user, uErr := s.store.GetUser(ctx, org.OwnerId)
+			if uErr == nil && user != nil {
+				ownerEmail = user.PrimaryEmail
+			}
+		}
+		return nil
+	}); err != nil {
 		return "", fmt.Errorf("load existing customer: %w", err)
 	}
 	if existing != "" {
 		return existing, nil
-	}
-
-	// No customer yet — look up the org's owner to use their email as
-	// the Stripe customer's primary email.
-	org, err := s.store.GetOrganization(ctx, orgID)
-	if err != nil {
-		return "", fmt.Errorf("load org: %w", err)
-	}
-	ownerID := ""
-	if org != nil {
-		ownerID = org.OwnerId
-	}
-	var ownerEmail string
-	if ownerID != "" {
-		user, err := s.store.GetUser(ctx, ownerID)
-		if err == nil && user != nil {
-			ownerEmail = user.PrimaryEmail
-		}
 	}
 	if ownerEmail == "" {
 		ownerEmail = "billing+" + orgID + "@localhost"
@@ -222,7 +249,9 @@ func (s *Service) ensureStripeCustomer(ctx context.Context, orgID string) (strin
 	if err != nil {
 		return "", fmt.Errorf("create stripe customer: %w", err)
 	}
-	if err := s.store.SetOrgStripeCustomerID(ctx, orgID, customer.ID); err != nil {
+	if err := s.store.WithOrgTx(ctx, orgID, func(ctx context.Context) error {
+		return s.store.SetOrgStripeCustomerID(ctx, orgID, customer.ID)
+	}); err != nil {
 		return "", fmt.Errorf("persist stripe customer id: %w", err)
 	}
 	return customer.ID, nil

@@ -26,6 +26,7 @@ import (
 	"google.golang.org/grpc/reflection"
 
 	codefly "github.com/codefly-dev/sdk-go"
+	wooltel "github.com/codefly-dev/core/wool/otel"
 	"google.golang.org/grpc"
 )
 
@@ -103,6 +104,18 @@ type PlatformAdminServer struct {
 	gen.UnsafePlatformAdminServiceServer
 }
 
+// IntrospectionServer handles IntrospectionService RPCs — the
+// service-level catalog (RPCs, RBAC vocab, RLS tables, scopes).
+// Public, no auth. Scoped to THIS service (api); module-level view
+// is an aggregation concern (CLI / gateway / Mind).
+type IntrospectionServer struct {
+	gen.UnsafeIntrospectionServiceServer
+}
+
+func (s *IntrospectionServer) GetServiceInfo(ctx context.Context, req *gen.GetServiceInfoRequest) (*gen.GetServiceInfoResponse, error) {
+	return service.GetServiceInfo(ctx, req)
+}
+
 // GrpcServer wraps all service servers and manages the gRPC lifecycle.
 type GrpcServer struct {
 	User   *UserServer
@@ -112,9 +125,10 @@ type GrpcServer struct {
 	Ident  *IdentServer
 	APIKey *APIKeyServer
 	Auth   *AuthServer
-	Audit      *AuditServer
-	Invitation *InvitationServer
+	Audit         *AuditServer
+	Invitation    *InvitationServer
 	PlatformAdmin *PlatformAdminServer
+	Introspection *IntrospectionServer
 
 	configuration *Configuration
 	gRPC          *grpc.Server
@@ -131,6 +145,14 @@ func (s *UserServer) Version(ctx context.Context, req *gen.VersionRequest) (*gen
 }
 
 func NewGrpServer(c *Configuration, opts ...grpc.ServerOption) (*GrpcServer, error) {
+	// OTEL stats handler — picks up W3C traceparent from incoming
+	// gRPC metadata and starts a child span. Combined with the
+	// browser-side trace propagation (Sentry/OTEL JS injects
+	// traceparent on Connect-ES requests), every server RPC is a
+	// child of the originating click. No-op when no OTEL provider
+	// is registered (the global tracer is a no-op tracer).
+	opts = append(opts, wooltel.GRPCServerOptions()...)
+
 	// Auth interceptor (mirror of the Connect one in connect_gen.go).
 	// Defense-in-depth: even when an auth-sidecar is in front and
 	// already stamped X-User-Id headers, the api re-validates any
@@ -166,6 +188,7 @@ func NewGrpServer(c *Configuration, opts ...grpc.ServerOption) (*GrpcServer, err
 		Audit:         &AuditServer{},
 		Invitation:    &InvitationServer{},
 		PlatformAdmin: &PlatformAdminServer{},
+		Introspection: &IntrospectionServer{},
 		configuration: c,
 		gRPC:          grpcServer,
 		validator:     v,
@@ -181,6 +204,7 @@ func NewGrpServer(c *Configuration, opts ...grpc.ServerOption) (*GrpcServer, err
 	gen.RegisterAuditServiceServer(grpcServer, s.Audit)
 	gen.RegisterInvitationServiceServer(grpcServer, s.Invitation)
 	gen.RegisterPlatformAdminServiceServer(grpcServer, s.PlatformAdmin)
+	gen.RegisterIntrospectionServiceServer(grpcServer, s.Introspection)
 	reflection.Register(grpcServer)
 
 	return s, nil

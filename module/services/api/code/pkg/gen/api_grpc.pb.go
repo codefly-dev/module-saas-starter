@@ -1098,12 +1098,14 @@ var TeamService_ServiceDesc = grpc.ServiceDesc{
 }
 
 const (
-	PermissionService_CreateRole_FullMethodName      = "/customers.PermissionService/CreateRole"
-	PermissionService_ListRoles_FullMethodName       = "/customers.PermissionService/ListRoles"
-	PermissionService_DeleteRole_FullMethodName      = "/customers.PermissionService/DeleteRole"
-	PermissionService_AssignRole_FullMethodName      = "/customers.PermissionService/AssignRole"
-	PermissionService_RevokeRole_FullMethodName      = "/customers.PermissionService/RevokeRole"
-	PermissionService_CheckPermission_FullMethodName = "/customers.PermissionService/CheckPermission"
+	PermissionService_CreateRole_FullMethodName          = "/customers.PermissionService/CreateRole"
+	PermissionService_ListRoles_FullMethodName           = "/customers.PermissionService/ListRoles"
+	PermissionService_DeleteRole_FullMethodName          = "/customers.PermissionService/DeleteRole"
+	PermissionService_AssignRole_FullMethodName          = "/customers.PermissionService/AssignRole"
+	PermissionService_RevokeRole_FullMethodName          = "/customers.PermissionService/RevokeRole"
+	PermissionService_ListRoleAssignments_FullMethodName = "/customers.PermissionService/ListRoleAssignments"
+	PermissionService_CheckPermission_FullMethodName     = "/customers.PermissionService/CheckPermission"
+	PermissionService_Decide_FullMethodName              = "/customers.PermissionService/Decide"
 )
 
 // PermissionServiceClient is the client API for PermissionService service.
@@ -1117,7 +1119,14 @@ type PermissionServiceClient interface {
 	DeleteRole(ctx context.Context, in *DeleteRoleRequest, opts ...grpc.CallOption) (*emptypb.Empty, error)
 	AssignRole(ctx context.Context, in *AssignRoleRequest, opts ...grpc.CallOption) (*AssignRoleResponse, error)
 	RevokeRole(ctx context.Context, in *RevokeRoleRequest, opts ...grpc.CallOption) (*emptypb.Empty, error)
+	ListRoleAssignments(ctx context.Context, in *ListRoleAssignmentsRequest, opts ...grpc.CallOption) (*ListRoleAssignmentsResponse, error)
 	CheckPermission(ctx context.Context, in *CheckPermissionRequest, opts ...grpc.CallOption) (*CheckPermissionResponse, error)
+	// Decide is the principal-aware permission check (M2). New
+	// callers should use Decide; CheckPermission is kept for backward
+	// compatibility while existing clients migrate. Both RPCs route
+	// through the same Postgres CheckPermission query in M2; they
+	// diverge starting at M4 (manifest ceiling) and M7 (approval flow).
+	Decide(ctx context.Context, in *DecideRequest, opts ...grpc.CallOption) (*DecideResponse, error)
 }
 
 type permissionServiceClient struct {
@@ -1178,10 +1187,30 @@ func (c *permissionServiceClient) RevokeRole(ctx context.Context, in *RevokeRole
 	return out, nil
 }
 
+func (c *permissionServiceClient) ListRoleAssignments(ctx context.Context, in *ListRoleAssignmentsRequest, opts ...grpc.CallOption) (*ListRoleAssignmentsResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ListRoleAssignmentsResponse)
+	err := c.cc.Invoke(ctx, PermissionService_ListRoleAssignments_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 func (c *permissionServiceClient) CheckPermission(ctx context.Context, in *CheckPermissionRequest, opts ...grpc.CallOption) (*CheckPermissionResponse, error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(CheckPermissionResponse)
 	err := c.cc.Invoke(ctx, PermissionService_CheckPermission_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *permissionServiceClient) Decide(ctx context.Context, in *DecideRequest, opts ...grpc.CallOption) (*DecideResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(DecideResponse)
+	err := c.cc.Invoke(ctx, PermissionService_Decide_FullMethodName, in, out, cOpts...)
 	if err != nil {
 		return nil, err
 	}
@@ -1199,7 +1228,14 @@ type PermissionServiceServer interface {
 	DeleteRole(context.Context, *DeleteRoleRequest) (*emptypb.Empty, error)
 	AssignRole(context.Context, *AssignRoleRequest) (*AssignRoleResponse, error)
 	RevokeRole(context.Context, *RevokeRoleRequest) (*emptypb.Empty, error)
+	ListRoleAssignments(context.Context, *ListRoleAssignmentsRequest) (*ListRoleAssignmentsResponse, error)
 	CheckPermission(context.Context, *CheckPermissionRequest) (*CheckPermissionResponse, error)
+	// Decide is the principal-aware permission check (M2). New
+	// callers should use Decide; CheckPermission is kept for backward
+	// compatibility while existing clients migrate. Both RPCs route
+	// through the same Postgres CheckPermission query in M2; they
+	// diverge starting at M4 (manifest ceiling) and M7 (approval flow).
+	Decide(context.Context, *DecideRequest) (*DecideResponse, error)
 	mustEmbedUnimplementedPermissionServiceServer()
 }
 
@@ -1225,8 +1261,14 @@ func (UnimplementedPermissionServiceServer) AssignRole(context.Context, *AssignR
 func (UnimplementedPermissionServiceServer) RevokeRole(context.Context, *RevokeRoleRequest) (*emptypb.Empty, error) {
 	return nil, status.Error(codes.Unimplemented, "method RevokeRole not implemented")
 }
+func (UnimplementedPermissionServiceServer) ListRoleAssignments(context.Context, *ListRoleAssignmentsRequest) (*ListRoleAssignmentsResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method ListRoleAssignments not implemented")
+}
 func (UnimplementedPermissionServiceServer) CheckPermission(context.Context, *CheckPermissionRequest) (*CheckPermissionResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method CheckPermission not implemented")
+}
+func (UnimplementedPermissionServiceServer) Decide(context.Context, *DecideRequest) (*DecideResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method Decide not implemented")
 }
 func (UnimplementedPermissionServiceServer) mustEmbedUnimplementedPermissionServiceServer() {}
 func (UnimplementedPermissionServiceServer) testEmbeddedByValue()                           {}
@@ -1339,6 +1381,24 @@ func _PermissionService_RevokeRole_Handler(srv interface{}, ctx context.Context,
 	return interceptor(ctx, in, info, handler)
 }
 
+func _PermissionService_ListRoleAssignments_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ListRoleAssignmentsRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(PermissionServiceServer).ListRoleAssignments(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: PermissionService_ListRoleAssignments_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(PermissionServiceServer).ListRoleAssignments(ctx, req.(*ListRoleAssignmentsRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 func _PermissionService_CheckPermission_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
 	in := new(CheckPermissionRequest)
 	if err := dec(in); err != nil {
@@ -1353,6 +1413,24 @@ func _PermissionService_CheckPermission_Handler(srv interface{}, ctx context.Con
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
 		return srv.(PermissionServiceServer).CheckPermission(ctx, req.(*CheckPermissionRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _PermissionService_Decide_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(DecideRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(PermissionServiceServer).Decide(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: PermissionService_Decide_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(PermissionServiceServer).Decide(ctx, req.(*DecideRequest))
 	}
 	return interceptor(ctx, in, info, handler)
 }
@@ -1385,11 +1463,529 @@ var PermissionService_ServiceDesc = grpc.ServiceDesc{
 			Handler:    _PermissionService_RevokeRole_Handler,
 		},
 		{
+			MethodName: "ListRoleAssignments",
+			Handler:    _PermissionService_ListRoleAssignments_Handler,
+		},
+		{
 			MethodName: "CheckPermission",
 			Handler:    _PermissionService_CheckPermission_Handler,
 		},
+		{
+			MethodName: "Decide",
+			Handler:    _PermissionService_Decide_Handler,
+		},
 	},
 	Streams:  []grpc.StreamDesc{},
+	Metadata: "api.proto",
+}
+
+const (
+	PrincipalService_GetPrincipal_FullMethodName         = "/customers.PrincipalService/GetPrincipal"
+	PrincipalService_GetAgentPrincipal_FullMethodName    = "/customers.PrincipalService/GetAgentPrincipal"
+	PrincipalService_CreateAgentPrincipal_FullMethodName = "/customers.PrincipalService/CreateAgentPrincipal"
+	PrincipalService_RevokePrincipal_FullMethodName      = "/customers.PrincipalService/RevokePrincipal"
+	PrincipalService_ListPrincipals_FullMethodName       = "/customers.PrincipalService/ListPrincipals"
+)
+
+// PrincipalServiceClient is the client API for PrincipalService service.
+//
+// For semantics around ctx use and closing/ending streaming RPCs, please refer to https://pkg.go.dev/google.golang.org/grpc/?tab=doc#ClientConn.NewStream.
+//
+// PrincipalService — unified principal management (M1 + M2). Humans,
+// services, and agents are all rows in the principals table; this
+// service is the public CRUD over them. Read paths are admin-only;
+// CreateAgent is org-admin scoped (called by the codefly CLI on
+// `codefly install`).
+type PrincipalServiceClient interface {
+	GetPrincipal(ctx context.Context, in *GetPrincipalRequest, opts ...grpc.CallOption) (*Principal, error)
+	GetAgentPrincipal(ctx context.Context, in *GetAgentPrincipalRequest, opts ...grpc.CallOption) (*Principal, error)
+	CreateAgentPrincipal(ctx context.Context, in *CreateAgentPrincipalRequest, opts ...grpc.CallOption) (*Principal, error)
+	RevokePrincipal(ctx context.Context, in *RevokePrincipalRequest, opts ...grpc.CallOption) (*emptypb.Empty, error)
+	ListPrincipals(ctx context.Context, in *ListPrincipalsRequest, opts ...grpc.CallOption) (*ListPrincipalsResponse, error)
+}
+
+type principalServiceClient struct {
+	cc grpc.ClientConnInterface
+}
+
+func NewPrincipalServiceClient(cc grpc.ClientConnInterface) PrincipalServiceClient {
+	return &principalServiceClient{cc}
+}
+
+func (c *principalServiceClient) GetPrincipal(ctx context.Context, in *GetPrincipalRequest, opts ...grpc.CallOption) (*Principal, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(Principal)
+	err := c.cc.Invoke(ctx, PrincipalService_GetPrincipal_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *principalServiceClient) GetAgentPrincipal(ctx context.Context, in *GetAgentPrincipalRequest, opts ...grpc.CallOption) (*Principal, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(Principal)
+	err := c.cc.Invoke(ctx, PrincipalService_GetAgentPrincipal_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *principalServiceClient) CreateAgentPrincipal(ctx context.Context, in *CreateAgentPrincipalRequest, opts ...grpc.CallOption) (*Principal, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(Principal)
+	err := c.cc.Invoke(ctx, PrincipalService_CreateAgentPrincipal_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *principalServiceClient) RevokePrincipal(ctx context.Context, in *RevokePrincipalRequest, opts ...grpc.CallOption) (*emptypb.Empty, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(emptypb.Empty)
+	err := c.cc.Invoke(ctx, PrincipalService_RevokePrincipal_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *principalServiceClient) ListPrincipals(ctx context.Context, in *ListPrincipalsRequest, opts ...grpc.CallOption) (*ListPrincipalsResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ListPrincipalsResponse)
+	err := c.cc.Invoke(ctx, PrincipalService_ListPrincipals_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+// PrincipalServiceServer is the server API for PrincipalService service.
+// All implementations must embed UnimplementedPrincipalServiceServer
+// for forward compatibility.
+//
+// PrincipalService — unified principal management (M1 + M2). Humans,
+// services, and agents are all rows in the principals table; this
+// service is the public CRUD over them. Read paths are admin-only;
+// CreateAgent is org-admin scoped (called by the codefly CLI on
+// `codefly install`).
+type PrincipalServiceServer interface {
+	GetPrincipal(context.Context, *GetPrincipalRequest) (*Principal, error)
+	GetAgentPrincipal(context.Context, *GetAgentPrincipalRequest) (*Principal, error)
+	CreateAgentPrincipal(context.Context, *CreateAgentPrincipalRequest) (*Principal, error)
+	RevokePrincipal(context.Context, *RevokePrincipalRequest) (*emptypb.Empty, error)
+	ListPrincipals(context.Context, *ListPrincipalsRequest) (*ListPrincipalsResponse, error)
+	mustEmbedUnimplementedPrincipalServiceServer()
+}
+
+// UnimplementedPrincipalServiceServer must be embedded to have
+// forward compatible implementations.
+//
+// NOTE: this should be embedded by value instead of pointer to avoid a nil
+// pointer dereference when methods are called.
+type UnimplementedPrincipalServiceServer struct{}
+
+func (UnimplementedPrincipalServiceServer) GetPrincipal(context.Context, *GetPrincipalRequest) (*Principal, error) {
+	return nil, status.Error(codes.Unimplemented, "method GetPrincipal not implemented")
+}
+func (UnimplementedPrincipalServiceServer) GetAgentPrincipal(context.Context, *GetAgentPrincipalRequest) (*Principal, error) {
+	return nil, status.Error(codes.Unimplemented, "method GetAgentPrincipal not implemented")
+}
+func (UnimplementedPrincipalServiceServer) CreateAgentPrincipal(context.Context, *CreateAgentPrincipalRequest) (*Principal, error) {
+	return nil, status.Error(codes.Unimplemented, "method CreateAgentPrincipal not implemented")
+}
+func (UnimplementedPrincipalServiceServer) RevokePrincipal(context.Context, *RevokePrincipalRequest) (*emptypb.Empty, error) {
+	return nil, status.Error(codes.Unimplemented, "method RevokePrincipal not implemented")
+}
+func (UnimplementedPrincipalServiceServer) ListPrincipals(context.Context, *ListPrincipalsRequest) (*ListPrincipalsResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method ListPrincipals not implemented")
+}
+func (UnimplementedPrincipalServiceServer) mustEmbedUnimplementedPrincipalServiceServer() {}
+func (UnimplementedPrincipalServiceServer) testEmbeddedByValue()                          {}
+
+// UnsafePrincipalServiceServer may be embedded to opt out of forward compatibility for this service.
+// Use of this interface is not recommended, as added methods to PrincipalServiceServer will
+// result in compilation errors.
+type UnsafePrincipalServiceServer interface {
+	mustEmbedUnimplementedPrincipalServiceServer()
+}
+
+func RegisterPrincipalServiceServer(s grpc.ServiceRegistrar, srv PrincipalServiceServer) {
+	// If the following call panics, it indicates UnimplementedPrincipalServiceServer was
+	// embedded by pointer and is nil.  This will cause panics if an
+	// unimplemented method is ever invoked, so we test this at initialization
+	// time to prevent it from happening at runtime later due to I/O.
+	if t, ok := srv.(interface{ testEmbeddedByValue() }); ok {
+		t.testEmbeddedByValue()
+	}
+	s.RegisterService(&PrincipalService_ServiceDesc, srv)
+}
+
+func _PrincipalService_GetPrincipal_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(GetPrincipalRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(PrincipalServiceServer).GetPrincipal(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: PrincipalService_GetPrincipal_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(PrincipalServiceServer).GetPrincipal(ctx, req.(*GetPrincipalRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _PrincipalService_GetAgentPrincipal_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(GetAgentPrincipalRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(PrincipalServiceServer).GetAgentPrincipal(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: PrincipalService_GetAgentPrincipal_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(PrincipalServiceServer).GetAgentPrincipal(ctx, req.(*GetAgentPrincipalRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _PrincipalService_CreateAgentPrincipal_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(CreateAgentPrincipalRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(PrincipalServiceServer).CreateAgentPrincipal(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: PrincipalService_CreateAgentPrincipal_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(PrincipalServiceServer).CreateAgentPrincipal(ctx, req.(*CreateAgentPrincipalRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _PrincipalService_RevokePrincipal_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(RevokePrincipalRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(PrincipalServiceServer).RevokePrincipal(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: PrincipalService_RevokePrincipal_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(PrincipalServiceServer).RevokePrincipal(ctx, req.(*RevokePrincipalRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _PrincipalService_ListPrincipals_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ListPrincipalsRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(PrincipalServiceServer).ListPrincipals(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: PrincipalService_ListPrincipals_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(PrincipalServiceServer).ListPrincipals(ctx, req.(*ListPrincipalsRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+// PrincipalService_ServiceDesc is the grpc.ServiceDesc for PrincipalService service.
+// It's only intended for direct use with grpc.RegisterService,
+// and not to be introspected or modified (even as a copy)
+var PrincipalService_ServiceDesc = grpc.ServiceDesc{
+	ServiceName: "customers.PrincipalService",
+	HandlerType: (*PrincipalServiceServer)(nil),
+	Methods: []grpc.MethodDesc{
+		{
+			MethodName: "GetPrincipal",
+			Handler:    _PrincipalService_GetPrincipal_Handler,
+		},
+		{
+			MethodName: "GetAgentPrincipal",
+			Handler:    _PrincipalService_GetAgentPrincipal_Handler,
+		},
+		{
+			MethodName: "CreateAgentPrincipal",
+			Handler:    _PrincipalService_CreateAgentPrincipal_Handler,
+		},
+		{
+			MethodName: "RevokePrincipal",
+			Handler:    _PrincipalService_RevokePrincipal_Handler,
+		},
+		{
+			MethodName: "ListPrincipals",
+			Handler:    _PrincipalService_ListPrincipals_Handler,
+		},
+	},
+	Streams:  []grpc.StreamDesc{},
+	Metadata: "api.proto",
+}
+
+const (
+	DelegationService_RequestDelegation_FullMethodName      = "/customers.DelegationService/RequestDelegation"
+	DelegationService_WaitForDelegation_FullMethodName      = "/customers.DelegationService/WaitForDelegation"
+	DelegationService_DecideDelegation_FullMethodName       = "/customers.DelegationService/DecideDelegation"
+	DelegationService_ListPendingDelegations_FullMethodName = "/customers.DelegationService/ListPendingDelegations"
+)
+
+// DelegationServiceClient is the client API for DelegationService service.
+//
+// For semantics around ctx use and closing/ending streaming RPCs, please refer to https://pkg.go.dev/google.golang.org/grpc/?tab=doc#ClientConn.NewStream.
+type DelegationServiceClient interface {
+	// RequestDelegation creates a new pending grant. Idempotent on
+	// (org_id, request_hash) — same request from a retrying actor
+	// returns the original row's id.
+	RequestDelegation(ctx context.Context, in *RequestDelegationRequest, opts ...grpc.CallOption) (*RequestDelegationResponse, error)
+	// WaitForDelegation streams one terminal event for a grant.
+	// Backed by Postgres LISTEN — no polling.
+	WaitForDelegation(ctx context.Context, in *WaitForDelegationRequest, opts ...grpc.CallOption) (grpc.ServerStreamingClient[DelegationEvent], error)
+	// DecideDelegation is the grantor's approve/deny action. Called
+	// from the approval UI; transitions the row + (on approve)
+	// mints the scoped-auth token + fires NOTIFY for any waiting
+	// streams.
+	DecideDelegation(ctx context.Context, in *DecideDelegationRequest, opts ...grpc.CallOption) (*DelegationGrant, error)
+	// ListPendingDelegations returns paginated pending grants for
+	// the approver UI. Sorted critical → high → medium → low,
+	// newest-first within tier.
+	ListPendingDelegations(ctx context.Context, in *ListPendingDelegationsRequest, opts ...grpc.CallOption) (*ListPendingDelegationsResponse, error)
+}
+
+type delegationServiceClient struct {
+	cc grpc.ClientConnInterface
+}
+
+func NewDelegationServiceClient(cc grpc.ClientConnInterface) DelegationServiceClient {
+	return &delegationServiceClient{cc}
+}
+
+func (c *delegationServiceClient) RequestDelegation(ctx context.Context, in *RequestDelegationRequest, opts ...grpc.CallOption) (*RequestDelegationResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(RequestDelegationResponse)
+	err := c.cc.Invoke(ctx, DelegationService_RequestDelegation_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *delegationServiceClient) WaitForDelegation(ctx context.Context, in *WaitForDelegationRequest, opts ...grpc.CallOption) (grpc.ServerStreamingClient[DelegationEvent], error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	stream, err := c.cc.NewStream(ctx, &DelegationService_ServiceDesc.Streams[0], DelegationService_WaitForDelegation_FullMethodName, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	x := &grpc.GenericClientStream[WaitForDelegationRequest, DelegationEvent]{ClientStream: stream}
+	if err := x.ClientStream.SendMsg(in); err != nil {
+		return nil, err
+	}
+	if err := x.ClientStream.CloseSend(); err != nil {
+		return nil, err
+	}
+	return x, nil
+}
+
+// This type alias is provided for backwards compatibility with existing code that references the prior non-generic stream type by name.
+type DelegationService_WaitForDelegationClient = grpc.ServerStreamingClient[DelegationEvent]
+
+func (c *delegationServiceClient) DecideDelegation(ctx context.Context, in *DecideDelegationRequest, opts ...grpc.CallOption) (*DelegationGrant, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(DelegationGrant)
+	err := c.cc.Invoke(ctx, DelegationService_DecideDelegation_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *delegationServiceClient) ListPendingDelegations(ctx context.Context, in *ListPendingDelegationsRequest, opts ...grpc.CallOption) (*ListPendingDelegationsResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ListPendingDelegationsResponse)
+	err := c.cc.Invoke(ctx, DelegationService_ListPendingDelegations_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+// DelegationServiceServer is the server API for DelegationService service.
+// All implementations must embed UnimplementedDelegationServiceServer
+// for forward compatibility.
+type DelegationServiceServer interface {
+	// RequestDelegation creates a new pending grant. Idempotent on
+	// (org_id, request_hash) — same request from a retrying actor
+	// returns the original row's id.
+	RequestDelegation(context.Context, *RequestDelegationRequest) (*RequestDelegationResponse, error)
+	// WaitForDelegation streams one terminal event for a grant.
+	// Backed by Postgres LISTEN — no polling.
+	WaitForDelegation(*WaitForDelegationRequest, grpc.ServerStreamingServer[DelegationEvent]) error
+	// DecideDelegation is the grantor's approve/deny action. Called
+	// from the approval UI; transitions the row + (on approve)
+	// mints the scoped-auth token + fires NOTIFY for any waiting
+	// streams.
+	DecideDelegation(context.Context, *DecideDelegationRequest) (*DelegationGrant, error)
+	// ListPendingDelegations returns paginated pending grants for
+	// the approver UI. Sorted critical → high → medium → low,
+	// newest-first within tier.
+	ListPendingDelegations(context.Context, *ListPendingDelegationsRequest) (*ListPendingDelegationsResponse, error)
+	mustEmbedUnimplementedDelegationServiceServer()
+}
+
+// UnimplementedDelegationServiceServer must be embedded to have
+// forward compatible implementations.
+//
+// NOTE: this should be embedded by value instead of pointer to avoid a nil
+// pointer dereference when methods are called.
+type UnimplementedDelegationServiceServer struct{}
+
+func (UnimplementedDelegationServiceServer) RequestDelegation(context.Context, *RequestDelegationRequest) (*RequestDelegationResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method RequestDelegation not implemented")
+}
+func (UnimplementedDelegationServiceServer) WaitForDelegation(*WaitForDelegationRequest, grpc.ServerStreamingServer[DelegationEvent]) error {
+	return status.Error(codes.Unimplemented, "method WaitForDelegation not implemented")
+}
+func (UnimplementedDelegationServiceServer) DecideDelegation(context.Context, *DecideDelegationRequest) (*DelegationGrant, error) {
+	return nil, status.Error(codes.Unimplemented, "method DecideDelegation not implemented")
+}
+func (UnimplementedDelegationServiceServer) ListPendingDelegations(context.Context, *ListPendingDelegationsRequest) (*ListPendingDelegationsResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method ListPendingDelegations not implemented")
+}
+func (UnimplementedDelegationServiceServer) mustEmbedUnimplementedDelegationServiceServer() {}
+func (UnimplementedDelegationServiceServer) testEmbeddedByValue()                           {}
+
+// UnsafeDelegationServiceServer may be embedded to opt out of forward compatibility for this service.
+// Use of this interface is not recommended, as added methods to DelegationServiceServer will
+// result in compilation errors.
+type UnsafeDelegationServiceServer interface {
+	mustEmbedUnimplementedDelegationServiceServer()
+}
+
+func RegisterDelegationServiceServer(s grpc.ServiceRegistrar, srv DelegationServiceServer) {
+	// If the following call panics, it indicates UnimplementedDelegationServiceServer was
+	// embedded by pointer and is nil.  This will cause panics if an
+	// unimplemented method is ever invoked, so we test this at initialization
+	// time to prevent it from happening at runtime later due to I/O.
+	if t, ok := srv.(interface{ testEmbeddedByValue() }); ok {
+		t.testEmbeddedByValue()
+	}
+	s.RegisterService(&DelegationService_ServiceDesc, srv)
+}
+
+func _DelegationService_RequestDelegation_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(RequestDelegationRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(DelegationServiceServer).RequestDelegation(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: DelegationService_RequestDelegation_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(DelegationServiceServer).RequestDelegation(ctx, req.(*RequestDelegationRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _DelegationService_WaitForDelegation_Handler(srv interface{}, stream grpc.ServerStream) error {
+	m := new(WaitForDelegationRequest)
+	if err := stream.RecvMsg(m); err != nil {
+		return err
+	}
+	return srv.(DelegationServiceServer).WaitForDelegation(m, &grpc.GenericServerStream[WaitForDelegationRequest, DelegationEvent]{ServerStream: stream})
+}
+
+// This type alias is provided for backwards compatibility with existing code that references the prior non-generic stream type by name.
+type DelegationService_WaitForDelegationServer = grpc.ServerStreamingServer[DelegationEvent]
+
+func _DelegationService_DecideDelegation_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(DecideDelegationRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(DelegationServiceServer).DecideDelegation(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: DelegationService_DecideDelegation_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(DelegationServiceServer).DecideDelegation(ctx, req.(*DecideDelegationRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _DelegationService_ListPendingDelegations_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ListPendingDelegationsRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(DelegationServiceServer).ListPendingDelegations(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: DelegationService_ListPendingDelegations_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(DelegationServiceServer).ListPendingDelegations(ctx, req.(*ListPendingDelegationsRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+// DelegationService_ServiceDesc is the grpc.ServiceDesc for DelegationService service.
+// It's only intended for direct use with grpc.RegisterService,
+// and not to be introspected or modified (even as a copy)
+var DelegationService_ServiceDesc = grpc.ServiceDesc{
+	ServiceName: "customers.DelegationService",
+	HandlerType: (*DelegationServiceServer)(nil),
+	Methods: []grpc.MethodDesc{
+		{
+			MethodName: "RequestDelegation",
+			Handler:    _DelegationService_RequestDelegation_Handler,
+		},
+		{
+			MethodName: "DecideDelegation",
+			Handler:    _DelegationService_DecideDelegation_Handler,
+		},
+		{
+			MethodName: "ListPendingDelegations",
+			Handler:    _DelegationService_ListPendingDelegations_Handler,
+		},
+	},
+	Streams: []grpc.StreamDesc{
+		{
+			StreamName:    "WaitForDelegation",
+			Handler:       _DelegationService_WaitForDelegation_Handler,
+			ServerStreams: true,
+		},
+	},
 	Metadata: "api.proto",
 }
 
@@ -4965,6 +5561,132 @@ var MFAService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "GenerateBackupCodes",
 			Handler:    _MFAService_GenerateBackupCodes_Handler,
+		},
+	},
+	Streams:  []grpc.StreamDesc{},
+	Metadata: "api.proto",
+}
+
+const (
+	IntrospectionService_GetServiceInfo_FullMethodName = "/customers.IntrospectionService/GetServiceInfo"
+)
+
+// IntrospectionServiceClient is the client API for IntrospectionService service.
+//
+// For semantics around ctx use and closing/ending streaming RPCs, please refer to https://pkg.go.dev/google.golang.org/grpc/?tab=doc#ClientConn.NewStream.
+//
+// IntrospectionService — describes THIS service only.
+//
+// Threat model: the API surface is not a secret — anyone with the
+// binary can grep for it. But unauthenticated probes should not get
+// a free attack-surface map. The server response REDACTS RPCs whose
+// HandlerAuthz is "platform_admin" or "mfa" for unauthenticated
+// callers. Authenticated callers see the full list. Callers must
+// still pass the relevant auth tier to invoke any non-public RPC.
+//
+// Rate-limit: same shared limiter as the rest of the surface;
+// tighten if this becomes a probe vector.
+type IntrospectionServiceClient interface {
+	GetServiceInfo(ctx context.Context, in *GetServiceInfoRequest, opts ...grpc.CallOption) (*GetServiceInfoResponse, error)
+}
+
+type introspectionServiceClient struct {
+	cc grpc.ClientConnInterface
+}
+
+func NewIntrospectionServiceClient(cc grpc.ClientConnInterface) IntrospectionServiceClient {
+	return &introspectionServiceClient{cc}
+}
+
+func (c *introspectionServiceClient) GetServiceInfo(ctx context.Context, in *GetServiceInfoRequest, opts ...grpc.CallOption) (*GetServiceInfoResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(GetServiceInfoResponse)
+	err := c.cc.Invoke(ctx, IntrospectionService_GetServiceInfo_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+// IntrospectionServiceServer is the server API for IntrospectionService service.
+// All implementations must embed UnimplementedIntrospectionServiceServer
+// for forward compatibility.
+//
+// IntrospectionService — describes THIS service only.
+//
+// Threat model: the API surface is not a secret — anyone with the
+// binary can grep for it. But unauthenticated probes should not get
+// a free attack-surface map. The server response REDACTS RPCs whose
+// HandlerAuthz is "platform_admin" or "mfa" for unauthenticated
+// callers. Authenticated callers see the full list. Callers must
+// still pass the relevant auth tier to invoke any non-public RPC.
+//
+// Rate-limit: same shared limiter as the rest of the surface;
+// tighten if this becomes a probe vector.
+type IntrospectionServiceServer interface {
+	GetServiceInfo(context.Context, *GetServiceInfoRequest) (*GetServiceInfoResponse, error)
+	mustEmbedUnimplementedIntrospectionServiceServer()
+}
+
+// UnimplementedIntrospectionServiceServer must be embedded to have
+// forward compatible implementations.
+//
+// NOTE: this should be embedded by value instead of pointer to avoid a nil
+// pointer dereference when methods are called.
+type UnimplementedIntrospectionServiceServer struct{}
+
+func (UnimplementedIntrospectionServiceServer) GetServiceInfo(context.Context, *GetServiceInfoRequest) (*GetServiceInfoResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method GetServiceInfo not implemented")
+}
+func (UnimplementedIntrospectionServiceServer) mustEmbedUnimplementedIntrospectionServiceServer() {}
+func (UnimplementedIntrospectionServiceServer) testEmbeddedByValue()                              {}
+
+// UnsafeIntrospectionServiceServer may be embedded to opt out of forward compatibility for this service.
+// Use of this interface is not recommended, as added methods to IntrospectionServiceServer will
+// result in compilation errors.
+type UnsafeIntrospectionServiceServer interface {
+	mustEmbedUnimplementedIntrospectionServiceServer()
+}
+
+func RegisterIntrospectionServiceServer(s grpc.ServiceRegistrar, srv IntrospectionServiceServer) {
+	// If the following call panics, it indicates UnimplementedIntrospectionServiceServer was
+	// embedded by pointer and is nil.  This will cause panics if an
+	// unimplemented method is ever invoked, so we test this at initialization
+	// time to prevent it from happening at runtime later due to I/O.
+	if t, ok := srv.(interface{ testEmbeddedByValue() }); ok {
+		t.testEmbeddedByValue()
+	}
+	s.RegisterService(&IntrospectionService_ServiceDesc, srv)
+}
+
+func _IntrospectionService_GetServiceInfo_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(GetServiceInfoRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(IntrospectionServiceServer).GetServiceInfo(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: IntrospectionService_GetServiceInfo_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(IntrospectionServiceServer).GetServiceInfo(ctx, req.(*GetServiceInfoRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+// IntrospectionService_ServiceDesc is the grpc.ServiceDesc for IntrospectionService service.
+// It's only intended for direct use with grpc.RegisterService,
+// and not to be introspected or modified (even as a copy)
+var IntrospectionService_ServiceDesc = grpc.ServiceDesc{
+	ServiceName: "customers.IntrospectionService",
+	HandlerType: (*IntrospectionServiceServer)(nil),
+	Methods: []grpc.MethodDesc{
+		{
+			MethodName: "GetServiceInfo",
+			Handler:    _IntrospectionService_GetServiceInfo_Handler,
 		},
 	},
 	Streams:  []grpc.StreamDesc{},

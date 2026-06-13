@@ -275,8 +275,24 @@ func (h *permConnectHandler) AssignRole(ctx context.Context, req *connect.Reques
 func (h *permConnectHandler) RevokeRole(ctx context.Context, req *connect.Request[gen.RevokeRoleRequest]) (*connect.Response[emptypb.Empty], error) {
 	return unary(ctx, req, h.inner.RevokeRole)
 }
+func (h *permConnectHandler) ListRoleAssignments(ctx context.Context, req *connect.Request[gen.ListRoleAssignmentsRequest]) (*connect.Response[gen.ListRoleAssignmentsResponse], error) {
+	return unary(ctx, req, h.inner.ListRoleAssignments)
+}
 func (h *permConnectHandler) CheckPermission(ctx context.Context, req *connect.Request[gen.CheckPermissionRequest]) (*connect.Response[gen.CheckPermissionResponse], error) {
 	return unary(ctx, req, h.inner.CheckPermission)
+}
+func (h *permConnectHandler) Decide(ctx context.Context, req *connect.Request[gen.DecideRequest]) (*connect.Response[gen.DecideResponse], error) {
+	return unary(ctx, req, h.inner.Decide)
+}
+
+// ============================================================================
+// IntrospectionService
+// ============================================================================
+
+type introspectionConnectHandler struct{ inner *IntrospectionServer }
+
+func (h *introspectionConnectHandler) GetServiceInfo(ctx context.Context, req *connect.Request[gen.GetServiceInfoRequest]) (*connect.Response[gen.GetServiceInfoResponse], error) {
+	return unary(ctx, req, h.inner.GetServiceInfo)
 }
 
 // ============================================================================

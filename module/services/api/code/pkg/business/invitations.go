@@ -74,19 +74,29 @@ func (s *Service) CreateInvitation(ctx context.Context, inviterID string, req *g
 		ExpiresAt: time.Now().Add(invitationTTL),
 	}
 
-	if err := s.store.CreateInvitation(ctx, inv); err != nil {
+	// invitations + organizations are RLS-protected — write the invite
+	// and read the org name inside the same WithOrgTx so the policy
+	// passes.
+	var orgName string
+	if err := s.store.WithOrgTx(ctx, req.OrgId, func(ctx context.Context) error {
+		if err := s.store.CreateInvitation(ctx, inv); err != nil {
+			return err
+		}
+		if org, err := s.store.GetOrganization(ctx, req.OrgId); err == nil && org != nil {
+			orgName = org.Name
+		}
+		return nil
+	}); err != nil {
 		return nil, w.Wrapf(err, "cannot create invitation")
 	}
 
 	s.emit(ctx, inviterID, "user", "invitation.created", "invitation", inv.ID, req.OrgId)
 
 	// Notify the invitee (by email lookup — they may not have an account yet,
-	// so we look up by email). Best-effort.
+	// so we look up by email). users is not RLS-protected. Best-effort.
 	if invitee, err := s.store.GetUserByEmail(ctx, req.Email); err == nil && invitee != nil {
-		org, _ := s.store.GetOrganization(ctx, req.OrgId)
-		orgName := req.OrgId
-		if org != nil {
-			orgName = org.Name
+		if orgName == "" {
+			orgName = req.OrgId
 		}
 		_ = s.NotifyUser(ctx, invitee.Uuid, "You've been invited", fmt.Sprintf("You've been invited to %s", orgName))
 	}
@@ -184,8 +194,16 @@ func (s *Service) AcceptInvitation(ctx context.Context, userID string, req *gen.
 	h := sha256.Sum256([]byte(req.Token))
 	tokenHash := hex.EncodeToString(h[:])
 
-	inv, err := s.store.GetInvitationByTokenHash(ctx, tokenHash)
-	if err != nil {
+	// Token-hash lookup is cross-tenant: the token doesn't carry the
+	// org, the invitation row does. invitations is RLS-protected
+	// (Phase 2B) so the read needs WithBypass; the result tells us
+	// which org to enter for the rest of the flow.
+	var inv *Invitation
+	if err := s.store.WithBypass(ctx, func(ctx context.Context) error {
+		i, err := s.store.GetInvitationByTokenHash(ctx, tokenHash)
+		inv = i
+		return err
+	}); err != nil {
 		return nil, w.Wrapf(err, "cannot look up invitation")
 	}
 	if inv == nil {
@@ -195,11 +213,15 @@ func (s *Service) AcceptInvitation(ctx context.Context, userID string, req *gen.
 		return nil, w.NewError("invitation is no longer pending")
 	}
 	if time.Now().After(inv.ExpiresAt) {
-		_ = s.store.UpdateInvitationStatus(ctx, inv.ID, "expired", "")
+		_ = s.store.WithOrgTx(ctx, inv.OrgID, func(ctx context.Context) error {
+			return s.store.UpdateInvitationStatus(ctx, inv.ID, "expired", "")
+		})
 		return nil, w.NewError("invitation has expired")
 	}
 
-	// Verify the caller is the invited email holder.
+	// Verify the caller is the invited email holder. users is not
+	// RLS-protected (it's a global lookup table per RLS_PLAN.md
+	// skip-list), so this read runs un-wrapped.
 	caller, err := s.store.GetUser(ctx, userID)
 	if err != nil {
 		return nil, w.Wrapf(err, "cannot resolve caller")
@@ -212,8 +234,11 @@ func (s *Service) AcceptInvitation(ctx context.Context, userID string, req *gen.
 	// able to observe a still-"pending" invitation after we've begun
 	// accepting it. We re-check status INSIDE the transaction so the
 	// check-and-act race (flagged as HIGH in the audit) is closed.
+	// WithOrgTx replaces RunInTransaction so org_members + invitations
+	// + organizations all see app.current_org_id and let the writes
+	// through under their RLS policies.
 	var org *gen.Organization
-	if txErr := s.store.RunInTransaction(ctx, func(txCtx context.Context) error {
+	if txErr := s.store.WithOrgTx(ctx, inv.OrgID, func(txCtx context.Context) error {
 		fresh, err := s.store.GetInvitationByTokenHash(txCtx, tokenHash)
 		if err != nil {
 			return w.Wrapf(err, "cannot re-read invitation")
@@ -249,8 +274,12 @@ func (s *Service) ListInvitations(ctx context.Context, req *gen.ListInvitationsR
 		status = invitationStatusToString(req.Status)
 	}
 
-	invs, err := s.store.ListInvitations(ctx, req.OrgId, status)
-	if err != nil {
+	var invs []*Invitation
+	if err := s.store.WithOrgTx(ctx, req.OrgId, func(ctx context.Context) error {
+		is, err := s.store.ListInvitations(ctx, req.OrgId, status)
+		invs = is
+		return err
+	}); err != nil {
 		return nil, err
 	}
 
@@ -261,10 +290,18 @@ func (s *Service) ListInvitations(ctx context.Context, req *gen.ListInvitationsR
 	return &gen.ListInvitationsResponse{Invitations: protos}, nil
 }
 
-// RevokeInvitation marks an invitation as revoked.
+// RevokeInvitation marks an invitation as revoked. The proto only
+// carries the invitation id (no org_id), so we run the update under
+// WithBypass — the handler upstream already required org admin.
 func (s *Service) RevokeInvitation(ctx context.Context, inviterID string, req *gen.RevokeInvitationRequest) error {
+	w := wool.Get(ctx).In("RevokeInvitation")
+	if err := s.store.WithBypass(ctx, func(ctx context.Context) error {
+		return s.store.UpdateInvitationStatus(ctx, req.Id, "revoked", "")
+	}); err != nil {
+		return w.Wrapf(err, "cannot revoke invitation")
+	}
 	s.emit(ctx, inviterID, "user", "invitation.revoked", "invitation", req.Id, "")
-	return s.store.UpdateInvitationStatus(ctx, req.Id, "revoked", "")
+	return nil
 }
 
 func invitationToProto(inv *Invitation) *gen.Invitation {

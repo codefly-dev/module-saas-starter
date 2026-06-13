@@ -1,0 +1,3 @@
+DROP POLICY IF EXISTS organizations_self ON organizations;
+ALTER TABLE organizations NO FORCE ROW LEVEL SECURITY;
+ALTER TABLE organizations DISABLE ROW LEVEL SECURITY;

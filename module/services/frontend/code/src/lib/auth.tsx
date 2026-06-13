@@ -14,7 +14,6 @@ import {
   decodeJWTPayload,
   extractRoles,
   detectImpersonation,
-  getStoredRefreshToken,
   storeRefreshToken,
   clearRefreshToken,
   getStoredUserEmail,
@@ -223,6 +222,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     async (provider: string, providerId: string, email: string) => {
       const res = await fetch(`${API_BASE}/v1/auth/authenticate`, {
         method: "POST",
+        credentials: "include", // receive the httpOnly refresh-token cookie
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ provider, provider_id: providerId, provider_email: email }),
       });
@@ -260,6 +260,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     try {
       const res = await fetch(`${API_BASE}/v1/auth/oauth/begin`, {
         method: "POST",
+        credentials: "include",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ provider: providerID, redirect_uri: redirectURI }),
       });
@@ -297,6 +298,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
       const res = await fetch(`${API_BASE}/v1/auth/authenticate`, {
         method: "POST",
+        credentials: "include", // receive the httpOnly refresh-token cookie
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           provider: providerID,
@@ -335,14 +337,18 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   );
 
   const logout = useCallback(async () => {
-    const refreshToken = getStoredRefreshToken();
-    if (refreshToken && state.accessToken) {
-      await fetch(`${API_BASE}/v1/auth/logout`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json", Authorization: `Bearer ${state.accessToken}` },
-        body: JSON.stringify({ refresh_token: refreshToken }),
-      }).catch(() => {});
-    }
+    // Always hit logout so the server clears the httpOnly refresh cookie, even
+    // if we have no access token in memory. The refresh token is read from the
+    // cookie server-side (no body token needed).
+    await fetch(`${API_BASE}/v1/auth/logout`, {
+      method: "POST",
+      credentials: "include",
+      headers: {
+        "Content-Type": "application/json",
+        ...(state.accessToken ? { Authorization: `Bearer ${state.accessToken}` } : {}),
+      },
+      body: JSON.stringify({}),
+    }).catch(() => {});
     clearRefreshToken();
     setConnectToken(null);
     if (typeof document !== "undefined") {
@@ -352,15 +358,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, [state.accessToken]);
 
   useEffect(() => {
-    const refreshToken = getStoredRefreshToken();
-    if (!refreshToken) {
-      setState((s) => ({ ...s, isLoading: false }));
-      return;
-    }
+    // Always attempt a refresh on load: the refresh token lives in an httpOnly
+    // cookie the browser sends automatically (credentials: "include"). If the
+    // cookie is absent/expired the request fails and we land unauthenticated.
+    // The body no longer carries the token — the backend reads it from the cookie.
     fetch(`${API_BASE}/v1/auth/refresh`, {
       method: "POST",
+      credentials: "include",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ refresh_token: refreshToken }),
+      body: JSON.stringify({}),
     })
       .then((res) => { if (!res.ok) throw new Error(); return res.json(); })
       .then((data) => setTokens(data.accessToken, data.refreshToken))

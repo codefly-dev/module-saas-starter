@@ -22,8 +22,16 @@ func (s *Service) GetSelf(ctx context.Context, userID string) (*gen.GetSelfRespo
 		return nil, w.Wrapf(err, "cannot list identities")
 	}
 
-	orgs, err := s.store.ListOrganizationsForUser(ctx, userID)
-	if err != nil {
+	// /me returns every org the caller is a member of for the org
+	// switcher — inherently cross-tenant. organizations is RLS-
+	// protected (Phase 2F) so the read needs WithBypass; the SQL
+	// already filters by user_id, so no leakage.
+	var orgs []*gen.Organization
+	if err := s.store.WithBypass(ctx, func(ctx context.Context) error {
+		os, err := s.store.ListOrganizationsForUser(ctx, userID)
+		orgs = os
+		return err
+	}); err != nil {
 		return nil, w.Wrapf(err, "cannot list organizations")
 	}
 

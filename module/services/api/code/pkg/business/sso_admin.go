@@ -29,9 +29,19 @@ type OrgSSOConfig struct {
 }
 
 // GetOrgSSO returns the org's SSO state. Returns (nil, nil) when no
-// row has been written yet — the FE branches on existence.
+// row has been written yet — the FE branches on existence. The
+// underlying SSO columns live on `organizations` (RLS-protected,
+// Phase 2F), so the read goes through WithOrgTx.
 func (s *Service) GetOrgSSO(ctx context.Context, orgID string) (*OrgSSOConfig, error) {
-	return s.store.GetOrgSSO(ctx, orgID)
+	var cfg *OrgSSOConfig
+	if err := s.store.WithOrgTx(ctx, orgID, func(ctx context.Context) error {
+		c, err := s.store.GetOrgSSO(ctx, orgID)
+		cfg = c
+		return err
+	}); err != nil {
+		return nil, err
+	}
+	return cfg, nil
 }
 
 // StartSSOSetup either reuses an existing WorkOS Organization for
@@ -39,24 +49,29 @@ func (s *Service) GetOrgSSO(ctx context.Context, orgID string) (*OrgSSOConfig, e
 // admin-portal link the FE redirects the browser to. Returns the
 // portal URL.
 //
+// actorID — the authenticated platform/org admin who initiated the
+// flow; recorded as the audit-event actor (NOT the org id).
+//
 // Stub mode: when WORKOS_API_KEY is unset we don't make HTTP calls
 // to WorkOS — instead we return a placeholder URL that points back
 // at /admin/sso?demo=1. Lets local dev exercise the FE without
 // needing real WorkOS credentials.
-func (s *Service) StartSSOSetup(ctx context.Context, orgID, returnURL string) (string, error) {
+func (s *Service) StartSSOSetup(ctx context.Context, actorID, orgID, returnURL string) (string, error) {
 	apiKey := os.Getenv("WORKOS_API_KEY")
 	if apiKey == "" {
 		// Dev / unit-test mode. Mark the row as "linked" so the FE
 		// transitions to the post-setup view (and an operator can
 		// click Disable to test that path).
 		now := time.Now()
-		_ = s.store.UpsertOrgSSO(ctx, &OrgSSOConfig{
-			OrgID:        orgID,
-			Provider:     "workos",
-			Status:       "linked",
-			ConfiguredAt: &now,
+		_ = s.store.WithOrgTx(ctx, orgID, func(ctx context.Context) error {
+			return s.store.UpsertOrgSSO(ctx, &OrgSSOConfig{
+				OrgID:        orgID,
+				Provider:     "workos",
+				Status:       "linked",
+				ConfiguredAt: &now,
+			})
 		})
-		s.emit(ctx, orgID, "user", "sso.setup.started", "organization", orgID, orgID)
+		s.emit(ctx, actorID, "user", "sso.setup.started", "organization", orgID, orgID)
 		return returnURL + "?demo=1", nil
 	}
 
@@ -65,8 +80,14 @@ func (s *Service) StartSSOSetup(ctx context.Context, orgID, returnURL string) (s
 		http:   &http.Client{Timeout: 10 * time.Second},
 	}
 
-	cfg, err := s.store.GetOrgSSO(ctx, orgID)
-	if err != nil {
+	// Read existing SSO state under the org's tx (RLS-protected via
+	// organizations).
+	var cfg *OrgSSOConfig
+	if err := s.store.WithOrgTx(ctx, orgID, func(ctx context.Context) error {
+		c, err := s.store.GetOrgSSO(ctx, orgID)
+		cfg = c
+		return err
+	}); err != nil {
 		return "", fmt.Errorf("load existing sso row: %w", err)
 	}
 
@@ -76,6 +97,7 @@ func (s *Service) StartSSOSetup(ctx context.Context, orgID, returnURL string) (s
 	if cfg != nil {
 		workosOrgID = cfg.OrganizationID
 	}
+	var err error
 	if workosOrgID == "" {
 		workosOrgID, err = client.createOrganization(ctx, orgID)
 		if err != nil {
@@ -89,34 +111,40 @@ func (s *Service) StartSSOSetup(ctx context.Context, orgID, returnURL string) (s
 	}
 
 	now := time.Now()
-	_ = s.store.UpsertOrgSSO(ctx, &OrgSSOConfig{
-		OrgID:          orgID,
-		Provider:       "workos",
-		OrganizationID: workosOrgID,
-		Status:         "linked",
-		ConfiguredAt:   &now,
+	_ = s.store.WithOrgTx(ctx, orgID, func(ctx context.Context) error {
+		return s.store.UpsertOrgSSO(ctx, &OrgSSOConfig{
+			OrgID:          orgID,
+			Provider:       "workos",
+			OrganizationID: workosOrgID,
+			Status:         "linked",
+			ConfiguredAt:   &now,
+		})
 	})
-	s.emit(ctx, orgID, "user", "sso.setup.started", "organization", orgID, orgID)
+	s.emit(ctx, actorID, "user", "sso.setup.started", "organization", orgID, orgID)
 	return link, nil
 }
 
 // DisableSSO marks the org as not-SSO. We keep the WorkOS connection
 // info around (organization_id) so a re-enable is one click — no
 // need to walk through the portal again. Status flips to "disabled".
-func (s *Service) DisableSSO(ctx context.Context, orgID string) error {
-	cfg, err := s.store.GetOrgSSO(ctx, orgID)
-	if err != nil {
+//
+// actorID — the platform/org admin who initiated the disable.
+func (s *Service) DisableSSO(ctx context.Context, actorID, orgID string) error {
+	if err := s.store.WithOrgTx(ctx, orgID, func(ctx context.Context) error {
+		cfg, err := s.store.GetOrgSSO(ctx, orgID)
+		if err != nil {
+			return err
+		}
+		if cfg == nil {
+			return nil // idempotent
+		}
+		cfg.Status = "disabled"
+		cfg.ConnectionID = ""
+		return s.store.UpsertOrgSSO(ctx, cfg)
+	}); err != nil {
 		return err
 	}
-	if cfg == nil {
-		return nil // idempotent
-	}
-	cfg.Status = "disabled"
-	cfg.ConnectionID = ""
-	if err := s.store.UpsertOrgSSO(ctx, cfg); err != nil {
-		return err
-	}
-	s.emit(ctx, orgID, "user", "sso.disabled", "organization", orgID, orgID)
+	s.emit(ctx, actorID, "user", "sso.disabled", "organization", orgID, orgID)
 	return nil
 }
 

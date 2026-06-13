@@ -8,7 +8,7 @@ import {
 } from "@tanstack/react-table";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
-import { Trash2, UserPlus, X } from "lucide-react";
+import { Shield, Trash2, UserPlus, X } from "lucide-react";
 import { DataTable } from "@/shared/ui/data-table";
 import {
   Badge,
@@ -26,6 +26,8 @@ import { orgQueries } from "../service/queries";
 import { orgMutations } from "../service/mutations";
 import { toOrgRole, fromOrgRole, type OrgMembership } from "../model/types";
 import { getRoleBadgeVariant, roleLabel } from "../model/transforms";
+import { ManageMemberRolesDialog } from "@/features/roles/ui/manage-member-roles-dialog";
+import { RoleGate } from "@/components/auth/role-gate";
 
 const col = createColumnHelper<OrgMembership>();
 
@@ -98,19 +100,38 @@ export function OrgMembersPanel({ orgId, orgName, onClose }: OrgMembersPanelProp
       }),
       col.display({
         id: "actions",
+        header: "",
         cell: ({ row }) => (
-          <Button
-            variant="ghost"
-            size="sm"
-            className="h-8 w-8 p-0 text-destructive"
-            onClick={() => removeMutation.mutate(row.original.userId)}
-          >
-            <Trash2 className="h-4 w-4" />
-          </Button>
+          <div className="flex items-center justify-end gap-1">
+            {/* roles:write hides the Shield from members + admin
+                roles that don't hold roles:write. Server-side authz
+                still gates AssignRole/RevokeRole independently. */}
+            <RoleGate requirePermission="roles:write">
+              <ManageMemberRolesDialog
+                orgId={orgId}
+                userId={row.original.userId}
+                userLabel={truncateUUID(row.original.userId)}
+                trigger={
+                  <Button variant="ghost" size="sm" className="h-8 w-8 p-0" aria-label="Manage roles">
+                    <Shield className="h-4 w-4" />
+                  </Button>
+                }
+              />
+            </RoleGate>
+            <Button
+              variant="ghost"
+              size="sm"
+              className="h-8 w-8 p-0 text-destructive"
+              onClick={() => removeMutation.mutate(row.original.userId)}
+              aria-label="Remove member"
+            >
+              <Trash2 className="h-4 w-4" />
+            </Button>
+          </div>
         ),
       }),
     ],
-    [removeMutation],
+    [removeMutation, orgId],
   );
 
   const table = useReactTable({

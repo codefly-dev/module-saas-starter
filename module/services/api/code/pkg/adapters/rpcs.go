@@ -315,9 +315,13 @@ func (s *TeamServer) AddMember(ctx context.Context, req *gen.AddTeamMemberReques
 	if err != nil {
 		return nil, err
 	}
-	if err := requireTeamAdmin(ctx, actorID, req.TeamId); err != nil {
+	orgID, err := requireTeamAdmin(ctx, actorID, req.TeamId)
+	if err != nil {
 		return nil, err
 	}
+	// Stamp team→org cache so Service.AddTeamMember skips the dup
+	// WithBypass lookup. 4 transactions/request → 3.
+	ctx = business.WithCachedTeamOrgID(ctx, req.TeamId, orgID)
 	if err := service.AddTeamMember(ctx, actorID, req); err != nil {
 		return nil, err
 	}
@@ -335,9 +339,11 @@ func (s *TeamServer) RemoveMember(ctx context.Context, req *gen.RemoveTeamMember
 	// A user removing themselves from a team is allowed; otherwise require
 	// team admin.
 	if req.UserId != actorID {
-		if err := requireTeamAdmin(ctx, actorID, req.TeamId); err != nil {
+		orgID, err := requireTeamAdmin(ctx, actorID, req.TeamId)
+		if err != nil {
 			return nil, err
 		}
+		ctx = business.WithCachedTeamOrgID(ctx, req.TeamId, orgID)
 	}
 	if err := service.RemoveTeamMember(ctx, actorID, req); err != nil {
 		return nil, err
@@ -448,14 +454,46 @@ func (s *PermServer) RevokeRole(ctx context.Context, req *gen.RevokeRoleRequest)
 	return &emptypb.Empty{}, nil
 }
 
+func (s *PermServer) ListRoleAssignments(ctx context.Context, req *gen.ListRoleAssignmentsRequest) (*gen.ListRoleAssignmentsResponse, error) {
+	if err := Validate(req); err != nil {
+		return nil, err
+	}
+	actorID, err := requireAuth(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if err := requireOrgMember(ctx, actorID, req.OrgId); err != nil {
+		// Platform admins can read any org's assignments for support
+		// ops. Fall through to that check before refusing.
+		if !IsPermissionDenied(err) {
+			return nil, err
+		}
+		if paErr := requirePlatformAdmin(ctx, actorID); paErr != nil {
+			return nil, err
+		}
+	}
+	return service.ListRoleAssignments(ctx, req)
+}
+
 func (s *PermServer) CheckPermission(ctx context.Context, req *gen.CheckPermissionRequest) (*gen.CheckPermissionResponse, error) {
 	if err := Validate(req); err != nil {
 		return nil, err
 	}
-	// CheckPermission is an authorization decision gate called BY internal
-	// services (auth-sidecar middleware). We don't require user auth on
-	// the caller — the sidecar is trusted by network boundary. If the
-	// endpoint is ever exposed publicly, this needs to be tightened.
+	// CheckPermission is an authorization decision oracle called by
+	// internal services (auth-sidecar middleware). Anyone with access
+	// to the api's gRPC port could otherwise probe "is user X allowed
+	// to do Y?" — an information-disclosure risk especially in
+	// stand-alone dev or any deploy where the network boundary isn't
+	// strict.
+	//
+	// Defense: require either a JWT (the standard auth path — the
+	// JWT proves the caller IS user X and is asking about themselves)
+	// or a shared secret (X-Codefly-Internal-Token) that the auth-
+	// sidecar carries. Production deploys set CODEFLY_INTERNAL_TOKEN
+	// in both the api and sidecar configs.
+	if err := requireInternalOrAuth(ctx); err != nil {
+		return nil, err
+	}
 	return service.CheckPermission(ctx, req)
 }
 

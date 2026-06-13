@@ -28,6 +28,7 @@ require (
 
 require (
 	cel.dev/expr v0.25.1 // indirect
+	connectrpc.com/otelconnect v0.9.0 // indirect
 	github.com/Masterminds/semver v1.5.0 // indirect
 	github.com/VividCortex/ewma v1.2.0 // indirect
 	github.com/antlr4-go/antlr/v4 v4.13.1 // indirect

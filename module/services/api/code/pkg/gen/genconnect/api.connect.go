@@ -30,6 +30,10 @@ const (
 	TeamServiceName = "customers.TeamService"
 	// PermissionServiceName is the fully-qualified name of the PermissionService service.
 	PermissionServiceName = "customers.PermissionService"
+	// PrincipalServiceName is the fully-qualified name of the PrincipalService service.
+	PrincipalServiceName = "customers.PrincipalService"
+	// DelegationServiceName is the fully-qualified name of the DelegationService service.
+	DelegationServiceName = "customers.DelegationService"
 	// IdentityServiceName is the fully-qualified name of the IdentityService service.
 	IdentityServiceName = "customers.IdentityService"
 	// APIKeyServiceName is the fully-qualified name of the APIKeyService service.
@@ -62,6 +66,8 @@ const (
 	UserSettingsServiceName = "customers.UserSettingsService"
 	// MFAServiceName is the fully-qualified name of the MFAService service.
 	MFAServiceName = "customers.MFAService"
+	// IntrospectionServiceName is the fully-qualified name of the IntrospectionService service.
+	IntrospectionServiceName = "customers.IntrospectionService"
 )
 
 // These constants are the fully-qualified names of the RPCs defined in this package. They're
@@ -145,9 +151,42 @@ const (
 	// PermissionServiceRevokeRoleProcedure is the fully-qualified name of the PermissionService's
 	// RevokeRole RPC.
 	PermissionServiceRevokeRoleProcedure = "/customers.PermissionService/RevokeRole"
+	// PermissionServiceListRoleAssignmentsProcedure is the fully-qualified name of the
+	// PermissionService's ListRoleAssignments RPC.
+	PermissionServiceListRoleAssignmentsProcedure = "/customers.PermissionService/ListRoleAssignments"
 	// PermissionServiceCheckPermissionProcedure is the fully-qualified name of the PermissionService's
 	// CheckPermission RPC.
 	PermissionServiceCheckPermissionProcedure = "/customers.PermissionService/CheckPermission"
+	// PermissionServiceDecideProcedure is the fully-qualified name of the PermissionService's Decide
+	// RPC.
+	PermissionServiceDecideProcedure = "/customers.PermissionService/Decide"
+	// PrincipalServiceGetPrincipalProcedure is the fully-qualified name of the PrincipalService's
+	// GetPrincipal RPC.
+	PrincipalServiceGetPrincipalProcedure = "/customers.PrincipalService/GetPrincipal"
+	// PrincipalServiceGetAgentPrincipalProcedure is the fully-qualified name of the PrincipalService's
+	// GetAgentPrincipal RPC.
+	PrincipalServiceGetAgentPrincipalProcedure = "/customers.PrincipalService/GetAgentPrincipal"
+	// PrincipalServiceCreateAgentPrincipalProcedure is the fully-qualified name of the
+	// PrincipalService's CreateAgentPrincipal RPC.
+	PrincipalServiceCreateAgentPrincipalProcedure = "/customers.PrincipalService/CreateAgentPrincipal"
+	// PrincipalServiceRevokePrincipalProcedure is the fully-qualified name of the PrincipalService's
+	// RevokePrincipal RPC.
+	PrincipalServiceRevokePrincipalProcedure = "/customers.PrincipalService/RevokePrincipal"
+	// PrincipalServiceListPrincipalsProcedure is the fully-qualified name of the PrincipalService's
+	// ListPrincipals RPC.
+	PrincipalServiceListPrincipalsProcedure = "/customers.PrincipalService/ListPrincipals"
+	// DelegationServiceRequestDelegationProcedure is the fully-qualified name of the
+	// DelegationService's RequestDelegation RPC.
+	DelegationServiceRequestDelegationProcedure = "/customers.DelegationService/RequestDelegation"
+	// DelegationServiceWaitForDelegationProcedure is the fully-qualified name of the
+	// DelegationService's WaitForDelegation RPC.
+	DelegationServiceWaitForDelegationProcedure = "/customers.DelegationService/WaitForDelegation"
+	// DelegationServiceDecideDelegationProcedure is the fully-qualified name of the DelegationService's
+	// DecideDelegation RPC.
+	DelegationServiceDecideDelegationProcedure = "/customers.DelegationService/DecideDelegation"
+	// DelegationServiceListPendingDelegationsProcedure is the fully-qualified name of the
+	// DelegationService's ListPendingDelegations RPC.
+	DelegationServiceListPendingDelegationsProcedure = "/customers.DelegationService/ListPendingDelegations"
 	// IdentityServiceResolveIdentityProcedure is the fully-qualified name of the IdentityService's
 	// ResolveIdentity RPC.
 	IdentityServiceResolveIdentityProcedure = "/customers.IdentityService/ResolveIdentity"
@@ -332,6 +371,9 @@ const (
 	// MFAServiceGenerateBackupCodesProcedure is the fully-qualified name of the MFAService's
 	// GenerateBackupCodes RPC.
 	MFAServiceGenerateBackupCodesProcedure = "/customers.MFAService/GenerateBackupCodes"
+	// IntrospectionServiceGetServiceInfoProcedure is the fully-qualified name of the
+	// IntrospectionService's GetServiceInfo RPC.
+	IntrospectionServiceGetServiceInfoProcedure = "/customers.IntrospectionService/GetServiceInfo"
 )
 
 // UserServiceClient is a client for the customers.UserService service.
@@ -1071,7 +1113,14 @@ type PermissionServiceClient interface {
 	DeleteRole(context.Context, *connect.Request[gen.DeleteRoleRequest]) (*connect.Response[emptypb.Empty], error)
 	AssignRole(context.Context, *connect.Request[gen.AssignRoleRequest]) (*connect.Response[gen.AssignRoleResponse], error)
 	RevokeRole(context.Context, *connect.Request[gen.RevokeRoleRequest]) (*connect.Response[emptypb.Empty], error)
+	ListRoleAssignments(context.Context, *connect.Request[gen.ListRoleAssignmentsRequest]) (*connect.Response[gen.ListRoleAssignmentsResponse], error)
 	CheckPermission(context.Context, *connect.Request[gen.CheckPermissionRequest]) (*connect.Response[gen.CheckPermissionResponse], error)
+	// Decide is the principal-aware permission check (M2). New
+	// callers should use Decide; CheckPermission is kept for backward
+	// compatibility while existing clients migrate. Both RPCs route
+	// through the same Postgres CheckPermission query in M2; they
+	// diverge starting at M4 (manifest ceiling) and M7 (approval flow).
+	Decide(context.Context, *connect.Request[gen.DecideRequest]) (*connect.Response[gen.DecideResponse], error)
 }
 
 // NewPermissionServiceClient constructs a client for the customers.PermissionService service. By
@@ -1115,10 +1164,22 @@ func NewPermissionServiceClient(httpClient connect.HTTPClient, baseURL string, o
 			connect.WithSchema(permissionServiceMethods.ByName("RevokeRole")),
 			connect.WithClientOptions(opts...),
 		),
+		listRoleAssignments: connect.NewClient[gen.ListRoleAssignmentsRequest, gen.ListRoleAssignmentsResponse](
+			httpClient,
+			baseURL+PermissionServiceListRoleAssignmentsProcedure,
+			connect.WithSchema(permissionServiceMethods.ByName("ListRoleAssignments")),
+			connect.WithClientOptions(opts...),
+		),
 		checkPermission: connect.NewClient[gen.CheckPermissionRequest, gen.CheckPermissionResponse](
 			httpClient,
 			baseURL+PermissionServiceCheckPermissionProcedure,
 			connect.WithSchema(permissionServiceMethods.ByName("CheckPermission")),
+			connect.WithClientOptions(opts...),
+		),
+		decide: connect.NewClient[gen.DecideRequest, gen.DecideResponse](
+			httpClient,
+			baseURL+PermissionServiceDecideProcedure,
+			connect.WithSchema(permissionServiceMethods.ByName("Decide")),
 			connect.WithClientOptions(opts...),
 		),
 	}
@@ -1126,12 +1187,14 @@ func NewPermissionServiceClient(httpClient connect.HTTPClient, baseURL string, o
 
 // permissionServiceClient implements PermissionServiceClient.
 type permissionServiceClient struct {
-	createRole      *connect.Client[gen.CreateRoleRequest, gen.CreateRoleResponse]
-	listRoles       *connect.Client[gen.ListRolesRequest, gen.ListRolesResponse]
-	deleteRole      *connect.Client[gen.DeleteRoleRequest, emptypb.Empty]
-	assignRole      *connect.Client[gen.AssignRoleRequest, gen.AssignRoleResponse]
-	revokeRole      *connect.Client[gen.RevokeRoleRequest, emptypb.Empty]
-	checkPermission *connect.Client[gen.CheckPermissionRequest, gen.CheckPermissionResponse]
+	createRole          *connect.Client[gen.CreateRoleRequest, gen.CreateRoleResponse]
+	listRoles           *connect.Client[gen.ListRolesRequest, gen.ListRolesResponse]
+	deleteRole          *connect.Client[gen.DeleteRoleRequest, emptypb.Empty]
+	assignRole          *connect.Client[gen.AssignRoleRequest, gen.AssignRoleResponse]
+	revokeRole          *connect.Client[gen.RevokeRoleRequest, emptypb.Empty]
+	listRoleAssignments *connect.Client[gen.ListRoleAssignmentsRequest, gen.ListRoleAssignmentsResponse]
+	checkPermission     *connect.Client[gen.CheckPermissionRequest, gen.CheckPermissionResponse]
+	decide              *connect.Client[gen.DecideRequest, gen.DecideResponse]
 }
 
 // CreateRole calls customers.PermissionService.CreateRole.
@@ -1159,9 +1222,19 @@ func (c *permissionServiceClient) RevokeRole(ctx context.Context, req *connect.R
 	return c.revokeRole.CallUnary(ctx, req)
 }
 
+// ListRoleAssignments calls customers.PermissionService.ListRoleAssignments.
+func (c *permissionServiceClient) ListRoleAssignments(ctx context.Context, req *connect.Request[gen.ListRoleAssignmentsRequest]) (*connect.Response[gen.ListRoleAssignmentsResponse], error) {
+	return c.listRoleAssignments.CallUnary(ctx, req)
+}
+
 // CheckPermission calls customers.PermissionService.CheckPermission.
 func (c *permissionServiceClient) CheckPermission(ctx context.Context, req *connect.Request[gen.CheckPermissionRequest]) (*connect.Response[gen.CheckPermissionResponse], error) {
 	return c.checkPermission.CallUnary(ctx, req)
+}
+
+// Decide calls customers.PermissionService.Decide.
+func (c *permissionServiceClient) Decide(ctx context.Context, req *connect.Request[gen.DecideRequest]) (*connect.Response[gen.DecideResponse], error) {
+	return c.decide.CallUnary(ctx, req)
 }
 
 // PermissionServiceHandler is an implementation of the customers.PermissionService service.
@@ -1171,7 +1244,14 @@ type PermissionServiceHandler interface {
 	DeleteRole(context.Context, *connect.Request[gen.DeleteRoleRequest]) (*connect.Response[emptypb.Empty], error)
 	AssignRole(context.Context, *connect.Request[gen.AssignRoleRequest]) (*connect.Response[gen.AssignRoleResponse], error)
 	RevokeRole(context.Context, *connect.Request[gen.RevokeRoleRequest]) (*connect.Response[emptypb.Empty], error)
+	ListRoleAssignments(context.Context, *connect.Request[gen.ListRoleAssignmentsRequest]) (*connect.Response[gen.ListRoleAssignmentsResponse], error)
 	CheckPermission(context.Context, *connect.Request[gen.CheckPermissionRequest]) (*connect.Response[gen.CheckPermissionResponse], error)
+	// Decide is the principal-aware permission check (M2). New
+	// callers should use Decide; CheckPermission is kept for backward
+	// compatibility while existing clients migrate. Both RPCs route
+	// through the same Postgres CheckPermission query in M2; they
+	// diverge starting at M4 (manifest ceiling) and M7 (approval flow).
+	Decide(context.Context, *connect.Request[gen.DecideRequest]) (*connect.Response[gen.DecideResponse], error)
 }
 
 // NewPermissionServiceHandler builds an HTTP handler from the service implementation. It returns
@@ -1211,10 +1291,22 @@ func NewPermissionServiceHandler(svc PermissionServiceHandler, opts ...connect.H
 		connect.WithSchema(permissionServiceMethods.ByName("RevokeRole")),
 		connect.WithHandlerOptions(opts...),
 	)
+	permissionServiceListRoleAssignmentsHandler := connect.NewUnaryHandler(
+		PermissionServiceListRoleAssignmentsProcedure,
+		svc.ListRoleAssignments,
+		connect.WithSchema(permissionServiceMethods.ByName("ListRoleAssignments")),
+		connect.WithHandlerOptions(opts...),
+	)
 	permissionServiceCheckPermissionHandler := connect.NewUnaryHandler(
 		PermissionServiceCheckPermissionProcedure,
 		svc.CheckPermission,
 		connect.WithSchema(permissionServiceMethods.ByName("CheckPermission")),
+		connect.WithHandlerOptions(opts...),
+	)
+	permissionServiceDecideHandler := connect.NewUnaryHandler(
+		PermissionServiceDecideProcedure,
+		svc.Decide,
+		connect.WithSchema(permissionServiceMethods.ByName("Decide")),
 		connect.WithHandlerOptions(opts...),
 	)
 	return "/customers.PermissionService/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -1229,8 +1321,12 @@ func NewPermissionServiceHandler(svc PermissionServiceHandler, opts ...connect.H
 			permissionServiceAssignRoleHandler.ServeHTTP(w, r)
 		case PermissionServiceRevokeRoleProcedure:
 			permissionServiceRevokeRoleHandler.ServeHTTP(w, r)
+		case PermissionServiceListRoleAssignmentsProcedure:
+			permissionServiceListRoleAssignmentsHandler.ServeHTTP(w, r)
 		case PermissionServiceCheckPermissionProcedure:
 			permissionServiceCheckPermissionHandler.ServeHTTP(w, r)
+		case PermissionServiceDecideProcedure:
+			permissionServiceDecideHandler.ServeHTTP(w, r)
 		default:
 			http.NotFound(w, r)
 		}
@@ -1260,8 +1356,362 @@ func (UnimplementedPermissionServiceHandler) RevokeRole(context.Context, *connec
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("customers.PermissionService.RevokeRole is not implemented"))
 }
 
+func (UnimplementedPermissionServiceHandler) ListRoleAssignments(context.Context, *connect.Request[gen.ListRoleAssignmentsRequest]) (*connect.Response[gen.ListRoleAssignmentsResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("customers.PermissionService.ListRoleAssignments is not implemented"))
+}
+
 func (UnimplementedPermissionServiceHandler) CheckPermission(context.Context, *connect.Request[gen.CheckPermissionRequest]) (*connect.Response[gen.CheckPermissionResponse], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("customers.PermissionService.CheckPermission is not implemented"))
+}
+
+func (UnimplementedPermissionServiceHandler) Decide(context.Context, *connect.Request[gen.DecideRequest]) (*connect.Response[gen.DecideResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("customers.PermissionService.Decide is not implemented"))
+}
+
+// PrincipalServiceClient is a client for the customers.PrincipalService service.
+type PrincipalServiceClient interface {
+	GetPrincipal(context.Context, *connect.Request[gen.GetPrincipalRequest]) (*connect.Response[gen.Principal], error)
+	GetAgentPrincipal(context.Context, *connect.Request[gen.GetAgentPrincipalRequest]) (*connect.Response[gen.Principal], error)
+	CreateAgentPrincipal(context.Context, *connect.Request[gen.CreateAgentPrincipalRequest]) (*connect.Response[gen.Principal], error)
+	RevokePrincipal(context.Context, *connect.Request[gen.RevokePrincipalRequest]) (*connect.Response[emptypb.Empty], error)
+	ListPrincipals(context.Context, *connect.Request[gen.ListPrincipalsRequest]) (*connect.Response[gen.ListPrincipalsResponse], error)
+}
+
+// NewPrincipalServiceClient constructs a client for the customers.PrincipalService service. By
+// default, it uses the Connect protocol with the binary Protobuf Codec, asks for gzipped responses,
+// and sends uncompressed requests. To use the gRPC or gRPC-Web protocols, supply the
+// connect.WithGRPC() or connect.WithGRPCWeb() options.
+//
+// The URL supplied here should be the base URL for the Connect or gRPC server (for example,
+// http://api.acme.com or https://acme.com/grpc).
+func NewPrincipalServiceClient(httpClient connect.HTTPClient, baseURL string, opts ...connect.ClientOption) PrincipalServiceClient {
+	baseURL = strings.TrimRight(baseURL, "/")
+	principalServiceMethods := gen.File_api_proto.Services().ByName("PrincipalService").Methods()
+	return &principalServiceClient{
+		getPrincipal: connect.NewClient[gen.GetPrincipalRequest, gen.Principal](
+			httpClient,
+			baseURL+PrincipalServiceGetPrincipalProcedure,
+			connect.WithSchema(principalServiceMethods.ByName("GetPrincipal")),
+			connect.WithClientOptions(opts...),
+		),
+		getAgentPrincipal: connect.NewClient[gen.GetAgentPrincipalRequest, gen.Principal](
+			httpClient,
+			baseURL+PrincipalServiceGetAgentPrincipalProcedure,
+			connect.WithSchema(principalServiceMethods.ByName("GetAgentPrincipal")),
+			connect.WithClientOptions(opts...),
+		),
+		createAgentPrincipal: connect.NewClient[gen.CreateAgentPrincipalRequest, gen.Principal](
+			httpClient,
+			baseURL+PrincipalServiceCreateAgentPrincipalProcedure,
+			connect.WithSchema(principalServiceMethods.ByName("CreateAgentPrincipal")),
+			connect.WithClientOptions(opts...),
+		),
+		revokePrincipal: connect.NewClient[gen.RevokePrincipalRequest, emptypb.Empty](
+			httpClient,
+			baseURL+PrincipalServiceRevokePrincipalProcedure,
+			connect.WithSchema(principalServiceMethods.ByName("RevokePrincipal")),
+			connect.WithClientOptions(opts...),
+		),
+		listPrincipals: connect.NewClient[gen.ListPrincipalsRequest, gen.ListPrincipalsResponse](
+			httpClient,
+			baseURL+PrincipalServiceListPrincipalsProcedure,
+			connect.WithSchema(principalServiceMethods.ByName("ListPrincipals")),
+			connect.WithClientOptions(opts...),
+		),
+	}
+}
+
+// principalServiceClient implements PrincipalServiceClient.
+type principalServiceClient struct {
+	getPrincipal         *connect.Client[gen.GetPrincipalRequest, gen.Principal]
+	getAgentPrincipal    *connect.Client[gen.GetAgentPrincipalRequest, gen.Principal]
+	createAgentPrincipal *connect.Client[gen.CreateAgentPrincipalRequest, gen.Principal]
+	revokePrincipal      *connect.Client[gen.RevokePrincipalRequest, emptypb.Empty]
+	listPrincipals       *connect.Client[gen.ListPrincipalsRequest, gen.ListPrincipalsResponse]
+}
+
+// GetPrincipal calls customers.PrincipalService.GetPrincipal.
+func (c *principalServiceClient) GetPrincipal(ctx context.Context, req *connect.Request[gen.GetPrincipalRequest]) (*connect.Response[gen.Principal], error) {
+	return c.getPrincipal.CallUnary(ctx, req)
+}
+
+// GetAgentPrincipal calls customers.PrincipalService.GetAgentPrincipal.
+func (c *principalServiceClient) GetAgentPrincipal(ctx context.Context, req *connect.Request[gen.GetAgentPrincipalRequest]) (*connect.Response[gen.Principal], error) {
+	return c.getAgentPrincipal.CallUnary(ctx, req)
+}
+
+// CreateAgentPrincipal calls customers.PrincipalService.CreateAgentPrincipal.
+func (c *principalServiceClient) CreateAgentPrincipal(ctx context.Context, req *connect.Request[gen.CreateAgentPrincipalRequest]) (*connect.Response[gen.Principal], error) {
+	return c.createAgentPrincipal.CallUnary(ctx, req)
+}
+
+// RevokePrincipal calls customers.PrincipalService.RevokePrincipal.
+func (c *principalServiceClient) RevokePrincipal(ctx context.Context, req *connect.Request[gen.RevokePrincipalRequest]) (*connect.Response[emptypb.Empty], error) {
+	return c.revokePrincipal.CallUnary(ctx, req)
+}
+
+// ListPrincipals calls customers.PrincipalService.ListPrincipals.
+func (c *principalServiceClient) ListPrincipals(ctx context.Context, req *connect.Request[gen.ListPrincipalsRequest]) (*connect.Response[gen.ListPrincipalsResponse], error) {
+	return c.listPrincipals.CallUnary(ctx, req)
+}
+
+// PrincipalServiceHandler is an implementation of the customers.PrincipalService service.
+type PrincipalServiceHandler interface {
+	GetPrincipal(context.Context, *connect.Request[gen.GetPrincipalRequest]) (*connect.Response[gen.Principal], error)
+	GetAgentPrincipal(context.Context, *connect.Request[gen.GetAgentPrincipalRequest]) (*connect.Response[gen.Principal], error)
+	CreateAgentPrincipal(context.Context, *connect.Request[gen.CreateAgentPrincipalRequest]) (*connect.Response[gen.Principal], error)
+	RevokePrincipal(context.Context, *connect.Request[gen.RevokePrincipalRequest]) (*connect.Response[emptypb.Empty], error)
+	ListPrincipals(context.Context, *connect.Request[gen.ListPrincipalsRequest]) (*connect.Response[gen.ListPrincipalsResponse], error)
+}
+
+// NewPrincipalServiceHandler builds an HTTP handler from the service implementation. It returns the
+// path on which to mount the handler and the handler itself.
+//
+// By default, handlers support the Connect, gRPC, and gRPC-Web protocols with the binary Protobuf
+// and JSON codecs. They also support gzip compression.
+func NewPrincipalServiceHandler(svc PrincipalServiceHandler, opts ...connect.HandlerOption) (string, http.Handler) {
+	principalServiceMethods := gen.File_api_proto.Services().ByName("PrincipalService").Methods()
+	principalServiceGetPrincipalHandler := connect.NewUnaryHandler(
+		PrincipalServiceGetPrincipalProcedure,
+		svc.GetPrincipal,
+		connect.WithSchema(principalServiceMethods.ByName("GetPrincipal")),
+		connect.WithHandlerOptions(opts...),
+	)
+	principalServiceGetAgentPrincipalHandler := connect.NewUnaryHandler(
+		PrincipalServiceGetAgentPrincipalProcedure,
+		svc.GetAgentPrincipal,
+		connect.WithSchema(principalServiceMethods.ByName("GetAgentPrincipal")),
+		connect.WithHandlerOptions(opts...),
+	)
+	principalServiceCreateAgentPrincipalHandler := connect.NewUnaryHandler(
+		PrincipalServiceCreateAgentPrincipalProcedure,
+		svc.CreateAgentPrincipal,
+		connect.WithSchema(principalServiceMethods.ByName("CreateAgentPrincipal")),
+		connect.WithHandlerOptions(opts...),
+	)
+	principalServiceRevokePrincipalHandler := connect.NewUnaryHandler(
+		PrincipalServiceRevokePrincipalProcedure,
+		svc.RevokePrincipal,
+		connect.WithSchema(principalServiceMethods.ByName("RevokePrincipal")),
+		connect.WithHandlerOptions(opts...),
+	)
+	principalServiceListPrincipalsHandler := connect.NewUnaryHandler(
+		PrincipalServiceListPrincipalsProcedure,
+		svc.ListPrincipals,
+		connect.WithSchema(principalServiceMethods.ByName("ListPrincipals")),
+		connect.WithHandlerOptions(opts...),
+	)
+	return "/customers.PrincipalService/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case PrincipalServiceGetPrincipalProcedure:
+			principalServiceGetPrincipalHandler.ServeHTTP(w, r)
+		case PrincipalServiceGetAgentPrincipalProcedure:
+			principalServiceGetAgentPrincipalHandler.ServeHTTP(w, r)
+		case PrincipalServiceCreateAgentPrincipalProcedure:
+			principalServiceCreateAgentPrincipalHandler.ServeHTTP(w, r)
+		case PrincipalServiceRevokePrincipalProcedure:
+			principalServiceRevokePrincipalHandler.ServeHTTP(w, r)
+		case PrincipalServiceListPrincipalsProcedure:
+			principalServiceListPrincipalsHandler.ServeHTTP(w, r)
+		default:
+			http.NotFound(w, r)
+		}
+	})
+}
+
+// UnimplementedPrincipalServiceHandler returns CodeUnimplemented from all methods.
+type UnimplementedPrincipalServiceHandler struct{}
+
+func (UnimplementedPrincipalServiceHandler) GetPrincipal(context.Context, *connect.Request[gen.GetPrincipalRequest]) (*connect.Response[gen.Principal], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("customers.PrincipalService.GetPrincipal is not implemented"))
+}
+
+func (UnimplementedPrincipalServiceHandler) GetAgentPrincipal(context.Context, *connect.Request[gen.GetAgentPrincipalRequest]) (*connect.Response[gen.Principal], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("customers.PrincipalService.GetAgentPrincipal is not implemented"))
+}
+
+func (UnimplementedPrincipalServiceHandler) CreateAgentPrincipal(context.Context, *connect.Request[gen.CreateAgentPrincipalRequest]) (*connect.Response[gen.Principal], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("customers.PrincipalService.CreateAgentPrincipal is not implemented"))
+}
+
+func (UnimplementedPrincipalServiceHandler) RevokePrincipal(context.Context, *connect.Request[gen.RevokePrincipalRequest]) (*connect.Response[emptypb.Empty], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("customers.PrincipalService.RevokePrincipal is not implemented"))
+}
+
+func (UnimplementedPrincipalServiceHandler) ListPrincipals(context.Context, *connect.Request[gen.ListPrincipalsRequest]) (*connect.Response[gen.ListPrincipalsResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("customers.PrincipalService.ListPrincipals is not implemented"))
+}
+
+// DelegationServiceClient is a client for the customers.DelegationService service.
+type DelegationServiceClient interface {
+	// RequestDelegation creates a new pending grant. Idempotent on
+	// (org_id, request_hash) — same request from a retrying actor
+	// returns the original row's id.
+	RequestDelegation(context.Context, *connect.Request[gen.RequestDelegationRequest]) (*connect.Response[gen.RequestDelegationResponse], error)
+	// WaitForDelegation streams one terminal event for a grant.
+	// Backed by Postgres LISTEN — no polling.
+	WaitForDelegation(context.Context, *connect.Request[gen.WaitForDelegationRequest]) (*connect.ServerStreamForClient[gen.DelegationEvent], error)
+	// DecideDelegation is the grantor's approve/deny action. Called
+	// from the approval UI; transitions the row + (on approve)
+	// mints the scoped-auth token + fires NOTIFY for any waiting
+	// streams.
+	DecideDelegation(context.Context, *connect.Request[gen.DecideDelegationRequest]) (*connect.Response[gen.DelegationGrant], error)
+	// ListPendingDelegations returns paginated pending grants for
+	// the approver UI. Sorted critical → high → medium → low,
+	// newest-first within tier.
+	ListPendingDelegations(context.Context, *connect.Request[gen.ListPendingDelegationsRequest]) (*connect.Response[gen.ListPendingDelegationsResponse], error)
+}
+
+// NewDelegationServiceClient constructs a client for the customers.DelegationService service. By
+// default, it uses the Connect protocol with the binary Protobuf Codec, asks for gzipped responses,
+// and sends uncompressed requests. To use the gRPC or gRPC-Web protocols, supply the
+// connect.WithGRPC() or connect.WithGRPCWeb() options.
+//
+// The URL supplied here should be the base URL for the Connect or gRPC server (for example,
+// http://api.acme.com or https://acme.com/grpc).
+func NewDelegationServiceClient(httpClient connect.HTTPClient, baseURL string, opts ...connect.ClientOption) DelegationServiceClient {
+	baseURL = strings.TrimRight(baseURL, "/")
+	delegationServiceMethods := gen.File_api_proto.Services().ByName("DelegationService").Methods()
+	return &delegationServiceClient{
+		requestDelegation: connect.NewClient[gen.RequestDelegationRequest, gen.RequestDelegationResponse](
+			httpClient,
+			baseURL+DelegationServiceRequestDelegationProcedure,
+			connect.WithSchema(delegationServiceMethods.ByName("RequestDelegation")),
+			connect.WithClientOptions(opts...),
+		),
+		waitForDelegation: connect.NewClient[gen.WaitForDelegationRequest, gen.DelegationEvent](
+			httpClient,
+			baseURL+DelegationServiceWaitForDelegationProcedure,
+			connect.WithSchema(delegationServiceMethods.ByName("WaitForDelegation")),
+			connect.WithClientOptions(opts...),
+		),
+		decideDelegation: connect.NewClient[gen.DecideDelegationRequest, gen.DelegationGrant](
+			httpClient,
+			baseURL+DelegationServiceDecideDelegationProcedure,
+			connect.WithSchema(delegationServiceMethods.ByName("DecideDelegation")),
+			connect.WithClientOptions(opts...),
+		),
+		listPendingDelegations: connect.NewClient[gen.ListPendingDelegationsRequest, gen.ListPendingDelegationsResponse](
+			httpClient,
+			baseURL+DelegationServiceListPendingDelegationsProcedure,
+			connect.WithSchema(delegationServiceMethods.ByName("ListPendingDelegations")),
+			connect.WithClientOptions(opts...),
+		),
+	}
+}
+
+// delegationServiceClient implements DelegationServiceClient.
+type delegationServiceClient struct {
+	requestDelegation      *connect.Client[gen.RequestDelegationRequest, gen.RequestDelegationResponse]
+	waitForDelegation      *connect.Client[gen.WaitForDelegationRequest, gen.DelegationEvent]
+	decideDelegation       *connect.Client[gen.DecideDelegationRequest, gen.DelegationGrant]
+	listPendingDelegations *connect.Client[gen.ListPendingDelegationsRequest, gen.ListPendingDelegationsResponse]
+}
+
+// RequestDelegation calls customers.DelegationService.RequestDelegation.
+func (c *delegationServiceClient) RequestDelegation(ctx context.Context, req *connect.Request[gen.RequestDelegationRequest]) (*connect.Response[gen.RequestDelegationResponse], error) {
+	return c.requestDelegation.CallUnary(ctx, req)
+}
+
+// WaitForDelegation calls customers.DelegationService.WaitForDelegation.
+func (c *delegationServiceClient) WaitForDelegation(ctx context.Context, req *connect.Request[gen.WaitForDelegationRequest]) (*connect.ServerStreamForClient[gen.DelegationEvent], error) {
+	return c.waitForDelegation.CallServerStream(ctx, req)
+}
+
+// DecideDelegation calls customers.DelegationService.DecideDelegation.
+func (c *delegationServiceClient) DecideDelegation(ctx context.Context, req *connect.Request[gen.DecideDelegationRequest]) (*connect.Response[gen.DelegationGrant], error) {
+	return c.decideDelegation.CallUnary(ctx, req)
+}
+
+// ListPendingDelegations calls customers.DelegationService.ListPendingDelegations.
+func (c *delegationServiceClient) ListPendingDelegations(ctx context.Context, req *connect.Request[gen.ListPendingDelegationsRequest]) (*connect.Response[gen.ListPendingDelegationsResponse], error) {
+	return c.listPendingDelegations.CallUnary(ctx, req)
+}
+
+// DelegationServiceHandler is an implementation of the customers.DelegationService service.
+type DelegationServiceHandler interface {
+	// RequestDelegation creates a new pending grant. Idempotent on
+	// (org_id, request_hash) — same request from a retrying actor
+	// returns the original row's id.
+	RequestDelegation(context.Context, *connect.Request[gen.RequestDelegationRequest]) (*connect.Response[gen.RequestDelegationResponse], error)
+	// WaitForDelegation streams one terminal event for a grant.
+	// Backed by Postgres LISTEN — no polling.
+	WaitForDelegation(context.Context, *connect.Request[gen.WaitForDelegationRequest], *connect.ServerStream[gen.DelegationEvent]) error
+	// DecideDelegation is the grantor's approve/deny action. Called
+	// from the approval UI; transitions the row + (on approve)
+	// mints the scoped-auth token + fires NOTIFY for any waiting
+	// streams.
+	DecideDelegation(context.Context, *connect.Request[gen.DecideDelegationRequest]) (*connect.Response[gen.DelegationGrant], error)
+	// ListPendingDelegations returns paginated pending grants for
+	// the approver UI. Sorted critical → high → medium → low,
+	// newest-first within tier.
+	ListPendingDelegations(context.Context, *connect.Request[gen.ListPendingDelegationsRequest]) (*connect.Response[gen.ListPendingDelegationsResponse], error)
+}
+
+// NewDelegationServiceHandler builds an HTTP handler from the service implementation. It returns
+// the path on which to mount the handler and the handler itself.
+//
+// By default, handlers support the Connect, gRPC, and gRPC-Web protocols with the binary Protobuf
+// and JSON codecs. They also support gzip compression.
+func NewDelegationServiceHandler(svc DelegationServiceHandler, opts ...connect.HandlerOption) (string, http.Handler) {
+	delegationServiceMethods := gen.File_api_proto.Services().ByName("DelegationService").Methods()
+	delegationServiceRequestDelegationHandler := connect.NewUnaryHandler(
+		DelegationServiceRequestDelegationProcedure,
+		svc.RequestDelegation,
+		connect.WithSchema(delegationServiceMethods.ByName("RequestDelegation")),
+		connect.WithHandlerOptions(opts...),
+	)
+	delegationServiceWaitForDelegationHandler := connect.NewServerStreamHandler(
+		DelegationServiceWaitForDelegationProcedure,
+		svc.WaitForDelegation,
+		connect.WithSchema(delegationServiceMethods.ByName("WaitForDelegation")),
+		connect.WithHandlerOptions(opts...),
+	)
+	delegationServiceDecideDelegationHandler := connect.NewUnaryHandler(
+		DelegationServiceDecideDelegationProcedure,
+		svc.DecideDelegation,
+		connect.WithSchema(delegationServiceMethods.ByName("DecideDelegation")),
+		connect.WithHandlerOptions(opts...),
+	)
+	delegationServiceListPendingDelegationsHandler := connect.NewUnaryHandler(
+		DelegationServiceListPendingDelegationsProcedure,
+		svc.ListPendingDelegations,
+		connect.WithSchema(delegationServiceMethods.ByName("ListPendingDelegations")),
+		connect.WithHandlerOptions(opts...),
+	)
+	return "/customers.DelegationService/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case DelegationServiceRequestDelegationProcedure:
+			delegationServiceRequestDelegationHandler.ServeHTTP(w, r)
+		case DelegationServiceWaitForDelegationProcedure:
+			delegationServiceWaitForDelegationHandler.ServeHTTP(w, r)
+		case DelegationServiceDecideDelegationProcedure:
+			delegationServiceDecideDelegationHandler.ServeHTTP(w, r)
+		case DelegationServiceListPendingDelegationsProcedure:
+			delegationServiceListPendingDelegationsHandler.ServeHTTP(w, r)
+		default:
+			http.NotFound(w, r)
+		}
+	})
+}
+
+// UnimplementedDelegationServiceHandler returns CodeUnimplemented from all methods.
+type UnimplementedDelegationServiceHandler struct{}
+
+func (UnimplementedDelegationServiceHandler) RequestDelegation(context.Context, *connect.Request[gen.RequestDelegationRequest]) (*connect.Response[gen.RequestDelegationResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("customers.DelegationService.RequestDelegation is not implemented"))
+}
+
+func (UnimplementedDelegationServiceHandler) WaitForDelegation(context.Context, *connect.Request[gen.WaitForDelegationRequest], *connect.ServerStream[gen.DelegationEvent]) error {
+	return connect.NewError(connect.CodeUnimplemented, errors.New("customers.DelegationService.WaitForDelegation is not implemented"))
+}
+
+func (UnimplementedDelegationServiceHandler) DecideDelegation(context.Context, *connect.Request[gen.DecideDelegationRequest]) (*connect.Response[gen.DelegationGrant], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("customers.DelegationService.DecideDelegation is not implemented"))
+}
+
+func (UnimplementedDelegationServiceHandler) ListPendingDelegations(context.Context, *connect.Request[gen.ListPendingDelegationsRequest]) (*connect.Response[gen.ListPendingDelegationsResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("customers.DelegationService.ListPendingDelegations is not implemented"))
 }
 
 // IdentityServiceClient is a client for the customers.IdentityService service.
@@ -3672,4 +4122,74 @@ func (UnimplementedMFAServiceHandler) RevokeDevice(context.Context, *connect.Req
 
 func (UnimplementedMFAServiceHandler) GenerateBackupCodes(context.Context, *connect.Request[gen.GenerateBackupCodesRequest]) (*connect.Response[gen.GenerateBackupCodesResponse], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("customers.MFAService.GenerateBackupCodes is not implemented"))
+}
+
+// IntrospectionServiceClient is a client for the customers.IntrospectionService service.
+type IntrospectionServiceClient interface {
+	GetServiceInfo(context.Context, *connect.Request[gen.GetServiceInfoRequest]) (*connect.Response[gen.GetServiceInfoResponse], error)
+}
+
+// NewIntrospectionServiceClient constructs a client for the customers.IntrospectionService service.
+// By default, it uses the Connect protocol with the binary Protobuf Codec, asks for gzipped
+// responses, and sends uncompressed requests. To use the gRPC or gRPC-Web protocols, supply the
+// connect.WithGRPC() or connect.WithGRPCWeb() options.
+//
+// The URL supplied here should be the base URL for the Connect or gRPC server (for example,
+// http://api.acme.com or https://acme.com/grpc).
+func NewIntrospectionServiceClient(httpClient connect.HTTPClient, baseURL string, opts ...connect.ClientOption) IntrospectionServiceClient {
+	baseURL = strings.TrimRight(baseURL, "/")
+	introspectionServiceMethods := gen.File_api_proto.Services().ByName("IntrospectionService").Methods()
+	return &introspectionServiceClient{
+		getServiceInfo: connect.NewClient[gen.GetServiceInfoRequest, gen.GetServiceInfoResponse](
+			httpClient,
+			baseURL+IntrospectionServiceGetServiceInfoProcedure,
+			connect.WithSchema(introspectionServiceMethods.ByName("GetServiceInfo")),
+			connect.WithClientOptions(opts...),
+		),
+	}
+}
+
+// introspectionServiceClient implements IntrospectionServiceClient.
+type introspectionServiceClient struct {
+	getServiceInfo *connect.Client[gen.GetServiceInfoRequest, gen.GetServiceInfoResponse]
+}
+
+// GetServiceInfo calls customers.IntrospectionService.GetServiceInfo.
+func (c *introspectionServiceClient) GetServiceInfo(ctx context.Context, req *connect.Request[gen.GetServiceInfoRequest]) (*connect.Response[gen.GetServiceInfoResponse], error) {
+	return c.getServiceInfo.CallUnary(ctx, req)
+}
+
+// IntrospectionServiceHandler is an implementation of the customers.IntrospectionService service.
+type IntrospectionServiceHandler interface {
+	GetServiceInfo(context.Context, *connect.Request[gen.GetServiceInfoRequest]) (*connect.Response[gen.GetServiceInfoResponse], error)
+}
+
+// NewIntrospectionServiceHandler builds an HTTP handler from the service implementation. It returns
+// the path on which to mount the handler and the handler itself.
+//
+// By default, handlers support the Connect, gRPC, and gRPC-Web protocols with the binary Protobuf
+// and JSON codecs. They also support gzip compression.
+func NewIntrospectionServiceHandler(svc IntrospectionServiceHandler, opts ...connect.HandlerOption) (string, http.Handler) {
+	introspectionServiceMethods := gen.File_api_proto.Services().ByName("IntrospectionService").Methods()
+	introspectionServiceGetServiceInfoHandler := connect.NewUnaryHandler(
+		IntrospectionServiceGetServiceInfoProcedure,
+		svc.GetServiceInfo,
+		connect.WithSchema(introspectionServiceMethods.ByName("GetServiceInfo")),
+		connect.WithHandlerOptions(opts...),
+	)
+	return "/customers.IntrospectionService/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case IntrospectionServiceGetServiceInfoProcedure:
+			introspectionServiceGetServiceInfoHandler.ServeHTTP(w, r)
+		default:
+			http.NotFound(w, r)
+		}
+	})
+}
+
+// UnimplementedIntrospectionServiceHandler returns CodeUnimplemented from all methods.
+type UnimplementedIntrospectionServiceHandler struct{}
+
+func (UnimplementedIntrospectionServiceHandler) GetServiceInfo(context.Context, *connect.Request[gen.GetServiceInfoRequest]) (*connect.Response[gen.GetServiceInfoResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("customers.IntrospectionService.GetServiceInfo is not implemented"))
 }

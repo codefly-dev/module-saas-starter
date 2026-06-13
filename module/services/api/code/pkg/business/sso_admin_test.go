@@ -36,6 +36,18 @@ func (f *ssoFakeStore) UpsertOrgSSO(_ context.Context, cfg *business.OrgSSOConfi
 	return nil
 }
 
+// WithOrgTx / WithBypass — pass-through. The real store wraps SQL
+// reads/writes in a Postgres tx with SET LOCAL settings; this fake
+// has no DB, so the wrapper is a no-op that just runs fn directly.
+// Without these overrides, the embedded-nil Store panics when
+// Service.StartSSOSetup calls them.
+func (f *ssoFakeStore) WithOrgTx(ctx context.Context, _ string, fn func(ctx context.Context) error) error {
+	return fn(ctx)
+}
+func (f *ssoFakeStore) WithBypass(ctx context.Context, fn func(ctx context.Context) error) error {
+	return fn(ctx)
+}
+
 func newSSOService(store business.Store) *business.Service {
 	svc, _ := business.NewService(store)
 	return svc
@@ -55,7 +67,7 @@ func TestStartSSOSetup_StubMode(t *testing.T) {
 	store := newSSOFakeStore()
 	svc := newSSOService(store)
 
-	got, err := svc.StartSSOSetup(context.Background(), "org-1", "https://app/admin/sso")
+	got, err := svc.StartSSOSetup(context.Background(), "actor-platform-admin", "org-1", "https://app/admin/sso")
 	if err != nil {
 		t.Fatalf("StartSSOSetup error: %v", err)
 	}
@@ -81,7 +93,7 @@ func TestStartSSOSetup_StubMode(t *testing.T) {
 func TestDisableSSO_Idempotent(t *testing.T) {
 	store := newSSOFakeStore()
 	svc := newSSOService(store)
-	if err := svc.DisableSSO(context.Background(), "no-such-org"); err != nil {
+	if err := svc.DisableSSO(context.Background(), "actor-platform-admin", "no-such-org"); err != nil {
 		t.Fatalf("DisableSSO on missing row should be no-op, got %v", err)
 	}
 }
@@ -101,7 +113,7 @@ func TestDisableSSO_PreservesOrganizationID(t *testing.T) {
 	}
 	svc := newSSOService(store)
 
-	if err := svc.DisableSSO(context.Background(), "org-1"); err != nil {
+	if err := svc.DisableSSO(context.Background(), "actor-platform-admin", "org-1"); err != nil {
 		t.Fatalf("DisableSSO error: %v", err)
 	}
 	row := store.cfg["org-1"]

@@ -13,16 +13,30 @@ filters by `current_setting('app.current_org_id')`. The api wraps every
 per-tenant request in a transaction that sets that setting before
 running queries.
 
-## Status
+## Status — Phase 1, 2A, 2B, 2C, 2D, 2E, 2F all live
 
-- ✅ Foundation: `infra.WithOrgTx(ctx, orgID, fn)` helper. Begins a
-  transaction, sets `app.current_org_id` via `set_config(..., true)`,
-  threads the tx onto the context using the same key
-  `RunInTransaction` uses so existing Store methods inherit it.
-- ✅ Empty-orgID guard test (`TestWithOrgTx_RejectsEmptyOrgID`).
-- ❌ No table has RLS enabled yet. Adopting `WithOrgTx` upstream of
-  the policies costs nothing — queries still hit normally — and means
-  the day a policy goes live, the wrapped paths Just Work.
+- ✅ Foundation: `infra.WithOrgTx(ctx, orgID, fn)` + `WithBypass`.
+- ✅ Empty-orgID guard.
+- ✅ Connection-level role downgrade (`BeforeAcquire` SET ROLE
+  app_tenant) — un-wrapped Store calls return zero rows by default.
+- ✅ Phase 1 — `audit_export_configs` (migration 23).
+- ✅ Phase 2A — `webhook_subscriptions`, `webhook_deliveries` (27),
+  `api_keys` (28).
+- ✅ Phase 2B — `org_settings`, `invitations`, `organization_members`,
+  `subscriptions`, `entitlement_overrides`, `usage_records` (29).
+- ✅ Phase 2C — `teams` (direct), `team_members` (JOIN) (30).
+- ✅ Phase 2D — `audit_events` (polymorphic; NULL org_id via bypass) (31).
+- ✅ Phase 2E — `roles`, `role_assignments` (polymorphic; built-ins
+  NULL globally readable) (32).
+- ✅ Phase 2F — `organizations` (self-referential `id` policy) (33).
+
+11 integration tests live (4 from Phase 1+2A, 2 each for teams /
+team_members JOIN, 2 for audit_events tenant + async emitter, 2 for
+roles polymorphic + assignment cross-tenant, 2 for organizations
+self-referential + ListOrganizations bypass). All assert
+cross-tenant blocking AND fail-closed-on-unwrapped.
+
+See `AUTHZ.md` for the table-by-table coverage and skip-list rationale.
 
 ## Phased rollout
 
@@ -69,35 +83,7 @@ inside a `WithOrgTx`. A missed path silently returns zero rows
 (fail-closed). Run the existing test suite + the new
 `TestRLS_CrossTenantBlocked` (to be added) before merging.
 
-### Phase 3 — fan out to remaining per-tenant tables
-
-In rough order of stake:
-
-| Table | Per-tenant? | Cross-tenant readers? | Effort |
-|---|---|---|---|
-| audit_events | yes (`org_id`) | audit-exporter goroutine | medium |
-| api_keys | yes | none | small |
-| webhook_subscriptions | yes | none | small |
-| webhook_deliveries | yes (via subscription) | dispatcher worker | medium |
-| entitlement_overrides | yes | platform admin | small (admin uses bypass) |
-| usage_records | yes | reporting/billing aggregator | medium |
-| invitations | yes | none | small |
-| teams + team_members | yes | none | small |
-| roles + role_assignments | yes | none | small |
-| subscriptions | yes | webhook handler (Stripe events) | medium |
-| audit_export_configs | yes | exporter goroutine | covered in Phase 2 |
-| organizations | tricky — owner can be platform-admin + tenant rows | needs special policy | hard |
-
-Skip-list (intentionally NOT RLS-enabled):
-
-- `users` — global lookup needed for cross-org auth flows.
-- `plans`, `plan_entitlements` — global catalog.
-- `feature_flags` — global config.
-- `oauth_state`, `refresh_tokens`, `mfa_devices` — user-scoped, not
-  tenant. Could get a `user_id` policy instead if we want symmetric
-  defense for user-scoped tables; lower priority.
-
-### Phase 4 — bypass-role audit
+### Phase 4 — bypass-role audit (still pending)
 
 Walk the api startup + all background workers; identify everything
 that connects to Postgres. For each, decide:

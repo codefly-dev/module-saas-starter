@@ -1,0 +1,22 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: saas-starter-store-local
+  namespace: argocd
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  project: saas-starter
+  source:
+    repoURL: REPLACE_ME
+    targetRevision: main
+    path: deployments/modules/saas-starter/services/store/overlays/local
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: saas-starter
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=false

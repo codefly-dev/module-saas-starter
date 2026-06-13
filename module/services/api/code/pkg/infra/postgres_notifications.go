@@ -101,3 +101,21 @@ func (s *PostgresStore) DeleteNotification(ctx context.Context, id string) error
 	_, err := q.Exec(ctx, `DELETE FROM notifications WHERE id = $1`, id)
 	return err
 }
+
+// GetNotificationUserID resolves notification.id → user_id. Called
+// under WithBypass by Service.MarkRead / DeleteNotification before
+// entering the owner's WithUserTx for the actual mutation. Returns
+// ("", nil) on miss; caller decides whether that's a 404 or an
+// authz failure.
+func (s *PostgresStore) GetNotificationUserID(ctx context.Context, id string) (string, error) {
+	q := s.getQueryExecutor(ctx)
+	var userID string
+	err := q.QueryRow(ctx, `SELECT user_id FROM notifications WHERE id = $1`, id).Scan(&userID)
+	if err != nil {
+		if err.Error() == "no rows in result set" {
+			return "", nil
+		}
+		return "", err
+	}
+	return userID, nil
+}

@@ -159,7 +159,31 @@ making it grep-able.
 |---|---|
 | L1 Policy gates | ✅ Live. All admin RPCs gated. Webhook + api-key handlers added scope checks 2026-04-26. |
 | L2 Permissions | ✅ Live. `CheckPermission` + RBAC tables. Wildcard + team inheritance. |
-| L3 RLS | ✅ Phase 1 live on `audit_export_configs`, **fail-closed** end-to-end. Connection-level role downgrade (`BeforeAcquire` SET ROLE app_tenant) makes un-wrapped Store calls return zero rows by default. Migrations 23-26, `WithOrgTx` / `WithBypass` helpers, `app_tenant` role. 4 integration tests prove cross-tenant blocking + fail-closed-on-unwrapped. Phase 2+ extends to ~13 more tables. |
+| L3 RLS | ✅ Live across **all** per-tenant tables, **fail-closed** end-to-end. Connection-level role downgrade (`BeforeAcquire` SET ROLE app_tenant) makes un-wrapped Store calls return zero rows by default. `WithOrgTx` / `WithBypass` helpers, `app_tenant` role. 11 integration tests prove cross-tenant blocking + fail-closed-on-unwrapped across direct-org, JOIN, polymorphic, and self-referential policies. |
+
+### RLS coverage (table → migration)
+
+| Table | Policy shape | Migration |
+|---|---|---|
+| `audit_export_configs` | direct org_id | 23 |
+| `webhook_subscriptions` | direct org_id | 27 |
+| `webhook_deliveries` | JOIN via subscription | 27 |
+| `api_keys` | direct organization_id | 28 |
+| `org_settings`, `invitations`, `organization_members`, `subscriptions`, `entitlement_overrides`, `usage_records` | direct org_id | 29 |
+| `teams` | direct org_id | 30 |
+| `team_members` | JOIN via teams | 30 |
+| `audit_events` | polymorphic (nullable org_id; NULL only via bypass) | 31 |
+| `roles`, `role_assignments` | polymorphic (built-ins NULL globally readable) | 32 |
+| `organizations` | self-referential (id matches setting) | 33 |
+
+### Skip-list (intentionally NOT RLS-protected)
+
+| Table | Why |
+|---|---|
+| `users` | Global lookup needed for cross-org auth flows; `WHERE user_id = $1` filters at the SQL layer. |
+| `plans`, `plan_entitlements`, `feature_flags` | Global catalogs; no tenant data. |
+| `oauth_state`, `refresh_tokens`, `mfa_devices`, `notifications` | User-scoped, not tenant-scoped. A symmetric `WithUserTx` + `app.current_user_id` GUC would close the symmetric defense, but the existing `WHERE user_id = $1` filters already provide the primary safety property. Lower priority. |
+| `role_permissions` | Child of `roles` (FK role_id). A JOIN-via-role policy would be redundant — the rows are not tenant-secret data. |
 
 ## How the role-downgrade works
 

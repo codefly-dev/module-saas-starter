@@ -13,10 +13,169 @@ package adapters
 // one edit to rest_gen.go is a single call to combineHandlers().
 
 import (
+	"bytes"
+	"encoding/json"
+	"io"
 	"net/http"
 	"strings"
 	"sync"
+	"time"
 )
+
+// refreshTokenCookieName is the httpOnly cookie that carries the long-lived
+// refresh token. Keeping it OUT of JS-readable storage (localStorage) is the
+// whole point — an XSS can no longer exfiltrate a 7-day refresh token.
+const refreshTokenCookieName = "codefly_rt"
+
+// refreshTokenCookie is an HTTP middleware that moves the refresh token between
+// the auth JSON endpoints and an httpOnly, SameSite=Strict cookie:
+//
+//   - POST /v1/auth/refresh: if the request body carries no refresh token, the
+//     one from the cookie is injected, so the browser never has to hold it.
+//   - 2xx responses of /v1/auth/authenticate and /v1/auth/refresh: the refresh
+//     token is lifted out of the JSON body into the cookie and STRIPPED from the
+//     body, so JS (and therefore XSS) never sees it.
+//   - POST /v1/auth/logout: the cookie is cleared.
+//
+// SameSite=Strict + the existing credentialed-CORS allowlist is the CSRF
+// defense for the (same-origin) refresh call. Secure is set automatically on
+// TLS so local http dev still works.
+func refreshTokenCookie(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		path := r.URL.Path
+		isAuth := path == "/v1/auth/authenticate"
+		isRefresh := path == "/v1/auth/refresh"
+		isLogout := path == "/v1/auth/logout"
+
+		if !isAuth && !isRefresh && !isLogout {
+			next.ServeHTTP(w, r)
+			return
+		}
+
+		// Request side: feed the cookie's refresh token into the refresh call
+		// when the body doesn't already carry one.
+		if isRefresh {
+			if c, err := r.Cookie(refreshTokenCookieName); err == nil && c.Value != "" {
+				r = injectRefreshToken(r, c.Value)
+			}
+		}
+
+		// Response side: capture so we can lift the refresh token into a cookie.
+		rec := &bodyCapture{ResponseWriter: w, status: http.StatusOK}
+		next.ServeHTTP(rec, r)
+
+		if isLogout {
+			clearRefreshCookie(w, r)
+		}
+		body := rec.buf.Bytes()
+		if (isAuth || isRefresh) && rec.status >= 200 && rec.status < 300 {
+			if token, stripped, ok := extractAndStripRefreshToken(body); ok {
+				setRefreshCookie(w, r, token)
+				body = stripped
+			}
+		}
+		// Content-Length may have changed after stripping; let net/http set it.
+		rec.Header().Del("Content-Length")
+		rec.flush(w, body)
+	})
+}
+
+// bodyCapture buffers the downstream handler's response so the middleware can
+// rewrite the body and headers before they reach the client.
+type bodyCapture struct {
+	http.ResponseWriter
+	buf         bytes.Buffer
+	status      int
+	wroteHeader bool
+}
+
+func (b *bodyCapture) WriteHeader(code int) { b.status = code; b.wroteHeader = true }
+func (b *bodyCapture) Write(p []byte) (int, error) {
+	return b.buf.Write(p)
+}
+
+// flush writes the captured (possibly rewritten) response to the real writer.
+func (b *bodyCapture) flush(w http.ResponseWriter, body []byte) {
+	w.WriteHeader(b.status)
+	_, _ = w.Write(body)
+}
+
+func injectRefreshToken(r *http.Request, token string) *http.Request {
+	var m map[string]any
+	if r.Body != nil {
+		raw, _ := io.ReadAll(r.Body)
+		_ = r.Body.Close()
+		if len(bytes.TrimSpace(raw)) > 0 {
+			_ = json.Unmarshal(raw, &m)
+		}
+	}
+	if m == nil {
+		m = map[string]any{}
+	}
+	// Cookie is the source of truth — overwrite whatever the body had.
+	m["refresh_token"] = token
+	m["refreshToken"] = token
+	out, _ := json.Marshal(m)
+	clone := r.Clone(r.Context())
+	clone.Body = io.NopCloser(bytes.NewReader(out))
+	clone.ContentLength = int64(len(out))
+	clone.Header.Set("Content-Type", "application/json")
+	return clone
+}
+
+// extractAndStripRefreshToken pulls refreshToken/refresh_token out of a JSON
+// object and returns the token, the body with those keys removed, and ok.
+func extractAndStripRefreshToken(body []byte) (token string, stripped []byte, ok bool) {
+	var m map[string]any
+	if json.Unmarshal(body, &m) != nil {
+		return "", body, false
+	}
+	for _, k := range []string{"refreshToken", "refresh_token"} {
+		if v, present := m[k]; present {
+			if s, isStr := v.(string); isStr && s != "" {
+				token = s
+			}
+			delete(m, k)
+		}
+	}
+	if token == "" {
+		return "", body, false
+	}
+	out, err := json.Marshal(m)
+	if err != nil {
+		return "", body, false
+	}
+	return token, out, true
+}
+
+func isSecureRequest(r *http.Request) bool {
+	return r.TLS != nil || strings.EqualFold(r.Header.Get("X-Forwarded-Proto"), "https")
+}
+
+func setRefreshCookie(w http.ResponseWriter, r *http.Request, token string) {
+	http.SetCookie(w, &http.Cookie{
+		Name:     refreshTokenCookieName,
+		Value:    token,
+		Path:     "/v1/auth",
+		HttpOnly: true,
+		Secure:   isSecureRequest(r),
+		SameSite: http.SameSiteStrictMode,
+		MaxAge:   7 * 24 * 60 * 60, // 7 days, matches refresh-token TTL
+	})
+}
+
+func clearRefreshCookie(w http.ResponseWriter, r *http.Request) {
+	http.SetCookie(w, &http.Cookie{
+		Name:     refreshTokenCookieName,
+		Value:    "",
+		Path:     "/v1/auth",
+		HttpOnly: true,
+		Secure:   isSecureRequest(r),
+		SameSite: http.SameSiteStrictMode,
+		MaxAge:   -1,
+		Expires:  time.Unix(0, 0),
+	})
+}
 
 var (
 	extraRoutesMu sync.RWMutex
@@ -40,7 +199,7 @@ func RegisterHTTPRoute(path string, h http.Handler) {
 // routes take precedence. Called from rest_gen.go's Run() via a one-
 // line edit that survives regeneration by a marker comment.
 func combineHandlers(gwMux http.Handler) http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	dispatch := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		extraRoutesMu.RLock()
 		var match http.Handler
 		for prefix, h := range extraRoutes {
@@ -57,4 +216,7 @@ func combineHandlers(gwMux http.Handler) http.Handler {
 		}
 		gwMux.ServeHTTP(w, r)
 	})
+	// Wrap with the refresh-token cookie middleware so the long-lived refresh
+	// token lives in an httpOnly cookie instead of the JS-readable response body.
+	return refreshTokenCookie(dispatch)
 }

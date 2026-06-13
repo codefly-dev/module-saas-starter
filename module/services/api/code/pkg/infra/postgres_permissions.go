@@ -17,34 +17,44 @@ import (
 func (s *PostgresStore) CreateRole(ctx context.Context, role *gen.Role) error {
 	w := wool.Get(ctx).In("CreateRole")
 
-	return pgx.BeginTxFunc(ctx, s.pool, pgx.TxOptions{}, func(tx pgx.Tx) error {
-		// Insert role
+	// Reuse the caller's tx if one is on context — that's where
+	// WithOrgTx / WithBypass put it, and stacking a fresh BeginTxFunc
+	// would lose the SET LOCAL app.current_org_id state and the role
+	// INSERT would fail the WITH CHECK on the polymorphic policy
+	// (Phase 2E migration). Same pattern as postgres_org.go's
+	// CreateOrganization.
+	exec := func(ctx context.Context) error {
+		executor := s.getQueryExecutor(ctx)
 		var orgID *string
 		if role.OrgId != "" {
 			orgID = &role.OrgId
 		}
-		_, err := tx.Exec(ctx, `
+		if _, err := executor.Exec(ctx, `
 			INSERT INTO roles (id, name, description, built_in, org_id, created_at)
 			VALUES ($1, $2, $3, $4, $5, CURRENT_TIMESTAMP)`,
 			role.Id, role.Name, role.Description, role.BuiltIn, orgID,
-		)
-		if err != nil {
+		); err != nil {
 			return w.Wrapf(err, "failed to insert role")
 		}
-
-		// Insert permissions
 		for _, perm := range role.Permissions {
-			_, err := tx.Exec(ctx, `
+			if _, err := executor.Exec(ctx, `
 				INSERT INTO role_permissions (role_id, resource, action)
 				VALUES ($1, $2, $3)
 				ON CONFLICT DO NOTHING`,
 				role.Id, perm.Resource, perm.Action,
-			)
-			if err != nil {
+			); err != nil {
 				return w.Wrapf(err, "failed to insert permission")
 			}
 		}
 		return nil
+	}
+
+	if _, hasTx := ctx.Value("tx").(pgx.Tx); hasTx {
+		return exec(ctx)
+	}
+	return pgx.BeginTxFunc(ctx, s.pool, pgx.TxOptions{}, func(tx pgx.Tx) error {
+		ctx = context.WithValue(ctx, "tx", tx) //nolint:staticcheck
+		return exec(ctx)
 	})
 }
 
@@ -171,6 +181,84 @@ func (s *PostgresStore) AssignRole(ctx context.Context, assignment *gen.RoleAssi
 	return nil
 }
 
+// ListRoleAssignments returns assignments scoped to an org, optionally
+// filtered by subject. Inside WithOrgTx the role_assignments policy
+// (Phase 2E) filters to org_id = current setting; the subject_id +
+// kind filters narrow further on top of that.
+func (s *PostgresStore) ListRoleAssignments(ctx context.Context, orgID string, subjectID string, subjectKind gen.SubjectKind) ([]*gen.RoleAssignment, error) {
+	w := wool.Get(ctx).In("ListRoleAssignments")
+	executor := s.getQueryExecutor(ctx)
+
+	query := `
+		SELECT id, subject_id, subject_kind, role_id, org_id, scope, assigned_at
+		FROM role_assignments
+		WHERE 1=1`
+	args := []any{}
+	argN := 1
+	if orgID != "" {
+		query += fmt.Sprintf(" AND org_id = $%d", argN)
+		args = append(args, orgID)
+		argN++
+	}
+	if subjectID != "" {
+		query += fmt.Sprintf(" AND subject_id = $%d", argN)
+		args = append(args, subjectID)
+		argN++
+	}
+	switch subjectKind {
+	case gen.SubjectKind_SUBJECT_KIND_USER:
+		query += fmt.Sprintf(" AND subject_kind = $%d", argN)
+		args = append(args, "user")
+		argN++
+	case gen.SubjectKind_SUBJECT_KIND_TEAM:
+		query += fmt.Sprintf(" AND subject_kind = $%d", argN)
+		args = append(args, "team")
+		argN++
+	}
+	query += " ORDER BY assigned_at DESC"
+
+	rows, err := executor.Query(ctx, query, args...)
+	if err != nil {
+		return nil, w.Wrapf(err, "failed to list role assignments")
+	}
+	defer rows.Close()
+
+	var out []*gen.RoleAssignment
+	for rows.Next() {
+		var (
+			id, subjID, kind, roleID string
+			orgIDVal, scopeVal       *string
+			assignedAt               time.Time
+		)
+		if err := rows.Scan(&id, &subjID, &kind, &roleID, &orgIDVal, &scopeVal, &assignedAt); err != nil {
+			return nil, w.Wrapf(err, "failed to scan assignment row")
+		}
+		ra := &gen.RoleAssignment{
+			Id:         id,
+			SubjectId:  subjID,
+			RoleId:     roleID,
+			AssignedAt: timestamppb.New(assignedAt),
+		}
+		switch kind {
+		case "team":
+			ra.SubjectKind = gen.SubjectKind_SUBJECT_KIND_TEAM
+		default:
+			ra.SubjectKind = gen.SubjectKind_SUBJECT_KIND_USER
+		}
+		if orgIDVal != nil {
+			ra.OrgId = *orgIDVal
+		}
+		if scopeVal != nil {
+			ra.Scope = *scopeVal
+		}
+		out = append(out, ra)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, w.Wrapf(err, "iterating assignment rows")
+	}
+	return out, nil
+}
+
 func (s *PostgresStore) RevokeRole(ctx context.Context, subjectID string, roleID string, orgID string, scope string) error {
 	w := wool.Get(ctx).In("RevokeRole")
 	executor := s.getQueryExecutor(ctx)
@@ -276,12 +364,20 @@ func (s *PostgresStore) CheckPermission(ctx context.Context, subjectID string, s
 func (s *PostgresStore) ResolveIdentity(ctx context.Context, provider string, providerID string) (*business.ResolvedIdentity, error) {
 	w := wool.Get(ctx).In("ResolveIdentity")
 
-	// Auth-flow read: organization_members is RLS-protected and we
-	// don't yet have a tenant on context (the whole point of resolving
-	// is to FIND the tenant). Open a tx + SET LOCAL ROLE NONE inline
-	// so the SELECTs see all tenants regardless of the policy. The
-	// defer handles release; queries are read-only so commit-vs-
-	// rollback semantics don't matter for data correctness.
+	// Auth-flow read: organization_members + role_assignments are
+	// RLS-protected and we don't yet have a tenant on context (the
+	// whole point of resolving is to FIND the tenant). Open a tx +
+	// SET LOCAL ROLE NONE + app.bypass='1' inline so the SELECTs see
+	// all tenants regardless of policy. The defer handles release;
+	// queries are read-only so commit-vs-rollback semantics don't
+	// matter for data correctness.
+	//
+	// Setting app.bypass='1' alongside the role-flip is defense-in-
+	// depth: today the role downgrade alone is sufficient (session_user
+	// is a superuser and BYPASSRLS), but any future codefly Postgres
+	// plugin that drops superuser would still leave this path
+	// functional via the GUC. Keeps the invariant that "bypass tx"
+	// always carries both signals — same shape as WithBypass.
 	tx, err := s.pool.Begin(ctx)
 	if err != nil {
 		return nil, w.Wrapf(err, "begin tx for resolve")
@@ -289,6 +385,9 @@ func (s *PostgresStore) ResolveIdentity(ctx context.Context, provider string, pr
 	defer tx.Rollback(ctx) //nolint:errcheck // read-only tx; rollback at end
 	if _, err := tx.Exec(ctx, "SET LOCAL ROLE NONE"); err != nil {
 		return nil, w.Wrapf(err, "elevate role for resolve")
+	}
+	if _, err := tx.Exec(ctx, "SELECT set_config('app.bypass', '1', true)"); err != nil {
+		return nil, w.Wrapf(err, "set bypass GUC for resolve")
 	}
 	executor := tx
 
@@ -452,47 +551,9 @@ func (s *PostgresStore) ListPlatformAdmins(ctx context.Context) ([]business.Plat
 	return admins, nil
 }
 
-// ListRoleAssignmentsForUser returns all role assignments for a user (direct + team).
-func (s *PostgresStore) ListRoleAssignmentsForUser(ctx context.Context, userID string) ([]*gen.RoleAssignment, error) {
-	w := wool.Get(ctx).In("ListRoleAssignmentsForUser")
-	executor := s.getQueryExecutor(ctx)
-
-	rows, err := executor.Query(ctx, `
-		SELECT ra.id, ra.subject_id, ra.subject_kind, ra.role_id, ra.org_id, ra.scope, ra.assigned_at
-		FROM role_assignments ra
-		WHERE ra.subject_id = $1
-		   OR (ra.subject_kind = 'team' AND ra.subject_id IN (
-		       SELECT team_id FROM team_members WHERE user_id = $1
-		   ))
-		ORDER BY ra.assigned_at`, userID,
-	)
-	if err != nil {
-		return nil, w.Wrapf(err, "failed to list role assignments")
-	}
-	defer rows.Close()
-
-	var assignments []*gen.RoleAssignment
-	for rows.Next() {
-		var a gen.RoleAssignment
-		var subjectKind string
-		var orgID, scope *string
-		var assignedAt time.Time
-		if err := rows.Scan(&a.Id, &a.SubjectId, &subjectKind, &a.RoleId, &orgID, &scope, &assignedAt); err != nil {
-			return nil, w.Wrapf(err, "failed to scan role assignment")
-		}
-		if subjectKind == "team" {
-			a.SubjectKind = gen.SubjectKind_SUBJECT_KIND_TEAM
-		} else {
-			a.SubjectKind = gen.SubjectKind_SUBJECT_KIND_USER
-		}
-		if orgID != nil {
-			a.OrgId = *orgID
-		}
-		if scope != nil {
-			a.Scope = *scope
-		}
-		a.AssignedAt = timestamppb.New(assignedAt)
-		assignments = append(assignments, &a)
-	}
-	return assignments, nil
-}
+// (Removed: ListRoleAssignmentsForUser was dead code with no
+// orgID filter and no RLS-wrap requirement. The Service-layer
+// ListRoleAssignments — defined on the same store via the org-
+// scoped path — replaces it. If a future caller needs cross-org
+// "all assignments for user X", add a new method that's explicitly
+// WithBypass-only and uses a distinct name.)

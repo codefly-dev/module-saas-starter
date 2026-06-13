@@ -1,0 +1,30 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: saas-starter
+  labels:
+    app.kubernetes.io/part-of: saas-starter
+    # Istio sidecar auto-injection. Every pod scheduled into this
+    # namespace gets the istio-proxy sidecar, which is what carries
+    # the mTLS, AuthorizationPolicy, VirtualService, and DestinationRule
+    # configs we add below. Without this label, all those Istio CRDs
+    # are silently inert — pods just talk plain HTTP/gRPC like they
+    # would without a service mesh.
+    istio-injection: enabled
+    # Pod Security Standards (PSS) — k8s 1.25+ built-in admission.
+    #
+    #   enforce=baseline: blocks the obvious foot-guns (privileged
+    #   pods, hostPath, host network/PID, capabilities like SYS_ADMIN).
+    #   Existing pre-PSS templates (redis, go-grpc, nextjs agent
+    #   templates that haven't been hardened yet) all pass baseline.
+    #
+    #   warn/audit=restricted: logs (no block) anything that would
+    #   fail under the strictest profile. Gives a feedback loop
+    #   toward eventual `enforce: restricted` once every agent
+    #   template grows a securityContext (tracked as a follow-up).
+    pod-security.kubernetes.io/enforce: baseline
+    pod-security.kubernetes.io/enforce-version: latest
+    pod-security.kubernetes.io/audit: restricted
+    pod-security.kubernetes.io/audit-version: latest
+    pod-security.kubernetes.io/warn: restricted
+    pod-security.kubernetes.io/warn-version: latest

@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5"
 	"github.com/stretchr/testify/require"
 
 	"api/pkg/auth"
@@ -96,9 +97,16 @@ func TestResolver_Signup_CreatesOrg(t *testing.T) {
 	require.NotEqual(t, uuid.Nil, id.OrgID)
 	require.Equal(t, "owner", id.OrgRole)
 
+	// organizations is RLS-protected (Phase 2F). Reading via the
+	// raw pool runs as app_tenant with no app.current_org_id set
+	// → zero rows. Wrap in WithBypass + use the tx from ctx for
+	// the assertion read.
 	var name, slug string
-	require.NoError(t, testPool.QueryRow(ctx,
-		`SELECT name, slug FROM organizations WHERE id = $1`, id.OrgID).Scan(&name, &slug))
+	require.NoError(t, testStore.WithBypass(ctx, func(ctx context.Context) error {
+		tx := ctx.Value("tx").(pgx.Tx) //nolint:staticcheck // shared key with PostgresStore.getQueryExecutor
+		return tx.QueryRow(ctx,
+			`SELECT name, slug FROM organizations WHERE id = $1`, id.OrgID).Scan(&name, &slug)
+	}))
 	require.Equal(t, "Carol's Corp", name)
 	require.Equal(t, "carol-s-corp", slug)
 }

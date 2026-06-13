@@ -1,0 +1,18 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: object-storage
+  namespace: saas-starter
+spec:
+  # S3 itself doesn't need an ExternalName Service — apps talk to
+  # s3.amazonaws.com directly via the AWS SDK. This shim exists only
+  # if some part of saas-starter still wants to resolve the literal
+  # "object-storage" hostname (left over from local-mode MinIO).
+  # Prefer dropping this and updating the app to use the SDK
+  # endpoint directly. Kept here as a transition aid.
+  type: ExternalName
+  externalName: s3.us-east-1.amazonaws.com
+  ports:
+    - port: 443
+      targetPort: 443
+      protocol: TCP

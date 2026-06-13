@@ -16,6 +16,7 @@ import (
 	"net/http"
 
 	"connectrpc.com/connect"
+	"connectrpc.com/otelconnect"
 	"github.com/rs/cors"
 	"golang.org/x/net/http2"
 	"golang.org/x/net/http2/h2c"
@@ -61,7 +62,20 @@ func (s *ConnectServer) Run(ctx context.Context) error {
 	// BEFORE work.go calls adapters.WithService, so capturing the
 	// minter at construction would deref nil. The closure resolves
 	// the package-level `service` at request time instead.
-	auth := connect.WithInterceptors(connectAuthInterceptor(func() auth.JWTMinter {
+
+	// otelconnect — extracts W3C traceparent/baggage from the Connect
+	// request headers and starts a child span. Same role as
+	// otelgrpc.NewServerHandler on the raw-gRPC server, but for the
+	// HTTP/Connect path the browser actually uses. No-op when no OTEL
+	// TracerProvider is registered (global tracer is a noop). First
+	// in the chain so every later interceptor's logs/spans land under
+	// the request's trace.
+	otelIc, otelErr := otelconnect.NewInterceptor()
+	if otelErr != nil {
+		return fmt.Errorf("otelconnect: %w", otelErr)
+	}
+
+	auth := connect.WithInterceptors(otelIc, connectAuthInterceptor(func() auth.JWTMinter {
 		if service == nil {
 			return nil
 		}
@@ -79,6 +93,26 @@ func (s *ConnectServer) Run(ctx context.Context) error {
 	mux.Handle(genconnect.NewAuditServiceHandler(&auditConnectHandler{inner: s.grpc.Audit}, auth))
 	mux.Handle(genconnect.NewInvitationServiceHandler(&invitationConnectHandler{inner: s.grpc.Invitation}, auth))
 	mux.Handle(genconnect.NewPlatformAdminServiceHandler(&platformAdminConnectHandler{inner: s.grpc.PlatformAdmin}, auth))
+	// IntrospectionService is intentionally unauthenticated — it
+	// describes THIS service's API surface (RPCs / RBAC vocab / RLS
+	// tables / scopes), not tenant data. No `auth` interceptor, but
+	// keep otelIc so introspection calls still land in the trace.
+	mux.Handle(genconnect.NewIntrospectionServiceHandler(
+		&introspectionConnectHandler{inner: s.grpc.Introspection},
+		connect.WithInterceptors(otelIc),
+	))
+
+	// CUSTOM: permissionsplugin Connect handlers. Mirrors the
+	// plugin loop in server_gen.go. Both protocols share the
+	// SAME PrincipalServer / DelegationServer instances via the
+	// adapters package singletons — critical for DelegationServer
+	// because DecideDelegation populates mintCache and
+	// WaitForDelegation reads from it; cross-protocol calls (e.g.
+	// approve via gRPC, wait via Connect) only see the token if
+	// they hit the same struct. Preserve these lines when
+	// regenerating.
+	mux.Handle(genconnect.NewPrincipalServiceHandler(&principalConnectHandler{inner: PrincipalSingleton()}, auth))
+	mux.Handle(genconnect.NewDelegationServiceHandler(&delegationConnectHandler{inner: DelegationSingleton()}, auth))
 
 	// Services backed directly by business.Service.
 	mux.Handle(genconnect.NewWebhookServiceHandler(&webhookConnectHandler{svc: s.service}, auth))
@@ -114,6 +148,19 @@ func (s *ConnectServer) Run(ctx context.Context) error {
 			"X-User-Agent",
 			"X-Grpc-Web",
 			"Grpc-Timeout",
+			// W3C trace context — Sentry's browserTracingIntegration
+			// stamps these on outgoing fetches so the api can stitch
+			// the browser span to the server span (otelconnect picks
+			// them off the request headers). Cross-origin preflight
+			// silently strips anything not in this list.
+			"traceparent",
+			"tracestate",
+			"baggage",
+			// Sentry-specific propagation header (the SDK sends both
+			// W3C `baggage` and `sentry-trace` for max compatibility
+			// with non-OTel servers). Harmless on the api side; we
+			// just need it past CORS.
+			"sentry-trace",
 		},
 		ExposedHeaders: []string{
 			"Grpc-Status",

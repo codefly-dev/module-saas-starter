@@ -103,9 +103,18 @@ func (s *Service) ImpersonateUser(ctx context.Context, actorID string, req *gen.
 		return nil, w.Wrapf(err, "permission denied")
 	}
 
-	// Get the target user's org and role
-	orgs, err := s.store.ListOrganizationsForUser(ctx, req.UserId)
-	if err != nil {
+	// Cross-tenant lookup: a platform admin impersonating any user
+	// needs to see all their orgs + role regardless of caller's
+	// tenant. WithBypass elevates for the read; the impersonation
+	// session that gets minted carries the resolved orgID so
+	// downstream tenant-scoped ops run correctly under the target's
+	// org.
+	var orgs []*gen.Organization
+	if err := s.store.WithBypass(ctx, func(ctx context.Context) error {
+		os, err := s.store.ListOrganizationsForUser(ctx, req.UserId)
+		orgs = os
+		return err
+	}); err != nil {
 		return nil, w.Wrapf(err, "cannot list orgs for target user")
 	}
 
@@ -113,8 +122,12 @@ func (s *Service) ImpersonateUser(ctx context.Context, actorID string, req *gen.
 	orgRole := ""
 	if len(orgs) > 0 {
 		orgID = orgs[0].Id
-		members, err := s.store.ListOrgMembers(ctx, orgID)
-		if err != nil {
+		var members []*gen.OrgMembership
+		if err := s.store.WithBypass(ctx, func(ctx context.Context) error {
+			ms, err := s.store.ListOrgMembers(ctx, orgID)
+			members = ms
+			return err
+		}); err != nil {
 			return nil, w.Wrapf(err, "cannot list org members")
 		}
 		for _, m := range members {
@@ -123,11 +136,6 @@ func (s *Service) ImpersonateUser(ctx context.Context, actorID string, req *gen.
 				break
 			}
 		}
-	}
-
-	targetPlatformRole, err := s.store.GetPlatformRole(ctx, req.UserId)
-	if err != nil {
-		return nil, w.Wrapf(err, "cannot get target platform role")
 	}
 
 	actorUUID, err := ParseID(actorID)
@@ -149,11 +157,16 @@ func (s *Service) ImpersonateUser(ctx context.Context, actorID string, req *gen.
 	// The minted Identity names the actor as UserID (audit correlation) and
 	// the target via ActingAsUserID. Downstream services read ActingAsUserID
 	// for authz decisions when present.
+	// PlatformRole is intentionally EMPTY on an impersonation token. It used to
+	// carry the TARGET's platform role, so a `support` admin impersonating a
+	// `super_admin` inherited super-admin — a privilege escalation. Impersonation
+	// grants the target's ORG context (orgID + orgRole) for support/debugging,
+	// never platform-admin powers; the actor uses their own token for those.
 	identity := &auth.Identity{
 		UserID:         actorUUID,
 		OrgID:          orgUUID,
 		OrgRole:        orgRole,
-		PlatformRole:   targetPlatformRole,
+		PlatformRole:   "",
 		SessionID:      NewID(),
 		ActingAsUserID: targetUUID,
 	}

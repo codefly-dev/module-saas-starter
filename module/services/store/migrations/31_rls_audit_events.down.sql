@@ -1,0 +1,3 @@
+DROP POLICY IF EXISTS audit_events_tenant ON audit_events;
+ALTER TABLE audit_events NO FORCE ROW LEVEL SECURITY;
+ALTER TABLE audit_events DISABLE ROW LEVEL SECURITY;

@@ -26,7 +26,11 @@ func (s *Service) ExportAuditLog(ctx context.Context, orgID, format, actorID, ac
 	var all []AuditEntry
 	pageToken := ""
 	for {
-		entries, nextToken, _, err := s.store.QueryAuditLog(ctx, orgID, actorID, action, "", "", nil, nil, 100, pageToken)
+		// Service.QueryAuditLog wraps in WithOrgTx (or WithBypass when
+		// orgID is empty for platform-admin export) so RLS lets the
+		// rows through. Don't use s.store.QueryAuditLog directly here
+		// — that bypasses the wrap and returns zero rows.
+		entries, nextToken, _, err := s.QueryAuditLog(ctx, orgID, actorID, action, "", "", nil, nil, 100, pageToken)
 		if err != nil {
 			return nil, "", "", w.Wrapf(err, "query audit log for export")
 		}

@@ -8,6 +8,7 @@ package adapters
 
 import (
 	"api/pkg/gen"
+	"api/plugins"
 	"bytes"
 	"context"
 	"fmt"
@@ -71,8 +72,19 @@ func (s *RestServer) Run(ctx context.Context) error {
 		gen.RegisterAuditServiceHandlerFromEndpoint,
 		gen.RegisterPlatformAdminServiceHandlerFromEndpoint,
 		gen.RegisterInvitationServiceHandlerFromEndpoint,
+		gen.RegisterIntrospectionServiceHandlerFromEndpoint,
 	} {
 		if err := register(ctx, gwMux, endpoint, opts); err != nil {
+			return err
+		}
+	}
+
+	// CUSTOM: plugin REST handlers. Mirrors the plugin loop in
+	// server_gen.go for gRPC. permissionsplugin contributes
+	// PrincipalService + DelegationService gateway handlers.
+	// Preserve this loop when regenerating.
+	for _, p := range plugins.All() {
+		if err := p.RegisterREST(ctx, gwMux, endpoint, opts); err != nil {
 			return err
 		}
 	}

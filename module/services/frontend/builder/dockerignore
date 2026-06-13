@@ -1,0 +1,6 @@
+code/node_modules
+code/.next
+code/.git
+.cache
+builder
+deployment

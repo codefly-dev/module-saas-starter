@@ -2,3 +2,42 @@ name: saas-starter-dev
 layout: modules
 modules:
     - name: saas-starter
+
+# Gitops target — where `codefly deploy --render-only` writes manifests
+# for ArgoCD/Flux to sync from. Optional. When nil, the module/deployment
+# Applications keep REPLACE_ME placeholders and you patch them by hand.
+# gitops:
+#   repo-url: git@github.com:my-org/saas-starter.git
+#   path: ""        # leave empty when the workspace is the repo root
+#   branch: main
+
+# Deploy targets the CLI knows about. `codefly deploy --env <name>` and
+# `codefly build --env <name>` look these up to resolve cluster +
+# registry. Empty env block = bare-name behavior (legacy defaults).
+environments:
+    # Local k3d cluster for dev/smoke. Image push is unnecessary —
+    # LocalApplyManager imports built images into k3d directly. URL is
+    # still set so manifests reference predictable image names.
+    - name: local
+      description: Local k3d cluster for development
+      cluster:
+          kind: k3d
+          kubeconfig: ~/.kube/config
+      registry:
+          url: localhost:5001
+      namespace: saas-starter
+
+    # AWS EKS production target. Replace registry URL with your ECR
+    # repo + bump kubeconfig path to wherever your cluster's config
+    # lives (or set $KUBECONFIG and drop the kubeconfig line). `auth:
+    # ecr` tells the build pipeline to run `aws ecr get-login-password`
+    # before docker push.
+    - name: aws
+      description: AWS EKS production
+      cluster:
+          kind: eks
+          kubeconfig: ~/Development/codefly.dev/infrastructure/eks/kubeconfig.yaml
+      registry:
+          url: 621829027644.dkr.ecr.us-east-1.amazonaws.com/saas-starter
+          auth: ecr
+      namespace: saas-starter

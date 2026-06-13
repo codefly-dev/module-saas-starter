@@ -67,7 +67,7 @@ func TestMain(m *testing.M) {
 	}
 
 	// New auth pipeline: IdentityResolver + JWTMinter both backed by Postgres.
-	sessionStore := pgauth.NewSessionStore(store.Pool())
+	sessionStore := pgauth.NewSessionStore(store)
 	resolver := pgauth.NewResolver(store.Pool())
 	_, priv, err := ed25519minter.GenerateKey()
 	if err != nil {
@@ -281,7 +281,11 @@ func TestTeamInheritedPermissions(t *testing.T) {
 	})
 	require.NoError(t, err)
 
-	err = testService.Store().AddTeamMember(testCtx, teamResp.Team.Id, bob.User.Uuid, "member")
+	// team_members is RLS-protected (Phase 2C, JOIN-via-teams policy);
+	// wrap in WithOrgTx so the insert sees the org context.
+	err = testStore.WithOrgTx(testCtx, orgID, func(ctx context.Context) error {
+		return testService.Store().AddTeamMember(ctx, teamResp.Team.Id, bob.User.Uuid, "member")
+	})
 	require.NoError(t, err)
 
 	// Create deployer role, assign to team

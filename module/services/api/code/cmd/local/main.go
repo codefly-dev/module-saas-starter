@@ -56,7 +56,7 @@ func main() {
 	// Auth pipeline: pg-backed resolver + ed25519 minter. The signing
 	// key is loaded from Vault when available so sessions survive a
 	// restart; otherwise we fall back to an ephemeral key with a warning.
-	sessionStore := pgauth.NewSessionStore(store.Pool())
+	sessionStore := pgauth.NewSessionStore(store)
 	resolver := pgauth.NewResolver(store.Pool())
 	priv, err := ed25519minter.LoadKeyFromVault(ctx, ed25519minter.VaultKeyLoaderConfig{
 		Address: vaultAddr,

@@ -5,6 +5,7 @@ import "google/api/annotations.proto";
 import "google/protobuf/timestamp.proto";
 import "google/protobuf/empty.proto";
 import "google/protobuf/field_mask.proto";
+import "google/protobuf/struct.proto";
 import "buf/validate/validate.proto";
 
 // ============================================================================
@@ -145,6 +146,52 @@ enum SubjectKind {
   SUBJECT_KIND_UNSPECIFIED = 0;
   SUBJECT_KIND_USER = 1;
   SUBJECT_KIND_TEAM = 2;
+}
+
+// PrincipalKind classifies a principal — humans, services, or agents
+// — for filtering/UI without affecting authorization. The auth layer
+// itself treats every Principal uniformly. ANY change here MUST stay
+// in sync with the SQL CHECK constraint on principals.kind and with
+// codefly's policy.Principal Kind constants.
+enum PrincipalKind {
+  PRINCIPAL_KIND_UNSPECIFIED = 0;
+  PRINCIPAL_KIND_HUMAN = 1;
+  PRINCIPAL_KIND_SERVICE = 2;
+  PRINCIPAL_KIND_AGENT = 3;
+}
+
+// Principal mirrors the principals table 1:1 — the unified identity
+// row used by every action, audit event, and delegation grant.
+//
+// id matches users.uuid for kind=HUMAN, api_keys.id for kind=SERVICE,
+// and is a fresh server-generated UUID for kind=AGENT. We do NOT
+// enforce these as foreign keys at the DB level (independent
+// lifecycles); the equality is convention and the backfill migration.
+message Principal {
+  string id = 1 [(buf.validate.field).string.uuid = true];
+  PrincipalKind kind = 2;
+  string display_name = 3 [(buf.validate.field).string.min_len = 1];
+  // org_id NULL/empty for kind=HUMAN (cross-org); required for
+  // SERVICE and AGENT. Server-side validation enforces.
+  string org_id = 4;
+  // agent_identifier is "publisher/name:version" for kind=AGENT;
+  // empty otherwise. Required when kind=AGENT.
+  string agent_identifier = 5;
+  google.protobuf.Timestamp created_at = 6;
+  google.protobuf.Timestamp revoked_at = 7;
+  string revoked_reason = 8;
+}
+
+// Decision is what the PDP returns for a Decide call. ALLOW means
+// proceed; DENY means refuse with reason; REQUIRE_APPROVAL means
+// the action is conditionally permitted but needs a grantor's
+// approval first (used by the M7+ synchronous escalation flow). The
+// agent SDK turns REQUIRE_APPROVAL into a RequestEscalation call.
+enum Decision {
+  DECISION_UNSPECIFIED = 0;
+  DECISION_ALLOW = 1;
+  DECISION_DENY = 2;
+  DECISION_REQUIRE_APPROVAL = 3;
 }
 
 // ============================================================================
@@ -369,6 +416,20 @@ message RevokeRoleRequest {
   string scope = 4;
 }
 
+// ListRoleAssignmentsRequest — read assignments scoped to an org.
+// subject_id (optional) filters to assignments for that user/team
+// only; empty returns every assignment in the org. Used by the
+// admin UI's "manage roles for member X" panel.
+message ListRoleAssignmentsRequest {
+  string org_id = 1 [(buf.validate.field).string.uuid = true];
+  string subject_id = 2;  // empty → all subjects in this org
+  SubjectKind subject_kind = 3;  // unspecified → both users + teams
+}
+
+message ListRoleAssignmentsResponse {
+  repeated RoleAssignment assignments = 1;
+}
+
 message CheckPermissionRequest {
   string subject_id = 1 [(buf.validate.field).string.uuid = true];
   SubjectKind subject_kind = 2;
@@ -381,6 +442,99 @@ message CheckPermissionRequest {
 message CheckPermissionResponse {
   bool allowed = 1;
   string reason = 2;
+}
+
+// --- Decide (the new permission-check primitive) ---
+//
+// Decide is the principal-aware successor to CheckPermission. It
+// accepts a single principal_id (no SubjectKind disambiguation —
+// the principals table answers that), structured action and
+// resource, optional context for caveat evaluation, and an
+// optional delegation_proof carrying a Biscuit token (M6+).
+//
+// CheckPermission stays alongside Decide for backwards compat; new
+// callers should use Decide. Once all callers migrate, CheckPermission
+// becomes a thin wrapper over Decide.
+message DecideRequest {
+  string principal_id = 1 [(buf.validate.field).string.uuid = true];
+  // action is dotted, e.g. "github.merge_pr" or "fs.write".
+  string action = 2 [(buf.validate.field).string.min_len = 1];
+  // resource is typed, e.g. "repo:codefly-dev/codefly.dev" or
+  // "file:/etc/passwd". Empty string means "no specific resource"
+  // (rare; usually for global actions).
+  string resource = 3;
+  // resource_id is an optional sub-identifier (e.g. PR number).
+  // Pure metadata for audit; not used in authz today.
+  string resource_id = 4;
+  string org_id = 5;
+  // context is a free-form structured map for caveat evaluation
+  // (Cedar/Rego rules consume it). Common keys: ci_status, labels,
+  // pr_number. Unknown keys ignored.
+  google.protobuf.Struct context = 6;
+  // risk_level is an advisory tier the caller's manifest declared
+  // for this action. The PDP MAY use it to gate approval flow;
+  // missing → treat as policy default.
+  string risk_level = 7;
+  // delegation_proof is an optional Biscuit token proving the
+  // caller acquired delegated authority for this action. Until M6
+  // lands, this field is unused — pass empty bytes.
+  bytes delegation_proof = 8;
+  // declared_permissions is the caller's manifest-declared
+  // permission set (M4+). The PDP enforces this as a ceiling: even
+  // if a role grants the action, the manifest must also have
+  // declared it. Until M4 lands, empty list = "no ceiling enforced
+  // at this layer."
+  repeated Permission declared_permissions = 9;
+}
+
+message DecideResponse {
+  Decision decision = 1;
+  string reason = 2;
+  // decision_path traces the role/permission match for human-
+  // readable explanation. Format: "role:editor → perm:github.read_pr"
+  // or "manifest-ceiling: action not declared" or "no role grants".
+  string decision_path = 3;
+  // approval_request_id is set when decision=REQUIRE_APPROVAL —
+  // identifies the saas-starter delegation_grants row created for
+  // this pending approval. Empty otherwise.
+  string approval_request_id = 4;
+}
+
+// --- Principal CRUD (M1 promoted to RPCs in M2) ---
+
+message GetPrincipalRequest {
+  string id = 1 [(buf.validate.field).string.uuid = true];
+}
+
+message GetAgentPrincipalRequest {
+  string org_id = 1 [(buf.validate.field).string.uuid = true];
+  string agent_identifier = 2 [(buf.validate.field).string.min_len = 1];
+}
+
+message CreateAgentPrincipalRequest {
+  string org_id = 1 [(buf.validate.field).string.uuid = true];
+  // agent_identifier in canonical "publisher/name:version" form.
+  string agent_identifier = 2 [(buf.validate.field).string.min_len = 1];
+  string display_name = 3;
+}
+
+message RevokePrincipalRequest {
+  string id = 1 [(buf.validate.field).string.uuid = true];
+  string reason = 2 [(buf.validate.field).string.min_len = 1];
+}
+
+message ListPrincipalsRequest {
+  string org_id = 1 [(buf.validate.field).string.uuid = true];
+  // kind filters; UNSPECIFIED returns all kinds in the org
+  // (humans via membership, services + agents via direct org_id).
+  PrincipalKind kind = 2;
+  int32 page_size = 3 [(buf.validate.field).int32 = { gte: 0, lte: 200 }];
+  string page_token = 4;
+}
+
+message ListPrincipalsResponse {
+  repeated Principal principals = 1;
+  string next_page_token = 2;
 }
 
 // --- Identity resolution (for auth sidecar) ---
@@ -537,8 +691,184 @@ service PermissionService {
     option (google.api.http) = { delete: "/v1/role-assignments" };
   }
 
+  rpc ListRoleAssignments(ListRoleAssignmentsRequest) returns (ListRoleAssignmentsResponse) {
+    option (google.api.http) = { get: "/v1/role-assignments" };
+  }
+
   rpc CheckPermission(CheckPermissionRequest) returns (CheckPermissionResponse) {
     option (google.api.http) = { post: "/v1/permissions:check" body: "*" };
+  }
+
+  // Decide is the principal-aware permission check (M2). New
+  // callers should use Decide; CheckPermission is kept for backward
+  // compatibility while existing clients migrate. Both RPCs route
+  // through the same Postgres CheckPermission query in M2; they
+  // diverge starting at M4 (manifest ceiling) and M7 (approval flow).
+  rpc Decide(DecideRequest) returns (DecideResponse) {
+    option (google.api.http) = { post: "/v1/permissions:decide" body: "*" };
+  }
+}
+
+// PrincipalService — unified principal management (M1 + M2). Humans,
+// services, and agents are all rows in the principals table; this
+// service is the public CRUD over them. Read paths are admin-only;
+// CreateAgent is org-admin scoped (called by the codefly CLI on
+// `codefly install`).
+service PrincipalService {
+  rpc GetPrincipal(GetPrincipalRequest) returns (Principal) {
+    option (google.api.http) = { get: "/v1/principals/{id}" };
+  }
+  rpc GetAgentPrincipal(GetAgentPrincipalRequest) returns (Principal) {
+    option (google.api.http) = { get: "/v1/principals:byAgent" };
+  }
+  rpc CreateAgentPrincipal(CreateAgentPrincipalRequest) returns (Principal) {
+    option (google.api.http) = { post: "/v1/principals:agent" body: "*" };
+  }
+  rpc RevokePrincipal(RevokePrincipalRequest) returns (google.protobuf.Empty) {
+    option (google.api.http) = { post: "/v1/principals/{id}:revoke" body: "*" };
+  }
+  rpc ListPrincipals(ListPrincipalsRequest) returns (ListPrincipalsResponse) {
+    option (google.api.http) = { get: "/v1/principals" };
+  }
+}
+
+// =====================================================================
+// DelegationService — M7 escalation flow + M8 pattern grants
+// =====================================================================
+//
+// Synchronous escalation: an actor (typically an agent that hit a
+// RequireApproval decision) requests authority; a grantor approves
+// or denies; the gateway mints a fresh scoped-auth token on
+// approve. Pattern grants (M8) extend the same table with
+// pre-authorized classes of future calls.
+
+message RequestDelegationRequest {
+  string org_id = 1 [(buf.validate.field).string.uuid = true];
+  string actor_principal_id = 2 [(buf.validate.field).string.uuid = true];
+  string action = 3 [(buf.validate.field).string.min_len = 1];
+  string resource = 4;
+  string resource_id = 5;
+  // Justification — REQUIRED. Without it the grantor has no
+  // basis to decide; saas-starter rejects empty/whitespace.
+  string justification = 6 [(buf.validate.field).string.min_len = 1];
+  google.protobuf.Struct context = 7;
+  // risk_level: low|medium|high|critical. Empty defaults to low.
+  string risk_level = 8;
+  // timeout_seconds: how long to wait before auto-expiry.
+  // Defaults to 300 (5 min) if zero.
+  int32 timeout_seconds = 9;
+  // Grantor: optional explicit target ("user:<id>" / "team:<name>");
+  // empty → default approver chain.
+  string grantor = 10;
+  // Idempotency key. Server derives from request content if empty.
+  string request_hash = 11;
+}
+
+message RequestDelegationResponse {
+  string id = 1;
+  string status = 2;     // typically "pending"; may be "approved" if a pattern matches (M8)
+  google.protobuf.Timestamp expires_at = 3;
+}
+
+message WaitForDelegationRequest {
+  string id = 1 [(buf.validate.field).string.uuid = true];
+  string org_id = 2 [(buf.validate.field).string.uuid = true];
+}
+
+// DelegationEvent is one streaming event delivered to a
+// subscriber. The agent SDK reads exactly one event (the
+// terminal decision) and disconnects.
+message DelegationEvent {
+  string id = 1;
+  string status = 2;        // approved | denied | expired | cancelled
+  google.protobuf.Timestamp decided_at = 3;
+  string grantor_principal_id = 4;
+  string reason = 5;
+  // On approve: the gateway's freshly minted scoped-auth token.
+  // Empty on deny / expired / cancelled.
+  string scoped_auth_token = 6;
+  // On approve: the unique id of the minted token (for audit
+  // correlation). Same value as the encoded token's `id` field.
+  string minted_token_id = 7;
+}
+
+message DecideDelegationRequest {
+  string id = 1 [(buf.validate.field).string.uuid = true];
+  string org_id = 2 [(buf.validate.field).string.uuid = true];
+  // Decision: approved | denied. (expired/cancelled are state
+  // transitions handled by other paths.)
+  string decision = 3 [(buf.validate.field).string.min_len = 1];
+  // Reason: required when decision=denied; optional on approve.
+  string reason = 4;
+}
+
+message DelegationGrant {
+  string id = 1;
+  string org_id = 2;
+  string actor_principal_id = 3;
+  string grantor_principal_id = 4;
+  string action = 5;
+  string resource = 6;
+  string resource_id = 7;
+  string justification = 8;
+  string status = 9;
+  string risk_level = 10;
+  string kind = 11;        // one_shot | pattern
+  google.protobuf.Timestamp created_at = 12;
+  google.protobuf.Timestamp decided_at = 13;
+  google.protobuf.Timestamp expires_at = 14;
+  string decision_reason = 15;
+  string minted_token_id = 16;
+}
+
+message ListPendingDelegationsRequest {
+  string org_id = 1 [(buf.validate.field).string.uuid = true];
+  int32 page_size = 2 [(buf.validate.field).int32 = { gte: 0, lte: 200 }];
+  string page_token = 3;
+}
+
+message ListPendingDelegationsResponse {
+  repeated DelegationGrant grants = 1;
+  string next_page_token = 2;
+}
+
+service DelegationService {
+  // RequestDelegation creates a new pending grant. Idempotent on
+  // (org_id, request_hash) — same request from a retrying actor
+  // returns the original row's id.
+  rpc RequestDelegation(RequestDelegationRequest) returns (RequestDelegationResponse) {
+    option (google.api.http) = {
+      post: "/v1/delegations"
+      body: "*"
+    };
+  }
+
+  // WaitForDelegation streams one terminal event for a grant.
+  // Backed by Postgres LISTEN — no polling.
+  rpc WaitForDelegation(WaitForDelegationRequest) returns (stream DelegationEvent) {
+    option (google.api.http) = {
+      get: "/v1/delegations/{id}:wait"
+    };
+  }
+
+  // DecideDelegation is the grantor's approve/deny action. Called
+  // from the approval UI; transitions the row + (on approve)
+  // mints the scoped-auth token + fires NOTIFY for any waiting
+  // streams.
+  rpc DecideDelegation(DecideDelegationRequest) returns (DelegationGrant) {
+    option (google.api.http) = {
+      post: "/v1/delegations/{id}:decide"
+      body: "*"
+    };
+  }
+
+  // ListPendingDelegations returns paginated pending grants for
+  // the approver UI. Sorted critical → high → medium → low,
+  // newest-first within tier.
+  rpc ListPendingDelegations(ListPendingDelegationsRequest) returns (ListPendingDelegationsResponse) {
+    option (google.api.http) = {
+      get: "/v1/delegations:pending"
+    };
   }
 }
 
@@ -1648,5 +1978,105 @@ service MFAService {
   }
   rpc GenerateBackupCodes(GenerateBackupCodesRequest) returns (GenerateBackupCodesResponse) {
     option (google.api.http) = { post: "/v1/mfa/backup-codes" body: "*" };
+  }
+}
+
+// ============================================================================
+// IntrospectionService — self-describing service catalog
+//
+// Each service in a codefly module owns its own proto. This RPC
+// describes THIS service (the api service) — its RPCs, the RBAC
+// vocabulary it enforces, the RLS-protected tables it owns, the
+// API-key scopes it accepts.
+//
+// Module-level view: a module is a collection of services. To
+// answer "what can the saas-starter module do?", an aggregator
+// (CLI command, gateway endpoint, Mind, etc.) walks every service
+// in the module and merges each one's GetServiceInfo response.
+// The aggregator is OUT OF SCOPE for this proto — keep cross-
+// service concerns out of per-service definitions.
+//
+// All RPCs here are PUBLIC (no auth required) — they describe the
+// API surface, not tenant data. The response REDACTS privileged
+// (platform_admin, mfa) RPCs for unauthenticated callers; see
+// threat-model note on the service.
+// ============================================================================
+
+// ServiceInfo — top-level identity of the service this catalog
+// describes. The `module` field locates this service within its
+// codefly module so an aggregator can group across services.
+message ServiceInfo {
+  string name = 1;          // service name, e.g. "api"
+  string module = 2;        // owning module, e.g. "saas-starter"
+  string version = 3;       // semver of the service's API surface
+  string description = 4;
+  string repo_url = 5;
+}
+
+// RPCInfo — one entry per gRPC RPC this service exposes.
+message RPCInfo {
+  string service = 1;          // proto-service name, e.g. "PermissionService"
+  string method = 2;           // e.g. "AssignRole"
+  string http_method = 3;      // "POST" | "GET" | "DELETE" | "PUT"
+  string http_path = 4;        // e.g. "/v1/role-assignments"
+  string description = 5;
+  repeated string scopes = 6;  // required scopes when called via API key
+  string handler_authz = 7;    // "public"|"auth"|"org_member"|"org_admin"|"platform_admin"|"mfa"
+  bool emits_audit = 8;        // writes to audit_events?
+}
+
+// PermissionInfo — RBAC vocabulary this service enforces.
+message PermissionInfo {
+  string resource = 1;
+  string action = 2;
+  string description = 3;
+  repeated string built_in_roles = 4;
+}
+
+// RLSPolicyInfo — RLS-protected table this service depends on (the
+// table itself lives in the store service's schema, but this api
+// service is the enforcer).
+message RLSPolicyInfo {
+  string table = 1;
+  string policy_shape = 2;     // "direct"|"join"|"polymorphic"|"self_referential"
+  bool fail_closed = 3;
+  string scope_column = 4;     // typically "org_id"
+  string notes = 5;
+}
+
+// ScopeInfo — API-key scope this service accepts.
+message ScopeInfo {
+  string scope = 1;            // e.g. "api_keys:write"
+  string description = 2;
+}
+
+// ServiceCapabilities — the full self-description of one service.
+message ServiceCapabilities {
+  ServiceInfo info = 1;
+  repeated RPCInfo rpcs = 2;
+  repeated PermissionInfo permissions = 3;
+  repeated RLSPolicyInfo rls_tables = 4;
+  repeated ScopeInfo scopes = 5;
+}
+
+message GetServiceInfoRequest {}
+message GetServiceInfoResponse {
+  ServiceCapabilities capabilities = 1;
+}
+
+// IntrospectionService — describes THIS service only.
+//
+// Threat model: the API surface is not a secret — anyone with the
+// binary can grep for it. But unauthenticated probes should not get
+// a free attack-surface map. The server response REDACTS RPCs whose
+// HandlerAuthz is "platform_admin" or "mfa" for unauthenticated
+// callers. Authenticated callers see the full list. Callers must
+// still pass the relevant auth tier to invoke any non-public RPC.
+//
+// Rate-limit: same shared limiter as the rest of the surface;
+// tighten if this becomes a probe vector.
+service IntrospectionService {
+  rpc GetServiceInfo(GetServiceInfoRequest) returns (GetServiceInfoResponse) {
+    option (google.api.http) = { get: "/v1/.well-known/service-info" };
   }
 }

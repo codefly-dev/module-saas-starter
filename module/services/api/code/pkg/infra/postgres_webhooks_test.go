@@ -8,6 +8,7 @@ import (
 	"time"
 
 	codefly "github.com/codefly-dev/sdk-go"
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/stretchr/testify/require"
 
@@ -73,14 +74,21 @@ func seedUser(t *testing.T) string {
 }
 
 // seedOrg inserts a minimal organization and returns its ID.
+// organizations is RLS-protected (Phase 2F); seed under WithBypass.
+// We grab the tx from ctx instead of using testPool — testPool would
+// check out a fresh app_tenant connection that doesn't see the
+// SET LOCAL ROLE NONE installed by WithBypass.
 func seedOrg(t *testing.T, ownerID string) string {
 	t.Helper()
 	id := business.NewIDString()
 	slug := fmt.Sprintf("org-%s", id)
-	_, err := testPool.Exec(testCtx,
-		`INSERT INTO organizations (id, name, slug, owner_id) VALUES ($1, 'Test Org', $2, $3)`,
-		id, slug, ownerID)
-	require.NoError(t, err)
+	require.NoError(t, testStore.WithBypass(testCtx, func(ctx context.Context) error {
+		tx := ctx.Value("tx").(pgx.Tx) //nolint:staticcheck // shared key with WithBypass
+		_, err := tx.Exec(ctx,
+			`INSERT INTO organizations (id, name, slug, owner_id) VALUES ($1, 'Test Org', $2, $3)`,
+			id, slug, ownerID)
+		return err
+	}))
 	return id
 }
 
@@ -101,18 +109,21 @@ func TestCreateAndListWebhookSubscriptions(t *testing.T) {
 		Description: "Test hook",
 		Active:      true,
 	}
-	err := testStore.CreateWebhookSubscription(testCtx, sub)
-	require.NoError(t, err)
-
-	subs, err := testStore.ListWebhookSubscriptions(testCtx, orgID)
-	require.NoError(t, err)
-	require.Len(t, subs, 1)
-	require.Equal(t, sub.ID, subs[0].ID)
-	require.Equal(t, sub.URL, subs[0].URL)
-	require.Equal(t, sub.Secret, subs[0].Secret)
-	require.Equal(t, sub.Events, subs[0].Events)
-	require.Equal(t, sub.Description, subs[0].Description)
-	require.True(t, subs[0].Active)
+	require.NoError(t, testStore.WithOrgTx(testCtx, orgID, func(ctx context.Context) error {
+		if err := testStore.CreateWebhookSubscription(ctx, sub); err != nil {
+			return err
+		}
+		subs, err := testStore.ListWebhookSubscriptions(ctx, orgID)
+		require.NoError(t, err)
+		require.Len(t, subs, 1)
+		require.Equal(t, sub.ID, subs[0].ID)
+		require.Equal(t, sub.URL, subs[0].URL)
+		require.Equal(t, sub.Secret, subs[0].Secret)
+		require.Equal(t, sub.Events, subs[0].Events)
+		require.Equal(t, sub.Description, subs[0].Description)
+		require.True(t, subs[0].Active)
+		return nil
+	}))
 }
 
 func TestDeleteWebhookSubscription(t *testing.T) {
@@ -127,14 +138,14 @@ func TestDeleteWebhookSubscription(t *testing.T) {
 		Events: []string{"user.deleted"},
 		Active: true,
 	}
-	require.NoError(t, testStore.CreateWebhookSubscription(testCtx, sub))
-
-	err := testStore.DeleteWebhookSubscription(testCtx, sub.ID)
-	require.NoError(t, err)
-
-	subs, err := testStore.ListWebhookSubscriptions(testCtx, orgID)
-	require.NoError(t, err)
-	require.Empty(t, subs)
+	require.NoError(t, testStore.WithOrgTx(testCtx, orgID, func(ctx context.Context) error {
+		require.NoError(t, testStore.CreateWebhookSubscription(ctx, sub))
+		require.NoError(t, testStore.DeleteWebhookSubscription(ctx, sub.ID))
+		subs, err := testStore.ListWebhookSubscriptions(ctx, orgID)
+		require.NoError(t, err)
+		require.Empty(t, subs)
+		return nil
+	}))
 }
 
 func TestGetActiveWebhookSubscriptions(t *testing.T) {
@@ -142,35 +153,36 @@ func TestGetActiveWebhookSubscriptions(t *testing.T) {
 	orgID := seedOrg(t, userID)
 
 	activeSub := &business.WebhookSubscription{
-		ID:     business.NewIDString(),
-		OrgID:  orgID,
-		URL:    "https://example.com/active",
-		Secret: "sec",
-		Events: []string{"user.registered"},
-		Active: true,
+		ID: business.NewIDString(), OrgID: orgID,
+		URL: "https://example.com/active", Secret: "sec",
+		Events: []string{"user.registered"}, Active: true,
 	}
 	inactiveSub := &business.WebhookSubscription{
-		ID:     business.NewIDString(),
-		OrgID:  orgID,
-		URL:    "https://example.com/inactive",
-		Secret: "sec",
-		Events: []string{"user.registered"},
-		Active: false,
+		ID: business.NewIDString(), OrgID: orgID,
+		URL: "https://example.com/inactive", Secret: "sec",
+		Events: []string{"user.registered"}, Active: false,
 	}
 	otherEventSub := &business.WebhookSubscription{
-		ID:     business.NewIDString(),
-		OrgID:  orgID,
-		URL:    "https://example.com/other",
-		Secret: "sec",
-		Events: []string{"org.created"},
-		Active: true,
+		ID: business.NewIDString(), OrgID: orgID,
+		URL: "https://example.com/other", Secret: "sec",
+		Events: []string{"org.created"}, Active: true,
 	}
-	require.NoError(t, testStore.CreateWebhookSubscription(testCtx, activeSub))
-	require.NoError(t, testStore.CreateWebhookSubscription(testCtx, inactiveSub))
-	require.NoError(t, testStore.CreateWebhookSubscription(testCtx, otherEventSub))
+	require.NoError(t, testStore.WithOrgTx(testCtx, orgID, func(ctx context.Context) error {
+		require.NoError(t, testStore.CreateWebhookSubscription(ctx, activeSub))
+		require.NoError(t, testStore.CreateWebhookSubscription(ctx, inactiveSub))
+		require.NoError(t, testStore.CreateWebhookSubscription(ctx, otherEventSub))
+		return nil
+	}))
 
-	subs, err := testStore.GetActiveWebhookSubscriptions(testCtx, "user.registered")
-	require.NoError(t, err)
+	// GetActiveWebhookSubscriptions is a cross-tenant scan (the
+	// dispatcher needs to see every org's active subs). Run under
+	// WithBypass — same shape as webhook_dispatcher.go.
+	var subs []*business.WebhookSubscription
+	require.NoError(t, testStore.WithBypass(testCtx, func(ctx context.Context) error {
+		s, err := testStore.GetActiveWebhookSubscriptions(ctx, "user.registered")
+		subs = s
+		return err
+	}))
 
 	ids := make(map[string]bool)
 	for _, s := range subs {
@@ -186,36 +198,27 @@ func TestCreateAndListWebhookDeliveries(t *testing.T) {
 	orgID := seedOrg(t, userID)
 
 	sub := &business.WebhookSubscription{
-		ID:     business.NewIDString(),
-		OrgID:  orgID,
-		URL:    "https://example.com/hook-delivery",
-		Secret: "sec",
-		Events: []string{"user.registered"},
-		Active: true,
+		ID: business.NewIDString(), OrgID: orgID,
+		URL: "https://example.com/hook-delivery", Secret: "sec",
+		Events: []string{"user.registered"}, Active: true,
 	}
-	require.NoError(t, testStore.CreateWebhookSubscription(testCtx, sub))
-
 	delivery := &business.WebhookDelivery{
-		ID:             business.NewIDString(),
-		SubscriptionID: sub.ID,
-		EventType:      "user.registered",
-		Payload:        `{"user_id":"123"}`,
-		Status:         "pending",
-		AttemptCount:   0,
+		ID: business.NewIDString(), SubscriptionID: sub.ID,
+		EventType: "user.registered", Payload: `{"user_id":"123"}`,
+		Status: "pending", AttemptCount: 0,
 	}
-	err := testStore.CreateWebhookDelivery(testCtx, delivery)
-	require.NoError(t, err)
-
-	deliveries, err := testStore.ListWebhookDeliveries(testCtx, sub.ID, 10)
-	require.NoError(t, err)
-	require.Len(t, deliveries, 1)
-	require.Equal(t, delivery.ID, deliveries[0].ID)
-	require.Equal(t, "user.registered", deliveries[0].EventType)
-	// JSONB re-serializes with a space after the colon. Compare by JSON
-	// semantics, not string equality, so this test isn't brittle to pg's
-	// formatting.
-	require.JSONEq(t, `{"user_id":"123"}`, deliveries[0].Payload)
-	require.Equal(t, "pending", deliveries[0].Status)
+	require.NoError(t, testStore.WithOrgTx(testCtx, orgID, func(ctx context.Context) error {
+		require.NoError(t, testStore.CreateWebhookSubscription(ctx, sub))
+		require.NoError(t, testStore.CreateWebhookDelivery(ctx, delivery))
+		deliveries, err := testStore.ListWebhookDeliveries(ctx, sub.ID, 10)
+		require.NoError(t, err)
+		require.Len(t, deliveries, 1)
+		require.Equal(t, delivery.ID, deliveries[0].ID)
+		require.Equal(t, "user.registered", deliveries[0].EventType)
+		require.JSONEq(t, `{"user_id":"123"}`, deliveries[0].Payload)
+		require.Equal(t, "pending", deliveries[0].Status)
+		return nil
+	}))
 }
 
 func TestUpdateWebhookDelivery(t *testing.T) {
@@ -223,43 +226,37 @@ func TestUpdateWebhookDelivery(t *testing.T) {
 	orgID := seedOrg(t, userID)
 
 	sub := &business.WebhookSubscription{
-		ID:     business.NewIDString(),
-		OrgID:  orgID,
-		URL:    "https://example.com/hook-update",
-		Secret: "sec",
-		Events: []string{"user.registered"},
-		Active: true,
+		ID: business.NewIDString(), OrgID: orgID,
+		URL: "https://example.com/hook-update", Secret: "sec",
+		Events: []string{"user.registered"}, Active: true,
 	}
-	require.NoError(t, testStore.CreateWebhookSubscription(testCtx, sub))
-
 	delivery := &business.WebhookDelivery{
-		ID:             business.NewIDString(),
-		SubscriptionID: sub.ID,
-		EventType:      "user.registered",
-		Payload:        `{}`,
-		Status:         "pending",
-		AttemptCount:   0,
+		ID: business.NewIDString(), SubscriptionID: sub.ID,
+		EventType: "user.registered", Payload: `{}`,
+		Status: "pending", AttemptCount: 0,
 	}
-	require.NoError(t, testStore.CreateWebhookDelivery(testCtx, delivery))
+	require.NoError(t, testStore.WithOrgTx(testCtx, orgID, func(ctx context.Context) error {
+		require.NoError(t, testStore.CreateWebhookSubscription(ctx, sub))
+		require.NoError(t, testStore.CreateWebhookDelivery(ctx, delivery))
 
-	now := time.Now()
-	delivery.Status = "delivered"
-	delivery.HTTPStatus = 200
-	delivery.ResponseBody = "OK"
-	delivery.AttemptCount = 1
-	delivery.DeliveredAt = &now
+		now := time.Now()
+		delivery.Status = "delivered"
+		delivery.HTTPStatus = 200
+		delivery.ResponseBody = "OK"
+		delivery.AttemptCount = 1
+		delivery.DeliveredAt = &now
+		require.NoError(t, testStore.UpdateWebhookDelivery(ctx, delivery))
 
-	err := testStore.UpdateWebhookDelivery(testCtx, delivery)
-	require.NoError(t, err)
-
-	deliveries, err := testStore.ListWebhookDeliveries(testCtx, sub.ID, 10)
-	require.NoError(t, err)
-	require.Len(t, deliveries, 1)
-	require.Equal(t, "delivered", deliveries[0].Status)
-	require.Equal(t, 200, deliveries[0].HTTPStatus)
-	require.Equal(t, "OK", deliveries[0].ResponseBody)
-	require.Equal(t, 1, deliveries[0].AttemptCount)
-	require.NotNil(t, deliveries[0].DeliveredAt)
+		deliveries, err := testStore.ListWebhookDeliveries(ctx, sub.ID, 10)
+		require.NoError(t, err)
+		require.Len(t, deliveries, 1)
+		require.Equal(t, "delivered", deliveries[0].Status)
+		require.Equal(t, 200, deliveries[0].HTTPStatus)
+		require.Equal(t, "OK", deliveries[0].ResponseBody)
+		require.Equal(t, 1, deliveries[0].AttemptCount)
+		require.NotNil(t, deliveries[0].DeliveredAt)
+		return nil
+	}))
 }
 
 func TestGetPendingDeliveries(t *testing.T) {
@@ -267,42 +264,38 @@ func TestGetPendingDeliveries(t *testing.T) {
 	orgID := seedOrg(t, userID)
 
 	sub := &business.WebhookSubscription{
-		ID:     business.NewIDString(),
-		OrgID:  orgID,
-		URL:    "https://example.com/hook-pending",
-		Secret: "sec",
-		Events: []string{"user.registered"},
-		Active: true,
+		ID: business.NewIDString(), OrgID: orgID,
+		URL: "https://example.com/hook-pending", Secret: "sec",
+		Events: []string{"user.registered"}, Active: true,
 	}
-	require.NoError(t, testStore.CreateWebhookSubscription(testCtx, sub))
-
-	// Create a "retrying" delivery with past next_retry_at
 	pastRetry := time.Now().Add(-1 * time.Minute)
 	retryDelivery := &business.WebhookDelivery{
-		ID:             business.NewIDString(),
-		SubscriptionID: sub.ID,
-		EventType:      "user.registered",
-		Payload:        `{"retry":true}`,
-		Status:         "retrying",
-		AttemptCount:   1,
+		ID: business.NewIDString(), SubscriptionID: sub.ID,
+		EventType: "user.registered", Payload: `{"retry":true}`,
+		Status: "retrying", AttemptCount: 1,
 	}
-	require.NoError(t, testStore.CreateWebhookDelivery(testCtx, retryDelivery))
-	retryDelivery.NextRetryAt = &pastRetry
-	require.NoError(t, testStore.UpdateWebhookDelivery(testCtx, retryDelivery))
-
-	// Create a "pending" delivery — should NOT appear (only "retrying" qualifies)
 	pendingDelivery := &business.WebhookDelivery{
-		ID:             business.NewIDString(),
-		SubscriptionID: sub.ID,
-		EventType:      "user.registered",
-		Payload:        `{"pending":true}`,
-		Status:         "pending",
-		AttemptCount:   0,
+		ID: business.NewIDString(), SubscriptionID: sub.ID,
+		EventType: "user.registered", Payload: `{"pending":true}`,
+		Status: "pending", AttemptCount: 0,
 	}
-	require.NoError(t, testStore.CreateWebhookDelivery(testCtx, pendingDelivery))
+	require.NoError(t, testStore.WithOrgTx(testCtx, orgID, func(ctx context.Context) error {
+		require.NoError(t, testStore.CreateWebhookSubscription(ctx, sub))
+		require.NoError(t, testStore.CreateWebhookDelivery(ctx, retryDelivery))
+		retryDelivery.NextRetryAt = &pastRetry
+		require.NoError(t, testStore.UpdateWebhookDelivery(ctx, retryDelivery))
+		require.NoError(t, testStore.CreateWebhookDelivery(ctx, pendingDelivery))
+		return nil
+	}))
 
-	deliveries, err := testStore.GetPendingDeliveries(testCtx, 10)
-	require.NoError(t, err)
+	// GetPendingDeliveries is a cross-tenant scan (the dispatcher
+	// polls every org's queue). Same WithBypass shape as production.
+	var deliveries []*business.WebhookDelivery
+	require.NoError(t, testStore.WithBypass(testCtx, func(ctx context.Context) error {
+		d, err := testStore.GetPendingDeliveries(ctx, 10)
+		deliveries = d
+		return err
+	}))
 
 	ids := make(map[string]bool)
 	for _, d := range deliveries {

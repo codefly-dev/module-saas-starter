@@ -103,7 +103,13 @@ func (s *Service) Authenticate(ctx context.Context, req *gen.AuthenticateRequest
 	// same (a follow-up will add VerifyMFAChallenge between Authenticate
 	// and the FE storing tokens). The token still carries the flag so
 	// downstream requireMFA gates work uniformly.
-	enrolled, mErr := s.store.HasVerifiedMFA(ctx, identity.UserID.String())
+	// mfa_devices is RLS-protected by user_id (Phase 2G).
+	var enrolled bool
+	mErr := s.store.WithUserTx(ctx, identity.UserID.String(), func(ctx context.Context) error {
+		e, err := s.store.HasVerifiedMFA(ctx, identity.UserID.String())
+		enrolled = e
+		return err
+	})
 	if mErr != nil {
 		w.Warn("HasVerifiedMFA lookup failed; defaulting to mfa_satisfied=false",
 			wool.ErrField(mErr))

@@ -376,35 +376,38 @@ func (s *PostgresStore) LinkIdentity(ctx context.Context, userUUID string, ident
 
 func (s *PostgresStore) ClearAll(ctx context.Context) error {
 	w := wool.Get(ctx).In("ClearAll")
-	executor := s.getQueryExecutor(ctx)
 
-	// Clean all user data but preserve built-in roles.
-	// Use DELETE instead of TRUNCATE to avoid CASCADE wiping roles table.
-	// Errors are intentionally swallowed per-statement: ClearAll runs
-	// in test cleanup against a possibly partial schema, and we want
-	// best-effort even if some tables haven't been migrated yet. The
-	// previous `var err error; if err != nil` block was a leftover
-	// from refactoring — never set, never tripped.
-	for _, stmt := range []string{
-		"DELETE FROM role_assignments",
-		"DELETE FROM role_permissions WHERE role_id IN (SELECT id FROM roles WHERE NOT built_in)",
-		"DELETE FROM roles WHERE NOT built_in",
-		"DELETE FROM team_members",
-		"DELETE FROM teams",
-		"DELETE FROM organization_members",
-		"DELETE FROM organizations",
-		"DELETE FROM user_identities",
-		"DELETE FROM users",
-	} {
-		if _, err := executor.Exec(ctx, stmt); err != nil {
-			// Log + continue: missing tables in dev are expected; real
-			// failures (constraint violations, connection lost) get a
-			// debug breadcrumb without aborting the cleanup loop.
-			w.Debug("ClearAll statement failed (continuing)",
-				wool.Field("stmt", stmt), wool.ErrField(err))
+	// Most tables here are RLS-protected (Phase 2B-2F). A bare DELETE
+	// under app_tenant with no app.current_org_id set returns ZERO
+	// rows — that's fail-closed for production but sabotages test
+	// cleanup. Wrap in WithBypass so the deletes actually fire across
+	// every tenant.
+	//
+	// Use DELETE instead of TRUNCATE to avoid CASCADE wiping roles
+	// table. Errors are intentionally swallowed per-statement:
+	// ClearAll runs in test cleanup against a possibly partial
+	// schema, and we want best-effort even if some tables haven't
+	// been migrated yet.
+	return s.WithBypass(ctx, func(ctx context.Context) error {
+		executor := s.getQueryExecutor(ctx)
+		for _, stmt := range []string{
+			"DELETE FROM role_assignments",
+			"DELETE FROM role_permissions WHERE role_id IN (SELECT id FROM roles WHERE NOT built_in)",
+			"DELETE FROM roles WHERE NOT built_in",
+			"DELETE FROM team_members",
+			"DELETE FROM teams",
+			"DELETE FROM organization_members",
+			"DELETE FROM organizations",
+			"DELETE FROM user_identities",
+			"DELETE FROM users",
+		} {
+			if _, err := executor.Exec(ctx, stmt); err != nil {
+				w.Debug("ClearAll statement failed (continuing)",
+					wool.Field("stmt", stmt), wool.ErrField(err))
+			}
 		}
-	}
-	return nil
+		return nil
+	})
 }
 
 // Helper functions for status conversion

@@ -120,7 +120,10 @@ func (s *Service) SetupTOTP(ctx context.Context, userID string) (secret string, 
 		SecretEncrypted: secretB32, // In production, encrypt before storing.
 	}
 
-	if err := mfaStore.CreateMFADevice(ctx, device); err != nil {
+	// mfa_devices is RLS-protected by user_id (Phase 2G).
+	if err := s.store.WithUserTx(ctx, userID, func(ctx context.Context) error {
+		return mfaStore.CreateMFADevice(ctx, device)
+	}); err != nil {
 		return "", "", w.Wrapf(err, "cannot create MFA device")
 	}
 
@@ -143,35 +146,41 @@ func (s *Service) VerifyTOTP(ctx context.Context, userID, code string) error {
 		return w.NewError("store does not implement MFAStore")
 	}
 
-	devices, err := mfaStore.ListMFADevices(ctx, userID)
-	if err != nil {
-		return w.Wrapf(err, "cannot list MFA devices")
-	}
-
-	for _, device := range devices {
-		if device.DeviceType != "totp" || device.VerifiedAt != nil {
-			continue
-		}
-
-		secretBytes, err := base32.StdEncoding.WithPadding(base32.NoPadding).DecodeString(device.SecretEncrypted)
+	// All reads + writes for this verify cycle run inside ONE
+	// WithUserTx so the listing, the per-device update, and the
+	// audit emit all see the user GUC. Without the wrap, RLS would
+	// hide the user's own devices (fail-closed) and the verify
+	// would always fail.
+	if err := s.store.WithUserTx(ctx, userID, func(ctx context.Context) error {
+		devices, err := mfaStore.ListMFADevices(ctx, userID)
 		if err != nil {
-			w.Warn("failed to decode TOTP secret for device", wool.Field("device_id", device.ID), wool.ErrField(err))
-			continue
+			return w.Wrapf(err, "cannot list MFA devices")
 		}
-
-		if validateTOTP(secretBytes, code, time.Now()) {
-			now := time.Now()
-			device.VerifiedAt = &now
-			device.LastUsedAt = &now
-			if err := mfaStore.UpdateMFADevice(ctx, device); err != nil {
-				return w.Wrapf(err, "cannot mark device as verified")
+		for _, device := range devices {
+			if device.DeviceType != "totp" || device.VerifiedAt != nil {
+				continue
 			}
-			s.emit(ctx, userID, "user", "mfa.totp_verified", "mfa_device", device.ID, "")
-			return nil
+			secretBytes, err := base32.StdEncoding.WithPadding(base32.NoPadding).DecodeString(device.SecretEncrypted)
+			if err != nil {
+				w.Warn("failed to decode TOTP secret for device", wool.Field("device_id", device.ID), wool.ErrField(err))
+				continue
+			}
+			if validateTOTP(secretBytes, code, time.Now()) {
+				now := time.Now()
+				device.VerifiedAt = &now
+				device.LastUsedAt = &now
+				if err := mfaStore.UpdateMFADevice(ctx, device); err != nil {
+					return w.Wrapf(err, "cannot mark device as verified")
+				}
+				s.emit(ctx, userID, "user", "mfa.totp_verified", "mfa_device", device.ID, "")
+				return nil
+			}
 		}
+		return w.NewError("invalid TOTP code")
+	}); err != nil {
+		return err
 	}
-
-	return w.NewError("invalid TOTP code")
+	return nil
 }
 
 // ListMFADevices returns all MFA devices for a user.
@@ -183,14 +192,20 @@ func (s *Service) ListMFADevices(ctx context.Context, userID string) ([]*MFADevi
 		return nil, w.NewError("store does not implement MFAStore")
 	}
 
-	devices, err := mfaStore.ListMFADevices(ctx, userID)
-	if err != nil {
+	var devices []*MFADevice
+	if err := s.store.WithUserTx(ctx, userID, func(ctx context.Context) error {
+		ds, err := mfaStore.ListMFADevices(ctx, userID)
+		devices = ds
+		return err
+	}); err != nil {
 		return nil, w.Wrapf(err, "cannot list MFA devices")
 	}
 	return devices, nil
 }
 
 // RevokeMFADevice removes an MFA device after verifying ownership.
+// Both reads (Get) and the delete run inside one WithUserTx so the
+// existence check and the mutation see the same RLS policy state.
 func (s *Service) RevokeMFADevice(ctx context.Context, userID, deviceID string) error {
 	w := wool.Get(ctx).In("RevokeMFADevice")
 
@@ -199,15 +214,16 @@ func (s *Service) RevokeMFADevice(ctx context.Context, userID, deviceID string) 
 		return w.NewError("store does not implement MFAStore")
 	}
 
-	device, err := mfaStore.GetMFADevice(ctx, deviceID)
-	if err != nil {
-		return w.Wrapf(err, "cannot get MFA device")
-	}
-	if device.UserID != userID {
-		return w.NewError("device does not belong to user")
-	}
-
-	if err := mfaStore.DeleteMFADevice(ctx, deviceID); err != nil {
+	if err := s.store.WithUserTx(ctx, userID, func(ctx context.Context) error {
+		device, err := mfaStore.GetMFADevice(ctx, deviceID)
+		if err != nil {
+			return w.Wrapf(err, "cannot get MFA device")
+		}
+		if device.UserID != userID {
+			return w.NewError("device does not belong to user")
+		}
+		return mfaStore.DeleteMFADevice(ctx, deviceID)
+	}); err != nil {
 		return w.Wrapf(err, "cannot delete MFA device")
 	}
 
@@ -223,11 +239,6 @@ func (s *Service) GenerateBackupCodes(ctx context.Context, userID string) ([]str
 	mfaStore, ok := s.store.(MFAStore)
 	if !ok {
 		return nil, w.NewError("store does not implement MFAStore")
-	}
-
-	// Delete existing backup codes.
-	if err := mfaStore.DeleteBackupCodes(ctx, userID); err != nil {
-		return nil, w.Wrapf(err, "cannot delete existing backup codes")
 	}
 
 	plaintextCodes := make([]string, backupCodeCount)
@@ -247,7 +258,15 @@ func (s *Service) GenerateBackupCodes(ctx context.Context, userID string) ([]str
 		}
 	}
 
-	if err := mfaStore.CreateBackupCodes(ctx, codes); err != nil {
+	// Delete existing + insert new under one WithUserTx so the
+	// rotate is atomic from RLS's POV (no momentary "no codes" gap
+	// visible across other transactions).
+	if err := s.store.WithUserTx(ctx, userID, func(ctx context.Context) error {
+		if err := mfaStore.DeleteBackupCodes(ctx, userID); err != nil {
+			return w.Wrapf(err, "cannot delete existing backup codes")
+		}
+		return mfaStore.CreateBackupCodes(ctx, codes)
+	}); err != nil {
 		return nil, w.Wrapf(err, "cannot create backup codes")
 	}
 
@@ -265,46 +284,48 @@ func (s *Service) ValidateMFACode(ctx context.Context, userID, code string) (boo
 		return false, w.NewError("store does not implement MFAStore")
 	}
 
-	// Try TOTP first.
-	devices, err := mfaStore.ListMFADevices(ctx, userID)
-	if err != nil {
-		return false, w.Wrapf(err, "cannot list MFA devices")
-	}
-
-	for _, device := range devices {
-		if device.DeviceType != "totp" || device.VerifiedAt == nil {
-			continue
-		}
-
-		secretBytes, err := base32.StdEncoding.WithPadding(base32.NoPadding).DecodeString(device.SecretEncrypted)
+	var ok2 bool
+	if err := s.store.WithUserTx(ctx, userID, func(ctx context.Context) error {
+		// Try TOTP first.
+		devices, err := mfaStore.ListMFADevices(ctx, userID)
 		if err != nil {
-			continue
+			return w.Wrapf(err, "cannot list MFA devices")
 		}
-
-		if validateTOTP(secretBytes, code, time.Now()) {
-			now := time.Now()
-			device.LastUsedAt = &now
-			_ = mfaStore.UpdateMFADevice(ctx, device)
-			return true, nil
-		}
-	}
-
-	// Try backup codes.
-	backupCodes, err := mfaStore.GetUnusedBackupCodes(ctx, userID)
-	if err != nil {
-		return false, w.Wrapf(err, "cannot get backup codes")
-	}
-
-	for _, bc := range backupCodes {
-		if bcrypt.CompareHashAndPassword([]byte(bc.CodeHash), []byte(code)) == nil {
-			if err := mfaStore.UseBackupCode(ctx, bc.ID); err != nil {
-				w.Warn("failed to mark backup code as used", wool.ErrField(err))
+		for _, device := range devices {
+			if device.DeviceType != "totp" || device.VerifiedAt == nil {
+				continue
 			}
-			return true, nil
+			secretBytes, err := base32.StdEncoding.WithPadding(base32.NoPadding).DecodeString(device.SecretEncrypted)
+			if err != nil {
+				continue
+			}
+			if validateTOTP(secretBytes, code, time.Now()) {
+				now := time.Now()
+				device.LastUsedAt = &now
+				_ = mfaStore.UpdateMFADevice(ctx, device)
+				ok2 = true
+				return nil
+			}
 		}
+		// Try backup codes.
+		backupCodes, err := mfaStore.GetUnusedBackupCodes(ctx, userID)
+		if err != nil {
+			return w.Wrapf(err, "cannot get backup codes")
+		}
+		for _, bc := range backupCodes {
+			if bcrypt.CompareHashAndPassword([]byte(bc.CodeHash), []byte(code)) == nil {
+				if err := mfaStore.UseBackupCode(ctx, bc.ID); err != nil {
+					w.Warn("failed to mark backup code as used", wool.ErrField(err))
+				}
+				ok2 = true
+				return nil
+			}
+		}
+		return nil
+	}); err != nil {
+		return false, err
 	}
-
-	return false, nil
+	return ok2, nil
 }
 
 // UserHasMFA returns true if the user has at least one verified MFA device.
@@ -316,8 +337,12 @@ func (s *Service) UserHasMFA(ctx context.Context, userID string) (bool, error) {
 		return false, w.NewError("store does not implement MFAStore")
 	}
 
-	has, err := mfaStore.HasVerifiedMFA(ctx, userID)
-	if err != nil {
+	var has bool
+	if err := s.store.WithUserTx(ctx, userID, func(ctx context.Context) error {
+		h, err := mfaStore.HasVerifiedMFA(ctx, userID)
+		has = h
+		return err
+	}); err != nil {
 		return false, w.Wrapf(err, "cannot check MFA status")
 	}
 	return has, nil

@@ -2,6 +2,7 @@ package infra
 
 import (
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"strings"
@@ -28,6 +29,29 @@ func (s *PostgresStore) InsertAuditEvent(ctx context.Context, entry business.Aud
 		entry.Resource, nilIfNotUUID(entry.ResourceID), nilIfNotUUID(entry.OrgID),
 		metadata, nilIfEmpty(entry.IPAddress))
 	return err
+}
+
+// encodeAuditCursor / decodeAuditCursor carry the keyset position for audit
+// pagination. The token is opaque to callers: base64 of "<RFC3339Nano>|<id>".
+func encodeAuditCursor(ct time.Time, id string) string {
+	raw := ct.UTC().Format(time.RFC3339Nano) + "|" + id
+	return base64.RawURLEncoding.EncodeToString([]byte(raw))
+}
+
+func decodeAuditCursor(token string) (time.Time, string, error) {
+	raw, err := base64.RawURLEncoding.DecodeString(token)
+	if err != nil {
+		return time.Time{}, "", err
+	}
+	parts := strings.SplitN(string(raw), "|", 2)
+	if len(parts) != 2 {
+		return time.Time{}, "", fmt.Errorf("malformed cursor")
+	}
+	ct, err := time.Parse(time.RFC3339Nano, parts[0])
+	if err != nil {
+		return time.Time{}, "", err
+	}
+	return ct, parts[1], nil
 }
 
 func (s *PostgresStore) QueryAuditLog(ctx context.Context, orgID, actorID, action, resource, resourceID string,
@@ -74,18 +98,34 @@ func (s *PostgresStore) QueryAuditLog(ctx context.Context, orgID, actorID, actio
 		argN++
 	}
 
+	if pageSize == 0 {
+		pageSize = 50
+	}
+
+	// Apply the keyset cursor. The previous implementation ignored pageToken
+	// entirely (and always returned an empty nextToken), so every audit export
+	// was silently truncated to the first page. The token encodes the last
+	// returned row's (created_at, id); the compound comparison is stable under
+	// the DESC ordering even when many rows share a created_at.
+	if pageToken != "" {
+		ct, id, err := decodeAuditCursor(pageToken)
+		if err != nil {
+			return nil, "", 0, fmt.Errorf("invalid page token: %w", err)
+		}
+		conditions = append(conditions, fmt.Sprintf("(created_at, id) < ($%d, $%d)", argN, argN+1))
+		args = append(args, ct, id)
+		argN += 2
+	}
+
 	where := ""
 	if len(conditions) > 0 {
 		where = "WHERE " + strings.Join(conditions, " AND ")
 	}
 
-	if pageSize == 0 {
-		pageSize = 50
-	}
-
+	// Fetch one extra row to detect whether a further page exists.
 	query := fmt.Sprintf(`SELECT id, actor_id, actor_type, action, resource, resource_id, org_id, metadata, ip_address, created_at
-		FROM audit_events %s ORDER BY created_at DESC LIMIT $%d`, where, argN)
-	args = append(args, pageSize)
+		FROM audit_events %s ORDER BY created_at DESC, id DESC LIMIT $%d`, where, argN)
+	args = append(args, pageSize+1)
 
 	rows, err := q.Query(ctx, query, args...)
 	if err != nil {
@@ -123,8 +163,20 @@ func (s *PostgresStore) QueryAuditLog(ctx context.Context, orgID, actorID, actio
 		}
 		events = append(events, e)
 	}
+	if err := rows.Err(); err != nil {
+		return nil, "", 0, err
+	}
 
-	return events, "", int32(len(events)), nil
+	// If we fetched the extra row, there is a next page: trim it and emit a
+	// cursor pointing at the last RETURNED row.
+	nextToken := ""
+	if len(events) > int(pageSize) {
+		events = events[:pageSize]
+		last := events[len(events)-1]
+		nextToken = encodeAuditCursor(last.CreatedAt, last.ID)
+	}
+
+	return events, nextToken, int32(len(events)), nil
 }
 
 // AuditEntryToProto converts a business AuditEntry to proto AuditEvent.

@@ -17,6 +17,13 @@ type Store interface {
 	// per-tenant Service path in this — see AUTHZ.md.
 	WithOrgTx(ctx context.Context, orgID string, fn func(ctx context.Context) error) error
 
+	// WithUserTx wraps fn in a transaction that has app.current_user_id
+	// set, so RLS policies on user-scoped tables (notifications,
+	// mfa_devices, sessions) filter to that user. Empty userID is
+	// rejected (loud, fail-closed). Same no-nesting rule as WithOrgTx.
+	// See AUTHZ.md for the user-scope policy shape.
+	WithUserTx(ctx context.Context, userID string, fn func(ctx context.Context) error) error
+
 	// WithBypass wraps fn in a transaction that has app.bypass='1'
 	// so RLS policies allow cross-tenant access. Use only for
 	// background workers + platform-admin views; every call site is
@@ -51,6 +58,12 @@ type Store interface {
 	AddTeamMember(ctx context.Context, teamID string, userID string, role string) error
 	RemoveTeamMember(ctx context.Context, teamID string, userID string) error
 	ListTeamMembers(ctx context.Context, teamID string) ([]*gen.TeamMembership, error)
+	// GetTeamOrgID resolves a team's owning org. Used by callers that
+	// only have a team_id (e.g. AddTeamMember handlers) so they can
+	// enter WithOrgTx with the right scope. Implementations bypass RLS
+	// internally — the result is then handed to WithOrgTx for the
+	// real op, which IS scoped.
+	GetTeamOrgID(ctx context.Context, teamID string) (string, error)
 
 	// Roles
 	CreateRole(ctx context.Context, role *gen.Role) error
@@ -60,6 +73,10 @@ type Store interface {
 	// Role assignments
 	AssignRole(ctx context.Context, assignment *gen.RoleAssignment) error
 	RevokeRole(ctx context.Context, subjectID string, roleID string, orgID string, scope string) error
+	// ListRoleAssignments returns assignments in an org. When subjectID is
+	// empty, every assignment in that org is returned. subjectKind ==
+	// SUBJECT_KIND_UNSPECIFIED returns both users and teams.
+	ListRoleAssignments(ctx context.Context, orgID string, subjectID string, subjectKind gen.SubjectKind) ([]*gen.RoleAssignment, error)
 
 	// Permission checking
 	CheckPermission(ctx context.Context, subjectID string, subjectKind gen.SubjectKind, resource string, action string, orgID string, scope string) (bool, string, error)
@@ -162,6 +179,11 @@ type Store interface {
 	MarkNotificationRead(ctx context.Context, id string) error
 	MarkAllNotificationsRead(ctx context.Context, userID string) error
 	DeleteNotification(ctx context.Context, id string) error
+	// GetNotificationUserID resolves notification.id → user_id.
+	// Called under WithBypass by Service methods that only have an
+	// id (MarkRead / DeleteNotification) and need to enter the
+	// user's WithUserTx for the actual mutation. Returns "" on miss.
+	GetNotificationUserID(ctx context.Context, id string) (string, error)
 
 	// MFA — exposed on the main Store interface so the auth layer's
 	// requireMFA gate can check enrollment without casting to MFAStore.

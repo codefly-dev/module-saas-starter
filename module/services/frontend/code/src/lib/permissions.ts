@@ -66,17 +66,24 @@ const permissionsByRole: Record<Role, Permission[]> = {
     "audit:read",
     "invitations:*",
     "webhooks:*",
+    "knowledge:*",
   ],
   // Org admin: same as owner minus org delete (enforced server-side).
+  // roles:* matches the backend's requireOrgAdmin gate on AssignRole/
+  // RevokeRole/CreateRole — admins can manage role assignments within
+  // their org. The "delete a custom role" path is platform-admin
+  // (handler enforces requirePlatformAdmin) so admin's roles:write
+  // here doesn't grant that.
   admin: [
     "users:read",
     "orgs:read",
     "teams:*",
-    "roles:read",
+    "roles:*",
     "api_keys:*",
     "audit:read",
     "invitations:*",
     "webhooks:read",
+    "knowledge:*",
   ],
   // Org member: limited read access. Most of the admin surface is hidden.
   member: [

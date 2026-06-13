@@ -2,6 +2,7 @@ package adapters
 
 import (
 	"context"
+	"os"
 	"strings"
 
 	"connectrpc.com/connect"
@@ -10,6 +11,12 @@ import (
 
 	"github.com/codefly-dev/core/wool"
 )
+
+// forwardedIdentityHeaders are the caller-supplied identity headers that must
+// be stripped on the direct (non-sidecar) path so they cannot spoof identity.
+var forwardedIdentityHeaders = []string{
+	"X-User-Id", "X-Org-Id", "X-Roles", "X-Auth-Id", "X-User-Email", "X-User-Name",
+}
 
 // connectAuthInterceptor validates `Authorization: Bearer <jwt>` on inbound
 // Connect requests and stamps the wool context keys (UserAuthID, UserID,
@@ -31,6 +38,10 @@ import (
 // level via callerID(ctx) — the same enforcement point used by the
 // gRPC path. That keeps the request-rejection logic in one place.
 func connectAuthInterceptor(getMinter func() auth.JWTMinter) connect.UnaryInterceptorFunc {
+	// Secure by default — see grpcAuthInterceptor. Opt in with
+	// API_TRUST_FORWARDED_IDENTITY=true only when the api sits behind the
+	// auth-sidecar on an isolated network.
+	trustForwarded := os.Getenv("API_TRUST_FORWARDED_IDENTITY") == "true"
 	return func(next connect.UnaryFunc) connect.UnaryFunc {
 		return func(ctx context.Context, req connect.AnyRequest) (connect.AnyResponse, error) {
 			// Late-bind: business.Service is wired AFTER the Connect
@@ -41,6 +52,14 @@ func connectAuthInterceptor(getMinter func() auth.JWTMinter) connect.UnaryInterc
 			// in dev with an unauthenticated stack. Hand off untouched.
 			if minter == nil {
 				return next(ctx, req)
+			}
+
+			// Strip caller-supplied identity headers so a direct client cannot
+			// spoof identity (downstream handlers trust these via Inject).
+			if !trustForwarded {
+				for _, h := range forwardedIdentityHeaders {
+					req.Header().Del(h)
+				}
 			}
 
 			// Skip the auth flow itself — clients aren't authenticated yet.

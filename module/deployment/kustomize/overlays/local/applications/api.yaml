@@ -1,0 +1,26 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: saas-starter-api-local
+  namespace: argocd
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  project: saas-starter
+  source:
+    # REPLACE_ME with your git remote (e.g. git@github.com:my-org/saas-starter.git).
+    # Once Phase 6 lands, this is auto-filled from workspace.codefly.yaml's
+    # gitops.repoURL field.
+    repoURL: REPLACE_ME
+    targetRevision: main
+    path: deployments/modules/saas-starter/services/api/overlays/local
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: saas-starter
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      # base/namespace.yaml already creates the namespace.
+      - CreateNamespace=false

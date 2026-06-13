@@ -1,0 +1,112 @@
+# Default-deny + minimal allows. Combined with Istio's
+# AuthorizationPolicy (which enforces L7 mTLS+identity), this gives
+# defense-in-depth: NetworkPolicy at L3/L4 stops random pods in
+# other namespaces from reaching us, AuthorizationPolicy at L7
+# stops authenticated-but-unauthorized callers.
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: default-deny-all
+  namespace: saas-starter
+spec:
+  # Empty podSelector = every pod in the namespace. Both ingress
+  # and egress are denied unless an explicit allow rule below
+  # matches first.
+  podSelector: {}
+  policyTypes:
+    - Ingress
+    - Egress
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-intra-namespace
+  namespace: saas-starter
+spec:
+  podSelector: {}
+  policyTypes:
+    - Ingress
+    - Egress
+  ingress:
+    # Pods in the saas-starter namespace can talk to each other.
+    - from:
+        - podSelector: {}
+  egress:
+    # Pods in saas-starter can talk to other saas-starter pods.
+    - to:
+        - podSelector: {}
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-dns-egress
+  namespace: saas-starter
+spec:
+  podSelector: {}
+  policyTypes:
+    - Egress
+  egress:
+    # CoreDNS lives in kube-system. Without this, no pod in
+    # saas-starter can resolve any name (including in-cluster).
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: kube-system
+          podSelector:
+            matchLabels:
+              k8s-app: kube-dns
+      ports:
+        - protocol: UDP
+          port: 53
+        - protocol: TCP
+          port: 53
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-istio-ingress
+  namespace: saas-starter
+spec:
+  podSelector: {}
+  policyTypes:
+    - Ingress
+  ingress:
+    # The istio-system ingress gateway is what fronts public
+    # traffic — auth-sidecar's public HTTP listener gets reached
+    # via a Gateway+VirtualService that terminates here.
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: istio-system
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-egress-internet
+  namespace: saas-starter
+spec:
+  # Apps that need to talk to outside services (Stripe, WorkOS,
+  # SMTP, OTLP collectors) need this. Tighten in prod by labeling
+  # only the pods that legitimately need internet egress and
+  # narrowing the ipBlock to specific CIDRs / known endpoints.
+  podSelector:
+    matchLabels:
+      saas-starter/egress: "internet"
+  policyTypes:
+    - Egress
+  egress:
+    - to:
+        - ipBlock:
+            cidr: 0.0.0.0/0
+            # Carve out cluster-internal CIDRs so this rule doesn't
+            # accidentally bypass the in-cluster intent above.
+            except:
+              - 10.0.0.0/8
+              - 172.16.0.0/12
+              - 192.168.0.0/16
+      ports:
+        - protocol: TCP
+          port: 443
+        - protocol: TCP
+          port: 80

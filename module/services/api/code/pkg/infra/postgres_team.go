@@ -2,11 +2,13 @@ package infra
 
 import (
 	"context"
+	"errors"
 	"time"
 
 	"api/pkg/gen"
 
 	"github.com/codefly-dev/core/wool"
+	"github.com/jackc/pgx/v5"
 	"google.golang.org/protobuf/types/known/timestamppb"
 )
 
@@ -112,6 +114,27 @@ func (s *PostgresStore) ListTeamMembers(ctx context.Context, teamID string) ([]*
 		members = append(members, &m)
 	}
 	return members, nil
+}
+
+// GetTeamOrgID looks up the org owning teamID. Returns "" with no
+// error when the team isn't found (or RLS hides it from this
+// caller — callers should wrap in WithBypass when they need the
+// lookup to succeed regardless of current tenant context).
+func (s *PostgresStore) GetTeamOrgID(ctx context.Context, teamID string) (string, error) {
+	w := wool.Get(ctx).In("GetTeamOrgID")
+	executor := s.getQueryExecutor(ctx)
+
+	var orgID string
+	err := executor.QueryRow(ctx,
+		`SELECT org_id FROM teams WHERE id = $1`, teamID,
+	).Scan(&orgID)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return "", nil
+		}
+		return "", w.Wrapf(err, "failed to get team org")
+	}
+	return orgID, nil
 }
 
 func parseTeamRole(role string) gen.TeamRole {

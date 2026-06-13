@@ -14,6 +14,7 @@ import (
 	"api/pkg/cache"
 	"api/pkg/email"
 	"api/pkg/infra"
+	"api/pkg/permissionsplugin"
 	"context"
 	ed25519core "crypto/ed25519"
 	"fmt"
@@ -22,6 +23,7 @@ import (
 
 	codefly "github.com/codefly-dev/sdk-go"
 	"github.com/codefly-dev/core/wool"
+	wooltel "github.com/codefly-dev/core/wool/otel"
 )
 
 func init() {
@@ -30,6 +32,32 @@ func init() {
 
 func doWork(ctx context.Context) (Clean, error) {
 	w := wool.Get(ctx).In("doWork")
+
+	// OpenTelemetry — enabled when OTEL_EXPORTER_OTLP_ENDPOINT is
+	// set (or by setting OTEL_SERVICE_NAME for stdout-fallback dev
+	// mode). The provider exports to any OTLP-compatible collector
+	// (Tempo, Jaeger, signoz, Honeycomb, Datadog…). Empty env → no
+	// provider registered → all spans are no-ops.
+	//
+	// FE→BE trace continuation: the browser stamps W3C `traceparent`
+	// on every Connect-ES fetch (Sentry's browserTracingIntegration),
+	// the api extracts it on the Connect path via otelconnect (see
+	// connect_gen.go) and on the raw-gRPC path via otelgrpc (see
+	// grpc_gen.go), and starts a child span. End-to-end traces from
+	// browser click to SQL query require both this provider AND the
+	// CORS allowlist for `traceparent` / `baggage` (connect_gen.go).
+	var otelProvider *wooltel.Provider
+	if os.Getenv("OTEL_EXPORTER_OTLP_ENDPOINT") != "" || os.Getenv("OTEL_SERVICE_NAME") != "" {
+		p, oerr := wooltel.Enable(wooltel.WithServiceName("saas-starter-api"))
+		if oerr != nil {
+			w.Warn("OTEL setup failed; continuing without tracing", wool.ErrField(oerr))
+		} else {
+			otelProvider = p
+			w.Info("OTEL enabled",
+				wool.Field("endpoint", os.Getenv("OTEL_EXPORTER_OTLP_ENDPOINT")),
+				wool.Field("service.name", "saas-starter-api"))
+		}
+	}
 
 	store, err := infra.NewPostgresStore(ctx)
 	if err != nil {
@@ -49,7 +77,10 @@ func doWork(ctx context.Context) (Clean, error) {
 
 	// Auth pipeline: IdentityResolver + JWTMinter + optional provider
 	// validator/exchanger chain for the OAuth code flow.
-	sessionStore := pgauth.NewSessionStore(store.Pool())
+	// SessionStore needs WithUserTx/WithBypass helpers (sessions is
+	// RLS-protected per Phase 2H); pass *PostgresStore which
+	// implements them.
+	sessionStore := pgauth.NewSessionStore(store)
 	resolver := pgauth.NewResolver(store.Pool())
 	priv, err := loadSigningKey(ctx)
 	if err != nil {
@@ -62,6 +93,19 @@ func doWork(ctx context.Context) (Clean, error) {
 
 	service.SetIdentityResolver(resolver)
 	service.SetJWTMinter(minter)
+
+	// Permissions plugin: configure signing keys before NewServer
+	// fires the plugin loop in server_gen.go. The ed25519 key is
+	// the SAME one we use for JWT minting (saas-starter's cluster
+	// identity); plugins running in this cluster verify both with
+	// the matching public key. The HMAC fallback is read from
+	// CODEFLY_SCOPED_AUTH_SECRET — the codefly host populates this
+	// when it spawns plugins via manager.WithScopedAuthSecret. In
+	// dev (no host, no env), v2 (ed25519) takes precedence so the
+	// approve flow still works end-to-end.
+	permissionsplugin.Default().
+		WithEd25519Key([]byte(priv)).
+		WithHMACSecret([]byte(os.Getenv("CODEFLY_SCOPED_AUTH_SECRET")))
 
 	// Server-side OAuth state signer. Seeded from the JWT private key so
 	// state survives across api restarts and is consistent across
@@ -124,6 +168,12 @@ func doWork(ctx context.Context) (Clean, error) {
 	}
 
 	adapters.WithService(service)
+
+	// Shared-secret guard for privileged-internal RPCs (e.g.
+	// CheckPermission). Empty env = dev mode (gate falls through);
+	// production deploys set CODEFLY_INTERNAL_TOKEN in both api and
+	// auth-sidecar configs.
+	adapters.SetInternalToken(os.Getenv("CODEFLY_INTERNAL_TOKEN"))
 
 	// /v1/status — public health probe surface. Probes run in parallel
 	// with a 2s budget each; overall status is the worst result. The
@@ -271,6 +321,16 @@ func doWork(ctx context.Context) (Clean, error) {
 		sw.Info("closing store")
 		store.Close()
 		sw.Info("store closed")
+		if otelProvider != nil {
+			sw.Info("flushing OTEL provider")
+			// Bounded shutdown — exporter has its own flush window
+			// (otlptrace's batcher). 5s is a sensible cap.
+			shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+			defer cancel()
+			if err := otelProvider.Shutdown(shutdownCtx); err != nil {
+				sw.Warn("OTEL shutdown failed", wool.ErrField(err))
+			}
+		}
 	}, nil
 }
 

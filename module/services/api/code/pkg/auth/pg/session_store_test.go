@@ -10,6 +10,7 @@ import (
 
 	codefly "github.com/codefly-dev/sdk-go"
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/stretchr/testify/require"
 
@@ -19,9 +20,21 @@ import (
 	"api/pkg/auth"
 	pgauth "api/pkg/auth/pg"
 	"api/pkg/business"
+	"api/pkg/infra"
 )
 
-var testPool *pgxpool.Pool
+// testStore is the RLS-aware *PostgresStore (BeforeAcquire SET ROLE
+// app_tenant on every connection). NewSessionStore is constructed
+// against this so the per-method WithUserTx / WithBypass wraps
+// exercise the production RLS path.
+//
+// testPool is a raw *pgxpool.Pool for places we need direct DB
+// access (e.g. seedUser inserting a users row, which is in the
+// RLS skip-list anyway).
+var (
+	testStore *infra.PostgresStore
+	testPool  *pgxpool.Pool
+)
 
 // TestMain boots a real postgres (+ vault) via codefly WithDependencies and
 // holds a pgxpool for the whole package. Matches the pattern in
@@ -53,15 +66,16 @@ func TestMain(m *testing.M) {
 		os.Exit(1)
 	}
 
-	pool, err := pgxpool.New(ctx, conn)
+	store, err := infra.NewPostgresStoreFromURL(ctx, conn)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "pgxpool.New: %v\n", err)
+		fmt.Fprintf(os.Stderr, "NewPostgresStoreFromURL: %v\n", err)
 		os.Exit(1)
 	}
-	testPool = pool
+	testStore = store
+	testPool = store.Pool()
 
 	code := m.Run()
-	pool.Close()
+	store.Close()
 	os.Exit(code)
 }
 
@@ -93,7 +107,7 @@ func newRecord(userID uuid.UUID) *auth.SessionRecord {
 
 func TestSessionStore_InsertAndFind(t *testing.T) {
 	ctx := context.Background()
-	store := pgauth.NewSessionStore(testPool)
+	store := pgauth.NewSessionStore(testStore)
 
 	userID := seedUser(t)
 	rec := newRecord(userID)
@@ -112,7 +126,7 @@ func TestSessionStore_InsertAndFind(t *testing.T) {
 
 func TestSessionStore_FindByRefreshHash_NotFound(t *testing.T) {
 	ctx := context.Background()
-	store := pgauth.NewSessionStore(testPool)
+	store := pgauth.NewSessionStore(testStore)
 
 	hash := sha256.Sum256([]byte("never-existed"))
 	_, err := store.FindByRefreshHash(ctx, hash[:])
@@ -122,7 +136,7 @@ func TestSessionStore_FindByRefreshHash_NotFound(t *testing.T) {
 
 func TestSessionStore_RevokeFamily(t *testing.T) {
 	ctx := context.Background()
-	store := pgauth.NewSessionStore(testPool)
+	store := pgauth.NewSessionStore(testStore)
 	userID := seedUser(t)
 
 	family := business.NewID()
@@ -150,7 +164,7 @@ func TestSessionStore_RevokeFamily(t *testing.T) {
 
 func TestSessionStore_RevokeFamily_OnlyAffectsMatchingFamily(t *testing.T) {
 	ctx := context.Background()
-	store := pgauth.NewSessionStore(testPool)
+	store := pgauth.NewSessionStore(testStore)
 	userID := seedUser(t)
 
 	target := newRecord(userID)
@@ -171,7 +185,7 @@ func TestSessionStore_RevokeFamily_OnlyAffectsMatchingFamily(t *testing.T) {
 
 func TestSessionStore_Insert_RequiresFamilyID(t *testing.T) {
 	ctx := context.Background()
-	store := pgauth.NewSessionStore(testPool)
+	store := pgauth.NewSessionStore(testStore)
 
 	rec := newRecord(seedUser(t))
 	rec.FamilyID = uuid.Nil
@@ -184,7 +198,7 @@ func TestSessionStore_Insert_NullableOrgID(t *testing.T) {
 	// User with no org yet (signup flow before org creation). OrgID must be
 	// persistable as NULL, not crash with "invalid UUID".
 	ctx := context.Background()
-	store := pgauth.NewSessionStore(testPool)
+	store := pgauth.NewSessionStore(testStore)
 	userID := seedUser(t)
 
 	rec := newRecord(userID)
@@ -197,4 +211,55 @@ func TestSessionStore_Insert_NullableOrgID(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, uuid.Nil, f.OrgID)
 	require.Equal(t, "", f.OrgRole)
+}
+
+// TestRLS_Sessions_CrossUserBlocked — Phase 2H. Two users each get a
+// session row; user A's WithUserTx must see only their own session.
+// User B's row stays invisible from A's scope. Un-wrapped reads return
+// zero (fail-closed). Refresh-token-hash lookup uses WithBypass and
+// CAN see both — that's the only correct shape (the lookup doesn't
+// know the user yet).
+func TestRLS_Sessions_CrossUserBlocked(t *testing.T) {
+	ctx := context.Background()
+	store := pgauth.NewSessionStore(testStore)
+
+	userA := seedUser(t)
+	userB := seedUser(t)
+
+	recA := newRecord(userA)
+	recB := newRecord(userB)
+	require.NoError(t, store.Insert(ctx, recA))
+	require.NoError(t, store.Insert(ctx, recB))
+
+	// Cross-user probe via raw tx: from A's WithUserTx, ask for
+	// any sessions whose user_id matches B. RLS hides B's row.
+	require.NoError(t, testStore.WithUserTx(ctx, userA.String(), func(ctx context.Context) error {
+		tx := ctx.Value("tx").(pgx.Tx) //nolint:staticcheck
+		var count int
+		require.NoError(t, tx.QueryRow(ctx,
+			`SELECT COUNT(*) FROM sessions WHERE user_id = $1`, userB,
+		).Scan(&count))
+		require.Equal(t, 0, count,
+			"RLS must hide B's sessions from A's WithUserTx")
+		return nil
+	}))
+
+	// Un-wrapped: zero rows. The pool's BeforeAcquire SET ROLE
+	// app_tenant + no app.current_user_id GUC = fail-closed.
+	var noWrapCount int
+	require.NoError(t, testPool.QueryRow(ctx,
+		`SELECT COUNT(*) FROM sessions WHERE user_id = $1`, userA,
+	).Scan(&noWrapCount))
+	require.Equal(t, 0, noWrapCount,
+		"un-wrapped session read must return ZERO rows (RLS fail-closed)")
+
+	// FindByRefreshHash (the production refresh-token lookup path)
+	// uses WithBypass and CAN see any user's row by design — that's
+	// what makes the auth flow work without knowing the user yet.
+	foundA, err := store.FindByRefreshHash(ctx, recA.RefreshHash)
+	require.NoError(t, err)
+	require.Equal(t, userA, foundA.UserID)
+	foundB, err := store.FindByRefreshHash(ctx, recB.RefreshHash)
+	require.NoError(t, err)
+	require.Equal(t, userB, foundB.UserID)
 }

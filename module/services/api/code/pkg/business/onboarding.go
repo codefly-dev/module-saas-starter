@@ -5,6 +5,8 @@ import (
 	"time"
 
 	"github.com/codefly-dev/core/wool"
+
+	"api/pkg/gen"
 )
 
 // OnboardingStep represents a single step in the onboarding flow.
@@ -67,32 +69,47 @@ func (s *Service) GetProgress(ctx context.Context, userID string) (*OnboardingPr
 		return !ok || st.Status == "pending"
 	}
 
+	// listOrgs is shared across the steps — ListOrganizationsForUser
+	// is cross-tenant by definition (the user can be in many orgs)
+	// so it runs under WithBypass. Org-scoped reads below re-enter
+	// WithOrgTx for each org.
+	listOrgs := func() []*gen.Organization {
+		var orgs []*gen.Organization
+		_ = s.store.WithBypass(ctx, func(ctx context.Context) error {
+			os, err := s.store.ListOrganizationsForUser(ctx, userID)
+			orgs = os
+			return err
+		})
+		return orgs
+	}
+
 	// create_org — user belongs to at least one org. Set is the trigger;
 	// our resolver auto-creates a personal org on first login so this
 	// completes immediately for fixture users (which is fine — the wizard
 	// step is "you have an org", not "you created one through the wizard").
 	if pending("create_org") {
-		orgs, oerr := s.store.ListOrganizationsForUser(ctx, userID)
-		autoComplete("create_org", oerr == nil && len(orgs) > 0)
+		orgs := listOrgs()
+		autoComplete("create_org", len(orgs) > 0)
 	}
 
 	// invite_team — any invitation has been issued from any org the
 	// user is a member of. Inviting a teammate is the user-visible
 	// action; we detect by counting invitations across their orgs.
 	if pending("invite_team") {
-		orgs, _ := s.store.ListOrganizationsForUser(ctx, userID)
+		orgs := listOrgs()
 		invited := false
 		for _, o := range orgs {
-			n, _ := s.store.CountPendingInvitations(ctx, o.Id)
-			if n > 0 {
-				invited = true
-				break
-			}
-			// Pending may have all been accepted — also consider any
-			// status counts as "they've used invitations".
-			invs, _ := s.store.ListInvitations(ctx, o.Id, "")
-			if len(invs) > 0 {
-				invited = true
+			_ = s.store.WithOrgTx(ctx, o.Id, func(ctx context.Context) error {
+				if n, _ := s.store.CountPendingInvitations(ctx, o.Id); n > 0 {
+					invited = true
+					return nil
+				}
+				if invs, _ := s.store.ListInvitations(ctx, o.Id, ""); len(invs) > 0 {
+					invited = true
+				}
+				return nil
+			})
+			if invited {
 				break
 			}
 		}
@@ -103,12 +120,17 @@ func (s *Service) GetProgress(ctx context.Context, userID string) (*OnboardingPr
 	// We don't gate on plan tier; any active subscription means the
 	// billing flow ran end-to-end at least once.
 	if pending("choose_plan") {
-		orgs, _ := s.store.ListOrganizationsForUser(ctx, userID)
+		orgs := listOrgs()
 		picked := false
 		for _, o := range orgs {
-			sub, serr := s.store.GetSubscription(ctx, o.Id)
-			if serr == nil && sub != nil && sub.Status != "" {
-				picked = true
+			_ = s.store.WithOrgTx(ctx, o.Id, func(ctx context.Context) error {
+				sub, serr := s.store.GetSubscription(ctx, o.Id)
+				if serr == nil && sub != nil && sub.Status != "" {
+					picked = true
+				}
+				return nil
+			})
+			if picked {
 				break
 			}
 		}
@@ -118,7 +140,7 @@ func (s *Service) GetProgress(ctx context.Context, userID string) (*OnboardingPr
 	// setup_api_key — at least one API key exists in any of the
 	// user's orgs.
 	if pending("setup_api_key") {
-		orgs, _ := s.store.ListOrganizationsForUser(ctx, userID)
+		orgs := listOrgs()
 		hasKey := false
 		for _, o := range orgs {
 			_ = s.store.WithOrgTx(ctx, o.Id, func(ctx context.Context) error {

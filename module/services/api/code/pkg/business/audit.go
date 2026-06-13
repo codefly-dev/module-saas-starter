@@ -4,6 +4,7 @@ import (
 	"context"
 	"time"
 
+	"github.com/codefly-dev/core/wool"
 	"google.golang.org/grpc/metadata"
 )
 
@@ -47,17 +48,40 @@ func NewAsyncAuditEmitter(store Store, bufferSize int) *AsyncAuditEmitter {
 	return e
 }
 
-func (e *AsyncAuditEmitter) Emit(_ context.Context, entry AuditEntry) {
+func (e *AsyncAuditEmitter) Emit(ctx context.Context, entry AuditEntry) {
 	select {
 	case e.ch <- auditWork{entry: entry}:
 	default:
-		// Buffer full — drop rather than block business logic
+		// Buffer full — drop rather than block business logic. Loud
+		// log so an under-sized buffer in prod doesn't silently lose
+		// audit rows. If this fires, either bump bufferSize or
+		// investigate why drain() is falling behind.
+		wool.Get(ctx).In("AsyncAuditEmitter.Emit").Warn("audit buffer full; event dropped",
+			wool.Field("action", entry.Action),
+			wool.Field("actor_id", entry.ActorID),
+			wool.Field("org_id", entry.OrgID),
+		)
 	}
 }
 
 func (e *AsyncAuditEmitter) drain() {
 	for w := range e.ch {
-		_ = e.store.InsertAuditEvent(context.Background(), w.entry)
+		ctx := context.Background()
+		// audit_events is RLS-protected (Phase 2D). Tenant-scoped
+		// events go through WithOrgTx so the WITH CHECK passes; system
+		// events (no resolved org — gdpr, billing webhooks, scheduled
+		// cleanup) carry an empty OrgID and write under WithBypass,
+		// which is also the only way NULL-org rows are visible to
+		// later readers (cross-tenant by nature).
+		if w.entry.OrgID != "" {
+			_ = e.store.WithOrgTx(ctx, w.entry.OrgID, func(ctx context.Context) error {
+				return e.store.InsertAuditEvent(ctx, w.entry)
+			})
+		} else {
+			_ = e.store.WithBypass(ctx, func(ctx context.Context) error {
+				return e.store.InsertAuditEvent(ctx, w.entry)
+			})
+		}
 	}
 }
 
@@ -65,10 +89,28 @@ func (e *AsyncAuditEmitter) Close() {
 	close(e.ch)
 }
 
-// QueryAuditLog delegates to the store.
+// QueryAuditLog delegates to the store, scoping the read to the
+// requested org under WithOrgTx so RLS lets the rows through. When
+// orgID is empty the caller is platform-admin (handler authz
+// already enforced this in adapters/rpcs.go AuditServer.QueryAuditLog)
+// and we use WithBypass to span tenants.
 func (s *Service) QueryAuditLog(ctx context.Context, orgID, actorID, action, resource, resourceID string,
 	from, to *time.Time, pageSize int32, pageToken string) ([]AuditEntry, string, int32, error) {
-	return s.store.QueryAuditLog(ctx, orgID, actorID, action, resource, resourceID, from, to, pageSize, pageToken)
+	var entries []AuditEntry
+	var nextToken string
+	var total int32
+	wrap := func(ctx context.Context) error {
+		ev, nt, tot, err := s.store.QueryAuditLog(ctx, orgID, actorID, action, resource, resourceID, from, to, pageSize, pageToken)
+		entries, nextToken, total = ev, nt, tot
+		return err
+	}
+	var err error
+	if orgID == "" {
+		err = s.store.WithBypass(ctx, wrap)
+	} else {
+		err = s.store.WithOrgTx(ctx, orgID, wrap)
+	}
+	return entries, nextToken, total, err
 }
 
 // emit is a convenience method on Service for audit emission.

@@ -148,9 +148,15 @@ func (s *Service) processExport(ctx context.Context, gdprStore GDPRStore, req *G
 		export["identities"] = identities
 	}
 
-	orgs, err := s.store.ListOrganizationsForUser(ctx, req.UserID)
-	if err != nil {
-		w.Warn("failed to list orgs for export", wool.ErrField(err))
+	// organizations is RLS-protected (Phase 2F); GDPR export spans
+	// every org the user is a member of, so WithBypass.
+	var orgs []*gen.Organization
+	if berr := s.store.WithBypass(ctx, func(ctx context.Context) error {
+		os, err := s.store.ListOrganizationsForUser(ctx, req.UserID)
+		orgs = os
+		return err
+	}); berr != nil {
+		w.Warn("failed to list orgs for export", wool.ErrField(berr))
 	} else {
 		export["organizations"] = orgs
 	}
@@ -177,11 +183,19 @@ func (s *Service) processExport(ctx context.Context, gdprStore GDPRStore, req *G
 		export["api_keys"] = apiKeys
 	}
 
-	// Collect audit events for this user.
-	auditEvents, _, _, err := s.store.QueryAuditLog(ctx, "", req.UserID, "", "", "",
-		nil, nil, 1000, "")
-	if err != nil {
-		w.Warn("failed to query audit log for export", wool.ErrField(err))
+	// Collect audit events for this user. Cross-tenant by nature:
+	// the GDPR export gathers every event the user ever generated
+	// regardless of org. audit_events is RLS-protected (Phase 2D)
+	// so the scan needs WithBypass — this is a privileged-by-policy
+	// platform flow.
+	var auditEvents []AuditEntry
+	if berr := s.store.WithBypass(ctx, func(ctx context.Context) error {
+		ev, _, _, err := s.store.QueryAuditLog(ctx, "", req.UserID, "", "", "",
+			nil, nil, 1000, "")
+		auditEvents = ev
+		return err
+	}); berr != nil {
+		w.Warn("failed to query audit log for export", wool.ErrField(berr))
 	} else {
 		export["audit_events"] = auditEvents
 	}

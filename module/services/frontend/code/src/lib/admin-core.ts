@@ -97,12 +97,21 @@ export function extractRoles(accessToken: string): {
 
 export function detectImpersonation(accessToken: string): ImpersonationInfo {
   const payload = decodeJWTPayload(accessToken);
-  // RFC 8693 `act` claim or custom `impersonated_by`
+  // The api mints a custom flat `acting` claim holding the impersonated
+  // (target) user id; the token subject (`sub`) is the admin actor. The old
+  // code only looked at RFC 8693 `act.sub` / `impersonated_by`, neither of
+  // which the backend emits — so the banner never rendered. Accept all three.
+  const acting = payload.acting as string | undefined;
   const act = payload.act as { sub?: string } | undefined;
   const impersonatedBy = payload.impersonated_by as string | undefined;
-  const impersonatorId = act?.sub ?? impersonatedBy;
+  const sub = payload.sub as string | undefined;
+
+  const isImpersonating = !!acting || !!act?.sub || !!impersonatedBy;
+  // The impersonator is the actor: the token subject when the backend's flat
+  // `acting` claim is in use, else the RFC/legacy actor fields.
+  const impersonatorId = (acting ? sub : undefined) ?? act?.sub ?? impersonatedBy;
   return {
-    isImpersonating: !!impersonatorId,
+    isImpersonating,
     impersonatorId,
   };
 }
@@ -110,14 +119,23 @@ export function detectImpersonation(accessToken: string): ImpersonationInfo {
 const REFRESH_TOKEN_KEY = "codefly_refresh_token";
 const USER_EMAIL_KEY = "codefly_user_email";
 
+// The refresh token now lives ONLY in an httpOnly `codefly_rt` cookie set by
+// the api (see rest_extras.go). JS — and therefore any XSS — can no longer read
+// it. These helpers are kept as no-ops / cookie-aware shims so callers don't
+// need to change shape, and we proactively purge any token left in localStorage
+// by an older build.
 export function getStoredRefreshToken(): string | null {
-  if (typeof window === "undefined") return null;
-  return localStorage.getItem(REFRESH_TOKEN_KEY);
+  // The httpOnly cookie is not readable from JS; the browser sends it
+  // automatically on the credentialed /v1/auth/refresh request.
+  return null;
 }
 
-export function storeRefreshToken(token: string): void {
-  if (typeof window === "undefined") return;
-  localStorage.setItem(REFRESH_TOKEN_KEY, token);
+export function storeRefreshToken(_token: string): void {
+  // No-op: the backend sets the httpOnly cookie. Make sure nothing lingers in
+  // localStorage from a previous (insecure) build.
+  if (typeof window !== "undefined") {
+    localStorage.removeItem(REFRESH_TOKEN_KEY);
+  }
 }
 
 export function clearRefreshToken(): void {

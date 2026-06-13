@@ -27,6 +27,7 @@ import (
 	"errors"
 
 	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/status"
 
 	"github.com/codefly-dev/core/wool"
@@ -61,6 +62,13 @@ func WithOrgMembershipCache(c *cache.OrgMembershipCache) {
 // lookupMembership consults cache first, falls back to DB, and fills
 // the cache on DB hit. Returns (role, err) where role == "" + err == nil
 // means "verified not-a-member" (still cached as a negative entry).
+//
+// The DB read goes through WithOrgTx scoped to orgID — that's the
+// natural scope for "is this user a member of THIS org", and lets
+// the org_members RLS policy through. We don't use bypass here on
+// purpose: a typo in orgID (or a probe with someone else's org)
+// SHOULD return zero rows, which the cache then memoizes as
+// "not-a-member" — fail-closed.
 func lookupMembership(ctx context.Context, orgID, userID string) (string, error) {
 	if orgMembershipCache != nil {
 		if m, err := orgMembershipCache.Get(ctx, orgID, userID); err == nil {
@@ -70,8 +78,12 @@ func lookupMembership(ctx context.Context, orgID, userID string) (string, error)
 		// distinguish: the DB is always truth, and cache failures should
 		// never block an authorized request.
 	}
-	members, err := service.Store().ListOrgMembers(ctx, orgID)
-	if err != nil {
+	var members []*gen.OrgMembership
+	if err := service.Store().WithOrgTx(ctx, orgID, func(ctx context.Context) error {
+		ms, err := service.Store().ListOrgMembers(ctx, orgID)
+		members = ms
+		return err
+	}); err != nil {
 		return "", err
 	}
 	var role string
@@ -161,31 +173,63 @@ func requireOrgAdmin(ctx context.Context, actorID, orgID string) error {
 	return status.Error(codes.PermissionDenied, "requires org admin or owner role")
 }
 
-// requireTeamAdmin verifies actorID has admin-or-owner role within the
-// team. Platform super_admin bypasses. For now this only checks team-level
-// role — caller should separately require org membership if cross-org
-// scoping matters; the team authz query alone doesn't resolve the org.
-func requireTeamAdmin(ctx context.Context, actorID, teamID string) error {
+// requireTeamAdmin verifies actorID has admin-or-owner role within
+// the team. Platform super_admin bypasses. team_members is RLS-
+// protected (Phase 2C) and the policy JOINs to teams (also RLS), so
+// the lookup has to enter WithOrgTx scoped to the team's owning
+// org. We resolve team→org under WithBypass first since the auth
+// helper is the entry point and doesn't yet have an org context.
+//
+// On success returns the resolved orgID; rpcs.go handlers stamp
+// that onto ctx via business.WithCachedTeamOrgID so downstream
+// Service methods (AddTeamMember etc.) skip a redundant WithBypass
+// → 3 transactions per request instead of 4.
+func requireTeamAdmin(ctx context.Context, actorID, teamID string) (string, error) {
 	if role, err := service.Store().GetPlatformRole(ctx, actorID); err == nil && role == "super_admin" {
-		return nil
+		// Even for super_admin we still need to resolve the org so
+		// the downstream WithOrgTx is correctly scoped.
+		var orgID string
+		if err := service.Store().WithBypass(ctx, func(ctx context.Context) error {
+			o, err := service.Store().GetTeamOrgID(ctx, teamID)
+			orgID = o
+			return err
+		}); err != nil {
+			return "", status.Errorf(codes.Internal, "cannot resolve team org: %v", err)
+		}
+		return orgID, nil
 	}
 	if teamID == "" {
-		return status.Error(codes.InvalidArgument, "team_id required")
+		return "", status.Error(codes.InvalidArgument, "team_id required")
 	}
-	members, err := service.Store().ListTeamMembers(ctx, teamID)
-	if err != nil {
-		return status.Errorf(codes.Internal, "cannot verify team membership: %v", err)
+	var orgID string
+	if err := service.Store().WithBypass(ctx, func(ctx context.Context) error {
+		o, err := service.Store().GetTeamOrgID(ctx, teamID)
+		orgID = o
+		return err
+	}); err != nil {
+		return "", status.Errorf(codes.Internal, "cannot resolve team org: %v", err)
+	}
+	if orgID == "" {
+		return "", status.Error(codes.PermissionDenied, "not a member of this team")
+	}
+	var members []*gen.TeamMembership
+	if err := service.Store().WithOrgTx(ctx, orgID, func(ctx context.Context) error {
+		ms, err := service.Store().ListTeamMembers(ctx, teamID)
+		members = ms
+		return err
+	}); err != nil {
+		return "", status.Errorf(codes.Internal, "cannot verify team membership: %v", err)
 	}
 	for _, m := range members {
 		if m.UserId != actorID {
 			continue
 		}
 		if m.Role == gen.TeamRole_TEAM_ROLE_ADMIN || m.Role == gen.TeamRole_TEAM_ROLE_OWNER {
-			return nil
+			return orgID, nil
 		}
-		return status.Error(codes.PermissionDenied, "requires team admin or owner role")
+		return "", status.Error(codes.PermissionDenied, "requires team admin or owner role")
 	}
-	return status.Error(codes.PermissionDenied, "not a member of this team")
+	return "", status.Error(codes.PermissionDenied, "not a member of this team")
 }
 
 // requirePlatformAdmin verifies actorID has some platform role (support,
@@ -200,6 +244,48 @@ func requirePlatformAdmin(ctx context.Context, actorID string) error {
 		return status.Error(codes.PermissionDenied, "requires platform admin role")
 	}
 	return nil
+}
+
+// internalToken is the shared secret the auth-sidecar (and other
+// trusted internal callers) carry to hit privileged-internal RPCs
+// like CheckPermission. Set at startup from CODEFLY_INTERNAL_TOKEN.
+// Empty = unset = dev mode (gate falls through, preserving the
+// stand-alone run UX).
+//
+// Why a shared secret rather than mTLS: the codefly mesh today
+// terminates network identity at the host level; per-process certs
+// would require a substantial codefly-side change. A shared secret
+// lets us draw a "auth-sidecar can call CheckPermission, anonymous
+// cannot" line without that overhaul. mTLS is the eventual fix.
+var internalToken string
+
+// SetInternalToken installs the shared secret. Called once from
+// work.go after reading CODEFLY_INTERNAL_TOKEN. Idempotent.
+func SetInternalToken(token string) { internalToken = token }
+
+// requireInternalOrAuth gates a privileged-internal RPC. Caller
+// must present EITHER a valid JWT (standard auth path) OR a
+// matching X-Codefly-Internal-Token header.
+//
+// Dev mode (internalToken=="") permits unauthenticated callers so
+// `codefly run service api --stand-alone` still functions. Any
+// deploy that sets CODEFLY_INTERNAL_TOKEN gets the real gate.
+func requireInternalOrAuth(ctx context.Context) error {
+	if id, ok := wool.Get(ctx).UserAuthID(); ok && id != "" {
+		return nil
+	}
+	if internalToken == "" {
+		return nil
+	}
+	md, ok := metadata.FromIncomingContext(ctx)
+	if ok {
+		for _, v := range md.Get("x-codefly-internal-token") {
+			if v != "" && v == internalToken {
+				return nil
+			}
+		}
+	}
+	return status.Error(codes.Unauthenticated, "internal endpoint requires JWT or X-Codefly-Internal-Token")
 }
 
 // requireSelfOrPlatformAdmin allows an action if the actor is either
@@ -368,8 +454,14 @@ func requireMFA(ctx context.Context, actorID string) error {
 	if mfaSatisfied(ctx) {
 		return nil
 	}
-	enrolled, err := service.Store().HasVerifiedMFA(ctx, actorID)
-	if err != nil {
+	// mfa_devices is RLS-protected by user_id (Phase 2G); wrap in
+	// the actor's WithUserTx so the count query sees their devices.
+	var enrolled bool
+	if err := service.Store().WithUserTx(ctx, actorID, func(ctx context.Context) error {
+		e, err := service.Store().HasVerifiedMFA(ctx, actorID)
+		enrolled = e
+		return err
+	}); err != nil {
 		// Fail closed when the lookup itself fails — better to block a
 		// sensitive op than to default-allow.
 		return status.Errorf(codes.Internal, "cannot verify MFA status: %v", err)

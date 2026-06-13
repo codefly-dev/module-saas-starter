@@ -52,7 +52,7 @@ func (h *ssoAdminConnectHandler) StartSetup(
 	if err := requireOrgAdmin(ctx, actorID, req.Msg.OrgId); err != nil {
 		return nil, translateGRPCError(err)
 	}
-	link, err := h.svc.StartSSOSetup(ctx, req.Msg.OrgId, req.Msg.ReturnUrl)
+	link, err := h.svc.StartSSOSetup(ctx, actorID, req.Msg.OrgId, req.Msg.ReturnUrl)
 	if err != nil {
 		return nil, translateGRPCError(err)
 	}
@@ -71,7 +71,7 @@ func (h *ssoAdminConnectHandler) Disable(
 	if err := requireOrgAdmin(ctx, actorID, req.Msg.OrgId); err != nil {
 		return nil, translateGRPCError(err)
 	}
-	if err := h.svc.DisableSSO(ctx, req.Msg.OrgId); err != nil {
+	if err := h.svc.DisableSSO(ctx, actorID, req.Msg.OrgId); err != nil {
 		return nil, translateGRPCError(err)
 	}
 	return connect.NewResponse(&emptypb.Empty{}), nil
