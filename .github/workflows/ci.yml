@@ -1,0 +1,32 @@
+name: ci
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        # The saas-starter is a multi-module repo: the module root plus each
+        # Go service. Build + vet each independently against published core.
+        module:
+          - "."
+          - "module/services/api/code"
+          - "module/services/auth-sidecar/code"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: '${{ matrix.module }}/go.mod'
+      - name: Build (${{ matrix.module }})
+        working-directory: ${{ matrix.module }}
+        run: go build ./...
+      - name: Vet (${{ matrix.module }})
+        working-directory: ${{ matrix.module }}
+        run: go vet ./...
