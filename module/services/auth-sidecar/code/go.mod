@@ -100,8 +100,4 @@ require (
 
 replace api => ../../api/code
 
-replace github.com/codefly-dev/core => ../../../../../../../core
-
-replace github.com/codefly-dev/sdk-go => ../../../../../../../sdk-go
-
 exclude google.golang.org/genproto v0.0.0-20210226172003-ab064af71705
