@@ -5,6 +5,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/jackc/pgx/v5"
 	"github.com/stretchr/testify/require"
 
 	"api/pkg/business"
@@ -14,19 +15,9 @@ import (
 // delegation_grants integration tests
 // =====================================================================
 //
-// Real Postgres only — never mock infra. Schema migration 38
-// is applied by the store agent's migration runner before
-// TestMain returns.
-//
-// **What's covered:**
-//   - Idempotent Insert (ON CONFLICT returns existing id)
-//   - Decide atomic transition (concurrent approvers cannot stomp)
-//   - SetMintedToken updates without changing status
-//   - ListPending honors risk ordering
-//   - Subscribe snapshot for already-decided rows
-//   - M8 MatchPattern: no match, exact, glob
-//   - M8 IncrementPatternUse: success, exhaustion, revoked
-//   - M8 InsertAutoApproved: status=approved + via_pattern caveat
+// Real Postgres only — never mock infra. delegation_grants is
+// RLS-protected (org-scoped), so every store call runs as the grant's
+// org via As(Identity{OrgID}); fixture inserts use the same.
 
 // seedActorPrincipal inserts an agent principal we can use as
 // actor on a delegation grant. Returns the principal id.
@@ -57,18 +48,14 @@ func newRequestInput(orgID, actorID, action, resource string) *business.RequestD
 	}
 }
 
-// seedPatternGrant inserts an active pattern grant directly via
-// SQL. The business layer doesn't yet expose a public CreatePattern
-// method (that's a separate UI flow); the integration tests poke
-// the row directly so they can exercise the M8 read path.
+// seedPatternGrant inserts an active pattern grant directly. delegation_grants
+// is RLS-protected (org-scoped); the insert runs as the org so WITH CHECK passes.
 func seedPatternGrant(t *testing.T, orgID, actorID, grantorID, actionPattern, resourcePattern string, maxUses *int) string {
 	t.Helper()
-	ctx := testCtx
 	id := business.NewIDString()
-
-	// expires_at far in the future so MatchPattern's
-	// expires_at > NOW() filter doesn't trip.
-	_, err := testPool.Exec(ctx, `
+	require.NoError(t, testStore.As(business.Identity{OrgID: orgID}).Within(testCtx, func(ctx context.Context) error {
+		tx := ctx.Value("tx").(pgx.Tx) //nolint:staticcheck // shared "tx" key
+		_, err := tx.Exec(ctx, `
         INSERT INTO delegation_grants (
             id, org_id, actor_principal_id, grantor_principal_id,
             action, resource, justification, risk_level, expires_at,
@@ -80,7 +67,8 @@ func seedPatternGrant(t *testing.T, orgID, actorID, grantorID, actionPattern, re
                 CURRENT_TIMESTAMP + INTERVAL '1 hour',
                 'pattern', 'active', $5, $6, $7, $8)
     `, id, orgID, actorID, grantorID, actionPattern, resourcePattern, maxUses, "pattern-"+id)
-	require.NoError(t, err)
+		return err
+	}))
 	return id
 }
 
@@ -92,30 +80,37 @@ func TestDelegation_Insert_IdempotentByHash(t *testing.T) {
 	owner := seedUser(t)
 	orgID := seedOrg(t, owner)
 	actor := seedActorPrincipal(t, orgID)
+	sc := testStore.As(business.Identity{OrgID: orgID})
 
 	in := newRequestInput(orgID, actor, "github.merge_pr", "repo:foo")
 	hash := business.ComputeRequestHash(in)
 	expires := time.Now().UTC().Add(5 * time.Minute)
 
-	id1, err := testStore.Insert(testCtx, in, hash, expires)
-	require.NoError(t, err)
+	var id1, id2, id3 string
+	require.NoError(t, sc.Within(testCtx, func(ctx context.Context) error {
+		var e error
+		if id1, e = testStore.Insert(ctx, in, hash, expires); e != nil {
+			return e
+		}
+		if id2, e = testStore.Insert(ctx, in, hash, expires); e != nil {
+			return e
+		}
+		in2 := newRequestInput(orgID, actor, "github.merge_pr", "repo:bar")
+		id3, e = testStore.Insert(ctx, in2, business.ComputeRequestHash(in2), expires)
+		return e
+	}))
 	require.NotEmpty(t, id1)
-
-	id2, err := testStore.Insert(testCtx, in, hash, expires)
-	require.NoError(t, err)
 	require.Equal(t, id1, id2, "same hash must return existing row")
-
-	// Different hash → new row.
-	in2 := newRequestInput(orgID, actor, "github.merge_pr", "repo:bar")
-	id3, err := testStore.Insert(testCtx, in2, business.ComputeRequestHash(in2), expires)
-	require.NoError(t, err)
 	require.NotEqual(t, id1, id3)
 }
 
 func TestDelegation_Get_NotFound(t *testing.T) {
 	owner := seedUser(t)
 	orgID := seedOrg(t, owner)
-	_, err := testStore.Get(testCtx, business.NewIDString(), orgID)
+	err := testStore.As(business.Identity{OrgID: orgID}).Within(testCtx, func(ctx context.Context) error {
+		_, e := testStore.Get(ctx, business.NewIDString(), orgID)
+		return e
+	})
 	require.Error(t, err)
 	var se *business.StoreError
 	require.ErrorAs(t, err, &se)
@@ -131,28 +126,44 @@ func TestDelegation_Decide_ApproveAndDeny(t *testing.T) {
 	orgID := seedOrg(t, owner)
 	actor := seedActorPrincipal(t, orgID)
 	grantor := seedGrantorPrincipal(t, orgID)
+	sc := testStore.As(business.Identity{OrgID: orgID})
+	expires := time.Now().UTC().Add(5 * time.Minute)
 
 	in := newRequestInput(orgID, actor, "infra.exec_sql", "db:prod")
-	expires := time.Now().UTC().Add(5 * time.Minute)
-	id, err := testStore.Insert(testCtx, in, business.ComputeRequestHash(in), expires)
-	require.NoError(t, err)
+	var id string
+	require.NoError(t, sc.Within(testCtx, func(ctx context.Context) error {
+		var e error
+		id, e = testStore.Insert(ctx, in, business.ComputeRequestHash(in), expires)
+		return e
+	}))
 
-	got, err := testStore.Decide(testCtx, id, orgID, grantor, business.GrantStatusApproved, "looks good")
-	require.NoError(t, err)
+	var got *business.DelegationGrant
+	require.NoError(t, sc.Within(testCtx, func(ctx context.Context) error {
+		var e error
+		got, e = testStore.Decide(ctx, id, orgID, grantor, business.GrantStatusApproved, "looks good")
+		return e
+	}))
 	require.Equal(t, business.GrantStatusApproved, got.Status)
 	require.Equal(t, grantor, got.GrantorPrincipalID)
 	require.NotNil(t, got.DecidedAt)
 
 	// Second Decide on the same row must fail (already decided).
-	_, err = testStore.Decide(testCtx, id, orgID, grantor, business.GrantStatusDenied, "changed my mind")
-	require.Error(t, err, "concurrent re-decision must be rejected")
+	require.Error(t, sc.Within(testCtx, func(ctx context.Context) error {
+		_, e := testStore.Decide(ctx, id, orgID, grantor, business.GrantStatusDenied, "changed my mind")
+		return e
+	}), "concurrent re-decision must be rejected")
 
 	// Fresh row, deny path.
 	in2 := newRequestInput(orgID, actor, "infra.drop_table", "db:prod")
-	id2, err := testStore.Insert(testCtx, in2, business.ComputeRequestHash(in2), expires)
-	require.NoError(t, err)
-	denied, err := testStore.Decide(testCtx, id2, orgID, grantor, business.GrantStatusDenied, "too risky")
-	require.NoError(t, err)
+	var denied *business.DelegationGrant
+	require.NoError(t, sc.Within(testCtx, func(ctx context.Context) error {
+		id2, e := testStore.Insert(ctx, in2, business.ComputeRequestHash(in2), expires)
+		if e != nil {
+			return e
+		}
+		denied, e = testStore.Decide(ctx, id2, orgID, grantor, business.GrantStatusDenied, "too risky")
+		return e
+	}))
 	require.Equal(t, business.GrantStatusDenied, denied.Status)
 	require.Equal(t, "too risky", denied.DecisionReason)
 }
@@ -162,17 +173,25 @@ func TestDelegation_SetMintedToken(t *testing.T) {
 	orgID := seedOrg(t, owner)
 	actor := seedActorPrincipal(t, orgID)
 	grantor := seedGrantorPrincipal(t, orgID)
+	sc := testStore.As(business.Identity{OrgID: orgID})
 
 	in := newRequestInput(orgID, actor, "github.merge_pr", "repo:foo")
-	id, err := testStore.Insert(testCtx, in, business.ComputeRequestHash(in), time.Now().Add(5*time.Minute))
-	require.NoError(t, err)
-	_, err = testStore.Decide(testCtx, id, orgID, grantor, business.GrantStatusApproved, "")
-	require.NoError(t, err)
-
-	require.NoError(t, testStore.SetMintedToken(testCtx, id, orgID, "tok-"+id))
-
-	got, err := testStore.Get(testCtx, id, orgID)
-	require.NoError(t, err)
+	var id string
+	var got *business.DelegationGrant
+	require.NoError(t, sc.Within(testCtx, func(ctx context.Context) error {
+		var e error
+		if id, e = testStore.Insert(ctx, in, business.ComputeRequestHash(in), time.Now().Add(5*time.Minute)); e != nil {
+			return e
+		}
+		if _, e = testStore.Decide(ctx, id, orgID, grantor, business.GrantStatusApproved, ""); e != nil {
+			return e
+		}
+		if e = testStore.SetMintedToken(ctx, id, orgID, "tok-"+id); e != nil {
+			return e
+		}
+		got, e = testStore.Get(ctx, id, orgID)
+		return e
+	}))
 	require.Equal(t, "tok-"+id, got.MintedTokenID)
 	require.Equal(t, business.GrantStatusApproved, got.Status, "SetMintedToken must not change status")
 }
@@ -185,22 +204,34 @@ func TestDelegation_ListPending_RiskOrdering(t *testing.T) {
 	owner := seedUser(t)
 	orgID := seedOrg(t, owner)
 	actor := seedActorPrincipal(t, orgID)
+	sc := testStore.As(business.Identity{OrgID: orgID})
 
-	insertWithRisk := func(action string, risk business.RiskLevel) {
-		in := newRequestInput(orgID, actor, action, "")
-		in.RiskLevel = risk
-		_, err := testStore.Insert(testCtx, in, business.ComputeRequestHash(in), time.Now().Add(5*time.Minute))
-		require.NoError(t, err)
-	}
-	insertWithRisk("low.action", business.RiskLevelLow)
-	insertWithRisk("medium.action", business.RiskLevelMedium)
-	insertWithRisk("critical.action", business.RiskLevelCritical)
-	insertWithRisk("high.action", business.RiskLevelHigh)
-
-	got, _, err := testStore.ListPending(testCtx, orgID, 10, "")
-	require.NoError(t, err)
+	var got []*business.DelegationGrant
+	require.NoError(t, sc.Within(testCtx, func(ctx context.Context) error {
+		insertWithRisk := func(action string, risk business.RiskLevel) error {
+			in := newRequestInput(orgID, actor, action, "")
+			in.RiskLevel = risk
+			_, e := testStore.Insert(ctx, in, business.ComputeRequestHash(in), time.Now().Add(5*time.Minute))
+			return e
+		}
+		for _, r := range []struct {
+			a string
+			l business.RiskLevel
+		}{
+			{"low.action", business.RiskLevelLow},
+			{"medium.action", business.RiskLevelMedium},
+			{"critical.action", business.RiskLevelCritical},
+			{"high.action", business.RiskLevelHigh},
+		} {
+			if e := insertWithRisk(r.a, r.l); e != nil {
+				return e
+			}
+		}
+		var e error
+		got, _, e = testStore.ListPending(ctx, orgID, 10, "")
+		return e
+	}))
 	require.Len(t, got, 4)
-
 	// Critical first, then high, medium, low.
 	require.Equal(t, business.RiskLevelCritical, got[0].RiskLevel)
 	require.Equal(t, business.RiskLevelHigh, got[1].RiskLevel)
@@ -217,15 +248,21 @@ func TestDelegation_Subscribe_AlreadyDecided(t *testing.T) {
 	orgID := seedOrg(t, owner)
 	actor := seedActorPrincipal(t, orgID)
 	grantor := seedGrantorPrincipal(t, orgID)
+	sc := testStore.As(business.Identity{OrgID: orgID})
 
 	in := newRequestInput(orgID, actor, "github.merge_pr", "repo:foo")
-	id, err := testStore.Insert(testCtx, in, business.ComputeRequestHash(in), time.Now().Add(5*time.Minute))
-	require.NoError(t, err)
-	_, err = testStore.Decide(testCtx, id, orgID, grantor, business.GrantStatusApproved, "")
-	require.NoError(t, err)
+	var id string
+	require.NoError(t, sc.Within(testCtx, func(ctx context.Context) error {
+		var e error
+		if id, e = testStore.Insert(ctx, in, business.ComputeRequestHash(in), time.Now().Add(5*time.Minute)); e != nil {
+			return e
+		}
+		_, e = testStore.Decide(ctx, id, orgID, grantor, business.GrantStatusApproved, "")
+		return e
+	}))
 
-	// Subscribe AFTER decision — Subscribe's snapshot path should
-	// emit one terminal event then close.
+	// Subscribe AFTER decision — its snapshot path emits one terminal event then
+	// closes. Subscribe sets its own connection's org context internally.
 	ctx, cancel := context.WithTimeout(testCtx, 3*time.Second)
 	defer cancel()
 	events, err := testStore.Subscribe(ctx, id, orgID)
@@ -238,7 +275,6 @@ func TestDelegation_Subscribe_AlreadyDecided(t *testing.T) {
 	case <-ctx.Done():
 		t.Fatal("snapshot event not delivered within timeout")
 	}
-	// Channel should close after terminal.
 	select {
 	case _, ok := <-events:
 		require.False(t, ok, "channel should close after terminal event")
@@ -256,8 +292,12 @@ func TestDelegation_MatchPattern_NoActivePattern(t *testing.T) {
 	orgID := seedOrg(t, owner)
 	actor := seedActorPrincipal(t, orgID)
 
-	got, err := testStore.MatchPattern(testCtx, orgID, actor, "github.merge_pr", "repo:foo")
-	require.NoError(t, err)
+	var got *business.DelegationGrant
+	require.NoError(t, testStore.As(business.Identity{OrgID: orgID}).Within(testCtx, func(ctx context.Context) error {
+		var e error
+		got, e = testStore.MatchPattern(ctx, orgID, actor, "github.merge_pr", "repo:foo")
+		return e
+	}))
 	require.Nil(t, got, "no active patterns → nil match")
 }
 
@@ -266,24 +306,26 @@ func TestDelegation_MatchPattern_ExactAndGlob(t *testing.T) {
 	orgID := seedOrg(t, owner)
 	actor := seedActorPrincipal(t, orgID)
 	grantor := seedGrantorPrincipal(t, orgID)
+	sc := testStore.As(business.Identity{OrgID: orgID})
 
-	// Pattern: action="github.merge_pr" (exact), resource="repo:codefly/*"
 	patID := seedPatternGrant(t, orgID, actor, grantor, "github.merge_pr", "repo:codefly/*", nil)
 
-	got, err := testStore.MatchPattern(testCtx, orgID, actor, "github.merge_pr", "repo:codefly/codefly.dev")
-	require.NoError(t, err)
+	var got, miss, miss2 *business.DelegationGrant
+	require.NoError(t, sc.Within(testCtx, func(ctx context.Context) error {
+		var e error
+		if got, e = testStore.MatchPattern(ctx, orgID, actor, "github.merge_pr", "repo:codefly/codefly.dev"); e != nil {
+			return e
+		}
+		if miss, e = testStore.MatchPattern(ctx, orgID, actor, "github.merge_pr", "repo:other/api"); e != nil {
+			return e
+		}
+		miss2, e = testStore.MatchPattern(ctx, orgID, actor, "github.delete_repo", "repo:codefly/codefly.dev")
+		return e
+	}))
 	require.NotNil(t, got)
 	require.Equal(t, patID, got.ID)
-
-	// Resource outside glob → no match.
-	miss, err := testStore.MatchPattern(testCtx, orgID, actor, "github.merge_pr", "repo:other/api")
-	require.NoError(t, err)
-	require.Nil(t, miss)
-
-	// Action mismatch → no match.
-	miss2, err := testStore.MatchPattern(testCtx, orgID, actor, "github.delete_repo", "repo:codefly/codefly.dev")
-	require.NoError(t, err)
-	require.Nil(t, miss2)
+	require.Nil(t, miss, "resource outside glob → no match")
+	require.Nil(t, miss2, "action mismatch → no match")
 }
 
 func TestDelegation_MatchPattern_OnlyMatchesActorOrg(t *testing.T) {
@@ -296,19 +338,26 @@ func TestDelegation_MatchPattern_OnlyMatchesActorOrg(t *testing.T) {
 
 	seedPatternGrant(t, orgA, actorA, grantorA, "*", "*", nil)
 
-	// Different org — no match.
-	missOrg, err := testStore.MatchPattern(testCtx, orgB, actorA, "x.y", "")
-	require.NoError(t, err)
+	// Different org — no match (read as orgB).
+	var missOrg *business.DelegationGrant
+	require.NoError(t, testStore.As(business.Identity{OrgID: orgB}).Within(testCtx, func(ctx context.Context) error {
+		var e error
+		missOrg, e = testStore.MatchPattern(ctx, orgB, actorA, "x.y", "")
+		return e
+	}))
 	require.Nil(t, missOrg)
 
-	// Same org, different actor — no match.
-	missActor, err := testStore.MatchPattern(testCtx, orgA, actorB, "x.y", "")
-	require.NoError(t, err)
+	// Same org, different actor / same actor — read as orgA.
+	var missActor, hit *business.DelegationGrant
+	require.NoError(t, testStore.As(business.Identity{OrgID: orgA}).Within(testCtx, func(ctx context.Context) error {
+		var e error
+		if missActor, e = testStore.MatchPattern(ctx, orgA, actorB, "x.y", ""); e != nil {
+			return e
+		}
+		hit, e = testStore.MatchPattern(ctx, orgA, actorA, "x.y", "")
+		return e
+	}))
 	require.Nil(t, missActor)
-
-	// Same actor + org — match.
-	hit, err := testStore.MatchPattern(testCtx, orgA, actorA, "x.y", "")
-	require.NoError(t, err)
 	require.NotNil(t, hit)
 }
 
@@ -321,17 +370,22 @@ func TestDelegation_IncrementPatternUse_Success(t *testing.T) {
 	orgID := seedOrg(t, owner)
 	actor := seedActorPrincipal(t, orgID)
 	grantor := seedGrantorPrincipal(t, orgID)
+	sc := testStore.As(business.Identity{OrgID: orgID})
 
 	max := 10
 	patID := seedPatternGrant(t, orgID, actor, grantor, "*", "*", &max)
 
-	g, err := testStore.IncrementPatternUse(testCtx, patID, orgID)
-	require.NoError(t, err)
-	require.Equal(t, 1, g.UseCount)
-
-	g, err = testStore.IncrementPatternUse(testCtx, patID, orgID)
-	require.NoError(t, err)
-	require.Equal(t, 2, g.UseCount)
+	var g1, g2 *business.DelegationGrant
+	require.NoError(t, sc.Within(testCtx, func(ctx context.Context) error {
+		var e error
+		if g1, e = testStore.IncrementPatternUse(ctx, patID, orgID); e != nil {
+			return e
+		}
+		g2, e = testStore.IncrementPatternUse(ctx, patID, orgID)
+		return e
+	}))
+	require.Equal(t, 1, g1.UseCount)
+	require.Equal(t, 2, g2.UseCount)
 }
 
 func TestDelegation_IncrementPatternUse_Exhausted(t *testing.T) {
@@ -339,15 +393,21 @@ func TestDelegation_IncrementPatternUse_Exhausted(t *testing.T) {
 	orgID := seedOrg(t, owner)
 	actor := seedActorPrincipal(t, orgID)
 	grantor := seedGrantorPrincipal(t, orgID)
+	sc := testStore.As(business.Identity{OrgID: orgID})
 
 	max := 1
 	patID := seedPatternGrant(t, orgID, actor, grantor, "*", "*", &max)
 
-	_, err := testStore.IncrementPatternUse(testCtx, patID, orgID)
-	require.NoError(t, err)
+	require.NoError(t, sc.Within(testCtx, func(ctx context.Context) error {
+		_, e := testStore.IncrementPatternUse(ctx, patID, orgID)
+		return e
+	}))
 
 	// Second call must fail with conflict — max_uses exhausted.
-	_, err = testStore.IncrementPatternUse(testCtx, patID, orgID)
+	err := sc.Within(testCtx, func(ctx context.Context) error {
+		_, e := testStore.IncrementPatternUse(ctx, patID, orgID)
+		return e
+	})
 	require.Error(t, err)
 	var se *business.StoreError
 	require.ErrorAs(t, err, &se)
@@ -359,15 +419,21 @@ func TestDelegation_IncrementPatternUse_Revoked(t *testing.T) {
 	orgID := seedOrg(t, owner)
 	actor := seedActorPrincipal(t, orgID)
 	grantor := seedGrantorPrincipal(t, orgID)
+	sc := testStore.As(business.Identity{OrgID: orgID})
 
 	patID := seedPatternGrant(t, orgID, actor, grantor, "*", "*", nil)
 
-	// Flip to cancelled (manual revoke).
-	_, err := testPool.Exec(testCtx,
-		`UPDATE delegation_grants SET status='cancelled' WHERE id=$1`, patID)
-	require.NoError(t, err)
+	// Flip to cancelled (manual revoke) — under org context.
+	require.NoError(t, sc.Within(testCtx, func(ctx context.Context) error {
+		tx := ctx.Value("tx").(pgx.Tx) //nolint:staticcheck // shared "tx" key
+		_, e := tx.Exec(ctx, `UPDATE delegation_grants SET status='cancelled' WHERE id=$1`, patID)
+		return e
+	}))
 
-	_, err = testStore.IncrementPatternUse(testCtx, patID, orgID)
+	err := sc.Within(testCtx, func(ctx context.Context) error {
+		_, e := testStore.IncrementPatternUse(ctx, patID, orgID)
+		return e
+	})
 	require.Error(t, err)
 	var se *business.StoreError
 	require.ErrorAs(t, err, &se)
@@ -383,30 +449,35 @@ func TestDelegation_InsertAutoApproved(t *testing.T) {
 	orgID := seedOrg(t, owner)
 	actor := seedActorPrincipal(t, orgID)
 	grantor := seedGrantorPrincipal(t, orgID)
+	sc := testStore.As(business.Identity{OrgID: orgID})
 
-	// Build the matching pattern row to pass as via.
 	patID := seedPatternGrant(t, orgID, actor, grantor, "*", "*", nil)
-	pattern, err := testStore.Get(testCtx, patID, orgID)
-	require.NoError(t, err)
 
 	in := newRequestInput(orgID, actor, "github.merge_pr", "repo:foo")
 	hash := business.ComputeRequestHash(in)
-	id, err := testStore.InsertAutoApproved(testCtx, in, hash, time.Now().Add(5*time.Minute), pattern)
-	require.NoError(t, err)
-	require.NotEmpty(t, id)
 
-	got, err := testStore.Get(testCtx, id, orgID)
-	require.NoError(t, err)
+	var id, id2 string
+	var got *business.DelegationGrant
+	require.NoError(t, sc.Within(testCtx, func(ctx context.Context) error {
+		pattern, e := testStore.Get(ctx, patID, orgID)
+		if e != nil {
+			return e
+		}
+		if id, e = testStore.InsertAutoApproved(ctx, in, hash, time.Now().Add(5*time.Minute), pattern); e != nil {
+			return e
+		}
+		if got, e = testStore.Get(ctx, id, orgID); e != nil {
+			return e
+		}
+		// Idempotency: same hash returns same id.
+		id2, e = testStore.InsertAutoApproved(ctx, in, hash, time.Now().Add(5*time.Minute), pattern)
+		return e
+	}))
+	require.NotEmpty(t, id)
 	require.Equal(t, business.GrantStatusApproved, got.Status, "auto-approved row must land approved")
 	require.Equal(t, grantor, got.GrantorPrincipalID, "grantor copied from pattern")
 	require.NotNil(t, got.DecidedAt)
-
-	// via_pattern caveat is in request_context.
 	require.NotNil(t, got.RequestContext)
 	require.Equal(t, patID, got.RequestContext["via_pattern"])
-
-	// Idempotency: same hash returns same id.
-	id2, err := testStore.InsertAutoApproved(testCtx, in, hash, time.Now().Add(5*time.Minute), pattern)
-	require.NoError(t, err)
 	require.Equal(t, id, id2)
 }

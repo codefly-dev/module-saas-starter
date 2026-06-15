@@ -242,6 +242,16 @@ func (s *PostgresStore) Subscribe(ctx context.Context, id, orgID string) (<-chan
 		return nil, w.Wrapf(err, "LISTEN %s", channel)
 	}
 
+	// delegation_grants is RLS-protected; this dedicated connection needs the
+	// org context for the snapshot + re-read queries below. Session-level (no tx
+	// spans the WaitForNotification loop). The goroutine RESETs it before Release
+	// so it can't leak to the next pool acquirer — the pool's AfterRelease resets
+	// ROLE, not app.* GUCs.
+	if _, err := conn.Exec(ctx, "SELECT set_config('app.current_org_id', $1, false)", orgID); err != nil {
+		conn.Release()
+		return nil, w.Wrapf(err, "set org context for subscribe")
+	}
+
 	out := make(chan business.DelegationDecisionEvent, 4)
 
 	go func() {
@@ -251,6 +261,9 @@ func (s *PostgresStore) Subscribe(ctx context.Context, id, orgID string) (<-chan
 		// already be torn down).
 		defer func() {
 			_, _ = conn.Exec(context.Background(), fmt.Sprintf("UNLISTEN %s", pgIdentifierQuote(channel)))
+			// Clear the org GUC before the conn returns to the pool (LIFO: this
+			// defer is registered after conn.Release, so it runs first).
+			_, _ = conn.Exec(context.Background(), "SELECT set_config('app.current_org_id', '', false)")
 		}()
 
 		// 1. Snapshot read — catches the case where the

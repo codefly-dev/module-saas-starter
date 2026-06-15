@@ -356,9 +356,29 @@ func (s *Service) RequestDelegation(ctx context.Context, in *RequestDelegationIn
 	// We MUST NOT short-circuit insert errors from the auto-
 	// approved path (those are real DB issues; they'd also fail
 	// the one_shot path, so surface them).
-	if pattern, err := s.delegationStore().MatchPattern(ctx, in.OrgID, in.ActorPrincipalID, in.Action, in.Resource); err == nil && pattern != nil {
-		if _, incErr := s.delegationStore().IncrementPatternUse(ctx, pattern.ID, in.OrgID); incErr == nil {
-			id, insErr := s.delegationStore().InsertAutoApproved(ctx, in, hash, expiresAt, pattern)
+	// delegation_grants is RLS-protected (org-scoped); run each store call as the
+	// grant's org. Narrow wraps (not the notify path, which is user-scoped and
+	// has its own WithUserTx — wrapping it here would nest).
+	scoped := s.store.As(Identity{OrgID: in.OrgID})
+	var pattern *DelegationGrant
+	patErr := scoped.Within(ctx, func(ctx context.Context) error {
+		var e error
+		pattern, e = s.delegationStore().MatchPattern(ctx, in.OrgID, in.ActorPrincipalID, in.Action, in.Resource)
+		return e
+	})
+	if patErr == nil && pattern != nil {
+		var incErr error
+		_ = scoped.Within(ctx, func(ctx context.Context) error {
+			_, incErr = s.delegationStore().IncrementPatternUse(ctx, pattern.ID, in.OrgID)
+			return incErr
+		})
+		if incErr == nil {
+			var id string
+			insErr := scoped.Within(ctx, func(ctx context.Context) error {
+				var e error
+				id, e = s.delegationStore().InsertAutoApproved(ctx, in, hash, expiresAt, pattern)
+				return e
+			})
 			if insErr != nil {
 				return "", w.Wrapf(insErr, "insert auto-approved (via pattern)")
 			}
@@ -374,17 +394,20 @@ func (s *Service) RequestDelegation(ctx context.Context, in *RequestDelegationIn
 			s.notifyDelegationDecision(ctx, in.ActorPrincipalID, in.OrgID, id, "approved",
 				"Auto-approved via pattern grant", in.Action)
 			return id, nil
-		} else {
-			w.Info("pattern matched but use cap exhausted; falling back to human approval",
-				wool.Field("pattern_id", pattern.ID),
-				wool.ErrField(incErr))
 		}
-	} else if err != nil {
-		w.Warn("pattern lookup failed; falling back to human approval", wool.ErrField(err))
+		w.Info("pattern matched but use cap exhausted; falling back to human approval",
+			wool.Field("pattern_id", pattern.ID),
+			wool.ErrField(incErr))
+	} else if patErr != nil {
+		w.Warn("pattern lookup failed; falling back to human approval", wool.ErrField(patErr))
 	}
 
-	id, err := s.delegationStore().Insert(ctx, in, hash, expiresAt)
-	if err != nil {
+	var id string
+	if err := scoped.Within(ctx, func(ctx context.Context) error {
+		var e error
+		id, e = s.delegationStore().Insert(ctx, in, hash, expiresAt)
+		return e
+	}); err != nil {
 		return "", w.Wrapf(err, "insert delegation grant")
 	}
 	w.Info("delegation requested",
@@ -448,8 +471,12 @@ func (s *Service) DecideDelegation(ctx context.Context, id, orgID, grantorID str
 		// defense.
 		return nil, w.NewError("denied decisions require a reason")
 	}
-	grant, err := s.delegationStore().Decide(ctx, id, orgID, grantorID, decision, reason)
-	if err != nil {
+	var grant *DelegationGrant
+	if err := s.store.As(Identity{OrgID: orgID}).Within(ctx, func(ctx context.Context) error {
+		var e error
+		grant, e = s.delegationStore().Decide(ctx, id, orgID, grantorID, decision, reason)
+		return e
+	}); err != nil {
 		return nil, w.Wrapf(err, "decide delegation")
 	}
 	w.Info("delegation decided",
@@ -479,7 +506,9 @@ func (s *Service) SetMintedToken(ctx context.Context, id, orgID, tokenID string)
 	if tokenID == "" {
 		return w.NewError("token_id required")
 	}
-	return s.delegationStore().SetMintedToken(ctx, id, orgID, tokenID)
+	return s.store.As(Identity{OrgID: orgID}).Within(ctx, func(ctx context.Context) error {
+		return s.delegationStore().SetMintedToken(ctx, id, orgID, tokenID)
+	})
 }
 
 // GetDelegation fetches a single grant. Caller-supplied org_id
@@ -488,7 +517,13 @@ func (s *Service) GetDelegation(ctx context.Context, id, orgID string) (*Delegat
 	if id == "" {
 		return nil, errors.New("grant id required")
 	}
-	return s.delegationStore().Get(ctx, id, orgID)
+	var grant *DelegationGrant
+	err := s.store.As(Identity{OrgID: orgID}).Within(ctx, func(ctx context.Context) error {
+		var e error
+		grant, e = s.delegationStore().Get(ctx, id, orgID)
+		return e
+	})
+	return grant, err
 }
 
 // ListPendingDelegations returns paginated pending grants for
@@ -504,7 +539,14 @@ func (s *Service) ListPendingDelegations(ctx context.Context, orgID string, page
 	if pageSize > 200 {
 		pageSize = 200
 	}
-	return s.delegationStore().ListPending(ctx, orgID, pageSize, pageToken)
+	var grants []*DelegationGrant
+	var next string
+	err := s.store.As(Identity{OrgID: orgID}).Within(ctx, func(ctx context.Context) error {
+		var e error
+		grants, next, e = s.delegationStore().ListPending(ctx, orgID, pageSize, pageToken)
+		return e
+	})
+	return grants, next, err
 }
 
 // =====================================================================
