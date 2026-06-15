@@ -69,7 +69,9 @@ func (s *Service) RequestExport(ctx context.Context, userID string) (*GDPRReques
 		Status: GDPRPending,
 	}
 
-	if err := gdprStore.CreateGDPRRequest(ctx, req); err != nil {
+	if err := s.store.As(Identity{UserID: req.UserID}).Within(ctx, func(ctx context.Context) error {
+		return gdprStore.CreateGDPRRequest(ctx, req)
+	}); err != nil {
 		return nil, w.Wrapf(err, "cannot create GDPR export request")
 	}
 
@@ -89,8 +91,13 @@ func (s *Service) GetExportStatus(ctx context.Context, requestID string) (*GDPRR
 		return nil, w.NewError("store does not implement GDPRStore")
 	}
 
-	req, err := gdprStore.GetGDPRRequest(ctx, requestID)
-	if err != nil {
+	// Point lookup by id (no user to scope to); RPC-layer authz gates it.
+	var req *GDPRRequest
+	if err := s.store.As(System()).Within(ctx, func(ctx context.Context) error {
+		var e error
+		req, e = gdprStore.GetGDPRRequest(ctx, requestID)
+		return e
+	}); err != nil {
 		return nil, w.Wrapf(err, "cannot get GDPR request")
 	}
 	return req, nil
@@ -113,7 +120,9 @@ func (s *Service) RequestDeletion(ctx context.Context, userID string) (*GDPRRequ
 		Status: GDPRPending,
 	}
 
-	if err := gdprStore.CreateGDPRRequest(ctx, req); err != nil {
+	if err := s.store.As(Identity{UserID: req.UserID}).Within(ctx, func(ctx context.Context) error {
+		return gdprStore.CreateGDPRRequest(ctx, req)
+	}); err != nil {
 		return nil, w.Wrapf(err, "cannot create GDPR deletion request")
 	}
 
@@ -129,7 +138,9 @@ func (s *Service) processExport(ctx context.Context, gdprStore GDPRStore, req *G
 	w := wool.Get(ctx).In("processExport")
 
 	req.Status = GDPRProcessing
-	_ = gdprStore.UpdateGDPRRequest(ctx, req)
+	_ = s.store.As(Identity{UserID: req.UserID}).Within(ctx, func(ctx context.Context) error {
+		return gdprStore.UpdateGDPRRequest(ctx, req)
+	})
 
 	// Collect user data into an export bundle.
 	export := map[string]any{}
@@ -216,7 +227,9 @@ func (s *Service) processExport(ctx context.Context, gdprStore GDPRStore, req *G
 	req.ExpiresAt = &expires
 	req.CompletedAt = &now
 
-	if err := gdprStore.UpdateGDPRRequest(ctx, req); err != nil {
+	if err := s.store.As(Identity{UserID: req.UserID}).Within(ctx, func(ctx context.Context) error {
+		return gdprStore.UpdateGDPRRequest(ctx, req)
+	}); err != nil {
 		w.Warn("failed to update GDPR request to completed", wool.ErrField(err))
 	}
 }
@@ -226,7 +239,9 @@ func (s *Service) processDeletion(ctx context.Context, gdprStore GDPRStore, req 
 	w := wool.Get(ctx).In("processDeletion")
 
 	req.Status = GDPRProcessing
-	_ = gdprStore.UpdateGDPRRequest(ctx, req)
+	_ = s.store.As(Identity{UserID: req.UserID}).Within(ctx, func(ctx context.Context) error {
+		return gdprStore.UpdateGDPRRequest(ctx, req)
+	})
 
 	// Anonymize user: hash-based pseudonym.
 	hash := sha256.Sum256([]byte(req.UserID))
@@ -270,7 +285,9 @@ func (s *Service) processDeletion(ctx context.Context, gdprStore GDPRStore, req 
 	req.Status = GDPRCompleted
 	req.CompletedAt = &now
 
-	if err := gdprStore.UpdateGDPRRequest(ctx, req); err != nil {
+	if err := s.store.As(Identity{UserID: req.UserID}).Within(ctx, func(ctx context.Context) error {
+		return gdprStore.UpdateGDPRRequest(ctx, req)
+	}); err != nil {
 		w.Warn("failed to update GDPR request to completed", wool.ErrField(err))
 	}
 
@@ -281,7 +298,9 @@ func (s *Service) failGDPRRequest(ctx context.Context, gdprStore GDPRStore, req 
 	w := wool.Get(ctx).In("failGDPRRequest")
 	req.Status = GDPRFailed
 	req.Error = errMsg
-	if err := gdprStore.UpdateGDPRRequest(ctx, req); err != nil {
+	if err := s.store.As(Identity{UserID: req.UserID}).Within(ctx, func(ctx context.Context) error {
+		return gdprStore.UpdateGDPRRequest(ctx, req)
+	}); err != nil {
 		w.Warn("failed to mark GDPR request as failed", wool.ErrField(err))
 	}
 }
