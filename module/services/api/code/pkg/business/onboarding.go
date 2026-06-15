@@ -42,7 +42,12 @@ var OnboardingStepNames = []string{
 func (s *Service) GetProgress(ctx context.Context, userID string) (*OnboardingProgress, error) {
 	w := wool.Get(ctx).In("GetProgress")
 
-	steps, err := s.store.GetOnboardingProgress(ctx, userID)
+	var steps []*OnboardingStep
+	err := s.store.As(Identity{UserID: userID}).Within(ctx, func(ctx context.Context) error {
+		var e error
+		steps, e = s.store.GetOnboardingProgress(ctx, userID)
+		return e
+	})
 	if err != nil {
 		return nil, w.Wrapf(err, "cannot get onboarding progress")
 	}
@@ -60,7 +65,9 @@ func (s *Service) GetProgress(ctx context.Context, userID string) (*OnboardingPr
 				Status:      "completed",
 				CompletedAt: &now,
 			}
-			_ = s.store.UpsertOnboardingStep(ctx, userID, name, "completed")
+			_ = s.store.As(Identity{UserID: userID}).Within(ctx, func(ctx context.Context) error {
+				return s.store.UpsertOnboardingStep(ctx, userID, name, "completed")
+			})
 		}
 	}
 
@@ -188,7 +195,9 @@ func (s *Service) CompleteStep(ctx context.Context, userID, stepName string) err
 		return w.NewError("invalid onboarding step: %s", stepName)
 	}
 
-	if err := s.store.UpsertOnboardingStep(ctx, userID, stepName, "completed"); err != nil {
+	if err := s.store.As(Identity{UserID: userID}).Within(ctx, func(ctx context.Context) error {
+		return s.store.UpsertOnboardingStep(ctx, userID, stepName, "completed")
+	}); err != nil {
 		return w.Wrapf(err, "cannot complete onboarding step")
 	}
 
@@ -203,7 +212,9 @@ func (s *Service) SkipStep(ctx context.Context, userID, stepName string) error {
 		return w.NewError("invalid onboarding step: %s", stepName)
 	}
 
-	if err := s.store.UpsertOnboardingStep(ctx, userID, stepName, "skipped"); err != nil {
+	if err := s.store.As(Identity{UserID: userID}).Within(ctx, func(ctx context.Context) error {
+		return s.store.UpsertOnboardingStep(ctx, userID, stepName, "skipped")
+	}); err != nil {
 		return w.Wrapf(err, "cannot skip onboarding step")
 	}
 
