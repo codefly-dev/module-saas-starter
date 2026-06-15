@@ -60,11 +60,9 @@ func TestResolver_NewUser_JITProvisioning(t *testing.T) {
 
 	// Verify rows exist
 	var count int
-	require.NoError(t, testPool.QueryRow(ctx,
-		`SELECT COUNT(*) FROM users WHERE uuid = $1`, id.UserID).Scan(&count))
+	scanBypass(t, &count, `SELECT COUNT(*) FROM users WHERE uuid = $1`, id.UserID)
 	require.Equal(t, 1, count)
-	require.NoError(t, testPool.QueryRow(ctx,
-		`SELECT COUNT(*) FROM user_identities WHERE user_uuid = $1`, id.UserID).Scan(&count))
+	scanBypass(t, &count, `SELECT COUNT(*) FROM user_identities WHERE user_uuid = $1`, id.UserID)
 	require.Equal(t, 1, count)
 }
 
@@ -82,8 +80,7 @@ func TestResolver_ExistingUser_Idempotent(t *testing.T) {
 	require.Equal(t, first.UserID, second.UserID, "same (provider, sub) → same user_id")
 
 	var count int
-	require.NoError(t, testPool.QueryRow(ctx,
-		`SELECT COUNT(*) FROM users WHERE primary_email = 'bob@test.local'`).Scan(&count))
+	scanBypass(t, &count, `SELECT COUNT(*) FROM users WHERE primary_email = 'bob@test.local'`)
 	require.Equal(t, 1, count, "no duplicate users created")
 }
 
@@ -251,8 +248,7 @@ func TestResolver_ConcurrentFirstLogin_OneUser(t *testing.T) {
 	require.Greater(t, successes, 0, "at least one concurrent resolve must succeed")
 
 	var count int
-	require.NoError(t, testPool.QueryRow(ctx,
-		`SELECT COUNT(*) FROM users WHERE primary_email = 'race@test.local'`).Scan(&count))
+	scanBypass(t, &count, `SELECT COUNT(*) FROM users WHERE primary_email = 'race@test.local'`)
 	require.Equal(t, 1, count, "concurrent first logins must produce exactly one user")
 }
 

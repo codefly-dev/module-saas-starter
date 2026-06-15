@@ -217,6 +217,13 @@ func (s *PostgresStore) RegisterUser(ctx context.Context, user *gen.User, identi
 	return pgx.BeginTxFunc(ctx, s.pool, pgx.TxOptions{
 		IsoLevel: pgx.Serializable,
 	}, func(tx pgx.Tx) error {
+		// Registration is pre-auth (no user/org context yet) and writes
+		// users + user_identities + the personal org — all RLS-protected.
+		// Elevate to session_user for this tx only, same as the auth resolver;
+		// auto-unwinds on commit/rollback.
+		if _, err := tx.Exec(ctx, "SET LOCAL ROLE NONE"); err != nil {
+			return w.Wrapf(err, "elevate role for registration")
+		}
 		ctx = context.WithValue(ctx, "tx", tx)
 		executor := s.getQueryExecutor(ctx)
 

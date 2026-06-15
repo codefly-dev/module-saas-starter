@@ -315,9 +315,13 @@ func TestPrincipal_SchemaCHECK_HumanWithOrgID_Rejected(t *testing.T) {
 	owner := seedUser(t)
 	orgID := seedOrg(t, owner)
 	id := business.NewIDString()
-	_, err := testPool.Exec(testCtx,
-		`INSERT INTO principals (id, kind, display_name, org_id) VALUES ($1, 'human', 'bad', $2)`,
-		id, orgID)
+	err := testStore.As(business.Identity{OrgID: orgID}).Within(testCtx, func(ctx context.Context) error {
+		tx := ctx.Value("tx").(pgx.Tx) //nolint:staticcheck // shared "tx" key
+		_, e := tx.Exec(ctx,
+			`INSERT INTO principals (id, kind, display_name, org_id) VALUES ($1, 'human', 'bad', $2)`,
+			id, orgID)
+		return e
+	})
 	require.Error(t, err, "schema CHECK must reject human with org_id set")
 }
 
@@ -325,9 +329,13 @@ func TestPrincipal_SchemaCHECK_AgentWithoutAgentIdentifier_Rejected(t *testing.T
 	owner := seedUser(t)
 	orgID := seedOrg(t, owner)
 	id := business.NewIDString()
-	_, err := testPool.Exec(testCtx,
-		`INSERT INTO principals (id, kind, display_name, org_id) VALUES ($1, 'agent', 'no-id', $2)`,
-		id, orgID)
+	err := testStore.As(business.Identity{OrgID: orgID}).Within(testCtx, func(ctx context.Context) error {
+		tx := ctx.Value("tx").(pgx.Tx) //nolint:staticcheck // shared "tx" key
+		_, e := tx.Exec(ctx,
+			`INSERT INTO principals (id, kind, display_name, org_id) VALUES ($1, 'agent', 'no-id', $2)`,
+			id, orgID)
+		return e
+	})
 	require.Error(t, err, "schema CHECK must reject agent without agent_identifier")
 }
 
@@ -335,10 +343,14 @@ func TestPrincipal_SchemaCHECK_NonAgentWithAgentIdentifier_Rejected(t *testing.T
 	owner := seedUser(t)
 	orgID := seedOrg(t, owner)
 	id := business.NewIDString()
-	_, err := testPool.Exec(testCtx,
-		`INSERT INTO principals (id, kind, display_name, org_id, agent_identifier)
-		 VALUES ($1, 'service', 'bad', $2, 'codefly.dev/x:0.0.1')`,
-		id, orgID)
+	err := testStore.As(business.Identity{OrgID: orgID}).Within(testCtx, func(ctx context.Context) error {
+		tx := ctx.Value("tx").(pgx.Tx) //nolint:staticcheck // shared "tx" key
+		_, e := tx.Exec(ctx,
+			`INSERT INTO principals (id, kind, display_name, org_id, agent_identifier)
+			 VALUES ($1, 'service', 'bad', $2, 'codefly.dev/x:0.0.1')`,
+			id, orgID)
+		return e
+	})
 	require.Error(t, err, "schema CHECK must reject service with agent_identifier set")
 }
 

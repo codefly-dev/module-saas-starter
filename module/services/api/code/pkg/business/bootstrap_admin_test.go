@@ -4,6 +4,7 @@ import (
 	"context"
 	"testing"
 
+	"github.com/jackc/pgx/v5"
 	"github.com/stretchr/testify/require"
 
 	pgauth "api/pkg/auth/pg"
@@ -48,13 +49,16 @@ func TestBootstrap_FirstMatchingLoginGrantsSuperAdmin(t *testing.T) {
 	require.NoError(t, err)
 	require.NotNil(t, stamped, "bootstrap_state must be stamped after first match")
 
-	// Verify platform_admins row exists for the new user
+	// Verify platform_admins row exists for the new user. The user_identities
+	// subquery is RLS-protected, so read under WithBypass.
 	var role string
-	err = testStore.Pool().QueryRow(testCtx, `
-		SELECT platform_role::text FROM platform_admins
-		WHERE user_id = (SELECT user_uuid FROM user_identities WHERE provider = 'google' AND provider_id = 'google-boss')`,
-	).Scan(&role)
-	require.NoError(t, err)
+	require.NoError(t, testStore.WithBypass(testCtx, func(ctx context.Context) error {
+		tx := ctx.Value("tx").(pgx.Tx) //nolint:staticcheck // shared "tx" key
+		return tx.QueryRow(ctx, `
+			SELECT platform_role::text FROM platform_admins
+			WHERE user_id = (SELECT user_uuid FROM user_identities WHERE provider = 'google' AND provider_id = 'google-boss')`,
+		).Scan(&role)
+	}))
 	require.Equal(t, "super_admin", role)
 }
 

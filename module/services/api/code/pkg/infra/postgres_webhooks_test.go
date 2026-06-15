@@ -67,9 +67,14 @@ func seedUser(t *testing.T) string {
 	t.Helper()
 	id := business.NewIDString()
 	email := fmt.Sprintf("user-%s@test.local", id)
-	_, err := testPool.Exec(testCtx,
-		`INSERT INTO users (uuid, primary_email, status) VALUES ($1, $2, 'active')`, id, email)
-	require.NoError(t, err)
+	// users is RLS-protected (WITH CHECK: self or System); a fixture bootstrap
+	// has no caller identity yet, so seed under the audited System bypass.
+	require.NoError(t, testStore.As(business.System()).Within(testCtx, func(ctx context.Context) error {
+		tx := ctx.Value("tx").(pgx.Tx) //nolint:staticcheck // shared "tx" key
+		_, err := tx.Exec(ctx,
+			`INSERT INTO users (uuid, primary_email, status) VALUES ($1, $2, 'active')`, id, email)
+		return err
+	}))
 	return id
 }
 
@@ -270,6 +275,14 @@ func TestUpdateWebhookDelivery(t *testing.T) {
 func TestGetPendingDeliveries(t *testing.T) {
 	userID := seedUser(t)
 	orgID := seedOrg(t, userID)
+
+	// GetPendingDeliveries is global (no subscription filter) with LIMIT; clear
+	// any pre-existing retrying rows so this test is isolated from other seeds.
+	require.NoError(t, testStore.WithBypass(testCtx, func(ctx context.Context) error {
+		tx := ctx.Value("tx").(pgx.Tx) //nolint:staticcheck // shared "tx" key
+		_, err := tx.Exec(ctx, `DELETE FROM webhook_deliveries`)
+		return err
+	}))
 
 	sub := &business.WebhookSubscription{
 		ID: business.NewIDString(), OrgID: orgID,

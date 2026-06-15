@@ -83,12 +83,27 @@ func TestMain(m *testing.M) {
 func seedUser(t *testing.T) uuid.UUID {
 	t.Helper()
 	id := business.NewID()
-	_, err := testPool.Exec(context.Background(), `
-		INSERT INTO users (uuid, primary_email, status)
-		VALUES ($1, $2, 'active')`,
-		id, fmt.Sprintf("user-%s@test.local", id.String()))
-	require.NoError(t, err)
+	// users is RLS-protected; seed under WithBypass (elevates the tx).
+	require.NoError(t, testStore.WithBypass(context.Background(), func(ctx context.Context) error {
+		tx := ctx.Value("tx").(pgx.Tx) //nolint:staticcheck // shared "tx" key
+		_, err := tx.Exec(ctx, `
+			INSERT INTO users (uuid, primary_email, status)
+			VALUES ($1, $2, 'active')`,
+			id, fmt.Sprintf("user-%s@test.local", id.String()))
+		return err
+	}))
 	return id
+}
+
+// scanBypass runs a single-row verification query under WithBypass — for tests
+// asserting that an RLS-protected row exists (an un-contexted testPool read
+// would be hidden by RLS and fail-close to zero).
+func scanBypass(t *testing.T, dst any, query string, args ...any) {
+	t.Helper()
+	require.NoError(t, testStore.WithBypass(context.Background(), func(ctx context.Context) error {
+		tx := ctx.Value("tx").(pgx.Tx) //nolint:staticcheck // shared "tx" key
+		return tx.QueryRow(ctx, query, args...).Scan(dst)
+	}))
 }
 
 func newRecord(userID uuid.UUID) *auth.SessionRecord {
