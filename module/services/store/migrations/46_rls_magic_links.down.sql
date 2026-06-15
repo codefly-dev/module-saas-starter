@@ -1,0 +1,3 @@
+DROP POLICY IF EXISTS magic_links_system ON magic_links;
+ALTER TABLE magic_links NO FORCE ROW LEVEL SECURITY;
+ALTER TABLE magic_links DISABLE ROW LEVEL SECURITY;

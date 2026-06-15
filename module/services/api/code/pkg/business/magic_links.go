@@ -49,7 +49,11 @@ func (s *Service) SendMagicLink(ctx context.Context, emailAddr string) error {
 		ExpiresAt: time.Now().Add(magicLinkTTL),
 	}
 
-	if err := s.store.CreateMagicLink(ctx, ml); err != nil {
+	// Pre-auth: no user/org identity exists at send/verify time, and magic_links
+	// has no tenant column → the audited System bypass.
+	if err := s.store.As(System()).Within(ctx, func(ctx context.Context) error {
+		return s.store.CreateMagicLink(ctx, ml)
+	}); err != nil {
 		return w.Wrapf(err, "cannot store magic link")
 	}
 
@@ -106,8 +110,12 @@ func (s *Service) VerifyMagicLink(ctx context.Context, token string) (*gen.Authe
 	h := sha256.Sum256([]byte(token))
 	tokenHash := hex.EncodeToString(h[:])
 
-	ml, err := s.store.GetMagicLinkByTokenHash(ctx, tokenHash)
-	if err != nil {
+	var ml *MagicLink
+	if err := s.store.As(System()).Within(ctx, func(ctx context.Context) error {
+		var e error
+		ml, e = s.store.GetMagicLinkByTokenHash(ctx, tokenHash)
+		return e
+	}); err != nil {
 		return nil, w.Wrapf(err, "cannot look up magic link")
 	}
 	if ml == nil {
@@ -121,7 +129,9 @@ func (s *Service) VerifyMagicLink(ctx context.Context, token string) (*gen.Authe
 	}
 
 	// Mark as used.
-	if err := s.store.MarkMagicLinkUsed(ctx, ml.ID); err != nil {
+	if err := s.store.As(System()).Within(ctx, func(ctx context.Context) error {
+		return s.store.MarkMagicLinkUsed(ctx, ml.ID)
+	}); err != nil {
 		return nil, w.Wrapf(err, "cannot mark magic link as used")
 	}
 
