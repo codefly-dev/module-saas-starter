@@ -92,6 +92,14 @@ func seedOrg(t *testing.T, ownerID string) string {
 	return id
 }
 
+// seedOrgMember adds a membership row via the domain method as a tenant-scoped
+// identity — organization_members is RLS-gated (org_id = app.current_org_id), so
+// the identity's OrgID satisfies the WITH CHECK. No raw SQL, no bypass.
+func seedOrgMember(t *testing.T, orgID, userID string) {
+	t.Helper()
+	require.NoError(t, testStore.As(business.Identity{OrgID: orgID}).AddOrgMember(testCtx, userID, "member"))
+}
+
 // ============================================================================
 // Webhook Subscription tests
 // ============================================================================

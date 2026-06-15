@@ -201,6 +201,46 @@
             "in": "path",
             "required": true,
             "type": "string"
+          },
+          {
+            "name": "organizationId",
+            "description": "The owning org — lets the handler enforce org-admin (not platform-admin)\nrevocation. Maps to a query param on the REST DELETE.",
+            "in": "query",
+            "required": false,
+            "type": "string"
+          }
+        ],
+        "tags": [
+          "APIKeyService"
+        ]
+      }
+    },
+    "/v1/api-keys:validate": {
+      "post": {
+        "summary": "REST-mapped so non-gRPC consumers (e.g. an AI gateway's REST identity\nbackend) can validate keys without a generated client.",
+        "operationId": "APIKeyService_ValidateAPIKey",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/customersValidateAPIKeyResponse"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/rpcStatus"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "body",
+            "in": "body",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/customersValidateAPIKeyRequest"
+            }
           }
         ],
         "tags": [
@@ -1904,6 +1944,14 @@
                 },
                 "description": {
                   "type": "string"
+                },
+                "parentTeamId": {
+                  "type": "string",
+                  "description": "Optional: create as a child of this team (must belong to the same org)."
+                },
+                "slug": {
+                  "type": "string",
+                  "description": "Optional: explicit path segment; derived from name when empty."
                 }
               }
             }
@@ -5345,6 +5393,10 @@
         },
         "revokedReason": {
           "type": "string"
+        },
+        "createdBy": {
+          "type": "string",
+          "description": "The principal that created this one — the authorship root a policy\nconsumer chains authority back to. Empty = a root principal (humans)."
         }
       },
       "description": "Principal mirrors the principals table 1:1 — the unified identity\nrow used by every action, audit event, and delegation grant.\n\nid matches users.uuid for kind=HUMAN, api_keys.id for kind=SERVICE,\nand is a fresh server-generated UUID for kind=AGENT. We do NOT\nenforce these as foreign keys at the DB level (independent\nlifecycles); the equality is convention and the backfill migration."
@@ -5870,8 +5922,21 @@
         "createdAt": {
           "type": "string",
           "format": "date-time"
+        },
+        "parentTeamId": {
+          "type": "string",
+          "description": "Empty for a root team."
+        },
+        "slug": {
+          "type": "string",
+          "description": "The team's own path segment: lowercase slug, derived from name if not given."
+        },
+        "path": {
+          "type": "string",
+          "description": "Full slug-path from the root, e.g. \"engineering/platform\". Server-derived."
         }
-      }
+      },
+      "description": "Teams form a strict tree within an org: parent_team_id is the authoritative\nedge; path is the materialized slug-path (\"engineering/platform\"), unique per\norg, maintained on write. Membership is literal (you belong to the teams you\njoined); consumers that want subtree semantics expand the path (a member of\n\"engineering/platform\" is, by expansion, under \"engineering\")."
     },
     "customersTeamMembership": {
       "type": "object",
@@ -6067,6 +6132,15 @@
       ],
       "default": "USER_STATUS_UNSPECIFIED"
     },
+    "customersValidateAPIKeyRequest": {
+      "type": "object",
+      "properties": {
+        "key": {
+          "type": "string",
+          "description": "The PLAINTEXT key, over TLS. The server hashes (Vault transit HMAC, or\nSHA-256 fallback) — clients cannot precompute the HMAC, and the previous\nfield name (`key_hash`) was a lie: the handler hashed whatever it received."
+        }
+      }
+    },
     "customersValidateAPIKeyResponse": {
       "type": "object",
       "properties": {
@@ -6083,9 +6157,36 @@
           "type": "array",
           "items": {
             "type": "string"
-          }
+          },
+          "description": "API-key permission scopes, \"resource:action\" strings."
+        },
+        "workspaces": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "description": "Team PATHS the key's user belongs to (literal membership; consumers expand\nancestors), e.g. \"engineering/platform\"."
+        },
+        "roles": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "description": "RBAC role names assigned to the user in this org."
+        },
+        "attributes": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "string"
+          },
+          "description": "The user's profile attributes (open metadata; policy may key on it)."
+        },
+        "principalKind": {
+          "type": "string",
+          "description": "\"human\" | \"service\" | \"agent\" (PrincipalKind, lowercase)."
         }
-      }
+      },
+      "description": "Identity Claims v1 — everything a policy-enforcement consumer (e.g. an AI\ngateway) needs to construct the caller's execution context in ONE call:\nwho, in which org, in which teams (paths), with which roles/permissions."
     },
     "customersVerifyTOTPRequest": {
       "type": "object",

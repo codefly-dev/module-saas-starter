@@ -92,12 +92,23 @@ enum OrgRole {
 // Team
 // ============================================================================
 
+// Teams form a strict tree within an org: parent_team_id is the authoritative
+// edge; path is the materialized slug-path ("engineering/platform"), unique per
+// org, maintained on write. Membership is literal (you belong to the teams you
+// joined); consumers that want subtree semantics expand the path (a member of
+// "engineering/platform" is, by expansion, under "engineering").
 message Team {
   string id = 1 [(buf.validate.field).string.uuid = true];
   string org_id = 2 [(buf.validate.field).string.uuid = true];
   string name = 3 [(buf.validate.field).string.min_len = 1];
   string description = 4;
   google.protobuf.Timestamp created_at = 5;
+  // Empty for a root team.
+  string parent_team_id = 6;
+  // The team's own path segment: lowercase slug, derived from name if not given.
+  string slug = 7;
+  // Full slug-path from the root, e.g. "engineering/platform". Server-derived.
+  string path = 8;
 }
 
 message TeamMembership {
@@ -180,6 +191,9 @@ message Principal {
   google.protobuf.Timestamp created_at = 6;
   google.protobuf.Timestamp revoked_at = 7;
   string revoked_reason = 8;
+  // The principal that created this one — the authorship root a policy
+  // consumer chains authority back to. Empty = a root principal (humans).
+  string created_by = 9;
 }
 
 // Decision is what the PDP returns for a Decide call. ALLOW means
@@ -339,6 +353,10 @@ message CreateTeamRequest {
   string org_id = 1 [(buf.validate.field).string.uuid = true];
   string name = 2 [(buf.validate.field).string.min_len = 1];
   string description = 3;
+  // Optional: create as a child of this team (must belong to the same org).
+  string parent_team_id = 4;
+  // Optional: explicit path segment; derived from name when empty.
+  string slug = 5;
 }
 
 message CreateTeamResponse {
@@ -930,17 +948,36 @@ message ListAPIKeysResponse {
 
 message RevokeAPIKeyRequest {
   string id = 1 [(buf.validate.field).string.uuid = true];
+  // The owning org — lets the handler enforce org-admin (not platform-admin)
+  // revocation. Maps to a query param on the REST DELETE.
+  string organization_id = 2 [(buf.validate.field).string.uuid = true];
 }
 
 message ValidateAPIKeyRequest {
-  string key_hash = 1 [(buf.validate.field).string.min_len = 1];
+  // The PLAINTEXT key, over TLS. The server hashes (Vault transit HMAC, or
+  // SHA-256 fallback) — clients cannot precompute the HMAC, and the previous
+  // field name (`key_hash`) was a lie: the handler hashed whatever it received.
+  string key = 1 [(buf.validate.field).string.min_len = 1];
 }
 
+// Identity Claims v1 — everything a policy-enforcement consumer (e.g. an AI
+// gateway) needs to construct the caller's execution context in ONE call:
+// who, in which org, in which teams (paths), with which roles/permissions.
 message ValidateAPIKeyResponse {
   bool valid = 1;
   string user_id = 2;
   string organization_id = 3;
+  // API-key permission scopes, "resource:action" strings.
   repeated string scopes = 4;
+  // Team PATHS the key's user belongs to (literal membership; consumers expand
+  // ancestors), e.g. "engineering/platform".
+  repeated string workspaces = 5;
+  // RBAC role names assigned to the user in this org.
+  repeated string roles = 6;
+  // The user's profile attributes (open metadata; policy may key on it).
+  map<string, string> attributes = 7;
+  // "human" | "service" | "agent" (PrincipalKind, lowercase).
+  string principal_kind = 8;
 }
 
 // APIKeyService — programmatic access management
@@ -958,7 +995,11 @@ service APIKeyService {
     option (google.api.http) = { delete: "/v1/api-keys/{id}" };
   }
 
-  rpc ValidateAPIKey(ValidateAPIKeyRequest) returns (ValidateAPIKeyResponse);
+  // REST-mapped so non-gRPC consumers (e.g. an AI gateway's REST identity
+  // backend) can validate keys without a generated client.
+  rpc ValidateAPIKey(ValidateAPIKeyRequest) returns (ValidateAPIKeyResponse) {
+    option (google.api.http) = { post: "/v1/api-keys:validate" body: "*" };
+  }
 }
 
 // ============================================================================

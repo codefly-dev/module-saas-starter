@@ -6,6 +6,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/jackc/pgx/v5"
 	"github.com/stretchr/testify/require"
 
 	"api/pkg/business"
@@ -31,7 +32,7 @@ func seedAgentPrincipal(t *testing.T, orgID, agentIdentifier string) *business.P
 		CreatedAt:       time.Now().UTC(),
 	}
 	require.NoError(t, p.Validate())
-	require.NoError(t, testStore.CreateAgentPrincipal(testCtx, p))
+	require.NoError(t, testStore.As(business.Identity{OrgID: orgID}).CreateAgentPrincipal(testCtx, p))
 	return p
 }
 
@@ -40,12 +41,18 @@ func seedAgentPrincipal(t *testing.T, orgID, agentIdentifier string) *business.P
 // seedUser); this just adds the principals row.
 func seedHumanPrincipal(t *testing.T, userID, displayName string) {
 	t.Helper()
-	_, err := testPool.Exec(testCtx,
-		`INSERT INTO principals (id, kind, display_name, org_id, agent_identifier, created_at)
-		 VALUES ($1, 'human', $2, NULL, NULL, CURRENT_TIMESTAMP)
-		 ON CONFLICT (id) DO NOTHING`,
-		userID, displayName)
-	require.NoError(t, err)
+	// No domain method for human-principal creation (humans are backfilled at
+	// registration), so this fixture inserts under the explicit System identity
+	// — the audited bypass — which satisfies the principals WITH CHECK.
+	require.NoError(t, testStore.As(business.System()).Within(testCtx, func(ctx context.Context) error {
+		tx := ctx.Value("tx").(pgx.Tx) //nolint:staticcheck // shared "tx" key
+		_, err := tx.Exec(ctx,
+			`INSERT INTO principals (id, kind, display_name, org_id, agent_identifier, created_at)
+			 VALUES ($1, 'human', $2, NULL, NULL, CURRENT_TIMESTAMP)
+			 ON CONFLICT (id) DO NOTHING`,
+			userID, displayName)
+		return err
+	}))
 }
 
 // ----------------------------------------------------------------------------
@@ -53,7 +60,7 @@ func seedHumanPrincipal(t *testing.T, userID, displayName string) {
 // ----------------------------------------------------------------------------
 
 func TestPrincipal_GetPrincipal_NotFound(t *testing.T) {
-	_, err := testStore.GetPrincipal(testCtx, business.NewIDString())
+	_, err := testStore.As(business.System()).GetPrincipal(testCtx, business.NewIDString())
 	require.Error(t, err)
 	var se *business.StoreError
 	require.ErrorAs(t, err, &se)
@@ -65,7 +72,7 @@ func TestPrincipal_GetPrincipal_Agent(t *testing.T) {
 	orgID := seedOrg(t, owner)
 	agent := seedAgentPrincipal(t, orgID, "test.codefly.dev/get-agent:0.1.0")
 
-	got, err := testStore.GetPrincipal(testCtx, agent.ID)
+	got, err := testStore.As(business.Identity{OrgID: orgID}).GetPrincipal(testCtx, agent.ID)
 	require.NoError(t, err)
 	require.Equal(t, agent.ID, got.ID)
 	require.Equal(t, business.PrincipalKindAgent, got.Kind)
@@ -78,7 +85,7 @@ func TestPrincipal_GetPrincipal_Human_NoOrgScope(t *testing.T) {
 	userID := seedUser(t)
 	seedHumanPrincipal(t, userID, "antoine@test.local")
 
-	got, err := testStore.GetPrincipal(testCtx, userID)
+	got, err := testStore.As(business.Identity{UserID: userID}).GetPrincipal(testCtx, userID)
 	require.NoError(t, err)
 	require.Equal(t, business.PrincipalKindHuman, got.Kind)
 	require.Empty(t, got.OrgID,
@@ -95,7 +102,7 @@ func TestPrincipal_GetAgentPrincipal_Found(t *testing.T) {
 	orgID := seedOrg(t, owner)
 	want := seedAgentPrincipal(t, orgID, "test.codefly.dev/auto-merge:0.1.0")
 
-	got, err := testStore.GetAgentPrincipal(testCtx, orgID, want.AgentIdentifier)
+	got, err := testStore.As(business.Identity{OrgID: orgID}).GetAgentPrincipal(testCtx, orgID, want.AgentIdentifier)
 	require.NoError(t, err)
 	require.Equal(t, want.ID, got.ID)
 }
@@ -106,7 +113,7 @@ func TestPrincipal_GetAgentPrincipal_DifferentOrg_NotFound(t *testing.T) {
 	orgB := seedOrg(t, owner)
 	seedAgentPrincipal(t, orgA, "test.codefly.dev/iso-agent:0.1.0")
 
-	_, err := testStore.GetAgentPrincipal(testCtx, orgB, "test.codefly.dev/iso-agent:0.1.0")
+	_, err := testStore.As(business.Identity{OrgID: orgB}).GetAgentPrincipal(testCtx, orgB, "test.codefly.dev/iso-agent:0.1.0")
 	require.Error(t, err, "agents are org-scoped; lookup in a different org must miss")
 	var se *business.StoreError
 	require.ErrorAs(t, err, &se)
@@ -118,9 +125,9 @@ func TestPrincipal_GetAgentPrincipal_Revoked_NotReturned(t *testing.T) {
 	orgID := seedOrg(t, owner)
 	agent := seedAgentPrincipal(t, orgID, "test.codefly.dev/revoked-agent:0.1.0")
 
-	require.NoError(t, testStore.RevokePrincipal(testCtx, agent.ID, "test revocation"))
+	require.NoError(t, testStore.As(business.System()).RevokePrincipal(testCtx, agent.ID, "test revocation"))
 
-	_, err := testStore.GetAgentPrincipal(testCtx, orgID, agent.AgentIdentifier)
+	_, err := testStore.As(business.Identity{OrgID: orgID}).GetAgentPrincipal(testCtx, orgID, agent.AgentIdentifier)
 	require.Error(t, err,
 		"revoked agents must not surface to GetAgentPrincipal — slot is free for re-install")
 	var se *business.StoreError
@@ -144,9 +151,9 @@ func TestPrincipal_CreateAgentPrincipal_RoundTrips(t *testing.T) {
 		AgentIdentifier: "test.codefly.dev/roundtrip:0.1.0",
 		CreatedAt:       time.Now().UTC(),
 	}
-	require.NoError(t, testStore.CreateAgentPrincipal(testCtx, p))
+	require.NoError(t, testStore.As(business.Identity{OrgID: orgID}).CreateAgentPrincipal(testCtx, p))
 
-	got, err := testStore.GetPrincipal(testCtx, p.ID)
+	got, err := testStore.As(business.Identity{OrgID: orgID}).GetPrincipal(testCtx, p.ID)
 	require.NoError(t, err)
 	require.Equal(t, p.AgentIdentifier, got.AgentIdentifier)
 	require.Equal(t, p.DisplayName, got.DisplayName)
@@ -165,7 +172,7 @@ func TestPrincipal_CreateAgentPrincipal_DuplicateInSameOrg_Conflict(t *testing.T
 		AgentIdentifier: first.AgentIdentifier, // SAME identifier in SAME org
 		CreatedAt:       time.Now().UTC(),
 	}
-	err := testStore.CreateAgentPrincipal(testCtx, dup)
+	err := testStore.As(business.Identity{OrgID: dup.OrgID}).CreateAgentPrincipal(testCtx, dup)
 	require.Error(t, err, "duplicate agent_identifier in same org must be rejected")
 	var se *business.StoreError
 	require.ErrorAs(t, err, &se)
@@ -186,7 +193,7 @@ func TestPrincipal_CreateAgentPrincipal_SameIdentifierAcrossOrgs_OK(t *testing.T
 		AgentIdentifier: "test.codefly.dev/cross:0.1.0",
 		CreatedAt:       time.Now().UTC(),
 	}
-	require.NoError(t, testStore.CreateAgentPrincipal(testCtx, pB),
+	require.NoError(t, testStore.As(business.Identity{OrgID: pB.OrgID}).CreateAgentPrincipal(testCtx, pB),
 		"same agent identifier in different orgs must be allowed — independent installations")
 }
 
@@ -201,7 +208,7 @@ func TestPrincipal_CreateAgentPrincipal_RejectsNonAgentKind(t *testing.T) {
 		AgentIdentifier: "test.codefly.dev/wrong-kind:0.1.0",
 		CreatedAt:       time.Now().UTC(),
 	}
-	err := testStore.CreateAgentPrincipal(testCtx, p)
+	err := testStore.As(business.System()).CreateAgentPrincipal(testCtx, p)
 	require.Error(t, err, "CreateAgentPrincipal must reject non-agent kinds")
 }
 
@@ -214,9 +221,9 @@ func TestPrincipal_RevokePrincipal_FirstCallSetsRevokedAt(t *testing.T) {
 	orgID := seedOrg(t, owner)
 	agent := seedAgentPrincipal(t, orgID, "test.codefly.dev/revoke1:0.1.0")
 
-	require.NoError(t, testStore.RevokePrincipal(testCtx, agent.ID, "policy violation"))
+	require.NoError(t, testStore.As(business.System()).RevokePrincipal(testCtx, agent.ID, "policy violation"))
 
-	got, err := testStore.GetPrincipal(testCtx, agent.ID)
+	got, err := testStore.As(business.Identity{OrgID: orgID}).GetPrincipal(testCtx, agent.ID)
 	require.NoError(t, err)
 	require.True(t, got.IsRevoked())
 	require.NotNil(t, got.RevokedAt)
@@ -228,18 +235,18 @@ func TestPrincipal_RevokePrincipal_Idempotent_PreservesOriginalReason(t *testing
 	orgID := seedOrg(t, owner)
 	agent := seedAgentPrincipal(t, orgID, "test.codefly.dev/revoke2:0.1.0")
 
-	require.NoError(t, testStore.RevokePrincipal(testCtx, agent.ID, "original reason"))
-	require.NoError(t, testStore.RevokePrincipal(testCtx, agent.ID, "second attempt"),
+	require.NoError(t, testStore.As(business.System()).RevokePrincipal(testCtx, agent.ID, "original reason"))
+	require.NoError(t, testStore.As(business.System()).RevokePrincipal(testCtx, agent.ID, "second attempt"),
 		"double-revoke must be a no-op success, not an error")
 
-	got, err := testStore.GetPrincipal(testCtx, agent.ID)
+	got, err := testStore.As(business.Identity{OrgID: orgID}).GetPrincipal(testCtx, agent.ID)
 	require.NoError(t, err)
 	require.Equal(t, "original reason", got.RevokedReason,
 		"the first revocation reason wins; the audit trail must not be overwritten")
 }
 
 func TestPrincipal_RevokePrincipal_NotFound(t *testing.T) {
-	err := testStore.RevokePrincipal(testCtx, business.NewIDString(), "ghost")
+	err := testStore.As(business.System()).RevokePrincipal(testCtx, business.NewIDString(), "ghost")
 	require.Error(t, err)
 	var se *business.StoreError
 	require.ErrorAs(t, err, &se)
@@ -258,13 +265,10 @@ func TestPrincipal_ListPrincipals_FilterByKind_Agent(t *testing.T) {
 	// Also seed a human in the org — must NOT appear when filter=agent.
 	humanID := seedUser(t)
 	seedHumanPrincipal(t, humanID, "human-in-list-test@local")
-	_, err := testPool.Exec(testCtx,
-		`INSERT INTO organization_members (org_id, user_id, role) VALUES ($1, $2, 'member')
-		 ON CONFLICT DO NOTHING`,
-		orgID, humanID)
-	require.NoError(t, err)
+	seedOrgMember(t, orgID, humanID)
 
-	got, _, err := testStore.ListPrincipals(testCtx, orgID, business.PrincipalKindAgent, 50, "")
+	got, _, err := testStore.As(business.Identity{UserID: owner, OrgID: orgID, Kind: business.PrincipalKindHuman}).
+		ListPrincipals(testCtx, business.PrincipalKindAgent, 50, "")
 	require.NoError(t, err)
 	for _, p := range got {
 		require.Equal(t, business.PrincipalKindAgent, p.Kind,
@@ -279,13 +283,10 @@ func TestPrincipal_ListPrincipals_AllKinds_IncludesHumansViaOrgMembership(t *tes
 	seedAgentPrincipal(t, orgID, fmt.Sprintf("test.codefly.dev/all-kinds:%d.0.0", time.Now().UnixNano()))
 	humanID := seedUser(t)
 	seedHumanPrincipal(t, humanID, "list-all-human@local")
-	_, err := testPool.Exec(testCtx,
-		`INSERT INTO organization_members (org_id, user_id, role) VALUES ($1, $2, 'member')
-		 ON CONFLICT DO NOTHING`,
-		orgID, humanID)
-	require.NoError(t, err)
+	seedOrgMember(t, orgID, humanID)
 
-	got, _, err := testStore.ListPrincipals(testCtx, orgID, "", 50, "")
+	got, _, err := testStore.As(business.Identity{UserID: owner, OrgID: orgID, Kind: business.PrincipalKindHuman}).
+		ListPrincipals(testCtx, "", 50, "")
 	require.NoError(t, err)
 
 	kinds := map[string]int{}
@@ -300,7 +301,8 @@ func TestPrincipal_ListPrincipals_AllKinds_IncludesHumansViaOrgMembership(t *tes
 func TestPrincipal_ListPrincipals_RejectsBadKind(t *testing.T) {
 	owner := seedUser(t)
 	orgID := seedOrg(t, owner)
-	_, _, err := testStore.ListPrincipals(testCtx, orgID, "not-a-real-kind", 50, "")
+	_, _, err := testStore.As(business.Identity{UserID: owner, OrgID: orgID, Kind: business.PrincipalKindHuman}).
+		ListPrincipals(testCtx, "not-a-real-kind", 50, "")
 	require.Error(t, err, "unknown kind values fail loud, not silently empty")
 }
 
@@ -358,15 +360,18 @@ func TestPrincipal_Backfill_UsersHaveHumanPrincipals(t *testing.T) {
 	// Mimic the backfill INSERT — the production migration runs once
 	// at deploy. This test verifies the SQL shape produces a valid
 	// row that GetPrincipal can read.
-	_, err := testPool.Exec(testCtx, `
-		INSERT INTO principals (id, kind, display_name, org_id, agent_identifier, created_at)
-		SELECT u.uuid, 'human', u.primary_email, NULL, NULL, u.created_at
-		FROM users u
-		WHERE u.uuid = $1
-		ON CONFLICT (id) DO NOTHING`, userID)
-	require.NoError(t, err)
+	require.NoError(t, testStore.As(business.System()).Within(testCtx, func(ctx context.Context) error {
+		tx := ctx.Value("tx").(pgx.Tx) //nolint:staticcheck // shared "tx" key
+		_, err := tx.Exec(ctx, `
+			INSERT INTO principals (id, kind, display_name, org_id, agent_identifier, created_at)
+			SELECT u.uuid, 'human', u.primary_email, NULL, NULL, u.created_at
+			FROM users u
+			WHERE u.uuid = $1
+			ON CONFLICT (id) DO NOTHING`, userID)
+		return err
+	}))
 
-	got, err := testStore.GetPrincipal(testCtx, userID)
+	got, err := testStore.As(business.Identity{UserID: userID}).GetPrincipal(testCtx, userID)
 	require.NoError(t, err)
 	require.Equal(t, business.PrincipalKindHuman, got.Kind)
 	require.Empty(t, got.OrgID)
@@ -397,7 +402,7 @@ func TestPrincipal_CreateAgent_ConcurrentDuplicate_OneWins(t *testing.T) {
 				AgentIdentifier: identifier,
 				CreatedAt:       time.Now().UTC(),
 			}
-			errCh <- testStore.CreateAgentPrincipal(context.Background(), p)
+			errCh <- testStore.As(business.Identity{OrgID: p.OrgID}).CreateAgentPrincipal(context.Background(), p)
 		}()
 	}
 	results := []error{<-errCh, <-errCh}

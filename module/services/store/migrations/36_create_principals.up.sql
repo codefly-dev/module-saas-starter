@@ -82,7 +82,7 @@ CREATE INDEX IF NOT EXISTS principals_display_name_idx
     ON principals (org_id, lower(display_name))
     WHERE revoked_at IS NULL;
 
+-- NOTE: COMMENT ON takes a single string LITERAL -- `||` concatenation is a
+-- syntax error here (template fix, found on first real boot; ledgered upstream).
 COMMENT ON TABLE principals IS
-    'Unified identity table: humans, services, and agents. The auth ' ||
-    'layer (role_assignments, CheckPermission, Decide) treats them ' ||
-    'uniformly. ID matches users.uuid or api_keys.id where applicable.';
+    'Unified identity table: humans, services, and agents. The auth layer (role_assignments, CheckPermission, Decide) treats them uniformly. ID matches users.uuid or api_keys.id where applicable.';

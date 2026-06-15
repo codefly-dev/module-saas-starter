@@ -74,6 +74,8 @@ func (s *PrincipalServer) CreateAgentPrincipal(ctx context.Context, req *gen.Cre
 		OrgID:           req.GetOrgId(),
 		AgentIdentifier: req.GetAgentIdentifier(),
 		DisplayName:     req.GetDisplayName(),
+		// The authenticated caller is the authorship root (Claims v1, ask #3).
+		CreatedBy: actorID,
 	})
 	if err != nil {
 		return nil, mapPrincipalError(err)
@@ -265,6 +267,7 @@ func principalToProto(p *business.Principal) *gen.Principal {
 		DisplayName:     p.DisplayName,
 		OrgId:           p.OrgID,
 		AgentIdentifier: p.AgentIdentifier,
+		CreatedBy:       p.CreatedBy,
 		CreatedAt:       timestamppb.New(p.CreatedAt),
 		RevokedReason:   p.RevokedReason,
 	}

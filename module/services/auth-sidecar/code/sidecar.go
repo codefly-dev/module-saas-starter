@@ -125,9 +125,10 @@ func (s *Sidecar) checkJWT(tokenString string) (*authv3.CheckResponse, error) {
 }
 
 // checkAPIKey delegates to the backend for api-key validation.
-// The backend does the argon2id verify, we just thread the result.
+// We send the plaintext key over TLS; the backend hashes (Vault transit HMAC)
+// and verifies, and we just thread the result.
 func (s *Sidecar) checkAPIKey(ctx context.Context, key string) (*authv3.CheckResponse, error) {
-	resp, err := s.apiKey.ValidateAPIKey(ctx, &apigen.ValidateAPIKeyRequest{KeyHash: key})
+	resp, err := s.apiKey.ValidateAPIKey(ctx, &apigen.ValidateAPIKeyRequest{Key: key})
 	if err != nil {
 		log.Printf("api key validate error: %v", err)
 		return deny(503, "api key validation failed"), nil

@@ -556,11 +556,10 @@ func (s *APIKeyServer) RevokeAPIKey(ctx context.Context, req *gen.RevokeAPIKeyRe
 	if err != nil {
 		return nil, err
 	}
-	// RevokeAPIKeyRequest carries only Id — the owning org isn't on the
-	// request. For now require platform_admin; a proper fix is to extend
-	// the proto with organization_id and enforce requireOrgAdmin on that.
-	// TODO(saas-starter): add org_id to RevokeAPIKeyRequest + regen.
-	if err := requirePlatformAdmin(ctx, actorID); err != nil {
+	// The request now carries the owning org (the old TODO): an ORG admin may
+	// revoke their org's keys; the business layer verifies the key actually
+	// belongs to that org before revoking (no cross-org revocation by id).
+	if err := requireOrgAdmin(ctx, actorID, req.GetOrganizationId()); err != nil {
 		return nil, err
 	}
 	if err := service.RevokeAPIKey(ctx, actorID, req); err != nil {
@@ -573,7 +572,7 @@ func (s *APIKeyServer) ValidateAPIKey(ctx context.Context, req *gen.ValidateAPIK
 	if err := Validate(req); err != nil {
 		return nil, err
 	}
-	return service.ValidateAPIKey(ctx, req.KeyHash)
+	return service.ValidateAPIKey(ctx, req.Key)
 }
 
 // ============================================================================

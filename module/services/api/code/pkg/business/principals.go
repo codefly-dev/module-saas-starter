@@ -47,7 +47,9 @@ type Principal struct {
 	DisplayName     string
 	OrgID           string // empty for kind=human (cross-org)
 	AgentIdentifier string // "publisher/name:version" for kind=agent
-	CreatedAt       time.Time
+	// The principal that created this one — empty = root (humans).
+	CreatedBy string
+	CreatedAt time.Time
 	RevokedAt       *time.Time
 	RevokedReason   string
 }
@@ -126,6 +128,8 @@ type CreateAgentRequest struct {
 	OrgID           string
 	AgentIdentifier string // "publisher/name:version"
 	DisplayName     string
+	// The authenticated principal performing the create (the authorship root).
+	CreatedBy string
 }
 
 // PrincipalStore is the persistence surface this file calls into.
@@ -175,8 +179,14 @@ func (s *Service) GetPrincipal(ctx context.Context, id string) (*Principal, erro
 	if id == "" {
 		return nil, w.NewError("principal id required")
 	}
-	p, err := s.principalStore().GetPrincipal(ctx, id)
-	if err != nil {
+	// Point lookup by id (no tenant to scope to); RPC-layer authz gates this.
+	// principals RLS protects enumeration (ListPrincipals), not id lookups.
+	var p *Principal
+	if err := s.store.As(System()).Within(ctx, func(ctx context.Context) error {
+		var e error
+		p, e = s.principalStore().GetPrincipal(ctx, id)
+		return e
+	}); err != nil {
 		return nil, w.Wrapf(err, "cannot get principal")
 	}
 	if p.IsRevoked() {
@@ -205,8 +215,12 @@ func (s *Service) GetAgentPrincipal(ctx context.Context, orgID, agentIdentifier 
 	if !looksLikeAgentIdentifier(agentIdentifier) {
 		return nil, w.NewError("agent_identifier must be 'publisher/name:version'")
 	}
-	p, err := s.principalStore().GetAgentPrincipal(ctx, orgID, agentIdentifier)
-	if err != nil {
+	var p *Principal
+	if err := s.store.As(Identity{OrgID: orgID}).Within(ctx, func(ctx context.Context) error {
+		var e error
+		p, e = s.principalStore().GetAgentPrincipal(ctx, orgID, agentIdentifier)
+		return e
+	}); err != nil {
 		return nil, w.Wrapf(err, "cannot get agent principal")
 	}
 	if p.IsRevoked() {
@@ -247,7 +261,12 @@ func (s *Service) CreateAgentPrincipal(ctx context.Context, req CreateAgentReque
 	}
 
 	// Idempotency: if the agent already exists in the org, return it.
-	existing, err := s.principalStore().GetAgentPrincipal(ctx, req.OrgID, req.AgentIdentifier)
+	var existing *Principal
+	err := s.store.As(Identity{OrgID: req.OrgID}).Within(ctx, func(ctx context.Context) error {
+		var e error
+		existing, e = s.principalStore().GetAgentPrincipal(ctx, req.OrgID, req.AgentIdentifier)
+		return e
+	})
 	if err == nil && !existing.IsRevoked() {
 		w.Trace("agent principal already registered; returning existing",
 			wool.Field("principal_id", existing.ID))
@@ -268,12 +287,15 @@ func (s *Service) CreateAgentPrincipal(ctx context.Context, req CreateAgentReque
 		DisplayName:     req.DisplayName,
 		OrgID:           req.OrgID,
 		AgentIdentifier: req.AgentIdentifier,
+		CreatedBy:       req.CreatedBy,
 		CreatedAt:       time.Now().UTC(),
 	}
 	if err := p.Validate(); err != nil {
 		return nil, w.Wrapf(err, "invalid principal")
 	}
-	if err := s.principalStore().CreateAgentPrincipal(ctx, p); err != nil {
+	if err := s.store.As(Identity{OrgID: req.OrgID}).Within(ctx, func(ctx context.Context) error {
+		return s.principalStore().CreateAgentPrincipal(ctx, p)
+	}); err != nil {
 		return nil, w.Wrapf(err, "cannot create agent principal")
 	}
 	w.Info("agent principal created",
@@ -304,7 +326,11 @@ func (s *Service) RevokePrincipal(ctx context.Context, id, reason string) error 
 		// readable reason being recorded.
 		return w.NewError("reason required (no silent revocations)")
 	}
-	if err := s.principalStore().RevokePrincipal(ctx, id, reason); err != nil {
+	// Privileged admin op by id (cascades to users for humans); RPC authz gates
+	// it, and the cascade needs cross-table reach → System.
+	if err := s.store.As(System()).Within(ctx, func(ctx context.Context) error {
+		return s.principalStore().RevokePrincipal(ctx, id, reason)
+	}); err != nil {
 		return w.Wrapf(err, "cannot revoke principal")
 	}
 	w.Info("principal revoked", wool.Field("reason", reason))
@@ -337,5 +363,14 @@ func (s *Service) ListPrincipals(ctx context.Context, orgID, kind string, pageSi
 	if pageSize > 200 {
 		pageSize = 200
 	}
-	return s.principalStore().ListPrincipals(ctx, orgID, kind, pageSize, pageToken)
+	var out []*Principal
+	var next string
+	if err := s.store.As(Identity{OrgID: orgID}).Within(ctx, func(ctx context.Context) error {
+		var e error
+		out, next, e = s.principalStore().ListPrincipals(ctx, orgID, kind, pageSize, pageToken)
+		return e
+	}); err != nil {
+		return nil, "", err
+	}
+	return out, next, nil
 }

@@ -24,16 +24,16 @@ func (s *PostgresStore) GetPrincipal(ctx context.Context, id string) (*business.
 	executor := s.getQueryExecutor(ctx)
 
 	var p business.Principal
-	var orgID, agentID, revokedReason *string
+	var orgID, agentID, revokedReason, createdBy *string
 	var revokedAt *time.Time
 
 	err := executor.QueryRow(ctx, `
 		SELECT id, kind, display_name, org_id, agent_identifier,
-		       created_at, revoked_at, revoked_reason
+		       created_at, revoked_at, revoked_reason, created_by
 		FROM principals
 		WHERE id = $1`, id,
 	).Scan(&p.ID, &p.Kind, &p.DisplayName, &orgID, &agentID,
-		&p.CreatedAt, &revokedAt, &revokedReason)
+		&p.CreatedAt, &revokedAt, &revokedReason, &createdBy)
 
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
@@ -58,6 +58,9 @@ func (s *PostgresStore) GetPrincipal(ctx context.Context, id string) (*business.
 	if revokedReason != nil {
 		p.RevokedReason = *revokedReason
 	}
+	if createdBy != nil {
+		p.CreatedBy = *createdBy
+	}
 	return &p, nil
 }
 
@@ -75,12 +78,12 @@ func (s *PostgresStore) GetAgentPrincipal(ctx context.Context, orgID, agentIdent
 	executor := s.getQueryExecutor(ctx)
 
 	var p business.Principal
-	var orgIDOut, agentID, revokedReason *string
+	var orgIDOut, agentID, revokedReason, createdBy *string
 	var revokedAt *time.Time
 
 	err := executor.QueryRow(ctx, `
 		SELECT id, kind, display_name, org_id, agent_identifier,
-		       created_at, revoked_at, revoked_reason
+		       created_at, revoked_at, revoked_reason, created_by
 		FROM principals
 		WHERE kind = 'agent'
 		  AND org_id = $1
@@ -88,7 +91,7 @@ func (s *PostgresStore) GetAgentPrincipal(ctx context.Context, orgID, agentIdent
 		  AND revoked_at IS NULL`,
 		orgID, agentIdentifier,
 	).Scan(&p.ID, &p.Kind, &p.DisplayName, &orgIDOut, &agentID,
-		&p.CreatedAt, &revokedAt, &revokedReason)
+		&p.CreatedAt, &revokedAt, &revokedReason, &createdBy)
 
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
@@ -113,6 +116,9 @@ func (s *PostgresStore) GetAgentPrincipal(ctx context.Context, orgID, agentIdent
 	if revokedReason != nil {
 		p.RevokedReason = *revokedReason
 	}
+	if createdBy != nil {
+		p.CreatedBy = *createdBy
+	}
 	return &p, nil
 }
 
@@ -134,9 +140,9 @@ func (s *PostgresStore) CreateAgentPrincipal(ctx context.Context, p *business.Pr
 	}
 
 	_, err := executor.Exec(ctx, `
-		INSERT INTO principals (id, kind, display_name, org_id, agent_identifier, created_at)
-		VALUES ($1, 'agent', $2, $3, $4, $5)`,
-		p.ID, p.DisplayName, p.OrgID, p.AgentIdentifier, p.CreatedAt,
+		INSERT INTO principals (id, kind, display_name, org_id, agent_identifier, created_by, created_at)
+		VALUES ($1, 'agent', $2, $3, $4, NULLIF($5, '')::uuid, $6)`,
+		p.ID, p.DisplayName, p.OrgID, p.AgentIdentifier, p.CreatedBy, p.CreatedAt,
 	)
 	if err != nil {
 		// pgx UNIQUE-violation surfaces with SQLSTATE 23505. We don't
@@ -233,7 +239,7 @@ func (s *PostgresStore) ListPrincipals(ctx context.Context, orgID, kind string, 
 	case business.PrincipalKindHuman:
 		query = `
 			SELECT p.id, p.kind, p.display_name, p.org_id, p.agent_identifier,
-			       p.created_at, p.revoked_at, p.revoked_reason
+			       p.created_at, p.revoked_at, p.revoked_reason, p.created_by
 			FROM principals p
 			JOIN organization_members om ON om.user_id = p.id
 			WHERE p.kind = 'human' AND om.org_id = $1`
@@ -241,7 +247,7 @@ func (s *PostgresStore) ListPrincipals(ctx context.Context, orgID, kind string, 
 	case business.PrincipalKindService, business.PrincipalKindAgent:
 		query = `
 			SELECT id, kind, display_name, org_id, agent_identifier,
-			       created_at, revoked_at, revoked_reason
+			       created_at, revoked_at, revoked_reason, created_by
 			FROM principals
 			WHERE kind = $1 AND org_id = $2`
 		args = append(args, kind, orgID)
@@ -252,13 +258,13 @@ func (s *PostgresStore) ListPrincipals(ctx context.Context, orgID, kind string, 
 		// different join paths.
 		query = `
 			(SELECT p.id, p.kind, p.display_name, p.org_id, p.agent_identifier,
-			        p.created_at, p.revoked_at, p.revoked_reason
+			        p.created_at, p.revoked_at, p.revoked_reason, p.created_by
 			 FROM principals p
 			 JOIN organization_members om ON om.user_id = p.id
 			 WHERE p.kind = 'human' AND om.org_id = $1)
 			UNION ALL
 			(SELECT id, kind, display_name, org_id, agent_identifier,
-			        created_at, revoked_at, revoked_reason
+			        created_at, revoked_at, revoked_reason, created_by
 			 FROM principals
 			 WHERE kind IN ('service', 'agent') AND org_id = $1)`
 		args = append(args, orgID)
@@ -272,7 +278,7 @@ func (s *PostgresStore) ListPrincipals(ctx context.Context, orgID, kind string, 
 	// lands after the second branch's closing paren), so paging past page 1
 	// failed. Wrapping makes the cursor apply to the union result for every kind.
 	query = `SELECT id, kind, display_name, org_id, agent_identifier,
-	                created_at, revoked_at, revoked_reason
+	                created_at, revoked_at, revoked_reason, created_by
 	         FROM (` + query + `) AS principals`
 	if pageToken != "" {
 		query += fmt.Sprintf(` WHERE id < $%d`, len(args)+1)
@@ -291,10 +297,10 @@ func (s *PostgresStore) ListPrincipals(ctx context.Context, orgID, kind string, 
 	var principals []*business.Principal
 	for rows.Next() {
 		var p business.Principal
-		var orgIDOut, agentID, revokedReason *string
+		var orgIDOut, agentID, revokedReason, createdBy *string
 		var revokedAt *time.Time
 		if err := rows.Scan(&p.ID, &p.Kind, &p.DisplayName, &orgIDOut, &agentID,
-			&p.CreatedAt, &revokedAt, &revokedReason); err != nil {
+			&p.CreatedAt, &revokedAt, &revokedReason, &createdBy); err != nil {
 			return nil, "", w.Wrapf(err, "failed to scan principal")
 		}
 		if orgIDOut != nil {
@@ -309,6 +315,9 @@ func (s *PostgresStore) ListPrincipals(ctx context.Context, orgID, kind string, 
 		}
 		if revokedReason != nil {
 			p.RevokedReason = *revokedReason
+		}
+		if createdBy != nil {
+			p.CreatedBy = *createdBy
 		}
 		principals = append(principals, &p)
 	}

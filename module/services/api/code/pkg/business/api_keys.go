@@ -130,11 +130,40 @@ func (s *Service) ValidateAPIKey(ctx context.Context, plaintextKey string) (*gen
 		scopes = append(scopes, fmt.Sprintf("%s:%s", p.Resource, p.Action))
 	}
 
+	// Identity Claims v1 — a policy-enforcement consumer (e.g. an AI gateway)
+	// builds the caller's full execution context from THIS one response: team
+	// paths (workspaces), RBAC role names, profile attributes. Claims read runs
+	// under the same bypass rationale as the key lookup (pre-auth, cross-tenant);
+	// a claims failure fails the validate (a half-built identity is worse than
+	// a retry).
+	var workspaces, roles []string
+	var attributes map[string]string
+	if err := s.store.WithBypass(ctx, func(ctx context.Context) error {
+		var err error
+		if workspaces, err = s.store.ListTeamPathsForUser(ctx, key.UserId, key.OrganizationId); err != nil {
+			return err
+		}
+		if roles, err = s.store.ListRoleNamesForUser(ctx, key.UserId, key.OrganizationId); err != nil {
+			return err
+		}
+		attributes, err = s.store.GetUserAttributes(ctx, key.UserId)
+		return err
+	}); err != nil {
+		return nil, w.Wrapf(err, "cannot load identity claims")
+	}
+
 	return &gen.ValidateAPIKeyResponse{
 		Valid:          true,
 		UserId:         key.UserId,
 		OrganizationId: key.OrganizationId,
 		Scopes:         scopes,
+		Workspaces:     workspaces,
+		Roles:          roles,
+		Attributes:     attributes,
+		// User-owned API keys authenticate the human principal; service/agent
+		// principals authenticate via the token flow (delegation-minted), not
+		// via user keys — so this is constant here, not a guess.
+		PrincipalKind: "human",
 	}, nil
 }
 
@@ -166,12 +195,15 @@ func (s *Service) ListAPIKeys(ctx context.Context, req *gen.ListAPIKeysRequest) 
 // goes away and org-admins can revoke their own keys without
 // platform-admin perms.
 func (s *Service) RevokeAPIKey(ctx context.Context, actorID string, req *gen.RevokeAPIKeyRequest) error {
-	if err := s.store.WithBypass(ctx, func(ctx context.Context) error {
-		return s.store.RevokeAPIKey(ctx, req.Id)
+	// Org-scoped revoke: the store statement pins id AND organization_id, so an
+	// org admin can never revoke another org's key by id (handler authorized
+	// the actor for req.OrganizationId; the WHERE enforces the binding).
+	if err := s.store.WithOrgTx(ctx, req.OrganizationId, func(ctx context.Context) error {
+		return s.store.RevokeAPIKey(ctx, req.Id, req.OrganizationId)
 	}); err != nil {
 		return err
 	}
-	s.emit(ctx, actorID, "user", "api_key.revoked", "api_key", req.Id, "")
+	s.emit(ctx, actorID, "user", "api_key.revoked", "api_key", req.Id, req.OrganizationId)
 	return nil
 }
 

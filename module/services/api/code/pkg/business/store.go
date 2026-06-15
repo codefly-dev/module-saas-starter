@@ -30,6 +30,12 @@ type Store interface {
 	// deliberate.
 	WithBypass(ctx context.Context, fn func(ctx context.Context) error) error
 
+	// As returns a Store handle bound to an identity (see Scoped). It is the
+	// identity-first entry point the With* wrappers collapse into: As(id).Within
+	// sets the same RLS context, but the identity is explicit and carried by the
+	// handle. As(System()) is the one named, audited bypass.
+	As(id Identity) Scoped
+
 	// Users
 	RegisterUser(ctx context.Context, user *gen.User, identity *gen.UserIdentity) error
 	GetUserByIdentity(ctx context.Context, id *gen.UserIdentity) (*gen.User, error)
@@ -64,6 +70,14 @@ type Store interface {
 	// internally — the result is then handed to WithOrgTx for the
 	// real op, which IS scoped.
 	GetTeamOrgID(ctx context.Context, teamID string) (string, error)
+	// GetTeamPath returns (orgID, path) — the parent lookup CreateTeam uses
+	// to derive a child team's path. ("", "") with no error when not found.
+	GetTeamPath(ctx context.Context, teamID string) (string, string, error)
+
+	// Identity Claims v1 (the validate-key read surface — see postgres_claims.go)
+	ListTeamPathsForUser(ctx context.Context, userID string, orgID string) ([]string, error)
+	ListRoleNamesForUser(ctx context.Context, userID string, orgID string) ([]string, error)
+	GetUserAttributes(ctx context.Context, userID string) (map[string]string, error)
 
 	// Roles
 	CreateRole(ctx context.Context, role *gen.Role) error
@@ -94,7 +108,7 @@ type Store interface {
 	CreateAPIKey(ctx context.Context, key *gen.APIKey, keyHash string) error
 	GetAPIKeyByHash(ctx context.Context, keyHash string) (*gen.APIKey, error)
 	ListAPIKeys(ctx context.Context, orgID string, pageSize int32, pageToken string) ([]*gen.APIKey, string, error)
-	RevokeAPIKey(ctx context.Context, keyID string) error
+	RevokeAPIKey(ctx context.Context, keyID string, orgID string) error
 	TouchAPIKeyUsage(ctx context.Context, keyID string, ip string) error
 
 	// Audit

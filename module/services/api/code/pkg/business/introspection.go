@@ -130,6 +130,7 @@ var rpcMetadata = map[string]rpcMeta{
 	"PermissionService/RevokeRole":          {HTTPMethod: "DELETE", HTTPPath: "/v1/role-assignments", Description: "Revoke a role assignment.", HandlerAuthz: "org_admin", EmitsAudit: true},
 	"PermissionService/ListRoleAssignments": {HTTPMethod: "GET", HTTPPath: "/v1/role-assignments", Description: "List assignments in an org.", HandlerAuthz: "org_member"},
 	"PermissionService/CheckPermission":     {HTTPMethod: "POST", HTTPPath: "/v1/permissions:check", Description: "Internal authz decision (auth-sidecar caller).", HandlerAuthz: "public"},
+	"PermissionService/Decide":              {HTTPMethod: "POST", HTTPPath: "/v1/permissions:decide", Description: "Principal-aware authz decision (M2; successor to CheckPermission).", HandlerAuthz: "public"},
 
 	// ============== IdentityService ==============
 	"IdentityService/ResolveIdentity": {HTTPMethod: "POST", HTTPPath: "/v1/identity:resolve", Description: "Internal: provider id → user/org/roles.", HandlerAuthz: "public"},

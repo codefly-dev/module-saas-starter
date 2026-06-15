@@ -3,11 +3,13 @@ package infra
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"time"
 
 	"github.com/jackc/pgx/v5"
 	"google.golang.org/protobuf/types/known/timestamppb"
 
+	"api/pkg/business"
 	"api/pkg/gen"
 )
 
@@ -127,10 +129,24 @@ func (s *PostgresStore) ListAPIKeys(ctx context.Context, orgID string, pageSize 
 	return keys, "", nil
 }
 
-func (s *PostgresStore) RevokeAPIKey(ctx context.Context, keyID string) error {
+// RevokeAPIKey is ORG-SCOPED: the WHERE pins the key to the org the handler
+// authorized, so a cross-org revoke-by-id is structurally impossible (one
+// atomic statement — no lookup/TOCTOU). Zero rows = not found in that org.
+func (s *PostgresStore) RevokeAPIKey(ctx context.Context, keyID string, orgID string) error {
 	q := s.getQueryExecutor(ctx)
-	_, err := q.Exec(ctx, `UPDATE api_keys SET revoked_at = NOW() WHERE id = $1`, keyID)
-	return err
+	tag, err := q.Exec(ctx,
+		`UPDATE api_keys SET revoked_at = NOW() WHERE id = $1 AND organization_id = $2`,
+		keyID, orgID)
+	if err != nil {
+		return err
+	}
+	if tag.RowsAffected() == 0 {
+		return business.NewStoreError(
+			fmt.Errorf("api key %s not found in org %s", keyID, orgID),
+			business.ErrTypeNotFound,
+		)
+	}
+	return nil
 }
 
 func (s *PostgresStore) TouchAPIKeyUsage(ctx context.Context, keyID string, ip string) error {

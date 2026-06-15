@@ -212,6 +212,14 @@ func requireTeamAdmin(ctx context.Context, actorID, teamID string) (string, erro
 	if orgID == "" {
 		return "", status.Error(codes.PermissionDenied, "not a member of this team")
 	}
+	// An org admin/owner administers every team in their org — without this, a
+	// freshly created team (zero members) is a bootstrap deadlock: nobody short
+	// of platform super_admin could ever add the FIRST member. (Found by a
+	// consumer's live provisioning flow.)
+	if role, err := lookupMembership(ctx, orgID, actorID); err == nil &&
+		(role == gen.OrgRole_ORG_ROLE_ADMIN.String() || role == gen.OrgRole_ORG_ROLE_OWNER.String()) {
+		return orgID, nil
+	}
 	var members []*gen.TeamMembership
 	if err := service.Store().WithOrgTx(ctx, orgID, func(ctx context.Context) error {
 		ms, err := service.Store().ListTeamMembers(ctx, teamID)

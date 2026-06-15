@@ -5,6 +5,7 @@ import (
 	"api/pkg/email"
 	"api/pkg/gen"
 	"context"
+	"strings"
 
 	"github.com/codefly-dev/core/wool"
 )
@@ -374,20 +375,67 @@ func (s *Service) CreateOrganization(ctx context.Context, ownerID string, req *g
 // actorID is the authenticated caller — recorded in the audit log so we
 // know who stood up the team. teams is RLS-protected (Phase 2C) so
 // the insert runs inside WithOrgTx scoped to the target org.
+//
+// Teams form a TREE: path = parent.path + "/" + slug (slug derived from the
+// name when not given). Create-under-existing-parent only — there is no
+// reparent RPC, so cycles cannot form; a future move feature adds a guard.
 func (s *Service) CreateTeam(ctx context.Context, actorID string, req *gen.CreateTeamRequest) (*gen.CreateTeamResponse, error) {
+	w := wool.Get(ctx).In("CreateTeam")
+
+	slug := req.Slug
+	if slug == "" {
+		slug = Slugify(req.Name)
+	}
+	if slug == "" {
+		return nil, w.NewError("team name yields an empty slug")
+	}
+
 	team := &gen.Team{
-		Id:          NewIDString(),
-		OrgId:       req.OrgId,
-		Name:        req.Name,
-		Description: req.Description,
+		Id:           NewIDString(),
+		OrgId:        req.OrgId,
+		Name:         req.Name,
+		Description:  req.Description,
+		ParentTeamId: req.ParentTeamId,
+		Slug:         slug,
+		Path:         slug, // root path; child path derived below
 	}
 	if err := s.store.WithOrgTx(ctx, req.OrgId, func(ctx context.Context) error {
+		if req.ParentTeamId != "" {
+			parentOrg, parentPath, err := s.store.GetTeamPath(ctx, req.ParentTeamId)
+			if err != nil {
+				return err
+			}
+			if parentOrg == "" {
+				return w.NewError("parent team not found")
+			}
+			if parentOrg != req.OrgId {
+				return w.NewError("parent team belongs to a different organization")
+			}
+			team.Path = parentPath + "/" + slug
+		}
 		return s.store.CreateTeam(ctx, team)
 	}); err != nil {
 		return nil, err
 	}
 	s.emit(ctx, actorID, "user", "team.created", "team", team.Id, req.OrgId)
 	return &gen.CreateTeamResponse{Team: team}, nil
+}
+
+// Slugify derives a path segment from a display name: lowercase, runs of
+// non-alphanumerics collapse to "-", trimmed. ("Platform Eng." → "platform-eng")
+func Slugify(name string) string {
+	var b strings.Builder
+	lastDash := true // suppress a leading dash
+	for _, r := range strings.ToLower(name) {
+		if (r >= 'a' && r <= 'z') || (r >= '0' && r <= '9') {
+			b.WriteRune(r)
+			lastDash = false
+		} else if !lastDash {
+			b.WriteRune('-')
+			lastDash = true
+		}
+	}
+	return strings.TrimRight(b.String(), "-")
 }
 
 // CreateRole creates a new custom role.

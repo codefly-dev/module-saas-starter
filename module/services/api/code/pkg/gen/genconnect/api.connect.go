@@ -1789,6 +1789,8 @@ type APIKeyServiceClient interface {
 	CreateAPIKey(context.Context, *connect.Request[gen.CreateAPIKeyRequest]) (*connect.Response[gen.CreateAPIKeyResponse], error)
 	ListAPIKeys(context.Context, *connect.Request[gen.ListAPIKeysRequest]) (*connect.Response[gen.ListAPIKeysResponse], error)
 	RevokeAPIKey(context.Context, *connect.Request[gen.RevokeAPIKeyRequest]) (*connect.Response[emptypb.Empty], error)
+	// REST-mapped so non-gRPC consumers (e.g. an AI gateway's REST identity
+	// backend) can validate keys without a generated client.
 	ValidateAPIKey(context.Context, *connect.Request[gen.ValidateAPIKeyRequest]) (*connect.Response[gen.ValidateAPIKeyResponse], error)
 }
 
@@ -1863,6 +1865,8 @@ type APIKeyServiceHandler interface {
 	CreateAPIKey(context.Context, *connect.Request[gen.CreateAPIKeyRequest]) (*connect.Response[gen.CreateAPIKeyResponse], error)
 	ListAPIKeys(context.Context, *connect.Request[gen.ListAPIKeysRequest]) (*connect.Response[gen.ListAPIKeysResponse], error)
 	RevokeAPIKey(context.Context, *connect.Request[gen.RevokeAPIKeyRequest]) (*connect.Response[emptypb.Empty], error)
+	// REST-mapped so non-gRPC consumers (e.g. an AI gateway's REST identity
+	// backend) can validate keys without a generated client.
 	ValidateAPIKey(context.Context, *connect.Request[gen.ValidateAPIKeyRequest]) (*connect.Response[gen.ValidateAPIKeyResponse], error)
 }
 
