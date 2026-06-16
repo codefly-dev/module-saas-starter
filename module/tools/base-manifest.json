@@ -45,7 +45,7 @@
     "services/api/code/cmd/local/main.go": "c8d247d1db78b33737f2e11ceb6fc48ae3c1735f9da87d92a962b65d3eb47c86",
     "services/api/code/cmd/module-info/main.go": "178f70943956773506b68b4040ffa75954e889b5cdf870f3a298cf60d3ad96ca",
     "services/api/code/fixtures/dev_admin.go": "71bd88b50f40b0b44ed401ddd08a96a66d1dda11c5b5ede30a61a194df230bd5",
-    "services/api/code/fixtures/seed.go": "b86d3941b67a99314677bf8b0c0791db56930452c4920ced1ddc58b1dc8c7b6f",
+    "services/api/code/fixtures/seed.go": "876b945b63631ddbd1a549119e1705f91f8f628728a7757ad087fb6da10e94f1",
     "services/api/code/fixtures/simple.go": "a2d1f8fa850e962c07834300695478a8ba149088c4f66af9d9819e388ac5d5ea",
     "services/api/code/go.mod": "f0006e399e24a24dd28e089aaa295cf5e06b3f37ed3b18f9ba7b7fe3d8be4882",
     "services/api/code/go.sum": "c957877fe224c3135c2d4896297e71e5d94aead2b1744ce7ecacd75bf38666ab",
