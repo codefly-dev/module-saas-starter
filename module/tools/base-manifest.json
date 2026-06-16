@@ -1,6 +1,6 @@
 {
   "note": "Base-file integrity manifest for the saas-starter module. Generated FROM canonical by `node tools/base-integrity.mjs gen`. Consumers MUST NOT hand-edit base files — only add files on the side. Regenerated on every codefly sync from canonical.",
-  "fileCount": 746,
+  "fileCount": 745,
   "files": {
     "FEATURES.md": "c6a61fbf10f57f84a8fa34c8725646e2f005b0af127adea6dda654b5a7cf9ad6",
     "GETTING_STARTED.md": "649044e1e6f9375e4a0425fde679b8e6db78bb827df9df00ff2c6ccb5448feba",
@@ -314,6 +314,7 @@
     "services/frontend/builder/Dockerfile": "12d91087528b4ade51e551b0e541ef1589dd47c74b224724a590a7d97ce5c141",
     "services/frontend/builder/dockerignore": "3e9a6d94e7445b4ce9b8fba062f6ade6612f6670f883021227cc4a7666ed7d19",
     "services/frontend/code/.env.example": "c8005077d756f68c0a2e9d284d567684a59bde640ff8c1bfb0fd42a5880f9beb",
+    "services/frontend/code/.gitignore": "fb006de0306a35974ba50d3de8a6107324e6a7eecddcb92688798f175b273caa",
     "services/frontend/code/components.json": "5102c25c44791f19be9a94380f85f6e78934feccbfce7fe9ec54c316e99a76b4",
     "services/frontend/code/eslint.config.mjs": "da51a595fd11f5520e80a6da9856ffad3d33833cd0afcafd5bc7d2a3476c5f3a",
     "services/frontend/code/instrumentation-client.ts": "970af8415c3ba01e181a3d6d90c1ab2cfb87bcede7465ae54ac909f4b3cfc447",
@@ -615,7 +616,6 @@
     "services/frontend/code/src/test/msw/handlers.ts": "bcba4829286988412dc10de4185a0e71c68e719e5466c6320bb1d6bc9da67aed",
     "services/frontend/code/src/test/setup.ts": "e10094f5b74dfc8e755bf1a1e63b82ec9487dc69a248c0c28085de7c481e847d",
     "services/frontend/code/tailwind.config.ts": "9b0df7cfdc064d3bbc376e790ee336dc575538f116c5755012de2f2c5115316c",
-    "services/frontend/code/test-results/.last-run.json": "91d1c43004802cd49950d78eb11c8fa7d05da8ffffe219a8b13b2f561bc00903",
     "services/frontend/code/tests/e2e/admin-flow.spec.ts": "b9b603c9d5ba24b9045563a0cf7a66db06c569a0ec214586fd0afb08752e9121",
     "services/frontend/code/tests/e2e/audit-export.spec.ts": "bb9b0e185dbf2740c0d0d69f7e5ca8fc108b0dbcb550b50eb95f982915e0d0ac",
     "services/frontend/code/tests/e2e/auth-boundary.spec.ts": "1c3341eabeca7b598cb0ceb6a85847cbd020ad10e51f714e891fd3240fa33f94",
@@ -629,7 +629,6 @@
     "services/frontend/code/tests/e2e/webhooks.spec.ts": "3e9e6e76ff17529c5e065bef531d4d57ccf6b269b808d304a13aedc4cfd1e828",
     "services/frontend/code/tests/sdk-smoke.mjs": "5b7b35b0cf37e27caea3be4f9521fcb70cfd827c76198d06f20fb57ca8e838b1",
     "services/frontend/code/tsconfig.json": "84bc7afb83ea58e56a63754132b130f028e26a00d7eb47c9aa7fe002bbb2a659",
-    "services/frontend/code/tsconfig.tsbuildinfo": "faaa573c0869583f273078c6e34ba3ea7eef26fc4f70c0b156122f859c48de75",
     "services/frontend/code/vitest.config.ts": "e053643075f3be434a9320f288a65d9458a35eb1f4d0e8705c08c9ac8d3a7c41",
     "services/frontend/service.codefly.yaml": "602a20ce5f7c3a6cdcc4cbe3333ffe48447e96235655c5a5815dd012df63efc3",
     "services/object-storage/service.codefly.yaml": "80eade252f8d97106510b9008d57ac990dba268c684b4ab0ef8a53c8901c5ed5",
@@ -747,6 +746,6 @@
     "services/store/service.codefly.yaml": "537c39c731d9023a3fdd6449c68fffb724332bf3f903212ed2b4f969d68975fc",
     "services/vault/configurations/local/vault.secret.env": "81f4aa569247292ec88ce61dfda9053b516bea3655f2a971e5cecb8a6b901105",
     "services/vault/service.codefly.yaml": "3531b28475c5d8c08f2678d9c8afedd93b223c13d833505289f721dd94e1df7a",
-    "tools/base-integrity.mjs": "e6ddf33e19f8f63417f67de7728d991cdfe24b8ce8b3cb4532fa32b3cae5af32"
+    "tools/base-integrity.mjs": "420a0bd670927191a0a419f2574299fba84aa34e9bed9671b1d51e115518b38a"
   }
 }

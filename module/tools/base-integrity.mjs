@@ -29,12 +29,13 @@ const ALLOW_PATH = join(MODULE_ROOT, "tools", "base-integrity-allow.json");
 // legitimately per consumer (each lists its own side-module plugins).
 const PRUNE_DIRS = new Set([
   "node_modules", ".next", ".turbo", "dist", "build", "coverage",
-  ".git", "vendor", "__pycache__", ".codefly", ".cache",
+  ".git", "vendor", "__pycache__", ".codefly", ".cache", "test-results", "playwright-report",
 ]);
 const isExcludedFile = (rel) =>
   rel === "tools/base-manifest.json" ||      // the manifest can't hash itself
   rel === "tools/base-integrity-allow.json" || // consumer-local escape hatch (logged, not hashed)
   /\.generated\.[a-z]+$/.test(rel) ||         // codegen output (e.g. registry.generated.ts)
+  rel.endsWith(".tsbuildinfo") ||             // TypeScript incremental build cache
   rel.endsWith(".DS_Store");
 
 function walk(dir, out = []) {
@@ -52,6 +53,31 @@ function walk(dir, out = []) {
 }
 
 const sha = (abs) => createHash("sha256").update(readFileSync(abs)).digest("hex");
+
+// A consumer may compose a SUBSET of the base's services (e.g. mind takes the
+// backend — api/store/vault/cache/object-storage — and brings its own gateway, so
+// it omits auth-sidecar + the frontend console). Files under an omitted service's
+// directory are then legitimately absent and must NOT count as "missing". The
+// composed set is the `services:` list in module.codefly.yaml; null = enforce
+// everything (canonical itself, or a consumer with no explicit list).
+function composedServices() {
+  const p = join(MODULE_ROOT, "module.codefly.yaml");
+  if (!existsSync(p)) return null;
+  const lines = readFileSync(p, "utf8").split("\n");
+  let inServices = false;
+  const svcs = new Set();
+  for (const line of lines) {
+    if (/^services:\s*$/.test(line)) { inServices = true; continue; }
+    if (!inServices) continue;
+    if (/^\S/.test(line)) break;                       // dedent to col 0 → block ended
+    const m = line.match(/^\s+-\s+name:\s*(\S+)/);
+    if (m) svcs.add(m[1]);
+  }
+  return svcs.size ? svcs : null;
+}
+
+// The service a base file belongs to, or null for module-level files (always enforced).
+const serviceOf = (rel) => rel.startsWith("services/") ? rel.split("/")[1] : null;
 
 function gen() {
   const files = walk(MODULE_ROOT).sort();
@@ -75,13 +101,19 @@ function check() {
   }
   const { files } = JSON.parse(readFileSync(MANIFEST_PATH, "utf8"));
   const allow = existsSync(ALLOW_PATH) ? JSON.parse(readFileSync(ALLOW_PATH, "utf8")) : {};
+  const composed = composedServices();
 
   const modified = [], missing = [];
+  let omitted = 0;
+  const omittedSvcs = new Set();
   for (const [rel, want] of Object.entries(files)) {
+    const svc = serviceOf(rel);
+    if (composed && svc && !composed.has(svc)) { omitted++; omittedSvcs.add(svc); continue; }
     const abs = join(MODULE_ROOT, rel);
     if (!existsSync(abs)) { missing.push(rel); continue; }
     if (sha(abs) !== want) modified.push(rel);
   }
+  if (omitted) console.log(`  composed subset: skipped ${omitted} base files for ${omittedSvcs.size} non-composed service(s): ${[...omittedSvcs].sort().join(", ")}`);
 
   // Anything on disk that isn't a known base file is a legal side-addition.
   const manifestSet = new Set(Object.keys(files));
