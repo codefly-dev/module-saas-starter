@@ -322,7 +322,7 @@
     "services/frontend/code/next.config.mjs": "fc2c26e8188e602cadce3add5415460656f3e699aa30c71ba22744a554411cfe",
     "services/frontend/code/package-lock.json": "43bd2dbe3ea399e7a41627f93bd7e6df474e6a8dfd93f4036fef73beda78cda2",
     "services/frontend/code/package.json": "ce1608812f46351ddbeb67716811f19052e4acc9f18f764b46c43dd3a46d59fd",
-    "services/frontend/code/playwright.config.ts": "cbf46c0a71a49dd75ccfc0a7ca718d729caefed8ff8195aa5611febb36528d85",
+    "services/frontend/code/playwright.config.ts": "b77b613da2a0e60ae1c334b11004ad9ca9e9379ae115072684145c22a9886a8d",
     "services/frontend/code/postcss.config.mjs": "ab4805b77935e8d8a2036e5de3d3a15d6e21229e8e3a1a4aea10b09327709460",
     "services/frontend/code/scripts/generate-plugin-registry.mjs": "3b5af6a71397b166bb19b68a8638e2eeedbac671aa4ce05e271166e2874edf02",
     "services/frontend/code/src/app/(auth)/auth/callback/page.tsx": "ff8d1a8901bf782b45f3c2ec555f83e66b2d6e0a7aacf7866f1a6da62f3d2c03",

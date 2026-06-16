@@ -48,7 +48,10 @@ export default defineConfig({
     command: `npm run build && npm run start -- -p ${frontendPort}`,
     url: frontendUrl,
     timeout: 300_000,
-    reuseExistingServer: true,
+    // Always start a fresh server: reusing a leftover one silently runs a
+    // STALE build (old inlined NEXT_PUBLIC_* / old port), which makes config
+    // changes appear to do nothing. Determinism over inner-loop speed.
+    reuseExistingServer: false,
     stdout: "pipe",
     stderr: "pipe",
     env: {
