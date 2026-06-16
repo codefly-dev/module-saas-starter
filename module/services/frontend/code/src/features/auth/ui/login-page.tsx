@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import { useRouter } from "next/navigation";
 import { useAuth, availableProviders } from "@/lib/auth";
 import type { FixtureUser } from "@/lib/fixtures/types";
 import { LogIn, AlertCircle, Loader2, ShieldCheck, Sparkles, Building2 } from "lucide-react";
@@ -12,6 +13,7 @@ interface FixtureResponse {
 
 export function LoginPage() {
   const { signInWith, login } = useAuth();
+  const router = useRouter();
   const providers = useMemo(() => availableProviders(), []);
   const [error, setError] = useState<string | null>(null);
   const [fixtureUsers, setFixtureUsers] = useState<FixtureUser[]>([]);
@@ -34,7 +36,12 @@ export function LoginPage() {
     setLoading(user.provider_id);
     try {
       await login(user.provider, user.provider_id, user.email);
-      window.location.href = "/";
+      // Client navigation (not a full reload): preserves the in-memory authed
+      // state login() just set in the root AuthProvider, so the dashboard
+      // renders immediately. A full window.location reload would drop that
+      // state and force a cross-origin refresh round-trip (fragile when the
+      // FE and api are on different ports, e.g. the e2e direct-to-api setup).
+      router.push("/");
     } catch (err) {
       setError(err instanceof Error ? err.message : "Login failed");
       setLoading(null);

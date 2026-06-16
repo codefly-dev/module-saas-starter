@@ -438,7 +438,7 @@
     "services/frontend/code/src/features/auth/model/types.ts": "fac8a151486d1e0eafe353c5017daf1678901251c3db474b846be316a746299e",
     "services/frontend/code/src/features/auth/service/mutations.ts": "4172407cb01284c1decff9af61fb65481c5b228c5cde57456579810dcd5f4c8a",
     "services/frontend/code/src/features/auth/ui/callback-page.tsx": "a31c4e1916c28f39f7eb68e25f7e2e1a45ae25fe09c09ed0eb62f4ae55b29d05",
-    "services/frontend/code/src/features/auth/ui/login-page.tsx": "068a6ad2f8e6cc67341606514573a746f7db0a0b424b7c52feb1c55404e2277d",
+    "services/frontend/code/src/features/auth/ui/login-page.tsx": "307749e21afa7fbce2c31735e09ca79ffc94d7afe74f4383907a83d6d1cd9707",
     "services/frontend/code/src/features/billing/core/plans.test.ts": "2efe1590e60ef60cfd43693135541bc3154fb8ed10d5e7750025101c0d6665c6",
     "services/frontend/code/src/features/billing/core/plans.ts": "9fe717123aafe5a3f5a45f1558dafc23f1d489bc0f9165c032df0772e832ef9d",
     "services/frontend/code/src/features/billing/ui/billing-admin-page.tsx": "614bb50c8cb377ccfb8f9b8cb47ca3877e1e562c0921e997aef19bc4a293e6c0",
