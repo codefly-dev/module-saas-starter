@@ -36,6 +36,7 @@ const isExcludedFile = (rel) =>
   rel === "tools/base-integrity-allow.json" || // consumer-local escape hatch (logged, not hashed)
   /\.generated\.[a-z]+$/.test(rel) ||         // codegen output (e.g. registry.generated.ts)
   rel.endsWith(".tsbuildinfo") ||             // TypeScript incremental build cache
+  rel.endsWith("next-env.d.ts") ||            // Next.js-generated env types (regenerated on dev/build)
   rel.endsWith(".DS_Store");
 
 function walk(dir, out = []) {

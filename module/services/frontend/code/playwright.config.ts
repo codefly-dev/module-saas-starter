@@ -1,4 +1,16 @@
 import { defineConfig } from "@playwright/test";
+import { resolveServiceAddressSync } from "codefly";
+
+// Resolve the api's REST + Connect addresses from codefly at config-load
+// time. These ports are deterministic codefly hashes of
+// workspace+module+service, so they DIFFER per consumer (the canonical
+// starter vs warden vs mind) — hardcoding them only worked in the workspace
+// they were authored in. The `??` fallbacks keep things working if codefly
+// can't resolve (e.g. a manually-started server with reuseExistingServer).
+const apiRest =
+  resolveServiceAddressSync("api", "rest") ?? "http://localhost:5962";
+const apiConnect =
+  resolveServiceAddressSync("api", "connect") ?? "http://localhost:44790";
 
 export default defineConfig({
   testDir: "./tests/e2e",
@@ -39,11 +51,10 @@ export default defineConfig({
       // the FE falls back to localhost:8080 (Connect) and listMembers /
       // listOrganizations / etc all fail silently — empty data, blank
       // selects, every "pick an org" assertion times out.
-      // Ports are deterministic codefly hashes; api gateway lives on
-      // 5962 (REST) / 44790 (Connect) for this workspace+module+service.
-      NEXT_PUBLIC_API_CONNECT: "http://localhost:44790",
-      NEXT_PUBLIC_API_REST: "http://localhost:5962",
-      NEXT_PUBLIC_BACKEND_URL: "http://localhost:5962",
+      // Resolved from codefly above (workspace-correct), not hardcoded.
+      NEXT_PUBLIC_API_CONNECT: apiConnect,
+      NEXT_PUBLIC_API_REST: apiRest,
+      NEXT_PUBLIC_BACKEND_URL: apiRest,
       // Force dev login flow even if the developer happens to have
       // NEXT_PUBLIC_WORKOS_* set in their shell — without this, the
       // login page treats those as configured providers and skips the

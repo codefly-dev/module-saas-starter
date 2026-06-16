@@ -45,9 +45,12 @@ async function globalSetup(_config: FullConfig): Promise<void> {
   // log instead of being swallowed by Playwright's reporter.
   // withDependencies passes --exclude-root, so it brings up the api +
   // postgres/vault/redis/auth-sidecar but NOT the frontend itself —
-  // Playwright's webServer config does that in step 2. Probe the api's
-  // REST endpoint (port 5962, fixed by the gateway hash) instead of
-  // the FE's port: there's no FE running yet at this point.
+  // Playwright's webServer config does that in step 2. Probe the API's
+  // REST endpoint (there's no FE running yet at this point). The port is
+  // NOT hardcoded: `readyService: "api"` makes the SDK resolve the api's
+  // REST address from codefly (`codefly get endpoints api --type rest`),
+  // so this works in ANY consumer workspace — the port is a workspace
+  // hash and differs between, e.g., the canonical starter and warden.
   deps = await withDependencies({
     service: "frontend",
     fixture: "dev-admin",
@@ -55,7 +58,7 @@ async function globalSetup(_config: FullConfig): Promise<void> {
     silents: ["store"],
     keepAlive,
     readyTimeoutMs: 180_000,
-    baseURL: "http://localhost:5962",
+    readyService: "api",
     readyPath: "/",
     echo: true,
   });
