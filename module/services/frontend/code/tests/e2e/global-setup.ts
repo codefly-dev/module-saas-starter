@@ -22,6 +22,7 @@
 import type { FullConfig } from "@playwright/test";
 import {
   withDependencies,
+  resolveServiceAddressSync,
   type Dependencies,
 } from "codefly";
 
@@ -63,10 +64,11 @@ async function globalSetup(_config: FullConfig): Promise<void> {
     echo: true,
   });
 
-  // The FE binds to 21931 (deterministic codefly hash) once Playwright
-  // brings it up via webServer. Tests use process.env.PLAYWRIGHT_BASE_URL
-  // when set, otherwise fall back to the same default.
-  process.env.PLAYWRIGHT_BASE_URL = "http://localhost:21931";
+  // The FE binds to its codefly-resolved http port (NOT a hardcoded one) once
+  // Playwright brings it up via webServer. Resolve the same address the
+  // webServer uses so baseURL and the running server always agree.
+  const frontendUrl = resolveServiceAddressSync("frontend", "http");
+  if (frontendUrl) process.env.PLAYWRIGHT_BASE_URL = frontendUrl;
 }
 
 export default globalSetup;
