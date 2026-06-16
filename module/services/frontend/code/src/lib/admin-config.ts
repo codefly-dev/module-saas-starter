@@ -1,16 +1,12 @@
 import { buildAdminConfig } from "./admin-core";
-import { coreUsersPlugin } from "@/plugins/core-users";
-import { platformAdminPlugin } from "@/plugins/platform-admin";
-import { auditPlugin } from "@/plugins/audit";
+import { discoveredPlugins } from "@/plugins/registry.generated";
 
 /**
  * Compose all plugins into the admin dashboard configuration.
  *
- * To add a new feature (e.g. billing, RAG), create a plugin file
- * in src/plugins/ and add it to this array.
+ * Plugins are AUTO-DISCOVERED: create a plugin file in src/plugins/ that exports
+ * an AdminPlugin and it's registered automatically (the registry barrel is
+ * regenerated on predev/prebuild/pretest). Side-modules — e.g. the warden
+ * console — compose in with ZERO edits to this base file.
  */
-export const adminConfig = buildAdminConfig([
-  coreUsersPlugin,
-  platformAdminPlugin,
-  auditPlugin,
-]);
+export const adminConfig = buildAdminConfig(discoveredPlugins);
