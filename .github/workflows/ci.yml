@@ -30,3 +30,17 @@ jobs:
       - name: Vet (${{ matrix.module }})
         working-directory: ${{ matrix.module }}
         run: go vet ./...
+
+  base-integrity:
+    # The base-file manifest must stay current with canonical's files: editing
+    # any base file without regenerating the manifest fails here. Consumers run
+    # the SAME command (`base-integrity.mjs check`) to prove they only ADD files
+    # on the side and never modify the base they synced from canonical.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - name: Base-file integrity (manifest current vs canonical)
+        run: node module/tools/base-integrity.mjs check
