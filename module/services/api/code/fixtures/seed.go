@@ -244,7 +244,13 @@ func seedTeams(ctx context.Context, w *wool.Wool, service *business.Service, tea
 				w.Warn("team member not found", wool.Field("email", email))
 				continue
 			}
-			if err := service.Store().AddTeamMember(ctx, teamResp.GetTeam().GetId(), memberID, "member"); err != nil {
+			// Bootstrap seeding carries no tenant context, so the org-scoped
+			// team_members RLS policy rejects a bare insert (SQLSTATE 42501).
+			// Seed under the audited System bypass — same bootstrap rationale
+			// as RegisterUser / GrantPlatformRole above.
+			if err := service.Store().WithBypass(ctx, func(ctx context.Context) error {
+				return service.Store().AddTeamMember(ctx, teamResp.GetTeam().GetId(), memberID, "member")
+			}); err != nil {
 				w.Warn("cannot add team member", wool.Field("email", email), wool.Field("error", err.Error()))
 			}
 		}

@@ -22,6 +22,7 @@
 import type { FullConfig } from "@playwright/test";
 import {
   withDependencies,
+  resolveServiceAddressSync,
   type Dependencies,
 } from "codefly";
 
@@ -45,9 +46,12 @@ async function globalSetup(_config: FullConfig): Promise<void> {
   // log instead of being swallowed by Playwright's reporter.
   // withDependencies passes --exclude-root, so it brings up the api +
   // postgres/vault/redis/auth-sidecar but NOT the frontend itself —
-  // Playwright's webServer config does that in step 2. Probe the api's
-  // REST endpoint (port 5962, fixed by the gateway hash) instead of
-  // the FE's port: there's no FE running yet at this point.
+  // Playwright's webServer config does that in step 2. Probe the API's
+  // REST endpoint (there's no FE running yet at this point). The port is
+  // NOT hardcoded: `readyService: "api"` makes the SDK resolve the api's
+  // REST address from codefly (`codefly get endpoints api --type rest`),
+  // so this works in ANY consumer workspace — the port is a workspace
+  // hash and differs between, e.g., the canonical starter and warden.
   deps = await withDependencies({
     service: "frontend",
     fixture: "dev-admin",
@@ -55,15 +59,16 @@ async function globalSetup(_config: FullConfig): Promise<void> {
     silents: ["store"],
     keepAlive,
     readyTimeoutMs: 180_000,
-    baseURL: "http://localhost:5962",
+    readyService: "api",
     readyPath: "/",
     echo: true,
   });
 
-  // The FE binds to 21931 (deterministic codefly hash) once Playwright
-  // brings it up via webServer. Tests use process.env.PLAYWRIGHT_BASE_URL
-  // when set, otherwise fall back to the same default.
-  process.env.PLAYWRIGHT_BASE_URL = "http://localhost:21931";
+  // The FE binds to its codefly-resolved http port (NOT a hardcoded one) once
+  // Playwright brings it up via webServer. Resolve the same address the
+  // webServer uses so baseURL and the running server always agree.
+  const frontendUrl = resolveServiceAddressSync("frontend", "http");
+  if (frontendUrl) process.env.PLAYWRIGHT_BASE_URL = frontendUrl;
 }
 
 export default globalSetup;

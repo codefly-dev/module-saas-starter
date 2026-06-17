@@ -6,6 +6,10 @@ export default defineConfig({
     globals: true,
     environment: "happy-dom",
     setupFiles: ["./src/test/setup.ts"],
+    // Unit tests only. Playwright e2e specs (tests/e2e/*.spec.ts) run via
+    // `npm run test:e2e`, not vitest — without this, vitest tries to collect
+    // them and fails on the @playwright/test import.
+    include: ["src/**/*.test.{ts,tsx}"],
     env: {
       NEXT_PUBLIC_API_CONNECT: "http://localhost:9999",
     },

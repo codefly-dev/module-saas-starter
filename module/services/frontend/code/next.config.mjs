@@ -3,6 +3,31 @@ import { withSentryConfig } from "@sentry/nextjs";
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   output: "standalone",
+  // Same-origin API proxy for local dev / e2e, where there is no auth-sidecar
+  // gateway in front of the frontend. The browser only ever talks to the
+  // frontend's own origin (so NEXT_PUBLIC_API_* point at it), and the Next
+  // server proxies API traffic to the api service. This keeps auth cookies
+  // FIRST-PARTY, so a full page load / reload re-establishes the session — a
+  // cross-origin frontend→api setup drops the cookie and bounces to login.
+  //
+  // Only registered when the internal api addresses are provided (dev/e2e):
+  //   API_REST_INTERNAL    — api REST endpoint    (e.g. http://localhost:10122)
+  //   API_CONNECT_INTERNAL — api Connect endpoint (e.g. http://localhost:16910)
+  // In production the gateway fronts these paths, the env vars are unset, and
+  // these rewrites are simply not registered.
+  async rewrites() {
+    const apiRest = process.env.API_REST_INTERNAL;
+    const apiConnect = process.env.API_CONNECT_INTERNAL;
+    const rules = [];
+    if (apiRest) {
+      rules.push({ source: "/v1/:path*", destination: `${apiRest}/v1/:path*` });
+    }
+    if (apiConnect) {
+      // Connect-ES service paths, e.g. /customers.UserService/ListUsers.
+      rules.push({ source: "/customers.:path*", destination: `${apiConnect}/customers.:path*` });
+    }
+    return rules;
+  },
 };
 
 // Sentry build-time plugin:
