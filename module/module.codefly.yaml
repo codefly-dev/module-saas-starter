@@ -11,10 +11,10 @@ interface:
         - service: auth-sidecar
           endpoint: grpc
           visibility: module
-        - service: api
+        - service: accounts
           endpoint: grpc
           visibility: module
-        - service: api
+        - service: accounts
           endpoint: connect
           visibility: module
         - service: frontend
@@ -23,7 +23,7 @@ interface:
 services:
     - name: store
     - name: vault
-    - name: api
+    - name: accounts
     - name: auth-sidecar
     - name: cache
     - name: frontend

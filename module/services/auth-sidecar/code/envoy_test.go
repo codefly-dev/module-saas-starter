@@ -13,7 +13,7 @@ import (
 // testUpstreams provides standard test upstream definitions.
 func testUpstreams() map[string]Upstream {
 	return map[string]Upstream{
-		"api":      {Address: "api", Port: 5962},
+		"accounts":      {Address: "accounts", Port: 5962},
 		"frontend": {Address: "frontend", Port: 3000},
 	}
 }
@@ -53,7 +53,7 @@ func TestGenerateEnvoyConfig_PublicRouteDisablesExtAuthz(t *testing.T) {
 	config := &EnvoyRouteConfig{
 		Routes: []EnvoyRouteEntry{
 			{
-				Service: "api",
+				Service: "accounts",
 				Rest:    &RestPath{Method: "POST", Path: "/v1/auth/authenticate"},
 				Connect: "/customers.AuthService/Authenticate",
 				Auth:    "public",
@@ -75,7 +75,7 @@ func TestGenerateEnvoyConfig_ProtectedRouteKeepsExtAuthz(t *testing.T) {
 	config := &EnvoyRouteConfig{
 		Routes: []EnvoyRouteEntry{
 			{
-				Service: "api",
+				Service: "accounts",
 				Rest:    &RestPath{Method: "GET", Path: "/v1/users/self"},
 				Connect: "/customers.UserService/GetSelf",
 				Auth:    "required",
@@ -113,7 +113,7 @@ func TestGenerateEnvoyConfig_MFAPendingRouteKeepsExtAuthz(t *testing.T) {
 	config := &EnvoyRouteConfig{
 		Routes: []EnvoyRouteEntry{
 			{
-				Service: "api",
+				Service: "accounts",
 				Rest:    &RestPath{Method: "POST", Path: "/v1/mfa/totp/verify"},
 				Connect: "/customers.MFAService/VerifyTOTP",
 				Auth:    "mfa_pending",
@@ -133,7 +133,7 @@ func TestGenerateEnvoyConfig_PathParamsBecomeSafeRegex(t *testing.T) {
 	config := &EnvoyRouteConfig{
 		Routes: []EnvoyRouteEntry{
 			{
-				Service: "api",
+				Service: "accounts",
 				Rest:    &RestPath{Method: "GET", Path: "/v1/users/{uuid}"},
 				Connect: "/customers.UserService/GetUser",
 				Auth:    "required",
@@ -157,7 +157,7 @@ func TestGenerateEnvoyConfig_ConnectRoutesAreExactMatch(t *testing.T) {
 	config := &EnvoyRouteConfig{
 		Routes: []EnvoyRouteEntry{
 			{
-				Service: "api",
+				Service: "accounts",
 				Rest:    &RestPath{Method: "POST", Path: "/v1/auth/authenticate"},
 				Connect: "/customers.AuthService/Authenticate",
 				Auth:    "public",
@@ -282,7 +282,7 @@ func TestGenerateEnvoyConfig_ExtAuthzClusterIsGRPC(t *testing.T) {
 	config := &EnvoyRouteConfig{
 		Routes: []EnvoyRouteEntry{
 			{
-				Service: "api",
+				Service: "accounts",
 				Rest:    &RestPath{Method: "GET", Path: "/v1/version"},
 				Auth:    "public",
 			},
@@ -327,7 +327,7 @@ func TestGenerateEnvoyConfig_SeparateConnectUpstreams(t *testing.T) {
 	config := &EnvoyRouteConfig{
 		Routes: []EnvoyRouteEntry{
 			{
-				Service: "api",
+				Service: "accounts",
 				Rest:    &RestPath{Method: "POST", Path: "/v1/auth/authenticate"},
 				Connect: "/customers.AuthService/Authenticate",
 				Auth:    "public",
@@ -336,7 +336,7 @@ func TestGenerateEnvoyConfig_SeparateConnectUpstreams(t *testing.T) {
 	}
 
 	connectUpstreams := map[string]Upstream{
-		"api": {Address: "api-connect", Port: 5963},
+		"accounts": {Address: "accounts-connect", Port: 5963},
 	}
 
 	yamlBytes, err := GenerateEnvoyConfig(config, testUpstreams(), connectUpstreams, testExtAuthz(), 8080)
@@ -346,14 +346,14 @@ func TestGenerateEnvoyConfig_SeparateConnectUpstreams(t *testing.T) {
 	// Should have separate api_rest and api_connect clusters.
 	assert.Contains(t, output, "api_rest")
 	assert.Contains(t, output, "api_connect")
-	assert.Contains(t, output, "api-connect") // connect upstream hostname
+	assert.Contains(t, output, "accounts-connect") // connect upstream hostname
 }
 
 func TestGenerateEnvoyConfig_ListenPort(t *testing.T) {
 	config := &EnvoyRouteConfig{
 		Routes: []EnvoyRouteEntry{
 			{
-				Service: "api",
+				Service: "accounts",
 				Rest:    &RestPath{Method: "GET", Path: "/v1/version"},
 				Auth:    "public",
 			},
@@ -406,7 +406,7 @@ func TestGenerateEnvoyConfig_ComplexPathParams(t *testing.T) {
 	config := &EnvoyRouteConfig{
 		Routes: []EnvoyRouteEntry{
 			{
-				Service: "api",
+				Service: "accounts",
 				Rest:    &RestPath{Method: "DELETE", Path: "/v1/organizations/{org_id}/members/{user_id}"},
 				Connect: "/customers.OrganizationService/RemoveMember",
 				Auth:    "required",
@@ -430,13 +430,13 @@ func TestGenerateEnvoyConfig_CustomActionPaths(t *testing.T) {
 	config := &EnvoyRouteConfig{
 		Routes: []EnvoyRouteEntry{
 			{
-				Service: "api",
+				Service: "accounts",
 				Rest:    &RestPath{Method: "GET", Path: "/v1/users:findByIdentity"},
 				Connect: "/customers.UserService/FindUserByIdentity",
 				Auth:    "required",
 			},
 			{
-				Service: "api",
+				Service: "accounts",
 				Rest:    &RestPath{Method: "POST", Path: "/v1/platform/users/{user_id}:suspend"},
 				Connect: "/customers.PlatformAdminService/SuspendUser",
 				Auth:    "required",

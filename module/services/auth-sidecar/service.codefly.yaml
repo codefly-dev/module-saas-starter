@@ -11,7 +11,7 @@ agent:
   version: 0.0.146
   publisher: codefly.dev
 service-dependencies:
-  - name: api
+  - name: accounts
   - name: frontend
 endpoints:
   - name: grpc

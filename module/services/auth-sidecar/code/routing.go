@@ -65,7 +65,7 @@ func LoadRoutesFromDir(ctx context.Context, dir string) ([]*RouteEntry, error) {
 			continue // not exposed — skip
 		}
 		entries = append(entries, &RouteEntry{
-			Service:   "api", // all routes currently go to the api service
+			Service: "accounts", // all routes currently go to the api service
 			Method:    string(route.Method),
 			Path:      route.Path,
 			Protected: route.Extension.Protected,

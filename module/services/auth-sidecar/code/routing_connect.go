@@ -14,7 +14,7 @@ import (
 	"log"
 	"strings"
 
-	_ "api/pkg/gen" // triggers proto descriptor registration for customers.*
+	_ "accounts/pkg/gen" // triggers proto descriptor registration for customers.*
 
 	"google.golang.org/protobuf/reflect/protoreflect"
 	"google.golang.org/protobuf/reflect/protoregistry"

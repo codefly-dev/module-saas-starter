@@ -9,7 +9,7 @@ agent:
     version: 0.0.2
     publisher: codefly.dev
 endpoints:
-    - name: api
+    - name: accounts
       api: tcp
 # MinIO root credentials default to the upstream MinIO defaults
 # (minioadmin/minioadmin) when no codefly secret is wired — fine

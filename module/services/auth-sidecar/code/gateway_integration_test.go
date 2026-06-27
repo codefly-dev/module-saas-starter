@@ -39,7 +39,7 @@ import (
 func newTestGateway(t *testing.T) (baseURL string, teardown func()) {
 	t.Helper()
 
-	apiRestNet := codefly.For(testCtx).Service("api").API("rest").NetworkInstance()
+	apiRestNet := codefly.For(testCtx).Service("accounts").API("rest").NetworkInstance()
 	require.NotNil(t, apiRestNet, "api REST endpoint not available")
 	apiURL, err := url.Parse(fmt.Sprintf("http://%s:%d", apiRestNet.Hostname, apiRestNet.Port))
 	require.NoError(t, err)
@@ -50,7 +50,7 @@ func newTestGateway(t *testing.T) (baseURL string, teardown func()) {
 	matcher := NewRouteMatcher(entries)
 
 	upstreams := map[string]*url.URL{
-		"api": apiURL,
+		"accounts": apiURL,
 	}
 
 	gateway := NewGateway(testSidecar, matcher, upstreams, nil)

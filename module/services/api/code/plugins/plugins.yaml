@@ -1,8 +1,0 @@
-# Plugin registry — list active plugins here.
-# The codefly agent regenerates registry_gen.go from this file during Sync.
-plugins:
-  # M7/M8 agent permission system: PrincipalService +
-  # DelegationService gRPC + REST. Operator configures signing
-  # keys at plugin construction time in main.go.
-  - name: permissions
-    import: "api/pkg/permissionsplugin"

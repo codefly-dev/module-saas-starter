@@ -15,7 +15,7 @@ import (
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 
-	apigen "api/pkg/gen"
+	apigen "accounts/pkg/gen"
 )
 
 // accessClaims mirrors the shape minted by pkg/auth/ed25519.

@@ -26,7 +26,7 @@ import (
 	"google.golang.org/grpc/reflection"
 	"google.golang.org/protobuf/types/known/emptypb"
 
-	apigen "api/pkg/gen"
+	apigen "accounts/pkg/gen"
 )
 
 func main() {
@@ -51,19 +51,19 @@ func main() {
 		httpPort = httpNet.Port
 	}
 
-	apiNet := codefly.For(ctx).Service("api").API("grpc").NetworkInstance()
+	apiNet := codefly.For(ctx).Service("accounts").API("grpc").NetworkInstance()
 	if apiNet == nil {
 		panic("api gRPC endpoint not available")
 	}
 	apiAddr := fmt.Sprintf("%s:%d", apiNet.Hostname, apiNet.Port)
 
 	// Upstream HTTP URLs used by the gateway listener.
-	apiRestNet := codefly.For(ctx).Service("api").API("rest").NetworkInstance()
+	apiRestNet := codefly.For(ctx).Service("accounts").API("rest").NetworkInstance()
 	apiHTTPURL := ""
 	if apiRestNet != nil {
 		apiHTTPURL = fmt.Sprintf("http://%s:%d", apiRestNet.Hostname, apiRestNet.Port)
 	}
-	apiConnectNet := codefly.For(ctx).Service("api").API("connect").NetworkInstance()
+	apiConnectNet := codefly.For(ctx).Service("accounts").API("connect").NetworkInstance()
 	apiConnectURL := ""
 	if apiConnectNet != nil {
 		apiConnectURL = fmt.Sprintf("http://%s:%d", apiConnectNet.Hostname, apiConnectNet.Port)
@@ -286,7 +286,7 @@ func generateEnvoyAndExit() {
 	// Default upstreams if none provided (sensible defaults for the module).
 	if len(upstreams) == 0 {
 		upstreams = map[string]Upstream{
-			"api":      {Address: "api", Port: 5962},
+			"accounts":      {Address: "accounts", Port: 5962},
 			"frontend": {Address: "frontend", Port: 3000},
 		}
 	}

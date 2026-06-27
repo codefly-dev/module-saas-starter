@@ -42,24 +42,24 @@ func (f *fakeUpstream) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 func testRouteEntries() []*RouteEntry {
 	return []*RouteEntry{
 		// Public auth routes
-		{Service: "api", Method: "POST", Path: "/v1/auth/authenticate", Protected: false},
-		{Service: "api", Method: "POST", Path: "/v1/auth/refresh", Protected: false},
-		{Service: "api", Method: "POST", Path: "/v1/auth/logout", Protected: false},
-		{Service: "api", Method: "GET", Path: "/v1/auth/.well-known/jwks.json", Protected: false},
+		{Service: "accounts", Method: "POST", Path: "/v1/auth/authenticate", Protected: false},
+		{Service: "accounts", Method: "POST", Path: "/v1/auth/refresh", Protected: false},
+		{Service: "accounts", Method: "POST", Path: "/v1/auth/logout", Protected: false},
+		{Service: "accounts", Method: "GET", Path: "/v1/auth/.well-known/jwks.json", Protected: false},
 		// MFA pending (treated as protected for gateway purposes)
-		{Service: "api", Method: "POST", Path: "/v1/mfa/totp/verify", Protected: true},
+		{Service: "accounts", Method: "POST", Path: "/v1/mfa/totp/verify", Protected: true},
 		// Protected routes
-		{Service: "api", Method: "GET", Path: "/v1/users", Protected: true},
-		{Service: "api", Method: "GET", Path: "/v1/users/{uuid}", Protected: true},
-		{Service: "api", Method: "GET", Path: "/v1/users/self", Protected: true},
-		{Service: "api", Method: "POST", Path: "/v1/users", Protected: true},
-		{Service: "api", Method: "DELETE", Path: "/v1/users/{uuid}", Protected: true},
-		{Service: "api", Method: "POST", Path: "/v1/users/{user_uuid}/identities", Protected: true},
-		{Service: "api", Method: "GET", Path: "/v1/users/{user_uuid}/identities", Protected: true},
-		{Service: "api", Method: "DELETE", Path: "/v1/mfa/devices/{id}", Protected: true},
-		{Service: "api", Method: "GET", Path: "/v1/version", Protected: false},
+		{Service: "accounts", Method: "GET", Path: "/v1/users", Protected: true},
+		{Service: "accounts", Method: "GET", Path: "/v1/users/{uuid}", Protected: true},
+		{Service: "accounts", Method: "GET", Path: "/v1/users/self", Protected: true},
+		{Service: "accounts", Method: "POST", Path: "/v1/users", Protected: true},
+		{Service: "accounts", Method: "DELETE", Path: "/v1/users/{uuid}", Protected: true},
+		{Service: "accounts", Method: "POST", Path: "/v1/users/{user_uuid}/identities", Protected: true},
+		{Service: "accounts", Method: "GET", Path: "/v1/users/{user_uuid}/identities", Protected: true},
+		{Service: "accounts", Method: "DELETE", Path: "/v1/mfa/devices/{id}", Protected: true},
+		{Service: "accounts", Method: "GET", Path: "/v1/version", Protected: false},
 		// Billing webhook (public)
-		{Service: "api", Method: "POST", Path: "/v1/billing/webhook", Protected: false},
+		{Service: "accounts", Method: "POST", Path: "/v1/billing/webhook", Protected: false},
 		// Frontend
 		{Service: "frontend", Method: "GET", Path: "/", Protected: false},
 		// Health checks
@@ -94,7 +94,7 @@ func newGatewayHarness(t *testing.T) (*Gateway, *fakeUpstream, *fakeUpstream, ed
 
 	matcher := NewRouteMatcher(testRouteEntries(), nil)
 	upstreams := map[string]*url.URL{
-		"api":      apiURL,
+		"accounts":      apiURL,
 		"frontend": frontendURL,
 	}
 

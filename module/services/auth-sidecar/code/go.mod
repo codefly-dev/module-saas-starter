@@ -3,7 +3,7 @@ module auth-sidecar
 go 1.25.0
 
 require (
-	api v0.0.0
+	accounts v0.0.0
 	buf.build/gen/go/bufbuild/protovalidate/protocolbuffers/go v1.36.11-20260415201107-50325440f8f2.1
 	github.com/codefly-dev/core v0.2.10
 	github.com/codefly-dev/sdk-go v0.1.40
@@ -87,6 +87,6 @@ require (
 	golang.org/x/text v0.37.0 // indirect
 )
 
-replace api => ../../api/code
+replace accounts => ../../accounts/code
 
 exclude google.golang.org/genproto v0.0.0-20210226172003-ab064af71705

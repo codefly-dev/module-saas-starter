@@ -6,7 +6,7 @@ agent:
     version: latest
     publisher: codefly.dev
 service-dependencies:
-    - name: api
+    - name: accounts
 workspace-configuration-dependencies:
     - workos
 endpoints:

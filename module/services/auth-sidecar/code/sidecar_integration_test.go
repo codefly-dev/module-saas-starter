@@ -23,7 +23,7 @@ import (
 	"github.com/codefly-dev/core/sdk"
 	"github.com/stretchr/testify/require"
 
-	apigen "api/pkg/gen"
+	apigen "accounts/pkg/gen"
 )
 
 // Global test fixtures — initialized once in TestMain.
@@ -55,7 +55,7 @@ func TestMain(m *testing.M) {
 		os.Exit(1)
 	}
 
-	apiNet := codefly.For(ctx).Service("api").API("grpc").NetworkInstance()
+	apiNet := codefly.For(ctx).Service("accounts").API("grpc").NetworkInstance()
 	if apiNet == nil {
 		fmt.Fprintf(os.Stderr, "backend gRPC endpoint not available\n")
 		os.Exit(1)
