@@ -14,3 +14,7 @@ dist/
 module/services/*/code/backend
 module/services/*/code/local
 module/services/*/.cache/
+
+# nix caches + materialized per-service nix envs (machine-local, regenerated)
+**/.nix-cache/
+module/services/*/nix/

@@ -37,11 +37,26 @@ export interface DashboardWidget {
   priority?: number;
 }
 
+// A plugin-provided admin page. Routes are DATA, not files: the shared
+// catch-all (app/admin/[...slug]/page.tsx) matches the current path to one of
+// these and renders its component. This is what lets a PROJECT plugin (warden,
+// living outside the shared starter tree) contribute pages without dropping
+// route files into the shared app/ — Next's filesystem router can't see those.
+export interface PluginRoute {
+  // The admin path this renders, e.g. "/admin/warden/calls". Matched exactly
+  // (trailing slash ignored) against the current pathname.
+  path: string;
+  component: React.LazyExoticComponent<React.ComponentType>;
+  // Optional finer gate on top of the admin-tier check the layout already does.
+  requiredRole?: OrgRole | PlatformRole;
+}
+
 export interface AdminPlugin {
   name: string;
   navItems?: NavItem[];
   resources?: Resource[];
   widgets?: DashboardWidget[];
+  routes?: PluginRoute[];
 }
 
 export interface AdminConfig {
@@ -49,6 +64,7 @@ export interface AdminConfig {
   navItems: NavItem[];
   resources: Resource[];
   widgets: DashboardWidget[];
+  routes: PluginRoute[];
 }
 
 // ============================================================================
@@ -63,6 +79,7 @@ export function buildAdminConfig(plugins: AdminPlugin[]): AdminConfig {
     widgets: plugins
       .flatMap((p) => p.widgets ?? [])
       .sort((a, b) => (a.priority ?? 0) - (b.priority ?? 0)),
+    routes: plugins.flatMap((p) => p.routes ?? []),
   };
 }
 

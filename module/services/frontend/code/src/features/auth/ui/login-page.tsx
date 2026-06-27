@@ -122,7 +122,7 @@ export function LoginPage() {
           </div>
 
           <p className="text-xs text-white/60">
-            Trusted by teams shipping the next great B2B product.
+            Trusted by teams shipping the next great product.
           </p>
         </div>
       </div>
