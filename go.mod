@@ -2,7 +2,7 @@ module github.com/codefly-dev/agents/modules/saas-starter
 
 go 1.25.0
 
-require github.com/codefly-dev/core v0.2.10
+require github.com/codefly-dev/core v0.2.11
 
 require (
 	github.com/google/uuid v1.6.0 // indirect
