@@ -9,7 +9,7 @@ import {
   useReactTable,
   type SortingState,
 } from "@tanstack/react-table";
-import { MoreHorizontal, Users } from "lucide-react";
+import { MoreHorizontal, Users, Pencil, Trash2 } from "lucide-react";
 import { DataTable } from "@/shared/ui/data-table";
 import {
   Button,
@@ -29,12 +29,16 @@ interface TeamsTableProps {
   data: Team[];
   isLoading: boolean;
   onViewMembers: (team: Team) => void;
+  onRename: (team: Team) => void;
+  onDelete: (team: Team) => void;
 }
 
 export function TeamsTable({
   data,
   isLoading,
   onViewMembers,
+  onRename,
+  onDelete,
 }: TeamsTableProps) {
   const [sorting, setSorting] = useState<SortingState>([]);
 
@@ -89,13 +93,25 @@ export function TeamsTable({
                   <Users className="mr-2 h-4 w-4" />
                   View Members
                 </DropdownMenuItem>
+                <DropdownMenuItem onClick={() => onRename(team)}>
+                  <Pencil className="mr-2 h-4 w-4" />
+                  Rename
+                </DropdownMenuItem>
+                <DropdownMenuSeparator />
+                <DropdownMenuItem
+                  onClick={() => onDelete(team)}
+                  className="text-destructive focus:text-destructive"
+                >
+                  <Trash2 className="mr-2 h-4 w-4" />
+                  Delete
+                </DropdownMenuItem>
               </DropdownMenuContent>
             </DropdownMenu>
           );
         },
       }),
     ],
-    [onViewMembers],
+    [onViewMembers, onRename, onDelete],
   );
 
   const table = useReactTable({

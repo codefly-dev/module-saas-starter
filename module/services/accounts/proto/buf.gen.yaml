@@ -2,7 +2,7 @@ version: v1
 managed:
   enabled: true
   go_package_prefix:
-    default: api/pkg/gen
+    default: accounts/pkg/gen
     except:
       - buf.build/googleapis/googleapis
       - buf.build/bufbuild/protovalidate

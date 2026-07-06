@@ -1,6 +1,7 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import {
   Card,
@@ -10,157 +11,97 @@ import {
   CardHeader,
   CardTitle,
   Button,
-  Checkbox,
   Label,
+  Switch,
 } from "@/shared/ui";
+import { userSettingsQueries } from "@/features/user-settings/service/queries";
+import { userSettingsMutations } from "@/features/user-settings/service/mutations";
 
-interface NotificationChannel {
-  id: string;
+interface Channel {
+  id: "inApp" | "push" | "sound";
   label: string;
+  description: string;
 }
 
-interface EventPreference {
-  eventType: string;
-  label: string;
-  channels: Record<string, boolean>;
-}
-
-const CHANNELS: NotificationChannel[] = [
-  { id: "in_app", label: "In-App" },
-  { id: "email", label: "Email" },
-  { id: "slack", label: "Slack" },
+/** The delivery channels the backend actually persists (UserNotificationSettings:
+ * in_app / push / sound). Per-event granularity would need a proto extension; these
+ * are the global toggles the api stores today. */
+const CHANNELS: Channel[] = [
+  { id: "inApp", label: "In-app", description: "Show notifications in the app's notification center." },
+  { id: "push", label: "Push", description: "Send push notifications to your registered devices." },
+  { id: "sound", label: "Sound", description: "Play a sound when a notification arrives." },
 ];
 
-const DEFAULT_EVENTS: EventPreference[] = [
-  {
-    eventType: "user.registered",
-    label: "New user registration",
-    channels: { in_app: true, email: true, slack: false },
-  },
-  {
-    eventType: "auth.login",
-    label: "User login",
-    channels: { in_app: false, email: false, slack: false },
-  },
-  {
-    eventType: "invitation.created",
-    label: "Invitation sent",
-    channels: { in_app: true, email: true, slack: false },
-  },
-  {
-    eventType: "invitation.accepted",
-    label: "Invitation accepted",
-    channels: { in_app: true, email: false, slack: false },
-  },
-  {
-    eventType: "org.member_added",
-    label: "Member added to org",
-    channels: { in_app: true, email: false, slack: true },
-  },
-  {
-    eventType: "org.member_removed",
-    label: "Member removed from org",
-    channels: { in_app: true, email: true, slack: true },
-  },
-  {
-    eventType: "api_key.created",
-    label: "API key created",
-    channels: { in_app: true, email: true, slack: false },
-  },
-  {
-    eventType: "role.assigned",
-    label: "Role assigned",
-    channels: { in_app: true, email: false, slack: false },
-  },
-  {
-    eventType: "platform.user_impersonated",
-    label: "User impersonation started",
-    channels: { in_app: true, email: true, slack: true },
-  },
-];
+type Prefs = { inApp: boolean; push: boolean; sound: boolean };
 
 /**
- * Notification preferences scaffold.
- * Backend notification preferences API can be wired in later; for now
- * this is a UI-only component with local state.
+ * Notification preferences — wired to the real UserSettings.notifications
+ * (in_app / push / sound). Reads the current settings and persists changes via
+ * UserSettingsService.Update (the nested `notifications` object is replaced
+ * wholesale, so we always send all three).
  */
 export function NotificationSettings() {
-  const [events, setEvents] = useState<EventPreference[]>(DEFAULT_EVENTS);
+  const queryClient = useQueryClient();
+  const { data, isLoading } = useQuery(userSettingsQueries.current());
 
-  const toggleChannel = (eventType: string, channelId: string) => {
-    setEvents((prev) =>
-      prev.map((e) =>
-        e.eventType === eventType
-          ? {
-              ...e,
-              channels: {
-                ...e.channels,
-                [channelId]: !e.channels[channelId],
-              },
-            }
-          : e,
-      ),
-    );
-  };
+  const [prefs, setPrefs] = useState<Prefs>({ inApp: true, push: false, sound: false });
 
-  const handleSave = () => {
-    // Placeholder: will call backend when preferences API exists
-    toast.success("Notification preferences saved");
-  };
+  // Seed local state from the server settings once they load.
+  useEffect(() => {
+    const n = data?.notifications;
+    if (n) {
+      setPrefs({ inApp: n.inApp ?? true, push: n.push ?? false, sound: n.sound ?? false });
+    }
+  }, [data]);
+
+  const save = useMutation({
+    mutationFn: () =>
+      userSettingsMutations.update({
+        notifications: { inApp: prefs.inApp, push: prefs.push, sound: prefs.sound },
+      }),
+    onSuccess: () => {
+      toast.success("Notification preferences saved");
+      queryClient.invalidateQueries({ queryKey: ["user-settings"] });
+    },
+    onError: () => toast.error("Failed to save preferences"),
+  });
 
   return (
     <div className="space-y-6">
       <div>
-        <h1 className="text-2xl font-bold tracking-tight">
-          Notification Preferences
-        </h1>
-        <p className="text-muted-foreground">
-          Choose how you want to be notified for each event type.
-        </p>
+        <h1 className="text-2xl font-bold tracking-tight">Notification Preferences</h1>
+        <p className="text-muted-foreground">Choose how you want to be notified.</p>
       </div>
 
       <Card>
         <CardHeader>
-          <CardTitle>Event Notifications</CardTitle>
-          <CardDescription>
-            Toggle notification channels per event type.
-          </CardDescription>
+          <CardTitle>Delivery channels</CardTitle>
+          <CardDescription>These apply to the notifications this account receives.</CardDescription>
         </CardHeader>
         <CardContent>
-          <div className="space-y-1">
-            {/* Header */}
-            <div className="grid grid-cols-[1fr_repeat(3,80px)] items-center gap-2 border-b pb-2 text-sm font-medium text-muted-foreground">
-              <span>Event</span>
-              {CHANNELS.map((ch) => (
-                <span key={ch.id} className="text-center">
-                  {ch.label}
-                </span>
-              ))}
-            </div>
-
-            {/* Rows */}
-            {events.map((event) => (
-              <div
-                key={event.eventType}
-                className="grid grid-cols-[1fr_repeat(3,80px)] items-center gap-2 py-2"
-              >
-                <Label className="text-sm">{event.label}</Label>
-                {CHANNELS.map((ch) => (
-                  <div key={ch.id} className="flex justify-center">
-                    <Checkbox
-                      checked={event.channels[ch.id] ?? false}
-                      onCheckedChange={() =>
-                        toggleChannel(event.eventType, ch.id)
-                      }
-                    />
-                  </div>
-                ))}
+          <div className="divide-y">
+            {CHANNELS.map((ch) => (
+              <div key={ch.id} className="flex items-center justify-between gap-4 py-4 first:pt-0 last:pb-0">
+                <div className="space-y-0.5">
+                  <Label htmlFor={`notif-${ch.id}`} className="text-sm font-medium">
+                    {ch.label}
+                  </Label>
+                  <p className="text-sm text-muted-foreground">{ch.description}</p>
+                </div>
+                <Switch
+                  id={`notif-${ch.id}`}
+                  checked={prefs[ch.id]}
+                  disabled={isLoading}
+                  onCheckedChange={(v) => setPrefs((p) => ({ ...p, [ch.id]: v }))}
+                />
               </div>
             ))}
           </div>
         </CardContent>
         <CardFooter>
-          <Button onClick={handleSave}>Save Preferences</Button>
+          <Button onClick={() => save.mutate()} disabled={isLoading || save.isPending}>
+            {save.isPending ? "Saving..." : "Save Preferences"}
+          </Button>
         </CardFooter>
       </Card>
     </div>

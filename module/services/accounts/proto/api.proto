@@ -382,6 +382,20 @@ message RemoveTeamMemberRequest {
   string user_id = 2 [(buf.validate.field).string.uuid = true];
 }
 
+message UpdateTeamRequest {
+  string team_id = 1 [(buf.validate.field).string.uuid = true];
+  string name = 2 [(buf.validate.field).string.min_len = 1];
+  string description = 3;
+}
+
+message UpdateTeamResponse {
+  Team team = 1;
+}
+
+message DeleteTeamRequest {
+  string team_id = 1 [(buf.validate.field).string.uuid = true];
+}
+
 message ListTeamMembersRequest {
   string team_id = 1 [(buf.validate.field).string.uuid = true];
 }
@@ -683,6 +697,14 @@ service TeamService {
 
   rpc ListMembers(ListTeamMembersRequest) returns (ListTeamMembersResponse) {
     option (google.api.http) = { get: "/v1/teams/{team_id}/members" };
+  }
+
+  rpc UpdateTeam(UpdateTeamRequest) returns (UpdateTeamResponse) {
+    option (google.api.http) = { patch: "/v1/teams/{team_id}" body: "*" };
+  }
+
+  rpc DeleteTeam(DeleteTeamRequest) returns (google.protobuf.Empty) {
+    option (google.api.http) = { delete: "/v1/teams/{team_id}" };
   }
 }
 
@@ -1333,6 +1355,11 @@ message ListActiveSessionsResponse {
   string next_page_token = 2;
 }
 
+message RevokeSessionRequest {
+  string session_id = 1 [(buf.validate.field).string.min_len = 1];
+  string reason = 2;
+}
+
 message GetOrgEntitlementsRequest {
   string org_id = 1 [(buf.validate.field).string.uuid = true];
 }
@@ -1432,6 +1459,10 @@ service PlatformAdminService {
   // Session visibility
   rpc ListActiveSessions(ListActiveSessionsRequest) returns (ListActiveSessionsResponse) {
     option (google.api.http) = { get: "/v1/platform/sessions" };
+  }
+
+  rpc RevokeSession(RevokeSessionRequest) returns (google.protobuf.Empty) {
+    option (google.api.http) = { delete: "/v1/platform/sessions/{session_id}" };
   }
 
   // Entitlements & billing

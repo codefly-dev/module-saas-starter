@@ -253,6 +253,12 @@ func (h *teamConnectHandler) RemoveMember(ctx context.Context, req *connect.Requ
 func (h *teamConnectHandler) ListMembers(ctx context.Context, req *connect.Request[gen.ListTeamMembersRequest]) (*connect.Response[gen.ListTeamMembersResponse], error) {
 	return unary(ctx, req, h.inner.ListMembers)
 }
+func (h *teamConnectHandler) UpdateTeam(ctx context.Context, req *connect.Request[gen.UpdateTeamRequest]) (*connect.Response[gen.UpdateTeamResponse], error) {
+	return unary(ctx, req, h.inner.UpdateTeam)
+}
+func (h *teamConnectHandler) DeleteTeam(ctx context.Context, req *connect.Request[gen.DeleteTeamRequest]) (*connect.Response[emptypb.Empty], error) {
+	return unary(ctx, req, h.inner.DeleteTeam)
+}
 
 // ============================================================================
 // PermissionService
@@ -399,6 +405,9 @@ func (h *platformAdminConnectHandler) ImpersonateUser(ctx context.Context, req *
 }
 func (h *platformAdminConnectHandler) ListActiveSessions(ctx context.Context, req *connect.Request[gen.ListActiveSessionsRequest]) (*connect.Response[gen.ListActiveSessionsResponse], error) {
 	return unary(ctx, req, h.inner.ListActiveSessions)
+}
+func (h *platformAdminConnectHandler) RevokeSession(ctx context.Context, req *connect.Request[gen.RevokeSessionRequest]) (*connect.Response[emptypb.Empty], error) {
+	return unary(ctx, req, h.inner.RevokeSession)
 }
 func (h *platformAdminConnectHandler) GetOrgEntitlements(ctx context.Context, req *connect.Request[gen.GetOrgEntitlementsRequest]) (*connect.Response[gen.GetOrgEntitlementsResponse], error) {
 	return unary(ctx, req, h.inner.GetOrgEntitlements)

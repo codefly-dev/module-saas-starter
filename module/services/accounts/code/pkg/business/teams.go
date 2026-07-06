@@ -77,6 +77,47 @@ func (s *Service) RemoveTeamMember(ctx context.Context, actorID string, req *gen
 	return nil
 }
 
+// UpdateTeam renames / re-describes a team. Org-scoped like the other team writes.
+func (s *Service) UpdateTeam(ctx context.Context, actorID string, req *gen.UpdateTeamRequest) (*gen.UpdateTeamResponse, error) {
+	w := wool.Get(ctx).In("UpdateTeam")
+
+	orgID, err := s.resolveTeamOrg(ctx, req.TeamId)
+	if err != nil {
+		return nil, w.Wrapf(err, "cannot resolve team org")
+	}
+
+	var team *gen.Team
+	if err := s.store.WithOrgTx(ctx, orgID, func(ctx context.Context) error {
+		t, err := s.store.UpdateTeam(ctx, req.TeamId, req.Name, req.Description)
+		team = t
+		return err
+	}); err != nil {
+		return nil, w.Wrapf(err, "cannot update team")
+	}
+
+	s.emit(ctx, actorID, "user", "team.updated", "team", req.TeamId, orgID)
+	return &gen.UpdateTeamResponse{Team: team}, nil
+}
+
+// DeleteTeam removes a team (and its memberships). Org-scoped.
+func (s *Service) DeleteTeam(ctx context.Context, actorID string, req *gen.DeleteTeamRequest) error {
+	w := wool.Get(ctx).In("DeleteTeam")
+
+	orgID, err := s.resolveTeamOrg(ctx, req.TeamId)
+	if err != nil {
+		return w.Wrapf(err, "cannot resolve team org")
+	}
+
+	if err := s.store.WithOrgTx(ctx, orgID, func(ctx context.Context) error {
+		return s.store.DeleteTeam(ctx, req.TeamId)
+	}); err != nil {
+		return w.Wrapf(err, "cannot delete team")
+	}
+
+	s.emit(ctx, actorID, "user", "team.deleted", "team", req.TeamId, orgID)
+	return nil
+}
+
 // ListTeamMembers lists all members of a team.
 func (s *Service) ListTeamMembers(ctx context.Context, req *gen.ListTeamMembersRequest) (*gen.ListTeamMembersResponse, error) {
 	w := wool.Get(ctx).In("ListTeamMembers")

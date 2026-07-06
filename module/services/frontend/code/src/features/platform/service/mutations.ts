@@ -71,3 +71,13 @@ export function useImpersonateUser() {
     mutationFn: (userId: string) => svc.impersonateUser({ userId }),
   });
 }
+
+export function useRevokeSession() {
+  const svc = usePlatformAdminService();
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ sessionId, reason }: { sessionId: string; reason?: string }) =>
+      svc.revokeSession({ sessionId, reason: reason ?? "" }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["sessions"] }),
+  });
+}

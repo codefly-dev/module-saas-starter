@@ -13,4 +13,9 @@ export const teamMutations = {
 
   removeMember: (teamId: string, userId: string) =>
     client.removeMember({ teamId, userId }),
+
+  update: (teamId: string, name: string, description?: string) =>
+    client.updateTeam({ teamId, name, description: description ?? "" }),
+
+  remove: (teamId: string) => client.deleteTeam({ teamId }),
 };

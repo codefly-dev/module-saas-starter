@@ -7,15 +7,19 @@ import { toast } from "sonner";
 import { timestampDate } from "@bufbuild/protobuf/wkt";
 import { Input } from "@/shared/ui";
 import { userQueries } from "../service/queries";
-import { userMutations } from "../service/mutations";
+import { userMutations, type UserEdit } from "../service/mutations";
 import { toUserStatus, type User } from "../model/types";
 import { UsersTable } from "./users-table";
 import { SuspendForm } from "./suspend-form";
+import { EditUserForm } from "./edit-user-form";
+import { DeleteUserDialog } from "./delete-user-dialog";
 
 export function UsersPage() {
   const queryClient = useQueryClient();
   const [search, setSearch] = useState("");
   const [suspendTarget, setSuspendTarget] = useState<User | null>(null);
+  const [editTarget, setEditTarget] = useState<User | null>(null);
+  const [deleteTarget, setDeleteTarget] = useState<User | null>(null);
   const [impersonationToken, setImpersonationToken] = useState<string | null>(null);
 
   // --- queries ---
@@ -64,6 +68,28 @@ export function UsersPage() {
     onError: () => toast.error("Failed to impersonate user"),
   });
 
+  const updateMutation = useMutation({
+    mutationFn: (edit: UserEdit) => userMutations.update(edit),
+    onSuccess: () => {
+      toast.success("User updated");
+      queryClient.invalidateQueries({ queryKey: ["users"] });
+      setEditTarget(null);
+    },
+    onError: () => toast.error("Failed to update user"),
+  });
+
+  const deleteMutation = useMutation({
+    mutationFn: (userId: string) => userMutations.remove(userId),
+    onSuccess: () => {
+      toast.success("User deleted");
+      queryClient.invalidateQueries({ queryKey: ["users"] });
+      setDeleteTarget(null);
+    },
+    onError: () => toast.error("Failed to delete user"),
+  });
+
+  const handleEdit = useCallback((user: User) => setEditTarget(user), []);
+  const handleDelete = useCallback((user: User) => setDeleteTarget(user), []);
   const handleSuspend = useCallback((user: User) => setSuspendTarget(user), []);
   const handleUnsuspend = useCallback(
     (user: User) => unsuspendMutation.mutate(user.uuid),
@@ -111,10 +137,32 @@ export function UsersPage() {
       <UsersTable
         data={users}
         isLoading={isLoading}
+        onEdit={handleEdit}
+        onDelete={handleDelete}
         onSuspend={handleSuspend}
         onUnsuspend={handleUnsuspend}
         onImpersonate={handleImpersonate}
       />
+
+      {editTarget && (
+        <EditUserForm
+          open
+          user={editTarget}
+          onSubmit={(edit) => updateMutation.mutate(edit)}
+          onCancel={() => setEditTarget(null)}
+          isPending={updateMutation.isPending}
+        />
+      )}
+
+      {deleteTarget && (
+        <DeleteUserDialog
+          open
+          userEmail={deleteTarget.primaryEmail}
+          onConfirm={() => deleteMutation.mutate(deleteTarget.uuid)}
+          onCancel={() => setDeleteTarget(null)}
+          isPending={deleteMutation.isPending}
+        />
+      )}
 
       {suspendTarget && (
         <SuspendForm

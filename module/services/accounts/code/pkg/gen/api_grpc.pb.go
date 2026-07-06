@@ -845,6 +845,8 @@ const (
 	TeamService_AddMember_FullMethodName    = "/customers.TeamService/AddMember"
 	TeamService_RemoveMember_FullMethodName = "/customers.TeamService/RemoveMember"
 	TeamService_ListMembers_FullMethodName  = "/customers.TeamService/ListMembers"
+	TeamService_UpdateTeam_FullMethodName   = "/customers.TeamService/UpdateTeam"
+	TeamService_DeleteTeam_FullMethodName   = "/customers.TeamService/DeleteTeam"
 )
 
 // TeamServiceClient is the client API for TeamService service.
@@ -858,6 +860,8 @@ type TeamServiceClient interface {
 	AddMember(ctx context.Context, in *AddTeamMemberRequest, opts ...grpc.CallOption) (*emptypb.Empty, error)
 	RemoveMember(ctx context.Context, in *RemoveTeamMemberRequest, opts ...grpc.CallOption) (*emptypb.Empty, error)
 	ListMembers(ctx context.Context, in *ListTeamMembersRequest, opts ...grpc.CallOption) (*ListTeamMembersResponse, error)
+	UpdateTeam(ctx context.Context, in *UpdateTeamRequest, opts ...grpc.CallOption) (*UpdateTeamResponse, error)
+	DeleteTeam(ctx context.Context, in *DeleteTeamRequest, opts ...grpc.CallOption) (*emptypb.Empty, error)
 }
 
 type teamServiceClient struct {
@@ -918,6 +922,26 @@ func (c *teamServiceClient) ListMembers(ctx context.Context, in *ListTeamMembers
 	return out, nil
 }
 
+func (c *teamServiceClient) UpdateTeam(ctx context.Context, in *UpdateTeamRequest, opts ...grpc.CallOption) (*UpdateTeamResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(UpdateTeamResponse)
+	err := c.cc.Invoke(ctx, TeamService_UpdateTeam_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *teamServiceClient) DeleteTeam(ctx context.Context, in *DeleteTeamRequest, opts ...grpc.CallOption) (*emptypb.Empty, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(emptypb.Empty)
+	err := c.cc.Invoke(ctx, TeamService_DeleteTeam_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // TeamServiceServer is the server API for TeamService service.
 // All implementations must embed UnimplementedTeamServiceServer
 // for forward compatibility.
@@ -929,6 +953,8 @@ type TeamServiceServer interface {
 	AddMember(context.Context, *AddTeamMemberRequest) (*emptypb.Empty, error)
 	RemoveMember(context.Context, *RemoveTeamMemberRequest) (*emptypb.Empty, error)
 	ListMembers(context.Context, *ListTeamMembersRequest) (*ListTeamMembersResponse, error)
+	UpdateTeam(context.Context, *UpdateTeamRequest) (*UpdateTeamResponse, error)
+	DeleteTeam(context.Context, *DeleteTeamRequest) (*emptypb.Empty, error)
 	mustEmbedUnimplementedTeamServiceServer()
 }
 
@@ -953,6 +979,12 @@ func (UnimplementedTeamServiceServer) RemoveMember(context.Context, *RemoveTeamM
 }
 func (UnimplementedTeamServiceServer) ListMembers(context.Context, *ListTeamMembersRequest) (*ListTeamMembersResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method ListMembers not implemented")
+}
+func (UnimplementedTeamServiceServer) UpdateTeam(context.Context, *UpdateTeamRequest) (*UpdateTeamResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method UpdateTeam not implemented")
+}
+func (UnimplementedTeamServiceServer) DeleteTeam(context.Context, *DeleteTeamRequest) (*emptypb.Empty, error) {
+	return nil, status.Error(codes.Unimplemented, "method DeleteTeam not implemented")
 }
 func (UnimplementedTeamServiceServer) mustEmbedUnimplementedTeamServiceServer() {}
 func (UnimplementedTeamServiceServer) testEmbeddedByValue()                     {}
@@ -1065,6 +1097,42 @@ func _TeamService_ListMembers_Handler(srv interface{}, ctx context.Context, dec 
 	return interceptor(ctx, in, info, handler)
 }
 
+func _TeamService_UpdateTeam_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(UpdateTeamRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(TeamServiceServer).UpdateTeam(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: TeamService_UpdateTeam_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(TeamServiceServer).UpdateTeam(ctx, req.(*UpdateTeamRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _TeamService_DeleteTeam_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(DeleteTeamRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(TeamServiceServer).DeleteTeam(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: TeamService_DeleteTeam_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(TeamServiceServer).DeleteTeam(ctx, req.(*DeleteTeamRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // TeamService_ServiceDesc is the grpc.ServiceDesc for TeamService service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -1091,6 +1159,14 @@ var TeamService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "ListMembers",
 			Handler:    _TeamService_ListMembers_Handler,
+		},
+		{
+			MethodName: "UpdateTeam",
+			Handler:    _TeamService_UpdateTeam_Handler,
+		},
+		{
+			MethodName: "DeleteTeam",
+			Handler:    _TeamService_DeleteTeam_Handler,
 		},
 	},
 	Streams:  []grpc.StreamDesc{},
@@ -3051,6 +3127,7 @@ const (
 	PlatformAdminService_UnsuspendUser_FullMethodName       = "/customers.PlatformAdminService/UnsuspendUser"
 	PlatformAdminService_ImpersonateUser_FullMethodName     = "/customers.PlatformAdminService/ImpersonateUser"
 	PlatformAdminService_ListActiveSessions_FullMethodName  = "/customers.PlatformAdminService/ListActiveSessions"
+	PlatformAdminService_RevokeSession_FullMethodName       = "/customers.PlatformAdminService/RevokeSession"
 	PlatformAdminService_GetOrgEntitlements_FullMethodName  = "/customers.PlatformAdminService/GetOrgEntitlements"
 	PlatformAdminService_OverrideEntitlement_FullMethodName = "/customers.PlatformAdminService/OverrideEntitlement"
 	PlatformAdminService_GrantPlatformRole_FullMethodName   = "/customers.PlatformAdminService/GrantPlatformRole"
@@ -3074,6 +3151,7 @@ type PlatformAdminServiceClient interface {
 	ImpersonateUser(ctx context.Context, in *ImpersonateUserRequest, opts ...grpc.CallOption) (*ImpersonateUserResponse, error)
 	// Session visibility
 	ListActiveSessions(ctx context.Context, in *ListActiveSessionsRequest, opts ...grpc.CallOption) (*ListActiveSessionsResponse, error)
+	RevokeSession(ctx context.Context, in *RevokeSessionRequest, opts ...grpc.CallOption) (*emptypb.Empty, error)
 	// Entitlements & billing
 	GetOrgEntitlements(ctx context.Context, in *GetOrgEntitlementsRequest, opts ...grpc.CallOption) (*GetOrgEntitlementsResponse, error)
 	OverrideEntitlement(ctx context.Context, in *OverrideEntitlementRequest, opts ...grpc.CallOption) (*OverrideEntitlementResponse, error)
@@ -3138,6 +3216,16 @@ func (c *platformAdminServiceClient) ListActiveSessions(ctx context.Context, in 
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(ListActiveSessionsResponse)
 	err := c.cc.Invoke(ctx, PlatformAdminService_ListActiveSessions_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *platformAdminServiceClient) RevokeSession(ctx context.Context, in *RevokeSessionRequest, opts ...grpc.CallOption) (*emptypb.Empty, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(emptypb.Empty)
+	err := c.cc.Invoke(ctx, PlatformAdminService_RevokeSession_FullMethodName, in, out, cOpts...)
 	if err != nil {
 		return nil, err
 	}
@@ -3228,6 +3316,7 @@ type PlatformAdminServiceServer interface {
 	ImpersonateUser(context.Context, *ImpersonateUserRequest) (*ImpersonateUserResponse, error)
 	// Session visibility
 	ListActiveSessions(context.Context, *ListActiveSessionsRequest) (*ListActiveSessionsResponse, error)
+	RevokeSession(context.Context, *RevokeSessionRequest) (*emptypb.Empty, error)
 	// Entitlements & billing
 	GetOrgEntitlements(context.Context, *GetOrgEntitlementsRequest) (*GetOrgEntitlementsResponse, error)
 	OverrideEntitlement(context.Context, *OverrideEntitlementRequest) (*OverrideEntitlementResponse, error)
@@ -3262,6 +3351,9 @@ func (UnimplementedPlatformAdminServiceServer) ImpersonateUser(context.Context, 
 }
 func (UnimplementedPlatformAdminServiceServer) ListActiveSessions(context.Context, *ListActiveSessionsRequest) (*ListActiveSessionsResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method ListActiveSessions not implemented")
+}
+func (UnimplementedPlatformAdminServiceServer) RevokeSession(context.Context, *RevokeSessionRequest) (*emptypb.Empty, error) {
+	return nil, status.Error(codes.Unimplemented, "method RevokeSession not implemented")
 }
 func (UnimplementedPlatformAdminServiceServer) GetOrgEntitlements(context.Context, *GetOrgEntitlementsRequest) (*GetOrgEntitlementsResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method GetOrgEntitlements not implemented")
@@ -3391,6 +3483,24 @@ func _PlatformAdminService_ListActiveSessions_Handler(srv interface{}, ctx conte
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
 		return srv.(PlatformAdminServiceServer).ListActiveSessions(ctx, req.(*ListActiveSessionsRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _PlatformAdminService_RevokeSession_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(RevokeSessionRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(PlatformAdminServiceServer).RevokeSession(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: PlatformAdminService_RevokeSession_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(PlatformAdminServiceServer).RevokeSession(ctx, req.(*RevokeSessionRequest))
 	}
 	return interceptor(ctx, in, info, handler)
 }
@@ -3547,6 +3657,10 @@ var PlatformAdminService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "ListActiveSessions",
 			Handler:    _PlatformAdminService_ListActiveSessions_Handler,
+		},
+		{
+			MethodName: "RevokeSession",
+			Handler:    _PlatformAdminService_RevokeSession_Handler,
 		},
 		{
 			MethodName: "GetOrgEntitlements",

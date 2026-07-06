@@ -87,16 +87,21 @@ func (s *UserServer) UpdateUser(ctx context.Context, req *gen.UpdateUserRequest)
 	if err := Validate(req); err != nil {
 		return nil, err
 	}
-	w := wool.Get(ctx).In("UpdateUser")
-	w.GRPC().Inject()
-	userID, found := w.UserAuthID()
-	if !found {
-		return nil, status.Error(codes.Unauthenticated, "user id not found")
+	actorID, err := requireAuth(ctx)
+	if err != nil {
+		return nil, err
+	}
+	// The target is the request's uuid (validated). The caller must be that user
+	// (self-service profile edit) or a platform admin (the admin Users table) —
+	// the same gate DeleteUser uses. Previously this ignored req.Uuid and updated
+	// the caller, so an admin could never edit another user.
+	if err := requireSelfOrPlatformAdmin(ctx, actorID, req.Uuid); err != nil {
+		return nil, err
 	}
 	if err := requireScope(ctx, "users:write"); err != nil {
 		return nil, err
 	}
-	return service.UpdateUser(ctx, userID, req)
+	return service.UpdateUser(ctx, req.Uuid, req)
 }
 
 func (s *UserServer) DeleteUser(ctx context.Context, req *gen.GetUserRequest) (*emptypb.Empty, error) {
@@ -356,6 +361,41 @@ func (s *TeamServer) ListMembers(ctx context.Context, req *gen.ListTeamMembersRe
 		return nil, err
 	}
 	return service.ListTeamMembers(ctx, req)
+}
+
+func (s *TeamServer) UpdateTeam(ctx context.Context, req *gen.UpdateTeamRequest) (*gen.UpdateTeamResponse, error) {
+	if err := Validate(req); err != nil {
+		return nil, err
+	}
+	actorID, err := requireAuth(ctx)
+	if err != nil {
+		return nil, err
+	}
+	orgID, err := requireTeamAdmin(ctx, actorID, req.TeamId)
+	if err != nil {
+		return nil, err
+	}
+	ctx = business.WithCachedTeamOrgID(ctx, req.TeamId, orgID)
+	return service.UpdateTeam(ctx, actorID, req)
+}
+
+func (s *TeamServer) DeleteTeam(ctx context.Context, req *gen.DeleteTeamRequest) (*emptypb.Empty, error) {
+	if err := Validate(req); err != nil {
+		return nil, err
+	}
+	actorID, err := requireAuth(ctx)
+	if err != nil {
+		return nil, err
+	}
+	orgID, err := requireTeamAdmin(ctx, actorID, req.TeamId)
+	if err != nil {
+		return nil, err
+	}
+	ctx = business.WithCachedTeamOrgID(ctx, req.TeamId, orgID)
+	if err := service.DeleteTeam(ctx, actorID, req); err != nil {
+		return nil, err
+	}
+	return &emptypb.Empty{}, nil
 }
 
 // ============================================================================
@@ -846,6 +886,22 @@ func (s *PlatformAdminServer) ListActiveSessions(ctx context.Context, req *gen.L
 		return nil, status.Error(codes.Unauthenticated, "user id not found")
 	}
 	return service.ListActiveSessions(ctx, actorID, req)
+}
+
+func (s *PlatformAdminServer) RevokeSession(ctx context.Context, req *gen.RevokeSessionRequest) (*emptypb.Empty, error) {
+	if err := Validate(req); err != nil {
+		return nil, err
+	}
+	w := wool.Get(ctx).In("RevokeSession")
+	w.GRPC().Inject()
+	actorID, found := w.UserAuthID()
+	if !found {
+		return nil, status.Error(codes.Unauthenticated, "user id not found")
+	}
+	if err := service.RevokeSession(ctx, actorID, req); err != nil {
+		return nil, err
+	}
+	return &emptypb.Empty{}, nil
 }
 
 func (s *PlatformAdminServer) GetOrgEntitlements(ctx context.Context, req *gen.GetOrgEntitlementsRequest) (*gen.GetOrgEntitlementsResponse, error) {

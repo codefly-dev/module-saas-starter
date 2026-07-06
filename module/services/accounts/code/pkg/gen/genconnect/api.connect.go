@@ -136,6 +136,10 @@ const (
 	TeamServiceRemoveMemberProcedure = "/customers.TeamService/RemoveMember"
 	// TeamServiceListMembersProcedure is the fully-qualified name of the TeamService's ListMembers RPC.
 	TeamServiceListMembersProcedure = "/customers.TeamService/ListMembers"
+	// TeamServiceUpdateTeamProcedure is the fully-qualified name of the TeamService's UpdateTeam RPC.
+	TeamServiceUpdateTeamProcedure = "/customers.TeamService/UpdateTeam"
+	// TeamServiceDeleteTeamProcedure is the fully-qualified name of the TeamService's DeleteTeam RPC.
+	TeamServiceDeleteTeamProcedure = "/customers.TeamService/DeleteTeam"
 	// PermissionServiceCreateRoleProcedure is the fully-qualified name of the PermissionService's
 	// CreateRole RPC.
 	PermissionServiceCreateRoleProcedure = "/customers.PermissionService/CreateRole"
@@ -249,6 +253,9 @@ const (
 	// PlatformAdminServiceListActiveSessionsProcedure is the fully-qualified name of the
 	// PlatformAdminService's ListActiveSessions RPC.
 	PlatformAdminServiceListActiveSessionsProcedure = "/customers.PlatformAdminService/ListActiveSessions"
+	// PlatformAdminServiceRevokeSessionProcedure is the fully-qualified name of the
+	// PlatformAdminService's RevokeSession RPC.
+	PlatformAdminServiceRevokeSessionProcedure = "/customers.PlatformAdminService/RevokeSession"
 	// PlatformAdminServiceGetOrgEntitlementsProcedure is the fully-qualified name of the
 	// PlatformAdminService's GetOrgEntitlements RPC.
 	PlatformAdminServiceGetOrgEntitlementsProcedure = "/customers.PlatformAdminService/GetOrgEntitlements"
@@ -939,6 +946,8 @@ type TeamServiceClient interface {
 	AddMember(context.Context, *connect.Request[gen.AddTeamMemberRequest]) (*connect.Response[emptypb.Empty], error)
 	RemoveMember(context.Context, *connect.Request[gen.RemoveTeamMemberRequest]) (*connect.Response[emptypb.Empty], error)
 	ListMembers(context.Context, *connect.Request[gen.ListTeamMembersRequest]) (*connect.Response[gen.ListTeamMembersResponse], error)
+	UpdateTeam(context.Context, *connect.Request[gen.UpdateTeamRequest]) (*connect.Response[gen.UpdateTeamResponse], error)
+	DeleteTeam(context.Context, *connect.Request[gen.DeleteTeamRequest]) (*connect.Response[emptypb.Empty], error)
 }
 
 // NewTeamServiceClient constructs a client for the customers.TeamService service. By default, it
@@ -982,6 +991,18 @@ func NewTeamServiceClient(httpClient connect.HTTPClient, baseURL string, opts ..
 			connect.WithSchema(teamServiceMethods.ByName("ListMembers")),
 			connect.WithClientOptions(opts...),
 		),
+		updateTeam: connect.NewClient[gen.UpdateTeamRequest, gen.UpdateTeamResponse](
+			httpClient,
+			baseURL+TeamServiceUpdateTeamProcedure,
+			connect.WithSchema(teamServiceMethods.ByName("UpdateTeam")),
+			connect.WithClientOptions(opts...),
+		),
+		deleteTeam: connect.NewClient[gen.DeleteTeamRequest, emptypb.Empty](
+			httpClient,
+			baseURL+TeamServiceDeleteTeamProcedure,
+			connect.WithSchema(teamServiceMethods.ByName("DeleteTeam")),
+			connect.WithClientOptions(opts...),
+		),
 	}
 }
 
@@ -992,6 +1013,8 @@ type teamServiceClient struct {
 	addMember    *connect.Client[gen.AddTeamMemberRequest, emptypb.Empty]
 	removeMember *connect.Client[gen.RemoveTeamMemberRequest, emptypb.Empty]
 	listMembers  *connect.Client[gen.ListTeamMembersRequest, gen.ListTeamMembersResponse]
+	updateTeam   *connect.Client[gen.UpdateTeamRequest, gen.UpdateTeamResponse]
+	deleteTeam   *connect.Client[gen.DeleteTeamRequest, emptypb.Empty]
 }
 
 // CreateTeam calls customers.TeamService.CreateTeam.
@@ -1019,6 +1042,16 @@ func (c *teamServiceClient) ListMembers(ctx context.Context, req *connect.Reques
 	return c.listMembers.CallUnary(ctx, req)
 }
 
+// UpdateTeam calls customers.TeamService.UpdateTeam.
+func (c *teamServiceClient) UpdateTeam(ctx context.Context, req *connect.Request[gen.UpdateTeamRequest]) (*connect.Response[gen.UpdateTeamResponse], error) {
+	return c.updateTeam.CallUnary(ctx, req)
+}
+
+// DeleteTeam calls customers.TeamService.DeleteTeam.
+func (c *teamServiceClient) DeleteTeam(ctx context.Context, req *connect.Request[gen.DeleteTeamRequest]) (*connect.Response[emptypb.Empty], error) {
+	return c.deleteTeam.CallUnary(ctx, req)
+}
+
 // TeamServiceHandler is an implementation of the customers.TeamService service.
 type TeamServiceHandler interface {
 	CreateTeam(context.Context, *connect.Request[gen.CreateTeamRequest]) (*connect.Response[gen.CreateTeamResponse], error)
@@ -1026,6 +1059,8 @@ type TeamServiceHandler interface {
 	AddMember(context.Context, *connect.Request[gen.AddTeamMemberRequest]) (*connect.Response[emptypb.Empty], error)
 	RemoveMember(context.Context, *connect.Request[gen.RemoveTeamMemberRequest]) (*connect.Response[emptypb.Empty], error)
 	ListMembers(context.Context, *connect.Request[gen.ListTeamMembersRequest]) (*connect.Response[gen.ListTeamMembersResponse], error)
+	UpdateTeam(context.Context, *connect.Request[gen.UpdateTeamRequest]) (*connect.Response[gen.UpdateTeamResponse], error)
+	DeleteTeam(context.Context, *connect.Request[gen.DeleteTeamRequest]) (*connect.Response[emptypb.Empty], error)
 }
 
 // NewTeamServiceHandler builds an HTTP handler from the service implementation. It returns the path
@@ -1065,6 +1100,18 @@ func NewTeamServiceHandler(svc TeamServiceHandler, opts ...connect.HandlerOption
 		connect.WithSchema(teamServiceMethods.ByName("ListMembers")),
 		connect.WithHandlerOptions(opts...),
 	)
+	teamServiceUpdateTeamHandler := connect.NewUnaryHandler(
+		TeamServiceUpdateTeamProcedure,
+		svc.UpdateTeam,
+		connect.WithSchema(teamServiceMethods.ByName("UpdateTeam")),
+		connect.WithHandlerOptions(opts...),
+	)
+	teamServiceDeleteTeamHandler := connect.NewUnaryHandler(
+		TeamServiceDeleteTeamProcedure,
+		svc.DeleteTeam,
+		connect.WithSchema(teamServiceMethods.ByName("DeleteTeam")),
+		connect.WithHandlerOptions(opts...),
+	)
 	return "/customers.TeamService/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case TeamServiceCreateTeamProcedure:
@@ -1077,6 +1124,10 @@ func NewTeamServiceHandler(svc TeamServiceHandler, opts ...connect.HandlerOption
 			teamServiceRemoveMemberHandler.ServeHTTP(w, r)
 		case TeamServiceListMembersProcedure:
 			teamServiceListMembersHandler.ServeHTTP(w, r)
+		case TeamServiceUpdateTeamProcedure:
+			teamServiceUpdateTeamHandler.ServeHTTP(w, r)
+		case TeamServiceDeleteTeamProcedure:
+			teamServiceDeleteTeamHandler.ServeHTTP(w, r)
 		default:
 			http.NotFound(w, r)
 		}
@@ -1104,6 +1155,14 @@ func (UnimplementedTeamServiceHandler) RemoveMember(context.Context, *connect.Re
 
 func (UnimplementedTeamServiceHandler) ListMembers(context.Context, *connect.Request[gen.ListTeamMembersRequest]) (*connect.Response[gen.ListTeamMembersResponse], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("customers.TeamService.ListMembers is not implemented"))
+}
+
+func (UnimplementedTeamServiceHandler) UpdateTeam(context.Context, *connect.Request[gen.UpdateTeamRequest]) (*connect.Response[gen.UpdateTeamResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("customers.TeamService.UpdateTeam is not implemented"))
+}
+
+func (UnimplementedTeamServiceHandler) DeleteTeam(context.Context, *connect.Request[gen.DeleteTeamRequest]) (*connect.Response[emptypb.Empty], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("customers.TeamService.DeleteTeam is not implemented"))
 }
 
 // PermissionServiceClient is a client for the customers.PermissionService service.
@@ -2439,6 +2498,7 @@ type PlatformAdminServiceClient interface {
 	ImpersonateUser(context.Context, *connect.Request[gen.ImpersonateUserRequest]) (*connect.Response[gen.ImpersonateUserResponse], error)
 	// Session visibility
 	ListActiveSessions(context.Context, *connect.Request[gen.ListActiveSessionsRequest]) (*connect.Response[gen.ListActiveSessionsResponse], error)
+	RevokeSession(context.Context, *connect.Request[gen.RevokeSessionRequest]) (*connect.Response[emptypb.Empty], error)
 	// Entitlements & billing
 	GetOrgEntitlements(context.Context, *connect.Request[gen.GetOrgEntitlementsRequest]) (*connect.Response[gen.GetOrgEntitlementsResponse], error)
 	OverrideEntitlement(context.Context, *connect.Request[gen.OverrideEntitlementRequest]) (*connect.Response[gen.OverrideEntitlementResponse], error)
@@ -2490,6 +2550,12 @@ func NewPlatformAdminServiceClient(httpClient connect.HTTPClient, baseURL string
 			httpClient,
 			baseURL+PlatformAdminServiceListActiveSessionsProcedure,
 			connect.WithSchema(platformAdminServiceMethods.ByName("ListActiveSessions")),
+			connect.WithClientOptions(opts...),
+		),
+		revokeSession: connect.NewClient[gen.RevokeSessionRequest, emptypb.Empty](
+			httpClient,
+			baseURL+PlatformAdminServiceRevokeSessionProcedure,
+			connect.WithSchema(platformAdminServiceMethods.ByName("RevokeSession")),
 			connect.WithClientOptions(opts...),
 		),
 		getOrgEntitlements: connect.NewClient[gen.GetOrgEntitlementsRequest, gen.GetOrgEntitlementsResponse](
@@ -2544,6 +2610,7 @@ type platformAdminServiceClient struct {
 	unsuspendUser       *connect.Client[gen.UnsuspendUserRequest, emptypb.Empty]
 	impersonateUser     *connect.Client[gen.ImpersonateUserRequest, gen.ImpersonateUserResponse]
 	listActiveSessions  *connect.Client[gen.ListActiveSessionsRequest, gen.ListActiveSessionsResponse]
+	revokeSession       *connect.Client[gen.RevokeSessionRequest, emptypb.Empty]
 	getOrgEntitlements  *connect.Client[gen.GetOrgEntitlementsRequest, gen.GetOrgEntitlementsResponse]
 	overrideEntitlement *connect.Client[gen.OverrideEntitlementRequest, gen.OverrideEntitlementResponse]
 	grantPlatformRole   *connect.Client[gen.GrantPlatformRoleRequest, emptypb.Empty]
@@ -2576,6 +2643,11 @@ func (c *platformAdminServiceClient) ImpersonateUser(ctx context.Context, req *c
 // ListActiveSessions calls customers.PlatformAdminService.ListActiveSessions.
 func (c *platformAdminServiceClient) ListActiveSessions(ctx context.Context, req *connect.Request[gen.ListActiveSessionsRequest]) (*connect.Response[gen.ListActiveSessionsResponse], error) {
 	return c.listActiveSessions.CallUnary(ctx, req)
+}
+
+// RevokeSession calls customers.PlatformAdminService.RevokeSession.
+func (c *platformAdminServiceClient) RevokeSession(ctx context.Context, req *connect.Request[gen.RevokeSessionRequest]) (*connect.Response[emptypb.Empty], error) {
+	return c.revokeSession.CallUnary(ctx, req)
 }
 
 // GetOrgEntitlements calls customers.PlatformAdminService.GetOrgEntitlements.
@@ -2622,6 +2694,7 @@ type PlatformAdminServiceHandler interface {
 	ImpersonateUser(context.Context, *connect.Request[gen.ImpersonateUserRequest]) (*connect.Response[gen.ImpersonateUserResponse], error)
 	// Session visibility
 	ListActiveSessions(context.Context, *connect.Request[gen.ListActiveSessionsRequest]) (*connect.Response[gen.ListActiveSessionsResponse], error)
+	RevokeSession(context.Context, *connect.Request[gen.RevokeSessionRequest]) (*connect.Response[emptypb.Empty], error)
 	// Entitlements & billing
 	GetOrgEntitlements(context.Context, *connect.Request[gen.GetOrgEntitlementsRequest]) (*connect.Response[gen.GetOrgEntitlementsResponse], error)
 	OverrideEntitlement(context.Context, *connect.Request[gen.OverrideEntitlementRequest]) (*connect.Response[gen.OverrideEntitlementResponse], error)
@@ -2669,6 +2742,12 @@ func NewPlatformAdminServiceHandler(svc PlatformAdminServiceHandler, opts ...con
 		PlatformAdminServiceListActiveSessionsProcedure,
 		svc.ListActiveSessions,
 		connect.WithSchema(platformAdminServiceMethods.ByName("ListActiveSessions")),
+		connect.WithHandlerOptions(opts...),
+	)
+	platformAdminServiceRevokeSessionHandler := connect.NewUnaryHandler(
+		PlatformAdminServiceRevokeSessionProcedure,
+		svc.RevokeSession,
+		connect.WithSchema(platformAdminServiceMethods.ByName("RevokeSession")),
 		connect.WithHandlerOptions(opts...),
 	)
 	platformAdminServiceGetOrgEntitlementsHandler := connect.NewUnaryHandler(
@@ -2725,6 +2804,8 @@ func NewPlatformAdminServiceHandler(svc PlatformAdminServiceHandler, opts ...con
 			platformAdminServiceImpersonateUserHandler.ServeHTTP(w, r)
 		case PlatformAdminServiceListActiveSessionsProcedure:
 			platformAdminServiceListActiveSessionsHandler.ServeHTTP(w, r)
+		case PlatformAdminServiceRevokeSessionProcedure:
+			platformAdminServiceRevokeSessionHandler.ServeHTTP(w, r)
 		case PlatformAdminServiceGetOrgEntitlementsProcedure:
 			platformAdminServiceGetOrgEntitlementsHandler.ServeHTTP(w, r)
 		case PlatformAdminServiceOverrideEntitlementProcedure:
@@ -2766,6 +2847,10 @@ func (UnimplementedPlatformAdminServiceHandler) ImpersonateUser(context.Context,
 
 func (UnimplementedPlatformAdminServiceHandler) ListActiveSessions(context.Context, *connect.Request[gen.ListActiveSessionsRequest]) (*connect.Response[gen.ListActiveSessionsResponse], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("customers.PlatformAdminService.ListActiveSessions is not implemented"))
+}
+
+func (UnimplementedPlatformAdminServiceHandler) RevokeSession(context.Context, *connect.Request[gen.RevokeSessionRequest]) (*connect.Response[emptypb.Empty], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("customers.PlatformAdminService.RevokeSession is not implemented"))
 }
 
 func (UnimplementedPlatformAdminServiceHandler) GetOrgEntitlements(context.Context, *connect.Request[gen.GetOrgEntitlementsRequest]) (*connect.Response[gen.GetOrgEntitlementsResponse], error) {

@@ -12,7 +12,7 @@ func (s *PostgresStore) GetUserSettings(ctx context.Context, userID string) ([]b
 	q := s.getQueryExecutor(ctx)
 	var raw []byte
 	err := q.QueryRow(ctx, `
-		SELECT settings FROM users WHERE id = $1`, userID,
+		SELECT settings FROM users WHERE uuid = $1`, userID,
 	).Scan(&raw)
 	if err != nil {
 		return nil, err
@@ -37,6 +37,6 @@ func (s *PostgresStore) UpdateUserSettings(ctx context.Context, userID string, p
 		UPDATE users
 		   SET settings = settings || $2::jsonb,
 		       updated_at = NOW()
-		 WHERE id = $1`, userID, patch)
+		 WHERE uuid = $1`, userID, patch)
 	return err
 }

@@ -18,24 +18,30 @@ import { createTeamSchema, type CreateTeamValues } from "../model/schemas";
 
 interface TeamFormProps {
   open: boolean;
+  /** "create" (default) or "edit" — an edit form seeds `initial` and relabels. */
+  mode?: "create" | "edit";
+  initial?: { name: string; description?: string };
   onSubmit: (values: CreateTeamValues) => void;
   onCancel: () => void;
   isPending: boolean;
 }
 
-export function TeamForm({ open, onSubmit, onCancel, isPending }: TeamFormProps) {
+export function TeamForm({ open, mode = "create", initial, onSubmit, onCancel, isPending }: TeamFormProps) {
+  const editing = mode === "edit";
   const form = useForm<CreateTeamValues>({
     resolver: zodResolver(createTeamSchema),
-    defaultValues: { name: "", description: "" },
+    defaultValues: { name: initial?.name ?? "", description: initial?.description ?? "" },
   });
 
   return (
     <Dialog open={open} onOpenChange={(o) => !o && onCancel()}>
       <DialogContent className="sm:max-w-[425px]">
         <DialogHeader>
-          <DialogTitle>Create Team</DialogTitle>
+          <DialogTitle>{editing ? "Rename team" : "Create Team"}</DialogTitle>
           <DialogDescription>
-            Add a new team to the selected organization.
+            {editing
+              ? "Update this team's name and description."
+              : "Add a new team to the selected organization."}
           </DialogDescription>
         </DialogHeader>
         <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4">
@@ -70,7 +76,7 @@ export function TeamForm({ open, onSubmit, onCancel, isPending }: TeamFormProps)
               Cancel
             </Button>
             <Button type="submit" disabled={isPending}>
-              {isPending ? "Creating..." : "Create"}
+              {isPending ? (editing ? "Saving..." : "Creating...") : editing ? "Save" : "Create"}
             </Button>
           </DialogFooter>
         </form>
