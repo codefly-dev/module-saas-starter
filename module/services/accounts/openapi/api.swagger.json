@@ -2315,6 +2315,43 @@
         ]
       }
     },
+    "/v1/platform/sessions/{sessionId}": {
+      "delete": {
+        "operationId": "PlatformAdminService_RevokeSession",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "type": "object",
+              "properties": {}
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/rpcStatus"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "sessionId",
+            "in": "path",
+            "required": true,
+            "type": "string"
+          },
+          {
+            "name": "reason",
+            "in": "query",
+            "required": false,
+            "type": "string"
+          }
+        ],
+        "tags": [
+          "PlatformAdminService"
+        ]
+      }
+    },
     "/v1/platform/users": {
       "get": {
         "summary": "User management (cross-tenant)",
@@ -2991,6 +3028,81 @@
         ],
         "tags": [
           "SSOAdminService"
+        ]
+      }
+    },
+    "/v1/teams/{teamId}": {
+      "delete": {
+        "operationId": "TeamService_DeleteTeam",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "type": "object",
+              "properties": {}
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/rpcStatus"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "teamId",
+            "in": "path",
+            "required": true,
+            "type": "string"
+          }
+        ],
+        "tags": [
+          "TeamService"
+        ]
+      },
+      "patch": {
+        "operationId": "TeamService_UpdateTeam",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/customersUpdateTeamResponse"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/rpcStatus"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "teamId",
+            "in": "path",
+            "required": true,
+            "type": "string"
+          },
+          {
+            "name": "body",
+            "in": "body",
+            "required": true,
+            "schema": {
+              "type": "object",
+              "properties": {
+                "name": {
+                  "type": "string"
+                },
+                "description": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        ],
+        "tags": [
+          "TeamService"
         ]
       }
     },
@@ -5965,6 +6077,14 @@
         "TEAM_ROLE_OWNER"
       ],
       "default": "TEAM_ROLE_UNSPECIFIED"
+    },
+    "customersUpdateTeamResponse": {
+      "type": "object",
+      "properties": {
+        "team": {
+          "$ref": "#/definitions/customersTeam"
+        }
+      }
     },
     "customersUpdateUserSettingsRequest": {
       "type": "object",

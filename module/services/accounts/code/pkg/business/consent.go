@@ -50,7 +50,13 @@ func (s *Service) GetConsentStatus(ctx context.Context, userID string) (*UserCon
 // version the user actually saw is more honest than refusing the
 // click. Next page load they'll see the new version and accept it.
 func (s *Service) AcceptConsent(ctx context.Context, userID, version string) error {
-	if err := s.store.SetUserConsent(ctx, userID, version, time.Now()); err != nil {
+	// The write targets the caller's own users row, which is RLS-protected
+	// (users_update: uuid == app.current_user_id). Scope the tx to the user so
+	// the GUC is set — without this the UPDATE matches zero rows under the
+	// app_tenant role and consent silently never persists (banner reappears).
+	if err := s.store.As(Identity{UserID: userID}).Within(ctx, func(ctx context.Context) error {
+		return s.store.SetUserConsent(ctx, userID, version, time.Now())
+	}); err != nil {
 		return err
 	}
 	s.emit(ctx, userID, "user", "consent.accepted", "user", userID, "")

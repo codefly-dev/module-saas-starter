@@ -17,7 +17,7 @@ jobs:
         # Go service. Build + vet each independently against published core.
         module:
           - "."
-          - "module/services/api/code"
+          - "module/services/accounts/code"
           - "module/services/auth-sidecar/code"
     steps:
       - uses: actions/checkout@v4

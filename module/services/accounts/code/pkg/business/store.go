@@ -61,6 +61,8 @@ type Store interface {
 	// Teams
 	CreateTeam(ctx context.Context, team *gen.Team) error
 	ListTeams(ctx context.Context, orgID string) ([]*gen.Team, error)
+	UpdateTeam(ctx context.Context, teamID, name, description string) (*gen.Team, error)
+	DeleteTeam(ctx context.Context, teamID string) error
 	AddTeamMember(ctx context.Context, teamID string, userID string, role string) error
 	RemoveTeamMember(ctx context.Context, teamID string, userID string) error
 	ListTeamMembers(ctx context.Context, teamID string) ([]*gen.TeamMembership, error)

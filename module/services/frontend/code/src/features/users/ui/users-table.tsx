@@ -10,7 +10,7 @@ import {
   type SortingState,
 } from "@tanstack/react-table";
 import { useState } from "react";
-import { MoreHorizontal, ShieldOff, ShieldAlert, UserCog } from "lucide-react";
+import { MoreHorizontal, ShieldOff, ShieldAlert, UserCog, Pencil, Trash2 } from "lucide-react";
 import { DataTable } from "@/shared/ui/data-table";
 import {
   Badge,
@@ -32,6 +32,8 @@ const col = createColumnHelper<User>();
 interface UsersTableProps {
   data: User[];
   isLoading: boolean;
+  onEdit: (user: User) => void;
+  onDelete: (user: User) => void;
   onSuspend: (user: User) => void;
   onUnsuspend: (user: User) => void;
   onImpersonate: (user: User) => void;
@@ -40,6 +42,8 @@ interface UsersTableProps {
 export function UsersTable({
   data,
   isLoading,
+  onEdit,
+  onDelete,
   onSuspend,
   onUnsuspend,
   onImpersonate,
@@ -106,6 +110,10 @@ export function UsersTable({
               <DropdownMenuContent align="end">
                 <DropdownMenuLabel>Actions</DropdownMenuLabel>
                 <DropdownMenuSeparator />
+                <DropdownMenuItem onClick={() => onEdit(user)}>
+                  <Pencil className="mr-2 h-4 w-4" />
+                  Edit
+                </DropdownMenuItem>
                 {user.status === "active" && (
                   <DropdownMenuItem onClick={() => onSuspend(user)}>
                     <ShieldAlert className="mr-2 h-4 w-4" />
@@ -122,13 +130,21 @@ export function UsersTable({
                   <UserCog className="mr-2 h-4 w-4" />
                   Impersonate
                 </DropdownMenuItem>
+                <DropdownMenuSeparator />
+                <DropdownMenuItem
+                  onClick={() => onDelete(user)}
+                  className="text-destructive focus:text-destructive"
+                >
+                  <Trash2 className="mr-2 h-4 w-4" />
+                  Delete
+                </DropdownMenuItem>
               </DropdownMenuContent>
             </DropdownMenu>
           );
         },
       }),
     ],
-    [onSuspend, onUnsuspend, onImpersonate],
+    [onEdit, onDelete, onSuspend, onUnsuspend, onImpersonate],
   );
 
   const table = useReactTable({

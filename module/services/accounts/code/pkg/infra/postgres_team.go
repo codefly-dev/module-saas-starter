@@ -114,6 +114,52 @@ func (s *PostgresStore) RemoveTeamMember(ctx context.Context, teamID string, use
 	return nil
 }
 
+// UpdateTeam renames / re-describes a team and returns the updated row. RLS
+// (teams_update) is satisfied by the org-scoped tx the business layer opens.
+func (s *PostgresStore) UpdateTeam(ctx context.Context, teamID, name, description string) (*gen.Team, error) {
+	w := wool.Get(ctx).In("UpdateTeam")
+	executor := s.getQueryExecutor(ctx)
+
+	var t gen.Team
+	var createdAt time.Time
+	var desc, parent *string
+	err := executor.QueryRow(ctx, `
+		UPDATE teams SET name = $2, description = $3
+		WHERE id = $1
+		RETURNING id, org_id, name, description, parent_team_id, slug, path, created_at`,
+		teamID, name, description,
+	).Scan(&t.Id, &t.OrgId, &t.Name, &desc, &parent, &t.Slug, &t.Path, &createdAt)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil, w.NewError("team not found")
+		}
+		return nil, w.Wrapf(err, "failed to update team")
+	}
+	if desc != nil {
+		t.Description = *desc
+	}
+	if parent != nil {
+		t.ParentTeamId = *parent
+	}
+	t.CreatedAt = timestamppb.New(createdAt)
+	return &t, nil
+}
+
+// DeleteTeam removes a team and its memberships. Memberships go first (no reliance
+// on a DB cascade); both run in the org-scoped tx the business layer opens.
+func (s *PostgresStore) DeleteTeam(ctx context.Context, teamID string) error {
+	w := wool.Get(ctx).In("DeleteTeam")
+	executor := s.getQueryExecutor(ctx)
+
+	if _, err := executor.Exec(ctx, `DELETE FROM team_members WHERE team_id = $1`, teamID); err != nil {
+		return w.Wrapf(err, "failed to remove team members")
+	}
+	if _, err := executor.Exec(ctx, `DELETE FROM teams WHERE id = $1`, teamID); err != nil {
+		return w.Wrapf(err, "failed to delete team")
+	}
+	return nil
+}
+
 func (s *PostgresStore) ListTeamMembers(ctx context.Context, teamID string) ([]*gen.TeamMembership, error) {
 	w := wool.Get(ctx).In("ListTeamMembers")
 	executor := s.getQueryExecutor(ctx)

@@ -91,7 +91,12 @@ func (s *Service) UpdateUserSettings(ctx context.Context, userID string, patch *
 	if err != nil {
 		return nil, fmt.Errorf("encode patch: %w", err)
 	}
-	if err := s.store.UpdateUserSettings(ctx, userID, body); err != nil {
+	// Settings live on the RLS-protected users row; scope the tx to the user so
+	// app.current_user_id is set (else the UPDATE silently matches zero rows and
+	// settings never persist — same class of bug as consent).
+	if err := s.store.As(Identity{UserID: userID}).Within(ctx, func(ctx context.Context) error {
+		return s.store.UpdateUserSettings(ctx, userID, body)
+	}); err != nil {
 		return nil, err
 	}
 	s.emit(ctx, userID, "user", "settings.updated", "user", userID, "")

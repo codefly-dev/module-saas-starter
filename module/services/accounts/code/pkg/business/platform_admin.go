@@ -210,6 +210,30 @@ func (s *Service) ListActiveSessions(ctx context.Context, actorID string, req *g
 	return &gen.ListActiveSessionsResponse{Sessions: infos}, nil
 }
 
+// RevokeSession force-logs-out one active session by id (support+ only). A platform
+// admin acts across all users, so the write rides WithBypass (RLS would otherwise scope
+// the sessions table to the caller).
+func (s *Service) RevokeSession(ctx context.Context, actorID string, req *gen.RevokeSessionRequest) error {
+	w := wool.Get(ctx).In("RevokeSession")
+
+	if err := s.requirePlatformRole(ctx, actorID, "support"); err != nil {
+		return w.Wrapf(err, "permission denied")
+	}
+
+	reason := req.Reason
+	if reason == "" {
+		reason = "revoked_by_admin"
+	}
+	if err := s.store.WithBypass(ctx, func(ctx context.Context) error {
+		return s.store.RevokeSession(ctx, req.SessionId, reason)
+	}); err != nil {
+		return w.Wrapf(err, "cannot revoke session")
+	}
+
+	s.emit(ctx, actorID, "user", "session.revoked", "session", req.SessionId, "")
+	return nil
+}
+
 // GrantPlatformRole grants a platform role to a user (super_admin only).
 func (s *Service) GrantPlatformRole(ctx context.Context, actorID string, req *gen.GrantPlatformRoleRequest) error {
 	w := wool.Get(ctx).In("GrantPlatformRole")

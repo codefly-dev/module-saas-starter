@@ -103,8 +103,16 @@ func (s *Service) UpdateUser(ctx context.Context, userID string, req *gen.Update
 		return s.store.GetUser(ctx, userID)
 	}
 
-	user, err := s.store.UpdateUser(ctx, userID, updates)
-	if err != nil {
+	// The users row is RLS-protected (users_update: uuid == app.current_user_id).
+	// Scope to the TARGET user so the GUC is set — this permits both the self-edit
+	// and the admin-edits-another case (the row being updated IS the scoped id).
+	// Without it the UPDATE silently matches zero rows under the app_tenant role.
+	var user *gen.User
+	if err := s.store.As(Identity{UserID: userID}).Within(ctx, func(ctx context.Context) error {
+		u, e := s.store.UpdateUser(ctx, userID, updates)
+		user = u
+		return e
+	}); err != nil {
 		return nil, w.Wrapf(err, "cannot update user")
 	}
 
@@ -120,12 +128,18 @@ func (s *Service) DeleteUser(ctx context.Context, userID string, req *gen.GetUse
 	if targetID == "" {
 		return w.NewError("uuid required for delete")
 	}
-	if err := s.store.DeleteUser(ctx, targetID); err != nil {
+	// Scope to the target so the RLS users_delete policy (uuid == app.current_user_id)
+	// permits the soft-delete; the session revoke rides the same scope.
+	if err := s.store.As(Identity{UserID: targetID}).Within(ctx, func(ctx context.Context) error {
+		if err := s.store.DeleteUser(ctx, targetID); err != nil {
+			return err
+		}
+		// Revoke all sessions (best-effort)
+		_ = s.store.RevokeAllUserSessions(ctx, targetID, "user_deleted")
+		return nil
+	}); err != nil {
 		return w.Wrapf(err, "cannot delete user")
 	}
-
-	// Revoke all sessions
-	_ = s.store.RevokeAllUserSessions(ctx, targetID, "user_deleted")
 
 	s.emit(ctx, userID, "user", "user.deleted", "user", targetID, "")
 	return nil

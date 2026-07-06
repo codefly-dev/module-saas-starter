@@ -5,7 +5,17 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Plus } from "lucide-react";
 import { toast } from "sonner";
 import { timestampDate } from "@bufbuild/protobuf/wkt";
-import { Button } from "@/shared/ui";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  Button,
+} from "@/shared/ui";
 import { OrgSelector } from "@/components/org-selector";
 import { teamQueries } from "../service/queries";
 import { teamMutations } from "../service/mutations";
@@ -19,6 +29,8 @@ export function TeamsPage() {
   const [orgId, setOrgId] = useState("");
   const [showCreate, setShowCreate] = useState(false);
   const [selectedTeam, setSelectedTeam] = useState<Team | null>(null);
+  const [renameTarget, setRenameTarget] = useState<Team | null>(null);
+  const [deleteTarget, setDeleteTarget] = useState<Team | null>(null);
 
   // --- queries ---
   const { data: raw, isLoading } = useQuery({
@@ -45,9 +57,32 @@ export function TeamsPage() {
     onError: () => toast.error("Failed to create team"),
   });
 
+  const updateMutation = useMutation({
+    mutationFn: ({ teamId, name, description }: { teamId: string; name: string; description?: string }) =>
+      teamMutations.update(teamId, name, description),
+    onSuccess: () => {
+      toast.success("Team updated");
+      queryClient.invalidateQueries({ queryKey: ["teams", orgId] });
+      setRenameTarget(null);
+    },
+    onError: () => toast.error("Failed to update team"),
+  });
+
+  const deleteMutation = useMutation({
+    mutationFn: (teamId: string) => teamMutations.remove(teamId),
+    onSuccess: () => {
+      toast.success("Team deleted");
+      queryClient.invalidateQueries({ queryKey: ["teams", orgId] });
+      setDeleteTarget(null);
+    },
+    onError: () => toast.error("Failed to delete team"),
+  });
+
   const handleViewMembers = useCallback((team: Team) => {
     setSelectedTeam(team);
   }, []);
+  const handleRename = useCallback((team: Team) => setRenameTarget(team), []);
+  const handleDelete = useCallback((team: Team) => setDeleteTarget(team), []);
 
   return (
     <div className="space-y-6">
@@ -75,6 +110,8 @@ export function TeamsPage() {
           data={teams}
           isLoading={isLoading}
           onViewMembers={handleViewMembers}
+          onRename={handleRename}
+          onDelete={handleDelete}
         />
       )}
 
@@ -92,6 +129,44 @@ export function TeamsPage() {
         onCancel={() => setShowCreate(false)}
         isPending={createMutation.isPending}
       />
+
+      {renameTarget && (
+        <TeamForm
+          key={renameTarget.id}
+          open
+          mode="edit"
+          initial={{ name: renameTarget.name, description: renameTarget.description }}
+          onSubmit={(vals) =>
+            updateMutation.mutate({ teamId: renameTarget.id, name: vals.name, description: vals.description })
+          }
+          onCancel={() => setRenameTarget(null)}
+          isPending={updateMutation.isPending}
+        />
+      )}
+
+      {deleteTarget && (
+        <AlertDialog open onOpenChange={(o) => !o && setDeleteTarget(null)}>
+          <AlertDialogContent>
+            <AlertDialogHeader>
+              <AlertDialogTitle>Delete team?</AlertDialogTitle>
+              <AlertDialogDescription>
+                This permanently deletes <span className="font-medium">{deleteTarget.name}</span> and removes all
+                its memberships. This can&apos;t be undone.
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+              <AlertDialogCancel onClick={() => setDeleteTarget(null)}>Cancel</AlertDialogCancel>
+              <AlertDialogAction
+                onClick={() => deleteMutation.mutate(deleteTarget.id)}
+                disabled={deleteMutation.isPending}
+                className="bg-destructive text-white hover:bg-destructive/90"
+              >
+                {deleteMutation.isPending ? "Deleting..." : "Delete team"}
+              </AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
+      )}
     </div>
   );
 }
