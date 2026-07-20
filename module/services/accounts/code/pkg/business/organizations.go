@@ -6,7 +6,7 @@ import (
 
 	"github.com/codefly-dev/core/wool"
 
-	"accounts/pkg/gen"
+	gen "accounts/pkg/gen/saas/accounts/v1"
 )
 
 func orgRoleToString(role gen.OrgRole) string {
@@ -41,7 +41,7 @@ func (s *Service) GetOrganization(ctx context.Context, req *gen.GetOrganizationR
 // ListOrganizations returns all organizations the user belongs to.
 //
 // Cross-tenant by nature: a user can be a member of multiple orgs,
-// and the org switcher needs to see every one of them. WithBypass
+// and the org switcher needs to see every one of them. WithControlPlane
 // is the right wrapper — handler authz already proved the caller is
 // who they say they are; the SQL filters by user_id so no cross-user
 // leakage either.
@@ -49,7 +49,7 @@ func (s *Service) ListOrganizations(ctx context.Context, userID string) (*gen.Li
 	w := wool.Get(ctx).In("ListOrganizations")
 
 	var orgs []*gen.Organization
-	if err := s.store.WithBypass(ctx, func(ctx context.Context) error {
+	if err := s.store.WithControlPlane(ctx, func(ctx context.Context) error {
 		os, err := s.store.ListOrganizationsForUser(ctx, userID)
 		orgs = os
 		return err
@@ -59,16 +59,29 @@ func (s *Service) ListOrganizations(ctx context.Context, userID string) (*gen.Li
 	return &gen.ListOrganizationsResponse{Organizations: orgs}, nil
 }
 
-// AddOrgMember adds a member to an organization. organization_members
-// is RLS-protected (Phase 2B); the write runs under WithOrgTx scoped
-// to the target org. The follow-up GetOrganization read uses the
-// same scope.
+// AddOrgMember adds a member to an organization. The seat decision and
+// membership write share one tenant transaction and one per-org quota lock, so
+// concurrent admin requests cannot consume the same final seat. Updating an
+// existing member remains idempotent even when the organization is full.
 func (s *Service) AddOrgMember(ctx context.Context, actorID string, req *gen.AddOrgMemberRequest) error {
 	w := wool.Get(ctx).In("AddOrgMember")
 
 	role := orgRoleToString(req.Role)
 	var orgName string
 	if err := s.store.WithOrgTx(ctx, req.OrgId, func(ctx context.Context) error {
+		quota, err := s.cardinalityQuotaInTx(ctx, req.OrgId, EntitlementSeats)
+		if err != nil {
+			return w.Wrapf(err, "cannot check seat quota")
+		}
+		exists, err := s.store.OrgMemberExists(ctx, req.OrgId, req.UserId)
+		if err != nil {
+			return w.Wrapf(err, "cannot check organization membership")
+		}
+		if !exists {
+			if err := quota.RequireAvailable(); err != nil {
+				return err
+			}
+		}
 		if err := s.store.AddOrgMember(ctx, req.OrgId, req.UserId, role); err != nil {
 			return err
 		}

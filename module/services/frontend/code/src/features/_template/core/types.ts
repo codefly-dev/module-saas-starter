@@ -5,12 +5,12 @@
 // without any setup.
 
 export interface ExampleEntity {
-  id: string;
-  name: string;
-  createdAt: string;
+	id: string;
+	name: string;
+	createdAt: string;
 }
 
 export interface ExampleViewRow {
-  id: string;
-  display: string;
+	id: string;
+	display: string;
 }

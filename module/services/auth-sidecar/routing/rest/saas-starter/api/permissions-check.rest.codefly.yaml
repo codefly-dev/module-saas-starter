@@ -1,7 +1,0 @@
-path: /v1/permissions
-routes:
-    - path: /v1/permissions:check
-      method: POST
-      extension:
-        exposed: true
-        protected: true

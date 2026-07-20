@@ -18,6 +18,17 @@ type settingsFakeStore struct {
 	settings map[string][]byte
 }
 
+type settingsFakeScoped struct {
+	business.Scoped
+	identity business.Identity
+}
+
+func (s *settingsFakeScoped) Within(ctx context.Context, fn func(context.Context) error) error {
+	return fn(ctx)
+}
+
+func (s *settingsFakeScoped) Identity() business.Identity { return s.identity }
+
 func newSettingsFakeStore() *settingsFakeStore {
 	return &settingsFakeStore{settings: map[string][]byte{}}
 }
@@ -44,6 +55,10 @@ func (f *settingsFakeStore) UpdateUserSettings(_ context.Context, userID string,
 	merged := mergeJSONShallow(prev, patch)
 	f.settings[userID] = merged
 	return nil
+}
+
+func (f *settingsFakeStore) As(identity business.Identity) business.Scoped {
+	return &settingsFakeScoped{identity: identity}
 }
 
 // mergeJSONShallow merges b's top-level keys onto a. b's values win
@@ -103,16 +118,28 @@ func TestUpdateUserSettings_PartialPatchPreservesUnsetKeys(t *testing.T) {
 		t.Fatalf("seed: %v", err)
 	}
 	// Now apply: theme=dark only.
-	theme := "dark"
+	theme := business.ThemePreferenceDark
 	got, err := svc.UpdateUserSettings(ctx, "user-1", &business.UserSettings{Theme: &theme})
 	if err != nil {
 		t.Fatalf("update: %v", err)
 	}
-	if got.Theme == nil || *got.Theme != "dark" {
+	if got.Theme == nil || *got.Theme != business.ThemePreferenceDark {
 		t.Errorf("theme: got %v, want dark", got.Theme)
 	}
 	if got.Locale == nil || *got.Locale != "fr" {
 		t.Errorf("locale should be preserved, got %v", got.Locale)
+	}
+}
+
+func TestUpdateUserSettingsRejectsInvalidTheme(t *testing.T) {
+	store := newSettingsFakeStore()
+	svc := newSettingsService(store)
+	invalid := business.ThemePreference("sepia")
+
+	if _, err := svc.UpdateUserSettings(context.Background(), "user-1", &business.UserSettings{
+		Theme: &invalid,
+	}); err == nil {
+		t.Fatal("expected invalid theme to be rejected")
 	}
 }
 

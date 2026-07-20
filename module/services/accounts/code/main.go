@@ -70,25 +70,30 @@ func main() {
 		config.EndpointConnectPort = shared.Pointer(net.Port)
 	}
 
+	// Complete dependency wiring, plugin registration and fixture seeding before
+	// opening any listener. Starting the generated server first exposes handlers
+	// while the package-level business service is still nil and makes a passing
+	// port probe race with application readiness.
+	if work != nil {
+		clean, err := work(ctx)
+		if err != nil {
+			panic(err)
+		}
+		if clean != nil {
+			defer clean()
+		}
+	}
+
 	server, err := adapters.NewServer(config)
 	if err != nil {
 		panic(err)
 	}
 
 	go func() {
-		err = server.Start(context.Background())
-		if err != nil {
-			panic(err)
+		if startErr := server.Start(context.Background()); startErr != nil {
+			panic(startErr)
 		}
 	}()
-
-	if work != nil {
-		clean, err := work(ctx)
-		if err != nil {
-			panic(err)
-		}
-		defer clean()
-	}
 
 	<-ctx.Done()
 	server.Stop()

@@ -1,0 +1,9 @@
+code/.next
+code/coverage
+code/node_modules
+code/packages/*/coverage
+code/packages/*/dist
+code/packages/*/node_modules
+code/playwright-report
+code/test-results
+code/tsconfig.tsbuildinfo

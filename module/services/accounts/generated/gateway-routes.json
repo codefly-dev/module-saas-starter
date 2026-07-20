@@ -1,0 +1,5493 @@
+{
+  "schema_version": "saas.gateway.routes.v1",
+  "routes": [
+    {
+      "protocol": "GATEWAY_PROTOCOL_CONNECT",
+      "method": "POST",
+      "path": "/customers.APIKeyService/CreateAPIKey",
+      "match": "GATEWAY_MATCH_EXACT",
+      "procedure": "/saas.accounts.v1.APIKeyService/CreateAPIKey",
+      "owner": {
+        "module": "saas-starter",
+        "service": "accounts"
+      },
+      "upstream_endpoint": "connect",
+      "exposure": "EXPOSURE_AUTHENTICATED",
+      "source": "GATEWAY_ROUTE_SOURCE_COMPATIBILITY_ALIAS",
+      "rewrite_path": "/saas.accounts.v1.APIKeyService/CreateAPIKey",
+      "remove_after": "2026-10-11"
+    },
+    {
+      "protocol": "GATEWAY_PROTOCOL_CONNECT",
+      "method": "POST",
+      "path": "/customers.APIKeyService/ListAPIKeys",
+      "match": "GATEWAY_MATCH_EXACT",
+      "procedure": "/saas.accounts.v1.APIKeyService/ListAPIKeys",
+      "owner": {
+        "module": "saas-starter",
+        "service": "accounts"
+      },
+      "upstream_endpoint": "connect",
+      "exposure": "EXPOSURE_AUTHENTICATED",
+      "source": "GATEWAY_ROUTE_SOURCE_COMPATIBILITY_ALIAS",
+      "rewrite_path": "/saas.accounts.v1.APIKeyService/ListAPIKeys",
+      "remove_after": "2026-10-11"
+    },
+    {
+      "protocol": "GATEWAY_PROTOCOL_CONNECT",
+      "method": "POST",
+      "path": "/customers.APIKeyService/RevokeAPIKey",
+      "match": "GATEWAY_MATCH_EXACT",
+      "procedure": "/saas.accounts.v1.APIKeyService/RevokeAPIKey",
+      "owner": {
+        "module": "saas-starter",
+        "service": "accounts"
+      },
+      "upstream_endpoint": "connect",
+      "exposure": "EXPOSURE_AUTHENTICATED",
+      "source": "GATEWAY_ROUTE_SOURCE_COMPATIBILITY_ALIAS",
+      "rewrite_path": "/saas.accounts.v1.APIKeyService/RevokeAPIKey",
+      "remove_after": "2026-10-11"
+    },
+    {
+      "protocol": "GATEWAY_PROTOCOL_CONNECT",
+      "method": "POST",
+      "path": "/customers.AuditExportService/DeleteConfig",
+      "match": "GATEWAY_MATCH_EXACT",
+      "procedure": "/saas.accounts.v1.AuditExportService/DeleteConfig",
+      "owner": {
+        "module": "saas-starter",
+        "service": "accounts"
+      },
+      "upstream_endpoint": "connect",
+      "exposure": "EXPOSURE_AUTHENTICATED",
+      "source": "GATEWAY_ROUTE_SOURCE_COMPATIBILITY_ALIAS",
+      "rewrite_path": "/saas.accounts.v1.AuditExportService/DeleteConfig",
+      "remove_after": "2026-10-11"
+    },
+    {
+      "protocol": "GATEWAY_PROTOCOL_CONNECT",
+      "method": "POST",
+      "path": "/customers.AuditExportService/GetConfig",
+      "match": "GATEWAY_MATCH_EXACT",
+      "procedure": "/saas.accounts.v1.AuditExportService/GetConfig",
+      "owner": {
+        "module": "saas-starter",
+        "service": "accounts"
+      },
+      "upstream_endpoint": "connect",
+      "exposure": "EXPOSURE_AUTHENTICATED",
+      "source": "GATEWAY_ROUTE_SOURCE_COMPATIBILITY_ALIAS",
+      "rewrite_path": "/saas.accounts.v1.AuditExportService/GetConfig",
+      "remove_after": "2026-10-11"
+    },
+    {
+      "protocol": "GATEWAY_PROTOCOL_CONNECT",
+      "method": "POST",
+      "path": "/customers.AuditExportService/SaveConfig",
+      "match": "GATEWAY_MATCH_EXACT",
+      "procedure": "/saas.accounts.v1.AuditExportService/SaveConfig",
+      "owner": {
+        "module": "saas-starter",
+        "service": "accounts"
+      },
+      "upstream_endpoint": "connect",
+      "exposure": "EXPOSURE_AUTHENTICATED",
+      "source": "GATEWAY_ROUTE_SOURCE_COMPATIBILITY_ALIAS",
+      "rewrite_path": "/saas.accounts.v1.AuditExportService/SaveConfig",
+      "remove_after": "2026-10-11"
+    },
+    {
+      "protocol": "GATEWAY_PROTOCOL_CONNECT",
+      "method": "POST",
+      "path": "/customers.AuditService/ExportAuditLog",
+      "match": "GATEWAY_MATCH_EXACT",
+      "procedure": "/saas.accounts.v1.AuditService/ExportAuditLog",
+      "owner": {
+        "module": "saas-starter",
+        "service": "accounts"
+      },
+      "upstream_endpoint": "connect",
+      "exposure": "EXPOSURE_AUTHENTICATED",
+      "source": "GATEWAY_ROUTE_SOURCE_COMPATIBILITY_ALIAS",
+      "rewrite_path": "/saas.accounts.v1.AuditService/ExportAuditLog",
+      "remove_after": "2026-10-11"
+    },
+    {
+      "protocol": "GATEWAY_PROTOCOL_CONNECT",
+      "method": "POST",
+      "path": "/customers.AuditService/QueryAuditLog",
+      "match": "GATEWAY_MATCH_EXACT",
+      "procedure": "/saas.accounts.v1.AuditService/QueryAuditLog",
+      "owner": {
+        "module": "saas-starter",
+        "service": "accounts"
+      },
+      "upstream_endpoint": "connect",
+      "exposure": "EXPOSURE_AUTHENTICATED",
+      "source": "GATEWAY_ROUTE_SOURCE_COMPATIBILITY_ALIAS",
+      "rewrite_path": "/saas.accounts.v1.AuditService/QueryAuditLog",
+      "remove_after": "2026-10-11"
+    },
+    {
+      "protocol": "GATEWAY_PROTOCOL_CONNECT",
+      "method": "POST",
+      "path": "/customers.AuthService/Authenticate",
+      "match": "GATEWAY_MATCH_EXACT",
+      "procedure": "/saas.accounts.v1.AuthService/Authenticate",
+      "owner": {
+        "module": "saas-starter",
+        "service": "accounts"
+      },
+      "upstream_endpoint": "connect",
+      "exposure": "EXPOSURE_PUBLIC",
+      "source": "GATEWAY_ROUTE_SOURCE_COMPATIBILITY_ALIAS",
+      "rewrite_path": "/saas.accounts.v1.AuthService/Authenticate",
+      "remove_after": "2026-10-11"
+    },
+    {
+      "protocol": "GATEWAY_PROTOCOL_CONNECT",
+      "method": "POST",
+      "path": "/customers.AuthService/BeginOAuth",
+      "match": "GATEWAY_MATCH_EXACT",
+      "procedure": "/saas.accounts.v1.AuthService/BeginOAuth",
+      "owner": {
+        "module": "saas-starter",
+        "service": "accounts"
+      },
+      "upstream_endpoint": "connect",
+      "exposure": "EXPOSURE_PUBLIC",
+      "source": "GATEWAY_ROUTE_SOURCE_COMPATIBILITY_ALIAS",
+      "rewrite_path": "/saas.accounts.v1.AuthService/BeginOAuth",
+      "remove_after": "2026-10-11"
+    },
+    {
+      "protocol": "GATEWAY_PROTOCOL_CONNECT",
+      "method": "POST",
+      "path": "/customers.AuthService/BeginWebAuthnMFAChallenge",
+      "match": "GATEWAY_MATCH_EXACT",
+      "procedure": "/saas.accounts.v1.AuthService/BeginWebAuthnMFAChallenge",
+      "owner": {
+        "module": "saas-starter",
+        "service": "accounts"
+      },
+      "upstream_endpoint": "connect",
+      "exposure": "EXPOSURE_PUBLIC",
+      "source": "GATEWAY_ROUTE_SOURCE_COMPATIBILITY_ALIAS",
+      "rewrite_path": "/saas.accounts.v1.AuthService/BeginWebAuthnMFAChallenge",
+      "remove_after": "2026-10-11"
+    },
+    {
+      "protocol": "GATEWAY_PROTOCOL_CONNECT",
+      "method": "POST",
+      "path": "/customers.AuthService/CompleteMFAChallenge",
+      "match": "GATEWAY_MATCH_EXACT",
+      "procedure": "/saas.accounts.v1.AuthService/CompleteMFAChallenge",
+      "owner": {
+        "module": "saas-starter",
+        "service": "accounts"
+      },
+      "upstream_endpoint": "connect",
+      "exposure": "EXPOSURE_PUBLIC",
+      "source": "GATEWAY_ROUTE_SOURCE_COMPATIBILITY_ALIAS",
+      "rewrite_path": "/saas.accounts.v1.AuthService/CompleteMFAChallenge",
+      "remove_after": "2026-10-11"
+    },
+    {
+      "protocol": "GATEWAY_PROTOCOL_CONNECT",
+      "method": "POST",
+      "path": "/customers.AuthService/CompleteWebAuthnMFAChallenge",
+      "match": "GATEWAY_MATCH_EXACT",
+      "procedure": "/saas.accounts.v1.AuthService/CompleteWebAuthnMFAChallenge",
+      "owner": {
+        "module": "saas-starter",
+        "service": "accounts"
+      },
+      "upstream_endpoint": "connect",
+      "exposure": "EXPOSURE_PUBLIC",
+      "source": "GATEWAY_ROUTE_SOURCE_COMPATIBILITY_ALIAS",
+      "rewrite_path": "/saas.accounts.v1.AuthService/CompleteWebAuthnMFAChallenge",
+      "remove_after": "2026-10-11"
+    },
+    {
+      "protocol": "GATEWAY_PROTOCOL_CONNECT",
+      "method": "POST",
+      "path": "/customers.AuthService/GetJWKS",
+      "match": "GATEWAY_MATCH_EXACT",
+      "procedure": "/saas.accounts.v1.AuthService/GetJWKS",
+      "owner": {
+        "module": "saas-starter",
+        "service": "accounts"
+      },
+      "upstream_endpoint": "connect",
+      "exposure": "EXPOSURE_PUBLIC",
+      "source": "GATEWAY_ROUTE_SOURCE_COMPATIBILITY_ALIAS",
+      "rewrite_path": "/saas.accounts.v1.AuthService/GetJWKS",
+      "remove_after": "2026-10-11"
+    },
+    {
+      "protocol": "GATEWAY_PROTOCOL_CONNECT",
+      "method": "POST",
+      "path": "/customers.AuthService/Logout",
+      "match": "GATEWAY_MATCH_EXACT",
+      "procedure": "/saas.accounts.v1.AuthService/Logout",
+      "owner": {
+        "module": "saas-starter",
+        "service": "accounts"
+      },
+      "upstream_endpoint": "connect",
+      "exposure": "EXPOSURE_PUBLIC",
+      "source": "GATEWAY_ROUTE_SOURCE_COMPATIBILITY_ALIAS",
+      "rewrite_path": "/saas.accounts.v1.AuthService/Logout",
+      "remove_after": "2026-10-11"
+    },
+    {
+      "protocol": "GATEWAY_PROTOCOL_CONNECT",
+      "method": "POST",
+      "path": "/customers.AuthService/RefreshToken",
+      "match": "GATEWAY_MATCH_EXACT",
+      "procedure": "/saas.accounts.v1.AuthService/RefreshToken",
+      "owner": {
+        "module": "saas-starter",
+        "service": "accounts"
+      },
+      "upstream_endpoint": "connect",
+      "exposure": "EXPOSURE_PUBLIC",
+      "source": "GATEWAY_ROUTE_SOURCE_COMPATIBILITY_ALIAS",
+      "rewrite_path": "/saas.accounts.v1.AuthService/RefreshToken",
+      "remove_after": "2026-10-11"
+    },
+    {
+      "protocol": "GATEWAY_PROTOCOL_CONNECT",
+      "method": "POST",
+      "path": "/customers.AuthService/SwitchOrganization",
+      "match": "GATEWAY_MATCH_EXACT",
+      "procedure": "/saas.accounts.v1.AuthService/SwitchOrganization",
+      "owner": {
+        "module": "saas-starter",
+        "service": "accounts"
+      },
+      "upstream_endpoint": "connect",
+      "exposure": "EXPOSURE_AUTHENTICATED",
+      "source": "GATEWAY_ROUTE_SOURCE_COMPATIBILITY_ALIAS",
+      "rewrite_path": "/saas.accounts.v1.AuthService/SwitchOrganization",
+      "remove_after": "2026-10-11"
+    },
+    {
+      "protocol": "GATEWAY_PROTOCOL_CONNECT",
+      "method": "POST",
+      "path": "/customers.BillingService/ListInvoices",
+      "match": "GATEWAY_MATCH_EXACT",
+      "procedure": "/saas.accounts.v1.BillingService/ListInvoices",
+      "owner": {
+        "module": "saas-starter",
+        "service": "accounts"
+      },
+      "upstream_endpoint": "connect",
+      "exposure": "EXPOSURE_AUTHENTICATED",
+      "source": "GATEWAY_ROUTE_SOURCE_COMPATIBILITY_ALIAS",
+      "rewrite_path": "/saas.accounts.v1.BillingService/ListInvoices",
+      "remove_after": "2026-10-11"
+    },
+    {
+      "protocol": "GATEWAY_PROTOCOL_CONNECT",
+      "method": "POST",
+      "path": "/customers.BillingService/OpenPortal",
+      "match": "GATEWAY_MATCH_EXACT",
+      "procedure": "/saas.accounts.v1.BillingService/OpenPortal",
+      "owner": {
+        "module": "saas-starter",
+        "service": "accounts"
+      },
+      "upstream_endpoint": "connect",
+      "exposure": "EXPOSURE_AUTHENTICATED",
+      "source": "GATEWAY_ROUTE_SOURCE_COMPATIBILITY_ALIAS",
+      "rewrite_path": "/saas.accounts.v1.BillingService/OpenPortal",
+      "remove_after": "2026-10-11"
+    },
+    {
+      "protocol": "GATEWAY_PROTOCOL_CONNECT",
+      "method": "POST",
+      "path": "/customers.ConsentService/Accept",
+      "match": "GATEWAY_MATCH_EXACT",
+      "procedure": "/saas.accounts.v1.ConsentService/Accept",
+      "owner": {
+        "module": "saas-starter",
+        "service": "accounts"
+      },
+      "upstream_endpoint": "connect",
+      "exposure": "EXPOSURE_AUTHENTICATED",
+      "source": "GATEWAY_ROUTE_SOURCE_COMPATIBILITY_ALIAS",
+      "rewrite_path": "/saas.accounts.v1.ConsentService/Accept",
+      "remove_after": "2026-10-11"
+    },
+    {
+      "protocol": "GATEWAY_PROTOCOL_CONNECT",
+      "method": "POST",
+      "path": "/customers.ConsentService/GetStatus",
+      "match": "GATEWAY_MATCH_EXACT",
+      "procedure": "/saas.accounts.v1.ConsentService/GetStatus",
+      "owner": {
+        "module": "saas-starter",
+        "service": "accounts"
+      },
+      "upstream_endpoint": "connect",
+      "exposure": "EXPOSURE_AUTHENTICATED",
+      "source": "GATEWAY_ROUTE_SOURCE_COMPATIBILITY_ALIAS",
+      "rewrite_path": "/saas.accounts.v1.ConsentService/GetStatus",
+      "remove_after": "2026-10-11"
+    },
+    {
+      "protocol": "GATEWAY_PROTOCOL_CONNECT",
+      "method": "POST",
+      "path": "/customers.DelegationService/DecideDelegation",
+      "match": "GATEWAY_MATCH_EXACT",
+      "procedure": "/saas.accounts.v1.DelegationService/DecideDelegation",
+      "owner": {
+        "module": "saas-starter",
+        "service": "accounts"
+      },
+      "upstream_endpoint": "connect",
+      "exposure": "EXPOSURE_AUTHENTICATED",
+      "source": "GATEWAY_ROUTE_SOURCE_COMPATIBILITY_ALIAS",
+      "rewrite_path": "/saas.accounts.v1.DelegationService/DecideDelegation",
+      "remove_after": "2026-10-11"
+    },
+    {
+      "protocol": "GATEWAY_PROTOCOL_CONNECT",
+      "method": "POST",
+      "path": "/customers.DelegationService/ListPendingDelegations",
+      "match": "GATEWAY_MATCH_EXACT",
+      "procedure": "/saas.accounts.v1.DelegationService/ListPendingDelegations",
+      "owner": {
+        "module": "saas-starter",
+        "service": "accounts"
+      },
+      "upstream_endpoint": "connect",
+      "exposure": "EXPOSURE_AUTHENTICATED",
+      "source": "GATEWAY_ROUTE_SOURCE_COMPATIBILITY_ALIAS",
+      "rewrite_path": "/saas.accounts.v1.DelegationService/ListPendingDelegations",
+      "remove_after": "2026-10-11"
+    },
+    {
+      "protocol": "GATEWAY_PROTOCOL_CONNECT",
+      "method": "POST",
+      "path": "/customers.DelegationService/RequestDelegation",
+      "match": "GATEWAY_MATCH_EXACT",
+      "procedure": "/saas.accounts.v1.DelegationService/RequestDelegation",
+      "owner": {
+        "module": "saas-starter",
+        "service": "accounts"
+      },
+      "upstream_endpoint": "connect",
+      "exposure": "EXPOSURE_AUTHENTICATED",
+      "source": "GATEWAY_ROUTE_SOURCE_COMPATIBILITY_ALIAS",
+      "rewrite_path": "/saas.accounts.v1.DelegationService/RequestDelegation",
+      "remove_after": "2026-10-11"
+    },
+    {
+      "protocol": "GATEWAY_PROTOCOL_CONNECT",
+      "method": "POST",
+      "path": "/customers.DelegationService/WaitForDelegation",
+      "match": "GATEWAY_MATCH_EXACT",
+      "procedure": "/saas.accounts.v1.DelegationService/WaitForDelegation",
+      "owner": {
+        "module": "saas-starter",
+        "service": "accounts"
+      },
+      "upstream_endpoint": "connect",
+      "exposure": "EXPOSURE_AUTHENTICATED",
+      "source": "GATEWAY_ROUTE_SOURCE_COMPATIBILITY_ALIAS",
+      "rewrite_path": "/saas.accounts.v1.DelegationService/WaitForDelegation",
+      "remove_after": "2026-10-11"
+    },
+    {
+      "protocol": "GATEWAY_PROTOCOL_CONNECT",
+      "method": "POST",
+      "path": "/customers.GDPRService/GetDeletionStatus",
+      "match": "GATEWAY_MATCH_EXACT",
+      "procedure": "/saas.accounts.v1.GDPRService/GetDeletionStatus",
+      "owner": {
+        "module": "saas-starter",
+        "service": "accounts"
+      },
+      "upstream_endpoint": "connect",
+      "exposure": "EXPOSURE_AUTHENTICATED",
+      "source": "GATEWAY_ROUTE_SOURCE_COMPATIBILITY_ALIAS",
+      "rewrite_path": "/saas.accounts.v1.GDPRService/GetDeletionStatus",
+      "remove_after": "2026-10-11"
+    },
+    {
+      "protocol": "GATEWAY_PROTOCOL_CONNECT",
+      "method": "POST",
+      "path": "/customers.GDPRService/GetExportStatus",
+      "match": "GATEWAY_MATCH_EXACT",
+      "procedure": "/saas.accounts.v1.GDPRService/GetExportStatus",
+      "owner": {
+        "module": "saas-starter",
+        "service": "accounts"
+      },
+      "upstream_endpoint": "connect",
+      "exposure": "EXPOSURE_AUTHENTICATED",
+      "source": "GATEWAY_ROUTE_SOURCE_COMPATIBILITY_ALIAS",
+      "rewrite_path": "/saas.accounts.v1.GDPRService/GetExportStatus",
+      "remove_after": "2026-10-11"
+    },
+    {
+      "protocol": "GATEWAY_PROTOCOL_CONNECT",
+      "method": "POST",
+      "path": "/customers.GDPRService/RequestDeletion",
+      "match": "GATEWAY_MATCH_EXACT",
+      "procedure": "/saas.accounts.v1.GDPRService/RequestDeletion",
+      "owner": {
+        "module": "saas-starter",
+        "service": "accounts"
+      },
+      "upstream_endpoint": "connect",
+      "exposure": "EXPOSURE_AUTHENTICATED",
+      "source": "GATEWAY_ROUTE_SOURCE_COMPATIBILITY_ALIAS",
+      "rewrite_path": "/saas.accounts.v1.GDPRService/RequestDeletion",
+      "remove_after": "2026-10-11"
+    },
+    {
+      "protocol": "GATEWAY_PROTOCOL_CONNECT",
+      "method": "POST",
+      "path": "/customers.GDPRService/RequestExport",
+      "match": "GATEWAY_MATCH_EXACT",
+      "procedure": "/saas.accounts.v1.GDPRService/RequestExport",
+      "owner": {
+        "module": "saas-starter",
+        "service": "accounts"
+      },
+      "upstream_endpoint": "connect",
+      "exposure": "EXPOSURE_AUTHENTICATED",
+      "source": "GATEWAY_ROUTE_SOURCE_COMPATIBILITY_ALIAS",
+      "rewrite_path": "/saas.accounts.v1.GDPRService/RequestExport",
+      "remove_after": "2026-10-11"
+    },
+    {
+      "protocol": "GATEWAY_PROTOCOL_CONNECT",
+      "method": "POST",
+      "path": "/customers.IntrospectionService/GetServiceInfo",
+      "match": "GATEWAY_MATCH_EXACT",
+      "procedure": "/saas.accounts.v1.IntrospectionService/GetServiceInfo",
+      "owner": {
+        "module": "saas-starter",
+        "service": "accounts"
+      },
+      "upstream_endpoint": "connect",
+      "exposure": "EXPOSURE_PUBLIC",
+      "source": "GATEWAY_ROUTE_SOURCE_COMPATIBILITY_ALIAS",
+      "rewrite_path": "/saas.accounts.v1.IntrospectionService/GetServiceInfo",
+      "remove_after": "2026-10-11"
+    },
+    {
+      "protocol": "GATEWAY_PROTOCOL_CONNECT",
+      "method": "POST",
+      "path": "/customers.InvitationService/AcceptInvitation",
+      "match": "GATEWAY_MATCH_EXACT",
+      "procedure": "/saas.accounts.v1.InvitationService/AcceptInvitation",
+      "owner": {
+        "module": "saas-starter",
+        "service": "accounts"
+      },
+      "upstream_endpoint": "connect",
+      "exposure": "EXPOSURE_AUTHENTICATED",
+      "source": "GATEWAY_ROUTE_SOURCE_COMPATIBILITY_ALIAS",
+      "rewrite_path": "/saas.accounts.v1.InvitationService/AcceptInvitation",
+      "remove_after": "2026-10-11"
+    },
+    {
+      "protocol": "GATEWAY_PROTOCOL_CONNECT",
+      "method": "POST",
+      "path": "/customers.InvitationService/CreateInvitation",
+      "match": "GATEWAY_MATCH_EXACT",
+      "procedure": "/saas.accounts.v1.InvitationService/CreateInvitation",
+      "owner": {
+        "module": "saas-starter",
+        "service": "accounts"
+      },
+      "upstream_endpoint": "connect",
+      "exposure": "EXPOSURE_AUTHENTICATED",
+      "source": "GATEWAY_ROUTE_SOURCE_COMPATIBILITY_ALIAS",
+      "rewrite_path": "/saas.accounts.v1.InvitationService/CreateInvitation",
+      "remove_after": "2026-10-11"
+    },
+    {
+      "protocol": "GATEWAY_PROTOCOL_CONNECT",
+      "method": "POST",
+      "path": "/customers.InvitationService/ListInvitations",
+      "match": "GATEWAY_MATCH_EXACT",
+      "procedure": "/saas.accounts.v1.InvitationService/ListInvitations",
+      "owner": {
+        "module": "saas-starter",
+        "service": "accounts"
+      },
+      "upstream_endpoint": "connect",
+      "exposure": "EXPOSURE_AUTHENTICATED",
+      "source": "GATEWAY_ROUTE_SOURCE_COMPATIBILITY_ALIAS",
+      "rewrite_path": "/saas.accounts.v1.InvitationService/ListInvitations",
+      "remove_after": "2026-10-11"
+    },
+    {
+      "protocol": "GATEWAY_PROTOCOL_CONNECT",
+      "method": "POST",
+      "path": "/customers.InvitationService/RevokeInvitation",
+      "match": "GATEWAY_MATCH_EXACT",
+      "procedure": "/saas.accounts.v1.InvitationService/RevokeInvitation",
+      "owner": {
+        "module": "saas-starter",
+        "service": "accounts"
+      },
+      "upstream_endpoint": "connect",
+      "exposure": "EXPOSURE_AUTHENTICATED",
+      "source": "GATEWAY_ROUTE_SOURCE_COMPATIBILITY_ALIAS",
+      "rewrite_path": "/saas.accounts.v1.InvitationService/RevokeInvitation",
+      "remove_after": "2026-10-11"
+    },
+    {
+      "protocol": "GATEWAY_PROTOCOL_CONNECT",
+      "method": "POST",
+      "path": "/customers.MFAService/BeginWebAuthnRegistration",
+      "match": "GATEWAY_MATCH_EXACT",
+      "procedure": "/saas.accounts.v1.MFAService/BeginWebAuthnRegistration",
+      "owner": {
+        "module": "saas-starter",
+        "service": "accounts"
+      },
+      "upstream_endpoint": "connect",
+      "exposure": "EXPOSURE_AUTHENTICATED",
+      "source": "GATEWAY_ROUTE_SOURCE_COMPATIBILITY_ALIAS",
+      "rewrite_path": "/saas.accounts.v1.MFAService/BeginWebAuthnRegistration",
+      "remove_after": "2026-10-11"
+    },
+    {
+      "protocol": "GATEWAY_PROTOCOL_CONNECT",
+      "method": "POST",
+      "path": "/customers.MFAService/FinishWebAuthnRegistration",
+      "match": "GATEWAY_MATCH_EXACT",
+      "procedure": "/saas.accounts.v1.MFAService/FinishWebAuthnRegistration",
+      "owner": {
+        "module": "saas-starter",
+        "service": "accounts"
+      },
+      "upstream_endpoint": "connect",
+      "exposure": "EXPOSURE_AUTHENTICATED",
+      "source": "GATEWAY_ROUTE_SOURCE_COMPATIBILITY_ALIAS",
+      "rewrite_path": "/saas.accounts.v1.MFAService/FinishWebAuthnRegistration",
+      "remove_after": "2026-10-11"
+    },
+    {
+      "protocol": "GATEWAY_PROTOCOL_CONNECT",
+      "method": "POST",
+      "path": "/customers.MFAService/GenerateBackupCodes",
+      "match": "GATEWAY_MATCH_EXACT",
+      "procedure": "/saas.accounts.v1.MFAService/GenerateBackupCodes",
+      "owner": {
+        "module": "saas-starter",
+        "service": "accounts"
+      },
+      "upstream_endpoint": "connect",
+      "exposure": "EXPOSURE_AUTHENTICATED",
+      "source": "GATEWAY_ROUTE_SOURCE_COMPATIBILITY_ALIAS",
+      "rewrite_path": "/saas.accounts.v1.MFAService/GenerateBackupCodes",
+      "remove_after": "2026-10-11"
+    },
+    {
+      "protocol": "GATEWAY_PROTOCOL_CONNECT",
+      "method": "POST",
+      "path": "/customers.MFAService/ListDevices",
+      "match": "GATEWAY_MATCH_EXACT",
+      "procedure": "/saas.accounts.v1.MFAService/ListDevices",
+      "owner": {
+        "module": "saas-starter",
+        "service": "accounts"
+      },
+      "upstream_endpoint": "connect",
+      "exposure": "EXPOSURE_AUTHENTICATED",
+      "source": "GATEWAY_ROUTE_SOURCE_COMPATIBILITY_ALIAS",
+      "rewrite_path": "/saas.accounts.v1.MFAService/ListDevices",
+      "remove_after": "2026-10-11"
+    },
+    {
+      "protocol": "GATEWAY_PROTOCOL_CONNECT",
+      "method": "POST",
+      "path": "/customers.MFAService/RevokeDevice",
+      "match": "GATEWAY_MATCH_EXACT",
+      "procedure": "/saas.accounts.v1.MFAService/RevokeDevice",
+      "owner": {
+        "module": "saas-starter",
+        "service": "accounts"
+      },
+      "upstream_endpoint": "connect",
+      "exposure": "EXPOSURE_AUTHENTICATED",
+      "source": "GATEWAY_ROUTE_SOURCE_COMPATIBILITY_ALIAS",
+      "rewrite_path": "/saas.accounts.v1.MFAService/RevokeDevice",
+      "remove_after": "2026-10-11"
+    },
+    {
+      "protocol": "GATEWAY_PROTOCOL_CONNECT",
+      "method": "POST",
+      "path": "/customers.MFAService/SetupTOTP",
+      "match": "GATEWAY_MATCH_EXACT",
+      "procedure": "/saas.accounts.v1.MFAService/SetupTOTP",
+      "owner": {
+        "module": "saas-starter",
+        "service": "accounts"
+      },
+      "upstream_endpoint": "connect",
+      "exposure": "EXPOSURE_AUTHENTICATED",
+      "source": "GATEWAY_ROUTE_SOURCE_COMPATIBILITY_ALIAS",
+      "rewrite_path": "/saas.accounts.v1.MFAService/SetupTOTP",
+      "remove_after": "2026-10-11"
+    },
+    {
+      "protocol": "GATEWAY_PROTOCOL_CONNECT",
+      "method": "POST",
+      "path": "/customers.MFAService/VerifyTOTP",
+      "match": "GATEWAY_MATCH_EXACT",
+      "procedure": "/saas.accounts.v1.MFAService/VerifyTOTP",
+      "owner": {
+        "module": "saas-starter",
+        "service": "accounts"
+      },
+      "upstream_endpoint": "connect",
+      "exposure": "EXPOSURE_AUTHENTICATED",
+      "source": "GATEWAY_ROUTE_SOURCE_COMPATIBILITY_ALIAS",
+      "rewrite_path": "/saas.accounts.v1.MFAService/VerifyTOTP",
+      "remove_after": "2026-10-11"
+    },
+    {
+      "protocol": "GATEWAY_PROTOCOL_CONNECT",
+      "method": "POST",
+      "path": "/customers.NotificationService/DeleteNotification",
+      "match": "GATEWAY_MATCH_EXACT",
+      "procedure": "/saas.accounts.v1.NotificationService/DeleteNotification",
+      "owner": {
+        "module": "saas-starter",
+        "service": "accounts"
+      },
+      "upstream_endpoint": "connect",
+      "exposure": "EXPOSURE_AUTHENTICATED",
+      "source": "GATEWAY_ROUTE_SOURCE_COMPATIBILITY_ALIAS",
+      "rewrite_path": "/saas.accounts.v1.NotificationService/DeleteNotification",
+      "remove_after": "2026-10-11"
+    },
+    {
+      "protocol": "GATEWAY_PROTOCOL_CONNECT",
+      "method": "POST",
+      "path": "/customers.NotificationService/GetUnreadCount",
+      "match": "GATEWAY_MATCH_EXACT",
+      "procedure": "/saas.accounts.v1.NotificationService/GetUnreadCount",
+      "owner": {
+        "module": "saas-starter",
+        "service": "accounts"
+      },
+      "upstream_endpoint": "connect",
+      "exposure": "EXPOSURE_AUTHENTICATED",
+      "source": "GATEWAY_ROUTE_SOURCE_COMPATIBILITY_ALIAS",
+      "rewrite_path": "/saas.accounts.v1.NotificationService/GetUnreadCount",
+      "remove_after": "2026-10-11"
+    },
+    {
+      "protocol": "GATEWAY_PROTOCOL_CONNECT",
+      "method": "POST",
+      "path": "/customers.NotificationService/ListNotifications",
+      "match": "GATEWAY_MATCH_EXACT",
+      "procedure": "/saas.accounts.v1.NotificationService/ListNotifications",
+      "owner": {
+        "module": "saas-starter",
+        "service": "accounts"
+      },
+      "upstream_endpoint": "connect",
+      "exposure": "EXPOSURE_AUTHENTICATED",
+      "source": "GATEWAY_ROUTE_SOURCE_COMPATIBILITY_ALIAS",
+      "rewrite_path": "/saas.accounts.v1.NotificationService/ListNotifications",
+      "remove_after": "2026-10-11"
+    },
+    {
+      "protocol": "GATEWAY_PROTOCOL_CONNECT",
+      "method": "POST",
+      "path": "/customers.NotificationService/MarkAllRead",
+      "match": "GATEWAY_MATCH_EXACT",
+      "procedure": "/saas.accounts.v1.NotificationService/MarkAllRead",
+      "owner": {
+        "module": "saas-starter",
+        "service": "accounts"
+      },
+      "upstream_endpoint": "connect",
+      "exposure": "EXPOSURE_AUTHENTICATED",
+      "source": "GATEWAY_ROUTE_SOURCE_COMPATIBILITY_ALIAS",
+      "rewrite_path": "/saas.accounts.v1.NotificationService/MarkAllRead",
+      "remove_after": "2026-10-11"
+    },
+    {
+      "protocol": "GATEWAY_PROTOCOL_CONNECT",
+      "method": "POST",
+      "path": "/customers.NotificationService/MarkRead",
+      "match": "GATEWAY_MATCH_EXACT",
+      "procedure": "/saas.accounts.v1.NotificationService/MarkRead",
+      "owner": {
+        "module": "saas-starter",
+        "service": "accounts"
+      },
+      "upstream_endpoint": "connect",
+      "exposure": "EXPOSURE_AUTHENTICATED",
+      "source": "GATEWAY_ROUTE_SOURCE_COMPATIBILITY_ALIAS",
+      "rewrite_path": "/saas.accounts.v1.NotificationService/MarkRead",
+      "remove_after": "2026-10-11"
+    },
+    {
+      "protocol": "GATEWAY_PROTOCOL_CONNECT",
+      "method": "POST",
+      "path": "/customers.OnboardingService/CompleteStep",
+      "match": "GATEWAY_MATCH_EXACT",
+      "procedure": "/saas.accounts.v1.OnboardingService/CompleteStep",
+      "owner": {
+        "module": "saas-starter",
+        "service": "accounts"
+      },
+      "upstream_endpoint": "connect",
+      "exposure": "EXPOSURE_AUTHENTICATED",
+      "source": "GATEWAY_ROUTE_SOURCE_COMPATIBILITY_ALIAS",
+      "rewrite_path": "/saas.accounts.v1.OnboardingService/CompleteStep",
+      "remove_after": "2026-10-11"
+    },
+    {
+      "protocol": "GATEWAY_PROTOCOL_CONNECT",
+      "method": "POST",
+      "path": "/customers.OnboardingService/GetProgress",
+      "match": "GATEWAY_MATCH_EXACT",
+      "procedure": "/saas.accounts.v1.OnboardingService/GetProgress",
+      "owner": {
+        "module": "saas-starter",
+        "service": "accounts"
+      },
+      "upstream_endpoint": "connect",
+      "exposure": "EXPOSURE_AUTHENTICATED",
+      "source": "GATEWAY_ROUTE_SOURCE_COMPATIBILITY_ALIAS",
+      "rewrite_path": "/saas.accounts.v1.OnboardingService/GetProgress",
+      "remove_after": "2026-10-11"
+    },
+    {
+      "protocol": "GATEWAY_PROTOCOL_CONNECT",
+      "method": "POST",
+      "path": "/customers.OnboardingService/SkipStep",
+      "match": "GATEWAY_MATCH_EXACT",
+      "procedure": "/saas.accounts.v1.OnboardingService/SkipStep",
+      "owner": {
+        "module": "saas-starter",
+        "service": "accounts"
+      },
+      "upstream_endpoint": "connect",
+      "exposure": "EXPOSURE_AUTHENTICATED",
+      "source": "GATEWAY_ROUTE_SOURCE_COMPATIBILITY_ALIAS",
+      "rewrite_path": "/saas.accounts.v1.OnboardingService/SkipStep",
+      "remove_after": "2026-10-11"
+    },
+    {
+      "protocol": "GATEWAY_PROTOCOL_CONNECT",
+      "method": "POST",
+      "path": "/customers.OrganizationService/AddMember",
+      "match": "GATEWAY_MATCH_EXACT",
+      "procedure": "/saas.accounts.v1.OrganizationService/AddMember",
+      "owner": {
+        "module": "saas-starter",
+        "service": "accounts"
+      },
+      "upstream_endpoint": "connect",
+      "exposure": "EXPOSURE_AUTHENTICATED",
+      "source": "GATEWAY_ROUTE_SOURCE_COMPATIBILITY_ALIAS",
+      "rewrite_path": "/saas.accounts.v1.OrganizationService/AddMember",
+      "remove_after": "2026-10-11"
+    },
+    {
+      "protocol": "GATEWAY_PROTOCOL_CONNECT",
+      "method": "POST",
+      "path": "/customers.OrganizationService/CreateOrganization",
+      "match": "GATEWAY_MATCH_EXACT",
+      "procedure": "/saas.accounts.v1.OrganizationService/CreateOrganization",
+      "owner": {
+        "module": "saas-starter",
+        "service": "accounts"
+      },
+      "upstream_endpoint": "connect",
+      "exposure": "EXPOSURE_AUTHENTICATED",
+      "source": "GATEWAY_ROUTE_SOURCE_COMPATIBILITY_ALIAS",
+      "rewrite_path": "/saas.accounts.v1.OrganizationService/CreateOrganization",
+      "remove_after": "2026-10-11"
+    },
+    {
+      "protocol": "GATEWAY_PROTOCOL_CONNECT",
+      "method": "POST",
+      "path": "/customers.OrganizationService/GetOrgSettings",
+      "match": "GATEWAY_MATCH_EXACT",
+      "procedure": "/saas.accounts.v1.OrganizationService/GetOrgSettings",
+      "owner": {
+        "module": "saas-starter",
+        "service": "accounts"
+      },
+      "upstream_endpoint": "connect",
+      "exposure": "EXPOSURE_AUTHENTICATED",
+      "source": "GATEWAY_ROUTE_SOURCE_COMPATIBILITY_ALIAS",
+      "rewrite_path": "/saas.accounts.v1.OrganizationService/GetOrgSettings",
+      "remove_after": "2026-10-11"
+    },
+    {
+      "protocol": "GATEWAY_PROTOCOL_CONNECT",
+      "method": "POST",
+      "path": "/customers.OrganizationService/GetOrganization",
+      "match": "GATEWAY_MATCH_EXACT",
+      "procedure": "/saas.accounts.v1.OrganizationService/GetOrganization",
+      "owner": {
+        "module": "saas-starter",
+        "service": "accounts"
+      },
+      "upstream_endpoint": "connect",
+      "exposure": "EXPOSURE_AUTHENTICATED",
+      "source": "GATEWAY_ROUTE_SOURCE_COMPATIBILITY_ALIAS",
+      "rewrite_path": "/saas.accounts.v1.OrganizationService/GetOrganization",
+      "remove_after": "2026-10-11"
+    },
+    {
+      "protocol": "GATEWAY_PROTOCOL_CONNECT",
+      "method": "POST",
+      "path": "/customers.OrganizationService/ListMembers",
+      "match": "GATEWAY_MATCH_EXACT",
+      "procedure": "/saas.accounts.v1.OrganizationService/ListMembers",
+      "owner": {
+        "module": "saas-starter",
+        "service": "accounts"
+      },
+      "upstream_endpoint": "connect",
+      "exposure": "EXPOSURE_AUTHENTICATED",
+      "source": "GATEWAY_ROUTE_SOURCE_COMPATIBILITY_ALIAS",
+      "rewrite_path": "/saas.accounts.v1.OrganizationService/ListMembers",
+      "remove_after": "2026-10-11"
+    },
+    {
+      "protocol": "GATEWAY_PROTOCOL_CONNECT",
+      "method": "POST",
+      "path": "/customers.OrganizationService/ListOrganizations",
+      "match": "GATEWAY_MATCH_EXACT",
+      "procedure": "/saas.accounts.v1.OrganizationService/ListOrganizations",
+      "owner": {
+        "module": "saas-starter",
+        "service": "accounts"
+      },
+      "upstream_endpoint": "connect",
+      "exposure": "EXPOSURE_AUTHENTICATED",
+      "source": "GATEWAY_ROUTE_SOURCE_COMPATIBILITY_ALIAS",
+      "rewrite_path": "/saas.accounts.v1.OrganizationService/ListOrganizations",
+      "remove_after": "2026-10-11"
+    },
+    {
+      "protocol": "GATEWAY_PROTOCOL_CONNECT",
+      "method": "POST",
+      "path": "/customers.OrganizationService/RemoveMember",
+      "match": "GATEWAY_MATCH_EXACT",
+      "procedure": "/saas.accounts.v1.OrganizationService/RemoveMember",
+      "owner": {
+        "module": "saas-starter",
+        "service": "accounts"
+      },
+      "upstream_endpoint": "connect",
+      "exposure": "EXPOSURE_AUTHENTICATED",
+      "source": "GATEWAY_ROUTE_SOURCE_COMPATIBILITY_ALIAS",
+      "rewrite_path": "/saas.accounts.v1.OrganizationService/RemoveMember",
+      "remove_after": "2026-10-11"
+    },
+    {
+      "protocol": "GATEWAY_PROTOCOL_CONNECT",
+      "method": "POST",
+      "path": "/customers.OrganizationService/UpdateOrgSettings",
+      "match": "GATEWAY_MATCH_EXACT",
+      "procedure": "/saas.accounts.v1.OrganizationService/UpdateOrgSettings",
+      "owner": {
+        "module": "saas-starter",
+        "service": "accounts"
+      },
+      "upstream_endpoint": "connect",
+      "exposure": "EXPOSURE_AUTHENTICATED",
+      "source": "GATEWAY_ROUTE_SOURCE_COMPATIBILITY_ALIAS",
+      "rewrite_path": "/saas.accounts.v1.OrganizationService/UpdateOrgSettings",
+      "remove_after": "2026-10-11"
+    },
+    {
+      "protocol": "GATEWAY_PROTOCOL_CONNECT",
+      "method": "POST",
+      "path": "/customers.PermissionService/AssignRole",
+      "match": "GATEWAY_MATCH_EXACT",
+      "procedure": "/saas.accounts.v1.PermissionService/AssignRole",
+      "owner": {
+        "module": "saas-starter",
+        "service": "accounts"
+      },
+      "upstream_endpoint": "connect",
+      "exposure": "EXPOSURE_AUTHENTICATED",
+      "source": "GATEWAY_ROUTE_SOURCE_COMPATIBILITY_ALIAS",
+      "rewrite_path": "/saas.accounts.v1.PermissionService/AssignRole",
+      "remove_after": "2026-10-11"
+    },
+    {
+      "protocol": "GATEWAY_PROTOCOL_CONNECT",
+      "method": "POST",
+      "path": "/customers.PermissionService/CreateRole",
+      "match": "GATEWAY_MATCH_EXACT",
+      "procedure": "/saas.accounts.v1.PermissionService/CreateRole",
+      "owner": {
+        "module": "saas-starter",
+        "service": "accounts"
+      },
+      "upstream_endpoint": "connect",
+      "exposure": "EXPOSURE_AUTHENTICATED",
+      "source": "GATEWAY_ROUTE_SOURCE_COMPATIBILITY_ALIAS",
+      "rewrite_path": "/saas.accounts.v1.PermissionService/CreateRole",
+      "remove_after": "2026-10-11"
+    },
+    {
+      "protocol": "GATEWAY_PROTOCOL_CONNECT",
+      "method": "POST",
+      "path": "/customers.PermissionService/DeleteRole",
+      "match": "GATEWAY_MATCH_EXACT",
+      "procedure": "/saas.accounts.v1.PermissionService/DeleteRole",
+      "owner": {
+        "module": "saas-starter",
+        "service": "accounts"
+      },
+      "upstream_endpoint": "connect",
+      "exposure": "EXPOSURE_AUTHENTICATED",
+      "source": "GATEWAY_ROUTE_SOURCE_COMPATIBILITY_ALIAS",
+      "rewrite_path": "/saas.accounts.v1.PermissionService/DeleteRole",
+      "remove_after": "2026-10-11"
+    },
+    {
+      "protocol": "GATEWAY_PROTOCOL_CONNECT",
+      "method": "POST",
+      "path": "/customers.PermissionService/ListRoleAssignments",
+      "match": "GATEWAY_MATCH_EXACT",
+      "procedure": "/saas.accounts.v1.PermissionService/ListRoleAssignments",
+      "owner": {
+        "module": "saas-starter",
+        "service": "accounts"
+      },
+      "upstream_endpoint": "connect",
+      "exposure": "EXPOSURE_AUTHENTICATED",
+      "source": "GATEWAY_ROUTE_SOURCE_COMPATIBILITY_ALIAS",
+      "rewrite_path": "/saas.accounts.v1.PermissionService/ListRoleAssignments",
+      "remove_after": "2026-10-11"
+    },
+    {
+      "protocol": "GATEWAY_PROTOCOL_CONNECT",
+      "method": "POST",
+      "path": "/customers.PermissionService/ListRoles",
+      "match": "GATEWAY_MATCH_EXACT",
+      "procedure": "/saas.accounts.v1.PermissionService/ListRoles",
+      "owner": {
+        "module": "saas-starter",
+        "service": "accounts"
+      },
+      "upstream_endpoint": "connect",
+      "exposure": "EXPOSURE_AUTHENTICATED",
+      "source": "GATEWAY_ROUTE_SOURCE_COMPATIBILITY_ALIAS",
+      "rewrite_path": "/saas.accounts.v1.PermissionService/ListRoles",
+      "remove_after": "2026-10-11"
+    },
+    {
+      "protocol": "GATEWAY_PROTOCOL_CONNECT",
+      "method": "POST",
+      "path": "/customers.PermissionService/RevokeRole",
+      "match": "GATEWAY_MATCH_EXACT",
+      "procedure": "/saas.accounts.v1.PermissionService/RevokeRole",
+      "owner": {
+        "module": "saas-starter",
+        "service": "accounts"
+      },
+      "upstream_endpoint": "connect",
+      "exposure": "EXPOSURE_AUTHENTICATED",
+      "source": "GATEWAY_ROUTE_SOURCE_COMPATIBILITY_ALIAS",
+      "rewrite_path": "/saas.accounts.v1.PermissionService/RevokeRole",
+      "remove_after": "2026-10-11"
+    },
+    {
+      "protocol": "GATEWAY_PROTOCOL_CONNECT",
+      "method": "POST",
+      "path": "/customers.PlatformAdminService/GetJob",
+      "match": "GATEWAY_MATCH_EXACT",
+      "procedure": "/saas.accounts.v1.PlatformAdminService/GetJob",
+      "owner": {
+        "module": "saas-starter",
+        "service": "accounts"
+      },
+      "upstream_endpoint": "connect",
+      "exposure": "EXPOSURE_AUTHENTICATED",
+      "source": "GATEWAY_ROUTE_SOURCE_COMPATIBILITY_ALIAS",
+      "rewrite_path": "/saas.accounts.v1.PlatformAdminService/GetJob",
+      "remove_after": "2026-10-11"
+    },
+    {
+      "protocol": "GATEWAY_PROTOCOL_CONNECT",
+      "method": "POST",
+      "path": "/customers.PlatformAdminService/GetJobOperations",
+      "match": "GATEWAY_MATCH_EXACT",
+      "procedure": "/saas.accounts.v1.PlatformAdminService/GetJobOperations",
+      "owner": {
+        "module": "saas-starter",
+        "service": "accounts"
+      },
+      "upstream_endpoint": "connect",
+      "exposure": "EXPOSURE_AUTHENTICATED",
+      "source": "GATEWAY_ROUTE_SOURCE_COMPATIBILITY_ALIAS",
+      "rewrite_path": "/saas.accounts.v1.PlatformAdminService/GetJobOperations",
+      "remove_after": "2026-10-11"
+    },
+    {
+      "protocol": "GATEWAY_PROTOCOL_CONNECT",
+      "method": "POST",
+      "path": "/customers.PlatformAdminService/GetOrgEntitlements",
+      "match": "GATEWAY_MATCH_EXACT",
+      "procedure": "/saas.accounts.v1.PlatformAdminService/GetOrgEntitlements",
+      "owner": {
+        "module": "saas-starter",
+        "service": "accounts"
+      },
+      "upstream_endpoint": "connect",
+      "exposure": "EXPOSURE_AUTHENTICATED",
+      "source": "GATEWAY_ROUTE_SOURCE_COMPATIBILITY_ALIAS",
+      "rewrite_path": "/saas.accounts.v1.PlatformAdminService/GetOrgEntitlements",
+      "remove_after": "2026-10-11"
+    },
+    {
+      "protocol": "GATEWAY_PROTOCOL_CONNECT",
+      "method": "POST",
+      "path": "/customers.PlatformAdminService/GrantPlatformRole",
+      "match": "GATEWAY_MATCH_EXACT",
+      "procedure": "/saas.accounts.v1.PlatformAdminService/GrantPlatformRole",
+      "owner": {
+        "module": "saas-starter",
+        "service": "accounts"
+      },
+      "upstream_endpoint": "connect",
+      "exposure": "EXPOSURE_AUTHENTICATED",
+      "source": "GATEWAY_ROUTE_SOURCE_COMPATIBILITY_ALIAS",
+      "rewrite_path": "/saas.accounts.v1.PlatformAdminService/GrantPlatformRole",
+      "remove_after": "2026-10-11"
+    },
+    {
+      "protocol": "GATEWAY_PROTOCOL_CONNECT",
+      "method": "POST",
+      "path": "/customers.PlatformAdminService/ImpersonateUser",
+      "match": "GATEWAY_MATCH_EXACT",
+      "procedure": "/saas.accounts.v1.PlatformAdminService/ImpersonateUser",
+      "owner": {
+        "module": "saas-starter",
+        "service": "accounts"
+      },
+      "upstream_endpoint": "connect",
+      "exposure": "EXPOSURE_AUTHENTICATED",
+      "source": "GATEWAY_ROUTE_SOURCE_COMPATIBILITY_ALIAS",
+      "rewrite_path": "/saas.accounts.v1.PlatformAdminService/ImpersonateUser",
+      "remove_after": "2026-10-11"
+    },
+    {
+      "protocol": "GATEWAY_PROTOCOL_CONNECT",
+      "method": "POST",
+      "path": "/customers.PlatformAdminService/ListActiveSessions",
+      "match": "GATEWAY_MATCH_EXACT",
+      "procedure": "/saas.accounts.v1.PlatformAdminService/ListActiveSessions",
+      "owner": {
+        "module": "saas-starter",
+        "service": "accounts"
+      },
+      "upstream_endpoint": "connect",
+      "exposure": "EXPOSURE_AUTHENTICATED",
+      "source": "GATEWAY_ROUTE_SOURCE_COMPATIBILITY_ALIAS",
+      "rewrite_path": "/saas.accounts.v1.PlatformAdminService/ListActiveSessions",
+      "remove_after": "2026-10-11"
+    },
+    {
+      "protocol": "GATEWAY_PROTOCOL_CONNECT",
+      "method": "POST",
+      "path": "/customers.PlatformAdminService/ListFeatureFlags",
+      "match": "GATEWAY_MATCH_EXACT",
+      "procedure": "/saas.accounts.v1.PlatformAdminService/ListFeatureFlags",
+      "owner": {
+        "module": "saas-starter",
+        "service": "accounts"
+      },
+      "upstream_endpoint": "connect",
+      "exposure": "EXPOSURE_AUTHENTICATED",
+      "source": "GATEWAY_ROUTE_SOURCE_COMPATIBILITY_ALIAS",
+      "rewrite_path": "/saas.accounts.v1.PlatformAdminService/ListFeatureFlags",
+      "remove_after": "2026-10-11"
+    },
+    {
+      "protocol": "GATEWAY_PROTOCOL_CONNECT",
+      "method": "POST",
+      "path": "/customers.PlatformAdminService/ListJobs",
+      "match": "GATEWAY_MATCH_EXACT",
+      "procedure": "/saas.accounts.v1.PlatformAdminService/ListJobs",
+      "owner": {
+        "module": "saas-starter",
+        "service": "accounts"
+      },
+      "upstream_endpoint": "connect",
+      "exposure": "EXPOSURE_AUTHENTICATED",
+      "source": "GATEWAY_ROUTE_SOURCE_COMPATIBILITY_ALIAS",
+      "rewrite_path": "/saas.accounts.v1.PlatformAdminService/ListJobs",
+      "remove_after": "2026-10-11"
+    },
+    {
+      "protocol": "GATEWAY_PROTOCOL_CONNECT",
+      "method": "POST",
+      "path": "/customers.PlatformAdminService/ListPlatformAdmins",
+      "match": "GATEWAY_MATCH_EXACT",
+      "procedure": "/saas.accounts.v1.PlatformAdminService/ListPlatformAdmins",
+      "owner": {
+        "module": "saas-starter",
+        "service": "accounts"
+      },
+      "upstream_endpoint": "connect",
+      "exposure": "EXPOSURE_AUTHENTICATED",
+      "source": "GATEWAY_ROUTE_SOURCE_COMPATIBILITY_ALIAS",
+      "rewrite_path": "/saas.accounts.v1.PlatformAdminService/ListPlatformAdmins",
+      "remove_after": "2026-10-11"
+    },
+    {
+      "protocol": "GATEWAY_PROTOCOL_CONNECT",
+      "method": "POST",
+      "path": "/customers.PlatformAdminService/OverrideEntitlement",
+      "match": "GATEWAY_MATCH_EXACT",
+      "procedure": "/saas.accounts.v1.PlatformAdminService/OverrideEntitlement",
+      "owner": {
+        "module": "saas-starter",
+        "service": "accounts"
+      },
+      "upstream_endpoint": "connect",
+      "exposure": "EXPOSURE_AUTHENTICATED",
+      "source": "GATEWAY_ROUTE_SOURCE_COMPATIBILITY_ALIAS",
+      "rewrite_path": "/saas.accounts.v1.PlatformAdminService/OverrideEntitlement",
+      "remove_after": "2026-10-11"
+    },
+    {
+      "protocol": "GATEWAY_PROTOCOL_CONNECT",
+      "method": "POST",
+      "path": "/customers.PlatformAdminService/ReplayJob",
+      "match": "GATEWAY_MATCH_EXACT",
+      "procedure": "/saas.accounts.v1.PlatformAdminService/ReplayJob",
+      "owner": {
+        "module": "saas-starter",
+        "service": "accounts"
+      },
+      "upstream_endpoint": "connect",
+      "exposure": "EXPOSURE_AUTHENTICATED",
+      "source": "GATEWAY_ROUTE_SOURCE_COMPATIBILITY_ALIAS",
+      "rewrite_path": "/saas.accounts.v1.PlatformAdminService/ReplayJob",
+      "remove_after": "2026-10-11"
+    },
+    {
+      "protocol": "GATEWAY_PROTOCOL_CONNECT",
+      "method": "POST",
+      "path": "/customers.PlatformAdminService/RevokePlatformRole",
+      "match": "GATEWAY_MATCH_EXACT",
+      "procedure": "/saas.accounts.v1.PlatformAdminService/RevokePlatformRole",
+      "owner": {
+        "module": "saas-starter",
+        "service": "accounts"
+      },
+      "upstream_endpoint": "connect",
+      "exposure": "EXPOSURE_AUTHENTICATED",
+      "source": "GATEWAY_ROUTE_SOURCE_COMPATIBILITY_ALIAS",
+      "rewrite_path": "/saas.accounts.v1.PlatformAdminService/RevokePlatformRole",
+      "remove_after": "2026-10-11"
+    },
+    {
+      "protocol": "GATEWAY_PROTOCOL_CONNECT",
+      "method": "POST",
+      "path": "/customers.PlatformAdminService/RevokeSession",
+      "match": "GATEWAY_MATCH_EXACT",
+      "procedure": "/saas.accounts.v1.PlatformAdminService/RevokeSession",
+      "owner": {
+        "module": "saas-starter",
+        "service": "accounts"
+      },
+      "upstream_endpoint": "connect",
+      "exposure": "EXPOSURE_AUTHENTICATED",
+      "source": "GATEWAY_ROUTE_SOURCE_COMPATIBILITY_ALIAS",
+      "rewrite_path": "/saas.accounts.v1.PlatformAdminService/RevokeSession",
+      "remove_after": "2026-10-11"
+    },
+    {
+      "protocol": "GATEWAY_PROTOCOL_CONNECT",
+      "method": "POST",
+      "path": "/customers.PlatformAdminService/SearchUsers",
+      "match": "GATEWAY_MATCH_EXACT",
+      "procedure": "/saas.accounts.v1.PlatformAdminService/SearchUsers",
+      "owner": {
+        "module": "saas-starter",
+        "service": "accounts"
+      },
+      "upstream_endpoint": "connect",
+      "exposure": "EXPOSURE_AUTHENTICATED",
+      "source": "GATEWAY_ROUTE_SOURCE_COMPATIBILITY_ALIAS",
+      "rewrite_path": "/saas.accounts.v1.PlatformAdminService/SearchUsers",
+      "remove_after": "2026-10-11"
+    },
+    {
+      "protocol": "GATEWAY_PROTOCOL_CONNECT",
+      "method": "POST",
+      "path": "/customers.PlatformAdminService/SuspendUser",
+      "match": "GATEWAY_MATCH_EXACT",
+      "procedure": "/saas.accounts.v1.PlatformAdminService/SuspendUser",
+      "owner": {
+        "module": "saas-starter",
+        "service": "accounts"
+      },
+      "upstream_endpoint": "connect",
+      "exposure": "EXPOSURE_AUTHENTICATED",
+      "source": "GATEWAY_ROUTE_SOURCE_COMPATIBILITY_ALIAS",
+      "rewrite_path": "/saas.accounts.v1.PlatformAdminService/SuspendUser",
+      "remove_after": "2026-10-11"
+    },
+    {
+      "protocol": "GATEWAY_PROTOCOL_CONNECT",
+      "method": "POST",
+      "path": "/customers.PlatformAdminService/UnsuspendUser",
+      "match": "GATEWAY_MATCH_EXACT",
+      "procedure": "/saas.accounts.v1.PlatformAdminService/UnsuspendUser",
+      "owner": {
+        "module": "saas-starter",
+        "service": "accounts"
+      },
+      "upstream_endpoint": "connect",
+      "exposure": "EXPOSURE_AUTHENTICATED",
+      "source": "GATEWAY_ROUTE_SOURCE_COMPATIBILITY_ALIAS",
+      "rewrite_path": "/saas.accounts.v1.PlatformAdminService/UnsuspendUser",
+      "remove_after": "2026-10-11"
+    },
+    {
+      "protocol": "GATEWAY_PROTOCOL_CONNECT",
+      "method": "POST",
+      "path": "/customers.PlatformAdminService/UpsertFeatureFlag",
+      "match": "GATEWAY_MATCH_EXACT",
+      "procedure": "/saas.accounts.v1.PlatformAdminService/UpsertFeatureFlag",
+      "owner": {
+        "module": "saas-starter",
+        "service": "accounts"
+      },
+      "upstream_endpoint": "connect",
+      "exposure": "EXPOSURE_AUTHENTICATED",
+      "source": "GATEWAY_ROUTE_SOURCE_COMPATIBILITY_ALIAS",
+      "rewrite_path": "/saas.accounts.v1.PlatformAdminService/UpsertFeatureFlag",
+      "remove_after": "2026-10-11"
+    },
+    {
+      "protocol": "GATEWAY_PROTOCOL_CONNECT",
+      "method": "POST",
+      "path": "/customers.PrincipalService/CreateAgentPrincipal",
+      "match": "GATEWAY_MATCH_EXACT",
+      "procedure": "/saas.accounts.v1.PrincipalService/CreateAgentPrincipal",
+      "owner": {
+        "module": "saas-starter",
+        "service": "accounts"
+      },
+      "upstream_endpoint": "connect",
+      "exposure": "EXPOSURE_AUTHENTICATED",
+      "source": "GATEWAY_ROUTE_SOURCE_COMPATIBILITY_ALIAS",
+      "rewrite_path": "/saas.accounts.v1.PrincipalService/CreateAgentPrincipal",
+      "remove_after": "2026-10-11"
+    },
+    {
+      "protocol": "GATEWAY_PROTOCOL_CONNECT",
+      "method": "POST",
+      "path": "/customers.PrincipalService/ListPrincipals",
+      "match": "GATEWAY_MATCH_EXACT",
+      "procedure": "/saas.accounts.v1.PrincipalService/ListPrincipals",
+      "owner": {
+        "module": "saas-starter",
+        "service": "accounts"
+      },
+      "upstream_endpoint": "connect",
+      "exposure": "EXPOSURE_AUTHENTICATED",
+      "source": "GATEWAY_ROUTE_SOURCE_COMPATIBILITY_ALIAS",
+      "rewrite_path": "/saas.accounts.v1.PrincipalService/ListPrincipals",
+      "remove_after": "2026-10-11"
+    },
+    {
+      "protocol": "GATEWAY_PROTOCOL_CONNECT",
+      "method": "POST",
+      "path": "/customers.PrincipalService/RevokePrincipal",
+      "match": "GATEWAY_MATCH_EXACT",
+      "procedure": "/saas.accounts.v1.PrincipalService/RevokePrincipal",
+      "owner": {
+        "module": "saas-starter",
+        "service": "accounts"
+      },
+      "upstream_endpoint": "connect",
+      "exposure": "EXPOSURE_AUTHENTICATED",
+      "source": "GATEWAY_ROUTE_SOURCE_COMPATIBILITY_ALIAS",
+      "rewrite_path": "/saas.accounts.v1.PrincipalService/RevokePrincipal",
+      "remove_after": "2026-10-11"
+    },
+    {
+      "protocol": "GATEWAY_PROTOCOL_CONNECT",
+      "method": "POST",
+      "path": "/customers.SSOAdminService/Disable",
+      "match": "GATEWAY_MATCH_EXACT",
+      "procedure": "/saas.accounts.v1.SSOAdminService/Disable",
+      "owner": {
+        "module": "saas-starter",
+        "service": "accounts"
+      },
+      "upstream_endpoint": "connect",
+      "exposure": "EXPOSURE_AUTHENTICATED",
+      "source": "GATEWAY_ROUTE_SOURCE_COMPATIBILITY_ALIAS",
+      "rewrite_path": "/saas.accounts.v1.SSOAdminService/Disable",
+      "remove_after": "2026-10-11"
+    },
+    {
+      "protocol": "GATEWAY_PROTOCOL_CONNECT",
+      "method": "POST",
+      "path": "/customers.SSOAdminService/GetSSO",
+      "match": "GATEWAY_MATCH_EXACT",
+      "procedure": "/saas.accounts.v1.SSOAdminService/GetSSO",
+      "owner": {
+        "module": "saas-starter",
+        "service": "accounts"
+      },
+      "upstream_endpoint": "connect",
+      "exposure": "EXPOSURE_AUTHENTICATED",
+      "source": "GATEWAY_ROUTE_SOURCE_COMPATIBILITY_ALIAS",
+      "rewrite_path": "/saas.accounts.v1.SSOAdminService/GetSSO",
+      "remove_after": "2026-10-11"
+    },
+    {
+      "protocol": "GATEWAY_PROTOCOL_CONNECT",
+      "method": "POST",
+      "path": "/customers.SSOAdminService/StartSetup",
+      "match": "GATEWAY_MATCH_EXACT",
+      "procedure": "/saas.accounts.v1.SSOAdminService/StartSetup",
+      "owner": {
+        "module": "saas-starter",
+        "service": "accounts"
+      },
+      "upstream_endpoint": "connect",
+      "exposure": "EXPOSURE_AUTHENTICATED",
+      "source": "GATEWAY_ROUTE_SOURCE_COMPATIBILITY_ALIAS",
+      "rewrite_path": "/saas.accounts.v1.SSOAdminService/StartSetup",
+      "remove_after": "2026-10-11"
+    },
+    {
+      "protocol": "GATEWAY_PROTOCOL_CONNECT",
+      "method": "POST",
+      "path": "/customers.TeamService/AddMember",
+      "match": "GATEWAY_MATCH_EXACT",
+      "procedure": "/saas.accounts.v1.TeamService/AddMember",
+      "owner": {
+        "module": "saas-starter",
+        "service": "accounts"
+      },
+      "upstream_endpoint": "connect",
+      "exposure": "EXPOSURE_AUTHENTICATED",
+      "source": "GATEWAY_ROUTE_SOURCE_COMPATIBILITY_ALIAS",
+      "rewrite_path": "/saas.accounts.v1.TeamService/AddMember",
+      "remove_after": "2026-10-11"
+    },
+    {
+      "protocol": "GATEWAY_PROTOCOL_CONNECT",
+      "method": "POST",
+      "path": "/customers.TeamService/CreateTeam",
+      "match": "GATEWAY_MATCH_EXACT",
+      "procedure": "/saas.accounts.v1.TeamService/CreateTeam",
+      "owner": {
+        "module": "saas-starter",
+        "service": "accounts"
+      },
+      "upstream_endpoint": "connect",
+      "exposure": "EXPOSURE_AUTHENTICATED",
+      "source": "GATEWAY_ROUTE_SOURCE_COMPATIBILITY_ALIAS",
+      "rewrite_path": "/saas.accounts.v1.TeamService/CreateTeam",
+      "remove_after": "2026-10-11"
+    },
+    {
+      "protocol": "GATEWAY_PROTOCOL_CONNECT",
+      "method": "POST",
+      "path": "/customers.TeamService/DeleteTeam",
+      "match": "GATEWAY_MATCH_EXACT",
+      "procedure": "/saas.accounts.v1.TeamService/DeleteTeam",
+      "owner": {
+        "module": "saas-starter",
+        "service": "accounts"
+      },
+      "upstream_endpoint": "connect",
+      "exposure": "EXPOSURE_AUTHENTICATED",
+      "source": "GATEWAY_ROUTE_SOURCE_COMPATIBILITY_ALIAS",
+      "rewrite_path": "/saas.accounts.v1.TeamService/DeleteTeam",
+      "remove_after": "2026-10-11"
+    },
+    {
+      "protocol": "GATEWAY_PROTOCOL_CONNECT",
+      "method": "POST",
+      "path": "/customers.TeamService/ListMembers",
+      "match": "GATEWAY_MATCH_EXACT",
+      "procedure": "/saas.accounts.v1.TeamService/ListMembers",
+      "owner": {
+        "module": "saas-starter",
+        "service": "accounts"
+      },
+      "upstream_endpoint": "connect",
+      "exposure": "EXPOSURE_AUTHENTICATED",
+      "source": "GATEWAY_ROUTE_SOURCE_COMPATIBILITY_ALIAS",
+      "rewrite_path": "/saas.accounts.v1.TeamService/ListMembers",
+      "remove_after": "2026-10-11"
+    },
+    {
+      "protocol": "GATEWAY_PROTOCOL_CONNECT",
+      "method": "POST",
+      "path": "/customers.TeamService/ListTeams",
+      "match": "GATEWAY_MATCH_EXACT",
+      "procedure": "/saas.accounts.v1.TeamService/ListTeams",
+      "owner": {
+        "module": "saas-starter",
+        "service": "accounts"
+      },
+      "upstream_endpoint": "connect",
+      "exposure": "EXPOSURE_AUTHENTICATED",
+      "source": "GATEWAY_ROUTE_SOURCE_COMPATIBILITY_ALIAS",
+      "rewrite_path": "/saas.accounts.v1.TeamService/ListTeams",
+      "remove_after": "2026-10-11"
+    },
+    {
+      "protocol": "GATEWAY_PROTOCOL_CONNECT",
+      "method": "POST",
+      "path": "/customers.TeamService/RemoveMember",
+      "match": "GATEWAY_MATCH_EXACT",
+      "procedure": "/saas.accounts.v1.TeamService/RemoveMember",
+      "owner": {
+        "module": "saas-starter",
+        "service": "accounts"
+      },
+      "upstream_endpoint": "connect",
+      "exposure": "EXPOSURE_AUTHENTICATED",
+      "source": "GATEWAY_ROUTE_SOURCE_COMPATIBILITY_ALIAS",
+      "rewrite_path": "/saas.accounts.v1.TeamService/RemoveMember",
+      "remove_after": "2026-10-11"
+    },
+    {
+      "protocol": "GATEWAY_PROTOCOL_CONNECT",
+      "method": "POST",
+      "path": "/customers.TeamService/UpdateTeam",
+      "match": "GATEWAY_MATCH_EXACT",
+      "procedure": "/saas.accounts.v1.TeamService/UpdateTeam",
+      "owner": {
+        "module": "saas-starter",
+        "service": "accounts"
+      },
+      "upstream_endpoint": "connect",
+      "exposure": "EXPOSURE_AUTHENTICATED",
+      "source": "GATEWAY_ROUTE_SOURCE_COMPATIBILITY_ALIAS",
+      "rewrite_path": "/saas.accounts.v1.TeamService/UpdateTeam",
+      "remove_after": "2026-10-11"
+    },
+    {
+      "protocol": "GATEWAY_PROTOCOL_CONNECT",
+      "method": "POST",
+      "path": "/customers.UsageService/GetUsage",
+      "match": "GATEWAY_MATCH_EXACT",
+      "procedure": "/saas.accounts.v1.UsageService/GetUsage",
+      "owner": {
+        "module": "saas-starter",
+        "service": "accounts"
+      },
+      "upstream_endpoint": "connect",
+      "exposure": "EXPOSURE_AUTHENTICATED",
+      "source": "GATEWAY_ROUTE_SOURCE_COMPATIBILITY_ALIAS",
+      "rewrite_path": "/saas.accounts.v1.UsageService/GetUsage",
+      "remove_after": "2026-10-11"
+    },
+    {
+      "protocol": "GATEWAY_PROTOCOL_CONNECT",
+      "method": "POST",
+      "path": "/customers.UserService/AddIdentity",
+      "match": "GATEWAY_MATCH_EXACT",
+      "procedure": "/saas.accounts.v1.UserService/AddIdentity",
+      "owner": {
+        "module": "saas-starter",
+        "service": "accounts"
+      },
+      "upstream_endpoint": "connect",
+      "exposure": "EXPOSURE_AUTHENTICATED",
+      "source": "GATEWAY_ROUTE_SOURCE_COMPATIBILITY_ALIAS",
+      "rewrite_path": "/saas.accounts.v1.UserService/AddIdentity",
+      "remove_after": "2026-10-11"
+    },
+    {
+      "protocol": "GATEWAY_PROTOCOL_CONNECT",
+      "method": "POST",
+      "path": "/customers.UserService/DeleteUser",
+      "match": "GATEWAY_MATCH_EXACT",
+      "procedure": "/saas.accounts.v1.UserService/DeleteUser",
+      "owner": {
+        "module": "saas-starter",
+        "service": "accounts"
+      },
+      "upstream_endpoint": "connect",
+      "exposure": "EXPOSURE_AUTHENTICATED",
+      "source": "GATEWAY_ROUTE_SOURCE_COMPATIBILITY_ALIAS",
+      "rewrite_path": "/saas.accounts.v1.UserService/DeleteUser",
+      "remove_after": "2026-10-11"
+    },
+    {
+      "protocol": "GATEWAY_PROTOCOL_CONNECT",
+      "method": "POST",
+      "path": "/customers.UserService/FindUserByIdentity",
+      "match": "GATEWAY_MATCH_EXACT",
+      "procedure": "/saas.accounts.v1.UserService/FindUserByIdentity",
+      "owner": {
+        "module": "saas-starter",
+        "service": "accounts"
+      },
+      "upstream_endpoint": "connect",
+      "exposure": "EXPOSURE_AUTHENTICATED",
+      "source": "GATEWAY_ROUTE_SOURCE_COMPATIBILITY_ALIAS",
+      "rewrite_path": "/saas.accounts.v1.UserService/FindUserByIdentity",
+      "remove_after": "2026-10-11"
+    },
+    {
+      "protocol": "GATEWAY_PROTOCOL_CONNECT",
+      "method": "POST",
+      "path": "/customers.UserService/GetSelf",
+      "match": "GATEWAY_MATCH_EXACT",
+      "procedure": "/saas.accounts.v1.UserService/GetSelf",
+      "owner": {
+        "module": "saas-starter",
+        "service": "accounts"
+      },
+      "upstream_endpoint": "connect",
+      "exposure": "EXPOSURE_AUTHENTICATED",
+      "source": "GATEWAY_ROUTE_SOURCE_COMPATIBILITY_ALIAS",
+      "rewrite_path": "/saas.accounts.v1.UserService/GetSelf",
+      "remove_after": "2026-10-11"
+    },
+    {
+      "protocol": "GATEWAY_PROTOCOL_CONNECT",
+      "method": "POST",
+      "path": "/customers.UserService/GetUser",
+      "match": "GATEWAY_MATCH_EXACT",
+      "procedure": "/saas.accounts.v1.UserService/GetUser",
+      "owner": {
+        "module": "saas-starter",
+        "service": "accounts"
+      },
+      "upstream_endpoint": "connect",
+      "exposure": "EXPOSURE_AUTHENTICATED",
+      "source": "GATEWAY_ROUTE_SOURCE_COMPATIBILITY_ALIAS",
+      "rewrite_path": "/saas.accounts.v1.UserService/GetUser",
+      "remove_after": "2026-10-11"
+    },
+    {
+      "protocol": "GATEWAY_PROTOCOL_CONNECT",
+      "method": "POST",
+      "path": "/customers.UserService/ListUserIdentities",
+      "match": "GATEWAY_MATCH_EXACT",
+      "procedure": "/saas.accounts.v1.UserService/ListUserIdentities",
+      "owner": {
+        "module": "saas-starter",
+        "service": "accounts"
+      },
+      "upstream_endpoint": "connect",
+      "exposure": "EXPOSURE_AUTHENTICATED",
+      "source": "GATEWAY_ROUTE_SOURCE_COMPATIBILITY_ALIAS",
+      "rewrite_path": "/saas.accounts.v1.UserService/ListUserIdentities",
+      "remove_after": "2026-10-11"
+    },
+    {
+      "protocol": "GATEWAY_PROTOCOL_CONNECT",
+      "method": "POST",
+      "path": "/customers.UserService/ListUsers",
+      "match": "GATEWAY_MATCH_EXACT",
+      "procedure": "/saas.accounts.v1.UserService/ListUsers",
+      "owner": {
+        "module": "saas-starter",
+        "service": "accounts"
+      },
+      "upstream_endpoint": "connect",
+      "exposure": "EXPOSURE_AUTHENTICATED",
+      "source": "GATEWAY_ROUTE_SOURCE_COMPATIBILITY_ALIAS",
+      "rewrite_path": "/saas.accounts.v1.UserService/ListUsers",
+      "remove_after": "2026-10-11"
+    },
+    {
+      "protocol": "GATEWAY_PROTOCOL_CONNECT",
+      "method": "POST",
+      "path": "/customers.UserService/RegisterUser",
+      "match": "GATEWAY_MATCH_EXACT",
+      "procedure": "/saas.accounts.v1.UserService/RegisterUser",
+      "owner": {
+        "module": "saas-starter",
+        "service": "accounts"
+      },
+      "upstream_endpoint": "connect",
+      "exposure": "EXPOSURE_PUBLIC",
+      "source": "GATEWAY_ROUTE_SOURCE_COMPATIBILITY_ALIAS",
+      "rewrite_path": "/saas.accounts.v1.UserService/RegisterUser",
+      "remove_after": "2026-10-11"
+    },
+    {
+      "protocol": "GATEWAY_PROTOCOL_CONNECT",
+      "method": "POST",
+      "path": "/customers.UserService/UpdateUser",
+      "match": "GATEWAY_MATCH_EXACT",
+      "procedure": "/saas.accounts.v1.UserService/UpdateUser",
+      "owner": {
+        "module": "saas-starter",
+        "service": "accounts"
+      },
+      "upstream_endpoint": "connect",
+      "exposure": "EXPOSURE_AUTHENTICATED",
+      "source": "GATEWAY_ROUTE_SOURCE_COMPATIBILITY_ALIAS",
+      "rewrite_path": "/saas.accounts.v1.UserService/UpdateUser",
+      "remove_after": "2026-10-11"
+    },
+    {
+      "protocol": "GATEWAY_PROTOCOL_CONNECT",
+      "method": "POST",
+      "path": "/customers.UserService/Version",
+      "match": "GATEWAY_MATCH_EXACT",
+      "procedure": "/saas.accounts.v1.UserService/Version",
+      "owner": {
+        "module": "saas-starter",
+        "service": "accounts"
+      },
+      "upstream_endpoint": "connect",
+      "exposure": "EXPOSURE_PUBLIC",
+      "source": "GATEWAY_ROUTE_SOURCE_COMPATIBILITY_ALIAS",
+      "rewrite_path": "/saas.accounts.v1.UserService/Version",
+      "remove_after": "2026-10-11"
+    },
+    {
+      "protocol": "GATEWAY_PROTOCOL_CONNECT",
+      "method": "POST",
+      "path": "/customers.UserSettingsService/Get",
+      "match": "GATEWAY_MATCH_EXACT",
+      "procedure": "/saas.accounts.v1.UserSettingsService/Get",
+      "owner": {
+        "module": "saas-starter",
+        "service": "accounts"
+      },
+      "upstream_endpoint": "connect",
+      "exposure": "EXPOSURE_AUTHENTICATED",
+      "source": "GATEWAY_ROUTE_SOURCE_COMPATIBILITY_ALIAS",
+      "rewrite_path": "/saas.accounts.v1.UserSettingsService/Get",
+      "remove_after": "2026-10-11"
+    },
+    {
+      "protocol": "GATEWAY_PROTOCOL_CONNECT",
+      "method": "POST",
+      "path": "/customers.UserSettingsService/Update",
+      "match": "GATEWAY_MATCH_EXACT",
+      "procedure": "/saas.accounts.v1.UserSettingsService/Update",
+      "owner": {
+        "module": "saas-starter",
+        "service": "accounts"
+      },
+      "upstream_endpoint": "connect",
+      "exposure": "EXPOSURE_AUTHENTICATED",
+      "source": "GATEWAY_ROUTE_SOURCE_COMPATIBILITY_ALIAS",
+      "rewrite_path": "/saas.accounts.v1.UserSettingsService/Update",
+      "remove_after": "2026-10-11"
+    },
+    {
+      "protocol": "GATEWAY_PROTOCOL_CONNECT",
+      "method": "POST",
+      "path": "/customers.WebhookService/CreateSubscription",
+      "match": "GATEWAY_MATCH_EXACT",
+      "procedure": "/saas.accounts.v1.WebhookService/CreateSubscription",
+      "owner": {
+        "module": "saas-starter",
+        "service": "accounts"
+      },
+      "upstream_endpoint": "connect",
+      "exposure": "EXPOSURE_AUTHENTICATED",
+      "source": "GATEWAY_ROUTE_SOURCE_COMPATIBILITY_ALIAS",
+      "rewrite_path": "/saas.accounts.v1.WebhookService/CreateSubscription",
+      "remove_after": "2026-10-11"
+    },
+    {
+      "protocol": "GATEWAY_PROTOCOL_CONNECT",
+      "method": "POST",
+      "path": "/customers.WebhookService/DeleteSubscription",
+      "match": "GATEWAY_MATCH_EXACT",
+      "procedure": "/saas.accounts.v1.WebhookService/DeleteSubscription",
+      "owner": {
+        "module": "saas-starter",
+        "service": "accounts"
+      },
+      "upstream_endpoint": "connect",
+      "exposure": "EXPOSURE_AUTHENTICATED",
+      "source": "GATEWAY_ROUTE_SOURCE_COMPATIBILITY_ALIAS",
+      "rewrite_path": "/saas.accounts.v1.WebhookService/DeleteSubscription",
+      "remove_after": "2026-10-11"
+    },
+    {
+      "protocol": "GATEWAY_PROTOCOL_CONNECT",
+      "method": "POST",
+      "path": "/customers.WebhookService/GetDelivery",
+      "match": "GATEWAY_MATCH_EXACT",
+      "procedure": "/saas.accounts.v1.WebhookService/GetDelivery",
+      "owner": {
+        "module": "saas-starter",
+        "service": "accounts"
+      },
+      "upstream_endpoint": "connect",
+      "exposure": "EXPOSURE_AUTHENTICATED",
+      "source": "GATEWAY_ROUTE_SOURCE_COMPATIBILITY_ALIAS",
+      "rewrite_path": "/saas.accounts.v1.WebhookService/GetDelivery",
+      "remove_after": "2026-10-11"
+    },
+    {
+      "protocol": "GATEWAY_PROTOCOL_CONNECT",
+      "method": "POST",
+      "path": "/customers.WebhookService/ListDeliveries",
+      "match": "GATEWAY_MATCH_EXACT",
+      "procedure": "/saas.accounts.v1.WebhookService/ListDeliveries",
+      "owner": {
+        "module": "saas-starter",
+        "service": "accounts"
+      },
+      "upstream_endpoint": "connect",
+      "exposure": "EXPOSURE_AUTHENTICATED",
+      "source": "GATEWAY_ROUTE_SOURCE_COMPATIBILITY_ALIAS",
+      "rewrite_path": "/saas.accounts.v1.WebhookService/ListDeliveries",
+      "remove_after": "2026-10-11"
+    },
+    {
+      "protocol": "GATEWAY_PROTOCOL_CONNECT",
+      "method": "POST",
+      "path": "/customers.WebhookService/ListSubscriptions",
+      "match": "GATEWAY_MATCH_EXACT",
+      "procedure": "/saas.accounts.v1.WebhookService/ListSubscriptions",
+      "owner": {
+        "module": "saas-starter",
+        "service": "accounts"
+      },
+      "upstream_endpoint": "connect",
+      "exposure": "EXPOSURE_AUTHENTICATED",
+      "source": "GATEWAY_ROUTE_SOURCE_COMPATIBILITY_ALIAS",
+      "rewrite_path": "/saas.accounts.v1.WebhookService/ListSubscriptions",
+      "remove_after": "2026-10-11"
+    },
+    {
+      "protocol": "GATEWAY_PROTOCOL_CONNECT",
+      "method": "POST",
+      "path": "/customers.WebhookService/ReplayDelivery",
+      "match": "GATEWAY_MATCH_EXACT",
+      "procedure": "/saas.accounts.v1.WebhookService/ReplayDelivery",
+      "owner": {
+        "module": "saas-starter",
+        "service": "accounts"
+      },
+      "upstream_endpoint": "connect",
+      "exposure": "EXPOSURE_AUTHENTICATED",
+      "source": "GATEWAY_ROUTE_SOURCE_COMPATIBILITY_ALIAS",
+      "rewrite_path": "/saas.accounts.v1.WebhookService/ReplayDelivery",
+      "remove_after": "2026-10-11"
+    },
+    {
+      "protocol": "GATEWAY_PROTOCOL_CONNECT",
+      "method": "POST",
+      "path": "/customers.WebhookService/RotateSecret",
+      "match": "GATEWAY_MATCH_EXACT",
+      "procedure": "/saas.accounts.v1.WebhookService/RotateSecret",
+      "owner": {
+        "module": "saas-starter",
+        "service": "accounts"
+      },
+      "upstream_endpoint": "connect",
+      "exposure": "EXPOSURE_AUTHENTICATED",
+      "source": "GATEWAY_ROUTE_SOURCE_COMPATIBILITY_ALIAS",
+      "rewrite_path": "/saas.accounts.v1.WebhookService/RotateSecret",
+      "remove_after": "2026-10-11"
+    },
+    {
+      "protocol": "GATEWAY_PROTOCOL_CONNECT",
+      "method": "POST",
+      "path": "/customers.WebhookService/TestWebhook",
+      "match": "GATEWAY_MATCH_EXACT",
+      "procedure": "/saas.accounts.v1.WebhookService/TestWebhook",
+      "owner": {
+        "module": "saas-starter",
+        "service": "accounts"
+      },
+      "upstream_endpoint": "connect",
+      "exposure": "EXPOSURE_AUTHENTICATED",
+      "source": "GATEWAY_ROUTE_SOURCE_COMPATIBILITY_ALIAS",
+      "rewrite_path": "/saas.accounts.v1.WebhookService/TestWebhook",
+      "remove_after": "2026-10-11"
+    },
+    {
+      "protocol": "GATEWAY_PROTOCOL_CONNECT",
+      "method": "POST",
+      "path": "/saas.accounts.v1.APIKeyService/CreateAPIKey",
+      "match": "GATEWAY_MATCH_EXACT",
+      "procedure": "/saas.accounts.v1.APIKeyService/CreateAPIKey",
+      "owner": {
+        "module": "saas-starter",
+        "service": "accounts"
+      },
+      "upstream_endpoint": "connect",
+      "exposure": "EXPOSURE_AUTHENTICATED",
+      "source": "GATEWAY_ROUTE_SOURCE_DESCRIPTOR",
+      "rewrite_path": "",
+      "remove_after": ""
+    },
+    {
+      "protocol": "GATEWAY_PROTOCOL_CONNECT",
+      "method": "POST",
+      "path": "/saas.accounts.v1.APIKeyService/ListAPIKeys",
+      "match": "GATEWAY_MATCH_EXACT",
+      "procedure": "/saas.accounts.v1.APIKeyService/ListAPIKeys",
+      "owner": {
+        "module": "saas-starter",
+        "service": "accounts"
+      },
+      "upstream_endpoint": "connect",
+      "exposure": "EXPOSURE_AUTHENTICATED",
+      "source": "GATEWAY_ROUTE_SOURCE_DESCRIPTOR",
+      "rewrite_path": "",
+      "remove_after": ""
+    },
+    {
+      "protocol": "GATEWAY_PROTOCOL_CONNECT",
+      "method": "POST",
+      "path": "/saas.accounts.v1.APIKeyService/RevokeAPIKey",
+      "match": "GATEWAY_MATCH_EXACT",
+      "procedure": "/saas.accounts.v1.APIKeyService/RevokeAPIKey",
+      "owner": {
+        "module": "saas-starter",
+        "service": "accounts"
+      },
+      "upstream_endpoint": "connect",
+      "exposure": "EXPOSURE_AUTHENTICATED",
+      "source": "GATEWAY_ROUTE_SOURCE_DESCRIPTOR",
+      "rewrite_path": "",
+      "remove_after": ""
+    },
+    {
+      "protocol": "GATEWAY_PROTOCOL_CONNECT",
+      "method": "POST",
+      "path": "/saas.accounts.v1.AuditExportService/DeleteConfig",
+      "match": "GATEWAY_MATCH_EXACT",
+      "procedure": "/saas.accounts.v1.AuditExportService/DeleteConfig",
+      "owner": {
+        "module": "saas-starter",
+        "service": "accounts"
+      },
+      "upstream_endpoint": "connect",
+      "exposure": "EXPOSURE_AUTHENTICATED",
+      "source": "GATEWAY_ROUTE_SOURCE_DESCRIPTOR",
+      "rewrite_path": "",
+      "remove_after": ""
+    },
+    {
+      "protocol": "GATEWAY_PROTOCOL_CONNECT",
+      "method": "POST",
+      "path": "/saas.accounts.v1.AuditExportService/GetConfig",
+      "match": "GATEWAY_MATCH_EXACT",
+      "procedure": "/saas.accounts.v1.AuditExportService/GetConfig",
+      "owner": {
+        "module": "saas-starter",
+        "service": "accounts"
+      },
+      "upstream_endpoint": "connect",
+      "exposure": "EXPOSURE_AUTHENTICATED",
+      "source": "GATEWAY_ROUTE_SOURCE_DESCRIPTOR",
+      "rewrite_path": "",
+      "remove_after": ""
+    },
+    {
+      "protocol": "GATEWAY_PROTOCOL_CONNECT",
+      "method": "POST",
+      "path": "/saas.accounts.v1.AuditExportService/SaveConfig",
+      "match": "GATEWAY_MATCH_EXACT",
+      "procedure": "/saas.accounts.v1.AuditExportService/SaveConfig",
+      "owner": {
+        "module": "saas-starter",
+        "service": "accounts"
+      },
+      "upstream_endpoint": "connect",
+      "exposure": "EXPOSURE_AUTHENTICATED",
+      "source": "GATEWAY_ROUTE_SOURCE_DESCRIPTOR",
+      "rewrite_path": "",
+      "remove_after": ""
+    },
+    {
+      "protocol": "GATEWAY_PROTOCOL_CONNECT",
+      "method": "POST",
+      "path": "/saas.accounts.v1.AuditService/ExportAuditLog",
+      "match": "GATEWAY_MATCH_EXACT",
+      "procedure": "/saas.accounts.v1.AuditService/ExportAuditLog",
+      "owner": {
+        "module": "saas-starter",
+        "service": "accounts"
+      },
+      "upstream_endpoint": "connect",
+      "exposure": "EXPOSURE_AUTHENTICATED",
+      "source": "GATEWAY_ROUTE_SOURCE_DESCRIPTOR",
+      "rewrite_path": "",
+      "remove_after": ""
+    },
+    {
+      "protocol": "GATEWAY_PROTOCOL_CONNECT",
+      "method": "POST",
+      "path": "/saas.accounts.v1.AuditService/QueryAuditLog",
+      "match": "GATEWAY_MATCH_EXACT",
+      "procedure": "/saas.accounts.v1.AuditService/QueryAuditLog",
+      "owner": {
+        "module": "saas-starter",
+        "service": "accounts"
+      },
+      "upstream_endpoint": "connect",
+      "exposure": "EXPOSURE_AUTHENTICATED",
+      "source": "GATEWAY_ROUTE_SOURCE_DESCRIPTOR",
+      "rewrite_path": "",
+      "remove_after": ""
+    },
+    {
+      "protocol": "GATEWAY_PROTOCOL_CONNECT",
+      "method": "POST",
+      "path": "/saas.accounts.v1.AuthService/Authenticate",
+      "match": "GATEWAY_MATCH_EXACT",
+      "procedure": "/saas.accounts.v1.AuthService/Authenticate",
+      "owner": {
+        "module": "saas-starter",
+        "service": "accounts"
+      },
+      "upstream_endpoint": "connect",
+      "exposure": "EXPOSURE_PUBLIC",
+      "source": "GATEWAY_ROUTE_SOURCE_DESCRIPTOR",
+      "rewrite_path": "",
+      "remove_after": ""
+    },
+    {
+      "protocol": "GATEWAY_PROTOCOL_CONNECT",
+      "method": "POST",
+      "path": "/saas.accounts.v1.AuthService/BeginOAuth",
+      "match": "GATEWAY_MATCH_EXACT",
+      "procedure": "/saas.accounts.v1.AuthService/BeginOAuth",
+      "owner": {
+        "module": "saas-starter",
+        "service": "accounts"
+      },
+      "upstream_endpoint": "connect",
+      "exposure": "EXPOSURE_PUBLIC",
+      "source": "GATEWAY_ROUTE_SOURCE_DESCRIPTOR",
+      "rewrite_path": "",
+      "remove_after": ""
+    },
+    {
+      "protocol": "GATEWAY_PROTOCOL_CONNECT",
+      "method": "POST",
+      "path": "/saas.accounts.v1.AuthService/BeginWebAuthnMFAChallenge",
+      "match": "GATEWAY_MATCH_EXACT",
+      "procedure": "/saas.accounts.v1.AuthService/BeginWebAuthnMFAChallenge",
+      "owner": {
+        "module": "saas-starter",
+        "service": "accounts"
+      },
+      "upstream_endpoint": "connect",
+      "exposure": "EXPOSURE_PUBLIC",
+      "source": "GATEWAY_ROUTE_SOURCE_DESCRIPTOR",
+      "rewrite_path": "",
+      "remove_after": ""
+    },
+    {
+      "protocol": "GATEWAY_PROTOCOL_CONNECT",
+      "method": "POST",
+      "path": "/saas.accounts.v1.AuthService/CompleteMFAChallenge",
+      "match": "GATEWAY_MATCH_EXACT",
+      "procedure": "/saas.accounts.v1.AuthService/CompleteMFAChallenge",
+      "owner": {
+        "module": "saas-starter",
+        "service": "accounts"
+      },
+      "upstream_endpoint": "connect",
+      "exposure": "EXPOSURE_PUBLIC",
+      "source": "GATEWAY_ROUTE_SOURCE_DESCRIPTOR",
+      "rewrite_path": "",
+      "remove_after": ""
+    },
+    {
+      "protocol": "GATEWAY_PROTOCOL_CONNECT",
+      "method": "POST",
+      "path": "/saas.accounts.v1.AuthService/CompleteWebAuthnMFAChallenge",
+      "match": "GATEWAY_MATCH_EXACT",
+      "procedure": "/saas.accounts.v1.AuthService/CompleteWebAuthnMFAChallenge",
+      "owner": {
+        "module": "saas-starter",
+        "service": "accounts"
+      },
+      "upstream_endpoint": "connect",
+      "exposure": "EXPOSURE_PUBLIC",
+      "source": "GATEWAY_ROUTE_SOURCE_DESCRIPTOR",
+      "rewrite_path": "",
+      "remove_after": ""
+    },
+    {
+      "protocol": "GATEWAY_PROTOCOL_CONNECT",
+      "method": "POST",
+      "path": "/saas.accounts.v1.AuthService/GetJWKS",
+      "match": "GATEWAY_MATCH_EXACT",
+      "procedure": "/saas.accounts.v1.AuthService/GetJWKS",
+      "owner": {
+        "module": "saas-starter",
+        "service": "accounts"
+      },
+      "upstream_endpoint": "connect",
+      "exposure": "EXPOSURE_PUBLIC",
+      "source": "GATEWAY_ROUTE_SOURCE_DESCRIPTOR",
+      "rewrite_path": "",
+      "remove_after": ""
+    },
+    {
+      "protocol": "GATEWAY_PROTOCOL_CONNECT",
+      "method": "POST",
+      "path": "/saas.accounts.v1.AuthService/Logout",
+      "match": "GATEWAY_MATCH_EXACT",
+      "procedure": "/saas.accounts.v1.AuthService/Logout",
+      "owner": {
+        "module": "saas-starter",
+        "service": "accounts"
+      },
+      "upstream_endpoint": "connect",
+      "exposure": "EXPOSURE_PUBLIC",
+      "source": "GATEWAY_ROUTE_SOURCE_DESCRIPTOR",
+      "rewrite_path": "",
+      "remove_after": ""
+    },
+    {
+      "protocol": "GATEWAY_PROTOCOL_CONNECT",
+      "method": "POST",
+      "path": "/saas.accounts.v1.AuthService/RefreshToken",
+      "match": "GATEWAY_MATCH_EXACT",
+      "procedure": "/saas.accounts.v1.AuthService/RefreshToken",
+      "owner": {
+        "module": "saas-starter",
+        "service": "accounts"
+      },
+      "upstream_endpoint": "connect",
+      "exposure": "EXPOSURE_PUBLIC",
+      "source": "GATEWAY_ROUTE_SOURCE_DESCRIPTOR",
+      "rewrite_path": "",
+      "remove_after": ""
+    },
+    {
+      "protocol": "GATEWAY_PROTOCOL_CONNECT",
+      "method": "POST",
+      "path": "/saas.accounts.v1.AuthService/SwitchOrganization",
+      "match": "GATEWAY_MATCH_EXACT",
+      "procedure": "/saas.accounts.v1.AuthService/SwitchOrganization",
+      "owner": {
+        "module": "saas-starter",
+        "service": "accounts"
+      },
+      "upstream_endpoint": "connect",
+      "exposure": "EXPOSURE_AUTHENTICATED",
+      "source": "GATEWAY_ROUTE_SOURCE_DESCRIPTOR",
+      "rewrite_path": "",
+      "remove_after": ""
+    },
+    {
+      "protocol": "GATEWAY_PROTOCOL_CONNECT",
+      "method": "POST",
+      "path": "/saas.accounts.v1.BillingService/ListInvoices",
+      "match": "GATEWAY_MATCH_EXACT",
+      "procedure": "/saas.accounts.v1.BillingService/ListInvoices",
+      "owner": {
+        "module": "saas-starter",
+        "service": "accounts"
+      },
+      "upstream_endpoint": "connect",
+      "exposure": "EXPOSURE_AUTHENTICATED",
+      "source": "GATEWAY_ROUTE_SOURCE_DESCRIPTOR",
+      "rewrite_path": "",
+      "remove_after": ""
+    },
+    {
+      "protocol": "GATEWAY_PROTOCOL_CONNECT",
+      "method": "POST",
+      "path": "/saas.accounts.v1.BillingService/OpenPortal",
+      "match": "GATEWAY_MATCH_EXACT",
+      "procedure": "/saas.accounts.v1.BillingService/OpenPortal",
+      "owner": {
+        "module": "saas-starter",
+        "service": "accounts"
+      },
+      "upstream_endpoint": "connect",
+      "exposure": "EXPOSURE_AUTHENTICATED",
+      "source": "GATEWAY_ROUTE_SOURCE_DESCRIPTOR",
+      "rewrite_path": "",
+      "remove_after": ""
+    },
+    {
+      "protocol": "GATEWAY_PROTOCOL_CONNECT",
+      "method": "POST",
+      "path": "/saas.accounts.v1.ConsentService/Accept",
+      "match": "GATEWAY_MATCH_EXACT",
+      "procedure": "/saas.accounts.v1.ConsentService/Accept",
+      "owner": {
+        "module": "saas-starter",
+        "service": "accounts"
+      },
+      "upstream_endpoint": "connect",
+      "exposure": "EXPOSURE_AUTHENTICATED",
+      "source": "GATEWAY_ROUTE_SOURCE_DESCRIPTOR",
+      "rewrite_path": "",
+      "remove_after": ""
+    },
+    {
+      "protocol": "GATEWAY_PROTOCOL_CONNECT",
+      "method": "POST",
+      "path": "/saas.accounts.v1.ConsentService/GetStatus",
+      "match": "GATEWAY_MATCH_EXACT",
+      "procedure": "/saas.accounts.v1.ConsentService/GetStatus",
+      "owner": {
+        "module": "saas-starter",
+        "service": "accounts"
+      },
+      "upstream_endpoint": "connect",
+      "exposure": "EXPOSURE_AUTHENTICATED",
+      "source": "GATEWAY_ROUTE_SOURCE_DESCRIPTOR",
+      "rewrite_path": "",
+      "remove_after": ""
+    },
+    {
+      "protocol": "GATEWAY_PROTOCOL_CONNECT",
+      "method": "POST",
+      "path": "/saas.accounts.v1.DelegationService/DecideDelegation",
+      "match": "GATEWAY_MATCH_EXACT",
+      "procedure": "/saas.accounts.v1.DelegationService/DecideDelegation",
+      "owner": {
+        "module": "saas-starter",
+        "service": "accounts"
+      },
+      "upstream_endpoint": "connect",
+      "exposure": "EXPOSURE_AUTHENTICATED",
+      "source": "GATEWAY_ROUTE_SOURCE_DESCRIPTOR",
+      "rewrite_path": "",
+      "remove_after": ""
+    },
+    {
+      "protocol": "GATEWAY_PROTOCOL_CONNECT",
+      "method": "POST",
+      "path": "/saas.accounts.v1.DelegationService/ListPendingDelegations",
+      "match": "GATEWAY_MATCH_EXACT",
+      "procedure": "/saas.accounts.v1.DelegationService/ListPendingDelegations",
+      "owner": {
+        "module": "saas-starter",
+        "service": "accounts"
+      },
+      "upstream_endpoint": "connect",
+      "exposure": "EXPOSURE_AUTHENTICATED",
+      "source": "GATEWAY_ROUTE_SOURCE_DESCRIPTOR",
+      "rewrite_path": "",
+      "remove_after": ""
+    },
+    {
+      "protocol": "GATEWAY_PROTOCOL_CONNECT",
+      "method": "POST",
+      "path": "/saas.accounts.v1.DelegationService/RequestDelegation",
+      "match": "GATEWAY_MATCH_EXACT",
+      "procedure": "/saas.accounts.v1.DelegationService/RequestDelegation",
+      "owner": {
+        "module": "saas-starter",
+        "service": "accounts"
+      },
+      "upstream_endpoint": "connect",
+      "exposure": "EXPOSURE_AUTHENTICATED",
+      "source": "GATEWAY_ROUTE_SOURCE_DESCRIPTOR",
+      "rewrite_path": "",
+      "remove_after": ""
+    },
+    {
+      "protocol": "GATEWAY_PROTOCOL_CONNECT",
+      "method": "POST",
+      "path": "/saas.accounts.v1.DelegationService/WaitForDelegation",
+      "match": "GATEWAY_MATCH_EXACT",
+      "procedure": "/saas.accounts.v1.DelegationService/WaitForDelegation",
+      "owner": {
+        "module": "saas-starter",
+        "service": "accounts"
+      },
+      "upstream_endpoint": "connect",
+      "exposure": "EXPOSURE_AUTHENTICATED",
+      "source": "GATEWAY_ROUTE_SOURCE_DESCRIPTOR",
+      "rewrite_path": "",
+      "remove_after": ""
+    },
+    {
+      "protocol": "GATEWAY_PROTOCOL_CONNECT",
+      "method": "POST",
+      "path": "/saas.accounts.v1.GDPRService/GetDeletionStatus",
+      "match": "GATEWAY_MATCH_EXACT",
+      "procedure": "/saas.accounts.v1.GDPRService/GetDeletionStatus",
+      "owner": {
+        "module": "saas-starter",
+        "service": "accounts"
+      },
+      "upstream_endpoint": "connect",
+      "exposure": "EXPOSURE_AUTHENTICATED",
+      "source": "GATEWAY_ROUTE_SOURCE_DESCRIPTOR",
+      "rewrite_path": "",
+      "remove_after": ""
+    },
+    {
+      "protocol": "GATEWAY_PROTOCOL_CONNECT",
+      "method": "POST",
+      "path": "/saas.accounts.v1.GDPRService/GetExportStatus",
+      "match": "GATEWAY_MATCH_EXACT",
+      "procedure": "/saas.accounts.v1.GDPRService/GetExportStatus",
+      "owner": {
+        "module": "saas-starter",
+        "service": "accounts"
+      },
+      "upstream_endpoint": "connect",
+      "exposure": "EXPOSURE_AUTHENTICATED",
+      "source": "GATEWAY_ROUTE_SOURCE_DESCRIPTOR",
+      "rewrite_path": "",
+      "remove_after": ""
+    },
+    {
+      "protocol": "GATEWAY_PROTOCOL_CONNECT",
+      "method": "POST",
+      "path": "/saas.accounts.v1.GDPRService/RequestDeletion",
+      "match": "GATEWAY_MATCH_EXACT",
+      "procedure": "/saas.accounts.v1.GDPRService/RequestDeletion",
+      "owner": {
+        "module": "saas-starter",
+        "service": "accounts"
+      },
+      "upstream_endpoint": "connect",
+      "exposure": "EXPOSURE_AUTHENTICATED",
+      "source": "GATEWAY_ROUTE_SOURCE_DESCRIPTOR",
+      "rewrite_path": "",
+      "remove_after": ""
+    },
+    {
+      "protocol": "GATEWAY_PROTOCOL_CONNECT",
+      "method": "POST",
+      "path": "/saas.accounts.v1.GDPRService/RequestExport",
+      "match": "GATEWAY_MATCH_EXACT",
+      "procedure": "/saas.accounts.v1.GDPRService/RequestExport",
+      "owner": {
+        "module": "saas-starter",
+        "service": "accounts"
+      },
+      "upstream_endpoint": "connect",
+      "exposure": "EXPOSURE_AUTHENTICATED",
+      "source": "GATEWAY_ROUTE_SOURCE_DESCRIPTOR",
+      "rewrite_path": "",
+      "remove_after": ""
+    },
+    {
+      "protocol": "GATEWAY_PROTOCOL_CONNECT",
+      "method": "POST",
+      "path": "/saas.accounts.v1.IntrospectionService/GetServiceInfo",
+      "match": "GATEWAY_MATCH_EXACT",
+      "procedure": "/saas.accounts.v1.IntrospectionService/GetServiceInfo",
+      "owner": {
+        "module": "saas-starter",
+        "service": "accounts"
+      },
+      "upstream_endpoint": "connect",
+      "exposure": "EXPOSURE_PUBLIC",
+      "source": "GATEWAY_ROUTE_SOURCE_DESCRIPTOR",
+      "rewrite_path": "",
+      "remove_after": ""
+    },
+    {
+      "protocol": "GATEWAY_PROTOCOL_CONNECT",
+      "method": "POST",
+      "path": "/saas.accounts.v1.InvitationService/AcceptInvitation",
+      "match": "GATEWAY_MATCH_EXACT",
+      "procedure": "/saas.accounts.v1.InvitationService/AcceptInvitation",
+      "owner": {
+        "module": "saas-starter",
+        "service": "accounts"
+      },
+      "upstream_endpoint": "connect",
+      "exposure": "EXPOSURE_AUTHENTICATED",
+      "source": "GATEWAY_ROUTE_SOURCE_DESCRIPTOR",
+      "rewrite_path": "",
+      "remove_after": ""
+    },
+    {
+      "protocol": "GATEWAY_PROTOCOL_CONNECT",
+      "method": "POST",
+      "path": "/saas.accounts.v1.InvitationService/CreateInvitation",
+      "match": "GATEWAY_MATCH_EXACT",
+      "procedure": "/saas.accounts.v1.InvitationService/CreateInvitation",
+      "owner": {
+        "module": "saas-starter",
+        "service": "accounts"
+      },
+      "upstream_endpoint": "connect",
+      "exposure": "EXPOSURE_AUTHENTICATED",
+      "source": "GATEWAY_ROUTE_SOURCE_DESCRIPTOR",
+      "rewrite_path": "",
+      "remove_after": ""
+    },
+    {
+      "protocol": "GATEWAY_PROTOCOL_CONNECT",
+      "method": "POST",
+      "path": "/saas.accounts.v1.InvitationService/ListInvitations",
+      "match": "GATEWAY_MATCH_EXACT",
+      "procedure": "/saas.accounts.v1.InvitationService/ListInvitations",
+      "owner": {
+        "module": "saas-starter",
+        "service": "accounts"
+      },
+      "upstream_endpoint": "connect",
+      "exposure": "EXPOSURE_AUTHENTICATED",
+      "source": "GATEWAY_ROUTE_SOURCE_DESCRIPTOR",
+      "rewrite_path": "",
+      "remove_after": ""
+    },
+    {
+      "protocol": "GATEWAY_PROTOCOL_CONNECT",
+      "method": "POST",
+      "path": "/saas.accounts.v1.InvitationService/RevokeInvitation",
+      "match": "GATEWAY_MATCH_EXACT",
+      "procedure": "/saas.accounts.v1.InvitationService/RevokeInvitation",
+      "owner": {
+        "module": "saas-starter",
+        "service": "accounts"
+      },
+      "upstream_endpoint": "connect",
+      "exposure": "EXPOSURE_AUTHENTICATED",
+      "source": "GATEWAY_ROUTE_SOURCE_DESCRIPTOR",
+      "rewrite_path": "",
+      "remove_after": ""
+    },
+    {
+      "protocol": "GATEWAY_PROTOCOL_CONNECT",
+      "method": "POST",
+      "path": "/saas.accounts.v1.MFAService/BeginWebAuthnRegistration",
+      "match": "GATEWAY_MATCH_EXACT",
+      "procedure": "/saas.accounts.v1.MFAService/BeginWebAuthnRegistration",
+      "owner": {
+        "module": "saas-starter",
+        "service": "accounts"
+      },
+      "upstream_endpoint": "connect",
+      "exposure": "EXPOSURE_AUTHENTICATED",
+      "source": "GATEWAY_ROUTE_SOURCE_DESCRIPTOR",
+      "rewrite_path": "",
+      "remove_after": ""
+    },
+    {
+      "protocol": "GATEWAY_PROTOCOL_CONNECT",
+      "method": "POST",
+      "path": "/saas.accounts.v1.MFAService/FinishWebAuthnRegistration",
+      "match": "GATEWAY_MATCH_EXACT",
+      "procedure": "/saas.accounts.v1.MFAService/FinishWebAuthnRegistration",
+      "owner": {
+        "module": "saas-starter",
+        "service": "accounts"
+      },
+      "upstream_endpoint": "connect",
+      "exposure": "EXPOSURE_AUTHENTICATED",
+      "source": "GATEWAY_ROUTE_SOURCE_DESCRIPTOR",
+      "rewrite_path": "",
+      "remove_after": ""
+    },
+    {
+      "protocol": "GATEWAY_PROTOCOL_CONNECT",
+      "method": "POST",
+      "path": "/saas.accounts.v1.MFAService/GenerateBackupCodes",
+      "match": "GATEWAY_MATCH_EXACT",
+      "procedure": "/saas.accounts.v1.MFAService/GenerateBackupCodes",
+      "owner": {
+        "module": "saas-starter",
+        "service": "accounts"
+      },
+      "upstream_endpoint": "connect",
+      "exposure": "EXPOSURE_AUTHENTICATED",
+      "source": "GATEWAY_ROUTE_SOURCE_DESCRIPTOR",
+      "rewrite_path": "",
+      "remove_after": ""
+    },
+    {
+      "protocol": "GATEWAY_PROTOCOL_CONNECT",
+      "method": "POST",
+      "path": "/saas.accounts.v1.MFAService/ListDevices",
+      "match": "GATEWAY_MATCH_EXACT",
+      "procedure": "/saas.accounts.v1.MFAService/ListDevices",
+      "owner": {
+        "module": "saas-starter",
+        "service": "accounts"
+      },
+      "upstream_endpoint": "connect",
+      "exposure": "EXPOSURE_AUTHENTICATED",
+      "source": "GATEWAY_ROUTE_SOURCE_DESCRIPTOR",
+      "rewrite_path": "",
+      "remove_after": ""
+    },
+    {
+      "protocol": "GATEWAY_PROTOCOL_CONNECT",
+      "method": "POST",
+      "path": "/saas.accounts.v1.MFAService/RevokeDevice",
+      "match": "GATEWAY_MATCH_EXACT",
+      "procedure": "/saas.accounts.v1.MFAService/RevokeDevice",
+      "owner": {
+        "module": "saas-starter",
+        "service": "accounts"
+      },
+      "upstream_endpoint": "connect",
+      "exposure": "EXPOSURE_AUTHENTICATED",
+      "source": "GATEWAY_ROUTE_SOURCE_DESCRIPTOR",
+      "rewrite_path": "",
+      "remove_after": ""
+    },
+    {
+      "protocol": "GATEWAY_PROTOCOL_CONNECT",
+      "method": "POST",
+      "path": "/saas.accounts.v1.MFAService/SetupTOTP",
+      "match": "GATEWAY_MATCH_EXACT",
+      "procedure": "/saas.accounts.v1.MFAService/SetupTOTP",
+      "owner": {
+        "module": "saas-starter",
+        "service": "accounts"
+      },
+      "upstream_endpoint": "connect",
+      "exposure": "EXPOSURE_AUTHENTICATED",
+      "source": "GATEWAY_ROUTE_SOURCE_DESCRIPTOR",
+      "rewrite_path": "",
+      "remove_after": ""
+    },
+    {
+      "protocol": "GATEWAY_PROTOCOL_CONNECT",
+      "method": "POST",
+      "path": "/saas.accounts.v1.MFAService/VerifyTOTP",
+      "match": "GATEWAY_MATCH_EXACT",
+      "procedure": "/saas.accounts.v1.MFAService/VerifyTOTP",
+      "owner": {
+        "module": "saas-starter",
+        "service": "accounts"
+      },
+      "upstream_endpoint": "connect",
+      "exposure": "EXPOSURE_AUTHENTICATED",
+      "source": "GATEWAY_ROUTE_SOURCE_DESCRIPTOR",
+      "rewrite_path": "",
+      "remove_after": ""
+    },
+    {
+      "protocol": "GATEWAY_PROTOCOL_CONNECT",
+      "method": "POST",
+      "path": "/saas.accounts.v1.NotificationService/DeleteNotification",
+      "match": "GATEWAY_MATCH_EXACT",
+      "procedure": "/saas.accounts.v1.NotificationService/DeleteNotification",
+      "owner": {
+        "module": "saas-starter",
+        "service": "accounts"
+      },
+      "upstream_endpoint": "connect",
+      "exposure": "EXPOSURE_AUTHENTICATED",
+      "source": "GATEWAY_ROUTE_SOURCE_DESCRIPTOR",
+      "rewrite_path": "",
+      "remove_after": ""
+    },
+    {
+      "protocol": "GATEWAY_PROTOCOL_CONNECT",
+      "method": "POST",
+      "path": "/saas.accounts.v1.NotificationService/GetUnreadCount",
+      "match": "GATEWAY_MATCH_EXACT",
+      "procedure": "/saas.accounts.v1.NotificationService/GetUnreadCount",
+      "owner": {
+        "module": "saas-starter",
+        "service": "accounts"
+      },
+      "upstream_endpoint": "connect",
+      "exposure": "EXPOSURE_AUTHENTICATED",
+      "source": "GATEWAY_ROUTE_SOURCE_DESCRIPTOR",
+      "rewrite_path": "",
+      "remove_after": ""
+    },
+    {
+      "protocol": "GATEWAY_PROTOCOL_CONNECT",
+      "method": "POST",
+      "path": "/saas.accounts.v1.NotificationService/ListNotifications",
+      "match": "GATEWAY_MATCH_EXACT",
+      "procedure": "/saas.accounts.v1.NotificationService/ListNotifications",
+      "owner": {
+        "module": "saas-starter",
+        "service": "accounts"
+      },
+      "upstream_endpoint": "connect",
+      "exposure": "EXPOSURE_AUTHENTICATED",
+      "source": "GATEWAY_ROUTE_SOURCE_DESCRIPTOR",
+      "rewrite_path": "",
+      "remove_after": ""
+    },
+    {
+      "protocol": "GATEWAY_PROTOCOL_CONNECT",
+      "method": "POST",
+      "path": "/saas.accounts.v1.NotificationService/MarkAllRead",
+      "match": "GATEWAY_MATCH_EXACT",
+      "procedure": "/saas.accounts.v1.NotificationService/MarkAllRead",
+      "owner": {
+        "module": "saas-starter",
+        "service": "accounts"
+      },
+      "upstream_endpoint": "connect",
+      "exposure": "EXPOSURE_AUTHENTICATED",
+      "source": "GATEWAY_ROUTE_SOURCE_DESCRIPTOR",
+      "rewrite_path": "",
+      "remove_after": ""
+    },
+    {
+      "protocol": "GATEWAY_PROTOCOL_CONNECT",
+      "method": "POST",
+      "path": "/saas.accounts.v1.NotificationService/MarkRead",
+      "match": "GATEWAY_MATCH_EXACT",
+      "procedure": "/saas.accounts.v1.NotificationService/MarkRead",
+      "owner": {
+        "module": "saas-starter",
+        "service": "accounts"
+      },
+      "upstream_endpoint": "connect",
+      "exposure": "EXPOSURE_AUTHENTICATED",
+      "source": "GATEWAY_ROUTE_SOURCE_DESCRIPTOR",
+      "rewrite_path": "",
+      "remove_after": ""
+    },
+    {
+      "protocol": "GATEWAY_PROTOCOL_CONNECT",
+      "method": "POST",
+      "path": "/saas.accounts.v1.OnboardingService/CompleteStep",
+      "match": "GATEWAY_MATCH_EXACT",
+      "procedure": "/saas.accounts.v1.OnboardingService/CompleteStep",
+      "owner": {
+        "module": "saas-starter",
+        "service": "accounts"
+      },
+      "upstream_endpoint": "connect",
+      "exposure": "EXPOSURE_AUTHENTICATED",
+      "source": "GATEWAY_ROUTE_SOURCE_DESCRIPTOR",
+      "rewrite_path": "",
+      "remove_after": ""
+    },
+    {
+      "protocol": "GATEWAY_PROTOCOL_CONNECT",
+      "method": "POST",
+      "path": "/saas.accounts.v1.OnboardingService/GetProgress",
+      "match": "GATEWAY_MATCH_EXACT",
+      "procedure": "/saas.accounts.v1.OnboardingService/GetProgress",
+      "owner": {
+        "module": "saas-starter",
+        "service": "accounts"
+      },
+      "upstream_endpoint": "connect",
+      "exposure": "EXPOSURE_AUTHENTICATED",
+      "source": "GATEWAY_ROUTE_SOURCE_DESCRIPTOR",
+      "rewrite_path": "",
+      "remove_after": ""
+    },
+    {
+      "protocol": "GATEWAY_PROTOCOL_CONNECT",
+      "method": "POST",
+      "path": "/saas.accounts.v1.OnboardingService/SkipStep",
+      "match": "GATEWAY_MATCH_EXACT",
+      "procedure": "/saas.accounts.v1.OnboardingService/SkipStep",
+      "owner": {
+        "module": "saas-starter",
+        "service": "accounts"
+      },
+      "upstream_endpoint": "connect",
+      "exposure": "EXPOSURE_AUTHENTICATED",
+      "source": "GATEWAY_ROUTE_SOURCE_DESCRIPTOR",
+      "rewrite_path": "",
+      "remove_after": ""
+    },
+    {
+      "protocol": "GATEWAY_PROTOCOL_CONNECT",
+      "method": "POST",
+      "path": "/saas.accounts.v1.OrganizationService/AddMember",
+      "match": "GATEWAY_MATCH_EXACT",
+      "procedure": "/saas.accounts.v1.OrganizationService/AddMember",
+      "owner": {
+        "module": "saas-starter",
+        "service": "accounts"
+      },
+      "upstream_endpoint": "connect",
+      "exposure": "EXPOSURE_AUTHENTICATED",
+      "source": "GATEWAY_ROUTE_SOURCE_DESCRIPTOR",
+      "rewrite_path": "",
+      "remove_after": ""
+    },
+    {
+      "protocol": "GATEWAY_PROTOCOL_CONNECT",
+      "method": "POST",
+      "path": "/saas.accounts.v1.OrganizationService/CreateOrganization",
+      "match": "GATEWAY_MATCH_EXACT",
+      "procedure": "/saas.accounts.v1.OrganizationService/CreateOrganization",
+      "owner": {
+        "module": "saas-starter",
+        "service": "accounts"
+      },
+      "upstream_endpoint": "connect",
+      "exposure": "EXPOSURE_AUTHENTICATED",
+      "source": "GATEWAY_ROUTE_SOURCE_DESCRIPTOR",
+      "rewrite_path": "",
+      "remove_after": ""
+    },
+    {
+      "protocol": "GATEWAY_PROTOCOL_CONNECT",
+      "method": "POST",
+      "path": "/saas.accounts.v1.OrganizationService/GetOrgSettings",
+      "match": "GATEWAY_MATCH_EXACT",
+      "procedure": "/saas.accounts.v1.OrganizationService/GetOrgSettings",
+      "owner": {
+        "module": "saas-starter",
+        "service": "accounts"
+      },
+      "upstream_endpoint": "connect",
+      "exposure": "EXPOSURE_AUTHENTICATED",
+      "source": "GATEWAY_ROUTE_SOURCE_DESCRIPTOR",
+      "rewrite_path": "",
+      "remove_after": ""
+    },
+    {
+      "protocol": "GATEWAY_PROTOCOL_CONNECT",
+      "method": "POST",
+      "path": "/saas.accounts.v1.OrganizationService/GetOrganization",
+      "match": "GATEWAY_MATCH_EXACT",
+      "procedure": "/saas.accounts.v1.OrganizationService/GetOrganization",
+      "owner": {
+        "module": "saas-starter",
+        "service": "accounts"
+      },
+      "upstream_endpoint": "connect",
+      "exposure": "EXPOSURE_AUTHENTICATED",
+      "source": "GATEWAY_ROUTE_SOURCE_DESCRIPTOR",
+      "rewrite_path": "",
+      "remove_after": ""
+    },
+    {
+      "protocol": "GATEWAY_PROTOCOL_CONNECT",
+      "method": "POST",
+      "path": "/saas.accounts.v1.OrganizationService/ListMembers",
+      "match": "GATEWAY_MATCH_EXACT",
+      "procedure": "/saas.accounts.v1.OrganizationService/ListMembers",
+      "owner": {
+        "module": "saas-starter",
+        "service": "accounts"
+      },
+      "upstream_endpoint": "connect",
+      "exposure": "EXPOSURE_AUTHENTICATED",
+      "source": "GATEWAY_ROUTE_SOURCE_DESCRIPTOR",
+      "rewrite_path": "",
+      "remove_after": ""
+    },
+    {
+      "protocol": "GATEWAY_PROTOCOL_CONNECT",
+      "method": "POST",
+      "path": "/saas.accounts.v1.OrganizationService/ListOrganizations",
+      "match": "GATEWAY_MATCH_EXACT",
+      "procedure": "/saas.accounts.v1.OrganizationService/ListOrganizations",
+      "owner": {
+        "module": "saas-starter",
+        "service": "accounts"
+      },
+      "upstream_endpoint": "connect",
+      "exposure": "EXPOSURE_AUTHENTICATED",
+      "source": "GATEWAY_ROUTE_SOURCE_DESCRIPTOR",
+      "rewrite_path": "",
+      "remove_after": ""
+    },
+    {
+      "protocol": "GATEWAY_PROTOCOL_CONNECT",
+      "method": "POST",
+      "path": "/saas.accounts.v1.OrganizationService/RemoveMember",
+      "match": "GATEWAY_MATCH_EXACT",
+      "procedure": "/saas.accounts.v1.OrganizationService/RemoveMember",
+      "owner": {
+        "module": "saas-starter",
+        "service": "accounts"
+      },
+      "upstream_endpoint": "connect",
+      "exposure": "EXPOSURE_AUTHENTICATED",
+      "source": "GATEWAY_ROUTE_SOURCE_DESCRIPTOR",
+      "rewrite_path": "",
+      "remove_after": ""
+    },
+    {
+      "protocol": "GATEWAY_PROTOCOL_CONNECT",
+      "method": "POST",
+      "path": "/saas.accounts.v1.OrganizationService/UpdateOrgSettings",
+      "match": "GATEWAY_MATCH_EXACT",
+      "procedure": "/saas.accounts.v1.OrganizationService/UpdateOrgSettings",
+      "owner": {
+        "module": "saas-starter",
+        "service": "accounts"
+      },
+      "upstream_endpoint": "connect",
+      "exposure": "EXPOSURE_AUTHENTICATED",
+      "source": "GATEWAY_ROUTE_SOURCE_DESCRIPTOR",
+      "rewrite_path": "",
+      "remove_after": ""
+    },
+    {
+      "protocol": "GATEWAY_PROTOCOL_CONNECT",
+      "method": "POST",
+      "path": "/saas.accounts.v1.PermissionService/AssignRole",
+      "match": "GATEWAY_MATCH_EXACT",
+      "procedure": "/saas.accounts.v1.PermissionService/AssignRole",
+      "owner": {
+        "module": "saas-starter",
+        "service": "accounts"
+      },
+      "upstream_endpoint": "connect",
+      "exposure": "EXPOSURE_AUTHENTICATED",
+      "source": "GATEWAY_ROUTE_SOURCE_DESCRIPTOR",
+      "rewrite_path": "",
+      "remove_after": ""
+    },
+    {
+      "protocol": "GATEWAY_PROTOCOL_CONNECT",
+      "method": "POST",
+      "path": "/saas.accounts.v1.PermissionService/CreateRole",
+      "match": "GATEWAY_MATCH_EXACT",
+      "procedure": "/saas.accounts.v1.PermissionService/CreateRole",
+      "owner": {
+        "module": "saas-starter",
+        "service": "accounts"
+      },
+      "upstream_endpoint": "connect",
+      "exposure": "EXPOSURE_AUTHENTICATED",
+      "source": "GATEWAY_ROUTE_SOURCE_DESCRIPTOR",
+      "rewrite_path": "",
+      "remove_after": ""
+    },
+    {
+      "protocol": "GATEWAY_PROTOCOL_CONNECT",
+      "method": "POST",
+      "path": "/saas.accounts.v1.PermissionService/DeleteRole",
+      "match": "GATEWAY_MATCH_EXACT",
+      "procedure": "/saas.accounts.v1.PermissionService/DeleteRole",
+      "owner": {
+        "module": "saas-starter",
+        "service": "accounts"
+      },
+      "upstream_endpoint": "connect",
+      "exposure": "EXPOSURE_AUTHENTICATED",
+      "source": "GATEWAY_ROUTE_SOURCE_DESCRIPTOR",
+      "rewrite_path": "",
+      "remove_after": ""
+    },
+    {
+      "protocol": "GATEWAY_PROTOCOL_CONNECT",
+      "method": "POST",
+      "path": "/saas.accounts.v1.PermissionService/ListRoleAssignments",
+      "match": "GATEWAY_MATCH_EXACT",
+      "procedure": "/saas.accounts.v1.PermissionService/ListRoleAssignments",
+      "owner": {
+        "module": "saas-starter",
+        "service": "accounts"
+      },
+      "upstream_endpoint": "connect",
+      "exposure": "EXPOSURE_AUTHENTICATED",
+      "source": "GATEWAY_ROUTE_SOURCE_DESCRIPTOR",
+      "rewrite_path": "",
+      "remove_after": ""
+    },
+    {
+      "protocol": "GATEWAY_PROTOCOL_CONNECT",
+      "method": "POST",
+      "path": "/saas.accounts.v1.PermissionService/ListRoles",
+      "match": "GATEWAY_MATCH_EXACT",
+      "procedure": "/saas.accounts.v1.PermissionService/ListRoles",
+      "owner": {
+        "module": "saas-starter",
+        "service": "accounts"
+      },
+      "upstream_endpoint": "connect",
+      "exposure": "EXPOSURE_AUTHENTICATED",
+      "source": "GATEWAY_ROUTE_SOURCE_DESCRIPTOR",
+      "rewrite_path": "",
+      "remove_after": ""
+    },
+    {
+      "protocol": "GATEWAY_PROTOCOL_CONNECT",
+      "method": "POST",
+      "path": "/saas.accounts.v1.PermissionService/RevokeRole",
+      "match": "GATEWAY_MATCH_EXACT",
+      "procedure": "/saas.accounts.v1.PermissionService/RevokeRole",
+      "owner": {
+        "module": "saas-starter",
+        "service": "accounts"
+      },
+      "upstream_endpoint": "connect",
+      "exposure": "EXPOSURE_AUTHENTICATED",
+      "source": "GATEWAY_ROUTE_SOURCE_DESCRIPTOR",
+      "rewrite_path": "",
+      "remove_after": ""
+    },
+    {
+      "protocol": "GATEWAY_PROTOCOL_CONNECT",
+      "method": "POST",
+      "path": "/saas.accounts.v1.PlatformAdminService/GetJob",
+      "match": "GATEWAY_MATCH_EXACT",
+      "procedure": "/saas.accounts.v1.PlatformAdminService/GetJob",
+      "owner": {
+        "module": "saas-starter",
+        "service": "accounts"
+      },
+      "upstream_endpoint": "connect",
+      "exposure": "EXPOSURE_AUTHENTICATED",
+      "source": "GATEWAY_ROUTE_SOURCE_DESCRIPTOR",
+      "rewrite_path": "",
+      "remove_after": ""
+    },
+    {
+      "protocol": "GATEWAY_PROTOCOL_CONNECT",
+      "method": "POST",
+      "path": "/saas.accounts.v1.PlatformAdminService/GetJobOperations",
+      "match": "GATEWAY_MATCH_EXACT",
+      "procedure": "/saas.accounts.v1.PlatformAdminService/GetJobOperations",
+      "owner": {
+        "module": "saas-starter",
+        "service": "accounts"
+      },
+      "upstream_endpoint": "connect",
+      "exposure": "EXPOSURE_AUTHENTICATED",
+      "source": "GATEWAY_ROUTE_SOURCE_DESCRIPTOR",
+      "rewrite_path": "",
+      "remove_after": ""
+    },
+    {
+      "protocol": "GATEWAY_PROTOCOL_CONNECT",
+      "method": "POST",
+      "path": "/saas.accounts.v1.PlatformAdminService/GetOrgEntitlements",
+      "match": "GATEWAY_MATCH_EXACT",
+      "procedure": "/saas.accounts.v1.PlatformAdminService/GetOrgEntitlements",
+      "owner": {
+        "module": "saas-starter",
+        "service": "accounts"
+      },
+      "upstream_endpoint": "connect",
+      "exposure": "EXPOSURE_AUTHENTICATED",
+      "source": "GATEWAY_ROUTE_SOURCE_DESCRIPTOR",
+      "rewrite_path": "",
+      "remove_after": ""
+    },
+    {
+      "protocol": "GATEWAY_PROTOCOL_CONNECT",
+      "method": "POST",
+      "path": "/saas.accounts.v1.PlatformAdminService/GrantPlatformRole",
+      "match": "GATEWAY_MATCH_EXACT",
+      "procedure": "/saas.accounts.v1.PlatformAdminService/GrantPlatformRole",
+      "owner": {
+        "module": "saas-starter",
+        "service": "accounts"
+      },
+      "upstream_endpoint": "connect",
+      "exposure": "EXPOSURE_AUTHENTICATED",
+      "source": "GATEWAY_ROUTE_SOURCE_DESCRIPTOR",
+      "rewrite_path": "",
+      "remove_after": ""
+    },
+    {
+      "protocol": "GATEWAY_PROTOCOL_CONNECT",
+      "method": "POST",
+      "path": "/saas.accounts.v1.PlatformAdminService/ImpersonateUser",
+      "match": "GATEWAY_MATCH_EXACT",
+      "procedure": "/saas.accounts.v1.PlatformAdminService/ImpersonateUser",
+      "owner": {
+        "module": "saas-starter",
+        "service": "accounts"
+      },
+      "upstream_endpoint": "connect",
+      "exposure": "EXPOSURE_AUTHENTICATED",
+      "source": "GATEWAY_ROUTE_SOURCE_DESCRIPTOR",
+      "rewrite_path": "",
+      "remove_after": ""
+    },
+    {
+      "protocol": "GATEWAY_PROTOCOL_CONNECT",
+      "method": "POST",
+      "path": "/saas.accounts.v1.PlatformAdminService/ListActiveSessions",
+      "match": "GATEWAY_MATCH_EXACT",
+      "procedure": "/saas.accounts.v1.PlatformAdminService/ListActiveSessions",
+      "owner": {
+        "module": "saas-starter",
+        "service": "accounts"
+      },
+      "upstream_endpoint": "connect",
+      "exposure": "EXPOSURE_AUTHENTICATED",
+      "source": "GATEWAY_ROUTE_SOURCE_DESCRIPTOR",
+      "rewrite_path": "",
+      "remove_after": ""
+    },
+    {
+      "protocol": "GATEWAY_PROTOCOL_CONNECT",
+      "method": "POST",
+      "path": "/saas.accounts.v1.PlatformAdminService/ListFeatureFlags",
+      "match": "GATEWAY_MATCH_EXACT",
+      "procedure": "/saas.accounts.v1.PlatformAdminService/ListFeatureFlags",
+      "owner": {
+        "module": "saas-starter",
+        "service": "accounts"
+      },
+      "upstream_endpoint": "connect",
+      "exposure": "EXPOSURE_AUTHENTICATED",
+      "source": "GATEWAY_ROUTE_SOURCE_DESCRIPTOR",
+      "rewrite_path": "",
+      "remove_after": ""
+    },
+    {
+      "protocol": "GATEWAY_PROTOCOL_CONNECT",
+      "method": "POST",
+      "path": "/saas.accounts.v1.PlatformAdminService/ListJobs",
+      "match": "GATEWAY_MATCH_EXACT",
+      "procedure": "/saas.accounts.v1.PlatformAdminService/ListJobs",
+      "owner": {
+        "module": "saas-starter",
+        "service": "accounts"
+      },
+      "upstream_endpoint": "connect",
+      "exposure": "EXPOSURE_AUTHENTICATED",
+      "source": "GATEWAY_ROUTE_SOURCE_DESCRIPTOR",
+      "rewrite_path": "",
+      "remove_after": ""
+    },
+    {
+      "protocol": "GATEWAY_PROTOCOL_CONNECT",
+      "method": "POST",
+      "path": "/saas.accounts.v1.PlatformAdminService/ListPlatformAdmins",
+      "match": "GATEWAY_MATCH_EXACT",
+      "procedure": "/saas.accounts.v1.PlatformAdminService/ListPlatformAdmins",
+      "owner": {
+        "module": "saas-starter",
+        "service": "accounts"
+      },
+      "upstream_endpoint": "connect",
+      "exposure": "EXPOSURE_AUTHENTICATED",
+      "source": "GATEWAY_ROUTE_SOURCE_DESCRIPTOR",
+      "rewrite_path": "",
+      "remove_after": ""
+    },
+    {
+      "protocol": "GATEWAY_PROTOCOL_CONNECT",
+      "method": "POST",
+      "path": "/saas.accounts.v1.PlatformAdminService/OverrideEntitlement",
+      "match": "GATEWAY_MATCH_EXACT",
+      "procedure": "/saas.accounts.v1.PlatformAdminService/OverrideEntitlement",
+      "owner": {
+        "module": "saas-starter",
+        "service": "accounts"
+      },
+      "upstream_endpoint": "connect",
+      "exposure": "EXPOSURE_AUTHENTICATED",
+      "source": "GATEWAY_ROUTE_SOURCE_DESCRIPTOR",
+      "rewrite_path": "",
+      "remove_after": ""
+    },
+    {
+      "protocol": "GATEWAY_PROTOCOL_CONNECT",
+      "method": "POST",
+      "path": "/saas.accounts.v1.PlatformAdminService/ReplayJob",
+      "match": "GATEWAY_MATCH_EXACT",
+      "procedure": "/saas.accounts.v1.PlatformAdminService/ReplayJob",
+      "owner": {
+        "module": "saas-starter",
+        "service": "accounts"
+      },
+      "upstream_endpoint": "connect",
+      "exposure": "EXPOSURE_AUTHENTICATED",
+      "source": "GATEWAY_ROUTE_SOURCE_DESCRIPTOR",
+      "rewrite_path": "",
+      "remove_after": ""
+    },
+    {
+      "protocol": "GATEWAY_PROTOCOL_CONNECT",
+      "method": "POST",
+      "path": "/saas.accounts.v1.PlatformAdminService/RevokePlatformRole",
+      "match": "GATEWAY_MATCH_EXACT",
+      "procedure": "/saas.accounts.v1.PlatformAdminService/RevokePlatformRole",
+      "owner": {
+        "module": "saas-starter",
+        "service": "accounts"
+      },
+      "upstream_endpoint": "connect",
+      "exposure": "EXPOSURE_AUTHENTICATED",
+      "source": "GATEWAY_ROUTE_SOURCE_DESCRIPTOR",
+      "rewrite_path": "",
+      "remove_after": ""
+    },
+    {
+      "protocol": "GATEWAY_PROTOCOL_CONNECT",
+      "method": "POST",
+      "path": "/saas.accounts.v1.PlatformAdminService/RevokeSession",
+      "match": "GATEWAY_MATCH_EXACT",
+      "procedure": "/saas.accounts.v1.PlatformAdminService/RevokeSession",
+      "owner": {
+        "module": "saas-starter",
+        "service": "accounts"
+      },
+      "upstream_endpoint": "connect",
+      "exposure": "EXPOSURE_AUTHENTICATED",
+      "source": "GATEWAY_ROUTE_SOURCE_DESCRIPTOR",
+      "rewrite_path": "",
+      "remove_after": ""
+    },
+    {
+      "protocol": "GATEWAY_PROTOCOL_CONNECT",
+      "method": "POST",
+      "path": "/saas.accounts.v1.PlatformAdminService/SearchUsers",
+      "match": "GATEWAY_MATCH_EXACT",
+      "procedure": "/saas.accounts.v1.PlatformAdminService/SearchUsers",
+      "owner": {
+        "module": "saas-starter",
+        "service": "accounts"
+      },
+      "upstream_endpoint": "connect",
+      "exposure": "EXPOSURE_AUTHENTICATED",
+      "source": "GATEWAY_ROUTE_SOURCE_DESCRIPTOR",
+      "rewrite_path": "",
+      "remove_after": ""
+    },
+    {
+      "protocol": "GATEWAY_PROTOCOL_CONNECT",
+      "method": "POST",
+      "path": "/saas.accounts.v1.PlatformAdminService/SuspendUser",
+      "match": "GATEWAY_MATCH_EXACT",
+      "procedure": "/saas.accounts.v1.PlatformAdminService/SuspendUser",
+      "owner": {
+        "module": "saas-starter",
+        "service": "accounts"
+      },
+      "upstream_endpoint": "connect",
+      "exposure": "EXPOSURE_AUTHENTICATED",
+      "source": "GATEWAY_ROUTE_SOURCE_DESCRIPTOR",
+      "rewrite_path": "",
+      "remove_after": ""
+    },
+    {
+      "protocol": "GATEWAY_PROTOCOL_CONNECT",
+      "method": "POST",
+      "path": "/saas.accounts.v1.PlatformAdminService/UnsuspendUser",
+      "match": "GATEWAY_MATCH_EXACT",
+      "procedure": "/saas.accounts.v1.PlatformAdminService/UnsuspendUser",
+      "owner": {
+        "module": "saas-starter",
+        "service": "accounts"
+      },
+      "upstream_endpoint": "connect",
+      "exposure": "EXPOSURE_AUTHENTICATED",
+      "source": "GATEWAY_ROUTE_SOURCE_DESCRIPTOR",
+      "rewrite_path": "",
+      "remove_after": ""
+    },
+    {
+      "protocol": "GATEWAY_PROTOCOL_CONNECT",
+      "method": "POST",
+      "path": "/saas.accounts.v1.PlatformAdminService/UpsertFeatureFlag",
+      "match": "GATEWAY_MATCH_EXACT",
+      "procedure": "/saas.accounts.v1.PlatformAdminService/UpsertFeatureFlag",
+      "owner": {
+        "module": "saas-starter",
+        "service": "accounts"
+      },
+      "upstream_endpoint": "connect",
+      "exposure": "EXPOSURE_AUTHENTICATED",
+      "source": "GATEWAY_ROUTE_SOURCE_DESCRIPTOR",
+      "rewrite_path": "",
+      "remove_after": ""
+    },
+    {
+      "protocol": "GATEWAY_PROTOCOL_CONNECT",
+      "method": "POST",
+      "path": "/saas.accounts.v1.PrincipalService/CreateAgentPrincipal",
+      "match": "GATEWAY_MATCH_EXACT",
+      "procedure": "/saas.accounts.v1.PrincipalService/CreateAgentPrincipal",
+      "owner": {
+        "module": "saas-starter",
+        "service": "accounts"
+      },
+      "upstream_endpoint": "connect",
+      "exposure": "EXPOSURE_AUTHENTICATED",
+      "source": "GATEWAY_ROUTE_SOURCE_DESCRIPTOR",
+      "rewrite_path": "",
+      "remove_after": ""
+    },
+    {
+      "protocol": "GATEWAY_PROTOCOL_CONNECT",
+      "method": "POST",
+      "path": "/saas.accounts.v1.PrincipalService/ListPrincipals",
+      "match": "GATEWAY_MATCH_EXACT",
+      "procedure": "/saas.accounts.v1.PrincipalService/ListPrincipals",
+      "owner": {
+        "module": "saas-starter",
+        "service": "accounts"
+      },
+      "upstream_endpoint": "connect",
+      "exposure": "EXPOSURE_AUTHENTICATED",
+      "source": "GATEWAY_ROUTE_SOURCE_DESCRIPTOR",
+      "rewrite_path": "",
+      "remove_after": ""
+    },
+    {
+      "protocol": "GATEWAY_PROTOCOL_CONNECT",
+      "method": "POST",
+      "path": "/saas.accounts.v1.PrincipalService/RevokePrincipal",
+      "match": "GATEWAY_MATCH_EXACT",
+      "procedure": "/saas.accounts.v1.PrincipalService/RevokePrincipal",
+      "owner": {
+        "module": "saas-starter",
+        "service": "accounts"
+      },
+      "upstream_endpoint": "connect",
+      "exposure": "EXPOSURE_AUTHENTICATED",
+      "source": "GATEWAY_ROUTE_SOURCE_DESCRIPTOR",
+      "rewrite_path": "",
+      "remove_after": ""
+    },
+    {
+      "protocol": "GATEWAY_PROTOCOL_CONNECT",
+      "method": "POST",
+      "path": "/saas.accounts.v1.SSOAdminService/Disable",
+      "match": "GATEWAY_MATCH_EXACT",
+      "procedure": "/saas.accounts.v1.SSOAdminService/Disable",
+      "owner": {
+        "module": "saas-starter",
+        "service": "accounts"
+      },
+      "upstream_endpoint": "connect",
+      "exposure": "EXPOSURE_AUTHENTICATED",
+      "source": "GATEWAY_ROUTE_SOURCE_DESCRIPTOR",
+      "rewrite_path": "",
+      "remove_after": ""
+    },
+    {
+      "protocol": "GATEWAY_PROTOCOL_CONNECT",
+      "method": "POST",
+      "path": "/saas.accounts.v1.SSOAdminService/GetSSO",
+      "match": "GATEWAY_MATCH_EXACT",
+      "procedure": "/saas.accounts.v1.SSOAdminService/GetSSO",
+      "owner": {
+        "module": "saas-starter",
+        "service": "accounts"
+      },
+      "upstream_endpoint": "connect",
+      "exposure": "EXPOSURE_AUTHENTICATED",
+      "source": "GATEWAY_ROUTE_SOURCE_DESCRIPTOR",
+      "rewrite_path": "",
+      "remove_after": ""
+    },
+    {
+      "protocol": "GATEWAY_PROTOCOL_CONNECT",
+      "method": "POST",
+      "path": "/saas.accounts.v1.SSOAdminService/StartSetup",
+      "match": "GATEWAY_MATCH_EXACT",
+      "procedure": "/saas.accounts.v1.SSOAdminService/StartSetup",
+      "owner": {
+        "module": "saas-starter",
+        "service": "accounts"
+      },
+      "upstream_endpoint": "connect",
+      "exposure": "EXPOSURE_AUTHENTICATED",
+      "source": "GATEWAY_ROUTE_SOURCE_DESCRIPTOR",
+      "rewrite_path": "",
+      "remove_after": ""
+    },
+    {
+      "protocol": "GATEWAY_PROTOCOL_CONNECT",
+      "method": "POST",
+      "path": "/saas.accounts.v1.TeamService/AddMember",
+      "match": "GATEWAY_MATCH_EXACT",
+      "procedure": "/saas.accounts.v1.TeamService/AddMember",
+      "owner": {
+        "module": "saas-starter",
+        "service": "accounts"
+      },
+      "upstream_endpoint": "connect",
+      "exposure": "EXPOSURE_AUTHENTICATED",
+      "source": "GATEWAY_ROUTE_SOURCE_DESCRIPTOR",
+      "rewrite_path": "",
+      "remove_after": ""
+    },
+    {
+      "protocol": "GATEWAY_PROTOCOL_CONNECT",
+      "method": "POST",
+      "path": "/saas.accounts.v1.TeamService/CreateTeam",
+      "match": "GATEWAY_MATCH_EXACT",
+      "procedure": "/saas.accounts.v1.TeamService/CreateTeam",
+      "owner": {
+        "module": "saas-starter",
+        "service": "accounts"
+      },
+      "upstream_endpoint": "connect",
+      "exposure": "EXPOSURE_AUTHENTICATED",
+      "source": "GATEWAY_ROUTE_SOURCE_DESCRIPTOR",
+      "rewrite_path": "",
+      "remove_after": ""
+    },
+    {
+      "protocol": "GATEWAY_PROTOCOL_CONNECT",
+      "method": "POST",
+      "path": "/saas.accounts.v1.TeamService/DeleteTeam",
+      "match": "GATEWAY_MATCH_EXACT",
+      "procedure": "/saas.accounts.v1.TeamService/DeleteTeam",
+      "owner": {
+        "module": "saas-starter",
+        "service": "accounts"
+      },
+      "upstream_endpoint": "connect",
+      "exposure": "EXPOSURE_AUTHENTICATED",
+      "source": "GATEWAY_ROUTE_SOURCE_DESCRIPTOR",
+      "rewrite_path": "",
+      "remove_after": ""
+    },
+    {
+      "protocol": "GATEWAY_PROTOCOL_CONNECT",
+      "method": "POST",
+      "path": "/saas.accounts.v1.TeamService/ListMembers",
+      "match": "GATEWAY_MATCH_EXACT",
+      "procedure": "/saas.accounts.v1.TeamService/ListMembers",
+      "owner": {
+        "module": "saas-starter",
+        "service": "accounts"
+      },
+      "upstream_endpoint": "connect",
+      "exposure": "EXPOSURE_AUTHENTICATED",
+      "source": "GATEWAY_ROUTE_SOURCE_DESCRIPTOR",
+      "rewrite_path": "",
+      "remove_after": ""
+    },
+    {
+      "protocol": "GATEWAY_PROTOCOL_CONNECT",
+      "method": "POST",
+      "path": "/saas.accounts.v1.TeamService/ListTeams",
+      "match": "GATEWAY_MATCH_EXACT",
+      "procedure": "/saas.accounts.v1.TeamService/ListTeams",
+      "owner": {
+        "module": "saas-starter",
+        "service": "accounts"
+      },
+      "upstream_endpoint": "connect",
+      "exposure": "EXPOSURE_AUTHENTICATED",
+      "source": "GATEWAY_ROUTE_SOURCE_DESCRIPTOR",
+      "rewrite_path": "",
+      "remove_after": ""
+    },
+    {
+      "protocol": "GATEWAY_PROTOCOL_CONNECT",
+      "method": "POST",
+      "path": "/saas.accounts.v1.TeamService/RemoveMember",
+      "match": "GATEWAY_MATCH_EXACT",
+      "procedure": "/saas.accounts.v1.TeamService/RemoveMember",
+      "owner": {
+        "module": "saas-starter",
+        "service": "accounts"
+      },
+      "upstream_endpoint": "connect",
+      "exposure": "EXPOSURE_AUTHENTICATED",
+      "source": "GATEWAY_ROUTE_SOURCE_DESCRIPTOR",
+      "rewrite_path": "",
+      "remove_after": ""
+    },
+    {
+      "protocol": "GATEWAY_PROTOCOL_CONNECT",
+      "method": "POST",
+      "path": "/saas.accounts.v1.TeamService/UpdateTeam",
+      "match": "GATEWAY_MATCH_EXACT",
+      "procedure": "/saas.accounts.v1.TeamService/UpdateTeam",
+      "owner": {
+        "module": "saas-starter",
+        "service": "accounts"
+      },
+      "upstream_endpoint": "connect",
+      "exposure": "EXPOSURE_AUTHENTICATED",
+      "source": "GATEWAY_ROUTE_SOURCE_DESCRIPTOR",
+      "rewrite_path": "",
+      "remove_after": ""
+    },
+    {
+      "protocol": "GATEWAY_PROTOCOL_CONNECT",
+      "method": "POST",
+      "path": "/saas.accounts.v1.UsageService/GetUsage",
+      "match": "GATEWAY_MATCH_EXACT",
+      "procedure": "/saas.accounts.v1.UsageService/GetUsage",
+      "owner": {
+        "module": "saas-starter",
+        "service": "accounts"
+      },
+      "upstream_endpoint": "connect",
+      "exposure": "EXPOSURE_AUTHENTICATED",
+      "source": "GATEWAY_ROUTE_SOURCE_DESCRIPTOR",
+      "rewrite_path": "",
+      "remove_after": ""
+    },
+    {
+      "protocol": "GATEWAY_PROTOCOL_CONNECT",
+      "method": "POST",
+      "path": "/saas.accounts.v1.UserService/AddIdentity",
+      "match": "GATEWAY_MATCH_EXACT",
+      "procedure": "/saas.accounts.v1.UserService/AddIdentity",
+      "owner": {
+        "module": "saas-starter",
+        "service": "accounts"
+      },
+      "upstream_endpoint": "connect",
+      "exposure": "EXPOSURE_AUTHENTICATED",
+      "source": "GATEWAY_ROUTE_SOURCE_DESCRIPTOR",
+      "rewrite_path": "",
+      "remove_after": ""
+    },
+    {
+      "protocol": "GATEWAY_PROTOCOL_CONNECT",
+      "method": "POST",
+      "path": "/saas.accounts.v1.UserService/DeleteUser",
+      "match": "GATEWAY_MATCH_EXACT",
+      "procedure": "/saas.accounts.v1.UserService/DeleteUser",
+      "owner": {
+        "module": "saas-starter",
+        "service": "accounts"
+      },
+      "upstream_endpoint": "connect",
+      "exposure": "EXPOSURE_AUTHENTICATED",
+      "source": "GATEWAY_ROUTE_SOURCE_DESCRIPTOR",
+      "rewrite_path": "",
+      "remove_after": ""
+    },
+    {
+      "protocol": "GATEWAY_PROTOCOL_CONNECT",
+      "method": "POST",
+      "path": "/saas.accounts.v1.UserService/FindUserByIdentity",
+      "match": "GATEWAY_MATCH_EXACT",
+      "procedure": "/saas.accounts.v1.UserService/FindUserByIdentity",
+      "owner": {
+        "module": "saas-starter",
+        "service": "accounts"
+      },
+      "upstream_endpoint": "connect",
+      "exposure": "EXPOSURE_AUTHENTICATED",
+      "source": "GATEWAY_ROUTE_SOURCE_DESCRIPTOR",
+      "rewrite_path": "",
+      "remove_after": ""
+    },
+    {
+      "protocol": "GATEWAY_PROTOCOL_CONNECT",
+      "method": "POST",
+      "path": "/saas.accounts.v1.UserService/GetSelf",
+      "match": "GATEWAY_MATCH_EXACT",
+      "procedure": "/saas.accounts.v1.UserService/GetSelf",
+      "owner": {
+        "module": "saas-starter",
+        "service": "accounts"
+      },
+      "upstream_endpoint": "connect",
+      "exposure": "EXPOSURE_AUTHENTICATED",
+      "source": "GATEWAY_ROUTE_SOURCE_DESCRIPTOR",
+      "rewrite_path": "",
+      "remove_after": ""
+    },
+    {
+      "protocol": "GATEWAY_PROTOCOL_CONNECT",
+      "method": "POST",
+      "path": "/saas.accounts.v1.UserService/GetUser",
+      "match": "GATEWAY_MATCH_EXACT",
+      "procedure": "/saas.accounts.v1.UserService/GetUser",
+      "owner": {
+        "module": "saas-starter",
+        "service": "accounts"
+      },
+      "upstream_endpoint": "connect",
+      "exposure": "EXPOSURE_AUTHENTICATED",
+      "source": "GATEWAY_ROUTE_SOURCE_DESCRIPTOR",
+      "rewrite_path": "",
+      "remove_after": ""
+    },
+    {
+      "protocol": "GATEWAY_PROTOCOL_CONNECT",
+      "method": "POST",
+      "path": "/saas.accounts.v1.UserService/ListUserIdentities",
+      "match": "GATEWAY_MATCH_EXACT",
+      "procedure": "/saas.accounts.v1.UserService/ListUserIdentities",
+      "owner": {
+        "module": "saas-starter",
+        "service": "accounts"
+      },
+      "upstream_endpoint": "connect",
+      "exposure": "EXPOSURE_AUTHENTICATED",
+      "source": "GATEWAY_ROUTE_SOURCE_DESCRIPTOR",
+      "rewrite_path": "",
+      "remove_after": ""
+    },
+    {
+      "protocol": "GATEWAY_PROTOCOL_CONNECT",
+      "method": "POST",
+      "path": "/saas.accounts.v1.UserService/ListUsers",
+      "match": "GATEWAY_MATCH_EXACT",
+      "procedure": "/saas.accounts.v1.UserService/ListUsers",
+      "owner": {
+        "module": "saas-starter",
+        "service": "accounts"
+      },
+      "upstream_endpoint": "connect",
+      "exposure": "EXPOSURE_AUTHENTICATED",
+      "source": "GATEWAY_ROUTE_SOURCE_DESCRIPTOR",
+      "rewrite_path": "",
+      "remove_after": ""
+    },
+    {
+      "protocol": "GATEWAY_PROTOCOL_CONNECT",
+      "method": "POST",
+      "path": "/saas.accounts.v1.UserService/RegisterUser",
+      "match": "GATEWAY_MATCH_EXACT",
+      "procedure": "/saas.accounts.v1.UserService/RegisterUser",
+      "owner": {
+        "module": "saas-starter",
+        "service": "accounts"
+      },
+      "upstream_endpoint": "connect",
+      "exposure": "EXPOSURE_PUBLIC",
+      "source": "GATEWAY_ROUTE_SOURCE_DESCRIPTOR",
+      "rewrite_path": "",
+      "remove_after": ""
+    },
+    {
+      "protocol": "GATEWAY_PROTOCOL_CONNECT",
+      "method": "POST",
+      "path": "/saas.accounts.v1.UserService/UpdateUser",
+      "match": "GATEWAY_MATCH_EXACT",
+      "procedure": "/saas.accounts.v1.UserService/UpdateUser",
+      "owner": {
+        "module": "saas-starter",
+        "service": "accounts"
+      },
+      "upstream_endpoint": "connect",
+      "exposure": "EXPOSURE_AUTHENTICATED",
+      "source": "GATEWAY_ROUTE_SOURCE_DESCRIPTOR",
+      "rewrite_path": "",
+      "remove_after": ""
+    },
+    {
+      "protocol": "GATEWAY_PROTOCOL_CONNECT",
+      "method": "POST",
+      "path": "/saas.accounts.v1.UserService/Version",
+      "match": "GATEWAY_MATCH_EXACT",
+      "procedure": "/saas.accounts.v1.UserService/Version",
+      "owner": {
+        "module": "saas-starter",
+        "service": "accounts"
+      },
+      "upstream_endpoint": "connect",
+      "exposure": "EXPOSURE_PUBLIC",
+      "source": "GATEWAY_ROUTE_SOURCE_DESCRIPTOR",
+      "rewrite_path": "",
+      "remove_after": ""
+    },
+    {
+      "protocol": "GATEWAY_PROTOCOL_CONNECT",
+      "method": "POST",
+      "path": "/saas.accounts.v1.UserSettingsService/Get",
+      "match": "GATEWAY_MATCH_EXACT",
+      "procedure": "/saas.accounts.v1.UserSettingsService/Get",
+      "owner": {
+        "module": "saas-starter",
+        "service": "accounts"
+      },
+      "upstream_endpoint": "connect",
+      "exposure": "EXPOSURE_AUTHENTICATED",
+      "source": "GATEWAY_ROUTE_SOURCE_DESCRIPTOR",
+      "rewrite_path": "",
+      "remove_after": ""
+    },
+    {
+      "protocol": "GATEWAY_PROTOCOL_CONNECT",
+      "method": "POST",
+      "path": "/saas.accounts.v1.UserSettingsService/Update",
+      "match": "GATEWAY_MATCH_EXACT",
+      "procedure": "/saas.accounts.v1.UserSettingsService/Update",
+      "owner": {
+        "module": "saas-starter",
+        "service": "accounts"
+      },
+      "upstream_endpoint": "connect",
+      "exposure": "EXPOSURE_AUTHENTICATED",
+      "source": "GATEWAY_ROUTE_SOURCE_DESCRIPTOR",
+      "rewrite_path": "",
+      "remove_after": ""
+    },
+    {
+      "protocol": "GATEWAY_PROTOCOL_CONNECT",
+      "method": "POST",
+      "path": "/saas.accounts.v1.WebhookService/CreateSubscription",
+      "match": "GATEWAY_MATCH_EXACT",
+      "procedure": "/saas.accounts.v1.WebhookService/CreateSubscription",
+      "owner": {
+        "module": "saas-starter",
+        "service": "accounts"
+      },
+      "upstream_endpoint": "connect",
+      "exposure": "EXPOSURE_AUTHENTICATED",
+      "source": "GATEWAY_ROUTE_SOURCE_DESCRIPTOR",
+      "rewrite_path": "",
+      "remove_after": ""
+    },
+    {
+      "protocol": "GATEWAY_PROTOCOL_CONNECT",
+      "method": "POST",
+      "path": "/saas.accounts.v1.WebhookService/DeleteSubscription",
+      "match": "GATEWAY_MATCH_EXACT",
+      "procedure": "/saas.accounts.v1.WebhookService/DeleteSubscription",
+      "owner": {
+        "module": "saas-starter",
+        "service": "accounts"
+      },
+      "upstream_endpoint": "connect",
+      "exposure": "EXPOSURE_AUTHENTICATED",
+      "source": "GATEWAY_ROUTE_SOURCE_DESCRIPTOR",
+      "rewrite_path": "",
+      "remove_after": ""
+    },
+    {
+      "protocol": "GATEWAY_PROTOCOL_CONNECT",
+      "method": "POST",
+      "path": "/saas.accounts.v1.WebhookService/GetDelivery",
+      "match": "GATEWAY_MATCH_EXACT",
+      "procedure": "/saas.accounts.v1.WebhookService/GetDelivery",
+      "owner": {
+        "module": "saas-starter",
+        "service": "accounts"
+      },
+      "upstream_endpoint": "connect",
+      "exposure": "EXPOSURE_AUTHENTICATED",
+      "source": "GATEWAY_ROUTE_SOURCE_DESCRIPTOR",
+      "rewrite_path": "",
+      "remove_after": ""
+    },
+    {
+      "protocol": "GATEWAY_PROTOCOL_CONNECT",
+      "method": "POST",
+      "path": "/saas.accounts.v1.WebhookService/ListDeliveries",
+      "match": "GATEWAY_MATCH_EXACT",
+      "procedure": "/saas.accounts.v1.WebhookService/ListDeliveries",
+      "owner": {
+        "module": "saas-starter",
+        "service": "accounts"
+      },
+      "upstream_endpoint": "connect",
+      "exposure": "EXPOSURE_AUTHENTICATED",
+      "source": "GATEWAY_ROUTE_SOURCE_DESCRIPTOR",
+      "rewrite_path": "",
+      "remove_after": ""
+    },
+    {
+      "protocol": "GATEWAY_PROTOCOL_CONNECT",
+      "method": "POST",
+      "path": "/saas.accounts.v1.WebhookService/ListSubscriptions",
+      "match": "GATEWAY_MATCH_EXACT",
+      "procedure": "/saas.accounts.v1.WebhookService/ListSubscriptions",
+      "owner": {
+        "module": "saas-starter",
+        "service": "accounts"
+      },
+      "upstream_endpoint": "connect",
+      "exposure": "EXPOSURE_AUTHENTICATED",
+      "source": "GATEWAY_ROUTE_SOURCE_DESCRIPTOR",
+      "rewrite_path": "",
+      "remove_after": ""
+    },
+    {
+      "protocol": "GATEWAY_PROTOCOL_CONNECT",
+      "method": "POST",
+      "path": "/saas.accounts.v1.WebhookService/ReplayDelivery",
+      "match": "GATEWAY_MATCH_EXACT",
+      "procedure": "/saas.accounts.v1.WebhookService/ReplayDelivery",
+      "owner": {
+        "module": "saas-starter",
+        "service": "accounts"
+      },
+      "upstream_endpoint": "connect",
+      "exposure": "EXPOSURE_AUTHENTICATED",
+      "source": "GATEWAY_ROUTE_SOURCE_DESCRIPTOR",
+      "rewrite_path": "",
+      "remove_after": ""
+    },
+    {
+      "protocol": "GATEWAY_PROTOCOL_CONNECT",
+      "method": "POST",
+      "path": "/saas.accounts.v1.WebhookService/RotateSecret",
+      "match": "GATEWAY_MATCH_EXACT",
+      "procedure": "/saas.accounts.v1.WebhookService/RotateSecret",
+      "owner": {
+        "module": "saas-starter",
+        "service": "accounts"
+      },
+      "upstream_endpoint": "connect",
+      "exposure": "EXPOSURE_AUTHENTICATED",
+      "source": "GATEWAY_ROUTE_SOURCE_DESCRIPTOR",
+      "rewrite_path": "",
+      "remove_after": ""
+    },
+    {
+      "protocol": "GATEWAY_PROTOCOL_CONNECT",
+      "method": "POST",
+      "path": "/saas.accounts.v1.WebhookService/TestWebhook",
+      "match": "GATEWAY_MATCH_EXACT",
+      "procedure": "/saas.accounts.v1.WebhookService/TestWebhook",
+      "owner": {
+        "module": "saas-starter",
+        "service": "accounts"
+      },
+      "upstream_endpoint": "connect",
+      "exposure": "EXPOSURE_AUTHENTICATED",
+      "source": "GATEWAY_ROUTE_SOURCE_DESCRIPTOR",
+      "rewrite_path": "",
+      "remove_after": ""
+    },
+    {
+      "protocol": "GATEWAY_PROTOCOL_REST",
+      "method": "DELETE",
+      "path": "/v1/api-keys/{id}",
+      "match": "GATEWAY_MATCH_PATH_TEMPLATE",
+      "procedure": "/saas.accounts.v1.APIKeyService/RevokeAPIKey",
+      "owner": {
+        "module": "saas-starter",
+        "service": "accounts"
+      },
+      "upstream_endpoint": "rest",
+      "exposure": "EXPOSURE_AUTHENTICATED",
+      "source": "GATEWAY_ROUTE_SOURCE_DESCRIPTOR",
+      "rewrite_path": "",
+      "remove_after": ""
+    },
+    {
+      "protocol": "GATEWAY_PROTOCOL_REST",
+      "method": "DELETE",
+      "path": "/v1/audit-export/{org_id}",
+      "match": "GATEWAY_MATCH_PATH_TEMPLATE",
+      "procedure": "/saas.accounts.v1.AuditExportService/DeleteConfig",
+      "owner": {
+        "module": "saas-starter",
+        "service": "accounts"
+      },
+      "upstream_endpoint": "rest",
+      "exposure": "EXPOSURE_AUTHENTICATED",
+      "source": "GATEWAY_ROUTE_SOURCE_DESCRIPTOR",
+      "rewrite_path": "",
+      "remove_after": ""
+    },
+    {
+      "protocol": "GATEWAY_PROTOCOL_REST",
+      "method": "DELETE",
+      "path": "/v1/invitations/{id}",
+      "match": "GATEWAY_MATCH_PATH_TEMPLATE",
+      "procedure": "/saas.accounts.v1.InvitationService/RevokeInvitation",
+      "owner": {
+        "module": "saas-starter",
+        "service": "accounts"
+      },
+      "upstream_endpoint": "rest",
+      "exposure": "EXPOSURE_AUTHENTICATED",
+      "source": "GATEWAY_ROUTE_SOURCE_DESCRIPTOR",
+      "rewrite_path": "",
+      "remove_after": ""
+    },
+    {
+      "protocol": "GATEWAY_PROTOCOL_REST",
+      "method": "DELETE",
+      "path": "/v1/mfa/devices/{id}",
+      "match": "GATEWAY_MATCH_PATH_TEMPLATE",
+      "procedure": "/saas.accounts.v1.MFAService/RevokeDevice",
+      "owner": {
+        "module": "saas-starter",
+        "service": "accounts"
+      },
+      "upstream_endpoint": "rest",
+      "exposure": "EXPOSURE_AUTHENTICATED",
+      "source": "GATEWAY_ROUTE_SOURCE_DESCRIPTOR",
+      "rewrite_path": "",
+      "remove_after": ""
+    },
+    {
+      "protocol": "GATEWAY_PROTOCOL_REST",
+      "method": "DELETE",
+      "path": "/v1/notifications/{id}",
+      "match": "GATEWAY_MATCH_PATH_TEMPLATE",
+      "procedure": "/saas.accounts.v1.NotificationService/DeleteNotification",
+      "owner": {
+        "module": "saas-starter",
+        "service": "accounts"
+      },
+      "upstream_endpoint": "rest",
+      "exposure": "EXPOSURE_AUTHENTICATED",
+      "source": "GATEWAY_ROUTE_SOURCE_DESCRIPTOR",
+      "rewrite_path": "",
+      "remove_after": ""
+    },
+    {
+      "protocol": "GATEWAY_PROTOCOL_REST",
+      "method": "DELETE",
+      "path": "/v1/organizations/{org_id}/members/{user_id}",
+      "match": "GATEWAY_MATCH_PATH_TEMPLATE",
+      "procedure": "/saas.accounts.v1.OrganizationService/RemoveMember",
+      "owner": {
+        "module": "saas-starter",
+        "service": "accounts"
+      },
+      "upstream_endpoint": "rest",
+      "exposure": "EXPOSURE_AUTHENTICATED",
+      "source": "GATEWAY_ROUTE_SOURCE_DESCRIPTOR",
+      "rewrite_path": "",
+      "remove_after": ""
+    },
+    {
+      "protocol": "GATEWAY_PROTOCOL_REST",
+      "method": "DELETE",
+      "path": "/v1/platform/admins/{user_id}",
+      "match": "GATEWAY_MATCH_PATH_TEMPLATE",
+      "procedure": "/saas.accounts.v1.PlatformAdminService/RevokePlatformRole",
+      "owner": {
+        "module": "saas-starter",
+        "service": "accounts"
+      },
+      "upstream_endpoint": "rest",
+      "exposure": "EXPOSURE_AUTHENTICATED",
+      "source": "GATEWAY_ROUTE_SOURCE_DESCRIPTOR",
+      "rewrite_path": "",
+      "remove_after": ""
+    },
+    {
+      "protocol": "GATEWAY_PROTOCOL_REST",
+      "method": "DELETE",
+      "path": "/v1/platform/sessions/{session_id}",
+      "match": "GATEWAY_MATCH_PATH_TEMPLATE",
+      "procedure": "/saas.accounts.v1.PlatformAdminService/RevokeSession",
+      "owner": {
+        "module": "saas-starter",
+        "service": "accounts"
+      },
+      "upstream_endpoint": "rest",
+      "exposure": "EXPOSURE_AUTHENTICATED",
+      "source": "GATEWAY_ROUTE_SOURCE_DESCRIPTOR",
+      "rewrite_path": "",
+      "remove_after": ""
+    },
+    {
+      "protocol": "GATEWAY_PROTOCOL_REST",
+      "method": "DELETE",
+      "path": "/v1/role-assignments",
+      "match": "GATEWAY_MATCH_EXACT",
+      "procedure": "/saas.accounts.v1.PermissionService/RevokeRole",
+      "owner": {
+        "module": "saas-starter",
+        "service": "accounts"
+      },
+      "upstream_endpoint": "rest",
+      "exposure": "EXPOSURE_AUTHENTICATED",
+      "source": "GATEWAY_ROUTE_SOURCE_DESCRIPTOR",
+      "rewrite_path": "",
+      "remove_after": ""
+    },
+    {
+      "protocol": "GATEWAY_PROTOCOL_REST",
+      "method": "DELETE",
+      "path": "/v1/roles/{id}",
+      "match": "GATEWAY_MATCH_PATH_TEMPLATE",
+      "procedure": "/saas.accounts.v1.PermissionService/DeleteRole",
+      "owner": {
+        "module": "saas-starter",
+        "service": "accounts"
+      },
+      "upstream_endpoint": "rest",
+      "exposure": "EXPOSURE_AUTHENTICATED",
+      "source": "GATEWAY_ROUTE_SOURCE_DESCRIPTOR",
+      "rewrite_path": "",
+      "remove_after": ""
+    },
+    {
+      "protocol": "GATEWAY_PROTOCOL_REST",
+      "method": "DELETE",
+      "path": "/v1/teams/{team_id}",
+      "match": "GATEWAY_MATCH_PATH_TEMPLATE",
+      "procedure": "/saas.accounts.v1.TeamService/DeleteTeam",
+      "owner": {
+        "module": "saas-starter",
+        "service": "accounts"
+      },
+      "upstream_endpoint": "rest",
+      "exposure": "EXPOSURE_AUTHENTICATED",
+      "source": "GATEWAY_ROUTE_SOURCE_DESCRIPTOR",
+      "rewrite_path": "",
+      "remove_after": ""
+    },
+    {
+      "protocol": "GATEWAY_PROTOCOL_REST",
+      "method": "DELETE",
+      "path": "/v1/teams/{team_id}/members/{user_id}",
+      "match": "GATEWAY_MATCH_PATH_TEMPLATE",
+      "procedure": "/saas.accounts.v1.TeamService/RemoveMember",
+      "owner": {
+        "module": "saas-starter",
+        "service": "accounts"
+      },
+      "upstream_endpoint": "rest",
+      "exposure": "EXPOSURE_AUTHENTICATED",
+      "source": "GATEWAY_ROUTE_SOURCE_DESCRIPTOR",
+      "rewrite_path": "",
+      "remove_after": ""
+    },
+    {
+      "protocol": "GATEWAY_PROTOCOL_REST",
+      "method": "DELETE",
+      "path": "/v1/users/{uuid}",
+      "match": "GATEWAY_MATCH_PATH_TEMPLATE",
+      "procedure": "/saas.accounts.v1.UserService/DeleteUser",
+      "owner": {
+        "module": "saas-starter",
+        "service": "accounts"
+      },
+      "upstream_endpoint": "rest",
+      "exposure": "EXPOSURE_AUTHENTICATED",
+      "source": "GATEWAY_ROUTE_SOURCE_DESCRIPTOR",
+      "rewrite_path": "",
+      "remove_after": ""
+    },
+    {
+      "protocol": "GATEWAY_PROTOCOL_REST",
+      "method": "DELETE",
+      "path": "/v1/webhooks/{id}",
+      "match": "GATEWAY_MATCH_PATH_TEMPLATE",
+      "procedure": "/saas.accounts.v1.WebhookService/DeleteSubscription",
+      "owner": {
+        "module": "saas-starter",
+        "service": "accounts"
+      },
+      "upstream_endpoint": "rest",
+      "exposure": "EXPOSURE_AUTHENTICATED",
+      "source": "GATEWAY_ROUTE_SOURCE_DESCRIPTOR",
+      "rewrite_path": "",
+      "remove_after": ""
+    },
+    {
+      "protocol": "GATEWAY_PROTOCOL_REST",
+      "method": "GET",
+      "path": "/v1/.well-known/service-info",
+      "match": "GATEWAY_MATCH_EXACT",
+      "procedure": "/saas.accounts.v1.IntrospectionService/GetServiceInfo",
+      "owner": {
+        "module": "saas-starter",
+        "service": "accounts"
+      },
+      "upstream_endpoint": "rest",
+      "exposure": "EXPOSURE_PUBLIC",
+      "source": "GATEWAY_ROUTE_SOURCE_DESCRIPTOR",
+      "rewrite_path": "",
+      "remove_after": ""
+    },
+    {
+      "protocol": "GATEWAY_PROTOCOL_REST",
+      "method": "GET",
+      "path": "/v1/api-keys",
+      "match": "GATEWAY_MATCH_EXACT",
+      "procedure": "/saas.accounts.v1.APIKeyService/ListAPIKeys",
+      "owner": {
+        "module": "saas-starter",
+        "service": "accounts"
+      },
+      "upstream_endpoint": "rest",
+      "exposure": "EXPOSURE_AUTHENTICATED",
+      "source": "GATEWAY_ROUTE_SOURCE_DESCRIPTOR",
+      "rewrite_path": "",
+      "remove_after": ""
+    },
+    {
+      "protocol": "GATEWAY_PROTOCOL_REST",
+      "method": "GET",
+      "path": "/v1/audit-export/{org_id}",
+      "match": "GATEWAY_MATCH_PATH_TEMPLATE",
+      "procedure": "/saas.accounts.v1.AuditExportService/GetConfig",
+      "owner": {
+        "module": "saas-starter",
+        "service": "accounts"
+      },
+      "upstream_endpoint": "rest",
+      "exposure": "EXPOSURE_AUTHENTICATED",
+      "source": "GATEWAY_ROUTE_SOURCE_DESCRIPTOR",
+      "rewrite_path": "",
+      "remove_after": ""
+    },
+    {
+      "protocol": "GATEWAY_PROTOCOL_REST",
+      "method": "GET",
+      "path": "/v1/audit-log",
+      "match": "GATEWAY_MATCH_EXACT",
+      "procedure": "/saas.accounts.v1.AuditService/QueryAuditLog",
+      "owner": {
+        "module": "saas-starter",
+        "service": "accounts"
+      },
+      "upstream_endpoint": "rest",
+      "exposure": "EXPOSURE_AUTHENTICATED",
+      "source": "GATEWAY_ROUTE_SOURCE_DESCRIPTOR",
+      "rewrite_path": "",
+      "remove_after": ""
+    },
+    {
+      "protocol": "GATEWAY_PROTOCOL_REST",
+      "method": "GET",
+      "path": "/v1/auth/.well-known/jwks.json",
+      "match": "GATEWAY_MATCH_EXACT",
+      "procedure": "/saas.accounts.v1.AuthService/GetJWKS",
+      "owner": {
+        "module": "saas-starter",
+        "service": "accounts"
+      },
+      "upstream_endpoint": "rest",
+      "exposure": "EXPOSURE_PUBLIC",
+      "source": "GATEWAY_ROUTE_SOURCE_DESCRIPTOR",
+      "rewrite_path": "",
+      "remove_after": ""
+    },
+    {
+      "protocol": "GATEWAY_PROTOCOL_REST",
+      "method": "GET",
+      "path": "/v1/billing/invoices/{org_id}",
+      "match": "GATEWAY_MATCH_PATH_TEMPLATE",
+      "procedure": "/saas.accounts.v1.BillingService/ListInvoices",
+      "owner": {
+        "module": "saas-starter",
+        "service": "accounts"
+      },
+      "upstream_endpoint": "rest",
+      "exposure": "EXPOSURE_AUTHENTICATED",
+      "source": "GATEWAY_ROUTE_SOURCE_DESCRIPTOR",
+      "rewrite_path": "",
+      "remove_after": ""
+    },
+    {
+      "protocol": "GATEWAY_PROTOCOL_REST",
+      "method": "GET",
+      "path": "/v1/consent/status",
+      "match": "GATEWAY_MATCH_EXACT",
+      "procedure": "/saas.accounts.v1.ConsentService/GetStatus",
+      "owner": {
+        "module": "saas-starter",
+        "service": "accounts"
+      },
+      "upstream_endpoint": "rest",
+      "exposure": "EXPOSURE_AUTHENTICATED",
+      "source": "GATEWAY_ROUTE_SOURCE_DESCRIPTOR",
+      "rewrite_path": "",
+      "remove_after": ""
+    },
+    {
+      "protocol": "GATEWAY_PROTOCOL_REST",
+      "method": "GET",
+      "path": "/v1/delegations/{id}:wait",
+      "match": "GATEWAY_MATCH_PATH_TEMPLATE",
+      "procedure": "/saas.accounts.v1.DelegationService/WaitForDelegation",
+      "owner": {
+        "module": "saas-starter",
+        "service": "accounts"
+      },
+      "upstream_endpoint": "rest",
+      "exposure": "EXPOSURE_AUTHENTICATED",
+      "source": "GATEWAY_ROUTE_SOURCE_DESCRIPTOR",
+      "rewrite_path": "",
+      "remove_after": ""
+    },
+    {
+      "protocol": "GATEWAY_PROTOCOL_REST",
+      "method": "GET",
+      "path": "/v1/delegations:pending",
+      "match": "GATEWAY_MATCH_EXACT",
+      "procedure": "/saas.accounts.v1.DelegationService/ListPendingDelegations",
+      "owner": {
+        "module": "saas-starter",
+        "service": "accounts"
+      },
+      "upstream_endpoint": "rest",
+      "exposure": "EXPOSURE_AUTHENTICATED",
+      "source": "GATEWAY_ROUTE_SOURCE_DESCRIPTOR",
+      "rewrite_path": "",
+      "remove_after": ""
+    },
+    {
+      "protocol": "GATEWAY_PROTOCOL_REST",
+      "method": "GET",
+      "path": "/v1/gdpr/delete/{id}",
+      "match": "GATEWAY_MATCH_PATH_TEMPLATE",
+      "procedure": "/saas.accounts.v1.GDPRService/GetDeletionStatus",
+      "owner": {
+        "module": "saas-starter",
+        "service": "accounts"
+      },
+      "upstream_endpoint": "rest",
+      "exposure": "EXPOSURE_AUTHENTICATED",
+      "source": "GATEWAY_ROUTE_SOURCE_DESCRIPTOR",
+      "rewrite_path": "",
+      "remove_after": ""
+    },
+    {
+      "protocol": "GATEWAY_PROTOCOL_REST",
+      "method": "GET",
+      "path": "/v1/gdpr/export/{id}",
+      "match": "GATEWAY_MATCH_PATH_TEMPLATE",
+      "procedure": "/saas.accounts.v1.GDPRService/GetExportStatus",
+      "owner": {
+        "module": "saas-starter",
+        "service": "accounts"
+      },
+      "upstream_endpoint": "rest",
+      "exposure": "EXPOSURE_AUTHENTICATED",
+      "source": "GATEWAY_ROUTE_SOURCE_DESCRIPTOR",
+      "rewrite_path": "",
+      "remove_after": ""
+    },
+    {
+      "protocol": "GATEWAY_PROTOCOL_REST",
+      "method": "GET",
+      "path": "/v1/invitations",
+      "match": "GATEWAY_MATCH_EXACT",
+      "procedure": "/saas.accounts.v1.InvitationService/ListInvitations",
+      "owner": {
+        "module": "saas-starter",
+        "service": "accounts"
+      },
+      "upstream_endpoint": "rest",
+      "exposure": "EXPOSURE_AUTHENTICATED",
+      "source": "GATEWAY_ROUTE_SOURCE_DESCRIPTOR",
+      "rewrite_path": "",
+      "remove_after": ""
+    },
+    {
+      "protocol": "GATEWAY_PROTOCOL_REST",
+      "method": "GET",
+      "path": "/v1/mfa/devices",
+      "match": "GATEWAY_MATCH_EXACT",
+      "procedure": "/saas.accounts.v1.MFAService/ListDevices",
+      "owner": {
+        "module": "saas-starter",
+        "service": "accounts"
+      },
+      "upstream_endpoint": "rest",
+      "exposure": "EXPOSURE_AUTHENTICATED",
+      "source": "GATEWAY_ROUTE_SOURCE_DESCRIPTOR",
+      "rewrite_path": "",
+      "remove_after": ""
+    },
+    {
+      "protocol": "GATEWAY_PROTOCOL_REST",
+      "method": "GET",
+      "path": "/v1/notifications",
+      "match": "GATEWAY_MATCH_EXACT",
+      "procedure": "/saas.accounts.v1.NotificationService/ListNotifications",
+      "owner": {
+        "module": "saas-starter",
+        "service": "accounts"
+      },
+      "upstream_endpoint": "rest",
+      "exposure": "EXPOSURE_AUTHENTICATED",
+      "source": "GATEWAY_ROUTE_SOURCE_DESCRIPTOR",
+      "rewrite_path": "",
+      "remove_after": ""
+    },
+    {
+      "protocol": "GATEWAY_PROTOCOL_REST",
+      "method": "GET",
+      "path": "/v1/notifications/unread-count",
+      "match": "GATEWAY_MATCH_EXACT",
+      "procedure": "/saas.accounts.v1.NotificationService/GetUnreadCount",
+      "owner": {
+        "module": "saas-starter",
+        "service": "accounts"
+      },
+      "upstream_endpoint": "rest",
+      "exposure": "EXPOSURE_AUTHENTICATED",
+      "source": "GATEWAY_ROUTE_SOURCE_DESCRIPTOR",
+      "rewrite_path": "",
+      "remove_after": ""
+    },
+    {
+      "protocol": "GATEWAY_PROTOCOL_REST",
+      "method": "GET",
+      "path": "/v1/onboarding",
+      "match": "GATEWAY_MATCH_EXACT",
+      "procedure": "/saas.accounts.v1.OnboardingService/GetProgress",
+      "owner": {
+        "module": "saas-starter",
+        "service": "accounts"
+      },
+      "upstream_endpoint": "rest",
+      "exposure": "EXPOSURE_AUTHENTICATED",
+      "source": "GATEWAY_ROUTE_SOURCE_DESCRIPTOR",
+      "rewrite_path": "",
+      "remove_after": ""
+    },
+    {
+      "protocol": "GATEWAY_PROTOCOL_REST",
+      "method": "GET",
+      "path": "/v1/organizations",
+      "match": "GATEWAY_MATCH_EXACT",
+      "procedure": "/saas.accounts.v1.OrganizationService/ListOrganizations",
+      "owner": {
+        "module": "saas-starter",
+        "service": "accounts"
+      },
+      "upstream_endpoint": "rest",
+      "exposure": "EXPOSURE_AUTHENTICATED",
+      "source": "GATEWAY_ROUTE_SOURCE_DESCRIPTOR",
+      "rewrite_path": "",
+      "remove_after": ""
+    },
+    {
+      "protocol": "GATEWAY_PROTOCOL_REST",
+      "method": "GET",
+      "path": "/v1/organizations/{id}",
+      "match": "GATEWAY_MATCH_PATH_TEMPLATE",
+      "procedure": "/saas.accounts.v1.OrganizationService/GetOrganization",
+      "owner": {
+        "module": "saas-starter",
+        "service": "accounts"
+      },
+      "upstream_endpoint": "rest",
+      "exposure": "EXPOSURE_AUTHENTICATED",
+      "source": "GATEWAY_ROUTE_SOURCE_DESCRIPTOR",
+      "rewrite_path": "",
+      "remove_after": ""
+    },
+    {
+      "protocol": "GATEWAY_PROTOCOL_REST",
+      "method": "GET",
+      "path": "/v1/organizations/{org_id}/members",
+      "match": "GATEWAY_MATCH_PATH_TEMPLATE",
+      "procedure": "/saas.accounts.v1.OrganizationService/ListMembers",
+      "owner": {
+        "module": "saas-starter",
+        "service": "accounts"
+      },
+      "upstream_endpoint": "rest",
+      "exposure": "EXPOSURE_AUTHENTICATED",
+      "source": "GATEWAY_ROUTE_SOURCE_DESCRIPTOR",
+      "rewrite_path": "",
+      "remove_after": ""
+    },
+    {
+      "protocol": "GATEWAY_PROTOCOL_REST",
+      "method": "GET",
+      "path": "/v1/organizations/{org_id}/settings",
+      "match": "GATEWAY_MATCH_PATH_TEMPLATE",
+      "procedure": "/saas.accounts.v1.OrganizationService/GetOrgSettings",
+      "owner": {
+        "module": "saas-starter",
+        "service": "accounts"
+      },
+      "upstream_endpoint": "rest",
+      "exposure": "EXPOSURE_AUTHENTICATED",
+      "source": "GATEWAY_ROUTE_SOURCE_DESCRIPTOR",
+      "rewrite_path": "",
+      "remove_after": ""
+    },
+    {
+      "protocol": "GATEWAY_PROTOCOL_REST",
+      "method": "GET",
+      "path": "/v1/organizations/{org_id}/teams",
+      "match": "GATEWAY_MATCH_PATH_TEMPLATE",
+      "procedure": "/saas.accounts.v1.TeamService/ListTeams",
+      "owner": {
+        "module": "saas-starter",
+        "service": "accounts"
+      },
+      "upstream_endpoint": "rest",
+      "exposure": "EXPOSURE_AUTHENTICATED",
+      "source": "GATEWAY_ROUTE_SOURCE_DESCRIPTOR",
+      "rewrite_path": "",
+      "remove_after": ""
+    },
+    {
+      "protocol": "GATEWAY_PROTOCOL_REST",
+      "method": "GET",
+      "path": "/v1/organizations/{organization_id}/usage/{meter}",
+      "match": "GATEWAY_MATCH_PATH_TEMPLATE",
+      "procedure": "/saas.accounts.v1.UsageService/GetUsage",
+      "owner": {
+        "module": "saas-starter",
+        "service": "accounts"
+      },
+      "upstream_endpoint": "rest",
+      "exposure": "EXPOSURE_AUTHENTICATED",
+      "source": "GATEWAY_ROUTE_SOURCE_DESCRIPTOR",
+      "rewrite_path": "",
+      "remove_after": ""
+    },
+    {
+      "protocol": "GATEWAY_PROTOCOL_REST",
+      "method": "GET",
+      "path": "/v1/platform/admins",
+      "match": "GATEWAY_MATCH_EXACT",
+      "procedure": "/saas.accounts.v1.PlatformAdminService/ListPlatformAdmins",
+      "owner": {
+        "module": "saas-starter",
+        "service": "accounts"
+      },
+      "upstream_endpoint": "rest",
+      "exposure": "EXPOSURE_AUTHENTICATED",
+      "source": "GATEWAY_ROUTE_SOURCE_DESCRIPTOR",
+      "rewrite_path": "",
+      "remove_after": ""
+    },
+    {
+      "protocol": "GATEWAY_PROTOCOL_REST",
+      "method": "GET",
+      "path": "/v1/platform/feature-flags",
+      "match": "GATEWAY_MATCH_EXACT",
+      "procedure": "/saas.accounts.v1.PlatformAdminService/ListFeatureFlags",
+      "owner": {
+        "module": "saas-starter",
+        "service": "accounts"
+      },
+      "upstream_endpoint": "rest",
+      "exposure": "EXPOSURE_AUTHENTICATED",
+      "source": "GATEWAY_ROUTE_SOURCE_DESCRIPTOR",
+      "rewrite_path": "",
+      "remove_after": ""
+    },
+    {
+      "protocol": "GATEWAY_PROTOCOL_REST",
+      "method": "GET",
+      "path": "/v1/platform/jobs",
+      "match": "GATEWAY_MATCH_EXACT",
+      "procedure": "/saas.accounts.v1.PlatformAdminService/ListJobs",
+      "owner": {
+        "module": "saas-starter",
+        "service": "accounts"
+      },
+      "upstream_endpoint": "rest",
+      "exposure": "EXPOSURE_AUTHENTICATED",
+      "source": "GATEWAY_ROUTE_SOURCE_DESCRIPTOR",
+      "rewrite_path": "",
+      "remove_after": ""
+    },
+    {
+      "protocol": "GATEWAY_PROTOCOL_REST",
+      "method": "GET",
+      "path": "/v1/platform/jobs/operations",
+      "match": "GATEWAY_MATCH_EXACT",
+      "procedure": "/saas.accounts.v1.PlatformAdminService/GetJobOperations",
+      "owner": {
+        "module": "saas-starter",
+        "service": "accounts"
+      },
+      "upstream_endpoint": "rest",
+      "exposure": "EXPOSURE_AUTHENTICATED",
+      "source": "GATEWAY_ROUTE_SOURCE_DESCRIPTOR",
+      "rewrite_path": "",
+      "remove_after": ""
+    },
+    {
+      "protocol": "GATEWAY_PROTOCOL_REST",
+      "method": "GET",
+      "path": "/v1/platform/jobs/{job_id}",
+      "match": "GATEWAY_MATCH_PATH_TEMPLATE",
+      "procedure": "/saas.accounts.v1.PlatformAdminService/GetJob",
+      "owner": {
+        "module": "saas-starter",
+        "service": "accounts"
+      },
+      "upstream_endpoint": "rest",
+      "exposure": "EXPOSURE_AUTHENTICATED",
+      "source": "GATEWAY_ROUTE_SOURCE_DESCRIPTOR",
+      "rewrite_path": "",
+      "remove_after": ""
+    },
+    {
+      "protocol": "GATEWAY_PROTOCOL_REST",
+      "method": "GET",
+      "path": "/v1/platform/organizations/{org_id}/entitlements",
+      "match": "GATEWAY_MATCH_PATH_TEMPLATE",
+      "procedure": "/saas.accounts.v1.PlatformAdminService/GetOrgEntitlements",
+      "owner": {
+        "module": "saas-starter",
+        "service": "accounts"
+      },
+      "upstream_endpoint": "rest",
+      "exposure": "EXPOSURE_AUTHENTICATED",
+      "source": "GATEWAY_ROUTE_SOURCE_DESCRIPTOR",
+      "rewrite_path": "",
+      "remove_after": ""
+    },
+    {
+      "protocol": "GATEWAY_PROTOCOL_REST",
+      "method": "GET",
+      "path": "/v1/platform/sessions",
+      "match": "GATEWAY_MATCH_EXACT",
+      "procedure": "/saas.accounts.v1.PlatformAdminService/ListActiveSessions",
+      "owner": {
+        "module": "saas-starter",
+        "service": "accounts"
+      },
+      "upstream_endpoint": "rest",
+      "exposure": "EXPOSURE_AUTHENTICATED",
+      "source": "GATEWAY_ROUTE_SOURCE_DESCRIPTOR",
+      "rewrite_path": "",
+      "remove_after": ""
+    },
+    {
+      "protocol": "GATEWAY_PROTOCOL_REST",
+      "method": "GET",
+      "path": "/v1/platform/users",
+      "match": "GATEWAY_MATCH_EXACT",
+      "procedure": "/saas.accounts.v1.PlatformAdminService/SearchUsers",
+      "owner": {
+        "module": "saas-starter",
+        "service": "accounts"
+      },
+      "upstream_endpoint": "rest",
+      "exposure": "EXPOSURE_AUTHENTICATED",
+      "source": "GATEWAY_ROUTE_SOURCE_DESCRIPTOR",
+      "rewrite_path": "",
+      "remove_after": ""
+    },
+    {
+      "protocol": "GATEWAY_PROTOCOL_REST",
+      "method": "GET",
+      "path": "/v1/principals",
+      "match": "GATEWAY_MATCH_EXACT",
+      "procedure": "/saas.accounts.v1.PrincipalService/ListPrincipals",
+      "owner": {
+        "module": "saas-starter",
+        "service": "accounts"
+      },
+      "upstream_endpoint": "rest",
+      "exposure": "EXPOSURE_AUTHENTICATED",
+      "source": "GATEWAY_ROUTE_SOURCE_DESCRIPTOR",
+      "rewrite_path": "",
+      "remove_after": ""
+    },
+    {
+      "protocol": "GATEWAY_PROTOCOL_REST",
+      "method": "GET",
+      "path": "/v1/role-assignments",
+      "match": "GATEWAY_MATCH_EXACT",
+      "procedure": "/saas.accounts.v1.PermissionService/ListRoleAssignments",
+      "owner": {
+        "module": "saas-starter",
+        "service": "accounts"
+      },
+      "upstream_endpoint": "rest",
+      "exposure": "EXPOSURE_AUTHENTICATED",
+      "source": "GATEWAY_ROUTE_SOURCE_DESCRIPTOR",
+      "rewrite_path": "",
+      "remove_after": ""
+    },
+    {
+      "protocol": "GATEWAY_PROTOCOL_REST",
+      "method": "GET",
+      "path": "/v1/roles",
+      "match": "GATEWAY_MATCH_EXACT",
+      "procedure": "/saas.accounts.v1.PermissionService/ListRoles",
+      "owner": {
+        "module": "saas-starter",
+        "service": "accounts"
+      },
+      "upstream_endpoint": "rest",
+      "exposure": "EXPOSURE_AUTHENTICATED",
+      "source": "GATEWAY_ROUTE_SOURCE_DESCRIPTOR",
+      "rewrite_path": "",
+      "remove_after": ""
+    },
+    {
+      "protocol": "GATEWAY_PROTOCOL_REST",
+      "method": "GET",
+      "path": "/v1/sso/{org_id}",
+      "match": "GATEWAY_MATCH_PATH_TEMPLATE",
+      "procedure": "/saas.accounts.v1.SSOAdminService/GetSSO",
+      "owner": {
+        "module": "saas-starter",
+        "service": "accounts"
+      },
+      "upstream_endpoint": "rest",
+      "exposure": "EXPOSURE_AUTHENTICATED",
+      "source": "GATEWAY_ROUTE_SOURCE_DESCRIPTOR",
+      "rewrite_path": "",
+      "remove_after": ""
+    },
+    {
+      "protocol": "GATEWAY_PROTOCOL_REST",
+      "method": "GET",
+      "path": "/v1/teams/{team_id}/members",
+      "match": "GATEWAY_MATCH_PATH_TEMPLATE",
+      "procedure": "/saas.accounts.v1.TeamService/ListMembers",
+      "owner": {
+        "module": "saas-starter",
+        "service": "accounts"
+      },
+      "upstream_endpoint": "rest",
+      "exposure": "EXPOSURE_AUTHENTICATED",
+      "source": "GATEWAY_ROUTE_SOURCE_DESCRIPTOR",
+      "rewrite_path": "",
+      "remove_after": ""
+    },
+    {
+      "protocol": "GATEWAY_PROTOCOL_REST",
+      "method": "GET",
+      "path": "/v1/user/settings",
+      "match": "GATEWAY_MATCH_EXACT",
+      "procedure": "/saas.accounts.v1.UserSettingsService/Get",
+      "owner": {
+        "module": "saas-starter",
+        "service": "accounts"
+      },
+      "upstream_endpoint": "rest",
+      "exposure": "EXPOSURE_AUTHENTICATED",
+      "source": "GATEWAY_ROUTE_SOURCE_DESCRIPTOR",
+      "rewrite_path": "",
+      "remove_after": ""
+    },
+    {
+      "protocol": "GATEWAY_PROTOCOL_REST",
+      "method": "GET",
+      "path": "/v1/users",
+      "match": "GATEWAY_MATCH_EXACT",
+      "procedure": "/saas.accounts.v1.UserService/ListUsers",
+      "owner": {
+        "module": "saas-starter",
+        "service": "accounts"
+      },
+      "upstream_endpoint": "rest",
+      "exposure": "EXPOSURE_AUTHENTICATED",
+      "source": "GATEWAY_ROUTE_SOURCE_DESCRIPTOR",
+      "rewrite_path": "",
+      "remove_after": ""
+    },
+    {
+      "protocol": "GATEWAY_PROTOCOL_REST",
+      "method": "GET",
+      "path": "/v1/users/self",
+      "match": "GATEWAY_MATCH_EXACT",
+      "procedure": "/saas.accounts.v1.UserService/GetSelf",
+      "owner": {
+        "module": "saas-starter",
+        "service": "accounts"
+      },
+      "upstream_endpoint": "rest",
+      "exposure": "EXPOSURE_AUTHENTICATED",
+      "source": "GATEWAY_ROUTE_SOURCE_DESCRIPTOR",
+      "rewrite_path": "",
+      "remove_after": ""
+    },
+    {
+      "protocol": "GATEWAY_PROTOCOL_REST",
+      "method": "GET",
+      "path": "/v1/users/{user_uuid}/identities",
+      "match": "GATEWAY_MATCH_PATH_TEMPLATE",
+      "procedure": "/saas.accounts.v1.UserService/ListUserIdentities",
+      "owner": {
+        "module": "saas-starter",
+        "service": "accounts"
+      },
+      "upstream_endpoint": "rest",
+      "exposure": "EXPOSURE_AUTHENTICATED",
+      "source": "GATEWAY_ROUTE_SOURCE_DESCRIPTOR",
+      "rewrite_path": "",
+      "remove_after": ""
+    },
+    {
+      "protocol": "GATEWAY_PROTOCOL_REST",
+      "method": "GET",
+      "path": "/v1/users/{uuid}",
+      "match": "GATEWAY_MATCH_PATH_TEMPLATE",
+      "procedure": "/saas.accounts.v1.UserService/GetUser",
+      "owner": {
+        "module": "saas-starter",
+        "service": "accounts"
+      },
+      "upstream_endpoint": "rest",
+      "exposure": "EXPOSURE_AUTHENTICATED",
+      "source": "GATEWAY_ROUTE_SOURCE_DESCRIPTOR",
+      "rewrite_path": "",
+      "remove_after": ""
+    },
+    {
+      "protocol": "GATEWAY_PROTOCOL_REST",
+      "method": "GET",
+      "path": "/v1/users:byEmail",
+      "match": "GATEWAY_MATCH_EXACT",
+      "procedure": "/saas.accounts.v1.UserService/GetUser",
+      "owner": {
+        "module": "saas-starter",
+        "service": "accounts"
+      },
+      "upstream_endpoint": "rest",
+      "exposure": "EXPOSURE_AUTHENTICATED",
+      "source": "GATEWAY_ROUTE_SOURCE_DESCRIPTOR",
+      "rewrite_path": "",
+      "remove_after": ""
+    },
+    {
+      "protocol": "GATEWAY_PROTOCOL_REST",
+      "method": "GET",
+      "path": "/v1/users:findByIdentity",
+      "match": "GATEWAY_MATCH_EXACT",
+      "procedure": "/saas.accounts.v1.UserService/FindUserByIdentity",
+      "owner": {
+        "module": "saas-starter",
+        "service": "accounts"
+      },
+      "upstream_endpoint": "rest",
+      "exposure": "EXPOSURE_AUTHENTICATED",
+      "source": "GATEWAY_ROUTE_SOURCE_DESCRIPTOR",
+      "rewrite_path": "",
+      "remove_after": ""
+    },
+    {
+      "protocol": "GATEWAY_PROTOCOL_REST",
+      "method": "GET",
+      "path": "/v1/version",
+      "match": "GATEWAY_MATCH_EXACT",
+      "procedure": "/saas.accounts.v1.UserService/Version",
+      "owner": {
+        "module": "saas-starter",
+        "service": "accounts"
+      },
+      "upstream_endpoint": "rest",
+      "exposure": "EXPOSURE_PUBLIC",
+      "source": "GATEWAY_ROUTE_SOURCE_DESCRIPTOR",
+      "rewrite_path": "",
+      "remove_after": ""
+    },
+    {
+      "protocol": "GATEWAY_PROTOCOL_REST",
+      "method": "GET",
+      "path": "/v1/webhooks",
+      "match": "GATEWAY_MATCH_EXACT",
+      "procedure": "/saas.accounts.v1.WebhookService/ListSubscriptions",
+      "owner": {
+        "module": "saas-starter",
+        "service": "accounts"
+      },
+      "upstream_endpoint": "rest",
+      "exposure": "EXPOSURE_AUTHENTICATED",
+      "source": "GATEWAY_ROUTE_SOURCE_DESCRIPTOR",
+      "rewrite_path": "",
+      "remove_after": ""
+    },
+    {
+      "protocol": "GATEWAY_PROTOCOL_REST",
+      "method": "GET",
+      "path": "/v1/webhooks/deliveries/{id}",
+      "match": "GATEWAY_MATCH_PATH_TEMPLATE",
+      "procedure": "/saas.accounts.v1.WebhookService/GetDelivery",
+      "owner": {
+        "module": "saas-starter",
+        "service": "accounts"
+      },
+      "upstream_endpoint": "rest",
+      "exposure": "EXPOSURE_AUTHENTICATED",
+      "source": "GATEWAY_ROUTE_SOURCE_DESCRIPTOR",
+      "rewrite_path": "",
+      "remove_after": ""
+    },
+    {
+      "protocol": "GATEWAY_PROTOCOL_REST",
+      "method": "GET",
+      "path": "/v1/webhooks/{subscription_id}/deliveries",
+      "match": "GATEWAY_MATCH_PATH_TEMPLATE",
+      "procedure": "/saas.accounts.v1.WebhookService/ListDeliveries",
+      "owner": {
+        "module": "saas-starter",
+        "service": "accounts"
+      },
+      "upstream_endpoint": "rest",
+      "exposure": "EXPOSURE_AUTHENTICATED",
+      "source": "GATEWAY_ROUTE_SOURCE_DESCRIPTOR",
+      "rewrite_path": "",
+      "remove_after": ""
+    },
+    {
+      "protocol": "GATEWAY_PROTOCOL_REST",
+      "method": "PATCH",
+      "path": "/v1/teams/{team_id}",
+      "match": "GATEWAY_MATCH_PATH_TEMPLATE",
+      "procedure": "/saas.accounts.v1.TeamService/UpdateTeam",
+      "owner": {
+        "module": "saas-starter",
+        "service": "accounts"
+      },
+      "upstream_endpoint": "rest",
+      "exposure": "EXPOSURE_AUTHENTICATED",
+      "source": "GATEWAY_ROUTE_SOURCE_DESCRIPTOR",
+      "rewrite_path": "",
+      "remove_after": ""
+    },
+    {
+      "protocol": "GATEWAY_PROTOCOL_REST",
+      "method": "PATCH",
+      "path": "/v1/users/{uuid}",
+      "match": "GATEWAY_MATCH_PATH_TEMPLATE",
+      "procedure": "/saas.accounts.v1.UserService/UpdateUser",
+      "owner": {
+        "module": "saas-starter",
+        "service": "accounts"
+      },
+      "upstream_endpoint": "rest",
+      "exposure": "EXPOSURE_AUTHENTICATED",
+      "source": "GATEWAY_ROUTE_SOURCE_DESCRIPTOR",
+      "rewrite_path": "",
+      "remove_after": ""
+    },
+    {
+      "protocol": "GATEWAY_PROTOCOL_REST",
+      "method": "POST",
+      "path": "/v1/api-keys",
+      "match": "GATEWAY_MATCH_EXACT",
+      "procedure": "/saas.accounts.v1.APIKeyService/CreateAPIKey",
+      "owner": {
+        "module": "saas-starter",
+        "service": "accounts"
+      },
+      "upstream_endpoint": "rest",
+      "exposure": "EXPOSURE_AUTHENTICATED",
+      "source": "GATEWAY_ROUTE_SOURCE_DESCRIPTOR",
+      "rewrite_path": "",
+      "remove_after": ""
+    },
+    {
+      "protocol": "GATEWAY_PROTOCOL_REST",
+      "method": "POST",
+      "path": "/v1/audit-export",
+      "match": "GATEWAY_MATCH_EXACT",
+      "procedure": "/saas.accounts.v1.AuditExportService/SaveConfig",
+      "owner": {
+        "module": "saas-starter",
+        "service": "accounts"
+      },
+      "upstream_endpoint": "rest",
+      "exposure": "EXPOSURE_AUTHENTICATED",
+      "source": "GATEWAY_ROUTE_SOURCE_DESCRIPTOR",
+      "rewrite_path": "",
+      "remove_after": ""
+    },
+    {
+      "protocol": "GATEWAY_PROTOCOL_REST",
+      "method": "POST",
+      "path": "/v1/audit-log:export",
+      "match": "GATEWAY_MATCH_EXACT",
+      "procedure": "/saas.accounts.v1.AuditService/ExportAuditLog",
+      "owner": {
+        "module": "saas-starter",
+        "service": "accounts"
+      },
+      "upstream_endpoint": "rest",
+      "exposure": "EXPOSURE_AUTHENTICATED",
+      "source": "GATEWAY_ROUTE_SOURCE_DESCRIPTOR",
+      "rewrite_path": "",
+      "remove_after": ""
+    },
+    {
+      "protocol": "GATEWAY_PROTOCOL_REST",
+      "method": "POST",
+      "path": "/v1/auth/authenticate",
+      "match": "GATEWAY_MATCH_EXACT",
+      "procedure": "/saas.accounts.v1.AuthService/Authenticate",
+      "owner": {
+        "module": "saas-starter",
+        "service": "accounts"
+      },
+      "upstream_endpoint": "rest",
+      "exposure": "EXPOSURE_PUBLIC",
+      "source": "GATEWAY_ROUTE_SOURCE_DESCRIPTOR",
+      "rewrite_path": "",
+      "remove_after": ""
+    },
+    {
+      "protocol": "GATEWAY_PROTOCOL_REST",
+      "method": "POST",
+      "path": "/v1/auth/logout",
+      "match": "GATEWAY_MATCH_EXACT",
+      "procedure": "/saas.accounts.v1.AuthService/Logout",
+      "owner": {
+        "module": "saas-starter",
+        "service": "accounts"
+      },
+      "upstream_endpoint": "rest",
+      "exposure": "EXPOSURE_PUBLIC",
+      "source": "GATEWAY_ROUTE_SOURCE_DESCRIPTOR",
+      "rewrite_path": "",
+      "remove_after": ""
+    },
+    {
+      "protocol": "GATEWAY_PROTOCOL_REST",
+      "method": "POST",
+      "path": "/v1/auth/mfa/complete",
+      "match": "GATEWAY_MATCH_EXACT",
+      "procedure": "/saas.accounts.v1.AuthService/CompleteMFAChallenge",
+      "owner": {
+        "module": "saas-starter",
+        "service": "accounts"
+      },
+      "upstream_endpoint": "rest",
+      "exposure": "EXPOSURE_PUBLIC",
+      "source": "GATEWAY_ROUTE_SOURCE_DESCRIPTOR",
+      "rewrite_path": "",
+      "remove_after": ""
+    },
+    {
+      "protocol": "GATEWAY_PROTOCOL_REST",
+      "method": "POST",
+      "path": "/v1/auth/mfa/webauthn/begin",
+      "match": "GATEWAY_MATCH_EXACT",
+      "procedure": "/saas.accounts.v1.AuthService/BeginWebAuthnMFAChallenge",
+      "owner": {
+        "module": "saas-starter",
+        "service": "accounts"
+      },
+      "upstream_endpoint": "rest",
+      "exposure": "EXPOSURE_PUBLIC",
+      "source": "GATEWAY_ROUTE_SOURCE_DESCRIPTOR",
+      "rewrite_path": "",
+      "remove_after": ""
+    },
+    {
+      "protocol": "GATEWAY_PROTOCOL_REST",
+      "method": "POST",
+      "path": "/v1/auth/mfa/webauthn/complete",
+      "match": "GATEWAY_MATCH_EXACT",
+      "procedure": "/saas.accounts.v1.AuthService/CompleteWebAuthnMFAChallenge",
+      "owner": {
+        "module": "saas-starter",
+        "service": "accounts"
+      },
+      "upstream_endpoint": "rest",
+      "exposure": "EXPOSURE_PUBLIC",
+      "source": "GATEWAY_ROUTE_SOURCE_DESCRIPTOR",
+      "rewrite_path": "",
+      "remove_after": ""
+    },
+    {
+      "protocol": "GATEWAY_PROTOCOL_REST",
+      "method": "POST",
+      "path": "/v1/auth/oauth/begin",
+      "match": "GATEWAY_MATCH_EXACT",
+      "procedure": "/saas.accounts.v1.AuthService/BeginOAuth",
+      "owner": {
+        "module": "saas-starter",
+        "service": "accounts"
+      },
+      "upstream_endpoint": "rest",
+      "exposure": "EXPOSURE_PUBLIC",
+      "source": "GATEWAY_ROUTE_SOURCE_DESCRIPTOR",
+      "rewrite_path": "",
+      "remove_after": ""
+    },
+    {
+      "protocol": "GATEWAY_PROTOCOL_REST",
+      "method": "POST",
+      "path": "/v1/auth/refresh",
+      "match": "GATEWAY_MATCH_EXACT",
+      "procedure": "/saas.accounts.v1.AuthService/RefreshToken",
+      "owner": {
+        "module": "saas-starter",
+        "service": "accounts"
+      },
+      "upstream_endpoint": "rest",
+      "exposure": "EXPOSURE_PUBLIC",
+      "source": "GATEWAY_ROUTE_SOURCE_DESCRIPTOR",
+      "rewrite_path": "",
+      "remove_after": ""
+    },
+    {
+      "protocol": "GATEWAY_PROTOCOL_REST",
+      "method": "POST",
+      "path": "/v1/auth/switch-organization",
+      "match": "GATEWAY_MATCH_EXACT",
+      "procedure": "/saas.accounts.v1.AuthService/SwitchOrganization",
+      "owner": {
+        "module": "saas-starter",
+        "service": "accounts"
+      },
+      "upstream_endpoint": "rest",
+      "exposure": "EXPOSURE_AUTHENTICATED",
+      "source": "GATEWAY_ROUTE_SOURCE_DESCRIPTOR",
+      "rewrite_path": "",
+      "remove_after": ""
+    },
+    {
+      "protocol": "GATEWAY_PROTOCOL_REST",
+      "method": "POST",
+      "path": "/v1/billing/connect/portal",
+      "match": "GATEWAY_MATCH_EXACT",
+      "procedure": "/saas.accounts.v1.BillingService/OpenPortal",
+      "owner": {
+        "module": "saas-starter",
+        "service": "accounts"
+      },
+      "upstream_endpoint": "rest",
+      "exposure": "EXPOSURE_AUTHENTICATED",
+      "source": "GATEWAY_ROUTE_SOURCE_DESCRIPTOR",
+      "rewrite_path": "",
+      "remove_after": ""
+    },
+    {
+      "protocol": "GATEWAY_PROTOCOL_REST",
+      "method": "POST",
+      "path": "/v1/consent/accept",
+      "match": "GATEWAY_MATCH_EXACT",
+      "procedure": "/saas.accounts.v1.ConsentService/Accept",
+      "owner": {
+        "module": "saas-starter",
+        "service": "accounts"
+      },
+      "upstream_endpoint": "rest",
+      "exposure": "EXPOSURE_AUTHENTICATED",
+      "source": "GATEWAY_ROUTE_SOURCE_DESCRIPTOR",
+      "rewrite_path": "",
+      "remove_after": ""
+    },
+    {
+      "protocol": "GATEWAY_PROTOCOL_REST",
+      "method": "POST",
+      "path": "/v1/delegations",
+      "match": "GATEWAY_MATCH_EXACT",
+      "procedure": "/saas.accounts.v1.DelegationService/RequestDelegation",
+      "owner": {
+        "module": "saas-starter",
+        "service": "accounts"
+      },
+      "upstream_endpoint": "rest",
+      "exposure": "EXPOSURE_AUTHENTICATED",
+      "source": "GATEWAY_ROUTE_SOURCE_DESCRIPTOR",
+      "rewrite_path": "",
+      "remove_after": ""
+    },
+    {
+      "protocol": "GATEWAY_PROTOCOL_REST",
+      "method": "POST",
+      "path": "/v1/delegations/{id}:decide",
+      "match": "GATEWAY_MATCH_PATH_TEMPLATE",
+      "procedure": "/saas.accounts.v1.DelegationService/DecideDelegation",
+      "owner": {
+        "module": "saas-starter",
+        "service": "accounts"
+      },
+      "upstream_endpoint": "rest",
+      "exposure": "EXPOSURE_AUTHENTICATED",
+      "source": "GATEWAY_ROUTE_SOURCE_DESCRIPTOR",
+      "rewrite_path": "",
+      "remove_after": ""
+    },
+    {
+      "protocol": "GATEWAY_PROTOCOL_REST",
+      "method": "POST",
+      "path": "/v1/gdpr/delete",
+      "match": "GATEWAY_MATCH_EXACT",
+      "procedure": "/saas.accounts.v1.GDPRService/RequestDeletion",
+      "owner": {
+        "module": "saas-starter",
+        "service": "accounts"
+      },
+      "upstream_endpoint": "rest",
+      "exposure": "EXPOSURE_AUTHENTICATED",
+      "source": "GATEWAY_ROUTE_SOURCE_DESCRIPTOR",
+      "rewrite_path": "",
+      "remove_after": ""
+    },
+    {
+      "protocol": "GATEWAY_PROTOCOL_REST",
+      "method": "POST",
+      "path": "/v1/gdpr/export",
+      "match": "GATEWAY_MATCH_EXACT",
+      "procedure": "/saas.accounts.v1.GDPRService/RequestExport",
+      "owner": {
+        "module": "saas-starter",
+        "service": "accounts"
+      },
+      "upstream_endpoint": "rest",
+      "exposure": "EXPOSURE_AUTHENTICATED",
+      "source": "GATEWAY_ROUTE_SOURCE_DESCRIPTOR",
+      "rewrite_path": "",
+      "remove_after": ""
+    },
+    {
+      "protocol": "GATEWAY_PROTOCOL_REST",
+      "method": "POST",
+      "path": "/v1/invitations",
+      "match": "GATEWAY_MATCH_EXACT",
+      "procedure": "/saas.accounts.v1.InvitationService/CreateInvitation",
+      "owner": {
+        "module": "saas-starter",
+        "service": "accounts"
+      },
+      "upstream_endpoint": "rest",
+      "exposure": "EXPOSURE_AUTHENTICATED",
+      "source": "GATEWAY_ROUTE_SOURCE_DESCRIPTOR",
+      "rewrite_path": "",
+      "remove_after": ""
+    },
+    {
+      "protocol": "GATEWAY_PROTOCOL_REST",
+      "method": "POST",
+      "path": "/v1/invitations:accept",
+      "match": "GATEWAY_MATCH_EXACT",
+      "procedure": "/saas.accounts.v1.InvitationService/AcceptInvitation",
+      "owner": {
+        "module": "saas-starter",
+        "service": "accounts"
+      },
+      "upstream_endpoint": "rest",
+      "exposure": "EXPOSURE_AUTHENTICATED",
+      "source": "GATEWAY_ROUTE_SOURCE_DESCRIPTOR",
+      "rewrite_path": "",
+      "remove_after": ""
+    },
+    {
+      "protocol": "GATEWAY_PROTOCOL_REST",
+      "method": "POST",
+      "path": "/v1/mfa/backup-codes",
+      "match": "GATEWAY_MATCH_EXACT",
+      "procedure": "/saas.accounts.v1.MFAService/GenerateBackupCodes",
+      "owner": {
+        "module": "saas-starter",
+        "service": "accounts"
+      },
+      "upstream_endpoint": "rest",
+      "exposure": "EXPOSURE_AUTHENTICATED",
+      "source": "GATEWAY_ROUTE_SOURCE_DESCRIPTOR",
+      "rewrite_path": "",
+      "remove_after": ""
+    },
+    {
+      "protocol": "GATEWAY_PROTOCOL_REST",
+      "method": "POST",
+      "path": "/v1/mfa/totp/setup",
+      "match": "GATEWAY_MATCH_EXACT",
+      "procedure": "/saas.accounts.v1.MFAService/SetupTOTP",
+      "owner": {
+        "module": "saas-starter",
+        "service": "accounts"
+      },
+      "upstream_endpoint": "rest",
+      "exposure": "EXPOSURE_AUTHENTICATED",
+      "source": "GATEWAY_ROUTE_SOURCE_DESCRIPTOR",
+      "rewrite_path": "",
+      "remove_after": ""
+    },
+    {
+      "protocol": "GATEWAY_PROTOCOL_REST",
+      "method": "POST",
+      "path": "/v1/mfa/totp/verify",
+      "match": "GATEWAY_MATCH_EXACT",
+      "procedure": "/saas.accounts.v1.MFAService/VerifyTOTP",
+      "owner": {
+        "module": "saas-starter",
+        "service": "accounts"
+      },
+      "upstream_endpoint": "rest",
+      "exposure": "EXPOSURE_AUTHENTICATED",
+      "source": "GATEWAY_ROUTE_SOURCE_DESCRIPTOR",
+      "rewrite_path": "",
+      "remove_after": ""
+    },
+    {
+      "protocol": "GATEWAY_PROTOCOL_REST",
+      "method": "POST",
+      "path": "/v1/mfa/webauthn/register/begin",
+      "match": "GATEWAY_MATCH_EXACT",
+      "procedure": "/saas.accounts.v1.MFAService/BeginWebAuthnRegistration",
+      "owner": {
+        "module": "saas-starter",
+        "service": "accounts"
+      },
+      "upstream_endpoint": "rest",
+      "exposure": "EXPOSURE_AUTHENTICATED",
+      "source": "GATEWAY_ROUTE_SOURCE_DESCRIPTOR",
+      "rewrite_path": "",
+      "remove_after": ""
+    },
+    {
+      "protocol": "GATEWAY_PROTOCOL_REST",
+      "method": "POST",
+      "path": "/v1/mfa/webauthn/register/finish",
+      "match": "GATEWAY_MATCH_EXACT",
+      "procedure": "/saas.accounts.v1.MFAService/FinishWebAuthnRegistration",
+      "owner": {
+        "module": "saas-starter",
+        "service": "accounts"
+      },
+      "upstream_endpoint": "rest",
+      "exposure": "EXPOSURE_AUTHENTICATED",
+      "source": "GATEWAY_ROUTE_SOURCE_DESCRIPTOR",
+      "rewrite_path": "",
+      "remove_after": ""
+    },
+    {
+      "protocol": "GATEWAY_PROTOCOL_REST",
+      "method": "POST",
+      "path": "/v1/notifications/{id}:read",
+      "match": "GATEWAY_MATCH_PATH_TEMPLATE",
+      "procedure": "/saas.accounts.v1.NotificationService/MarkRead",
+      "owner": {
+        "module": "saas-starter",
+        "service": "accounts"
+      },
+      "upstream_endpoint": "rest",
+      "exposure": "EXPOSURE_AUTHENTICATED",
+      "source": "GATEWAY_ROUTE_SOURCE_DESCRIPTOR",
+      "rewrite_path": "",
+      "remove_after": ""
+    },
+    {
+      "protocol": "GATEWAY_PROTOCOL_REST",
+      "method": "POST",
+      "path": "/v1/notifications:read-all",
+      "match": "GATEWAY_MATCH_EXACT",
+      "procedure": "/saas.accounts.v1.NotificationService/MarkAllRead",
+      "owner": {
+        "module": "saas-starter",
+        "service": "accounts"
+      },
+      "upstream_endpoint": "rest",
+      "exposure": "EXPOSURE_AUTHENTICATED",
+      "source": "GATEWAY_ROUTE_SOURCE_DESCRIPTOR",
+      "rewrite_path": "",
+      "remove_after": ""
+    },
+    {
+      "protocol": "GATEWAY_PROTOCOL_REST",
+      "method": "POST",
+      "path": "/v1/onboarding/{step_name}:complete",
+      "match": "GATEWAY_MATCH_PATH_TEMPLATE",
+      "procedure": "/saas.accounts.v1.OnboardingService/CompleteStep",
+      "owner": {
+        "module": "saas-starter",
+        "service": "accounts"
+      },
+      "upstream_endpoint": "rest",
+      "exposure": "EXPOSURE_AUTHENTICATED",
+      "source": "GATEWAY_ROUTE_SOURCE_DESCRIPTOR",
+      "rewrite_path": "",
+      "remove_after": ""
+    },
+    {
+      "protocol": "GATEWAY_PROTOCOL_REST",
+      "method": "POST",
+      "path": "/v1/onboarding/{step_name}:skip",
+      "match": "GATEWAY_MATCH_PATH_TEMPLATE",
+      "procedure": "/saas.accounts.v1.OnboardingService/SkipStep",
+      "owner": {
+        "module": "saas-starter",
+        "service": "accounts"
+      },
+      "upstream_endpoint": "rest",
+      "exposure": "EXPOSURE_AUTHENTICATED",
+      "source": "GATEWAY_ROUTE_SOURCE_DESCRIPTOR",
+      "rewrite_path": "",
+      "remove_after": ""
+    },
+    {
+      "protocol": "GATEWAY_PROTOCOL_REST",
+      "method": "POST",
+      "path": "/v1/organizations",
+      "match": "GATEWAY_MATCH_EXACT",
+      "procedure": "/saas.accounts.v1.OrganizationService/CreateOrganization",
+      "owner": {
+        "module": "saas-starter",
+        "service": "accounts"
+      },
+      "upstream_endpoint": "rest",
+      "exposure": "EXPOSURE_AUTHENTICATED",
+      "source": "GATEWAY_ROUTE_SOURCE_DESCRIPTOR",
+      "rewrite_path": "",
+      "remove_after": ""
+    },
+    {
+      "protocol": "GATEWAY_PROTOCOL_REST",
+      "method": "POST",
+      "path": "/v1/organizations/{org_id}/members",
+      "match": "GATEWAY_MATCH_PATH_TEMPLATE",
+      "procedure": "/saas.accounts.v1.OrganizationService/AddMember",
+      "owner": {
+        "module": "saas-starter",
+        "service": "accounts"
+      },
+      "upstream_endpoint": "rest",
+      "exposure": "EXPOSURE_AUTHENTICATED",
+      "source": "GATEWAY_ROUTE_SOURCE_DESCRIPTOR",
+      "rewrite_path": "",
+      "remove_after": ""
+    },
+    {
+      "protocol": "GATEWAY_PROTOCOL_REST",
+      "method": "POST",
+      "path": "/v1/organizations/{org_id}/teams",
+      "match": "GATEWAY_MATCH_PATH_TEMPLATE",
+      "procedure": "/saas.accounts.v1.TeamService/CreateTeam",
+      "owner": {
+        "module": "saas-starter",
+        "service": "accounts"
+      },
+      "upstream_endpoint": "rest",
+      "exposure": "EXPOSURE_AUTHENTICATED",
+      "source": "GATEWAY_ROUTE_SOURCE_DESCRIPTOR",
+      "rewrite_path": "",
+      "remove_after": ""
+    },
+    {
+      "protocol": "GATEWAY_PROTOCOL_REST",
+      "method": "POST",
+      "path": "/v1/platform/admins",
+      "match": "GATEWAY_MATCH_EXACT",
+      "procedure": "/saas.accounts.v1.PlatformAdminService/GrantPlatformRole",
+      "owner": {
+        "module": "saas-starter",
+        "service": "accounts"
+      },
+      "upstream_endpoint": "rest",
+      "exposure": "EXPOSURE_AUTHENTICATED",
+      "source": "GATEWAY_ROUTE_SOURCE_DESCRIPTOR",
+      "rewrite_path": "",
+      "remove_after": ""
+    },
+    {
+      "protocol": "GATEWAY_PROTOCOL_REST",
+      "method": "POST",
+      "path": "/v1/platform/jobs/{source_job_id}:replay",
+      "match": "GATEWAY_MATCH_PATH_TEMPLATE",
+      "procedure": "/saas.accounts.v1.PlatformAdminService/ReplayJob",
+      "owner": {
+        "module": "saas-starter",
+        "service": "accounts"
+      },
+      "upstream_endpoint": "rest",
+      "exposure": "EXPOSURE_AUTHENTICATED",
+      "source": "GATEWAY_ROUTE_SOURCE_DESCRIPTOR",
+      "rewrite_path": "",
+      "remove_after": ""
+    },
+    {
+      "protocol": "GATEWAY_PROTOCOL_REST",
+      "method": "POST",
+      "path": "/v1/platform/organizations/{org_id}/entitlements",
+      "match": "GATEWAY_MATCH_PATH_TEMPLATE",
+      "procedure": "/saas.accounts.v1.PlatformAdminService/OverrideEntitlement",
+      "owner": {
+        "module": "saas-starter",
+        "service": "accounts"
+      },
+      "upstream_endpoint": "rest",
+      "exposure": "EXPOSURE_AUTHENTICATED",
+      "source": "GATEWAY_ROUTE_SOURCE_DESCRIPTOR",
+      "rewrite_path": "",
+      "remove_after": ""
+    },
+    {
+      "protocol": "GATEWAY_PROTOCOL_REST",
+      "method": "POST",
+      "path": "/v1/platform/users/{user_id}:impersonate",
+      "match": "GATEWAY_MATCH_PATH_TEMPLATE",
+      "procedure": "/saas.accounts.v1.PlatformAdminService/ImpersonateUser",
+      "owner": {
+        "module": "saas-starter",
+        "service": "accounts"
+      },
+      "upstream_endpoint": "rest",
+      "exposure": "EXPOSURE_AUTHENTICATED",
+      "source": "GATEWAY_ROUTE_SOURCE_DESCRIPTOR",
+      "rewrite_path": "",
+      "remove_after": ""
+    },
+    {
+      "protocol": "GATEWAY_PROTOCOL_REST",
+      "method": "POST",
+      "path": "/v1/platform/users/{user_id}:suspend",
+      "match": "GATEWAY_MATCH_PATH_TEMPLATE",
+      "procedure": "/saas.accounts.v1.PlatformAdminService/SuspendUser",
+      "owner": {
+        "module": "saas-starter",
+        "service": "accounts"
+      },
+      "upstream_endpoint": "rest",
+      "exposure": "EXPOSURE_AUTHENTICATED",
+      "source": "GATEWAY_ROUTE_SOURCE_DESCRIPTOR",
+      "rewrite_path": "",
+      "remove_after": ""
+    },
+    {
+      "protocol": "GATEWAY_PROTOCOL_REST",
+      "method": "POST",
+      "path": "/v1/platform/users/{user_id}:unsuspend",
+      "match": "GATEWAY_MATCH_PATH_TEMPLATE",
+      "procedure": "/saas.accounts.v1.PlatformAdminService/UnsuspendUser",
+      "owner": {
+        "module": "saas-starter",
+        "service": "accounts"
+      },
+      "upstream_endpoint": "rest",
+      "exposure": "EXPOSURE_AUTHENTICATED",
+      "source": "GATEWAY_ROUTE_SOURCE_DESCRIPTOR",
+      "rewrite_path": "",
+      "remove_after": ""
+    },
+    {
+      "protocol": "GATEWAY_PROTOCOL_REST",
+      "method": "POST",
+      "path": "/v1/principals/{id}:revoke",
+      "match": "GATEWAY_MATCH_PATH_TEMPLATE",
+      "procedure": "/saas.accounts.v1.PrincipalService/RevokePrincipal",
+      "owner": {
+        "module": "saas-starter",
+        "service": "accounts"
+      },
+      "upstream_endpoint": "rest",
+      "exposure": "EXPOSURE_AUTHENTICATED",
+      "source": "GATEWAY_ROUTE_SOURCE_DESCRIPTOR",
+      "rewrite_path": "",
+      "remove_after": ""
+    },
+    {
+      "protocol": "GATEWAY_PROTOCOL_REST",
+      "method": "POST",
+      "path": "/v1/principals:agent",
+      "match": "GATEWAY_MATCH_EXACT",
+      "procedure": "/saas.accounts.v1.PrincipalService/CreateAgentPrincipal",
+      "owner": {
+        "module": "saas-starter",
+        "service": "accounts"
+      },
+      "upstream_endpoint": "rest",
+      "exposure": "EXPOSURE_AUTHENTICATED",
+      "source": "GATEWAY_ROUTE_SOURCE_DESCRIPTOR",
+      "rewrite_path": "",
+      "remove_after": ""
+    },
+    {
+      "protocol": "GATEWAY_PROTOCOL_REST",
+      "method": "POST",
+      "path": "/v1/role-assignments",
+      "match": "GATEWAY_MATCH_EXACT",
+      "procedure": "/saas.accounts.v1.PermissionService/AssignRole",
+      "owner": {
+        "module": "saas-starter",
+        "service": "accounts"
+      },
+      "upstream_endpoint": "rest",
+      "exposure": "EXPOSURE_AUTHENTICATED",
+      "source": "GATEWAY_ROUTE_SOURCE_DESCRIPTOR",
+      "rewrite_path": "",
+      "remove_after": ""
+    },
+    {
+      "protocol": "GATEWAY_PROTOCOL_REST",
+      "method": "POST",
+      "path": "/v1/roles",
+      "match": "GATEWAY_MATCH_EXACT",
+      "procedure": "/saas.accounts.v1.PermissionService/CreateRole",
+      "owner": {
+        "module": "saas-starter",
+        "service": "accounts"
+      },
+      "upstream_endpoint": "rest",
+      "exposure": "EXPOSURE_AUTHENTICATED",
+      "source": "GATEWAY_ROUTE_SOURCE_DESCRIPTOR",
+      "rewrite_path": "",
+      "remove_after": ""
+    },
+    {
+      "protocol": "GATEWAY_PROTOCOL_REST",
+      "method": "POST",
+      "path": "/v1/sso/disable",
+      "match": "GATEWAY_MATCH_EXACT",
+      "procedure": "/saas.accounts.v1.SSOAdminService/Disable",
+      "owner": {
+        "module": "saas-starter",
+        "service": "accounts"
+      },
+      "upstream_endpoint": "rest",
+      "exposure": "EXPOSURE_AUTHENTICATED",
+      "source": "GATEWAY_ROUTE_SOURCE_DESCRIPTOR",
+      "rewrite_path": "",
+      "remove_after": ""
+    },
+    {
+      "protocol": "GATEWAY_PROTOCOL_REST",
+      "method": "POST",
+      "path": "/v1/sso/setup",
+      "match": "GATEWAY_MATCH_EXACT",
+      "procedure": "/saas.accounts.v1.SSOAdminService/StartSetup",
+      "owner": {
+        "module": "saas-starter",
+        "service": "accounts"
+      },
+      "upstream_endpoint": "rest",
+      "exposure": "EXPOSURE_AUTHENTICATED",
+      "source": "GATEWAY_ROUTE_SOURCE_DESCRIPTOR",
+      "rewrite_path": "",
+      "remove_after": ""
+    },
+    {
+      "protocol": "GATEWAY_PROTOCOL_REST",
+      "method": "POST",
+      "path": "/v1/teams/{team_id}/members",
+      "match": "GATEWAY_MATCH_PATH_TEMPLATE",
+      "procedure": "/saas.accounts.v1.TeamService/AddMember",
+      "owner": {
+        "module": "saas-starter",
+        "service": "accounts"
+      },
+      "upstream_endpoint": "rest",
+      "exposure": "EXPOSURE_AUTHENTICATED",
+      "source": "GATEWAY_ROUTE_SOURCE_DESCRIPTOR",
+      "rewrite_path": "",
+      "remove_after": ""
+    },
+    {
+      "protocol": "GATEWAY_PROTOCOL_REST",
+      "method": "POST",
+      "path": "/v1/user/settings",
+      "match": "GATEWAY_MATCH_EXACT",
+      "procedure": "/saas.accounts.v1.UserSettingsService/Update",
+      "owner": {
+        "module": "saas-starter",
+        "service": "accounts"
+      },
+      "upstream_endpoint": "rest",
+      "exposure": "EXPOSURE_AUTHENTICATED",
+      "source": "GATEWAY_ROUTE_SOURCE_DESCRIPTOR",
+      "rewrite_path": "",
+      "remove_after": ""
+    },
+    {
+      "protocol": "GATEWAY_PROTOCOL_REST",
+      "method": "POST",
+      "path": "/v1/users",
+      "match": "GATEWAY_MATCH_EXACT",
+      "procedure": "/saas.accounts.v1.UserService/RegisterUser",
+      "owner": {
+        "module": "saas-starter",
+        "service": "accounts"
+      },
+      "upstream_endpoint": "rest",
+      "exposure": "EXPOSURE_PUBLIC",
+      "source": "GATEWAY_ROUTE_SOURCE_DESCRIPTOR",
+      "rewrite_path": "",
+      "remove_after": ""
+    },
+    {
+      "protocol": "GATEWAY_PROTOCOL_REST",
+      "method": "POST",
+      "path": "/v1/users/{user_uuid}/identities",
+      "match": "GATEWAY_MATCH_PATH_TEMPLATE",
+      "procedure": "/saas.accounts.v1.UserService/AddIdentity",
+      "owner": {
+        "module": "saas-starter",
+        "service": "accounts"
+      },
+      "upstream_endpoint": "rest",
+      "exposure": "EXPOSURE_AUTHENTICATED",
+      "source": "GATEWAY_ROUTE_SOURCE_DESCRIPTOR",
+      "rewrite_path": "",
+      "remove_after": ""
+    },
+    {
+      "protocol": "GATEWAY_PROTOCOL_REST",
+      "method": "POST",
+      "path": "/v1/webhooks",
+      "match": "GATEWAY_MATCH_EXACT",
+      "procedure": "/saas.accounts.v1.WebhookService/CreateSubscription",
+      "owner": {
+        "module": "saas-starter",
+        "service": "accounts"
+      },
+      "upstream_endpoint": "rest",
+      "exposure": "EXPOSURE_AUTHENTICATED",
+      "source": "GATEWAY_ROUTE_SOURCE_DESCRIPTOR",
+      "rewrite_path": "",
+      "remove_after": ""
+    },
+    {
+      "protocol": "GATEWAY_PROTOCOL_REST",
+      "method": "POST",
+      "path": "/v1/webhooks/deliveries/{id}:replay",
+      "match": "GATEWAY_MATCH_PATH_TEMPLATE",
+      "procedure": "/saas.accounts.v1.WebhookService/ReplayDelivery",
+      "owner": {
+        "module": "saas-starter",
+        "service": "accounts"
+      },
+      "upstream_endpoint": "rest",
+      "exposure": "EXPOSURE_AUTHENTICATED",
+      "source": "GATEWAY_ROUTE_SOURCE_DESCRIPTOR",
+      "rewrite_path": "",
+      "remove_after": ""
+    },
+    {
+      "protocol": "GATEWAY_PROTOCOL_REST",
+      "method": "POST",
+      "path": "/v1/webhooks/{id}:rotateSecret",
+      "match": "GATEWAY_MATCH_PATH_TEMPLATE",
+      "procedure": "/saas.accounts.v1.WebhookService/RotateSecret",
+      "owner": {
+        "module": "saas-starter",
+        "service": "accounts"
+      },
+      "upstream_endpoint": "rest",
+      "exposure": "EXPOSURE_AUTHENTICATED",
+      "source": "GATEWAY_ROUTE_SOURCE_DESCRIPTOR",
+      "rewrite_path": "",
+      "remove_after": ""
+    },
+    {
+      "protocol": "GATEWAY_PROTOCOL_REST",
+      "method": "POST",
+      "path": "/v1/webhooks/{id}:test",
+      "match": "GATEWAY_MATCH_PATH_TEMPLATE",
+      "procedure": "/saas.accounts.v1.WebhookService/TestWebhook",
+      "owner": {
+        "module": "saas-starter",
+        "service": "accounts"
+      },
+      "upstream_endpoint": "rest",
+      "exposure": "EXPOSURE_AUTHENTICATED",
+      "source": "GATEWAY_ROUTE_SOURCE_DESCRIPTOR",
+      "rewrite_path": "",
+      "remove_after": ""
+    },
+    {
+      "protocol": "GATEWAY_PROTOCOL_REST",
+      "method": "PUT",
+      "path": "/v1/organizations/{org_id}/settings",
+      "match": "GATEWAY_MATCH_PATH_TEMPLATE",
+      "procedure": "/saas.accounts.v1.OrganizationService/UpdateOrgSettings",
+      "owner": {
+        "module": "saas-starter",
+        "service": "accounts"
+      },
+      "upstream_endpoint": "rest",
+      "exposure": "EXPOSURE_AUTHENTICATED",
+      "source": "GATEWAY_ROUTE_SOURCE_DESCRIPTOR",
+      "rewrite_path": "",
+      "remove_after": ""
+    },
+    {
+      "protocol": "GATEWAY_PROTOCOL_REST",
+      "method": "PUT",
+      "path": "/v1/platform/feature-flags/{name}",
+      "match": "GATEWAY_MATCH_PATH_TEMPLATE",
+      "procedure": "/saas.accounts.v1.PlatformAdminService/UpsertFeatureFlag",
+      "owner": {
+        "module": "saas-starter",
+        "service": "accounts"
+      },
+      "upstream_endpoint": "rest",
+      "exposure": "EXPOSURE_AUTHENTICATED",
+      "source": "GATEWAY_ROUTE_SOURCE_DESCRIPTOR",
+      "rewrite_path": "",
+      "remove_after": ""
+    }
+  ]
+}

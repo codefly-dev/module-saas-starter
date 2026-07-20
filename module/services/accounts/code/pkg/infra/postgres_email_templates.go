@@ -28,13 +28,13 @@ func (s *PostgresTemplateStore) GetTemplate(ctx context.Context, name string) (*
 	q := s.store.getQueryExecutor(ctx)
 
 	row := q.QueryRow(ctx, `
-		SELECT name, subject_template, html_template, text_template
+		SELECT name, version, subject_template, html_template, text_template
 		FROM email_templates WHERE name = $1`, name)
 
 	var tmpl email.Template
 	var htmlTemplate, textTemplate *string
 
-	err := row.Scan(&tmpl.Name, &tmpl.SubjectTemplate, &htmlTemplate, &textTemplate)
+	err := row.Scan(&tmpl.Name, &tmpl.Version, &tmpl.SubjectTemplate, &htmlTemplate, &textTemplate)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return nil, business.NewStoreError(errors.New("email template not found"), business.ErrTypeNotFound)

@@ -4,7 +4,7 @@
 > a world-class SaaS starter. Source-of-truth checklist for both end users
 > picking a starter and contributors deciding what to build next.
 
-Last updated: 2026-04-25
+Last updated: 2026-07-19
 
 ---
 
@@ -48,7 +48,7 @@ the sidecar in front so this code path isn't reached.
 | Test infra   | Playwright e2e against the real stack via `withDependencies` |
 
 Everything orchestrated by codefly: `codefly run service frontend
---fixture dev-admin` brings up Postgres + Vault + Redis + api + sidecar +
+--fixture dev-admin` brings up Postgres + Vault + Redis + accounts + sidecar +
 frontend with seed data in one command.
 
 ---
@@ -60,8 +60,11 @@ frontend with seed data in one command.
 `dev-admin.yaml` seeds 4 users: Sarah Chen (super_admin), Alice (admin),
 Bob (member), Carol (member). The login page detects fixture mode (no
 `NEXT_PUBLIC_*_AUTHORIZE_URL` configured) and renders a one-click user
-picker. Click → POST `/v1/auth/authenticate` with `{provider: "email",
-provider_id: "dev-bob", provider_email: "bob@acme.com"}` → mint JWT.
+picker. Explicit `AUTH_PROVIDER=dev` or `CODEFLY__FIXTURE=dev-admin` wires a
+fixture allowlist. Click → POST `/v1/auth/authenticate` with `{provider:
+"email", fixture: {token: "dev-bob"}}`; the backend obtains the subject and email
+from the selected fixture rather than trusting request fields, then mints JWTs.
+An explicit Codefly fixture takes precedence over local OAuth configuration.
 
 Used by: every Playwright spec, every contributor running `codefly run`.
 
@@ -69,12 +72,14 @@ Used by: every Playwright spec, every contributor running `codefly run`.
 
 Standard OAuth 2.0 authorization-code flow:
 
-1. User clicks "Sign in with WorkOS" → frontend generates a CSRF state
-   nonce, stores it in `sessionStorage`, redirects to WorkOS authorize URL.
+1. User clicks "Sign in with WorkOS" → frontend calls `BeginOAuth`; the backend
+   validates the exact redirect allowlist and mints a signed CSRF state bound to
+   the provider and redirect URI. The frontend stores it in `sessionStorage` and
+   redirects to the provider with a PKCE challenge.
 2. WorkOS authenticates the user, redirects back to `/auth/callback?code=…&state=…`.
 3. Frontend verifies state matches the stored nonce.
-4. Frontend POSTs `{provider: "workos", profile: {code, redirect_uri}}` to
-   `/v1/auth/authenticate`.
+4. Frontend POSTs `{provider: "workos", oauth_code: {code, redirect_uri,
+   state, code_verifier}}` to `/v1/auth/authenticate`.
 5. Backend `Exchanger.Exchange` calls WorkOS's token endpoint with
    `grant_type=authorization_code`, gets `id_token`.
 6. Backend `Validator.Validate` verifies WorkOS's signature via JWKS.
@@ -88,12 +93,15 @@ Switching providers is one env var: `AUTH_PROVIDER=workos|auth0|google`.
 
 | Stage         | Mechanism                                                       |
 |---------------|-----------------------------------------------------------------|
-| Access token  | Ed25519 JWT, 15-min TTL, claims: sub/iss/aud/exp/nbf/iat/jti/sid/org/or/pr/acting |
-| Refresh token | Opaque random, SHA-256 hashed in `sessions` table, 30-day TTL   |
-| Rotation      | OWASP pattern: each refresh consumes the old token, issues a new pair in the same family |
-| Reuse defense | Presented-but-revoked refresh → revoke entire user's session families (all devices) |
-| Logout        | Marks the refresh family revoked; access tokens valid until expiry |
-| Revocation    | Family-based; access tokens NOT individually revocable (15-min blast radius) |
+| Access token  | Ed25519 JWT, 15-min TTL, with identity, tenant, role, session, and assurance claims |
+| Refresh token | Opaque 256-bit random token, SHA-256 hashed in `sessions`, fixed 7-day absolute family lifetime by default |
+| Session idle  | Explicit 24-hour idle expiry by default; successful rotation advances idle expiry but never absolute expiry |
+| Device policy | Bounded device metadata, stable family id, whole-device revocation, and configurable active-device cap (default 10) |
+| Rotation      | One locked transaction consumes the family, resolves current authorization, and inserts one successor |
+| Org exchange  | Authenticated target-only exchange; current membership/roles resolved under the active session lock; same device family and refresh credential |
+| Reuse defense | Reuse of a token consumed by rotation revokes every active user session; administrative revocation is not replay |
+| Logout        | Revokes the refresh family and deny-lists the current access-token JTI in Redis |
+| Current state | Refresh requires current authorization; database triggers atomically revoke affected families on status, membership/role, platform-role, and verified-MFA changes |
 
 ---
 
@@ -122,15 +130,23 @@ non-admins; **server is still authoritative**.
 ### Public Connect/gRPC procedures (no auth required)
 
 ```
-/customers.AuthService/Authenticate
-/customers.AuthService/RefreshToken
-/customers.AuthService/Logout
-/customers.AuthService/GetJWKS
+/saas.accounts.v1.AuthService/Authenticate
+/saas.accounts.v1.AuthService/BeginOAuth
+/saas.accounts.v1.AuthService/BeginWebAuthnMFAChallenge
+/saas.accounts.v1.AuthService/CompleteMFAChallenge
+/saas.accounts.v1.AuthService/CompleteWebAuthnMFAChallenge
+/saas.accounts.v1.AuthService/RefreshToken
+/saas.accounts.v1.AuthService/Logout
+/saas.accounts.v1.AuthService/GetJWKS
+/saas.accounts.v1.IntrospectionService/GetServiceInfo
+/saas.accounts.v1.UserService/RegisterUser
+/saas.accounts.v1.UserService/Version
 ```
 
-All other RPCs require a valid bearer JWT. Public REST endpoints (Stripe
-webhook, OpenAPI spec) live outside the Connect/gRPC mux and are
-explicitly exempted.
+This list is projected from protobuf `method_policy` exposure and pinned by
+catalog tests. All other RPCs, including `AuthService/SwitchOrganization`,
+require a valid bearer JWT. Public REST endpoints outside the Connect/gRPC mux
+are explicit catalogued extensions rather than implicit bypasses.
 
 ---
 
@@ -146,16 +162,17 @@ Legend: ✅ production-ready · 🟡 partial / scoped · ❌ stubbed / not imple
 | Magic link                          | 🟡    | Token gen/verify in `business/magic_links.go`; needs email-send wiring |
 | Password login                       | ❌    | Intentional — provider-only; account recovery routed via OAuth    |
 | Fixture login (dev)                 | ✅    | Click-to-login in dev mode; not exposed in prod build            |
-| MFA (TOTP)                          | 🟡    | Setup, verify, list, disable + backup codes — but NOT enforced on login or sensitive ops |
+| MFA (passkeys + TOTP + recovery)    | ✅    | WebAuthn with exact RP/origin policy and encrypted credential state; durable one-use login challenges and recent AAL2 step-up |
 | Refresh-token rotation              | ✅    | OWASP family revocation on reuse                                 |
-| Session list + revoke               | ✅    | `ListActiveSessions` per user, revoke-by-family                  |
-| Logout                              | ✅    | Single-device + all-devices                                      |
+| Session list + revoke               | ✅    | Stable per-device family ids, device context, idle/absolute expiry, whole-family revoke |
+| Session lifetime policy             | ✅    | Configurable fixed absolute TTL, idle TTL, and serialized active-device cap |
+| Logout                              | ✅    | Revokes the presented device family                              |
 | OAuth state / CSRF                  | 🟡    | Validated client-side in `sessionStorage`; no server-side double-check (gap) |
 | OAuth PKCE                          | ❌    | Comments mention PKCE but exchanger uses `client_secret` (acceptable for confidential server-side; PKCE adds defense for SPA-driven flows) |
 | Account lockout (failed attempts)   | ❌    | No counter on user table                                         |
 | Email verification                  | 🟡    | `email_verified` flag stored; no flow that issues + checks       |
 | Password reset                      | ❌    | No password ⇒ no reset                                           |
-| Device fingerprinting               | ❌    | Not modeled                                                      |
+| Device fingerprinting               | ❌    | Deliberately not an auth signal; device description is display-only |
 
 ### Identity & users
 
@@ -182,7 +199,7 @@ Legend: ✅ production-ready · 🟡 partial / scoped · ❌ stubbed / not imple
 | Org branding                 | 🟡    | Logo + name stored; update RPC missing                                 |
 | Transfer ownership           | ❌    | No explicit RPC; only role reassignment                                |
 | Leave org                    | ❌    | Member must be removed by admin                                        |
-| Org switcher (multi-org user)| 🟡    | Backend supports; FE picks the most-recently-joined org as session default |
+| Org switcher (multi-org user)| ✅    | Generated `SwitchOrganization` exchange; signed session context drives one global FE selector and all tenant-scoped queries |
 | Org-scoped subdomain         | ❌    | All routing is `app.example.com/admin/...` not `<org>.example.com`     |
 
 ### RBAC / permissions
@@ -196,20 +213,43 @@ Legend: ✅ production-ready · 🟡 partial / scoped · ❌ stubbed / not imple
 | Fine-grained scopes    | 🟡    | API keys carry scope strings (`x-scopes` header); not enforced at handler level (gap) |
 | ABAC / row-level rules | ❌    | Not modeled                                                                          |
 
+### Background work
+
+| Feature | Status | Notes |
+|---------|--------|-------|
+| Shared inbox/outbox contract | ✅ | Product-neutral `saas.jobs.v1` protobuf; Codefly-generated Go and TypeScript types |
+| Durable message schema | ✅ | Exact-byte envelopes, tenant/subject/global scope, attempts, schedules, replay lineage, append-only transitions |
+| Database state machine | ✅ | Finite transitions, immutable terminal history, fencing fields, attempt budgets, cross-layer parity tests |
+| Transactional producers | ✅ | Generated enqueue contract, deterministic exact-retry fingerprint, collision-free ordering keys, and business-transaction outbox atomicity |
+| Worker database isolation | ✅ | Function-only tenant enqueue plus grant-limited `app_job_worker`; no request payload reads or worker product-table access |
+| Generic execution runtime | ✅ | Generated worker commands plus atomic claim, heartbeat, retry, recovery, fencing, ordering, and dead-letter operations |
+| Worker lifecycle and telemetry | ✅ | Generic polling runtime, redacted typed failures, queue-only metrics, per-poll/job traces, and deadline-based graceful shutdown |
+| Job operations | ✅ | Super-admin payload-free queue/job/history UI plus recent-MFA, idempotent, audited dead-letter replay copied inside PostgreSQL |
+| Workload convergence | 🟡 | Stripe, outbound webhooks, and transactional email use generated generic job adapters; exports and approvals follow |
+
+The persistence, producer, lifecycle, operations, Stripe, outbound-webhook, and
+email adapter contracts are ready. Remaining workers migrate independently;
+see `JOBS.md` for the exact boundary and sequencing.
+
 ### Billing (Stripe)
 
 | Feature                      | Status | Notes                                                            |
 |------------------------------|--------|------------------------------------------------------------------|
-| Checkout sessions            | ✅    | `/v1/billing/checkout` — creates Stripe checkout, redirects user |
-| Customer portal              | ✅    | `/v1/billing/portal` — one-click "manage subscription"           |
-| Plans (DB-modeled)           | ✅    | `plans` table with `stripe_product_id`, `stripe_price_id`        |
+| Checkout sessions            | ✅    | Catalog-key-only request; stable idempotency key; server-owned redirects/trial/tax/currency |
+| Customer portal              | ✅    | Server-owned return origin; stable idempotency key                |
+| Plans (DB-modeled)           | ✅    | Price IDs, checkout availability, trial, currency, and tax policy are server-owned |
 | Subscriptions                | ✅    | Track active/trialing/past_due/canceled                          |
-| Webhook signature verify     | ✅    | HMAC verified before processing                                  |
-| Webhook idempotency          | ✅    | `stripe_webhook_events` dedup table                              |
+| Webhook signature verify     | ✅    | Exact raw body HMAC-verified before durable acknowledgment        |
+| Durable webhook inbox        | ✅    | Generated protobuf retains exact raw body + Stripe metadata before fast `2xx` |
+| Webhook retries/idempotency  | ✅    | Generic atomic dedup, leased worker, fencing, backoff, dead letters, replay |
+| Out-of-order convergence     | ✅    | Hydrates current Stripe state; org-serialized monotonic projection |
+| Billing mutation auth        | ✅    | Owner/admin or delegated `billing:write`, plus mandatory recent AAL2 |
+| Worker database isolation    | ✅    | `app_job_worker` owns lifecycle; grant-limited `app_billing_worker` owns product projection |
 | Trial periods                | ✅    | Stripe-driven; status mirrored locally                           |
-| Dunning emails               | 🟡    | `payment_failed` triggers email; no in-app prompts or retry orchestration |
-| Usage-based billing          | 🟡    | Schema supports `EntitlementChecker`; no `RecordUsage` RPC       |
-| Invoices                     | 🟡    | Webhooks update DB; no list-invoices RPC for end users            |
+| Dunning emails               | 🟡    | `payment_failed` queues an exact rendered email on the generic retry/dead-letter runtime; in-app prompts remain |
+| Usage metering               | ✅    | Internal `ConsumeUsage` RPC; idempotent event receipts, tenant RLS, atomic monthly hard caps |
+| Usage-based invoicing        | 🟡    | Meter reconciliation and Stripe usage reporting are not wired yet |
+| Invoices                     | ✅    | Connect invoice list plus hosted-detail/PDF links                 |
 | Tax (sales tax / VAT)        | 🟡    | Stripe Tax can be enabled; no local tax config UI                |
 | Proration on plan change     | ✅    | Handled by Stripe automatically                                  |
 | Refunds                      | ❌    | Manual via Stripe dashboard only                                 |
@@ -220,10 +260,10 @@ Legend: ✅ production-ready · 🟡 partial / scoped · ❌ stubbed / not imple
 |------------------------|--------|---------------------------------------------------------------------|
 | In-app notifications   | ✅    | DB-backed, list / mark-read / unread-count                          |
 | SSE notification stream| ✅    | `/api/notifications/stream` Server-Sent-Events                      |
-| Email transactional    | ✅    | Welcome, invitation, GDPR-export-ready, billing event emails        |
-| Email templates        | ✅    | DB-backed templates with variable substitution                      |
+| Email transactional    | ✅    | Invitation, magic-link, and billing emails use a generated transactional outbox and isolated worker |
+| Email templates        | ✅    | Versioned DB catalog; strict variable resolution, HTML escaping, and immutable rendered job payloads |
 | User notification prefs| ❌    | No opt-out per category                                             |
-| Outbound webhooks      | 🟡    | Customer-facing webhooks (CRUD + dispatcher exist; signature signing implemented; retry/backoff scaffolded but not battle-tested) |
+| Outbound webhooks      | ✅    | Generated transactional outbox, Vault keys, SSRF-safe exact-body signing, generic fenced retries/dead letters, replay |
 | Push notifications     | ❌    | No web push or mobile push                                          |
 | SMS notifications      | ❌    | No SMS provider                                                     |
 | Slack / Teams hooks    | 🟡    | Internal Slack notifier (errors/health); not customer-facing        |
@@ -232,7 +272,7 @@ Legend: ✅ production-ready · 🟡 partial / scoped · ❌ stubbed / not imple
 
 | Feature                | Status | Notes                                                              |
 |------------------------|--------|--------------------------------------------------------------------|
-| Async event emit       | ✅    | `AsyncAuditEmitter` (1024 buffer); never blocks request path       |
+| Durable event emit     | ✅    | Audit row + delivery history + generated webhook jobs commit atomically; no lossy process queue |
 | Event types            | ✅    | auth.login, user.registered, org.created, role.assigned, etc.      |
 | Multi-field filter     | ✅    | By org, actor, action, resource, time range                        |
 | Cursor pagination      | ✅    | Stable across writes                                               |
@@ -247,11 +287,11 @@ Legend: ✅ production-ready · 🟡 partial / scoped · ❌ stubbed / not imple
 |------------------------|--------|--------------------------------------------------------------------|
 | User search & CRUD     | ✅    | Platform-admin can suspend / unsuspend / delete                    |
 | Impersonation          | ✅    | Mints session with `acting` claim; banner shown to impersonator    |
-| Sessions list          | ✅    | All active sessions platform-wide                                  |
+| Sessions list          | ✅    | Active device families with description, activity, and both expiries |
 | Feature flags          | ✅    | DB-backed; per-org gates; `useFeatureFlag()` hook on FE            |
 | Entitlements           | ✅    | Per-org plan → feature mapping with overrides                      |
 | Webhooks (system view) | ✅    | List + delete from admin                                           |
-| Time-bound impersonation | ❌  | No automatic session expiry on impersonated sessions               |
+| Time-bound impersonation | ✅  | Access tokens are capped at five minutes by default                 |
 | Audit log viewer       | ✅    | Same UI as user-facing log, super-admin sees all orgs              |
 
 ### Compliance & legal
@@ -275,9 +315,9 @@ implementations without rewriting the route handlers.
 |------------------------|--------------------------------------------------------------------------------|
 | Auth                   | `/auth/login`, `/auth/callback`, `/auth/magic-link`                            |
 | Dashboard (every user) | `/`, `/notifications`, `/settings/{mfa,notifications,data}`                    |
-| Pricing                | `/pricing`                                                                     |
+| Subscription           | `/admin/billing`, `/admin/billing/success`                                     |
 | Onboarding             | `/onboarding`                                                                  |
-| Org admin (`/admin/*`) | `users`, `organizations`, `teams`, `roles`, `invitations`, `api-keys`, `audit-log`, `webhooks`, `entitlements`, `billing/success` |
+| Org admin (`/admin/*`) | `users`, `organizations`, `teams`, `roles`, `invitations`, `api-keys`, `audit-log`, `webhooks`, `entitlements`, `billing` |
 | Platform admin         | `/admin/platform/{admins,feature-flags}`, `/admin/sessions`                    |
 | Docs                   | `/docs/sdks`, `/docs/compliance`                                               |
 
@@ -324,7 +364,7 @@ starters, and large-scale enterprise SaaS expectations.
 | Audit log                                  | ✅          | Same — and ours has retention + export, which many starters skip |
 | Stripe checkout + portal                   | ✅          | Same               |
 | Webhook (inbound from Stripe, signed)      | ✅          | Same               |
-| Outbound webhooks (customer endpoints)     | 🟡          | ✅ (with retry, signature, replay UI) |
+| Outbound webhooks (customer endpoints)     | ✅          | ✅ — plus Vault rotation, SSRF-safe egress, generated generic multi-replica outbox |
 | Email (transactional, templated, dev-mode) | ✅          | Same               |
 | GDPR export + delete                       | ✅          | 🟡 (often skipped — we're ahead) |
 | Admin impersonation                        | ✅          | 🟡 (Cal.com has it; many starters don't) |
@@ -347,7 +387,7 @@ starters, and large-scale enterprise SaaS expectations.
 | Custom SSO (SAML / OIDC dynamic clients)       | ✅          | ✅ (2026-04-25: SSOAdminService + /admin/sso self-serve WorkOS Admin Portal flow with stub-mode for dev) |
 | Webhooks UI (test event, replay, signing key)  | ✅          | ✅ (Stripe-style; v2 added 2026-04-25: replay, rotate-secret, deliveries inspector) |
 | API rate limiting per org/key                  | ✅          | ✅ (2026-04-25: Redis-backed fixed-window limiter on Connect + gRPC; X-RateLimit-* headers exposed via CORS + low-budget banner on FE) |
-| Usage-based billing UI                         | ✅          | ✅ (2026-04-25: GetOrgEntitlements RPC + /admin/entitlements + /admin/billing with plan / usage / Stripe-portal / invoices) |
+| Usage metering + billing UI                    | ✅          | ✅ (idempotent tenant-RLS event ledger, atomic monthly quota consumption, GetUsage/GetOrgEntitlements, and billing/admin usage UI) |
 | Status page / system health                    | ❌          | ✅                |
 | Internationalization (i18n)                    | ❌          | 🟡                |
 | Mobile-responsive admin                        | 🟡          | ✅                |
@@ -410,16 +450,16 @@ _All previously-open gaps closed 2026-04-25._
 - ✅ **User identity endpoints unauthenticated** — `AddIdentity`, `FindUserByIdentity`, `ListUserIdentities` would let any authenticated caller enumerate provider identities or attach attacker-controlled identities to any user. Now gated by `requireSelfOrPlatformAdmin` / `requirePlatformAdmin`.
 - ✅ **gRPC server had no in-process auth interceptor** — handlers assumed sidecar presence; direct port hits bypassed auth. Added `grpcAuthInterceptor` mirroring the Connect interceptor (defense in depth: api validates the bearer regardless of upstream).
 - ✅ **Connect server had no CORS** — browser preflight returned 405; every Connect-Web request from the FE failed in production-style architectures. Added `rs/cors` middleware.
-- ✅ **MFA enforcement was cosmetic** — TOTP setup existed but no handler required `mfa_satisfied=true`. JWT now carries `mfa` claim (true when user has no enrolled device OR cleared a challenge). New `requireMFA(ctx, actorID)` gate applied to: `ImpersonateUser`, `GrantPlatformRole`, `RevokePlatformRole`, GDPR `RequestDeletion`, billing `/v1/billing/checkout`, billing `/v1/billing/portal`. Returns `FailedPrecondition` so FE can prompt for TOTP.
+- ✅ **MFA is enforced and refresh-safe** — enrolled users receive no normal session until a durable one-use challenge succeeds. JWT/session evidence carries `amr`, `auth_time`, `acr`, and `mfa_at`; refresh preserves rather than renews that evidence. Refresh re-resolves verified enrollment: newly enrolled MFA terminates AAL1 refresh families and requires login, while removed MFA strips factor methods and downgrades the successor to AAL1. General sensitive operations apply the configured recent-AAL2 policy to enrolled users; money-moving billing checkout/portal is stricter and always requires fresh AAL2, so lack of enrollment is not a bypass. Passkeys require WebAuthn user verification with exact Codefly-configured RP/origin policy; complete credentials and ceremony state use Vault Transit envelopes. TOTP seeds are encrypted and recovery codes are one-use bcrypt hashes.
 - ✅ **API key scopes forwarded but not enforced** — sidecar set `X-Scopes`; handlers ignored. New `requireScope(ctx, "resource:action")` gate with wildcard support (`*`, `users:*`, `*:read`). Applied to `ListUsers`, `UpdateUser`, `DeleteUser` as a starter set; extend to other resources per business needs (JWT-authenticated callers bypass — RBAC handles them).
 - ✅ **Access tokens not individually revocable** — Logout only killed the refresh chain; old access tokens stayed valid up to 15 min. New `auth.TokenRevoker` interface + `cache.NewTokenRevoker` Redis impl. `Logout(refresh, accessToken)` now calls `JWTMinter.RevokeAccess` which adds the jti to the revocation list with TTL = remaining `exp`. `VerifyAccess` consults the list. Falls back to `NoopTokenRevoker` (no Redis) → original behavior.
 - ✅ **Impersonation had no time limit** — admin "view-as" sessions inherited the normal 15-min TTL. New `Config.ImpersonationTokenTTL` (default 5 min) auto-applied when minting tokens with `acting` claim set.
 - ✅ **Cache invalidation on member-remove** — confirmed correct on a closer read. `CacheInvalidator.InvalidateMembership` calls `cache.Delete` against shared Redis, so all api instances see the change immediately. The 30s TTL is safety net, not staleness window.
-- ✅ **OAuth `state` not validated server-side** — added `auth.OAuthStateSigner` (HMAC-SHA256, key derived from the JWT private key with a domain label, 10-min TTL). New `BeginOAuth(provider, redirect_uri) → state` RPC mints a server-signed self-validating token bound to provider + redirect_uri. `Authenticate` re-verifies on callback; mismatch returns the canonical `ErrInvalidOAuthState` (no oracle on the cause). FE refactored to call `BeginOAuth` before redirect; falls back to client-only random state when the RPC is unreachable so offline dev still works. 6 unit tests cover sig tampering, provider-mismatch, redirect-mismatch, expiry, and key-divergence.
+- ✅ **OAuth `state` not validated server-side** — added `auth.OAuthStateSigner` (HMAC-SHA256, key derived from the JWT private key with a domain label, 10-min TTL). `BeginOAuth(provider, redirect_uri) → state` mints a server-signed token bound to provider + redirect URI. `Authenticate` requires and re-verifies it; mismatch returns the canonical `ErrInvalidOAuthState` without an oracle. The frontend fails closed if state cannot be minted. Exact redirects are enforced by `OAUTH_ALLOWED_REDIRECT_URIS` during both initiation and exchange.
 - ✅ **PKCE for OAuth code flow** — FE now generates a 64-byte `code_verifier` per sign-in, computes SHA-256 `code_challenge`, and includes both in the authorize URL. `code_verifier` rides through `Authenticate` to `Exchanger.Exchange`, which forwards it as the standard `code_verifier` form parameter to the provider's token endpoint. Belt-and-suspenders alongside the existing `client_secret` flow — recommended even for confidential clients per OAuth 2.1.
 - ✅ **Connect error code translation** — handlers return `status.Error(codes.X, ...)` (gRPC) but Connect-Go didn't recognize the wrapper, defaulting every error to `CodeUnknown` → HTTP 500. Added `translateGRPCError` in the Connect `unary` adapter mapping all 16 gRPC codes to their Connect equivalents. Without this, the auth-boundary tests showed Bob's `PermissionDenied` as 500 instead of 403, masking the real behaviour.
 - ✅ **Rate limiting per org / API key** — `cache.RateLimiter` (Redis-backed fixed-window) + Connect/gRPC interceptors. Key derivation: API-key id > org id > user id. Default 1000 req/min, configurable. Returns `ResourceExhausted` (gRPC 8 / HTTP 429) with `Retry-After` and `X-RateLimit-*` headers; nil-receiver / nil-cache / zero-limit all degrade to allow-all so an unconfigured Redis can't mass-reject. 5 unit tests cover budget exhaustion, per-key isolation, and graceful degradation.
-- ✅ **Cmd-K command palette** — global cmd/ctrl+K dialog at the dashboard root. Static nav list role-gated (admin / super_admin / public-personal); async user search via Connect-ES (200ms debounce, super_admin only — server-gated, not just UI). 4 e2e specs cover hotkey, role visibility, navigation. Built on the existing cmdk + shadcn primitives (zero new deps).
+- ✅ **Cmd-K command palette** — global cmd/ctrl+K dialog at the dashboard root. Its generated navigation projection is shared with the sidebar/plugin registry and role-gated (admin / super_admin / personal); async user search uses Connect-ES (200ms debounce, super_admin only — server-gated, not just UI). E2E specs cover hotkey, role visibility, and navigation. Built on the existing cmdk + shadcn primitives (zero new deps).
 
 ---
 
@@ -435,7 +475,7 @@ In priority order, based on "where we'd lose deals or land in a CVE":
 5. ~~OAuth state server-side / PKCE~~ — done 2026-04-25 (`BeginOAuth` RPC + signer + FE refactor).
 6. ~~Rate limiting per org + per API key~~ — done 2026-04-25 (Redis fixed-window; Connect + gRPC interceptors).
 7. ~~Cmd-K command palette~~ — done 2026-04-25 (role-gated nav + super_admin user search).
-8. Webhooks v2 — replay UI, signing-secret rotation, retry tuning (~3–5 days).
+8. ~~Webhooks v2 — replay UI, signing-secret rotation, generic retry visibility~~ — done 2026-07-20.
 
 **Quarter 2 — growth features**
 6. Org-scoped subdomains + cookie scoping (~1 week).
@@ -461,27 +501,30 @@ Environment variables consumed by the api:
 | `POSTGRES_URL`                 | DB connection (codefly auto-injects)                        |
 | `VAULT_ADDR`, `VAULT_TOKEN`    | Signing-key storage; falls back to ephemeral key in dev     |
 | `BOOTSTRAP_ADMIN_EMAIL`        | First login matching this becomes super_admin              |
-| `AUTH_PROVIDER`                | `workos` / `auth0` / `google` / empty (fixture mode)        |
+| `AUTH_PROVIDER`                | Required: `workos` / `auth0` / `google`; `dev` only for explicit local fixtures |
 | `WORKOS_CLIENT_ID/SECRET`      | OAuth client credentials                                   |
 | `WORKOS_ISSUER`, `WORKOS_JWKS_URL` | Override discovery URLs (optional)                      |
+| `OAUTH_ALLOWED_REDIRECT_URIS`  | Required exact callback URI allowlist (comma-separated)     |
 | `STRIPE_API_KEY`               | Enables billing endpoints                                   |
-| `STRIPE_WEBHOOK_SECRET`        | Webhook signature verification                              |
+| `STRIPE_WEBHOOK_SECRET`        | Required with Stripe API key; exact-body webhook verification |
 | `RESEND_API_KEY`               | Switches email sender from log-only to Resend               |
 | `EMAIL_FROM`                   | Default sender address                                      |
-| `APP_BASE_URL`                 | Used in email templates for return URLs                     |
+| `APP_BASE_URL`                 | Exact HTTPS production origin for email and server-owned Stripe redirects |
 | `SLACK_WEBHOOK_URL`            | Internal alerts (optional)                                  |
 | `CODEFLY__FIXTURE`             | Loads fixture YAML (e.g. `dev-admin`); FE login picker too |
 
-Frontend (`NEXT_PUBLIC_*` only — these get baked into the client bundle):
+Frontend browser configuration (`NEXT_PUBLIC_*` values are baked into the client bundle):
 
 | Var                          | Used for                                                    |
 |------------------------------|-------------------------------------------------------------|
-| `NEXT_PUBLIC_API_CONNECT`    | Connect-ES base URL (sidecar in prod, api direct in dev)    |
-| `NEXT_PUBLIC_API_REST`       | grpc-gateway REST base URL                                  |
-| `NEXT_PUBLIC_BACKEND_URL`    | Fallback for the above                                      |
 | `NEXT_PUBLIC_WORKOS_*`       | OAuth provider preset (presence enables provider in UI)     |
 | `NEXT_PUBLIC_AUTH0_*`        | Same, for Auth0                                             |
 | `NEXT_PUBLIC_GOOGLE_*`       | Same, for Google                                            |
+
+Accounts REST and Connect browser calls are relative and same-origin. The
+server-only `API_REST_INTERNAL` and `API_CONNECT_INTERNAL` Codefly bindings are
+resolved by Next rewrites and server route handlers; backend origins are never
+published to browser code.
 
 ---
 

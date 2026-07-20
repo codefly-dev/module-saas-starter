@@ -3,28 +3,34 @@
 Shared, module-wide Kubernetes resources for saas-starter. Per-service
 manifests are rendered by each service's agent at `codefly deploy` time
 (into `<workspace>/deployments/modules/saas-starter/services/<svc>/`).
-This directory is for everything that **spans services**:
+The Codefly topology feeding those agents is generated from
+`topology.bindings.codefly.yaml`; see `../DEPLOYMENT_TOPOLOGY.md`. This
+directory also owns everything that **spans services**:
 
 - The `saas-starter` namespace.
 - The ArgoCD `AppProject` (RBAC scope for all module Applications).
 - The ArgoCD `Application` per service (app-of-apps pattern).
-- Eventually: shared Ingress, ServiceMonitor, NetworkPolicies, Secrets
-  that span services, etc.
+- Generated default-deny and service-dependency `NetworkPolicy` resources.
+- Shared Istio ingress/mTLS policy, quotas, limits, and environment overlays.
 
 ## Layout
 
 ```
 module/deployment/
+  topology.bindings.codefly.yaml         endpoint/dependency/egress source
+  generated/
+    service-topology.json                typed normalized topology
   kustomize/
     base/                         shared across environments
       kustomization.yaml
       namespace.yaml
       project.yaml                ArgoCD AppProject "saas-starter"
+      network-policy.yaml         generated least-privilege policies
     overlays/
       local/                      k3d / kind / minikube
         kustomization.yaml
         applications/             ArgoCD Application per service
-          api.yaml
+          accounts.yaml
           auth-sidecar.yaml
           frontend.yaml
           store.yaml
@@ -34,7 +40,7 @@ module/deployment/
       aws/                        EKS production
         kustomization.yaml
         applications/
-          api.yaml
+          accounts.yaml
           auth-sidecar.yaml
           frontend.yaml
           # store / cache / vault / object-storage are intentionally
@@ -97,7 +103,7 @@ testing.
 
 ### aws (EKS)
 
-Only the three application services (`api`, `auth-sidecar`,
+Only the three application services (`accounts`, `auth-sidecar`,
 `frontend`) are Applications here. The rest are AWS-managed:
 
 - `store` → Amazon RDS for Postgres.

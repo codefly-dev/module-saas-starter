@@ -1,0 +1,92 @@
+syntax = "proto3";
+
+package saas.accounts.v1;
+
+import "buf/validate/validate.proto";
+import "google/api/annotations.proto";
+import "google/protobuf/timestamp.proto";
+import "saas/policy/v1/options.proto";
+
+// ============================================================================
+// Onboarding
+// ============================================================================
+
+enum OnboardingStepStatus {
+  ONBOARDING_STEP_STATUS_UNSPECIFIED = 0;
+  ONBOARDING_STEP_STATUS_PENDING = 1;
+  ONBOARDING_STEP_STATUS_COMPLETED = 2;
+  ONBOARDING_STEP_STATUS_SKIPPED = 3;
+}
+
+message OnboardingStep {
+  string step_name = 1 [(buf.validate.field).string.min_len = 1];
+  OnboardingStepStatus status = 2;
+  google.protobuf.Timestamp completed_at = 3;
+}
+
+message OnboardingProgress {
+  repeated OnboardingStep steps = 1;
+  bool completed = 2;
+}
+
+message GetOnboardingProgressRequest {}
+
+message CompleteOnboardingStepRequest {
+  string step_name = 1 [(buf.validate.field).string.min_len = 1];
+}
+
+message SkipOnboardingStepRequest {
+  string step_name = 1 [(buf.validate.field).string.min_len = 1];
+}
+
+// OnboardingService — user onboarding flow management
+service OnboardingService {
+  rpc GetProgress(GetOnboardingProgressRequest) returns (OnboardingProgress) {
+    option (saas.policy.v1.method_policy) = {
+      exposure: EXPOSURE_AUTHENTICATED
+      tenant: TENANT_REQUIREMENT_USER
+      mfa: MFA_REQUIREMENT_NONE
+      audit: {emission: AUDIT_EMISSION_NONE}
+      idempotency: IDEMPOTENCY_REQUIREMENT_FORBIDDEN
+      rate_limit: RATE_LIMIT_CLASS_STANDARD_READ
+      request_sensitivity: SENSITIVITY_CONFIDENTIAL
+      response_sensitivity: SENSITIVITY_CONFIDENTIAL
+      platform_role: PLATFORM_ROLE_REQUIREMENT_NONE
+    };
+    option (google.api.http) = {get: "/v1/onboarding"};
+  }
+  rpc CompleteStep(CompleteOnboardingStepRequest) returns (OnboardingProgress) {
+    option (saas.policy.v1.method_policy) = {
+      exposure: EXPOSURE_AUTHENTICATED
+      tenant: TENANT_REQUIREMENT_USER
+      mfa: MFA_REQUIREMENT_NONE
+      audit: {emission: AUDIT_EMISSION_NONE}
+      idempotency: IDEMPOTENCY_REQUIREMENT_FORBIDDEN
+      rate_limit: RATE_LIMIT_CLASS_STANDARD_WRITE
+      request_sensitivity: SENSITIVITY_CONFIDENTIAL
+      response_sensitivity: SENSITIVITY_CONFIDENTIAL
+      platform_role: PLATFORM_ROLE_REQUIREMENT_NONE
+    };
+    option (google.api.http) = {
+      post: "/v1/onboarding/{step_name}:complete"
+      body: "*"
+    };
+  }
+  rpc SkipStep(SkipOnboardingStepRequest) returns (OnboardingProgress) {
+    option (saas.policy.v1.method_policy) = {
+      exposure: EXPOSURE_AUTHENTICATED
+      tenant: TENANT_REQUIREMENT_USER
+      mfa: MFA_REQUIREMENT_NONE
+      audit: {emission: AUDIT_EMISSION_NONE}
+      idempotency: IDEMPOTENCY_REQUIREMENT_FORBIDDEN
+      rate_limit: RATE_LIMIT_CLASS_STANDARD_WRITE
+      request_sensitivity: SENSITIVITY_CONFIDENTIAL
+      response_sensitivity: SENSITIVITY_CONFIDENTIAL
+      platform_role: PLATFORM_ROLE_REQUIREMENT_NONE
+    };
+    option (google.api.http) = {
+      post: "/v1/onboarding/{step_name}:skip"
+      body: "*"
+    };
+  }
+}

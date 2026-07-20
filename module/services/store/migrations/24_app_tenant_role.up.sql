@@ -1,13 +1,11 @@
 -- Postgres role + privileges for the RLS code path.
 --
--- Why a dedicated role: postgres SUPERUSERS AND ROLES WITH BYPASSRLS
--- BYPASS RLS UNCONDITIONALLY, even with FORCE ROW LEVEL SECURITY.
--- Codefly's Postgres plugin connects the api as a superuser, which
--- silently defeats every policy. Solution: WithOrgTx switches to
--- this non-superuser non-BYPASSRLS role for the duration of the
--- request transaction; SET LOCAL restores the original role on
--- commit/rollback. WithBypass leaves the role as the default
--- (superuser) so workers naturally bypass RLS.
+-- Why a dedicated role: request traffic must always enter through a
+-- non-superuser, non-BYPASSRLS role so policies cannot be skipped by
+-- accident. Codefly exports a non-owner read-write principal and grants
+-- it permission to SET ROLE app_tenant through the Postgres service's
+-- runtime-read-write-roles setting. WithBypass returns to that managed
+-- principal and opts into the explicitly audited app.bypass policy path.
 --
 -- Idempotent: CREATE ROLE under DO $$ ... IF NOT EXISTS, GRANTs are
 -- repeat-safe.
@@ -29,10 +27,9 @@ ALTER DEFAULT PRIVILEGES IN SCHEMA public
 ALTER DEFAULT PRIVILEGES IN SCHEMA public
     GRANT USAGE, SELECT ON SEQUENCES TO app_tenant;
 
--- Allow the connection's user (typically the codefly-managed
--- superuser) to assume app_tenant via SET ROLE. Superusers can SET
--- ROLE without an explicit grant in most cases, but being explicit
--- documents the contract for non-superuser-deployed setups.
+-- The migration owner also gets membership for migrations and integration
+-- tests. The Codefly Postgres agent separately reconciles membership for its
+-- managed read-write principal after all migrations have run.
 DO $$
 DECLARE
     cur TEXT := current_user;

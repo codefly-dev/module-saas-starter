@@ -1,0 +1,526 @@
+syntax = "proto3";
+
+package saas.catalog.v1;
+
+import "saas/policy/v1/options.proto";
+
+// ServiceCatalog is the deterministic, machine-readable contract compiled
+// from one Codefly service's protobuf descriptor graph. Consumers must reject
+// unknown schema versions instead of guessing at field semantics.
+message ServiceCatalog {
+  // schema_version identifies this catalog format, independently of the API
+  // version described by the catalog.
+  string schema_version = 1;
+
+  // owner identifies the Codefly module and service that own this surface.
+  ServiceOwner owner = 2;
+
+  // api_package is the protobuf package shared by the owned API services.
+  string api_package = 3;
+
+  // api_version is the semantic version advertised by the owned service.
+  string api_version = 4;
+
+  // services is the sorted grouping of procedures by protobuf service.
+  repeated Service services = 5;
+
+  // methods is the sorted, flat inventory consumed by generators and parity
+  // tests. Procedure is its unique key.
+  repeated Method methods = 6;
+
+  // permissions is the sorted canonical RBAC/API-key vocabulary. Method
+  // policies and generated frontend gates may only reference these values.
+  repeated PermissionDefinition permissions = 7;
+
+  // entitlements is the sorted server-owned feature/quota vocabulary shared
+  // by plans, runtime checks, generated clients, and plugin manifests.
+  repeated EntitlementDefinition entitlements = 8;
+}
+
+// PermissionDefinition is one canonical resource:action capability. The
+// permission field is redundant by design: consumers can use it directly,
+// while validation proves it agrees with resource and action.
+message PermissionDefinition {
+  // permission is the canonical resource:action value.
+  string permission = 1;
+
+  // resource is the left side of permission.
+  string resource = 2;
+
+  // action is the right side of permission.
+  string action = 3;
+
+  // description is safe operator-facing documentation.
+  string description = 4;
+
+  // built_in_roles documents seeded database roles that grant this value.
+  repeated string built_in_roles = 5;
+
+  // api_key_scope reports whether API keys may request this exact value.
+  bool api_key_scope = 6;
+}
+
+// EntitlementKind distinguishes boolean feature access from numeric quotas.
+enum EntitlementKind {
+  // ENTITLEMENT_KIND_UNSPECIFIED is invalid in a compiled catalog.
+  ENTITLEMENT_KIND_UNSPECIFIED = 0;
+
+  // ENTITLEMENT_KIND_FEATURE uses zero as disabled and non-zero as enabled.
+  ENTITLEMENT_KIND_FEATURE = 1;
+
+  // ENTITLEMENT_KIND_QUOTA uses zero as disabled, positive values as a cap,
+  // and a null database limit (rendered as -1 at runtime) as unlimited.
+  ENTITLEMENT_KIND_QUOTA = 2;
+}
+
+// EntitlementDefinition is one stable server-owned plan capability.
+message EntitlementDefinition {
+  // key is the value stored by plan_entitlements and usage meters.
+  string key = 1;
+
+  // kind defines limit semantics.
+  EntitlementKind kind = 2;
+
+  // unit is a stable display/metering unit such as seats or requests/month.
+  string unit = 3;
+
+  // description is safe operator-facing documentation.
+  string description = 4;
+}
+
+// DeploymentCatalog is the normalized Codefly module topology consumed by
+// manifest, network-policy, and deployment-parity generators.
+message DeploymentCatalog {
+  // schema_version identifies this deployment topology format.
+  string schema_version = 1;
+
+  // module is the owning Codefly module.
+  string module = 2;
+
+  // namespace is the Kubernetes namespace used by generated policy.
+  string namespace = 3;
+
+  // services is the sorted endpoint and dependency inventory.
+  repeated DeploymentService services = 4;
+
+  // interface_endpoints is the sorted public/module contract.
+  repeated ModuleEndpoint interface_endpoints = 5;
+
+  // public_egress is the sorted, explicitly approved Internet access.
+  repeated PublicEgress public_egress = 6;
+}
+
+// CodeflyAPI is the finite endpoint protocol vocabulary used by this module.
+enum CodeflyAPI {
+  // CODEFLY_API_UNSPECIFIED is invalid in a compiled topology.
+  CODEFLY_API_UNSPECIFIED = 0;
+
+  CODEFLY_API_GRPC = 1;
+  CODEFLY_API_REST = 2;
+  CODEFLY_API_CONNECT = 3;
+  CODEFLY_API_HTTP = 4;
+  CODEFLY_API_TCP = 5;
+}
+
+// EndpointVisibility mirrors Codefly's finite network visibility contract.
+enum EndpointVisibility {
+  // ENDPOINT_VISIBILITY_UNSPECIFIED is invalid in a compiled topology.
+  ENDPOINT_VISIBILITY_UNSPECIFIED = 0;
+
+  ENDPOINT_VISIBILITY_PRIVATE = 1;
+  ENDPOINT_VISIBILITY_MODULE = 2;
+  ENDPOINT_VISIBILITY_PUBLIC = 3;
+  ENDPOINT_VISIBILITY_EXTERNAL = 4;
+}
+
+// DeploymentService is one Codefly service's endpoint and dependency surface.
+message DeploymentService {
+  string name = 1;
+  repeated CodeflyEndpoint endpoints = 2;
+  repeated ServiceDependency dependencies = 3;
+}
+
+// CodeflyEndpoint is one named runtime endpoint and its deployment port.
+message CodeflyEndpoint {
+  string name = 1;
+  CodeflyAPI api = 2;
+  EndpointVisibility visibility = 3;
+  uint32 port = 4;
+}
+
+// ServiceDependency grants one caller only the named target endpoints.
+message ServiceDependency {
+  string service = 1;
+  repeated string endpoints = 2;
+}
+
+// ModuleEndpoint exposes one service endpoint through the module interface.
+message ModuleEndpoint {
+  string service = 1;
+  string endpoint = 2;
+  EndpointVisibility visibility = 3;
+}
+
+// PublicEgress grants one workload outbound Internet access on finite ports.
+message PublicEgress {
+  string service = 1;
+  repeated uint32 ports = 2;
+}
+
+// FrontendPluginCatalog is the normalized compile-time route and navigation
+// inventory for the module's built-in frontend plugins.
+message FrontendPluginCatalog {
+  // schema_version identifies this frontend projection format.
+  string schema_version = 1;
+
+  // module and service identify the Codefly owner of the page surface.
+  string module = 2;
+  string service = 3;
+
+  // plugins is the sorted built-in plugin source inventory.
+  repeated FrontendPlugin plugins = 4;
+
+  // routes is the sorted Next.js page inventory discovered from src/app.
+  repeated FrontendRoute routes = 5;
+
+  // navigation is the globally ordered metadata used by registry consumers.
+  repeated FrontendNavigationItem navigation = 6;
+}
+
+// FrontendPlugin identifies one built-in compile-time FrontendPlugin source.
+message FrontendPlugin {
+  string name = 1;
+  string source_path = 2;
+}
+
+// FrontendRouteMatch distinguishes exact pages from dynamic/catch-all pages.
+enum FrontendRouteMatch {
+  // FRONTEND_ROUTE_MATCH_UNSPECIFIED is invalid in a compiled catalog.
+  FRONTEND_ROUTE_MATCH_UNSPECIFIED = 0;
+
+  FRONTEND_ROUTE_MATCH_EXACT = 1;
+  FRONTEND_ROUTE_MATCH_PARAMETER = 2;
+  FRONTEND_ROUTE_MATCH_CATCH_ALL = 3;
+}
+
+// FrontendRouteAccess is the minimum shell-level audience for a page or link.
+// Backend authorization remains authoritative for every data operation.
+enum FrontendRouteAccess {
+  // FRONTEND_ROUTE_ACCESS_UNSPECIFIED is invalid in a compiled catalog.
+  FRONTEND_ROUTE_ACCESS_UNSPECIFIED = 0;
+
+  FRONTEND_ROUTE_ACCESS_PUBLIC = 1;
+  FRONTEND_ROUTE_ACCESS_AUTHENTICATED = 2;
+  FRONTEND_ROUTE_ACCESS_ADMIN = 3;
+  FRONTEND_ROUTE_ACCESS_SUPER_ADMIN = 4;
+}
+
+// FrontendRoute is one page owned by the Next.js filesystem router.
+message FrontendRoute {
+  string path = 1;
+  string source_path = 2;
+  FrontendRouteMatch match = 3;
+  FrontendRouteAccess access = 4;
+}
+
+// FrontendNavigationSurface names a generated navigation consumer.
+enum FrontendNavigationSurface {
+  // FRONTEND_NAVIGATION_SURFACE_UNSPECIFIED is invalid in a compiled catalog.
+  FRONTEND_NAVIGATION_SURFACE_UNSPECIFIED = 0;
+
+  FRONTEND_NAVIGATION_SURFACE_COMMAND_PALETTE = 1;
+  FRONTEND_NAVIGATION_SURFACE_PLUGIN_REGISTRY = 2;
+  FRONTEND_NAVIGATION_SURFACE_SIDEBAR = 3;
+  FRONTEND_NAVIGATION_SURFACE_USER_MENU = 4;
+}
+
+// FrontendNavigationItem is one canonical link projected into finite surfaces.
+message FrontendNavigationItem {
+  string id = 1;
+  string plugin = 2;
+  string label = 3;
+  string path = 4;
+  string icon = 5;
+  string group = 6;
+  FrontendRouteAccess access = 7;
+  string permission = 8;
+  repeated FrontendNavigationSurface surfaces = 9;
+  uint32 order = 10;
+}
+
+// ServiceOwner locates a service within a reusable Codefly module.
+message ServiceOwner {
+  // module is the Codefly module name, for example saas-starter.
+  string module = 1;
+
+  // service is the Codefly service name, for example accounts.
+  string service = 2;
+}
+
+// Service groups the canonical procedures owned by one protobuf service.
+message Service {
+  // name is the short protobuf service name.
+  string name = 1;
+
+  // full_name is the package-qualified protobuf service name.
+  string full_name = 2;
+
+  // procedures contains sorted canonical gRPC/Connect procedure paths.
+  repeated string procedures = 3;
+}
+
+// Protocol is a transport on which a method is intentionally exposed.
+enum Protocol {
+  // PROTOCOL_UNSPECIFIED is invalid in a compiled catalog.
+  PROTOCOL_UNSPECIFIED = 0;
+
+  // PROTOCOL_GRPC exposes the canonical procedure over gRPC.
+  PROTOCOL_GRPC = 1;
+
+  // PROTOCOL_CONNECT exposes the canonical procedure over Connect.
+  PROTOCOL_CONNECT = 2;
+
+  // PROTOCOL_REST exposes at least one explicit google.api.http binding.
+  PROTOCOL_REST = 3;
+}
+
+// Method is the normalized transport and policy metadata for one RPC.
+message Method {
+  // procedure is the canonical /package.Service/Method path used by both gRPC
+  // and Connect.
+  string procedure = 1;
+
+  // service is the short protobuf service name.
+  string service = 2;
+
+  // full_service is the package-qualified protobuf service name.
+  string full_service = 3;
+
+  // method is the protobuf method name.
+  string method = 4;
+
+  // input_type is the package-qualified protobuf request message name.
+  string input_type = 5;
+
+  // output_type is the package-qualified protobuf response message name.
+  string output_type = 6;
+
+  // client_streaming reports whether the client may send a stream.
+  bool client_streaming = 7;
+
+  // server_streaming reports whether the server returns a stream.
+  bool server_streaming = 8;
+
+  // deprecated mirrors the protobuf method deprecation option.
+  bool deprecated = 9;
+
+  // source_proto is the descriptor source path for review provenance.
+  string source_proto = 10;
+
+  // protocols is a finite, canonical-order list of exposed transports.
+  repeated Protocol protocols = 11;
+
+  // http_bindings contains every explicit REST binding in declaration order.
+  repeated HTTPBinding http_bindings = 12;
+
+  // policy is the complete descriptor-authoritative admission policy.
+  saas.policy.v1.MethodPolicy policy = 13;
+
+  // policy_tier is the compact compatibility view used by current runtime
+  // introspection. Policy remains authoritative.
+  string policy_tier = 14;
+
+  // description is human-facing editorial metadata.
+  string description = 15;
+
+  // owner makes flat merged inventories independently routable.
+  ServiceOwner owner = 16;
+}
+
+// HTTPBinding is one normalized google.api.http route binding.
+message HTTPBinding {
+  // method is an uppercase HTTP verb or custom binding kind.
+  string method = 1;
+
+  // path is the annotated URI template.
+  string path = 2;
+
+  // body is the annotated request-body field selection.
+  string body = 3;
+
+  // response_body is the annotated response-body field selection.
+  string response_body = 4;
+}
+
+// GatewayRouteCatalog is the deterministic public edge inventory derived from
+// a ServiceCatalog. Internal methods are intentionally absent.
+message GatewayRouteCatalog {
+  // schema_version identifies the gateway route artifact contract.
+  string schema_version = 1;
+
+  // routes is sorted by protocol, method, path, and procedure.
+  repeated GatewayRoute routes = 2;
+}
+
+// GatewayProtocol identifies the public transport matched at the edge.
+enum GatewayProtocol {
+  // GATEWAY_PROTOCOL_UNSPECIFIED is invalid in generated routes.
+  GATEWAY_PROTOCOL_UNSPECIFIED = 0;
+
+  // GATEWAY_PROTOCOL_CONNECT matches a canonical Connect procedure path.
+  GATEWAY_PROTOCOL_CONNECT = 1;
+
+  // GATEWAY_PROTOCOL_REST matches an explicit google.api.http binding.
+  GATEWAY_PROTOCOL_REST = 2;
+}
+
+// GatewayMatch identifies how an edge proxy must interpret a route path.
+enum GatewayMatch {
+  // GATEWAY_MATCH_UNSPECIFIED is invalid in generated routes.
+  GATEWAY_MATCH_UNSPECIFIED = 0;
+
+  // GATEWAY_MATCH_EXACT requires a byte-for-byte URI path match.
+  GATEWAY_MATCH_EXACT = 1;
+
+  // GATEWAY_MATCH_PATH_TEMPLATE permits only non-empty values for declared
+  // brace-delimited path parameters.
+  GATEWAY_MATCH_PATH_TEMPLATE = 2;
+}
+
+// GatewayRouteSource identifies whether a route came from a descriptor or an
+// explicitly configured compatibility alias.
+enum GatewayRouteSource {
+  // GATEWAY_ROUTE_SOURCE_UNSPECIFIED is invalid in generated routes.
+  GATEWAY_ROUTE_SOURCE_UNSPECIFIED = 0;
+
+  // GATEWAY_ROUTE_SOURCE_DESCRIPTOR is a canonical descriptor route.
+  GATEWAY_ROUTE_SOURCE_DESCRIPTOR = 1;
+
+  // GATEWAY_ROUTE_SOURCE_COMPATIBILITY_ALIAS is a temporary rewritten alias.
+  GATEWAY_ROUTE_SOURCE_COMPATIBILITY_ALIAS = 2;
+}
+
+// GatewayRoute is one exact or path-template edge match and its upstream
+// ownership. Procedure links every transport back to its authoritative policy.
+message GatewayRoute {
+  // protocol is the public transport matched by this route.
+  GatewayProtocol protocol = 1;
+
+  // method is the uppercase HTTP method required at the edge.
+  string method = 2;
+
+  // path is the exact URI or normalized URI template.
+  string path = 3;
+
+  // match controls exact versus bounded path-template matching.
+  GatewayMatch match = 4;
+
+  // procedure is the canonical descriptor method represented by the route.
+  string procedure = 5;
+
+  // owner identifies the Codefly module and service receiving the request.
+  ServiceOwner owner = 6;
+
+  // upstream_endpoint is the named Codefly endpoint for this transport.
+  string upstream_endpoint = 7;
+
+  // exposure is copied from the descriptor policy. Internal exposure is
+  // forbidden in this public edge artifact.
+  saas.policy.v1.Exposure exposure = 8;
+
+  // source distinguishes canonical routes from temporary aliases.
+  GatewayRouteSource source = 9;
+
+  // rewrite_path is the canonical upstream path for a compatibility alias.
+  string rewrite_path = 10;
+
+  // remove_after is the ISO-8601 review/removal date for an alias.
+  string remove_after = 11;
+}
+
+// AuthorizationCatalog is the deterministic method-policy inventory consumed
+// by policy decision points, transport adapters, and review tooling. It keeps
+// transport routing separate from admission policy while preserving a stable
+// procedure join key.
+message AuthorizationCatalog {
+  // schema_version identifies this authorization artifact contract.
+  string schema_version = 1;
+
+  // owner identifies the Codefly service whose procedures are described.
+  ServiceOwner owner = 2;
+
+  // methods contains every owned method, including internal procedures,
+  // sorted by canonical procedure.
+  repeated AuthorizationMethod methods = 3;
+}
+
+// RateLimitBackendFailureMode specifies availability behavior when the edge
+// limiter backend is unavailable. The compiler derives it from reviewed method
+// metadata so runtimes never classify security-sensitive routes by URL.
+enum RateLimitBackendFailureMode {
+  // RATE_LIMIT_BACKEND_FAILURE_MODE_UNSPECIFIED is invalid in generated data.
+  RATE_LIMIT_BACKEND_FAILURE_MODE_UNSPECIFIED = 0;
+
+  // RATE_LIMIT_BACKEND_FAILURE_MODE_FAIL_OPEN preserves service availability.
+  RATE_LIMIT_BACKEND_FAILURE_MODE_FAIL_OPEN = 1;
+
+  // RATE_LIMIT_BACKEND_FAILURE_MODE_FAIL_CLOSED preserves the security budget.
+  RATE_LIMIT_BACKEND_FAILURE_MODE_FAIL_CLOSED = 2;
+}
+
+// AuthorizationMethod is the transport-independent PDP input for one RPC.
+message AuthorizationMethod {
+  // procedure is the canonical /package.Service/Method lookup key.
+  string procedure = 1;
+
+  // full_service is the package-qualified protobuf service name.
+  string full_service = 2;
+
+  // method is the protobuf method name.
+  string method = 3;
+
+  // input_type identifies the request schema used for resource bindings.
+  string input_type = 4;
+
+  // output_type identifies the response schema used by audit/redaction tools.
+  string output_type = 5;
+
+  // client_streaming and server_streaming define interceptor requirements.
+  bool client_streaming = 6;
+  bool server_streaming = 7;
+
+  // policy is the complete descriptor-authoritative admission contract.
+  saas.policy.v1.MethodPolicy policy = 8;
+
+  // policy_tier is the compact compatibility view used by current runtimes.
+  string policy_tier = 9;
+
+  // owner makes merged authorization catalogs independently dispatchable.
+  ServiceOwner owner = 10;
+
+  // source_proto preserves review provenance without an ambient file path.
+  string source_proto = 11;
+
+  // policy_sha256 is the lowercase SHA-256 of the deterministic protobuf
+  // encoding of policy. Audit/config consumers can pin an exact policy value.
+  string policy_sha256 = 12;
+
+  // rate_limit_backend_failure_mode is the compiler-selected edge behavior.
+  RateLimitBackendFailureMode rate_limit_backend_failure_mode = 13;
+}
+
+// RESTSurfaceCatalog is the explicit protobuf-to-JSON surface compiled from
+// google.api.http annotations and method exposure policy. Only PUBLIC and
+// AUTHENTICATED routes are present; INTERNAL bindings remain private gRPC or
+// Connect procedures even when a legacy HTTP annotation exists.
+message RESTSurfaceCatalog {
+  // schema_version identifies this REST surface artifact contract.
+  string schema_version = 1;
+
+  // owner identifies the Codefly service that owns the surface.
+  ServiceOwner owner = 2;
+
+  // routes contains descriptor routes sorted by method, path, and procedure.
+  // Compatibility aliases are not REST API operations and are forbidden.
+  repeated GatewayRoute routes = 3;
+}

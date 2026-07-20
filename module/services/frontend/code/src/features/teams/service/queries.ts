@@ -1,22 +1,22 @@
-import { queryOptions } from "@tanstack/react-query";
 import { createClient } from "@connectrpc/connect";
+import { queryOptions } from "@tanstack/react-query";
+import { TeamService } from "@/gen/saas/accounts/v1/teams_pb";
 import { apiTransport } from "@/lib/connect/transport";
-import { TeamService } from "@/gen/saas-starter_api_grpc_pb";
 
 const client = createClient(TeamService, apiTransport);
 
 export const teamQueries = {
-  list: (orgId: string) =>
-    queryOptions({
-      queryKey: ["teams", orgId],
-      queryFn: () => client.listTeams({ orgId }),
-      enabled: !!orgId,
-    }),
+	list: (orgId: string) =>
+		queryOptions({
+			queryKey: ["teams", orgId],
+			queryFn: () => client.listTeams({ orgId }),
+			enabled: !!orgId,
+		}),
 
-  members: (teamId: string) =>
-    queryOptions({
-      queryKey: ["team-members", teamId],
-      queryFn: () => client.listMembers({ teamId }),
-      enabled: !!teamId,
-    }),
+	members: (teamId: string) =>
+		queryOptions({
+			queryKey: ["team-members", teamId],
+			queryFn: () => client.listMembers({ teamId }),
+			enabled: !!teamId,
+		}),
 };

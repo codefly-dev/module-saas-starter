@@ -1,0 +1,104 @@
+syntax = "proto3";
+
+package saas.accounts.v1;
+
+import "buf/validate/validate.proto";
+import "google/api/annotations.proto";
+import "saas/policy/v1/options.proto";
+
+// ============================================================================
+// User Settings — per-user preferences blob, JSONB-backed
+// ============================================================================
+
+enum ThemePreference {
+  THEME_PREFERENCE_UNSPECIFIED = 0;
+  THEME_PREFERENCE_SYSTEM = 1;
+  THEME_PREFERENCE_LIGHT = 2;
+  THEME_PREFERENCE_DARK = 3;
+}
+
+// UserEmailSettings — top-level transactional email opt-ins.
+// `security` is forced-on server-side but exposed here so the
+// unsubscribe page can reflect that to the user.
+message UserEmailSettings {
+  optional bool product = 1;
+  optional bool marketing = 2;
+  optional bool security = 3;
+  optional bool weekly_digest = 4;
+}
+
+message UserNotificationSettings {
+  optional bool in_app = 1;
+  optional bool push = 2;
+  optional bool sound = 3;
+}
+
+// UserSettings — per-user preferences. All fields optional. The
+// FE submits ONLY changed keys; the api jsonb-merges onto the row.
+// Adding a field is a no-op (FE bumps + new key flows through).
+message UserSettings {
+  optional ThemePreference theme = 1 [(buf.validate.field).enum = {
+    defined_only: true
+    not_in: 0
+  }];
+  // IETF tag: "en", "fr", "es-419", etc.
+  optional string locale = 2;
+  // IANA tz: "America/New_York", "UTC".
+  optional string timezone = 3;
+  // "iso" | "us" | "eu"
+  optional string date_format = 4;
+  // "12h" | "24h"
+  optional string time_format = 5;
+
+  optional UserEmailSettings email = 6;
+  optional UserNotificationSettings notifications = 7;
+}
+
+message GetUserSettingsRequest {}
+
+message UpdateUserSettingsRequest {
+  // Partial — only the keys to change. Nested objects are replaced
+  // wholesale (the FE always sends the full nested object).
+  UserSettings patch = 1;
+}
+
+// UserSettingsService — per-caller (no org scoping). The auth
+// interceptor's user id determines whose settings are read/written;
+// no admin override surface (admins use PlatformAdminService for
+// other-user impersonation flows).
+service UserSettingsService {
+  rpc Get(GetUserSettingsRequest) returns (UserSettings) {
+    option (saas.policy.v1.method_policy) = {
+      exposure: EXPOSURE_AUTHENTICATED
+      tenant: TENANT_REQUIREMENT_USER
+      mfa: MFA_REQUIREMENT_NONE
+      audit: {emission: AUDIT_EMISSION_NONE}
+      idempotency: IDEMPOTENCY_REQUIREMENT_FORBIDDEN
+      rate_limit: RATE_LIMIT_CLASS_STANDARD_READ
+      request_sensitivity: SENSITIVITY_CONFIDENTIAL
+      response_sensitivity: SENSITIVITY_CONFIDENTIAL
+      platform_role: PLATFORM_ROLE_REQUIREMENT_NONE
+    };
+    option (google.api.http) = {get: "/v1/user/settings"};
+  }
+  rpc Update(UpdateUserSettingsRequest) returns (UserSettings) {
+    option (saas.policy.v1.method_policy) = {
+      exposure: EXPOSURE_AUTHENTICATED
+      tenant: TENANT_REQUIREMENT_USER
+      mfa: MFA_REQUIREMENT_NONE
+      audit: {
+        events: "settings.updated"
+        emission: AUDIT_EMISSION_SUCCESS
+      }
+      idempotency: IDEMPOTENCY_REQUIREMENT_FORBIDDEN
+      rate_limit: RATE_LIMIT_CLASS_STANDARD_WRITE
+      request_sensitivity: SENSITIVITY_CONFIDENTIAL
+      response_sensitivity: SENSITIVITY_CONFIDENTIAL
+      platform_role: PLATFORM_ROLE_REQUIREMENT_NONE
+    };
+    option (google.api.http) = {
+      post: "/v1/user/settings"
+      body: "*"
+    };
+  }
+}

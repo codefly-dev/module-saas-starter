@@ -2,7 +2,10 @@ package business
 
 import (
 	"context"
+	"errors"
 	"time"
+
+	"accounts/pkg/jobs"
 
 	"github.com/codefly-dev/core/wool"
 	"google.golang.org/grpc/metadata"
@@ -24,76 +27,85 @@ type AuditEntry struct {
 	CreatedAt      time.Time
 }
 
-// AuditEmitter writes audit events. Implementations must be non-blocking.
+// AuditEmitter writes audit events. Production uses DurableAuditEmitter so the
+// audit row and every matching webhook outbox row commit atomically.
 type AuditEmitter interface {
 	Emit(ctx context.Context, entry AuditEntry)
 }
 
-// AsyncAuditEmitter buffers events and writes them asynchronously.
-type AsyncAuditEmitter struct {
-	store Store
-	ch    chan auditWork
+// DurableAuditEmitter has no process-local queue. A process crash before commit
+// leaves neither the domain event nor partial fan-out; after commit, the leased
+// delivery worker can resume on any replica.
+type DurableAuditEmitter struct {
+	store    Store
+	producer jobs.Producer
 }
 
-type auditWork struct {
-	entry AuditEntry
-}
-
-func NewAsyncAuditEmitter(store Store, bufferSize int) *AsyncAuditEmitter {
-	e := &AsyncAuditEmitter{
-		store: store,
-		ch:    make(chan auditWork, bufferSize),
+func NewDurableAuditEmitter(store Store, producer jobs.Producer) (*DurableAuditEmitter, error) {
+	if store == nil {
+		return nil, errors.New("audit: store is required")
 	}
-	go e.drain()
-	return e
+	if producer == nil {
+		return nil, errors.New("audit: transactional job producer is required")
+	}
+	return &DurableAuditEmitter{store: store, producer: producer}, nil
 }
 
-func (e *AsyncAuditEmitter) Emit(ctx context.Context, entry AuditEntry) {
-	select {
-	case e.ch <- auditWork{entry: entry}:
-	default:
-		// Buffer full — drop rather than block business logic. Loud
-		// log so an under-sized buffer in prod doesn't silently lose
-		// audit rows. If this fires, either bump bufferSize or
-		// investigate why drain() is falling behind.
-		wool.Get(ctx).In("AsyncAuditEmitter.Emit").Warn("audit buffer full; event dropped",
+func (e *DurableAuditEmitter) Emit(ctx context.Context, entry AuditEntry) {
+	if entry.ID == "" {
+		entry.ID = NewIDString()
+	}
+	if entry.CreatedAt.IsZero() {
+		entry.CreatedAt = time.Now().UTC()
+	}
+	write := func(ctx context.Context) error {
+		if err := e.store.InsertAuditEvent(ctx, entry); err != nil {
+			return err
+		}
+		if entry.OrgID == "" {
+			return nil
+		}
+		subscriptions, err := e.store.GetActiveWebhookSubscriptions(ctx, entry.Action)
+		if err != nil {
+			return err
+		}
+		for _, subscription := range subscriptions {
+			delivery, payload, err := newWebhookDelivery(entry, subscription.ID)
+			if err != nil {
+				return err
+			}
+			if err := createOutboundWebhookDelivery(
+				ctx, e.store, e.producer, entry.OrgID, delivery, payload,
+			); err != nil {
+				return err
+			}
+		}
+		return nil
+	}
+	var err error
+	if entry.OrgID == "" {
+		err = e.store.WithControlPlane(ctx, write)
+	} else {
+		err = e.store.WithOrgTx(ctx, entry.OrgID, write)
+	}
+	if err != nil {
+		wool.Get(ctx).In("DurableAuditEmitter.Emit").Error(
+			"failed to commit audit event and webhook outbox",
+			wool.Field("event_id", entry.ID),
 			wool.Field("action", entry.Action),
-			wool.Field("actor_id", entry.ActorID),
 			wool.Field("org_id", entry.OrgID),
+			wool.ErrField(err),
 		)
 	}
 }
 
-func (e *AsyncAuditEmitter) drain() {
-	for w := range e.ch {
-		ctx := context.Background()
-		// audit_events is RLS-protected (Phase 2D). Tenant-scoped
-		// events go through WithOrgTx so the WITH CHECK passes; system
-		// events (no resolved org — gdpr, billing webhooks, scheduled
-		// cleanup) carry an empty OrgID and write under WithBypass,
-		// which is also the only way NULL-org rows are visible to
-		// later readers (cross-tenant by nature).
-		if w.entry.OrgID != "" {
-			_ = e.store.WithOrgTx(ctx, w.entry.OrgID, func(ctx context.Context) error {
-				return e.store.InsertAuditEvent(ctx, w.entry)
-			})
-		} else {
-			_ = e.store.WithBypass(ctx, func(ctx context.Context) error {
-				return e.store.InsertAuditEvent(ctx, w.entry)
-			})
-		}
-	}
-}
-
-func (e *AsyncAuditEmitter) Close() {
-	close(e.ch)
-}
+func (e *DurableAuditEmitter) Close() {}
 
 // QueryAuditLog delegates to the store, scoping the read to the
 // requested org under WithOrgTx so RLS lets the rows through. When
 // orgID is empty the caller is platform-admin (handler authz
 // already enforced this in adapters/rpcs.go AuditServer.QueryAuditLog)
-// and we use WithBypass to span tenants.
+// and we use WithControlPlane to span tenants.
 func (s *Service) QueryAuditLog(ctx context.Context, orgID, actorID, action, resource, resourceID string,
 	from, to *time.Time, pageSize int32, pageToken string) ([]AuditEntry, string, int32, error) {
 	var entries []AuditEntry
@@ -106,7 +118,7 @@ func (s *Service) QueryAuditLog(ctx context.Context, orgID, actorID, action, res
 	}
 	var err error
 	if orgID == "" {
-		err = s.store.WithBypass(ctx, wrap)
+		err = s.store.WithControlPlane(ctx, wrap)
 	} else {
 		err = s.store.WithOrgTx(ctx, orgID, wrap)
 	}

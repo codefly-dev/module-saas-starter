@@ -11,9 +11,9 @@ import (
 // Scoped is a Store handle bound to a principal Identity. Every call runs inside
 // a single transaction pre-seeded with that identity's RLS context —
 // app.current_user_id and/or app.current_org_id — or, for business.System(), the
-// explicit `SET LOCAL ROLE NONE` bypass. This is how RLS context gets
+// explicit app_control_plane role. This is how RLS context gets
 // established: once, from the identity, instead of each call site reaching for
-// WithUserTx / WithOrgTx / WithBypass.
+// WithUserTx / WithOrgTx / WithControlPlane.
 //
 // Only tenant/user-scoped reads and writes belong on Scoped. Truly-global
 // lookups (JWKS, version, cross-tenant scans like GetAPIKeyByHash) stay on the
@@ -39,7 +39,7 @@ func (sc *Scoped) Identity() business.Identity { return sc.id }
 //
 // One tx sets both vars directly — WithOrgTx/WithUserTx each open their own tx
 // and must not be nested (see tenant_tx.go's no-nesting rule). System() delegates
-// to the audited WithBypass.
+// to the audited WithControlPlane.
 func (sc *Scoped) Within(ctx context.Context, fn func(ctx context.Context) error) error {
 	// Nesting-safe: if a tx is already on ctx (an outer As().Within or With*Tx),
 	// reuse it — the outer scope already established the RLS context, and opening
@@ -50,7 +50,7 @@ func (sc *Scoped) Within(ctx context.Context, fn func(ctx context.Context) error
 		return fn(ctx)
 	}
 	if sc.id.IsSystem() {
-		return sc.store.WithBypass(ctx, fn)
+		return sc.store.WithControlPlane(ctx, fn)
 	}
 	tx, err := sc.store.pool.Begin(ctx)
 	if err != nil {

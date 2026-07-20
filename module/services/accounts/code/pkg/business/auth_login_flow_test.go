@@ -1,9 +1,11 @@
 package business_test
 
 import (
-	"accounts/pkg/gen"
+	"accounts/pkg/auth"
+	gen "accounts/pkg/gen/saas/accounts/v1"
 	"testing"
 
+	"github.com/google/uuid"
 	"github.com/stretchr/testify/require"
 )
 
@@ -34,7 +36,7 @@ func TestFullLoginFlow(t *testing.T) {
 	require.NotEmpty(t, regResp.User.Uuid)
 
 	// 2. Authenticate (same provider+id as registered)
-	authResp, err := testService.Authenticate(ctx, &gen.AuthenticateRequest{
+	authResp, err := authenticateFixture(ctx, &gen.AuthenticateRequest{
 		Provider:      "email",
 		ProviderId:    "login-test-001",
 		ProviderEmail: "logintest@example.com",
@@ -44,6 +46,12 @@ func TestFullLoginFlow(t *testing.T) {
 	require.NotEmpty(t, authResp.AccessToken, "access token should be returned")
 	require.NotEmpty(t, authResp.RefreshToken, "refresh token should be returned")
 	require.NotZero(t, authResp.ExpiresIn, "expires_in should be set")
+	identity, err := testService.JWTMinter().VerifyAccess(authResp.AccessToken)
+	require.NoError(t, err)
+	require.Equal(t, auth.AssuranceLevelAAL1, identity.AssuranceLevel)
+	require.Equal(t, []string{auth.AuthenticationMethodFixture}, identity.AuthenticationMethods)
+	require.False(t, identity.AuthenticatedAt.IsZero())
+	require.True(t, identity.MFAVerifiedAt.IsZero(), "primary authentication alone is not an MFA step-up")
 
 	// 3. Refresh token
 	refreshResp, err := testService.RefreshToken(ctx, &gen.RefreshTokenRequest{RefreshToken: authResp.RefreshToken})
@@ -70,6 +78,65 @@ func TestFullLoginFlow(t *testing.T) {
 	require.Error(t, err, "replayed family should be fully revoked")
 }
 
+func TestOrganizationSwitchUsesCurrentMembershipAndPreservesRefreshFamily(t *testing.T) {
+	if testService == nil {
+		t.Skip("test infrastructure not available (run with codefly test)")
+	}
+	clearData(t)
+
+	registered, err := testService.RegisterUser(testCtx, &gen.RegisterUserRequest{
+		PrimaryEmail: "switch@example.com",
+		Identity: &gen.UserIdentity{
+			Provider:      "email",
+			ProviderId:    "switch-user-001",
+			ProviderEmail: "switch@example.com",
+			EmailVerified: true,
+		},
+	})
+	require.NoError(t, err)
+
+	login, err := authenticateFixture(testCtx, &gen.AuthenticateRequest{
+		Provider:      "email",
+		ProviderId:    "switch-user-001",
+		ProviderEmail: "switch@example.com",
+		EmailVerified: true,
+	})
+	require.NoError(t, err)
+	before, err := testService.JWTMinter().VerifyAccess(login.AccessToken)
+	require.NoError(t, err)
+	require.NotEqual(t, uuid.Nil, before.OrgID)
+
+	target, err := testService.CreateOrganization(testCtx, registered.User.Uuid, &gen.CreateOrganizationRequest{
+		Name: "Second Organization",
+		Slug: "second-organization",
+	})
+	require.NoError(t, err)
+	targetOrgID := uuid.MustParse(target.Organization.Id)
+
+	exchanged, err := testService.SwitchOrganization(testCtx, registered.User.Uuid, before.SessionID, &gen.SwitchOrganizationRequest{
+		OrganizationId: target.Organization.Id,
+	})
+	require.NoError(t, err)
+	after, err := testService.JWTMinter().VerifyAccess(exchanged.AccessToken)
+	require.NoError(t, err)
+	require.Equal(t, targetOrgID, after.OrgID)
+	require.Equal(t, "owner", after.OrgRole)
+	require.Equal(t, before.SessionID, after.SessionID)
+
+	rotated, err := testService.RefreshToken(testCtx, &gen.RefreshTokenRequest{RefreshToken: login.RefreshToken})
+	require.NoError(t, err, "switching must preserve the existing refresh credential")
+	refreshed, err := testService.JWTMinter().VerifyAccess(rotated.AccessToken)
+	require.NoError(t, err)
+	require.Equal(t, targetOrgID, refreshed.OrgID)
+
+	_, err = testService.SwitchOrganization(testCtx, registered.User.Uuid, refreshed.SessionID, &gen.SwitchOrganizationRequest{
+		OrganizationId: uuid.Must(uuid.NewV7()).String(),
+	})
+	require.ErrorIs(t, err, auth.ErrOrganizationAccessDenied)
+	_, err = testService.RefreshToken(testCtx, &gen.RefreshTokenRequest{RefreshToken: rotated.RefreshToken})
+	require.NoError(t, err, "a denied switch must leave the refresh family active")
+}
+
 // TestLoginWithAutoRegister verifies that Authenticate transparently
 // creates a new user on first sign-in. This is the production OAuth
 // pattern: the first time a user signs in via Google/WorkOS, we treat
@@ -89,7 +156,7 @@ func TestLoginWithAutoRegister(t *testing.T) {
 	ctx := testCtx
 
 	// A never-seen-before provider_id should auto-register.
-	authResp, err := testService.Authenticate(ctx, &gen.AuthenticateRequest{
+	authResp, err := authenticateFixture(ctx, &gen.AuthenticateRequest{
 		Provider:      "email",
 		ProviderId:    "brand-new-user",
 		ProviderEmail: "new@example.com",
@@ -130,7 +197,7 @@ func TestLoginReturnsUserDetails(t *testing.T) {
 	})
 	require.NoError(t, err)
 
-	authResp, err := testService.Authenticate(ctx, &gen.AuthenticateRequest{
+	authResp, err := authenticateFixture(ctx, &gen.AuthenticateRequest{
 		Provider:      "email",
 		ProviderId:    "known-user-001",
 		ProviderEmail: "known@example.com",

@@ -9,67 +9,68 @@ import type { AuditEvent, AuditLogFilters } from "../model/types";
  * events client-side and serialize them into the chosen format.
  */
 export function useExportAuditLog() {
-  const svc = useAuditService();
+	const svc = useAuditService();
 
-  return useMutation({
-    mutationFn: async ({
-      format,
-      action,
-      orgId,
-    }: {
-      format: "csv" | "json";
-      action?: string;
-      orgId?: string;
-    }) => {
-      const resp = await svc.queryAuditLog({
-        orgId: orgId ?? "",
-        action: action ?? "",
-        actorId: "",
-        pageSize: 10_000,
-      });
+	return useMutation({
+		mutationFn: async ({
+			format,
+			action,
+			orgId,
+		}: {
+			format: "csv" | "json";
+			action?: string;
+			orgId?: string;
+		}) => {
+			const resp = await svc.queryAuditLog({
+				orgId: orgId ?? "",
+				action: action ?? "",
+				actorId: "",
+				pageSize: 10_000,
+			});
 
-      const events = (resp.events ?? []) as AuditEvent[];
-      let data: string;
-      let mimeType: string;
-      let extension: string;
+			const events = (resp.events ?? []) as AuditEvent[];
+			let data: string;
+			let mimeType: string;
+			let extension: string;
 
-      if (format === "json") {
-        data = JSON.stringify(events, null, 2);
-        mimeType = "application/json";
-        extension = "json";
-      } else {
-        const headers = [
-          "id",
-          "actorId",
-          "actorType",
-          "action",
-          "resource",
-          "resourceId",
-          "orgId",
-          "ipAddress",
-          "createdAt",
-        ];
-        const rows = events.map((e) =>
-          headers
-            .map((h) => {
-              const val = e[h as keyof AuditEvent] ?? "";
-              const str = typeof val === "object" ? JSON.stringify(val) : String(val);
-              return `"${str.replace(/"/g, '""')}"`;
-            })
-            .join(","),
-        );
-        data = [headers.join(","), ...rows].join("\n");
-        mimeType = "text/csv";
-        extension = "csv";
-      }
+			if (format === "json") {
+				data = JSON.stringify(events, null, 2);
+				mimeType = "application/json";
+				extension = "json";
+			} else {
+				const headers = [
+					"id",
+					"actorId",
+					"actorType",
+					"action",
+					"resource",
+					"resourceId",
+					"orgId",
+					"ipAddress",
+					"createdAt",
+				];
+				const rows = events.map((e) =>
+					headers
+						.map((h) => {
+							const val = e[h as keyof AuditEvent] ?? "";
+							const str =
+								typeof val === "object" ? JSON.stringify(val) : String(val);
+							return `"${str.replace(/"/g, '""')}"`;
+						})
+						.join(","),
+				);
+				data = [headers.join(","), ...rows].join("\n");
+				mimeType = "text/csv";
+				extension = "csv";
+			}
 
-      const blob = new Blob([data], { type: mimeType });
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement("a");
-      a.href = url;
-      a.download = `audit-log-${new Date().toISOString().slice(0, 10)}.${extension}`;
-      a.click();
-      URL.revokeObjectURL(url);
-    },
-  });
+			const blob = new Blob([data], { type: mimeType });
+			const url = URL.createObjectURL(blob);
+			const a = document.createElement("a");
+			a.href = url;
+			a.download = `audit-log-${new Date().toISOString().slice(0, 10)}.${extension}`;
+			a.click();
+			URL.revokeObjectURL(url);
+		},
+	});
 }

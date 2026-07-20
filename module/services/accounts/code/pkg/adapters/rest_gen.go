@@ -7,13 +7,11 @@ package adapters
 ----------------------------------------------------------------- */
 
 import (
-	"accounts/pkg/gen"
-	"accounts/plugins"
-	"bytes"
 	"context"
 	"fmt"
-	"io"
 	"net/http"
+	"strings"
+	"time"
 
 	"google.golang.org/grpc/status"
 
@@ -21,18 +19,22 @@ import (
 	"google.golang.org/grpc/metadata"
 
 	"github.com/codefly-dev/core/wool"
+	"github.com/google/uuid"
 
 	"github.com/grpc-ecosystem/grpc-gateway/v2/runtime"
+	"golang.org/x/net/http2"
+	"golang.org/x/net/http2/h2c"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
 )
 
 type RestServer struct {
 	config *Configuration
+	grpc   *GrpcServer
 }
 
-func NewRestServer(c *Configuration) (*RestServer, error) {
-	server := &RestServer{config: c}
+func NewRestServer(c *Configuration, grpc *GrpcServer) (*RestServer, error) {
+	server := &RestServer{config: c, grpc: grpc}
 	return server, nil
 }
 
@@ -49,7 +51,10 @@ func customErrorHandler(ctx context.Context, mux *runtime.ServeMux, marshaler ru
 }
 
 func (s *RestServer) Run(ctx context.Context) error {
-	fmt.Println("Starting Rest server at", *s.config.EndpointHttpPort)
+	fmt.Println("Starting REST + internal gRPC server at", *s.config.EndpointHttpPort)
+	if s.config.EndpointConnectPort == nil {
+		return fmt.Errorf("REST transcoding requires the generated Connect/gRPC endpoint")
+	}
 
 	c := Cors()
 
@@ -58,50 +63,48 @@ func (s *RestServer) Run(ctx context.Context) error {
 		runtime.WithErrorHandler(customErrorHandler))
 
 	opts := []grpc.DialOption{grpc.WithTransportCredentials(insecure.NewCredentials())}
-	endpoint := fmt.Sprintf("0.0.0.0:%d", s.config.EndpointGrpcPort)
+	// Connect-Go serves Connect, gRPC, and gRPC-Web for all catalog services on
+	// one port. grpc-gateway speaks gRPC to that complete generated surface; the
+	// legacy raw-gRPC port intentionally remains the private/internal listener.
+	endpoint := fmt.Sprintf("0.0.0.0:%d", *s.config.EndpointConnectPort)
 
-	// Register all service gateways
-	for _, register := range []func(context.Context, *runtime.ServeMux, string, []grpc.DialOption) error{
-		gen.RegisterUserServiceHandlerFromEndpoint,
-		gen.RegisterOrganizationServiceHandlerFromEndpoint,
-		gen.RegisterTeamServiceHandlerFromEndpoint,
-		gen.RegisterPermissionServiceHandlerFromEndpoint,
-		gen.RegisterIdentityServiceHandlerFromEndpoint,
-		gen.RegisterAPIKeyServiceHandlerFromEndpoint,
-		gen.RegisterAuthServiceHandlerFromEndpoint,
-		gen.RegisterAuditServiceHandlerFromEndpoint,
-		gen.RegisterPlatformAdminServiceHandlerFromEndpoint,
-		gen.RegisterInvitationServiceHandlerFromEndpoint,
-		gen.RegisterIntrospectionServiceHandlerFromEndpoint,
-	} {
-		if err := register(ctx, gwMux, endpoint, opts); err != nil {
-			return err
-		}
-	}
-
-	// CUSTOM: plugin REST handlers. Mirrors the plugin loop in
-	// server_gen.go for gRPC. permissionsplugin contributes
-	// PrincipalService + DelegationService gateway handlers.
-	// Preserve this loop when regenerating.
-	for _, p := range plugins.All() {
-		if err := p.RegisterREST(ctx, gwMux, endpoint, opts); err != nil {
-			return err
-		}
+	if err := registerCatalogRESTHandlers(ctx, gwMux, endpoint, opts); err != nil {
+		return err
 	}
 
 	// CUSTOM: combineHandlers mounts non-proto HTTP routes (e.g. Stripe
 	// webhooks) alongside the grpc-gateway mux. See rest_extras.go.
 	// Preserve this line when regenerating.
-	handler := c.Handler(combineHandlers(gwMux))
-	return http.ListenAndServe(fmt.Sprintf(":%d", *s.config.EndpointHttpPort), logRequestBody(handler))
+	restHandler := c.Handler(combineHandlers(catalogRESTHandler(gwMux)))
+	handler := multiplexInternalGRPC(s.grpc.internalGRPC, logRequestOutcome(restHandler))
+	server := &http.Server{
+		Addr:    fmt.Sprintf(":%d", *s.config.EndpointHttpPort),
+		Handler: h2c.NewHandler(handler, &http2.Server{}),
+	}
+	return server.ListenAndServe()
+}
+
+func multiplexInternalGRPC(internal *grpc.Server, fallback http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.ProtoMajor == 2 && strings.HasPrefix(strings.ToLower(r.Header.Get("Content-Type")), "application/grpc") {
+			internal.ServeHTTP(w, r)
+			return
+		}
+		fallback.ServeHTTP(w, r)
+	})
 }
 
 type logResponseWriter struct {
 	http.ResponseWriter
-	statusCode int
+	statusCode  int
+	wroteHeader bool
 }
 
 func (rsp *logResponseWriter) WriteHeader(code int) {
+	if rsp.wroteHeader {
+		return
+	}
+	rsp.wroteHeader = true
 	rsp.statusCode = code
 	rsp.ResponseWriter.WriteHeader(code)
 }
@@ -111,25 +114,71 @@ func (rsp *logResponseWriter) Unwrap() http.ResponseWriter {
 }
 
 func newLogResponseWriter(w http.ResponseWriter) *logResponseWriter {
-	return &logResponseWriter{w, http.StatusOK}
+	return &logResponseWriter{ResponseWriter: w, statusCode: http.StatusOK}
 }
 
-func logRequestBody(h http.Handler) http.Handler {
+type httpFailureDiagnostic struct {
+	RequestID  string
+	Method     string
+	Path       string
+	StatusCode int
+	Duration   time.Duration
+}
+
+var emitHTTPFailureDiagnostic = func(d httpFailureDiagnostic) {
+	grpclog.Errorf(
+		"http request failed request_id=%q method=%q path=%q status=%d duration_ms=%d",
+		d.RequestID, d.Method, d.Path, d.StatusCode, d.Duration.Milliseconds(),
+	)
+}
+
+func logRequestOutcome(h http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		lw := newLogResponseWriter(w)
-
-		body, err := io.ReadAll(r.Body)
-		if err != nil {
-			http.Error(w, fmt.Sprintf("failed to read body: %v", err), http.StatusBadRequest)
-			return
+		requestID := trustedRequestID(r.Header.Get("X-Request-Id"))
+		if requestID == "" {
+			requestID = uuid.NewString()
 		}
-		clonedR := r.Clone(r.Context())
-		clonedR.Body = io.NopCloser(bytes.NewReader(body))
+		w.Header().Set("X-Request-Id", requestID)
+		r.Header.Set("X-Request-Id", requestID)
 
-		h.ServeHTTP(lw, clonedR)
+		lw := newLogResponseWriter(w)
+		started := time.Now()
+		h.ServeHTTP(lw, r)
 
-		if lw.statusCode != http.StatusOK {
-			grpclog.Errorf("http error %+v request body %+v", lw.statusCode, string(body))
+		if lw.statusCode >= http.StatusBadRequest {
+			emitHTTPFailureDiagnostic(httpFailureDiagnostic{
+				RequestID:  requestID,
+				Method:     r.Method,
+				Path:       boundedLogValue(r.URL.Path, 256),
+				StatusCode: lw.statusCode,
+				Duration:   time.Since(started),
+			})
 		}
 	})
+}
+
+func trustedRequestID(candidate string) string {
+	if candidate == "" || len(candidate) > 128 {
+		return ""
+	}
+	for _, r := range candidate {
+		if !((r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z') ||
+			(r >= '0' && r <= '9') || r == '-' || r == '_' || r == '.') {
+			return ""
+		}
+	}
+	return candidate
+}
+
+func boundedLogValue(value string, limit int) string {
+	value = strings.Map(func(r rune) rune {
+		if r < 0x20 || r == 0x7f {
+			return -1
+		}
+		return r
+	}, value)
+	if len(value) > limit {
+		return value[:limit]
+	}
+	return value
 }

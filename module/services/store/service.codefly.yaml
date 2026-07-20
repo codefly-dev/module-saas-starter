@@ -1,9 +1,10 @@
+# Code generated from deployment/topology.bindings.codefly.yaml. DO NOT EDIT.
 name: store
 version: 0.0.0
 agent:
     kind: codefly:service
     name: postgres
-    version: 0.0.1
+    version: 0.0.103
     publisher: codefly.dev
 endpoints:
     - name: tcp
@@ -12,6 +13,12 @@ spec:
     database-name: users
     debug: false
     persist: true
+    runtime-read-write-roles:
+        - app_tenant
+        - app_control_plane
+        - app_billing_worker
+        - app_webhook_worker
+        - app_job_worker
     silent: true
     watch: true
     without-ssl: false

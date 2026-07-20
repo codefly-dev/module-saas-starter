@@ -16,25 +16,33 @@
 
 import { createHash } from "node:crypto";
 import { readFileSync, writeFileSync, readdirSync, statSync, existsSync } from "node:fs";
-import { join, relative, dirname } from "node:path";
+import { join, relative, dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
-const MODULE_ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
+const SCRIPT_PATH = fileURLToPath(import.meta.url);
+const MODULE_ROOT = join(dirname(SCRIPT_PATH), "..");
 const MANIFEST_PATH = join(MODULE_ROOT, "tools", "base-manifest.json");
 const ALLOW_PATH = join(MODULE_ROOT, "tools", "base-integrity-allow.json");
 
 // Directory names pruned wholesale (build output, deps, VCS) and per-file patterns that are
-// generated or inherently per-consumer. Generated files (e.g. the plugin auto-discovery
-// registry) are EXCLUDED on purpose — they are produced by base code, not authored, and differ
-// legitimately per consumer (each lists its own side-module plugins).
+// generated or inherently per-consumer. Generated files are excluded because base code produces
+// them; the application-owned frontend.config.ts is excluded because consumers explicitly list
+// their installed compile-time plugin packages there. The frontend lockfile is reproducibly
+// regenerated from the protected root manifest plus additive packages/* workspaces. The frontend
+// service manifest is generated from protected topology plus the application plugin allowlist.
 const PRUNE_DIRS = new Set([
   "node_modules", ".next", ".turbo", "dist", "build", "coverage",
   ".git", "vendor", "__pycache__", ".codefly", ".cache", "test-results", "playwright-report",
 ]);
-const isExcludedFile = (rel) =>
+export const isExcludedFile = (rel) =>
   rel === "tools/base-manifest.json" ||      // the manifest can't hash itself
   rel === "tools/base-integrity-allow.json" || // consumer-local escape hatch (logged, not hashed)
-  /\.generated\.[a-z]+$/.test(rel) ||         // codegen output (e.g. registry.generated.ts)
+  rel === "services/store/code/store-migrator" || // `go build ./...` output; source and migrations remain protected
+  rel === "services/frontend/code/frontend.config.ts" || // FP-001: application-owned composition root
+  rel === "services/frontend/code/package-lock.json" || // FP-010A: generated workspace install graph
+  /^services\/[^/]+\/service\.codefly\.yaml$/.test(rel) || // generated from protected topology + explicit application inputs
+  /^services\/[^/]+\/builder\//.test(rel) || // service agents regenerate build recipes and companion files
+  /\.generated\.[a-z]+$/.test(rel) ||         // codegen output
   rel.endsWith(".tsbuildinfo") ||             // TypeScript incremental build cache
   rel.endsWith("next-env.d.ts") ||            // Next.js-generated env types (regenerated on dev/build)
   rel.endsWith(".DS_Store");
@@ -54,6 +62,143 @@ function walk(dir, out = []) {
 }
 
 const sha = (abs) => createHash("sha256").update(readFileSync(abs)).digest("hex");
+
+const FRONTEND_CODE_ROOT = join(MODULE_ROOT, "services", "frontend", "code");
+const PACKAGE_LOCK_FIELDS = [
+  "name",
+  "version",
+  "dependencies",
+  "devDependencies",
+  "optionalDependencies",
+  "peerDependencies",
+  "peerDependenciesMeta",
+];
+const PACKAGE_DEPENDENCY_FIELDS = [
+  "dependencies",
+  "devDependencies",
+  "optionalDependencies",
+  "peerDependencies",
+];
+
+function normalizedJSON(value) {
+  if (Array.isArray(value)) return value.map(normalizedJSON);
+  if (value && typeof value === "object") {
+    return Object.fromEntries(
+      Object.entries(value)
+        .filter(([, entry]) => entry !== undefined)
+        .sort(([left], [right]) => left.localeCompare(right))
+        .map(([key, entry]) => [key, normalizedJSON(entry)]),
+    );
+  }
+  return value;
+}
+
+function packageLockProjection(value) {
+  return Object.fromEntries(
+    PACKAGE_LOCK_FIELDS
+      .filter((field) => value[field] !== undefined)
+      .map((field) => [field, value[field]]),
+  );
+}
+
+// package-lock.json is application-generated, but it is not unchecked. The
+// protected root package.json fixes Starter-owned scripts/dependencies and its
+// packages/* wildcard. Consumer package.json files are additive side-files.
+// This check proves npm's lock contains the exact root/workspace dependency
+// metadata and links every installed workspace; npm ci then verifies the full
+// transitive graph in CI and the container build.
+export function workspaceInstallGraphErrors(frontendCodeRoot = FRONTEND_CODE_ROOT) {
+  const rootManifestPath = join(frontendCodeRoot, "package.json");
+  const lockPath = join(frontendCodeRoot, "package-lock.json");
+  if (!existsSync(rootManifestPath) && !existsSync(lockPath)) return [];
+  if (!existsSync(rootManifestPath)) return ["frontend package.json is missing beside its lockfile"];
+  if (!existsSync(lockPath)) return ["frontend package-lock.json is missing beside package.json"];
+
+  const errors = [];
+  let rootManifest;
+  let lock;
+  try {
+    rootManifest = JSON.parse(readFileSync(rootManifestPath, "utf8"));
+    lock = JSON.parse(readFileSync(lockPath, "utf8"));
+  } catch (error) {
+    return [`frontend package metadata is not valid JSON: ${error.message}`];
+  }
+  if (JSON.stringify(rootManifest.workspaces) !== JSON.stringify(["packages/*"])) {
+    errors.push("protected frontend package.json must declare only the packages/* workspace seam");
+  }
+  const pinnedLocalDependencies = new Map([
+    // CI checks out the SDK at this exact runner-workspace path and pins its
+    // commit. Keep the exception narrow until the typed SDK release is
+    // published; all product packages still enter through packages/*.
+    ["dependencies.codefly", "file:../../../../../../codefly/sdk-js"],
+  ]);
+  for (const field of PACKAGE_DEPENDENCY_FIELDS) {
+    for (const [name, specifier] of Object.entries(rootManifest[field] ?? {})) {
+      const dependency = `${field}.${name}`;
+      if (
+        typeof specifier === "string" &&
+        /^(file|link):/.test(specifier) &&
+        pinnedLocalDependencies.get(dependency) !== specifier
+      ) {
+        errors.push(
+          `protected frontend package.json ${dependency} must use a published version, not ${specifier}`,
+        );
+      }
+    }
+  }
+  if (lock.lockfileVersion !== 3 || !lock.packages || typeof lock.packages !== "object") {
+    return [...errors, "frontend package-lock.json must be an npm lockfileVersion 3 install graph"];
+  }
+  const rootLock = lock.packages[""];
+  if (!rootLock || JSON.stringify(normalizedJSON(packageLockProjection(rootLock))) !==
+      JSON.stringify(normalizedJSON(packageLockProjection(rootManifest)))) {
+    errors.push("frontend package-lock.json root metadata does not match protected package.json");
+  }
+  if (JSON.stringify(rootLock?.workspaces) !== JSON.stringify(rootManifest.workspaces)) {
+    errors.push("frontend package-lock.json does not preserve the protected workspace declaration");
+  }
+
+  const packagesRoot = join(frontendCodeRoot, "packages");
+  const workspaceKeys = [];
+  const packageNames = new Set();
+  if (existsSync(packagesRoot)) {
+    for (const entry of readdirSync(packagesRoot, { withFileTypes: true }).sort((left, right) => left.name.localeCompare(right.name))) {
+      if (!entry.isDirectory()) continue;
+      const manifestPath = join(packagesRoot, entry.name, "package.json");
+      if (!existsSync(manifestPath)) continue;
+      const key = `packages/${entry.name}`;
+      workspaceKeys.push(key);
+      let manifest;
+      try {
+        manifest = JSON.parse(readFileSync(manifestPath, "utf8"));
+      } catch (error) {
+        errors.push(`${key}/package.json is not valid JSON: ${error.message}`);
+        continue;
+      }
+      if (typeof manifest.name !== "string" || !manifest.name || packageNames.has(manifest.name)) {
+        errors.push(`${key}/package.json has a missing or duplicate package name`);
+        continue;
+      }
+      packageNames.add(manifest.name);
+      const locked = lock.packages[key];
+      if (!locked || JSON.stringify(normalizedJSON(packageLockProjection(locked))) !==
+          JSON.stringify(normalizedJSON(packageLockProjection(manifest)))) {
+        errors.push(`frontend package-lock.json workspace metadata is stale for ${key}`);
+      }
+      const link = lock.packages[`node_modules/${manifest.name}`];
+      if (!link || link.link !== true || link.resolved !== key) {
+        errors.push(`frontend package-lock.json is missing the workspace link for ${manifest.name}`);
+      }
+    }
+  }
+  const lockedWorkspaceKeys = Object.keys(lock.packages)
+    .filter((key) => /^packages\/[^/]+$/.test(key))
+    .sort();
+  if (JSON.stringify(lockedWorkspaceKeys) !== JSON.stringify(workspaceKeys.sort())) {
+    errors.push("frontend package-lock.json contains a missing or removed packages/* workspace");
+  }
+  return errors;
+}
 
 // A consumer may compose a SUBSET of the base's services (e.g. mind takes the
 // backend — api/store/vault/cache/object-storage — and brings its own gateway, so
@@ -78,9 +223,17 @@ function composedServices() {
 }
 
 // The service a base file belongs to, or null for module-level files (always enforced).
-const serviceOf = (rel) => rel.startsWith("services/") ? rel.split("/")[1] : null;
+const serviceOf = (rel) => {
+  const segments = rel.split("/");
+  return segments[0] === "services" && segments.length > 2 ? segments[1] : null;
+};
 
 function gen() {
+  const installGraphErrors = workspaceInstallGraphErrors();
+  if (installGraphErrors.length) {
+    installGraphErrors.forEach((error) => console.error(`base-integrity: ${error}`));
+    process.exit(1);
+  }
   const files = walk(MODULE_ROOT).sort();
   const hashes = {};
   for (const rel of files) hashes[rel] = sha(join(MODULE_ROOT, rel));
@@ -128,20 +281,24 @@ function check() {
   });
   const badModified = allowed(modified);
   const badMissing = allowed(missing);
+  const installGraphErrors = workspaceInstallGraphErrors();
 
   console.log(`base-integrity: ${Object.keys(files).length} base files, ${additions.length} side-additions.`);
   if (badMissing.length) { console.error(`\n✗ MISSING base files (do not delete base files):`); badMissing.forEach((r) => console.error(`    ${r}`)); }
   if (badModified.length) { console.error(`\n✗ MODIFIED base files (add on the side, never edit the base):`); badModified.forEach((r) => console.error(`    ${r}`)); }
+  if (installGraphErrors.length) { console.error(`\n✗ INVALID frontend workspace install graph:`); installGraphErrors.forEach((error) => console.error(`    ${error}`)); }
 
-  if (badModified.length || badMissing.length) {
-    console.error(`\nFAIL: ${badModified.length} modified, ${badMissing.length} missing. `
+  if (badModified.length || badMissing.length || installGraphErrors.length) {
+    console.error(`\nFAIL: ${badModified.length} modified, ${badMissing.length} missing, ${installGraphErrors.length} invalid install-graph checks. `
       + `Move your change upstream into canonical (making the original stronger), or express it as a side-addition.`);
     process.exit(1);
   }
   console.log("✓ base intact — every base file matches canonical; all consumer changes are additions.");
 }
 
-const cmd = process.argv[2];
-if (cmd === "gen") gen();
-else if (cmd === "check") check();
-else { console.error("usage: base-integrity.mjs <gen|check>"); process.exit(2); }
+if (resolve(process.argv[1] ?? "") === resolve(SCRIPT_PATH)) {
+  const cmd = process.argv[2];
+  if (cmd === "gen") gen();
+  else if (cmd === "check") check();
+  else { console.error("usage: base-integrity.mjs <gen|check>"); process.exit(2); }
+}

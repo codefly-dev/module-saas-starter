@@ -1,0 +1,8 @@
+title = "SaaS Starter secret scanning"
+
+[extend]
+useDefault = true
+
+[[allowlists]]
+description = "Canonical integrity manifest contains only file paths and SHA-256 hashes"
+paths = ['''^module/tools/base-manifest\.json$''']

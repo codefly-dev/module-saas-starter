@@ -17,20 +17,23 @@ package business
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"fmt"
+	"strings"
 
 	"github.com/codefly-dev/core/wool"
 
 	"accounts/pkg/billing"
-	"accounts/pkg/gen"
+	gen "accounts/pkg/gen/saas/accounts/v1"
 )
 
 // BillingClient is the subset of billing.Client we need here. Kept
 // as an interface so tests can swap a fake.
 type BillingClient interface {
-	CreateCustomer(ctx context.Context, email, orgID string) (*billing.Customer, error)
+	CreateCustomer(ctx context.Context, email, orgID, idempotencyKey string) (*billing.Customer, error)
 	CreateCheckoutSession(ctx context.Context, p billing.CheckoutParams) (*billing.CheckoutSession, error)
-	CreateBillingPortalSession(ctx context.Context, customerID, returnURL string) (*billing.BillingPortalSession, error)
+	CreateBillingPortalSession(ctx context.Context, customerID, returnURL, idempotencyKey string) (*billing.BillingPortalSession, error)
 	ListInvoices(ctx context.Context, customerID string, limit int) ([]billing.Invoice, error)
 }
 
@@ -41,14 +44,24 @@ func (s *Service) SetBillingClient(c BillingClient) {
 	s.billing = c
 }
 
+// BillingRedirects are server-owned destinations for Stripe-hosted flows.
+// Callers never supply arbitrary redirect URLs.
+type BillingRedirects struct {
+	CheckoutSuccessURL string
+	CheckoutCancelURL  string
+	PortalReturnURL    string
+}
+
+func (s *Service) SetBillingRedirects(redirects BillingRedirects) {
+	s.billingURLs = redirects
+}
+
 // StartCheckoutInput is what the HTTP route passes in.
 type StartCheckoutInput struct {
-	UserID     string // the caller (for audit)
-	OrgID      string
-	PlanName   string // "pro" | "enterprise" | ...
-	SuccessURL string // where Stripe redirects on payment success
-	CancelURL  string // where Stripe redirects on abort
-	TrialDays  int    // 0 = no trial
+	UserID         string // the caller (for audit)
+	OrgID          string
+	PlanName       string // server-owned catalog key
+	IdempotencyKey string // caller operation key; required and stable across retries
 }
 
 // StartCheckout builds a Stripe Checkout session for the given org.
@@ -66,8 +79,14 @@ func (s *Service) StartCheckout(ctx context.Context, in StartCheckoutInput) (str
 	if s.billing == nil {
 		return "", w.NewError("billing not configured: STRIPE_API_KEY missing")
 	}
-	if in.OrgID == "" || in.PlanName == "" || in.SuccessURL == "" || in.CancelURL == "" {
-		return "", w.NewError("StartCheckout requires OrgID, PlanName, SuccessURL, CancelURL")
+	if in.OrgID == "" || in.PlanName == "" {
+		return "", w.NewError("StartCheckout requires OrgID and PlanName")
+	}
+	if err := validateBillingIdempotencyKey(in.IdempotencyKey); err != nil {
+		return "", w.Wrapf(err, "invalid checkout idempotency key")
+	}
+	if s.billingURLs.CheckoutSuccessURL == "" || s.billingURLs.CheckoutCancelURL == "" {
+		return "", w.NewError("billing checkout redirects are not configured")
 	}
 
 	plan, err := s.store.GetPlanByName(ctx, in.PlanName)
@@ -77,6 +96,9 @@ func (s *Service) StartCheckout(ctx context.Context, in StartCheckoutInput) (str
 	if plan.StripePriceID == "" {
 		return "", w.NewError("plan %q has no stripe_price_id configured", in.PlanName)
 	}
+	if !plan.CheckoutEnabled {
+		return "", w.NewError("plan %q is not available for checkout", in.PlanName)
+	}
 
 	customerID, err := s.ensureStripeCustomer(ctx, in.OrgID)
 	if err != nil {
@@ -84,13 +106,15 @@ func (s *Service) StartCheckout(ctx context.Context, in StartCheckoutInput) (str
 	}
 
 	session, err := s.billing.CreateCheckoutSession(ctx, billing.CheckoutParams{
-		CustomerID: customerID,
-		PriceID:    plan.StripePriceID,
-		SuccessURL: in.SuccessURL,
-		CancelURL:  in.CancelURL,
-		OrgID:      in.OrgID,
-		TrialDays:  in.TrialDays,
-		Currency:   plan.Currency,
+		CustomerID:     customerID,
+		PriceID:        plan.StripePriceID,
+		SuccessURL:     s.billingURLs.CheckoutSuccessURL,
+		CancelURL:      s.billingURLs.CheckoutCancelURL,
+		OrgID:          in.OrgID,
+		TrialDays:      plan.TrialDays,
+		Currency:       plan.Currency,
+		AutomaticTax:   plan.TaxBehavior == "automatic",
+		IdempotencyKey: billingMutationKey("checkout", in.IdempotencyKey),
 	})
 	if err != nil {
 		return "", w.Wrapf(err, "create checkout session")
@@ -102,9 +126,9 @@ func (s *Service) StartCheckout(ctx context.Context, in StartCheckoutInput) (str
 
 // OpenBillingPortalInput is the HTTP route input.
 type OpenBillingPortalInput struct {
-	UserID    string
-	OrgID     string
-	ReturnURL string
+	UserID         string
+	OrgID          string
+	IdempotencyKey string
 }
 
 // OpenBillingPortal returns the URL of a Stripe-hosted billing portal
@@ -116,8 +140,14 @@ func (s *Service) OpenBillingPortal(ctx context.Context, in OpenBillingPortalInp
 	if s.billing == nil {
 		return "", w.NewError("billing not configured")
 	}
-	if in.OrgID == "" || in.ReturnURL == "" {
-		return "", w.NewError("OpenBillingPortal requires OrgID and ReturnURL")
+	if in.OrgID == "" {
+		return "", w.NewError("OpenBillingPortal requires OrgID")
+	}
+	if err := validateBillingIdempotencyKey(in.IdempotencyKey); err != nil {
+		return "", w.Wrapf(err, "invalid portal idempotency key")
+	}
+	if s.billingURLs.PortalReturnURL == "" {
+		return "", w.NewError("billing portal return URL is not configured")
 	}
 
 	// stripe_customer_id is on organizations (RLS-protected, Phase 2F).
@@ -133,7 +163,12 @@ func (s *Service) OpenBillingPortal(ctx context.Context, in OpenBillingPortalInp
 		return "", w.NewError("org has no stripe customer — start a checkout first")
 	}
 
-	session, err := s.billing.CreateBillingPortalSession(ctx, customerID, in.ReturnURL)
+	session, err := s.billing.CreateBillingPortalSession(
+		ctx,
+		customerID,
+		s.billingURLs.PortalReturnURL,
+		billingMutationKey("portal", in.IdempotencyKey),
+	)
 	if err != nil {
 		return "", w.Wrapf(err, "create billing portal session")
 	}
@@ -229,10 +264,7 @@ func (s *Service) ensureStripeCustomer(ctx context.Context, orgID string) (strin
 			return err
 		}
 		if org != nil {
-			user, uErr := s.store.GetUser(ctx, org.OwnerId)
-			if uErr == nil && user != nil {
-				ownerEmail = user.PrimaryEmail
-			}
+			ownerEmail, _ = s.store.GetOrganizationMemberPrimaryEmail(ctx, org.OwnerId)
 		}
 		return nil
 	}); err != nil {
@@ -245,7 +277,12 @@ func (s *Service) ensureStripeCustomer(ctx context.Context, orgID string) (strin
 		ownerEmail = "billing+" + orgID + "@localhost"
 	}
 
-	customer, err := s.billing.CreateCustomer(ctx, ownerEmail, orgID)
+	customer, err := s.billing.CreateCustomer(
+		ctx,
+		ownerEmail,
+		orgID,
+		billingMutationKey("customer", orgID),
+	)
 	if err != nil {
 		return "", fmt.Errorf("create stripe customer: %w", err)
 	}
@@ -255,4 +292,24 @@ func (s *Service) ensureStripeCustomer(ctx context.Context, orgID string) (strin
 		return "", fmt.Errorf("persist stripe customer id: %w", err)
 	}
 	return customer.ID, nil
+}
+
+// billingMutationKey namespaces and hashes caller keys so the same external
+// token cannot collide across Stripe operations and arbitrary header length or
+// tenant identifiers never leak into Stripe's request metadata.
+func billingMutationKey(operation, seed string) string {
+	digest := sha256.Sum256([]byte(operation + "\x00" + seed))
+	return "saas-starter:" + operation + ":" + hex.EncodeToString(digest[:])
+}
+
+func validateBillingIdempotencyKey(key string) error {
+	if strings.TrimSpace(key) == "" {
+		return fmt.Errorf("Idempotency-Key is required")
+	}
+	// The key is hashed before it reaches Stripe, but bounding caller input
+	// keeps request metadata and logs predictable.
+	if len(key) > 512 {
+		return fmt.Errorf("Idempotency-Key exceeds 512 characters")
+	}
+	return nil
 }

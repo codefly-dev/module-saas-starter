@@ -11,8 +11,8 @@ import (
 	"net/http"
 	"strings"
 
-	codefly "github.com/codefly-dev/sdk-go"
 	"github.com/codefly-dev/core/wool"
+	codefly "github.com/codefly-dev/sdk-go"
 )
 
 // VaultClient provides transit encryption and hashing via HashiCorp Vault.
@@ -91,6 +91,82 @@ func (v *VaultClient) HashKey(ctx context.Context, plaintext string) (string, er
 		return hex.EncodeToString(h[:]), nil
 	}
 	return hmac, nil
+}
+
+const secretEnvelopePrefix = "cfs1:vault-transit:"
+
+// EncryptSecret stores a purpose-bound JSON payload in Vault Transit and wraps
+// the Vault ciphertext in an application-versioned envelope. There is
+// intentionally no plaintext/local fallback for MFA seeds.
+func (v *VaultClient) EncryptSecret(ctx context.Context, purpose, plaintext string) (string, error) {
+	if purpose == "" || plaintext == "" {
+		return "", fmt.Errorf("vault secret encryption requires purpose and plaintext")
+	}
+	payload, err := json.Marshal(struct {
+		Purpose string `json:"purpose"`
+		Value   string `json:"value"`
+	}{Purpose: purpose, Value: plaintext})
+	if err != nil {
+		return "", err
+	}
+	body, err := json.Marshal(map[string]string{
+		"plaintext": base64.StdEncoding.EncodeToString(payload),
+	})
+	if err != nil {
+		return "", err
+	}
+	result, err := v.request(ctx, http.MethodPost,
+		fmt.Sprintf("/v1/transit/encrypt/%s", v.transitKey), string(body))
+	if err != nil {
+		return "", err
+	}
+	ciphertext, ok := result["ciphertext"].(string)
+	if !ok || ciphertext == "" {
+		return "", fmt.Errorf("vault transit response missing ciphertext")
+	}
+	return secretEnvelopePrefix + base64.RawURLEncoding.EncodeToString([]byte(ciphertext)), nil
+}
+
+// DecryptSecret accepts only the current application envelope, decrypts with
+// Vault Transit (which handles its own key-version prefix), and verifies the
+// purpose embedded inside the ciphertext.
+func (v *VaultClient) DecryptSecret(ctx context.Context, purpose, envelope string) (string, error) {
+	if purpose == "" || !strings.HasPrefix(envelope, secretEnvelopePrefix) {
+		return "", fmt.Errorf("unsupported secret envelope")
+	}
+	encoded := strings.TrimPrefix(envelope, secretEnvelopePrefix)
+	ciphertext, err := base64.RawURLEncoding.DecodeString(encoded)
+	if err != nil || len(ciphertext) == 0 {
+		return "", fmt.Errorf("invalid secret envelope")
+	}
+	body, err := json.Marshal(map[string]string{"ciphertext": string(ciphertext)})
+	if err != nil {
+		return "", err
+	}
+	result, err := v.request(ctx, http.MethodPost,
+		fmt.Sprintf("/v1/transit/decrypt/%s", v.transitKey), string(body))
+	if err != nil {
+		return "", err
+	}
+	encodedPlaintext, ok := result["plaintext"].(string)
+	if !ok || encodedPlaintext == "" {
+		return "", fmt.Errorf("vault transit response missing plaintext")
+	}
+	plaintext, err := base64.StdEncoding.DecodeString(encodedPlaintext)
+	if err != nil {
+		return "", fmt.Errorf("decode vault plaintext: %w", err)
+	}
+	var payload struct {
+		Purpose string `json:"purpose"`
+		Value   string `json:"value"`
+	}
+	if err := json.Unmarshal(plaintext, &payload); err != nil {
+		return "", fmt.Errorf("decode secret payload: %w", err)
+	}
+	if payload.Purpose != purpose || payload.Value == "" {
+		return "", fmt.Errorf("secret purpose mismatch")
+	}
+	return payload.Value, nil
 }
 
 func (v *VaultClient) request(ctx context.Context, method, path, body string) (map[string]interface{}, error) {

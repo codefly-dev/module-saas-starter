@@ -10,18 +10,21 @@ import (
 	"math/big"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 
 	"github.com/golang-jwt/jwt/v5"
 	"github.com/stretchr/testify/require"
 
+	"accounts/pkg/auth"
+	devvalidator "accounts/pkg/auth/dev"
 	"accounts/pkg/auth/oidc"
-	"accounts/pkg/gen"
+	gen "accounts/pkg/gen/saas/accounts/v1"
 )
 
 // This suite exercises the OAuth authorization-code login path end to
-// end: request carries a `code` in profile map → business.Authenticate
+// end: request carries typed OAuth credentials → business.Authenticate
 // calls the Exchanger (fake OAuth token endpoint) → validates the
 // returned id_token via the OIDC validator (fake JWKS) → runs JIT
 // provisioning → mints our own JWT → returns.
@@ -115,7 +118,7 @@ func (f *fakeProvider) serveToken(w http.ResponseWriter, r *http.Request) {
 
 // wireOAuthOnTestService attaches a validator + exchanger to the shared
 // testService for the duration of the current test. Reset via cleanup.
-func wireOAuthOnTestService(t *testing.T, fp *fakeProvider) {
+func wireOAuthOnTestService(t *testing.T, fp *fakeProvider) *auth.OAuthStateSigner {
 	t.Helper()
 
 	validator, err := oidc.New(oidc.Config{
@@ -134,26 +137,44 @@ func wireOAuthOnTestService(t *testing.T, fp *fakeProvider) {
 	require.NoError(t, err)
 	testService.SetCodeExchanger(oidc.AsBusinessExchanger(exchanger))
 
+	signer := auth.NewOAuthStateSigner([]byte("test OAuth state signing seed with sufficient entropy"))
+	policy, err := auth.NewOAuthRequestPolicy("workos", []string{"https://app.acme.com/auth/callback"})
+	require.NoError(t, err)
+	testService.SetOAuthStateSigner(signer)
+	testService.SetOAuthRequestPolicy(policy)
+
 	t.Cleanup(func() {
 		testService.SetTokenValidator(nil)
 		testService.SetCodeExchanger(nil)
+		testService.SetOAuthStateSigner(nil)
+		testService.SetOAuthRequestPolicy(nil)
 	})
+	return signer
+}
+
+func oauthCodeRequest(t *testing.T, signer *auth.OAuthStateSigner, provider, code, redirectURI string) *gen.AuthenticateRequest {
+	t.Helper()
+	state, err := signer.Mint(provider, redirectURI)
+	require.NoError(t, err)
+	return &gen.AuthenticateRequest{
+		Provider: provider,
+		Authentication: &gen.AuthenticateRequest_OauthCode{OauthCode: &gen.OAuthCodeAuthentication{
+			Code:         code,
+			RedirectUri:  redirectURI,
+			State:        state,
+			CodeVerifier: strings.Repeat("a", 43),
+		}},
+	}
 }
 
 func TestAuthenticate_OAuthCodeFlow_NewUser(t *testing.T) {
 	clearData(t)
 	fp := newFakeProvider(t)
-	wireOAuthOnTestService(t, fp)
+	signer := wireOAuthOnTestService(t, fp)
 
 	fp.issueCode("authz-code-1")
 
-	resp, err := testService.Authenticate(testCtx, &gen.AuthenticateRequest{
-		Provider: "workos",
-		Profile: map[string]string{
-			"code":         "authz-code-1",
-			"redirect_uri": "https://app.acme.com/auth/callback",
-		},
-	})
+	resp, err := testService.Authenticate(testCtx, oauthCodeRequest(t, signer, "workos", "authz-code-1", "https://app.acme.com/auth/callback"))
 	require.NoError(t, err)
 	require.NotEmpty(t, resp.AccessToken)
 	require.NotEmpty(t, resp.RefreshToken)
@@ -173,96 +194,228 @@ func TestAuthenticate_OAuthCodeFlow_NewUser(t *testing.T) {
 func TestAuthenticate_OAuthCodeFlow_ReusedCode(t *testing.T) {
 	clearData(t)
 	fp := newFakeProvider(t)
-	wireOAuthOnTestService(t, fp)
+	signer := wireOAuthOnTestService(t, fp)
 
 	fp.issueCode("single-use-code")
 
-	_, err := testService.Authenticate(testCtx, &gen.AuthenticateRequest{
-		Provider: "workos",
-		Profile: map[string]string{
-			"code":         "single-use-code",
-			"redirect_uri": "https://app.acme.com/auth/callback",
-		},
-	})
+	_, err := testService.Authenticate(testCtx, oauthCodeRequest(t, signer, "workos", "single-use-code", "https://app.acme.com/auth/callback"))
 	require.NoError(t, err)
 
 	// Second attempt with the same code must fail at the token endpoint.
-	_, err = testService.Authenticate(testCtx, &gen.AuthenticateRequest{
-		Provider: "workos",
-		Profile: map[string]string{
-			"code":         "single-use-code",
-			"redirect_uri": "https://app.acme.com/auth/callback",
-		},
-	})
+	_, err = testService.Authenticate(testCtx, oauthCodeRequest(t, signer, "workos", "single-use-code", "https://app.acme.com/auth/callback"))
 	require.Error(t, err)
 }
 
 func TestAuthenticate_OAuthCodeFlow_MissingRedirectURI(t *testing.T) {
 	clearData(t)
 	fp := newFakeProvider(t)
-	wireOAuthOnTestService(t, fp)
+	signer := wireOAuthOnTestService(t, fp)
 
 	fp.issueCode("x")
 
 	_, err := testService.Authenticate(testCtx, &gen.AuthenticateRequest{
 		Provider: "workos",
-		Profile: map[string]string{
-			"code": "x",
-		},
+		Authentication: &gen.AuthenticateRequest_OauthCode{OauthCode: &gen.OAuthCodeAuthentication{
+			Code: "x", State: "invalid", CodeVerifier: strings.Repeat("a", 43),
+		}},
 	})
 	require.Error(t, err)
-	require.Contains(t, err.Error(), "redirect_uri")
+	require.ErrorIs(t, err, auth.ErrInvalidOAuthRequest)
+	_ = signer
 }
 
-func TestAuthenticate_OAuthCodeFlow_ProviderMismatch(t *testing.T) {
+func TestAuthenticate_OAuthCodeFlow_UnconfiguredProviderRejected(t *testing.T) {
+	clearData(t)
+	fp := newFakeProvider(t)
+	signer := wireOAuthOnTestService(t, fp)
+
+	fp.issueCode("mismatch-code")
+
+	_, err := testService.Authenticate(testCtx, oauthCodeRequest(t, signer, "auth0", "mismatch-code", "https://app.acme.com/auth/callback"))
+	require.Error(t, err)
+	require.ErrorIs(t, err, auth.ErrInvalidOAuthRequest)
+}
+
+func TestAuthenticate_NoCodeRejectedWithoutDevelopmentValidator(t *testing.T) {
+	// Wiring a production OAuth validator must never make request-supplied
+	// provider identity fields trustworthy when the authorization code is absent.
 	clearData(t)
 	fp := newFakeProvider(t)
 	wireOAuthOnTestService(t, fp)
 
-	fp.issueCode("mismatch-code")
+	_, err := testService.Authenticate(testCtx, &gen.AuthenticateRequest{
+		Provider:      "google",
+		ProviderId:    "google-legacy",
+		ProviderEmail: "legacy@test.local",
+		Authentication: &gen.AuthenticateRequest_Fixture{Fixture: &gen.FixtureAuthentication{
+			Token: "google-legacy",
+		}},
+	})
+	require.Error(t, err)
+	require.ErrorIs(t, err, auth.ErrDevelopmentAuthDisabled)
+}
+
+func TestAuthenticate_DevelopmentPathUsesAllowlistedClaims(t *testing.T) {
+	clearData(t)
+	testService.SetDevelopmentTokenValidator(&requestFixtureValidator{
+		token: "opaque-fixture-token",
+		claims: &auth.Claims{
+			Provider:  "email",
+			Subject:   "allowlisted-subject",
+			Email:     "allowlisted@example.com",
+			ExpiresAt: time.Now().Add(time.Hour),
+		},
+	})
+	t.Cleanup(func() { testService.SetDevelopmentTokenValidator(nil) })
+
+	resp, err := testService.Authenticate(testCtx, &gen.AuthenticateRequest{
+		Provider:      "email",
+		ProviderId:    "opaque-fixture-token",
+		ProviderEmail: "attacker@example.com",
+		EmailVerified: true,
+		Authentication: &gen.AuthenticateRequest_Fixture{Fixture: &gen.FixtureAuthentication{
+			Token: "opaque-fixture-token",
+		}},
+	})
+	require.NoError(t, err)
+	require.Equal(t, "allowlisted@example.com", resp.User.PrimaryEmail)
+
+	resolved, err := testService.ResolveIdentity(testCtx, &gen.ResolveIdentityRequest{
+		Provider:   "email",
+		ProviderId: "allowlisted-subject",
+	})
+	require.NoError(t, err)
+	require.True(t, resolved.Found)
+
+	attacker, err := testService.ResolveIdentity(testCtx, &gen.ResolveIdentityRequest{
+		Provider:   "email",
+		ProviderId: "opaque-fixture-token",
+	})
+	require.NoError(t, err)
+	require.False(t, attacker.Found, "opaque fixture token must not become the provider subject")
+}
+
+func TestAuthenticate_DevelopmentPathRejectsUnknownToken(t *testing.T) {
+	clearData(t)
+	testService.SetDevelopmentTokenValidator(&requestFixtureValidator{
+		token: "known-token",
+		claims: &auth.Claims{
+			Provider: "email", Subject: "known-subject", Email: "known@example.com",
+		},
+	})
+	t.Cleanup(func() { testService.SetDevelopmentTokenValidator(nil) })
 
 	_, err := testService.Authenticate(testCtx, &gen.AuthenticateRequest{
-		Provider: "auth0", // fake provider says "workos"
-		Profile: map[string]string{
-			"code":         "mismatch-code",
-			"redirect_uri": "https://app.acme.com/auth/callback",
+		Provider: "email", ProviderId: "ignored-legacy-value",
+		Authentication: &gen.AuthenticateRequest_Fixture{Fixture: &gen.FixtureAuthentication{Token: "unknown-token"}},
+	})
+	require.ErrorIs(t, err, auth.ErrUnknownIdentity)
+}
+
+func TestAuthenticate_DevelopmentPathRejectsProviderMismatch(t *testing.T) {
+	clearData(t)
+	testService.SetDevelopmentTokenValidator(&requestFixtureValidator{
+		token: "known-token",
+		claims: &auth.Claims{
+			Provider: "email", Subject: "known-subject", Email: "known@example.com",
 		},
+	})
+	t.Cleanup(func() { testService.SetDevelopmentTokenValidator(nil) })
+
+	_, err := testService.Authenticate(testCtx, &gen.AuthenticateRequest{
+		Provider: "google", ProviderId: "ignored-legacy-value",
+		Authentication: &gen.AuthenticateRequest_Fixture{Fixture: &gen.FixtureAuthentication{Token: "known-token"}},
 	})
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "provider mismatch")
 }
 
-func TestAuthenticate_LegacyPath_StillWorks(t *testing.T) {
-	// Even with OAuth wiring in place, the dev/fixture path (code absent)
-	// must continue to work — it's how tests and dev-admin log in.
+func TestAuthenticateRejectsOversizedDeviceInfoBeforeCredentialWork(t *testing.T) {
+	_, err := testService.Authenticate(testCtx, &gen.AuthenticateRequest{
+		DeviceInfo: strings.Repeat("x", 513),
+	})
+	require.ErrorIs(t, err, auth.ErrInvalidOAuthRequest)
+}
+
+func TestAuthenticate_DevelopmentFixtureEndToEnd(t *testing.T) {
 	clearData(t)
-	fp := newFakeProvider(t)
-	wireOAuthOnTestService(t, fp)
+	validator, err := devvalidator.New("../../../../../fixtures/dev-admin.yaml")
+	require.NoError(t, err)
+	testService.SetDevelopmentTokenValidator(validator)
+	t.Cleanup(func() { testService.SetDevelopmentTokenValidator(nil) })
 
 	resp, err := testService.Authenticate(testCtx, &gen.AuthenticateRequest{
-		Provider:      "google",
-		ProviderId:    "google-legacy",
-		ProviderEmail: "legacy@test.local",
+		Provider:      "email",
+		ProviderId:    "attacker-controlled-deprecated-subject",
+		ProviderEmail: "attacker@example.com",
+		Authentication: &gen.AuthenticateRequest_Fixture{Fixture: &gen.FixtureAuthentication{
+			Token: "dev-admin",
+		}},
 	})
 	require.NoError(t, err)
-	require.NotEmpty(t, resp.AccessToken)
-	require.NotEmpty(t, resp.RefreshToken)
+	require.Equal(t, "admin@acme.com", resp.User.PrimaryEmail)
+	identity, err := testService.JWTMinter().VerifyAccess(resp.AccessToken)
+	require.NoError(t, err)
+	require.Equal(t, auth.AssuranceLevelAAL2, identity.AssuranceLevel)
+	require.Equal(t, []string{auth.AuthenticationMethodFixture, auth.AuthenticationMethodOTP}, identity.AuthenticationMethods)
+	require.False(t, identity.MFAVerifiedAt.IsZero())
+	require.True(t, identity.MFASatisfied)
+
+	resolved, err := testService.ResolveIdentity(testCtx, &gen.ResolveIdentityRequest{
+		Provider: "email", ProviderId: "dev-admin",
+	})
+	require.NoError(t, err)
+	require.True(t, resolved.Found)
+}
+
+func TestAuthenticate_OAuthCodeFlow_RequiresSignedState(t *testing.T) {
+	clearData(t)
+	fp := newFakeProvider(t)
+	signer := wireOAuthOnTestService(t, fp)
+	fp.issueCode("missing-state")
+
+	req := oauthCodeRequest(t, signer, "workos", "missing-state", "https://app.acme.com/auth/callback")
+	req.GetOauthCode().State = ""
+	_, err := testService.Authenticate(testCtx, req)
+	require.ErrorIs(t, err, auth.ErrInvalidOAuthRequest)
+
+	req = oauthCodeRequest(t, signer, "workos", "missing-state", "https://app.acme.com/auth/callback")
+	req.GetOauthCode().State = "not-a-signed-state"
+	_, err = testService.Authenticate(testCtx, req)
+	require.ErrorIs(t, err, auth.ErrInvalidOAuthState)
+}
+
+func TestBeginOAuth_RequiresPolicyAndSigner(t *testing.T) {
+	policy, err := auth.NewOAuthRequestPolicy("workos", []string{"https://app.acme.com/auth/callback"})
+	require.NoError(t, err)
+	signer := auth.NewOAuthStateSigner([]byte("test OAuth state signing seed with sufficient entropy"))
+	testService.SetOAuthRequestPolicy(policy)
+	testService.SetOAuthStateSigner(signer)
+	t.Cleanup(func() {
+		testService.SetOAuthRequestPolicy(nil)
+		testService.SetOAuthStateSigner(nil)
+	})
+
+	_, err = testService.BeginOAuth(testCtx, "workos", "https://evil.example/auth/callback")
+	require.ErrorIs(t, err, auth.ErrInvalidOAuthRequest)
+
+	state, err := testService.BeginOAuth(testCtx, "workos", "https://app.acme.com/auth/callback")
+	require.NoError(t, err)
+	require.NoError(t, signer.Verify(state, "workos", "https://app.acme.com/auth/callback"))
+
+	testService.SetOAuthStateSigner(nil)
+	_, err = testService.BeginOAuth(testCtx, "workos", "https://app.acme.com/auth/callback")
+	require.Error(t, err)
 }
 
 // Sanity: prove errors.Is propagation still works across the path.
 func TestAuthenticate_OAuthCodeFlow_RealError(t *testing.T) {
 	clearData(t)
 	fp := newFakeProvider(t)
-	wireOAuthOnTestService(t, fp)
+	signer := wireOAuthOnTestService(t, fp)
 
 	// No code issued → server returns invalid_grant
-	_, err := testService.Authenticate(testCtx, &gen.AuthenticateRequest{
-		Provider: "workos",
-		Profile: map[string]string{
-			"code":         "never-issued",
-			"redirect_uri": "https://app.acme.com/auth/callback",
-		},
-	})
+	_, err := testService.Authenticate(testCtx, oauthCodeRequest(t, signer, "workos", "never-issued", "https://app.acme.com/auth/callback"))
 	require.Error(t, err)
 	require.False(t, errors.Is(err, context.Canceled))
 }

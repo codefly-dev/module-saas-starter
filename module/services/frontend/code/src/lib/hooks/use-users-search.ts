@@ -2,9 +2,9 @@ import { useEffect, useState } from "react";
 import { useUsers } from "./use-users";
 
 interface UserHit {
-  uuid: string;
-  email: string;
-  name?: string;
+	uuid: string;
+	email: string;
+	name?: string;
 }
 
 /**
@@ -19,21 +19,21 @@ interface UserHit {
  *   palette UI doesn't depend on the wire format.
  */
 export function useUsersSearch(query: string, enabled: boolean): UserHit[] {
-  const [debounced, setDebounced] = useState(query);
-  useEffect(() => {
-    if (!enabled) {
-      setDebounced("");
-      return;
-    }
-    const t = setTimeout(() => setDebounced(query), 200);
-    return () => clearTimeout(t);
-  }, [query, enabled]);
+	const [debounced, setDebounced] = useState(query);
+	useEffect(() => {
+		if (!enabled) {
+			setDebounced("");
+			return;
+		}
+		const t = setTimeout(() => setDebounced(query), 200);
+		return () => clearTimeout(t);
+	}, [query, enabled]);
 
-  const { data } = useUsers(debounced);
-  if (!enabled || !data) return [];
-  return data.map((u) => ({
-    uuid: u.uuid,
-    email: u.primaryEmail,
-    name: u.profile?.name,
-  }));
+	const { data } = useUsers(debounced);
+	if (!enabled || !data) return [];
+	return data.map((u) => ({
+		uuid: u.uuid,
+		email: u.primaryEmail,
+		name: u.profile?.name,
+	}));
 }

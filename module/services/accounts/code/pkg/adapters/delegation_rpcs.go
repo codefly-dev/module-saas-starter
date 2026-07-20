@@ -15,17 +15,15 @@ import (
 	"github.com/codefly-dev/core/wool"
 
 	"accounts/pkg/business"
-	"accounts/pkg/gen"
+	gen "accounts/pkg/gen/saas/accounts/v1"
 )
 
 // =====================================================================
 // DelegationService RPCs (M7 escalation flow + M8 pattern grants)
 // =====================================================================
 
-// DelegationServer handles DelegationService RPCs. Lives in its
-// own file — auto-generated grpc_gen.go should NOT have to know
-// about this; the manual server registration in gen wiring picks
-// it up by interface satisfaction.
+// DelegationServer handles DelegationService RPCs. Catalog-generated transport
+// registration picks it up through the shared singleton binding.
 //
 // Holds a reference to the scoped-auth signing secret used to
 // mint tokens on approve. The secret is the SAME one

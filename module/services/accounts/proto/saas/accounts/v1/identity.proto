@@ -1,0 +1,316 @@
+syntax = "proto3";
+
+package saas.accounts.v1;
+
+import "buf/validate/validate.proto";
+import "google/api/annotations.proto";
+import "google/protobuf/empty.proto";
+import "google/protobuf/field_mask.proto";
+import "saas/accounts/v1/common.proto";
+import "saas/policy/v1/options.proto";
+
+// ============================================================================
+// Request / Response messages
+// ============================================================================
+
+// --- User ---
+
+message RegisterUserRequest {
+  string primary_email = 1 [(buf.validate.field).string.email = true];
+  map<string, string> profile = 2;
+  UserIdentity identity = 3;
+}
+
+message RegisterUserResponse {
+  User user = 1;
+  UserIdentity identity = 2;
+}
+
+message GetUserRequest {
+  oneof identifier {
+    option (buf.validate.oneof).required = true;
+    string uuid = 1 [(buf.validate.field).string.uuid = true];
+    string email = 2 [(buf.validate.field).string.email = true];
+  }
+}
+
+message GetSelfRequest {}
+
+message GetSelfResponse {
+  User user = 1;
+  repeated UserIdentity identities = 2;
+  repeated Organization organizations = 3;
+  repeated RoleAssignment role_assignments = 4;
+}
+
+message ListUsersRequest {
+  int32 page_size = 1 [(buf.validate.field).int32 = {
+    gt: 0
+    lte: 100
+  }];
+  string page_token = 2;
+  UserStatus status = 3;
+}
+
+message ListUsersResponse {
+  repeated User users = 1;
+  string next_page_token = 2;
+}
+
+message UpdateUserRequest {
+  string uuid = 1 [(buf.validate.field).string.uuid = true];
+  User user = 2;
+  google.protobuf.FieldMask update_mask = 3;
+}
+
+message AddIdentityRequest {
+  string user_uuid = 1 [(buf.validate.field).string.uuid = true];
+  UserIdentity identity = 2;
+}
+
+message FindUserByIdentityRequest {
+  string provider = 1 [(buf.validate.field).string = {
+    min_len: 1
+    max_len: 50
+    pattern: "^[a-zA-Z0-9_-]+$"
+  }];
+  string provider_id = 2 [(buf.validate.field).string = {
+    min_len: 1
+    max_len: 255
+  }];
+}
+
+message ListUserIdentitiesRequest {
+  string user_uuid = 1 [(buf.validate.field).string.uuid = true];
+}
+
+message ListUserIdentitiesResponse {
+  repeated UserIdentity identities = 1;
+}
+
+// --- Identity resolution (for auth sidecar) ---
+
+message ResolveIdentityRequest {
+  string provider = 1 [(buf.validate.field).string = {
+    min_len: 1
+    max_len: 50
+    pattern: "^[a-zA-Z0-9_-]+$"
+  }];
+  string provider_id = 2 [(buf.validate.field).string = {
+    min_len: 1
+    max_len: 255
+  }];
+}
+
+message ResolveIdentityResponse {
+  string user_id = 1;
+  string org_id = 2;
+  repeated string roles = 3; // deprecated, kept for backward compat
+  bool found = 4;
+  string org_role = 5; // "owner"|"admin"|"member"
+  string platform_role = 6; // "super_admin"|"support"|"billing"|absent
+}
+
+// ============================================================================
+// Services
+// ============================================================================
+
+// UserService — user CRUD and identity management
+service UserService {
+  rpc Version(VersionRequest) returns (VersionResponse) {
+    option (saas.policy.v1.method_policy) = {
+      exposure: EXPOSURE_PUBLIC
+      tenant: TENANT_REQUIREMENT_NONE
+      mfa: MFA_REQUIREMENT_NONE
+      audit: {emission: AUDIT_EMISSION_NONE}
+      idempotency: IDEMPOTENCY_REQUIREMENT_FORBIDDEN
+      rate_limit: RATE_LIMIT_CLASS_PUBLIC
+      request_sensitivity: SENSITIVITY_PUBLIC
+      response_sensitivity: SENSITIVITY_PUBLIC
+      platform_role: PLATFORM_ROLE_REQUIREMENT_NONE
+    };
+    option (google.api.http) = {get: "/v1/version"};
+  }
+
+  rpc GetSelf(GetSelfRequest) returns (GetSelfResponse) {
+    option (saas.policy.v1.method_policy) = {
+      exposure: EXPOSURE_AUTHENTICATED
+      tenant: TENANT_REQUIREMENT_USER
+      mfa: MFA_REQUIREMENT_NONE
+      audit: {emission: AUDIT_EMISSION_NONE}
+      idempotency: IDEMPOTENCY_REQUIREMENT_FORBIDDEN
+      rate_limit: RATE_LIMIT_CLASS_STANDARD_READ
+      request_sensitivity: SENSITIVITY_CONFIDENTIAL
+      response_sensitivity: SENSITIVITY_CONFIDENTIAL
+      platform_role: PLATFORM_ROLE_REQUIREMENT_NONE
+    };
+    option (google.api.http) = {get: "/v1/users/self"};
+  }
+
+  rpc RegisterUser(RegisterUserRequest) returns (RegisterUserResponse) {
+    option (saas.policy.v1.method_policy) = {
+      exposure: EXPOSURE_PUBLIC
+      tenant: TENANT_REQUIREMENT_NONE
+      mfa: MFA_REQUIREMENT_NONE
+      audit: {
+        events: "user.registered"
+        emission: AUDIT_EMISSION_SUCCESS
+      }
+      idempotency: IDEMPOTENCY_REQUIREMENT_FORBIDDEN
+      rate_limit: RATE_LIMIT_CLASS_AUTHENTICATION
+      request_sensitivity: SENSITIVITY_CONFIDENTIAL
+      response_sensitivity: SENSITIVITY_CONFIDENTIAL
+      platform_role: PLATFORM_ROLE_REQUIREMENT_NONE
+    };
+    option (google.api.http) = {
+      post: "/v1/users"
+      body: "*"
+    };
+  }
+
+  rpc GetUser(GetUserRequest) returns (User) {
+    option (saas.policy.v1.method_policy) = {
+      exposure: EXPOSURE_AUTHENTICATED
+      tenant: TENANT_REQUIREMENT_USER
+      mfa: MFA_REQUIREMENT_NONE
+      audit: {emission: AUDIT_EMISSION_NONE}
+      idempotency: IDEMPOTENCY_REQUIREMENT_FORBIDDEN
+      rate_limit: RATE_LIMIT_CLASS_STANDARD_READ
+      request_sensitivity: SENSITIVITY_CONFIDENTIAL
+      response_sensitivity: SENSITIVITY_CONFIDENTIAL
+      platform_role: PLATFORM_ROLE_REQUIREMENT_NONE
+    };
+    option (google.api.http) = {
+      get: "/v1/users/{uuid}"
+      additional_bindings: {get: "/v1/users:byEmail"}
+    };
+  }
+
+  rpc ListUsers(ListUsersRequest) returns (ListUsersResponse) {
+    option (saas.policy.v1.method_policy) = {
+      exposure: EXPOSURE_AUTHENTICATED
+      tenant: TENANT_REQUIREMENT_NONE
+      permissions: "users:read"
+      scopes: "users:read"
+      mfa: MFA_REQUIREMENT_NONE
+      audit: {emission: AUDIT_EMISSION_NONE}
+      idempotency: IDEMPOTENCY_REQUIREMENT_FORBIDDEN
+      rate_limit: RATE_LIMIT_CLASS_SENSITIVE
+      request_sensitivity: SENSITIVITY_CONFIDENTIAL
+      response_sensitivity: SENSITIVITY_CONFIDENTIAL
+      platform_role: PLATFORM_ROLE_REQUIREMENT_ANY
+    };
+    option (google.api.http) = {get: "/v1/users"};
+  }
+
+  rpc UpdateUser(UpdateUserRequest) returns (User) {
+    option (saas.policy.v1.method_policy) = {
+      exposure: EXPOSURE_AUTHENTICATED
+      tenant: TENANT_REQUIREMENT_USER
+      permissions: "users:write"
+      scopes: "users:write"
+      mfa: MFA_REQUIREMENT_NONE
+      audit: {
+        events: "user.updated"
+        emission: AUDIT_EMISSION_SUCCESS
+      }
+      idempotency: IDEMPOTENCY_REQUIREMENT_FORBIDDEN
+      rate_limit: RATE_LIMIT_CLASS_STANDARD_WRITE
+      request_sensitivity: SENSITIVITY_CONFIDENTIAL
+      response_sensitivity: SENSITIVITY_CONFIDENTIAL
+      platform_role: PLATFORM_ROLE_REQUIREMENT_NONE
+    };
+    option (google.api.http) = {
+      patch: "/v1/users/{uuid}"
+      body: "user"
+    };
+  }
+
+  rpc DeleteUser(GetUserRequest) returns (google.protobuf.Empty) {
+    option (saas.policy.v1.method_policy) = {
+      exposure: EXPOSURE_AUTHENTICATED
+      tenant: TENANT_REQUIREMENT_USER
+      permissions: "users:write"
+      scopes: "users:write"
+      mfa: MFA_REQUIREMENT_NONE
+      audit: {
+        events: "user.deleted"
+        emission: AUDIT_EMISSION_SUCCESS
+      }
+      idempotency: IDEMPOTENCY_REQUIREMENT_FORBIDDEN
+      rate_limit: RATE_LIMIT_CLASS_STANDARD_WRITE
+      request_sensitivity: SENSITIVITY_CONFIDENTIAL
+      response_sensitivity: SENSITIVITY_CONFIDENTIAL
+      platform_role: PLATFORM_ROLE_REQUIREMENT_NONE
+    };
+    option (google.api.http) = {delete: "/v1/users/{uuid}"};
+  }
+
+  rpc AddIdentity(AddIdentityRequest) returns (UserIdentity) {
+    option (saas.policy.v1.method_policy) = {
+      exposure: EXPOSURE_AUTHENTICATED
+      tenant: TENANT_REQUIREMENT_USER
+      mfa: MFA_REQUIREMENT_NONE
+      audit: {
+        events: "user.identity_added"
+        emission: AUDIT_EMISSION_SUCCESS
+      }
+      idempotency: IDEMPOTENCY_REQUIREMENT_FORBIDDEN
+      rate_limit: RATE_LIMIT_CLASS_STANDARD_WRITE
+      request_sensitivity: SENSITIVITY_CONFIDENTIAL
+      response_sensitivity: SENSITIVITY_CONFIDENTIAL
+      platform_role: PLATFORM_ROLE_REQUIREMENT_NONE
+    };
+    option (google.api.http) = {
+      post: "/v1/users/{user_uuid}/identities"
+      body: "identity"
+    };
+  }
+
+  rpc FindUserByIdentity(FindUserByIdentityRequest) returns (User) {
+    option (saas.policy.v1.method_policy) = {
+      exposure: EXPOSURE_AUTHENTICATED
+      tenant: TENANT_REQUIREMENT_NONE
+      mfa: MFA_REQUIREMENT_NONE
+      audit: {emission: AUDIT_EMISSION_NONE}
+      idempotency: IDEMPOTENCY_REQUIREMENT_FORBIDDEN
+      rate_limit: RATE_LIMIT_CLASS_SENSITIVE
+      request_sensitivity: SENSITIVITY_CONFIDENTIAL
+      response_sensitivity: SENSITIVITY_CONFIDENTIAL
+      platform_role: PLATFORM_ROLE_REQUIREMENT_ANY
+    };
+    option (google.api.http) = {get: "/v1/users:findByIdentity"};
+  }
+
+  rpc ListUserIdentities(ListUserIdentitiesRequest) returns (ListUserIdentitiesResponse) {
+    option (saas.policy.v1.method_policy) = {
+      exposure: EXPOSURE_AUTHENTICATED
+      tenant: TENANT_REQUIREMENT_USER
+      mfa: MFA_REQUIREMENT_NONE
+      audit: {emission: AUDIT_EMISSION_NONE}
+      idempotency: IDEMPOTENCY_REQUIREMENT_FORBIDDEN
+      rate_limit: RATE_LIMIT_CLASS_STANDARD_READ
+      request_sensitivity: SENSITIVITY_CONFIDENTIAL
+      response_sensitivity: SENSITIVITY_CONFIDENTIAL
+      platform_role: PLATFORM_ROLE_REQUIREMENT_NONE
+    };
+    option (google.api.http) = {get: "/v1/users/{user_uuid}/identities"};
+  }
+}
+
+// IdentityService — auth provider ID resolution (used by auth sidecar)
+service IdentityService {
+  rpc ResolveIdentity(ResolveIdentityRequest) returns (ResolveIdentityResponse) {
+    option (saas.policy.v1.method_policy) = {
+      exposure: EXPOSURE_INTERNAL
+      tenant: TENANT_REQUIREMENT_NONE
+      mfa: MFA_REQUIREMENT_NONE
+      audit: {emission: AUDIT_EMISSION_NONE}
+      idempotency: IDEMPOTENCY_REQUIREMENT_FORBIDDEN
+      rate_limit: RATE_LIMIT_CLASS_INTERNAL
+      request_sensitivity: SENSITIVITY_SECRET
+      response_sensitivity: SENSITIVITY_CONFIDENTIAL
+      platform_role: PLATFORM_ROLE_REQUIREMENT_NONE
+    };
+  }
+}

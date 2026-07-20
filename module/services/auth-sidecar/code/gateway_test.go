@@ -76,9 +76,10 @@ func newGatewayHarness(t *testing.T) (*Gateway, *fakeUpstream, *fakeUpstream, ed
 	require.NoError(t, err)
 
 	sidecar := &Sidecar{
-		publicKey: pub,
-		issuer:    "saas-starter",
-		audience:  "saas-starter",
+		publicKey:    pub,
+		issuer:       "saas-starter",
+		audience:     "saas-starter",
+		gatewayToken: "test-gateway-token",
 	}
 
 	apiFake := &fakeUpstream{body: "api-response"}
@@ -94,7 +95,7 @@ func newGatewayHarness(t *testing.T) (*Gateway, *fakeUpstream, *fakeUpstream, ed
 
 	matcher := NewRouteMatcher(testRouteEntries(), nil)
 	upstreams := map[string]*url.URL{
-		"accounts":      apiURL,
+		"accounts": apiURL,
 		"frontend": frontendURL,
 	}
 
@@ -175,6 +176,23 @@ func TestGateway_ProtectedRoute_ValidJWT_ForwardsWithHeaders(t *testing.T) {
 	require.Equal(t, "admin", apiFake.lastHeaders.Get("x-org-role"))
 	require.Equal(t, "super_admin", apiFake.lastHeaders.Get("x-platform-role"))
 	require.NotEmpty(t, apiFake.lastHeaders.Get("x-session-id"))
+	require.Equal(t, "test-gateway-token", apiFake.lastHeaders.Get("x-codefly-gateway-token"))
+}
+
+func TestGateway_StripsCallerIdentityAndTrustCredentials(t *testing.T) {
+	gw, apiFake, _, _ := newGatewayHarness(t)
+
+	req := httptest.NewRequest(http.MethodPost, "/v1/auth/authenticate", strings.NewReader(`{}`))
+	for _, key := range untrustedAuthHeaders {
+		req.Header.Set(key, "attacker-value")
+	}
+	w := httptest.NewRecorder()
+	gw.ServeHTTP(w, req)
+
+	require.Equal(t, http.StatusOK, w.Code)
+	for _, key := range untrustedAuthHeaders {
+		require.Empty(t, apiFake.lastHeaders.Get(key), "caller-controlled %s must be stripped", key)
+	}
 }
 
 // ============================================================================
@@ -259,7 +277,7 @@ func TestGateway_PathParameterMatching(t *testing.T) {
 func TestGateway_ConnectRPC_UnlistedMethod_404(t *testing.T) {
 	gw, _, _, _ := newGatewayHarness(t)
 
-	req := httptest.NewRequest(http.MethodPost, "/customers.UserService/SecretMethod", nil)
+	req := httptest.NewRequest(http.MethodPost, "/saas.accounts.v1.UserService/SecretMethod", nil)
 	w := httptest.NewRecorder()
 	gw.ServeHTTP(w, req)
 
@@ -300,6 +318,45 @@ func TestGateway_HealthCheck_Self(t *testing.T) {
 			require.Contains(t, w.Body.String(), `"status":"ok"`)
 		})
 	}
+}
+
+func TestGateway_LivenessDoesNotDependOnSidecarOrUpstreams(t *testing.T) {
+	matcher := NewRouteMatcher([]*RouteEntry{{Service: "accounts", Method: "GET", Path: "/v1/users", Protected: true}, {Service: "self", Method: "GET", Path: "/health"}}, nil)
+	gateway := NewGateway(nil, matcher, nil, nil)
+	req := httptest.NewRequest(http.MethodGet, "/health", nil)
+	w := httptest.NewRecorder()
+	gateway.ServeHTTP(w, req)
+	require.Equal(t, http.StatusOK, w.Code)
+}
+
+func TestGateway_ReadinessRequiresEveryRoutedUpstream(t *testing.T) {
+	available := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(http.StatusOK) }))
+	t.Cleanup(available.Close)
+	availableURL, err := url.Parse(available.URL)
+	require.NoError(t, err)
+
+	matcher := NewRouteMatcher([]*RouteEntry{
+		{Service: "accounts", Method: "GET", Path: "/v1/users", Protected: true},
+		{Service: "frontend", Method: "GET", Path: "/", Protected: false},
+		{Service: "self", Method: "GET", Path: "/ready", Protected: false},
+	}, nil)
+
+	gateway := NewGateway(&Sidecar{}, matcher, map[string]*url.URL{"accounts": availableURL}, nil)
+	req := httptest.NewRequest(http.MethodGet, "/ready", nil)
+	w := httptest.NewRecorder()
+	gateway.ServeHTTP(w, req)
+	require.Equal(t, http.StatusServiceUnavailable, w.Code)
+	require.Contains(t, w.Body.String(), "frontend")
+
+	unavailable := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(http.StatusOK) }))
+	unavailableURL, err := url.Parse(unavailable.URL)
+	require.NoError(t, err)
+	unavailable.Close()
+	gateway = NewGateway(&Sidecar{}, matcher, map[string]*url.URL{"accounts": availableURL, "frontend": unavailableURL}, nil)
+	w = httptest.NewRecorder()
+	gateway.ServeHTTP(w, req)
+	require.Equal(t, http.StatusServiceUnavailable, w.Code)
+	require.Contains(t, w.Body.String(), "frontend")
 }
 
 // ============================================================================
@@ -417,4 +474,79 @@ func TestGateway_ExactMethodMatching(t *testing.T) {
 	w = httptest.NewRecorder()
 	gw.ServeHTTP(w, req)
 	require.Equal(t, http.StatusNotFound, w.Code)
+}
+
+func TestGateway_ConnectProtocol_AuthenticatedEndToEnd(t *testing.T) {
+	pub, priv, err := ed25519.GenerateKey(rand.Reader)
+	require.NoError(t, err)
+	sidecar := &Sidecar{
+		publicKey:    pub,
+		issuer:       "saas-starter",
+		audience:     "saas-starter",
+		gatewayToken: "test-gateway-token",
+	}
+
+	upstream := &fakeUpstream{body: `{"user":{"id":"user-1"}}`}
+	upstreamServer := httptest.NewServer(upstream)
+	t.Cleanup(upstreamServer.Close)
+	upstreamURL, err := url.Parse(upstreamServer.URL)
+	require.NoError(t, err)
+
+	procedure := "/saas.accounts.v1.UserService/GetSelf"
+	matcher := NewRouteMatcher(nil, []*RouteEntry{{
+		Service: "accounts_connect", Method: http.MethodPost, Path: procedure, Protected: true,
+	}})
+	gateway := NewGateway(sidecar, matcher, map[string]*url.URL{"accounts_connect": upstreamURL}, nil)
+
+	req := httptest.NewRequest(http.MethodPost, procedure, strings.NewReader(`{}`))
+	req.Header.Set("Authorization", "Bearer "+signValidToken(t, priv))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Connect-Protocol-Version", "1")
+	w := httptest.NewRecorder()
+	gateway.ServeHTTP(w, req)
+
+	require.Equal(t, http.StatusOK, w.Code)
+	require.Equal(t, procedure, upstream.lastPath)
+	require.Equal(t, http.MethodPost, upstream.lastMethod)
+	require.NotEmpty(t, upstream.lastHeaders.Get("X-User-Id"))
+	require.Equal(t, "test-gateway-token", upstream.lastHeaders.Get("X-Codefly-Gateway-Token"))
+	require.Equal(t, "1", upstream.lastHeaders.Get("Connect-Protocol-Version"))
+}
+
+func TestGateway_LegacyConnectProcedureRewritesToV1(t *testing.T) {
+	pub, priv, err := ed25519.GenerateKey(rand.Reader)
+	require.NoError(t, err)
+	sidecar := &Sidecar{
+		publicKey:    pub,
+		issuer:       "saas-starter",
+		audience:     "saas-starter",
+		gatewayToken: "test-gateway-token",
+	}
+
+	upstream := &fakeUpstream{body: `{}`}
+	upstreamServer := httptest.NewServer(upstream)
+	t.Cleanup(upstreamServer.Close)
+	upstreamURL, err := url.Parse(upstreamServer.URL)
+	require.NoError(t, err)
+
+	legacy := "/customers.UserService/GetSelf"
+	canonical := "/saas.accounts.v1.UserService/GetSelf"
+	matcher := NewRouteMatcher(nil, []*RouteEntry{{
+		Service:      "accounts_connect",
+		Method:       http.MethodPost,
+		Path:         legacy,
+		UpstreamPath: canonical,
+		Protected:    true,
+	}})
+	gateway := NewGateway(sidecar, matcher, map[string]*url.URL{"accounts_connect": upstreamURL}, nil)
+
+	req := httptest.NewRequest(http.MethodPost, legacy, strings.NewReader(`{}`))
+	req.Header.Set("Authorization", "Bearer "+signValidToken(t, priv))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Connect-Protocol-Version", "1")
+	w := httptest.NewRecorder()
+	gateway.ServeHTTP(w, req)
+
+	require.Equal(t, http.StatusOK, w.Code)
+	require.Equal(t, canonical, upstream.lastPath)
 }

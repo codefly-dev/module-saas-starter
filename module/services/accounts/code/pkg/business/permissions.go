@@ -5,7 +5,7 @@ import (
 
 	"github.com/codefly-dev/core/wool"
 
-	"accounts/pkg/gen"
+	gen "accounts/pkg/gen/saas/accounts/v1"
 )
 
 // ListRoles returns global built-in roles + org-specific custom roles.
@@ -13,7 +13,7 @@ import (
 // Built-in roles (org_id=NULL) are globally readable under RLS thanks
 // to the polymorphic policy on `roles`; tenant rows still require
 // either WithOrgTx or bypass. We wrap in WithOrgTx when an org is
-// requested so tenant rows come through, and in WithBypass for the
+// requested so tenant rows come through, and in WithControlPlane for the
 // global-only ListRoles("") path (callers wanting just the built-ins).
 func (s *Service) ListRoles(ctx context.Context, req *gen.ListRolesRequest) (*gen.ListRolesResponse, error) {
 	w := wool.Get(ctx).In("ListRoles")
@@ -26,7 +26,7 @@ func (s *Service) ListRoles(ctx context.Context, req *gen.ListRolesRequest) (*ge
 	}
 	var err error
 	if req.OrgId == "" {
-		err = s.store.WithBypass(ctx, wrap)
+		err = s.store.WithControlPlane(ctx, wrap)
 	} else {
 		err = s.store.WithOrgTx(ctx, req.OrgId, wrap)
 	}
@@ -41,11 +41,11 @@ func (s *Service) ListRoles(ctx context.Context, req *gen.ListRolesRequest) (*ge
 // req only carries the role id — we don't know the role's org without
 // a lookup. Handler authz already required platform_admin (see
 // adapters/rpcs.go DeleteRole), so the caller is privileged-by-policy
-// and WithBypass is the right wrapper.
+// and WithControlPlane is the right wrapper.
 func (s *Service) DeleteRole(ctx context.Context, actorID string, req *gen.DeleteRoleRequest) error {
 	w := wool.Get(ctx).In("DeleteRole")
 
-	if err := s.store.WithBypass(ctx, func(ctx context.Context) error {
+	if err := s.store.WithControlPlane(ctx, func(ctx context.Context) error {
 		return s.store.DeleteRole(ctx, req.Id)
 	}); err != nil {
 		return w.Wrapf(err, "cannot delete role")
@@ -58,7 +58,7 @@ func (s *Service) DeleteRole(ctx context.Context, actorID string, req *gen.Delet
 // ListRoleAssignments returns the assignments in an org. Always
 // runs under WithOrgTx — the proto requires org_id (no platform-
 // admin global view yet; if needed later, route req.OrgId == "" via
-// WithBypass with platform-admin handler authz).
+// WithControlPlane with platform-admin handler authz).
 func (s *Service) ListRoleAssignments(ctx context.Context, req *gen.ListRoleAssignmentsRequest) (*gen.ListRoleAssignmentsResponse, error) {
 	w := wool.Get(ctx).In("ListRoleAssignments")
 	var assignments []*gen.RoleAssignment
@@ -83,7 +83,7 @@ func (s *Service) RevokeRole(ctx context.Context, actorID string, req *gen.Revok
 	}
 	var err error
 	if req.OrgId == "" {
-		err = s.store.WithBypass(ctx, wrap)
+		err = s.store.WithControlPlane(ctx, wrap)
 	} else {
 		err = s.store.WithOrgTx(ctx, req.OrgId, wrap)
 	}

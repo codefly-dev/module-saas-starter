@@ -23,19 +23,16 @@ CREATE TABLE webhook_deliveries (
     id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     subscription_id UUID NOT NULL REFERENCES webhook_subscriptions(id) ON DELETE CASCADE,
     event_type      TEXT NOT NULL,
-    payload         JSONB NOT NULL,
-    status          TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending', 'delivered', 'failed', 'retrying')),
+    payload         TEXT NOT NULL,
+    status          TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending', 'delivered', 'failed')),
     http_status     INT,
     response_body   TEXT,
     attempts        INT NOT NULL DEFAULT 0,
-    max_attempts    INT NOT NULL DEFAULT 5,
-    next_retry_at   TIMESTAMPTZ,
     created_at      TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
     delivered_at    TIMESTAMPTZ
 );
 
 CREATE INDEX idx_webhook_deliveries_sub ON webhook_deliveries(subscription_id, created_at DESC);
-CREATE INDEX idx_webhook_deliveries_retry ON webhook_deliveries(next_retry_at) WHERE status = 'retrying';
 
 -- ════════════════════════════════════════════════════════════════
 -- In-App Notifications
@@ -133,7 +130,8 @@ CREATE TABLE email_templates (
 INSERT INTO email_templates (name, subject_template, html_template, text_template) VALUES
 ('welcome', 'Welcome to {{app_name}}', '<h1>Welcome, {{user_name}}!</h1><p>Your account has been created. <a href="{{app_url}}">Get started</a>.</p>', 'Welcome, {{user_name}}! Your account has been created. Get started: {{app_url}}'),
 ('invitation', 'You''ve been invited to {{org_name}}', '<h1>Join {{org_name}}</h1><p>{{inviter_name}} has invited you to join {{org_name}} as {{role}}.</p><p><a href="{{invite_url}}">Accept invitation</a></p>', '{{inviter_name}} has invited you to join {{org_name}} as {{role}}. Accept: {{invite_url}}'),
-('payment_failed', 'Payment failed for {{org_name}}', '<h1>Payment Failed</h1><p>We couldn''t process your payment for {{org_name}}. Please <a href="{{billing_url}}">update your payment method</a>.</p>', 'Payment failed for {{org_name}}. Update your payment method: {{billing_url}}'),
-('invoice_ready', 'Invoice for {{org_name}} — {{amount}}', '<h1>Invoice Ready</h1><p>Your invoice for {{period}} is ready. Amount: {{amount}}.</p><p><a href="{{invoice_url}}">View invoice</a></p>', 'Your invoice for {{period}} is ready. Amount: {{amount}}. View: {{invoice_url}}'),
-('trial_ending', 'Your trial ends in {{days_left}} days', '<h1>Trial Ending Soon</h1><p>Your trial for {{org_name}} ends in {{days_left}} days. <a href="{{pricing_url}}">Choose a plan</a> to keep your account.</p>', 'Your trial for {{org_name}} ends in {{days_left}} days. Choose a plan: {{pricing_url}}'),
+('magic_link', 'Your sign-in link', '<h1>Sign in to your account</h1><p><a href="{{link_url}}">Sign in</a>. This link expires in 15 minutes.</p>', 'Sign in to your account (expires in 15 minutes): {{link_url}}'),
+('payment_failed', 'Subscription payment failed', '<h1>Payment Failed</h1><p>We couldn''t process your subscription payment. <a href="{{billing_url}}">Manage billing</a> to update your payment method.</p>', 'We couldn''t process your subscription payment. Manage billing: {{billing_url}}'),
+('invoice_ready', 'Subscription payment received', '<h1>Payment Received</h1><p>Your subscription payment was received. <a href="{{billing_url}}">View billing</a>.</p>', 'Your subscription payment was received. View billing: {{billing_url}}'),
+('trial_ending', 'Your subscription trial is ending soon', '<h1>Trial Ending Soon</h1><p>Your subscription trial is ending soon. <a href="{{billing_url}}">Manage your subscription</a> to keep your account.</p>', 'Your subscription trial is ending soon. Manage your subscription: {{billing_url}}'),
 ('gdpr_export_ready', 'Your data export is ready', '<h1>Data Export Ready</h1><p>Your data export for {{user_email}} is ready. <a href="{{download_url}}">Download</a> (expires {{expires_at}}).</p>', 'Your data export is ready. Download: {{download_url}} (expires {{expires_at}})');

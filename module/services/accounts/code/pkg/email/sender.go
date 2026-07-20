@@ -16,14 +16,34 @@ import (
 	"fmt"
 )
 
+// DeliveryError classifies a provider response without retaining its body.
+// Worker history may persist only the generic classification supplied by the
+// job handler, never provider text that could contain an address or payload.
+type DeliveryError struct {
+	StatusCode int
+	Retryable  bool
+}
+
+func (e *DeliveryError) Error() string {
+	if e == nil || e.StatusCode == 0 {
+		return "email: provider request failed"
+	}
+	return fmt.Sprintf("email: provider returned HTTP %d", e.StatusCode)
+}
+
 // Message is the full payload for a single outgoing email.
 type Message struct {
-	From     string   // "Acme <noreply@acme.com>"
-	To       []string // RFC 5321 addresses
-	ReplyTo  string   // optional
-	Subject  string
-	HTMLBody string // rendered HTML (required)
-	TextBody string // plaintext fallback, optional but recommended
+	// IdempotencyKey is the stable delivery identity supplied to providers that
+	// support retry deduplication. The generic outbox sets it from the durable
+	// job id. Adapter tests and alternate workers may leave it empty when
+	// duplication is acceptable.
+	IdempotencyKey string
+	From           string   // "Acme <noreply@acme.com>"
+	To             []string // RFC 5321 addresses
+	ReplyTo        string   // optional
+	Subject        string
+	HTMLBody       string // rendered HTML (required)
+	TextBody       string // plaintext fallback, optional but recommended
 
 	// Tags are arbitrary key/value labels for deliverability analytics.
 	// Resend supports up to 10. Example: {"type": "invitation", "org": "acme"}.
@@ -32,6 +52,9 @@ type Message struct {
 
 // Validate returns an error describing the first missing required field.
 func (m *Message) Validate() error {
+	if len(m.IdempotencyKey) > 256 {
+		return fmt.Errorf("email: IdempotencyKey must not exceed 256 characters")
+	}
 	if m.From == "" {
 		return fmt.Errorf("email: From is required")
 	}

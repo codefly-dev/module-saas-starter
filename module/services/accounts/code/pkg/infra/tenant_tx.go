@@ -10,13 +10,15 @@ import (
 	"github.com/jackc/pgx/v5"
 )
 
-// bypassCounters tracks, per call site, the cumulative number of
-// WithBypass invocations during the api process's lifetime. The
-// callsite key is "<file>:<line>" of the caller of WithBypass —
+const controlPlaneDatabaseRole = "app_control_plane"
+
+// controlPlaneCounters tracks, per call site, the cumulative number of
+// WithControlPlane invocations during the api process's lifetime. The
+// callsite key is "<file>:<line>" of the caller of WithControlPlane —
 // gives operators a greppable manifest of every place that intentionally
 // skips RLS. Resets on process restart.
 //
-// Why this matters: every WithBypass is a deliberate skip-RLS act.
+// Why this matters: every WithControlPlane is a deliberate skip-RLS act.
 // In a healthy system the call sites are a short, audited list
 // (workers + platform-admin + a few cross-tenant lookups). If a
 // new call site appears in production without code review, that's
@@ -26,14 +28,14 @@ import (
 // the runtime half (the static-grep half lives in CI). Combined,
 // they're how operators answer "show me every line that bypasses
 // RLS today, and how often each fires."
-var bypassCounters sync.Map // map[string]*int64
+var controlPlaneCounters sync.Map // map[string]*int64
 
-// BypassCounters returns a snapshot of (callsite → count) for every
-// call site that has invoked WithBypass since process start.
+// ControlPlaneCounters returns a snapshot of (callsite → count) for every
+// call site that has invoked WithControlPlane since process start.
 // Exposed for ops dashboards / smoke tests / audit tooling.
-func BypassCounters() map[string]int64 {
+func ControlPlaneCounters() map[string]int64 {
 	out := map[string]int64{}
-	bypassCounters.Range(func(k, v any) bool {
+	controlPlaneCounters.Range(func(k, v any) bool {
 		out[k.(string)] = atomic.LoadInt64(v.(*int64))
 		return true
 	})
@@ -49,22 +51,22 @@ var orgTxCount int64
 // OrgTxCount returns the cumulative WithOrgTx invocation count.
 func OrgTxCount() int64 { return atomic.LoadInt64(&orgTxCount) }
 
-// recordBypass increments the per-callsite counter and emits a wool
-// debug event. Called once per WithBypass invocation.
-func recordBypass(ctx context.Context) {
-	// Caller skip = 2: recordBypass → WithBypass → real call site.
+// recordControlPlane increments the per-callsite counter and emits a wool
+// debug event. Called once per WithControlPlane invocation.
+func recordControlPlane(ctx context.Context) {
+	// Caller skip = 2: recordControlPlane → WithControlPlane → real call site.
 	_, file, line, ok := runtime.Caller(2)
 	site := "unknown"
 	if ok {
 		site = trimToProjectPath(file) + ":" + itoa(line)
 	}
-	v, _ := bypassCounters.LoadOrStore(site, new(int64))
+	v, _ := controlPlaneCounters.LoadOrStore(site, new(int64))
 	atomic.AddInt64(v.(*int64), 1)
 	// Debug-level: visible in dev, not noisy in prod (Info would be
 	// too loud given audit-exporter / dispatcher loops fire many
-	// times/min). Aggregate counts via BypassCounters() are the
+	// times/min). Aggregate counts via ControlPlaneCounters() are the
 	// production-grade signal.
-	wool.Get(ctx).In("WithBypass").Debug("RLS bypass invoked", wool.Field("site", site))
+	wool.Get(ctx).In("WithControlPlane").Debug("control-plane role assumed", wool.Field("site", site))
 }
 
 func trimToProjectPath(file string) string {
@@ -128,13 +130,13 @@ func itoa(n int) string {
 // transaction; commit/rollback both clear it. No leak across pool
 // reuse.
 //
-// Bypass: code paths that legitimately span tenants — the audit
+// Control plane: code paths that legitimately span tenants — the audit
 // exporter's poll loop, migration runner, platform-admin queries —
 // must NOT use WithOrgTx. They run against the pool directly using
 // a Postgres role that has BYPASSRLS (configured at deploy time;
 // see RLS_PLAN.md).
 //
-// IMPORTANT — DO NOT NEST: WithOrgTx (and WithBypass) call
+// IMPORTANT — DO NOT NEST: WithOrgTx (and WithControlPlane) call
 // pool.Begin(ctx) unconditionally; they don't check whether `ctx`
 // already carries a tx. Nesting will check out a SECOND connection
 // from the pool while the outer tx still holds the first, which
@@ -216,7 +218,7 @@ var _ pgx.Tx = (pgx.Tx)(nil)
 // user-RLS-protected table returns zero rows by default because the
 // pool's BeforeAcquire hook left the connection as `app_tenant`
 // with no `app.current_user_id` set. Cross-user readers (platform
-// admin / refresh-token-hash lookup during login) use WithBypass.
+// admin / refresh-token-hash lookup during login) use WithControlPlane.
 func (s *PostgresStore) WithUserTx(ctx context.Context, userID string, fn func(ctx context.Context) error) error {
 	if userID == "" {
 		return errEmptyUserID
@@ -238,49 +240,41 @@ func (s *PostgresStore) WithUserTx(ctx context.Context, userID string, fn func(c
 
 const errEmptyUserID errString = "WithUserTx: userID is required"
 
-// WithBypass runs `fn` inside a transaction that elevates back to
-// the connection's session_user (the codefly-managed superuser),
-// bypassing RLS for the tx duration. Used ONLY for:
+// WithControlPlane runs `fn` inside a transaction that assumes the named,
+// audited app_control_plane database role for the tx duration. Used ONLY for:
 //
 //   - Background workers that legitimately scan across tenants
-//     (audit-exporter polling, webhook dispatcher, billing
-//     reconciliation, scheduled cleanup jobs).
+//     (audit-exporter polling, billing reconciliation, scheduled cleanup
+//     jobs).
 //   - Platform-admin endpoints that present a cross-org view.
 //
 // Mechanism: the pool's BeforeAcquire hook stamps every checked-out
-// connection with `SET ROLE app_tenant`. Inside this tx we run
-// `SET LOCAL ROLE NONE`, which reverts current_user to session_user
-// for the tx duration. On commit/rollback the SET LOCAL unwinds and
-// the connection resumes as app_tenant for any subsequent caller.
-//
-// We also set `app.bypass = '1'` for policies that key off it
-// (defense in depth; today the role switch alone is enough since
-// session_user is a superuser, but a future codefly Postgres plugin
-// that drops superuser would still be safe via the GUC).
+// connection with `SET ROLE app_tenant`. The managed session principal has
+// explicit SET membership in app_control_plane, so this transaction can use
+// `SET LOCAL ROLE app_control_plane`. On commit/rollback the local role unwinds
+// and the connection resumes as app_tenant for any subsequent caller.
 //
 // Treat it like sudo — every call site should be deliberate, with a
 // comment explaining why it can't use WithOrgTx. Invariant: a
-// WithBypass-wrapped function MUST NOT use user-supplied input as a
+// WithControlPlane-wrapped function MUST NOT use user-supplied input as a
 // filter without explicit SQL — the policy isn't there to catch
 // you.
-func (s *PostgresStore) WithBypass(ctx context.Context, fn func(ctx context.Context) error) error {
-	// Phase 4 audit: every WithBypass is a deliberate RLS skip;
-	// we count + log per call site so operators can grep `bypass
-	// invoked site=...` in logs and pull aggregate counts via
-	// BypassCounters() for dashboards.
-	recordBypass(ctx)
-	tx, err := s.pool.Begin(ctx)
+func (s *PostgresStore) WithControlPlane(ctx context.Context, fn func(ctx context.Context) error) error {
+	// Record here, rather than inside withControlPlaneTx, so the metric retains
+	// the actual capability call site instead of collapsing every caller onto
+	// this helper.
+	recordControlPlane(ctx)
+	return s.withControlPlaneTx(ctx, pgx.TxOptions{}, fn)
+}
+
+func (s *PostgresStore) withControlPlaneTx(ctx context.Context, options pgx.TxOptions, fn func(ctx context.Context) error) error {
+	tx, err := s.pool.BeginTx(ctx, options)
 	if err != nil {
 		return err
 	}
 	defer tx.Rollback(ctx) //nolint:errcheck // rollback after commit is a no-op
 
-	// Elevate from app_tenant back to the connection's session_user
-	// (the codefly-provided superuser) for the duration of this tx.
-	if _, err := tx.Exec(ctx, "SET LOCAL ROLE NONE"); err != nil {
-		return err
-	}
-	if _, err := tx.Exec(ctx, "SELECT set_config('app.bypass', '1', true)"); err != nil {
+	if _, err := tx.Exec(ctx, "SET LOCAL ROLE "+controlPlaneDatabaseRole); err != nil {
 		return err
 	}
 

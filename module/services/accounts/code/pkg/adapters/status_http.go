@@ -37,8 +37,8 @@ type StatusResponse struct {
 }
 
 var (
-	statusProbes      []StatusProbe
-	statusProbesMu    sync.RWMutex
+	statusProbes       []StatusProbe
+	statusProbesMu     sync.RWMutex
 	statusProcessStart = time.Now()
 )
 

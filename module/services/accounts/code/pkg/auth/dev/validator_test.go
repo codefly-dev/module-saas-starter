@@ -52,6 +52,44 @@ users:
 	require.NoError(t, claims.Valid())
 }
 
+func TestValidate_FixtureTokenIsDistinctFromProviderSubject(t *testing.T) {
+	path := writeFixture(t, `
+users:
+  - email: admin@example.com
+    provider: email
+    provider_id: admin@example.com
+    fixture_token: dev-admin
+`)
+	v, err := devvalidator.New(path)
+	require.NoError(t, err)
+
+	claims, err := v.Validate(context.Background(), "dev-admin")
+	require.NoError(t, err)
+	require.Equal(t, "admin@example.com", claims.Subject)
+
+	_, err = v.Validate(context.Background(), "admin@example.com")
+	require.ErrorIs(t, err, auth.ErrUnknownIdentity,
+		"the stable provider subject must not become a fixture login credential")
+}
+
+func TestFixtureMFAWasVerified_IsExplicitAndAllowlisted(t *testing.T) {
+	path := writeFixture(t, `
+users:
+  - email: admin@acme.com
+    provider: email
+    provider_id: dev-admin
+    mfa_verified: true
+  - email: alice@acme.com
+    provider: email
+    provider_id: dev-alice
+`)
+	v, err := devvalidator.New(path)
+	require.NoError(t, err)
+	require.True(t, v.FixtureMFAWasVerified("dev-admin"))
+	require.False(t, v.FixtureMFAWasVerified("dev-alice"))
+	require.False(t, v.FixtureMFAWasVerified("unknown"))
+}
+
 func TestValidate_UnknownTokenReturnsSentinel(t *testing.T) {
 	path := writeFixture(t, `
 users:

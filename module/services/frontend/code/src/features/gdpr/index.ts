@@ -1,4 +1,8 @@
-export { DataPrivacyPage } from "./ui/data-privacy-page";
-export { gdprQueries } from "./service/queries";
+export type {
+	GDPRRequest,
+	GDPRRequestStatus,
+	GDPRRequestType,
+} from "./model/types";
 export { gdprMutations } from "./service/mutations";
-export type { GDPRRequest, GDPRRequestType, GDPRRequestStatus } from "./model/types";
+export { gdprQueries } from "./service/queries";
+export { DataPrivacyPage } from "./ui/data-privacy-page";

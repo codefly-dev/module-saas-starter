@@ -1,0 +1,40 @@
+package main
+
+import (
+	"testing"
+
+	"github.com/stretchr/testify/require"
+
+	policyv1 "accounts/pkg/gen/saas/policy/v1"
+)
+
+func TestGeneratedAuthorizationMetadataJoinsRESTAndConnectRoutes(t *testing.T) {
+	registration := &RouteEntry{Method: "POST", Path: "/v1/users", Protected: false}
+	require.NoError(t, applyGeneratedAuthorizationMetadata(registration))
+	require.Equal(t, "/saas.accounts.v1.UserService/RegisterUser", registration.Procedure)
+	require.False(t, registration.Protected)
+	require.Equal(t, policyv1.RateLimitClass_RATE_LIMIT_CLASS_AUTHENTICATION, registration.RateLimitClass)
+	require.NotEmpty(t, registration.PolicySHA256)
+
+	mfaCompletion := &RouteEntry{Procedure: "/saas.accounts.v1.AuthService/CompleteMFAChallenge"}
+	require.NoError(t, applyGeneratedAuthorizationMetadata(mfaCompletion))
+	require.False(t, mfaCompletion.Protected)
+	require.True(t, mfaCompletion.RateLimitBackendFailClosed)
+	require.True(t, mfaCompletion.AuthenticationFactorAttempt)
+
+	unknownExtension := &RouteEntry{Method: "POST", Path: "/v1/auth/magic-link", Protected: false}
+	require.NoError(t, applyGeneratedAuthorizationMetadata(unknownExtension))
+	require.Empty(t, unknownExtension.Procedure)
+	require.Equal(t, policyv1.RateLimitClass_RATE_LIMIT_CLASS_UNSPECIFIED, unknownExtension.RateLimitClass)
+}
+
+func TestGeneratedAuthorizationMetadataRejectsPolicyDrift(t *testing.T) {
+	wrongOverlay := &RouteEntry{Method: "POST", Path: "/v1/users", Protected: true}
+	require.ErrorContains(t, applyGeneratedAuthorizationMetadata(wrongOverlay), "disagrees with descriptor exposure")
+
+	internal := &RouteEntry{Procedure: "/saas.accounts.v1.APIKeyService/ValidateAPIKey"}
+	require.ErrorContains(t, applyGeneratedAuthorizationMetadata(internal), "cannot be exposed")
+
+	unknownProcedure := &RouteEntry{Procedure: "/saas.accounts.v1.UserService/Unknown"}
+	require.ErrorContains(t, applyGeneratedAuthorizationMetadata(unknownProcedure), "metadata is missing")
+}

@@ -8,6 +8,6 @@
 import { _deps } from "./global-setup";
 
 export default async function globalTeardown(): Promise<void> {
-  if (!_deps) return;
-  await _deps.destroy();
+	if (!_deps) return;
+	await _deps.destroy();
 }

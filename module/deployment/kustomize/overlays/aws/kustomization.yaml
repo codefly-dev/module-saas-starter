@@ -22,7 +22,7 @@ kind: Kustomization
 
 resources:
   - ../../base
-  - applications/api.yaml
+  - applications/accounts.yaml
   - applications/auth-sidecar.yaml
   - applications/frontend.yaml
 

@@ -1,35 +1,40 @@
 "use client";
 
 import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-  Tabs,
-  TabsContent,
-  TabsList,
-  TabsTrigger,
+	Card,
+	CardContent,
+	CardDescription,
+	CardHeader,
+	CardTitle,
+	Tabs,
+	TabsContent,
+	TabsList,
+	TabsTrigger,
 } from "@/shared/ui";
 
 const sdks = [
-  {
-    id: "javascript",
-    label: "JavaScript / TypeScript",
-    install: `npm install @connectrpc/connect @connectrpc/connect-web @bufbuild/protobuf`,
-    usage: `import { createClient } from "@connectrpc/connect";
+	{
+		id: "javascript",
+		label: "JavaScript / TypeScript",
+		install: `npm install @connectrpc/connect @connectrpc/connect-web @bufbuild/protobuf`,
+		usage: `import { createClient } from "@connectrpc/connect";
 import { createConnectTransport } from "@connectrpc/connect-web";
-import { UserService, AuthService, OrganizationService } from "./gen/saas-starter_api_grpc_pb";
+import { AuthService } from "./gen/saas/accounts/v1/authentication_pb";
+import { UserService } from "./gen/saas/accounts/v1/identity_pb";
+import { OrganizationService } from "./gen/saas/accounts/v1/organizations_pb";
 
 const transport = createConnectTransport({
   baseUrl: "https://api.yourapp.com",
 });
 
-// Authenticate
+// Exchange the OAuth callback code (PKCE verifier + signed state included)
 const auth = createClient(AuthService, transport);
-const { accessToken } = await auth.loginWithPassword({
-  email: "user@example.com",
-  password: "secret",
+const { accessToken } = await auth.authenticate({
+  provider: "workos",
+  authentication: {
+    case: "oauthCode",
+    value: { code, redirectUri, state, codeVerifier },
+  },
 });
 
 // Use authenticated transport
@@ -52,52 +57,59 @@ const { organization } = await orgs.createOrganization({
   name: "Acme Inc",
   slug: "acme-inc",
 });`,
-  },
-  {
-    id: "python",
-    label: "Python",
-    install: `pip install grpcio grpcio-tools`,
-    usage: `import grpc
-from gen import api_pb2, api_pb2_grpc
+	},
+	{
+		id: "python",
+		label: "Python",
+		install: `pip install grpcio grpcio-tools`,
+		usage: `import grpc
+from gen.saas.accounts.v1 import authentication_pb2, authentication_pb2_grpc
+from gen.saas.accounts.v1 import identity_pb2, identity_pb2_grpc
+from gen.saas.accounts.v1 import organizations_pb2, organizations_pb2_grpc
 
 # Connect to the API gateway
 channel = grpc.insecure_channel("api.yourapp.com:443")
 
 # Authenticate
-auth = api_pb2_grpc.AuthServiceStub(channel)
-resp = auth.LoginWithPassword(api_pb2.LoginWithPasswordRequest(
-    email="user@example.com",
-    password="secret",
+auth = authentication_pb2_grpc.AuthServiceStub(channel)
+resp = auth.Authenticate(authentication_pb2.AuthenticateRequest(
+    provider="workos",
+    oauth_code=authentication_pb2.OAuthCodeAuthentication(
+        code=code,
+        redirect_uri=redirect_uri,
+        state=state,
+        code_verifier=code_verifier,
+    ),
 ))
 
 # Create authenticated metadata
 metadata = [("authorization", f"Bearer {resp.access_token}")]
 
 # List users
-users_svc = api_pb2_grpc.UserServiceStub(channel)
+users_svc = identity_pb2_grpc.UserServiceStub(channel)
 users = users_svc.ListUsers(
-    api_pb2.ListUsersRequest(page_size=20),
+    identity_pb2.ListUsersRequest(page_size=20),
     metadata=metadata,
 )
 for user in users.users:
     print(user.primary_email)
 
 # Create organization
-orgs_svc = api_pb2_grpc.OrganizationServiceStub(channel)
+orgs_svc = organizations_pb2_grpc.OrganizationServiceStub(channel)
 org = orgs_svc.CreateOrganization(
-    api_pb2.CreateOrganizationRequest(
+    organizations_pb2.CreateOrganizationRequest(
         name="Acme Inc",
         slug="acme-inc",
     ),
     metadata=metadata,
 )`,
-  },
-  {
-    id: "go",
-    label: "Go",
-    install: `go install connectrpc.com/connect@latest
+	},
+	{
+		id: "go",
+		label: "Go",
+		install: `go install connectrpc.com/connect@latest
 go install buf.build/gen/go/yourorg/api/connectrpc/go@latest`,
-    usage: `package main
+		usage: `package main
 
 import (
     "context"
@@ -159,65 +171,65 @@ func newAuthInterceptor(token string) connect.UnaryInterceptorFunc {
         }
     }
 }`,
-  },
+	},
 ];
 
 function CodeBlock({ code }: { code: string }) {
-  return (
-    <pre className="overflow-x-auto rounded-md bg-muted p-4 text-sm">
-      <code>{code}</code>
-    </pre>
-  );
+	return (
+		<pre className="overflow-x-auto rounded-md bg-muted p-4 text-sm">
+			<code>{code}</code>
+		</pre>
+	);
 }
 
 export default function SDKDocsPage() {
-  return (
-    <div className="space-y-6">
-      <div>
-        <h1 className="text-2xl font-bold tracking-tight">SDK Documentation</h1>
-        <p className="text-muted-foreground">
-          Integrate with the API using the Connect protocol. Available for
-          JavaScript, Python, and Go.
-        </p>
-      </div>
+	return (
+		<div className="space-y-6">
+			<div>
+				<h1 className="text-2xl font-bold tracking-tight">SDK Documentation</h1>
+				<p className="text-muted-foreground">
+					Integrate with the API using the Connect protocol. Available for
+					JavaScript, Python, and Go.
+				</p>
+			</div>
 
-      <Tabs defaultValue="javascript" className="w-full">
-        <TabsList>
-          {sdks.map((sdk) => (
-            <TabsTrigger key={sdk.id} value={sdk.id}>
-              {sdk.label}
-            </TabsTrigger>
-          ))}
-        </TabsList>
+			<Tabs defaultValue="javascript" className="w-full">
+				<TabsList>
+					{sdks.map((sdk) => (
+						<TabsTrigger key={sdk.id} value={sdk.id}>
+							{sdk.label}
+						</TabsTrigger>
+					))}
+				</TabsList>
 
-        {sdks.map((sdk) => (
-          <TabsContent key={sdk.id} value={sdk.id} className="space-y-4 mt-4">
-            <Card>
-              <CardHeader>
-                <CardTitle>Installation</CardTitle>
-                <CardDescription>
-                  Install the required packages for {sdk.label}.
-                </CardDescription>
-              </CardHeader>
-              <CardContent>
-                <CodeBlock code={sdk.install} />
-              </CardContent>
-            </Card>
+				{sdks.map((sdk) => (
+					<TabsContent key={sdk.id} value={sdk.id} className="space-y-4 mt-4">
+						<Card>
+							<CardHeader>
+								<CardTitle>Installation</CardTitle>
+								<CardDescription>
+									Install the required packages for {sdk.label}.
+								</CardDescription>
+							</CardHeader>
+							<CardContent>
+								<CodeBlock code={sdk.install} />
+							</CardContent>
+						</Card>
 
-            <Card>
-              <CardHeader>
-                <CardTitle>Usage Example</CardTitle>
-                <CardDescription>
-                  Authenticate, list users, and create an organization.
-                </CardDescription>
-              </CardHeader>
-              <CardContent>
-                <CodeBlock code={sdk.usage} />
-              </CardContent>
-            </Card>
-          </TabsContent>
-        ))}
-      </Tabs>
-    </div>
-  );
+						<Card>
+							<CardHeader>
+								<CardTitle>Usage Example</CardTitle>
+								<CardDescription>
+									Authenticate, list users, and create an organization.
+								</CardDescription>
+							</CardHeader>
+							<CardContent>
+								<CodeBlock code={sdk.usage} />
+							</CardContent>
+						</Card>
+					</TabsContent>
+				))}
+			</Tabs>
+		</div>
+	);
 }

@@ -1,5 +1,3 @@
-DROP TABLE IF EXISTS stripe_webhook_events;
-
 DROP INDEX IF EXISTS idx_organizations_stripe_customer;
 ALTER TABLE organizations DROP COLUMN IF EXISTS stripe_customer_id;
 

@@ -4,7 +4,7 @@ import (
 	"context"
 	"time"
 
-	"accounts/pkg/gen"
+	gen "accounts/pkg/gen/saas/accounts/v1"
 )
 
 type Store interface {
@@ -24,11 +24,11 @@ type Store interface {
 	// See AUTHZ.md for the user-scope policy shape.
 	WithUserTx(ctx context.Context, userID string, fn func(ctx context.Context) error) error
 
-	// WithBypass wraps fn in a transaction that has app.bypass='1'
-	// so RLS policies allow cross-tenant access. Use only for
+	// WithControlPlane wraps fn in a transaction that assumes the named
+	// app_control_plane role. Use only for
 	// background workers + platform-admin views; every call site is
 	// deliberate.
-	WithBypass(ctx context.Context, fn func(ctx context.Context) error) error
+	WithControlPlane(ctx context.Context, fn func(ctx context.Context) error) error
 
 	// As returns a Store handle bound to an identity (see Scoped). It is the
 	// identity-first entry point the With* wrappers collapse into: As(id).Within
@@ -41,6 +41,7 @@ type Store interface {
 	GetUserByIdentity(ctx context.Context, id *gen.UserIdentity) (*gen.User, error)
 	GetUser(ctx context.Context, id string) (*gen.User, error)
 	GetUserByEmail(ctx context.Context, email string) (*gen.User, error)
+	GetOrganizationMemberPrimaryEmail(ctx context.Context, userID string) (string, error)
 	ListUsers(ctx context.Context, orgID string, statusFilter string, pageSize int32, pageToken string) ([]*gen.User, string, error)
 	UpdateUser(ctx context.Context, userID string, updates map[string]any) (*gen.User, error)
 	DeleteUser(ctx context.Context, userID string) error
@@ -49,13 +50,18 @@ type Store interface {
 	AddIdentity(ctx context.Context, identity *gen.UserIdentity) error
 	FindUserByIdentity(ctx context.Context, provider, providerID string) (*gen.User, error)
 	ListUserIdentities(ctx context.Context, userID string) ([]*gen.UserIdentity, error)
+	DeleteUserIdentities(ctx context.Context, userID string) error
 
 	// Organizations
 	CreateOrganization(ctx context.Context, org *gen.Organization) error
 	GetOrganization(ctx context.Context, id string) (*gen.Organization, error)
 	ListOrganizationsForUser(ctx context.Context, userID string) ([]*gen.Organization, error)
 	AddOrgMember(ctx context.Context, orgID string, userID string, role string) error
+	OrgMemberExists(ctx context.Context, orgID string, userID string) (bool, error)
 	RemoveOrgMember(ctx context.Context, orgID string, userID string) error
+	// GetOrgMembership is the authorization hot path. It must be an indexed
+	// point lookup, never an org-roster scan. Nil means the user is not a member.
+	GetOrgMembership(ctx context.Context, orgID string, userID string) (*gen.OrgMembership, error)
 	ListOrgMembers(ctx context.Context, orgID string) ([]*gen.OrgMembership, error)
 
 	// Teams
@@ -65,6 +71,9 @@ type Store interface {
 	DeleteTeam(ctx context.Context, teamID string) error
 	AddTeamMember(ctx context.Context, teamID string, userID string, role string) error
 	RemoveTeamMember(ctx context.Context, teamID string, userID string) error
+	// GetTeamMembership is the authorization hot path. Nil means the user is
+	// not a member; list access remains a separate, explicitly authorized API.
+	GetTeamMembership(ctx context.Context, orgID string, teamID string, userID string) (*gen.TeamMembership, error)
 	ListTeamMembers(ctx context.Context, teamID string) ([]*gen.TeamMembership, error)
 	// GetTeamOrgID resolves a team's owning org. Used by callers that
 	// only have a team_id (e.g. AddTeamMember handlers) so they can
@@ -80,6 +89,10 @@ type Store interface {
 	ListTeamPathsForUser(ctx context.Context, userID string, orgID string) ([]string, error)
 	ListRoleNamesForUser(ctx context.Context, userID string, orgID string) ([]string, error)
 	GetUserAttributes(ctx context.Context, userID string) (map[string]string, error)
+	// GetAPIKeyAuthentication is the narrow pre-authentication projection. It
+	// resolves a presented key and its current owner policy facts atomically,
+	// without exposing a raw pool or general control-plane capability.
+	GetAPIKeyAuthentication(ctx context.Context, keyHash string) (*APIKeyAuthentication, error)
 
 	// Roles
 	CreateRole(ctx context.Context, role *gen.Role) error
@@ -108,6 +121,7 @@ type Store interface {
 
 	// API Keys
 	CreateAPIKey(ctx context.Context, key *gen.APIKey, keyHash string) error
+	CountActiveAPIKeys(ctx context.Context, orgID string) (int64, error)
 	GetAPIKeyByHash(ctx context.Context, keyHash string) (*gen.APIKey, error)
 	ListAPIKeys(ctx context.Context, orgID string, pageSize int32, pageToken string) ([]*gen.APIKey, string, error)
 	RevokeAPIKey(ctx context.Context, keyID string, orgID string) error
@@ -120,7 +134,9 @@ type Store interface {
 
 	// Invitations
 	CreateInvitation(ctx context.Context, inv *Invitation) error
+	ExpirePendingInvitations(ctx context.Context, orgID string) error
 	GetInvitationByTokenHash(ctx context.Context, hash string) (*Invitation, error)
+	GetInvitationOrgID(ctx context.Context, id string) (string, error)
 	ListInvitations(ctx context.Context, orgID string, status string) ([]*Invitation, error)
 	UpdateInvitationStatus(ctx context.Context, id string, status string, acceptedBy string) error
 	CountPendingInvitations(ctx context.Context, orgID string) (int32, error)
@@ -141,8 +157,9 @@ type Store interface {
 	GetEntitlementOverride(ctx context.Context, orgID string, feature string) (*EntitlementOverride, error)
 	ListEntitlementOverrides(ctx context.Context, orgID string) ([]*EntitlementOverride, error)
 	CreateEntitlementOverride(ctx context.Context, override *EntitlementOverride) error
-	GetUsageForPeriod(ctx context.Context, orgID string, feature string, period string) (int64, error)
-	RecordUsage(ctx context.Context, orgID string, feature string, quantity int64, period string) error
+	LockEntitlementQuota(ctx context.Context, orgID string, feature string) error
+	GetUsageTotal(ctx context.Context, orgID string, meter string, periodStart time.Time) (int64, error)
+	ConsumeUsage(ctx context.Context, consumption UsageConsumption) (*UsageReceipt, error)
 	GetSubscription(ctx context.Context, orgID string) (*Subscription, error)
 	CreateSubscription(ctx context.Context, sub *Subscription) error
 	UpdateSubscription(ctx context.Context, sub *Subscription) error
@@ -166,7 +183,7 @@ type Store interface {
 	// Sessions
 	CreateSession(ctx context.Context, session *Session) error
 	GetSessionByRefreshTokenHash(ctx context.Context, hash string) (*Session, error)
-	RevokeSession(ctx context.Context, sessionID string, reason string) error
+	RevokeSession(ctx context.Context, deviceSessionID string, reason string) error
 	RevokeSessionFamily(ctx context.Context, familyID string, reason string) error
 	RevokeAllUserSessions(ctx context.Context, userID string, reason string) error
 	UpdateSessionActivity(ctx context.Context, sessionID string) error
@@ -180,9 +197,7 @@ type Store interface {
 	GetActiveWebhookSubscriptions(ctx context.Context, eventType string) ([]*WebhookSubscription, error)
 	CreateWebhookDelivery(ctx context.Context, delivery *WebhookDelivery) error
 	GetWebhookDelivery(ctx context.Context, id string) (*WebhookDelivery, error)
-	UpdateWebhookDelivery(ctx context.Context, delivery *WebhookDelivery) error
 	ListWebhookDeliveries(ctx context.Context, subscriptionID string, pageSize int) ([]*WebhookDelivery, error)
-	GetPendingDeliveries(ctx context.Context, limit int) ([]*WebhookDelivery, error)
 
 	// Organization Settings (branding)
 	GetOrgSettings(ctx context.Context, orgID string) (*OrgSettings, error)
@@ -196,7 +211,7 @@ type Store interface {
 	MarkAllNotificationsRead(ctx context.Context, userID string) error
 	DeleteNotification(ctx context.Context, id string) error
 	// GetNotificationUserID resolves notification.id → user_id.
-	// Called under WithBypass by Service methods that only have an
+	// Called under WithControlPlane by Service methods that only have an
 	// id (MarkRead / DeleteNotification) and need to enter the
 	// user's WithUserTx for the actual mutation. Returns "" on miss.
 	GetNotificationUserID(ctx context.Context, id string) (string, error)
@@ -268,6 +283,20 @@ type ResolvedIdentity struct {
 	Found        bool
 }
 
+type APIKeyIdentityClaims struct {
+	Member       bool
+	OrgRole      string
+	PlatformRole string
+	Workspaces   []string
+	Roles        []string
+	Attributes   map[string]string
+}
+
+type APIKeyAuthentication struct {
+	Key    *gen.APIKey
+	Claims APIKeyIdentityClaims
+}
+
 // PlatformAdmin represents a user with platform-level privileges.
 type PlatformAdmin struct {
 	UserID       string
@@ -294,6 +323,7 @@ type Session struct {
 	IPAddress        string
 	CreatedAt        time.Time
 	LastActiveAt     time.Time
+	IdleExpiresAt    time.Time
 	ExpiresAt        time.Time
 	RevokedAt        *time.Time
 	RevokedReason    string

@@ -31,11 +31,12 @@ import (
 // Route matching is driven entirely by the static RouteMatcher — no prefix
 // matching, no implicit exposure.
 type Gateway struct {
-	sidecar     *Sidecar
-	matcher     *RouteMatcher
-	upstreams   map[string]*url.URL // service name → upstream URL
-	selfHandler http.Handler        // handler for "self" routes (health checks)
-	rateLimiter *RateLimiter
+	sidecar           *Sidecar
+	matcher           *RouteMatcher
+	upstreams         map[string]*url.URL // service name → upstream URL
+	selfHandler       http.Handler        // handler for "self" routes (health checks)
+	rateLimiter       *RateLimiter
+	requiredUpstreams []string
 }
 
 // NewGateway constructs a gateway with explicit route matching.
@@ -43,10 +44,11 @@ type Gateway struct {
 // rateLimiter may be nil to disable rate limiting.
 func NewGateway(sidecar *Sidecar, matcher *RouteMatcher, upstreams map[string]*url.URL, rateLimiter *RateLimiter) *Gateway {
 	g := &Gateway{
-		sidecar:     sidecar,
-		matcher:     matcher,
-		upstreams:   upstreams,
-		rateLimiter: rateLimiter,
+		sidecar:           sidecar,
+		matcher:           matcher,
+		upstreams:         upstreams,
+		rateLimiter:       rateLimiter,
+		requiredUpstreams: matcher.RequiredServices(),
 	}
 	mux := http.NewServeMux()
 	mux.HandleFunc("/health", g.healthHandler)
@@ -61,24 +63,16 @@ func NewGateway(sidecar *Sidecar, matcher *RouteMatcher, upstreams map[string]*u
 	return g
 }
 
-// healthHandler returns 200 with {"status":"ok"} when the sidecar is
-// running, or 503 if the gRPC auth server is not wired.
+// healthHandler is process-only liveness. Dependency state belongs to /ready.
 func (g *Gateway) healthHandler(w http.ResponseWriter, _ *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
-
-	if g.sidecar == nil {
-		w.WriteHeader(http.StatusServiceUnavailable)
-		_, _ = io.WriteString(w, `{"status":"unhealthy","reason":"sidecar not initialized"}`)
-		return
-	}
-
 	w.WriteHeader(http.StatusOK)
 	_, _ = io.WriteString(w, `{"status":"ok"}`)
 }
 
 // readyHandler returns 200 when the sidecar is ready to serve traffic.
-// In addition to the basic health check it verifies that at least one
-// upstream is configured (so we can actually proxy requests).
+// Every service referenced by the exact route catalog must be configured and
+// reachable; a partial deployment must not receive traffic.
 func (g *Gateway) readyHandler(w http.ResponseWriter, _ *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 
@@ -88,32 +82,33 @@ func (g *Gateway) readyHandler(w http.ResponseWriter, _ *http.Request) {
 		return
 	}
 
-	if len(g.upstreams) == 0 {
+	if len(g.requiredUpstreams) == 0 {
 		w.WriteHeader(http.StatusServiceUnavailable)
-		_, _ = io.WriteString(w, `{"status":"not ready","reason":"no upstreams configured"}`)
+		_, _ = io.WriteString(w, `{"status":"not ready","reason":"no routed upstreams"}`)
 		return
 	}
 
-	// Verify at least one upstream is reachable (non-blocking TCP dial).
-	anyReachable := false
-	for name, u := range g.upstreams {
+	for _, name := range g.requiredUpstreams {
+		u, configured := g.upstreams[name]
+		if !configured {
+			w.WriteHeader(http.StatusServiceUnavailable)
+			_, _ = io.WriteString(w, fmt.Sprintf(`{"status":"not ready","reason":"missing upstream","service":%q}`, name))
+			return
+		}
 		addr := u.Host
 		if addr == "" {
-			continue
+			w.WriteHeader(http.StatusServiceUnavailable)
+			_, _ = io.WriteString(w, fmt.Sprintf(`{"status":"not ready","reason":"invalid upstream","service":%q}`, name))
+			return
 		}
-		conn, err := net.DialTimeout("tcp", addr, 2*time.Second)
+		conn, err := net.DialTimeout("tcp", addr, 500*time.Millisecond)
 		if err != nil {
 			log.Printf("readiness: upstream %s (%s) unreachable: %v", name, addr, err)
-			continue
+			w.WriteHeader(http.StatusServiceUnavailable)
+			_, _ = io.WriteString(w, fmt.Sprintf(`{"status":"not ready","reason":"upstream unreachable","service":%q}`, name))
+			return
 		}
 		conn.Close()
-		anyReachable = true
-		break
-	}
-	if !anyReachable {
-		w.WriteHeader(http.StatusServiceUnavailable)
-		_, _ = io.WriteString(w, `{"status":"not ready","reason":"no upstream reachable"}`)
-		return
 	}
 
 	w.WriteHeader(http.StatusOK)
@@ -136,6 +131,11 @@ func (g *Gateway) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		g.selfHandler.ServeHTTP(w, r)
 		return
 	}
+
+	// Identity and trust credentials are never accepted from the public side
+	// of the gateway. Sidecar.Check only sees the caller's real credential
+	// (Authorization); successful checks re-stamp canonical headers below.
+	stripAllIdentityHeaders(r)
 
 	// Resolve upstream.
 	upstream, ok := g.upstreams[entry.Service]
@@ -170,7 +170,7 @@ func (g *Gateway) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			}
 			// No token on public route — forward without identity.
 			stripAllIdentityHeaders(r)
-			g.rateLimitThenProxy(w, r, upstream)
+			g.rateLimitThenProxy(w, r, upstream, entry)
 			return
 		}
 
@@ -180,13 +180,13 @@ func (g *Gateway) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 				return
 			}
 			stripAllIdentityHeaders(r)
-			g.rateLimitThenProxy(w, r, upstream)
+			g.rateLimitThenProxy(w, r, upstream, entry)
 			return
 		}
 
 		// Token present and valid — inject identity headers.
 		injectHeaders(r, checkResp.GetOkResponse().GetHeaders())
-		g.rateLimitThenProxy(w, r, upstream)
+		g.rateLimitThenProxy(w, r, upstream, entry)
 
 	case "required":
 		// Protected route: must have valid auth.
@@ -211,7 +211,7 @@ func (g *Gateway) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		}
 
 		injectHeaders(r, checkResp.GetOkResponse().GetHeaders())
-		g.rateLimitThenProxy(w, r, upstream)
+		g.rateLimitThenProxy(w, r, upstream, entry)
 
 	case "mfa_pending":
 		// MFA pending route: sidecar handles mfa_token validation.
@@ -238,7 +238,7 @@ func (g *Gateway) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		}
 
 		injectHeaders(r, checkResp.GetOkResponse().GetHeaders())
-		g.rateLimitThenProxy(w, r, upstream)
+		g.rateLimitThenProxy(w, r, upstream, entry)
 
 	default:
 		log.Printf("WARN: blocked request: method=%s path=%s reason=unknown_auth_type_%s", r.Method, r.URL.Path, authMode(entry))
@@ -247,17 +247,31 @@ func (g *Gateway) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 }
 
 // rateLimitThenProxy applies rate limiting (if configured) then proxies.
-func (g *Gateway) rateLimitThenProxy(w http.ResponseWriter, r *http.Request, upstream *url.URL) {
+func (g *Gateway) rateLimitThenProxy(w http.ResponseWriter, r *http.Request, upstream *url.URL, entry *RouteEntry) {
 	if g.rateLimiter != nil {
-		g.rateLimiter.Middleware(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			g.proxyTo(w, r, upstream)
+		g.rateLimiter.Middleware(limiterFailureModeFor(entry), entry.AuthenticationFactorAttempt, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			g.proxyTo(w, r, upstream, entry)
 		})).ServeHTTP(w, r)
 		return
 	}
-	g.proxyTo(w, r, upstream)
+	g.proxyTo(w, r, upstream, entry)
 }
 
-func (g *Gateway) proxyTo(w http.ResponseWriter, r *http.Request, upstream *url.URL) {
+func limiterFailureModeFor(entry *RouteEntry) limiterFailureMode {
+	if entry == nil {
+		return limiterFailClosed
+	}
+	if entry.RateLimitBackendFailClosed {
+		return limiterFailClosed
+	}
+	return limiterFailOpen
+}
+
+func (g *Gateway) proxyTo(w http.ResponseWriter, r *http.Request, upstream *url.URL, entry *RouteEntry) {
+	if entry != nil && entry.UpstreamPath != "" {
+		r.URL.Path = entry.UpstreamPath
+		r.URL.RawPath = ""
+	}
 	proxy := httputil.NewSingleHostReverseProxy(upstream)
 	proxy.ErrorHandler = func(w http.ResponseWriter, _ *http.Request, err error) {
 		httpError(w, http.StatusBadGateway, "upstream error: "+err.Error())
@@ -294,6 +308,7 @@ func buildCheckRequest(r *http.Request) *authv3.CheckRequest {
 // request before forwarding to the upstream. Existing header values are
 // replaced — the sidecar is authoritative for identity.
 func injectHeaders(r *http.Request, headers []*corev3.HeaderValueOption) {
+	stripAllIdentityHeaders(r)
 	for _, h := range headers {
 		key := h.GetHeader().GetKey()
 		val := h.GetHeader().GetValue()
@@ -302,36 +317,23 @@ func injectHeaders(r *http.Request, headers []*corev3.HeaderValueOption) {
 		}
 		r.Header.Set(key, val)
 	}
-	// Strip any incoming identity headers that the caller might have
-	// set maliciously — the sidecar is the only legitimate source.
-	// If the sidecar didn't set one of these, we must not forward it.
-	stripIfAbsent(r, headers, "x-user-id")
-	stripIfAbsent(r, headers, "x-org-id")
-	stripIfAbsent(r, headers, "x-org-role")
-	stripIfAbsent(r, headers, "x-platform-role")
-	stripIfAbsent(r, headers, "x-session-id")
-	stripIfAbsent(r, headers, "x-acting-as-user-id")
-}
-
-func stripIfAbsent(r *http.Request, headers []*corev3.HeaderValueOption, key string) {
-	for _, h := range headers {
-		if strings.EqualFold(h.GetHeader().GetKey(), key) {
-			return // sidecar set it; keep
-		}
-	}
-	r.Header.Del(key)
 }
 
 // stripAllIdentityHeaders removes every identity header from the request.
 // Used on public routes when no auth was presented — prevents a caller
 // from spoofing identity by setting headers directly.
 func stripAllIdentityHeaders(r *http.Request) {
-	for _, k := range []string{
-		"x-user-id", "x-org-id", "x-org-role", "x-platform-role",
-		"x-session-id", "x-acting-as-user-id", "x-scopes",
-	} {
+	for _, k := range untrustedAuthHeaders {
 		r.Header.Del(k)
 	}
+}
+
+var untrustedAuthHeaders = []string{
+	"x-user-id", "x-org-id", "x-org-role", "x-platform-role", "x-roles",
+	"x-auth-id", "x-user-email", "x-user-name", "x-session-id",
+	"x-acting-as-user-id", "x-scopes", "x-mfa-satisfied",
+	"x-authentication-methods", "x-auth-time", "x-assurance-level", "x-mfa-verified-at",
+	"x-codefly-gateway-token", "x-codefly-internal-token",
 }
 
 // httpError writes a plain-text error response. Bodies are short,

@@ -1,23 +1,35 @@
+# Code generated from deployment/topology.bindings.codefly.yaml. DO NOT EDIT.
 name: accounts
 version: 0.0.0
 agent:
     kind: codefly:service
     name: go-grpc
-    version: 0.0.147
+    version: 0.1.11
     publisher: codefly.dev
 service-dependencies:
-    - name: store
-    - name: vault
     - name: cache
+      endpoints:
+        - name: read
+        - name: write
     - name: object-storage
+      endpoints:
+        - name: accounts
+    - name: store
+      endpoints:
+        - name: tcp
+    - name: vault
+      endpoints:
+        - name: http
 workspace-configuration-dependencies:
+    - internal-auth
+    - security
     - workos
 endpoints:
+    - name: connect
     - name: grpc
     - name: rest
-    - name: connect
 spec:
+    connect-endpoint: true
     hot-reload: true
     rest-endpoint: true
-    connect-endpoint: true
     with-workspace: true

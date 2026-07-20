@@ -20,6 +20,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"sort"
 	"strings"
 	"time"
 )
@@ -81,7 +82,13 @@ func (s *ResendSender) Send(ctx context.Context, m *Message) (string, error) {
 	}
 	if len(m.Tags) > 0 {
 		tags := make([]map[string]string, 0, len(m.Tags))
-		for k, v := range m.Tags {
+		keys := make([]string, 0, len(m.Tags))
+		for key := range m.Tags {
+			keys = append(keys, key)
+		}
+		sort.Strings(keys)
+		for _, k := range keys {
+			v := m.Tags[k]
 			tags = append(tags, map[string]string{"name": k, "value": v})
 		}
 		payload["tags"] = tags
@@ -98,6 +105,9 @@ func (s *ResendSender) Send(ctx context.Context, m *Message) (string, error) {
 	}
 	req.Header.Set("Authorization", "Bearer "+s.cfg.APIKey)
 	req.Header.Set("Content-Type", "application/json")
+	if m.IdempotencyKey != "" {
+		req.Header.Set("Idempotency-Key", m.IdempotencyKey)
+	}
 
 	resp, err := s.http.Do(req)
 	if err != nil {
@@ -110,7 +120,13 @@ func (s *ResendSender) Send(ctx context.Context, m *Message) (string, error) {
 		return "", fmt.Errorf("email: read response: %w", err)
 	}
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return "", fmt.Errorf("email: resend http %d: %s", resp.StatusCode, truncate(respBody, 500))
+		return "", &DeliveryError{
+			StatusCode: resp.StatusCode,
+			Retryable: resp.StatusCode == http.StatusRequestTimeout ||
+				resp.StatusCode == http.StatusConflict ||
+				resp.StatusCode == http.StatusTooManyRequests ||
+				resp.StatusCode >= http.StatusInternalServerError,
+		}
 	}
 
 	var decoded struct {
@@ -120,11 +136,4 @@ func (s *ResendSender) Send(ctx context.Context, m *Message) (string, error) {
 		return "", fmt.Errorf("email: decode response: %w", err)
 	}
 	return decoded.ID, nil
-}
-
-func truncate(b []byte, n int) string {
-	if len(b) <= n {
-		return string(b)
-	}
-	return string(b[:n]) + "…"
 }

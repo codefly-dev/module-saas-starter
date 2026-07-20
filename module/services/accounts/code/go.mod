@@ -7,12 +7,14 @@ require (
 	buf.build/go/protovalidate v1.2.0
 	connectrpc.com/connect v1.20.0
 	connectrpc.com/otelconnect v0.9.0
-	github.com/codefly-dev/core v0.2.10
-	github.com/codefly-dev/sdk-go v0.1.40
+	github.com/codefly-dev/core v0.2.24
+	github.com/codefly-dev/sdk-go v0.1.42
+	github.com/codefly-dev/service-postgres v0.0.0
+	github.com/go-webauthn/webauthn v0.17.4
 	github.com/golang-jwt/jwt/v5 v5.3.1
 	github.com/google/uuid v1.6.0
 	github.com/grpc-ecosystem/grpc-gateway/v2 v2.29.0
-	github.com/jackc/pgx/v5 v5.9.1
+	github.com/jackc/pgx/v5 v5.9.2
 	github.com/minio/minio-go/v7 v7.0.100
 	github.com/redis/go-redis/v9 v9.18.0
 	github.com/rs/cors v1.11.1
@@ -39,6 +41,7 @@ require (
 	github.com/dgryski/go-rendezvous v0.0.0-20200823014737-9f7001d12a5f // indirect
 	github.com/dustin/go-humanize v1.0.1 // indirect
 	github.com/fatih/color v1.19.0 // indirect
+	github.com/fxamacker/cbor/v2 v2.9.2 // indirect
 	github.com/go-ini/ini v1.67.0 // indirect
 	github.com/go-logr/logr v1.4.3 // indirect
 	github.com/go-logr/stdr v1.2.2 // indirect
@@ -59,9 +62,11 @@ require (
 	github.com/go-openapi/swag/typeutils v0.26.0 // indirect
 	github.com/go-openapi/swag/yamlutils v0.26.0 // indirect
 	github.com/go-viper/mapstructure/v2 v2.5.0 // indirect
+	github.com/go-webauthn/x v0.2.6 // indirect
 	github.com/google/cel-go v0.28.0 // indirect
 	github.com/google/go-github/v37 v37.0.0 // indirect
 	github.com/google/go-querystring v1.2.0 // indirect
+	github.com/google/go-tpm v0.9.8 // indirect
 	github.com/hashicorp/errwrap v1.1.0 // indirect
 	github.com/hashicorp/go-multierror v1.1.1 // indirect
 	github.com/jackc/pgpassfile v1.0.0 // indirect
@@ -85,9 +90,10 @@ require (
 	github.com/rs/xid v1.6.0 // indirect
 	github.com/shirou/gopsutil/v3 v3.24.5 // indirect
 	github.com/shoenig/go-m1cpu v0.2.1 // indirect
-	github.com/tinylib/msgp v1.6.1 // indirect
+	github.com/tinylib/msgp v1.6.4 // indirect
 	github.com/tklauser/go-sysconf v0.3.16 // indirect
 	github.com/tklauser/numcpus v0.11.0 // indirect
+	github.com/x448/float16 v0.8.4 // indirect
 	github.com/yoheimuta/go-protoparser/v4 v4.14.2 // indirect
 	github.com/yusufpapurcu/wmi v1.2.4 // indirect
 	go.opentelemetry.io/auto/sdk v1.2.1 // indirect

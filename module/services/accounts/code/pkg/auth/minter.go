@@ -1,6 +1,10 @@
 package auth
 
-import "context"
+import (
+	"context"
+
+	"github.com/google/uuid"
+)
 
 // TokenPair is the output of a successful login/signup/refresh.
 //
@@ -45,10 +49,18 @@ type JWTMinter interface {
 	// access+refresh pair in the same family. The returned TokenPair is
 	// what /auth/refresh hands back to the client.
 	//
-	// If the submitted token hashes to a row that is already revoked, the
-	// entire family is revoked and ErrRefreshReuse is returned — OWASP
-	// refresh-token-rotation reuse detection.
+	// If the submitted token hashes to a row consumed by a prior rotation, the
+	// store commits revocation of every active session for that user before
+	// ErrRefreshReuse is returned — strict OWASP refresh-token reuse handling.
+	// Tokens revoked by logout or an authorization mutation return
+	// ErrRefreshRevoked without being misclassified as an attacker replay.
 	VerifyRefresh(ctx context.Context, refreshToken string) (*TokenPair, error)
+
+	// SwitchOrganization issues a fresh access token for a current membership
+	// while preserving the refresh token, session row, device family, and both
+	// lifetime boundaries. userID and sessionID must come from verified request
+	// identity, never directly from the request body.
+	SwitchOrganization(ctx context.Context, userID, sessionID, organizationID uuid.UUID) (string, error)
 
 	// Revoke marks all sessions in a family as revoked. Called by /auth/logout.
 	Revoke(ctx context.Context, refreshToken string) error

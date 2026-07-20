@@ -6,7 +6,7 @@ import (
 
 	"github.com/codefly-dev/core/wool"
 
-	"accounts/pkg/gen"
+	gen "accounts/pkg/gen/saas/accounts/v1"
 )
 
 // OnboardingStep represents a single step in the onboarding flow.
@@ -78,11 +78,11 @@ func (s *Service) GetProgress(ctx context.Context, userID string) (*OnboardingPr
 
 	// listOrgs is shared across the steps — ListOrganizationsForUser
 	// is cross-tenant by definition (the user can be in many orgs)
-	// so it runs under WithBypass. Org-scoped reads below re-enter
+	// so it runs under WithControlPlane. Org-scoped reads below re-enter
 	// WithOrgTx for each org.
 	listOrgs := func() []*gen.Organization {
 		var orgs []*gen.Organization
-		_ = s.store.WithBypass(ctx, func(ctx context.Context) error {
+		_ = s.store.WithControlPlane(ctx, func(ctx context.Context) error {
 			os, err := s.store.ListOrganizationsForUser(ctx, userID)
 			orgs = os
 			return err

@@ -6,7 +6,7 @@ import (
 	"time"
 
 	"accounts/pkg/business"
-	"accounts/pkg/gen"
+	gen "accounts/pkg/gen/saas/accounts/v1"
 
 	"encoding/json"
 
@@ -82,7 +82,7 @@ func (s *PostgresStore) UpdateUserStatus(ctx context.Context, userID string, sta
 	return nil
 }
 
-// ListActiveSessions returns non-revoked, non-expired sessions for a user.
+// ListActiveSessions returns policy-valid device families for a user.
 func (s *PostgresStore) ListActiveSessions(ctx context.Context, userID string, pageSize int32) ([]*business.Session, error) {
 	w := wool.Get(ctx).In("ListActiveSessions")
 	executor := s.getQueryExecutor(ctx)
@@ -92,10 +92,13 @@ func (s *PostgresStore) ListActiveSessions(ctx context.Context, userID string, p
 	}
 
 	rows, err := executor.Query(ctx, `
-		SELECT id, user_id, refresh_token_hash, family_id, ip_address,
-		       created_at, last_active_at, expires_at
+		SELECT id, user_id, refresh_token_hash, family_id, COALESCE(ip_address, ''), device_info,
+		       created_at, last_active_at, idle_expires_at, expires_at
 		FROM sessions
-		WHERE user_id = $1 AND revoked_at IS NULL AND expires_at > CURRENT_TIMESTAMP
+		WHERE user_id = $1
+		  AND revoked_at IS NULL
+		  AND expires_at > CURRENT_TIMESTAMP
+		  AND idle_expires_at > CURRENT_TIMESTAMP
 		ORDER BY last_active_at DESC
 		LIMIT $2`,
 		userID, pageSize,
@@ -108,11 +111,16 @@ func (s *PostgresStore) ListActiveSessions(ctx context.Context, userID string, p
 	var sessions []*business.Session
 	for rows.Next() {
 		var sess business.Session
+		var deviceInfo []byte
 		if err := rows.Scan(
 			&sess.ID, &sess.UserID, &sess.RefreshTokenHash, &sess.FamilyID,
-			&sess.IPAddress, &sess.CreatedAt, &sess.LastActiveAt, &sess.ExpiresAt,
+			&sess.IPAddress, &deviceInfo,
+			&sess.CreatedAt, &sess.LastActiveAt, &sess.IdleExpiresAt, &sess.ExpiresAt,
 		); err != nil {
 			return nil, w.Wrapf(err, "failed to scan session")
+		}
+		if err := json.Unmarshal(deviceInfo, &sess.DeviceInfo); err != nil {
+			return nil, w.Wrapf(err, "failed to decode session device info")
 		}
 		sessions = append(sessions, &sess)
 	}

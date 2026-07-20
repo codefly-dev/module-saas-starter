@@ -6,7 +6,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	"accounts/pkg/gen"
+	gen "accounts/pkg/gen/saas/accounts/v1"
 )
 
 // TestRLS_Roles_BuiltInsGloballyVisible — Phase 2E polymorphic policy.
@@ -56,7 +56,7 @@ func TestRLS_Roles_BuiltInsGloballyVisible(t *testing.T) {
 		return nil
 	}))
 
-	// Built-in-only path (orgID==""). Service uses WithBypass —
+	// Built-in-only path (orgID==""). Service uses WithControlPlane —
 	// returns built-ins (already globally visible).
 	builtIns, err := testService.ListRoles(ctx, &gen.ListRolesRequest{OrgId: ""})
 	require.NoError(t, err)
@@ -83,7 +83,7 @@ func TestRLS_RoleAssignments_CrossTenantBlocked(t *testing.T) {
 	// Pull the built-in admin role id (org_id IS NULL) — globally
 	// readable under polymorphic RLS.
 	adminRoleID := ""
-	require.NoError(t, testStore.WithBypass(ctx, func(ctx context.Context) error {
+	require.NoError(t, testStore.WithControlPlane(ctx, func(ctx context.Context) error {
 		rs, err := testStore.ListRoles(ctx, "")
 		if err != nil {
 			return err

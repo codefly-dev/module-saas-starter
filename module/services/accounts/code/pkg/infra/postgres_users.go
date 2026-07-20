@@ -8,7 +8,7 @@ import (
 	"time"
 
 	"accounts/pkg/business"
-	"accounts/pkg/gen"
+	gen "accounts/pkg/gen/saas/accounts/v1"
 
 	"github.com/codefly-dev/core/wool"
 	"github.com/jackc/pgx/v5"
@@ -75,6 +75,27 @@ func (s *PostgresStore) GetUserByEmail(ctx context.Context, email string) (*gen.
 		_ = json.Unmarshal(profile, &u.Profile)
 	}
 	return &u, nil
+}
+
+// GetOrganizationMemberPrimaryEmail resolves the primary email of a user who
+// belongs to the transaction's current organization. The database function is
+// the intentionally narrow co-member directory surface: app_tenant cannot read
+// another user's full users row, and the function returns NULL when userID is
+// not a member of app.current_org_id.
+func (s *PostgresStore) GetOrganizationMemberPrimaryEmail(ctx context.Context, userID string) (string, error) {
+	w := wool.Get(ctx).In("GetOrganizationMemberPrimaryEmail")
+	executor := s.getQueryExecutor(ctx)
+
+	var email *string
+	if err := executor.QueryRow(ctx,
+		`SELECT public.organization_member_primary_email($1)`, userID,
+	).Scan(&email); err != nil {
+		return "", w.Wrapf(err, "failed to get organization member email")
+	}
+	if email == nil {
+		return "", nil
+	}
+	return *email, nil
 }
 
 // ListUsers returns paginated users, optionally filtered by org membership and status.
@@ -251,4 +272,17 @@ func (s *PostgresStore) ListUserIdentities(ctx context.Context, userID string) (
 		identities = append(identities, &id)
 	}
 	return identities, nil
+}
+
+// DeleteUserIdentities removes every authentication identity linked to a
+// user. Callers must establish that user's scope (or the control-plane role);
+// the user_identities RLS policy is the database-level cross-user guard.
+func (s *PostgresStore) DeleteUserIdentities(ctx context.Context, userID string) error {
+	w := wool.Get(ctx).In("DeleteUserIdentities")
+	if _, err := s.getQueryExecutor(ctx).Exec(ctx,
+		`DELETE FROM user_identities WHERE user_uuid = $1`, userID,
+	); err != nil {
+		return w.Wrapf(err, "failed to delete user identities")
+	}
+	return nil
 }

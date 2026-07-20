@@ -13,10 +13,12 @@ import (
 
 	"accounts/pkg/auth"
 	"accounts/pkg/email"
-	"accounts/pkg/gen"
+	gen "accounts/pkg/gen/saas/accounts/v1"
 )
 
 const magicLinkTTL = 15 * time.Minute
+
+const magicLinkEmailSource = "saas.accounts.authentication"
 
 // MagicLink is the domain representation of a passwordless magic link.
 type MagicLink struct {
@@ -49,14 +51,6 @@ func (s *Service) SendMagicLink(ctx context.Context, emailAddr string) error {
 		ExpiresAt: time.Now().Add(magicLinkTTL),
 	}
 
-	// Pre-auth: no user/org identity exists at send/verify time, and magic_links
-	// has no tenant column → the audited System bypass.
-	if err := s.store.As(System()).Within(ctx, func(ctx context.Context) error {
-		return s.store.CreateMagicLink(ctx, ml)
-	}); err != nil {
-		return w.Wrapf(err, "cannot store magic link")
-	}
-
 	// Build the link URL.
 	appBase := s.appBaseURL
 	if appBase == "" {
@@ -64,34 +58,32 @@ func (s *Service) SendMagicLink(ctx context.Context, emailAddr string) error {
 	}
 	linkURL := fmt.Sprintf("%s/auth/magic-link?token=%s", appBase, plaintext)
 
-	// Prefer template-backed email when available.
-	if s.templateMail != nil {
-		if _, err := s.templateMail.SendTemplate(ctx, "magic_link", emailAddr, map[string]string{
-			"link_url": linkURL,
-		}); err != nil {
-			w.Debug("magic link template email failed, trying raw send", wool.ErrField(err))
-		} else {
+	// Pre-auth: no user/org identity exists at send time, so the token row and
+	// exact global email job share the audited control-plane transaction.
+	if err := s.store.As(System()).Within(ctx, func(ctx context.Context) error {
+		if err := s.store.CreateMagicLink(ctx, ml); err != nil {
+			return err
+		}
+		if s.emailOutbox == nil {
 			return nil
 		}
-	}
-
-	// Fallback: raw email send.
-	if s.mail != nil {
-		from := s.fromAddress
-		if from == "" {
-			from = "no-reply@localhost"
-		}
-		msg := &email.Message{
-			From:     from,
-			To:       []string{emailAddr},
-			Subject:  "Your sign-in link",
-			HTMLBody: renderMagicLinkHTML(linkURL),
-			TextBody: renderMagicLinkText(linkURL),
-			Tags:     map[string]string{"type": "magic_link"},
-		}
-		if _, err := s.mail.Send(ctx, msg); err != nil {
-			return w.Wrapf(err, "cannot send magic link email")
-		}
+		return s.emailOutbox.EnqueueTemplate(ctx, email.TemplateRequest{
+			DeliveryKey: ml.ID,
+			Scope:       email.GlobalScope(),
+			Source:      magicLinkEmailSource,
+			Template:    "magic_link",
+			To:          emailAddr,
+			Variables:   map[string]string{"link_url": linkURL},
+			Fallback: &email.Message{
+				To:       []string{emailAddr},
+				Subject:  "Your sign-in link",
+				HTMLBody: renderMagicLinkHTML(linkURL),
+				TextBody: renderMagicLinkText(linkURL),
+				Tags:     map[string]string{"type": "magic_link"},
+			},
+		})
+	}); err != nil {
+		return w.Wrapf(err, "cannot store magic link and delivery job")
 	}
 
 	return nil
@@ -149,6 +141,33 @@ func (s *Service) VerifyMagicLink(ctx context.Context, token string) (*gen.Authe
 	if err != nil {
 		return nil, w.Wrapf(err, "cannot resolve identity for magic link")
 	}
+	identity.AuthenticationMethods = []string{auth.AuthenticationMethodEmail}
+	identity.AuthenticatedAt = time.Now()
+	identity.AssuranceLevel = auth.AssuranceLevelAAL1
+	var enrolled bool
+	var user *gen.User
+	if err := s.store.WithUserTx(ctx, identity.UserID.String(), func(ctx context.Context) error {
+		var err error
+		enrolled, err = s.store.HasVerifiedMFA(ctx, identity.UserID.String())
+		if err != nil {
+			return err
+		}
+		user, err = s.store.GetUser(ctx, identity.UserID.String())
+		return err
+	}); err != nil {
+		return nil, w.Wrapf(err, "cannot determine MFA enrollment")
+	}
+	if user == nil {
+		user = &gen.User{Uuid: identity.UserID.String()}
+	}
+	if enrolled {
+		mfaToken, err := s.BeginMFALogin(ctx, identity)
+		if err != nil {
+			return nil, w.Wrapf(err, "begin MFA login")
+		}
+		return &gen.AuthenticateResponse{User: user, MfaRequired: true, MfaToken: mfaToken}, nil
+	}
+	identity.MFASatisfied = true
 
 	pair, err := s.minter.Mint(ctx, identity)
 	if err != nil {
@@ -162,7 +181,7 @@ func (s *Service) VerifyMagicLink(ctx context.Context, token string) (*gen.Authe
 		AccessToken:  pair.AccessToken,
 		RefreshToken: pair.RefreshToken,
 		ExpiresIn:    int64(AccessTokenLifetime.Seconds()),
-		User:         &gen.User{Uuid: identity.UserID.String()},
+		User:         user,
 	}, nil
 }
 

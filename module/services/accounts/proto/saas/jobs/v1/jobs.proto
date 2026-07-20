@@ -1,0 +1,484 @@
+syntax = "proto3";
+
+package saas.jobs.v1;
+
+import "buf/validate/validate.proto";
+import "google/protobuf/duration.proto";
+import "google/protobuf/timestamp.proto";
+
+// JobDirection distinguishes work accepted from an external producer from work
+// emitted transactionally for an external consumer.
+enum JobDirection {
+  JOB_DIRECTION_UNSPECIFIED = 0;
+  JOB_DIRECTION_INBOX = 1;
+  JOB_DIRECTION_OUTBOX = 2;
+}
+
+// JobState is the durable message lifecycle. New jobs start pending. Processing
+// owns a lease. Retrying becomes claimable at available_at. The remaining
+// states are terminal; replay creates a new job linked to the original rather
+// than rewriting terminal history.
+enum JobState {
+  JOB_STATE_UNSPECIFIED = 0;
+  JOB_STATE_PENDING = 1;
+  JOB_STATE_PROCESSING = 2;
+  JOB_STATE_RETRYING = 3;
+  JOB_STATE_SUCCEEDED = 4;
+  JOB_STATE_DEAD_LETTER = 5;
+  JOB_STATE_CANCELED = 6;
+}
+
+// JobAttemptOutcome records why one processing lease ended.
+enum JobAttemptOutcome {
+  JOB_ATTEMPT_OUTCOME_UNSPECIFIED = 0;
+  JOB_ATTEMPT_OUTCOME_SUCCEEDED = 1;
+  JOB_ATTEMPT_OUTCOME_RETRYABLE_FAILURE = 2;
+  JOB_ATTEMPT_OUTCOME_PERMANENT_FAILURE = 3;
+  JOB_ATTEMPT_OUTCOME_LEASE_EXPIRED = 4;
+  JOB_ATTEMPT_OUTCOME_CANCELED = 5;
+}
+
+// JobEnqueueDisposition distinguishes a newly committed message from an exact
+// idempotent replay that resolved to the message already stored.
+enum JobEnqueueDisposition {
+  JOB_ENQUEUE_DISPOSITION_UNSPECIFIED = 0;
+  JOB_ENQUEUE_DISPOSITION_INSERTED = 1;
+  JOB_ENQUEUE_DISPOSITION_DUPLICATE = 2;
+}
+
+// JobScope carries the tenant or subject binding enforced when request traffic
+// appends a job. Global scope is reserved for the privileged worker boundary.
+message JobScope {
+  oneof value {
+    option (buf.validate.oneof).required = true;
+
+    string organization_id = 1 [(buf.validate.field).string.uuid = true];
+    string subject_id = 2 [(buf.validate.field).string.uuid = true];
+    bool global = 3 [(buf.validate.field).bool.const = true];
+  }
+}
+
+// JobLease is present only while a job is processing. token is an unguessable
+// fencing value: finalization must match both owner and token.
+message JobLease {
+  string owner = 1 [(buf.validate.field).string = {
+    min_len: 1
+    max_len: 255
+  }];
+  string token = 2 [(buf.validate.field).string.uuid = true];
+  google.protobuf.Timestamp expires_at = 3;
+  google.protobuf.Timestamp heartbeat_at = 4;
+}
+
+// JobFailure contains bounded operator-safe diagnostics. It must never contain
+// credentials or the original payload.
+message JobFailure {
+  string code = 1 [(buf.validate.field).string = {
+    min_len: 1
+    max_len: 128
+    pattern: "^[a-z][a-z0-9_.-]*$"
+  }];
+  string message = 2 [(buf.validate.field).string.max_len = 4096];
+}
+
+// JobEnvelope is the product-neutral durable inbox/outbox record. payload is
+// retained as exact bytes; large artifacts belong in object storage and are
+// referenced from the payload. Identity, routing, scope, and payload fields are
+// immutable after insertion.
+message JobEnvelope {
+  string id = 1 [(buf.validate.field).string.uuid = true];
+  JobDirection direction = 2 [(buf.validate.field).required = true];
+  JobScope scope = 3 [(buf.validate.field).required = true];
+  string queue = 4 [(buf.validate.field).string = {
+    min_len: 1
+    max_len: 128
+    pattern: "^[a-z][a-z0-9_.-]*$"
+  }];
+  string topic = 5 [(buf.validate.field).string = {
+    min_len: 1
+    max_len: 255
+    pattern: "^[a-z][a-z0-9_.-]*$"
+  }];
+  string source = 6 [(buf.validate.field).string = {
+    min_len: 1
+    max_len: 255
+    pattern: "^[a-z][a-z0-9_.:/-]*$"
+  }];
+  string idempotency_key = 7 [(buf.validate.field).string = {
+    min_len: 1
+    max_len: 255
+  }];
+  string ordering_key = 8 [(buf.validate.field).string.max_len = 255];
+  uint32 schema_version = 9 [(buf.validate.field).uint32.gt = 0];
+  bytes payload = 10 [(buf.validate.field).bytes.max_len = 1048576];
+  string content_type = 11 [(buf.validate.field).string = {
+    min_len: 1
+    max_len: 255
+  }];
+  map<string, string> attributes = 12 [
+    (buf.validate.field).map.max_pairs = 64,
+    (buf.validate.field).map.keys = {string: {
+      min_len: 1
+      max_len: 128
+      pattern: "^[a-z][a-z0-9_.-]*$"
+    }},
+    (buf.validate.field).map.values = {string: {max_len: 1024}}
+  ];
+  JobState state = 13 [(buf.validate.field).required = true];
+  int32 priority = 14 [(buf.validate.field).int32 = {
+    gte: -100
+    lte: 100
+  }];
+  uint32 attempt_count = 15;
+  uint32 max_attempts = 16 [(buf.validate.field).uint32.gt = 0];
+  JobLease lease = 17;
+  JobFailure last_failure = 18;
+  google.protobuf.Timestamp available_at = 19;
+  google.protobuf.Timestamp last_attempt_at = 20;
+  google.protobuf.Timestamp completed_at = 21;
+  google.protobuf.Timestamp dead_lettered_at = 22;
+  google.protobuf.Timestamp created_at = 23;
+  google.protobuf.Timestamp updated_at = 24;
+  uint64 state_version = 25;
+  string replay_of = 26 [
+    (buf.validate.field).ignore = IGNORE_IF_ZERO_VALUE,
+    (buf.validate.field).string.uuid = true
+  ];
+}
+
+// JobOrderingKey is the portable source for one strict FIFO key. The runtime
+// encodes each opaque component independently, so component boundaries cannot
+// collide even when identifiers contain punctuation or Unicode.
+message JobOrderingKey {
+  string namespace = 1 [(buf.validate.field).string = {
+    min_len: 1
+    max_len: 64
+    pattern: "^[a-z][a-z0-9_.-]*$"
+  }];
+  repeated string components = 2 [(buf.validate.field).repeated = {
+    min_items: 1
+    max_items: 8
+    items: {string: {
+      min_len: 1
+      max_len: 128
+    }}
+  }];
+}
+
+// NewJob contains only producer-owned immutable fields. Database-owned ids,
+// lifecycle state, attempts, leases, and audit timestamps cannot be supplied by
+// a producer.
+message NewJob {
+  JobDirection direction = 1 [(buf.validate.field).required = true];
+  JobScope scope = 2 [(buf.validate.field).required = true];
+  string queue = 3 [(buf.validate.field).string = {
+    min_len: 1
+    max_len: 128
+    pattern: "^[a-z][a-z0-9_.-]*$"
+  }];
+  string topic = 4 [(buf.validate.field).string = {
+    min_len: 1
+    max_len: 255
+    pattern: "^[a-z][a-z0-9_.-]*$"
+  }];
+  string source = 5 [(buf.validate.field).string = {
+    min_len: 1
+    max_len: 255
+    pattern: "^[a-z][a-z0-9_.:/-]*$"
+  }];
+  string idempotency_key = 6 [(buf.validate.field).string = {
+    min_len: 1
+    max_len: 255
+  }];
+  JobOrderingKey ordering = 7;
+  uint32 schema_version = 8 [(buf.validate.field).uint32.gt = 0];
+  bytes payload = 9 [(buf.validate.field).bytes.max_len = 1048576];
+  string content_type = 10 [(buf.validate.field).string = {
+    min_len: 1
+    max_len: 255
+  }];
+  map<string, string> attributes = 11 [
+    (buf.validate.field).map.max_pairs = 64,
+    (buf.validate.field).map.keys = {string: {
+      min_len: 1
+      max_len: 128
+      pattern: "^[a-z][a-z0-9_.-]*$"
+    }},
+    (buf.validate.field).map.values = {string: {max_len: 1024}}
+  ];
+  int32 priority = 12 [(buf.validate.field).int32 = {
+    gte: -100
+    lte: 100
+  }];
+  uint32 max_attempts = 13 [(buf.validate.field).uint32 = {
+    gte: 1
+    lte: 100
+  }];
+  google.protobuf.Timestamp available_at = 14;
+}
+
+// EnqueueJobRequest is safe to fingerprint deterministically. Exact retries
+// return the original job id; semantically different reuse of the same
+// idempotency key is rejected.
+message EnqueueJobRequest {
+  NewJob job = 1 [(buf.validate.field).required = true];
+}
+
+message EnqueueJobResponse {
+  string job_id = 1 [(buf.validate.field).string.uuid = true];
+  JobEnqueueDisposition disposition = 2 [(buf.validate.field).required = true];
+}
+
+// JobSummary is the payload-free operations view. Payload bytes and attributes
+// never cross the platform-administration API boundary.
+message JobSummary {
+  string id = 1 [(buf.validate.field).string.uuid = true];
+  JobDirection direction = 2 [(buf.validate.field).required = true];
+  JobScope scope = 3 [(buf.validate.field).required = true];
+  string queue = 4;
+  string topic = 5;
+  string source = 6;
+  string idempotency_key = 7;
+  string ordering_key = 8;
+  uint32 schema_version = 9;
+  string content_type = 10;
+  JobState state = 11 [(buf.validate.field).required = true];
+  int32 priority = 12;
+  uint32 attempt_count = 13;
+  uint32 max_attempts = 14;
+  JobLease lease = 15;
+  JobFailure last_failure = 16;
+  google.protobuf.Timestamp available_at = 17;
+  google.protobuf.Timestamp last_attempt_at = 18;
+  google.protobuf.Timestamp completed_at = 19;
+  google.protobuf.Timestamp dead_lettered_at = 20;
+  google.protobuf.Timestamp created_at = 21;
+  google.protobuf.Timestamp updated_at = 22;
+  uint64 state_version = 23;
+  string replay_of = 24;
+}
+
+// JobQueueSnapshot is database-derived operational state and is therefore
+// consistent across replicas. Queue is the only metric label; topic, tenant,
+// subject, source, job id, and error text remain out of the metric surface.
+message JobQueueSnapshot {
+  string queue = 1;
+  uint64 pending = 2;
+  uint64 processing = 3;
+  uint64 retrying = 4;
+  uint64 succeeded = 5;
+  uint64 dead_letter = 6;
+  uint64 canceled = 7;
+  uint64 ready = 8;
+  uint64 scheduled = 9;
+  uint64 expired_leases = 10;
+  google.protobuf.Timestamp oldest_ready_at = 11;
+}
+
+message GetJobOperationsRequest {
+  string queue = 1 [
+    (buf.validate.field).ignore = IGNORE_IF_ZERO_VALUE,
+    (buf.validate.field).string = {
+      max_len: 128
+      pattern: "^[a-z][a-z0-9_.-]*$"
+    }
+  ];
+}
+
+message GetJobOperationsResponse {
+  repeated JobQueueSnapshot queues = 1;
+  google.protobuf.Timestamp observed_at = 2 [(buf.validate.field).required = true];
+}
+
+message ListJobsRequest {
+  string queue = 1 [
+    (buf.validate.field).ignore = IGNORE_IF_ZERO_VALUE,
+    (buf.validate.field).string = {
+      max_len: 128
+      pattern: "^[a-z][a-z0-9_.-]*$"
+    }
+  ];
+  repeated JobState states = 2 [(buf.validate.field).repeated = {
+    max_items: 6
+    unique: true
+    items: {enum: {
+      defined_only: true
+      not_in: 0
+    }}
+  }];
+  oneof scope {
+    string organization_id = 3 [(buf.validate.field).string.uuid = true];
+    string subject_id = 4 [(buf.validate.field).string.uuid = true];
+  }
+  uint32 page_size = 5 [
+    (buf.validate.field).ignore = IGNORE_IF_ZERO_VALUE,
+    (buf.validate.field).uint32 = {
+      gte: 1
+      lte: 100
+    }
+  ];
+  string page_token = 6 [(buf.validate.field).string.max_len = 512];
+}
+
+message ListJobsResponse {
+  repeated JobSummary jobs = 1;
+  string next_page_token = 2;
+}
+
+message GetJobRequest {
+  string job_id = 1 [(buf.validate.field).string.uuid = true];
+}
+
+message GetJobResponse {
+  JobSummary job = 1 [(buf.validate.field).required = true];
+  repeated JobAttempt attempts = 2;
+  repeated JobStateTransition transitions = 3;
+}
+
+// ReplayJobRequest creates a new pending copy of one dead-lettered job. The
+// source row remains immutable. idempotency_key makes an operator retry resolve
+// to the same new job instead of duplicating the side effect.
+message ReplayJobRequest {
+  string source_job_id = 1 [(buf.validate.field).string.uuid = true];
+  string idempotency_key = 2 [(buf.validate.field).string = {
+    min_len: 1
+    max_len: 255
+  }];
+  google.protobuf.Timestamp available_at = 3;
+}
+
+message ReplayJobResponse {
+  string job_id = 1 [(buf.validate.field).string.uuid = true];
+  JobEnqueueDisposition disposition = 2 [(buf.validate.field).required = true];
+}
+
+// JobWorkerMetrics is a low-cardinality process-local snapshot for one queue.
+// Durable queue depth and age live in JobQueueSnapshot.
+message JobWorkerMetrics {
+  string queue = 1;
+  uint64 iterations = 2;
+  uint64 claim_errors = 3;
+  uint64 claimed = 4;
+  uint64 succeeded = 5;
+  uint64 retried = 6;
+  uint64 dead_lettered = 7;
+  uint64 handler_panics = 8;
+  uint64 lease_lost = 9;
+  int64 active = 10;
+}
+
+// JobAttempt is the immutable result of one lease. The attempt row is opened
+// when a job is claimed and finalized once; heartbeats may update heartbeat_at
+// while it remains open.
+message JobAttempt {
+  string id = 1 [(buf.validate.field).string.uuid = true];
+  string job_id = 2 [(buf.validate.field).string.uuid = true];
+  uint32 number = 3 [(buf.validate.field).uint32.gt = 0];
+  string worker_id = 4 [(buf.validate.field).string = {
+    min_len: 1
+    max_len: 255
+  }];
+  string lease_token = 5 [(buf.validate.field).string.uuid = true];
+  JobAttemptOutcome outcome = 6;
+  JobFailure failure = 7;
+  google.protobuf.Timestamp started_at = 8;
+  google.protobuf.Timestamp heartbeat_at = 9;
+  google.protobuf.Timestamp finished_at = 10;
+}
+
+// JobStateTransition is the append-only audit record produced by the database
+// whenever a job is created or changes state.
+message JobStateTransition {
+  int64 sequence = 1 [(buf.validate.field).int64.gt = 0];
+  string job_id = 2 [(buf.validate.field).string.uuid = true];
+  JobState from_state = 3;
+  JobState to_state = 4 [(buf.validate.field).required = true];
+  uint64 state_version = 5;
+  uint32 attempt_count = 6;
+  string actor = 7 [(buf.validate.field).string.min_len = 1];
+  JobFailure failure = 8;
+  google.protobuf.Timestamp occurred_at = 9;
+}
+
+// ClaimJobsRequest selects one queue and acquires a bounded batch with a fresh
+// fencing token per job. Claims never cross queue boundaries.
+message ClaimJobsRequest {
+  string queue = 1 [(buf.validate.field).string = {
+    min_len: 1
+    max_len: 128
+    pattern: "^[a-z][a-z0-9_.-]*$"
+  }];
+  string worker_id = 2 [(buf.validate.field).string = {
+    min_len: 1
+    max_len: 255
+  }];
+  uint32 limit = 3 [(buf.validate.field).uint32 = {
+    gte: 1
+    lte: 100
+  }];
+  google.protobuf.Duration lease_duration = 4 [
+    (buf.validate.field).required = true,
+    (buf.validate.field).duration = {
+      gte: {nanos: 1000000}
+      lte: {seconds: 3600}
+    }
+  ];
+}
+
+// ClaimJobsResponse contains only jobs whose attempt rows committed in the
+// same transaction as their processing transitions.
+message ClaimJobsResponse {
+  repeated JobEnvelope jobs = 1;
+}
+
+// JobLeaseReference fences every heartbeat and finalization by the job, worker,
+// and unguessable token issued by the most recent claim.
+message JobLeaseReference {
+  string job_id = 1 [(buf.validate.field).string.uuid = true];
+  string worker_id = 2 [(buf.validate.field).string = {
+    min_len: 1
+    max_len: 255
+  }];
+  string lease_token = 3 [(buf.validate.field).string.uuid = true];
+}
+
+// HeartbeatJobRequest renews a live lease from the database clock. An expired
+// lease cannot be revived, even when no other worker has reclaimed the job.
+message HeartbeatJobRequest {
+  JobLeaseReference lease = 1 [(buf.validate.field).required = true];
+  google.protobuf.Duration extension = 2 [
+    (buf.validate.field).required = true,
+    (buf.validate.field).duration = {
+      gte: {nanos: 1000000}
+      lte: {seconds: 3600}
+    }
+  ];
+}
+
+message HeartbeatJobResponse {
+  JobLease lease = 1 [(buf.validate.field).required = true];
+}
+
+// CompleteJobRequest commits a successful attempt and terminal job transition.
+message CompleteJobRequest {
+  JobLeaseReference lease = 1 [(buf.validate.field).required = true];
+}
+
+// RetryJobRequest commits a retryable failed attempt. When the attempt budget
+// is exhausted, the same operation deterministically dead-letters the job.
+message RetryJobRequest {
+  JobLeaseReference lease = 1 [(buf.validate.field).required = true];
+  JobFailure failure = 2 [(buf.validate.field).required = true];
+  google.protobuf.Timestamp retry_at = 3 [(buf.validate.field).required = true];
+}
+
+message RetryJobResponse {
+  JobState state = 1 [(buf.validate.field).required = true];
+}
+
+// DeadLetterJobRequest commits a permanent failed attempt and immediately
+// moves the job to terminal dead-letter state.
+message DeadLetterJobRequest {
+  JobLeaseReference lease = 1 [(buf.validate.field).required = true];
+  JobFailure failure = 2 [(buf.validate.field).required = true];
+}

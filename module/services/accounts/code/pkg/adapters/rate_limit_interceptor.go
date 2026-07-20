@@ -21,11 +21,11 @@ import (
 // context — the limit key picks the most specific identifier
 // available:
 //
-//   1. API key id   — preferred when the caller authenticated via
-//                     `cfly_sk_*` (sidecar set X-Auth-Id).
-//   2. Org id       — when the caller is part of a specific tenant.
-//   3. User id      — solo-user endpoints (no org context yet).
-//   4. Remote IP    — anonymous endpoints (BeginOAuth, Authenticate).
+//  1. API key id   — preferred when the caller authenticated via
+//     `cfly_sk_*` (sidecar set X-Auth-Id).
+//  2. Org id       — when the caller is part of a specific tenant.
+//  3. User id      — solo-user endpoints (no org context yet).
+//  4. Remote IP    — anonymous endpoints (BeginOAuth, Authenticate).
 //
 // Defaults are intentionally generous (1000 req/min per org) — the
 // gate exists to absorb runaway clients and cost-amplification bugs,

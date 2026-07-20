@@ -1,0 +1,107 @@
+syntax = "proto3";
+
+package saas.accounts.v1;
+
+import "buf/validate/validate.proto";
+import "google/api/annotations.proto";
+import "google/protobuf/timestamp.proto";
+import "saas/policy/v1/options.proto";
+
+// ============================================================================
+// Billing — Connect-RPC surface (the REST endpoint exists too, used
+// by the auth-sidecar passthrough in production. The Connect path
+// works without the sidecar so direct-to-api dev/test setups can
+// hit billing flows from the FE.)
+// ============================================================================
+
+message OpenBillingPortalRequest {
+  string org_id = 1 [(buf.validate.field).string.uuid = true];
+  // Deprecated: redirect policy is server-owned and this value is ignored.
+  // Retain the field until the next major API version so v0.0.2 clients remain
+  // source-compatible as well as wire-compatible.
+  string return_url = 2 [
+    deprecated = true,
+    (buf.validate.field).ignore = IGNORE_ALWAYS
+  ];
+}
+
+message OpenBillingPortalResponse {
+  string url = 1; // Stripe-hosted billing portal URL — one-shot.
+}
+
+// Invoice — trimmed view of Stripe's invoice object. Amounts are in
+// the smallest currency unit (cents for USD/EUR); FE divides by 100.
+message Invoice {
+  string id = 1;
+  string number = 2;
+  // paid | open | void | uncollectible | draft
+  string status = 3;
+  int64 amount_due = 4;
+  int64 amount_paid = 5;
+  string currency = 6;
+  google.protobuf.Timestamp created = 7;
+  string hosted_invoice_url = 8;
+  string invoice_pdf = 9;
+  google.protobuf.Timestamp period_start = 10;
+  google.protobuf.Timestamp period_end = 11;
+}
+
+message ListInvoicesRequest {
+  string org_id = 1 [(buf.validate.field).string.uuid = true];
+  int32 limit = 2; // 0 → server default (12)
+}
+
+message ListInvoicesResponse {
+  repeated Invoice invoices = 1;
+}
+
+service BillingService {
+  rpc OpenPortal(OpenBillingPortalRequest) returns (OpenBillingPortalResponse) {
+    option (saas.policy.v1.method_policy) = {
+      exposure: EXPOSURE_AUTHENTICATED
+      tenant: TENANT_REQUIREMENT_ORG_ADMIN
+      permissions: "billing:write"
+      scopes: "billing:write"
+      resource_bindings: {
+        request_field: "org_id"
+        target: RESOURCE_TARGET_ORGANIZATION
+        lookup: RESOURCE_LOOKUP_DIRECT_ID
+      }
+      mfa: MFA_REQUIREMENT_RECENT_STEP_UP
+      audit: {
+        events: "billing.portal_opened"
+        emission: AUDIT_EMISSION_SUCCESS
+      }
+      idempotency: IDEMPOTENCY_REQUIREMENT_FORBIDDEN
+      rate_limit: RATE_LIMIT_CLASS_SENSITIVE
+      request_sensitivity: SENSITIVITY_CONFIDENTIAL
+      response_sensitivity: SENSITIVITY_SECRET
+      platform_role: PLATFORM_ROLE_REQUIREMENT_NONE
+    };
+    option (google.api.http) = {
+      post: "/v1/billing/connect/portal"
+      body: "*"
+    };
+  }
+  rpc ListInvoices(ListInvoicesRequest) returns (ListInvoicesResponse) {
+    option (saas.policy.v1.method_policy) = {
+      exposure: EXPOSURE_AUTHENTICATED
+      tenant: TENANT_REQUIREMENT_ORG_ADMIN
+      permissions: "billing:read"
+      scopes: "billing:read"
+      resource_bindings: {
+        request_field: "org_id"
+        target: RESOURCE_TARGET_ORGANIZATION
+        lookup: RESOURCE_LOOKUP_DIRECT_ID
+      }
+      mfa: MFA_REQUIREMENT_NONE
+      audit: {emission: AUDIT_EMISSION_NONE}
+      idempotency: IDEMPOTENCY_REQUIREMENT_FORBIDDEN
+      rate_limit: RATE_LIMIT_CLASS_STANDARD_READ
+      request_sensitivity: SENSITIVITY_CONFIDENTIAL
+      response_sensitivity: SENSITIVITY_CONFIDENTIAL
+      platform_role: PLATFORM_ROLE_REQUIREMENT_NONE
+    };
+    option (google.api.http) = {get: "/v1/billing/invoices/{org_id}"};
+  }
+}

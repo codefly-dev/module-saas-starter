@@ -4,7 +4,24 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 )
+
+type ThemePreference string
+
+const (
+	ThemePreferenceSystem ThemePreference = "system"
+	ThemePreferenceLight  ThemePreference = "light"
+	ThemePreferenceDark   ThemePreference = "dark"
+)
+
+func (preference ThemePreference) valid() bool {
+	return preference == ThemePreferenceSystem ||
+		preference == ThemePreferenceLight ||
+		preference == ThemePreferenceDark
+}
 
 // UserSettings — the canonical shape of the per-user preferences blob
 // stored as JSONB on the users row. Adding a field here is a no-op
@@ -18,7 +35,7 @@ import (
 // stored value alone".
 type UserSettings struct {
 	// "light" | "dark" | "system" — synced with next-themes on the FE.
-	Theme *string `json:"theme,omitempty"`
+	Theme *ThemePreference `json:"theme,omitempty"`
 	// IETF language tag: "en", "en-US", "fr", "es-419", etc.
 	Locale *string `json:"locale,omitempty"`
 	// IANA tz: "America/New_York", "Europe/Paris", "UTC".
@@ -41,10 +58,10 @@ type UserSettings struct {
 // not exposed as a toggle (we always send security alerts) but is
 // tracked here so the unsubscribe page can show its forced-on state.
 type EmailSettings struct {
-	Product       *bool `json:"product,omitempty"`        // product updates
-	Marketing     *bool `json:"marketing,omitempty"`      // newsletters / promos
-	Security      *bool `json:"security,omitempty"`       // alerts (forced on; surfaced for transparency)
-	WeeklyDigest  *bool `json:"weekly_digest,omitempty"`  // weekly activity rollup
+	Product      *bool `json:"product,omitempty"`       // product updates
+	Marketing    *bool `json:"marketing,omitempty"`     // newsletters / promos
+	Security     *bool `json:"security,omitempty"`      // alerts (forced on; surfaced for transparency)
+	WeeklyDigest *bool `json:"weekly_digest,omitempty"` // weekly activity rollup
 }
 
 type NotificationSettings struct {
@@ -57,10 +74,18 @@ type NotificationSettings struct {
 // an empty struct; the FE's defaults fill in missing fields client-
 // side. Never errors on missing — only on store / json failures.
 func (s *Service) GetUserSettings(ctx context.Context, userID string) (*UserSettings, error) {
-	raw, err := s.store.GetUserSettings(ctx, userID)
-	if err != nil {
+	var raw []byte
+	if err := s.store.As(Identity{UserID: userID}).Within(ctx, func(ctx context.Context) error {
+		var err error
+		raw, err = s.store.GetUserSettings(ctx, userID)
+		return err
+	}); err != nil {
 		return nil, err
 	}
+	return decodeUserSettings(raw)
+}
+
+func decodeUserSettings(raw []byte) (*UserSettings, error) {
 	if len(raw) == 0 || string(raw) == "{}" {
 		return &UserSettings{}, nil
 	}
@@ -87,6 +112,9 @@ func (s *Service) UpdateUserSettings(ctx context.Context, userID string, patch *
 	if patch == nil {
 		return s.GetUserSettings(ctx, userID)
 	}
+	if patch.Theme != nil && !patch.Theme.valid() {
+		return nil, status.Error(codes.InvalidArgument, "theme preference is invalid")
+	}
 	body, err := json.Marshal(patch)
 	if err != nil {
 		return nil, fmt.Errorf("encode patch: %w", err)
@@ -94,11 +122,17 @@ func (s *Service) UpdateUserSettings(ctx context.Context, userID string, patch *
 	// Settings live on the RLS-protected users row; scope the tx to the user so
 	// app.current_user_id is set (else the UPDATE silently matches zero rows and
 	// settings never persist — same class of bug as consent).
+	var raw []byte
 	if err := s.store.As(Identity{UserID: userID}).Within(ctx, func(ctx context.Context) error {
-		return s.store.UpdateUserSettings(ctx, userID, body)
+		if err := s.store.UpdateUserSettings(ctx, userID, body); err != nil {
+			return err
+		}
+		var err error
+		raw, err = s.store.GetUserSettings(ctx, userID)
+		return err
 	}); err != nil {
 		return nil, err
 	}
 	s.emit(ctx, userID, "user", "settings.updated", "user", userID, "")
-	return s.GetUserSettings(ctx, userID)
+	return decodeUserSettings(raw)
 }

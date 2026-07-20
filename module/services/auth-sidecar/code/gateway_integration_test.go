@@ -45,9 +45,9 @@ func newTestGateway(t *testing.T) (baseURL string, teardown func()) {
 	require.NoError(t, err)
 
 	// Load the real route config.
-	entries, err := LoadRoutesFromDir(context.Background(), DefaultRoutingDir())
+	entries, err := LoadAllRESTRoutes(context.Background(), DefaultRoutingDir())
 	require.NoError(t, err)
-	matcher := NewRouteMatcher(entries)
+	matcher := NewRouteMatcher(entries, nil)
 
 	upstreams := map[string]*url.URL{
 		"accounts": apiURL,

@@ -1,0 +1,148 @@
+syntax = "proto3";
+
+package saas.policy.v1;
+
+import "google/protobuf/descriptor.proto";
+
+// Exposure defines which trust boundary may invoke a procedure.
+enum Exposure {
+  EXPOSURE_UNSPECIFIED = 0;
+  EXPOSURE_PUBLIC = 1;
+  EXPOSURE_AUTHENTICATED = 2;
+  EXPOSURE_INTERNAL = 3;
+}
+
+// TenantRequirement defines the minimum tenant relationship for the caller.
+enum TenantRequirement {
+  TENANT_REQUIREMENT_UNSPECIFIED = 0;
+  TENANT_REQUIREMENT_NONE = 1;
+  TENANT_REQUIREMENT_USER = 2;
+  TENANT_REQUIREMENT_ORG_MEMBER = 3;
+  TENANT_REQUIREMENT_ORG_ADMIN = 4;
+  TENANT_REQUIREMENT_ORG_OWNER = 5;
+  TENANT_REQUIREMENT_TEAM_MEMBER = 6;
+}
+
+// ResourceTarget identifies what the request field is expected to name.
+enum ResourceTarget {
+  RESOURCE_TARGET_UNSPECIFIED = 0;
+  RESOURCE_TARGET_CALLER_USER = 1;
+  RESOURCE_TARGET_ORGANIZATION = 2;
+  RESOURCE_TARGET_TEAM = 3;
+  RESOURCE_TARGET_OWNED_RESOURCE = 4;
+}
+
+// ResourceLookup selects a finite server-side binding operation.
+enum ResourceLookup {
+  RESOURCE_LOOKUP_UNSPECIFIED = 0;
+  RESOURCE_LOOKUP_DIRECT_ID = 1;
+  RESOURCE_LOOKUP_TEAM_TO_ORGANIZATION = 2;
+  RESOURCE_LOOKUP_RESOURCE_TO_ORGANIZATION = 3;
+  RESOURCE_LOOKUP_RESOURCE_TO_OWNER = 4;
+}
+
+// ResourceBinding binds a protobuf request field to an authorization target.
+// request_field is a protobuf field path such as "org_id" or "webhook.id";
+// lookup controls the finite database lookup the policy adapter may perform.
+message ResourceBinding {
+  string request_field = 1;
+  ResourceTarget target = 2;
+  ResourceLookup lookup = 3;
+}
+
+// MFARequirement defines the assurance required before handler execution.
+enum MFARequirement {
+  MFA_REQUIREMENT_UNSPECIFIED = 0;
+  MFA_REQUIREMENT_NONE = 1;
+  MFA_REQUIREMENT_ENROLLED = 2;
+  MFA_REQUIREMENT_RECENT_STEP_UP = 3;
+  // Require recent step-up when the caller has enrolled a factor. This models
+  // opt-in MFA policy without pretending that enrollment is mandatory.
+  MFA_REQUIREMENT_IF_ENROLLED_RECENT_STEP_UP = 4;
+}
+
+// PlatformRoleRequirement defines the minimum cross-tenant operator role. The
+// role hierarchy is enforced centrally; application methods never compare
+// unvalidated role strings from descriptors.
+enum PlatformRoleRequirement {
+  PLATFORM_ROLE_REQUIREMENT_UNSPECIFIED = 0;
+  PLATFORM_ROLE_REQUIREMENT_NONE = 1;
+  PLATFORM_ROLE_REQUIREMENT_ANY = 2;
+  PLATFORM_ROLE_REQUIREMENT_SUPPORT = 3;
+  PLATFORM_ROLE_REQUIREMENT_BILLING = 4;
+  PLATFORM_ROLE_REQUIREMENT_SUPER_ADMIN = 5;
+}
+
+// AuditEmission defines which outcomes produce durable audit events.
+enum AuditEmission {
+  AUDIT_EMISSION_UNSPECIFIED = 0;
+  AUDIT_EMISSION_NONE = 1;
+  AUDIT_EMISSION_SUCCESS = 2;
+  AUDIT_EMISSION_FAILURE = 3;
+  AUDIT_EMISSION_SUCCESS_AND_FAILURE = 4;
+}
+
+// AuditPolicy names every stable event this method may emit and the outcomes
+// that produce them. Repetition represents multi-event and outcome-dependent
+// methods without hiding policy in an arbitrary expression.
+message AuditPolicy {
+  repeated string events = 1;
+  AuditEmission emission = 2;
+}
+
+// IdempotencyRequirement defines whether an idempotency key is accepted.
+enum IdempotencyRequirement {
+  IDEMPOTENCY_REQUIREMENT_UNSPECIFIED = 0;
+  IDEMPOTENCY_REQUIREMENT_FORBIDDEN = 1;
+  IDEMPOTENCY_REQUIREMENT_OPTIONAL = 2;
+  IDEMPOTENCY_REQUIREMENT_REQUIRED = 3;
+}
+
+// RateLimitClass selects a generated, centrally configured limiter budget.
+enum RateLimitClass {
+  RATE_LIMIT_CLASS_UNSPECIFIED = 0;
+  RATE_LIMIT_CLASS_PUBLIC = 1;
+  RATE_LIMIT_CLASS_AUTHENTICATION = 2;
+  RATE_LIMIT_CLASS_STANDARD_READ = 3;
+  RATE_LIMIT_CLASS_STANDARD_WRITE = 4;
+  RATE_LIMIT_CLASS_SENSITIVE = 5;
+  RATE_LIMIT_CLASS_WEBHOOK = 6;
+  RATE_LIMIT_CLASS_INTERNAL = 7;
+  RATE_LIMIT_CLASS_MFA = 8;
+}
+
+// Sensitivity controls logging, tracing, body capture, and documentation.
+enum Sensitivity {
+  SENSITIVITY_UNSPECIFIED = 0;
+  SENSITIVITY_PUBLIC = 1;
+  SENSITIVITY_INTERNAL = 2;
+  SENSITIVITY_CONFIDENTIAL = 3;
+  SENSITIVITY_SECRET = 4;
+}
+
+// MethodPolicy is the complete declarative input to Codefly's route and policy
+// compiler. Complex, state-dependent authorization remains in domain code.
+message MethodPolicy {
+  Exposure exposure = 1;
+  TenantRequirement tenant = 2;
+  repeated string permissions = 3;
+  repeated string scopes = 4;
+  repeated ResourceBinding resource_bindings = 5;
+  MFARequirement mfa = 6;
+  AuditPolicy audit = 7;
+  IdempotencyRequirement idempotency = 8;
+  RateLimitClass rate_limit = 9;
+  Sensitivity request_sensitivity = 10;
+  Sensitivity response_sensitivity = 11;
+  PlatformRoleRequirement platform_role = 12;
+
+  // authentication_factor_attempt marks a public login-factor verification
+  // attempt that must use the dedicated per-client-IP edge budget. It is not
+  // inferred from method names or HTTP paths.
+  bool authentication_factor_attempt = 13;
+}
+
+extend google.protobuf.MethodOptions {
+  // method_policy is the single policy source consumed by Codefly generation.
+  MethodPolicy method_policy = 51000;
+}

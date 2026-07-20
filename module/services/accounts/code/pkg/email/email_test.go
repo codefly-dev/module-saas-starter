@@ -137,6 +137,7 @@ func TestResendSender_Happy(t *testing.T) {
 		require.Equal(t, "/emails", r.URL.Path)
 		require.Equal(t, "Bearer re_test", r.Header.Get("Authorization"))
 		require.Equal(t, "application/json", r.Header.Get("Content-Type"))
+		require.Equal(t, "delivery-123", r.Header.Get("Idempotency-Key"))
 		body, _ := io.ReadAll(r.Body)
 		require.NoError(t, json.Unmarshal(body, &received))
 		w.Header().Set("Content-Type", "application/json")
@@ -151,13 +152,14 @@ func TestResendSender_Happy(t *testing.T) {
 	require.NoError(t, err)
 
 	id, err := s.Send(context.Background(), &email.Message{
-		From:     "Acme <noreply@acme.com>",
-		To:       []string{"user@example.com"},
-		ReplyTo:  "support@acme.com",
-		Subject:  "Welcome",
-		HTMLBody: "<p>welcome</p>",
-		TextBody: "welcome",
-		Tags:     map[string]string{"type": "welcome"},
+		IdempotencyKey: "delivery-123",
+		From:           "Acme <noreply@acme.com>",
+		To:             []string{"user@example.com"},
+		ReplyTo:        "support@acme.com",
+		Subject:        "Welcome",
+		HTMLBody:       "<p>welcome</p>",
+		TextBody:       "welcome",
+		Tags:           map[string]string{"type": "welcome"},
 	})
 	require.NoError(t, err)
 	require.Equal(t, "msg_01ABC", id)
@@ -185,7 +187,9 @@ func TestResendSender_HTTPError(t *testing.T) {
 	})
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "422")
-	require.Contains(t, err.Error(), "invalid to address")
+	var deliveryErr *email.DeliveryError
+	require.ErrorAs(t, err, &deliveryErr)
+	require.False(t, deliveryErr.Retryable)
 }
 
 func TestResendSender_RequiresAPIKey(t *testing.T) {

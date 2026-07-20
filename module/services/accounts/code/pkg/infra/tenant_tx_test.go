@@ -25,14 +25,14 @@ func TestWithOrgTx_RejectsEmptyOrgID(t *testing.T) {
 	require.Contains(t, err.Error(), "orgID is required")
 }
 
-// TestBypassCounters_TracksCallSites — smoke for the Phase 4
-// audit trail. Each WithBypass call from a unique source position
+// TestControlPlaneCounters_TracksCallSites — smoke for the Phase 4
+// audit trail. Each WithControlPlane call from a unique source position
 // gets its own counter; multiple invocations from the same line
 // increment that one counter. The test asserts both shapes.
 //
-// Runs against the real DB so we exercise the WithBypass body too.
-func TestBypassCounters_TracksCallSites(t *testing.T) {
-	before := infra.BypassCounters()
+// Runs against the real DB so we exercise the WithControlPlane body too.
+func TestControlPlaneCounters_TracksCallSites(t *testing.T) {
+	before := infra.ControlPlaneCounters()
 	beforeSum := int64(0)
 	for _, v := range before {
 		beforeSum += v
@@ -41,23 +41,23 @@ func TestBypassCounters_TracksCallSites(t *testing.T) {
 	// Two calls from the same source line — should bump ONE site
 	// by 2.
 	for i := 0; i < 2; i++ {
-		require.NoError(t, testStore.WithBypass(context.Background(), func(_ context.Context) error {
+		require.NoError(t, testStore.WithControlPlane(context.Background(), func(_ context.Context) error {
 			return nil
 		}))
 	}
 
 	// One call from a different line — bumps a different site.
-	require.NoError(t, testStore.WithBypass(context.Background(), func(_ context.Context) error {
+	require.NoError(t, testStore.WithControlPlane(context.Background(), func(_ context.Context) error {
 		return nil
 	}))
 
-	after := infra.BypassCounters()
+	after := infra.ControlPlaneCounters()
 	afterSum := int64(0)
 	for _, v := range after {
 		afterSum += v
 	}
 	require.Equal(t, beforeSum+3, afterSum,
-		"BypassCounters should grow by exactly 3 across the 3 invocations")
+		"ControlPlaneCounters should grow by exactly 3 across the 3 invocations")
 
 	// At least 2 distinct call-site keys should appear (the two
 	// lines we invoked from). Keys look like "<file>:<line>".

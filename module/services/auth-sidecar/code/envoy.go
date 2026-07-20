@@ -66,10 +66,10 @@ type envoyFilter struct {
 
 // envoyHCM is the HttpConnectionManager typed_config.
 type envoyHCM struct {
-	Type        string           `yaml:"@type"`
-	StatPrefix  string           `yaml:"stat_prefix"`
+	Type        string            `yaml:"@type"`
+	StatPrefix  string            `yaml:"stat_prefix"`
 	HTTPFilters []envoyHTTPFilter `yaml:"http_filters"`
-	RouteConfig envoyRouteConfig `yaml:"route_config"`
+	RouteConfig envoyRouteConfig  `yaml:"route_config"`
 }
 
 type envoyHTTPFilter struct {
@@ -79,11 +79,11 @@ type envoyHTTPFilter struct {
 
 // envoyExtAuthzConfig is the ext_authz filter typed_config.
 type envoyExtAuthzConfig struct {
-	Type                  string             `yaml:"@type"`
-	GRPCService           envoyGRPCService   `yaml:"grpc_service"`
-	TransportAPIVersion   string             `yaml:"transport_api_version"`
-	WithRequestBody       *envoyRequestBody  `yaml:"with_request_body,omitempty"`
-	FailureModeAllow      bool               `yaml:"failure_mode_allow"`
+	Type                string            `yaml:"@type"`
+	GRPCService         envoyGRPCService  `yaml:"grpc_service"`
+	TransportAPIVersion string            `yaml:"transport_api_version"`
+	WithRequestBody     *envoyRequestBody `yaml:"with_request_body,omitempty"`
+	FailureModeAllow    bool              `yaml:"failure_mode_allow"`
 }
 
 type envoyGRPCService struct {
@@ -112,16 +112,16 @@ type envoyVirtualHost struct {
 }
 
 type envoyRoute struct {
-	Match                 envoyMatch                `yaml:"match"`
-	Route                 *envoyRouteAction         `yaml:"route,omitempty"`
-	DirectResponse        *envoyDirectResponse      `yaml:"direct_response,omitempty"`
-	TypedPerFilterConfig  map[string]interface{}    `yaml:"typed_per_filter_config,omitempty"`
+	Match                envoyMatch             `yaml:"match"`
+	Route                *envoyRouteAction      `yaml:"route,omitempty"`
+	DirectResponse       *envoyDirectResponse   `yaml:"direct_response,omitempty"`
+	TypedPerFilterConfig map[string]interface{} `yaml:"typed_per_filter_config,omitempty"`
 }
 
 type envoyMatch struct {
-	Path      string            `yaml:"path,omitempty"`
-	SafeRegex *envoySafeRegex   `yaml:"safe_regex,omitempty"`
-	Prefix    string            `yaml:"prefix,omitempty"`
+	Path      string             `yaml:"path,omitempty"`
+	SafeRegex *envoySafeRegex    `yaml:"safe_regex,omitempty"`
+	Prefix    string             `yaml:"prefix,omitempty"`
 	Headers   []envoyHeaderMatch `yaml:"headers,omitempty"`
 }
 
@@ -135,12 +135,24 @@ type envoyHeaderMatch struct {
 }
 
 type envoyRouteAction struct {
-	Cluster string `yaml:"cluster"`
+	Cluster                string             `yaml:"cluster"`
+	RequestHeadersToRemove []string           `yaml:"request_headers_to_remove,omitempty"`
+	RegexRewrite           *envoyRegexRewrite `yaml:"regex_rewrite,omitempty"`
+}
+
+type envoyRegexRewrite struct {
+	Pattern      envoyRegexPattern `yaml:"pattern"`
+	Substitution string            `yaml:"substitution"`
+}
+
+type envoyRegexPattern struct {
+	GoogleRE2 map[string]interface{} `yaml:"google_re2"`
+	Regex     string                 `yaml:"regex"`
 }
 
 type envoyDirectResponse struct {
-	Status uint32               `yaml:"status"`
-	Body   *envoyDirectBody     `yaml:"body,omitempty"`
+	Status uint32           `yaml:"status"`
+	Body   *envoyDirectBody `yaml:"body,omitempty"`
 }
 
 type envoyDirectBody struct {
@@ -165,8 +177,8 @@ type envoyCluster struct {
 }
 
 type envoyLoadAssignment struct {
-	ClusterName string              `yaml:"cluster_name"`
-	Endpoints   []envoyLBEndpoint   `yaml:"endpoints"`
+	ClusterName string            `yaml:"cluster_name"`
+	Endpoints   []envoyLBEndpoint `yaml:"endpoints"`
 }
 
 type envoyLBEndpoint struct {
@@ -186,8 +198,8 @@ type envoyHTTP2Options struct {
 }
 
 type envoyHTTP2Proto struct {
-	Type                string              `yaml:"@type"`
-	ExplicitHTTPConfig  envoyExplicitHTTP   `yaml:"explicit_http_config"`
+	Type               string            `yaml:"@type"`
+	ExplicitHTTPConfig envoyExplicitHTTP `yaml:"explicit_http_config"`
 }
 
 type envoyExplicitHTTP struct {
@@ -429,6 +441,7 @@ func buildRESTRoute(entry EnvoyRouteEntry, cluster string) envoyRoute {
 
 	// Per-route ext_authz config: disable for public routes.
 	if entry.Auth == "public" {
+		r.Route.RequestHeadersToRemove = append([]string(nil), untrustedAuthHeaders...)
 		r.TypedPerFilterConfig = map[string]interface{}{
 			"envoy.filters.http.ext_authz": envoyExtAuthzPerRoute{
 				Type:     "type.googleapis.com/envoy.extensions.filters.http.ext_authz.v3.ExtAuthzPerRoute",
@@ -452,9 +465,19 @@ func buildConnectRoute(entry EnvoyRouteEntry, cluster string) envoyRoute {
 		},
 		Route: &envoyRouteAction{Cluster: cluster},
 	}
+	if entry.Rewrite != "" {
+		r.Route.RegexRewrite = &envoyRegexRewrite{
+			Pattern: envoyRegexPattern{
+				GoogleRE2: map[string]interface{}{},
+				Regex:     "^" + regexp.QuoteMeta(entry.Connect) + "$",
+			},
+			Substitution: entry.Rewrite,
+		}
+	}
 
 	// Per-route ext_authz config: disable for public routes.
 	if entry.Auth == "public" {
+		r.Route.RequestHeadersToRemove = append([]string(nil), untrustedAuthHeaders...)
 		r.TypedPerFilterConfig = map[string]interface{}{
 			"envoy.filters.http.ext_authz": envoyExtAuthzPerRoute{
 				Type:     "type.googleapis.com/envoy.extensions.filters.http.ext_authz.v3.ExtAuthzPerRoute",

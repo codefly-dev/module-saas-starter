@@ -22,18 +22,23 @@ func resetAuthTables(t *testing.T) {
 	t.Helper()
 	ctx := context.Background()
 	queries := []string{
-		`TRUNCATE TABLE sessions RESTART IDENTITY CASCADE`,
-		`TRUNCATE TABLE platform_admins RESTART IDENTITY CASCADE`,
-		`TRUNCATE TABLE organization_members RESTART IDENTITY CASCADE`,
-		`TRUNCATE TABLE organizations RESTART IDENTITY CASCADE`,
-		`TRUNCATE TABLE user_identities RESTART IDENTITY CASCADE`,
-		`TRUNCATE TABLE users RESTART IDENTITY CASCADE`,
+		`DELETE FROM sessions`,
+		`DELETE FROM platform_admins`,
+		`DELETE FROM organization_members`,
+		`DELETE FROM organizations`,
+		`DELETE FROM user_identities`,
+		`DELETE FROM users`,
 		`UPDATE bootstrap_state SET bootstrapped_at = NULL WHERE id = 1`,
 	}
-	for _, q := range queries {
-		_, err := testPool.Exec(ctx, q)
-		require.NoError(t, err, q)
-	}
+	require.NoError(t, testStore.WithControlPlane(ctx, func(ctx context.Context) error {
+		tx := ctx.Value("tx").(pgx.Tx) //nolint:staticcheck // shared transaction context key
+		for _, q := range queries {
+			if _, err := tx.Exec(ctx, q); err != nil {
+				return fmt.Errorf("%s: %w", q, err)
+			}
+		}
+		return nil
+	}))
 }
 
 func claims(email, sub string) *auth.Claims {
@@ -48,7 +53,7 @@ func claims(email, sub string) *auth.Claims {
 func TestResolver_NewUser_JITProvisioning(t *testing.T) {
 	resetAuthTables(t)
 	ctx := context.Background()
-	r := pgauth.NewResolver(testPool)
+	r := pgauth.NewResolver(testStore)
 
 	id, err := r.Resolve(ctx, claims("alice@test.local", "dev-alice"), "")
 	require.NoError(t, err)
@@ -60,16 +65,16 @@ func TestResolver_NewUser_JITProvisioning(t *testing.T) {
 
 	// Verify rows exist
 	var count int
-	scanBypass(t, &count, `SELECT COUNT(*) FROM users WHERE uuid = $1`, id.UserID)
+	scanControlPlane(t, &count, `SELECT COUNT(*) FROM users WHERE uuid = $1`, id.UserID)
 	require.Equal(t, 1, count)
-	scanBypass(t, &count, `SELECT COUNT(*) FROM user_identities WHERE user_uuid = $1`, id.UserID)
+	scanControlPlane(t, &count, `SELECT COUNT(*) FROM user_identities WHERE user_uuid = $1`, id.UserID)
 	require.Equal(t, 1, count)
 }
 
 func TestResolver_ExistingUser_Idempotent(t *testing.T) {
 	resetAuthTables(t)
 	ctx := context.Background()
-	r := pgauth.NewResolver(testPool)
+	r := pgauth.NewResolver(testStore)
 
 	first, err := r.Resolve(ctx, claims("bob@test.local", "dev-bob"), "")
 	require.NoError(t, err)
@@ -80,14 +85,31 @@ func TestResolver_ExistingUser_Idempotent(t *testing.T) {
 	require.Equal(t, first.UserID, second.UserID, "same (provider, sub) → same user_id")
 
 	var count int
-	scanBypass(t, &count, `SELECT COUNT(*) FROM users WHERE primary_email = 'bob@test.local'`)
+	scanControlPlane(t, &count, `SELECT COUNT(*) FROM users WHERE primary_email = 'bob@test.local'`)
 	require.Equal(t, 1, count, "no duplicate users created")
+}
+
+func TestResolver_ExistingInactiveUserRejected(t *testing.T) {
+	resetAuthTables(t)
+	ctx := context.Background()
+	r := pgauth.NewResolver(testStore)
+
+	identity, err := r.Resolve(ctx, claims("suspended@test.local", "dev-suspended"), "")
+	require.NoError(t, err)
+	require.NoError(t, testStore.WithControlPlane(ctx, func(ctx context.Context) error {
+		tx := ctx.Value("tx").(pgx.Tx) //nolint:staticcheck // shared transaction context key
+		_, err := tx.Exec(ctx, `UPDATE users SET status = 'suspended' WHERE uuid = $1`, identity.UserID)
+		return err
+	}))
+
+	_, err = r.Resolve(ctx, claims("suspended@test.local", "dev-suspended"), "")
+	require.ErrorIs(t, err, auth.ErrAccountInactive)
 }
 
 func TestResolver_Signup_CreatesOrg(t *testing.T) {
 	resetAuthTables(t)
 	ctx := context.Background()
-	r := pgauth.NewResolver(testPool)
+	r := pgauth.NewResolver(testStore)
 
 	id, err := r.Resolve(ctx, claims("carol@test.local", "dev-carol"), "Carol's Corp")
 	require.NoError(t, err)
@@ -96,10 +118,10 @@ func TestResolver_Signup_CreatesOrg(t *testing.T) {
 
 	// organizations is RLS-protected (Phase 2F). Reading via the
 	// raw pool runs as app_tenant with no app.current_org_id set
-	// → zero rows. Wrap in WithBypass + use the tx from ctx for
+	// → zero rows. Wrap in WithControlPlane + use the tx from ctx for
 	// the assertion read.
 	var name, slug string
-	require.NoError(t, testStore.WithBypass(ctx, func(ctx context.Context) error {
+	require.NoError(t, testStore.WithControlPlane(ctx, func(ctx context.Context) error {
 		tx := ctx.Value("tx").(pgx.Tx) //nolint:staticcheck // shared key with PostgresStore.getQueryExecutor
 		return tx.QueryRow(ctx,
 			`SELECT name, slug FROM organizations WHERE id = $1`, id.OrgID).Scan(&name, &slug)
@@ -111,7 +133,7 @@ func TestResolver_Signup_CreatesOrg(t *testing.T) {
 func TestResolver_Signup_NoOrgNameDoesNotCreateOrg(t *testing.T) {
 	resetAuthTables(t)
 	ctx := context.Background()
-	r := pgauth.NewResolver(testPool)
+	r := pgauth.NewResolver(testStore)
 
 	id, err := r.Resolve(ctx, claims("dave@test.local", "dev-dave"), "")
 	require.NoError(t, err)
@@ -121,7 +143,7 @@ func TestResolver_Signup_NoOrgNameDoesNotCreateOrg(t *testing.T) {
 func TestResolver_ExistingOrgIsLoaded(t *testing.T) {
 	resetAuthTables(t)
 	ctx := context.Background()
-	r := pgauth.NewResolver(testPool)
+	r := pgauth.NewResolver(testStore)
 
 	// Provision user + org
 	first, err := r.Resolve(ctx, claims("erin@test.local", "dev-erin"), "Erin Inc")
@@ -140,7 +162,7 @@ func TestResolver_Bootstrap_FirstMatchGetsSuperAdmin(t *testing.T) {
 
 	t.Setenv(pgauth.BootstrapAdminEmailEnv, "boss@test.local")
 
-	r := pgauth.NewResolver(testPool)
+	r := pgauth.NewResolver(testStore)
 	id, err := r.Resolve(ctx, claims("boss@test.local", "dev-boss"), "")
 	require.NoError(t, err)
 	require.Equal(t, "super_admin", id.PlatformRole)
@@ -163,7 +185,7 @@ func TestResolver_Bootstrap_SelfDisarms(t *testing.T) {
 	ctx := context.Background()
 
 	t.Setenv(pgauth.BootstrapAdminEmailEnv, "first@test.local")
-	r := pgauth.NewResolver(testPool)
+	r := pgauth.NewResolver(testStore)
 
 	// First call grants
 	id1, err := r.Resolve(ctx, claims("first@test.local", "dev-first"), "")
@@ -190,7 +212,7 @@ func TestResolver_Bootstrap_NoEnvNoGrant(t *testing.T) {
 	ctx := context.Background()
 
 	os.Unsetenv(pgauth.BootstrapAdminEmailEnv)
-	r := pgauth.NewResolver(testPool)
+	r := pgauth.NewResolver(testStore)
 
 	id, err := r.Resolve(ctx, claims("anyone@test.local", "dev-anyone"), "")
 	require.NoError(t, err)
@@ -202,7 +224,7 @@ func TestResolver_Bootstrap_CaseInsensitiveEmail(t *testing.T) {
 	ctx := context.Background()
 
 	t.Setenv(pgauth.BootstrapAdminEmailEnv, "  Boss@Test.LOCAL  ")
-	r := pgauth.NewResolver(testPool)
+	r := pgauth.NewResolver(testStore)
 
 	id, err := r.Resolve(ctx, claims("BOSS@test.local", "dev-boss-caps"), "")
 	require.NoError(t, err)
@@ -213,7 +235,7 @@ func TestResolver_Bootstrap_CaseInsensitiveEmail(t *testing.T) {
 func TestResolver_ConcurrentFirstLogin_OneUser(t *testing.T) {
 	resetAuthTables(t)
 	ctx := context.Background()
-	r := pgauth.NewResolver(testPool)
+	r := pgauth.NewResolver(testStore)
 
 	// Fire 10 concurrent first logins for the same identity — must converge
 	// on a single user row without deadlocking or duplicating rows.
@@ -248,13 +270,13 @@ func TestResolver_ConcurrentFirstLogin_OneUser(t *testing.T) {
 	require.Greater(t, successes, 0, "at least one concurrent resolve must succeed")
 
 	var count int
-	scanBypass(t, &count, `SELECT COUNT(*) FROM users WHERE primary_email = 'race@test.local'`)
+	scanControlPlane(t, &count, `SELECT COUNT(*) FROM users WHERE primary_email = 'race@test.local'`)
 	require.Equal(t, 1, count, "concurrent first logins must produce exactly one user")
 }
 
 func TestResolver_InvalidClaims_Rejected(t *testing.T) {
 	ctx := context.Background()
-	r := pgauth.NewResolver(testPool)
+	r := pgauth.NewResolver(testStore)
 
 	_, err := r.Resolve(ctx, &auth.Claims{Provider: "dev"}, "")
 	require.Error(t, err)

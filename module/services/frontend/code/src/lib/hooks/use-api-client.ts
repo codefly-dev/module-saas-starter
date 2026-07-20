@@ -1,52 +1,40 @@
-"use client";
-
-import { useMemo } from "react";
-import { createClient } from "@connectrpc/connect";
+import { createAccountsClients } from "@/gen/saas/accounts/v1/frontend_catalog";
 import { apiTransport } from "@/lib/connect/transport";
-import {
-  UserService,
-  OrganizationService,
-  TeamService,
-  PermissionService,
-  AuthService,
-  AuditService,
-  APIKeyService,
-  PlatformAdminService,
-  InvitationService,
-} from "@/gen/saas-starter_api_grpc_pb";
+
+const clients = createAccountsClients(apiTransport);
 
 export function useUserService() {
-  return useMemo(() => createClient(UserService, apiTransport), []);
+	return clients.UserService;
 }
 
 export function useOrganizationService() {
-  return useMemo(() => createClient(OrganizationService, apiTransport), []);
+	return clients.OrganizationService;
 }
 
 export function useTeamService() {
-  return useMemo(() => createClient(TeamService, apiTransport), []);
+	return clients.TeamService;
 }
 
 export function usePermissionService() {
-  return useMemo(() => createClient(PermissionService, apiTransport), []);
+	return clients.PermissionService;
 }
 
 export function useAuthService() {
-  return useMemo(() => createClient(AuthService, apiTransport), []);
+	return clients.AuthService;
 }
 
 export function useAuditService() {
-  return useMemo(() => createClient(AuditService, apiTransport), []);
+	return clients.AuditService;
 }
 
 export function useAPIKeyService() {
-  return useMemo(() => createClient(APIKeyService, apiTransport), []);
+	return clients.APIKeyService;
 }
 
 export function usePlatformAdminService() {
-  return useMemo(() => createClient(PlatformAdminService, apiTransport), []);
+	return clients.PlatformAdminService;
 }
 
 export function useInvitationService() {
-  return useMemo(() => createClient(InvitationService, apiTransport), []);
+	return clients.InvitationService;
 }

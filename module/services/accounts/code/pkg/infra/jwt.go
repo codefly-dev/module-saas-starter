@@ -13,15 +13,14 @@ import (
 	"net/http"
 	"time"
 
-	codefly "github.com/codefly-dev/sdk-go"
 	"github.com/codefly-dev/core/wool"
+	codefly "github.com/codefly-dev/sdk-go"
 	"github.com/golang-jwt/jwt/v5"
 )
 
 const (
-	AccessTokenTTL  = 15 * time.Minute
-	RefreshTokenTTL = 30 * 24 * time.Hour
-	TokenIssuer     = "codefly-user-mgmt"
+	AccessTokenTTL = 15 * time.Minute
+	TokenIssuer    = "codefly-user-mgmt"
 )
 
 // AccessClaims are the JWT claims embedded in access tokens.

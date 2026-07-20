@@ -8,7 +8,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	pgauth "accounts/pkg/auth/pg"
-	"accounts/pkg/gen"
+	gen "accounts/pkg/gen/saas/accounts/v1"
 )
 
 // These tests exercise the BOOTSTRAP_ADMIN_EMAIL flow through the
@@ -24,7 +24,7 @@ func wipeBootstrapState(t *testing.T) {
 	ctx := context.Background()
 	_, err := testStore.Pool().Exec(ctx, `UPDATE bootstrap_state SET bootstrapped_at = NULL WHERE id = 1`)
 	require.NoError(t, err)
-	_, err = testStore.Pool().Exec(ctx, `TRUNCATE TABLE platform_admins`)
+	_, err = testStore.Pool().Exec(ctx, `DELETE FROM platform_admins`)
 	require.NoError(t, err)
 }
 
@@ -33,7 +33,7 @@ func TestBootstrap_FirstMatchingLoginGrantsSuperAdmin(t *testing.T) {
 	wipeBootstrapState(t)
 	t.Setenv(pgauth.BootstrapAdminEmailEnv, "boss@acme.com")
 
-	resp, err := testService.Authenticate(testCtx, &gen.AuthenticateRequest{
+	resp, err := authenticateFixture(testCtx, &gen.AuthenticateRequest{
 		Provider:      "google",
 		ProviderId:    "google-boss",
 		ProviderEmail: "boss@acme.com",
@@ -50,9 +50,9 @@ func TestBootstrap_FirstMatchingLoginGrantsSuperAdmin(t *testing.T) {
 	require.NotNil(t, stamped, "bootstrap_state must be stamped after first match")
 
 	// Verify platform_admins row exists for the new user. The user_identities
-	// subquery is RLS-protected, so read under WithBypass.
+	// subquery is RLS-protected, so read under WithControlPlane.
 	var role string
-	require.NoError(t, testStore.WithBypass(testCtx, func(ctx context.Context) error {
+	require.NoError(t, testStore.WithControlPlane(testCtx, func(ctx context.Context) error {
 		tx := ctx.Value("tx").(pgx.Tx) //nolint:staticcheck // shared "tx" key
 		return tx.QueryRow(ctx, `
 			SELECT platform_role::text FROM platform_admins
@@ -67,7 +67,7 @@ func TestBootstrap_WrongEmailGetsNoPlatformRole(t *testing.T) {
 	wipeBootstrapState(t)
 	t.Setenv(pgauth.BootstrapAdminEmailEnv, "boss@acme.com")
 
-	resp, err := testService.Authenticate(testCtx, &gen.AuthenticateRequest{
+	resp, err := authenticateFixture(testCtx, &gen.AuthenticateRequest{
 		Provider:      "google",
 		ProviderId:    "google-rando",
 		ProviderEmail: "rando@acme.com",
@@ -98,7 +98,7 @@ func TestBootstrap_SecondMatchingLoginIsNotPromoted(t *testing.T) {
 	t.Setenv(pgauth.BootstrapAdminEmailEnv, "boss@acme.com")
 
 	// First matching login grants.
-	_, err := testService.Authenticate(testCtx, &gen.AuthenticateRequest{
+	_, err := authenticateFixture(testCtx, &gen.AuthenticateRequest{
 		Provider: "google", ProviderId: "google-boss-1", ProviderEmail: "boss@acme.com",
 	})
 	require.NoError(t, err)
@@ -108,7 +108,7 @@ func TestBootstrap_SecondMatchingLoginIsNotPromoted(t *testing.T) {
 	// claimed.
 	t.Setenv(pgauth.BootstrapAdminEmailEnv, "new-boss@acme.com")
 
-	_, err = testService.Authenticate(testCtx, &gen.AuthenticateRequest{
+	_, err = authenticateFixture(testCtx, &gen.AuthenticateRequest{
 		Provider: "google", ProviderId: "google-new-boss", ProviderEmail: "new-boss@acme.com",
 	})
 	require.NoError(t, err)

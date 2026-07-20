@@ -1,0 +1,114 @@
+syntax = "proto3";
+
+package saas.accounts.v1;
+
+import "buf/validate/validate.proto";
+import "google/api/annotations.proto";
+import "google/protobuf/timestamp.proto";
+import "saas/policy/v1/options.proto";
+
+// ConsumeUsageRequest records one logical usage operation. Callers must reuse
+// idempotency_key when retrying the same operation.
+message ConsumeUsageRequest {
+  string organization_id = 1 [(buf.validate.field).string.uuid = true];
+  string meter = 2 [(buf.validate.field).string = {pattern: "^[a-z][a-z0-9_]{0,127}$"}];
+  int64 quantity = 3 [(buf.validate.field).int64.gt = 0];
+  string idempotency_key = 4 [(buf.validate.field).string = {
+    min_len: 1
+    max_len: 255
+  }];
+  // occurred_at selects the UTC calendar-month bucket. When omitted, the
+  // server uses its current time.
+  google.protobuf.Timestamp occurred_at = 5;
+  // dimensions are immutable event metadata for analytics and reconciliation;
+  // they do not affect the aggregate counter key.
+  map<string, string> dimensions = 6 [
+    (buf.validate.field).map.max_pairs = 32,
+    (buf.validate.field).map.keys = {string: {pattern: "^[a-z][a-z0-9_.-]{0,63}$"}},
+    (buf.validate.field).map.values = {string: {max_len: 256}}
+  ];
+}
+
+// UsageReceipt is the durable result of a consumption attempt. A rejected
+// attempt has an event_id and is replayed identically for duplicate requests.
+message UsageReceipt {
+  string event_id = 1;
+  string organization_id = 2;
+  string meter = 3;
+  int64 quantity = 4;
+  bool accepted = 5;
+  bool duplicate = 6;
+  int64 used = 7;
+  // limit is -1 when the meter is unlimited, 0 when disabled, or positive for
+  // a hard cap.
+  int64 limit = 8;
+  google.protobuf.Timestamp period_start = 9;
+  // period_end is exclusive.
+  google.protobuf.Timestamp period_end = 10;
+  google.protobuf.Timestamp occurred_at = 11;
+}
+
+message ConsumeUsageResponse {
+  UsageReceipt receipt = 1;
+}
+
+message GetUsageRequest {
+  string organization_id = 1 [(buf.validate.field).string.uuid = true];
+  string meter = 2 [(buf.validate.field).string = {pattern: "^[a-z][a-z0-9_]{0,127}$"}];
+}
+
+message GetUsageResponse {
+  string organization_id = 1;
+  string meter = 2;
+  int64 used = 3;
+  // limit is -1 when the meter is unlimited, 0 when disabled, or positive for
+  // a hard cap.
+  int64 limit = 4;
+  google.protobuf.Timestamp period_start = 5;
+  // period_end is exclusive.
+  google.protobuf.Timestamp period_end = 6;
+}
+
+// UsageService is the generic monthly metering boundary for product services.
+service UsageService {
+  // ConsumeUsage is service-to-service only. It atomically enforces the
+  // effective plan/override limit and records an immutable attempt receipt.
+  rpc ConsumeUsage(ConsumeUsageRequest) returns (ConsumeUsageResponse) {
+    option (saas.policy.v1.method_policy) = {
+      exposure: EXPOSURE_INTERNAL
+      tenant: TENANT_REQUIREMENT_NONE
+      mfa: MFA_REQUIREMENT_NONE
+      audit: {emission: AUDIT_EMISSION_NONE}
+      idempotency: IDEMPOTENCY_REQUIREMENT_REQUIRED
+      rate_limit: RATE_LIMIT_CLASS_INTERNAL
+      request_sensitivity: SENSITIVITY_CONFIDENTIAL
+      response_sensitivity: SENSITIVITY_CONFIDENTIAL
+      platform_role: PLATFORM_ROLE_REQUIREMENT_NONE
+    };
+  }
+
+  // GetUsage returns the caller organization's current UTC month for one
+  // meter. Cardinality quotas such as seats remain entitlement gauges rather
+  // than usage events.
+  rpc GetUsage(GetUsageRequest) returns (GetUsageResponse) {
+    option (saas.policy.v1.method_policy) = {
+      exposure: EXPOSURE_AUTHENTICATED
+      tenant: TENANT_REQUIREMENT_ORG_MEMBER
+      permissions: "entitlements:read"
+      scopes: "entitlements:read"
+      resource_bindings: {
+        request_field: "organization_id"
+        target: RESOURCE_TARGET_ORGANIZATION
+        lookup: RESOURCE_LOOKUP_DIRECT_ID
+      }
+      mfa: MFA_REQUIREMENT_NONE
+      audit: {emission: AUDIT_EMISSION_NONE}
+      idempotency: IDEMPOTENCY_REQUIREMENT_FORBIDDEN
+      rate_limit: RATE_LIMIT_CLASS_STANDARD_READ
+      request_sensitivity: SENSITIVITY_CONFIDENTIAL
+      response_sensitivity: SENSITIVITY_CONFIDENTIAL
+      platform_role: PLATFORM_ROLE_REQUIREMENT_NONE
+    };
+    option (google.api.http) = {get: "/v1/organizations/{organization_id}/usage/{meter}"};
+  }
+}

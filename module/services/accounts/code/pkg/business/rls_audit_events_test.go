@@ -13,7 +13,7 @@ import (
 // TestRLS_AuditEvents_CrossTenantBlocked — Phase 2D, polymorphic
 // policy on audit_events. Two orgs each emit a tenant-scoped audit
 // event. Org A's tx must see only its own events; B's events stay
-// invisible. NULL-org rows are visible only via WithBypass.
+// invisible. NULL-org rows are visible only via WithControlPlane.
 func TestRLS_AuditEvents_CrossTenantBlocked(t *testing.T) {
 	clearData(t)
 	ctx := testCtx
@@ -22,8 +22,8 @@ func TestRLS_AuditEvents_CrossTenantBlocked(t *testing.T) {
 	_, orgB := mustUserAndOrg(t, ctx, "bob-ae@rls-test.com", "bob-ae-rls", "Acme AE B")
 
 	// Seed: a tenant-scoped event for each org + a NULL-org system event.
-	// Direct InsertAuditEvent under the appropriate wrapper — bypassing
-	// the AsyncAuditEmitter so the test is synchronous.
+	// Direct InsertAuditEvent under the appropriate wrapper isolates the RLS
+	// policy from fan-out behavior.
 	require.NoError(t, testStore.WithOrgTx(ctx, orgA, func(ctx context.Context) error {
 		return testStore.InsertAuditEvent(ctx, business.AuditEntry{
 			ActorType: "user", Action: "test.event", Resource: "test", OrgID: orgA,
@@ -34,7 +34,7 @@ func TestRLS_AuditEvents_CrossTenantBlocked(t *testing.T) {
 			ActorType: "user", Action: "test.event", Resource: "test", OrgID: orgB,
 		})
 	}))
-	require.NoError(t, testStore.WithBypass(ctx, func(ctx context.Context) error {
+	require.NoError(t, testStore.WithControlPlane(ctx, func(ctx context.Context) error {
 		return testStore.InsertAuditEvent(ctx, business.AuditEntry{
 			ActorType: "system", Action: "system.event", Resource: "system",
 			// OrgID intentionally empty — NULL in DB
@@ -65,7 +65,7 @@ func TestRLS_AuditEvents_CrossTenantBlocked(t *testing.T) {
 		return nil
 	}))
 
-	// Platform-admin path (orgID==""): WithBypass via the Service
+	// Platform-admin path (orgID==""): WithControlPlane via the Service
 	// wrapper. Should see everything (both tenant events + NULL-org
 	// system event).
 	all, _, _, err := testService.QueryAuditLog(ctx, "", "", "", "", "", &past, &now, 100, "")
@@ -80,40 +80,33 @@ func TestRLS_AuditEvents_CrossTenantBlocked(t *testing.T) {
 		"un-wrapped QueryAuditLog must return ZERO rows (RLS fail-closed)")
 }
 
-// TestRLS_AuditEvents_AsyncEmitterPicksWrapper — Phase 2D, the
-// AsyncAuditEmitter must pick WithOrgTx vs WithBypass based on
-// entry.OrgID. Drains the channel synchronously by closing it and
-// waiting; then verifies both tenant + system events landed.
-func TestRLS_AuditEvents_AsyncEmitterPicksWrapper(t *testing.T) {
+// TestRLS_AuditEvents_DurableEmitterPicksWrapper verifies tenant and system
+// events choose the correct transactional authority boundary.
+func TestRLS_AuditEvents_DurableEmitterPicksWrapper(t *testing.T) {
 	clearData(t)
 	ctx := testCtx
 
 	_, orgA := mustUserAndOrg(t, ctx, "alice-em@rls-test.com", "alice-em-rls", "Acme EM A")
 
-	// Drive the global asyncAuditEmitter by way of Service.emit which
-	// calls it under the hood. We use a fresh emitter to control the
-	// drain timing — close + sleep is reliable for buffered channels.
-	emitter := business.NewAsyncAuditEmitter(testStore, 16)
+	emitter, err := business.NewDurableAuditEmitter(testStore, testStore)
+	require.NoError(t, err)
 
 	emitter.Emit(ctx, business.AuditEntry{
 		ActorType: "user", Action: "tenant.event", Resource: "test", OrgID: orgA,
 	})
 	emitter.Emit(ctx, business.AuditEntry{
 		ActorType: "system", Action: "system.event", Resource: "test",
-		// OrgID empty → NULL-org write under WithBypass
+		// OrgID empty → NULL-org write under WithControlPlane
 	})
 
 	emitter.Close()
-	// Give drain() a moment to commit the writes; the test pool's
-	// flush is sub-millisecond but be generous.
-	time.Sleep(200 * time.Millisecond)
 
 	// Tenant event visible to org A.
 	now := time.Now().Add(1 * time.Hour)
 	past := time.Now().Add(-1 * time.Hour)
 	asA, _, _, err := testService.QueryAuditLog(ctx, orgA, "", "tenant.event", "", "", &past, &now, 100, "")
 	require.NoError(t, err)
-	require.Len(t, asA, 1, "tenant event written via async emitter must be visible to its org")
+	require.Len(t, asA, 1, "tenant event written via durable emitter must be visible to its org")
 
 	// System event visible only via bypass (platform-admin scope).
 	all, _, _, err := testService.QueryAuditLog(ctx, "", "", "system.event", "", "", &past, &now, 100, "")

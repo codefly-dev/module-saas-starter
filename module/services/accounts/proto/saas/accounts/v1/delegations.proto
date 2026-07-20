@@ -1,0 +1,220 @@
+syntax = "proto3";
+
+package saas.accounts.v1;
+
+import "buf/validate/validate.proto";
+import "google/api/annotations.proto";
+import "google/protobuf/struct.proto";
+import "google/protobuf/timestamp.proto";
+import "saas/policy/v1/options.proto";
+
+// =====================================================================
+// DelegationService — M7 escalation flow + M8 pattern grants
+// =====================================================================
+//
+// Synchronous escalation: an actor (typically an agent that hit a
+// RequireApproval decision) requests authority; a grantor approves
+// or denies; the gateway mints a fresh scoped-auth token on
+// approve. Pattern grants (M8) extend the same table with
+// pre-authorized classes of future calls.
+
+message RequestDelegationRequest {
+  string org_id = 1 [(buf.validate.field).string.uuid = true];
+  string actor_principal_id = 2 [(buf.validate.field).string.uuid = true];
+  string action = 3 [(buf.validate.field).string.min_len = 1];
+  string resource = 4;
+  string resource_id = 5;
+  // Justification — REQUIRED. Without it the grantor has no
+  // basis to decide; saas-starter rejects empty/whitespace.
+  string justification = 6 [(buf.validate.field).string.min_len = 1];
+  google.protobuf.Struct context = 7;
+  // risk_level: low|medium|high|critical. Empty defaults to low.
+  string risk_level = 8;
+  // timeout_seconds: how long to wait before auto-expiry.
+  // Defaults to 300 (5 min) if zero.
+  int32 timeout_seconds = 9;
+  // Grantor: optional explicit target ("user:<id>" / "team:<name>");
+  // empty → default approver chain.
+  string grantor = 10;
+  // Idempotency key. Server derives from request content if empty.
+  string request_hash = 11;
+}
+
+message RequestDelegationResponse {
+  string id = 1;
+  string status = 2; // typically "pending"; may be "approved" if a pattern matches (M8)
+  google.protobuf.Timestamp expires_at = 3;
+}
+
+message WaitForDelegationRequest {
+  string id = 1 [(buf.validate.field).string.uuid = true];
+  string org_id = 2 [(buf.validate.field).string.uuid = true];
+}
+
+// DelegationEvent is one streaming event delivered to a
+// subscriber. The agent SDK reads exactly one event (the
+// terminal decision) and disconnects.
+message DelegationEvent {
+  string id = 1;
+  string status = 2; // approved | denied | expired | cancelled
+  google.protobuf.Timestamp decided_at = 3;
+  string grantor_principal_id = 4;
+  string reason = 5;
+  // On approve: the gateway's freshly minted scoped-auth token.
+  // Empty on deny / expired / cancelled.
+  string scoped_auth_token = 6;
+  // On approve: the unique id of the minted token (for audit
+  // correlation). Same value as the encoded token's `id` field.
+  string minted_token_id = 7;
+}
+
+message DecideDelegationRequest {
+  string id = 1 [(buf.validate.field).string.uuid = true];
+  string org_id = 2 [(buf.validate.field).string.uuid = true];
+  // Decision: approved | denied. (expired/cancelled are state
+  // transitions handled by other paths.)
+  string decision = 3 [(buf.validate.field).string.min_len = 1];
+  // Reason: required when decision=denied; optional on approve.
+  string reason = 4;
+}
+
+message DelegationGrant {
+  string id = 1;
+  string org_id = 2;
+  string actor_principal_id = 3;
+  string grantor_principal_id = 4;
+  string action = 5;
+  string resource = 6;
+  string resource_id = 7;
+  string justification = 8;
+  string status = 9;
+  string risk_level = 10;
+  string kind = 11; // one_shot | pattern
+  google.protobuf.Timestamp created_at = 12;
+  google.protobuf.Timestamp decided_at = 13;
+  google.protobuf.Timestamp expires_at = 14;
+  string decision_reason = 15;
+  string minted_token_id = 16;
+}
+
+message ListPendingDelegationsRequest {
+  string org_id = 1 [(buf.validate.field).string.uuid = true];
+  int32 page_size = 2 [(buf.validate.field).int32 = {
+    gte: 0
+    lte: 200
+  }];
+  string page_token = 3;
+}
+
+message ListPendingDelegationsResponse {
+  repeated DelegationGrant grants = 1;
+  string next_page_token = 2;
+}
+
+service DelegationService {
+  // RequestDelegation creates a new pending grant. Idempotent on
+  // (org_id, request_hash) — same request from a retrying actor
+  // returns the original row's id.
+  rpc RequestDelegation(RequestDelegationRequest) returns (RequestDelegationResponse) {
+    option (saas.policy.v1.method_policy) = {
+      exposure: EXPOSURE_AUTHENTICATED
+      tenant: TENANT_REQUIREMENT_ORG_MEMBER
+      resource_bindings: {
+        request_field: "org_id"
+        target: RESOURCE_TARGET_ORGANIZATION
+        lookup: RESOURCE_LOOKUP_DIRECT_ID
+      }
+      mfa: MFA_REQUIREMENT_NONE
+      audit: {
+        events: "delegation.requested"
+        events: "delegation.auto_approved"
+        emission: AUDIT_EMISSION_SUCCESS
+      }
+      idempotency: IDEMPOTENCY_REQUIREMENT_FORBIDDEN
+      rate_limit: RATE_LIMIT_CLASS_STANDARD_WRITE
+      request_sensitivity: SENSITIVITY_CONFIDENTIAL
+      response_sensitivity: SENSITIVITY_CONFIDENTIAL
+      platform_role: PLATFORM_ROLE_REQUIREMENT_NONE
+    };
+    option (google.api.http) = {
+      post: "/v1/delegations"
+      body: "*"
+    };
+  }
+
+  // WaitForDelegation streams one terminal event for a grant.
+  // Backed by Postgres LISTEN — no polling.
+  rpc WaitForDelegation(WaitForDelegationRequest) returns (stream DelegationEvent) {
+    option (saas.policy.v1.method_policy) = {
+      exposure: EXPOSURE_AUTHENTICATED
+      tenant: TENANT_REQUIREMENT_ORG_MEMBER
+      resource_bindings: {
+        request_field: "org_id"
+        target: RESOURCE_TARGET_ORGANIZATION
+        lookup: RESOURCE_LOOKUP_DIRECT_ID
+      }
+      mfa: MFA_REQUIREMENT_NONE
+      audit: {emission: AUDIT_EMISSION_NONE}
+      idempotency: IDEMPOTENCY_REQUIREMENT_FORBIDDEN
+      rate_limit: RATE_LIMIT_CLASS_STANDARD_READ
+      request_sensitivity: SENSITIVITY_CONFIDENTIAL
+      response_sensitivity: SENSITIVITY_CONFIDENTIAL
+      platform_role: PLATFORM_ROLE_REQUIREMENT_NONE
+    };
+    option (google.api.http) = {get: "/v1/delegations/{id}:wait"};
+  }
+
+  // DecideDelegation is the grantor's approve/deny action. Called
+  // from the approval UI; transitions the row + (on approve)
+  // mints the scoped-auth token + fires NOTIFY for any waiting
+  // streams.
+  rpc DecideDelegation(DecideDelegationRequest) returns (DelegationGrant) {
+    option (saas.policy.v1.method_policy) = {
+      exposure: EXPOSURE_AUTHENTICATED
+      tenant: TENANT_REQUIREMENT_ORG_ADMIN
+      resource_bindings: {
+        request_field: "org_id"
+        target: RESOURCE_TARGET_ORGANIZATION
+        lookup: RESOURCE_LOOKUP_DIRECT_ID
+      }
+      mfa: MFA_REQUIREMENT_NONE
+      audit: {
+        events: "delegation.approved"
+        events: "delegation.denied"
+        emission: AUDIT_EMISSION_SUCCESS
+      }
+      idempotency: IDEMPOTENCY_REQUIREMENT_FORBIDDEN
+      rate_limit: RATE_LIMIT_CLASS_STANDARD_READ
+      request_sensitivity: SENSITIVITY_CONFIDENTIAL
+      response_sensitivity: SENSITIVITY_CONFIDENTIAL
+      platform_role: PLATFORM_ROLE_REQUIREMENT_NONE
+    };
+    option (google.api.http) = {
+      post: "/v1/delegations/{id}:decide"
+      body: "*"
+    };
+  }
+
+  // ListPendingDelegations returns paginated pending grants for
+  // the approver UI. Sorted critical → high → medium → low,
+  // newest-first within tier.
+  rpc ListPendingDelegations(ListPendingDelegationsRequest) returns (ListPendingDelegationsResponse) {
+    option (saas.policy.v1.method_policy) = {
+      exposure: EXPOSURE_AUTHENTICATED
+      tenant: TENANT_REQUIREMENT_ORG_MEMBER
+      resource_bindings: {
+        request_field: "org_id"
+        target: RESOURCE_TARGET_ORGANIZATION
+        lookup: RESOURCE_LOOKUP_DIRECT_ID
+      }
+      mfa: MFA_REQUIREMENT_NONE
+      audit: {emission: AUDIT_EMISSION_NONE}
+      idempotency: IDEMPOTENCY_REQUIREMENT_FORBIDDEN
+      rate_limit: RATE_LIMIT_CLASS_STANDARD_READ
+      request_sensitivity: SENSITIVITY_CONFIDENTIAL
+      response_sensitivity: SENSITIVITY_CONFIDENTIAL
+      platform_role: PLATFORM_ROLE_REQUIREMENT_NONE
+    };
+    option (google.api.http) = {get: "/v1/delegations:pending"};
+  }
+}

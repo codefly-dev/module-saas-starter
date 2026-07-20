@@ -1,265 +1,308 @@
 "use client";
 
+import type { NavItem, PluginNavSection } from "@codefly/saas-plugin-contract";
+import { ChevronRight, ChevronUp, LogOut, ShieldCheck } from "lucide-react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { useAuth } from "@/lib/auth";
-import { isAdmin } from "@/lib/permissions";
-import {
-  SidebarProvider,
-  Sidebar,
-  SidebarContent,
-  SidebarFooter,
-  SidebarGroup,
-  SidebarGroupContent,
-  SidebarGroupLabel,
-  SidebarHeader,
-  SidebarMenu,
-  SidebarMenuButton,
-  SidebarMenuItem,
-  SidebarInset,
-  SidebarTrigger,
-} from "@/components/ui/sidebar";
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuSeparator,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
+import { useState } from "react";
+import { BrandMark } from "@/components/brand-mark";
+import { RateLimitBanner } from "@/components/rate-limit-banner";
+import { ThemeToggle } from "@/components/theme-toggle";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
-import { Toaster } from "@/components/ui/sonner";
+import {
+	DropdownMenu,
+	DropdownMenuContent,
+	DropdownMenuItem,
+	DropdownMenuSeparator,
+	DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { Separator } from "@/components/ui/separator";
 import {
-  LayoutDashboard,
-  CreditCard,
-  Settings,
-  Users,
-  Building2,
-  UsersRound,
-  Mail,
-  Key,
-  Shield,
-  Activity,
-  Flag,
-  FileText,
-  UserSearch,
-  ShieldCheck,
-  Globe,
-  HardDriveDownload,
-  KeyRound,
-  Bell,
-  LogOut,
-  ChevronUp,
-  BookOpen,
-  Monitor,
-} from "lucide-react";
+	Sidebar,
+	SidebarContent,
+	SidebarFooter,
+	SidebarGroup,
+	SidebarGroupContent,
+	SidebarGroupLabel,
+	SidebarHeader,
+	SidebarInset,
+	SidebarMenu,
+	SidebarMenuButton,
+	SidebarMenuItem,
+	SidebarProvider,
+	SidebarTrigger,
+} from "@/components/ui/sidebar";
+import { Toaster } from "@/components/ui/sonner";
 import { NotificationBell } from "@/features/notifications/ui/notification-bell";
-import { ThemeToggle } from "@/components/theme-toggle";
-import { ThemeSync } from "@/features/user-settings/ui/theme-sync";
-import { RateLimitBanner } from "@/components/rate-limit-banner";
+import { useAppearance } from "@/lib/appearance-provider";
+import { useAuth } from "@/lib/auth";
+import { getNavigationIcon } from "@/lib/navigation-icons";
+import { canPresent, selectNavigation } from "@/lib/plugins/presentation";
+import { useFrontendConfig } from "@/lib/providers";
+import { cn } from "@/lib/utils";
 
-// Regular user nav — visible to all authenticated users
-const userNav = [
-  { label: "Dashboard", href: "/", icon: LayoutDashboard },
-  { label: "Pricing", href: "/pricing", icon: CreditCard },
-];
+function isNavActive(pathname: string, href: string): boolean {
+	if (href === "/") return pathname === "/";
+	return pathname === href || pathname.startsWith(`${href}/`);
+}
 
-// Admin nav — only visible to admin and super_admin
-const adminNav = [
-  {
-    group: "Users & Access",
-    items: [
-      { label: "Users", href: "/admin/users", icon: Users },
-      { label: "Organizations", href: "/admin/organizations", icon: Building2 },
-      { label: "Teams", href: "/admin/teams", icon: UsersRound },
-      { label: "Roles", href: "/admin/roles", icon: Shield },
-      { label: "Invitations", href: "/admin/invitations", icon: Mail },
-      { label: "API Keys", href: "/admin/api-keys", icon: Key },
-    ],
-  },
-  {
-    group: "Platform",
-    items: [
-      { label: "Platform Users", href: "/admin/platform/admins", icon: UserSearch },
-      { label: "Feature Flags", href: "/admin/platform/feature-flags", icon: Flag },
-      { label: "Sessions", href: "/admin/sessions", icon: Monitor },
-      { label: "Entitlements", href: "/admin/entitlements", icon: ShieldCheck },
-      { label: "Audit Log", href: "/admin/audit-log", icon: Activity },
-    ],
-  },
-  {
-    group: "Billing",
-    items: [
-      { label: "Subscription", href: "/admin/billing", icon: CreditCard },
-    ],
-  },
-  {
-    group: "Integrations",
-    items: [
-      { label: "Webhooks", href: "/admin/webhooks", icon: Globe },
-      { label: "Audit Export", href: "/admin/audit-export", icon: HardDriveDownload },
-      { label: "Single Sign-On", href: "/admin/sso", icon: KeyRound },
-    ],
-  },
-  {
-    group: "Developer",
-    items: [
-      { label: "API Docs", href: "/docs", icon: BookOpen },
-      { label: "SDKs", href: "/docs/sdks", icon: FileText },
-      { label: "Compliance", href: "/docs/compliance", icon: ShieldCheck },
-    ],
-  },
-];
+function groupPluginItems(
+	section: PluginNavSection,
+): Array<[string | undefined, readonly NavItem[]]> {
+	const groups = new Map<string | undefined, NavItem[]>();
+	for (const item of section.items) {
+		const items = groups.get(item.group) ?? [];
+		items.push(item);
+		groups.set(item.group, items);
+	}
+	return [...groups.entries()];
+}
 
-// isAdmin lives in @/lib/permissions and is imported above — the sidebar
-// uses the same predicate <RoleGate> uses so role semantics stay unified.
+function PluginNavigationSection({
+	section,
+	pathname,
+}: {
+	section: PluginNavSection;
+	pathname: string;
+}) {
+	return (
+		<SidebarGroup>
+			<SidebarGroupLabel>{section.label}</SidebarGroupLabel>
+			<SidebarGroupContent className="space-y-2">
+				{groupPluginItems(section).map(([group, items]) => (
+					<div key={group ?? "default"}>
+						{group ? (
+							<div className="px-2 pb-1 text-[10px] font-medium uppercase tracking-wider text-muted-foreground/70">
+								{group}
+							</div>
+						) : null}
+						<SidebarMenu>
+							{items.map((item) => {
+								const Icon = getNavigationIcon(item.icon);
+								return (
+									<SidebarMenuItem key={item.href}>
+										<SidebarMenuButton
+											render={<Link href={item.href} />}
+											isActive={isNavActive(pathname, item.href)}
+										>
+											<Icon className="h-4 w-4" />
+											<span>{item.label}</span>
+										</SidebarMenuButton>
+									</SidebarMenuItem>
+								);
+							})}
+						</SidebarMenu>
+					</div>
+				))}
+			</SidebarGroupContent>
+		</SidebarGroup>
+	);
+}
 
 export function AdminLayout({ children }: { children: React.ReactNode }) {
-  const pathname = usePathname();
-  const { user, platformRole, orgRole, logout } = useAuth();
+	const pathname = usePathname();
+	const { user, platformRole, orgRole, isAuthenticated, logout } = useAuth();
+	const config = useFrontendConfig();
+	const { branding } = useAppearance();
+	const principal = { isAuthenticated, platformRole, orgRole };
 
-  const showAdmin = isAdmin(platformRole, orgRole);
+	const showAdmin = canPresent({ access: "admin" }, principal);
 
-  const userInitials = user?.email
-    ? user.email.slice(0, 2).toUpperCase()
-    : user?.id?.slice(0, 2).toUpperCase() ?? "U";
+	const visibleSidebar = selectNavigation(config, "sidebar", principal);
+	const userNav = visibleSidebar.filter(
+		(item) =>
+			!item.requiredRole &&
+			item.access !== "admin" &&
+			item.access !== "super_admin",
+	);
+	const visibleSections = config.navSections
+		.map((section) => ({
+			...section,
+			items: section.items.filter(
+				(item) => visibleSidebar.includes(item) && !userNav.includes(item),
+			),
+		}))
+		.filter((section) => section.items.length > 0);
+	const primarySections = visibleSections.filter(
+		(section) => section.placement === "primary",
+	);
+	const adminSections = visibleSections.filter(
+		(section) => section.placement === "admin",
+	);
+	const onAdminRoute = adminSections.some((section) =>
+		section.items.some((item) => isNavActive(pathname, item.href)),
+	);
+	const onPrimaryRoute = primarySections.some((section) =>
+		section.items.some((item) => isNavActive(pathname, item.href)),
+	);
+	const [adminOpen, setAdminOpen] = useState(
+		pathname === "/admin" || (onAdminRoute && !onPrimaryRoute),
+	);
+	const userMenu = selectNavigation(config, "user_menu", principal);
 
-  return (
-    <SidebarProvider>
-      <Sidebar>
-        <SidebarHeader>
-          <SidebarMenu>
-            <SidebarMenuItem>
-              <SidebarMenuButton size="lg" render={<Link href="/" />}>
-                <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-primary text-primary-foreground">
-                  <span className="text-sm font-bold">S</span>
-                </div>
-                <div className="flex flex-col gap-0.5 leading-none">
-                  <span className="font-semibold">SaaS Starter</span>
-                  <span className="text-xs text-muted-foreground">
-                    {showAdmin ? "Admin" : "Dashboard"}
-                  </span>
-                </div>
-              </SidebarMenuButton>
-            </SidebarMenuItem>
-          </SidebarMenu>
-        </SidebarHeader>
+	const userInitials = user?.email
+		? user.email.slice(0, 2).toUpperCase()
+		: (user?.id?.slice(0, 2).toUpperCase() ?? "U");
 
-        <SidebarContent>
-          {/* User nav — always visible */}
-          <SidebarGroup>
-            <SidebarGroupContent>
-              <SidebarMenu>
-                {userNav.map((item) => (
-                  <SidebarMenuItem key={item.href}>
-                    <SidebarMenuButton
-                      render={<Link href={item.href} />}
-                      isActive={item.href === "/" ? pathname === "/" : pathname.startsWith(item.href)}
-                    >
-                      <item.icon className="h-4 w-4" />
-                      <span>{item.label}</span>
-                    </SidebarMenuButton>
-                  </SidebarMenuItem>
-                ))}
-              </SidebarMenu>
-            </SidebarGroupContent>
-          </SidebarGroup>
+	return (
+		<SidebarProvider>
+			<Sidebar>
+				<SidebarHeader>
+					<SidebarMenu>
+						<SidebarMenuItem>
+							<SidebarMenuButton size="lg" render={<Link href="/" />}>
+								<BrandMark
+									className="flex h-8 w-8 items-center justify-center overflow-hidden rounded-lg bg-primary text-sm font-bold text-primary-foreground"
+									imageClassName="p-1"
+								/>
+								<div className="flex flex-col gap-0.5 leading-none">
+									<span className="font-semibold">{branding.name}</span>
+									<span className="text-xs text-muted-foreground">
+										{showAdmin ? "Admin" : "Dashboard"}
+									</span>
+								</div>
+							</SidebarMenuButton>
+						</SidebarMenuItem>
+					</SidebarMenu>
+				</SidebarHeader>
 
-          {/* Admin nav — only for admin/super_admin */}
-          {showAdmin && (
-            <>
-              <Separator />
-              {adminNav.map((section) => (
-                <SidebarGroup key={section.group}>
-                  <SidebarGroupLabel>{section.group}</SidebarGroupLabel>
-                  <SidebarGroupContent>
-                    <SidebarMenu>
-                      {section.items.map((item) => (
-                        <SidebarMenuItem key={item.href}>
-                          <SidebarMenuButton
-                            render={<Link href={item.href} />}
-                            isActive={pathname.startsWith(item.href)}
-                          >
-                            <item.icon className="h-4 w-4" />
-                            <span>{item.label}</span>
-                          </SidebarMenuButton>
-                        </SidebarMenuItem>
-                      ))}
-                    </SidebarMenu>
-                  </SidebarGroupContent>
-                </SidebarGroup>
-              ))}
-            </>
-          )}
+				<SidebarContent>
+					{/* User nav — always visible */}
+					<SidebarGroup>
+						<SidebarGroupContent>
+							<SidebarMenu>
+								{userNav.map((item) => {
+									const Icon = getNavigationIcon(item.icon);
+									return (
+										<SidebarMenuItem key={item.href}>
+											<SidebarMenuButton
+												render={<Link href={item.href} />}
+												isActive={isNavActive(pathname, item.href)}
+											>
+												<Icon className="h-4 w-4" />
+												<span>{item.label}</span>
+											</SidebarMenuButton>
+										</SidebarMenuItem>
+									);
+								})}
+							</SidebarMenu>
+						</SidebarGroupContent>
+					</SidebarGroup>
 
-          {/* Settings moved to user avatar dropdown */}
-        </SidebarContent>
+					{showAdmin &&
+						primarySections.map((section) => (
+							<PluginNavigationSection
+								key={section.plugin}
+								section={section}
+								pathname={pathname}
+							/>
+						))}
 
-        <SidebarFooter>
-          <SidebarMenu>
-            <SidebarMenuItem>
-              <DropdownMenu>
-                <DropdownMenuTrigger render={<SidebarMenuButton size="lg" />}>
-                  <Avatar className="h-8 w-8">
-                    <AvatarFallback>{userInitials}</AvatarFallback>
-                  </Avatar>
-                  <div className="flex flex-col gap-0.5 leading-none">
-                    <span className="text-sm font-medium">
-                      {user?.email || user?.id}
-                    </span>
-                    {platformRole && (
-                      <span className="text-xs text-muted-foreground">
-                        {platformRole}
-                      </span>
-                    )}
-                  </div>
-                  <ChevronUp className="ml-auto h-4 w-4" />
-                </DropdownMenuTrigger>
-                <DropdownMenuContent side="top" align="start" className="w-56">
-                  <DropdownMenuItem render={<Link href="/settings/mfa" />}>
-                    <Shield className="mr-2 h-4 w-4" />
-                    Security
-                  </DropdownMenuItem>
-                  <DropdownMenuItem render={<Link href="/settings/notifications" />}>
-                    <Bell className="mr-2 h-4 w-4" />
-                    Notifications
-                  </DropdownMenuItem>
-                  <DropdownMenuItem render={<Link href="/settings/data" />}>
-                    <FileText className="mr-2 h-4 w-4" />
-                    Data & Privacy
-                  </DropdownMenuItem>
-                  <DropdownMenuSeparator />
-                  <DropdownMenuItem onClick={logout}>
-                    <LogOut className="mr-2 h-4 w-4" />
-                    Sign out
-                  </DropdownMenuItem>
-                </DropdownMenuContent>
-              </DropdownMenu>
-            </SidebarMenuItem>
-          </SidebarMenu>
-        </SidebarFooter>
-      </Sidebar>
+					{showAdmin && (
+						<>
+							<Separator />
+							<SidebarGroup>
+								<SidebarGroupContent>
+									<SidebarMenu>
+										<SidebarMenuItem>
+											<SidebarMenuButton
+												onClick={() => setAdminOpen((open) => !open)}
+												isActive={onAdminRoute && !adminOpen}
+											>
+												<ShieldCheck className="h-4 w-4" />
+												<span>Admin</span>
+												<ChevronRight
+													className={cn(
+														"ml-auto h-4 w-4 transition-transform",
+														adminOpen && "rotate-90",
+													)}
+												/>
+											</SidebarMenuButton>
+										</SidebarMenuItem>
+									</SidebarMenu>
+								</SidebarGroupContent>
+							</SidebarGroup>
+							{adminOpen &&
+								adminSections.map((section) => (
+									<PluginNavigationSection
+										key={section.plugin}
+										section={section}
+										pathname={pathname}
+									/>
+								))}
+						</>
+					)}
 
-      <SidebarInset>
-        <header className="flex h-14 items-center gap-2 border-b px-4">
-          <SidebarTrigger />
-          <Separator orientation="vertical" className="h-6" />
-          <div className="flex-1" />
-          <ThemeToggle />
-          <NotificationBell />
-        </header>
-        {/* Route-content fade-in. The key={pathname} forces React
+					{/* Settings moved to user avatar dropdown */}
+				</SidebarContent>
+
+				<SidebarFooter>
+					<SidebarMenu>
+						<SidebarMenuItem>
+							<DropdownMenu>
+								<DropdownMenuTrigger render={<SidebarMenuButton size="lg" />}>
+									<Avatar className="h-8 w-8">
+										<AvatarFallback>{userInitials}</AvatarFallback>
+									</Avatar>
+									<div className="flex flex-col gap-0.5 leading-none">
+										<span className="text-sm font-medium">
+											{user?.email || user?.id}
+										</span>
+										{platformRole && (
+											<span className="text-xs text-muted-foreground">
+												{platformRole}
+											</span>
+										)}
+									</div>
+									<ChevronUp className="ml-auto h-4 w-4" />
+								</DropdownMenuTrigger>
+								<DropdownMenuContent side="top" align="start" className="w-56">
+									{userMenu.map((item) => {
+										const Icon = getNavigationIcon(item.icon);
+										return (
+											<DropdownMenuItem
+												key={item.href}
+												render={<Link href={item.href} />}
+											>
+												<Icon className="mr-2 h-4 w-4" />
+												{item.label}
+											</DropdownMenuItem>
+										);
+									})}
+									<DropdownMenuSeparator />
+									<DropdownMenuItem onClick={logout}>
+										<LogOut className="mr-2 h-4 w-4" />
+										Sign out
+									</DropdownMenuItem>
+								</DropdownMenuContent>
+							</DropdownMenu>
+						</SidebarMenuItem>
+					</SidebarMenu>
+				</SidebarFooter>
+			</Sidebar>
+
+			<SidebarInset>
+				<header className="flex h-14 items-center gap-2 border-b px-4">
+					<SidebarTrigger />
+					<Separator orientation="vertical" className="h-6" />
+					<div className="flex-1" />
+					<ThemeToggle />
+					<NotificationBell />
+				</header>
+				{/* Route-content fade-in. The key={pathname} forces React
             to remount the wrapper on every navigation, replaying the
             CSS animation. Snappy (200ms) so it feels like polish, not
             a delay. */}
-        <main key={pathname} className="flex-1 p-6 animate-in fade-in slide-in-from-bottom-1 duration-200">
-          {children}
-        </main>
-      </SidebarInset>
+				<main
+					key={pathname}
+					className="flex-1 p-6 animate-in fade-in slide-in-from-bottom-1 duration-200"
+				>
+					{children}
+				</main>
+			</SidebarInset>
 
-      <Toaster />
-      <ThemeSync />
-      <RateLimitBanner />
-    </SidebarProvider>
-  );
+			<Toaster />
+			<RateLimitBanner />
+		</SidebarProvider>
+	);
 }

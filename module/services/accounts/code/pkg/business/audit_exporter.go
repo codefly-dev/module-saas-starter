@@ -5,16 +5,18 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"sync"
 	"time"
 
 	"github.com/codefly-dev/core/wool"
+	"github.com/google/uuid"
 	"github.com/minio/minio-go/v7"
 	"github.com/minio/minio-go/v7/pkg/credentials"
 )
 
-// AuditExporter polls audit_export_configs on a 1-min cycle, finds
-// configs whose last_exported_at is older than (now - cadence), and
-// uploads new audit_events as JSONL to the customer's bucket.
+// AuditExporter executes one already-durable audit export job. Scheduling,
+// claims, retries, dead letters, and shutdown belong to the generic job
+// platform; this type owns only product reads, object upload, and projection.
 //
 // Why minio-go and not aws-sdk-go-v2: minio-go is a third the size,
 // uses the same API surface against any S3-compatible store (R2,
@@ -23,13 +25,14 @@ import (
 // AWS-specific feature parity (Glacier, etc) — when a customer needs
 // those, they swap impls.
 type AuditExporter struct {
-	store    Store
-	interval time.Duration
-	stop     chan struct{}
+	store     Store
+	interval  time.Duration
+	stop      chan struct{}
+	startOnce sync.Once
+	closeOnce sync.Once
 }
 
-// NewAuditExporter constructs an exporter with a 1-min polling
-// cadence. Start() spawns the goroutine; Close() stops it.
+// NewAuditExporter constructs the product-specific one-shot processor.
 func NewAuditExporter(store Store) *AuditExporter {
 	return &AuditExporter{
 		store:    store,
@@ -38,36 +41,34 @@ func NewAuditExporter(store Store) *AuditExporter {
 	}
 }
 
-// Start spawns the polling goroutine. Idempotent on repeat calls.
+// Start schedules configured exports until the durable export scheduler owns
+// this trigger. Export itself stays one-shot so the trigger can be replaced
+// without changing product processing or storage behavior.
 func (e *AuditExporter) Start() {
-	go e.loop()
-}
-
-// Close signals the goroutine to stop. Safe on uninitialised values.
-func (e *AuditExporter) Close() {
-	if e == nil || e.stop == nil {
+	if e == nil {
 		return
 	}
-	select {
-	case <-e.stop:
-		// already closed
-	default:
-		close(e.stop)
+	e.startOnce.Do(func() { go e.loop() })
+}
+
+// Close stops new scheduled exports. An export already in progress is allowed
+// to finish before the loop exits.
+func (e *AuditExporter) Close() {
+	if e == nil {
+		return
 	}
+	e.closeOnce.Do(func() { close(e.stop) })
 }
 
 func (e *AuditExporter) loop() {
-	t := time.NewTicker(e.interval)
-	defer t.Stop()
-	// Run an immediate tick on startup so a freshly-deployed api
-	// doesn't sit idle for a full minute on a customer who just
-	// configured exports.
+	ticker := time.NewTicker(e.interval)
+	defer ticker.Stop()
 	e.tick(context.Background())
 	for {
 		select {
 		case <-e.stop:
 			return
-		case <-t.C:
+		case <-ticker.C:
 			e.tick(context.Background())
 		}
 	}
@@ -75,81 +76,94 @@ func (e *AuditExporter) loop() {
 
 func (e *AuditExporter) tick(ctx context.Context) {
 	w := wool.Get(ctx).In("AuditExporter.tick")
-	// Cross-tenant scan: ListDueAuditExportConfigs must see every
-	// org's row to decide who's due. WithBypass disables the RLS
-	// policy on audit_export_configs for this read. Below, exportOne
-	// re-enters WithOrgTx for each per-tenant operation so writes
-	// (MarkSucceeded / RecordError) are tenant-scoped.
 	var configs []*AuditExportConfig
-	if err := e.store.WithBypass(ctx, func(ctx context.Context) error {
-		c, err := e.store.ListDueAuditExportConfigs(ctx, time.Now())
-		configs = c
+	if err := e.store.WithControlPlane(ctx, func(ctx context.Context) error {
+		var err error
+		configs, err = e.store.ListDueAuditExportConfigs(ctx, time.Now().UTC())
 		return err
 	}); err != nil {
-		w.Debug("ListDueAuditExportConfigs failed", wool.ErrField(err))
+		w.Debug("list due export configs failed", wool.ErrField(err))
 		return
 	}
-	for _, cfg := range configs {
-		// One config at a time, sequentially. Concurrent exports per
-		// config aren't useful (each must read since last_exported_at
-		// from the same row) and inter-org parallelism is unnecessary
-		// at the volumes a single api instance handles.
-		e.exportOne(ctx, cfg)
+	for _, config := range configs {
+		if err := e.Export(ctx, config, uuid.NewString()); err != nil {
+			w.Debug("scheduled export failed",
+				wool.Field("org", config.OrgID),
+				wool.ErrField(err),
+			)
+		}
 	}
 }
 
-// exportOne runs one export cycle for one config: pulls events since
-// last_exported_at, uploads as JSONL, advances last_exported_at on
-// success or records last_error on failure. Either way it returns —
-// the next tick re-evaluates the same config.
-func (e *AuditExporter) exportOne(ctx context.Context, cfg *AuditExportConfig) {
-	w := wool.Get(ctx).In("AuditExporter.exportOne", wool.Field("org", cfg.OrgID))
+// Export runs one export cycle for one config. objectID is the durable job UUID,
+// making object replacement idempotent across automatic retries.
+func (e *AuditExporter) Export(ctx context.Context, cfg *AuditExportConfig, objectID string) error {
+	w := wool.Get(ctx).In("AuditExporter.Export", wool.Field("org", cfg.OrgID))
 
 	// Window: from last_exported_at (or epoch) to now. Capped to
 	// 50k events per run so a backlog doesn't OOM the api on first
 	// export of a high-volume org.
 	from := time.Time{}
 	if cfg.LastExportedAt != nil {
-		from = *cfg.LastExportedAt
+		// PostgreSQL timestamps have microsecond precision. The previous cursor
+		// is inclusive in the shared query API, so advance by one database tick
+		// to avoid duplicating the boundary event in the next object.
+		from = cfg.LastExportedAt.Add(time.Microsecond)
 	}
-	to := time.Now()
+	to := time.Now().UTC()
 
 	// All per-org reads + writes for this cycle run inside a single
 	// WithOrgTx so the RLS policy on audit_export_configs scopes
 	// MarkSucceeded / RecordError to this org. QueryAuditLog goes
 	// through too even though audit_events doesn't yet have RLS — when
 	// it does (Phase 2), this code path will Just Work.
-	var events []AuditEntry
+	var body bytes.Buffer
+	pageToken := ""
+	eventCount := 0
 	if err := e.store.WithOrgTx(ctx, cfg.OrgID, func(ctx context.Context) error {
-		ev, _, _, qerr := e.store.QueryAuditLog(
-			ctx, cfg.OrgID, "", "", "", "", &from, &to, 50_000, "")
-		events = ev
-		return qerr
+		for {
+			events, nextToken, _, err := e.store.QueryAuditLog(
+				ctx, cfg.OrgID, "", "", "", "", &from, &to, 5_000, pageToken)
+			if err != nil {
+				return err
+			}
+			chunk, err := encodeJSONL(events)
+			if err != nil {
+				return err
+			}
+			if _, err := body.Write(chunk); err != nil {
+				return err
+			}
+			eventCount += len(events)
+			if nextToken == "" {
+				return nil
+			}
+			pageToken = nextToken
+		}
 	}); err != nil {
-		_ = e.recordError(ctx, cfg.OrgID, err.Error())
+		_ = e.recordError(ctx, cfg.OrgID, "query_failed")
 		w.Debug("query failed", wool.ErrField(err))
-		return
+		return err
 	}
-	if len(events) == 0 {
+	if eventCount == 0 {
 		// Nothing to export — still advance the cursor so we don't
 		// requery the same empty window next tick.
-		_ = e.markSucceeded(ctx, cfg.OrgID, to)
-		return
+		if err := e.markSucceeded(ctx, cfg.OrgID, to); err != nil {
+			return err
+		}
+		return nil
 	}
 
-	body, err := encodeJSONL(events)
-	if err != nil {
-		_ = e.recordError(ctx, cfg.OrgID, err.Error())
-		return
-	}
-
-	if err := e.upload(ctx, cfg, to, body); err != nil {
-		_ = e.recordError(ctx, cfg.OrgID, err.Error())
+	if err := e.upload(ctx, cfg, to, objectID, body.Bytes()); err != nil {
+		_ = e.recordError(ctx, cfg.OrgID, "storage_failed")
 		w.Debug("upload failed", wool.ErrField(err))
-		return
+		return err
 	}
 
-	_ = e.markSucceeded(ctx, cfg.OrgID, to)
+	if err := e.markSucceeded(ctx, cfg.OrgID, to); err != nil {
+		return err
+	}
+	return nil
 }
 
 // markSucceeded / recordError — small wrappers so the per-tenant
@@ -185,7 +199,8 @@ func encodeJSONL(events []AuditEntry) ([]byte, error) {
 }
 
 // upload writes body to the customer's bucket at:
-//   <prefix>/<yyyy-mm-dd>/<unix-ms>.jsonl
+//
+//	<prefix>/<yyyy-mm-dd>/<unix-ms>.jsonl
 //
 // `prefix` may be empty. The unix-ms suffix dedupes when an exporter
 // runs multiple times in the same second (e.g. two api instances
@@ -197,7 +212,7 @@ func encodeJSONL(events []AuditEntry) ([]byte, error) {
 // IAM/lifecycle/encryption policies; the auto-create branch is for
 // dev (local MinIO) where the operator just typed in a name. Errors
 // other than "already exists" are surfaced.
-func (e *AuditExporter) upload(ctx context.Context, cfg *AuditExportConfig, ts time.Time, body []byte) error {
+func (e *AuditExporter) upload(ctx context.Context, cfg *AuditExportConfig, ts time.Time, objectID string, body []byte) error {
 	endpoint, useSSL := resolveEndpoint(cfg.Endpoint, cfg.Region)
 
 	client, err := minio.New(endpoint, &minio.Options{
@@ -214,7 +229,7 @@ func (e *AuditExporter) upload(ctx context.Context, cfg *AuditExportConfig, ts t
 	}
 
 	day := ts.UTC().Format("2006-01-02")
-	objectKey := joinPath(cfg.Prefix, day, fmt.Sprintf("%d.jsonl", ts.UnixMilli()))
+	objectKey := joinPath(cfg.Prefix, day, objectID+".jsonl")
 
 	_, err = client.PutObject(ctx, cfg.Bucket, objectKey,
 		bytes.NewReader(body), int64(len(body)),
@@ -269,10 +284,11 @@ func VerifyAuditExportConnection(ctx context.Context, cfg *AuditExportConfig) er
 
 // resolveEndpoint converts a user-entered endpoint string into the
 // (host, useSSL) pair minio-go needs. Accepts:
-//   ""                    → AWS S3 in `region`, TLS on
-//   "host:port"           → TLS on  (production-shaped)
-//   "https://host:port"   → TLS on
-//   "http://host:port"    → TLS OFF (local MinIO / non-prod)
+//
+//	""                    → AWS S3 in `region`, TLS on
+//	"host:port"           → TLS on  (production-shaped)
+//	"https://host:port"   → TLS on
+//	"http://host:port"    → TLS OFF (local MinIO / non-prod)
 //
 // Letting the operator opt into HTTP via the http:// prefix avoids a
 // separate use_tls field on the config (and the migration / proto

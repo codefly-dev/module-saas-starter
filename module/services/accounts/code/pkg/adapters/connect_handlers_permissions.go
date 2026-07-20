@@ -12,7 +12,7 @@ import (
 	"github.com/codefly-dev/core/wool"
 
 	"accounts/pkg/business"
-	"accounts/pkg/gen"
+	gen "accounts/pkg/gen/saas/accounts/v1"
 )
 
 // =====================================================================

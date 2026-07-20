@@ -1,0 +1,31 @@
+syntax = "proto3";
+
+package saas.frontend.plugin.v1;
+
+// GetFrontendPluginCapabilitiesRequest is the empty capability probe.
+message GetFrontendPluginCapabilitiesRequest {}
+
+// GetFrontendPluginCapabilitiesResponse is the safe runtime compatibility
+// declaration returned by one installed plugin backend.
+message GetFrontendPluginCapabilitiesResponse {
+  // Schema_version identifies this response shape independently of the
+  // product API contract being advertised.
+  uint32 schema_version = 1;
+
+  // Contract is the stable product API identifier declared by the frontend.
+  string contract = 2;
+
+  // Contract_major is the exact API major implemented by this backend.
+  uint32 contract_major = 3;
+
+  // Capabilities is a sorted set of product-owned, namespaced feature IDs.
+  repeated string capabilities = 4;
+}
+
+// FrontendPluginCapabilityService is implemented once by every plugin backend.
+// Connect exposes the canonical generated procedure. REST implementations serve
+// the same ProtoJSON response at the fixed path documented by the public SDK.
+service FrontendPluginCapabilityService {
+  // GetFrontendPluginCapabilities returns only non-sensitive contract metadata.
+  rpc GetFrontendPluginCapabilities(GetFrontendPluginCapabilitiesRequest) returns (GetFrontendPluginCapabilitiesResponse);
+}

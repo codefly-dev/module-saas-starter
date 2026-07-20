@@ -5,7 +5,6 @@ import (
 	"crypto/hmac"
 	"crypto/rand"
 	"crypto/sha1"
-	"crypto/sha256"
 	"encoding/base32"
 	"encoding/binary"
 	"fmt"
@@ -15,6 +14,8 @@ import (
 	"golang.org/x/crypto/bcrypt"
 
 	"github.com/codefly-dev/core/wool"
+
+	gen "accounts/pkg/gen/saas/accounts/v1"
 )
 
 // ── MFA domain types ───────────────────────────────────────────
@@ -51,6 +52,13 @@ type MFAStore interface {
 	GetUnusedBackupCodes(ctx context.Context, userID string) ([]*MFABackupCode, error)
 	UseBackupCode(ctx context.Context, id string) error
 	DeleteBackupCodes(ctx context.Context, userID string) error
+}
+
+// SecretCipher encrypts high-value application secrets with a versioned
+// envelope. Implementations must fail closed; plaintext fallback is forbidden.
+type SecretCipher interface {
+	EncryptSecret(ctx context.Context, purpose, plaintext string) (string, error)
+	DecryptSecret(ctx context.Context, purpose, envelope string) (string, error)
 }
 
 const (
@@ -98,6 +106,9 @@ func (s *Service) SetupTOTP(ctx context.Context, userID string) (secret string, 
 	if !ok {
 		return "", "", w.NewError("store does not implement MFAStore")
 	}
+	if s.mfaCipher == nil {
+		return "", "", w.NewError("MFA secret cipher is not configured")
+	}
 
 	// Generate random secret.
 	raw := make([]byte, totpSecretBytes)
@@ -105,11 +116,9 @@ func (s *Service) SetupTOTP(ctx context.Context, userID string) (secret string, 
 		return "", "", w.Wrapf(err, "cannot generate TOTP secret")
 	}
 	secretB32 := base32.StdEncoding.WithPadding(base32.NoPadding).EncodeToString(raw)
-
-	// Look up user email for the provisioning URI.
-	user, err := s.store.GetUser(ctx, userID)
+	encryptedSecret, err := s.mfaCipher.EncryptSecret(ctx, "mfa-totp", secretB32)
 	if err != nil {
-		return "", "", w.Wrapf(err, "cannot get user for TOTP setup")
+		return "", "", w.Wrapf(err, "cannot encrypt TOTP secret")
 	}
 
 	device := &MFADevice{
@@ -117,14 +126,22 @@ func (s *Service) SetupTOTP(ctx context.Context, userID string) (secret string, 
 		UserID:          userID,
 		DeviceType:      "totp",
 		Name:            "Authenticator",
-		SecretEncrypted: secretB32, // In production, encrypt before storing.
+		SecretEncrypted: encryptedSecret,
 	}
 
-	// mfa_devices is RLS-protected by user_id (Phase 2G).
+	// User profile and MFA devices share the same user scope. Load the email
+	// and create the device in one transaction rather than briefly widening
+	// users visibility for provisioning.
+	var user *gen.User
 	if err := s.store.WithUserTx(ctx, userID, func(ctx context.Context) error {
+		var err error
+		user, err = s.store.GetUser(ctx, userID)
+		if err != nil {
+			return err
+		}
 		return mfaStore.CreateMFADevice(ctx, device)
 	}); err != nil {
-		return "", "", w.Wrapf(err, "cannot create MFA device")
+		return "", "", w.Wrapf(err, "cannot load user and create MFA device")
 	}
 
 	// Build otpauth:// URI per https://github.com/google/google-authenticator/wiki/Key-Uri-Format
@@ -145,6 +162,9 @@ func (s *Service) VerifyTOTP(ctx context.Context, userID, code string) error {
 	if !ok {
 		return w.NewError("store does not implement MFAStore")
 	}
+	if s.mfaCipher == nil {
+		return w.NewError("MFA secret cipher is not configured")
+	}
 
 	// All reads + writes for this verify cycle run inside ONE
 	// WithUserTx so the listing, the per-device update, and the
@@ -160,7 +180,12 @@ func (s *Service) VerifyTOTP(ctx context.Context, userID, code string) error {
 			if device.DeviceType != "totp" || device.VerifiedAt != nil {
 				continue
 			}
-			secretBytes, err := base32.StdEncoding.WithPadding(base32.NoPadding).DecodeString(device.SecretEncrypted)
+			secretB32, err := s.mfaCipher.DecryptSecret(ctx, "mfa-totp", device.SecretEncrypted)
+			if err != nil {
+				w.Warn("failed to decrypt TOTP secret for device", wool.Field("device_id", device.ID), wool.ErrField(err))
+				continue
+			}
+			secretBytes, err := base32.StdEncoding.WithPadding(base32.NoPadding).DecodeString(secretB32)
 			if err != nil {
 				w.Warn("failed to decode TOTP secret for device", wool.Field("device_id", device.ID), wool.ErrField(err))
 				continue
@@ -285,47 +310,82 @@ func (s *Service) ValidateMFACode(ctx context.Context, userID, code string) (boo
 	}
 
 	var ok2 bool
+	var method string
 	if err := s.store.WithUserTx(ctx, userID, func(ctx context.Context) error {
-		// Try TOTP first.
-		devices, err := mfaStore.ListMFADevices(ctx, userID)
-		if err != nil {
-			return w.Wrapf(err, "cannot list MFA devices")
+		var err error
+		ok2, method, err = validateMFACodeInTx(ctx, mfaStore, s.mfaCipher, userID, code, time.Now())
+		if err == nil && ok2 && method == "backup_code" {
+			return s.store.CreateNotification(ctx, backupCodeUseNotification(userID))
 		}
-		for _, device := range devices {
-			if device.DeviceType != "totp" || device.VerifiedAt == nil {
-				continue
-			}
-			secretBytes, err := base32.StdEncoding.WithPadding(base32.NoPadding).DecodeString(device.SecretEncrypted)
-			if err != nil {
-				continue
-			}
-			if validateTOTP(secretBytes, code, time.Now()) {
-				now := time.Now()
-				device.LastUsedAt = &now
-				_ = mfaStore.UpdateMFADevice(ctx, device)
-				ok2 = true
-				return nil
-			}
-		}
-		// Try backup codes.
-		backupCodes, err := mfaStore.GetUnusedBackupCodes(ctx, userID)
-		if err != nil {
-			return w.Wrapf(err, "cannot get backup codes")
-		}
-		for _, bc := range backupCodes {
-			if bcrypt.CompareHashAndPassword([]byte(bc.CodeHash), []byte(code)) == nil {
-				if err := mfaStore.UseBackupCode(ctx, bc.ID); err != nil {
-					w.Warn("failed to mark backup code as used", wool.ErrField(err))
-				}
-				ok2 = true
-				return nil
-			}
-		}
-		return nil
+		return err
 	}); err != nil {
 		return false, err
 	}
+	if ok2 && method == "backup_code" {
+		s.emit(ctx, userID, "user", "mfa.backup_code_used", "user", userID, "")
+	}
 	return ok2, nil
+}
+
+// validateMFACodeInTx validates and consumes a factor using the transaction
+// already carried by ctx. Keeping the transaction boundary outside is
+// load-bearing for login: the factor use, challenge consume, and session insert
+// must commit or roll back together.
+func validateMFACodeInTx(ctx context.Context, mfaStore MFAStore, cipher SecretCipher, userID, code string, now time.Time) (bool, string, error) {
+	w := wool.Get(ctx).In("validateMFACodeInTx")
+	if cipher == nil {
+		return false, "", w.NewError("MFA secret cipher is not configured")
+	}
+
+	devices, err := mfaStore.ListMFADevices(ctx, userID)
+	if err != nil {
+		return false, "", w.Wrapf(err, "cannot list MFA devices")
+	}
+	for _, device := range devices {
+		if device.DeviceType != "totp" || device.VerifiedAt == nil {
+			continue
+		}
+		secretB32, err := cipher.DecryptSecret(ctx, "mfa-totp", device.SecretEncrypted)
+		if err != nil {
+			return false, "", w.Wrapf(err, "cannot decrypt TOTP secret")
+		}
+		secretBytes, err := base32.StdEncoding.WithPadding(base32.NoPadding).DecodeString(secretB32)
+		if err != nil {
+			continue
+		}
+		if validateTOTP(secretBytes, code, now) {
+			device.LastUsedAt = &now
+			if err := mfaStore.UpdateMFADevice(ctx, device); err != nil {
+				return false, "", w.Wrapf(err, "cannot update MFA device use")
+			}
+			return true, "totp", nil
+		}
+	}
+
+	backupCodes, err := mfaStore.GetUnusedBackupCodes(ctx, userID)
+	if err != nil {
+		return false, "", w.Wrapf(err, "cannot get backup codes")
+	}
+	for _, bc := range backupCodes {
+		if bcrypt.CompareHashAndPassword([]byte(bc.CodeHash), []byte(code)) == nil {
+			if err := mfaStore.UseBackupCode(ctx, bc.ID); err != nil {
+				return false, "", w.Wrapf(err, "cannot consume backup code")
+			}
+			return true, "backup_code", nil
+		}
+	}
+	return false, "", nil
+}
+
+func backupCodeUseNotification(userID string) *Notification {
+	return &Notification{
+		ID:        NewIDString(),
+		UserID:    userID,
+		Title:     "Recovery code used",
+		Body:      "A one-time MFA recovery code was used to sign in. Generate a new set if this was not you.",
+		Type:      "warning",
+		ActionURL: "/settings/security",
+	}
 }
 
 // UserHasMFA returns true if the user has at least one verified MFA device.
@@ -346,33 +406,6 @@ func (s *Service) UserHasMFA(ctx context.Context, userID string) (bool, error) {
 		return false, w.Wrapf(err, "cannot check MFA status")
 	}
 	return has, nil
-}
-
-// MintMFAPendingToken creates a short-lived (5 min) JWT with an
-// mfa_pending claim, indicating the user has authenticated but still
-// needs to complete MFA verification.
-func (s *Service) MintMFAPendingToken(ctx context.Context, userID string) (string, error) {
-	w := wool.Get(ctx).In("MintMFAPendingToken")
-
-	if s.minter == nil {
-		return "", w.NewError("JWT minter not configured")
-	}
-
-	// We create a minimal identity — no org/role — with a special
-	// platform-role marker that the auth middleware can check.
-	// The token will be very short-lived (handled by the minter's
-	// access TTL). For a 5 min token we mint via the standard path
-	// but callers should configure a short-lived minter or check
-	// the mfa_pending claim downstream.
-	//
-	// For now, we return a SHA-256 hash of the user ID + timestamp
-	// as a simple opaque token. A full implementation would use a
-	// dedicated JWT with an mfa_pending claim.
-	now := time.Now()
-	hash := sha256.Sum256([]byte(fmt.Sprintf("%s:%d", userID, now.UnixNano())))
-	token := fmt.Sprintf("mfa_%s", base32.StdEncoding.WithPadding(base32.NoPadding).EncodeToString(hash[:]))
-
-	return token, nil
 }
 
 // randomAlphanumeric generates a random alphanumeric string of length n.

@@ -18,7 +18,7 @@ import (
 //
 // Async audit emits can fire between snapshots (RegisterUser /
 // CreateOrganization in the seeded mustUserAndOrg both emit and
-// the AsyncAuditEmitter writes via WithOrgTx in a goroutine).
+// the durable audit emitter writes via WithOrgTx).
 // We sleep briefly before the measured call to let those drain,
 // then assert the FRESH GetOrgEntitlements bumps by exactly 1.
 func TestGetOrgEntitlements_SingleTransaction(t *testing.T) {
@@ -31,7 +31,7 @@ func TestGetOrgEntitlements_SingleTransaction(t *testing.T) {
 	// First call also serves as warm-up + drain trigger.
 	_, err := testService.GetOrgEntitlements(ctx, orgID)
 	require.NoError(t, err)
-	// Let any pending async audit emits drain.
+	// Audit emission is synchronous and durable.
 	time.Sleep(150 * time.Millisecond)
 
 	// Now measure: a second call should bump WithOrgTx by exactly 1

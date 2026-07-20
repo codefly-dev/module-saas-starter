@@ -1,0 +1,373 @@
+syntax = "proto3";
+
+package saas.accounts.v1;
+
+import "buf/validate/validate.proto";
+import "google/api/annotations.proto";
+import "google/protobuf/empty.proto";
+import "saas/accounts/v1/common.proto";
+import "saas/policy/v1/options.proto";
+
+// ============================================================================
+// Authentication (JWT token issuance)
+// ============================================================================
+
+message OAuthCodeAuthentication {
+  string code = 1 [(buf.validate.field).string = {
+    min_len: 1
+    max_len: 4096
+  }];
+  string redirect_uri = 2 [(buf.validate.field).string = {
+    min_len: 1
+    max_len: 2048
+  }];
+  string state = 3 [(buf.validate.field).string = {
+    min_len: 1
+    max_len: 4096
+  }];
+  string code_verifier = 4 [(buf.validate.field).string = {
+    min_len: 43
+    max_len: 128
+    pattern: "^[A-Za-z0-9._~-]+$"
+  }];
+}
+
+message FixtureAuthentication {
+  // Opaque token looked up in the explicitly selected development fixture.
+  // It is not a provider subject and is never trusted without the fixture
+  // validator.
+  string token = 1 [(buf.validate.field).string = {
+    min_len: 1
+    max_len: 255
+  }];
+}
+
+message AuthenticateRequest {
+  string provider = 1 [(buf.validate.field).string = {
+    min_len: 1
+    max_len: 50
+    pattern: "^[a-zA-Z0-9_-]+$"
+  }];
+  // Deprecated caller-asserted identity fields. Kept only for wire
+  // compatibility during the v0 transition; Authenticate ignores them.
+  string provider_id = 2 [deprecated = true];
+  string provider_email = 3 [deprecated = true];
+  bool email_verified = 4 [deprecated = true];
+  // Optional signup/profile metadata. OAuth protocol fields do not belong here.
+  map<string, string> profile = 5;
+  // Bounded display-only device description (typically the browser user-agent).
+  // It is persisted with the refresh family for session management and is
+  // never trusted as an authentication or authorization signal.
+  string device_info = 6 [(buf.validate.field).string.max_len = 512];
+  oneof authentication {
+    option (buf.validate.oneof).required = true;
+    OAuthCodeAuthentication oauth_code = 7;
+    FixtureAuthentication fixture = 8;
+  }
+}
+
+message AuthenticateResponse {
+  string access_token = 1;
+  string refresh_token = 2;
+  int64 expires_in = 3;
+  User user = 4;
+  bool mfa_required = 5;
+  // Opaque, short-lived, one-use login transaction. Present only when
+  // mfa_required is true; it is not an access or refresh token.
+  string mfa_token = 6;
+}
+
+// CompleteMFAChallengeRequest is deliberately distinct from VerifyTOTPRequest:
+// this completes a login transaction, while VerifyTOTP only confirms a new
+// authenticator during enrollment.
+message CompleteMFAChallengeRequest {
+  string mfa_token = 1 [(buf.validate.field).string = {
+    min_len: 32
+    max_len: 255
+  }];
+  // Six-digit TOTP or a one-use backup code.
+  string code = 2 [(buf.validate.field).string = {
+    min_len: 6
+    max_len: 64
+  }];
+}
+
+message CompleteMFAChallengeResponse {
+  string access_token = 1;
+  string refresh_token = 2;
+  int64 expires_in = 3;
+  User user = 4;
+}
+
+// Begins a WebAuthn assertion for an existing primary-authentication handoff.
+// The mfa_token remains the login credential; the returned ceremony token is
+// an independently random, short-lived handle for server-side WebAuthn state.
+message BeginWebAuthnMFAChallengeRequest {
+  string mfa_token = 1 [(buf.validate.field).string = {
+    min_len: 32
+    max_len: 255
+  }];
+}
+
+message BeginWebAuthnMFAChallengeResponse {
+  string ceremony_token = 1;
+  // JSON-encoded PublicKeyCredentialRequestOptions. The browser hands these
+  // generated options directly to the WebAuthn API.
+  string public_key_options_json = 2;
+}
+
+message CompleteWebAuthnMFAChallengeRequest {
+  string mfa_token = 1 [(buf.validate.field).string = {
+    min_len: 32
+    max_len: 255
+  }];
+  string ceremony_token = 2 [(buf.validate.field).string = {
+    min_len: 32
+    max_len: 255
+  }];
+  // JSON-encoded PublicKeyCredential assertion returned by the browser.
+  string credential_response_json = 3 [(buf.validate.field).string = {
+    min_len: 2
+    max_len: 131072
+  }];
+}
+
+message RefreshTokenRequest {
+  string refresh_token = 1 [(buf.validate.field).string.min_len = 1];
+}
+
+message RefreshTokenResponse {
+  string access_token = 1;
+  string refresh_token = 2;
+  int64 expires_in = 3;
+}
+
+message SwitchOrganizationRequest {
+  // Target tenant for this existing device session. The server resolves the
+  // caller's current membership and role; no role is accepted from the client.
+  string organization_id = 1 [(buf.validate.field).string.uuid = true];
+}
+
+message SwitchOrganizationResponse {
+  // Fresh access token for organization_id. The refresh token and device
+  // family do not rotate, so switching cannot race with normal refresh-token
+  // reuse detection or create an extra active device.
+  string access_token = 1;
+  int64 expires_in = 2;
+}
+
+message LogoutRequest {
+  string refresh_token = 1 [(buf.validate.field).string.min_len = 1];
+}
+
+message JWKSResponse {
+  string keys_json = 1;
+}
+
+// BeginOAuthRequest is the FE's first hop on the authorization-code
+// flow. Server returns a server-signed `state` token bound to
+// (provider, redirect_uri); the FE embeds it in the provider's
+// authorize URL alongside its own PKCE code_challenge. Authenticate
+// later verifies the state before exchanging the code.
+message BeginOAuthRequest {
+  string provider = 1 [(buf.validate.field).string.min_len = 1];
+  string redirect_uri = 2 [(buf.validate.field).string.min_len = 1];
+}
+
+message BeginOAuthResponse {
+  // state is opaque to the FE — pass it back unchanged in the
+  // authorize URL and again in the Authenticate request.
+  string state = 1;
+}
+
+// AuthService — JWT token issuance and session management
+service AuthService {
+  // BeginOAuth issues a server-signed `state` for the OAuth code flow.
+  // Public RPC: callable without authentication (this is the start of
+  // the login flow).
+  rpc BeginOAuth(BeginOAuthRequest) returns (BeginOAuthResponse) {
+    option (saas.policy.v1.method_policy) = {
+      exposure: EXPOSURE_PUBLIC
+      tenant: TENANT_REQUIREMENT_NONE
+      mfa: MFA_REQUIREMENT_NONE
+      audit: {emission: AUDIT_EMISSION_NONE}
+      idempotency: IDEMPOTENCY_REQUIREMENT_FORBIDDEN
+      rate_limit: RATE_LIMIT_CLASS_AUTHENTICATION
+      request_sensitivity: SENSITIVITY_CONFIDENTIAL
+      response_sensitivity: SENSITIVITY_SECRET
+      platform_role: PLATFORM_ROLE_REQUIREMENT_NONE
+    };
+    option (google.api.http) = {
+      post: "/v1/auth/oauth/begin"
+      body: "*"
+    };
+  }
+
+  rpc Authenticate(AuthenticateRequest) returns (AuthenticateResponse) {
+    option (saas.policy.v1.method_policy) = {
+      exposure: EXPOSURE_PUBLIC
+      tenant: TENANT_REQUIREMENT_NONE
+      mfa: MFA_REQUIREMENT_NONE
+      audit: {
+        events: "auth.login"
+        events: "auth.mfa_challenge_started"
+        emission: AUDIT_EMISSION_SUCCESS
+      }
+      idempotency: IDEMPOTENCY_REQUIREMENT_FORBIDDEN
+      rate_limit: RATE_LIMIT_CLASS_AUTHENTICATION
+      request_sensitivity: SENSITIVITY_SECRET
+      response_sensitivity: SENSITIVITY_SECRET
+      platform_role: PLATFORM_ROLE_REQUIREMENT_NONE
+    };
+    option (google.api.http) = {
+      post: "/v1/auth/authenticate"
+      body: "*"
+    };
+  }
+
+  // Public RPC: possession of the opaque mfa_token is the temporary login
+  // credential. Successful verification atomically consumes it and creates
+  // the normal refreshable session.
+  rpc CompleteMFAChallenge(CompleteMFAChallengeRequest) returns (CompleteMFAChallengeResponse) {
+    option (saas.policy.v1.method_policy) = {
+      exposure: EXPOSURE_PUBLIC
+      tenant: TENANT_REQUIREMENT_NONE
+      mfa: MFA_REQUIREMENT_NONE
+      audit: {
+        events: "auth.login"
+        events: "auth.mfa_challenge_completed"
+        events: "mfa.backup_code_used"
+        emission: AUDIT_EMISSION_SUCCESS
+      }
+      idempotency: IDEMPOTENCY_REQUIREMENT_FORBIDDEN
+      rate_limit: RATE_LIMIT_CLASS_AUTHENTICATION
+      request_sensitivity: SENSITIVITY_SECRET
+      response_sensitivity: SENSITIVITY_SECRET
+      platform_role: PLATFORM_ROLE_REQUIREMENT_NONE
+      authentication_factor_attempt: true
+    };
+    option (google.api.http) = {
+      post: "/v1/auth/mfa/complete"
+      body: "*"
+    };
+  }
+
+  // Public RPCs: possession of the opaque mfa_token gates both operations.
+  // Finish atomically consumes both the WebAuthn ceremony and login handoff.
+  rpc BeginWebAuthnMFAChallenge(BeginWebAuthnMFAChallengeRequest) returns (BeginWebAuthnMFAChallengeResponse) {
+    option (saas.policy.v1.method_policy) = {
+      exposure: EXPOSURE_PUBLIC
+      tenant: TENANT_REQUIREMENT_NONE
+      mfa: MFA_REQUIREMENT_NONE
+      audit: {emission: AUDIT_EMISSION_NONE}
+      idempotency: IDEMPOTENCY_REQUIREMENT_FORBIDDEN
+      rate_limit: RATE_LIMIT_CLASS_AUTHENTICATION
+      request_sensitivity: SENSITIVITY_CONFIDENTIAL
+      response_sensitivity: SENSITIVITY_SECRET
+      platform_role: PLATFORM_ROLE_REQUIREMENT_NONE
+    };
+    option (google.api.http) = {
+      post: "/v1/auth/mfa/webauthn/begin"
+      body: "*"
+    };
+  }
+
+  rpc CompleteWebAuthnMFAChallenge(CompleteWebAuthnMFAChallengeRequest) returns (CompleteMFAChallengeResponse) {
+    option (saas.policy.v1.method_policy) = {
+      exposure: EXPOSURE_PUBLIC
+      tenant: TENANT_REQUIREMENT_NONE
+      mfa: MFA_REQUIREMENT_NONE
+      audit: {
+        events: "auth.login"
+        events: "auth.mfa_challenge_completed"
+        events: "mfa.webauthn_used"
+        emission: AUDIT_EMISSION_SUCCESS
+      }
+      idempotency: IDEMPOTENCY_REQUIREMENT_FORBIDDEN
+      rate_limit: RATE_LIMIT_CLASS_AUTHENTICATION
+      request_sensitivity: SENSITIVITY_SECRET
+      response_sensitivity: SENSITIVITY_SECRET
+      platform_role: PLATFORM_ROLE_REQUIREMENT_NONE
+      authentication_factor_attempt: true
+    };
+    option (google.api.http) = {
+      post: "/v1/auth/mfa/webauthn/complete"
+      body: "*"
+    };
+  }
+
+  rpc RefreshToken(RefreshTokenRequest) returns (RefreshTokenResponse) {
+    option (saas.policy.v1.method_policy) = {
+      exposure: EXPOSURE_PUBLIC
+      tenant: TENANT_REQUIREMENT_NONE
+      mfa: MFA_REQUIREMENT_NONE
+      audit: {emission: AUDIT_EMISSION_NONE}
+      idempotency: IDEMPOTENCY_REQUIREMENT_FORBIDDEN
+      rate_limit: RATE_LIMIT_CLASS_AUTHENTICATION
+      request_sensitivity: SENSITIVITY_SECRET
+      response_sensitivity: SENSITIVITY_SECRET
+      platform_role: PLATFORM_ROLE_REQUIREMENT_NONE
+    };
+    option (google.api.http) = {
+      post: "/v1/auth/refresh"
+      body: "*"
+    };
+  }
+
+  // Exchanges the authenticated access-token context for another organization
+  // in the same device family. Membership and current role are resolved under
+  // the locked session row before the selected organization is persisted.
+  rpc SwitchOrganization(SwitchOrganizationRequest) returns (SwitchOrganizationResponse) {
+    option (saas.policy.v1.method_policy) = {
+      exposure: EXPOSURE_AUTHENTICATED
+      tenant: TENANT_REQUIREMENT_NONE
+      mfa: MFA_REQUIREMENT_NONE
+      audit: {
+        events: "auth.organization_switched"
+        emission: AUDIT_EMISSION_SUCCESS
+      }
+      idempotency: IDEMPOTENCY_REQUIREMENT_FORBIDDEN
+      rate_limit: RATE_LIMIT_CLASS_SENSITIVE
+      request_sensitivity: SENSITIVITY_CONFIDENTIAL
+      response_sensitivity: SENSITIVITY_SECRET
+      platform_role: PLATFORM_ROLE_REQUIREMENT_NONE
+    };
+    option (google.api.http) = {
+      post: "/v1/auth/switch-organization"
+      body: "*"
+    };
+  }
+
+  rpc Logout(LogoutRequest) returns (google.protobuf.Empty) {
+    option (saas.policy.v1.method_policy) = {
+      exposure: EXPOSURE_PUBLIC
+      tenant: TENANT_REQUIREMENT_NONE
+      mfa: MFA_REQUIREMENT_NONE
+      audit: {emission: AUDIT_EMISSION_NONE}
+      idempotency: IDEMPOTENCY_REQUIREMENT_FORBIDDEN
+      rate_limit: RATE_LIMIT_CLASS_AUTHENTICATION
+      request_sensitivity: SENSITIVITY_SECRET
+      response_sensitivity: SENSITIVITY_CONFIDENTIAL
+      platform_role: PLATFORM_ROLE_REQUIREMENT_NONE
+    };
+    option (google.api.http) = {
+      post: "/v1/auth/logout"
+      body: "*"
+    };
+  }
+
+  rpc GetJWKS(google.protobuf.Empty) returns (JWKSResponse) {
+    option (saas.policy.v1.method_policy) = {
+      exposure: EXPOSURE_PUBLIC
+      tenant: TENANT_REQUIREMENT_NONE
+      mfa: MFA_REQUIREMENT_NONE
+      audit: {emission: AUDIT_EMISSION_NONE}
+      idempotency: IDEMPOTENCY_REQUIREMENT_FORBIDDEN
+      rate_limit: RATE_LIMIT_CLASS_PUBLIC
+      request_sensitivity: SENSITIVITY_PUBLIC
+      response_sensitivity: SENSITIVITY_PUBLIC
+      platform_role: PLATFORM_ROLE_REQUIREMENT_NONE
+    };
+    option (google.api.http) = {get: "/v1/auth/.well-known/jwks.json"};
+  }
+}

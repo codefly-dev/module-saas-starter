@@ -8,13 +8,13 @@ import "testing"
 // enforced by the store schema + CreateTeam and covered by the RLS/DB tests.
 func TestSlugify(t *testing.T) {
 	cases := map[string]string{
-		"Platform Eng.":        "platform-eng",
-		"engineering":          "engineering",
-		"  Data / ML  ":        "data-ml",
-		"A--B":                 "a-b",
-		"Ops_2026":             "ops-2026",
-		"---":                  "",
-		"Ünïcode Team":         "n-code-team", // non-ASCII drops (slug charset is [a-z0-9-])
+		"Platform Eng.": "platform-eng",
+		"engineering":   "engineering",
+		"  Data / ML  ": "data-ml",
+		"A--B":          "a-b",
+		"Ops_2026":      "ops-2026",
+		"---":           "",
+		"Ünïcode Team":  "n-code-team", // non-ASCII drops (slug charset is [a-z0-9-])
 	}
 	for in, want := range cases {
 		if got := Slugify(in); got != want {

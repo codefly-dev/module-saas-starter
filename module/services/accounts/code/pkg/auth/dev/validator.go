@@ -2,19 +2,20 @@
 //
 // It replaces the legacy X-Dev-Role / X-Dev-User-ID header bypass with a
 // proper validator that reads seeded identities from the dev-admin fixture
-// file. The "token" presented by the frontend is literally the provider_id
-// from the fixture (e.g. "dev-admin", "dev-alice"). The validator maps it
-// to Claims using the seed.
+// file. `fixture_token` is the development login credential; `provider_id`
+// remains the stable external identity subject. Keeping these separate
+// prevents a fixture shortcut from changing the identity trusted clients
+// resolve.
 //
-// Only enabled when AUTH_PROVIDER=dev. MUST never be compiled into a
-// production-facing binary — the sidecar selects the production validator
-// at startup based on the env var.
+// Only wired when AUTH_PROVIDER=dev or Codefly explicitly selects a fixture.
+// Production startup leaves this validator disconnected from Authenticate.
 package devvalidator
 
 import (
 	"context"
 	"fmt"
 	"os"
+	"path/filepath"
 	"sync"
 	"time"
 
@@ -31,26 +32,33 @@ type fixtureFile struct {
 }
 
 type fixtureUser struct {
-	Email      string `yaml:"email"`
-	Name       string `yaml:"name"`
-	Role       string `yaml:"role"` // optional: "super_admin" | "admin" | "member"
-	Provider   string `yaml:"provider"`
-	ProviderID string `yaml:"provider_id"`
+	Email        string `yaml:"email"`
+	Name         string `yaml:"name"`
+	Role         string `yaml:"role"` // optional: "super_admin" | "admin" | "member"
+	Provider     string `yaml:"provider"`
+	ProviderID   string `yaml:"provider_id"`
+	FixtureToken string `yaml:"fixture_token"`
+	MFAVerified  bool   `yaml:"mfa_verified"`
 }
 
 // Validator is a dev-only TokenValidator backed by a fixture YAML file.
 //
 // Thread-safe: the seed is parsed once at construction and held read-only.
 type Validator struct {
-	mu    sync.RWMutex
-	seeds map[string]*auth.Claims // keyed by provider_id
+	mu          sync.RWMutex
+	seeds       map[string]*auth.Claims // keyed by fixture_token (provider_id fallback)
+	mfaVerified map[string]bool         // explicit development-only AAL2 attestations
 }
 
 // New constructs a Validator from a fixture path. If path is empty it
 // defaults to the dev-admin fixture under the module root.
 func New(path string) (*Validator, error) {
 	if path == "" {
-		path = defaultPath()
+		var err error
+		path, err = defaultPath()
+		if err != nil {
+			return nil, err
+		}
 	}
 	data, err := os.ReadFile(path)
 	if err != nil {
@@ -61,7 +69,10 @@ func New(path string) (*Validator, error) {
 		return nil, fmt.Errorf("devvalidator: cannot parse fixture: %w", err)
 	}
 
-	v := &Validator{seeds: make(map[string]*auth.Claims, len(f.Users))}
+	v := &Validator{
+		seeds:       make(map[string]*auth.Claims, len(f.Users)),
+		mfaVerified: make(map[string]bool, len(f.Users)),
+	}
 	for i := range f.Users {
 		u := f.Users[i]
 		if u.ProviderID == "" || u.Email == "" {
@@ -71,12 +82,17 @@ func New(path string) (*Validator, error) {
 		if provider == "" {
 			provider = "dev"
 		}
-		v.seeds[u.ProviderID] = &auth.Claims{
+		token := u.FixtureToken
+		if token == "" {
+			token = u.ProviderID // backwards-compatible fixtures
+		}
+		v.seeds[token] = &auth.Claims{
 			Provider:  provider,
 			Subject:   u.ProviderID,
 			Email:     u.Email,
 			ExpiresAt: time.Now().Add(24 * time.Hour),
 		}
+		v.mfaVerified[token] = u.MFAVerified
 	}
 	if len(v.seeds) == 0 {
 		return nil, fmt.Errorf("devvalidator: fixture %q contained no usable users", path)
@@ -84,8 +100,21 @@ func New(path string) (*Validator, error) {
 	return v, nil
 }
 
-// Validate implements auth.TokenValidator. The "token" is the provider_id of
-// a seeded user. Unknown tokens return ErrUnknownIdentity.
+// FixtureMFAWasVerified reports whether the allowlisted development identity
+// represents a login ceremony that already completed a second factor. The
+// business auth path uses this only after the same token passed Validate.
+// Production never wires this validator, so fixture assurance cannot cross
+// the development authentication boundary.
+func (v *Validator) FixtureMFAWasVerified(token string) bool {
+	v.mu.RLock()
+	verified := v.mfaVerified[token]
+	v.mu.RUnlock()
+	return verified
+}
+
+// Validate implements auth.TokenValidator. The token is the fixture-only login
+// credential; returned Claims carry the distinct provider_id subject. Unknown
+// tokens return ErrUnknownIdentity.
 //
 // No signature check happens — this is a dev-only path. Production uses the
 // WorkOS validator.
@@ -107,11 +136,11 @@ func (v *Validator) Validate(ctx context.Context, token string) (*auth.Claims, e
 // defaultPath resolves the dev-admin fixture path relative to the running
 // api service. The working directory when codefly starts the accounts service
 // is services/accounts/code; the fixture lives at ../../../fixtures/dev-admin.yaml.
-func defaultPath() string {
+func defaultPath() (string, error) {
 	if env := os.Getenv("DEV_FIXTURE_PATH"); env != "" {
-		return env
+		return env, nil
 	}
-	return "../../../fixtures/dev-admin.yaml"
+	return filepath.Join("..", "..", "..", "fixtures", "dev-admin.yaml"), nil
 }
 
 // Compile-time assertion.

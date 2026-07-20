@@ -1,0 +1,90 @@
+package cataloggen_test
+
+import (
+	"strings"
+	"testing"
+
+	"github.com/stretchr/testify/require"
+	"google.golang.org/protobuf/encoding/protojson"
+	"google.golang.org/protobuf/proto"
+
+	"accounts/pkg/cataloggen"
+	catalogv1 "accounts/pkg/gen/saas/catalog/v1"
+	policyv1 "accounts/pkg/gen/saas/policy/v1"
+)
+
+func TestAuthorizationCatalogCompilationAndPolicyProjection(t *testing.T) {
+	serviceDocument := readFixture(t, "../../../generated/service-catalog.json")
+	catalog, err := cataloggen.BuildAuthorizationCatalog(serviceDocument)
+	require.NoError(t, err)
+	require.NoError(t, cataloggen.ValidateAuthorizationCatalog(catalog))
+	require.Equal(t, "saas.authz.methods.v1", catalog.GetSchemaVersion())
+	require.Equal(t, "accounts", catalog.GetOwner().GetService())
+	require.Len(t, catalog.GetMethods(), 121)
+
+	var internalCount, failClosedCount, factorAttemptCount int
+	for _, method := range catalog.GetMethods() {
+		require.Regexp(t, `^[0-9a-f]{64}$`, method.GetPolicySha256())
+		if method.GetPolicy().GetExposure() == policyv1.Exposure_EXPOSURE_INTERNAL {
+			internalCount++
+		}
+		if method.GetRateLimitBackendFailureMode() == catalogv1.RateLimitBackendFailureMode_RATE_LIMIT_BACKEND_FAILURE_MODE_FAIL_CLOSED {
+			failClosedCount++
+		}
+		if method.GetPolicy().GetAuthenticationFactorAttempt() {
+			factorAttemptCount++
+			require.Contains(t, method.GetProcedure(), "Complete")
+		}
+	}
+	require.Equal(t, 7, internalCount)
+	require.Equal(t, 15, failClosedCount)
+	require.Equal(t, 2, factorAttemptCount)
+}
+
+func TestAuthorizationArtifactsAreDeterministicAndCurrent(t *testing.T) {
+	serviceDocument := readFixture(t, "../../../generated/service-catalog.json")
+	authz, err := cataloggen.BuildAuthorizationCatalog(serviceDocument)
+	require.NoError(t, err)
+
+	first, err := cataloggen.RenderAuthorizationCatalogJSON(authz)
+	require.NoError(t, err)
+	second, err := cataloggen.RenderAuthorizationCatalogJSON(authz)
+	require.NoError(t, err)
+	require.Equal(t, first, second)
+	require.Equal(t, string(readFixture(t, "../../../generated/authz-methods.json")), string(first), "run: go generate ./pkg/cataloggen")
+
+	parsed := &catalogv1.AuthorizationCatalog{}
+	require.NoError(t, (protojson.UnmarshalOptions{DiscardUnknown: false}).Unmarshal(first, parsed))
+	require.True(t, proto.Equal(authz, parsed))
+
+	service := &catalogv1.ServiceCatalog{}
+	require.NoError(t, (protojson.UnmarshalOptions{DiscardUnknown: false}).Unmarshal(serviceDocument, service))
+	goDocument, err := cataloggen.RenderAuthSidecarAuthorizationMetadata(authz, service)
+	require.NoError(t, err)
+	require.Equal(t, string(readFixture(t, "../../../../auth-sidecar/code/authz_catalog_gen.go")), string(goDocument), "run: go generate ./pkg/cataloggen")
+	require.Equal(t, 121, strings.Count(string(goDocument), "{exposure:"))
+	runtimeSections := strings.Split(string(goDocument), "var generatedRESTProcedureByRoute")
+	require.Len(t, runtimeSections, 2)
+	require.Equal(t, 115, strings.Count(runtimeSections[1], `"/saas.accounts.v1.`))
+}
+
+func TestAuthorizationCatalogValidationRejectsUnsafeDrift(t *testing.T) {
+	catalog, err := cataloggen.BuildAuthorizationCatalog(readFixture(t, "../../../generated/service-catalog.json"))
+	require.NoError(t, err)
+
+	wrongSchema := proto.Clone(catalog).(*catalogv1.AuthorizationCatalog)
+	wrongSchema.SchemaVersion = "saas.authz.methods.v2"
+	require.ErrorContains(t, cataloggen.ValidateAuthorizationCatalog(wrongSchema), "unsupported")
+
+	wrongHash := proto.Clone(catalog).(*catalogv1.AuthorizationCatalog)
+	wrongHash.Methods[0].PolicySha256 = strings.Repeat("0", 64)
+	require.ErrorContains(t, cataloggen.ValidateAuthorizationCatalog(wrongHash), "policy hash")
+
+	wrongFailureMode := proto.Clone(catalog).(*catalogv1.AuthorizationCatalog)
+	wrongFailureMode.Methods[0].RateLimitBackendFailureMode = catalogv1.RateLimitBackendFailureMode_RATE_LIMIT_BACKEND_FAILURE_MODE_FAIL_CLOSED
+	require.ErrorContains(t, cataloggen.ValidateAuthorizationCatalog(wrongFailureMode), "failure mode")
+
+	invalidFactor := proto.Clone(catalog).(*catalogv1.AuthorizationCatalog)
+	invalidFactor.Methods[0].Policy.AuthenticationFactorAttempt = true
+	require.ErrorContains(t, cataloggen.ValidateAuthorizationCatalog(invalidFactor), "authentication-factor")
+}

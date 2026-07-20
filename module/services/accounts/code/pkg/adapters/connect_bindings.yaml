@@ -1,0 +1,113 @@
+version: v1
+services:
+  APIKeyService:
+    handler: apiKeyConnectHandler
+    source:
+      kind: grpc
+      name: APIKey
+  AuditExportService:
+    handler: auditExportConnectHandler
+    source:
+      kind: business
+  AuditService:
+    handler: auditConnectHandler
+    source:
+      kind: grpc
+      name: Audit
+  AuthService:
+    handler: authConnectHandler
+    source:
+      kind: grpc
+      name: Auth
+  BillingService:
+    handler: billingConnectHandler
+    source:
+      kind: business
+  ConsentService:
+    handler: consentConnectHandler
+    source:
+      kind: business
+  DelegationService:
+    handler: delegationConnectHandler
+    source:
+      kind: singleton
+      name: DelegationSingleton
+  GDPRService:
+    handler: gdprConnectHandler
+    source:
+      kind: business
+  IdentityService:
+    handler: identConnectHandler
+    source:
+      kind: grpc
+      name: Ident
+  IntrospectionService:
+    handler: introspectionConnectHandler
+    source:
+      kind: grpc
+      name: Introspection
+  InvitationService:
+    handler: invitationConnectHandler
+    source:
+      kind: grpc
+      name: Invitation
+  MFAService:
+    handler: mfaConnectHandler
+    grpc_server: MFA
+    source:
+      kind: business
+  NotificationService:
+    handler: notificationConnectHandler
+    source:
+      kind: business
+  OnboardingService:
+    handler: onboardingConnectHandler
+    source:
+      kind: business
+  OrganizationService:
+    handler: orgConnectHandler
+    source:
+      kind: grpc
+      name: Org
+  PermissionService:
+    handler: permConnectHandler
+    source:
+      kind: grpc
+      name: Perm
+  PlatformAdminService:
+    handler: platformAdminConnectHandler
+    source:
+      kind: grpc
+      name: PlatformAdmin
+  PrincipalService:
+    handler: principalConnectHandler
+    source:
+      kind: singleton
+      name: PrincipalSingleton
+  SSOAdminService:
+    handler: ssoAdminConnectHandler
+    source:
+      kind: business
+  TeamService:
+    handler: teamConnectHandler
+    source:
+      kind: grpc
+      name: Team
+  UserService:
+    handler: userConnectHandler
+    source:
+      kind: grpc
+      name: User
+  UsageService:
+    handler: usageConnectHandler
+    source:
+      kind: singleton
+      name: UsageSingleton
+  UserSettingsService:
+    handler: userSettingsConnectHandler
+    source:
+      kind: business
+  WebhookService:
+    handler: webhookConnectHandler
+    source:
+      kind: business

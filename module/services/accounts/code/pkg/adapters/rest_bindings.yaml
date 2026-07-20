@@ -1,0 +1,50 @@
+version: v1
+services:
+  APIKeyService:
+    kind: generated
+  AuditExportService:
+    kind: generated
+  AuditService:
+    kind: generated
+  AuthService:
+    kind: generated
+  BillingService:
+    kind: generated
+  ConsentService:
+    kind: generated
+  DelegationService:
+    kind: plugin
+    plugin: permissions
+  GDPRService:
+    kind: generated
+  IntrospectionService:
+    kind: generated
+  InvitationService:
+    kind: generated
+  MFAService:
+    kind: generated
+  NotificationService:
+    kind: generated
+  OnboardingService:
+    kind: generated
+  OrganizationService:
+    kind: generated
+  PermissionService:
+    kind: generated
+  PlatformAdminService:
+    kind: generated
+  PrincipalService:
+    kind: plugin
+    plugin: permissions
+  SSOAdminService:
+    kind: generated
+  TeamService:
+    kind: generated
+  UserService:
+    kind: generated
+  UsageService:
+    kind: generated
+  UserSettingsService:
+    kind: generated
+  WebhookService:
+    kind: generated

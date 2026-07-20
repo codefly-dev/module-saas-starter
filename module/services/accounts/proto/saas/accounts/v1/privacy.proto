@@ -1,0 +1,121 @@
+syntax = "proto3";
+
+package saas.accounts.v1;
+
+import "buf/validate/validate.proto";
+import "google/api/annotations.proto";
+import "google/protobuf/timestamp.proto";
+import "saas/policy/v1/options.proto";
+
+// ============================================================================
+// GDPR (Data Privacy)
+// ============================================================================
+
+enum GDPRRequestType {
+  GDPR_REQUEST_TYPE_UNSPECIFIED = 0;
+  GDPR_REQUEST_TYPE_EXPORT = 1;
+  GDPR_REQUEST_TYPE_DELETION = 2;
+}
+
+enum GDPRRequestStatus {
+  GDPR_REQUEST_STATUS_UNSPECIFIED = 0;
+  GDPR_REQUEST_STATUS_PENDING = 1;
+  GDPR_REQUEST_STATUS_PROCESSING = 2;
+  GDPR_REQUEST_STATUS_COMPLETED = 3;
+  GDPR_REQUEST_STATUS_FAILED = 4;
+}
+
+message GDPRRequest {
+  string id = 1 [(buf.validate.field).string.uuid = true];
+  string user_id = 2 [(buf.validate.field).string.uuid = true];
+  GDPRRequestType type = 3;
+  GDPRRequestStatus status = 4;
+  string download_url = 5;
+  google.protobuf.Timestamp expires_at = 6;
+  google.protobuf.Timestamp created_at = 7;
+  google.protobuf.Timestamp completed_at = 8;
+}
+
+message RequestDataExportRequest {}
+
+message GetExportStatusRequest {
+  string id = 1 [(buf.validate.field).string.uuid = true];
+}
+
+message RequestDeletionRequest {}
+
+message GetDeletionStatusRequest {
+  string id = 1 [(buf.validate.field).string.uuid = true];
+}
+
+// GDPRService — GDPR data export and deletion requests
+service GDPRService {
+  rpc RequestExport(RequestDataExportRequest) returns (GDPRRequest) {
+    option (saas.policy.v1.method_policy) = {
+      exposure: EXPOSURE_AUTHENTICATED
+      tenant: TENANT_REQUIREMENT_USER
+      mfa: MFA_REQUIREMENT_NONE
+      audit: {
+        events: "gdpr.export_requested"
+        emission: AUDIT_EMISSION_SUCCESS
+      }
+      idempotency: IDEMPOTENCY_REQUIREMENT_FORBIDDEN
+      rate_limit: RATE_LIMIT_CLASS_STANDARD_WRITE
+      request_sensitivity: SENSITIVITY_CONFIDENTIAL
+      response_sensitivity: SENSITIVITY_CONFIDENTIAL
+      platform_role: PLATFORM_ROLE_REQUIREMENT_NONE
+    };
+    option (google.api.http) = {
+      post: "/v1/gdpr/export"
+      body: "*"
+    };
+  }
+  rpc GetExportStatus(GetExportStatusRequest) returns (GDPRRequest) {
+    option (saas.policy.v1.method_policy) = {
+      exposure: EXPOSURE_AUTHENTICATED
+      tenant: TENANT_REQUIREMENT_USER
+      mfa: MFA_REQUIREMENT_NONE
+      audit: {emission: AUDIT_EMISSION_NONE}
+      idempotency: IDEMPOTENCY_REQUIREMENT_FORBIDDEN
+      rate_limit: RATE_LIMIT_CLASS_STANDARD_READ
+      request_sensitivity: SENSITIVITY_CONFIDENTIAL
+      response_sensitivity: SENSITIVITY_CONFIDENTIAL
+      platform_role: PLATFORM_ROLE_REQUIREMENT_NONE
+    };
+    option (google.api.http) = {get: "/v1/gdpr/export/{id}"};
+  }
+  rpc RequestDeletion(RequestDeletionRequest) returns (GDPRRequest) {
+    option (saas.policy.v1.method_policy) = {
+      exposure: EXPOSURE_AUTHENTICATED
+      tenant: TENANT_REQUIREMENT_USER
+      mfa: MFA_REQUIREMENT_IF_ENROLLED_RECENT_STEP_UP
+      audit: {
+        events: "gdpr.deletion_requested"
+        emission: AUDIT_EMISSION_SUCCESS
+      }
+      idempotency: IDEMPOTENCY_REQUIREMENT_FORBIDDEN
+      rate_limit: RATE_LIMIT_CLASS_SENSITIVE
+      request_sensitivity: SENSITIVITY_CONFIDENTIAL
+      response_sensitivity: SENSITIVITY_CONFIDENTIAL
+      platform_role: PLATFORM_ROLE_REQUIREMENT_NONE
+    };
+    option (google.api.http) = {
+      post: "/v1/gdpr/delete"
+      body: "*"
+    };
+  }
+  rpc GetDeletionStatus(GetDeletionStatusRequest) returns (GDPRRequest) {
+    option (saas.policy.v1.method_policy) = {
+      exposure: EXPOSURE_AUTHENTICATED
+      tenant: TENANT_REQUIREMENT_USER
+      mfa: MFA_REQUIREMENT_NONE
+      audit: {emission: AUDIT_EMISSION_NONE}
+      idempotency: IDEMPOTENCY_REQUIREMENT_FORBIDDEN
+      rate_limit: RATE_LIMIT_CLASS_STANDARD_READ
+      request_sensitivity: SENSITIVITY_CONFIDENTIAL
+      response_sensitivity: SENSITIVITY_CONFIDENTIAL
+      platform_role: PLATFORM_ROLE_REQUIREMENT_NONE
+    };
+    option (google.api.http) = {get: "/v1/gdpr/delete/{id}"};
+  }
+}

@@ -22,7 +22,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"accounts/pkg/business"
-	"accounts/pkg/gen"
+	gen "accounts/pkg/gen/saas/accounts/v1"
 )
 
 // TestRLS_OrgSettings_CrossTenantBlocked — org_settings has direct
@@ -34,7 +34,7 @@ func TestRLS_OrgSettings_CrossTenantBlocked(t *testing.T) {
 	_, orgA := mustUserAndOrg(t, ctx, "alice-os@rls-test.com", "alice-os-rls", "Acme OS A")
 	_, orgB := mustUserAndOrg(t, ctx, "bob-os@rls-test.com", "bob-os-rls", "Acme OS B")
 
-	require.NoError(t, testStore.WithBypass(ctx, func(ctx context.Context) error {
+	require.NoError(t, testStore.WithControlPlane(ctx, func(ctx context.Context) error {
 		if err := testStore.UpsertOrgSettings(ctx, &business.OrgSettings{
 			OrgID: orgA, PrimaryColor: "#aaaaaa", LogoURL: "https://a/logo.png",
 		}); err != nil {
@@ -153,25 +153,31 @@ func TestRLS_Subscriptions_CrossTenantBlocked(t *testing.T) {
 	// Resolve the seeded "free" plan's UUID — subscriptions.plan_id
 	// is a UUID FK to plans(id), not the plan name.
 	var freePlanID, proPlanID string
-	require.NoError(t, testStore.WithBypass(ctx, func(ctx context.Context) error {
+	require.NoError(t, testStore.WithControlPlane(ctx, func(ctx context.Context) error {
 		free, err := testStore.GetPlanByName(ctx, "free")
 		if err != nil {
 			return err
 		}
 		require.NotNil(t, free, "expected seeded 'free' plan from migration 9")
+		require.False(t, free.CheckoutEnabled, "free plan must not be purchasable through Stripe")
+		require.Zero(t, free.TrialDays)
+		require.Equal(t, "unspecified", free.TaxBehavior)
 		freePlanID = free.ID
 		pro, err := testStore.GetPlanByName(ctx, "pro")
 		if err != nil {
 			return err
 		}
 		require.NotNil(t, pro, "expected seeded 'pro' plan from migration 9")
+		require.True(t, pro.CheckoutEnabled)
+		require.Equal(t, 14, pro.TrialDays)
+		require.Equal(t, "unspecified", pro.TaxBehavior)
 		proPlanID = pro.ID
 		return nil
 	}))
 
 	now := time.Now()
 	end := now.Add(30 * 24 * time.Hour)
-	require.NoError(t, testStore.WithBypass(ctx, func(ctx context.Context) error {
+	require.NoError(t, testStore.WithControlPlane(ctx, func(ctx context.Context) error {
 		if err := testStore.CreateSubscription(ctx, &business.Subscription{
 			ID: business.NewIDString(), OrgID: orgA, PlanID: freePlanID, Status: "active",
 			StripeSubscriptionID: "sub_a", CurrentPeriodStart: &now, CurrentPeriodEnd: &end,
@@ -216,7 +222,7 @@ func TestRLS_EntitlementOverrides_CrossTenantBlocked(t *testing.T) {
 
 	limitA := int64(50)
 	limitB := int64(100)
-	require.NoError(t, testStore.WithBypass(ctx, func(ctx context.Context) error {
+	require.NoError(t, testStore.WithControlPlane(ctx, func(ctx context.Context) error {
 		if err := testStore.CreateEntitlementOverride(ctx, &business.EntitlementOverride{
 			ID: business.NewIDString(), OrgID: orgA, Feature: "seats",
 			LimitValue: &limitA, Reason: "promo", CreatedBy: userA,
@@ -254,38 +260,64 @@ func TestRLS_EntitlementOverrides_CrossTenantBlocked(t *testing.T) {
 		"un-wrapped ListEntitlementOverrides must return ZERO rows (RLS fail-closed)")
 }
 
-// TestRLS_UsageRecords_CrossTenantBlocked — usage_records is the
-// metered-feature counter (org_id, feature, period, quantity).
-func TestRLS_UsageRecords_CrossTenantBlocked(t *testing.T) {
+// TestRLS_UsageMetering_CrossTenantBlocked covers both the immutable event
+// ledger and its monthly aggregate read model.
+func TestRLS_UsageMetering_CrossTenantBlocked(t *testing.T) {
 	clearData(t)
 	ctx := testCtx
 
 	_, orgA := mustUserAndOrg(t, ctx, "alice-ur@rls-test.com", "alice-ur-rls", "Acme UR A")
 	_, orgB := mustUserAndOrg(t, ctx, "bob-ur@rls-test.com", "bob-ur-rls", "Acme UR B")
 
-	const period = "2026-04"
-	require.NoError(t, testStore.WithBypass(ctx, func(ctx context.Context) error {
-		if err := testStore.RecordUsage(ctx, orgA, "api_calls", 50, period); err != nil {
-			return err
+	periodStart := time.Date(2026, time.April, 1, 0, 0, 0, 0, time.UTC)
+	periodEnd := periodStart.AddDate(0, 1, 0)
+	occurredAt := periodStart.Add(12 * time.Hour)
+	record := func(orgID, eventID, key string, quantity int64, hashByte byte) error {
+		var requestHash [32]byte
+		for i := range requestHash {
+			requestHash[i] = hashByte
 		}
-		return testStore.RecordUsage(ctx, orgB, "api_calls", 200, period)
-	}))
+		return testStore.WithOrgTx(ctx, orgID, func(ctx context.Context) error {
+			_, err := testStore.ConsumeUsage(ctx, business.UsageConsumption{
+				EventID: eventID, OrgID: orgID, Meter: "api_calls_monthly",
+				Quantity: quantity, IdempotencyKey: key, RequestHash: requestHash,
+				OccurredAt: occurredAt, PeriodStart: periodStart, PeriodEnd: periodEnd,
+				Dimensions: map[string]string{}, Limit: -1,
+			})
+			return err
+		})
+	}
+	require.NoError(t, record(orgA, business.NewIDString(), "rls-usage-a", 50, 1))
+	require.NoError(t, record(orgB, business.NewIDString(), "rls-usage-b", 200, 2))
 
 	// As A's tx: see A's count, B's returns 0.
 	require.NoError(t, testStore.WithOrgTx(ctx, orgA, func(ctx context.Context) error {
-		mine, err := testStore.GetUsageForPeriod(ctx, orgA, "api_calls", period)
+		mine, err := testStore.GetUsageTotal(ctx, orgA, "api_calls_monthly", periodStart)
 		require.NoError(t, err)
 		require.Equal(t, int64(50), mine, "org A should see its own usage")
 
-		stolen, err := testStore.GetUsageForPeriod(ctx, orgB, "api_calls", period)
+		stolen, err := testStore.GetUsageTotal(ctx, orgB, "api_calls_monthly", periodStart)
 		require.NoError(t, err)
 		require.Equal(t, int64(0), stolen, "RLS must hide B's usage from A's tx")
+
 		return nil
 	}))
+	var crossTenantHash [32]byte
+	crossTenantHash[0] = 3
+	err := testStore.WithOrgTx(ctx, orgA, func(ctx context.Context) error {
+		_, err := testStore.ConsumeUsage(ctx, business.UsageConsumption{
+			EventID: business.NewIDString(), OrgID: orgB, Meter: "api_calls_monthly",
+			Quantity: 1, IdempotencyKey: "cross-tenant-write", RequestHash: crossTenantHash,
+			OccurredAt: occurredAt, PeriodStart: periodStart, PeriodEnd: periodEnd,
+			Dimensions: map[string]string{}, Limit: -1,
+		})
+		return err
+	})
+	require.Error(t, err, "RLS must reject an event and total write for org B from org A's tx")
 
 	// Un-wrapped: zero.
-	noWrap, err := testStore.GetUsageForPeriod(context.Background(), orgA, "api_calls", period)
+	noWrap, err := testStore.GetUsageTotal(context.Background(), orgA, "api_calls_monthly", periodStart)
 	require.NoError(t, err)
 	require.Equal(t, int64(0), noWrap,
-		"un-wrapped GetUsageForPeriod must return 0 (RLS fail-closed)")
+		"un-wrapped GetUsageTotal must return 0 (RLS fail-closed)")
 }

@@ -1,0 +1,258 @@
+syntax = "proto3";
+
+package saas.accounts.v1;
+
+import "buf/validate/validate.proto";
+import "google/api/annotations.proto";
+import "google/protobuf/empty.proto";
+import "saas/accounts/v1/common.proto";
+import "saas/policy/v1/options.proto";
+
+// --- Organization Settings (branding) ---
+
+message OrgSettings {
+  string org_id = 1;
+  string logo_url = 2;
+  string primary_color = 3;
+  string custom_domain = 4;
+  string favicon_url = 5;
+}
+
+message GetOrgSettingsRequest {
+  string org_id = 1 [(buf.validate.field).string.uuid = true];
+}
+
+message UpdateOrgSettingsRequest {
+  string org_id = 1 [(buf.validate.field).string.uuid = true];
+  string logo_url = 2 [(buf.validate.field).string = {
+    max_len: 2048
+    pattern: "^(|https://[^\\s]+)$"
+  }];
+  string primary_color = 3 [(buf.validate.field).string.pattern = "^(|#[0-9A-Fa-f]{6})$"];
+  string custom_domain = 4 [(buf.validate.field).string = {
+    max_len: 253
+    pattern: "^(|([a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?\\.)+[a-z]{2,63})$"
+  }];
+  string favicon_url = 5 [(buf.validate.field).string = {
+    max_len: 2048
+    pattern: "^(|https://[^\\s]+)$"
+  }];
+}
+
+// --- Organization ---
+
+message CreateOrganizationRequest {
+  string name = 1 [(buf.validate.field).string.min_len = 1];
+  string slug = 2 [(buf.validate.field).string = {
+    min_len: 1
+    max_len: 63
+    pattern: "^[a-z0-9][a-z0-9-]*[a-z0-9]$"
+  }];
+}
+
+message CreateOrganizationResponse {
+  Organization organization = 1;
+}
+
+message GetOrganizationRequest {
+  string id = 1 [(buf.validate.field).string.uuid = true];
+}
+
+message ListOrganizationsRequest {}
+
+message ListOrganizationsResponse {
+  repeated Organization organizations = 1;
+}
+
+message AddOrgMemberRequest {
+  string org_id = 1 [(buf.validate.field).string.uuid = true];
+  string user_id = 2 [(buf.validate.field).string.uuid = true];
+  OrgRole role = 3;
+}
+
+message RemoveOrgMemberRequest {
+  string org_id = 1 [(buf.validate.field).string.uuid = true];
+  string user_id = 2 [(buf.validate.field).string.uuid = true];
+}
+
+message ListOrgMembersRequest {
+  string org_id = 1 [(buf.validate.field).string.uuid = true];
+}
+
+message ListOrgMembersResponse {
+  repeated OrgMembership members = 1;
+}
+
+// OrganizationService — org and membership management
+service OrganizationService {
+  rpc CreateOrganization(CreateOrganizationRequest) returns (CreateOrganizationResponse) {
+    option (saas.policy.v1.method_policy) = {
+      exposure: EXPOSURE_AUTHENTICATED
+      tenant: TENANT_REQUIREMENT_USER
+      mfa: MFA_REQUIREMENT_NONE
+      audit: {
+        events: "org.created"
+        emission: AUDIT_EMISSION_SUCCESS
+      }
+      idempotency: IDEMPOTENCY_REQUIREMENT_FORBIDDEN
+      rate_limit: RATE_LIMIT_CLASS_STANDARD_WRITE
+      request_sensitivity: SENSITIVITY_CONFIDENTIAL
+      response_sensitivity: SENSITIVITY_CONFIDENTIAL
+      platform_role: PLATFORM_ROLE_REQUIREMENT_NONE
+    };
+    option (google.api.http) = {
+      post: "/v1/organizations"
+      body: "*"
+    };
+  }
+
+  rpc GetOrganization(GetOrganizationRequest) returns (Organization) {
+    option (saas.policy.v1.method_policy) = {
+      exposure: EXPOSURE_AUTHENTICATED
+      tenant: TENANT_REQUIREMENT_ORG_MEMBER
+      resource_bindings: {
+        request_field: "id"
+        target: RESOURCE_TARGET_ORGANIZATION
+        lookup: RESOURCE_LOOKUP_DIRECT_ID
+      }
+      mfa: MFA_REQUIREMENT_NONE
+      audit: {emission: AUDIT_EMISSION_NONE}
+      idempotency: IDEMPOTENCY_REQUIREMENT_FORBIDDEN
+      rate_limit: RATE_LIMIT_CLASS_STANDARD_READ
+      request_sensitivity: SENSITIVITY_CONFIDENTIAL
+      response_sensitivity: SENSITIVITY_CONFIDENTIAL
+      platform_role: PLATFORM_ROLE_REQUIREMENT_NONE
+    };
+    option (google.api.http) = {get: "/v1/organizations/{id}"};
+  }
+
+  rpc ListOrganizations(ListOrganizationsRequest) returns (ListOrganizationsResponse) {
+    option (saas.policy.v1.method_policy) = {
+      exposure: EXPOSURE_AUTHENTICATED
+      tenant: TENANT_REQUIREMENT_USER
+      mfa: MFA_REQUIREMENT_NONE
+      audit: {emission: AUDIT_EMISSION_NONE}
+      idempotency: IDEMPOTENCY_REQUIREMENT_FORBIDDEN
+      rate_limit: RATE_LIMIT_CLASS_STANDARD_READ
+      request_sensitivity: SENSITIVITY_CONFIDENTIAL
+      response_sensitivity: SENSITIVITY_CONFIDENTIAL
+      platform_role: PLATFORM_ROLE_REQUIREMENT_NONE
+    };
+    option (google.api.http) = {get: "/v1/organizations"};
+  }
+
+  rpc AddMember(AddOrgMemberRequest) returns (google.protobuf.Empty) {
+    option (saas.policy.v1.method_policy) = {
+      exposure: EXPOSURE_AUTHENTICATED
+      tenant: TENANT_REQUIREMENT_ORG_ADMIN
+      resource_bindings: {
+        request_field: "org_id"
+        target: RESOURCE_TARGET_ORGANIZATION
+        lookup: RESOURCE_LOOKUP_DIRECT_ID
+      }
+      mfa: MFA_REQUIREMENT_NONE
+      audit: {
+        events: "org.member_added"
+        emission: AUDIT_EMISSION_SUCCESS
+      }
+      idempotency: IDEMPOTENCY_REQUIREMENT_FORBIDDEN
+      rate_limit: RATE_LIMIT_CLASS_STANDARD_WRITE
+      request_sensitivity: SENSITIVITY_CONFIDENTIAL
+      response_sensitivity: SENSITIVITY_CONFIDENTIAL
+      platform_role: PLATFORM_ROLE_REQUIREMENT_NONE
+    };
+    option (google.api.http) = {
+      post: "/v1/organizations/{org_id}/members"
+      body: "*"
+    };
+  }
+
+  rpc RemoveMember(RemoveOrgMemberRequest) returns (google.protobuf.Empty) {
+    option (saas.policy.v1.method_policy) = {
+      exposure: EXPOSURE_AUTHENTICATED
+      tenant: TENANT_REQUIREMENT_ORG_ADMIN
+      resource_bindings: {
+        request_field: "org_id"
+        target: RESOURCE_TARGET_ORGANIZATION
+        lookup: RESOURCE_LOOKUP_DIRECT_ID
+      }
+      mfa: MFA_REQUIREMENT_NONE
+      audit: {
+        events: "org.member_removed"
+        emission: AUDIT_EMISSION_SUCCESS
+      }
+      idempotency: IDEMPOTENCY_REQUIREMENT_FORBIDDEN
+      rate_limit: RATE_LIMIT_CLASS_STANDARD_WRITE
+      request_sensitivity: SENSITIVITY_CONFIDENTIAL
+      response_sensitivity: SENSITIVITY_CONFIDENTIAL
+      platform_role: PLATFORM_ROLE_REQUIREMENT_NONE
+    };
+    option (google.api.http) = {delete: "/v1/organizations/{org_id}/members/{user_id}"};
+  }
+
+  rpc ListMembers(ListOrgMembersRequest) returns (ListOrgMembersResponse) {
+    option (saas.policy.v1.method_policy) = {
+      exposure: EXPOSURE_AUTHENTICATED
+      tenant: TENANT_REQUIREMENT_ORG_MEMBER
+      resource_bindings: {
+        request_field: "org_id"
+        target: RESOURCE_TARGET_ORGANIZATION
+        lookup: RESOURCE_LOOKUP_DIRECT_ID
+      }
+      mfa: MFA_REQUIREMENT_NONE
+      audit: {emission: AUDIT_EMISSION_NONE}
+      idempotency: IDEMPOTENCY_REQUIREMENT_FORBIDDEN
+      rate_limit: RATE_LIMIT_CLASS_STANDARD_READ
+      request_sensitivity: SENSITIVITY_CONFIDENTIAL
+      response_sensitivity: SENSITIVITY_CONFIDENTIAL
+      platform_role: PLATFORM_ROLE_REQUIREMENT_NONE
+    };
+    option (google.api.http) = {get: "/v1/organizations/{org_id}/members"};
+  }
+
+  rpc GetOrgSettings(GetOrgSettingsRequest) returns (OrgSettings) {
+    option (saas.policy.v1.method_policy) = {
+      exposure: EXPOSURE_AUTHENTICATED
+      tenant: TENANT_REQUIREMENT_ORG_MEMBER
+      resource_bindings: {
+        request_field: "org_id"
+        target: RESOURCE_TARGET_ORGANIZATION
+        lookup: RESOURCE_LOOKUP_DIRECT_ID
+      }
+      mfa: MFA_REQUIREMENT_NONE
+      audit: {emission: AUDIT_EMISSION_NONE}
+      idempotency: IDEMPOTENCY_REQUIREMENT_FORBIDDEN
+      rate_limit: RATE_LIMIT_CLASS_STANDARD_READ
+      request_sensitivity: SENSITIVITY_CONFIDENTIAL
+      response_sensitivity: SENSITIVITY_CONFIDENTIAL
+      platform_role: PLATFORM_ROLE_REQUIREMENT_NONE
+    };
+    option (google.api.http) = {get: "/v1/organizations/{org_id}/settings"};
+  }
+
+  rpc UpdateOrgSettings(UpdateOrgSettingsRequest) returns (OrgSettings) {
+    option (saas.policy.v1.method_policy) = {
+      exposure: EXPOSURE_AUTHENTICATED
+      tenant: TENANT_REQUIREMENT_ORG_ADMIN
+      resource_bindings: {
+        request_field: "org_id"
+        target: RESOURCE_TARGET_ORGANIZATION
+        lookup: RESOURCE_LOOKUP_DIRECT_ID
+      }
+      mfa: MFA_REQUIREMENT_NONE
+      audit: {
+        events: "org.settings_updated"
+        emission: AUDIT_EMISSION_SUCCESS
+      }
+      idempotency: IDEMPOTENCY_REQUIREMENT_FORBIDDEN
+      rate_limit: RATE_LIMIT_CLASS_STANDARD_WRITE
+      request_sensitivity: SENSITIVITY_CONFIDENTIAL
+      response_sensitivity: SENSITIVITY_CONFIDENTIAL
+      platform_role: PLATFORM_ROLE_REQUIREMENT_NONE
+    };
+    option (google.api.http) = {
+      put: "/v1/organizations/{org_id}/settings"
+      body: "*"
+    };
+  }
+}

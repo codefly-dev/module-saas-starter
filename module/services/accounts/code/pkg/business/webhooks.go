@@ -5,68 +5,140 @@ import (
 	"crypto/rand"
 	"encoding/base64"
 	"encoding/json"
-	"net/url"
+	"fmt"
+	"regexp"
+	"strings"
 	"time"
 
 	"github.com/codefly-dev/core/wool"
 )
 
+var canonicalWebhookEventType = regexp.MustCompile(`^[a-z][a-z0-9._-]*$`)
+
 // WebhookSubscription is the domain representation of a webhook subscription.
 type WebhookSubscription struct {
-	ID          string
-	OrgID       string
-	URL         string
-	Secret      string
-	Events      []string // event types to subscribe to, e.g. "user.registered", "org.created"
-	Description string
-	Active      bool
-	CreatedAt   time.Time
-	UpdatedAt   time.Time
+	ID                      string
+	OrgID                   string
+	URL                     string
+	SecretEncrypted         string
+	PreviousSecretEncrypted string
+	PreviousSecretExpiresAt *time.Time
+	SecretReveal            string   // transient: populated only by create
+	Events                  []string // event types to subscribe to, e.g. "user.registered", "org.created"
+	Description             string
+	Active                  bool
+	CreatedAt               time.Time
+	UpdatedAt               time.Time
 }
 
-// WebhookDelivery tracks a single delivery attempt for a webhook.
+// WebhookDelivery is customer-visible delivery history. Generic job records,
+// not this projection, own scheduling, leases, retries, and dead letters.
 type WebhookDelivery struct {
 	ID             string
 	SubscriptionID string
+	EventID        string
+	OutboxEventID  string
 	EventType      string
 	Payload        string // JSON payload
-	Status         string // "pending", "delivered", "failed", "retrying"
+	Status         string // "pending", "delivered", "failed"
 	HTTPStatus     int
 	ResponseBody   string
 	AttemptCount   int
-	NextRetryAt    *time.Time
+	LastAttemptAt  *time.Time
 	CreatedAt      time.Time
+	UpdatedAt      time.Time
 	DeliveredAt    *time.Time
 }
 
+// webhookPayload is serialized once and the exact bytes are persisted. Every
+// attempt and replay signs those stored bytes rather than re-marshalling data.
+type webhookPayload struct {
+	EventID    string          `json:"id"`
+	EventType  string          `json:"event_type"`
+	Data       json.RawMessage `json:"data"`
+	Timestamp  string          `json:"timestamp"`
+	DeliveryID string          `json:"delivery_id"`
+}
+
+func newWebhookDelivery(entry AuditEntry, subscriptionID string) (*WebhookDelivery, []byte, error) {
+	deliveryID := NewIDString()
+	data, err := json.Marshal(map[string]any{
+		"action":          entry.Action,
+		"resource":        entry.Resource,
+		"resource_id":     entry.ResourceID,
+		"actor_id":        entry.ActorID,
+		"actor_type":      entry.ActorType,
+		"organization_id": entry.OrgID,
+		"metadata":        entry.Metadata,
+	})
+	if err != nil {
+		return nil, nil, err
+	}
+	payload, err := json.Marshal(webhookPayload{
+		EventID:    entry.ID,
+		EventType:  entry.Action,
+		Data:       data,
+		Timestamp:  entry.CreatedAt.UTC().Format(time.RFC3339Nano),
+		DeliveryID: deliveryID,
+	})
+	if err != nil {
+		return nil, nil, err
+	}
+	return &WebhookDelivery{
+		ID:             deliveryID,
+		SubscriptionID: subscriptionID,
+		EventID:        entry.ID,
+		OutboxEventID:  entry.ID,
+		EventType:      entry.Action,
+		Payload:        string(payload),
+		Status:         "pending",
+	}, payload, nil
+}
+
 // CreateSubscription validates and stores a new webhook subscription.
-func (s *Service) CreateSubscription(ctx context.Context, orgID, rawURL, secret string, events []string, description string) (*WebhookSubscription, error) {
+func (s *Service) CreateSubscription(ctx context.Context, orgID, rawURL string, events []string, description string) (*WebhookSubscription, error) {
 	w := wool.Get(ctx).In("CreateSubscription")
 
-	// Validate URL
-	u, err := url.Parse(rawURL)
+	if s.webhookCipher == nil {
+		return nil, w.NewError("webhook secret cipher is not configured")
+	}
+	policy := s.webhookPolicy.ensureDefaults()
+	normalizedURL, err := policy.NormalizeAndValidate(ctx, rawURL)
 	if err != nil {
-		return nil, w.NewError("invalid webhook URL: %s", err)
-	}
-	if u.Scheme != "https" && u.Scheme != "http" {
-		return nil, w.NewError("webhook URL must use http or https scheme")
-	}
-	if u.Host == "" {
-		return nil, w.NewError("webhook URL must have a host")
+		return nil, w.Wrapf(err, "unsafe webhook URL")
 	}
 
-	if len(events) == 0 {
+	if len(events) == 0 || len(events) > 64 {
 		return nil, w.NewError("at least one event type is required")
+	}
+	for _, event := range events {
+		if event = strings.TrimSpace(event); len(event) > 128 || !canonicalWebhookEventType.MatchString(event) {
+			return nil, w.NewError("webhook event types must use lowercase letters, digits, dots, underscores, or hyphens")
+		}
+	}
+	if len(description) > 500 {
+		return nil, w.NewError("webhook description must not exceed 500 bytes")
+	}
+
+	subscriptionID := NewIDString()
+	secret, err := generateWebhookSecret()
+	if err != nil {
+		return nil, w.Wrapf(err, "cannot generate webhook secret")
+	}
+	encryptedSecret, err := s.webhookCipher.EncryptSecret(ctx, WebhookSecretPurpose(subscriptionID), secret)
+	if err != nil {
+		return nil, w.Wrapf(err, "cannot encrypt webhook secret")
 	}
 
 	sub := &WebhookSubscription{
-		ID:          NewIDString(),
-		OrgID:       orgID,
-		URL:         rawURL,
-		Secret:      secret,
-		Events:      events,
-		Description: description,
-		Active:      true,
+		ID:              subscriptionID,
+		OrgID:           orgID,
+		URL:             normalizedURL,
+		SecretEncrypted: encryptedSecret,
+		SecretReveal:    secret,
+		Events:          events,
+		Description:     description,
+		Active:          true,
 	}
 
 	// RLS: write goes through WithOrgTx so the policy WITH CHECK
@@ -145,26 +217,10 @@ func (s *Service) ListDeliveries(ctx context.Context, orgID, subscriptionID stri
 	return out, err
 }
 
-// TestWebhook fires a synthetic event at the subscription's URL and
-// returns the resulting delivery row (delivered / failed status set
-// inline before return — caller doesn't need to poll).
-//
-// eventType picks the event name on the envelope; empty defaults to
-// "webhook.test". The payload data is server-generated sample JSON
-// matching the same envelope the async dispatcher uses, so consumer-
-// side validation logic can treat tests identically to real events.
-// TestWebhook fires a synthetic event at the subscription's URL.
-// orgID is the caller's tenant — required so the lookup, the
-// delivery insert, and the row re-load all happen inside WithOrgTx
-// and the RLS policies on webhook_subscriptions / webhook_deliveries
-// scope to the right tenant. A subscription_id from a different
-// tenant returns "not found" via the policy, never the cross-tenant
-// row.
-//
-// The HTTP-send to the customer's endpoint runs OUTSIDE the
-// WithOrgTx (after we exit the closure) — keeping a tx open during
-// a network round-trip would tie up a connection for up to 10s.
-// A separate WithOrgTx wraps the post-send re-load.
+// TestWebhook atomically creates a synthetic delivery and its generated
+// generic outbox job. It returns the pending delivery immediately; the same
+// leased worker, signing path, retry policy, and history projection used by
+// production events perform the network request.
 func (s *Service) TestWebhook(ctx context.Context, orgID, subscriptionID, eventType string) (*WebhookDelivery, error) {
 	w := wool.Get(ctx).In("TestWebhook")
 
@@ -173,6 +229,7 @@ func (s *Service) TestWebhook(ctx context.Context, orgID, subscriptionID, eventT
 	}
 	deliveryID := NewIDString()
 	envelope := webhookPayload{
+		EventID:    deliveryID,
 		EventType:  eventType,
 		Data:       json.RawMessage(`{"message":"This is a test webhook delivery.","test":true}`),
 		Timestamp:  time.Now().UTC().Format(time.RFC3339),
@@ -186,47 +243,32 @@ func (s *Service) TestWebhook(ctx context.Context, orgID, subscriptionID, eventT
 	delivery := &WebhookDelivery{
 		ID:             deliveryID,
 		SubscriptionID: subscriptionID,
+		EventID:        deliveryID,
 		EventType:      eventType,
 		Payload:        string(payloadBytes),
 		Status:         "pending",
 		AttemptCount:   0,
 	}
 
-	var sub *WebhookSubscription
 	if err := s.store.WithOrgTx(ctx, orgID, func(ctx context.Context) error {
-		s2, err := s.store.GetWebhookSubscription(ctx, subscriptionID)
+		subscription, err := s.store.GetWebhookSubscription(ctx, subscriptionID)
 		if err != nil {
 			return w.Wrapf(err, "cannot load subscription")
 		}
-		if s2 == nil {
+		if subscription == nil {
 			return w.NewError("subscription not found")
 		}
-		sub = s2
-		return s.store.CreateWebhookDelivery(ctx, delivery)
+		return createOutboundWebhookDelivery(
+			ctx, s.store, s.webhookJobs, orgID, delivery, payloadBytes,
+		)
 	}); err != nil {
 		return nil, err
-	}
-
-	// Send (HTTP) outside the tx — long-running.
-	s.webhookSenderOrDefault().Send(ctx, sub, delivery, payloadBytes)
-
-	// Re-load the row (Send mutates in-place, but DB has the source of
-	// truth post-round-trip).
-	var updated *WebhookDelivery
-	_ = s.store.WithOrgTx(ctx, orgID, func(ctx context.Context) error {
-		u, err := s.store.GetWebhookDelivery(ctx, deliveryID)
-		updated = u
-		return err
-	})
-	if updated != nil {
-		return updated, nil
 	}
 	return delivery, nil
 }
 
-// GetWebhookDelivery fetches a single delivery row including the
-// captured response body and retry timing. Used by the Stripe-style
-// "deliveries" detail panel.
+// GetWebhookDelivery fetches a single delivery row including the captured
+// response body and latest attempt metadata.
 //
 // orgID gates the lookup via RLS — a delivery from another tenant
 // returns "not found" instead of leaking.
@@ -247,18 +289,15 @@ func (s *Service) GetWebhookDelivery(ctx context.Context, orgID, deliveryID stri
 	return d, nil
 }
 
-// ReplayWebhookDelivery re-fires an existing delivery's payload at
-// the subscription's CURRENT url + secret (so a delivery that
-// originally 503'd against an old endpoint can be replayed against
-// the fixed one). Creates a NEW delivery row so the audit trail
-// captures both attempts; the original row is unchanged.
+// ReplayWebhookDelivery creates a new history row and generated outbox job for
+// an existing delivery's exact payload. The worker resolves the subscription's
+// current URL and secret when it executes; the original row remains immutable.
 //
 // Authz expectation: caller must already be org-admin on the
 // subscription's org — enforced at the adapter layer.
 func (s *Service) ReplayWebhookDelivery(ctx context.Context, orgID, originalID string) (*WebhookDelivery, error) {
 	w := wool.Get(ctx).In("ReplayWebhookDelivery")
 
-	var original *WebhookDelivery
 	var sub *WebhookSubscription
 	replay := &WebhookDelivery{
 		ID:           NewIDString(),
@@ -274,8 +313,6 @@ func (s *Service) ReplayWebhookDelivery(ctx context.Context, orgID, originalID s
 		if o == nil {
 			return w.NewError("original delivery not found")
 		}
-		original = o
-
 		sb, err := s.store.GetWebhookSubscription(ctx, o.SubscriptionID)
 		if err != nil {
 			return w.Wrapf(err, "cannot load subscription")
@@ -286,43 +323,44 @@ func (s *Service) ReplayWebhookDelivery(ctx context.Context, orgID, originalID s
 		sub = sb
 
 		replay.SubscriptionID = o.SubscriptionID
+		replay.EventID = o.EventID
+		if replay.EventID == "" {
+			replay.EventID = o.ID
+		}
 		replay.EventType = o.EventType
 		replay.Payload = o.Payload
-		return s.store.CreateWebhookDelivery(ctx, replay)
+		return createOutboundWebhookDelivery(
+			ctx, s.store, s.webhookJobs, orgID, replay, []byte(o.Payload),
+		)
 	}); err != nil {
 		return nil, err
 	}
 
-	s.webhookSenderOrDefault().Send(ctx, sub, replay, []byte(original.Payload))
-
-	var updated *WebhookDelivery
-	_ = s.store.WithOrgTx(ctx, orgID, func(ctx context.Context) error {
-		u, err := s.store.GetWebhookDelivery(ctx, replay.ID)
-		updated = u
-		return err
-	})
-
 	s.emit(ctx, sub.OrgID, "system", "webhook.replayed", "webhook_delivery", replay.ID, sub.OrgID)
-	if updated != nil {
-		return updated, nil
-	}
 	return replay, nil
 }
 
-// RotateWebhookSecret generates a new HMAC secret for the
-// subscription, stores it, and returns the plaintext to the caller
-// ONCE. The old secret is dropped immediately on the server side;
-// the caller already has both old and new at this moment (the API
-// just returned the new one), so they can flip their verifier at
-// their own pace.
-func (s *Service) RotateWebhookSecret(ctx context.Context, orgID, subscriptionID string) (string, error) {
+// RotateWebhookSecret generates and encrypts a new signing secret. During the
+// requested overlap, deliveries carry signatures from both the new and prior
+// keys so consumers can deploy the new verifier without an outage.
+func (s *Service) RotateWebhookSecret(ctx context.Context, orgID, subscriptionID string, gracePeriod time.Duration) (string, *time.Time, error) {
 	w := wool.Get(ctx).In("RotateWebhookSecret")
-
-	raw := make([]byte, 32)
-	if _, err := rand.Read(raw); err != nil {
-		return "", w.Wrapf(err, "rng failure")
+	if s.webhookCipher == nil {
+		return "", nil, w.NewError("webhook secret cipher is not configured")
 	}
-	newSecret := "whsec_" + base64.RawURLEncoding.EncodeToString(raw)
+	if gracePeriod < 0 || gracePeriod > 7*24*time.Hour {
+		return "", nil, w.NewError("webhook secret grace period must be between 0 and 7 days")
+	}
+
+	newSecret, err := generateWebhookSecret()
+	if err != nil {
+		return "", nil, w.Wrapf(err, "rng failure")
+	}
+	encryptedSecret, err := s.webhookCipher.EncryptSecret(ctx, WebhookSecretPurpose(subscriptionID), newSecret)
+	if err != nil {
+		return "", nil, w.Wrapf(err, "cannot encrypt webhook secret")
+	}
+	var oldSecretExpiresAt *time.Time
 
 	if err := s.store.WithOrgTx(ctx, orgID, func(ctx context.Context) error {
 		sub, err := s.store.GetWebhookSubscription(ctx, subscriptionID)
@@ -332,14 +370,29 @@ func (s *Service) RotateWebhookSecret(ctx context.Context, orgID, subscriptionID
 		if sub == nil {
 			return w.NewError("subscription not found")
 		}
-		sub.Secret = newSecret
+		if gracePeriod > 0 {
+			expiresAt := time.Now().UTC().Add(gracePeriod)
+			sub.PreviousSecretEncrypted = sub.SecretEncrypted
+			sub.PreviousSecretExpiresAt = &expiresAt
+			oldSecretExpiresAt = &expiresAt
+		} else {
+			sub.PreviousSecretEncrypted = ""
+			sub.PreviousSecretExpiresAt = nil
+		}
+		sub.SecretEncrypted = encryptedSecret
 		return s.store.UpdateWebhookSubscription(ctx, sub)
 	}); err != nil {
-		return "", err
+		return "", nil, err
 	}
 
 	s.emit(ctx, orgID, "system", "webhook.secret_rotated", "webhook_subscription", subscriptionID, orgID)
-	return newSecret, nil
+	return newSecret, oldSecretExpiresAt, nil
 }
 
-
+func generateWebhookSecret() (string, error) {
+	raw := make([]byte, 32)
+	if _, err := rand.Read(raw); err != nil {
+		return "", fmt.Errorf("read cryptographic random bytes: %w", err)
+	}
+	return "whsec_" + base64.RawURLEncoding.EncodeToString(raw), nil
+}

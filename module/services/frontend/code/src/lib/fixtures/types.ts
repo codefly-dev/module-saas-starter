@@ -3,34 +3,35 @@
 import { z } from "zod";
 
 export const FixtureUserSchema = z.object({
-  email: z.string().email(),
-  name: z.string().min(1),
-  role: z.string().min(1),
-  provider: z.string().min(1),
-  provider_id: z.string().min(1),
+	email: z.string().email(),
+	name: z.string().min(1),
+	role: z.string().min(1),
+	provider: z.string().min(1),
+	provider_id: z.string().min(1),
+	fixture_token: z.string().min(1).optional(),
 });
 
 export const FixtureOrgMemberSchema = z.object({
-  email: z.string().email(),
-  role: z.string().min(1),
+	email: z.string().email(),
+	role: z.string().min(1),
 });
 
 export const FixtureOrgSchema = z.object({
-  name: z.string().min(1),
-  owner: z.string().email(),
-  members: z.array(FixtureOrgMemberSchema),
+	name: z.string().min(1),
+	owner: z.string().email(),
+	members: z.array(FixtureOrgMemberSchema).default([]),
 });
 
 export const FixtureTeamSchema = z.object({
-  name: z.string().min(1),
-  org: z.string().min(1),
-  members: z.array(z.string()),
+	name: z.string().min(1),
+	org: z.string().min(1),
+	members: z.array(z.string()).default([]),
 });
 
 export const FixtureFileSchema = z.object({
-  users: z.array(FixtureUserSchema),
-  organizations: z.array(FixtureOrgSchema).optional(),
-  teams: z.array(FixtureTeamSchema).optional(),
+	users: z.array(FixtureUserSchema),
+	organizations: z.array(FixtureOrgSchema).optional(),
+	teams: z.array(FixtureTeamSchema).optional(),
 });
 
 export type FixtureUser = z.infer<typeof FixtureUserSchema>;

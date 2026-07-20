@@ -84,15 +84,16 @@ func (s *Service) GetUnreadCount(ctx context.Context, userID string) (int, error
 	return count, nil
 }
 
-// MarkRead marks a single notification as read. The id-only signature
-// forces a bypass-then-WithUserTx dance; we read the notif's user_id
-// under bypass first, then enter the user's tx for the update.
-// Handler-level authz (caller must be the owning user OR a platform
-// admin) gates who can ask.
-func (s *Service) MarkRead(ctx context.Context, id string) error {
+// MarkRead marks a caller-owned notification as read. Resolve and compare the
+// owner before entering the user-scoped transaction so an ID substitution is
+// indistinguishable from a missing notification.
+func (s *Service) MarkRead(ctx context.Context, callerID, id string) error {
 	userID, err := s.resolveNotificationUser(ctx, id)
 	if err != nil {
 		return err
+	}
+	if callerID == "" || userID != callerID {
+		return wool.Get(ctx).NewError("notification not found")
 	}
 	return s.store.WithUserTx(ctx, userID, func(ctx context.Context) error {
 		return s.store.MarkNotificationRead(ctx, id)
@@ -106,12 +107,15 @@ func (s *Service) MarkAllRead(ctx context.Context, userID string) error {
 	})
 }
 
-// DeleteNotification deletes a single notification. Same id-only
-// bypass-resolve pattern as MarkRead.
-func (s *Service) DeleteNotification(ctx context.Context, id string) error {
+// DeleteNotification deletes a caller-owned notification. Same owner-bound
+// resolution as MarkRead.
+func (s *Service) DeleteNotification(ctx context.Context, callerID, id string) error {
 	userID, err := s.resolveNotificationUser(ctx, id)
 	if err != nil {
 		return err
+	}
+	if callerID == "" || userID != callerID {
+		return wool.Get(ctx).NewError("notification not found")
 	}
 	return s.store.WithUserTx(ctx, userID, func(ctx context.Context) error {
 		return s.store.DeleteNotification(ctx, id)
@@ -119,15 +123,15 @@ func (s *Service) DeleteNotification(ctx context.Context, id string) error {
 }
 
 // resolveNotificationUser looks up the user_id for a notification
-// id. The lookup runs under WithBypass — it's a per-request resolve
-// before entering the user-scoped tx, parallel to resolveTeamOrg in
-// teams.go. Handler authz gates the actual permission decision.
+// id. The lookup runs under WithControlPlane — it's a per-request resolve before
+// entering the user-scoped tx. MarkRead/DeleteNotification compare this owner
+// to the authenticated caller before mutating.
 //
 // Returns "" + error when the row doesn't exist, so a probe with a
 // random id can't be used as an existence oracle.
 func (s *Service) resolveNotificationUser(ctx context.Context, id string) (string, error) {
 	var userID string
-	if err := s.store.WithBypass(ctx, func(ctx context.Context) error {
+	if err := s.store.WithControlPlane(ctx, func(ctx context.Context) error {
 		u, err := s.store.GetNotificationUserID(ctx, id)
 		userID = u
 		return err

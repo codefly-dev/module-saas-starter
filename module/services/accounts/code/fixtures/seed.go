@@ -2,12 +2,17 @@ package fixtures
 
 import (
 	"accounts/pkg/business"
-	"accounts/pkg/gen"
+	gen "accounts/pkg/gen/saas/accounts/v1"
 	"context"
 	"fmt"
 	"os"
+	"path/filepath"
+	"regexp"
+	"sort"
+	"strings"
 
 	"github.com/codefly-dev/core/wool"
+	codefly "github.com/codefly-dev/sdk-go"
 	"gopkg.in/yaml.v3"
 )
 
@@ -19,11 +24,12 @@ type fixtureFile struct {
 }
 
 type fixtureUser struct {
-	Email      string `yaml:"email"`
-	Name       string `yaml:"name"`
-	Role       string `yaml:"role"`
-	Provider   string `yaml:"provider"`
-	ProviderID string `yaml:"provider_id"`
+	Email        string `yaml:"email"`
+	Name         string `yaml:"name"`
+	Role         string `yaml:"role"`
+	Provider     string `yaml:"provider"`
+	ProviderID   string `yaml:"provider_id"`
+	FixtureToken string `yaml:"fixture_token"`
 }
 
 type fixtureOrg struct {
@@ -43,14 +49,114 @@ type fixtureTeam struct {
 	Members []string `yaml:"members"`
 }
 
+var fixtureNamePattern = regexp.MustCompile(`^[a-zA-Z0-9][a-zA-Z0-9_-]*$`)
+
+func fixtureDirectory() (string, error) {
+	dir, err := os.Getwd()
+	if err != nil {
+		return "", fmt.Errorf("resolve fixture working directory: %w", err)
+	}
+	for {
+		candidate := filepath.Join(dir, "fixtures")
+		if info, statErr := os.Stat(candidate); statErr == nil && info.IsDir() {
+			matches, globErr := filepath.Glob(filepath.Join(candidate, "*.yaml"))
+			if globErr == nil && len(matches) > 0 {
+				return candidate, nil
+			}
+		}
+		parent := filepath.Dir(dir)
+		if parent == dir {
+			return "", fmt.Errorf("cannot find module fixtures directory from %q", dir)
+		}
+		dir = parent
+	}
+}
+
+// SelectedName discovers product-added fixture files and asks the Codefly SDK
+// which one the runtime selected. Consumers add YAML only; Starter never reads
+// Codefly runtime environment variables or hard-codes product fixture names.
+func SelectedName() (string, error) {
+	directory, err := fixtureDirectory()
+	if err != nil {
+		return "", err
+	}
+	entries, err := os.ReadDir(directory)
+	if err != nil {
+		return "", fmt.Errorf("cannot read fixture directory %q: %w", directory, err)
+	}
+
+	names := make([]string, 0, len(entries))
+	for _, entry := range entries {
+		if entry.IsDir() || filepath.Ext(entry.Name()) != ".yaml" {
+			continue
+		}
+		name := strings.TrimSuffix(entry.Name(), ".yaml")
+		if fixtureNamePattern.MatchString(name) {
+			names = append(names, name)
+		}
+	}
+	sort.Strings(names)
+	for _, name := range names {
+		if codefly.WithFixture(name) {
+			return name, nil
+		}
+	}
+	return "", nil
+}
+
+// FixturePath resolves a validated fixture name to its module-owned YAML file.
+func FixturePath(name string) (string, error) {
+	if !fixtureNamePattern.MatchString(name) {
+		return "", fmt.Errorf("invalid fixture name %q", name)
+	}
+	if override := os.Getenv("DEV_FIXTURE_PATH"); override != "" {
+		return override, nil
+	}
+	directory, err := fixtureDirectory()
+	if err != nil {
+		return "", err
+	}
+	return filepath.Join(directory, name+".yaml"), nil
+}
+
+// Seed loads and converges any explicitly selected module fixture. Product
+// consumers can add fixtures/<name>.yaml without modifying Starter-owned Go
+// code; the same name is also consumed by the development auth validator.
+func Seed(ctx context.Context, service *business.Service, name string) error {
+	path, err := FixturePath(name)
+	if err != nil {
+		return err
+	}
+
+	w := wool.Get(ctx).In("fixtures.Seed")
+	f, err := loadFixtureFile(path)
+	if err != nil {
+		return w.Wrapf(err, "cannot load %s fixture", name)
+	}
+
+	w.Info("Applying fixtures",
+		wool.Field("fixture", name),
+		wool.Field("users", len(f.Users)),
+		wool.Field("orgs", len(f.Organizations)),
+		wool.Field("teams", len(f.Teams)))
+
+	userIDs, err := seedUsers(ctx, w, service, f.Users)
+	if err != nil {
+		return err
+	}
+	orgIDs := seedOrganizations(ctx, w, service, f.Organizations, userIDs)
+	seedTeams(ctx, w, service, f.Teams, orgIDs, userIDs)
+
+	w.Info("fixtures applied", wool.Field("fixture", name))
+	return nil
+}
+
 // fixturePath resolves the YAML fixture relative to the accounts service's working
 // directory. Codefly starts the binary in services/accounts/code/, so the module
 // fixtures live at ../../../fixtures/.
 func fixturePath(name string) string {
-	if env := os.Getenv("DEV_FIXTURE_PATH"); env != "" {
-		return env
-	}
-	return fmt.Sprintf("../../../fixtures/%s.yaml", name)
+	path, _ := FixturePath(name)
+	return path
 }
 
 func loadFixtureFile(path string) (*fixtureFile, error) {
@@ -120,11 +226,22 @@ func orgRoleFromString(s string, w *wool.Wool) gen.OrgRole {
 func seedUsers(ctx context.Context, w *wool.Wool, service *business.Service, users []fixtureUser) (map[string]string, error) {
 	userIDs := make(map[string]string, len(users))
 	for _, u := range users {
-		// Check if user already exists via their identity.
-		existing, _ := service.Store().GetUserByIdentity(ctx, &gen.UserIdentity{
-			Provider:   u.Provider,
-			ProviderId: u.ProviderID,
+		// Fixture bootstrap has no caller identity. The identity tables are
+		// RLS-protected, so an unscoped lookup appears empty and a second run
+		// then collides on the unique provider identity. Use the explicit
+		// system bypass for this convergence check.
+		var existing *gen.User
+		err := service.Store().WithControlPlane(ctx, func(ctx context.Context) error {
+			var lookupErr error
+			existing, lookupErr = service.Store().GetUserByIdentity(ctx, &gen.UserIdentity{
+				Provider:   u.Provider,
+				ProviderId: u.ProviderID,
+			})
+			return lookupErr
 		})
+		if err != nil {
+			return nil, w.Wrapf(err, "cannot look up fixture user %s", u.Email)
+		}
 		if existing != nil {
 			userIDs[u.Email] = existing.Uuid
 			w.Info("user already exists, skipping", wool.Field("email", u.Email))
@@ -178,27 +295,30 @@ func seedOrganizations(ctx context.Context, w *wool.Wool, service *business.Serv
 			continue
 		}
 
-		orgResp, err := service.CreateOrganization(ctx, ownerID, &gen.CreateOrganizationRequest{
-			Name: org.Name,
+		var existingOrgs []*gen.Organization
+		listErr := service.Store().WithControlPlane(ctx, func(ctx context.Context) error {
+			var err error
+			existingOrgs, err = service.Store().ListOrganizationsForUser(ctx, ownerID)
+			return err
 		})
-		if err != nil {
-			// Org may already exist — try to find it via the owner's org list.
-			w.Info("org creation failed, looking up existing", wool.Field("name", org.Name))
-			existingOrgs, listErr := service.Store().ListOrganizationsForUser(ctx, ownerID)
-			if listErr == nil {
-				for _, existing := range existingOrgs {
-					if existing.Name == org.Name {
-						orgIDs[org.Name] = existing.Id
-						w.Info("found existing org", wool.Field("name", org.Name))
-						break
-					}
-				}
+		if listErr != nil {
+			w.Warn("cannot list fixture organizations", wool.Field("name", org.Name), wool.Field("error", listErr.Error()))
+			continue
+		}
+		for _, existing := range existingOrgs {
+			if existing.Name == org.Name {
+				orgIDs[org.Name] = existing.Id
+				w.Info("org already exists, reusing", wool.Field("name", org.Name))
+				break
 			}
-			if _, found := orgIDs[org.Name]; !found {
-				w.Warn("cannot create or find org, skipping", wool.Field("name", org.Name), wool.Field("error", err.Error()))
+		}
+
+		if _, found := orgIDs[org.Name]; !found {
+			orgResp, err := service.CreateOrganization(ctx, ownerID, &gen.CreateOrganizationRequest{Name: org.Name})
+			if err != nil {
+				w.Warn("cannot create org, skipping", wool.Field("name", org.Name), wool.Field("error", err.Error()))
 				continue
 			}
-		} else {
 			orgIDs[org.Name] = orgResp.GetOrganization().GetId()
 			w.Info("seeded org", wool.Field("name", org.Name))
 		}
@@ -231,12 +351,32 @@ func seedTeams(ctx context.Context, w *wool.Wool, service *business.Service, tea
 			w.Warn("team org not found, skipping", wool.Field("org", team.Org))
 			continue
 		}
-		teamResp, err := service.CreateTeam(ctx, "seed", &gen.CreateTeamRequest{OrgId: orgID, Name: team.Name})
-		if err != nil {
-			w.Warn("team may already exist, skipping", wool.Field("name", team.Name), wool.Field("error", err.Error()))
+		teamID := ""
+		var existingTeams []*gen.Team
+		if err := service.Store().WithControlPlane(ctx, func(ctx context.Context) error {
+			var listErr error
+			existingTeams, listErr = service.Store().ListTeams(ctx, orgID)
+			return listErr
+		}); err != nil {
+			w.Warn("cannot list fixture teams", wool.Field("name", team.Name), wool.Field("error", err.Error()))
 			continue
 		}
-		w.Info("seeded team", wool.Field("name", team.Name))
+		for _, existing := range existingTeams {
+			if existing.Name == team.Name {
+				teamID = existing.Id
+				w.Info("team already exists, reusing", wool.Field("name", team.Name))
+				break
+			}
+		}
+		if teamID == "" {
+			teamResp, err := service.CreateTeam(ctx, "seed", &gen.CreateTeamRequest{OrgId: orgID, Name: team.Name})
+			if err != nil {
+				w.Warn("cannot create team, skipping", wool.Field("name", team.Name), wool.Field("error", err.Error()))
+				continue
+			}
+			teamID = teamResp.GetTeam().GetId()
+			w.Info("seeded team", wool.Field("name", team.Name))
+		}
 
 		for _, email := range team.Members {
 			memberID, ok := userIDs[email]
@@ -248,8 +388,8 @@ func seedTeams(ctx context.Context, w *wool.Wool, service *business.Service, tea
 			// team_members RLS policy rejects a bare insert (SQLSTATE 42501).
 			// Seed under the audited System bypass — same bootstrap rationale
 			// as RegisterUser / GrantPlatformRole above.
-			if err := service.Store().WithBypass(ctx, func(ctx context.Context) error {
-				return service.Store().AddTeamMember(ctx, teamResp.GetTeam().GetId(), memberID, "member")
+			if err := service.Store().WithControlPlane(ctx, func(ctx context.Context) error {
+				return service.Store().AddTeamMember(ctx, teamID, memberID, "member")
 			}); err != nil {
 				w.Warn("cannot add team member", wool.Field("email", email), wool.Field("error", err.Error()))
 			}

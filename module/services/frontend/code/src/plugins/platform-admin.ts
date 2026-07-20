@@ -1,42 +1,17 @@
-import type { AdminPlugin } from "@/lib/admin-core";
+import {
+	definePlugin,
+	FRONTEND_PLUGIN_CONTRACT_VERSION,
+} from "@codefly/saas-plugin-contract";
+import { defineReactPlugin } from "@codefly/saas-plugin-react";
+import { FRONTEND_NAVIGATION } from "@/gen/saas/frontend/v1/plugin_catalog";
 
-export const platformAdminPlugin: AdminPlugin = {
-  name: "platform-admin",
-  navItems: [
-    {
-      label: "Platform Users",
-      href: "/admin/platform",
-      icon: "UserSearch",
-      group: "Platform",
-      requiredRole: "support",
-    },
-    {
-      label: "Sessions",
-      href: "/admin/sessions",
-      icon: "Activity",
-      group: "Platform",
-      requiredRole: "support",
-    },
-    {
-      label: "Admins",
-      href: "/admin/platform/admins",
-      icon: "ShieldCheck",
-      group: "Platform",
-      requiredRole: "super_admin",
-    },
-    {
-      label: "Feature Flags",
-      href: "/admin/platform/feature-flags",
-      icon: "Flag",
-      group: "Platform",
-      requiredRole: "super_admin",
-    },
-    {
-      label: "Entitlements",
-      href: "/admin/entitlements",
-      icon: "CreditCard",
-      group: "Platform",
-      requiredRole: "billing",
-    },
-  ],
-};
+export const platformAdminPlugin = defineReactPlugin({
+	manifest: definePlugin({
+		contractVersion: FRONTEND_PLUGIN_CONTRACT_VERSION,
+		name: "platform-admin",
+		navigation: { label: "Platform", placement: "admin", priority: 20 },
+		navItems: FRONTEND_NAVIGATION.filter(
+			(item) => item.plugin === "platform-admin",
+		),
+	}),
+});

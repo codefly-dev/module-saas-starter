@@ -14,16 +14,20 @@ import (
 	"accounts/pkg/cache"
 	"accounts/pkg/email"
 	"accounts/pkg/infra"
+	"accounts/pkg/jobs"
 	"accounts/pkg/permissionsplugin"
 	"context"
 	ed25519core "crypto/ed25519"
 	"fmt"
+	"net/url"
 	"os"
+	"strconv"
+	"strings"
 	"time"
 
-	codefly "github.com/codefly-dev/sdk-go"
 	"github.com/codefly-dev/core/wool"
 	wooltel "github.com/codefly-dev/core/wool/otel"
+	codefly "github.com/codefly-dev/sdk-go"
 )
 
 func init() {
@@ -32,6 +36,19 @@ func init() {
 
 func doWork(ctx context.Context) (Clean, error) {
 	w := wool.Get(ctx).In("doWork")
+	selectedFixture, err := fixtures.SelectedName()
+	if err != nil {
+		return nil, err
+	}
+	stepUpMaxAge, err := configuredMFAStepUpMaxAge()
+	if err != nil {
+		return nil, err
+	}
+	adapters.SetRecentStepUpMaxAge(stepUpMaxAge)
+	sessionPolicy, err := configuredSessionPolicy()
+	if err != nil {
+		return nil, err
+	}
 
 	// OpenTelemetry — enabled when OTEL_EXPORTER_OTLP_ENDPOINT is
 	// set (or by setting OTEL_SERVICE_NAME for stdout-fallback dev
@@ -68,34 +85,71 @@ func doWork(ctx context.Context) (Clean, error) {
 	if err != nil {
 		return nil, err
 	}
+	// Cross-tenant job administration is isolated from request traffic at the
+	// connection-pool boundary. The API exposes payload-free metadata only;
+	// replay copies payload bytes inside PostgreSQL under app_job_worker.
+	jobWorkerPool, err := infra.NewJobWorkerPool(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("configure job operations database pool: %w", err)
+	}
+	jobStore := infra.NewPostgresJobStore(jobWorkerPool)
+	service.SetJobOperations(jobStore)
+	service.SetWebhookJobProducer(store)
 
-	// Vault-backed API key hasher (optional — only in environments with Vault).
+	// Vault is a required security dependency: API-key HMAC and TOTP seed
+	// encryption must be stable across replicas and fail closed.
 	vaultClient, err := infra.NewVaultClient(ctx)
-	if err == nil {
-		service.SetHasher(vaultClient)
+	if err != nil {
+		return nil, fmt.Errorf("configure Vault security services: %w", err)
+	}
+	service.SetHasher(vaultClient)
+	service.SetMFASecretCipher(vaultClient)
+	webhookPolicy := business.NewWebhookEndpointPolicy()
+	service.SetWebhookSecurity(vaultClient, webhookPolicy)
+	webAuthnRPID, webAuthnDisplayName, webAuthnOrigins, err := configuredWebAuthn()
+	if err != nil {
+		return nil, fmt.Errorf("configure WebAuthn: %w", err)
+	}
+	webAuthnEngine, err := infra.NewWebAuthnEngine(webAuthnRPID, webAuthnDisplayName, webAuthnOrigins)
+	if err != nil {
+		return nil, err
+	}
+	service.SetWebAuthnEngine(webAuthnEngine)
+	if migrated, err := store.MigrateLegacyMFASecrets(ctx, vaultClient); err != nil {
+		return nil, fmt.Errorf("migrate legacy MFA secrets: %w", err)
+	} else if migrated > 0 {
+		w.Info("encrypted legacy MFA secrets", wool.Field("count", migrated))
+	}
+	if migrated, disabled, err := store.MigrateLegacyWebhookSecrets(ctx, vaultClient); err != nil {
+		return nil, fmt.Errorf("migrate legacy webhook secrets: %w", err)
+	} else if migrated > 0 {
+		w.Info("encrypted legacy webhook secrets",
+			wool.Field("count", migrated),
+			wool.Field("disabled_empty_secret_endpoints", disabled))
 	}
 
 	// Auth pipeline: IdentityResolver + JWTMinter + optional provider
 	// validator/exchanger chain for the OAuth code flow.
-	// SessionStore needs WithUserTx/WithBypass helpers (sessions is
+	// SessionStore needs WithUserTx/WithControlPlane helpers (sessions is
 	// RLS-protected per Phase 2H); pass *PostgresStore which
 	// implements them.
-	sessionStore := pgauth.NewSessionStore(store)
-	resolver := pgauth.NewResolver(store.Pool())
+	sessionStore := pgauth.NewSessionStore(store, sessionPolicy)
+	resolver := pgauth.NewResolver(store)
 	priv, err := loadSigningKey(ctx)
 	if err != nil {
 		return nil, err
 	}
 	minter := ed25519minter.New(ed25519minter.Config{
-		Issuer:   "saas-starter",
-		Audience: "saas-starter",
+		Issuer:        "saas-starter",
+		Audience:      "saas-starter",
+		SessionPolicy: sessionPolicy,
 	}, priv, sessionStore)
 
 	service.SetIdentityResolver(resolver)
 	service.SetJWTMinter(minter)
 
-	// Permissions plugin: configure signing keys before NewServer
-	// fires the plugin loop in server_gen.go. The ed25519 key is
+	// Permissions plugin: configure signing keys before NewServer builds the
+	// generated gRPC registrations. The ed25519 key is
 	// the SAME one we use for JWT minting (saas-starter's cluster
 	// identity); plugins running in this cluster verify both with
 	// the matching public key. The HMAC fallback is read from
@@ -114,18 +168,33 @@ func doWork(ctx context.Context) (Clean, error) {
 	// not defense-in-depth.
 	service.SetOAuthStateSigner(auth.NewOAuthStateSigner(priv))
 
-	// Provider validator + exchanger based on AUTH_PROVIDER. For
-	// AUTH_PROVIDER=workos|auth0|google we build an oidc.Validator with
-	// the matching preset plus a matching Exchanger. When unset we stay
-	// on the dev / pre-validated path.
-	if v, ex := buildProviderStack(ctx); v != nil {
-		service.SetTokenValidator(v)
-		if ex != nil {
-			service.SetCodeExchanger(oidc.AsBusinessExchanger(ex))
+	// Authentication mode is explicit. A selected Codefly fixture implies
+	// dev mode; otherwise AUTH_PROVIDER is required. Empty or incomplete
+	// production configuration fails startup instead of silently enabling
+	// caller-supplied identities.
+	authProvider := configuredAuthProvider(selectedFixture)
+	v, ex, err := buildProviderStack(authProvider, selectedFixture)
+	if err != nil {
+		return nil, fmt.Errorf("configure authentication: %w", err)
+	}
+	if authProvider == "dev" {
+		service.SetDevelopmentTokenValidator(v)
+	} else {
+		oauthPolicy, err := buildOAuthRequestPolicy(authProvider)
+		if err != nil {
+			return nil, fmt.Errorf("configure OAuth request policy: %w", err)
 		}
+		service.SetOAuthRequestPolicy(oauthPolicy)
+		service.SetTokenValidator(v)
+		service.SetCodeExchanger(oidc.AsBusinessExchanger(ex))
 	}
 
-	auditEmitter := business.NewAsyncAuditEmitter(store, 1024)
+	// Audit persistence and matching webhook fan-out share one database
+	// transaction. There is no process-local queue to saturate or lose on crash.
+	auditEmitter, err := business.NewDurableAuditEmitter(store, store)
+	if err != nil {
+		return nil, err
+	}
 	service.SetAuditEmitter(auditEmitter)
 
 	// Audit S3 exporter — polls audit_export_configs every 1 min,
@@ -134,11 +203,28 @@ func doWork(ctx context.Context) (Clean, error) {
 	auditExporter := business.NewAuditExporter(store)
 	auditExporter.Start()
 
-	// Synchronous webhook send path used by TestWebhook + ReplayDelivery.
-	// Distinct from the async dispatcher (audit-driven outbound webhooks)
-	// — this one is request-scoped so the FE shows immediate outcome
-	// after a click.
-	service.SetWebhookSender(business.NewWebhookSender(store))
+	// Every outbound path shares the generated generic job runtime. This
+	// separate pool can only read endpoint configuration and project outcomes.
+	webhookSender := business.NewWebhookSender(vaultClient, webhookPolicy)
+	webhookProjectionPool, err := infra.NewWebhookProjectionPool(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("configure outbound webhook projection database pool: %w", err)
+	}
+	webhookJobHandler, err := business.NewOutboundWebhookJobHandler(
+		infra.NewPostgresWebhookProjection(webhookProjectionPool), webhookSender,
+	)
+	if err != nil {
+		webhookProjectionPool.Close()
+		return nil, err
+	}
+	webhookWorker, err := jobs.NewWorker(jobs.WorkerConfig{
+		Store: jobStore, Queue: business.OutboundWebhookQueue,
+		Handler: webhookJobHandler, RetryDelay: business.OutboundWebhookRetryDelay,
+	})
+	if err != nil {
+		webhookProjectionPool.Close()
+		return nil, err
+	}
 
 	entitlementChecker := business.NewDefaultEntitlementChecker(store)
 	service.SetEntitlementChecker(entitlementChecker)
@@ -169,11 +255,11 @@ func doWork(ctx context.Context) (Clean, error) {
 
 	adapters.WithService(service)
 
-	// Shared-secret guard for privileged-internal RPCs (e.g.
-	// CheckPermission). Empty env = dev mode (gate falls through);
-	// production deploys set CODEFLY_INTERNAL_TOKEN in both api and
-	// auth-sidecar configs.
-	adapters.SetInternalToken(os.Getenv("CODEFLY_INTERNAL_TOKEN"))
+	// Separate shared-secret guards for internal RPC admission and forwarded
+	// gateway identity. Empty values fail closed; production deploys provide
+	// independent high-entropy values to both accounts and auth-sidecar.
+	adapters.SetInternalToken(workspaceEnv("internal-auth", "CODEFLY_INTERNAL_TOKEN"))
+	adapters.SetGatewayToken(workspaceEnv("internal-auth", "CODEFLY_GATEWAY_TOKEN"))
 
 	// /v1/status — public health probe surface. Probes run in parallel
 	// with a 2s budget each; overall status is the worst result. The
@@ -192,60 +278,106 @@ func doWork(ctx context.Context) (Clean, error) {
 	}
 	adapters.RegisterHTTPRoute("/v1/status", adapters.NewStatusHTTPHandler(service))
 
+	// Email production and transport are split by the generic outbox. Request
+	// paths render templates and enqueue exact messages in their product
+	// transaction; this worker is the only owner of the provider adapter.
+	fromAddr := os.Getenv("EMAIL_FROM")
+	if fromAddr == "" {
+		fromAddr = "no-reply@localhost"
+	}
+	appBase := os.Getenv("APP_BASE_URL")
+	if appBase == "" {
+		appBase = "http://localhost:21931"
+	}
+	templateStore := infra.NewPostgresTemplateStore(store)
+	requestEmailOutbox, err := email.NewOutbox(store, templateStore, fromAddr)
+	if err != nil {
+		return nil, err
+	}
+	service.SetEmailOutbox(requestEmailOutbox, appBase)
+	workerEmailOutbox, err := email.NewOutbox(jobStore, templateStore, fromAddr)
+	if err != nil {
+		return nil, err
+	}
+	emailJobHandler, err := email.NewJobHandler(pickEmailSender(ctx))
+	if err != nil {
+		return nil, err
+	}
+	emailWorker, err := jobs.NewWorker(jobs.WorkerConfig{
+		Store: jobStore, Queue: email.DeliveryQueue,
+		Handler: emailJobHandler, RetryDelay: email.DeliveryRetryDelay,
+	})
+	if err != nil {
+		return nil, err
+	}
+
 	// Billing: wire Stripe webhook handler at /v1/billing/webhook AND
 	// the authenticated /v1/billing/checkout + /v1/billing/portal
 	// endpoints. The sidecar's public-path allowlist covers the
 	// webhook; checkout + portal are authenticated via forwarded
 	// identity headers.
+	var stripeWebhookWorker *jobs.Worker
+	var billingWorkerPool interface{ Close() }
 	if stripeKey := os.Getenv("STRIPE_API_KEY"); stripeKey != "" {
 		whSecret := os.Getenv("STRIPE_WEBHOOK_SECRET")
 		if whSecret == "" {
-			w.Warn("STRIPE_API_KEY set but STRIPE_WEBHOOK_SECRET missing — webhooks will be rejected")
+			return nil, fmt.Errorf("billing: STRIPE_WEBHOOK_SECRET is required when STRIPE_API_KEY is configured")
 		}
 		stripeClient, err := billing.New(billing.Config{APIKey: stripeKey})
 		if err != nil {
 			return nil, fmt.Errorf("billing: %w", err)
 		}
-		billingStore := pgbilling.New(store.Pool())
+		billingBaseURL, err := configuredBillingBaseURL()
+		if err != nil {
+			return nil, err
+		}
+		workerPool, err := infra.NewBillingWorkerPool(ctx)
+		if err != nil {
+			return nil, fmt.Errorf("billing: configure worker database pool: %w", err)
+		}
+		billingWorkerPool = workerPool
+		workerStore := pgbilling.New(workerPool)
+		service.SetBillingRedirects(business.BillingRedirects{
+			CheckoutSuccessURL: billingBaseURL + "/admin/billing/success?session_id={CHECKOUT_SESSION_ID}",
+			CheckoutCancelURL:  billingBaseURL + "/admin/billing",
+			PortalReturnURL:    billingBaseURL + "/admin/billing",
+		})
 
-		// Build the billing email notifier if templates are available.
-		var billingNotifier billing.EmailNotifier
-		if service.TemplateSender() != nil {
-			billingNotifier = &billingEmailNotifier{ts: service.TemplateSender()}
+		billingNotifier := &billingEmailNotifier{
+			outbox:     workerEmailOutbox,
+			billingURL: billingBaseURL + "/admin/billing",
 		}
 
 		adapters.RegisterHTTPRoute("/v1/billing/webhook", billing.NewHandler(billing.HandlerDeps{
-			Store:         billingStore,
-			Client:        stripeClient,
+			Producer:      jobStore,
 			WebhookSecret: whSecret,
-			Notifier:      billingNotifier,
 		}))
+		stripeWebhookJobHandler, err := billing.NewStripeWebhookJobHandler(
+			billing.NewProcessor(billing.ProcessorDeps{
+				Store:    workerStore,
+				Client:   stripeClient,
+				Notifier: billingNotifier,
+			}),
+		)
+		if err != nil {
+			workerPool.Close()
+			billingWorkerPool = nil
+			return nil, err
+		}
+		stripeWebhookWorker, err = jobs.NewWorker(jobs.WorkerConfig{
+			Store:      jobStore,
+			Queue:      billing.StripeWebhookQueue,
+			Handler:    stripeWebhookJobHandler,
+			RetryDelay: billing.StripeWebhookRetryDelay,
+		})
+		if err != nil {
+			workerPool.Close()
+			billingWorkerPool = nil
+			return nil, err
+		}
 		service.SetBillingClient(stripeClient)
 		adapters.RegisterHTTPRoute("/v1/billing/checkout", adapters.NewBillingHTTPHandler(service))
 		adapters.RegisterHTTPRoute("/v1/billing/portal", adapters.NewBillingHTTPHandler(service))
-	}
-
-	// Email sender selection: Resend if RESEND_API_KEY is set, log-only
-	// otherwise (so dev still sees what would be sent without setup).
-	sender := pickEmailSender(ctx)
-	if sender != nil {
-		fromAddr := os.Getenv("EMAIL_FROM")
-		if fromAddr == "" {
-			fromAddr = "no-reply@localhost"
-		}
-		appBase := os.Getenv("APP_BASE_URL")
-		if appBase == "" {
-			appBase = "http://localhost:21931"
-		}
-		service.SetEmailSender(sender, fromAddr, appBase)
-
-		// Template-backed email: wraps the raw Sender with the DB-backed
-		// template store so business logic can use SendTemplate for the
-		// seeded templates (welcome, invitation, payment_failed,
-		// invoice_ready, trial_ending, gdpr_export_ready).
-		templateStore := infra.NewPostgresTemplateStore(store)
-		templateSender := email.NewTemplateSender(sender, templateStore)
-		service.SetTemplateSender(templateSender)
 	}
 
 	// Start background data retention goroutine. Runs once on startup and
@@ -285,24 +417,49 @@ func doWork(ctx context.Context) (Clean, error) {
 		}
 	}()
 
-	if codefly.WithFixture("simple") {
-		err = fixtures.Simple(ctx, service)
+	if selectedFixture != "" {
+		err = fixtures.Seed(ctx, service, selectedFixture)
 		if err != nil {
 			retentionCancel()
 			return nil, err
 		}
 	}
-
-	if codefly.WithFixture("dev-admin") {
-		err = fixtures.DevAdmin(ctx, service)
-		if err != nil {
-			retentionCancel()
-			return nil, err
-		}
+	if stripeWebhookWorker != nil {
+		stripeWebhookWorker.Start(ctx)
 	}
+	emailWorker.Start(ctx)
+	webhookWorker.Start(ctx)
 
 	return func() {
 		sw := wool.Get(ctx).In("shutdown")
+		if stripeWebhookWorker != nil {
+			sw.Info("stopping Stripe webhook worker")
+			shutdownCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+			if err := stripeWebhookWorker.Shutdown(shutdownCtx); err != nil {
+				sw.Warn("Stripe webhook worker shutdown timed out", wool.ErrField(err))
+			}
+			cancel()
+		}
+		sw.Info("stopping email delivery worker")
+		shutdownCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+		if err := emailWorker.Shutdown(shutdownCtx); err != nil {
+			sw.Warn("email delivery worker shutdown timed out", wool.ErrField(err))
+		}
+		cancel()
+		sw.Info("stopping outbound webhook worker")
+		shutdownCtx, cancel = context.WithTimeout(context.Background(), 30*time.Second)
+		if err := webhookWorker.Shutdown(shutdownCtx); err != nil {
+			sw.Warn("outbound webhook worker shutdown timed out", wool.ErrField(err))
+		}
+		cancel()
+		sw.Info("closing outbound webhook projection database pool")
+		webhookProjectionPool.Close()
+		sw.Info("closing generic job worker database pool")
+		jobWorkerPool.Close()
+		if billingWorkerPool != nil {
+			sw.Info("closing Stripe projection database pool")
+			billingWorkerPool.Close()
+		}
 		sw.Info("stopping retention goroutine")
 		retentionCancel()
 		sw.Info("closing audit emitter")
@@ -334,6 +491,109 @@ func doWork(ctx context.Context) (Clean, error) {
 	}, nil
 }
 
+func configuredMFAStepUpMaxAge() (time.Duration, error) {
+	raw := strings.TrimSpace(workspaceEnv("security", "MFA_STEP_UP_MAX_AGE"))
+	if raw == "" {
+		return auth.DefaultRecentStepUpMaxAge, nil
+	}
+	maxAge, err := time.ParseDuration(raw)
+	if err != nil || maxAge <= 0 || maxAge > 24*time.Hour {
+		return 0, fmt.Errorf("MFA_STEP_UP_MAX_AGE must be a positive Go duration no greater than 24h")
+	}
+	return maxAge, nil
+}
+
+func configuredSessionPolicy() (auth.SessionPolicy, error) {
+	policy := auth.DefaultSessionPolicy()
+	parseDuration := func(name string, fallback time.Duration) (time.Duration, error) {
+		raw := strings.TrimSpace(workspaceEnv("security", name))
+		if raw == "" {
+			return fallback, nil
+		}
+		value, err := time.ParseDuration(raw)
+		if err != nil {
+			return 0, fmt.Errorf("%s must be a valid Go duration", name)
+		}
+		return value, nil
+	}
+
+	var err error
+	policy.AbsoluteLifetime, err = parseDuration("SESSION_ABSOLUTE_LIFETIME", policy.AbsoluteLifetime)
+	if err != nil {
+		return auth.SessionPolicy{}, err
+	}
+	policy.IdleTimeout, err = parseDuration("SESSION_IDLE_TIMEOUT", policy.IdleTimeout)
+	if err != nil {
+		return auth.SessionPolicy{}, err
+	}
+	if raw := strings.TrimSpace(workspaceEnv("security", "SESSION_MAX_ACTIVE_DEVICES")); raw != "" {
+		policy.MaxActiveDevices, err = strconv.Atoi(raw)
+		if err != nil {
+			return auth.SessionPolicy{}, fmt.Errorf("SESSION_MAX_ACTIVE_DEVICES must be an integer")
+		}
+	}
+	if err := policy.Validate(); err != nil {
+		return auth.SessionPolicy{}, fmt.Errorf("invalid session policy: %w", err)
+	}
+	if policy.AbsoluteLifetime < time.Hour || policy.AbsoluteLifetime > 365*24*time.Hour {
+		return auth.SessionPolicy{}, fmt.Errorf("SESSION_ABSOLUTE_LIFETIME must be between 1h and 8760h")
+	}
+	if policy.IdleTimeout < 5*time.Minute {
+		return auth.SessionPolicy{}, fmt.Errorf("SESSION_IDLE_TIMEOUT must be at least 5m")
+	}
+	if policy.MaxActiveDevices > 100 {
+		return auth.SessionPolicy{}, fmt.Errorf("SESSION_MAX_ACTIVE_DEVICES must not exceed 100")
+	}
+	return policy, nil
+}
+
+func configuredBillingBaseURL() (string, error) {
+	raw := strings.TrimSpace(os.Getenv("APP_BASE_URL"))
+	if raw == "" {
+		if strings.EqualFold(strings.TrimSpace(os.Getenv("CODEFLY__ENVIRONMENT")), "local") {
+			return "http://localhost:21931", nil
+		}
+		return "", fmt.Errorf("billing: APP_BASE_URL is required when Stripe is configured")
+	}
+	parsed, err := url.Parse(raw)
+	if err != nil || parsed.Host == "" || parsed.User != nil || parsed.Opaque != "" ||
+		(parsed.Scheme != "https" && parsed.Scheme != "http") ||
+		(parsed.Path != "" && parsed.Path != "/") || parsed.RawPath != "" ||
+		parsed.RawQuery != "" || parsed.ForceQuery || parsed.Fragment != "" {
+		return "", fmt.Errorf("billing: APP_BASE_URL must be an exact http(s) origin")
+	}
+	if parsed.Scheme != "https" && parsed.Hostname() != "localhost" && parsed.Hostname() != "127.0.0.1" {
+		return "", fmt.Errorf("billing: APP_BASE_URL must use https outside local development")
+	}
+	return strings.TrimSuffix(raw, "/"), nil
+}
+
+func configuredWebAuthn() (rpID, displayName string, origins []string, err error) {
+	rpID = strings.TrimSpace(workspaceEnv("security", "WEBAUTHN_RP_ID"))
+	if rpID == "" || strings.ContainsAny(rpID, "/:") {
+		return "", "", nil, fmt.Errorf("WEBAUTHN_RP_ID must be a host name without scheme or port")
+	}
+	displayName = strings.TrimSpace(workspaceEnv("security", "WEBAUTHN_RP_DISPLAY_NAME"))
+	if displayName == "" {
+		displayName = "SaaS Starter"
+	}
+	for _, raw := range strings.Split(workspaceEnv("security", "WEBAUTHN_RP_ORIGINS"), ",") {
+		origin := strings.TrimSpace(raw)
+		if origin == "" {
+			continue
+		}
+		parsed, parseErr := url.Parse(origin)
+		if parseErr != nil || (parsed.Scheme != "https" && parsed.Scheme != "http") || parsed.Host == "" || (parsed.Path != "" && parsed.Path != "/") || parsed.RawQuery != "" || parsed.Fragment != "" {
+			return "", "", nil, fmt.Errorf("WEBAUTHN_RP_ORIGINS contains invalid origin %q", origin)
+		}
+		origins = append(origins, strings.TrimSuffix(origin, "/"))
+	}
+	if len(origins) == 0 {
+		return "", "", nil, fmt.Errorf("WEBAUTHN_RP_ORIGINS must contain at least one exact browser origin")
+	}
+	return rpID, displayName, origins, nil
+}
+
 // buildProviderStack returns the (TokenValidator, Exchanger) pair
 // matching AUTH_PROVIDER. Supported values:
 //
@@ -344,40 +604,85 @@ func doWork(ctx context.Context) (Clean, error) {
 //	auth0      — same shape, Auth0 preset. Requires AUTH0_DOMAIN +
 //	             AUTH0_AUDIENCE + AUTH0_CLIENT_ID/SECRET.
 //	google     — google sign-in. GOOGLE_CLIENT_ID + GOOGLE_CLIENT_SECRET.
-//	(empty)    — same as dev, for backwards compat with fixture tests.
+//	(empty)    — invalid unless CODEFLY__FIXTURE explicitly selects a fixture.
 //
-// Returns (nil, nil) if the provider is unknown or not configured.
-// workosEnv reads a key from the codefly workspace configuration for "workos",
-// falling back to plain env var for backwards compatibility.
-func workosEnv(key string) string {
-	// Codefly injects workspace configs as CODEFLY__WORKSPACE_CONFIGURATION__WORKOS__KEY
-	if v := os.Getenv("CODEFLY__WORKSPACE_CONFIGURATION__WORKOS__" + key); v != "" {
-		return v
+// Empty, unknown, and incomplete provider configurations return an error so
+// the service cannot start with an ambiguous authentication boundary.
+// workspaceEnv reads a key from a named Codefly workspace configuration,
+// including its secret namespace, and falls back to a plain process variable
+// for deployments that do not use Codefly's configuration provider.
+func workspaceEnv(configuration, key string) string {
+	key = strings.ToUpper(key)
+	exact := strings.ToUpper(configuration)
+	normalized := strings.ReplaceAll(exact, "-", "_")
+	for _, prefix := range []string{exact, normalized} {
+		if v := os.Getenv("CODEFLY__WORKSPACE_CONFIGURATION__" + prefix + "__" + key); v != "" {
+			return v
+		}
+		if v := os.Getenv("CODEFLY__WORKSPACE_SECRET_CONFIGURATION__" + prefix + "__" + key); v != "" {
+			return v
+		}
+		if exact == normalized {
+			break
+		}
 	}
-	// Secret variant
-	if v := os.Getenv("CODEFLY__WORKSPACE_SECRET_CONFIGURATION__WORKOS__" + key); v != "" {
-		return v
-	}
-	// Fallback to plain env var
 	return os.Getenv(key)
 }
 
-func buildProviderStack(ctx context.Context) (auth.TokenValidator, *oidc.Exchanger) {
-	w := wool.Get(ctx).In("buildProviderStack")
-	switch workosEnv("AUTH_PROVIDER") {
-	case "dev", "":
-		v, err := devvalidator.New("")
-		if err != nil {
-			return nil, nil
+func workosEnv(key string) string { return workspaceEnv("workos", key) }
+
+func configuredAuthProvider(selectedFixture string) string {
+	if selectedFixture != "" {
+		return "dev"
+	}
+	if provider := strings.ToLower(strings.TrimSpace(workosEnv("AUTH_PROVIDER"))); provider != "" {
+		return provider
+	}
+	return ""
+}
+
+func hasConfiguredValue(value string) bool {
+	value = strings.TrimSpace(value)
+	return value != "" && !strings.EqualFold(value, "REPLACE_ME")
+}
+
+func configuredOAuthRedirectURIs() []string {
+	raw := workosEnv("OAUTH_ALLOWED_REDIRECT_URIS")
+	parts := strings.Split(raw, ",")
+	redirectURIs := make([]string, 0, len(parts))
+	for _, part := range parts {
+		if redirectURI := strings.TrimSpace(part); redirectURI != "" {
+			redirectURIs = append(redirectURIs, redirectURI)
 		}
-		return v, nil
+	}
+	return redirectURIs
+}
+
+func buildOAuthRequestPolicy(provider string) (*auth.OAuthRequestPolicy, error) {
+	return auth.NewOAuthRequestPolicy(provider, configuredOAuthRedirectURIs())
+}
+
+func buildProviderStack(provider, selectedFixture string) (auth.TokenValidator, *oidc.Exchanger, error) {
+	switch provider {
+	case "dev":
+		if selectedFixture == "" {
+			return nil, nil, fmt.Errorf("development authentication requires an explicit Codefly SDK-selected fixture")
+		}
+		fixturePath, err := fixtures.FixturePath(selectedFixture)
+		if err != nil {
+			return nil, nil, fmt.Errorf("resolve development fixture: %w", err)
+		}
+		v, err := devvalidator.New(fixturePath)
+		if err != nil {
+			return nil, nil, fmt.Errorf("initialize development fixture validator: %w", err)
+		}
+		return v, nil, nil
 
 	case "workos":
 		clientID := workosEnv("WORKOS_CLIENT_ID")
 		clientSecret := workosEnv("WORKOS_CLIENT_SECRET")
-		if clientID == "" || clientSecret == "" {
-			w.Warn("AUTH_PROVIDER=workos but WORKOS_CLIENT_ID / WORKOS_CLIENT_SECRET missing")
-			return nil, nil
+		if !hasConfiguredValue(clientID) || !hasConfiguredValue(clientSecret) {
+			return nil, nil, fmt.Errorf("AUTH_PROVIDER=workos requires WORKOS_CLIENT_ID and WORKOS_CLIENT_SECRET")
 		}
 		cfg := oidc.WorkOSConfig(clientID)
 		// Allow env override for self-hosted / WorkOS-compatible tenants.
@@ -389,8 +694,7 @@ func buildProviderStack(ctx context.Context) (auth.TokenValidator, *oidc.Exchang
 		}
 		v, err := oidc.New(cfg)
 		if err != nil {
-			w.Warn("workos validator init failed", wool.ErrField(err))
-			return nil, nil
+			return nil, nil, fmt.Errorf("initialize WorkOS validator: %w", err)
 		}
 		tokenURL := workosEnv("WORKOS_TOKEN_URL")
 		if tokenURL == "" {
@@ -402,24 +706,21 @@ func buildProviderStack(ctx context.Context) (auth.TokenValidator, *oidc.Exchang
 			ClientSecret: clientSecret,
 		})
 		if err != nil {
-			w.Warn("workos exchanger init failed", wool.ErrField(err))
-			return v, nil
+			return nil, nil, fmt.Errorf("initialize WorkOS exchanger: %w", err)
 		}
-		return v, ex
+		return v, ex, nil
 
 	case "auth0":
 		domain := os.Getenv("AUTH0_DOMAIN")
 		audience := os.Getenv("AUTH0_AUDIENCE")
 		clientID := os.Getenv("AUTH0_CLIENT_ID")
 		clientSecret := os.Getenv("AUTH0_CLIENT_SECRET")
-		if domain == "" || clientID == "" || clientSecret == "" {
-			w.Warn("AUTH_PROVIDER=auth0 but AUTH0_DOMAIN / AUTH0_CLIENT_ID / AUTH0_CLIENT_SECRET missing")
-			return nil, nil
+		if !hasConfiguredValue(domain) || !hasConfiguredValue(clientID) || !hasConfiguredValue(clientSecret) {
+			return nil, nil, fmt.Errorf("AUTH_PROVIDER=auth0 requires AUTH0_DOMAIN, AUTH0_CLIENT_ID, and AUTH0_CLIENT_SECRET")
 		}
 		v, err := oidc.New(oidc.Auth0Config(domain, audience))
 		if err != nil {
-			w.Warn("auth0 validator init failed", wool.ErrField(err))
-			return nil, nil
+			return nil, nil, fmt.Errorf("initialize Auth0 validator: %w", err)
 		}
 		ex, err := oidc.NewExchanger(oidc.ExchangerConfig{
 			TokenURL:     fmt.Sprintf("https://%s/oauth/token", domain),
@@ -427,22 +728,19 @@ func buildProviderStack(ctx context.Context) (auth.TokenValidator, *oidc.Exchang
 			ClientSecret: clientSecret,
 		})
 		if err != nil {
-			w.Warn("auth0 exchanger init failed", wool.ErrField(err))
-			return v, nil
+			return nil, nil, fmt.Errorf("initialize Auth0 exchanger: %w", err)
 		}
-		return v, ex
+		return v, ex, nil
 
 	case "google":
 		clientID := os.Getenv("GOOGLE_CLIENT_ID")
 		clientSecret := os.Getenv("GOOGLE_CLIENT_SECRET")
-		if clientID == "" || clientSecret == "" {
-			w.Warn("AUTH_PROVIDER=google but GOOGLE_CLIENT_ID / GOOGLE_CLIENT_SECRET missing")
-			return nil, nil
+		if !hasConfiguredValue(clientID) || !hasConfiguredValue(clientSecret) {
+			return nil, nil, fmt.Errorf("AUTH_PROVIDER=google requires GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET")
 		}
 		v, err := oidc.New(oidc.GoogleConfig(clientID))
 		if err != nil {
-			w.Warn("google validator init failed", wool.ErrField(err))
-			return nil, nil
+			return nil, nil, fmt.Errorf("initialize Google validator: %w", err)
 		}
 		ex, err := oidc.NewExchanger(oidc.ExchangerConfig{
 			TokenURL:     "https://oauth2.googleapis.com/token",
@@ -450,14 +748,14 @@ func buildProviderStack(ctx context.Context) (auth.TokenValidator, *oidc.Exchang
 			ClientSecret: clientSecret,
 		})
 		if err != nil {
-			w.Warn("google exchanger init failed", wool.ErrField(err))
-			return v, nil
+			return nil, nil, fmt.Errorf("initialize Google exchanger: %w", err)
 		}
-		return v, ex
+		return v, ex, nil
 
+	case "":
+		return nil, nil, fmt.Errorf("AUTH_PROVIDER is required (use dev only with an explicit local fixture)")
 	default:
-		w.Warn("unknown AUTH_PROVIDER", wool.Field("value", os.Getenv("AUTH_PROVIDER")))
-		return nil, nil
+		return nil, nil, fmt.Errorf("unsupported AUTH_PROVIDER %q", provider)
 	}
 }
 
@@ -506,14 +804,28 @@ func loadSigningKey(ctx context.Context) (ed25519core.PrivateKey, error) {
 	return priv, err
 }
 
-// billingEmailNotifier adapts the email.TemplateSender to the
-// billing.EmailNotifier interface so webhook handlers can send
-// templated emails without depending on the business package.
+// billingEmailNotifier converts a completed billing projection into a second
+// durable outbox command. It never owns or calls the email transport.
 type billingEmailNotifier struct {
-	ts *email.TemplateSender
+	outbox     *email.Outbox
+	billingURL string
 }
 
-func (n *billingEmailNotifier) SendBillingEmail(ctx context.Context, templateName, toEmail string, vars map[string]string) error {
-	_, err := n.ts.SendTemplate(ctx, templateName, toEmail, vars)
-	return err
+func (n *billingEmailNotifier) EnqueueBillingEmail(ctx context.Context, message billing.BillingEmail) error {
+	if n == nil || n.outbox == nil {
+		return nil
+	}
+	variables := make(map[string]string, len(message.Variables)+1)
+	for key, value := range message.Variables {
+		variables[key] = value
+	}
+	variables["billing_url"] = n.billingURL
+	return n.outbox.EnqueueTemplate(ctx, email.TemplateRequest{
+		DeliveryKey: message.DeliveryKey,
+		Scope:       email.TenantScope(message.OrganizationID),
+		Source:      "saas.billing",
+		Template:    message.Template,
+		To:          message.To,
+		Variables:   variables,
+	})
 }

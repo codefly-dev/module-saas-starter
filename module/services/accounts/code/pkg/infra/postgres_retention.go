@@ -64,3 +64,16 @@ func (s *PostgresStore) DeleteOldNotifications(ctx context.Context, before time.
 	}
 	return tag.RowsAffected(), nil
 }
+
+func (s *PostgresStore) DeleteExpiredAuthenticationCeremonies(ctx context.Context, before time.Time) (webauthn, mfaLogin int64, err error) {
+	q := s.getQueryExecutor(ctx)
+	webauthnTag, err := q.Exec(ctx, `DELETE FROM webauthn_ceremonies WHERE expires_at < $1`, before)
+	if err != nil {
+		return 0, 0, err
+	}
+	loginTag, err := q.Exec(ctx, `DELETE FROM mfa_login_transactions WHERE expires_at < $1`, before)
+	if err != nil {
+		return 0, 0, err
+	}
+	return webauthnTag.RowsAffected(), loginTag.RowsAffected(), nil
+}

@@ -2,146 +2,197 @@ package adapters
 
 import (
 	"context"
-	"os"
+	"crypto/subtle"
 	"strings"
 
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/metadata"
+	"google.golang.org/grpc/status"
 
 	"accounts/pkg/auth"
+	"accounts/pkg/business"
 
 	"github.com/codefly-dev/core/wool"
 )
 
-// stripForwardedIdentity removes any caller-supplied identity metadata from the
-// incoming context — both the dotted wool keys that wool.GRPC().Inject() reads
-// (user.id, org.id, …) and the X-* header forms — so identity cannot be spoofed
-// by a client connecting directly to the api. The authorization header is left
-// intact so bearer verification still runs.
+// stripForwardedIdentity removes caller-controlled identity metadata. The
+// authorization and internal-credential fields are retained for verification.
 func stripForwardedIdentity(ctx context.Context) context.Context {
 	md, ok := metadata.FromIncomingContext(ctx)
 	if !ok {
 		return ctx
 	}
 	md = md.Copy()
-	for _, k := range wool.ContextKeys {
-		md.Delete(string(k))
+	for _, key := range wool.ContextKeys {
+		md.Delete(string(key))
 	}
-	for _, h := range []string{"x-user-id", "x-org-id", "x-roles", "x-auth-id", "x-user-email", "x-user-name"} {
-		md.Delete(h)
+	for _, header := range forwardedIdentityHeaders {
+		md.Delete(strings.ToLower(header))
 	}
 	return metadata.NewIncomingContext(ctx, md)
 }
 
-// grpcAuthInterceptor mirrors connectAuthInterceptor for the raw gRPC
-// path. Defense-in-depth: production has the auth-sidecar in front of
-// every transport, but the api should NEVER trust upstream identity
-// headers blindly. Even when the sidecar already validated the JWT, we
-// re-verify the bearer here so a misconfigured sidecar / direct port
-// access in dev / mistakenly-allowed traffic cannot bypass auth.
-//
-// Behaviour mirrors the Connect interceptor:
-//   - Public methods (Authenticate, RefreshToken, Logout, GetJWKS) skip
-//     bearer validation entirely.
-//   - Missing / invalid bearer is permissive: the request is forwarded
-//     to the handler, which calls requireAuth(ctx) and returns
-//     Unauthenticated. Centralizing rejection at requireAuth keeps the
-//     handler-level error consistent across paths.
-//   - Valid bearer: stamp wool's UserID / UserAuthID / OrgID context
-//     keys so downstream callerID() / callerOrg() see the same identity
-//     they would see via X-User-Id headers from the sidecar.
-//
-// Sidecar interaction: when the sidecar IS in front, it strips the
-// Authorization header and forwards X-User-Id / X-Org-Id / X-Auth-Id
-// instead. wool.GRPC().Inject() (called by handlers) reads those into
-// the same UserID / OrgID context keys. This interceptor's stamping
-// then becomes a no-op overwrite with the same values — harmless.
-func grpcAuthInterceptor(getMinter func() auth.JWTMinter) grpc.UnaryServerInterceptor {
-	// Secure by default: do NOT trust caller-supplied identity headers
-	// (X-User-Id / user.id / …). They are only safe when the api is network-
-	// isolated behind the auth-sidecar, which strips and re-injects them.
-	// Operators of that topology opt in with API_TRUST_FORWARDED_IDENTITY=true.
-	trustForwarded := os.Getenv("API_TRUST_FORWARDED_IDENTITY") == "true"
+type grpcPolicyAuthorizer struct {
+	getMinter func() auth.JWTMinter
+	exposure  rpcExposure
+}
+
+type rpcExposure uint8
+
+const (
+	rpcExposureTenant rpcExposure = iota
+	rpcExposureInternal
+)
+
+func newGRPCPolicyAuthorizer(getMinter func() auth.JWTMinter, exposure rpcExposure) *grpcPolicyAuthorizer {
+	return &grpcPolicyAuthorizer{
+		getMinter: getMinter,
+		exposure:  exposure,
+	}
+}
+
+func grpcAuthInterceptor(getMinter func() auth.JWTMinter, exposure rpcExposure) grpc.UnaryServerInterceptor {
+	authorizer := newGRPCPolicyAuthorizer(getMinter, exposure)
 	return func(ctx context.Context, req any, info *grpc.UnaryServerInfo, handler grpc.UnaryHandler) (any, error) {
-		minter := getMinter()
-		if minter == nil {
-			return handler(ctx, req)
-		}
-		if isPublicGrpcMethod(info.FullMethod) {
-			return handler(ctx, req)
-		}
-
-		// Strip forwarded identity so a direct connection (bypassing the
-		// sidecar) cannot spoof identity via metadata that wool.GRPC().Inject()
-		// in the handlers would otherwise trust. After this, identity can only
-		// come from the verified bearer stamped below.
-		if !trustForwarded {
-			ctx = stripForwardedIdentity(ctx)
-		}
-
-		md, _ := metadata.FromIncomingContext(ctx)
-		var token string
-		if v := md.Get("authorization"); len(v) > 0 {
-			if t, ok := strings.CutPrefix(v[0], "Bearer "); ok {
-				token = t
-			}
-		}
-		if token == "" {
-			return handler(ctx, req)
-		}
-
-		identity, err := minter.VerifyAccess(token)
+		ctx, err := authorizer.authorize(ctx, info.FullMethod)
 		if err != nil {
-			wool.Get(ctx).In("grpcAuthInterceptor").
-				Debug("VerifyAccess failed", wool.ErrField(err))
-			return handler(ctx, req)
-		}
-
-		ctx = context.WithValue(ctx, wool.UserIDKey, identity.UserID.String())
-		ctx = context.WithValue(ctx, wool.UserAuthIDKey, identity.UserID.String())
-		zeroOrg := "00000000-0000-0000-0000-000000000000"
-		if orgID := identity.OrgID.String(); orgID != "" && orgID != zeroOrg {
-			ctx = context.WithValue(ctx, wool.OrgIDKey, orgID)
-		}
-		if identity.MFASatisfied {
-			ctx = withMFASatisfied(ctx)
-		}
-		if v := md.Get("x-scopes"); len(v) > 0 && v[0] != "" {
-			ctx = withScopes(ctx, parseScopes(v[0]))
+			return nil, err
 		}
 		return handler(ctx, req)
 	}
 }
 
-// publicGrpcMethods are gRPC FullMethod paths that do not require auth.
-// gRPC FullMethod format: /<package>.<service>/<method>.
-//
-// Keep this list in sync with:
-//   - connect_gen.go (Connect handlers that skip the auth interceptor)
-//   - module.go moduleRPCs entries with HandlerAuthz="public"
-//
-// The two transports MUST agree, otherwise the same RPC behaves
-// differently depending on whether the caller used HTTP/2 gRPC or
-// Connect. The module_test.go capability test pins this contract.
-var publicGrpcMethods = map[string]struct{}{
-	// Auth — public by necessity (login flow can't carry a Bearer yet).
-	"/customers.AuthService/BeginOAuth":   {},
-	"/customers.AuthService/Authenticate": {},
-	"/customers.AuthService/RefreshToken": {},
-	"/customers.AuthService/Logout":       {},
-	"/customers.AuthService/GetJWKS":      {},
-	// Smoke / introspection — describes the public API surface, no
-	// tenant data. IntrospectionService.GetServiceInfo / Version.
-	"/customers.UserService/Version":                       {},
-	"/customers.IntrospectionService/GetServiceInfo":       {},
-	// CheckPermission is called by the auth-sidecar over a private
-	// network boundary (mesh-internal). The wire is unauthenticated
-	// today; production deployments should isolate it via mTLS or a
-	// dedicated network namespace.
-	"/customers.PermissionService/CheckPermission": {},
+func grpcStreamAuthInterceptor(getMinter func() auth.JWTMinter, exposure rpcExposure) grpc.StreamServerInterceptor {
+	authorizer := newGRPCPolicyAuthorizer(getMinter, exposure)
+	return func(srv any, stream grpc.ServerStream, info *grpc.StreamServerInfo, handler grpc.StreamHandler) error {
+		ctx, err := authorizer.authorize(stream.Context(), info.FullMethod)
+		if err != nil {
+			return err
+		}
+		return handler(srv, &contextServerStream{ServerStream: stream, ctx: ctx})
+	}
 }
 
-func isPublicGrpcMethod(fullMethod string) bool {
-	_, ok := publicGrpcMethods[fullMethod]
-	return ok
+type contextServerStream struct {
+	grpc.ServerStream
+	ctx context.Context
+}
+
+func (stream *contextServerStream) Context() context.Context { return stream.ctx }
+
+func (i *grpcPolicyAuthorizer) authorize(ctx context.Context, fullMethod string) (context.Context, error) {
+	md, _ := metadata.FromIncomingContext(ctx)
+	trustedForwarded := validGatewayToken(firstMetadataValue(md, "x-codefly-gateway-token"))
+	if !trustedForwarded {
+		ctx = stripForwardedIdentity(ctx)
+		md, _ = metadata.FromIncomingContext(ctx)
+	}
+	policy, classified := business.LookupRPCPolicy(fullMethod)
+	if !classified {
+		return ctx, status.Error(codes.PermissionDenied, "RPC is not classified by the authorization policy")
+	}
+	if i.exposure == rpcExposureInternal {
+		if policy.Tier != business.RPCPolicyInternal {
+			return ctx, status.Error(codes.PermissionDenied, "tenant RPC is not exposed on the internal listener")
+		}
+		if !validInternalToken(firstMetadataValue(md, "x-codefly-internal-token")) {
+			return ctx, status.Error(codes.PermissionDenied, "internal service credential required")
+		}
+		return ctx, nil
+	}
+
+	if policy.Tier == business.RPCPolicyInternal {
+		return ctx, status.Error(codes.PermissionDenied, "internal RPC is not exposed on the tenant listener")
+	}
+	if policy.Tier == business.RPCPolicyPublic {
+		return ctx, nil
+	}
+
+	if trustedForwarded && hasForwardedIdentity(md) {
+		return stampForwardedGRPCIdentity(ctx, md), nil
+	}
+	var minter auth.JWTMinter
+	if i.getMinter != nil {
+		minter = i.getMinter()
+	}
+	if minter == nil {
+		return ctx, status.Error(codes.Unauthenticated, "authentication required")
+	}
+	var token string
+	if values := md.Get("authorization"); len(values) > 0 {
+		token, _ = strings.CutPrefix(values[0], "Bearer ")
+	}
+	if token == "" {
+		return ctx, status.Error(codes.Unauthenticated, "authentication required")
+	}
+	identity, err := minter.VerifyAccess(token)
+	if err != nil {
+		wool.Get(ctx).In("grpcPolicyInterceptor").Debug("VerifyAccess failed", wool.ErrField(err))
+		return ctx, status.Error(codes.Unauthenticated, "invalid or expired access token")
+	}
+	ctx = stampVerifiedIdentity(ctx, identity.UserID.String(), identity.OrgID.String(), identity.Assurance())
+	ctx = auth.WithVerifiedSessionID(ctx, identity.SessionID)
+	if values := md.Get("x-scopes"); len(values) > 0 && values[0] != "" {
+		ctx = withScopes(ctx, parseScopes(values[0]))
+	}
+	return ctx, nil
+}
+
+func firstMetadataValue(md metadata.MD, key string) string {
+	if values := md.Get(key); len(values) > 0 {
+		return values[0]
+	}
+	return ""
+}
+
+func stampForwardedGRPCIdentity(ctx context.Context, md metadata.MD) context.Context {
+	ctx = stampVerifiedIdentity(ctx, firstMetadataValue(md, "x-user-id"), firstMetadataValue(md, "x-org-id"), assuranceFromTransport(
+		firstMetadataValue(md, "x-authentication-methods"),
+		firstMetadataValue(md, "x-auth-time"),
+		firstMetadataValue(md, "x-assurance-level"),
+		firstMetadataValue(md, "x-mfa-verified-at"),
+	))
+	if scopes := firstMetadataValue(md, "x-scopes"); scopes != "" {
+		ctx = withScopes(ctx, parseScopes(scopes))
+	}
+	return auth.WithVerifiedSessionIDString(ctx, firstMetadataValue(md, "x-session-id"))
+}
+
+func stampVerifiedIdentity(ctx context.Context, userID, orgID string, assurance auth.Assurance) context.Context {
+	ctx = auth.WithVerifiedDatabaseIdentity(ctx, userID, orgID)
+	ctx = context.WithValue(ctx, wool.UserIDKey, userID)
+	ctx = context.WithValue(ctx, wool.UserAuthIDKey, userID)
+	if orgID != "" && orgID != "00000000-0000-0000-0000-000000000000" {
+		ctx = context.WithValue(ctx, wool.OrgIDKey, orgID)
+	}
+	return auth.WithAssurance(ctx, assurance)
+}
+
+func hasForwardedIdentity(md metadata.MD) bool {
+	if len(md.Get("x-user-id")) > 0 && md.Get("x-user-id")[0] != "" {
+		return true
+	}
+	for _, key := range wool.ContextKeys {
+		if string(key) == string(wool.UserIDKey) || string(key) == string(wool.UserAuthIDKey) {
+			if values := md.Get(string(key)); len(values) > 0 && values[0] != "" {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+func validInternalToken(candidate string) bool {
+	if internalToken == "" || candidate == "" || len(candidate) != len(internalToken) {
+		return false
+	}
+	return subtle.ConstantTimeCompare([]byte(candidate), []byte(internalToken)) == 1
+}
+
+func validGatewayToken(candidate string) bool {
+	if gatewayToken == "" || candidate == "" || len(candidate) != len(gatewayToken) {
+		return false
+	}
+	return subtle.ConstantTimeCompare([]byte(candidate), []byte(gatewayToken)) == 1
 }

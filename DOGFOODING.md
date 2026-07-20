@@ -119,11 +119,10 @@ SMTP. Every box should pass cleanly with just the dev-admin fixture.
 
 - [ ] Ensure STRIPE_API_KEY is **unset**.
 - [ ] `/admin/billing` — pick Acme Corp.
-- [ ] Plan card shows "Free" badge + "X features included" + Manage subscription button + Compare plans button.
+- [ ] Plan card shows "Free" badge + "X features included" + Manage subscription button.
 - [ ] Click **Manage subscription** → toast "Couldn't open portal: billing not configured". (Expected.)
 - [ ] Usage card shows top-3 by % used (likely just `seats` since others are 0-used).
 - [ ] Invoices card shows the friendly "Stripe not configured" callout pointing at the `STRIPE_API_KEY` codefly secret.
-- [ ] Click **Compare plans** → routes to `/pricing`. Three plan cards (Free / Pro / Enterprise). Buttons rendered (will fail without Stripe — covered in Tier 3).
 
 ### Entitlements
 
@@ -172,7 +171,6 @@ codefly secret set api STRIPE_API_KEY sk_test_xxxxxxxxxxxx
 codefly run service frontend --fixture dev-admin
 ```
 
-- [ ] `/pricing` — click **Upgrade to Pro** on a plan. Redirects to Stripe Checkout. Use Stripe test card `4242 4242 4242 4242`. After payment, lands on `/admin/billing/success`.
 - [ ] `/admin/billing` — Plan card shows **Pro** badge.
 - [ ] Click **Manage subscription** — redirects to Stripe-hosted billing portal.
 - [ ] Update card / cancel subscription → return → status reflects.

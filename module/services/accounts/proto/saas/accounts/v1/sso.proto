@@ -1,0 +1,130 @@
+syntax = "proto3";
+
+package saas.accounts.v1;
+
+import "buf/validate/validate.proto";
+import "google/api/annotations.proto";
+import "google/protobuf/empty.proto";
+import "google/protobuf/timestamp.proto";
+import "saas/policy/v1/options.proto";
+
+// ============================================================================
+// SSO Admin (self-serve WorkOS Connections)
+// ============================================================================
+
+// OrgSSOConfig is the per-org SSO state. Empty connection_id means
+// SSO is not configured. status mirrors WorkOS Connections lifecycle:
+//   ""             — not configured
+//   "linked"       — admin portal link issued, IdP setup pending
+//   "active"       — connection live; email-domain users SSO-routed
+//   "disabled"     — connection exists but admin paused it
+message OrgSSOConfig {
+  string org_id = 1 [(buf.validate.field).string.uuid = true];
+  string provider = 2; // e.g. "workos"
+  string connection_id = 3; // WorkOS Connection id, when linked
+  string organization_id = 4; // WorkOS Organization id (the customer's tenant on WorkOS)
+  string status = 5; // "linked" | "active" | "disabled" | ""
+  google.protobuf.Timestamp configured_at = 6;
+}
+
+message GetOrgSSORequest {
+  string org_id = 1 [(buf.validate.field).string.uuid = true];
+}
+
+// StartSSOSetupRequest kicks off the admin portal flow. The backend
+// (a) ensures a WorkOS Organization exists for the saas-starter org,
+// (b) mints a portal link, (c) returns it for browser redirect.
+message StartSSOSetupRequest {
+  string org_id = 1 [(buf.validate.field).string.uuid = true];
+  // return_url is where WorkOS redirects the admin after they
+  // finish IdP setup. Typically the saas-starter /admin/sso page.
+  string return_url = 2 [(buf.validate.field).string.uri = true];
+}
+
+message StartSSOSetupResponse {
+  // portal_link is the one-shot URL the FE redirects the browser
+  // to. Expires per WorkOS policy (15 min default). Re-callable to
+  // mint a fresh one if the operator needs to re-enter the portal.
+  string portal_link = 1;
+}
+
+message DisableSSORequest {
+  string org_id = 1 [(buf.validate.field).string.uuid = true];
+}
+
+// SSOAdminService — org-admin-gated. Lets paying customers wire up
+// SAML / OIDC themselves through the WorkOS Admin Portal without a
+// support ticket. Stub-mode (no WORKOS_API_KEY env) returns a
+// placeholder portal link pointing back at /admin/sso?demo=1 so dev
+// environments can exercise the FE flow.
+service SSOAdminService {
+  rpc GetSSO(GetOrgSSORequest) returns (OrgSSOConfig) {
+    option (saas.policy.v1.method_policy) = {
+      exposure: EXPOSURE_AUTHENTICATED
+      tenant: TENANT_REQUIREMENT_ORG_ADMIN
+      resource_bindings: {
+        request_field: "org_id"
+        target: RESOURCE_TARGET_ORGANIZATION
+        lookup: RESOURCE_LOOKUP_DIRECT_ID
+      }
+      mfa: MFA_REQUIREMENT_NONE
+      audit: {emission: AUDIT_EMISSION_NONE}
+      idempotency: IDEMPOTENCY_REQUIREMENT_FORBIDDEN
+      rate_limit: RATE_LIMIT_CLASS_STANDARD_READ
+      request_sensitivity: SENSITIVITY_CONFIDENTIAL
+      response_sensitivity: SENSITIVITY_CONFIDENTIAL
+      platform_role: PLATFORM_ROLE_REQUIREMENT_NONE
+    };
+    option (google.api.http) = {get: "/v1/sso/{org_id}"};
+  }
+  rpc StartSetup(StartSSOSetupRequest) returns (StartSSOSetupResponse) {
+    option (saas.policy.v1.method_policy) = {
+      exposure: EXPOSURE_AUTHENTICATED
+      tenant: TENANT_REQUIREMENT_ORG_ADMIN
+      resource_bindings: {
+        request_field: "org_id"
+        target: RESOURCE_TARGET_ORGANIZATION
+        lookup: RESOURCE_LOOKUP_DIRECT_ID
+      }
+      mfa: MFA_REQUIREMENT_NONE
+      audit: {
+        events: "sso.setup.started"
+        emission: AUDIT_EMISSION_SUCCESS
+      }
+      idempotency: IDEMPOTENCY_REQUIREMENT_FORBIDDEN
+      rate_limit: RATE_LIMIT_CLASS_STANDARD_WRITE
+      request_sensitivity: SENSITIVITY_CONFIDENTIAL
+      response_sensitivity: SENSITIVITY_CONFIDENTIAL
+      platform_role: PLATFORM_ROLE_REQUIREMENT_NONE
+    };
+    option (google.api.http) = {
+      post: "/v1/sso/setup"
+      body: "*"
+    };
+  }
+  rpc Disable(DisableSSORequest) returns (google.protobuf.Empty) {
+    option (saas.policy.v1.method_policy) = {
+      exposure: EXPOSURE_AUTHENTICATED
+      tenant: TENANT_REQUIREMENT_ORG_ADMIN
+      resource_bindings: {
+        request_field: "org_id"
+        target: RESOURCE_TARGET_ORGANIZATION
+        lookup: RESOURCE_LOOKUP_DIRECT_ID
+      }
+      mfa: MFA_REQUIREMENT_NONE
+      audit: {
+        events: "sso.disabled"
+        emission: AUDIT_EMISSION_SUCCESS
+      }
+      idempotency: IDEMPOTENCY_REQUIREMENT_FORBIDDEN
+      rate_limit: RATE_LIMIT_CLASS_STANDARD_WRITE
+      request_sensitivity: SENSITIVITY_CONFIDENTIAL
+      response_sensitivity: SENSITIVITY_CONFIDENTIAL
+      platform_role: PLATFORM_ROLE_REQUIREMENT_NONE
+    };
+    option (google.api.http) = {
+      post: "/v1/sso/disable"
+      body: "*"
+    };
+  }
+}

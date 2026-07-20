@@ -6,7 +6,7 @@ import "context"
 // to an Identity (see infra.PostgresStore.As) derives the RLS session context —
 // app.current_user_id and/or app.current_org_id — from it on every call, so the
 // identity decision is made once (at the edge, from the authenticated caller)
-// rather than each call site choosing WithUserTx / WithOrgTx / WithBypass by hand.
+// rather than each call site choosing WithUserTx / WithOrgTx / WithControlPlane by hand.
 //
 // System() is the single, explicit, audited way past RLS — greppable by design.
 type Identity struct {
@@ -17,8 +17,8 @@ type Identity struct {
 }
 
 // System is the one explicit RLS bypass, for genuine cross-tenant / bootstrap
-// work (the role that the scattered WithBypass call sites collapse into). Use
-// sparingly; it is audited via infra.BypassCounters.
+// work (the role that the scattered WithControlPlane call sites collapse into). Use
+// sparingly; it is audited via infra.ControlPlaneCounters.
 func System() Identity { return Identity{system: true} }
 
 // IsSystem reports whether this identity bypasses RLS.

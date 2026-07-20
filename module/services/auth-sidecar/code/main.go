@@ -17,8 +17,8 @@ import (
 	"syscall"
 	"time"
 
-	codefly "github.com/codefly-dev/sdk-go"
 	"github.com/codefly-dev/core/standards"
+	codefly "github.com/codefly-dev/sdk-go"
 
 	authv3 "github.com/envoyproxy/go-control-plane/envoy/service/auth/v3"
 	"google.golang.org/grpc"
@@ -26,7 +26,7 @@ import (
 	"google.golang.org/grpc/reflection"
 	"google.golang.org/protobuf/types/known/emptypb"
 
-	apigen "accounts/pkg/gen"
+	apigen "accounts/pkg/gen/saas/accounts/v1"
 )
 
 func main() {
@@ -51,17 +51,21 @@ func main() {
 		httpPort = httpNet.Port
 	}
 
-	apiNet := codefly.For(ctx).Service("accounts").API("grpc").NetworkInstance()
+	apiNet := codefly.For(ctx).Service("accounts").Endpoint("grpc").API("grpc").NetworkInstance()
 	if apiNet == nil {
 		panic("api gRPC endpoint not available")
 	}
 	apiAddr := fmt.Sprintf("%s:%d", apiNet.Hostname, apiNet.Port)
-
 	// Upstream HTTP URLs used by the gateway listener.
 	apiRestNet := codefly.For(ctx).Service("accounts").API("rest").NetworkInstance()
 	apiHTTPURL := ""
+	internalAPIAddr := ""
 	if apiRestNet != nil {
 		apiHTTPURL = fmt.Sprintf("http://%s:%d", apiRestNet.Hostname, apiRestNet.Port)
+		internalAPIAddr = fmt.Sprintf("%s:%d", apiRestNet.Hostname, apiRestNet.Port)
+	}
+	if internalAPIAddr == "" {
+		panic("api private REST/internal-gRPC endpoint not available")
 	}
 	apiConnectNet := codefly.For(ctx).Service("accounts").API("connect").NetworkInstance()
 	apiConnectURL := ""
@@ -79,10 +83,15 @@ func main() {
 		panic(fmt.Sprintf("cannot connect to api at %s: %v", apiAddr, err))
 	}
 	defer apiConn.Close()
+	internalAPIConn, err := grpc.NewClient(internalAPIAddr, grpc.WithTransportCredentials(insecure.NewCredentials()))
+	if err != nil {
+		panic(fmt.Sprintf("cannot connect to internal api at %s: %v", internalAPIAddr, err))
+	}
+	defer internalAPIConn.Close()
 
 	publicKey := fetchPublicKey(ctx, apiConn)
 
-	sidecar := NewSidecar(apiConn, publicKey)
+	sidecar := NewSidecar(internalAPIConn, publicKey)
 
 	grpcServer := grpc.NewServer()
 	authv3.RegisterAuthorizationServer(grpcServer, sidecar)
@@ -96,16 +105,17 @@ func main() {
 	fmt.Printf("auth-sidecar gRPC (ext_authz) listening on :%d (api: %s, jwt: %v)\n",
 		grpcPort, apiAddr, publicKey != nil)
 
-	// Load REST routes from folder-based *.rest.codefly.yaml files.
+	// Load generated descriptor REST routes plus explicit YAML extensions.
 	routingDir := DefaultRoutingDir()
-	restEntries, err := LoadRoutesFromDir(ctx, routingDir)
+	restEntries, err := LoadAllRESTRoutes(ctx, routingDir)
 	if err != nil {
 		panic(fmt.Sprintf("failed to load routes from %s: %v", routingDir, err))
 	}
-	// Discover Connect RPC paths from the customers proto package.
-	connectEntries, err := LoadConnectRoutesFromProto(ctx, "customers")
+	// Load descriptor- and policy-derived Connect paths from the checked,
+	// generated gateway route catalog.
+	connectEntries, err := LoadConnectRoutesFromCatalog()
 	if err != nil {
-		panic(fmt.Sprintf("failed to load connect routes: %v", err))
+		panic(fmt.Sprintf("failed to load generated Connect routes: %v", err))
 	}
 	matcher := NewRouteMatcher(restEntries, connectEntries)
 	routeEntries := append(restEntries, connectEntries...)
@@ -119,21 +129,27 @@ func main() {
 		// get distinct upstream keys matching the Service field on RouteEntry.
 		upstreams := make(map[string]*url.URL)
 		if apiHTTPURL != "" {
-			upstreams["api"] = MustURL(apiHTTPURL)
+			upstreams["accounts"] = MustURL(apiHTTPURL)
 		}
 		if apiConnectURL != "" {
-			upstreams["api_connect"] = MustURL(apiConnectURL)
-		} else if apiHTTPURL != "" {
-			// Fall back to the REST upstream so Connect paths at least hit the
-			// api binary; grpc-gateway's REST server won't serve them but it's
-			// better than a bad gateway error during partial rollouts.
-			upstreams["api_connect"] = MustURL(apiHTTPURL)
+			upstreams["accounts_connect"] = MustURL(apiConnectURL)
 		}
 		if frontendURL != "" {
 			upstreams["frontend"] = MustURL(frontendURL)
 		}
+		redisURL := os.Getenv("REDIS_URL")
+		if cacheNet := codefly.For(ctx).Service("cache").Endpoint("write").API("tcp").NetworkInstance(); cacheNet != nil && redisURL == "" {
+			redisURL = fmt.Sprintf("redis://%s:%d", cacheNet.Hostname, cacheNet.Port)
+		}
 
-		rateLimiter = NewRateLimiter(1000) // 1000 req/min per org (or IP)
+		authenticationAttemptLimit, err := configuredAuthenticationAttemptLimit()
+		if err != nil {
+			panic(err)
+		}
+		rateLimiter = NewRateLimiter(1000,
+			WithRedisURL(redisURL),
+			WithAuthenticationAttemptLimit(authenticationAttemptLimit),
+		) // 1000 req/min per org/IP; stricter MFA budget is configured separately.
 		gateway := NewGateway(sidecar, matcher, upstreams, rateLimiter)
 		httpServer = &http.Server{
 			Addr:    fmt.Sprintf(":%d", httpPort),
@@ -182,6 +198,18 @@ func main() {
 	if err := grpcServer.Serve(grpcLis); err != nil {
 		fmt.Fprintf(os.Stderr, "grpc server error: %v\n", err)
 	}
+}
+
+func configuredAuthenticationAttemptLimit() (int, error) {
+	raw := strings.TrimSpace(workspaceEnv("security", "MFA_COMPLETION_RATE_LIMIT_PER_MINUTE"))
+	if raw == "" {
+		return authenticationAttemptLimitPerMinute, nil
+	}
+	limit, err := strconv.Atoi(raw)
+	if err != nil || limit < 1 || limit > 1000 {
+		return 0, fmt.Errorf("MFA_COMPLETION_RATE_LIMIT_PER_MINUTE must be an integer between 1 and 1000")
+	}
+	return limit, nil
 }
 
 // fetchPublicKey calls api's GetJWKS to get the Ed25519 public key.
@@ -246,15 +274,21 @@ func shouldGenerateEnvoy() bool {
 	return false
 }
 
-// generateEnvoyAndExit reads folder-based route configs, builds an Envoy config,
-// and writes it to stdout (or a file if ENVOY_CONFIG_OUTPUT is set).
+// generateEnvoyAndExit reads generated routes plus explicit extensions, builds
+// an Envoy config, and writes it to stdout (or ENVOY_CONFIG_OUTPUT).
 func generateEnvoyAndExit() {
 	routingDir := DefaultRoutingDir()
-	entries, err := LoadRoutesFromDir(context.Background(), routingDir)
+	entries, err := LoadAllRESTRoutes(context.Background(), routingDir)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "error loading routes from %s: %v\n", routingDir, err)
 		os.Exit(1)
 	}
+	connectEntries, err := LoadConnectRoutesFromCatalog()
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "error loading generated Connect routes: %v\n", err)
+		os.Exit(1)
+	}
+	entries = append(entries, connectEntries...)
 
 	// Parse upstream definitions from environment variables.
 	// Format: ENVOY_UPSTREAM_<SERVICE>=<host>:<port>
@@ -286,7 +320,7 @@ func generateEnvoyAndExit() {
 	// Default upstreams if none provided (sensible defaults for the module).
 	if len(upstreams) == 0 {
 		upstreams = map[string]Upstream{
-			"accounts":      {Address: "accounts", Port: 5962},
+			"accounts": {Address: "accounts", Port: 5962},
 			"frontend": {Address: "frontend", Port: 3000},
 		}
 	}

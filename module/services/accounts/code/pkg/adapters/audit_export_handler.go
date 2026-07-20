@@ -8,7 +8,7 @@ import (
 	"google.golang.org/protobuf/types/known/timestamppb"
 
 	"accounts/pkg/business"
-	"accounts/pkg/gen"
+	gen "accounts/pkg/gen/saas/accounts/v1"
 )
 
 // auditExportConnectHandler exposes per-org audit-export config CRUD.

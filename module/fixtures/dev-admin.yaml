@@ -8,6 +8,10 @@ users:
     role: super_admin
     provider: email
     provider_id: dev-admin
+    # Development-only assurance attestation. The fixture validator is never
+    # wired in production; this lets browser journeys exercise strict AAL2
+    # operations without weakening their runtime policy.
+    mfa_verified: true
 
   - email: alice@acme.com
     name: Alice Johnson

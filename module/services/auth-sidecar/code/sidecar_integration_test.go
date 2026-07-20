@@ -23,7 +23,7 @@ import (
 	"github.com/codefly-dev/core/sdk"
 	"github.com/stretchr/testify/require"
 
-	apigen "accounts/pkg/gen"
+	apigen "accounts/pkg/gen/saas/accounts/v1"
 )
 
 // Global test fixtures — initialized once in TestMain.
@@ -36,6 +36,11 @@ var (
 )
 
 func TestMain(m *testing.M) {
+	// The accounts transport deliberately fails closed for internal RPCs.
+	// WithDependencies inherits this process environment, so both services use
+	// the same integration-only credential.
+	_ = os.Setenv("CODEFLY_INTERNAL_TOKEN", "integration-test-internal-token")
+	_ = os.Setenv("CODEFLY_GATEWAY_TOKEN", "integration-test-gateway-token")
 	ctx := context.Background()
 
 	deps, err := sdk.WithDependencies(ctx,
@@ -71,12 +76,23 @@ func TestMain(m *testing.M) {
 	// Fetch public key from backend's JWKS endpoint
 	publicKey := fetchTestPublicKey(ctx, apiConn)
 
-	testSidecar = NewSidecar(apiConn, publicKey)
+	internalNet := codefly.For(ctx).Service("accounts").API("rest").NetworkInstance()
+	if internalNet == nil {
+		fmt.Fprintf(os.Stderr, "backend internal gRPC endpoint not available\n")
+		os.Exit(1)
+	}
+	internalConn, err := grpc.NewClient(fmt.Sprintf("%s:%d", internalNet.Hostname, internalNet.Port), grpc.WithTransportCredentials(insecure.NewCredentials()))
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "cannot connect to internal backend: %v\n", err)
+		os.Exit(1)
+	}
+	testSidecar = NewSidecar(internalConn, publicKey)
 	testUserClient = apigen.NewUserServiceClient(apiConn)
 	testAuthClient = apigen.NewAuthServiceClient(apiConn)
 	testCtx = ctx
 
 	testCleanup = func() {
+		internalConn.Close()
 		apiConn.Close()
 		deps.Destroy(ctx)
 	}

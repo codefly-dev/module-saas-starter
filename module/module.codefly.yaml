@@ -1,35 +1,20 @@
+# Code generated from deployment/topology.bindings.codefly.yaml. DO NOT EDIT.
 kind: module
 name: saas-starter
-description: "SaaS foundation — auth, multi-tenancy, RBAC, OPA gateway, impersonation, audit"
+description: SaaS foundation — auth, multi-tenancy, generated RPC policy, RBAC, impersonation, audit
 interface:
     endpoints:
-        # Public ingress — every external request enters through the gateway
-        # hosted by auth-sidecar. Frontend and api are internal only.
+        - service: auth-sidecar
+          endpoint: grpc
+          visibility: module
         - service: auth-sidecar
           endpoint: http
           visibility: public
-        - service: auth-sidecar
-          endpoint: grpc
-          visibility: module
-        - service: accounts
-          endpoint: grpc
-          visibility: module
-        - service: accounts
-          endpoint: connect
-          visibility: module
-        - service: frontend
-          endpoint: http
-          visibility: module
 services:
-    - name: store
-    - name: vault
     - name: accounts
     - name: auth-sidecar
     - name: cache
     - name: frontend
-    # object-storage runs MinIO via the s3 plugin — declared as a
-    # service-dependency by api for the audit-log → S3 export feature.
-    # Must be listed here too, otherwise the dependency-graph resolver
-    # in `codefly run` (and the test-time WithDependencies harness)
-    # errors with "resource <object-storage> not found".
     - name: object-storage
+    - name: store
+    - name: vault

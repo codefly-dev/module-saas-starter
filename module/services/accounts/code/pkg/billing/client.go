@@ -14,8 +14,8 @@
 //   - Stateless: no DB access. Callers thread results into business.Service.
 //   - Testable: all endpoints configurable via Config.BaseURL; tests use
 //     httptest.
-//   - Idempotent-safe: the WebhookHandler records event ids in the
-//     stripe_webhook_events table before processing.
+//   - Idempotent-safe: the webhook endpoint durably queues verified event
+//     bodies before leased workers process them.
 package billing
 
 import (
@@ -23,9 +23,9 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"strconv"
 	"net/http"
 	"net/url"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -127,13 +127,13 @@ func (s *Subscription) PrimaryPriceID() string {
 // CreateCustomer creates a new Stripe Customer for an org. Call once per
 // org the first time they attempt to subscribe; store the returned id on
 // organizations.stripe_customer_id.
-func (c *Client) CreateCustomer(ctx context.Context, email, orgID string) (*Customer, error) {
+func (c *Client) CreateCustomer(ctx context.Context, email, orgID, idempotencyKey string) (*Customer, error) {
 	form := url.Values{}
 	form.Set("email", email)
 	form.Set("metadata[org_id]", orgID)
 
 	var out Customer
-	if err := c.post(ctx, "/v1/customers", form, &out); err != nil {
+	if err := c.post(ctx, "/v1/customers", form, idempotencyKey, &out); err != nil {
 		return nil, err
 	}
 	return &out, nil
@@ -145,13 +145,15 @@ func (c *Client) CreateCustomer(ctx context.Context, email, orgID string) (*Cust
 
 // CheckoutParams is the input for a subscription checkout session.
 type CheckoutParams struct {
-	CustomerID string // existing Stripe customer id (required)
-	PriceID    string // Stripe Price id for the target plan (required)
-	SuccessURL string // where Stripe redirects on success
-	CancelURL  string // where Stripe redirects on cancel
-	OrgID      string // our internal org id, threaded through metadata
-	TrialDays  int    // optional trial days; 0 = no trial
-	Currency   string // ISO 4217 currency code (e.g. "usd", "eur"); empty = plan default
+	CustomerID     string // existing Stripe customer id (required)
+	PriceID        string // Stripe Price id for the target plan (required)
+	SuccessURL     string // where Stripe redirects on success
+	CancelURL      string // where Stripe redirects on cancel
+	OrgID          string // our internal org id, threaded through metadata
+	TrialDays      int    // optional trial days; 0 = no trial
+	Currency       string // ISO 4217 currency code (e.g. "usd", "eur"); empty = plan default
+	AutomaticTax   bool   // enable Stripe Tax for this checkout
+	IdempotencyKey string // unique logical operation key, required
 }
 
 // CreateCheckoutSession starts a Stripe Checkout flow for a subscription.
@@ -175,9 +177,12 @@ func (c *Client) CreateCheckoutSession(ctx context.Context, p CheckoutParams) (*
 	if p.TrialDays > 0 {
 		form.Set("subscription_data[trial_period_days]", fmt.Sprintf("%d", p.TrialDays))
 	}
+	if p.AutomaticTax {
+		form.Set("automatic_tax[enabled]", "true")
+	}
 
 	var out CheckoutSession
-	if err := c.post(ctx, "/v1/checkout/sessions", form, &out); err != nil {
+	if err := c.post(ctx, "/v1/checkout/sessions", form, p.IdempotencyKey, &out); err != nil {
 		return nil, err
 	}
 	return &out, nil
@@ -190,7 +195,7 @@ func (c *Client) CreateCheckoutSession(ctx context.Context, p CheckoutParams) (*
 // CreateBillingPortalSession returns a URL the customer can visit to
 // manage their subscription (update card, cancel, view invoices).
 // ReturnURL is where Stripe sends them when they're done.
-func (c *Client) CreateBillingPortalSession(ctx context.Context, customerID, returnURL string) (*BillingPortalSession, error) {
+func (c *Client) CreateBillingPortalSession(ctx context.Context, customerID, returnURL, idempotencyKey string) (*BillingPortalSession, error) {
 	if customerID == "" || returnURL == "" {
 		return nil, fmt.Errorf("billing: CreateBillingPortalSession requires customerID and returnURL")
 	}
@@ -199,7 +204,7 @@ func (c *Client) CreateBillingPortalSession(ctx context.Context, customerID, ret
 	form.Set("return_url", returnURL)
 
 	var out BillingPortalSession
-	if err := c.post(ctx, "/v1/billing_portal/sessions", form, &out); err != nil {
+	if err := c.post(ctx, "/v1/billing_portal/sessions", form, idempotencyKey, &out); err != nil {
 		return nil, err
 	}
 	return &out, nil
@@ -213,17 +218,17 @@ func (c *Client) CreateBillingPortalSession(ctx context.Context, customerID, ret
 // fields the operator dashboard renders. Amount is in the smallest
 // currency unit (cents for USD/EUR) — the FE divides by 100.
 type Invoice struct {
-	ID                string `json:"id"`
-	Number            string `json:"number"`
-	Status            string `json:"status"` // paid | open | void | uncollectible | draft
-	AmountDue         int64  `json:"amount_due"`
-	AmountPaid        int64  `json:"amount_paid"`
-	Currency          string `json:"currency"` // lowercase ISO 4217
-	Created           int64  `json:"created"`  // unix seconds
-	HostedInvoiceURL  string `json:"hosted_invoice_url"`
-	InvoicePDF        string `json:"invoice_pdf"`
-	PeriodStart       int64  `json:"period_start"`
-	PeriodEnd         int64  `json:"period_end"`
+	ID               string `json:"id"`
+	Number           string `json:"number"`
+	Status           string `json:"status"` // paid | open | void | uncollectible | draft
+	AmountDue        int64  `json:"amount_due"`
+	AmountPaid       int64  `json:"amount_paid"`
+	Currency         string `json:"currency"` // lowercase ISO 4217
+	Created          int64  `json:"created"`  // unix seconds
+	HostedInvoiceURL string `json:"hosted_invoice_url"`
+	InvoicePDF       string `json:"invoice_pdf"`
+	PeriodStart      int64  `json:"period_start"`
+	PeriodEnd        int64  `json:"period_end"`
 }
 
 type invoiceList struct {
@@ -273,13 +278,20 @@ func (c *Client) GetSubscription(ctx context.Context, id string) (*Subscription,
 // HTTP primitives
 // ============================================================================
 
-func (c *Client) post(ctx context.Context, path string, form url.Values, out any) error {
+func (c *Client) post(ctx context.Context, path string, form url.Values, idempotencyKey string, out any) error {
+	if idempotencyKey == "" {
+		return fmt.Errorf("billing: Stripe POST requires an idempotency key")
+	}
+	if len(idempotencyKey) > 255 {
+		return fmt.Errorf("billing: Stripe idempotency key exceeds 255 characters")
+	}
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, c.baseURL+path, strings.NewReader(form.Encode()))
 	if err != nil {
 		return err
 	}
 	req.Header.Set("Authorization", "Bearer "+c.cfg.APIKey)
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	req.Header.Set("Idempotency-Key", idempotencyKey)
 	return c.do(req, out)
 }
 

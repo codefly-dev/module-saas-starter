@@ -1,6 +1,6 @@
 {
   "details": {
-    "methodFqn": "customers.BackendService.Version"
+    "methodFqn": "saas.accounts.v1.BackendService.Version"
   },
   "requests": [
     {

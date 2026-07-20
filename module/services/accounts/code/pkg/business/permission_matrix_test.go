@@ -9,7 +9,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	"accounts/pkg/gen"
+	gen "accounts/pkg/gen/saas/accounts/v1"
 )
 
 // TestPermissionMatrix_FrontendCoversBackend — drift guard for the
@@ -44,8 +44,11 @@ func TestPermissionMatrix_FrontendCoversBackend(t *testing.T) {
 	fePath := frontendPermissionsPath(t)
 	raw, err := os.ReadFile(fePath)
 	require.NoError(t, err, "failed to read %s", fePath)
+	generatedPath := filepath.Join(filepath.Dir(fePath), "..", "gen", "saas", "accounts", "v1", "frontend_catalog.ts")
+	generated, err := os.ReadFile(generatedPath)
+	require.NoError(t, err, "failed to read %s", generatedPath)
 
-	fePairs := parseFEPermissions(string(raw))
+	fePairs := parseFEPermissions(string(raw), string(generated))
 	require.NotEmpty(t, fePairs, "FE matrix produced no permissions — parser regex broken?")
 
 	// 3. Every FE pair must exist in BE (allowing wildcards both
@@ -89,18 +92,25 @@ func frontendPermissionsPath(t *testing.T) string {
 	return ""
 }
 
-// parseFEPermissions extracts every "resource:action" string literal
-// from permissions.ts. The regex matches `"foo:bar"` (or single-
-// quoted) but skips imports/comments by matching only inside the
-// permissionsByRole object's array literals — heuristically all
-// quoted strings of the shape look like permissions.
-func parseFEPermissions(src string) map[string]struct{} {
-	// Anchored regex: a quoted string with exactly one colon and
-	// nothing besides word/letter/star/underscore on each side.
+// parseFEPermissions extracts literal grants and resolves generated
+// PERMISSIONS.* references used by permissions.ts.
+func parseFEPermissions(src, generated string) map[string]struct{} {
 	re := regexp.MustCompile(`["']([A-Za-z_*][A-Za-z0-9_]*):([A-Za-z_*][A-Za-z0-9_]*)["']`)
 	out := map[string]struct{}{}
 	for _, m := range re.FindAllStringSubmatch(src, -1) {
 		out[m[1]+":"+m[2]] = struct{}{}
+	}
+
+	constants := map[string]string{}
+	constantRE := regexp.MustCompile(`(?m)^\s*([A-Z][A-Z0-9_]*):\s*["']([A-Za-z_*][A-Za-z0-9_]*:[A-Za-z_*][A-Za-z0-9_]*)["'],?$`)
+	for _, match := range constantRE.FindAllStringSubmatch(generated, -1) {
+		constants[match[1]] = match[2]
+	}
+	referenceRE := regexp.MustCompile(`PERMISSIONS\.([A-Z][A-Z0-9_]*)`)
+	for _, match := range referenceRE.FindAllStringSubmatch(src, -1) {
+		if permission, ok := constants[match[1]]; ok {
+			out[permission] = struct{}{}
+		}
 	}
 	return out
 }

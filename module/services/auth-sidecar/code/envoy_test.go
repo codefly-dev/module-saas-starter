@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"net/http"
 	"strings"
 	"testing"
 
@@ -13,7 +14,7 @@ import (
 // testUpstreams provides standard test upstream definitions.
 func testUpstreams() map[string]Upstream {
 	return map[string]Upstream{
-		"accounts":      {Address: "accounts", Port: 5962},
+		"accounts": {Address: "accounts", Port: 5962},
 		"frontend": {Address: "frontend", Port: 3000},
 	}
 }
@@ -55,7 +56,7 @@ func TestGenerateEnvoyConfig_PublicRouteDisablesExtAuthz(t *testing.T) {
 			{
 				Service: "accounts",
 				Rest:    &RestPath{Method: "POST", Path: "/v1/auth/authenticate"},
-				Connect: "/customers.AuthService/Authenticate",
+				Connect: "/saas.accounts.v1.AuthService/Authenticate",
 				Auth:    "public",
 			},
 		},
@@ -69,6 +70,9 @@ func TestGenerateEnvoyConfig_PublicRouteDisablesExtAuthz(t *testing.T) {
 	// The public REST route should have ext_authz disabled.
 	assert.Contains(t, output, "disabled: true")
 	assert.Contains(t, output, "/v1/auth/authenticate")
+	assert.Contains(t, output, "request_headers_to_remove:")
+	assert.Contains(t, output, "x-codefly-gateway-token")
+	assert.Contains(t, output, "x-codefly-internal-token")
 }
 
 func TestGenerateEnvoyConfig_ProtectedRouteKeepsExtAuthz(t *testing.T) {
@@ -77,7 +81,7 @@ func TestGenerateEnvoyConfig_ProtectedRouteKeepsExtAuthz(t *testing.T) {
 			{
 				Service: "accounts",
 				Rest:    &RestPath{Method: "GET", Path: "/v1/users/self"},
-				Connect: "/customers.UserService/GetSelf",
+				Connect: "/saas.accounts.v1.UserService/GetSelf",
 				Auth:    "required",
 			},
 		},
@@ -115,7 +119,7 @@ func TestGenerateEnvoyConfig_MFAPendingRouteKeepsExtAuthz(t *testing.T) {
 			{
 				Service: "accounts",
 				Rest:    &RestPath{Method: "POST", Path: "/v1/mfa/totp/verify"},
-				Connect: "/customers.MFAService/VerifyTOTP",
+				Connect: "/saas.accounts.v1.MFAService/VerifyTOTP",
 				Auth:    "mfa_pending",
 			},
 		},
@@ -135,7 +139,7 @@ func TestGenerateEnvoyConfig_PathParamsBecomeSafeRegex(t *testing.T) {
 			{
 				Service: "accounts",
 				Rest:    &RestPath{Method: "GET", Path: "/v1/users/{uuid}"},
-				Connect: "/customers.UserService/GetUser",
+				Connect: "/saas.accounts.v1.UserService/GetUser",
 				Auth:    "required",
 			},
 		},
@@ -150,7 +154,7 @@ func TestGenerateEnvoyConfig_PathParamsBecomeSafeRegex(t *testing.T) {
 	assert.Contains(t, output, "safe_regex")
 	assert.Contains(t, output, `regex: ^/v1/users/[^/]+$`)
 	// The Connect route should be exact match (no regex).
-	assert.Contains(t, output, "/customers.UserService/GetUser")
+	assert.Contains(t, output, "/saas.accounts.v1.UserService/GetUser")
 }
 
 func TestGenerateEnvoyConfig_ConnectRoutesAreExactMatch(t *testing.T) {
@@ -159,7 +163,7 @@ func TestGenerateEnvoyConfig_ConnectRoutesAreExactMatch(t *testing.T) {
 			{
 				Service: "accounts",
 				Rest:    &RestPath{Method: "POST", Path: "/v1/auth/authenticate"},
-				Connect: "/customers.AuthService/Authenticate",
+				Connect: "/saas.accounts.v1.AuthService/Authenticate",
 				Auth:    "public",
 			},
 		},
@@ -174,7 +178,7 @@ func TestGenerateEnvoyConfig_ConnectRoutesAreExactMatch(t *testing.T) {
 
 	output := string(yamlBytes)
 	// Connect routes use exact path match.
-	assert.Contains(t, output, "path: /customers.AuthService/Authenticate")
+	assert.Contains(t, output, "path: /saas.accounts.v1.AuthService/Authenticate")
 }
 
 func TestGenerateEnvoyConfig_SelfRoutesAreDirectResponse(t *testing.T) {
@@ -208,7 +212,7 @@ func TestGenerateEnvoyConfig_SelfRoutesAreDirectResponse(t *testing.T) {
 func TestGenerateEnvoyConfig_AllRoutesFromFile(t *testing.T) {
 	// Load the actual route files from the routing directory.
 	ctx := context.Background()
-	entries, err := LoadRoutesFromDir(ctx, DefaultRoutingDir())
+	entries, err := LoadAllRESTRoutes(ctx, DefaultRoutingDir())
 	require.NoError(t, err)
 	config := ToEnvoyConfig(entries)
 
@@ -245,7 +249,7 @@ func TestGenerateEnvoyConfig_AllRoutesFromFile(t *testing.T) {
 
 func TestGenerateEnvoyConfig_ValidYAML(t *testing.T) {
 	ctx := context.Background()
-	entries, err := LoadRoutesFromDir(ctx, DefaultRoutingDir())
+	entries, err := LoadAllRESTRoutes(ctx, DefaultRoutingDir())
 	require.NoError(t, err)
 	config := ToEnvoyConfig(entries)
 
@@ -329,7 +333,7 @@ func TestGenerateEnvoyConfig_SeparateConnectUpstreams(t *testing.T) {
 			{
 				Service: "accounts",
 				Rest:    &RestPath{Method: "POST", Path: "/v1/auth/authenticate"},
-				Connect: "/customers.AuthService/Authenticate",
+				Connect: "/saas.accounts.v1.AuthService/Authenticate",
 				Auth:    "public",
 			},
 		},
@@ -343,9 +347,9 @@ func TestGenerateEnvoyConfig_SeparateConnectUpstreams(t *testing.T) {
 	require.NoError(t, err)
 
 	output := string(yamlBytes)
-	// Should have separate api_rest and api_connect clusters.
-	assert.Contains(t, output, "api_rest")
-	assert.Contains(t, output, "api_connect")
+	// Should have separate accounts_rest and accounts_connect clusters.
+	assert.Contains(t, output, "accounts_rest")
+	assert.Contains(t, output, "accounts_connect")
 	assert.Contains(t, output, "accounts-connect") // connect upstream hostname
 }
 
@@ -408,7 +412,7 @@ func TestGenerateEnvoyConfig_ComplexPathParams(t *testing.T) {
 			{
 				Service: "accounts",
 				Rest:    &RestPath{Method: "DELETE", Path: "/v1/organizations/{org_id}/members/{user_id}"},
-				Connect: "/customers.OrganizationService/RemoveMember",
+				Connect: "/saas.accounts.v1.OrganizationService/RemoveMember",
 				Auth:    "required",
 			},
 		},
@@ -432,13 +436,13 @@ func TestGenerateEnvoyConfig_CustomActionPaths(t *testing.T) {
 			{
 				Service: "accounts",
 				Rest:    &RestPath{Method: "GET", Path: "/v1/users:findByIdentity"},
-				Connect: "/customers.UserService/FindUserByIdentity",
+				Connect: "/saas.accounts.v1.UserService/FindUserByIdentity",
 				Auth:    "required",
 			},
 			{
 				Service: "accounts",
 				Rest:    &RestPath{Method: "POST", Path: "/v1/platform/users/{user_id}:suspend"},
-				Connect: "/customers.PlatformAdminService/SuspendUser",
+				Connect: "/saas.accounts.v1.PlatformAdminService/SuspendUser",
 				Auth:    "required",
 			},
 		},
@@ -452,4 +456,31 @@ func TestGenerateEnvoyConfig_CustomActionPaths(t *testing.T) {
 	assert.Contains(t, output, "path: /v1/users:findByIdentity")
 	// Parameterized custom action path should be regex.
 	assert.Contains(t, output, `^/v1/platform/users/[^/]+:suspend$`)
+}
+
+func TestGenerateEnvoyConfig_LegacyConnectAliasRewritesToV1(t *testing.T) {
+	entries := []*RouteEntry{{
+		Service:      "accounts_connect",
+		Method:       http.MethodPost,
+		Path:         "/customers.UserService/GetSelf",
+		UpstreamPath: "/saas.accounts.v1.UserService/GetSelf",
+		Protected:    true,
+	}}
+	config := ToEnvoyConfig(entries)
+	require.Len(t, config.Routes, 1)
+	require.Equal(t, "/customers.UserService/GetSelf", config.Routes[0].Connect)
+
+	yamlBytes, err := GenerateEnvoyConfig(
+		config,
+		testUpstreams(),
+		map[string]Upstream{"accounts": {Address: "accounts", Port: 5963}},
+		testExtAuthz(),
+		8080,
+	)
+	require.NoError(t, err)
+	output := string(yamlBytes)
+	assert.Contains(t, output, "path: /customers.UserService/GetSelf")
+	assert.Contains(t, output, "regex_rewrite:")
+	assert.Contains(t, output, `regex: ^/customers\.UserService/GetSelf$`)
+	assert.Contains(t, output, "substitution: /saas.accounts.v1.UserService/GetSelf")
 }

@@ -1,26 +1,36 @@
+# Code generated from deployment/topology.bindings.codefly.yaml. DO NOT EDIT.
 name: auth-sidecar
 version: 0.0.0
 description: |
-  Single ingress + auth brain. Hosts two listeners:
-    - gRPC ext_authz (for Envoy in production)
-    - HTTP reverse proxy (for local dev via codefly run)
-  Every request to the module goes through this service.
+    Single ingress + auth brain. Hosts two listeners:
+      - gRPC ext_authz for Envoy
+      - HTTP reverse proxy for public and local traffic
 agent:
-  kind: codefly:service
-  name: go-grpc
-  version: 0.0.146
-  publisher: codefly.dev
+    kind: codefly:service
+    name: go-grpc
+    version: 0.1.11
+    publisher: codefly.dev
 service-dependencies:
-  - name: accounts
-  - name: frontend
+    - name: accounts
+      endpoints:
+        - name: connect
+        - name: grpc
+        - name: rest
+    - name: cache
+      endpoints:
+        - name: write
+    - name: frontend
+      endpoints:
+        - name: http
+workspace-configuration-dependencies:
+    - gateway
+    - internal-auth
+    - security
 endpoints:
-  - name: grpc
-    visibility: module
-    api: grpc
-  - name: http
-    visibility: public
+    - name: grpc
+      visibility: module
+    - name: http
+      visibility: public
 spec:
-  hot-reload: true
-  # Auth-sidecar is itself the HTTP ingress; it doesn't need grpc-gateway
-  # to expose a REST facade of its internal proto.
-  rest-endpoint: false
+    hot-reload: true
+    rest-endpoint: false

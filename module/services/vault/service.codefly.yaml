@@ -1,13 +1,13 @@
+# Code generated from deployment/topology.bindings.codefly.yaml. DO NOT EDIT.
 name: vault
 version: 0.0.0
 agent:
     kind: codefly:service
     name: vault
-    version: 0.0.7
+    version: 0.0.15
     publisher: codefly.dev
 endpoints:
     - name: http
-      api: http
       visibility: module
 spec:
     transit-key: api-keys

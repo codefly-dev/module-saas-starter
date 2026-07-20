@@ -2,7 +2,10 @@ package infra
 
 import (
 	"context"
+	"encoding/base32"
 	"errors"
+	"fmt"
+	"strings"
 	"time"
 
 	"github.com/jackc/pgx/v5"
@@ -13,14 +16,80 @@ import (
 // Compile-time check that PostgresStore implements MFAStore.
 var _ business.MFAStore = (*PostgresStore)(nil)
 
+// MigrateLegacyMFASecrets upgrades pre-envelope base32 TOTP seeds before the
+// server begins accepting traffic. Reads are collected under the audited
+// system scope, Vault calls happen outside database transactions, and each
+// compare-and-swap update is user-scoped and restart-safe.
+func (s *PostgresStore) MigrateLegacyMFASecrets(ctx context.Context, cipher business.SecretCipher) (int, error) {
+	if cipher == nil {
+		return 0, errors.New("MFA secret cipher is required")
+	}
+	type legacySecret struct {
+		id, userID, plaintext string
+	}
+	var legacy []legacySecret
+	if err := s.WithControlPlane(ctx, func(ctx context.Context) error {
+		rows, err := s.getQueryExecutor(ctx).Query(ctx, `
+			SELECT id, user_id, secret_encrypted
+			FROM mfa_devices
+			WHERE device_type = 'totp'
+			  AND secret_encrypted NOT LIKE 'cfs1:vault-transit:%'`)
+		if err != nil {
+			return err
+		}
+		defer rows.Close()
+		for rows.Next() {
+			var item legacySecret
+			if err := rows.Scan(&item.id, &item.userID, &item.plaintext); err != nil {
+				return err
+			}
+			legacy = append(legacy, item)
+		}
+		return rows.Err()
+	}); err != nil {
+		return 0, err
+	}
+
+	migrated := 0
+	for _, item := range legacy {
+		if _, err := base32.StdEncoding.WithPadding(base32.NoPadding).DecodeString(strings.ToUpper(item.plaintext)); err != nil {
+			return migrated, fmt.Errorf("legacy MFA secret %s is not valid base32: %w", item.id, err)
+		}
+		envelope, err := cipher.EncryptSecret(ctx, "mfa-totp", item.plaintext)
+		if err != nil {
+			return migrated, fmt.Errorf("encrypt legacy MFA secret %s: %w", item.id, err)
+		}
+		if err := s.WithUserTx(ctx, item.userID, func(ctx context.Context) error {
+			tag, err := s.getQueryExecutor(ctx).Exec(ctx, `
+				UPDATE mfa_devices
+				SET secret_encrypted = $2
+				WHERE id = $1 AND secret_encrypted = $3`, item.id, envelope, item.plaintext)
+			if err != nil {
+				return err
+			}
+			if tag.RowsAffected() == 1 {
+				migrated++
+			}
+			return nil
+		}); err != nil {
+			return migrated, err
+		}
+	}
+	return migrated, nil
+}
+
 func (s *PostgresStore) CreateMFADevice(ctx context.Context, device *business.MFADevice) error {
 	q := s.getQueryExecutor(ctx)
+	var secret any
+	if device.DeviceType == "totp" {
+		secret = device.SecretEncrypted
+	}
 
 	_, err := q.Exec(ctx, `
 		INSERT INTO mfa_devices (id, user_id, device_type, name, secret_encrypted, verified_at, last_used_at)
 		VALUES ($1, $2, $3, $4, $5, $6, $7)`,
 		device.ID, device.UserID, device.DeviceType, device.Name,
-		device.SecretEncrypted, device.VerifiedAt, device.LastUsedAt)
+		secret, device.VerifiedAt, device.LastUsedAt)
 	return err
 }
 
@@ -32,10 +101,11 @@ func (s *PostgresStore) GetMFADevice(ctx context.Context, id string) (*business.
 		FROM mfa_devices WHERE id = $1`, id)
 
 	var device business.MFADevice
+	var secretEncrypted *string
 	var verifiedAt, lastUsedAt *time.Time
 
 	err := row.Scan(&device.ID, &device.UserID, &device.DeviceType, &device.Name,
-		&device.SecretEncrypted, &verifiedAt, &lastUsedAt, &device.CreatedAt)
+		&secretEncrypted, &verifiedAt, &lastUsedAt, &device.CreatedAt)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return nil, business.NewStoreError(errors.New("MFA device not found"), business.ErrTypeNotFound)
@@ -45,6 +115,9 @@ func (s *PostgresStore) GetMFADevice(ctx context.Context, id string) (*business.
 
 	device.VerifiedAt = verifiedAt
 	device.LastUsedAt = lastUsedAt
+	if secretEncrypted != nil {
+		device.SecretEncrypted = *secretEncrypted
+	}
 	return &device, nil
 }
 
@@ -76,15 +149,19 @@ func (s *PostgresStore) ListMFADevices(ctx context.Context, userID string) ([]*b
 	var devices []*business.MFADevice
 	for rows.Next() {
 		var device business.MFADevice
+		var secretEncrypted *string
 		var verifiedAt, lastUsedAt *time.Time
 
 		if err := rows.Scan(&device.ID, &device.UserID, &device.DeviceType, &device.Name,
-			&device.SecretEncrypted, &verifiedAt, &lastUsedAt, &device.CreatedAt); err != nil {
+			&secretEncrypted, &verifiedAt, &lastUsedAt, &device.CreatedAt); err != nil {
 			return nil, err
 		}
 
 		device.VerifiedAt = verifiedAt
 		device.LastUsedAt = lastUsedAt
+		if secretEncrypted != nil {
+			device.SecretEncrypted = *secretEncrypted
+		}
 		devices = append(devices, &device)
 	}
 
@@ -106,12 +183,16 @@ func (s *PostgresStore) DeleteMFADevice(ctx context.Context, id string) error {
 
 func (s *PostgresStore) UpdateMFADevice(ctx context.Context, device *business.MFADevice) error {
 	q := s.getQueryExecutor(ctx)
+	var secret any
+	if device.DeviceType == "totp" {
+		secret = device.SecretEncrypted
+	}
 
 	_, err := q.Exec(ctx, `
 		UPDATE mfa_devices
 		SET name = $2, secret_encrypted = $3, verified_at = $4, last_used_at = $5
 		WHERE id = $1`,
-		device.ID, device.Name, device.SecretEncrypted, device.VerifiedAt, device.LastUsedAt)
+		device.ID, device.Name, secret, device.VerifiedAt, device.LastUsedAt)
 	return err
 }
 

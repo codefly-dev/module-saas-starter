@@ -8,32 +8,33 @@
  */
 import "server-only";
 
-import { readFileSync, existsSync } from "fs";
-import { resolve } from "path";
+import { getCurrentFixture } from "codefly";
+import { existsSync, readFileSync } from "fs";
 import yaml from "js-yaml";
-import { FixtureFileSchema, type FixtureFile } from "./types";
+import { resolve } from "path";
+import { type FixtureFile, FixtureFileSchema } from "./types";
 
 const FIXTURES_DIR =
-  process.env.FIXTURES_DIR || resolve(process.cwd(), "../../../fixtures");
+	process.env.FIXTURES_DIR || resolve(process.cwd(), "../../../fixtures");
 
 // Only alphanumeric, hyphens, underscores — prevents path traversal.
 const SAFE_NAME = /^[a-zA-Z0-9_-]+$/;
 
 export function loadFixture(name: string): FixtureFile | null {
-  if (!SAFE_NAME.test(name)) return null;
-  const path = resolve(FIXTURES_DIR, `${name}.yaml`);
-  if (!existsSync(path)) return null;
-  const raw = readFileSync(path, "utf-8");
-  const parsed = yaml.load(raw);
-  return FixtureFileSchema.parse(parsed);
+	if (!SAFE_NAME.test(name)) return null;
+	const path = resolve(FIXTURES_DIR, `${name}.yaml`);
+	if (!existsSync(path)) return null;
+	const raw = readFileSync(path, "utf-8");
+	const parsed = yaml.load(raw);
+	return FixtureFileSchema.parse(parsed);
 }
 
 export function activeFixtureName(): string | null {
-  return process.env.CODEFLY__FIXTURE || null;
+	return getCurrentFixture() || null;
 }
 
 export function loadActiveFixture(): FixtureFile | null {
-  const name = activeFixtureName();
-  if (!name) return null;
-  return loadFixture(name);
+	const name = activeFixtureName();
+	if (!name) return null;
+	return loadFixture(name);
 }

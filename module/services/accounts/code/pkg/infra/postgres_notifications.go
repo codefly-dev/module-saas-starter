@@ -103,7 +103,7 @@ func (s *PostgresStore) DeleteNotification(ctx context.Context, id string) error
 }
 
 // GetNotificationUserID resolves notification.id → user_id. Called
-// under WithBypass by Service.MarkRead / DeleteNotification before
+// under WithControlPlane by Service.MarkRead / DeleteNotification before
 // entering the owner's WithUserTx for the actual mutation. Returns
 // ("", nil) on miss; caller decides whether that's a 404 or an
 // authz failure.

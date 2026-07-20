@@ -9,10 +9,11 @@ import (
 	"google.golang.org/protobuf/types/known/timestamppb"
 
 	"accounts/pkg/auth"
-	"accounts/pkg/gen"
+	gen "accounts/pkg/gen/saas/accounts/v1"
 )
 
-// Platform role hierarchy for authorization checks (defense-in-depth, OPA is primary).
+// Platform role hierarchy for handler authorization checks. Transport admission
+// comes from the shared RPC policy; resource-sensitive role checks stay here.
 var platformRoleLevel = map[string]int{
 	"super_admin": 3,
 	"billing":     2,
@@ -65,9 +66,6 @@ func (s *Service) SuspendUser(ctx context.Context, actorID string, req *gen.Susp
 		return w.Wrapf(err, "cannot suspend user")
 	}
 
-	// Revoke all sessions for the suspended user
-	_ = s.store.RevokeAllUserSessions(ctx, req.UserId, "user_suspended")
-
 	s.emit(ctx, actorID, "user", "user.suspended", "user", req.UserId, "")
 	s.notifySlack(ctx, fmt.Sprintf("Security: user %s suspended by %s (reason: %s)", req.UserId, actorID, req.Reason))
 	return nil
@@ -105,12 +103,12 @@ func (s *Service) ImpersonateUser(ctx context.Context, actorID string, req *gen.
 
 	// Cross-tenant lookup: a platform admin impersonating any user
 	// needs to see all their orgs + role regardless of caller's
-	// tenant. WithBypass elevates for the read; the impersonation
+	// tenant. WithControlPlane elevates for the read; the impersonation
 	// session that gets minted carries the resolved orgID so
 	// downstream tenant-scoped ops run correctly under the target's
 	// org.
 	var orgs []*gen.Organization
-	if err := s.store.WithBypass(ctx, func(ctx context.Context) error {
+	if err := s.store.WithControlPlane(ctx, func(ctx context.Context) error {
 		os, err := s.store.ListOrganizationsForUser(ctx, req.UserId)
 		orgs = os
 		return err
@@ -123,7 +121,7 @@ func (s *Service) ImpersonateUser(ctx context.Context, actorID string, req *gen.
 	if len(orgs) > 0 {
 		orgID = orgs[0].Id
 		var members []*gen.OrgMembership
-		if err := s.store.WithBypass(ctx, func(ctx context.Context) error {
+		if err := s.store.WithControlPlane(ctx, func(ctx context.Context) error {
 			ms, err := s.store.ListOrgMembers(ctx, orgID)
 			members = ms
 			return err
@@ -199,19 +197,24 @@ func (s *Service) ListActiveSessions(ctx context.Context, actorID string, req *g
 	var infos []*gen.SessionInfo
 	for _, sess := range sessions {
 		infos = append(infos, &gen.SessionInfo{
-			Id:           sess.ID,
-			UserId:       sess.UserID,
-			IpAddress:    sess.IPAddress,
-			CreatedAt:    timestamppb.New(sess.CreatedAt),
-			LastActiveAt: timestamppb.New(sess.LastActiveAt),
+			// family_id is the stable per-device session identifier. Row ids
+			// rotate with refresh tokens and must not leak into management UX.
+			Id:            sess.FamilyID,
+			UserId:        sess.UserID,
+			IpAddress:     sess.IPAddress,
+			DeviceInfo:    sess.DeviceInfo,
+			CreatedAt:     timestamppb.New(sess.CreatedAt),
+			LastActiveAt:  timestamppb.New(sess.LastActiveAt),
+			IdleExpiresAt: timestamppb.New(sess.IdleExpiresAt),
+			ExpiresAt:     timestamppb.New(sess.ExpiresAt),
 		})
 	}
 
 	return &gen.ListActiveSessionsResponse{Sessions: infos}, nil
 }
 
-// RevokeSession force-logs-out one active session by id (support+ only). A platform
-// admin acts across all users, so the write rides WithBypass (RLS would otherwise scope
+// RevokeSession force-logs-out one active device family by id (support+ only). A platform
+// admin acts across all users, so the write rides WithControlPlane (RLS would otherwise scope
 // the sessions table to the caller).
 func (s *Service) RevokeSession(ctx context.Context, actorID string, req *gen.RevokeSessionRequest) error {
 	w := wool.Get(ctx).In("RevokeSession")
@@ -224,7 +227,7 @@ func (s *Service) RevokeSession(ctx context.Context, actorID string, req *gen.Re
 	if reason == "" {
 		reason = "revoked_by_admin"
 	}
-	if err := s.store.WithBypass(ctx, func(ctx context.Context) error {
+	if err := s.store.WithControlPlane(ctx, func(ctx context.Context) error {
 		return s.store.RevokeSession(ctx, req.SessionId, reason)
 	}); err != nil {
 		return w.Wrapf(err, "cannot revoke session")

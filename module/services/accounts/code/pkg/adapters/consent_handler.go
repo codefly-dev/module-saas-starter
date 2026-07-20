@@ -7,7 +7,7 @@ import (
 	"google.golang.org/protobuf/types/known/timestamppb"
 
 	"accounts/pkg/business"
-	"accounts/pkg/gen"
+	gen "accounts/pkg/gen/saas/accounts/v1"
 )
 
 // consentConnectHandler exposes per-user TOS / privacy acceptance

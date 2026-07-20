@@ -3,8 +3,8 @@ package infra
 import (
 	"context"
 
-	codefly "github.com/codefly-dev/sdk-go"
 	"github.com/codefly-dev/core/wool"
+	codefly "github.com/codefly-dev/sdk-go"
 
 	"accounts/pkg/cache"
 )

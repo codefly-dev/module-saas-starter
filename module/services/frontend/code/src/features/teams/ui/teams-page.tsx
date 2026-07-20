@@ -1,172 +1,201 @@
 "use client";
 
-import { useState, useCallback } from "react";
-import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { Plus } from "lucide-react";
-import { toast } from "sonner";
 import { timestampDate } from "@bufbuild/protobuf/wkt";
-import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-  Button,
-} from "@/shared/ui";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { Plus } from "lucide-react";
+import { useCallback, useState } from "react";
+import { toast } from "sonner";
 import { OrgSelector } from "@/components/org-selector";
-import { teamQueries } from "../service/queries";
-import { teamMutations } from "../service/mutations";
+import { useAuth } from "@/lib/auth";
+import {
+	AlertDialog,
+	AlertDialogAction,
+	AlertDialogCancel,
+	AlertDialogContent,
+	AlertDialogDescription,
+	AlertDialogFooter,
+	AlertDialogHeader,
+	AlertDialogTitle,
+	Button,
+} from "@/shared/ui";
 import type { Team } from "../model/types";
-import { TeamsTable } from "./teams-table";
+import { teamMutations } from "../service/mutations";
+import { teamQueries } from "../service/queries";
 import { TeamForm } from "./team-form";
 import { TeamMembersPanel } from "./team-members-panel";
+import { TeamsTable } from "./teams-table";
 
 export function TeamsPage() {
-  const queryClient = useQueryClient();
-  const [orgId, setOrgId] = useState("");
-  const [showCreate, setShowCreate] = useState(false);
-  const [selectedTeam, setSelectedTeam] = useState<Team | null>(null);
-  const [renameTarget, setRenameTarget] = useState<Team | null>(null);
-  const [deleteTarget, setDeleteTarget] = useState<Team | null>(null);
+	const { organizationId: orgId = "" } = useAuth();
+	return <TeamsPageForOrganization key={orgId} orgId={orgId} />;
+}
 
-  // --- queries ---
-  const { data: raw, isLoading } = useQuery({
-    ...teamQueries.list(orgId),
-    enabled: !!orgId,
-  });
-  const teams: Team[] = (raw?.teams ?? []).map((t) => ({
-    id: t.id,
-    orgId: t.orgId,
-    name: t.name,
-    description: t.description,
-    createdAt: t.createdAt ? timestampDate(t.createdAt).toISOString() : undefined,
-  }));
+function TeamsPageForOrganization({ orgId }: { orgId: string }) {
+	const queryClient = useQueryClient();
+	const [showCreate, setShowCreate] = useState(false);
+	const [selectedTeam, setSelectedTeam] = useState<Team | null>(null);
+	const [renameTarget, setRenameTarget] = useState<Team | null>(null);
+	const [deleteTarget, setDeleteTarget] = useState<Team | null>(null);
 
-  // --- mutations ---
-  const createMutation = useMutation({
-    mutationFn: ({ name, description }: { name: string; description?: string }) =>
-      teamMutations.create(orgId, name, description),
-    onSuccess: () => {
-      toast.success("Team created");
-      queryClient.invalidateQueries({ queryKey: ["teams", orgId] });
-      setShowCreate(false);
-    },
-    onError: () => toast.error("Failed to create team"),
-  });
+	// --- queries ---
+	const { data: raw, isLoading } = useQuery({
+		...teamQueries.list(orgId),
+		enabled: !!orgId,
+	});
+	const teams: Team[] = (raw?.teams ?? []).map((t) => ({
+		id: t.id,
+		orgId: t.orgId,
+		name: t.name,
+		description: t.description,
+		createdAt: t.createdAt
+			? timestampDate(t.createdAt).toISOString()
+			: undefined,
+	}));
 
-  const updateMutation = useMutation({
-    mutationFn: ({ teamId, name, description }: { teamId: string; name: string; description?: string }) =>
-      teamMutations.update(teamId, name, description),
-    onSuccess: () => {
-      toast.success("Team updated");
-      queryClient.invalidateQueries({ queryKey: ["teams", orgId] });
-      setRenameTarget(null);
-    },
-    onError: () => toast.error("Failed to update team"),
-  });
+	// --- mutations ---
+	const createMutation = useMutation({
+		mutationFn: ({
+			name,
+			description,
+		}: {
+			name: string;
+			description?: string;
+		}) => teamMutations.create(orgId, name, description),
+		onSuccess: () => {
+			toast.success("Team created");
+			queryClient.invalidateQueries({ queryKey: ["teams", orgId] });
+			setShowCreate(false);
+		},
+		onError: () => toast.error("Failed to create team"),
+	});
 
-  const deleteMutation = useMutation({
-    mutationFn: (teamId: string) => teamMutations.remove(teamId),
-    onSuccess: () => {
-      toast.success("Team deleted");
-      queryClient.invalidateQueries({ queryKey: ["teams", orgId] });
-      setDeleteTarget(null);
-    },
-    onError: () => toast.error("Failed to delete team"),
-  });
+	const updateMutation = useMutation({
+		mutationFn: ({
+			teamId,
+			name,
+			description,
+		}: {
+			teamId: string;
+			name: string;
+			description?: string;
+		}) => teamMutations.update(teamId, name, description),
+		onSuccess: () => {
+			toast.success("Team updated");
+			queryClient.invalidateQueries({ queryKey: ["teams", orgId] });
+			setRenameTarget(null);
+		},
+		onError: () => toast.error("Failed to update team"),
+	});
 
-  const handleViewMembers = useCallback((team: Team) => {
-    setSelectedTeam(team);
-  }, []);
-  const handleRename = useCallback((team: Team) => setRenameTarget(team), []);
-  const handleDelete = useCallback((team: Team) => setDeleteTarget(team), []);
+	const deleteMutation = useMutation({
+		mutationFn: (teamId: string) => teamMutations.remove(teamId),
+		onSuccess: () => {
+			toast.success("Team deleted");
+			queryClient.invalidateQueries({ queryKey: ["teams", orgId] });
+			setDeleteTarget(null);
+		},
+		onError: () => toast.error("Failed to delete team"),
+	});
 
-  return (
-    <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <h2 className="text-2xl font-bold tracking-tight">Teams</h2>
-        <div className="flex items-center gap-3">
-          <OrgSelector value={orgId} onChange={setOrgId} />
-          {orgId && (
-            <Button onClick={() => setShowCreate(true)}>
-              <Plus className="mr-2 h-4 w-4" />
-              Create Team
-            </Button>
-          )}
-        </div>
-      </div>
+	const handleViewMembers = useCallback((team: Team) => {
+		setSelectedTeam(team);
+	}, []);
+	const handleRename = useCallback((team: Team) => setRenameTarget(team), []);
+	const handleDelete = useCallback((team: Team) => setDeleteTarget(team), []);
 
-      {!orgId ? (
-        <div className="flex h-48 items-center justify-center rounded-md border border-dashed">
-          <p className="text-muted-foreground">
-            Select an organization to view teams.
-          </p>
-        </div>
-      ) : (
-        <TeamsTable
-          data={teams}
-          isLoading={isLoading}
-          onViewMembers={handleViewMembers}
-          onRename={handleRename}
-          onDelete={handleDelete}
-        />
-      )}
+	return (
+		<div className="space-y-6">
+			<div className="flex items-center justify-between">
+				<h2 className="text-2xl font-bold tracking-tight">Teams</h2>
+				<div className="flex items-center gap-3">
+					<OrgSelector />
+					{orgId && (
+						<Button onClick={() => setShowCreate(true)}>
+							<Plus className="mr-2 h-4 w-4" />
+							Create Team
+						</Button>
+					)}
+				</div>
+			</div>
 
-      {selectedTeam && (
-        <TeamMembersPanel
-          teamId={selectedTeam.id}
-          teamName={selectedTeam.name}
-          onClose={() => setSelectedTeam(null)}
-        />
-      )}
+			{!orgId ? (
+				<div className="flex h-48 items-center justify-center rounded-md border border-dashed">
+					<p className="text-muted-foreground">
+						Select an organization to view teams.
+					</p>
+				</div>
+			) : (
+				<TeamsTable
+					data={teams}
+					isLoading={isLoading}
+					onViewMembers={handleViewMembers}
+					onRename={handleRename}
+					onDelete={handleDelete}
+				/>
+			)}
 
-      <TeamForm
-        open={showCreate}
-        onSubmit={(vals) => createMutation.mutate(vals)}
-        onCancel={() => setShowCreate(false)}
-        isPending={createMutation.isPending}
-      />
+			{selectedTeam && (
+				<TeamMembersPanel
+					teamId={selectedTeam.id}
+					teamName={selectedTeam.name}
+					onClose={() => setSelectedTeam(null)}
+				/>
+			)}
 
-      {renameTarget && (
-        <TeamForm
-          key={renameTarget.id}
-          open
-          mode="edit"
-          initial={{ name: renameTarget.name, description: renameTarget.description }}
-          onSubmit={(vals) =>
-            updateMutation.mutate({ teamId: renameTarget.id, name: vals.name, description: vals.description })
-          }
-          onCancel={() => setRenameTarget(null)}
-          isPending={updateMutation.isPending}
-        />
-      )}
+			<TeamForm
+				open={showCreate}
+				onSubmit={(vals) => createMutation.mutate(vals)}
+				onCancel={() => setShowCreate(false)}
+				isPending={createMutation.isPending}
+			/>
 
-      {deleteTarget && (
-        <AlertDialog open onOpenChange={(o) => !o && setDeleteTarget(null)}>
-          <AlertDialogContent>
-            <AlertDialogHeader>
-              <AlertDialogTitle>Delete team?</AlertDialogTitle>
-              <AlertDialogDescription>
-                This permanently deletes <span className="font-medium">{deleteTarget.name}</span> and removes all
-                its memberships. This can&apos;t be undone.
-              </AlertDialogDescription>
-            </AlertDialogHeader>
-            <AlertDialogFooter>
-              <AlertDialogCancel onClick={() => setDeleteTarget(null)}>Cancel</AlertDialogCancel>
-              <AlertDialogAction
-                onClick={() => deleteMutation.mutate(deleteTarget.id)}
-                disabled={deleteMutation.isPending}
-                className="bg-destructive text-white hover:bg-destructive/90"
-              >
-                {deleteMutation.isPending ? "Deleting..." : "Delete team"}
-              </AlertDialogAction>
-            </AlertDialogFooter>
-          </AlertDialogContent>
-        </AlertDialog>
-      )}
-    </div>
-  );
+			{renameTarget && (
+				<TeamForm
+					key={renameTarget.id}
+					open
+					mode="edit"
+					initial={{
+						name: renameTarget.name,
+						description: renameTarget.description,
+					}}
+					onSubmit={(vals) =>
+						updateMutation.mutate({
+							teamId: renameTarget.id,
+							name: vals.name,
+							description: vals.description,
+						})
+					}
+					onCancel={() => setRenameTarget(null)}
+					isPending={updateMutation.isPending}
+				/>
+			)}
+
+			{deleteTarget && (
+				<AlertDialog open onOpenChange={(o) => !o && setDeleteTarget(null)}>
+					<AlertDialogContent>
+						<AlertDialogHeader>
+							<AlertDialogTitle>Delete team?</AlertDialogTitle>
+							<AlertDialogDescription>
+								This permanently deletes{" "}
+								<span className="font-medium">{deleteTarget.name}</span> and
+								removes all its memberships. This can&apos;t be undone.
+							</AlertDialogDescription>
+						</AlertDialogHeader>
+						<AlertDialogFooter>
+							<AlertDialogCancel onClick={() => setDeleteTarget(null)}>
+								Cancel
+							</AlertDialogCancel>
+							<AlertDialogAction
+								onClick={() => deleteMutation.mutate(deleteTarget.id)}
+								disabled={deleteMutation.isPending}
+								className="bg-destructive text-white hover:bg-destructive/90"
+							>
+								{deleteMutation.isPending ? "Deleting..." : "Delete team"}
+							</AlertDialogAction>
+						</AlertDialogFooter>
+					</AlertDialogContent>
+				</AlertDialog>
+			)}
+		</div>
+	);
 }

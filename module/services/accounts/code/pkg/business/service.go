@@ -3,7 +3,8 @@ package business
 import (
 	"accounts/pkg/auth"
 	"accounts/pkg/email"
-	"accounts/pkg/gen"
+	gen "accounts/pkg/gen/saas/accounts/v1"
+	"accounts/pkg/jobs"
 	"context"
 	"strings"
 
@@ -11,24 +12,30 @@ import (
 )
 
 type Service struct {
-	store        Store
-	hasher       KeyHasher
-	validator    auth.TokenValidator // optional: validates provider tokens at login
-	exchanger    CodeExchanger       // optional: exchanges OAuth codes for provider tokens
-	resolver     auth.IdentityResolver
-	minter       auth.JWTMinter
-	mail         email.Sender          // optional: transactional email for invites et al
-	templateMail *email.TemplateSender // optional: template-backed email sender
-	billing      BillingClient         // optional: Stripe client for checkout/portal
-	appBaseURL   string                // public URL of the frontend, used in email bodies
-	fromAddress  string                // "From" header for outgoing email
-	audit        AuditEmitter
-	entitlements EntitlementChecker
-	features     FeatureChecker
-	membership   MembershipInvalidator
+	store         Store
+	hasher        KeyHasher
+	validator     auth.TokenValidator // production: validates provider tokens after OAuth code exchange
+	exchanger     CodeExchanger       // production: exchanges OAuth codes for provider tokens
+	devValidator  auth.TokenValidator // development only: allowlists explicit fixture identities
+	resolver      auth.IdentityResolver
+	minter        auth.JWTMinter
+	emailOutbox   *email.Outbox    // optional durable email producer; transport is worker-only
+	billing       BillingClient    // optional: Stripe client for checkout/portal
+	billingURLs   BillingRedirects // server-owned Stripe return destinations
+	appBaseURL    string           // public URL of the frontend, used in email bodies
+	audit         AuditEmitter
+	entitlements  EntitlementChecker
+	features      FeatureChecker
+	membership    MembershipInvalidator
 	slack         *SlackNotifier // optional: sends critical notifications to Slack
 	oauthState    *auth.OAuthStateSigner
-	webhookSender *WebhookSender // synchronous send path for Test + Replay
+	oauthPolicy   *auth.OAuthRequestPolicy
+	webhookJobs   jobs.Producer // request-scoped, transactional outbound producer
+	mfaCipher     SecretCipher  // required for TOTP enrollment and verification
+	webhookCipher SecretCipher  // required for outbound-webhook signing keys
+	webhookPolicy *WebhookEndpointPolicy
+	webAuthn      WebAuthnEngine  // required for passkey registration and assertion
+	jobOperations jobs.Operations // isolated, payload-free platform operations
 }
 
 // CodeExchanger abstracts the OAuth 2.0 code-for-token exchange so the
@@ -60,6 +67,34 @@ func (s *Service) SetHasher(h KeyHasher) {
 	s.hasher = h
 }
 
+// SetJobOperations wires the product-neutral administration boundary backed by
+// the isolated app_job_worker pool. It is intentionally separate from Store so
+// tenant request traffic cannot inherit cross-tenant job access.
+func (s *Service) SetJobOperations(operations jobs.Operations) {
+	s.jobOperations = operations
+}
+
+// SetWebhookJobProducer wires the request-scoped producer used by Test and
+// Replay. Its implementation must require the caller's organization
+// transaction so delivery history and generated work commit atomically.
+func (s *Service) SetWebhookJobProducer(producer jobs.Producer) {
+	s.webhookJobs = producer
+}
+
+// SetMFASecretCipher wires fail-closed encryption for TOTP seeds. Production
+// uses Vault Transit; tests may provide an explicit in-memory implementation.
+func (s *Service) SetMFASecretCipher(cipher SecretCipher) {
+	s.mfaCipher = cipher
+}
+
+// SetWebhookSecurity wires the fail-closed signing-key cipher and the shared
+// registration/connect-time endpoint policy. Production uses Vault Transit and
+// the public-Internet-only dialer; tests can provide deterministic substitutes.
+func (s *Service) SetWebhookSecurity(cipher SecretCipher, policy *WebhookEndpointPolicy) {
+	s.webhookCipher = cipher
+	s.webhookPolicy = policy.ensureDefaults()
+}
+
 // SetIdentityResolver wires the JIT provisioning + bootstrap layer.
 // Required for /auth/login and /auth/signup flows.
 func (s *Service) SetIdentityResolver(r auth.IdentityResolver) {
@@ -72,32 +107,17 @@ func (s *Service) SetJWTMinter(m auth.JWTMinter) {
 	s.minter = m
 }
 
-// SetOAuthStateSigner wires the server-side state signer used by
-// BeginOAuth and verified in Authenticate. Optional: when nil, the
-// FE-only state validation (sessionStorage) remains the sole defense.
-// Production deployments SHOULD wire this with a stable seed (the
-// JWT signing key works) so state survives api restarts and
-// multi-instance deployments.
+// SetOAuthStateSigner wires the server-side state signer used by BeginOAuth
+// and verified in Authenticate. OAuth fails closed when this is nil.
 func (s *Service) SetOAuthStateSigner(signer *auth.OAuthStateSigner) {
 	s.oauthState = signer
 }
 
-// SetWebhookSender wires the synchronous send path used by the
-// TestWebhook + ReplayDelivery RPCs. Defaults lazily to a sender
-// constructed from s.store on first use, so tests don't need to wire
-// it explicitly; production calls this so the sender shares the
-// configured HTTP client + timeout.
-func (s *Service) SetWebhookSender(sender *WebhookSender) {
-	s.webhookSender = sender
-}
-
-// webhookSenderOrDefault returns the wired sender or lazily creates
-// one. Centralizes the fallback so callers don't repeat the pattern.
-func (s *Service) webhookSenderOrDefault() *WebhookSender {
-	if s.webhookSender == nil {
-		s.webhookSender = NewWebhookSender(s.store)
-	}
-	return s.webhookSender
+// SetOAuthRequestPolicy restricts OAuth initiation and callback exchange to
+// the configured provider and exact redirect URI allowlist. OAuth fails closed
+// when this is nil.
+func (s *Service) SetOAuthRequestPolicy(policy *auth.OAuthRequestPolicy) {
+	s.oauthPolicy = policy
 }
 
 // JWTMinter returns the configured minter so adapters (e.g. the
@@ -108,13 +128,20 @@ func (s *Service) JWTMinter() auth.JWTMinter {
 	return s.minter
 }
 
-// SetTokenValidator wires a provider-specific TokenValidator. When set,
-// incoming Authenticate requests carrying an OAuth `code` in their
-// profile map get routed through Exchanger → Validator → Resolver.
-// Optional: if unset, Authenticate trusts the request's provider+sub
-// directly (dev path).
+// SetTokenValidator wires a production provider TokenValidator. Authenticate
+// uses it only after exchanging an OAuth authorization code. It is deliberately
+// separate from the development fixture validator: a missing production
+// validator never enables caller-supplied identities as a fallback.
 func (s *Service) SetTokenValidator(v auth.TokenValidator) {
 	s.validator = v
+}
+
+// SetDevelopmentTokenValidator explicitly enables fixture authentication.
+// The validator must resolve an opaque fixture token to allowlisted claims;
+// Authenticate never trusts provider identity fields supplied by the caller.
+// Production wiring must leave this nil.
+func (s *Service) SetDevelopmentTokenValidator(v auth.TokenValidator) {
+	s.devValidator = v
 }
 
 // SetCodeExchanger wires the OAuth code-for-token exchange used in
@@ -124,26 +151,12 @@ func (s *Service) SetCodeExchanger(e CodeExchanger) {
 	s.exchanger = e
 }
 
-// SetEmailSender wires the transactional email provider used for
-// invitations, password reset links, etc. Optional: if unset, email
-// sends are skipped and logged at warn level — the underlying
-// invitation/session row is still created.
-func (s *Service) SetEmailSender(sender email.Sender, fromAddress, appBaseURL string) {
-	s.mail = sender
-	s.fromAddress = fromAddress
+// SetEmailOutbox wires the transactional producer used by invitations,
+// authentication, and other request paths. The provider sender is deliberately
+// absent from Service: only the generic email worker may perform delivery.
+func (s *Service) SetEmailOutbox(outbox *email.Outbox, appBaseURL string) {
+	s.emailOutbox = outbox
 	s.appBaseURL = appBaseURL
-}
-
-// SetTemplateSender wires the template-backed email sender. When set,
-// business methods prefer SendTemplate over raw Send for emails that
-// match a seeded template (invitation, billing notifications, etc.).
-func (s *Service) SetTemplateSender(ts *email.TemplateSender) {
-	s.templateMail = ts
-}
-
-// TemplateSender returns the template email sender, or nil if not wired.
-func (s *Service) TemplateSender() *email.TemplateSender {
-	return s.templateMail
 }
 
 func (s *Service) SetAuditEmitter(a AuditEmitter) {
@@ -207,13 +220,6 @@ func (s *Service) Store() Store {
 func (s *Service) RegisterUser(ctx context.Context, input *gen.RegisterUserRequest) (*gen.RegisterUserResponse, error) {
 	w := wool.Get(ctx).In("RegisterUser")
 
-	// Check if identity already exists
-	if u, err := s.store.GetUserByIdentity(ctx, input.Identity); err != nil {
-		return nil, w.Wrapf(err, "error checking existing user")
-	} else if u != nil {
-		return nil, w.NewError("user already exists with this identity")
-	}
-
 	userID := NewIDString()
 	identityID := NewIDString()
 
@@ -239,16 +245,16 @@ func (s *Service) RegisterUser(ctx context.Context, input *gen.RegisterUserReque
 	// Create a default personal organization
 	orgID := NewIDString()
 	org := &gen.Organization{
-		Id:      orgID,
-		Name:    "Personal",
+		Id:   orgID,
+		Name: "Personal",
 		// Use the tail of the uuid (random bits) not the head (v7 timestamp prefix)
 		// so two users created in the same millisecond get distinct slugs.
 		Slug:    "personal-" + userID[len(userID)-12:],
 		OwnerId: userID,
 	}
 	// Personal-org bootstrap: see CreateOrganization comment — at
-	// this moment the org doesn't exist; WithBypass is correct.
-	if err := s.store.WithBypass(ctx, func(ctx context.Context) error {
+	// this moment the org doesn't exist; WithControlPlane is correct.
+	if err := s.store.WithControlPlane(ctx, func(ctx context.Context) error {
 		return s.store.CreateOrganization(ctx, org)
 	}); err != nil {
 		return nil, w.Wrapf(err, "cannot create default organization")
@@ -259,7 +265,7 @@ func (s *Service) RegisterUser(ctx context.Context, input *gen.RegisterUserReque
 	// bypass (built-ins are global). The assignment row carries
 	// concrete orgID so it goes through WithOrgTx.
 	var roles []*gen.Role
-	if err := s.store.WithBypass(ctx, func(ctx context.Context) error {
+	if err := s.store.WithControlPlane(ctx, func(ctx context.Context) error {
 		rs, err := s.store.ListRoles(ctx, "")
 		roles = rs
 		return err
@@ -310,7 +316,7 @@ func (s *Service) CheckPermission(ctx context.Context, req *gen.CheckPermissionR
 	}
 	var err error
 	if req.OrgId == "" {
-		err = s.store.WithBypass(ctx, wrap)
+		err = s.store.WithControlPlane(ctx, wrap)
 	} else {
 		err = s.store.WithOrgTx(ctx, req.OrgId, wrap)
 	}
@@ -324,7 +330,7 @@ func (s *Service) CheckPermission(ctx context.Context, req *gen.CheckPermissionR
 //
 // Auth-flow read: at login we don't yet know the user's tenant. The
 // Store implementation (postgres_permissions.go:ResolveIdentity)
-// opens its own tx + SET LOCAL ROLE NONE + app.bypass='1' inline so
+// opens its own tx and assumes app_control_plane inline so
 // the JOINs against organization_members + role_assignments (both
 // RLS-protected) see all tenants.
 //
@@ -349,7 +355,7 @@ func (s *Service) ResolveIdentity(ctx context.Context, req *gen.ResolveIdentityR
 // CreateOrganization creates a new org with the requesting user as owner.
 //
 // Bootstrap path: at this moment the tenant doesn't exist yet, so
-// there's no org context to set. WithBypass (which keeps the
+// there's no org context to set. WithControlPlane (which keeps the
 // connection's session_user role) is correct here — the role-switch
 // in WithOrgTx would put us as app_tenant with no app.current_org_id,
 // and the WITH CHECK on organization_members would reject the insert.
@@ -362,7 +368,7 @@ func (s *Service) CreateOrganization(ctx context.Context, ownerID string, req *g
 		Slug:    req.Slug,
 		OwnerId: ownerID,
 	}
-	if err := s.store.WithBypass(ctx, func(ctx context.Context) error {
+	if err := s.store.WithControlPlane(ctx, func(ctx context.Context) error {
 		return s.store.CreateOrganization(ctx, org)
 	}); err != nil {
 		return nil, err
@@ -459,7 +465,7 @@ func (s *Service) CreateRole(ctx context.Context, actorID string, req *gen.Creat
 	wrap := func(ctx context.Context) error { return s.store.CreateRole(ctx, role) }
 	var err error
 	if req.OrgId == "" {
-		err = s.store.WithBypass(ctx, wrap)
+		err = s.store.WithControlPlane(ctx, wrap)
 	} else {
 		err = s.store.WithOrgTx(ctx, req.OrgId, wrap)
 	}
@@ -486,7 +492,7 @@ func (s *Service) AssignRole(ctx context.Context, req *gen.AssignRoleRequest) (*
 	wrap := func(ctx context.Context) error { return s.store.AssignRole(ctx, assignment) }
 	var err error
 	if req.OrgId == "" {
-		err = s.store.WithBypass(ctx, wrap)
+		err = s.store.WithControlPlane(ctx, wrap)
 	} else {
 		err = s.store.WithOrgTx(ctx, req.OrgId, wrap)
 	}

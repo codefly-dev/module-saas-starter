@@ -1,0 +1,108 @@
+syntax = "proto3";
+
+package saas.accounts.v1;
+
+import "buf/validate/validate.proto";
+import "google/api/annotations.proto";
+import "google/protobuf/timestamp.proto";
+import "saas/policy/v1/options.proto";
+
+// ============================================================================
+// Audit Log
+// ============================================================================
+
+message AuditEvent {
+  string id = 1;
+  string actor_id = 2;
+  string actor_type = 3;
+  string action = 4;
+  string resource = 5;
+  string resource_id = 6;
+  string org_id = 7;
+  map<string, string> metadata = 8;
+  string ip_address = 9;
+  google.protobuf.Timestamp created_at = 10;
+}
+
+message QueryAuditLogRequest {
+  string org_id = 1;
+  string actor_id = 2;
+  string action = 3;
+  string resource = 4;
+  string resource_id = 5;
+  google.protobuf.Timestamp from = 6;
+  google.protobuf.Timestamp to = 7;
+  int32 page_size = 8 [(buf.validate.field).int32 = {
+    gt: 0
+    lte: 100
+  }];
+  string page_token = 9;
+}
+
+message QueryAuditLogResponse {
+  repeated AuditEvent events = 1;
+  string next_page_token = 2;
+  int32 total_count = 3;
+}
+
+message ExportAuditLogRequest {
+  string org_id = 1;
+  string format = 2; // "csv" or "json"
+  string actor_id = 3;
+  string action = 4;
+}
+
+message ExportAuditLogResponse {
+  bytes data = 1;
+  string content_type = 2;
+  string filename = 3;
+}
+
+// AuditService — append-only audit event log
+service AuditService {
+  rpc QueryAuditLog(QueryAuditLogRequest) returns (QueryAuditLogResponse) {
+    option (saas.policy.v1.method_policy) = {
+      exposure: EXPOSURE_AUTHENTICATED
+      tenant: TENANT_REQUIREMENT_ORG_MEMBER
+      permissions: "audit:read"
+      scopes: "audit:read"
+      resource_bindings: {
+        request_field: "org_id"
+        target: RESOURCE_TARGET_ORGANIZATION
+        lookup: RESOURCE_LOOKUP_DIRECT_ID
+      }
+      mfa: MFA_REQUIREMENT_NONE
+      audit: {emission: AUDIT_EMISSION_NONE}
+      idempotency: IDEMPOTENCY_REQUIREMENT_FORBIDDEN
+      rate_limit: RATE_LIMIT_CLASS_STANDARD_READ
+      request_sensitivity: SENSITIVITY_CONFIDENTIAL
+      response_sensitivity: SENSITIVITY_CONFIDENTIAL
+      platform_role: PLATFORM_ROLE_REQUIREMENT_NONE
+    };
+    option (google.api.http) = {get: "/v1/audit-log"};
+  }
+  rpc ExportAuditLog(ExportAuditLogRequest) returns (ExportAuditLogResponse) {
+    option (saas.policy.v1.method_policy) = {
+      exposure: EXPOSURE_AUTHENTICATED
+      tenant: TENANT_REQUIREMENT_ORG_ADMIN
+      permissions: "audit:read"
+      scopes: "audit:read"
+      resource_bindings: {
+        request_field: "org_id"
+        target: RESOURCE_TARGET_ORGANIZATION
+        lookup: RESOURCE_LOOKUP_DIRECT_ID
+      }
+      mfa: MFA_REQUIREMENT_NONE
+      audit: {emission: AUDIT_EMISSION_NONE}
+      idempotency: IDEMPOTENCY_REQUIREMENT_FORBIDDEN
+      rate_limit: RATE_LIMIT_CLASS_STANDARD_READ
+      request_sensitivity: SENSITIVITY_CONFIDENTIAL
+      response_sensitivity: SENSITIVITY_CONFIDENTIAL
+      platform_role: PLATFORM_ROLE_REQUIREMENT_NONE
+    };
+    option (google.api.http) = {
+      post: "/v1/audit-log:export"
+      body: "*"
+    };
+  }
+}

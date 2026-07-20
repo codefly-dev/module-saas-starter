@@ -1,0 +1,309 @@
+version: v1
+owner:
+  module: saas-starter
+  service: frontend
+plugins:
+  - name: audit
+    source_path: src/plugins/audit.ts
+  - name: core-users
+    source_path: src/plugins/core-users.ts
+  - name: platform-admin
+    source_path: src/plugins/platform-admin.ts
+navigation:
+  - id: dashboard
+    plugin: core-users
+    label: Dashboard
+    path: /
+    icon: LayoutDashboard
+    access: authenticated
+    surfaces:
+      - sidebar
+    order: 10
+  - id: admin-users
+    plugin: core-users
+    label: Users
+    path: /admin/users
+    icon: Users
+    group: Users & Access
+    access: admin
+    permission: users:read
+    surfaces:
+      - command_palette
+      - plugin_registry
+      - sidebar
+    order: 100
+  - id: admin-organizations
+    plugin: core-users
+    label: Organizations
+    path: /admin/organizations
+    icon: Building2
+    group: Users & Access
+    access: admin
+    permission: orgs:read
+    surfaces:
+      - command_palette
+      - plugin_registry
+      - sidebar
+    order: 110
+  - id: admin-teams
+    plugin: core-users
+    label: Teams
+    path: /admin/teams
+    icon: UsersRound
+    group: Users & Access
+    access: admin
+    permission: teams:read
+    surfaces:
+      - command_palette
+      - plugin_registry
+      - sidebar
+    order: 120
+  - id: admin-roles
+    plugin: core-users
+    label: Roles
+    path: /admin/roles
+    icon: Shield
+    group: Users & Access
+    access: admin
+    permission: roles:read
+    surfaces:
+      - command_palette
+      - plugin_registry
+      - sidebar
+    order: 130
+  - id: admin-invitations
+    plugin: core-users
+    label: Invitations
+    path: /admin/invitations
+    icon: Mail
+    group: Users & Access
+    access: admin
+    permission: invitations:read
+    surfaces:
+      - command_palette
+      - plugin_registry
+      - sidebar
+    order: 140
+  - id: admin-api-keys
+    plugin: core-users
+    label: API Keys
+    path: /admin/api-keys
+    icon: Key
+    group: Users & Access
+    access: admin
+    permission: api_keys:read
+    surfaces:
+      - command_palette
+      - plugin_registry
+      - sidebar
+    order: 150
+  - id: admin-organization-settings
+    plugin: core-users
+    label: Organization Settings
+    path: /admin/organizations/settings
+    icon: Building2
+    group: Organizations
+    access: admin
+    permission: orgs:read
+    surfaces:
+      - plugin_registry
+    order: 160
+  - id: admin-platform-overview
+    plugin: platform-admin
+    label: Platform Overview
+    path: /admin/platform
+    icon: Layers
+    group: Platform
+    access: super_admin
+    surfaces:
+      - plugin_registry
+    order: 190
+  - id: admin-platform-users
+    plugin: platform-admin
+    label: Platform Users
+    path: /admin/platform/admins
+    icon: UserSearch
+    group: Platform
+    access: super_admin
+    permission: users:read
+    surfaces:
+      - command_palette
+      - plugin_registry
+      - sidebar
+    order: 200
+  - id: admin-feature-flags
+    plugin: platform-admin
+    label: Feature Flags
+    path: /admin/platform/feature-flags
+    icon: Flag
+    group: Platform
+    access: super_admin
+    surfaces:
+      - command_palette
+      - plugin_registry
+      - sidebar
+    order: 210
+  - id: admin-sessions
+    plugin: platform-admin
+    label: Sessions
+    path: /admin/sessions
+    icon: Monitor
+    group: Platform
+    access: super_admin
+    surfaces:
+      - command_palette
+      - plugin_registry
+      - sidebar
+    order: 220
+  - id: admin-entitlements
+    plugin: platform-admin
+    label: Entitlements
+    path: /admin/entitlements
+    icon: ShieldCheck
+    group: Platform
+    access: admin
+    permission: entitlements:read
+    surfaces:
+      - command_palette
+      - plugin_registry
+      - sidebar
+    order: 230
+  - id: admin-job-operations
+    plugin: platform-admin
+    label: Job Operations
+    path: /admin/platform/jobs
+    icon: ListChecks
+    group: Platform
+    access: super_admin
+    surfaces:
+      - command_palette
+      - plugin_registry
+      - sidebar
+    order: 235
+  - id: admin-audit-log
+    plugin: audit
+    label: Audit Log
+    path: /admin/audit-log
+    icon: Activity
+    group: Platform
+    access: admin
+    permission: audit:read
+    surfaces:
+      - command_palette
+      - plugin_registry
+      - sidebar
+    order: 240
+  - id: admin-billing
+    plugin: core-users
+    label: Subscription
+    path: /admin/billing
+    icon: CreditCard
+    group: Billing
+    access: admin
+    permission: billing:read
+    surfaces:
+      - sidebar
+    order: 300
+  - id: admin-webhooks
+    plugin: core-users
+    label: Webhooks
+    path: /admin/webhooks
+    icon: Globe
+    group: Integrations
+    access: admin
+    permission: webhooks:read
+    surfaces:
+      - command_palette
+      - plugin_registry
+      - sidebar
+    order: 400
+  - id: admin-audit-export
+    plugin: audit
+    label: Audit Export
+    path: /admin/audit-export
+    icon: HardDriveDownload
+    group: Integrations
+    access: admin
+    permission: audit:read
+    surfaces:
+      - sidebar
+    order: 410
+  - id: admin-sso
+    plugin: core-users
+    label: Single Sign-On
+    path: /admin/sso
+    icon: KeyRound
+    group: Integrations
+    access: admin
+    surfaces:
+      - sidebar
+    order: 420
+  - id: api-docs
+    plugin: audit
+    label: API Docs
+    path: /docs
+    icon: BookOpen
+    group: Developer
+    access: admin
+    surfaces:
+      - plugin_registry
+      - sidebar
+    order: 500
+  - id: sdks
+    plugin: audit
+    label: SDKs
+    path: /docs/sdks
+    icon: FileText
+    group: Developer
+    access: admin
+    surfaces:
+      - plugin_registry
+      - sidebar
+    order: 510
+  - id: compliance
+    plugin: audit
+    label: Compliance
+    path: /docs/compliance
+    icon: ShieldCheck
+    group: Developer
+    access: admin
+    surfaces:
+      - plugin_registry
+      - sidebar
+    order: 520
+  - id: security
+    plugin: core-users
+    label: Security
+    path: /settings/mfa
+    icon: Shield
+    group: Settings
+    access: authenticated
+    surfaces:
+      - command_palette
+      - plugin_registry
+      - user_menu
+    order: 600
+  - id: notifications
+    plugin: core-users
+    label: Notifications
+    path: /settings/notifications
+    icon: Bell
+    group: Settings
+    access: authenticated
+    surfaces:
+      - command_palette
+      - plugin_registry
+      - user_menu
+    order: 610
+  - id: data-privacy
+    plugin: core-users
+    label: Data & Privacy
+    path: /settings/data
+    icon: FileText
+    group: Settings
+    access: authenticated
+    surfaces:
+      - command_palette
+      - plugin_registry
+      - user_menu
+    order: 620

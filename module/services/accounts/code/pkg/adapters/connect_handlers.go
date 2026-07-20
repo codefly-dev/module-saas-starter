@@ -2,7 +2,9 @@ package adapters
 
 import (
 	"context"
+	"errors"
 	"net/http"
+	"time"
 
 	"connectrpc.com/connect"
 	"google.golang.org/grpc/codes"
@@ -14,7 +16,8 @@ import (
 	"github.com/codefly-dev/core/wool"
 
 	"accounts/pkg/business"
-	"accounts/pkg/gen"
+	gen "accounts/pkg/gen/saas/accounts/v1"
+	jobsv1 "accounts/pkg/gen/saas/jobs/v1"
 )
 
 // connectCtx converts Connect HTTP headers to gRPC incoming metadata so that
@@ -29,6 +32,12 @@ func connectCtx(ctx context.Context, h http.Header) context.Context {
 	}
 	if v := h.Values("Authorization"); len(v) > 0 {
 		md.Set("authorization", v...)
+	}
+	if v := h.Values("X-Codefly-Internal-Token"); len(v) > 0 {
+		md.Set("x-codefly-internal-token", v...)
+	}
+	if v := h.Values("X-Scopes"); len(v) > 0 {
+		md.Set("x-scopes", v...)
 	}
 	return metadata.NewIncomingContext(ctx, md)
 }
@@ -343,8 +352,20 @@ func (h *authConnectHandler) BeginOAuth(ctx context.Context, req *connect.Reques
 func (h *authConnectHandler) Authenticate(ctx context.Context, req *connect.Request[gen.AuthenticateRequest]) (*connect.Response[gen.AuthenticateResponse], error) {
 	return unary(ctx, req, h.inner.Authenticate)
 }
+func (h *authConnectHandler) CompleteMFAChallenge(ctx context.Context, req *connect.Request[gen.CompleteMFAChallengeRequest]) (*connect.Response[gen.CompleteMFAChallengeResponse], error) {
+	return unary(ctx, req, h.inner.CompleteMFAChallenge)
+}
+func (h *authConnectHandler) BeginWebAuthnMFAChallenge(ctx context.Context, req *connect.Request[gen.BeginWebAuthnMFAChallengeRequest]) (*connect.Response[gen.BeginWebAuthnMFAChallengeResponse], error) {
+	return unary(ctx, req, h.inner.BeginWebAuthnMFAChallenge)
+}
+func (h *authConnectHandler) CompleteWebAuthnMFAChallenge(ctx context.Context, req *connect.Request[gen.CompleteWebAuthnMFAChallengeRequest]) (*connect.Response[gen.CompleteMFAChallengeResponse], error) {
+	return unary(ctx, req, h.inner.CompleteWebAuthnMFAChallenge)
+}
 func (h *authConnectHandler) RefreshToken(ctx context.Context, req *connect.Request[gen.RefreshTokenRequest]) (*connect.Response[gen.RefreshTokenResponse], error) {
 	return unary(ctx, req, h.inner.RefreshToken)
+}
+func (h *authConnectHandler) SwitchOrganization(ctx context.Context, req *connect.Request[gen.SwitchOrganizationRequest]) (*connect.Response[gen.SwitchOrganizationResponse], error) {
+	return unary(ctx, req, h.inner.SwitchOrganization)
 }
 func (h *authConnectHandler) Logout(ctx context.Context, req *connect.Request[gen.LogoutRequest]) (*connect.Response[emptypb.Empty], error) {
 	return unary(ctx, req, h.inner.Logout)
@@ -430,11 +451,37 @@ func (h *platformAdminConnectHandler) ListFeatureFlags(ctx context.Context, req 
 func (h *platformAdminConnectHandler) UpsertFeatureFlag(ctx context.Context, req *connect.Request[gen.UpsertFeatureFlagRequest]) (*connect.Response[gen.UpsertFeatureFlagResponse], error) {
 	return unary(ctx, req, h.inner.UpsertFeatureFlag)
 }
+func (h *platformAdminConnectHandler) GetJobOperations(ctx context.Context, req *connect.Request[jobsv1.GetJobOperationsRequest]) (*connect.Response[jobsv1.GetJobOperationsResponse], error) {
+	return unary(ctx, req, h.inner.GetJobOperations)
+}
+func (h *platformAdminConnectHandler) ListJobs(ctx context.Context, req *connect.Request[jobsv1.ListJobsRequest]) (*connect.Response[jobsv1.ListJobsResponse], error) {
+	return unary(ctx, req, h.inner.ListJobs)
+}
+func (h *platformAdminConnectHandler) GetJob(ctx context.Context, req *connect.Request[jobsv1.GetJobRequest]) (*connect.Response[jobsv1.GetJobResponse], error) {
+	return unary(ctx, req, h.inner.GetJob)
+}
+func (h *platformAdminConnectHandler) ReplayJob(ctx context.Context, req *connect.Request[jobsv1.ReplayJobRequest]) (*connect.Response[jobsv1.ReplayJobResponse], error) {
+	return unary(ctx, req, h.inner.ReplayJob)
+}
+
+// ============================================================================
+// UsageService
+// ============================================================================
+
+type usageConnectHandler struct{ inner *UsageServer }
+
+func (h *usageConnectHandler) ConsumeUsage(ctx context.Context, req *connect.Request[gen.ConsumeUsageRequest]) (*connect.Response[gen.ConsumeUsageResponse], error) {
+	return unary(ctx, req, h.inner.ConsumeUsage)
+}
+
+func (h *usageConnectHandler) GetUsage(ctx context.Context, req *connect.Request[gen.GetUsageRequest]) (*connect.Response[gen.GetUsageResponse], error) {
+	return unary(ctx, req, h.inner.GetUsage)
+}
 
 // ============================================================================
 // WebhookService — backed by business.Service, no gRPC Server struct yet.
-// Secret is server-generated on CreateSubscription (returned to client as
-// part of the subscription response when implemented — TODO).
+// Secret is server-generated, encrypted at rest, and revealed only in the
+// CreateSubscription response.
 // ============================================================================
 
 type webhookConnectHandler struct{ svc *business.Service }
@@ -444,7 +491,14 @@ func (h *webhookConnectHandler) CreateSubscription(ctx context.Context, req *con
 	if err := requireScope(ctx, "webhooks:write"); err != nil {
 		return nil, translateGRPCError(err)
 	}
-	sub, err := h.svc.CreateSubscription(ctx, req.Msg.OrgId, req.Msg.Url, "", req.Msg.Events, req.Msg.Description)
+	actorID, err := requireAuth(ctx)
+	if err != nil {
+		return nil, translateGRPCError(err)
+	}
+	if err := requireOrgAdmin(ctx, actorID, req.Msg.OrgId); err != nil {
+		return nil, translateGRPCError(err)
+	}
+	sub, err := h.svc.CreateSubscription(ctx, req.Msg.OrgId, req.Msg.Url, req.Msg.Events, req.Msg.Description)
 	if err != nil {
 		return nil, err
 	}
@@ -456,7 +510,15 @@ func (h *webhookConnectHandler) DeleteSubscription(ctx context.Context, req *con
 	if err := requireScope(ctx, "webhooks:write"); err != nil {
 		return nil, translateGRPCError(err)
 	}
-	if err := h.svc.DeleteSubscription(ctx, callerOrg(ctx), req.Msg.Id); err != nil {
+	actorID, err := requireAuth(ctx)
+	if err != nil {
+		return nil, translateGRPCError(err)
+	}
+	orgID := callerOrg(ctx)
+	if err := requireOrgAdmin(ctx, actorID, orgID); err != nil {
+		return nil, translateGRPCError(err)
+	}
+	if err := h.svc.DeleteSubscription(ctx, orgID, req.Msg.Id); err != nil {
 		return nil, err
 	}
 	return connect.NewResponse(&emptypb.Empty{}), nil
@@ -465,6 +527,13 @@ func (h *webhookConnectHandler) DeleteSubscription(ctx context.Context, req *con
 func (h *webhookConnectHandler) ListSubscriptions(ctx context.Context, req *connect.Request[gen.ListWebhookSubscriptionsRequest]) (*connect.Response[gen.ListWebhookSubscriptionsResponse], error) {
 	ctx = connectCtx(ctx, req.Header())
 	if err := requireScope(ctx, "webhooks:read"); err != nil {
+		return nil, translateGRPCError(err)
+	}
+	actorID, err := requireAuth(ctx)
+	if err != nil {
+		return nil, translateGRPCError(err)
+	}
+	if err := requireOrgMember(ctx, actorID, req.Msg.OrgId); err != nil {
 		return nil, translateGRPCError(err)
 	}
 	subs, err := h.svc.ListSubscriptions(ctx, req.Msg.OrgId)
@@ -483,11 +552,19 @@ func (h *webhookConnectHandler) ListDeliveries(ctx context.Context, req *connect
 	if err := requireScope(ctx, "webhooks:read"); err != nil {
 		return nil, translateGRPCError(err)
 	}
+	actorID, err := requireAuth(ctx)
+	if err != nil {
+		return nil, translateGRPCError(err)
+	}
+	orgID := callerOrg(ctx)
+	if err := requireOrgMember(ctx, actorID, orgID); err != nil {
+		return nil, translateGRPCError(err)
+	}
 	pageSize := int(req.Msg.PageSize)
 	if pageSize == 0 {
 		pageSize = 50
 	}
-	deliveries, err := h.svc.ListDeliveries(ctx, callerOrg(ctx), req.Msg.SubscriptionId, pageSize)
+	deliveries, err := h.svc.ListDeliveries(ctx, orgID, req.Msg.SubscriptionId, pageSize)
 	if err != nil {
 		return nil, err
 	}
@@ -503,7 +580,15 @@ func (h *webhookConnectHandler) TestWebhook(ctx context.Context, req *connect.Re
 	if err := requireScope(ctx, "webhooks:write"); err != nil {
 		return nil, translateGRPCError(err)
 	}
-	d, err := h.svc.TestWebhook(ctx, callerOrg(ctx), req.Msg.Id, req.Msg.EventType)
+	actorID, err := requireAuth(ctx)
+	if err != nil {
+		return nil, translateGRPCError(err)
+	}
+	orgID := callerOrg(ctx)
+	if err := requireOrgAdmin(ctx, actorID, orgID); err != nil {
+		return nil, translateGRPCError(err)
+	}
+	d, err := h.svc.TestWebhook(ctx, orgID, req.Msg.Id, req.Msg.EventType)
 	if err != nil {
 		return nil, err
 	}
@@ -519,7 +604,15 @@ func (h *webhookConnectHandler) GetDelivery(ctx context.Context, req *connect.Re
 	if err := requireScope(ctx, "webhooks:read"); err != nil {
 		return nil, translateGRPCError(err)
 	}
-	d, err := h.svc.GetWebhookDelivery(ctx, callerOrg(ctx), req.Msg.Id)
+	actorID, err := requireAuth(ctx)
+	if err != nil {
+		return nil, translateGRPCError(err)
+	}
+	orgID := callerOrg(ctx)
+	if err := requireOrgMember(ctx, actorID, orgID); err != nil {
+		return nil, translateGRPCError(err)
+	}
+	d, err := h.svc.GetWebhookDelivery(ctx, orgID, req.Msg.Id)
 	if err != nil {
 		return nil, err
 	}
@@ -535,7 +628,15 @@ func (h *webhookConnectHandler) ReplayDelivery(ctx context.Context, req *connect
 	if err := requireScope(ctx, "webhooks:write"); err != nil {
 		return nil, translateGRPCError(err)
 	}
-	d, err := h.svc.ReplayWebhookDelivery(ctx, callerOrg(ctx), req.Msg.Id)
+	actorID, err := requireAuth(ctx)
+	if err != nil {
+		return nil, translateGRPCError(err)
+	}
+	orgID := callerOrg(ctx)
+	if err := requireOrgAdmin(ctx, actorID, orgID); err != nil {
+		return nil, translateGRPCError(err)
+	}
+	d, err := h.svc.ReplayWebhookDelivery(ctx, orgID, req.Msg.Id)
 	if err != nil {
 		return nil, err
 	}
@@ -558,14 +659,23 @@ func (h *webhookConnectHandler) RotateSecret(ctx context.Context, req *connect.R
 	if err != nil {
 		return nil, err
 	}
-	if err := requireMFA(ctx, actorID); err != nil {
+	if err := requireRecentMFA(ctx); err != nil {
 		return nil, err
 	}
-	secret, err := h.svc.RotateWebhookSecret(ctx, callerOrg(ctx), req.Msg.Id)
+	orgID := callerOrg(ctx)
+	if err := requireOrgAdmin(ctx, actorID, orgID); err != nil {
+		return nil, translateGRPCError(err)
+	}
+	gracePeriod := time.Duration(req.Msg.GracePeriodSeconds) * time.Second
+	secret, oldSecretExpiresAt, err := h.svc.RotateWebhookSecret(ctx, orgID, req.Msg.Id, gracePeriod)
 	if err != nil {
 		return nil, err
 	}
-	return connect.NewResponse(&gen.RotateWebhookSecretResponse{Secret: secret}), nil
+	resp := &gen.RotateWebhookSecretResponse{Secret: secret}
+	if oldSecretExpiresAt != nil {
+		resp.OldSecretExpiresAt = timestamppb.New(*oldSecretExpiresAt)
+	}
+	return connect.NewResponse(resp), nil
 }
 
 // ============================================================================
@@ -611,7 +721,11 @@ func (h *notificationConnectHandler) GetUnreadCount(ctx context.Context, req *co
 
 func (h *notificationConnectHandler) MarkRead(ctx context.Context, req *connect.Request[gen.MarkNotificationReadRequest]) (*connect.Response[emptypb.Empty], error) {
 	ctx = connectCtx(ctx, req.Header())
-	if err := h.svc.MarkRead(ctx, req.Msg.Id); err != nil {
+	userID, err := callerID(ctx)
+	if err != nil {
+		return nil, translateGRPCError(err)
+	}
+	if err := h.svc.MarkRead(ctx, userID, req.Msg.Id); err != nil {
 		return nil, err
 	}
 	return connect.NewResponse(&emptypb.Empty{}), nil
@@ -631,7 +745,11 @@ func (h *notificationConnectHandler) MarkAllRead(ctx context.Context, req *conne
 
 func (h *notificationConnectHandler) DeleteNotification(ctx context.Context, req *connect.Request[gen.DeleteNotificationRequest]) (*connect.Response[emptypb.Empty], error) {
 	ctx = connectCtx(ctx, req.Header())
-	if err := h.svc.DeleteNotification(ctx, req.Msg.Id); err != nil {
+	userID, err := callerID(ctx)
+	if err != nil {
+		return nil, translateGRPCError(err)
+	}
+	if err := h.svc.DeleteNotification(ctx, userID, req.Msg.Id); err != nil {
 		return nil, err
 	}
 	return connect.NewResponse(&emptypb.Empty{}), nil
@@ -709,7 +827,11 @@ func (h *gdprConnectHandler) RequestExport(ctx context.Context, req *connect.Req
 
 func (h *gdprConnectHandler) GetExportStatus(ctx context.Context, req *connect.Request[gen.GetExportStatusRequest]) (*connect.Response[gen.GDPRRequest], error) {
 	ctx = connectCtx(ctx, req.Header())
-	r, err := h.svc.GetExportStatus(ctx, req.Msg.Id)
+	userID, err := callerID(ctx)
+	if err != nil {
+		return nil, translateGRPCError(err)
+	}
+	r, err := h.svc.GetExportStatus(ctx, userID, req.Msg.Id)
 	if err != nil {
 		return nil, err
 	}
@@ -735,7 +857,11 @@ func (h *gdprConnectHandler) RequestDeletion(ctx context.Context, req *connect.R
 
 func (h *gdprConnectHandler) GetDeletionStatus(ctx context.Context, req *connect.Request[gen.GetDeletionStatusRequest]) (*connect.Response[gen.GDPRRequest], error) {
 	ctx = connectCtx(ctx, req.Header())
-	r, err := h.svc.GetExportStatus(ctx, req.Msg.Id) // underlying lookup is by request id
+	userID, err := callerID(ctx)
+	if err != nil {
+		return nil, translateGRPCError(err)
+	}
+	r, err := h.svc.GetDeletionStatus(ctx, userID, req.Msg.Id)
 	if err != nil {
 		return nil, err
 	}
@@ -747,6 +873,44 @@ func (h *gdprConnectHandler) GetDeletionStatus(ctx context.Context, req *connect
 // ============================================================================
 
 type mfaConnectHandler struct{ svc *business.Service }
+
+func (h *mfaConnectHandler) BeginWebAuthnRegistration(ctx context.Context, req *connect.Request[gen.BeginWebAuthnRegistrationRequest]) (*connect.Response[gen.BeginWebAuthnRegistrationResponse], error) {
+	if err := Validate(req.Msg); err != nil {
+		return nil, translateGRPCError(err)
+	}
+	ctx = connectCtx(ctx, req.Header())
+	userID, err := callerID(ctx)
+	if err != nil {
+		return nil, err
+	}
+	ceremonyToken, optionsJSON, err := h.svc.BeginWebAuthnRegistration(ctx, userID)
+	if err != nil {
+		return nil, err
+	}
+	return connect.NewResponse(&gen.BeginWebAuthnRegistrationResponse{
+		CeremonyToken:        ceremonyToken,
+		PublicKeyOptionsJson: optionsJSON,
+	}), nil
+}
+
+func (h *mfaConnectHandler) FinishWebAuthnRegistration(ctx context.Context, req *connect.Request[gen.FinishWebAuthnRegistrationRequest]) (*connect.Response[gen.FinishWebAuthnRegistrationResponse], error) {
+	if err := Validate(req.Msg); err != nil {
+		return nil, translateGRPCError(err)
+	}
+	ctx = connectCtx(ctx, req.Header())
+	userID, err := callerID(ctx)
+	if err != nil {
+		return nil, err
+	}
+	device, err := h.svc.FinishWebAuthnRegistration(ctx, userID, req.Msg.CeremonyToken, req.Msg.CredentialResponseJson, req.Msg.Name)
+	if errors.Is(err, business.ErrWebAuthnCeremonyRejected) {
+		return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("WebAuthn ceremony rejected"))
+	}
+	if err != nil {
+		return nil, err
+	}
+	return connect.NewResponse(&gen.FinishWebAuthnRegistrationResponse{Device: mfaDeviceToProto(device)}), nil
+}
 
 func (h *mfaConnectHandler) SetupTOTP(ctx context.Context, req *connect.Request[gen.SetupTOTPRequest]) (*connect.Response[gen.SetupTOTPResponse], error) {
 	ctx = connectCtx(ctx, req.Header())
@@ -830,6 +994,7 @@ func webhookSubToProto(s *business.WebhookSubscription) *gen.WebhookSubscription
 		Events:      s.Events,
 		Active:      s.Active,
 		Description: s.Description,
+		Secret:      s.SecretReveal,
 	}
 	if !s.CreatedAt.IsZero() {
 		out.CreatedAt = timestamppb.New(s.CreatedAt)
@@ -850,12 +1015,13 @@ func webhookDeliveryToProto(d *business.WebhookDelivery) *gen.WebhookDelivery {
 		HttpStatus:     int32(d.HTTPStatus),
 		Status:         webhookDeliveryStatusToProto(d.Status),
 		ResponseBody:   d.ResponseBody,
-	}
-	if d.NextRetryAt != nil && !d.NextRetryAt.IsZero() {
-		out.NextRetryAt = timestamppb.New(*d.NextRetryAt)
+		EventId:        d.EventID,
 	}
 	if !d.CreatedAt.IsZero() {
 		out.CreatedAt = timestamppb.New(d.CreatedAt)
+	}
+	if d.LastAttemptAt != nil {
+		out.LastAttemptAt = timestamppb.New(*d.LastAttemptAt)
 	}
 	if d.DeliveredAt != nil {
 		out.DeliveredAt = timestamppb.New(*d.DeliveredAt)
@@ -869,7 +1035,7 @@ func webhookDeliveryStatusToProto(s string) gen.WebhookDeliveryStatus {
 		return gen.WebhookDeliveryStatus_WEBHOOK_DELIVERY_STATUS_SUCCESS
 	case "failed":
 		return gen.WebhookDeliveryStatus_WEBHOOK_DELIVERY_STATUS_FAILED
-	case "pending", "retrying":
+	case "pending":
 		return gen.WebhookDeliveryStatus_WEBHOOK_DELIVERY_STATUS_PENDING
 	}
 	return gen.WebhookDeliveryStatus_WEBHOOK_DELIVERY_STATUS_UNSPECIFIED

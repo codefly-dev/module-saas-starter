@@ -23,7 +23,6 @@ import (
 
 	"accounts/pkg/auth"
 	"accounts/pkg/business"
-	"accounts/pkg/gen/genconnect"
 )
 
 // ConnectServer serves the Connect, gRPC, and gRPC-Web protocols over HTTP
@@ -35,6 +34,9 @@ type ConnectServer struct {
 }
 
 func NewConnectServer(c *Configuration, grpc *GrpcServer) (*ConnectServer, error) {
+	if service == nil {
+		return nil, fmt.Errorf("business service must be configured before the Connect server")
+	}
 	return &ConnectServer{
 		config:  c,
 		grpc:    grpc,
@@ -58,10 +60,10 @@ func (s *ConnectServer) Run(ctx context.Context) error {
 	// directly (e.g. saas-starter frontend → api Connect endpoint with
 	// no auth-sidecar in between).
 	//
-	// Late-bound minter: NewServer + Connect Run() fire from main.go
-	// BEFORE work.go calls adapters.WithService, so capturing the
-	// minter at construction would deref nil. The closure resolves
-	// the package-level `service` at request time instead.
+	// The generated entrypoint completes work.go before constructing any
+	// listener, and NewConnectServer fails fast if that lifecycle contract is
+	// violated. Keep the minter lookup late-bound so tests and controlled key
+	// rotation can replace the configured service without rebuilding handlers.
 
 	// otelconnect — extracts W3C traceparent/baggage from the Connect
 	// request headers and starts a child span. Same role as
@@ -82,49 +84,11 @@ func (s *ConnectServer) Run(ctx context.Context) error {
 		return service.JWTMinter()
 	}), rateLimitInterceptor(rateLimiter))
 
-	// Services backed by existing gRPC Server structs.
-	mux.Handle(genconnect.NewUserServiceHandler(&userConnectHandler{inner: s.grpc.User}, auth))
-	mux.Handle(genconnect.NewOrganizationServiceHandler(&orgConnectHandler{inner: s.grpc.Org}, auth))
-	mux.Handle(genconnect.NewTeamServiceHandler(&teamConnectHandler{inner: s.grpc.Team}, auth))
-	mux.Handle(genconnect.NewPermissionServiceHandler(&permConnectHandler{inner: s.grpc.Perm}, auth))
-	mux.Handle(genconnect.NewIdentityServiceHandler(&identConnectHandler{inner: s.grpc.Ident}, auth))
-	mux.Handle(genconnect.NewAPIKeyServiceHandler(&apiKeyConnectHandler{inner: s.grpc.APIKey}, auth))
-	mux.Handle(genconnect.NewAuthServiceHandler(&authConnectHandler{inner: s.grpc.Auth}, auth))
-	mux.Handle(genconnect.NewAuditServiceHandler(&auditConnectHandler{inner: s.grpc.Audit}, auth))
-	mux.Handle(genconnect.NewInvitationServiceHandler(&invitationConnectHandler{inner: s.grpc.Invitation}, auth))
-	mux.Handle(genconnect.NewPlatformAdminServiceHandler(&platformAdminConnectHandler{inner: s.grpc.PlatformAdmin}, auth))
-	// IntrospectionService is intentionally unauthenticated — it
-	// describes THIS service's API surface (RPCs / RBAC vocab / RLS
-	// tables / scopes), not tenant data. No `auth` interceptor, but
-	// keep otelIc so introspection calls still land in the trace.
-	mux.Handle(genconnect.NewIntrospectionServiceHandler(
-		&introspectionConnectHandler{inner: s.grpc.Introspection},
-		connect.WithInterceptors(otelIc),
-	))
-
-	// CUSTOM: permissionsplugin Connect handlers. Mirrors the
-	// plugin loop in server_gen.go. Both protocols share the
-	// SAME PrincipalServer / DelegationServer instances via the
-	// adapters package singletons — critical for DelegationServer
-	// because DecideDelegation populates mintCache and
-	// WaitForDelegation reads from it; cross-protocol calls (e.g.
-	// approve via gRPC, wait via Connect) only see the token if
-	// they hit the same struct. Preserve these lines when
-	// regenerating.
-	mux.Handle(genconnect.NewPrincipalServiceHandler(&principalConnectHandler{inner: PrincipalSingleton()}, auth))
-	mux.Handle(genconnect.NewDelegationServiceHandler(&delegationConnectHandler{inner: DelegationSingleton()}, auth))
-
-	// Services backed directly by business.Service.
-	mux.Handle(genconnect.NewWebhookServiceHandler(&webhookConnectHandler{svc: s.service}, auth))
-	mux.Handle(genconnect.NewAuditExportServiceHandler(&auditExportConnectHandler{svc: s.service}, auth))
-	mux.Handle(genconnect.NewConsentServiceHandler(&consentConnectHandler{svc: s.service}, auth))
-	mux.Handle(genconnect.NewNotificationServiceHandler(&notificationConnectHandler{svc: s.service}, auth))
-	mux.Handle(genconnect.NewOnboardingServiceHandler(&onboardingConnectHandler{svc: s.service}, auth))
-	mux.Handle(genconnect.NewGDPRServiceHandler(&gdprConnectHandler{svc: s.service}, auth))
-	mux.Handle(genconnect.NewMFAServiceHandler(&mfaConnectHandler{svc: s.service}, auth))
-	mux.Handle(genconnect.NewSSOAdminServiceHandler(&ssoAdminConnectHandler{svc: s.service}, auth))
-	mux.Handle(genconnect.NewUserSettingsServiceHandler(&userSettingsConnectHandler{svc: s.service}, auth))
-	mux.Handle(genconnect.NewBillingServiceHandler(&billingConnectHandler{svc: s.service}, auth))
+	// The catalog generator owns complete service registration and compile-time
+	// handler-interface assertions. connect_bindings.yaml supplies only the
+	// finite implementation source (gRPC adapter, business service, or shared
+	// singleton); it cannot add or omit descriptor services.
+	registerCatalogConnectServices(mux, s, auth)
 
 	// CORS — required when the FE talks directly to this api (no
 	// auth-sidecar in front). Connect-Web preflights every POST
@@ -133,13 +97,9 @@ func (s *ConnectServer) Run(ctx context.Context) error {
 	// without explicit CORS the browser drops the preflight at 405
 	// and every Connect call fails silently.
 	//
-	// AllowOriginFunc is permissive in dev (any localhost / 127.0.0.1
-	// origin). Production deployments put the auth-sidecar in front
-	// and don't reach this code path, so a tight allowlist would just
-	// cause dev-mode confusion.
 	corsHandler := cors.New(cors.Options{
-		AllowOriginFunc: func(origin string) bool { return true },
-		AllowedMethods:  []string{http.MethodGet, http.MethodPost, http.MethodOptions},
+		AllowedOrigins: configuredCORSOrigins(),
+		AllowedMethods: []string{http.MethodGet, http.MethodPost, http.MethodOptions},
 		AllowedHeaders: []string{
 			"Authorization",
 			"Content-Type",
@@ -148,6 +108,7 @@ func (s *ConnectServer) Run(ctx context.Context) error {
 			"X-User-Agent",
 			"X-Grpc-Web",
 			"Grpc-Timeout",
+			"Idempotency-Key",
 			// W3C trace context — Sentry's browserTracingIntegration
 			// stamps these on outgoing fetches so the api can stitch
 			// the browser span to the server span (otelconnect picks

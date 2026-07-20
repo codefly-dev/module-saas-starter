@@ -11,11 +11,17 @@ import (
 	"google.golang.org/protobuf/types/known/timestamppb"
 
 	"accounts/pkg/business"
-	"accounts/pkg/gen"
+	gen "accounts/pkg/gen/saas/accounts/v1"
 )
 
 func (s *PostgresStore) InsertAuditEvent(ctx context.Context, entry business.AuditEntry) error {
 	q := s.getQueryExecutor(ctx)
+	if entry.ID == "" {
+		entry.ID = business.NewIDString()
+	}
+	if entry.CreatedAt.IsZero() {
+		entry.CreatedAt = time.Now().UTC()
+	}
 
 	metadata, err := json.Marshal(entry.Metadata)
 	if err != nil {
@@ -23,11 +29,13 @@ func (s *PostgresStore) InsertAuditEvent(ctx context.Context, entry business.Aud
 	}
 
 	_, err = q.Exec(ctx, `
-		INSERT INTO audit_events (actor_id, actor_type, action, resource, resource_id, org_id, metadata, ip_address)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
-		nilIfNotUUID(entry.ActorID), entry.ActorType, entry.Action,
+		INSERT INTO audit_events (
+			id, actor_id, actor_type, action, resource, resource_id,
+			org_id, metadata, ip_address, created_at
+		) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)`,
+		entry.ID, nilIfNotUUID(entry.ActorID), entry.ActorType, entry.Action,
 		entry.Resource, nilIfNotUUID(entry.ResourceID), nilIfNotUUID(entry.OrgID),
-		metadata, nilIfEmpty(entry.IPAddress))
+		metadata, nilIfEmpty(entry.IPAddress), entry.CreatedAt)
 	return err
 }
 

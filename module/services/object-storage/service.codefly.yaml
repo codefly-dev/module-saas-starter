@@ -1,20 +1,13 @@
+# Code generated from deployment/topology.bindings.codefly.yaml. DO NOT EDIT.
 name: object-storage
 version: 0.0.0
 agent:
     kind: codefly:service
     name: s3
-    # Pinned: 0.0.2 is the first rev that actually runs MinIO (port
-    # 9000, /minio/health/live readiness, structured conn keys).
-    # 0.0.1 was a redis-template scaffold that built but didn't work.
-    version: 0.0.2
+    version: 0.0.16
     publisher: codefly.dev
 endpoints:
     - name: accounts
       api: tcp
-# MinIO root credentials default to the upstream MinIO defaults
-# (minioadmin/minioadmin) when no codefly secret is wired — fine
-# for dev. Production overrides via:
-#   codefly secret set object-storage MINIO_ROOT_USER <value>
-#   codefly secret set object-storage MINIO_ROOT_PASSWORD <value>
 spec:
     watch: false

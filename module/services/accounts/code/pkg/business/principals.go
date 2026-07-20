@@ -48,10 +48,10 @@ type Principal struct {
 	OrgID           string // empty for kind=human (cross-org)
 	AgentIdentifier string // "publisher/name:version" for kind=agent
 	// The principal that created this one — empty = root (humans).
-	CreatedBy string
-	CreatedAt time.Time
-	RevokedAt       *time.Time
-	RevokedReason   string
+	CreatedBy     string
+	CreatedAt     time.Time
+	RevokedAt     *time.Time
+	RevokedReason string
 }
 
 // IsRevoked reports whether the principal has been revoked. Used by

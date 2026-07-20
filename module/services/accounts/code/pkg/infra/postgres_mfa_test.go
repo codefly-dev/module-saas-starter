@@ -5,10 +5,21 @@ import (
 	"testing"
 	"time"
 
+	"github.com/jackc/pgx/v5"
 	"github.com/stretchr/testify/require"
 
 	"accounts/pkg/business"
 )
+
+type migrationCipher struct{}
+
+func (migrationCipher) EncryptSecret(_ context.Context, purpose, plaintext string) (string, error) {
+	return "cfs1:vault-transit:" + purpose + ":" + plaintext, nil
+}
+
+func (migrationCipher) DecryptSecret(_ context.Context, _, envelope string) (string, error) {
+	return envelope, nil
+}
 
 // MFA tables (mfa_devices, mfa_backup_codes) are RLS-protected by
 // user_id (Phase 2G). Each test wraps direct Store calls in
@@ -190,4 +201,40 @@ func TestDeleteBackupCodes(t *testing.T) {
 		require.Empty(t, unused)
 		return nil
 	}))
+}
+
+func TestMigrateLegacyMFASecrets(t *testing.T) {
+	// The migration scans globally by design; isolate it from rows created by
+	// other integration cases in this package.
+	require.NoError(t, testStore.WithControlPlane(testCtx, func(ctx context.Context) error {
+		tx := ctx.Value("tx").(pgx.Tx) //nolint:staticcheck // shared transaction key
+		_, err := tx.Exec(ctx, `DELETE FROM mfa_devices`)
+		return err
+	}))
+
+	userID := seedUser(t)
+	legacy := "JBSWY3DPEHPK3PXP"
+	device := &business.MFADevice{
+		ID: business.NewIDString(), UserID: userID, DeviceType: "totp",
+		Name: "Legacy", SecretEncrypted: legacy,
+	}
+	require.NoError(t, testStore.WithUserTx(testCtx, userID, func(ctx context.Context) error {
+		return testStore.CreateMFADevice(ctx, device)
+	}))
+
+	migrated, err := testStore.MigrateLegacyMFASecrets(testCtx, migrationCipher{})
+	require.NoError(t, err)
+	require.Equal(t, 1, migrated)
+	require.NoError(t, testStore.WithUserTx(testCtx, userID, func(ctx context.Context) error {
+		got, err := testStore.GetMFADevice(ctx, device.ID)
+		require.NoError(t, err)
+		require.NotEqual(t, legacy, got.SecretEncrypted)
+		require.Contains(t, got.SecretEncrypted, "cfs1:vault-transit:mfa-totp:")
+		return nil
+	}))
+
+	// Restart safety: already-enveloped rows are skipped.
+	migrated, err = testStore.MigrateLegacyMFASecrets(testCtx, migrationCipher{})
+	require.NoError(t, err)
+	require.Zero(t, migrated)
 }

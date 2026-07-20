@@ -1,8 +1,31 @@
-version: v1
+version: v2
+modules:
+  - path: .
+    # `codefly/` contains the narrow dependency-client facade. The service's
+    # canonical server schema lives under saas/accounts/v1 and must not generate
+    # duplicate Go/Connect/REST symbols.
+    excludes:
+      - codefly
 deps:
-  - buf.build/googleapis/googleapis
   - buf.build/bufbuild/protovalidate
+  - buf.build/googleapis/googleapis
 lint:
   use:
-    - DEFAULT
     - COMMENTS
+    - STANDARD
+  # The package is versioned and directory-aligned. Remaining exceptions are
+  # explicit debt: P1-DOC-001 completes declaration comments; P1-PROTO-005
+  # replaces shared Empty/nonstandard request-response types through a
+  # compatibility-safe API transition rather than breaking stable v1 clients.
+  except:
+    - COMMENT_ENUM
+    - COMMENT_ENUM_VALUE
+    - COMMENT_FIELD
+    - COMMENT_MESSAGE
+    - COMMENT_ONEOF
+    - COMMENT_RPC
+    - COMMENT_SERVICE
+    - RPC_REQUEST_RESPONSE_UNIQUE
+    - RPC_REQUEST_STANDARD_NAME
+    - RPC_RESPONSE_STANDARD_NAME
+  disallow_comment_ignores: true

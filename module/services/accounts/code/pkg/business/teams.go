@@ -5,7 +5,7 @@ import (
 
 	"github.com/codefly-dev/core/wool"
 
-	"accounts/pkg/gen"
+	gen "accounts/pkg/gen/saas/accounts/v1"
 )
 
 // ListTeams returns all teams in an organization.
@@ -24,7 +24,7 @@ func (s *Service) ListTeams(ctx context.Context, req *gen.ListTeamsRequest) (*ge
 }
 
 // AddTeamMember adds a member to a team. The team_id-only request
-// shape forces a team→org resolve under WithBypass before entering
+// shape forces a team→org resolve under WithControlPlane before entering
 // the tenant-scoped tx that does the actual write.
 func (s *Service) AddTeamMember(ctx context.Context, actorID string, req *gen.AddTeamMemberRequest) error {
 	w := wool.Get(ctx).In("AddTeamMember")
@@ -146,7 +146,7 @@ type teamOrgCacheKey struct{ teamID string }
 
 // WithCachedTeamOrgID stamps a team→org resolution onto ctx so the
 // downstream Service.resolveTeamOrg call inside the same request
-// skips a WithBypass round-trip. Called by adapters/rpcs.go right
+// skips a WithControlPlane round-trip. Called by adapters/rpcs.go right
 // after requireTeamAdmin succeeds. Exported so adapters can use it.
 func WithCachedTeamOrgID(ctx context.Context, teamID, orgID string) context.Context {
 	if teamID == "" || orgID == "" {
@@ -164,14 +164,14 @@ func WithCachedTeamOrgID(ctx context.Context, teamID, orgID string) context.Cont
 //
 // If ctx already carries a cached resolution from this same request
 // (set by adapters' WithCachedTeamOrgID after requireTeamAdmin), we
-// skip the WithBypass round-trip — saves 1 of 4 transactions per
+// skip the WithControlPlane round-trip — saves 1 of 4 transactions per
 // request on the team-mutation path.
 func (s *Service) resolveTeamOrg(ctx context.Context, teamID string) (string, error) {
 	if cached, ok := ctx.Value(teamOrgCacheKey{teamID: teamID}).(string); ok && cached != "" {
 		return cached, nil
 	}
 	var orgID string
-	if err := s.store.WithBypass(ctx, func(ctx context.Context) error {
+	if err := s.store.WithControlPlane(ctx, func(ctx context.Context) error {
 		o, err := s.store.GetTeamOrgID(ctx, teamID)
 		orgID = o
 		return err

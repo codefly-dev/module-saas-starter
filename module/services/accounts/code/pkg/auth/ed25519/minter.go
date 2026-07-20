@@ -9,9 +9,9 @@
 //   - Access tokens carry a jti (random 128 bits) for replay correlation.
 //   - Refresh tokens are opaque 256-bit tokens, SHA-256 hashed at rest,
 //     compared constant-time via crypto/subtle.
-//   - Refresh rotation: every VerifyRefresh that finds an already-revoked
-//     row triggers RevokeFamily on the entire family (OWASP pattern) and
-//     returns auth.ErrRefreshReuse.
+//   - Refresh consumption and successor insertion are one atomic store
+//     operation. Reuse commits revocation of every active session for the
+//     affected user before auth.ErrRefreshReuse is returned.
 //   - Clock skew tolerance is configurable, default 60s.
 //
 // This package does NOT own key management. Callers pass a keypair that
@@ -31,6 +31,8 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"maps"
+	"slices"
 	"time"
 
 	"github.com/golang-jwt/jwt/v5"
@@ -53,13 +55,13 @@ type Config struct {
 	// Falls back to AccessTokenTTL when zero. Belt-and-suspenders against
 	// admin "view-as" sessions left open in a forgotten tab.
 	ImpersonationTokenTTL time.Duration
-	// RefreshTokenTTL is the lifetime of a refresh token. Default 7 days.
-	RefreshTokenTTL time.Duration
+	// SessionPolicy controls absolute, idle, and active-device limits.
+	SessionPolicy auth.SessionPolicy
 	// ClockSkew is the tolerance allowed when validating exp/nbf. Default 60s.
 	ClockSkew time.Duration
 }
 
-func (c *Config) withDefaults() {
+func (c *Config) withDefaults() error {
 	if c.Issuer == "" {
 		c.Issuer = "saas-starter"
 	}
@@ -72,12 +74,11 @@ func (c *Config) withDefaults() {
 	if c.ImpersonationTokenTTL == 0 {
 		c.ImpersonationTokenTTL = 5 * time.Minute
 	}
-	if c.RefreshTokenTTL == 0 {
-		c.RefreshTokenTTL = 7 * 24 * time.Hour
-	}
 	if c.ClockSkew == 0 {
 		c.ClockSkew = 60 * time.Second
 	}
+	c.SessionPolicy = c.SessionPolicy.WithDefaults()
+	return c.SessionPolicy.Validate()
 }
 
 // accessClaims is the exact claim shape of our access token. Field names use
@@ -85,11 +86,15 @@ func (c *Config) withDefaults() {
 // API surface.
 type accessClaims struct {
 	jwt.RegisteredClaims
-	OrgID          string `json:"org,omitempty"`
-	OrgRole        string `json:"or,omitempty"`
-	PlatformRole   string `json:"pr,omitempty"`
-	SessionID      string `json:"sid"`
-	ActingAsUserID string `json:"acting,omitempty"`
+	OrgID                 string           `json:"org,omitempty"`
+	OrgRole               string           `json:"or,omitempty"`
+	PlatformRole          string           `json:"pr,omitempty"`
+	SessionID             string           `json:"sid"`
+	ActingAsUserID        string           `json:"acting,omitempty"`
+	AuthenticationMethods []string         `json:"amr,omitempty"`
+	AuthenticationTime    *jwt.NumericDate `json:"auth_time,omitempty"`
+	AssuranceLevel        string           `json:"acr,omitempty"`
+	MFAVerifiedAt         *jwt.NumericDate `json:"mfa_at,omitempty"`
 	// MFASatisfied marks tokens minted after a successful MFA challenge
 	// (or by users who haven't enrolled MFA — the gate is "no enrolled
 	// device" OR "satisfied this session", not "always satisfied"). When
@@ -106,6 +111,7 @@ type Minter struct {
 	store      auth.SessionStore
 	revoker    auth.TokenRevoker
 	now        func() time.Time // injectable clock for tests
+	configErr  error
 }
 
 // New constructs a Minter. The priv key is used for signing and the pub key
@@ -116,7 +122,7 @@ type Minter struct {
 // matching the pre-Redis behaviour). Wire it in production for real
 // access-token revocation on logout.
 func New(cfg Config, priv ed25519.PrivateKey, store auth.SessionStore) *Minter {
-	cfg.withDefaults()
+	configErr := cfg.withDefaults()
 	pub := priv.Public().(ed25519.PublicKey)
 	h := sha256.Sum256(pub)
 	keyID := base64.RawURLEncoding.EncodeToString(h[:8])
@@ -128,6 +134,7 @@ func New(cfg Config, priv ed25519.PrivateKey, store auth.SessionStore) *Minter {
 		store:      store,
 		revoker:    auth.NoopTokenRevoker{},
 		now:        time.Now,
+		configErr:  configErr,
 	}
 }
 
@@ -177,14 +184,35 @@ func (m *Minter) JWKS() (string, error) {
 // For refresh rotation (issuing a new refresh within an existing family),
 // callers go through VerifyRefresh first, which mints a rotated token.
 func (m *Minter) Mint(ctx context.Context, identity *auth.Identity) (*auth.TokenPair, error) {
+	if m.configErr != nil {
+		return nil, fmt.Errorf("ed25519minter: invalid session policy: %w", m.configErr)
+	}
 	return m.mint(ctx, identity, uuid.UUID{} /* new family */)
 }
 
 // mint is the shared implementation for both initial Mint and rotation.
 // familyID == zero means "start a new family".
 func (m *Minter) mint(ctx context.Context, identity *auth.Identity, familyID uuid.UUID) (*auth.TokenPair, error) {
+	pair, rec, err := m.prepareMint(identity, familyID)
+	if err != nil {
+		return nil, err
+	}
+	if err := m.store.Insert(ctx, rec); err != nil {
+		return nil, fmt.Errorf("ed25519minter: insert session: %w", err)
+	}
+	return pair, nil
+}
+
+// prepareMint performs the cryptographic half of token issuance without
+// writing session state. Initial login persists the returned record through
+// Insert; refresh passes it to SessionStore.RotateRefresh so consumption and
+// successor insertion share one database transaction.
+func (m *Minter) prepareMint(identity *auth.Identity, familyID uuid.UUID) (*auth.TokenPair, *auth.SessionRecord, error) {
 	if identity == nil || identity.UserID == uuid.Nil {
-		return nil, fmt.Errorf("ed25519minter: identity missing user id")
+		return nil, nil, fmt.Errorf("ed25519minter: identity missing user id")
+	}
+	if identity.AssuranceLevel == "" {
+		identity.AssuranceLevel = auth.AssuranceLevelAAL1
 	}
 
 	now := m.now()
@@ -199,31 +227,43 @@ func (m *Minter) mint(ctx context.Context, identity *auth.Identity, familyID uui
 	// Access token
 	access, err := m.signAccess(identity, sessionID, now)
 	if err != nil {
-		return nil, fmt.Errorf("ed25519minter: sign access: %w", err)
+		return nil, nil, fmt.Errorf("ed25519minter: sign access: %w", err)
 	}
 
 	// Refresh token
 	plain, hash, err := newRefreshToken()
 	if err != nil {
-		return nil, fmt.Errorf("ed25519minter: generate refresh: %w", err)
+		return nil, nil, fmt.Errorf("ed25519minter: generate refresh: %w", err)
 	}
 
+	idleExpiresAt := now.Add(m.cfg.SessionPolicy.IdleTimeout)
+	absoluteExpiresAt := now.Add(m.cfg.SessionPolicy.AbsoluteLifetime)
+	if idleExpiresAt.After(absoluteExpiresAt) {
+		idleExpiresAt = absoluteExpiresAt
+	}
 	rec := &auth.SessionRecord{
-		ID:           business.NewID(),
-		UserID:       identity.UserID,
-		OrgID:        identity.OrgID,
-		OrgRole:      identity.OrgRole,
-		PlatformRole: identity.PlatformRole,
-		FamilyID:     familyID,
-		RefreshHash:  hash,
-		IssuedAt:     now,
-		ExpiresAt:    now.Add(m.cfg.RefreshTokenTTL),
+		// The sid claim and persisted session primary key must identify the
+		// same session for audit, revocation, and user-facing device lists.
+		ID:                    sessionID,
+		UserID:                identity.UserID,
+		OrgID:                 identity.OrgID,
+		OrgRole:               identity.OrgRole,
+		PlatformRole:          identity.PlatformRole,
+		MFASatisfied:          identity.MFASatisfied,
+		AuthenticationMethods: identity.AuthenticationMethods,
+		AuthenticatedAt:       identity.AuthenticatedAt,
+		AssuranceLevel:        identity.AssuranceLevel,
+		MFAVerifiedAt:         identity.MFAVerifiedAt,
+		DeviceInfo:            maps.Clone(identity.DeviceInfo),
+		IPAddress:             identity.IPAddress,
+		FamilyID:              familyID,
+		RefreshHash:           hash,
+		IssuedAt:              now,
+		LastActiveAt:          now,
+		IdleExpiresAt:         idleExpiresAt,
+		ExpiresAt:             absoluteExpiresAt,
 	}
-	if err := m.store.Insert(ctx, rec); err != nil {
-		return nil, fmt.Errorf("ed25519minter: insert session: %w", err)
-	}
-
-	return &auth.TokenPair{AccessToken: access, RefreshToken: plain}, nil
+	return &auth.TokenPair{AccessToken: access, RefreshToken: plain}, rec, nil
 }
 
 // VerifyRefresh implements auth.JWTMinter.VerifyRefresh with OWASP rotation.
@@ -231,55 +271,159 @@ func (m *Minter) mint(ctx context.Context, identity *auth.Identity, familyID uui
 // Behaviour:
 //   - Valid unexpired active refresh → rotate: revoke this row, mint a new
 //     row in the same family, return fresh (access, refresh) pair.
-//   - Submitted hash maps to a row that is already revoked_at != NULL →
-//     reuse. Revoke the whole family and return ErrRefreshReuse.
-//   - Expired or unknown → ErrRefreshRevoked (intentionally indistinguishable
-//     from not-found to avoid oracle attacks).
+//   - Submitted hash maps to a row consumed by rotation → reuse. Revoke every
+//     active session for the user and return ErrRefreshReuse.
+//   - Submitted hash maps to a row revoked by logout or an authorization
+//     mutation → return ErrRefreshRevoked without triggering replay handling.
+//   - Expired or authorization-rejected sessions are terminally revoked;
+//     unknown tokens return the same ErrRefreshRevoked sentinel to avoid an
+//     existence oracle.
 func (m *Minter) VerifyRefresh(ctx context.Context, refreshToken string) (*auth.TokenPair, error) {
+	if m.configErr != nil {
+		return nil, fmt.Errorf("ed25519minter: invalid session policy: %w", m.configErr)
+	}
 	hash := hashRefresh(refreshToken)
+	var pair *auth.TokenPair
+	err := m.store.RotateRefresh(ctx, hash, func(
+		rec *auth.SessionRecord,
+		authorization auth.RefreshAuthorization,
+	) (*auth.SessionRecord, error) {
+		// Constant-time equality remains defence in depth for alternative stores
+		// whose lookup implementation is not the indexed Postgres operation.
+		if subtle.ConstantTimeCompare(rec.RefreshHash, hash) != 1 {
+			return nil, auth.RejectRefresh(auth.RefreshRejectionHashMismatch)
+		}
+		now := m.now()
+		if !now.Before(rec.ExpiresAt) {
+			return nil, auth.RejectRefresh(auth.RefreshRejectionAbsoluteLifetime)
+		}
+		if !now.Before(rec.IdleExpiresAt) {
+			return nil, auth.RejectRefresh(auth.RefreshRejectionIdleTimeout)
+		}
 
-	rec, err := m.store.FindByRefreshHash(ctx, hash)
-	if err != nil {
-		if errors.Is(err, auth.ErrRefreshRevoked) {
+		identity, err := identityFromCurrentAuthorization(rec, authorization, now, business.NewID())
+		if err != nil {
 			return nil, err
 		}
-		return nil, fmt.Errorf("ed25519minter: lookup session: %w", err)
+
+		var next *auth.SessionRecord
+		pair, next, err = m.prepareMint(identity, rec.FamilyID)
+		if next != nil {
+			// Rotation advances activity but never slides the device family's
+			// creation time or absolute expiry.
+			next.IssuedAt = rec.IssuedAt
+			next.LastActiveAt = now
+			next.ExpiresAt = rec.ExpiresAt
+			next.IdleExpiresAt = now.Add(m.cfg.SessionPolicy.IdleTimeout)
+			if next.IdleExpiresAt.After(rec.ExpiresAt) {
+				next.IdleExpiresAt = rec.ExpiresAt
+			}
+		}
+		return next, err
+	})
+	if err != nil {
+		if errors.Is(err, auth.ErrRefreshRevoked) || errors.Is(err, auth.ErrRefreshReuse) {
+			return nil, err
+		}
+		return nil, fmt.Errorf("ed25519minter: rotate refresh: %w", err)
+	}
+	if pair == nil {
+		return nil, errors.New("ed25519minter: refresh rotation returned no token pair")
+	}
+	return pair, nil
+}
+
+// SwitchOrganization issues a new access-token projection for an existing
+// active device session. It deliberately does not consume or replace the
+// refresh token: organization selection is serialized on the session row and
+// cannot be mistaken for refresh-token replay when it races a background
+// refresh in another browser task.
+func (m *Minter) SwitchOrganization(
+	ctx context.Context,
+	userID uuid.UUID,
+	sessionID uuid.UUID,
+	organizationID uuid.UUID,
+) (string, error) {
+	if m.configErr != nil {
+		return "", fmt.Errorf("ed25519minter: invalid session policy: %w", m.configErr)
+	}
+	if userID == uuid.Nil || sessionID == uuid.Nil || organizationID == uuid.Nil {
+		return "", auth.ErrSessionUnavailable
 	}
 
-	// Constant-time hash equality (defence in depth against any non-indexed
-	// fallback in the store).
-	if subtle.ConstantTimeCompare(rec.RefreshHash, hash) != 1 {
-		return nil, auth.ErrRefreshRevoked
+	var accessToken string
+	err := m.store.ExchangeOrganization(ctx, userID, sessionID, organizationID, func(
+		current *auth.SessionRecord,
+		authorization auth.RefreshAuthorization,
+	) error {
+		now := m.now()
+		identity, err := identityFromCurrentAuthorization(current, authorization, now, current.ID)
+		if err != nil {
+			return err
+		}
+		accessToken, err = m.signAccess(identity, current.ID, now)
+		return err
+	})
+	if err != nil {
+		if errors.Is(err, auth.ErrSessionUnavailable) || errors.Is(err, auth.ErrOrganizationAccessDenied) {
+			return "", err
+		}
+		return "", fmt.Errorf("ed25519minter: switch organization: %w", err)
+	}
+	if accessToken == "" {
+		return "", errors.New("ed25519minter: organization exchange returned no access token")
+	}
+	return accessToken, nil
+}
+
+func identityFromCurrentAuthorization(
+	rec *auth.SessionRecord,
+	authorization auth.RefreshAuthorization,
+	now time.Time,
+	sessionID uuid.UUID,
+) (*auth.Identity, error) {
+	assurance := auth.Assurance{
+		AuthenticationMethods: rec.AuthenticationMethods,
+		AuthenticatedAt:       rec.AuthenticatedAt,
+		Level:                 rec.AssuranceLevel,
+		MFAVerifiedAt:         rec.MFAVerifiedAt,
+	}
+	if authorization.MFAEnrolled &&
+		(!rec.MFASatisfied || !assurance.HasMFAEvidence() || rec.MFAVerifiedAt.After(now.Add(time.Minute))) {
+		return nil, auth.RejectRefresh(auth.RefreshRejectionMFAReauthentication)
 	}
 
-	// Reuse detection: row exists but is already revoked → replay attack.
-	// Kill ALL sessions for this user (not just the family) to force
-	// re-authentication on every device.
-	if rec.RevokedAt != nil {
-		_ = m.store.RevokeByUserID(ctx, rec.UserID, "refresh-reuse-all-sessions")
-		return nil, auth.ErrRefreshReuse
+	authenticationMethods := slices.Clone(rec.AuthenticationMethods)
+	assuranceLevel := rec.AssuranceLevel
+	mfaVerifiedAt := rec.MFAVerifiedAt
+	mfaSatisfied := rec.MFASatisfied
+	if !authorization.MFAEnrolled {
+		authenticationMethods = slices.DeleteFunc(authenticationMethods, isMFAMethod)
+		assuranceLevel = auth.AssuranceLevelAAL1
+		mfaVerifiedAt = time.Time{}
+		mfaSatisfied = true
 	}
 
-	if m.now().After(rec.ExpiresAt) {
-		return nil, auth.ErrRefreshRevoked
-	}
+	return &auth.Identity{
+		UserID:                rec.UserID,
+		OrgID:                 authorization.OrgID,
+		OrgRole:               authorization.OrgRole,
+		PlatformRole:          authorization.PlatformRole,
+		SessionID:             sessionID,
+		MFASatisfied:          mfaSatisfied,
+		AuthenticationMethods: authenticationMethods,
+		AuthenticatedAt:       rec.AuthenticatedAt,
+		AssuranceLevel:        assuranceLevel,
+		MFAVerifiedAt:         mfaVerifiedAt,
+		DeviceInfo:            maps.Clone(rec.DeviceInfo),
+		IPAddress:             rec.IPAddress,
+	}, nil
+}
 
-	// Reconstitute the identity that was snapshotted when this refresh was
-	// issued. Roles may be stale relative to current DB state — accepted
-	// tradeoff documented in PRODUCTION_READY.md.
-	identity := &auth.Identity{
-		UserID:       rec.UserID,
-		OrgID:        rec.OrgID,
-		OrgRole:      rec.OrgRole,
-		PlatformRole: rec.PlatformRole,
-		SessionID:    business.NewID(),
-	}
-
-	// Rotate: revoke the presented row, mint a new pair in the same family.
-	if err := m.store.RevokeFamily(ctx, rec.FamilyID, "rotated"); err != nil {
-		return nil, fmt.Errorf("ed25519minter: revoke rotated: %w", err)
-	}
-	return m.mint(ctx, identity, rec.FamilyID)
+func isMFAMethod(method string) bool {
+	return method == auth.AuthenticationMethodOTP ||
+		method == auth.AuthenticationMethodRecovery ||
+		method == auth.AuthenticationMethodWebAuthn
 }
 
 // Revoke implements auth.JWTMinter.Revoke by revoking the family backing the
@@ -368,13 +512,17 @@ func (m *Minter) VerifyAccess(tokenString string) (*auth.Identity, error) {
 	}
 
 	return &auth.Identity{
-		UserID:         userID,
-		OrgID:          orgID,
-		OrgRole:        claims.OrgRole,
-		PlatformRole:   claims.PlatformRole,
-		SessionID:      sessionID,
-		ActingAsUserID: actingAs,
-		MFASatisfied:   claims.MFASatisfied,
+		UserID:                userID,
+		OrgID:                 orgID,
+		OrgRole:               claims.OrgRole,
+		PlatformRole:          claims.PlatformRole,
+		SessionID:             sessionID,
+		ActingAsUserID:        actingAs,
+		MFASatisfied:          claims.MFASatisfied,
+		AuthenticationMethods: claims.AuthenticationMethods,
+		AuthenticatedAt:       numericDateTime(claims.AuthenticationTime),
+		AssuranceLevel:        claims.AssuranceLevel,
+		MFAVerifiedAt:         numericDateTime(claims.MFAVerifiedAt),
 	}, nil
 }
 
@@ -444,10 +592,25 @@ func (m *Minter) signAccess(identity *auth.Identity, sessionID uuid.UUID, now ti
 		claims.ActingAsUserID = identity.ActingAsUserID.String()
 	}
 	claims.MFASatisfied = identity.MFASatisfied
+	claims.AuthenticationMethods = identity.AuthenticationMethods
+	if !identity.AuthenticatedAt.IsZero() {
+		claims.AuthenticationTime = jwt.NewNumericDate(identity.AuthenticatedAt)
+	}
+	claims.AssuranceLevel = identity.AssuranceLevel
+	if !identity.MFAVerifiedAt.IsZero() {
+		claims.MFAVerifiedAt = jwt.NewNumericDate(identity.MFAVerifiedAt)
+	}
 
 	token := jwt.NewWithClaims(jwt.SigningMethodEdDSA, claims)
 	token.Header["kid"] = m.keyID
 	return token.SignedString(m.privateKey)
+}
+
+func numericDateTime(value *jwt.NumericDate) time.Time {
+	if value == nil {
+		return time.Time{}
+	}
+	return value.Time
 }
 
 // newRefreshToken generates a cryptographically random opaque refresh token

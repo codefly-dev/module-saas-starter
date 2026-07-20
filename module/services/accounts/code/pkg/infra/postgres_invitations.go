@@ -18,6 +18,19 @@ func (s *PostgresStore) CreateInvitation(ctx context.Context, inv *business.Invi
 	return err
 }
 
+// ExpirePendingInvitations releases stale seat reservations and, importantly,
+// removes them from the partial unique index that permits only one pending
+// invitation per organization/email.
+func (s *PostgresStore) ExpirePendingInvitations(ctx context.Context, orgID string) error {
+	_, err := s.getQueryExecutor(ctx).Exec(ctx, `
+		UPDATE invitations
+		SET status = 'expired'
+		WHERE org_id = $1
+		  AND status = 'pending'
+		  AND expires_at <= CURRENT_TIMESTAMP`, orgID)
+	return err
+}
+
 func (s *PostgresStore) GetInvitationByTokenHash(ctx context.Context, hash string) (*business.Invitation, error) {
 	q := s.getQueryExecutor(ctx)
 	row := q.QueryRow(ctx, `
@@ -43,6 +56,16 @@ func (s *PostgresStore) GetInvitationByTokenHash(ctx context.Context, hash strin
 		inv.AcceptedBy = *acceptedBy
 	}
 	return &inv, nil
+}
+
+func (s *PostgresStore) GetInvitationOrgID(ctx context.Context, id string) (string, error) {
+	q := s.getQueryExecutor(ctx)
+	var orgID string
+	err := q.QueryRow(ctx, `SELECT org_id FROM invitations WHERE id = $1`, id).Scan(&orgID)
+	if err == pgx.ErrNoRows {
+		return "", nil
+	}
+	return orgID, err
 }
 
 func (s *PostgresStore) ListInvitations(ctx context.Context, orgID string, status string) ([]*business.Invitation, error) {
@@ -95,6 +118,11 @@ func (s *PostgresStore) UpdateInvitationStatus(ctx context.Context, id string, s
 func (s *PostgresStore) CountPendingInvitations(ctx context.Context, orgID string) (int32, error) {
 	q := s.getQueryExecutor(ctx)
 	var count int32
-	err := q.QueryRow(ctx, `SELECT COUNT(*) FROM invitations WHERE org_id = $1 AND status = 'pending'`, orgID).Scan(&count)
+	err := q.QueryRow(ctx, `
+		SELECT COUNT(*)
+		FROM invitations
+		WHERE org_id = $1
+		  AND status = 'pending'
+		  AND expires_at > CURRENT_TIMESTAMP`, orgID).Scan(&count)
 	return count, err
 }

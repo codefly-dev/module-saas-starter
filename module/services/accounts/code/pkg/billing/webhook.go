@@ -6,10 +6,10 @@ package billing
 // webhook secret registered in your dashboard. We verify the signature
 // BEFORE parsing the body. Any unsigned or tampered payload is rejected.
 //
-// Idempotency: Stripe retries on any non-2xx response. Handlers MUST
-// be idempotent. The db-backed event log (stripe_webhook_events) is
-// inserted with a unique constraint on event id — duplicates short-
-// circuit, returning 200 without re-processing.
+// Idempotency: Stripe retries on any non-2xx response. The generic jobs inbox
+// atomically retains the verified body under Stripe's event id. Duplicate
+// deliveries return 200 without replacing the original; processing retries
+// are owned by the generic leased worker, not Stripe's request.
 //
 // Events we care about for a subscription SaaS:
 //
@@ -38,10 +38,12 @@ import (
 // We only unmarshal the fields we route on; the full raw body stays in
 // Data.Raw for downstream typed decoding.
 type Event struct {
-	ID      string          `json:"id"`
-	Type    string          `json:"type"`
-	Created int64           `json:"created"`
-	Data    json.RawMessage `json:"data"`
+	ID         string          `json:"id"`
+	Type       string          `json:"type"`
+	Created    int64           `json:"created"`
+	APIVersion string          `json:"api_version"`
+	Livemode   bool            `json:"livemode"`
+	Data       json.RawMessage `json:"data"`
 }
 
 // ObjectFromData pulls the nested data.object out of an Event body.

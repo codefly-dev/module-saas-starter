@@ -5,9 +5,8 @@ import (
 	"sort"
 
 	"github.com/codefly-dev/core/wool"
-	"google.golang.org/grpc"
 
-	"accounts/pkg/gen"
+	gen "accounts/pkg/gen/saas/accounts/v1"
 )
 
 // ServiceVersion is the semver of THIS service's API surface (the
@@ -16,7 +15,7 @@ import (
 //
 // Module-level version is a separate concern owned by the module
 // declaration (module.codefly.yaml), not by this service.
-const ServiceVersion = "0.1.0"
+const ServiceVersion = "0.2.0"
 
 // GetServiceInfo returns the machine-readable catalog of THIS
 // service: its RPC surface, RBAC vocabulary, RLS-protected tables,
@@ -28,13 +27,11 @@ const ServiceVersion = "0.1.0"
 // the module and merges each service's GetServiceInfo response.
 // That aggregator is intentionally out of scope here.
 //
-// Drift resistance: the RPC LIST is derived from the gRPC service
-// descriptors generated from proto/api.proto — adding/removing a
-// proto RPC mechanically changes the response. We hand-maintain
-// only the per-RPC METADATA (handler_authz, scopes, emits_audit,
-// http_*) in `rpcMetadata`. If a new proto RPC lands without
-// metadata, it shows up with empty fields and a test in
-// introspection_test.go fails — loud, not silent.
+// Drift resistance: RPCs, HTTP routes, and enforcement policy are derived from
+// the protobuf descriptor graph. Adding a method without a complete
+// saas.policy.v1.method_policy option leaves it unclassified, so interceptors
+// deny it and the completeness test fails. Only editorial descriptions remain
+// in rpcDescriptions until P1-DOC-001 makes source comments compiler-readable.
 //
 // The redaction pass at the end strips platform_admin / mfa-tier
 // RPCs for unauthenticated callers (the catalog is exposed publicly
@@ -57,228 +54,157 @@ func (s *Service) GetServiceInfo(ctx context.Context, _ *gen.GetServiceInfoReque
 }
 
 var serviceInfo = &gen.ServiceInfo{
-	Name: "accounts",
+	Name:        "accounts",
 	Module:      "saas-starter",
 	Version:     ServiceVersion,
 	Description: "Tenant-facing API for saas-starter: auth, orgs, teams, RBAC, billing, webhooks, audit. Three-layer authz (handler gates + RBAC + Postgres RLS).",
 	RepoUrl:     "https://github.com/codefly-dev/saas-starter",
 }
 
-// rpcMeta is the hand-maintained metadata for one (Service, Method).
-// Service+Method are the dictionary key (see rpcMetadata below).
-type rpcMeta struct {
-	HTTPMethod   string   // "GET" | "POST" | "DELETE" | "PUT"
-	HTTPPath     string   // grpc-gateway annotation, e.g. "/v1/roles"
-	Description  string   // one-line summary
-	Scopes       []string // required scopes for API-key callers
-	HandlerAuthz string   // "public"|"auth"|"org_member"|"org_admin"|"platform_admin"|"mfa"
-	EmitsAudit   bool
+// rpcDescriptions is the only hand-maintained per-method catalog data.
+// Routing and enforcement metadata comes exclusively from protobuf method
+// options; descriptions remain editorial prose until source comments are
+// compiled into the service catalog.
+var rpcDescriptions = map[string]string{
+	"APIKeyService/CreateAPIKey":               "Mint an API key for an administered organization.",
+	"APIKeyService/ListAPIKeys":                "List org's API keys.",
+	"APIKeyService/RevokeAPIKey":               "Revoke an API key in an administered organization.",
+	"APIKeyService/ValidateAPIKey":             "Internal: plaintext key → key + org id.",
+	"AuditExportService/DeleteConfig":          "Stop exporting; clears cursor.",
+	"AuditExportService/GetConfig":             "Read export config.",
+	"AuditExportService/SaveConfig":            "Configure per-org S3 export.",
+	"AuditService/ExportAuditLog":              "Download audit log as CSV/JSON.",
+	"AuditService/QueryAuditLog":               "Read audit events (org member sees own org; platform admin sees all).",
+	"AuthService/Authenticate":                 "Exchange typed OAuth-code or explicit fixture credentials for tokens.",
+	"AuthService/BeginOAuth":                   "Mint signed OAuth state for an allowlisted redirect.",
+	"AuthService/BeginWebAuthnMFAChallenge":    "Begin a WebAuthn assertion bound to an MFA login transaction.",
+	"AuthService/CompleteMFAChallenge":         "Consume a one-use MFA login transaction and issue the session.",
+	"AuthService/CompleteWebAuthnMFAChallenge": "Verify WebAuthn and atomically consume the MFA login transaction.",
+	"AuthService/GetJWKS":                      "Public JWKS for JWT signature verification.",
+	"AuthService/Logout":                       "Revoke session.",
+	"AuthService/RefreshToken":                 "Refresh access token.",
+	"AuthService/SwitchOrganization":           "Exchange the active device session for an access token scoped to another current membership.",
+	"BillingService/ListInvoices":              "Past Stripe invoices.",
+	"BillingService/OpenPortal":                "Stripe billing-portal session; requires billing:write and recent MFA.",
+	"ConsentService/Accept":                    "Record TOS acceptance.",
+	"ConsentService/GetStatus":                 "Read TOS acceptance state.",
+	"DelegationService/DecideDelegation":       "Approve or deny a delegation request.",
+	"DelegationService/ListPendingDelegations": "List pending organization delegations.",
+	"DelegationService/RequestDelegation":      "Request a scoped authority delegation.",
+	"DelegationService/WaitForDelegation":      "Stream the terminal delegation decision.",
+	"GDPRService/GetDeletionStatus":            "Status of a GDPR deletion request.",
+	"GDPRService/GetExportStatus":              "Status of a GDPR export request.",
+	"GDPRService/RequestDeletion":              "Request account deletion. Requires MFA.",
+	"GDPRService/RequestExport":                "Request data export. Async.",
+	"IdentityService/ResolveIdentity":          "Internal: provider id → user/org/roles.",
+	"IntrospectionService/GetServiceInfo":      "Self-describing service catalog (this RPC).",
+	"InvitationService/AcceptInvitation":       "Accept an invite by token.",
+	"InvitationService/CreateInvitation":       "Invite a user to an org.",
+	"InvitationService/ListInvitations":        "List pending invites for an org.",
+	"InvitationService/RevokeInvitation":       "Revoke a pending invite.",
+	"MFAService/BeginWebAuthnRegistration":     "Begin passkey registration with server-side ceremony state.",
+	"MFAService/FinishWebAuthnRegistration":    "Verify and persist a passkey credential.",
+	"MFAService/GenerateBackupCodes":           "Mint backup codes (one-time view).",
+	"MFAService/ListDevices":                   "List user's MFA devices.",
+	"MFAService/RevokeDevice":                  "Remove an MFA device.",
+	"MFAService/SetupTOTP":                     "Begin TOTP enrollment.",
+	"MFAService/VerifyTOTP":                    "Confirm TOTP code; activate device.",
+	"NotificationService/DeleteNotification":   "Delete one.",
+	"NotificationService/GetUnreadCount":       "Count of unread.",
+	"NotificationService/ListNotifications":    "List the caller's notifications.",
+	"NotificationService/MarkAllRead":          "Mark all read.",
+	"NotificationService/MarkRead":             "Mark one read.",
+	"OnboardingService/CompleteStep":           "Mark a step done.",
+	"OnboardingService/GetProgress":            "Wizard step status for the caller.",
+	"OnboardingService/SkipStep":               "Mark a step skipped.",
+	"OrganizationService/AddMember":            "Add a user to an org.",
+	"OrganizationService/CreateOrganization":   "Create a new org; caller becomes owner.",
+	"OrganizationService/GetOrgSettings":       "Read branding.",
+	"OrganizationService/GetOrganization":      "Read an org.",
+	"OrganizationService/ListMembers":          "List members of an org.",
+	"OrganizationService/ListOrganizations":    "Orgs the caller belongs to.",
+	"OrganizationService/RemoveMember":         "Remove a member; last-admin guard.",
+	"OrganizationService/UpdateOrgSettings":    "Update branding (logo, color, custom domain).",
+	"PermissionService/AssignRole":             "Grant a role to a user/team.",
+	"PermissionService/CheckPermission":        "Internal authz decision (auth-sidecar caller).",
+	"PermissionService/CreateRole":             "Create a role (org-scoped or platform).",
+	"PermissionService/Decide":                 "Internal principal-aware authz decision (successor to CheckPermission).",
+	"PermissionService/DeleteRole":             "Delete a custom role.",
+	"PermissionService/ListRoleAssignments":    "List assignments in an org.",
+	"PermissionService/ListRoles":              "List built-in + org-scoped roles.",
+	"PermissionService/RevokeRole":             "Revoke a role assignment.",
+	"PlatformAdminService/GetOrgEntitlements":  "Plan + overrides + usage.",
+	"PlatformAdminService/GetJob":              "Payload-free job metadata, attempts, and state history.",
+	"PlatformAdminService/GetJobOperations":    "Durable queue depth, readiness, and lease-health snapshots.",
+	"PlatformAdminService/GrantPlatformRole":   "Grant a platform role.",
+	"PlatformAdminService/ImpersonateUser":     "Mint an impersonation session.",
+	"PlatformAdminService/ListActiveSessions":  "Active sessions for a user.",
+	"PlatformAdminService/ListFeatureFlags":    "List platform feature flags.",
+	"PlatformAdminService/ListJobs":            "Seek-paginated payload-free job operations view.",
+	"PlatformAdminService/ListPlatformAdmins":  "List platform admins.",
+	"PlatformAdminService/OverrideEntitlement": "Per-org limit override.",
+	"PlatformAdminService/RevokePlatformRole":  "Revoke a platform role.",
+	"PlatformAdminService/RevokeSession":       "Revoke a single session.",
+	"PlatformAdminService/ReplayJob":           "Idempotently copy dead-lettered work for another attempt.",
+	"PlatformAdminService/SearchUsers":         "Search across all users.",
+	"PlatformAdminService/SuspendUser":         "Suspend a user account.",
+	"PlatformAdminService/UnsuspendUser":       "Restore a suspended user.",
+	"PlatformAdminService/UpsertFeatureFlag":   "Create / update a feature flag.",
+	"PrincipalService/CreateAgentPrincipal":    "Create an agent principal in an organization.",
+	"PrincipalService/GetAgentPrincipal":       "Internal agent-principal lookup.",
+	"PrincipalService/GetPrincipal":            "Internal principal lookup.",
+	"PrincipalService/ListPrincipals":          "List principals in an organization.",
+	"PrincipalService/RevokePrincipal":         "Revoke an organization or platform principal.",
+	"SSOAdminService/Disable":                  "Pause SSO; preserves WorkOS state for re-enable.",
+	"SSOAdminService/GetSSO":                   "Read org SSO state.",
+	"SSOAdminService/StartSetup":               "Mint WorkOS portal link.",
+	"TeamService/AddMember":                    "Add a user to a team.",
+	"TeamService/CreateTeam":                   "Create a team within an org.",
+	"TeamService/DeleteTeam":                   "Delete a team.",
+	"TeamService/ListMembers":                  "List team members.",
+	"TeamService/ListTeams":                    "List teams in an org.",
+	"TeamService/RemoveMember":                 "Remove a user from a team.",
+	"TeamService/UpdateTeam":                   "Update a team's name or description.",
+	"UserService/AddIdentity":                  "Link an additional auth provider.",
+	"UserService/DeleteUser":                   "Soft-delete a user (self or platform admin).",
+	"UserService/FindUserByIdentity":           "Platform-admin identity lookup.",
+	"UserService/GetSelf":                      "Authenticated user + their orgs.",
+	"UserService/GetUser":                      "Look up a user (self or platform admin).",
+	"UserService/ListUserIdentities":           "List a user's auth methods.",
+	"UserService/ListUsers":                    "Paginated user list (platform admin).",
+	"UserService/RegisterUser":                 "Bootstrap a new user + personal org.",
+	"UserService/UpdateUser":                   "Update profile (self or platform admin).",
+	"UserService/Version":                      "Service version (smoke test).",
+	"UsageService/ConsumeUsage":                "Atomically consume a monthly meter with an idempotent receipt.",
+	"UsageService/GetUsage":                    "Current monthly meter total and effective limit.",
+	"UserSettingsService/Get":                  "JSONB user prefs.",
+	"UserSettingsService/Update":               "Patch user prefs.",
+	"WebhookService/CreateSubscription":        "Create a public-HTTPS endpoint and reveal its encrypted-at-rest signing secret once.",
+	"WebhookService/DeleteSubscription":        "Delete a subscription.",
+	"WebhookService/GetDelivery":               "Read one delivery.",
+	"WebhookService/ListDeliveries":            "Past delivery attempts.",
+	"WebhookService/ListSubscriptions":         "List webhook subscriptions.",
+	"WebhookService/ReplayDelivery":            "Create and audit a new attempt for a past delivery using its stable event ID.",
+	"WebhookService/RotateSecret":              "Rotate the reveal-once signing secret with bounded dual-signature overlap. Requires recent MFA.",
+	"WebhookService/TestWebhook":               "Send a test ping.",
 }
 
-// rpcMetadata maps "<Service>/<Method>" → metadata. Add an entry
-// here for every new proto RPC. The build pass below loops the gRPC
-// service descriptors and joins this map; missing entries surface
-// as RPCs with empty fields in the catalog (the drift-guard test
-// catches that).
-//
-// Keep in sync with adapters/rpcs.go handler-level checks.
-var rpcMetadata = map[string]rpcMeta{
-	// ============== IntrospectionService ==============
-	"IntrospectionService/GetServiceInfo": {HTTPMethod: "GET", HTTPPath: "/v1/.well-known/service-info", Description: "Self-describing service catalog (this RPC).", HandlerAuthz: "public"},
-
-	// ============== AuthService ==============
-	"AuthService/Authenticate": {HTTPMethod: "POST", HTTPPath: "/v1/auth/authenticate", Description: "Dev/fixture login (provider+id → tokens). Production uses BeginOAuth.", HandlerAuthz: "public"},
-	"AuthService/BeginOAuth":   {HTTPMethod: "POST", HTTPPath: "/v1/auth/oauth/begin", Description: "Mint OAuth state for a redirect.", HandlerAuthz: "public"},
-	"AuthService/RefreshToken": {HTTPMethod: "POST", HTTPPath: "/v1/auth/refresh", Description: "Refresh access token.", HandlerAuthz: "public"},
-	"AuthService/Logout":       {HTTPMethod: "POST", HTTPPath: "/v1/auth/logout", Description: "Revoke session.", HandlerAuthz: "public"},
-	"AuthService/GetJWKS":      {HTTPMethod: "GET", HTTPPath: "/v1/auth/.well-known/jwks.json", Description: "Public JWKS for JWT signature verification.", HandlerAuthz: "public"},
-
-	// ============== UserService ==============
-	"UserService/Version":            {HTTPMethod: "GET", HTTPPath: "/v1/version", Description: "Service version (smoke test).", HandlerAuthz: "public"},
-	"UserService/GetSelf":            {HTTPMethod: "GET", HTTPPath: "/v1/users/self", Description: "Authenticated user + their orgs.", HandlerAuthz: "auth"},
-	"UserService/RegisterUser":       {HTTPMethod: "POST", HTTPPath: "/v1/users/register", Description: "Bootstrap a new user + personal org.", HandlerAuthz: "public", EmitsAudit: true},
-	"UserService/GetUser":            {HTTPMethod: "GET", HTTPPath: "/v1/users/{uuid}", Description: "Look up a user (self or platform admin).", HandlerAuthz: "auth"},
-	"UserService/ListUsers":          {HTTPMethod: "GET", HTTPPath: "/v1/users", Description: "Paginated user list (platform admin).", HandlerAuthz: "platform_admin"},
-	"UserService/UpdateUser":         {HTTPMethod: "PATCH", HTTPPath: "/v1/users/{uuid}", Description: "Update profile (self or platform admin).", HandlerAuthz: "auth", EmitsAudit: true},
-	"UserService/DeleteUser":         {HTTPMethod: "DELETE", HTTPPath: "/v1/users/{uuid}", Description: "Soft-delete a user (self or platform admin).", HandlerAuthz: "auth", EmitsAudit: true},
-	"UserService/AddIdentity":        {HTTPMethod: "POST", HTTPPath: "/v1/users/{user_uuid}/identities", Description: "Link an additional auth provider.", HandlerAuthz: "auth"},
-	"UserService/FindUserByIdentity": {HTTPMethod: "GET", HTTPPath: "/v1/identities/find", Description: "Internal lookup (auth-sidecar).", HandlerAuthz: "public"},
-	"UserService/ListUserIdentities": {HTTPMethod: "GET", HTTPPath: "/v1/users/{user_uuid}/identities", Description: "List a user's auth methods.", HandlerAuthz: "auth"},
-
-	// ============== OrganizationService ==============
-	"OrganizationService/CreateOrganization": {HTTPMethod: "POST", HTTPPath: "/v1/organizations", Description: "Create a new org; caller becomes owner.", HandlerAuthz: "auth", EmitsAudit: true},
-	"OrganizationService/GetOrganization":    {HTTPMethod: "GET", HTTPPath: "/v1/organizations/{id}", Description: "Read an org.", HandlerAuthz: "org_member"},
-	"OrganizationService/ListOrganizations":  {HTTPMethod: "GET", HTTPPath: "/v1/organizations", Description: "Orgs the caller belongs to.", HandlerAuthz: "auth"},
-	"OrganizationService/AddMember":          {HTTPMethod: "POST", HTTPPath: "/v1/organizations/{org_id}/members", Description: "Add a user to an org.", HandlerAuthz: "org_admin", EmitsAudit: true},
-	"OrganizationService/RemoveMember":       {HTTPMethod: "DELETE", HTTPPath: "/v1/organizations/{org_id}/members/{user_id}", Description: "Remove a member; last-admin guard.", HandlerAuthz: "org_admin", EmitsAudit: true},
-	"OrganizationService/ListMembers":        {HTTPMethod: "GET", HTTPPath: "/v1/organizations/{org_id}/members", Description: "List members of an org.", HandlerAuthz: "org_member"},
-	"OrganizationService/UpdateOrgSettings":  {HTTPMethod: "PUT", HTTPPath: "/v1/organizations/{org_id}/settings", Description: "Update branding (logo, color, custom domain).", HandlerAuthz: "org_admin", EmitsAudit: true},
-	"OrganizationService/GetOrgSettings":     {HTTPMethod: "GET", HTTPPath: "/v1/organizations/{org_id}/settings", Description: "Read branding.", HandlerAuthz: "org_member"},
-
-	// ============== TeamService ==============
-	"TeamService/CreateTeam":   {HTTPMethod: "POST", HTTPPath: "/v1/organizations/{org_id}/teams", Description: "Create a team within an org.", HandlerAuthz: "org_admin", EmitsAudit: true},
-	"TeamService/ListTeams":    {HTTPMethod: "GET", HTTPPath: "/v1/organizations/{org_id}/teams", Description: "List teams in an org.", HandlerAuthz: "org_member"},
-	"TeamService/AddMember":    {HTTPMethod: "POST", HTTPPath: "/v1/teams/{team_id}/members", Description: "Add a user to a team.", HandlerAuthz: "org_admin", EmitsAudit: true},
-	"TeamService/RemoveMember": {HTTPMethod: "DELETE", HTTPPath: "/v1/teams/{team_id}/members/{user_id}", Description: "Remove a user from a team.", HandlerAuthz: "org_admin", EmitsAudit: true},
-	"TeamService/ListMembers":  {HTTPMethod: "GET", HTTPPath: "/v1/teams/{team_id}/members", Description: "List team members.", HandlerAuthz: "org_member"},
-
-	// ============== PermissionService ==============
-	"PermissionService/CreateRole":          {HTTPMethod: "POST", HTTPPath: "/v1/roles", Description: "Create a role (org-scoped or platform).", HandlerAuthz: "org_admin", EmitsAudit: true},
-	"PermissionService/ListRoles":           {HTTPMethod: "GET", HTTPPath: "/v1/roles", Description: "List built-in + org-scoped roles.", HandlerAuthz: "auth"},
-	"PermissionService/DeleteRole":          {HTTPMethod: "DELETE", HTTPPath: "/v1/roles/{id}", Description: "Delete a custom role.", HandlerAuthz: "platform_admin", EmitsAudit: true},
-	"PermissionService/AssignRole":          {HTTPMethod: "POST", HTTPPath: "/v1/role-assignments", Description: "Grant a role to a user/team.", HandlerAuthz: "org_admin", EmitsAudit: true},
-	"PermissionService/RevokeRole":          {HTTPMethod: "DELETE", HTTPPath: "/v1/role-assignments", Description: "Revoke a role assignment.", HandlerAuthz: "org_admin", EmitsAudit: true},
-	"PermissionService/ListRoleAssignments": {HTTPMethod: "GET", HTTPPath: "/v1/role-assignments", Description: "List assignments in an org.", HandlerAuthz: "org_member"},
-	"PermissionService/CheckPermission":     {HTTPMethod: "POST", HTTPPath: "/v1/permissions:check", Description: "Internal authz decision (auth-sidecar caller).", HandlerAuthz: "public"},
-	"PermissionService/Decide":              {HTTPMethod: "POST", HTTPPath: "/v1/permissions:decide", Description: "Principal-aware authz decision (M2; successor to CheckPermission).", HandlerAuthz: "public"},
-
-	// ============== IdentityService ==============
-	"IdentityService/ResolveIdentity": {HTTPMethod: "POST", HTTPPath: "/v1/identity:resolve", Description: "Internal: provider id → user/org/roles.", HandlerAuthz: "public"},
-
-	// ============== APIKeyService ==============
-	"APIKeyService/CreateAPIKey":   {HTTPMethod: "POST", HTTPPath: "/v1/api-keys", Description: "Mint an API key with scopes.", HandlerAuthz: "auth", Scopes: []string{"api_keys:write"}, EmitsAudit: true},
-	"APIKeyService/ListAPIKeys":    {HTTPMethod: "GET", HTTPPath: "/v1/api-keys", Description: "List org's API keys.", HandlerAuthz: "org_member", Scopes: []string{"api_keys:read"}},
-	"APIKeyService/RevokeAPIKey":   {HTTPMethod: "DELETE", HTTPPath: "/v1/api-keys/{id}", Description: "Revoke an API key.", HandlerAuthz: "platform_admin", Scopes: []string{"api_keys:write"}, EmitsAudit: true},
-	"APIKeyService/ValidateAPIKey": {HTTPMethod: "POST", HTTPPath: "/v1/api-keys:validate", Description: "Internal: plaintext key → key + org id.", HandlerAuthz: "public"},
-
-	// ============== AuditService ==============
-	"AuditService/QueryAuditLog":  {HTTPMethod: "GET", HTTPPath: "/v1/audit-log", Description: "Read audit events (org member sees own org; platform admin sees all).", HandlerAuthz: "org_member", Scopes: []string{"audit:read"}},
-	"AuditService/ExportAuditLog": {HTTPMethod: "GET", HTTPPath: "/v1/audit-log/export", Description: "Download audit log as CSV/JSON.", HandlerAuthz: "org_admin", Scopes: []string{"audit:read"}},
-
-	// ============== AuditExportService ==============
-	"AuditExportService/SaveConfig":   {HTTPMethod: "PUT", HTTPPath: "/v1/audit-export/config", Description: "Configure per-org S3 export.", HandlerAuthz: "org_admin", EmitsAudit: true},
-	"AuditExportService/GetConfig":    {HTTPMethod: "GET", HTTPPath: "/v1/audit-export/config", Description: "Read export config.", HandlerAuthz: "org_admin"},
-	"AuditExportService/DeleteConfig": {HTTPMethod: "DELETE", HTTPPath: "/v1/audit-export/config", Description: "Stop exporting; clears cursor.", HandlerAuthz: "org_admin", EmitsAudit: true},
-
-	// ============== InvitationService ==============
-	"InvitationService/CreateInvitation": {HTTPMethod: "POST", HTTPPath: "/v1/invitations", Description: "Invite a user to an org.", HandlerAuthz: "org_admin", EmitsAudit: true},
-	"InvitationService/AcceptInvitation": {HTTPMethod: "POST", HTTPPath: "/v1/invitations:accept", Description: "Accept an invite by token.", HandlerAuthz: "auth", EmitsAudit: true},
-	"InvitationService/ListInvitations":  {HTTPMethod: "GET", HTTPPath: "/v1/invitations", Description: "List pending invites for an org.", HandlerAuthz: "org_admin"},
-	"InvitationService/RevokeInvitation": {HTTPMethod: "DELETE", HTTPPath: "/v1/invitations/{id}", Description: "Revoke a pending invite.", HandlerAuthz: "org_admin", EmitsAudit: true},
-
-	// ============== WebhookService ==============
-	"WebhookService/CreateSubscription": {HTTPMethod: "POST", HTTPPath: "/v1/webhooks", Description: "Subscribe to events.", HandlerAuthz: "org_admin", Scopes: []string{"webhooks:write"}, EmitsAudit: true},
-	"WebhookService/ListSubscriptions":  {HTTPMethod: "GET", HTTPPath: "/v1/webhooks", Description: "List webhook subscriptions.", HandlerAuthz: "org_member", Scopes: []string{"webhooks:read"}},
-	"WebhookService/DeleteSubscription": {HTTPMethod: "DELETE", HTTPPath: "/v1/webhooks/{id}", Description: "Delete a subscription.", HandlerAuthz: "org_admin", Scopes: []string{"webhooks:write"}, EmitsAudit: true},
-	"WebhookService/ListDeliveries":     {HTTPMethod: "GET", HTTPPath: "/v1/webhooks/{subscription_id}/deliveries", Description: "Past delivery attempts.", HandlerAuthz: "org_member", Scopes: []string{"webhooks:read"}},
-	"WebhookService/GetDelivery":        {HTTPMethod: "GET", HTTPPath: "/v1/webhooks/deliveries/{id}", Description: "Read one delivery.", HandlerAuthz: "org_member", Scopes: []string{"webhooks:read"}},
-	"WebhookService/ReplayDelivery":     {HTTPMethod: "POST", HTTPPath: "/v1/webhooks/deliveries/{id}:replay", Description: "Re-send a past delivery.", HandlerAuthz: "org_admin", Scopes: []string{"webhooks:write"}, EmitsAudit: true},
-	"WebhookService/TestWebhook":        {HTTPMethod: "POST", HTTPPath: "/v1/webhooks/{id}:test", Description: "Send a test ping.", HandlerAuthz: "org_admin", Scopes: []string{"webhooks:write"}},
-	"WebhookService/RotateSecret":       {HTTPMethod: "POST", HTTPPath: "/v1/webhooks/{id}:rotateSecret", Description: "Rotate signing secret. Requires MFA.", HandlerAuthz: "mfa", Scopes: []string{"webhooks:write"}, EmitsAudit: true},
-
-	// ============== NotificationService ==============
-	"NotificationService/ListNotifications":  {HTTPMethod: "GET", HTTPPath: "/v1/notifications", Description: "List the caller's notifications.", HandlerAuthz: "auth"},
-	"NotificationService/GetUnreadCount":     {HTTPMethod: "GET", HTTPPath: "/v1/notifications/unread-count", Description: "Count of unread.", HandlerAuthz: "auth"},
-	"NotificationService/MarkRead":           {HTTPMethod: "POST", HTTPPath: "/v1/notifications/{id}:read", Description: "Mark one read.", HandlerAuthz: "auth"},
-	"NotificationService/MarkAllRead":        {HTTPMethod: "POST", HTTPPath: "/v1/notifications:mark-all-read", Description: "Mark all read.", HandlerAuthz: "auth"},
-	"NotificationService/DeleteNotification": {HTTPMethod: "DELETE", HTTPPath: "/v1/notifications/{id}", Description: "Delete one.", HandlerAuthz: "auth"},
-
-	// ============== OnboardingService ==============
-	"OnboardingService/GetProgress":  {HTTPMethod: "GET", HTTPPath: "/v1/onboarding/progress", Description: "Wizard step status for the caller.", HandlerAuthz: "auth"},
-	"OnboardingService/CompleteStep": {HTTPMethod: "POST", HTTPPath: "/v1/onboarding/steps/{step_name}:complete", Description: "Mark a step done.", HandlerAuthz: "auth"},
-	"OnboardingService/SkipStep":     {HTTPMethod: "POST", HTTPPath: "/v1/onboarding/steps/{step_name}:skip", Description: "Mark a step skipped.", HandlerAuthz: "auth"},
-
-	// ============== GDPRService ==============
-	"GDPRService/RequestExport":     {HTTPMethod: "POST", HTTPPath: "/v1/gdpr/export", Description: "Request data export. Async.", HandlerAuthz: "auth", EmitsAudit: true},
-	"GDPRService/GetExportStatus":   {HTTPMethod: "GET", HTTPPath: "/v1/gdpr/export/{id}", Description: "Status of a GDPR export request.", HandlerAuthz: "auth"},
-	"GDPRService/RequestDeletion":   {HTTPMethod: "POST", HTTPPath: "/v1/gdpr/delete", Description: "Request account deletion. Requires MFA.", HandlerAuthz: "mfa", EmitsAudit: true},
-	"GDPRService/GetDeletionStatus": {HTTPMethod: "GET", HTTPPath: "/v1/gdpr/delete/{id}", Description: "Status of a GDPR deletion request.", HandlerAuthz: "auth"},
-
-	// ============== ConsentService ==============
-	"ConsentService/GetStatus": {HTTPMethod: "GET", HTTPPath: "/v1/consent", Description: "Read TOS acceptance state.", HandlerAuthz: "auth"},
-	"ConsentService/Accept":    {HTTPMethod: "POST", HTTPPath: "/v1/consent:accept", Description: "Record TOS acceptance.", HandlerAuthz: "auth", EmitsAudit: true},
-
-	// ============== SSOAdminService ==============
-	"SSOAdminService/GetSSO":     {HTTPMethod: "GET", HTTPPath: "/v1/sso", Description: "Read org SSO state.", HandlerAuthz: "org_admin"},
-	"SSOAdminService/StartSetup": {HTTPMethod: "POST", HTTPPath: "/v1/sso/setup", Description: "Mint WorkOS portal link.", HandlerAuthz: "org_admin", EmitsAudit: true},
-	"SSOAdminService/Disable":    {HTTPMethod: "POST", HTTPPath: "/v1/sso:disable", Description: "Pause SSO; preserves WorkOS state for re-enable.", HandlerAuthz: "org_admin", EmitsAudit: true},
-
-	// ============== BillingService ==============
-	"BillingService/StartCheckout": {HTTPMethod: "POST", HTTPPath: "/v1/billing/checkout", Description: "Create Stripe checkout session.", HandlerAuthz: "mfa", Scopes: []string{"billing:write"}, EmitsAudit: true},
-	"BillingService/OpenPortal":    {HTTPMethod: "POST", HTTPPath: "/v1/billing/connect/portal", Description: "Stripe billing-portal session.", HandlerAuthz: "mfa", Scopes: []string{"billing:write"}, EmitsAudit: true},
-	"BillingService/ListInvoices":  {HTTPMethod: "GET", HTTPPath: "/v1/billing/invoices", Description: "Past Stripe invoices.", HandlerAuthz: "org_admin", Scopes: []string{"billing:read"}},
-
-	// ============== UserSettingsService ==============
-	"UserSettingsService/Get":    {HTTPMethod: "GET", HTTPPath: "/v1/users/self/settings", Description: "JSONB user prefs.", HandlerAuthz: "auth"},
-	"UserSettingsService/Update": {HTTPMethod: "PATCH", HTTPPath: "/v1/users/self/settings", Description: "Patch user prefs.", HandlerAuthz: "auth"},
-
-	// ============== MFAService ==============
-	"MFAService/SetupTOTP":           {HTTPMethod: "POST", HTTPPath: "/v1/mfa/totp/setup", Description: "Begin TOTP enrollment.", HandlerAuthz: "auth", EmitsAudit: true},
-	"MFAService/VerifyTOTP":          {HTTPMethod: "POST", HTTPPath: "/v1/mfa/totp/verify", Description: "Confirm TOTP code; activate device.", HandlerAuthz: "auth", EmitsAudit: true},
-	"MFAService/ListDevices":         {HTTPMethod: "GET", HTTPPath: "/v1/mfa/devices", Description: "List user's MFA devices.", HandlerAuthz: "auth"},
-	"MFAService/RevokeDevice":        {HTTPMethod: "DELETE", HTTPPath: "/v1/mfa/devices/{id}", Description: "Remove an MFA device.", HandlerAuthz: "auth", EmitsAudit: true},
-	"MFAService/GenerateBackupCodes": {HTTPMethod: "POST", HTTPPath: "/v1/mfa/backup-codes", Description: "Mint backup codes (one-time view).", HandlerAuthz: "auth", EmitsAudit: true},
-
-	// ============== PlatformAdminService ==============
-	"PlatformAdminService/SuspendUser":         {HTTPMethod: "POST", HTTPPath: "/v1/platform/users/{user_id}:suspend", Description: "Suspend a user account.", HandlerAuthz: "platform_admin", EmitsAudit: true},
-	"PlatformAdminService/UnsuspendUser":       {HTTPMethod: "POST", HTTPPath: "/v1/platform/users/{user_id}:unsuspend", Description: "Restore a suspended user.", HandlerAuthz: "platform_admin", EmitsAudit: true},
-	"PlatformAdminService/ImpersonateUser":     {HTTPMethod: "POST", HTTPPath: "/v1/platform/users/{user_id}:impersonate", Description: "Mint an impersonation session.", HandlerAuthz: "platform_admin", EmitsAudit: true},
-	"PlatformAdminService/SearchUsers":         {HTTPMethod: "GET", HTTPPath: "/v1/platform/users:search", Description: "Search across all users.", HandlerAuthz: "platform_admin"},
-	"PlatformAdminService/ListActiveSessions":  {HTTPMethod: "GET", HTTPPath: "/v1/platform/users/{user_id}/sessions", Description: "Active sessions for a user.", HandlerAuthz: "platform_admin"},
-	"PlatformAdminService/RevokeSession":       {HTTPMethod: "DELETE", HTTPPath: "/v1/platform/sessions/{id}", Description: "Revoke a single session.", HandlerAuthz: "platform_admin", EmitsAudit: true},
-	"PlatformAdminService/RevokeAllSessions":   {HTTPMethod: "DELETE", HTTPPath: "/v1/platform/users/{user_id}/sessions", Description: "Revoke all sessions for a user.", HandlerAuthz: "platform_admin", EmitsAudit: true},
-	"PlatformAdminService/GrantPlatformRole":   {HTTPMethod: "POST", HTTPPath: "/v1/platform/admins", Description: "Grant a platform role.", HandlerAuthz: "platform_admin", EmitsAudit: true},
-	"PlatformAdminService/RevokePlatformRole":  {HTTPMethod: "DELETE", HTTPPath: "/v1/platform/admins/{user_id}", Description: "Revoke a platform role.", HandlerAuthz: "platform_admin", EmitsAudit: true},
-	"PlatformAdminService/ListPlatformAdmins":  {HTTPMethod: "GET", HTTPPath: "/v1/platform/admins", Description: "List platform admins.", HandlerAuthz: "platform_admin"},
-	"PlatformAdminService/GetOrgEntitlements":  {HTTPMethod: "GET", HTTPPath: "/v1/platform/orgs/{org_id}/entitlements", Description: "Plan + overrides + usage.", HandlerAuthz: "platform_admin"},
-	"PlatformAdminService/OverrideEntitlement": {HTTPMethod: "POST", HTTPPath: "/v1/platform/entitlements:override", Description: "Per-org limit override.", HandlerAuthz: "platform_admin", EmitsAudit: true},
-	"PlatformAdminService/ListFeatureFlags":    {HTTPMethod: "GET", HTTPPath: "/v1/platform/feature-flags", Description: "List platform feature flags.", HandlerAuthz: "platform_admin"},
-	"PlatformAdminService/UpsertFeatureFlag":   {HTTPMethod: "PUT", HTTPPath: "/v1/platform/feature-flags", Description: "Create / update a feature flag.", HandlerAuthz: "platform_admin", EmitsAudit: true},
-}
-
-// allServiceDescs returns every gRPC service descriptor THIS service
-// (api) exposes. Used by buildRPCList to enumerate the surface.
-func allServiceDescs() []*grpc.ServiceDesc {
-	return []*grpc.ServiceDesc{
-		&gen.IntrospectionService_ServiceDesc,
-		&gen.AuthService_ServiceDesc,
-		&gen.UserService_ServiceDesc,
-		&gen.OrganizationService_ServiceDesc,
-		&gen.TeamService_ServiceDesc,
-		&gen.PermissionService_ServiceDesc,
-		&gen.IdentityService_ServiceDesc,
-		&gen.APIKeyService_ServiceDesc,
-		&gen.AuditService_ServiceDesc,
-		&gen.AuditExportService_ServiceDesc,
-		&gen.InvitationService_ServiceDesc,
-		&gen.WebhookService_ServiceDesc,
-		&gen.NotificationService_ServiceDesc,
-		&gen.OnboardingService_ServiceDesc,
-		&gen.GDPRService_ServiceDesc,
-		&gen.ConsentService_ServiceDesc,
-		&gen.SSOAdminService_ServiceDesc,
-		&gen.BillingService_ServiceDesc,
-		&gen.UserSettingsService_ServiceDesc,
-		&gen.MFAService_ServiceDesc,
-		&gen.PlatformAdminService_ServiceDesc,
-	}
-}
-
-// buildRPCList enumerates every (Service, Method) from gRPC
-// descriptors and joins per-method metadata. Stable sort by
-// (service, method) so the response is deterministic across calls.
+// buildRPCList enumerates every (Service, Method) and its policy from protobuf
+// descriptors. Stable sort by (service, method) makes the response deterministic.
 func buildRPCList() []*gen.RPCInfo {
-	var out []*gen.RPCInfo
-	for _, sd := range allServiceDescs() {
-		// ServiceName is "customers.UserService" — strip the package.
-		svc := sd.ServiceName
-		if idx := lastDot(svc); idx >= 0 {
-			svc = svc[idx+1:]
-		}
-		for _, m := range sd.Methods {
-			key := svc + "/" + m.MethodName
-			meta := rpcMetadata[key] // empty struct on miss
-			out = append(out, &gen.RPCInfo{
-				Service:      svc,
-				Method:       m.MethodName,
-				HttpMethod:   meta.HTTPMethod,
-				HttpPath:     meta.HTTPPath,
-				Description:  meta.Description,
-				Scopes:       meta.Scopes,
-				HandlerAuthz: meta.HandlerAuthz,
-				EmitsAudit:   meta.EmitsAudit,
-			})
-		}
+	policies := RPCPolicies()
+	out := make([]*gen.RPCInfo, 0, len(policies))
+	for _, policy := range policies {
+		out = append(out, &gen.RPCInfo{
+			Service:      policy.Service,
+			Method:       policy.Method,
+			HttpMethod:   policy.HTTPMethod,
+			HttpPath:     policy.HTTPPath,
+			Description:  policy.Description,
+			Scopes:       policy.Scopes,
+			HandlerAuthz: string(policy.Tier),
+			EmitsAudit:   policy.EmitsAudit,
+		})
 	}
 	sort.Slice(out, func(i, j int) bool {
 		if out[i].Service != out[j].Service {
@@ -314,7 +240,7 @@ func callerIsAuthenticated(ctx context.Context) bool {
 func redactPrivilegedRPCs(in []*gen.RPCInfo) []*gen.RPCInfo {
 	out := make([]*gen.RPCInfo, 0, len(in))
 	for _, r := range in {
-		if r.HandlerAuthz == "platform_admin" || r.HandlerAuthz == "mfa" {
+		if r.HandlerAuthz == "platform_admin" || r.HandlerAuthz == "mfa" || r.HandlerAuthz == "internal" {
 			continue
 		}
 		out = append(out, r)
@@ -322,36 +248,12 @@ func redactPrivilegedRPCs(in []*gen.RPCInfo) []*gen.RPCInfo {
 	return out
 }
 
-// servicePermissions — RBAC vocabulary this service enforces. Each
-// entry is one resource:action pair the api recognizes. Built-in
-// role mapping mirrors migration 4. Note: admin holds the ones
-// below via the seeded `*:*` wildcard, NOT via explicit
-// role_permissions rows; the `built_in_roles: ["admin (via *:*)"]`
-// notation is a documentation shortcut. Editor/viewer ARE seeded
-// explicitly.
-var servicePermissions = []*gen.PermissionInfo{
-	{Resource: "*", Action: "*", Description: "Full access (root). Held by admin via explicit *:* row.", BuiltInRoles: []string{"admin"}},
-	{Resource: "users", Action: "read", Description: "List + get users.", BuiltInRoles: []string{"admin (via *:*)", "editor", "viewer"}},
-	{Resource: "users", Action: "write", Description: "Create / update / delete users.", BuiltInRoles: []string{"admin (via *:*)", "editor"}},
-	{Resource: "teams", Action: "read", Description: "List teams.", BuiltInRoles: []string{"admin (via *:*)", "editor", "viewer"}},
-	{Resource: "teams", Action: "write", Description: "Manage teams.", BuiltInRoles: []string{"admin (via *:*)", "editor"}},
-	{Resource: "knowledge", Action: "read", Description: "Domain-resource read.", BuiltInRoles: []string{"admin (via *:*)", "editor", "viewer"}},
-	{Resource: "knowledge", Action: "write", Description: "Domain-resource write.", BuiltInRoles: []string{"admin (via *:*)", "editor"}},
-	{Resource: "billing", Action: "read", Description: "View billing state.", BuiltInRoles: []string{"admin (via *:*)", "editor"}},
-	{Resource: "billing", Action: "write", Description: "Mutate billing.", BuiltInRoles: []string{"admin (via *:*)"}},
-	{Resource: "audit", Action: "read", Description: "Read audit events.", BuiltInRoles: []string{"admin (via *:*)"}},
-	{Resource: "webhooks", Action: "read", Description: "List webhook subs.", BuiltInRoles: []string{"admin (via *:*)"}},
-	{Resource: "webhooks", Action: "write", Description: "Manage webhook subs.", BuiltInRoles: []string{"admin (via *:*)"}},
-	{Resource: "api_keys", Action: "read", Description: "List API keys.", BuiltInRoles: []string{"admin (via *:*)"}},
-	{Resource: "api_keys", Action: "write", Description: "Manage API keys.", BuiltInRoles: []string{"admin (via *:*)"}},
-}
-
 // serviceRLSTables — RLS-protected tables this api service depends
 // on. The tables themselves live in the store service's schema (via
 // store/migrations); this api is the enforcer that wraps every
-// per-tenant Store call in WithOrgTx / WithBypass.
+// per-tenant Store call in WithOrgTx / WithControlPlane.
 //
-// Source: migrations 23, 27, 28, 29, 30, 31, 32, 33.
+// Source: store migrations through 60.
 var serviceRLSTables = []*gen.RLSPolicyInfo{
 	{Table: "audit_export_configs", PolicyShape: "direct", FailClosed: true, ScopeColumn: "org_id"},
 	{Table: "webhook_subscriptions", PolicyShape: "direct", FailClosed: true, ScopeColumn: "org_id"},
@@ -362,36 +264,17 @@ var serviceRLSTables = []*gen.RLSPolicyInfo{
 	{Table: "organization_members", PolicyShape: "direct", FailClosed: true, ScopeColumn: "org_id"},
 	{Table: "subscriptions", PolicyShape: "direct", FailClosed: true, ScopeColumn: "org_id"},
 	{Table: "entitlement_overrides", PolicyShape: "direct", FailClosed: true, ScopeColumn: "org_id"},
-	{Table: "usage_records", PolicyShape: "direct", FailClosed: true, ScopeColumn: "org_id"},
+	{Table: "usage_events", PolicyShape: "direct", FailClosed: true, ScopeColumn: "org_id", Notes: "Immutable accepted/rejected usage attempt ledger."},
+	{Table: "usage_totals", PolicyShape: "direct", FailClosed: true, ScopeColumn: "org_id", Notes: "Transactionally maintained monthly meter aggregates."},
 	{Table: "teams", PolicyShape: "direct", FailClosed: true, ScopeColumn: "org_id"},
 	{Table: "team_members", PolicyShape: "join", FailClosed: true, ScopeColumn: "team_id", Notes: "JOIN walks team_id → teams.org_id"},
-	{Table: "audit_events", PolicyShape: "polymorphic", FailClosed: true, ScopeColumn: "org_id", Notes: "NULL org_id rows visible only via WithBypass (system events)."},
+	{Table: "audit_events", PolicyShape: "polymorphic", FailClosed: true, ScopeColumn: "org_id", Notes: "NULL org_id rows visible only via WithControlPlane (system events)."},
 	{Table: "roles", PolicyShape: "polymorphic", FailClosed: true, ScopeColumn: "org_id", Notes: "Built-in roles (org_id IS NULL) globally readable; tenant rows scoped."},
 	{Table: "role_assignments", PolicyShape: "polymorphic", FailClosed: true, ScopeColumn: "org_id"},
 	{Table: "organizations", PolicyShape: "self_referential", FailClosed: true, ScopeColumn: "id"},
-}
-
-// serviceScopes — every scope this service accepts on an API key.
-// Wildcard semantics: `*:*` matches everything; `users:*` matches
-// all users:* pairs; `*:read` matches reads across resources.
-var serviceScopes = []*gen.ScopeInfo{
-	{Scope: "*:*", Description: "Root. All resources, all actions."},
-	{Scope: "users:read", Description: "List + get users."},
-	{Scope: "users:write", Description: "Create / update / delete users."},
-	{Scope: "orgs:read", Description: "Read org metadata."},
-	{Scope: "orgs:write", Description: "Manage org settings + members."},
-	{Scope: "teams:read", Description: "List teams + members."},
-	{Scope: "teams:write", Description: "Manage teams."},
-	{Scope: "roles:read", Description: "List roles + assignments."},
-	{Scope: "roles:write", Description: "Create roles + assign / revoke."},
-	{Scope: "api_keys:read", Description: "List API keys."},
-	{Scope: "api_keys:write", Description: "Mint / revoke API keys."},
-	{Scope: "audit:read", Description: "Read audit events."},
-	{Scope: "invitations:read", Description: "List invites."},
-	{Scope: "invitations:write", Description: "Create / revoke invites."},
-	{Scope: "webhooks:read", Description: "List webhook subs."},
-	{Scope: "webhooks:write", Description: "Manage webhook subs (incl. RotateSecret)."},
-	{Scope: "billing:read", Description: "View billing portal + invoices."},
-	{Scope: "billing:write", Description: "Open checkout / portal sessions."},
-	{Scope: "entitlements:read", Description: "View entitlement overrides + usage."},
+	{Table: "mfa_devices", PolicyShape: "direct", FailClosed: true, ScopeColumn: "user_id"},
+	{Table: "mfa_backup_codes", PolicyShape: "direct", FailClosed: true, ScopeColumn: "user_id"},
+	{Table: "mfa_login_transactions", PolicyShape: "direct", FailClosed: true, ScopeColumn: "user_id", Notes: "Public completion uses exact opaque-token hash lookup under audited bypass."},
+	{Table: "webauthn_credentials", PolicyShape: "direct", FailClosed: true, ScopeColumn: "user_id", Notes: "Complete credential record is Vault-encrypted; public credential ID is unique."},
+	{Table: "webauthn_ceremonies", PolicyShape: "direct", FailClosed: true, ScopeColumn: "user_id", Notes: "Short-lived server-side state; login ceremonies are bound to an MFA login transaction."},
 }

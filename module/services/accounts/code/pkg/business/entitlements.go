@@ -2,16 +2,52 @@ package business
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"time"
 )
 
-// EntitlementChecker checks feature access and quota limits for an org.
+var ErrEntitlementQuotaExceeded = errors.New("entitlement quota exceeded")
+
+// CardinalityQuota is a transactionally consistent view of a live-resource
+// allowance. Event meters do not use this type; they go through ConsumeUsage.
+type CardinalityQuota struct {
+	Feature string
+	Used    int64
+	Limit   int64
+}
+
+func (q CardinalityQuota) Available() bool {
+	return q.Limit == -1 || q.Used < q.Limit
+}
+
+// EntitlementQuotaError is safe to inspect with errors.Is while retaining the
+// feature and observed counts for logs and protocol mapping.
+type EntitlementQuotaError struct {
+	Feature string
+	Used    int64
+	Limit   int64
+}
+
+func (e *EntitlementQuotaError) Error() string {
+	return fmt.Sprintf("%s quota exhausted: used %d of %d", e.Feature, e.Used, e.Limit)
+}
+
+func (e *EntitlementQuotaError) Unwrap() error { return ErrEntitlementQuotaExceeded }
+
+func (q CardinalityQuota) RequireAvailable() error {
+	if q.Available() {
+		return nil
+	}
+	return &EntitlementQuotaError{Feature: q.Feature, Used: q.Used, Limit: q.Limit}
+}
+
+// EntitlementChecker resolves feature access and transaction-scoped
+// cardinality quotas for an organization.
 type EntitlementChecker interface {
 	HasFeature(ctx context.Context, orgID string, feature string) (bool, error)
 	GetLimit(ctx context.Context, orgID string, feature string) (int64, error)
-	CheckQuota(ctx context.Context, orgID string, feature string) (bool, error)
-	RecordUsage(ctx context.Context, orgID string, feature string, quantity int64) error
+	CheckCardinalityQuotaInTx(ctx context.Context, orgID string, feature string) (CardinalityQuota, error)
 }
 
 // Plan represents a subscription plan.
@@ -30,6 +66,9 @@ type PlanFull struct {
 	StripeProductID string
 	StripePriceID   string
 	Currency        string // ISO 4217, e.g. "usd", "eur"
+	CheckoutEnabled bool
+	TrialDays       int
+	TaxBehavior     string
 }
 
 // Subscription links an org to a plan.
@@ -105,23 +144,24 @@ func (c *DefaultEntitlementChecker) HasFeature(ctx context.Context, orgID string
 // Phase 2B) plus plan_entitlements (global). Bracket the per-tenant
 // reads in WithOrgTx.
 func (c *DefaultEntitlementChecker) GetLimit(ctx context.Context, orgID string, feature string) (int64, error) {
-	var override *EntitlementOverride
-	var planID string
+	var limit int64
 	if err := c.store.WithOrgTx(ctx, orgID, func(ctx context.Context) error {
-		o, err := c.store.GetEntitlementOverride(ctx, orgID, feature)
-		if err != nil {
-			return err
-		}
-		override = o
-		p, err := c.store.GetOrgPlanID(ctx, orgID)
-		planID = p
+		var err error
+		limit, err = resolveEffectiveLimitInTx(ctx, c.store, orgID, feature, time.Now().UTC())
 		return err
 	}); err != nil {
 		return 0, err
 	}
+	return limit, nil
+}
 
+func resolveEffectiveLimitInTx(ctx context.Context, store Store, orgID, feature string, now time.Time) (int64, error) {
+	override, err := store.GetEntitlementOverride(ctx, orgID, feature)
+	if err != nil {
+		return 0, err
+	}
 	if override != nil {
-		if override.ExpiresAt != nil && override.ExpiresAt.Before(time.Now()) {
+		if override.ExpiresAt != nil && override.ExpiresAt.Before(now) {
 			// Override expired, fall through to plan
 		} else if override.LimitValue == nil {
 			return -1, nil // unlimited
@@ -130,74 +170,45 @@ func (c *DefaultEntitlementChecker) GetLimit(ctx context.Context, orgID string, 
 		}
 	}
 
-	// plan_entitlements is global (skip-list), no wrap needed.
-	limit, err := c.store.GetPlanEntitlement(ctx, planID, feature)
+	planID, err := store.GetOrgPlanID(ctx, orgID)
+	if err != nil {
+		return 0, err
+	}
+	limit, err := store.GetPlanEntitlement(ctx, planID, feature)
 	if err != nil {
 		return 0, err
 	}
 	return limit, nil
 }
 
-// CheckQuota checks if the org has remaining quota for a feature.
-//
-// All reads are tenant-scoped — wrap the whole switch in WithOrgTx
-// so org_members, invitations, api_keys, usage_records (all RLS-
-// protected) let the rows through.
-func (c *DefaultEntitlementChecker) CheckQuota(ctx context.Context, orgID string, feature string) (bool, error) {
-	limit, err := c.GetLimit(ctx, orgID, feature)
+// CheckCardinalityQuotaInTx serializes one tenant/feature admission decision,
+// then resolves its limit and authoritative live-resource count. The caller
+// must keep the returned decision and the resource write in the same
+// transaction. This method intentionally rejects event meters: those use the
+// immutable ConsumeUsage ledger and aggregate row lock instead.
+func (c *DefaultEntitlementChecker) CheckCardinalityQuotaInTx(ctx context.Context, orgID string, feature string) (CardinalityQuota, error) {
+	if feature != EntitlementSeats && feature != EntitlementAPIKeys {
+		return CardinalityQuota{}, fmt.Errorf("%s is not a cardinality entitlement", feature)
+	}
+	if err := c.store.LockEntitlementQuota(ctx, orgID, feature); err != nil {
+		return CardinalityQuota{}, err
+	}
+	limit, err := resolveEffectiveLimitInTx(ctx, c.store, orgID, feature, time.Now().UTC())
 	if err != nil {
-		return false, err
+		return CardinalityQuota{}, err
 	}
-	if limit == -1 {
-		return true, nil // unlimited
+	used, err := resolveUsageInTx(ctx, c.store, orgID, feature, time.Time{})
+	if err != nil {
+		return CardinalityQuota{}, err
 	}
-	if limit == 0 {
-		return false, nil // disabled
-	}
-
-	var used int64
-	if err := c.store.WithOrgTx(ctx, orgID, func(ctx context.Context) error {
-		switch feature {
-		case "seats":
-			members, err := c.store.ListOrgMembers(ctx, orgID)
-			if err != nil {
-				return err
-			}
-			pending, err := c.store.CountPendingInvitations(ctx, orgID)
-			if err != nil {
-				return err
-			}
-			used = int64(len(members)) + int64(pending)
-		case "api_keys":
-			keys, _, err := c.store.ListAPIKeys(ctx, orgID, 1000, "")
-			if err != nil {
-				return err
-			}
-			used = int64(len(keys))
-		default:
-			period := currentPeriod()
-			u, err := c.store.GetUsageForPeriod(ctx, orgID, feature, period)
-			used = u
-			return err
-		}
-		return nil
-	}); err != nil {
-		return false, err
-	}
-
-	return used < limit, nil
+	return CardinalityQuota{Feature: feature, Used: used, Limit: limit}, nil
 }
 
-// RecordUsage increments usage for a metered feature.
-// usage_records is RLS-protected (Phase 2B).
-func (c *DefaultEntitlementChecker) RecordUsage(ctx context.Context, orgID string, feature string, quantity int64) error {
-	return c.store.WithOrgTx(ctx, orgID, func(ctx context.Context) error {
-		return c.store.RecordUsage(ctx, orgID, feature, quantity, currentPeriod())
-	})
-}
-
-func currentPeriod() string {
-	return fmt.Sprintf("%d-%02d", time.Now().Year(), time.Now().Month())
+func (s *Service) cardinalityQuotaInTx(ctx context.Context, orgID string, feature string) (CardinalityQuota, error) {
+	if s.entitlements == nil {
+		return CardinalityQuota{}, errors.New("entitlement checker is not configured")
+	}
+	return s.entitlements.CheckCardinalityQuotaInTx(ctx, orgID, feature)
 }
 
 // GetOrgEntitlements returns the resolved view (plan name + per-
@@ -205,12 +216,12 @@ func currentPeriod() string {
 // platform-admin Entitlements page and the org-side Usage dashboard.
 //
 // Resolution order per feature:
-//   1. plan_entitlements row gives the base limit
-//   2. entitlement_overrides row replaces it (unless expired)
-//   3. usage is read from usage_records for metered features, or
-//      computed from cardinality (seats = members + pending invites,
-//      api_keys = ListAPIKeys count) for the two non-metered ones
-//      that the EntitlementChecker already knows about.
+//  1. plan_entitlements row gives the base limit
+//  2. entitlement_overrides row replaces it (unless expired)
+//  3. usage is read from usage_totals for metered features, or
+//     computed from cardinality (seats = members + live pending invites,
+//     api_keys = active non-expired/non-revoked rows) for the two non-metered ones
+//     that the EntitlementChecker already knows about.
 //
 // Authz expectation: caller is org-admin OR platform-admin, gated by
 // the adapter — this method trusts its inputs.
@@ -250,7 +261,7 @@ func (s *Service) GetOrgEntitlements(ctx context.Context, orgID string) (*OrgEnt
 			overrideMap[o.Feature] = o
 		}
 
-		period := currentPeriod()
+		periodStart, _ := monthlyUsagePeriod(now)
 		out.PlanName = planNameOrFallback(plan)
 		out.Entitlements = make([]OrgEntitlement, 0, len(planFeatures))
 
@@ -265,7 +276,7 @@ func (s *Service) GetOrgEntitlements(ctx context.Context, orgID string) (*OrgEnt
 					limit = *o.LimitValue
 				}
 			}
-			used, err := resolveUsageInTx(ctx, s.store, orgID, fl.Feature, period)
+			used, err := resolveUsageInTx(ctx, s.store, orgID, fl.Feature, periodStart)
 			if err != nil {
 				return fmt.Errorf("usage for %s: %w", fl.Feature, err)
 			}
@@ -285,13 +296,13 @@ func (s *Service) GetOrgEntitlements(ctx context.Context, orgID string) (*OrgEnt
 
 // resolveUsageInTx is the inner helper that assumes the caller is
 // already inside a WithOrgTx (so the ctx carries the tx) — same
-// branch logic as DefaultEntitlementChecker.CheckQuota but with the
+// branch logic as DefaultEntitlementChecker.CheckCardinalityQuotaInTx but with the
 // wrap moved out, letting GetOrgEntitlements bracket every per-
 // feature read in one transaction. Don't call this from outside a
 // tx — un-wrapped reads return zero rows under RLS.
-func resolveUsageInTx(ctx context.Context, store Store, orgID, feature, period string) (int64, error) {
+func resolveUsageInTx(ctx context.Context, store Store, orgID, feature string, periodStart time.Time) (int64, error) {
 	switch feature {
-	case "seats":
+	case EntitlementSeats:
 		members, err := store.ListOrgMembers(ctx, orgID)
 		if err != nil {
 			return 0, err
@@ -301,14 +312,10 @@ func resolveUsageInTx(ctx context.Context, store Store, orgID, feature, period s
 			return 0, err
 		}
 		return int64(len(members)) + int64(pending), nil
-	case "api_keys":
-		keys, _, err := store.ListAPIKeys(ctx, orgID, 1000, "")
-		if err != nil {
-			return 0, err
-		}
-		return int64(len(keys)), nil
+	case EntitlementAPIKeys:
+		return store.CountActiveAPIKeys(ctx, orgID)
 	default:
-		return store.GetUsageForPeriod(ctx, orgID, feature, period)
+		return store.GetUsageTotal(ctx, orgID, feature, periodStart)
 	}
 }
 
@@ -317,9 +324,10 @@ func resolveUsageInTx(ctx context.Context, store Store, orgID, feature, period s
 // customer extra capacity (or revoke it) without changing their plan.
 //
 // limitValue semantics:
-//   -1  → unlimited (stored as NULL via LimitValue=nil)
-//    0  → disabled
-//   >0  → the new metered cap
+//
+//	-1  → unlimited (stored as NULL via LimitValue=nil)
+//	 0  → disabled
+//	>0  → the new metered cap
 //
 // Authz expectation: caller is platform-admin, gated by the adapter.
 // Emits an audit event for the operator trail.

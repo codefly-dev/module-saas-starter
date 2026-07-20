@@ -10,7 +10,6 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
-	"github.com/jackc/pgx/v5/pgxpool"
 
 	"accounts/pkg/auth"
 	"accounts/pkg/business"
@@ -37,11 +36,19 @@ const BootstrapAdminEmailEnv = "BOOTSTRAP_ADMIN_EMAIL"
 // All of the above runs inside a single serializable transaction so
 // concurrent first-logins of the same identity converge on a single user row.
 type Resolver struct {
-	pool *pgxpool.Pool
+	bootstrap BootstrapStore
 }
 
-func NewResolver(pool *pgxpool.Pool) *Resolver {
-	return &Resolver{pool: pool}
+// BootstrapStore is the narrow pre-auth database capability. It deliberately
+// exposes neither a raw pool nor connection credentials; the composition root
+// owns the audited role transition and bounds the capability to one
+// serializable transaction callback.
+type BootstrapStore interface {
+	WithAuthBootstrapTx(context.Context, func(context.Context, pgx.Tx) error) error
+}
+
+func NewResolver(bootstrap BootstrapStore) *Resolver {
+	return &Resolver{bootstrap: bootstrap}
 }
 
 // Resolve implements auth.IdentityResolver.
@@ -50,29 +57,24 @@ func (r *Resolver) Resolve(ctx context.Context, c *auth.Claims, orgNameOnSignup 
 		return nil, err
 	}
 
-	tx, err := r.pool.BeginTx(ctx, pgx.TxOptions{IsoLevel: pgx.Serializable})
+	if r.bootstrap == nil {
+		return nil, errors.New("pgauth: bootstrap store is required")
+	}
+
+	// Authentication is an interactive boundary. Bound the complete database
+	// operation, including pool acquisition, so a stale dependency becomes a
+	// retryable service failure instead of an unbounded login request.
+	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
+
+	var identity *auth.Identity
+	err := r.bootstrap.WithAuthBootstrapTx(ctx, func(ctx context.Context, tx pgx.Tx) error {
+		var err error
+		identity, err = r.resolveInTx(ctx, tx, c, orgNameOnSignup)
+		return err
+	})
 	if err != nil {
-		return nil, fmt.Errorf("pgauth: begin tx: %w", err)
-	}
-	defer tx.Rollback(ctx) //nolint:errcheck // rollback on early return is best-effort
-
-	// Auth-flow tx: at this moment we're pre-tenant — the pool's
-	// BeforeAcquire put us as app_tenant, but we don't yet have an
-	// org context. INSERT INTO organization_members (the JIT-org
-	// path below) would fail RLS WITH CHECK. SET LOCAL ROLE NONE
-	// elevates to session_user (the codefly superuser) for this tx
-	// only; auto-unwinds on commit/rollback.
-	if _, err := tx.Exec(ctx, "SET LOCAL ROLE NONE"); err != nil {
-		return nil, fmt.Errorf("pgauth: elevate role: %w", err)
-	}
-
-	identity, err := r.resolveInTx(ctx, tx, c, orgNameOnSignup)
-	if err != nil {
-		return nil, err
-	}
-
-	if err := tx.Commit(ctx); err != nil {
-		return nil, fmt.Errorf("pgauth: commit tx: %w", err)
+		return nil, fmt.Errorf("pgauth: bootstrap transaction: %w", err)
 	}
 	return identity, nil
 }
@@ -116,16 +118,20 @@ func (r *Resolver) resolveInTx(
 // Returns (userID, wasNewlyProvisioned, error).
 func (r *Resolver) upsertIdentity(ctx context.Context, tx pgx.Tx, c *auth.Claims) (uuid.UUID, bool, error) {
 	var userID uuid.UUID
+	var userStatus string
 
 	err := tx.QueryRow(ctx, `
-		SELECT u.uuid
+		SELECT u.uuid, u.status::text
 		FROM users u
 		JOIN user_identities ui ON ui.user_uuid = u.uuid
 		WHERE ui.provider = $1 AND ui.provider_id = $2`,
 		c.Provider, c.Subject,
-	).Scan(&userID)
+	).Scan(&userID, &userStatus)
 
 	if err == nil {
+		if userStatus != "active" {
+			return uuid.Nil, false, auth.ErrAccountInactive
+		}
 		// Existing identity — touch last_used and return.
 		_, err = tx.Exec(ctx, `
 			UPDATE user_identities

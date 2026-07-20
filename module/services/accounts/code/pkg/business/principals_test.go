@@ -174,12 +174,12 @@ func TestPrincipal_LooksLikeAgentIdentifier(t *testing.T) {
 		{"publisher/name:version", true},
 		// Malformed cases:
 		{"", false},
-		{"publisher/name", false},        // no colon
-		{"publisher:version", false},     // no slash
-		{"publisher/name:", false},        // empty version
-		{"/name:version", false},          // empty publisher
-		{"name:version", false},           // no slash
-		{":version", false},               // no slash before colon
+		{"publisher/name", false},    // no colon
+		{"publisher:version", false}, // no slash
+		{"publisher/name:", false},   // empty version
+		{"/name:version", false},     // empty publisher
+		{"name:version", false},      // no slash
+		{":version", false},          // no slash before colon
 	}
 	for _, tc := range tests {
 		t.Run(tc.input, func(t *testing.T) {

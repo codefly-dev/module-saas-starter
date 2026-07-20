@@ -2,6 +2,7 @@ package auth
 
 import (
 	"context"
+	"time"
 
 	"github.com/google/uuid"
 )
@@ -39,11 +40,28 @@ type Identity struct {
 	// UserID.
 	ActingAsUserID uuid.UUID
 
-	// MFASatisfied is true when this session has cleared the MFA gate
+	// MFASatisfied is the legacy compatibility bit used by older consumers.
+	// New policy code uses AssuranceLevel + MFAVerifiedAt instead. It is true
+	// when this session has cleared the MFA gate
 	// (either the user never enrolled MFA, or they completed a TOTP /
 	// backup-code challenge during this login). Sensitive operations
 	// reject sessions where this is false via requireMFA(ctx).
 	MFASatisfied bool
+
+	// AuthenticationMethods is projected into the standard JWT `amr` claim.
+	// AuthenticatedAt becomes `auth_time`; AssuranceLevel becomes `acr`.
+	// MFAVerifiedAt is deliberately separate so refresh rotation cannot make
+	// an old second-factor ceremony look like a recent step-up.
+	AuthenticationMethods []string
+	AuthenticatedAt       time.Time
+	AssuranceLevel        string
+	MFAVerifiedAt         time.Time
+
+	// DeviceInfo is bounded, caller-supplied display metadata for per-device
+	// session management. It is never used for authorization. IPAddress is
+	// trusted transport metadata when the adapter can provide it.
+	DeviceInfo map[string]string
+	IPAddress  string
 }
 
 // IdentityResolver translates provider Claims into an internal Identity.

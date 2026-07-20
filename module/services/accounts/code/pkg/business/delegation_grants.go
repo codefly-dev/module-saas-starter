@@ -78,28 +78,28 @@ const (
 
 // DelegationGrant mirrors the delegation_grants row 1:1.
 type DelegationGrant struct {
-	ID                  string
-	OrgID               string
-	ActorPrincipalID    string
-	GrantorPrincipalID  string // nullable; empty until decided
-	Action              string
-	Resource            string
-	ResourceID          string
-	Justification       string
-	RequestContext      map[string]any
-	RiskLevel           RiskLevel
-	Kind                DelegationGrantKind
-	Status              DelegationGrantStatus
-	CreatedAt           time.Time
-	DecidedAt           *time.Time
-	DecisionReason      string
-	ExpiresAt           time.Time
-	ActionPattern       string // pattern grants only
-	ResourcePattern     string // pattern grants only
-	MaxUses             *int
-	UseCount            int
-	MintedTokenID       string
-	RequestHash         string
+	ID                 string
+	OrgID              string
+	ActorPrincipalID   string
+	GrantorPrincipalID string // nullable; empty until decided
+	Action             string
+	Resource           string
+	ResourceID         string
+	Justification      string
+	RequestContext     map[string]any
+	RiskLevel          RiskLevel
+	Kind               DelegationGrantKind
+	Status             DelegationGrantStatus
+	CreatedAt          time.Time
+	DecidedAt          *time.Time
+	DecisionReason     string
+	ExpiresAt          time.Time
+	ActionPattern      string // pattern grants only
+	ResourcePattern    string // pattern grants only
+	MaxUses            *int
+	UseCount           int
+	MintedTokenID      string
+	RequestHash        string
 }
 
 // IsTerminal reports whether the grant has reached a final
@@ -214,11 +214,11 @@ func ComputeRequestHash(in *RequestDelegationInput) string {
 // streaming RPC delivers. Mirrors the JSON the SQL trigger
 // builds in pg_notify.
 type DelegationDecisionEvent struct {
-	GrantID    string
-	Status     DelegationGrantStatus
-	DecidedAt  *time.Time
-	Reason     string
-	GrantorID  string
+	GrantID   string
+	Status    DelegationGrantStatus
+	DecidedAt *time.Time
+	Reason    string
+	GrantorID string
 	// TokenSet is true when status=approved AND the server has
 	// minted + persisted the scoped-auth token. The streaming
 	// RPC delays sending the event until the mint completes

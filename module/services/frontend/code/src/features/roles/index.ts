@@ -1,6 +1,11 @@
+export type { Permission, Role, RoleAssignment } from "./model/types";
+export {
+	useAssignRole,
+	useCreateRole,
+	useDeleteRole,
+	useRevokeRole,
+} from "./service/mutations";
+export { useRoles } from "./service/queries";
+export { RoleForm } from "./ui/role-form";
 export { RolesPage } from "./ui/roles-page";
 export { RolesTable } from "./ui/roles-table";
-export { RoleForm } from "./ui/role-form";
-export { useRoles } from "./service/queries";
-export { useCreateRole, useDeleteRole, useAssignRole, useRevokeRole } from "./service/mutations";
-export type { Role, Permission, RoleAssignment } from "./model/types";

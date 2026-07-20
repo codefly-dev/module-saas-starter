@@ -11,7 +11,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"accounts/pkg/business"
-	"accounts/pkg/gen"
+	gen "accounts/pkg/gen/saas/accounts/v1"
 )
 
 // TestRLS_Notifications_CrossUserBlocked — two users each get a
@@ -24,10 +24,19 @@ func TestRLS_Notifications_CrossUserBlocked(t *testing.T) {
 	userA, _ := mustUserAndOrg(t, ctx, "alice-notif@rls-test.com", "alice-notif-rls", "Acme NotifA")
 	userB, _ := mustUserAndOrg(t, ctx, "bob-notif@rls-test.com", "bob-notif-rls", "Acme NotifB")
 
-	_, err := testService.CreateNotification(ctx, userA, "", "Hi A", "msg-a", "info", "")
+	noteA, err := testService.CreateNotification(ctx, userA, "", "Hi A", "msg-a", "info", "")
 	require.NoError(t, err)
-	_, err = testService.CreateNotification(ctx, userB, "", "Hi B", "msg-b", "info", "")
+	noteB, err := testService.CreateNotification(ctx, userB, "", "Hi B", "msg-b", "info", "")
 	require.NoError(t, err)
+
+	// Resource-ID substitution: A cannot mutate B's notification even with the
+	// exact UUID. The business boundary resolves and compares ownership before
+	// entering the user-scoped mutation transaction.
+	require.Error(t, testService.MarkRead(ctx, userA, noteB.ID))
+	require.Error(t, testService.DeleteNotification(ctx, userA, noteB.ID))
+
+	// Owners can still mutate their own rows.
+	require.NoError(t, testService.MarkRead(ctx, userA, noteA.ID))
 
 	// As A: see exactly 1 notification (theirs).
 	listA, _, err := testService.ListNotifications(ctx, userA, 50, "")
@@ -40,6 +49,7 @@ func TestRLS_Notifications_CrossUserBlocked(t *testing.T) {
 	require.NoError(t, err)
 	require.Len(t, listB, 1)
 	require.Equal(t, "Hi B", listB[0].Title)
+	require.Nil(t, listB[0].ReadAt, "cross-user MarkRead must not alter the row")
 
 	// Cross-user probe via Store: from A's WithUserTx, ListNotifications
 	// asking for B returns zero — RLS hides B's row even though the

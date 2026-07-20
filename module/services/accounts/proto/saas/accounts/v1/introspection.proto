@@ -1,0 +1,118 @@
+syntax = "proto3";
+
+package saas.accounts.v1;
+
+import "google/api/annotations.proto";
+import "saas/policy/v1/options.proto";
+
+// ============================================================================
+// IntrospectionService — self-describing service catalog
+//
+// Each service in a codefly module owns its own proto. This RPC
+// describes THIS service (the api service) — its RPCs, the RBAC
+// vocabulary it enforces, the RLS-protected tables it owns, the
+// API-key scopes it accepts.
+//
+// Module-level view: a module is a collection of services. To
+// answer "what can the saas-starter module do?", an aggregator
+// (CLI command, gateway endpoint, Mind, etc.) walks every service
+// in the module and merges each one's GetServiceInfo response.
+// The aggregator is OUT OF SCOPE for this proto — keep cross-
+// service concerns out of per-service definitions.
+//
+// All RPCs here are PUBLIC (no auth required) — they describe the
+// API surface, not tenant data. The response REDACTS privileged
+// (platform_admin, mfa) RPCs for unauthenticated callers; see
+// threat-model note on the service.
+// ============================================================================
+
+// ServiceInfo — top-level identity of the service this catalog
+// describes. The `module` field locates this service within its
+// codefly module so an aggregator can group across services.
+message ServiceInfo {
+  string name = 1; // service name, e.g. "api"
+  string module = 2; // owning module, e.g. "saas-starter"
+  string version = 3; // semver of the service's API surface
+  string description = 4;
+  string repo_url = 5;
+}
+
+// RPCInfo — one entry per gRPC RPC this service exposes.
+message RPCInfo {
+  string service = 1; // proto-service name, e.g. "PermissionService"
+  string method = 2; // e.g. "AssignRole"
+  string http_method = 3; // "POST" | "GET" | "DELETE" | "PUT"
+  string http_path = 4; // e.g. "/v1/role-assignments"
+  string description = 5;
+  repeated string scopes = 6; // required scopes when called via API key
+  string handler_authz = 7; // "public"|"auth"|"org_member"|"org_admin"|"platform_admin"|"mfa"
+  bool emits_audit = 8; // writes to audit_events?
+}
+
+// PermissionInfo — RBAC vocabulary this service enforces.
+message PermissionInfo {
+  string resource = 1;
+  string action = 2;
+  string description = 3;
+  repeated string built_in_roles = 4;
+}
+
+// RLSPolicyInfo — RLS-protected table this service depends on (the
+// table itself lives in the store service's schema, but this api
+// service is the enforcer).
+message RLSPolicyInfo {
+  string table = 1;
+  string policy_shape = 2; // "direct"|"join"|"polymorphic"|"self_referential"
+  bool fail_closed = 3;
+  string scope_column = 4; // typically "org_id"
+  string notes = 5;
+}
+
+// ScopeInfo — API-key scope this service accepts.
+message ScopeInfo {
+  string scope = 1; // e.g. "api_keys:write"
+  string description = 2;
+}
+
+// ServiceCapabilities — the full self-description of one service.
+message ServiceCapabilities {
+  ServiceInfo info = 1;
+  repeated RPCInfo rpcs = 2;
+  repeated PermissionInfo permissions = 3;
+  repeated RLSPolicyInfo rls_tables = 4;
+  repeated ScopeInfo scopes = 5;
+}
+
+message GetServiceInfoRequest {}
+
+message GetServiceInfoResponse {
+  ServiceCapabilities capabilities = 1;
+}
+
+// IntrospectionService — describes THIS service only.
+//
+// Threat model: the API surface is not a secret — anyone with the
+// binary can grep for it. But unauthenticated probes should not get
+// a free attack-surface map. The server response REDACTS RPCs whose
+// HandlerAuthz is "platform_admin" or "mfa" for unauthenticated
+// callers. Authenticated callers see the full list. Callers must
+// still pass the relevant auth tier to invoke any non-public RPC.
+//
+// Rate-limit: same shared limiter as the rest of the surface;
+// tighten if this becomes a probe vector.
+service IntrospectionService {
+  rpc GetServiceInfo(GetServiceInfoRequest) returns (GetServiceInfoResponse) {
+    option (saas.policy.v1.method_policy) = {
+      exposure: EXPOSURE_PUBLIC
+      tenant: TENANT_REQUIREMENT_NONE
+      mfa: MFA_REQUIREMENT_NONE
+      audit: {emission: AUDIT_EMISSION_NONE}
+      idempotency: IDEMPOTENCY_REQUIREMENT_FORBIDDEN
+      rate_limit: RATE_LIMIT_CLASS_PUBLIC
+      request_sensitivity: SENSITIVITY_PUBLIC
+      response_sensitivity: SENSITIVITY_PUBLIC
+      platform_role: PLATFORM_ROLE_REQUIREMENT_NONE
+    };
+    option (google.api.http) = {get: "/v1/.well-known/service-info"};
+  }
+}

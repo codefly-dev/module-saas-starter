@@ -1,0 +1,8 @@
+version: v2
+clean: true
+plugins:
+  - local: [npx, --prefix, ../.., --no-install, protoc-gen-es]
+    out: src/gen
+    opt:
+      - target=ts
+      - import_extension=none

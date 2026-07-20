@@ -7,13 +7,11 @@
 -- Policy: rows visible iff (org_id matches current_setting) OR bypass.
 -- NULL-org rows are visible ONLY under bypass — they're inherently
 -- cross-tenant in nature (system / audit-readers / GDPR exports) and
--- writers (the AsyncAuditEmitter goroutine) opt into bypass when
--- entry.OrgID is empty.
+-- writers use the cross-scope boundary when entry.OrgID is empty.
 --
 -- WITH CHECK has the same shape, so a per-tenant write path
 -- (WithOrgTx) cannot insert a row carrying the wrong org_id; the
--- system-events path (WithBypass) can write any org_id including
--- NULL.
+-- privileged system-events path can write any org_id including NULL.
 
 ALTER TABLE audit_events ENABLE ROW LEVEL SECURITY;
 ALTER TABLE audit_events FORCE  ROW LEVEL SECURITY;

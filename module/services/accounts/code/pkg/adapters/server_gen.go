@@ -8,7 +8,6 @@ package adapters
 ----------------------------------------------------------------- */
 
 import (
-	"accounts/plugins"
 	"context"
 	"fmt"
 
@@ -28,14 +27,9 @@ func NewServer(config *Configuration, grpcOpts ...grpc.ServerOption) (*Server, e
 		return nil, err
 	}
 
-	// Register plugins on the gRPC server
-	for _, p := range plugins.All() {
-		p.RegisterGRPC(grpc.gRPC)
-	}
-
 	var rest *RestServer
 	if config.EndpointHttpPort != nil {
-		rest, err = NewRestServer(config)
+		rest, err = NewRestServer(config, grpc)
 		if err != nil {
 			return nil, err
 		}
@@ -79,4 +73,5 @@ func (server *Server) Start(ctx context.Context) error {
 func (server *Server) Stop() {
 	fmt.Println("Stopping server...")
 	server.Grpc.gRPC.GracefulStop()
+	server.Grpc.internalGRPC.GracefulStop()
 }

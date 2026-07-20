@@ -2,15 +2,28 @@
 
 Multi-tenant SaaS backend with three-layer authorization (handler gates + RBAC + Postgres RLS), a Next.js admin frontend, and per-service introspection endpoints.
 
-A codefly **module** is a collection of **services**; each service owns its own proto. The api service of saas-starter exposes a self-describing catalog of its OWN RPCs / RBAC vocabulary / RLS-protected tables / scopes. A "module-level" view = aggregation across every service's catalog and is a separate concern (CLI / gateway / Mind aggregator) — not encoded in any single proto.
+A codefly **module** is a collection of **services**; each service owns its own proto. The accounts service of saas-starter exposes a self-describing catalog of its OWN RPCs / RBAC vocabulary / RLS-protected tables / scopes. A "module-level" view = aggregation across every service's catalog and is a separate concern (CLI / gateway / Mind aggregator) — not encoded in any single proto.
 
 ## Quick links
 
-- api service introspection (after `codefly run`): `GET /v1/.well-known/service-info`
-- Connect-RPC: `customers.IntrospectionService/GetServiceInfo`
+- accounts service introspection (after `codefly run`): `GET /v1/.well-known/service-info`
+- Connect-RPC: `saas.accounts.v1.IntrospectionService/GetServiceInfo`
 - Code: `pkg/business/introspection.go`
 - Test: `pkg/business/introspection_test.go`
-- Source-of-truth proto: `module/services/api/proto/api.proto` (api service owns its proto; other services own theirs)
+- Source-of-truth protos: `module/services/accounts/proto/saas/accounts/v1/*.proto` (each bounded context owns one file)
+- Normalized generator input: `module/services/accounts/generated/service-catalog.json`
+- Catalog contract and workflow: `module/SERVICE_CATALOG.md`
+- Generated frontend clients and vocabulary: `module/FRONTEND_CATALOG.md`
+- Generated frontend plugin routes/navigation: `module/FRONTEND_PLUGINS.md`
+- Generic event meters, quota semantics, and product integration: `module/USAGE_METERING.md`
+- Postgres roles, grant rules, and RLS authority: `module/DATABASE_AUTHORITY.md`
+- Generated Codefly topology and NetworkPolicies: `module/DEPLOYMENT_TOPOLOGY.md`
+- Generated PDP input: `module/services/accounts/generated/authz-methods.json`
+- Authorization catalog and enforcement boundary: `module/AUTHORIZATION_CATALOG.md`
+- Generated gateway inventory: `module/services/accounts/generated/gateway-routes.json`
+- Gateway route contract and rollout boundary: `module/GATEWAY_ROUTES.md`
+- Generated REST inventory: `module/services/accounts/generated/rest-surface.json`
+- REST/OpenAPI contract and extension boundary: `module/REST_SURFACE.md`
 
 ## Architecture
 
@@ -21,7 +34,7 @@ Gateway (Envoy/KrakenD) — merges per-service REST endpoints
   ↓ Bearer JWT or X-API-Key, plus X-Scopes
 auth-sidecar — validates token, stamps x-user-id / x-org-id metadata
   ↓ gRPC
-api service
+accounts service
   ├─ adapters/ — gRPC + Connect + REST gateway servers
   ├─ business/ — Service methods (RBAC + RLS wrappers go here)
   └─ infra/    — Store impl (Postgres + Redis + Vault)
@@ -43,7 +56,8 @@ A bug in any one layer is caught by the others. See `AUTHZ.md` for the deep dive
 
 ## RLS — protected tables
 
-16 tables, every per-tenant table covered. Source of truth: `migrations/` 23 (Phase 1) → 33 (Phase 2F).
+The runtime introspection catalog is the current protected-table inventory.
+Important direct-tenant tables include:
 
 | Table | Policy | Notes |
 |---|---|---|
@@ -51,7 +65,8 @@ A bug in any one layer is caught by the others. See `AUTHZ.md` for the deep dive
 | `webhook_subscriptions` | direct `org_id` | Phase 2A |
 | `webhook_deliveries` | JOIN via `subscription_id` | Phase 2A |
 | `api_keys` | direct `organization_id` | Phase 2A |
-| `org_settings`, `invitations`, `organization_members`, `subscriptions`, `entitlement_overrides`, `usage_records` | direct `org_id` | Phase 2B |
+| `org_settings`, `invitations`, `organization_members`, `subscriptions`, `entitlement_overrides` | direct `org_id` | Phase 2B |
+| `usage_events`, `usage_totals` | direct `org_id` | Immutable attempts + monthly read model; no application bypass branch |
 | `teams` | direct `org_id` | Phase 2C |
 | `team_members` | JOIN via `team_id` → teams.org_id | Phase 2C |
 | `audit_events` | polymorphic; NULL `org_id` rows visible only via bypass | Phase 2D |
@@ -99,7 +114,7 @@ Wildcard semantics: `users:*` matches all `users:X`; `*:read` matches read acros
 
 ## RPC catalog (selected)
 
-The full machine-readable list is auto-derived from gRPC service descriptors at runtime, joined with hand-maintained metadata in `pkg/business/introspection.go:rpcMetadata`, and served at `GET /v1/.well-known/service-info`. Highlights:
+The full machine-readable list is derived from protobuf descriptors and `saas.policy.v1.method_policy`; only editorial summaries remain in `pkg/business/introspection.go:rpcDescriptions`. The complete deterministic generator input is checked in at `module/services/accounts/generated/service-catalog.json`, and the redacted runtime view is served at `GET /v1/.well-known/service-info`. Highlights:
 
 ### IntrospectionService
 
@@ -123,13 +138,48 @@ The full machine-readable list is auto-derived from gRPC service descriptors at 
 
 `CreateOrganization`, `GetOrganization`, `ListMembers`, `AddMember`, `RemoveMember` — all org-scoped, RLS-wrapped.
 
+### AuthService organization exchange
+
+`SwitchOrganization` is an authenticated, target-id-only token exchange. The
+server locks the current device session using verified `sub` + `sid`, resolves
+the target membership and roles from PostgreSQL, and returns a new access token
+without rotating the refresh credential or changing device/lifetime state. The
+frontend decodes the signed `org` claim into one global organization context;
+tenant-scoped pages do not maintain independent organization filters.
+
 ### TeamService
 
 `CreateTeam`, `ListTeams`, `AddMember`, `RemoveMember`, `ListMembers` — team_id-scoped operations resolve team→org via `WithBypass` first, then enter `WithOrgTx` for the actual write.
 
 ### Other domain services
 
-`UserService`, `APIKeyService`, `AuditService`, `AuditExportService`, `InvitationService`, `WebhookService`, `BillingService`, `PlatformAdminService`, `SSOAdminService`, `MFAService`, `ConsentService`, `NotificationService`, `OnboardingService`, `GDPRService`, `UserSettingsService`, `AuthService`, `IdentityService`.
+`UserService`, `APIKeyService`, `AuditService`, `AuditExportService`, `InvitationService`, `WebhookService`, `BillingService`, `PlatformAdminService`, `UsageService`, `SSOAdminService`, `MFAService`, `ConsentService`, `NotificationService`, `OnboardingService`, `GDPRService`, `UserSettingsService`, `AuthService`, `IdentityService`.
+
+## Usage metering
+
+`UsageService.ConsumeUsage` is an internal-only protobuf API for trusted product
+services. Each logical operation supplies an organization, canonical meter,
+positive quantity, idempotency key, and optional event time/dimensions. The
+service resolves the plan/override inside the same tenant transaction, locks the
+monthly aggregate, and persists an immutable accepted or rejected receipt.
+Retries return that receipt without incrementing again; reusing the key with a
+different payload fails. `UsageService.GetUsage` is the authenticated tenant
+read path. Periods are UTC calendar months and `period_end` is exclusive.
+
+Seats and API-key counts remain computed cardinality gauges. They must not be
+written as usage events because their authoritative rows can be reconciled
+directly. Their admission checks are serialized with the authoritative write in
+one tenant transaction; pending invitations reserve seats, while expired
+invitations and expired or revoked API keys release capacity. New event meters
+become active by adding their canonical key to the product plan/override
+catalog; unknown keys resolve to a disabled limit.
+
+The protobuf and storage contract is product-neutral. The current internal
+gRPC listener is multiplexed onto the private REST h2c listener and is not a
+module export. Cross-module product callers must use the generated named
+internal endpoint tracked by `P1-NET-007`; exporting the mixed listener or
+making ingestion public is not an acceptable integration shortcut. See
+`module/USAGE_METERING.md` for the complete producer contract.
 
 ## Frontend admin pages
 
@@ -161,24 +211,26 @@ Client-side gating uses `<RoleGate>` (`src/components/auth/role-gate.tsx`) — d
    ALTER TABLE X ENABLE ROW LEVEL SECURITY;
    ALTER TABLE X FORCE  ROW LEVEL SECURITY;
    CREATE POLICY X_tenant ON X
-     USING (org_id::text = current_setting('app.current_org_id', true)
-            OR current_setting('app.bypass', true) = '1')
-     WITH CHECK (...same...);
+     USING (org_id::text = current_setting('app.current_org_id', true))
+     WITH CHECK (org_id::text = current_setting('app.current_org_id', true));
    ```
 3. Add a `Store` method in `pkg/business/store.go`.
 4. Implement in `pkg/infra/postgres_X.go`. Use `s.getQueryExecutor(ctx)` so context-scoped tx (from `WithOrgTx`) is reused.
-5. Wrap every Service-layer call site in `s.store.WithOrgTx(ctx, orgID, ...)`. Cross-tenant scans (background workers) use `WithBypass`.
+5. Wrap every Service-layer call site in `s.store.WithOrgTx(ctx, orgID, ...)`.
+   Cross-tenant workers require a dedicated least-privilege worker role and
+   pool; do not add an application-settable bypass branch to a new policy.
 6. Add a cross-tenant blocking test in `pkg/business/rls_X_test.go` mirroring `rls_audit_export_test.go`.
 7. Add the table to `pkg/business/introspection.go:serviceRLSTables` so it shows up in `GetServiceInfo`.
 
 ### Adding a new RPC
 
-1. Add message + RPC to `proto/api.proto`. Annotate the HTTP route via `option (google.api.http)`.
-2. Run `codefly generate proto --proto ./proto --output ./code/pkg/gen` (NEVER run `buf generate` directly — see `CLAUDE.md`).
-3. Run `codefly generate gRPC --service saas-starter/api --language ts --destination <frontend>/src/gen` to refresh the TS client.
-4. Implement: `pkg/business/<feature>.go` (the Service method, with `WithOrgTx`/`WithBypass` wrap), `pkg/infra/postgres_<feature>.go` (raw SQL), `pkg/adapters/rpcs.go` or a new `<feature>_rpcs.go` (handler authz + Validate + Service call), `pkg/adapters/connect_handlers.go` (Connect adapter), and registration in `grpc_gen.go` / `connect_gen.go` / `rest_gen.go`.
-5. Add metadata to `pkg/business/introspection.go:rpcMetadata` (the RPC list itself is auto-derived from descriptors; this map carries handler authz tier, scopes, audit-emit, and HTTP route).
-6. Frontend: a `useX` hook in `src/features/<feature>/service/{queries,mutations}.ts`, called from a UI in `src/features/<feature>/ui/`.
+1. Add the message + RPC to its bounded-context file under `proto/saas/accounts/v1`. Add a complete `option (saas.policy.v1.method_policy)`; missing or `UNSPECIFIED` policy is denied and fails tests. Annotate `google.api.http` only when REST exposure is intended.
+2. From the accounts service directory, run `codefly generate proto --proto ./proto --output . --local --template buf.gen.local.yaml` (NEVER run `buf generate` directly). The local template invokes exact-version Go plugins and the lockfile-pinned TypeScript plugin, regenerating Go, gRPC, Connect, gateway, OpenAPI, and modular TypeScript outputs together without depending on BSR plugin availability.
+3. Import browser types from their bounded module, for example `@/gen/saas/accounts/v1/teams_pb`; do not restore the former monolithic TypeScript barrel.
+4. Implement: `pkg/business/<feature>.go` (the Service method, with `WithOrgTx`/`WithBypass` wrap), `pkg/infra/postgres_<feature>.go` (raw SQL), `pkg/adapters/rpcs.go` or a new `<feature>_rpcs.go` (handler authz + Validate + Service call), and a Connect adapter. Keep any still-manual gRPC/REST implementation wiring current.
+5. For a new service only, add its finite implementation source to `pkg/adapters/connect_bindings.yaml`; never hand-register a Connect service or procedure. If it opts into REST, also classify the service as `generated` or `plugin` in `pkg/adapters/rest_bindings.yaml`. Existing services need no binding change when an RPC is added.
+6. Add only the editorial summary to `pkg/business/introspection.go:rpcDescriptions`, then run `go generate ./pkg/business`, `go generate ./pkg/adapters`, and `go generate ./pkg/cataloggen`. This refreshes the normalized catalog, authorization catalog/matrix, auth-sidecar policy lookup, Connect registration, REST registration/allowlists, filtered OpenAPI, and gateway/Envoy/Istio route artifacts. HTTP, authz, scopes, resource bindings, MFA, audit, rate, and sensitivity must come from descriptors; do not introduce another policy map or service list.
+7. Frontend: a `useX` hook in `src/features/<feature>/service/{queries,mutations}.ts`, called from a UI in `src/features/<feature>/ui/`.
 
 ### Adding a new RBAC permission
 
@@ -206,7 +258,7 @@ Run: `go test -count=1 -run TestRLS ./pkg/business`. Requires Docker + `codefly 
 
 ## Compatibility
 
-- api service version: see `pkg/business/introspection.go:ServiceVersion` (`0.1.0` at time of writing). Module-level versioning is owned by `module.codefly.yaml`, not by any single service.
+- api service version: see `pkg/business/introspection.go:ServiceVersion` (`0.2.0` at time of writing). Module-level versioning is owned by `module.codefly.yaml`, not by any single service.
 
 ## Known issues
 

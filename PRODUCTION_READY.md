@@ -4,13 +4,13 @@ Scope of this document: **Tier 1 (ship-blockers)** only. Observability, Sentry, 
 
 ## Architectural decisions (locked)
 
-0. **Gateway is the single ingress.** Every request — including `/auth/login` and `/auth/signup` — enters through the sidecar/gateway. No service is reachable directly. The gateway applies a per-route policy: login/signup public, refresh requires valid refresh token, everything else requires valid access token. Per-IP rate limiting on public routes, per-user on authenticated routes.
+0. **Gateway is the single ingress.** Every request — including the public OAuth, primary-authentication, MFA, refresh, logout, registration, and discovery ceremonies — enters through the sidecar/gateway. No service is reachable directly. Exposure, rate-limit class, tenant requirements, sensitivity, and audit behavior come from each protobuf method's `saas.policy.v1.method_policy`; unclassified methods fail descriptor validation and are denied at runtime.
 
-1. **Two auth paths, hard-separated.** Login/signup/refresh/logout go through the backend (via the gateway). Every other request goes through the sidecar and only the sidecar. The backend's auth surface area is four endpoints — nothing else.
+1. **Two auth paths, hard-separated.** Authentication ceremonies, refresh/logout, and organization token exchange go through the accounts backend via the gateway. Normal product requests use the sidecar-verified runtime identity. The switch endpoint is authenticated by the current access token; it never accepts identity or role claims from the browser.
 
-2. **Our own JWT is the runtime token.** On login/signup, backend mints an Ed25519-signed JWT carrying `sub=user_id`, `org_id`, `org_role`, `platform_role`, `sid=session_id`. Sidecar validates that token on every request — no DB hit, no provider knowledge.
+2. **Our own JWT is the runtime token.** On login/signup, backend mints an Ed25519-signed JWT carrying `sub=user_id`, `org=organization_id`, `or=organization_role`, `pr=platform_role`, and `sid=session_id`. Sidecar validates that token on every request — no DB hit, no provider knowledge.
 
-3. **WorkOS is login-only.** WorkOS tokens never enter the runtime path. They're validated exactly once in `/auth/login` or `/auth/signup`, then thrown away. The sidecar has no WorkOS dependency.
+3. **WorkOS is login-only.** WorkOS tokens never enter the runtime path. They are validated exactly once during `Authenticate`, then thrown away. The sidecar has no WorkOS dependency.
 
 4. **`TokenValidator` + `IdentityResolver` live in the backend `pkg/auth/`**, not in the sidecar. They run during login/signup only. Sidecar has its own much smaller `LocalValidator` for our JWT.
 
@@ -26,7 +26,7 @@ Scope of this document: **Tier 1 (ship-blockers)** only. Observability, Sentry, 
    - `X-Session-ID` — uuid v7, for audit/correlation
    - `X-Acting-As-User-ID` — present only during impersonation
 
-8. **Token TTL**: access token 15 min, refresh token 7 days. `POST /auth/refresh` is the only endpoint besides the four above that needs session-state access. Stale role propagation window = 15 min, documented and accepted.
+8. **Token and device-session policy**: access tokens live 15 minutes. A refresh family has a fixed seven-day absolute lifetime and a 24-hour idle window by default; rotation advances only idle expiry and cannot slide the absolute boundary. Initial login atomically enforces the configured active-device cap (default ten) and evicts the least-recently active family. Bounded display-only device metadata survives MFA and rotation, while management uses the stable family id and revokes the whole device. Refresh consumption, current-authorization resolution, family revocation, and successor insertion are one locked PostgreSQL transaction. Each refresh requires an active user and current selected-org membership, projects current org/platform roles, and evaluates current verified MFA enrollment. Concurrent reuse of a token consumed by rotation commits revocation of every active refresh session for the affected user; logout and administrative revocation are not misclassified as replay. Database triggers revoke affected refresh sessions atomically when user status, membership/org role, platform role, or verified MFA enrollment changes. Organization switching is a separate authenticated access-token exchange serialized on the exact active session row: the server resolves current target membership/roles, signs a fresh access token with the same `sid`, and updates only the selected organization projection. It does not rotate the refresh credential, create a device, or advance session lifetime, so a switch racing refresh cannot be misclassified as replay. An already-issued access token remains a signed snapshot for at most its 15-minute lifetime; high-risk deployments can shorten that TTL or add a stateful gateway session check without weakening refresh invariants.
 
 9. **`AUTH_PROVIDER=workos|dev`** env var selects the validator used at login. `dev` replaces today's `X-Dev-Role` header bypass with a dev validator reading the fixture seed. The sidecar does not read this env var — it only validates our JWT.
 
@@ -38,14 +38,23 @@ Scope of this document: **Tier 1 (ship-blockers)** only. Observability, Sentry, 
 
 13. **WorkOS last.** Land schema + backend interfaces + Dev validator + sidecar rewrite + business-layer strip first. Plug in WorkOSValidator + AuthKit as the final phase.
 
-## Backend auth surface (the ONLY auth endpoints)
+## Backend authentication surface
 
-```
-POST /auth/login      { provider, code }              → { access_token, refresh_token }
-POST /auth/signup     { provider, code, org_name }    → { access_token, refresh_token }
-POST /auth/refresh    { refresh_token }               → { access_token }
-POST /auth/logout     { refresh_token }               → { }
-```
+`AuthService` in `authentication.proto` is the only authentication/session
+contract. Connect, gRPC, and REST transports are generated from it; handlers do
+not maintain an independent route list.
+
+| RPC | REST route | Admission credential |
+|-----|------------|----------------------|
+| `BeginOAuth` | `POST /v1/auth/oauth/begin` | Public, rate-limited ceremony |
+| `Authenticate` | `POST /v1/auth/authenticate` | OAuth code or explicit development fixture token |
+| `CompleteMFAChallenge` | `POST /v1/auth/mfa/complete` | One-use MFA login token |
+| `BeginWebAuthnMFAChallenge` | `POST /v1/auth/mfa/webauthn/begin` | One-use MFA login token |
+| `CompleteWebAuthnMFAChallenge` | `POST /v1/auth/mfa/webauthn/complete` | MFA login token plus one-use ceremony token |
+| `RefreshToken` | `POST /v1/auth/refresh` | Opaque refresh credential |
+| `SwitchOrganization` | `POST /v1/auth/switch-organization` | Current access token and its verified `sid` |
+| `Logout` | `POST /v1/auth/logout` | Opaque refresh credential |
+| `GetJWKS` | `GET /v1/auth/.well-known/jwks.json` | Public discovery |
 
 Everything else under `pkg/business/` (users, orgs, teams, invitations, api_keys, audit, etc.) takes `userID`, `orgID`, `orgRole`, `platformRole uuid.UUID / string` as parameters derived from sidecar headers. No auth imports. No JWT parsing. No provider knowledge.
 
@@ -55,7 +64,7 @@ Everything else under `pkg/business/` (users, orgs, teams, invitations, api_keys
 browser → sidecar
   1. Extract JWT from Authorization header or session cookie
   2. LocalValidator.Validate() — Ed25519 signature check (in-memory pubkey)
-  3. Read claims directly: sub, org_id, org_role, platform_role, sid
+  3. Read claims directly: sub, org, or, pr, sid
   4. Forward headers: X-User-ID / X-Org-ID / X-Org-Role / X-Platform-Role / X-Session-ID
   5. Proxy to upstream service
 ```
@@ -68,8 +77,8 @@ Total request overhead: one Ed25519 verify (microseconds) + one header rewrite. 
 
 ```
 browser → WorkOS hosted UI → redirect with code
-  frontend → POST /auth/login { provider: "workos", code }
-  backend /auth/login:
+  frontend → POST /v1/auth/authenticate with OAuth code, signed state, PKCE verifier
+  backend Authenticate:
     1. workos.ExchangeCodeForToken(code) → provider access_token
     2. WorkOSValidator.Validate(access_token) → Claims{provider, sub, email}
     3. IdentityResolver.Resolve(ctx, claims):
@@ -85,14 +94,16 @@ browser → WorkOS hosted UI → redirect with code
        access in memory)
 ```
 
-Signup is the same shape but creates a new `orgs` row with the user as owner if `org_name` is present and the identity has no existing org.
+Registration is a separate public `UserService.RegisterUser` operation. It
+creates the local user and initial organization; authentication then uses the
+same provider-code exchange as every returning user.
 
 ## What gets deleted
 
 - `X-Dev-Role` / `X-Dev-User-ID` header bypass → replaced by `AUTH_PROVIDER=dev`
-- Current `Authenticate` RPC in `pkg/business/auth.go` → replaced by `/auth/login` + `/auth/signup`
+- Caller-asserted provider subjects, emails, roles, organizations, or session ids; the server derives all identity and authorization state
 - Any `pkg/business/*.go` import of `jwt`, `auth`, or session/token parsing
-- Sidecar's current policy evaluation, if any — the sidecar becomes a pure passthrough after JWT check. OPA policy evaluation (if retained) moves into the backend gRPC interceptor, keyed off `X-User-ID` + method name.
+- Method admission is derived from the protobuf RPC inventory and enforced by deny-by-default Connect/gRPC interceptors. Resource ownership and tenant checks remain in handlers and PostgreSQL RLS; the sidecar only validates credentials and stamps canonical identity.
 
 ## Schema migration
 
@@ -216,13 +227,90 @@ Sidecar-side (module/services/auth-sidecar/code/pkg/auth/):
 State-of-the-art, not "good enough". Every item below lands as part of the phases; no separate "security pass" at the end.
 
 - **JWT**: EdDSA only. `alg: none` rejected. Audience + issuer + exp + nbf + jti validated. 60s clock skew tolerance.
-- **Refresh token rotation**: every `/auth/refresh` mints a new refresh and invalidates the previous. Reuse of an invalidated refresh → revoke the entire session family (OWASP pattern). Detection logged to audit.
-- **Refresh tokens hashed at rest** (argon2id with pepper from Vault). Constant-time comparison (`crypto/subtle`).
+- **Refresh token rotation**: every `/auth/refresh` atomically consumes the presented token, re-resolves current authorization, and inserts one successor. Reuse of an invalidated refresh revokes every active session for the user. Inactive users, removed selected-org memberships, expired refreshes, and MFA-policy rejection commit terminal revocation rather than leaving a reusable credential.
+- **Refresh tokens hashed at rest** with SHA-256. Tokens contain 256 random bits, so a fast indexed digest is appropriate; the minter retains a constant-time comparison (`crypto/subtle`) as defense in depth.
 - **Cookies**: refresh token in `HttpOnly; Secure; SameSite=Strict; Path=/auth`. Access token in memory only (never localStorage).
 - **CSRF**: double-submit token on state-changing requests wherever cookies are in play.
 - **Key rotation**: sidecar loads `current` + `previous` Ed25519 pubkeys from Vault. Backend mints with current, sidecar accepts either. Rotation = Vault update, no deploy.
-- **Per-IP rate limits**: 10 req/min/IP on `/auth/login` + `/auth/signup`. 5 failed logins → 15 min lockout per IP. In-memory, Redis-backed later.
-- **Per-user rate limits**: 60 req/min/user on refresh, 300 req/min/user on everything else.
+- **Gateway rate limits**: pooled Redis-backed fixed windows use canonical org
+  identity for authenticated traffic and trusted client IP otherwise. MFA
+  completion has a dedicated 10 req/min/IP budget and each durable MFA
+  transaction locks after five rejected factors. Authentication/refresh/MFA
+  routes fail closed on limiter-operation errors; local development may use
+  the in-memory backend.
+- **WebAuthn/passkeys**: registration and assertion options are generated
+  server-side with required user verification. `WEBAUTHN_RP_ID` and the exact
+  `WEBAUTHN_RP_ORIGINS` allowlist are supplied by Codefly's `security`
+  configuration and fail startup when absent or malformed. Full credentials
+  and ceremony state are Vault-encrypted; one-use state, authenticator counter
+  updates, and session creation are transactionally locked.
+- **Generic inbox/outbox foundation**: product-neutral `saas.jobs.v1`
+  protobufs generate the shared envelope, scope, lease, failure, attempt, and
+  state vocabulary for Go and TypeScript. Migration 72 stores exact payload
+  bytes, enforces finite transitions and terminal immutability in PostgreSQL,
+  and appends transition history automatically. Generated producer requests
+  use collision-free structured ordering keys and deterministic exact-content
+  fingerprints. Tenant/subject producers must enqueue inside the surrounding
+  business transaction through one scope-checking database operation; request
+  traffic has no raw job-table rights. Exact retries return the original job
+  identity, conflicting key reuse fails without mutation, and a
+  dedicated grant-limited `app_job_worker` role can touch the three job
+  relations and no product tables while accepting privileged inbox/global
+  ingestion. Generated internal worker commands drive
+  atomic queue-scoped `SKIP LOCKED` claims, database-clock leases and
+  heartbeats, strict ordering keys, scheduled retry, expired-lease recovery,
+  fencing-token finalization, and dead letters. A reusable polling runtime adds
+  safe typed failure persistence, arbitrary-error/panic redaction, lease
+  heartbeats, queue-only metrics, per-poll/job OpenTelemetry spans, and bounded
+  graceful shutdown. Super-admin generated APIs and `/admin/platform/jobs`
+  expose payload-free queue/lifecycle history; dead-letter replay requires
+  recent MFA, is idempotent and audited, and copies payload only inside
+  PostgreSQL through a worker-only operation. Stripe, outbound webhooks, and
+  transactional email are generated workload adapters on the platform; later
+  workloads remain explicit `P2-JOB-008` onward slices. See `module/JOBS.md`.
+- **Stripe webhook inbox**: the public endpoint verifies the signature over the
+  unmodified body, encodes a generated versioned protobuf payload, atomically
+  enqueues one immutable generic inbox job by Stripe ID, and returns before
+  business processing. Multi-replica generic workers use atomic `SKIP LOCKED`
+  claims, heartbeats, expiring owner-checked leases, and fencing tokens.
+  Arbitrary failures are redacted, retry on a bounded schedule, and become
+  visible dead letters after the attempt budget; a duplicate delivery never
+  converts a failed event into a false success. Subscription events hydrate the current Stripe object;
+  provider-read timestamps and organization-scoped PostgreSQL advisory locks
+  prevent reverse completion or a late prior-subscription event from restoring
+  stale state. Stripe POSTs require operation-scoped idempotency keys. Browsers
+  choose only an enabled catalog key; price, trial, currency, tax policy, and
+  exact redirects are server-owned. Checkout/portal creation requires
+  organization billing authority and fresh AAL2 evidence. Cross-tenant claims
+  run through the generic `app_job_worker` pool. Projection uses a separate
+  four-connection `app_billing_worker` pool whose BYPASSRLS role has grants only
+  on billing product tables; neither request traffic nor the billing projector
+  has direct job-table authority.
+- **Outbound webhook outbox**: endpoint keys are 256-bit, Vault-enveloped,
+  subscription-bound, revealed only at create/rotate, and dual-signed during a
+  bounded rotation overlap. Only normalized public HTTPS/443 endpoints are
+  accepted. All IPv4/IPv6 answers are checked at registration and again in the
+  IP-pinning dialer; redirects and environment proxies are disabled, while
+  Kubernetes egress policy separately denies internal, metadata, special-use,
+  and multicast ranges. Audit events and exact-body endpoint rows fan out in
+  one transaction with generated generic outbox jobs. Structured subscription
+  ordering keys preserve endpoint FIFO while the shared `app_job_worker` owns
+  claims, heartbeats, fenced leases, retries, and dead letters. The isolated
+  `app_webhook_worker` role can only read endpoint configuration and update
+  customer-visible delivery history; it has no job-table authority. Replay
+  retains stable event identity. Test and replay RPCs atomically queue generated
+  jobs rather than executing a separate synchronous transport. See
+  `module/WEBHOOKS.md` for the verification contract.
+- **Transactional email outbox**: invitation and magic-link product writes
+  commit atomically with generated exact-rendered email jobs under tenant and
+  audited pre-authentication scope respectively. Billing events append email
+  work by stable Stripe event identity and propagate enqueue failures for
+  retry. The generic notification worker is the only production path to the
+  provider and owns leases, retries, safe failures, dead letters, replay, and
+  shutdown. Template rendering fails on malformed or unresolved variables,
+  escapes HTML insertions, and persists immutable bodies. Automatic provider
+  retries use the durable job UUID as their idempotency key; an intentional
+  replay gets a new key while retaining the exact payload.
 - **Audit log** (append-only, `audit_events` table): role grants, impersonation start/stop, session revocation, failed logins beyond threshold, bootstrap_admin activation, refresh reuse detection, JWT signature failures in excess.
 - **Zero tokens in logs**: structured logger scrubs any field matching token shapes. Enforced via interceptor.
 - **Constant-time** comparisons for all secret-equality checks.
@@ -260,41 +348,28 @@ Every commit that touches auth lands with tests. No separate test pass.
 - The existing `dev-admin` scenario still works (regression gate).
 - WorkOS path: mock AuthKit callback, verify full flow lands a valid session.
 
-## Task list (ordered)
+## Current work and verification gates
 
-Each row produces a commit. Each is independently testable.
+The original phased authentication migration is complete. Remaining hardening
+work is tracked only in `TODO.md`; duplicating an ordered backlog here caused
+the implementation and this document to diverge.
 
-### Phase 1 — foundation (no behavior change)
-1. **UUID v7 utility** in `pkg/business/ids.go`; use `uuid.NewV7()` for new rows.
-2. **Migration** for `provider_identities`, `sessions`, `orgs.provider_org_id`, `bootstrap_state`. Apply, verify roundtrip.
-3. **`pkg/auth/` package skeleton** with `Claims`, `Identity`, `TokenValidator`, `IdentityResolver`, `JWTMinter` interfaces only. No implementations. Compiles as no-op.
-4. **Copy current Ed25519 signer into `pkg/auth/ed25519/minter.go`**, wrap with `JWTMinter` interface. Unit test mint → verify roundtrip.
+Every authentication/session change must pass these Codefly-owned gates:
 
-### Phase 2 — dev path end-to-end, no WorkOS yet
-5. **Implement `pkg/auth/dev/validator.go`** — returns hardcoded Claims for a fixture-seeded identity.
-6. **Implement `pkg/auth/pg/resolver.go`** — JIT provisioning + bootstrap check + session insert, all in one transaction.
-7. **Implement the four backend endpoints** `/auth/login`, `/auth/signup`, `/auth/refresh`, `/auth/logout`. Wire to the validator/resolver/minter behind `AUTH_PROVIDER` env var (dev only at this point).
-8. **Implement sidecar `localvalidator.go`** — validates our JWT, forwards canonical headers. Delete the current request handler's auth code.
-9. **Strip `pkg/business/` of all auth imports.** Every function takes `userID, orgID uuid.UUID` + `orgRole, platformRole string` as parameters. Delete the old `Authenticate` RPC.
-10. **Verification gate**: `codefly run service frontend --fixture dev-admin`; log in via dev validator, verify all the RPCs still work end-to-end through the new sidecar + new token path.
+1. Regenerate protobuf, gRPC, Connect, REST, OpenAPI, and TypeScript bindings
+   from `authentication.proto` with the pinned service template.
+2. Regenerate the service, authorization, frontend, REST, and gateway catalogs;
+   their exact-count and byte-determinism tests must pass.
+3. Run the complete accounts test suite with the Go race detector, including
+   real-PostgreSQL refresh, revocation, device-cap, authorization-invalidation,
+   organization-switch, and switch-versus-refresh concurrency tests.
+4. Run the complete auth-sidecar suite so every generated route has matching
+   admission metadata and spoofed identity/session headers remain rejected.
+5. Run the complete frontend suite, lint, and production compile so every
+   tenant-scoped query follows the signed active organization.
+6. Exercise the `dev-admin` fixture end to end through the gateway. Production
+   provider smoke tests must additionally cover signed OAuth state, PKCE, MFA,
+   refresh, organization exchange, and logout.
 
-### Phase 3 — WorkOS
-11. **Implement `pkg/auth/workos/validator.go`** — JWKS cache + token verify + `ExchangeCodeForToken` helper.
-12. **Frontend: drop in `@workos-inc/authkit-nextjs`.** Hosted login, callback at `/auth/callback` which POSTs `{ code }` to backend `/auth/login`.
-13. **Env config**: `WORKOS_API_KEY`, `WORKOS_CLIENT_ID`, `AUTH_PROVIDER=workos`, `BOOTSTRAP_ADMIN_EMAIL`.
-14. **Verification gate**: fresh DB, `AUTH_PROVIDER=workos`, log in via WorkOS hosted UI as `BOOTSTRAP_ADMIN_EMAIL`, verify you end up with `super_admin` and `bootstrap_state.bootstrapped_at` stamped. Log in again, bootstrap path should no-op.
-
-### Phase 4 — production hygiene
-15. **Vault wiring** for the Ed25519 signing key. Key rotation plan: the sidecar supports two pubkeys during rotation, backend mints with the new one, old tokens verify against the old one until expiry.
-16. **Vault wiring** for API key hash pepper.
-17. **Migration path**: up-only, no reset-on-start. Failures halt boot.
-18. **Rate limiting per X-User-ID** in sidecar. In-memory token bucket. Redis later if needed.
-19. **Structured request logging** correlated to `X-Session-ID`.
-20. **CORS + security headers** reviewed per endpoint.
-
-## Verification gates
-
-- **End of Phase 1**: `go build` clean, migration applied, no behavior change. Existing tests pass.
-- **End of Phase 2**: `codefly run --fixture dev-admin` works end-to-end. Dev user can log in, create an org, invite another user, accept invitation — all flowing through the new sidecar + backend auth endpoints + local JWT.
-- **End of Phase 3**: fresh env, WorkOS login, first login of `BOOTSTRAP_ADMIN_EMAIL` provisions super_admin.
-- **End of Phase 4**: k6 load test at 500 rps on sidecar for 5 min, no memory growth, rate limit 429s under overload.
+Use `codefly test`, `codefly lint`, and `codefly compile` for these gates. Do not
+encode a second CI implementation in repository-specific workflow scripts.

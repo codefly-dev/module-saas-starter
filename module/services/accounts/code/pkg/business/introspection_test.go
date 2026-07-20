@@ -2,15 +2,18 @@ package business_test
 
 import (
 	"context"
+	"os"
 	"sort"
 	"testing"
 
 	"github.com/codefly-dev/core/wool"
 	"github.com/stretchr/testify/require"
-	"google.golang.org/grpc"
+	"google.golang.org/protobuf/reflect/protoreflect"
+	"google.golang.org/protobuf/reflect/protoregistry"
 
 	"accounts/pkg/business"
-	"accounts/pkg/gen"
+	gen "accounts/pkg/gen/saas/accounts/v1"
+	policyv1 "accounts/pkg/gen/saas/policy/v1"
 )
 
 // authedCtx returns a context that GetServiceInfo will treat as
@@ -77,12 +80,10 @@ func TestIntrospection_GetServiceInfo(t *testing.T) {
 		"built-in 'admin' role must hold wildcard *:* permission")
 }
 
-// TestIntrospection_NoMissingMetadata — drift guard. The RPC list
-// is auto-derived from gRPC service descriptors; per-RPC metadata
-// is hand-maintained in introspection.go's rpcMetadata. This test
-// asserts every (Service, Method) the proto exposes has a metadata
-// entry — adding a new RPC without filling metadata fails loud.
-func TestIntrospection_NoMissingMetadata(t *testing.T) {
+// TestIntrospection_NoMissingPolicy — drift guard. The RPC list and policy are
+// descriptor-derived; adding a method without a valid method_policy option is
+// therefore visible as an unclassified row and fails loud.
+func TestIntrospection_NoMissingPolicy(t *testing.T) {
 	resp, err := testService.GetServiceInfo(authedCtx(), &gen.GetServiceInfoRequest{})
 	require.NoError(t, err)
 
@@ -93,8 +94,66 @@ func TestIntrospection_NoMissingMetadata(t *testing.T) {
 		}
 	}
 	if len(missing) > 0 {
-		t.Fatalf("RPCs without metadata in introspection.go's rpcMetadata map (%d):\n  %v\nAdd entries.", len(missing), missing)
+		t.Fatalf("RPCs without valid descriptor method policy (%d):\n  %v\nAdd saas.policy.v1.method_policy options.", len(missing), missing)
 	}
+}
+
+func TestRPCPolicyInventoryIsCompleteAndClassified(t *testing.T) {
+	policies := business.RPCPolicies()
+	require.NotEmpty(t, policies)
+	seen := make(map[string]struct{}, len(policies))
+	streaming := make(map[string]bool)
+	internalWithoutHTTP := 0
+	for _, policy := range policies {
+		require.Empty(t, policy.PolicyError, "%s has invalid descriptor policy", policy.FullMethod)
+		require.NotNil(t, policy.MethodPolicy, "%s has no descriptor policy", policy.FullMethod)
+		require.True(t, policy.Tier.Valid(), "%s has invalid tier %q", policy.FullMethod, policy.Tier)
+		if policy.MethodPolicy.GetExposure() == policyv1.Exposure_EXPOSURE_INTERNAL {
+			require.Empty(t, policy.HTTPMethod, "%s must not opt into REST", policy.FullMethod)
+			require.Empty(t, policy.HTTPPath, "%s must not opt into REST", policy.FullMethod)
+			internalWithoutHTTP++
+		} else {
+			require.Equal(t, policy.HTTPMethod == "", policy.HTTPPath == "", "%s has incomplete HTTP metadata", policy.FullMethod)
+		}
+		require.NotEmpty(t, policy.Description, "%s has no description", policy.FullMethod)
+		_, duplicate := seen[policy.FullMethod]
+		require.False(t, duplicate, "duplicate policy for %s", policy.FullMethod)
+		seen[policy.FullMethod] = struct{}{}
+		streaming[policy.FullMethod] = policy.Streaming
+	}
+	require.Equal(t, 7, internalWithoutHTTP, "all internal RPCs must remain off the REST surface")
+	require.True(t, streaming["/saas.accounts.v1.DelegationService/WaitForDelegation"], "server-streaming RPC must be present and marked streaming")
+}
+
+func TestRPCPolicyDescriptorFixesFormerManualDrift(t *testing.T) {
+	byMethod := make(map[string]business.RPCPolicy)
+	for _, policy := range business.RPCPolicies() {
+		byMethod[policy.FullMethod] = policy
+	}
+
+	authenticate := byMethod["/saas.accounts.v1.AuthService/Authenticate"]
+	require.True(t, authenticate.EmitsAudit)
+	require.ElementsMatch(t, []string{"auth.login", "auth.mfa_challenge_started"}, authenticate.MethodPolicy.GetAudit().GetEvents())
+
+	listUsers := byMethod["/saas.accounts.v1.UserService/ListUsers"]
+	require.Equal(t, []string{"users:read"}, listUsers.Scopes)
+	require.Equal(t, "GET", listUsers.HTTPMethod)
+	require.Equal(t, "/v1/users", listUsers.HTTPPath)
+
+	entitlements := byMethod["/saas.accounts.v1.PlatformAdminService/GetOrgEntitlements"]
+	require.Equal(t, business.RPCPolicyOrgMember, entitlements.Tier)
+	require.Equal(t, "/v1/platform/organizations/{org_id}/entitlements", entitlements.HTTPPath)
+
+	grantPlatformRole := byMethod["/saas.accounts.v1.PlatformAdminService/GrantPlatformRole"]
+	require.Equal(t, policyv1.PlatformRoleRequirement_PLATFORM_ROLE_REQUIREMENT_SUPER_ADMIN, grantPlatformRole.MethodPolicy.GetPlatformRole())
+	require.Equal(t, policyv1.MFARequirement_MFA_REQUIREMENT_IF_ENROLLED_RECENT_STEP_UP, grantPlatformRole.MethodPolicy.GetMfa())
+}
+
+func TestRPCPolicyMatrixIsCurrent(t *testing.T) {
+	want := business.RenderRPCPolicyMatrix()
+	got, err := os.ReadFile("../../../AUTHZ_MATRIX.md")
+	require.NoError(t, err)
+	require.Equal(t, string(want), string(got), "run: go generate ./pkg/business")
 }
 
 // TestIntrospection_PublicRPCsAdvertised — the gRPC auth interceptor
@@ -112,11 +171,15 @@ func TestIntrospection_PublicRPCsAdvertised(t *testing.T) {
 	for _, key := range []string{
 		"IntrospectionService/GetServiceInfo",
 		"UserService/Version",
+		"UserService/RegisterUser",
 		"AuthService/GetJWKS",
+		"AuthService/BeginOAuth",
 		"AuthService/Authenticate",
+		"AuthService/CompleteMFAChallenge",
+		"AuthService/BeginWebAuthnMFAChallenge",
+		"AuthService/CompleteWebAuthnMFAChallenge",
 		"AuthService/RefreshToken",
 		"AuthService/Logout",
-		"PermissionService/CheckPermission",
 	} {
 		require.Equal(t, "public", got[key],
 			"RPC %s must be advertised as handler_authz=public", key)
@@ -131,12 +194,18 @@ func TestIntrospection_RPCListMatchesDescriptors(t *testing.T) {
 	require.NoError(t, err)
 
 	wanted := map[string]struct{}{}
-	for _, sd := range testServiceDescs() {
-		svc := stripPkg(sd.ServiceName)
-		for _, m := range sd.Methods {
-			wanted[svc+"/"+m.MethodName] = struct{}{}
+	protoregistry.GlobalFiles.RangeFiles(func(file protoreflect.FileDescriptor) bool {
+		if string(file.Package()) != "saas.accounts.v1" {
+			return true
 		}
-	}
+		for i := 0; i < file.Services().Len(); i++ {
+			service := file.Services().Get(i)
+			for j := 0; j < service.Methods().Len(); j++ {
+				wanted[string(service.Name())+"/"+string(service.Methods().Get(j).Name())] = struct{}{}
+			}
+		}
+		return true
+	})
 
 	got := map[string]struct{}{}
 	for _, r := range resp.Capabilities.Rpcs {
@@ -174,48 +243,11 @@ func TestIntrospection_UnauthenticatedRedacts(t *testing.T) {
 			"anonymous response must not include platform_admin RPCs (got %s)", r.Service+"/"+r.Method)
 		require.NotEqual(t, "mfa", r.HandlerAuthz,
 			"anonymous response must not include mfa-tier RPCs (got %s)", r.Service+"/"+r.Method)
+		require.NotEqual(t, "internal", r.HandlerAuthz,
+			"anonymous response must not include internal RPCs (got %s)", r.Service+"/"+r.Method)
 	}
 	require.NotEmpty(t, anonResp.Capabilities.Rpcs,
 		"anonymous still gets non-privileged RPCs")
-}
-
-// testServiceDescs mirrors introspection.go's allServiceDescs for
-// the test pkg. Divergence will trip
-// TestIntrospection_RPCListMatchesDescriptors — which is the right
-// thing to fail on.
-func testServiceDescs() []*grpc.ServiceDesc {
-	return []*grpc.ServiceDesc{
-		&gen.IntrospectionService_ServiceDesc,
-		&gen.AuthService_ServiceDesc,
-		&gen.UserService_ServiceDesc,
-		&gen.OrganizationService_ServiceDesc,
-		&gen.TeamService_ServiceDesc,
-		&gen.PermissionService_ServiceDesc,
-		&gen.IdentityService_ServiceDesc,
-		&gen.APIKeyService_ServiceDesc,
-		&gen.AuditService_ServiceDesc,
-		&gen.AuditExportService_ServiceDesc,
-		&gen.InvitationService_ServiceDesc,
-		&gen.WebhookService_ServiceDesc,
-		&gen.NotificationService_ServiceDesc,
-		&gen.OnboardingService_ServiceDesc,
-		&gen.GDPRService_ServiceDesc,
-		&gen.ConsentService_ServiceDesc,
-		&gen.SSOAdminService_ServiceDesc,
-		&gen.BillingService_ServiceDesc,
-		&gen.UserSettingsService_ServiceDesc,
-		&gen.MFAService_ServiceDesc,
-		&gen.PlatformAdminService_ServiceDesc,
-	}
-}
-
-func stripPkg(s string) string {
-	for i := len(s) - 1; i >= 0; i-- {
-		if s[i] == '.' {
-			return s[i+1:]
-		}
-	}
-	return s
 }
 
 var _ = business.ServiceVersion // keep business import alive

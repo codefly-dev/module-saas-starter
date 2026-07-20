@@ -1,0 +1,132 @@
+{
+	"schemaVersion": 2,
+	"contractVersion": 2,
+	"packages": {
+		"@codefly/saas-plugin-contract": {
+			"status": "active",
+			"packageVersion": "2.1.0",
+			"entrypoints": [".", "./capabilities"],
+			"entrypointExports": {
+				".": [
+					"FRONTEND_PLUGIN_CONTRACT_VERSION",
+					"FRONTEND_APPEARANCE_TOKEN_NAMES",
+					"DEFAULT_FRONTEND_APPEARANCE",
+					"DashboardWidget",
+					"FrontendAppearance",
+					"FrontendAppearanceDefinition",
+					"FrontendAppearanceTokenName",
+					"FrontendBranding",
+					"FrontendConfig",
+					"FrontendDefinition",
+					"FrontendLogo",
+					"FrontendPlugin",
+					"FrontendServiceAllowlist",
+					"FrontendServiceAllowlistEntry",
+					"FrontendServiceBinding",
+					"FrontendServiceCompatibility",
+					"FrontendServiceProtocol",
+					"FrontendServiceRequirement",
+					"FrontendServiceTarget",
+					"FrontendThemePreference",
+					"FrontendThemeTokenOverrides",
+					"FrontendThemeTokens",
+					"InstalledFrontendService",
+					"InstalledDashboardWidget",
+					"InstalledPluginRoute",
+					"NavItem",
+					"NavigationPlacement",
+					"NavigationSurface",
+					"PluginNavigation",
+					"PluginNavSection",
+					"PluginRoute",
+					"PresentationAccess",
+					"PresentationRequirement",
+					"PresentationRole",
+					"buildFrontendServiceAllowlist",
+					"defineFrontend",
+					"definePlugin",
+					"resolveFrontendAppearance",
+					"validateFrontendPlugins"
+				],
+				"./capabilities": [
+					"FRONTEND_PLUGIN_CAPABILITIES_BFF_PATH",
+					"FRONTEND_PLUGIN_CAPABILITIES_CONNECT_PROCEDURE",
+					"FRONTEND_PLUGIN_CAPABILITIES_REST_PATH",
+					"FRONTEND_PLUGIN_CAPABILITIES_SCHEMA_VERSION",
+					"FrontendPluginCapabilitiesInput",
+					"FrontendPluginCapabilityService",
+					"GetFrontendPluginCapabilitiesRequest",
+					"GetFrontendPluginCapabilitiesRequestSchema",
+					"GetFrontendPluginCapabilitiesResponse",
+					"GetFrontendPluginCapabilitiesResponseSchema",
+					"defineFrontendPluginCapabilities",
+					"emptyFrontendPluginCapabilitiesRequest",
+					"frontendPluginCapabilitiesToJson",
+					"parseFrontendPluginCapabilities",
+					"supportsFrontendPluginContract"
+				]
+			}
+		},
+		"@codefly/saas-plugin-react": {
+			"status": "active",
+			"packageVersion": "0.4.1",
+			"entrypoints": [".", "./runtime", "./ui"],
+			"entrypointExports": {
+				".": [
+					"FrontendPluginComponent",
+					"FrontendReactConfig",
+					"FrontendReactDefinition",
+					"FrontendReactPlugin",
+					"FrontendReactPluginDefinition",
+					"ReactDashboardWidget",
+					"ReactPluginRoute",
+					"ReactRouteRegistration",
+					"ReactWidgetRegistration",
+					"defineReactFrontend",
+					"defineReactPlugin"
+				],
+				"./runtime": [
+					"PluginAvailabilityError",
+					"PluginAvailabilityErrorOptions",
+					"PluginAvailabilityState",
+					"PluginFailure",
+					"PluginFailureState",
+					"PluginRuntime",
+					"PluginRuntimeOptions",
+					"PluginRuntimeProvider",
+					"PluginRuntimeProviderProps",
+					"PluginServicePath",
+					"PluginServiceCapabilities",
+					"PluginServiceQuery",
+					"PluginServiceRequestInit",
+					"PluginServiceTransport",
+					"PluginTransportConfigurationError",
+					"PluginTransportConfigurationErrorCode",
+					"createPluginRuntime",
+					"pluginErrorFromResponse",
+					"toPluginFailure",
+					"usePluginRuntime",
+					"usePluginService"
+				],
+				"./ui": [
+					"PluginAvailabilityState",
+					"PluginErrorBoundary",
+					"PluginErrorBoundaryFallbackProps",
+					"PluginErrorBoundaryProps",
+					"PluginFailure",
+					"PluginFailureState"
+				]
+			}
+		},
+		"@codefly/saas-plugin-testkit": {
+			"status": "planned",
+			"entrypoints": ["."],
+			"entrypointExports": { ".": [] }
+		}
+	},
+	"forbiddenImportPatterns": [
+		"^@/",
+		"^(?:\\.\\./)+(?:src|app|features|plugins|lib|components)(?:/|$)"
+	],
+	"compatibilityOnlyImports": []
+}

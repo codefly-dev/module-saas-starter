@@ -1,0 +1,475 @@
+syntax = "proto3";
+
+package saas.accounts.v1;
+
+import "buf/validate/validate.proto";
+import "google/api/annotations.proto";
+import "google/protobuf/empty.proto";
+import "google/protobuf/timestamp.proto";
+import "saas/accounts/v1/common.proto";
+import "saas/jobs/v1/jobs.proto";
+import "saas/policy/v1/options.proto";
+
+// ============================================================================
+// Admin Service (requires admin role)
+// ============================================================================
+
+message SearchUsersRequest {
+  string query = 1;
+  int32 page_size = 2 [(buf.validate.field).int32 = {
+    gt: 0
+    lte: 100
+  }];
+  string page_token = 3;
+}
+
+message SearchUsersResponse {
+  repeated User users = 1;
+  string next_page_token = 2;
+  int32 total_count = 3;
+}
+
+message SuspendUserRequest {
+  string user_id = 1 [(buf.validate.field).string.uuid = true];
+  string reason = 2;
+}
+
+message UnsuspendUserRequest {
+  string user_id = 1 [(buf.validate.field).string.uuid = true];
+}
+
+message ImpersonateUserRequest {
+  string user_id = 1 [(buf.validate.field).string.uuid = true];
+}
+
+message ImpersonateUserResponse {
+  string access_token = 1;
+  int64 expires_in = 2;
+}
+
+message ListActiveSessionsRequest {
+  string user_id = 1;
+  int32 page_size = 2 [(buf.validate.field).int32 = {
+    gt: 0
+    lte: 100
+  }];
+  string page_token = 3;
+}
+
+message SessionInfo {
+  // Stable refresh-family identifier for one device login. Unlike the JWT sid,
+  // it does not change when the refresh token rotates.
+  string id = 1;
+  string user_id = 2;
+  string ip_address = 3;
+  map<string, string> device_info = 4;
+  google.protobuf.Timestamp created_at = 5;
+  google.protobuf.Timestamp last_active_at = 6;
+  google.protobuf.Timestamp expires_at = 7;
+  google.protobuf.Timestamp idle_expires_at = 8;
+}
+
+message ListActiveSessionsResponse {
+  repeated SessionInfo sessions = 1;
+  string next_page_token = 2;
+}
+
+message RevokeSessionRequest {
+  // SessionInfo.id: the stable device refresh-family identifier.
+  string session_id = 1 [(buf.validate.field).string.min_len = 1];
+  string reason = 2;
+}
+
+message GetOrgEntitlementsRequest {
+  string org_id = 1 [(buf.validate.field).string.uuid = true];
+}
+
+message GetOrgEntitlementsResponse {
+  string plan_name = 1;
+  repeated EntitlementInfo entitlements = 2;
+}
+
+message EntitlementInfo {
+  string feature = 1;
+  int64 limit = 2; // -1 = unlimited, 0 = disabled
+  int64 used = 3;
+  bool has_override = 4;
+}
+
+message OverrideEntitlementRequest {
+  string org_id = 1 [(buf.validate.field).string.uuid = true];
+  string feature = 2 [(buf.validate.field).string.min_len = 1];
+  int64 limit_value = 3;
+  string reason = 4;
+}
+
+message OverrideEntitlementResponse {
+  string id = 1;
+}
+
+// ── Platform admin management messages ──────────────────────────
+
+message GrantPlatformRoleRequest {
+  string user_id = 1 [(buf.validate.field).string.uuid = true];
+  string platform_role = 2 [(buf.validate.field).string = {
+    in: [
+      "super_admin",
+      "support",
+      "billing"
+    ]
+  }];
+}
+
+message RevokePlatformRoleRequest {
+  string user_id = 1 [(buf.validate.field).string.uuid = true];
+}
+
+message ListPlatformAdminsRequest {}
+
+message PlatformAdminEntry {
+  string user_id = 1;
+  string platform_role = 2;
+  string granted_by = 3;
+  google.protobuf.Timestamp granted_at = 4;
+}
+
+message ListPlatformAdminsResponse {
+  repeated PlatformAdminEntry admins = 1;
+}
+
+// ── Feature flag messages ───────────────────────────────────────
+
+message ListFeatureFlagsRequest {}
+
+message FeatureFlagEntry {
+  string name = 1;
+  string description = 2;
+  bool enabled = 3;
+  int32 rollout_percent = 4;
+  repeated string target_org_ids = 5;
+}
+
+message ListFeatureFlagsResponse {
+  repeated FeatureFlagEntry flags = 1;
+}
+
+message UpsertFeatureFlagRequest {
+  string name = 1 [(buf.validate.field).string.min_len = 1];
+  string description = 2;
+  bool enabled = 3;
+  int32 rollout_percent = 4;
+  repeated string target_org_ids = 5;
+}
+
+message UpsertFeatureFlagResponse {
+  string name = 1;
+}
+
+// PlatformAdminService — cross-tenant operations for platform operators.
+// All RPCs require a platform_role in the JWT claims.
+service PlatformAdminService {
+  // User management (cross-tenant)
+  rpc SearchUsers(SearchUsersRequest) returns (SearchUsersResponse) {
+    option (saas.policy.v1.method_policy) = {
+      exposure: EXPOSURE_AUTHENTICATED
+      tenant: TENANT_REQUIREMENT_NONE
+      mfa: MFA_REQUIREMENT_NONE
+      audit: {emission: AUDIT_EMISSION_NONE}
+      idempotency: IDEMPOTENCY_REQUIREMENT_FORBIDDEN
+      rate_limit: RATE_LIMIT_CLASS_SENSITIVE
+      request_sensitivity: SENSITIVITY_CONFIDENTIAL
+      response_sensitivity: SENSITIVITY_CONFIDENTIAL
+      platform_role: PLATFORM_ROLE_REQUIREMENT_SUPPORT
+    };
+    option (google.api.http) = {get: "/v1/platform/users"};
+  }
+  rpc SuspendUser(SuspendUserRequest) returns (google.protobuf.Empty) {
+    option (saas.policy.v1.method_policy) = {
+      exposure: EXPOSURE_AUTHENTICATED
+      tenant: TENANT_REQUIREMENT_NONE
+      mfa: MFA_REQUIREMENT_NONE
+      audit: {
+        events: "user.suspended"
+        emission: AUDIT_EMISSION_SUCCESS
+      }
+      idempotency: IDEMPOTENCY_REQUIREMENT_FORBIDDEN
+      rate_limit: RATE_LIMIT_CLASS_SENSITIVE
+      request_sensitivity: SENSITIVITY_CONFIDENTIAL
+      response_sensitivity: SENSITIVITY_CONFIDENTIAL
+      platform_role: PLATFORM_ROLE_REQUIREMENT_SUPER_ADMIN
+    };
+    option (google.api.http) = {
+      post: "/v1/platform/users/{user_id}:suspend"
+      body: "*"
+    };
+  }
+  rpc UnsuspendUser(UnsuspendUserRequest) returns (google.protobuf.Empty) {
+    option (saas.policy.v1.method_policy) = {
+      exposure: EXPOSURE_AUTHENTICATED
+      tenant: TENANT_REQUIREMENT_NONE
+      mfa: MFA_REQUIREMENT_NONE
+      audit: {
+        events: "user.unsuspended"
+        emission: AUDIT_EMISSION_SUCCESS
+      }
+      idempotency: IDEMPOTENCY_REQUIREMENT_FORBIDDEN
+      rate_limit: RATE_LIMIT_CLASS_SENSITIVE
+      request_sensitivity: SENSITIVITY_CONFIDENTIAL
+      response_sensitivity: SENSITIVITY_CONFIDENTIAL
+      platform_role: PLATFORM_ROLE_REQUIREMENT_SUPER_ADMIN
+    };
+    option (google.api.http) = {
+      post: "/v1/platform/users/{user_id}:unsuspend"
+      body: "*"
+    };
+  }
+  rpc ImpersonateUser(ImpersonateUserRequest) returns (ImpersonateUserResponse) {
+    option (saas.policy.v1.method_policy) = {
+      exposure: EXPOSURE_AUTHENTICATED
+      tenant: TENANT_REQUIREMENT_NONE
+      mfa: MFA_REQUIREMENT_IF_ENROLLED_RECENT_STEP_UP
+      audit: {
+        events: "platform.user_impersonated"
+        emission: AUDIT_EMISSION_SUCCESS
+      }
+      idempotency: IDEMPOTENCY_REQUIREMENT_FORBIDDEN
+      rate_limit: RATE_LIMIT_CLASS_SENSITIVE
+      request_sensitivity: SENSITIVITY_CONFIDENTIAL
+      response_sensitivity: SENSITIVITY_SECRET
+      platform_role: PLATFORM_ROLE_REQUIREMENT_SUPPORT
+    };
+    option (google.api.http) = {
+      post: "/v1/platform/users/{user_id}:impersonate"
+      body: "*"
+    };
+  }
+
+  // Session visibility
+  rpc ListActiveSessions(ListActiveSessionsRequest) returns (ListActiveSessionsResponse) {
+    option (saas.policy.v1.method_policy) = {
+      exposure: EXPOSURE_AUTHENTICATED
+      tenant: TENANT_REQUIREMENT_NONE
+      mfa: MFA_REQUIREMENT_NONE
+      audit: {emission: AUDIT_EMISSION_NONE}
+      idempotency: IDEMPOTENCY_REQUIREMENT_FORBIDDEN
+      rate_limit: RATE_LIMIT_CLASS_SENSITIVE
+      request_sensitivity: SENSITIVITY_CONFIDENTIAL
+      response_sensitivity: SENSITIVITY_CONFIDENTIAL
+      platform_role: PLATFORM_ROLE_REQUIREMENT_SUPPORT
+    };
+    option (google.api.http) = {get: "/v1/platform/sessions"};
+  }
+
+  rpc RevokeSession(RevokeSessionRequest) returns (google.protobuf.Empty) {
+    option (saas.policy.v1.method_policy) = {
+      exposure: EXPOSURE_AUTHENTICATED
+      tenant: TENANT_REQUIREMENT_NONE
+      mfa: MFA_REQUIREMENT_NONE
+      audit: {
+        events: "session.revoked"
+        emission: AUDIT_EMISSION_SUCCESS
+      }
+      idempotency: IDEMPOTENCY_REQUIREMENT_FORBIDDEN
+      rate_limit: RATE_LIMIT_CLASS_SENSITIVE
+      request_sensitivity: SENSITIVITY_CONFIDENTIAL
+      response_sensitivity: SENSITIVITY_CONFIDENTIAL
+      platform_role: PLATFORM_ROLE_REQUIREMENT_SUPPORT
+    };
+    option (google.api.http) = {delete: "/v1/platform/sessions/{session_id}"};
+  }
+
+  // Entitlements & billing
+  rpc GetOrgEntitlements(GetOrgEntitlementsRequest) returns (GetOrgEntitlementsResponse) {
+    option (saas.policy.v1.method_policy) = {
+      exposure: EXPOSURE_AUTHENTICATED
+      tenant: TENANT_REQUIREMENT_ORG_MEMBER
+      resource_bindings: {
+        request_field: "org_id"
+        target: RESOURCE_TARGET_ORGANIZATION
+        lookup: RESOURCE_LOOKUP_DIRECT_ID
+      }
+      mfa: MFA_REQUIREMENT_NONE
+      audit: {emission: AUDIT_EMISSION_NONE}
+      idempotency: IDEMPOTENCY_REQUIREMENT_FORBIDDEN
+      rate_limit: RATE_LIMIT_CLASS_STANDARD_READ
+      request_sensitivity: SENSITIVITY_CONFIDENTIAL
+      response_sensitivity: SENSITIVITY_CONFIDENTIAL
+      platform_role: PLATFORM_ROLE_REQUIREMENT_NONE
+    };
+    option (google.api.http) = {get: "/v1/platform/organizations/{org_id}/entitlements"};
+  }
+  rpc OverrideEntitlement(OverrideEntitlementRequest) returns (OverrideEntitlementResponse) {
+    option (saas.policy.v1.method_policy) = {
+      exposure: EXPOSURE_AUTHENTICATED
+      tenant: TENANT_REQUIREMENT_NONE
+      mfa: MFA_REQUIREMENT_NONE
+      audit: {
+        events: "entitlement.override"
+        emission: AUDIT_EMISSION_SUCCESS
+      }
+      idempotency: IDEMPOTENCY_REQUIREMENT_FORBIDDEN
+      rate_limit: RATE_LIMIT_CLASS_SENSITIVE
+      request_sensitivity: SENSITIVITY_CONFIDENTIAL
+      response_sensitivity: SENSITIVITY_CONFIDENTIAL
+      platform_role: PLATFORM_ROLE_REQUIREMENT_ANY
+    };
+    option (google.api.http) = {
+      post: "/v1/platform/organizations/{org_id}/entitlements"
+      body: "*"
+    };
+  }
+
+  // Platform admin management (super_admin only)
+  rpc GrantPlatformRole(GrantPlatformRoleRequest) returns (google.protobuf.Empty) {
+    option (saas.policy.v1.method_policy) = {
+      exposure: EXPOSURE_AUTHENTICATED
+      tenant: TENANT_REQUIREMENT_NONE
+      mfa: MFA_REQUIREMENT_IF_ENROLLED_RECENT_STEP_UP
+      audit: {
+        events: "platform.role_granted"
+        emission: AUDIT_EMISSION_SUCCESS
+      }
+      idempotency: IDEMPOTENCY_REQUIREMENT_FORBIDDEN
+      rate_limit: RATE_LIMIT_CLASS_SENSITIVE
+      request_sensitivity: SENSITIVITY_CONFIDENTIAL
+      response_sensitivity: SENSITIVITY_CONFIDENTIAL
+      platform_role: PLATFORM_ROLE_REQUIREMENT_SUPER_ADMIN
+    };
+    option (google.api.http) = {
+      post: "/v1/platform/admins"
+      body: "*"
+    };
+  }
+  rpc RevokePlatformRole(RevokePlatformRoleRequest) returns (google.protobuf.Empty) {
+    option (saas.policy.v1.method_policy) = {
+      exposure: EXPOSURE_AUTHENTICATED
+      tenant: TENANT_REQUIREMENT_NONE
+      mfa: MFA_REQUIREMENT_IF_ENROLLED_RECENT_STEP_UP
+      audit: {
+        events: "platform.role_revoked"
+        emission: AUDIT_EMISSION_SUCCESS
+      }
+      idempotency: IDEMPOTENCY_REQUIREMENT_FORBIDDEN
+      rate_limit: RATE_LIMIT_CLASS_SENSITIVE
+      request_sensitivity: SENSITIVITY_CONFIDENTIAL
+      response_sensitivity: SENSITIVITY_CONFIDENTIAL
+      platform_role: PLATFORM_ROLE_REQUIREMENT_SUPER_ADMIN
+    };
+    option (google.api.http) = {delete: "/v1/platform/admins/{user_id}"};
+  }
+  rpc ListPlatformAdmins(ListPlatformAdminsRequest) returns (ListPlatformAdminsResponse) {
+    option (saas.policy.v1.method_policy) = {
+      exposure: EXPOSURE_AUTHENTICATED
+      tenant: TENANT_REQUIREMENT_NONE
+      mfa: MFA_REQUIREMENT_NONE
+      audit: {emission: AUDIT_EMISSION_NONE}
+      idempotency: IDEMPOTENCY_REQUIREMENT_FORBIDDEN
+      rate_limit: RATE_LIMIT_CLASS_SENSITIVE
+      request_sensitivity: SENSITIVITY_CONFIDENTIAL
+      response_sensitivity: SENSITIVITY_CONFIDENTIAL
+      platform_role: PLATFORM_ROLE_REQUIREMENT_SUPER_ADMIN
+    };
+    option (google.api.http) = {get: "/v1/platform/admins"};
+  }
+
+  // Feature flags (platform-only)
+  rpc ListFeatureFlags(ListFeatureFlagsRequest) returns (ListFeatureFlagsResponse) {
+    option (saas.policy.v1.method_policy) = {
+      exposure: EXPOSURE_AUTHENTICATED
+      tenant: TENANT_REQUIREMENT_NONE
+      mfa: MFA_REQUIREMENT_NONE
+      audit: {emission: AUDIT_EMISSION_NONE}
+      idempotency: IDEMPOTENCY_REQUIREMENT_FORBIDDEN
+      rate_limit: RATE_LIMIT_CLASS_SENSITIVE
+      request_sensitivity: SENSITIVITY_CONFIDENTIAL
+      response_sensitivity: SENSITIVITY_CONFIDENTIAL
+      platform_role: PLATFORM_ROLE_REQUIREMENT_SUPER_ADMIN
+    };
+    option (google.api.http) = {get: "/v1/platform/feature-flags"};
+  }
+  rpc UpsertFeatureFlag(UpsertFeatureFlagRequest) returns (UpsertFeatureFlagResponse) {
+    option (saas.policy.v1.method_policy) = {
+      exposure: EXPOSURE_AUTHENTICATED
+      tenant: TENANT_REQUIREMENT_NONE
+      mfa: MFA_REQUIREMENT_NONE
+      audit: {
+        events: "feature_flag.updated"
+        emission: AUDIT_EMISSION_SUCCESS
+      }
+      idempotency: IDEMPOTENCY_REQUIREMENT_FORBIDDEN
+      rate_limit: RATE_LIMIT_CLASS_SENSITIVE
+      request_sensitivity: SENSITIVITY_CONFIDENTIAL
+      response_sensitivity: SENSITIVITY_CONFIDENTIAL
+      platform_role: PLATFORM_ROLE_REQUIREMENT_SUPER_ADMIN
+    };
+    option (google.api.http) = {
+      put: "/v1/platform/feature-flags/{name}"
+      body: "*"
+    };
+  }
+
+  // Product-neutral durable job operations. Payload bytes never leave the
+  // worker database boundary through these methods.
+  rpc GetJobOperations(saas.jobs.v1.GetJobOperationsRequest) returns (saas.jobs.v1.GetJobOperationsResponse) {
+    option (saas.policy.v1.method_policy) = {
+      exposure: EXPOSURE_AUTHENTICATED
+      tenant: TENANT_REQUIREMENT_NONE
+      mfa: MFA_REQUIREMENT_NONE
+      audit: {emission: AUDIT_EMISSION_NONE}
+      idempotency: IDEMPOTENCY_REQUIREMENT_FORBIDDEN
+      rate_limit: RATE_LIMIT_CLASS_SENSITIVE
+      request_sensitivity: SENSITIVITY_CONFIDENTIAL
+      response_sensitivity: SENSITIVITY_CONFIDENTIAL
+      platform_role: PLATFORM_ROLE_REQUIREMENT_SUPER_ADMIN
+    };
+    option (google.api.http) = {get: "/v1/platform/jobs/operations"};
+  }
+  rpc ListJobs(saas.jobs.v1.ListJobsRequest) returns (saas.jobs.v1.ListJobsResponse) {
+    option (saas.policy.v1.method_policy) = {
+      exposure: EXPOSURE_AUTHENTICATED
+      tenant: TENANT_REQUIREMENT_NONE
+      mfa: MFA_REQUIREMENT_NONE
+      audit: {emission: AUDIT_EMISSION_NONE}
+      idempotency: IDEMPOTENCY_REQUIREMENT_FORBIDDEN
+      rate_limit: RATE_LIMIT_CLASS_SENSITIVE
+      request_sensitivity: SENSITIVITY_CONFIDENTIAL
+      response_sensitivity: SENSITIVITY_CONFIDENTIAL
+      platform_role: PLATFORM_ROLE_REQUIREMENT_SUPER_ADMIN
+    };
+    option (google.api.http) = {get: "/v1/platform/jobs"};
+  }
+  rpc GetJob(saas.jobs.v1.GetJobRequest) returns (saas.jobs.v1.GetJobResponse) {
+    option (saas.policy.v1.method_policy) = {
+      exposure: EXPOSURE_AUTHENTICATED
+      tenant: TENANT_REQUIREMENT_NONE
+      mfa: MFA_REQUIREMENT_NONE
+      audit: {emission: AUDIT_EMISSION_NONE}
+      idempotency: IDEMPOTENCY_REQUIREMENT_FORBIDDEN
+      rate_limit: RATE_LIMIT_CLASS_SENSITIVE
+      request_sensitivity: SENSITIVITY_CONFIDENTIAL
+      response_sensitivity: SENSITIVITY_CONFIDENTIAL
+      platform_role: PLATFORM_ROLE_REQUIREMENT_SUPER_ADMIN
+    };
+    option (google.api.http) = {get: "/v1/platform/jobs/{job_id}"};
+  }
+  rpc ReplayJob(saas.jobs.v1.ReplayJobRequest) returns (saas.jobs.v1.ReplayJobResponse) {
+    option (saas.policy.v1.method_policy) = {
+      exposure: EXPOSURE_AUTHENTICATED
+      tenant: TENANT_REQUIREMENT_NONE
+      mfa: MFA_REQUIREMENT_RECENT_STEP_UP
+      audit: {
+        events: "job.replayed"
+        emission: AUDIT_EMISSION_SUCCESS
+      }
+      idempotency: IDEMPOTENCY_REQUIREMENT_REQUIRED
+      rate_limit: RATE_LIMIT_CLASS_SENSITIVE
+      request_sensitivity: SENSITIVITY_CONFIDENTIAL
+      response_sensitivity: SENSITIVITY_CONFIDENTIAL
+      platform_role: PLATFORM_ROLE_REQUIREMENT_SUPER_ADMIN
+    };
+    option (google.api.http) = {
+      post: "/v1/platform/jobs/{source_job_id}:replay"
+      body: "*"
+    };
+  }
+}

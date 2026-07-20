@@ -1,0 +1,191 @@
+syntax = "proto3";
+
+package saas.accounts.v1;
+
+import "buf/validate/validate.proto";
+import "google/api/annotations.proto";
+import "google/protobuf/empty.proto";
+import "google/protobuf/timestamp.proto";
+import "saas/accounts/v1/common.proto";
+import "saas/policy/v1/options.proto";
+
+// ============================================================================
+// API Keys
+// ============================================================================
+
+enum APIKeyEnvironment {
+  API_KEY_ENVIRONMENT_UNSPECIFIED = 0;
+  API_KEY_ENVIRONMENT_LIVE = 1;
+  API_KEY_ENVIRONMENT_TEST = 2;
+}
+
+message APIKey {
+  string id = 1;
+  string organization_id = 2;
+  string user_id = 3;
+  string name = 4;
+  string prefix = 5;
+  repeated Permission scopes = 6;
+  APIKeyEnvironment environment = 7;
+  google.protobuf.Timestamp created_at = 8;
+  google.protobuf.Timestamp expires_at = 9;
+  google.protobuf.Timestamp last_used_at = 10;
+  google.protobuf.Timestamp revoked_at = 11;
+}
+
+message CreateAPIKeyRequest {
+  string organization_id = 1 [(buf.validate.field).string.uuid = true];
+  string name = 2 [(buf.validate.field).string = {
+    min_len: 1
+    max_len: 255
+  }];
+  repeated Permission scopes = 3;
+  APIKeyEnvironment environment = 4;
+  google.protobuf.Timestamp expires_at = 5 [(buf.validate.field).timestamp.gt_now = true];
+}
+
+message CreateAPIKeyResponse {
+  APIKey key = 1;
+  string plaintext_key = 2;
+}
+
+message ListAPIKeysRequest {
+  string organization_id = 1 [(buf.validate.field).string.uuid = true];
+  int32 page_size = 2 [(buf.validate.field).int32 = {
+    gt: 0
+    lte: 100
+  }];
+  string page_token = 3;
+}
+
+message ListAPIKeysResponse {
+  repeated APIKey keys = 1;
+  string next_page_token = 2;
+}
+
+message RevokeAPIKeyRequest {
+  string id = 1 [(buf.validate.field).string.uuid = true];
+  // The owning org — lets the handler enforce org-admin (not platform-admin)
+  // revocation. Maps to a query param on the REST DELETE.
+  string organization_id = 2 [(buf.validate.field).string.uuid = true];
+}
+
+message ValidateAPIKeyRequest {
+  // The PLAINTEXT key, over TLS. The server hashes (Vault transit HMAC, or
+  // SHA-256 fallback) — clients cannot precompute the HMAC, and the previous
+  // field name (`key_hash`) was a lie: the handler hashed whatever it received.
+  string key = 1 [(buf.validate.field).string.min_len = 1];
+}
+
+// Identity Claims v1 — everything a policy-enforcement consumer (e.g. an AI
+// gateway) needs to construct the caller's execution context in ONE call:
+// who, in which org, in which teams (paths), with which roles/permissions.
+message ValidateAPIKeyResponse {
+  bool valid = 1;
+  string user_id = 2;
+  string organization_id = 3;
+  // API-key permission scopes, "resource:action" strings.
+  repeated string scopes = 4;
+  // Team PATHS the key's user belongs to (literal membership; consumers expand
+  // ancestors), e.g. "engineering/platform".
+  repeated string workspaces = 5;
+  // RBAC role names assigned to the user in this org.
+  repeated string roles = 6;
+  // The user's profile attributes (open metadata; policy may key on it).
+  map<string, string> attributes = 7;
+  // "human" | "service" | "agent" (PrincipalKind, lowercase).
+  string principal_kind = 8;
+}
+
+// APIKeyService — programmatic access management
+service APIKeyService {
+  rpc CreateAPIKey(CreateAPIKeyRequest) returns (CreateAPIKeyResponse) {
+    option (saas.policy.v1.method_policy) = {
+      exposure: EXPOSURE_AUTHENTICATED
+      tenant: TENANT_REQUIREMENT_ORG_ADMIN
+      permissions: "api_keys:write"
+      scopes: "api_keys:write"
+      resource_bindings: {
+        request_field: "organization_id"
+        target: RESOURCE_TARGET_ORGANIZATION
+        lookup: RESOURCE_LOOKUP_DIRECT_ID
+      }
+      mfa: MFA_REQUIREMENT_NONE
+      audit: {
+        events: "api_key.created"
+        emission: AUDIT_EMISSION_SUCCESS
+      }
+      idempotency: IDEMPOTENCY_REQUIREMENT_FORBIDDEN
+      rate_limit: RATE_LIMIT_CLASS_STANDARD_WRITE
+      request_sensitivity: SENSITIVITY_CONFIDENTIAL
+      response_sensitivity: SENSITIVITY_SECRET
+      platform_role: PLATFORM_ROLE_REQUIREMENT_NONE
+    };
+    option (google.api.http) = {
+      post: "/v1/api-keys"
+      body: "*"
+    };
+  }
+
+  rpc ListAPIKeys(ListAPIKeysRequest) returns (ListAPIKeysResponse) {
+    option (saas.policy.v1.method_policy) = {
+      exposure: EXPOSURE_AUTHENTICATED
+      tenant: TENANT_REQUIREMENT_ORG_MEMBER
+      permissions: "api_keys:read"
+      scopes: "api_keys:read"
+      resource_bindings: {
+        request_field: "organization_id"
+        target: RESOURCE_TARGET_ORGANIZATION
+        lookup: RESOURCE_LOOKUP_DIRECT_ID
+      }
+      mfa: MFA_REQUIREMENT_NONE
+      audit: {emission: AUDIT_EMISSION_NONE}
+      idempotency: IDEMPOTENCY_REQUIREMENT_FORBIDDEN
+      rate_limit: RATE_LIMIT_CLASS_STANDARD_READ
+      request_sensitivity: SENSITIVITY_CONFIDENTIAL
+      response_sensitivity: SENSITIVITY_CONFIDENTIAL
+      platform_role: PLATFORM_ROLE_REQUIREMENT_NONE
+    };
+    option (google.api.http) = {get: "/v1/api-keys"};
+  }
+
+  rpc RevokeAPIKey(RevokeAPIKeyRequest) returns (google.protobuf.Empty) {
+    option (saas.policy.v1.method_policy) = {
+      exposure: EXPOSURE_AUTHENTICATED
+      tenant: TENANT_REQUIREMENT_ORG_ADMIN
+      permissions: "api_keys:write"
+      scopes: "api_keys:write"
+      resource_bindings: {
+        request_field: "organization_id"
+        target: RESOURCE_TARGET_ORGANIZATION
+        lookup: RESOURCE_LOOKUP_DIRECT_ID
+      }
+      mfa: MFA_REQUIREMENT_NONE
+      audit: {
+        events: "api_key.revoked"
+        emission: AUDIT_EMISSION_SUCCESS
+      }
+      idempotency: IDEMPOTENCY_REQUIREMENT_FORBIDDEN
+      rate_limit: RATE_LIMIT_CLASS_STANDARD_WRITE
+      request_sensitivity: SENSITIVITY_CONFIDENTIAL
+      response_sensitivity: SENSITIVITY_CONFIDENTIAL
+      platform_role: PLATFORM_ROLE_REQUIREMENT_NONE
+    };
+    option (google.api.http) = {delete: "/v1/api-keys/{id}"};
+  }
+
+  // Internal-only validation for gateways using generated gRPC or Connect clients.
+  rpc ValidateAPIKey(ValidateAPIKeyRequest) returns (ValidateAPIKeyResponse) {
+    option (saas.policy.v1.method_policy) = {
+      exposure: EXPOSURE_INTERNAL
+      tenant: TENANT_REQUIREMENT_NONE
+      mfa: MFA_REQUIREMENT_NONE
+      audit: {emission: AUDIT_EMISSION_NONE}
+      idempotency: IDEMPOTENCY_REQUIREMENT_FORBIDDEN
+      rate_limit: RATE_LIMIT_CLASS_INTERNAL
+      request_sensitivity: SENSITIVITY_SECRET
+      response_sensitivity: SENSITIVITY_CONFIDENTIAL
+      platform_role: PLATFORM_ROLE_REQUIREMENT_NONE
+    };
+  }
+}

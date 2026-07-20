@@ -1,3 +1,5 @@
 "use client";
 import { SessionsPage } from "@/features/platform/ui/sessions-page";
-export default function Page() { return <SessionsPage />; }
+export default function Page() {
+	return <SessionsPage />;
+}

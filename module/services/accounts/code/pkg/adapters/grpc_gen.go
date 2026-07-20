@@ -11,7 +11,7 @@ implement your APIs there.
 
 import (
 	"accounts/pkg/auth"
-	"accounts/pkg/gen"
+	gen "accounts/pkg/gen/saas/accounts/v1"
 	"context"
 	"fmt"
 	"net"
@@ -25,8 +25,8 @@ import (
 
 	"google.golang.org/grpc/reflection"
 
-	codefly "github.com/codefly-dev/sdk-go"
 	wooltel "github.com/codefly-dev/core/wool/otel"
+	codefly "github.com/codefly-dev/sdk-go"
 	"google.golang.org/grpc"
 )
 
@@ -118,13 +118,14 @@ func (s *IntrospectionServer) GetServiceInfo(ctx context.Context, req *gen.GetSe
 
 // GrpcServer wraps all service servers and manages the gRPC lifecycle.
 type GrpcServer struct {
-	User   *UserServer
-	Org    *OrgServer
-	Team   *TeamServer
-	Perm   *PermServer
-	Ident  *IdentServer
-	APIKey *APIKeyServer
-	Auth   *AuthServer
+	User          *UserServer
+	Org           *OrgServer
+	Team          *TeamServer
+	Perm          *PermServer
+	Ident         *IdentServer
+	APIKey        *APIKeyServer
+	Auth          *AuthServer
+	MFA           *MFAServer
 	Audit         *AuditServer
 	Invitation    *InvitationServer
 	PlatformAdmin *PlatformAdminServer
@@ -132,6 +133,7 @@ type GrpcServer struct {
 
 	configuration *Configuration
 	gRPC          *grpc.Server
+	internalGRPC  *grpc.Server
 	validator     protovalidate.Validator
 }
 
@@ -159,19 +161,28 @@ func NewGrpServer(c *Configuration, opts ...grpc.ServerOption) (*GrpcServer, err
 	// `Authorization: Bearer …` it sees so a direct gRPC connection
 	// (dev, debugging, misconfig) cannot bypass auth. Late-bound
 	// because business.Service is wired after NewGrpServer runs.
-	authIc := grpcAuthInterceptor(func() auth.JWTMinter {
+	getMinter := func() auth.JWTMinter {
 		if service == nil {
 			return nil
 		}
 		return service.JWTMinter()
-	})
+	}
+	authIc := grpcAuthInterceptor(getMinter, rpcExposureTenant)
+	streamAuthIc := grpcStreamAuthInterceptor(getMinter, rpcExposureTenant)
 	// gRPC rate-limit twin of the Connect interceptor. Same package-
 	// level limiter, same key derivation (rateLimitKey reads the
 	// wool context after authIc has stamped it).
 	rateIc := grpcRateLimitInterceptor()
 	opts = append(opts, grpc.ChainUnaryInterceptor(authIc, rateIc))
+	opts = append(opts, grpc.ChainStreamInterceptor(streamAuthIc))
 
 	grpcServer := grpc.NewServer(opts...)
+	internalOpts := append([]grpc.ServerOption{}, wooltel.GRPCServerOptions()...)
+	internalOpts = append(internalOpts,
+		grpc.ChainUnaryInterceptor(grpcAuthInterceptor(getMinter, rpcExposureInternal)),
+		grpc.ChainStreamInterceptor(grpcStreamAuthInterceptor(getMinter, rpcExposureInternal)),
+	)
+	internalServer := grpc.NewServer(internalOpts...)
 	v, err := protovalidate.New()
 	if err != nil {
 		return nil, fmt.Errorf("failed to create validator: %w", err)
@@ -185,26 +196,20 @@ func NewGrpServer(c *Configuration, opts ...grpc.ServerOption) (*GrpcServer, err
 		Ident:         &IdentServer{},
 		APIKey:        &APIKeyServer{},
 		Auth:          &AuthServer{},
+		MFA:           &MFAServer{},
 		Audit:         &AuditServer{},
 		Invitation:    &InvitationServer{},
 		PlatformAdmin: &PlatformAdminServer{},
 		Introspection: &IntrospectionServer{},
 		configuration: c,
 		gRPC:          grpcServer,
+		internalGRPC:  internalServer,
 		validator:     v,
 	}
 
-	gen.RegisterUserServiceServer(grpcServer, s.User)
-	gen.RegisterOrganizationServiceServer(grpcServer, s.Org)
-	gen.RegisterTeamServiceServer(grpcServer, s.Team)
-	gen.RegisterPermissionServiceServer(grpcServer, s.Perm)
-	gen.RegisterIdentityServiceServer(grpcServer, s.Ident)
-	gen.RegisterAPIKeyServiceServer(grpcServer, s.APIKey)
-	gen.RegisterAuthServiceServer(grpcServer, s.Auth)
-	gen.RegisterAuditServiceServer(grpcServer, s.Audit)
-	gen.RegisterInvitationServiceServer(grpcServer, s.Invitation)
-	gen.RegisterPlatformAdminServiceServer(grpcServer, s.PlatformAdmin)
-	gen.RegisterIntrospectionServiceServer(grpcServer, s.Introspection)
+	configurePermissionServerKeys()
+	registerCatalogGRPCServices(grpcServer, s)
+	registerCatalogGRPCServices(internalServer, s)
 	reflection.Register(grpcServer)
 
 	return s, nil

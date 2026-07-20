@@ -9,7 +9,7 @@ import (
 
 	"github.com/codefly-dev/core/wool"
 
-	"accounts/pkg/gen"
+	gen "accounts/pkg/gen/saas/accounts/v1"
 )
 
 // ── GDPR domain types ──────────────────────────────────────────
@@ -82,23 +82,40 @@ func (s *Service) RequestExport(ctx context.Context, userID string) (*GDPRReques
 	return req, nil
 }
 
-// GetExportStatus returns the current state of a GDPR request.
-func (s *Service) GetExportStatus(ctx context.Context, requestID string) (*GDPRRequest, error) {
-	w := wool.Get(ctx).In("GetExportStatus")
+// GetExportStatus returns a caller-owned export request.
+func (s *Service) GetExportStatus(ctx context.Context, userID, requestID string) (*GDPRRequest, error) {
+	return s.getGDPRStatus(ctx, userID, requestID, GDPRExport)
+}
+
+// GetDeletionStatus returns a caller-owned deletion request.
+func (s *Service) GetDeletionStatus(ctx context.Context, userID, requestID string) (*GDPRRequest, error) {
+	return s.getGDPRStatus(ctx, userID, requestID, GDPRDeletion)
+}
+
+func (s *Service) getGDPRStatus(ctx context.Context, userID, requestID string, expectedType GDPRRequestType) (*GDPRRequest, error) {
+	w := wool.Get(ctx).In("GetGDPRStatus")
 
 	gdprStore, ok := s.store.(GDPRStore)
 	if !ok {
 		return nil, w.NewError("store does not implement GDPRStore")
 	}
 
-	// Point lookup by id (no user to scope to); RPC-layer authz gates it.
+	if userID == "" {
+		return nil, w.NewError("authenticated user required")
+	}
+
+	// The user-scoped RLS policy makes another subject's request invisible even
+	// when its UUID is supplied directly.
 	var req *GDPRRequest
-	if err := s.store.As(System()).Within(ctx, func(ctx context.Context) error {
+	if err := s.store.As(Identity{UserID: userID}).Within(ctx, func(ctx context.Context) error {
 		var e error
 		req, e = gdprStore.GetGDPRRequest(ctx, requestID)
 		return e
 	}); err != nil {
 		return nil, w.Wrapf(err, "cannot get GDPR request")
+	}
+	if req == nil || req.UserID != userID || req.Type != expectedType {
+		return nil, w.NewError("GDPR request not found")
 	}
 	return req, nil
 }
@@ -145,24 +162,35 @@ func (s *Service) processExport(ctx context.Context, gdprStore GDPRStore, req *G
 	// Collect user data into an export bundle.
 	export := map[string]any{}
 
-	user, err := s.store.GetUser(ctx, req.UserID)
-	if err != nil {
+	var user *gen.User
+	var identities []*gen.UserIdentity
+	var sessions []*Session
+	var identitiesErr, sessionsErr error
+	if err := s.store.As(Identity{UserID: req.UserID}).Within(ctx, func(ctx context.Context) error {
+		var err error
+		user, err = s.store.GetUser(ctx, req.UserID)
+		if err != nil {
+			return err
+		}
+		identities, identitiesErr = s.store.ListUserIdentities(ctx, req.UserID)
+		sessions, sessionsErr = s.store.ListActiveSessions(ctx, req.UserID, 1000)
+		return nil
+	}); err != nil {
 		s.failGDPRRequest(ctx, gdprStore, req, fmt.Sprintf("get user: %v", err))
 		return
 	}
 	export["user"] = user
 
-	identities, err := s.store.ListUserIdentities(ctx, req.UserID)
-	if err != nil {
-		w.Warn("failed to list identities for export", wool.ErrField(err))
+	if identitiesErr != nil {
+		w.Warn("failed to list identities for export", wool.ErrField(identitiesErr))
 	} else {
 		export["identities"] = identities
 	}
 
 	// organizations is RLS-protected (Phase 2F); GDPR export spans
-	// every org the user is a member of, so WithBypass.
+	// every org the user is a member of, so WithControlPlane.
 	var orgs []*gen.Organization
-	if berr := s.store.WithBypass(ctx, func(ctx context.Context) error {
+	if berr := s.store.WithControlPlane(ctx, func(ctx context.Context) error {
 		os, err := s.store.ListOrganizationsForUser(ctx, req.UserID)
 		orgs = os
 		return err
@@ -172,19 +200,17 @@ func (s *Service) processExport(ctx context.Context, gdprStore GDPRStore, req *G
 		export["organizations"] = orgs
 	}
 
-	// Collect sessions (active).
-	sessions, err := s.store.ListActiveSessions(ctx, req.UserID, 1000)
-	if err != nil {
-		w.Warn("failed to list sessions for export", wool.ErrField(err))
+	if sessionsErr != nil {
+		w.Warn("failed to list sessions for export", wool.ErrField(sessionsErr))
 	} else {
 		export["sessions"] = sessions
 	}
 
 	// Collect API keys. GDPR export spans every org the user is a
-	// member of; under RLS the cross-org scan needs WithBypass —
+	// member of; under RLS the cross-org scan needs WithControlPlane —
 	// the platform-level GDPR flow is privileged-by-policy.
 	var apiKeys []*gen.APIKey
-	if berr := s.store.WithBypass(ctx, func(ctx context.Context) error {
+	if berr := s.store.WithControlPlane(ctx, func(ctx context.Context) error {
 		ks, _, err := s.store.ListAPIKeys(ctx, "" /* all orgs */, 1000, "")
 		apiKeys = ks
 		return err
@@ -197,10 +223,10 @@ func (s *Service) processExport(ctx context.Context, gdprStore GDPRStore, req *G
 	// Collect audit events for this user. Cross-tenant by nature:
 	// the GDPR export gathers every event the user ever generated
 	// regardless of org. audit_events is RLS-protected (Phase 2D)
-	// so the scan needs WithBypass — this is a privileged-by-policy
+	// so the scan needs WithControlPlane — this is a privileged-by-policy
 	// platform flow.
 	var auditEvents []AuditEntry
-	if berr := s.store.WithBypass(ctx, func(ctx context.Context) error {
+	if berr := s.store.WithControlPlane(ctx, func(ctx context.Context) error {
 		ev, _, _, err := s.store.QueryAuditLog(ctx, "", req.UserID, "", "", "",
 			nil, nil, 1000, "")
 		auditEvents = ev
@@ -236,8 +262,6 @@ func (s *Service) processExport(ctx context.Context, gdprStore GDPRStore, req *G
 
 // processDeletion anonymizes user data and marks the request complete.
 func (s *Service) processDeletion(ctx context.Context, gdprStore GDPRStore, req *GDPRRequest) {
-	w := wool.Get(ctx).In("processDeletion")
-
 	req.Status = GDPRProcessing
 	_ = s.store.As(Identity{UserID: req.UserID}).Within(ctx, func(ctx context.Context) error {
 		return gdprStore.UpdateGDPRRequest(ctx, req)
@@ -249,46 +273,35 @@ func (s *Service) processDeletion(ctx context.Context, gdprStore GDPRStore, req 
 	anonymousName := fmt.Sprintf("Deleted User #%s", hashStr)
 	anonymousEmail := fmt.Sprintf("%s@deleted.local", hashStr)
 
-	_, err := s.store.UpdateUser(ctx, req.UserID, map[string]any{
-		"primary_email": anonymousEmail,
-		"profile": map[string]string{
-			"display_name": anonymousName,
-		},
-	})
-	if err != nil {
-		s.failGDPRRequest(ctx, gdprStore, req, fmt.Sprintf("anonymize user: %v", err))
-		return
-	}
-
-	// Delete all identities.
-	identities, err := s.store.ListUserIdentities(ctx, req.UserID)
-	if err != nil {
-		w.Warn("failed to list identities for deletion", wool.ErrField(err))
-	}
-	for _, id := range identities {
-		// Use the store's DeleteUser method on identities — we do a direct
-		// delete via the transaction-aware executor.
-		_ = s.store.DeleteUser(ctx, id.Uuid)
-	}
-
-	// Revoke all sessions.
-	if err := s.store.RevokeAllUserSessions(ctx, req.UserID, "gdpr_deletion"); err != nil {
-		w.Warn("failed to revoke sessions for deletion", wool.ErrField(err))
-	}
-
-	// Soft-delete the user.
-	if err := s.store.DeleteUser(ctx, req.UserID); err != nil {
-		w.Warn("failed to soft-delete user", wool.ErrField(err))
-	}
-
 	now := time.Now()
 	req.Status = GDPRCompleted
 	req.CompletedAt = &now
 
+	// Anonymization, identity removal, session revocation, soft deletion, and
+	// request completion are one user-scoped transaction. A partial GDPR
+	// deletion is worse than a retryable failure, so every step is required.
 	if err := s.store.As(Identity{UserID: req.UserID}).Within(ctx, func(ctx context.Context) error {
+		if _, err := s.store.UpdateUser(ctx, req.UserID, map[string]any{
+			"primary_email": anonymousEmail,
+			"profile": map[string]string{
+				"display_name": anonymousName,
+			},
+		}); err != nil {
+			return err
+		}
+		if err := s.store.DeleteUserIdentities(ctx, req.UserID); err != nil {
+			return err
+		}
+		if err := s.store.RevokeAllUserSessions(ctx, req.UserID, "gdpr_deletion"); err != nil {
+			return err
+		}
+		if err := s.store.DeleteUser(ctx, req.UserID); err != nil {
+			return err
+		}
 		return gdprStore.UpdateGDPRRequest(ctx, req)
 	}); err != nil {
-		w.Warn("failed to update GDPR request to completed", wool.ErrField(err))
+		s.failGDPRRequest(ctx, gdprStore, req, fmt.Sprintf("delete user data: %v", err))
+		return
 	}
 
 	s.emit(ctx, req.UserID, "system", "gdpr.deletion_completed", "gdpr_request", req.ID, "")

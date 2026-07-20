@@ -60,12 +60,14 @@ func (s *PostgresStore) GetPlanByName(ctx context.Context, name string) (*busine
 	)
 	err := q.QueryRow(ctx, `
 		SELECT id::text, name, display_name, is_default, sort_order,
-		       stripe_product_id, stripe_price_id, currency
+		       stripe_product_id, stripe_price_id, currency,
+		       checkout_enabled, trial_days, tax_behavior
 		FROM plans
 		WHERE name = $1`,
 		name,
 	).Scan(&p.ID, &p.Name, &p.DisplayName, &p.IsDefault, &p.SortOrder,
-		&stripeProductID, &stripePriceID, &p.Currency)
+		&stripeProductID, &stripePriceID, &p.Currency,
+		&p.CheckoutEnabled, &p.TrialDays, &p.TaxBehavior)
 	if err != nil {
 		return nil, err
 	}

@@ -1,0 +1,10 @@
+# Frontend plugin public API and host boundary.
+# Product repositories own their product packages in their own CODEOWNERS.
+/module/services/frontend/code/packages/saas-plugin-contract/ @AntoineToussaint
+/module/services/frontend/code/packages/saas-plugin-react/ @AntoineToussaint
+/module/services/frontend/code/frontend-plugin-public-api.json @AntoineToussaint
+/module/services/frontend/code/frontend.config.ts @AntoineToussaint
+/module/services/frontend/code/server/plugin-* @AntoineToussaint
+/module/services/frontend/code/src/app/api/plugins/ @AntoineToussaint
+/module/docs/frontend-plugin-* @AntoineToussaint
+/module/docs/adr/0001-frontend-plugin-packaging.md @AntoineToussaint

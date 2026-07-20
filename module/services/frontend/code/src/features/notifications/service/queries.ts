@@ -1,21 +1,21 @@
-import { queryOptions } from "@tanstack/react-query";
 import { createClient } from "@connectrpc/connect";
+import { queryOptions } from "@tanstack/react-query";
+import { NotificationService } from "@/gen/saas/accounts/v1/notifications_pb";
 import { apiTransport } from "@/lib/connect/transport";
-import { NotificationService } from "@/gen/saas-starter_api_grpc_pb";
 
 const client = createClient(NotificationService, apiTransport);
 
 export const notificationQueries = {
-  list: (pageSize = 20) =>
-    queryOptions({
-      queryKey: ["notifications", pageSize],
-      queryFn: () => client.listNotifications({ pageSize }),
-    }),
+	list: (pageSize = 20) =>
+		queryOptions({
+			queryKey: ["notifications", pageSize],
+			queryFn: () => client.listNotifications({ pageSize }),
+		}),
 
-  unreadCount: () =>
-    queryOptions({
-      queryKey: ["notifications", "unread-count"],
-      queryFn: () => client.getUnreadCount({}),
-      refetchInterval: 30_000,
-    }),
+	unreadCount: () =>
+		queryOptions({
+			queryKey: ["notifications", "unread-count"],
+			queryFn: () => client.getUnreadCount({}),
+			refetchInterval: 30_000,
+		}),
 };

@@ -8,6 +8,6 @@ resources:
   - project.yaml            # ArgoCD AppProject (RBAC scope)
   - resource-quota.yaml     # namespace-wide CPU/memory/PVC caps
   - limit-range.yaml        # default + max requests/limits per container
-  - network-policy.yaml     # default-deny + scoped allows (L3/L4)
+  - network-policy.yaml     # generated default-deny + topology-scoped allows
   - istio-mtls.yaml         # STRICT mTLS + AuthorizationPolicy default-deny
   - istio-gateway.yaml      # public ingress → auth-sidecar + DestinationRule defaults

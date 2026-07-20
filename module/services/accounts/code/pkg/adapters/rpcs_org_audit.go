@@ -4,7 +4,7 @@ import (
 	"context"
 
 	"accounts/pkg/business"
-	"accounts/pkg/gen"
+	gen "accounts/pkg/gen/saas/accounts/v1"
 )
 
 // OrgSettings bridges between proto and business types.

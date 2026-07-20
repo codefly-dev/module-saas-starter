@@ -2,10 +2,10 @@ package main
 
 // Route configuration loader for the auth-sidecar gateway.
 //
-// Loads route definitions from the folder-based *.rest.codefly.yaml files
-// under routing/rest/{module}/{service}/. Each file is one endpoint group.
-// Any request not matching an entry is rejected with 404 — zero prefix
-// matching, zero implicit exposure.
+// Descriptor REST routes come from the generated saas.rest.surface.v1 catalog.
+// The folder-based *.rest.codefly.yaml source contains only explicit
+// non-protobuf extensions. Any request not matching an entry is rejected with
+// 404.
 //
 // This is the same pattern used by the KrakenD gateway agent in codefly,
 // reusing core's ExtendedRestRouteLoader[T].
@@ -17,9 +17,12 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"sort"
 	"strings"
 
 	"github.com/codefly-dev/core/resources"
+
+	policyv1 "accounts/pkg/gen/saas/policy/v1"
 )
 
 // RouteExtension carries the per-route auth configuration in the
@@ -31,10 +34,16 @@ type RouteExtension struct {
 
 // RouteEntry is the internal representation used by the gateway.
 type RouteEntry struct {
-	Service   string // upstream service name (from directory path)
-	Method    string // HTTP method
-	Path      string // HTTP path (may contain {param} segments)
-	Protected bool   // true = auth required, false = public
+	Service                     string                  // upstream service name (from directory path)
+	Method                      string                  // HTTP method
+	Path                        string                  // public HTTP path (may contain {param} segments)
+	UpstreamPath                string                  // optional canonical path used for a compatibility alias
+	Procedure                   string                  // canonical descriptor procedure when this is a protobuf route
+	Protected                   bool                    // true = auth required, false = public
+	RateLimitClass              policyv1.RateLimitClass // descriptor-selected limiter budget class
+	RateLimitBackendFailClosed  bool                    // preserve the security budget when the limiter backend fails
+	AuthenticationFactorAttempt bool                    // use the dedicated per-client-IP login-factor budget
+	PolicySHA256                string                  // stable fingerprint of the complete method policy
 }
 
 // RouteMatcher provides fast lookups against the loaded route config.
@@ -48,9 +57,10 @@ type restRoute struct {
 	entry    *RouteEntry
 }
 
-// LoadRoutesFromDir loads all *.rest.codefly.yaml files from the routing
-// directory using core's ExtendedRestRouteLoader. Returns RouteEntry slice.
-func LoadRoutesFromDir(ctx context.Context, dir string) ([]*RouteEntry, error) {
+// LoadRESTExtensionsFromDir loads the explicit non-protobuf REST extensions.
+// Descriptor-owned routes and disabled entries are rejected so this source
+// cannot regress into a shadow route inventory.
+func LoadRESTExtensionsFromDir(ctx context.Context, dir string) ([]*RouteEntry, error) {
 	loader, err := resources.NewExtendedRestRouteLoader[RouteExtension](ctx, dir)
 	if err != nil {
 		return nil, fmt.Errorf("routing: cannot create loader for %s: %w", dir, err)
@@ -62,17 +72,24 @@ func LoadRoutesFromDir(ctx context.Context, dir string) ([]*RouteEntry, error) {
 	var entries []*RouteEntry
 	for _, route := range loader.All() {
 		if !route.Extension.Exposed {
-			continue // not exposed — skip
+			return nil, fmt.Errorf("routing: extension %s %s must set exposed=true", route.Method, route.Path)
 		}
-		entries = append(entries, &RouteEntry{
-			Service: "accounts", // all routes currently go to the api service
+		entry := &RouteEntry{
+			Service:   "accounts", // all routes currently go to the api service
 			Method:    string(route.Method),
 			Path:      route.Path,
 			Protected: route.Extension.Protected,
-		})
+		}
+		if err := applyGeneratedAuthorizationMetadata(entry); err != nil {
+			return nil, fmt.Errorf("routing: %s %s: %w", entry.Method, entry.Path, err)
+		}
+		if entry.Procedure != "" {
+			return nil, fmt.Errorf("routing: extension %s %s collides with generated descriptor procedure %s", entry.Method, entry.Path, entry.Procedure)
+		}
+		entries = append(entries, entry)
 	}
 
-	log.Printf("routing: loaded %d exposed routes from %s", len(entries), dir)
+	log.Printf("routing: loaded %d explicit REST extensions from %s", len(entries), dir)
 	return entries, nil
 }
 
@@ -93,9 +110,8 @@ func DefaultRoutingDir() string {
 	return filepath.Join("..", "routing", "rest")
 }
 
-// NewRouteMatcher builds a RouteMatcher from REST and Connect entries.
-// REST entries come from folder-based *.rest.codefly.yaml files; Connect
-// entries come from LoadConnectRoutesFromProto and are keyed by exact path.
+// NewRouteMatcher builds a RouteMatcher from generated REST plus explicit
+// extension entries and generated Connect entries keyed by exact path.
 func NewRouteMatcher(restEntries, connectEntries []*RouteEntry) *RouteMatcher {
 	m := &RouteMatcher{
 		restRoutes:    make(map[string][]restRoute),
@@ -116,6 +132,28 @@ func NewRouteMatcher(restEntries, connectEntries []*RouteEntry) *RouteMatcher {
 	}
 
 	return m
+}
+
+func (m *RouteMatcher) RequiredServices() []string {
+	services := make(map[string]struct{})
+	for _, routes := range m.restRoutes {
+		for _, route := range routes {
+			if route.entry.Service != "" && route.entry.Service != "self" {
+				services[route.entry.Service] = struct{}{}
+			}
+		}
+	}
+	for _, entry := range m.connectRoutes {
+		if entry.Service != "" && entry.Service != "self" {
+			services[entry.Service] = struct{}{}
+		}
+	}
+	out := make([]string, 0, len(services))
+	for service := range services {
+		out = append(out, service)
+	}
+	sort.Strings(out)
+	return out
 }
 
 // MatchREST looks up a REST route by HTTP method and path.
@@ -197,6 +235,7 @@ type EnvoyRouteEntry struct {
 	Service string    `yaml:"service"`
 	Rest    *RestPath `yaml:"rest"`
 	Connect string    `yaml:"connect"`
+	Rewrite string    `yaml:"rewrite,omitempty"`
 	Auth    string    `yaml:"auth"`
 }
 
@@ -214,11 +253,15 @@ type EnvoyRouteConfig struct {
 func ToEnvoyConfig(entries []*RouteEntry) *EnvoyRouteConfig {
 	cfg := &EnvoyRouteConfig{}
 	for _, e := range entries {
-		cfg.Routes = append(cfg.Routes, EnvoyRouteEntry{
-			Service: e.Service,
-			Rest:    &RestPath{Method: e.Method, Path: e.Path},
-			Auth:    authMode(e),
-		})
+		entry := EnvoyRouteEntry{Service: e.Service, Auth: authMode(e)}
+		if strings.HasSuffix(e.Service, "_connect") {
+			entry.Service = strings.TrimSuffix(e.Service, "_connect")
+			entry.Connect = e.Path
+			entry.Rewrite = e.UpstreamPath
+		} else {
+			entry.Rest = &RestPath{Method: e.Method, Path: e.Path}
+		}
+		cfg.Routes = append(cfg.Routes, entry)
 	}
 	return cfg
 }

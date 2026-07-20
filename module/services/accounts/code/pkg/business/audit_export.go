@@ -26,7 +26,7 @@ func (s *Service) ExportAuditLog(ctx context.Context, orgID, format, actorID, ac
 	var all []AuditEntry
 	pageToken := ""
 	for {
-		// Service.QueryAuditLog wraps in WithOrgTx (or WithBypass when
+		// Service.QueryAuditLog wraps in WithOrgTx (or WithControlPlane when
 		// orgID is empty for platform-admin export) so RLS lets the
 		// rows through. Don't use s.store.QueryAuditLog directly here
 		// — that bypasses the wrap and returns zero rows.

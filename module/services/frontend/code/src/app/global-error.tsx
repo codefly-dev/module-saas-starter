@@ -14,22 +14,22 @@ import NextError from "next/error";
 import { useEffect } from "react";
 
 export default function GlobalError({
-  error,
+	error,
 }: {
-  error: Error & { digest?: string };
+	error: Error & { digest?: string };
 }) {
-  useEffect(() => {
-    Sentry.captureException(error);
-  }, [error]);
+	useEffect(() => {
+		Sentry.captureException(error);
+	}, [error]);
 
-  return (
-    <html lang="en">
-      <body>
-        {/* NextError renders Next's default 500 page so users still
+	return (
+		<html lang="en">
+			<body>
+				{/* NextError renders Next's default 500 page so users still
             get something coherent; the actual signal goes to
             Sentry above. */}
-        <NextError statusCode={0} />
-      </body>
-    </html>
-  );
+				<NextError statusCode={0} />
+			</body>
+		</html>
+	);
 }

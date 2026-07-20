@@ -12,16 +12,14 @@ import (
 // alarm: if a future change makes WithOrgTx 10× slower, this catches
 // it.
 //
-// Run: go test -bench=BenchmarkRLS -benchtime=2s ./pkg/business
-//
 // Reference numbers (M1 Pro, single-node Docker postgres, single
 // goroutine) at time of writing:
 //
 //   BenchmarkRLS_NoOpQuery_NoWrap   ~850µs/op   bare pool QueryRow("SELECT 1")
 //   BenchmarkRLS_NoOpQuery_OrgTx   ~1680µs/op   + Begin + SET LOCAL app.current_org_id + Commit
 //   BenchmarkRLS_NoOpQuery_UserTx  ~1510µs/op   + Begin + SET LOCAL app.current_user_id + Commit
-//   BenchmarkRLS_NoOpQuery_Bypass   ~700µs/op   + Begin + SET LOCAL ROLE NONE + bypass GUC + Commit
-//   (* Bypass also runs recordBypass which emits a wool.Debug;
+//   BenchmarkRLS_NoOpQuery_ControlPlane ~700µs/op + Begin + SET LOCAL ROLE + Commit
+//   (* ControlPlane also runs recordControlPlane which emits a wool.Debug;
 //      with DEBUG-level logging the per-op number includes that.)
 //
 // Read: the wrap adds ~600-800µs over a bare query. For a typical
@@ -36,10 +34,10 @@ import (
 //   - Postgres server tuning (shared_buffers, work_mem)
 //   - Docker disk slowness (most common in dev)
 
-func BenchmarkRLS_NoOpQuery_Bypass(b *testing.B) {
+func BenchmarkRLS_NoOpQuery_ControlPlane(b *testing.B) {
 	b.ReportAllocs()
 	for i := 0; i < b.N; i++ {
-		err := testStore.WithBypass(context.Background(), func(_ context.Context) error {
+		err := testStore.WithControlPlane(context.Background(), func(_ context.Context) error {
 			return nil
 		})
 		if err != nil {
@@ -77,7 +75,7 @@ func BenchmarkRLS_NoOpQuery_UserTx(b *testing.B) {
 // BenchmarkRLS_NoOpQuery_NoWrap — the un-wrapped baseline. Each
 // iteration does a single SELECT 1 against the pool. Subtract this
 // from the wrapped numbers for the marginal cost of WithOrgTx /
-// WithBypass / WithUserTx.
+// WithControlPlane / WithUserTx.
 func BenchmarkRLS_NoOpQuery_NoWrap(b *testing.B) {
 	pool := testStore.Pool()
 	b.ReportAllocs()

@@ -27,8 +27,13 @@ type UserConsentStatus struct {
 // current authoritative version. The FE compares; if they differ
 // (including AcceptedVersion empty), it shows the banner.
 func (s *Service) GetConsentStatus(ctx context.Context, userID string) (*UserConsentStatus, error) {
-	v, at, err := s.store.GetUserConsent(ctx, userID)
-	if err != nil {
+	var v string
+	var at *time.Time
+	if err := s.store.As(Identity{UserID: userID}).Within(ctx, func(ctx context.Context) error {
+		var err error
+		v, at, err = s.store.GetUserConsent(ctx, userID)
+		return err
+	}); err != nil {
 		return nil, err
 	}
 	return &UserConsentStatus{

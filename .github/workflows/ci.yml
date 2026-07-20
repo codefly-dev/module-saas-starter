@@ -1,46 +1,47 @@
 name: ci
+
 on:
   push:
-    branches: [ main ]
+    branches: [main]
+    tags: ["v*"]
   pull_request:
-    branches: [ main ]
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
-jobs:
-  build:
-    runs-on: ubuntu-latest
-    strategy:
-      fail-fast: false
-      matrix:
-        # The saas-starter is a multi-module repo: the module root plus each
-        # Go service. Build + vet each independently against published core.
-        module:
-          - "."
-          - "module/services/accounts/code"
-          - "module/services/auth-sidecar/code"
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-go@v5
-        with:
-          go-version-file: '${{ matrix.module }}/go.mod'
-      - name: Build (${{ matrix.module }})
-        working-directory: ${{ matrix.module }}
-        run: go build ./...
-      - name: Vet (${{ matrix.module }})
-        working-directory: ${{ matrix.module }}
-        run: go vet ./...
 
-  base-integrity:
-    # The base-file manifest must stay current with canonical's files: editing
-    # any base file without regenerating the manifest fails here. Consumers run
-    # the SAME command (`base-integrity.mjs check`) to prove they only ADD files
-    # on the side and never modify the base they synced from canonical.
+env:
+  CODEFLY_CLI_VERSION: v0.1.16
+
+jobs:
+  codefly:
+    name: Codefly CI
     runs-on: ubuntu-latest
+    timeout-minutes: 60
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
-          node-version: '24'
-      - name: Base-file integrity (manifest current vs canonical)
-        run: node module/tools/base-integrity.mjs check
+          fetch-depth: 0
+      - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6.5.0
+        with:
+          go-version: stable
+          cache: false
+      - name: Install Codefly
+        run: go install github.com/codefly-dev/cli@${CODEFLY_CLI_VERSION}
+      - name: Run Codefly-owned gate
+        shell: bash
+        env:
+          CODEFLY_BASE: ${{ github.event.pull_request.base.sha || github.event.before }}
+        run: |
+          args=(ci run --head "${GITHUB_SHA}" --output .codefly/ci)
+          if [[ -n "${CODEFLY_BASE}" && "${CODEFLY_BASE}" != "0000000000000000000000000000000000000000" ]]; then
+            args+=(--base "${CODEFLY_BASE}")
+          else
+            args+=(--all)
+          fi
+          codefly "${args[@]}"

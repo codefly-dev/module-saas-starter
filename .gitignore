@@ -10,9 +10,13 @@ dist/
 # macOS
 .DS_Store
 
+# Codefly CI reports and generated evidence (machine-local)
+.codefly/
+
 # build artifacts inside embedded module
 module/services/*/code/backend
 module/services/*/code/local
+module/services/store/code/store-migrator
 module/services/*/.cache/
 
 # nix caches + materialized per-service nix envs (machine-local, regenerated)

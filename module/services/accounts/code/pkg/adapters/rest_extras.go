@@ -2,8 +2,8 @@ package adapters
 
 // Extra HTTP routes that live ALONGSIDE the grpc-gateway mux.
 //
-// The generated rest_gen.go mounts a runtime.ServeMux that serves every
-// proto RPC. Some routes don't fit the proto model — specifically
+// The generated rest_gen.go mounts a runtime.ServeMux for the strict public
+// REST catalog. Some routes don't fit the proto model — specifically
 // Stripe webhooks, which need to receive a raw signed body and verify
 // an HMAC header. These are registered here and wrapped into the same
 // HTTP listener via combineHandlers().
@@ -32,9 +32,9 @@ const refreshTokenCookieName = "codefly_rt"
 //
 //   - POST /v1/auth/refresh: if the request body carries no refresh token, the
 //     one from the cookie is injected, so the browser never has to hold it.
-//   - 2xx responses of /v1/auth/authenticate and /v1/auth/refresh: the refresh
-//     token is lifted out of the JSON body into the cookie and STRIPPED from the
-//     body, so JS (and therefore XSS) never sees it.
+//   - 2xx responses of /v1/auth/authenticate, /v1/auth/mfa/complete, and
+//     /v1/auth/refresh: the refresh token is lifted out of the JSON body into
+//     the cookie and STRIPPED from the body, so JS never sees it.
 //   - POST /v1/auth/logout: the cookie is cleared.
 //
 // SameSite=Strict + the existing credentialed-CORS allowlist is the CSRF
@@ -44,10 +44,11 @@ func refreshTokenCookie(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		path := r.URL.Path
 		isAuth := path == "/v1/auth/authenticate"
+		isMFAComplete := path == "/v1/auth/mfa/complete"
 		isRefresh := path == "/v1/auth/refresh"
 		isLogout := path == "/v1/auth/logout"
 
-		if !isAuth && !isRefresh && !isLogout {
+		if !isAuth && !isMFAComplete && !isRefresh && !isLogout {
 			next.ServeHTTP(w, r)
 			return
 		}
@@ -68,7 +69,7 @@ func refreshTokenCookie(next http.Handler) http.Handler {
 			clearRefreshCookie(w, r)
 		}
 		body := rec.buf.Bytes()
-		if (isAuth || isRefresh) && rec.status >= 200 && rec.status < 300 {
+		if (isAuth || isMFAComplete || isRefresh) && rec.status >= 200 && rec.status < 300 {
 			if token, stripped, ok := extractAndStripRefreshToken(body); ok {
 				setRefreshCookie(w, r, token)
 				body = stripped
@@ -113,8 +114,10 @@ func injectRefreshToken(r *http.Request, token string) *http.Request {
 		m = map[string]any{}
 	}
 	// Cookie is the source of truth — overwrite whatever the body had.
+	// Emit only the proto field name. Sending both snake_case and camelCase
+	// aliases makes protojson reject the body as a duplicate field.
+	delete(m, "refreshToken")
 	m["refresh_token"] = token
-	m["refreshToken"] = token
 	out, _ := json.Marshal(m)
 	clone := r.Clone(r.Context())
 	clone.Body = io.NopCloser(bytes.NewReader(out))
@@ -149,7 +152,10 @@ func extractAndStripRefreshToken(body []byte) (token string, stripped []byte, ok
 }
 
 func isSecureRequest(r *http.Request) bool {
-	return r.TLS != nil || strings.EqualFold(r.Header.Get("X-Forwarded-Proto"), "https")
+	// Refresh tokens are always Secure. Never derive cookie security from
+	// caller-controlled forwarding headers; browsers treat localhost as a
+	// secure cookie context for local development.
+	return true
 }
 
 func setRefreshCookie(w http.ResponseWriter, r *http.Request, token string) {

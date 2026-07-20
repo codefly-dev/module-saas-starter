@@ -2,6 +2,7 @@ package business_test
 
 import (
 	"context"
+	"errors"
 	"os"
 	"sync"
 	"testing"
@@ -14,8 +15,9 @@ import (
 // overrides only the SSO methods.
 type ssoFakeStore struct {
 	business.Store
-	mu  sync.Mutex
-	cfg map[string]*business.OrgSSOConfig
+	mu        sync.Mutex
+	cfg       map[string]*business.OrgSSOConfig
+	upsertErr error
 }
 
 func newSSOFakeStore() *ssoFakeStore {
@@ -31,12 +33,30 @@ func (f *ssoFakeStore) GetOrgSSO(_ context.Context, orgID string) (*business.Org
 func (f *ssoFakeStore) UpsertOrgSSO(_ context.Context, cfg *business.OrgSSOConfig) error {
 	f.mu.Lock()
 	defer f.mu.Unlock()
+	if f.upsertErr != nil {
+		return f.upsertErr
+	}
 	cp := *cfg
 	f.cfg[cp.OrgID] = &cp
 	return nil
 }
 
-// WithOrgTx / WithBypass — pass-through. The real store wraps SQL
+func TestStartSSOSetup_StubModeFailsWhenStateCannotBePersisted(t *testing.T) {
+	t.Setenv("WORKOS_API_KEY", "")
+	store := newSSOFakeStore()
+	store.upsertErr = errors.New("database unavailable")
+	svc := newSSOService(store)
+
+	got, err := svc.StartSSOSetup(context.Background(), "actor-platform-admin", "org-1", "https://app/admin/sso")
+	if got != "" {
+		t.Fatalf("portal URL: got %q, want empty URL on persistence failure", got)
+	}
+	if err == nil || err.Error() != "persist stub SSO setup: database unavailable" {
+		t.Fatalf("error: got %v, want persistence failure", err)
+	}
+}
+
+// WithOrgTx / WithControlPlane — pass-through. The real store wraps SQL
 // reads/writes in a Postgres tx with SET LOCAL settings; this fake
 // has no DB, so the wrapper is a no-op that just runs fn directly.
 // Without these overrides, the embedded-nil Store panics when
@@ -44,7 +64,7 @@ func (f *ssoFakeStore) UpsertOrgSSO(_ context.Context, cfg *business.OrgSSOConfi
 func (f *ssoFakeStore) WithOrgTx(ctx context.Context, _ string, fn func(ctx context.Context) error) error {
 	return fn(ctx)
 }
-func (f *ssoFakeStore) WithBypass(ctx context.Context, fn func(ctx context.Context) error) error {
+func (f *ssoFakeStore) WithControlPlane(ctx context.Context, fn func(ctx context.Context) error) error {
 	return fn(ctx)
 }
 

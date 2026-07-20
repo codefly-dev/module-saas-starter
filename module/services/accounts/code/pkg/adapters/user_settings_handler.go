@@ -6,7 +6,7 @@ import (
 	"connectrpc.com/connect"
 
 	"accounts/pkg/business"
-	"accounts/pkg/gen"
+	gen "accounts/pkg/gen/saas/accounts/v1"
 )
 
 // userSettingsConnectHandler exposes the per-user JSONB preferences
@@ -55,11 +55,14 @@ func userSettingsToProto(s *business.UserSettings) *gen.UserSettings {
 		return &gen.UserSettings{}
 	}
 	out := &gen.UserSettings{
-		Theme:      s.Theme,
 		Locale:     s.Locale,
 		Timezone:   s.Timezone,
 		DateFormat: s.DateFormat,
 		TimeFormat: s.TimeFormat,
+	}
+	if s.Theme != nil {
+		preference := themePreferenceToProto(*s.Theme)
+		out.Theme = &preference
 	}
 	if s.Email != nil {
 		out.Email = &gen.UserEmailSettings{
@@ -84,11 +87,14 @@ func userSettingsFromProto(p *gen.UserSettings) *business.UserSettings {
 		return &business.UserSettings{}
 	}
 	out := &business.UserSettings{
-		Theme:      p.Theme,
 		Locale:     p.Locale,
 		Timezone:   p.Timezone,
 		DateFormat: p.DateFormat,
 		TimeFormat: p.TimeFormat,
+	}
+	if p.Theme != nil {
+		preference := themePreferenceFromProto(*p.Theme)
+		out.Theme = &preference
 	}
 	if p.Email != nil {
 		out.Email = &business.EmailSettings{
@@ -106,4 +112,30 @@ func userSettingsFromProto(p *gen.UserSettings) *business.UserSettings {
 		}
 	}
 	return out
+}
+
+func themePreferenceToProto(preference business.ThemePreference) gen.ThemePreference {
+	switch preference {
+	case business.ThemePreferenceSystem:
+		return gen.ThemePreference_THEME_PREFERENCE_SYSTEM
+	case business.ThemePreferenceLight:
+		return gen.ThemePreference_THEME_PREFERENCE_LIGHT
+	case business.ThemePreferenceDark:
+		return gen.ThemePreference_THEME_PREFERENCE_DARK
+	default:
+		return gen.ThemePreference_THEME_PREFERENCE_UNSPECIFIED
+	}
+}
+
+func themePreferenceFromProto(preference gen.ThemePreference) business.ThemePreference {
+	switch preference {
+	case gen.ThemePreference_THEME_PREFERENCE_SYSTEM:
+		return business.ThemePreferenceSystem
+	case gen.ThemePreference_THEME_PREFERENCE_LIGHT:
+		return business.ThemePreferenceLight
+	case gen.ThemePreference_THEME_PREFERENCE_DARK:
+		return business.ThemePreferenceDark
+	default:
+		return ""
+	}
 }

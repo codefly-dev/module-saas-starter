@@ -5,7 +5,7 @@ import (
 	"errors"
 	"time"
 
-	"accounts/pkg/gen"
+	gen "accounts/pkg/gen/saas/accounts/v1"
 
 	"github.com/codefly-dev/core/wool"
 	"github.com/jackc/pgx/v5"
@@ -114,6 +114,50 @@ func (s *PostgresStore) RemoveTeamMember(ctx context.Context, teamID string, use
 	return nil
 }
 
+func (s *PostgresStore) GetTeamMembership(ctx context.Context, orgID string, teamID string, userID string) (*gen.TeamMembership, error) {
+	w := wool.Get(ctx).In("GetTeamMembership")
+	var membership *gen.TeamMembership
+	load := func(ctx context.Context, executor ReadQueryExecutor, query string, args ...any) error {
+		var value gen.TeamMembership
+		var role string
+		var joinedAt time.Time
+		err := executor.QueryRow(ctx, query, args...).Scan(&value.TeamId, &value.UserId, &role, &joinedAt)
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil
+		}
+		if err != nil {
+			return w.Wrapf(err, "failed to get team membership")
+		}
+		value.Role = parseTeamRole(role)
+		value.JoinedAt = timestamppb.New(joinedAt)
+		membership = &value
+		return nil
+	}
+
+	if s.database != nil {
+		err := s.readAs(ctx, orgID, userID, func(ctx context.Context, executor ReadQueryExecutor) error {
+			return load(ctx, executor, `
+				SELECT team_id, user_id, role, joined_at
+				FROM team_members
+				WHERE team_id = $1
+				  AND user_id = current_setting('app.current_user_id', true)::uuid`, teamID)
+		})
+		return membership, err
+	}
+
+	legacyRead := func(ctx context.Context) error {
+		return load(ctx, s.getQueryExecutor(ctx), `
+			SELECT team_id, user_id, role, joined_at
+			FROM team_members
+			WHERE team_id = $1 AND user_id = $2`, teamID, userID)
+	}
+	if _, hasTx := ctx.Value("tx").(pgx.Tx); hasTx { //nolint:staticcheck // legacy transaction bridge
+		return membership, legacyRead(ctx)
+	}
+	err := s.WithOrgTx(ctx, orgID, legacyRead)
+	return membership, err
+}
+
 // UpdateTeam renames / re-describes a team and returns the updated row. RLS
 // (teams_update) is satisfied by the org-scoped tx the business layer opens.
 func (s *PostgresStore) UpdateTeam(ctx context.Context, teamID, name, description string) (*gen.Team, error) {
@@ -191,7 +235,7 @@ func (s *PostgresStore) ListTeamMembers(ctx context.Context, teamID string) ([]*
 
 // GetTeamOrgID looks up the org owning teamID. Returns "" with no
 // error when the team isn't found (or RLS hides it from this
-// caller — callers should wrap in WithBypass when they need the
+// caller — callers should wrap in WithControlPlane when they need the
 // lookup to succeed regardless of current tenant context).
 func (s *PostgresStore) GetTeamOrgID(ctx context.Context, teamID string) (string, error) {
 	w := wool.Get(ctx).In("GetTeamOrgID")

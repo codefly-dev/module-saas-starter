@@ -2,13 +2,14 @@ package adapters
 
 import (
 	"context"
+	"errors"
 
 	"connectrpc.com/connect"
 	"google.golang.org/protobuf/types/known/timestamppb"
 
 	"accounts/pkg/billing"
 	"accounts/pkg/business"
-	"accounts/pkg/gen"
+	gen "accounts/pkg/gen/saas/accounts/v1"
 )
 
 // billingConnectHandler — Connect-RPC surface for billing flows that
@@ -31,13 +32,20 @@ func (h *billingConnectHandler) OpenPortal(
 	if err != nil {
 		return nil, err
 	}
-	if err := requireOrgAdmin(ctx, actorID, req.Msg.OrgId); err != nil {
+	if err := requireBillingAdmin(ctx, actorID, req.Msg.OrgId); err != nil {
 		return nil, translateGRPCError(err)
 	}
+	if err := requireRecentMFA(ctx); err != nil {
+		return nil, translateGRPCError(err)
+	}
+	idempotencyKey := req.Header().Get("Idempotency-Key")
+	if idempotencyKey == "" {
+		return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("Idempotency-Key header required"))
+	}
 	url, err := h.svc.OpenBillingPortal(ctx, business.OpenBillingPortalInput{
-		UserID:    actorID,
-		OrgID:     req.Msg.OrgId,
-		ReturnURL: req.Msg.ReturnUrl,
+		UserID:         actorID,
+		OrgID:          req.Msg.OrgId,
+		IdempotencyKey: idempotencyKey,
 	})
 	if err != nil {
 		return nil, translateGRPCError(err)

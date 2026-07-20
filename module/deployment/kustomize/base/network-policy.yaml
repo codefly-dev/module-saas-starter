@@ -1,8 +1,4 @@
-# Default-deny + minimal allows. Combined with Istio's
-# AuthorizationPolicy (which enforces L7 mTLS+identity), this gives
-# defense-in-depth: NetworkPolicy at L3/L4 stops random pods in
-# other namespaces from reaching us, AuthorizationPolicy at L7
-# stops authenticated-but-unauthorized callers.
+# Code generated from deployment/topology.bindings.codefly.yaml. DO NOT EDIT.
 ---
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
@@ -10,32 +6,10 @@ metadata:
   name: default-deny-all
   namespace: saas-starter
 spec:
-  # Empty podSelector = every pod in the namespace. Both ingress
-  # and egress are denied unless an explicit allow rule below
-  # matches first.
   podSelector: {}
   policyTypes:
     - Ingress
     - Egress
----
-apiVersion: networking.k8s.io/v1
-kind: NetworkPolicy
-metadata:
-  name: allow-intra-namespace
-  namespace: saas-starter
-spec:
-  podSelector: {}
-  policyTypes:
-    - Ingress
-    - Egress
-  ingress:
-    # Pods in the saas-starter namespace can talk to each other.
-    - from:
-        - podSelector: {}
-  egress:
-    # Pods in saas-starter can talk to other saas-starter pods.
-    - to:
-        - podSelector: {}
 ---
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
@@ -47,8 +21,6 @@ spec:
   policyTypes:
     - Egress
   egress:
-    # CoreDNS lives in kube-system. Without this, no pod in
-    # saas-starter can resolve any name (including in-cluster).
     - to:
         - namespaceSelector:
             matchLabels:
@@ -65,48 +37,384 @@ spec:
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
-  name: allow-istio-ingress
+  name: allow-istio-control-plane-egress
   namespace: saas-starter
 spec:
   podSelector: {}
   policyTypes:
-    - Ingress
-  ingress:
-    # The istio-system ingress gateway is what fronts public
-    # traffic — auth-sidecar's public HTTP listener gets reached
-    # via a Gateway+VirtualService that terminates here.
-    - from:
+    - Egress
+  egress:
+    - to:
         - namespaceSelector:
             matchLabels:
               kubernetes.io/metadata.name: istio-system
+          podSelector:
+            matchLabels:
+              app: istiod
+      ports:
+        - protocol: TCP
+          port: 15012
+        - protocol: TCP
+          port: 15014
 ---
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
-  name: allow-egress-internet
+  name: allow-istio-ingress-to-auth-sidecar
   namespace: saas-starter
 spec:
-  # Apps that need to talk to outside services (Stripe, WorkOS,
-  # SMTP, OTLP collectors) need this. Tighten in prod by labeling
-  # only the pods that legitimately need internet egress and
-  # narrowing the ipBlock to specific CIDRs / known endpoints.
   podSelector:
     matchLabels:
-      saas-starter/egress: "internet"
+      app: auth-sidecar
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: istio-system
+          podSelector:
+            matchLabels:
+              istio: ingressgateway
+      ports:
+        - protocol: TCP
+          port: 8080
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-accounts-from-dependents
+  namespace: saas-starter
+spec:
+  podSelector:
+    matchLabels:
+      app: accounts
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              app: auth-sidecar
+      ports:
+        - protocol: TCP
+          port: 8080
+        - protocol: TCP
+          port: 9090
+    - from:
+        - podSelector:
+            matchLabels:
+              app: frontend
+      ports:
+        - protocol: TCP
+          port: 8080
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-cache-from-dependents
+  namespace: saas-starter
+spec:
+  podSelector:
+    matchLabels:
+      app: cache
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              app: accounts
+      ports:
+        - protocol: TCP
+          port: 6379
+    - from:
+        - podSelector:
+            matchLabels:
+              app: auth-sidecar
+      ports:
+        - protocol: TCP
+          port: 6379
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-frontend-from-dependents
+  namespace: saas-starter
+spec:
+  podSelector:
+    matchLabels:
+      app: frontend
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              app: auth-sidecar
+      ports:
+        - protocol: TCP
+          port: 3000
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-object-storage-from-dependents
+  namespace: saas-starter
+spec:
+  podSelector:
+    matchLabels:
+      app: object-storage
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              app: accounts
+      ports:
+        - protocol: TCP
+          port: 9000
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-store-from-dependents
+  namespace: saas-starter
+spec:
+  podSelector:
+    matchLabels:
+      app: store
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              app: accounts
+      ports:
+        - protocol: TCP
+          port: 5432
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-vault-from-dependents
+  namespace: saas-starter
+spec:
+  podSelector:
+    matchLabels:
+      app: vault
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              app: accounts
+      ports:
+        - protocol: TCP
+          port: 8200
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-accounts-to-dependencies
+  namespace: saas-starter
+spec:
+  podSelector:
+    matchLabels:
+      app: accounts
+  policyTypes:
+    - Egress
+  egress:
+    - to:
+        - podSelector:
+            matchLabels:
+              app: cache
+      ports:
+        - protocol: TCP
+          port: 6379
+    - to:
+        - podSelector:
+            matchLabels:
+              app: object-storage
+      ports:
+        - protocol: TCP
+          port: 9000
+    - to:
+        - podSelector:
+            matchLabels:
+              app: store
+      ports:
+        - protocol: TCP
+          port: 5432
+    - to:
+        - podSelector:
+            matchLabels:
+              app: vault
+      ports:
+        - protocol: TCP
+          port: 8200
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-auth-sidecar-to-dependencies
+  namespace: saas-starter
+spec:
+  podSelector:
+    matchLabels:
+      app: auth-sidecar
+  policyTypes:
+    - Egress
+  egress:
+    - to:
+        - podSelector:
+            matchLabels:
+              app: accounts
+      ports:
+        - protocol: TCP
+          port: 8080
+        - protocol: TCP
+          port: 9090
+    - to:
+        - podSelector:
+            matchLabels:
+              app: cache
+      ports:
+        - protocol: TCP
+          port: 6379
+    - to:
+        - podSelector:
+            matchLabels:
+              app: frontend
+      ports:
+        - protocol: TCP
+          port: 3000
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-frontend-to-dependencies
+  namespace: saas-starter
+spec:
+  podSelector:
+    matchLabels:
+      app: frontend
+  policyTypes:
+    - Egress
+  egress:
+    - to:
+        - podSelector:
+            matchLabels:
+              app: accounts
+      ports:
+        - protocol: TCP
+          port: 8080
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-accounts-public-egress
+  namespace: saas-starter
+spec:
+  podSelector:
+    matchLabels:
+      app: accounts
   policyTypes:
     - Egress
   egress:
     - to:
         - ipBlock:
             cidr: 0.0.0.0/0
-            # Carve out cluster-internal CIDRs so this rule doesn't
-            # accidentally bypass the in-cluster intent above.
             except:
+              - 0.0.0.0/8
               - 10.0.0.0/8
+              - 100.64.0.0/10
+              - 127.0.0.0/8
+              - 169.254.0.0/16
               - 172.16.0.0/12
+              - 192.0.0.0/24
+              - 192.0.2.0/24
+              - 192.31.196.0/24
+              - 192.52.193.0/24
+              - 192.88.99.0/24
               - 192.168.0.0/16
+              - 192.175.48.0/24
+              - 198.18.0.0/15
+              - 198.51.100.0/24
+              - 203.0.113.0/24
+              - 224.0.0.0/4
+              - 240.0.0.0/4
+        - ipBlock:
+            cidr: ::/0
+            except:
+              - ::/128
+              - ::1/128
+              - ::ffff:0:0/96
+              - 64:ff9b::/96
+              - 64:ff9b:1::/48
+              - 100::/64
+              - 2001::/23
+              - 2001:db8::/32
+              - 2002::/16
+              - fc00::/7
+              - fe80::/10
+              - ff00::/8
       ports:
         - protocol: TCP
           port: 443
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-frontend-public-egress
+  namespace: saas-starter
+spec:
+  podSelector:
+    matchLabels:
+      app: frontend
+  policyTypes:
+    - Egress
+  egress:
+    - to:
+        - ipBlock:
+            cidr: 0.0.0.0/0
+            except:
+              - 0.0.0.0/8
+              - 10.0.0.0/8
+              - 100.64.0.0/10
+              - 127.0.0.0/8
+              - 169.254.0.0/16
+              - 172.16.0.0/12
+              - 192.0.0.0/24
+              - 192.0.2.0/24
+              - 192.31.196.0/24
+              - 192.52.193.0/24
+              - 192.88.99.0/24
+              - 192.168.0.0/16
+              - 192.175.48.0/24
+              - 198.18.0.0/15
+              - 198.51.100.0/24
+              - 203.0.113.0/24
+              - 224.0.0.0/4
+              - 240.0.0.0/4
+        - ipBlock:
+            cidr: ::/0
+            except:
+              - ::/128
+              - ::1/128
+              - ::ffff:0:0/96
+              - 64:ff9b::/96
+              - 64:ff9b:1::/48
+              - 100::/64
+              - 2001::/23
+              - 2001:db8::/32
+              - 2002::/16
+              - fc00::/7
+              - fe80::/10
+              - ff00::/8
+      ports:
         - protocol: TCP
-          port: 80
+          port: 443

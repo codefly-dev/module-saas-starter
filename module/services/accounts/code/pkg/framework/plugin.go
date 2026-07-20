@@ -8,13 +8,11 @@ import (
 )
 
 // Plugin defines the interface that all service plugins must implement.
-// Each plugin contributes gRPC services, REST handlers, and database migrations.
+// Descriptor-derived registration owns gRPC; plugins contribute selected REST
+// handlers and database migrations.
 type Plugin interface {
 	// Name returns a unique identifier for this plugin.
 	Name() string
-
-	// RegisterGRPC registers the plugin's gRPC service implementations on the server.
-	RegisterGRPC(server *grpc.Server)
 
 	// RegisterREST registers the plugin's REST gateway handlers.
 	RegisterREST(ctx context.Context, mux *runtime.ServeMux, endpoint string, opts []grpc.DialOption) error

@@ -1,19 +1,28 @@
 import { createClient } from "@connectrpc/connect";
+import { MFAService } from "@/gen/saas/accounts/v1/mfa_pb";
 import { apiTransport } from "@/lib/connect/transport";
-import { MFAService } from "@/gen/saas-starter_api_grpc_pb";
 
 const client = createClient(MFAService, apiTransport);
 
 export const mfaMutations = {
-  setupTOTP: () =>
-    client.setupTOTP({}),
+	beginWebAuthnRegistration: () => client.beginWebAuthnRegistration({}),
 
-  verifyTOTP: (code: string) =>
-    client.verifyTOTP({ code }),
+	finishWebAuthnRegistration: (
+		ceremonyToken: string,
+		credentialResponseJson: string,
+		name: string,
+	) =>
+		client.finishWebAuthnRegistration({
+			ceremonyToken,
+			credentialResponseJson,
+			name,
+		}),
 
-  revokeDevice: (id: string) =>
-    client.revokeDevice({ id }),
+	setupTOTP: () => client.setupTOTP({}),
 
-  generateBackupCodes: () =>
-    client.generateBackupCodes({}),
+	verifyTOTP: (code: string) => client.verifyTOTP({ code }),
+
+	revokeDevice: (id: string) => client.revokeDevice({ id }),
+
+	generateBackupCodes: () => client.generateBackupCodes({}),
 };

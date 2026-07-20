@@ -5,6 +5,7 @@ import (
 	"crypto/ed25519"
 	"crypto/rand"
 	"encoding/base64"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -26,9 +27,10 @@ func newTestSidecar(t *testing.T) (*Sidecar, ed25519.PrivateKey) {
 	pub, priv, err := ed25519.GenerateKey(rand.Reader)
 	require.NoError(t, err)
 	return &Sidecar{
-		publicKey: pub,
-		issuer:    "saas-starter",
-		audience:  "saas-starter",
+		publicKey:    pub,
+		issuer:       "saas-starter",
+		audience:     "saas-starter",
+		gatewayToken: "test-gateway-token",
 	}, priv
 }
 
@@ -137,7 +139,30 @@ func TestUnit_ValidJWT_ForwardsHeaders(t *testing.T) {
 	require.Equal(t, c.OrgRole, h["x-org-role"])
 	require.Equal(t, c.PlatformRole, h["x-platform-role"])
 	require.Equal(t, c.SessionID, h["x-session-id"])
-	require.NotContains(t, h, "x-acting-as-user-id", "acting header only set when impersonating")
+	require.Equal(t, "test-gateway-token", h["x-codefly-gateway-token"])
+	require.Empty(t, h["x-acting-as-user-id"], "acting header is empty unless impersonating")
+}
+
+func TestUnit_ValidJWT_ForwardsMFAState(t *testing.T) {
+	s, priv := newTestSidecar(t)
+	c := validClaims(time.Now())
+	c.MFASatisfied = true
+	c.AuthenticationMethods = []string{"oauth", "otp"}
+	c.AuthenticationTime = jwt.NewNumericDate(time.Now().Add(-2 * time.Minute).Truncate(time.Second))
+	c.AssuranceLevel = "aal2"
+	c.MFAVerifiedAt = jwt.NewNumericDate(time.Now().Add(-time.Minute).Truncate(time.Second))
+	token := signClaims(t, priv, c)
+
+	resp, err := s.Check(context.Background(), checkReq("/v1/users", map[string]string{
+		"authorization": "Bearer " + token,
+	}))
+	require.NoError(t, err)
+	headers := headerMap(resp)
+	require.Equal(t, "true", headers["x-mfa-satisfied"])
+	require.Equal(t, "oauth,otp", headers["x-authentication-methods"])
+	require.Equal(t, strconv.FormatInt(c.AuthenticationTime.Unix(), 10), headers["x-auth-time"])
+	require.Equal(t, "aal2", headers["x-assurance-level"])
+	require.Equal(t, strconv.FormatInt(c.MFAVerifiedAt.Unix(), 10), headers["x-mfa-verified-at"])
 }
 
 func TestUnit_ValidJWT_Impersonation_ForwardsActingHeader(t *testing.T) {

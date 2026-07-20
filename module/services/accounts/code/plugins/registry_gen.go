@@ -17,17 +17,14 @@ import (
 // **Wiring note for operators.** The permissions plugin is
 // constructed without signing keys here so registry_gen.go has
 // no dependency on operator config. main.go (or work.go) is
-// responsible for replacing the bare instance with one that has
-// keys via Plugin.WithHMACSecret / Plugin.WithEd25519Key.
+// responsible for configuring the shared instance via
+// Plugin.WithHMACSecret / Plugin.WithEd25519Key before NewServer.
 //
 // Pattern in main.go:
 //
-//	for _, p := range plugins.All() {
-//	    if perm, ok := p.(*permissionsplugin.Plugin); ok {
-//	        perm.WithHMACSecret(loadSpawnSecret())
-//	        perm.WithEd25519Key(loadEd25519PrivateKey())
-//	    }
-//	}
+//	permissionsplugin.Default().
+//	    WithHMACSecret(loadSpawnSecret()).
+//	    WithEd25519Key(loadEd25519PrivateKey())
 //	server, _ := adapters.NewServer(config, ...)
 func All() []framework.Plugin {
 	return []framework.Plugin{

@@ -1,10 +1,11 @@
 package business_test
 
 import (
+	authcore "accounts/pkg/auth"
 	ed25519minter "accounts/pkg/auth/ed25519"
 	pgauth "accounts/pkg/auth/pg"
 	"accounts/pkg/business"
-	"accounts/pkg/gen"
+	gen "accounts/pkg/gen/saas/accounts/v1"
 	"accounts/pkg/infra"
 	"context"
 	"fmt"
@@ -18,6 +19,49 @@ import (
 	"github.com/codefly-dev/core/wool"
 	"github.com/stretchr/testify/require"
 )
+
+// requestFixtureValidator is test-only wiring for business tests that exercise
+// the explicitly enabled development login path. Production code never derives
+// claims from an AuthenticateRequest; the real dev validator reads an allowlist
+// from the selected fixture file.
+type requestFixtureValidator struct {
+	token  string
+	claims *authcore.Claims
+}
+
+func (v *requestFixtureValidator) Validate(_ context.Context, token string) (*authcore.Claims, error) {
+	if token != v.token {
+		return nil, authcore.ErrUnknownIdentity
+	}
+	out := *v.claims
+	return &out, nil
+}
+
+func authenticateFixture(ctx context.Context, req *gen.AuthenticateRequest) (*gen.AuthenticateResponse, error) {
+	token := req.ProviderId
+	if fixture := req.GetFixture(); fixture != nil && fixture.Token != "" {
+		token = fixture.Token
+	} else {
+		// Keep older business tests concise while routing them through the
+		// generated fixture oneof. Production ignores the deprecated field.
+		req.Authentication = &gen.AuthenticateRequest_Fixture{Fixture: &gen.FixtureAuthentication{Token: token}}
+	}
+	email := req.ProviderEmail
+	if email == "" {
+		email = token + "@test.invalid"
+	}
+	testService.SetDevelopmentTokenValidator(&requestFixtureValidator{
+		token: token,
+		claims: &authcore.Claims{
+			Provider:  req.Provider,
+			Subject:   token,
+			Email:     email,
+			ExpiresAt: time.Now().Add(time.Hour),
+		},
+	})
+	defer testService.SetDevelopmentTokenValidator(nil)
+	return testService.Authenticate(ctx, req)
+}
 
 // Shared test fixtures — initialized once in TestMain.
 var (
@@ -34,7 +78,10 @@ func TestMain(m *testing.M) {
 	deps, err := sdk.WithDependencies(ctx,
 		sdk.WithDebug(),
 		sdk.WithNamingScope("test"),
-		sdk.WithTimeout(90*time.Second),
+		// A clean machine may need to pull Postgres, Vault, Redis, and MinIO
+		// before the first integration test. Keep the dependency-start budget
+		// separate from individual test timeouts so cold CI is deterministic.
+		sdk.WithTimeout(5*time.Minute),
 		sdk.WithSilence("store"),
 	)
 	if err != nil {
@@ -59,16 +106,18 @@ func TestMain(m *testing.M) {
 		fmt.Fprintf(os.Stderr, "NewService failed: %v\n", err)
 		os.Exit(1)
 	}
+	service.SetWebhookJobProducer(store)
 
 	// Wire optional components
 	vaultClient, err := infra.NewVaultClient(ctx)
 	if err == nil {
 		service.SetHasher(vaultClient)
+		service.SetMFASecretCipher(vaultClient)
 	}
 
 	// New auth pipeline: IdentityResolver + JWTMinter both backed by Postgres.
 	sessionStore := pgauth.NewSessionStore(store)
-	resolver := pgauth.NewResolver(store.Pool())
+	resolver := pgauth.NewResolver(store)
 	_, priv, err := ed25519minter.GenerateKey()
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "GenerateKey failed: %v\n", err)
@@ -80,8 +129,18 @@ func TestMain(m *testing.M) {
 	}, priv, sessionStore)
 	service.SetIdentityResolver(resolver)
 	service.SetJWTMinter(minter)
+	webAuthnEngine, err := infra.NewWebAuthnEngine("localhost", "SaaS Starter Test", []string{"http://localhost:21931"})
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "NewWebAuthnEngine failed: %v\n", err)
+		os.Exit(1)
+	}
+	service.SetWebAuthnEngine(webAuthnEngine)
 
-	auditEmitter := business.NewAsyncAuditEmitter(store, 1024)
+	auditEmitter, err := business.NewDurableAuditEmitter(store, store)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "NewDurableAuditEmitter failed: %v\n", err)
+		os.Exit(1)
+	}
 	service.SetAuditEmitter(auditEmitter)
 
 	entitlementChecker := business.NewDefaultEntitlementChecker(store)
@@ -337,7 +396,7 @@ func TestTeamInheritedPermissions(t *testing.T) {
 func TestAuthenticate(t *testing.T) {
 	clearData(t)
 
-	resp, err := testService.Authenticate(testCtx, &gen.AuthenticateRequest{
+	resp, err := authenticateFixture(testCtx, &gen.AuthenticateRequest{
 		Provider:      "google",
 		ProviderId:    "google-auth-test",
 		ProviderEmail: "auth@test.com",
@@ -355,7 +414,7 @@ func TestAuthenticate_AutoRegister(t *testing.T) {
 	clearData(t)
 
 	// Authenticate with unknown identity — should auto-register
-	resp, err := testService.Authenticate(testCtx, &gen.AuthenticateRequest{
+	resp, err := authenticateFixture(testCtx, &gen.AuthenticateRequest{
 		Provider:      "github",
 		ProviderId:    "github-new-user",
 		ProviderEmail: "newuser@github.com",
@@ -376,7 +435,7 @@ func TestAuthenticate_AutoRegister(t *testing.T) {
 func TestRefreshToken(t *testing.T) {
 	clearData(t)
 
-	authResp, err := testService.Authenticate(testCtx, &gen.AuthenticateRequest{
+	authResp, err := authenticateFixture(testCtx, &gen.AuthenticateRequest{
 		Provider: "google", ProviderId: "google-refresh", ProviderEmail: "refresh@test.com",
 	})
 	require.NoError(t, err)
@@ -398,7 +457,7 @@ func TestRefreshToken(t *testing.T) {
 func TestLogout(t *testing.T) {
 	clearData(t)
 
-	authResp, err := testService.Authenticate(testCtx, &gen.AuthenticateRequest{
+	authResp, err := authenticateFixture(testCtx, &gen.AuthenticateRequest{
 		Provider: "google", ProviderId: "google-logout", ProviderEmail: "logout@test.com",
 	})
 	require.NoError(t, err)

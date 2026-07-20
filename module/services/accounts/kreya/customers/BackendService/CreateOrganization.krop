@@ -1,6 +1,6 @@
 {
   "details": {
-    "methodFqn": "customers.BackendService.CreateOrganization"
+    "methodFqn": "saas.accounts.v1.BackendService.CreateOrganization"
   },
   "requests": [
     {

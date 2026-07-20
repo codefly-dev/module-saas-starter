@@ -6,13 +6,13 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	"accounts/pkg/gen"
+	gen "accounts/pkg/gen/saas/accounts/v1"
 )
 
 // TestRLS_Organizations_SelfReferential — Phase 2F. The org row IS
 // the tenant; the policy filters by id (not org_id) against the
 // current setting. Two orgs exist; each is visible only to its own
-// scope. WithBypass spans both (org switcher / platform admin).
+// scope. WithControlPlane spans both (org switcher / platform admin).
 func TestRLS_Organizations_SelfReferential(t *testing.T) {
 	clearData(t)
 	ctx := testCtx
@@ -45,14 +45,14 @@ func TestRLS_Organizations_SelfReferential(t *testing.T) {
 	require.NoError(t, err)
 	require.Nil(t, noWrap, "un-wrapped GetOrganization must return nil (RLS fail-closed)")
 
-	// WithBypass sees both.
-	require.NoError(t, testStore.WithBypass(context.Background(), func(ctx context.Context) error {
+	// WithControlPlane sees both.
+	require.NoError(t, testStore.WithControlPlane(context.Background(), func(ctx context.Context) error {
 		gA, err := testStore.GetOrganization(ctx, orgA)
 		require.NoError(t, err)
-		require.NotNil(t, gA, "WithBypass must see org A")
+		require.NotNil(t, gA, "WithControlPlane must see org A")
 		gB, err := testStore.GetOrganization(ctx, orgB)
 		require.NoError(t, err)
-		require.NotNil(t, gB, "WithBypass must see org B")
+		require.NotNil(t, gB, "WithControlPlane must see org B")
 		return nil
 	}))
 }
@@ -60,7 +60,7 @@ func TestRLS_Organizations_SelfReferential(t *testing.T) {
 // TestRLS_Organizations_ListForUser_BypassesPolicy — the org switcher
 // (Service.ListOrganizations) needs to see every org a user is a
 // member of regardless of current tenant context. The Service wraps
-// in WithBypass; the SQL still filters by user_id so cross-user
+// in WithControlPlane; the SQL still filters by user_id so cross-user
 // leakage isn't possible.
 func TestRLS_Organizations_ListForUser_BypassesPolicy(t *testing.T) {
 	clearData(t)

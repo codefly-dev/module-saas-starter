@@ -14,10 +14,12 @@ import (
 	"google.golang.org/protobuf/types/known/timestamppb"
 
 	"accounts/pkg/email"
-	"accounts/pkg/gen"
+	gen "accounts/pkg/gen/saas/accounts/v1"
 )
 
 const invitationTTL = 7 * 24 * time.Hour
+
+const invitationEmailSource = "saas.accounts.invitations"
 
 // Invitation is the domain representation of an org invitation.
 type Invitation struct {
@@ -37,17 +39,6 @@ type Invitation struct {
 // CreateInvitation generates and stores an invitation token.
 func (s *Service) CreateInvitation(ctx context.Context, inviterID string, req *gen.CreateInvitationRequest) (*gen.CreateInvitationResponse, error) {
 	w := wool.Get(ctx).In("CreateInvitation")
-
-	// Check seat quota
-	if s.entitlements != nil {
-		ok, err := s.entitlements.CheckQuota(ctx, req.OrgId, "seats")
-		if err != nil {
-			return nil, w.Wrapf(err, "cannot check seat quota")
-		}
-		if !ok {
-			return nil, w.NewError("seat limit reached for your plan")
-		}
-	}
 
 	// Generate token
 	raw := make([]byte, 32)
@@ -74,16 +65,60 @@ func (s *Service) CreateInvitation(ctx context.Context, inviterID string, req *g
 		ExpiresAt: time.Now().Add(invitationTTL),
 	}
 
-	// invitations + organizations are RLS-protected — write the invite
-	// and read the org name inside the same WithOrgTx so the policy
-	// passes.
+	appBase := s.appBaseURL
+	if appBase == "" {
+		appBase = "http://localhost:21931"
+	}
+	acceptURL := fmt.Sprintf("%s/invitations/accept?token=%s", appBase, plaintext)
+
+	// The pending invitation reserves one seat. Quota inspection, stale
+	// reservation cleanup, insertion, and the organization read all share the
+	// same tenant transaction and per-org quota lock. When email is enabled, the
+	// exact rendered delivery command commits in this transaction as well.
 	var orgName string
 	if err := s.store.WithOrgTx(ctx, req.OrgId, func(ctx context.Context) error {
+		quota, err := s.cardinalityQuotaInTx(ctx, req.OrgId, EntitlementSeats)
+		if err != nil {
+			return w.Wrapf(err, "cannot check seat quota")
+		}
+		if err := quota.RequireAvailable(); err != nil {
+			return err
+		}
+		if err := s.store.ExpirePendingInvitations(ctx, req.OrgId); err != nil {
+			return w.Wrapf(err, "cannot expire stale invitations")
+		}
 		if err := s.store.CreateInvitation(ctx, inv); err != nil {
 			return err
 		}
 		if org, err := s.store.GetOrganization(ctx, req.OrgId); err == nil && org != nil {
 			orgName = org.Name
+		}
+		if s.emailOutbox != nil {
+			if orgName == "" {
+				orgName = req.OrgId
+			}
+			return s.emailOutbox.EnqueueTemplate(ctx, email.TemplateRequest{
+				DeliveryKey: inv.ID,
+				Scope:       email.TenantScope(req.OrgId),
+				Source:      invitationEmailSource,
+				Template:    "invitation",
+				To:          inv.Email,
+				Variables: map[string]string{
+					"invite_url":   acceptURL,
+					"accept_url":   acceptURL,
+					"org_name":     orgName,
+					"inviter_name": inviterID,
+					"role":         inv.Role,
+					"email":        inv.Email,
+				},
+				Fallback: &email.Message{
+					To:       []string{inv.Email},
+					Subject:  "You're invited",
+					HTMLBody: renderInviteHTML(acceptURL, inv.Role),
+					TextBody: renderInviteText(acceptURL, inv.Role),
+					Tags:     map[string]string{"type": "invitation", "org_id": inv.OrgID},
+				},
+			})
 		}
 		return nil
 	}); err != nil {
@@ -92,68 +127,26 @@ func (s *Service) CreateInvitation(ctx context.Context, inviterID string, req *g
 
 	s.emit(ctx, inviterID, "user", "invitation.created", "invitation", inv.ID, req.OrgId)
 
-	// Notify the invitee (by email lookup — they may not have an account yet,
-	// so we look up by email). users is not RLS-protected. Best-effort.
-	if invitee, err := s.store.GetUserByEmail(ctx, req.Email); err == nil && invitee != nil {
+	// Notify an existing invitee. This is an exact pre-auth-style lookup: the
+	// invite target is not yet in the organization, so no user/org scope can
+	// authorize the read. Keep it behind the named control-plane operation.
+	var invitee *gen.User
+	_ = s.store.As(System()).Within(ctx, func(ctx context.Context) error {
+		var err error
+		invitee, err = s.store.GetUserByEmail(ctx, req.Email)
+		return err
+	})
+	if invitee != nil {
 		if orgName == "" {
 			orgName = req.OrgId
 		}
 		_ = s.NotifyUser(ctx, invitee.Uuid, "You've been invited", fmt.Sprintf("You've been invited to %s", orgName))
 	}
 
-	// Best-effort email delivery. Failures are logged but do NOT fail
-	// the invite creation — the inviter can always resend or copy the
-	// link manually.
-	if s.mail != nil {
-		if _, err := s.sendInvitationEmail(ctx, inv, plaintext); err != nil {
-			w.Debug("invitation email send failed", wool.ErrField(err))
-		}
-	}
-
 	return &gen.CreateInvitationResponse{
 		Invitation:  invitationToProto(inv),
 		InviteToken: plaintext,
 	}, nil
-}
-
-// sendInvitationEmail renders and delivers the invite message.
-// The accept link includes the plaintext token as a query param;
-// the frontend's /auth/accept page extracts it and calls AcceptInvitation.
-//
-// Prefers the "invitation" template from the template store when the
-// TemplateSender is wired; falls back to the hardcoded HTML/text render
-// when templates are unavailable.
-func (s *Service) sendInvitationEmail(ctx context.Context, inv *Invitation, plainToken string) (string, error) {
-	appBase := s.appBaseURL
-	if appBase == "" {
-		appBase = "http://localhost:21931"
-	}
-
-	acceptURL := fmt.Sprintf("%s/invitations/accept?token=%s", appBase, plainToken)
-
-	// Prefer the template system when available.
-	if s.templateMail != nil {
-		return s.templateMail.SendTemplate(ctx, "invitation", inv.Email, map[string]string{
-			"accept_url": acceptURL,
-			"role":       inv.Role,
-			"email":      inv.Email,
-		})
-	}
-
-	// Fallback: raw Send with inline HTML.
-	from := s.fromAddress
-	if from == "" {
-		from = "no-reply@localhost"
-	}
-	msg := &email.Message{
-		From:     from,
-		To:       []string{inv.Email},
-		Subject:  "You're invited",
-		HTMLBody: renderInviteHTML(acceptURL, inv.Role),
-		TextBody: renderInviteText(acceptURL, inv.Role),
-		Tags:     map[string]string{"type": "invitation", "org_id": inv.OrgID},
-	}
-	return s.mail.Send(ctx, msg)
 }
 
 func renderInviteHTML(acceptURL, role string) string {
@@ -196,10 +189,10 @@ func (s *Service) AcceptInvitation(ctx context.Context, userID string, req *gen.
 
 	// Token-hash lookup is cross-tenant: the token doesn't carry the
 	// org, the invitation row does. invitations is RLS-protected
-	// (Phase 2B) so the read needs WithBypass; the result tells us
+	// (Phase 2B) so the read needs WithControlPlane; the result tells us
 	// which org to enter for the rest of the flow.
 	var inv *Invitation
-	if err := s.store.WithBypass(ctx, func(ctx context.Context) error {
+	if err := s.store.WithControlPlane(ctx, func(ctx context.Context) error {
 		i, err := s.store.GetInvitationByTokenHash(ctx, tokenHash)
 		inv = i
 		return err
@@ -219,10 +212,8 @@ func (s *Service) AcceptInvitation(ctx context.Context, userID string, req *gen.
 		return nil, w.NewError("invitation has expired")
 	}
 
-	// Verify the caller is the invited email holder. users is not
-	// RLS-protected (it's a global lookup table per RLS_PLAN.md
-	// skip-list), so this read runs un-wrapped.
-	caller, err := s.store.GetUser(ctx, userID)
+	// Verify the caller is the invited email holder under their own user scope.
+	caller, err := s.getUserAsSelf(ctx, userID)
 	if err != nil {
 		return nil, w.Wrapf(err, "cannot resolve caller")
 	}
@@ -290,12 +281,13 @@ func (s *Service) ListInvitations(ctx context.Context, req *gen.ListInvitationsR
 	return &gen.ListInvitationsResponse{Invitations: protos}, nil
 }
 
-// RevokeInvitation marks an invitation as revoked. The proto only
-// carries the invitation id (no org_id), so we run the update under
-// WithBypass — the handler upstream already required org admin.
+// RevokeInvitation marks an invitation as revoked. The proto only carries the
+// invitation id, so the handler first resolves its organization under a narrow
+// bypass and requires that tenant's admin role. This update then uses bypass
+// because no organization id reaches the storage mutation itself.
 func (s *Service) RevokeInvitation(ctx context.Context, inviterID string, req *gen.RevokeInvitationRequest) error {
 	w := wool.Get(ctx).In("RevokeInvitation")
-	if err := s.store.WithBypass(ctx, func(ctx context.Context) error {
+	if err := s.store.WithControlPlane(ctx, func(ctx context.Context) error {
 		return s.store.UpdateInvitationStatus(ctx, req.Id, "revoked", "")
 	}); err != nil {
 		return w.Wrapf(err, "cannot revoke invitation")
@@ -351,4 +343,3 @@ func invitationStatusToString(s gen.InvitationStatus) string {
 		return ""
 	}
 }
-

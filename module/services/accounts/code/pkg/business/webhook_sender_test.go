@@ -1,89 +1,83 @@
-package business_test
+package business
 
 import (
 	"context"
 	"crypto/hmac"
 	"crypto/sha256"
 	"encoding/hex"
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
-	"sync"
+	"strconv"
+	"strings"
 	"testing"
 	"time"
-
-	"accounts/pkg/business"
 )
 
-// fakeStore is a minimal in-memory shim that satisfies the only
-// methods WebhookSender touches: UpdateWebhookDelivery (called once
-// after the HTTP round-trip). Anything else panics so we catch
-// accidental coupling to other Store methods.
-type fakeStore struct {
-	business.Store // embed the interface to inherit "panic on call" defaults
-	mu             sync.Mutex
-	updates        []business.WebhookDelivery
+type testCipher struct{}
+
+func (testCipher) EncryptSecret(_ context.Context, _, plaintext string) (string, error) {
+	return plaintext, nil
 }
 
-func (f *fakeStore) UpdateWebhookDelivery(_ context.Context, d *business.WebhookDelivery) error {
-	f.mu.Lock()
-	defer f.mu.Unlock()
-	// Snapshot — sender mutates the same row across paths.
-	f.updates = append(f.updates, *d)
-	return nil
-}
-
-// WithOrgTx — pass-through for the fake. Real impl begins a pgx tx
-// + SET LOCAL app.current_org_id; here we just invoke fn with the
-// same ctx so production's wrap-pattern works through the fake.
-// orgID isn't checked — the fake models the storage interface,
-// not the policy.
-func (f *fakeStore) WithOrgTx(ctx context.Context, _ string, fn func(ctx context.Context) error) error {
-	return fn(ctx)
+func (testCipher) DecryptSecret(_ context.Context, _, envelope string) (string, error) {
+	return envelope, nil
 }
 
 func TestWebhookSender_DeliveredOn200(t *testing.T) {
 	var got struct {
-		body      []byte
-		signature string
-		event     string
+		body       []byte
+		signature  string
+		event      string
 		deliveryID string
+		eventID    string
 	}
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		got.body, _ = io.ReadAll(r.Body)
 		got.signature = r.Header.Get("X-Webhook-Signature")
 		got.event = r.Header.Get("X-Webhook-Event")
 		got.deliveryID = r.Header.Get("X-Webhook-Delivery-ID")
+		got.eventID = r.Header.Get("X-Webhook-Event-ID")
 		w.WriteHeader(http.StatusOK)
 		_, _ = w.Write([]byte(`{"ok":true}`))
 	}))
 	defer srv.Close()
 
-	store := &fakeStore{}
-	sender := business.NewWebhookSender(store)
+	sender := NewWebhookSenderWithClient(testCipher{}, srv.Client())
 
-	sub := &business.WebhookSubscription{
-		ID:     "sub-1",
-		OrgID:  "org-1",
-		URL:    srv.URL,
-		Secret: "whsec_test",
+	sub := &WebhookSubscription{
+		ID:              "sub-1",
+		OrgID:           "org-1",
+		URL:             srv.URL,
+		SecretEncrypted: "whsec_test",
 	}
-	delivery := &business.WebhookDelivery{
+	delivery := &WebhookDelivery{
 		ID:             "del-1",
 		SubscriptionID: "sub-1",
 		EventType:      "user.registered",
 		Payload:        `{"event_type":"user.registered"}`,
 	}
 
-	sender.Send(context.Background(), sub, delivery, []byte(delivery.Payload))
+	result, err := sender.attempt(context.Background(), sub, delivery, []byte(delivery.Payload))
+	if err != nil {
+		t.Fatalf("attempt: %v", err)
+	}
 
-	// Signature must verify under the subscription's secret — proves we
-	// signed with the right key and the consumer can verify the payload.
-	mac := hmac.New(sha256.New, []byte(sub.Secret))
-	mac.Write([]byte(delivery.Payload))
-	expected := "sha256=" + hex.EncodeToString(mac.Sum(nil))
-	if got.signature != expected {
-		t.Errorf("signature mismatch:\n got  %q\n want %q", got.signature, expected)
+	// Signature covers timestamp + stable event ID + the exact body bytes.
+	parts := strings.Split(got.signature, ",")
+	if len(parts) != 2 || !strings.HasPrefix(parts[0], "t=") || !strings.HasPrefix(parts[1], "v1=") {
+		t.Fatalf("signature format = %q", got.signature)
+	}
+	timestamp, err := strconv.ParseInt(strings.TrimPrefix(parts[0], "t="), 10, 64)
+	if err != nil {
+		t.Fatalf("parse signature timestamp: %v", err)
+	}
+	mac := hmac.New(sha256.New, []byte(sub.SecretEncrypted))
+	_, _ = fmt.Fprintf(mac, "%d.%s.%s", timestamp, "del-1", delivery.Payload)
+	expected := "v1=" + hex.EncodeToString(mac.Sum(nil))
+	if parts[1] != expected {
+		t.Errorf("signature mismatch:\n got  %q\n want %q", parts[1], expected)
 	}
 
 	if got.event != "user.registered" {
@@ -92,28 +86,15 @@ func TestWebhookSender_DeliveredOn200(t *testing.T) {
 	if got.deliveryID != "del-1" {
 		t.Errorf("X-Webhook-Delivery-ID = %q, want del-1", got.deliveryID)
 	}
+	if got.eventID != "del-1" {
+		t.Errorf("X-Webhook-Event-ID = %q, want del-1", got.eventID)
+	}
 	if string(got.body) != delivery.Payload {
 		t.Errorf("body mismatch:\n got  %s\n want %s", got.body, delivery.Payload)
 	}
 
-	if delivery.Status != "delivered" {
-		t.Errorf("Status = %q, want delivered", delivery.Status)
-	}
-	if delivery.HTTPStatus != 200 {
-		t.Errorf("HTTPStatus = %d, want 200", delivery.HTTPStatus)
-	}
-	if delivery.DeliveredAt == nil {
-		t.Errorf("DeliveredAt should be set on success")
-	}
-	if delivery.ResponseBody != `{"ok":true}` {
-		t.Errorf("ResponseBody = %q, want {\"ok\":true}", delivery.ResponseBody)
-	}
-
-	// And the row should have been persisted exactly once.
-	store.mu.Lock()
-	defer store.mu.Unlock()
-	if len(store.updates) != 1 {
-		t.Errorf("UpdateWebhookDelivery calls = %d, want 1", len(store.updates))
+	if result.HTTPStatus != http.StatusOK || result.ResponseBody != `{"ok":true}` {
+		t.Errorf("result = %+v, want HTTP 200 response", result)
 	}
 }
 
@@ -124,50 +105,71 @@ func TestWebhookSender_FailedOn500(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	store := &fakeStore{}
-	sender := business.NewWebhookSender(store)
-	sub := &business.WebhookSubscription{ID: "s", URL: srv.URL, Secret: "k"}
-	d := &business.WebhookDelivery{ID: "d", SubscriptionID: "s", EventType: "e", Payload: `{"k":1}`}
+	sender := NewWebhookSenderWithClient(testCipher{}, srv.Client())
+	sub := &WebhookSubscription{ID: "s", URL: srv.URL, SecretEncrypted: "k"}
+	d := &WebhookDelivery{ID: "d", SubscriptionID: "s", EventType: "e", Payload: `{"k":1}`}
 
-	sender.Send(context.Background(), sub, d, []byte(d.Payload))
+	result, err := sender.attempt(context.Background(), sub, d, []byte(d.Payload))
+	if err != nil {
+		t.Fatalf("attempt: %v", err)
+	}
+	if result.HTTPStatus != http.StatusInternalServerError || result.ResponseBody != "oops" {
+		t.Errorf("result = %+v, want HTTP 500 response", result)
+	}
+}
 
-	if d.Status != "failed" {
-		t.Errorf("Status = %q, want failed", d.Status)
+func TestWebhookSender_RotationOverlapSignsWithBothKeys(t *testing.T) {
+	var signature string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		signature = r.Header.Get("X-Webhook-Signature")
+		w.WriteHeader(http.StatusNoContent)
+	}))
+	defer srv.Close()
+
+	sender := NewWebhookSenderWithClient(testCipher{}, srv.Client())
+	expires := time.Now().Add(time.Hour)
+	sub := &WebhookSubscription{
+		ID: "sub-rotation", OrgID: "org-1", URL: srv.URL,
+		SecretEncrypted:         "new-key",
+		PreviousSecretEncrypted: "old-key",
+		PreviousSecretExpiresAt: &expires,
 	}
-	if d.HTTPStatus != 500 {
-		t.Errorf("HTTPStatus = %d, want 500", d.HTTPStatus)
+	delivery := &WebhookDelivery{
+		ID: "delivery-rotation", EventID: "event-stable", SubscriptionID: sub.ID,
+		EventType: "user.updated", Payload: `{"version":2}`,
 	}
-	if d.DeliveredAt != nil {
-		t.Errorf("DeliveredAt should be nil on failure")
+	if _, err := sender.attempt(t.Context(), sub, delivery, []byte(delivery.Payload)); err != nil {
+		t.Fatalf("attempt: %v", err)
 	}
-	if d.ResponseBody != "oops" {
-		t.Errorf("ResponseBody = %q, want oops", d.ResponseBody)
+
+	parts := strings.Split(signature, ",")
+	if len(parts) != 3 || !strings.HasPrefix(parts[0], "t=") ||
+		!strings.HasPrefix(parts[1], "v1=") || !strings.HasPrefix(parts[2], "v1=") {
+		t.Fatalf("rotation signature = %q, want timestamp and two v1 digests", signature)
+	}
+	if parts[1] == parts[2] {
+		t.Fatal("old and new key signatures unexpectedly match")
 	}
 }
 
 func TestWebhookSender_FailedOnConnectionError(t *testing.T) {
-	store := &fakeStore{}
-	sender := business.NewWebhookSender(store)
+	sender := NewWebhookSenderWithClient(testCipher{}, &http.Client{Timeout: 2 * time.Second})
 
 	// Point at a port that's almost certainly closed — exercises the
 	// "URL didn't connect" branch where HTTPStatus stays 0.
-	sub := &business.WebhookSubscription{ID: "s", URL: "http://127.0.0.1:1", Secret: "k"}
-	d := &business.WebhookDelivery{ID: "d", SubscriptionID: "s", EventType: "e", Payload: "{}"}
+	sub := &WebhookSubscription{ID: "s", URL: "http://127.0.0.1:1", SecretEncrypted: "k"}
+	d := &WebhookDelivery{ID: "d", SubscriptionID: "s", EventType: "e", Payload: "{}"}
 
 	// Bound the test — the sender uses a 10s default but we want this
 	// test to fail fast if the local connection refusal isn't immediate.
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
-	sender.Send(ctx, sub, d, []byte("{}"))
-
-	if d.Status != "failed" {
-		t.Errorf("Status = %q, want failed", d.Status)
+	result, err := sender.attempt(ctx, sub, d, []byte("{}"))
+	if err == nil {
+		t.Fatal("attempt succeeded against a closed port")
 	}
-	if d.HTTPStatus != 0 {
-		t.Errorf("HTTPStatus = %d, want 0 (no response)", d.HTTPStatus)
-	}
-	if d.ResponseBody == "" {
-		t.Errorf("ResponseBody should carry the connection error message")
+	if result.HTTPStatus != 0 {
+		t.Errorf("HTTPStatus = %d, want 0 (no response)", result.HTTPStatus)
 	}
 }

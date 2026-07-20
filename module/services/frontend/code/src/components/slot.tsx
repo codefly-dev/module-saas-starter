@@ -1,23 +1,34 @@
 "use client";
 
-import { Suspense } from "react";
-import { useAdminConfig } from "@/lib/hooks/use-admin-config";
+import { PluginContributionBoundary } from "@/components/plugin-contribution-boundary";
+import { useAuth } from "@/lib/auth";
+import { selectWidgets } from "@/lib/plugins/presentation";
+import { useFrontendConfig } from "@/lib/providers";
 
 export function Slot({ name }: { name: string }) {
-  const config = useAdminConfig();
+	const config = useFrontendConfig();
+	const { isAuthenticated, platformRole, orgRole } = useAuth();
+	const widgets = selectWidgets(config, name, {
+		isAuthenticated,
+		platformRole,
+		orgRole,
+	});
 
-  // For now, slot content comes from plugin widgets matching the slot name
-  if (name === "dashboard.widgets") {
-    return (
-      <>
-        {config.widgets.map((widget) => (
-          <Suspense key={widget.id} fallback={<div className="animate-pulse bg-gray-200 dark:bg-gray-800 rounded-lg h-32" />}>
-            <widget.component />
-          </Suspense>
-        ))}
-      </>
-    );
-  }
-
-  return null;
+	return (
+		<>
+			{widgets.map((widget) => (
+				<PluginContributionBoundary
+					key={`${widget.plugin}/${widget.id}`}
+					plugin={widget.plugin}
+					contributionId={widget.id}
+					kind="widget"
+					services={config.metadata.services.filter(
+						(service) => service.plugin === widget.plugin,
+					)}
+				>
+					<widget.component />
+				</PluginContributionBoundary>
+			))}
+		</>
+	);
 }

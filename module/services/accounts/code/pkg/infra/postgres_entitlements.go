@@ -1,7 +1,12 @@
 package infra
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
+	"errors"
+	"fmt"
+	"math"
 	"time"
 
 	"github.com/jackc/pgx/v5"
@@ -176,15 +181,33 @@ func (s *PostgresStore) CreateEntitlementOverride(ctx context.Context, override 
 	return err
 }
 
-func (s *PostgresStore) GetUsageForPeriod(ctx context.Context, orgID string, feature string, period string) (int64, error) {
+// LockEntitlementQuota serializes live-resource admission for one
+// organization and entitlement. It must be held in the same transaction as
+// both the authoritative count and the resource insert; otherwise a pair of
+// concurrent requests could observe the same remaining slot.
+func (s *PostgresStore) LockEntitlementQuota(ctx context.Context, orgID string, feature string) error {
+	if _, ok := ctx.Value("tx").(pgx.Tx); !ok { //nolint:staticcheck // shared transaction context key
+		return errors.New("entitlement quota lock requires a tenant transaction")
+	}
+	_, err := s.getQueryExecutor(ctx).Exec(ctx,
+		`SELECT pg_advisory_xact_lock(hashtextextended($1, 0))`,
+		"cardinality:"+orgID+":"+feature,
+	)
+	if err != nil {
+		return fmt.Errorf("lock %s entitlement quota: %w", feature, err)
+	}
+	return nil
+}
+
+func (s *PostgresStore) GetUsageTotal(ctx context.Context, orgID string, meter string, periodStart time.Time) (int64, error) {
 	q := s.getQueryExecutor(ctx)
 	var quantity int64
 	err := q.QueryRow(ctx, `
-		SELECT COALESCE(quantity, 0) FROM usage_records
-		WHERE org_id = $1 AND feature = $2 AND period = $3`,
-		orgID, feature, period).Scan(&quantity)
+		SELECT quantity FROM usage_totals
+		WHERE org_id = $1 AND meter = $2 AND period_start = $3`,
+		orgID, meter, periodStart).Scan(&quantity)
 	if err != nil {
-		if err == pgx.ErrNoRows {
+		if errors.Is(err, pgx.ErrNoRows) {
 			return 0, nil
 		}
 		return 0, err
@@ -192,15 +215,105 @@ func (s *PostgresStore) GetUsageForPeriod(ctx context.Context, orgID string, fea
 	return quantity, nil
 }
 
-func (s *PostgresStore) RecordUsage(ctx context.Context, orgID string, feature string, quantity int64, period string) error {
+func (s *PostgresStore) ConsumeUsage(ctx context.Context, consumption business.UsageConsumption) (*business.UsageReceipt, error) {
+	// The advisory idempotency lock and aggregate row lock only have meaning in
+	// one explicit transaction. The business layer always enters through
+	// WithOrgTx; reject accidental direct calls instead of weakening atomicity.
+	if _, ok := ctx.Value("tx").(pgx.Tx); !ok { //nolint:staticcheck // shared transaction context key
+		return nil, errors.New("usage consumption requires a tenant transaction")
+	}
 	q := s.getQueryExecutor(ctx)
-	_, err := q.Exec(ctx, `
-		INSERT INTO usage_records (org_id, feature, period, quantity)
-		VALUES ($1, $2, $3, $4)
-		ON CONFLICT (org_id, feature, period)
-		DO UPDATE SET quantity = usage_records.quantity + EXCLUDED.quantity, updated_at = NOW()`,
-		orgID, feature, period, quantity)
-	return err
+
+	if _, err := q.Exec(ctx, `SELECT pg_advisory_xact_lock(hashtextextended($1, 0))`,
+		consumption.OrgID+":"+consumption.IdempotencyKey); err != nil {
+		return nil, fmt.Errorf("lock usage idempotency key: %w", err)
+	}
+
+	var (
+		existing    business.UsageReceipt
+		requestHash []byte
+	)
+	err := q.QueryRow(ctx, `
+		SELECT id, org_id, meter, quantity, accepted, total_after,
+		       limit_at_ingestion, period_start, period_end, occurred_at, request_hash
+		FROM usage_events
+		WHERE org_id = $1 AND idempotency_key = $2`,
+		consumption.OrgID, consumption.IdempotencyKey,
+	).Scan(
+		&existing.EventID, &existing.OrgID, &existing.Meter, &existing.Quantity,
+		&existing.Accepted, &existing.Used, &existing.Limit, &existing.PeriodStart,
+		&existing.PeriodEnd, &existing.OccurredAt, &requestHash,
+	)
+	if err == nil {
+		if !bytes.Equal(requestHash, consumption.RequestHash[:]) {
+			return nil, business.ErrUsageIdempotencyConflict
+		}
+		existing.Duplicate = true
+		return &existing, nil
+	}
+	if !errors.Is(err, pgx.ErrNoRows) {
+		return nil, fmt.Errorf("read usage idempotency receipt: %w", err)
+	}
+
+	if _, err := q.Exec(ctx, `
+		INSERT INTO usage_totals (org_id, meter, period_start, period_end, quantity)
+		VALUES ($1, $2, $3, $4, 0)
+		ON CONFLICT (org_id, meter, period_start) DO NOTHING`,
+		consumption.OrgID, consumption.Meter, consumption.PeriodStart, consumption.PeriodEnd,
+	); err != nil {
+		return nil, fmt.Errorf("initialize usage total: %w", err)
+	}
+
+	var used int64
+	if err := q.QueryRow(ctx, `
+		SELECT quantity FROM usage_totals
+		WHERE org_id = $1 AND meter = $2 AND period_start = $3
+		FOR UPDATE`,
+		consumption.OrgID, consumption.Meter, consumption.PeriodStart,
+	).Scan(&used); err != nil {
+		return nil, fmt.Errorf("lock usage total: %w", err)
+	}
+	if consumption.Quantity > math.MaxInt64-used {
+		return nil, errors.New("usage total exceeds bigint capacity")
+	}
+
+	totalAfter := used
+	accepted := consumption.Limit == -1 || used+consumption.Quantity <= consumption.Limit
+	if accepted {
+		totalAfter = used + consumption.Quantity
+		if _, err := q.Exec(ctx, `
+			UPDATE usage_totals
+			SET quantity = $4, period_end = $5, updated_at = CURRENT_TIMESTAMP
+			WHERE org_id = $1 AND meter = $2 AND period_start = $3`,
+			consumption.OrgID, consumption.Meter, consumption.PeriodStart, totalAfter, consumption.PeriodEnd,
+		); err != nil {
+			return nil, fmt.Errorf("update usage total: %w", err)
+		}
+	}
+
+	dimensions, err := json.Marshal(consumption.Dimensions)
+	if err != nil {
+		return nil, fmt.Errorf("encode usage dimensions: %w", err)
+	}
+	if _, err := q.Exec(ctx, `
+		INSERT INTO usage_events (
+			id, org_id, meter, quantity, idempotency_key, request_hash,
+			accepted, occurred_at, period_start, period_end, dimensions,
+			limit_at_ingestion, total_after
+		) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)`,
+		consumption.EventID, consumption.OrgID, consumption.Meter, consumption.Quantity,
+		consumption.IdempotencyKey, consumption.RequestHash[:], accepted, consumption.OccurredAt,
+		consumption.PeriodStart, consumption.PeriodEnd, dimensions, consumption.Limit, totalAfter,
+	); err != nil {
+		return nil, fmt.Errorf("insert usage event: %w", err)
+	}
+
+	return &business.UsageReceipt{
+		EventID: consumption.EventID, OrgID: consumption.OrgID, Meter: consumption.Meter,
+		Quantity: consumption.Quantity, Accepted: accepted, Used: totalAfter,
+		Limit: consumption.Limit, PeriodStart: consumption.PeriodStart,
+		PeriodEnd: consumption.PeriodEnd, OccurredAt: consumption.OccurredAt,
+	}, nil
 }
 
 func (s *PostgresStore) GetSubscription(ctx context.Context, orgID string) (*business.Subscription, error) {
@@ -208,7 +321,9 @@ func (s *PostgresStore) GetSubscription(ctx context.Context, orgID string) (*bus
 	var sub business.Subscription
 	err := q.QueryRow(ctx, `
 		SELECT id, org_id, plan_id, status, stripe_subscription_id, current_period_start, current_period_end
-		FROM subscriptions WHERE org_id = $1 AND status IN ('active', 'trialing', 'past_due')
+		FROM subscriptions
+		WHERE org_id = $1
+		  AND status IN ('incomplete', 'trialing', 'active', 'past_due', 'unpaid', 'paused')
 		LIMIT 1`, orgID).Scan(&sub.ID, &sub.OrgID, &sub.PlanID, &sub.Status,
 		&sub.StripeSubscriptionID, &sub.CurrentPeriodStart, &sub.CurrentPeriodEnd)
 	if err != nil {

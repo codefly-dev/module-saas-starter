@@ -1,0 +1,611 @@
+{
+  "schema_version": "saas.frontend.plugins.v1",
+  "module": "saas-starter",
+  "service": "frontend",
+  "plugins": [
+    {
+      "name": "audit",
+      "source_path": "src/plugins/audit.ts"
+    },
+    {
+      "name": "core-users",
+      "source_path": "src/plugins/core-users.ts"
+    },
+    {
+      "name": "platform-admin",
+      "source_path": "src/plugins/platform-admin.ts"
+    }
+  ],
+  "routes": [
+    {
+      "path": "/",
+      "source_path": "src/app/(dashboard)/page.tsx",
+      "match": "FRONTEND_ROUTE_MATCH_EXACT",
+      "access": "FRONTEND_ROUTE_ACCESS_AUTHENTICATED"
+    },
+    {
+      "path": "/admin",
+      "source_path": "src/app/admin/page.tsx",
+      "match": "FRONTEND_ROUTE_MATCH_EXACT",
+      "access": "FRONTEND_ROUTE_ACCESS_ADMIN"
+    },
+    {
+      "path": "/admin/api-keys",
+      "source_path": "src/app/admin/api-keys/page.tsx",
+      "match": "FRONTEND_ROUTE_MATCH_EXACT",
+      "access": "FRONTEND_ROUTE_ACCESS_ADMIN"
+    },
+    {
+      "path": "/admin/audit-export",
+      "source_path": "src/app/admin/audit-export/page.tsx",
+      "match": "FRONTEND_ROUTE_MATCH_EXACT",
+      "access": "FRONTEND_ROUTE_ACCESS_ADMIN"
+    },
+    {
+      "path": "/admin/audit-log",
+      "source_path": "src/app/admin/audit-log/page.tsx",
+      "match": "FRONTEND_ROUTE_MATCH_EXACT",
+      "access": "FRONTEND_ROUTE_ACCESS_ADMIN"
+    },
+    {
+      "path": "/admin/billing",
+      "source_path": "src/app/admin/billing/page.tsx",
+      "match": "FRONTEND_ROUTE_MATCH_EXACT",
+      "access": "FRONTEND_ROUTE_ACCESS_ADMIN"
+    },
+    {
+      "path": "/admin/billing/success",
+      "source_path": "src/app/admin/billing/success/page.tsx",
+      "match": "FRONTEND_ROUTE_MATCH_EXACT",
+      "access": "FRONTEND_ROUTE_ACCESS_ADMIN"
+    },
+    {
+      "path": "/admin/entitlements",
+      "source_path": "src/app/admin/entitlements/page.tsx",
+      "match": "FRONTEND_ROUTE_MATCH_EXACT",
+      "access": "FRONTEND_ROUTE_ACCESS_ADMIN"
+    },
+    {
+      "path": "/admin/invitations",
+      "source_path": "src/app/admin/invitations/page.tsx",
+      "match": "FRONTEND_ROUTE_MATCH_EXACT",
+      "access": "FRONTEND_ROUTE_ACCESS_ADMIN"
+    },
+    {
+      "path": "/admin/organizations",
+      "source_path": "src/app/admin/organizations/page.tsx",
+      "match": "FRONTEND_ROUTE_MATCH_EXACT",
+      "access": "FRONTEND_ROUTE_ACCESS_ADMIN"
+    },
+    {
+      "path": "/admin/organizations/settings",
+      "source_path": "src/app/admin/organizations/settings/page.tsx",
+      "match": "FRONTEND_ROUTE_MATCH_EXACT",
+      "access": "FRONTEND_ROUTE_ACCESS_ADMIN"
+    },
+    {
+      "path": "/admin/platform",
+      "source_path": "src/app/admin/platform/page.tsx",
+      "match": "FRONTEND_ROUTE_MATCH_EXACT",
+      "access": "FRONTEND_ROUTE_ACCESS_SUPER_ADMIN"
+    },
+    {
+      "path": "/admin/platform/admins",
+      "source_path": "src/app/admin/platform/admins/page.tsx",
+      "match": "FRONTEND_ROUTE_MATCH_EXACT",
+      "access": "FRONTEND_ROUTE_ACCESS_SUPER_ADMIN"
+    },
+    {
+      "path": "/admin/platform/feature-flags",
+      "source_path": "src/app/admin/platform/feature-flags/page.tsx",
+      "match": "FRONTEND_ROUTE_MATCH_EXACT",
+      "access": "FRONTEND_ROUTE_ACCESS_SUPER_ADMIN"
+    },
+    {
+      "path": "/admin/platform/jobs",
+      "source_path": "src/app/admin/platform/jobs/page.tsx",
+      "match": "FRONTEND_ROUTE_MATCH_EXACT",
+      "access": "FRONTEND_ROUTE_ACCESS_SUPER_ADMIN"
+    },
+    {
+      "path": "/admin/roles",
+      "source_path": "src/app/admin/roles/page.tsx",
+      "match": "FRONTEND_ROUTE_MATCH_EXACT",
+      "access": "FRONTEND_ROUTE_ACCESS_ADMIN"
+    },
+    {
+      "path": "/admin/sessions",
+      "source_path": "src/app/admin/sessions/page.tsx",
+      "match": "FRONTEND_ROUTE_MATCH_EXACT",
+      "access": "FRONTEND_ROUTE_ACCESS_ADMIN"
+    },
+    {
+      "path": "/admin/sso",
+      "source_path": "src/app/admin/sso/page.tsx",
+      "match": "FRONTEND_ROUTE_MATCH_EXACT",
+      "access": "FRONTEND_ROUTE_ACCESS_ADMIN"
+    },
+    {
+      "path": "/admin/teams",
+      "source_path": "src/app/admin/teams/page.tsx",
+      "match": "FRONTEND_ROUTE_MATCH_EXACT",
+      "access": "FRONTEND_ROUTE_ACCESS_ADMIN"
+    },
+    {
+      "path": "/admin/users",
+      "source_path": "src/app/admin/users/page.tsx",
+      "match": "FRONTEND_ROUTE_MATCH_EXACT",
+      "access": "FRONTEND_ROUTE_ACCESS_ADMIN"
+    },
+    {
+      "path": "/admin/webhooks",
+      "source_path": "src/app/admin/webhooks/page.tsx",
+      "match": "FRONTEND_ROUTE_MATCH_EXACT",
+      "access": "FRONTEND_ROUTE_ACCESS_ADMIN"
+    },
+    {
+      "path": "/admin/{*slug}",
+      "source_path": "src/app/admin/[...slug]/page.tsx",
+      "match": "FRONTEND_ROUTE_MATCH_CATCH_ALL",
+      "access": "FRONTEND_ROUTE_ACCESS_ADMIN"
+    },
+    {
+      "path": "/auth/callback",
+      "source_path": "src/app/(auth)/auth/callback/page.tsx",
+      "match": "FRONTEND_ROUTE_MATCH_EXACT",
+      "access": "FRONTEND_ROUTE_ACCESS_PUBLIC"
+    },
+    {
+      "path": "/auth/login",
+      "source_path": "src/app/(auth)/auth/login/page.tsx",
+      "match": "FRONTEND_ROUTE_MATCH_EXACT",
+      "access": "FRONTEND_ROUTE_ACCESS_PUBLIC"
+    },
+    {
+      "path": "/auth/magic-link",
+      "source_path": "src/app/(auth)/auth/magic-link/page.tsx",
+      "match": "FRONTEND_ROUTE_MATCH_EXACT",
+      "access": "FRONTEND_ROUTE_ACCESS_PUBLIC"
+    },
+    {
+      "path": "/auth/mfa",
+      "source_path": "src/app/(auth)/auth/mfa/page.tsx",
+      "match": "FRONTEND_ROUTE_MATCH_EXACT",
+      "access": "FRONTEND_ROUTE_ACCESS_PUBLIC"
+    },
+    {
+      "path": "/docs",
+      "source_path": "src/app/(dashboard)/docs/page.tsx",
+      "match": "FRONTEND_ROUTE_MATCH_EXACT",
+      "access": "FRONTEND_ROUTE_ACCESS_AUTHENTICATED"
+    },
+    {
+      "path": "/docs/compliance",
+      "source_path": "src/app/(dashboard)/docs/compliance/page.tsx",
+      "match": "FRONTEND_ROUTE_MATCH_EXACT",
+      "access": "FRONTEND_ROUTE_ACCESS_AUTHENTICATED"
+    },
+    {
+      "path": "/docs/sdks",
+      "source_path": "src/app/(dashboard)/docs/sdks/page.tsx",
+      "match": "FRONTEND_ROUTE_MATCH_EXACT",
+      "access": "FRONTEND_ROUTE_ACCESS_AUTHENTICATED"
+    },
+    {
+      "path": "/notifications",
+      "source_path": "src/app/(dashboard)/notifications/page.tsx",
+      "match": "FRONTEND_ROUTE_MATCH_EXACT",
+      "access": "FRONTEND_ROUTE_ACCESS_AUTHENTICATED"
+    },
+    {
+      "path": "/onboarding",
+      "source_path": "src/app/(dashboard)/onboarding/page.tsx",
+      "match": "FRONTEND_ROUTE_MATCH_EXACT",
+      "access": "FRONTEND_ROUTE_ACCESS_AUTHENTICATED"
+    },
+    {
+      "path": "/settings",
+      "source_path": "src/app/(dashboard)/settings/page.tsx",
+      "match": "FRONTEND_ROUTE_MATCH_EXACT",
+      "access": "FRONTEND_ROUTE_ACCESS_AUTHENTICATED"
+    },
+    {
+      "path": "/settings/data",
+      "source_path": "src/app/(dashboard)/settings/data/page.tsx",
+      "match": "FRONTEND_ROUTE_MATCH_EXACT",
+      "access": "FRONTEND_ROUTE_ACCESS_AUTHENTICATED"
+    },
+    {
+      "path": "/settings/mfa",
+      "source_path": "src/app/(dashboard)/settings/mfa/page.tsx",
+      "match": "FRONTEND_ROUTE_MATCH_EXACT",
+      "access": "FRONTEND_ROUTE_ACCESS_AUTHENTICATED"
+    },
+    {
+      "path": "/settings/notifications",
+      "source_path": "src/app/(dashboard)/settings/notifications/page.tsx",
+      "match": "FRONTEND_ROUTE_MATCH_EXACT",
+      "access": "FRONTEND_ROUTE_ACCESS_AUTHENTICATED"
+    },
+    {
+      "path": "/status",
+      "source_path": "src/app/(auth)/status/page.tsx",
+      "match": "FRONTEND_ROUTE_MATCH_EXACT",
+      "access": "FRONTEND_ROUTE_ACCESS_PUBLIC"
+    }
+  ],
+  "navigation": [
+    {
+      "id": "dashboard",
+      "plugin": "core-users",
+      "label": "Dashboard",
+      "path": "/",
+      "icon": "LayoutDashboard",
+      "access": "FRONTEND_ROUTE_ACCESS_AUTHENTICATED",
+      "surfaces": [
+        "FRONTEND_NAVIGATION_SURFACE_SIDEBAR"
+      ],
+      "order": 10
+    },
+    {
+      "id": "admin-users",
+      "plugin": "core-users",
+      "label": "Users",
+      "path": "/admin/users",
+      "icon": "Users",
+      "group": "Users & Access",
+      "access": "FRONTEND_ROUTE_ACCESS_ADMIN",
+      "permission": "users:read",
+      "surfaces": [
+        "FRONTEND_NAVIGATION_SURFACE_COMMAND_PALETTE",
+        "FRONTEND_NAVIGATION_SURFACE_PLUGIN_REGISTRY",
+        "FRONTEND_NAVIGATION_SURFACE_SIDEBAR"
+      ],
+      "order": 100
+    },
+    {
+      "id": "admin-organizations",
+      "plugin": "core-users",
+      "label": "Organizations",
+      "path": "/admin/organizations",
+      "icon": "Building2",
+      "group": "Users & Access",
+      "access": "FRONTEND_ROUTE_ACCESS_ADMIN",
+      "permission": "orgs:read",
+      "surfaces": [
+        "FRONTEND_NAVIGATION_SURFACE_COMMAND_PALETTE",
+        "FRONTEND_NAVIGATION_SURFACE_PLUGIN_REGISTRY",
+        "FRONTEND_NAVIGATION_SURFACE_SIDEBAR"
+      ],
+      "order": 110
+    },
+    {
+      "id": "admin-teams",
+      "plugin": "core-users",
+      "label": "Teams",
+      "path": "/admin/teams",
+      "icon": "UsersRound",
+      "group": "Users & Access",
+      "access": "FRONTEND_ROUTE_ACCESS_ADMIN",
+      "permission": "teams:read",
+      "surfaces": [
+        "FRONTEND_NAVIGATION_SURFACE_COMMAND_PALETTE",
+        "FRONTEND_NAVIGATION_SURFACE_PLUGIN_REGISTRY",
+        "FRONTEND_NAVIGATION_SURFACE_SIDEBAR"
+      ],
+      "order": 120
+    },
+    {
+      "id": "admin-roles",
+      "plugin": "core-users",
+      "label": "Roles",
+      "path": "/admin/roles",
+      "icon": "Shield",
+      "group": "Users & Access",
+      "access": "FRONTEND_ROUTE_ACCESS_ADMIN",
+      "permission": "roles:read",
+      "surfaces": [
+        "FRONTEND_NAVIGATION_SURFACE_COMMAND_PALETTE",
+        "FRONTEND_NAVIGATION_SURFACE_PLUGIN_REGISTRY",
+        "FRONTEND_NAVIGATION_SURFACE_SIDEBAR"
+      ],
+      "order": 130
+    },
+    {
+      "id": "admin-invitations",
+      "plugin": "core-users",
+      "label": "Invitations",
+      "path": "/admin/invitations",
+      "icon": "Mail",
+      "group": "Users & Access",
+      "access": "FRONTEND_ROUTE_ACCESS_ADMIN",
+      "permission": "invitations:read",
+      "surfaces": [
+        "FRONTEND_NAVIGATION_SURFACE_COMMAND_PALETTE",
+        "FRONTEND_NAVIGATION_SURFACE_PLUGIN_REGISTRY",
+        "FRONTEND_NAVIGATION_SURFACE_SIDEBAR"
+      ],
+      "order": 140
+    },
+    {
+      "id": "admin-api-keys",
+      "plugin": "core-users",
+      "label": "API Keys",
+      "path": "/admin/api-keys",
+      "icon": "Key",
+      "group": "Users & Access",
+      "access": "FRONTEND_ROUTE_ACCESS_ADMIN",
+      "permission": "api_keys:read",
+      "surfaces": [
+        "FRONTEND_NAVIGATION_SURFACE_COMMAND_PALETTE",
+        "FRONTEND_NAVIGATION_SURFACE_PLUGIN_REGISTRY",
+        "FRONTEND_NAVIGATION_SURFACE_SIDEBAR"
+      ],
+      "order": 150
+    },
+    {
+      "id": "admin-organization-settings",
+      "plugin": "core-users",
+      "label": "Organization Settings",
+      "path": "/admin/organizations/settings",
+      "icon": "Building2",
+      "group": "Organizations",
+      "access": "FRONTEND_ROUTE_ACCESS_ADMIN",
+      "permission": "orgs:read",
+      "surfaces": [
+        "FRONTEND_NAVIGATION_SURFACE_PLUGIN_REGISTRY"
+      ],
+      "order": 160
+    },
+    {
+      "id": "admin-platform-overview",
+      "plugin": "platform-admin",
+      "label": "Platform Overview",
+      "path": "/admin/platform",
+      "icon": "Layers",
+      "group": "Platform",
+      "access": "FRONTEND_ROUTE_ACCESS_SUPER_ADMIN",
+      "surfaces": [
+        "FRONTEND_NAVIGATION_SURFACE_PLUGIN_REGISTRY"
+      ],
+      "order": 190
+    },
+    {
+      "id": "admin-platform-users",
+      "plugin": "platform-admin",
+      "label": "Platform Users",
+      "path": "/admin/platform/admins",
+      "icon": "UserSearch",
+      "group": "Platform",
+      "access": "FRONTEND_ROUTE_ACCESS_SUPER_ADMIN",
+      "permission": "users:read",
+      "surfaces": [
+        "FRONTEND_NAVIGATION_SURFACE_COMMAND_PALETTE",
+        "FRONTEND_NAVIGATION_SURFACE_PLUGIN_REGISTRY",
+        "FRONTEND_NAVIGATION_SURFACE_SIDEBAR"
+      ],
+      "order": 200
+    },
+    {
+      "id": "admin-feature-flags",
+      "plugin": "platform-admin",
+      "label": "Feature Flags",
+      "path": "/admin/platform/feature-flags",
+      "icon": "Flag",
+      "group": "Platform",
+      "access": "FRONTEND_ROUTE_ACCESS_SUPER_ADMIN",
+      "surfaces": [
+        "FRONTEND_NAVIGATION_SURFACE_COMMAND_PALETTE",
+        "FRONTEND_NAVIGATION_SURFACE_PLUGIN_REGISTRY",
+        "FRONTEND_NAVIGATION_SURFACE_SIDEBAR"
+      ],
+      "order": 210
+    },
+    {
+      "id": "admin-sessions",
+      "plugin": "platform-admin",
+      "label": "Sessions",
+      "path": "/admin/sessions",
+      "icon": "Monitor",
+      "group": "Platform",
+      "access": "FRONTEND_ROUTE_ACCESS_SUPER_ADMIN",
+      "surfaces": [
+        "FRONTEND_NAVIGATION_SURFACE_COMMAND_PALETTE",
+        "FRONTEND_NAVIGATION_SURFACE_PLUGIN_REGISTRY",
+        "FRONTEND_NAVIGATION_SURFACE_SIDEBAR"
+      ],
+      "order": 220
+    },
+    {
+      "id": "admin-entitlements",
+      "plugin": "platform-admin",
+      "label": "Entitlements",
+      "path": "/admin/entitlements",
+      "icon": "ShieldCheck",
+      "group": "Platform",
+      "access": "FRONTEND_ROUTE_ACCESS_ADMIN",
+      "permission": "entitlements:read",
+      "surfaces": [
+        "FRONTEND_NAVIGATION_SURFACE_COMMAND_PALETTE",
+        "FRONTEND_NAVIGATION_SURFACE_PLUGIN_REGISTRY",
+        "FRONTEND_NAVIGATION_SURFACE_SIDEBAR"
+      ],
+      "order": 230
+    },
+    {
+      "id": "admin-job-operations",
+      "plugin": "platform-admin",
+      "label": "Job Operations",
+      "path": "/admin/platform/jobs",
+      "icon": "ListChecks",
+      "group": "Platform",
+      "access": "FRONTEND_ROUTE_ACCESS_SUPER_ADMIN",
+      "surfaces": [
+        "FRONTEND_NAVIGATION_SURFACE_COMMAND_PALETTE",
+        "FRONTEND_NAVIGATION_SURFACE_PLUGIN_REGISTRY",
+        "FRONTEND_NAVIGATION_SURFACE_SIDEBAR"
+      ],
+      "order": 235
+    },
+    {
+      "id": "admin-audit-log",
+      "plugin": "audit",
+      "label": "Audit Log",
+      "path": "/admin/audit-log",
+      "icon": "Activity",
+      "group": "Platform",
+      "access": "FRONTEND_ROUTE_ACCESS_ADMIN",
+      "permission": "audit:read",
+      "surfaces": [
+        "FRONTEND_NAVIGATION_SURFACE_COMMAND_PALETTE",
+        "FRONTEND_NAVIGATION_SURFACE_PLUGIN_REGISTRY",
+        "FRONTEND_NAVIGATION_SURFACE_SIDEBAR"
+      ],
+      "order": 240
+    },
+    {
+      "id": "admin-billing",
+      "plugin": "core-users",
+      "label": "Subscription",
+      "path": "/admin/billing",
+      "icon": "CreditCard",
+      "group": "Billing",
+      "access": "FRONTEND_ROUTE_ACCESS_ADMIN",
+      "permission": "billing:read",
+      "surfaces": [
+        "FRONTEND_NAVIGATION_SURFACE_SIDEBAR"
+      ],
+      "order": 300
+    },
+    {
+      "id": "admin-webhooks",
+      "plugin": "core-users",
+      "label": "Webhooks",
+      "path": "/admin/webhooks",
+      "icon": "Globe",
+      "group": "Integrations",
+      "access": "FRONTEND_ROUTE_ACCESS_ADMIN",
+      "permission": "webhooks:read",
+      "surfaces": [
+        "FRONTEND_NAVIGATION_SURFACE_COMMAND_PALETTE",
+        "FRONTEND_NAVIGATION_SURFACE_PLUGIN_REGISTRY",
+        "FRONTEND_NAVIGATION_SURFACE_SIDEBAR"
+      ],
+      "order": 400
+    },
+    {
+      "id": "admin-audit-export",
+      "plugin": "audit",
+      "label": "Audit Export",
+      "path": "/admin/audit-export",
+      "icon": "HardDriveDownload",
+      "group": "Integrations",
+      "access": "FRONTEND_ROUTE_ACCESS_ADMIN",
+      "permission": "audit:read",
+      "surfaces": [
+        "FRONTEND_NAVIGATION_SURFACE_SIDEBAR"
+      ],
+      "order": 410
+    },
+    {
+      "id": "admin-sso",
+      "plugin": "core-users",
+      "label": "Single Sign-On",
+      "path": "/admin/sso",
+      "icon": "KeyRound",
+      "group": "Integrations",
+      "access": "FRONTEND_ROUTE_ACCESS_ADMIN",
+      "surfaces": [
+        "FRONTEND_NAVIGATION_SURFACE_SIDEBAR"
+      ],
+      "order": 420
+    },
+    {
+      "id": "api-docs",
+      "plugin": "audit",
+      "label": "API Docs",
+      "path": "/docs",
+      "icon": "BookOpen",
+      "group": "Developer",
+      "access": "FRONTEND_ROUTE_ACCESS_ADMIN",
+      "surfaces": [
+        "FRONTEND_NAVIGATION_SURFACE_PLUGIN_REGISTRY",
+        "FRONTEND_NAVIGATION_SURFACE_SIDEBAR"
+      ],
+      "order": 500
+    },
+    {
+      "id": "sdks",
+      "plugin": "audit",
+      "label": "SDKs",
+      "path": "/docs/sdks",
+      "icon": "FileText",
+      "group": "Developer",
+      "access": "FRONTEND_ROUTE_ACCESS_ADMIN",
+      "surfaces": [
+        "FRONTEND_NAVIGATION_SURFACE_PLUGIN_REGISTRY",
+        "FRONTEND_NAVIGATION_SURFACE_SIDEBAR"
+      ],
+      "order": 510
+    },
+    {
+      "id": "compliance",
+      "plugin": "audit",
+      "label": "Compliance",
+      "path": "/docs/compliance",
+      "icon": "ShieldCheck",
+      "group": "Developer",
+      "access": "FRONTEND_ROUTE_ACCESS_ADMIN",
+      "surfaces": [
+        "FRONTEND_NAVIGATION_SURFACE_PLUGIN_REGISTRY",
+        "FRONTEND_NAVIGATION_SURFACE_SIDEBAR"
+      ],
+      "order": 520
+    },
+    {
+      "id": "security",
+      "plugin": "core-users",
+      "label": "Security",
+      "path": "/settings/mfa",
+      "icon": "Shield",
+      "group": "Settings",
+      "access": "FRONTEND_ROUTE_ACCESS_AUTHENTICATED",
+      "surfaces": [
+        "FRONTEND_NAVIGATION_SURFACE_COMMAND_PALETTE",
+        "FRONTEND_NAVIGATION_SURFACE_PLUGIN_REGISTRY",
+        "FRONTEND_NAVIGATION_SURFACE_USER_MENU"
+      ],
+      "order": 600
+    },
+    {
+      "id": "notifications",
+      "plugin": "core-users",
+      "label": "Notifications",
+      "path": "/settings/notifications",
+      "icon": "Bell",
+      "group": "Settings",
+      "access": "FRONTEND_ROUTE_ACCESS_AUTHENTICATED",
+      "surfaces": [
+        "FRONTEND_NAVIGATION_SURFACE_COMMAND_PALETTE",
+        "FRONTEND_NAVIGATION_SURFACE_PLUGIN_REGISTRY",
+        "FRONTEND_NAVIGATION_SURFACE_USER_MENU"
+      ],
+      "order": 610
+    },
+    {
+      "id": "data-privacy",
+      "plugin": "core-users",
+      "label": "Data & Privacy",
+      "path": "/settings/data",
+      "icon": "FileText",
+      "group": "Settings",
+      "access": "FRONTEND_ROUTE_ACCESS_AUTHENTICATED",
+      "surfaces": [
+        "FRONTEND_NAVIGATION_SURFACE_COMMAND_PALETTE",
+        "FRONTEND_NAVIGATION_SURFACE_PLUGIN_REGISTRY",
+        "FRONTEND_NAVIGATION_SURFACE_USER_MENU"
+      ],
+      "order": 620
+    }
+  ]
+}

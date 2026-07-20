@@ -14,7 +14,7 @@ import (
 // TestGuard_NoRawPoolMutationsInTests enforces the RLS-aware-tests rule: tests
 // must not INSERT/UPDATE/DELETE through the raw testPool (an app_tenant
 // connection with no RLS context — which fail-closes or, worse, masks RLS).
-// Seeds and verification go through As(Identity{...}) / WithBypass so RLS is
+// Seeds and verification go through As(Identity{...}) / WithControlPlane so RLS is
 // actually exercised. Scans every *_test.go under code/pkg.
 func TestGuard_NoRawPoolMutationsInTests(t *testing.T) {
 	_, thisFile, _, ok := runtime.Caller(0)
@@ -31,9 +31,9 @@ func TestGuard_NoRawPoolMutationsInTests(t *testing.T) {
 		if strings.HasSuffix(path, "zz_rls_test_guard_test.go") {
 			return nil
 		}
-		// billing/pg deliberately uses its own raw (superuser) pool to unit-test
-		// billing store SQL with RLS out of scope; RLS is covered by the
-		// rls_*_test.go suites. Out of scope for this guard.
+		// billing/pg deliberately resolves the test-only migration-owner
+		// capability through the Codefly SDK to unit-test billing store SQL with
+		// RLS out of scope. RLS is covered by the rls_*_test.go suites.
 		if strings.Contains(filepath.ToSlash(path), "/billing/pg/") {
 			return nil
 		}
@@ -58,7 +58,7 @@ func TestGuard_NoRawPoolMutationsInTests(t *testing.T) {
 	}))
 
 	require.Empty(t, offenders,
-		"tests must not mutate via raw testPool (bypasses RLS context); seed/verify via As(Identity{...}) or WithBypass")
+		"tests must not mutate via raw testPool (bypasses RLS context); seed/verify via As(Identity{...}) or WithControlPlane")
 }
 
 func min(a, b int) int {

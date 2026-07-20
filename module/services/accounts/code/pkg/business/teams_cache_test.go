@@ -6,7 +6,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"accounts/pkg/business"
-	"accounts/pkg/gen"
+	gen "accounts/pkg/gen/saas/accounts/v1"
 	"accounts/pkg/infra"
 )
 
@@ -14,16 +14,16 @@ import (
 // requireTeamAdmin → AddTeamMember dedup. Without the cache, the
 // flow is:
 //
-//   1. requireTeamAdmin: WithBypass to resolve team→org   (#bypass+=1)
-//   2. requireTeamAdmin: WithOrgTx to ListTeamMembers
-//   3. Service.AddTeamMember: WithBypass again (resolveTeamOrg)  (#bypass+=1)
-//   4. Service.AddTeamMember: WithOrgTx to do the insert
+//  1. requireTeamAdmin: WithControlPlane to resolve team→org   (#bypass+=1)
+//  2. requireTeamAdmin: WithOrgTx to ListTeamMembers
+//  3. Service.AddTeamMember: WithControlPlane again (resolveTeamOrg)  (#bypass+=1)
+//  4. Service.AddTeamMember: WithOrgTx to do the insert
 //
 // With the cache stamped via WithCachedTeamOrgID, step 3 is elided —
 // resolveTeamOrg sees the ctx-cached orgID and skips the bypass call.
 //
 // The test invokes AddTeamMember once with the cache pre-stamped,
-// once without, and asserts the WithBypass counter delta differs.
+// once without, and asserts the WithControlPlane counter delta differs.
 //
 // This is integration-y: real DB + real Service. Slow-ish (~1s).
 func TestService_AddTeamMember_UsesCachedOrgID(t *testing.T) {
@@ -46,7 +46,7 @@ func TestService_AddTeamMember_UsesCachedOrgID(t *testing.T) {
 	// behavior we care about.
 	countTeamsBypasses := func() int64 {
 		var n int64
-		for site, v := range infra.BypassCounters() {
+		for site, v := range infra.ControlPlaneCounters() {
 			if containsTeamsGo(site) {
 				n += v
 			}
@@ -55,7 +55,7 @@ func TestService_AddTeamMember_UsesCachedOrgID(t *testing.T) {
 	}
 
 	// First call: NO cache. Service.resolveTeamOrg should fire
-	// WithBypass once (one bypass for THIS team_id resolve).
+	// WithControlPlane once (one bypass for THIS team_id resolve).
 	before := countTeamsBypasses()
 	require.NoError(t, testService.AddTeamMember(ctx, owner, &gen.AddTeamMemberRequest{
 		TeamId: team.Team.Id,
@@ -72,7 +72,7 @@ func TestService_AddTeamMember_UsesCachedOrgID(t *testing.T) {
 	}))
 
 	// Second call: with cached orgID. resolveTeamOrg should
-	// short-circuit; no new WithBypass from teams.go.
+	// short-circuit; no new WithControlPlane from teams.go.
 	before2 := countTeamsBypasses()
 	cachedCtx := business.WithCachedTeamOrgID(ctx, team.Team.Id, orgID)
 	require.NoError(t, testService.AddTeamMember(cachedCtx, owner, &gen.AddTeamMemberRequest{
@@ -87,11 +87,11 @@ func TestService_AddTeamMember_UsesCachedOrgID(t *testing.T) {
 	// bypasses transitively), but at least one less from the
 	// resolveTeamOrg path.
 	require.Greater(t, withoutCacheDelta, withCacheDelta,
-		"cached AddTeamMember should fire fewer WithBypass calls than uncached "+
+		"cached AddTeamMember should fire fewer WithControlPlane calls than uncached "+
 			"(uncached delta=%d, cached delta=%d)", withoutCacheDelta, withCacheDelta)
 }
 
-// containsTeamsGo — naive substring check. The recordBypass site
+// containsTeamsGo — naive substring check. The recordControlPlane site
 // key looks like "module/services/accounts/code/pkg/business/teams.go:N";
 // resolveTeamOrg lives in teams.go.
 func containsTeamsGo(site string) bool {

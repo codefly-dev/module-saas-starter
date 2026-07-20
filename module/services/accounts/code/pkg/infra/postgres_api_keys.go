@@ -10,7 +10,7 @@ import (
 	"google.golang.org/protobuf/types/known/timestamppb"
 
 	"accounts/pkg/business"
-	"accounts/pkg/gen"
+	gen "accounts/pkg/gen/saas/accounts/v1"
 )
 
 func (s *PostgresStore) CreateAPIKey(ctx context.Context, key *gen.APIKey, keyHash string) error {
@@ -33,6 +33,20 @@ func (s *PostgresStore) CreateAPIKey(ctx context.Context, key *gen.APIKey, keyHa
 		key.Id, key.OrganizationId, key.UserId, key.Name, key.Prefix,
 		keyHash, scopes, apiKeyEnvToString(key.Environment), expiresAt, key.UserId)
 	return err
+}
+
+// CountActiveAPIKeys is the authoritative cardinality query for the api_keys
+// entitlement. Revoked and already-expired keys do not consume a slot.
+func (s *PostgresStore) CountActiveAPIKeys(ctx context.Context, orgID string) (int64, error) {
+	var count int64
+	err := s.getQueryExecutor(ctx).QueryRow(ctx, `
+		SELECT COUNT(*)
+		FROM api_keys
+		WHERE organization_id = $1
+		  AND revoked_at IS NULL
+		  AND (expires_at IS NULL OR expires_at > CURRENT_TIMESTAMP)`, orgID,
+	).Scan(&count)
+	return count, err
 }
 
 func (s *PostgresStore) GetAPIKeyByHash(ctx context.Context, keyHash string) (*gen.APIKey, error) {

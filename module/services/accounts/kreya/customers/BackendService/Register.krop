@@ -1,6 +1,6 @@
 {
   "details": {
-    "methodFqn": "customers.BackendService.Register",
+    "methodFqn": "saas.accounts.v1.BackendService.Register",
     "metadata": [
       {
         "key": "codefly.user.auth.id",

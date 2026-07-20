@@ -6,14 +6,17 @@ import (
 	"errors"
 	"time"
 
+	"accounts/pkg/auth"
+
 	codefly "github.com/codefly-dev/sdk-go"
+	scopedpostgres "github.com/codefly-dev/service-postgres/libs/go"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/types/known/timestamppb"
 
-	"accounts/pkg/gen"
+	gen "accounts/pkg/gen/saas/accounts/v1"
 
 	"github.com/codefly-dev/core/wool"
 
@@ -26,23 +29,54 @@ type Close func()
 
 type PostgresStore struct {
 	Close
-	pool *pgxpool.Pool
+	pool     *pgxpool.Pool
+	database *scopedpostgres.Factory
 }
 
 func NewPostgresStore(ctx context.Context) (*PostgresStore, error) {
 	w := wool.Get(ctx).In("NewPostgresStore")
-	connection, err := codefly.For(ctx).Service("store").Secret("postgres", "connection")
+	readOnlyConnection, err := codefly.For(ctx).Service("store").Secret("postgres", "read-only-connection")
 	if err != nil {
-		return nil, w.Wrapf(err, "failed to get connection string")
+		return nil, w.Wrapf(err, "failed to get read-only connection string")
 	}
-	return NewPostgresStoreFromURL(ctx, connection)
+	readWriteConnection, err := codefly.For(ctx).Service("store").Secret("postgres", "read-write-connection")
+	if err != nil {
+		return nil, w.Wrapf(err, "failed to get read-write connection string")
+	}
+	database, closeDatabase, err := scopedpostgres.Open(
+		ctx,
+		readOnlyConnection,
+		readWriteConnection,
+		postgresAuthenticator{},
+		scopedpostgres.WithScopeSettings("app.current_org_id", "app.current_user_id"),
+		scopedpostgres.WithOperationTimeout(5*time.Second),
+	)
+	if err != nil {
+		return nil, w.Wrapf(err, "failed to open authenticated Postgres boundary")
+	}
+	store, err := NewPostgresStoreFromURL(ctx, readWriteConnection)
+	if err != nil {
+		closeDatabase()
+		return nil, err
+	}
+	closeLegacy := store.Close
+	store.Close = func() {
+		closeLegacy()
+		closeDatabase()
+	}
+	store.database = database
+	return store, nil
 }
 
-// NewPostgresStoreFromURL creates a store from an explicit connection URL (for local/test use).
+// NewPostgresStoreFromURL creates a legacy store from one explicit connection
+// URL for local tools and integration tests. Production must use
+// NewPostgresStore, which requires service-postgres's distinct reader/writer
+// capabilities and verified identity boundary.
 //
-// Connection-level role downgrade: codefly's Postgres plugin connects
-// the accounts service as a superuser, which would bypass RLS unconditionally. We
-// install a BeforeAcquire hook that SET ROLEs every checked-out
+// Connection-level role selection: Codefly's Postgres service exports a
+// non-owner read-write principal whose explicit application-role memberships
+// come from runtime-read-write-roles. We install a BeforeAcquire hook that
+// SET ROLEs every checked-out
 // connection to `app_tenant` (a non-superuser, non-BYPASSRLS role
 // created by migration 24). After this:
 //
@@ -51,10 +85,8 @@ func NewPostgresStore(ctx context.Context) (*PostgresStore, error) {
 //     when no app.current_org_id is set — fail-closed.
 //   - WithOrgTx adds `SET LOCAL app.current_org_id = $orgID` inside
 //     a tx so the policy filters to the right tenant.
-//   - WithBypass does `SET LOCAL ROLE NONE` inside its tx, reverting
-//     to the connection's session_user (the original superuser) for
-//     just that tx — workers / cross-tenant scans get superuser
-//     bypass without needing a separate connection.
+//   - WithControlPlane assumes the named app_control_plane role for
+//     cross-tenant work. The session principal must have explicit membership.
 //
 // AfterRelease is the safety net: when the connection returns to the
 // pool we run RESET ROLE in case any caller somehow left the role
@@ -76,8 +108,8 @@ func NewPostgresStoreFromURL(ctx context.Context, connectionURL string) (*Postgr
 
 	poolConfig.BeforeAcquire = func(ctx context.Context, conn *pgx.Conn) bool {
 		// SET ROLE app_tenant — persists for the life of the user's
-		// hold on this connection. Tx-scoped overrides (SET LOCAL
-		// ROLE NONE inside WithBypass) layer on top and revert on
+		// hold on this connection. Tx-scoped role assumptions inside
+		// WithControlPlane layer on top and revert on
 		// commit/rollback automatically.
 		if _, err := conn.Exec(ctx, "SET ROLE app_tenant"); err != nil {
 			wool.Get(ctx).In("BeforeAcquire").Debug("SET ROLE app_tenant failed", wool.ErrField(err))
@@ -143,6 +175,42 @@ type QueryExecutor interface {
 	Exec(ctx context.Context, sql string, arguments ...any) (pgconn.CommandTag, error)
 	Query(ctx context.Context, sql string, args ...any) (pgx.Rows, error)
 	QueryRow(ctx context.Context, sql string, args ...any) pgx.Row
+}
+
+// ReadQueryExecutor is the repository surface shared by legacy transactions
+// and service-postgres ReadTx. It intentionally cannot mutate.
+type ReadQueryExecutor interface {
+	Query(ctx context.Context, sql string, args ...any) (pgx.Rows, error)
+	QueryRow(ctx context.Context, sql string, args ...any) pgx.Row
+}
+
+func (s *PostgresStore) readAs(ctx context.Context, tenantID, userID string, fn func(context.Context, ReadQueryExecutor) error) error {
+	if s.database == nil {
+		return errors.New("authenticated Postgres boundary is unavailable")
+	}
+	if err := auth.RequireVerifiedDatabaseScope(ctx, tenantID, userID); err != nil {
+		return err
+	}
+	verifiedTenantID, verifiedUserID, ok := auth.VerifiedDatabaseIdentity(ctx)
+	if !ok {
+		return auth.ErrVerifiedDatabaseIdentityRequired
+	}
+	// service-postgres supports opaque IDs and therefore compares exact strings.
+	// Accounts accepts equivalent UUID spellings at its domain boundary, then
+	// passes the canonical verified values into the generic capability checks.
+	if err := s.database.RequireTenant(ctx, verifiedTenantID); err != nil {
+		return err
+	}
+	if err := s.database.RequireUser(ctx, verifiedUserID); err != nil {
+		return err
+	}
+	reader, err := s.database.Reader(ctx)
+	if err != nil {
+		return err
+	}
+	return reader.InTransaction(ctx, func(ctx context.Context, tx scopedpostgres.ReadTx) error {
+		return fn(ctx, tx)
+	})
 }
 
 func (s *PostgresStore) getQueryExecutor(ctx context.Context) QueryExecutor {
@@ -219,10 +287,10 @@ func (s *PostgresStore) RegisterUser(ctx context.Context, user *gen.User, identi
 	}, func(tx pgx.Tx) error {
 		// Registration is pre-auth (no user/org context yet) and writes
 		// users + user_identities + the personal org — all RLS-protected.
-		// Elevate to session_user for this tx only, same as the auth resolver;
-		// auto-unwinds on commit/rollback.
-		if _, err := tx.Exec(ctx, "SET LOCAL ROLE NONE"); err != nil {
-			return w.Wrapf(err, "elevate role for registration")
+		// Registration is an explicit control-plane capability because no
+		// tenant or user scope exists until these rows have been created.
+		if _, err := tx.Exec(ctx, "SET LOCAL ROLE "+controlPlaneDatabaseRole); err != nil {
+			return w.Wrapf(err, "assume control-plane role for registration")
 		}
 		ctx = context.WithValue(ctx, "tx", tx)
 		executor := s.getQueryExecutor(ctx)
@@ -387,7 +455,7 @@ func (s *PostgresStore) ClearAll(ctx context.Context) error {
 	// Most tables here are RLS-protected (Phase 2B-2F). A bare DELETE
 	// under app_tenant with no app.current_org_id set returns ZERO
 	// rows — that's fail-closed for production but sabotages test
-	// cleanup. Wrap in WithBypass so the deletes actually fire across
+	// cleanup. Wrap in WithControlPlane so the deletes actually fire across
 	// every tenant.
 	//
 	// Use DELETE instead of TRUNCATE to avoid CASCADE wiping roles
@@ -395,9 +463,12 @@ func (s *PostgresStore) ClearAll(ctx context.Context) error {
 	// ClearAll runs in test cleanup against a possibly partial
 	// schema, and we want best-effort even if some tables haven't
 	// been migrated yet.
-	return s.WithBypass(ctx, func(ctx context.Context) error {
+	return s.WithControlPlane(ctx, func(ctx context.Context) error {
 		executor := s.getQueryExecutor(ctx)
 		for _, stmt := range []string{
+			// gdpr_requests.user_id intentionally has no ON DELETE CASCADE;
+			// remove durable privacy jobs before their subjects.
+			"DELETE FROM gdpr_requests",
 			"DELETE FROM role_assignments",
 			"DELETE FROM role_permissions WHERE role_id IN (SELECT id FROM roles WHERE NOT built_in)",
 			"DELETE FROM roles WHERE NOT built_in",

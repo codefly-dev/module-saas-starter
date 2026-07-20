@@ -2,6 +2,7 @@ package adapters
 
 import (
 	"context"
+	"errors"
 	"strings"
 	"time"
 
@@ -12,15 +13,58 @@ import (
 
 	"github.com/codefly-dev/core/wool"
 
+	"accounts/pkg/auth"
 	"accounts/pkg/business"
-	"accounts/pkg/gen"
+	gen "accounts/pkg/gen/saas/accounts/v1"
+	jobsv1 "accounts/pkg/gen/saas/jobs/v1"
 	"accounts/pkg/infra"
+	"accounts/pkg/jobs"
 )
 
 var service *business.Service
 
 func WithService(s *business.Service) {
 	service = s
+}
+
+func quotaStatusError(err error) error {
+	if errors.Is(err, business.ErrEntitlementQuotaExceeded) {
+		return status.Error(codes.ResourceExhausted, err.Error())
+	}
+	return err
+}
+
+func jobOperationStatusError(err error) error {
+	switch {
+	case err == nil:
+		return nil
+	case errors.Is(err, jobs.ErrInvalidCommand), errors.Is(err, jobs.ErrInvalidPageToken):
+		return status.Error(codes.InvalidArgument, err.Error())
+	case errors.Is(err, jobs.ErrJobNotFound):
+		return status.Error(codes.NotFound, err.Error())
+	case errors.Is(err, jobs.ErrReplayNotAllowed):
+		return status.Error(codes.FailedPrecondition, err.Error())
+	case errors.Is(err, jobs.ErrIdempotencyConflict):
+		return status.Error(codes.AlreadyExists, err.Error())
+	case errors.Is(err, business.ErrJobOperationsUnavailable):
+		return status.Error(codes.Unavailable, err.Error())
+	default:
+		return status.Error(codes.Internal, "job operation failed")
+	}
+}
+
+// userDataIdentity converts an already-authenticated authorization decision
+// into the database identity used by user-scoped operations. Self-service uses
+// RLS; cross-user access requires platform administration and uses the named
+// control-plane role.
+func userDataIdentity(ctx context.Context, actorID, targetID string) (business.Identity, error) {
+	if actorID == targetID {
+		return business.Identity{UserID: actorID}, nil
+	}
+	if err := requirePlatformAdmin(ctx, actorID); err != nil {
+		return business.Identity{}, err
+	}
+	return business.System(), nil
 }
 
 // ============================================================================
@@ -52,17 +96,20 @@ func (s *UserServer) GetUser(ctx context.Context, req *gen.GetUserRequest) (*gen
 	if err != nil {
 		return nil, err
 	}
-	// GetUser is callable on self (any user) or on any user by a platform
-	// admin. Resolve the target's id from the oneof uuid/email before the
-	// self check — otherwise an email lookup can't be authorized.
-	u, err := service.GetUser(ctx, req)
+	var access business.Identity
+	if targetID := req.GetUuid(); targetID != "" {
+		access, err = userDataIdentity(ctx, actorID, targetID)
+	} else {
+		// Email is not an authorization identifier. Cross-account lookup by
+		// email is therefore platform-admin-only; self-service uses the UUID
+		// already present in the authenticated identity.
+		err = requirePlatformAdmin(ctx, actorID)
+		access = business.System()
+	}
 	if err != nil {
 		return nil, err
 	}
-	if err := requireSelfOrPlatformAdmin(ctx, actorID, u.Uuid); err != nil {
-		return nil, err
-	}
-	return u, nil
+	return service.GetUser(ctx, access, req)
 }
 
 func (s *UserServer) ListUsers(ctx context.Context, req *gen.ListUsersRequest) (*gen.ListUsersResponse, error) {
@@ -95,13 +142,14 @@ func (s *UserServer) UpdateUser(ctx context.Context, req *gen.UpdateUserRequest)
 	// (self-service profile edit) or a platform admin (the admin Users table) —
 	// the same gate DeleteUser uses. Previously this ignored req.Uuid and updated
 	// the caller, so an admin could never edit another user.
-	if err := requireSelfOrPlatformAdmin(ctx, actorID, req.Uuid); err != nil {
+	access, err := userDataIdentity(ctx, actorID, req.Uuid)
+	if err != nil {
 		return nil, err
 	}
 	if err := requireScope(ctx, "users:write"); err != nil {
 		return nil, err
 	}
-	return service.UpdateUser(ctx, req.Uuid, req)
+	return service.UpdateUser(ctx, actorID, access, req.Uuid, req)
 }
 
 func (s *UserServer) DeleteUser(ctx context.Context, req *gen.GetUserRequest) (*emptypb.Empty, error) {
@@ -112,20 +160,31 @@ func (s *UserServer) DeleteUser(ctx context.Context, req *gen.GetUserRequest) (*
 	if err != nil {
 		return nil, err
 	}
-	// Resolve the target first so we can authorize against the real uuid
-	// (GetUserRequest is a uuid/email oneof; email lookups must be authz'd
-	// against the resolved id, not the email string).
-	target, err := service.GetUser(ctx, req)
-	if err != nil {
-		return nil, err
+	targetID := req.GetUuid()
+	access := business.Identity{}
+	if targetID != "" {
+		access, err = userDataIdentity(ctx, actorID, targetID)
+	} else {
+		// Deleting by email first resolves a private identifier, so it is an
+		// administrative operation from the start.
+		if err = requirePlatformAdmin(ctx, actorID); err == nil {
+			var target *gen.User
+			target, err = service.GetUser(ctx, business.System(), req)
+			if err == nil {
+				targetID = target.Uuid
+				access = business.System()
+			}
+		}
 	}
-	if err := requireSelfOrPlatformAdmin(ctx, actorID, target.Uuid); err != nil {
+	if err != nil {
 		return nil, err
 	}
 	if err := requireScope(ctx, "users:write"); err != nil {
 		return nil, err
 	}
-	if err := service.DeleteUser(ctx, actorID, req); err != nil {
+	if err := service.DeleteUser(ctx, actorID, access, &gen.GetUserRequest{
+		Identifier: &gen.GetUserRequest_Uuid{Uuid: targetID},
+	}); err != nil {
 		return nil, err
 	}
 	return &emptypb.Empty{}, nil
@@ -143,10 +202,11 @@ func (s *UserServer) AddIdentity(ctx context.Context, req *gen.AddIdentityReques
 	if err != nil {
 		return nil, err
 	}
-	if err := requireSelfOrPlatformAdmin(ctx, actorID, req.UserUuid); err != nil {
+	access, err := userDataIdentity(ctx, actorID, req.UserUuid)
+	if err != nil {
 		return nil, err
 	}
-	return service.AddIdentity(ctx, req)
+	return service.AddIdentity(ctx, actorID, access, req)
 }
 
 // FindUserByIdentity resolves (provider, provider_id) → user. This is
@@ -179,10 +239,11 @@ func (s *UserServer) ListUserIdentities(ctx context.Context, req *gen.ListUserId
 	if err != nil {
 		return nil, err
 	}
-	if err := requireSelfOrPlatformAdmin(ctx, actorID, req.UserUuid); err != nil {
+	access, err := userDataIdentity(ctx, actorID, req.UserUuid)
+	if err != nil {
 		return nil, err
 	}
-	return service.ListUserIdentities(ctx, req)
+	return service.ListUserIdentities(ctx, access, req)
 }
 
 // ============================================================================
@@ -243,8 +304,11 @@ func (s *OrgServer) AddMember(ctx context.Context, req *gen.AddOrgMemberRequest)
 	if !found {
 		return nil, status.Error(codes.Unauthenticated, "user id not found")
 	}
-	if err := service.AddOrgMember(ctx, actorID, req); err != nil {
+	if err := requireOrgAdmin(ctx, actorID, req.OrgId); err != nil {
 		return nil, err
+	}
+	if err := service.AddOrgMember(ctx, actorID, req); err != nil {
+		return nil, quotaStatusError(err)
 	}
 	return &emptypb.Empty{}, nil
 }
@@ -258,6 +322,9 @@ func (s *OrgServer) RemoveMember(ctx context.Context, req *gen.RemoveOrgMemberRe
 	actorID, found := w.UserAuthID()
 	if !found {
 		return nil, status.Error(codes.Unauthenticated, "user id not found")
+	}
+	if err := requireOrgAdmin(ctx, actorID, req.OrgId); err != nil {
+		return nil, err
 	}
 	if err := service.RemoveOrgMember(ctx, actorID, req); err != nil {
 		return nil, err
@@ -325,7 +392,7 @@ func (s *TeamServer) AddMember(ctx context.Context, req *gen.AddTeamMemberReques
 		return nil, err
 	}
 	// Stamp team→org cache so Service.AddTeamMember skips the dup
-	// WithBypass lookup. 4 transactions/request → 3.
+	// WithControlPlane lookup. 4 transactions/request → 3.
 	ctx = business.WithCachedTeamOrgID(ctx, req.TeamId, orgID)
 	if err := service.AddTeamMember(ctx, actorID, req); err != nil {
 		return nil, err
@@ -341,15 +408,11 @@ func (s *TeamServer) RemoveMember(ctx context.Context, req *gen.RemoveTeamMember
 	if err != nil {
 		return nil, err
 	}
-	// A user removing themselves from a team is allowed; otherwise require
-	// team admin.
-	if req.UserId != actorID {
-		orgID, err := requireTeamAdmin(ctx, actorID, req.TeamId)
-		if err != nil {
-			return nil, err
-		}
-		ctx = business.WithCachedTeamOrgID(ctx, req.TeamId, orgID)
+	orgID, err := requireTeamAdmin(ctx, actorID, req.TeamId)
+	if err != nil {
+		return nil, err
 	}
+	ctx = business.WithCachedTeamOrgID(ctx, req.TeamId, orgID)
 	if err := service.RemoveTeamMember(ctx, actorID, req); err != nil {
 		return nil, err
 	}
@@ -360,6 +423,15 @@ func (s *TeamServer) ListMembers(ctx context.Context, req *gen.ListTeamMembersRe
 	if err := Validate(req); err != nil {
 		return nil, err
 	}
+	actorID, err := requireAuth(ctx)
+	if err != nil {
+		return nil, err
+	}
+	orgID, err := requireTeamMember(ctx, actorID, req.TeamId)
+	if err != nil {
+		return nil, err
+	}
+	ctx = business.WithCachedTeamOrgID(ctx, req.TeamId, orgID)
 	return service.ListTeamMembers(ctx, req)
 }
 
@@ -545,6 +617,9 @@ func (s *IdentServer) ResolveIdentity(ctx context.Context, req *gen.ResolveIdent
 	if err := Validate(req); err != nil {
 		return nil, err
 	}
+	if err := requireInternalOrAuth(ctx); err != nil {
+		return nil, err
+	}
 	return service.ResolveIdentity(ctx, req)
 }
 
@@ -559,13 +634,15 @@ func (s *APIKeyServer) CreateAPIKey(ctx context.Context, req *gen.CreateAPIKeyRe
 	if err := requireScope(ctx, "api_keys:write"); err != nil {
 		return nil, err
 	}
-	w := wool.Get(ctx).In("CreateAPIKey")
-	w.GRPC().Inject()
-	userID, found := w.UserAuthID()
-	if !found {
-		return nil, status.Error(codes.Unauthenticated, "user id not found")
+	actorID, err := requireAuth(ctx)
+	if err != nil {
+		return nil, err
 	}
-	return service.CreateAPIKey(ctx, userID, req)
+	if err := requireOrgAdmin(ctx, actorID, req.OrganizationId); err != nil {
+		return nil, err
+	}
+	response, err := service.CreateAPIKey(ctx, actorID, req)
+	return response, quotaStatusError(err)
 }
 
 func (s *APIKeyServer) ListAPIKeys(ctx context.Context, req *gen.ListAPIKeysRequest) (*gen.ListAPIKeysResponse, error) {
@@ -612,6 +689,9 @@ func (s *APIKeyServer) ValidateAPIKey(ctx context.Context, req *gen.ValidateAPIK
 	if err := Validate(req); err != nil {
 		return nil, err
 	}
+	if err := requireInternalOrAuth(ctx); err != nil {
+		return nil, err
+	}
 	return service.ValidateAPIKey(ctx, req.Key)
 }
 
@@ -626,11 +706,73 @@ func (s *AuthServer) Authenticate(ctx context.Context, req *gen.AuthenticateRequ
 	return service.Authenticate(ctx, req)
 }
 
+func (s *AuthServer) CompleteMFAChallenge(ctx context.Context, req *gen.CompleteMFAChallengeRequest) (*gen.CompleteMFAChallengeResponse, error) {
+	if err := Validate(req); err != nil {
+		return nil, err
+	}
+	resp, err := service.CompleteMFAChallenge(ctx, req.MfaToken, req.Code)
+	if errors.Is(err, business.ErrMFAChallengeRejected) {
+		return nil, status.Error(codes.Unauthenticated, "MFA challenge rejected")
+	}
+	return resp, err
+}
+
+func (s *AuthServer) BeginWebAuthnMFAChallenge(ctx context.Context, req *gen.BeginWebAuthnMFAChallengeRequest) (*gen.BeginWebAuthnMFAChallengeResponse, error) {
+	if err := Validate(req); err != nil {
+		return nil, err
+	}
+	ceremonyToken, optionsJSON, err := service.BeginWebAuthnMFAChallenge(ctx, req.MfaToken)
+	if errors.Is(err, business.ErrMFAChallengeRejected) {
+		return nil, status.Error(codes.Unauthenticated, "MFA challenge rejected")
+	}
+	if err != nil {
+		return nil, err
+	}
+	return &gen.BeginWebAuthnMFAChallengeResponse{
+		CeremonyToken:        ceremonyToken,
+		PublicKeyOptionsJson: optionsJSON,
+	}, nil
+}
+
+func (s *AuthServer) CompleteWebAuthnMFAChallenge(ctx context.Context, req *gen.CompleteWebAuthnMFAChallengeRequest) (*gen.CompleteMFAChallengeResponse, error) {
+	if err := Validate(req); err != nil {
+		return nil, err
+	}
+	resp, err := service.CompleteWebAuthnMFAChallenge(ctx, req.MfaToken, req.CeremonyToken, req.CredentialResponseJson)
+	if errors.Is(err, business.ErrMFAChallengeRejected) {
+		return nil, status.Error(codes.Unauthenticated, "MFA challenge rejected")
+	}
+	return resp, err
+}
+
 func (s *AuthServer) RefreshToken(ctx context.Context, req *gen.RefreshTokenRequest) (*gen.RefreshTokenResponse, error) {
 	if err := Validate(req); err != nil {
 		return nil, err
 	}
 	return service.RefreshToken(ctx, req)
+}
+
+func (s *AuthServer) SwitchOrganization(ctx context.Context, req *gen.SwitchOrganizationRequest) (*gen.SwitchOrganizationResponse, error) {
+	if err := Validate(req); err != nil {
+		return nil, err
+	}
+	userID, err := callerID(ctx)
+	if err != nil {
+		return nil, err
+	}
+	sessionID, ok := auth.VerifiedSessionID(ctx)
+	if !ok {
+		return nil, status.Error(codes.Unauthenticated, "verified device session not found")
+	}
+	resp, err := service.SwitchOrganization(ctx, userID, sessionID, req)
+	switch {
+	case errors.Is(err, auth.ErrOrganizationAccessDenied):
+		return nil, status.Error(codes.PermissionDenied, "organization membership required")
+	case errors.Is(err, auth.ErrSessionUnavailable):
+		return nil, status.Error(codes.Unauthenticated, "device session is no longer active")
+	default:
+		return resp, err
+	}
 }
 
 // BeginOAuth issues the server-signed state token for the OAuth code
@@ -764,7 +906,8 @@ func (s *InvitationServer) CreateInvitation(ctx context.Context, req *gen.Create
 	if err := requireOrgAdmin(ctx, actorID, req.OrgId); err != nil {
 		return nil, err
 	}
-	return service.CreateInvitation(ctx, actorID, req)
+	response, err := service.CreateInvitation(ctx, actorID, req)
+	return response, quotaStatusError(err)
 }
 
 func (s *InvitationServer) AcceptInvitation(ctx context.Context, req *gen.AcceptInvitationRequest) (*gen.AcceptInvitationResponse, error) {
@@ -803,6 +946,24 @@ func (s *InvitationServer) RevokeInvitation(ctx context.Context, req *gen.Revoke
 	userID, found := w.UserAuthID()
 	if !found {
 		return nil, status.Error(codes.Unauthenticated, "user id not found")
+	}
+	// The request contains only the invitation id. Resolve its organization
+	// under the narrow bypass, then authorize the actor before the business
+	// update uses bypass. Without this binding any authenticated user could
+	// revoke a foreign tenant's invitation by UUID.
+	var orgID string
+	if err := service.Store().WithControlPlane(ctx, func(ctx context.Context) error {
+		var err error
+		orgID, err = service.Store().GetInvitationOrgID(ctx, req.Id)
+		return err
+	}); err != nil {
+		return nil, status.Errorf(codes.Internal, "cannot resolve invitation organization: %v", err)
+	}
+	if orgID == "" {
+		return nil, status.Error(codes.NotFound, "invitation not found")
+	}
+	if err := requireOrgAdmin(ctx, userID, orgID); err != nil {
+		return nil, err
 	}
 	if err := service.RevokeInvitation(ctx, userID, req); err != nil {
 		return nil, err
@@ -1030,4 +1191,55 @@ func (s *PlatformAdminServer) UpsertFeatureFlag(ctx context.Context, req *gen.Up
 		return nil, status.Error(codes.Unauthenticated, "user id not found")
 	}
 	return service.UpsertFeatureFlag(ctx, actorID, req)
+}
+
+func (s *PlatformAdminServer) GetJobOperations(ctx context.Context, req *jobsv1.GetJobOperationsRequest) (*jobsv1.GetJobOperationsResponse, error) {
+	if err := Validate(req); err != nil {
+		return nil, err
+	}
+	actorID, err := requireAuth(ctx)
+	if err != nil {
+		return nil, err
+	}
+	response, err := service.GetJobOperations(ctx, actorID, req)
+	return response, jobOperationStatusError(err)
+}
+
+func (s *PlatformAdminServer) ListJobs(ctx context.Context, req *jobsv1.ListJobsRequest) (*jobsv1.ListJobsResponse, error) {
+	if err := Validate(req); err != nil {
+		return nil, err
+	}
+	actorID, err := requireAuth(ctx)
+	if err != nil {
+		return nil, err
+	}
+	response, err := service.ListJobs(ctx, actorID, req)
+	return response, jobOperationStatusError(err)
+}
+
+func (s *PlatformAdminServer) GetJob(ctx context.Context, req *jobsv1.GetJobRequest) (*jobsv1.GetJobResponse, error) {
+	if err := Validate(req); err != nil {
+		return nil, err
+	}
+	actorID, err := requireAuth(ctx)
+	if err != nil {
+		return nil, err
+	}
+	response, err := service.GetJob(ctx, actorID, req)
+	return response, jobOperationStatusError(err)
+}
+
+func (s *PlatformAdminServer) ReplayJob(ctx context.Context, req *jobsv1.ReplayJobRequest) (*jobsv1.ReplayJobResponse, error) {
+	if err := Validate(req); err != nil {
+		return nil, err
+	}
+	actorID, err := requireAuth(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if err := requireRecentMFA(ctx); err != nil {
+		return nil, err
+	}
+	response, err := service.ReplayJob(ctx, actorID, req)
+	return response, jobOperationStatusError(err)
 }

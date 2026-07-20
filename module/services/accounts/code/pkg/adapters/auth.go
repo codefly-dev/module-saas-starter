@@ -19,12 +19,15 @@ package adapters
 //	    return nil, err
 //	}
 //
-// The Service facade exposes ListOrgMembers / GetPlatformRole so these
-// helpers can answer membership questions without a dedicated query path.
+// The Service facade exposes indexed membership lookups / GetPlatformRole so
+// these helpers never need to fetch a tenant roster to answer one decision.
 
 import (
 	"context"
 	"errors"
+	"strconv"
+	"strings"
+	"time"
 
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/metadata"
@@ -32,8 +35,9 @@ import (
 
 	"github.com/codefly-dev/core/wool"
 
+	"accounts/pkg/auth"
 	"accounts/pkg/cache"
-	"accounts/pkg/gen"
+	gen "accounts/pkg/gen/saas/accounts/v1"
 )
 
 // orgMembershipCache is wired from adapters.WithService when the cache
@@ -47,10 +51,20 @@ var orgMembershipCache *cache.OrgMembershipCache
 // the rate-limit interceptor falls through to allow-all).
 var rateLimiter *cache.RateLimiter
 
+var recentStepUpMaxAge = auth.DefaultRecentStepUpMaxAge
+
 // WithRateLimiter installs the rate limiter. Idempotent — pass nil
 // to disable. Only safe to call before the gRPC + Connect servers
 // register their interceptors (which the work.go boot order does).
 func WithRateLimiter(r *cache.RateLimiter) { rateLimiter = r }
+
+// SetRecentStepUpMaxAge installs the operator-selected freshness window.
+// Startup validates the Codefly-provided duration before calling this setter.
+func SetRecentStepUpMaxAge(maxAge time.Duration) {
+	if maxAge > 0 {
+		recentStepUpMaxAge = maxAge
+	}
+}
 
 // WithOrgMembershipCache lets the main() wire a cache after the service
 // is constructed. Separate from WithService so caching is opt-in: a
@@ -63,13 +77,17 @@ func WithOrgMembershipCache(c *cache.OrgMembershipCache) {
 // the cache on DB hit. Returns (role, err) where role == "" + err == nil
 // means "verified not-a-member" (still cached as a negative entry).
 //
-// The DB read goes through WithOrgTx scoped to orgID — that's the
-// natural scope for "is this user a member of THIS org", and lets
-// the org_members RLS policy through. We don't use bypass here on
-// purpose: a typo in orgID (or a probe with someone else's org)
-// SHOULD return zero rows, which the cache then memoizes as
-// "not-a-member" — fail-closed.
+// The Store read goes through service-postgres in production. It derives
+// tenant/user from the verified request principal, checks these artifact IDs
+// match, then executes through a read-only database role with RLS scope.
 func lookupMembership(ctx context.Context, orgID, userID string) (string, error) {
+	// A cache is an optimization, not an authority. Validate the requested
+	// tuple against the private identity installed by the trusted auth
+	// interceptor before even constructing a Redis key. service-postgres
+	// repeats this invariant on cache miss before it opens a DB transaction.
+	if err := auth.RequireVerifiedDatabaseScope(ctx, orgID, userID); err != nil {
+		return "", err
+	}
 	if orgMembershipCache != nil {
 		if m, err := orgMembershipCache.Get(ctx, orgID, userID); err == nil {
 			return m.Role, nil
@@ -78,20 +96,13 @@ func lookupMembership(ctx context.Context, orgID, userID string) (string, error)
 		// distinguish: the DB is always truth, and cache failures should
 		// never block an authorized request.
 	}
-	var members []*gen.OrgMembership
-	if err := service.Store().WithOrgTx(ctx, orgID, func(ctx context.Context) error {
-		ms, err := service.Store().ListOrgMembers(ctx, orgID)
-		members = ms
-		return err
-	}); err != nil {
+	membership, err := service.Store().GetOrgMembership(ctx, orgID, userID)
+	if err != nil {
 		return "", err
 	}
 	var role string
-	for _, m := range members {
-		if m.UserId == userID {
-			role = m.Role.String()
-			break
-		}
+	if membership != nil {
+		role = membership.Role.String()
 	}
 	if orgMembershipCache != nil {
 		// Cache negative lookups too — saves DB hits for "not a member"
@@ -99,6 +110,17 @@ func lookupMembership(ctx context.Context, orgID, userID string) (string, error)
 		_ = orgMembershipCache.Set(ctx, orgID, userID, &cache.OrgMembership{Role: role})
 	}
 	return role, nil
+}
+
+func membershipLookupStatus(message string, err error) error {
+	switch {
+	case errors.Is(err, auth.ErrVerifiedDatabaseIdentityRequired):
+		return status.Error(codes.Unauthenticated, "verified authentication context required")
+	case errors.Is(err, auth.ErrVerifiedDatabaseScopeMismatch):
+		return status.Error(codes.PermissionDenied, "requested organization is outside the authenticated scope")
+	default:
+		return status.Errorf(codes.Internal, "%s: %v", message, err)
+	}
 }
 
 // CacheInvalidator adapts the package-level orgMembershipCache to the
@@ -134,17 +156,41 @@ func requireAuth(ctx context.Context) (string, error) {
 // requireOrgMember verifies that actorID is a member of orgID. Returns
 // codes.PermissionDenied otherwise. Uses the org-membership cache if
 // configured (30s TTL + mutation-driven invalidation) to collapse the
-// per-request ListOrgMembers round trip into a single Redis GET.
+// per-request indexed membership lookup into a single Redis GET.
 func requireOrgMember(ctx context.Context, actorID, orgID string) error {
 	if orgID == "" {
 		return status.Error(codes.InvalidArgument, "org_id required")
 	}
 	role, err := lookupMembership(ctx, orgID, actorID)
 	if err != nil {
-		return status.Errorf(codes.Internal, "cannot verify membership: %v", err)
+		return membershipLookupStatus("cannot verify membership", err)
 	}
 	if role == "" {
 		return status.Error(codes.PermissionDenied, "not a member of this organization")
+	}
+	return nil
+}
+
+// requireOrgPermission enforces the descriptor's two-part tenant contract:
+// the caller must be a current member and must hold the named RBAC permission
+// in that organization. API-key scopes remain a separate ceiling enforced by
+// requireScope before this helper is called.
+func requireOrgPermission(ctx context.Context, actorID, orgID, resource, action string) error {
+	if err := requireOrgMember(ctx, actorID, orgID); err != nil {
+		return err
+	}
+	decision, err := service.CheckPermission(ctx, &gen.CheckPermissionRequest{
+		SubjectId:   actorID,
+		SubjectKind: gen.SubjectKind_SUBJECT_KIND_USER,
+		Resource:    resource,
+		Action:      action,
+		OrgId:       orgID,
+	})
+	if err != nil {
+		return status.Errorf(codes.Internal, "cannot verify %s:%s permission: %v", resource, action, err)
+	}
+	if !decision.Allowed {
+		return status.Errorf(codes.PermissionDenied, "requires %s:%s permission", resource, action)
 	}
 	return nil
 }
@@ -161,7 +207,7 @@ func requireOrgAdmin(ctx context.Context, actorID, orgID string) error {
 	}
 	role, err := lookupMembership(ctx, orgID, actorID)
 	if err != nil {
-		return status.Errorf(codes.Internal, "cannot verify membership: %v", err)
+		return membershipLookupStatus("cannot verify membership", err)
 	}
 	if role == "" {
 		return status.Error(codes.PermissionDenied, "not a member of this organization")
@@ -173,23 +219,61 @@ func requireOrgAdmin(ctx context.Context, actorID, orgID string) error {
 	return status.Error(codes.PermissionDenied, "requires org admin or owner role")
 }
 
+// requireBillingAdmin authorizes money-moving organization operations. Owners
+// and organization admins retain their expected access; a member can also be
+// delegated the narrower billing:write permission through a custom role.
+func requireBillingAdmin(ctx context.Context, actorID, orgID string) error {
+	if orgID == "" {
+		return status.Error(codes.InvalidArgument, "org_id required")
+	}
+	if role, err := service.Store().GetPlatformRole(ctx, actorID); err == nil && role == "super_admin" {
+		return nil
+	}
+
+	role, err := lookupMembership(ctx, orgID, actorID)
+	if err != nil {
+		return membershipLookupStatus("cannot verify billing membership", err)
+	}
+	if role == "" {
+		return status.Error(codes.PermissionDenied, "not a member of this organization")
+	}
+	if role == gen.OrgRole_ORG_ROLE_ADMIN.String() || role == gen.OrgRole_ORG_ROLE_OWNER.String() {
+		return nil
+	}
+
+	decision, err := service.CheckPermission(ctx, &gen.CheckPermissionRequest{
+		SubjectId:   actorID,
+		SubjectKind: gen.SubjectKind_SUBJECT_KIND_USER,
+		Resource:    "billing",
+		Action:      "write",
+		OrgId:       orgID,
+	})
+	if err != nil {
+		return status.Errorf(codes.Internal, "cannot verify billing permission: %v", err)
+	}
+	if decision.Allowed {
+		return nil
+	}
+	return status.Error(codes.PermissionDenied, "requires billing:write permission")
+}
+
 // requireTeamAdmin verifies actorID has admin-or-owner role within
 // the team. Platform super_admin bypasses. team_members is RLS-
 // protected (Phase 2C) and the policy JOINs to teams (also RLS), so
 // the lookup has to enter WithOrgTx scoped to the team's owning
-// org. We resolve team→org under WithBypass first since the auth
+// org. We resolve team→org under WithControlPlane first since the auth
 // helper is the entry point and doesn't yet have an org context.
 //
 // On success returns the resolved orgID; rpcs.go handlers stamp
 // that onto ctx via business.WithCachedTeamOrgID so downstream
-// Service methods (AddTeamMember etc.) skip a redundant WithBypass
+// Service methods (AddTeamMember etc.) skip a redundant WithControlPlane
 // → 3 transactions per request instead of 4.
 func requireTeamAdmin(ctx context.Context, actorID, teamID string) (string, error) {
 	if role, err := service.Store().GetPlatformRole(ctx, actorID); err == nil && role == "super_admin" {
 		// Even for super_admin we still need to resolve the org so
 		// the downstream WithOrgTx is correctly scoped.
 		var orgID string
-		if err := service.Store().WithBypass(ctx, func(ctx context.Context) error {
+		if err := service.Store().WithControlPlane(ctx, func(ctx context.Context) error {
 			o, err := service.Store().GetTeamOrgID(ctx, teamID)
 			orgID = o
 			return err
@@ -202,7 +286,7 @@ func requireTeamAdmin(ctx context.Context, actorID, teamID string) (string, erro
 		return "", status.Error(codes.InvalidArgument, "team_id required")
 	}
 	var orgID string
-	if err := service.Store().WithBypass(ctx, func(ctx context.Context) error {
+	if err := service.Store().WithControlPlane(ctx, func(ctx context.Context) error {
 		o, err := service.Store().GetTeamOrgID(ctx, teamID)
 		orgID = o
 		return err
@@ -216,28 +300,48 @@ func requireTeamAdmin(ctx context.Context, actorID, teamID string) (string, erro
 	// freshly created team (zero members) is a bootstrap deadlock: nobody short
 	// of platform super_admin could ever add the FIRST member. (Found by a
 	// consumer's live provisioning flow.)
-	if role, err := lookupMembership(ctx, orgID, actorID); err == nil &&
-		(role == gen.OrgRole_ORG_ROLE_ADMIN.String() || role == gen.OrgRole_ORG_ROLE_OWNER.String()) {
+	role, err := lookupMembership(ctx, orgID, actorID)
+	if err != nil {
+		return "", membershipLookupStatus("cannot verify team organization membership", err)
+	}
+	if role == gen.OrgRole_ORG_ROLE_ADMIN.String() || role == gen.OrgRole_ORG_ROLE_OWNER.String() {
 		return orgID, nil
 	}
-	var members []*gen.TeamMembership
-	if err := service.Store().WithOrgTx(ctx, orgID, func(ctx context.Context) error {
-		ms, err := service.Store().ListTeamMembers(ctx, teamID)
-		members = ms
-		return err
-	}); err != nil {
+	membership, err := service.Store().GetTeamMembership(ctx, orgID, teamID, actorID)
+	if err != nil {
 		return "", status.Errorf(codes.Internal, "cannot verify team membership: %v", err)
 	}
-	for _, m := range members {
-		if m.UserId != actorID {
-			continue
-		}
-		if m.Role == gen.TeamRole_TEAM_ROLE_ADMIN || m.Role == gen.TeamRole_TEAM_ROLE_OWNER {
+	if membership != nil {
+		if membership.Role == gen.TeamRole_TEAM_ROLE_ADMIN || membership.Role == gen.TeamRole_TEAM_ROLE_OWNER {
 			return orgID, nil
 		}
 		return "", status.Error(codes.PermissionDenied, "requires team admin or owner role")
 	}
 	return "", status.Error(codes.PermissionDenied, "not a member of this team")
+}
+
+// requireTeamMember resolves the owning organization and requires the caller
+// to be a member of that organization. Team rosters are tenant-visible, while
+// mutations remain restricted to team/org admins by requireTeamAdmin.
+func requireTeamMember(ctx context.Context, actorID, teamID string) (string, error) {
+	if teamID == "" {
+		return "", status.Error(codes.InvalidArgument, "team_id required")
+	}
+	var orgID string
+	if err := service.Store().WithControlPlane(ctx, func(ctx context.Context) error {
+		o, err := service.Store().GetTeamOrgID(ctx, teamID)
+		orgID = o
+		return err
+	}); err != nil {
+		return "", status.Errorf(codes.Internal, "cannot resolve team org: %v", err)
+	}
+	if orgID == "" {
+		return "", status.Error(codes.PermissionDenied, "team not found or inaccessible")
+	}
+	if err := requireOrgMember(ctx, actorID, orgID); err != nil {
+		return "", err
+	}
+	return orgID, nil
 }
 
 // requirePlatformAdmin verifies actorID has some platform role (support,
@@ -257,61 +361,45 @@ func requirePlatformAdmin(ctx context.Context, actorID string) error {
 // internalToken is the shared secret the auth-sidecar (and other
 // trusted internal callers) carry to hit privileged-internal RPCs
 // like CheckPermission. Set at startup from CODEFLY_INTERNAL_TOKEN.
-// Empty = unset = dev mode (gate falls through, preserving the
-// stand-alone run UX).
+// Empty = unset, and internal calls fail closed.
 //
 // Why a shared secret rather than mTLS: the codefly mesh today
 // terminates network identity at the host level; per-process certs
 // would require a substantial codefly-side change. A shared secret
 // lets us draw a "auth-sidecar can call CheckPermission, anonymous
 // cannot" line without that overhaul. mTLS is the eventual fix.
-var internalToken string
+var (
+	internalToken string
+	gatewayToken  string
+)
 
 // SetInternalToken installs the shared secret. Called once from
 // work.go after reading CODEFLY_INTERNAL_TOKEN. Idempotent.
 func SetInternalToken(token string) { internalToken = token }
 
+// SetGatewayToken installs the credential used to authenticate identity
+// headers stamped by auth-sidecar. Unlike the internal token, this credential
+// never grants access to internal-only RPCs; it only proves the provenance of
+// X-User-Id/X-Org-Id/etc. on tenant-facing transports.
+func SetGatewayToken(token string) { gatewayToken = token }
+
 // requireInternalOrAuth gates a privileged-internal RPC. Caller
 // must present EITHER a valid JWT (standard auth path) OR a
 // matching X-Codefly-Internal-Token header.
-//
-// Dev mode (internalToken=="") permits unauthenticated callers so
-// `codefly run service accounts --stand-alone` still functions. Any
-// deploy that sets CODEFLY_INTERNAL_TOKEN gets the real gate.
 func requireInternalOrAuth(ctx context.Context) error {
 	if id, ok := wool.Get(ctx).UserAuthID(); ok && id != "" {
-		return nil
-	}
-	if internalToken == "" {
 		return nil
 	}
 	md, ok := metadata.FromIncomingContext(ctx)
 	if ok {
 		for _, v := range md.Get("x-codefly-internal-token") {
-			if v != "" && v == internalToken {
+			if validInternalToken(v) {
 				return nil
 			}
 		}
 	}
-	return status.Error(codes.Unauthenticated, "internal endpoint requires JWT or X-Codefly-Internal-Token")
+	return status.Error(codes.Unauthenticated, "internal endpoint requires an authenticated caller or X-Codefly-Internal-Token")
 }
-
-// requireSelfOrPlatformAdmin allows an action if the actor is either
-// operating on themselves or is a platform admin. Used for endpoints
-// like DeleteUser / GetUser.
-func requireSelfOrPlatformAdmin(ctx context.Context, actorID, targetID string) error {
-	if actorID == targetID {
-		return nil
-	}
-	return requirePlatformAdmin(ctx, actorID)
-}
-
-// mfaSatisfiedCtxKey marks a context that came from a JWT bearing
-// `mfa=true`. The Connect/gRPC auth interceptors stamp it after a
-// successful VerifyAccess; consumers read it via mfaSatisfied(ctx).
-type mfaSatisfiedCtxKeyType struct{}
-
-var mfaSatisfiedCtxKey = mfaSatisfiedCtxKeyType{}
 
 // scopesCtxKey holds the comma-separated scope list forwarded by the
 // auth-sidecar (`X-Scopes`) when the caller authenticated with an API
@@ -430,17 +518,24 @@ func trimSpace(s string) string {
 	return s
 }
 
-// withMFASatisfied returns a context flagged as MFA-satisfied. Called
-// only by the auth interceptors after parsing a valid bearer token.
-func withMFASatisfied(ctx context.Context) context.Context {
-	return context.WithValue(ctx, mfaSatisfiedCtxKey, true)
+func assuranceFromTransport(methods, authenticatedAt, level, mfaVerifiedAt string) auth.Assurance {
+	assurance := auth.Assurance{Level: level}
+	for _, method := range strings.Split(methods, ",") {
+		if method = strings.TrimSpace(method); method != "" {
+			assurance.AuthenticationMethods = append(assurance.AuthenticationMethods, method)
+		}
+	}
+	assurance.AuthenticatedAt = parseUnixTimestamp(authenticatedAt)
+	assurance.MFAVerifiedAt = parseUnixTimestamp(mfaVerifiedAt)
+	return assurance
 }
 
-// mfaSatisfied reports whether this request rode on a JWT minted after
-// the user cleared an MFA challenge (or whose user has no MFA device).
-func mfaSatisfied(ctx context.Context) bool {
-	v, _ := ctx.Value(mfaSatisfiedCtxKey).(bool)
-	return v
+func parseUnixTimestamp(raw string) time.Time {
+	seconds, err := strconv.ParseInt(raw, 10, 64)
+	if err != nil || seconds <= 0 {
+		return time.Time{}
+	}
+	return time.Unix(seconds, 0)
 }
 
 // requireMFA gates sensitive operations behind a satisfied MFA challenge
@@ -455,11 +550,11 @@ func mfaSatisfied(ctx context.Context) bool {
 // checkout/portal, role grants, GDPR delete, impersonation, API key
 // creation with broad scopes.
 //
-// The check is fast: a single DB hit (or its cached equivalent in the
-// future) only when the session DIDN'T satisfy MFA — happy path is
-// just a context value read.
+// Refresh does not update MFAVerifiedAt. An enrolled user must therefore
+// have explicit AAL2 evidence no older than DefaultRecentStepUpMaxAge;
+// otherwise the frontend asks them to authenticate again.
 func requireMFA(ctx context.Context, actorID string) error {
-	if mfaSatisfied(ctx) {
+	if auth.AssuranceFromContext(ctx).HasRecentMFA(time.Now(), recentStepUpMaxAge) {
 		return nil
 	}
 	// mfa_devices is RLS-protected by user_id (Phase 2G); wrap in
@@ -479,6 +574,16 @@ func requireMFA(ctx context.Context, actorID string) error {
 		// run; audit captures mfa_satisfied=false. Operators who want
 		// to force-enroll go through a separate "MFA required" feature
 		// flag at the org level (not yet implemented).
+		return nil
+	}
+	return status.Error(codes.FailedPrecondition, "mfa_required")
+}
+
+// requireRecentMFA is the strict step-up gate for money-moving operations.
+// Unlike the general opt-in requireMFA helper, lack of enrollment does not
+// bypass this check: billing administrators must establish fresh AAL2 evidence.
+func requireRecentMFA(ctx context.Context) error {
+	if auth.AssuranceFromContext(ctx).HasRecentMFA(time.Now(), recentStepUpMaxAge) {
 		return nil
 	}
 	return status.Error(codes.FailedPrecondition, "mfa_required")

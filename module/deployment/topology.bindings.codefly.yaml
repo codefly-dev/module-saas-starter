@@ -1,0 +1,196 @@
+version: v1
+module:
+  name: saas-starter
+  namespace: saas-starter
+  description: "SaaS foundation — auth, multi-tenancy, generated RPC policy, RBAC, impersonation, audit"
+interface:
+  - service: auth-sidecar
+    endpoint: grpc
+    visibility: module
+  - service: auth-sidecar
+    endpoint: http
+    visibility: public
+services:
+  - name: accounts
+    version: 0.0.0
+    agent:
+      kind: codefly:service
+      name: go-grpc
+      version: 0.1.11
+      publisher: codefly.dev
+    workspace_configuration_dependencies:
+      - internal-auth
+      - security
+      - workos
+    endpoints:
+      - name: connect
+        api: connect
+        visibility: private
+        port: 8080
+      - name: grpc
+        api: grpc
+        visibility: private
+        port: 9090
+      - name: rest
+        api: rest
+        visibility: private
+        port: 8080
+    dependencies:
+      - service: cache
+        endpoints:
+          - read
+          - write
+      - service: object-storage
+        endpoints:
+          - accounts
+      - service: store
+        endpoints:
+          - tcp
+      - service: vault
+        endpoints:
+          - http
+    public_egress_ports:
+      - 443
+    spec:
+      hot-reload: true
+      rest-endpoint: true
+      connect-endpoint: true
+      with-workspace: true
+  - name: auth-sidecar
+    version: 0.0.0
+    description: |
+      Single ingress + auth brain. Hosts two listeners:
+        - gRPC ext_authz for Envoy
+        - HTTP reverse proxy for public and local traffic
+    agent:
+      kind: codefly:service
+      name: go-grpc
+      version: 0.1.11
+      publisher: codefly.dev
+    workspace_configuration_dependencies:
+      - gateway
+      - internal-auth
+      - security
+    endpoints:
+      - name: grpc
+        api: grpc
+        visibility: module
+        port: 9090
+      - name: http
+        api: http
+        visibility: public
+        port: 8080
+    dependencies:
+      - service: accounts
+        endpoints:
+          - connect
+          - grpc
+          - rest
+      - service: cache
+        endpoints:
+          - write
+      - service: frontend
+        endpoints:
+          - http
+    spec:
+      hot-reload: true
+      rest-endpoint: false
+  - name: cache
+    version: 0.0.0
+    agent:
+      kind: codefly:service
+      name: redis
+      version: 0.0.74
+      publisher: codefly.dev
+    endpoints:
+      - name: read
+        api: tcp
+        visibility: private
+        port: 6379
+      - name: write
+        api: tcp
+        visibility: private
+        port: 6379
+    spec:
+      watch: false
+      with-read-replicas: true
+  - name: frontend
+    version: 0.0.0
+    agent:
+      kind: codefly:service
+      name: nextjs
+      version: 0.0.114
+      publisher: codefly.dev
+    workspace_configuration_dependencies:
+      - workos
+    endpoints:
+      - name: http
+        api: http
+        visibility: module
+        port: 3000
+    dependencies:
+      - service: accounts
+        endpoints:
+          - connect
+          - rest
+    public_egress_ports:
+      - 443
+    spec:
+      # Next dev/Turbopack owns source HMR. Restarting the entire dev server on
+      # every TS/TSX save invalidates browser chunks instead of applying HMR.
+      hot-reload: false
+      auth-provider: workos
+      mode: ssr
+  - name: object-storage
+    version: 0.0.0
+    agent:
+      kind: codefly:service
+      name: s3
+      version: 0.0.16
+      publisher: codefly.dev
+    endpoints:
+      - name: accounts
+        api: tcp
+        visibility: private
+        port: 9000
+    spec:
+      watch: false
+  - name: store
+    version: 0.0.0
+    agent:
+      kind: codefly:service
+      name: postgres
+      version: 0.0.103
+      publisher: codefly.dev
+    endpoints:
+      - name: tcp
+        api: tcp
+        visibility: external
+        port: 5432
+    spec:
+      database-name: users
+      debug: false
+      runtime-read-write-roles:
+        - app_tenant
+        - app_control_plane
+        - app_billing_worker
+        - app_webhook_worker
+        - app_job_worker
+      persist: true
+      silent: true
+      watch: true
+      without-ssl: false
+  - name: vault
+    version: 0.0.0
+    agent:
+      kind: codefly:service
+      name: vault
+      version: 0.0.15
+      publisher: codefly.dev
+    endpoints:
+      - name: http
+        api: http
+        visibility: module
+        port: 8200
+    spec:
+      transit-key: api-keys

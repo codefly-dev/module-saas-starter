@@ -1,40 +1,43 @@
 // Pure domain types for platform admin features. No React imports.
 
+import type { Entitlement as EntitlementKey } from "@/gen/saas/accounts/v1/frontend_catalog";
+
 export interface PlatformAdmin {
-  userId: string;
-  platformRole: string;
-  grantedBy: string;
-  grantedAt?: string;
+	userId: string;
+	platformRole: string;
+	grantedBy: string;
+	grantedAt?: string;
 }
 
 export interface FeatureFlag {
-  name: string;
-  description: string;
-  enabled: boolean;
-  rolloutPercent: number;
-  targetOrgIds: string[];
+	name: string;
+	description: string;
+	enabled: boolean;
+	rolloutPercent: number;
+	targetOrgIds: string[];
 }
 
 export interface SessionInfo {
-  id: string;
-  userId: string;
-  ipAddress: string;
-  deviceInfo: Record<string, string>;
-  createdAt?: string;
-  lastActiveAt?: string;
-  expiresAt?: string;
+	id: string;
+	userId: string;
+	ipAddress: string;
+	deviceInfo: Record<string, string>;
+	createdAt?: string;
+	lastActiveAt?: string;
+	idleExpiresAt?: string;
+	expiresAt?: string;
 }
 
 export interface Entitlement {
-  feature: string;
-  limit: bigint;
-  used: bigint;
-  hasOverride: boolean;
+	feature: EntitlementKey;
+	limit: bigint;
+	used: bigint;
+	hasOverride: boolean;
 }
 
 export interface OrgEntitlements {
-  planName: string;
-  entitlements: Entitlement[];
+	planName: string;
+	entitlements: Entitlement[];
 }
 
 export const PLATFORM_ROLES = ["super_admin", "billing", "support"] as const;

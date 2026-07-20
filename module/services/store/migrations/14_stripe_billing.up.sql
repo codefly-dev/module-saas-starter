@@ -19,16 +19,3 @@ ALTER TABLE organizations
 
 CREATE UNIQUE INDEX idx_organizations_stripe_customer
     ON organizations(stripe_customer_id) WHERE stripe_customer_id IS NOT NULL;
-
--- Idempotency table for Stripe webhook events. Stripe retries on any non-2xx
--- response, so handlers must be idempotent. We key on the event id and
--- short-circuit if we've already processed it.
-CREATE TABLE IF NOT EXISTS "stripe_webhook_events" (
-    id           TEXT PRIMARY KEY,
-    type         TEXT NOT NULL,
-    received_at  TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    processed_at TIMESTAMP WITH TIME ZONE,
-    error        TEXT
-);
-
-CREATE INDEX idx_stripe_webhook_events_type ON stripe_webhook_events(type);

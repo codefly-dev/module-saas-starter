@@ -8,7 +8,7 @@ import (
 
 	"github.com/codefly-dev/core/wool"
 
-	"accounts/pkg/gen"
+	gen "accounts/pkg/gen/saas/accounts/v1"
 )
 
 // KeyHasher hashes API key plaintext into a storable hash.
@@ -23,16 +23,8 @@ func (s *Service) CreateAPIKey(ctx context.Context, userID string, req *gen.Crea
 	if s.hasher == nil {
 		return nil, w.NewError("key hasher not configured")
 	}
-
-	// Check API key quota
-	if s.entitlements != nil {
-		ok, err := s.entitlements.CheckQuota(ctx, req.OrganizationId, "api_keys")
-		if err != nil {
-			return nil, w.Wrapf(err, "cannot check API key quota")
-		}
-		if !ok {
-			return nil, w.NewError("API key limit reached for your plan")
-		}
+	if req.ExpiresAt != nil && !req.ExpiresAt.AsTime().After(time.Now()) {
+		return nil, w.NewError("API key expiration must be in the future")
 	}
 
 	// Generate random key material (32 bytes = 256 bits)
@@ -69,6 +61,13 @@ func (s *Service) CreateAPIKey(ctx context.Context, userID string, req *gen.Crea
 	}
 
 	if err := s.store.WithOrgTx(ctx, req.OrganizationId, func(ctx context.Context) error {
+		quota, err := s.cardinalityQuotaInTx(ctx, req.OrganizationId, EntitlementAPIKeys)
+		if err != nil {
+			return w.Wrapf(err, "cannot check API key quota")
+		}
+		if err := quota.RequireAvailable(); err != nil {
+			return err
+		}
 		return s.store.CreateAPIKey(ctx, key, keyHash)
 	}); err != nil {
 		return nil, w.Wrapf(err, "cannot store API key")
@@ -84,12 +83,10 @@ func (s *Service) CreateAPIKey(ctx context.Context, userID string, req *gen.Crea
 
 // ValidateAPIKey checks a hashed key against the store.
 //
-// Cross-tenant lookup: the plaintext key is presented by an
-// unauthenticated request — we don't yet know which tenant it
-// belongs to. WithBypass elevates so the GetAPIKeyByHash scan can
-// match across all orgs. The returned key carries OrganizationId
-// which the auth interceptor stamps on the request context, so
-// every subsequent op runs as the right tenant.
+// The plaintext key is presented before a request principal exists. The store
+// exposes one narrow bootstrap capability that resolves the key and its current
+// owner policy facts atomically; business code never receives a raw pool or a
+// general cross-tenant transaction.
 func (s *Service) ValidateAPIKey(ctx context.Context, plaintextKey string) (*gen.ValidateAPIKeyResponse, error) {
 	w := wool.Get(ctx).In("ValidateAPIKey")
 
@@ -102,17 +99,14 @@ func (s *Service) ValidateAPIKey(ctx context.Context, plaintextKey string) (*gen
 		return nil, w.Wrapf(err, "cannot hash key")
 	}
 
-	var key *gen.APIKey
-	if err := s.store.WithBypass(ctx, func(ctx context.Context) error {
-		k, err := s.store.GetAPIKeyByHash(ctx, keyHash)
-		key = k
-		return err
-	}); err != nil {
+	authentication, err := s.store.GetAPIKeyAuthentication(ctx, keyHash)
+	if err != nil {
 		return nil, w.Wrapf(err, "cannot look up key")
 	}
-	if key == nil {
+	if authentication == nil || authentication.Key == nil {
 		return &gen.ValidateAPIKeyResponse{Valid: false}, nil
 	}
+	key := authentication.Key
 
 	// Check revoked
 	if key.RevokedAt != nil {
@@ -130,41 +124,45 @@ func (s *Service) ValidateAPIKey(ctx context.Context, plaintextKey string) (*gen
 		scopes = append(scopes, fmt.Sprintf("%s:%s", p.Resource, p.Action))
 	}
 
-	// Identity Claims v1 — a policy-enforcement consumer (e.g. an AI gateway)
-	// builds the caller's full execution context from THIS one response: team
-	// paths (workspaces), RBAC role names, profile attributes. Claims read runs
-	// under the same bypass rationale as the key lookup (pre-auth, cross-tenant);
-	// a claims failure fails the validate (a half-built identity is worse than
-	// a retry).
-	var workspaces, roles []string
-	var attributes map[string]string
-	if err := s.store.WithBypass(ctx, func(ctx context.Context) error {
-		var err error
-		if workspaces, err = s.store.ListTeamPathsForUser(ctx, key.UserId, key.OrganizationId); err != nil {
-			return err
-		}
-		if roles, err = s.store.ListRoleNamesForUser(ctx, key.UserId, key.OrganizationId); err != nil {
-			return err
-		}
-		attributes, err = s.store.GetUserAttributes(ctx, key.UserId)
-		return err
-	}); err != nil {
-		return nil, w.Wrapf(err, "cannot load identity claims")
+	claims := authentication.Claims
+	if !claims.Member {
+		// User-owned keys stop authenticating as soon as their owner leaves the
+		// organization. A stale key can never outlive membership revocation.
+		return &gen.ValidateAPIKeyResponse{Valid: false}, nil
 	}
+	claims.Roles = appendUnique(claims.Roles, claims.OrgRole)
+	claims.Roles = appendUnique(claims.Roles, claims.PlatformRole)
+	if claims.Attributes == nil {
+		claims.Attributes = map[string]string{}
+	}
+	claims.Attributes["org_role"] = claims.OrgRole
+	claims.Attributes["platform_role"] = claims.PlatformRole
 
 	return &gen.ValidateAPIKeyResponse{
 		Valid:          true,
 		UserId:         key.UserId,
 		OrganizationId: key.OrganizationId,
 		Scopes:         scopes,
-		Workspaces:     workspaces,
-		Roles:          roles,
-		Attributes:     attributes,
+		Workspaces:     claims.Workspaces,
+		Roles:          claims.Roles,
+		Attributes:     claims.Attributes,
 		// User-owned API keys authenticate the human principal; service/agent
 		// principals authenticate via the token flow (delegation-minted), not
 		// via user keys — so this is constant here, not a guess.
 		PrincipalKind: "human",
 	}, nil
+}
+
+func appendUnique(values []string, value string) []string {
+	if value == "" {
+		return values
+	}
+	for _, existing := range values {
+		if existing == value {
+			return values
+		}
+	}
+	return append(values, value)
 }
 
 // ListAPIKeys returns non-revoked API keys for an org.
@@ -188,10 +186,10 @@ func (s *Service) ListAPIKeys(ctx context.Context, req *gen.ListAPIKeysRequest) 
 //
 // req only carries Id; we don't know the org. The handler gates on
 // platform-admin (rpcs.go RevokeAPIKey requires `requirePlatformAdmin`),
-// so the caller is privileged-by-policy. WithBypass lets the UPDATE
+// so the caller is privileged-by-policy. WithControlPlane lets the UPDATE
 // hit the row regardless of its tenant.
 //
-// Phase 3 idea: thread orgID into the proto so the WithBypass step
+// Phase 3 idea: thread orgID into the proto so the WithControlPlane step
 // goes away and org-admins can revoke their own keys without
 // platform-admin perms.
 func (s *Service) RevokeAPIKey(ctx context.Context, actorID string, req *gen.RevokeAPIKeyRequest) error {

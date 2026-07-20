@@ -1,0 +1,192 @@
+{
+  "schema_version": "saas.deployment.topology.v1",
+  "module": "saas-starter",
+  "namespace": "saas-starter",
+  "services": [
+    {
+      "name": "accounts",
+      "endpoints": [
+        {
+          "name": "connect",
+          "api": "CODEFLY_API_CONNECT",
+          "visibility": "ENDPOINT_VISIBILITY_PRIVATE",
+          "port": 8080
+        },
+        {
+          "name": "grpc",
+          "api": "CODEFLY_API_GRPC",
+          "visibility": "ENDPOINT_VISIBILITY_PRIVATE",
+          "port": 9090
+        },
+        {
+          "name": "rest",
+          "api": "CODEFLY_API_REST",
+          "visibility": "ENDPOINT_VISIBILITY_PRIVATE",
+          "port": 8080
+        }
+      ],
+      "dependencies": [
+        {
+          "service": "cache",
+          "endpoints": [
+            "read",
+            "write"
+          ]
+        },
+        {
+          "service": "object-storage",
+          "endpoints": [
+            "accounts"
+          ]
+        },
+        {
+          "service": "store",
+          "endpoints": [
+            "tcp"
+          ]
+        },
+        {
+          "service": "vault",
+          "endpoints": [
+            "http"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "auth-sidecar",
+      "endpoints": [
+        {
+          "name": "grpc",
+          "api": "CODEFLY_API_GRPC",
+          "visibility": "ENDPOINT_VISIBILITY_MODULE",
+          "port": 9090
+        },
+        {
+          "name": "http",
+          "api": "CODEFLY_API_HTTP",
+          "visibility": "ENDPOINT_VISIBILITY_PUBLIC",
+          "port": 8080
+        }
+      ],
+      "dependencies": [
+        {
+          "service": "accounts",
+          "endpoints": [
+            "connect",
+            "grpc",
+            "rest"
+          ]
+        },
+        {
+          "service": "cache",
+          "endpoints": [
+            "write"
+          ]
+        },
+        {
+          "service": "frontend",
+          "endpoints": [
+            "http"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "cache",
+      "endpoints": [
+        {
+          "name": "read",
+          "api": "CODEFLY_API_TCP",
+          "visibility": "ENDPOINT_VISIBILITY_PRIVATE",
+          "port": 6379
+        },
+        {
+          "name": "write",
+          "api": "CODEFLY_API_TCP",
+          "visibility": "ENDPOINT_VISIBILITY_PRIVATE",
+          "port": 6379
+        }
+      ]
+    },
+    {
+      "name": "frontend",
+      "endpoints": [
+        {
+          "name": "http",
+          "api": "CODEFLY_API_HTTP",
+          "visibility": "ENDPOINT_VISIBILITY_MODULE",
+          "port": 3000
+        }
+      ],
+      "dependencies": [
+        {
+          "service": "accounts",
+          "endpoints": [
+            "connect",
+            "rest"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "object-storage",
+      "endpoints": [
+        {
+          "name": "accounts",
+          "api": "CODEFLY_API_TCP",
+          "visibility": "ENDPOINT_VISIBILITY_PRIVATE",
+          "port": 9000
+        }
+      ]
+    },
+    {
+      "name": "store",
+      "endpoints": [
+        {
+          "name": "tcp",
+          "api": "CODEFLY_API_TCP",
+          "visibility": "ENDPOINT_VISIBILITY_EXTERNAL",
+          "port": 5432
+        }
+      ]
+    },
+    {
+      "name": "vault",
+      "endpoints": [
+        {
+          "name": "http",
+          "api": "CODEFLY_API_HTTP",
+          "visibility": "ENDPOINT_VISIBILITY_MODULE",
+          "port": 8200
+        }
+      ]
+    }
+  ],
+  "interface_endpoints": [
+    {
+      "service": "auth-sidecar",
+      "endpoint": "grpc",
+      "visibility": "ENDPOINT_VISIBILITY_MODULE"
+    },
+    {
+      "service": "auth-sidecar",
+      "endpoint": "http",
+      "visibility": "ENDPOINT_VISIBILITY_PUBLIC"
+    }
+  ],
+  "public_egress": [
+    {
+      "service": "accounts",
+      "ports": [
+        443
+      ]
+    },
+    {
+      "service": "frontend",
+      "ports": [
+        443
+      ]
+    }
+  ]
+}

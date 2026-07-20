@@ -14,14 +14,14 @@ import (
 // subscription rows even when the SQL has no org_id filter.
 //
 // Three-act test:
-//   1. Seed: each org gets a subscription via WithBypass (skip Service
-//      so we can write any orgID — the WithOrgTx-wrapped Service
-//      paths only let you write to your own org, which is correct
-//      but unhelpful for seed setup).
-//   2. WithOrgTx as A: Service.ListSubscriptions returns A's row only.
-//      ListWebhookSubscriptions called with org B's id from inside
-//      A's tx returns nothing (RLS hides B's row from A).
-//   3. Un-wrapped: zero rows visible (fail-closed).
+//  1. Seed: each org gets a subscription via WithControlPlane (skip Service
+//     so we can write any orgID — the WithOrgTx-wrapped Service
+//     paths only let you write to your own org, which is correct
+//     but unhelpful for seed setup).
+//  2. WithOrgTx as A: Service.ListSubscriptions returns A's row only.
+//     ListWebhookSubscriptions called with org B's id from inside
+//     A's tx returns nothing (RLS hides B's row from A).
+//  3. Un-wrapped: zero rows visible (fail-closed).
 func TestRLS_WebhookSubscriptions_CrossTenantBlocked(t *testing.T) {
 	clearData(t)
 	ctx := testCtx
@@ -29,16 +29,16 @@ func TestRLS_WebhookSubscriptions_CrossTenantBlocked(t *testing.T) {
 	orgA := mustOrgWithOwner(t, ctx, "alice-wh@rls-test.com", "alice-wh-rls", "Acme Wh A")
 	orgB := mustOrgWithOwner(t, ctx, "bob-wh@rls-test.com", "bob-wh-rls", "Acme Wh B")
 
-	require.NoError(t, testStore.WithBypass(ctx, func(ctx context.Context) error {
+	require.NoError(t, testStore.WithControlPlane(ctx, func(ctx context.Context) error {
 		if err := testStore.CreateWebhookSubscription(ctx, &business.WebhookSubscription{
 			ID: business.NewIDString(), OrgID: orgA, URL: "https://a.example.com/hook",
-			Secret: "sa", Events: []string{"user.created"}, Active: true,
+			SecretEncrypted: "encrypted:sa", Events: []string{"user.created"}, Active: true,
 		}); err != nil {
 			return err
 		}
 		return testStore.CreateWebhookSubscription(ctx, &business.WebhookSubscription{
 			ID: business.NewIDString(), OrgID: orgB, URL: "https://b.example.com/hook",
-			Secret: "sb", Events: []string{"user.created"}, Active: true,
+			SecretEncrypted: "encrypted:sb", Events: []string{"user.created"}, Active: true,
 		})
 	}))
 
@@ -87,16 +87,16 @@ func TestRLS_WebhookDeliveries_PolicyJoinsToParent(t *testing.T) {
 	delA := business.NewIDString()
 	delB := business.NewIDString()
 
-	require.NoError(t, testStore.WithBypass(ctx, func(ctx context.Context) error {
+	require.NoError(t, testStore.WithControlPlane(ctx, func(ctx context.Context) error {
 		if err := testStore.CreateWebhookSubscription(ctx, &business.WebhookSubscription{
 			ID: subA, OrgID: orgA, URL: "https://a.example.com/hook",
-			Secret: "sa", Events: []string{"user.created"}, Active: true,
+			SecretEncrypted: "encrypted:sa", Events: []string{"user.created"}, Active: true,
 		}); err != nil {
 			return err
 		}
 		if err := testStore.CreateWebhookSubscription(ctx, &business.WebhookSubscription{
 			ID: subB, OrgID: orgB, URL: "https://b.example.com/hook",
-			Secret: "sb", Events: []string{"user.created"}, Active: true,
+			SecretEncrypted: "encrypted:sb", Events: []string{"user.created"}, Active: true,
 		}); err != nil {
 			return err
 		}

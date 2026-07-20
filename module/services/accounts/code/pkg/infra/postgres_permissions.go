@@ -7,7 +7,7 @@ import (
 	"time"
 
 	"accounts/pkg/business"
-	"accounts/pkg/gen"
+	gen "accounts/pkg/gen/saas/accounts/v1"
 
 	"github.com/codefly-dev/core/wool"
 	"github.com/jackc/pgx/v5"
@@ -18,7 +18,7 @@ func (s *PostgresStore) CreateRole(ctx context.Context, role *gen.Role) error {
 	w := wool.Get(ctx).In("CreateRole")
 
 	// Reuse the caller's tx if one is on context — that's where
-	// WithOrgTx / WithBypass put it, and stacking a fresh BeginTxFunc
+	// WithOrgTx / WithControlPlane put it, and stacking a fresh BeginTxFunc
 	// would lose the SET LOCAL app.current_org_id state and the role
 	// INSERT would fail the WITH CHECK on the polymorphic policy
 	// (Phase 2E migration). Same pattern as postgres_org.go's
@@ -366,28 +366,20 @@ func (s *PostgresStore) ResolveIdentity(ctx context.Context, provider string, pr
 
 	// Auth-flow read: organization_members + role_assignments are
 	// RLS-protected and we don't yet have a tenant on context (the
-	// whole point of resolving is to FIND the tenant). Open a tx +
-	// SET LOCAL ROLE NONE + app.bypass='1' inline so the SELECTs see
-	// all tenants regardless of policy. The defer handles release;
+	// whole point of resolving is to FIND the tenant). Open a tx and
+	// assume app_control_plane so the SELECTs see all tenants. The defer handles release;
 	// queries are read-only so commit-vs-rollback semantics don't
 	// matter for data correctness.
 	//
-	// Setting app.bypass='1' alongside the role-flip is defense-in-
-	// depth: today the role downgrade alone is sufficient (session_user
-	// is a superuser and BYPASSRLS), but any future codefly Postgres
-	// plugin that drops superuser would still leave this path
-	// functional via the GUC. Keeps the invariant that "bypass tx"
-	// always carries both signals — same shape as WithBypass.
+	// Role membership is the explicit capability: app_tenant cannot mint it by
+	// setting a custom session variable.
 	tx, err := s.pool.Begin(ctx)
 	if err != nil {
 		return nil, w.Wrapf(err, "begin tx for resolve")
 	}
 	defer tx.Rollback(ctx) //nolint:errcheck // read-only tx; rollback at end
-	if _, err := tx.Exec(ctx, "SET LOCAL ROLE NONE"); err != nil {
-		return nil, w.Wrapf(err, "elevate role for resolve")
-	}
-	if _, err := tx.Exec(ctx, "SELECT set_config('app.bypass', '1', true)"); err != nil {
-		return nil, w.Wrapf(err, "set bypass GUC for resolve")
+	if _, err := tx.Exec(ctx, "SET LOCAL ROLE "+controlPlaneDatabaseRole); err != nil {
+		return nil, w.Wrapf(err, "assume control-plane role for resolve")
 	}
 	executor := tx
 
@@ -430,7 +422,7 @@ func (s *PostgresStore) ResolveIdentity(ctx context.Context, provider string, pr
 	}
 
 	// Step 4: Get role names (backward compat, deprecated)
-	rows, err := executor.Query(ctx, `
+	roleQuery := `
 		SELECT DISTINCT r.name FROM roles r
 		JOIN role_assignments ra ON r.id = ra.role_id
 		WHERE (
@@ -438,10 +430,18 @@ func (s *PostgresStore) ResolveIdentity(ctx context.Context, provider string, pr
 			OR (ra.subject_kind = 'team' AND ra.subject_id IN (
 				SELECT team_id FROM team_members WHERE user_id = $1
 			))
+		)`
+	var rows pgx.Rows
+	if orgID == "" {
+		// A user may legitimately exist before joining or creating an
+		// organization. Do not bind "" to a UUID column: PostgreSQL parses
+		// parameters by column type before it can evaluate an OR expression.
+		rows, err = executor.Query(ctx, roleQuery+` AND ra.org_id IS NULL`, userID)
+	} else {
+		rows, err = executor.Query(ctx,
+			roleQuery+` AND (ra.org_id IS NULL OR ra.org_id = $2)`, userID, orgID,
 		)
-		AND (ra.org_id IS NULL OR ra.org_id = $2)`,
-		userID, orgID,
-	)
+	}
 	if err != nil {
 		return nil, w.Wrapf(err, "failed to get user roles")
 	}
@@ -454,6 +454,9 @@ func (s *PostgresStore) ResolveIdentity(ctx context.Context, provider string, pr
 			return nil, w.Wrapf(err, "failed to scan role")
 		}
 		roles = append(roles, name)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, w.Wrapf(err, "failed iterating user roles")
 	}
 
 	// Update last_used on identity
@@ -556,4 +559,4 @@ func (s *PostgresStore) ListPlatformAdmins(ctx context.Context) ([]business.Plat
 // ListRoleAssignments — defined on the same store via the org-
 // scoped path — replaces it. If a future caller needs cross-org
 // "all assignments for user X", add a new method that's explicitly
-// WithBypass-only and uses a distinct name.)
+// WithControlPlane-only and uses a distinct name.)

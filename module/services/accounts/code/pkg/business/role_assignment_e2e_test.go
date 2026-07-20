@@ -40,7 +40,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"accounts/pkg/business"
-	"accounts/pkg/gen"
+	gen "accounts/pkg/gen/saas/accounts/v1"
 )
 
 func TestE2E_RoleAssignmentFlow(t *testing.T) {
@@ -147,7 +147,7 @@ func TestE2E_RoleAssignmentFlow(t *testing.T) {
 	require.False(t, postRevoke.Allowed,
 		"after RevokeRole, member should no longer have deployments:write")
 
-	// --- Step 8: audit trail. Let the AsyncAuditEmitter drain.
+	// --- Step 8: audit trail.
 	time.Sleep(200 * time.Millisecond)
 
 	auditEvents, _, _, err := testService.QueryAuditLog(ctx,

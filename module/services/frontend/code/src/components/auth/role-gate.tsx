@@ -26,47 +26,37 @@
  *     </RoleGate>
  */
 
-import { ReactNode } from "react";
+import type { ReactNode } from "react";
+import type { Permission } from "@/gen/saas/accounts/v1/frontend_catalog";
 import { useAuth } from "@/lib/auth";
-import { hasPermission, isAdmin, isSuperAdmin } from "@/lib/permissions";
+import { canPresent } from "@/lib/plugins/presentation";
 
 type RequireLevel = "admin" | "super_admin";
 
 interface RoleGateProps {
-  /** Required role tier ("admin" = any admin; "super_admin" = only super). */
-  require?: RequireLevel;
-  /** Alternative to `require`: a granular "resource:action" permission. */
-  requirePermission?: string;
-  /** What to show when the gate fails. Defaults to `null` (hide silently). */
-  fallback?: ReactNode;
-  children: ReactNode;
+	/** Required role tier ("admin" = any admin; "super_admin" = only super). */
+	require?: RequireLevel;
+	/** Alternative to `require`: a granular "resource:action" permission. */
+	requirePermission?: Permission;
+	/** What to show when the gate fails. Defaults to `null` (hide silently). */
+	fallback?: ReactNode;
+	children: ReactNode;
 }
 
 export function RoleGate({
-  require,
-  requirePermission,
-  fallback = null,
-  children,
+	require,
+	requirePermission,
+	fallback = null,
+	children,
 }: RoleGateProps) {
-  const { platformRole, orgRole, isAuthenticated } = useAuth();
+	const { platformRole, orgRole, isAuthenticated } = useAuth();
 
-  if (!isAuthenticated) {
-    return <>{fallback}</>;
-  }
+	const allowed = canPresent(
+		{ requiredRole: require, requiredPermission: requirePermission },
+		{ isAuthenticated, platformRole, orgRole },
+	);
 
-  let allowed = true;
-
-  if (require === "super_admin") {
-    allowed = isSuperAdmin(platformRole);
-  } else if (require === "admin") {
-    allowed = isAdmin(platformRole, orgRole);
-  }
-
-  if (allowed && requirePermission) {
-    allowed = hasPermission(platformRole, orgRole, requirePermission);
-  }
-
-  return allowed ? <>{children}</> : <>{fallback}</>;
+	return allowed ? <>{children}</> : <>{fallback}</>;
 }
 
 /**
@@ -74,15 +64,12 @@ export function RoleGate({
  * a button rather than hiding it, deciding between two renderings, etc.).
  */
 export function useCanAccess(opts: {
-  require?: RequireLevel;
-  requirePermission?: string;
+	require?: RequireLevel;
+	requirePermission?: Permission;
 }): boolean {
-  const { platformRole, orgRole, isAuthenticated } = useAuth();
-  if (!isAuthenticated) return false;
-  if (opts.require === "super_admin" && !isSuperAdmin(platformRole)) return false;
-  if (opts.require === "admin" && !isAdmin(platformRole, orgRole)) return false;
-  if (opts.requirePermission && !hasPermission(platformRole, orgRole, opts.requirePermission)) {
-    return false;
-  }
-  return true;
+	const { platformRole, orgRole, isAuthenticated } = useAuth();
+	return canPresent(
+		{ requiredRole: opts.require, requiredPermission: opts.requirePermission },
+		{ isAuthenticated, platformRole, orgRole },
+	);
 }

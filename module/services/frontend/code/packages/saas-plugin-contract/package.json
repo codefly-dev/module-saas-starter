@@ -1,0 +1,39 @@
+{
+	"name": "@codefly/saas-plugin-contract",
+	"version": "2.1.0",
+	"description": "React-free serializable frontend plugin metadata and composition for the Codefly SaaS host.",
+	"type": "module",
+	"sideEffects": false,
+	"files": [
+		"dist",
+		"proto",
+		"README.md"
+	],
+	"exports": {
+		".": {
+			"types": "./dist/index.d.ts",
+			"import": "./dist/index.js",
+			"default": "./dist/index.js"
+		},
+		"./capabilities": {
+			"types": "./dist/capabilities.d.ts",
+			"import": "./dist/capabilities.js",
+			"default": "./dist/capabilities.js"
+		}
+	},
+	"scripts": {
+		"build": "tsc -p tsconfig.json",
+		"test": "vitest run --config vitest.config.ts"
+	},
+	"dependencies": {
+		"@bufbuild/protobuf": "2.11.0"
+	},
+	"devDependencies": {
+		"typescript": "5.9.3",
+		"vitest": "^3.0.0"
+	},
+	"publishConfig": {
+		"access": "public"
+	},
+	"license": "Apache-2.0"
+}

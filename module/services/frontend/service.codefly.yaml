@@ -1,20 +1,22 @@
+# Code generated from deployment/topology.bindings.codefly.yaml and services/frontend/code/server/plugin-service-allowlist.generated.json. DO NOT EDIT.
 name: frontend
 version: 0.0.0
 agent:
     kind: codefly:service
     name: nextjs
-    version: latest
+    version: 0.0.114
     publisher: codefly.dev
 service-dependencies:
     - name: accounts
+      endpoints:
+        - name: connect
+        - name: rest
 workspace-configuration-dependencies:
     - workos
 endpoints:
     - name: http
-      api: http
-      # Internal only — public traffic enters via auth-sidecar gateway.
       visibility: module
 spec:
-    hot-reload: true
     auth-provider: workos
+    hot-reload: false
     mode: ssr

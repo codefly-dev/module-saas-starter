@@ -1,0 +1,42 @@
+version: v2
+clean: true
+managed:
+  enabled: true
+  disable:
+    - file_option: go_package
+      module: buf.build/googleapis/googleapis
+    - file_option: go_package
+      module: buf.build/bufbuild/protovalidate
+  override:
+    - file_option: go_package_prefix
+      value: accounts/pkg/gen
+plugins:
+  # Exact go-run module versions avoid ambient workstation binaries while
+  # keeping Codefly's local path independent of anonymous BSR plugin quotas.
+  - local: [go, run, google.golang.org/protobuf/cmd/protoc-gen-go@v1.36.11]
+    out: code/pkg/gen
+    opt: paths=source_relative
+  - local: [go, run, google.golang.org/grpc/cmd/protoc-gen-go-grpc@v1.6.1]
+    out: code/pkg/gen
+    opt: paths=source_relative
+  - local: [go, run, github.com/grpc-ecosystem/grpc-gateway/v2/protoc-gen-grpc-gateway@v2.29.0]
+    out: code/pkg/gen
+    opt: paths=source_relative
+  - local: [go, run, connectrpc.com/connect/cmd/protoc-gen-connect-go@v1.20.0]
+    out: code/pkg/gen
+    opt: paths=source_relative
+  - local: [go, run, github.com/grpc-ecosystem/grpc-gateway/v2/protoc-gen-openapiv2@v2.29.0]
+    # Raw protoc output is an ignored intermediate. The REST catalog validates
+    # every operation and publishes only the checked public document.
+    out: .cache/openapi
+    strategy: all
+    opt:
+      - allow_merge=true
+      - merge_file_name=api
+  - local: [npx, --prefix, ../frontend/code, --no-install, protoc-gen-es]
+    out: ../frontend/code/src/gen
+    strategy: all
+    include_imports: true
+    opt:
+      - target=ts
+      - import_extension=none

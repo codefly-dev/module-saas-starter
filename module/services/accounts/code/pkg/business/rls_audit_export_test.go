@@ -8,7 +8,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"accounts/pkg/business"
-	"accounts/pkg/gen"
+	gen "accounts/pkg/gen/saas/accounts/v1"
 )
 
 // TestRLS_AuditExportConfigs_CrossTenantBlocked is the load-bearing
@@ -16,7 +16,7 @@ import (
 // org A queries via the api and MUST see only its own row, no
 // matter how the SQL is written under the hood.
 //
-// We seed via testStore.UpsertAuditExportConfig under WithBypass to
+// We seed via testStore.UpsertAuditExportConfig under WithControlPlane to
 // skip the SaveAuditExportConfig pre-flight (which calls real S3).
 // The seed path goes through the same RLS-policy'd table writes —
 // just bypass-mode so we can write any orgID.
@@ -32,7 +32,7 @@ func TestRLS_AuditExportConfigs_CrossTenantBlocked(t *testing.T) {
 	orgB := mustOrgWithOwner(t, ctx, "bob@rls-test.com", "bob-rls", "Acme B")
 
 	// Seed both orgs' configs as bypass (skip Service pre-flight).
-	require.NoError(t, testStore.WithBypass(ctx, func(ctx context.Context) error {
+	require.NoError(t, testStore.WithControlPlane(ctx, func(ctx context.Context) error {
 		if err := testStore.UpsertAuditExportConfig(ctx, &business.AuditExportConfig{
 			ID: business.NewIDString(), OrgID: orgA, Bucket: "bucket-a",
 			Region: "us-east-1", AccessKeyID: "x", SecretAccessKey: "y",
@@ -88,12 +88,12 @@ func TestRLS_AuditExportConfigs_CrossTenantBlocked(t *testing.T) {
 
 // TestRLS_AuditExporter_BypassWorks pins the worker path. The
 // audit-exporter's tick() does a cross-tenant scan
-// (ListDueAuditExportConfigs) inside WithBypass — that scan MUST
+// (ListDueAuditExportConfigs) inside WithControlPlane — that scan MUST
 // see all enabled rows regardless of which org's context is on the
 // caller.
 //
 // Companion assertion: an un-wrapped Store call (no WithOrgTx, no
-// WithBypass) MUST return zero rows. The pool's BeforeAcquire hook
+// WithControlPlane) MUST return zero rows. The pool's BeforeAcquire hook
 // SET ROLEs every connection to app_tenant before handing it out,
 // so a forgotten wrapper means current_user is app_tenant and the
 // missing app.current_org_id GUC means the policy filters out
@@ -106,7 +106,7 @@ func TestRLS_AuditExporter_BypassWorks(t *testing.T) {
 	orgA := mustOrgWithOwner(t, ctx, "alice2@rls-test.com", "alice2-rls", "Acme A2")
 	orgB := mustOrgWithOwner(t, ctx, "bob2@rls-test.com", "bob2-rls", "Acme B2")
 
-	require.NoError(t, testStore.WithBypass(ctx, func(ctx context.Context) error {
+	require.NoError(t, testStore.WithControlPlane(ctx, func(ctx context.Context) error {
 		if err := testStore.UpsertAuditExportConfig(ctx, &business.AuditExportConfig{
 			ID: business.NewIDString(), OrgID: orgA, Bucket: "ba",
 			Region: "us-east-1", AccessKeyID: "x", SecretAccessKey: "y",
@@ -121,18 +121,18 @@ func TestRLS_AuditExporter_BypassWorks(t *testing.T) {
 		})
 	}))
 
-	// WithBypass: see all enabled rows. That's the worker path's
+	// WithControlPlane: see all enabled rows. That's the worker path's
 	// job (poll all orgs' configs to find due ones).
 	var withBypass []*business.AuditExportConfig
-	require.NoError(t, testStore.WithBypass(context.Background(), func(ctx context.Context) error {
+	require.NoError(t, testStore.WithControlPlane(context.Background(), func(ctx context.Context) error {
 		c, err := testStore.ListDueAuditExportConfigs(ctx, time.Now())
 		withBypass = c
 		return err
 	}))
 	require.GreaterOrEqual(t, len(withBypass), 2,
-		"WithBypass must see all orgs' due configs (saw %d)", len(withBypass))
+		"WithControlPlane must see all orgs' due configs (saw %d)", len(withBypass))
 
-	// Un-wrapped path: no WithOrgTx, no WithBypass → connection
+	// Un-wrapped path: no WithOrgTx, no WithControlPlane → connection
 	// runs as app_tenant (via BeforeAcquire), no app.current_org_id
 	// set → policy filters out everything → ZERO ROWS. This is the
 	// fail-closed property the role-downgrade pattern delivers.

@@ -27,7 +27,7 @@ func signEvent(t *testing.T, payload []byte, secret string, ts int64) string {
 	return fmt.Sprintf("t=%d,v1=%s", ts, hex.EncodeToString(mac.Sum(nil)))
 }
 
-const testSecret = "whsec_test_abcdef123456"
+const testSecret = "whsec_test_abcdef123456" // gitleaks:allow -- synthetic test fixture
 
 // ============================================================================
 // VerifySignature

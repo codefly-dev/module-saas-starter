@@ -15,17 +15,18 @@ import (
 // portal flow, or admin Disabled it and we cleared the row).
 //
 // Status reflects the WorkOS Connections lifecycle as we observe it:
-//   ""             — no record / never configured
-//   "linked"       — admin portal link minted, IdP setup pending
-//   "active"       — connection live, users in domain SSO-routed
-//   "disabled"     — admin paused; row preserved so re-enable is fast
+//
+//	""             — no record / never configured
+//	"linked"       — admin portal link minted, IdP setup pending
+//	"active"       — connection live, users in domain SSO-routed
+//	"disabled"     — admin paused; row preserved so re-enable is fast
 type OrgSSOConfig struct {
-	OrgID              string
-	Provider           string
-	ConnectionID       string
-	OrganizationID     string // WorkOS-side Organization id
-	Status             string
-	ConfiguredAt       *time.Time
+	OrgID          string
+	Provider       string
+	ConnectionID   string
+	OrganizationID string // WorkOS-side Organization id
+	Status         string
+	ConfiguredAt   *time.Time
 }
 
 // GetOrgSSO returns the org's SSO state. Returns (nil, nil) when no
@@ -63,14 +64,16 @@ func (s *Service) StartSSOSetup(ctx context.Context, actorID, orgID, returnURL s
 		// transitions to the post-setup view (and an operator can
 		// click Disable to test that path).
 		now := time.Now()
-		_ = s.store.WithOrgTx(ctx, orgID, func(ctx context.Context) error {
+		if err := s.store.WithOrgTx(ctx, orgID, func(ctx context.Context) error {
 			return s.store.UpsertOrgSSO(ctx, &OrgSSOConfig{
 				OrgID:        orgID,
 				Provider:     "workos",
 				Status:       "linked",
 				ConfiguredAt: &now,
 			})
-		})
+		}); err != nil {
+			return "", fmt.Errorf("persist stub SSO setup: %w", err)
+		}
 		s.emit(ctx, actorID, "user", "sso.setup.started", "organization", orgID, orgID)
 		return returnURL + "?demo=1", nil
 	}
@@ -166,8 +169,8 @@ const workosBase = "https://api.workos.com"
 // picks which IdP they wire in the portal.
 func (c *workosClient) createOrganization(ctx context.Context, externalID string) (string, error) {
 	body, _ := json.Marshal(map[string]any{
-		"name":        externalID,
-		"external_id": externalID,
+		"name":                                externalID,
+		"external_id":                         externalID,
 		"allow_profiles_outside_organization": false,
 	})
 	req, _ := http.NewRequestWithContext(ctx, http.MethodPost,

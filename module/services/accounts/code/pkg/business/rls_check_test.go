@@ -42,7 +42,7 @@ func TestRLS_WithOrgTx_SwitchesToNonSuperuser(t *testing.T) {
 		// Use raw pool through the bypass to read role attrs (the
 		// connection's static identity, not the tx-local SET ROLE).
 		var exists bool
-		require.NoError(t, testStore.WithBypass(context.Background(), func(ctx context.Context) error {
+		require.NoError(t, testStore.WithControlPlane(context.Background(), func(ctx context.Context) error {
 			return testStore.Pool().QueryRow(ctx,
 				`SELECT EXISTS(SELECT 1 FROM pg_roles WHERE rolname = 'app_tenant'
 				   AND NOT rolsuper AND NOT rolbypassrls)`).Scan(&exists)
@@ -58,7 +58,7 @@ func TestRLS_WithOrgTx_SwitchesToNonSuperuser(t *testing.T) {
 // other RLS test is meaningless — the policy isn't there to begin
 // with.
 func TestRLS_PolicyInstalled(t *testing.T) {
-	require.NoError(t, testStore.WithBypass(context.Background(), func(ctx context.Context) error {
+	require.NoError(t, testStore.WithControlPlane(context.Background(), func(ctx context.Context) error {
 		var enabled, forced bool
 		err := testStore.Pool().QueryRow(ctx, `
 			SELECT relrowsecurity, relforcerowsecurity

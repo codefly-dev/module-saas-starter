@@ -1,0 +1,206 @@
+syntax = "proto3";
+
+package saas.accounts.v1;
+
+import "buf/validate/validate.proto";
+import "google/protobuf/timestamp.proto";
+
+// ============================================================================
+// Core messages
+// ============================================================================
+
+message VersionRequest {}
+
+message VersionResponse {
+  string version = 1 [(buf.validate.field).string.min_len = 1];
+}
+
+// User represents a user in the system
+message User {
+  string uuid = 1 [(buf.validate.field).string.uuid = true];
+  string primary_email = 2 [(buf.validate.field).string.email = true];
+  google.protobuf.Timestamp created_at = 3;
+  google.protobuf.Timestamp updated_at = 4;
+  google.protobuf.Timestamp last_login = 5;
+  UserStatus status = 6;
+  map<string, string> profile = 7;
+  bool email_verified = 8;
+}
+
+// UserIdentity represents a user's authentication method
+message UserIdentity {
+  string uuid = 1;
+  string user_uuid = 2;
+  string provider = 3 [(buf.validate.field).string = {
+    min_len: 1
+    max_len: 50
+    pattern: "^[a-zA-Z0-9_-]+$"
+  }];
+  string provider_id = 4 [(buf.validate.field).string = {
+    min_len: 1
+    max_len: 255
+  }];
+  string provider_email = 5 [(buf.validate.field).string.email = true];
+  google.protobuf.Timestamp created_at = 6;
+  google.protobuf.Timestamp last_used = 7;
+  map<string, string> provider_data = 8;
+  bool email_verified = 9;
+}
+
+enum UserStatus {
+  USER_STATUS_UNSPECIFIED = 0;
+  USER_STATUS_ACTIVE = 1;
+  USER_STATUS_INACTIVE = 2;
+  USER_STATUS_SUSPENDED = 3;
+  USER_STATUS_DELETED = 4;
+}
+
+// ============================================================================
+// Organization
+// ============================================================================
+
+message Organization {
+  string id = 1 [(buf.validate.field).string.uuid = true];
+  string name = 2 [(buf.validate.field).string.min_len = 1];
+  string slug = 3 [(buf.validate.field).string = {
+    min_len: 1
+    max_len: 63
+    pattern: "^[a-z0-9][a-z0-9-]*[a-z0-9]$"
+  }];
+  string owner_id = 4 [(buf.validate.field).string.uuid = true];
+  google.protobuf.Timestamp created_at = 5;
+}
+
+message OrgMembership {
+  string org_id = 1;
+  string user_id = 2;
+  OrgRole role = 3;
+  google.protobuf.Timestamp joined_at = 4;
+}
+
+enum OrgRole {
+  ORG_ROLE_UNSPECIFIED = 0;
+  ORG_ROLE_MEMBER = 1;
+  ORG_ROLE_ADMIN = 2;
+  ORG_ROLE_OWNER = 3;
+}
+
+// ============================================================================
+// Team
+// ============================================================================
+
+// Teams form a strict tree within an org: parent_team_id is the authoritative
+// edge; path is the materialized slug-path ("engineering/platform"), unique per
+// org, maintained on write. Membership is literal (you belong to the teams you
+// joined); consumers that want subtree semantics expand the path (a member of
+// "engineering/platform" is, by expansion, under "engineering").
+message Team {
+  string id = 1 [(buf.validate.field).string.uuid = true];
+  string org_id = 2 [(buf.validate.field).string.uuid = true];
+  string name = 3 [(buf.validate.field).string.min_len = 1];
+  string description = 4;
+  google.protobuf.Timestamp created_at = 5;
+  // Empty for a root team.
+  string parent_team_id = 6;
+  // The team's own path segment: lowercase slug, derived from name if not given.
+  string slug = 7;
+  // Full slug-path from the root, e.g. "engineering/platform". Server-derived.
+  string path = 8;
+}
+
+message TeamMembership {
+  string team_id = 1;
+  string user_id = 2;
+  TeamRole role = 3;
+  google.protobuf.Timestamp joined_at = 4;
+}
+
+enum TeamRole {
+  TEAM_ROLE_UNSPECIFIED = 0;
+  TEAM_ROLE_MEMBER = 1;
+  TEAM_ROLE_ADMIN = 2;
+  TEAM_ROLE_OWNER = 3;
+}
+
+// ============================================================================
+// Roles & Permissions (generic resource:action model)
+// ============================================================================
+
+message Permission {
+  string resource = 1 [(buf.validate.field).string.min_len = 1];
+  string action = 2 [(buf.validate.field).string.min_len = 1];
+}
+
+message Role {
+  string id = 1 [(buf.validate.field).string.uuid = true];
+  string name = 2 [(buf.validate.field).string.min_len = 1];
+  string description = 3;
+  repeated Permission permissions = 4;
+  bool built_in = 5;
+  string org_id = 6; // empty = global
+}
+
+message RoleAssignment {
+  string id = 1;
+  string subject_id = 2 [(buf.validate.field).string.uuid = true];
+  SubjectKind subject_kind = 3;
+  string role_id = 4 [(buf.validate.field).string.uuid = true];
+  string org_id = 5;
+  string scope = 6; // optional fine-grained scope
+  google.protobuf.Timestamp assigned_at = 7;
+}
+
+enum SubjectKind {
+  SUBJECT_KIND_UNSPECIFIED = 0;
+  SUBJECT_KIND_USER = 1;
+  SUBJECT_KIND_TEAM = 2;
+}
+
+// PrincipalKind classifies a principal — humans, services, or agents
+// — for filtering/UI without affecting authorization. The auth layer
+// itself treats every Principal uniformly. ANY change here MUST stay
+// in sync with the SQL CHECK constraint on principals.kind and with
+// codefly's policy.Principal Kind constants.
+enum PrincipalKind {
+  PRINCIPAL_KIND_UNSPECIFIED = 0;
+  PRINCIPAL_KIND_HUMAN = 1;
+  PRINCIPAL_KIND_SERVICE = 2;
+  PRINCIPAL_KIND_AGENT = 3;
+}
+
+// Principal mirrors the principals table 1:1 — the unified identity
+// row used by every action, audit event, and delegation grant.
+//
+// id matches users.uuid for kind=HUMAN, api_keys.id for kind=SERVICE,
+// and is a fresh server-generated UUID for kind=AGENT. We do NOT
+// enforce these as foreign keys at the DB level (independent
+// lifecycles); the equality is convention and the backfill migration.
+message Principal {
+  string id = 1 [(buf.validate.field).string.uuid = true];
+  PrincipalKind kind = 2;
+  string display_name = 3 [(buf.validate.field).string.min_len = 1];
+  // org_id NULL/empty for kind=HUMAN (cross-org); required for
+  // SERVICE and AGENT. Server-side validation enforces.
+  string org_id = 4;
+  // agent_identifier is "publisher/name:version" for kind=AGENT;
+  // empty otherwise. Required when kind=AGENT.
+  string agent_identifier = 5;
+  google.protobuf.Timestamp created_at = 6;
+  google.protobuf.Timestamp revoked_at = 7;
+  string revoked_reason = 8;
+  // The principal that created this one — the authorship root a policy
+  // consumer chains authority back to. Empty = a root principal (humans).
+  string created_by = 9;
+}
+
+// Decision is what the PDP returns for a Decide call. ALLOW means
+// proceed; DENY means refuse with reason; REQUIRE_APPROVAL means
+// the action is conditionally permitted but needs a grantor's
+// approval first (used by the M7+ synchronous escalation flow). The
+// agent SDK turns REQUIRE_APPROVAL into a RequestEscalation call.
+enum Decision {
+  DECISION_UNSPECIFIED = 0;
+  DECISION_ALLOW = 1;
+  DECISION_DENY = 2;
+  DECISION_REQUIRE_APPROVAL = 3;
+}

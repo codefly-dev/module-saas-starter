@@ -58,8 +58,42 @@ func TestRefreshCookie_AuthResponse_StripsTokenAndSetsCookie(t *testing.T) {
 	if !rt.HttpOnly {
 		t.Fatal("refresh cookie must be HttpOnly")
 	}
+	if !rt.Secure {
+		t.Fatal("refresh cookie must always be Secure")
+	}
 	if rt.SameSite != http.SameSiteStrictMode {
 		t.Fatal("refresh cookie must be SameSite=Strict")
+	}
+}
+
+func TestRefreshCookie_MFACompletionResponse_StripsTokenAndSetsCookie(t *testing.T) {
+	h := refreshTokenCookie(downstream(`{"accessToken":"at","refreshToken":"rt-after-mfa"}`))
+	req := httptest.NewRequest(http.MethodPost, "/v1/auth/mfa/complete", strings.NewReader(`{}`))
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, req)
+
+	if strings.Contains(rec.Body.String(), "rt-after-mfa") {
+		t.Fatalf("MFA completion exposed refresh token: %s", rec.Body.String())
+	}
+	for _, cookie := range rec.Result().Cookies() {
+		if cookie.Name == refreshTokenCookieName && cookie.Value == "rt-after-mfa" && cookie.HttpOnly && cookie.Secure {
+			return
+		}
+	}
+	t.Fatal("MFA completion did not move refresh token into the secure httpOnly cookie")
+}
+
+func TestRefreshCookie_DoesNotTrustForwardedProto(t *testing.T) {
+	h := refreshTokenCookie(downstream(`{"accessToken":"at","refreshToken":"rt-secret"}`))
+	req := httptest.NewRequest(http.MethodPost, "/v1/auth/authenticate", strings.NewReader(`{}`))
+	req.Header.Set("X-Forwarded-Proto", "http")
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, req)
+
+	for _, cookie := range rec.Result().Cookies() {
+		if cookie.Name == refreshTokenCookieName && !cookie.Secure {
+			t.Fatal("caller-controlled X-Forwarded-Proto must not disable Secure cookies")
+		}
 	}
 }
 
@@ -75,6 +109,9 @@ func TestRefreshCookie_RefreshRequest_InjectsCookieIntoBody(t *testing.T) {
 	echo := rec.Header().Get("X-Echo-Body")
 	if !strings.Contains(echo, "cookie-rt") {
 		t.Fatalf("refresh token from cookie not injected into request body: %q", echo)
+	}
+	if strings.Contains(echo, "refreshToken") {
+		t.Fatalf("request must not contain both proto JSON aliases: %q", echo)
 	}
 }
 

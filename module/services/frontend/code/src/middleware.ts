@@ -12,55 +12,62 @@
 //
 // Public pages (login, callback, landing, health) bypass the check.
 
-import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
+import { NextResponse } from "next/server";
 
 const PUBLIC_PATHS = [
-  "/",
-  "/auth/login",
-  "/auth/callback",
-  "/auth/logout",
-  "/pricing",
-  "/health",
-  "/favicon.ico",
+	"/",
+	"/auth/login",
+	"/auth/callback",
+	"/auth/mfa",
+	"/auth/magic-link",
+	"/auth/logout",
+	"/health",
+	"/favicon.ico",
 ];
 
 function isPublic(pathname: string): boolean {
-  if (PUBLIC_PATHS.includes(pathname)) return true;
-  // Next internals must always pass through.
-  if (pathname.startsWith("/_next/")) return true;
-  if (pathname.startsWith("/api/")) return true;
-  if (pathname.match(/\.(png|jpg|jpeg|gif|svg|ico|webp|avif|css|js|woff2?)$/)) return true;
-  return false;
+	if (PUBLIC_PATHS.includes(pathname)) return true;
+	// Next internals must always pass through.
+	if (pathname.startsWith("/_next/")) return true;
+	if (pathname.startsWith("/api/")) return true;
+	// Same-origin backend proxy paths must reach the gateway/accounts service.
+	// Page middleware is only a UX guard; redirecting these requests would turn
+	// login into a 307 POST to /auth/login and bypass the backend's real auth
+	// response semantics.
+	if (pathname.startsWith("/v1/")) return true;
+	if (pathname.startsWith("/saas.accounts.v1.")) return true;
+	if (pathname === "/monitoring") return true;
+	if (pathname.match(/\.(png|jpg|jpeg|gif|svg|ico|webp|avif|css|js|woff2?)$/))
+		return true;
+	return false;
 }
 
 export function middleware(req: NextRequest) {
-  const { pathname, search } = req.nextUrl;
+	const { pathname, search } = req.nextUrl;
 
-  if (isPublic(pathname)) {
-    return NextResponse.next();
-  }
+	if (isPublic(pathname)) {
+		return NextResponse.next();
+	}
 
-  // Check the session cookie set by AuthProvider on login. The
-  // cookie contents are not validated here — if present we trust it
-  // and let the backend gateway do the real validation. An invalid
-  // cookie will just cause every backend call to 401, which is fine.
-  const session = req.cookies.get("codefly_session");
-  if (!session) {
-    const loginURL = req.nextUrl.clone();
-    loginURL.pathname = "/auth/login";
-    loginURL.searchParams.set("next", pathname + search);
-    return NextResponse.redirect(loginURL);
-  }
+	// Check the session cookie set by AuthProvider on login. The
+	// cookie contents are not validated here — if present we trust it
+	// and let the backend gateway do the real validation. An invalid
+	// cookie will just cause every backend call to 401, which is fine.
+	const session = req.cookies.get("codefly_session");
+	if (!session) {
+		const loginURL = req.nextUrl.clone();
+		loginURL.pathname = "/auth/login";
+		loginURL.searchParams.set("next", pathname + search);
+		return NextResponse.redirect(loginURL);
+	}
 
-  return NextResponse.next();
+	return NextResponse.next();
 }
 
 export const config = {
-  // Match everything EXCEPT the Next.js internals that we already
-  // bypass in isPublic. This narrower matcher avoids running the
-  // middleware on every static asset.
-  matcher: [
-    "/((?!_next/static|_next/image|favicon.ico).*)",
-  ],
+	// Match everything EXCEPT the Next.js internals that we already
+	// bypass in isPublic. This narrower matcher avoids running the
+	// middleware on every static asset.
+	matcher: ["/((?!_next/static|_next/image|favicon.ico).*)"],
 };

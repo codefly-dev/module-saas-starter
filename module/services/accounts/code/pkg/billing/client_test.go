@@ -17,12 +17,13 @@ import (
 // fakeStripe is a minimal Stripe API stand-in. It exposes the three
 // endpoints the client uses and verifies the request shape + auth.
 type fakeStripe struct {
-	apiKey     string
-	server     *httptest.Server
-	lastForm   url.Values
-	lastPath   string
-	nextStatus int
-	nextBody   any
+	apiKey             string
+	server             *httptest.Server
+	lastForm           url.Values
+	lastPath           string
+	lastIdempotencyKey string
+	nextStatus         int
+	nextBody           any
 }
 
 func newFakeStripe(t *testing.T) *fakeStripe {
@@ -51,6 +52,7 @@ func (f *fakeStripe) handle(w http.ResponseWriter, r *http.Request) {
 	}
 	f.lastForm = r.PostForm
 	f.lastPath = r.URL.Path
+	f.lastIdempotencyKey = r.Header.Get("Idempotency-Key")
 
 	status := f.nextStatus
 	if status == 0 {
@@ -100,13 +102,14 @@ func TestCreateCustomer_PostsExpectedForm(t *testing.T) {
 	fs.nextBody = map[string]any{"id": "cus_01ABC", "email": "org@acme.com"}
 
 	c := newClient(t, fs)
-	out, err := c.CreateCustomer(ctx, "org@acme.com", "internal-org-7")
+	out, err := c.CreateCustomer(ctx, "org@acme.com", "internal-org-7", "customer-key")
 	require.NoError(t, err)
 	require.Equal(t, "cus_01ABC", out.ID)
 	require.Equal(t, "org@acme.com", out.Email)
 	require.Equal(t, "/v1/customers", fs.lastPath)
 	require.Equal(t, "org@acme.com", fs.lastForm.Get("email"))
 	require.Equal(t, "internal-org-7", fs.lastForm.Get("metadata[org_id]"))
+	require.Equal(t, "customer-key", fs.lastIdempotencyKey)
 }
 
 func TestCreateCustomer_AuthFailure(t *testing.T) {
@@ -118,7 +121,7 @@ func TestCreateCustomer_AuthFailure(t *testing.T) {
 	})
 	require.NoError(t, err)
 
-	_, err = c.CreateCustomer(ctx, "a@b.com", "o1")
+	_, err = c.CreateCustomer(ctx, "a@b.com", "o1", "customer-key")
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "401")
 }
@@ -138,12 +141,14 @@ func TestCreateCheckoutSession_Happy(t *testing.T) {
 
 	c := newClient(t, fs)
 	out, err := c.CreateCheckoutSession(ctx, billing.CheckoutParams{
-		CustomerID: "cus_01ABC",
-		PriceID:    "price_pro_monthly",
-		SuccessURL: "https://app.acme.com/billing/success",
-		CancelURL:  "https://app.acme.com/billing/cancel",
-		OrgID:      "org-uuid",
-		TrialDays:  14,
+		CustomerID:     "cus_01ABC",
+		PriceID:        "price_pro_monthly",
+		SuccessURL:     "https://app.acme.com/billing/success",
+		CancelURL:      "https://app.acme.com/billing/cancel",
+		OrgID:          "org-uuid",
+		TrialDays:      14,
+		AutomaticTax:   true,
+		IdempotencyKey: "checkout-key",
 	})
 	require.NoError(t, err)
 	require.Equal(t, "cs_01XYZ", out.ID)
@@ -156,6 +161,8 @@ func TestCreateCheckoutSession_Happy(t *testing.T) {
 	require.Equal(t, "org-uuid", fs.lastForm.Get("metadata[org_id]"))
 	require.Equal(t, "org-uuid", fs.lastForm.Get("subscription_data[metadata][org_id]"))
 	require.Equal(t, "14", fs.lastForm.Get("subscription_data[trial_period_days]"))
+	require.Equal(t, "true", fs.lastForm.Get("automatic_tax[enabled]"))
+	require.Equal(t, "checkout-key", fs.lastIdempotencyKey)
 }
 
 func TestCreateCheckoutSession_Validation(t *testing.T) {
@@ -172,6 +179,15 @@ func TestCreateCheckoutSession_Validation(t *testing.T) {
 		// missing urls
 	})
 	require.Error(t, err)
+
+	_, err = c.CreateCheckoutSession(ctx, billing.CheckoutParams{
+		CustomerID: "cus_x",
+		PriceID:    "price_y",
+		SuccessURL: "https://app.example/success",
+		CancelURL:  "https://app.example/cancel",
+	})
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "idempotency key")
 }
 
 // ============================================================================
@@ -188,12 +204,13 @@ func TestCreateBillingPortalSession_Happy(t *testing.T) {
 
 	c := newClient(t, fs)
 	out, err := c.CreateBillingPortalSession(ctx,
-		"cus_01ABC", "https://app.acme.com/settings/billing")
+		"cus_01ABC", "https://app.acme.com/settings/billing", "portal-key")
 	require.NoError(t, err)
 	require.Equal(t, "bps_01", out.ID)
 	require.Contains(t, out.URL, "billing.stripe.com")
 	require.Equal(t, "cus_01ABC", fs.lastForm.Get("customer"))
 	require.Equal(t, "https://app.acme.com/settings/billing", fs.lastForm.Get("return_url"))
+	require.Equal(t, "portal-key", fs.lastIdempotencyKey)
 }
 
 func TestCreateBillingPortalSession_Validation(t *testing.T) {
@@ -201,9 +218,12 @@ func TestCreateBillingPortalSession_Validation(t *testing.T) {
 	fs := newFakeStripe(t)
 	c := newClient(t, fs)
 
-	_, err := c.CreateBillingPortalSession(ctx, "", "https://x")
+	_, err := c.CreateBillingPortalSession(ctx, "", "https://x", "portal-key")
 	require.Error(t, err)
-	_, err = c.CreateBillingPortalSession(ctx, "cus_x", "")
+	_, err = c.CreateBillingPortalSession(ctx, "cus_x", "", "portal-key")
+	require.Error(t, err)
+
+	_, err = c.CreateBillingPortalSession(ctx, "cus_x", "https://x", "")
 	require.Error(t, err)
 }
 
@@ -215,12 +235,12 @@ func TestGetSubscription_Happy(t *testing.T) {
 	ctx := context.Background()
 	fs := newFakeStripe(t)
 	fs.nextBody = map[string]any{
-		"id":                    "sub_01",
-		"status":                "active",
-		"customer":              "cus_01",
-		"current_period_start":  1_700_000_000,
-		"current_period_end":    1_702_592_000,
-		"cancel_at_period_end":  false,
+		"id":                   "sub_01",
+		"status":               "active",
+		"customer":             "cus_01",
+		"current_period_start": 1_700_000_000,
+		"current_period_end":   1_702_592_000,
+		"cancel_at_period_end": false,
 		"items": map[string]any{
 			"data": []map[string]any{
 				{

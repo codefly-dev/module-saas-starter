@@ -1,6 +1,7 @@
 package adapters
 
 import (
+	"net/url"
 	"os"
 	"strings"
 
@@ -20,19 +21,8 @@ var defaultAllowedOrigins = []string{
 }
 
 func Cors() *cors.Cors {
-	origins := defaultAllowedOrigins
-	if env := os.Getenv("CORS_ALLOWED_ORIGINS"); env != "" {
-		origins = nil
-		for _, o := range strings.Split(env, ",") {
-			o = strings.TrimSpace(o)
-			if o != "" {
-				origins = append(origins, o)
-			}
-		}
-	}
-
 	return cors.New(cors.Options{
-		AllowedOrigins: origins,
+		AllowedOrigins: configuredCORSOrigins(),
 		AllowedMethods: []string{"GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"},
 		AllowedHeaders: []string{
 			"Authorization",
@@ -41,10 +31,36 @@ func Cors() *cors.Cors {
 			"Origin",
 			"X-Requested-With",
 			"X-Request-ID",
+			"Idempotency-Key",
 		},
 		AllowCredentials: true,
 		// Handle preflight: rs/cors automatically responds to OPTIONS
 		// with the correct Access-Control-Allow-* headers when
 		// OptionsPassthrough is false (the default).
 	})
+}
+
+func configuredCORSOrigins() []string {
+	origins := append([]string(nil), defaultAllowedOrigins...)
+	if env := os.Getenv("CORS_ALLOWED_ORIGINS"); env != "" {
+		origins = nil
+		for _, o := range strings.Split(env, ",") {
+			o = strings.TrimSpace(o)
+			if validExactOrigin(o) {
+				origins = append(origins, o)
+			}
+		}
+	}
+	return origins
+}
+
+func validExactOrigin(origin string) bool {
+	if origin == "" || strings.ContainsAny(origin, "*\r\n") {
+		return false
+	}
+	u, err := url.Parse(origin)
+	if err != nil || (u.Scheme != "http" && u.Scheme != "https") || u.Host == "" {
+		return false
+	}
+	return u.User == nil && u.Path == "" && u.RawQuery == "" && u.Fragment == ""
 }

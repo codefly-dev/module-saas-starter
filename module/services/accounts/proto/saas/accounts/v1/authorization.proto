@@ -1,0 +1,425 @@
+syntax = "proto3";
+
+package saas.accounts.v1;
+
+import "buf/validate/validate.proto";
+import "google/api/annotations.proto";
+import "google/protobuf/empty.proto";
+import "google/protobuf/struct.proto";
+import "saas/accounts/v1/common.proto";
+import "saas/policy/v1/options.proto";
+
+// --- Roles & Permissions ---
+
+message CreateRoleRequest {
+  string name = 1 [(buf.validate.field).string.min_len = 1];
+  string description = 2;
+  repeated Permission permissions = 3;
+  string org_id = 4; // empty = global
+}
+
+message CreateRoleResponse {
+  Role role = 1;
+}
+
+message ListRolesRequest {
+  string org_id = 1; // empty = list global roles
+}
+
+message ListRolesResponse {
+  repeated Role roles = 1;
+}
+
+message DeleteRoleRequest {
+  string id = 1 [(buf.validate.field).string.uuid = true];
+}
+
+message AssignRoleRequest {
+  string subject_id = 1 [(buf.validate.field).string.uuid = true];
+  SubjectKind subject_kind = 2;
+  string role_id = 3 [(buf.validate.field).string.uuid = true];
+  string org_id = 4;
+  string scope = 5;
+}
+
+message AssignRoleResponse {
+  RoleAssignment assignment = 1;
+}
+
+message RevokeRoleRequest {
+  string subject_id = 1 [(buf.validate.field).string.uuid = true];
+  string role_id = 2 [(buf.validate.field).string.uuid = true];
+  string org_id = 3;
+  string scope = 4;
+}
+
+// ListRoleAssignmentsRequest — read assignments scoped to an org.
+// subject_id (optional) filters to assignments for that user/team
+// only; empty returns every assignment in the org. Used by the
+// admin UI's "manage roles for member X" panel.
+message ListRoleAssignmentsRequest {
+  string org_id = 1 [(buf.validate.field).string.uuid = true];
+  string subject_id = 2; // empty → all subjects in this org
+  SubjectKind subject_kind = 3; // unspecified → both users + teams
+}
+
+message ListRoleAssignmentsResponse {
+  repeated RoleAssignment assignments = 1;
+}
+
+message CheckPermissionRequest {
+  string subject_id = 1 [(buf.validate.field).string.uuid = true];
+  SubjectKind subject_kind = 2;
+  string resource = 3 [(buf.validate.field).string.min_len = 1];
+  string action = 4 [(buf.validate.field).string.min_len = 1];
+  string org_id = 5;
+  string scope = 6;
+}
+
+message CheckPermissionResponse {
+  bool allowed = 1;
+  string reason = 2;
+}
+
+// --- Decide (the new permission-check primitive) ---
+//
+// Decide is the principal-aware successor to CheckPermission. It
+// accepts a single principal_id (no SubjectKind disambiguation —
+// the principals table answers that), structured action and
+// resource, optional context for caveat evaluation, and an
+// optional delegation_proof carrying a Biscuit token (M6+).
+//
+// CheckPermission stays alongside Decide for backwards compat; new
+// callers should use Decide. Once all callers migrate, CheckPermission
+// becomes a thin wrapper over Decide.
+message DecideRequest {
+  string principal_id = 1 [(buf.validate.field).string.uuid = true];
+  // action is dotted, e.g. "github.merge_pr" or "fs.write".
+  string action = 2 [(buf.validate.field).string.min_len = 1];
+  // resource is typed, e.g. "repo:codefly-dev/codefly.dev" or
+  // "file:/etc/passwd". Empty string means "no specific resource"
+  // (rare; usually for global actions).
+  string resource = 3;
+  // resource_id is an optional sub-identifier (e.g. PR number).
+  // Pure metadata for audit; not used in authz today.
+  string resource_id = 4;
+  string org_id = 5;
+  // context is a free-form structured map for caveat evaluation
+  // (Cedar/Rego rules consume it). Common keys: ci_status, labels,
+  // pr_number. Unknown keys ignored.
+  google.protobuf.Struct context = 6;
+  // risk_level is an advisory tier the caller's manifest declared
+  // for this action. The PDP MAY use it to gate approval flow;
+  // missing → treat as policy default.
+  string risk_level = 7;
+  // delegation_proof is an optional Biscuit token proving the
+  // caller acquired delegated authority for this action. Until M6
+  // lands, this field is unused — pass empty bytes.
+  bytes delegation_proof = 8;
+  // declared_permissions is the caller's manifest-declared
+  // permission set (M4+). The PDP enforces this as a ceiling: even
+  // if a role grants the action, the manifest must also have
+  // declared it. Until M4 lands, empty list = "no ceiling enforced
+  // at this layer."
+  repeated Permission declared_permissions = 9;
+}
+
+message DecideResponse {
+  Decision decision = 1;
+  string reason = 2;
+  // decision_path traces the role/permission match for human-
+  // readable explanation. Format: "role:editor → perm:github.read_pr"
+  // or "manifest-ceiling: action not declared" or "no role grants".
+  string decision_path = 3;
+  // approval_request_id is set when decision=REQUIRE_APPROVAL —
+  // identifies the saas-starter delegation_grants row created for
+  // this pending approval. Empty otherwise.
+  string approval_request_id = 4;
+}
+
+// --- Principal CRUD (M1 promoted to RPCs in M2) ---
+
+message GetPrincipalRequest {
+  string id = 1 [(buf.validate.field).string.uuid = true];
+}
+
+message GetAgentPrincipalRequest {
+  string org_id = 1 [(buf.validate.field).string.uuid = true];
+  string agent_identifier = 2 [(buf.validate.field).string.min_len = 1];
+}
+
+message CreateAgentPrincipalRequest {
+  string org_id = 1 [(buf.validate.field).string.uuid = true];
+  // agent_identifier in canonical "publisher/name:version" form.
+  string agent_identifier = 2 [(buf.validate.field).string.min_len = 1];
+  string display_name = 3;
+}
+
+message RevokePrincipalRequest {
+  string id = 1 [(buf.validate.field).string.uuid = true];
+  string reason = 2 [(buf.validate.field).string.min_len = 1];
+}
+
+message ListPrincipalsRequest {
+  string org_id = 1 [(buf.validate.field).string.uuid = true];
+  // kind filters; UNSPECIFIED returns all kinds in the org
+  // (humans via membership, services + agents via direct org_id).
+  PrincipalKind kind = 2;
+  int32 page_size = 3 [(buf.validate.field).int32 = {
+    gte: 0
+    lte: 200
+  }];
+  string page_token = 4;
+}
+
+message ListPrincipalsResponse {
+  repeated Principal principals = 1;
+  string next_page_token = 2;
+}
+
+// PermissionService — RBAC management and enforcement
+service PermissionService {
+  rpc CreateRole(CreateRoleRequest) returns (CreateRoleResponse) {
+    option (saas.policy.v1.method_policy) = {
+      exposure: EXPOSURE_AUTHENTICATED
+      tenant: TENANT_REQUIREMENT_USER
+      mfa: MFA_REQUIREMENT_NONE
+      audit: {
+        events: "role.created"
+        emission: AUDIT_EMISSION_SUCCESS
+      }
+      idempotency: IDEMPOTENCY_REQUIREMENT_FORBIDDEN
+      rate_limit: RATE_LIMIT_CLASS_STANDARD_WRITE
+      request_sensitivity: SENSITIVITY_CONFIDENTIAL
+      response_sensitivity: SENSITIVITY_CONFIDENTIAL
+      platform_role: PLATFORM_ROLE_REQUIREMENT_NONE
+    };
+    option (google.api.http) = {
+      post: "/v1/roles"
+      body: "*"
+    };
+  }
+
+  rpc ListRoles(ListRolesRequest) returns (ListRolesResponse) {
+    option (saas.policy.v1.method_policy) = {
+      exposure: EXPOSURE_AUTHENTICATED
+      tenant: TENANT_REQUIREMENT_USER
+      mfa: MFA_REQUIREMENT_NONE
+      audit: {emission: AUDIT_EMISSION_NONE}
+      idempotency: IDEMPOTENCY_REQUIREMENT_FORBIDDEN
+      rate_limit: RATE_LIMIT_CLASS_STANDARD_READ
+      request_sensitivity: SENSITIVITY_CONFIDENTIAL
+      response_sensitivity: SENSITIVITY_CONFIDENTIAL
+      platform_role: PLATFORM_ROLE_REQUIREMENT_NONE
+    };
+    option (google.api.http) = {get: "/v1/roles"};
+  }
+
+  rpc DeleteRole(DeleteRoleRequest) returns (google.protobuf.Empty) {
+    option (saas.policy.v1.method_policy) = {
+      exposure: EXPOSURE_AUTHENTICATED
+      tenant: TENANT_REQUIREMENT_NONE
+      mfa: MFA_REQUIREMENT_NONE
+      audit: {
+        events: "role.deleted"
+        emission: AUDIT_EMISSION_SUCCESS
+      }
+      idempotency: IDEMPOTENCY_REQUIREMENT_FORBIDDEN
+      rate_limit: RATE_LIMIT_CLASS_SENSITIVE
+      request_sensitivity: SENSITIVITY_CONFIDENTIAL
+      response_sensitivity: SENSITIVITY_CONFIDENTIAL
+      platform_role: PLATFORM_ROLE_REQUIREMENT_ANY
+    };
+    option (google.api.http) = {delete: "/v1/roles/{id}"};
+  }
+
+  rpc AssignRole(AssignRoleRequest) returns (AssignRoleResponse) {
+    option (saas.policy.v1.method_policy) = {
+      exposure: EXPOSURE_AUTHENTICATED
+      tenant: TENANT_REQUIREMENT_USER
+      mfa: MFA_REQUIREMENT_NONE
+      audit: {
+        events: "role.assigned"
+        emission: AUDIT_EMISSION_SUCCESS
+      }
+      idempotency: IDEMPOTENCY_REQUIREMENT_FORBIDDEN
+      rate_limit: RATE_LIMIT_CLASS_STANDARD_WRITE
+      request_sensitivity: SENSITIVITY_CONFIDENTIAL
+      response_sensitivity: SENSITIVITY_CONFIDENTIAL
+      platform_role: PLATFORM_ROLE_REQUIREMENT_NONE
+    };
+    option (google.api.http) = {
+      post: "/v1/role-assignments"
+      body: "*"
+    };
+  }
+
+  rpc RevokeRole(RevokeRoleRequest) returns (google.protobuf.Empty) {
+    option (saas.policy.v1.method_policy) = {
+      exposure: EXPOSURE_AUTHENTICATED
+      tenant: TENANT_REQUIREMENT_USER
+      mfa: MFA_REQUIREMENT_NONE
+      audit: {
+        events: "role.revoked"
+        emission: AUDIT_EMISSION_SUCCESS
+      }
+      idempotency: IDEMPOTENCY_REQUIREMENT_FORBIDDEN
+      rate_limit: RATE_LIMIT_CLASS_STANDARD_WRITE
+      request_sensitivity: SENSITIVITY_CONFIDENTIAL
+      response_sensitivity: SENSITIVITY_CONFIDENTIAL
+      platform_role: PLATFORM_ROLE_REQUIREMENT_NONE
+    };
+    option (google.api.http) = {delete: "/v1/role-assignments"};
+  }
+
+  rpc ListRoleAssignments(ListRoleAssignmentsRequest) returns (ListRoleAssignmentsResponse) {
+    option (saas.policy.v1.method_policy) = {
+      exposure: EXPOSURE_AUTHENTICATED
+      tenant: TENANT_REQUIREMENT_USER
+      mfa: MFA_REQUIREMENT_NONE
+      audit: {emission: AUDIT_EMISSION_NONE}
+      idempotency: IDEMPOTENCY_REQUIREMENT_FORBIDDEN
+      rate_limit: RATE_LIMIT_CLASS_STANDARD_READ
+      request_sensitivity: SENSITIVITY_CONFIDENTIAL
+      response_sensitivity: SENSITIVITY_CONFIDENTIAL
+      platform_role: PLATFORM_ROLE_REQUIREMENT_NONE
+    };
+    option (google.api.http) = {get: "/v1/role-assignments"};
+  }
+
+  rpc CheckPermission(CheckPermissionRequest) returns (CheckPermissionResponse) {
+    option (saas.policy.v1.method_policy) = {
+      exposure: EXPOSURE_INTERNAL
+      tenant: TENANT_REQUIREMENT_NONE
+      mfa: MFA_REQUIREMENT_NONE
+      audit: {emission: AUDIT_EMISSION_NONE}
+      idempotency: IDEMPOTENCY_REQUIREMENT_FORBIDDEN
+      rate_limit: RATE_LIMIT_CLASS_INTERNAL
+      request_sensitivity: SENSITIVITY_CONFIDENTIAL
+      response_sensitivity: SENSITIVITY_CONFIDENTIAL
+      platform_role: PLATFORM_ROLE_REQUIREMENT_NONE
+    };
+  }
+
+  // Decide is the principal-aware permission check (M2). New
+  // callers should use Decide; CheckPermission is kept for backward
+  // compatibility while existing clients migrate. Both RPCs route
+  // through the same Postgres CheckPermission query in M2; they
+  // diverge starting at M4 (manifest ceiling) and M7 (approval flow).
+  rpc Decide(DecideRequest) returns (DecideResponse) {
+    option (saas.policy.v1.method_policy) = {
+      exposure: EXPOSURE_INTERNAL
+      tenant: TENANT_REQUIREMENT_NONE
+      mfa: MFA_REQUIREMENT_NONE
+      audit: {emission: AUDIT_EMISSION_NONE}
+      idempotency: IDEMPOTENCY_REQUIREMENT_FORBIDDEN
+      rate_limit: RATE_LIMIT_CLASS_INTERNAL
+      request_sensitivity: SENSITIVITY_CONFIDENTIAL
+      response_sensitivity: SENSITIVITY_CONFIDENTIAL
+      platform_role: PLATFORM_ROLE_REQUIREMENT_NONE
+    };
+  }
+}
+
+// PrincipalService — unified principal management (M1 + M2). Humans,
+// services, and agents are all rows in the principals table; this
+// service is the public CRUD over them. Read paths are admin-only;
+// CreateAgent is org-admin scoped (called by the codefly CLI on
+// `codefly install`).
+service PrincipalService {
+  rpc GetPrincipal(GetPrincipalRequest) returns (Principal) {
+    option (saas.policy.v1.method_policy) = {
+      exposure: EXPOSURE_INTERNAL
+      tenant: TENANT_REQUIREMENT_NONE
+      mfa: MFA_REQUIREMENT_NONE
+      audit: {emission: AUDIT_EMISSION_NONE}
+      idempotency: IDEMPOTENCY_REQUIREMENT_FORBIDDEN
+      rate_limit: RATE_LIMIT_CLASS_INTERNAL
+      request_sensitivity: SENSITIVITY_CONFIDENTIAL
+      response_sensitivity: SENSITIVITY_CONFIDENTIAL
+      platform_role: PLATFORM_ROLE_REQUIREMENT_NONE
+    };
+  }
+  rpc GetAgentPrincipal(GetAgentPrincipalRequest) returns (Principal) {
+    option (saas.policy.v1.method_policy) = {
+      exposure: EXPOSURE_INTERNAL
+      tenant: TENANT_REQUIREMENT_NONE
+      mfa: MFA_REQUIREMENT_NONE
+      audit: {emission: AUDIT_EMISSION_NONE}
+      idempotency: IDEMPOTENCY_REQUIREMENT_FORBIDDEN
+      rate_limit: RATE_LIMIT_CLASS_INTERNAL
+      request_sensitivity: SENSITIVITY_CONFIDENTIAL
+      response_sensitivity: SENSITIVITY_CONFIDENTIAL
+      platform_role: PLATFORM_ROLE_REQUIREMENT_NONE
+    };
+  }
+  rpc CreateAgentPrincipal(CreateAgentPrincipalRequest) returns (Principal) {
+    option (saas.policy.v1.method_policy) = {
+      exposure: EXPOSURE_AUTHENTICATED
+      tenant: TENANT_REQUIREMENT_ORG_ADMIN
+      resource_bindings: {
+        request_field: "org_id"
+        target: RESOURCE_TARGET_ORGANIZATION
+        lookup: RESOURCE_LOOKUP_DIRECT_ID
+      }
+      mfa: MFA_REQUIREMENT_NONE
+      audit: {
+        events: "principal.created"
+        emission: AUDIT_EMISSION_SUCCESS
+      }
+      idempotency: IDEMPOTENCY_REQUIREMENT_FORBIDDEN
+      rate_limit: RATE_LIMIT_CLASS_STANDARD_WRITE
+      request_sensitivity: SENSITIVITY_CONFIDENTIAL
+      response_sensitivity: SENSITIVITY_CONFIDENTIAL
+      platform_role: PLATFORM_ROLE_REQUIREMENT_NONE
+    };
+    option (google.api.http) = {
+      post: "/v1/principals:agent"
+      body: "*"
+    };
+  }
+  rpc RevokePrincipal(RevokePrincipalRequest) returns (google.protobuf.Empty) {
+    option (saas.policy.v1.method_policy) = {
+      exposure: EXPOSURE_AUTHENTICATED
+      tenant: TENANT_REQUIREMENT_USER
+      resource_bindings: {
+        request_field: "id"
+        target: RESOURCE_TARGET_OWNED_RESOURCE
+        lookup: RESOURCE_LOOKUP_RESOURCE_TO_ORGANIZATION
+      }
+      mfa: MFA_REQUIREMENT_NONE
+      audit: {
+        events: "principal.revoked"
+        emission: AUDIT_EMISSION_SUCCESS
+      }
+      idempotency: IDEMPOTENCY_REQUIREMENT_FORBIDDEN
+      rate_limit: RATE_LIMIT_CLASS_STANDARD_WRITE
+      request_sensitivity: SENSITIVITY_CONFIDENTIAL
+      response_sensitivity: SENSITIVITY_CONFIDENTIAL
+      platform_role: PLATFORM_ROLE_REQUIREMENT_NONE
+    };
+    option (google.api.http) = {
+      post: "/v1/principals/{id}:revoke"
+      body: "*"
+    };
+  }
+  rpc ListPrincipals(ListPrincipalsRequest) returns (ListPrincipalsResponse) {
+    option (saas.policy.v1.method_policy) = {
+      exposure: EXPOSURE_AUTHENTICATED
+      tenant: TENANT_REQUIREMENT_ORG_MEMBER
+      resource_bindings: {
+        request_field: "org_id"
+        target: RESOURCE_TARGET_ORGANIZATION
+        lookup: RESOURCE_LOOKUP_DIRECT_ID
+      }
+      mfa: MFA_REQUIREMENT_NONE
+      audit: {emission: AUDIT_EMISSION_NONE}
+      idempotency: IDEMPOTENCY_REQUIREMENT_FORBIDDEN
+      rate_limit: RATE_LIMIT_CLASS_STANDARD_READ
+      request_sensitivity: SENSITIVITY_CONFIDENTIAL
+      response_sensitivity: SENSITIVITY_CONFIDENTIAL
+      platform_role: PLATFORM_ROLE_REQUIREMENT_NONE
+    };
+    option (google.api.http) = {get: "/v1/principals"};
+  }
+}
