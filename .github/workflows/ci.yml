@@ -15,9 +15,6 @@ concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
-env:
-  CODEFLY_CLI_VERSION: v0.1.19
-
 jobs:
   sdk-boundary:
     name: Codefly SDK boundary
@@ -43,26 +40,8 @@ jobs:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
           fetch-depth: 0
-      - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6.5.0
-        with:
-          go-version: stable
-          cache: false
       - name: Install Codefly
-        env:
-          CODEFLY_CLI_TOKEN: ${{ secrets.CODEFLY_CLI_TOKEN }}
-        run: |
-          test -n "$CODEFLY_CLI_TOKEN" || {
-            echo "::error::CODEFLY_CLI_TOKEN is required to read the private Codefly CLI module"
-            exit 1
-          }
-          git config --global \
-            "url.https://x-access-token:${CODEFLY_CLI_TOKEN}@github.com/codefly-dev/.insteadOf" \
-            "https://github.com/codefly-dev/"
-          mkdir -p "$RUNNER_TEMP/codefly-bin"
-          GOPRIVATE=github.com/codefly-dev/cli GONOSUMDB=github.com/codefly-dev/cli \
-            GOBIN="$RUNNER_TEMP/codefly-bin" \
-            go install github.com/codefly-dev/cli/cmd/codefly@${CODEFLY_CLI_VERSION}
-          echo "$RUNNER_TEMP/codefly-bin" >> "$GITHUB_PATH"
+        uses: codefly-dev/cli/.github/actions/install@9d621ef336b9ab6e7542105e272b47d2c521fbef # v0.1.20
       - name: Run Codefly-owned gate
         shell: bash
         env:
