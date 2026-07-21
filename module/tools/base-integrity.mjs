@@ -126,19 +126,12 @@ export function workspaceInstallGraphErrors(frontendCodeRoot = FRONTEND_CODE_ROO
   if (JSON.stringify(rootManifest.workspaces) !== JSON.stringify(["packages/*"])) {
     errors.push("protected frontend package.json must declare only the packages/* workspace seam");
   }
-  const pinnedLocalDependencies = new Map([
-    // CI checks out the SDK at this exact runner-workspace path and pins its
-    // commit. Keep the exception narrow until the typed SDK release is
-    // published; all product packages still enter through packages/*.
-    ["dependencies.codefly", "file:../../../../../../codefly/sdk-js"],
-  ]);
   for (const field of PACKAGE_DEPENDENCY_FIELDS) {
     for (const [name, specifier] of Object.entries(rootManifest[field] ?? {})) {
       const dependency = `${field}.${name}`;
       if (
         typeof specifier === "string" &&
-        /^(file|link):/.test(specifier) &&
-        pinnedLocalDependencies.get(dependency) !== specifier
+        /^(file|link):/.test(specifier)
       ) {
         errors.push(
           `protected frontend package.json ${dependency} must use a published version, not ${specifier}`,
