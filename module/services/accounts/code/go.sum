@@ -40,8 +40,8 @@ github.com/cloudflare/circl v1.6.3 h1:9GPOhQGF9MCYUeXyMYlqTR6a5gTrgR/fBLXvUgtVcg
 github.com/cloudflare/circl v1.6.3/go.mod h1:2eXP6Qfat4O/Yhh8BznvKnJ+uzEoTQ6jVKJRn81BiS4=
 github.com/codefly-dev/core v0.2.24 h1:1CRaWbVIQXnkW+lX3U4kgdYUfnqdODjUzNGta/ECrCM=
 github.com/codefly-dev/core v0.2.24/go.mod h1:78gNY4qIlPnj08Fe8X5WwXWtqjTvU4MelJlOYTJq/5s=
-github.com/codefly-dev/sdk-go v0.1.49 h1:wqgBcY1h4LPwG1+Qb42MmXjiapWdkljRxlYNnw562v4=
-github.com/codefly-dev/sdk-go v0.1.49/go.mod h1:/2pttFVF1+b/3aRZ78L/FXgVAJFrx2jHFnZqVK37t90=
+github.com/codefly-dev/sdk-go v0.1.50 h1:MKIRLsLW72LqPLQn5vFyFybTcreeE1qm40On/LEO6eQ=
+github.com/codefly-dev/sdk-go v0.1.50/go.mod h1:/2pttFVF1+b/3aRZ78L/FXgVAJFrx2jHFnZqVK37t90=
 github.com/codefly-dev/service-postgres v0.0.104 h1:vSoz4c1O7l2OnAfgKVD/kF4fkOOQUP/6lMP5rtVSp6A=
 github.com/codefly-dev/service-postgres v0.0.104/go.mod h1:6cBk3sF39kvhMymimXutuQl2HhkLpxWTviwyENMod8E=
 github.com/cyphar/filepath-securejoin v0.6.1 h1:5CeZ1jPXEiYt3+Z6zqprSAgSWiggmpVyciv8syjIpVE=
