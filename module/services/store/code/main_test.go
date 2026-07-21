@@ -5,11 +5,9 @@ import (
 	"testing"
 )
 
-func TestRunRequiresDatabaseURL(t *testing.T) {
-	t.Setenv(databaseURLEnv, "")
-
-	err := run()
-	if err == nil || !strings.Contains(err.Error(), databaseURLEnv) {
-		t.Fatalf("run() error = %v, want missing %s error", err, databaseURLEnv)
+func TestMigrateStoreRequiresOwnerConnection(t *testing.T) {
+	err := migrateStore("")
+	if err == nil || !strings.Contains(err.Error(), "owner connection") {
+		t.Fatalf("migrateStore() error = %v, want missing owner connection error", err)
 	}
 }

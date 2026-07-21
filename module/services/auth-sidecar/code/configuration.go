@@ -2,7 +2,8 @@ package main
 
 import (
 	"os"
-	"strings"
+
+	codefly "github.com/codefly-dev/sdk-go"
 )
 
 // workspaceEnv resolves Codefly workspace configuration and secret values
@@ -10,19 +11,8 @@ import (
 // boundary for declared workspace-configuration-dependencies; Codefly keeps
 // those values namespaced to prevent collisions between providers.
 func workspaceEnv(configuration, key string) string {
-	key = strings.ToUpper(key)
-	exact := strings.ToUpper(configuration)
-	normalized := strings.ReplaceAll(exact, "-", "_")
-	for _, prefix := range []string{exact, normalized} {
-		if value := os.Getenv("CODEFLY__WORKSPACE_CONFIGURATION__" + prefix + "__" + key); value != "" {
-			return value
-		}
-		if value := os.Getenv("CODEFLY__WORKSPACE_SECRET_CONFIGURATION__" + prefix + "__" + key); value != "" {
-			return value
-		}
-		if exact == normalized {
-			break
-		}
+	if value, err := codefly.For(codefly.Context()).WorkspaceValue(configuration, key); err == nil && value != "" {
+		return value
 	}
 	return os.Getenv(key)
 }

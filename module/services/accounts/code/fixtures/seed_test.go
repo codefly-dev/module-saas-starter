@@ -23,6 +23,13 @@ func TestSelectedNameUsesCodeflySDKAcrossAvailableFixtures(t *testing.T) {
 	}
 }
 
+func TestSelectedNameRejectsUnknownCodeflyFixture(t *testing.T) {
+	t.Setenv("CODEFLY__FIXTURE", "not-installed")
+	if _, err := SelectedName(); err == nil {
+		t.Fatal("SelectedName() accepted a fixture without a module YAML definition")
+	}
+}
+
 func TestFixtureNamePatternAcceptsProductFixtureNames(t *testing.T) {
 	for _, name := range []string{"simple", "dev-admin", "codefly_local-1"} {
 		if !fixtureNamePattern.MatchString(name) {

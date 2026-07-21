@@ -152,14 +152,13 @@ func doWork(ctx context.Context) (Clean, error) {
 	// generated gRPC registrations. The ed25519 key is
 	// the SAME one we use for JWT minting (saas-starter's cluster
 	// identity); plugins running in this cluster verify both with
-	// the matching public key. The HMAC fallback is read from
-	// CODEFLY_SCOPED_AUTH_SECRET — the codefly host populates this
-	// when it spawns plugins via manager.WithScopedAuthSecret. In
+	// the matching public key. The HMAC fallback is read through the Codefly
+	// SDK; the host populates it when spawning plugins. In
 	// dev (no host, no env), v2 (ed25519) takes precedence so the
 	// approve flow still works end-to-end.
 	permissionsplugin.Default().
 		WithEd25519Key([]byte(priv)).
-		WithHMACSecret([]byte(os.Getenv("CODEFLY_SCOPED_AUTH_SECRET")))
+		WithHMACSecret([]byte(codefly.ScopedAuthSecret()))
 
 	// Server-side OAuth state signer. Seeded from the JWT private key so
 	// state survives across api restarts and is consistent across
@@ -550,7 +549,7 @@ func configuredSessionPolicy() (auth.SessionPolicy, error) {
 func configuredBillingBaseURL() (string, error) {
 	raw := strings.TrimSpace(os.Getenv("APP_BASE_URL"))
 	if raw == "" {
-		if strings.EqualFold(strings.TrimSpace(os.Getenv("CODEFLY__ENVIRONMENT")), "local") {
+		if codefly.IsLocal() {
 			return "http://localhost:21931", nil
 		}
 		return "", fmt.Errorf("billing: APP_BASE_URL is required when Stripe is configured")
@@ -604,7 +603,7 @@ func configuredWebAuthn() (rpID, displayName string, origins []string, err error
 //	auth0      — same shape, Auth0 preset. Requires AUTH0_DOMAIN +
 //	             AUTH0_AUDIENCE + AUTH0_CLIENT_ID/SECRET.
 //	google     — google sign-in. GOOGLE_CLIENT_ID + GOOGLE_CLIENT_SECRET.
-//	(empty)    — invalid unless CODEFLY__FIXTURE explicitly selects a fixture.
+//	(empty)    — invalid unless the Codefly SDK reports an explicit fixture.
 //
 // Empty, unknown, and incomplete provider configurations return an error so
 // the service cannot start with an ambiguous authentication boundary.
@@ -612,19 +611,8 @@ func configuredWebAuthn() (rpID, displayName string, origins []string, err error
 // including its secret namespace, and falls back to a plain process variable
 // for deployments that do not use Codefly's configuration provider.
 func workspaceEnv(configuration, key string) string {
-	key = strings.ToUpper(key)
-	exact := strings.ToUpper(configuration)
-	normalized := strings.ReplaceAll(exact, "-", "_")
-	for _, prefix := range []string{exact, normalized} {
-		if v := os.Getenv("CODEFLY__WORKSPACE_CONFIGURATION__" + prefix + "__" + key); v != "" {
-			return v
-		}
-		if v := os.Getenv("CODEFLY__WORKSPACE_SECRET_CONFIGURATION__" + prefix + "__" + key); v != "" {
-			return v
-		}
-		if exact == normalized {
-			break
-		}
+	if value, err := codefly.For(codefly.Context()).WorkspaceValue(configuration, key); err == nil && value != "" {
+		return value
 	}
 	return os.Getenv(key)
 }

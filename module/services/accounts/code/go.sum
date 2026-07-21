@@ -38,12 +38,12 @@ github.com/clipperhouse/uax29/v2 v2.7.0 h1:+gs4oBZ2gPfVrKPthwbMzWZDaAFPGYK72F0NJ
 github.com/clipperhouse/uax29/v2 v2.7.0/go.mod h1:EFJ2TJMRUaplDxHKj1qAEhCtQPW2tJSwu5BF98AuoVM=
 github.com/cloudflare/circl v1.6.3 h1:9GPOhQGF9MCYUeXyMYlqTR6a5gTrgR/fBLXvUgtVcg8=
 github.com/cloudflare/circl v1.6.3/go.mod h1:2eXP6Qfat4O/Yhh8BznvKnJ+uzEoTQ6jVKJRn81BiS4=
-github.com/codefly-dev/core v0.2.18 h1:vcY5iIm1nrs672eDFv+BFctPhWjaDCNqctm5ycWpOdk=
-github.com/codefly-dev/core v0.2.18/go.mod h1:78gNY4qIlPnj08Fe8X5WwXWtqjTvU4MelJlOYTJq/5s=
 github.com/codefly-dev/core v0.2.24 h1:1CRaWbVIQXnkW+lX3U4kgdYUfnqdODjUzNGta/ECrCM=
 github.com/codefly-dev/core v0.2.24/go.mod h1:78gNY4qIlPnj08Fe8X5WwXWtqjTvU4MelJlOYTJq/5s=
-github.com/codefly-dev/sdk-go v0.1.42 h1:O+3k/NW+2RyvPn6k0MlEkox3WZTi0EWMOM3dw8SkehA=
-github.com/codefly-dev/sdk-go v0.1.42/go.mod h1:YqfSUNhgONZo/CgWymVAdz91IHAQ+AjWaHHBd+1DIQA=
+github.com/codefly-dev/sdk-go v0.1.47 h1:hY0y+26jGOu+m9/DvzbanuzWmX5YpQrawOP2YDx7r1E=
+github.com/codefly-dev/sdk-go v0.1.47/go.mod h1:/2pttFVF1+b/3aRZ78L/FXgVAJFrx2jHFnZqVK37t90=
+github.com/codefly-dev/service-postgres v0.0.104 h1:vSoz4c1O7l2OnAfgKVD/kF4fkOOQUP/6lMP5rtVSp6A=
+github.com/codefly-dev/service-postgres v0.0.104/go.mod h1:6cBk3sF39kvhMymimXutuQl2HhkLpxWTviwyENMod8E=
 github.com/cyphar/filepath-securejoin v0.6.1 h1:5CeZ1jPXEiYt3+Z6zqprSAgSWiggmpVyciv8syjIpVE=
 github.com/cyphar/filepath-securejoin v0.6.1/go.mod h1:A8hd4EnAeyujCJRrICiOWqjS1AX0a9kM5XL+NwKoYSc=
 github.com/davecgh/go-spew v1.1.0/go.mod h1:J7Y8YcW2NihsgmVo/mv3lAwl/skON4iLHjSsI+c5H38=
@@ -51,6 +51,8 @@ github.com/davecgh/go-spew v1.1.2-0.20180830191138-d8f796af33cc h1:U9qPSI2PIWSS1
 github.com/davecgh/go-spew v1.1.2-0.20180830191138-d8f796af33cc/go.mod h1:J7Y8YcW2NihsgmVo/mv3lAwl/skON4iLHjSsI+c5H38=
 github.com/dgryski/go-rendezvous v0.0.0-20200823014737-9f7001d12a5f h1:lO4WD4F/rVNCu3HqELle0jiPLLBs70cWOduZpkS1E78=
 github.com/dgryski/go-rendezvous v0.0.0-20200823014737-9f7001d12a5f/go.mod h1:cuUVRXasLTGF7a8hSLbxyZXjz+1KgoB3wDUb6vlszIc=
+github.com/dlclark/regexp2 v1.12.0 h1:0j4c5qQmnC6XOWNjP3PIXURXN2gWx76rd3KvgdPkCz8=
+github.com/dlclark/regexp2 v1.12.0/go.mod h1:DHkYz0B9wPfa6wondMfaivmHpzrQ3v9q8cnmRbL6yW8=
 github.com/dustin/go-humanize v1.0.1 h1:GzkhY7T5VNhEkwH0PVJgjz+fX1rhBrR7pRT3mDkpeCY=
 github.com/dustin/go-humanize v1.0.1/go.mod h1:Mu1zIs6XwVuF/gI1OepvI0qD18qycQx+mFykh5fBlto=
 github.com/emirpasic/gods v1.18.1 h1:FXtiHYKDGKCW2KzwZKx0iC0PQmdlorYgdFG9jPXJ1Bc=

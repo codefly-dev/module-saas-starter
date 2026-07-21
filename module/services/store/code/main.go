@@ -1,17 +1,16 @@
 package main
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"log"
-	"os"
 
+	codefly "github.com/codefly-dev/sdk-go"
 	"github.com/golang-migrate/migrate/v4"
 	_ "github.com/golang-migrate/migrate/v4/database/postgres"
 	_ "github.com/golang-migrate/migrate/v4/source/file"
 )
-
-const databaseURLEnv = "CODEFLY__SERVICE_SECRET_CONFIGURATION__SAAS_STARTER__STORE__POSTGRES__CONNECTION"
 
 func main() {
 	log.SetFlags(0)
@@ -21,11 +20,21 @@ func main() {
 }
 
 func run() error {
-	databaseURL := os.Getenv(databaseURLEnv)
-	if databaseURL == "" {
-		return fmt.Errorf("%s is required", databaseURLEnv)
+	ctx := context.Background()
+	if _, err := codefly.Init(ctx); err != nil {
+		return fmt.Errorf("initialize Codefly SDK: %w", err)
 	}
+	databaseURL, err := codefly.For(ctx).Service("store").Secret("postgres", "owner-connection")
+	if err != nil {
+		return fmt.Errorf("resolve store owner connection through Codefly SDK: %w", err)
+	}
+	return migrateStore(databaseURL)
+}
 
+func migrateStore(databaseURL string) error {
+	if databaseURL == "" {
+		return errors.New("store owner connection is empty")
+	}
 	runner, err := migrate.New("file:///app/migrations", databaseURL)
 	if err != nil {
 		return fmt.Errorf("initialize database migrations: %w", err)

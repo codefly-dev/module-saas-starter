@@ -96,12 +96,19 @@ func SelectedName() (string, error) {
 		}
 	}
 	sort.Strings(names)
+	selected := strings.TrimSpace(codefly.Fixture())
+	if selected == "" {
+		return "", nil
+	}
+	if !fixtureNamePattern.MatchString(selected) {
+		return "", fmt.Errorf("Codefly selected invalid fixture name %q", selected)
+	}
 	for _, name := range names {
-		if codefly.WithFixture(name) {
-			return name, nil
+		if name == selected {
+			return selected, nil
 		}
 	}
-	return "", nil
+	return "", fmt.Errorf("Codefly selected fixture %q, but %s does not contain %s.yaml", selected, directory, selected)
 }
 
 // FixturePath resolves a validated fixture name to its module-owned YAML file.
