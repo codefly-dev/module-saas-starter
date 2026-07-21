@@ -10,23 +10,44 @@ credentials, DTOs, and backend-specific behavior never enter the Starter host.
 
 ## Updating an installed Starter base
 
-Never update a consumer with `rsync`, a directory copy, or a hand-edited
-manifest. After canonical release gates pass and the canonical manifest is
-regenerated, review and apply the manifest-owned copy set:
+Never update a consumer with `rsync`, a directory copy, a hand-edited manifest,
+or a product-local updater. Codefly owns the update transaction; the Starter
+owns only its versioned manifest. From the consumer workspace, first pin the
+canonical source with an immutable semantic-version tag:
 
 ```sh
-node tools/base-sync.mjs --target /absolute/path/to/consumer/module
-node tools/base-sync.mjs --target /absolute/path/to/consumer/module --apply
+codefly sync module <consumer-module-name> \
+  --source https://github.com/codefly-dev/module-saas-starter.git \
+  --to <starter-version> \
+  --subdir module
+codefly sync module <consumer-module-name> \
+  --source https://github.com/codefly-dev/module-saas-starter.git \
+  --to <starter-version> \
+  --subdir module \
+  --apply
 ```
 
-The dry-run distinguishes ordinary upstream updates, consumer-modified base
-files, newly-canonical paths that collide with side-additions, and files deleted
-upstream. Generated service manifests, the application `frontend.config.ts`,
-the frontend lockfile, allowlisted module identity, and all unrelated
-side-additions are preserved. A reviewed promotion may use
-`--replace-modified`; a reviewed side-addition adoption may additionally use
-`--replace-collisions`. Modified files deleted upstream always require manual
-reconciliation.
+The applied command writes `tools/base-source.json` with the repository, tag,
+peeled commit, and subdirectory. Later updates need only the new tag:
+
+```sh
+codefly sync module <consumer-module-name> --to <next-starter-version>
+codefly sync module <consumer-module-name> --to <next-starter-version> --apply
+```
+
+Dry-run is always the default. It distinguishes ordinary upstream updates,
+consumer-modified base files, newly-canonical paths that collide with
+side-additions, files deleted upstream, and files released to overlay ownership.
+Generated service manifests, the application `frontend.config.ts`, the frontend
+lockfile, allowlisted module identity, and all unrelated side-additions are
+preserved. Conflicts fail closed and require an explicit source or consumer
+change; there are no overwrite flags. Local source directories are preview-only
+so an applied base always has reproducible provenance.
+
+The consumer's `tools/base-integrity-allow.json` is its survival contract. Put
+every indispensable product composition root, plugin package entry point, and
+integration contract test under `requiredAdditions`. `codefly verify`, module
+sync preview, and CI all fail if an update would leave one missing or invalid.
 
 ## Supported installation shape
 

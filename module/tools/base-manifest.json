@@ -1,6 +1,6 @@
 {
   "note": "Base-file integrity manifest for the saas-starter module. Generated FROM canonical by `node tools/base-integrity.mjs gen`. Consumers MUST NOT hand-edit base files — only add files on the side. Regenerated on every codefly sync from canonical.",
-  "fileCount": 1169,
+  "fileCount": 1167,
   "files": {
     "AUTHORIZATION_CATALOG.md": "c801d07db8d54ff7484e26dc4d5a65925b32fa108eb5b7899f11b9f193c6a730",
     "CONTRACT_VERSIONING.md": "02031aa87922ab5ec573ea582cf584271873481de6ceabbda52b1bfda005ffbd",
@@ -50,7 +50,7 @@
     "docs/frontend-plugin-auth-tenant-matrix.md": "60c70b8abad4f3d420eb7de0e8ca7fecc9b8901ba94fa43bfb9d2ead846a90e9",
     "docs/frontend-plugin-bff-contract.md": "17a6751d670e110a59bc7e8a0d39714904742784177ce9745803096bcd73c52e",
     "docs/frontend-plugin-convergence-brief.md": "fcb27ef0ca8eaf092d81027ec67b4aec61f38d37d26db4cd8025dbbb2e0294c0",
-    "docs/frontend-plugin-installation.md": "84739f1a3da26e3dd2da0e45e549c99209b0dec56d6341ee6b1c5d1f61a2c7d8",
+    "docs/frontend-plugin-installation.md": "bfd5c1b57e6b6d4867b13a9ce51787054cfa91edd5a5124e8ba2c95f02827e58",
     "docs/frontend-plugin-maintainers.md": "ca042e41f827ae4eaaebd242e54b4c0da4596ffb4286ad31383f23baa7c8ecd8",
     "docs/frontend-plugin-platform-implementation-plan.md": "3304e78413d506dae9c316a0c900de7b5d237e27c31885abbfba8893e9f1b37b",
     "docs/frontend-plugin-platform-todo.md": "6810b5130246401fde67015c0c9ff94de1a43f02b541fec576a2d499c8ea8942",
@@ -1168,8 +1168,6 @@
     "services/vault/configurations/local/vault.secret.env": "81f4aa569247292ec88ce61dfda9053b516bea3655f2a971e5cecb8a6b901105",
     "tools/base-integrity.mjs": "cd1dbf9905a387d44c8f740e0b5c90067fe358c1e3a01b730473cca307caa6b3",
     "tools/base-integrity.test.mjs": "67737ee11cdd851b7aa3f562421e3b480c6124e457e69235cffc720d82e08b46",
-    "tools/base-sync.mjs": "100191b9a1de05984136053e6fbf7132ae924e4714416dbe3af6e58c23112d31",
-    "tools/base-sync.test.mjs": "572852229246c41f76550661968734fc762662c871d7f45fff07526728c6d4cd",
     "tools/codefly_sdk_boundary_test.go": "f49decb7361512d4786332acad0c218a57f013daf26c1f183f29310ef32df53e"
   }
 }
