@@ -1,6 +1,7 @@
 package tools
 
 import (
+	"bufio"
 	"fmt"
 	"go/ast"
 	"go/parser"
@@ -11,6 +12,52 @@ import (
 	"strings"
 	"testing"
 )
+
+// TestShellToolsDoNotReadCodeflyCarriers extends the SDK boundary to operational
+// scripts. A shell tool may invoke the Codefly CLI or accept an explicit,
+// purpose-named input; it must never couple itself to the runtime's generated
+// environment representation.
+func TestShellToolsDoNotReadCodeflyCarriers(t *testing.T) {
+	root := findRepositoryRoot(t)
+	err := filepath.WalkDir(root, func(path string, entry os.DirEntry, walkErr error) error {
+		if walkErr != nil {
+			return walkErr
+		}
+		if entry.IsDir() {
+			switch entry.Name() {
+			case ".git", ".next", "node_modules", "target", "vendor":
+				return filepath.SkipDir
+			}
+			return nil
+		}
+		if filepath.Ext(path) != ".sh" {
+			return nil
+		}
+
+		file, err := os.Open(path)
+		if err != nil {
+			return err
+		}
+		defer file.Close()
+		scanner := bufio.NewScanner(file)
+		line := 0
+		for scanner.Scan() {
+			line++
+			text := strings.TrimSpace(scanner.Text())
+			if text == "" || strings.HasPrefix(text, "#") {
+				continue
+			}
+			if strings.Contains(text, "CODEFLY__") || strings.Contains(text, "CODEFLY_SCOPED_AUTH_SECRET") {
+				relative, _ := filepath.Rel(root, path)
+				t.Errorf("%s:%d hard-codes a Codefly runtime carrier; use the SDK/CLI boundary instead", relative, line)
+			}
+		}
+		return scanner.Err()
+	})
+	if err != nil {
+		t.Fatalf("scan shell tools: %v", err)
+	}
+}
 
 // TestProductionGoUsesCodeflySDK is a portable architecture gate for both the
 // canonical module and composed workspaces. Runtime carriers belong to sdk-go;
@@ -95,6 +142,15 @@ func reportSDKBoundaryViolation(t *testing.T, fset *token.FileSet, root, path st
 
 func findProductionScanRoot(t *testing.T) string {
 	t.Helper()
+	root := findRepositoryRoot(t)
+	if _, err := os.Stat(filepath.Join(root, "workspace.codefly.yaml")); err == nil {
+		return filepath.Join(root, "modules")
+	}
+	return root
+}
+
+func findRepositoryRoot(t *testing.T) string {
+	t.Helper()
 	directory, err := os.Getwd()
 	if err != nil {
 		t.Fatal(err)
@@ -102,7 +158,7 @@ func findProductionScanRoot(t *testing.T) string {
 	moduleRoot := ""
 	for {
 		if _, statErr := os.Stat(filepath.Join(directory, "workspace.codefly.yaml")); statErr == nil {
-			return filepath.Join(directory, "modules")
+			return directory
 		}
 		if moduleRoot == "" {
 			if _, statErr := os.Stat(filepath.Join(directory, "module.codefly.yaml")); statErr == nil {
