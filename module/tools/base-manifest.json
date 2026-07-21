@@ -1,6 +1,6 @@
 {
   "note": "Base-file integrity manifest for the saas-starter module. Generated FROM canonical by `node tools/base-integrity.mjs gen`. Consumers MUST NOT hand-edit base files — only add files on the side. Regenerated on every codefly sync from canonical.",
-  "fileCount": 1167,
+  "fileCount": 1164,
   "files": {
     "AUTHORIZATION_CATALOG.md": "c801d07db8d54ff7484e26dc4d5a65925b32fa108eb5b7899f11b9f193c6a730",
     "CONTRACT_VERSIONING.md": "02031aa87922ab5ec573ea582cf584271873481de6ceabbda52b1bfda005ffbd",
@@ -1006,9 +1006,7 @@
     "services/store/code/main.go": "efcae8683e1dc22437684cc2a1ebbe19525d4b7c526e46b3ebbe979d771d1872",
     "services/store/code/main_test.go": "518aeac69ddd17f5560aef6f219600a538ff7ce4ec5f12bbd77f764932212ac3",
     "services/store/configurations/local/README.md": "24e90c569c10eebad176e943f694bb19a365204d301d9aa2f738588c7af0f73f",
-    "services/store/configurations/local/postgres.secret.env": "08d6cc6d4c2fc27add51f22cbedf027316895618980f7cf403f7b09f8b73fdf5",
     "services/store/configurations/localkube/README.md": "24e90c569c10eebad176e943f694bb19a365204d301d9aa2f738588c7af0f73f",
-    "services/store/configurations/localkube/postgres.secret.env": "7fbde1969840ae34870f5235cde1f907e846176930888af6c32173e50a590136",
     "services/store/dns/localkube/dns.codefly.yaml": "fbbbcd6b24a67a359a3f1c6ba29e30c9c55d5eb5878576e33b90c5e424461507",
     "services/store/migrations/10_create_feature_flags.down.sql": "288769c1d697eb0f19a4aad22bf0896c998c0cd5ad5b5695ca60435981ff26cd",
     "services/store/migrations/10_create_feature_flags.up.sql": "85caf6e1cc57d3b8b82af926c0817f6fe9bb1ffa5703046993e7b7749341405f",
@@ -1165,9 +1163,8 @@
     "services/store/old_migration/2_create_organizations_table.up.sql": "8a0967db380bfeb7efe8c237b66cb88cb4eebbc171d73d302b40d07911a0f6b3",
     "services/store/old_migration/3_create_teams_table.down.sql": "96b049baec3557a064554373a176bcc4a74e04af66a7d23dd84e43e7c926e151",
     "services/store/old_migration/3_create_teams_table.up.sql": "8dfa5332db49a1385ad73150c6952f9d4aec728f289317946ac4da3970065a48",
-    "services/vault/configurations/local/vault.secret.env": "81f4aa569247292ec88ce61dfda9053b516bea3655f2a971e5cecb8a6b901105",
-    "tools/base-integrity.mjs": "88b269d82e55bc2d85e27add7567c1b32451a1cb833c3c722870b25bb539699a",
-    "tools/base-integrity.test.mjs": "67737ee11cdd851b7aa3f562421e3b480c6124e457e69235cffc720d82e08b46",
+    "tools/base-integrity.mjs": "1aa1746c3f303095b19791aacb4f2aa1c049597bb510c9925c22f9a130c5cdb9",
+    "tools/base-integrity.test.mjs": "62eee89e2a19c9f26766a4c5149070c37ec00bacf116fb0db98fd5066da477f6",
     "tools/codefly_sdk_boundary_test.go": "f49decb7361512d4786332acad0c218a57f013daf26c1f183f29310ef32df53e"
   }
 }
