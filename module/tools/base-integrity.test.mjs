@@ -4,7 +4,11 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
 
-import { isExcludedFile, workspaceInstallGraphErrors } from "./base-integrity.mjs";
+import {
+  isExcludedFile,
+  requiredAdditionsErrors,
+  workspaceInstallGraphErrors,
+} from "./base-integrity.mjs";
 
 function writeJSON(path, value) {
   writeFileSync(path, `${JSON.stringify(value, null, 2)}\n`);
@@ -112,4 +116,33 @@ test("allows only the CI-pinned local Codefly SDK dependency", (t) => {
     workspaceInstallGraphErrors(root).some((error) =>
       error.includes("must use a published version")),
   );
+});
+
+test("requires consumer-owned composition files without hashing their contents", (t) => {
+  const root = mkdtempSync(join(tmpdir(), "saas-required-additions-"));
+  t.after(() => rmSync(root, { recursive: true, force: true }));
+  const required = "services/frontend/code/packages/product-plugin/package.json";
+  const allow = { requiredAdditions: { [required]: "installs the product UI" } };
+
+  assert.deepEqual(requiredAdditionsErrors(root, allow), [
+    `required consumer addition is missing: ${required}`,
+  ]);
+  mkdirSync(join(root, "services/frontend/code/packages/product-plugin"), { recursive: true });
+  writeFileSync(join(root, required), "{}\n");
+  assert.deepEqual(requiredAdditionsErrors(root, allow), []);
+});
+
+test("rejects unsafe or undocumented required additions", (t) => {
+  const root = mkdtempSync(join(tmpdir(), "saas-required-additions-policy-"));
+  t.after(() => rmSync(root, { recursive: true, force: true }));
+
+  assert.deepEqual(requiredAdditionsErrors(root, { requiredAdditions: [] }), [
+    "base-integrity-allow.json requiredAdditions must be a path-to-reason object",
+  ]);
+  assert.ok(requiredAdditionsErrors(root, {
+    requiredAdditions: { "../outside": "must not escape", "inside": "" },
+  }).some((error) => error.includes("escapes the module")));
+  assert.ok(requiredAdditionsErrors(root, {
+    requiredAdditions: { "inside": "" },
+  }).some((error) => error.includes("non-empty reason")));
 });

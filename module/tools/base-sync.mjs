@@ -28,6 +28,8 @@ import { createHash } from "node:crypto";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
+import { requiredAdditionsErrors } from "./base-integrity.mjs";
+
 const SOURCE_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const MANIFEST_REL = "tools/base-manifest.json";
 const ALLOW_REL = "tools/base-integrity-allow.json";
@@ -78,6 +80,7 @@ function buildPlan(options, sourceRoot = SOURCE_ROOT) {
     staleModified: [],
     allowed: [],
     sourceInvalid: [],
+    requiredAdditionErrors: requiredAdditionsErrors(options.target, allow),
     sourceManifest,
   };
 
@@ -148,11 +151,15 @@ function printPlan(plan, options, sourceRoot = SOURCE_ROOT) {
   printGroup("MODIFIED FILES DELETED UPSTREAM", plan.staleModified);
   printGroup("ALLOWLISTED CONSUMER FILES", plan.allowed);
   printGroup("INVALID CANONICAL MANIFEST ENTRIES", plan.sourceInvalid);
+  printGroup("INVALID REQUIRED CONSUMER ADDITIONS", plan.requiredAdditionErrors);
 }
 
 function assertApplicable(plan, options) {
   if (plan.sourceInvalid.length) {
     throw new Error("canonical manifest is stale; regenerate it only after canonical release gates pass");
+  }
+  if (plan.requiredAdditionErrors.length) {
+    throw new Error("required consumer additions are missing or invalid; restore the product overlay before syncing");
   }
   if (plan.modified.length && !options.replaceModified) {
     throw new Error("modified protected files require --replace-modified after review");

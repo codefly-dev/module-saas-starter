@@ -200,6 +200,33 @@ export function workspaceInstallGraphErrors(frontendCodeRoot = FRONTEND_CODE_ROO
   return errors;
 }
 
+// Consumer additions are intentionally outside the canonical hash manifest,
+// but a product may still require selected composition roots to exist after a
+// base sync. The application-owned allow file is the durable contract because
+// sync never replaces it. Values are human-readable reasons for the requirement.
+export function requiredAdditionsErrors(moduleRoot, allow = {}) {
+  const required = allow.requiredAdditions;
+  if (required === undefined) return [];
+  if (!required || Array.isArray(required) || typeof required !== "object") {
+    return ["base-integrity-allow.json requiredAdditions must be a path-to-reason object"];
+  }
+
+  const errors = [];
+  for (const [rel, reason] of Object.entries(required)) {
+    const abs = resolve(moduleRoot, rel);
+    const local = relative(moduleRoot, abs);
+    if (!rel || local.startsWith("..") || resolve(abs) === resolve(moduleRoot)) {
+      errors.push(`required addition path escapes the module: ${rel || "<empty>"}`);
+      continue;
+    }
+    if (typeof reason !== "string" || !reason.trim()) {
+      errors.push(`required addition ${rel} must declare a non-empty reason`);
+    }
+    if (!existsSync(abs)) errors.push(`required consumer addition is missing: ${rel}`);
+  }
+  return errors;
+}
+
 // A consumer may compose a SUBSET of the base's services (e.g. mind takes the
 // backend — api/store/vault/cache/object-storage — and brings its own gateway, so
 // it omits auth-sidecar + the frontend console). Files under an omitted service's
@@ -282,14 +309,16 @@ function check() {
   const badModified = allowed(modified);
   const badMissing = allowed(missing);
   const installGraphErrors = workspaceInstallGraphErrors();
+  const additionErrors = requiredAdditionsErrors(MODULE_ROOT, allow);
 
   console.log(`base-integrity: ${Object.keys(files).length} base files, ${additions.length} side-additions.`);
   if (badMissing.length) { console.error(`\n✗ MISSING base files (do not delete base files):`); badMissing.forEach((r) => console.error(`    ${r}`)); }
   if (badModified.length) { console.error(`\n✗ MODIFIED base files (add on the side, never edit the base):`); badModified.forEach((r) => console.error(`    ${r}`)); }
   if (installGraphErrors.length) { console.error(`\n✗ INVALID frontend workspace install graph:`); installGraphErrors.forEach((error) => console.error(`    ${error}`)); }
+  if (additionErrors.length) { console.error(`\n✗ MISSING OR INVALID required consumer additions:`); additionErrors.forEach((error) => console.error(`    ${error}`)); }
 
-  if (badModified.length || badMissing.length || installGraphErrors.length) {
-    console.error(`\nFAIL: ${badModified.length} modified, ${badMissing.length} missing, ${installGraphErrors.length} invalid install-graph checks. `
+  if (badModified.length || badMissing.length || installGraphErrors.length || additionErrors.length) {
+    console.error(`\nFAIL: ${badModified.length} modified, ${badMissing.length} missing, ${installGraphErrors.length} invalid install-graph checks, ${additionErrors.length} invalid required-addition checks. `
       + `Move your change upstream into canonical (making the original stronger), or express it as a side-addition.`);
     process.exit(1);
   }

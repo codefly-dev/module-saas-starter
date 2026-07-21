@@ -1,6 +1,6 @@
 {
   "note": "Base-file integrity manifest for the saas-starter module. Generated FROM canonical by `node tools/base-integrity.mjs gen`. Consumers MUST NOT hand-edit base files — only add files on the side. Regenerated on every codefly sync from canonical.",
-  "fileCount": 1167,
+  "fileCount": 1169,
   "files": {
     "AUTHORIZATION_CATALOG.md": "c801d07db8d54ff7484e26dc4d5a65925b32fa108eb5b7899f11b9f193c6a730",
     "CONTRACT_VERSIONING.md": "02031aa87922ab5ec573ea582cf584271873481de6ceabbda52b1bfda005ffbd",
@@ -1152,6 +1152,8 @@
     "services/store/migrations/75_email_job_convergence.up.sql": "372986f49e86d4de92da4257474d9439f9cc8a7013bada7d2af179e9da4b6599",
     "services/store/migrations/76_subscription_email_templates.down.sql": "c28575d5ab149b3d4ab9404ac5a9a6f45a5cb41d5df4afa137144fe739f8ca86",
     "services/store/migrations/76_subscription_email_templates.up.sql": "5c825722341fa5c11e0ebe0b98e3924421b29b588b80ff1fbd5b395c196be0e2",
+    "services/store/migrations/77_drop_legacy_stripe_webhook_events.down.sql": "c543aad9c654257deebf7ad4c0c45bf2090c8406e53543cea4fce2490b017a51",
+    "services/store/migrations/77_drop_legacy_stripe_webhook_events.up.sql": "e0d8deb30f332efd76bbf31532886fde349e516ad1995e07a8c7778b5b63fa80",
     "services/store/migrations/7_create_audit_events.down.sql": "e67b8ae26da34283c8c1f266f84b4a44a3bf14607d794ab6eafec070c8f9e52d",
     "services/store/migrations/7_create_audit_events.up.sql": "4a4088bad1a9f8195f7e0b2108de98ef222d0890bc642380049a9ebea609defa",
     "services/store/migrations/8_create_invitations.down.sql": "3c73e2e3f3ea7069041c6308ae0ca084fec38d96799037a8bcfb82a9f1850e08",
@@ -1164,10 +1166,10 @@
     "services/store/old_migration/3_create_teams_table.down.sql": "96b049baec3557a064554373a176bcc4a74e04af66a7d23dd84e43e7c926e151",
     "services/store/old_migration/3_create_teams_table.up.sql": "8dfa5332db49a1385ad73150c6952f9d4aec728f289317946ac4da3970065a48",
     "services/vault/configurations/local/vault.secret.env": "81f4aa569247292ec88ce61dfda9053b516bea3655f2a971e5cecb8a6b901105",
-    "tools/base-integrity.mjs": "12ffeb15a13b910edc1aa80b4a3ea24fc83824bb17a3cb04645ec02c94e03d29",
-    "tools/base-integrity.test.mjs": "179715fb201cadec41466d14eaa5d70ecfe052a681a9480afc103ad862c6f859",
-    "tools/base-sync.mjs": "3275cdf2b77856012465d164378213e3d73e2cba141c6ed4f7bef3fedd44053c",
-    "tools/base-sync.test.mjs": "0b38be44d7d6d3d522c8577168f260e5947dd8d802a5f434c55f682d2b45f3d3",
+    "tools/base-integrity.mjs": "cd1dbf9905a387d44c8f740e0b5c90067fe358c1e3a01b730473cca307caa6b3",
+    "tools/base-integrity.test.mjs": "67737ee11cdd851b7aa3f562421e3b480c6124e457e69235cffc720d82e08b46",
+    "tools/base-sync.mjs": "100191b9a1de05984136053e6fbf7132ae924e4714416dbe3af6e58c23112d31",
+    "tools/base-sync.test.mjs": "572852229246c41f76550661968734fc762662c871d7f45fff07526728c6d4cd",
     "tools/codefly_sdk_boundary_test.go": "da516743e9b28ce2c66966f5aa4e29510f8bb9cb512faad9603998e33d8393c8"
   }
 }

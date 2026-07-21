@@ -66,3 +66,26 @@ test("manifest sync preserves allowed files and detects every overwrite class", 
   assert.equal(readFileSync(join(target, "released.bin"), "utf8"), "consumer-build-artifact");
   assert.equal(readFileSync(join(target, "tools/base-manifest.json"), "utf8"), readFileSync(join(source, "tools/base-manifest.json"), "utf8"));
 });
+
+test("sync refuses to mutate a consumer whose required overlay is missing", () => {
+  const sandbox = mkdtempSync(join(tmpdir(), "saas-base-sync-required-overlay-"));
+  const source = join(sandbox, "source");
+  const target = join(sandbox, "target");
+
+  write(source, "base.txt", "canonical-new");
+  manifest(source, { "base.txt": hash("canonical-new") });
+  write(target, "base.txt", "canonical-old");
+  manifest(target, { "base.txt": hash("canonical-old") });
+  write(target, "tools/base-integrity-allow.json", `${JSON.stringify({
+    requiredAdditions: {
+      "services/frontend/code/packages/product/package.json": "product UI package",
+    },
+  })}\n`);
+
+  const options = { target, apply: true, replaceModified: false, replaceCollisions: false };
+  const plan = buildPlan(options, source);
+  assert.deepEqual(plan.requiredAdditionErrors, [
+    "required consumer addition is missing: services/frontend/code/packages/product/package.json",
+  ]);
+  assert.throws(() => assertApplicable(plan, options), /required consumer additions/);
+});
