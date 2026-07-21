@@ -61,6 +61,17 @@ test("excludes compiled service binaries without excluding their source", () => 
   assert.equal(isExcludedFile("services/store/migrations/1_create.up.sql"), false);
 });
 
+test("excludes runtime-owned secret configuration from the canonical base", () => {
+  assert.equal(
+    isExcludedFile("services/store/configurations/local/postgres.secret.env"),
+    true,
+  );
+  assert.equal(
+    isExcludedFile("services/store/configurations/local/postgres.env"),
+    false,
+  );
+});
+
 test("rejects stale product metadata and missing workspace links", (t) => {
   const { root, packageRoot, productManifest, lock } = fixture();
   t.after(() => rmSync(root, { recursive: true, force: true }));
@@ -99,14 +110,17 @@ test("rejects a missing lock beside an installed frontend", (t) => {
   ]);
 });
 
-test("allows only the CI-pinned local Codefly SDK dependency", (t) => {
+test("rejects every local Codefly SDK dependency", (t) => {
   const { root, rootManifest, lock } = fixture();
   t.after(() => rmSync(root, { recursive: true, force: true }));
   rootManifest.dependencies.codefly = "file:../../../../../../codefly/sdk-js";
   lock.packages[""].dependencies.codefly = "file:../../../../../../codefly/sdk-js";
   writeJSON(join(root, "package.json"), rootManifest);
   writeJSON(join(root, "package-lock.json"), lock);
-  assert.deepEqual(workspaceInstallGraphErrors(root), []);
+  assert.ok(
+    workspaceInstallGraphErrors(root).some((error) =>
+      error.includes("must use a published version")),
+  );
 
   rootManifest.dependencies.codefly = "file:../../../../../../sdk-js";
   lock.packages[""].dependencies.codefly = "file:../../../../../../sdk-js";

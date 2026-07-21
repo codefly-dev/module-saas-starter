@@ -40,6 +40,7 @@ export const isExcludedFile = (rel) =>
   rel === "services/store/code/store-migrator" || // `go build ./...` output; source and migrations remain protected
   rel === "services/frontend/code/frontend.config.ts" || // FP-001: application-owned composition root
   rel === "services/frontend/code/package-lock.json" || // FP-010A: generated workspace install graph
+  /^services\/[^/]+\/configurations\/.*\.secret\.[^/]+$/.test(rel) || // local secret material is SDK/runtime-owned, never canonical base
   /^services\/[^/]+\/service\.codefly\.yaml$/.test(rel) || // generated from protected topology + explicit application inputs
   /^services\/[^/]+\/builder\//.test(rel) || // service agents regenerate build recipes and companion files
   /\.generated\.[a-z]+$/.test(rel) ||         // codegen output
