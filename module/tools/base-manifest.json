@@ -586,7 +586,7 @@
     "services/frontend/code/instrumentation-client.ts": "d190fa026d64667c0bdd56389a62f9baf69066f059d43a92f9c6e1658835c0d1",
     "services/frontend/code/instrumentation.ts": "30a955a0031f406bf480dc3196c50713dfaff523d0b1e5443a4f86784fb107e7",
     "services/frontend/code/next.config.mjs": "226d42c404cfdadc91ca0d16f44fbd76e694939d52380bad1655c6cce64f5bfe",
-    "services/frontend/code/package.json": "409ea5fbb7f8edbc7a867ef4c19065c2e692512823d03624ddc1c1b80a098714",
+    "services/frontend/code/package.json": "2bb05b1c396692ad9fe08167551464ccdcdfe1cfeed1a1f2dceb34cab44907c9",
     "services/frontend/code/packages/saas-plugin-contract/README.md": "a2763de59eeb823a9e8a3cb22d4ed6330ae54fd5397f2cedac157b6a040cf120",
     "services/frontend/code/packages/saas-plugin-contract/buf.gen.local.yaml": "8b234b5eddfe02f93327fbb4cecfa30a4ed7d57660b27bb0c1a6af6839b3f2d7",
     "services/frontend/code/packages/saas-plugin-contract/buf.gen.yaml": "104d34fbc5f80d9f63edf4399d2a211f8bcd16b5467c77bcdaf9e7ce7e94f06b",
@@ -1166,7 +1166,7 @@
     "services/store/old_migration/3_create_teams_table.down.sql": "96b049baec3557a064554373a176bcc4a74e04af66a7d23dd84e43e7c926e151",
     "services/store/old_migration/3_create_teams_table.up.sql": "8dfa5332db49a1385ad73150c6952f9d4aec728f289317946ac4da3970065a48",
     "services/vault/configurations/local/vault.secret.env": "81f4aa569247292ec88ce61dfda9053b516bea3655f2a971e5cecb8a6b901105",
-    "tools/base-integrity.mjs": "cd1dbf9905a387d44c8f740e0b5c90067fe358c1e3a01b730473cca307caa6b3",
+    "tools/base-integrity.mjs": "88b269d82e55bc2d85e27add7567c1b32451a1cb833c3c722870b25bb539699a",
     "tools/base-integrity.test.mjs": "67737ee11cdd851b7aa3f562421e3b480c6124e457e69235cffc720d82e08b46",
     "tools/codefly_sdk_boundary_test.go": "f49decb7361512d4786332acad0c218a57f013daf26c1f183f29310ef32df53e"
   }
