@@ -504,7 +504,7 @@
     "services/accounts/proto/buf.gen.yaml": "eecd1242da972f0495189efe78f30c10de77f9c8d015691578bb45dd1fff0e14",
     "services/accounts/proto/buf.lock": "4c40adcd0a9b97c77bc6ad38cf9ce111ae1f6a9a41407b25f6bc24f6e2b0fc1d",
     "services/accounts/proto/buf.yaml": "c62aea12d39c51ccd34c16229171924912d244124a2de8e04b110c0d99532676",
-    "services/accounts/proto/codefly/api.proto": "c526a83702ea895d92a19404542a722b97a3e97ecc05b86ca13494f6019c5f0e",
+    "services/accounts/proto/codefly/api.proto": "707824448f3a3c3c82c9a980a3a6b24bef669707cc85bbf2134e34df68701e23",
     "services/accounts/proto/saas/accounts/v1/api_keys.proto": "8fec41e899286056c30a4b5815ba813a86958c0d770fd0a1cbbd5c8c41966d4f",
     "services/accounts/proto/saas/accounts/v1/audit.proto": "7170deca60890aeb5b013f6b18ed6808dd8b5a49ce4aa5e1ed6d4817f616bbee",
     "services/accounts/proto/saas/accounts/v1/audit_export.proto": "12f7a4a94add9d60e726fb1fce89dfe5eb584d64b547454cc996f5a75475d729",
