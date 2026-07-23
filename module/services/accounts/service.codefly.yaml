@@ -4,7 +4,7 @@ version: 0.0.0
 agent:
     kind: codefly:service
     name: go-grpc
-    version: 0.1.11
+    version: 0.1.12
     publisher: codefly.dev
 service-dependencies:
     - name: cache
@@ -31,5 +31,8 @@ endpoints:
 spec:
     connect-endpoint: true
     hot-reload: true
+    protocol-output-dirs:
+        - code/pkg/gen
+        - .cache/openapi
     rest-endpoint: true
     with-workspace: true

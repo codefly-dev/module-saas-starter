@@ -16,7 +16,7 @@ services:
     agent:
       kind: codefly:service
       name: go-grpc
-      version: 0.1.11
+      version: 0.1.12
       publisher: codefly.dev
     workspace_configuration_dependencies:
       - internal-auth
@@ -56,6 +56,9 @@ services:
       rest-endpoint: true
       connect-endpoint: true
       with-workspace: true
+      protocol-output-dirs:
+        - code/pkg/gen
+        - .cache/openapi
   - name: auth-sidecar
     version: 0.0.0
     description: |
@@ -65,7 +68,7 @@ services:
     agent:
       kind: codefly:service
       name: go-grpc
-      version: 0.1.11
+      version: 0.1.12
       publisher: codefly.dev
     workspace_configuration_dependencies:
       - gateway
@@ -95,6 +98,8 @@ services:
     spec:
       hot-reload: true
       rest-endpoint: false
+      protocol-output-dirs:
+        - code/pkg/gen
   - name: cache
     version: 0.0.0
     agent:
