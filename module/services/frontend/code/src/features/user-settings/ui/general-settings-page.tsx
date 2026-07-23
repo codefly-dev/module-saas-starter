@@ -4,8 +4,16 @@ import type { FrontendThemePreference } from "@codefly/saas-plugin-contract";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 import { toast } from "sonner";
+import { profileInitials } from "@/features/user-profile/model/profile";
+import { USER_PROFILE_QUERY_KEY } from "@/features/user-profile/service/client";
+import { userProfileMutations } from "@/features/user-profile/service/mutations";
+import { userProfileQueries } from "@/features/user-profile/service/queries";
+import type { GetSelfResponse } from "@/gen/saas/accounts/v1/identity_pb";
 import type { UserSettings } from "@/gen/saas/accounts/v1/user_settings_pb";
 import {
+	Avatar,
+	AvatarFallback,
+	AvatarImage,
 	Button,
 	Card,
 	CardContent,
@@ -21,6 +29,7 @@ import {
 	SelectTrigger,
 	SelectValue,
 	Skeleton,
+	Textarea,
 } from "@/shared/ui";
 import { themePreferenceFromProto } from "../model/theme-preference";
 import { userSettingsMutations } from "../service/mutations";
@@ -39,9 +48,13 @@ import { useThemePreference } from "./theme-preference-provider";
  */
 export function GeneralSettingsPage() {
 	const { data: settings, isLoading } = useQuery(userSettingsQueries.current());
-	if (isLoading) {
+	const { data: self, isLoading: isProfileLoading } = useQuery(
+		userProfileQueries.current(),
+	);
+	if (isLoading || isProfileLoading) {
 		return (
 			<div className="space-y-4 max-w-3xl">
+				<Skeleton className="h-64 w-full" />
 				<Skeleton className="h-48 w-full" />
 				<Skeleton className="h-48 w-full" />
 				<Skeleton className="h-48 w-full" />
@@ -57,14 +70,21 @@ export function GeneralSettingsPage() {
 		settings?.email?.product,
 		settings?.email?.marketing,
 		settings?.email?.weeklyDigest,
+		self?.user?.uuid,
+		self?.user?.primaryEmail,
+		self?.user?.profile,
 	]);
-	return <GeneralSettingsForm key={formIdentity} settings={settings} />;
+	return (
+		<GeneralSettingsForm key={formIdentity} settings={settings} self={self} />
+	);
 }
 
 function GeneralSettingsForm({
 	settings,
+	self,
 }: {
 	settings: UserSettings | undefined;
+	self: GetSelfResponse | undefined;
 }) {
 	const queryClient = useQueryClient();
 	const { setPreference, isSaving: isSavingTheme } = useThemePreference();
@@ -88,8 +108,38 @@ function GeneralSettingsForm({
 	const [emailWeeklyDigest, setEmailWeeklyDigest] = useState(
 		settings?.email?.weeklyDigest ?? true,
 	);
+	const profile = self?.user?.profile;
+	const [profileName, setProfileName] = useState(profile?.name ?? "");
+	const [profileDisplayName, setProfileDisplayName] = useState(
+		profile?.display_name ?? "",
+	);
+	const [profileAvatarURL, setProfileAvatarURL] = useState(
+		profile?.avatar_url ?? "",
+	);
+	const [profileTitle, setProfileTitle] = useState(profile?.title ?? "");
+	const [profileBio, setProfileBio] = useState(profile?.bio ?? "");
+	const [profilePhone, setProfilePhone] = useState(profile?.phone ?? "");
+	const [profileLocation, setProfileLocation] = useState(
+		profile?.location ?? "",
+	);
+	const [profileTimezone, setProfileTimezone] = useState(
+		profile?.timezone ?? "",
+	);
 
 	const save = useMutation({ mutationFn: userSettingsMutations.update });
+	const saveProfile = useMutation({
+		mutationFn: () =>
+			userProfileMutations.update({
+				name: profileName.trim(),
+				display_name: profileDisplayName.trim(),
+				avatar_url: profileAvatarURL.trim(),
+				title: profileTitle.trim(),
+				bio: profileBio.trim(),
+				phone: profilePhone.trim(),
+				location: profileLocation.trim(),
+				timezone: profileTimezone.trim(),
+			}),
+	});
 
 	async function persist(
 		operation: () => Promise<unknown>,
@@ -131,6 +181,15 @@ function GeneralSettingsForm({
 		);
 	}
 
+	function saveUserProfile() {
+		void persist(async () => {
+			await saveProfile.mutateAsync();
+			await queryClient.invalidateQueries({
+				queryKey: USER_PROFILE_QUERY_KEY,
+			});
+		}, "Profile saved");
+	}
+
 	return (
 		<div className="space-y-6 max-w-3xl">
 			<div>
@@ -139,6 +198,112 @@ function GeneralSettingsForm({
 					Theme, locale, and email preferences. Synced across all your devices.
 				</p>
 			</div>
+
+			{/* ── Profile ── */}
+			<Card>
+				<CardHeader>
+					<CardTitle>Profile</CardTitle>
+					<CardDescription>
+						Your public identity across organizations and team activity.
+					</CardDescription>
+				</CardHeader>
+				<CardContent className="space-y-5">
+					<div className="flex items-center gap-4">
+						<Avatar data-size="lg">
+							<AvatarImage src={profileAvatarURL || undefined} />
+							<AvatarFallback>
+								{profileInitials(
+									profileDisplayName || profileName || self?.user?.primaryEmail,
+								)}
+							</AvatarFallback>
+						</Avatar>
+						<div className="grid flex-1 gap-4 sm:grid-cols-2">
+							<div className="space-y-2">
+								<Label htmlFor="profile-name">Full name</Label>
+								<Input
+									id="profile-name"
+									value={profileName}
+									onChange={(event) => setProfileName(event.target.value)}
+									placeholder="Ada Lovelace"
+								/>
+							</div>
+							<div className="space-y-2">
+								<Label htmlFor="profile-display-name">Display name</Label>
+								<Input
+									id="profile-display-name"
+									value={profileDisplayName}
+									onChange={(event) =>
+										setProfileDisplayName(event.target.value)
+									}
+									placeholder="ada"
+								/>
+							</div>
+						</div>
+					</div>
+					<div className="grid gap-4 sm:grid-cols-2">
+						<div className="space-y-2 sm:col-span-2">
+							<Label htmlFor="profile-avatar">Avatar URL</Label>
+							<Input
+								id="profile-avatar"
+								value={profileAvatarURL}
+								onChange={(event) => setProfileAvatarURL(event.target.value)}
+								placeholder="https://example.com/avatar.png"
+							/>
+						</div>
+						<div className="space-y-2">
+							<Label htmlFor="profile-title">Title</Label>
+							<Input
+								id="profile-title"
+								value={profileTitle}
+								onChange={(event) => setProfileTitle(event.target.value)}
+								placeholder="Engineering Manager"
+							/>
+						</div>
+						<div className="space-y-2">
+							<Label htmlFor="profile-phone">Phone</Label>
+							<Input
+								id="profile-phone"
+								value={profilePhone}
+								onChange={(event) => setProfilePhone(event.target.value)}
+								placeholder="+1 555 0100"
+							/>
+						</div>
+						<div className="space-y-2">
+							<Label htmlFor="profile-location">Location</Label>
+							<Input
+								id="profile-location"
+								value={profileLocation}
+								onChange={(event) => setProfileLocation(event.target.value)}
+								placeholder="New York, NY"
+							/>
+						</div>
+						<div className="space-y-2">
+							<Label htmlFor="profile-timezone">Profile time zone</Label>
+							<Input
+								id="profile-timezone"
+								value={profileTimezone}
+								onChange={(event) => setProfileTimezone(event.target.value)}
+								placeholder="America/New_York"
+							/>
+						</div>
+						<div className="space-y-2 sm:col-span-2">
+							<Label htmlFor="profile-bio">Bio</Label>
+							<Textarea
+								id="profile-bio"
+								value={profileBio}
+								onChange={(event) => setProfileBio(event.target.value)}
+								rows={3}
+								placeholder="A short note teammates see on your profile."
+							/>
+						</div>
+					</div>
+					<div className="flex justify-end">
+						<Button onClick={saveUserProfile} disabled={saveProfile.isPending}>
+							{saveProfile.isPending ? "Saving…" : "Save profile"}
+						</Button>
+					</div>
+				</CardContent>
+			</Card>
 
 			{/* ── Appearance ── */}
 			<Card>
