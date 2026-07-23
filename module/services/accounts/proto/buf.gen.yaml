@@ -26,11 +26,13 @@ plugins:
     opt: paths=source_relative
   - local: protoc-gen-openapiv2
     out: ../.cache/openapi
+    strategy: all
     opt:
       - allow_merge=true
       - merge_file_name=api
   - local: protoc-gen-es
     out: ../../frontend/code/src/gen
+    strategy: all
     include_imports: true
     opt:
       - target=ts

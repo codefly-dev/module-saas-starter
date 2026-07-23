@@ -1,6 +1,6 @@
 {
   "note": "Base-file integrity manifest for the saas-starter module. Generated FROM canonical by `node tools/base-integrity.mjs gen`. Consumers MUST NOT hand-edit base files — only add files on the side. Regenerated on every codefly sync from canonical.",
-  "fileCount": 1169,
+  "fileCount": 1170,
   "files": {
     "AUTHORIZATION_CATALOG.md": "c801d07db8d54ff7484e26dc4d5a65925b32fa108eb5b7899f11b9f193c6a730",
     "CONTRACT_VERSIONING.md": "02031aa87922ab5ec573ea582cf584271873481de6ceabbda52b1bfda005ffbd",
@@ -501,7 +501,7 @@
     "services/accounts/kreya/grpc/reflection/v1/ServerReflection/ServerReflectionInfo-request-0.json": "206393591a3c283e137f17cf4ff18fa2d1e80a680d3ee65751ccabc9f89afa28",
     "services/accounts/kreya/grpc/reflection/v1/ServerReflection/ServerReflectionInfo.krop": "8f022ffb673c00cd228857333f6464adb6c0a43b91307966ab6eb466caab467f",
     "services/accounts/openapi/api.swagger.json": "c03a8a1844bfbf6588cacd1e1491586dd996d2458c13ec8a73dd03533b466258",
-    "services/accounts/proto/buf.gen.yaml": "eecd1242da972f0495189efe78f30c10de77f9c8d015691578bb45dd1fff0e14",
+    "services/accounts/proto/buf.gen.yaml": "3f58bee6f69c765c5895d73db37c2d078c36b53f8553f902b63de9abcc8a946e",
     "services/accounts/proto/buf.lock": "4c40adcd0a9b97c77bc6ad38cf9ce111ae1f6a9a41407b25f6bc24f6e2b0fc1d",
     "services/accounts/proto/buf.yaml": "c62aea12d39c51ccd34c16229171924912d244124a2de8e04b110c0d99532676",
     "services/accounts/proto/codefly/api.proto": "707824448f3a3c3c82c9a980a3a6b24bef669707cc85bbf2134e34df68701e23",
@@ -1170,6 +1170,7 @@
     "services/store/old_migration/3_create_teams_table.up.sql": "8dfa5332db49a1385ad73150c6952f9d4aec728f289317946ac4da3970065a48",
     "tools/base-integrity.mjs": "1aa1746c3f303095b19791aacb4f2aa1c049597bb510c9925c22f9a130c5cdb9",
     "tools/base-integrity.test.mjs": "62eee89e2a19c9f26766a4c5149070c37ec00bacf116fb0db98fd5066da477f6",
-    "tools/codefly_sdk_boundary_test.go": "f49decb7361512d4786332acad0c218a57f013daf26c1f183f29310ef32df53e"
+    "tools/codefly_sdk_boundary_test.go": "f49decb7361512d4786332acad0c218a57f013daf26c1f183f29310ef32df53e",
+    "tools/proto_generation_test.go": "4e2d9a1de58a2aa0c459fbbc69d5f741519abf25b09cc7e6b7c9b19424756521"
   }
 }
