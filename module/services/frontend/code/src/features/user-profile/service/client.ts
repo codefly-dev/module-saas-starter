@@ -1,7 +1,7 @@
 import { createClient } from "@connectrpc/connect";
 import { UserService } from "@/gen/saas/accounts/v1/identity_pb";
 import { apiTransport } from "@/lib/connect/transport";
-import { stringProfilePatch, type UserProfileValues } from "../model/profile";
+import { applyProfilePatch, type UserProfileValues } from "../model/profile";
 
 export type UserProfilePatch = Partial<UserProfileValues>;
 
@@ -27,10 +27,7 @@ async function updateSelfProfile(patch: UserProfilePatch) {
 		user: {
 			uuid: user.uuid,
 			primaryEmail: user.primaryEmail,
-			profile: {
-				...user.profile,
-				...stringProfilePatch(patch),
-			},
+			profile: applyProfilePatch(user.profile, patch),
 		},
 		// Only the profile map is being changed. Declaring the mask makes the
 		// intent explicit and keeps this call correct if the server ever honors
