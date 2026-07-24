@@ -41,7 +41,7 @@ jobs:
         with:
           fetch-depth: 0
       - name: Install Codefly
-        uses: codefly-dev/cli/.github/actions/install@7e8cfd1f14b024bdd28db0d814cb8c87d5399d37 # v0.1.21
+        uses: codefly-dev/cli/.github/actions/install@a0fc38441977f00446c49de728bb0fd48e0d1281 # v0.1.27
       - name: Run Codefly-owned gate
         shell: bash
         env:

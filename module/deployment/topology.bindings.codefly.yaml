@@ -58,7 +58,6 @@ services:
       with-workspace: true
       protocol-output-dirs:
         - code/pkg/gen
-        - .cache/openapi
   - name: auth-sidecar
     version: 0.0.0
     description: |
@@ -165,7 +164,7 @@ services:
     agent:
       kind: codefly:service
       name: postgres
-      version: 0.0.103
+      version: 0.0.104
       publisher: codefly.dev
     endpoints:
       - name: tcp

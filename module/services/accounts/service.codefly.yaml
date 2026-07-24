@@ -33,6 +33,5 @@ spec:
     hot-reload: true
     protocol-output-dirs:
         - code/pkg/gen
-        - .cache/openapi
     rest-endpoint: true
     with-workspace: true
