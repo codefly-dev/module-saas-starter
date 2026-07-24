@@ -64,9 +64,11 @@ jobs:
           # could not read it back ("permission denied" on the staged dir).
           printf '%s\n' \
             'FROM codeflydev/proto:0.0.10' \
-            'ENV GOTOOLCHAIN=auto HOME=/tmp' \
+            'ENV GOTOOLCHAIN=auto' \
             'RUN GOBIN=/usr/local/bin go install google.golang.org/protobuf/cmd/protoc-gen-go@v1.36.11' \
             'RUN GOBIN=/usr/local/bin go install google.golang.org/grpc/cmd/protoc-gen-go-grpc@v1.6.1' \
+            'RUN mkdir -p /home/buf && chmod 777 /home/buf' \
+            'ENV HOME=/home/buf' \
             'ARG RUN_UID=1001' \
             'USER ${RUN_UID}' \
             > "${RUNNER_TEMP}/proto-patch.Dockerfile"
