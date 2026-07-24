@@ -189,6 +189,33 @@ func (s *PostgresStore) UpdateUser(ctx context.Context, userID string, updates m
 		}
 	}
 
+	// profile_merge patches the JSONB map field-by-field instead of replacing
+	// it, so a self-service write only touches the keys it sends and cannot
+	// clobber a concurrent writer's changes. Empty values clear their key.
+	// GDPR anonymization deliberately uses the "profile" replace path above so
+	// scrubbing wipes every field.
+	if profile, ok := updates["profile_merge"]; ok {
+		patch := profile.(map[string]string)
+		set := map[string]string{}
+		clear := []string{}
+		for k, v := range patch {
+			if v == "" {
+				clear = append(clear, k)
+			} else {
+				set[k] = v
+			}
+		}
+		setJSON, _ := json.Marshal(set)
+		_, err := executor.Exec(ctx, `
+			UPDATE users
+			SET profile = (COALESCE(profile, '{}'::jsonb) || $1::jsonb) - $2::text[],
+			    updated_at = CURRENT_TIMESTAMP
+			WHERE uuid = $3`, setJSON, clear, userID)
+		if err != nil {
+			return nil, w.Wrapf(err, "failed to merge profile")
+		}
+	}
+
 	return s.GetUser(ctx, userID)
 }
 

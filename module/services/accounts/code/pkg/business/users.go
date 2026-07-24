@@ -124,7 +124,11 @@ func (s *Service) UpdateUser(ctx context.Context, actorID string, access Identit
 			updates["primary_email"] = req.User.PrimaryEmail
 		}
 		if req.User.Profile != nil {
-			updates["profile"] = req.User.Profile
+			// Merge, not replace: the caller sends only the fields it changed,
+			// so a self-service profile write can't clobber a concurrent one.
+			// GDPR anonymization keeps the replace path (store UpdateUser's
+			// "profile" key) to guarantee a full scrub.
+			updates["profile_merge"] = req.User.Profile
 		}
 	}
 
