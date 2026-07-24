@@ -59,13 +59,19 @@ jobs:
       - name: Patch proto companion with the Go plugins it omits
         shell: bash
         run: |
+          # Also run the container as the runner UID: the base image is root, so
+          # buf would write the generated tree as root and the non-root runner
+          # could not read it back ("permission denied" on the staged dir).
           printf '%s\n' \
             'FROM codeflydev/proto:0.0.10' \
-            'ENV GOTOOLCHAIN=auto' \
+            'ENV GOTOOLCHAIN=auto HOME=/tmp' \
             'RUN GOBIN=/usr/local/bin go install google.golang.org/protobuf/cmd/protoc-gen-go@v1.36.11' \
             'RUN GOBIN=/usr/local/bin go install google.golang.org/grpc/cmd/protoc-gen-go-grpc@v1.6.1' \
+            'ARG RUN_UID=1001' \
+            'USER ${RUN_UID}' \
             > "${RUNNER_TEMP}/proto-patch.Dockerfile"
-          docker build -t codeflydev/proto:0.0.10 -f "${RUNNER_TEMP}/proto-patch.Dockerfile" "${RUNNER_TEMP}"
+          docker build --build-arg RUN_UID="$(id -u)" -t codeflydev/proto:0.0.10 \
+            -f "${RUNNER_TEMP}/proto-patch.Dockerfile" "${RUNNER_TEMP}"
       - name: Run Codefly-owned gate
         shell: bash
         env:
