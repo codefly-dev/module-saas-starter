@@ -189,7 +189,57 @@ func (s *PostgresStore) UpdateUser(ctx context.Context, userID string, updates m
 		}
 	}
 
+	if patch, ok := updates["profile_merge"]; ok {
+		if err := s.mergeUserProfile(ctx, executor, userID, patch); err != nil {
+			return nil, w.Wrap(err)
+		}
+	}
+
 	return s.GetUser(ctx, userID)
+}
+
+// mergeUserProfile applies a partial profile patch atomically: keys with a
+// non-empty value are set, keys with an empty value are removed, and every
+// other existing key is preserved. The row is locked FOR UPDATE so concurrent
+// profile writers serialize on the server instead of a caller having to
+// read-modify-write the whole map (which loses concurrent changes).
+//
+// This is deliberately separate from the "profile" replace path, which GDPR
+// anonymization (business.(*Service).processDeletion) relies on to scrub PII
+// by overwriting the entire map — a merge there would preserve the PII.
+func (s *PostgresStore) mergeUserProfile(ctx context.Context, executor QueryExecutor, userID string, patch any) error {
+	w := wool.Get(ctx).In("mergeUserProfile")
+	fields, ok := patch.(map[string]string)
+	if !ok {
+		return w.NewError("profile_merge expects map[string]string, got %T", patch)
+	}
+	var raw []byte
+	if err := executor.QueryRow(ctx,
+		`SELECT profile FROM users WHERE uuid = $1 FOR UPDATE`, userID).Scan(&raw); err != nil {
+		return w.Wrapf(err, "failed to read profile for merge")
+	}
+	current := map[string]string{}
+	if len(raw) > 0 {
+		if err := json.Unmarshal(raw, &current); err != nil {
+			return w.Wrapf(err, "malformed profile json")
+		}
+	}
+	for key, value := range fields {
+		if value == "" {
+			delete(current, key)
+		} else {
+			current[key] = value
+		}
+	}
+	merged, err := json.Marshal(current)
+	if err != nil {
+		return w.Wrapf(err, "failed to marshal merged profile")
+	}
+	if _, err := executor.Exec(ctx,
+		`UPDATE users SET profile = $1, updated_at = CURRENT_TIMESTAMP WHERE uuid = $2`, merged, userID); err != nil {
+		return w.Wrapf(err, "failed to update profile")
+	}
+	return nil
 }
 
 // DeleteUser soft-deletes a user by setting status to 'deleted'.

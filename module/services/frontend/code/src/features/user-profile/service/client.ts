@@ -1,7 +1,7 @@
 import { createClient } from "@connectrpc/connect";
 import { UserService } from "@/gen/saas/accounts/v1/identity_pb";
 import { apiTransport } from "@/lib/connect/transport";
-import { applyProfilePatch, type UserProfileValues } from "../model/profile";
+import { stringProfilePatch, type UserProfileValues } from "../model/profile";
 
 export type UserProfilePatch = Partial<UserProfileValues>;
 
@@ -27,11 +27,13 @@ async function updateSelfProfile(patch: UserProfilePatch) {
 		user: {
 			uuid: user.uuid,
 			primaryEmail: user.primaryEmail,
-			profile: applyProfilePatch(user.profile, patch),
+			// Send only the changed fields (blank value = clear). The server
+			// merges this patch into the stored map, so there is no
+			// read-modify-write of the whole profile on the client.
+			profile: stringProfilePatch(patch),
 		},
-		// Only the profile map is being changed. Declaring the mask makes the
-		// intent explicit and keeps this call correct if the server ever honors
-		// update_mask instead of the current "update non-empty fields" behavior.
+		// Only the profile map is being changed. Declaring the mask keeps this
+		// call correct if the server ever honors update_mask.
 		updateMask: { paths: ["profile"] },
 	});
 }

@@ -1,9 +1,5 @@
 import { describe, expect, it } from "vitest";
-import {
-	applyProfilePatch,
-	profileInitials,
-	stringProfilePatch,
-} from "./profile";
+import { profileInitials, stringProfilePatch } from "./profile";
 
 describe("user profile model", () => {
 	it("keeps only string values when translating a typed patch", () => {
@@ -25,15 +21,9 @@ describe("user profile model", () => {
 		expect(profileInitials("")).toBe("U");
 	});
 
-	it("merges a patch, clears blanked fields, and preserves unrelated keys", () => {
+	it("keeps blank values in the patch so the server clears those keys", () => {
 		expect(
-			applyProfilePatch(
-				{ name: "Ada", title: "Engineer", custom: "keep" },
-				{ name: "Ada Lovelace", title: "" },
-			),
-		).toEqual({
-			name: "Ada Lovelace",
-			custom: "keep",
-		});
+			stringProfilePatch({ name: "Ada Lovelace", title: "" }),
+		).toEqual({ name: "Ada Lovelace", title: "" });
 	});
 });

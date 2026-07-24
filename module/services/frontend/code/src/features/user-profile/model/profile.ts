@@ -22,21 +22,6 @@ export function stringProfilePatch(
 	);
 }
 
-/**
- * applyProfilePatch merges a typed patch onto existing metadata and drops
- * cleared (empty) values, so a blanked field is removed from the map rather
- * than persisted as an empty string. Unrelated keys are preserved.
- */
-export function applyProfilePatch(
-	base: Record<string, string> | undefined,
-	patch: Partial<UserProfileValues>,
-): Record<string, string> {
-	const merged = { ...base, ...stringProfilePatch(patch) };
-	return Object.fromEntries(
-		Object.entries(merged).filter(([, value]) => value !== ""),
-	);
-}
-
 /** profileInitials renders a compact, deterministic avatar fallback. */
 export function profileInitials(value?: string) {
 	const clean = value?.trim();
