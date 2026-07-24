@@ -854,7 +854,7 @@
     "services/frontend/code/src/features/teams/ui/teams-table.tsx": "26c97ebff83643798d36f5fc2b5f75a84062417b629250c8f9e12051b0008cb6",
     "services/frontend/code/src/features/user-profile/model/profile.test.ts": "a443a23ce99e6ca4724506d8e6494053fea7929b6d0724d8995eeb383ef404a4",
     "services/frontend/code/src/features/user-profile/model/profile.ts": "4414e35d838588b4688bbcfb54aa572f2732750c202086aa417269ee07ff58e4",
-    "services/frontend/code/src/features/user-profile/service/client.ts": "6197d125098570e28602b8049ff85898a9511a30154c96f669198f7ca77f69de",
+    "services/frontend/code/src/features/user-profile/service/client.ts": "5637bc1733b1bd76dfcb8ddd29babc03ff274da9d14fc5d64b36c12b4a21c23b",
     "services/frontend/code/src/features/user-profile/service/mutations.ts": "e93638bc7241eb2859f61cc2af677059192d227fbbc59eafa0016ab25456fa26",
     "services/frontend/code/src/features/user-profile/service/queries.ts": "5e3431418169e82fee1ccb54ba6ed5cb4dea64704cb0d3a1d73e64afddcc21a3",
     "services/frontend/code/src/features/user-settings/model/theme-preference.test.ts": "32570af17f295a33101cf5718b985ada2440044193cef9edc865d767115ddad8",

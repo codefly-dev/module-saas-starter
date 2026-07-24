@@ -32,5 +32,9 @@ async function updateSelfProfile(patch: UserProfilePatch) {
 				...stringProfilePatch(patch),
 			},
 		},
+		// Only the profile map is being changed. Declaring the mask makes the
+		// intent explicit and keeps this call correct if the server ever honors
+		// update_mask instead of the current "update non-empty fields" behavior.
+		updateMask: { paths: ["profile"] },
 	});
 }
