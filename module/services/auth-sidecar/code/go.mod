@@ -6,7 +6,7 @@ require (
 	accounts v0.0.0
 	buf.build/gen/go/bufbuild/protovalidate/protocolbuffers/go v1.36.11-20260415201107-50325440f8f2.1
 	github.com/codefly-dev/core v0.2.24
-	github.com/codefly-dev/sdk-go v0.1.47
+	github.com/codefly-dev/sdk-go v0.1.50
 	github.com/envoyproxy/go-control-plane/envoy v1.37.0
 	github.com/golang-jwt/jwt/v5 v5.3.1
 	github.com/google/uuid v1.6.0
