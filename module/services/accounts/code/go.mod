@@ -9,7 +9,7 @@ require (
 	connectrpc.com/otelconnect v0.9.0
 	github.com/codefly-dev/core v0.2.24
 	github.com/codefly-dev/sdk-go v0.1.50
-	github.com/codefly-dev/service-postgres v0.0.104
+	github.com/codefly-dev/service-postgres v0.0.104-0.20260720162636-a0362a22f904
 	github.com/go-webauthn/webauthn v0.17.4
 	github.com/golang-jwt/jwt/v5 v5.3.1
 	github.com/google/uuid v1.6.0
