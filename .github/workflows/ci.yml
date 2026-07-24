@@ -47,17 +47,19 @@ jobs:
           fetch-depth: 0
       - name: Install Codefly
         uses: codefly-dev/cli/.github/actions/install@3d6f02e21e1ee1e862ebd1c8c15eb0c1807f60ef # v0.1.27
-      # The go-grpc 0.1.12 proto companion image (codeflydev/proto:0.0.10) ships
-      # protoc-gen-grpc-gateway/connect-go/openapiv2/es but omits protoc-gen-go
-      # and protoc-gen-go-grpc, so buf falls back to $PATH for those two. Provide
-      # them at the exact versions the checked-in code was generated with so
-      # generation is deterministic and sync-drift stays clean.
-      - name: Provide protoc Go plugins the proto companion omits
+      # The published go-grpc 0.1.12 agent resolves proto companion image
+      # codeflydev/proto:0.0.10, which is missing protoc-gen-go and
+      # protoc-gen-go-grpc (fixed in 0.0.11). buf runs INSIDE that container, so
+      # host plugins don't help. The runner pulls the companion only when it is
+      # absent locally (core GetImageIfNotPresent), so pre-seed the 0.0.10 tag
+      # from the fixed 0.0.11 image (same plugin versions, plus the two missing
+      # Go plugins). Stopgap until go-grpc ships an agent built against
+      # core >= v0.2.29, which pins proto 0.0.11.
+      - name: Pin fixed proto companion image
         shell: bash
         run: |
-          go install google.golang.org/protobuf/cmd/protoc-gen-go@v1.36.11
-          go install google.golang.org/grpc/cmd/protoc-gen-go-grpc@v1.6.1
-          echo "$(go env GOPATH)/bin" >> "$GITHUB_PATH"
+          docker pull codeflydev/proto:0.0.11
+          docker tag codeflydev/proto:0.0.11 codeflydev/proto:0.0.10
       - name: Run Codefly-owned gate
         shell: bash
         env:
