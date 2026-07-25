@@ -1,5 +1,5 @@
-github.com/codefly-dev/core v0.2.19 h1:J2nffMEzmr9FHkf1lh/2gNPbjJFYjpQHro3niejrv04=
-github.com/codefly-dev/core v0.2.19/go.mod h1:78gNY4qIlPnj08Fe8X5WwXWtqjTvU4MelJlOYTJq/5s=
+github.com/codefly-dev/core v0.2.24 h1:1CRaWbVIQXnkW+lX3U4kgdYUfnqdODjUzNGta/ECrCM=
+github.com/codefly-dev/core v0.2.24/go.mod h1:78gNY4qIlPnj08Fe8X5WwXWtqjTvU4MelJlOYTJq/5s=
 github.com/creack/pty v1.1.9/go.mod h1:oKZEueFk5CKHvIhNR5MUki03XCEU+Q6VDXinZuGJ33E=
 github.com/davecgh/go-spew v1.1.2-0.20180830191138-d8f796af33cc h1:U9qPSI2PIWSS1VwoXQT9A3Wy9MM3WgvqSxFWenqJduM=
 github.com/davecgh/go-spew v1.1.2-0.20180830191138-d8f796af33cc/go.mod h1:J7Y8YcW2NihsgmVo/mv3lAwl/skON4iLHjSsI+c5H38=
