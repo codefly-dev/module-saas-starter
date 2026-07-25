@@ -47,35 +47,6 @@ jobs:
           fetch-depth: 0
       - name: Install Codefly
         uses: codefly-dev/cli/.github/actions/install@3d6f02e21e1ee1e862ebd1c8c15eb0c1807f60ef # v0.1.27
-      # The published go-grpc 0.1.12 agent resolves proto companion image
-      # codeflydev/proto:0.0.10, which omits protoc-gen-go and protoc-gen-go-grpc
-      # (the fixed 0.0.11 image is not published). buf runs INSIDE that
-      # container, so host plugins don't help. The runner pulls the companion
-      # only when it is absent locally (core GetImageIfNotPresent), so build a
-      # patched 0.0.10 that adds the two Go plugins at the exact versions the
-      # checked-in code was generated with, and keep the tag — the agent then
-      # uses it and buf generation succeeds. Stopgap until a go-grpc agent built
-      # against core >= v0.2.29 (proto 0.0.11) is published.
-      - name: Patch proto companion with the Go plugins it omits
-        shell: bash
-        run: |
-          # Also run the container as the runner UID: the base image is root, so
-          # buf would write the generated tree as root and the non-root runner
-          # could not read it back ("permission denied" on the staged dir).
-          printf '%s\n' \
-            'FROM codeflydev/proto:0.0.10' \
-            'ENV GOTOOLCHAIN=auto' \
-            'RUN GOBIN=/usr/local/bin go install google.golang.org/protobuf/cmd/protoc-gen-go@v1.36.11' \
-            'RUN GOBIN=/usr/local/bin go install google.golang.org/grpc/cmd/protoc-gen-go-grpc@v1.6.1' \
-            'RUN npm i -g @bufbuild/protoc-gen-es@2.11.0' \
-            'RUN mkdir -p /home/buf && chmod 777 /home/buf' \
-            'ENV HOME=/home/buf' \
-            'RUN mkdir -p /frontend && chmod 777 /frontend' \
-            'ARG RUN_UID=1001' \
-            'USER ${RUN_UID}' \
-            > "${RUNNER_TEMP}/proto-patch.Dockerfile"
-          docker build --build-arg RUN_UID="$(id -u)" -t codeflydev/proto:0.0.10 \
-            -f "${RUNNER_TEMP}/proto-patch.Dockerfile" "${RUNNER_TEMP}"
       - name: Run Codefly-owned gate
         shell: bash
         env:
