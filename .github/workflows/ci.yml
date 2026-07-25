@@ -40,8 +40,11 @@ jobs:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
           fetch-depth: 0
+      - uses: actions/setup-go@v5
+        with:
+          go-version: stable
       - name: Install Codefly
-        uses: codefly-dev/cli/.github/actions/install@7e8cfd1f14b024bdd28db0d814cb8c87d5399d37 # v0.1.21
+        run: go install github.com/codefly-dev/cli/cmd/codefly@latest
       - name: Run Codefly-owned gate
         shell: bash
         env:
