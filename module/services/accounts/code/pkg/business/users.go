@@ -124,7 +124,11 @@ func (s *Service) UpdateUser(ctx context.Context, actorID string, access Identit
 			updates["primary_email"] = req.User.PrimaryEmail
 		}
 		if req.User.Profile != nil {
-			updates["profile"] = req.User.Profile
+			// Merge the profile map (set non-empty keys, delete blanked keys,
+			// preserve the rest) so callers send only the fields they changed
+			// and don't have to read-modify-write the whole map. GDPR's
+			// anonymization uses the "profile" replace path directly.
+			updates["profile_merge"] = req.User.Profile
 		}
 	}
 

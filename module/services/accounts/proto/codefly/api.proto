@@ -7,10 +7,55 @@ package saas.accounts.v1;
 // Codefly currently advertises a service's gRPC dependency contract from the
 // proto/codefly/api.proto convention. Accounts' canonical, catalog-complete
 // schema is split under saas/accounts/v1; this deliberately narrow facade keeps
-// the internal identity boundary available to generated service clients without
-// duplicating these symbols in Accounts' own Buf generation (buf.yaml excludes
-// this file). Keep field numbers and wire method names aligned with the canonical
-// identity.proto and api_keys.proto definitions.
+// identity enforcement plus real dependency-test credential provisioning
+// available to generated service clients without duplicating these symbols in
+// Accounts' own Buf generation (buf.yaml excludes this file). Keep field
+// numbers and wire method names aligned with the canonical schemas.
+
+message FixtureAuthentication {
+  string token = 1;
+}
+
+message AuthenticateRequest {
+  string provider = 1;
+  string provider_id = 2 [deprecated = true];
+  string provider_email = 3 [deprecated = true];
+  bool email_verified = 4 [deprecated = true];
+  map<string, string> profile = 5;
+  string device_info = 6;
+  oneof authentication {
+    FixtureAuthentication fixture = 8;
+  }
+}
+
+message User {
+  string uuid = 1;
+}
+
+message AuthenticateResponse {
+  string access_token = 1;
+  string refresh_token = 2;
+  int64 expires_in = 3;
+  User user = 4;
+}
+
+service AuthService {
+  rpc Authenticate(AuthenticateRequest) returns (AuthenticateResponse);
+}
+
+message ListOrganizationsRequest {}
+
+message Organization {
+  string id = 1;
+}
+
+message ListOrganizationsResponse {
+  repeated Organization organizations = 1;
+}
+
+service OrganizationService {
+  rpc ListOrganizations(ListOrganizationsRequest) returns (ListOrganizationsResponse);
+}
 
 message ResolveIdentityRequest {
   string provider = 1;
@@ -45,6 +90,29 @@ message ValidateAPIKeyResponse {
   string principal_kind = 8;
 }
 
+enum APIKeyEnvironment {
+  API_KEY_ENVIRONMENT_UNSPECIFIED = 0;
+  API_KEY_ENVIRONMENT_LIVE = 1;
+  API_KEY_ENVIRONMENT_TEST = 2;
+}
+
+message Permission {
+  string resource = 1;
+  string action = 2;
+}
+
+message CreateAPIKeyRequest {
+  string organization_id = 1;
+  string name = 2;
+  repeated Permission scopes = 3;
+  APIKeyEnvironment environment = 4;
+}
+
+message CreateAPIKeyResponse {
+  string plaintext_key = 2;
+}
+
 service APIKeyService {
+  rpc CreateAPIKey(CreateAPIKeyRequest) returns (CreateAPIKeyResponse);
   rpc ValidateAPIKey(ValidateAPIKeyRequest) returns (ValidateAPIKeyResponse);
 }

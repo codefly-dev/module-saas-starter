@@ -36,8 +36,8 @@ github.com/cncf/xds/go v0.0.0-20260202195803-dba9d589def2 h1:aBangftG7EVZoUb69Os
 github.com/cncf/xds/go v0.0.0-20260202195803-dba9d589def2/go.mod h1:qwXFYgsP6T7XnJtbKlf1HP8AjxZZyzxMmc+Lq5GjlU4=
 github.com/codefly-dev/core v0.2.24 h1:1CRaWbVIQXnkW+lX3U4kgdYUfnqdODjUzNGta/ECrCM=
 github.com/codefly-dev/core v0.2.24/go.mod h1:78gNY4qIlPnj08Fe8X5WwXWtqjTvU4MelJlOYTJq/5s=
-github.com/codefly-dev/sdk-go v0.1.47 h1:hY0y+26jGOu+m9/DvzbanuzWmX5YpQrawOP2YDx7r1E=
-github.com/codefly-dev/sdk-go v0.1.47/go.mod h1:/2pttFVF1+b/3aRZ78L/FXgVAJFrx2jHFnZqVK37t90=
+github.com/codefly-dev/sdk-go v0.1.50 h1:MKIRLsLW72LqPLQn5vFyFybTcreeE1qm40On/LEO6eQ=
+github.com/codefly-dev/sdk-go v0.1.50/go.mod h1:/2pttFVF1+b/3aRZ78L/FXgVAJFrx2jHFnZqVK37t90=
 github.com/codefly-dev/service-postgres v0.0.104 h1:vSoz4c1O7l2OnAfgKVD/kF4fkOOQUP/6lMP5rtVSp6A=
 github.com/codefly-dev/service-postgres v0.0.104/go.mod h1:6cBk3sF39kvhMymimXutuQl2HhkLpxWTviwyENMod8E=
 github.com/cyphar/filepath-securejoin v0.6.1 h1:5CeZ1jPXEiYt3+Z6zqprSAgSWiggmpVyciv8syjIpVE=

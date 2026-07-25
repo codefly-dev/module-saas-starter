@@ -11,14 +11,14 @@ managed:
     - file_option: go_package_prefix
       value: auth-sidecar/pkg/gen
 plugins:
-  # Codefly invokes this template; explicit versions make generation
-  # reproducible across developer machines and clean CI runners.
-  - remote: buf.build/protocolbuffers/go:v1.36.11
+  # Codefly's versioned proto companion owns the byte-generating toolchain.
+  # Local plugins avoid mutable registry execution and anonymous rate limits.
+  - local: protoc-gen-go
     out: ../code/pkg/gen
     opt: paths=source_relative
-  - remote: buf.build/grpc/go:v1.6.1
+  - local: protoc-gen-go-grpc
     out: ../code/pkg/gen
     opt: paths=source_relative
-  - remote: buf.build/grpc-ecosystem/gateway:v2.29.0
+  - local: protoc-gen-grpc-gateway
     out: ../code/pkg/gen
     opt: paths=source_relative

@@ -66,7 +66,7 @@ function PluginFailureState({
 	kind: PluginContributionKind;
 	retry(): void;
 }) {
-	const copy = stateCopy[failure.state];
+	const copy = stateCopy[failure.state as keyof typeof stateCopy];
 	const Icon = copy.icon;
 	return (
 		<div
