@@ -24,6 +24,10 @@ import (
 var testPool *pgxpool.Pool
 
 func TestMain(m *testing.M) {
+	os.Exit(runBillingStoreTests(m))
+}
+
+func runBillingStoreTests(m *testing.M) int {
 	ctx := context.Background()
 	wool.SetGlobalLogLevel(wool.DEBUG)
 
@@ -35,13 +39,13 @@ func TestMain(m *testing.M) {
 	)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "WithDependencies: %v\n", err)
-		os.Exit(1)
+		return 1
 	}
 	defer deps.Destroy(ctx)
 
 	if _, err := codefly.Init(ctx); err != nil {
 		fmt.Fprintf(os.Stderr, "codefly.Init: %v\n", err)
-		os.Exit(1)
+		return 1
 	}
 	// Billing SQL tests need deterministic cross-tenant setup and teardown.
 	// Resolve the test-only migration-owner capability through the Codefly SDK;
@@ -50,18 +54,17 @@ func TestMain(m *testing.M) {
 	conn, err := codefly.For(ctx).Service("store").Secret("postgres", "owner-connection")
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "connection: %v\n", err)
-		os.Exit(1)
+		return 1
 	}
 	pool, err := pgxpool.New(ctx, conn)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "pgxpool: %v\n", err)
-		os.Exit(1)
+		return 1
 	}
+	defer pool.Close()
 	testPool = pool
 
-	code := m.Run()
-	pool.Close()
-	os.Exit(code)
+	return m.Run()
 }
 
 // resetBilling wipes the billing-related tables between tests.

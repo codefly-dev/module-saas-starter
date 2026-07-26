@@ -54,13 +54,13 @@ message RevokeRoleRequest {
 }
 
 // ListRoleAssignmentsRequest — read assignments scoped to an org.
-// subject_id (optional) filters to assignments for that user/team
+// subject_id (optional) filters to assignments for that principal/team
 // only; empty returns every assignment in the org. Used by the
 // admin UI's "manage roles for member X" panel.
 message ListRoleAssignmentsRequest {
   string org_id = 1 [(buf.validate.field).string.uuid = true];
   string subject_id = 2; // empty → all subjects in this org
-  SubjectKind subject_kind = 3; // unspecified → both users + teams
+  SubjectKind subject_kind = 3; // unspecified → both principals + teams
 }
 
 message ListRoleAssignmentsResponse {

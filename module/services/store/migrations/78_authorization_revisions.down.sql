@@ -1,0 +1,31 @@
+DROP TRIGGER IF EXISTS platform_admins_bump_authorization_revision ON public.platform_admins;
+DROP TRIGGER IF EXISTS users_bump_authorization_revision ON public.users;
+DROP TRIGGER IF EXISTS users_sync_human_principal ON public.users;
+DROP TRIGGER IF EXISTS principals_bump_authorization_revision ON public.principals;
+DROP TRIGGER IF EXISTS role_permissions_bump_authorization_revision ON public.role_permissions;
+DROP TRIGGER IF EXISTS roles_bump_authorization_revision ON public.roles;
+DROP TRIGGER IF EXISTS role_assignments_bump_authorization_revision ON public.role_assignments;
+DROP TRIGGER IF EXISTS teams_bump_authorization_revision ON public.teams;
+DROP TRIGGER IF EXISTS team_members_bump_authorization_revision ON public.team_members;
+DROP TRIGGER IF EXISTS organization_members_bump_authorization_revision ON public.organization_members;
+DROP TRIGGER IF EXISTS organizations_seed_authorization_revision ON public.organizations;
+
+DROP FUNCTION IF EXISTS public.authorization_revision_platform_admin_mutation();
+DROP FUNCTION IF EXISTS public.authorization_revision_user_mutation();
+DROP FUNCTION IF EXISTS public.sync_human_principal();
+DROP FUNCTION IF EXISTS public.authorization_revision_principal_mutation();
+DROP FUNCTION IF EXISTS public.authorization_revision_role_permission_mutation();
+DROP FUNCTION IF EXISTS public.authorization_revision_role_mutation();
+DROP FUNCTION IF EXISTS public.authorization_revision_role_assignment_mutation();
+DROP FUNCTION IF EXISTS public.authorization_revision_team_mutation();
+DROP FUNCTION IF EXISTS public.authorization_revision_team_member_mutation();
+DROP FUNCTION IF EXISTS public.authorization_revision_membership_mutation();
+DROP FUNCTION IF EXISTS public.authorization_revision_organization_insert();
+DROP FUNCTION IF EXISTS public.bump_role_authorization_revision(UUID, UUID);
+DROP FUNCTION IF EXISTS public.bump_principal_and_organization_authorization(UUID, UUID);
+DROP FUNCTION IF EXISTS public.bump_principal_authorization_revision(UUID, UUID);
+DROP FUNCTION IF EXISTS public.bump_organization_authorization_revision(UUID);
+
+DROP TABLE IF EXISTS public.principal_authorization_revisions;
+DROP TABLE IF EXISTS public.organization_authorization_revisions;
+DROP SEQUENCE IF EXISTS public.authorization_revision_sequence;

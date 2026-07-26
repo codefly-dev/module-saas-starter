@@ -20,7 +20,7 @@ func TestGatewayRouteCatalogCompilationAndParity(t *testing.T) {
 	routes, err := cataloggen.BuildGatewayRouteCatalog(serviceDocument, bindingDocument, topologyDocument)
 	require.NoError(t, err)
 	require.NoError(t, cataloggen.ValidateGatewayRouteCatalog(routes))
-	require.Len(t, routes.GetRoutes(), 343)
+	require.Len(t, routes.GetRoutes(), 355)
 
 	var connectCount, restCount, aliasCount, publicCount int
 	byMatch := make(map[string]*catalogv1.GatewayRoute, len(routes.GetRoutes()))
@@ -40,9 +40,9 @@ func TestGatewayRouteCatalogCompilationAndParity(t *testing.T) {
 		}
 		require.NotEqual(t, policyv1.Exposure_EXPOSURE_INTERNAL, route.GetExposure())
 	}
-	require.Equal(t, 228, connectCount)
-	require.Equal(t, 115, restCount)
-	require.Equal(t, 114, aliasCount)
+	require.Equal(t, 236, connectCount)
+	require.Equal(t, 119, restCount)
+	require.Equal(t, 118, aliasCount)
 	require.Equal(t, 33, publicCount)
 
 	require.Nil(t, byMatch["POST /saas.accounts.v1.APIKeyService/ValidateAPIKey"])
@@ -50,6 +50,7 @@ func TestGatewayRouteCatalogCompilationAndParity(t *testing.T) {
 	require.Equal(t, "/saas.accounts.v1.UserService/GetUser", byMatch["GET /v1/users:byEmail"].GetProcedure())
 	require.Equal(t, "/saas.accounts.v1.PlatformAdminService/GetJobOperations", byMatch["GET /v1/platform/jobs/operations"].GetProcedure())
 	require.Equal(t, "/saas.accounts.v1.PlatformAdminService/ReplayJob", byMatch["POST /v1/platform/jobs/{source_job_id}:replay"].GetProcedure())
+	require.Equal(t, "/saas.accounts.v1.WorkContextService/ExchangeAudience", byMatch["POST /v1/work-contexts:exchange-audience"].GetProcedure())
 	legacy := byMatch["POST /customers.UserService/GetSelf"]
 	require.Equal(t, "/saas.accounts.v1.UserService/GetSelf", legacy.GetRewritePath())
 	require.Equal(t, "2026-10-11", legacy.GetRemoveAfter())
@@ -84,12 +85,12 @@ func TestGatewayArtifactsAreDeterministicAndCurrent(t *testing.T) {
 	goRoutes, err := cataloggen.RenderAuthSidecarConnectRoutes(routes)
 	require.NoError(t, err)
 	require.Equal(t, string(goRoutes), string(readFixture(t, "../../../../auth-sidecar/code/routing_catalog_gen.go")), "run: go generate ./pkg/cataloggen")
-	require.Equal(t, 228, strings.Count(string(goRoutes), `{Service: "accounts_connect"`))
+	require.Equal(t, 236, strings.Count(string(goRoutes), `{Service: "accounts_connect"`))
 
 	istio, err := cataloggen.RenderIstioVirtualService(routes, bindingDocument)
 	require.NoError(t, err)
 	require.Equal(t, string(istio), string(readFixture(t, "../../../../../deployment/generated/accounts-routes.virtualservice.yaml")), "run: go generate ./pkg/cataloggen")
-	require.Equal(t, 343, strings.Count(string(istio), "- name: catalog-"))
+	require.Equal(t, 355, strings.Count(string(istio), "- name: catalog-"))
 	require.NotContains(t, string(istio), "prefix:")
 	require.Contains(t, string(istio), "regex: ^/v1/users/[^/]+$")
 }

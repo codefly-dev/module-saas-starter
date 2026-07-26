@@ -14,6 +14,7 @@ import {
 	Label,
 } from "@/shared/ui";
 import { type EditUserValues, editUserSchema } from "../model/schemas";
+import { withDisplayName } from "../model/transforms";
 import type { User } from "../model/types";
 import type { UserEdit } from "../service/mutations";
 
@@ -37,18 +38,23 @@ export function EditUserForm({
 	const form = useForm<EditUserValues>({
 		resolver: zodResolver(editUserSchema),
 		defaultValues: {
-			firstName: user.profile["first_name"] ?? "",
-			lastName: user.profile["last_name"] ?? "",
+			firstName: user.profile.first_name ?? "",
+			lastName: user.profile.last_name ?? "",
 			primaryEmail: user.primaryEmail,
 		},
 	});
 
 	const submit = (values: EditUserValues) => {
-		const profile = {
-			...user.profile,
-			first_name: values.firstName ?? "",
-			last_name: values.lastName ?? "",
-		};
+		const firstName = values.firstName?.trim() ?? "";
+		const lastName = values.lastName?.trim() ?? "";
+		const profile = withDisplayName(
+			{
+				...user.profile,
+				first_name: firstName,
+				last_name: lastName,
+			},
+			[firstName, lastName].filter(Boolean).join(" "),
+		);
 		// Always send a valid email (the User proto validates it); fall back to the
 		// current address when the field was left unchanged/blank.
 		onSubmit({

@@ -1,77 +1,4 @@
-"use client";
-
-import {
-	Activity,
-	AlertTriangle,
-	ChevronDown,
-	FileText,
-	Key,
-	Lock,
-	Server,
-	Shield,
-	ShieldCheck,
-	Users,
-} from "lucide-react";
-import { useState } from "react";
-import {
-	Card,
-	CardContent,
-	CardDescription,
-	CardHeader,
-	CardTitle,
-} from "@/shared/ui";
-
-// ---------------------------------------------------------------------------
-// Collapsible section — replaces a full accordion dependency
-// ---------------------------------------------------------------------------
-
-function Section({
-	icon: Icon,
-	title,
-	description,
-	children,
-	defaultOpen = false,
-}: {
-	icon: React.ElementType;
-	title: string;
-	description: string;
-	children: React.ReactNode;
-	defaultOpen?: boolean;
-}) {
-	const [open, setOpen] = useState(defaultOpen);
-
-	return (
-		<Card>
-			<button
-				type="button"
-				onClick={() => setOpen(!open)}
-				className="w-full text-left"
-			>
-				<CardHeader className="flex flex-row items-center gap-4 space-y-0">
-					<div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-primary/10">
-						<Icon className="h-5 w-5 text-primary" />
-					</div>
-					<div className="flex-1 min-w-0">
-						<CardTitle className="text-base">{title}</CardTitle>
-						<CardDescription className="mt-1">{description}</CardDescription>
-					</div>
-					<ChevronDown
-						className={`h-5 w-5 shrink-0 text-muted-foreground transition-transform ${
-							open ? "rotate-180" : ""
-						}`}
-					/>
-				</CardHeader>
-			</button>
-			{open && (
-				<CardContent className="pt-0 pl-[4.5rem]">
-					<div className="prose prose-sm dark:prose-invert max-w-none">
-						{children}
-					</div>
-				</CardContent>
-			)}
-		</Card>
-	);
-}
+import { ComplianceSection as Section } from "./compliance-section";
 
 // ---------------------------------------------------------------------------
 // Page
@@ -94,7 +21,7 @@ export default function CompliancePage() {
 			<div className="space-y-4">
 				{/* ── Security Overview ─────────────────────────────────── */}
 				<Section
-					icon={ShieldCheck}
+					icon="security"
 					title="Security Overview"
 					description="Authentication, encryption, and rate limiting"
 					defaultOpen
@@ -144,7 +71,7 @@ export default function CompliancePage() {
 
 				{/* ── Data Handling ─────────────────────────────────────── */}
 				<Section
-					icon={Lock}
+					icon="lock"
 					title="Data Handling"
 					description="GDPR compliance, data export, deletion, and retention"
 				>
@@ -196,7 +123,7 @@ export default function CompliancePage() {
 
 				{/* ── Access Control ───────────────────────────────────── */}
 				<Section
-					icon={Users}
+					icon="users"
 					title="Access Control"
 					description="Role-based access, audit logging, and multi-factor authentication"
 				>
@@ -253,7 +180,7 @@ export default function CompliancePage() {
 
 				{/* ── Infrastructure ───────────────────────────────────── */}
 				<Section
-					icon={Server}
+					icon="server"
 					title="Infrastructure"
 					description="Gateway architecture, route whitelisting, and service isolation"
 				>
@@ -305,7 +232,7 @@ export default function CompliancePage() {
 
 				{/* ── Incident Response ────────────────────────────────── */}
 				<Section
-					icon={AlertTriangle}
+					icon="warning"
 					title="Incident Response"
 					description="Response process, escalation, and communication"
 				>
@@ -362,7 +289,7 @@ export default function CompliancePage() {
 
 				{/* ── Compliance Programs ──────────────────────────────── */}
 				<Section
-					icon={FileText}
+					icon="document"
 					title="Compliance Programs"
 					description="SOC 2, GDPR, and ongoing compliance commitments"
 				>

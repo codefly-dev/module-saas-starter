@@ -3,10 +3,10 @@
 import type { FrontendReactConfig } from "@codefly/saas-plugin-react";
 import { PluginRuntimeProvider } from "@codefly/saas-plugin-react/runtime";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { ThemeProvider } from "next-themes";
 import { createContext, type ReactNode, useContext, useState } from "react";
 import { ThemePreferenceProvider } from "@/features/user-settings/ui/theme-preference-provider";
 import { AppearanceProvider } from "@/lib/appearance-provider";
+import { ThemeProvider } from "@/lib/theme-provider";
 import applicationFrontendConfig from "../../frontend.config";
 import { AuthProvider } from "./auth";
 import { hostPluginRuntime } from "./plugins/runtime";
@@ -58,10 +58,9 @@ export function Providers({
 	return (
 		// ThemeProvider wraps everything so cmd+K, toasts, and the
 		// admin chrome all read the same theme. attribute="class"
-		// matches the .dark CSS variant in globals.css. defaultTheme
+		// behavior matches the .dark CSS variant in globals.css. defaultTheme
 		// "system" honours the OS preference until the user picks one.
 		<ThemeProvider
-			attribute="class"
 			defaultTheme={frontendConfig.appearance.defaultTheme}
 			enableSystem
 			disableTransitionOnChange

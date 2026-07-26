@@ -214,7 +214,7 @@ func (s *PermServer) Decide(ctx context.Context, req *gen.DecideRequest) (*gen.D
 	// correctly.
 	checkReq := &gen.CheckPermissionRequest{
 		SubjectId:   req.GetPrincipalId(),
-		SubjectKind: gen.SubjectKind_SUBJECT_KIND_USER,
+		SubjectKind: gen.SubjectKind_SUBJECT_KIND_PRINCIPAL,
 		Resource:    resourceForCheck,
 		Action:      verb,
 		OrgId:       req.GetOrgId(),

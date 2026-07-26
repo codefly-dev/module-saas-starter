@@ -58,6 +58,10 @@ var (
 )
 
 func TestMain(m *testing.M) {
+	os.Exit(runPostgresInfraTests(m))
+}
+
+func runPostgresInfraTests(m *testing.M) int {
 	ctx := context.Background()
 	wool.SetGlobalLogLevel(wool.DEBUG)
 
@@ -69,28 +73,27 @@ func TestMain(m *testing.M) {
 	)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "WithDependencies: %v\n", err)
-		os.Exit(1)
+		return 1
 	}
+	defer deps.Destroy(ctx)
 
 	if _, err := codefly.Init(ctx); err != nil {
 		fmt.Fprintf(os.Stderr, "codefly.Init: %v\n", err)
-		os.Exit(1)
+		return 1
 	}
 
 	store, err := infra.NewPostgresStore(ctx)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "NewPostgresStore: %v\n", err)
-		os.Exit(1)
+		return 1
 	}
+	defer store.Close()
 
 	testStore = store
 	testPool = store.Pool()
 	testCtx = ctx
 
-	code := m.Run()
-	store.Close()
-	deps.Destroy(ctx)
-	os.Exit(code)
+	return m.Run()
 }
 
 func TestBillingWorkerPoolUsesLeastPrivilegeBypassRole(t *testing.T) {

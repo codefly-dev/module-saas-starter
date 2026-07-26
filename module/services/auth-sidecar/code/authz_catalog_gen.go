@@ -134,6 +134,10 @@ var generatedAuthorizationByProcedure = map[string]generatedAuthorizationMetadat
 	"/saas.accounts.v1.WebhookService/ReplayDelivery":            {exposure: policyv1.Exposure_EXPOSURE_AUTHENTICATED, rateLimitClass: policyv1.RateLimitClass_RATE_LIMIT_CLASS_STANDARD_WRITE, rateLimitBackendFailClosed: false, authenticationFactorAttempt: false, policySHA256: "69b6d26f7e90803043dec1b6d1fffd3a34fdf1e774b140b9c1cff55f58f5f90d"},
 	"/saas.accounts.v1.WebhookService/RotateSecret":              {exposure: policyv1.Exposure_EXPOSURE_AUTHENTICATED, rateLimitClass: policyv1.RateLimitClass_RATE_LIMIT_CLASS_SENSITIVE, rateLimitBackendFailClosed: false, authenticationFactorAttempt: false, policySHA256: "5bcb3fee05cb589b8ac533759a878527c31dcda2f357c052c17d750c1c1c89db"},
 	"/saas.accounts.v1.WebhookService/TestWebhook":               {exposure: policyv1.Exposure_EXPOSURE_AUTHENTICATED, rateLimitClass: policyv1.RateLimitClass_RATE_LIMIT_CLASS_STANDARD_WRITE, rateLimitBackendFailClosed: false, authenticationFactorAttempt: false, policySHA256: "19d51fded6d0d21c195a1527d70784808afabf8a04b4f234431586184d94b8cd"},
+	"/saas.accounts.v1.WorkContextService/ExchangeAudience":      {exposure: policyv1.Exposure_EXPOSURE_AUTHENTICATED, rateLimitClass: policyv1.RateLimitClass_RATE_LIMIT_CLASS_SENSITIVE, rateLimitBackendFailClosed: false, authenticationFactorAttempt: false, policySHA256: "71fa0526a27eaa69bf6cd296965636eb1abc969272b5b7a40f850ed89b4d4ed0"},
+	"/saas.accounts.v1.WorkContextService/StartChildSession":     {exposure: policyv1.Exposure_EXPOSURE_AUTHENTICATED, rateLimitClass: policyv1.RateLimitClass_RATE_LIMIT_CLASS_SENSITIVE, rateLimitBackendFailClosed: false, authenticationFactorAttempt: false, policySHA256: "d7dce2d5de2ae9f9704f90467e5ce092c85ec152c7aa1fc85197c80f931a893c"},
+	"/saas.accounts.v1.WorkContextService/StartRootSession":      {exposure: policyv1.Exposure_EXPOSURE_AUTHENTICATED, rateLimitClass: policyv1.RateLimitClass_RATE_LIMIT_CLASS_SENSITIVE, rateLimitBackendFailClosed: false, authenticationFactorAttempt: false, policySHA256: "72cf1ff58c718b569b081fd94fdab94cd539123c9dccd44ebc93c2c44937d075"},
+	"/saas.accounts.v1.WorkContextService/StartTask":             {exposure: policyv1.Exposure_EXPOSURE_AUTHENTICATED, rateLimitClass: policyv1.RateLimitClass_RATE_LIMIT_CLASS_SENSITIVE, rateLimitBackendFailClosed: false, authenticationFactorAttempt: false, policySHA256: "ade874693fca0881500a158a8da0d7275cf4a1cc48c94a7cf6e6e5ae0f42bebc"},
 }
 
 var generatedRESTProcedureByRoute = map[string]string{
@@ -252,4 +256,8 @@ var generatedRESTProcedureByRoute = map[string]string{
 	"POST /v1/webhooks/deliveries/{id}:replay":              "/saas.accounts.v1.WebhookService/ReplayDelivery",
 	"POST /v1/webhooks/{id}:rotateSecret":                   "/saas.accounts.v1.WebhookService/RotateSecret",
 	"POST /v1/webhooks/{id}:test":                           "/saas.accounts.v1.WebhookService/TestWebhook",
+	"POST /v1/work-contexts:exchange-audience":              "/saas.accounts.v1.WorkContextService/ExchangeAudience",
+	"POST /v1/work-contexts:child-session":                  "/saas.accounts.v1.WorkContextService/StartChildSession",
+	"POST /v1/work-contexts:root-session":                   "/saas.accounts.v1.WorkContextService/StartRootSession",
+	"POST /v1/work-contexts:task":                           "/saas.accounts.v1.WorkContextService/StartTask",
 }

@@ -29,7 +29,7 @@ workspace-configuration-dependencies:
 endpoints:
     - name: grpc
       visibility: module
-    - name: http
+    - name: rest
       visibility: public
 spec:
     hot-reload: true

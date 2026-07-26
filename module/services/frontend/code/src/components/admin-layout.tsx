@@ -233,7 +233,6 @@ export function AdminLayout({ children }: { children: React.ReactNode }) {
 						</>
 					)}
 
-					{/* Settings moved to user avatar dropdown */}
 				</SidebarContent>
 
 				<SidebarFooter>

@@ -117,6 +117,10 @@ func generatedCatalogRESTRoutes() []*RouteEntry {
 		{Service: "accounts", Method: "POST", Path: "/v1/webhooks/deliveries/{id}:replay", Procedure: "/saas.accounts.v1.WebhookService/ReplayDelivery"},
 		{Service: "accounts", Method: "POST", Path: "/v1/webhooks/{id}:rotateSecret", Procedure: "/saas.accounts.v1.WebhookService/RotateSecret"},
 		{Service: "accounts", Method: "POST", Path: "/v1/webhooks/{id}:test", Procedure: "/saas.accounts.v1.WebhookService/TestWebhook"},
+		{Service: "accounts", Method: "POST", Path: "/v1/work-contexts:child-session", Procedure: "/saas.accounts.v1.WorkContextService/StartChildSession"},
+		{Service: "accounts", Method: "POST", Path: "/v1/work-contexts:exchange-audience", Procedure: "/saas.accounts.v1.WorkContextService/ExchangeAudience"},
+		{Service: "accounts", Method: "POST", Path: "/v1/work-contexts:root-session", Procedure: "/saas.accounts.v1.WorkContextService/StartRootSession"},
+		{Service: "accounts", Method: "POST", Path: "/v1/work-contexts:task", Procedure: "/saas.accounts.v1.WorkContextService/StartTask"},
 		{Service: "accounts", Method: "PUT", Path: "/v1/organizations/{org_id}/settings", Procedure: "/saas.accounts.v1.OrganizationService/UpdateOrgSettings"},
 		{Service: "accounts", Method: "PUT", Path: "/v1/platform/feature-flags/{name}", Procedure: "/saas.accounts.v1.PlatformAdminService/UpsertFeatureFlag"},
 	}

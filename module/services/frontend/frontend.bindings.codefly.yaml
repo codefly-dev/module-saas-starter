@@ -271,6 +271,19 @@ navigation:
       - plugin_registry
       - sidebar
     order: 520
+  - id: settings
+    plugin: core-users
+    label: Settings
+    path: /settings
+    icon: Settings
+    group: Settings
+    access: authenticated
+    surfaces:
+      - command_palette
+      - plugin_registry
+      - sidebar
+      - user_menu
+    order: 590
   - id: security
     plugin: core-users
     label: Security

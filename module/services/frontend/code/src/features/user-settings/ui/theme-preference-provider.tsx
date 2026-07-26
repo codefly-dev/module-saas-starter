@@ -2,7 +2,6 @@
 
 import type { FrontendThemePreference } from "@codefly/saas-plugin-contract";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useTheme } from "next-themes";
 import {
 	createContext,
 	type ReactNode,
@@ -12,6 +11,8 @@ import {
 	useRef,
 } from "react";
 import { useAuth } from "@/lib/auth";
+import { useTheme } from "@/lib/theme-provider";
+import { Settings } from "../model/settings";
 import {
 	isThemePreference,
 	themePreferenceFromProto,
@@ -50,13 +51,15 @@ export function ThemePreferenceProvider({ children }: { children: ReactNode }) {
 			appliedServerValue.current = "";
 			return;
 		}
-		const serverPreference = themePreferenceFromProto(settings?.theme);
+		if (!settings) return;
+		const serverTheme = Settings.appearance.theme.get(settings);
+		const serverPreference = themePreferenceFromProto(serverTheme);
 		if (!serverPreference) return;
 		const identity = `${user.id}:${serverPreference}`;
 		if (appliedServerValue.current === identity) return;
 		appliedServerValue.current = identity;
 		setTheme(serverPreference);
-	}, [isAuthenticated, settings?.theme, setTheme, user?.id]);
+	}, [isAuthenticated, settings, setTheme, user?.id]);
 
 	const setPreference = useCallback(
 		async (preference: FrontendThemePreference) => {
@@ -65,7 +68,9 @@ export function ThemePreferenceProvider({ children }: { children: ReactNode }) {
 			if (!isAuthenticated) return;
 			try {
 				const updated = await mutation.mutateAsync({
-					theme: themePreferenceToProto(preference),
+					patch: Settings.appearance.theme.patch(
+						themePreferenceToProto(preference),
+					),
 				});
 				queryClient.setQueryData(["user-settings"], updated);
 			} catch (error) {

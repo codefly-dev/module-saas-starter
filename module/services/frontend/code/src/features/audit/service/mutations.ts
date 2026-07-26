@@ -1,6 +1,6 @@
 import { useMutation } from "@tanstack/react-query";
 import { useAuditService } from "@/lib/hooks/use-api-client";
-import type { AuditEvent, AuditLogFilters } from "../model/types";
+import type { AuditEvent } from "../model/types";
 
 /**
  * Export audit log as CSV or JSON and trigger a browser download.

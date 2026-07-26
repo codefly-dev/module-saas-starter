@@ -16,7 +16,7 @@ This module provides a complete SaaS foundation.
 
 This module exposes only:
 
-- `auth-sidecar/http` — the public application ingress
+- `auth-sidecar/rest` — the public application ingress
 - `auth-sidecar/grpc` — module-visible Envoy ext-authz
 
 Accounts transports and the frontend stay private behind the auth sidecar.
@@ -29,15 +29,25 @@ caps through `saas.accounts.v1.UsageService`. Installed products define meter
 keys and limits through additive migrations, then use the generated protobuf
 client. See `USAGE_METERING.md` before integrating a producer.
 
+## User settings
+
+Every Starter ships with typed appearance, regional, email, and notification
+preferences in both Go and the frontend. See `SETTINGS.md` for default,
+presence, reset, and extension rules.
+
 ## Development
 
 ```bash
-# Enter the Nix dev shell
-nix develop
-
-# Run services
-codefly run
+# From the repository root. The module declares auth-sidecar as its service
+# entry, so Codefly starts the complete seven-service dependency graph.
+codefly run service --fixture dev-admin
 ```
+
+Open the public HTTP URL printed for `auth-sidecar`. That gateway routes the
+private frontend and API; do not use the frontend's direct development URL for
+the application. Stop the complete stack with Ctrl-C. Use
+`codefly run service auth-sidecar --fixture dev-admin` with older Codefly
+releases that do not yet resolve module service entries.
 
 The local Codefly `security` workspace configuration supplies the MFA step-up
 window, completion rate limit, and WebAuthn relying-party policy. For a hosted

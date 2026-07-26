@@ -16,6 +16,7 @@ import (
 	_ "google.golang.org/genproto/googleapis/api/annotations"
 	protoreflect "google.golang.org/protobuf/reflect/protoreflect"
 	protoimpl "google.golang.org/protobuf/runtime/protoimpl"
+	fieldmaskpb "google.golang.org/protobuf/types/known/fieldmaskpb"
 )
 
 const (
@@ -77,6 +78,127 @@ func (ThemePreference) EnumDescriptor() ([]byte, []int) {
 	return file_saas_accounts_v1_user_settings_proto_rawDescGZIP(), []int{0}
 }
 
+// UserAppearanceSettings — presentation preferences shared by every Starter
+// frontend. The setting describes user intent, not a specific web client, so
+// native and future clients consume the same value.
+type UserAppearanceSettings struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Theme         *ThemePreference       `protobuf:"varint,1,opt,name=theme,proto3,enum=saas.accounts.v1.ThemePreference,oneof" json:"theme,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *UserAppearanceSettings) Reset() {
+	*x = UserAppearanceSettings{}
+	mi := &file_saas_accounts_v1_user_settings_proto_msgTypes[0]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *UserAppearanceSettings) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*UserAppearanceSettings) ProtoMessage() {}
+
+func (x *UserAppearanceSettings) ProtoReflect() protoreflect.Message {
+	mi := &file_saas_accounts_v1_user_settings_proto_msgTypes[0]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use UserAppearanceSettings.ProtoReflect.Descriptor instead.
+func (*UserAppearanceSettings) Descriptor() ([]byte, []int) {
+	return file_saas_accounts_v1_user_settings_proto_rawDescGZIP(), []int{0}
+}
+
+func (x *UserAppearanceSettings) GetTheme() ThemePreference {
+	if x != nil && x.Theme != nil {
+		return *x.Theme
+	}
+	return ThemePreference_THEME_PREFERENCE_UNSPECIFIED
+}
+
+// UserRegionalSettings — locale and formatting preferences shared by all
+// clients and backend-rendered content.
+type UserRegionalSettings struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// IETF tag: "en", "fr", "es-419", etc.
+	Locale *string `protobuf:"bytes,1,opt,name=locale,proto3,oneof" json:"locale,omitempty"`
+	// IANA tz: "America/New_York", "UTC".
+	Timezone *string `protobuf:"bytes,2,opt,name=timezone,proto3,oneof" json:"timezone,omitempty"`
+	// "iso" | "us" | "eu"
+	DateFormat *string `protobuf:"bytes,3,opt,name=date_format,json=dateFormat,proto3,oneof" json:"date_format,omitempty"`
+	// "12h" | "24h"
+	TimeFormat    *string `protobuf:"bytes,4,opt,name=time_format,json=timeFormat,proto3,oneof" json:"time_format,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *UserRegionalSettings) Reset() {
+	*x = UserRegionalSettings{}
+	mi := &file_saas_accounts_v1_user_settings_proto_msgTypes[1]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *UserRegionalSettings) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*UserRegionalSettings) ProtoMessage() {}
+
+func (x *UserRegionalSettings) ProtoReflect() protoreflect.Message {
+	mi := &file_saas_accounts_v1_user_settings_proto_msgTypes[1]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use UserRegionalSettings.ProtoReflect.Descriptor instead.
+func (*UserRegionalSettings) Descriptor() ([]byte, []int) {
+	return file_saas_accounts_v1_user_settings_proto_rawDescGZIP(), []int{1}
+}
+
+func (x *UserRegionalSettings) GetLocale() string {
+	if x != nil && x.Locale != nil {
+		return *x.Locale
+	}
+	return ""
+}
+
+func (x *UserRegionalSettings) GetTimezone() string {
+	if x != nil && x.Timezone != nil {
+		return *x.Timezone
+	}
+	return ""
+}
+
+func (x *UserRegionalSettings) GetDateFormat() string {
+	if x != nil && x.DateFormat != nil {
+		return *x.DateFormat
+	}
+	return ""
+}
+
+func (x *UserRegionalSettings) GetTimeFormat() string {
+	if x != nil && x.TimeFormat != nil {
+		return *x.TimeFormat
+	}
+	return ""
+}
+
 // UserEmailSettings — top-level transactional email opt-ins.
 // `security` is forced-on server-side but exposed here so the
 // unsubscribe page can reflect that to the user.
@@ -92,7 +214,7 @@ type UserEmailSettings struct {
 
 func (x *UserEmailSettings) Reset() {
 	*x = UserEmailSettings{}
-	mi := &file_saas_accounts_v1_user_settings_proto_msgTypes[0]
+	mi := &file_saas_accounts_v1_user_settings_proto_msgTypes[2]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -104,7 +226,7 @@ func (x *UserEmailSettings) String() string {
 func (*UserEmailSettings) ProtoMessage() {}
 
 func (x *UserEmailSettings) ProtoReflect() protoreflect.Message {
-	mi := &file_saas_accounts_v1_user_settings_proto_msgTypes[0]
+	mi := &file_saas_accounts_v1_user_settings_proto_msgTypes[2]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -117,7 +239,7 @@ func (x *UserEmailSettings) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use UserEmailSettings.ProtoReflect.Descriptor instead.
 func (*UserEmailSettings) Descriptor() ([]byte, []int) {
-	return file_saas_accounts_v1_user_settings_proto_rawDescGZIP(), []int{0}
+	return file_saas_accounts_v1_user_settings_proto_rawDescGZIP(), []int{2}
 }
 
 func (x *UserEmailSettings) GetProduct() bool {
@@ -159,7 +281,7 @@ type UserNotificationSettings struct {
 
 func (x *UserNotificationSettings) Reset() {
 	*x = UserNotificationSettings{}
-	mi := &file_saas_accounts_v1_user_settings_proto_msgTypes[1]
+	mi := &file_saas_accounts_v1_user_settings_proto_msgTypes[3]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -171,7 +293,7 @@ func (x *UserNotificationSettings) String() string {
 func (*UserNotificationSettings) ProtoMessage() {}
 
 func (x *UserNotificationSettings) ProtoReflect() protoreflect.Message {
-	mi := &file_saas_accounts_v1_user_settings_proto_msgTypes[1]
+	mi := &file_saas_accounts_v1_user_settings_proto_msgTypes[3]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -184,7 +306,7 @@ func (x *UserNotificationSettings) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use UserNotificationSettings.ProtoReflect.Descriptor instead.
 func (*UserNotificationSettings) Descriptor() ([]byte, []int) {
-	return file_saas_accounts_v1_user_settings_proto_rawDescGZIP(), []int{1}
+	return file_saas_accounts_v1_user_settings_proto_rawDescGZIP(), []int{3}
 }
 
 func (x *UserNotificationSettings) GetInApp() bool {
@@ -208,29 +330,23 @@ func (x *UserNotificationSettings) GetSound() bool {
 	return false
 }
 
-// UserSettings — per-user preferences. All fields optional. The
-// FE submits ONLY changed keys; the api jsonb-merges onto the row.
-// Adding a field is a no-op (FE bumps + new key flows through).
+// UserSettings — common per-user preferences included in every SaaS Starter.
+// All scalar fields below the section messages are optional so an explicit
+// false/empty value remains distinct from an unset value that resolves to its
+// catalog default. The API recursively merges typed protobuf patches.
 type UserSettings struct {
-	state protoimpl.MessageState `protogen:"open.v1"`
-	Theme *ThemePreference       `protobuf:"varint,1,opt,name=theme,proto3,enum=saas.accounts.v1.ThemePreference,oneof" json:"theme,omitempty"`
-	// IETF tag: "en", "fr", "es-419", etc.
-	Locale *string `protobuf:"bytes,2,opt,name=locale,proto3,oneof" json:"locale,omitempty"`
-	// IANA tz: "America/New_York", "UTC".
-	Timezone *string `protobuf:"bytes,3,opt,name=timezone,proto3,oneof" json:"timezone,omitempty"`
-	// "iso" | "us" | "eu"
-	DateFormat *string `protobuf:"bytes,4,opt,name=date_format,json=dateFormat,proto3,oneof" json:"date_format,omitempty"`
-	// "12h" | "24h"
-	TimeFormat    *string                   `protobuf:"bytes,5,opt,name=time_format,json=timeFormat,proto3,oneof" json:"time_format,omitempty"`
-	Email         *UserEmailSettings        `protobuf:"bytes,6,opt,name=email,proto3,oneof" json:"email,omitempty"`
-	Notifications *UserNotificationSettings `protobuf:"bytes,7,opt,name=notifications,proto3,oneof" json:"notifications,omitempty"`
+	state         protoimpl.MessageState    `protogen:"open.v1"`
+	Appearance    *UserAppearanceSettings   `protobuf:"bytes,1,opt,name=appearance,proto3,oneof" json:"appearance,omitempty"`
+	Regional      *UserRegionalSettings     `protobuf:"bytes,2,opt,name=regional,proto3,oneof" json:"regional,omitempty"`
+	Email         *UserEmailSettings        `protobuf:"bytes,3,opt,name=email,proto3,oneof" json:"email,omitempty"`
+	Notifications *UserNotificationSettings `protobuf:"bytes,4,opt,name=notifications,proto3,oneof" json:"notifications,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
 
 func (x *UserSettings) Reset() {
 	*x = UserSettings{}
-	mi := &file_saas_accounts_v1_user_settings_proto_msgTypes[2]
+	mi := &file_saas_accounts_v1_user_settings_proto_msgTypes[4]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -242,7 +358,7 @@ func (x *UserSettings) String() string {
 func (*UserSettings) ProtoMessage() {}
 
 func (x *UserSettings) ProtoReflect() protoreflect.Message {
-	mi := &file_saas_accounts_v1_user_settings_proto_msgTypes[2]
+	mi := &file_saas_accounts_v1_user_settings_proto_msgTypes[4]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -255,42 +371,21 @@ func (x *UserSettings) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use UserSettings.ProtoReflect.Descriptor instead.
 func (*UserSettings) Descriptor() ([]byte, []int) {
-	return file_saas_accounts_v1_user_settings_proto_rawDescGZIP(), []int{2}
+	return file_saas_accounts_v1_user_settings_proto_rawDescGZIP(), []int{4}
 }
 
-func (x *UserSettings) GetTheme() ThemePreference {
-	if x != nil && x.Theme != nil {
-		return *x.Theme
+func (x *UserSettings) GetAppearance() *UserAppearanceSettings {
+	if x != nil {
+		return x.Appearance
 	}
-	return ThemePreference_THEME_PREFERENCE_UNSPECIFIED
+	return nil
 }
 
-func (x *UserSettings) GetLocale() string {
-	if x != nil && x.Locale != nil {
-		return *x.Locale
+func (x *UserSettings) GetRegional() *UserRegionalSettings {
+	if x != nil {
+		return x.Regional
 	}
-	return ""
-}
-
-func (x *UserSettings) GetTimezone() string {
-	if x != nil && x.Timezone != nil {
-		return *x.Timezone
-	}
-	return ""
-}
-
-func (x *UserSettings) GetDateFormat() string {
-	if x != nil && x.DateFormat != nil {
-		return *x.DateFormat
-	}
-	return ""
-}
-
-func (x *UserSettings) GetTimeFormat() string {
-	if x != nil && x.TimeFormat != nil {
-		return *x.TimeFormat
-	}
-	return ""
+	return nil
 }
 
 func (x *UserSettings) GetEmail() *UserEmailSettings {
@@ -315,7 +410,7 @@ type GetUserSettingsRequest struct {
 
 func (x *GetUserSettingsRequest) Reset() {
 	*x = GetUserSettingsRequest{}
-	mi := &file_saas_accounts_v1_user_settings_proto_msgTypes[3]
+	mi := &file_saas_accounts_v1_user_settings_proto_msgTypes[5]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -327,7 +422,7 @@ func (x *GetUserSettingsRequest) String() string {
 func (*GetUserSettingsRequest) ProtoMessage() {}
 
 func (x *GetUserSettingsRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_saas_accounts_v1_user_settings_proto_msgTypes[3]
+	mi := &file_saas_accounts_v1_user_settings_proto_msgTypes[5]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -340,21 +435,24 @@ func (x *GetUserSettingsRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetUserSettingsRequest.ProtoReflect.Descriptor instead.
 func (*GetUserSettingsRequest) Descriptor() ([]byte, []int) {
-	return file_saas_accounts_v1_user_settings_proto_rawDescGZIP(), []int{3}
+	return file_saas_accounts_v1_user_settings_proto_rawDescGZIP(), []int{5}
 }
 
 type UpdateUserSettingsRequest struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
-	// Partial — only the keys to change. Nested objects are replaced
-	// wholesale (the FE always sends the full nested object).
-	Patch         *UserSettings `protobuf:"bytes,1,opt,name=patch,proto3" json:"patch,omitempty"`
+	// Partial — only explicitly present fields change. Missing parent messages
+	// are materialized by the typed settings SDK, and nested siblings survive.
+	Patch *UserSettings `protobuf:"bytes,1,opt,name=patch,proto3" json:"patch,omitempty"`
+	// Paths whose explicit overrides should be removed before applying patch.
+	// A cleared field resolves to its catalog default on the returned document.
+	ClearMask     *fieldmaskpb.FieldMask `protobuf:"bytes,2,opt,name=clear_mask,json=clearMask,proto3" json:"clear_mask,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
 
 func (x *UpdateUserSettingsRequest) Reset() {
 	*x = UpdateUserSettingsRequest{}
-	mi := &file_saas_accounts_v1_user_settings_proto_msgTypes[4]
+	mi := &file_saas_accounts_v1_user_settings_proto_msgTypes[6]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -366,7 +464,7 @@ func (x *UpdateUserSettingsRequest) String() string {
 func (*UpdateUserSettingsRequest) ProtoMessage() {}
 
 func (x *UpdateUserSettingsRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_saas_accounts_v1_user_settings_proto_msgTypes[4]
+	mi := &file_saas_accounts_v1_user_settings_proto_msgTypes[6]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -379,7 +477,7 @@ func (x *UpdateUserSettingsRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use UpdateUserSettingsRequest.ProtoReflect.Descriptor instead.
 func (*UpdateUserSettingsRequest) Descriptor() ([]byte, []int) {
-	return file_saas_accounts_v1_user_settings_proto_rawDescGZIP(), []int{4}
+	return file_saas_accounts_v1_user_settings_proto_rawDescGZIP(), []int{6}
 }
 
 func (x *UpdateUserSettingsRequest) GetPatch() *UserSettings {
@@ -389,11 +487,33 @@ func (x *UpdateUserSettingsRequest) GetPatch() *UserSettings {
 	return nil
 }
 
+func (x *UpdateUserSettingsRequest) GetClearMask() *fieldmaskpb.FieldMask {
+	if x != nil {
+		return x.ClearMask
+	}
+	return nil
+}
+
 var File_saas_accounts_v1_user_settings_proto protoreflect.FileDescriptor
 
 const file_saas_accounts_v1_user_settings_proto_rawDesc = "" +
 	"\n" +
-	"$saas/accounts/v1/user_settings.proto\x12\x10saas.accounts.v1\x1a\x1bbuf/validate/validate.proto\x1a\x1cgoogle/api/annotations.proto\x1a\x1csaas/policy/v1/options.proto\"\xd9\x01\n" +
+	"$saas/accounts/v1/user_settings.proto\x12\x10saas.accounts.v1\x1a\x1bbuf/validate/validate.proto\x1a\x1cgoogle/api/annotations.proto\x1a google/protobuf/field_mask.proto\x1a\x1csaas/policy/v1/options.proto\"l\n" +
+	"\x16UserAppearanceSettings\x12H\n" +
+	"\x05theme\x18\x01 \x01(\x0e2!.saas.accounts.v1.ThemePreferenceB\n" +
+	"\xbaH\a\x82\x01\x04\x10\x01 \x00H\x00R\x05theme\x88\x01\x01B\b\n" +
+	"\x06_theme\"\xd8\x01\n" +
+	"\x14UserRegionalSettings\x12\x1b\n" +
+	"\x06locale\x18\x01 \x01(\tH\x00R\x06locale\x88\x01\x01\x12\x1f\n" +
+	"\btimezone\x18\x02 \x01(\tH\x01R\btimezone\x88\x01\x01\x12$\n" +
+	"\vdate_format\x18\x03 \x01(\tH\x02R\n" +
+	"dateFormat\x88\x01\x01\x12$\n" +
+	"\vtime_format\x18\x04 \x01(\tH\x03R\n" +
+	"timeFormat\x88\x01\x01B\t\n" +
+	"\a_localeB\v\n" +
+	"\t_timezoneB\x0e\n" +
+	"\f_date_formatB\x0e\n" +
+	"\f_time_format\"\xd9\x01\n" +
 	"\x11UserEmailSettings\x12\x1d\n" +
 	"\aproduct\x18\x01 \x01(\bH\x00R\aproduct\x88\x01\x01\x12!\n" +
 	"\tmarketing\x18\x02 \x01(\bH\x01R\tmarketing\x88\x01\x01\x12\x1f\n" +
@@ -411,28 +531,23 @@ const file_saas_accounts_v1_user_settings_proto_rawDesc = "" +
 	"\x05sound\x18\x03 \x01(\bH\x02R\x05sound\x88\x01\x01B\t\n" +
 	"\a_in_appB\a\n" +
 	"\x05_pushB\b\n" +
-	"\x06_sound\"\xd7\x03\n" +
-	"\fUserSettings\x12H\n" +
-	"\x05theme\x18\x01 \x01(\x0e2!.saas.accounts.v1.ThemePreferenceB\n" +
-	"\xbaH\a\x82\x01\x04\x10\x01 \x00H\x00R\x05theme\x88\x01\x01\x12\x1b\n" +
-	"\x06locale\x18\x02 \x01(\tH\x01R\x06locale\x88\x01\x01\x12\x1f\n" +
-	"\btimezone\x18\x03 \x01(\tH\x02R\btimezone\x88\x01\x01\x12$\n" +
-	"\vdate_format\x18\x04 \x01(\tH\x03R\n" +
-	"dateFormat\x88\x01\x01\x12$\n" +
-	"\vtime_format\x18\x05 \x01(\tH\x04R\n" +
-	"timeFormat\x88\x01\x01\x12>\n" +
-	"\x05email\x18\x06 \x01(\v2#.saas.accounts.v1.UserEmailSettingsH\x05R\x05email\x88\x01\x01\x12U\n" +
-	"\rnotifications\x18\a \x01(\v2*.saas.accounts.v1.UserNotificationSettingsH\x06R\rnotifications\x88\x01\x01B\b\n" +
-	"\x06_themeB\t\n" +
-	"\a_localeB\v\n" +
-	"\t_timezoneB\x0e\n" +
-	"\f_date_formatB\x0e\n" +
-	"\f_time_formatB\b\n" +
+	"\x06_sound\"\xf5\x02\n" +
+	"\fUserSettings\x12M\n" +
+	"\n" +
+	"appearance\x18\x01 \x01(\v2(.saas.accounts.v1.UserAppearanceSettingsH\x00R\n" +
+	"appearance\x88\x01\x01\x12G\n" +
+	"\bregional\x18\x02 \x01(\v2&.saas.accounts.v1.UserRegionalSettingsH\x01R\bregional\x88\x01\x01\x12>\n" +
+	"\x05email\x18\x03 \x01(\v2#.saas.accounts.v1.UserEmailSettingsH\x02R\x05email\x88\x01\x01\x12U\n" +
+	"\rnotifications\x18\x04 \x01(\v2*.saas.accounts.v1.UserNotificationSettingsH\x03R\rnotifications\x88\x01\x01B\r\n" +
+	"\v_appearanceB\v\n" +
+	"\t_regionalB\b\n" +
 	"\x06_emailB\x10\n" +
 	"\x0e_notifications\"\x18\n" +
-	"\x16GetUserSettingsRequest\"Q\n" +
+	"\x16GetUserSettingsRequest\"\x8c\x01\n" +
 	"\x19UpdateUserSettingsRequest\x124\n" +
-	"\x05patch\x18\x01 \x01(\v2\x1e.saas.accounts.v1.UserSettingsR\x05patch*\x87\x01\n" +
+	"\x05patch\x18\x01 \x01(\v2\x1e.saas.accounts.v1.UserSettingsR\x05patch\x129\n" +
+	"\n" +
+	"clear_mask\x18\x02 \x01(\v2\x1a.google.protobuf.FieldMaskR\tclearMask*\x87\x01\n" +
 	"\x0fThemePreference\x12 \n" +
 	"\x1cTHEME_PREFERENCE_UNSPECIFIED\x10\x00\x12\x1b\n" +
 	"\x17THEME_PREFERENCE_SYSTEM\x10\x01\x12\x1a\n" +
@@ -457,29 +572,35 @@ func file_saas_accounts_v1_user_settings_proto_rawDescGZIP() []byte {
 }
 
 var file_saas_accounts_v1_user_settings_proto_enumTypes = make([]protoimpl.EnumInfo, 1)
-var file_saas_accounts_v1_user_settings_proto_msgTypes = make([]protoimpl.MessageInfo, 5)
+var file_saas_accounts_v1_user_settings_proto_msgTypes = make([]protoimpl.MessageInfo, 7)
 var file_saas_accounts_v1_user_settings_proto_goTypes = []any{
 	(ThemePreference)(0),              // 0: saas.accounts.v1.ThemePreference
-	(*UserEmailSettings)(nil),         // 1: saas.accounts.v1.UserEmailSettings
-	(*UserNotificationSettings)(nil),  // 2: saas.accounts.v1.UserNotificationSettings
-	(*UserSettings)(nil),              // 3: saas.accounts.v1.UserSettings
-	(*GetUserSettingsRequest)(nil),    // 4: saas.accounts.v1.GetUserSettingsRequest
-	(*UpdateUserSettingsRequest)(nil), // 5: saas.accounts.v1.UpdateUserSettingsRequest
+	(*UserAppearanceSettings)(nil),    // 1: saas.accounts.v1.UserAppearanceSettings
+	(*UserRegionalSettings)(nil),      // 2: saas.accounts.v1.UserRegionalSettings
+	(*UserEmailSettings)(nil),         // 3: saas.accounts.v1.UserEmailSettings
+	(*UserNotificationSettings)(nil),  // 4: saas.accounts.v1.UserNotificationSettings
+	(*UserSettings)(nil),              // 5: saas.accounts.v1.UserSettings
+	(*GetUserSettingsRequest)(nil),    // 6: saas.accounts.v1.GetUserSettingsRequest
+	(*UpdateUserSettingsRequest)(nil), // 7: saas.accounts.v1.UpdateUserSettingsRequest
+	(*fieldmaskpb.FieldMask)(nil),     // 8: google.protobuf.FieldMask
 }
 var file_saas_accounts_v1_user_settings_proto_depIdxs = []int32{
-	0, // 0: saas.accounts.v1.UserSettings.theme:type_name -> saas.accounts.v1.ThemePreference
-	1, // 1: saas.accounts.v1.UserSettings.email:type_name -> saas.accounts.v1.UserEmailSettings
-	2, // 2: saas.accounts.v1.UserSettings.notifications:type_name -> saas.accounts.v1.UserNotificationSettings
-	3, // 3: saas.accounts.v1.UpdateUserSettingsRequest.patch:type_name -> saas.accounts.v1.UserSettings
-	4, // 4: saas.accounts.v1.UserSettingsService.Get:input_type -> saas.accounts.v1.GetUserSettingsRequest
-	5, // 5: saas.accounts.v1.UserSettingsService.Update:input_type -> saas.accounts.v1.UpdateUserSettingsRequest
-	3, // 6: saas.accounts.v1.UserSettingsService.Get:output_type -> saas.accounts.v1.UserSettings
-	3, // 7: saas.accounts.v1.UserSettingsService.Update:output_type -> saas.accounts.v1.UserSettings
-	6, // [6:8] is the sub-list for method output_type
-	4, // [4:6] is the sub-list for method input_type
-	4, // [4:4] is the sub-list for extension type_name
-	4, // [4:4] is the sub-list for extension extendee
-	0, // [0:4] is the sub-list for field type_name
+	0, // 0: saas.accounts.v1.UserAppearanceSettings.theme:type_name -> saas.accounts.v1.ThemePreference
+	1, // 1: saas.accounts.v1.UserSettings.appearance:type_name -> saas.accounts.v1.UserAppearanceSettings
+	2, // 2: saas.accounts.v1.UserSettings.regional:type_name -> saas.accounts.v1.UserRegionalSettings
+	3, // 3: saas.accounts.v1.UserSettings.email:type_name -> saas.accounts.v1.UserEmailSettings
+	4, // 4: saas.accounts.v1.UserSettings.notifications:type_name -> saas.accounts.v1.UserNotificationSettings
+	5, // 5: saas.accounts.v1.UpdateUserSettingsRequest.patch:type_name -> saas.accounts.v1.UserSettings
+	8, // 6: saas.accounts.v1.UpdateUserSettingsRequest.clear_mask:type_name -> google.protobuf.FieldMask
+	6, // 7: saas.accounts.v1.UserSettingsService.Get:input_type -> saas.accounts.v1.GetUserSettingsRequest
+	7, // 8: saas.accounts.v1.UserSettingsService.Update:input_type -> saas.accounts.v1.UpdateUserSettingsRequest
+	5, // 9: saas.accounts.v1.UserSettingsService.Get:output_type -> saas.accounts.v1.UserSettings
+	5, // 10: saas.accounts.v1.UserSettingsService.Update:output_type -> saas.accounts.v1.UserSettings
+	9, // [9:11] is the sub-list for method output_type
+	7, // [7:9] is the sub-list for method input_type
+	7, // [7:7] is the sub-list for extension type_name
+	7, // [7:7] is the sub-list for extension extendee
+	0, // [0:7] is the sub-list for field type_name
 }
 
 func init() { file_saas_accounts_v1_user_settings_proto_init() }
@@ -490,13 +611,15 @@ func file_saas_accounts_v1_user_settings_proto_init() {
 	file_saas_accounts_v1_user_settings_proto_msgTypes[0].OneofWrappers = []any{}
 	file_saas_accounts_v1_user_settings_proto_msgTypes[1].OneofWrappers = []any{}
 	file_saas_accounts_v1_user_settings_proto_msgTypes[2].OneofWrappers = []any{}
+	file_saas_accounts_v1_user_settings_proto_msgTypes[3].OneofWrappers = []any{}
+	file_saas_accounts_v1_user_settings_proto_msgTypes[4].OneofWrappers = []any{}
 	type x struct{}
 	out := protoimpl.TypeBuilder{
 		File: protoimpl.DescBuilder{
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_saas_accounts_v1_user_settings_proto_rawDesc), len(file_saas_accounts_v1_user_settings_proto_rawDesc)),
 			NumEnums:      1,
-			NumMessages:   5,
+			NumMessages:   7,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

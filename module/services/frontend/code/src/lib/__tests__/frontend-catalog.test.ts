@@ -12,12 +12,15 @@ import {
 
 describe("generated frontend catalog", () => {
 	it("covers every accounts service and procedure", () => {
-		expect(Object.keys(ACCOUNT_SERVICE_DESCRIPTORS)).toHaveLength(24);
+		expect(Object.keys(ACCOUNT_SERVICE_DESCRIPTORS)).toHaveLength(25);
 		const procedureCount = Object.values(ACCOUNT_SERVICE_DESCRIPTORS).reduce(
 			(count, service) => count + Object.keys(service.method).length,
 			0,
 		);
-		expect(procedureCount).toBe(121);
+		expect(procedureCount).toBe(125);
+		expect(
+			ACCOUNT_SERVICE_DESCRIPTORS.WorkContextService.method.exchangeAudience,
+		).toBeDefined();
 	});
 
 	it("creates one typed client for every service", () => {

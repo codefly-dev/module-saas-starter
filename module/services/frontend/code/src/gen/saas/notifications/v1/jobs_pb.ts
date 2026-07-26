@@ -68,3 +68,4 @@ export type EmailDeliveryJob = Message<"saas.notifications.v1.EmailDeliveryJob">
  */
 export const EmailDeliveryJobSchema: GenMessage<EmailDeliveryJob> = /*@__PURE__*/
   messageDesc(file_saas_notifications_v1_jobs, 0);
+

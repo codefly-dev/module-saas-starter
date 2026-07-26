@@ -277,7 +277,7 @@ func (s *Service) RegisterUser(ctx context.Context, input *gen.RegisterUserReque
 			assignment := &gen.RoleAssignment{
 				Id:          NewIDString(),
 				SubjectId:   userID,
-				SubjectKind: gen.SubjectKind_SUBJECT_KIND_USER,
+				SubjectKind: gen.SubjectKind_SUBJECT_KIND_PRINCIPAL,
 				RoleId:      role.Id,
 				OrgId:       orgID,
 			}

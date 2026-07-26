@@ -2,13 +2,14 @@ version: v1
 module:
   name: saas-starter
   namespace: saas-starter
+  service_entry: auth-sidecar
   description: "SaaS foundation — auth, multi-tenancy, generated RPC policy, RBAC, impersonation, audit"
 interface:
   - service: auth-sidecar
     endpoint: grpc
     visibility: module
   - service: auth-sidecar
-    endpoint: http
+    endpoint: rest
     visibility: public
 services:
   - name: accounts
@@ -78,8 +79,8 @@ services:
         api: grpc
         visibility: module
         port: 9090
-      - name: http
-        api: http
+      - name: rest
+        api: rest
         visibility: public
         port: 8080
     dependencies:

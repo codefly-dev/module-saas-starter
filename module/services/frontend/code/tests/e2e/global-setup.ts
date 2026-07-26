@@ -19,7 +19,6 @@
 //     instances, so two terminals can run tests in parallel without
 //     fighting over the same db.
 
-import type { FullConfig } from "@playwright/test";
 import {
 	type Dependencies,
 	resolveServiceAddressSync,
@@ -31,7 +30,7 @@ import {
 // variable is sufficient.
 let deps: Dependencies | null = null;
 
-async function globalSetup(_config: FullConfig): Promise<void> {
+async function globalSetup(): Promise<void> {
 	// Default: NO scope. That keeps codefly's derived ports at the
 	// deterministic defaults (frontend=21931) which matches the
 	// playwright baseURL fallback. Set CODEFLY_TEST_SCOPE=<name> in the

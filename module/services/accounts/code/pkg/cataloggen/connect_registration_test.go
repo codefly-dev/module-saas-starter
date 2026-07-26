@@ -22,8 +22,8 @@ func TestConnectRegistrationIsDeterministicAndCurrent(t *testing.T) {
 
 	checkedIn := readFixture(t, "../adapters/connect_registration_catalog_gen.go")
 	require.Equal(t, string(first), string(checkedIn), "run: go generate ./pkg/adapters")
-	require.Equal(t, 24, strings.Count(string(first), "genconnect.New"))
-	require.Equal(t, 24, strings.Count(string(first), ")(nil)"))
+	require.Equal(t, 25, strings.Count(string(first), "genconnect.New"))
+	require.Equal(t, 25, strings.Count(string(first), ")(nil)"))
 	require.Contains(t, string(first), "&apiKeyConnectHandler{inner: server.grpc.APIKey}")
 	require.Contains(t, string(first), "&webhookConnectHandler{svc: server.service}")
 	require.Contains(t, string(first), "&delegationConnectHandler{inner: DelegationSingleton()}")
@@ -41,7 +41,7 @@ func TestGRPCRegistrationIsDeterministicAndCurrent(t *testing.T) {
 
 	checkedIn := readFixture(t, "../adapters/grpc_registration_catalog_gen.go")
 	require.Equal(t, string(first), string(checkedIn), "run: go generate ./pkg/adapters")
-	require.Equal(t, 15, strings.Count(string(first), "gen.Register"))
+	require.Equal(t, 16, strings.Count(string(first), "gen.Register"))
 	require.Contains(t, string(first), "gen.RegisterAPIKeyServiceServer(registrar, server.APIKey)")
 	require.Contains(t, string(first), "gen.RegisterDelegationServiceServer(registrar, DelegationSingleton())")
 	require.Contains(t, string(first), "gen.RegisterMFAServiceServer(registrar, server.MFA)")

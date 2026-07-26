@@ -118,6 +118,22 @@
 				]
 			}
 		},
+		"@codefly/saas-settings": {
+			"status": "active",
+			"packageVersion": "0.1.0",
+			"entrypoints": ["."],
+			"entrypointExports": {
+				".": [
+					"SettingsField",
+					"SettingsLookup",
+					"SettingsUpdate",
+					"createSettingsFieldFactory",
+					"createSettingsUpdate",
+					"defineSettingsField",
+					"mergeSettingsPatches"
+				]
+			}
+		},
 		"@codefly/saas-plugin-testkit": {
 			"status": "planned",
 			"entrypoints": ["."],

@@ -47,9 +47,10 @@ the sidecar in front so this code path isn't reached.
 | Observability| `wool` structured logging everywhere                 |
 | Test infra   | Playwright e2e against the real stack via `withDependencies` |
 
-Everything orchestrated by codefly: `codefly run service frontend
---fixture dev-admin` brings up Postgres + Vault + Redis + accounts + sidecar +
-frontend with seed data in one command.
+Everything is orchestrated by Codefly: `codefly run service --fixture
+dev-admin` resolves the module's `auth-sidecar` service entry and brings up all
+seven services—Postgres + Vault + Redis + object storage + accounts + frontend
++ the public auth gateway—with seed data in one command.
 
 ---
 
@@ -537,7 +538,7 @@ If you're picking a starter, ask:
 3. Stripe integration that won't bite us in prod? **Webhook signature + idempotency + portal + checkout ✅.** Dunning flows are basic.
 4. Audit + compliance ready for an early SOC 2 push? **Audit retention, GDPR export/delete, impersonation tracking — yes.** Cookie consent + TOS versioning — no, add yourself.
 5. Real tests that actually exercise auth/billing/audit? **Yes — Playwright e2e against the running stack.**
-6. Easy to run locally? **One command (`codefly run service frontend --fixture dev-admin`); no docker-compose surgery.**
+6. Easy to run locally? **One command (`codefly run service --fixture dev-admin`); no docker-compose surgery.**
 7. What will I have to build that's "obviously missing"? Per the gap list above: rate limiting, command palette, webhooks v2 dashboard, self-serve SSO admin, org subdomains. These are 1–5 days each.
 
 ---

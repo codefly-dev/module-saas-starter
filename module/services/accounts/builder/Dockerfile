@@ -1,5 +1,5 @@
 # Build stage
-FROM golang:1.26.5-alpine3.23@sha256:622e56dbc11a8cfe87cafa2331e9a201877271cbff918af53d3be315f3da88cc AS builder
+FROM golang:1.26-alpine AS builder
 
 ARG TARGETARCH
 
@@ -24,10 +24,10 @@ RUN cd code && \
     CGO_ENABLED=0 GOOS=linux GOARCH=${TARGETARCH} go build -ldflags='-w -s -extldflags "-static"' -o /app/app .
 
 # Final stage
-FROM alpine:3.23.5@sha256:fd791d74b68913cbb027c6546007b3f0d3bc45125f797758156952bc2d6daf40
+FROM alpine:3.21
 
-# Runtime only needs the public CA bundle. Keep build tooling out of the image.
-RUN apk add --no-cache ca-certificates
+# Install ca-certificates for HTTPS and git for runtime operations
+RUN apk add --no-cache ca-certificates git
 
 # Set working directory
 WORKDIR /app

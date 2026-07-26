@@ -68,10 +68,13 @@ var (
 	testStore   *infra.PostgresStore
 	testService *business.Service
 	testCtx     context.Context
-	testCleanup func()
 )
 
 func TestMain(m *testing.M) {
+	os.Exit(runBusinessTests(m))
+}
+
+func runBusinessTests(m *testing.M) int {
 	ctx := context.Background()
 	wool.SetGlobalLogLevel(wool.DEBUG)
 
@@ -86,25 +89,27 @@ func TestMain(m *testing.M) {
 	)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "WithDependencies failed: %v\n", err)
-		os.Exit(1)
+		return 1
 	}
+	defer deps.Destroy(ctx)
 
 	_, err = codefly.Init(ctx)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "codefly.Init failed: %v\n", err)
-		os.Exit(1)
+		return 1
 	}
 
 	store, err := infra.NewPostgresStore(ctx)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "NewPostgresStore failed: %v\n", err)
-		os.Exit(1)
+		return 1
 	}
+	defer store.Close()
 
 	service, err := business.NewService(store)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "NewService failed: %v\n", err)
-		os.Exit(1)
+		return 1
 	}
 	service.SetWebhookJobProducer(store)
 
@@ -121,7 +126,7 @@ func TestMain(m *testing.M) {
 	_, priv, err := ed25519minter.GenerateKey()
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "GenerateKey failed: %v\n", err)
-		os.Exit(1)
+		return 1
 	}
 	minter := ed25519minter.New(ed25519minter.Config{
 		Issuer:   "saas-starter-test",
@@ -132,15 +137,16 @@ func TestMain(m *testing.M) {
 	webAuthnEngine, err := infra.NewWebAuthnEngine("localhost", "SaaS Starter Test", []string{"http://localhost:21931"})
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "NewWebAuthnEngine failed: %v\n", err)
-		os.Exit(1)
+		return 1
 	}
 	service.SetWebAuthnEngine(webAuthnEngine)
 
 	auditEmitter, err := business.NewDurableAuditEmitter(store, store)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "NewDurableAuditEmitter failed: %v\n", err)
-		os.Exit(1)
+		return 1
 	}
+	defer auditEmitter.Close()
 	service.SetAuditEmitter(auditEmitter)
 
 	entitlementChecker := business.NewDefaultEntitlementChecker(store)
@@ -149,15 +155,8 @@ func TestMain(m *testing.M) {
 	testStore = store
 	testService = service
 	testCtx = ctx
-	testCleanup = func() {
-		auditEmitter.Close()
-		store.Close()
-		deps.Destroy(ctx)
-	}
 
-	code := m.Run()
-	testCleanup()
-	os.Exit(code)
+	return m.Run()
 }
 
 // clearData resets test data between tests.
@@ -259,7 +258,7 @@ func TestCheckPermission_AdminWildcard(t *testing.T) {
 
 	check, err := testService.CheckPermission(testCtx, &gen.CheckPermissionRequest{
 		SubjectId:   resp.User.Uuid,
-		SubjectKind: gen.SubjectKind_SUBJECT_KIND_USER,
+		SubjectKind: gen.SubjectKind_SUBJECT_KIND_PRINCIPAL,
 		Resource:    "billing",
 		Action:      "write",
 		OrgId:       resolved.OrgId,
@@ -362,7 +361,7 @@ func TestTeamInheritedPermissions(t *testing.T) {
 
 	// Bob should inherit via team
 	check, err := testService.CheckPermission(testCtx, &gen.CheckPermissionRequest{
-		SubjectId: bob.User.Uuid, SubjectKind: gen.SubjectKind_SUBJECT_KIND_USER,
+		SubjectId: bob.User.Uuid, SubjectKind: gen.SubjectKind_SUBJECT_KIND_PRINCIPAL,
 		Resource: "deployments", Action: "write", OrgId: orgID,
 	})
 	require.NoError(t, err)
@@ -382,7 +381,7 @@ func TestTeamInheritedPermissions(t *testing.T) {
 	require.NoError(t, err)
 
 	check, err = testService.CheckPermission(testCtx, &gen.CheckPermissionRequest{
-		SubjectId: charlie.User.Uuid, SubjectKind: gen.SubjectKind_SUBJECT_KIND_USER,
+		SubjectId: charlie.User.Uuid, SubjectKind: gen.SubjectKind_SUBJECT_KIND_PRINCIPAL,
 		Resource: "deployments", Action: "write", OrgId: orgID,
 	})
 	require.NoError(t, err)

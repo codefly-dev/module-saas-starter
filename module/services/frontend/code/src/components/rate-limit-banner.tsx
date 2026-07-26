@@ -13,45 +13,51 @@
  */
 
 import { AlertTriangle } from "lucide-react";
-import { useEffect, useState } from "react";
+import { useSyncExternalStore } from "react";
 import {
 	getRateLimit,
-	type RateLimitSnapshot,
 	subscribeRateLimit,
 } from "@/lib/connect/rate-limit-tracker";
 
 const WARN_RATIO = 0.1; // banner kicks in when remaining/limit < 10%
+const CLOCK_INTERVAL_MS = 1000;
+
+function subscribeToRateLimit(onStoreChange: () => void) {
+	return subscribeRateLimit(onStoreChange);
+}
+
+function getServerRateLimit() {
+	return null;
+}
+
+function subscribeToClock(onStoreChange: () => void) {
+	const timer = window.setInterval(onStoreChange, CLOCK_INTERVAL_MS);
+	return () => window.clearInterval(timer);
+}
+
+function getClockSeconds() {
+	return Math.floor(Date.now() / 1000);
+}
+
+function getServerClockSeconds() {
+	return 0;
+}
 
 export function RateLimitBanner() {
-	const [snap, setSnap] = useState<RateLimitSnapshot | null>(getRateLimit());
-	const [seconds, setSeconds] = useState<number | null>(null);
-
-	useEffect(() => {
-		return subscribeRateLimit(setSnap);
-	}, []);
-
-	// Auto-clear once the window resets — without this the banner
-	// would linger after the user stopped firing requests until the
-	// next call repopulates the snapshot.
-	useEffect(() => {
-		if (!snap) {
-			setSeconds(null);
-			return;
-		}
-		const update = () => {
-			const remaining = Math.max(
-				0,
-				snap.resetAt - Math.floor(Date.now() / 1000),
-			);
-			setSeconds(remaining);
-			if (remaining === 0) setSnap(null);
-		};
-		update();
-		const timer = window.setInterval(update, 1000);
-		return () => window.clearInterval(timer);
-	}, [snap]);
+	const snap = useSyncExternalStore(
+		subscribeToRateLimit,
+		getRateLimit,
+		getServerRateLimit,
+	);
+	const now = useSyncExternalStore(
+		subscribeToClock,
+		getClockSeconds,
+		getServerClockSeconds,
+	);
+	const seconds = snap && now > 0 ? Math.max(0, snap.resetAt - now) : null;
 
 	if (!snap) return null;
+	if (seconds === 0) return null;
 	if (snap.remaining / snap.limit >= WARN_RATIO) return null;
 
 	return (

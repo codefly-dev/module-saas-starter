@@ -42,6 +42,10 @@ var (
 // holds a pgxpool for the whole package. Matches the pattern in
 // pkg/business/service_test.go so the two suites can run back-to-back.
 func TestMain(m *testing.M) {
+	os.Exit(runSessionStoreTests(m))
+}
+
+func runSessionStoreTests(m *testing.M) int {
 	ctx := context.Background()
 	wool.SetGlobalLogLevel(wool.DEBUG)
 
@@ -53,32 +57,31 @@ func TestMain(m *testing.M) {
 	)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "WithDependencies failed: %v\n", err)
-		os.Exit(1)
+		return 1
 	}
 	defer deps.Destroy(ctx)
 
 	if _, err := codefly.Init(ctx); err != nil {
 		fmt.Fprintf(os.Stderr, "codefly.Init failed: %v\n", err)
-		os.Exit(1)
+		return 1
 	}
 
 	conn, err := codefly.For(ctx).Service("store").Secret("postgres", "read-write-connection")
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "get connection string: %v\n", err)
-		os.Exit(1)
+		return 1
 	}
 
 	store, err := infra.NewPostgresStoreFromURL(ctx, conn)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "NewPostgresStoreFromURL: %v\n", err)
-		os.Exit(1)
+		return 1
 	}
+	defer store.Close()
 	testStore = store
 	testPool = store.Pool()
 
-	code := m.Run()
-	store.Close()
-	os.Exit(code)
+	return m.Run()
 }
 
 // seedUser inserts a minimum users row so sessions FK is happy.

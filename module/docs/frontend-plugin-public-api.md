@@ -166,6 +166,14 @@ library or product styling. SaaS Starter owns the canonical visual fallback;
 product packages may use the error type/response converter and keep their own
 domain-specific empty, stale, and authorization states.
 
+`@codefly/saas-settings` is the schema-agnostic settings runtime available to
+the Starter host and installed product plugins. It binds a product's generated
+protobuf `Settings` and patch types once, then supplies typed fields, presence
+and default handling, recursive sibling-preserving patch composition, and
+field-mask reset requests. It has no generated-schema, React, Next.js, host, or
+product dependency. A product such as Warden owns its concrete settings proto
+and generated bindings; changing that schema never forks this runtime.
+
 ## Generic service requirements
 
 A plugin may declare one or more backend requirements without embedding a

@@ -2,7 +2,7 @@
 
 > Generated from protobuf service descriptors and `saas.policy.v1.method_policy`; only the prose description is joined from `pkg/business/introspection.go`. Do not edit by hand. Run `go generate ./pkg/business` from `module/services/accounts/code`.
 
-Inventory: **121 RPCs** across **24 services**. Missing, invalid, or unclassified procedures are denied by both Connect and gRPC interceptors.
+Inventory: **125 RPCs** across **25 services**. Missing, invalid, or unclassified procedures are denied by both Connect and gRPC interceptors.
 
 The compact tier is retained for compatibility. Guards, resource bindings, audit events, limiter class, and data sensitivity are descriptor-authoritative. Domain handlers may enforce stronger state-dependent rules but may not weaken this floor.
 
@@ -67,7 +67,7 @@ The compact tier is retained for compatibility. Guards, resource bindings, audit
 | `/saas.accounts.v1.OrganizationService/ListOrganizations` | unary | `GET /v1/organizations` | `auth` | exposure=AUTHENTICATED; tenant=USER | — | — | — | FORBIDDEN / STANDARD_READ | CONFIDENTIAL → CONFIDENTIAL | Orgs the caller belongs to. |
 | `/saas.accounts.v1.OrganizationService/RemoveMember` | unary | `DELETE /v1/organizations/{org_id}/members/{user_id}` | `org_admin` | exposure=AUTHENTICATED; tenant=ORG_ADMIN | — | org_id → ORGANIZATION/DIRECT_ID | SUCCESS: org.member_removed | FORBIDDEN / STANDARD_WRITE | CONFIDENTIAL → CONFIDENTIAL | Remove a member; last-admin guard. |
 | `/saas.accounts.v1.OrganizationService/UpdateOrgSettings` | unary | `PUT /v1/organizations/{org_id}/settings` | `org_admin` | exposure=AUTHENTICATED; tenant=ORG_ADMIN | — | org_id → ORGANIZATION/DIRECT_ID | SUCCESS: org.settings_updated | FORBIDDEN / STANDARD_WRITE | CONFIDENTIAL → CONFIDENTIAL | Update branding (logo, color, custom domain). |
-| `/saas.accounts.v1.PermissionService/AssignRole` | unary | `POST /v1/role-assignments` | `auth` | exposure=AUTHENTICATED; tenant=USER | — | — | SUCCESS: role.assigned | FORBIDDEN / STANDARD_WRITE | CONFIDENTIAL → CONFIDENTIAL | Grant a role to a user/team. |
+| `/saas.accounts.v1.PermissionService/AssignRole` | unary | `POST /v1/role-assignments` | `auth` | exposure=AUTHENTICATED; tenant=USER | — | — | SUCCESS: role.assigned | FORBIDDEN / STANDARD_WRITE | CONFIDENTIAL → CONFIDENTIAL | Grant a role to a principal/team. |
 | `/saas.accounts.v1.PermissionService/CheckPermission` | unary | `—` | `internal` | exposure=INTERNAL; tenant=NONE | — | — | — | FORBIDDEN / INTERNAL | CONFIDENTIAL → CONFIDENTIAL | Internal authz decision (auth-sidecar caller). |
 | `/saas.accounts.v1.PermissionService/CreateRole` | unary | `POST /v1/roles` | `auth` | exposure=AUTHENTICATED; tenant=USER | — | — | SUCCESS: role.created | FORBIDDEN / STANDARD_WRITE | CONFIDENTIAL → CONFIDENTIAL | Create a role (org-scoped or platform). |
 | `/saas.accounts.v1.PermissionService/Decide` | unary | `—` | `internal` | exposure=INTERNAL; tenant=NONE | — | — | — | FORBIDDEN / INTERNAL | CONFIDENTIAL → CONFIDENTIAL | Internal principal-aware authz decision (successor to CheckPermission). |
@@ -129,6 +129,10 @@ The compact tier is retained for compatibility. Guards, resource bindings, audit
 | `/saas.accounts.v1.WebhookService/ReplayDelivery` | unary | `POST /v1/webhooks/deliveries/{id}:replay` | `org_admin` | exposure=AUTHENTICATED; tenant=ORG_ADMIN | perm=webhooks:write; scope=webhooks:write | id → OWNED_RESOURCE/RESOURCE_TO_ORGANIZATION | SUCCESS: webhook.replayed | FORBIDDEN / STANDARD_WRITE | CONFIDENTIAL → CONFIDENTIAL | Create and audit a new attempt for a past delivery using its stable event ID. |
 | `/saas.accounts.v1.WebhookService/RotateSecret` | unary | `POST /v1/webhooks/{id}:rotateSecret` | `mfa` | exposure=AUTHENTICATED; tenant=ORG_ADMIN; mfa=RECENT_STEP_UP | perm=webhooks:write; scope=webhooks:write | id → OWNED_RESOURCE/RESOURCE_TO_ORGANIZATION | SUCCESS: webhook.secret_rotated | FORBIDDEN / SENSITIVE | CONFIDENTIAL → SECRET | Rotate the reveal-once signing secret with bounded dual-signature overlap. Requires recent MFA. |
 | `/saas.accounts.v1.WebhookService/TestWebhook` | unary | `POST /v1/webhooks/{id}:test` | `org_admin` | exposure=AUTHENTICATED; tenant=ORG_ADMIN | perm=webhooks:write; scope=webhooks:write | id → OWNED_RESOURCE/RESOURCE_TO_ORGANIZATION | — | FORBIDDEN / STANDARD_WRITE | CONFIDENTIAL → CONFIDENTIAL | Send a test ping. |
+| `/saas.accounts.v1.WorkContextService/ExchangeAudience` | unary | `POST /v1/work-contexts:exchange-audience` | `org_member` | exposure=AUTHENTICATED; tenant=ORG_MEMBER | — | org_id → ORGANIZATION/DIRECT_ID | SUCCESS: work_context.audience_exchanged | FORBIDDEN / SENSITIVE | SECRET → SECRET | Reissue one Task and Session lineage for another audience with attenuated authority. |
+| `/saas.accounts.v1.WorkContextService/StartChildSession` | unary | `POST /v1/work-contexts:child-session` | `org_member` | exposure=AUTHENTICATED; tenant=ORG_MEMBER | — | org_id → ORGANIZATION/DIRECT_ID | SUCCESS: work_context.child_session_started | FORBIDDEN / SENSITIVE | SECRET → SECRET | Exchange a current Work Context for an attenuated child-agent Session. |
+| `/saas.accounts.v1.WorkContextService/StartRootSession` | unary | `POST /v1/work-contexts:root-session` | `org_member` | exposure=AUTHENTICATED; tenant=ORG_MEMBER | — | org_id → ORGANIZATION/DIRECT_ID | SUCCESS: work_context.root_session_started | FORBIDDEN / SENSITIVE | SECRET → SECRET | Exchange a current Work Context for another root Session under the same Task. |
+| `/saas.accounts.v1.WorkContextService/StartTask` | unary | `POST /v1/work-contexts:task` | `org_member` | exposure=AUTHENTICATED; tenant=ORG_MEMBER | — | org_id → ORGANIZATION/DIRECT_ID | SUCCESS: work_context.task_started | FORBIDDEN / SENSITIVE | CONFIDENTIAL → SECRET | Issue a signed Work Context for a new Task and root Session. |
 
 ## Tier totals
 
@@ -136,6 +140,6 @@ The compact tier is retained for compatibility. Guards, resource bindings, audit
 - `internal`: 7
 - `mfa`: 3
 - `org_admin`: 27
-- `org_member`: 16
+- `org_member`: 20
 - `platform_admin`: 19
 - `public`: 11

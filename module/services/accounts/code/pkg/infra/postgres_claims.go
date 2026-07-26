@@ -90,7 +90,7 @@ func (s *PostgresStore) GetAPIKeyAuthentication(ctx context.Context, keyHash str
 			JOIN roles r ON r.id = a.role_id
 			WHERE a.org_id = $2
 			  AND (
-			    (a.subject_kind = 'user' AND a.subject_id = $1)
+			    (a.subject_kind = 'principal' AND a.subject_id = $1)
 			    OR (a.subject_kind = 'team' AND a.subject_id IN (
 			      SELECT team_id FROM team_members WHERE user_id = $1
 			    ))
@@ -154,8 +154,8 @@ func (s *PostgresStore) ListTeamPathsForUser(ctx context.Context, userID string,
 }
 
 // ListRoleNamesForUser returns the names of roles assigned to the user in this
-// org (direct user assignments; team-subject assignments resolve via the teams
-// the user is in).
+// org (direct principal assignments; team-subject assignments resolve via the
+// teams the human principal is in).
 func (s *PostgresStore) ListRoleNamesForUser(ctx context.Context, userID string, orgID string) ([]string, error) {
 	w := wool.Get(ctx).In("ListRoleNamesForUser")
 	executor := s.getQueryExecutor(ctx)
@@ -166,7 +166,7 @@ func (s *PostgresStore) ListRoleNamesForUser(ctx context.Context, userID string,
 		JOIN roles r ON r.id = a.role_id
 		WHERE a.org_id = $2
 		  AND (
-		    (a.subject_kind = 'user' AND a.subject_id = $1)
+		    (a.subject_kind = 'principal' AND a.subject_id = $1)
 		    OR (a.subject_kind = 'team' AND a.subject_id IN (
 		      SELECT team_id FROM team_members WHERE user_id = $1
 		    ))

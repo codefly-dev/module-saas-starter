@@ -1,8 +1,9 @@
 "use client";
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { toast } from "sonner";
+import { Settings } from "@/features/user-settings/model/settings";
 import { userSettingsMutations } from "@/features/user-settings/service/mutations";
 import { userSettingsQueries } from "@/features/user-settings/service/queries";
 import {
@@ -49,38 +50,29 @@ type Prefs = { inApp: boolean; push: boolean; sound: boolean };
 /**
  * Notification preferences — wired to the real UserSettings.notifications
  * (in_app / push / sound). Reads the current settings and persists changes via
- * UserSettingsService.Update (the nested `notifications` object is replaced
- * wholesale, so we always send all three).
+ * UserSettingsService.Update. Nested fields merge independently.
  */
 export function NotificationSettings() {
 	const queryClient = useQueryClient();
 	const { data, isLoading } = useQuery(userSettingsQueries.current());
 
-	const [prefs, setPrefs] = useState<Prefs>({
-		inApp: true,
-		push: false,
-		sound: false,
-	});
-
-	// Seed local state from the server settings once they load.
-	useEffect(() => {
-		const n = data?.notifications;
-		if (n) {
-			setPrefs({
-				inApp: n.inApp ?? true,
-				push: n.push ?? false,
-				sound: n.sound ?? false,
-			});
-		}
-	}, [data]);
+	const [draft, setDraft] = useState<Partial<Prefs>>({});
+	const serverPrefs: Prefs = {
+		inApp: Settings.notifications.inApp.get(data),
+		push: Settings.notifications.push.get(data),
+		sound: Settings.notifications.sound.get(data),
+	};
+	const prefs: Prefs = { ...serverPrefs, ...draft };
 
 	const save = useMutation({
 		mutationFn: () =>
 			userSettingsMutations.update({
-				notifications: {
-					inApp: prefs.inApp,
-					push: prefs.push,
-					sound: prefs.sound,
+				patch: {
+					notifications: {
+						inApp: prefs.inApp,
+						push: prefs.push,
+						sound: prefs.sound,
+					},
 				},
 			}),
 		onSuccess: () => {
@@ -131,7 +123,7 @@ export function NotificationSettings() {
 									checked={prefs[ch.id]}
 									disabled={isLoading}
 									onCheckedChange={(v) =>
-										setPrefs((p) => ({ ...p, [ch.id]: v }))
+										setDraft((current) => ({ ...current, [ch.id]: v }))
 									}
 								/>
 							</div>

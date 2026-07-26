@@ -120,6 +120,10 @@ func generatedCatalogConnectRoutes() []*RouteEntry {
 		{Service: "accounts_connect", Method: "POST", Path: "/customers.WebhookService/ReplayDelivery", UpstreamPath: "/saas.accounts.v1.WebhookService/ReplayDelivery", Procedure: "/saas.accounts.v1.WebhookService/ReplayDelivery"},
 		{Service: "accounts_connect", Method: "POST", Path: "/customers.WebhookService/RotateSecret", UpstreamPath: "/saas.accounts.v1.WebhookService/RotateSecret", Procedure: "/saas.accounts.v1.WebhookService/RotateSecret"},
 		{Service: "accounts_connect", Method: "POST", Path: "/customers.WebhookService/TestWebhook", UpstreamPath: "/saas.accounts.v1.WebhookService/TestWebhook", Procedure: "/saas.accounts.v1.WebhookService/TestWebhook"},
+		{Service: "accounts_connect", Method: "POST", Path: "/customers.WorkContextService/ExchangeAudience", UpstreamPath: "/saas.accounts.v1.WorkContextService/ExchangeAudience", Procedure: "/saas.accounts.v1.WorkContextService/ExchangeAudience"},
+		{Service: "accounts_connect", Method: "POST", Path: "/customers.WorkContextService/StartChildSession", UpstreamPath: "/saas.accounts.v1.WorkContextService/StartChildSession", Procedure: "/saas.accounts.v1.WorkContextService/StartChildSession"},
+		{Service: "accounts_connect", Method: "POST", Path: "/customers.WorkContextService/StartRootSession", UpstreamPath: "/saas.accounts.v1.WorkContextService/StartRootSession", Procedure: "/saas.accounts.v1.WorkContextService/StartRootSession"},
+		{Service: "accounts_connect", Method: "POST", Path: "/customers.WorkContextService/StartTask", UpstreamPath: "/saas.accounts.v1.WorkContextService/StartTask", Procedure: "/saas.accounts.v1.WorkContextService/StartTask"},
 		{Service: "accounts_connect", Method: "POST", Path: "/saas.accounts.v1.APIKeyService/CreateAPIKey", UpstreamPath: "", Procedure: "/saas.accounts.v1.APIKeyService/CreateAPIKey"},
 		{Service: "accounts_connect", Method: "POST", Path: "/saas.accounts.v1.APIKeyService/ListAPIKeys", UpstreamPath: "", Procedure: "/saas.accounts.v1.APIKeyService/ListAPIKeys"},
 		{Service: "accounts_connect", Method: "POST", Path: "/saas.accounts.v1.APIKeyService/RevokeAPIKey", UpstreamPath: "", Procedure: "/saas.accounts.v1.APIKeyService/RevokeAPIKey"},
@@ -234,5 +238,9 @@ func generatedCatalogConnectRoutes() []*RouteEntry {
 		{Service: "accounts_connect", Method: "POST", Path: "/saas.accounts.v1.WebhookService/ReplayDelivery", UpstreamPath: "", Procedure: "/saas.accounts.v1.WebhookService/ReplayDelivery"},
 		{Service: "accounts_connect", Method: "POST", Path: "/saas.accounts.v1.WebhookService/RotateSecret", UpstreamPath: "", Procedure: "/saas.accounts.v1.WebhookService/RotateSecret"},
 		{Service: "accounts_connect", Method: "POST", Path: "/saas.accounts.v1.WebhookService/TestWebhook", UpstreamPath: "", Procedure: "/saas.accounts.v1.WebhookService/TestWebhook"},
+		{Service: "accounts_connect", Method: "POST", Path: "/saas.accounts.v1.WorkContextService/ExchangeAudience", UpstreamPath: "", Procedure: "/saas.accounts.v1.WorkContextService/ExchangeAudience"},
+		{Service: "accounts_connect", Method: "POST", Path: "/saas.accounts.v1.WorkContextService/StartChildSession", UpstreamPath: "", Procedure: "/saas.accounts.v1.WorkContextService/StartChildSession"},
+		{Service: "accounts_connect", Method: "POST", Path: "/saas.accounts.v1.WorkContextService/StartRootSession", UpstreamPath: "", Procedure: "/saas.accounts.v1.WorkContextService/StartRootSession"},
+		{Service: "accounts_connect", Method: "POST", Path: "/saas.accounts.v1.WorkContextService/StartTask", UpstreamPath: "", Procedure: "/saas.accounts.v1.WorkContextService/StartTask"},
 	}
 }

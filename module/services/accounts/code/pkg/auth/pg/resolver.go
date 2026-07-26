@@ -132,11 +132,16 @@ func (r *Resolver) upsertIdentity(ctx context.Context, tx pgx.Tx, c *auth.Claims
 		if userStatus != "active" {
 			return uuid.Nil, false, auth.ErrAccountInactive
 		}
-		// Existing identity — touch last_used and return.
+		// Existing identity — coalesce last_used touches to avoid turning a
+		// burst of authenticated reads into a hot-row write storm. The value is
+		// operational recency, not a per-request audit log; one-minute
+		// precision is sufficient, while the serializable transaction retry
+		// remains the safety net at the refresh boundary.
 		_, err = tx.Exec(ctx, `
 			UPDATE user_identities
 			   SET last_used = NOW()
-			 WHERE provider = $1 AND provider_id = $2`,
+			 WHERE provider = $1 AND provider_id = $2
+			   AND (last_used IS NULL OR last_used < NOW() - INTERVAL '1 minute')`,
 			c.Provider, c.Subject)
 		if err != nil {
 			return uuid.Nil, false, fmt.Errorf("pgauth: update last_used: %w", err)
@@ -164,8 +169,8 @@ func (r *Resolver) upsertIdentity(ctx context.Context, tx pgx.Tx, c *auth.Claims
 	_, err = tx.Exec(ctx, `
 		INSERT INTO user_identities (
 			uuid, user_uuid, provider, provider_id,
-			provider_email, email_verified
-		) VALUES ($1, $2, $3, $4, $5, true)`,
+			provider_email, email_verified, last_used
+		) VALUES ($1, $2, $3, $4, $5, true, NOW())`,
 		identityID, userID, c.Provider, c.Subject, email,
 	)
 	if err != nil {

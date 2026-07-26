@@ -19,17 +19,14 @@ interface UserHit {
  *   palette UI doesn't depend on the wire format.
  */
 export function useUsersSearch(query: string, enabled: boolean): UserHit[] {
-	const [debounced, setDebounced] = useState(query);
+	const [debounced, setDebounced] = useState("");
 	useEffect(() => {
-		if (!enabled) {
-			setDebounced("");
-			return;
-		}
+		if (!enabled) return;
 		const t = setTimeout(() => setDebounced(query), 200);
 		return () => clearTimeout(t);
 	}, [query, enabled]);
 
-	const { data } = useUsers(debounced);
+	const { data } = useUsers(debounced, enabled && debounced === query);
 	if (!enabled || !data) return [];
 	return data.map((u) => ({
 		uuid: u.uuid,

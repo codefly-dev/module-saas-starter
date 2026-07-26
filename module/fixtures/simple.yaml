@@ -1,5 +1,5 @@
 # simple fixture — minimal admin user for quick dev
-# Used with: codefly run service frontend --fixture simple
+# Used with: codefly run service --fixture simple
 
 users:
   - email: admin@example.com

@@ -1,6 +1,7 @@
 # SaaS Starter master TODO
 
 Detailed design and sequencing: [ROADMAP.md](ROADMAP.md)
+Last reviewed: 2026-07-26
 
 Status legend:
 
@@ -96,8 +97,10 @@ Keep IDs stable so commits, PRs, tests, and release notes can reference them.
 
 - [x] `P0-CI-001` Patch high-risk production frontend dependencies.
 - [x] `P0-CI-002` Repair TypeScript/React ESLint flat configuration.
-- [!] `P0-CI-003` Remove the workstation-local Codefly `file:` dependency.
-  Blocker: the published `codefly@0.0.28` package lacks the current endpoint/test-harness API and declarations; publish the current `sdk-js` package, then pin it here. The deleted `sdk/js` path is corrected to the live monorepo `sdk-js` path meanwhile.
+- [x] `P0-CI-003` Remove the workstation-local Codefly `file:` dependency.
+  The frontend consumes an immutable Codefly JS SDK release artifact; clean
+  installs contain no workstation path. Publishing the same package to npm is
+  a distribution improvement, not a correctness blocker.
 - [x] `P0-CI-004` Fix unavailable local dependency-agent versions.
 - [x] `P0-CI-005` Replace stale Playwright `api` service references with `accounts`.
 - [x] `P0-CI-006` Run Go tests, frontend lint/typecheck/test/build, and Buf checks in CI.
@@ -117,6 +120,19 @@ Keep IDs stable so commits, PRs, tests, and release notes can reference them.
   were deleted. Remaining upstream blockers are authoritative non-mutating sync
   contracts for the Redis, S3, Postgres, and Vault agents, plus Go test-suite
   dependency ownership for packages that currently call `WithDependencies`.
+- [x] `P0-CI-014` Make the frontend and Codefly Next.js factory React
+  Compiler-ready and server-first.
+  React/React DOM `19.2.8` and the stable compiler are enabled; every App Router
+  page/layout is a Server Component boundary, interactive routes use explicit
+  client islands, `next-themes` script injection is removed, and boundary tests
+  prevent regressions. Local Tailwind helpers replace the unused vulnerable
+  `shadcn` CLI dependency. The Codefly Next.js `0.0.115` factory carries the
+  same defaults, while the shared upgrader handles npm 11 workspace arrays and
+  peer-coupled React upgrades atomically.
+- [ ] `P0-CI-015` Release the shared Codefly core upgrade changes and Next.js
+  agent `0.0.115`, then pin starter consumers to the published agent.
+  Local packages and tests are complete; publication and consumer pinning are
+  intentionally separate release actions.
 
 ## P1 — contract compiler and protocols
 
@@ -159,7 +175,7 @@ Keep IDs stable so commits, PRs, tests, and release notes can reference them.
   protobuf round-trip tests are active; `module/METHOD_POLICY.md` documents the
   compiler's fail-closed authoring rules.
 - [x] `P1-POLICY-004` Annotate every existing RPC and review the generated matrix.
-  All 121 RPCs declare a complete `method_policy`; descriptor validation rejects
+  All 125 RPCs declare a complete `method_policy`; descriptor validation rejects
   omissions, unspecified enums, invalid vocabulary/events, and nonexistent
   resource field paths. Runtime admission and the checked-in matrix now consume
   descriptors directly, with only editorial descriptions remaining handwritten.
@@ -168,39 +184,39 @@ Keep IDs stable so commits, PRs, tests, and release notes can reference them.
 
 - [x] `P1-GEN-001` Implement descriptor-to-normalized-service-catalog compilation.
   Generated `saas.catalog.v1` Go/TypeScript types define a deterministic
-  24-service, 121-method artifact. The compiler discovers the accounts service
+  25-service, 125-method artifact. The compiler discovers the accounts service
   graph without a handwritten service list and fails on policy, route,
   ownership, transport, ordering, grouping, or schema drift.
 - [x] `P1-GEN-002` Generate Connect server registration and handler interfaces.
-  The catalog plus strict `connect_bindings.yaml` now emit all 24 registrations
+  The catalog plus strict `connect_bindings.yaml` now emit all 25 registrations
   and compile-time assertions against protoc-gen-connect-go interfaces. The
   binding schema permits only gRPC-field, business-service, or singleton
-  sources; exact catalog coverage and all 121 mux procedures are tested.
+  sources; exact catalog coverage and all 125 mux procedures are tested.
 - [x] `P1-GEN-003` Generate Envoy/Istio exact routes and upstream ownership.
-  `saas.gateway.routes.v1` emits 343 deterministic routes with Codefly owner,
+  `saas.gateway.routes.v1` emits 355 deterministic routes with Codefly owner,
   named endpoint, exact/path-template semantics, descriptor exposure, and dated
   rewrites. Auth-sidecar consumes generated Connect routes; the exact Istio
   manifest remains undeployed until frontend/static routes land in P1-NET-003.
 - [x] `P1-GEN-004` Generate auth/PDP method metadata and policy documentation.
-  `saas.authz.methods.v1` projects all 121 policies into deterministic typed
+  `saas.authz.methods.v1` projects all 125 policies into deterministic typed
   PDP metadata with policy SHA-256 fingerprints. Auth-sidecar consumes generated
   exposure, rate failure, and login-factor flags; REST parity caught and fixed
   stale protection on public user registration. `AUTHZ_MATRIX.md` remains the
   generated human review surface.
 - [x] `P1-GEN-005` Generate opt-in REST/OpenAPI surfaces.
-  `saas.rest.surface.v1` now projects 115 explicitly annotated public-edge
-  routes across 23 services. Strict generated/plugin bindings emit complete
+  `saas.rest.surface.v1` now projects 119 explicitly annotated public-edge
+  routes across 24 services. Strict generated/plugin bindings emit complete
   grpc-gateway registration, an exact/template runtime allowlist, auth-sidecar
-  routing, and a verified 115-operation OpenAPI document. Seven internal RPCs no
+  routing, and a verified 119-operation OpenAPI document. Seven internal RPCs no
   longer carry HTTP annotations. Five non-protobuf routes remain explicit
   extensions; descriptor-equivalent YAML has been removed.
 - [x] `P1-GEN-006` Generate TypeScript clients and permission/entitlement constants.
   The normalized catalog now owns 21 permissions, 19 API-key scopes, and five
   entitlement definitions. Its deterministic frontend projection creates
-  typed clients for all 24 accounts services and exports finite constants,
+  typed clients for all 25 accounts services and exports finite constants,
   metadata, wildcard grant types, and runtime guards. Frontend role gates,
   common client hooks, and entitlement administration consume the generated
-  vocabulary; generator and Vitest parity checks pin all 121 procedures.
+  vocabulary; generator and Vitest parity checks pin all 125 procedures.
 - [x] `P1-GEN-007` Generate Codefly endpoints, dependencies, and network policy.
   One strict topology binding now generates the module interface, all seven
   service manifests, a typed 7-service/11-endpoint/8-dependency deployment
@@ -227,8 +243,10 @@ Keep IDs stable so commits, PRs, tests, and release notes can reference them.
 - [ ] `P1-NET-002` Make REST transcoding explicitly opt-in.
 - [ ] `P1-NET-003` Add frontend page/static/catch-all routes to the generated catalog.
   The 36 page routes and admin plugin catch-all now exist in
-  `saas.frontend.plugins.v1`; static Next.js assets and the generated Istio
-  frontend fallback remain before this gate can close.
+  `saas.frontend.plugins.v1` and generate the local gateway's finite page
+  allowlist. Next.js assets and explicit route handlers also traverse the local
+  gateway. The generated Istio frontend fallback remains before this gate can
+  close.
 - [ ] `P1-NET-004` Deploy one edge data path using Istio/Envoy plus auth/PDP.
 - [ ] `P1-NET-005` Remove or repurpose the competing Go gateway implementation.
 - [x] `P1-NET-006` Add generated service-to-service network allow policies.
@@ -241,16 +259,27 @@ Keep IDs stable so commits, PRs, tests, and release notes can reference them.
   visibility and generate least-privilege dependency/network-policy edges for
   installed product services. `UsageService.ConsumeUsage` is the first
   cross-module acceptance slice; do not expose the mixed listener meanwhile.
+- [x] `P1-NET-008` Declare and validate `auth-sidecar` as the module service
+  entry, teach Codefly to resolve it from a module or single-module workspace,
+  and smoke-test the full seven-service fixture stack from the repository root.
+  The sidecar's public HTTP endpoint is the application ingress; selecting the
+  raw frontend would omit authentication routing.
+- [ ] `P1-NET-009` Make the generated public OpenAPI document available inside
+  the standalone frontend artifact and serve it through `/api/openapi`.
+  The current route still resolves the removed
+  `../../api/openapi/user.swagger.json` path, so it returns 404 in native and
+  container layouts even though the canonical document exists under
+  `accounts/openapi/api.swagger.json`.
 
 ### Contract CI
 
 - [x] `P1-CI-001` Add proto/handler/protocol/OpenAPI/Envoy/TS parity tests.
   Connect registration now has catalog-to-config generation parity,
   compile-time handler-interface parity, and catalog-to-runtime-mux parity for
-  all 121 procedures. Gateway generation adds catalog-to-runtime Connect parity,
-  343-route target-neutral/Envoy/Istio parity, and internal-route exclusion.
+  all 125 procedures. Gateway generation adds catalog-to-runtime Connect parity,
+  355-route target-neutral/Envoy/Istio parity, and internal-route exclusion.
   Authorization and REST/OpenAPI catalog/runtime parity are also complete. The
-  TypeScript catalog now verifies all 24 clients, 121 procedures, 21
+  TypeScript catalog now verifies all 25 clients, 125 procedures, 21
   permissions, 19 API-key scopes, and five entitlements. Frontend plugin parity
   additionally pins three plugin sources, 36 filesystem pages, 25 navigation
   items, all four consumer surfaces, access tiers, and permission references.
@@ -264,7 +293,7 @@ Keep IDs stable so commits, PRs, tests, and release notes can reference them.
   frontend page/plugin/navigation catalogs are also covered. New P1-GEN
   producers must join the same gate when added.
 - [x] `P1-CI-003` Snapshot public/internal API exposure for review.
-  `AUTHZ_MATRIX.md` is a descriptor-generated 121-RPC exposure/policy snapshot,
+  `AUTHZ_MATRIX.md` is a descriptor-generated 125-RPC exposure/policy snapshot,
   and the accounts suite fails when the checked-in review artifact drifts.
 - [ ] `P1-CI-004` Render and schema-validate deployment artifacts.
   Base/local/AWS Kustomize rendering and strict generated NetworkPolicy parsing
@@ -370,6 +399,45 @@ Keep IDs stable so commits, PRs, tests, and release notes can reference them.
   membership, refresh/family/lifetime/device preservation, denial without
   mutation, end-to-end refresh continuity, and switch-versus-refresh row-lock
   behavior without false replay revocation.
+
+### Principal authority and Work Context
+
+- [x] `P2-WORK-001` Make direct RBAC assignments target Principals.
+  `SUBJECT_KIND_PRINCIPAL = 1` is now canonical while the legacy
+  `SUBJECT_KIND_USER = 1` alias remains deprecated and wire-compatible.
+  Migration 79 rewrites stored direct assignments from `user` to `principal`,
+  updates the database constraint and authorization-revision trigger, and lets
+  human, service, and Agent Principals receive explicit roles without semantic
+  impersonation.
+- [x] `P2-WORK-002` Add product-neutral Task/Session capability exchange.
+  The permissions plugin owns generated `StartTask`, `StartRootSession`, and
+  `StartChildSession` gRPC/Connect/REST operations. Accounts issues the shared
+  Codefly Ed25519 Work Context and deliberately owns no product Task/Session
+  lifecycle rows.
+- [x] `P2-WORK-003` Resolve Work Context authority through verified
+  `service-postgres` scope.
+  One Reader transaction binds the authenticated tenant/owner, current
+  membership, organization and Principal authorization revisions, immutable
+  team attribution, active Agent Actor, and every exact
+  resource/action/resource-id grant. Caller-selected tenant facts, revoked
+  Actors, and scope widening fail closed.
+- [x] `P2-WORK-004` Prove attenuation and database authority.
+  Fresh Codefly-managed PostgreSQL tests cover direct Agent grants, human RBAC,
+  current revisions, scope mismatch, foreign tenant substitution, revoked
+  Actor, cross-tenant RLS, runtime roles, exact grants, complete relation
+  inventory, and RLS-policy parity. RPC tests cover stale-parent rejection and
+  fail-closed signer/store configuration.
+- [ ] `P2-WORK-005` Add revisioned authorization caching with explicit
+  invalidation.
+  Cache only product-neutral computed facts keyed by organization, Principal,
+  requested permission tuple, and current revision. A cache outage or stale
+  entry may reduce performance or narrow presentation; it must never widen
+  Work Context issuance, database RLS, or current revocation behavior.
+- [ ] `P2-WORK-006` Publish a public Accounts client package for external
+  products and tools.
+  Consumers must use generated/public SDK clients for identity, directory, and
+  Work Context exchange rather than importing Accounts-internal generated Go
+  packages. The conformance suite must cover Go and TypeScript first.
 
 ### Inbox/outbox workers
 
@@ -519,9 +587,20 @@ Keep IDs stable so commits, PRs, tests, and release notes can reference them.
 ### Mind capabilities and approvals
 
 - [ ] `P3-MIND-001` Add short-lived workload identity for agents and services.
-- [ ] `P3-MIND-002` Model agent principals separately from users/API keys.
-- [ ] `P3-MIND-003` Issue audience/subject/org/action/resource-bound capabilities.
-- [ ] `P3-MIND-004` Make capabilities short-lived, one-use, revocable, and replica-safe.
+- [x] `P3-MIND-002` Model agent principals separately from users/API keys.
+  The unified Principal directory has explicit HUMAN/SERVICE/AGENT kinds, and
+  direct RBAC assignments now target Principals rather than a user-only
+  subject. The Codefly fixture proves a Claude Code Agent with independent
+  `evidence:append` authority.
+- [-] `P3-MIND-003` Issue audience/subject/org/action/resource-bound capabilities.
+  Work Context issuance binds audience, owner, current Actor, organization,
+  Task, Session, action/resource scopes, attribution, expiry, replay policy, and
+  authorization revision. Automatic workload authentication and propagation
+  across all agent/tool boundaries remain.
+- [-] `P3-MIND-004` Make capabilities short-lived, one-use, revocable, and replica-safe.
+  TTL, monotonic attenuation, current authorization revisions, idempotent versus
+  single-use policy, and durable consumer replay semantics exist. The generic
+  single-use replay store and workload revocation distribution remain.
 - [ ] `P3-MIND-005` Persist risk inputs, policy version/hash, approvals, and redemption.
 - [ ] `P3-MIND-006` Require approver roles and recent MFA for high-risk actions.
 - [ ] `P3-MIND-007` Add immutable audit, notification, timeout, cancel, and replay safety.
@@ -839,3 +918,24 @@ Add completion records here in the form:
   canonical billing copy points to subscription management rather than a
   pricing route. Unit and fresh-PostgreSQL coverage pins generated payloads,
   role authority, rollback atomicity, replay, and end-to-end delivery.
+- 2026-07-21 `P0-CI-014` — upgraded the starter and Codefly Next.js factory to
+  Next.js 16.2.11 and React/React DOM 19.2.8 with the stable React Compiler;
+  removed `next-themes`
+  script injection; converted all 40 App Router page/layout boundaries to
+  server-first wrappers with focused client islands; and made compiler state
+  diagnostics blocking. Codefly core now parses npm 11 workspace-shaped
+  `outdated` output, groups coupled upgrades atomically, resolves workspace
+  aliases, and reports workspace-only changes. The local Next.js agent packages
+  as 0.0.115. Core/agent Go tests, 383 frontend tests, lint/typecheck, the
+  40-route production compile, the six-service container build, and the live
+  seven-service gateway stack pass.
+- 2026-07-23 `P2-WORK-001`–`P2-WORK-004` — added the permissions-plugin-owned
+  Work Context authority and made direct RBAC assignments explicitly
+  Principal-based. Migrations 78–79 provide monotonic authorization revisions,
+  migrate the old `user` database subject to `principal`, and keep the
+  deprecated protobuf alias wire-compatible. The generated 25-service /
+  125-method catalog now includes Task, root-Session, and child-Session
+  capability exchange across gRPC, Connect, REST, OpenAPI, auth metadata, and
+  TypeScript. Codefly compile, three RPC tests, two real-Postgres Work Context
+  tests, human RBAC E2E, direct Agent authority, cross-tenant RLS, and six
+  database role/grant/inventory/policy checks pass.

@@ -187,19 +187,29 @@ type SubjectKind int32
 
 const (
 	SubjectKind_SUBJECT_KIND_UNSPECIFIED SubjectKind = 0
-	SubjectKind_SUBJECT_KIND_USER        SubjectKind = 1
-	SubjectKind_SUBJECT_KIND_TEAM        SubjectKind = 2
+	// A direct role assignment always targets a Principal. Human users remain
+	// Principals of kind HUMAN; agents and services can receive the same
+	// explicitly assigned authority without masquerading as users.
+	SubjectKind_SUBJECT_KIND_PRINCIPAL SubjectKind = 1
+	// Backward-compatible wire/JSON input alias. New clients must use
+	// SUBJECT_KIND_PRINCIPAL.
+	//
+	// Deprecated: Marked as deprecated in saas/accounts/v1/common.proto.
+	SubjectKind_SUBJECT_KIND_USER SubjectKind = 1
+	SubjectKind_SUBJECT_KIND_TEAM SubjectKind = 2
 )
 
 // Enum value maps for SubjectKind.
 var (
 	SubjectKind_name = map[int32]string{
 		0: "SUBJECT_KIND_UNSPECIFIED",
-		1: "SUBJECT_KIND_USER",
+		1: "SUBJECT_KIND_PRINCIPAL",
+		// Duplicate value: 1: "SUBJECT_KIND_USER",
 		2: "SUBJECT_KIND_TEAM",
 	}
 	SubjectKind_value = map[string]int32{
 		"SUBJECT_KIND_UNSPECIFIED": 0,
+		"SUBJECT_KIND_PRINCIPAL":   1,
 		"SUBJECT_KIND_USER":        1,
 		"SUBJECT_KIND_TEAM":        2,
 	}
@@ -1421,11 +1431,12 @@ const file_saas_accounts_v1_common_proto_rawDesc = "" +
 	"\x15TEAM_ROLE_UNSPECIFIED\x10\x00\x12\x14\n" +
 	"\x10TEAM_ROLE_MEMBER\x10\x01\x12\x13\n" +
 	"\x0fTEAM_ROLE_ADMIN\x10\x02\x12\x13\n" +
-	"\x0fTEAM_ROLE_OWNER\x10\x03*Y\n" +
+	"\x0fTEAM_ROLE_OWNER\x10\x03*}\n" +
 	"\vSubjectKind\x12\x1c\n" +
-	"\x18SUBJECT_KIND_UNSPECIFIED\x10\x00\x12\x15\n" +
-	"\x11SUBJECT_KIND_USER\x10\x01\x12\x15\n" +
-	"\x11SUBJECT_KIND_TEAM\x10\x02*\x7f\n" +
+	"\x18SUBJECT_KIND_UNSPECIFIED\x10\x00\x12\x1a\n" +
+	"\x16SUBJECT_KIND_PRINCIPAL\x10\x01\x12\x19\n" +
+	"\x11SUBJECT_KIND_USER\x10\x01\x1a\x02\b\x01\x12\x15\n" +
+	"\x11SUBJECT_KIND_TEAM\x10\x02\x1a\x02\x10\x01*\x7f\n" +
 	"\rPrincipalKind\x12\x1e\n" +
 	"\x1aPRINCIPAL_KIND_UNSPECIFIED\x10\x00\x12\x18\n" +
 	"\x14PRINCIPAL_KIND_HUMAN\x10\x01\x12\x1a\n" +

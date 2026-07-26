@@ -27,8 +27,9 @@ type frontendPluginAllowlistEntry struct {
 	Protocol      string `json:"protocol"`
 	RoutePrefix   string `json:"routePrefix"`
 	Compatibility struct {
-		Contract string `json:"contract"`
-		Major    int    `json:"major"`
+		Contract  string  `json:"contract"`
+		Major     int     `json:"major"`
+		ProbePath *string `json:"probePath"`
 	} `json:"compatibility"`
 	Target struct {
 		Module   string `json:"module"`
@@ -136,6 +137,27 @@ func decodeFrontendPluginServiceDependencies(document []byte) ([]manifestService
 		}
 		if !frontendPluginLogicalIDPattern.MatchString(entry.Compatibility.Contract) || entry.Compatibility.Major <= 0 {
 			return nil, fmt.Errorf("frontend plugin service %q has invalid compatibility metadata", owner)
+		}
+		if entry.Compatibility.ProbePath != nil {
+			probePath := *entry.Compatibility.ProbePath
+			probeSegments := strings.Split(strings.TrimPrefix(probePath, "/"), "/")
+			if entry.Protocol != "rest" ||
+				!frontendPluginRoutePrefixPattern.MatchString(probePath) {
+				return nil, fmt.Errorf(
+					"frontend plugin service %q has unsafe compatibility probe path %q",
+					owner,
+					probePath,
+				)
+			}
+			for _, segment := range probeSegments {
+				if segment == "." || segment == ".." {
+					return nil, fmt.Errorf(
+						"frontend plugin service %q has unsafe compatibility probe path %q",
+						owner,
+						probePath,
+					)
+				}
+			}
 		}
 		if entry.Target.Endpoint != entry.Protocol {
 			return nil, fmt.Errorf(

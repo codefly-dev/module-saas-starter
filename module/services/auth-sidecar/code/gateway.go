@@ -7,8 +7,10 @@ package main
 // equivalent for local iteration — it calls Sidecar.Check in-process (zero
 // gRPC round-trip) and does the same header injection + routing.
 //
-// Routing is WHITELIST-ONLY: every endpoint must be explicitly listed in
-// routes.codefly.yaml. Unlisted paths return 404. Zero prefix matching.
+// Routing is WHITELIST-ONLY: backend endpoints come from generated and explicit
+// REST catalogs; frontend pages come from the generated Next.js page catalog,
+// with finite allowances for Next.js assets and route handlers. Everything else
+// returns 404.
 
 import (
 	"fmt"
@@ -49,6 +51,9 @@ func NewGateway(sidecar *Sidecar, matcher *RouteMatcher, upstreams map[string]*u
 		upstreams:         upstreams,
 		rateLimiter:       rateLimiter,
 		requiredUpstreams: matcher.RequiredServices(),
+	}
+	if !containsString(g.requiredUpstreams, "frontend") {
+		g.requiredUpstreams = append(g.requiredUpstreams, "frontend")
 	}
 	mux := http.NewServeMux()
 	mux.HandleFunc("/health", g.healthHandler)
@@ -120,6 +125,9 @@ func (g *Gateway) readyHandler(w http.ResponseWriter, _ *http.Request) {
 // entry in the route config.
 func (g *Gateway) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	entry := g.matcher.Match(r.Method, r.URL.Path)
+	if entry == nil {
+		entry = matchFrontendGatewayRoute(r.Method, r.URL.Path)
+	}
 	if entry == nil {
 		log.Printf("WARN: blocked request: method=%s path=%s reason=no_matching_route", r.Method, r.URL.Path)
 		httpError(w, http.StatusNotFound, "endpoint not exposed")
@@ -244,6 +252,15 @@ func (g *Gateway) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		log.Printf("WARN: blocked request: method=%s path=%s reason=unknown_auth_type_%s", r.Method, r.URL.Path, authMode(entry))
 		httpError(w, http.StatusInternalServerError, "unknown auth type")
 	}
+}
+
+func containsString(values []string, wanted string) bool {
+	for _, value := range values {
+		if value == wanted {
+			return true
+		}
+	}
+	return false
 }
 
 // rateLimitThenProxy applies rate limiting (if configured) then proxies.

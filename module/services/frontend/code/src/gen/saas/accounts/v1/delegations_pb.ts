@@ -441,3 +441,4 @@ export const DelegationService: GenService<{
   },
 }> = /*@__PURE__*/
   serviceDesc(file_saas_accounts_v1_delegations, 0);
+

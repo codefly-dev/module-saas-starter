@@ -66,8 +66,10 @@ async function problemCode(response: Response): Promise<string> {
 describe("generic frontend plugin BFF", () => {
 	it("proxies only the allowlisted prefix, query, bearer, and safe headers", async () => {
 		const fetchMock = vi.fn(
-			async (_target: RequestInfo | URL, _init?: RequestInit) =>
-				new Response(JSON.stringify({ calls: 3 }), {
+			async (target: RequestInfo | URL, init?: RequestInit) => {
+				void target;
+				void init;
+				return new Response(JSON.stringify({ calls: 3 }), {
 					status: 200,
 					headers: {
 						"content-type": "application/json",
@@ -76,7 +78,8 @@ describe("generic frontend plugin BFF", () => {
 						"x-correlation-id": "backend-correlation",
 						"x-upstream-private": "secret",
 					},
-				}),
+				});
+			},
 		);
 		const incoming = request("/api/plugins/example/api/traffic?window=24h", {
 			headers: {
@@ -146,14 +149,12 @@ describe("generic frontend plugin BFF", () => {
 			.fn()
 			.mockReturnValueOnce("request-first")
 			.mockReturnValueOnce("request-second");
-		const fetchMock = vi.fn(
-			async (...args: Parameters<typeof fetch>) => {
-				void args;
-				return new Response("{}", {
-					headers: { "x-request-id": "backend-controlled" },
-				});
-			},
-		);
+		const fetchMock = vi.fn(async (...args: Parameters<typeof fetch>) => {
+			void args;
+			return new Response("{}", {
+				headers: { "x-request-id": "backend-controlled" },
+			});
+		});
 
 		for (const expected of ["request-first", "request-second"]) {
 			const response = await handlePluginBffRequest(
@@ -208,8 +209,11 @@ describe("generic frontend plugin BFF", () => {
 			"00-4bf92f3577b34da6a3ce929d0e0e4736-0000000000000000-01",
 		]) {
 			const fetchMock = vi.fn(
-				async (_target: RequestInfo | URL, _init?: RequestInit) =>
-					new Response("{}"),
+				async (target: RequestInfo | URL, init?: RequestInit) => {
+					void target;
+					void init;
+					return new Response("{}");
+				},
 			);
 			const response = await handlePluginBffRequest(
 				request("/api/plugins/example/api/traffic", {
@@ -257,7 +261,11 @@ describe("generic frontend plugin BFF", () => {
 		["expired or revoked credential", `Bearer expired.${"a".repeat(24)}`, 401],
 		["missing product permission", `Bearer member.${"b".repeat(25)}`, 403],
 		["wrong active organization", `Bearer wrong-org.${"c".repeat(22)}`, 403],
-		["foreign resource identifier", `Bearer cross-tenant.${"d".repeat(18)}`, 404],
+		[
+			"foreign resource identifier",
+			`Bearer cross-tenant.${"d".repeat(18)}`,
+			404,
+		],
 		["explicit support operation", `Bearer support.${"e".repeat(25)}`, 200],
 		[
 			"explicit super-admin operation",
@@ -268,28 +276,26 @@ describe("generic frontend plugin BFF", () => {
 		"keeps the bearer opaque and preserves the backend decision for %s",
 		async (scenario, authorization, upstreamStatus) => {
 			void scenario;
-			const fetchMock = vi.fn(
-				async (...args: Parameters<typeof fetch>) => {
-					const headers = new Headers(args[1]?.headers);
-					expect(headers.get("authorization")).toBe(authorization);
-					for (const trustedHeader of [
-						"cookie",
-						"forwarded",
-						"x-user-id",
-						"x-org-id",
-						"x-tenant-id",
-						"x-role",
-						"x-platform-role",
-						"x-codefly-gateway-token",
-					]) {
-						expect(headers.get(trustedHeader)).toBeNull();
-					}
-					return new Response(upstreamStatus === 200 ? "{}" : null, {
-						status: upstreamStatus,
-						headers: { "content-type": "application/json" },
-					});
-				},
-			);
+			const fetchMock = vi.fn(async (...args: Parameters<typeof fetch>) => {
+				const headers = new Headers(args[1]?.headers);
+				expect(headers.get("authorization")).toBe(authorization);
+				for (const trustedHeader of [
+					"cookie",
+					"forwarded",
+					"x-user-id",
+					"x-org-id",
+					"x-tenant-id",
+					"x-role",
+					"x-platform-role",
+					"x-codefly-gateway-token",
+				]) {
+					expect(headers.get(trustedHeader)).toBeNull();
+				}
+				return new Response(upstreamStatus === 200 ? "{}" : null, {
+					status: upstreamStatus,
+					headers: { "content-type": "application/json" },
+				});
+			});
 			const response = await handlePluginBffRequest(
 				request("/api/plugins/example/api/traffic", {
 					headers: {
@@ -375,6 +381,43 @@ describe("generic frontend plugin BFF", () => {
 		expect(init?.method).toBe("GET");
 		expect(init?.body).toBeUndefined();
 		expect(new Headers(init?.headers).get("authorization")).toBe(TOKEN);
+	});
+
+	it("uses a validated product-owned REST capability probe path", async () => {
+		const fetchMock = vi.fn(async (...args: Parameters<typeof fetch>) => {
+			void args;
+			return Response.json({
+				schemaVersion: 1,
+				contract: "example.api",
+				contractMajor: 1,
+			});
+		});
+		const response = await handlePluginBffRequest(
+			request("/api/plugins/example/api/.well-known/capabilities"),
+			capabilityParams,
+			dependencies({
+				fetch: fetchMock as typeof fetch,
+				resolve: () => ({
+					ok: true,
+					value: {
+						entry: {
+							...entry("rest"),
+							compatibility: {
+								contract: "example.api",
+								major: 1,
+								probePath: "/api/v1/plugins/example/capabilities",
+							},
+						},
+						baseURL: "http://example-api.internal",
+					},
+				}),
+			}),
+		);
+
+		expect(response.status).toBe(200);
+		expect(String(fetchMock.mock.calls[0]?.[0])).toBe(
+			"http://example-api.internal/api/v1/plugins/example/capabilities",
+		);
 	});
 
 	it("uses the generated Connect capability procedure behind a browser GET", async () => {

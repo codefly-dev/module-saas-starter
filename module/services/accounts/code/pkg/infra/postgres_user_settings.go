@@ -2,41 +2,61 @@ package infra
 
 import (
 	"context"
+
+	gen "accounts/pkg/gen/saas/accounts/v1"
+	"accounts/pkg/usersettings"
 )
 
-// GetUserSettings returns the user's settings JSONB as raw bytes
-// for the business layer to unmarshal. Empty rows ('{}') and
-// missing-user errors are surfaced as-is — the business layer
-// converts {}-bytes to an empty struct.
-func (s *PostgresStore) GetUserSettings(ctx context.Context, userID string) ([]byte, error) {
+// GetUserSettings returns the typed protobuf document. Raw ProtoJSON never
+// escapes this adapter.
+func (s *PostgresStore) GetUserSettings(
+	ctx context.Context,
+	userID string,
+) (*gen.UserSettings, error) {
 	q := s.getQueryExecutor(ctx)
-	var raw []byte
-	err := q.QueryRow(ctx, `
-		SELECT settings FROM users WHERE uuid = $1`, userID,
-	).Scan(&raw)
+	var encoded []byte
+	err := q.QueryRow(
+		ctx,
+		`SELECT settings FROM users WHERE uuid = $1`,
+		userID,
+	).Scan(&encoded)
 	if err != nil {
 		return nil, err
 	}
-	return raw, nil
+	return usersettings.JSON.Unmarshal(encoded)
 }
 
-// UpdateUserSettings merges a partial JSONB patch onto the stored
-// settings via the `||` (concatenation) operator. Last-write-wins
-// per top-level key: incoming { theme: "dark", email: {...} } merges
-// onto stored { locale: "en", theme: "system" } as { locale: "en",
-// theme: "dark", email: {...} } — nested objects are replaced, not
-// merged. The FE accommodates by sending the full nested object on
-// any nested-key change.
-//
-// Why not jsonb_set with a recursive merge: postgres has no
-// idiomatic deep-merge operator. The shallow `||` keeps the
-// semantic explicit and the FE simple.
-func (s *PostgresStore) UpdateUserSettings(ctx context.Context, userID string, patch []byte) error {
+// UpdateUserSettings atomically deep-merges a canonical ProtoJSON patch.
+// PostgreSQL preserves nested siblings and fields unknown to this binary,
+// while explicit optional zero values still overwrite.
+func (s *PostgresStore) UpdateUserSettings(
+	ctx context.Context,
+	userID string,
+	patch *gen.UserSettings,
+	resetPaths []string,
+) error {
+	if patch == nil {
+		patch = &gen.UserSettings{}
+	}
+	if resetPaths == nil {
+		resetPaths = []string{}
+	}
 	q := s.getQueryExecutor(ctx)
-	_, err := q.Exec(ctx, `
+	encoded, err := usersettings.JSON.Marshal(patch)
+	if err != nil {
+		return err
+	}
+	_, err = q.Exec(ctx, `
 		UPDATE users
-		   SET settings = settings || $2::jsonb,
+		   SET settings = public.settings_jsonb_deep_merge(
+		           public.settings_jsonb_delete_paths(settings, $3::text[]),
+		           $2::jsonb
+		       ),
 		       updated_at = NOW()
-		 WHERE uuid = $1`, userID, patch)
+		 WHERE uuid = $1`,
+		userID,
+		encoded,
+		resetPaths,
+	)
 	return err
 }

@@ -211,7 +211,7 @@ export const RevokeRoleRequestSchema: GenMessage<RevokeRoleRequest> = /*@__PURE_
 
 /**
  * ListRoleAssignmentsRequest — read assignments scoped to an org.
- * subject_id (optional) filters to assignments for that user/team
+ * subject_id (optional) filters to assignments for that principal/team
  * only; empty returns every assignment in the org. Used by the
  * admin UI's "manage roles for member X" panel.
  *
@@ -231,7 +231,7 @@ export type ListRoleAssignmentsRequest = Message<"saas.accounts.v1.ListRoleAssig
   subjectId: string;
 
   /**
-   * unspecified → both users + teams
+   * unspecified → both principals + teams
    *
    * @generated from field: saas.accounts.v1.SubjectKind subject_kind = 3;
    */
@@ -740,3 +740,4 @@ export const PrincipalService: GenService<{
   },
 }> = /*@__PURE__*/
   serviceDesc(file_saas_accounts_v1_authorization, 1);
+

@@ -6,7 +6,7 @@ import {
 } from "@simplewebauthn/browser";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { Fingerprint, Loader2, ShieldCheck } from "lucide-react";
-import { useEffect, useState } from "react";
+import { useState, useSyncExternalStore } from "react";
 import { toast } from "sonner";
 
 import {
@@ -34,12 +34,22 @@ function registrationError(error: unknown): string {
 	return error instanceof Error ? error.message : "Passkey setup failed.";
 }
 
+function subscribeToBrowserCapability() {
+	return () => undefined;
+}
+
+function getServerBrowserCapability() {
+	return false;
+}
+
 export function PasskeySetup({ open, onClose }: PasskeySetupProps) {
 	const queryClient = useQueryClient();
 	const [name, setName] = useState("My passkey");
-	const [supported, setSupported] = useState(false);
-
-	useEffect(() => setSupported(browserSupportsWebAuthn()), []);
+	const supported = useSyncExternalStore(
+		subscribeToBrowserCapability,
+		browserSupportsWebAuthn,
+		getServerBrowserCapability,
+	);
 
 	const registration = useMutation({
 		mutationFn: async () => {

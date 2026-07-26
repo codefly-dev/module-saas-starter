@@ -89,6 +89,83 @@ func TestResolver_ExistingUser_Idempotent(t *testing.T) {
 	require.Equal(t, 1, count, "no duplicate users created")
 }
 
+func TestResolver_LastUsedIsInitializedCoalescedAndRefreshed(t *testing.T) {
+	resetAuthTables(t)
+	ctx := context.Background()
+	r := pgauth.NewResolver(testStore)
+	loginClaims := claims("last-used@test.local", "dev-last-used")
+
+	identity, err := r.Resolve(ctx, loginClaims, "")
+	require.NoError(t, err)
+	initial := identityLastUsed(t, identity.UserID)
+	require.WithinDuration(t, time.Now(), initial, 5*time.Second)
+
+	_, err = r.Resolve(ctx, loginClaims, "")
+	require.NoError(t, err)
+	require.Equal(t, initial, identityLastUsed(t, identity.UserID),
+		"immediate repeat authentication must not rewrite the hot identity row")
+
+	stale := time.Now().Add(-2 * time.Minute).UTC().Truncate(time.Microsecond)
+	require.NoError(t, testStore.WithControlPlane(ctx, func(ctx context.Context) error {
+		tx := ctx.Value("tx").(pgx.Tx) //nolint:staticcheck // shared transaction context key
+		_, err := tx.Exec(ctx,
+			`UPDATE user_identities SET last_used = $2 WHERE user_uuid = $1`,
+			identity.UserID,
+			stale,
+		)
+		return err
+	}))
+
+	_, err = r.Resolve(ctx, loginClaims, "")
+	require.NoError(t, err)
+	require.True(t, identityLastUsed(t, identity.UserID).After(stale))
+}
+
+func TestResolver_ConcurrentExistingLogin_AllSucceed(t *testing.T) {
+	resetAuthTables(t)
+	ctx := context.Background()
+	r := pgauth.NewResolver(testStore)
+
+	first, err := r.Resolve(ctx, claims("concurrent@test.local", "dev-concurrent"), "")
+	require.NoError(t, err)
+
+	const n = 16
+	start := make(chan struct{})
+	results := make([]*auth.Identity, n)
+	errs := make([]error, n)
+	var wg sync.WaitGroup
+	wg.Add(n)
+	for i := 0; i < n; i++ {
+		go func(i int) {
+			defer wg.Done()
+			<-start
+			results[i], errs[i] = r.Resolve(
+				ctx,
+				claims("concurrent@test.local", "dev-concurrent"),
+				"",
+			)
+		}(i)
+	}
+	close(start)
+	wg.Wait()
+
+	for i := range n {
+		require.NoError(t, errs[i], "concurrent authentication %d", i)
+		require.NotNil(t, results[i], "concurrent authentication %d", i)
+		require.Equal(t, first.UserID, results[i].UserID)
+	}
+}
+
+func identityLastUsed(t *testing.T, userID uuid.UUID) time.Time {
+	t.Helper()
+	var lastUsed time.Time
+	scanControlPlane(t, &lastUsed,
+		`SELECT last_used FROM user_identities WHERE user_uuid = $1`,
+		userID,
+	)
+	return lastUsed
+}
+
 func TestResolver_ExistingInactiveUserRejected(t *testing.T) {
 	resetAuthTables(t)
 	ctx := context.Background()
@@ -257,17 +334,11 @@ func TestResolver_ConcurrentFirstLogin_OneUser(t *testing.T) {
 	}
 	wg.Wait()
 
-	// With SERIALIZABLE isolation, some concurrent transactions may retry
-	// or conflict. We accept a small number of retryable failures but need
-	// at least one success and zero duplicate users in the end.
-	successes := 0
 	for i, err := range errs {
-		if err == nil {
-			successes++
-			require.NotEqual(t, uuid.Nil, results[i])
-		}
+		require.NoError(t, err, "concurrent first authentication %d", i)
+		require.NotEqual(t, uuid.Nil, results[i])
+		require.Equal(t, results[0], results[i], "all requests must resolve the same user")
 	}
-	require.Greater(t, successes, 0, "at least one concurrent resolve must succeed")
 
 	var count int
 	scanControlPlane(t, &count, `SELECT COUNT(*) FROM users WHERE primary_email = 'race@test.local'`)

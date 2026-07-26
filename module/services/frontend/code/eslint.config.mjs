@@ -14,16 +14,14 @@ export default defineConfig([
 	...nextVitals,
 	...nextTypeScript,
 
-	// Warning policy: lint exits non-zero for correctness, security, routing,
-	// hooks-order, and architecture violations. These two React-compiler
-	// migration diagnostics are advisory while legacy external-state hydration
-	// is converted incrementally; incompatible third-party hooks are supported
-	// by the libraries and simply opt those components out of compilation.
+	// React Compiler correctness is mandatory for application state. Third-party
+	// hooks that cannot be compiled remain visible as migration warnings while
+	// React safely skips those individual components.
 	{
 		files: ["**/*.{ts,tsx}"],
 		rules: {
-			"react-hooks/set-state-in-effect": "warn",
-			"react-hooks/incompatible-library": "off",
+			"react-hooks/set-state-in-effect": "error",
+			"react-hooks/incompatible-library": "warn",
 		},
 	},
 

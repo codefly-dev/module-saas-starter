@@ -32,10 +32,13 @@ var (
 	testUserClient apigen.UserServiceClient
 	testAuthClient apigen.AuthServiceClient
 	testCtx        context.Context
-	testCleanup    func()
 )
 
 func TestMain(m *testing.M) {
+	os.Exit(runSidecarIntegrationTests(m))
+}
+
+func runSidecarIntegrationTests(m *testing.M) int {
 	// The accounts transport deliberately fails closed for internal RPCs.
 	// WithDependencies inherits this process environment, so both services use
 	// the same integration-only credential.
@@ -51,27 +54,29 @@ func TestMain(m *testing.M) {
 	)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "WithDependencies failed: %v\n", err)
-		os.Exit(1)
+		return 1
 	}
+	defer deps.Destroy(ctx)
 
 	_, err = codefly.Init(ctx)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "codefly.Init failed: %v\n", err)
-		os.Exit(1)
+		return 1
 	}
 
 	apiNet := codefly.For(ctx).Service("accounts").API("grpc").NetworkInstance()
 	if apiNet == nil {
 		fmt.Fprintf(os.Stderr, "backend gRPC endpoint not available\n")
-		os.Exit(1)
+		return 1
 	}
 	apiAddr := fmt.Sprintf("%s:%d", apiNet.Hostname, apiNet.Port)
 
 	apiConn, err := grpc.NewClient(apiAddr, grpc.WithTransportCredentials(insecure.NewCredentials()))
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "cannot connect to backend: %v\n", err)
-		os.Exit(1)
+		return 1
 	}
+	defer apiConn.Close()
 
 	// Fetch public key from backend's JWKS endpoint
 	publicKey := fetchTestPublicKey(ctx, apiConn)
@@ -79,27 +84,20 @@ func TestMain(m *testing.M) {
 	internalNet := codefly.For(ctx).Service("accounts").API("rest").NetworkInstance()
 	if internalNet == nil {
 		fmt.Fprintf(os.Stderr, "backend internal gRPC endpoint not available\n")
-		os.Exit(1)
+		return 1
 	}
 	internalConn, err := grpc.NewClient(fmt.Sprintf("%s:%d", internalNet.Hostname, internalNet.Port), grpc.WithTransportCredentials(insecure.NewCredentials()))
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "cannot connect to internal backend: %v\n", err)
-		os.Exit(1)
+		return 1
 	}
+	defer internalConn.Close()
 	testSidecar = NewSidecar(internalConn, publicKey)
 	testUserClient = apigen.NewUserServiceClient(apiConn)
 	testAuthClient = apigen.NewAuthServiceClient(apiConn)
 	testCtx = ctx
 
-	testCleanup = func() {
-		internalConn.Close()
-		apiConn.Close()
-		deps.Destroy(ctx)
-	}
-
-	code := m.Run()
-	testCleanup()
-	os.Exit(code)
+	return m.Run()
 }
 
 func fetchTestPublicKey(ctx context.Context, conn *grpc.ClientConn) ed25519.PublicKey {

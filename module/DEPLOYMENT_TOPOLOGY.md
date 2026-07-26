@@ -38,7 +38,7 @@ generation fails.
 | `auth-sidecar` | `frontend/http` | TCP 3000 |
 | `frontend` | `accounts/connect`, `accounts/rest` | TCP 8080 |
 
-The public module interface exposes only `auth-sidecar/http`; its gRPC
+The public module interface exposes only `auth-sidecar/rest`; its gRPC
 ext-authz endpoint has module visibility. Accounts and frontend may reach
 public IP space only over TCP 443. The public rules exclude private, loopback,
 link-local, metadata, documentation, benchmark, multicast, and other

@@ -6,6 +6,8 @@ import type { GenEnum, GenFile, GenMessage, GenService } from "@bufbuild/protobu
 import { enumDesc, fileDesc, messageDesc, serviceDesc } from "@bufbuild/protobuf/codegenv2";
 import { file_buf_validate_validate } from "../../../buf/validate/validate_pb";
 import { file_google_api_annotations } from "../../../google/api/annotations_pb";
+import type { FieldMask } from "@bufbuild/protobuf/wkt";
+import { file_google_protobuf_field_mask } from "@bufbuild/protobuf/wkt";
 import { file_saas_policy_v1_options } from "../../policy/v1/options_pb";
 import type { Message } from "@bufbuild/protobuf";
 
@@ -13,7 +15,71 @@ import type { Message } from "@bufbuild/protobuf";
  * Describes the file saas/accounts/v1/user_settings.proto.
  */
 export const file_saas_accounts_v1_user_settings: GenFile = /*@__PURE__*/
-  fileDesc("CiRzYWFzL2FjY291bnRzL3YxL3VzZXJfc2V0dGluZ3MucHJvdG8SEHNhYXMuYWNjb3VudHMudjEirQEKEVVzZXJFbWFpbFNldHRpbmdzEhQKB3Byb2R1Y3QYASABKAhIAIgBARIWCgltYXJrZXRpbmcYAiABKAhIAYgBARIVCghzZWN1cml0eRgDIAEoCEgCiAEBEhoKDXdlZWtseV9kaWdlc3QYBCABKAhIA4gBAUIKCghfcHJvZHVjdEIMCgpfbWFya2V0aW5nQgsKCV9zZWN1cml0eUIQCg5fd2Vla2x5X2RpZ2VzdCJ0ChhVc2VyTm90aWZpY2F0aW9uU2V0dGluZ3MSEwoGaW5fYXBwGAEgASgISACIAQESEQoEcHVzaBgCIAEoCEgBiAEBEhIKBXNvdW5kGAMgASgISAKIAQFCCQoHX2luX2FwcEIHCgVfcHVzaEIICgZfc291bmQikAMKDFVzZXJTZXR0aW5ncxJBCgV0aGVtZRgBIAEoDjIhLnNhYXMuYWNjb3VudHMudjEuVGhlbWVQcmVmZXJlbmNlQgq6SAeCAQQQASAASACIAQESEwoGbG9jYWxlGAIgASgJSAGIAQESFQoIdGltZXpvbmUYAyABKAlIAogBARIYCgtkYXRlX2Zvcm1hdBgEIAEoCUgDiAEBEhgKC3RpbWVfZm9ybWF0GAUgASgJSASIAQESNwoFZW1haWwYBiABKAsyIy5zYWFzLmFjY291bnRzLnYxLlVzZXJFbWFpbFNldHRpbmdzSAWIAQESRgoNbm90aWZpY2F0aW9ucxgHIAEoCzIqLnNhYXMuYWNjb3VudHMudjEuVXNlck5vdGlmaWNhdGlvblNldHRpbmdzSAaIAQFCCAoGX3RoZW1lQgkKB19sb2NhbGVCCwoJX3RpbWV6b25lQg4KDF9kYXRlX2Zvcm1hdEIOCgxfdGltZV9mb3JtYXRCCAoGX2VtYWlsQhAKDl9ub3RpZmljYXRpb25zIhgKFkdldFVzZXJTZXR0aW5nc1JlcXVlc3QiSgoZVXBkYXRlVXNlclNldHRpbmdzUmVxdWVzdBItCgVwYXRjaBgBIAEoCzIeLnNhYXMuYWNjb3VudHMudjEuVXNlclNldHRpbmdzKocBCg9UaGVtZVByZWZlcmVuY2USIAocVEhFTUVfUFJFRkVSRU5DRV9VTlNQRUNJRklFRBAAEhsKF1RIRU1FX1BSRUZFUkVOQ0VfU1lTVEVNEAESGgoWVEhFTUVfUFJFRkVSRU5DRV9MSUdIVBACEhkKFVRIRU1FX1BSRUZFUkVOQ0VfREFSSxADMroCChNVc2VyU2V0dGluZ3NTZXJ2aWNlEoIBCgNHZXQSKC5zYWFzLmFjY291bnRzLnYxLkdldFVzZXJTZXR0aW5nc1JlcXVlc3QaHi5zYWFzLmFjY291bnRzLnYxLlVzZXJTZXR0aW5ncyIxwvMYFAgCEAIwAToCEAFAAUgDUANYA2ABgtPkkwITEhEvdjEvdXNlci9zZXR0aW5ncxKdAQoGVXBkYXRlEisuc2Fhcy5hY2NvdW50cy52MS5VcGRhdGVVc2VyU2V0dGluZ3NSZXF1ZXN0Gh4uc2Fhcy5hY2NvdW50cy52MS5Vc2VyU2V0dGluZ3MiRsLzGCYIAhACMAE6FAoQc2V0dGluZ3MudXBkYXRlZBACQAFIBFADWANgAYLT5JMCFjoBKiIRL3YxL3VzZXIvc2V0dGluZ3NCuQEKFGNvbS5zYWFzLmFjY291bnRzLnYxQhFVc2VyU2V0dGluZ3NQcm90b1ABWixhY2NvdW50cy9wa2cvZ2VuL3NhYXMvYWNjb3VudHMvdjE7YWNjb3VudHN2MaICA1NBWKoCEFNhYXMuQWNjb3VudHMuVjHKAhBTYWFzXEFjY291bnRzXFYx4gIcU2Fhc1xBY2NvdW50c1xWMVxHUEJNZXRhZGF0YeoCElNhYXM6OkFjY291bnRzOjpWMWIGcHJvdG8z", [file_buf_validate_validate, file_google_api_annotations, file_saas_policy_v1_options]);
+  fileDesc("CiRzYWFzL2FjY291bnRzL3YxL3VzZXJfc2V0dGluZ3MucHJvdG8SEHNhYXMuYWNjb3VudHMudjEiZQoWVXNlckFwcGVhcmFuY2VTZXR0aW5ncxJBCgV0aGVtZRgBIAEoDjIhLnNhYXMuYWNjb3VudHMudjEuVGhlbWVQcmVmZXJlbmNlQgq6SAeCAQQQASAASACIAQFCCAoGX3RoZW1lIq4BChRVc2VyUmVnaW9uYWxTZXR0aW5ncxITCgZsb2NhbGUYASABKAlIAIgBARIVCgh0aW1lem9uZRgCIAEoCUgBiAEBEhgKC2RhdGVfZm9ybWF0GAMgASgJSAKIAQESGAoLdGltZV9mb3JtYXQYBCABKAlIA4gBAUIJCgdfbG9jYWxlQgsKCV90aW1lem9uZUIOCgxfZGF0ZV9mb3JtYXRCDgoMX3RpbWVfZm9ybWF0Iq0BChFVc2VyRW1haWxTZXR0aW5ncxIUCgdwcm9kdWN0GAEgASgISACIAQESFgoJbWFya2V0aW5nGAIgASgISAGIAQESFQoIc2VjdXJpdHkYAyABKAhIAogBARIaCg13ZWVrbHlfZGlnZXN0GAQgASgISAOIAQFCCgoIX3Byb2R1Y3RCDAoKX21hcmtldGluZ0ILCglfc2VjdXJpdHlCEAoOX3dlZWtseV9kaWdlc3QidAoYVXNlck5vdGlmaWNhdGlvblNldHRpbmdzEhMKBmluX2FwcBgBIAEoCEgAiAEBEhEKBHB1c2gYAiABKAhIAYgBARISCgVzb3VuZBgDIAEoCEgCiAEBQgkKB19pbl9hcHBCBwoFX3B1c2hCCAoGX3NvdW5kIskCCgxVc2VyU2V0dGluZ3MSQQoKYXBwZWFyYW5jZRgBIAEoCzIoLnNhYXMuYWNjb3VudHMudjEuVXNlckFwcGVhcmFuY2VTZXR0aW5nc0gAiAEBEj0KCHJlZ2lvbmFsGAIgASgLMiYuc2Fhcy5hY2NvdW50cy52MS5Vc2VyUmVnaW9uYWxTZXR0aW5nc0gBiAEBEjcKBWVtYWlsGAMgASgLMiMuc2Fhcy5hY2NvdW50cy52MS5Vc2VyRW1haWxTZXR0aW5nc0gCiAEBEkYKDW5vdGlmaWNhdGlvbnMYBCABKAsyKi5zYWFzLmFjY291bnRzLnYxLlVzZXJOb3RpZmljYXRpb25TZXR0aW5nc0gDiAEBQg0KC19hcHBlYXJhbmNlQgsKCV9yZWdpb25hbEIICgZfZW1haWxCEAoOX25vdGlmaWNhdGlvbnMiGAoWR2V0VXNlclNldHRpbmdzUmVxdWVzdCJ6ChlVcGRhdGVVc2VyU2V0dGluZ3NSZXF1ZXN0Ei0KBXBhdGNoGAEgASgLMh4uc2Fhcy5hY2NvdW50cy52MS5Vc2VyU2V0dGluZ3MSLgoKY2xlYXJfbWFzaxgCIAEoCzIaLmdvb2dsZS5wcm90b2J1Zi5GaWVsZE1hc2sqhwEKD1RoZW1lUHJlZmVyZW5jZRIgChxUSEVNRV9QUkVGRVJFTkNFX1VOU1BFQ0lGSUVEEAASGwoXVEhFTUVfUFJFRkVSRU5DRV9TWVNURU0QARIaChZUSEVNRV9QUkVGRVJFTkNFX0xJR0hUEAISGQoVVEhFTUVfUFJFRkVSRU5DRV9EQVJLEAMyugIKE1VzZXJTZXR0aW5nc1NlcnZpY2USggEKA0dldBIoLnNhYXMuYWNjb3VudHMudjEuR2V0VXNlclNldHRpbmdzUmVxdWVzdBoeLnNhYXMuYWNjb3VudHMudjEuVXNlclNldHRpbmdzIjHC8xgUCAIQAjABOgIQAUABSANQA1gDYAGC0+STAhMSES92MS91c2VyL3NldHRpbmdzEp0BCgZVcGRhdGUSKy5zYWFzLmFjY291bnRzLnYxLlVwZGF0ZVVzZXJTZXR0aW5nc1JlcXVlc3QaHi5zYWFzLmFjY291bnRzLnYxLlVzZXJTZXR0aW5ncyJGwvMYJggCEAIwAToUChBzZXR0aW5ncy51cGRhdGVkEAJAAUgEUANYA2ABgtPkkwIWOgEqIhEvdjEvdXNlci9zZXR0aW5nc0K5AQoUY29tLnNhYXMuYWNjb3VudHMudjFCEVVzZXJTZXR0aW5nc1Byb3RvUAFaLGFjY291bnRzL3BrZy9nZW4vc2Fhcy9hY2NvdW50cy92MTthY2NvdW50c3YxogIDU0FYqgIQU2Fhcy5BY2NvdW50cy5WMcoCEFNhYXNcQWNjb3VudHNcVjHiAhxTYWFzXEFjY291bnRzXFYxXEdQQk1ldGFkYXRh6gISU2Fhczo6QWNjb3VudHM6OlYxYgZwcm90bzM", [file_buf_validate_validate, file_google_api_annotations, file_google_protobuf_field_mask, file_saas_policy_v1_options]);
+
+/**
+ * UserAppearanceSettings — presentation preferences shared by every Starter
+ * frontend. The setting describes user intent, not a specific web client, so
+ * native and future clients consume the same value.
+ *
+ * @generated from message saas.accounts.v1.UserAppearanceSettings
+ */
+export type UserAppearanceSettings = Message<"saas.accounts.v1.UserAppearanceSettings"> & {
+  /**
+   * @generated from field: optional saas.accounts.v1.ThemePreference theme = 1;
+   */
+  theme?: ThemePreference;
+};
+
+/**
+ * Describes the message saas.accounts.v1.UserAppearanceSettings.
+ * Use `create(UserAppearanceSettingsSchema)` to create a new message.
+ */
+export const UserAppearanceSettingsSchema: GenMessage<UserAppearanceSettings> = /*@__PURE__*/
+  messageDesc(file_saas_accounts_v1_user_settings, 0);
+
+/**
+ * UserRegionalSettings — locale and formatting preferences shared by all
+ * clients and backend-rendered content.
+ *
+ * @generated from message saas.accounts.v1.UserRegionalSettings
+ */
+export type UserRegionalSettings = Message<"saas.accounts.v1.UserRegionalSettings"> & {
+  /**
+   * IETF tag: "en", "fr", "es-419", etc.
+   *
+   * @generated from field: optional string locale = 1;
+   */
+  locale?: string;
+
+  /**
+   * IANA tz: "America/New_York", "UTC".
+   *
+   * @generated from field: optional string timezone = 2;
+   */
+  timezone?: string;
+
+  /**
+   * "iso" | "us" | "eu"
+   *
+   * @generated from field: optional string date_format = 3;
+   */
+  dateFormat?: string;
+
+  /**
+   * "12h" | "24h"
+   *
+   * @generated from field: optional string time_format = 4;
+   */
+  timeFormat?: string;
+};
+
+/**
+ * Describes the message saas.accounts.v1.UserRegionalSettings.
+ * Use `create(UserRegionalSettingsSchema)` to create a new message.
+ */
+export const UserRegionalSettingsSchema: GenMessage<UserRegionalSettings> = /*@__PURE__*/
+  messageDesc(file_saas_accounts_v1_user_settings, 1);
 
 /**
  * UserEmailSettings — top-level transactional email opt-ins.
@@ -49,7 +115,7 @@ export type UserEmailSettings = Message<"saas.accounts.v1.UserEmailSettings"> & 
  * Use `create(UserEmailSettingsSchema)` to create a new message.
  */
 export const UserEmailSettingsSchema: GenMessage<UserEmailSettings> = /*@__PURE__*/
-  messageDesc(file_saas_accounts_v1_user_settings, 0);
+  messageDesc(file_saas_accounts_v1_user_settings, 2);
 
 /**
  * @generated from message saas.accounts.v1.UserNotificationSettings
@@ -76,56 +142,34 @@ export type UserNotificationSettings = Message<"saas.accounts.v1.UserNotificatio
  * Use `create(UserNotificationSettingsSchema)` to create a new message.
  */
 export const UserNotificationSettingsSchema: GenMessage<UserNotificationSettings> = /*@__PURE__*/
-  messageDesc(file_saas_accounts_v1_user_settings, 1);
+  messageDesc(file_saas_accounts_v1_user_settings, 3);
 
 /**
- * UserSettings — per-user preferences. All fields optional. The
- * FE submits ONLY changed keys; the api jsonb-merges onto the row.
- * Adding a field is a no-op (FE bumps + new key flows through).
+ * UserSettings — common per-user preferences included in every SaaS Starter.
+ * All scalar fields below the section messages are optional so an explicit
+ * false/empty value remains distinct from an unset value that resolves to its
+ * catalog default. The API recursively merges typed protobuf patches.
  *
  * @generated from message saas.accounts.v1.UserSettings
  */
 export type UserSettings = Message<"saas.accounts.v1.UserSettings"> & {
   /**
-   * @generated from field: optional saas.accounts.v1.ThemePreference theme = 1;
+   * @generated from field: optional saas.accounts.v1.UserAppearanceSettings appearance = 1;
    */
-  theme?: ThemePreference;
+  appearance?: UserAppearanceSettings;
 
   /**
-   * IETF tag: "en", "fr", "es-419", etc.
-   *
-   * @generated from field: optional string locale = 2;
+   * @generated from field: optional saas.accounts.v1.UserRegionalSettings regional = 2;
    */
-  locale?: string;
+  regional?: UserRegionalSettings;
 
   /**
-   * IANA tz: "America/New_York", "UTC".
-   *
-   * @generated from field: optional string timezone = 3;
-   */
-  timezone?: string;
-
-  /**
-   * "iso" | "us" | "eu"
-   *
-   * @generated from field: optional string date_format = 4;
-   */
-  dateFormat?: string;
-
-  /**
-   * "12h" | "24h"
-   *
-   * @generated from field: optional string time_format = 5;
-   */
-  timeFormat?: string;
-
-  /**
-   * @generated from field: optional saas.accounts.v1.UserEmailSettings email = 6;
+   * @generated from field: optional saas.accounts.v1.UserEmailSettings email = 3;
    */
   email?: UserEmailSettings;
 
   /**
-   * @generated from field: optional saas.accounts.v1.UserNotificationSettings notifications = 7;
+   * @generated from field: optional saas.accounts.v1.UserNotificationSettings notifications = 4;
    */
   notifications?: UserNotificationSettings;
 };
@@ -135,7 +179,7 @@ export type UserSettings = Message<"saas.accounts.v1.UserSettings"> & {
  * Use `create(UserSettingsSchema)` to create a new message.
  */
 export const UserSettingsSchema: GenMessage<UserSettings> = /*@__PURE__*/
-  messageDesc(file_saas_accounts_v1_user_settings, 2);
+  messageDesc(file_saas_accounts_v1_user_settings, 4);
 
 /**
  * @generated from message saas.accounts.v1.GetUserSettingsRequest
@@ -148,19 +192,27 @@ export type GetUserSettingsRequest = Message<"saas.accounts.v1.GetUserSettingsRe
  * Use `create(GetUserSettingsRequestSchema)` to create a new message.
  */
 export const GetUserSettingsRequestSchema: GenMessage<GetUserSettingsRequest> = /*@__PURE__*/
-  messageDesc(file_saas_accounts_v1_user_settings, 3);
+  messageDesc(file_saas_accounts_v1_user_settings, 5);
 
 /**
  * @generated from message saas.accounts.v1.UpdateUserSettingsRequest
  */
 export type UpdateUserSettingsRequest = Message<"saas.accounts.v1.UpdateUserSettingsRequest"> & {
   /**
-   * Partial — only the keys to change. Nested objects are replaced
-   * wholesale (the FE always sends the full nested object).
+   * Partial — only explicitly present fields change. Missing parent messages
+   * are materialized by the typed settings SDK, and nested siblings survive.
    *
    * @generated from field: saas.accounts.v1.UserSettings patch = 1;
    */
   patch?: UserSettings;
+
+  /**
+   * Paths whose explicit overrides should be removed before applying patch.
+   * A cleared field resolves to its catalog default on the returned document.
+   *
+   * @generated from field: google.protobuf.FieldMask clear_mask = 2;
+   */
+  clearMask?: FieldMask;
 };
 
 /**
@@ -168,7 +220,7 @@ export type UpdateUserSettingsRequest = Message<"saas.accounts.v1.UpdateUserSett
  * Use `create(UpdateUserSettingsRequestSchema)` to create a new message.
  */
 export const UpdateUserSettingsRequestSchema: GenMessage<UpdateUserSettingsRequest> = /*@__PURE__*/
-  messageDesc(file_saas_accounts_v1_user_settings, 4);
+  messageDesc(file_saas_accounts_v1_user_settings, 6);
 
 /**
  * @generated from enum saas.accounts.v1.ThemePreference
@@ -228,3 +280,4 @@ export const UserSettingsService: GenService<{
   },
 }> = /*@__PURE__*/
   serviceDesc(file_saas_accounts_v1_user_settings, 0);
+
