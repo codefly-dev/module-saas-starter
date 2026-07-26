@@ -48,7 +48,7 @@ func TestRESTSurfaceArtifactsAreDeterministicAndCurrent(t *testing.T) {
 	serviceDocument := readFixture(t, "../../../generated/service-catalog.json")
 	gatewayDocument := readFixture(t, "../../../generated/gateway-routes.json")
 	bindingDocument := readFixture(t, "../adapters/rest_bindings.yaml")
-	rawOpenAPI := readFixture(t, "../../../.cache/openapi/api.swagger.json")
+	rawOpenAPI := readFixture(t, "../../../generated/openapi-raw/api.swagger.json")
 	surface, err := cataloggen.BuildRESTSurfaceCatalog(gatewayDocument)
 	require.NoError(t, err)
 
@@ -123,7 +123,7 @@ func TestRESTSurfaceRejectsUnsafeDriftAndBindings(t *testing.T) {
 
 	reduced := proto.Clone(surface).(*catalogv1.RESTSurfaceCatalog)
 	reduced.Routes = reduced.Routes[1:]
-	_, err = cataloggen.RenderPublicOpenAPI(readFixture(t, "../../../.cache/openapi/api.swagger.json"), reduced, service)
+	_, err = cataloggen.RenderPublicOpenAPI(readFixture(t, "../../../generated/openapi-raw/api.swagger.json"), reduced, service)
 	require.ErrorContains(t, err, "absent from the public REST surface")
 }
 

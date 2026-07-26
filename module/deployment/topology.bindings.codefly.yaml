@@ -59,6 +59,7 @@ services:
       with-workspace: true
       protocol-output-dirs:
         - code/pkg/gen
+        - generated/openapi-raw
   - name: auth-sidecar
     version: 0.0.0
     description: |

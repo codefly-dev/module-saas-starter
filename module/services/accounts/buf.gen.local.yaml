@@ -26,9 +26,10 @@ plugins:
     out: code/pkg/gen
     opt: paths=source_relative
   - local: [go, run, github.com/grpc-ecosystem/grpc-gateway/v2/protoc-gen-openapiv2@v2.29.0]
-    # Raw protoc output is an ignored intermediate. The REST catalog validates
-    # every operation and publishes only the checked public document.
-    out: .cache/openapi
+    # The REST catalog consumes this merged document as a checked generated
+    # input. Keep it in the tracked generator-owned tree so clean checkouts,
+    # Codefly sync, and local generation all validate the same bytes.
+    out: generated/openapi-raw
     strategy: all
     opt:
       - allow_merge=true

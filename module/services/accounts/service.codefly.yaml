@@ -33,5 +33,6 @@ spec:
     hot-reload: true
     protocol-output-dirs:
         - code/pkg/gen
+        - generated/openapi-raw
     rest-endpoint: true
     with-workspace: true
