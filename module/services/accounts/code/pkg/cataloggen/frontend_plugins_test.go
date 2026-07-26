@@ -44,7 +44,7 @@ func TestFrontendPluginCatalogIsDeterministicAndCurrent(t *testing.T) {
 	}
 	require.Equal(t, 17, surfaceCounts[catalogv1.FrontendNavigationSurface_FRONTEND_NAVIGATION_SURFACE_COMMAND_PALETTE])
 	require.Equal(t, 22, surfaceCounts[catalogv1.FrontendNavigationSurface_FRONTEND_NAVIGATION_SURFACE_PLUGIN_REGISTRY])
-	require.Equal(t, 21, surfaceCounts[catalogv1.FrontendNavigationSurface_FRONTEND_NAVIGATION_SURFACE_SIDEBAR])
+	require.Equal(t, 20, surfaceCounts[catalogv1.FrontendNavigationSurface_FRONTEND_NAVIGATION_SURFACE_SIDEBAR])
 	require.Equal(t, 4, surfaceCounts[catalogv1.FrontendNavigationSurface_FRONTEND_NAVIGATION_SURFACE_USER_MENU])
 }
 

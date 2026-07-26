@@ -54,11 +54,12 @@ describe("generated frontend navigation", () => {
 	it("keeps general Settings directly discoverable", () => {
 		expect(
 			SIDEBAR_NAVIGATION.find((item) => item.id === "settings"),
-		).toMatchObject({
+		).toBeUndefined();
+		expect(USER_MENU_NAVIGATION[0]).toMatchObject({
+			id: "settings",
 			label: "Settings",
 			href: "/settings",
 			access: "authenticated",
 		});
-		expect(USER_MENU_NAVIGATION[0]?.id).toBe("settings");
 	});
 });

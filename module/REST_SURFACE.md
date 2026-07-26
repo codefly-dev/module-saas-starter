@@ -52,7 +52,7 @@ transcoder dials the generated Connect port, whose Connect-Go handler serves
 Connect, gRPC, and gRPC-Web for all 24 services; it no longer depends on the
 incomplete legacy raw-gRPC registration set.
 
-Auth-sidecar loads the 115 descriptor routes from generated Go and joins each
+Auth-sidecar loads the 119 descriptor routes from generated Go and joins each
 one to generated authorization metadata by canonical procedure. One
 extension-only YAML file owns the five routes without protobuf procedures.
 Startup rejects disabled extension entries and any method/path collision with a
@@ -60,13 +60,14 @@ descriptor route, so the file cannot become a shadow descriptor inventory.
 
 ## OpenAPI publication
 
-Codefly first emits the unfiltered grpc-gateway OpenAPI document to the ignored
-`.cache/openapi/api.swagger.json` intermediate. The REST compiler verifies every
-operation against `rest-surface.json`, rejects missing or unexpected routes,
-normalizes path-parameter spelling, adds `x-codefly-rest-schema` and
-`x-codefly-owner`, prunes unreachable definitions, and writes the public
-document to `openapi/api.swagger.json`. The current raw and public documents
-both have 115 operations; pruning reduces definitions from 182 to 181.
+Codefly emits the unfiltered grpc-gateway OpenAPI document to the tracked,
+generator-owned `generated/openapi-raw/api.swagger.json`. The REST compiler
+verifies every operation against `rest-surface.json`, rejects missing or
+unexpected routes, normalizes path-parameter spelling, adds
+`x-codefly-rest-schema` and `x-codefly-owner`, prunes unreachable definitions,
+and writes the public document to `openapi/api.swagger.json`. The current raw
+and public documents both have 119 operations; pruning reduces definitions
+from 192 to 191.
 
 ## Regeneration
 
@@ -79,6 +80,6 @@ go generate ./pkg/business ./pkg/adapters ./pkg/cataloggen
 ```
 
 Codefly generation must run first because the REST compiler deliberately reads
-the fresh ignored OpenAPI intermediate instead of trusting a previous public
+the checked raw generator output instead of trusting a previous public
 artifact. CI repeats this pipeline and rejects drift in the typed catalog,
 accounts runtime, auth-sidecar runtime, and filtered OpenAPI document.
