@@ -21,10 +21,12 @@ func main() {
 	accountsOutput := flag.String("accounts-go-output", "", "path for accounts generated REST runtime")
 	sidecarOutput := flag.String("sidecar-go-output", "", "path for auth-sidecar generated REST routes")
 	openAPIOutput := flag.String("openapi-output", "", "path for filtered public OpenAPI")
+	rawOpenAPIOutput := flag.String("raw-openapi-output", "", "path to persist the raw OpenAPI as a tracked fixture")
 	flag.Parse()
 
 	if *servicePath == "" || *gatewayPath == "" || *bindingsPath == "" || *rawOpenAPIPath == "" ||
-		*surfaceOutput == "" || *accountsOutput == "" || *sidecarOutput == "" || *openAPIOutput == "" {
+		*surfaceOutput == "" || *accountsOutput == "" || *sidecarOutput == "" || *openAPIOutput == "" ||
+		*rawOpenAPIOutput == "" {
 		_, _ = fmt.Fprintln(os.Stderr, "compile REST surface: all input and output flags are required")
 		os.Exit(2)
 	}
@@ -63,6 +65,10 @@ func main() {
 	mustWrite(*accountsOutput, accountsRuntime)
 	mustWrite(*sidecarOutput, sidecarRuntime)
 	mustWrite(*openAPIOutput, publicOpenAPI)
+	// Persist the raw OpenAPI so the determinism test has a tracked, checkout-
+	// present input: protoc-gen-openapiv2 writes it under the gitignored .cache,
+	// which is absent in a clean CI checkout.
+	mustWrite(*rawOpenAPIOutput, rawOpenAPI)
 }
 
 func mustRead(path, name string) []byte {

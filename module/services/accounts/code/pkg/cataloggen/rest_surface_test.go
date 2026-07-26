@@ -47,7 +47,7 @@ func TestRESTSurfaceArtifactsAreDeterministicAndCurrent(t *testing.T) {
 	serviceDocument := readFixture(t, "../../../generated/service-catalog.json")
 	gatewayDocument := readFixture(t, "../../../generated/gateway-routes.json")
 	bindingDocument := readFixture(t, "../adapters/rest_bindings.yaml")
-	rawOpenAPI := readFixture(t, "../../../.cache/openapi/api.swagger.json")
+	rawOpenAPI := readFixture(t, "../../../generated/raw-openapi.swagger.json")
 	surface, err := cataloggen.BuildRESTSurfaceCatalog(gatewayDocument)
 	require.NoError(t, err)
 
