@@ -49,6 +49,11 @@ jobs:
         with:
           go-version: stable
       - name: Install Codefly
+        env:
+          # First-party modules never verify against the public checksum DB —
+          # sum.golang.org 500s/404s on fresh or private codefly-dev tags.
+          # Same setting Mind's CI uses (scripts/ci-fetch-codefly.sh).
+          GOPRIVATE: github.com/codefly-dev/*
         run: go install github.com/codefly-dev/cli/cmd/codefly@latest
       - name: Run Codefly-owned gate
         shell: bash
