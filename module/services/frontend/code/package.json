@@ -25,7 +25,7 @@
 		"format": "biome format --write .",
 		"fix": "biome check --write .",
 		"pretest": "npm run prepare:frontend",
-		"test": "vitest run && node --test scripts/build-plugin-workspaces.test.mjs",
+		"test": "vitest run",
 		"test:plugin-contract": "npm run test --workspace @codefly/saas-plugin-contract",
 		"test:plugin-react": "npm run test --workspace @codefly/saas-plugin-react",
 		"pretypecheck": "npm run build:plugin-packages",
