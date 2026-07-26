@@ -45,7 +45,7 @@
     "deployment/kustomize/overlays/local/applications/store.yaml": "beda694f1f7eec01491d1b45cfcfe6ef961982d27578129a771be5f738202153",
     "deployment/kustomize/overlays/local/applications/vault.yaml": "8f4bb9b1e2dafc391c7da680878b77fa8dbe0a05cdfdd79bd6aab4b96c0dbebc",
     "deployment/kustomize/overlays/local/kustomization.yaml": "f46837f1093c54b70136ce75e0c12d76623646fa46feed478f7ae9cc17268335",
-    "deployment/topology.bindings.codefly.yaml": "3993815567ba542c50f88488045c796f63dae21a4b2b11e926d9a5451d8e1149",
+    "deployment/topology.bindings.codefly.yaml": "e097a995764a0bf965b3a17d00f2a953ea806d5cd549eb91c841b695811dbc4f",
     "docs/adr/0001-frontend-plugin-packaging.md": "6fe5b3fc0e345d0e002ddf4165d86243567411377520fd22f922e4127babd02b",
     "docs/frontend-plugin-architecture.md": "92b3aedb71d819d9ebfcf65bc472b5638830164c55ded5734033880068b3f5c7",
     "docs/frontend-plugin-auth-tenant-matrix.md": "60c70b8abad4f3d420eb7de0e8ca7fecc9b8901ba94fa43bfb9d2ead846a90e9",
