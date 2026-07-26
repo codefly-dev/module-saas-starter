@@ -1,6 +1,6 @@
 {
   "note": "Base-file integrity manifest for the saas-starter module. Generated FROM canonical by `node tools/base-integrity.mjs gen`. Consumers MUST NOT hand-edit base files — only add files on the side. Regenerated on every codefly sync from canonical.",
-  "fileCount": 1231,
+  "fileCount": 1232,
   "files": {
     "AUTHORIZATION_CATALOG.md": "c801d07db8d54ff7484e26dc4d5a65925b32fa108eb5b7899f11b9f193c6a730",
     "CONTRACT_VERSIONING.md": "02031aa87922ab5ec573ea582cf584271873481de6ceabbda52b1bfda005ffbd",
@@ -45,7 +45,7 @@
     "deployment/kustomize/overlays/local/applications/store.yaml": "beda694f1f7eec01491d1b45cfcfe6ef961982d27578129a771be5f738202153",
     "deployment/kustomize/overlays/local/applications/vault.yaml": "8f4bb9b1e2dafc391c7da680878b77fa8dbe0a05cdfdd79bd6aab4b96c0dbebc",
     "deployment/kustomize/overlays/local/kustomization.yaml": "f46837f1093c54b70136ce75e0c12d76623646fa46feed478f7ae9cc17268335",
-    "deployment/topology.bindings.codefly.yaml": "735bec2fad49ec9fe94255781fdfb8875d866164ff9abed58713232890e9abec",
+    "deployment/topology.bindings.codefly.yaml": "9218e3951f29dd8c81dfdd2a199dcd6e1845eda4ab8f795bad18729ba2129f5d",
     "docs/adr/0001-frontend-plugin-packaging.md": "6fe5b3fc0e345d0e002ddf4165d86243567411377520fd22f922e4127babd02b",
     "docs/frontend-plugin-architecture.md": "92b3aedb71d819d9ebfcf65bc472b5638830164c55ded5734033880068b3f5c7",
     "docs/frontend-plugin-auth-tenant-matrix.md": "60c70b8abad4f3d420eb7de0e8ca7fecc9b8901ba94fa43bfb9d2ead846a90e9",
@@ -380,7 +380,7 @@
     "services/accounts/code/pkg/gen/saas/accounts/v1/organizations.pb.gw.go": "7f5c76f40cfe19aabadccbff1094f4e7716f3921c106b8397765fbe9f891f66d",
     "services/accounts/code/pkg/gen/saas/accounts/v1/organizations_grpc.pb.go": "725a07ce5df132d022220a673176653be2ddcf984506d59de1489c84c54c716d",
     "services/accounts/code/pkg/gen/saas/accounts/v1/platform_admin.pb.go": "c251eb037672f3822e244945255cabe0ffd5280f48642e3315406b6c5d50f842",
-    "services/accounts/code/pkg/gen/saas/accounts/v1/platform_admin.pb.gw.go": "5ed9337b77872e20bd1187ffe24d6e78efa2623ef9ac23e327a4a431778d8972",
+    "services/accounts/code/pkg/gen/saas/accounts/v1/platform_admin.pb.gw.go": "a0760be12f59b286dee750703408bcf450880712ee529212b6b32e4bc4a16f50",
     "services/accounts/code/pkg/gen/saas/accounts/v1/platform_admin_grpc.pb.go": "11940f6e523aee515e55e5b111c2c6bdfa5c42cb6b46d6d01798d273e0678315",
     "services/accounts/code/pkg/gen/saas/accounts/v1/privacy.pb.go": "0c9ee25e0460414f8888794b6a06d8ba5aad1c12226cd5191fd5cda8a471e23a",
     "services/accounts/code/pkg/gen/saas/accounts/v1/privacy.pb.gw.go": "9e08809ac2c99b5423e32c1a88b5333803e0c560518dc629b584eaf498b1642f",
@@ -941,6 +941,7 @@
     "services/frontend/code/src/gen/buf/validate/validate_pb.ts": "6b475f037f1c56f1c895ad1d4c88ac712812ada2b7b2e19be092b2758c4d3110",
     "services/frontend/code/src/gen/google/api/annotations_pb.ts": "709420566bd6cdb6223276c16c309bff5680cad0c8779c3490c4d4d4d7c70666",
     "services/frontend/code/src/gen/google/api/http_pb.ts": "157c0e1b1bf4ecbce777e69811e9c03847d56c207947d51c1e1a2be9b1761f11",
+    "services/frontend/code/src/gen/saas-starter_accounts_grpc_pb.ts": "2fbe934e2a1bfe499ef5e729c308a9d594297ebc93c515a995a571cdfa5d01da",
     "services/frontend/code/src/gen/saas/accounts/v1/api_keys_pb.ts": "38c9b51c812e1b50609310a427093132c90ad11b6ac5458cf63a1acf4238a5aa",
     "services/frontend/code/src/gen/saas/accounts/v1/audit_export_pb.ts": "108b615d1751b7c775ecee0daec24b645f4cc8277bc53c88ec97f4c4cf2305cb",
     "services/frontend/code/src/gen/saas/accounts/v1/audit_pb.ts": "e42324876d6750b93c6d4239ceaa05bcaeb3782c1390bcd0339af670674bd7e0",
