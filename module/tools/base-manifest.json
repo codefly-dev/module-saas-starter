@@ -502,7 +502,7 @@
     "services/accounts/kreya/grpc/reflection/v1/ServerReflection/ServerReflectionInfo-request-0.json": "206393591a3c283e137f17cf4ff18fa2d1e80a680d3ee65751ccabc9f89afa28",
     "services/accounts/kreya/grpc/reflection/v1/ServerReflection/ServerReflectionInfo.krop": "8f022ffb673c00cd228857333f6464adb6c0a43b91307966ab6eb466caab467f",
     "services/accounts/openapi/api.swagger.json": "c03a8a1844bfbf6588cacd1e1491586dd996d2458c13ec8a73dd03533b466258",
-    "services/accounts/proto/buf.gen.yaml": "3f58bee6f69c765c5895d73db37c2d078c36b53f8553f902b63de9abcc8a946e",
+    "services/accounts/proto/buf.gen.yaml": "b30d29d5dfcae1cc9f68a16815a9e0c62c39b09d34398c97da9cd9c59b90791d",
     "services/accounts/proto/buf.lock": "4c40adcd0a9b97c77bc6ad38cf9ce111ae1f6a9a41407b25f6bc24f6e2b0fc1d",
     "services/accounts/proto/buf.yaml": "c62aea12d39c51ccd34c16229171924912d244124a2de8e04b110c0d99532676",
     "services/accounts/proto/codefly/api.proto": "707824448f3a3c3c82c9a980a3a6b24bef669707cc85bbf2134e34df68701e23",
