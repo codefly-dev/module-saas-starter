@@ -1,0 +1,7120 @@
+{
+  "swagger": "2.0",
+  "info": {
+    "title": "saas/accounts/v1/common.proto",
+    "version": "version not set"
+  },
+  "tags": [
+    {
+      "name": "APIKeyService"
+    },
+    {
+      "name": "AuditService"
+    },
+    {
+      "name": "AuditExportService"
+    },
+    {
+      "name": "AuthService"
+    },
+    {
+      "name": "PermissionService"
+    },
+    {
+      "name": "PrincipalService"
+    },
+    {
+      "name": "BillingService"
+    },
+    {
+      "name": "ConsentService"
+    },
+    {
+      "name": "DelegationService"
+    },
+    {
+      "name": "UserService"
+    },
+    {
+      "name": "IdentityService"
+    },
+    {
+      "name": "IntrospectionService"
+    },
+    {
+      "name": "InvitationService"
+    },
+    {
+      "name": "MFAService"
+    },
+    {
+      "name": "NotificationService"
+    },
+    {
+      "name": "OnboardingService"
+    },
+    {
+      "name": "OrganizationService"
+    },
+    {
+      "name": "PlatformAdminService"
+    },
+    {
+      "name": "GDPRService"
+    },
+    {
+      "name": "SSOAdminService"
+    },
+    {
+      "name": "TeamService"
+    },
+    {
+      "name": "UsageService"
+    },
+    {
+      "name": "UserSettingsService"
+    },
+    {
+      "name": "WebhookService"
+    }
+  ],
+  "consumes": [
+    "application/json"
+  ],
+  "produces": [
+    "application/json"
+  ],
+  "paths": {
+    "/v1/.well-known/service-info": {
+      "get": {
+        "operationId": "IntrospectionService_GetServiceInfo",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1GetServiceInfoResponse"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/rpcStatus"
+            }
+          }
+        },
+        "tags": [
+          "IntrospectionService"
+        ]
+      }
+    },
+    "/v1/api-keys": {
+      "get": {
+        "operationId": "APIKeyService_ListAPIKeys",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1ListAPIKeysResponse"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/rpcStatus"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "organizationId",
+            "in": "query",
+            "required": false,
+            "type": "string"
+          },
+          {
+            "name": "pageSize",
+            "in": "query",
+            "required": false,
+            "type": "integer",
+            "format": "int32"
+          },
+          {
+            "name": "pageToken",
+            "in": "query",
+            "required": false,
+            "type": "string"
+          }
+        ],
+        "tags": [
+          "APIKeyService"
+        ]
+      },
+      "post": {
+        "operationId": "APIKeyService_CreateAPIKey",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1CreateAPIKeyResponse"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/rpcStatus"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "body",
+            "in": "body",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/v1CreateAPIKeyRequest"
+            }
+          }
+        ],
+        "tags": [
+          "APIKeyService"
+        ]
+      }
+    },
+    "/v1/api-keys/{id}": {
+      "delete": {
+        "operationId": "APIKeyService_RevokeAPIKey",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "type": "object",
+              "properties": {}
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/rpcStatus"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "type": "string"
+          },
+          {
+            "name": "organizationId",
+            "description": "The owning org — lets the handler enforce org-admin (not platform-admin)\nrevocation. Maps to a query param on the REST DELETE.",
+            "in": "query",
+            "required": false,
+            "type": "string"
+          }
+        ],
+        "tags": [
+          "APIKeyService"
+        ]
+      }
+    },
+    "/v1/audit-export": {
+      "post": {
+        "operationId": "AuditExportService_SaveConfig",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1AuditExportConfig"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/rpcStatus"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "body",
+            "in": "body",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/v1SaveAuditExportConfigRequest"
+            }
+          }
+        ],
+        "tags": [
+          "AuditExportService"
+        ]
+      }
+    },
+    "/v1/audit-export/{orgId}": {
+      "get": {
+        "operationId": "AuditExportService_GetConfig",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1AuditExportConfig"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/rpcStatus"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "orgId",
+            "in": "path",
+            "required": true,
+            "type": "string"
+          }
+        ],
+        "tags": [
+          "AuditExportService"
+        ]
+      },
+      "delete": {
+        "operationId": "AuditExportService_DeleteConfig",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "type": "object",
+              "properties": {}
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/rpcStatus"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "orgId",
+            "in": "path",
+            "required": true,
+            "type": "string"
+          }
+        ],
+        "tags": [
+          "AuditExportService"
+        ]
+      }
+    },
+    "/v1/audit-log": {
+      "get": {
+        "operationId": "AuditService_QueryAuditLog",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1QueryAuditLogResponse"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/rpcStatus"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "orgId",
+            "in": "query",
+            "required": false,
+            "type": "string"
+          },
+          {
+            "name": "actorId",
+            "in": "query",
+            "required": false,
+            "type": "string"
+          },
+          {
+            "name": "action",
+            "in": "query",
+            "required": false,
+            "type": "string"
+          },
+          {
+            "name": "resource",
+            "in": "query",
+            "required": false,
+            "type": "string"
+          },
+          {
+            "name": "resourceId",
+            "in": "query",
+            "required": false,
+            "type": "string"
+          },
+          {
+            "name": "from",
+            "in": "query",
+            "required": false,
+            "type": "string",
+            "format": "date-time"
+          },
+          {
+            "name": "to",
+            "in": "query",
+            "required": false,
+            "type": "string",
+            "format": "date-time"
+          },
+          {
+            "name": "pageSize",
+            "in": "query",
+            "required": false,
+            "type": "integer",
+            "format": "int32"
+          },
+          {
+            "name": "pageToken",
+            "in": "query",
+            "required": false,
+            "type": "string"
+          }
+        ],
+        "tags": [
+          "AuditService"
+        ]
+      }
+    },
+    "/v1/audit-log:export": {
+      "post": {
+        "operationId": "AuditService_ExportAuditLog",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1ExportAuditLogResponse"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/rpcStatus"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "body",
+            "in": "body",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/v1ExportAuditLogRequest"
+            }
+          }
+        ],
+        "tags": [
+          "AuditService"
+        ]
+      }
+    },
+    "/v1/auth/.well-known/jwks.json": {
+      "get": {
+        "operationId": "AuthService_GetJWKS",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1JWKSResponse"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/rpcStatus"
+            }
+          }
+        },
+        "tags": [
+          "AuthService"
+        ]
+      }
+    },
+    "/v1/auth/authenticate": {
+      "post": {
+        "operationId": "AuthService_Authenticate",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1AuthenticateResponse"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/rpcStatus"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "body",
+            "in": "body",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/v1AuthenticateRequest"
+            }
+          }
+        ],
+        "tags": [
+          "AuthService"
+        ]
+      }
+    },
+    "/v1/auth/logout": {
+      "post": {
+        "operationId": "AuthService_Logout",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "type": "object",
+              "properties": {}
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/rpcStatus"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "body",
+            "in": "body",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/v1LogoutRequest"
+            }
+          }
+        ],
+        "tags": [
+          "AuthService"
+        ]
+      }
+    },
+    "/v1/auth/mfa/complete": {
+      "post": {
+        "summary": "Public RPC: possession of the opaque mfa_token is the temporary login\ncredential. Successful verification atomically consumes it and creates\nthe normal refreshable session.",
+        "operationId": "AuthService_CompleteMFAChallenge",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1CompleteMFAChallengeResponse"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/rpcStatus"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "body",
+            "description": "CompleteMFAChallengeRequest is deliberately distinct from VerifyTOTPRequest:\nthis completes a login transaction, while VerifyTOTP only confirms a new\nauthenticator during enrollment.",
+            "in": "body",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/v1CompleteMFAChallengeRequest"
+            }
+          }
+        ],
+        "tags": [
+          "AuthService"
+        ]
+      }
+    },
+    "/v1/auth/mfa/webauthn/begin": {
+      "post": {
+        "summary": "Public RPCs: possession of the opaque mfa_token gates both operations.\nFinish atomically consumes both the WebAuthn ceremony and login handoff.",
+        "operationId": "AuthService_BeginWebAuthnMFAChallenge",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1BeginWebAuthnMFAChallengeResponse"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/rpcStatus"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "body",
+            "description": "Begins a WebAuthn assertion for an existing primary-authentication handoff.\nThe mfa_token remains the login credential; the returned ceremony token is\nan independently random, short-lived handle for server-side WebAuthn state.",
+            "in": "body",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/v1BeginWebAuthnMFAChallengeRequest"
+            }
+          }
+        ],
+        "tags": [
+          "AuthService"
+        ]
+      }
+    },
+    "/v1/auth/mfa/webauthn/complete": {
+      "post": {
+        "operationId": "AuthService_CompleteWebAuthnMFAChallenge",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1CompleteMFAChallengeResponse"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/rpcStatus"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "body",
+            "in": "body",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/v1CompleteWebAuthnMFAChallengeRequest"
+            }
+          }
+        ],
+        "tags": [
+          "AuthService"
+        ]
+      }
+    },
+    "/v1/auth/oauth/begin": {
+      "post": {
+        "summary": "BeginOAuth issues a server-signed `state` for the OAuth code flow.\nPublic RPC: callable without authentication (this is the start of\nthe login flow).",
+        "operationId": "AuthService_BeginOAuth",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1BeginOAuthResponse"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/rpcStatus"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "body",
+            "description": "BeginOAuthRequest is the FE's first hop on the authorization-code\nflow. Server returns a server-signed `state` token bound to\n(provider, redirect_uri); the FE embeds it in the provider's\nauthorize URL alongside its own PKCE code_challenge. Authenticate\nlater verifies the state before exchanging the code.",
+            "in": "body",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/v1BeginOAuthRequest"
+            }
+          }
+        ],
+        "tags": [
+          "AuthService"
+        ]
+      }
+    },
+    "/v1/auth/refresh": {
+      "post": {
+        "operationId": "AuthService_RefreshToken",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1RefreshTokenResponse"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/rpcStatus"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "body",
+            "in": "body",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/v1RefreshTokenRequest"
+            }
+          }
+        ],
+        "tags": [
+          "AuthService"
+        ]
+      }
+    },
+    "/v1/auth/switch-organization": {
+      "post": {
+        "summary": "Exchanges the authenticated access-token context for another organization\nin the same device family. Membership and current role are resolved under\nthe locked session row before the selected organization is persisted.",
+        "operationId": "AuthService_SwitchOrganization",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1SwitchOrganizationResponse"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/rpcStatus"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "body",
+            "in": "body",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/v1SwitchOrganizationRequest"
+            }
+          }
+        ],
+        "tags": [
+          "AuthService"
+        ]
+      }
+    },
+    "/v1/billing/connect/portal": {
+      "post": {
+        "operationId": "BillingService_OpenPortal",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1OpenBillingPortalResponse"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/rpcStatus"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "body",
+            "in": "body",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/v1OpenBillingPortalRequest"
+            }
+          }
+        ],
+        "tags": [
+          "BillingService"
+        ]
+      }
+    },
+    "/v1/billing/invoices/{orgId}": {
+      "get": {
+        "operationId": "BillingService_ListInvoices",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1ListInvoicesResponse"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/rpcStatus"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "orgId",
+            "in": "path",
+            "required": true,
+            "type": "string"
+          },
+          {
+            "name": "limit",
+            "description": "0 → server default (12)",
+            "in": "query",
+            "required": false,
+            "type": "integer",
+            "format": "int32"
+          }
+        ],
+        "tags": [
+          "BillingService"
+        ]
+      }
+    },
+    "/v1/consent/accept": {
+      "post": {
+        "operationId": "ConsentService_Accept",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1ConsentStatus"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/rpcStatus"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "body",
+            "in": "body",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/v1AcceptConsentRequest"
+            }
+          }
+        ],
+        "tags": [
+          "ConsentService"
+        ]
+      }
+    },
+    "/v1/consent/status": {
+      "get": {
+        "operationId": "ConsentService_GetStatus",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1ConsentStatus"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/rpcStatus"
+            }
+          }
+        },
+        "tags": [
+          "ConsentService"
+        ]
+      }
+    },
+    "/v1/delegations": {
+      "post": {
+        "summary": "RequestDelegation creates a new pending grant. Idempotent on\n(org_id, request_hash) — same request from a retrying actor\nreturns the original row's id.",
+        "operationId": "DelegationService_RequestDelegation",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1RequestDelegationResponse"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/rpcStatus"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "body",
+            "in": "body",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/v1RequestDelegationRequest"
+            }
+          }
+        ],
+        "tags": [
+          "DelegationService"
+        ]
+      }
+    },
+    "/v1/delegations/{id}:decide": {
+      "post": {
+        "summary": "DecideDelegation is the grantor's approve/deny action. Called\nfrom the approval UI; transitions the row + (on approve)\nmints the scoped-auth token + fires NOTIFY for any waiting\nstreams.",
+        "operationId": "DelegationService_DecideDelegation",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1DelegationGrant"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/rpcStatus"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "type": "string"
+          },
+          {
+            "name": "body",
+            "in": "body",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/DelegationServiceDecideDelegationBody"
+            }
+          }
+        ],
+        "tags": [
+          "DelegationService"
+        ]
+      }
+    },
+    "/v1/delegations/{id}:wait": {
+      "get": {
+        "summary": "WaitForDelegation streams one terminal event for a grant.\nBacked by Postgres LISTEN — no polling.",
+        "operationId": "DelegationService_WaitForDelegation",
+        "responses": {
+          "200": {
+            "description": "A successful response.(streaming responses)",
+            "schema": {
+              "type": "object",
+              "properties": {
+                "result": {
+                  "$ref": "#/definitions/v1DelegationEvent"
+                },
+                "error": {
+                  "$ref": "#/definitions/rpcStatus"
+                }
+              },
+              "title": "Stream result of v1DelegationEvent"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/rpcStatus"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "type": "string"
+          },
+          {
+            "name": "orgId",
+            "in": "query",
+            "required": false,
+            "type": "string"
+          }
+        ],
+        "tags": [
+          "DelegationService"
+        ]
+      }
+    },
+    "/v1/delegations:pending": {
+      "get": {
+        "summary": "ListPendingDelegations returns paginated pending grants for\nthe approver UI. Sorted critical → high → medium → low,\nnewest-first within tier.",
+        "operationId": "DelegationService_ListPendingDelegations",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1ListPendingDelegationsResponse"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/rpcStatus"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "orgId",
+            "in": "query",
+            "required": false,
+            "type": "string"
+          },
+          {
+            "name": "pageSize",
+            "in": "query",
+            "required": false,
+            "type": "integer",
+            "format": "int32"
+          },
+          {
+            "name": "pageToken",
+            "in": "query",
+            "required": false,
+            "type": "string"
+          }
+        ],
+        "tags": [
+          "DelegationService"
+        ]
+      }
+    },
+    "/v1/gdpr/delete": {
+      "post": {
+        "operationId": "GDPRService_RequestDeletion",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1GDPRRequest"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/rpcStatus"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "body",
+            "in": "body",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/v1RequestDeletionRequest"
+            }
+          }
+        ],
+        "tags": [
+          "GDPRService"
+        ]
+      }
+    },
+    "/v1/gdpr/delete/{id}": {
+      "get": {
+        "operationId": "GDPRService_GetDeletionStatus",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1GDPRRequest"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/rpcStatus"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "type": "string"
+          }
+        ],
+        "tags": [
+          "GDPRService"
+        ]
+      }
+    },
+    "/v1/gdpr/export": {
+      "post": {
+        "operationId": "GDPRService_RequestExport",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1GDPRRequest"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/rpcStatus"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "body",
+            "in": "body",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/v1RequestDataExportRequest"
+            }
+          }
+        ],
+        "tags": [
+          "GDPRService"
+        ]
+      }
+    },
+    "/v1/gdpr/export/{id}": {
+      "get": {
+        "operationId": "GDPRService_GetExportStatus",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1GDPRRequest"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/rpcStatus"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "type": "string"
+          }
+        ],
+        "tags": [
+          "GDPRService"
+        ]
+      }
+    },
+    "/v1/invitations": {
+      "get": {
+        "operationId": "InvitationService_ListInvitations",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1ListInvitationsResponse"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/rpcStatus"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "orgId",
+            "in": "query",
+            "required": false,
+            "type": "string"
+          },
+          {
+            "name": "status",
+            "in": "query",
+            "required": false,
+            "type": "string",
+            "enum": [
+              "INVITATION_STATUS_UNSPECIFIED",
+              "INVITATION_STATUS_PENDING",
+              "INVITATION_STATUS_ACCEPTED",
+              "INVITATION_STATUS_REVOKED",
+              "INVITATION_STATUS_EXPIRED"
+            ],
+            "default": "INVITATION_STATUS_UNSPECIFIED"
+          }
+        ],
+        "tags": [
+          "InvitationService"
+        ]
+      },
+      "post": {
+        "operationId": "InvitationService_CreateInvitation",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1CreateInvitationResponse"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/rpcStatus"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "body",
+            "in": "body",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/v1CreateInvitationRequest"
+            }
+          }
+        ],
+        "tags": [
+          "InvitationService"
+        ]
+      }
+    },
+    "/v1/invitations/{id}": {
+      "delete": {
+        "operationId": "InvitationService_RevokeInvitation",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "type": "object",
+              "properties": {}
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/rpcStatus"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "type": "string"
+          }
+        ],
+        "tags": [
+          "InvitationService"
+        ]
+      }
+    },
+    "/v1/invitations:accept": {
+      "post": {
+        "operationId": "InvitationService_AcceptInvitation",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1AcceptInvitationResponse"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/rpcStatus"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "body",
+            "in": "body",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/v1AcceptInvitationRequest"
+            }
+          }
+        ],
+        "tags": [
+          "InvitationService"
+        ]
+      }
+    },
+    "/v1/mfa/backup-codes": {
+      "post": {
+        "operationId": "MFAService_GenerateBackupCodes",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1GenerateBackupCodesResponse"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/rpcStatus"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "body",
+            "in": "body",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/v1GenerateBackupCodesRequest"
+            }
+          }
+        ],
+        "tags": [
+          "MFAService"
+        ]
+      }
+    },
+    "/v1/mfa/devices": {
+      "get": {
+        "operationId": "MFAService_ListDevices",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1ListMFADevicesResponse"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/rpcStatus"
+            }
+          }
+        },
+        "tags": [
+          "MFAService"
+        ]
+      }
+    },
+    "/v1/mfa/devices/{id}": {
+      "delete": {
+        "operationId": "MFAService_RevokeDevice",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "type": "object",
+              "properties": {}
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/rpcStatus"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "type": "string"
+          }
+        ],
+        "tags": [
+          "MFAService"
+        ]
+      }
+    },
+    "/v1/mfa/totp/setup": {
+      "post": {
+        "operationId": "MFAService_SetupTOTP",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1SetupTOTPResponse"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/rpcStatus"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "body",
+            "in": "body",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/v1SetupTOTPRequest"
+            }
+          }
+        ],
+        "tags": [
+          "MFAService"
+        ]
+      }
+    },
+    "/v1/mfa/totp/verify": {
+      "post": {
+        "operationId": "MFAService_VerifyTOTP",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1VerifyTOTPResponse"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/rpcStatus"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "body",
+            "in": "body",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/v1VerifyTOTPRequest"
+            }
+          }
+        ],
+        "tags": [
+          "MFAService"
+        ]
+      }
+    },
+    "/v1/mfa/webauthn/register/begin": {
+      "post": {
+        "operationId": "MFAService_BeginWebAuthnRegistration",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1BeginWebAuthnRegistrationResponse"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/rpcStatus"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "body",
+            "in": "body",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/v1BeginWebAuthnRegistrationRequest"
+            }
+          }
+        ],
+        "tags": [
+          "MFAService"
+        ]
+      }
+    },
+    "/v1/mfa/webauthn/register/finish": {
+      "post": {
+        "operationId": "MFAService_FinishWebAuthnRegistration",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1FinishWebAuthnRegistrationResponse"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/rpcStatus"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "body",
+            "in": "body",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/v1FinishWebAuthnRegistrationRequest"
+            }
+          }
+        ],
+        "tags": [
+          "MFAService"
+        ]
+      }
+    },
+    "/v1/notifications": {
+      "get": {
+        "operationId": "NotificationService_ListNotifications",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1ListNotificationsResponse"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/rpcStatus"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "pageSize",
+            "in": "query",
+            "required": false,
+            "type": "integer",
+            "format": "int32"
+          },
+          {
+            "name": "pageToken",
+            "in": "query",
+            "required": false,
+            "type": "string"
+          }
+        ],
+        "tags": [
+          "NotificationService"
+        ]
+      }
+    },
+    "/v1/notifications/unread-count": {
+      "get": {
+        "operationId": "NotificationService_GetUnreadCount",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1GetUnreadCountResponse"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/rpcStatus"
+            }
+          }
+        },
+        "tags": [
+          "NotificationService"
+        ]
+      }
+    },
+    "/v1/notifications/{id}": {
+      "delete": {
+        "operationId": "NotificationService_DeleteNotification",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "type": "object",
+              "properties": {}
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/rpcStatus"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "type": "string"
+          }
+        ],
+        "tags": [
+          "NotificationService"
+        ]
+      }
+    },
+    "/v1/notifications/{id}:read": {
+      "post": {
+        "operationId": "NotificationService_MarkRead",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "type": "object",
+              "properties": {}
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/rpcStatus"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "type": "string"
+          },
+          {
+            "name": "body",
+            "in": "body",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/NotificationServiceMarkReadBody"
+            }
+          }
+        ],
+        "tags": [
+          "NotificationService"
+        ]
+      }
+    },
+    "/v1/notifications:read-all": {
+      "post": {
+        "operationId": "NotificationService_MarkAllRead",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "type": "object",
+              "properties": {}
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/rpcStatus"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "body",
+            "in": "body",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/v1MarkAllNotificationsReadRequest"
+            }
+          }
+        ],
+        "tags": [
+          "NotificationService"
+        ]
+      }
+    },
+    "/v1/onboarding": {
+      "get": {
+        "operationId": "OnboardingService_GetProgress",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1OnboardingProgress"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/rpcStatus"
+            }
+          }
+        },
+        "tags": [
+          "OnboardingService"
+        ]
+      }
+    },
+    "/v1/onboarding/{stepName}:complete": {
+      "post": {
+        "operationId": "OnboardingService_CompleteStep",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1OnboardingProgress"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/rpcStatus"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "stepName",
+            "in": "path",
+            "required": true,
+            "type": "string"
+          },
+          {
+            "name": "body",
+            "in": "body",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/OnboardingServiceCompleteStepBody"
+            }
+          }
+        ],
+        "tags": [
+          "OnboardingService"
+        ]
+      }
+    },
+    "/v1/onboarding/{stepName}:skip": {
+      "post": {
+        "operationId": "OnboardingService_SkipStep",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1OnboardingProgress"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/rpcStatus"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "stepName",
+            "in": "path",
+            "required": true,
+            "type": "string"
+          },
+          {
+            "name": "body",
+            "in": "body",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/OnboardingServiceSkipStepBody"
+            }
+          }
+        ],
+        "tags": [
+          "OnboardingService"
+        ]
+      }
+    },
+    "/v1/organizations": {
+      "get": {
+        "operationId": "OrganizationService_ListOrganizations",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1ListOrganizationsResponse"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/rpcStatus"
+            }
+          }
+        },
+        "tags": [
+          "OrganizationService"
+        ]
+      },
+      "post": {
+        "operationId": "OrganizationService_CreateOrganization",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1CreateOrganizationResponse"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/rpcStatus"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "body",
+            "in": "body",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/v1CreateOrganizationRequest"
+            }
+          }
+        ],
+        "tags": [
+          "OrganizationService"
+        ]
+      }
+    },
+    "/v1/organizations/{id}": {
+      "get": {
+        "operationId": "OrganizationService_GetOrganization",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1Organization"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/rpcStatus"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "type": "string"
+          }
+        ],
+        "tags": [
+          "OrganizationService"
+        ]
+      }
+    },
+    "/v1/organizations/{orgId}/members": {
+      "get": {
+        "operationId": "OrganizationService_ListMembers",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1ListOrgMembersResponse"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/rpcStatus"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "orgId",
+            "in": "path",
+            "required": true,
+            "type": "string"
+          }
+        ],
+        "tags": [
+          "OrganizationService"
+        ]
+      },
+      "post": {
+        "operationId": "OrganizationService_AddMember",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "type": "object",
+              "properties": {}
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/rpcStatus"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "orgId",
+            "in": "path",
+            "required": true,
+            "type": "string"
+          },
+          {
+            "name": "body",
+            "in": "body",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/v1OrganizationServiceAddMemberBody"
+            }
+          }
+        ],
+        "tags": [
+          "OrganizationService"
+        ]
+      }
+    },
+    "/v1/organizations/{orgId}/members/{userId}": {
+      "delete": {
+        "operationId": "OrganizationService_RemoveMember",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "type": "object",
+              "properties": {}
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/rpcStatus"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "orgId",
+            "in": "path",
+            "required": true,
+            "type": "string"
+          },
+          {
+            "name": "userId",
+            "in": "path",
+            "required": true,
+            "type": "string"
+          }
+        ],
+        "tags": [
+          "OrganizationService"
+        ]
+      }
+    },
+    "/v1/organizations/{orgId}/settings": {
+      "get": {
+        "operationId": "OrganizationService_GetOrgSettings",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1OrgSettings"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/rpcStatus"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "orgId",
+            "in": "path",
+            "required": true,
+            "type": "string"
+          }
+        ],
+        "tags": [
+          "OrganizationService"
+        ]
+      },
+      "put": {
+        "operationId": "OrganizationService_UpdateOrgSettings",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1OrgSettings"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/rpcStatus"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "orgId",
+            "in": "path",
+            "required": true,
+            "type": "string"
+          },
+          {
+            "name": "body",
+            "in": "body",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/OrganizationServiceUpdateOrgSettingsBody"
+            }
+          }
+        ],
+        "tags": [
+          "OrganizationService"
+        ]
+      }
+    },
+    "/v1/organizations/{orgId}/teams": {
+      "get": {
+        "operationId": "TeamService_ListTeams",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1ListTeamsResponse"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/rpcStatus"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "orgId",
+            "in": "path",
+            "required": true,
+            "type": "string"
+          }
+        ],
+        "tags": [
+          "TeamService"
+        ]
+      },
+      "post": {
+        "operationId": "TeamService_CreateTeam",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1CreateTeamResponse"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/rpcStatus"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "orgId",
+            "in": "path",
+            "required": true,
+            "type": "string"
+          },
+          {
+            "name": "body",
+            "in": "body",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/TeamServiceCreateTeamBody"
+            }
+          }
+        ],
+        "tags": [
+          "TeamService"
+        ]
+      }
+    },
+    "/v1/organizations/{organizationId}/usage/{meter}": {
+      "get": {
+        "summary": "GetUsage returns the caller organization's current UTC month for one\nmeter. Cardinality quotas such as seats remain entitlement gauges rather\nthan usage events.",
+        "operationId": "UsageService_GetUsage",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1GetUsageResponse"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/rpcStatus"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "organizationId",
+            "in": "path",
+            "required": true,
+            "type": "string"
+          },
+          {
+            "name": "meter",
+            "in": "path",
+            "required": true,
+            "type": "string"
+          }
+        ],
+        "tags": [
+          "UsageService"
+        ]
+      }
+    },
+    "/v1/platform/admins": {
+      "get": {
+        "operationId": "PlatformAdminService_ListPlatformAdmins",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1ListPlatformAdminsResponse"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/rpcStatus"
+            }
+          }
+        },
+        "tags": [
+          "PlatformAdminService"
+        ]
+      },
+      "post": {
+        "summary": "Platform admin management (super_admin only)",
+        "operationId": "PlatformAdminService_GrantPlatformRole",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "type": "object",
+              "properties": {}
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/rpcStatus"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "body",
+            "in": "body",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/v1GrantPlatformRoleRequest"
+            }
+          }
+        ],
+        "tags": [
+          "PlatformAdminService"
+        ]
+      }
+    },
+    "/v1/platform/admins/{userId}": {
+      "delete": {
+        "operationId": "PlatformAdminService_RevokePlatformRole",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "type": "object",
+              "properties": {}
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/rpcStatus"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "userId",
+            "in": "path",
+            "required": true,
+            "type": "string"
+          }
+        ],
+        "tags": [
+          "PlatformAdminService"
+        ]
+      }
+    },
+    "/v1/platform/feature-flags": {
+      "get": {
+        "summary": "Feature flags (platform-only)",
+        "operationId": "PlatformAdminService_ListFeatureFlags",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1ListFeatureFlagsResponse"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/rpcStatus"
+            }
+          }
+        },
+        "tags": [
+          "PlatformAdminService"
+        ]
+      }
+    },
+    "/v1/platform/feature-flags/{name}": {
+      "put": {
+        "operationId": "PlatformAdminService_UpsertFeatureFlag",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1UpsertFeatureFlagResponse"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/rpcStatus"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "name",
+            "in": "path",
+            "required": true,
+            "type": "string"
+          },
+          {
+            "name": "body",
+            "in": "body",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/PlatformAdminServiceUpsertFeatureFlagBody"
+            }
+          }
+        ],
+        "tags": [
+          "PlatformAdminService"
+        ]
+      }
+    },
+    "/v1/platform/jobs": {
+      "get": {
+        "operationId": "PlatformAdminService_ListJobs",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1ListJobsResponse"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/rpcStatus"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "queue",
+            "in": "query",
+            "required": false,
+            "type": "string"
+          },
+          {
+            "name": "states",
+            "in": "query",
+            "required": false,
+            "type": "array",
+            "items": {
+              "type": "string",
+              "enum": [
+                "JOB_STATE_UNSPECIFIED",
+                "JOB_STATE_PENDING",
+                "JOB_STATE_PROCESSING",
+                "JOB_STATE_RETRYING",
+                "JOB_STATE_SUCCEEDED",
+                "JOB_STATE_DEAD_LETTER",
+                "JOB_STATE_CANCELED"
+              ]
+            },
+            "collectionFormat": "multi"
+          },
+          {
+            "name": "organizationId",
+            "in": "query",
+            "required": false,
+            "type": "string"
+          },
+          {
+            "name": "subjectId",
+            "in": "query",
+            "required": false,
+            "type": "string"
+          },
+          {
+            "name": "pageSize",
+            "in": "query",
+            "required": false,
+            "type": "integer",
+            "format": "int64"
+          },
+          {
+            "name": "pageToken",
+            "in": "query",
+            "required": false,
+            "type": "string"
+          }
+        ],
+        "tags": [
+          "PlatformAdminService"
+        ]
+      }
+    },
+    "/v1/platform/jobs/operations": {
+      "get": {
+        "summary": "Product-neutral durable job operations. Payload bytes never leave the\nworker database boundary through these methods.",
+        "operationId": "PlatformAdminService_GetJobOperations",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1GetJobOperationsResponse"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/rpcStatus"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "queue",
+            "in": "query",
+            "required": false,
+            "type": "string"
+          }
+        ],
+        "tags": [
+          "PlatformAdminService"
+        ]
+      }
+    },
+    "/v1/platform/jobs/{jobId}": {
+      "get": {
+        "operationId": "PlatformAdminService_GetJob",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1GetJobResponse"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/rpcStatus"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "jobId",
+            "in": "path",
+            "required": true,
+            "type": "string"
+          }
+        ],
+        "tags": [
+          "PlatformAdminService"
+        ]
+      }
+    },
+    "/v1/platform/jobs/{sourceJobId}:replay": {
+      "post": {
+        "operationId": "PlatformAdminService_ReplayJob",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1ReplayJobResponse"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/rpcStatus"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "sourceJobId",
+            "in": "path",
+            "required": true,
+            "type": "string"
+          },
+          {
+            "name": "body",
+            "in": "body",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/PlatformAdminServiceReplayJobBody"
+            }
+          }
+        ],
+        "tags": [
+          "PlatformAdminService"
+        ]
+      }
+    },
+    "/v1/platform/organizations/{orgId}/entitlements": {
+      "get": {
+        "summary": "Entitlements \u0026 billing",
+        "operationId": "PlatformAdminService_GetOrgEntitlements",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1GetOrgEntitlementsResponse"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/rpcStatus"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "orgId",
+            "in": "path",
+            "required": true,
+            "type": "string"
+          }
+        ],
+        "tags": [
+          "PlatformAdminService"
+        ]
+      },
+      "post": {
+        "operationId": "PlatformAdminService_OverrideEntitlement",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1OverrideEntitlementResponse"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/rpcStatus"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "orgId",
+            "in": "path",
+            "required": true,
+            "type": "string"
+          },
+          {
+            "name": "body",
+            "in": "body",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/PlatformAdminServiceOverrideEntitlementBody"
+            }
+          }
+        ],
+        "tags": [
+          "PlatformAdminService"
+        ]
+      }
+    },
+    "/v1/platform/sessions": {
+      "get": {
+        "summary": "Session visibility",
+        "operationId": "PlatformAdminService_ListActiveSessions",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1ListActiveSessionsResponse"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/rpcStatus"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "userId",
+            "in": "query",
+            "required": false,
+            "type": "string"
+          },
+          {
+            "name": "pageSize",
+            "in": "query",
+            "required": false,
+            "type": "integer",
+            "format": "int32"
+          },
+          {
+            "name": "pageToken",
+            "in": "query",
+            "required": false,
+            "type": "string"
+          }
+        ],
+        "tags": [
+          "PlatformAdminService"
+        ]
+      }
+    },
+    "/v1/platform/sessions/{sessionId}": {
+      "delete": {
+        "operationId": "PlatformAdminService_RevokeSession",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "type": "object",
+              "properties": {}
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/rpcStatus"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "sessionId",
+            "description": "SessionInfo.id: the stable device refresh-family identifier.",
+            "in": "path",
+            "required": true,
+            "type": "string"
+          },
+          {
+            "name": "reason",
+            "in": "query",
+            "required": false,
+            "type": "string"
+          }
+        ],
+        "tags": [
+          "PlatformAdminService"
+        ]
+      }
+    },
+    "/v1/platform/users": {
+      "get": {
+        "summary": "User management (cross-tenant)",
+        "operationId": "PlatformAdminService_SearchUsers",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1SearchUsersResponse"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/rpcStatus"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "query",
+            "in": "query",
+            "required": false,
+            "type": "string"
+          },
+          {
+            "name": "pageSize",
+            "in": "query",
+            "required": false,
+            "type": "integer",
+            "format": "int32"
+          },
+          {
+            "name": "pageToken",
+            "in": "query",
+            "required": false,
+            "type": "string"
+          }
+        ],
+        "tags": [
+          "PlatformAdminService"
+        ]
+      }
+    },
+    "/v1/platform/users/{userId}:impersonate": {
+      "post": {
+        "operationId": "PlatformAdminService_ImpersonateUser",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1ImpersonateUserResponse"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/rpcStatus"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "userId",
+            "in": "path",
+            "required": true,
+            "type": "string"
+          },
+          {
+            "name": "body",
+            "in": "body",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/PlatformAdminServiceImpersonateUserBody"
+            }
+          }
+        ],
+        "tags": [
+          "PlatformAdminService"
+        ]
+      }
+    },
+    "/v1/platform/users/{userId}:suspend": {
+      "post": {
+        "operationId": "PlatformAdminService_SuspendUser",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "type": "object",
+              "properties": {}
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/rpcStatus"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "userId",
+            "in": "path",
+            "required": true,
+            "type": "string"
+          },
+          {
+            "name": "body",
+            "in": "body",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/PlatformAdminServiceSuspendUserBody"
+            }
+          }
+        ],
+        "tags": [
+          "PlatformAdminService"
+        ]
+      }
+    },
+    "/v1/platform/users/{userId}:unsuspend": {
+      "post": {
+        "operationId": "PlatformAdminService_UnsuspendUser",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "type": "object",
+              "properties": {}
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/rpcStatus"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "userId",
+            "in": "path",
+            "required": true,
+            "type": "string"
+          },
+          {
+            "name": "body",
+            "in": "body",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/PlatformAdminServiceUnsuspendUserBody"
+            }
+          }
+        ],
+        "tags": [
+          "PlatformAdminService"
+        ]
+      }
+    },
+    "/v1/principals": {
+      "get": {
+        "operationId": "PrincipalService_ListPrincipals",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1ListPrincipalsResponse"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/rpcStatus"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "orgId",
+            "in": "query",
+            "required": false,
+            "type": "string"
+          },
+          {
+            "name": "kind",
+            "description": "kind filters; UNSPECIFIED returns all kinds in the org\n(humans via membership, services + agents via direct org_id).",
+            "in": "query",
+            "required": false,
+            "type": "string",
+            "enum": [
+              "PRINCIPAL_KIND_UNSPECIFIED",
+              "PRINCIPAL_KIND_HUMAN",
+              "PRINCIPAL_KIND_SERVICE",
+              "PRINCIPAL_KIND_AGENT"
+            ],
+            "default": "PRINCIPAL_KIND_UNSPECIFIED"
+          },
+          {
+            "name": "pageSize",
+            "in": "query",
+            "required": false,
+            "type": "integer",
+            "format": "int32"
+          },
+          {
+            "name": "pageToken",
+            "in": "query",
+            "required": false,
+            "type": "string"
+          }
+        ],
+        "tags": [
+          "PrincipalService"
+        ]
+      }
+    },
+    "/v1/principals/{id}:revoke": {
+      "post": {
+        "operationId": "PrincipalService_RevokePrincipal",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "type": "object",
+              "properties": {}
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/rpcStatus"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "type": "string"
+          },
+          {
+            "name": "body",
+            "in": "body",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/PrincipalServiceRevokePrincipalBody"
+            }
+          }
+        ],
+        "tags": [
+          "PrincipalService"
+        ]
+      }
+    },
+    "/v1/principals:agent": {
+      "post": {
+        "operationId": "PrincipalService_CreateAgentPrincipal",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1Principal"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/rpcStatus"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "body",
+            "in": "body",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/v1CreateAgentPrincipalRequest"
+            }
+          }
+        ],
+        "tags": [
+          "PrincipalService"
+        ]
+      }
+    },
+    "/v1/role-assignments": {
+      "get": {
+        "operationId": "PermissionService_ListRoleAssignments",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1ListRoleAssignmentsResponse"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/rpcStatus"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "orgId",
+            "in": "query",
+            "required": false,
+            "type": "string"
+          },
+          {
+            "name": "subjectId",
+            "description": "empty → all subjects in this org",
+            "in": "query",
+            "required": false,
+            "type": "string"
+          },
+          {
+            "name": "subjectKind",
+            "description": "unspecified → both users + teams",
+            "in": "query",
+            "required": false,
+            "type": "string",
+            "enum": [
+              "SUBJECT_KIND_UNSPECIFIED",
+              "SUBJECT_KIND_USER",
+              "SUBJECT_KIND_TEAM"
+            ],
+            "default": "SUBJECT_KIND_UNSPECIFIED"
+          }
+        ],
+        "tags": [
+          "PermissionService"
+        ]
+      },
+      "delete": {
+        "operationId": "PermissionService_RevokeRole",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "type": "object",
+              "properties": {}
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/rpcStatus"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "subjectId",
+            "in": "query",
+            "required": false,
+            "type": "string"
+          },
+          {
+            "name": "roleId",
+            "in": "query",
+            "required": false,
+            "type": "string"
+          },
+          {
+            "name": "orgId",
+            "in": "query",
+            "required": false,
+            "type": "string"
+          },
+          {
+            "name": "scope",
+            "in": "query",
+            "required": false,
+            "type": "string"
+          }
+        ],
+        "tags": [
+          "PermissionService"
+        ]
+      },
+      "post": {
+        "operationId": "PermissionService_AssignRole",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1AssignRoleResponse"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/rpcStatus"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "body",
+            "in": "body",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/v1AssignRoleRequest"
+            }
+          }
+        ],
+        "tags": [
+          "PermissionService"
+        ]
+      }
+    },
+    "/v1/roles": {
+      "get": {
+        "operationId": "PermissionService_ListRoles",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1ListRolesResponse"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/rpcStatus"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "orgId",
+            "description": "empty = list global roles",
+            "in": "query",
+            "required": false,
+            "type": "string"
+          }
+        ],
+        "tags": [
+          "PermissionService"
+        ]
+      },
+      "post": {
+        "operationId": "PermissionService_CreateRole",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1CreateRoleResponse"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/rpcStatus"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "body",
+            "in": "body",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/v1CreateRoleRequest"
+            }
+          }
+        ],
+        "tags": [
+          "PermissionService"
+        ]
+      }
+    },
+    "/v1/roles/{id}": {
+      "delete": {
+        "operationId": "PermissionService_DeleteRole",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "type": "object",
+              "properties": {}
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/rpcStatus"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "type": "string"
+          }
+        ],
+        "tags": [
+          "PermissionService"
+        ]
+      }
+    },
+    "/v1/sso/disable": {
+      "post": {
+        "operationId": "SSOAdminService_Disable",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "type": "object",
+              "properties": {}
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/rpcStatus"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "body",
+            "in": "body",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/v1DisableSSORequest"
+            }
+          }
+        ],
+        "tags": [
+          "SSOAdminService"
+        ]
+      }
+    },
+    "/v1/sso/setup": {
+      "post": {
+        "operationId": "SSOAdminService_StartSetup",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1StartSSOSetupResponse"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/rpcStatus"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "body",
+            "description": "StartSSOSetupRequest kicks off the admin portal flow. The backend\n(a) ensures a WorkOS Organization exists for the saas-starter org,\n(b) mints a portal link, (c) returns it for browser redirect.",
+            "in": "body",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/v1StartSSOSetupRequest"
+            }
+          }
+        ],
+        "tags": [
+          "SSOAdminService"
+        ]
+      }
+    },
+    "/v1/sso/{orgId}": {
+      "get": {
+        "operationId": "SSOAdminService_GetSSO",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1OrgSSOConfig"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/rpcStatus"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "orgId",
+            "in": "path",
+            "required": true,
+            "type": "string"
+          }
+        ],
+        "tags": [
+          "SSOAdminService"
+        ]
+      }
+    },
+    "/v1/teams/{teamId}": {
+      "delete": {
+        "operationId": "TeamService_DeleteTeam",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "type": "object",
+              "properties": {}
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/rpcStatus"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "teamId",
+            "in": "path",
+            "required": true,
+            "type": "string"
+          }
+        ],
+        "tags": [
+          "TeamService"
+        ]
+      },
+      "patch": {
+        "operationId": "TeamService_UpdateTeam",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1UpdateTeamResponse"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/rpcStatus"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "teamId",
+            "in": "path",
+            "required": true,
+            "type": "string"
+          },
+          {
+            "name": "body",
+            "in": "body",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/TeamServiceUpdateTeamBody"
+            }
+          }
+        ],
+        "tags": [
+          "TeamService"
+        ]
+      }
+    },
+    "/v1/teams/{teamId}/members": {
+      "get": {
+        "operationId": "TeamService_ListMembers",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1ListTeamMembersResponse"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/rpcStatus"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "teamId",
+            "in": "path",
+            "required": true,
+            "type": "string"
+          }
+        ],
+        "tags": [
+          "TeamService"
+        ]
+      },
+      "post": {
+        "operationId": "TeamService_AddMember",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "type": "object",
+              "properties": {}
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/rpcStatus"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "teamId",
+            "in": "path",
+            "required": true,
+            "type": "string"
+          },
+          {
+            "name": "body",
+            "in": "body",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/v1TeamServiceAddMemberBody"
+            }
+          }
+        ],
+        "tags": [
+          "TeamService"
+        ]
+      }
+    },
+    "/v1/teams/{teamId}/members/{userId}": {
+      "delete": {
+        "operationId": "TeamService_RemoveMember",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "type": "object",
+              "properties": {}
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/rpcStatus"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "teamId",
+            "in": "path",
+            "required": true,
+            "type": "string"
+          },
+          {
+            "name": "userId",
+            "in": "path",
+            "required": true,
+            "type": "string"
+          }
+        ],
+        "tags": [
+          "TeamService"
+        ]
+      }
+    },
+    "/v1/user/settings": {
+      "get": {
+        "operationId": "UserSettingsService_Get",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1UserSettings"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/rpcStatus"
+            }
+          }
+        },
+        "tags": [
+          "UserSettingsService"
+        ]
+      },
+      "post": {
+        "operationId": "UserSettingsService_Update",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1UserSettings"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/rpcStatus"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "body",
+            "in": "body",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/v1UpdateUserSettingsRequest"
+            }
+          }
+        ],
+        "tags": [
+          "UserSettingsService"
+        ]
+      }
+    },
+    "/v1/users": {
+      "get": {
+        "operationId": "UserService_ListUsers",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1ListUsersResponse"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/rpcStatus"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "pageSize",
+            "in": "query",
+            "required": false,
+            "type": "integer",
+            "format": "int32"
+          },
+          {
+            "name": "pageToken",
+            "in": "query",
+            "required": false,
+            "type": "string"
+          },
+          {
+            "name": "status",
+            "in": "query",
+            "required": false,
+            "type": "string",
+            "enum": [
+              "USER_STATUS_UNSPECIFIED",
+              "USER_STATUS_ACTIVE",
+              "USER_STATUS_INACTIVE",
+              "USER_STATUS_SUSPENDED",
+              "USER_STATUS_DELETED"
+            ],
+            "default": "USER_STATUS_UNSPECIFIED"
+          }
+        ],
+        "tags": [
+          "UserService"
+        ]
+      },
+      "post": {
+        "operationId": "UserService_RegisterUser",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1RegisterUserResponse"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/rpcStatus"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "body",
+            "in": "body",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/v1RegisterUserRequest"
+            }
+          }
+        ],
+        "tags": [
+          "UserService"
+        ]
+      }
+    },
+    "/v1/users/self": {
+      "get": {
+        "operationId": "UserService_GetSelf",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1GetSelfResponse"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/rpcStatus"
+            }
+          }
+        },
+        "tags": [
+          "UserService"
+        ]
+      }
+    },
+    "/v1/users/{userUuid}/identities": {
+      "get": {
+        "operationId": "UserService_ListUserIdentities",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1ListUserIdentitiesResponse"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/rpcStatus"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "userUuid",
+            "in": "path",
+            "required": true,
+            "type": "string"
+          }
+        ],
+        "tags": [
+          "UserService"
+        ]
+      },
+      "post": {
+        "operationId": "UserService_AddIdentity",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1UserIdentity"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/rpcStatus"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "userUuid",
+            "in": "path",
+            "required": true,
+            "type": "string"
+          },
+          {
+            "name": "identity",
+            "in": "body",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/v1UserIdentity"
+            }
+          }
+        ],
+        "tags": [
+          "UserService"
+        ]
+      }
+    },
+    "/v1/users/{uuid}": {
+      "get": {
+        "operationId": "UserService_GetUser",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1User"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/rpcStatus"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "uuid",
+            "in": "path",
+            "required": true,
+            "type": "string"
+          },
+          {
+            "name": "email",
+            "in": "query",
+            "required": false,
+            "type": "string"
+          }
+        ],
+        "tags": [
+          "UserService"
+        ]
+      },
+      "delete": {
+        "operationId": "UserService_DeleteUser",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "type": "object",
+              "properties": {}
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/rpcStatus"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "uuid",
+            "in": "path",
+            "required": true,
+            "type": "string"
+          },
+          {
+            "name": "email",
+            "in": "query",
+            "required": false,
+            "type": "string"
+          }
+        ],
+        "tags": [
+          "UserService"
+        ]
+      },
+      "patch": {
+        "operationId": "UserService_UpdateUser",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1User"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/rpcStatus"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "uuid",
+            "in": "path",
+            "required": true,
+            "type": "string"
+          },
+          {
+            "name": "user",
+            "in": "body",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/v1User"
+            }
+          }
+        ],
+        "tags": [
+          "UserService"
+        ]
+      }
+    },
+    "/v1/users:byEmail": {
+      "get": {
+        "operationId": "UserService_GetUser2",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1User"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/rpcStatus"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "uuid",
+            "in": "query",
+            "required": false,
+            "type": "string"
+          },
+          {
+            "name": "email",
+            "in": "query",
+            "required": false,
+            "type": "string"
+          }
+        ],
+        "tags": [
+          "UserService"
+        ]
+      }
+    },
+    "/v1/users:findByIdentity": {
+      "get": {
+        "operationId": "UserService_FindUserByIdentity",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1User"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/rpcStatus"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "provider",
+            "in": "query",
+            "required": false,
+            "type": "string"
+          },
+          {
+            "name": "providerId",
+            "in": "query",
+            "required": false,
+            "type": "string"
+          }
+        ],
+        "tags": [
+          "UserService"
+        ]
+      }
+    },
+    "/v1/version": {
+      "get": {
+        "operationId": "UserService_Version",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1VersionResponse"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/rpcStatus"
+            }
+          }
+        },
+        "tags": [
+          "UserService"
+        ]
+      }
+    },
+    "/v1/webhooks": {
+      "get": {
+        "operationId": "WebhookService_ListSubscriptions",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1ListWebhookSubscriptionsResponse"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/rpcStatus"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "orgId",
+            "in": "query",
+            "required": false,
+            "type": "string"
+          },
+          {
+            "name": "pageSize",
+            "in": "query",
+            "required": false,
+            "type": "integer",
+            "format": "int32"
+          },
+          {
+            "name": "pageToken",
+            "in": "query",
+            "required": false,
+            "type": "string"
+          }
+        ],
+        "tags": [
+          "WebhookService"
+        ]
+      },
+      "post": {
+        "operationId": "WebhookService_CreateSubscription",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1WebhookSubscription"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/rpcStatus"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "body",
+            "in": "body",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/v1CreateWebhookSubscriptionRequest"
+            }
+          }
+        ],
+        "tags": [
+          "WebhookService"
+        ]
+      }
+    },
+    "/v1/webhooks/deliveries/{id}": {
+      "get": {
+        "operationId": "WebhookService_GetDelivery",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1WebhookDelivery"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/rpcStatus"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "type": "string"
+          }
+        ],
+        "tags": [
+          "WebhookService"
+        ]
+      }
+    },
+    "/v1/webhooks/deliveries/{id}:replay": {
+      "post": {
+        "operationId": "WebhookService_ReplayDelivery",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1WebhookDelivery"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/rpcStatus"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "id",
+            "description": "Queue the existing delivery's exact payload for its subscription's current\nURL and secret. The result is a NEW pending delivery row; the original row\nis unchanged and the generic outbox worker owns execution.",
+            "in": "path",
+            "required": true,
+            "type": "string"
+          },
+          {
+            "name": "body",
+            "in": "body",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/WebhookServiceReplayDeliveryBody"
+            }
+          }
+        ],
+        "tags": [
+          "WebhookService"
+        ]
+      }
+    },
+    "/v1/webhooks/{id}": {
+      "delete": {
+        "operationId": "WebhookService_DeleteSubscription",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "type": "object",
+              "properties": {}
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/rpcStatus"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "type": "string"
+          }
+        ],
+        "tags": [
+          "WebhookService"
+        ]
+      }
+    },
+    "/v1/webhooks/{id}:rotateSecret": {
+      "post": {
+        "operationId": "WebhookService_RotateSecret",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1RotateWebhookSecretResponse"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/rpcStatus"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "type": "string"
+          },
+          {
+            "name": "body",
+            "in": "body",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/WebhookServiceRotateSecretBody"
+            }
+          }
+        ],
+        "tags": [
+          "WebhookService"
+        ]
+      }
+    },
+    "/v1/webhooks/{id}:test": {
+      "post": {
+        "operationId": "WebhookService_TestWebhook",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1WebhookDelivery"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/rpcStatus"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "type": "string"
+          },
+          {
+            "name": "body",
+            "in": "body",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/WebhookServiceTestWebhookBody"
+            }
+          }
+        ],
+        "tags": [
+          "WebhookService"
+        ]
+      }
+    },
+    "/v1/webhooks/{subscriptionId}/deliveries": {
+      "get": {
+        "operationId": "WebhookService_ListDeliveries",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1ListWebhookDeliveriesResponse"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/rpcStatus"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "subscriptionId",
+            "in": "path",
+            "required": true,
+            "type": "string"
+          },
+          {
+            "name": "pageSize",
+            "in": "query",
+            "required": false,
+            "type": "integer",
+            "format": "int32"
+          },
+          {
+            "name": "pageToken",
+            "in": "query",
+            "required": false,
+            "type": "string"
+          }
+        ],
+        "tags": [
+          "WebhookService"
+        ]
+      }
+    }
+  },
+  "definitions": {
+    "DelegationServiceDecideDelegationBody": {
+      "type": "object",
+      "properties": {
+        "orgId": {
+          "type": "string"
+        },
+        "decision": {
+          "type": "string",
+          "title": "Decision: approved | denied. (expired/cancelled are state\ntransitions handled by other paths.)"
+        },
+        "reason": {
+          "type": "string",
+          "description": "Reason: required when decision=denied; optional on approve."
+        }
+      }
+    },
+    "NotificationServiceMarkReadBody": {
+      "type": "object"
+    },
+    "OnboardingServiceCompleteStepBody": {
+      "type": "object"
+    },
+    "OnboardingServiceSkipStepBody": {
+      "type": "object"
+    },
+    "OrganizationServiceUpdateOrgSettingsBody": {
+      "type": "object",
+      "properties": {
+        "logoUrl": {
+          "type": "string"
+        },
+        "primaryColor": {
+          "type": "string"
+        },
+        "customDomain": {
+          "type": "string"
+        },
+        "faviconUrl": {
+          "type": "string"
+        }
+      }
+    },
+    "PlatformAdminServiceImpersonateUserBody": {
+      "type": "object"
+    },
+    "PlatformAdminServiceOverrideEntitlementBody": {
+      "type": "object",
+      "properties": {
+        "feature": {
+          "type": "string"
+        },
+        "limitValue": {
+          "type": "string",
+          "format": "int64"
+        },
+        "reason": {
+          "type": "string"
+        }
+      }
+    },
+    "PlatformAdminServiceReplayJobBody": {
+      "type": "object",
+      "properties": {
+        "idempotencyKey": {
+          "type": "string"
+        },
+        "availableAt": {
+          "type": "string",
+          "format": "date-time"
+        }
+      },
+      "description": "ReplayJobRequest creates a new pending copy of one dead-lettered job. The\nsource row remains immutable. idempotency_key makes an operator retry resolve\nto the same new job instead of duplicating the side effect."
+    },
+    "PlatformAdminServiceSuspendUserBody": {
+      "type": "object",
+      "properties": {
+        "reason": {
+          "type": "string"
+        }
+      }
+    },
+    "PlatformAdminServiceUnsuspendUserBody": {
+      "type": "object"
+    },
+    "PlatformAdminServiceUpsertFeatureFlagBody": {
+      "type": "object",
+      "properties": {
+        "description": {
+          "type": "string"
+        },
+        "enabled": {
+          "type": "boolean"
+        },
+        "rolloutPercent": {
+          "type": "integer",
+          "format": "int32"
+        },
+        "targetOrgIds": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "PrincipalServiceRevokePrincipalBody": {
+      "type": "object",
+      "properties": {
+        "reason": {
+          "type": "string"
+        }
+      }
+    },
+    "TeamServiceCreateTeamBody": {
+      "type": "object",
+      "properties": {
+        "name": {
+          "type": "string"
+        },
+        "description": {
+          "type": "string"
+        },
+        "parentTeamId": {
+          "type": "string",
+          "description": "Optional: create as a child of this team (must belong to the same org)."
+        },
+        "slug": {
+          "type": "string",
+          "description": "Optional: explicit path segment; derived from name when empty."
+        }
+      }
+    },
+    "TeamServiceUpdateTeamBody": {
+      "type": "object",
+      "properties": {
+        "name": {
+          "type": "string"
+        },
+        "description": {
+          "type": "string"
+        }
+      }
+    },
+    "WebhookServiceReplayDeliveryBody": {
+      "type": "object"
+    },
+    "WebhookServiceRotateSecretBody": {
+      "type": "object",
+      "properties": {
+        "gracePeriodSeconds": {
+          "type": "integer",
+          "format": "int32",
+          "description": "grace_period_seconds — how long the OLD secret stays valid for\nsignature verification on incoming replays. 0 = revoke\nimmediately; 86400 (24h) is the recommended default for staged\nrollouts. Bound to a 7-day max server-side."
+        }
+      }
+    },
+    "WebhookServiceTestWebhookBody": {
+      "type": "object",
+      "properties": {
+        "eventType": {
+          "type": "string",
+          "description": "event_type to queue. Empty defaults to \"webhook.test\"; otherwise it must\nuse the same canonical lowercase routing vocabulary as subscriptions. The\npayload is server-generated and the generic outbox worker sends it."
+        }
+      }
+    },
+    "protobufAny": {
+      "type": "object",
+      "properties": {
+        "@type": {
+          "type": "string"
+        }
+      },
+      "additionalProperties": {}
+    },
+    "protobufNullValue": {
+      "type": "string",
+      "enum": [
+        "NULL_VALUE"
+      ],
+      "default": "NULL_VALUE",
+      "description": "`NullValue` is a singleton enumeration to represent the null value for the\n`Value` type union.\n\nThe JSON representation for `NullValue` is JSON `null`.\n\n - NULL_VALUE: Null value."
+    },
+    "rpcStatus": {
+      "type": "object",
+      "properties": {
+        "code": {
+          "type": "integer",
+          "format": "int32"
+        },
+        "message": {
+          "type": "string"
+        },
+        "details": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "$ref": "#/definitions/protobufAny"
+          }
+        }
+      }
+    },
+    "v1APIKey": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "organizationId": {
+          "type": "string"
+        },
+        "userId": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        },
+        "prefix": {
+          "type": "string"
+        },
+        "scopes": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "$ref": "#/definitions/v1Permission"
+          }
+        },
+        "environment": {
+          "$ref": "#/definitions/v1APIKeyEnvironment"
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "expiresAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "lastUsedAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "revokedAt": {
+          "type": "string",
+          "format": "date-time"
+        }
+      }
+    },
+    "v1APIKeyEnvironment": {
+      "type": "string",
+      "enum": [
+        "API_KEY_ENVIRONMENT_UNSPECIFIED",
+        "API_KEY_ENVIRONMENT_LIVE",
+        "API_KEY_ENVIRONMENT_TEST"
+      ],
+      "default": "API_KEY_ENVIRONMENT_UNSPECIFIED"
+    },
+    "v1AcceptConsentRequest": {
+      "type": "object",
+      "properties": {
+        "version": {
+          "type": "string"
+        }
+      }
+    },
+    "v1AcceptInvitationRequest": {
+      "type": "object",
+      "properties": {
+        "token": {
+          "type": "string"
+        }
+      }
+    },
+    "v1AcceptInvitationResponse": {
+      "type": "object",
+      "properties": {
+        "organization": {
+          "$ref": "#/definitions/v1Organization"
+        }
+      }
+    },
+    "v1AssignRoleRequest": {
+      "type": "object",
+      "properties": {
+        "subjectId": {
+          "type": "string"
+        },
+        "subjectKind": {
+          "$ref": "#/definitions/v1SubjectKind"
+        },
+        "roleId": {
+          "type": "string"
+        },
+        "orgId": {
+          "type": "string"
+        },
+        "scope": {
+          "type": "string"
+        }
+      }
+    },
+    "v1AssignRoleResponse": {
+      "type": "object",
+      "properties": {
+        "assignment": {
+          "$ref": "#/definitions/v1RoleAssignment"
+        }
+      }
+    },
+    "v1AuditEvent": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "actorId": {
+          "type": "string"
+        },
+        "actorType": {
+          "type": "string"
+        },
+        "action": {
+          "type": "string"
+        },
+        "resource": {
+          "type": "string"
+        },
+        "resourceId": {
+          "type": "string"
+        },
+        "orgId": {
+          "type": "string"
+        },
+        "metadata": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "string"
+          }
+        },
+        "ipAddress": {
+          "type": "string"
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time"
+        }
+      }
+    },
+    "v1AuditExportConfig": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "orgId": {
+          "type": "string"
+        },
+        "bucket": {
+          "type": "string"
+        },
+        "region": {
+          "type": "string"
+        },
+        "endpoint": {
+          "type": "string",
+          "description": "endpoint empty = real AWS S3; non-empty points at MinIO / R2 / etc."
+        },
+        "prefix": {
+          "type": "string"
+        },
+        "accessKeyId": {
+          "type": "string"
+        },
+        "secretAccessKey": {
+          "type": "string",
+          "description": "Get returns \"\" for secret_access_key so the FE can't echo a\nstored secret. Save with \"\" preserves the existing one."
+        },
+        "cadenceMinutes": {
+          "type": "integer",
+          "format": "int32"
+        },
+        "enabled": {
+          "type": "boolean"
+        },
+        "lastExportedAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "lastError": {
+          "type": "string"
+        },
+        "lastErrorAt": {
+          "type": "string",
+          "format": "date-time"
+        }
+      }
+    },
+    "v1AuthenticateRequest": {
+      "type": "object",
+      "properties": {
+        "provider": {
+          "type": "string"
+        },
+        "providerId": {
+          "type": "string",
+          "description": "Deprecated caller-asserted identity fields. Kept only for wire\ncompatibility during the v0 transition; Authenticate ignores them."
+        },
+        "providerEmail": {
+          "type": "string"
+        },
+        "emailVerified": {
+          "type": "boolean"
+        },
+        "profile": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "string"
+          },
+          "description": "Optional signup/profile metadata. OAuth protocol fields do not belong here."
+        },
+        "deviceInfo": {
+          "type": "string",
+          "description": "Bounded display-only device description (typically the browser user-agent).\nIt is persisted with the refresh family for session management and is\nnever trusted as an authentication or authorization signal."
+        },
+        "oauthCode": {
+          "$ref": "#/definitions/v1OAuthCodeAuthentication"
+        },
+        "fixture": {
+          "$ref": "#/definitions/v1FixtureAuthentication"
+        }
+      }
+    },
+    "v1AuthenticateResponse": {
+      "type": "object",
+      "properties": {
+        "accessToken": {
+          "type": "string"
+        },
+        "refreshToken": {
+          "type": "string"
+        },
+        "expiresIn": {
+          "type": "string",
+          "format": "int64"
+        },
+        "user": {
+          "$ref": "#/definitions/v1User"
+        },
+        "mfaRequired": {
+          "type": "boolean"
+        },
+        "mfaToken": {
+          "type": "string",
+          "description": "Opaque, short-lived, one-use login transaction. Present only when\nmfa_required is true; it is not an access or refresh token."
+        }
+      }
+    },
+    "v1BeginOAuthRequest": {
+      "type": "object",
+      "properties": {
+        "provider": {
+          "type": "string"
+        },
+        "redirectUri": {
+          "type": "string"
+        }
+      },
+      "description": "BeginOAuthRequest is the FE's first hop on the authorization-code\nflow. Server returns a server-signed `state` token bound to\n(provider, redirect_uri); the FE embeds it in the provider's\nauthorize URL alongside its own PKCE code_challenge. Authenticate\nlater verifies the state before exchanging the code."
+    },
+    "v1BeginOAuthResponse": {
+      "type": "object",
+      "properties": {
+        "state": {
+          "type": "string",
+          "description": "state is opaque to the FE — pass it back unchanged in the\nauthorize URL and again in the Authenticate request."
+        }
+      }
+    },
+    "v1BeginWebAuthnMFAChallengeRequest": {
+      "type": "object",
+      "properties": {
+        "mfaToken": {
+          "type": "string"
+        }
+      },
+      "description": "Begins a WebAuthn assertion for an existing primary-authentication handoff.\nThe mfa_token remains the login credential; the returned ceremony token is\nan independently random, short-lived handle for server-side WebAuthn state."
+    },
+    "v1BeginWebAuthnMFAChallengeResponse": {
+      "type": "object",
+      "properties": {
+        "ceremonyToken": {
+          "type": "string"
+        },
+        "publicKeyOptionsJson": {
+          "type": "string",
+          "description": "JSON-encoded PublicKeyCredentialRequestOptions. The browser hands these\ngenerated options directly to the WebAuthn API."
+        }
+      }
+    },
+    "v1BeginWebAuthnRegistrationRequest": {
+      "type": "object"
+    },
+    "v1BeginWebAuthnRegistrationResponse": {
+      "type": "object",
+      "properties": {
+        "ceremonyToken": {
+          "type": "string"
+        },
+        "publicKeyOptionsJson": {
+          "type": "string",
+          "description": "JSON-encoded PublicKeyCredentialCreationOptions generated by the server."
+        }
+      }
+    },
+    "v1CompleteMFAChallengeRequest": {
+      "type": "object",
+      "properties": {
+        "mfaToken": {
+          "type": "string"
+        },
+        "code": {
+          "type": "string",
+          "description": "Six-digit TOTP or a one-use backup code."
+        }
+      },
+      "description": "CompleteMFAChallengeRequest is deliberately distinct from VerifyTOTPRequest:\nthis completes a login transaction, while VerifyTOTP only confirms a new\nauthenticator during enrollment."
+    },
+    "v1CompleteMFAChallengeResponse": {
+      "type": "object",
+      "properties": {
+        "accessToken": {
+          "type": "string"
+        },
+        "refreshToken": {
+          "type": "string"
+        },
+        "expiresIn": {
+          "type": "string",
+          "format": "int64"
+        },
+        "user": {
+          "$ref": "#/definitions/v1User"
+        }
+      }
+    },
+    "v1CompleteWebAuthnMFAChallengeRequest": {
+      "type": "object",
+      "properties": {
+        "mfaToken": {
+          "type": "string"
+        },
+        "ceremonyToken": {
+          "type": "string"
+        },
+        "credentialResponseJson": {
+          "type": "string",
+          "description": "JSON-encoded PublicKeyCredential assertion returned by the browser."
+        }
+      }
+    },
+    "v1ConsentStatus": {
+      "type": "object",
+      "properties": {
+        "acceptedVersion": {
+          "type": "string",
+          "description": "accepted_version is the CONSENT_VERSION string the user clicked\nAccept on. Empty when the user has never accepted."
+        },
+        "acceptedAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "currentVersion": {
+          "type": "string",
+          "description": "current_version is the version the api considers active. The FE\nshows the banner whenever accepted_version != current_version."
+        }
+      }
+    },
+    "v1CreateAPIKeyRequest": {
+      "type": "object",
+      "properties": {
+        "organizationId": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        },
+        "scopes": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "$ref": "#/definitions/v1Permission"
+          }
+        },
+        "environment": {
+          "$ref": "#/definitions/v1APIKeyEnvironment"
+        },
+        "expiresAt": {
+          "type": "string",
+          "format": "date-time"
+        }
+      }
+    },
+    "v1CreateAPIKeyResponse": {
+      "type": "object",
+      "properties": {
+        "key": {
+          "$ref": "#/definitions/v1APIKey"
+        },
+        "plaintextKey": {
+          "type": "string"
+        }
+      }
+    },
+    "v1CreateAgentPrincipalRequest": {
+      "type": "object",
+      "properties": {
+        "orgId": {
+          "type": "string"
+        },
+        "agentIdentifier": {
+          "type": "string",
+          "description": "agent_identifier in canonical \"publisher/name:version\" form."
+        },
+        "displayName": {
+          "type": "string"
+        }
+      }
+    },
+    "v1CreateInvitationRequest": {
+      "type": "object",
+      "properties": {
+        "orgId": {
+          "type": "string"
+        },
+        "email": {
+          "type": "string"
+        },
+        "role": {
+          "type": "string"
+        }
+      }
+    },
+    "v1CreateInvitationResponse": {
+      "type": "object",
+      "properties": {
+        "invitation": {
+          "$ref": "#/definitions/v1Invitation"
+        },
+        "inviteToken": {
+          "type": "string"
+        }
+      }
+    },
+    "v1CreateOrganizationRequest": {
+      "type": "object",
+      "properties": {
+        "name": {
+          "type": "string"
+        },
+        "slug": {
+          "type": "string"
+        }
+      }
+    },
+    "v1CreateOrganizationResponse": {
+      "type": "object",
+      "properties": {
+        "organization": {
+          "$ref": "#/definitions/v1Organization"
+        }
+      }
+    },
+    "v1CreateRoleRequest": {
+      "type": "object",
+      "properties": {
+        "name": {
+          "type": "string"
+        },
+        "description": {
+          "type": "string"
+        },
+        "permissions": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "$ref": "#/definitions/v1Permission"
+          }
+        },
+        "orgId": {
+          "type": "string",
+          "title": "empty = global"
+        }
+      }
+    },
+    "v1CreateRoleResponse": {
+      "type": "object",
+      "properties": {
+        "role": {
+          "$ref": "#/definitions/v1Role"
+        }
+      }
+    },
+    "v1CreateTeamResponse": {
+      "type": "object",
+      "properties": {
+        "team": {
+          "$ref": "#/definitions/v1Team"
+        }
+      }
+    },
+    "v1CreateWebhookSubscriptionRequest": {
+      "type": "object",
+      "properties": {
+        "orgId": {
+          "type": "string"
+        },
+        "url": {
+          "type": "string"
+        },
+        "events": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "description": {
+          "type": "string"
+        }
+      }
+    },
+    "v1DelegationEvent": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "status": {
+          "type": "string",
+          "title": "approved | denied | expired | cancelled"
+        },
+        "decidedAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "grantorPrincipalId": {
+          "type": "string"
+        },
+        "reason": {
+          "type": "string"
+        },
+        "scopedAuthToken": {
+          "type": "string",
+          "description": "On approve: the gateway's freshly minted scoped-auth token.\nEmpty on deny / expired / cancelled."
+        },
+        "mintedTokenId": {
+          "type": "string",
+          "description": "On approve: the unique id of the minted token (for audit\ncorrelation). Same value as the encoded token's `id` field."
+        }
+      },
+      "description": "DelegationEvent is one streaming event delivered to a\nsubscriber. The agent SDK reads exactly one event (the\nterminal decision) and disconnects."
+    },
+    "v1DelegationGrant": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "orgId": {
+          "type": "string"
+        },
+        "actorPrincipalId": {
+          "type": "string"
+        },
+        "grantorPrincipalId": {
+          "type": "string"
+        },
+        "action": {
+          "type": "string"
+        },
+        "resource": {
+          "type": "string"
+        },
+        "resourceId": {
+          "type": "string"
+        },
+        "justification": {
+          "type": "string"
+        },
+        "status": {
+          "type": "string"
+        },
+        "riskLevel": {
+          "type": "string"
+        },
+        "kind": {
+          "type": "string",
+          "title": "one_shot | pattern"
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "decidedAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "expiresAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "decisionReason": {
+          "type": "string"
+        },
+        "mintedTokenId": {
+          "type": "string"
+        }
+      }
+    },
+    "v1DisableSSORequest": {
+      "type": "object",
+      "properties": {
+        "orgId": {
+          "type": "string"
+        }
+      }
+    },
+    "v1EntitlementInfo": {
+      "type": "object",
+      "properties": {
+        "feature": {
+          "type": "string"
+        },
+        "limit": {
+          "type": "string",
+          "format": "int64",
+          "title": "-1 = unlimited, 0 = disabled"
+        },
+        "used": {
+          "type": "string",
+          "format": "int64"
+        },
+        "hasOverride": {
+          "type": "boolean"
+        }
+      }
+    },
+    "v1ExportAuditLogRequest": {
+      "type": "object",
+      "properties": {
+        "orgId": {
+          "type": "string"
+        },
+        "format": {
+          "type": "string",
+          "title": "\"csv\" or \"json\""
+        },
+        "actorId": {
+          "type": "string"
+        },
+        "action": {
+          "type": "string"
+        }
+      }
+    },
+    "v1ExportAuditLogResponse": {
+      "type": "object",
+      "properties": {
+        "data": {
+          "type": "string",
+          "format": "byte"
+        },
+        "contentType": {
+          "type": "string"
+        },
+        "filename": {
+          "type": "string"
+        }
+      }
+    },
+    "v1FeatureFlagEntry": {
+      "type": "object",
+      "properties": {
+        "name": {
+          "type": "string"
+        },
+        "description": {
+          "type": "string"
+        },
+        "enabled": {
+          "type": "boolean"
+        },
+        "rolloutPercent": {
+          "type": "integer",
+          "format": "int32"
+        },
+        "targetOrgIds": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "v1FinishWebAuthnRegistrationRequest": {
+      "type": "object",
+      "properties": {
+        "ceremonyToken": {
+          "type": "string"
+        },
+        "credentialResponseJson": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        }
+      }
+    },
+    "v1FinishWebAuthnRegistrationResponse": {
+      "type": "object",
+      "properties": {
+        "device": {
+          "$ref": "#/definitions/v1MFADevice"
+        }
+      }
+    },
+    "v1FixtureAuthentication": {
+      "type": "object",
+      "properties": {
+        "token": {
+          "type": "string",
+          "description": "Opaque token looked up in the explicitly selected development fixture.\nIt is not a provider subject and is never trusted without the fixture\nvalidator."
+        }
+      }
+    },
+    "v1GDPRRequest": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "userId": {
+          "type": "string"
+        },
+        "type": {
+          "$ref": "#/definitions/v1GDPRRequestType"
+        },
+        "status": {
+          "$ref": "#/definitions/v1GDPRRequestStatus"
+        },
+        "downloadUrl": {
+          "type": "string"
+        },
+        "expiresAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "completedAt": {
+          "type": "string",
+          "format": "date-time"
+        }
+      }
+    },
+    "v1GDPRRequestStatus": {
+      "type": "string",
+      "enum": [
+        "GDPR_REQUEST_STATUS_UNSPECIFIED",
+        "GDPR_REQUEST_STATUS_PENDING",
+        "GDPR_REQUEST_STATUS_PROCESSING",
+        "GDPR_REQUEST_STATUS_COMPLETED",
+        "GDPR_REQUEST_STATUS_FAILED"
+      ],
+      "default": "GDPR_REQUEST_STATUS_UNSPECIFIED"
+    },
+    "v1GDPRRequestType": {
+      "type": "string",
+      "enum": [
+        "GDPR_REQUEST_TYPE_UNSPECIFIED",
+        "GDPR_REQUEST_TYPE_EXPORT",
+        "GDPR_REQUEST_TYPE_DELETION"
+      ],
+      "default": "GDPR_REQUEST_TYPE_UNSPECIFIED"
+    },
+    "v1GenerateBackupCodesRequest": {
+      "type": "object"
+    },
+    "v1GenerateBackupCodesResponse": {
+      "type": "object",
+      "properties": {
+        "backupCodes": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "v1GetJobOperationsResponse": {
+      "type": "object",
+      "properties": {
+        "queues": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "$ref": "#/definitions/v1JobQueueSnapshot"
+          }
+        },
+        "observedAt": {
+          "type": "string",
+          "format": "date-time"
+        }
+      }
+    },
+    "v1GetJobResponse": {
+      "type": "object",
+      "properties": {
+        "job": {
+          "$ref": "#/definitions/v1JobSummary"
+        },
+        "attempts": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "$ref": "#/definitions/v1JobAttempt"
+          }
+        },
+        "transitions": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "$ref": "#/definitions/v1JobStateTransition"
+          }
+        }
+      }
+    },
+    "v1GetOrgEntitlementsResponse": {
+      "type": "object",
+      "properties": {
+        "planName": {
+          "type": "string"
+        },
+        "entitlements": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "$ref": "#/definitions/v1EntitlementInfo"
+          }
+        }
+      }
+    },
+    "v1GetSelfResponse": {
+      "type": "object",
+      "properties": {
+        "user": {
+          "$ref": "#/definitions/v1User"
+        },
+        "identities": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "$ref": "#/definitions/v1UserIdentity"
+          }
+        },
+        "organizations": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "$ref": "#/definitions/v1Organization"
+          }
+        },
+        "roleAssignments": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "$ref": "#/definitions/v1RoleAssignment"
+          }
+        }
+      }
+    },
+    "v1GetServiceInfoResponse": {
+      "type": "object",
+      "properties": {
+        "capabilities": {
+          "$ref": "#/definitions/v1ServiceCapabilities"
+        }
+      }
+    },
+    "v1GetUnreadCountResponse": {
+      "type": "object",
+      "properties": {
+        "count": {
+          "type": "integer",
+          "format": "int32"
+        }
+      }
+    },
+    "v1GetUsageResponse": {
+      "type": "object",
+      "properties": {
+        "organizationId": {
+          "type": "string"
+        },
+        "meter": {
+          "type": "string"
+        },
+        "used": {
+          "type": "string",
+          "format": "int64"
+        },
+        "limit": {
+          "type": "string",
+          "format": "int64",
+          "description": "limit is -1 when the meter is unlimited, 0 when disabled, or positive for\na hard cap."
+        },
+        "periodStart": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "periodEnd": {
+          "type": "string",
+          "format": "date-time",
+          "description": "period_end is exclusive."
+        }
+      }
+    },
+    "v1GrantPlatformRoleRequest": {
+      "type": "object",
+      "properties": {
+        "userId": {
+          "type": "string"
+        },
+        "platformRole": {
+          "type": "string"
+        }
+      }
+    },
+    "v1ImpersonateUserResponse": {
+      "type": "object",
+      "properties": {
+        "accessToken": {
+          "type": "string"
+        },
+        "expiresIn": {
+          "type": "string",
+          "format": "int64"
+        }
+      }
+    },
+    "v1Invitation": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "orgId": {
+          "type": "string"
+        },
+        "inviterId": {
+          "type": "string"
+        },
+        "email": {
+          "type": "string"
+        },
+        "role": {
+          "type": "string"
+        },
+        "status": {
+          "$ref": "#/definitions/v1InvitationStatus"
+        },
+        "expiresAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time"
+        }
+      }
+    },
+    "v1InvitationStatus": {
+      "type": "string",
+      "enum": [
+        "INVITATION_STATUS_UNSPECIFIED",
+        "INVITATION_STATUS_PENDING",
+        "INVITATION_STATUS_ACCEPTED",
+        "INVITATION_STATUS_REVOKED",
+        "INVITATION_STATUS_EXPIRED"
+      ],
+      "default": "INVITATION_STATUS_UNSPECIFIED"
+    },
+    "v1Invoice": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "number": {
+          "type": "string"
+        },
+        "status": {
+          "type": "string",
+          "title": "paid | open | void | uncollectible | draft"
+        },
+        "amountDue": {
+          "type": "string",
+          "format": "int64"
+        },
+        "amountPaid": {
+          "type": "string",
+          "format": "int64"
+        },
+        "currency": {
+          "type": "string"
+        },
+        "created": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "hostedInvoiceUrl": {
+          "type": "string"
+        },
+        "invoicePdf": {
+          "type": "string"
+        },
+        "periodStart": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "periodEnd": {
+          "type": "string",
+          "format": "date-time"
+        }
+      },
+      "description": "Invoice — trimmed view of Stripe's invoice object. Amounts are in\nthe smallest currency unit (cents for USD/EUR); FE divides by 100."
+    },
+    "v1JWKSResponse": {
+      "type": "object",
+      "properties": {
+        "keysJson": {
+          "type": "string"
+        }
+      }
+    },
+    "v1JobAttempt": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "jobId": {
+          "type": "string"
+        },
+        "number": {
+          "type": "integer",
+          "format": "int64"
+        },
+        "workerId": {
+          "type": "string"
+        },
+        "leaseToken": {
+          "type": "string"
+        },
+        "outcome": {
+          "$ref": "#/definitions/v1JobAttemptOutcome"
+        },
+        "failure": {
+          "$ref": "#/definitions/v1JobFailure"
+        },
+        "startedAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "heartbeatAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "finishedAt": {
+          "type": "string",
+          "format": "date-time"
+        }
+      },
+      "description": "JobAttempt is the immutable result of one lease. The attempt row is opened\nwhen a job is claimed and finalized once; heartbeats may update heartbeat_at\nwhile it remains open."
+    },
+    "v1JobAttemptOutcome": {
+      "type": "string",
+      "enum": [
+        "JOB_ATTEMPT_OUTCOME_UNSPECIFIED",
+        "JOB_ATTEMPT_OUTCOME_SUCCEEDED",
+        "JOB_ATTEMPT_OUTCOME_RETRYABLE_FAILURE",
+        "JOB_ATTEMPT_OUTCOME_PERMANENT_FAILURE",
+        "JOB_ATTEMPT_OUTCOME_LEASE_EXPIRED",
+        "JOB_ATTEMPT_OUTCOME_CANCELED"
+      ],
+      "default": "JOB_ATTEMPT_OUTCOME_UNSPECIFIED",
+      "description": "JobAttemptOutcome records why one processing lease ended."
+    },
+    "v1JobDirection": {
+      "type": "string",
+      "enum": [
+        "JOB_DIRECTION_UNSPECIFIED",
+        "JOB_DIRECTION_INBOX",
+        "JOB_DIRECTION_OUTBOX"
+      ],
+      "default": "JOB_DIRECTION_UNSPECIFIED",
+      "description": "JobDirection distinguishes work accepted from an external producer from work\nemitted transactionally for an external consumer."
+    },
+    "v1JobEnqueueDisposition": {
+      "type": "string",
+      "enum": [
+        "JOB_ENQUEUE_DISPOSITION_UNSPECIFIED",
+        "JOB_ENQUEUE_DISPOSITION_INSERTED",
+        "JOB_ENQUEUE_DISPOSITION_DUPLICATE"
+      ],
+      "default": "JOB_ENQUEUE_DISPOSITION_UNSPECIFIED",
+      "description": "JobEnqueueDisposition distinguishes a newly committed message from an exact\nidempotent replay that resolved to the message already stored."
+    },
+    "v1JobFailure": {
+      "type": "object",
+      "properties": {
+        "code": {
+          "type": "string"
+        },
+        "message": {
+          "type": "string"
+        }
+      },
+      "description": "JobFailure contains bounded operator-safe diagnostics. It must never contain\ncredentials or the original payload."
+    },
+    "v1JobLease": {
+      "type": "object",
+      "properties": {
+        "owner": {
+          "type": "string"
+        },
+        "token": {
+          "type": "string"
+        },
+        "expiresAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "heartbeatAt": {
+          "type": "string",
+          "format": "date-time"
+        }
+      },
+      "description": "JobLease is present only while a job is processing. token is an unguessable\nfencing value: finalization must match both owner and token."
+    },
+    "v1JobQueueSnapshot": {
+      "type": "object",
+      "properties": {
+        "queue": {
+          "type": "string"
+        },
+        "pending": {
+          "type": "string",
+          "format": "uint64"
+        },
+        "processing": {
+          "type": "string",
+          "format": "uint64"
+        },
+        "retrying": {
+          "type": "string",
+          "format": "uint64"
+        },
+        "succeeded": {
+          "type": "string",
+          "format": "uint64"
+        },
+        "deadLetter": {
+          "type": "string",
+          "format": "uint64"
+        },
+        "canceled": {
+          "type": "string",
+          "format": "uint64"
+        },
+        "ready": {
+          "type": "string",
+          "format": "uint64"
+        },
+        "scheduled": {
+          "type": "string",
+          "format": "uint64"
+        },
+        "expiredLeases": {
+          "type": "string",
+          "format": "uint64"
+        },
+        "oldestReadyAt": {
+          "type": "string",
+          "format": "date-time"
+        }
+      },
+      "description": "JobQueueSnapshot is database-derived operational state and is therefore\nconsistent across replicas. Queue is the only metric label; topic, tenant,\nsubject, source, job id, and error text remain out of the metric surface."
+    },
+    "v1JobScope": {
+      "type": "object",
+      "properties": {
+        "organizationId": {
+          "type": "string"
+        },
+        "subjectId": {
+          "type": "string"
+        },
+        "global": {
+          "type": "boolean"
+        }
+      },
+      "description": "JobScope carries the tenant or subject binding enforced when request traffic\nappends a job. Global scope is reserved for the privileged worker boundary."
+    },
+    "v1JobState": {
+      "type": "string",
+      "enum": [
+        "JOB_STATE_UNSPECIFIED",
+        "JOB_STATE_PENDING",
+        "JOB_STATE_PROCESSING",
+        "JOB_STATE_RETRYING",
+        "JOB_STATE_SUCCEEDED",
+        "JOB_STATE_DEAD_LETTER",
+        "JOB_STATE_CANCELED"
+      ],
+      "default": "JOB_STATE_UNSPECIFIED",
+      "description": "JobState is the durable message lifecycle. New jobs start pending. Processing\nowns a lease. Retrying becomes claimable at available_at. The remaining\nstates are terminal; replay creates a new job linked to the original rather\nthan rewriting terminal history."
+    },
+    "v1JobStateTransition": {
+      "type": "object",
+      "properties": {
+        "sequence": {
+          "type": "string",
+          "format": "int64"
+        },
+        "jobId": {
+          "type": "string"
+        },
+        "fromState": {
+          "$ref": "#/definitions/v1JobState"
+        },
+        "toState": {
+          "$ref": "#/definitions/v1JobState"
+        },
+        "stateVersion": {
+          "type": "string",
+          "format": "uint64"
+        },
+        "attemptCount": {
+          "type": "integer",
+          "format": "int64"
+        },
+        "actor": {
+          "type": "string"
+        },
+        "failure": {
+          "$ref": "#/definitions/v1JobFailure"
+        },
+        "occurredAt": {
+          "type": "string",
+          "format": "date-time"
+        }
+      },
+      "description": "JobStateTransition is the append-only audit record produced by the database\nwhenever a job is created or changes state."
+    },
+    "v1JobSummary": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "direction": {
+          "$ref": "#/definitions/v1JobDirection"
+        },
+        "scope": {
+          "$ref": "#/definitions/v1JobScope"
+        },
+        "queue": {
+          "type": "string"
+        },
+        "topic": {
+          "type": "string"
+        },
+        "source": {
+          "type": "string"
+        },
+        "idempotencyKey": {
+          "type": "string"
+        },
+        "orderingKey": {
+          "type": "string"
+        },
+        "schemaVersion": {
+          "type": "integer",
+          "format": "int64"
+        },
+        "contentType": {
+          "type": "string"
+        },
+        "state": {
+          "$ref": "#/definitions/v1JobState"
+        },
+        "priority": {
+          "type": "integer",
+          "format": "int32"
+        },
+        "attemptCount": {
+          "type": "integer",
+          "format": "int64"
+        },
+        "maxAttempts": {
+          "type": "integer",
+          "format": "int64"
+        },
+        "lease": {
+          "$ref": "#/definitions/v1JobLease"
+        },
+        "lastFailure": {
+          "$ref": "#/definitions/v1JobFailure"
+        },
+        "availableAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "lastAttemptAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "completedAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "deadLetteredAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "stateVersion": {
+          "type": "string",
+          "format": "uint64"
+        },
+        "replayOf": {
+          "type": "string"
+        }
+      },
+      "description": "JobSummary is the payload-free operations view. Payload bytes and attributes\nnever cross the platform-administration API boundary."
+    },
+    "v1ListAPIKeysResponse": {
+      "type": "object",
+      "properties": {
+        "keys": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "$ref": "#/definitions/v1APIKey"
+          }
+        },
+        "nextPageToken": {
+          "type": "string"
+        }
+      }
+    },
+    "v1ListActiveSessionsResponse": {
+      "type": "object",
+      "properties": {
+        "sessions": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "$ref": "#/definitions/v1SessionInfo"
+          }
+        },
+        "nextPageToken": {
+          "type": "string"
+        }
+      }
+    },
+    "v1ListFeatureFlagsResponse": {
+      "type": "object",
+      "properties": {
+        "flags": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "$ref": "#/definitions/v1FeatureFlagEntry"
+          }
+        }
+      }
+    },
+    "v1ListInvitationsResponse": {
+      "type": "object",
+      "properties": {
+        "invitations": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "$ref": "#/definitions/v1Invitation"
+          }
+        }
+      }
+    },
+    "v1ListInvoicesResponse": {
+      "type": "object",
+      "properties": {
+        "invoices": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "$ref": "#/definitions/v1Invoice"
+          }
+        }
+      }
+    },
+    "v1ListJobsResponse": {
+      "type": "object",
+      "properties": {
+        "jobs": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "$ref": "#/definitions/v1JobSummary"
+          }
+        },
+        "nextPageToken": {
+          "type": "string"
+        }
+      }
+    },
+    "v1ListMFADevicesResponse": {
+      "type": "object",
+      "properties": {
+        "devices": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "$ref": "#/definitions/v1MFADevice"
+          }
+        }
+      }
+    },
+    "v1ListNotificationsResponse": {
+      "type": "object",
+      "properties": {
+        "notifications": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "$ref": "#/definitions/v1Notification"
+          }
+        },
+        "nextPageToken": {
+          "type": "string"
+        }
+      }
+    },
+    "v1ListOrgMembersResponse": {
+      "type": "object",
+      "properties": {
+        "members": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "$ref": "#/definitions/v1OrgMembership"
+          }
+        }
+      }
+    },
+    "v1ListOrganizationsResponse": {
+      "type": "object",
+      "properties": {
+        "organizations": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "$ref": "#/definitions/v1Organization"
+          }
+        }
+      }
+    },
+    "v1ListPendingDelegationsResponse": {
+      "type": "object",
+      "properties": {
+        "grants": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "$ref": "#/definitions/v1DelegationGrant"
+          }
+        },
+        "nextPageToken": {
+          "type": "string"
+        }
+      }
+    },
+    "v1ListPlatformAdminsResponse": {
+      "type": "object",
+      "properties": {
+        "admins": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "$ref": "#/definitions/v1PlatformAdminEntry"
+          }
+        }
+      }
+    },
+    "v1ListPrincipalsResponse": {
+      "type": "object",
+      "properties": {
+        "principals": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "$ref": "#/definitions/v1Principal"
+          }
+        },
+        "nextPageToken": {
+          "type": "string"
+        }
+      }
+    },
+    "v1ListRoleAssignmentsResponse": {
+      "type": "object",
+      "properties": {
+        "assignments": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "$ref": "#/definitions/v1RoleAssignment"
+          }
+        }
+      }
+    },
+    "v1ListRolesResponse": {
+      "type": "object",
+      "properties": {
+        "roles": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "$ref": "#/definitions/v1Role"
+          }
+        }
+      }
+    },
+    "v1ListTeamMembersResponse": {
+      "type": "object",
+      "properties": {
+        "members": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "$ref": "#/definitions/v1TeamMembership"
+          }
+        }
+      }
+    },
+    "v1ListTeamsResponse": {
+      "type": "object",
+      "properties": {
+        "teams": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "$ref": "#/definitions/v1Team"
+          }
+        }
+      }
+    },
+    "v1ListUserIdentitiesResponse": {
+      "type": "object",
+      "properties": {
+        "identities": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "$ref": "#/definitions/v1UserIdentity"
+          }
+        }
+      }
+    },
+    "v1ListUsersResponse": {
+      "type": "object",
+      "properties": {
+        "users": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "$ref": "#/definitions/v1User"
+          }
+        },
+        "nextPageToken": {
+          "type": "string"
+        }
+      }
+    },
+    "v1ListWebhookDeliveriesResponse": {
+      "type": "object",
+      "properties": {
+        "deliveries": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "$ref": "#/definitions/v1WebhookDelivery"
+          }
+        },
+        "nextPageToken": {
+          "type": "string"
+        }
+      }
+    },
+    "v1ListWebhookSubscriptionsResponse": {
+      "type": "object",
+      "properties": {
+        "subscriptions": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "$ref": "#/definitions/v1WebhookSubscription"
+          }
+        },
+        "nextPageToken": {
+          "type": "string"
+        }
+      }
+    },
+    "v1LogoutRequest": {
+      "type": "object",
+      "properties": {
+        "refreshToken": {
+          "type": "string"
+        }
+      }
+    },
+    "v1MFADevice": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "userId": {
+          "type": "string"
+        },
+        "deviceType": {
+          "$ref": "#/definitions/v1MFADeviceType"
+        },
+        "name": {
+          "type": "string"
+        },
+        "verifiedAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "lastUsedAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time"
+        }
+      }
+    },
+    "v1MFADeviceType": {
+      "type": "string",
+      "enum": [
+        "MFA_DEVICE_TYPE_UNSPECIFIED",
+        "MFA_DEVICE_TYPE_TOTP",
+        "MFA_DEVICE_TYPE_WEBAUTHN"
+      ],
+      "default": "MFA_DEVICE_TYPE_UNSPECIFIED"
+    },
+    "v1MarkAllNotificationsReadRequest": {
+      "type": "object"
+    },
+    "v1Notification": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "userId": {
+          "type": "string"
+        },
+        "orgId": {
+          "type": "string"
+        },
+        "title": {
+          "type": "string"
+        },
+        "body": {
+          "type": "string"
+        },
+        "type": {
+          "type": "string"
+        },
+        "actionUrl": {
+          "type": "string"
+        },
+        "readAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time"
+        }
+      }
+    },
+    "v1OAuthCodeAuthentication": {
+      "type": "object",
+      "properties": {
+        "code": {
+          "type": "string"
+        },
+        "redirectUri": {
+          "type": "string"
+        },
+        "state": {
+          "type": "string"
+        },
+        "codeVerifier": {
+          "type": "string"
+        }
+      }
+    },
+    "v1OnboardingProgress": {
+      "type": "object",
+      "properties": {
+        "steps": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "$ref": "#/definitions/v1OnboardingStep"
+          }
+        },
+        "completed": {
+          "type": "boolean"
+        }
+      }
+    },
+    "v1OnboardingStep": {
+      "type": "object",
+      "properties": {
+        "stepName": {
+          "type": "string"
+        },
+        "status": {
+          "$ref": "#/definitions/v1OnboardingStepStatus"
+        },
+        "completedAt": {
+          "type": "string",
+          "format": "date-time"
+        }
+      }
+    },
+    "v1OnboardingStepStatus": {
+      "type": "string",
+      "enum": [
+        "ONBOARDING_STEP_STATUS_UNSPECIFIED",
+        "ONBOARDING_STEP_STATUS_PENDING",
+        "ONBOARDING_STEP_STATUS_COMPLETED",
+        "ONBOARDING_STEP_STATUS_SKIPPED"
+      ],
+      "default": "ONBOARDING_STEP_STATUS_UNSPECIFIED"
+    },
+    "v1OpenBillingPortalRequest": {
+      "type": "object",
+      "properties": {
+        "orgId": {
+          "type": "string"
+        },
+        "returnUrl": {
+          "type": "string",
+          "description": "Deprecated: redirect policy is server-owned and this value is ignored.\nRetain the field until the next major API version so v0.0.2 clients remain\nsource-compatible as well as wire-compatible."
+        }
+      }
+    },
+    "v1OpenBillingPortalResponse": {
+      "type": "object",
+      "properties": {
+        "url": {
+          "type": "string",
+          "description": "Stripe-hosted billing portal URL — one-shot."
+        }
+      }
+    },
+    "v1OrgMembership": {
+      "type": "object",
+      "properties": {
+        "orgId": {
+          "type": "string"
+        },
+        "userId": {
+          "type": "string"
+        },
+        "role": {
+          "$ref": "#/definitions/v1OrgRole"
+        },
+        "joinedAt": {
+          "type": "string",
+          "format": "date-time"
+        }
+      }
+    },
+    "v1OrgRole": {
+      "type": "string",
+      "enum": [
+        "ORG_ROLE_UNSPECIFIED",
+        "ORG_ROLE_MEMBER",
+        "ORG_ROLE_ADMIN",
+        "ORG_ROLE_OWNER"
+      ],
+      "default": "ORG_ROLE_UNSPECIFIED"
+    },
+    "v1OrgSSOConfig": {
+      "type": "object",
+      "properties": {
+        "orgId": {
+          "type": "string"
+        },
+        "provider": {
+          "type": "string",
+          "title": "e.g. \"workos\""
+        },
+        "connectionId": {
+          "type": "string",
+          "title": "WorkOS Connection id, when linked"
+        },
+        "organizationId": {
+          "type": "string",
+          "title": "WorkOS Organization id (the customer's tenant on WorkOS)"
+        },
+        "status": {
+          "type": "string",
+          "title": "\"linked\" | \"active\" | \"disabled\" | \"\""
+        },
+        "configuredAt": {
+          "type": "string",
+          "format": "date-time"
+        }
+      },
+      "title": "OrgSSOConfig is the per-org SSO state. Empty connection_id means\nSSO is not configured. status mirrors WorkOS Connections lifecycle:\n  \"\"             — not configured\n  \"linked\"       — admin portal link issued, IdP setup pending\n  \"active\"       — connection live; email-domain users SSO-routed\n  \"disabled\"     — connection exists but admin paused it"
+    },
+    "v1OrgSettings": {
+      "type": "object",
+      "properties": {
+        "orgId": {
+          "type": "string"
+        },
+        "logoUrl": {
+          "type": "string"
+        },
+        "primaryColor": {
+          "type": "string"
+        },
+        "customDomain": {
+          "type": "string"
+        },
+        "faviconUrl": {
+          "type": "string"
+        }
+      }
+    },
+    "v1Organization": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        },
+        "slug": {
+          "type": "string"
+        },
+        "ownerId": {
+          "type": "string"
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time"
+        }
+      }
+    },
+    "v1OrganizationServiceAddMemberBody": {
+      "type": "object",
+      "properties": {
+        "userId": {
+          "type": "string"
+        },
+        "role": {
+          "$ref": "#/definitions/v1OrgRole"
+        }
+      }
+    },
+    "v1OverrideEntitlementResponse": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string"
+        }
+      }
+    },
+    "v1Permission": {
+      "type": "object",
+      "properties": {
+        "resource": {
+          "type": "string"
+        },
+        "action": {
+          "type": "string"
+        }
+      }
+    },
+    "v1PermissionInfo": {
+      "type": "object",
+      "properties": {
+        "resource": {
+          "type": "string"
+        },
+        "action": {
+          "type": "string"
+        },
+        "description": {
+          "type": "string"
+        },
+        "builtInRoles": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      },
+      "description": "PermissionInfo — RBAC vocabulary this service enforces."
+    },
+    "v1PlatformAdminEntry": {
+      "type": "object",
+      "properties": {
+        "userId": {
+          "type": "string"
+        },
+        "platformRole": {
+          "type": "string"
+        },
+        "grantedBy": {
+          "type": "string"
+        },
+        "grantedAt": {
+          "type": "string",
+          "format": "date-time"
+        }
+      }
+    },
+    "v1Principal": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "kind": {
+          "$ref": "#/definitions/v1PrincipalKind"
+        },
+        "displayName": {
+          "type": "string"
+        },
+        "orgId": {
+          "type": "string",
+          "description": "org_id NULL/empty for kind=HUMAN (cross-org); required for\nSERVICE and AGENT. Server-side validation enforces."
+        },
+        "agentIdentifier": {
+          "type": "string",
+          "description": "agent_identifier is \"publisher/name:version\" for kind=AGENT;\nempty otherwise. Required when kind=AGENT."
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "revokedAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "revokedReason": {
+          "type": "string"
+        },
+        "createdBy": {
+          "type": "string",
+          "description": "The principal that created this one — the authorship root a policy\nconsumer chains authority back to. Empty = a root principal (humans)."
+        }
+      },
+      "description": "Principal mirrors the principals table 1:1 — the unified identity\nrow used by every action, audit event, and delegation grant.\n\nid matches users.uuid for kind=HUMAN, api_keys.id for kind=SERVICE,\nand is a fresh server-generated UUID for kind=AGENT. We do NOT\nenforce these as foreign keys at the DB level (independent\nlifecycles); the equality is convention and the backfill migration."
+    },
+    "v1PrincipalKind": {
+      "type": "string",
+      "enum": [
+        "PRINCIPAL_KIND_UNSPECIFIED",
+        "PRINCIPAL_KIND_HUMAN",
+        "PRINCIPAL_KIND_SERVICE",
+        "PRINCIPAL_KIND_AGENT"
+      ],
+      "default": "PRINCIPAL_KIND_UNSPECIFIED",
+      "description": "PrincipalKind classifies a principal — humans, services, or agents\n— for filtering/UI without affecting authorization. The auth layer\nitself treats every Principal uniformly. ANY change here MUST stay\nin sync with the SQL CHECK constraint on principals.kind and with\ncodefly's policy.Principal Kind constants."
+    },
+    "v1QueryAuditLogResponse": {
+      "type": "object",
+      "properties": {
+        "events": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "$ref": "#/definitions/v1AuditEvent"
+          }
+        },
+        "nextPageToken": {
+          "type": "string"
+        },
+        "totalCount": {
+          "type": "integer",
+          "format": "int32"
+        }
+      }
+    },
+    "v1RLSPolicyInfo": {
+      "type": "object",
+      "properties": {
+        "table": {
+          "type": "string"
+        },
+        "policyShape": {
+          "type": "string",
+          "title": "\"direct\"|\"join\"|\"polymorphic\"|\"self_referential\""
+        },
+        "failClosed": {
+          "type": "boolean"
+        },
+        "scopeColumn": {
+          "type": "string",
+          "title": "typically \"org_id\""
+        },
+        "notes": {
+          "type": "string"
+        }
+      },
+      "description": "RLSPolicyInfo — RLS-protected table this service depends on (the\ntable itself lives in the store service's schema, but this api\nservice is the enforcer)."
+    },
+    "v1RPCInfo": {
+      "type": "object",
+      "properties": {
+        "service": {
+          "type": "string",
+          "title": "proto-service name, e.g. \"PermissionService\""
+        },
+        "method": {
+          "type": "string",
+          "title": "e.g. \"AssignRole\""
+        },
+        "httpMethod": {
+          "type": "string",
+          "title": "\"POST\" | \"GET\" | \"DELETE\" | \"PUT\""
+        },
+        "httpPath": {
+          "type": "string",
+          "title": "e.g. \"/v1/role-assignments\""
+        },
+        "description": {
+          "type": "string"
+        },
+        "scopes": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "title": "required scopes when called via API key"
+        },
+        "handlerAuthz": {
+          "type": "string",
+          "title": "\"public\"|\"auth\"|\"org_member\"|\"org_admin\"|\"platform_admin\"|\"mfa\""
+        },
+        "emitsAudit": {
+          "type": "boolean",
+          "title": "writes to audit_events?"
+        }
+      },
+      "description": "RPCInfo — one entry per gRPC RPC this service exposes."
+    },
+    "v1RefreshTokenRequest": {
+      "type": "object",
+      "properties": {
+        "refreshToken": {
+          "type": "string"
+        }
+      }
+    },
+    "v1RefreshTokenResponse": {
+      "type": "object",
+      "properties": {
+        "accessToken": {
+          "type": "string"
+        },
+        "refreshToken": {
+          "type": "string"
+        },
+        "expiresIn": {
+          "type": "string",
+          "format": "int64"
+        }
+      }
+    },
+    "v1RegisterUserRequest": {
+      "type": "object",
+      "properties": {
+        "primaryEmail": {
+          "type": "string"
+        },
+        "profile": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "string"
+          }
+        },
+        "identity": {
+          "$ref": "#/definitions/v1UserIdentity"
+        }
+      }
+    },
+    "v1RegisterUserResponse": {
+      "type": "object",
+      "properties": {
+        "user": {
+          "$ref": "#/definitions/v1User"
+        },
+        "identity": {
+          "$ref": "#/definitions/v1UserIdentity"
+        }
+      }
+    },
+    "v1ReplayJobResponse": {
+      "type": "object",
+      "properties": {
+        "jobId": {
+          "type": "string"
+        },
+        "disposition": {
+          "$ref": "#/definitions/v1JobEnqueueDisposition"
+        }
+      }
+    },
+    "v1RequestDataExportRequest": {
+      "type": "object"
+    },
+    "v1RequestDelegationRequest": {
+      "type": "object",
+      "properties": {
+        "orgId": {
+          "type": "string"
+        },
+        "actorPrincipalId": {
+          "type": "string"
+        },
+        "action": {
+          "type": "string"
+        },
+        "resource": {
+          "type": "string"
+        },
+        "resourceId": {
+          "type": "string"
+        },
+        "justification": {
+          "type": "string",
+          "description": "Justification — REQUIRED. Without it the grantor has no\nbasis to decide; saas-starter rejects empty/whitespace."
+        },
+        "context": {
+          "type": "object"
+        },
+        "riskLevel": {
+          "type": "string",
+          "description": "risk_level: low|medium|high|critical. Empty defaults to low."
+        },
+        "timeoutSeconds": {
+          "type": "integer",
+          "format": "int32",
+          "description": "timeout_seconds: how long to wait before auto-expiry.\nDefaults to 300 (5 min) if zero."
+        },
+        "grantor": {
+          "type": "string",
+          "description": "Grantor: optional explicit target (\"user:\u003cid\u003e\" / \"team:\u003cname\u003e\");\nempty → default approver chain."
+        },
+        "requestHash": {
+          "type": "string",
+          "description": "Idempotency key. Server derives from request content if empty."
+        }
+      }
+    },
+    "v1RequestDelegationResponse": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "status": {
+          "type": "string",
+          "title": "typically \"pending\"; may be \"approved\" if a pattern matches (M8)"
+        },
+        "expiresAt": {
+          "type": "string",
+          "format": "date-time"
+        }
+      }
+    },
+    "v1RequestDeletionRequest": {
+      "type": "object"
+    },
+    "v1Role": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        },
+        "description": {
+          "type": "string"
+        },
+        "permissions": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "$ref": "#/definitions/v1Permission"
+          }
+        },
+        "builtIn": {
+          "type": "boolean"
+        },
+        "orgId": {
+          "type": "string",
+          "title": "empty = global"
+        }
+      }
+    },
+    "v1RoleAssignment": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "subjectId": {
+          "type": "string"
+        },
+        "subjectKind": {
+          "$ref": "#/definitions/v1SubjectKind"
+        },
+        "roleId": {
+          "type": "string"
+        },
+        "orgId": {
+          "type": "string"
+        },
+        "scope": {
+          "type": "string",
+          "title": "optional fine-grained scope"
+        },
+        "assignedAt": {
+          "type": "string",
+          "format": "date-time"
+        }
+      }
+    },
+    "v1RotateWebhookSecretResponse": {
+      "type": "object",
+      "properties": {
+        "secret": {
+          "type": "string",
+          "description": "The new signing secret, returned ONCE on rotation. Show + copy\nin the FE; not retrievable again."
+        },
+        "oldSecretExpiresAt": {
+          "type": "string",
+          "format": "date-time"
+        }
+      }
+    },
+    "v1SaveAuditExportConfigRequest": {
+      "type": "object",
+      "properties": {
+        "config": {
+          "$ref": "#/definitions/v1AuditExportConfig"
+        }
+      }
+    },
+    "v1ScopeInfo": {
+      "type": "object",
+      "properties": {
+        "scope": {
+          "type": "string",
+          "title": "e.g. \"api_keys:write\""
+        },
+        "description": {
+          "type": "string"
+        }
+      },
+      "description": "ScopeInfo — API-key scope this service accepts."
+    },
+    "v1SearchUsersResponse": {
+      "type": "object",
+      "properties": {
+        "users": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "$ref": "#/definitions/v1User"
+          }
+        },
+        "nextPageToken": {
+          "type": "string"
+        },
+        "totalCount": {
+          "type": "integer",
+          "format": "int32"
+        }
+      }
+    },
+    "v1ServiceCapabilities": {
+      "type": "object",
+      "properties": {
+        "info": {
+          "$ref": "#/definitions/v1ServiceInfo"
+        },
+        "rpcs": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "$ref": "#/definitions/v1RPCInfo"
+          }
+        },
+        "permissions": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "$ref": "#/definitions/v1PermissionInfo"
+          }
+        },
+        "rlsTables": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "$ref": "#/definitions/v1RLSPolicyInfo"
+          }
+        },
+        "scopes": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "$ref": "#/definitions/v1ScopeInfo"
+          }
+        }
+      },
+      "description": "ServiceCapabilities — the full self-description of one service."
+    },
+    "v1ServiceInfo": {
+      "type": "object",
+      "properties": {
+        "name": {
+          "type": "string",
+          "title": "service name, e.g. \"api\""
+        },
+        "module": {
+          "type": "string",
+          "title": "owning module, e.g. \"saas-starter\""
+        },
+        "version": {
+          "type": "string",
+          "title": "semver of the service's API surface"
+        },
+        "description": {
+          "type": "string"
+        },
+        "repoUrl": {
+          "type": "string"
+        }
+      },
+      "description": "ServiceInfo — top-level identity of the service this catalog\ndescribes. The `module` field locates this service within its\ncodefly module so an aggregator can group across services."
+    },
+    "v1SessionInfo": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "Stable refresh-family identifier for one device login. Unlike the JWT sid,\nit does not change when the refresh token rotates."
+        },
+        "userId": {
+          "type": "string"
+        },
+        "ipAddress": {
+          "type": "string"
+        },
+        "deviceInfo": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "string"
+          }
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "lastActiveAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "expiresAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "idleExpiresAt": {
+          "type": "string",
+          "format": "date-time"
+        }
+      }
+    },
+    "v1SetupTOTPRequest": {
+      "type": "object"
+    },
+    "v1SetupTOTPResponse": {
+      "type": "object",
+      "properties": {
+        "secret": {
+          "type": "string"
+        },
+        "provisioningUri": {
+          "type": "string"
+        },
+        "backupCodes": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "v1StartSSOSetupRequest": {
+      "type": "object",
+      "properties": {
+        "orgId": {
+          "type": "string"
+        },
+        "returnUrl": {
+          "type": "string",
+          "description": "return_url is where WorkOS redirects the admin after they\nfinish IdP setup. Typically the saas-starter /admin/sso page."
+        }
+      },
+      "description": "StartSSOSetupRequest kicks off the admin portal flow. The backend\n(a) ensures a WorkOS Organization exists for the saas-starter org,\n(b) mints a portal link, (c) returns it for browser redirect."
+    },
+    "v1StartSSOSetupResponse": {
+      "type": "object",
+      "properties": {
+        "portalLink": {
+          "type": "string",
+          "description": "portal_link is the one-shot URL the FE redirects the browser\nto. Expires per WorkOS policy (15 min default). Re-callable to\nmint a fresh one if the operator needs to re-enter the portal."
+        }
+      }
+    },
+    "v1SubjectKind": {
+      "type": "string",
+      "enum": [
+        "SUBJECT_KIND_UNSPECIFIED",
+        "SUBJECT_KIND_USER",
+        "SUBJECT_KIND_TEAM"
+      ],
+      "default": "SUBJECT_KIND_UNSPECIFIED"
+    },
+    "v1SwitchOrganizationRequest": {
+      "type": "object",
+      "properties": {
+        "organizationId": {
+          "type": "string",
+          "description": "Target tenant for this existing device session. The server resolves the\ncaller's current membership and role; no role is accepted from the client."
+        }
+      }
+    },
+    "v1SwitchOrganizationResponse": {
+      "type": "object",
+      "properties": {
+        "accessToken": {
+          "type": "string",
+          "description": "Fresh access token for organization_id. The refresh token and device\nfamily do not rotate, so switching cannot race with normal refresh-token\nreuse detection or create an extra active device."
+        },
+        "expiresIn": {
+          "type": "string",
+          "format": "int64"
+        }
+      }
+    },
+    "v1Team": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "orgId": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        },
+        "description": {
+          "type": "string"
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "parentTeamId": {
+          "type": "string",
+          "description": "Empty for a root team."
+        },
+        "slug": {
+          "type": "string",
+          "description": "The team's own path segment: lowercase slug, derived from name if not given."
+        },
+        "path": {
+          "type": "string",
+          "description": "Full slug-path from the root, e.g. \"engineering/platform\". Server-derived."
+        }
+      },
+      "description": "Teams form a strict tree within an org: parent_team_id is the authoritative\nedge; path is the materialized slug-path (\"engineering/platform\"), unique per\norg, maintained on write. Membership is literal (you belong to the teams you\njoined); consumers that want subtree semantics expand the path (a member of\n\"engineering/platform\" is, by expansion, under \"engineering\")."
+    },
+    "v1TeamMembership": {
+      "type": "object",
+      "properties": {
+        "teamId": {
+          "type": "string"
+        },
+        "userId": {
+          "type": "string"
+        },
+        "role": {
+          "$ref": "#/definitions/v1TeamRole"
+        },
+        "joinedAt": {
+          "type": "string",
+          "format": "date-time"
+        }
+      }
+    },
+    "v1TeamRole": {
+      "type": "string",
+      "enum": [
+        "TEAM_ROLE_UNSPECIFIED",
+        "TEAM_ROLE_MEMBER",
+        "TEAM_ROLE_ADMIN",
+        "TEAM_ROLE_OWNER"
+      ],
+      "default": "TEAM_ROLE_UNSPECIFIED"
+    },
+    "v1TeamServiceAddMemberBody": {
+      "type": "object",
+      "properties": {
+        "userId": {
+          "type": "string"
+        },
+        "role": {
+          "$ref": "#/definitions/v1TeamRole"
+        }
+      }
+    },
+    "v1ThemePreference": {
+      "type": "string",
+      "enum": [
+        "THEME_PREFERENCE_UNSPECIFIED",
+        "THEME_PREFERENCE_SYSTEM",
+        "THEME_PREFERENCE_LIGHT",
+        "THEME_PREFERENCE_DARK"
+      ],
+      "default": "THEME_PREFERENCE_UNSPECIFIED"
+    },
+    "v1UpdateTeamResponse": {
+      "type": "object",
+      "properties": {
+        "team": {
+          "$ref": "#/definitions/v1Team"
+        }
+      }
+    },
+    "v1UpdateUserSettingsRequest": {
+      "type": "object",
+      "properties": {
+        "patch": {
+          "$ref": "#/definitions/v1UserSettings",
+          "description": "Partial — only the keys to change. Nested objects are replaced\nwholesale (the FE always sends the full nested object)."
+        }
+      }
+    },
+    "v1UpsertFeatureFlagResponse": {
+      "type": "object",
+      "properties": {
+        "name": {
+          "type": "string"
+        }
+      }
+    },
+    "v1User": {
+      "type": "object",
+      "properties": {
+        "uuid": {
+          "type": "string"
+        },
+        "primaryEmail": {
+          "type": "string"
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "lastLogin": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "status": {
+          "$ref": "#/definitions/v1UserStatus"
+        },
+        "profile": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "string"
+          }
+        },
+        "emailVerified": {
+          "type": "boolean"
+        }
+      },
+      "title": "User represents a user in the system"
+    },
+    "v1UserEmailSettings": {
+      "type": "object",
+      "properties": {
+        "product": {
+          "type": "boolean"
+        },
+        "marketing": {
+          "type": "boolean"
+        },
+        "security": {
+          "type": "boolean"
+        },
+        "weeklyDigest": {
+          "type": "boolean"
+        }
+      },
+      "description": "UserEmailSettings — top-level transactional email opt-ins.\n`security` is forced-on server-side but exposed here so the\nunsubscribe page can reflect that to the user."
+    },
+    "v1UserIdentity": {
+      "type": "object",
+      "properties": {
+        "uuid": {
+          "type": "string"
+        },
+        "userUuid": {
+          "type": "string"
+        },
+        "provider": {
+          "type": "string"
+        },
+        "providerId": {
+          "type": "string"
+        },
+        "providerEmail": {
+          "type": "string"
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "lastUsed": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "providerData": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "string"
+          }
+        },
+        "emailVerified": {
+          "type": "boolean"
+        }
+      },
+      "title": "UserIdentity represents a user's authentication method"
+    },
+    "v1UserNotificationSettings": {
+      "type": "object",
+      "properties": {
+        "inApp": {
+          "type": "boolean"
+        },
+        "push": {
+          "type": "boolean"
+        },
+        "sound": {
+          "type": "boolean"
+        }
+      }
+    },
+    "v1UserSettings": {
+      "type": "object",
+      "properties": {
+        "theme": {
+          "$ref": "#/definitions/v1ThemePreference"
+        },
+        "locale": {
+          "type": "string",
+          "description": "IETF tag: \"en\", \"fr\", \"es-419\", etc."
+        },
+        "timezone": {
+          "type": "string",
+          "description": "IANA tz: \"America/New_York\", \"UTC\"."
+        },
+        "dateFormat": {
+          "type": "string",
+          "title": "\"iso\" | \"us\" | \"eu\""
+        },
+        "timeFormat": {
+          "type": "string",
+          "title": "\"12h\" | \"24h\""
+        },
+        "email": {
+          "$ref": "#/definitions/v1UserEmailSettings"
+        },
+        "notifications": {
+          "$ref": "#/definitions/v1UserNotificationSettings"
+        }
+      },
+      "description": "UserSettings — per-user preferences. All fields optional. The\nFE submits ONLY changed keys; the api jsonb-merges onto the row.\nAdding a field is a no-op (FE bumps + new key flows through)."
+    },
+    "v1UserStatus": {
+      "type": "string",
+      "enum": [
+        "USER_STATUS_UNSPECIFIED",
+        "USER_STATUS_ACTIVE",
+        "USER_STATUS_INACTIVE",
+        "USER_STATUS_SUSPENDED",
+        "USER_STATUS_DELETED"
+      ],
+      "default": "USER_STATUS_UNSPECIFIED"
+    },
+    "v1VerifyTOTPRequest": {
+      "type": "object",
+      "properties": {
+        "code": {
+          "type": "string"
+        }
+      }
+    },
+    "v1VerifyTOTPResponse": {
+      "type": "object",
+      "properties": {
+        "valid": {
+          "type": "boolean"
+        },
+        "device": {
+          "$ref": "#/definitions/v1MFADevice"
+        }
+      }
+    },
+    "v1VersionResponse": {
+      "type": "object",
+      "properties": {
+        "version": {
+          "type": "string"
+        }
+      }
+    },
+    "v1WebhookDelivery": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "subscriptionId": {
+          "type": "string"
+        },
+        "eventType": {
+          "type": "string"
+        },
+        "payload": {
+          "type": "string"
+        },
+        "status": {
+          "$ref": "#/definitions/v1WebhookDeliveryStatus"
+        },
+        "attempts": {
+          "type": "integer",
+          "format": "int32"
+        },
+        "httpStatus": {
+          "type": "integer",
+          "format": "int32"
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "deliveredAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "responseBody": {
+          "type": "string",
+          "description": "response_body — captured upstream response (truncated server-side\nto 4KiB). Empty when the request never connected."
+        },
+        "eventId": {
+          "type": "string",
+          "description": "Stable across endpoint fan-out and manual replay; use with the signed\ntimestamp to reject replayed events idempotently."
+        },
+        "lastAttemptAt": {
+          "type": "string",
+          "format": "date-time"
+        }
+      }
+    },
+    "v1WebhookDeliveryStatus": {
+      "type": "string",
+      "enum": [
+        "WEBHOOK_DELIVERY_STATUS_UNSPECIFIED",
+        "WEBHOOK_DELIVERY_STATUS_PENDING",
+        "WEBHOOK_DELIVERY_STATUS_SUCCESS",
+        "WEBHOOK_DELIVERY_STATUS_FAILED"
+      ],
+      "default": "WEBHOOK_DELIVERY_STATUS_UNSPECIFIED"
+    },
+    "v1WebhookSubscription": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "orgId": {
+          "type": "string"
+        },
+        "url": {
+          "type": "string"
+        },
+        "events": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "active": {
+          "type": "boolean"
+        },
+        "description": {
+          "type": "string"
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "secret": {
+          "type": "string",
+          "description": "Generated by the server and returned only by CreateSubscription. List and\nall later reads leave this empty; store it in the consumer immediately."
+        }
+      }
+    }
+  }
+}
