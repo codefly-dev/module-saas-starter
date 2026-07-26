@@ -28,6 +28,8 @@ export function themePreferenceToProto(
 			return ThemePreference.LIGHT;
 		case "dark":
 			return ThemePreference.DARK;
+		default:
+			return ThemePreference.SYSTEM;
 	}
 }
 

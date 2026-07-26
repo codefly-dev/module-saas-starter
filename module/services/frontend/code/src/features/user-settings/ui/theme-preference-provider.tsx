@@ -69,7 +69,7 @@ export function ThemePreferenceProvider({ children }: { children: ReactNode }) {
 				});
 				queryClient.setQueryData(["user-settings"], updated);
 			} catch (error) {
-				setTheme(previous);
+				setTheme(previous ?? "system");
 				throw error;
 			}
 		},
