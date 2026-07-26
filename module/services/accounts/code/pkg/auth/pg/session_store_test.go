@@ -19,6 +19,7 @@ import (
 	"github.com/codefly-dev/core/sdk"
 	"github.com/codefly-dev/core/wool"
 
+	"accounts/internal/testdb"
 	"accounts/pkg/auth"
 	pgauth "accounts/pkg/auth/pg"
 	"accounts/pkg/business"
@@ -80,6 +81,16 @@ func runSessionStoreTests(m *testing.M) int {
 	defer store.Close()
 	testStore = store
 	testPool = store.Pool()
+	releasePackageLock, err := testdb.AcquirePackageLock(ctx, testPool)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "integration test lock: %v\n", err)
+		return 1
+	}
+	defer func() {
+		if err := releasePackageLock(); err != nil {
+			fmt.Fprintf(os.Stderr, "release integration test lock: %v\n", err)
+		}
+	}()
 
 	return m.Run()
 }

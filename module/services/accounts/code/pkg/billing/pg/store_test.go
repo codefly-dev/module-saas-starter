@@ -16,6 +16,7 @@ import (
 	"github.com/codefly-dev/core/sdk"
 	"github.com/codefly-dev/core/wool"
 
+	"accounts/internal/testdb"
 	"accounts/pkg/billing"
 	pgbilling "accounts/pkg/billing/pg"
 	"accounts/pkg/business"
@@ -63,6 +64,16 @@ func runBillingStoreTests(m *testing.M) int {
 	}
 	defer pool.Close()
 	testPool = pool
+	releasePackageLock, err := testdb.AcquirePackageLock(ctx, pool)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "integration test lock: %v\n", err)
+		return 1
+	}
+	defer func() {
+		if err := releasePackageLock(); err != nil {
+			fmt.Fprintf(os.Stderr, "release integration test lock: %v\n", err)
+		}
+	}()
 
 	return m.Run()
 }

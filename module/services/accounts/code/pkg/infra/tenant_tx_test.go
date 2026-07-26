@@ -59,15 +59,21 @@ func TestControlPlaneCounters_TracksCallSites(t *testing.T) {
 	require.Equal(t, beforeSum+3, afterSum,
 		"ControlPlaneCounters should grow by exactly 3 across the 3 invocations")
 
-	// At least 2 distinct call-site keys should appear (the two
-	// lines we invoked from). Keys look like "<file>:<line>".
-	newSites := 0
-	for site := range after {
-		if _, existed := before[site]; !existed {
-			newSites++
-			require.Contains(t, site, "tenant_tx_test.go", "site should reference this test file")
+	// Exactly two call-site keys should change (the two lines above). Compare
+	// deltas rather than requiring new map entries so `go test -count=N`
+	// remains a valid repeatability check in the same test process.
+	changedSites := 0
+	deltas := map[int64]int{}
+	for site, count := range after {
+		delta := count - before[site]
+		if delta == 0 {
+			continue
 		}
+		changedSites++
+		deltas[delta]++
+		require.Contains(t, site, "tenant_tx_test.go", "site should reference this test file")
 	}
-	require.GreaterOrEqual(t, newSites, 2,
-		"expected at least 2 distinct call sites recorded (got %d)", newSites)
+	require.Equal(t, 2, changedSites, "expected exactly 2 changed call sites")
+	require.Equal(t, 1, deltas[int64(2)], "one call site should be invoked twice")
+	require.Equal(t, 1, deltas[int64(1)], "one call site should be invoked once")
 }

@@ -18,6 +18,8 @@ import (
 	"github.com/codefly-dev/core/sdk"
 	"github.com/codefly-dev/core/wool"
 	"github.com/stretchr/testify/require"
+
+	"accounts/internal/testdb"
 )
 
 // requestFixtureValidator is test-only wiring for business tests that exercise
@@ -105,6 +107,16 @@ func runBusinessTests(m *testing.M) int {
 		return 1
 	}
 	defer store.Close()
+	releasePackageLock, err := testdb.AcquirePackageLock(ctx, store.Pool())
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "integration test lock: %v\n", err)
+		return 1
+	}
+	defer func() {
+		if err := releasePackageLock(); err != nil {
+			fmt.Fprintf(os.Stderr, "release integration test lock: %v\n", err)
+		}
+	}()
 
 	service, err := business.NewService(store)
 	if err != nil {

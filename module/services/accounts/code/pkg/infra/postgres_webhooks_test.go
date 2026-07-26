@@ -29,6 +29,8 @@ import (
 	"accounts/pkg/jobs"
 
 	"google.golang.org/protobuf/proto"
+
+	"accounts/internal/testdb"
 )
 
 type webhookProjectionCipher struct{}
@@ -92,6 +94,16 @@ func runPostgresInfraTests(m *testing.M) int {
 	testStore = store
 	testPool = store.Pool()
 	testCtx = ctx
+	releasePackageLock, err := testdb.AcquirePackageLock(ctx, testPool)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "integration test lock: %v\n", err)
+		return 1
+	}
+	defer func() {
+		if err := releasePackageLock(); err != nil {
+			fmt.Fprintf(os.Stderr, "release integration test lock: %v\n", err)
+		}
+	}()
 
 	return m.Run()
 }
