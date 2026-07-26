@@ -4,6 +4,7 @@ import (
 	"testing"
 
 	"accounts/pkg/settings"
+
 	"github.com/stretchr/testify/require"
 	"google.golang.org/protobuf/types/descriptorpb"
 )

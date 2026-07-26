@@ -24,10 +24,10 @@ type deploymentBindings struct {
 }
 
 type deploymentModuleBinding struct {
-	Name        string `yaml:"name"`
-	Namespace   string `yaml:"namespace"`
+	Name         string `yaml:"name"`
+	Namespace    string `yaml:"namespace"`
 	ServiceEntry string `yaml:"service_entry"`
-	Description string `yaml:"description"`
+	Description  string `yaml:"description"`
 }
 
 type deploymentInterfaceBinding struct {

@@ -6,6 +6,7 @@ import (
 	"fmt"
 
 	saassettings "accounts/pkg/settings"
+
 	"google.golang.org/protobuf/proto"
 
 	gen "accounts/pkg/gen/saas/accounts/v1"
