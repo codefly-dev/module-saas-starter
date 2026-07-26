@@ -60,7 +60,10 @@ jobs:
           # and may carry upstream findings that this repository cannot patch.
           # The next step separately fails closed on every first-party service
           # and production frontend dependency.
-          args=(ci run --head "${GITHUB_SHA}" --output .codefly/ci --fail-on-vuln=false)
+          # Several published vendor-image agents predate Core's shared Trivy
+          # cache lock. Serialize the workspace gate so those independent
+          # agent processes cannot corrupt or time out on the same cache.
+          args=(ci run --head "${GITHUB_SHA}" --output .codefly/ci --fail-on-vuln=false --jobs 1)
           if [[ -n "${CODEFLY_BASE}" && "${CODEFLY_BASE}" != "0000000000000000000000000000000000000000" ]]; then
             args+=(--base "${CODEFLY_BASE}")
           else
