@@ -17,7 +17,7 @@ services:
     agent:
       kind: codefly:service
       name: go-grpc
-      version: 0.1.14
+      version: 0.1.17
       publisher: codefly.dev
     workspace_configuration_dependencies:
       - internal-auth
@@ -68,7 +68,7 @@ services:
     agent:
       kind: codefly:service
       name: go-grpc
-      version: 0.1.14
+      version: 0.1.17
       publisher: codefly.dev
     workspace_configuration_dependencies:
       - gateway
