@@ -124,6 +124,157 @@ func TestProductionGoUsesCodeflySDK(t *testing.T) {
 	}
 }
 
+// TestProductionRustAndTypeScriptUseCodeflySDK closes the same architecture
+// boundary for the other languages used by composed products. The scanner
+// examines string contents while removing comments: documentation may explain
+// a private carrier, but executable product code may only reach it through the
+// language SDK.
+func TestProductionRustAndTypeScriptUseCodeflySDK(t *testing.T) {
+	root := findProductionScanRoot(t)
+	extensions := map[string]bool{
+		".rs":  true,
+		".ts":  true,
+		".tsx": true,
+		".js":  true,
+		".jsx": true,
+		".mjs": true,
+		".cjs": true,
+	}
+
+	err := filepath.WalkDir(root, func(path string, entry os.DirEntry, walkErr error) error {
+		if walkErr != nil {
+			return walkErr
+		}
+		if entry.IsDir() {
+			switch entry.Name() {
+			case ".git", ".next", "node_modules", "target", "vendor":
+				return filepath.SkipDir
+			}
+			return nil
+		}
+		if !extensions[filepath.Ext(path)] || isTestSource(path) {
+			return nil
+		}
+		contents, readErr := os.ReadFile(path)
+		if readErr != nil {
+			return readErr
+		}
+		for index, line := range strings.Split(stripSourceComments(string(contents)), "\n") {
+			if !containsCodeflyCarrier(line) {
+				continue
+			}
+			relative, _ := filepath.Rel(root, path)
+			t.Errorf("%s:%d hard-codes a Codefly runtime carrier; add/use the language SDK instead", relative, index+1)
+		}
+		return nil
+	})
+	if err != nil {
+		t.Fatalf("scan production Rust/TypeScript code: %v", err)
+	}
+}
+
+func containsCodeflyCarrier(text string) bool {
+	return strings.Contains(text, "CODEFLY__") ||
+		strings.Contains(text, "CODEFLY_SCOPED_AUTH_SECRET")
+}
+
+func isTestSource(path string) bool {
+	slashPath := filepath.ToSlash(path)
+	for _, segment := range []string{"/test/", "/tests/", "/__tests__/"} {
+		if strings.Contains(slashPath, segment) {
+			return true
+		}
+	}
+	name := filepath.Base(path)
+	for _, marker := range []string{".test.", ".spec.", "playwright.config."} {
+		if strings.Contains(name, marker) {
+			return true
+		}
+	}
+	return false
+}
+
+// stripSourceComments is a deliberately small lexer, not a source parser. It
+// preserves quoted strings (the evidence this gate cares about) and newlines
+// (for useful locations), while removing line and block comments.
+func stripSourceComments(source string) string {
+	var result strings.Builder
+	result.Grow(len(source))
+	var quote byte
+	escaped := false
+	lineComment := false
+	blockComment := false
+
+	for index := 0; index < len(source); index++ {
+		current := source[index]
+		next := byte(0)
+		if index+1 < len(source) {
+			next = source[index+1]
+		}
+
+		if lineComment {
+			if current == '\n' {
+				lineComment = false
+				result.WriteByte(current)
+			}
+			continue
+		}
+		if blockComment {
+			if current == '*' && next == '/' {
+				blockComment = false
+				index++
+			} else if current == '\n' {
+				result.WriteByte(current)
+			}
+			continue
+		}
+		if quote != 0 {
+			result.WriteByte(current)
+			if escaped {
+				escaped = false
+			} else if current == '\\' {
+				escaped = true
+			} else if current == quote {
+				quote = 0
+			}
+			continue
+		}
+		if current == '/' && next == '/' {
+			lineComment = true
+			index++
+			continue
+		}
+		if current == '/' && next == '*' {
+			blockComment = true
+			index++
+			continue
+		}
+		if current == '"' || current == '\'' || current == '`' {
+			quote = current
+		}
+		result.WriteByte(current)
+	}
+	return result.String()
+}
+
+func TestSourceCommentStrippingPreservesOnlyExecutableCarrierText(t *testing.T) {
+	source := `// CODEFLY__COMMENT
+const actual = "CODEFLY__EXECUTABLE";
+/* CODEFLY__BLOCK */
+const url = "https://example.test/CODEFLY__INSIDE_STRING";
+`
+	stripped := stripSourceComments(source)
+	if strings.Contains(stripped, "CODEFLY__COMMENT") ||
+		strings.Contains(stripped, "CODEFLY__BLOCK") {
+		t.Fatalf("comment text survived: %q", stripped)
+	}
+	for _, wanted := range []string{"CODEFLY__EXECUTABLE", "CODEFLY__INSIDE_STRING"} {
+		if !strings.Contains(stripped, wanted) {
+			t.Fatalf("executable text %q was removed: %q", wanted, stripped)
+		}
+	}
+}
+
 var codeflyCarrierResourceSelectors = map[string]bool{
 	"EnvironmentPrefix":                  true,
 	"FixturePrefix":                      true,

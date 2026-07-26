@@ -1237,7 +1237,7 @@
     "services/store/old_migration/3_create_teams_table.up.sql": "8dfa5332db49a1385ad73150c6952f9d4aec728f289317946ac4da3970065a48",
     "tools/base-integrity.mjs": "1aa1746c3f303095b19791aacb4f2aa1c049597bb510c9925c22f9a130c5cdb9",
     "tools/base-integrity.test.mjs": "62eee89e2a19c9f26766a4c5149070c37ec00bacf116fb0db98fd5066da477f6",
-    "tools/codefly_sdk_boundary_test.go": "f49decb7361512d4786332acad0c218a57f013daf26c1f183f29310ef32df53e",
+    "tools/codefly_sdk_boundary_test.go": "6d66ca1ba95db634bcd72ab5846da61411c1361313a8fcd365fe0172517bc2c5",
     "tools/proto_generation_test.go": "4e2d9a1de58a2aa0c459fbbc69d5f741519abf25b09cc7e6b7c9b19424756521"
   }
 }
