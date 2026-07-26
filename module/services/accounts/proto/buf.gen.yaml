@@ -25,7 +25,10 @@ plugins:
     out: ../code/pkg/gen
     opt: paths=source_relative
   - local: protoc-gen-openapiv2
-    out: ../.cache/openapi
+    # Merged raw OpenAPI: a checked generated fixture (committed under
+    # generated/openapi-raw) that `go generate ./pkg/cataloggen` and the
+    # REST-surface determinism test consume; must exist in a clean checkout.
+    out: ../generated/openapi-raw
     strategy: all
     opt:
       - allow_merge=true
