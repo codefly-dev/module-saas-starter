@@ -23,13 +23,12 @@ import (
 	"github.com/codefly-dev/core/sdk"
 	"github.com/stretchr/testify/require"
 
-	apigen "accounts/pkg/gen/saas/accounts/v1"
+	apigen "auth-sidecar/external/saas-starter/accounts"
 )
 
 // Global test fixtures — initialized once in TestMain.
 var (
 	testSidecar    *Sidecar
-	testUserClient apigen.UserServiceClient
 	testAuthClient apigen.AuthServiceClient
 	testCtx        context.Context
 )
@@ -93,7 +92,6 @@ func runSidecarIntegrationTests(m *testing.M) int {
 	}
 	defer internalConn.Close()
 	testSidecar = NewSidecar(internalConn, publicKey)
-	testUserClient = apigen.NewUserServiceClient(apiConn)
 	testAuthClient = apigen.NewAuthServiceClient(apiConn)
 	testCtx = ctx
 

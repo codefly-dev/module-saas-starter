@@ -26,7 +26,7 @@ import (
 	"google.golang.org/grpc/reflection"
 	"google.golang.org/protobuf/types/known/emptypb"
 
-	apigen "accounts/pkg/gen/saas/accounts/v1"
+	apigen "auth-sidecar/external/saas-starter/accounts"
 )
 
 func main() {

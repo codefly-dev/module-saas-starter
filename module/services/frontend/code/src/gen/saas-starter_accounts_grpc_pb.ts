@@ -4,13 +4,15 @@
 
 import type { GenEnum, GenFile, GenMessage, GenService } from "@bufbuild/protobuf/codegenv1";
 import { enumDesc, fileDesc, messageDesc, serviceDesc } from "@bufbuild/protobuf/codegenv1";
+import type { EmptySchema } from "@bufbuild/protobuf/wkt";
+import { file_google_protobuf_empty } from "@bufbuild/protobuf/wkt";
 import type { Message } from "@bufbuild/protobuf";
 
 /**
  * Describes the file saas-starter_accounts_grpc.proto.
  */
 export const file_saas_starter_accounts_grpc: GenFile = /*@__PURE__*/
-  fileDesc("CiBzYWFzLXN0YXJ0ZXJfYWNjb3VudHNfZ3JwYy5wcm90bxIQc2Fhcy5hY2NvdW50cy52MSImChVGaXh0dXJlQXV0aGVudGljYXRpb24SDQoFdG9rZW4YASABKAki0AIKE0F1dGhlbnRpY2F0ZVJlcXVlc3QSEAoIcHJvdmlkZXIYASABKAkSFwoLcHJvdmlkZXJfaWQYAiABKAlCAhgBEhoKDnByb3ZpZGVyX2VtYWlsGAMgASgJQgIYARIaCg5lbWFpbF92ZXJpZmllZBgEIAEoCEICGAESQwoHcHJvZmlsZRgFIAMoCzIyLnNhYXMuYWNjb3VudHMudjEuQXV0aGVudGljYXRlUmVxdWVzdC5Qcm9maWxlRW50cnkSEwoLZGV2aWNlX2luZm8YBiABKAkSOgoHZml4dHVyZRgIIAEoCzInLnNhYXMuYWNjb3VudHMudjEuRml4dHVyZUF1dGhlbnRpY2F0aW9uSAAaLgoMUHJvZmlsZUVudHJ5EgsKA2tleRgBIAEoCRINCgV2YWx1ZRgCIAEoCToCOAFCEAoOYXV0aGVudGljYXRpb24iFAoEVXNlchIMCgR1dWlkGAEgASgJIn0KFEF1dGhlbnRpY2F0ZVJlc3BvbnNlEhQKDGFjY2Vzc190b2tlbhgBIAEoCRIVCg1yZWZyZXNoX3Rva2VuGAIgASgJEhIKCmV4cGlyZXNfaW4YAyABKAMSJAoEdXNlchgEIAEoCzIWLnNhYXMuYWNjb3VudHMudjEuVXNlciIaChhMaXN0T3JnYW5pemF0aW9uc1JlcXVlc3QiGgoMT3JnYW5pemF0aW9uEgoKAmlkGAEgASgJIlIKGUxpc3RPcmdhbml6YXRpb25zUmVzcG9uc2USNQoNb3JnYW5pemF0aW9ucxgBIAMoCzIeLnNhYXMuYWNjb3VudHMudjEuT3JnYW5pemF0aW9uIj8KFlJlc29sdmVJZGVudGl0eVJlcXVlc3QSEAoIcHJvdmlkZXIYASABKAkSEwoLcHJvdmlkZXJfaWQYAiABKAkigQEKF1Jlc29sdmVJZGVudGl0eVJlc3BvbnNlEg8KB3VzZXJfaWQYASABKAkSDgoGb3JnX2lkGAIgASgJEg0KBXJvbGVzGAMgAygJEg0KBWZvdW5kGAQgASgIEhAKCG9yZ19yb2xlGAUgASgJEhUKDXBsYXRmb3JtX3JvbGUYBiABKAkiJAoVVmFsaWRhdGVBUElLZXlSZXF1ZXN0EgsKA2tleRgBIAEoCSKdAgoWVmFsaWRhdGVBUElLZXlSZXNwb25zZRINCgV2YWxpZBgBIAEoCBIPCgd1c2VyX2lkGAIgASgJEhcKD29yZ2FuaXphdGlvbl9pZBgDIAEoCRIOCgZzY29wZXMYBCADKAkSEgoKd29ya3NwYWNlcxgFIAMoCRINCgVyb2xlcxgGIAMoCRJMCgphdHRyaWJ1dGVzGAcgAygLMjguc2Fhcy5hY2NvdW50cy52MS5WYWxpZGF0ZUFQSUtleVJlc3BvbnNlLkF0dHJpYnV0ZXNFbnRyeRIWCg5wcmluY2lwYWxfa2luZBgIIAEoCRoxCg9BdHRyaWJ1dGVzRW50cnkSCwoDa2V5GAEgASgJEg0KBXZhbHVlGAIgASgJOgI4ASIuCgpQZXJtaXNzaW9uEhAKCHJlc291cmNlGAEgASgJEg4KBmFjdGlvbhgCIAEoCSKkAQoTQ3JlYXRlQVBJS2V5UmVxdWVzdBIXCg9vcmdhbml6YXRpb25faWQYASABKAkSDAoEbmFtZRgCIAEoCRIsCgZzY29wZXMYAyADKAsyHC5zYWFzLmFjY291bnRzLnYxLlBlcm1pc3Npb24SOAoLZW52aXJvbm1lbnQYBCABKA4yIy5zYWFzLmFjY291bnRzLnYxLkFQSUtleUVudmlyb25tZW50Ii0KFENyZWF0ZUFQSUtleVJlc3BvbnNlEhUKDXBsYWludGV4dF9rZXkYAiABKAkqdAoRQVBJS2V5RW52aXJvbm1lbnQSIwofQVBJX0tFWV9FTlZJUk9OTUVOVF9VTlNQRUNJRklFRBAAEhwKGEFQSV9LRVlfRU5WSVJPTk1FTlRfTElWRRABEhwKGEFQSV9LRVlfRU5WSVJPTk1FTlRfVEVTVBACMmwKC0F1dGhTZXJ2aWNlEl0KDEF1dGhlbnRpY2F0ZRIlLnNhYXMuYWNjb3VudHMudjEuQXV0aGVudGljYXRlUmVxdWVzdBomLnNhYXMuYWNjb3VudHMudjEuQXV0aGVudGljYXRlUmVzcG9uc2UygwEKE09yZ2FuaXphdGlvblNlcnZpY2USbAoRTGlzdE9yZ2FuaXphdGlvbnMSKi5zYWFzLmFjY291bnRzLnYxLkxpc3RPcmdhbml6YXRpb25zUmVxdWVzdBorLnNhYXMuYWNjb3VudHMudjEuTGlzdE9yZ2FuaXphdGlvbnNSZXNwb25zZTJ5Cg9JZGVudGl0eVNlcnZpY2USZgoPUmVzb2x2ZUlkZW50aXR5Eiguc2Fhcy5hY2NvdW50cy52MS5SZXNvbHZlSWRlbnRpdHlSZXF1ZXN0Gikuc2Fhcy5hY2NvdW50cy52MS5SZXNvbHZlSWRlbnRpdHlSZXNwb25zZTLTAQoNQVBJS2V5U2VydmljZRJdCgxDcmVhdGVBUElLZXkSJS5zYWFzLmFjY291bnRzLnYxLkNyZWF0ZUFQSUtleVJlcXVlc3QaJi5zYWFzLmFjY291bnRzLnYxLkNyZWF0ZUFQSUtleVJlc3BvbnNlEmMKDlZhbGlkYXRlQVBJS2V5Eicuc2Fhcy5hY2NvdW50cy52MS5WYWxpZGF0ZUFQSUtleVJlcXVlc3QaKC5zYWFzLmFjY291bnRzLnYxLlZhbGlkYXRlQVBJS2V5UmVzcG9uc2ViBnByb3RvMw");
+  fileDesc("CiBzYWFzLXN0YXJ0ZXJfYWNjb3VudHNfZ3JwYy5wcm90bxIQc2Fhcy5hY2NvdW50cy52MSImChVGaXh0dXJlQXV0aGVudGljYXRpb24SDQoFdG9rZW4YASABKAki0AIKE0F1dGhlbnRpY2F0ZVJlcXVlc3QSEAoIcHJvdmlkZXIYASABKAkSFwoLcHJvdmlkZXJfaWQYAiABKAlCAhgBEhoKDnByb3ZpZGVyX2VtYWlsGAMgASgJQgIYARIaCg5lbWFpbF92ZXJpZmllZBgEIAEoCEICGAESQwoHcHJvZmlsZRgFIAMoCzIyLnNhYXMuYWNjb3VudHMudjEuQXV0aGVudGljYXRlUmVxdWVzdC5Qcm9maWxlRW50cnkSEwoLZGV2aWNlX2luZm8YBiABKAkSOgoHZml4dHVyZRgIIAEoCzInLnNhYXMuYWNjb3VudHMudjEuRml4dHVyZUF1dGhlbnRpY2F0aW9uSAAaLgoMUHJvZmlsZUVudHJ5EgsKA2tleRgBIAEoCRINCgV2YWx1ZRgCIAEoCToCOAFCEAoOYXV0aGVudGljYXRpb24iFAoEVXNlchIMCgR1dWlkGAEgASgJIn0KFEF1dGhlbnRpY2F0ZVJlc3BvbnNlEhQKDGFjY2Vzc190b2tlbhgBIAEoCRIVCg1yZWZyZXNoX3Rva2VuGAIgASgJEhIKCmV4cGlyZXNfaW4YAyABKAMSJAoEdXNlchgEIAEoCzIWLnNhYXMuYWNjb3VudHMudjEuVXNlciIsChNSZWZyZXNoVG9rZW5SZXF1ZXN0EhUKDXJlZnJlc2hfdG9rZW4YASABKAkiVwoUUmVmcmVzaFRva2VuUmVzcG9uc2USFAoMYWNjZXNzX3Rva2VuGAEgASgJEhUKDXJlZnJlc2hfdG9rZW4YAiABKAkSEgoKZXhwaXJlc19pbhgDIAEoAyImCg1Mb2dvdXRSZXF1ZXN0EhUKDXJlZnJlc2hfdG9rZW4YASABKAkiIQoMSldLU1Jlc3BvbnNlEhEKCWtleXNfanNvbhgBIAEoCSIaChhMaXN0T3JnYW5pemF0aW9uc1JlcXVlc3QiGgoMT3JnYW5pemF0aW9uEgoKAmlkGAEgASgJIlIKGUxpc3RPcmdhbml6YXRpb25zUmVzcG9uc2USNQoNb3JnYW5pemF0aW9ucxgBIAMoCzIeLnNhYXMuYWNjb3VudHMudjEuT3JnYW5pemF0aW9uIj8KFlJlc29sdmVJZGVudGl0eVJlcXVlc3QSEAoIcHJvdmlkZXIYASABKAkSEwoLcHJvdmlkZXJfaWQYAiABKAkigQEKF1Jlc29sdmVJZGVudGl0eVJlc3BvbnNlEg8KB3VzZXJfaWQYASABKAkSDgoGb3JnX2lkGAIgASgJEg0KBXJvbGVzGAMgAygJEg0KBWZvdW5kGAQgASgIEhAKCG9yZ19yb2xlGAUgASgJEhUKDXBsYXRmb3JtX3JvbGUYBiABKAkiJAoVVmFsaWRhdGVBUElLZXlSZXF1ZXN0EgsKA2tleRgBIAEoCSKdAgoWVmFsaWRhdGVBUElLZXlSZXNwb25zZRINCgV2YWxpZBgBIAEoCBIPCgd1c2VyX2lkGAIgASgJEhcKD29yZ2FuaXphdGlvbl9pZBgDIAEoCRIOCgZzY29wZXMYBCADKAkSEgoKd29ya3NwYWNlcxgFIAMoCRINCgVyb2xlcxgGIAMoCRJMCgphdHRyaWJ1dGVzGAcgAygLMjguc2Fhcy5hY2NvdW50cy52MS5WYWxpZGF0ZUFQSUtleVJlc3BvbnNlLkF0dHJpYnV0ZXNFbnRyeRIWCg5wcmluY2lwYWxfa2luZBgIIAEoCRoxCg9BdHRyaWJ1dGVzRW50cnkSCwoDa2V5GAEgASgJEg0KBXZhbHVlGAIgASgJOgI4ASIuCgpQZXJtaXNzaW9uEhAKCHJlc291cmNlGAEgASgJEg4KBmFjdGlvbhgCIAEoCSKkAQoTQ3JlYXRlQVBJS2V5UmVxdWVzdBIXCg9vcmdhbml6YXRpb25faWQYASABKAkSDAoEbmFtZRgCIAEoCRIsCgZzY29wZXMYAyADKAsyHC5zYWFzLmFjY291bnRzLnYxLlBlcm1pc3Npb24SOAoLZW52aXJvbm1lbnQYBCABKA4yIy5zYWFzLmFjY291bnRzLnYxLkFQSUtleUVudmlyb25tZW50Ii0KFENyZWF0ZUFQSUtleVJlc3BvbnNlEhUKDXBsYWludGV4dF9rZXkYAiABKAkqdAoRQVBJS2V5RW52aXJvbm1lbnQSIwofQVBJX0tFWV9FTlZJUk9OTUVOVF9VTlNQRUNJRklFRBAAEhwKGEFQSV9LRVlfRU5WSVJPTk1FTlRfTElWRRABEhwKGEFQSV9LRVlfRU5WSVJPTk1FTlRfVEVTVBACMtECCgtBdXRoU2VydmljZRJdCgxBdXRoZW50aWNhdGUSJS5zYWFzLmFjY291bnRzLnYxLkF1dGhlbnRpY2F0ZVJlcXVlc3QaJi5zYWFzLmFjY291bnRzLnYxLkF1dGhlbnRpY2F0ZVJlc3BvbnNlEl0KDFJlZnJlc2hUb2tlbhIlLnNhYXMuYWNjb3VudHMudjEuUmVmcmVzaFRva2VuUmVxdWVzdBomLnNhYXMuYWNjb3VudHMudjEuUmVmcmVzaFRva2VuUmVzcG9uc2USQQoGTG9nb3V0Eh8uc2Fhcy5hY2NvdW50cy52MS5Mb2dvdXRSZXF1ZXN0GhYuZ29vZ2xlLnByb3RvYnVmLkVtcHR5EkEKB0dldEpXS1MSFi5nb29nbGUucHJvdG9idWYuRW1wdHkaHi5zYWFzLmFjY291bnRzLnYxLkpXS1NSZXNwb25zZTKDAQoTT3JnYW5pemF0aW9uU2VydmljZRJsChFMaXN0T3JnYW5pemF0aW9ucxIqLnNhYXMuYWNjb3VudHMudjEuTGlzdE9yZ2FuaXphdGlvbnNSZXF1ZXN0Gisuc2Fhcy5hY2NvdW50cy52MS5MaXN0T3JnYW5pemF0aW9uc1Jlc3BvbnNlMnkKD0lkZW50aXR5U2VydmljZRJmCg9SZXNvbHZlSWRlbnRpdHkSKC5zYWFzLmFjY291bnRzLnYxLlJlc29sdmVJZGVudGl0eVJlcXVlc3QaKS5zYWFzLmFjY291bnRzLnYxLlJlc29sdmVJZGVudGl0eVJlc3BvbnNlMtMBCg1BUElLZXlTZXJ2aWNlEl0KDENyZWF0ZUFQSUtleRIlLnNhYXMuYWNjb3VudHMudjEuQ3JlYXRlQVBJS2V5UmVxdWVzdBomLnNhYXMuYWNjb3VudHMudjEuQ3JlYXRlQVBJS2V5UmVzcG9uc2USYwoOVmFsaWRhdGVBUElLZXkSJy5zYWFzLmFjY291bnRzLnYxLlZhbGlkYXRlQVBJS2V5UmVxdWVzdBooLnNhYXMuYWNjb3VudHMudjEuVmFsaWRhdGVBUElLZXlSZXNwb25zZWIGcHJvdG8z", [file_google_protobuf_empty]);
 
 /**
  * @generated from message saas.accounts.v1.FixtureAuthentication
@@ -135,6 +137,84 @@ export const AuthenticateResponseSchema: GenMessage<AuthenticateResponse> = /*@_
   messageDesc(file_saas_starter_accounts_grpc, 3);
 
 /**
+ * @generated from message saas.accounts.v1.RefreshTokenRequest
+ */
+export type RefreshTokenRequest = Message<"saas.accounts.v1.RefreshTokenRequest"> & {
+  /**
+   * @generated from field: string refresh_token = 1;
+   */
+  refreshToken: string;
+};
+
+/**
+ * Describes the message saas.accounts.v1.RefreshTokenRequest.
+ * Use `create(RefreshTokenRequestSchema)` to create a new message.
+ */
+export const RefreshTokenRequestSchema: GenMessage<RefreshTokenRequest> = /*@__PURE__*/
+  messageDesc(file_saas_starter_accounts_grpc, 4);
+
+/**
+ * @generated from message saas.accounts.v1.RefreshTokenResponse
+ */
+export type RefreshTokenResponse = Message<"saas.accounts.v1.RefreshTokenResponse"> & {
+  /**
+   * @generated from field: string access_token = 1;
+   */
+  accessToken: string;
+
+  /**
+   * @generated from field: string refresh_token = 2;
+   */
+  refreshToken: string;
+
+  /**
+   * @generated from field: int64 expires_in = 3;
+   */
+  expiresIn: bigint;
+};
+
+/**
+ * Describes the message saas.accounts.v1.RefreshTokenResponse.
+ * Use `create(RefreshTokenResponseSchema)` to create a new message.
+ */
+export const RefreshTokenResponseSchema: GenMessage<RefreshTokenResponse> = /*@__PURE__*/
+  messageDesc(file_saas_starter_accounts_grpc, 5);
+
+/**
+ * @generated from message saas.accounts.v1.LogoutRequest
+ */
+export type LogoutRequest = Message<"saas.accounts.v1.LogoutRequest"> & {
+  /**
+   * @generated from field: string refresh_token = 1;
+   */
+  refreshToken: string;
+};
+
+/**
+ * Describes the message saas.accounts.v1.LogoutRequest.
+ * Use `create(LogoutRequestSchema)` to create a new message.
+ */
+export const LogoutRequestSchema: GenMessage<LogoutRequest> = /*@__PURE__*/
+  messageDesc(file_saas_starter_accounts_grpc, 6);
+
+/**
+ * @generated from message saas.accounts.v1.JWKSResponse
+ */
+export type JWKSResponse = Message<"saas.accounts.v1.JWKSResponse"> & {
+  /**
+   * @generated from field: string keys_json = 1;
+   */
+  keysJson: string;
+};
+
+/**
+ * Describes the message saas.accounts.v1.JWKSResponse.
+ * Use `create(JWKSResponseSchema)` to create a new message.
+ */
+export const JWKSResponseSchema: GenMessage<JWKSResponse> = /*@__PURE__*/
+  messageDesc(file_saas_starter_accounts_grpc, 7);
+
+/**
  * @generated from message saas.accounts.v1.ListOrganizationsRequest
  */
 export type ListOrganizationsRequest = Message<"saas.accounts.v1.ListOrganizationsRequest"> & {
@@ -145,7 +225,7 @@ export type ListOrganizationsRequest = Message<"saas.accounts.v1.ListOrganizatio
  * Use `create(ListOrganizationsRequestSchema)` to create a new message.
  */
 export const ListOrganizationsRequestSchema: GenMessage<ListOrganizationsRequest> = /*@__PURE__*/
-  messageDesc(file_saas_starter_accounts_grpc, 4);
+  messageDesc(file_saas_starter_accounts_grpc, 8);
 
 /**
  * @generated from message saas.accounts.v1.Organization
@@ -162,7 +242,7 @@ export type Organization = Message<"saas.accounts.v1.Organization"> & {
  * Use `create(OrganizationSchema)` to create a new message.
  */
 export const OrganizationSchema: GenMessage<Organization> = /*@__PURE__*/
-  messageDesc(file_saas_starter_accounts_grpc, 5);
+  messageDesc(file_saas_starter_accounts_grpc, 9);
 
 /**
  * @generated from message saas.accounts.v1.ListOrganizationsResponse
@@ -179,7 +259,7 @@ export type ListOrganizationsResponse = Message<"saas.accounts.v1.ListOrganizati
  * Use `create(ListOrganizationsResponseSchema)` to create a new message.
  */
 export const ListOrganizationsResponseSchema: GenMessage<ListOrganizationsResponse> = /*@__PURE__*/
-  messageDesc(file_saas_starter_accounts_grpc, 6);
+  messageDesc(file_saas_starter_accounts_grpc, 10);
 
 /**
  * @generated from message saas.accounts.v1.ResolveIdentityRequest
@@ -201,7 +281,7 @@ export type ResolveIdentityRequest = Message<"saas.accounts.v1.ResolveIdentityRe
  * Use `create(ResolveIdentityRequestSchema)` to create a new message.
  */
 export const ResolveIdentityRequestSchema: GenMessage<ResolveIdentityRequest> = /*@__PURE__*/
-  messageDesc(file_saas_starter_accounts_grpc, 7);
+  messageDesc(file_saas_starter_accounts_grpc, 11);
 
 /**
  * @generated from message saas.accounts.v1.ResolveIdentityResponse
@@ -243,7 +323,7 @@ export type ResolveIdentityResponse = Message<"saas.accounts.v1.ResolveIdentityR
  * Use `create(ResolveIdentityResponseSchema)` to create a new message.
  */
 export const ResolveIdentityResponseSchema: GenMessage<ResolveIdentityResponse> = /*@__PURE__*/
-  messageDesc(file_saas_starter_accounts_grpc, 8);
+  messageDesc(file_saas_starter_accounts_grpc, 12);
 
 /**
  * @generated from message saas.accounts.v1.ValidateAPIKeyRequest
@@ -260,7 +340,7 @@ export type ValidateAPIKeyRequest = Message<"saas.accounts.v1.ValidateAPIKeyRequ
  * Use `create(ValidateAPIKeyRequestSchema)` to create a new message.
  */
 export const ValidateAPIKeyRequestSchema: GenMessage<ValidateAPIKeyRequest> = /*@__PURE__*/
-  messageDesc(file_saas_starter_accounts_grpc, 9);
+  messageDesc(file_saas_starter_accounts_grpc, 13);
 
 /**
  * @generated from message saas.accounts.v1.ValidateAPIKeyResponse
@@ -312,7 +392,7 @@ export type ValidateAPIKeyResponse = Message<"saas.accounts.v1.ValidateAPIKeyRes
  * Use `create(ValidateAPIKeyResponseSchema)` to create a new message.
  */
 export const ValidateAPIKeyResponseSchema: GenMessage<ValidateAPIKeyResponse> = /*@__PURE__*/
-  messageDesc(file_saas_starter_accounts_grpc, 10);
+  messageDesc(file_saas_starter_accounts_grpc, 14);
 
 /**
  * @generated from message saas.accounts.v1.Permission
@@ -334,7 +414,7 @@ export type Permission = Message<"saas.accounts.v1.Permission"> & {
  * Use `create(PermissionSchema)` to create a new message.
  */
 export const PermissionSchema: GenMessage<Permission> = /*@__PURE__*/
-  messageDesc(file_saas_starter_accounts_grpc, 11);
+  messageDesc(file_saas_starter_accounts_grpc, 15);
 
 /**
  * @generated from message saas.accounts.v1.CreateAPIKeyRequest
@@ -366,7 +446,7 @@ export type CreateAPIKeyRequest = Message<"saas.accounts.v1.CreateAPIKeyRequest"
  * Use `create(CreateAPIKeyRequestSchema)` to create a new message.
  */
 export const CreateAPIKeyRequestSchema: GenMessage<CreateAPIKeyRequest> = /*@__PURE__*/
-  messageDesc(file_saas_starter_accounts_grpc, 12);
+  messageDesc(file_saas_starter_accounts_grpc, 16);
 
 /**
  * @generated from message saas.accounts.v1.CreateAPIKeyResponse
@@ -383,7 +463,7 @@ export type CreateAPIKeyResponse = Message<"saas.accounts.v1.CreateAPIKeyRespons
  * Use `create(CreateAPIKeyResponseSchema)` to create a new message.
  */
 export const CreateAPIKeyResponseSchema: GenMessage<CreateAPIKeyResponse> = /*@__PURE__*/
-  messageDesc(file_saas_starter_accounts_grpc, 13);
+  messageDesc(file_saas_starter_accounts_grpc, 17);
 
 /**
  * @generated from enum saas.accounts.v1.APIKeyEnvironment
@@ -422,6 +502,30 @@ export const AuthService: GenService<{
     methodKind: "unary";
     input: typeof AuthenticateRequestSchema;
     output: typeof AuthenticateResponseSchema;
+  },
+  /**
+   * @generated from rpc saas.accounts.v1.AuthService.RefreshToken
+   */
+  refreshToken: {
+    methodKind: "unary";
+    input: typeof RefreshTokenRequestSchema;
+    output: typeof RefreshTokenResponseSchema;
+  },
+  /**
+   * @generated from rpc saas.accounts.v1.AuthService.Logout
+   */
+  logout: {
+    methodKind: "unary";
+    input: typeof LogoutRequestSchema;
+    output: typeof EmptySchema;
+  },
+  /**
+   * @generated from rpc saas.accounts.v1.AuthService.GetJWKS
+   */
+  getJWKS: {
+    methodKind: "unary";
+    input: typeof EmptySchema;
+    output: typeof JWKSResponseSchema;
   },
 }> = /*@__PURE__*/
   serviceDesc(file_saas_starter_accounts_grpc, 0);

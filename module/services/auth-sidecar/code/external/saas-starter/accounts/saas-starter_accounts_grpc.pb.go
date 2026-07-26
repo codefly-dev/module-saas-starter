@@ -13,6 +13,7 @@ import (
 
 	protoreflect "google.golang.org/protobuf/reflect/protoreflect"
 	protoimpl "google.golang.org/protobuf/runtime/protoimpl"
+	emptypb "google.golang.org/protobuf/types/known/emptypb"
 )
 
 const (
@@ -347,6 +348,198 @@ func (x *AuthenticateResponse) GetUser() *User {
 	return nil
 }
 
+type RefreshTokenRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	RefreshToken  string                 `protobuf:"bytes,1,opt,name=refresh_token,json=refreshToken,proto3" json:"refresh_token,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *RefreshTokenRequest) Reset() {
+	*x = RefreshTokenRequest{}
+	mi := &file_saas_starter_accounts_grpc_proto_msgTypes[4]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *RefreshTokenRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*RefreshTokenRequest) ProtoMessage() {}
+
+func (x *RefreshTokenRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_saas_starter_accounts_grpc_proto_msgTypes[4]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use RefreshTokenRequest.ProtoReflect.Descriptor instead.
+func (*RefreshTokenRequest) Descriptor() ([]byte, []int) {
+	return file_saas_starter_accounts_grpc_proto_rawDescGZIP(), []int{4}
+}
+
+func (x *RefreshTokenRequest) GetRefreshToken() string {
+	if x != nil {
+		return x.RefreshToken
+	}
+	return ""
+}
+
+type RefreshTokenResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	AccessToken   string                 `protobuf:"bytes,1,opt,name=access_token,json=accessToken,proto3" json:"access_token,omitempty"`
+	RefreshToken  string                 `protobuf:"bytes,2,opt,name=refresh_token,json=refreshToken,proto3" json:"refresh_token,omitempty"`
+	ExpiresIn     int64                  `protobuf:"varint,3,opt,name=expires_in,json=expiresIn,proto3" json:"expires_in,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *RefreshTokenResponse) Reset() {
+	*x = RefreshTokenResponse{}
+	mi := &file_saas_starter_accounts_grpc_proto_msgTypes[5]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *RefreshTokenResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*RefreshTokenResponse) ProtoMessage() {}
+
+func (x *RefreshTokenResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_saas_starter_accounts_grpc_proto_msgTypes[5]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use RefreshTokenResponse.ProtoReflect.Descriptor instead.
+func (*RefreshTokenResponse) Descriptor() ([]byte, []int) {
+	return file_saas_starter_accounts_grpc_proto_rawDescGZIP(), []int{5}
+}
+
+func (x *RefreshTokenResponse) GetAccessToken() string {
+	if x != nil {
+		return x.AccessToken
+	}
+	return ""
+}
+
+func (x *RefreshTokenResponse) GetRefreshToken() string {
+	if x != nil {
+		return x.RefreshToken
+	}
+	return ""
+}
+
+func (x *RefreshTokenResponse) GetExpiresIn() int64 {
+	if x != nil {
+		return x.ExpiresIn
+	}
+	return 0
+}
+
+type LogoutRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	RefreshToken  string                 `protobuf:"bytes,1,opt,name=refresh_token,json=refreshToken,proto3" json:"refresh_token,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *LogoutRequest) Reset() {
+	*x = LogoutRequest{}
+	mi := &file_saas_starter_accounts_grpc_proto_msgTypes[6]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *LogoutRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*LogoutRequest) ProtoMessage() {}
+
+func (x *LogoutRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_saas_starter_accounts_grpc_proto_msgTypes[6]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use LogoutRequest.ProtoReflect.Descriptor instead.
+func (*LogoutRequest) Descriptor() ([]byte, []int) {
+	return file_saas_starter_accounts_grpc_proto_rawDescGZIP(), []int{6}
+}
+
+func (x *LogoutRequest) GetRefreshToken() string {
+	if x != nil {
+		return x.RefreshToken
+	}
+	return ""
+}
+
+type JWKSResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	KeysJson      string                 `protobuf:"bytes,1,opt,name=keys_json,json=keysJson,proto3" json:"keys_json,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *JWKSResponse) Reset() {
+	*x = JWKSResponse{}
+	mi := &file_saas_starter_accounts_grpc_proto_msgTypes[7]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *JWKSResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*JWKSResponse) ProtoMessage() {}
+
+func (x *JWKSResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_saas_starter_accounts_grpc_proto_msgTypes[7]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use JWKSResponse.ProtoReflect.Descriptor instead.
+func (*JWKSResponse) Descriptor() ([]byte, []int) {
+	return file_saas_starter_accounts_grpc_proto_rawDescGZIP(), []int{7}
+}
+
+func (x *JWKSResponse) GetKeysJson() string {
+	if x != nil {
+		return x.KeysJson
+	}
+	return ""
+}
+
 type ListOrganizationsRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	unknownFields protoimpl.UnknownFields
@@ -355,7 +548,7 @@ type ListOrganizationsRequest struct {
 
 func (x *ListOrganizationsRequest) Reset() {
 	*x = ListOrganizationsRequest{}
-	mi := &file_saas_starter_accounts_grpc_proto_msgTypes[4]
+	mi := &file_saas_starter_accounts_grpc_proto_msgTypes[8]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -367,7 +560,7 @@ func (x *ListOrganizationsRequest) String() string {
 func (*ListOrganizationsRequest) ProtoMessage() {}
 
 func (x *ListOrganizationsRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_saas_starter_accounts_grpc_proto_msgTypes[4]
+	mi := &file_saas_starter_accounts_grpc_proto_msgTypes[8]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -380,7 +573,7 @@ func (x *ListOrganizationsRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListOrganizationsRequest.ProtoReflect.Descriptor instead.
 func (*ListOrganizationsRequest) Descriptor() ([]byte, []int) {
-	return file_saas_starter_accounts_grpc_proto_rawDescGZIP(), []int{4}
+	return file_saas_starter_accounts_grpc_proto_rawDescGZIP(), []int{8}
 }
 
 type Organization struct {
@@ -392,7 +585,7 @@ type Organization struct {
 
 func (x *Organization) Reset() {
 	*x = Organization{}
-	mi := &file_saas_starter_accounts_grpc_proto_msgTypes[5]
+	mi := &file_saas_starter_accounts_grpc_proto_msgTypes[9]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -404,7 +597,7 @@ func (x *Organization) String() string {
 func (*Organization) ProtoMessage() {}
 
 func (x *Organization) ProtoReflect() protoreflect.Message {
-	mi := &file_saas_starter_accounts_grpc_proto_msgTypes[5]
+	mi := &file_saas_starter_accounts_grpc_proto_msgTypes[9]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -417,7 +610,7 @@ func (x *Organization) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Organization.ProtoReflect.Descriptor instead.
 func (*Organization) Descriptor() ([]byte, []int) {
-	return file_saas_starter_accounts_grpc_proto_rawDescGZIP(), []int{5}
+	return file_saas_starter_accounts_grpc_proto_rawDescGZIP(), []int{9}
 }
 
 func (x *Organization) GetId() string {
@@ -436,7 +629,7 @@ type ListOrganizationsResponse struct {
 
 func (x *ListOrganizationsResponse) Reset() {
 	*x = ListOrganizationsResponse{}
-	mi := &file_saas_starter_accounts_grpc_proto_msgTypes[6]
+	mi := &file_saas_starter_accounts_grpc_proto_msgTypes[10]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -448,7 +641,7 @@ func (x *ListOrganizationsResponse) String() string {
 func (*ListOrganizationsResponse) ProtoMessage() {}
 
 func (x *ListOrganizationsResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_saas_starter_accounts_grpc_proto_msgTypes[6]
+	mi := &file_saas_starter_accounts_grpc_proto_msgTypes[10]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -461,7 +654,7 @@ func (x *ListOrganizationsResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListOrganizationsResponse.ProtoReflect.Descriptor instead.
 func (*ListOrganizationsResponse) Descriptor() ([]byte, []int) {
-	return file_saas_starter_accounts_grpc_proto_rawDescGZIP(), []int{6}
+	return file_saas_starter_accounts_grpc_proto_rawDescGZIP(), []int{10}
 }
 
 func (x *ListOrganizationsResponse) GetOrganizations() []*Organization {
@@ -481,7 +674,7 @@ type ResolveIdentityRequest struct {
 
 func (x *ResolveIdentityRequest) Reset() {
 	*x = ResolveIdentityRequest{}
-	mi := &file_saas_starter_accounts_grpc_proto_msgTypes[7]
+	mi := &file_saas_starter_accounts_grpc_proto_msgTypes[11]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -493,7 +686,7 @@ func (x *ResolveIdentityRequest) String() string {
 func (*ResolveIdentityRequest) ProtoMessage() {}
 
 func (x *ResolveIdentityRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_saas_starter_accounts_grpc_proto_msgTypes[7]
+	mi := &file_saas_starter_accounts_grpc_proto_msgTypes[11]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -506,7 +699,7 @@ func (x *ResolveIdentityRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ResolveIdentityRequest.ProtoReflect.Descriptor instead.
 func (*ResolveIdentityRequest) Descriptor() ([]byte, []int) {
-	return file_saas_starter_accounts_grpc_proto_rawDescGZIP(), []int{7}
+	return file_saas_starter_accounts_grpc_proto_rawDescGZIP(), []int{11}
 }
 
 func (x *ResolveIdentityRequest) GetProvider() string {
@@ -537,7 +730,7 @@ type ResolveIdentityResponse struct {
 
 func (x *ResolveIdentityResponse) Reset() {
 	*x = ResolveIdentityResponse{}
-	mi := &file_saas_starter_accounts_grpc_proto_msgTypes[8]
+	mi := &file_saas_starter_accounts_grpc_proto_msgTypes[12]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -549,7 +742,7 @@ func (x *ResolveIdentityResponse) String() string {
 func (*ResolveIdentityResponse) ProtoMessage() {}
 
 func (x *ResolveIdentityResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_saas_starter_accounts_grpc_proto_msgTypes[8]
+	mi := &file_saas_starter_accounts_grpc_proto_msgTypes[12]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -562,7 +755,7 @@ func (x *ResolveIdentityResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ResolveIdentityResponse.ProtoReflect.Descriptor instead.
 func (*ResolveIdentityResponse) Descriptor() ([]byte, []int) {
-	return file_saas_starter_accounts_grpc_proto_rawDescGZIP(), []int{8}
+	return file_saas_starter_accounts_grpc_proto_rawDescGZIP(), []int{12}
 }
 
 func (x *ResolveIdentityResponse) GetUserId() string {
@@ -616,7 +809,7 @@ type ValidateAPIKeyRequest struct {
 
 func (x *ValidateAPIKeyRequest) Reset() {
 	*x = ValidateAPIKeyRequest{}
-	mi := &file_saas_starter_accounts_grpc_proto_msgTypes[9]
+	mi := &file_saas_starter_accounts_grpc_proto_msgTypes[13]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -628,7 +821,7 @@ func (x *ValidateAPIKeyRequest) String() string {
 func (*ValidateAPIKeyRequest) ProtoMessage() {}
 
 func (x *ValidateAPIKeyRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_saas_starter_accounts_grpc_proto_msgTypes[9]
+	mi := &file_saas_starter_accounts_grpc_proto_msgTypes[13]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -641,7 +834,7 @@ func (x *ValidateAPIKeyRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ValidateAPIKeyRequest.ProtoReflect.Descriptor instead.
 func (*ValidateAPIKeyRequest) Descriptor() ([]byte, []int) {
-	return file_saas_starter_accounts_grpc_proto_rawDescGZIP(), []int{9}
+	return file_saas_starter_accounts_grpc_proto_rawDescGZIP(), []int{13}
 }
 
 func (x *ValidateAPIKeyRequest) GetKey() string {
@@ -667,7 +860,7 @@ type ValidateAPIKeyResponse struct {
 
 func (x *ValidateAPIKeyResponse) Reset() {
 	*x = ValidateAPIKeyResponse{}
-	mi := &file_saas_starter_accounts_grpc_proto_msgTypes[10]
+	mi := &file_saas_starter_accounts_grpc_proto_msgTypes[14]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -679,7 +872,7 @@ func (x *ValidateAPIKeyResponse) String() string {
 func (*ValidateAPIKeyResponse) ProtoMessage() {}
 
 func (x *ValidateAPIKeyResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_saas_starter_accounts_grpc_proto_msgTypes[10]
+	mi := &file_saas_starter_accounts_grpc_proto_msgTypes[14]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -692,7 +885,7 @@ func (x *ValidateAPIKeyResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ValidateAPIKeyResponse.ProtoReflect.Descriptor instead.
 func (*ValidateAPIKeyResponse) Descriptor() ([]byte, []int) {
-	return file_saas_starter_accounts_grpc_proto_rawDescGZIP(), []int{10}
+	return file_saas_starter_accounts_grpc_proto_rawDescGZIP(), []int{14}
 }
 
 func (x *ValidateAPIKeyResponse) GetValid() bool {
@@ -761,7 +954,7 @@ type Permission struct {
 
 func (x *Permission) Reset() {
 	*x = Permission{}
-	mi := &file_saas_starter_accounts_grpc_proto_msgTypes[11]
+	mi := &file_saas_starter_accounts_grpc_proto_msgTypes[15]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -773,7 +966,7 @@ func (x *Permission) String() string {
 func (*Permission) ProtoMessage() {}
 
 func (x *Permission) ProtoReflect() protoreflect.Message {
-	mi := &file_saas_starter_accounts_grpc_proto_msgTypes[11]
+	mi := &file_saas_starter_accounts_grpc_proto_msgTypes[15]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -786,7 +979,7 @@ func (x *Permission) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Permission.ProtoReflect.Descriptor instead.
 func (*Permission) Descriptor() ([]byte, []int) {
-	return file_saas_starter_accounts_grpc_proto_rawDescGZIP(), []int{11}
+	return file_saas_starter_accounts_grpc_proto_rawDescGZIP(), []int{15}
 }
 
 func (x *Permission) GetResource() string {
@@ -815,7 +1008,7 @@ type CreateAPIKeyRequest struct {
 
 func (x *CreateAPIKeyRequest) Reset() {
 	*x = CreateAPIKeyRequest{}
-	mi := &file_saas_starter_accounts_grpc_proto_msgTypes[12]
+	mi := &file_saas_starter_accounts_grpc_proto_msgTypes[16]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -827,7 +1020,7 @@ func (x *CreateAPIKeyRequest) String() string {
 func (*CreateAPIKeyRequest) ProtoMessage() {}
 
 func (x *CreateAPIKeyRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_saas_starter_accounts_grpc_proto_msgTypes[12]
+	mi := &file_saas_starter_accounts_grpc_proto_msgTypes[16]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -840,7 +1033,7 @@ func (x *CreateAPIKeyRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CreateAPIKeyRequest.ProtoReflect.Descriptor instead.
 func (*CreateAPIKeyRequest) Descriptor() ([]byte, []int) {
-	return file_saas_starter_accounts_grpc_proto_rawDescGZIP(), []int{12}
+	return file_saas_starter_accounts_grpc_proto_rawDescGZIP(), []int{16}
 }
 
 func (x *CreateAPIKeyRequest) GetOrganizationId() string {
@@ -880,7 +1073,7 @@ type CreateAPIKeyResponse struct {
 
 func (x *CreateAPIKeyResponse) Reset() {
 	*x = CreateAPIKeyResponse{}
-	mi := &file_saas_starter_accounts_grpc_proto_msgTypes[13]
+	mi := &file_saas_starter_accounts_grpc_proto_msgTypes[17]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -892,7 +1085,7 @@ func (x *CreateAPIKeyResponse) String() string {
 func (*CreateAPIKeyResponse) ProtoMessage() {}
 
 func (x *CreateAPIKeyResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_saas_starter_accounts_grpc_proto_msgTypes[13]
+	mi := &file_saas_starter_accounts_grpc_proto_msgTypes[17]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -905,7 +1098,7 @@ func (x *CreateAPIKeyResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CreateAPIKeyResponse.ProtoReflect.Descriptor instead.
 func (*CreateAPIKeyResponse) Descriptor() ([]byte, []int) {
-	return file_saas_starter_accounts_grpc_proto_rawDescGZIP(), []int{13}
+	return file_saas_starter_accounts_grpc_proto_rawDescGZIP(), []int{17}
 }
 
 func (x *CreateAPIKeyResponse) GetPlaintextKey() string {
@@ -919,7 +1112,7 @@ var File_saas_starter_accounts_grpc_proto protoreflect.FileDescriptor
 
 const file_saas_starter_accounts_grpc_proto_rawDesc = "" +
 	"\n" +
-	" saas-starter_accounts_grpc.proto\x12\x10saas.accounts.v1\"-\n" +
+	" saas-starter_accounts_grpc.proto\x12\x10saas.accounts.v1\x1a\x1bgoogle/protobuf/empty.proto\"-\n" +
 	"\x15FixtureAuthentication\x12\x14\n" +
 	"\x05token\x18\x01 \x01(\tR\x05token\"\xae\x03\n" +
 	"\x13AuthenticateRequest\x12\x1a\n" +
@@ -943,7 +1136,18 @@ const file_saas_starter_accounts_grpc_proto_rawDesc = "" +
 	"\rrefresh_token\x18\x02 \x01(\tR\frefreshToken\x12\x1d\n" +
 	"\n" +
 	"expires_in\x18\x03 \x01(\x03R\texpiresIn\x12*\n" +
-	"\x04user\x18\x04 \x01(\v2\x16.saas.accounts.v1.UserR\x04user\"\x1a\n" +
+	"\x04user\x18\x04 \x01(\v2\x16.saas.accounts.v1.UserR\x04user\":\n" +
+	"\x13RefreshTokenRequest\x12#\n" +
+	"\rrefresh_token\x18\x01 \x01(\tR\frefreshToken\"}\n" +
+	"\x14RefreshTokenResponse\x12!\n" +
+	"\faccess_token\x18\x01 \x01(\tR\vaccessToken\x12#\n" +
+	"\rrefresh_token\x18\x02 \x01(\tR\frefreshToken\x12\x1d\n" +
+	"\n" +
+	"expires_in\x18\x03 \x01(\x03R\texpiresIn\"4\n" +
+	"\rLogoutRequest\x12#\n" +
+	"\rrefresh_token\x18\x01 \x01(\tR\frefreshToken\"+\n" +
+	"\fJWKSResponse\x12\x1b\n" +
+	"\tkeys_json\x18\x01 \x01(\tR\bkeysJson\"\x1a\n" +
 	"\x18ListOrganizationsRequest\"\x1e\n" +
 	"\fOrganization\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\"a\n" +
@@ -992,9 +1196,12 @@ const file_saas_starter_accounts_grpc_proto_rawDesc = "" +
 	"\x11APIKeyEnvironment\x12#\n" +
 	"\x1fAPI_KEY_ENVIRONMENT_UNSPECIFIED\x10\x00\x12\x1c\n" +
 	"\x18API_KEY_ENVIRONMENT_LIVE\x10\x01\x12\x1c\n" +
-	"\x18API_KEY_ENVIRONMENT_TEST\x10\x022l\n" +
+	"\x18API_KEY_ENVIRONMENT_TEST\x10\x022\xd1\x02\n" +
 	"\vAuthService\x12]\n" +
-	"\fAuthenticate\x12%.saas.accounts.v1.AuthenticateRequest\x1a&.saas.accounts.v1.AuthenticateResponse2\x83\x01\n" +
+	"\fAuthenticate\x12%.saas.accounts.v1.AuthenticateRequest\x1a&.saas.accounts.v1.AuthenticateResponse\x12]\n" +
+	"\fRefreshToken\x12%.saas.accounts.v1.RefreshTokenRequest\x1a&.saas.accounts.v1.RefreshTokenResponse\x12A\n" +
+	"\x06Logout\x12\x1f.saas.accounts.v1.LogoutRequest\x1a\x16.google.protobuf.Empty\x12A\n" +
+	"\aGetJWKS\x12\x16.google.protobuf.Empty\x1a\x1e.saas.accounts.v1.JWKSResponse2\x83\x01\n" +
 	"\x13OrganizationService\x12l\n" +
 	"\x11ListOrganizations\x12*.saas.accounts.v1.ListOrganizationsRequest\x1a+.saas.accounts.v1.ListOrganizationsResponse2y\n" +
 	"\x0fIdentityService\x12f\n" +
@@ -1017,46 +1224,57 @@ func file_saas_starter_accounts_grpc_proto_rawDescGZIP() []byte {
 }
 
 var file_saas_starter_accounts_grpc_proto_enumTypes = make([]protoimpl.EnumInfo, 1)
-var file_saas_starter_accounts_grpc_proto_msgTypes = make([]protoimpl.MessageInfo, 16)
+var file_saas_starter_accounts_grpc_proto_msgTypes = make([]protoimpl.MessageInfo, 20)
 var file_saas_starter_accounts_grpc_proto_goTypes = []any{
 	(APIKeyEnvironment)(0),            // 0: saas.accounts.v1.APIKeyEnvironment
 	(*FixtureAuthentication)(nil),     // 1: saas.accounts.v1.FixtureAuthentication
 	(*AuthenticateRequest)(nil),       // 2: saas.accounts.v1.AuthenticateRequest
 	(*User)(nil),                      // 3: saas.accounts.v1.User
 	(*AuthenticateResponse)(nil),      // 4: saas.accounts.v1.AuthenticateResponse
-	(*ListOrganizationsRequest)(nil),  // 5: saas.accounts.v1.ListOrganizationsRequest
-	(*Organization)(nil),              // 6: saas.accounts.v1.Organization
-	(*ListOrganizationsResponse)(nil), // 7: saas.accounts.v1.ListOrganizationsResponse
-	(*ResolveIdentityRequest)(nil),    // 8: saas.accounts.v1.ResolveIdentityRequest
-	(*ResolveIdentityResponse)(nil),   // 9: saas.accounts.v1.ResolveIdentityResponse
-	(*ValidateAPIKeyRequest)(nil),     // 10: saas.accounts.v1.ValidateAPIKeyRequest
-	(*ValidateAPIKeyResponse)(nil),    // 11: saas.accounts.v1.ValidateAPIKeyResponse
-	(*Permission)(nil),                // 12: saas.accounts.v1.Permission
-	(*CreateAPIKeyRequest)(nil),       // 13: saas.accounts.v1.CreateAPIKeyRequest
-	(*CreateAPIKeyResponse)(nil),      // 14: saas.accounts.v1.CreateAPIKeyResponse
-	nil,                               // 15: saas.accounts.v1.AuthenticateRequest.ProfileEntry
-	nil,                               // 16: saas.accounts.v1.ValidateAPIKeyResponse.AttributesEntry
+	(*RefreshTokenRequest)(nil),       // 5: saas.accounts.v1.RefreshTokenRequest
+	(*RefreshTokenResponse)(nil),      // 6: saas.accounts.v1.RefreshTokenResponse
+	(*LogoutRequest)(nil),             // 7: saas.accounts.v1.LogoutRequest
+	(*JWKSResponse)(nil),              // 8: saas.accounts.v1.JWKSResponse
+	(*ListOrganizationsRequest)(nil),  // 9: saas.accounts.v1.ListOrganizationsRequest
+	(*Organization)(nil),              // 10: saas.accounts.v1.Organization
+	(*ListOrganizationsResponse)(nil), // 11: saas.accounts.v1.ListOrganizationsResponse
+	(*ResolveIdentityRequest)(nil),    // 12: saas.accounts.v1.ResolveIdentityRequest
+	(*ResolveIdentityResponse)(nil),   // 13: saas.accounts.v1.ResolveIdentityResponse
+	(*ValidateAPIKeyRequest)(nil),     // 14: saas.accounts.v1.ValidateAPIKeyRequest
+	(*ValidateAPIKeyResponse)(nil),    // 15: saas.accounts.v1.ValidateAPIKeyResponse
+	(*Permission)(nil),                // 16: saas.accounts.v1.Permission
+	(*CreateAPIKeyRequest)(nil),       // 17: saas.accounts.v1.CreateAPIKeyRequest
+	(*CreateAPIKeyResponse)(nil),      // 18: saas.accounts.v1.CreateAPIKeyResponse
+	nil,                               // 19: saas.accounts.v1.AuthenticateRequest.ProfileEntry
+	nil,                               // 20: saas.accounts.v1.ValidateAPIKeyResponse.AttributesEntry
+	(*emptypb.Empty)(nil),             // 21: google.protobuf.Empty
 }
 var file_saas_starter_accounts_grpc_proto_depIdxs = []int32{
-	15, // 0: saas.accounts.v1.AuthenticateRequest.profile:type_name -> saas.accounts.v1.AuthenticateRequest.ProfileEntry
+	19, // 0: saas.accounts.v1.AuthenticateRequest.profile:type_name -> saas.accounts.v1.AuthenticateRequest.ProfileEntry
 	1,  // 1: saas.accounts.v1.AuthenticateRequest.fixture:type_name -> saas.accounts.v1.FixtureAuthentication
 	3,  // 2: saas.accounts.v1.AuthenticateResponse.user:type_name -> saas.accounts.v1.User
-	6,  // 3: saas.accounts.v1.ListOrganizationsResponse.organizations:type_name -> saas.accounts.v1.Organization
-	16, // 4: saas.accounts.v1.ValidateAPIKeyResponse.attributes:type_name -> saas.accounts.v1.ValidateAPIKeyResponse.AttributesEntry
-	12, // 5: saas.accounts.v1.CreateAPIKeyRequest.scopes:type_name -> saas.accounts.v1.Permission
+	10, // 3: saas.accounts.v1.ListOrganizationsResponse.organizations:type_name -> saas.accounts.v1.Organization
+	20, // 4: saas.accounts.v1.ValidateAPIKeyResponse.attributes:type_name -> saas.accounts.v1.ValidateAPIKeyResponse.AttributesEntry
+	16, // 5: saas.accounts.v1.CreateAPIKeyRequest.scopes:type_name -> saas.accounts.v1.Permission
 	0,  // 6: saas.accounts.v1.CreateAPIKeyRequest.environment:type_name -> saas.accounts.v1.APIKeyEnvironment
 	2,  // 7: saas.accounts.v1.AuthService.Authenticate:input_type -> saas.accounts.v1.AuthenticateRequest
-	5,  // 8: saas.accounts.v1.OrganizationService.ListOrganizations:input_type -> saas.accounts.v1.ListOrganizationsRequest
-	8,  // 9: saas.accounts.v1.IdentityService.ResolveIdentity:input_type -> saas.accounts.v1.ResolveIdentityRequest
-	13, // 10: saas.accounts.v1.APIKeyService.CreateAPIKey:input_type -> saas.accounts.v1.CreateAPIKeyRequest
-	10, // 11: saas.accounts.v1.APIKeyService.ValidateAPIKey:input_type -> saas.accounts.v1.ValidateAPIKeyRequest
-	4,  // 12: saas.accounts.v1.AuthService.Authenticate:output_type -> saas.accounts.v1.AuthenticateResponse
-	7,  // 13: saas.accounts.v1.OrganizationService.ListOrganizations:output_type -> saas.accounts.v1.ListOrganizationsResponse
-	9,  // 14: saas.accounts.v1.IdentityService.ResolveIdentity:output_type -> saas.accounts.v1.ResolveIdentityResponse
-	14, // 15: saas.accounts.v1.APIKeyService.CreateAPIKey:output_type -> saas.accounts.v1.CreateAPIKeyResponse
-	11, // 16: saas.accounts.v1.APIKeyService.ValidateAPIKey:output_type -> saas.accounts.v1.ValidateAPIKeyResponse
-	12, // [12:17] is the sub-list for method output_type
-	7,  // [7:12] is the sub-list for method input_type
+	5,  // 8: saas.accounts.v1.AuthService.RefreshToken:input_type -> saas.accounts.v1.RefreshTokenRequest
+	7,  // 9: saas.accounts.v1.AuthService.Logout:input_type -> saas.accounts.v1.LogoutRequest
+	21, // 10: saas.accounts.v1.AuthService.GetJWKS:input_type -> google.protobuf.Empty
+	9,  // 11: saas.accounts.v1.OrganizationService.ListOrganizations:input_type -> saas.accounts.v1.ListOrganizationsRequest
+	12, // 12: saas.accounts.v1.IdentityService.ResolveIdentity:input_type -> saas.accounts.v1.ResolveIdentityRequest
+	17, // 13: saas.accounts.v1.APIKeyService.CreateAPIKey:input_type -> saas.accounts.v1.CreateAPIKeyRequest
+	14, // 14: saas.accounts.v1.APIKeyService.ValidateAPIKey:input_type -> saas.accounts.v1.ValidateAPIKeyRequest
+	4,  // 15: saas.accounts.v1.AuthService.Authenticate:output_type -> saas.accounts.v1.AuthenticateResponse
+	6,  // 16: saas.accounts.v1.AuthService.RefreshToken:output_type -> saas.accounts.v1.RefreshTokenResponse
+	21, // 17: saas.accounts.v1.AuthService.Logout:output_type -> google.protobuf.Empty
+	8,  // 18: saas.accounts.v1.AuthService.GetJWKS:output_type -> saas.accounts.v1.JWKSResponse
+	11, // 19: saas.accounts.v1.OrganizationService.ListOrganizations:output_type -> saas.accounts.v1.ListOrganizationsResponse
+	13, // 20: saas.accounts.v1.IdentityService.ResolveIdentity:output_type -> saas.accounts.v1.ResolveIdentityResponse
+	18, // 21: saas.accounts.v1.APIKeyService.CreateAPIKey:output_type -> saas.accounts.v1.CreateAPIKeyResponse
+	15, // 22: saas.accounts.v1.APIKeyService.ValidateAPIKey:output_type -> saas.accounts.v1.ValidateAPIKeyResponse
+	15, // [15:23] is the sub-list for method output_type
+	7,  // [7:15] is the sub-list for method input_type
 	7,  // [7:7] is the sub-list for extension type_name
 	7,  // [7:7] is the sub-list for extension extendee
 	0,  // [0:7] is the sub-list for field type_name
@@ -1076,7 +1294,7 @@ func file_saas_starter_accounts_grpc_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_saas_starter_accounts_grpc_proto_rawDesc), len(file_saas_starter_accounts_grpc_proto_rawDesc)),
 			NumEnums:      1,
-			NumMessages:   16,
+			NumMessages:   20,
 			NumExtensions: 0,
 			NumServices:   4,
 		},

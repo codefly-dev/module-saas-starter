@@ -3,8 +3,6 @@ package main
 import (
 	"testing"
 
-	"accounts/pkg/business"
-
 	"github.com/stretchr/testify/require"
 )
 
@@ -18,14 +16,11 @@ func TestConnectRouteDiscoveryExcludesInternalRPCs(t *testing.T) {
 	for _, entry := range entries {
 		paths[entry.Path] = true
 		protected[entry.Path] = entry.Protected
-		policyPath := entry.Path
-		if entry.UpstreamPath != "" {
-			policyPath = entry.UpstreamPath
-		}
-		policy, classified := business.LookupRPCPolicy(policyPath)
+		policyPath := entry.Procedure
+		policy, classified := generatedAuthorizationByProcedure[policyPath]
 		require.True(t, classified, policyPath)
-		require.NotEqual(t, business.RPCPolicyInternal, policy.Tier, policyPath)
-		require.Equal(t, policy.MethodPolicy.GetRateLimit(), entry.RateLimitClass, policyPath)
+		require.NotEqual(t, edgeExposureInternal, policy.exposure, policyPath)
+		require.Equal(t, policy.rateLimitClass, entry.RateLimitClass, policyPath)
 		require.NotEmpty(t, entry.PolicySHA256, policyPath)
 	}
 	require.False(t, paths["/saas.accounts.v1.APIKeyService/ValidateAPIKey"])

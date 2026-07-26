@@ -227,11 +227,9 @@ func RenderAuthSidecarAuthorizationMetadata(authz *catalogv1.AuthorizationCatalo
 
 package main
 
-import policyv1 "accounts/pkg/gen/saas/policy/v1"
-
 type generatedAuthorizationMetadata struct {
-	exposure                    policyv1.Exposure
-	rateLimitClass              policyv1.RateLimitClass
+	exposure                    edgeExposure
+	rateLimitClass              edgeRateLimitClass
 	rateLimitBackendFailClosed  bool
 	authenticationFactorAttempt bool
 	policySHA256                string
@@ -244,10 +242,18 @@ var generatedAuthorizationByProcedure = map[string]generatedAuthorizationMetadat
 		if method.GetProcedure() != serviceMethod.GetProcedure() || !proto.Equal(method.GetPolicy(), serviceMethod.GetPolicy()) {
 			return nil, fmt.Errorf("authorization and service catalogs disagree at %q", method.GetProcedure())
 		}
-		fmt.Fprintf(&source, "\t%q: {exposure: policyv1.Exposure_%s, rateLimitClass: policyv1.RateLimitClass_%s, rateLimitBackendFailClosed: %t, authenticationFactorAttempt: %t, policySHA256: %q},\n",
+		exposure, err := authSidecarExposureConstant(method.GetPolicy().GetExposure())
+		if err != nil {
+			return nil, fmt.Errorf("%s: %w", method.GetProcedure(), err)
+		}
+		rateLimit, err := authSidecarRateLimitConstant(method.GetPolicy().GetRateLimit())
+		if err != nil {
+			return nil, fmt.Errorf("%s: %w", method.GetProcedure(), err)
+		}
+		fmt.Fprintf(&source, "\t%q: {exposure: %s, rateLimitClass: %s, rateLimitBackendFailClosed: %t, authenticationFactorAttempt: %t, policySHA256: %q},\n",
 			method.GetProcedure(),
-			method.GetPolicy().GetExposure().String(),
-			method.GetPolicy().GetRateLimit().String(),
+			exposure,
+			rateLimit,
 			method.GetRateLimitBackendFailureMode() == catalogv1.RateLimitBackendFailureMode_RATE_LIMIT_BACKEND_FAILURE_MODE_FAIL_CLOSED,
 			method.GetPolicy().GetAuthenticationFactorAttempt(),
 			method.GetPolicySha256(),
@@ -265,4 +271,44 @@ var generatedAuthorizationByProcedure = map[string]generatedAuthorizationMetadat
 		return nil, fmt.Errorf("format auth-sidecar authorization metadata: %w", err)
 	}
 	return formatted, nil
+}
+
+func authSidecarExposureConstant(value policyv1.Exposure) (string, error) {
+	switch value {
+	case policyv1.Exposure_EXPOSURE_UNSPECIFIED:
+		return "edgeExposureUnspecified", nil
+	case policyv1.Exposure_EXPOSURE_PUBLIC:
+		return "edgeExposurePublic", nil
+	case policyv1.Exposure_EXPOSURE_AUTHENTICATED:
+		return "edgeExposureAuthenticated", nil
+	case policyv1.Exposure_EXPOSURE_INTERNAL:
+		return "edgeExposureInternal", nil
+	default:
+		return "", fmt.Errorf("unsupported edge exposure %s", value)
+	}
+}
+
+func authSidecarRateLimitConstant(value policyv1.RateLimitClass) (string, error) {
+	switch value {
+	case policyv1.RateLimitClass_RATE_LIMIT_CLASS_UNSPECIFIED:
+		return "edgeRateLimitClassUnspecified", nil
+	case policyv1.RateLimitClass_RATE_LIMIT_CLASS_PUBLIC:
+		return "edgeRateLimitClassPublic", nil
+	case policyv1.RateLimitClass_RATE_LIMIT_CLASS_AUTHENTICATION:
+		return "edgeRateLimitClassAuthentication", nil
+	case policyv1.RateLimitClass_RATE_LIMIT_CLASS_STANDARD_READ:
+		return "edgeRateLimitClassStandardRead", nil
+	case policyv1.RateLimitClass_RATE_LIMIT_CLASS_STANDARD_WRITE:
+		return "edgeRateLimitClassStandardWrite", nil
+	case policyv1.RateLimitClass_RATE_LIMIT_CLASS_SENSITIVE:
+		return "edgeRateLimitClassSensitive", nil
+	case policyv1.RateLimitClass_RATE_LIMIT_CLASS_WEBHOOK:
+		return "edgeRateLimitClassWebhook", nil
+	case policyv1.RateLimitClass_RATE_LIMIT_CLASS_INTERNAL:
+		return "edgeRateLimitClassInternal", nil
+	case policyv1.RateLimitClass_RATE_LIMIT_CLASS_MFA:
+		return "edgeRateLimitClassMFA", nil
+	default:
+		return "", fmt.Errorf("unsupported edge rate-limit class %s", value)
+	}
 }

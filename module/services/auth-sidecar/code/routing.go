@@ -21,8 +21,6 @@ import (
 	"strings"
 
 	"github.com/codefly-dev/core/resources"
-
-	policyv1 "accounts/pkg/gen/saas/policy/v1"
 )
 
 // RouteExtension carries the per-route auth configuration in the
@@ -34,16 +32,16 @@ type RouteExtension struct {
 
 // RouteEntry is the internal representation used by the gateway.
 type RouteEntry struct {
-	Service                     string                  // upstream service name (from directory path)
-	Method                      string                  // HTTP method
-	Path                        string                  // public HTTP path (may contain {param} segments)
-	UpstreamPath                string                  // optional canonical path used for a compatibility alias
-	Procedure                   string                  // canonical descriptor procedure when this is a protobuf route
-	Protected                   bool                    // true = auth required, false = public
-	RateLimitClass              policyv1.RateLimitClass // descriptor-selected limiter budget class
-	RateLimitBackendFailClosed  bool                    // preserve the security budget when the limiter backend fails
-	AuthenticationFactorAttempt bool                    // use the dedicated per-client-IP login-factor budget
-	PolicySHA256                string                  // stable fingerprint of the complete method policy
+	Service                     string             // upstream service name (from directory path)
+	Method                      string             // HTTP method
+	Path                        string             // public HTTP path (may contain {param} segments)
+	UpstreamPath                string             // optional canonical path used for a compatibility alias
+	Procedure                   string             // canonical descriptor procedure when this is a protobuf route
+	Protected                   bool               // true = auth required, false = public
+	RateLimitClass              edgeRateLimitClass // descriptor-selected limiter budget class
+	RateLimitBackendFailClosed  bool               // preserve the security budget when the limiter backend fails
+	AuthenticationFactorAttempt bool               // use the dedicated per-client-IP login-factor budget
+	PolicySHA256                string             // stable fingerprint of the complete method policy
 }
 
 // RouteMatcher provides fast lookups against the loaded route config.

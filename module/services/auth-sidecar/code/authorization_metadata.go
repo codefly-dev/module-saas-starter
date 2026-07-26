@@ -3,8 +3,6 @@ package main
 import (
 	"fmt"
 	"strings"
-
-	policyv1 "accounts/pkg/gen/saas/policy/v1"
 )
 
 // applyGeneratedAuthorizationMetadata joins a route to the generated method
@@ -28,10 +26,10 @@ func applyGeneratedAuthorizationMetadata(entry *RouteEntry) error {
 	if !ok {
 		return fmt.Errorf("generated authorization metadata is missing for %q", procedure)
 	}
-	if metadata.exposure == policyv1.Exposure_EXPOSURE_INTERNAL {
+	if metadata.exposure == edgeExposureInternal {
 		return fmt.Errorf("internal procedure %q cannot be exposed at the public edge", procedure)
 	}
-	expectedProtected := metadata.exposure != policyv1.Exposure_EXPOSURE_PUBLIC
+	expectedProtected := metadata.exposure != edgeExposurePublic
 	if descriptorRESTRoute && entry.Protected != expectedProtected {
 		return fmt.Errorf("REST overlay protected=%t disagrees with descriptor exposure %s for %q", entry.Protected, metadata.exposure, procedure)
 	}
