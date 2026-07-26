@@ -9,6 +9,7 @@ It translates gRPC into RESTful JSON APIs.
 package accountsv1
 
 import (
+	jobsv1 "accounts/pkg/gen/saas/jobs/v1"
 	"context"
 	"errors"
 	"io"
