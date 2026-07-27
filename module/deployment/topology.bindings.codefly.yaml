@@ -146,6 +146,9 @@ services:
       # every TS/TSX save invalidates browser chunks instead of applying HMR.
       hot-reload: false
       auth-provider: workos
+      execution-profiles:
+        local: development
+        production: production
       mode: ssr
   - name: object-storage
     version: 0.0.0

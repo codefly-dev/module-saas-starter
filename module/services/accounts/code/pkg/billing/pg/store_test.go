@@ -5,11 +5,13 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"strings"
 	"testing"
 	"time"
 
 	codefly "github.com/codefly-dev/sdk-go"
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/stretchr/testify/require"
 
@@ -81,9 +83,24 @@ func runBillingStoreTests(m *testing.M) int {
 // resetBilling wipes the billing-related tables between tests.
 func resetBilling(t *testing.T) {
 	t.Helper()
-	ctx := context.Background()
+	const attempts = 5
+	for attempt := 1; attempt <= attempts; attempt++ {
+		err := resetBillingOnce(context.Background())
+		if err == nil {
+			return
+		}
+		if !isConcurrentCatalogUpdate(err) || attempt == attempts {
+			require.NoError(t, err, "reset billing tables")
+		}
+		time.Sleep(time.Duration(attempt) * 25 * time.Millisecond)
+	}
+}
+
+func resetBillingOnce(ctx context.Context) error {
 	tx, err := testPool.Begin(ctx)
-	require.NoError(t, err)
+	if err != nil {
+		return fmt.Errorf("begin billing reset: %w", err)
+	}
 	defer func() { _ = tx.Rollback(ctx) }()
 
 	// Acquire every related table lock in one statement and hold the locks
@@ -95,15 +112,27 @@ func resetBilling(t *testing.T) {
 		organizations,
 		users
 		RESTART IDENTITY CASCADE`
-	_, err = tx.Exec(ctx, truncate)
-	require.NoError(t, err, truncate)
+	if _, err := tx.Exec(ctx, truncate); err != nil {
+		return fmt.Errorf("truncate billing tables: %w", err)
+	}
 
 	// Seed-restore plans — the initial migration populated three rows and our
 	// tests re-seed with deterministic Stripe price ids.
 	const resetPlans = `UPDATE plans SET stripe_price_id = NULL, stripe_product_id = NULL`
-	_, err = tx.Exec(ctx, resetPlans)
-	require.NoError(t, err, resetPlans)
-	require.NoError(t, tx.Commit(ctx))
+	if _, err := tx.Exec(ctx, resetPlans); err != nil {
+		return fmt.Errorf("reset billing plans: %w", err)
+	}
+	if err := tx.Commit(ctx); err != nil {
+		return fmt.Errorf("commit billing reset: %w", err)
+	}
+	return nil
+}
+
+func isConcurrentCatalogUpdate(err error) bool {
+	var pgErr *pgconn.PgError
+	return errors.As(err, &pgErr) &&
+		pgErr.Code == "XX000" &&
+		strings.Contains(strings.ToLower(pgErr.Message), "tuple concurrently updated")
 }
 
 // seedOrg creates a user + org returning their ids. Stripe customer

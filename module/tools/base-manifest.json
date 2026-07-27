@@ -1,6 +1,6 @@
 {
   "note": "Base-file integrity manifest for the saas-starter module. Generated FROM canonical by `node tools/base-integrity.mjs gen`. Consumers MUST NOT hand-edit base files — only add files on the side. Regenerated on every codefly sync from canonical.",
-  "fileCount": 1237,
+  "fileCount": 1239,
   "files": {
     "AUTHORIZATION_CATALOG.md": "c801d07db8d54ff7484e26dc4d5a65925b32fa108eb5b7899f11b9f193c6a730",
     "CONTRACT_VERSIONING.md": "02031aa87922ab5ec573ea582cf584271873481de6ceabbda52b1bfda005ffbd",
@@ -45,7 +45,7 @@
     "deployment/kustomize/overlays/local/applications/store.yaml": "beda694f1f7eec01491d1b45cfcfe6ef961982d27578129a771be5f738202153",
     "deployment/kustomize/overlays/local/applications/vault.yaml": "8f4bb9b1e2dafc391c7da680878b77fa8dbe0a05cdfdd79bd6aab4b96c0dbebc",
     "deployment/kustomize/overlays/local/kustomization.yaml": "f46837f1093c54b70136ce75e0c12d76623646fa46feed478f7ae9cc17268335",
-    "deployment/topology.bindings.codefly.yaml": "29bf759e6e2fbda1643aa3e378a16cd2bf8cedb8cbfe08d733c8ecb40fb18c40",
+    "deployment/topology.bindings.codefly.yaml": "5a16a194c22f9818ec984faa7d9f3d857106cdd4867755bec0cd93c93489ecbb",
     "docs/adr/0001-frontend-plugin-packaging.md": "6fe5b3fc0e345d0e002ddf4165d86243567411377520fd22f922e4127babd02b",
     "docs/frontend-plugin-architecture.md": "92b3aedb71d819d9ebfcf65bc472b5638830164c55ded5734033880068b3f5c7",
     "docs/frontend-plugin-auth-tenant-matrix.md": "60c70b8abad4f3d420eb7de0e8ca7fecc9b8901ba94fa43bfb9d2ead846a90e9",
@@ -185,7 +185,7 @@
     "services/accounts/code/pkg/billing/handler.go": "118e24c3c4cbef04a42995f46c35a9d6549273f46328378b34a621ccaad01c55",
     "services/accounts/code/pkg/billing/handler_test.go": "99662de8a7768d7250792cb472cd0f9079069485486e8fa48d8948b43165240c",
     "services/accounts/code/pkg/billing/pg/store.go": "c9de4b91ed5553570e3ad6fe35a265b4a3fc4fd3f051d334aad2a1fce7682286",
-    "services/accounts/code/pkg/billing/pg/store_test.go": "4fef86e7e858ff77f12978fdc80a152e190bab43c9942da0c3bdf7525199630d",
+    "services/accounts/code/pkg/billing/pg/store_test.go": "6c6c89a46e56a52b3927dca4b0515bbbd85bd2a1aa4cde6270a37c5221a7492d",
     "services/accounts/code/pkg/billing/processor_test.go": "03522925309460fa46fd3d9a116b800d6986b819dfe9301b24222137c079e601",
     "services/accounts/code/pkg/billing/store.go": "9db3bc7b6be266170df21324f9bf1b31bd0d435cb3c4df92544a3c7d97fafc7e",
     "services/accounts/code/pkg/billing/webhook.go": "303a620a8b35a7a5feaa235a92389e8248e3a392b297ca86ea59a40d3225ca33",
@@ -291,7 +291,7 @@
     "services/accounts/code/pkg/cataloggen/connect_registration.go": "4a96a96436ba97b7a90c95aced7963d572cc9c3d44a5620f052800922fd466a6",
     "services/accounts/code/pkg/cataloggen/connect_registration_test.go": "3988bc6c0561ed913088459f25454f978a35358a01fa2fa37eeef98a7c93c3d2",
     "services/accounts/code/pkg/cataloggen/deployment_topology.go": "60c06624a352a092c4883087a1edbf70469f4cb69affdfe76c9111611d316020",
-    "services/accounts/code/pkg/cataloggen/deployment_topology_test.go": "21cb1d054185038ce079a3f623ff521838dd2cf5aba0962373597af0e8ab4de1",
+    "services/accounts/code/pkg/cataloggen/deployment_topology_test.go": "6677e9a1bfe29631958dc9a75e2f8c8b95dc71a68941ad4fe4453c059e109b83",
     "services/accounts/code/pkg/cataloggen/frontend_catalog.go": "de43b6122c05006de69c75edeb61e0eff9ad351dd316c5e992a9cc2a3c2ec36c",
     "services/accounts/code/pkg/cataloggen/frontend_catalog_test.go": "983435eca1ac9b5183fde062a1f81f8b7a892dc05a828aed7fa03b4b203c0dfb",
     "services/accounts/code/pkg/cataloggen/frontend_plugin_service_dependencies.go": "61aa83339c63467627377a38c060668a86eb9bad85349c326bce490b4e42a536",
@@ -1238,6 +1238,8 @@
     "tools/base-integrity.mjs": "1aa1746c3f303095b19791aacb4f2aa1c049597bb510c9925c22f9a130c5cdb9",
     "tools/base-integrity.test.mjs": "62eee89e2a19c9f26766a4c5149070c37ec00bacf116fb0db98fd5066da477f6",
     "tools/codefly_sdk_boundary_test.go": "6d66ca1ba95db634bcd72ab5846da61411c1361313a8fcd365fe0172517bc2c5",
+    "tools/go.mod": "4581b764afe74c43631f4de1accbfb5874483b1590cf3fcee1071883f1ca65af",
+    "tools/go.sum": "e42794fa9b56301ad073de55cac1dea683b320ed951454d8709ffc7156088dd2",
     "tools/proto_generation_test.go": "4e2d9a1de58a2aa0c459fbbc69d5f741519abf25b09cc7e6b7c9b19424756521"
   }
 }

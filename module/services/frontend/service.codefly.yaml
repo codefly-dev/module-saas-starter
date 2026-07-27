@@ -18,5 +18,8 @@ endpoints:
       visibility: module
 spec:
     auth-provider: workos
+    execution-profiles:
+        local: development
+        production: production
     hot-reload: false
     mode: ssr
