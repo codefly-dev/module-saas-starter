@@ -67,12 +67,14 @@ func TestMain(m *testing.M) {
 // resetBilling wipes the billing-related tables between tests.
 func resetBilling(t *testing.T) {
 	t.Helper()
-	ctx := context.Background()
+	ctx := t.Context()
 	for _, q := range []string{
-		`TRUNCATE TABLE subscriptions RESTART IDENTITY CASCADE`,
-		`TRUNCATE TABLE organization_members RESTART IDENTITY CASCADE`,
-		`TRUNCATE TABLE organizations RESTART IDENTITY CASCADE`,
-		`TRUNCATE TABLE users RESTART IDENTITY CASCADE`,
+		// Reset the related tables in one PostgreSQL command. Issuing one
+		// TRUNCATE CASCADE per table repeatedly revisits the same foreign-key
+		// graph and can race concurrent package-level test setup in the shared
+		// Codefly dependency, producing PostgreSQL's "tuple concurrently
+		// updated" catalog error.
+		`TRUNCATE TABLE subscriptions, organization_members, organizations, users RESTART IDENTITY CASCADE`,
 		// seed-restore plans — the initial migration populated three rows
 		// and our tests re-seed with deterministic Stripe price ids.
 		`UPDATE plans SET stripe_price_id = NULL, stripe_product_id = NULL`,
