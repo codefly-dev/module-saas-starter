@@ -82,10 +82,10 @@ func runBusinessTests(m *testing.M) int {
 
 	deps, err := sdk.WithDependencies(ctx,
 		sdk.WithDebug(),
-		// The go-grpc runtime-test harness already reserves the "test" scope
-		// for the service under test and its dependencies. Keep this nested
-		// integration stack isolated so its containers and host ports cannot
-		// collide with the outer stack.
+		// Keep this package-owned integration stack distinct from the outer
+		// service runtime and the other package TestMain stacks. The SDK gives
+		// each short-lived flow temporary host ports; the scope also isolates
+		// its named containers and other runtime resources.
 		sdk.WithNamingScope("business-test"),
 		// A clean machine may need to pull Postgres, Vault, Redis, and MinIO
 		// before the first integration test. Keep the dependency-start budget

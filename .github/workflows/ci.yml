@@ -26,6 +26,10 @@ jobs:
         with:
           go-version: stable
           cache: false
+      - name: Validate module agent
+        env:
+          GOWORK: "off"
+        run: go test ./...
       - name: Reject direct Codefly runtime-carrier access
         working-directory: module/tools
         env:
@@ -59,10 +63,6 @@ jobs:
         shell: bash
         env:
           CODEFLY_BASE: ${{ github.event.pull_request.base.sha || github.event.before }}
-          # Four accounts packages start nested Codefly dependency stacks.
-          # Package-parallel `go test` lets those independent CLIs race on
-          # container reaping and host-port allocation.
-          GOFLAGS: "-p=1"
         run: |
           # Keep the complete audit in the Codefly evidence report, including
           # vendor runtime images. Those images have their own release cadence
