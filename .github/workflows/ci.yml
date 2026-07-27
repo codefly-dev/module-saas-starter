@@ -69,16 +69,50 @@ jobs:
           # and may carry upstream findings that this repository cannot patch.
           # The next step separately fails closed on every first-party service
           # and production frontend dependency.
-          # Several published vendor-image agents predate Core's shared Trivy
-          # cache lock. Serialize the workspace gate so those independent
-          # agent processes cannot corrupt or time out on the same cache.
-          args=(ci run --head "${GITHUB_SHA}" --output .codefly/ci --fail-on-vuln=false --jobs 1)
+          args=(ci run --head "${GITHUB_SHA}")
           if [[ -n "${CODEFLY_BASE}" && "${CODEFLY_BASE}" != "0000000000000000000000000000000000000000" ]]; then
             args+=(--base "${CODEFLY_BASE}")
           else
             args+=(--all)
           fi
-          codefly "${args[@]}"
+
+          codefly "${args[@]}" \
+            --phase verify,sync-drift,lint,compile,test \
+            --output .codefly/ci/pre-audit
+
+          # Several published vendor-image agents predate Core's shared Trivy
+          # cache lock. Serialize the audit so those independent agent processes
+          # cannot corrupt or time out on the same cache. Keep vendor findings
+          # in the evidence report without letting unpatchable upstream images
+          # override the first-party vulnerability gate below.
+          codefly "${args[@]}" \
+            --phase audit \
+            --output .codefly/ci/audit \
+            --fail-on-vuln=false \
+            --jobs=1
+
+          codefly "${args[@]}" \
+            --phase sbom \
+            --output .codefly/ci/sbom
+
+          # Agent builds share the runner's Docker layer store, and the Store
+          # agent can still hit a transient export fault on a serialized build.
+          # Retry only that exact daemon error; genuine failures stop at once.
+          build_log="$(mktemp)"
+          trap 'rm -f "${build_log}"' EXIT
+          for attempt in 1 2 3; do
+            if codefly "${args[@]}" \
+              --phase build \
+              --output ".codefly/ci/build-${attempt}" \
+              --jobs=1 2>&1 | tee "${build_log}"; then
+              break
+            fi
+            if ! grep -Fq "layer does not exist" "${build_log}" || (( attempt == 3 )); then
+              exit 1
+            fi
+            echo "::warning::Docker lost an image-export layer; syncing and retrying the serialized build"
+            sync
+          done
       - name: Enforce first-party vulnerability gate
         shell: bash
         run: |
