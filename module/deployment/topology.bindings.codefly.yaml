@@ -17,7 +17,7 @@ services:
     agent:
       kind: codefly:service
       name: go-grpc
-      version: 0.1.18
+      version: 0.1.19
       publisher: codefly.dev
     workspace_configuration_dependencies:
       - internal-auth
@@ -69,7 +69,7 @@ services:
     agent:
       kind: codefly:service
       name: go-grpc
-      version: 0.1.18
+      version: 0.1.19
       publisher: codefly.dev
     workspace_configuration_dependencies:
       - gateway
@@ -166,7 +166,7 @@ services:
     agent:
       kind: codefly:service
       name: postgres
-      version: 0.0.106
+      version: 0.0.107
       publisher: codefly.dev
     endpoints:
       - name: tcp
