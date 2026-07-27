@@ -362,10 +362,17 @@ func (s *Service) ResolveIdentity(ctx context.Context, req *gen.ResolveIdentityR
 // User authz is at the handler — only authenticated users can create
 // orgs; abuse is rate-limited.
 func (s *Service) CreateOrganization(ctx context.Context, ownerID string, req *gen.CreateOrganizationRequest) (*gen.CreateOrganizationResponse, error) {
+	slug := req.Slug
+	if slug == "" {
+		slug = Slugify(req.Name)
+	}
+	if slug == "" {
+		return nil, wool.Get(ctx).In("CreateOrganization").NewError("organization name yields an empty slug")
+	}
 	org := &gen.Organization{
 		Id:      NewIDString(),
 		Name:    req.Name,
-		Slug:    req.Slug,
+		Slug:    slug,
 		OwnerId: ownerID,
 	}
 	if err := s.store.WithControlPlane(ctx, func(ctx context.Context) error {

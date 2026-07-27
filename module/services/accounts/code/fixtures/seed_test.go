@@ -96,6 +96,25 @@ func TestValidateFixtureRejectsIncompleteAgentAuthority(t *testing.T) {
 	}
 }
 
+func TestValidateFixtureRejectsUnsafeOrganizationSlugs(t *testing.T) {
+	tests := map[string][]fixtureOrg{
+		"empty": {
+			{Name: "!!!", Owner: "owner@example.com"},
+		},
+		"collision": {
+			{Name: "Mind AI", Owner: "owner@example.com"},
+			{Name: "mind-ai", Owner: "owner@example.com"},
+		},
+	}
+	for name, organizations := range tests {
+		t.Run(name, func(t *testing.T) {
+			if err := validateFixture(&fixtureFile{Organizations: organizations}); err == nil {
+				t.Fatal("validateFixture() accepted unsafe organization slugs")
+			}
+		})
+	}
+}
+
 func TestSameFixturePermissionsIsOrderIndependent(t *testing.T) {
 	left := []*gen.Permission{
 		{Resource: "build", Action: "read"},

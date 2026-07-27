@@ -242,6 +242,7 @@ func validateFixture(f *fixtureFile) error {
 			return fmt.Errorf("user[%d] (%s): provider_id is required", i, u.Email)
 		}
 	}
+	organizationSlugIndexes := make(map[string]int, len(f.Organizations))
 	for i, org := range f.Organizations {
 		if org.Name == "" {
 			return fmt.Errorf("organization[%d]: name is required", i)
@@ -249,6 +250,20 @@ func validateFixture(f *fixtureFile) error {
 		if org.Owner == "" {
 			return fmt.Errorf("organization[%d] (%s): owner is required", i, org.Name)
 		}
+		slug := business.Slugify(org.Name)
+		if slug == "" {
+			return fmt.Errorf("organization[%d] (%s): name yields an empty slug", i, org.Name)
+		}
+		if previous, exists := organizationSlugIndexes[slug]; exists {
+			return fmt.Errorf(
+				"organization[%d] (%s): slug %q collides with organization[%d]",
+				i,
+				org.Name,
+				slug,
+				previous,
+			)
+		}
+		organizationSlugIndexes[slug] = i
 	}
 	for i, agent := range f.Agents {
 		if strings.TrimSpace(agent.Org) == "" {
