@@ -76,8 +76,13 @@ const dark: FrontendThemeTokens = {
 export const DEFAULT_FRONTEND_APPEARANCE: FrontendAppearance = deepFreeze({
 	defaultTheme: "system",
 	radius: "0.625rem",
-	fontSans: "var(--font-geist-sans), system-ui, -apple-system, sans-serif",
-	fontHeading: "var(--font-geist-sans), system-ui, -apple-system, sans-serif",
+	// Preserve the original SaaS Starter typography as the application
+	// default. Applications may opt into a bundled/web font explicitly, but
+	// the reusable Starter must not depend on an undeclared CSS variable.
+	fontSans:
+		'system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif',
+	fontHeading:
+		'system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif',
 	light,
 	dark,
 });

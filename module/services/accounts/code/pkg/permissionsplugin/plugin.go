@@ -43,6 +43,8 @@ import (
 type Plugin struct {
 	signingSecret     []byte
 	signingEd25519Key []byte
+	workContextIssuer string
+	workContextKeyID  string
 }
 
 // defaultPlugin is the singleton instance returned by New.
@@ -104,6 +106,16 @@ func (p *Plugin) WithEd25519Key(key []byte) *Plugin {
 	return p
 }
 
+// WithWorkContextAuthority configures the stable authority identity used by
+// Codefly Work Context tokens. The signing key remains the same cluster key
+// configured through WithEd25519Key; issuer and key ID are explicit so
+// consumers can pin trust and rotate verification keys without product code.
+func (p *Plugin) WithWorkContextAuthority(issuer, keyID string) *Plugin {
+	p.workContextIssuer = issuer
+	p.workContextKeyID = keyID
+	return p
+}
+
 // HMACSecret returns the configured HMAC signing secret. The generated
 // transport setup copies it to the shared DelegationServer.
 func (p *Plugin) HMACSecret() []byte { return p.signingSecret }
@@ -111,6 +123,10 @@ func (p *Plugin) HMACSecret() []byte { return p.signingSecret }
 // Ed25519Key returns the configured ed25519 signing key. See
 // HMACSecret for the rationale.
 func (p *Plugin) Ed25519Key() []byte { return p.signingEd25519Key }
+
+func (p *Plugin) WorkContextIssuer() string { return p.workContextIssuer }
+
+func (p *Plugin) WorkContextKeyID() string { return p.workContextKeyID }
 
 // Name implements framework.Plugin.
 func (p *Plugin) Name() string { return "permissions" }
@@ -134,6 +150,9 @@ func (p *Plugin) RegisterREST(ctx context.Context, mux *runtime.ServeMux, endpoi
 		return err
 	}
 	if err := gen.RegisterDelegationServiceHandlerFromEndpoint(ctx, mux, endpoint, opts); err != nil {
+		return err
+	}
+	if err := gen.RegisterWorkContextServiceHandlerFromEndpoint(ctx, mux, endpoint, opts); err != nil {
 		return err
 	}
 	return nil
@@ -160,6 +179,8 @@ func (p *Plugin) Migrations() []string {
 		"37_backfill_principals.up.sql",
 		"38_create_delegation_grants.up.sql",
 		"39_delegation_audit_views.up.sql",
+		"78_authorization_revisions.up.sql",
+		"79_principal_role_assignments.up.sql",
 	}
 }
 

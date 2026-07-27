@@ -12,7 +12,6 @@
  */
 
 import { Monitor, Moon, Sun } from "lucide-react";
-import { useTheme } from "next-themes";
 import { useSyncExternalStore } from "react";
 import { toast } from "sonner";
 import {
@@ -22,6 +21,7 @@ import {
 	DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { useThemePreference } from "@/features/user-settings/ui/theme-preference-provider";
+import { useTheme } from "@/lib/theme-provider";
 import { Button } from "@/shared/ui";
 
 const items = [

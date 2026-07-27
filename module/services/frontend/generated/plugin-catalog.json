@@ -563,6 +563,21 @@
       "order": 520
     },
     {
+      "id": "settings",
+      "plugin": "core-users",
+      "label": "Settings",
+      "path": "/settings",
+      "icon": "Settings",
+      "group": "Settings",
+      "access": "FRONTEND_ROUTE_ACCESS_AUTHENTICATED",
+      "surfaces": [
+        "FRONTEND_NAVIGATION_SURFACE_COMMAND_PALETTE",
+        "FRONTEND_NAVIGATION_SURFACE_PLUGIN_REGISTRY",
+        "FRONTEND_NAVIGATION_SURFACE_USER_MENU"
+      ],
+      "order": 590
+    },
+    {
       "id": "security",
       "plugin": "core-users",
       "label": "Security",

@@ -2,6 +2,8 @@ syntax = "proto3";
 
 package saas.accounts.v1;
 
+import "google/protobuf/empty.proto";
+
 // Codefly dependency-client facade.
 //
 // Codefly currently advertises a service's gRPC dependency contract from the
@@ -39,8 +41,29 @@ message AuthenticateResponse {
   User user = 4;
 }
 
+message RefreshTokenRequest {
+  string refresh_token = 1;
+}
+
+message RefreshTokenResponse {
+  string access_token = 1;
+  string refresh_token = 2;
+  int64 expires_in = 3;
+}
+
+message LogoutRequest {
+  string refresh_token = 1;
+}
+
+message JWKSResponse {
+  string keys_json = 1;
+}
+
 service AuthService {
   rpc Authenticate(AuthenticateRequest) returns (AuthenticateResponse);
+  rpc RefreshToken(RefreshTokenRequest) returns (RefreshTokenResponse);
+  rpc Logout(LogoutRequest) returns (google.protobuf.Empty);
+  rpc GetJWKS(google.protobuf.Empty) returns (JWKSResponse);
 }
 
 message ListOrganizationsRequest {}

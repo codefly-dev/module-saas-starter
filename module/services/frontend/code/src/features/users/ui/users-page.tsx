@@ -5,7 +5,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Search } from "lucide-react";
 import { useCallback, useState } from "react";
 import { toast } from "sonner";
-import { Input } from "@/shared/ui";
+import { Button, Input } from "@/shared/ui";
 import { toUserStatus, type User } from "../model/types";
 import { type UserEdit, userMutations } from "../service/mutations";
 import { userQueries } from "../service/queries";
@@ -25,7 +25,12 @@ export function UsersPage() {
 	);
 
 	// --- queries ---
-	const { data: raw, isLoading } = useQuery(userQueries.list(search));
+	const {
+		data: raw,
+		isLoading,
+		isError,
+		refetch,
+	} = useQuery(userQueries.list(search));
 	const users: User[] = (raw?.users ?? []).map((u) => ({
 		uuid: u.uuid,
 		primaryEmail: u.primaryEmail,
@@ -145,15 +150,34 @@ export function UsersPage() {
 				</div>
 			)}
 
-			<UsersTable
-				data={users}
-				isLoading={isLoading}
-				onEdit={handleEdit}
-				onDelete={handleDelete}
-				onSuspend={handleSuspend}
-				onUnsuspend={handleUnsuspend}
-				onImpersonate={handleImpersonate}
-			/>
+			{isError ? (
+				<div
+					role="alert"
+					className="flex items-center justify-between gap-4 rounded-lg border border-destructive/30 bg-destructive/5 p-4"
+				>
+					<div>
+						<p className="font-medium text-destructive">
+							Users could not be loaded
+						</p>
+						<p className="text-sm text-muted-foreground">
+							The directory request failed or your platform role is not active.
+						</p>
+					</div>
+					<Button variant="outline" onClick={() => void refetch()}>
+						Retry
+					</Button>
+				</div>
+			) : (
+				<UsersTable
+					data={users}
+					isLoading={isLoading}
+					onEdit={handleEdit}
+					onDelete={handleDelete}
+					onSuspend={handleSuspend}
+					onUnsuspend={handleUnsuspend}
+					onImpersonate={handleImpersonate}
+				/>
+			)}
 
 			{editTarget && (
 				<EditUserForm

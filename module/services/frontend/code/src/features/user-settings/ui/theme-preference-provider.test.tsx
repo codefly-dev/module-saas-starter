@@ -14,10 +14,13 @@ const mocks = vi.hoisted(() => ({
 	setTheme: vi.fn((theme: string) => {
 		mocks.currentTheme = theme;
 	}),
-	update: vi.fn(async ({ theme }: { theme: ThemePreference }) => ({ theme })),
+	update: vi.fn(
+		async ({ patch }: { patch: { appearance: { theme: ThemePreference } } }) =>
+			patch,
+	),
 }));
 
-vi.mock("next-themes", () => ({
+vi.mock("@/lib/theme-provider", () => ({
 	useTheme: () => ({
 		theme: mocks.currentTheme,
 		resolvedTheme: mocks.currentTheme === "dark" ? "dark" : "light",
@@ -35,7 +38,9 @@ vi.mock("../service/queries", () => ({
 	userSettingsQueries: {
 		current: () => ({
 			queryKey: ["user-settings"],
-			queryFn: async () => ({ theme: ThemePreference.DARK }),
+			queryFn: async () => ({
+				appearance: { theme: ThemePreference.DARK },
+			}),
 		}),
 	},
 }));
@@ -84,7 +89,9 @@ describe("ThemePreferenceProvider", () => {
 		await waitFor(() =>
 			expect(mocks.update).toHaveBeenCalledWith(
 				{
-					theme: ThemePreference.LIGHT,
+					patch: {
+						appearance: { theme: ThemePreference.LIGHT },
+					},
 				},
 				expect.anything(),
 			),

@@ -37,24 +37,28 @@ const STORAGE_KEY = "saas-starter:consent-version";
 const consentClient = createClient(ConsentService, apiTransport);
 
 type BannerState = "loading" | "stale" | "current";
+type ConsentMode = "authenticated" | "anonymous";
+
+interface ConsentResult {
+	mode: ConsentMode;
+	state: Exclude<BannerState, "loading">;
+}
 
 export function ConsentBanner() {
 	const { isAuthenticated, isLoading: authLoading } = useAuth();
-	const [state, setState] = useState<BannerState>("loading");
+	const mode: ConsentMode = isAuthenticated ? "authenticated" : "anonymous";
+	const [result, setResult] = useState<ConsentResult | null>(null);
 
 	useEffect(() => {
 		// While auth is resolving (refresh-token round-trip on cold load)
 		// we render nothing — picking a tier early would either flash the
 		// banner for users who already accepted server-side, or skip it
 		// for someone whose server record disagrees with localStorage.
-		if (authLoading) {
-			setState("loading");
-			return;
-		}
+		if (authLoading) return;
 
 		let cancelled = false;
 
-		if (isAuthenticated) {
+		if (mode === "authenticated") {
 			consentClient
 				.getStatus({})
 				.then((status) => {
@@ -62,28 +66,44 @@ export function ConsentBanner() {
 					const accepted =
 						status.acceptedVersion !== "" &&
 						status.acceptedVersion === status.currentVersion;
-					setState(accepted ? "current" : "stale");
+					setResult({
+						mode: "authenticated",
+						state: accepted ? "current" : "stale",
+					});
 				})
 				.catch(() => {
 					// Server unreachable → fall back to "current" so a transient
 					// outage doesn't pop the banner over real content. Next page
 					// load retries.
-					if (!cancelled) setState("current");
+					if (!cancelled) {
+						setResult({ mode: "authenticated", state: "current" });
+					}
 				});
 		} else {
-			try {
-				const accepted = window.localStorage.getItem(STORAGE_KEY);
-				setState(accepted === ANON_CONSENT_VERSION ? "current" : "stale");
-			} catch {
-				// SSR / private mode → no banner.
-				setState("current");
-			}
+			// Read browser storage asynchronously so the effect only synchronizes
+			// with the external store and never performs a synchronous state cascade.
+			Promise.resolve().then(() => {
+				if (cancelled) return;
+				try {
+					const accepted = window.localStorage.getItem(STORAGE_KEY);
+					setResult({
+						mode: "anonymous",
+						state: accepted === ANON_CONSENT_VERSION ? "current" : "stale",
+					});
+				} catch {
+					// SSR / private mode → no banner.
+					setResult({ mode: "anonymous", state: "current" });
+				}
+			});
 		}
 
 		return () => {
 			cancelled = true;
 		};
-	}, [isAuthenticated, authLoading]);
+	}, [mode, authLoading]);
+
+	const state: BannerState =
+		authLoading || result?.mode !== mode ? "loading" : result.state;
 
 	async function accept() {
 		if (isAuthenticated) {
@@ -93,7 +113,7 @@ export function ConsentBanner() {
 				});
 				// Server echoes the version it actually persisted; trust that.
 				if (status.acceptedVersion === status.currentVersion) {
-					setState("current");
+					setResult({ mode, state: "current" });
 					return;
 				}
 			} catch {
@@ -101,7 +121,7 @@ export function ConsentBanner() {
 				// — close it locally; they'll re-see it on next page load if
 				// the server still has no record.
 			}
-			setState("current");
+			setResult({ mode, state: "current" });
 			return;
 		}
 		try {
@@ -109,13 +129,13 @@ export function ConsentBanner() {
 		} catch {
 			// ignore — SSR / private mode
 		}
-		setState("current");
+		setResult({ mode, state: "current" });
 	}
 
 	function dismiss() {
 		// Dismissing is NOT acceptance — banner returns next visit. We
 		// close it locally for this session only; nothing is persisted.
-		setState("current");
+		setResult({ mode, state: "current" });
 	}
 
 	if (state !== "stale") return null;

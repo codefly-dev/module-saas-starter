@@ -8,7 +8,7 @@ import {
 	type SortingState,
 	useReactTable,
 } from "@tanstack/react-table";
-import { MoreHorizontal, Trash2, Users } from "lucide-react";
+import { MoreHorizontal, Users } from "lucide-react";
 import { useMemo, useState } from "react";
 import { formatDate, truncateUUID } from "@/shared/lib/utils";
 import {

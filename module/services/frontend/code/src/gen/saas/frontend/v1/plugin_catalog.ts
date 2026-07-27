@@ -96,6 +96,7 @@ export type FrontendNavigationIcon =
   | "ListChecks"
   | "Mail"
   | "Monitor"
+  | "Settings"
   | "Shield"
   | "ShieldCheck"
   | "UserSearch"
@@ -126,6 +127,7 @@ export const FRONTEND_NAVIGATION: readonly FrontendNavigationItem[] = [
   { id: "api-docs", plugin: "audit", label: "API Docs", href: "/docs", icon: "BookOpen", group: "Developer", access: "admin", requiredRole: "admin", surfaces: ["plugin_registry", "sidebar"], order: 500 },
   { id: "sdks", plugin: "audit", label: "SDKs", href: "/docs/sdks", icon: "FileText", group: "Developer", access: "admin", requiredRole: "admin", surfaces: ["plugin_registry", "sidebar"], order: 510 },
   { id: "compliance", plugin: "audit", label: "Compliance", href: "/docs/compliance", icon: "ShieldCheck", group: "Developer", access: "admin", requiredRole: "admin", surfaces: ["plugin_registry", "sidebar"], order: 520 },
+  { id: "settings", plugin: "core-users", label: "Settings", href: "/settings", icon: "Settings", group: "Settings", access: "authenticated", surfaces: ["command_palette", "plugin_registry", "user_menu"], order: 590 },
   { id: "security", plugin: "core-users", label: "Security", href: "/settings/mfa", icon: "Shield", group: "Settings", access: "authenticated", surfaces: ["command_palette", "plugin_registry", "user_menu"], order: 600 },
   { id: "notifications", plugin: "core-users", label: "Notifications", href: "/settings/notifications", icon: "Bell", group: "Settings", access: "authenticated", surfaces: ["command_palette", "plugin_registry", "user_menu"], order: 610 },
   { id: "data-privacy", plugin: "core-users", label: "Data & Privacy", href: "/settings/data", icon: "FileText", group: "Settings", access: "authenticated", surfaces: ["command_palette", "plugin_registry", "user_menu"], order: 620 },

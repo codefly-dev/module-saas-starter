@@ -2,13 +2,14 @@
 kind: module
 name: saas-starter
 description: SaaS foundation — auth, multi-tenancy, generated RPC policy, RBAC, impersonation, audit
+service-entry: auth-sidecar
 interface:
     endpoints:
         - service: auth-sidecar
           endpoint: grpc
           visibility: module
         - service: auth-sidecar
-          endpoint: http
+          endpoint: rest
           visibility: public
 services:
     - name: accounts

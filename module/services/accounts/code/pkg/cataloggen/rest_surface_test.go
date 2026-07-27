@@ -20,7 +20,7 @@ func TestRESTSurfaceCompilationAndExposure(t *testing.T) {
 	require.NoError(t, cataloggen.ValidateRESTSurfaceCatalog(surface))
 	require.Equal(t, "saas.rest.surface.v1", surface.GetSchemaVersion())
 	require.Equal(t, "accounts", surface.GetOwner().GetService())
-	require.Len(t, surface.GetRoutes(), 115)
+	require.Len(t, surface.GetRoutes(), 119)
 
 	publicCount := 0
 	services := make(map[string]struct{})
@@ -34,20 +34,21 @@ func TestRESTSurfaceCompilationAndExposure(t *testing.T) {
 		}
 	}
 	require.Equal(t, 11, publicCount)
-	require.Len(t, services, 23)
+	require.Len(t, services, 24)
 	require.Nil(t, routes["POST /v1/permissions:check"])
 	require.Nil(t, routes["POST /v1/api-keys:validate"])
 	require.Equal(t, "/saas.accounts.v1.UserService/RegisterUser", routes["POST /v1/users"].GetProcedure())
 	require.Equal(t, "/saas.accounts.v1.AuditExportService/SaveConfig", routes["POST /v1/audit-export"].GetProcedure())
 	require.Equal(t, "/saas.accounts.v1.PlatformAdminService/GetJobOperations", routes["GET /v1/platform/jobs/operations"].GetProcedure())
 	require.Equal(t, "/saas.accounts.v1.PlatformAdminService/ReplayJob", routes["POST /v1/platform/jobs/{source_job_id}:replay"].GetProcedure())
+	require.Equal(t, "/saas.accounts.v1.WorkContextService/ExchangeAudience", routes["POST /v1/work-contexts:exchange-audience"].GetProcedure())
 }
 
 func TestRESTSurfaceArtifactsAreDeterministicAndCurrent(t *testing.T) {
 	serviceDocument := readFixture(t, "../../../generated/service-catalog.json")
 	gatewayDocument := readFixture(t, "../../../generated/gateway-routes.json")
 	bindingDocument := readFixture(t, "../adapters/rest_bindings.yaml")
-	rawOpenAPI := readFixture(t, "../../../.cache/openapi/api.swagger.json")
+	rawOpenAPI := readFixture(t, "../../../generated/openapi-raw/api.swagger.json")
 	surface, err := cataloggen.BuildRESTSurfaceCatalog(gatewayDocument)
 	require.NoError(t, err)
 
@@ -73,7 +74,7 @@ func TestRESTSurfaceArtifactsAreDeterministicAndCurrent(t *testing.T) {
 	sidecarRuntime, err := cataloggen.RenderAuthSidecarRESTRoutes(surface)
 	require.NoError(t, err)
 	require.Equal(t, string(readFixture(t, "../../../../auth-sidecar/code/routing_rest_catalog_gen.go")), string(sidecarRuntime), "run: go generate ./pkg/cataloggen")
-	require.Equal(t, 115, strings.Count(string(sidecarRuntime), `{Service: "accounts"`))
+	require.Equal(t, 119, strings.Count(string(sidecarRuntime), `{Service: "accounts"`))
 
 	publicOpenAPI, err := cataloggen.RenderPublicOpenAPI(rawOpenAPI, surface, service)
 	require.NoError(t, err)
@@ -85,8 +86,8 @@ func TestRESTSurfaceArtifactsAreDeterministicAndCurrent(t *testing.T) {
 	var raw, public map[string]any
 	require.NoError(t, json.Unmarshal(rawOpenAPI, &raw))
 	require.NoError(t, json.Unmarshal(publicOpenAPI, &public))
-	require.Equal(t, 115, openAPIOperationCount(t, raw))
-	require.Equal(t, 115, openAPIOperationCount(t, public))
+	require.Equal(t, 119, openAPIOperationCount(t, raw))
+	require.Equal(t, 119, openAPIOperationCount(t, public))
 	require.Equal(t, "saas.rest.surface.v1", public["x-codefly-rest-schema"])
 	publicPaths := public["paths"].(map[string]any)
 	require.NotContains(t, publicPaths, "/v1/permissions:check")
@@ -122,7 +123,7 @@ func TestRESTSurfaceRejectsUnsafeDriftAndBindings(t *testing.T) {
 
 	reduced := proto.Clone(surface).(*catalogv1.RESTSurfaceCatalog)
 	reduced.Routes = reduced.Routes[1:]
-	_, err = cataloggen.RenderPublicOpenAPI(readFixture(t, "../../../.cache/openapi/api.swagger.json"), reduced, service)
+	_, err = cataloggen.RenderPublicOpenAPI(readFixture(t, "../../../generated/openapi-raw/api.swagger.json"), reduced, service)
 	require.ErrorContains(t, err, "absent from the public REST surface")
 }
 

@@ -76,6 +76,9 @@
     },
     {
       "name": "WebhookService"
+    },
+    {
+      "name": "WorkContextService"
     }
   ],
   "consumes": [
@@ -2872,12 +2875,13 @@
           },
           {
             "name": "subjectKind",
-            "description": "unspecified → both users + teams",
+            "description": "unspecified → both principals + teams\n\n - SUBJECT_KIND_PRINCIPAL: A direct role assignment always targets a Principal. Human users remain\nPrincipals of kind HUMAN; agents and services can receive the same\nexplicitly assigned authority without masquerading as users.\n - SUBJECT_KIND_USER: Backward-compatible wire/JSON input alias. New clients must use\nSUBJECT_KIND_PRINCIPAL.",
             "in": "query",
             "required": false,
             "type": "string",
             "enum": [
               "SUBJECT_KIND_UNSPECIFIED",
+              "SUBJECT_KIND_PRINCIPAL",
               "SUBJECT_KIND_USER",
               "SUBJECT_KIND_TEAM"
             ],
@@ -4038,6 +4042,136 @@
           "WebhookService"
         ]
       }
+    },
+    "/v1/work-contexts:child-session": {
+      "post": {
+        "operationId": "WorkContextService_StartChildSession",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1IssuedWorkContext"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/rpcStatus"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "body",
+            "in": "body",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/v1StartChildSessionWorkContextRequest"
+            }
+          }
+        ],
+        "tags": [
+          "WorkContextService"
+        ]
+      }
+    },
+    "/v1/work-contexts:exchange-audience": {
+      "post": {
+        "summary": "ExchangeAudience derives a least-privilege, audience-bound capability\nwithout changing the Task, Session, owner, or delegation identity.",
+        "operationId": "WorkContextService_ExchangeAudience",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1IssuedWorkContext"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/rpcStatus"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "body",
+            "description": "ExchangeWorkContextAudienceRequest reissues the same immutable Task,\nSession, owner, and delegation lineage for another service boundary while\nattenuating the effective authority to the requested scopes.",
+            "in": "body",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/v1ExchangeWorkContextAudienceRequest"
+            }
+          }
+        ],
+        "tags": [
+          "WorkContextService"
+        ]
+      }
+    },
+    "/v1/work-contexts:root-session": {
+      "post": {
+        "operationId": "WorkContextService_StartRootSession",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1IssuedWorkContext"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/rpcStatus"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "body",
+            "in": "body",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/v1StartRootSessionWorkContextRequest"
+            }
+          }
+        ],
+        "tags": [
+          "WorkContextService"
+        ]
+      }
+    },
+    "/v1/work-contexts:task": {
+      "post": {
+        "operationId": "WorkContextService_StartTask",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1IssuedWorkContext"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/rpcStatus"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "body",
+            "in": "body",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/v1StartTaskWorkContextRequest"
+            }
+          }
+        ],
+        "tags": [
+          "WorkContextService"
+        ]
+      }
     }
   },
   "definitions": {
@@ -4886,6 +5020,35 @@
         }
       }
     },
+    "v1ExchangeWorkContextAudienceRequest": {
+      "type": "object",
+      "properties": {
+        "orgId": {
+          "type": "string"
+        },
+        "parentWorkContextToken": {
+          "type": "string"
+        },
+        "audience": {
+          "type": "string"
+        },
+        "attenuatedScopes": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "$ref": "#/definitions/v1WorkContextScope"
+          }
+        },
+        "replayPolicy": {
+          "$ref": "#/definitions/v1WorkContextReplayPolicy"
+        },
+        "ttlSeconds": {
+          "type": "integer",
+          "format": "int32"
+        }
+      },
+      "description": "ExchangeWorkContextAudienceRequest reissues the same immutable Task,\nSession, owner, and delegation lineage for another service boundary while\nattenuating the effective authority to the requested scopes."
+    },
     "v1ExportAuditLogRequest": {
       "type": "object",
       "properties": {
@@ -5277,6 +5440,47 @@
         }
       },
       "description": "Invoice — trimmed view of Stripe's invoice object. Amounts are in\nthe smallest currency unit (cents for USD/EUR); FE divides by 100."
+    },
+    "v1IssuedWorkContext": {
+      "type": "object",
+      "properties": {
+        "token": {
+          "type": "string"
+        },
+        "orgId": {
+          "type": "string"
+        },
+        "ownerPrincipalId": {
+          "type": "string"
+        },
+        "taskId": {
+          "type": "string"
+        },
+        "sessionId": {
+          "type": "string"
+        },
+        "parentSessionId": {
+          "type": "string"
+        },
+        "currentActorPrincipalId": {
+          "type": "string"
+        },
+        "authorizationRevision": {
+          "type": "string",
+          "format": "uint64"
+        },
+        "expiresAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "workspaceId": {
+          "type": "string"
+        },
+        "projectId": {
+          "type": "string"
+        }
+      },
+      "description": "IssuedWorkContext is the opaque signed capability plus safe correlation\nfields useful to an SDK caller. Consumers must verify the token rather than\ntrusting these duplicated display fields."
     },
     "v1JWKSResponse": {
       "type": "object",
@@ -6688,6 +6892,64 @@
         }
       }
     },
+    "v1StartChildSessionWorkContextRequest": {
+      "type": "object",
+      "properties": {
+        "orgId": {
+          "type": "string"
+        },
+        "parentWorkContextToken": {
+          "type": "string"
+        },
+        "sessionId": {
+          "type": "string"
+        },
+        "actorPrincipalId": {
+          "type": "string"
+        },
+        "grantedScopes": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "$ref": "#/definitions/v1WorkContextScope"
+          }
+        },
+        "audience": {
+          "type": "string"
+        },
+        "replayPolicy": {
+          "$ref": "#/definitions/v1WorkContextReplayPolicy"
+        },
+        "ttlSeconds": {
+          "type": "integer",
+          "format": "int32"
+        }
+      }
+    },
+    "v1StartRootSessionWorkContextRequest": {
+      "type": "object",
+      "properties": {
+        "orgId": {
+          "type": "string"
+        },
+        "parentWorkContextToken": {
+          "type": "string"
+        },
+        "sessionId": {
+          "type": "string"
+        },
+        "audience": {
+          "type": "string"
+        },
+        "replayPolicy": {
+          "$ref": "#/definitions/v1WorkContextReplayPolicy"
+        },
+        "ttlSeconds": {
+          "type": "integer",
+          "format": "int32"
+        }
+      }
+    },
     "v1StartSSOSetupRequest": {
       "type": "object",
       "properties": {
@@ -6710,14 +6972,59 @@
         }
       }
     },
+    "v1StartTaskWorkContextRequest": {
+      "type": "object",
+      "properties": {
+        "orgId": {
+          "type": "string"
+        },
+        "taskId": {
+          "type": "string"
+        },
+        "sessionId": {
+          "type": "string"
+        },
+        "actorPrincipalId": {
+          "type": "string",
+          "description": "Empty means a direct human-owned Task. Otherwise this must name an active,\nregistered agent Principal in org_id."
+        },
+        "authorityScopes": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "$ref": "#/definitions/v1WorkContextScope"
+          }
+        },
+        "audience": {
+          "type": "string"
+        },
+        "replayPolicy": {
+          "$ref": "#/definitions/v1WorkContextReplayPolicy"
+        },
+        "ttlSeconds": {
+          "type": "integer",
+          "format": "int32"
+        },
+        "workspaceId": {
+          "type": "string",
+          "description": "Optional Codefly execution boundary. When set, consumers bind the\ncapability to this exact workspace and reject cross-workspace reuse."
+        },
+        "projectId": {
+          "type": "string",
+          "description": "Optional product/project attribution inside workspace_id."
+        }
+      }
+    },
     "v1SubjectKind": {
       "type": "string",
       "enum": [
         "SUBJECT_KIND_UNSPECIFIED",
+        "SUBJECT_KIND_PRINCIPAL",
         "SUBJECT_KIND_USER",
         "SUBJECT_KIND_TEAM"
       ],
-      "default": "SUBJECT_KIND_UNSPECIFIED"
+      "default": "SUBJECT_KIND_UNSPECIFIED",
+      "description": " - SUBJECT_KIND_PRINCIPAL: A direct role assignment always targets a Principal. Human users remain\nPrincipals of kind HUMAN; agents and services can receive the same\nexplicitly assigned authority without masquerading as users.\n - SUBJECT_KIND_USER: Backward-compatible wire/JSON input alias. New clients must use\nSUBJECT_KIND_PRINCIPAL."
     },
     "v1SwitchOrganizationRequest": {
       "type": "object",
@@ -6837,7 +7144,11 @@
       "properties": {
         "patch": {
           "$ref": "#/definitions/v1UserSettings",
-          "description": "Partial — only the keys to change. Nested objects are replaced\nwholesale (the FE always sends the full nested object)."
+          "description": "Partial — only explicitly present fields change. Missing parent messages\nare materialized by the typed settings SDK, and nested siblings survive."
+        },
+        "clearMask": {
+          "type": "string",
+          "description": "Paths whose explicit overrides should be removed before applying patch.\nA cleared field resolves to its catalog default on the returned document."
         }
       }
     },
@@ -6884,6 +7195,15 @@
         }
       },
       "title": "User represents a user in the system"
+    },
+    "v1UserAppearanceSettings": {
+      "type": "object",
+      "properties": {
+        "theme": {
+          "$ref": "#/definitions/v1ThemePreference"
+        }
+      },
+      "description": "UserAppearanceSettings — presentation preferences shared by every Starter\nfrontend. The setting describes user intent, not a specific web client, so\nnative and future clients consume the same value."
     },
     "v1UserEmailSettings": {
       "type": "object",
@@ -6955,12 +7275,9 @@
         }
       }
     },
-    "v1UserSettings": {
+    "v1UserRegionalSettings": {
       "type": "object",
       "properties": {
-        "theme": {
-          "$ref": "#/definitions/v1ThemePreference"
-        },
         "locale": {
           "type": "string",
           "description": "IETF tag: \"en\", \"fr\", \"es-419\", etc."
@@ -6976,6 +7293,18 @@
         "timeFormat": {
           "type": "string",
           "title": "\"12h\" | \"24h\""
+        }
+      },
+      "description": "UserRegionalSettings — locale and formatting preferences shared by all\nclients and backend-rendered content."
+    },
+    "v1UserSettings": {
+      "type": "object",
+      "properties": {
+        "appearance": {
+          "$ref": "#/definitions/v1UserAppearanceSettings"
+        },
+        "regional": {
+          "$ref": "#/definitions/v1UserRegionalSettings"
         },
         "email": {
           "$ref": "#/definitions/v1UserEmailSettings"
@@ -6984,7 +7313,7 @@
           "$ref": "#/definitions/v1UserNotificationSettings"
         }
       },
-      "description": "UserSettings — per-user preferences. All fields optional. The\nFE submits ONLY changed keys; the api jsonb-merges onto the row.\nAdding a field is a no-op (FE bumps + new key flows through)."
+      "description": "UserSettings — common per-user preferences included in every SaaS Starter.\nAll scalar fields below the section messages are optional so an explicit\nfalse/empty value remains distinct from an unset value that resolves to its\ncatalog default. The API recursively merges typed protobuf patches."
     },
     "v1UserStatus": {
       "type": "string",
@@ -7115,6 +7444,37 @@
           "description": "Generated by the server and returned only by CreateSubscription. List and\nall later reads leave this empty; store it in the consumer immediately."
         }
       }
+    },
+    "v1WorkContextReplayPolicy": {
+      "type": "string",
+      "enum": [
+        "WORK_CONTEXT_REPLAY_POLICY_UNSPECIFIED",
+        "WORK_CONTEXT_REPLAY_POLICY_IDEMPOTENT",
+        "WORK_CONTEXT_REPLAY_POLICY_SINGLE_USE"
+      ],
+      "default": "WORK_CONTEXT_REPLAY_POLICY_UNSPECIFIED",
+      "description": "WorkContextReplayPolicy controls how a consumer may accept a signed Work\nContext. Single-use still requires a durable replay store at the consumer."
+    },
+    "v1WorkContextScope": {
+      "type": "object",
+      "properties": {
+        "resourceKind": {
+          "type": "string"
+        },
+        "actions": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "resourceIds": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      },
+      "description": "WorkContextScope is one product-neutral authority slice. Product plugins\ncontribute the resource/action vocabulary through Accounts RBAC; this API\ndoes not carry a built-in list of product permissions."
     }
   }
 }

@@ -2,6 +2,7 @@
 
 Status: active
 Started: 2026-07-12
+Last reviewed: 2026-07-26
 Companion checklist: [TODO.md](TODO.md)
 
 This roadmap turns the architecture review into an executable program of work.
@@ -353,6 +354,16 @@ SBOM attestations for exact image digests on main and release tags. Runtime
 images use pinned current bases, non-root users, and no package managers; the
 database migration image is a minimal Postgres-only binary instead of the
 vulnerability-heavy all-driver upstream CLI.
+The frontend now uses Next.js 16.2.11 and React/React DOM 19.2.8 with the stable
+React Compiler.
+App Router page and layout files remain server boundaries, while authentication,
+plugin routing, accordions, and browser-origin discovery live in narrow client
+islands. A script-free external-store theme provider replaces `next-themes`, and
+compiler correctness findings are enforced. The same baseline is implemented in
+the Codefly Next.js factory; Codefly's shared Node upgrader now understands npm
+11 workspace arrays, upgrades peer-coupled packages atomically per workspace,
+and reports workspace-only changes. Publishing core and agent 0.0.115 remains a
+separate release step before consumer pins move.
 The CI workflow now exposes an aggregate clean-checkout check that cannot pass
 when a prerequisite is skipped, runs version tags, and promotes only after the
 complete Playwright suite succeeds against a freshly created Codefly `dev-admin`
@@ -412,7 +423,7 @@ protobuf. Complex state-dependent authorization stays in domain code.
 Implemented: `saas.policy.v1.MethodPolicy` defines finite exposure,
 tenant, permission/scope, resource-binding, MFA, audit, idempotency, rate-limit,
 platform-role, and sensitivity vocabulary as extension `51000` of
-`MethodOptions`. All 114 RPCs are annotated. Exact local Codefly generation
+`MethodOptions`. All 125 RPCs are annotated. Exact local Codefly generation
 emits Go and TypeScript bindings; runtime admission and the review matrix read
 the descriptors directly; validation rejects incomplete policy, bad vocabulary,
 and invalid resource field paths. `module/METHOD_POLICY.md` defines the
@@ -436,8 +447,8 @@ has functional equivalence and migration tests.
 
 Implemented foundation: `saas.catalog.v1` supplies generated Go and TypeScript
 catalog types, and the accounts compiler discovers every service directly from
-the registered protobuf file graph. It emits a deterministic 23-service,
-114-method `generated/service-catalog.json` with canonical procedures,
+the registered protobuf file graph. It emits a deterministic 25-service,
+125-method `generated/service-catalog.json` with canonical procedures,
 request/response and streaming shape, all HTTP bindings, full typed policy,
 source provenance, and Codefly ownership. Semantic validation and CI fail on
 missing/invalid policy, duplicate routes, incomplete ownership, inventory
@@ -445,26 +456,26 @@ ordering/grouping drift, unknown permission/scope vocabulary, invalid
 entitlement definitions, transport mismatch, or generated-file drift. The
 catalog plus a strict finite implementation-binding file now generates every
 Connect registration and compile-time handler-interface assertion. Runtime mux
-parity proves all 114 catalog procedures resolve through 23 Connect service
+parity proves all 125 catalog procedures resolve through 25 Connect service
 patterns; the former handwritten registration block is gone. The gateway
-compiler emits a typed 325-route public-edge inventory, generated
+compiler emits a typed 355-route public-edge inventory, generated
 auth-sidecar/Envoy Connect whitelist, and exact/path-template Istio manifest
 with Codefly ownership and named endpoints. Internal methods are omitted and
 public/protected behavior is descriptor-derived. Istio activation waits for the
 frontend/static route catalog so deployment cannot regress to an API-only
 surface. The authorization compiler now emits `saas.authz.methods.v1` for all
-114 procedures with complete policy, deterministic policy fingerprints, and
+125 procedures with complete policy, deterministic policy fingerprints, and
 edge limiter behavior. Auth-sidecar joins Connect and known REST routes to its
 generated policy lookup; parity repaired stale registration exposure and URL
 classification is gone from limiter failure handling. The generated
-`saas.rest.surface.v1` projection now drives 109 opt-in descriptor routes,
+`saas.rest.surface.v1` projection now drives 119 opt-in descriptor routes,
 accounts registration/allowlisting, auth-sidecar routing, and verified public
 OpenAPI; internal RPCs have no HTTP annotations and five non-protobuf routes
 remain explicit extensions. The frontend projection now generates typed
-Connect clients for all 23 accounts services plus finite permission, API-key
+Connect clients for all 25 accounts services plus finite permission, API-key
 scope, and entitlement constants. Frontend role gates, common client hooks,
 and entitlement administration consume those types, while Go and Vitest parity
-tests pin all 114 procedures. The deployment projection now compiles a strict
+tests pin all 125 procedures. The deployment projection now compiles a strict
 module topology into the actual Codefly module/service manifests, a typed
 7-service/11-endpoint/8-dependency inventory, and 15 default-deny Kubernetes
 NetworkPolicies. Each service edge is limited to declared endpoint ports;
@@ -494,6 +505,12 @@ two module-interface exports, and finite public egress. Generation writes the
 runtime `module.codefly.yaml`/`service.codefly.yaml` files and removes the broad
 intra-namespace allow policy in favor of dependency-specific ingress/egress.
 DNS, Istio control-plane/ingress, and HTTPS egress remain explicit exceptions.
+The same source declares `auth-sidecar` as the module service entry. Because the
+sidecar depends on the frontend, accounts, and cache—and those dependencies pull
+in the remaining infrastructure—Codefly resolves the complete seven-service
+graph from either the module directory or the repository's single-module
+workspace without a manually repeated service name. Its public HTTP endpoint is
+the application ingress; the frontend remains private behind it.
 
 Reference: <https://connectrpc.com/docs/go/getting-started/> and
 <https://www.envoyproxy.io/docs/envoy/latest/configuration/http/http_filters/ext_authz_filter>.
@@ -571,6 +588,46 @@ privacy/billing workflows are recoverable.
   available to backend, frontend, gateway, and plugin manifests through generated
   types.
 - Support seats and usage as separate meters with reconciliation jobs.
+
+### P2.6 Principal authority and Work Context
+
+- Treat every direct RBAC subject as a Principal, not as a human user. Teams
+  remain indirect/group subjects. Preserve the legacy `SUBJECT_KIND_USER = 1`
+  protobuf alias for compatibility while making `SUBJECT_KIND_PRINCIPAL = 1`
+  canonical and migrating stored `user` assignments to `principal`.
+- Issue short-lived, audience-bound Codefly Work Context capabilities from the
+  permissions plugin for a new Task/root Session, another root Session under
+  the same Task, or an attenuated child-agent Session.
+- Resolve owner membership, active Agent Principal, exact requested
+  resource/action/scope grants, team attribution, and monotonic organization /
+  Principal authorization revisions inside one verified `service-postgres`
+  Reader transaction. A request field or cached display context may not select
+  the authoritative tenant or Principal.
+- Keep Task and Session lifecycle rows in the product. Accounts owns current
+  identity/RBAC and capability exchange only.
+- Cache permission computations only behind revisioned keys and explicit
+  invalidation. Issuance and row-level authority must fail closed when current
+  revision state cannot be established; stale cache may narrow presentation but
+  never widen execution or reads.
+
+Implemented foundation: `WorkContextService` contributes three generated
+gRPC/Connect/REST operations and uses the shared Codefly Ed25519 Work Context
+SDK. Migrations 78–79 add authorization revisions and principal-uniform role
+subjects. The store binds verified tenant/owner scope, checks exact owner and
+Actor authority, and signs only current facts. Compile, RPC attenuation, direct
+Agent Principal, human RBAC, cross-tenant RLS, database-role, grant, inventory,
+and policy tests pass against fresh Codefly-managed PostgreSQL.
+
+Acceptance criteria:
+
+- One human owner can authorize a registered Agent Principal without encoding
+  the Agent as a user.
+- A child Session can only attenuate its parent capability and cannot change
+  Task owner or tenant.
+- Revoked membership, revoked Actor, changed role/scope, stale revision, foreign
+  tenant, wrong audience, expiry, and replay-policy violations fail closed.
+- A real product consumes the capability through released Codefly/Warden SDKs
+  without importing Accounts internals or scanning Codefly carriers.
 
 ## Phase 3: plugin platform and Mind delegation
 

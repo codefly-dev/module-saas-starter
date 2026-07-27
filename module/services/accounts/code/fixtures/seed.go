@@ -18,9 +18,12 @@ import (
 
 // fixtureFile mirrors module/fixtures/*.yaml.
 type fixtureFile struct {
-	Users         []fixtureUser `yaml:"users"`
-	Organizations []fixtureOrg  `yaml:"organizations"`
-	Teams         []fixtureTeam `yaml:"teams"`
+	Users         []fixtureUser           `yaml:"users"`
+	Organizations []fixtureOrg            `yaml:"organizations"`
+	Teams         []fixtureTeam           `yaml:"teams"`
+	Agents        []fixtureAgent          `yaml:"agents"`
+	Roles         []fixtureRole           `yaml:"roles"`
+	Assignments   []fixtureRoleAssignment `yaml:"assignments"`
 }
 
 type fixtureUser struct {
@@ -47,6 +50,32 @@ type fixtureTeam struct {
 	Name    string   `yaml:"name"`
 	Org     string   `yaml:"org"`
 	Members []string `yaml:"members"`
+}
+
+type fixtureAgent struct {
+	Org             string `yaml:"org"`
+	AgentIdentifier string `yaml:"agent_identifier"`
+	DisplayName     string `yaml:"display_name"`
+	CreatedBy       string `yaml:"created_by"`
+}
+
+type fixturePermission struct {
+	Resource string `yaml:"resource"`
+	Action   string `yaml:"action"`
+}
+
+type fixtureRole struct {
+	Org         string              `yaml:"org"`
+	Name        string              `yaml:"name"`
+	Description string              `yaml:"description"`
+	Permissions []fixturePermission `yaml:"permissions"`
+}
+
+type fixtureRoleAssignment struct {
+	Org             string `yaml:"org"`
+	Role            string `yaml:"role"`
+	AgentIdentifier string `yaml:"agent_identifier"`
+	Scope           string `yaml:"scope"`
 }
 
 var fixtureNamePattern = regexp.MustCompile(`^[a-zA-Z0-9][a-zA-Z0-9_-]*$`)
@@ -145,14 +174,34 @@ func Seed(ctx context.Context, service *business.Service, name string) error {
 		wool.Field("fixture", name),
 		wool.Field("users", len(f.Users)),
 		wool.Field("orgs", len(f.Organizations)),
-		wool.Field("teams", len(f.Teams)))
+		wool.Field("teams", len(f.Teams)),
+		wool.Field("agents", len(f.Agents)),
+		wool.Field("roles", len(f.Roles)),
+		wool.Field("assignments", len(f.Assignments)))
 
 	userIDs, err := seedUsers(ctx, w, service, f.Users)
 	if err != nil {
 		return err
 	}
 	orgIDs := seedOrganizations(ctx, w, service, f.Organizations, userIDs)
+	orgOwnerIDs := make(map[string]string, len(f.Organizations))
+	for _, organization := range f.Organizations {
+		if ownerID, ok := userIDs[organization.Owner]; ok {
+			orgOwnerIDs[organization.Name] = ownerID
+		}
+	}
 	seedTeams(ctx, w, service, f.Teams, orgIDs, userIDs)
+	agentIDs, err := seedAgents(ctx, w, service, f.Agents, orgIDs, userIDs)
+	if err != nil {
+		return err
+	}
+	roleIDs, err := seedRoles(ctx, w, service, f.Roles, orgIDs, orgOwnerIDs)
+	if err != nil {
+		return err
+	}
+	if err := seedRoleAssignments(ctx, w, service, f.Assignments, orgIDs, agentIDs, roleIDs); err != nil {
+		return err
+	}
 
 	w.Info("fixtures applied", wool.Field("fixture", name))
 	return nil
@@ -199,6 +248,40 @@ func validateFixture(f *fixtureFile) error {
 		}
 		if org.Owner == "" {
 			return fmt.Errorf("organization[%d] (%s): owner is required", i, org.Name)
+		}
+	}
+	for i, agent := range f.Agents {
+		if strings.TrimSpace(agent.Org) == "" {
+			return fmt.Errorf("agent[%d]: org is required", i)
+		}
+		if strings.TrimSpace(agent.AgentIdentifier) == "" {
+			return fmt.Errorf("agent[%d]: agent_identifier is required", i)
+		}
+		if strings.TrimSpace(agent.CreatedBy) == "" {
+			return fmt.Errorf("agent[%d] (%s): created_by is required", i, agent.AgentIdentifier)
+		}
+	}
+	for i, role := range f.Roles {
+		if strings.TrimSpace(role.Org) == "" {
+			return fmt.Errorf("role[%d]: org is required", i)
+		}
+		if strings.TrimSpace(role.Name) == "" {
+			return fmt.Errorf("role[%d]: name is required", i)
+		}
+		if len(role.Permissions) == 0 {
+			return fmt.Errorf("role[%d] (%s): at least one permission is required", i, role.Name)
+		}
+		for j, permission := range role.Permissions {
+			if strings.TrimSpace(permission.Resource) == "" || strings.TrimSpace(permission.Action) == "" {
+				return fmt.Errorf("role[%d] (%s) permission[%d]: resource and action are required", i, role.Name, j)
+			}
+		}
+	}
+	for i, assignment := range f.Assignments {
+		if strings.TrimSpace(assignment.Org) == "" ||
+			strings.TrimSpace(assignment.Role) == "" ||
+			strings.TrimSpace(assignment.AgentIdentifier) == "" {
+			return fmt.Errorf("assignment[%d]: org, role, and agent_identifier are required", i)
 		}
 	}
 	return nil
@@ -251,7 +334,24 @@ func seedUsers(ctx context.Context, w *wool.Wool, service *business.Service, use
 		}
 		if existing != nil {
 			userIDs[u.Email] = existing.Uuid
-			w.Info("user already exists, skipping", wool.Field("email", u.Email))
+			// Fixtures are desired state, not create-only samples. Converge the
+			// platform role on every activation so authentication and admin
+			// authorization cannot disagree for the same fixture identity.
+			if u.Role == "super_admin" {
+				if err := service.Store().GrantPlatformRole(
+					ctx,
+					existing.Uuid,
+					u.Role,
+					existing.Uuid,
+				); err != nil {
+					return nil, w.Wrapf(
+						err,
+						"cannot converge platform role for fixture user %s",
+						u.Email,
+					)
+				}
+			}
+			w.Info("fixture user converged", wool.Field("email", u.Email))
 			continue
 		}
 
@@ -284,7 +384,7 @@ func seedUsers(ctx context.Context, w *wool.Wool, service *business.Service, use
 		// fixture time. "fixture-seed" as a string fails the uuid cast.
 		if u.Role == "super_admin" {
 			if err := service.Store().GrantPlatformRole(ctx, userID, u.Role, userID); err != nil {
-				w.Warn("cannot grant platform role", wool.Field("email", u.Email), wool.Field("error", err.Error()))
+				return nil, w.Wrapf(err, "cannot grant platform role for fixture user %s", u.Email)
 			}
 		}
 	}
@@ -402,4 +502,198 @@ func seedTeams(ctx context.Context, w *wool.Wool, service *business.Service, tea
 			}
 		}
 	}
+}
+
+func fixtureScopedKey(org, value string) string {
+	return org + "\x00" + value
+}
+
+func seedAgents(
+	ctx context.Context,
+	w *wool.Wool,
+	service *business.Service,
+	agents []fixtureAgent,
+	orgIDs, userIDs map[string]string,
+) (map[string]string, error) {
+	agentIDs := make(map[string]string, len(agents))
+	for _, agent := range agents {
+		orgID, ok := orgIDs[agent.Org]
+		if !ok {
+			return nil, fmt.Errorf("agent %q references unknown organization %q", agent.AgentIdentifier, agent.Org)
+		}
+		creatorID, ok := userIDs[agent.CreatedBy]
+		if !ok {
+			return nil, fmt.Errorf("agent %q references unknown creator %q", agent.AgentIdentifier, agent.CreatedBy)
+		}
+		principal, err := service.CreateAgentPrincipal(ctx, business.CreateAgentRequest{
+			OrgID:           orgID,
+			AgentIdentifier: agent.AgentIdentifier,
+			DisplayName:     agent.DisplayName,
+			CreatedBy:       creatorID,
+		})
+		if err != nil {
+			return nil, w.Wrapf(err, "cannot seed agent %s", agent.AgentIdentifier)
+		}
+		agentIDs[fixtureScopedKey(agent.Org, agent.AgentIdentifier)] = principal.ID
+		w.Info("seeded or reused agent principal",
+			wool.Field("org", agent.Org),
+			wool.Field("agent_identifier", agent.AgentIdentifier))
+	}
+	return agentIDs, nil
+}
+
+func seedRoles(
+	ctx context.Context,
+	w *wool.Wool,
+	service *business.Service,
+	roles []fixtureRole,
+	orgIDs, orgOwnerIDs map[string]string,
+) (map[string]string, error) {
+	roleIDs := make(map[string]string, len(roles))
+	for _, fixtureRole := range roles {
+		orgID, ok := orgIDs[fixtureRole.Org]
+		if !ok {
+			return nil, fmt.Errorf("role %q references unknown organization %q", fixtureRole.Name, fixtureRole.Org)
+		}
+		ownerID, ok := orgOwnerIDs[fixtureRole.Org]
+		if !ok {
+			return nil, fmt.Errorf("role %q cannot resolve an organization owner", fixtureRole.Name)
+		}
+
+		var existingRoles []*gen.Role
+		if err := service.Store().WithOrgTx(ctx, orgID, func(ctx context.Context) error {
+			var listErr error
+			existingRoles, listErr = service.Store().ListRoles(ctx, orgID)
+			return listErr
+		}); err != nil {
+			return nil, w.Wrapf(err, "cannot list fixture roles for %s", fixtureRole.Org)
+		}
+		var existing *gen.Role
+		for _, role := range existingRoles {
+			if role.OrgId == orgID && role.Name == fixtureRole.Name {
+				existing = role
+				break
+			}
+		}
+		permissions := make([]*gen.Permission, 0, len(fixtureRole.Permissions))
+		for _, permission := range fixtureRole.Permissions {
+			permissions = append(permissions, &gen.Permission{
+				Resource: permission.Resource,
+				Action:   permission.Action,
+			})
+		}
+		if existing != nil {
+			if !sameFixturePermissions(existing.Permissions, permissions) {
+				return nil, fmt.Errorf(
+					"fixture role %q in %q exists with different permissions",
+					fixtureRole.Name,
+					fixtureRole.Org,
+				)
+			}
+			roleIDs[fixtureScopedKey(fixtureRole.Org, fixtureRole.Name)] = existing.Id
+			w.Info("role already exists, reusing",
+				wool.Field("org", fixtureRole.Org),
+				wool.Field("name", fixtureRole.Name))
+			continue
+		}
+		response, err := service.CreateRole(ctx, ownerID, &gen.CreateRoleRequest{
+			OrgId:       orgID,
+			Name:        fixtureRole.Name,
+			Description: fixtureRole.Description,
+			Permissions: permissions,
+		})
+		if err != nil {
+			return nil, w.Wrapf(err, "cannot seed role %s", fixtureRole.Name)
+		}
+		roleIDs[fixtureScopedKey(fixtureRole.Org, fixtureRole.Name)] = response.Role.Id
+		w.Info("seeded role", wool.Field("org", fixtureRole.Org), wool.Field("name", fixtureRole.Name))
+	}
+	return roleIDs, nil
+}
+
+func sameFixturePermissions(left, right []*gen.Permission) bool {
+	canonical := func(permissions []*gen.Permission) []string {
+		values := make([]string, 0, len(permissions))
+		for _, permission := range permissions {
+			values = append(values, permission.GetResource()+"\x00"+permission.GetAction())
+		}
+		sort.Strings(values)
+		return values
+	}
+	leftValues := canonical(left)
+	rightValues := canonical(right)
+	if len(leftValues) != len(rightValues) {
+		return false
+	}
+	for index := range leftValues {
+		if leftValues[index] != rightValues[index] {
+			return false
+		}
+	}
+	return true
+}
+
+func seedRoleAssignments(
+	ctx context.Context,
+	w *wool.Wool,
+	service *business.Service,
+	assignments []fixtureRoleAssignment,
+	orgIDs, agentIDs, roleIDs map[string]string,
+) error {
+	for _, assignment := range assignments {
+		orgID, ok := orgIDs[assignment.Org]
+		if !ok {
+			return fmt.Errorf("assignment references unknown organization %q", assignment.Org)
+		}
+		agentID, ok := agentIDs[fixtureScopedKey(assignment.Org, assignment.AgentIdentifier)]
+		if !ok {
+			return fmt.Errorf("assignment references unknown agent %q in %q", assignment.AgentIdentifier, assignment.Org)
+		}
+		roleID, ok := roleIDs[fixtureScopedKey(assignment.Org, assignment.Role)]
+		if !ok {
+			return fmt.Errorf("assignment references unknown role %q in %q", assignment.Role, assignment.Org)
+		}
+
+		var existing []*gen.RoleAssignment
+		if err := service.Store().WithOrgTx(ctx, orgID, func(ctx context.Context) error {
+			var listErr error
+			existing, listErr = service.Store().ListRoleAssignments(
+				ctx,
+				orgID,
+				agentID,
+				gen.SubjectKind_SUBJECT_KIND_PRINCIPAL,
+			)
+			return listErr
+		}); err != nil {
+			return w.Wrapf(err, "cannot list fixture role assignments")
+		}
+		found := false
+		for _, current := range existing {
+			if current.RoleId == roleID && current.Scope == assignment.Scope {
+				found = true
+				break
+			}
+		}
+		if found {
+			w.Info("role assignment already exists, reusing",
+				wool.Field("org", assignment.Org),
+				wool.Field("agent_identifier", assignment.AgentIdentifier),
+				wool.Field("role", assignment.Role))
+			continue
+		}
+		if _, err := service.AssignRole(ctx, &gen.AssignRoleRequest{
+			SubjectId:   agentID,
+			SubjectKind: gen.SubjectKind_SUBJECT_KIND_PRINCIPAL,
+			RoleId:      roleID,
+			OrgId:       orgID,
+			Scope:       assignment.Scope,
+		}); err != nil {
+			return w.Wrapf(err, "cannot assign fixture role %s", assignment.Role)
+		}
+		w.Info("seeded role assignment",
+			wool.Field("org", assignment.Org),
+			wool.Field("agent_identifier", assignment.AgentIdentifier),
+			wool.Field("role", assignment.Role))
+	}
+	return nil
 }

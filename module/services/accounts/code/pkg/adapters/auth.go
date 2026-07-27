@@ -181,7 +181,7 @@ func requireOrgPermission(ctx context.Context, actorID, orgID, resource, action 
 	}
 	decision, err := service.CheckPermission(ctx, &gen.CheckPermissionRequest{
 		SubjectId:   actorID,
-		SubjectKind: gen.SubjectKind_SUBJECT_KIND_USER,
+		SubjectKind: gen.SubjectKind_SUBJECT_KIND_PRINCIPAL,
 		Resource:    resource,
 		Action:      action,
 		OrgId:       orgID,
@@ -243,7 +243,7 @@ func requireBillingAdmin(ctx context.Context, actorID, orgID string) error {
 
 	decision, err := service.CheckPermission(ctx, &gen.CheckPermissionRequest{
 		SubjectId:   actorID,
-		SubjectKind: gen.SubjectKind_SUBJECT_KIND_USER,
+		SubjectKind: gen.SubjectKind_SUBJECT_KIND_PRINCIPAL,
 		Resource:    "billing",
 		Action:      "write",
 		OrgId:       orgID,

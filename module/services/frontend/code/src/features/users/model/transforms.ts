@@ -36,10 +36,21 @@ export function toDisplayName(
 	profile: Record<string, string>,
 	email: string,
 ): string {
-	const first = profile["first_name"] ?? "";
-	const last = profile["last_name"] ?? "";
+	const displayName = profile.name?.trim();
+	if (displayName) return displayName;
+	const first = profile.first_name ?? "";
+	const last = profile.last_name ?? "";
 	const full = [first, last].filter(Boolean).join(" ");
 	return full || email;
+}
+
+/** Update the canonical display name without discarding product-specific
+ * profile attributes. `UpdateUser` replaces the profile map. */
+export function withDisplayName(
+	profile: Record<string, string>,
+	name: string,
+): Record<string, string> {
+	return { ...profile, name: name.trim() };
 }
 
 export function sortByCreated<T extends { createdAt: string | undefined }>(

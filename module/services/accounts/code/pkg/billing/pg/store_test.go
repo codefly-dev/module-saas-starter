@@ -16,6 +16,7 @@ import (
 	"github.com/codefly-dev/core/sdk"
 	"github.com/codefly-dev/core/wool"
 
+	"accounts/internal/testdb"
 	"accounts/pkg/billing"
 	pgbilling "accounts/pkg/billing/pg"
 	"accounts/pkg/business"
@@ -24,6 +25,10 @@ import (
 var testPool *pgxpool.Pool
 
 func TestMain(m *testing.M) {
+	os.Exit(runBillingStoreTests(m))
+}
+
+func runBillingStoreTests(m *testing.M) int {
 	ctx := context.Background()
 	wool.SetGlobalLogLevel(wool.DEBUG)
 
@@ -35,13 +40,13 @@ func TestMain(m *testing.M) {
 	)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "WithDependencies: %v\n", err)
-		os.Exit(1)
+		return 1
 	}
 	defer deps.Destroy(ctx)
 
 	if _, err := codefly.Init(ctx); err != nil {
 		fmt.Fprintf(os.Stderr, "codefly.Init: %v\n", err)
-		os.Exit(1)
+		return 1
 	}
 	// Billing SQL tests need deterministic cross-tenant setup and teardown.
 	// Resolve the test-only migration-owner capability through the Codefly SDK;
@@ -50,36 +55,55 @@ func TestMain(m *testing.M) {
 	conn, err := codefly.For(ctx).Service("store").Secret("postgres", "owner-connection")
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "connection: %v\n", err)
-		os.Exit(1)
+		return 1
 	}
 	pool, err := pgxpool.New(ctx, conn)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "pgxpool: %v\n", err)
-		os.Exit(1)
+		return 1
 	}
+	defer pool.Close()
 	testPool = pool
+	releasePackageLock, err := testdb.AcquirePackageLock(ctx, pool)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "integration test lock: %v\n", err)
+		return 1
+	}
+	defer func() {
+		if err := releasePackageLock(); err != nil {
+			fmt.Fprintf(os.Stderr, "release integration test lock: %v\n", err)
+		}
+	}()
 
-	code := m.Run()
-	pool.Close()
-	os.Exit(code)
+	return m.Run()
 }
 
 // resetBilling wipes the billing-related tables between tests.
 func resetBilling(t *testing.T) {
 	t.Helper()
 	ctx := context.Background()
-	for _, q := range []string{
-		`TRUNCATE TABLE subscriptions RESTART IDENTITY CASCADE`,
-		`TRUNCATE TABLE organization_members RESTART IDENTITY CASCADE`,
-		`TRUNCATE TABLE organizations RESTART IDENTITY CASCADE`,
-		`TRUNCATE TABLE users RESTART IDENTITY CASCADE`,
-		// seed-restore plans — the initial migration populated three rows
-		// and our tests re-seed with deterministic Stripe price ids.
-		`UPDATE plans SET stripe_price_id = NULL, stripe_product_id = NULL`,
-	} {
-		_, err := testPool.Exec(ctx, q)
-		require.NoError(t, err, q)
-	}
+	tx, err := testPool.Begin(ctx)
+	require.NoError(t, err)
+	defer func() { _ = tx.Rollback(ctx) }()
+
+	// Acquire every related table lock in one statement and hold the locks
+	// through the plan reset. Separate auto-commit TRUNCATE statements can
+	// deadlock with cascading foreign-key locks during managed Postgres setup.
+	const truncate = `TRUNCATE TABLE
+		subscriptions,
+		organization_members,
+		organizations,
+		users
+		RESTART IDENTITY CASCADE`
+	_, err = tx.Exec(ctx, truncate)
+	require.NoError(t, err, truncate)
+
+	// Seed-restore plans — the initial migration populated three rows and our
+	// tests re-seed with deterministic Stripe price ids.
+	const resetPlans = `UPDATE plans SET stripe_price_id = NULL, stripe_product_id = NULL`
+	_, err = tx.Exec(ctx, resetPlans)
+	require.NoError(t, err, resetPlans)
+	require.NoError(t, tx.Commit(ctx))
 }
 
 // seedOrg creates a user + org returning their ids. Stripe customer

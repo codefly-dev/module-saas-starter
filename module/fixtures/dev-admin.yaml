@@ -1,5 +1,5 @@
 # dev-admin fixture — seeds a complete dev environment
-# Used with: codefly run service frontend --fixture dev-admin
+# Used with: codefly run service --fixture dev-admin
 # This file is shared across all services in the module.
 
 users:

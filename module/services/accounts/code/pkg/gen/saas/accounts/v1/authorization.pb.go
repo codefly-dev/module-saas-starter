@@ -460,14 +460,14 @@ func (x *RevokeRoleRequest) GetScope() string {
 }
 
 // ListRoleAssignmentsRequest — read assignments scoped to an org.
-// subject_id (optional) filters to assignments for that user/team
+// subject_id (optional) filters to assignments for that principal/team
 // only; empty returns every assignment in the org. Used by the
 // admin UI's "manage roles for member X" panel.
 type ListRoleAssignmentsRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	OrgId         string                 `protobuf:"bytes,1,opt,name=org_id,json=orgId,proto3" json:"org_id,omitempty"`
 	SubjectId     string                 `protobuf:"bytes,2,opt,name=subject_id,json=subjectId,proto3" json:"subject_id,omitempty"`                                          // empty → all subjects in this org
-	SubjectKind   SubjectKind            `protobuf:"varint,3,opt,name=subject_kind,json=subjectKind,proto3,enum=saas.accounts.v1.SubjectKind" json:"subject_kind,omitempty"` // unspecified → both users + teams
+	SubjectKind   SubjectKind            `protobuf:"varint,3,opt,name=subject_kind,json=subjectKind,proto3,enum=saas.accounts.v1.SubjectKind" json:"subject_kind,omitempty"` // unspecified → both principals + teams
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }

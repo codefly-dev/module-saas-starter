@@ -17,7 +17,7 @@ import (
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/metadata"
 
-	apigen "accounts/pkg/gen/saas/accounts/v1"
+	apigen "auth-sidecar/external/saas-starter/accounts"
 )
 
 // accessClaims mirrors the shape minted by pkg/auth/ed25519.

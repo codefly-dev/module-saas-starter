@@ -2,13 +2,14 @@ version: v1
 module:
   name: saas-starter
   namespace: saas-starter
+  service_entry: auth-sidecar
   description: "SaaS foundation — auth, multi-tenancy, generated RPC policy, RBAC, impersonation, audit"
 interface:
   - service: auth-sidecar
     endpoint: grpc
     visibility: module
   - service: auth-sidecar
-    endpoint: http
+    endpoint: rest
     visibility: public
 services:
   - name: accounts
@@ -16,7 +17,7 @@ services:
     agent:
       kind: codefly:service
       name: go-grpc
-      version: 0.1.13
+      version: 0.1.21
       publisher: codefly.dev
     workspace_configuration_dependencies:
       - internal-auth
@@ -58,6 +59,7 @@ services:
       with-workspace: true
       protocol-output-dirs:
         - code/pkg/gen
+        - generated/openapi-raw
   - name: auth-sidecar
     version: 0.0.0
     description: |
@@ -67,7 +69,7 @@ services:
     agent:
       kind: codefly:service
       name: go-grpc
-      version: 0.1.13
+      version: 0.1.21
       publisher: codefly.dev
     workspace_configuration_dependencies:
       - gateway
@@ -78,8 +80,8 @@ services:
         api: grpc
         visibility: module
         port: 9090
-      - name: http
-        api: http
+      - name: rest
+        api: rest
         visibility: public
         port: 8080
     dependencies:
@@ -123,7 +125,7 @@ services:
     agent:
       kind: codefly:service
       name: nextjs
-      version: 0.0.115
+      version: 0.0.117
       publisher: codefly.dev
     workspace_configuration_dependencies:
       - workos
@@ -164,7 +166,7 @@ services:
     agent:
       kind: codefly:service
       name: postgres
-      version: 0.0.104
+      version: 0.0.107
       publisher: codefly.dev
     endpoints:
       - name: tcp

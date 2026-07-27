@@ -26,7 +26,7 @@ import (
 	"google.golang.org/grpc/reflection"
 	"google.golang.org/protobuf/types/known/emptypb"
 
-	apigen "accounts/pkg/gen/saas/accounts/v1"
+	apigen "auth-sidecar/external/saas-starter/accounts"
 )
 
 func main() {
@@ -111,6 +111,11 @@ func main() {
 	if err != nil {
 		panic(fmt.Sprintf("failed to load routes from %s: %v", routingDir, err))
 	}
+	restEntries = append(restEntries,
+		&RouteEntry{Service: "self", Method: http.MethodGet, Path: "/health"},
+		&RouteEntry{Service: "self", Method: http.MethodGet, Path: "/healthz"},
+		&RouteEntry{Service: "self", Method: http.MethodGet, Path: "/ready"},
+	)
 	// Load descriptor- and policy-derived Connect paths from the checked,
 	// generated gateway route catalog.
 	connectEntries, err := LoadConnectRoutesFromCatalog()
@@ -137,9 +142,9 @@ func main() {
 		if frontendURL != "" {
 			upstreams["frontend"] = MustURL(frontendURL)
 		}
-		redisURL := os.Getenv("REDIS_URL")
-		if cacheNet := codefly.For(ctx).Service("cache").Endpoint("write").API("tcp").NetworkInstance(); cacheNet != nil && redisURL == "" {
-			redisURL = fmt.Sprintf("redis://%s:%d", cacheNet.Hostname, cacheNet.Port)
+		redisURL, redisErr := codefly.For(ctx).Service("cache").Secret("redis", "connection")
+		if redisErr != nil || redisURL == "" {
+			redisURL = os.Getenv("REDIS_URL")
 		}
 
 		authenticationAttemptLimit, err := configuredAuthenticationAttemptLimit()

@@ -44,6 +44,9 @@ services:
     kind: generated
   UsageService:
     kind: generated
+  WorkContextService:
+    kind: plugin
+    plugin: permissions
   UserSettingsService:
     kind: generated
   WebhookService:

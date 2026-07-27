@@ -17,29 +17,26 @@ import {
 function CallbackHandler() {
 	const { completeOAuth } = useAuth();
 	const params = useSearchParams();
-	const [error, setError] = useState<string | null>(null);
+	const [completionError, setCompletionError] = useState<string | null>(null);
+	const code = params.get("code");
+	const state = params.get("state");
+	const providerError = params.get("error");
+	const providerErrorDescription = params.get("error_description");
+	const parameterError = providerError
+		? `${providerError}${providerErrorDescription ? `: ${providerErrorDescription}` : ""}`
+		: !code || !state
+			? "Missing code or state in callback URL"
+			: null;
 
 	useEffect(() => {
-		const code = params.get("code");
-		const state = params.get("state");
-		const providerError = params.get("error");
-		const providerErrorDescription = params.get("error_description");
-
-		if (providerError) {
-			setError(
-				`${providerError}${providerErrorDescription ? `: ${providerErrorDescription}` : ""}`,
-			);
-			return;
-		}
-		if (!code || !state) {
-			setError("Missing code or state in callback URL");
-			return;
-		}
+		if (parameterError || !code || !state) return;
 
 		completeOAuth(code, state).catch((e) => {
-			setError(e instanceof Error ? e.message : "Sign-in failed");
+			setCompletionError(e instanceof Error ? e.message : "Sign-in failed");
 		});
-	}, [params, completeOAuth]);
+	}, [code, state, parameterError, completeOAuth]);
+
+	const error = parameterError ?? completionError;
 
 	if (error) {
 		return (

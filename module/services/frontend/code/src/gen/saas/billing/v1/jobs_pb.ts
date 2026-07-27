@@ -61,3 +61,4 @@ export type StripeWebhookJob = Message<"saas.billing.v1.StripeWebhookJob"> & {
  */
 export const StripeWebhookJobSchema: GenMessage<StripeWebhookJob> = /*@__PURE__*/
   messageDesc(file_saas_billing_v1_jobs, 0);
+

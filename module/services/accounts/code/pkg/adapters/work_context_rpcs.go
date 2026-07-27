@@ -1,0 +1,502 @@
+package adapters
+
+import (
+	"context"
+	"crypto/ed25519"
+	"errors"
+	"fmt"
+	"strings"
+	"time"
+
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
+	"google.golang.org/protobuf/types/known/timestamppb"
+
+	basev0 "github.com/codefly-dev/core/generated/go/codefly/base/v0"
+	codefly "github.com/codefly-dev/sdk-go"
+	"github.com/google/uuid"
+
+	"accounts/pkg/business"
+	gen "accounts/pkg/gen/saas/accounts/v1"
+)
+
+type WorkContextAuthorityConfiguration struct {
+	Issuer     string
+	KeyID      string
+	PrivateKey []byte
+	Authority  business.WorkContextAuthorityStore
+}
+
+// WorkContextAuthorityServer is the permissions-plugin-owned issuer. It never
+// owns Warden Task/Session rows: it binds current Accounts identity and RBAC
+// facts into a short-lived Codefly capability.
+type WorkContextAuthorityServer struct {
+	gen.UnimplementedWorkContextServiceServer
+
+	issuer       string
+	signer       *codefly.WorkContextSigner
+	verifier     *codefly.WorkContextVerifier
+	authority    business.WorkContextAuthorityStore
+	configureErr error
+}
+
+func (s *WorkContextAuthorityServer) Configure(config WorkContextAuthorityConfiguration) {
+	s.issuer = strings.TrimSpace(config.Issuer)
+	s.signer = nil
+	s.verifier = nil
+	s.authority = nil
+	s.configureErr = nil
+
+	if s.issuer == "" || strings.TrimSpace(config.KeyID) == "" {
+		s.configureErr = errors.New("work-context issuer and key ID are required")
+		return
+	}
+	if len(config.PrivateKey) != ed25519.PrivateKeySize {
+		s.configureErr = fmt.Errorf("work-context Ed25519 private key must be %d bytes", ed25519.PrivateKeySize)
+		return
+	}
+	if config.Authority == nil {
+		s.configureErr = errors.New("Accounts store does not implement WorkContextAuthorityStore")
+		return
+	}
+	privateKey := append(ed25519.PrivateKey(nil), config.PrivateKey...)
+	signer, err := codefly.NewWorkContextSigner(codefly.WorkContextSignerOptions{
+		Issuer:     s.issuer,
+		KeyID:      config.KeyID,
+		PrivateKey: privateKey,
+	})
+	if err != nil {
+		s.configureErr = err
+		return
+	}
+	publicKey, ok := privateKey.Public().(ed25519.PublicKey)
+	if !ok {
+		s.configureErr = errors.New("work-context signing key has no Ed25519 public key")
+		return
+	}
+	verifier, err := codefly.NewWorkContextVerifier(codefly.WorkContextVerifierOptions{
+		PublicKeys: map[string]ed25519.PublicKey{config.KeyID: publicKey},
+	})
+	if err != nil {
+		s.configureErr = err
+		return
+	}
+	s.signer = signer
+	s.verifier = verifier
+	s.authority = config.Authority
+}
+
+func (s *WorkContextAuthorityServer) StartTask(
+	ctx context.Context,
+	req *gen.StartTaskWorkContextRequest,
+) (*gen.IssuedWorkContext, error) {
+	if err := Validate(req); err != nil {
+		return nil, err
+	}
+	ownerID, err := s.authorizeOwner(ctx, req.GetOrgId())
+	if err != nil {
+		return nil, err
+	}
+	permissions, scopes, err := workContextScopes(req.GetAuthorityScopes())
+	if err != nil {
+		return nil, status.Error(codes.InvalidArgument, err.Error())
+	}
+	facts, err := s.resolveAuthority(
+		ctx, req.GetOrgId(), ownerID, req.GetActorPrincipalId(), permissions,
+	)
+	if err != nil {
+		return nil, err
+	}
+
+	var actors []*basev0.WorkActorV1
+	if facts.Actor != nil {
+		actors = []*basev0.WorkActorV1{{
+			PrincipalId:   facts.Actor.ID,
+			PrincipalKind: facts.Actor.Kind,
+			DelegationId:  uuid.NewString(),
+			GrantedScopes: cloneWorkScopes(scopes),
+		}}
+	}
+	token, signed, err := s.signer.StartTask(codefly.StartTaskInput{
+		Audience:              req.GetAudience(),
+		TenantID:              req.GetOrgId(),
+		OwnerPrincipalID:      ownerID,
+		TaskID:                req.GetTaskId(),
+		SessionID:             req.GetSessionId(),
+		AuthorizationRevision: facts.EffectiveRevision(),
+		ReplayPolicy:          workContextReplayPolicy(req.GetReplayPolicy()),
+		AuthorityScopes:       scopes,
+		ActorChain:            actors,
+		AttributionTeamIDs:    facts.AttributionTeamIDs,
+		WorkspaceID:           req.GetWorkspaceId(),
+		ProjectID:             req.GetProjectId(),
+		TTL:                   workContextTTL(req.GetTtlSeconds()),
+	})
+	if err != nil {
+		return nil, mapWorkContextError(err)
+	}
+	return issuedWorkContext(token, signed), nil
+}
+
+func (s *WorkContextAuthorityServer) StartRootSession(
+	ctx context.Context,
+	req *gen.StartRootSessionWorkContextRequest,
+) (*gen.IssuedWorkContext, error) {
+	if err := Validate(req); err != nil {
+		return nil, err
+	}
+	ownerID, err := s.authorizeOwner(ctx, req.GetOrgId())
+	if err != nil {
+		return nil, err
+	}
+	parentToken, parent, err := s.verifyParent(
+		ctx, req.GetOrgId(), ownerID, req.GetParentWorkContextToken(),
+	)
+	if err != nil {
+		return nil, err
+	}
+	if req.GetSessionId() == parent.GetSessionId() {
+		return nil, status.Error(codes.InvalidArgument, "new session_id must differ from parent session")
+	}
+	token, signed, err := s.signer.StartSession(parentToken, codefly.StartRootSessionInput{
+		SessionID:    req.GetSessionId(),
+		Audience:     req.GetAudience(),
+		ReplayPolicy: workContextReplayPolicy(req.GetReplayPolicy()),
+		TTL:          workContextTTL(req.GetTtlSeconds()),
+	})
+	if err != nil {
+		return nil, mapWorkContextError(err)
+	}
+	return issuedWorkContext(token, signed), nil
+}
+
+func (s *WorkContextAuthorityServer) ExchangeAudience(
+	ctx context.Context,
+	req *gen.ExchangeWorkContextAudienceRequest,
+) (*gen.IssuedWorkContext, error) {
+	if err := Validate(req); err != nil {
+		return nil, err
+	}
+	ownerID, err := s.authorizeOwner(ctx, req.GetOrgId())
+	if err != nil {
+		return nil, err
+	}
+	parentToken, parent, err := s.verifyParent(
+		ctx, req.GetOrgId(), ownerID, req.GetParentWorkContextToken(),
+	)
+	if err != nil {
+		return nil, err
+	}
+	if req.GetAudience() == parent.GetAudience() {
+		return nil, status.Error(codes.InvalidArgument, "new audience must differ from parent audience")
+	}
+	_, scopes, err := workContextScopes(req.GetAttenuatedScopes())
+	if err != nil {
+		return nil, status.Error(codes.InvalidArgument, err.Error())
+	}
+	token, signed, err := s.signer.ExchangeWorkContextAudience(
+		parentToken,
+		codefly.ExchangeWorkContextAudienceInput{
+			Audience:         req.GetAudience(),
+			ReplayPolicy:     workContextReplayPolicy(req.GetReplayPolicy()),
+			TTL:              workContextTTL(req.GetTtlSeconds()),
+			AttenuatedScopes: scopes,
+		},
+	)
+	if err != nil {
+		return nil, mapWorkContextError(err)
+	}
+	return issuedWorkContext(token, signed), nil
+}
+
+func (s *WorkContextAuthorityServer) StartChildSession(
+	ctx context.Context,
+	req *gen.StartChildSessionWorkContextRequest,
+) (*gen.IssuedWorkContext, error) {
+	if err := Validate(req); err != nil {
+		return nil, err
+	}
+	ownerID, err := s.authorizeOwner(ctx, req.GetOrgId())
+	if err != nil {
+		return nil, err
+	}
+	parentToken, parent, err := s.verifyParent(
+		ctx, req.GetOrgId(), ownerID, req.GetParentWorkContextToken(),
+	)
+	if err != nil {
+		return nil, err
+	}
+	if req.GetSessionId() == parent.GetSessionId() {
+		return nil, status.Error(codes.InvalidArgument, "child session_id must differ from parent session")
+	}
+	permissions, scopes, err := workContextScopes(req.GetGrantedScopes())
+	if err != nil {
+		return nil, status.Error(codes.InvalidArgument, err.Error())
+	}
+	facts, err := s.resolveAuthority(
+		ctx, req.GetOrgId(), ownerID, req.GetActorPrincipalId(), permissions,
+	)
+	if err != nil {
+		return nil, err
+	}
+	if facts.EffectiveRevision() != parent.GetAuthorizationRevision() {
+		return nil, status.Error(
+			codes.FailedPrecondition,
+			"parent Work Context authorization revision is stale",
+		)
+	}
+	token, signed, err := s.signer.StartChildSession(parentToken, codefly.StartChildSessionInput{
+		SessionID: req.GetSessionId(),
+		Audience:  req.GetAudience(),
+		Actor: &basev0.WorkActorV1{
+			PrincipalId:   facts.Actor.ID,
+			PrincipalKind: facts.Actor.Kind,
+			DelegationId:  uuid.NewString(),
+			GrantedScopes: scopes,
+		},
+		ReplayPolicy: workContextReplayPolicy(req.GetReplayPolicy()),
+		TTL:          workContextTTL(req.GetTtlSeconds()),
+	})
+	if err != nil {
+		return nil, mapWorkContextError(err)
+	}
+	return issuedWorkContext(token, signed), nil
+}
+
+func (s *WorkContextAuthorityServer) authorizeOwner(ctx context.Context, orgID string) (string, error) {
+	if s == nil || s.configureErr != nil || s.signer == nil || s.verifier == nil || s.authority == nil {
+		return "", status.Error(codes.FailedPrecondition, "Work Context authority is not configured")
+	}
+	ownerID, err := requireAuth(ctx)
+	if err != nil {
+		return "", err
+	}
+	if err := requireOrgMember(ctx, ownerID, orgID); err != nil {
+		return "", err
+	}
+	return ownerID, nil
+}
+
+func (s *WorkContextAuthorityServer) verifyParent(
+	ctx context.Context,
+	orgID string,
+	ownerID string,
+	encoded string,
+) (codefly.WorkContextToken, *basev0.WorkContextV1, error) {
+	token, err := codefly.ParseWorkContextToken(encoded)
+	if err != nil {
+		return codefly.WorkContextToken{}, nil, status.Error(codes.InvalidArgument, "invalid parent Work Context")
+	}
+	parent, err := s.verifier.Verify(token, codefly.WorkContextExpectations{
+		Issuer:           s.issuer,
+		TenantID:         orgID,
+		OwnerPrincipalID: ownerID,
+	})
+	if err != nil {
+		return codefly.WorkContextToken{}, nil, status.Error(codes.PermissionDenied, "parent Work Context is not valid for caller")
+	}
+
+	if len(parent.GetActorChain()) == 0 {
+		permissions := permissionsFromCoreScopes(parent.GetAuthorityScopes())
+		facts, resolveErr := s.resolveAuthority(ctx, orgID, ownerID, "", permissions)
+		if resolveErr != nil {
+			return codefly.WorkContextToken{}, nil, resolveErr
+		}
+		if facts.EffectiveRevision() != parent.GetAuthorizationRevision() {
+			return codefly.WorkContextToken{}, nil, status.Error(
+				codes.FailedPrecondition,
+				"parent Work Context authorization revision is stale",
+			)
+		}
+		return token, parent, nil
+	}
+
+	for _, actor := range parent.GetActorChain() {
+		permissions := permissionsFromCoreScopes(actor.GetGrantedScopes())
+		facts, resolveErr := s.resolveAuthority(
+			ctx, orgID, ownerID, actor.GetPrincipalId(), permissions,
+		)
+		if resolveErr != nil {
+			return codefly.WorkContextToken{}, nil, resolveErr
+		}
+		if facts.EffectiveRevision() != parent.GetAuthorizationRevision() {
+			return codefly.WorkContextToken{}, nil, status.Error(
+				codes.FailedPrecondition,
+				"parent Work Context authorization revision is stale",
+			)
+		}
+	}
+	return token, parent, nil
+}
+
+func (s *WorkContextAuthorityServer) resolveAuthority(
+	ctx context.Context,
+	orgID string,
+	ownerID string,
+	actorID string,
+	permissions []business.WorkContextPermission,
+) (*business.WorkContextAuthorityFacts, error) {
+	facts, err := s.authority.ResolveWorkContextAuthority(
+		ctx, orgID, ownerID, actorID, permissions,
+	)
+	if err == nil {
+		if actorID != "" && facts.Actor == nil {
+			return nil, status.Error(codes.Internal, "authority store omitted requested actor")
+		}
+		return facts, nil
+	}
+	var storeErr *business.StoreError
+	if errors.As(err, &storeErr) {
+		switch storeErr.StoreErrorType {
+		case business.ErrTypeNotFound:
+			return nil, status.Error(codes.FailedPrecondition, err.Error())
+		case business.ErrTypePermission:
+			return nil, status.Error(codes.PermissionDenied, err.Error())
+		}
+	}
+	return nil, status.Error(codes.Internal, "cannot resolve current Work Context authority")
+}
+
+func workContextScopes(
+	input []*gen.WorkContextScope,
+) ([]business.WorkContextPermission, []*basev0.WorkScopeV1, error) {
+	permissions := make([]business.WorkContextPermission, 0)
+	scopes := make([]*basev0.WorkScopeV1, 0, len(input))
+	seenScopes := make(map[string]struct{}, len(input))
+	for _, scope := range input {
+		if scope == nil {
+			return nil, nil, errors.New("authority scope must not be null")
+		}
+		resourceKind := strings.TrimSpace(scope.GetResourceKind())
+		if resourceKind != scope.GetResourceKind() {
+			return nil, nil, errors.New("resource_kind must not have surrounding whitespace")
+		}
+		coreScope := &basev0.WorkScopeV1{
+			ResourceKind: resourceKind,
+			Actions:      append([]string(nil), scope.GetActions()...),
+			ResourceIds:  append([]string(nil), scope.GetResourceIds()...),
+		}
+		scopeKey := resourceKind + "\x00" + strings.Join(coreScope.Actions, "\x00") +
+			"\x01" + strings.Join(coreScope.ResourceIds, "\x00")
+		if _, exists := seenScopes[scopeKey]; exists {
+			return nil, nil, errors.New("duplicate authority scope")
+		}
+		seenScopes[scopeKey] = struct{}{}
+
+		for _, action := range coreScope.Actions {
+			if action != strings.TrimSpace(action) {
+				return nil, nil, errors.New("scope action must not have surrounding whitespace")
+			}
+			if len(coreScope.ResourceIds) == 0 {
+				permissions = append(permissions, business.WorkContextPermission{
+					ResourceKind: resourceKind,
+					Action:       action,
+				})
+				continue
+			}
+			for _, resourceID := range coreScope.ResourceIds {
+				if resourceID != strings.TrimSpace(resourceID) {
+					return nil, nil, errors.New("resource_id must not have surrounding whitespace")
+				}
+				permissions = append(permissions, business.WorkContextPermission{
+					ResourceKind: resourceKind,
+					Action:       action,
+					ResourceID:   resourceID,
+				})
+			}
+		}
+		scopes = append(scopes, coreScope)
+	}
+	return permissions, scopes, nil
+}
+
+func permissionsFromCoreScopes(scopes []*basev0.WorkScopeV1) []business.WorkContextPermission {
+	permissions := make([]business.WorkContextPermission, 0)
+	for _, scope := range scopes {
+		for _, action := range scope.GetActions() {
+			if len(scope.GetResourceIds()) == 0 {
+				permissions = append(permissions, business.WorkContextPermission{
+					ResourceKind: scope.GetResourceKind(),
+					Action:       action,
+				})
+				continue
+			}
+			for _, resourceID := range scope.GetResourceIds() {
+				permissions = append(permissions, business.WorkContextPermission{
+					ResourceKind: scope.GetResourceKind(),
+					Action:       action,
+					ResourceID:   resourceID,
+				})
+			}
+		}
+	}
+	return permissions
+}
+
+func cloneWorkScopes(scopes []*basev0.WorkScopeV1) []*basev0.WorkScopeV1 {
+	out := make([]*basev0.WorkScopeV1, 0, len(scopes))
+	for _, scope := range scopes {
+		out = append(out, &basev0.WorkScopeV1{
+			ResourceKind: scope.GetResourceKind(),
+			Actions:      append([]string(nil), scope.GetActions()...),
+			ResourceIds:  append([]string(nil), scope.GetResourceIds()...),
+		})
+	}
+	return out
+}
+
+func workContextReplayPolicy(value gen.WorkContextReplayPolicy) string {
+	if value == gen.WorkContextReplayPolicy_WORK_CONTEXT_REPLAY_POLICY_SINGLE_USE {
+		return codefly.WorkContextReplaySingleUse
+	}
+	return codefly.WorkContextReplayIdempotent
+}
+
+func workContextTTL(seconds int32) time.Duration {
+	if seconds == 0 {
+		return 0
+	}
+	return time.Duration(seconds) * time.Second
+}
+
+func issuedWorkContext(
+	token codefly.WorkContextToken,
+	signed *basev0.WorkContextV1,
+) *gen.IssuedWorkContext {
+	currentActor := signed.GetOwnerPrincipalId()
+	if actors := signed.GetActorChain(); len(actors) > 0 {
+		currentActor = actors[len(actors)-1].GetPrincipalId()
+	}
+	response := &gen.IssuedWorkContext{
+		Token:                   token.Encoded(),
+		OrgId:                   signed.GetTenantId(),
+		OwnerPrincipalId:        signed.GetOwnerPrincipalId(),
+		TaskId:                  signed.GetTaskId(),
+		SessionId:               signed.GetSessionId(),
+		CurrentActorPrincipalId: currentActor,
+		AuthorizationRevision:   signed.GetAuthorizationRevision(),
+		ExpiresAt:               timestamppb.New(time.Unix(signed.GetExpiresAtUnix(), 0).UTC()),
+	}
+	if signed.ParentSessionId != nil {
+		parent := signed.GetParentSessionId()
+		response.ParentSessionId = &parent
+	}
+	if signed.WorkspaceId != nil {
+		workspaceID := signed.GetWorkspaceId()
+		response.WorkspaceId = &workspaceID
+	}
+	if signed.ProjectId != nil {
+		projectID := signed.GetProjectId()
+		response.ProjectId = &projectID
+	}
+	return response
+}
+
+func mapWorkContextError(err error) error {
+	if errors.Is(err, codefly.ErrWorkContextInvalid) {
+		return status.Error(codes.InvalidArgument, err.Error())
+	}
+	return status.Error(codes.Internal, "cannot issue Work Context")
+}
+
+var _ gen.WorkContextServiceServer = (*WorkContextAuthorityServer)(nil)

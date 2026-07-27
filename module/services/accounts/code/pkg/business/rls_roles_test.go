@@ -101,14 +101,14 @@ func TestRLS_RoleAssignments_CrossTenantBlocked(t *testing.T) {
 	// Assign admin to each user in their respective explicit org.
 	_, err := testService.AssignRole(ctx, &gen.AssignRoleRequest{
 		SubjectId:   userA,
-		SubjectKind: gen.SubjectKind_SUBJECT_KIND_USER,
+		SubjectKind: gen.SubjectKind_SUBJECT_KIND_PRINCIPAL,
 		RoleId:      adminRoleID,
 		OrgId:       orgA,
 	})
 	require.NoError(t, err)
 	_, err = testService.AssignRole(ctx, &gen.AssignRoleRequest{
 		SubjectId:   userB,
-		SubjectKind: gen.SubjectKind_SUBJECT_KIND_USER,
+		SubjectKind: gen.SubjectKind_SUBJECT_KIND_PRINCIPAL,
 		RoleId:      adminRoleID,
 		OrgId:       orgB,
 	})
@@ -117,7 +117,7 @@ func TestRLS_RoleAssignments_CrossTenantBlocked(t *testing.T) {
 	// User A in org A → allowed.
 	checkA, err := testService.CheckPermission(ctx, &gen.CheckPermissionRequest{
 		SubjectId:   userA,
-		SubjectKind: gen.SubjectKind_SUBJECT_KIND_USER,
+		SubjectKind: gen.SubjectKind_SUBJECT_KIND_PRINCIPAL,
 		Resource:    "users", Action: "write",
 		OrgId: orgA,
 	})
@@ -129,7 +129,7 @@ func TestRLS_RoleAssignments_CrossTenantBlocked(t *testing.T) {
 	// by RLS — CheckPermission must return false.
 	checkAcrossB, err := testService.CheckPermission(ctx, &gen.CheckPermissionRequest{
 		SubjectId:   userA,
-		SubjectKind: gen.SubjectKind_SUBJECT_KIND_USER,
+		SubjectKind: gen.SubjectKind_SUBJECT_KIND_PRINCIPAL,
 		Resource:    "users", Action: "write",
 		OrgId: orgB,
 	})
@@ -140,7 +140,7 @@ func TestRLS_RoleAssignments_CrossTenantBlocked(t *testing.T) {
 	// User B in org B → allowed (own org).
 	checkB, err := testService.CheckPermission(ctx, &gen.CheckPermissionRequest{
 		SubjectId:   userB,
-		SubjectKind: gen.SubjectKind_SUBJECT_KIND_USER,
+		SubjectKind: gen.SubjectKind_SUBJECT_KIND_PRINCIPAL,
 		Resource:    "users", Action: "write",
 		OrgId: orgB,
 	})

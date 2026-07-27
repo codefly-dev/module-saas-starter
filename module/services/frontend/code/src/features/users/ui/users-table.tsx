@@ -17,7 +17,7 @@ import {
 	UserCog,
 } from "lucide-react";
 import { useMemo, useState } from "react";
-import { formatDate, truncateUUID } from "@/shared/lib/utils";
+import { formatDate } from "@/shared/lib/utils";
 import {
 	Badge,
 	Button,
@@ -36,7 +36,6 @@ import {
 	toDisplayName,
 } from "../model/transforms";
 import type { User } from "../model/types";
-import { toUserStatus } from "../model/types";
 
 const col = createColumnHelper<User>();
 
@@ -93,15 +92,6 @@ export function UsersTable({
 						{formatDate(info.getValue())}
 					</span>
 				),
-			}),
-			col.accessor("uuid", {
-				header: "ID",
-				cell: (info) => (
-					<span className="font-mono text-xs text-muted-foreground">
-						{truncateUUID(info.getValue())}
-					</span>
-				),
-				enableSorting: false,
 			}),
 			col.display({
 				id: "actions",

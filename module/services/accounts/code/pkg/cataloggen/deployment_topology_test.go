@@ -119,7 +119,11 @@ func TestFrontendPluginAllowlistGeneratesExternalCodeflyDependencies(t *testing.
       "alias": "rest-api",
       "protocol": "rest",
       "routePrefix": "/api/v1/analytics",
-      "compatibility": { "contract": "example.analytics", "major": 1 },
+      "compatibility": {
+        "contract": "example.analytics",
+        "major": 1,
+        "probePath": "/api/v1/analytics/capabilities"
+      },
       "target": { "module": "products", "service": "telemetry", "endpoint": "rest" }
     }
   ]
@@ -200,6 +204,16 @@ func TestFrontendPluginAllowlistRejectsUnsafeDeploymentDrift(t *testing.T) {
 			wantError: "invalid compatibility",
 		},
 		{
+			name:      "unsafe compatibility probe",
+			document:  strings.Replace(valid, `"major": 1`, `"major": 1, "probePath": "/api/../private"`, 1),
+			wantError: "unsafe compatibility probe path",
+		},
+		{
+			name:      "connect compatibility probe",
+			document:  strings.Replace(strings.Replace(valid, `"protocol": "rest"`, `"protocol": "connect"`, 1), `"major": 1`, `"major": 1, "probePath": "/connect/example"`, 1),
+			wantError: "unsafe compatibility probe path",
+		},
+		{
 			name:      "unsafe Codefly target",
 			document:  strings.Replace(valid, `"module": "products"`, `"module": "https://products"`, 1),
 			wantError: "unsafe Codefly target",
@@ -233,6 +247,11 @@ func TestGeneratedCodeflyAndNetworkManifestsParseStrictly(t *testing.T) {
 	require.Len(t, loadedServices, 7)
 
 	moduleDocument := readFixture(t, "../../../../../module.codefly.yaml")
+	var moduleEntry struct {
+		ServiceEntry string `yaml:"service-entry"`
+	}
+	require.NoError(t, yaml.Unmarshal(moduleDocument, &moduleEntry))
+	require.Equal(t, "auth-sidecar", moduleEntry.ServiceEntry)
 	var module resources.Module
 	require.NoError(t, yaml.Unmarshal(moduleDocument, &module))
 	_, err = module.Proto(ctx)
@@ -297,6 +316,10 @@ func TestDeploymentTopologyRejectsUnsafeOrIncompleteBindings(t *testing.T) {
 	missingProtocol := strings.Replace(bindings, "        api: connect", "        api: http", 1)
 	_, err = cataloggen.BuildDeploymentArtifacts(serviceCatalog, []byte(missingProtocol))
 	require.ErrorContains(t, err, "required API CODEFLY_API_CONNECT")
+
+	unknownServiceEntry := strings.Replace(bindings, "service_entry: auth-sidecar", "service_entry: missing", 1)
+	_, err = cataloggen.BuildDeploymentArtifacts(serviceCatalog, []byte(unknownServiceEntry))
+	require.ErrorContains(t, err, "service entry references unknown service")
 
 	cycle := strings.Replace(bindings, "    spec:\n      watch: false\n      with-read-replicas: true", `    dependencies:
       - service: accounts

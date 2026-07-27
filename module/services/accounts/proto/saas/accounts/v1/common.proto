@@ -151,8 +151,16 @@ message RoleAssignment {
 }
 
 enum SubjectKind {
+  option allow_alias = true;
+
   SUBJECT_KIND_UNSPECIFIED = 0;
-  SUBJECT_KIND_USER = 1;
+  // A direct role assignment always targets a Principal. Human users remain
+  // Principals of kind HUMAN; agents and services can receive the same
+  // explicitly assigned authority without masquerading as users.
+  SUBJECT_KIND_PRINCIPAL = 1;
+  // Backward-compatible wire/JSON input alias. New clients must use
+  // SUBJECT_KIND_PRINCIPAL.
+  SUBJECT_KIND_USER = 1 [deprecated = true];
   SUBJECT_KIND_TEAM = 2;
 }
 

@@ -1,4 +1,4 @@
-// Next.js middleware — runs on every request matching the matcher
+// Next.js proxy — runs on every request matching the matcher
 // config at the bottom of this file.
 //
 // Job: if the request is for a protected page and the user isn't
@@ -43,7 +43,7 @@ function isPublic(pathname: string): boolean {
 	return false;
 }
 
-export function middleware(req: NextRequest) {
+export function proxy(req: NextRequest) {
 	const { pathname, search } = req.nextUrl;
 
 	if (isPublic(pathname)) {
@@ -68,6 +68,6 @@ export function middleware(req: NextRequest) {
 export const config = {
 	// Match everything EXCEPT the Next.js internals that we already
 	// bypass in isPublic. This narrower matcher avoids running the
-	// middleware on every static asset.
+	// proxy on every static asset.
 	matcher: ["/((?!_next/static|_next/image|favicon.ico).*)"],
 };

@@ -1,6 +1,6 @@
 # Accounts trust boundary
 
-The module has one public ingress: `auth-sidecar/http`. The accounts REST,
+The module has one public ingress: `auth-sidecar/rest`. The accounts REST,
 Connect, tenant gRPC, internal gRPC, and frontend endpoints stay private to the
 Codefly module and are not exported by `module.codefly.yaml`.
 

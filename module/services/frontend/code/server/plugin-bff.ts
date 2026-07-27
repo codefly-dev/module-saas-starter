@@ -1,3 +1,4 @@
+import { toJsonString } from "@bufbuild/protobuf";
 import type { FrontendServiceProtocol } from "@codefly/saas-plugin-contract";
 import {
 	emptyFrontendPluginCapabilitiesRequest,
@@ -9,7 +10,6 @@ import {
 	parseFrontendPluginCapabilities,
 	supportsFrontendPluginContract,
 } from "@codefly/saas-plugin-contract/capabilities";
-import { toJsonString } from "@bufbuild/protobuf";
 
 import {
 	type PluginServiceResolution,
@@ -260,12 +260,13 @@ function isCapabilityProbe(path: readonly string[]): boolean {
 function capabilityTargetURL(
 	baseURL: string,
 	protocol: FrontendServiceProtocol,
+	probePath?: string,
 ): URL {
 	const target = new URL(baseURL);
 	target.pathname =
 		protocol === "connect"
 			? FRONTEND_PLUGIN_CAPABILITIES_CONNECT_PROCEDURE
-			: FRONTEND_PLUGIN_CAPABILITIES_REST_PATH;
+			: (probePath ?? FRONTEND_PLUGIN_CAPABILITIES_REST_PATH);
 	return target;
 }
 
@@ -357,6 +358,7 @@ export async function handlePluginBffRequest(
 			upstreamTarget = capabilityTargetURL(
 				resolution.value.baseURL,
 				resolution.value.entry.protocol,
+				resolution.value.entry.compatibility.probePath,
 			);
 			upstreamHeaders.set("accept", "application/json");
 			if (resolution.value.entry.protocol === "connect") {

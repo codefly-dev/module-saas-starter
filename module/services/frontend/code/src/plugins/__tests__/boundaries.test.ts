@@ -161,7 +161,7 @@ describe("frontend convergence boundaries", () => {
 				if (forbidden.some((pattern) => pattern.test(specifier))) {
 					return [`${relative(codeDir, path)}: private import ${specifier}`];
 				}
-				if (!specifier.startsWith("@codefly/saas-plugin-")) return [];
+				if (!specifier.startsWith("@codefly/saas-")) return [];
 				const resolved = publicPackageEntrypoint(specifier);
 				if (!resolved)
 					return [
@@ -197,10 +197,27 @@ describe("frontend convergence boundaries", () => {
 		expect(referenceImports).toContain("@codefly/saas-plugin-react/runtime");
 	});
 
-	it("mounts only AdminLayout from both protected layout roots", () => {
+	it("keeps App Router page and layout boundaries server-first", () => {
+		const violations = sourceFiles(join(codeDir, "src/app"))
+			.filter((path) => /\/(?:page|layout)\.tsx$/.test(path))
+			.filter((path) => readFileSync(path, "utf8").startsWith('"use client"'))
+			.map((path) => relative(codeDir, path));
+		expect(violations).toEqual([]);
+	});
+
+	it("mounts AdminLayout inside the two protected client shells", () => {
+		const boundaries = [
+			["src/app/(dashboard)/layout.tsx", "DashboardRouteShell"],
+			["src/app/admin/layout.tsx", "AdminRouteShell"],
+		] as const;
+		for (const [path, shell] of boundaries) {
+			const source = readFileSync(join(codeDir, path), "utf8");
+			expect(source).toContain(shell);
+			expect(source).not.toContain('"use client"');
+		}
 		for (const path of [
-			"src/app/(dashboard)/layout.tsx",
-			"src/app/admin/layout.tsx",
+			"src/components/dashboard-route-shell.tsx",
+			"src/components/admin-route-shell.tsx",
 		]) {
 			const source = readFileSync(join(codeDir, path), "utf8");
 			expect(source).toContain(

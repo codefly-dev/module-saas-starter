@@ -43,8 +43,15 @@ func (s *Service) SearchUsers(ctx context.Context, actorID string, req *gen.Sear
 		return nil, w.Wrapf(err, "permission denied")
 	}
 
-	users, nextToken, err := s.store.SearchUsers(ctx, req.Query, req.PageSize, req.PageToken)
-	if err != nil {
+	var (
+		users     []*gen.User
+		nextToken string
+	)
+	if err := s.store.WithControlPlane(ctx, func(ctx context.Context) error {
+		var err error
+		users, nextToken, err = s.store.SearchUsers(ctx, req.Query, req.PageSize, req.PageToken)
+		return err
+	}); err != nil {
 		return nil, w.Wrapf(err, "search failed")
 	}
 
@@ -62,7 +69,9 @@ func (s *Service) SuspendUser(ctx context.Context, actorID string, req *gen.Susp
 		return w.Wrapf(err, "permission denied")
 	}
 
-	if err := s.store.UpdateUserStatus(ctx, req.UserId, "suspended"); err != nil {
+	if err := s.store.WithControlPlane(ctx, func(ctx context.Context) error {
+		return s.store.UpdateUserStatus(ctx, req.UserId, "suspended")
+	}); err != nil {
 		return w.Wrapf(err, "cannot suspend user")
 	}
 
@@ -79,7 +88,9 @@ func (s *Service) UnsuspendUser(ctx context.Context, actorID string, req *gen.Un
 		return w.Wrapf(err, "permission denied")
 	}
 
-	if err := s.store.UpdateUserStatus(ctx, req.UserId, "active"); err != nil {
+	if err := s.store.WithControlPlane(ctx, func(ctx context.Context) error {
+		return s.store.UpdateUserStatus(ctx, req.UserId, "active")
+	}); err != nil {
 		return w.Wrapf(err, "cannot unsuspend user")
 	}
 
@@ -189,8 +200,12 @@ func (s *Service) ListActiveSessions(ctx context.Context, actorID string, req *g
 		return nil, w.Wrapf(err, "permission denied")
 	}
 
-	sessions, err := s.store.ListActiveSessions(ctx, req.UserId, req.PageSize)
-	if err != nil {
+	var sessions []*Session
+	if err := s.store.WithControlPlane(ctx, func(ctx context.Context) error {
+		var err error
+		sessions, err = s.store.ListActiveSessions(ctx, req.UserId, req.PageSize)
+		return err
+	}); err != nil {
 		return nil, w.Wrapf(err, "cannot list sessions")
 	}
 

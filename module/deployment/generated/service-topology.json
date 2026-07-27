@@ -63,8 +63,8 @@
           "port": 9090
         },
         {
-          "name": "http",
-          "api": "CODEFLY_API_HTTP",
+          "name": "rest",
+          "api": "CODEFLY_API_REST",
           "visibility": "ENDPOINT_VISIBILITY_PUBLIC",
           "port": 8080
         }
@@ -171,7 +171,7 @@
     },
     {
       "service": "auth-sidecar",
-      "endpoint": "http",
+      "endpoint": "rest",
       "visibility": "ENDPOINT_VISIBILITY_PUBLIC"
     }
   ],

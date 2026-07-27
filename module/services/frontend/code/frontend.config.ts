@@ -33,26 +33,6 @@ const frontendConfig = defineReactFrontend({
 		title: "SaaS Application",
 		description: "A secure multi-tenant application.",
 	},
-	appearance: {
-		defaultTheme: "system",
-		radius: "0.75rem",
-		light: {
-			primary: "oklch(0.52 0.22 270)",
-			primaryForeground: "oklch(0.985 0 0)",
-			ring: "oklch(0.52 0.22 270)",
-			sidebarPrimary: "oklch(0.52 0.22 270)",
-			sidebarPrimaryForeground: "oklch(0.985 0 0)",
-			chart1: "oklch(0.52 0.22 270)",
-		},
-		dark: {
-			primary: "oklch(0.72 0.17 270)",
-			primaryForeground: "oklch(0.16 0.03 270)",
-			ring: "oklch(0.72 0.17 270)",
-			sidebarPrimary: "oklch(0.72 0.17 270)",
-			sidebarPrimaryForeground: "oklch(0.16 0.03 270)",
-			chart1: "oklch(0.72 0.17 270)",
-		},
-	},
 	plugins: installedPlugins,
 	filesystemRoutes: FRONTEND_ROUTES.map((route) => route.path),
 });

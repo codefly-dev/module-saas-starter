@@ -26,6 +26,7 @@ const workspacePackageNames = readdirSync(
 /** @type {import('next').NextConfig} */
 const nextConfig = {
 	output: "standalone",
+	reactCompiler: true,
 	// Product plugins are additive packages/* workspaces. Discover them instead
 	// of requiring each consumer to mutate this protected host config; packages
 	// that expose TypeScript under the development condition then participate in
@@ -68,7 +69,7 @@ const nextConfig = {
 //     in the Issues feed get mapped back to TypeScript stack frames).
 //   - Tunneling — proxies Sentry events through /monitoring so an
 //     ad-blocker on a customer's browser doesn't drop them.
-//   - Server-side tree-shaking of debug code.
+//   - Webpack tree-shaking of debug code when Webpack is selected.
 //
 // Wrapper is a no-op without the env vars below; safe to leave in
 // place for local dev where SENTRY_AUTH_TOKEN / SENTRY_ORG are unset.
@@ -100,9 +101,11 @@ export default withSentryConfig(nextConfig, {
 	// can grep CVEs against. Off-by-default; set to true to enable.
 	hideSourceMaps: true,
 
-	// Disable source-map upload locally (no auth token = no upload
-	// attempt = no log noise).
-	disableLogger: true,
+	webpack: {
+		treeshake: {
+			removeDebugLogging: true,
+		},
+	},
 
 	// Tunnel Sentry events through the same origin to dodge browser
 	// ad-blockers that block sentry.io. /monitoring is a Next route

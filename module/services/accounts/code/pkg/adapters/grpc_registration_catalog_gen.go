@@ -27,6 +27,7 @@ func registerCatalogGRPCServices(registrar grpc.ServiceRegistrar, server *GrpcSe
 	gen.RegisterTeamServiceServer(registrar, server.Team)
 	gen.RegisterUsageServiceServer(registrar, UsageSingleton())
 	gen.RegisterUserServiceServer(registrar, server.User)
+	gen.RegisterWorkContextServiceServer(registrar, WorkContextSingleton())
 }
 
 var catalogGRPCServiceNames = []string{
@@ -45,6 +46,7 @@ var catalogGRPCServiceNames = []string{
 	"saas.accounts.v1.TeamService",
 	"saas.accounts.v1.UsageService",
 	"saas.accounts.v1.UserService",
+	"saas.accounts.v1.WorkContextService",
 }
 
 var catalogConnectOnlyServiceNames = []string{

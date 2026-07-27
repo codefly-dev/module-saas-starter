@@ -4,8 +4,6 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/require"
-
-	policyv1 "accounts/pkg/gen/saas/policy/v1"
 )
 
 func TestGeneratedAuthorizationMetadataJoinsRESTAndConnectRoutes(t *testing.T) {
@@ -13,7 +11,7 @@ func TestGeneratedAuthorizationMetadataJoinsRESTAndConnectRoutes(t *testing.T) {
 	require.NoError(t, applyGeneratedAuthorizationMetadata(registration))
 	require.Equal(t, "/saas.accounts.v1.UserService/RegisterUser", registration.Procedure)
 	require.False(t, registration.Protected)
-	require.Equal(t, policyv1.RateLimitClass_RATE_LIMIT_CLASS_AUTHENTICATION, registration.RateLimitClass)
+	require.Equal(t, edgeRateLimitClassAuthentication, registration.RateLimitClass)
 	require.NotEmpty(t, registration.PolicySHA256)
 
 	mfaCompletion := &RouteEntry{Procedure: "/saas.accounts.v1.AuthService/CompleteMFAChallenge"}
@@ -25,7 +23,7 @@ func TestGeneratedAuthorizationMetadataJoinsRESTAndConnectRoutes(t *testing.T) {
 	unknownExtension := &RouteEntry{Method: "POST", Path: "/v1/auth/magic-link", Protected: false}
 	require.NoError(t, applyGeneratedAuthorizationMetadata(unknownExtension))
 	require.Empty(t, unknownExtension.Procedure)
-	require.Equal(t, policyv1.RateLimitClass_RATE_LIMIT_CLASS_UNSPECIFIED, unknownExtension.RateLimitClass)
+	require.Equal(t, edgeRateLimitClassUnspecified, unknownExtension.RateLimitClass)
 }
 
 func TestGeneratedAuthorizationMetadataRejectsPolicyDrift(t *testing.T) {

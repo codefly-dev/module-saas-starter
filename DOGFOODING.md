@@ -16,20 +16,21 @@ current source.
 # 1. Build agents (s3 plugin v0.0.2 must be installed locally)
 cd ~/Development/deus/codefly.dev/agents/services/s3 && codefly agent build
 
-# 2. Sync the module so codefly picks up the new object-storage entry
-cd ~/Development/deus/codefly.dev/agents/modules/saas-starter
-codefly sync service       # for each: api, frontend, object-storage
+# 2. Enter the standalone starter repository
+cd ~/Development/deus/codefly/module-saas-starter
 
 # 3. Boot the stack
-codefly run service frontend --fixture dev-admin
+codefly run service --fixture dev-admin
 ```
 
-Expected boot order: `vault → store → cache → object-storage (s3 plugin
-→ MinIO at port 9xxx) → api → auth-sidecar → frontend`. If any service
+Expected graph: `vault + store + cache + object-storage (s3 plugin
+→ MinIO at port 9xxx) → accounts → frontend → auth-sidecar`. Independent
+services may start concurrently. If any service
 hangs at "waiting for ready", check that step's `--debug` output.
 
-The TUI shows green dots when each service is up. Wait for **frontend**
-to report a URL — typically `http://localhost:21931`.
+The TUI shows green dots when each service is up. Wait for **auth-sidecar**
+to report its public HTTP URL. Open that URL; the frontend's direct URL bypasses
+authentication routing and is not the application ingress.
 
 ---
 
@@ -168,7 +169,7 @@ service. Use a Stripe test-mode key.
 
 ```bash
 codefly secret set api STRIPE_API_KEY sk_test_xxxxxxxxxxxx
-codefly run service frontend --fixture dev-admin
+codefly run service --fixture dev-admin
 ```
 
 - [ ] `/admin/billing` — Plan card shows **Pro** badge.

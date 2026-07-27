@@ -24,9 +24,10 @@ type deploymentBindings struct {
 }
 
 type deploymentModuleBinding struct {
-	Name        string `yaml:"name"`
-	Namespace   string `yaml:"namespace"`
-	Description string `yaml:"description"`
+	Name         string `yaml:"name"`
+	Namespace    string `yaml:"namespace"`
+	ServiceEntry string `yaml:"service_entry"`
+	Description  string `yaml:"description"`
 }
 
 type deploymentInterfaceBinding struct {
@@ -210,6 +211,12 @@ func validateDeploymentBindings(serviceCatalog *catalogv1.ServiceCatalog, bindin
 			}
 			previousPort = port
 		}
+	}
+	if !endpointNamePattern.MatchString(bindings.Module.ServiceEntry) {
+		return fmt.Errorf("deployment module service entry is incomplete or invalid")
+	}
+	if _, exists := services[bindings.Module.ServiceEntry]; !exists {
+		return fmt.Errorf("deployment module service entry references unknown service %q", bindings.Module.ServiceEntry)
 	}
 
 	for _, service := range bindings.Services {
@@ -521,11 +528,12 @@ func renderDeploymentCatalogJSON(catalog *catalogv1.DeploymentCatalog) ([]byte, 
 }
 
 type moduleManifest struct {
-	Kind        string                  `yaml:"kind"`
-	Name        string                  `yaml:"name"`
-	Description string                  `yaml:"description"`
-	Interface   moduleManifestInterface `yaml:"interface"`
-	Services    []manifestServiceRef    `yaml:"services"`
+	Kind         string                  `yaml:"kind"`
+	Name         string                  `yaml:"name"`
+	Description  string                  `yaml:"description"`
+	ServiceEntry string                  `yaml:"service-entry"`
+	Interface    moduleManifestInterface `yaml:"interface"`
+	Services     []manifestServiceRef    `yaml:"services"`
 }
 
 type moduleManifestInterface struct {
@@ -572,6 +580,7 @@ type manifestEndpoint struct {
 func renderModuleManifest(bindings deploymentBindings) ([]byte, error) {
 	manifest := moduleManifest{
 		Kind: "module", Name: bindings.Module.Name, Description: bindings.Module.Description,
+		ServiceEntry: bindings.Module.ServiceEntry,
 	}
 	for _, exposed := range bindings.Interface {
 		manifest.Interface.Endpoints = append(manifest.Interface.Endpoints, manifestInterfaceEndpoint(exposed))

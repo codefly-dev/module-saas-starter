@@ -26,12 +26,14 @@ func TestFrontendPluginCatalogIsDeterministicAndCurrent(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, first.CatalogJSON, second.CatalogJSON)
 	require.Equal(t, first.TypeScript, second.TypeScript)
+	require.Equal(t, first.GatewayGo, second.GatewayGo)
 	require.Equal(t, string(readFixture(t, "../../../../frontend/generated/plugin-catalog.json")), string(first.CatalogJSON), "run: go generate ./pkg/cataloggen")
 	require.Equal(t, string(readFixture(t, "../../../../frontend/code/src/gen/saas/frontend/v1/plugin_catalog.ts")), string(first.TypeScript), "run: go generate ./pkg/cataloggen")
+	require.Equal(t, string(readFixture(t, "../../../../auth-sidecar/code/frontend_routes_catalog_gen.go")), string(first.GatewayGo), "run: go generate ./pkg/cataloggen")
 
 	require.Len(t, first.Catalog.GetPlugins(), 3)
 	require.Len(t, first.Catalog.GetRoutes(), 36)
-	require.Len(t, first.Catalog.GetNavigation(), 25)
+	require.Len(t, first.Catalog.GetNavigation(), 26)
 	require.Contains(t, string(first.TypeScript), `path: "/admin/{*slug}"`)
 
 	surfaceCounts := map[catalogv1.FrontendNavigationSurface]int{}
@@ -40,10 +42,10 @@ func TestFrontendPluginCatalogIsDeterministicAndCurrent(t *testing.T) {
 			surfaceCounts[surface]++
 		}
 	}
-	require.Equal(t, 16, surfaceCounts[catalogv1.FrontendNavigationSurface_FRONTEND_NAVIGATION_SURFACE_COMMAND_PALETTE])
-	require.Equal(t, 21, surfaceCounts[catalogv1.FrontendNavigationSurface_FRONTEND_NAVIGATION_SURFACE_PLUGIN_REGISTRY])
+	require.Equal(t, 17, surfaceCounts[catalogv1.FrontendNavigationSurface_FRONTEND_NAVIGATION_SURFACE_COMMAND_PALETTE])
+	require.Equal(t, 22, surfaceCounts[catalogv1.FrontendNavigationSurface_FRONTEND_NAVIGATION_SURFACE_PLUGIN_REGISTRY])
 	require.Equal(t, 20, surfaceCounts[catalogv1.FrontendNavigationSurface_FRONTEND_NAVIGATION_SURFACE_SIDEBAR])
-	require.Equal(t, 3, surfaceCounts[catalogv1.FrontendNavigationSurface_FRONTEND_NAVIGATION_SURFACE_USER_MENU])
+	require.Equal(t, 4, surfaceCounts[catalogv1.FrontendNavigationSurface_FRONTEND_NAVIGATION_SURFACE_USER_MENU])
 }
 
 func TestFrontendPageDiscoveryPinsAccessAndMatch(t *testing.T) {

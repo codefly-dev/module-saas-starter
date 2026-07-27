@@ -246,6 +246,55 @@ describe("public frontend plugin composition", () => {
 		},
 	);
 
+	it("accepts a safe product-owned REST capability probe path", () => {
+		const config = defineFrontend({
+			branding: {
+				name: "Example",
+				mark: "E",
+				title: "Example",
+				description: "Example",
+			},
+			plugins: [
+				plugin({
+					services: [
+						service({
+							compatibility: {
+								contract: "example.api",
+								major: 1,
+								probePath: "/api/v1/plugins/example/capabilities",
+							},
+						}),
+					],
+				}),
+			],
+		});
+		expect(config.services[0]?.compatibility.probePath).toBe(
+			"/api/v1/plugins/example/capabilities",
+		);
+	});
+
+	it.each([
+		["relative", "api/v1/capabilities"],
+		["traversal", "/api/v1/../capabilities"],
+		["encoded separator", "/api/v1/%2fprivate"],
+	])("rejects an unsafe capability probe path: %s", (_case, probePath) => {
+		expect(() =>
+			validateFrontendPlugins([
+				plugin({
+					services: [
+						service({
+							compatibility: {
+								contract: "example.api",
+								major: 1,
+								probePath,
+							},
+						}),
+					],
+				}),
+			]),
+		).toThrow(/probe path.*unsafe/);
+	});
+
 	it("rejects duplicate aliases and routes within one plugin", () => {
 		expect(() =>
 			validateFrontendPlugins([

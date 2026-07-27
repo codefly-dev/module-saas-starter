@@ -104,7 +104,7 @@ type Store interface {
 	RevokeRole(ctx context.Context, subjectID string, roleID string, orgID string, scope string) error
 	// ListRoleAssignments returns assignments in an org. When subjectID is
 	// empty, every assignment in that org is returned. subjectKind ==
-	// SUBJECT_KIND_UNSPECIFIED returns both users and teams.
+	// SUBJECT_KIND_UNSPECIFIED returns both direct principals and teams.
 	ListRoleAssignments(ctx context.Context, orgID string, subjectID string, subjectKind gen.SubjectKind) ([]*gen.RoleAssignment, error)
 
 	// Permission checking
@@ -145,9 +145,10 @@ type Store interface {
 	GetOrgSSO(ctx context.Context, orgID string) (*OrgSSOConfig, error)
 	UpsertOrgSSO(ctx context.Context, cfg *OrgSSOConfig) error
 
-	// User settings (JSONB blob — see business/user_settings.go)
-	GetUserSettings(ctx context.Context, userID string) ([]byte, error)
-	UpdateUserSettings(ctx context.Context, userID string, patch []byte) error
+	// User settings. The Store boundary is protobuf-typed; only the Postgres
+	// implementation sees the ProtoJSON representation stored in JSONB.
+	GetUserSettings(ctx context.Context, userID string) (*gen.UserSettings, error)
+	UpdateUserSettings(ctx context.Context, userID string, patch *gen.UserSettings, resetPaths []string) error
 
 	// Entitlements
 	GetOrgPlanID(ctx context.Context, orgID string) (string, error)
@@ -252,9 +253,10 @@ type Store interface {
 type StoreErrorType string
 
 const (
-	ErrTypeNotFound StoreErrorType = "not_found"
-	ErrTypeConflict StoreErrorType = "conflict"
-	ErrTypeInternal StoreErrorType = "internal"
+	ErrTypeNotFound   StoreErrorType = "not_found"
+	ErrTypeConflict   StoreErrorType = "conflict"
+	ErrTypePermission StoreErrorType = "permission"
+	ErrTypeInternal   StoreErrorType = "internal"
 )
 
 type StoreError struct {

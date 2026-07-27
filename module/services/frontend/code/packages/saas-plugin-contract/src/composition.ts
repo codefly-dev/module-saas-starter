@@ -1,5 +1,6 @@
 import { resolveFrontendAppearance } from "./appearance.js";
 import {
+	type DashboardWidget,
 	FRONTEND_PLUGIN_CONTRACT_VERSION,
 	type FrontendBranding,
 	type FrontendConfig,
@@ -11,7 +12,6 @@ import {
 	type NavItem,
 	type PluginNavigation,
 	type PluginRoute,
-	type DashboardWidget,
 	type PresentationRequirement,
 } from "./contracts.js";
 
@@ -254,7 +254,7 @@ function validateServiceRequirement(
 	);
 	assertExactKeys(
 		service.compatibility,
-		["contract", "major"],
+		["contract", "major", "probePath"],
 		`plugin '${pluginName}' service '${service.alias}' compatibility`,
 	);
 	assertContribution(
@@ -267,6 +267,19 @@ function validateServiceRequirement(
 			service.compatibility.major > 0,
 		`plugin '${pluginName}' service '${service.alias}' compatibility major must be a positive integer`,
 	);
+	if (service.compatibility.probePath !== undefined) {
+		const probeSegments =
+			typeof service.compatibility.probePath === "string"
+				? service.compatibility.probePath.slice(1).split("/")
+				: [];
+		assertContribution(
+			service.protocol === "rest" &&
+				typeof service.compatibility.probePath === "string" &&
+				SAFE_ROUTE_PREFIX.test(service.compatibility.probePath) &&
+				probeSegments.every((segment) => segment !== "." && segment !== ".."),
+			`plugin '${pluginName}' service '${service.alias}' compatibility probe path '${String(service.compatibility.probePath)}' is unsafe`,
+		);
+	}
 }
 
 function assertUnique(

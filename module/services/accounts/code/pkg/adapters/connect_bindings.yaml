@@ -103,6 +103,11 @@ services:
     source:
       kind: singleton
       name: UsageSingleton
+  WorkContextService:
+    handler: workContextConnectHandler
+    source:
+      kind: singleton
+      name: WorkContextSingleton
   UserSettingsService:
     handler: userSettingsConnectHandler
     source:

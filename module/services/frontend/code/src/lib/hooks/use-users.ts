@@ -1,12 +1,13 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { usePlatformAdminService, useUserService } from "./use-api-client";
 
-export function useUsers(query: string) {
+export function useUsers(query: string, enabled = true) {
 	const svc = usePlatformAdminService();
 	return useQuery({
 		queryKey: ["users", query],
 		queryFn: () => svc.searchUsers({ query, pageSize: 50 }),
 		select: (data) => data.users,
+		enabled,
 	});
 }
 

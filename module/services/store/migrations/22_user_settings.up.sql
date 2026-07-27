@@ -1,9 +1,8 @@
--- User-level preferences. JSONB rather than a wide schema so future
--- additions (a new `default_org_id`, a flag for a beta feature, an
--- accessibility toggle) don't need migrations + handler updates +
--- proto codegen each time. Frontend writes a partial JSON; the api
--- merges it on the column with jsonb || (concatenation, last-write
--- wins per top-level key).
+-- User-level preferences. PostgreSQL stores the canonical ProtoJSON projection
+-- in JSONB, so adding a typed protobuf setting requires contract/code
+-- generation but no SQL column migration. Application code never manipulates
+-- raw JSON. Partial protobuf messages are merged under a user-row lock so
+-- nested sibling settings and explicit scalar presence are preserved.
 --
 -- Default '{}'::jsonb so every user has a non-NULL settings value
 -- on the first read — the application code never needs to handle

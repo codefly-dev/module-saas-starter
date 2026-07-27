@@ -18,13 +18,6 @@ module/services/*/code/backend
 module/services/*/code/local
 module/services/store/code/store-migrator
 module/services/*/.cache/
-# Raw protoc-gen-openapiv2 output is a genuine test input for the REST-surface
-# catalog (pkg/cataloggen); keep this one intermediate checked in as a fixture.
-!module/services/accounts/.cache/
-module/services/accounts/.cache/*
-!module/services/accounts/.cache/openapi/
-module/services/accounts/.cache/openapi/*
-!module/services/accounts/.cache/openapi/api.swagger.json
 
 # nix caches + materialized per-service nix envs (machine-local, regenerated)
 **/.nix-cache/

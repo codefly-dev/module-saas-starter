@@ -31,6 +31,7 @@ import {
 	Skeleton,
 	Textarea,
 } from "@/shared/ui";
+import { Settings } from "../model/settings";
 import { themePreferenceFromProto } from "../model/theme-preference";
 import { userSettingsMutations } from "../service/mutations";
 import { userSettingsQueries } from "../service/queries";
@@ -42,7 +43,7 @@ import { useThemePreference } from "./theme-preference-provider";
  * opt-ins) in three cards, each with an inline Save so the operator
  * can update one section without committing the others.
  *
- * Theme syncs both ways: applying the theme via next-themes also
+ * Theme syncs both ways: applying the theme via the client provider also
  * persists it to the api on save, so a fresh device login restores
  * the user's preference.
  */
@@ -62,14 +63,14 @@ export function GeneralSettingsPage() {
 		);
 	}
 	const formIdentity = JSON.stringify([
-		settings?.theme,
-		settings?.locale,
-		settings?.timezone,
-		settings?.dateFormat,
-		settings?.timeFormat,
-		settings?.email?.product,
-		settings?.email?.marketing,
-		settings?.email?.weeklyDigest,
+		Settings.appearance.theme.get(settings),
+		Settings.regional.locale.get(settings),
+		Settings.regional.timezone.get(settings),
+		Settings.regional.dateFormat.get(settings),
+		Settings.regional.timeFormat.get(settings),
+		Settings.email.product.get(settings),
+		Settings.email.marketing.get(settings),
+		Settings.email.weeklyDigest.get(settings),
 		self?.user?.uuid,
 		self?.user?.primaryEmail,
 		self?.user?.profile,
@@ -92,21 +93,28 @@ function GeneralSettingsForm({
 	// Local form state. Initialized from the api on load; saves below
 	// submit a partial patch with only the keys this card owns.
 	const [theme, setLocalTheme] = useState<FrontendThemePreference>(
-		themePreferenceFromProto(settings?.theme) ?? "system",
+		themePreferenceFromProto(Settings.appearance.theme.get(settings)) ??
+			"system",
 	);
-	const [locale, setLocale] = useState(settings?.locale ?? "en");
-	const [timezone, setTimezone] = useState(settings?.timezone ?? "UTC");
-	const [dateFormat, setDateFormat] = useState(settings?.dateFormat ?? "iso");
-	const [timeFormat, setTimeFormat] = useState(settings?.timeFormat ?? "24h");
+	const [locale, setLocale] = useState(Settings.regional.locale.get(settings));
+	const [timezone, setTimezone] = useState(
+		Settings.regional.timezone.get(settings),
+	);
+	const [dateFormat, setDateFormat] = useState(
+		Settings.regional.dateFormat.get(settings),
+	);
+	const [timeFormat, setTimeFormat] = useState(
+		Settings.regional.timeFormat.get(settings),
+	);
 
 	const [emailProduct, setEmailProduct] = useState(
-		settings?.email?.product ?? true,
+		Settings.email.product.get(settings),
 	);
 	const [emailMarketing, setEmailMarketing] = useState(
-		settings?.email?.marketing ?? false,
+		Settings.email.marketing.get(settings),
 	);
 	const [emailWeeklyDigest, setEmailWeeklyDigest] = useState(
-		settings?.email?.weeklyDigest ?? true,
+		Settings.email.weeklyDigest.get(settings),
 	);
 	const profile = self?.user?.profile;
 	const [profileName, setProfileName] = useState(profile?.name ?? "");
@@ -159,23 +167,30 @@ function GeneralSettingsForm({
 	function saveAppearance() {
 		void persist(async () => {
 			await setPreference(theme);
-			await save.mutateAsync({ locale });
+			await save.mutateAsync({
+				patch: Settings.regional.locale.patch(locale),
+			});
 		});
 	}
 
 	function saveTimezone() {
-		void persist(() => save.mutateAsync({ timezone, dateFormat, timeFormat }));
+		void persist(() =>
+			save.mutateAsync({
+				patch: { regional: { timezone, dateFormat, timeFormat } },
+			}),
+		);
 	}
 
 	function saveEmail() {
 		void persist(() =>
 			save.mutateAsync({
-				email: {
-					$typeName: "saas.accounts.v1.UserEmailSettings",
-					product: emailProduct,
-					marketing: emailMarketing,
-					weeklyDigest: emailWeeklyDigest,
-					// security forced-on server-side; we don't send it.
+				patch: {
+					email: {
+						product: emailProduct,
+						marketing: emailMarketing,
+						weeklyDigest: emailWeeklyDigest,
+						// security forced-on server-side; we don't send it.
+					},
 				},
 			}),
 		);

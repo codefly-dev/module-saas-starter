@@ -1,5 +1,8 @@
 import { describe, expect, it } from "vitest";
-import { SIDEBAR_NAVIGATION } from "@/gen/saas/frontend/v1/plugin_catalog";
+import {
+	SIDEBAR_NAVIGATION,
+	USER_MENU_NAVIGATION,
+} from "@/gen/saas/frontend/v1/plugin_catalog";
 import {
 	groupFrontendNavigation,
 	isFrontendNavigationVisible,
@@ -46,5 +49,17 @@ describe("generated frontend navigation", () => {
 			"/admin/invitations",
 			"/admin/api-keys",
 		]);
+	});
+
+	it("keeps general Settings directly discoverable", () => {
+		expect(
+			SIDEBAR_NAVIGATION.find((item) => item.id === "settings"),
+		).toBeUndefined();
+		expect(USER_MENU_NAVIGATION[0]).toMatchObject({
+			id: "settings",
+			label: "Settings",
+			href: "/settings",
+			access: "authenticated",
+		});
 	});
 });

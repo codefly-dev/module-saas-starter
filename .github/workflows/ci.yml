@@ -26,6 +26,10 @@ jobs:
         with:
           go-version: stable
           cache: false
+      - name: Validate module agent
+        env:
+          GOWORK: "off"
+        run: go test ./...
       - name: Reject direct Codefly runtime-carrier access
         working-directory: module/tools
         env:
@@ -60,10 +64,24 @@ jobs:
         env:
           CODEFLY_BASE: ${{ github.event.pull_request.base.sha || github.event.before }}
         run: |
-          args=(ci run --head "${GITHUB_SHA}" --output .codefly/ci)
+          # Keep the complete audit in the Codefly evidence report, including
+          # vendor runtime images. Those images have their own release cadence
+          # and may carry upstream findings that this repository cannot patch.
+          # The next step separately fails closed on every first-party service
+          # and production frontend dependency.
+          # Several published vendor-image agents predate Core's shared Trivy
+          # cache lock. Serialize the workspace gate so those independent
+          # agent processes cannot corrupt or time out on the same cache.
+          args=(ci run --head "${GITHUB_SHA}" --output .codefly/ci --fail-on-vuln=false --jobs 1)
           if [[ -n "${CODEFLY_BASE}" && "${CODEFLY_BASE}" != "0000000000000000000000000000000000000000" ]]; then
             args+=(--base "${CODEFLY_BASE}")
           else
             args+=(--all)
           fi
           codefly "${args[@]}"
+      - name: Enforce first-party vulnerability gate
+        shell: bash
+        run: |
+          codefly audit service accounts --outdated=false --fail-on-vuln
+          codefly audit service auth-sidecar --outdated=false --fail-on-vuln
+          npm --prefix module/services/frontend/code audit --omit=dev --audit-level=high

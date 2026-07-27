@@ -147,6 +147,13 @@ func doWork(ctx context.Context) (Clean, error) {
 
 	service.SetIdentityResolver(resolver)
 	service.SetJWTMinter(minter)
+	// The standards-named HTTP endpoint must return a top-level JSON Web Key
+	// Set. grpc-gateway otherwise wraps the document in JWKSResponse.keys_json,
+	// which generic verifiers correctly reject.
+	adapters.RegisterHTTPRoute(
+		"/v1/auth/.well-known/jwks.json",
+		adapters.NewJWKSHTTPHandler(service),
+	)
 
 	// Permissions plugin: configure signing keys before NewServer builds the
 	// generated gRPC registrations. The ed25519 key is
@@ -158,7 +165,8 @@ func doWork(ctx context.Context) (Clean, error) {
 	// approve flow still works end-to-end.
 	permissionsplugin.Default().
 		WithEd25519Key([]byte(priv)).
-		WithHMACSecret([]byte(codefly.ScopedAuthSecret()))
+		WithHMACSecret([]byte(codefly.ScopedAuthSecret())).
+		WithWorkContextAuthority("saas-starter", minter.KeyID())
 
 	// Server-side OAuth state signer. Seeded from the JWT private key so
 	// state survives across api restarts and is consistent across

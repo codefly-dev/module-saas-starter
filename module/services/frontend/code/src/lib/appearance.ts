@@ -17,8 +17,8 @@ export function appearanceVariableName(
 
 /**
  * Produces the SSR-safe custom properties consumed by globals.css. Keeping
- * both palettes on <html> lets next-themes switch one class without a repaint
- * through a client-only provider.
+ * both palettes on <html> lets the client theme provider switch one class
+ * without recomputing the tenant appearance tokens.
  */
 export function appearanceStyleProperties(
 	appearance: FrontendAppearance,

@@ -58,6 +58,12 @@ export interface FrontendServiceCompatibility {
 	contract: string;
 	/** Exact positive contract major required by this frontend package. */
 	major: number;
+	/**
+	 * Optional product-owned REST capability endpoint. This is a path only,
+	 * never an origin. Several narrow aliases backed by one Codefly service can
+	 * therefore share a service-level handshake owned by a backend plugin.
+	 */
+	probePath?: string;
 }
 
 /** Serializable backend requirement declared by a product plugin. */

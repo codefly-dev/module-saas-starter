@@ -1,0 +1,3 @@
+# protoc-gen-es emits one separator line after the final declaration.
+# Keep normal whitespace checks everywhere else.
+module/services/frontend/code/src/gen/** whitespace=-blank-at-eof

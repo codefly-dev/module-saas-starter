@@ -4,6 +4,7 @@ import {
 	sortByCreated,
 	statusLabel,
 	toDisplayName,
+	withDisplayName,
 } from "../transforms";
 
 describe("getStatusBadgeVariant", () => {
@@ -43,6 +44,19 @@ describe("statusLabel", () => {
 });
 
 describe("toDisplayName", () => {
+	it("prefers the canonical profile name", () => {
+		expect(
+			toDisplayName(
+				{
+					name: "Antoine Toussaint",
+					first_name: "Stale",
+					last_name: "Value",
+				},
+				"antoine@example.com",
+			),
+		).toBe("Antoine Toussaint");
+	});
+
 	it("returns full name when first and last are present", () => {
 		expect(
 			toDisplayName(
@@ -66,6 +80,21 @@ describe("toDisplayName", () => {
 		expect(
 			toDisplayName({ first_name: "", last_name: "" }, "bob@test.com"),
 		).toBe("bob@test.com");
+	});
+});
+
+describe("withDisplayName", () => {
+	it("trims the name and preserves unrelated profile attributes", () => {
+		expect(
+			withDisplayName(
+				{ locale: "fr", first_name: "Antoine" },
+				"  Antoine Toussaint  ",
+			),
+		).toEqual({
+			locale: "fr",
+			first_name: "Antoine",
+			name: "Antoine Toussaint",
+		});
 	});
 });
 

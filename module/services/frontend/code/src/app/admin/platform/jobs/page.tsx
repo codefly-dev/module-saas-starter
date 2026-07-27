@@ -1,5 +1,3 @@
-"use client";
-
 import { RoleGate } from "@/components/auth/role-gate";
 import { JobOperationsPage } from "@/features/job-operations";
 

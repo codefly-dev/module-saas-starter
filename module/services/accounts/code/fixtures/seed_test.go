@@ -1,6 +1,7 @@
 package fixtures
 
 import (
+	gen "accounts/pkg/gen/saas/accounts/v1"
 	"context"
 	"testing"
 )
@@ -35,5 +36,80 @@ func TestFixtureNamePatternAcceptsProductFixtureNames(t *testing.T) {
 		if !fixtureNamePattern.MatchString(name) {
 			t.Fatalf("fixtureNamePattern rejected %q", name)
 		}
+	}
+}
+
+func TestValidateFixtureAcceptsAgentRoleAndAssignment(t *testing.T) {
+	fixture := &fixtureFile{
+		Users: []fixtureUser{{
+			Email:      "owner@example.com",
+			Provider:   "dev",
+			ProviderID: "owner",
+		}},
+		Organizations: []fixtureOrg{{
+			Name:  "Example",
+			Owner: "owner@example.com",
+		}},
+		Agents: []fixtureAgent{{
+			Org:             "Example",
+			AgentIdentifier: "example/agent:local",
+			CreatedBy:       "owner@example.com",
+		}},
+		Roles: []fixtureRole{{
+			Org:  "Example",
+			Name: "executor",
+			Permissions: []fixturePermission{{
+				Resource: "build",
+				Action:   "run",
+			}},
+		}},
+		Assignments: []fixtureRoleAssignment{{
+			Org:             "Example",
+			Role:            "executor",
+			AgentIdentifier: "example/agent:local",
+		}},
+	}
+
+	if err := validateFixture(fixture); err != nil {
+		t.Fatalf("validateFixture() rejected generic agent authority: %v", err)
+	}
+}
+
+func TestValidateFixtureRejectsIncompleteAgentAuthority(t *testing.T) {
+	tests := map[string]*fixtureFile{
+		"agent creator": {
+			Agents: []fixtureAgent{{Org: "Example", AgentIdentifier: "example/agent:local"}},
+		},
+		"empty role permissions": {
+			Roles: []fixtureRole{{Org: "Example", Name: "executor"}},
+		},
+		"incomplete assignment": {
+			Assignments: []fixtureRoleAssignment{{Org: "Example", Role: "executor"}},
+		},
+	}
+	for name, fixture := range tests {
+		t.Run(name, func(t *testing.T) {
+			if err := validateFixture(fixture); err == nil {
+				t.Fatal("validateFixture() accepted incomplete agent authority")
+			}
+		})
+	}
+}
+
+func TestSameFixturePermissionsIsOrderIndependent(t *testing.T) {
+	left := []*gen.Permission{
+		{Resource: "build", Action: "read"},
+		{Resource: "build", Action: "run"},
+	}
+	right := []*gen.Permission{
+		{Resource: "build", Action: "run"},
+		{Resource: "build", Action: "read"},
+	}
+	if !sameFixturePermissions(left, right) {
+		t.Fatal("sameFixturePermissions() treated an ordering change as authority drift")
+	}
+	right[0].Action = "delete"
+	if sameFixturePermissions(left, right) {
+		t.Fatal("sameFixturePermissions() accepted different authority")
 	}
 }

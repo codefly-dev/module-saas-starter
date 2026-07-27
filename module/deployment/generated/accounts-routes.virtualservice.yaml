@@ -1498,7 +1498,9 @@ spec:
             - method:
                 exact: POST
               uri:
-                exact: /saas.accounts.v1.APIKeyService/CreateAPIKey
+                exact: /customers.WorkContextService/ExchangeAudience
+          rewrite:
+            uri: /saas.accounts.v1.WorkContextService/ExchangeAudience
           route:
             - destination:
                 host: auth-sidecar.saas-starter.svc.cluster.local
@@ -1509,7 +1511,9 @@ spec:
             - method:
                 exact: POST
               uri:
-                exact: /saas.accounts.v1.APIKeyService/ListAPIKeys
+                exact: /customers.WorkContextService/StartChildSession
+          rewrite:
+            uri: /saas.accounts.v1.WorkContextService/StartChildSession
           route:
             - destination:
                 host: auth-sidecar.saas-starter.svc.cluster.local
@@ -1520,7 +1524,9 @@ spec:
             - method:
                 exact: POST
               uri:
-                exact: /saas.accounts.v1.APIKeyService/RevokeAPIKey
+                exact: /customers.WorkContextService/StartRootSession
+          rewrite:
+            uri: /saas.accounts.v1.WorkContextService/StartRootSession
           route:
             - destination:
                 host: auth-sidecar.saas-starter.svc.cluster.local
@@ -1531,7 +1537,9 @@ spec:
             - method:
                 exact: POST
               uri:
-                exact: /saas.accounts.v1.AuditExportService/DeleteConfig
+                exact: /customers.WorkContextService/StartTask
+          rewrite:
+            uri: /saas.accounts.v1.WorkContextService/StartTask
           route:
             - destination:
                 host: auth-sidecar.saas-starter.svc.cluster.local
@@ -1542,7 +1550,7 @@ spec:
             - method:
                 exact: POST
               uri:
-                exact: /saas.accounts.v1.AuditExportService/GetConfig
+                exact: /saas.accounts.v1.APIKeyService/CreateAPIKey
           route:
             - destination:
                 host: auth-sidecar.saas-starter.svc.cluster.local
@@ -1553,7 +1561,7 @@ spec:
             - method:
                 exact: POST
               uri:
-                exact: /saas.accounts.v1.AuditExportService/SaveConfig
+                exact: /saas.accounts.v1.APIKeyService/ListAPIKeys
           route:
             - destination:
                 host: auth-sidecar.saas-starter.svc.cluster.local
@@ -1564,7 +1572,7 @@ spec:
             - method:
                 exact: POST
               uri:
-                exact: /saas.accounts.v1.AuditService/ExportAuditLog
+                exact: /saas.accounts.v1.APIKeyService/RevokeAPIKey
           route:
             - destination:
                 host: auth-sidecar.saas-starter.svc.cluster.local
@@ -1575,7 +1583,7 @@ spec:
             - method:
                 exact: POST
               uri:
-                exact: /saas.accounts.v1.AuditService/QueryAuditLog
+                exact: /saas.accounts.v1.AuditExportService/DeleteConfig
           route:
             - destination:
                 host: auth-sidecar.saas-starter.svc.cluster.local
@@ -1586,7 +1594,7 @@ spec:
             - method:
                 exact: POST
               uri:
-                exact: /saas.accounts.v1.AuthService/Authenticate
+                exact: /saas.accounts.v1.AuditExportService/GetConfig
           route:
             - destination:
                 host: auth-sidecar.saas-starter.svc.cluster.local
@@ -1597,7 +1605,7 @@ spec:
             - method:
                 exact: POST
               uri:
-                exact: /saas.accounts.v1.AuthService/BeginOAuth
+                exact: /saas.accounts.v1.AuditExportService/SaveConfig
           route:
             - destination:
                 host: auth-sidecar.saas-starter.svc.cluster.local
@@ -1608,7 +1616,7 @@ spec:
             - method:
                 exact: POST
               uri:
-                exact: /saas.accounts.v1.AuthService/BeginWebAuthnMFAChallenge
+                exact: /saas.accounts.v1.AuditService/ExportAuditLog
           route:
             - destination:
                 host: auth-sidecar.saas-starter.svc.cluster.local
@@ -1619,7 +1627,7 @@ spec:
             - method:
                 exact: POST
               uri:
-                exact: /saas.accounts.v1.AuthService/CompleteMFAChallenge
+                exact: /saas.accounts.v1.AuditService/QueryAuditLog
           route:
             - destination:
                 host: auth-sidecar.saas-starter.svc.cluster.local
@@ -1630,7 +1638,7 @@ spec:
             - method:
                 exact: POST
               uri:
-                exact: /saas.accounts.v1.AuthService/CompleteWebAuthnMFAChallenge
+                exact: /saas.accounts.v1.AuthService/Authenticate
           route:
             - destination:
                 host: auth-sidecar.saas-starter.svc.cluster.local
@@ -1641,7 +1649,7 @@ spec:
             - method:
                 exact: POST
               uri:
-                exact: /saas.accounts.v1.AuthService/GetJWKS
+                exact: /saas.accounts.v1.AuthService/BeginOAuth
           route:
             - destination:
                 host: auth-sidecar.saas-starter.svc.cluster.local
@@ -1652,7 +1660,7 @@ spec:
             - method:
                 exact: POST
               uri:
-                exact: /saas.accounts.v1.AuthService/Logout
+                exact: /saas.accounts.v1.AuthService/BeginWebAuthnMFAChallenge
           route:
             - destination:
                 host: auth-sidecar.saas-starter.svc.cluster.local
@@ -1663,7 +1671,7 @@ spec:
             - method:
                 exact: POST
               uri:
-                exact: /saas.accounts.v1.AuthService/RefreshToken
+                exact: /saas.accounts.v1.AuthService/CompleteMFAChallenge
           route:
             - destination:
                 host: auth-sidecar.saas-starter.svc.cluster.local
@@ -1674,7 +1682,7 @@ spec:
             - method:
                 exact: POST
               uri:
-                exact: /saas.accounts.v1.AuthService/SwitchOrganization
+                exact: /saas.accounts.v1.AuthService/CompleteWebAuthnMFAChallenge
           route:
             - destination:
                 host: auth-sidecar.saas-starter.svc.cluster.local
@@ -1685,7 +1693,7 @@ spec:
             - method:
                 exact: POST
               uri:
-                exact: /saas.accounts.v1.BillingService/ListInvoices
+                exact: /saas.accounts.v1.AuthService/GetJWKS
           route:
             - destination:
                 host: auth-sidecar.saas-starter.svc.cluster.local
@@ -1696,7 +1704,7 @@ spec:
             - method:
                 exact: POST
               uri:
-                exact: /saas.accounts.v1.BillingService/OpenPortal
+                exact: /saas.accounts.v1.AuthService/Logout
           route:
             - destination:
                 host: auth-sidecar.saas-starter.svc.cluster.local
@@ -1707,7 +1715,7 @@ spec:
             - method:
                 exact: POST
               uri:
-                exact: /saas.accounts.v1.ConsentService/Accept
+                exact: /saas.accounts.v1.AuthService/RefreshToken
           route:
             - destination:
                 host: auth-sidecar.saas-starter.svc.cluster.local
@@ -1718,7 +1726,7 @@ spec:
             - method:
                 exact: POST
               uri:
-                exact: /saas.accounts.v1.ConsentService/GetStatus
+                exact: /saas.accounts.v1.AuthService/SwitchOrganization
           route:
             - destination:
                 host: auth-sidecar.saas-starter.svc.cluster.local
@@ -1729,7 +1737,7 @@ spec:
             - method:
                 exact: POST
               uri:
-                exact: /saas.accounts.v1.DelegationService/DecideDelegation
+                exact: /saas.accounts.v1.BillingService/ListInvoices
           route:
             - destination:
                 host: auth-sidecar.saas-starter.svc.cluster.local
@@ -1740,7 +1748,7 @@ spec:
             - method:
                 exact: POST
               uri:
-                exact: /saas.accounts.v1.DelegationService/ListPendingDelegations
+                exact: /saas.accounts.v1.BillingService/OpenPortal
           route:
             - destination:
                 host: auth-sidecar.saas-starter.svc.cluster.local
@@ -1751,7 +1759,7 @@ spec:
             - method:
                 exact: POST
               uri:
-                exact: /saas.accounts.v1.DelegationService/RequestDelegation
+                exact: /saas.accounts.v1.ConsentService/Accept
           route:
             - destination:
                 host: auth-sidecar.saas-starter.svc.cluster.local
@@ -1762,7 +1770,7 @@ spec:
             - method:
                 exact: POST
               uri:
-                exact: /saas.accounts.v1.DelegationService/WaitForDelegation
+                exact: /saas.accounts.v1.ConsentService/GetStatus
           route:
             - destination:
                 host: auth-sidecar.saas-starter.svc.cluster.local
@@ -1773,7 +1781,7 @@ spec:
             - method:
                 exact: POST
               uri:
-                exact: /saas.accounts.v1.GDPRService/GetDeletionStatus
+                exact: /saas.accounts.v1.DelegationService/DecideDelegation
           route:
             - destination:
                 host: auth-sidecar.saas-starter.svc.cluster.local
@@ -1784,7 +1792,7 @@ spec:
             - method:
                 exact: POST
               uri:
-                exact: /saas.accounts.v1.GDPRService/GetExportStatus
+                exact: /saas.accounts.v1.DelegationService/ListPendingDelegations
           route:
             - destination:
                 host: auth-sidecar.saas-starter.svc.cluster.local
@@ -1795,7 +1803,7 @@ spec:
             - method:
                 exact: POST
               uri:
-                exact: /saas.accounts.v1.GDPRService/RequestDeletion
+                exact: /saas.accounts.v1.DelegationService/RequestDelegation
           route:
             - destination:
                 host: auth-sidecar.saas-starter.svc.cluster.local
@@ -1806,7 +1814,7 @@ spec:
             - method:
                 exact: POST
               uri:
-                exact: /saas.accounts.v1.GDPRService/RequestExport
+                exact: /saas.accounts.v1.DelegationService/WaitForDelegation
           route:
             - destination:
                 host: auth-sidecar.saas-starter.svc.cluster.local
@@ -1817,7 +1825,7 @@ spec:
             - method:
                 exact: POST
               uri:
-                exact: /saas.accounts.v1.IntrospectionService/GetServiceInfo
+                exact: /saas.accounts.v1.GDPRService/GetDeletionStatus
           route:
             - destination:
                 host: auth-sidecar.saas-starter.svc.cluster.local
@@ -1828,7 +1836,7 @@ spec:
             - method:
                 exact: POST
               uri:
-                exact: /saas.accounts.v1.InvitationService/AcceptInvitation
+                exact: /saas.accounts.v1.GDPRService/GetExportStatus
           route:
             - destination:
                 host: auth-sidecar.saas-starter.svc.cluster.local
@@ -1839,7 +1847,7 @@ spec:
             - method:
                 exact: POST
               uri:
-                exact: /saas.accounts.v1.InvitationService/CreateInvitation
+                exact: /saas.accounts.v1.GDPRService/RequestDeletion
           route:
             - destination:
                 host: auth-sidecar.saas-starter.svc.cluster.local
@@ -1850,7 +1858,7 @@ spec:
             - method:
                 exact: POST
               uri:
-                exact: /saas.accounts.v1.InvitationService/ListInvitations
+                exact: /saas.accounts.v1.GDPRService/RequestExport
           route:
             - destination:
                 host: auth-sidecar.saas-starter.svc.cluster.local
@@ -1861,7 +1869,7 @@ spec:
             - method:
                 exact: POST
               uri:
-                exact: /saas.accounts.v1.InvitationService/RevokeInvitation
+                exact: /saas.accounts.v1.IntrospectionService/GetServiceInfo
           route:
             - destination:
                 host: auth-sidecar.saas-starter.svc.cluster.local
@@ -1872,7 +1880,7 @@ spec:
             - method:
                 exact: POST
               uri:
-                exact: /saas.accounts.v1.MFAService/BeginWebAuthnRegistration
+                exact: /saas.accounts.v1.InvitationService/AcceptInvitation
           route:
             - destination:
                 host: auth-sidecar.saas-starter.svc.cluster.local
@@ -1883,7 +1891,7 @@ spec:
             - method:
                 exact: POST
               uri:
-                exact: /saas.accounts.v1.MFAService/FinishWebAuthnRegistration
+                exact: /saas.accounts.v1.InvitationService/CreateInvitation
           route:
             - destination:
                 host: auth-sidecar.saas-starter.svc.cluster.local
@@ -1894,7 +1902,7 @@ spec:
             - method:
                 exact: POST
               uri:
-                exact: /saas.accounts.v1.MFAService/GenerateBackupCodes
+                exact: /saas.accounts.v1.InvitationService/ListInvitations
           route:
             - destination:
                 host: auth-sidecar.saas-starter.svc.cluster.local
@@ -1905,7 +1913,7 @@ spec:
             - method:
                 exact: POST
               uri:
-                exact: /saas.accounts.v1.MFAService/ListDevices
+                exact: /saas.accounts.v1.InvitationService/RevokeInvitation
           route:
             - destination:
                 host: auth-sidecar.saas-starter.svc.cluster.local
@@ -1916,7 +1924,7 @@ spec:
             - method:
                 exact: POST
               uri:
-                exact: /saas.accounts.v1.MFAService/RevokeDevice
+                exact: /saas.accounts.v1.MFAService/BeginWebAuthnRegistration
           route:
             - destination:
                 host: auth-sidecar.saas-starter.svc.cluster.local
@@ -1927,7 +1935,7 @@ spec:
             - method:
                 exact: POST
               uri:
-                exact: /saas.accounts.v1.MFAService/SetupTOTP
+                exact: /saas.accounts.v1.MFAService/FinishWebAuthnRegistration
           route:
             - destination:
                 host: auth-sidecar.saas-starter.svc.cluster.local
@@ -1938,7 +1946,7 @@ spec:
             - method:
                 exact: POST
               uri:
-                exact: /saas.accounts.v1.MFAService/VerifyTOTP
+                exact: /saas.accounts.v1.MFAService/GenerateBackupCodes
           route:
             - destination:
                 host: auth-sidecar.saas-starter.svc.cluster.local
@@ -1949,7 +1957,7 @@ spec:
             - method:
                 exact: POST
               uri:
-                exact: /saas.accounts.v1.NotificationService/DeleteNotification
+                exact: /saas.accounts.v1.MFAService/ListDevices
           route:
             - destination:
                 host: auth-sidecar.saas-starter.svc.cluster.local
@@ -1960,7 +1968,7 @@ spec:
             - method:
                 exact: POST
               uri:
-                exact: /saas.accounts.v1.NotificationService/GetUnreadCount
+                exact: /saas.accounts.v1.MFAService/RevokeDevice
           route:
             - destination:
                 host: auth-sidecar.saas-starter.svc.cluster.local
@@ -1971,7 +1979,7 @@ spec:
             - method:
                 exact: POST
               uri:
-                exact: /saas.accounts.v1.NotificationService/ListNotifications
+                exact: /saas.accounts.v1.MFAService/SetupTOTP
           route:
             - destination:
                 host: auth-sidecar.saas-starter.svc.cluster.local
@@ -1982,7 +1990,7 @@ spec:
             - method:
                 exact: POST
               uri:
-                exact: /saas.accounts.v1.NotificationService/MarkAllRead
+                exact: /saas.accounts.v1.MFAService/VerifyTOTP
           route:
             - destination:
                 host: auth-sidecar.saas-starter.svc.cluster.local
@@ -1993,7 +2001,7 @@ spec:
             - method:
                 exact: POST
               uri:
-                exact: /saas.accounts.v1.NotificationService/MarkRead
+                exact: /saas.accounts.v1.NotificationService/DeleteNotification
           route:
             - destination:
                 host: auth-sidecar.saas-starter.svc.cluster.local
@@ -2004,7 +2012,7 @@ spec:
             - method:
                 exact: POST
               uri:
-                exact: /saas.accounts.v1.OnboardingService/CompleteStep
+                exact: /saas.accounts.v1.NotificationService/GetUnreadCount
           route:
             - destination:
                 host: auth-sidecar.saas-starter.svc.cluster.local
@@ -2015,7 +2023,7 @@ spec:
             - method:
                 exact: POST
               uri:
-                exact: /saas.accounts.v1.OnboardingService/GetProgress
+                exact: /saas.accounts.v1.NotificationService/ListNotifications
           route:
             - destination:
                 host: auth-sidecar.saas-starter.svc.cluster.local
@@ -2026,7 +2034,7 @@ spec:
             - method:
                 exact: POST
               uri:
-                exact: /saas.accounts.v1.OnboardingService/SkipStep
+                exact: /saas.accounts.v1.NotificationService/MarkAllRead
           route:
             - destination:
                 host: auth-sidecar.saas-starter.svc.cluster.local
@@ -2037,7 +2045,7 @@ spec:
             - method:
                 exact: POST
               uri:
-                exact: /saas.accounts.v1.OrganizationService/AddMember
+                exact: /saas.accounts.v1.NotificationService/MarkRead
           route:
             - destination:
                 host: auth-sidecar.saas-starter.svc.cluster.local
@@ -2048,7 +2056,7 @@ spec:
             - method:
                 exact: POST
               uri:
-                exact: /saas.accounts.v1.OrganizationService/CreateOrganization
+                exact: /saas.accounts.v1.OnboardingService/CompleteStep
           route:
             - destination:
                 host: auth-sidecar.saas-starter.svc.cluster.local
@@ -2059,7 +2067,7 @@ spec:
             - method:
                 exact: POST
               uri:
-                exact: /saas.accounts.v1.OrganizationService/GetOrgSettings
+                exact: /saas.accounts.v1.OnboardingService/GetProgress
           route:
             - destination:
                 host: auth-sidecar.saas-starter.svc.cluster.local
@@ -2070,7 +2078,7 @@ spec:
             - method:
                 exact: POST
               uri:
-                exact: /saas.accounts.v1.OrganizationService/GetOrganization
+                exact: /saas.accounts.v1.OnboardingService/SkipStep
           route:
             - destination:
                 host: auth-sidecar.saas-starter.svc.cluster.local
@@ -2081,7 +2089,7 @@ spec:
             - method:
                 exact: POST
               uri:
-                exact: /saas.accounts.v1.OrganizationService/ListMembers
+                exact: /saas.accounts.v1.OrganizationService/AddMember
           route:
             - destination:
                 host: auth-sidecar.saas-starter.svc.cluster.local
@@ -2092,7 +2100,7 @@ spec:
             - method:
                 exact: POST
               uri:
-                exact: /saas.accounts.v1.OrganizationService/ListOrganizations
+                exact: /saas.accounts.v1.OrganizationService/CreateOrganization
           route:
             - destination:
                 host: auth-sidecar.saas-starter.svc.cluster.local
@@ -2103,7 +2111,7 @@ spec:
             - method:
                 exact: POST
               uri:
-                exact: /saas.accounts.v1.OrganizationService/RemoveMember
+                exact: /saas.accounts.v1.OrganizationService/GetOrgSettings
           route:
             - destination:
                 host: auth-sidecar.saas-starter.svc.cluster.local
@@ -2114,7 +2122,7 @@ spec:
             - method:
                 exact: POST
               uri:
-                exact: /saas.accounts.v1.OrganizationService/UpdateOrgSettings
+                exact: /saas.accounts.v1.OrganizationService/GetOrganization
           route:
             - destination:
                 host: auth-sidecar.saas-starter.svc.cluster.local
@@ -2125,7 +2133,7 @@ spec:
             - method:
                 exact: POST
               uri:
-                exact: /saas.accounts.v1.PermissionService/AssignRole
+                exact: /saas.accounts.v1.OrganizationService/ListMembers
           route:
             - destination:
                 host: auth-sidecar.saas-starter.svc.cluster.local
@@ -2136,7 +2144,7 @@ spec:
             - method:
                 exact: POST
               uri:
-                exact: /saas.accounts.v1.PermissionService/CreateRole
+                exact: /saas.accounts.v1.OrganizationService/ListOrganizations
           route:
             - destination:
                 host: auth-sidecar.saas-starter.svc.cluster.local
@@ -2147,7 +2155,7 @@ spec:
             - method:
                 exact: POST
               uri:
-                exact: /saas.accounts.v1.PermissionService/DeleteRole
+                exact: /saas.accounts.v1.OrganizationService/RemoveMember
           route:
             - destination:
                 host: auth-sidecar.saas-starter.svc.cluster.local
@@ -2158,7 +2166,7 @@ spec:
             - method:
                 exact: POST
               uri:
-                exact: /saas.accounts.v1.PermissionService/ListRoleAssignments
+                exact: /saas.accounts.v1.OrganizationService/UpdateOrgSettings
           route:
             - destination:
                 host: auth-sidecar.saas-starter.svc.cluster.local
@@ -2169,7 +2177,7 @@ spec:
             - method:
                 exact: POST
               uri:
-                exact: /saas.accounts.v1.PermissionService/ListRoles
+                exact: /saas.accounts.v1.PermissionService/AssignRole
           route:
             - destination:
                 host: auth-sidecar.saas-starter.svc.cluster.local
@@ -2180,7 +2188,7 @@ spec:
             - method:
                 exact: POST
               uri:
-                exact: /saas.accounts.v1.PermissionService/RevokeRole
+                exact: /saas.accounts.v1.PermissionService/CreateRole
           route:
             - destination:
                 host: auth-sidecar.saas-starter.svc.cluster.local
@@ -2191,7 +2199,7 @@ spec:
             - method:
                 exact: POST
               uri:
-                exact: /saas.accounts.v1.PlatformAdminService/GetJob
+                exact: /saas.accounts.v1.PermissionService/DeleteRole
           route:
             - destination:
                 host: auth-sidecar.saas-starter.svc.cluster.local
@@ -2202,7 +2210,7 @@ spec:
             - method:
                 exact: POST
               uri:
-                exact: /saas.accounts.v1.PlatformAdminService/GetJobOperations
+                exact: /saas.accounts.v1.PermissionService/ListRoleAssignments
           route:
             - destination:
                 host: auth-sidecar.saas-starter.svc.cluster.local
@@ -2213,7 +2221,7 @@ spec:
             - method:
                 exact: POST
               uri:
-                exact: /saas.accounts.v1.PlatformAdminService/GetOrgEntitlements
+                exact: /saas.accounts.v1.PermissionService/ListRoles
           route:
             - destination:
                 host: auth-sidecar.saas-starter.svc.cluster.local
@@ -2224,7 +2232,7 @@ spec:
             - method:
                 exact: POST
               uri:
-                exact: /saas.accounts.v1.PlatformAdminService/GrantPlatformRole
+                exact: /saas.accounts.v1.PermissionService/RevokeRole
           route:
             - destination:
                 host: auth-sidecar.saas-starter.svc.cluster.local
@@ -2235,7 +2243,7 @@ spec:
             - method:
                 exact: POST
               uri:
-                exact: /saas.accounts.v1.PlatformAdminService/ImpersonateUser
+                exact: /saas.accounts.v1.PlatformAdminService/GetJob
           route:
             - destination:
                 host: auth-sidecar.saas-starter.svc.cluster.local
@@ -2246,7 +2254,7 @@ spec:
             - method:
                 exact: POST
               uri:
-                exact: /saas.accounts.v1.PlatformAdminService/ListActiveSessions
+                exact: /saas.accounts.v1.PlatformAdminService/GetJobOperations
           route:
             - destination:
                 host: auth-sidecar.saas-starter.svc.cluster.local
@@ -2257,7 +2265,7 @@ spec:
             - method:
                 exact: POST
               uri:
-                exact: /saas.accounts.v1.PlatformAdminService/ListFeatureFlags
+                exact: /saas.accounts.v1.PlatformAdminService/GetOrgEntitlements
           route:
             - destination:
                 host: auth-sidecar.saas-starter.svc.cluster.local
@@ -2268,7 +2276,7 @@ spec:
             - method:
                 exact: POST
               uri:
-                exact: /saas.accounts.v1.PlatformAdminService/ListJobs
+                exact: /saas.accounts.v1.PlatformAdminService/GrantPlatformRole
           route:
             - destination:
                 host: auth-sidecar.saas-starter.svc.cluster.local
@@ -2279,7 +2287,7 @@ spec:
             - method:
                 exact: POST
               uri:
-                exact: /saas.accounts.v1.PlatformAdminService/ListPlatformAdmins
+                exact: /saas.accounts.v1.PlatformAdminService/ImpersonateUser
           route:
             - destination:
                 host: auth-sidecar.saas-starter.svc.cluster.local
@@ -2290,7 +2298,7 @@ spec:
             - method:
                 exact: POST
               uri:
-                exact: /saas.accounts.v1.PlatformAdminService/OverrideEntitlement
+                exact: /saas.accounts.v1.PlatformAdminService/ListActiveSessions
           route:
             - destination:
                 host: auth-sidecar.saas-starter.svc.cluster.local
@@ -2301,7 +2309,7 @@ spec:
             - method:
                 exact: POST
               uri:
-                exact: /saas.accounts.v1.PlatformAdminService/ReplayJob
+                exact: /saas.accounts.v1.PlatformAdminService/ListFeatureFlags
           route:
             - destination:
                 host: auth-sidecar.saas-starter.svc.cluster.local
@@ -2312,7 +2320,7 @@ spec:
             - method:
                 exact: POST
               uri:
-                exact: /saas.accounts.v1.PlatformAdminService/RevokePlatformRole
+                exact: /saas.accounts.v1.PlatformAdminService/ListJobs
           route:
             - destination:
                 host: auth-sidecar.saas-starter.svc.cluster.local
@@ -2323,7 +2331,7 @@ spec:
             - method:
                 exact: POST
               uri:
-                exact: /saas.accounts.v1.PlatformAdminService/RevokeSession
+                exact: /saas.accounts.v1.PlatformAdminService/ListPlatformAdmins
           route:
             - destination:
                 host: auth-sidecar.saas-starter.svc.cluster.local
@@ -2334,7 +2342,7 @@ spec:
             - method:
                 exact: POST
               uri:
-                exact: /saas.accounts.v1.PlatformAdminService/SearchUsers
+                exact: /saas.accounts.v1.PlatformAdminService/OverrideEntitlement
           route:
             - destination:
                 host: auth-sidecar.saas-starter.svc.cluster.local
@@ -2345,7 +2353,7 @@ spec:
             - method:
                 exact: POST
               uri:
-                exact: /saas.accounts.v1.PlatformAdminService/SuspendUser
+                exact: /saas.accounts.v1.PlatformAdminService/ReplayJob
           route:
             - destination:
                 host: auth-sidecar.saas-starter.svc.cluster.local
@@ -2356,7 +2364,7 @@ spec:
             - method:
                 exact: POST
               uri:
-                exact: /saas.accounts.v1.PlatformAdminService/UnsuspendUser
+                exact: /saas.accounts.v1.PlatformAdminService/RevokePlatformRole
           route:
             - destination:
                 host: auth-sidecar.saas-starter.svc.cluster.local
@@ -2367,7 +2375,7 @@ spec:
             - method:
                 exact: POST
               uri:
-                exact: /saas.accounts.v1.PlatformAdminService/UpsertFeatureFlag
+                exact: /saas.accounts.v1.PlatformAdminService/RevokeSession
           route:
             - destination:
                 host: auth-sidecar.saas-starter.svc.cluster.local
@@ -2378,7 +2386,7 @@ spec:
             - method:
                 exact: POST
               uri:
-                exact: /saas.accounts.v1.PrincipalService/CreateAgentPrincipal
+                exact: /saas.accounts.v1.PlatformAdminService/SearchUsers
           route:
             - destination:
                 host: auth-sidecar.saas-starter.svc.cluster.local
@@ -2389,7 +2397,7 @@ spec:
             - method:
                 exact: POST
               uri:
-                exact: /saas.accounts.v1.PrincipalService/ListPrincipals
+                exact: /saas.accounts.v1.PlatformAdminService/SuspendUser
           route:
             - destination:
                 host: auth-sidecar.saas-starter.svc.cluster.local
@@ -2400,7 +2408,7 @@ spec:
             - method:
                 exact: POST
               uri:
-                exact: /saas.accounts.v1.PrincipalService/RevokePrincipal
+                exact: /saas.accounts.v1.PlatformAdminService/UnsuspendUser
           route:
             - destination:
                 host: auth-sidecar.saas-starter.svc.cluster.local
@@ -2411,7 +2419,7 @@ spec:
             - method:
                 exact: POST
               uri:
-                exact: /saas.accounts.v1.SSOAdminService/Disable
+                exact: /saas.accounts.v1.PlatformAdminService/UpsertFeatureFlag
           route:
             - destination:
                 host: auth-sidecar.saas-starter.svc.cluster.local
@@ -2422,7 +2430,7 @@ spec:
             - method:
                 exact: POST
               uri:
-                exact: /saas.accounts.v1.SSOAdminService/GetSSO
+                exact: /saas.accounts.v1.PrincipalService/CreateAgentPrincipal
           route:
             - destination:
                 host: auth-sidecar.saas-starter.svc.cluster.local
@@ -2433,7 +2441,7 @@ spec:
             - method:
                 exact: POST
               uri:
-                exact: /saas.accounts.v1.SSOAdminService/StartSetup
+                exact: /saas.accounts.v1.PrincipalService/ListPrincipals
           route:
             - destination:
                 host: auth-sidecar.saas-starter.svc.cluster.local
@@ -2444,7 +2452,7 @@ spec:
             - method:
                 exact: POST
               uri:
-                exact: /saas.accounts.v1.TeamService/AddMember
+                exact: /saas.accounts.v1.PrincipalService/RevokePrincipal
           route:
             - destination:
                 host: auth-sidecar.saas-starter.svc.cluster.local
@@ -2455,7 +2463,7 @@ spec:
             - method:
                 exact: POST
               uri:
-                exact: /saas.accounts.v1.TeamService/CreateTeam
+                exact: /saas.accounts.v1.SSOAdminService/Disable
           route:
             - destination:
                 host: auth-sidecar.saas-starter.svc.cluster.local
@@ -2466,7 +2474,7 @@ spec:
             - method:
                 exact: POST
               uri:
-                exact: /saas.accounts.v1.TeamService/DeleteTeam
+                exact: /saas.accounts.v1.SSOAdminService/GetSSO
           route:
             - destination:
                 host: auth-sidecar.saas-starter.svc.cluster.local
@@ -2477,7 +2485,7 @@ spec:
             - method:
                 exact: POST
               uri:
-                exact: /saas.accounts.v1.TeamService/ListMembers
+                exact: /saas.accounts.v1.SSOAdminService/StartSetup
           route:
             - destination:
                 host: auth-sidecar.saas-starter.svc.cluster.local
@@ -2488,7 +2496,7 @@ spec:
             - method:
                 exact: POST
               uri:
-                exact: /saas.accounts.v1.TeamService/ListTeams
+                exact: /saas.accounts.v1.TeamService/AddMember
           route:
             - destination:
                 host: auth-sidecar.saas-starter.svc.cluster.local
@@ -2499,7 +2507,7 @@ spec:
             - method:
                 exact: POST
               uri:
-                exact: /saas.accounts.v1.TeamService/RemoveMember
+                exact: /saas.accounts.v1.TeamService/CreateTeam
           route:
             - destination:
                 host: auth-sidecar.saas-starter.svc.cluster.local
@@ -2510,7 +2518,7 @@ spec:
             - method:
                 exact: POST
               uri:
-                exact: /saas.accounts.v1.TeamService/UpdateTeam
+                exact: /saas.accounts.v1.TeamService/DeleteTeam
           route:
             - destination:
                 host: auth-sidecar.saas-starter.svc.cluster.local
@@ -2521,7 +2529,7 @@ spec:
             - method:
                 exact: POST
               uri:
-                exact: /saas.accounts.v1.UsageService/GetUsage
+                exact: /saas.accounts.v1.TeamService/ListMembers
           route:
             - destination:
                 host: auth-sidecar.saas-starter.svc.cluster.local
@@ -2532,7 +2540,7 @@ spec:
             - method:
                 exact: POST
               uri:
-                exact: /saas.accounts.v1.UserService/AddIdentity
+                exact: /saas.accounts.v1.TeamService/ListTeams
           route:
             - destination:
                 host: auth-sidecar.saas-starter.svc.cluster.local
@@ -2543,7 +2551,7 @@ spec:
             - method:
                 exact: POST
               uri:
-                exact: /saas.accounts.v1.UserService/DeleteUser
+                exact: /saas.accounts.v1.TeamService/RemoveMember
           route:
             - destination:
                 host: auth-sidecar.saas-starter.svc.cluster.local
@@ -2554,7 +2562,7 @@ spec:
             - method:
                 exact: POST
               uri:
-                exact: /saas.accounts.v1.UserService/FindUserByIdentity
+                exact: /saas.accounts.v1.TeamService/UpdateTeam
           route:
             - destination:
                 host: auth-sidecar.saas-starter.svc.cluster.local
@@ -2565,7 +2573,7 @@ spec:
             - method:
                 exact: POST
               uri:
-                exact: /saas.accounts.v1.UserService/GetSelf
+                exact: /saas.accounts.v1.UsageService/GetUsage
           route:
             - destination:
                 host: auth-sidecar.saas-starter.svc.cluster.local
@@ -2576,7 +2584,7 @@ spec:
             - method:
                 exact: POST
               uri:
-                exact: /saas.accounts.v1.UserService/GetUser
+                exact: /saas.accounts.v1.UserService/AddIdentity
           route:
             - destination:
                 host: auth-sidecar.saas-starter.svc.cluster.local
@@ -2587,7 +2595,7 @@ spec:
             - method:
                 exact: POST
               uri:
-                exact: /saas.accounts.v1.UserService/ListUserIdentities
+                exact: /saas.accounts.v1.UserService/DeleteUser
           route:
             - destination:
                 host: auth-sidecar.saas-starter.svc.cluster.local
@@ -2598,7 +2606,7 @@ spec:
             - method:
                 exact: POST
               uri:
-                exact: /saas.accounts.v1.UserService/ListUsers
+                exact: /saas.accounts.v1.UserService/FindUserByIdentity
           route:
             - destination:
                 host: auth-sidecar.saas-starter.svc.cluster.local
@@ -2609,7 +2617,7 @@ spec:
             - method:
                 exact: POST
               uri:
-                exact: /saas.accounts.v1.UserService/RegisterUser
+                exact: /saas.accounts.v1.UserService/GetSelf
           route:
             - destination:
                 host: auth-sidecar.saas-starter.svc.cluster.local
@@ -2620,7 +2628,7 @@ spec:
             - method:
                 exact: POST
               uri:
-                exact: /saas.accounts.v1.UserService/UpdateUser
+                exact: /saas.accounts.v1.UserService/GetUser
           route:
             - destination:
                 host: auth-sidecar.saas-starter.svc.cluster.local
@@ -2631,7 +2639,7 @@ spec:
             - method:
                 exact: POST
               uri:
-                exact: /saas.accounts.v1.UserService/Version
+                exact: /saas.accounts.v1.UserService/ListUserIdentities
           route:
             - destination:
                 host: auth-sidecar.saas-starter.svc.cluster.local
@@ -2642,7 +2650,7 @@ spec:
             - method:
                 exact: POST
               uri:
-                exact: /saas.accounts.v1.UserSettingsService/Get
+                exact: /saas.accounts.v1.UserService/ListUsers
           route:
             - destination:
                 host: auth-sidecar.saas-starter.svc.cluster.local
@@ -2653,7 +2661,7 @@ spec:
             - method:
                 exact: POST
               uri:
-                exact: /saas.accounts.v1.UserSettingsService/Update
+                exact: /saas.accounts.v1.UserService/RegisterUser
           route:
             - destination:
                 host: auth-sidecar.saas-starter.svc.cluster.local
@@ -2664,7 +2672,7 @@ spec:
             - method:
                 exact: POST
               uri:
-                exact: /saas.accounts.v1.WebhookService/CreateSubscription
+                exact: /saas.accounts.v1.UserService/UpdateUser
           route:
             - destination:
                 host: auth-sidecar.saas-starter.svc.cluster.local
@@ -2675,7 +2683,7 @@ spec:
             - method:
                 exact: POST
               uri:
-                exact: /saas.accounts.v1.WebhookService/DeleteSubscription
+                exact: /saas.accounts.v1.UserService/Version
           route:
             - destination:
                 host: auth-sidecar.saas-starter.svc.cluster.local
@@ -2686,7 +2694,7 @@ spec:
             - method:
                 exact: POST
               uri:
-                exact: /saas.accounts.v1.WebhookService/GetDelivery
+                exact: /saas.accounts.v1.UserSettingsService/Get
           route:
             - destination:
                 host: auth-sidecar.saas-starter.svc.cluster.local
@@ -2697,7 +2705,7 @@ spec:
             - method:
                 exact: POST
               uri:
-                exact: /saas.accounts.v1.WebhookService/ListDeliveries
+                exact: /saas.accounts.v1.UserSettingsService/Update
           route:
             - destination:
                 host: auth-sidecar.saas-starter.svc.cluster.local
@@ -2708,7 +2716,7 @@ spec:
             - method:
                 exact: POST
               uri:
-                exact: /saas.accounts.v1.WebhookService/ListSubscriptions
+                exact: /saas.accounts.v1.WebhookService/CreateSubscription
           route:
             - destination:
                 host: auth-sidecar.saas-starter.svc.cluster.local
@@ -2719,7 +2727,7 @@ spec:
             - method:
                 exact: POST
               uri:
-                exact: /saas.accounts.v1.WebhookService/ReplayDelivery
+                exact: /saas.accounts.v1.WebhookService/DeleteSubscription
           route:
             - destination:
                 host: auth-sidecar.saas-starter.svc.cluster.local
@@ -2730,7 +2738,7 @@ spec:
             - method:
                 exact: POST
               uri:
-                exact: /saas.accounts.v1.WebhookService/RotateSecret
+                exact: /saas.accounts.v1.WebhookService/GetDelivery
           route:
             - destination:
                 host: auth-sidecar.saas-starter.svc.cluster.local
@@ -2741,7 +2749,7 @@ spec:
             - method:
                 exact: POST
               uri:
-                exact: /saas.accounts.v1.WebhookService/TestWebhook
+                exact: /saas.accounts.v1.WebhookService/ListDeliveries
           route:
             - destination:
                 host: auth-sidecar.saas-starter.svc.cluster.local
@@ -2750,9 +2758,9 @@ spec:
         - name: catalog-229
           match:
             - method:
-                exact: DELETE
+                exact: POST
               uri:
-                regex: ^/v1/api-keys/[^/]+$
+                exact: /saas.accounts.v1.WebhookService/ListSubscriptions
           route:
             - destination:
                 host: auth-sidecar.saas-starter.svc.cluster.local
@@ -2761,9 +2769,9 @@ spec:
         - name: catalog-230
           match:
             - method:
-                exact: DELETE
+                exact: POST
               uri:
-                regex: ^/v1/audit-export/[^/]+$
+                exact: /saas.accounts.v1.WebhookService/ReplayDelivery
           route:
             - destination:
                 host: auth-sidecar.saas-starter.svc.cluster.local
@@ -2772,9 +2780,9 @@ spec:
         - name: catalog-231
           match:
             - method:
-                exact: DELETE
+                exact: POST
               uri:
-                regex: ^/v1/invitations/[^/]+$
+                exact: /saas.accounts.v1.WebhookService/RotateSecret
           route:
             - destination:
                 host: auth-sidecar.saas-starter.svc.cluster.local
@@ -2783,9 +2791,9 @@ spec:
         - name: catalog-232
           match:
             - method:
-                exact: DELETE
+                exact: POST
               uri:
-                regex: ^/v1/mfa/devices/[^/]+$
+                exact: /saas.accounts.v1.WebhookService/TestWebhook
           route:
             - destination:
                 host: auth-sidecar.saas-starter.svc.cluster.local
@@ -2794,9 +2802,9 @@ spec:
         - name: catalog-233
           match:
             - method:
-                exact: DELETE
+                exact: POST
               uri:
-                regex: ^/v1/notifications/[^/]+$
+                exact: /saas.accounts.v1.WorkContextService/ExchangeAudience
           route:
             - destination:
                 host: auth-sidecar.saas-starter.svc.cluster.local
@@ -2805,9 +2813,9 @@ spec:
         - name: catalog-234
           match:
             - method:
-                exact: DELETE
+                exact: POST
               uri:
-                regex: ^/v1/organizations/[^/]+/members/[^/]+$
+                exact: /saas.accounts.v1.WorkContextService/StartChildSession
           route:
             - destination:
                 host: auth-sidecar.saas-starter.svc.cluster.local
@@ -2816,9 +2824,9 @@ spec:
         - name: catalog-235
           match:
             - method:
-                exact: DELETE
+                exact: POST
               uri:
-                regex: ^/v1/platform/admins/[^/]+$
+                exact: /saas.accounts.v1.WorkContextService/StartRootSession
           route:
             - destination:
                 host: auth-sidecar.saas-starter.svc.cluster.local
@@ -2827,9 +2835,9 @@ spec:
         - name: catalog-236
           match:
             - method:
-                exact: DELETE
+                exact: POST
               uri:
-                regex: ^/v1/platform/sessions/[^/]+$
+                exact: /saas.accounts.v1.WorkContextService/StartTask
           route:
             - destination:
                 host: auth-sidecar.saas-starter.svc.cluster.local
@@ -2840,7 +2848,7 @@ spec:
             - method:
                 exact: DELETE
               uri:
-                exact: /v1/role-assignments
+                regex: ^/v1/api-keys/[^/]+$
           route:
             - destination:
                 host: auth-sidecar.saas-starter.svc.cluster.local
@@ -2851,7 +2859,7 @@ spec:
             - method:
                 exact: DELETE
               uri:
-                regex: ^/v1/roles/[^/]+$
+                regex: ^/v1/audit-export/[^/]+$
           route:
             - destination:
                 host: auth-sidecar.saas-starter.svc.cluster.local
@@ -2862,7 +2870,7 @@ spec:
             - method:
                 exact: DELETE
               uri:
-                regex: ^/v1/teams/[^/]+$
+                regex: ^/v1/invitations/[^/]+$
           route:
             - destination:
                 host: auth-sidecar.saas-starter.svc.cluster.local
@@ -2873,7 +2881,7 @@ spec:
             - method:
                 exact: DELETE
               uri:
-                regex: ^/v1/teams/[^/]+/members/[^/]+$
+                regex: ^/v1/mfa/devices/[^/]+$
           route:
             - destination:
                 host: auth-sidecar.saas-starter.svc.cluster.local
@@ -2884,7 +2892,7 @@ spec:
             - method:
                 exact: DELETE
               uri:
-                regex: ^/v1/users/[^/]+$
+                regex: ^/v1/notifications/[^/]+$
           route:
             - destination:
                 host: auth-sidecar.saas-starter.svc.cluster.local
@@ -2895,7 +2903,7 @@ spec:
             - method:
                 exact: DELETE
               uri:
-                regex: ^/v1/webhooks/[^/]+$
+                regex: ^/v1/organizations/[^/]+/members/[^/]+$
           route:
             - destination:
                 host: auth-sidecar.saas-starter.svc.cluster.local
@@ -2904,9 +2912,9 @@ spec:
         - name: catalog-243
           match:
             - method:
-                exact: GET
+                exact: DELETE
               uri:
-                exact: /v1/.well-known/service-info
+                regex: ^/v1/platform/admins/[^/]+$
           route:
             - destination:
                 host: auth-sidecar.saas-starter.svc.cluster.local
@@ -2915,9 +2923,9 @@ spec:
         - name: catalog-244
           match:
             - method:
-                exact: GET
+                exact: DELETE
               uri:
-                exact: /v1/api-keys
+                regex: ^/v1/platform/sessions/[^/]+$
           route:
             - destination:
                 host: auth-sidecar.saas-starter.svc.cluster.local
@@ -2926,9 +2934,9 @@ spec:
         - name: catalog-245
           match:
             - method:
-                exact: GET
+                exact: DELETE
               uri:
-                regex: ^/v1/audit-export/[^/]+$
+                exact: /v1/role-assignments
           route:
             - destination:
                 host: auth-sidecar.saas-starter.svc.cluster.local
@@ -2937,9 +2945,9 @@ spec:
         - name: catalog-246
           match:
             - method:
-                exact: GET
+                exact: DELETE
               uri:
-                exact: /v1/audit-log
+                regex: ^/v1/roles/[^/]+$
           route:
             - destination:
                 host: auth-sidecar.saas-starter.svc.cluster.local
@@ -2948,9 +2956,9 @@ spec:
         - name: catalog-247
           match:
             - method:
-                exact: GET
+                exact: DELETE
               uri:
-                exact: /v1/auth/.well-known/jwks.json
+                regex: ^/v1/teams/[^/]+$
           route:
             - destination:
                 host: auth-sidecar.saas-starter.svc.cluster.local
@@ -2959,9 +2967,9 @@ spec:
         - name: catalog-248
           match:
             - method:
-                exact: GET
+                exact: DELETE
               uri:
-                regex: ^/v1/billing/invoices/[^/]+$
+                regex: ^/v1/teams/[^/]+/members/[^/]+$
           route:
             - destination:
                 host: auth-sidecar.saas-starter.svc.cluster.local
@@ -2970,9 +2978,9 @@ spec:
         - name: catalog-249
           match:
             - method:
-                exact: GET
+                exact: DELETE
               uri:
-                exact: /v1/consent/status
+                regex: ^/v1/users/[^/]+$
           route:
             - destination:
                 host: auth-sidecar.saas-starter.svc.cluster.local
@@ -2981,9 +2989,9 @@ spec:
         - name: catalog-250
           match:
             - method:
-                exact: GET
+                exact: DELETE
               uri:
-                regex: ^/v1/delegations/[^/]+:wait$
+                regex: ^/v1/webhooks/[^/]+$
           route:
             - destination:
                 host: auth-sidecar.saas-starter.svc.cluster.local
@@ -2994,7 +3002,7 @@ spec:
             - method:
                 exact: GET
               uri:
-                exact: /v1/delegations:pending
+                exact: /v1/.well-known/service-info
           route:
             - destination:
                 host: auth-sidecar.saas-starter.svc.cluster.local
@@ -3005,7 +3013,7 @@ spec:
             - method:
                 exact: GET
               uri:
-                regex: ^/v1/gdpr/delete/[^/]+$
+                exact: /v1/api-keys
           route:
             - destination:
                 host: auth-sidecar.saas-starter.svc.cluster.local
@@ -3016,7 +3024,7 @@ spec:
             - method:
                 exact: GET
               uri:
-                regex: ^/v1/gdpr/export/[^/]+$
+                regex: ^/v1/audit-export/[^/]+$
           route:
             - destination:
                 host: auth-sidecar.saas-starter.svc.cluster.local
@@ -3027,7 +3035,7 @@ spec:
             - method:
                 exact: GET
               uri:
-                exact: /v1/invitations
+                exact: /v1/audit-log
           route:
             - destination:
                 host: auth-sidecar.saas-starter.svc.cluster.local
@@ -3038,7 +3046,7 @@ spec:
             - method:
                 exact: GET
               uri:
-                exact: /v1/mfa/devices
+                exact: /v1/auth/.well-known/jwks.json
           route:
             - destination:
                 host: auth-sidecar.saas-starter.svc.cluster.local
@@ -3049,7 +3057,7 @@ spec:
             - method:
                 exact: GET
               uri:
-                exact: /v1/notifications
+                regex: ^/v1/billing/invoices/[^/]+$
           route:
             - destination:
                 host: auth-sidecar.saas-starter.svc.cluster.local
@@ -3060,7 +3068,7 @@ spec:
             - method:
                 exact: GET
               uri:
-                exact: /v1/notifications/unread-count
+                exact: /v1/consent/status
           route:
             - destination:
                 host: auth-sidecar.saas-starter.svc.cluster.local
@@ -3071,7 +3079,7 @@ spec:
             - method:
                 exact: GET
               uri:
-                exact: /v1/onboarding
+                regex: ^/v1/delegations/[^/]+:wait$
           route:
             - destination:
                 host: auth-sidecar.saas-starter.svc.cluster.local
@@ -3082,7 +3090,7 @@ spec:
             - method:
                 exact: GET
               uri:
-                exact: /v1/organizations
+                exact: /v1/delegations:pending
           route:
             - destination:
                 host: auth-sidecar.saas-starter.svc.cluster.local
@@ -3093,7 +3101,7 @@ spec:
             - method:
                 exact: GET
               uri:
-                regex: ^/v1/organizations/[^/]+$
+                regex: ^/v1/gdpr/delete/[^/]+$
           route:
             - destination:
                 host: auth-sidecar.saas-starter.svc.cluster.local
@@ -3104,7 +3112,7 @@ spec:
             - method:
                 exact: GET
               uri:
-                regex: ^/v1/organizations/[^/]+/members$
+                regex: ^/v1/gdpr/export/[^/]+$
           route:
             - destination:
                 host: auth-sidecar.saas-starter.svc.cluster.local
@@ -3115,7 +3123,7 @@ spec:
             - method:
                 exact: GET
               uri:
-                regex: ^/v1/organizations/[^/]+/settings$
+                exact: /v1/invitations
           route:
             - destination:
                 host: auth-sidecar.saas-starter.svc.cluster.local
@@ -3126,7 +3134,7 @@ spec:
             - method:
                 exact: GET
               uri:
-                regex: ^/v1/organizations/[^/]+/teams$
+                exact: /v1/mfa/devices
           route:
             - destination:
                 host: auth-sidecar.saas-starter.svc.cluster.local
@@ -3137,7 +3145,7 @@ spec:
             - method:
                 exact: GET
               uri:
-                regex: ^/v1/organizations/[^/]+/usage/[^/]+$
+                exact: /v1/notifications
           route:
             - destination:
                 host: auth-sidecar.saas-starter.svc.cluster.local
@@ -3148,7 +3156,7 @@ spec:
             - method:
                 exact: GET
               uri:
-                exact: /v1/platform/admins
+                exact: /v1/notifications/unread-count
           route:
             - destination:
                 host: auth-sidecar.saas-starter.svc.cluster.local
@@ -3159,7 +3167,7 @@ spec:
             - method:
                 exact: GET
               uri:
-                exact: /v1/platform/feature-flags
+                exact: /v1/onboarding
           route:
             - destination:
                 host: auth-sidecar.saas-starter.svc.cluster.local
@@ -3170,7 +3178,7 @@ spec:
             - method:
                 exact: GET
               uri:
-                exact: /v1/platform/jobs
+                exact: /v1/organizations
           route:
             - destination:
                 host: auth-sidecar.saas-starter.svc.cluster.local
@@ -3181,7 +3189,7 @@ spec:
             - method:
                 exact: GET
               uri:
-                exact: /v1/platform/jobs/operations
+                regex: ^/v1/organizations/[^/]+$
           route:
             - destination:
                 host: auth-sidecar.saas-starter.svc.cluster.local
@@ -3192,7 +3200,7 @@ spec:
             - method:
                 exact: GET
               uri:
-                regex: ^/v1/platform/jobs/[^/]+$
+                regex: ^/v1/organizations/[^/]+/members$
           route:
             - destination:
                 host: auth-sidecar.saas-starter.svc.cluster.local
@@ -3203,7 +3211,7 @@ spec:
             - method:
                 exact: GET
               uri:
-                regex: ^/v1/platform/organizations/[^/]+/entitlements$
+                regex: ^/v1/organizations/[^/]+/settings$
           route:
             - destination:
                 host: auth-sidecar.saas-starter.svc.cluster.local
@@ -3214,7 +3222,7 @@ spec:
             - method:
                 exact: GET
               uri:
-                exact: /v1/platform/sessions
+                regex: ^/v1/organizations/[^/]+/teams$
           route:
             - destination:
                 host: auth-sidecar.saas-starter.svc.cluster.local
@@ -3225,7 +3233,7 @@ spec:
             - method:
                 exact: GET
               uri:
-                exact: /v1/platform/users
+                regex: ^/v1/organizations/[^/]+/usage/[^/]+$
           route:
             - destination:
                 host: auth-sidecar.saas-starter.svc.cluster.local
@@ -3236,7 +3244,7 @@ spec:
             - method:
                 exact: GET
               uri:
-                exact: /v1/principals
+                exact: /v1/platform/admins
           route:
             - destination:
                 host: auth-sidecar.saas-starter.svc.cluster.local
@@ -3247,7 +3255,7 @@ spec:
             - method:
                 exact: GET
               uri:
-                exact: /v1/role-assignments
+                exact: /v1/platform/feature-flags
           route:
             - destination:
                 host: auth-sidecar.saas-starter.svc.cluster.local
@@ -3258,7 +3266,7 @@ spec:
             - method:
                 exact: GET
               uri:
-                exact: /v1/roles
+                exact: /v1/platform/jobs
           route:
             - destination:
                 host: auth-sidecar.saas-starter.svc.cluster.local
@@ -3269,7 +3277,7 @@ spec:
             - method:
                 exact: GET
               uri:
-                regex: ^/v1/sso/[^/]+$
+                exact: /v1/platform/jobs/operations
           route:
             - destination:
                 host: auth-sidecar.saas-starter.svc.cluster.local
@@ -3280,7 +3288,7 @@ spec:
             - method:
                 exact: GET
               uri:
-                regex: ^/v1/teams/[^/]+/members$
+                regex: ^/v1/platform/jobs/[^/]+$
           route:
             - destination:
                 host: auth-sidecar.saas-starter.svc.cluster.local
@@ -3291,7 +3299,7 @@ spec:
             - method:
                 exact: GET
               uri:
-                exact: /v1/user/settings
+                regex: ^/v1/platform/organizations/[^/]+/entitlements$
           route:
             - destination:
                 host: auth-sidecar.saas-starter.svc.cluster.local
@@ -3302,7 +3310,7 @@ spec:
             - method:
                 exact: GET
               uri:
-                exact: /v1/users
+                exact: /v1/platform/sessions
           route:
             - destination:
                 host: auth-sidecar.saas-starter.svc.cluster.local
@@ -3313,7 +3321,7 @@ spec:
             - method:
                 exact: GET
               uri:
-                exact: /v1/users/self
+                exact: /v1/platform/users
           route:
             - destination:
                 host: auth-sidecar.saas-starter.svc.cluster.local
@@ -3324,7 +3332,7 @@ spec:
             - method:
                 exact: GET
               uri:
-                regex: ^/v1/users/[^/]+/identities$
+                exact: /v1/principals
           route:
             - destination:
                 host: auth-sidecar.saas-starter.svc.cluster.local
@@ -3335,7 +3343,7 @@ spec:
             - method:
                 exact: GET
               uri:
-                regex: ^/v1/users/[^/]+$
+                exact: /v1/role-assignments
           route:
             - destination:
                 host: auth-sidecar.saas-starter.svc.cluster.local
@@ -3346,7 +3354,7 @@ spec:
             - method:
                 exact: GET
               uri:
-                exact: /v1/users:byEmail
+                exact: /v1/roles
           route:
             - destination:
                 host: auth-sidecar.saas-starter.svc.cluster.local
@@ -3357,7 +3365,7 @@ spec:
             - method:
                 exact: GET
               uri:
-                exact: /v1/users:findByIdentity
+                regex: ^/v1/sso/[^/]+$
           route:
             - destination:
                 host: auth-sidecar.saas-starter.svc.cluster.local
@@ -3368,7 +3376,7 @@ spec:
             - method:
                 exact: GET
               uri:
-                exact: /v1/version
+                regex: ^/v1/teams/[^/]+/members$
           route:
             - destination:
                 host: auth-sidecar.saas-starter.svc.cluster.local
@@ -3379,7 +3387,7 @@ spec:
             - method:
                 exact: GET
               uri:
-                exact: /v1/webhooks
+                exact: /v1/user/settings
           route:
             - destination:
                 host: auth-sidecar.saas-starter.svc.cluster.local
@@ -3390,7 +3398,7 @@ spec:
             - method:
                 exact: GET
               uri:
-                regex: ^/v1/webhooks/deliveries/[^/]+$
+                exact: /v1/users
           route:
             - destination:
                 host: auth-sidecar.saas-starter.svc.cluster.local
@@ -3401,7 +3409,7 @@ spec:
             - method:
                 exact: GET
               uri:
-                regex: ^/v1/webhooks/[^/]+/deliveries$
+                exact: /v1/users/self
           route:
             - destination:
                 host: auth-sidecar.saas-starter.svc.cluster.local
@@ -3410,9 +3418,9 @@ spec:
         - name: catalog-289
           match:
             - method:
-                exact: PATCH
+                exact: GET
               uri:
-                regex: ^/v1/teams/[^/]+$
+                regex: ^/v1/users/[^/]+/identities$
           route:
             - destination:
                 host: auth-sidecar.saas-starter.svc.cluster.local
@@ -3421,7 +3429,7 @@ spec:
         - name: catalog-290
           match:
             - method:
-                exact: PATCH
+                exact: GET
               uri:
                 regex: ^/v1/users/[^/]+$
           route:
@@ -3432,9 +3440,9 @@ spec:
         - name: catalog-291
           match:
             - method:
-                exact: POST
+                exact: GET
               uri:
-                exact: /v1/api-keys
+                exact: /v1/users:byEmail
           route:
             - destination:
                 host: auth-sidecar.saas-starter.svc.cluster.local
@@ -3443,9 +3451,9 @@ spec:
         - name: catalog-292
           match:
             - method:
-                exact: POST
+                exact: GET
               uri:
-                exact: /v1/audit-export
+                exact: /v1/users:findByIdentity
           route:
             - destination:
                 host: auth-sidecar.saas-starter.svc.cluster.local
@@ -3454,9 +3462,9 @@ spec:
         - name: catalog-293
           match:
             - method:
-                exact: POST
+                exact: GET
               uri:
-                exact: /v1/audit-log:export
+                exact: /v1/version
           route:
             - destination:
                 host: auth-sidecar.saas-starter.svc.cluster.local
@@ -3465,9 +3473,9 @@ spec:
         - name: catalog-294
           match:
             - method:
-                exact: POST
+                exact: GET
               uri:
-                exact: /v1/auth/authenticate
+                exact: /v1/webhooks
           route:
             - destination:
                 host: auth-sidecar.saas-starter.svc.cluster.local
@@ -3476,9 +3484,9 @@ spec:
         - name: catalog-295
           match:
             - method:
-                exact: POST
+                exact: GET
               uri:
-                exact: /v1/auth/logout
+                regex: ^/v1/webhooks/deliveries/[^/]+$
           route:
             - destination:
                 host: auth-sidecar.saas-starter.svc.cluster.local
@@ -3487,9 +3495,9 @@ spec:
         - name: catalog-296
           match:
             - method:
-                exact: POST
+                exact: GET
               uri:
-                exact: /v1/auth/mfa/complete
+                regex: ^/v1/webhooks/[^/]+/deliveries$
           route:
             - destination:
                 host: auth-sidecar.saas-starter.svc.cluster.local
@@ -3498,9 +3506,9 @@ spec:
         - name: catalog-297
           match:
             - method:
-                exact: POST
+                exact: PATCH
               uri:
-                exact: /v1/auth/mfa/webauthn/begin
+                regex: ^/v1/teams/[^/]+$
           route:
             - destination:
                 host: auth-sidecar.saas-starter.svc.cluster.local
@@ -3509,9 +3517,9 @@ spec:
         - name: catalog-298
           match:
             - method:
-                exact: POST
+                exact: PATCH
               uri:
-                exact: /v1/auth/mfa/webauthn/complete
+                regex: ^/v1/users/[^/]+$
           route:
             - destination:
                 host: auth-sidecar.saas-starter.svc.cluster.local
@@ -3522,7 +3530,7 @@ spec:
             - method:
                 exact: POST
               uri:
-                exact: /v1/auth/oauth/begin
+                exact: /v1/api-keys
           route:
             - destination:
                 host: auth-sidecar.saas-starter.svc.cluster.local
@@ -3533,7 +3541,7 @@ spec:
             - method:
                 exact: POST
               uri:
-                exact: /v1/auth/refresh
+                exact: /v1/audit-export
           route:
             - destination:
                 host: auth-sidecar.saas-starter.svc.cluster.local
@@ -3544,7 +3552,7 @@ spec:
             - method:
                 exact: POST
               uri:
-                exact: /v1/auth/switch-organization
+                exact: /v1/audit-log:export
           route:
             - destination:
                 host: auth-sidecar.saas-starter.svc.cluster.local
@@ -3555,7 +3563,7 @@ spec:
             - method:
                 exact: POST
               uri:
-                exact: /v1/billing/connect/portal
+                exact: /v1/auth/authenticate
           route:
             - destination:
                 host: auth-sidecar.saas-starter.svc.cluster.local
@@ -3566,7 +3574,7 @@ spec:
             - method:
                 exact: POST
               uri:
-                exact: /v1/consent/accept
+                exact: /v1/auth/logout
           route:
             - destination:
                 host: auth-sidecar.saas-starter.svc.cluster.local
@@ -3577,7 +3585,7 @@ spec:
             - method:
                 exact: POST
               uri:
-                exact: /v1/delegations
+                exact: /v1/auth/mfa/complete
           route:
             - destination:
                 host: auth-sidecar.saas-starter.svc.cluster.local
@@ -3588,7 +3596,7 @@ spec:
             - method:
                 exact: POST
               uri:
-                regex: ^/v1/delegations/[^/]+:decide$
+                exact: /v1/auth/mfa/webauthn/begin
           route:
             - destination:
                 host: auth-sidecar.saas-starter.svc.cluster.local
@@ -3599,7 +3607,7 @@ spec:
             - method:
                 exact: POST
               uri:
-                exact: /v1/gdpr/delete
+                exact: /v1/auth/mfa/webauthn/complete
           route:
             - destination:
                 host: auth-sidecar.saas-starter.svc.cluster.local
@@ -3610,7 +3618,7 @@ spec:
             - method:
                 exact: POST
               uri:
-                exact: /v1/gdpr/export
+                exact: /v1/auth/oauth/begin
           route:
             - destination:
                 host: auth-sidecar.saas-starter.svc.cluster.local
@@ -3621,7 +3629,7 @@ spec:
             - method:
                 exact: POST
               uri:
-                exact: /v1/invitations
+                exact: /v1/auth/refresh
           route:
             - destination:
                 host: auth-sidecar.saas-starter.svc.cluster.local
@@ -3632,7 +3640,7 @@ spec:
             - method:
                 exact: POST
               uri:
-                exact: /v1/invitations:accept
+                exact: /v1/auth/switch-organization
           route:
             - destination:
                 host: auth-sidecar.saas-starter.svc.cluster.local
@@ -3643,7 +3651,7 @@ spec:
             - method:
                 exact: POST
               uri:
-                exact: /v1/mfa/backup-codes
+                exact: /v1/billing/connect/portal
           route:
             - destination:
                 host: auth-sidecar.saas-starter.svc.cluster.local
@@ -3654,7 +3662,7 @@ spec:
             - method:
                 exact: POST
               uri:
-                exact: /v1/mfa/totp/setup
+                exact: /v1/consent/accept
           route:
             - destination:
                 host: auth-sidecar.saas-starter.svc.cluster.local
@@ -3665,7 +3673,7 @@ spec:
             - method:
                 exact: POST
               uri:
-                exact: /v1/mfa/totp/verify
+                exact: /v1/delegations
           route:
             - destination:
                 host: auth-sidecar.saas-starter.svc.cluster.local
@@ -3676,7 +3684,7 @@ spec:
             - method:
                 exact: POST
               uri:
-                exact: /v1/mfa/webauthn/register/begin
+                regex: ^/v1/delegations/[^/]+:decide$
           route:
             - destination:
                 host: auth-sidecar.saas-starter.svc.cluster.local
@@ -3687,7 +3695,7 @@ spec:
             - method:
                 exact: POST
               uri:
-                exact: /v1/mfa/webauthn/register/finish
+                exact: /v1/gdpr/delete
           route:
             - destination:
                 host: auth-sidecar.saas-starter.svc.cluster.local
@@ -3698,7 +3706,7 @@ spec:
             - method:
                 exact: POST
               uri:
-                regex: ^/v1/notifications/[^/]+:read$
+                exact: /v1/gdpr/export
           route:
             - destination:
                 host: auth-sidecar.saas-starter.svc.cluster.local
@@ -3709,7 +3717,7 @@ spec:
             - method:
                 exact: POST
               uri:
-                exact: /v1/notifications:read-all
+                exact: /v1/invitations
           route:
             - destination:
                 host: auth-sidecar.saas-starter.svc.cluster.local
@@ -3720,7 +3728,7 @@ spec:
             - method:
                 exact: POST
               uri:
-                regex: ^/v1/onboarding/[^/]+:complete$
+                exact: /v1/invitations:accept
           route:
             - destination:
                 host: auth-sidecar.saas-starter.svc.cluster.local
@@ -3731,7 +3739,7 @@ spec:
             - method:
                 exact: POST
               uri:
-                regex: ^/v1/onboarding/[^/]+:skip$
+                exact: /v1/mfa/backup-codes
           route:
             - destination:
                 host: auth-sidecar.saas-starter.svc.cluster.local
@@ -3742,7 +3750,7 @@ spec:
             - method:
                 exact: POST
               uri:
-                exact: /v1/organizations
+                exact: /v1/mfa/totp/setup
           route:
             - destination:
                 host: auth-sidecar.saas-starter.svc.cluster.local
@@ -3753,7 +3761,7 @@ spec:
             - method:
                 exact: POST
               uri:
-                regex: ^/v1/organizations/[^/]+/members$
+                exact: /v1/mfa/totp/verify
           route:
             - destination:
                 host: auth-sidecar.saas-starter.svc.cluster.local
@@ -3764,7 +3772,7 @@ spec:
             - method:
                 exact: POST
               uri:
-                regex: ^/v1/organizations/[^/]+/teams$
+                exact: /v1/mfa/webauthn/register/begin
           route:
             - destination:
                 host: auth-sidecar.saas-starter.svc.cluster.local
@@ -3775,7 +3783,7 @@ spec:
             - method:
                 exact: POST
               uri:
-                exact: /v1/platform/admins
+                exact: /v1/mfa/webauthn/register/finish
           route:
             - destination:
                 host: auth-sidecar.saas-starter.svc.cluster.local
@@ -3786,7 +3794,7 @@ spec:
             - method:
                 exact: POST
               uri:
-                regex: ^/v1/platform/jobs/[^/]+:replay$
+                regex: ^/v1/notifications/[^/]+:read$
           route:
             - destination:
                 host: auth-sidecar.saas-starter.svc.cluster.local
@@ -3797,7 +3805,7 @@ spec:
             - method:
                 exact: POST
               uri:
-                regex: ^/v1/platform/organizations/[^/]+/entitlements$
+                exact: /v1/notifications:read-all
           route:
             - destination:
                 host: auth-sidecar.saas-starter.svc.cluster.local
@@ -3808,7 +3816,7 @@ spec:
             - method:
                 exact: POST
               uri:
-                regex: ^/v1/platform/users/[^/]+:impersonate$
+                regex: ^/v1/onboarding/[^/]+:complete$
           route:
             - destination:
                 host: auth-sidecar.saas-starter.svc.cluster.local
@@ -3819,7 +3827,7 @@ spec:
             - method:
                 exact: POST
               uri:
-                regex: ^/v1/platform/users/[^/]+:suspend$
+                regex: ^/v1/onboarding/[^/]+:skip$
           route:
             - destination:
                 host: auth-sidecar.saas-starter.svc.cluster.local
@@ -3830,7 +3838,7 @@ spec:
             - method:
                 exact: POST
               uri:
-                regex: ^/v1/platform/users/[^/]+:unsuspend$
+                exact: /v1/organizations
           route:
             - destination:
                 host: auth-sidecar.saas-starter.svc.cluster.local
@@ -3841,7 +3849,7 @@ spec:
             - method:
                 exact: POST
               uri:
-                regex: ^/v1/principals/[^/]+:revoke$
+                regex: ^/v1/organizations/[^/]+/members$
           route:
             - destination:
                 host: auth-sidecar.saas-starter.svc.cluster.local
@@ -3852,7 +3860,7 @@ spec:
             - method:
                 exact: POST
               uri:
-                exact: /v1/principals:agent
+                regex: ^/v1/organizations/[^/]+/teams$
           route:
             - destination:
                 host: auth-sidecar.saas-starter.svc.cluster.local
@@ -3863,7 +3871,7 @@ spec:
             - method:
                 exact: POST
               uri:
-                exact: /v1/role-assignments
+                exact: /v1/platform/admins
           route:
             - destination:
                 host: auth-sidecar.saas-starter.svc.cluster.local
@@ -3874,7 +3882,7 @@ spec:
             - method:
                 exact: POST
               uri:
-                exact: /v1/roles
+                regex: ^/v1/platform/jobs/[^/]+:replay$
           route:
             - destination:
                 host: auth-sidecar.saas-starter.svc.cluster.local
@@ -3885,7 +3893,7 @@ spec:
             - method:
                 exact: POST
               uri:
-                exact: /v1/sso/disable
+                regex: ^/v1/platform/organizations/[^/]+/entitlements$
           route:
             - destination:
                 host: auth-sidecar.saas-starter.svc.cluster.local
@@ -3896,7 +3904,7 @@ spec:
             - method:
                 exact: POST
               uri:
-                exact: /v1/sso/setup
+                regex: ^/v1/platform/users/[^/]+:impersonate$
           route:
             - destination:
                 host: auth-sidecar.saas-starter.svc.cluster.local
@@ -3907,7 +3915,7 @@ spec:
             - method:
                 exact: POST
               uri:
-                regex: ^/v1/teams/[^/]+/members$
+                regex: ^/v1/platform/users/[^/]+:suspend$
           route:
             - destination:
                 host: auth-sidecar.saas-starter.svc.cluster.local
@@ -3918,7 +3926,7 @@ spec:
             - method:
                 exact: POST
               uri:
-                exact: /v1/user/settings
+                regex: ^/v1/platform/users/[^/]+:unsuspend$
           route:
             - destination:
                 host: auth-sidecar.saas-starter.svc.cluster.local
@@ -3929,7 +3937,7 @@ spec:
             - method:
                 exact: POST
               uri:
-                exact: /v1/users
+                regex: ^/v1/principals/[^/]+:revoke$
           route:
             - destination:
                 host: auth-sidecar.saas-starter.svc.cluster.local
@@ -3940,7 +3948,7 @@ spec:
             - method:
                 exact: POST
               uri:
-                regex: ^/v1/users/[^/]+/identities$
+                exact: /v1/principals:agent
           route:
             - destination:
                 host: auth-sidecar.saas-starter.svc.cluster.local
@@ -3951,7 +3959,7 @@ spec:
             - method:
                 exact: POST
               uri:
-                exact: /v1/webhooks
+                exact: /v1/role-assignments
           route:
             - destination:
                 host: auth-sidecar.saas-starter.svc.cluster.local
@@ -3962,7 +3970,7 @@ spec:
             - method:
                 exact: POST
               uri:
-                regex: ^/v1/webhooks/deliveries/[^/]+:replay$
+                exact: /v1/roles
           route:
             - destination:
                 host: auth-sidecar.saas-starter.svc.cluster.local
@@ -3973,7 +3981,7 @@ spec:
             - method:
                 exact: POST
               uri:
-                regex: ^/v1/webhooks/[^/]+:rotateSecret$
+                exact: /v1/sso/disable
           route:
             - destination:
                 host: auth-sidecar.saas-starter.svc.cluster.local
@@ -3984,13 +3992,145 @@ spec:
             - method:
                 exact: POST
               uri:
-                regex: ^/v1/webhooks/[^/]+:test$
+                exact: /v1/sso/setup
           route:
             - destination:
                 host: auth-sidecar.saas-starter.svc.cluster.local
                 port:
                     number: 8080
         - name: catalog-342
+          match:
+            - method:
+                exact: POST
+              uri:
+                regex: ^/v1/teams/[^/]+/members$
+          route:
+            - destination:
+                host: auth-sidecar.saas-starter.svc.cluster.local
+                port:
+                    number: 8080
+        - name: catalog-343
+          match:
+            - method:
+                exact: POST
+              uri:
+                exact: /v1/user/settings
+          route:
+            - destination:
+                host: auth-sidecar.saas-starter.svc.cluster.local
+                port:
+                    number: 8080
+        - name: catalog-344
+          match:
+            - method:
+                exact: POST
+              uri:
+                exact: /v1/users
+          route:
+            - destination:
+                host: auth-sidecar.saas-starter.svc.cluster.local
+                port:
+                    number: 8080
+        - name: catalog-345
+          match:
+            - method:
+                exact: POST
+              uri:
+                regex: ^/v1/users/[^/]+/identities$
+          route:
+            - destination:
+                host: auth-sidecar.saas-starter.svc.cluster.local
+                port:
+                    number: 8080
+        - name: catalog-346
+          match:
+            - method:
+                exact: POST
+              uri:
+                exact: /v1/webhooks
+          route:
+            - destination:
+                host: auth-sidecar.saas-starter.svc.cluster.local
+                port:
+                    number: 8080
+        - name: catalog-347
+          match:
+            - method:
+                exact: POST
+              uri:
+                regex: ^/v1/webhooks/deliveries/[^/]+:replay$
+          route:
+            - destination:
+                host: auth-sidecar.saas-starter.svc.cluster.local
+                port:
+                    number: 8080
+        - name: catalog-348
+          match:
+            - method:
+                exact: POST
+              uri:
+                regex: ^/v1/webhooks/[^/]+:rotateSecret$
+          route:
+            - destination:
+                host: auth-sidecar.saas-starter.svc.cluster.local
+                port:
+                    number: 8080
+        - name: catalog-349
+          match:
+            - method:
+                exact: POST
+              uri:
+                regex: ^/v1/webhooks/[^/]+:test$
+          route:
+            - destination:
+                host: auth-sidecar.saas-starter.svc.cluster.local
+                port:
+                    number: 8080
+        - name: catalog-350
+          match:
+            - method:
+                exact: POST
+              uri:
+                exact: /v1/work-contexts:child-session
+          route:
+            - destination:
+                host: auth-sidecar.saas-starter.svc.cluster.local
+                port:
+                    number: 8080
+        - name: catalog-351
+          match:
+            - method:
+                exact: POST
+              uri:
+                exact: /v1/work-contexts:exchange-audience
+          route:
+            - destination:
+                host: auth-sidecar.saas-starter.svc.cluster.local
+                port:
+                    number: 8080
+        - name: catalog-352
+          match:
+            - method:
+                exact: POST
+              uri:
+                exact: /v1/work-contexts:root-session
+          route:
+            - destination:
+                host: auth-sidecar.saas-starter.svc.cluster.local
+                port:
+                    number: 8080
+        - name: catalog-353
+          match:
+            - method:
+                exact: POST
+              uri:
+                exact: /v1/work-contexts:task
+          route:
+            - destination:
+                host: auth-sidecar.saas-starter.svc.cluster.local
+                port:
+                    number: 8080
+        - name: catalog-354
           match:
             - method:
                 exact: PUT
@@ -4001,7 +4141,7 @@ spec:
                 host: auth-sidecar.saas-starter.svc.cluster.local
                 port:
                     number: 8080
-        - name: catalog-343
+        - name: catalog-355
           match:
             - method:
                 exact: PUT

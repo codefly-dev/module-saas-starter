@@ -23,6 +23,7 @@ import { TeamService } from "./teams_pb";
 import { UsageService } from "./usage_pb";
 import { UserSettingsService } from "./user_settings_pb";
 import { WebhookService } from "./webhooks_pb";
+import { WorkContextService } from "./work_contexts_pb";
 
 export const PERMISSIONS = {
   ALL: "*:*",
@@ -176,6 +177,7 @@ export const ACCOUNT_SERVICE_DESCRIPTORS = {
   UserService,
   UserSettingsService,
   WebhookService,
+  WorkContextService,
 } as const;
 
 export type AccountServiceName = keyof typeof ACCOUNT_SERVICE_DESCRIPTORS;
@@ -205,6 +207,7 @@ export interface AccountsClients {
   readonly UserService: Client<typeof UserService>;
   readonly UserSettingsService: Client<typeof UserSettingsService>;
   readonly WebhookService: Client<typeof WebhookService>;
+  readonly WorkContextService: Client<typeof WorkContextService>;
 }
 
 export function createAccountsClients(transport: Transport): AccountsClients {
@@ -233,5 +236,6 @@ export function createAccountsClients(transport: Transport): AccountsClients {
     UserService: createClient(UserService, transport),
     UserSettingsService: createClient(UserSettingsService, transport),
     WebhookService: createClient(WebhookService, transport),
+    WorkContextService: createClient(WorkContextService, transport),
   };
 }

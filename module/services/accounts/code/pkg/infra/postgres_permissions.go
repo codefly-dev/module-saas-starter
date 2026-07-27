@@ -154,9 +154,14 @@ func (s *PostgresStore) AssignRole(ctx context.Context, assignment *gen.RoleAssi
 	w := wool.Get(ctx).In("AssignRole")
 	executor := s.getQueryExecutor(ctx)
 
-	subjectKind := "user"
-	if assignment.SubjectKind == gen.SubjectKind_SUBJECT_KIND_TEAM {
+	var subjectKind string
+	switch assignment.SubjectKind {
+	case gen.SubjectKind_SUBJECT_KIND_PRINCIPAL:
+		subjectKind = "principal"
+	case gen.SubjectKind_SUBJECT_KIND_TEAM:
 		subjectKind = "team"
+	default:
+		return fmt.Errorf("assign role: unsupported subject kind %s", assignment.SubjectKind)
 	}
 
 	// Handle nullable org_id and scope
@@ -206,14 +211,18 @@ func (s *PostgresStore) ListRoleAssignments(ctx context.Context, orgID string, s
 		argN++
 	}
 	switch subjectKind {
-	case gen.SubjectKind_SUBJECT_KIND_USER:
+	case gen.SubjectKind_SUBJECT_KIND_UNSPECIFIED:
+		// No kind filter: return both direct Principal and Team assignments.
+	case gen.SubjectKind_SUBJECT_KIND_PRINCIPAL:
 		query += fmt.Sprintf(" AND subject_kind = $%d", argN)
-		args = append(args, "user")
+		args = append(args, "principal")
 		argN++
 	case gen.SubjectKind_SUBJECT_KIND_TEAM:
 		query += fmt.Sprintf(" AND subject_kind = $%d", argN)
 		args = append(args, "team")
 		argN++
+	default:
+		return nil, fmt.Errorf("list role assignments: unsupported subject kind %s", subjectKind)
 	}
 	query += " ORDER BY assigned_at DESC"
 
@@ -240,10 +249,12 @@ func (s *PostgresStore) ListRoleAssignments(ctx context.Context, orgID string, s
 			AssignedAt: timestamppb.New(assignedAt),
 		}
 		switch kind {
+		case "principal":
+			ra.SubjectKind = gen.SubjectKind_SUBJECT_KIND_PRINCIPAL
 		case "team":
 			ra.SubjectKind = gen.SubjectKind_SUBJECT_KIND_TEAM
 		default:
-			ra.SubjectKind = gen.SubjectKind_SUBJECT_KIND_USER
+			return nil, fmt.Errorf("list role assignments: unsupported stored subject kind %q", kind)
 		}
 		if orgIDVal != nil {
 			ra.OrgId = *orgIDVal
@@ -294,12 +305,13 @@ func (s *PostgresStore) RevokeRole(ctx context.Context, subjectID string, roleID
 	return nil
 }
 
-// CheckPermission checks whether a subject (user or team) has a given permission.
+// CheckPermission checks whether a subject (direct principal or team) has a
+// given permission.
 // It supports:
 //   - Wildcard permissions: resource="*" or action="*" match everything
 //   - Scope matching: assignment scope must match or be empty (global)
-//   - Team inheritance: if the subject is a user, also check permissions
-//     assigned to teams the user belongs to
+//   - Team inheritance: human principals also inherit permissions assigned to
+//     teams they belong to
 func (s *PostgresStore) CheckPermission(ctx context.Context, subjectID string, subjectKind gen.SubjectKind, resource string, action string, orgID string, scope string) (bool, string, error) {
 	w := wool.Get(ctx).In("CheckPermission")
 	executor := s.getQueryExecutor(ctx)
@@ -308,24 +320,34 @@ func (s *PostgresStore) CheckPermission(ctx context.Context, subjectID string, s
 	// the requested resource:action permission via wildcard matching.
 	//
 	// This single query handles:
-	// 1. Direct user role assignments
-	// 2. Team role assignments (for users who are team members)
+	// 1. Direct principal role assignments
+	// 2. Team role assignments (for human principals who are team members)
 	// 3. Wildcard permission matching (* on resource or action)
 	// 4. Scope matching (NULL scope = global, specific scope = scoped)
 	// 5. Org scoping (NULL org = global role, specific org = org role)
 	// Build query dynamically to avoid passing empty strings as UUID parameters
+	var subjectPredicate string
+	switch subjectKind {
+	case gen.SubjectKind_SUBJECT_KIND_PRINCIPAL:
+		subjectPredicate = `(
+			(ra.subject_kind = 'principal' AND ra.subject_id = $1)
+			OR
+			(ra.subject_kind = 'team' AND ra.subject_id IN (
+				SELECT team_id FROM team_members WHERE user_id = $1
+			))
+		)`
+	case gen.SubjectKind_SUBJECT_KIND_TEAM:
+		subjectPredicate = `(ra.subject_kind = 'team' AND ra.subject_id = $1)`
+	default:
+		return false, "", fmt.Errorf("check permission: unsupported subject kind %s", subjectKind)
+	}
+
 	query := `
 		SELECT rp.resource, rp.action, r.name as role_name
 		FROM role_assignments ra
 		JOIN roles r ON ra.role_id = r.id
 		JOIN role_permissions rp ON r.id = rp.role_id
-		WHERE (
-			ra.subject_id = $1
-			OR
-			(ra.subject_kind = 'team' AND ra.subject_id IN (
-				SELECT team_id FROM team_members WHERE user_id = $1
-			))
-		)
+		WHERE ` + subjectPredicate + `
 		AND (rp.resource = '*' OR rp.resource = $2)
 		AND (rp.action = '*' OR rp.action = $3)`
 
@@ -426,7 +448,7 @@ func (s *PostgresStore) ResolveIdentity(ctx context.Context, provider string, pr
 		SELECT DISTINCT r.name FROM roles r
 		JOIN role_assignments ra ON r.id = ra.role_id
 		WHERE (
-			ra.subject_id = $1
+			(ra.subject_kind = 'principal' AND ra.subject_id = $1)
 			OR (ra.subject_kind = 'team' AND ra.subject_id IN (
 				SELECT team_id FROM team_members WHERE user_id = $1
 			))

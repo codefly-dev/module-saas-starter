@@ -73,7 +73,7 @@ func TestE2E_RoleAssignmentFlow(t *testing.T) {
 	// for "deployments:write" yet — must return Allowed=false.
 	pre, err := testService.CheckPermission(ctx, &gen.CheckPermissionRequest{
 		SubjectId:   memberID,
-		SubjectKind: gen.SubjectKind_SUBJECT_KIND_USER,
+		SubjectKind: gen.SubjectKind_SUBJECT_KIND_PRINCIPAL,
 		Resource:    "deployments", Action: "write",
 		OrgId: ownerOrg,
 	})
@@ -98,7 +98,7 @@ func TestE2E_RoleAssignmentFlow(t *testing.T) {
 	// --- Step 4: grant the role to the member.
 	_, err = testService.AssignRole(ctx, &gen.AssignRoleRequest{
 		SubjectId:   memberID,
-		SubjectKind: gen.SubjectKind_SUBJECT_KIND_USER,
+		SubjectKind: gen.SubjectKind_SUBJECT_KIND_PRINCIPAL,
 		RoleId:      roleID,
 		OrgId:       ownerOrg,
 	})
@@ -108,7 +108,7 @@ func TestE2E_RoleAssignmentFlow(t *testing.T) {
 	// check — must now return Allowed=true.
 	post, err := testService.CheckPermission(ctx, &gen.CheckPermissionRequest{
 		SubjectId:   memberID,
-		SubjectKind: gen.SubjectKind_SUBJECT_KIND_USER,
+		SubjectKind: gen.SubjectKind_SUBJECT_KIND_PRINCIPAL,
 		Resource:    "deployments", Action: "write",
 		OrgId: ownerOrg,
 	})
@@ -122,7 +122,7 @@ func TestE2E_RoleAssignmentFlow(t *testing.T) {
 	assignments, err := testService.ListRoleAssignments(ctx, &gen.ListRoleAssignmentsRequest{
 		OrgId:       ownerOrg,
 		SubjectId:   memberID,
-		SubjectKind: gen.SubjectKind_SUBJECT_KIND_USER,
+		SubjectKind: gen.SubjectKind_SUBJECT_KIND_PRINCIPAL,
 	})
 	require.NoError(t, err)
 	require.Len(t, assignments.Assignments, 1)
@@ -139,7 +139,7 @@ func TestE2E_RoleAssignmentFlow(t *testing.T) {
 
 	postRevoke, err := testService.CheckPermission(ctx, &gen.CheckPermissionRequest{
 		SubjectId:   memberID,
-		SubjectKind: gen.SubjectKind_SUBJECT_KIND_USER,
+		SubjectKind: gen.SubjectKind_SUBJECT_KIND_PRINCIPAL,
 		Resource:    "deployments", Action: "write",
 		OrgId: ownerOrg,
 	})

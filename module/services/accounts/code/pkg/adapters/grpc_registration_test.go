@@ -27,6 +27,6 @@ func TestCatalogGRPCRegistrationMatchesGeneratedNativeSubset(t *testing.T) {
 		}
 	}
 
-	require.Len(t, catalogGRPCServiceNames, 15)
+	require.Len(t, catalogGRPCServiceNames, 16)
 	require.Len(t, catalogConnectOnlyServiceNames, 9)
 }

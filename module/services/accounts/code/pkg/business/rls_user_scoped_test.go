@@ -152,4 +152,4 @@ func TestWithUserTx_RejectsEmptyUserID(t *testing.T) {
 	require.Error(t, err)
 }
 
-var _ = gen.SubjectKind_SUBJECT_KIND_USER // keep gen import for parity with other tests
+var _ = gen.SubjectKind_SUBJECT_KIND_PRINCIPAL // keep gen import for parity with other tests

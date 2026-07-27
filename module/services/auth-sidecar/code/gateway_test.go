@@ -301,6 +301,45 @@ func TestGateway_RoutesFrontendByDefault(t *testing.T) {
 	require.Equal(t, "/", frontendFake.lastPath)
 }
 
+func TestGateway_RoutesGeneratedFrontendPagesAssetsAndHandlers(t *testing.T) {
+	gw, _, frontendFake, _ := newGatewayHarness(t)
+
+	cases := []struct {
+		method string
+		path   string
+	}{
+		{http.MethodGet, "/auth/login"},
+		{http.MethodGet, "/admin/installed-plugin/page"},
+		{http.MethodGet, "/_next/static/chunks/app.js"},
+		{http.MethodGet, "/api/fixtures"},
+		{http.MethodPost, "/api/plugins/example/accounts/v1/action"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.method+" "+tc.path, func(t *testing.T) {
+			req := httptest.NewRequest(tc.method, tc.path, nil)
+			w := httptest.NewRecorder()
+			gw.ServeHTTP(w, req)
+
+			require.Equal(t, http.StatusOK, w.Code)
+			require.Equal(t, tc.path, frontendFake.lastPath)
+			require.Equal(t, tc.method, frontendFake.lastMethod)
+		})
+	}
+}
+
+func TestGateway_UnknownFrontendLikePathsRemainClosed(t *testing.T) {
+	gw, _, frontendFake, _ := newGatewayHarness(t)
+	for _, path := range []string{"/unknown", "/api/unknown", "/v1/unknown"} {
+		frontendFake.lastPath = ""
+		req := httptest.NewRequest(http.MethodGet, path, nil)
+		w := httptest.NewRecorder()
+		gw.ServeHTTP(w, req)
+
+		require.Equal(t, http.StatusNotFound, w.Code)
+		require.Empty(t, frontendFake.lastPath)
+	}
+}
+
 // ============================================================================
 // Health checks — self service
 // ============================================================================
