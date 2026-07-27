@@ -125,7 +125,7 @@ services:
     agent:
       kind: codefly:service
       name: nextjs
-      version: 0.0.117
+      version: 0.0.118
       publisher: codefly.dev
     workspace_configuration_dependencies:
       - workos
