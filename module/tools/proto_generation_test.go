@@ -14,11 +14,7 @@ import (
 // browser client include multiple protocol trees; directory strategy would
 // emit duplicate names and make checked-in generation drift nondeterministic.
 func TestMergedProtocolGeneratorsUseOneInvocation(t *testing.T) {
-	root := findRepositoryRoot(t)
-	moduleRoot := root
-	if _, err := os.Stat(filepath.Join(root, "module", "module.codefly.yaml")); err == nil {
-		moduleRoot = filepath.Join(root, "module")
-	}
+	moduleRoot := findModuleRoot(t)
 	for _, relative := range []string{
 		"services/accounts/proto/buf.gen.yaml",
 		"services/accounts/buf.gen.local.yaml",
@@ -46,6 +42,24 @@ func TestMergedProtocolGeneratorsUseOneInvocation(t *testing.T) {
 				t.Errorf("%s: %s strategy = %q, want all", relative, name, plugin.Strategy)
 			}
 		}
+	}
+}
+
+func findModuleRoot(t *testing.T) string {
+	t.Helper()
+	directory, err := os.Getwd()
+	if err != nil {
+		t.Fatal(err)
+	}
+	for {
+		if _, err := os.Stat(filepath.Join(directory, "module.codefly.yaml")); err == nil {
+			return directory
+		}
+		parent := filepath.Dir(directory)
+		if parent == directory {
+			t.Fatal("Codefly module root not found")
+		}
+		directory = parent
 	}
 }
 

@@ -1240,6 +1240,6 @@
     "tools/codefly_sdk_boundary_test.go": "6d66ca1ba95db634bcd72ab5846da61411c1361313a8fcd365fe0172517bc2c5",
     "tools/go.mod": "4581b764afe74c43631f4de1accbfb5874483b1590cf3fcee1071883f1ca65af",
     "tools/go.sum": "e42794fa9b56301ad073de55cac1dea683b320ed951454d8709ffc7156088dd2",
-    "tools/proto_generation_test.go": "4e2d9a1de58a2aa0c459fbbc69d5f741519abf25b09cc7e6b7c9b19424756521"
+    "tools/proto_generation_test.go": "993e2bc7f10bde428ad9b9bea8c7c88a6fa129a8a092689a33f9bc1a9a40509f"
   }
 }
