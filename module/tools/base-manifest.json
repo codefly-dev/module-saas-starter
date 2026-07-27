@@ -1,6 +1,6 @@
 {
   "note": "Base-file integrity manifest for the saas-starter module. Generated FROM canonical by `node tools/base-integrity.mjs gen`. Consumers MUST NOT hand-edit base files — only add files on the side. Regenerated on every codefly sync from canonical.",
-  "fileCount": 1175,
+  "fileCount": 1176,
   "files": {
     "AUTHORIZATION_CATALOG.md": "c801d07db8d54ff7484e26dc4d5a65925b32fa108eb5b7899f11b9f193c6a730",
     "CONTRACT_VERSIONING.md": "02031aa87922ab5ec573ea582cf584271873481de6ceabbda52b1bfda005ffbd",
@@ -177,7 +177,7 @@
     "services/accounts/code/pkg/billing/handler.go": "118e24c3c4cbef04a42995f46c35a9d6549273f46328378b34a621ccaad01c55",
     "services/accounts/code/pkg/billing/handler_test.go": "99662de8a7768d7250792cb472cd0f9079069485486e8fa48d8948b43165240c",
     "services/accounts/code/pkg/billing/pg/store.go": "c9de4b91ed5553570e3ad6fe35a265b4a3fc4fd3f051d334aad2a1fce7682286",
-    "services/accounts/code/pkg/billing/pg/store_test.go": "f0d8349140811d0b6867607a7d62279437617268ea1876c9b2fa1b869e8b7d3b",
+    "services/accounts/code/pkg/billing/pg/store_test.go": "e7a1fe8925b96fe71bef835b0bfe36b778b4be7c97c6627d9a9f5d702c8a38e4",
     "services/accounts/code/pkg/billing/processor_test.go": "03522925309460fa46fd3d9a116b800d6986b819dfe9301b24222137c079e601",
     "services/accounts/code/pkg/billing/store.go": "9db3bc7b6be266170df21324f9bf1b31bd0d435cb3c4df92544a3c7d97fafc7e",
     "services/accounts/code/pkg/billing/webhook.go": "303a620a8b35a7a5feaa235a92389e8248e3a392b297ca86ea59a40d3225ca33",
@@ -683,6 +683,7 @@
     "services/frontend/code/src/app/layout.tsx": "daa0ed64946aaa1a6b5c05d6782b8f125461159be0f7cf936e35eb6322ae7760",
     "services/frontend/code/src/components/__tests__/frontend-config-adapters.test.tsx": "189082df5e5e2ba521ee49a6e37017a66458d4bde8122ecb8876ad983222348d",
     "services/frontend/code/src/components/__tests__/plugin-contribution-boundary.test.tsx": "4f6abb3ac1c03682a88c7cdc5331402e5efef9eb8e4941a1cfd14a32e45a0872",
+    "services/frontend/code/src/components/__tests__/sidebar-settings.test.tsx": "85daa88142825f58561b20ef2af1a98d23acbb795497b4f1d9ccab7b9c191ee7",
     "services/frontend/code/src/components/activity-feed.tsx": "f62df34d3d2a38397169b66528a8a0bb96a769d7f8eb97dcbc9dc79bc2529cc7",
     "services/frontend/code/src/components/admin-layout.tsx": "6c1422653663446c1243bf227bffff220903d03bc67d8d5a3dcec575fab8b038",
     "services/frontend/code/src/components/auth/role-gate.tsx": "81aa9ca42ddd21fb92bf06a7e005483603abc266239a00b2e855ac35b254dc7d",
