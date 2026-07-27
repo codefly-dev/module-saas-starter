@@ -51,6 +51,10 @@ func TestDeploymentTopologyIsDeterministicAndCurrent(t *testing.T) {
 	}
 	require.Equal(t, 11, endpointCount)
 	require.Equal(t, 8, dependencyCount)
+	frontendManifest := string(first.ServiceManifests["frontend"])
+	require.Contains(t, frontendManifest, "execution-profiles:")
+	require.Contains(t, frontendManifest, "local: development")
+	require.Contains(t, frontendManifest, "production: production")
 	require.Equal(t, 15, strings.Count(string(first.NetworkPolicy), "\nkind: NetworkPolicy\n"))
 	require.NotContains(t, string(first.NetworkPolicy), "allow-intra-namespace")
 	require.Contains(t, string(first.NetworkPolicy), "name: allow-accounts-from-dependents")
