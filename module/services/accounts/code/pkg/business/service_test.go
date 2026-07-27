@@ -309,10 +309,10 @@ func TestCreateOrganization(t *testing.T) {
 
 	orgResp, err := testService.CreateOrganization(testCtx, resp.User.Uuid, &gen.CreateOrganizationRequest{
 		Name: "Acme Corp",
-		Slug: "acme-corp",
 	})
 	require.NoError(t, err)
 	require.Equal(t, "Acme Corp", orgResp.Organization.Name)
+	require.Equal(t, "acme-corp", orgResp.Organization.Slug)
 	require.Equal(t, resp.User.Uuid, orgResp.Organization.OwnerId)
 }
 
