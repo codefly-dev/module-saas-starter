@@ -82,18 +82,28 @@ func runBillingStoreTests(m *testing.M) int {
 func resetBilling(t *testing.T) {
 	t.Helper()
 	ctx := context.Background()
-	for _, q := range []string{
-		`TRUNCATE TABLE subscriptions RESTART IDENTITY CASCADE`,
-		`TRUNCATE TABLE organization_members RESTART IDENTITY CASCADE`,
-		`TRUNCATE TABLE organizations RESTART IDENTITY CASCADE`,
-		`TRUNCATE TABLE users RESTART IDENTITY CASCADE`,
-		// seed-restore plans — the initial migration populated three rows
-		// and our tests re-seed with deterministic Stripe price ids.
-		`UPDATE plans SET stripe_price_id = NULL, stripe_product_id = NULL`,
-	} {
-		_, err := testPool.Exec(ctx, q)
-		require.NoError(t, err, q)
-	}
+	tx, err := testPool.Begin(ctx)
+	require.NoError(t, err)
+	defer func() { _ = tx.Rollback(ctx) }()
+
+	// Acquire every related table lock in one statement and hold the locks
+	// through the plan reset. Separate auto-commit TRUNCATE statements can
+	// deadlock with cascading foreign-key locks during managed Postgres setup.
+	const truncate = `TRUNCATE TABLE
+		subscriptions,
+		organization_members,
+		organizations,
+		users
+		RESTART IDENTITY CASCADE`
+	_, err = tx.Exec(ctx, truncate)
+	require.NoError(t, err, truncate)
+
+	// Seed-restore plans — the initial migration populated three rows and our
+	// tests re-seed with deterministic Stripe price ids.
+	const resetPlans = `UPDATE plans SET stripe_price_id = NULL, stripe_product_id = NULL`
+	_, err = tx.Exec(ctx, resetPlans)
+	require.NoError(t, err, resetPlans)
+	require.NoError(t, tx.Commit(ctx))
 }
 
 // seedOrg creates a user + org returning their ids. Stripe customer
