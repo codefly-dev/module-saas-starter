@@ -27,6 +27,10 @@ vi.mock("@/lib/auth", () => ({
 	useAuth: () => authState,
 }));
 
+vi.mock("@/lib/legal-config", () => ({
+	legalContentConfigured: () => false,
+}));
+
 vi.mock("@connectrpc/connect", () => ({
 	createClient: vi.fn((service: { typeName: string }) =>
 		service.typeName.endsWith("ConsentService")
@@ -46,6 +50,23 @@ afterEach(() => {
 });
 
 describe("ConsentBanner", () => {
+	it("does not allow Terms acceptance while legal content is unconfigured", async () => {
+		authState.isAuthenticated = true;
+		clients.consent.getStatus.mockResolvedValue({
+			currentTermsVersion: "terms-v1",
+			termsAcceptedVersion: "",
+			policyVersion: "policy-v2",
+			purposes: [],
+		});
+
+		render(<ConsentBanner />);
+
+		const acceptTerms = await screen.findByRole("button", {
+			name: "Accept Terms",
+		});
+		expect(acceptTerms.getAttribute("disabled")).not.toBeNull();
+	});
+
 	it("persists the current server policy version for anonymous preferences", async () => {
 		clients.acquisition.getAcquisitionStatus.mockResolvedValue({
 			consentPolicyVersion: "policy-v2",
