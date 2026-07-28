@@ -1,0 +1,52 @@
+{
+  "schemaVersion": "codefly.dev/module-gitops/v1",
+  "workspace": "mind-control",
+  "module": "users",
+  "repository": "git@github.com:acme/platform-config.git",
+  "ownedPath": "clusters/codefly/deployments/modules/users/services",
+  "secretReferenceContract": "github.com/codefly-dev/core/configurations@v0.2.47#reference-only-secret-manifest",
+  "environments": [
+    {
+      "name": "local",
+      "namespace": "users-local",
+      "revision": "0123456789abcdef0123456789abcdef01234567",
+      "services": [
+        "store",
+        "vault",
+        "accounts",
+        "cache",
+        "frontend",
+        "forge-edge",
+        "object-storage"
+      ]
+    },
+    {
+      "name": "aws",
+      "namespace": "users-aws",
+      "revision": "0123456789abcdef0123456789abcdef01234567",
+      "services": [
+        "accounts",
+        "frontend",
+        "forge-edge"
+      ],
+      "managedServiceHandoffs": [
+        {
+          "service": "store",
+          "awsKind": "rds-postgresql"
+        },
+        {
+          "service": "vault",
+          "awsKind": "secrets-manager"
+        },
+        {
+          "service": "cache",
+          "awsKind": "elasticache"
+        },
+        {
+          "service": "object-storage",
+          "awsKind": "s3"
+        }
+      ]
+    }
+  ]
+}

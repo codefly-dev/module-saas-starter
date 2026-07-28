@@ -3,13 +3,17 @@ layout: modules
 modules:
     - name: saas-starter
 
-# Gitops target — where `codefly deploy --render-only` writes manifests
-# for ArgoCD/Flux to sync from. Optional. When nil, the module/deployment
-# Applications keep REPLACE_ME placeholders and you patch them by hand.
+# GitOps target used by the module generator and `codefly deploy
+# --render-only`. Configure it before adding the module; generation fails
+# closed when any field is absent instead of emitting placeholders.
 # gitops:
 #   repo-url: git@github.com:my-org/saas-starter.git
-#   path: ""        # leave empty when the workspace is the repo root
-#   branch: main
+#   path: ""        # repository subtree that owns rendered deployments
+#   branch: <40-character-commit-sha>
+#
+# A local-only workspace may name the checked-out harness branch; the
+# generator resolves it to HEAD. Any remote environment requires a full
+# commit SHA or a locally verified signed tag, which is resolved to its SHA.
 
 # Deploy targets the CLI knows about. `codefly deploy --env <name>` and
 # `codefly build --env <name>` look these up to resolve cluster +
