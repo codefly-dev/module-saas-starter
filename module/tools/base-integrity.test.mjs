@@ -5,7 +5,9 @@ import { join } from "node:path";
 import test from "node:test";
 
 import {
+  capabilityManifestErrors,
   isExcludedFile,
+  productionTruthErrors,
   requiredAdditionsErrors,
   workspaceInstallGraphErrors,
 } from "./base-integrity.mjs";
@@ -159,4 +161,121 @@ test("rejects unsafe or undocumented required additions", (t) => {
   assert.ok(requiredAdditionsErrors(root, {
     requiredAdditions: { "inside": "" },
   }).some((error) => error.includes("non-empty reason")));
+});
+
+function capabilityManifest() {
+  return {
+    schemaVersion: 1,
+    environment: "starter-default",
+    scope: "Unconfigured starter distribution",
+    capabilities: [{
+      id: "operations.backup-restore",
+      category: "Operations",
+      title: "Backup and restore",
+      designState: "absent",
+      responsibility: "shared",
+      configuration: {
+        providers: ["backup-provider"],
+        settings: ["recovery.policy"],
+      },
+      public: {
+        minimumState: "operationally_verified",
+        summary: "Recovery has current scoped exercise evidence.",
+      },
+    }],
+    evidence: [],
+  };
+}
+
+test("validates complete evidence records without exposing private artifacts", () => {
+  const manifest = capabilityManifest();
+  manifest.evidence.push({
+    id: "ev-restore",
+    capabilityId: "operations.backup-restore",
+    environment: "production",
+    scope: "primary region",
+    owner: "operations",
+    verifier: "release-manager",
+    source: "private://recovery/restore-exercise",
+    performedAt: "2026-07-20T10:00:00Z",
+    reviewAt: "2026-08-20T10:00:00Z",
+    expiresAt: "2026-10-20T10:00:00Z",
+    status: "current",
+    state: "operationally_verified",
+    visibility: "private",
+  });
+  assert.deepEqual(capabilityManifestErrors(manifest), []);
+});
+
+test("rejects incomplete, orphaned, or unsafe public evidence metadata", () => {
+  const manifest = capabilityManifest();
+  manifest.evidence.push({
+    id: "ev-orphan",
+    capabilityId: "missing.capability",
+    environment: "production",
+    scope: "primary region",
+    owner: "operations",
+    verifier: "release-manager",
+    source: "private://recovery/restore-exercise",
+    performedAt: "invalid",
+    reviewAt: "2026-07-19T10:00:00Z",
+    status: "current",
+    state: "implemented",
+    visibility: "public_summary",
+  });
+  const errors = capabilityManifestErrors(manifest);
+  assert.ok(errors.some((error) => error.includes("does not reference")));
+  assert.ok(errors.some((error) => error.includes("operationally_verified")));
+  assert.ok(errors.some((error) => error.includes("publicSummary")));
+  assert.ok(errors.some((error) => error.includes("performedAt")));
+});
+
+test("rejects unsupported promises in customer-visible source", (t) => {
+  const root = mkdtempSync(join(tmpdir(), "saas-production-truth-"));
+  t.after(() => rmSync(root, { recursive: true, force: true }));
+  const manifestPath = join(
+    root,
+    "services/frontend/code/src/features/trust/capability-manifest.json",
+  );
+  const pagePath = join(
+    root,
+    "services/frontend/code/src/app/docs/compliance/page.tsx",
+  );
+  mkdirSync(join(manifestPath, ".."), { recursive: true });
+  mkdirSync(join(pagePath, ".."), { recursive: true });
+  writeJSON(manifestPath, capabilityManifest());
+  writeFileSync(
+    pagePath,
+    `export default function Page() {
+      return [
+        "Backups are retained for 90 days",
+        "production-grade from day one",
+        "Trusted by teams shipping",
+        "SOC 2 / enterprise-compliant path",
+        "tamper-evident copy outside the platform",
+      ];
+    }\n`,
+  );
+
+  const errors = productionTruthErrors(root);
+  for (const claim of [
+    "unsupported fixed backup retention",
+    "unsupported production readiness",
+    "unverified customer endorsement",
+    "unsupported assurance path",
+    "unverified audit immutability",
+  ]) {
+    assert.ok(errors.some((error) => error.includes(claim)));
+  }
+});
+
+test("does not require the frontend capability manifest when frontend is omitted", (t) => {
+  const root = mkdtempSync(join(tmpdir(), "saas-production-truth-"));
+  t.after(() => rmSync(root, { recursive: true, force: true }));
+  writeFileSync(
+    join(root, "module.codefly.yaml"),
+    "name: consumer\nservices:\n  - name: accounts\n",
+  );
+
+  assert.deepEqual(productionTruthErrors(root), []);
 });

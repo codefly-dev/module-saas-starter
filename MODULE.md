@@ -16,6 +16,7 @@ A codefly **module** is a collection of **services**; each service owns its own 
 - Generated frontend clients and vocabulary: `module/FRONTEND_CATALOG.md`
 - Generated frontend plugin routes/navigation: `module/FRONTEND_PLUGINS.md`
 - Generic event meters, quota semantics, and product integration: `module/USAGE_METERING.md`
+- Evidence-bound trust claims and adopter responsibilities: `module/TRUST_CAPABILITIES.md`
 - Postgres roles, grant rules, and RLS authority: `module/DATABASE_AUTHORITY.md`
 - Generated Codefly topology and NetworkPolicies: `module/DEPLOYMENT_TOPOLOGY.md`
 - Generated PDP input: `module/services/accounts/generated/authz-methods.json`

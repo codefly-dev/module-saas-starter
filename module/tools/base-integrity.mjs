@@ -23,6 +23,49 @@ const SCRIPT_PATH = fileURLToPath(import.meta.url);
 const MODULE_ROOT = join(dirname(SCRIPT_PATH), "..");
 const MANIFEST_PATH = join(MODULE_ROOT, "tools", "base-manifest.json");
 const ALLOW_PATH = join(MODULE_ROOT, "tools", "base-integrity-allow.json");
+const CAPABILITY_MANIFEST_REL =
+  "services/frontend/code/src/features/trust/capability-manifest.json";
+const CAPABILITY_STATES = [
+  "absent",
+  "implemented",
+  "configured",
+  "operationally_verified",
+  "externally_attested",
+];
+const CAPABILITY_RESPONSIBILITIES = new Set([
+  "starter",
+  "provider",
+  "adopter",
+  "shared",
+]);
+const EVIDENCE_STATES = new Set([
+  "operationally_verified",
+  "externally_attested",
+]);
+const EVIDENCE_STATUSES = new Set(["current", "expired", "revoked", "rejected"]);
+const EVIDENCE_VISIBILITIES = new Set(["private", "public_summary"]);
+
+const UNSUPPORTED_PUBLIC_CLAIMS = [
+  ["fixed backup retention", /\bbackups? (?:are|is) retained for \d+/i],
+  ["unverified point-in-time recovery", /\bpoint-in-time recovery capability\b/i],
+  ["executed DPA availability", /\b(?:a )?data processing agreement \(?DPA\)? is available\b/i],
+  ["unverified penetration test", /\bannual third-party penetration testing is conducted\b/i],
+  ["unverified incident delivery", /\bstatus updates are provided via email\b/i],
+  ["unapproved incident target", /\btarget response:\s*\d+/i],
+  ["fixed database encryption claim", /\bdatabase-level encryption at rest \(AES-256\)/i],
+  ["unverified transport enforcement", /\bTLS 1\.2\+ enforced on all external connections\b/i],
+  ["unapproved SLA claim", /\bincident response procedures with documented SLAs\b/i],
+  ["completed privacy export", /\bfull export of (?:their|your) personal data\b/i],
+  ["completed archive export", /\bZIP archive containing all (?:their|your) account data\b/i],
+  ["completed privacy deletion", /\bpermanently delete (?:their|your) account and all associated data\b/i],
+  ["immediate physical erasure", /\bremove all (?:their|your) data from (?:our|the) servers\b/i],
+  ["compliance status", /\bGDPR compliance\b/i],
+  ["unsupported compliance readiness", /\bcompliance ready\b[\s\S]{0,120}\byes\b/i],
+  ["unsupported production readiness", /\bproduction-grade from day one\b/i],
+  ["unverified customer endorsement", /\btrusted by teams shipping\b/i],
+  ["unsupported assurance path", /\bSOC ?2\s*\/\s*enterprise-compliant path\b/i],
+  ["unverified audit immutability", /\btamper-evident copy outside the platform\b/i],
+];
 
 // Directory names pruned wholesale (build output, deps, VCS) and per-file patterns that are
 // generated or inherently per-consumer. Generated files are excluded because base code produces
@@ -48,14 +91,14 @@ export const isExcludedFile = (rel) =>
   rel.endsWith("next-env.d.ts") ||            // Next.js-generated env types (regenerated on dev/build)
   rel.endsWith(".DS_Store");
 
-function walk(dir, out = []) {
+function walk(dir, out = [], base = MODULE_ROOT) {
   for (const name of readdirSync(dir)) {
     if (PRUNE_DIRS.has(name)) continue;
     const abs = join(dir, name);
     const st = statSync(abs);
-    if (st.isDirectory()) walk(abs, out);
+    if (st.isDirectory()) walk(abs, out, base);
     else if (st.isFile()) {
-      const rel = relative(MODULE_ROOT, abs);
+      const rel = relative(base, abs);
       if (!isExcludedFile(rel)) out.push(rel);
     }
   }
@@ -221,14 +264,189 @@ export function requiredAdditionsErrors(moduleRoot, allow = {}) {
   return errors;
 }
 
+export function capabilityManifestErrors(manifest) {
+  if (!manifest || Array.isArray(manifest) || typeof manifest !== "object") {
+    return ["capability manifest must be a JSON object"];
+  }
+  const errors = [];
+  if (manifest.schemaVersion !== 1) {
+    errors.push("capability manifest schemaVersion must be 1");
+  }
+  for (const field of ["environment", "scope"]) {
+    if (typeof manifest[field] !== "string" || !manifest[field].trim()) {
+      errors.push(`capability manifest ${field} must be a non-empty string`);
+    }
+  }
+  if (!Array.isArray(manifest.capabilities) || manifest.capabilities.length === 0) {
+    return [...errors, "capability manifest must declare at least one capability"];
+  }
+  if (!Array.isArray(manifest.evidence)) {
+    return [...errors, "capability manifest evidence must be an array"];
+  }
+
+  const ids = new Set();
+  for (const [index, capability] of manifest.capabilities.entries()) {
+    const prefix = `capabilities[${index}]`;
+    if (!capability || Array.isArray(capability) || typeof capability !== "object") {
+      errors.push(`${prefix} must be an object`);
+      continue;
+    }
+    if (typeof capability.id !== "string" || !/^[a-z][a-z0-9.-]+$/.test(capability.id)) {
+      errors.push(`${prefix}.id must be a stable dotted identifier`);
+    } else if (ids.has(capability.id)) {
+      errors.push(`${prefix}.id duplicates ${capability.id}`);
+    } else {
+      ids.add(capability.id);
+    }
+    for (const field of ["category", "title"]) {
+      if (typeof capability[field] !== "string" || !capability[field].trim()) {
+        errors.push(`${prefix}.${field} must be a non-empty string`);
+      }
+    }
+    if (!["absent", "implemented"].includes(capability.designState)) {
+      errors.push(`${prefix}.designState must distinguish absent from implemented source`);
+    }
+    if (!CAPABILITY_RESPONSIBILITIES.has(capability.responsibility)) {
+      errors.push(`${prefix}.responsibility must name starter, provider, adopter, or shared`);
+    }
+    if (!capability.configuration || typeof capability.configuration !== "object") {
+      errors.push(`${prefix}.configuration must be an object`);
+    } else {
+      for (const field of ["providers", "settings"]) {
+        const values = capability.configuration[field];
+        if (!Array.isArray(values) || values.some((value) => typeof value !== "string" || !value.trim())) {
+          errors.push(`${prefix}.configuration.${field} must be an array of non-empty strings`);
+        } else if (new Set(values).size !== values.length) {
+          errors.push(`${prefix}.configuration.${field} contains duplicates`);
+        }
+      }
+    }
+    if (!capability.public || typeof capability.public !== "object") {
+      errors.push(`${prefix}.public must define the gated public summary`);
+    } else {
+      if (!CAPABILITY_STATES.includes(capability.public.minimumState)) {
+        errors.push(`${prefix}.public.minimumState is not a capability state`);
+      }
+      if (typeof capability.public.summary !== "string" || !capability.public.summary.trim()) {
+        errors.push(`${prefix}.public.summary must be a non-empty string`);
+      }
+    }
+  }
+
+  const evidenceIDs = new Set();
+  for (const [index, record] of manifest.evidence.entries()) {
+    const prefix = `evidence[${index}]`;
+    if (!record || Array.isArray(record) || typeof record !== "object") {
+      errors.push(`${prefix} must be an object`);
+      continue;
+    }
+    for (const field of [
+      "id",
+      "capabilityId",
+      "environment",
+      "scope",
+      "owner",
+      "verifier",
+      "source",
+      "performedAt",
+      "reviewAt",
+    ]) {
+      if (typeof record[field] !== "string" || !record[field].trim()) {
+        errors.push(`${prefix}.${field} must be a non-empty string`);
+      }
+    }
+    if (evidenceIDs.has(record.id)) {
+      errors.push(`${prefix}.id duplicates ${record.id}`);
+    }
+    evidenceIDs.add(record.id);
+    if (!ids.has(record.capabilityId)) {
+      errors.push(`${prefix}.capabilityId does not reference a declared capability`);
+    }
+    if (!EVIDENCE_STATES.has(record.state)) {
+      errors.push(`${prefix}.state must be operationally_verified or externally_attested`);
+    }
+    if (!EVIDENCE_STATUSES.has(record.status)) {
+      errors.push(`${prefix}.status is not supported`);
+    }
+    if (!EVIDENCE_VISIBILITIES.has(record.visibility)) {
+      errors.push(`${prefix}.visibility must be private or public_summary`);
+    }
+    if (
+      record.visibility === "public_summary" &&
+      (typeof record.publicSummary !== "string" || !record.publicSummary.trim())
+    ) {
+      errors.push(`${prefix}.publicSummary is required for public_summary evidence`);
+    }
+    const performedAt = Date.parse(record.performedAt);
+    const reviewAt = Date.parse(record.reviewAt);
+    const expiresAt = record.expiresAt === undefined
+      ? Number.POSITIVE_INFINITY
+      : Date.parse(record.expiresAt);
+    if (!Number.isFinite(performedAt)) errors.push(`${prefix}.performedAt must be an ISO timestamp`);
+    if (!Number.isFinite(reviewAt)) errors.push(`${prefix}.reviewAt must be an ISO timestamp`);
+    if (record.expiresAt !== undefined && !Number.isFinite(expiresAt)) {
+      errors.push(`${prefix}.expiresAt must be an ISO timestamp when present`);
+    }
+    if (Number.isFinite(performedAt) && Number.isFinite(reviewAt) && reviewAt <= performedAt) {
+      errors.push(`${prefix}.reviewAt must be after performedAt`);
+    }
+    if (Number.isFinite(performedAt) && Number.isFinite(expiresAt) && expiresAt <= performedAt) {
+      errors.push(`${prefix}.expiresAt must be after performedAt`);
+    }
+  }
+  return errors;
+}
+
+function publicClaimFiles(moduleRoot) {
+  const rootDocuments = new Set([
+    "FEATURES.md",
+    "GETTING_STARTED.md",
+    "MODULE.md",
+    "PRODUCTION_READY.md",
+  ]);
+  return walk(moduleRoot, [], moduleRoot).filter((rel) => {
+    if (rootDocuments.has(rel)) return true;
+    if (!rel.startsWith("services/frontend/code/src/")) return false;
+    if (!/\.(?:ts|tsx)$/.test(rel)) return false;
+    return !/(?:^|\/)(?:__tests__|test|tests|gen)(?:\/|$)/.test(rel) &&
+      !/\.test\.(?:ts|tsx)$/.test(rel);
+  });
+}
+
+export function productionTruthErrors(moduleRoot = MODULE_ROOT) {
+  const errors = [];
+  const manifestPath = join(moduleRoot, CAPABILITY_MANIFEST_REL);
+  if (!existsSync(manifestPath)) {
+    const composed = composedServices(moduleRoot);
+    if (!composed || composed.has("frontend")) {
+      errors.push(`missing machine-readable capability manifest: ${CAPABILITY_MANIFEST_REL}`);
+    }
+  } else {
+    try {
+      const manifest = JSON.parse(readFileSync(manifestPath, "utf8"));
+      errors.push(...capabilityManifestErrors(manifest));
+    } catch (error) {
+      errors.push(`capability manifest is not valid JSON: ${error.message}`);
+    }
+  }
+
+  for (const rel of publicClaimFiles(moduleRoot)) {
+    const source = readFileSync(join(moduleRoot, rel), "utf8");
+    for (const [claim, pattern] of UNSUPPORTED_PUBLIC_CLAIMS) {
+      if (pattern.test(source)) errors.push(`${rel}: unsupported ${claim}`);
+    }
+  }
+  return errors;
+}
+
 // A consumer may compose a SUBSET of the base's services (e.g. mind takes the
 // backend — api/store/vault/cache/object-storage — and brings its own gateway, so
 // it omits auth-sidecar + the frontend console). Files under an omitted service's
 // directory are then legitimately absent and must NOT count as "missing". The
 // composed set is the `services:` list in module.codefly.yaml; null = enforce
 // everything (canonical itself, or a consumer with no explicit list).
-function composedServices() {
-  const p = join(MODULE_ROOT, "module.codefly.yaml");
+function composedServices(moduleRoot = MODULE_ROOT) {
+  const p = join(moduleRoot, "module.codefly.yaml");
   if (!existsSync(p)) return null;
   const lines = readFileSync(p, "utf8").split("\n");
   let inServices = false;
@@ -250,6 +468,11 @@ const serviceOf = (rel) => {
 };
 
 function gen() {
+  const truthErrors = productionTruthErrors();
+  if (truthErrors.length) {
+    truthErrors.forEach((error) => console.error(`production-truth: ${error}`));
+    process.exit(1);
+  }
   const installGraphErrors = workspaceInstallGraphErrors();
   if (installGraphErrors.length) {
     installGraphErrors.forEach((error) => console.error(`base-integrity: ${error}`));
@@ -304,15 +527,17 @@ function check() {
   const badMissing = allowed(missing);
   const installGraphErrors = workspaceInstallGraphErrors();
   const additionErrors = requiredAdditionsErrors(MODULE_ROOT, allow);
+  const truthErrors = productionTruthErrors();
 
   console.log(`base-integrity: ${Object.keys(files).length} base files, ${additions.length} side-additions.`);
   if (badMissing.length) { console.error(`\n✗ MISSING base files (do not delete base files):`); badMissing.forEach((r) => console.error(`    ${r}`)); }
   if (badModified.length) { console.error(`\n✗ MODIFIED base files (add on the side, never edit the base):`); badModified.forEach((r) => console.error(`    ${r}`)); }
   if (installGraphErrors.length) { console.error(`\n✗ INVALID frontend workspace install graph:`); installGraphErrors.forEach((error) => console.error(`    ${error}`)); }
   if (additionErrors.length) { console.error(`\n✗ MISSING OR INVALID required consumer additions:`); additionErrors.forEach((error) => console.error(`    ${error}`)); }
+  if (truthErrors.length) { console.error(`\n✗ INVALID production capability claims:`); truthErrors.forEach((error) => console.error(`    ${error}`)); }
 
-  if (badModified.length || badMissing.length || installGraphErrors.length || additionErrors.length) {
-    console.error(`\nFAIL: ${badModified.length} modified, ${badMissing.length} missing, ${installGraphErrors.length} invalid install-graph checks, ${additionErrors.length} invalid required-addition checks. `
+  if (badModified.length || badMissing.length || installGraphErrors.length || additionErrors.length || truthErrors.length) {
+    console.error(`\nFAIL: ${badModified.length} modified, ${badMissing.length} missing, ${installGraphErrors.length} invalid install-graph checks, ${additionErrors.length} invalid required-addition checks, ${truthErrors.length} invalid production-truth checks. `
       + `Move your change upstream into canonical (making the original stronger), or express it as a side-addition.`);
     process.exit(1);
   }
