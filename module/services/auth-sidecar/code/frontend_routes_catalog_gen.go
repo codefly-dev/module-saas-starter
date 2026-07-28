@@ -32,6 +32,7 @@ var generatedFrontendPageRoutes = []frontendRoutePattern{
 	{path: "/docs", match: frontendRouteExact},
 	{path: "/docs/compliance", match: frontendRouteExact},
 	{path: "/docs/sdks", match: frontendRouteExact},
+	{path: "/invitations/accept", match: frontendRouteExact},
 	{path: "/notifications", match: frontendRouteExact},
 	{path: "/onboarding", match: frontendRouteExact},
 	{path: "/settings", match: frontendRouteExact},

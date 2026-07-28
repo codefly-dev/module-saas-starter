@@ -70,6 +70,7 @@ export const FRONTEND_ROUTES = [
   { path: "/docs", sourcePath: "src/app/(dashboard)/docs/page.tsx", match: "exact", access: "authenticated" },
   { path: "/docs/compliance", sourcePath: "src/app/(dashboard)/docs/compliance/page.tsx", match: "exact", access: "authenticated" },
   { path: "/docs/sdks", sourcePath: "src/app/(dashboard)/docs/sdks/page.tsx", match: "exact", access: "authenticated" },
+  { path: "/invitations/accept", sourcePath: "src/app/(dashboard)/invitations/accept/page.tsx", match: "exact", access: "authenticated" },
   { path: "/notifications", sourcePath: "src/app/(dashboard)/notifications/page.tsx", match: "exact", access: "authenticated" },
   { path: "/onboarding", sourcePath: "src/app/(dashboard)/onboarding/page.tsx", match: "exact", access: "authenticated" },
   { path: "/settings", sourcePath: "src/app/(dashboard)/settings/page.tsx", match: "exact", access: "authenticated" },

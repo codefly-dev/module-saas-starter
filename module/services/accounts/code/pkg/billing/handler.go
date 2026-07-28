@@ -47,11 +47,22 @@ type BillingEmail struct {
 	Variables      map[string]string
 }
 
-// EmailNotifier is the optional durable email integration used for
-// billing-related notifications. An enqueue failure is returned to the Stripe
-// job worker so its stable event id can be retried without duplicate email.
-type EmailNotifier interface {
+// BillingNotification is the immutable command for a mandatory in-app billing
+// notification.
+type BillingNotification struct {
+	DeliveryKey    string
+	OrganizationID string
+	RecipientID    string
+	Title          string
+	Body           string
+	ActionURL      string
+}
+
+// Notifier delivers billing lifecycle communication. A delivery failure is
+// returned to the Stripe job worker so its stable event id can be retried.
+type Notifier interface {
 	EnqueueBillingEmail(ctx context.Context, message BillingEmail) error
+	CreateBillingNotification(ctx context.Context, message BillingNotification) error
 }
 
 // HandlerDeps are deliberately limited to receipt-time dependencies.
@@ -222,7 +233,7 @@ type SubscriptionReader interface {
 type ProcessorDeps struct {
 	Store    ProcessingStore
 	Client   SubscriptionReader
-	Notifier EmailNotifier
+	Notifier Notifier
 	Now      func() time.Time
 }
 
@@ -391,33 +402,50 @@ func (p *Processor) notifyByCustomer(
 	if p.deps.Notifier == nil || stripeCustomerID == "" {
 		return nil
 	}
-	orgID, err := p.deps.Store.OrgByStripeCustomerID(ctx, stripeCustomerID)
+	recipient, err := p.deps.Store.BillingRecipientByStripeCustomerID(ctx, stripeCustomerID)
 	if err != nil {
 		return err
 	}
-	to, err := p.deps.Store.OwnerEmailByStripeCustomerID(ctx, stripeCustomerID)
-	if err != nil {
-		return err
+	if recipient.Email != "" {
+		vars := map[string]string{"email": recipient.Email}
+		for key, value := range extraVars {
+			vars[key] = value
+		}
+		if err := p.deps.Notifier.EnqueueBillingEmail(ctx, BillingEmail{
+			DeliveryKey:    billingEmailDeliveryKey(eventID, templateName),
+			OrganizationID: recipient.OrganizationID,
+			Template:       templateName,
+			To:             recipient.Email,
+			Variables:      vars,
+		}); err != nil {
+			return err
+		}
 	}
-	if to == "" {
+
+	if templateName != "payment_failed" {
 		return nil
 	}
-	vars := map[string]string{"email": to}
-	for key, value := range extraVars {
-		vars[key] = value
+	if recipient.UserID == "" {
+		return errors.New("billing: payment-failure recipient user is required")
 	}
-	return p.deps.Notifier.EnqueueBillingEmail(ctx, BillingEmail{
-		DeliveryKey:    billingEmailDeliveryKey(eventID, templateName),
-		OrganizationID: orgID,
-		Template:       templateName,
-		To:             to,
-		Variables:      vars,
+	return p.deps.Notifier.CreateBillingNotification(ctx, BillingNotification{
+		DeliveryKey:    billingNotificationDeliveryKey(eventID),
+		OrganizationID: recipient.OrganizationID,
+		RecipientID:    recipient.UserID,
+		Title:          "Payment failed",
+		Body:           "We couldn't process your subscription payment. Please update your payment method.",
+		ActionURL:      "/admin/billing",
 	})
 }
 
 func billingEmailDeliveryKey(eventID, templateName string) string {
 	digest := sha256.Sum256([]byte(eventID + "\x00" + templateName))
 	return "stripe-email/" + hex.EncodeToString(digest[:])
+}
+
+func billingNotificationDeliveryKey(eventID string) string {
+	digest := sha256.Sum256([]byte(eventID + "\x00payment_failed"))
+	return "stripe-notification/" + hex.EncodeToString(digest[:])
 }
 
 func writeError(w http.ResponseWriter, status int, msg string) {

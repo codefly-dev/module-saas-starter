@@ -4,7 +4,10 @@ import (
 	"context"
 	"time"
 
+	gen "accounts/pkg/gen/saas/accounts/v1"
+
 	"github.com/codefly-dev/core/wool"
+	"github.com/google/uuid"
 )
 
 // Notification is the domain representation of a user notification.
@@ -14,41 +17,99 @@ type Notification struct {
 	OrgID     string
 	Title     string
 	Body      string
-	Type      string // "info", "warning", "success", "error"
+	Type      string
 	ActionURL string
 	ReadAt    *time.Time
 	CreatedAt time.Time
 }
 
-// CreateNotification creates and stores a new notification for a
-// user. notifications is RLS-protected by user_id (Phase 2G); the
-// write runs inside WithUserTx scoped to the recipient. Callers from
-// system paths (no actor) should still pass a userID — the recipient
-// is the right scope here.
-func (s *Service) CreateNotification(ctx context.Context, userID, orgID, title, body, notifType, actionURL string) (*Notification, error) {
+// CreateNotificationInput separates delivery policy from presentation.
+type CreateNotificationInput struct {
+	UserID    string
+	OrgID     string
+	Title     string
+	Body      string
+	Type      string
+	ActionURL string
+	Category  NotificationCategory
+	// IdempotencyKey makes retries of the same delivery command converge on one
+	// row. Empty keys create a fresh notification.
+	IdempotencyKey string
+}
+
+// CreateNotification creates an optional in-app notification when the
+// recipient has the channel enabled. Mandatory security notifications are
+// written by their owning transaction so a user preference cannot suppress
+// account-protection messages.
+func (s *Service) CreateNotification(
+	ctx context.Context,
+	input CreateNotificationInput,
+) (*Notification, error) {
 	w := wool.Get(ctx).In("CreateNotification")
-
-	if notifType == "" {
-		notifType = "info"
+	mandatory, err := notificationCategoryIsMandatory(input.Category)
+	if err != nil {
+		return nil, w.Wrapf(err, "cannot create notification")
 	}
 
-	n := &Notification{
-		ID:        NewIDString(),
-		UserID:    userID,
-		OrgID:     orgID,
-		Title:     title,
-		Body:      body,
-		Type:      notifType,
-		ActionURL: actionURL,
-	}
-
-	if err := s.store.WithUserTx(ctx, userID, func(ctx context.Context) error {
-		return s.store.CreateNotification(ctx, n)
+	var notification *Notification
+	if err := s.store.WithUserTx(ctx, input.UserID, func(ctx context.Context) error {
+		var settings *gen.UserSettings
+		if !mandatory {
+			var err error
+			settings, err = s.store.GetUserSettings(ctx, input.UserID)
+			if err != nil {
+				return err
+			}
+		}
+		var err error
+		notification, err = s.createNotificationWithSettings(ctx, input, settings)
+		return err
 	}); err != nil {
 		return nil, w.Wrapf(err, "cannot create notification")
 	}
 
-	return n, nil
+	return notification, nil
+}
+
+func (s *Service) createNotificationWithSettings(
+	ctx context.Context,
+	input CreateNotificationInput,
+	settings *gen.UserSettings,
+) (*Notification, error) {
+	decision, err := EvaluateNotificationDelivery(
+		settings,
+		input.Category,
+		NotificationChannelInApp,
+	)
+	if err != nil {
+		return nil, err
+	}
+	if !decision.Deliver {
+		return nil, nil
+	}
+	if input.Type == "" {
+		input.Type = "info"
+	}
+	notificationID := NewIDString()
+	if input.IdempotencyKey != "" {
+		notificationID = uuid.NewSHA1(
+			uuid.NameSpaceURL,
+			[]byte("saas-starter/notification/"+input.IdempotencyKey),
+		).String()
+	}
+	notification := &Notification{
+		ID:        notificationID,
+		UserID:    input.UserID,
+		OrgID:     input.OrgID,
+		Title:     input.Title,
+		Body:      input.Body,
+		Type:      input.Type,
+		ActionURL: input.ActionURL,
+	}
+	if err := s.store.CreateNotification(ctx, notification); err != nil {
+		return nil, err
+	}
+	return notification, nil
 }
 
 // ListNotifications returns paginated notifications for a user.
@@ -144,9 +205,17 @@ func (s *Service) resolveNotificationUser(ctx context.Context, id string) (strin
 	return userID, nil
 }
 
-// NotifyUser is a convenience helper for internal code to create a
-// simple info notification for a user without specifying all fields.
-func (s *Service) NotifyUser(ctx context.Context, userID, title, body string) error {
-	_, err := s.CreateNotification(ctx, userID, "", title, body, "info", "")
+// NotifyUser is a convenience helper for internal code to create a simple
+// category-aware info notification.
+func (s *Service) NotifyUser(
+	ctx context.Context,
+	userID string,
+	category NotificationCategory,
+	title string,
+	body string,
+) error {
+	_, err := s.CreateNotification(ctx, CreateNotificationInput{
+		UserID: userID, Category: category, Title: title, Body: body,
+	})
 	return err
 }

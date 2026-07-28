@@ -383,7 +383,7 @@ func backupCodeUseNotification(userID string) *Notification {
 		UserID:    userID,
 		Title:     "Recovery code used",
 		Body:      "A one-time MFA recovery code was used to sign in. Generate a new set if this was not you.",
-		Type:      "warning",
+		Type:      "security",
 		ActionURL: "/settings/security",
 	}
 }

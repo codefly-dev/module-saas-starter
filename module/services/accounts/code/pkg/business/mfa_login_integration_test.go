@@ -300,7 +300,7 @@ func TestMFABackupCodesAreOneUseRegeneratedAndNotified(t *testing.T) {
 	require.NoError(t, err)
 	require.NotEmpty(t, notifications)
 	require.Equal(t, "Recovery code used", notifications[0].Title)
-	require.Equal(t, "warning", notifications[0].Type)
+	require.Equal(t, "security", notifications[0].Type)
 
 	second := login()
 	_, err = testService.CompleteMFAChallenge(testCtx, second.MfaToken, codes[0])
