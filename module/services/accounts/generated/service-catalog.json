@@ -1838,7 +1838,7 @@
         "authentication_factor_attempt": false
       },
       "policy_tier": "mfa",
-      "description": "Request account deletion. Requires MFA.",
+      "description": "Request account deletion when a complete privacy workflow is configured. Requires MFA.",
       "owner": {
         "module": "saas-starter",
         "service": "accounts"
@@ -1889,7 +1889,7 @@
         "authentication_factor_attempt": false
       },
       "policy_tier": "auth",
-      "description": "Request data export. Async.",
+      "description": "Request data export when a complete privacy workflow is configured.",
       "owner": {
         "module": "saas-starter",
         "service": "accounts"

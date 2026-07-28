@@ -1,0 +1,200 @@
+{
+	"schemaVersion": 1,
+	"capabilities": [
+		{
+			"id": "trust.claim-release-gate",
+			"category": "Trust",
+			"title": "Evidence-bound claim gate",
+			"designState": "implemented",
+			"responsibility": "starter",
+			"configuration": {
+				"providers": [],
+				"settings": []
+			},
+			"public": {
+				"minimumState": "implemented",
+				"summary": "The starter validates this manifest and rejects known unsupported production claims during its integrity gate."
+			}
+		},
+		{
+			"id": "security.authentication",
+			"category": "Security controls",
+			"title": "Authentication and session controls",
+			"designState": "implemented",
+			"responsibility": "shared",
+			"configuration": {
+				"providers": ["identity-provider"],
+				"settings": ["authentication.production"]
+			},
+			"public": {
+				"minimumState": "implemented",
+				"summary": "The starter includes OAuth/OIDC integration, rotating sessions, passkeys, TOTP, recovery codes, and recent-step-up policy. An adopter must configure and verify the production identity provider."
+			}
+		},
+		{
+			"id": "security.tenant-authorization",
+			"category": "Security controls",
+			"title": "Tenant authorization",
+			"designState": "implemented",
+			"responsibility": "starter",
+			"configuration": {
+				"providers": [],
+				"settings": []
+			},
+			"public": {
+				"minimumState": "implemented",
+				"summary": "The starter includes generated handler policy, role and scope checks, and PostgreSQL row-level tenant isolation."
+			}
+		},
+		{
+			"id": "security.transport-encryption",
+			"category": "Security controls",
+			"title": "Production transport encryption",
+			"designState": "absent",
+			"responsibility": "provider",
+			"configuration": {
+				"providers": ["edge-tls"],
+				"settings": ["transport.production"]
+			},
+			"public": {
+				"minimumState": "operationally_verified",
+				"summary": "Production transport encryption has current, environment-scoped verification."
+			}
+		},
+		{
+			"id": "security.storage-encryption",
+			"category": "Security controls",
+			"title": "Production storage encryption",
+			"designState": "absent",
+			"responsibility": "provider",
+			"configuration": {
+				"providers": ["database", "object-storage"],
+				"settings": ["storage.production"]
+			},
+			"public": {
+				"minimumState": "operationally_verified",
+				"summary": "Production storage encryption has current, provider-backed verification for the declared scope."
+			}
+		},
+		{
+			"id": "privacy.export-artifact",
+			"category": "Privacy",
+			"title": "Privacy export artifact",
+			"designState": "absent",
+			"responsibility": "starter",
+			"configuration": {
+				"providers": ["object-storage"],
+				"settings": ["privacy.export"]
+			},
+			"public": {
+				"minimumState": "operationally_verified",
+				"summary": "Subject-bound privacy exports use expiring storage artifacts and have current end-to-end verification."
+			}
+		},
+		{
+			"id": "privacy.deletion-completion",
+			"category": "Privacy",
+			"title": "Verified privacy deletion",
+			"designState": "absent",
+			"responsibility": "shared",
+			"configuration": {
+				"providers": ["deletion-adapters"],
+				"settings": ["privacy.deletion"]
+			},
+			"public": {
+				"minimumState": "operationally_verified",
+				"summary": "Deletion completion, retention exceptions, provider cleanup, and recovery behavior have current end-to-end verification."
+			}
+		},
+		{
+			"id": "operations.audit-log",
+			"category": "Operations",
+			"title": "Application audit log",
+			"designState": "implemented",
+			"responsibility": "shared",
+			"configuration": {
+				"providers": [],
+				"settings": ["audit.retention"]
+			},
+			"public": {
+				"minimumState": "implemented",
+				"summary": "The starter records application audit events and supports query and export. Retention and external storage remain adopter configuration."
+			}
+		},
+		{
+			"id": "operations.backup-restore",
+			"category": "Operations",
+			"title": "Backup, restore, and point-in-time recovery",
+			"designState": "absent",
+			"responsibility": "shared",
+			"configuration": {
+				"providers": ["backup-provider"],
+				"settings": ["recovery.policy"]
+			},
+			"public": {
+				"minimumState": "operationally_verified",
+				"summary": "Backup and recovery objectives have current restore-exercise evidence for the named environment and scope."
+			}
+		},
+		{
+			"id": "operations.incident-communication",
+			"category": "Operations",
+			"title": "Independent incident communication",
+			"designState": "absent",
+			"responsibility": "adopter",
+			"configuration": {
+				"providers": ["external-status-page"],
+				"settings": ["incident.communication"]
+			},
+			"public": {
+				"minimumState": "operationally_verified",
+				"summary": "Independent incident publication and subscriber delivery have current exercise evidence."
+			}
+		},
+		{
+			"id": "assurance.dpa",
+			"category": "Assurance",
+			"title": "Data Processing Agreement",
+			"designState": "absent",
+			"responsibility": "adopter",
+			"configuration": {
+				"providers": [],
+				"settings": ["legal.dpa-executed"]
+			},
+			"public": {
+				"minimumState": "externally_attested",
+				"summary": "An executed agreement is available for the stated legal entity, customer, and processing scope."
+			}
+		},
+		{
+			"id": "assurance.penetration-test",
+			"category": "Assurance",
+			"title": "Independent penetration test",
+			"designState": "absent",
+			"responsibility": "adopter",
+			"configuration": {
+				"providers": ["security-assessor"],
+				"settings": ["assurance.penetration-test"]
+			},
+			"public": {
+				"minimumState": "externally_attested",
+				"summary": "An independent assessment is current for the stated system and remediation scope."
+			}
+		},
+		{
+			"id": "assurance.certification",
+			"category": "Assurance",
+			"title": "External certification",
+			"designState": "absent",
+			"responsibility": "adopter",
+			"configuration": {
+				"providers": ["auditor"],
+				"settings": ["assurance.certification"]
+			},
+			"public": {
+				"minimumState": "externally_attested",
+				"summary": "A current external attestation covers the stated legal entity, system, criteria, and period."
+			}
+		}
+	]
+}

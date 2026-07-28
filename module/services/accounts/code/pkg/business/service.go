@@ -40,6 +40,7 @@ type Service struct {
 	eventRegistry *analytics.Registry
 	productEvents analytics.Emitter
 	usageMeters   *UsageMeterCatalog
+	privacy       PrivacyWorkflow
 }
 
 // CodeExchanger abstracts the OAuth 2.0 code-for-token exchange so the
@@ -106,6 +107,10 @@ func (s *Service) SetMFASecretCipher(cipher SecretCipher) {
 func (s *Service) SetWebhookSecurity(cipher SecretCipher, policy *WebhookEndpointPolicy) {
 	s.webhookCipher = cipher
 	s.webhookPolicy = policy.ensureDefaults()
+}
+
+func (s *Service) SetPrivacyWorkflow(workflow PrivacyWorkflow) {
+	s.privacy = workflow
 }
 
 // SetIdentityResolver wires the JIT provisioning + bootstrap layer.
