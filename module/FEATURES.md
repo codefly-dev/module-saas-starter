@@ -153,7 +153,10 @@ are explicit catalogued extensions rather than implicit bypasses.
 
 ## Feature inventory
 
-Legend: ✅ production-ready · 🟡 partial / scoped · ❌ stubbed / not implemented
+Legend: ✅ implemented in starter source · 🟡 partial / scoped · ❌ not
+implemented. These labels are design inventory, not deployed or externally
+attested behavior. The machine-readable production claim model and its default
+readiness view are documented in `TRUST_CAPABILITIES.md`.
 
 ### Authentication & sessions
 
@@ -185,9 +188,9 @@ Legend: ✅ production-ready · 🟡 partial / scoped · ❌ stubbed / not imple
 | Add identity             | ✅    | `AddIdentity` — gated to self or platform-admin (security fix 2026-04-25)      |
 | Find by identity         | ✅    | `FindUserByIdentity` — platform-admin only (security fix 2026-04-25)           |
 | List identities          | ✅    | `ListUserIdentities` — gated to self or platform-admin (security fix 2026-04-25) |
-| Account deletion         | ✅    | `DeleteUser` cascades through org memberships, audit, etc.                     |
-| GDPR export              | ✅    | `ExportUserData` returns JSON / CSV bundle                                     |
-| GDPR delete              | ✅    | `DeleteAllUserData` — full erasure with audit trail                            |
+| Account deletion request | ❌    | Request/status scaffolding fails closed until a complete deletion, retention, provider-cleanup, and legal-hold workflow is wired |
+| Privacy export           | ❌    | Request/status scaffolding fails closed until a complete secure-artifact workflow is wired |
+| Verified privacy delete  | ❌    | No complete dataset/provider inventory, retention authority, legal-hold handling, or completion receipt |
 
 ### Multi-tenancy (orgs / teams)
 
@@ -277,7 +280,7 @@ see `JOBS.md` for the exact boundary and sequencing.
 | Event types            | ✅    | auth.login, user.registered, org.created, role.assigned, etc.      |
 | Multi-field filter     | ✅    | By org, actor, action, resource, time range                        |
 | Cursor pagination      | ✅    | Stable across writes                                               |
-| Retention policy       | ✅    | Goroutine purges > 90 days nightly (configurable)                  |
+| Retention purge job    | 🟡    | Configurable database purge policies exist; provider data, backups, holds, receipts, and production execution evidence do not |
 | Export (JSON/CSV)      | ✅    | `audit_export.go`                                                  |
 | Impersonation tracking | ✅    | Records both real actor + viewed-as user                           |
 | Replay / event sourcing| ❌    | Audit log is read-only history; not used to reconstruct state      |
@@ -299,12 +302,12 @@ see `JOBS.md` for the exact boundary and sequencing.
 
 | Feature                  | Status | Notes                                                            |
 |--------------------------|--------|------------------------------------------------------------------|
-| GDPR data export         | ✅    | User-initiated; emailed when ready                               |
-| GDPR data deletion       | ✅    | Cascade through all PII tables                                   |
-| Audit retention          | ✅    | 90 days default, configurable                                    |
+| Privacy export artifact  | ❌    | UI disabled until secure storage, subject binding, expiry, deletion, and completeness are verified |
+| Verified data deletion   | ❌    | UI disabled until dataset rules, blockers, provider cleanup, retained records, and receipts are complete |
+| Audit purge configuration| 🟡    | Starter database policy only; deployment retention is adopter-owned and must be evidenced |
 | Consent / TOS versioning | ❌    | No `terms_accepted_at`, no policy version table                   |
 | Cookie consent           | ❌    | No banner / consent record                                       |
-| SOC2 evidence collection | 🟡    | Audit log + access reviews would feed into SOC2; no auto-pack    |
+| Assurance evidence       | ❌    | No certification or attestation ships with the starter           |
 
 ### Frontend (Next.js)
 
@@ -362,12 +365,12 @@ starters, and large-scale enterprise SaaS expectations.
 | Multi-org tenancy                          | ✅          | Same               |
 | Org invitations                            | ✅          | Same               |
 | RBAC (built-in roles)                      | ✅          | Same               |
-| Audit log                                  | ✅          | Same — and ours has retention + export, which many starters skip |
+| Audit log                                  | ✅          | Query/export implementation; deployment retention remains adopter-owned |
 | Stripe checkout + portal                   | ✅          | Same               |
 | Webhook (inbound from Stripe, signed)      | ✅          | Same               |
 | Outbound webhooks (customer endpoints)     | ✅          | ✅ — plus Vault rotation, SSRF-safe egress, generated generic multi-replica outbox |
 | Email (transactional, templated, dev-mode) | ✅          | Same               |
-| GDPR export + delete                       | ✅          | 🟡 (often skipped — we're ahead) |
+| Verified privacy export + delete           | ❌          | Requires secure artifacts, complete dataset/provider adapters, retention authority, and end-to-end evidence |
 | Admin impersonation                        | ✅          | 🟡 (Cal.com has it; many starters don't) |
 | API keys with scopes                       | ✅          | ✅ (2026-04-25 fix: `requireScope` enforces `resource:action` patterns + wildcards on API-key callers; JWT callers bypass via RBAC) |
 | OpenAPI / TS client autogen                | ✅          | ✅ (Connect-ES is more typesafe than fetch-based clients) |
@@ -413,8 +416,8 @@ prioritized by leverage:
    B2B SaaS. Cookie scope, branding, white-label all flow from this.
 6. **Onboarding checklist with sample data toggle** — convert sign-ups
    to active users. We have fixtures already; surface as "load demo data".
-7. **System status page** — `/status` reading internal probes; protects
-   incident response and shows up well during sales demos.
+7. **Independent incident communication** — keep `/status` as a live probe,
+   then connect and exercise a status channel outside the product failure domain.
 8. **Self-serve SSO admin** — paying enterprise plans should be able to
    wire SAML themselves. WorkOS Connections handle this if we expose it.
 9. **Audit log streaming to customer S3 / Datadog** — compliance teams
@@ -536,10 +539,10 @@ If you're picking a starter, ask:
 1. Does it support our identity provider? **WorkOS / Auth0 / Google ✅; SAML via WorkOS ✅; LDAP ❌**
 2. Multi-tenant from day one? **Yes — orgs/teams/roles built in.**
 3. Stripe integration that won't bite us in prod? **Webhook signature + idempotency + portal + checkout ✅.** Dunning flows are basic.
-4. Audit + compliance ready for an early SOC 2 push? **Audit retention, GDPR export/delete, impersonation tracking — yes.** Cookie consent + TOS versioning — no, add yourself.
+4. Audit and assurance ready for external review? **The starter includes audit and impersonation controls, but privacy completion, production retention, legal review, and external assurance remain adopter responsibilities.**
 5. Real tests that actually exercise auth/billing/audit? **Yes — Playwright e2e against the running stack.**
 6. Easy to run locally? **One command (`codefly run service --fixture dev-admin`); no docker-compose surgery.**
-7. What will I have to build that's "obviously missing"? Per the gap list above: rate limiting, command palette, webhooks v2 dashboard, self-serve SSO admin, org subdomains. These are 1–5 days each.
+7. What production work remains? Use the evidence-bound readiness view at `/docs/compliance`; it keeps unverified privacy, recovery, incident, legal, and assurance capabilities explicit.
 
 ---
 

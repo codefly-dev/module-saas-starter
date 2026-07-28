@@ -115,8 +115,9 @@ export function LoginPage() {
 								The starter you actually want to ship.
 							</h2>
 							<p className="mt-4 text-lg text-primary-foreground/80 leading-relaxed">
-								Auth, multi-tenancy, billing, audit, MFA — production-grade from
-								day one. Pick up where you left off.
+								Auth, multi-tenancy, billing, audit, and MFA controls are
+								included in the starter. Configure and verify them for your
+								deployment.
 							</p>
 						</div>
 
@@ -133,7 +134,8 @@ export function LoginPage() {
 								<Building2 className="h-5 w-5 mt-0.5 text-primary-foreground/90 shrink-0" />
 								<span className="text-primary-foreground/90">
 									<span className="font-medium">Multi-tenant orgs + teams</span>{" "}
-									— RBAC, invitations, impersonation, audit log with retention.
+									— RBAC, invitations, impersonation, and audit logging with a
+									configurable purge policy.
 								</span>
 							</li>
 							<li className="flex items-start gap-3">
@@ -147,7 +149,7 @@ export function LoginPage() {
 					</div>
 
 					<p className="text-xs text-primary-foreground/60">
-						Trusted by teams shipping the next great product.
+						Production claims require current evidence for your environment.
 					</p>
 				</div>
 			</div>

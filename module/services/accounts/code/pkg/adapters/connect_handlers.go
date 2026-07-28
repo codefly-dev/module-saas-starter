@@ -820,7 +820,7 @@ func (h *gdprConnectHandler) RequestExport(ctx context.Context, req *connect.Req
 	}
 	r, err := h.svc.RequestExport(ctx, userID)
 	if err != nil {
-		return nil, err
+		return nil, translateGRPCError(privacyStatusError(err))
 	}
 	return connect.NewResponse(gdprToProto(r)), nil
 }
@@ -850,7 +850,7 @@ func (h *gdprConnectHandler) RequestDeletion(ctx context.Context, req *connect.R
 	}
 	r, err := h.svc.RequestDeletion(ctx, userID)
 	if err != nil {
-		return nil, err
+		return nil, translateGRPCError(privacyStatusError(err))
 	}
 	return connect.NewResponse(gdprToProto(r)), nil
 }

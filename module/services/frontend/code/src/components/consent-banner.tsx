@@ -5,8 +5,7 @@
  *
  *  - Authenticated users: source of truth is the api
  *    (ConsentService.GetStatus / Accept). Records userID + version +
- *    timestamp + IP server-side and emits an audit event. This is the
- *    SOC 2 / enterprise-compliant path.
+ *    timestamp + IP server-side and emits an audit event.
  *
  *  - Anonymous visitors: localStorage fallback (per-browser). Good
  *    enough for marketing pages where there's no user row to attach

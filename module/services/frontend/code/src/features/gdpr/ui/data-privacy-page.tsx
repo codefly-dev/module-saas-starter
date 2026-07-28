@@ -23,7 +23,15 @@ import {
 } from "@/shared/ui";
 import { gdprMutations } from "../service/mutations";
 
-export function DataPrivacyPage() {
+export interface DataPrivacyPageProps {
+	exportAvailable: boolean;
+	deletionAvailable: boolean;
+}
+
+export function DataPrivacyPage({
+	exportAvailable,
+	deletionAvailable,
+}: DataPrivacyPageProps) {
 	const queryClient = useQueryClient();
 
 	const exportMutation = useMutation({
@@ -49,12 +57,12 @@ export function DataPrivacyPage() {
 			<div>
 				<h2 className="text-2xl font-bold tracking-tight">Data Privacy</h2>
 				<p className="text-muted-foreground">
-					Manage your personal data in accordance with GDPR regulations.
+					Review the starter&apos;s data-request workflows and the production
+					adapters your deployment still requires.
 				</p>
 			</div>
 
 			<div className="grid gap-4 md:grid-cols-2">
-				{/* Export My Data */}
 				<Card>
 					<CardHeader>
 						<div className="flex items-center gap-3">
@@ -62,22 +70,23 @@ export function DataPrivacyPage() {
 							<div>
 								<CardTitle className="text-lg">Export My Data</CardTitle>
 								<CardDescription>
-									Download a copy of all your personal data.
+									Requires a verified secure export adapter.
 								</CardDescription>
 							</div>
 						</div>
 					</CardHeader>
 					<CardContent>
 						<p className="text-sm text-muted-foreground">
-							We will prepare a ZIP archive containing all your account data,
-							activity history, and any content you have created. This may take
-							a few minutes.
+							The starter includes a request and status workflow, but its server
+							fails closed until a complete production implementation is wired.
+							Configure subject-bound encrypted storage, expiry, deletion, and
+							dataset completeness before enabling this action.
 						</p>
 					</CardContent>
 					<CardFooter>
 						<Button
 							onClick={() => exportMutation.mutate()}
-							disabled={exportMutation.isPending}
+							disabled={!exportAvailable || exportMutation.isPending}
 						>
 							{exportMutation.isPending ? (
 								<>
@@ -87,14 +96,15 @@ export function DataPrivacyPage() {
 							) : (
 								<>
 									<Download className="mr-2 h-4 w-4" />
-									Request Export
+									{exportAvailable
+										? "Request Export"
+										: "Export Adapter Required"}
 								</>
 							)}
 						</Button>
 					</CardFooter>
 				</Card>
 
-				{/* Delete My Account */}
 				<Card className="border-destructive/30">
 					<CardHeader>
 						<div className="flex items-center gap-3">
@@ -102,25 +112,28 @@ export function DataPrivacyPage() {
 							<div>
 								<CardTitle className="text-lg">Delete My Account</CardTitle>
 								<CardDescription>
-									Permanently delete your account and all associated data.
+									Requires verified deletion and retention policy.
 								</CardDescription>
 							</div>
 						</div>
 					</CardHeader>
 					<CardContent>
 						<p className="text-sm text-muted-foreground">
-							This action is <strong>irreversible</strong>. All your data,
-							including organizations, teams, API keys, and activity history
-							will be permanently deleted.
+							The starter&apos;s current anonymization path does not cover every
+							product dataset, provider, legal hold, financial record, or
+							backup. Keep this action unavailable until those rules and
+							adapters are complete.
 						</p>
 					</CardContent>
 					<CardFooter>
 						<AlertDialog>
 							<AlertDialogTrigger
 								render={
-									<Button variant="destructive">
+									<Button variant="destructive" disabled={!deletionAvailable}>
 										<Trash2 className="mr-2 h-4 w-4" />
-										Delete Account
+										{deletionAvailable
+											? "Delete Account"
+											: "Deletion Policy Required"}
 									</Button>
 								}
 							/>
@@ -128,8 +141,9 @@ export function DataPrivacyPage() {
 								<AlertDialogHeader>
 									<AlertDialogTitle>Are you absolutely sure?</AlertDialogTitle>
 									<AlertDialogDescription>
-										This action cannot be undone. This will permanently delete
-										your account and remove all your data from our servers.
+										This action follows the configured deletion and retention
+										policy. Required retained records and backup-expiry behavior
+										remain governed by that reviewed policy.
 									</AlertDialogDescription>
 								</AlertDialogHeader>
 								<AlertDialogFooter>
@@ -149,13 +163,13 @@ export function DataPrivacyPage() {
 				</Card>
 			</div>
 
-			{/* Request Status Info */}
 			<Card>
 				<CardHeader>
-					<CardTitle className="text-lg">Request Status</CardTitle>
+					<CardTitle className="text-lg">Production enablement</CardTitle>
 					<CardDescription>
-						After submitting a request, you can check its status on this page.
-						Export requests typically complete within a few minutes.
+						An adopter must connect durable jobs and provider cleanup, define
+						dataset ownership and retention exceptions, and record current
+						environment-scoped evidence before these controls become available.
 					</CardDescription>
 				</CardHeader>
 			</Card>
