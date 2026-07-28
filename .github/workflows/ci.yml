@@ -77,6 +77,17 @@ jobs:
           # Same setting Mind's CI uses (scripts/ci-fetch-codefly.sh).
           GOPRIVATE: github.com/codefly-dev/*
         run: go install github.com/codefly-dev/cli/cmd/codefly@latest
+      - name: Reclaim runner disk space
+        shell: bash
+        run: |
+          # The full topology produces several Docker images, including two
+          # independent Next.js applications. Remove unused hosted-runner
+          # toolchains so Docker can retain every service image in one gate.
+          sudo rm -rf \
+            /opt/ghc \
+            /usr/local/lib/android \
+            /usr/share/dotnet
+          docker system prune --all --force --volumes
       - name: Run Codefly-owned gate
         shell: bash
         env:
