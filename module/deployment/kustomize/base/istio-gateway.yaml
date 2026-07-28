@@ -61,10 +61,6 @@ spec:
         attempts: 1
         perTryTimeout: 5s
         retryOn: gateway-error,connect-failure,refused-stream
-      headers:
-        response:
-          set:
-            Cache-Control: "public, max-age=60, stale-while-revalidate=300"
     # Product traffic continues through auth-sidecar so the gateway remains
     # the only browser-facing authentication and API boundary.
     - match:

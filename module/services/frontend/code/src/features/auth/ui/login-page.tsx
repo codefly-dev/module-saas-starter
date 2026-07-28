@@ -8,12 +8,13 @@ import {
 	ShieldCheck,
 	Sparkles,
 } from "lucide-react";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
 import { BrandMark } from "@/components/brand-mark";
 import { useAppearance } from "@/lib/appearance-provider";
 import { availableProviders, useAuth } from "@/lib/auth";
 import type { FixtureUser } from "@/lib/fixtures/types";
+import { publicHandoffDestination } from "@/lib/public-handoff";
 
 interface FixtureResponse {
 	name: string;
@@ -24,7 +25,12 @@ export function LoginPage() {
 	const { signInWith, login } = useAuth();
 	const { branding } = useAppearance();
 	const router = useRouter();
+	const searchParams = useSearchParams();
 	const providers = useMemo(() => availableProviders(), []);
+	const postLoginDestination = useMemo(
+		() => publicHandoffDestination(searchParams),
+		[searchParams],
+	);
 	const [error, setError] = useState<string | null>(null);
 	const [fixtureUsers, setFixtureUsers] = useState<FixtureUser[]>([]);
 	const [loading, setLoading] = useState<string | null>(null);
@@ -56,7 +62,7 @@ export function LoginPage() {
 			// renders immediately. A full window.location reload would drop that
 			// state and force a cross-origin refresh round-trip (fragile when the
 			// FE and api are on different ports, e.g. the e2e direct-to-api setup).
-			if (authenticated) router.push("/");
+			if (authenticated) router.push(postLoginDestination);
 		} catch (err) {
 			setError(err instanceof Error ? err.message : "Login failed");
 			setLoading(null);
@@ -199,7 +205,7 @@ export function LoginPage() {
 											key={p.id}
 											onClick={async () => {
 												try {
-													await signInWith(p.id);
+													await signInWith(p.id, postLoginDestination);
 												} catch {}
 											}}
 											className="w-full flex items-center justify-center gap-2.5 h-11 rounded-lg border bg-background hover:bg-accent/50 text-sm font-medium transition-colors"

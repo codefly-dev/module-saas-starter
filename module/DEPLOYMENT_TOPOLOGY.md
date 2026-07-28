@@ -20,7 +20,7 @@ deployment ports, and public egress. The runtime `module.codefly.yaml` and every
 | `services/accounts/code/pkg/cataloggen/deployment_topology.go` | Strict compiler, semantic validator, and renderers. |
 
 The normalized inventory currently contains eight services, 12 endpoints,
-eight dependency edges, two module-interface endpoints, and three explicit
+eight dependency edges, three module-interface endpoints, and three explicit
 public-egress grants. The accounts descriptor catalog is an input: if its RPCs
 use gRPC, Connect, or REST without a corresponding accounts endpoint,
 generation fails.
@@ -38,16 +38,17 @@ generation fails.
 | `auth-sidecar` | `frontend/http` | TCP 3000 |
 | `frontend` | `accounts/connect`, `accounts/rest` | TCP 8080 |
 
-The Codefly module interface exposes `auth-sidecar/rest`; its gRPC ext-authz
-endpoint has module visibility. Istio separately routes apex/`www`/docs hosts
-to `marketing/http` and `app` to `auth-sidecar/rest`. Accounts, frontend, and
-marketing may reach public IP space only over TCP 443. The public rules exclude
-private, loopback, link-local, metadata, documentation, benchmark, multicast,
-and other special-purpose IPv4/IPv6 ranges.
+The Codefly module interface exposes the public `auth-sidecar/rest` and
+`marketing/http` endpoints; the auth-sidecar gRPC ext-authz endpoint has module
+visibility. Istio routes apex/`www`/docs hosts to `marketing/http` and `app` to
+`auth-sidecar/rest`. Accounts, frontend, and marketing may reach public IP
+space only over TCP 443. The public rules exclude private, loopback,
+link-local, metadata, documentation, benchmark, multicast, and other
+special-purpose IPv4/IPv6 ranges.
 
 ## Network-policy model
 
-The generated base contains 16 `NetworkPolicy` resources:
+The generated base contains 17 `NetworkPolicy` resources:
 
 - one namespace-wide ingress/egress default deny;
 - DNS and Istio control-plane egress for all injected workloads;
@@ -93,7 +94,7 @@ exports, and missing descriptor-required accounts protocols.
 
 Parity tests build every artifact twice, compare all checked-in outputs, parse
 the generated files through Codefly's resource model, and strictly inspect all
-16 Kubernetes documents. The deployment trees can be rendered locally with:
+17 Kubernetes documents. The deployment trees can be rendered locally with:
 
 ```sh
 kubectl kustomize module/deployment/kustomize/base

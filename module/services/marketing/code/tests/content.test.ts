@@ -7,7 +7,7 @@ import {
 } from "@/lib/content";
 
 test("publishes every content kind with unique identities", async () => {
-  const documents = await allPublicContent();
+  const documents = await allPublicContent("en");
   assert.ok(documents.length >= 5);
   const identities = documents.map(
     (document) => `${document.type}:${document.locale}:${document.slug}`,
@@ -17,7 +17,7 @@ test("publishes every content kind with unique identities", async () => {
 });
 
 test("searches only published documentation", async () => {
-  const results = await repositoryContentProvider.searchDocs("deployment");
+  const results = await repositoryContentProvider.searchDocs("deployment", "en");
   assert.ok(results.some((document) => document.slug === "deployment-topology"));
   assert.ok(results.every((document) => document.type === "doc"));
 });

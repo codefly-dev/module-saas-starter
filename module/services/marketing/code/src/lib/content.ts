@@ -43,15 +43,15 @@ export type ContentDocument = ContentMetadata & {
 };
 
 export interface ContentProvider {
-  list(kind: ContentKind, locale?: string): Promise<ContentDocument[]>;
+  list(kind: ContentKind, locale: string): Promise<ContentDocument[]>;
   get(
     kind: ContentKind,
     slug: string,
-    locale?: string,
+    locale: string,
   ): Promise<ContentDocument | null>;
-  searchDocs(query: string, locale?: string): Promise<ContentDocument[]>;
-  tags(kind: ContentKind, locale?: string): Promise<string[]>;
-  authors(locale?: string): Promise<string[]>;
+  searchDocs(query: string, locale: string): Promise<ContentDocument[]>;
+  tags(kind: ContentKind, locale: string): Promise<string[]>;
+  authors(locale: string): Promise<string[]>;
 }
 
 function contentRoot(): string {
@@ -124,19 +124,19 @@ function publicDocuments(
 }
 
 export const repositoryContentProvider: ContentProvider = {
-  async list(kind, locale = "en") {
+  async list(kind, locale) {
     return publicDocuments(await loadDocuments(), locale).filter(
       (document) => document.type === kind,
     );
   },
-  async get(kind, slug, locale = "en") {
+  async get(kind, slug, locale) {
     return (
       (await this.list(kind, locale)).find(
         (document) => document.slug === slug,
       ) ?? null
     );
   },
-  async searchDocs(query, locale = "en") {
+  async searchDocs(query, locale) {
     const terms = query
       .toLocaleLowerCase(locale)
       .split(/\s+/)
@@ -151,14 +151,14 @@ export const repositoryContentProvider: ContentProvider = {
       return terms.every((term) => searchable.includes(term));
     });
   },
-  async tags(kind, locale = "en") {
+  async tags(kind, locale) {
     return [
       ...new Set(
         (await this.list(kind, locale)).flatMap((document) => document.tags),
       ),
     ].sort();
   },
-  async authors(locale = "en") {
+  async authors(locale) {
     return [
       ...new Set(
         publicDocuments(await loadDocuments(), locale).map(
@@ -169,9 +169,11 @@ export const repositoryContentProvider: ContentProvider = {
   },
 };
 
-export async function allPublicContent(): Promise<ContentDocument[]> {
+export async function allPublicContent(
+  locale: string,
+): Promise<ContentDocument[]> {
   const lists = await Promise.all(
-    contentKinds.map((kind) => repositoryContentProvider.list(kind)),
+    contentKinds.map((kind) => repositoryContentProvider.list(kind, locale)),
   );
   return lists.flat();
 }

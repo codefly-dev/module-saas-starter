@@ -12,7 +12,7 @@ agent:
     publisher: codefly.dev
 endpoints:
     - name: http
-      visibility: module
+      visibility: public
 spec:
     execution-profiles:
         local: development

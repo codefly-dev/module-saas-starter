@@ -11,6 +11,9 @@ interface:
   - service: auth-sidecar
     endpoint: rest
     visibility: public
+  - service: marketing
+    endpoint: http
+    visibility: public
 services:
   - name: accounts
     version: 0.0.0
@@ -164,7 +167,7 @@ services:
     endpoints:
       - name: http
         api: http
-        visibility: module
+        visibility: public
         port: 3000
     public_egress_ports:
       - 443

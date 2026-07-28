@@ -50,8 +50,19 @@ export type CatalogState =
   | { kind: "disabled" }
   | { kind: "unavailable" };
 
+export type CatalogDisplayState =
+  | CatalogState
+  | { kind: "empty"; revision: string };
+
 export function parsePublicCatalog(value: unknown): PublicCatalog {
   return publicCatalogSchema.parse(value);
+}
+
+export function catalogDisplayState(state: CatalogState): CatalogDisplayState {
+  if (state.kind === "available" && state.catalog.plans.length === 0) {
+    return { kind: "empty", revision: state.catalog.revision };
+  }
+  return state;
 }
 
 export async function loadPublicPlans(): Promise<CatalogState> {
@@ -84,9 +95,10 @@ export function formatPlanAmount(plan: PublicPlan, locale: string): string {
     return "Contact sales";
   }
   if (plan.amountMinor === 0) return "Free";
-  return new Intl.NumberFormat(locale, {
+  const formatter = new Intl.NumberFormat(locale, {
     style: "currency",
     currency: plan.currency,
-    maximumFractionDigits: plan.amountMinor % 100 === 0 ? 0 : 2,
-  }).format(plan.amountMinor / 100);
+  });
+  const minorUnitDigits = formatter.resolvedOptions().maximumFractionDigits!;
+  return formatter.format(plan.amountMinor / 10 ** minorUnitDigits);
 }

@@ -12,27 +12,3 @@ ALTER TABLE plans
         CHECK (billing_interval IN ('month', 'year', 'one_time', 'contact')),
     ADD CONSTRAINT plans_public_price_check
         CHECK (NOT public_visible OR amount_minor IS NOT NULL OR contact_sales);
-
-UPDATE plans
-SET description = CASE name
-        WHEN 'free' THEN 'Development fixture for evaluating the starter.'
-        WHEN 'pro' THEN 'Development fixture for a growing product team.'
-        WHEN 'enterprise' THEN 'Development fixture for a negotiated plan.'
-        ELSE description
-    END,
-    amount_minor = CASE name
-        WHEN 'free' THEN 0
-        WHEN 'pro' THEN 4900
-        ELSE amount_minor
-    END,
-    billing_interval = CASE
-        WHEN name = 'enterprise' THEN 'contact'
-        ELSE 'month'
-    END,
-    public_visible = name IN ('free', 'pro', 'enterprise'),
-    contact_sales = name = 'enterprise',
-    checkout_enabled = CASE
-        WHEN name = 'enterprise' THEN FALSE
-        ELSE checkout_enabled
-    END,
-    updated_at = CURRENT_TIMESTAMP;

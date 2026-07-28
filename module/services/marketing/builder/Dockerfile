@@ -12,7 +12,8 @@ COPY code/ .
 RUN rm -rf node_modules
 COPY --from=deps /app/node_modules ./node_modules
 ENV NEXT_TELEMETRY_DISABLED=1
-ENV MARKETING_STRICT_READINESS=0
+ARG MARKETING_STRICT_READINESS
+ENV MARKETING_STRICT_READINESS=${MARKETING_STRICT_READINESS}
 RUN mkdir -p public && npm run build
 
 FROM base AS runner

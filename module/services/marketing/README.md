@@ -24,6 +24,12 @@ dependency. Local development may use localhost. This prevents dependency sync
 from copying product protobuf/session contracts into the public service and
 keeps extracted deployments independent of cluster DNS.
 
+The container build accepts `MARKETING_STRICT_READINESS` as an explicit build
+argument instead of forcing readiness off. Production builds pass
+`--build-arg MARKETING_STRICT_READINESS=1` and must supply launch-ready public
+configuration; an omitted argument builds the clearly marked development
+fixture used by starter CI.
+
 ## Rendering and cache policy
 
 - Repository content and route metadata are revalidated every five minutes.
@@ -50,9 +56,11 @@ With the local Istio gateway:
 ## Deploy, roll back, or disable
 
 Marketing has its own Codefly service manifest, container, health route,
-NetworkPolicy, and local/AWS ArgoCD Application. Deploy or roll it back by
-syncing only the marketing Application to the intended image revision. Its
-rollback has no database migration.
+NetworkPolicy, and local/AWS ArgoCD Application manifest. The local overlay
+includes it; the AWS migration overlay keeps it opt-in until an adopter
+uncomments that resource. Deploy or roll it back by syncing only the marketing
+Application to the intended image revision. Its rollback has no database
+migration.
 
 Set `MARKETING_ENABLED=false`, remove the marketing ArgoCD Application, and
 remove the apex/`www` route to disable it without changing product code or the

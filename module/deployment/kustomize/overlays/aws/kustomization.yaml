@@ -25,7 +25,10 @@ resources:
   - applications/accounts.yaml
   - applications/auth-sidecar.yaml
   - applications/frontend.yaml
-  - applications/marketing.yaml
+
+  # Existing deployments keep marketing opt-in during migration. Uncomment
+  # after its public configuration, domains, and catalog boundary are ready.
+  # - applications/marketing.yaml
 
   # External-name shims so saas-starter:5432 resolves to the RDS
   # endpoint, etc. Uncomment + fill in once your AWS resources are

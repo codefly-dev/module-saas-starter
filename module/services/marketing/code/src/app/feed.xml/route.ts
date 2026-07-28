@@ -12,11 +12,21 @@ function escapeXML(value: string): string {
 
 export async function GET() {
   const entries = [
-    ...(await repositoryContentProvider.list("article")).map((document) => ({
+    ...(
+      await repositoryContentProvider.list(
+        "article",
+        siteConfig.locales.default,
+      )
+    ).map((document) => ({
       ...document,
       href: `/blog/${document.slug}`,
     })),
-    ...(await repositoryContentProvider.list("changelog")).map((document) => ({
+    ...(
+      await repositoryContentProvider.list(
+        "changelog",
+        siteConfig.locales.default,
+      )
+    ).map((document) => ({
       ...document,
       href: `/changelog/${document.slug}`,
     })),

@@ -42,7 +42,7 @@ func TestDeploymentTopologyIsDeterministicAndCurrent(t *testing.T) {
 	}
 
 	require.Len(t, first.Catalog.GetServices(), 8)
-	require.Len(t, first.Catalog.GetInterfaceEndpoints(), 2)
+	require.Len(t, first.Catalog.GetInterfaceEndpoints(), 3)
 	require.Len(t, first.Catalog.GetPublicEgress(), 3)
 	endpointCount, dependencyCount := 0, 0
 	for _, service := range first.Catalog.GetServices() {
@@ -55,12 +55,13 @@ func TestDeploymentTopologyIsDeterministicAndCurrent(t *testing.T) {
 	require.Contains(t, frontendManifest, "execution-profiles:")
 	require.Contains(t, frontendManifest, "local: development")
 	require.Contains(t, frontendManifest, "production: production")
-	require.Equal(t, 16, strings.Count(string(first.NetworkPolicy), "\nkind: NetworkPolicy\n"))
+	require.Equal(t, 17, strings.Count(string(first.NetworkPolicy), "\nkind: NetworkPolicy\n"))
 	require.NotContains(t, string(first.NetworkPolicy), "allow-intra-namespace")
 	require.Contains(t, string(first.NetworkPolicy), "name: allow-accounts-from-dependents")
 	require.Contains(t, string(first.NetworkPolicy), "name: allow-auth-sidecar-to-dependencies")
 	require.Contains(t, string(first.NetworkPolicy), "name: allow-frontend-public-egress")
 	require.Contains(t, string(first.NetworkPolicy), "name: allow-marketing-public-egress")
+	require.Contains(t, string(first.NetworkPolicy), "name: allow-istio-ingress-to-marketing")
 	require.Contains(t, string(first.NetworkPolicy), "192.175.48.0/24")
 	require.Contains(t, string(first.NetworkPolicy), "64:ff9b::/96")
 }
@@ -303,13 +304,15 @@ func TestGeneratedCodeflyAndNetworkManifestsParseStrictly(t *testing.T) {
 		require.False(t, names[document.Metadata.Name], "duplicate NetworkPolicy %s", document.Metadata.Name)
 		names[document.Metadata.Name] = true
 	}
-	require.Len(t, names, 16)
+	require.Len(t, names, 17)
+	require.True(t, names["allow-istio-ingress-to-marketing"])
 }
 
 func TestLocalIngressKeepsMarketingAndProductHostsSeparate(t *testing.T) {
 	type route struct {
-		Name  string `yaml:"name"`
-		Match []struct {
+		Name    string         `yaml:"name"`
+		Headers map[string]any `yaml:"headers"`
+		Match   []struct {
 			Authority struct {
 				Regex string `yaml:"regex"`
 			} `yaml:"authority"`
@@ -344,8 +347,74 @@ func TestLocalIngressKeepsMarketingAndProductHostsSeparate(t *testing.T) {
 	require.Equal(t, "marketing", routes[0].Name)
 	require.Equal(t, `^((www|docs)\.)?saas\.localhost(:[0-9]+)?$`, routes[0].Match[0].Authority.Regex)
 	require.Equal(t, "marketing.saas-starter.svc.cluster.local", routes[0].Route[0].Destination.Host)
+	require.Empty(t, routes[0].Headers)
 	require.Equal(t, `^app\.saas\.localhost(:[0-9]+)?$`, routes[1].Match[0].Authority.Regex)
 	require.Equal(t, "auth-sidecar.saas-starter.svc.cluster.local", routes[1].Route[0].Destination.Host)
+}
+
+func TestIstioIngressIsAuthorizedForMarketingOnlyOnItsPublicPort(t *testing.T) {
+	decoder := yaml.NewDecoder(strings.NewReader(string(
+		readFixture(t, "../../../../../deployment/kustomize/base/istio-mtls.yaml"),
+	)))
+	for {
+		var document struct {
+			Kind     string `yaml:"kind"`
+			Metadata struct {
+				Name string `yaml:"name"`
+			} `yaml:"metadata"`
+			Spec struct {
+				Selector struct {
+					MatchLabels map[string]string `yaml:"matchLabels"`
+				} `yaml:"selector"`
+				Rules []struct {
+					From []struct {
+						Source struct {
+							Principals []string `yaml:"principals"`
+						} `yaml:"source"`
+					} `yaml:"from"`
+					To []struct {
+						Operation struct {
+							Ports []string `yaml:"ports"`
+						} `yaml:"operation"`
+					} `yaml:"to"`
+				} `yaml:"rules"`
+			} `yaml:"spec"`
+		}
+		err := decoder.Decode(&document)
+		if err == io.EOF {
+			t.Fatal("marketing ingress AuthorizationPolicy is missing")
+		}
+		require.NoError(t, err)
+		if document.Kind != "AuthorizationPolicy" || document.Metadata.Name != "allow-istio-ingress-to-marketing" {
+			continue
+		}
+		require.Equal(t, "marketing", document.Spec.Selector.MatchLabels["app"])
+		require.Equal(t,
+			[]string{"cluster.local/ns/istio-system/sa/istio-ingressgateway-service-account"},
+			document.Spec.Rules[0].From[0].Source.Principals,
+		)
+		require.Equal(t, []string{"3000"}, document.Spec.Rules[0].To[0].Operation.Ports)
+		return
+	}
+}
+
+func TestMarketingRemainsOptInForExistingAWSDeployments(t *testing.T) {
+	type kustomization struct {
+		Resources []string `yaml:"resources"`
+	}
+	var aws kustomization
+	require.NoError(t, yaml.Unmarshal(
+		readFixture(t, "../../../../../deployment/kustomize/overlays/aws/kustomization.yaml"),
+		&aws,
+	))
+	require.NotContains(t, aws.Resources, "applications/marketing.yaml")
+
+	var local kustomization
+	require.NoError(t, yaml.Unmarshal(
+		readFixture(t, "../../../../../deployment/kustomize/overlays/local/kustomization.yaml"),
+		&local,
+	))
+	require.Contains(t, local.Resources, "applications/marketing.yaml")
 }
 
 func TestDeploymentTopologyRejectsUnsafeOrIncompleteBindings(t *testing.T) {

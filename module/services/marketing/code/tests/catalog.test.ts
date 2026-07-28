@@ -1,6 +1,10 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { formatPlanAmount, parsePublicCatalog } from "@/lib/catalog";
+import {
+  catalogDisplayState,
+  formatPlanAmount,
+  parsePublicCatalog,
+} from "@/lib/catalog";
 
 const plan = {
   key: "pro",
@@ -23,6 +27,23 @@ test("accepts the sanitized public catalog and formats minor units", () => {
   assert.match(formatPlanAmount(plan, "en"), /49/);
 });
 
+test("formats amounts with the currency's ISO minor-unit precision", () => {
+  assert.equal(
+    formatPlanAmount({ ...plan, currency: "JPY", amountMinor: 4900 }, "en"),
+    new Intl.NumberFormat("en", {
+      style: "currency",
+      currency: "JPY",
+    }).format(4900),
+  );
+  assert.equal(
+    formatPlanAmount({ ...plan, currency: "KWD", amountMinor: 4900 }, "en"),
+    new Intl.NumberFormat("en", {
+      style: "currency",
+      currency: "KWD",
+    }).format(4.9),
+  );
+});
+
 test("rejects checkout secrets and unsupported intervals", () => {
   assert.throws(
     () =>
@@ -39,5 +60,15 @@ test("rejects checkout secrets and unsupported intervals", () => {
         plans: [{ ...plan, interval: "quarter" }],
       }),
     /invalid enum/i,
+  );
+});
+
+test("represents an available catalog with no public plans as an empty state", () => {
+  assert.deepEqual(
+    catalogDisplayState({
+      kind: "available",
+      catalog: { revision: "catalog-empty", plans: [] },
+    }),
+    { kind: "empty", revision: "catalog-empty" },
   );
 });

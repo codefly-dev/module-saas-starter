@@ -29,6 +29,8 @@ const outputPaths = [
 const HEX_COLOR = /^#[0-9a-f]{6}$/i;
 const SAFE_FONT = /^[^{};\r\n]+$/;
 const SAFE_PATH = /^\/(?!\/)[a-z0-9/_-]*$/;
+const SAFE_ASSET_PATH =
+  /^\/(?!\/)(?!.*(?:^|\/)\.{1,2}(?:\/|$))[a-z0-9][a-z0-9/_.-]*$/i;
 const CONTACT = /^[^@\s]+@[^@\s]+\.[^@\s]+$/;
 const RESERVED_KEY = /(?:secret|password|private.?key|access.?token|api.?key)/i;
 const ALLOWED_MODES = new Set([
@@ -138,7 +140,10 @@ export function validatePublicSiteConfig(config) {
   );
   nonEmpty(config.brand.mark, "brand.mark", 3);
   nonEmpty(config.brand.logoAlt, "brand.logoAlt", 120);
-  assert(SAFE_PATH.test(config.brand.favicon), "brand.favicon must be a safe path");
+  assert(
+    SAFE_ASSET_PATH.test(config.brand.favicon),
+    "brand.favicon must be a safe asset path",
+  );
   exactKeys(
     config.brand.colors,
     ["primary", "accent", "background", "foreground"],
@@ -233,11 +238,30 @@ export function validatePublicSiteConfig(config) {
     "the starter content provider must be repository",
   );
   assert(Array.isArray(config.customers), "customers must be an array");
+  for (const [index, customer] of config.customers.entries()) {
+    exactKeys(customer, ["name", "logo", "url"], `customers[${index}]`);
+    nonEmpty(customer.name, `customers[${index}].name`, 80);
+    assert(
+      SAFE_ASSET_PATH.test(customer.logo),
+      `customers[${index}].logo must be a safe asset path`,
+    );
+    absoluteURL(customer.url, `customers[${index}].url`);
+  }
   assert(Array.isArray(config.testimonials), "testimonials must be an array");
+  for (const [index, testimonial] of config.testimonials.entries()) {
+    exactKeys(
+      testimonial,
+      ["quote", "attribution", "role"],
+      `testimonials[${index}]`,
+    );
+    nonEmpty(testimonial.quote, `testimonials[${index}].quote`, 400);
+    nonEmpty(testimonial.attribution, `testimonials[${index}].attribution`, 80);
+    nonEmpty(testimonial.role, `testimonials[${index}].role`, 120);
+  }
   assert(
-    config.developmentFixture ||
+    !config.developmentFixture ||
       (config.customers.length === 0 && config.testimonials.length === 0),
-    "customer and testimonial claims require explicit adopter review",
+    "development fixtures cannot include customer or testimonial claims",
   );
   return config;
 }

@@ -41,9 +41,9 @@ async function waitForServer() {
 
 try {
   await waitForServer();
-  const health = await fetch(`${origin}/api/health`).then((response) =>
-    response.json(),
-  );
+  const healthResponse = await fetch(`${origin}/api/health`);
+  assert.match(healthResponse.headers.get("cache-control") ?? "", /no-store/);
+  const health = await healthResponse.json();
   assert.deepEqual(health, {
     status: "ok",
     service: "marketing",
@@ -53,7 +53,20 @@ try {
 
   const home = await fetch(origin);
   assert.equal(home.status, 200);
-  assert.match(await home.text(), /One starter\. Two deployables\./);
+  assert.doesNotMatch(
+    home.headers.get("cache-control") ?? "",
+    /private|no-store/,
+  );
+  assert.match(
+    home.headers.get("content-security-policy") ?? "",
+    /script-src 'self' 'unsafe-inline'/,
+  );
+  const homeDocument = await home.text();
+  assert.match(homeDocument, /One starter\. Two deployables\./);
+  assert.match(homeDocument, /<script/);
+  assert.match(homeDocument, /property="og:image"/);
+  assert.match(homeDocument, /name="twitter:card" content="summary_large_image"/);
+  assert.match(homeDocument, /name="twitter:image"/);
 
   const pricing = await fetch(`${origin}/pricing`);
   assert.equal(pricing.status, 200);
@@ -61,6 +74,7 @@ try {
 
   const readiness = await fetch(`${origin}/api/readiness`);
   assert.equal(readiness.status, 200);
+  assert.match(readiness.headers.get("cache-control") ?? "", /no-store/);
   assert.equal((await readiness.json()).status, "ready");
 } finally {
   child.kill("SIGTERM");

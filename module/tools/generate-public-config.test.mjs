@@ -75,11 +75,23 @@ test("rejects secret-shaped fields and unsafe handoff URLs", () => {
   assert.throws(() => validatePublicSiteConfig(redirect), /signupPath is unsafe/);
 });
 
-test("requires explicit fixture marking before configured claims", () => {
+test("accepts reviewed production claims and rejects them in fixtures", () => {
   const claims = structuredClone(valid);
-  claims.customers.push({ name: "Unverified customer" });
+  claims.customers.push({
+    name: "Customer",
+    logo: "/customers/customer.svg",
+    url: "https://customer.test",
+  });
+  claims.testimonials.push({
+    quote: "The configured product works for us.",
+    attribution: "A. Customer",
+    role: "Product lead",
+  });
+  assert.equal(validatePublicSiteConfig(claims).customers.length, 1);
+
+  claims.developmentFixture = true;
   assert.throws(
     () => validatePublicSiteConfig(claims),
-    /claims require explicit adopter review/,
+    /development fixtures cannot include/,
   );
 });

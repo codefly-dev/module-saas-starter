@@ -26,6 +26,7 @@ import {
 } from "./auth-session";
 import { setToken as setConnectToken } from "./connect/token-store";
 import { apiTransport } from "./connect/transport";
+import { safePostLoginDestination } from "./public-handoff";
 
 const authClient = createClient(AuthService, apiTransport);
 
@@ -160,7 +161,10 @@ interface AuthContextType extends AuthState {
 	// browser to the provider's hosted login. The callback page completes
 	// the handshake. Async because we mint a server-signed state via
 	// BeginOAuth before the redirect.
-	signInWith: (providerID: string) => Promise<void>;
+	signInWith: (
+		providerID: string,
+		postLoginDestination: string,
+	) => Promise<void>;
 	// Completes the OAuth flow from /auth/callback: POSTs the code to the
 	// backend, stores the returned tokens, redirects to the post-login
 	// destination (or "/").
@@ -342,7 +346,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 	// and PKCE binds the code redemption to this specific browser session
 	// (so a stolen code can't be redeemed elsewhere).
 	//
-	const signInWith = useCallback(async (providerID: string) => {
+	const signInWith = useCallback(async (
+		providerID: string,
+		postLoginDestination: string,
+	) => {
 		const presets = availableProviders();
 		const preset = presets.find((p) => p.id === providerID);
 		if (!preset) {
@@ -370,7 +377,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 		sessionStorage.setItem("oauth_redirect_uri", redirectURI);
 		sessionStorage.setItem(
 			"post_login_destination",
-			window.location.pathname + window.location.search,
+			safePostLoginDestination(postLoginDestination),
 		);
 		window.location.href = buildAuthorizeURL(
 			preset,

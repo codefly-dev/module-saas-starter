@@ -11,6 +11,9 @@ interface:
         - service: auth-sidecar
           endpoint: rest
           visibility: public
+        - service: marketing
+          endpoint: http
+          visibility: public
 services:
     - name: accounts
     - name: auth-sidecar

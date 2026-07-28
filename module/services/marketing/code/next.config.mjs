@@ -16,7 +16,7 @@ const nextConfig = {
       "frame-ancestors 'none'",
       "img-src 'self' data:",
       "object-src 'none'",
-      "script-src 'self'",
+      "script-src 'self' 'unsafe-inline'",
       "style-src 'self' 'unsafe-inline'",
       "upgrade-insecure-requests",
     ].join("; ");

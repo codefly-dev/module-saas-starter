@@ -135,7 +135,7 @@
         {
           "name": "http",
           "api": "CODEFLY_API_HTTP",
-          "visibility": "ENDPOINT_VISIBILITY_MODULE",
+          "visibility": "ENDPOINT_VISIBILITY_PUBLIC",
           "port": 3000
         }
       ]
@@ -183,6 +183,11 @@
     {
       "service": "auth-sidecar",
       "endpoint": "rest",
+      "visibility": "ENDPOINT_VISIBILITY_PUBLIC"
+    },
+    {
+      "service": "marketing",
+      "endpoint": "http",
       "visibility": "ENDPOINT_VISIBILITY_PUBLIC"
     }
   ],

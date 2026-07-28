@@ -1,10 +1,10 @@
 import Link from "next/link";
-import type { ReactNode } from "react";
+import { Suspense, type ReactNode } from "react";
+import { AttributionAcquisitionActions } from "@/components/attribution-handoff";
 import { siteConfig } from "@/config/site";
 import {
   primaryAcquisitionHandoff,
   productHandoff,
-  type AttributionInput,
 } from "@/lib/cta";
 
 const navigation = [
@@ -132,14 +132,10 @@ export function PageIntro({
 }
 
 export function AcquisitionCTA({
-  attribution = {},
   heading = "Move from starter to your product",
 }: {
-  attribution?: AttributionInput;
   heading?: string;
 }) {
-  const handoff = primaryAcquisitionHandoff(attribution);
-  const login = productHandoff("login", attribution);
   return (
     <section className="shell callout" aria-labelledby="acquisition-heading">
       <div>
@@ -150,23 +146,33 @@ export function AcquisitionCTA({
           accepting arbitrary redirect destinations.
         </p>
       </div>
-      <div className="button-row">
-        {handoff.available && handoff.href ? (
-          <a className="button" href={handoff.href}>
-            {handoff.label}
-          </a>
-        ) : (
-          <span className="button button-disabled" aria-disabled="true">
-            {handoff.label} unavailable
-          </span>
-        )}
-        {login && handoff.href !== login ? (
-          <a className="button button-quiet" href={login}>
-            Sign in
-          </a>
-        ) : null}
-      </div>
+      <Suspense fallback={<AcquisitionActionsFallback />}>
+        <AttributionAcquisitionActions />
+      </Suspense>
     </section>
+  );
+}
+
+function AcquisitionActionsFallback() {
+  const handoff = primaryAcquisitionHandoff();
+  const login = productHandoff("login");
+  return (
+    <div className="button-row">
+      {handoff.available && handoff.href ? (
+        <a className="button" href={handoff.href}>
+          {handoff.label}
+        </a>
+      ) : (
+        <span className="button button-disabled" aria-disabled="true">
+          {handoff.label} unavailable
+        </span>
+      )}
+      {login && handoff.href !== login ? (
+        <a className="button button-quiet" href={login}>
+          Sign in
+        </a>
+      ) : null}
+    </div>
   );
 }
 

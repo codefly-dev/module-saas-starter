@@ -1,6 +1,8 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import type { ReactNode } from "react";
+import { Suspense, type ReactNode } from "react";
+import { AttributionHandoffLink } from "@/components/attribution-handoff";
+import { DocsSearchResults } from "@/components/docs-search";
 import {
   AcquisitionCTA,
   EmptyState,
@@ -8,6 +10,7 @@ import {
 } from "@/components/site-shell";
 import { acquisitionMode, siteConfig } from "@/config/site";
 import {
+  catalogDisplayState,
   formatPlanAmount,
   loadPublicPlans,
   type PublicPlan,
@@ -18,12 +21,11 @@ import {
   type ContentKind,
   repositoryContentProvider,
 } from "@/lib/content";
-import { productHandoff, type AttributionInput } from "@/lib/cta";
+import { productHandoff } from "@/lib/cta";
 import { Markdown } from "@/lib/markdown";
 
 export type MarketingRoute = {
   segments: string[];
-  searchParams: AttributionInput;
 };
 
 type IndexKind = "article" | "changelog" | "doc" | "use-case";
@@ -95,6 +97,7 @@ function ContentGrid({
 
 async function ContentIndex({
   kind,
+  locale,
   eyebrow,
   title,
   description,
@@ -102,13 +105,14 @@ async function ContentIndex({
   filter,
 }: {
   kind: IndexKind;
+  locale: string;
   eyebrow: string;
   title: string;
   description: string;
   prefix: string;
   filter?: (document: ContentDocument) => boolean;
 }) {
-  let documents = await repositoryContentProvider.list(kind);
+  let documents = await repositoryContentProvider.list(kind, locale);
   if (filter) documents = documents.filter(filter);
   return (
     <>
@@ -122,12 +126,14 @@ async function ContentIndex({
 
 async function ContentDetail({
   kind,
+  locale,
   slug,
 }: {
   kind: ContentKind;
+  locale: string;
   slug: string;
 }) {
-  const document = await repositoryContentProvider.get(kind, slug);
+  const document = await repositoryContentProvider.get(kind, slug, locale);
   if (!document) notFound();
   return (
     <article className="shell article-shell">
@@ -152,11 +158,10 @@ async function ContentDetail({
   );
 }
 
-function Home({ searchParams }: { searchParams: AttributionInput }) {
-  const handoff = productHandoff(
-    acquisitionMode() === "open_signup" ? "signup" : "login",
-    searchParams,
-  );
+function Home({ routePrefix }: { routePrefix: string }) {
+  const destination =
+    acquisitionMode() === "open_signup" ? "signup" : "login";
+  const handoff = productHandoff(destination);
   return (
     <>
       <section className="hero shell">
@@ -165,12 +170,23 @@ function Home({ searchParams }: { searchParams: AttributionInput }) {
           <h1>Build the company people discover and the product they return to.</h1>
           <p className="lede">{siteConfig.company.longDescription}</p>
           <div className="button-row">
-            {handoff ? (
-              <a className="button" href={handoff}>
+            <Suspense
+              fallback={
+                handoff ? (
+                  <a className="button" href={handoff}>
+                    Open the product
+                  </a>
+                ) : null
+              }
+            >
+              <AttributionHandoffLink
+                className="button"
+                destination={destination}
+              >
                 Open the product
-              </a>
-            ) : null}
-            <Link className="button button-quiet" href="/docs/getting-started">
+              </AttributionHandoffLink>
+            </Suspense>
+            <Link className="button button-quiet" href={`${routePrefix}/docs/getting-started`}>
               Read the launch guide
             </Link>
           </div>
@@ -206,7 +222,45 @@ function Home({ searchParams }: { searchParams: AttributionInput }) {
           ))}
         </div>
       </section>
-      <AcquisitionCTA attribution={searchParams} />
+      {siteConfig.customers.length > 0 ? (
+        <section className="shell section" aria-labelledby="customers-heading">
+          <div className="section-heading">
+            <p className="eyebrow">Configured customers</p>
+            <h2 id="customers-heading">Teams using the product</h2>
+          </div>
+          <div className="feature-grid">
+            {siteConfig.customers.map((customer) => (
+              <a href={customer.url} key={customer.name}>
+                <img
+                  alt={customer.name}
+                  height="48"
+                  src={customer.logo}
+                  width="160"
+                />
+              </a>
+            ))}
+          </div>
+        </section>
+      ) : null}
+      {siteConfig.testimonials.length > 0 ? (
+        <section className="shell section" aria-labelledby="testimonials-heading">
+          <div className="section-heading">
+            <p className="eyebrow">Configured testimonials</p>
+            <h2 id="testimonials-heading">What customers say</h2>
+          </div>
+          <div className="content-grid">
+            {siteConfig.testimonials.map((testimonial) => (
+              <figure className="content-card" key={testimonial.attribution}>
+                <blockquote>{testimonial.quote}</blockquote>
+                <figcaption>
+                  {testimonial.attribution}, {testimonial.role}
+                </figcaption>
+              </figure>
+            ))}
+          </div>
+        </section>
+      ) : null}
+      <AcquisitionCTA />
     </>
   );
 }
@@ -298,7 +352,7 @@ function ContactPage() {
   );
 }
 
-function SecurityPage() {
+function SecurityPage({ routePrefix }: { routePrefix: string }) {
   return (
     <>
       <PageIntro
@@ -318,7 +372,8 @@ function SecurityPage() {
         <p>
           Current availability belongs on the externally hosted{" "}
           <a href={siteConfig.urls.status}>status site</a>. Report a security
-          concern through the configured contact on the <Link href="/contact">contact page</Link>.
+          concern through the configured contact on the{" "}
+          <Link href={`${routePrefix}/contact`}>contact page</Link>.
         </p>
       </section>
     </>
@@ -375,7 +430,7 @@ function AccessibilityPage() {
   );
 }
 
-function MaintenancePage() {
+function MaintenancePage({ routePrefix }: { routePrefix: string }) {
   return (
     <PageIntro
       eyebrow="Maintenance"
@@ -386,7 +441,7 @@ function MaintenancePage() {
         <a className="button" href={siteConfig.urls.status}>
           View service status
         </a>
-        <Link className="button button-quiet" href="/docs">
+        <Link className="button button-quiet" href={`${routePrefix}/docs`}>
           Browse documentation
         </Link>
       </div>
@@ -395,18 +450,18 @@ function MaintenancePage() {
 }
 
 function PlanCard({
+  locale,
   plan,
-  attribution,
 }: {
+  locale: string;
   plan: PublicPlan;
-  attribution: AttributionInput;
 }) {
-  const handoff = plan.contactSales
+  const staticHandoff = plan.contactSales
     ? !siteConfig.contacts.sales.endsWith(".invalid")
       ? `mailto:${siteConfig.contacts.sales}?subject=${encodeURIComponent(`${plan.name} plan`)}`
       : null
     : plan.checkoutEnabled
-      ? productHandoff("signup", attribution, plan.key)
+      ? productHandoff("signup", {}, plan.key)
       : null;
   return (
     <article className="price-card">
@@ -416,7 +471,7 @@ function PlanCard({
           {plan.fixture ? <span className="tag">Development fixture</span> : null}
         </div>
         <p className="price">
-          {formatPlanAmount(plan, siteConfig.locales.default)}
+          {formatPlanAmount(plan, locale)}
           {plan.amountMinor !== null &&
           plan.amountMinor > 0 &&
           plan.interval !== "contact" ? (
@@ -443,10 +498,26 @@ function PlanCard({
           </li>
         ))}
       </ul>
-      {handoff ? (
-        <a className="button" href={handoff}>
-          {plan.contactSales ? "Contact sales" : "Select plan"}
+      {plan.contactSales && staticHandoff ? (
+        <a className="button" href={staticHandoff}>
+          Contact sales
         </a>
+      ) : plan.checkoutEnabled && staticHandoff ? (
+        <Suspense
+          fallback={
+            <a className="button" href={staticHandoff}>
+              Select plan
+            </a>
+          }
+        >
+          <AttributionHandoffLink
+            className="button"
+            destination="signup"
+            plan={plan.key}
+          >
+            Select plan
+          </AttributionHandoffLink>
+        </Suspense>
       ) : (
         <span className="button button-disabled" aria-disabled="true">
           Currently unavailable
@@ -456,8 +527,8 @@ function PlanCard({
   );
 }
 
-async function PricingPage({ searchParams }: { searchParams: AttributionInput }) {
-  const state = await loadPublicPlans();
+async function PricingPage({ locale }: { locale: string }) {
+  const state = catalogDisplayState(await loadPublicPlans());
   return (
     <>
       <PageIntro
@@ -471,11 +542,7 @@ async function PricingPage({ searchParams }: { searchParams: AttributionInput })
             <p className="catalog-revision">Catalog revision {state.catalog.revision}</p>
             <div className="pricing-grid">
               {state.catalog.plans.map((plan) => (
-                <PlanCard
-                  attribution={searchParams}
-                  key={plan.key}
-                  plan={plan}
-                />
+                <PlanCard key={plan.key} locale={locale} plan={plan} />
               ))}
             </div>
           </>
@@ -484,11 +551,15 @@ async function PricingPage({ searchParams }: { searchParams: AttributionInput })
             title={
               state.kind === "disabled"
                 ? "Public pricing is not configured"
+                : state.kind === "empty"
+                  ? "No public plans are available"
                 : "Pricing is temporarily unavailable"
             }
             description={
               state.kind === "disabled"
                 ? "Configure the public catalog endpoint to publish authoritative plans."
+                : state.kind === "empty"
+                  ? "The authoritative catalog is available, but it does not currently publish any customer-selectable plans."
                 : "The product catalog did not respond. Public content remains available and no price is guessed from stale marketing copy."
             }
           />
@@ -498,87 +569,96 @@ async function PricingPage({ searchParams }: { searchParams: AttributionInput })
   );
 }
 
-async function DocsSearch({ query }: { query: string }) {
-  const results = await repositoryContentProvider.searchDocs(query);
-  return (
-    <>
-      <PageIntro
-        eyebrow="Documentation search"
-        title="Search the launch documentation."
-        description="The default provider uses a deterministic local index. An external search adapter can replace it without changing document rendering."
-      >
-        <form action="/docs/search" className="search-form" role="search">
-          <label htmlFor="docs-query">Search documentation</label>
-          <div>
-            <input
-              defaultValue={query}
-              id="docs-query"
-              maxLength={100}
-              name="q"
-              placeholder="Try “deployment”"
-              type="search"
-            />
-            <button className="button" type="submit">
-              Search
-            </button>
-          </div>
-        </form>
-      </PageIntro>
-      <section className="shell section">
-        {query ? (
-          <ContentGrid documents={results} prefix="/docs" />
-        ) : (
-          <EmptyState
-            title="Enter a search term"
-            description="Search runs only after you submit a query."
-          />
-        )}
-      </section>
-    </>
+async function DocsSearch({
+  locale,
+  routePrefix,
+}: {
+  locale: string;
+  routePrefix: string;
+}) {
+  const documents = (await repositoryContentProvider.list("doc", locale)).map(
+    ({ slug, title, description, body, locale }) => ({
+      slug,
+      title,
+      description,
+      body,
+      locale,
+    }),
   );
-}
-
-function firstParam(value: string | string[] | undefined): string {
-  return (Array.isArray(value) ? value[0] : value)?.trim().slice(0, 100) ?? "";
+  return (
+    <Suspense
+      fallback={
+        <PageIntro
+          eyebrow="Documentation search"
+          title="Search the launch documentation."
+          description="Loading the local documentation index."
+        />
+      }
+    >
+      <DocsSearchResults documents={documents} routePrefix={routePrefix} />
+    </Suspense>
+  );
 }
 
 export async function renderMarketingPage({
   segments,
-  searchParams,
 }: MarketingRoute): Promise<ReactNode> {
+  const localizedRoute = resolveLocalizedRoute(segments);
+  const content = await renderRoute(
+    localizedRoute.segments,
+    localizedRoute.locale,
+    localizedRoute.routePrefix,
+  );
+  return (
+    <div
+      dir={isRightToLeft(localizedRoute.locale) ? "rtl" : "ltr"}
+      lang={localizedRoute.locale}
+    >
+      {content}
+    </div>
+  );
+}
+
+async function renderRoute(
+  segments: string[],
+  locale: string,
+  routePrefix: string,
+): Promise<ReactNode> {
   const route = `/${segments.join("/")}`;
-  if (route === "/") return <Home searchParams={searchParams} />;
+  if (route === "/") return <Home routePrefix={routePrefix} />;
   if (route === "/product") return <ProductPage />;
-  if (route === "/pricing") return <PricingPage searchParams={searchParams} />;
+  if (route === "/pricing") return <PricingPage locale={locale} />;
   if (route === "/about") return <AboutPage />;
   if (route === "/contact") return <ContactPage />;
-  if (route === "/security") return <SecurityPage />;
+  if (route === "/security") return <SecurityPage routePrefix={routePrefix} />;
   if (route === "/consent") return <ConsentPage />;
   if (route === "/accessibility") return <AccessibilityPage />;
-  if (route === "/maintenance") return <MaintenancePage />;
+  if (route === "/maintenance") return <MaintenancePage routePrefix={routePrefix} />;
 
   if (route === "/use-cases") {
     return (
       <ContentIndex
         kind="use-case"
+        locale={locale}
         eyebrow="Use cases"
         title="Adapt the shell to the product you are building."
         description="These examples describe starter integration patterns, not customer results."
-        prefix="/use-cases"
+        prefix={`${routePrefix}/use-cases`}
       />
     );
   }
   if (segments[0] === "use-cases" && segments.length === 2) {
-    return <ContentDetail kind="use-case" slug={segments[1]} />;
+    return <ContentDetail kind="use-case" locale={locale} slug={segments[1]} />;
   }
   if (route === "/blog") {
     return (
       <ContentIndex
         kind="article"
+        locale={locale}
         eyebrow="Blog"
         title="Notes for building and launching."
         description="Repository-backed articles carry explicit author, reviewer, publication, and revision metadata."
-        prefix="/blog"
+        prefix={`${routePrefix}/blog`}
       />
     );
   }
@@ -586,10 +666,11 @@ export async function renderMarketingPage({
     return (
       <ContentIndex
         kind="article"
+        locale={locale}
         eyebrow="Blog tag"
         title={`Articles tagged “${segments[2]}”`}
         description="Published articles in this tag."
-        prefix="/blog"
+        prefix={`${routePrefix}/blog`}
         filter={(document) => document.tags.includes(segments[2])}
       />
     );
@@ -599,20 +680,24 @@ export async function renderMarketingPage({
     segments[1] === "author" &&
     segments.length === 3
   ) {
-    const author = segments[2].replaceAll("-", " ");
+    const author = (await repositoryContentProvider.authors(locale)).find(
+      (candidate) => authorSlug(candidate) === segments[2],
+    );
+    if (!author) notFound();
     return (
       <ContentIndex
         kind="article"
+        locale={locale}
         eyebrow="Author"
         title={`Articles by ${author}`}
         description="Published articles reviewed through the repository workflow."
-        prefix="/blog"
-        filter={(document) => document.author.toLowerCase() === author.toLowerCase()}
+        prefix={`${routePrefix}/blog`}
+        filter={(document) => document.author === author}
       />
     );
   }
   if (segments[0] === "blog" && segments.length === 2) {
-    return <ContentDetail kind="article" slug={segments[1]} />;
+    return <ContentDetail kind="article" locale={locale} slug={segments[1]} />;
   }
   if (route === "/docs") {
     return (
@@ -622,41 +707,42 @@ export async function renderMarketingPage({
           title="Launch and extraction guides."
           description="Documentation is versioned with the service and searchable through a provider-neutral interface."
         >
-          <Link className="button button-quiet" href="/docs/search">
+          <Link className="button button-quiet" href={`${routePrefix}/docs/search`}>
             Search docs
           </Link>
         </PageIntro>
         <section className="shell section">
           <ContentGrid
-            documents={await repositoryContentProvider.list("doc")}
-            prefix="/docs"
+            documents={await repositoryContentProvider.list("doc", locale)}
+            prefix={`${routePrefix}/docs`}
           />
         </section>
       </>
     );
   }
   if (route === "/docs/search") {
-    return <DocsSearch query={firstParam(searchParams.q)} />;
+    return <DocsSearch locale={locale} routePrefix={routePrefix} />;
   }
   if (segments[0] === "docs" && segments.length === 2) {
-    return <ContentDetail kind="doc" slug={segments[1]} />;
+    return <ContentDetail kind="doc" locale={locale} slug={segments[1]} />;
   }
   if (route === "/changelog") {
     return (
       <ContentIndex
         kind="changelog"
+        locale={locale}
         eyebrow="Changelog"
         title="Published release notes."
         description="Each entry names its release identifier and affected features without promising notification delivery."
-        prefix="/changelog"
+        prefix={`${routePrefix}/changelog`}
       />
     );
   }
   if (segments[0] === "changelog" && segments.length === 2) {
-    return <ContentDetail kind="changelog" slug={segments[1]} />;
+    return <ContentDetail kind="changelog" locale={locale} slug={segments[1]} />;
   }
   if (segments[0] === "legal" && segments.length === 2) {
-    return <ContentDetail kind="legal" slug={segments[1]} />;
+    return <ContentDetail kind="legal" locale={locale} slug={segments[1]} />;
   }
   notFound();
 }
@@ -687,16 +773,26 @@ const contentPrefixes: Record<ContentKind, string[]> = {
 };
 
 export async function marketingRouteInventory(): Promise<string[][]> {
-  const routes = [...staticRoutes];
-  for (const document of await allPublicContent()) {
-    routes.push([...contentPrefixes[document.type], document.slug]);
-    if (document.type === "article") {
-      for (const tag of document.tags) routes.push(["blog", "tag", tag]);
-      routes.push([
-        "blog",
-        "author",
-        document.author.toLowerCase().replace(/[^a-z0-9]+/g, "-"),
-      ]);
+  const routes: string[][] = [];
+  for (const locale of siteConfig.locales.enabled) {
+    for (const route of staticRoutes) {
+      routes.push(localizedSegments(route, locale));
+    }
+    for (const document of await allPublicContent(locale)) {
+      routes.push(
+        localizedSegments(
+          [...contentPrefixes[document.type], document.slug],
+          locale,
+        ),
+      );
+      if (document.type === "article") {
+        for (const tag of document.tags) {
+          routes.push(localizedSegments(["blog", "tag", tag], locale));
+        }
+        routes.push(
+          localizedSegments(["blog", "author", authorSlug(document.author)], locale),
+        );
+      }
     }
   }
   const unique = new Map(routes.map((segments) => [segments.join("/"), segments]));
@@ -709,7 +805,9 @@ export async function metadataForRoute(segments: string[]): Promise<{
   title: string;
   description: string;
 }> {
-  const route = `/${segments.join("/")}`;
+  const localizedRoute = resolveLocalizedRoute(segments);
+  const routeSegments = localizedRoute.segments;
+  const route = `/${routeSegments.join("/")}`;
   const named: Record<string, [string, string]> = {
     "/": [
       siteConfig.company.productName,
@@ -734,21 +832,29 @@ export async function metadataForRoute(segments: string[]): Promise<{
   };
   if (named[route]) return { title: named[route][0], description: named[route][1] };
   if (
-    segments[0] === "blog" &&
-    segments[1] === "tag" &&
-    segments.length === 3
+    routeSegments[0] === "blog" &&
+    routeSegments[1] === "tag" &&
+    routeSegments.length === 3
   ) {
     return {
-      title: `Articles tagged ${segments[2]}`,
-      description: `Published articles tagged ${segments[2]}.`,
+      title: `Articles tagged ${routeSegments[2]}`,
+      description: `Published articles tagged ${routeSegments[2]}.`,
     };
   }
   if (
-    segments[0] === "blog" &&
-    segments[1] === "author" &&
-    segments.length === 3
+    routeSegments[0] === "blog" &&
+    routeSegments[1] === "author" &&
+    routeSegments.length === 3
   ) {
-    const author = segments[2].replaceAll("-", " ");
+    const author = (
+      await repositoryContentProvider.authors(localizedRoute.locale)
+    ).find((candidate) => authorSlug(candidate) === routeSegments[2]);
+    if (!author) {
+      return {
+        title: "Page not found",
+        description: "The requested public page was not found.",
+      };
+    }
     return {
       title: `Articles by ${author}`,
       description: `Published articles by ${author}.`,
@@ -761,10 +867,11 @@ export async function metadataForRoute(segments: string[]): Promise<{
     legal: "legal",
     "use-cases": "use-case",
   };
-  if (segments.length === 2 && mapping[segments[0]]) {
+  if (routeSegments.length === 2 && mapping[routeSegments[0]]) {
     const document = await repositoryContentProvider.get(
-      mapping[segments[0]],
-      segments[1],
+      mapping[routeSegments[0]],
+      routeSegments[1],
+      localizedRoute.locale,
     );
     if (document) return { title: document.title, description: document.description };
   }
@@ -772,4 +879,54 @@ export async function metadataForRoute(segments: string[]): Promise<{
     title: "Page not found",
     description: "The requested public page was not found.",
   };
+}
+
+export function authorSlug(author: string): string {
+  return author.toLocaleLowerCase("en").replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
+}
+
+export function localizedSegments(
+  segments: string[],
+  locale: string,
+  defaultLocale = siteConfig.locales.default,
+): string[] {
+  return locale === defaultLocale ? [...segments] : [locale, ...segments];
+}
+
+export function localizedPath(
+  segments: string[],
+  locale: string,
+  defaultLocale = siteConfig.locales.default,
+): string {
+  return `/${localizedSegments(segments, locale, defaultLocale).join("/")}`;
+}
+
+export function resolveLocalizedRoute(segments: string[]): {
+  locale: string;
+  routePrefix: string;
+  segments: string[];
+} {
+  const candidate = segments[0];
+  if (
+    candidate &&
+    candidate !== siteConfig.locales.default &&
+    siteConfig.locales.enabled.includes(
+      candidate as (typeof siteConfig.locales.enabled)[number],
+    )
+  ) {
+    return {
+      locale: candidate,
+      routePrefix: `/${candidate}`,
+      segments: segments.slice(1),
+    };
+  }
+  return {
+    locale: siteConfig.locales.default,
+    routePrefix: "",
+    segments,
+  };
+}
+
+function isRightToLeft(locale: string): boolean {
+  return /^(ar|fa|he|ur)(-|$)/i.test(locale);
 }

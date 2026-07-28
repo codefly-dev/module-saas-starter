@@ -9,8 +9,13 @@ import {
   marketingRouteInventory,
   metadataForRoute,
 } from "../src/lib/page-renderer";
+import { siteConfig } from "../src/config/site";
 
-const documents = await allPublicContent();
+const documents = (
+  await Promise.all(
+    siteConfig.locales.enabled.map((locale) => allPublicContent(locale)),
+  )
+).flat();
 const routes = await marketingRouteInventory();
 const paths = new Set(routes.map((segments) => `/${segments.join("/")}`));
 paths.add("/feed.xml");
