@@ -1385,6 +1385,38 @@
         ]
       }
     },
+    "/v1/invitations:inspect-id": {
+      "post": {
+        "operationId": "InvitationService_InspectInvitationById",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1InvitationSummary"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/rpcStatus"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "body",
+            "in": "body",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/v1InspectInvitationByIdRequest"
+            }
+          }
+        ],
+        "tags": [
+          "InvitationService"
+        ]
+      }
+    },
     "/v1/mfa/backup-codes": {
       "post": {
         "operationId": "MFAService_GenerateBackupCodes",
@@ -4887,6 +4919,9 @@
         },
         "emailVerificationRequired": {
           "type": "boolean"
+        },
+        "consentPolicyVersion": {
+          "type": "string"
         }
       }
     },
@@ -5807,6 +5842,14 @@
         "expiresIn": {
           "type": "string",
           "format": "int64"
+        }
+      }
+    },
+    "v1InspectInvitationByIdRequest": {
+      "type": "object",
+      "properties": {
+        "invitationId": {
+          "type": "string"
         }
       }
     },

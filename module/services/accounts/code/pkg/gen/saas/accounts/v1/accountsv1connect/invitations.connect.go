@@ -6,13 +6,12 @@ package accountsv1connect
 
 import (
 	v1 "accounts/pkg/gen/saas/accounts/v1"
+	connect "connectrpc.com/connect"
 	context "context"
 	errors "errors"
+	emptypb "google.golang.org/protobuf/types/known/emptypb"
 	http "net/http"
 	strings "strings"
-
-	connect "connectrpc.com/connect"
-	emptypb "google.golang.org/protobuf/types/known/emptypb"
 )
 
 // This is a compile-time assertion to ensure that this generated file and the connect package are
@@ -41,6 +40,9 @@ const (
 	// InvitationServiceInspectInvitationProcedure is the fully-qualified name of the
 	// InvitationService's InspectInvitation RPC.
 	InvitationServiceInspectInvitationProcedure = "/saas.accounts.v1.InvitationService/InspectInvitation"
+	// InvitationServiceInspectInvitationByIdProcedure is the fully-qualified name of the
+	// InvitationService's InspectInvitationById RPC.
+	InvitationServiceInspectInvitationByIdProcedure = "/saas.accounts.v1.InvitationService/InspectInvitationById"
 	// InvitationServiceAcceptInvitationProcedure is the fully-qualified name of the InvitationService's
 	// AcceptInvitation RPC.
 	InvitationServiceAcceptInvitationProcedure = "/saas.accounts.v1.InvitationService/AcceptInvitation"
@@ -59,6 +61,7 @@ const (
 type InvitationServiceClient interface {
 	CreateInvitation(context.Context, *connect.Request[v1.CreateInvitationRequest]) (*connect.Response[v1.CreateInvitationResponse], error)
 	InspectInvitation(context.Context, *connect.Request[v1.InspectInvitationRequest]) (*connect.Response[v1.InvitationSummary], error)
+	InspectInvitationById(context.Context, *connect.Request[v1.InspectInvitationByIdRequest]) (*connect.Response[v1.InvitationSummary], error)
 	AcceptInvitation(context.Context, *connect.Request[v1.AcceptInvitationRequest]) (*connect.Response[v1.AcceptInvitationResponse], error)
 	ListInvitations(context.Context, *connect.Request[v1.ListInvitationsRequest]) (*connect.Response[v1.ListInvitationsResponse], error)
 	ResendInvitation(context.Context, *connect.Request[v1.ResendInvitationRequest]) (*connect.Response[v1.Invitation], error)
@@ -86,6 +89,12 @@ func NewInvitationServiceClient(httpClient connect.HTTPClient, baseURL string, o
 			httpClient,
 			baseURL+InvitationServiceInspectInvitationProcedure,
 			connect.WithSchema(invitationServiceMethods.ByName("InspectInvitation")),
+			connect.WithClientOptions(opts...),
+		),
+		inspectInvitationById: connect.NewClient[v1.InspectInvitationByIdRequest, v1.InvitationSummary](
+			httpClient,
+			baseURL+InvitationServiceInspectInvitationByIdProcedure,
+			connect.WithSchema(invitationServiceMethods.ByName("InspectInvitationById")),
 			connect.WithClientOptions(opts...),
 		),
 		acceptInvitation: connect.NewClient[v1.AcceptInvitationRequest, v1.AcceptInvitationResponse](
@@ -117,12 +126,13 @@ func NewInvitationServiceClient(httpClient connect.HTTPClient, baseURL string, o
 
 // invitationServiceClient implements InvitationServiceClient.
 type invitationServiceClient struct {
-	createInvitation  *connect.Client[v1.CreateInvitationRequest, v1.CreateInvitationResponse]
-	inspectInvitation *connect.Client[v1.InspectInvitationRequest, v1.InvitationSummary]
-	acceptInvitation  *connect.Client[v1.AcceptInvitationRequest, v1.AcceptInvitationResponse]
-	listInvitations   *connect.Client[v1.ListInvitationsRequest, v1.ListInvitationsResponse]
-	resendInvitation  *connect.Client[v1.ResendInvitationRequest, v1.Invitation]
-	revokeInvitation  *connect.Client[v1.RevokeInvitationRequest, emptypb.Empty]
+	createInvitation      *connect.Client[v1.CreateInvitationRequest, v1.CreateInvitationResponse]
+	inspectInvitation     *connect.Client[v1.InspectInvitationRequest, v1.InvitationSummary]
+	inspectInvitationById *connect.Client[v1.InspectInvitationByIdRequest, v1.InvitationSummary]
+	acceptInvitation      *connect.Client[v1.AcceptInvitationRequest, v1.AcceptInvitationResponse]
+	listInvitations       *connect.Client[v1.ListInvitationsRequest, v1.ListInvitationsResponse]
+	resendInvitation      *connect.Client[v1.ResendInvitationRequest, v1.Invitation]
+	revokeInvitation      *connect.Client[v1.RevokeInvitationRequest, emptypb.Empty]
 }
 
 // CreateInvitation calls saas.accounts.v1.InvitationService.CreateInvitation.
@@ -133,6 +143,11 @@ func (c *invitationServiceClient) CreateInvitation(ctx context.Context, req *con
 // InspectInvitation calls saas.accounts.v1.InvitationService.InspectInvitation.
 func (c *invitationServiceClient) InspectInvitation(ctx context.Context, req *connect.Request[v1.InspectInvitationRequest]) (*connect.Response[v1.InvitationSummary], error) {
 	return c.inspectInvitation.CallUnary(ctx, req)
+}
+
+// InspectInvitationById calls saas.accounts.v1.InvitationService.InspectInvitationById.
+func (c *invitationServiceClient) InspectInvitationById(ctx context.Context, req *connect.Request[v1.InspectInvitationByIdRequest]) (*connect.Response[v1.InvitationSummary], error) {
+	return c.inspectInvitationById.CallUnary(ctx, req)
 }
 
 // AcceptInvitation calls saas.accounts.v1.InvitationService.AcceptInvitation.
@@ -159,6 +174,7 @@ func (c *invitationServiceClient) RevokeInvitation(ctx context.Context, req *con
 type InvitationServiceHandler interface {
 	CreateInvitation(context.Context, *connect.Request[v1.CreateInvitationRequest]) (*connect.Response[v1.CreateInvitationResponse], error)
 	InspectInvitation(context.Context, *connect.Request[v1.InspectInvitationRequest]) (*connect.Response[v1.InvitationSummary], error)
+	InspectInvitationById(context.Context, *connect.Request[v1.InspectInvitationByIdRequest]) (*connect.Response[v1.InvitationSummary], error)
 	AcceptInvitation(context.Context, *connect.Request[v1.AcceptInvitationRequest]) (*connect.Response[v1.AcceptInvitationResponse], error)
 	ListInvitations(context.Context, *connect.Request[v1.ListInvitationsRequest]) (*connect.Response[v1.ListInvitationsResponse], error)
 	ResendInvitation(context.Context, *connect.Request[v1.ResendInvitationRequest]) (*connect.Response[v1.Invitation], error)
@@ -182,6 +198,12 @@ func NewInvitationServiceHandler(svc InvitationServiceHandler, opts ...connect.H
 		InvitationServiceInspectInvitationProcedure,
 		svc.InspectInvitation,
 		connect.WithSchema(invitationServiceMethods.ByName("InspectInvitation")),
+		connect.WithHandlerOptions(opts...),
+	)
+	invitationServiceInspectInvitationByIdHandler := connect.NewUnaryHandler(
+		InvitationServiceInspectInvitationByIdProcedure,
+		svc.InspectInvitationById,
+		connect.WithSchema(invitationServiceMethods.ByName("InspectInvitationById")),
 		connect.WithHandlerOptions(opts...),
 	)
 	invitationServiceAcceptInvitationHandler := connect.NewUnaryHandler(
@@ -214,6 +236,8 @@ func NewInvitationServiceHandler(svc InvitationServiceHandler, opts ...connect.H
 			invitationServiceCreateInvitationHandler.ServeHTTP(w, r)
 		case InvitationServiceInspectInvitationProcedure:
 			invitationServiceInspectInvitationHandler.ServeHTTP(w, r)
+		case InvitationServiceInspectInvitationByIdProcedure:
+			invitationServiceInspectInvitationByIdHandler.ServeHTTP(w, r)
 		case InvitationServiceAcceptInvitationProcedure:
 			invitationServiceAcceptInvitationHandler.ServeHTTP(w, r)
 		case InvitationServiceListInvitationsProcedure:
@@ -237,6 +261,10 @@ func (UnimplementedInvitationServiceHandler) CreateInvitation(context.Context, *
 
 func (UnimplementedInvitationServiceHandler) InspectInvitation(context.Context, *connect.Request[v1.InspectInvitationRequest]) (*connect.Response[v1.InvitationSummary], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("saas.accounts.v1.InvitationService.InspectInvitation is not implemented"))
+}
+
+func (UnimplementedInvitationServiceHandler) InspectInvitationById(context.Context, *connect.Request[v1.InspectInvitationByIdRequest]) (*connect.Response[v1.InvitationSummary], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("saas.accounts.v1.InvitationService.InspectInvitationById is not implemented"))
 }
 
 func (UnimplementedInvitationServiceHandler) AcceptInvitation(context.Context, *connect.Request[v1.AcceptInvitationRequest]) (*connect.Response[v1.AcceptInvitationResponse], error) {

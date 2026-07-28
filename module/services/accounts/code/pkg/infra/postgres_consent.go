@@ -33,14 +33,14 @@ func (s *PostgresStore) GetUserConsent(
 
 func (s *PostgresStore) SetUserConsent(
 	ctx context.Context,
-	userID, version string,
+	userID, version, consentContext string,
 	acceptedAt time.Time,
 ) error {
 	_, err := s.getQueryExecutor(ctx).Exec(ctx, `
 		UPDATE users
-		SET terms_version = $2, terms_accepted_at = $3
+		SET terms_version = $2, terms_accepted_at = $3, terms_context = $4
 		WHERE uuid = $1`,
-		userID, version, acceptedAt)
+		userID, version, acceptedAt, consentContext)
 	return err
 }
 

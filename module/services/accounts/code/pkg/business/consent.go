@@ -96,13 +96,19 @@ func (s *Service) GetConsentStatus(
 
 func (s *Service) AcceptTerms(
 	ctx context.Context,
-	userID, version string,
+	userID, version, consentContext string,
 ) error {
 	if version != CurrentTermsVersion {
 		return wool.Get(ctx).NewError("terms version is not current")
 	}
 	if err := s.store.As(Identity{UserID: userID}).Within(ctx, func(ctx context.Context) error {
-		return s.store.SetUserConsent(ctx, userID, version, time.Now())
+		return s.store.SetUserConsent(
+			ctx,
+			userID,
+			version,
+			consentContext,
+			time.Now(),
+		)
 	}); err != nil {
 		return err
 	}

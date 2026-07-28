@@ -46,6 +46,7 @@ type Invitation struct {
 	CreatedAt          time.Time
 	LastSentAt         *time.Time
 	SendCount          uint32
+	LastResendKeyHash  string
 }
 
 func (s *Service) CreateInvitation(
@@ -158,14 +159,61 @@ func (s *Service) InspectInvitation(
 	if err != nil {
 		return nil, wool.Get(ctx).Wrapf(err, "cannot inspect invitation")
 	}
+	return s.summarizeInvitation(ctx, inv)
+}
+
+func (s *Service) InspectInvitationByID(
+	ctx context.Context,
+	userID string,
+	req *gen.InspectInvitationByIdRequest,
+) (*gen.InvitationSummary, error) {
+	var inv *Invitation
+	err := s.store.As(System()).Within(ctx, func(ctx context.Context) error {
+		var lookupErr error
+		inv, lookupErr = s.store.GetInvitationByID(ctx, req.InvitationId)
+		return lookupErr
+	})
+	if err != nil {
+		return nil, wool.Get(ctx).Wrapf(err, "cannot inspect invitation")
+	}
+	if inv == nil {
+		return nil, ErrInvitationUnavailable
+	}
+	caller, err := s.getUserAsSelf(ctx, userID)
+	if err != nil {
+		return nil, wool.Get(ctx).Wrapf(err, "cannot resolve caller")
+	}
+	if caller == nil || !strings.EqualFold(caller.PrimaryEmail, inv.Email) {
+		return nil, ErrInvitationEmailMismatch
+	}
+	return s.summarizeInvitation(ctx, inv)
+}
+
+func (s *Service) summarizeInvitation(
+	ctx context.Context,
+	inv *Invitation,
+) (*gen.InvitationSummary, error) {
 	if inv == nil {
 		return nil, ErrInvitationUnavailable
 	}
 	if inv.Status == "pending" && time.Now().After(inv.ExpiresAt) {
-		_ = s.store.WithOrgTx(ctx, inv.OrgID, func(ctx context.Context) error {
-			return s.store.UpdateInvitationStatus(ctx, inv.ID, "expired", "")
-		})
-		inv.Status = "expired"
+		if err := s.store.WithOrgTx(ctx, inv.OrgID, func(ctx context.Context) error {
+			transitioned, err := s.store.UpdateInvitationStatus(ctx, inv.ID, "expired", "")
+			if err != nil {
+				return err
+			}
+			if transitioned {
+				inv.Status = "expired"
+				return nil
+			}
+			inv, err = s.store.GetInvitationByID(ctx, inv.ID)
+			return err
+		}); err != nil {
+			return nil, wool.Get(ctx).Wrapf(err, "cannot resolve invitation status")
+		}
+		if inv == nil {
+			return nil, ErrInvitationUnavailable
+		}
 	}
 	return &gen.InvitationSummary{
 		Status:    invitationStatusFromString(inv.Status),
@@ -222,7 +270,8 @@ func (s *Service) AcceptInvitation(
 	}
 	if time.Now().After(inv.ExpiresAt) {
 		_ = s.store.WithOrgTx(ctx, inv.OrgID, func(ctx context.Context) error {
-			return s.store.UpdateInvitationStatus(ctx, inv.ID, "expired", "")
+			_, err := s.store.UpdateInvitationStatus(ctx, inv.ID, "expired", "")
+			return err
 		})
 		return nil, ErrInvitationExpired
 	}
@@ -246,8 +295,12 @@ func (s *Service) AcceptInvitation(
 			if err := s.store.AddOrgMember(ctx, inv.OrgID, userID, inv.Role); err != nil {
 				return w.Wrapf(err, "cannot add member to organization")
 			}
-			if err := s.store.UpdateInvitationStatus(ctx, inv.ID, "accepted", userID); err != nil {
+			updated, err := s.store.UpdateInvitationStatus(ctx, inv.ID, "accepted", userID)
+			if err != nil {
 				return w.Wrapf(err, "cannot accept invitation")
+			}
+			if !updated {
+				return ErrInvitationUnavailable
 			}
 		}
 		var getErr error
@@ -300,8 +353,18 @@ func (s *Service) ResendInvitation(
 	ctx context.Context,
 	actorID string,
 	req *gen.ResendInvitationRequest,
+	idempotencyKey string,
 ) (*gen.Invitation, error) {
 	w := wool.Get(ctx).In("ResendInvitation")
+	if s.emailOutbox == nil {
+		return nil, w.NewError("invitation delivery is unavailable")
+	}
+	idempotencyKey = strings.TrimSpace(idempotencyKey)
+	if idempotencyKey == "" || len(idempotencyKey) > 255 {
+		return nil, w.NewError("valid Idempotency-Key header required")
+	}
+	keyHashBytes := sha256.Sum256([]byte(idempotencyKey))
+	keyHash := hex.EncodeToString(keyHashBytes[:])
 	var inv *Invitation
 	if err := s.store.As(System()).Within(ctx, func(ctx context.Context) error {
 		var err error
@@ -309,6 +372,9 @@ func (s *Service) ResendInvitation(
 		return err
 	}); err != nil || inv == nil {
 		return nil, w.NewError("invitation not found")
+	}
+	if inv.LastResendKeyHash == keyHash {
+		return invitationToProto(inv), nil
 	}
 	if inv.Status != "pending" {
 		return nil, w.NewError("only pending invitations can be resent")
@@ -323,6 +389,7 @@ func (s *Service) ResendInvitation(
 	}
 	now := time.Now()
 	var orgName string
+	replayed := false
 	if err := s.store.WithOrgTx(ctx, inv.OrgID, func(ctx context.Context) error {
 		fresh, err := s.store.GetInvitationByID(ctx, inv.ID)
 		if err != nil || fresh == nil {
@@ -330,6 +397,11 @@ func (s *Service) ResendInvitation(
 		}
 		if fresh.Status != "pending" {
 			return w.NewError("only pending invitations can be resent")
+		}
+		if fresh.LastResendKeyHash == keyHash {
+			inv = fresh
+			replayed = true
+			return nil
 		}
 		if fresh.LastSentAt != nil && time.Since(*fresh.LastSentAt) < invitationResendCooldown {
 			return w.NewError("invitation was sent recently; try again later")
@@ -339,6 +411,7 @@ func (s *Service) ResendInvitation(
 		fresh.LastSentAt = &now
 		fresh.SendCount++
 		fresh.DeliveryStatus = "queued"
+		fresh.LastResendKeyHash = keyHash
 		if err := s.store.RotateInvitationToken(ctx, fresh); err != nil {
 			return err
 		}
@@ -352,7 +425,9 @@ func (s *Service) ResendInvitation(
 	}); err != nil {
 		return nil, err
 	}
-	s.emit(ctx, actorID, "user", "invitation.resent", "invitation", inv.ID, inv.OrgID)
+	if !replayed {
+		s.emit(ctx, actorID, "user", "invitation.resent", "invitation", inv.ID, inv.OrgID)
+	}
 	return invitationToProto(inv), nil
 }
 
@@ -361,12 +436,31 @@ func (s *Service) RevokeInvitation(
 	inviterID string,
 	req *gen.RevokeInvitationRequest,
 ) error {
+	var inv *Invitation
+	revoked := false
 	if err := s.store.WithControlPlane(ctx, func(ctx context.Context) error {
-		return s.store.UpdateInvitationStatus(ctx, req.Id, "revoked", "")
+		var err error
+		inv, err = s.store.GetInvitationByID(ctx, req.Id)
+		if err != nil {
+			return err
+		}
+		if inv == nil {
+			return ErrInvitationUnavailable
+		}
+		if inv.Status == "revoked" {
+			return nil
+		}
+		if inv.Status != "pending" {
+			return ErrInvitationUnavailable
+		}
+		revoked, err = s.store.UpdateInvitationStatus(ctx, req.Id, "revoked", "")
+		return err
 	}); err != nil {
 		return wool.Get(ctx).Wrapf(err, "cannot revoke invitation")
 	}
-	s.emit(ctx, inviterID, "user", "invitation.revoked", "invitation", req.Id, "")
+	if revoked {
+		s.emit(ctx, inviterID, "user", "invitation.revoked", "invitation", req.Id, inv.OrgID)
+	}
 	return nil
 }
 

@@ -200,7 +200,24 @@ export function OnboardingWizard({
 		visibleSteps.find((step) => step.status === OnboardingStepStatus.PENDING) ??
 		visibleSteps[visibleSteps.length - 1];
 
-	if (query.isLoading || !organizationId) {
+	if (!organizationId) {
+		return (
+			<Card className="mx-auto w-full max-w-lg">
+				<CardHeader>
+					<CardTitle>Create your workspace</CardTitle>
+					<CardDescription>
+						Set up the organization that will own your team and product
+						resources.
+					</CardDescription>
+				</CardHeader>
+				<CardContent>
+					<OrganizationAction />
+				</CardContent>
+			</Card>
+		);
+	}
+
+	if (query.isLoading) {
 		return (
 			<div className="mx-auto w-full max-w-xl space-y-4 p-6">
 				<Skeleton className="h-7 w-52" />

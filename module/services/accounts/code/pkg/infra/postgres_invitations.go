@@ -4,6 +4,7 @@ import (
 	"context"
 
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgconn"
 
 	"accounts/pkg/business"
 )
@@ -11,7 +12,7 @@ import (
 const invitationColumns = `
 	id, org_id, inviter_id, inviter_display_name, email, role, token_hash,
 	status, delivery_status, expires_at, accepted_at, accepted_by, created_at,
-	last_sent_at, send_count`
+	last_sent_at, send_count, last_resend_idempotency_key_hash`
 
 func (s *PostgresStore) CreateInvitation(ctx context.Context, inv *business.Invitation) error {
 	if inv.DeliveryStatus == "" {
@@ -20,12 +21,13 @@ func (s *PostgresStore) CreateInvitation(ctx context.Context, inv *business.Invi
 	_, err := s.getQueryExecutor(ctx).Exec(ctx, `
 		INSERT INTO invitations (
 			id, org_id, inviter_id, inviter_display_name, email, role, token_hash,
-			status, delivery_status, expires_at, last_sent_at, send_count
+			status, delivery_status, expires_at, last_sent_at, send_count,
+			last_resend_idempotency_key_hash
 		)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)`,
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)`,
 		inv.ID, inv.OrgID, inv.InviterID, inv.InviterDisplayName, inv.Email,
 		inv.Role, inv.TokenHash, inv.Status, inv.DeliveryStatus, inv.ExpiresAt,
-		inv.LastSentAt, inv.SendCount)
+		inv.LastSentAt, inv.SendCount, inv.LastResendKeyHash)
 	return err
 }
 
@@ -76,6 +78,7 @@ func (s *PostgresStore) getInvitation(
 		&inv.CreatedAt,
 		&inv.LastSentAt,
 		&inv.SendCount,
+		&inv.LastResendKeyHash,
 	)
 	if err == pgx.ErrNoRows {
 		return nil, nil
@@ -137,6 +140,7 @@ func (s *PostgresStore) ListInvitations(
 			&inv.CreatedAt,
 			&inv.LastSentAt,
 			&inv.SendCount,
+			&inv.LastResendKeyHash,
 		); err != nil {
 			return nil, err
 		}
@@ -155,7 +159,8 @@ func (s *PostgresStore) RotateInvitationToken(
 	_, err := s.getQueryExecutor(ctx).Exec(ctx, `
 		UPDATE invitations
 		SET token_hash = $2, expires_at = $3, last_sent_at = $4,
-		    send_count = $5, delivery_status = $6
+		    send_count = $5, delivery_status = $6,
+		    last_resend_idempotency_key_hash = $7
 		WHERE id = $1 AND status = 'pending'`,
 		inv.ID,
 		inv.TokenHash,
@@ -163,6 +168,7 @@ func (s *PostgresStore) RotateInvitationToken(
 		inv.LastSentAt,
 		inv.SendCount,
 		inv.DeliveryStatus,
+		inv.LastResendKeyHash,
 	)
 	return err
 }
@@ -170,28 +176,28 @@ func (s *PostgresStore) RotateInvitationToken(
 func (s *PostgresStore) UpdateInvitationStatus(
 	ctx context.Context,
 	id, status, acceptedBy string,
-) error {
+) (bool, error) {
+	var result pgconn.CommandTag
+	var err error
 	switch status {
 	case "accepted":
-		_, err := s.getQueryExecutor(ctx).Exec(ctx, `
+		result, err = s.getQueryExecutor(ctx).Exec(ctx, `
 			UPDATE invitations
 			SET status = 'accepted', accepted_at = COALESCE(accepted_at, CURRENT_TIMESTAMP),
 			    accepted_by = COALESCE(accepted_by, $2)
-			WHERE id = $1 AND status IN ('pending', 'accepted')`,
+			WHERE id = $1 AND status = 'pending'`,
 			id, nilIfEmpty(acceptedBy))
-		return err
 	case "revoked":
-		_, err := s.getQueryExecutor(ctx).Exec(ctx, `
+		result, err = s.getQueryExecutor(ctx).Exec(ctx, `
 			UPDATE invitations
 			SET status = 'revoked', revoked_at = COALESCE(revoked_at, CURRENT_TIMESTAMP)
 			WHERE id = $1 AND status = 'pending'`, id)
-		return err
 	default:
-		_, err := s.getQueryExecutor(ctx).Exec(ctx, `
+		result, err = s.getQueryExecutor(ctx).Exec(ctx, `
 			UPDATE invitations SET status = $2
 			WHERE id = $1 AND status = 'pending'`, id, status)
-		return err
 	}
+	return result.RowsAffected() > 0, err
 }
 
 func (s *PostgresStore) CountPendingInvitations(ctx context.Context, orgID string) (int32, error) {

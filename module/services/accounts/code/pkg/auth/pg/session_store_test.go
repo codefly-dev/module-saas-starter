@@ -714,7 +714,7 @@ func TestAuthorizationInvalidation_OrganizationRoleChangeIsScopedAndAtomic(t *te
 	require.Nil(t, active.RevokedAt, "removing one tenant must not revoke another selected tenant")
 }
 
-func TestAuthorizationInvalidation_OrganizationMembershipAdditionRevokesOrglessSessions(t *testing.T) {
+func TestAuthorizationInvalidation_OrganizationMembershipAdditionAllowsExplicitExchange(t *testing.T) {
 	ctx := context.Background()
 	store := pgauth.NewSessionStore(testStore)
 	userID := seedUser(t)
@@ -746,11 +746,25 @@ func TestAuthorizationInvalidation_OrganizationMembershipAdditionRevokesOrglessS
 		return err
 	}))
 
-	revoked, err := store.FindByRefreshHash(ctx, orglessSession.RefreshHash)
+	active, err := store.FindByRefreshHash(ctx, orglessSession.RefreshHash)
 	require.NoError(t, err)
-	require.NotNil(t, revoked.RevokedAt)
-	require.Equal(t, "organization_membership_added", revoked.RevokedReason)
-	active, err := store.FindByRefreshHash(ctx, existingOrgSession.RefreshHash)
+	require.Nil(t, active.RevokedAt)
+
+	var authorization auth.RefreshAuthorization
+	require.NoError(t, store.ExchangeOrganization(
+		ctx,
+		userID,
+		orglessSession.ID,
+		newOrgID,
+		func(_ *auth.SessionRecord, current auth.RefreshAuthorization) error {
+			authorization = current
+			return nil
+		},
+	))
+	require.Equal(t, newOrgID, authorization.OrgID)
+	require.Equal(t, "member", authorization.OrgRole)
+
+	active, err = store.FindByRefreshHash(ctx, existingOrgSession.RefreshHash)
 	require.NoError(t, err)
 	require.Nil(t, active.RevokedAt, "adding a tenant must not revoke another selected tenant")
 }

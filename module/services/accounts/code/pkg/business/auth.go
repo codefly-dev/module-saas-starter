@@ -113,7 +113,7 @@ func (s *Service) Authenticate(ctx context.Context, req *gen.AuthenticateRequest
 	if err := claims.Valid(); err != nil {
 		return nil, w.Wrapf(err, "provider claims")
 	}
-	if err := s.authorizeAccountCreation(ctx, claims.Email); err != nil {
+	if err := s.authorizeAuthentication(ctx, claims); err != nil {
 		return nil, err
 	}
 

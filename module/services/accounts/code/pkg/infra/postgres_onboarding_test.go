@@ -23,7 +23,7 @@ func TestGetOnboardingProgress_Empty(t *testing.T) {
 	})
 }
 
-func TestUpsertOnboardingStep_CreateAndUpdate(t *testing.T) {
+func TestEnsureOnboardingStepDoesNotRegressCompletedProgress(t *testing.T) {
 	userID := seedUser(t)
 	orgID := seedOrg(t, userID)
 	withOnboardingScope(t, userID, orgID, func(ctx context.Context) {
@@ -35,20 +35,33 @@ func TestUpsertOnboardingStep_CreateAndUpdate(t *testing.T) {
 			Required:    true,
 			FirstSeenAt: now,
 		}
-		require.NoError(t, upsertOnboardingStep(ctx, userID, orgID, step))
+		current, err := ensureOnboardingStep(ctx, userID, orgID, step)
+		require.NoError(t, err)
+		require.Equal(t, "pending", current.Status)
+
+		completed := *step
+		completed.Status = "completed"
+		completed.CompletedAt = &now
+		completed.CompletionMethod = "detected"
+		current, transitioned, err := testStore.TransitionOnboardingStep(
+			ctx,
+			userID,
+			orgID,
+			business.CurrentOnboardingFlowID,
+			business.CurrentOnboardingFlowVersion,
+			"pending",
+			&completed,
+		)
+		require.NoError(t, err)
+		require.True(t, transitioned)
+		require.Equal(t, "completed", current.Status)
+
+		current, err = ensureOnboardingStep(ctx, userID, orgID, step)
+		require.NoError(t, err)
+		require.Equal(t, "completed", current.Status)
+		require.NotNil(t, current.CompletedAt)
 
 		steps, err := onboardingSteps(ctx, userID, orgID)
-		require.NoError(t, err)
-		require.Len(t, steps, 1)
-		require.Equal(t, "pending", steps[0].Status)
-		require.Nil(t, steps[0].CompletedAt)
-
-		step.Status = "completed"
-		step.CompletedAt = &now
-		step.CompletionMethod = "detected"
-		require.NoError(t, upsertOnboardingStep(ctx, userID, orgID, step))
-
-		steps, err = onboardingSteps(ctx, userID, orgID)
 		require.NoError(t, err)
 		require.Len(t, steps, 1)
 		require.Equal(t, "completed", steps[0].Status)
@@ -56,7 +69,7 @@ func TestUpsertOnboardingStep_CreateAndUpdate(t *testing.T) {
 	})
 }
 
-func TestUpsertOnboardingStep_IsOrganizationScopedAndIdempotent(t *testing.T) {
+func TestEnsureOnboardingStep_IsOrganizationScopedAndIdempotent(t *testing.T) {
 	userID := seedUser(t)
 	firstOrgID := seedOrg(t, userID)
 	secondOrgID := seedOrg(t, userID)
@@ -71,8 +84,10 @@ func TestUpsertOnboardingStep_IsOrganizationScopedAndIdempotent(t *testing.T) {
 				SkippedAt:        &now,
 				CompletionMethod: "user_skip",
 			}
-			require.NoError(t, upsertOnboardingStep(ctx, userID, orgID, step))
-			require.NoError(t, upsertOnboardingStep(ctx, userID, orgID, step))
+			_, err := ensureOnboardingStep(ctx, userID, orgID, step)
+			require.NoError(t, err)
+			_, err = ensureOnboardingStep(ctx, userID, orgID, step)
+			require.NoError(t, err)
 			steps, err := onboardingSteps(ctx, userID, orgID)
 			require.NoError(t, err)
 			require.Len(t, steps, 1)
@@ -99,12 +114,12 @@ func withOnboardingScope(
 	)
 }
 
-func upsertOnboardingStep(
+func ensureOnboardingStep(
 	ctx context.Context,
 	userID, orgID string,
 	step *business.OnboardingStep,
-) error {
-	return testStore.UpsertOnboardingStep(
+) (*business.OnboardingStep, error) {
+	return testStore.EnsureOnboardingStep(
 		ctx,
 		userID,
 		orgID,

@@ -32,47 +32,10 @@ func (s *PostgresStore) UpsertWaitlistEntry(
 	ctx context.Context,
 	input *business.WaitlistEntry,
 	cooldown time.Duration,
-) (*business.WaitlistEntry, bool, error) {
-	existing, err := s.getWaitlistEntry(ctx, "normalized_email", input.Email)
-	if err != nil {
-		return nil, false, err
-	}
+) (*business.WaitlistUpsertResult, error) {
 	now := time.Now()
-	if existing != nil {
-		if existing.State != "pending" {
-			return existing, false, nil
-		}
-		if existing.VerificationSentAt != nil && now.Sub(*existing.VerificationSentAt) < cooldown {
-			return existing, false, nil
-		}
-		_, err = s.getQueryExecutor(ctx).Exec(ctx, `
-			UPDATE waitlist_entries
-			SET verification_token_hash = $2,
-			    verification_expires_at = $3,
-			    verification_sent_at = $4,
-			    name = COALESCE(NULLIF($5, ''), name),
-			    company = COALESCE(NULLIF($6, ''), company),
-			    use_case = COALESCE(NULLIF($7, ''), use_case)
-			WHERE id = $1`,
-			existing.ID,
-			input.VerificationTokenHash,
-			input.VerificationExpiresAt,
-			now,
-			input.Name,
-			input.Company,
-			input.UseCase,
-		)
-		if err != nil {
-			return nil, false, err
-		}
-		existing.VerificationTokenHash = input.VerificationTokenHash
-		existing.VerificationExpiresAt = input.VerificationExpiresAt
-		existing.VerificationSentAt = &now
-		return existing, true, nil
-	}
-
 	input.VerificationSentAt = &now
-	_, err = s.getQueryExecutor(ctx).Exec(ctx, `
+	row := s.getQueryExecutor(ctx).QueryRow(ctx, `
 		INSERT INTO waitlist_entries (
 			id, normalized_email, name, company, use_case, state,
 			verification_token_hash, verification_expires_at, verification_sent_at,
@@ -82,7 +45,9 @@ func (s *PostgresStore) UpsertWaitlistEntry(
 		VALUES (
 			$1, $2, $3, $4, $5, $6, $7, $8, $9,
 			$10, $11, $12, $13, $14, $15, $16, $17
-		)`,
+		)
+		ON CONFLICT (normalized_email) DO NOTHING
+		RETURNING `+waitlistColumns,
 		input.ID,
 		input.Email,
 		input.Name,
@@ -101,34 +66,94 @@ func (s *PostgresStore) UpsertWaitlistEntry(
 		input.ConsentPolicyVersion,
 		input.VerifiedAt,
 	)
-	return input, input.State == "pending", err
+	inserted, err := scanWaitlistEntry(row)
+	if err == nil {
+		return &business.WaitlistUpsertResult{
+			Entry:                  inserted,
+			Created:                true,
+			ShouldSendVerification: inserted.State == "pending",
+		}, nil
+	}
+	if err != pgx.ErrNoRows {
+		return nil, err
+	}
+
+	row = s.getQueryExecutor(ctx).QueryRow(ctx, `
+		UPDATE waitlist_entries
+		SET verification_token_hash = $2,
+		    verification_expires_at = $3,
+		    verification_sent_at = $4,
+		    name = COALESCE(NULLIF($5, ''), name),
+		    company = COALESCE(NULLIF($6, ''), company),
+		    use_case = COALESCE(NULLIF($7, ''), use_case)
+		WHERE normalized_email = LOWER(BTRIM($1))
+		  AND state = 'pending'
+		  AND (
+			  verification_sent_at IS NULL
+			  OR verification_sent_at <= $8
+		  )
+		RETURNING `+waitlistColumns,
+		input.Email,
+		nilIfEmpty(input.VerificationTokenHash),
+		input.VerificationExpiresAt,
+		now,
+		input.Name,
+		input.Company,
+		input.UseCase,
+		now.Add(-cooldown),
+	)
+	updated, err := scanWaitlistEntry(row)
+	if err == nil {
+		return &business.WaitlistUpsertResult{
+			Entry:                  updated,
+			ShouldSendVerification: true,
+		}, nil
+	}
+	if err != pgx.ErrNoRows {
+		return nil, err
+	}
+
+	existing, err := s.getWaitlistEntry(ctx, "normalized_email", input.Email)
+	if err != nil {
+		return nil, err
+	}
+	return &business.WaitlistUpsertResult{Entry: existing}, nil
 }
 
 func (s *PostgresStore) VerifyWaitlistEntry(
 	ctx context.Context,
 	tokenHash string,
 	now time.Time,
-) (*business.WaitlistEntry, error) {
-	entry, err := s.getWaitlistEntry(ctx, "verification_token_hash", tokenHash)
+) (*business.WaitlistVerificationResult, error) {
+	row := s.getQueryExecutor(ctx).QueryRow(ctx, `
+		UPDATE waitlist_entries
+		SET state = 'verified', verified_at = COALESCE(verified_at, $2)
+		WHERE verification_token_hash = $1
+		  AND state = 'pending'
+		  AND verification_expires_at >= $2
+		RETURNING `+waitlistColumns,
+		tokenHash, now)
+	entry, err := scanWaitlistEntry(row)
+	if err == nil {
+		return &business.WaitlistVerificationResult{
+			Entry:        entry,
+			Transitioned: true,
+		}, nil
+	}
+	if err != pgx.ErrNoRows {
+		return nil, err
+	}
+
+	entry, err = s.getWaitlistEntry(ctx, "verification_token_hash", tokenHash)
 	if err != nil || entry == nil {
-		return entry, err
+		return &business.WaitlistVerificationResult{Entry: entry}, err
 	}
 	if entry.VerificationExpiresAt == nil || now.After(*entry.VerificationExpiresAt) {
 		return nil, business.ErrWaitlistTokenExpired
 	}
-	if entry.State == "pending" {
-		_, err = s.getQueryExecutor(ctx).Exec(ctx, `
-			UPDATE waitlist_entries
-			SET state = 'verified', verified_at = COALESCE(verified_at, $2)
-			WHERE id = $1 AND state = 'pending'`,
-			entry.ID, now)
-		if err != nil {
-			return nil, err
-		}
-		entry.State = "verified"
-		entry.VerifiedAt = &now
-	}
-	return entry, nil
+	return &business.WaitlistVerificationResult{
+		Entry: entry,
+	}, nil
 }
 
 func (s *PostgresStore) ListWaitlistEntries(
@@ -216,6 +241,26 @@ func (s *PostgresStore) UpdateWaitlistState(
 	return entry, err
 }
 
+func (s *PostgresStore) InviteWaitlistEntry(
+	ctx context.Context,
+	id string,
+	now time.Time,
+) (*business.WaitlistEntry, error) {
+	row := s.getQueryExecutor(ctx).QueryRow(ctx, `
+		UPDATE waitlist_entries
+		SET state = 'invited',
+		    invited_at = COALESCE(invited_at, $2)
+		WHERE id = $1
+		  AND state = 'approved'
+		RETURNING `+waitlistColumns,
+		id, now)
+	entry, err := scanWaitlistEntry(row)
+	if err == pgx.ErrNoRows {
+		return nil, nil
+	}
+	return entry, err
+}
+
 func (s *PostgresStore) GetWaitlistStateByEmail(ctx context.Context, email string) (string, error) {
 	var state string
 	err := s.getQueryExecutor(ctx).QueryRow(ctx,
@@ -240,7 +285,7 @@ func (s *PostgresStore) ConvertWaitlistEntry(
 		    converted_user_id = COALESCE(converted_user_id, $2),
 		    converted_org_id = COALESCE(converted_org_id, $3)
 		WHERE normalized_email = LOWER(BTRIM($1))
-		  AND state NOT IN ('rejected', 'unsubscribed')
+		  AND state NOT IN ('converted', 'rejected', 'unsubscribed')
 		RETURNING `+waitlistColumns,
 		email, userID, nilIfEmpty(orgID), now)
 	entry, err := scanWaitlistEntry(row)

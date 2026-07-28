@@ -2,6 +2,8 @@ package business_test
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"strings"
 	"testing"
 	"time"
@@ -9,7 +11,9 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"accounts/pkg/business"
+	"accounts/pkg/email"
 	gen "accounts/pkg/gen/saas/accounts/v1"
+	jobsv1 "accounts/pkg/gen/saas/jobs/v1"
 )
 
 type waitlistStoreFake struct {
@@ -69,13 +73,69 @@ func (f *waitlistStoreFake) UpsertWaitlistEntry(
 	_ context.Context,
 	entry *business.WaitlistEntry,
 	_ time.Duration,
-) (*business.WaitlistEntry, bool, error) {
+) (*business.WaitlistUpsertResult, error) {
 	if existing := f.entries[entry.Email]; existing != nil {
-		return existing, false, nil
+		return &business.WaitlistUpsertResult{Entry: existing}, nil
 	}
 	copy := *entry
 	f.entries[entry.Email] = &copy
-	return &copy, true, nil
+	return &business.WaitlistUpsertResult{
+		Entry:                  &copy,
+		Created:                true,
+		ShouldSendVerification: copy.State == "pending",
+	}, nil
+}
+
+func (f *waitlistStoreFake) VerifyWaitlistEntry(
+	_ context.Context,
+	tokenHash string,
+	now time.Time,
+) (*business.WaitlistVerificationResult, error) {
+	for _, entry := range f.entries {
+		if entry.VerificationTokenHash != tokenHash {
+			continue
+		}
+		transitioned := entry.State == "pending"
+		if transitioned {
+			entry.State = "verified"
+			entry.VerifiedAt = &now
+		}
+		return &business.WaitlistVerificationResult{
+			Entry:        entry,
+			Transitioned: transitioned,
+		}, nil
+	}
+	return &business.WaitlistVerificationResult{}, nil
+}
+
+func (f *waitlistStoreFake) InviteWaitlistEntry(
+	_ context.Context,
+	id string,
+	now time.Time,
+) (*business.WaitlistEntry, error) {
+	for _, entry := range f.entries {
+		if entry.ID != id || entry.State != "approved" {
+			continue
+		}
+		entry.State = "invited"
+		entry.InvitedAt = &now
+		return entry, nil
+	}
+	return nil, nil
+}
+
+type waitlistJobProducer struct {
+	enqueued int
+}
+
+func (p *waitlistJobProducer) EnqueueJob(
+	context.Context,
+	*jobsv1.EnqueueJobRequest,
+) (*jobsv1.EnqueueJobResponse, error) {
+	p.enqueued++
+	return &jobsv1.EnqueueJobResponse{
+		Disposition: jobsv1.JobEnqueueDisposition_JOB_ENQUEUE_DISPOSITION_INSERTED,
+	}, nil
 }
 
 func TestJoinWaitlistIsCaseFoldedAndEnumerationSafe(t *testing.T) {
@@ -118,4 +178,88 @@ func TestClosedAcquisitionModeDoesNotPersistWaitlistData(t *testing.T) {
 	require.NoError(t, err)
 	require.NotEmpty(t, response.Message)
 	require.Empty(t, store.entries)
+}
+
+func TestJoinWaitlistRejectsStaleConsentPolicy(t *testing.T) {
+	store := newWaitlistStoreFake()
+	service, err := business.NewService(store)
+	require.NoError(t, err)
+	require.NoError(t, service.SetAcquisitionMode("approval_required"))
+
+	_, err = service.JoinWaitlist(context.Background(), &gen.JoinWaitlistRequest{
+		Email:         "person@example.com",
+		PolicyVersion: "attacker-controlled-version",
+	})
+
+	require.ErrorContains(t, err, "policy version")
+	require.Empty(t, store.entries)
+}
+
+func TestWaitlistJourneyEventsEmitOnlyOnStateTransition(t *testing.T) {
+	store := newWaitlistStoreFake()
+	service, err := business.NewService(store)
+	require.NoError(t, err)
+	require.NoError(t, service.SetAcquisitionMode("approval_required"))
+	audit := &recordingAuditEmitter{}
+	service.SetAuditEmitter(audit)
+
+	request := &gen.JoinWaitlistRequest{
+		Email:         "person@example.com",
+		PolicyVersion: business.CurrentConsentPolicyVersion,
+	}
+	_, err = service.JoinWaitlist(context.Background(), request)
+	require.NoError(t, err)
+	_, err = service.JoinWaitlist(context.Background(), request)
+	require.NoError(t, err)
+
+	token := "verification-token"
+	hash := sha256.Sum256([]byte(token))
+	entry := store.entries["person@example.com"]
+	entry.VerificationTokenHash = hex.EncodeToString(hash[:])
+	_, err = service.VerifyWaitlist(context.Background(), &gen.VerifyWaitlistRequest{Token: token})
+	require.NoError(t, err)
+	_, err = service.VerifyWaitlist(context.Background(), &gen.VerifyWaitlistRequest{Token: token})
+	require.NoError(t, err)
+
+	require.Len(t, audit.entries, 2)
+	require.Equal(t, "waitlist.joined", audit.entries[0].Action)
+	require.Equal(t, "waitlist.verified", audit.entries[1].Action)
+}
+
+func TestInviteWaitlistRequiresDeliveryAndApproval(t *testing.T) {
+	store := newWaitlistStoreFake()
+	store.entries["person@example.com"] = &business.WaitlistEntry{
+		ID:    "00000000-0000-4000-8000-000000000020",
+		Email: "person@example.com",
+		State: "approved",
+	}
+	service, err := business.NewService(store)
+	require.NoError(t, err)
+
+	_, err = service.InviteWaitlist(context.Background(), "admin", &gen.InviteWaitlistRequest{
+		Id: "00000000-0000-4000-8000-000000000020",
+	})
+	require.ErrorContains(t, err, "delivery is unavailable")
+	require.Equal(t, "approved", store.entries["person@example.com"].State)
+
+	producer := &waitlistJobProducer{}
+	outbox, err := email.NewOutbox(producer, nil, "no-reply@example.com")
+	require.NoError(t, err)
+	service.SetEmailOutbox(outbox, "https://app.example.com")
+
+	store.entries["person@example.com"].State = "pending"
+	_, err = service.InviteWaitlist(context.Background(), "admin", &gen.InviteWaitlistRequest{
+		Id: "00000000-0000-4000-8000-000000000020",
+	})
+	require.ErrorContains(t, err, "not found")
+	require.Equal(t, "pending", store.entries["person@example.com"].State)
+	require.Zero(t, producer.enqueued)
+
+	store.entries["person@example.com"].State = "approved"
+	_, err = service.InviteWaitlist(context.Background(), "admin", &gen.InviteWaitlistRequest{
+		Id: "00000000-0000-4000-8000-000000000020",
+	})
+	require.NoError(t, err)
+	require.Equal(t, "invited", store.entries["person@example.com"].State)
+	require.Equal(t, 1, producer.enqueued)
 }

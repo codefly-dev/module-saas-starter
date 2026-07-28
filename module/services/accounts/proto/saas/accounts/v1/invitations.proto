@@ -75,6 +75,10 @@ message InspectInvitationRequest {
   }];
 }
 
+message InspectInvitationByIdRequest {
+  string invitation_id = 1 [(buf.validate.field).string.uuid = true];
+}
+
 message AcceptInvitationRequest {
   oneof credential {
     option (buf.validate.oneof).required = true;
@@ -151,6 +155,24 @@ service InvitationService {
     };
     option (google.api.http) = {
       post: "/v1/invitations:inspect"
+      body: "*"
+    };
+  }
+
+  rpc InspectInvitationById(InspectInvitationByIdRequest) returns (InvitationSummary) {
+    option (saas.policy.v1.method_policy) = {
+      exposure: EXPOSURE_AUTHENTICATED
+      tenant: TENANT_REQUIREMENT_USER
+      mfa: MFA_REQUIREMENT_NONE
+      audit: {emission: AUDIT_EMISSION_NONE}
+      idempotency: IDEMPOTENCY_REQUIREMENT_FORBIDDEN
+      rate_limit: RATE_LIMIT_CLASS_STANDARD_READ
+      request_sensitivity: SENSITIVITY_CONFIDENTIAL
+      response_sensitivity: SENSITIVITY_CONFIDENTIAL
+      platform_role: PLATFORM_ROLE_REQUIREMENT_NONE
+    };
+    option (google.api.http) = {
+      post: "/v1/invitations:inspect-id"
       body: "*"
     };
   }

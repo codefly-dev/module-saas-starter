@@ -107,6 +107,7 @@
         "/saas.accounts.v1.InvitationService/AcceptInvitation",
         "/saas.accounts.v1.InvitationService/CreateInvitation",
         "/saas.accounts.v1.InvitationService/InspectInvitation",
+        "/saas.accounts.v1.InvitationService/InspectInvitationById",
         "/saas.accounts.v1.InvitationService/ListInvitations",
         "/saas.accounts.v1.InvitationService/ResendInvitation",
         "/saas.accounts.v1.InvitationService/RevokeInvitation"
@@ -2205,6 +2206,55 @@
       },
       "policy_tier": "public",
       "description": "Resolve a privacy-limited invitation summary from a secret credential.",
+      "owner": {
+        "module": "saas-starter",
+        "service": "accounts"
+      }
+    },
+    {
+      "procedure": "/saas.accounts.v1.InvitationService/InspectInvitationById",
+      "service": "InvitationService",
+      "full_service": "saas.accounts.v1.InvitationService",
+      "method": "InspectInvitationById",
+      "input_type": "saas.accounts.v1.InspectInvitationByIdRequest",
+      "output_type": "saas.accounts.v1.InvitationSummary",
+      "client_streaming": false,
+      "server_streaming": false,
+      "deprecated": false,
+      "source_proto": "saas/accounts/v1/invitations.proto",
+      "protocols": [
+        "PROTOCOL_GRPC",
+        "PROTOCOL_CONNECT",
+        "PROTOCOL_REST"
+      ],
+      "http_bindings": [
+        {
+          "method": "POST",
+          "path": "/v1/invitations:inspect-id",
+          "body": "*",
+          "response_body": ""
+        }
+      ],
+      "policy": {
+        "exposure": "EXPOSURE_AUTHENTICATED",
+        "tenant": "TENANT_REQUIREMENT_USER",
+        "permissions": [],
+        "scopes": [],
+        "resource_bindings": [],
+        "mfa": "MFA_REQUIREMENT_NONE",
+        "audit": {
+          "events": [],
+          "emission": "AUDIT_EMISSION_NONE"
+        },
+        "idempotency": "IDEMPOTENCY_REQUIREMENT_FORBIDDEN",
+        "rate_limit": "RATE_LIMIT_CLASS_STANDARD_READ",
+        "request_sensitivity": "SENSITIVITY_CONFIDENTIAL",
+        "response_sensitivity": "SENSITIVITY_CONFIDENTIAL",
+        "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
+        "authentication_factor_attempt": false
+      },
+      "policy_tier": "auth",
+      "description": "Resolve an authenticated invitee's invitation summary.",
       "owner": {
         "module": "saas-starter",
         "service": "accounts"

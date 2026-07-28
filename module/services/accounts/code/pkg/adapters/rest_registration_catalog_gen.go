@@ -151,6 +151,7 @@ var catalogRESTExactRoutes = map[string]struct{}{
 	"POST /v1/invitations":                     {},
 	"POST /v1/invitations:accept":              {},
 	"POST /v1/invitations:inspect":             {},
+	"POST /v1/invitations:inspect-id":          {},
 	"POST /v1/mfa/backup-codes":                {},
 	"POST /v1/mfa/totp/setup":                  {},
 	"POST /v1/mfa/totp/verify":                 {},

@@ -2,7 +2,7 @@
 
 > Generated from protobuf service descriptors and `saas.policy.v1.method_policy`; only the prose description is joined from `pkg/business/introspection.go`. Do not edit by hand. Run `go generate ./pkg/business` from `module/services/accounts/code`.
 
-Inventory: **134 RPCs** across **26 services**. Missing, invalid, or unclassified procedures are denied by both Connect and gRPC interceptors.
+Inventory: **135 RPCs** across **26 services**. Missing, invalid, or unclassified procedures are denied by both Connect and gRPC interceptors.
 
 The compact tier is retained for compatibility. Guards, resource bindings, audit events, limiter class, and data sensitivity are descriptor-authoritative. Domain handlers may enforce stronger state-dependent rules but may not weaken this floor.
 
@@ -44,6 +44,7 @@ The compact tier is retained for compatibility. Guards, resource bindings, audit
 | `/saas.accounts.v1.InvitationService/AcceptInvitation` | unary | `POST /v1/invitations:accept` | `auth` | exposure=AUTHENTICATED; tenant=USER | — | — | SUCCESS: invitation.accepted | FORBIDDEN / STANDARD_WRITE | SECRET → CONFIDENTIAL | Accept an invite by token. |
 | `/saas.accounts.v1.InvitationService/CreateInvitation` | unary | `POST /v1/invitations` | `org_admin` | exposure=AUTHENTICATED; tenant=ORG_ADMIN | perm=invitations:write; scope=invitations:write | org_id → ORGANIZATION/DIRECT_ID | SUCCESS: invitation.created | FORBIDDEN / STANDARD_WRITE | CONFIDENTIAL → CONFIDENTIAL | Invite a user to an org. |
 | `/saas.accounts.v1.InvitationService/InspectInvitation` | unary | `POST /v1/invitations:inspect` | `public` | exposure=PUBLIC; tenant=NONE | — | — | — | FORBIDDEN / PUBLIC | SECRET → CONFIDENTIAL | Resolve a privacy-limited invitation summary from a secret credential. |
+| `/saas.accounts.v1.InvitationService/InspectInvitationById` | unary | `POST /v1/invitations:inspect-id` | `auth` | exposure=AUTHENTICATED; tenant=USER | — | — | — | FORBIDDEN / STANDARD_READ | CONFIDENTIAL → CONFIDENTIAL | Resolve an authenticated invitee's invitation summary. |
 | `/saas.accounts.v1.InvitationService/ListInvitations` | unary | `GET /v1/invitations` | `org_admin` | exposure=AUTHENTICATED; tenant=ORG_ADMIN | perm=invitations:read; scope=invitations:read | org_id → ORGANIZATION/DIRECT_ID | — | FORBIDDEN / STANDARD_READ | CONFIDENTIAL → CONFIDENTIAL | List pending invites for an org. |
 | `/saas.accounts.v1.InvitationService/ResendInvitation` | unary | `POST /v1/invitations/{id}:resend` | `org_admin` | exposure=AUTHENTICATED; tenant=ORG_ADMIN | perm=invitations:write; scope=invitations:write | id → OWNED_RESOURCE/RESOURCE_TO_ORGANIZATION | SUCCESS: invitation.resent | REQUIRED / STANDARD_WRITE | CONFIDENTIAL → CONFIDENTIAL | Rotate and requeue a pending invitation after its cooldown. |
 | `/saas.accounts.v1.InvitationService/RevokeInvitation` | unary | `DELETE /v1/invitations/{id}` | `org_admin` | exposure=AUTHENTICATED; tenant=ORG_ADMIN | perm=invitations:write; scope=invitations:write | id → OWNED_RESOURCE/RESOURCE_TO_ORGANIZATION | SUCCESS: invitation.revoked | FORBIDDEN / STANDARD_WRITE | CONFIDENTIAL → CONFIDENTIAL | Revoke a pending invite. |
@@ -145,7 +146,7 @@ The compact tier is retained for compatibility. Guards, resource bindings, audit
 
 ## Tier totals
 
-- `auth`: 36
+- `auth`: 37
 - `internal`: 7
 - `mfa`: 3
 - `org_admin`: 28

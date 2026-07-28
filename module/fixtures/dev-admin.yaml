@@ -31,6 +31,12 @@ users:
     provider: email
     provider_id: dev-carol
 
+  - email: dana@example.com
+    name: Dana Lee
+    role: member
+    provider: email
+    provider_id: dev-dana
+
 organizations:
   - name: Acme Corp
     owner: admin@acme.com

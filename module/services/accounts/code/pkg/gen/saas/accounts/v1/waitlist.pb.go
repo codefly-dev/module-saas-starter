@@ -8,15 +8,14 @@ package accountsv1
 
 import (
 	_ "accounts/pkg/gen/saas/policy/v1"
-	reflect "reflect"
-	sync "sync"
-	unsafe "unsafe"
-
 	_ "buf.build/gen/go/bufbuild/protovalidate/protocolbuffers/go/buf/validate"
 	_ "google.golang.org/genproto/googleapis/api/annotations"
 	protoreflect "google.golang.org/protobuf/reflect/protoreflect"
 	protoimpl "google.golang.org/protobuf/runtime/protoimpl"
 	timestamppb "google.golang.org/protobuf/types/known/timestamppb"
+	reflect "reflect"
+	sync "sync"
+	unsafe "unsafe"
 )
 
 const (
@@ -150,6 +149,7 @@ type AcquisitionStatus struct {
 	Mode                      AcquisitionMode        `protobuf:"varint,1,opt,name=mode,proto3,enum=saas.accounts.v1.AcquisitionMode" json:"mode,omitempty"`
 	WaitlistEnabled           bool                   `protobuf:"varint,2,opt,name=waitlist_enabled,json=waitlistEnabled,proto3" json:"waitlist_enabled,omitempty"`
 	EmailVerificationRequired bool                   `protobuf:"varint,3,opt,name=email_verification_required,json=emailVerificationRequired,proto3" json:"email_verification_required,omitempty"`
+	ConsentPolicyVersion      string                 `protobuf:"bytes,4,opt,name=consent_policy_version,json=consentPolicyVersion,proto3" json:"consent_policy_version,omitempty"`
 	unknownFields             protoimpl.UnknownFields
 	sizeCache                 protoimpl.SizeCache
 }
@@ -203,6 +203,13 @@ func (x *AcquisitionStatus) GetEmailVerificationRequired() bool {
 		return x.EmailVerificationRequired
 	}
 	return false
+}
+
+func (x *AcquisitionStatus) GetConsentPolicyVersion() string {
+	if x != nil {
+		return x.ConsentPolicyVersion
+	}
+	return ""
 }
 
 type WaitlistEntry struct {
@@ -945,11 +952,12 @@ var File_saas_accounts_v1_waitlist_proto protoreflect.FileDescriptor
 
 const file_saas_accounts_v1_waitlist_proto_rawDesc = "" +
 	"\n" +
-	"\x1fsaas/accounts/v1/waitlist.proto\x12\x10saas.accounts.v1\x1a\x1bbuf/validate/validate.proto\x1a\x1cgoogle/api/annotations.proto\x1a\x1fgoogle/protobuf/timestamp.proto\x1a\x1csaas/policy/v1/options.proto\"\xbf\x01\n" +
+	"\x1fsaas/accounts/v1/waitlist.proto\x12\x10saas.accounts.v1\x1a\x1bbuf/validate/validate.proto\x1a\x1cgoogle/api/annotations.proto\x1a\x1fgoogle/protobuf/timestamp.proto\x1a\x1csaas/policy/v1/options.proto\"\xf5\x01\n" +
 	"\x11AcquisitionStatus\x12?\n" +
 	"\x04mode\x18\x01 \x01(\x0e2!.saas.accounts.v1.AcquisitionModeB\b\xbaH\x05\x82\x01\x02\x10\x01R\x04mode\x12)\n" +
 	"\x10waitlist_enabled\x18\x02 \x01(\bR\x0fwaitlistEnabled\x12>\n" +
-	"\x1bemail_verification_required\x18\x03 \x01(\bR\x19emailVerificationRequired\"\x91\x06\n" +
+	"\x1bemail_verification_required\x18\x03 \x01(\bR\x19emailVerificationRequired\x124\n" +
+	"\x16consent_policy_version\x18\x04 \x01(\tR\x14consentPolicyVersion\"\x91\x06\n" +
 	"\rWaitlistEntry\x12\x18\n" +
 	"\x02id\x18\x01 \x01(\tB\b\xbaH\x05r\x03\xb0\x01\x01R\x02id\x12\x1d\n" +
 	"\x05email\x18\x02 \x01(\tB\a\xbaH\x04r\x02`\x01R\x05email\x12\x12\n" +

@@ -134,6 +134,7 @@ func (s *Service) GetProgress(ctx context.Context, userID, orgID string) (*Onboa
 	}
 
 	now := time.Now()
+	var completedTransitions []gen.OnboardingStepId
 	if err := s.store.As(identity).Within(ctx, func(ctx context.Context) error {
 		for _, definition := range onboardingStepDefinitions {
 			step := stepMap[definition.ID]
@@ -147,30 +148,51 @@ func (s *Service) GetProgress(ctx context.Context, userID, orgID string) (*Onboa
 					FirstSeenAt:   now,
 					LastSeenAt:    now,
 				}
-				stepMap[definition.ID] = step
-				if err := s.store.UpsertOnboardingStep(
+				current, err := s.store.EnsureOnboardingStep(
 					ctx, userID, orgID, CurrentOnboardingFlowID, CurrentOnboardingFlowVersion, step,
-				); err != nil {
+				)
+				if err != nil {
 					return err
 				}
+				current.ID = definition.ID
+				current.Prerequisites = append([]gen.OnboardingStepId(nil), definition.Prerequisites...)
+				stepMap[definition.ID] = current
+				step = current
 			}
 			step.Required = definition.Required
 			step.Prerequisites = append([]gen.OnboardingStepId(nil), definition.Prerequisites...)
 			step.LastSeenAt = now
 			if detected[definition.ID] && step.Status == "pending" {
-				step.Status = "completed"
-				step.CompletedAt = &now
-				step.CompletionMethod = "detected"
-				if err := s.store.UpsertOnboardingStep(
-					ctx, userID, orgID, CurrentOnboardingFlowID, CurrentOnboardingFlowVersion, step,
-				); err != nil {
+				completed := *step
+				completed.Status = "completed"
+				completed.CompletedAt = &now
+				completed.CompletionMethod = "detected"
+				current, transitioned, err := s.store.TransitionOnboardingStep(
+					ctx,
+					userID,
+					orgID,
+					CurrentOnboardingFlowID,
+					CurrentOnboardingFlowVersion,
+					"pending",
+					&completed,
+				)
+				if err != nil {
 					return err
+				}
+				current.ID = definition.ID
+				current.Prerequisites = append([]gen.OnboardingStepId(nil), definition.Prerequisites...)
+				stepMap[definition.ID] = current
+				if transitioned {
+					completedTransitions = append(completedTransitions, definition.ID)
 				}
 			}
 		}
 		return nil
 	}); err != nil {
 		return nil, w.Wrapf(err, "cannot reconcile onboarding progress")
+	}
+	for range completedTransitions {
+		s.emit(ctx, userID, "user", "onboarding.step_completed", "organization", orgID, orgID)
 	}
 
 	progress := &OnboardingProgress{
@@ -235,7 +257,6 @@ func (s *Service) CompleteStep(
 			if step.Status != "completed" {
 				return wool.Get(ctx).NewError("complete the represented product action first")
 			}
-			s.emit(ctx, userID, "user", "onboarding.step_completed", "organization", orgID, orgID)
 			return nil
 		}
 	}
@@ -256,25 +277,64 @@ func (s *Service) SkipStep(
 			return wool.Get(ctx).NewError("required onboarding steps cannot be skipped")
 		}
 	}
+	progress, err := s.GetProgress(ctx, userID, orgID)
+	if err != nil {
+		return err
+	}
+	var current *OnboardingStep
+	for _, step := range progress.Steps {
+		if step.ID == stepID {
+			current = step
+			break
+		}
+	}
+	if current == nil {
+		return wool.Get(ctx).NewError("invalid onboarding step")
+	}
+	if current.Status == "completed" {
+		return wool.Get(ctx).NewError("completed onboarding steps cannot be skipped")
+	}
+	if current.Status == "skipped" {
+		return nil
+	}
 	now := time.Now()
 	step := &OnboardingStep{
-		ID:               stepID,
-		StepName:         onboardingStepName(stepID),
+		ID:               current.ID,
+		StepName:         current.StepName,
 		Status:           "skipped",
-		FirstSeenAt:      now,
+		Required:         current.Required,
+		Prerequisites:    append([]gen.OnboardingStepId(nil), current.Prerequisites...),
+		FirstSeenAt:      current.FirstSeenAt,
 		SkippedAt:        &now,
 		CompletionMethod: "user_skip",
 		SkipReason:       strings.TrimSpace(reason),
 		LastSeenAt:       now,
 	}
+	var transitioned bool
 	if err := s.store.As(Identity{UserID: userID, OrgID: orgID}).Within(ctx, func(ctx context.Context) error {
-		return s.store.UpsertOnboardingStep(
-			ctx, userID, orgID, CurrentOnboardingFlowID, CurrentOnboardingFlowVersion, step,
+		authoritative, changed, err := s.store.TransitionOnboardingStep(
+			ctx,
+			userID,
+			orgID,
+			CurrentOnboardingFlowID,
+			CurrentOnboardingFlowVersion,
+			"pending",
+			step,
 		)
+		if err != nil {
+			return err
+		}
+		transitioned = changed
+		if !changed && authoritative.Status == "completed" {
+			return wool.Get(ctx).NewError("completed onboarding steps cannot be skipped")
+		}
+		return nil
 	}); err != nil {
 		return wool.Get(ctx).Wrapf(err, "cannot skip onboarding step")
 	}
-	s.emit(ctx, userID, "user", "onboarding.step_skipped", "organization", orgID, orgID)
+	if transitioned {
+		s.emit(ctx, userID, "user", "onboarding.step_skipped", "organization", orgID, orgID)
+	}
 	return nil
 }
 

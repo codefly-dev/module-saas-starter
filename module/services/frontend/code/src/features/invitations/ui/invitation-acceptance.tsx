@@ -26,6 +26,13 @@ type State =
 	| { kind: "loading" }
 	| { kind: "ready"; emailHint?: string }
 	| { kind: "error"; message: string; wrongAccount?: boolean }
+	| { kind: "terminal"; message: string }
+	| {
+			kind: "switch-error";
+			message: string;
+			organizationId: string;
+			organizationName: string;
+	  }
 	| { kind: "success"; organizationId: string; organizationName: string };
 
 const UUID =
@@ -63,6 +70,38 @@ function failureMessage(status: number): {
 	};
 }
 
+function inspectedState(summary: {
+	status?: string | number;
+	emailHint?: string;
+}): State {
+	switch (summary.status) {
+		case undefined:
+		case 1:
+		case "INVITATION_STATUS_PENDING":
+			return { kind: "ready", emailHint: summary.emailHint };
+		case 2:
+		case "INVITATION_STATUS_ACCEPTED":
+			return {
+				kind: "terminal",
+				message: "This invitation has already been accepted.",
+			};
+		case 3:
+		case "INVITATION_STATUS_REVOKED":
+			return {
+				kind: "terminal",
+				message: "This invitation was revoked. Ask the inviter for a new one.",
+			};
+		case 4:
+		case "INVITATION_STATUS_EXPIRED":
+			return {
+				kind: "terminal",
+				message: "This invitation expired. Ask the inviter for a new one.",
+			};
+		default:
+			return { kind: "error", message: failureMessage(400).message };
+	}
+}
+
 export function InvitationAcceptance() {
 	const params = useSearchParams();
 	const invitationId = params.get("id");
@@ -79,11 +118,16 @@ export function InvitationAcceptance() {
 	const [state, setState] = useState<State>({ kind: "loading" });
 
 	useEffect(() => {
+		if (authLoading) return;
 		let cancelled = false;
+		const token = isAuthenticated ? getToken() : null;
 		fetch("/invitations/accept/api", {
 			method: "POST",
 			cache: "no-store",
-			headers: { "Content-Type": "application/json" },
+			headers: {
+				"Content-Type": "application/json",
+				...(token ? { Authorization: `Bearer ${token}` } : {}),
+			},
 			body: JSON.stringify({
 				action: "inspect",
 				invitationId: safeInvitationId,
@@ -91,9 +135,12 @@ export function InvitationAcceptance() {
 		})
 			.then(async (response) => {
 				if (!response.ok) throw failureMessage(response.status);
-				const summary = (await response.json()) as { emailHint?: string };
+				const summary = (await response.json()) as {
+					status?: string | number;
+					emailHint?: string;
+				};
 				if (!cancelled) {
-					setState({ kind: "ready", emailHint: summary.emailHint });
+					setState(inspectedState(summary));
 				}
 			})
 			.catch((error) => {
@@ -110,40 +157,57 @@ export function InvitationAcceptance() {
 		return () => {
 			cancelled = true;
 		};
-	}, [safeInvitationId]);
+	}, [authLoading, getToken, isAuthenticated, safeInvitationId]);
 
 	async function accept() {
 		setState({ kind: "loading" });
-		const token = getToken();
-		const response = await fetch("/invitations/accept/api", {
-			method: "POST",
-			cache: "no-store",
-			headers: {
-				"Content-Type": "application/json",
-				...(token ? { Authorization: `Bearer ${token}` } : {}),
-			},
-			body: JSON.stringify({
-				action: "accept",
-				invitationId: safeInvitationId,
-			}),
-		});
-		if (!response.ok) {
-			setState({ kind: "error", ...failureMessage(response.status) });
-			return;
-		}
-		const result = (await response.json()) as {
-			organization?: { id?: string; name?: string };
-		};
-		if (!result.organization?.id) {
+		try {
+			const token = getToken();
+			const response = await fetch("/invitations/accept/api", {
+				method: "POST",
+				cache: "no-store",
+				headers: {
+					"Content-Type": "application/json",
+					...(token ? { Authorization: `Bearer ${token}` } : {}),
+				},
+				body: JSON.stringify({
+					action: "accept",
+					invitationId: safeInvitationId,
+				}),
+			});
+			if (!response.ok) {
+				setState({ kind: "error", ...failureMessage(response.status) });
+				return;
+			}
+			const result = (await response.json()) as {
+				organization?: { id?: string; name?: string };
+			};
+			if (!result.organization?.id) {
+				setState({ kind: "error", ...failureMessage(500) });
+				return;
+			}
+			const organizationId = result.organization.id;
+			const organizationName = result.organization.name ?? "your organization";
+			try {
+				await switchOrganization(organizationId);
+			} catch {
+				setState({
+					kind: "switch-error",
+					message:
+						"The invitation was accepted, but this browser could not switch workspaces. Retry the workspace switch; accepting again is not required.",
+					organizationId,
+					organizationName,
+				});
+				return;
+			}
+			setState({
+				kind: "success",
+				organizationId,
+				organizationName,
+			});
+		} catch {
 			setState({ kind: "error", ...failureMessage(500) });
-			return;
 		}
-		await switchOrganization(result.organization.id);
-		setState({
-			kind: "success",
-			organizationId: result.organization.id,
-			organizationName: result.organization.name ?? "your organization",
-		});
 	}
 
 	const returnPath = safeInvitationId
@@ -199,7 +263,9 @@ export function InvitationAcceptance() {
 					</CardDescription>
 				</CardHeader>
 				<CardContent>
-					{state.kind === "error" && (
+					{(state.kind === "error" ||
+						state.kind === "terminal" ||
+						state.kind === "switch-error") && (
 						<div
 							role="alert"
 							className="flex gap-2 rounded-lg border border-destructive/30 bg-destructive/10 p-3 text-sm"
@@ -210,28 +276,37 @@ export function InvitationAcceptance() {
 					)}
 				</CardContent>
 				<CardFooter className="flex-col gap-2">
-					{isAuthenticated ? (
-						<>
-							<Button className="w-full" onClick={accept}>
-								Accept invitation
-							</Button>
-							{state.kind === "error" && state.wrongAccount && (
-								<Button
-									variant="outline"
-									className="w-full"
-									onClick={async () => {
-										await logout();
-										router.replace(
-											`/auth/login?next=${encodeURIComponent(returnPath)}`,
-										);
-									}}
-								>
-									<UserRoundCog className="mr-2 h-4 w-4" />
-									Switch account
-								</Button>
-							)}
-						</>
-					) : (
+					{state.kind === "switch-error" ? (
+						<Button
+							className="w-full"
+							onClick={async () => {
+								try {
+									await switchOrganization(state.organizationId);
+									setState({
+										kind: "success",
+										organizationId: state.organizationId,
+										organizationName: state.organizationName,
+									});
+								} catch {
+									setState({ ...state });
+								}
+							}}
+						>
+							Retry workspace switch
+						</Button>
+					) : state.kind === "terminal" ? (
+						<Button
+							className="w-full"
+							nativeButton={false}
+							render={<Link href="/" />}
+						>
+							Open dashboard
+						</Button>
+					) : isAuthenticated && state.kind === "ready" ? (
+						<Button className="w-full" onClick={accept}>
+							Accept invitation
+						</Button>
+					) : !isAuthenticated && state.kind === "ready" ? (
 						<Button
 							className="w-full"
 							nativeButton={false}
@@ -244,7 +319,21 @@ export function InvitationAcceptance() {
 							<LogIn className="mr-2 h-4 w-4" />
 							Sign in or create account
 						</Button>
-					)}
+					) : state.kind === "error" && state.wrongAccount ? (
+						<Button
+							variant="outline"
+							className="w-full"
+							onClick={async () => {
+								await logout();
+								router.replace(
+									`/auth/login?next=${encodeURIComponent(returnPath)}`,
+								);
+							}}
+						>
+							<UserRoundCog className="mr-2 h-4 w-4" />
+							Switch account
+						</Button>
+					) : null}
 					{state.kind === "error" && !state.wrongAccount && (
 						<Button
 							variant="ghost"

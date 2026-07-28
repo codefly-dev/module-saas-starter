@@ -205,6 +205,29 @@ func TestRegisterUser(t *testing.T) {
 	require.Equal(t, "google-123", resp.Identity.ProviderId)
 }
 
+func TestRegisterUserHonorsClosedAcquisitionMode(t *testing.T) {
+	clearData(t)
+	require.NoError(t, testService.SetAcquisitionMode("closed"))
+	t.Cleanup(func() {
+		require.NoError(t, testService.SetAcquisitionMode("open_signup"))
+	})
+
+	_, err := testService.RegisterUser(testCtx, &gen.RegisterUserRequest{
+		PrimaryEmail: "closed-signup@test.com",
+		Identity: &gen.UserIdentity{
+			Provider:      "email",
+			ProviderId:    "closed-signup",
+			ProviderEmail: "closed-signup@test.com",
+			EmailVerified: true,
+		},
+	})
+	require.ErrorContains(t, err, "account creation is not available")
+
+	resolved, lookupErr := testStore.ResolveIdentity(testCtx, "email", "closed-signup")
+	require.NoError(t, lookupErr)
+	require.False(t, resolved.Found)
+}
+
 func TestRegisterUser_DuplicateIdentity(t *testing.T) {
 	clearData(t)
 

@@ -1,7 +1,17 @@
+DROP TRIGGER organization_members_invalidate_authorization_sessions
+    ON public.organization_members;
+
+CREATE TRIGGER organization_members_invalidate_authorization_sessions
+AFTER INSERT OR UPDATE OF user_id, org_id, role OR DELETE ON public.organization_members
+FOR EACH ROW EXECUTE FUNCTION public.invalidate_authorization_sessions();
+
 DROP TABLE IF EXISTS user_consent_events;
 DROP TABLE IF EXISTS user_consent_preferences;
 DROP TABLE IF EXISTS waitlist_entries;
 DROP TABLE IF EXISTS organization_activations;
+
+ALTER TABLE users
+    DROP COLUMN IF EXISTS terms_context;
 
 DROP INDEX IF EXISTS onboarding_progress_scoped_unique;
 DROP INDEX IF EXISTS onboarding_progress_legacy_unique;
@@ -28,6 +38,7 @@ ALTER TABLE onboarding_progress
 
 ALTER TABLE invitations
     DROP COLUMN IF EXISTS send_count,
+    DROP COLUMN IF EXISTS last_resend_idempotency_key_hash,
     DROP COLUMN IF EXISTS last_sent_at,
     DROP COLUMN IF EXISTS delivery_status,
     DROP COLUMN IF EXISTS inviter_display_name;

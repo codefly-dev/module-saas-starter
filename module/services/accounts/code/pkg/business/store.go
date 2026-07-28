@@ -140,16 +140,17 @@ type Store interface {
 	GetInvitationOrgID(ctx context.Context, id string) (string, error)
 	ListInvitations(ctx context.Context, orgID string, status string) ([]*Invitation, error)
 	RotateInvitationToken(ctx context.Context, inv *Invitation) error
-	UpdateInvitationStatus(ctx context.Context, id string, status string, acceptedBy string) error
+	UpdateInvitationStatus(ctx context.Context, id string, status string, acceptedBy string) (bool, error)
 	CountPendingInvitations(ctx context.Context, orgID string) (int32, error)
 	HasPendingInvitationForEmail(ctx context.Context, email string) (bool, error)
 
 	// Waitlist
 	GetWaitlistReferralID(ctx context.Context, code string) (string, error)
-	UpsertWaitlistEntry(ctx context.Context, entry *WaitlistEntry, cooldown time.Duration) (*WaitlistEntry, bool, error)
-	VerifyWaitlistEntry(ctx context.Context, tokenHash string, now time.Time) (*WaitlistEntry, error)
+	UpsertWaitlistEntry(ctx context.Context, entry *WaitlistEntry, cooldown time.Duration) (*WaitlistUpsertResult, error)
+	VerifyWaitlistEntry(ctx context.Context, tokenHash string, now time.Time) (*WaitlistVerificationResult, error)
 	ListWaitlistEntries(ctx context.Context, state, query, source, campaign string, pageSize int32, pageToken string) ([]*WaitlistEntry, string, error)
 	UpdateWaitlistState(ctx context.Context, id, state, notes string, tags []string, now time.Time) (*WaitlistEntry, error)
+	InviteWaitlistEntry(ctx context.Context, id string, now time.Time) (*WaitlistEntry, error)
 	GetWaitlistStateByEmail(ctx context.Context, email string) (string, error)
 	ConvertWaitlistEntry(ctx context.Context, email, userID, orgID string, now time.Time) (*WaitlistEntry, error)
 
@@ -235,7 +236,8 @@ type Store interface {
 
 	// Onboarding
 	GetOnboardingProgress(ctx context.Context, userID, orgID, flowID string, flowVersion uint32) ([]*OnboardingStep, error)
-	UpsertOnboardingStep(ctx context.Context, userID, orgID, flowID string, flowVersion uint32, step *OnboardingStep) error
+	EnsureOnboardingStep(ctx context.Context, userID, orgID, flowID string, flowVersion uint32, step *OnboardingStep) (*OnboardingStep, error)
+	TransitionOnboardingStep(ctx context.Context, userID, orgID, flowID string, flowVersion uint32, fromStatus string, step *OnboardingStep) (*OnboardingStep, bool, error)
 	GetOrganizationActivation(ctx context.Context, orgID, flowID string, flowVersion uint32, milestone string) (*time.Time, error)
 	RecordOrganizationActivation(ctx context.Context, orgID, flowID string, flowVersion uint32, milestone, actorID string) error
 
@@ -254,7 +256,7 @@ type Store interface {
 
 	// User consent — server-side TOS/privacy acceptance trail.
 	GetUserConsent(ctx context.Context, userID string) (version string, acceptedAt *time.Time, err error)
-	SetUserConsent(ctx context.Context, userID, version string, acceptedAt time.Time) error
+	SetUserConsent(ctx context.Context, userID, version, consentContext string, acceptedAt time.Time) error
 	GetUserConsentPreferences(ctx context.Context, userID string) ([]*ConsentPreference, error)
 	SetUserConsentPreferences(ctx context.Context, userID string, preferences []*ConsentPreference, region, consentContext string) error
 

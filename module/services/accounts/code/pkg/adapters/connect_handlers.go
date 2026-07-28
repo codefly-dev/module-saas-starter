@@ -39,6 +39,9 @@ func connectCtx(ctx context.Context, h http.Header) context.Context {
 	if v := h.Values("X-Scopes"); len(v) > 0 {
 		md.Set("x-scopes", v...)
 	}
+	if v := h.Values("Idempotency-Key"); len(v) > 0 {
+		md.Set("idempotency-key", v...)
+	}
 	return metadata.NewIncomingContext(ctx, md)
 }
 
@@ -398,6 +401,9 @@ func (h *invitationConnectHandler) CreateInvitation(ctx context.Context, req *co
 }
 func (h *invitationConnectHandler) InspectInvitation(ctx context.Context, req *connect.Request[gen.InspectInvitationRequest]) (*connect.Response[gen.InvitationSummary], error) {
 	return unary(ctx, req, h.inner.InspectInvitation)
+}
+func (h *invitationConnectHandler) InspectInvitationById(ctx context.Context, req *connect.Request[gen.InspectInvitationByIdRequest]) (*connect.Response[gen.InvitationSummary], error) {
+	return unary(ctx, req, h.inner.InspectInvitationById)
 }
 func (h *invitationConnectHandler) AcceptInvitation(ctx context.Context, req *connect.Request[gen.AcceptInvitationRequest]) (*connect.Response[gen.AcceptInvitationResponse], error) {
 	return unary(ctx, req, h.inner.AcceptInvitation)

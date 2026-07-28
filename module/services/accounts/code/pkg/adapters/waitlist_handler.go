@@ -87,6 +87,9 @@ func (h *waitlistConnectHandler) Review(
 	if err := requirePlatformAdmin(ctx, actorID); err != nil {
 		return nil, translateGRPCError(err)
 	}
+	if err := requireMFA(ctx, actorID); err != nil {
+		return nil, translateGRPCError(err)
+	}
 	response, err := h.svc.ReviewWaitlist(ctx, actorID, req.Msg)
 	if err != nil {
 		return nil, err
@@ -107,6 +110,9 @@ func (h *waitlistConnectHandler) Invite(
 		return nil, err
 	}
 	if err := requirePlatformAdmin(ctx, actorID); err != nil {
+		return nil, translateGRPCError(err)
+	}
+	if err := requireMFA(ctx, actorID); err != nil {
 		return nil, translateGRPCError(err)
 	}
 	response, err := h.svc.InviteWaitlist(ctx, actorID, req.Msg)

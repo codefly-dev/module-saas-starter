@@ -341,12 +341,13 @@ see `JOBS.md` for the exact boundary and sequencing.
 | Optional SDK gating      | ✅    | Analytics and marketing default off; `consentchange` is emitted immediately on grant or withdrawal |
 | SOC2 evidence collection | 🟡    | Audit log + access reviews would feed into SOC2; no auto-pack    |
 
-The included legal text is a technical placeholder, not legal advice.
-`NEXT_PUBLIC_LEGAL_ENTITY_NAME` and `NEXT_PUBLIC_LEGAL_CONTACT_EMAIL` must be
-configured before Terms can be accepted, and adopters must replace/review the
-content for their product and jurisdictions. Anonymous browser preferences are
-used only to fail optional SDKs closed; they are not treated as authenticated
-legal evidence.
+The unconfigured legal routes show a technical placeholder, not legal advice.
+`NEXT_PUBLIC_LEGAL_ENTITY_NAME`, `NEXT_PUBLIC_LEGAL_CONTACT_EMAIL`,
+`NEXT_PUBLIC_LEGAL_TERMS_CONTENT`, and `NEXT_PUBLIC_LEGAL_PRIVACY_CONTENT` must
+all be configured before Terms can be accepted, and adopters must legally review
+the supplied content for their product and jurisdictions. Anonymous browser
+preferences are used only to fail optional SDKs closed; they are not treated as
+authenticated legal evidence.
 
 ### Frontend (Next.js)
 
@@ -567,6 +568,8 @@ Frontend browser configuration (`NEXT_PUBLIC_*` values are baked into the client
 | `NEXT_PUBLIC_GOOGLE_*`       | Same, for Google                                            |
 | `NEXT_PUBLIC_LEGAL_ENTITY_NAME` | Operator named in configured legal content                |
 | `NEXT_PUBLIC_LEGAL_CONTACT_EMAIL` | Legal/privacy contact; required before Terms acceptance |
+| `NEXT_PUBLIC_LEGAL_TERMS_CONTENT` | Operator-supplied Terms; required before Terms acceptance |
+| `NEXT_PUBLIC_LEGAL_PRIVACY_CONTENT` | Operator-supplied Privacy Policy; required before Terms acceptance |
 
 Accounts REST and Connect browser calls are relative and same-origin. The
 server-only `API_REST_INTERNAL` and `API_CONNECT_INTERNAL` Codefly bindings are

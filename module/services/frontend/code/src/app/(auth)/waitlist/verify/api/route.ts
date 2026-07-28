@@ -22,12 +22,19 @@ export async function POST(request: Request) {
 	const response = NextResponse.json(body, { status: upstream.status });
 	response.headers.set("Cache-Control", "no-store");
 	response.headers.set("Referrer-Policy", "no-referrer");
-	response.cookies.set(COOKIE, "", {
-		httpOnly: true,
-		secure: process.env.NODE_ENV === "production",
-		sameSite: "strict",
-		path: "/waitlist/verify",
-		maxAge: 0,
-	});
+	if (
+		upstream.ok ||
+		(upstream.status >= 400 &&
+			upstream.status < 500 &&
+			upstream.status !== 429)
+	) {
+		response.cookies.set(COOKIE, "", {
+			httpOnly: true,
+			secure: process.env.NODE_ENV === "production",
+			sameSite: "strict",
+			path: "/waitlist/verify",
+			maxAge: 0,
+		});
+	}
 	return response;
 }

@@ -14,6 +14,7 @@ import (
 	"github.com/codefly-dev/core/wool"
 	"google.golang.org/protobuf/types/known/timestamppb"
 
+	"accounts/pkg/auth"
 	"accounts/pkg/email"
 	gen "accounts/pkg/gen/saas/accounts/v1"
 )
@@ -54,6 +55,17 @@ type WaitlistEntry struct {
 	ConvertedOrganizationID string
 }
 
+type WaitlistUpsertResult struct {
+	Entry                  *WaitlistEntry
+	Created                bool
+	ShouldSendVerification bool
+}
+
+type WaitlistVerificationResult struct {
+	Entry        *WaitlistEntry
+	Transitioned bool
+}
+
 func (s *Service) SetAcquisitionMode(mode string) error {
 	switch strings.ToLower(strings.TrimSpace(mode)) {
 	case "", "open_signup":
@@ -80,6 +92,7 @@ func (s *Service) AcquisitionStatus() *gen.AcquisitionStatus {
 		WaitlistEnabled: s.acquisitionMode == gen.AcquisitionMode_ACQUISITION_MODE_INVITE_ONLY ||
 			s.acquisitionMode == gen.AcquisitionMode_ACQUISITION_MODE_APPROVAL_REQUIRED,
 		EmailVerificationRequired: s.waitlistEmailVerification,
+		ConsentPolicyVersion:      CurrentConsentPolicyVersion,
 	}
 }
 
@@ -95,6 +108,9 @@ func (s *Service) JoinWaitlist(
 	}
 	if req.Website != "" || s.acquisitionMode == gen.AcquisitionMode_ACQUISITION_MODE_CLOSED {
 		return generic, nil
+	}
+	if req.PolicyVersion != CurrentConsentPolicyVersion {
+		return nil, wool.Get(ctx).NewError("consent policy version is no longer current")
 	}
 
 	plaintext, hash, err := newWaitlistToken()
@@ -129,7 +145,7 @@ func (s *Service) JoinWaitlist(
 		entry.VerifiedAt = &now
 	}
 
-	var shouldSend bool
+	var result *WaitlistUpsertResult
 	err = s.store.As(System()).Within(ctx, func(ctx context.Context) error {
 		if req.ReferralCode != "" {
 			var lookupErr error
@@ -139,13 +155,14 @@ func (s *Service) JoinWaitlist(
 			}
 		}
 		var upsertErr error
-		entry, shouldSend, upsertErr = s.store.UpsertWaitlistEntry(
+		result, upsertErr = s.store.UpsertWaitlistEntry(
 			ctx, entry, waitlistVerificationCooldown,
 		)
 		if upsertErr != nil {
 			return upsertErr
 		}
-		if shouldSend && s.emailOutbox != nil {
+		entry = result.Entry
+		if result.ShouldSendVerification && s.emailOutbox != nil {
 			verifyURL := fmt.Sprintf(
 				"%s/waitlist/verify?token=%s",
 				nonEmpty(s.appBaseURL, "http://localhost:21931"),
@@ -173,7 +190,7 @@ func (s *Service) JoinWaitlist(
 		return nil, wool.Get(ctx).Wrapf(err, "waitlist request could not be queued")
 	}
 
-	if entry != nil {
+	if result != nil && result.Created {
 		s.emit(ctx, entry.ID, "waitlist", "waitlist.joined", "waitlist_entry", entry.ID, "")
 	}
 	return generic, nil
@@ -184,10 +201,10 @@ func (s *Service) VerifyWaitlist(
 	req *gen.VerifyWaitlistRequest,
 ) (*gen.VerifyWaitlistResponse, error) {
 	hash := sha256.Sum256([]byte(req.Token))
-	var entry *WaitlistEntry
+	var result *WaitlistVerificationResult
 	err := s.store.As(System()).Within(ctx, func(ctx context.Context) error {
 		var verifyErr error
-		entry, verifyErr = s.store.VerifyWaitlistEntry(ctx, hex.EncodeToString(hash[:]), time.Now())
+		result, verifyErr = s.store.VerifyWaitlistEntry(ctx, hex.EncodeToString(hash[:]), time.Now())
 		return verifyErr
 	})
 	if err != nil {
@@ -199,13 +216,16 @@ func (s *Service) VerifyWaitlist(
 		}
 		return nil, err
 	}
-	if entry == nil {
+	if result == nil || result.Entry == nil {
 		return &gen.VerifyWaitlistResponse{
 			State:   gen.WaitlistState_WAITLIST_STATE_UNSPECIFIED,
 			Message: "This verification link is invalid or no longer available.",
 		}, nil
 	}
-	s.emit(ctx, entry.ID, "waitlist", "waitlist.verified", "waitlist_entry", entry.ID, "")
+	entry := result.Entry
+	if result.Transitioned {
+		s.emit(ctx, entry.ID, "waitlist", "waitlist.verified", "waitlist_entry", entry.ID, "")
+	}
 	return &gen.VerifyWaitlistResponse{
 		State:   waitlistStateFromString(entry.State),
 		Message: "Your email is verified. We'll contact you when access is available.",
@@ -273,17 +293,15 @@ func (s *Service) InviteWaitlist(
 	actorID string,
 	req *gen.InviteWaitlistRequest,
 ) (*gen.WaitlistEntry, error) {
+	if s.emailOutbox == nil {
+		return nil, wool.Get(ctx).NewError("waitlist invitation delivery is unavailable")
+	}
 	var entry *WaitlistEntry
 	err := s.store.As(System()).Within(ctx, func(ctx context.Context) error {
 		var updateErr error
-		entry, updateErr = s.store.UpdateWaitlistState(
-			ctx, req.Id, "invited", "", nil, time.Now(),
-		)
+		entry, updateErr = s.store.InviteWaitlistEntry(ctx, req.Id, time.Now())
 		if updateErr != nil || entry == nil {
 			return updateErr
-		}
-		if s.emailOutbox == nil {
-			return nil
 		}
 		signupURL := nonEmpty(s.appBaseURL, "http://localhost:21931") + "/auth/login?next=/onboarding"
 		return s.emailOutbox.EnqueueTemplate(ctx, email.TemplateRequest{
@@ -322,6 +340,10 @@ func (s *Service) authorizeAccountCreation(ctx context.Context, emailAddress str
 	err := s.store.As(System()).Within(ctx, func(ctx context.Context) error {
 		var lookupErr error
 		existing, lookupErr = s.store.GetUserByEmail(ctx, emailAddress)
+		var storeErr *StoreError
+		if errors.As(lookupErr, &storeErr) && storeErr.StoreErrorType == ErrTypeNotFound {
+			lookupErr = nil
+		}
 		if lookupErr != nil || existing != nil {
 			return lookupErr
 		}
@@ -347,6 +369,17 @@ func (s *Service) authorizeAccountCreation(ctx context.Context, emailAddress str
 	case gen.AcquisitionMode_ACQUISITION_MODE_CLOSED:
 	}
 	return wool.Get(ctx).NewError("account creation is not available for this address")
+}
+
+func (s *Service) authorizeAuthentication(ctx context.Context, claims *auth.Claims) error {
+	resolved, err := s.store.ResolveIdentity(ctx, claims.Provider, claims.Subject)
+	if err != nil {
+		return err
+	}
+	if resolved != nil && resolved.Found {
+		return nil
+	}
+	return s.authorizeAccountCreation(ctx, claims.Email)
 }
 
 func (s *Service) convertWaitlistLead(

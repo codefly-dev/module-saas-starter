@@ -89,6 +89,7 @@ func generatedCatalogRESTRoutes() []*RouteEntry {
 		{Service: "accounts", Method: "POST", Path: "/v1/invitations/{id}:resend", Procedure: "/saas.accounts.v1.InvitationService/ResendInvitation"},
 		{Service: "accounts", Method: "POST", Path: "/v1/invitations:accept", Procedure: "/saas.accounts.v1.InvitationService/AcceptInvitation"},
 		{Service: "accounts", Method: "POST", Path: "/v1/invitations:inspect", Procedure: "/saas.accounts.v1.InvitationService/InspectInvitation"},
+		{Service: "accounts", Method: "POST", Path: "/v1/invitations:inspect-id", Procedure: "/saas.accounts.v1.InvitationService/InspectInvitationById"},
 		{Service: "accounts", Method: "POST", Path: "/v1/mfa/backup-codes", Procedure: "/saas.accounts.v1.MFAService/GenerateBackupCodes"},
 		{Service: "accounts", Method: "POST", Path: "/v1/mfa/totp/setup", Procedure: "/saas.accounts.v1.MFAService/SetupTOTP"},
 		{Service: "accounts", Method: "POST", Path: "/v1/mfa/totp/verify", Procedure: "/saas.accounts.v1.MFAService/VerifyTOTP"},

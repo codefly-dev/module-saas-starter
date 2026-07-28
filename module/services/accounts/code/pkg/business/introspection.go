@@ -102,6 +102,7 @@ var rpcDescriptions = map[string]string{
 	"InvitationService/AcceptInvitation":       "Accept an invite by token.",
 	"InvitationService/CreateInvitation":       "Invite a user to an org.",
 	"InvitationService/InspectInvitation":      "Resolve a privacy-limited invitation summary from a secret credential.",
+	"InvitationService/InspectInvitationById":  "Resolve an authenticated invitee's invitation summary.",
 	"InvitationService/ListInvitations":        "List pending invites for an org.",
 	"InvitationService/ResendInvitation":       "Rotate and requeue a pending invitation after its cooldown.",
 	"InvitationService/RevokeInvitation":       "Revoke a pending invite.",

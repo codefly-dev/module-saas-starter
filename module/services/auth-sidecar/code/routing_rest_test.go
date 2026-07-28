@@ -13,7 +13,7 @@ import (
 func TestGeneratedRESTSurfaceAndExtensions(t *testing.T) {
 	generated, err := LoadRESTRoutesFromCatalog()
 	require.NoError(t, err)
-	require.Len(t, generated, 128)
+	require.Len(t, generated, 129)
 
 	paths := make(map[string]*RouteEntry, len(generated))
 	publicCount := 0
@@ -32,6 +32,8 @@ func TestGeneratedRESTSurfaceAndExtensions(t *testing.T) {
 	require.False(t, paths["GET /v1/acquisition"].Protected)
 	require.NotNil(t, paths["POST /v1/waitlist"])
 	require.False(t, paths["POST /v1/waitlist"].Protected)
+	require.False(t, paths["POST /v1/invitations:inspect"].Protected)
+	require.True(t, paths["POST /v1/invitations:inspect-id"].Protected)
 	require.NotNil(t, paths["GET /v1/platform/jobs/operations"])
 	require.True(t, paths["GET /v1/platform/jobs/operations"].Protected)
 	require.NotNil(t, paths["GET /v1/platform/jobs/{job_id}"])
@@ -64,7 +66,7 @@ func TestGeneratedRESTSurfaceAndExtensions(t *testing.T) {
 
 	all, err := LoadAllRESTRoutes(context.Background(), DefaultRoutingDir())
 	require.NoError(t, err)
-	require.Len(t, all, 133)
+	require.Len(t, all, 134)
 	matcher := NewRouteMatcher(all, nil)
 	require.NotNil(t, matcher.MatchREST(http.MethodGet, "/v1/audit-export/org-1"))
 	require.NotNil(t, matcher.MatchREST(http.MethodPost, "/v1/auth/magic-link"))

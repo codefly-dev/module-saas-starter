@@ -76,6 +76,12 @@ export default defineConfig({
 			NEXT_PUBLIC_GOOGLE_CLIENT_ID: "",
 			NEXT_PUBLIC_AUTH0_AUTHORIZE_URL: "",
 			NEXT_PUBLIC_AUTH0_CLIENT_ID: "",
+			NEXT_PUBLIC_LEGAL_ENTITY_NAME: "Codefly E2E",
+			NEXT_PUBLIC_LEGAL_CONTACT_EMAIL: "legal@example.test",
+			NEXT_PUBLIC_LEGAL_TERMS_CONTENT:
+				"E2E Terms content used only to exercise configured legal routes.",
+			NEXT_PUBLIC_LEGAL_PRIVACY_CONTENT:
+				"E2E Privacy content used only to exercise configured legal routes.",
 		},
 	},
 	// Fully serial + 1 worker — tests share the same backend db + fixture seed.

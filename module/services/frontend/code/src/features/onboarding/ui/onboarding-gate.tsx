@@ -17,6 +17,14 @@ export function OnboardingGate({ children }: { children: ReactNode }) {
 		enabled: isAuthenticated && Boolean(organizationId),
 	});
 
+	if (isAuthenticated && !organizationId) {
+		return (
+			<main className="flex min-h-screen items-center justify-center bg-background">
+				<OnboardingWizard requiredOnly />
+			</main>
+		);
+	}
+
 	if (
 		isAuthenticated &&
 		!query.isLoading &&

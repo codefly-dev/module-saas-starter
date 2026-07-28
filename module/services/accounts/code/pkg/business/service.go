@@ -226,6 +226,10 @@ func (s *Service) Store() Store {
 func (s *Service) RegisterUser(ctx context.Context, input *gen.RegisterUserRequest) (*gen.RegisterUserResponse, error) {
 	w := wool.Get(ctx).In("RegisterUser")
 
+	if err := s.authorizeAccountCreation(ctx, input.PrimaryEmail); err != nil {
+		return nil, err
+	}
+
 	userID := NewIDString()
 	identityID := NewIDString()
 

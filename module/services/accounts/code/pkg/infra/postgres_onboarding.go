@@ -47,13 +47,13 @@ func (s *PostgresStore) GetOnboardingProgress(
 	return steps, rows.Err()
 }
 
-func (s *PostgresStore) UpsertOnboardingStep(
+func (s *PostgresStore) EnsureOnboardingStep(
 	ctx context.Context,
 	userID, orgID, flowID string,
 	flowVersion uint32,
 	step *business.OnboardingStep,
-) error {
-	_, err := s.getQueryExecutor(ctx).Exec(ctx, `
+) (*business.OnboardingStep, error) {
+	row := s.getQueryExecutor(ctx).QueryRow(ctx, `
 		INSERT INTO onboarding_progress (
 			id, user_id, org_id, flow_id, flow_version, variant, step_name,
 			status, required, first_seen_at, last_seen_at, completed_at,
@@ -66,13 +66,10 @@ func (s *PostgresStore) UpsertOnboardingStep(
 		ON CONFLICT (user_id, org_id, flow_id, flow_version, step_name)
 			WHERE org_id IS NOT NULL
 		DO UPDATE SET
-			status = EXCLUDED.status,
 			required = EXCLUDED.required,
-			last_seen_at = CURRENT_TIMESTAMP,
-			completed_at = COALESCE(EXCLUDED.completed_at, onboarding_progress.completed_at),
-			skipped_at = COALESCE(EXCLUDED.skipped_at, onboarding_progress.skipped_at),
-			completion_method = COALESCE(EXCLUDED.completion_method, onboarding_progress.completion_method),
-			skip_reason = EXCLUDED.skip_reason`,
+			last_seen_at = CURRENT_TIMESTAMP
+		RETURNING step_name, status, required, first_seen_at, last_seen_at,
+		          completed_at, skipped_at, completion_method, skip_reason`,
 		business.NewIDString(),
 		userID,
 		orgID,
@@ -87,7 +84,88 @@ func (s *PostgresStore) UpsertOnboardingStep(
 		step.CompletionMethod,
 		step.SkipReason,
 	)
-	return err
+	return scanOnboardingStep(row)
+}
+
+func (s *PostgresStore) TransitionOnboardingStep(
+	ctx context.Context,
+	userID, orgID, flowID string,
+	flowVersion uint32,
+	fromStatus string,
+	step *business.OnboardingStep,
+) (*business.OnboardingStep, bool, error) {
+	row := s.getQueryExecutor(ctx).QueryRow(ctx, `
+		UPDATE onboarding_progress
+		SET status = $7,
+		    required = $8,
+		    last_seen_at = CURRENT_TIMESTAMP,
+		    completed_at = COALESCE($9, completed_at),
+		    skipped_at = COALESCE($10, skipped_at),
+		    completion_method = $11,
+		    skip_reason = $12
+		WHERE user_id = $1
+		  AND org_id = $2
+		  AND flow_id = $3
+		  AND flow_version = $4
+		  AND step_name = $5
+		  AND status = $6
+		RETURNING step_name, status, required, first_seen_at, last_seen_at,
+		          completed_at, skipped_at, completion_method, skip_reason`,
+		userID,
+		orgID,
+		flowID,
+		flowVersion,
+		step.StepName,
+		fromStatus,
+		step.Status,
+		step.Required,
+		step.CompletedAt,
+		step.SkippedAt,
+		step.CompletionMethod,
+		step.SkipReason,
+	)
+	current, err := scanOnboardingStep(row)
+	if err == nil {
+		return current, true, nil
+	}
+	if err != pgx.ErrNoRows {
+		return nil, false, err
+	}
+
+	row = s.getQueryExecutor(ctx).QueryRow(ctx, `
+		SELECT step_name, status, required, first_seen_at, last_seen_at,
+		       completed_at, skipped_at, completion_method, skip_reason
+		FROM onboarding_progress
+		WHERE user_id = $1
+		  AND org_id = $2
+		  AND flow_id = $3
+		  AND flow_version = $4
+		  AND step_name = $5`,
+		userID, orgID, flowID, flowVersion, step.StepName,
+	)
+	current, err = scanOnboardingStep(row)
+	if err != nil {
+		return nil, false, err
+	}
+	return current, false, nil
+}
+
+func scanOnboardingStep(row pgx.Row) (*business.OnboardingStep, error) {
+	var step business.OnboardingStep
+	if err := row.Scan(
+		&step.StepName,
+		&step.Status,
+		&step.Required,
+		&step.FirstSeenAt,
+		&step.LastSeenAt,
+		&step.CompletedAt,
+		&step.SkippedAt,
+		&step.CompletionMethod,
+		&step.SkipReason,
+	); err != nil {
+		return nil, err
+	}
+	return &step, nil
 }
 
 func (s *PostgresStore) GetOrganizationActivation(

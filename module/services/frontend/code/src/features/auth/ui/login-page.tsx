@@ -259,11 +259,12 @@ export function LoginPage() {
 
 					{/* Footer */}
 					<p className="text-center text-xs text-muted-foreground mt-6">
-						By continuing, you agree to our{" "}
+						Continuing starts authentication. You will review and accept the
+						current{" "}
 						<a href="/legal/terms" className="underline">
 							Terms of Service
 						</a>{" "}
-						and acknowledge our{" "}
+						separately. See our{" "}
 						<a href="/legal/privacy" className="underline">
 							Privacy Policy
 						</a>

@@ -46,11 +46,27 @@ export function WaitlistAdminPage() {
 	const [state, setState] = useState(WaitlistState.UNSPECIFIED);
 	const [source, setSource] = useState("");
 	const [campaign, setCampaign] = useState("");
+	const filterKey = JSON.stringify([state, query, source, campaign]);
+	const [pagination, setPagination] = useState({
+		filterKey,
+		pageToken: "",
+		history: [] as string[],
+	});
+	const pageToken =
+		pagination.filterKey === filterKey ? pagination.pageToken : "";
+	const pageHistory =
+		pagination.filterKey === filterKey ? pagination.history : [];
 	const entries = useQuery({
-		queryKey: ["waitlist", state, query, source, campaign],
+		queryKey: ["waitlist", state, query, source, campaign, pageToken],
 		queryFn: () =>
-			client.list({ state, query, source, campaign, pageSize: 100 }),
-		select: (response) => response.entries,
+			client.list({
+				state,
+				query,
+				source,
+				campaign,
+				pageSize: 100,
+				pageToken,
+			}),
 	});
 	const review = useMutation({
 		mutationFn: ({
@@ -171,14 +187,15 @@ export function WaitlistAdminPage() {
 										</TableCell>
 									</TableRow>
 								)}
-								{!entries.isLoading && entries.data?.length === 0 && (
+								{!entries.isLoading &&
+									entries.data?.entries.length === 0 && (
 									<TableRow>
 										<TableCell colSpan={5}>
 											No matching access requests.
 										</TableCell>
 									</TableRow>
 								)}
-								{entries.data?.map((entry) => (
+								{entries.data?.entries.map((entry) => (
 									<TableRow key={entry.id}>
 										<TableCell>
 											<div className="font-medium">{entry.email}</div>
@@ -250,6 +267,35 @@ export function WaitlistAdminPage() {
 								))}
 							</TableBody>
 						</Table>
+					</div>
+					<div className="flex justify-end gap-2">
+						<Button
+							variant="outline"
+							disabled={pageHistory.length === 0 || entries.isFetching}
+							onClick={() => {
+								const previous = pageHistory[pageHistory.length - 1] ?? "";
+								setPagination({
+									filterKey,
+									pageToken: previous,
+									history: pageHistory.slice(0, -1),
+								});
+							}}
+						>
+							Previous
+						</Button>
+						<Button
+							variant="outline"
+							disabled={!entries.data?.nextPageToken || entries.isFetching}
+							onClick={() => {
+								setPagination({
+									filterKey,
+									pageToken: entries.data?.nextPageToken ?? "",
+									history: [...pageHistory, pageToken],
+								});
+							}}
+						>
+							Next
+						</Button>
 					</div>
 				</CardContent>
 			</Card>

@@ -4,12 +4,14 @@
 // unconfigured → linked → disabled — without real WorkOS credentials.
 
 import { expect, type Page, test } from "@playwright/test";
+import { resolveConsentPrompt } from "./consent";
 
 async function loginAsSuperAdmin(page: Page) {
 	await page.goto("/auth/login");
 	await expect(page.getByText("Sarah Chen")).toBeVisible({ timeout: 15000 });
 	await page.getByText("Sarah Chen").click();
 	await expect(page.getByText("Welcome back")).toBeVisible({ timeout: 20000 });
+	await resolveConsentPrompt(page);
 }
 
 async function pickAcmeOrg(page: Page) {
@@ -29,11 +31,11 @@ test.describe("SSO admin page", () => {
 		).toBeVisible();
 	});
 
-	test("no-org empty state", async ({ page }) => {
-		await expect(page.getByText(/select an organization/i)).toBeVisible();
+	test("the authenticated organization shows its SSO state", async ({ page }) => {
+		await expect(page.getByText(/not configured/i)).toBeVisible();
 		await expect(
 			page.getByRole("button", { name: /^set up sso$/i }),
-		).toHaveCount(0);
+		).toBeVisible();
 	});
 
 	test("unconfigured org shows the Set up SSO CTA", async ({ page }) => {

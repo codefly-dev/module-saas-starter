@@ -26,15 +26,17 @@ export async function POST(request: Request) {
 			{ status: 400 },
 		);
 	}
-	if (body.action === "inspect" && !token) {
-		return NextResponse.json({ actionable: true });
+	const authorization = request.headers.get("authorization");
+	if (body.action === "inspect" && !token && !authorization) {
+		return NextResponse.json({ status: "INVITATION_STATUS_PENDING" });
 	}
 
 	const upstreamPath =
 		body.action === "inspect"
-			? "/v1/invitations:inspect"
+			? token
+				? "/v1/invitations:inspect"
+				: "/v1/invitations:inspect-id"
 			: "/v1/invitations:accept";
-	const authorization = request.headers.get("authorization");
 	const upstream = await fetch(new URL(upstreamPath, request.url), {
 		method: "POST",
 		cache: "no-store",
@@ -42,13 +44,7 @@ export async function POST(request: Request) {
 			"Content-Type": "application/json",
 			...(authorization ? { Authorization: authorization } : {}),
 		},
-		body: JSON.stringify(
-			body.action === "inspect"
-				? { token }
-				: token
-					? { token }
-					: { invitationId },
-		),
+		body: JSON.stringify(token ? { token } : { invitationId }),
 	});
 	const responseBody = await upstream.json().catch(() => ({}));
 	const response = NextResponse.json(responseBody, { status: upstream.status });

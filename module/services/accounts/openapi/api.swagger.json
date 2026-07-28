@@ -325,6 +325,9 @@
     },
     "v1AcquisitionStatus": {
       "properties": {
+        "consentPolicyVersion": {
+          "type": "string"
+        },
         "emailVerificationRequired": {
           "type": "boolean"
         },
@@ -1252,6 +1255,14 @@
         },
         "expiresIn": {
           "format": "int64",
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
+    "v1InspectInvitationByIdRequest": {
+      "properties": {
+        "invitationId": {
           "type": "string"
         }
       },
@@ -5015,6 +5026,38 @@
             "required": true,
             "schema": {
               "$ref": "#/definitions/v1InspectInvitationRequest"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1InvitationSummary"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/rpcStatus"
+            }
+          }
+        },
+        "tags": [
+          "InvitationService"
+        ]
+      }
+    },
+    "/v1/invitations:inspect-id": {
+      "post": {
+        "operationId": "InvitationService_InspectInvitationById",
+        "parameters": [
+          {
+            "in": "body",
+            "name": "body",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/v1InspectInvitationByIdRequest"
             }
           }
         ],

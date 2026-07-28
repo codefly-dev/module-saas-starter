@@ -9,23 +9,27 @@ import {
 	ConsentService,
 	type ConsentStatus,
 } from "@/gen/saas/accounts/v1/consent_pb";
+import { WaitlistService } from "@/gen/saas/accounts/v1/waitlist_pb";
 import { useAuth } from "@/lib/auth";
 import { apiTransport } from "@/lib/connect/transport";
+import { legalContentConfigured } from "@/lib/legal-config";
 import { Button, Switch } from "@/shared/ui";
 
-const POLICY_VERSION = "2026-07-28";
 const STORAGE_KEY = "saas-starter:consent-preferences";
 const client = createClient(ConsentService, apiTransport);
-const LEGAL_CONTENT_CONFIGURED = Boolean(
-	process.env.NEXT_PUBLIC_LEGAL_ENTITY_NAME &&
-		process.env.NEXT_PUBLIC_LEGAL_CONTACT_EMAIL,
-);
+const acquisitionClient = createClient(WaitlistService, apiTransport);
+const LEGAL_CONTENT_CONFIGURED = legalContentConfigured();
 
 type Choices = { analytics: boolean; marketing: boolean };
 type Banner =
 	| { kind: "hidden" }
 	| { kind: "terms"; status: ConsentStatus }
-	| { kind: "preferences"; choices: Choices; configure: boolean };
+	| {
+			kind: "preferences";
+			choices: Choices;
+			configure: boolean;
+			policyVersion: string;
+	  };
 
 function purposeChoice(
 	status: ConsentStatus,
@@ -36,10 +40,10 @@ function purposeChoice(
 	);
 }
 
-function notifyConsent(choices: Choices) {
+function notifyConsent(choices: Choices, policyVersion: string) {
 	window.dispatchEvent(
 		new CustomEvent("consentchange", {
-			detail: { necessary: true, ...choices, policyVersion: POLICY_VERSION },
+			detail: { necessary: true, ...choices, policyVersion },
 		}),
 	);
 }
@@ -64,51 +68,64 @@ export function ConsentBanner() {
 						analytics: purposeChoice(status, ConsentPurpose.ANALYTICS),
 						marketing: purposeChoice(status, ConsentPurpose.MARKETING),
 					};
-					notifyConsent(choices);
+					notifyConsent(choices, status.policyVersion);
 					if (
 						!status.preferencesRecorded ||
 						status.preferencesPolicyVersion !== status.policyVersion
 					) {
-						setBanner({ kind: "preferences", choices, configure: false });
+						setBanner({
+							kind: "preferences",
+							choices,
+							configure: false,
+							policyVersion: status.policyVersion,
+						});
 					}
 				})
-				.catch(() => notifyConsent({ analytics: false, marketing: false }));
+				.catch(() =>
+					notifyConsent({ analytics: false, marketing: false }, ""),
+				);
 			return () => {
 				cancelled = true;
 			};
 		}
 
-		queueMicrotask(() => {
-			if (cancelled) return;
-			try {
+		acquisitionClient
+			.getAcquisitionStatus({})
+			.then((status) => {
+				if (cancelled) return;
+				const policyVersion = status.consentPolicyVersion;
 				const stored = JSON.parse(
 					window.localStorage.getItem(STORAGE_KEY) ?? "null",
 				) as (Choices & { policyVersion?: string }) | null;
-				if (stored?.policyVersion === POLICY_VERSION) {
-					notifyConsent({
-						analytics: Boolean(stored.analytics),
-						marketing: Boolean(stored.marketing),
-					});
+				if (stored?.policyVersion === policyVersion) {
+					notifyConsent(
+						{
+							analytics: Boolean(stored.analytics),
+							marketing: Boolean(stored.marketing),
+						},
+						policyVersion,
+					);
 				} else {
 					setBanner({
 						kind: "preferences",
 						choices: { analytics: false, marketing: false },
 						configure: false,
+						policyVersion,
 					});
 				}
-			} catch {
-				notifyConsent({ analytics: false, marketing: false });
-			}
-		});
+			})
+			.catch(() =>
+				notifyConsent({ analytics: false, marketing: false }, ""),
+			);
 		return () => {
 			cancelled = true;
 		};
 	}, [isAuthenticated, isLoading]);
 
-	async function savePreferences(choices: Choices) {
+	async function savePreferences(choices: Choices, policyVersion: string) {
 		if (isAuthenticated) {
 			await client.updatePreferences({
-				policyVersion: POLICY_VERSION,
+				policyVersion,
 				...choices,
 				region: Intl.DateTimeFormat().resolvedOptions().timeZone,
 				context: "consent_banner",
@@ -116,10 +133,10 @@ export function ConsentBanner() {
 		} else {
 			window.localStorage.setItem(
 				STORAGE_KEY,
-				JSON.stringify({ policyVersion: POLICY_VERSION, ...choices }),
+				JSON.stringify({ policyVersion, ...choices }),
 			);
 		}
-		notifyConsent(choices);
+		notifyConsent(choices, policyVersion);
 		setBanner({ kind: "hidden" });
 	}
 
@@ -133,7 +150,7 @@ export function ConsentBanner() {
 					? "Terms acceptance"
 					: "Optional tracking preferences"
 			}
-			className="fixed bottom-4 left-4 right-4 z-50 ml-auto max-w-lg rounded-2xl border bg-card p-5 shadow-2xl"
+			className="fixed bottom-4 left-4 right-4 z-50 mr-auto max-w-lg rounded-2xl border bg-card p-5 shadow-2xl"
 		>
 			<div className="flex items-start gap-3">
 				<div className="rounded-lg bg-primary/10 p-2">
@@ -249,13 +266,18 @@ export function ConsentBanner() {
 								kind: "preferences",
 								choices,
 								configure: false,
+								policyVersion: status.policyVersion,
 							});
 						}}
 					>
 						Accept Terms
 					</Button>
 				) : banner.configure ? (
-					<Button onClick={() => savePreferences(banner.choices)}>
+					<Button
+						onClick={() =>
+							savePreferences(banner.choices, banner.policyVersion)
+						}
+					>
 						Save choices
 					</Button>
 				) : (
@@ -263,7 +285,10 @@ export function ConsentBanner() {
 						<Button
 							variant="outline"
 							onClick={() =>
-								savePreferences({ analytics: false, marketing: false })
+								savePreferences(
+									{ analytics: false, marketing: false },
+									banner.policyVersion,
+								)
 							}
 						>
 							Reject optional
@@ -276,7 +301,10 @@ export function ConsentBanner() {
 						</Button>
 						<Button
 							onClick={() =>
-								savePreferences({ analytics: true, marketing: true })
+								savePreferences(
+									{ analytics: true, marketing: true },
+									banner.policyVersion,
+								)
 							}
 						>
 							Accept all

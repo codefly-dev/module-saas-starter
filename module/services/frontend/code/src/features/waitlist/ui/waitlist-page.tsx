@@ -25,7 +25,6 @@ import {
 } from "@/shared/ui";
 
 const client = createClient(WaitlistService, apiTransport);
-const POLICY_VERSION = "2026-07-28";
 
 export function WaitlistPage() {
 	const params = useSearchParams();
@@ -33,11 +32,15 @@ export function WaitlistPage() {
 	const [submitting, setSubmitting] = useState(false);
 	const [message, setMessage] = useState("");
 	const [error, setError] = useState("");
+	const [policyVersion, setPolicyVersion] = useState("");
 
 	useEffect(() => {
 		client
 			.getAcquisitionStatus({})
-			.then((status) => setMode(status.mode))
+			.then((status) => {
+				setMode(status.mode);
+				setPolicyVersion(status.consentPolicyVersion);
+			})
 			.catch(() => setError("Access status is temporarily unavailable."));
 	}, []);
 
@@ -56,7 +59,7 @@ export function WaitlistPage() {
 				referrer: document.referrer.slice(0, 2048),
 				referralCode: params.get("ref") ?? "",
 				marketingConsent: form.get("marketing") === "on",
-				policyVersion: POLICY_VERSION,
+				policyVersion,
 			});
 			setMessage(response.message);
 		} catch {
@@ -209,7 +212,7 @@ export function WaitlistPage() {
 						type="submit"
 						form="waitlist-form"
 						className="w-full"
-						disabled={submitting || mode === undefined}
+						disabled={submitting || mode === undefined || !policyVersion}
 					>
 						{submitting && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
 						Join waitlist

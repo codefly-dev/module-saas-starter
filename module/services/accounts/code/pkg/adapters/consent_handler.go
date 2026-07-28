@@ -45,7 +45,7 @@ func (h *consentConnectHandler) AcceptTerms(
 	if err != nil {
 		return nil, err
 	}
-	if err := h.svc.AcceptTerms(ctx, userID, req.Msg.Version); err != nil {
+	if err := h.svc.AcceptTerms(ctx, userID, req.Msg.Version, req.Msg.Context); err != nil {
 		return nil, translateGRPCError(err)
 	}
 	status, err := h.svc.GetConsentStatus(ctx, userID)

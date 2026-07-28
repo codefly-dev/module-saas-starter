@@ -938,6 +938,18 @@ func (s *InvitationServer) InspectInvitation(ctx context.Context, req *gen.Inspe
 	return summary, invitationStatusError(err)
 }
 
+func (s *InvitationServer) InspectInvitationById(ctx context.Context, req *gen.InspectInvitationByIdRequest) (*gen.InvitationSummary, error) {
+	if err := Validate(req); err != nil {
+		return nil, err
+	}
+	userID, err := requireAuth(ctx)
+	if err != nil {
+		return nil, err
+	}
+	summary, err := service.InspectInvitationByID(ctx, userID, req)
+	return summary, invitationStatusError(err)
+}
+
 func (s *InvitationServer) AcceptInvitation(ctx context.Context, req *gen.AcceptInvitationRequest) (*gen.AcceptInvitationResponse, error) {
 	if err := Validate(req); err != nil {
 		return nil, err
@@ -974,7 +986,15 @@ func (s *InvitationServer) ResendInvitation(ctx context.Context, req *gen.Resend
 	if err := requireOrgAdmin(ctx, actorID, orgID); err != nil {
 		return nil, err
 	}
-	return service.ResendInvitation(ctx, actorID, req)
+	md, _ := metadata.FromIncomingContext(ctx)
+	idempotencyKey := ""
+	if values := md.Get("idempotency-key"); len(values) > 0 {
+		idempotencyKey = values[0]
+	}
+	if idempotencyKey == "" {
+		return nil, status.Error(codes.InvalidArgument, "Idempotency-Key header required")
+	}
+	return service.ResendInvitation(ctx, actorID, req, idempotencyKey)
 }
 
 func (s *InvitationServer) ListInvitations(ctx context.Context, req *gen.ListInvitationsRequest) (*gen.ListInvitationsResponse, error) {

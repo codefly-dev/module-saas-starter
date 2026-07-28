@@ -1,14 +1,28 @@
+DROP TRIGGER organization_members_invalidate_authorization_sessions
+    ON public.organization_members;
+
+-- A grant does not alter claims already present in an access token. Keep the
+-- org-less session active so the invitee can explicitly exchange into the new
+-- organization; updates and removals still revoke stale authorization.
+CREATE TRIGGER organization_members_invalidate_authorization_sessions
+AFTER UPDATE OF user_id, org_id, role OR DELETE ON public.organization_members
+FOR EACH ROW EXECUTE FUNCTION public.invalidate_authorization_sessions();
+
 ALTER TABLE invitations
     ADD COLUMN inviter_display_name TEXT NOT NULL DEFAULT '',
     ADD COLUMN delivery_status TEXT NOT NULL DEFAULT 'disabled'
         CHECK (delivery_status IN ('disabled', 'queued', 'sent', 'delivered', 'bounced', 'complained')),
     ADD COLUMN last_sent_at TIMESTAMPTZ,
-    ADD COLUMN send_count INTEGER NOT NULL DEFAULT 0 CHECK (send_count >= 0);
+    ADD COLUMN send_count INTEGER NOT NULL DEFAULT 0 CHECK (send_count >= 0),
+    ADD COLUMN last_resend_idempotency_key_hash TEXT NOT NULL DEFAULT '';
 
 UPDATE invitations
 SET email = LOWER(BTRIM(email)),
     last_sent_at = created_at,
     send_count = 1;
+
+ALTER TABLE users
+    ADD COLUMN terms_context TEXT NOT NULL DEFAULT '';
 
 ALTER TABLE onboarding_progress
     DROP CONSTRAINT IF EXISTS onboarding_progress_user_id_step_name_key;

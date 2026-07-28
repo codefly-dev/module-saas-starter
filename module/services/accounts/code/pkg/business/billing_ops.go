@@ -4,12 +4,13 @@ package business
 //
 // These are the methods the HTTP billing routes call into:
 //
-//   StartCheckout    — /v1/billing/checkout (user clicked "Upgrade")
+//   StartCheckout     — /v1/billing/checkout (user clicked "Upgrade")
+//   SelectFreePlan    — /v1/billing/free-plan (user chose the free tier)
 //   OpenBillingPortal — /v1/billing/portal  (user clicked "Manage billing")
 //
-// They both need a Stripe customer record for the org. We create one
-// lazily on first checkout and store the id on organizations.
-// stripe_customer_id for subsequent calls.
+// Checkout and portal operations need a Stripe customer record for the org.
+// We create one lazily on first checkout and store the id on organizations
+// for subsequent calls.
 //
 // The billing.Client lives on Service via SetBillingClient (nil by
 // default so dev runs without a Stripe account still work — calling
@@ -122,6 +123,54 @@ func (s *Service) StartCheckout(ctx context.Context, in StartCheckoutInput) (str
 
 	s.emit(ctx, in.UserID, "user", "billing.checkout_started", "subscription", session.ID, in.OrgID)
 	return session.URL, nil
+}
+
+func (s *Service) SelectFreePlan(ctx context.Context, userID, orgID string) error {
+	w := wool.Get(ctx).In("SelectFreePlan")
+	if userID == "" || orgID == "" {
+		return w.NewError("SelectFreePlan requires UserID and OrgID")
+	}
+
+	created := false
+	err := s.store.WithOrgTx(ctx, orgID, func(ctx context.Context) error {
+		plan, err := s.store.GetPlanByName(ctx, "free")
+		if err != nil {
+			return w.Wrapf(err, "look up free plan")
+		}
+		if plan == nil || !plan.IsDefault || plan.Name != "free" {
+			return w.NewError("free plan is not configured")
+		}
+
+		subscription, err := s.store.GetSubscription(ctx, orgID)
+		if err != nil {
+			return w.Wrapf(err, "look up current subscription")
+		}
+		if subscription != nil {
+			if subscription.PlanID == plan.ID &&
+				(subscription.Status == "active" || subscription.Status == "trialing") {
+				return nil
+			}
+			return w.NewError("an existing subscription must be changed through the billing portal")
+		}
+
+		if err := s.store.CreateSubscription(ctx, &Subscription{
+			ID:     NewIDString(),
+			OrgID:  orgID,
+			PlanID: plan.ID,
+			Status: "active",
+		}); err != nil {
+			return w.Wrapf(err, "activate free plan")
+		}
+		created = true
+		return nil
+	})
+	if err != nil {
+		return err
+	}
+	if created {
+		s.emit(ctx, userID, "user", "billing.free_plan_selected", "organization", orgID, orgID)
+	}
+	return nil
 }
 
 // OpenBillingPortalInput is the HTTP route input.
