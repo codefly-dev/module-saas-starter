@@ -3,6 +3,7 @@ package adapters
 import (
 	"context"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc/codes"
@@ -38,6 +39,13 @@ func (f *invitationAuthorizationStore) GetInvitationOrgID(context.Context, strin
 	return f.invitationOrgID, nil
 }
 
+func (f *invitationAuthorizationStore) GetInvitationByID(
+	_ context.Context,
+	id string,
+) (*business.Invitation, error) {
+	return &business.Invitation{ID: id, OrgID: f.invitationOrgID, Status: "pending"}, nil
+}
+
 func (f *invitationAuthorizationStore) GetOrgMembership(_ context.Context, orgID, userID string) (*gen.OrgMembership, error) {
 	for _, member := range f.members[orgID] {
 		if member.UserId == userID {
@@ -51,7 +59,13 @@ func (f *invitationAuthorizationStore) GetPlatformRole(context.Context, string) 
 	return "", nil
 }
 
-func (f *invitationAuthorizationStore) UpdateInvitationStatus(context.Context, string, string, string) error {
+func (f *invitationAuthorizationStore) UpdateInvitationStatus(
+	context.Context,
+	string,
+	string,
+	string,
+	time.Time,
+) error {
 	f.revoked = true
 	return nil
 }

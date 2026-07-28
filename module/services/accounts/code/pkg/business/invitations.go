@@ -22,6 +22,8 @@ const invitationTTL = 7 * 24 * time.Hour
 
 const invitationEmailSource = "saas.accounts.invitations"
 
+var ErrInvitationTransitionConflict = errors.New("invitation is no longer pending")
+
 // Invitation is the domain representation of an org invitation.
 type Invitation struct {
 	ID         string
@@ -55,6 +57,7 @@ func (s *Service) CreateInvitation(ctx context.Context, inviterID string, req *g
 		role = "member"
 	}
 
+	createdAt := time.Now().UTC()
 	inv := &Invitation{
 		ID:        NewIDString(),
 		OrgID:     req.OrgId,
@@ -63,7 +66,8 @@ func (s *Service) CreateInvitation(ctx context.Context, inviterID string, req *g
 		Role:      role,
 		TokenHash: tokenHash,
 		Status:    "pending",
-		ExpiresAt: time.Now().Add(invitationTTL),
+		ExpiresAt: createdAt.Add(invitationTTL),
+		CreatedAt: createdAt,
 	}
 
 	appBase := s.appBaseURL
@@ -171,7 +175,15 @@ func (s *Service) CreateInvitation(ctx context.Context, inviterID string, req *g
 				return err
 			}
 		}
-		return nil
+		return s.captureProductEvent(
+			ctx,
+			"invite_created",
+			inv.ID,
+			inviterID,
+			req.OrgId,
+			inv.CreatedAt,
+			map[string]any{"role": inv.Role},
+		)
 	}); err != nil {
 		return nil, w.Wrapf(err, "cannot create invitation")
 	}
@@ -241,9 +253,28 @@ func (s *Service) AcceptInvitation(ctx context.Context, userID string, req *gen.
 		return nil, w.NewError("invitation is no longer pending")
 	}
 	if time.Now().After(inv.ExpiresAt) {
-		_ = s.store.WithOrgTx(ctx, inv.OrgID, func(ctx context.Context) error {
-			return s.store.UpdateInvitationStatus(ctx, inv.ID, "expired", "")
-		})
+		if err := s.store.WithOrgTx(ctx, inv.OrgID, func(ctx context.Context) error {
+			if err := s.store.UpdateInvitationStatus(
+				ctx,
+				inv.ID,
+				"expired",
+				"",
+				inv.ExpiresAt,
+			); err != nil {
+				return err
+			}
+			return s.captureProductEvent(
+				ctx,
+				"invite_expired",
+				inv.ID,
+				userID,
+				inv.OrgID,
+				inv.ExpiresAt,
+				nil,
+			)
+		}); err != nil {
+			return nil, w.Wrapf(err, "cannot expire invitation")
+		}
 		return nil, w.NewError("invitation has expired")
 	}
 
@@ -275,7 +306,14 @@ func (s *Service) AcceptInvitation(ctx context.Context, userID string, req *gen.
 		if err := s.store.AddOrgMember(txCtx, inv.OrgID, userID, inv.Role); err != nil {
 			return w.Wrapf(err, "cannot add member to org")
 		}
-		if err := s.store.UpdateInvitationStatus(txCtx, inv.ID, "accepted", userID); err != nil {
+		acceptedAt := time.Now().UTC()
+		if err := s.store.UpdateInvitationStatus(
+			txCtx,
+			inv.ID,
+			"accepted",
+			userID,
+			acceptedAt,
+		); err != nil {
 			return w.Wrapf(err, "cannot update invitation status")
 		}
 		o, err := s.store.GetOrganization(txCtx, inv.OrgID)
@@ -283,7 +321,15 @@ func (s *Service) AcceptInvitation(ctx context.Context, userID string, req *gen.
 			return w.Wrapf(err, "cannot get organization")
 		}
 		org = o
-		return nil
+		return s.captureProductEvent(
+			txCtx,
+			"invite_accepted",
+			inv.ID,
+			userID,
+			inv.OrgID,
+			acceptedAt,
+			map[string]any{"role": inv.Role},
+		)
 	}); txErr != nil {
 		return nil, txErr
 	}
@@ -317,17 +363,52 @@ func (s *Service) ListInvitations(ctx context.Context, req *gen.ListInvitationsR
 }
 
 // RevokeInvitation marks an invitation as revoked. The proto only carries the
-// invitation id, so the handler first resolves its organization under a narrow
-// bypass and requires that tenant's admin role. This update then uses bypass
-// because no organization id reaches the storage mutation itself.
+// invitation id, so the handler first resolves its organization under the
+// control-plane role before entering the tenant transaction.
 func (s *Service) RevokeInvitation(ctx context.Context, inviterID string, req *gen.RevokeInvitationRequest) error {
 	w := wool.Get(ctx).In("RevokeInvitation")
+	var invitation *Invitation
 	if err := s.store.WithControlPlane(ctx, func(ctx context.Context) error {
-		return s.store.UpdateInvitationStatus(ctx, req.Id, "revoked", "")
+		var err error
+		invitation, err = s.store.GetInvitationByID(ctx, req.Id)
+		return err
+	}); err != nil {
+		return w.Wrapf(err, "cannot resolve invitation")
+	}
+	if invitation == nil {
+		return w.NewError("invitation not found")
+	}
+	if invitation.Status == "revoked" {
+		return nil
+	}
+	if invitation.Status != "pending" {
+		return w.NewError("invitation is no longer pending")
+	}
+	revokedAt := time.Now().UTC()
+	orgID := invitation.OrgID
+	if err := s.store.WithOrgTx(ctx, orgID, func(ctx context.Context) error {
+		if err := s.store.UpdateInvitationStatus(
+			ctx,
+			req.Id,
+			"revoked",
+			"",
+			revokedAt,
+		); err != nil {
+			return err
+		}
+		return s.captureProductEvent(
+			ctx,
+			"invite_revoked",
+			req.Id,
+			inviterID,
+			orgID,
+			revokedAt,
+			nil,
+		)
 	}); err != nil {
 		return w.Wrapf(err, "cannot revoke invitation")
 	}
-	s.emit(ctx, inviterID, "user", "invitation.revoked", "invitation", req.Id, "")
+	s.emit(ctx, inviterID, "user", "invitation.revoked", "invitation", req.Id, orgID)
 	return nil
 }
 

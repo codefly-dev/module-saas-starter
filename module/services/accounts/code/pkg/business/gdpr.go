@@ -223,6 +223,13 @@ func (s *Service) processDeletion(
 	req.Status = GDPRCompleted
 	req.CompletedAt = &now
 	if err := s.store.As(Identity{UserID: req.UserID}).Within(ctx, func(ctx context.Context) error {
+		if err := s.suppressProductIdentity(
+			ctx,
+			userAnalyticsSuppression(req.UserID),
+			Identity{UserID: req.UserID},
+		); err != nil {
+			return err
+		}
 		return gdprStore.UpdateGDPRRequest(ctx, req)
 	}); err != nil {
 		s.failGDPRRequest(ctx, gdprStore, req, fmt.Sprintf("complete deletion request: %v", err))

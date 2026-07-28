@@ -2,8 +2,8 @@
 // @generated from file saas/accounts/v1/usage.proto (package saas.accounts.v1, syntax proto3)
 /* eslint-disable */
 
-import type { GenFile, GenMessage, GenService } from "@bufbuild/protobuf/codegenv2";
-import { fileDesc, messageDesc, serviceDesc } from "@bufbuild/protobuf/codegenv2";
+import type { GenEnum, GenFile, GenMessage, GenService } from "@bufbuild/protobuf/codegenv2";
+import { enumDesc, fileDesc, messageDesc, serviceDesc } from "@bufbuild/protobuf/codegenv2";
 import { file_buf_validate_validate } from "../../../buf/validate/validate_pb";
 import { file_google_api_annotations } from "../../../google/api/annotations_pb";
 import type { Timestamp } from "@bufbuild/protobuf/wkt";
@@ -15,7 +15,7 @@ import type { Message } from "@bufbuild/protobuf";
  * Describes the file saas/accounts/v1/usage.proto.
  */
 export const file_saas_accounts_v1_usage: GenFile = /*@__PURE__*/
-  fileDesc("ChxzYWFzL2FjY291bnRzL3YxL3VzYWdlLnByb3RvEhBzYWFzLmFjY291bnRzLnYxIoUDChNDb25zdW1lVXNhZ2VSZXF1ZXN0EiEKD29yZ2FuaXphdGlvbl9pZBgBIAEoCUIIukgFcgOwAQESLQoFbWV0ZXIYAiABKAlCHrpIG3IZMhdeW2Etel1bYS16MC05X117MCwxMjd9JBIZCghxdWFudGl0eRgDIAEoA0IHukgEIgIgABIjCg9pZGVtcG90ZW5jeV9rZXkYBCABKAlCCrpIB3IFEAEY/wESLwoLb2NjdXJyZWRfYXQYBSABKAsyGi5nb29nbGUucHJvdG9idWYuVGltZXN0YW1wEngKCmRpbWVuc2lvbnMYBiADKAsyNS5zYWFzLmFjY291bnRzLnYxLkNvbnN1bWVVc2FnZVJlcXVlc3QuRGltZW5zaW9uc0VudHJ5Qi26SCqaAScQICIcchoyGF5bYS16XVthLXowLTlfLi1dezAsNjN9JCoFcgMYgAIaMQoPRGltZW5zaW9uc0VudHJ5EgsKA2tleRgBIAEoCRINCgV2YWx1ZRgCIAEoCToCOAEirwIKDFVzYWdlUmVjZWlwdBIQCghldmVudF9pZBgBIAEoCRIXCg9vcmdhbml6YXRpb25faWQYAiABKAkSDQoFbWV0ZXIYAyABKAkSEAoIcXVhbnRpdHkYBCABKAMSEAoIYWNjZXB0ZWQYBSABKAgSEQoJZHVwbGljYXRlGAYgASgIEgwKBHVzZWQYByABKAMSDQoFbGltaXQYCCABKAMSMAoMcGVyaW9kX3N0YXJ0GAkgASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcBIuCgpwZXJpb2RfZW5kGAogASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcBIvCgtvY2N1cnJlZF9hdBgLIAEoCzIaLmdvb2dsZS5wcm90b2J1Zi5UaW1lc3RhbXAiRwoUQ29uc3VtZVVzYWdlUmVzcG9uc2USLwoHcmVjZWlwdBgBIAEoCzIeLnNhYXMuYWNjb3VudHMudjEuVXNhZ2VSZWNlaXB0ImMKD0dldFVzYWdlUmVxdWVzdBIhCg9vcmdhbml6YXRpb25faWQYASABKAlCCLpIBXIDsAEBEi0KBW1ldGVyGAIgASgJQh66SBtyGTIXXlthLXpdW2EtejAtOV9dezAsMTI3fSQiuQEKEEdldFVzYWdlUmVzcG9uc2USFwoPb3JnYW5pemF0aW9uX2lkGAEgASgJEg0KBW1ldGVyGAIgASgJEgwKBHVzZWQYAyABKAMSDQoFbGltaXQYBCABKAMSMAoMcGVyaW9kX3N0YXJ0GAUgASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcBIuCgpwZXJpb2RfZW5kGAYgASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcDLsAgoMVXNhZ2VTZXJ2aWNlEncKDENvbnN1bWVVc2FnZRIlLnNhYXMuYWNjb3VudHMudjEuQ29uc3VtZVVzYWdlUmVxdWVzdBomLnNhYXMuYWNjb3VudHMudjEuQ29uc3VtZVVzYWdlUmVzcG9uc2UiGMLzGBQIAxABMAE6AhABQANIB1ADWANgARLiAQoIR2V0VXNhZ2USIS5zYWFzLmFjY291bnRzLnYxLkdldFVzYWdlUmVxdWVzdBoiLnNhYXMuYWNjb3VudHMudjEuR2V0VXNhZ2VSZXNwb25zZSKOAcLzGFEIAhADGhFlbnRpdGxlbWVudHM6cmVhZCIRZW50aXRsZW1lbnRzOnJlYWQqFQoPb3JnYW5pemF0aW9uX2lkEAIYATABOgIQAUABSANQA1gDYAGC0+STAjMSMS92MS9vcmdhbml6YXRpb25zL3tvcmdhbml6YXRpb25faWR9L3VzYWdlL3ttZXRlcn1CsgEKFGNvbS5zYWFzLmFjY291bnRzLnYxQgpVc2FnZVByb3RvUAFaLGFjY291bnRzL3BrZy9nZW4vc2Fhcy9hY2NvdW50cy92MTthY2NvdW50c3YxogIDU0FYqgIQU2Fhcy5BY2NvdW50cy5WMcoCEFNhYXNcQWNjb3VudHNcVjHiAhxTYWFzXEFjY291bnRzXFYxXEdQQk1ldGFkYXRh6gISU2Fhczo6QWNjb3VudHM6OlYxYgZwcm90bzM", [file_buf_validate_validate, file_google_api_annotations, file_google_protobuf_timestamp, file_saas_policy_v1_options]);
+  fileDesc("ChxzYWFzL2FjY291bnRzL3YxL3VzYWdlLnByb3RvEhBzYWFzLmFjY291bnRzLnYxIoUDChNDb25zdW1lVXNhZ2VSZXF1ZXN0EiEKD29yZ2FuaXphdGlvbl9pZBgBIAEoCUIIukgFcgOwAQESLQoFbWV0ZXIYAiABKAlCHrpIG3IZMhdeW2Etel1bYS16MC05X117MCwxMjd9JBIZCghxdWFudGl0eRgDIAEoA0IHukgEIgIgABIjCg9pZGVtcG90ZW5jeV9rZXkYBCABKAlCCrpIB3IFEAEY/wESLwoLb2NjdXJyZWRfYXQYBSABKAsyGi5nb29nbGUucHJvdG9idWYuVGltZXN0YW1wEngKCmRpbWVuc2lvbnMYBiADKAsyNS5zYWFzLmFjY291bnRzLnYxLkNvbnN1bWVVc2FnZVJlcXVlc3QuRGltZW5zaW9uc0VudHJ5Qi26SCqaAScQICIcchoyGF5bYS16XVthLXowLTlfLi1dezAsNjN9JCoFcgMYgAIaMQoPRGltZW5zaW9uc0VudHJ5EgsKA2tleRgBIAEoCRINCgV2YWx1ZRgCIAEoCToCOAEirwIKDFVzYWdlUmVjZWlwdBIQCghldmVudF9pZBgBIAEoCRIXCg9vcmdhbml6YXRpb25faWQYAiABKAkSDQoFbWV0ZXIYAyABKAkSEAoIcXVhbnRpdHkYBCABKAMSEAoIYWNjZXB0ZWQYBSABKAgSEQoJZHVwbGljYXRlGAYgASgIEgwKBHVzZWQYByABKAMSDQoFbGltaXQYCCABKAMSMAoMcGVyaW9kX3N0YXJ0GAkgASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcBIuCgpwZXJpb2RfZW5kGAogASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcBIvCgtvY2N1cnJlZF9hdBgLIAEoCzIaLmdvb2dsZS5wcm90b2J1Zi5UaW1lc3RhbXAiRwoUQ29uc3VtZVVzYWdlUmVzcG9uc2USLwoHcmVjZWlwdBgBIAEoCzIeLnNhYXMuYWNjb3VudHMudjEuVXNhZ2VSZWNlaXB0ImMKD0dldFVzYWdlUmVxdWVzdBIhCg9vcmdhbml6YXRpb25faWQYASABKAlCCLpIBXIDsAEBEi0KBW1ldGVyGAIgASgJQh66SBtyGTIXXlthLXpdW2EtejAtOV9dezAsMTI3fSQiuQEKEEdldFVzYWdlUmVzcG9uc2USFwoPb3JnYW5pemF0aW9uX2lkGAEgASgJEg0KBW1ldGVyGAIgASgJEgwKBHVzZWQYAyABKAMSDQoFbGltaXQYBCABKAMSMAoMcGVyaW9kX3N0YXJ0GAUgASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcBIuCgpwZXJpb2RfZW5kGAYgASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcCKCAgoKVXNhZ2VNZXRlchILCgNrZXkYASABKAkSFAoMZGlzcGxheV9uYW1lGAIgASgJEgwKBHVuaXQYAyABKAkSNwoLYWdncmVnYXRpb24YBCABKA4yIi5zYWFzLmFjY291bnRzLnYxLlVzYWdlQWdncmVnYXRpb24SDQoFb3duZXIYBSABKAkSDgoGc291cmNlGAYgASgJEhcKD2VudGl0bGVtZW50X2tleRgHIAEoCRIbChNyZWNvbmNpbGlhdGlvbl9ydWxlGAggASgJEjUKCnZpc2liaWxpdHkYCSABKA4yIS5zYWFzLmFjY291bnRzLnYxLlVzYWdlVmlzaWJpbGl0eSLAAQoSVXNhZ2VNZXRlclNuYXBzaG90EisKBW1ldGVyGAEgASgLMhwuc2Fhcy5hY2NvdW50cy52MS5Vc2FnZU1ldGVyEgwKBHVzZWQYAiABKAMSDQoFbGltaXQYAyABKAMSMAoMcGVyaW9kX3N0YXJ0GAQgASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcBIuCgpwZXJpb2RfZW5kGAUgASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcCI7ChZMaXN0VXNhZ2VNZXRlcnNSZXF1ZXN0EiEKD29yZ2FuaXphdGlvbl9pZBgBIAEoCUIIukgFcgOwAQEigAEKF0xpc3RVc2FnZU1ldGVyc1Jlc3BvbnNlEjQKBm1ldGVycxgBIAMoCzIkLnNhYXMuYWNjb3VudHMudjEuVXNhZ2VNZXRlclNuYXBzaG90Ei8KC29ic2VydmVkX2F0GAIgASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcCJzCgtVc2FnZUJ1Y2tldBIpCgVzdGFydBgBIAEoCzIaLmdvb2dsZS5wcm90b2J1Zi5UaW1lc3RhbXASJwoDZW5kGAIgASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcBIQCghxdWFudGl0eRgDIAEoAyKPAgoWR2V0VXNhZ2VIaXN0b3J5UmVxdWVzdBIhCg9vcmdhbml6YXRpb25faWQYASABKAlCCLpIBXIDsAEBEi0KBW1ldGVyGAIgASgJQh66SBtyGTIXXlthLXpdW2EtejAtOV9dezAsMTI3fSQSMAoEZnJvbRgDIAEoCzIaLmdvb2dsZS5wcm90b2J1Zi5UaW1lc3RhbXBCBrpIA8gBARIuCgJ0bxgEIAEoCzIaLmdvb2dsZS5wcm90b2J1Zi5UaW1lc3RhbXBCBrpIA8gBARJBCgZidWNrZXQYBSABKA4yJS5zYWFzLmFjY291bnRzLnYxLlVzYWdlQnVja2V0SW50ZXJ2YWxCCrpIB4IBBBABIAAiugIKF0dldFVzYWdlSGlzdG9yeVJlc3BvbnNlEhcKD29yZ2FuaXphdGlvbl9pZBgBIAEoCRINCgVtZXRlchgCIAEoCRI1CgZidWNrZXQYAyABKA4yJS5zYWFzLmFjY291bnRzLnYxLlVzYWdlQnVja2V0SW50ZXJ2YWwSLgoHYnVja2V0cxgEIAMoCzIdLnNhYXMuYWNjb3VudHMudjEuVXNhZ2VCdWNrZXQSDQoFdG90YWwYBSABKAMSKAoEZnJvbRgGIAEoCzIaLmdvb2dsZS5wcm90b2J1Zi5UaW1lc3RhbXASJgoCdG8YByABKAsyGi5nb29nbGUucHJvdG9idWYuVGltZXN0YW1wEi8KC29ic2VydmVkX2F0GAggASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcCpcChBVc2FnZUFnZ3JlZ2F0aW9uEiEKHVVTQUdFX0FHR1JFR0FUSU9OX1VOU1BFQ0lGSUVEEAASGQoVVVNBR0VfQUdHUkVHQVRJT05fU1VNEAEiBAgCEAIiBAgDEAMqcQoPVXNhZ2VWaXNpYmlsaXR5EiAKHFVTQUdFX1ZJU0lCSUxJVFlfVU5TUEVDSUZJRUQQABIdChlVU0FHRV9WSVNJQklMSVRZX0NVU1RPTUVSEAESHQoZVVNBR0VfVklTSUJJTElUWV9PUEVSQVRPUhACKpwBChNVc2FnZUJ1Y2tldEludGVydmFsEiUKIVVTQUdFX0JVQ0tFVF9JTlRFUlZBTF9VTlNQRUNJRklFRBAAEh4KGlVTQUdFX0JVQ0tFVF9JTlRFUlZBTF9IT1VSEAESHQoZVVNBR0VfQlVDS0VUX0lOVEVSVkFMX0RBWRACEh8KG1VTQUdFX0JVQ0tFVF9JTlRFUlZBTF9NT05USBADMuAGCgxVc2FnZVNlcnZpY2USdwoMQ29uc3VtZVVzYWdlEiUuc2Fhcy5hY2NvdW50cy52MS5Db25zdW1lVXNhZ2VSZXF1ZXN0GiYuc2Fhcy5hY2NvdW50cy52MS5Db25zdW1lVXNhZ2VSZXNwb25zZSIYwvMYFAgDEAEwAToCEAFAA0gHUANYA2ABEuIBCghHZXRVc2FnZRIhLnNhYXMuYWNjb3VudHMudjEuR2V0VXNhZ2VSZXF1ZXN0GiIuc2Fhcy5hY2NvdW50cy52MS5HZXRVc2FnZVJlc3BvbnNlIo4BwvMYUQgCEAMaEWVudGl0bGVtZW50czpyZWFkIhFlbnRpdGxlbWVudHM6cmVhZCoVCg9vcmdhbml6YXRpb25faWQQAhgBMAE6AhABQAFIA1ADWANgAYLT5JMCMxIxL3YxL29yZ2FuaXphdGlvbnMve29yZ2FuaXphdGlvbl9pZH0vdXNhZ2Uve21ldGVyfRLvAQoPTGlzdFVzYWdlTWV0ZXJzEiguc2Fhcy5hY2NvdW50cy52MS5MaXN0VXNhZ2VNZXRlcnNSZXF1ZXN0Gikuc2Fhcy5hY2NvdW50cy52MS5MaXN0VXNhZ2VNZXRlcnNSZXNwb25zZSKGAcLzGFEIAhADGhFlbnRpdGxlbWVudHM6cmVhZCIRZW50aXRsZW1lbnRzOnJlYWQqFQoPb3JnYW5pemF0aW9uX2lkEAIYATABOgIQAUABSANQA1gDYAGC0+STAisSKS92MS9vcmdhbml6YXRpb25zL3tvcmdhbml6YXRpb25faWR9L3VzYWdlEv8BCg9HZXRVc2FnZUhpc3RvcnkSKC5zYWFzLmFjY291bnRzLnYxLkdldFVzYWdlSGlzdG9yeVJlcXVlc3QaKS5zYWFzLmFjY291bnRzLnYxLkdldFVzYWdlSGlzdG9yeVJlc3BvbnNlIpYBwvMYUQgCEAMaEWVudGl0bGVtZW50czpyZWFkIhFlbnRpdGxlbWVudHM6cmVhZCoVCg9vcmdhbml6YXRpb25faWQQAhgBMAE6AhABQAFIA1ADWANgAYLT5JMCOxI5L3YxL29yZ2FuaXphdGlvbnMve29yZ2FuaXphdGlvbl9pZH0vdXNhZ2Uve21ldGVyfS9oaXN0b3J5QrIBChRjb20uc2Fhcy5hY2NvdW50cy52MUIKVXNhZ2VQcm90b1ABWixhY2NvdW50cy9wa2cvZ2VuL3NhYXMvYWNjb3VudHMvdjE7YWNjb3VudHN2MaICA1NBWKoCEFNhYXMuQWNjb3VudHMuVjHKAhBTYWFzXEFjY291bnRzXFYx4gIcU2Fhc1xBY2NvdW50c1xWMVxHUEJNZXRhZGF0YeoCElNhYXM6OkFjY291bnRzOjpWMWIGcHJvdG8z", [file_buf_validate_validate, file_google_api_annotations, file_google_protobuf_timestamp, file_saas_policy_v1_options]);
 
 /**
  * ConsumeUsageRequest records one logical usage operation. Callers must reuse
@@ -230,6 +230,333 @@ export const GetUsageResponseSchema: GenMessage<GetUsageResponse> = /*@__PURE__*
   messageDesc(file_saas_accounts_v1_usage, 4);
 
 /**
+ * @generated from message saas.accounts.v1.UsageMeter
+ */
+export type UsageMeter = Message<"saas.accounts.v1.UsageMeter"> & {
+  /**
+   * @generated from field: string key = 1;
+   */
+  key: string;
+
+  /**
+   * @generated from field: string display_name = 2;
+   */
+  displayName: string;
+
+  /**
+   * @generated from field: string unit = 3;
+   */
+  unit: string;
+
+  /**
+   * @generated from field: saas.accounts.v1.UsageAggregation aggregation = 4;
+   */
+  aggregation: UsageAggregation;
+
+  /**
+   * @generated from field: string owner = 5;
+   */
+  owner: string;
+
+  /**
+   * @generated from field: string source = 6;
+   */
+  source: string;
+
+  /**
+   * @generated from field: string entitlement_key = 7;
+   */
+  entitlementKey: string;
+
+  /**
+   * @generated from field: string reconciliation_rule = 8;
+   */
+  reconciliationRule: string;
+
+  /**
+   * @generated from field: saas.accounts.v1.UsageVisibility visibility = 9;
+   */
+  visibility: UsageVisibility;
+};
+
+/**
+ * Describes the message saas.accounts.v1.UsageMeter.
+ * Use `create(UsageMeterSchema)` to create a new message.
+ */
+export const UsageMeterSchema: GenMessage<UsageMeter> = /*@__PURE__*/
+  messageDesc(file_saas_accounts_v1_usage, 5);
+
+/**
+ * @generated from message saas.accounts.v1.UsageMeterSnapshot
+ */
+export type UsageMeterSnapshot = Message<"saas.accounts.v1.UsageMeterSnapshot"> & {
+  /**
+   * @generated from field: saas.accounts.v1.UsageMeter meter = 1;
+   */
+  meter?: UsageMeter;
+
+  /**
+   * @generated from field: int64 used = 2;
+   */
+  used: bigint;
+
+  /**
+   * @generated from field: int64 limit = 3;
+   */
+  limit: bigint;
+
+  /**
+   * @generated from field: google.protobuf.Timestamp period_start = 4;
+   */
+  periodStart?: Timestamp;
+
+  /**
+   * @generated from field: google.protobuf.Timestamp period_end = 5;
+   */
+  periodEnd?: Timestamp;
+};
+
+/**
+ * Describes the message saas.accounts.v1.UsageMeterSnapshot.
+ * Use `create(UsageMeterSnapshotSchema)` to create a new message.
+ */
+export const UsageMeterSnapshotSchema: GenMessage<UsageMeterSnapshot> = /*@__PURE__*/
+  messageDesc(file_saas_accounts_v1_usage, 6);
+
+/**
+ * @generated from message saas.accounts.v1.ListUsageMetersRequest
+ */
+export type ListUsageMetersRequest = Message<"saas.accounts.v1.ListUsageMetersRequest"> & {
+  /**
+   * @generated from field: string organization_id = 1;
+   */
+  organizationId: string;
+};
+
+/**
+ * Describes the message saas.accounts.v1.ListUsageMetersRequest.
+ * Use `create(ListUsageMetersRequestSchema)` to create a new message.
+ */
+export const ListUsageMetersRequestSchema: GenMessage<ListUsageMetersRequest> = /*@__PURE__*/
+  messageDesc(file_saas_accounts_v1_usage, 7);
+
+/**
+ * @generated from message saas.accounts.v1.ListUsageMetersResponse
+ */
+export type ListUsageMetersResponse = Message<"saas.accounts.v1.ListUsageMetersResponse"> & {
+  /**
+   * @generated from field: repeated saas.accounts.v1.UsageMeterSnapshot meters = 1;
+   */
+  meters: UsageMeterSnapshot[];
+
+  /**
+   * @generated from field: google.protobuf.Timestamp observed_at = 2;
+   */
+  observedAt?: Timestamp;
+};
+
+/**
+ * Describes the message saas.accounts.v1.ListUsageMetersResponse.
+ * Use `create(ListUsageMetersResponseSchema)` to create a new message.
+ */
+export const ListUsageMetersResponseSchema: GenMessage<ListUsageMetersResponse> = /*@__PURE__*/
+  messageDesc(file_saas_accounts_v1_usage, 8);
+
+/**
+ * @generated from message saas.accounts.v1.UsageBucket
+ */
+export type UsageBucket = Message<"saas.accounts.v1.UsageBucket"> & {
+  /**
+   * @generated from field: google.protobuf.Timestamp start = 1;
+   */
+  start?: Timestamp;
+
+  /**
+   * @generated from field: google.protobuf.Timestamp end = 2;
+   */
+  end?: Timestamp;
+
+  /**
+   * @generated from field: int64 quantity = 3;
+   */
+  quantity: bigint;
+};
+
+/**
+ * Describes the message saas.accounts.v1.UsageBucket.
+ * Use `create(UsageBucketSchema)` to create a new message.
+ */
+export const UsageBucketSchema: GenMessage<UsageBucket> = /*@__PURE__*/
+  messageDesc(file_saas_accounts_v1_usage, 9);
+
+/**
+ * @generated from message saas.accounts.v1.GetUsageHistoryRequest
+ */
+export type GetUsageHistoryRequest = Message<"saas.accounts.v1.GetUsageHistoryRequest"> & {
+  /**
+   * @generated from field: string organization_id = 1;
+   */
+  organizationId: string;
+
+  /**
+   * @generated from field: string meter = 2;
+   */
+  meter: string;
+
+  /**
+   * @generated from field: google.protobuf.Timestamp from = 3;
+   */
+  from?: Timestamp;
+
+  /**
+   * @generated from field: google.protobuf.Timestamp to = 4;
+   */
+  to?: Timestamp;
+
+  /**
+   * @generated from field: saas.accounts.v1.UsageBucketInterval bucket = 5;
+   */
+  bucket: UsageBucketInterval;
+};
+
+/**
+ * Describes the message saas.accounts.v1.GetUsageHistoryRequest.
+ * Use `create(GetUsageHistoryRequestSchema)` to create a new message.
+ */
+export const GetUsageHistoryRequestSchema: GenMessage<GetUsageHistoryRequest> = /*@__PURE__*/
+  messageDesc(file_saas_accounts_v1_usage, 10);
+
+/**
+ * @generated from message saas.accounts.v1.GetUsageHistoryResponse
+ */
+export type GetUsageHistoryResponse = Message<"saas.accounts.v1.GetUsageHistoryResponse"> & {
+  /**
+   * @generated from field: string organization_id = 1;
+   */
+  organizationId: string;
+
+  /**
+   * @generated from field: string meter = 2;
+   */
+  meter: string;
+
+  /**
+   * @generated from field: saas.accounts.v1.UsageBucketInterval bucket = 3;
+   */
+  bucket: UsageBucketInterval;
+
+  /**
+   * @generated from field: repeated saas.accounts.v1.UsageBucket buckets = 4;
+   */
+  buckets: UsageBucket[];
+
+  /**
+   * @generated from field: int64 total = 5;
+   */
+  total: bigint;
+
+  /**
+   * @generated from field: google.protobuf.Timestamp from = 6;
+   */
+  from?: Timestamp;
+
+  /**
+   * @generated from field: google.protobuf.Timestamp to = 7;
+   */
+  to?: Timestamp;
+
+  /**
+   * @generated from field: google.protobuf.Timestamp observed_at = 8;
+   */
+  observedAt?: Timestamp;
+};
+
+/**
+ * Describes the message saas.accounts.v1.GetUsageHistoryResponse.
+ * Use `create(GetUsageHistoryResponseSchema)` to create a new message.
+ */
+export const GetUsageHistoryResponseSchema: GenMessage<GetUsageHistoryResponse> = /*@__PURE__*/
+  messageDesc(file_saas_accounts_v1_usage, 11);
+
+/**
+ * @generated from enum saas.accounts.v1.UsageAggregation
+ */
+export enum UsageAggregation {
+  /**
+   * @generated from enum value: USAGE_AGGREGATION_UNSPECIFIED = 0;
+   */
+  UNSPECIFIED = 0,
+
+  /**
+   * @generated from enum value: USAGE_AGGREGATION_SUM = 1;
+   */
+  SUM = 1,
+}
+
+/**
+ * Describes the enum saas.accounts.v1.UsageAggregation.
+ */
+export const UsageAggregationSchema: GenEnum<UsageAggregation> = /*@__PURE__*/
+  enumDesc(file_saas_accounts_v1_usage, 0);
+
+/**
+ * @generated from enum saas.accounts.v1.UsageVisibility
+ */
+export enum UsageVisibility {
+  /**
+   * @generated from enum value: USAGE_VISIBILITY_UNSPECIFIED = 0;
+   */
+  UNSPECIFIED = 0,
+
+  /**
+   * @generated from enum value: USAGE_VISIBILITY_CUSTOMER = 1;
+   */
+  CUSTOMER = 1,
+
+  /**
+   * @generated from enum value: USAGE_VISIBILITY_OPERATOR = 2;
+   */
+  OPERATOR = 2,
+}
+
+/**
+ * Describes the enum saas.accounts.v1.UsageVisibility.
+ */
+export const UsageVisibilitySchema: GenEnum<UsageVisibility> = /*@__PURE__*/
+  enumDesc(file_saas_accounts_v1_usage, 1);
+
+/**
+ * @generated from enum saas.accounts.v1.UsageBucketInterval
+ */
+export enum UsageBucketInterval {
+  /**
+   * @generated from enum value: USAGE_BUCKET_INTERVAL_UNSPECIFIED = 0;
+   */
+  UNSPECIFIED = 0,
+
+  /**
+   * @generated from enum value: USAGE_BUCKET_INTERVAL_HOUR = 1;
+   */
+  HOUR = 1,
+
+  /**
+   * @generated from enum value: USAGE_BUCKET_INTERVAL_DAY = 2;
+   */
+  DAY = 2,
+
+  /**
+   * @generated from enum value: USAGE_BUCKET_INTERVAL_MONTH = 3;
+   */
+  MONTH = 3,
+}
+
+/**
+ * Describes the enum saas.accounts.v1.UsageBucketInterval.
+ */
+export const UsageBucketIntervalSchema: GenEnum<UsageBucketInterval> = /*@__PURE__*/
+  enumDesc(file_saas_accounts_v1_usage, 2);
+
+/**
  * UsageService is the generic monthly metering boundary for product services.
  *
  * @generated from service saas.accounts.v1.UsageService
@@ -257,6 +584,22 @@ export const UsageService: GenService<{
     methodKind: "unary";
     input: typeof GetUsageRequestSchema;
     output: typeof GetUsageResponseSchema;
+  },
+  /**
+   * @generated from rpc saas.accounts.v1.UsageService.ListUsageMeters
+   */
+  listUsageMeters: {
+    methodKind: "unary";
+    input: typeof ListUsageMetersRequestSchema;
+    output: typeof ListUsageMetersResponseSchema;
+  },
+  /**
+   * @generated from rpc saas.accounts.v1.UsageService.GetUsageHistory
+   */
+  getUsageHistory: {
+    methodKind: "unary";
+    input: typeof GetUsageHistoryRequestSchema;
+    output: typeof GetUsageHistoryResponseSchema;
   },
 }> = /*@__PURE__*/
   serviceDesc(file_saas_accounts_v1_usage, 0);

@@ -3,6 +3,7 @@ package infra_test
 import (
 	"context"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/require"
 
@@ -28,7 +29,9 @@ func TestUpsertOnboardingStep_CreateAndUpdate(t *testing.T) {
 	userID := seedUser(t)
 	require.NoError(t, testStore.As(business.Identity{UserID: userID}).Within(testCtx, func(ctx context.Context) error {
 		// Create a new step with "pending" status.
-		require.NoError(t, testStore.UpsertOnboardingStep(ctx, userID, "setup_profile", "pending"))
+		require.NoError(t, testStore.UpsertOnboardingStep(
+			ctx, userID, "setup_profile", "pending", time.Now(),
+		))
 
 		steps, err := testStore.GetOnboardingProgress(ctx, userID)
 		require.NoError(t, err)
@@ -38,7 +41,9 @@ func TestUpsertOnboardingStep_CreateAndUpdate(t *testing.T) {
 		require.Nil(t, steps[0].CompletedAt, "pending step should not have completed_at")
 
 		// Update the same step to "completed".
-		require.NoError(t, testStore.UpsertOnboardingStep(ctx, userID, "setup_profile", "completed"))
+		require.NoError(t, testStore.UpsertOnboardingStep(
+			ctx, userID, "setup_profile", "completed", time.Now(),
+		))
 
 		steps, err = testStore.GetOnboardingProgress(ctx, userID)
 		require.NoError(t, err)
@@ -53,8 +58,12 @@ func TestUpsertOnboardingStep_Idempotent(t *testing.T) {
 	userID := seedUser(t)
 	require.NoError(t, testStore.As(business.Identity{UserID: userID}).Within(testCtx, func(ctx context.Context) error {
 		// Insert the same step twice with the same status.
-		require.NoError(t, testStore.UpsertOnboardingStep(ctx, userID, "invite_team", "skipped"))
-		require.NoError(t, testStore.UpsertOnboardingStep(ctx, userID, "invite_team", "skipped"))
+		require.NoError(t, testStore.UpsertOnboardingStep(
+			ctx, userID, "invite_team", "skipped", time.Now(),
+		))
+		require.NoError(t, testStore.UpsertOnboardingStep(
+			ctx, userID, "invite_team", "skipped", time.Now(),
+		))
 
 		steps, err := testStore.GetOnboardingProgress(ctx, userID)
 		require.NoError(t, err)
@@ -68,9 +77,15 @@ func TestUpsertOnboardingStep_Idempotent(t *testing.T) {
 func TestUpsertOnboardingStep_MultipleSteps(t *testing.T) {
 	userID := seedUser(t)
 	require.NoError(t, testStore.As(business.Identity{UserID: userID}).Within(testCtx, func(ctx context.Context) error {
-		require.NoError(t, testStore.UpsertOnboardingStep(ctx, userID, "step_a", "completed"))
-		require.NoError(t, testStore.UpsertOnboardingStep(ctx, userID, "step_b", "pending"))
-		require.NoError(t, testStore.UpsertOnboardingStep(ctx, userID, "step_c", "skipped"))
+		require.NoError(t, testStore.UpsertOnboardingStep(
+			ctx, userID, "step_a", "completed", time.Now(),
+		))
+		require.NoError(t, testStore.UpsertOnboardingStep(
+			ctx, userID, "step_b", "pending", time.Now(),
+		))
+		require.NoError(t, testStore.UpsertOnboardingStep(
+			ctx, userID, "step_c", "skipped", time.Now(),
+		))
 
 		steps, err := testStore.GetOnboardingProgress(ctx, userID)
 		require.NoError(t, err)

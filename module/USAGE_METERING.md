@@ -1,7 +1,8 @@
 # Generic usage metering
 
-Status: event-meter and atomic cardinality-quota foundations implemented;
-provider reporting and reconciliation remain open under `P2-ENT-004`.
+Status: event-meter, catalog, history API, customer UI, and atomic
+cardinality-quota foundations implemented; provider reporting and automated
+reconciliation remain open under `P2-ENT-004`.
 
 The Starter owns the generic tenant, entitlement, quota, and metering
 boundary. Installed products define their meter names and emit operations;
@@ -30,6 +31,10 @@ consume capacity.
 - `GetUsage` is an authenticated tenant read requiring organization
   membership, `entitlements:read`, and the equivalent API-key scope when an
   API key is used.
+- `ListUsageMeters` returns catalog metadata plus current accepted usage and
+  the effective limit for every customer-visible meter.
+- `GetUsageHistory` returns zero-filled UTC hour, day, or month buckets for an
+  arbitrary range up to 366 days and 1,000 buckets.
 - Periods are UTC calendar months; `period_end` is exclusive.
 - Quantities are positive integers. Negative corrections are deliberately not
   accepted by the ingestion command.
@@ -41,6 +46,26 @@ consume capacity.
 organization. A retry with the same key and payload returns the original
 receipt and does not increment the aggregate. Reusing the key with different
 meter, quantity, event time, or dimensions fails with `AlreadyExists`.
+
+## Meter catalog and customer history
+
+`services/accounts/code/pkg/business/usage_meters.json` is the machine-readable
+meter catalog. Each entry defines its key, display name, unit, aggregation,
+owner, source, entitlement link, reconciliation rule, and visibility. Catalog
+validation rejects duplicate or incomplete entries.
+
+History reads aggregate accepted immutable events, not entitlement gauges.
+The billing page displays actual period usage, zero/partial/provider states,
+UTC source freshness, limit headroom, daily history, and a run-rate forecast.
+Cardinality entitlements remain a separate surface. An unlimited meter reports
+`-1`; a disabled meter reports `0`.
+
+`occurred_at` selects the source UTC bucket, so a delayed command is attributed
+to its original period. Exact retries remain duplicates even after the period
+closes. Product-specific backfills must retain their original idempotency keys
+and timestamps. Corrections, credits, and negative quantities are not silently
+folded into this monotonic event counter; they require an explicit additive
+ledger extension and an audited reconciliation rule.
 
 ## Product integration
 
@@ -110,7 +135,8 @@ it only blocks the final cross-module service edge.
 
 - Generate the named internal Codefly endpoint and product dependency edge
   (`P1-NET-007`).
-- Add reconciliation jobs, operational metrics, and discrepancy alerts.
+- Add automated reconciliation jobs; the discrepancy alert contract is in
+  `services/accounts/code/pkg/metrics/slo_pack.json`.
 - Report billable aggregates to the configured billing provider with durable
   checkpoints and idempotency.
 - Add correction/reversal semantics only if a concrete product requires them.
