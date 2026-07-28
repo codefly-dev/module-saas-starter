@@ -5,9 +5,8 @@ export type NotificationType =
 	| "success"
 	| "warning"
 	| "error"
-	| "invite"
-	| "mention"
-	| "system";
+	| "billing"
+	| "security";
 
 export interface Notification {
 	id: string;
@@ -16,5 +15,5 @@ export interface Notification {
 	type: NotificationType;
 	read: boolean;
 	createdAt: string;
-	linkUrl?: string;
+	actionUrl?: string;
 }

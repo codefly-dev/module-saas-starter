@@ -12,7 +12,7 @@ type ProcessingStore interface {
 	PlanByStripePriceID(ctx context.Context, stripePriceID string) (*PlanRef, error)
 	OrgByStripeCustomerID(ctx context.Context, stripeCustomerID string) (string, error)
 	UpsertSubscription(ctx context.Context, sub SubscriptionUpsert) error
-	OwnerEmailByStripeCustomerID(ctx context.Context, stripeCustomerID string) (string, error)
+	BillingRecipientByStripeCustomerID(ctx context.Context, stripeCustomerID string) (*BillingRecipient, error)
 }
 
 // Store is the complete local projection surface used by the Stripe job
@@ -23,6 +23,14 @@ type Store interface{ ProcessingStore }
 type PlanRef struct {
 	ID   string
 	Name string
+}
+
+// BillingRecipient is the organization owner who receives billing lifecycle
+// communication.
+type BillingRecipient struct {
+	OrganizationID string
+	UserID         string
+	Email          string
 }
 
 // SubscriptionUpsert is the normalized state written after resolving Stripe

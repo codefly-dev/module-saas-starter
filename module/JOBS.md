@@ -354,9 +354,14 @@ again while preserving the copied exact payload. Provider bodies and arbitrary
 errors are never retained in job history.
 
 In-app notifications remain direct durable destination rows with owner-bound
-RLS; there is no external side effect to enqueue. Preference-based fan-out to
-email, Slack, and other future channels remains a separate notification-product
-slice and must reuse this platform rather than introduce another queue.
+RLS; there is no external side effect to enqueue. Optional writes read and
+enforce the recipient's in-app preference in the same user-scoped transaction.
+Security notices created by their owning authentication transaction are
+mandatory and cannot be disabled. The shared policy also maps optional product,
+marketing, and digest email to their typed user settings; existing-account
+invitation delivery uses the product decision before appending its email job.
+Additional email, Slack, and future-channel fan-out must reuse this platform
+rather than introduce another queue.
 
 Unit tests cover generated exact payloads, strict and HTML-safe templates,
 retry/permanent provider classification, exact duplicate enqueue, and replay

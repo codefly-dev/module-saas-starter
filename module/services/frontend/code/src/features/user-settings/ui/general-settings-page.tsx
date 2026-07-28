@@ -189,7 +189,6 @@ function GeneralSettingsForm({
 						product: emailProduct,
 						marketing: emailMarketing,
 						weeklyDigest: emailWeeklyDigest,
-						// security forced-on server-side; we don't send it.
 					},
 				},
 			}),
@@ -445,9 +444,9 @@ function GeneralSettingsForm({
 				<CardHeader>
 					<CardTitle>Email preferences</CardTitle>
 					<CardDescription>
-						Macro categories for transactional email. Per-event overrides live
-						in <code>/settings/notifications</code>. Security alerts are always
-						on.
+						Invitation emails use the product setting. Other optional categories
+						apply when a matching workflow is configured. Billing lifecycle
+						messages are always on.
 					</CardDescription>
 				</CardHeader>
 				<CardContent className="space-y-3">
@@ -463,7 +462,7 @@ function GeneralSettingsForm({
 						<div className="space-y-0.5">
 							<div className="font-medium text-sm">Product updates</div>
 							<div className="text-xs text-muted-foreground">
-								New features, important changes, planned maintenance.
+								Invitations and configured product updates.
 							</div>
 						</div>
 					</label>
@@ -479,7 +478,7 @@ function GeneralSettingsForm({
 						<div className="space-y-0.5">
 							<div className="font-medium text-sm">Weekly digest</div>
 							<div className="text-xs text-muted-foreground">
-								Quiet rollup of activity across your orgs once a week.
+								Applied when a digest workflow is configured.
 							</div>
 						</div>
 					</label>
@@ -495,19 +494,8 @@ function GeneralSettingsForm({
 						<div className="space-y-0.5">
 							<div className="font-medium text-sm">Marketing</div>
 							<div className="text-xs text-muted-foreground">
-								Newsletters and promotions. Off by default.
-							</div>
-						</div>
-					</label>
-					<label
-						htmlFor="email-security"
-						className="flex items-start gap-3 opacity-60 cursor-not-allowed"
-					>
-						<Checkbox id="email-security" checked disabled />
-						<div className="space-y-0.5">
-							<div className="font-medium text-sm">Security alerts</div>
-							<div className="text-xs text-muted-foreground">
-								Always on. Sign-in from a new device, password / MFA changes.
+								Applied to configured newsletters and promotions. Off by
+								default.
 							</div>
 						</div>
 					</label>

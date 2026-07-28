@@ -620,7 +620,10 @@ func (s *Service) notifyDelegationDecision(ctx context.Context, actorPrincipalID
 		notifType = "success"
 	}
 
-	if _, err := s.CreateNotification(ctx, p.ID, orgID, title, body, notifType, ""); err != nil {
+	if _, err := s.CreateNotification(ctx, CreateNotificationInput{
+		UserID: p.ID, OrgID: orgID, Title: title, Body: body,
+		Type: notifType, Category: NotificationCategoryProduct,
+	}); err != nil {
 		// Inbox failure is not critical — the streaming RPC
 		// already delivered the verdict. Log loud so operators
 		// can correlate with notification-table outages.

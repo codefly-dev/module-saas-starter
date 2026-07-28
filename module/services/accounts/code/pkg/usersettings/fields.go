@@ -232,6 +232,9 @@ func Resolve(stored *gen.UserSettings) (*gen.UserSettings, error) {
 	if err := applyDefault(Fields.Email.Security, resolved); err != nil {
 		return nil, err
 	}
+	if err := Fields.Email.Security.Set(resolved, true); err != nil {
+		return nil, err
+	}
 	if err := applyDefault(Fields.Email.WeeklyDigest, resolved); err != nil {
 		return nil, err
 	}

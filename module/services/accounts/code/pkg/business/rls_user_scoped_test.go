@@ -24,9 +24,15 @@ func TestRLS_Notifications_CrossUserBlocked(t *testing.T) {
 	userA, _ := mustUserAndOrg(t, ctx, "alice-notif@rls-test.com", "alice-notif-rls", "Acme NotifA")
 	userB, _ := mustUserAndOrg(t, ctx, "bob-notif@rls-test.com", "bob-notif-rls", "Acme NotifB")
 
-	noteA, err := testService.CreateNotification(ctx, userA, "", "Hi A", "msg-a", "info", "")
+	noteA, err := testService.CreateNotification(ctx, business.CreateNotificationInput{
+		UserID: userA, Category: business.NotificationCategoryProduct,
+		Title: "Hi A", Body: "msg-a", Type: "info",
+	})
 	require.NoError(t, err)
-	noteB, err := testService.CreateNotification(ctx, userB, "", "Hi B", "msg-b", "info", "")
+	noteB, err := testService.CreateNotification(ctx, business.CreateNotificationInput{
+		UserID: userB, Category: business.NotificationCategoryProduct,
+		Title: "Hi B", Body: "msg-b", Type: "info",
+	})
 	require.NoError(t, err)
 
 	// Resource-ID substitution: A cannot mutate B's notification even with the

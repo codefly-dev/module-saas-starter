@@ -48,6 +48,34 @@ func TestCreateAndListNotifications(t *testing.T) {
 	}))
 }
 
+func TestCreateNotificationRejectsConflictingIdempotentRetry(t *testing.T) {
+	userID := seedUser(t)
+	notification := &business.Notification{
+		ID: business.NewIDString(), UserID: userID,
+		Title: "Payment failed", Body: "Update your payment method.",
+		Type: "billing", ActionURL: "/admin/billing",
+	}
+
+	require.NoError(t, testStore.WithUserTx(testCtx, userID, func(ctx context.Context) error {
+		require.NoError(t, testStore.CreateNotification(ctx, notification))
+		require.NoError(t, testStore.CreateNotification(ctx, notification))
+
+		conflict := *notification
+		conflict.Body = "Different payload"
+		require.ErrorContains(
+			t,
+			testStore.CreateNotification(ctx, &conflict),
+			"idempotency key conflicts",
+		)
+
+		notifications, _, err := testStore.ListNotifications(ctx, userID, 20, "")
+		require.NoError(t, err)
+		require.Len(t, notifications, 1)
+		require.Equal(t, notification.Body, notifications[0].Body)
+		return nil
+	}))
+}
+
 func TestGetUnreadCount(t *testing.T) {
 	userID := seedUser(t)
 

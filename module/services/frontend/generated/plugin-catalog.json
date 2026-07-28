@@ -192,6 +192,12 @@
       "access": "FRONTEND_ROUTE_ACCESS_AUTHENTICATED"
     },
     {
+      "path": "/invitations/accept",
+      "source_path": "src/app/(dashboard)/invitations/accept/page.tsx",
+      "match": "FRONTEND_ROUTE_MATCH_EXACT",
+      "access": "FRONTEND_ROUTE_ACCESS_AUTHENTICATED"
+    },
+    {
       "path": "/notifications",
       "source_path": "src/app/(dashboard)/notifications/page.tsx",
       "match": "FRONTEND_ROUTE_MATCH_EXACT",
