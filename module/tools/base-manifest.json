@@ -1,6 +1,6 @@
 {
   "note": "Base-file integrity manifest for the saas-starter module. Generated FROM canonical by `node tools/base-integrity.mjs gen`. Consumers MUST NOT hand-edit base files — only add files on the side. Regenerated on every codefly sync from canonical.",
-  "fileCount": 1332,
+  "fileCount": 1333,
   "files": {
     "AUTHORIZATION_CATALOG.md": "c801d07db8d54ff7484e26dc4d5a65925b32fa108eb5b7899f11b9f193c6a730",
     "CONTRACT_VERSIONING.md": "02031aa87922ab5ec573ea582cf584271873481de6ceabbda52b1bfda005ffbd",
@@ -1115,6 +1115,7 @@
     "services/marketing/code/next.config.mjs": "ee378dc4afc175a6dfbc6f861c845fa28a1424e623f2f50f22a53854a1ec342d",
     "services/marketing/code/package-lock.json": "b67ed1636085ddcd45d74c97c3ea8afeb31aa59e569dc239c8cf01a67959c2d0",
     "services/marketing/code/package.json": "a8512a467e4df1fa256635dfadb5b4bb57c92e7c62462d6df549f018148a3920",
+    "services/marketing/code/packages/.gitkeep": "01ba4719c80b6fe911b091a7c05124b64eeece964e09c058ef8f9805daca546b",
     "services/marketing/code/public/og.png": "eaea1f5c4ab7ee2e64db5599a1bd46015f199e3dc4e52c48f01ad4aa2cce762d",
     "services/marketing/code/scripts/check-boundaries.mjs": "f77faa0827107dec1683c7943d6bce0c6e0a52d89fc9c4cf980dfbcf200ffcfc",
     "services/marketing/code/scripts/performance-budget.mjs": "34fae8fa6cde5f96b47c7a2c23fe072a0aea36ecce0233b5c09233bfcdbc3dbb",
@@ -1146,7 +1147,7 @@
     "services/marketing/code/src/lib/markdown.tsx": "73baef75868892132656b4cc780542750e2b79a94fee37c97995b392a2f08cc5",
     "services/marketing/code/src/lib/page-renderer.tsx": "036bb7b1a8bedfb2dc811c504177adc1195edb5414f090c5dea75c108076c71e",
     "services/marketing/code/tests/catalog.test.ts": "7d7dcb8d6bdc3a99ae7377d5a027a74c029abf0c375939735184924d111e7f6a",
-    "services/marketing/code/tests/container.test.ts": "283ffb1dd8f5ce6f3cb79cf84cc48caaaf453fd317f4037daa8d2dadc1a374d3",
+    "services/marketing/code/tests/container.test.ts": "df929eb239e44e0ea247e3102b459303607580359d59c4b22e2415e97cc18cc1",
     "services/marketing/code/tests/content.test.ts": "acd820515db8b69759a04b203d2496ef589ef220a00647c4546313029c3afba6",
     "services/marketing/code/tests/cta.test.ts": "841d877b796b0396cf63e5be40f2fd8944e090cc981eaf805fd77268f06e5959",
     "services/marketing/code/tests/environment.test.ts": "44a2a8c446a2d01a940eaf6a76266d629750af02c30449dd5768c052e5e47d9f",
