@@ -1,6 +1,7 @@
 package business
 
 import (
+	"accounts/pkg/analytics"
 	"accounts/pkg/auth"
 	"accounts/pkg/email"
 	gen "accounts/pkg/gen/saas/accounts/v1"
@@ -36,6 +37,10 @@ type Service struct {
 	webhookPolicy *WebhookEndpointPolicy
 	webAuthn      WebAuthnEngine  // required for passkey registration and assertion
 	jobOperations jobs.Operations // isolated, payload-free platform operations
+	eventRegistry *analytics.Registry
+	productEvents analytics.Emitter
+	usageMeters   *UsageMeterCatalog
+	privacy       PrivacyWorkflow
 }
 
 // CodeExchanger abstracts the OAuth 2.0 code-for-token exchange so the
@@ -60,7 +65,11 @@ type ExchangedTokens struct {
 }
 
 func NewService(store Store) (*Service, error) {
-	return &Service{store: store}, nil
+	usageMeters, err := DefaultUsageMeterCatalog()
+	if err != nil {
+		return nil, err
+	}
+	return &Service{store: store, usageMeters: usageMeters}, nil
 }
 
 func (s *Service) SetHasher(h KeyHasher) {
@@ -72,6 +81,11 @@ func (s *Service) SetHasher(h KeyHasher) {
 // tenant request traffic cannot inherit cross-tenant job access.
 func (s *Service) SetJobOperations(operations jobs.Operations) {
 	s.jobOperations = operations
+}
+
+func (s *Service) SetProductAnalytics(registry *analytics.Registry, emitter analytics.Emitter) {
+	s.eventRegistry = registry
+	s.productEvents = emitter
 }
 
 // SetWebhookJobProducer wires the request-scoped producer used by Test and
@@ -93,6 +107,10 @@ func (s *Service) SetMFASecretCipher(cipher SecretCipher) {
 func (s *Service) SetWebhookSecurity(cipher SecretCipher, policy *WebhookEndpointPolicy) {
 	s.webhookCipher = cipher
 	s.webhookPolicy = policy.ensureDefaults()
+}
+
+func (s *Service) SetPrivacyWorkflow(workflow PrivacyWorkflow) {
+	s.privacy = workflow
 }
 
 // SetIdentityResolver wires the JIT provisioning + bootstrap layer.

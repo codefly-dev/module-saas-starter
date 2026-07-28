@@ -4,7 +4,7 @@
 > a world-class SaaS starter. Source-of-truth checklist for both end users
 > picking a starter and contributors deciding what to build next.
 
-Last updated: 2026-07-19
+Last updated: 2026-07-28
 
 ---
 
@@ -44,7 +44,7 @@ the sidecar in front so this code path isn't reached.
 | Secrets      | Vault (signing key + integrations)                   |
 | Email        | Resend (prod), log-only fake (dev)                   |
 | Billing      | Stripe (checkout, portal, webhook)                   |
-| Observability| `wool` structured logging everywhere                 |
+| Observability| `wool` logs/traces, OTLP, job metrics, and optional Sentry |
 | Test infra   | Playwright e2e against the real stack via `withDependencies` |
 
 Everything is orchestrated by Codefly: `codefly run service --fixture
@@ -153,7 +153,29 @@ are explicit catalogued extensions rather than implicit bypasses.
 
 ## Feature inventory
 
-Legend: ✅ production-ready · 🟡 partial / scoped · ❌ stubbed / not implemented
+Legend: ✅ implemented in starter source · 🟡 partial / scoped · ❌ not
+implemented. These labels are design inventory, not deployed or externally
+attested behavior. The machine-readable production claim model and its default
+readiness view are documented in `TRUST_CAPABILITIES.md`.
+
+New capability claims use one of
+`implemented_e2e|component_only|experimental|placeholder|planned|not_supported`.
+`implemented_e2e` requires a linked route or API, durable state, and journey or
+contract test. Existing inventory rows retain the older visual legend until
+their next owning change.
+
+### Product measurement
+
+| Capability | Status | Evidence |
+| --- | --- | --- |
+| Canonical product-event envelope and 52-event registry | `component_only` | [proto](services/accounts/proto/saas/analytics/v1/events.proto), [registry](services/accounts/code/pkg/analytics/registry.json), and [contract tests](services/accounts/code/pkg/analytics/registry_test.go) |
+| Transactional analytics outbox and leased export | `component_only` | [outbox](services/accounts/code/pkg/analytics/outbox.go), durable `job_messages`, and [idempotency/export tests](services/accounts/code/pkg/analytics/outbox_test.go) |
+| PostHog/no-op/memory adapters | `component_only` | [adapter](services/accounts/code/pkg/analytics/posthog.go) and [transport tests](services/accounts/code/pkg/analytics/posthog_test.go); production mode is disabled by default |
+| Consent-gated browser analytics, attribution, and aliasing | `component_only` | [browser contract](services/frontend/code/src/lib/analytics/browser.ts) and [consent/shared-device tests](services/frontend/code/src/lib/analytics/browser.test.ts); consent UI is owned by its companion feature |
+| Usage catalog, history, and customer billing view | `component_only` | [`UsageService` API](services/accounts/proto/saas/accounts/v1/usage.proto), durable `usage_events`, [Postgres tests](services/accounts/code/pkg/infra/postgres_usage_test.go), and `/admin/billing`; automated provider reconciliation remains planned |
+| Activation and subscription-revenue semantics | `component_only` | [metric functions and exact fixtures](services/accounts/code/pkg/metrics) |
+| Founder/growth/product/finance/success/engineering dashboard pack | `experimental` | [versioned executable SQL pack](services/accounts/code/pkg/metrics/dashboard_pack.json) and [`measurement-pack` deployment bundle](services/accounts/code/cmd/measurement-pack); cross-domain value materialization remains deployment work |
+| Operational SLO and alert pack | `component_only` | [executable PromQL pack](services/accounts/code/pkg/metrics/slo_pack.json), [OTel worker instruments](services/accounts/code/pkg/jobs/telemetry.go), [durable queue monitor](services/accounts/code/pkg/jobs/operations_telemetry.go), and [runbooks](MEASUREMENT_RUNBOOKS.md) |
 
 ### Authentication & sessions
 
@@ -185,9 +207,9 @@ Legend: ✅ production-ready · 🟡 partial / scoped · ❌ stubbed / not imple
 | Add identity             | ✅    | `AddIdentity` — gated to self or platform-admin (security fix 2026-04-25)      |
 | Find by identity         | ✅    | `FindUserByIdentity` — platform-admin only (security fix 2026-04-25)           |
 | List identities          | ✅    | `ListUserIdentities` — gated to self or platform-admin (security fix 2026-04-25) |
-| Account deletion         | ✅    | `DeleteUser` cascades through org memberships, audit, etc.                     |
-| GDPR export              | ✅    | `ExportUserData` returns JSON / CSV bundle                                     |
-| GDPR delete              | ✅    | `DeleteAllUserData` — full erasure with audit trail                            |
+| Account deletion request | ❌    | Request/status scaffolding fails closed until a complete deletion, retention, provider-cleanup, and legal-hold workflow is wired |
+| Privacy export           | ❌    | Request/status scaffolding fails closed until a complete secure-artifact workflow is wired |
+| Verified privacy delete  | ❌    | No complete dataset/provider inventory, retention authority, legal-hold handling, or completion receipt |
 
 ### Multi-tenancy (orgs / teams)
 
@@ -248,7 +270,7 @@ see `JOBS.md` for the exact boundary and sequencing.
 | Worker database isolation    | ✅    | `app_job_worker` owns lifecycle; grant-limited `app_billing_worker` owns product projection |
 | Trial periods                | ✅    | Stripe-driven; status mirrored locally                           |
 | Dunning emails               | 🟡    | `payment_failed` queues an exact rendered email on the generic retry/dead-letter runtime; in-app prompts remain |
-| Usage metering               | ✅    | Internal `ConsumeUsage` RPC; idempotent event receipts, tenant RLS, atomic monthly hard caps |
+| Usage metering               | ✅    | Internal consumption plus tenant-authorized catalog/history APIs, immutable receipts, tenant RLS, and atomic monthly hard caps |
 | Usage-based invoicing        | 🟡    | Meter reconciliation and Stripe usage reporting are not wired yet |
 | Invoices                     | ✅    | Connect invoice list plus hosted-detail/PDF links                 |
 | Tax (sales tax / VAT)        | 🟡    | Stripe Tax can be enabled; no local tax config UI                |
@@ -259,13 +281,13 @@ see `JOBS.md` for the exact boundary and sequencing.
 
 | Feature                | Status | Notes                                                               |
 |------------------------|--------|---------------------------------------------------------------------|
-| In-app notifications   | ✅    | DB-backed, list / mark-read / unread-count                          |
+| In-app notifications   | ✅    | DB-backed, actionable, list / mark-read / unread-count; optional writes honor the user opt-out |
 | SSE notification stream| ✅    | `/api/notifications/stream` Server-Sent-Events                      |
 | Email transactional    | ✅    | Invitation, magic-link, and billing emails use a generated transactional outbox and isolated worker |
 | Email templates        | ✅    | Versioned DB catalog; strict variable resolution, HTML escaping, and immutable rendered job payloads |
-| User notification prefs| ❌    | No opt-out per category                                             |
+| User notification prefs| 🟡    | Optional in-app and product/marketing/digest email policy is enforced; per-workflow overrides and unsubscribe are not yet available |
 | Outbound webhooks      | ✅    | Generated transactional outbox, Vault keys, SSRF-safe exact-body signing, generic fenced retries/dead letters, replay |
-| Push notifications     | ❌    | No web push or mobile push                                          |
+| Push notifications     | ❌    | No web/mobile push implementation or user-facing control            |
 | SMS notifications      | ❌    | No SMS provider                                                     |
 | Slack / Teams hooks    | 🟡    | Internal Slack notifier (errors/health); not customer-facing        |
 
@@ -277,7 +299,7 @@ see `JOBS.md` for the exact boundary and sequencing.
 | Event types            | ✅    | auth.login, user.registered, org.created, role.assigned, etc.      |
 | Multi-field filter     | ✅    | By org, actor, action, resource, time range                        |
 | Cursor pagination      | ✅    | Stable across writes                                               |
-| Retention policy       | ✅    | Goroutine purges > 90 days nightly (configurable)                  |
+| Retention purge job    | 🟡    | Configurable database purge policies exist; provider data, backups, holds, receipts, and production execution evidence do not |
 | Export (JSON/CSV)      | ✅    | `audit_export.go`                                                  |
 | Impersonation tracking | ✅    | Records both real actor + viewed-as user                           |
 | Replay / event sourcing| ❌    | Audit log is read-only history; not used to reconstruct state      |
@@ -299,12 +321,12 @@ see `JOBS.md` for the exact boundary and sequencing.
 
 | Feature                  | Status | Notes                                                            |
 |--------------------------|--------|------------------------------------------------------------------|
-| GDPR data export         | ✅    | User-initiated; emailed when ready                               |
-| GDPR data deletion       | ✅    | Cascade through all PII tables                                   |
-| Audit retention          | ✅    | 90 days default, configurable                                    |
+| Privacy export artifact  | ❌    | UI disabled until secure storage, subject binding, expiry, deletion, and completeness are verified |
+| Verified data deletion   | ❌    | UI disabled until dataset rules, blockers, provider cleanup, retained records, and receipts are complete |
+| Audit purge configuration| 🟡    | Starter database policy only; deployment retention is adopter-owned and must be evidenced |
 | Consent / TOS versioning | ❌    | No `terms_accepted_at`, no policy version table                   |
 | Cookie consent           | ❌    | No banner / consent record                                       |
-| SOC2 evidence collection | 🟡    | Audit log + access reviews would feed into SOC2; no auto-pack    |
+| Assurance evidence       | ❌    | No certification or attestation ships with the starter           |
 
 ### Frontend (Next.js)
 
@@ -337,10 +359,10 @@ implementations without rewriting the route handlers.
 |----------------|--------|-----------------------------------------------------------------|
 | Structured logs| ✅    | `wool` everywhere; user/org/action context auto-attached         |
 | Audit trail    | ✅    | Separate from app logs; queryable                                |
-| Metrics        | ❌    | No Prometheus / StatsD                                           |
-| Tracing        | ❌    | OpenTelemetry hooks exist in `wool` but no exporter wired        |
-| Error tracking | ❌    | No Sentry / Rollbar / Honeybadger                                |
-| Dashboards     | ❌    | No pre-built Grafana / Datadog                                   |
+| Metrics        | 🟡    | Job-worker OTel instruments plus durable queue projections; HTTP/service SLIs remain scoped |
+| Tracing        | ✅    | OTLP-enabled backend traces and browser-to-backend W3C propagation |
+| Error tracking | ✅    | Optional server/browser Sentry, disabled when no DSN is configured |
+| Dashboards     | 🟡    | Versioned provider-neutral business dashboard pack; provider materialization is deployment-specific |
 
 ---
 
@@ -362,12 +384,12 @@ starters, and large-scale enterprise SaaS expectations.
 | Multi-org tenancy                          | ✅          | Same               |
 | Org invitations                            | ✅          | Same               |
 | RBAC (built-in roles)                      | ✅          | Same               |
-| Audit log                                  | ✅          | Same — and ours has retention + export, which many starters skip |
+| Audit log                                  | ✅          | Query/export implementation; deployment retention remains adopter-owned |
 | Stripe checkout + portal                   | ✅          | Same               |
 | Webhook (inbound from Stripe, signed)      | ✅          | Same               |
 | Outbound webhooks (customer endpoints)     | ✅          | ✅ — plus Vault rotation, SSRF-safe egress, generated generic multi-replica outbox |
 | Email (transactional, templated, dev-mode) | ✅          | Same               |
-| GDPR export + delete                       | ✅          | 🟡 (often skipped — we're ahead) |
+| Verified privacy export + delete           | ❌          | Requires secure artifacts, complete dataset/provider adapters, retention authority, and end-to-end evidence |
 | Admin impersonation                        | ✅          | 🟡 (Cal.com has it; many starters don't) |
 | API keys with scopes                       | ✅          | ✅ (2026-04-25 fix: `requireScope` enforces `resource:action` patterns + wildcards on API-key callers; JWT callers bypass via RBAC) |
 | OpenAPI / TS client autogen                | ✅          | ✅ (Connect-ES is more typesafe than fetch-based clients) |
@@ -388,7 +410,7 @@ starters, and large-scale enterprise SaaS expectations.
 | Custom SSO (SAML / OIDC dynamic clients)       | ✅          | ✅ (2026-04-25: SSOAdminService + /admin/sso self-serve WorkOS Admin Portal flow with stub-mode for dev) |
 | Webhooks UI (test event, replay, signing key)  | ✅          | ✅ (Stripe-style; v2 added 2026-04-25: replay, rotate-secret, deliveries inspector) |
 | API rate limiting per org/key                  | ✅          | ✅ (2026-04-25: Redis-backed fixed-window limiter on Connect + gRPC; X-RateLimit-* headers exposed via CORS + low-budget banner on FE) |
-| Usage metering + billing UI                    | ✅          | ✅ (idempotent tenant-RLS event ledger, atomic monthly quota consumption, GetUsage/GetOrgEntitlements, and billing/admin usage UI) |
+| Usage metering + billing UI                    | ✅          | ✅ (catalogued tenant-RLS event ledger, atomic quota consumption, UTC history, headroom, forecast, and billing/admin UI) |
 | Status page / system health                    | ❌          | ✅                |
 | Internationalization (i18n)                    | ❌          | 🟡                |
 | Mobile-responsive admin                        | 🟡          | ✅                |
@@ -413,8 +435,8 @@ prioritized by leverage:
    B2B SaaS. Cookie scope, branding, white-label all flow from this.
 6. **Onboarding checklist with sample data toggle** — convert sign-ups
    to active users. We have fixtures already; surface as "load demo data".
-7. **System status page** — `/status` reading internal probes; protects
-   incident response and shows up well during sales demos.
+7. **Independent incident communication** — keep `/status` as a live probe,
+   then connect and exercise a status channel outside the product failure domain.
 8. **Self-serve SSO admin** — paying enterprise plans should be able to
    wire SAML themselves. WorkOS Connections handle this if we expose it.
 9. **Audit log streaming to customer S3 / Datadog** — compliance teams
@@ -512,6 +534,13 @@ Environment variables consumed by the api:
 | `EMAIL_FROM`                   | Default sender address                                      |
 | `APP_BASE_URL`                 | Exact HTTPS production origin for email and server-owned Stripe redirects |
 | `SLACK_WEBHOOK_URL`            | Internal alerts (optional)                                  |
+| `PRODUCT_ANALYTICS_MODE`       | `disabled` (default), durable `noop`, or `posthog`           |
+| `POSTHOG_PROJECT_API_KEY`      | PostHog project capture key; required only in PostHog mode   |
+| `POSTHOG_PERSONAL_API_KEY`     | PostHog person-deletion key; required only in PostHog mode   |
+| `POSTHOG_PROJECT_ID`           | Positive PostHog project ID; required only in PostHog mode   |
+| `POSTHOG_HOST`                 | Explicit HTTPS or local PostHog endpoint                     |
+| `OTEL_EXPORTER_OTLP_ENDPOINT`  | Enables the backend OpenTelemetry provider                   |
+| `OTEL_SERVICE_NAME`            | Enables the backend OTel provider in local/stdout mode       |
 | `CODEFLY__FIXTURE`             | Loads fixture YAML (e.g. `dev-admin`); FE login picker too |
 
 Frontend browser configuration (`NEXT_PUBLIC_*` values are baked into the client bundle):
@@ -521,6 +550,8 @@ Frontend browser configuration (`NEXT_PUBLIC_*` values are baked into the client
 | `NEXT_PUBLIC_WORKOS_*`       | OAuth provider preset (presence enables provider in UI)     |
 | `NEXT_PUBLIC_AUTH0_*`        | Same, for Auth0                                             |
 | `NEXT_PUBLIC_GOOGLE_*`       | Same, for Google                                            |
+| `NEXT_PUBLIC_SENTRY_DSN`     | Enables browser Sentry; empty is a no-op                    |
+| `NEXT_PUBLIC_SENTRY_RELEASE` | Correlates frontend errors and traces with a release         |
 
 Accounts REST and Connect browser calls are relative and same-origin. The
 server-only `API_REST_INTERNAL` and `API_CONNECT_INTERNAL` Codefly bindings are
@@ -536,10 +567,10 @@ If you're picking a starter, ask:
 1. Does it support our identity provider? **WorkOS / Auth0 / Google ✅; SAML via WorkOS ✅; LDAP ❌**
 2. Multi-tenant from day one? **Yes — orgs/teams/roles built in.**
 3. Stripe integration that won't bite us in prod? **Webhook signature + idempotency + portal + checkout ✅.** Dunning flows are basic.
-4. Audit + compliance ready for an early SOC 2 push? **Audit retention, GDPR export/delete, impersonation tracking — yes.** Cookie consent + TOS versioning — no, add yourself.
+4. Audit and assurance ready for external review? **The starter includes audit and impersonation controls, but privacy completion, production retention, legal review, and external assurance remain adopter responsibilities.**
 5. Real tests that actually exercise auth/billing/audit? **Yes — Playwright e2e against the running stack.**
 6. Easy to run locally? **One command (`codefly run service --fixture dev-admin`); no docker-compose surgery.**
-7. What will I have to build that's "obviously missing"? Per the gap list above: rate limiting, command palette, webhooks v2 dashboard, self-serve SSO admin, org subdomains. These are 1–5 days each.
+7. What production work remains? Use the evidence-bound readiness view at `/docs/compliance`; it keeps unverified privacy, recovery, incident, legal, and assurance capabilities explicit.
 
 ---
 

@@ -14,7 +14,7 @@ function createWrapper() {
 
 describe("useAuditLog", () => {
 	it("returns audit events", async () => {
-		const { result } = renderHook(() => useAuditLog({}), {
+		const { result } = renderHook(() => useAuditLog({ orgId: "org-1" }), {
 			wrapper: createWrapper(),
 		});
 		await waitFor(() => expect(result.current.isSuccess).toBe(true));
@@ -42,7 +42,7 @@ describe("useAuditLog", () => {
 	});
 
 	it("returns events with expected shape", async () => {
-		const { result } = renderHook(() => useAuditLog({}), {
+		const { result } = renderHook(() => useAuditLog({ orgId: "org-1" }), {
 			wrapper: createWrapper(),
 		});
 		await waitFor(() => expect(result.current.isSuccess).toBe(true));

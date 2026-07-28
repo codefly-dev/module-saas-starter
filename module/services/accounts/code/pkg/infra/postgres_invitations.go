@@ -5,6 +5,7 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgconn"
 
 	"accounts/pkg/business"
 )
@@ -12,9 +13,12 @@ import (
 func (s *PostgresStore) CreateInvitation(ctx context.Context, inv *business.Invitation) error {
 	q := s.getQueryExecutor(ctx)
 	_, err := q.Exec(ctx, `
-		INSERT INTO invitations (id, org_id, inviter_id, email, role, token_hash, status, expires_at)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
-		inv.ID, inv.OrgID, inv.InviterID, inv.Email, inv.Role, inv.TokenHash, inv.Status, inv.ExpiresAt)
+		INSERT INTO invitations (
+			id, org_id, inviter_id, email, role, token_hash, status, expires_at, created_at
+		)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
+		inv.ID, inv.OrgID, inv.InviterID, inv.Email, inv.Role, inv.TokenHash,
+		inv.Status, inv.ExpiresAt, inv.CreatedAt)
 	return err
 }
 
@@ -52,6 +56,46 @@ func (s *PostgresStore) GetInvitationByTokenHash(ctx context.Context, hash strin
 	if acceptedAt != nil {
 		inv.AcceptedAt = acceptedAt
 	}
+	if acceptedBy != nil {
+		inv.AcceptedBy = *acceptedBy
+	}
+	return &inv, nil
+}
+
+func (s *PostgresStore) GetInvitationByID(
+	ctx context.Context,
+	id string,
+) (*business.Invitation, error) {
+	q := s.getQueryExecutor(ctx)
+	row := q.QueryRow(ctx, `
+		SELECT id, org_id, inviter_id, email, role, token_hash, status, expires_at,
+		       accepted_at, accepted_by, created_at
+		FROM invitations
+		WHERE id = $1`, id)
+
+	var inv business.Invitation
+	var acceptedAt *time.Time
+	var acceptedBy *string
+	err := row.Scan(
+		&inv.ID,
+		&inv.OrgID,
+		&inv.InviterID,
+		&inv.Email,
+		&inv.Role,
+		&inv.TokenHash,
+		&inv.Status,
+		&inv.ExpiresAt,
+		&acceptedAt,
+		&acceptedBy,
+		&inv.CreatedAt,
+	)
+	if err == pgx.ErrNoRows {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	inv.AcceptedAt = acceptedAt
 	if acceptedBy != nil {
 		inv.AcceptedBy = *acceptedBy
 	}
@@ -100,19 +144,42 @@ func (s *PostgresStore) ListInvitations(ctx context.Context, orgID string, statu
 	return invitations, nil
 }
 
-func (s *PostgresStore) UpdateInvitationStatus(ctx context.Context, id string, status string, acceptedBy string) error {
+func (s *PostgresStore) UpdateInvitationStatus(
+	ctx context.Context,
+	id string,
+	status string,
+	acceptedBy string,
+	occurredAt time.Time,
+) error {
 	q := s.getQueryExecutor(ctx)
+	var result pgconn.CommandTag
+	var err error
 	if status == "accepted" && acceptedBy != "" {
-		_, err := q.Exec(ctx, `UPDATE invitations SET status = $2, accepted_at = NOW(), accepted_by = $3 WHERE id = $1`,
-			id, status, acceptedBy)
+		result, err = q.Exec(ctx, `
+			UPDATE invitations
+			SET status = $2, accepted_at = $4, accepted_by = $3
+			WHERE id = $1 AND status = 'pending'`,
+			id, status, acceptedBy, occurredAt)
+	} else if status == "revoked" {
+		result, err = q.Exec(ctx, `
+			UPDATE invitations
+			SET status = $2, revoked_at = $3
+			WHERE id = $1 AND status = 'pending'`,
+			id, status, occurredAt)
+	} else {
+		result, err = q.Exec(ctx, `
+			UPDATE invitations
+			SET status = $2
+			WHERE id = $1 AND status = 'pending'`,
+			id, status)
+	}
+	if err != nil {
 		return err
 	}
-	if status == "revoked" {
-		_, err := q.Exec(ctx, `UPDATE invitations SET status = $2, revoked_at = NOW() WHERE id = $1`, id, status)
-		return err
+	if result.RowsAffected() != 1 {
+		return business.ErrInvitationTransitionConflict
 	}
-	_, err := q.Exec(ctx, `UPDATE invitations SET status = $2 WHERE id = $1`, id, status)
-	return err
+	return nil
 }
 
 func (s *PostgresStore) CountPendingInvitations(ctx context.Context, orgID string) (int32, error) {

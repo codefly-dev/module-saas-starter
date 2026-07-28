@@ -32,7 +32,7 @@ func TestFrontendPluginCatalogIsDeterministicAndCurrent(t *testing.T) {
 	require.Equal(t, string(readFixture(t, "../../../../auth-sidecar/code/frontend_routes_catalog_gen.go")), string(first.GatewayGo), "run: go generate ./pkg/cataloggen")
 
 	require.Len(t, first.Catalog.GetPlugins(), 3)
-	require.Len(t, first.Catalog.GetRoutes(), 36)
+	require.Len(t, first.Catalog.GetRoutes(), 37)
 	require.Len(t, first.Catalog.GetNavigation(), 26)
 	require.Contains(t, string(first.TypeScript), `path: "/admin/{*slug}"`)
 
@@ -51,7 +51,7 @@ func TestFrontendPluginCatalogIsDeterministicAndCurrent(t *testing.T) {
 func TestFrontendPageDiscoveryPinsAccessAndMatch(t *testing.T) {
 	routes, err := cataloggen.DiscoverNextPageRoutes(filepath.Clean("../../../../frontend/code"))
 	require.NoError(t, err)
-	require.Len(t, routes, 36)
+	require.Len(t, routes, 37)
 	byPath := make(map[string]*catalogv1.FrontendRoute, len(routes))
 	for _, route := range routes {
 		byPath[route.GetPath()] = route

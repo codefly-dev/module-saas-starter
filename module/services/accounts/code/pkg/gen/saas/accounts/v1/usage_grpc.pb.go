@@ -20,8 +20,10 @@ import (
 const _ = grpc.SupportPackageIsVersion9
 
 const (
-	UsageService_ConsumeUsage_FullMethodName = "/saas.accounts.v1.UsageService/ConsumeUsage"
-	UsageService_GetUsage_FullMethodName     = "/saas.accounts.v1.UsageService/GetUsage"
+	UsageService_ConsumeUsage_FullMethodName    = "/saas.accounts.v1.UsageService/ConsumeUsage"
+	UsageService_GetUsage_FullMethodName        = "/saas.accounts.v1.UsageService/GetUsage"
+	UsageService_ListUsageMeters_FullMethodName = "/saas.accounts.v1.UsageService/ListUsageMeters"
+	UsageService_GetUsageHistory_FullMethodName = "/saas.accounts.v1.UsageService/GetUsageHistory"
 )
 
 // UsageServiceClient is the client API for UsageService service.
@@ -37,6 +39,8 @@ type UsageServiceClient interface {
 	// meter. Cardinality quotas such as seats remain entitlement gauges rather
 	// than usage events.
 	GetUsage(ctx context.Context, in *GetUsageRequest, opts ...grpc.CallOption) (*GetUsageResponse, error)
+	ListUsageMeters(ctx context.Context, in *ListUsageMetersRequest, opts ...grpc.CallOption) (*ListUsageMetersResponse, error)
+	GetUsageHistory(ctx context.Context, in *GetUsageHistoryRequest, opts ...grpc.CallOption) (*GetUsageHistoryResponse, error)
 }
 
 type usageServiceClient struct {
@@ -67,6 +71,26 @@ func (c *usageServiceClient) GetUsage(ctx context.Context, in *GetUsageRequest, 
 	return out, nil
 }
 
+func (c *usageServiceClient) ListUsageMeters(ctx context.Context, in *ListUsageMetersRequest, opts ...grpc.CallOption) (*ListUsageMetersResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ListUsageMetersResponse)
+	err := c.cc.Invoke(ctx, UsageService_ListUsageMeters_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *usageServiceClient) GetUsageHistory(ctx context.Context, in *GetUsageHistoryRequest, opts ...grpc.CallOption) (*GetUsageHistoryResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(GetUsageHistoryResponse)
+	err := c.cc.Invoke(ctx, UsageService_GetUsageHistory_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // UsageServiceServer is the server API for UsageService service.
 // All implementations must embed UnimplementedUsageServiceServer
 // for forward compatibility.
@@ -80,6 +104,8 @@ type UsageServiceServer interface {
 	// meter. Cardinality quotas such as seats remain entitlement gauges rather
 	// than usage events.
 	GetUsage(context.Context, *GetUsageRequest) (*GetUsageResponse, error)
+	ListUsageMeters(context.Context, *ListUsageMetersRequest) (*ListUsageMetersResponse, error)
+	GetUsageHistory(context.Context, *GetUsageHistoryRequest) (*GetUsageHistoryResponse, error)
 	mustEmbedUnimplementedUsageServiceServer()
 }
 
@@ -95,6 +121,12 @@ func (UnimplementedUsageServiceServer) ConsumeUsage(context.Context, *ConsumeUsa
 }
 func (UnimplementedUsageServiceServer) GetUsage(context.Context, *GetUsageRequest) (*GetUsageResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method GetUsage not implemented")
+}
+func (UnimplementedUsageServiceServer) ListUsageMeters(context.Context, *ListUsageMetersRequest) (*ListUsageMetersResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method ListUsageMeters not implemented")
+}
+func (UnimplementedUsageServiceServer) GetUsageHistory(context.Context, *GetUsageHistoryRequest) (*GetUsageHistoryResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method GetUsageHistory not implemented")
 }
 func (UnimplementedUsageServiceServer) mustEmbedUnimplementedUsageServiceServer() {}
 func (UnimplementedUsageServiceServer) testEmbeddedByValue()                      {}
@@ -153,6 +185,42 @@ func _UsageService_GetUsage_Handler(srv interface{}, ctx context.Context, dec fu
 	return interceptor(ctx, in, info, handler)
 }
 
+func _UsageService_ListUsageMeters_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ListUsageMetersRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(UsageServiceServer).ListUsageMeters(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: UsageService_ListUsageMeters_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(UsageServiceServer).ListUsageMeters(ctx, req.(*ListUsageMetersRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _UsageService_GetUsageHistory_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(GetUsageHistoryRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(UsageServiceServer).GetUsageHistory(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: UsageService_GetUsageHistory_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(UsageServiceServer).GetUsageHistory(ctx, req.(*GetUsageHistoryRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // UsageService_ServiceDesc is the grpc.ServiceDesc for UsageService service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -167,6 +235,14 @@ var UsageService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "GetUsage",
 			Handler:    _UsageService_GetUsage_Handler,
+		},
+		{
+			MethodName: "ListUsageMeters",
+			Handler:    _UsageService_ListUsageMeters_Handler,
+		},
+		{
+			MethodName: "GetUsageHistory",
+			Handler:    _UsageService_GetUsageHistory_Handler,
 		},
 	},
 	Streams:  []grpc.StreamDesc{},

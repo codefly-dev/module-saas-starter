@@ -53,6 +53,13 @@ func jobOperationStatusError(err error) error {
 	}
 }
 
+func privacyStatusError(err error) error {
+	if errors.Is(err, business.ErrPrivacyWorkflowUnavailable) {
+		return status.Error(codes.FailedPrecondition, err.Error())
+	}
+	return err
+}
+
 // userDataIdentity converts an already-authenticated authorization decision
 // into the database identity used by user-scoped operations. Self-service uses
 // RLS; cross-user access requires platform administration and uses the named

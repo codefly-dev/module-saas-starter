@@ -60,11 +60,17 @@ export function ActivityFeed({
 	orgId?: string;
 	limit?: number;
 }) {
-	const { user } = useAuth();
-	const { data, isLoading } = useAuditLog({
-		orgId: orgId ?? "",
-		pageSize: limit,
-	});
+	const { user, organizationId } = useAuth();
+	const resolvedOrgId = orgId ?? organizationId ?? "";
+	const { data, isLoading } = useAuditLog(
+		{
+			orgId: resolvedOrgId,
+			pageSize: limit,
+		},
+		{
+			enabled: resolvedOrgId !== "",
+		},
+	);
 
 	const events: RawEvent[] = (data?.events as RawEvent[] | undefined) ?? [];
 
@@ -77,7 +83,7 @@ export function ActivityFeed({
 					<Activity className="h-4 w-4 text-muted-foreground" />
 					Recent activity
 				</CardTitle>
-				{orgId && (
+				{resolvedOrgId && (
 					<Link
 						href="/admin/audit-log"
 						className="text-xs text-muted-foreground hover:text-foreground"
@@ -89,9 +95,10 @@ export function ActivityFeed({
 			<CardContent className="pt-0">
 				{isLoading ? (
 					<div className="space-y-2">
-						{Array.from({ length: 4 }).map((_, i) => (
-							<Skeleton key={i} className="h-9 w-full" />
-						))}
+						<Skeleton className="h-9 w-full" />
+						<Skeleton className="h-9 w-full" />
+						<Skeleton className="h-9 w-full" />
+						<Skeleton className="h-9 w-full" />
 					</div>
 				) : (
 					<ul className="space-y-2.5">

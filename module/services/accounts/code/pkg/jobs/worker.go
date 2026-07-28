@@ -13,6 +13,8 @@ import (
 
 	"github.com/codefly-dev/core/wool"
 	"github.com/google/uuid"
+	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/metric"
 	"google.golang.org/protobuf/types/known/durationpb"
 	"google.golang.org/protobuf/types/known/timestamppb"
 )
@@ -57,6 +59,7 @@ type WorkerConfig struct {
 	BatchSize         uint32
 	Now               func() time.Time
 	RetryDelay        func(attempt uint32) time.Duration
+	Meter             metric.Meter
 }
 
 type workerMetrics struct {
@@ -74,8 +77,9 @@ type workerMetrics struct {
 // Worker is the reusable, product-neutral polling runtime. One worker owns one
 // queue, keeping queue as its only metric label.
 type Worker struct {
-	config  WorkerConfig
-	metrics workerMetrics
+	config    WorkerConfig
+	metrics   workerMetrics
+	telemetry workerTelemetry
 
 	mu           sync.Mutex
 	started      bool
@@ -122,6 +126,13 @@ func NewWorker(config WorkerConfig) (*Worker, error) {
 	if config.RetryDelay == nil {
 		config.RetryDelay = defaultRetryDelay
 	}
+	if config.Meter == nil {
+		config.Meter = otel.Meter("github.com/codefly-dev/module-saas-starter/jobs")
+	}
+	telemetry, err := newWorkerTelemetry(config.Meter)
+	if err != nil {
+		return nil, fmt.Errorf("jobs: initialize worker metrics: %w", err)
+	}
 	claim := &jobsv1.ClaimJobsRequest{
 		Queue: config.Queue, WorkerId: config.WorkerID, Limit: config.BatchSize,
 		LeaseDuration: durationpb.New(config.LeaseDuration),
@@ -129,7 +140,7 @@ func NewWorker(config WorkerConfig) (*Worker, error) {
 	if err := ValidateCommand(claim); err != nil {
 		return nil, err
 	}
-	return &Worker{config: config}, nil
+	return &Worker{config: config, telemetry: telemetry}, nil
 }
 
 // Start begins polling once. Repeated calls are harmless.
@@ -217,9 +228,11 @@ func (w *Worker) runOnce(claimCtx, processCtx context.Context) (int, error) {
 	})
 	if err != nil {
 		w.metrics.claimErrors.Add(1)
+		w.telemetry.recordPoll(claimCtx, w.config.Queue, "error", 0)
 		return 0, err
 	}
 	w.metrics.claimed.Add(uint64(len(claim.GetJobs())))
+	w.telemetry.recordPoll(claimCtx, w.config.Queue, "success", len(claim.GetJobs()))
 
 	var wait sync.WaitGroup
 	errorsByJob := make(chan error, len(claim.GetJobs()))
@@ -246,8 +259,17 @@ func (w *Worker) process(ctx context.Context, envelope *jobsv1.JobEnvelope) erro
 	if envelope == nil || envelope.GetLease() == nil {
 		return errors.New("jobs: claimed envelope has no lease")
 	}
+	outcome := "error"
+	startedAt := time.Now()
+	defer func() {
+		w.telemetry.recordProcess(ctx, w.config.Queue, outcome, startedAt)
+	}()
 	w.metrics.active.Add(1)
-	defer w.metrics.active.Add(-1)
+	w.telemetry.addActive(ctx, w.config.Queue, 1)
+	defer func() {
+		w.metrics.active.Add(-1)
+		w.telemetry.addActive(ctx, w.config.Queue, -1)
+	}()
 	trace, end := wool.StartSpan(ctx, "jobs.worker.process")
 	defer end()
 	trace.Debug("processing job",
@@ -287,6 +309,7 @@ func (w *Worker) process(ctx context.Context, envelope *jobsv1.JobEnvelope) erro
 			return w.finalizationError(err)
 		}
 		w.metrics.succeeded.Add(1)
+		outcome = "succeeded"
 		return nil
 	}
 
@@ -308,6 +331,7 @@ func (w *Worker) process(ctx context.Context, envelope *jobsv1.JobEnvelope) erro
 			return w.finalizationError(err)
 		}
 		w.metrics.deadLettered.Add(1)
+		outcome = "dead_letter"
 		return nil
 	}
 
@@ -323,8 +347,10 @@ func (w *Worker) process(ctx context.Context, envelope *jobsv1.JobEnvelope) erro
 	}
 	if response.GetState() == jobsv1.JobState_JOB_STATE_DEAD_LETTER {
 		w.metrics.deadLettered.Add(1)
+		outcome = "dead_letter"
 	} else {
 		w.metrics.retried.Add(1)
+		outcome = "retry"
 	}
 	return nil
 }

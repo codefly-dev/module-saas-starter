@@ -346,19 +346,41 @@ retryable. Exact duplicate enqueue is accepted without creating another
 delivery.
 
 The generic worker owns email claims, leases, heartbeats, bounded retry,
-dead-letter state, typed safe failures, telemetry, and shutdown. Provider
+dead-letter state, typed safe failures, OpenTelemetry metrics, tracing, and
+shutdown. Provider
 idempotency uses the durable job UUID: automatic retries keep the same key,
 while an intentional operator replay receives a new provider key and can send
 again while preserving the copied exact payload. Provider bodies and arbitrary
 errors are never retained in job history.
 
 In-app notifications remain direct durable destination rows with owner-bound
-RLS; there is no external side effect to enqueue. Preference-based fan-out to
-email, Slack, and other future channels remains a separate notification-product
-slice and must reuse this platform rather than introduce another queue.
+RLS; there is no external side effect to enqueue. Optional writes read and
+enforce the recipient's in-app preference in the same user-scoped transaction.
+Security notices created by their owning authentication transaction are
+mandatory and cannot be disabled. The shared policy also maps optional product,
+marketing, and digest email to their typed user settings; existing-account
+invitation delivery uses the product decision before appending its email job.
+Additional email, Slack, and future-channel fan-out must reuse this platform
+rather than introduce another queue.
 
 Unit tests cover generated exact payloads, strict and HTML-safe templates,
 retry/permanent provider classification, exact duplicate enqueue, and replay
 identity. Fresh-PostgreSQL tests prove tenant and pre-auth authority, atomic
 invitation and magic-link rows, generic worker delivery, exact function ACLs,
 and rollback on enqueue failure.
+
+## Product analytics adapter
+
+The analytics workload uses queue `analytics`, topic
+`product_event.export`, source `saas.analytics`, schema version `1`, and the
+canonical event UUID as its idempotency key. Tenant or subject scope must equal
+the validated event envelope. The worker revalidates the registry and payload
+identity before calling the no-op, memory, or PostHog sink. Invalid schemas and
+idempotency conflicts are permanent safe failures; destination errors follow
+the bounded eight-attempt schedule.
+
+The worker exports `saas.jobs.polls`, `saas.jobs.claimed`,
+`saas.jobs.active`, `saas.jobs.completed`, and `saas.jobs.duration` through
+OpenTelemetry. Queue and bounded result/outcome are the only labels. Durable
+queue depth, oldest age, retries, terminal failures, and replay lineage remain
+in the generic Postgres operations projection.

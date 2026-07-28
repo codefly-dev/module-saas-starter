@@ -1238,6 +1238,32 @@ spec:
             - method:
                 exact: POST
               uri:
+                exact: /customers.UsageService/GetUsageHistory
+          rewrite:
+            uri: /saas.accounts.v1.UsageService/GetUsageHistory
+          route:
+            - destination:
+                host: auth-sidecar.saas-starter.svc.cluster.local
+                port:
+                    number: 8080
+        - name: catalog-096
+          match:
+            - method:
+                exact: POST
+              uri:
+                exact: /customers.UsageService/ListUsageMeters
+          rewrite:
+            uri: /saas.accounts.v1.UsageService/ListUsageMeters
+          route:
+            - destination:
+                host: auth-sidecar.saas-starter.svc.cluster.local
+                port:
+                    number: 8080
+        - name: catalog-097
+          match:
+            - method:
+                exact: POST
+              uri:
                 exact: /customers.UserService/AddIdentity
           rewrite:
             uri: /saas.accounts.v1.UserService/AddIdentity
@@ -1246,7 +1272,7 @@ spec:
                 host: auth-sidecar.saas-starter.svc.cluster.local
                 port:
                     number: 8080
-        - name: catalog-096
+        - name: catalog-098
           match:
             - method:
                 exact: POST
@@ -1259,7 +1285,7 @@ spec:
                 host: auth-sidecar.saas-starter.svc.cluster.local
                 port:
                     number: 8080
-        - name: catalog-097
+        - name: catalog-099
           match:
             - method:
                 exact: POST
@@ -1272,7 +1298,7 @@ spec:
                 host: auth-sidecar.saas-starter.svc.cluster.local
                 port:
                     number: 8080
-        - name: catalog-098
+        - name: catalog-100
           match:
             - method:
                 exact: POST
@@ -1285,7 +1311,7 @@ spec:
                 host: auth-sidecar.saas-starter.svc.cluster.local
                 port:
                     number: 8080
-        - name: catalog-099
+        - name: catalog-101
           match:
             - method:
                 exact: POST
@@ -1298,7 +1324,7 @@ spec:
                 host: auth-sidecar.saas-starter.svc.cluster.local
                 port:
                     number: 8080
-        - name: catalog-100
+        - name: catalog-102
           match:
             - method:
                 exact: POST
@@ -1311,7 +1337,7 @@ spec:
                 host: auth-sidecar.saas-starter.svc.cluster.local
                 port:
                     number: 8080
-        - name: catalog-101
+        - name: catalog-103
           match:
             - method:
                 exact: POST
@@ -1324,7 +1350,7 @@ spec:
                 host: auth-sidecar.saas-starter.svc.cluster.local
                 port:
                     number: 8080
-        - name: catalog-102
+        - name: catalog-104
           match:
             - method:
                 exact: POST
@@ -1337,7 +1363,7 @@ spec:
                 host: auth-sidecar.saas-starter.svc.cluster.local
                 port:
                     number: 8080
-        - name: catalog-103
+        - name: catalog-105
           match:
             - method:
                 exact: POST
@@ -1350,7 +1376,7 @@ spec:
                 host: auth-sidecar.saas-starter.svc.cluster.local
                 port:
                     number: 8080
-        - name: catalog-104
+        - name: catalog-106
           match:
             - method:
                 exact: POST
@@ -1363,7 +1389,7 @@ spec:
                 host: auth-sidecar.saas-starter.svc.cluster.local
                 port:
                     number: 8080
-        - name: catalog-105
+        - name: catalog-107
           match:
             - method:
                 exact: POST
@@ -1376,7 +1402,7 @@ spec:
                 host: auth-sidecar.saas-starter.svc.cluster.local
                 port:
                     number: 8080
-        - name: catalog-106
+        - name: catalog-108
           match:
             - method:
                 exact: POST
@@ -1389,7 +1415,7 @@ spec:
                 host: auth-sidecar.saas-starter.svc.cluster.local
                 port:
                     number: 8080
-        - name: catalog-107
+        - name: catalog-109
           match:
             - method:
                 exact: POST
@@ -1402,7 +1428,7 @@ spec:
                 host: auth-sidecar.saas-starter.svc.cluster.local
                 port:
                     number: 8080
-        - name: catalog-108
+        - name: catalog-110
           match:
             - method:
                 exact: POST
@@ -1415,7 +1441,7 @@ spec:
                 host: auth-sidecar.saas-starter.svc.cluster.local
                 port:
                     number: 8080
-        - name: catalog-109
+        - name: catalog-111
           match:
             - method:
                 exact: POST
@@ -1428,7 +1454,7 @@ spec:
                 host: auth-sidecar.saas-starter.svc.cluster.local
                 port:
                     number: 8080
-        - name: catalog-110
+        - name: catalog-112
           match:
             - method:
                 exact: POST
@@ -1441,7 +1467,7 @@ spec:
                 host: auth-sidecar.saas-starter.svc.cluster.local
                 port:
                     number: 8080
-        - name: catalog-111
+        - name: catalog-113
           match:
             - method:
                 exact: POST
@@ -1454,7 +1480,7 @@ spec:
                 host: auth-sidecar.saas-starter.svc.cluster.local
                 port:
                     number: 8080
-        - name: catalog-112
+        - name: catalog-114
           match:
             - method:
                 exact: POST
@@ -1467,7 +1493,7 @@ spec:
                 host: auth-sidecar.saas-starter.svc.cluster.local
                 port:
                     number: 8080
-        - name: catalog-113
+        - name: catalog-115
           match:
             - method:
                 exact: POST
@@ -1480,7 +1506,7 @@ spec:
                 host: auth-sidecar.saas-starter.svc.cluster.local
                 port:
                     number: 8080
-        - name: catalog-114
+        - name: catalog-116
           match:
             - method:
                 exact: POST
@@ -1493,7 +1519,7 @@ spec:
                 host: auth-sidecar.saas-starter.svc.cluster.local
                 port:
                     number: 8080
-        - name: catalog-115
+        - name: catalog-117
           match:
             - method:
                 exact: POST
@@ -1506,7 +1532,7 @@ spec:
                 host: auth-sidecar.saas-starter.svc.cluster.local
                 port:
                     number: 8080
-        - name: catalog-116
+        - name: catalog-118
           match:
             - method:
                 exact: POST
@@ -1519,7 +1545,7 @@ spec:
                 host: auth-sidecar.saas-starter.svc.cluster.local
                 port:
                     number: 8080
-        - name: catalog-117
+        - name: catalog-119
           match:
             - method:
                 exact: POST
@@ -1532,7 +1558,7 @@ spec:
                 host: auth-sidecar.saas-starter.svc.cluster.local
                 port:
                     number: 8080
-        - name: catalog-118
+        - name: catalog-120
           match:
             - method:
                 exact: POST
@@ -1545,7 +1571,7 @@ spec:
                 host: auth-sidecar.saas-starter.svc.cluster.local
                 port:
                     number: 8080
-        - name: catalog-119
+        - name: catalog-121
           match:
             - method:
                 exact: POST
@@ -1556,7 +1582,7 @@ spec:
                 host: auth-sidecar.saas-starter.svc.cluster.local
                 port:
                     number: 8080
-        - name: catalog-120
+        - name: catalog-122
           match:
             - method:
                 exact: POST
@@ -1567,7 +1593,7 @@ spec:
                 host: auth-sidecar.saas-starter.svc.cluster.local
                 port:
                     number: 8080
-        - name: catalog-121
+        - name: catalog-123
           match:
             - method:
                 exact: POST
@@ -1578,7 +1604,7 @@ spec:
                 host: auth-sidecar.saas-starter.svc.cluster.local
                 port:
                     number: 8080
-        - name: catalog-122
+        - name: catalog-124
           match:
             - method:
                 exact: POST
@@ -1589,7 +1615,7 @@ spec:
                 host: auth-sidecar.saas-starter.svc.cluster.local
                 port:
                     number: 8080
-        - name: catalog-123
+        - name: catalog-125
           match:
             - method:
                 exact: POST
@@ -1600,7 +1626,7 @@ spec:
                 host: auth-sidecar.saas-starter.svc.cluster.local
                 port:
                     number: 8080
-        - name: catalog-124
+        - name: catalog-126
           match:
             - method:
                 exact: POST
@@ -1611,7 +1637,7 @@ spec:
                 host: auth-sidecar.saas-starter.svc.cluster.local
                 port:
                     number: 8080
-        - name: catalog-125
+        - name: catalog-127
           match:
             - method:
                 exact: POST
@@ -1622,7 +1648,7 @@ spec:
                 host: auth-sidecar.saas-starter.svc.cluster.local
                 port:
                     number: 8080
-        - name: catalog-126
+        - name: catalog-128
           match:
             - method:
                 exact: POST
@@ -1633,7 +1659,7 @@ spec:
                 host: auth-sidecar.saas-starter.svc.cluster.local
                 port:
                     number: 8080
-        - name: catalog-127
+        - name: catalog-129
           match:
             - method:
                 exact: POST
@@ -1644,7 +1670,7 @@ spec:
                 host: auth-sidecar.saas-starter.svc.cluster.local
                 port:
                     number: 8080
-        - name: catalog-128
+        - name: catalog-130
           match:
             - method:
                 exact: POST
@@ -1655,7 +1681,7 @@ spec:
                 host: auth-sidecar.saas-starter.svc.cluster.local
                 port:
                     number: 8080
-        - name: catalog-129
+        - name: catalog-131
           match:
             - method:
                 exact: POST
@@ -1666,7 +1692,7 @@ spec:
                 host: auth-sidecar.saas-starter.svc.cluster.local
                 port:
                     number: 8080
-        - name: catalog-130
+        - name: catalog-132
           match:
             - method:
                 exact: POST
@@ -1677,7 +1703,7 @@ spec:
                 host: auth-sidecar.saas-starter.svc.cluster.local
                 port:
                     number: 8080
-        - name: catalog-131
+        - name: catalog-133
           match:
             - method:
                 exact: POST
@@ -1688,7 +1714,7 @@ spec:
                 host: auth-sidecar.saas-starter.svc.cluster.local
                 port:
                     number: 8080
-        - name: catalog-132
+        - name: catalog-134
           match:
             - method:
                 exact: POST
@@ -1699,7 +1725,7 @@ spec:
                 host: auth-sidecar.saas-starter.svc.cluster.local
                 port:
                     number: 8080
-        - name: catalog-133
+        - name: catalog-135
           match:
             - method:
                 exact: POST
@@ -1710,7 +1736,7 @@ spec:
                 host: auth-sidecar.saas-starter.svc.cluster.local
                 port:
                     number: 8080
-        - name: catalog-134
+        - name: catalog-136
           match:
             - method:
                 exact: POST
@@ -1721,7 +1747,7 @@ spec:
                 host: auth-sidecar.saas-starter.svc.cluster.local
                 port:
                     number: 8080
-        - name: catalog-135
+        - name: catalog-137
           match:
             - method:
                 exact: POST
@@ -1732,7 +1758,7 @@ spec:
                 host: auth-sidecar.saas-starter.svc.cluster.local
                 port:
                     number: 8080
-        - name: catalog-136
+        - name: catalog-138
           match:
             - method:
                 exact: POST
@@ -1743,7 +1769,7 @@ spec:
                 host: auth-sidecar.saas-starter.svc.cluster.local
                 port:
                     number: 8080
-        - name: catalog-137
+        - name: catalog-139
           match:
             - method:
                 exact: POST
@@ -1754,7 +1780,7 @@ spec:
                 host: auth-sidecar.saas-starter.svc.cluster.local
                 port:
                     number: 8080
-        - name: catalog-138
+        - name: catalog-140
           match:
             - method:
                 exact: POST
@@ -1765,7 +1791,7 @@ spec:
                 host: auth-sidecar.saas-starter.svc.cluster.local
                 port:
                     number: 8080
-        - name: catalog-139
+        - name: catalog-141
           match:
             - method:
                 exact: POST
@@ -1776,7 +1802,7 @@ spec:
                 host: auth-sidecar.saas-starter.svc.cluster.local
                 port:
                     number: 8080
-        - name: catalog-140
+        - name: catalog-142
           match:
             - method:
                 exact: POST
@@ -1787,7 +1813,7 @@ spec:
                 host: auth-sidecar.saas-starter.svc.cluster.local
                 port:
                     number: 8080
-        - name: catalog-141
+        - name: catalog-143
           match:
             - method:
                 exact: POST
@@ -1798,7 +1824,7 @@ spec:
                 host: auth-sidecar.saas-starter.svc.cluster.local
                 port:
                     number: 8080
-        - name: catalog-142
+        - name: catalog-144
           match:
             - method:
                 exact: POST
@@ -1809,7 +1835,7 @@ spec:
                 host: auth-sidecar.saas-starter.svc.cluster.local
                 port:
                     number: 8080
-        - name: catalog-143
+        - name: catalog-145
           match:
             - method:
                 exact: POST
@@ -1820,7 +1846,7 @@ spec:
                 host: auth-sidecar.saas-starter.svc.cluster.local
                 port:
                     number: 8080
-        - name: catalog-144
+        - name: catalog-146
           match:
             - method:
                 exact: POST
@@ -1831,7 +1857,7 @@ spec:
                 host: auth-sidecar.saas-starter.svc.cluster.local
                 port:
                     number: 8080
-        - name: catalog-145
+        - name: catalog-147
           match:
             - method:
                 exact: POST
@@ -1842,7 +1868,7 @@ spec:
                 host: auth-sidecar.saas-starter.svc.cluster.local
                 port:
                     number: 8080
-        - name: catalog-146
+        - name: catalog-148
           match:
             - method:
                 exact: POST
@@ -1853,7 +1879,7 @@ spec:
                 host: auth-sidecar.saas-starter.svc.cluster.local
                 port:
                     number: 8080
-        - name: catalog-147
+        - name: catalog-149
           match:
             - method:
                 exact: POST
@@ -1864,7 +1890,7 @@ spec:
                 host: auth-sidecar.saas-starter.svc.cluster.local
                 port:
                     number: 8080
-        - name: catalog-148
+        - name: catalog-150
           match:
             - method:
                 exact: POST
@@ -1875,7 +1901,7 @@ spec:
                 host: auth-sidecar.saas-starter.svc.cluster.local
                 port:
                     number: 8080
-        - name: catalog-149
+        - name: catalog-151
           match:
             - method:
                 exact: POST
@@ -1886,7 +1912,7 @@ spec:
                 host: auth-sidecar.saas-starter.svc.cluster.local
                 port:
                     number: 8080
-        - name: catalog-150
+        - name: catalog-152
           match:
             - method:
                 exact: POST
@@ -1897,7 +1923,7 @@ spec:
                 host: auth-sidecar.saas-starter.svc.cluster.local
                 port:
                     number: 8080
-        - name: catalog-151
+        - name: catalog-153
           match:
             - method:
                 exact: POST
@@ -1908,7 +1934,7 @@ spec:
                 host: auth-sidecar.saas-starter.svc.cluster.local
                 port:
                     number: 8080
-        - name: catalog-152
+        - name: catalog-154
           match:
             - method:
                 exact: POST
@@ -1919,7 +1945,7 @@ spec:
                 host: auth-sidecar.saas-starter.svc.cluster.local
                 port:
                     number: 8080
-        - name: catalog-153
+        - name: catalog-155
           match:
             - method:
                 exact: POST
@@ -1930,7 +1956,7 @@ spec:
                 host: auth-sidecar.saas-starter.svc.cluster.local
                 port:
                     number: 8080
-        - name: catalog-154
+        - name: catalog-156
           match:
             - method:
                 exact: POST
@@ -1941,7 +1967,7 @@ spec:
                 host: auth-sidecar.saas-starter.svc.cluster.local
                 port:
                     number: 8080
-        - name: catalog-155
+        - name: catalog-157
           match:
             - method:
                 exact: POST
@@ -1952,7 +1978,7 @@ spec:
                 host: auth-sidecar.saas-starter.svc.cluster.local
                 port:
                     number: 8080
-        - name: catalog-156
+        - name: catalog-158
           match:
             - method:
                 exact: POST
@@ -1963,7 +1989,7 @@ spec:
                 host: auth-sidecar.saas-starter.svc.cluster.local
                 port:
                     number: 8080
-        - name: catalog-157
+        - name: catalog-159
           match:
             - method:
                 exact: POST
@@ -1974,7 +2000,7 @@ spec:
                 host: auth-sidecar.saas-starter.svc.cluster.local
                 port:
                     number: 8080
-        - name: catalog-158
+        - name: catalog-160
           match:
             - method:
                 exact: POST
@@ -1985,7 +2011,7 @@ spec:
                 host: auth-sidecar.saas-starter.svc.cluster.local
                 port:
                     number: 8080
-        - name: catalog-159
+        - name: catalog-161
           match:
             - method:
                 exact: POST
@@ -1996,7 +2022,7 @@ spec:
                 host: auth-sidecar.saas-starter.svc.cluster.local
                 port:
                     number: 8080
-        - name: catalog-160
+        - name: catalog-162
           match:
             - method:
                 exact: POST
@@ -2007,7 +2033,7 @@ spec:
                 host: auth-sidecar.saas-starter.svc.cluster.local
                 port:
                     number: 8080
-        - name: catalog-161
+        - name: catalog-163
           match:
             - method:
                 exact: POST
@@ -2018,7 +2044,7 @@ spec:
                 host: auth-sidecar.saas-starter.svc.cluster.local
                 port:
                     number: 8080
-        - name: catalog-162
+        - name: catalog-164
           match:
             - method:
                 exact: POST
@@ -2029,7 +2055,7 @@ spec:
                 host: auth-sidecar.saas-starter.svc.cluster.local
                 port:
                     number: 8080
-        - name: catalog-163
+        - name: catalog-165
           match:
             - method:
                 exact: POST
@@ -2040,7 +2066,7 @@ spec:
                 host: auth-sidecar.saas-starter.svc.cluster.local
                 port:
                     number: 8080
-        - name: catalog-164
+        - name: catalog-166
           match:
             - method:
                 exact: POST
@@ -2051,7 +2077,7 @@ spec:
                 host: auth-sidecar.saas-starter.svc.cluster.local
                 port:
                     number: 8080
-        - name: catalog-165
+        - name: catalog-167
           match:
             - method:
                 exact: POST
@@ -2062,7 +2088,7 @@ spec:
                 host: auth-sidecar.saas-starter.svc.cluster.local
                 port:
                     number: 8080
-        - name: catalog-166
+        - name: catalog-168
           match:
             - method:
                 exact: POST
@@ -2073,7 +2099,7 @@ spec:
                 host: auth-sidecar.saas-starter.svc.cluster.local
                 port:
                     number: 8080
-        - name: catalog-167
+        - name: catalog-169
           match:
             - method:
                 exact: POST
@@ -2084,7 +2110,7 @@ spec:
                 host: auth-sidecar.saas-starter.svc.cluster.local
                 port:
                     number: 8080
-        - name: catalog-168
+        - name: catalog-170
           match:
             - method:
                 exact: POST
@@ -2095,7 +2121,7 @@ spec:
                 host: auth-sidecar.saas-starter.svc.cluster.local
                 port:
                     number: 8080
-        - name: catalog-169
+        - name: catalog-171
           match:
             - method:
                 exact: POST
@@ -2106,7 +2132,7 @@ spec:
                 host: auth-sidecar.saas-starter.svc.cluster.local
                 port:
                     number: 8080
-        - name: catalog-170
+        - name: catalog-172
           match:
             - method:
                 exact: POST
@@ -2117,7 +2143,7 @@ spec:
                 host: auth-sidecar.saas-starter.svc.cluster.local
                 port:
                     number: 8080
-        - name: catalog-171
+        - name: catalog-173
           match:
             - method:
                 exact: POST
@@ -2128,7 +2154,7 @@ spec:
                 host: auth-sidecar.saas-starter.svc.cluster.local
                 port:
                     number: 8080
-        - name: catalog-172
+        - name: catalog-174
           match:
             - method:
                 exact: POST
@@ -2139,7 +2165,7 @@ spec:
                 host: auth-sidecar.saas-starter.svc.cluster.local
                 port:
                     number: 8080
-        - name: catalog-173
+        - name: catalog-175
           match:
             - method:
                 exact: POST
@@ -2150,7 +2176,7 @@ spec:
                 host: auth-sidecar.saas-starter.svc.cluster.local
                 port:
                     number: 8080
-        - name: catalog-174
+        - name: catalog-176
           match:
             - method:
                 exact: POST
@@ -2161,7 +2187,7 @@ spec:
                 host: auth-sidecar.saas-starter.svc.cluster.local
                 port:
                     number: 8080
-        - name: catalog-175
+        - name: catalog-177
           match:
             - method:
                 exact: POST
@@ -2172,7 +2198,7 @@ spec:
                 host: auth-sidecar.saas-starter.svc.cluster.local
                 port:
                     number: 8080
-        - name: catalog-176
+        - name: catalog-178
           match:
             - method:
                 exact: POST
@@ -2183,7 +2209,7 @@ spec:
                 host: auth-sidecar.saas-starter.svc.cluster.local
                 port:
                     number: 8080
-        - name: catalog-177
+        - name: catalog-179
           match:
             - method:
                 exact: POST
@@ -2194,7 +2220,7 @@ spec:
                 host: auth-sidecar.saas-starter.svc.cluster.local
                 port:
                     number: 8080
-        - name: catalog-178
+        - name: catalog-180
           match:
             - method:
                 exact: POST
@@ -2205,7 +2231,7 @@ spec:
                 host: auth-sidecar.saas-starter.svc.cluster.local
                 port:
                     number: 8080
-        - name: catalog-179
+        - name: catalog-181
           match:
             - method:
                 exact: POST
@@ -2216,7 +2242,7 @@ spec:
                 host: auth-sidecar.saas-starter.svc.cluster.local
                 port:
                     number: 8080
-        - name: catalog-180
+        - name: catalog-182
           match:
             - method:
                 exact: POST
@@ -2227,7 +2253,7 @@ spec:
                 host: auth-sidecar.saas-starter.svc.cluster.local
                 port:
                     number: 8080
-        - name: catalog-181
+        - name: catalog-183
           match:
             - method:
                 exact: POST
@@ -2238,7 +2264,7 @@ spec:
                 host: auth-sidecar.saas-starter.svc.cluster.local
                 port:
                     number: 8080
-        - name: catalog-182
+        - name: catalog-184
           match:
             - method:
                 exact: POST
@@ -2249,7 +2275,7 @@ spec:
                 host: auth-sidecar.saas-starter.svc.cluster.local
                 port:
                     number: 8080
-        - name: catalog-183
+        - name: catalog-185
           match:
             - method:
                 exact: POST
@@ -2260,7 +2286,7 @@ spec:
                 host: auth-sidecar.saas-starter.svc.cluster.local
                 port:
                     number: 8080
-        - name: catalog-184
+        - name: catalog-186
           match:
             - method:
                 exact: POST
@@ -2271,7 +2297,7 @@ spec:
                 host: auth-sidecar.saas-starter.svc.cluster.local
                 port:
                     number: 8080
-        - name: catalog-185
+        - name: catalog-187
           match:
             - method:
                 exact: POST
@@ -2282,7 +2308,7 @@ spec:
                 host: auth-sidecar.saas-starter.svc.cluster.local
                 port:
                     number: 8080
-        - name: catalog-186
+        - name: catalog-188
           match:
             - method:
                 exact: POST
@@ -2293,7 +2319,7 @@ spec:
                 host: auth-sidecar.saas-starter.svc.cluster.local
                 port:
                     number: 8080
-        - name: catalog-187
+        - name: catalog-189
           match:
             - method:
                 exact: POST
@@ -2304,7 +2330,7 @@ spec:
                 host: auth-sidecar.saas-starter.svc.cluster.local
                 port:
                     number: 8080
-        - name: catalog-188
+        - name: catalog-190
           match:
             - method:
                 exact: POST
@@ -2315,7 +2341,7 @@ spec:
                 host: auth-sidecar.saas-starter.svc.cluster.local
                 port:
                     number: 8080
-        - name: catalog-189
+        - name: catalog-191
           match:
             - method:
                 exact: POST
@@ -2326,7 +2352,7 @@ spec:
                 host: auth-sidecar.saas-starter.svc.cluster.local
                 port:
                     number: 8080
-        - name: catalog-190
+        - name: catalog-192
           match:
             - method:
                 exact: POST
@@ -2337,7 +2363,7 @@ spec:
                 host: auth-sidecar.saas-starter.svc.cluster.local
                 port:
                     number: 8080
-        - name: catalog-191
+        - name: catalog-193
           match:
             - method:
                 exact: POST
@@ -2348,7 +2374,7 @@ spec:
                 host: auth-sidecar.saas-starter.svc.cluster.local
                 port:
                     number: 8080
-        - name: catalog-192
+        - name: catalog-194
           match:
             - method:
                 exact: POST
@@ -2359,7 +2385,7 @@ spec:
                 host: auth-sidecar.saas-starter.svc.cluster.local
                 port:
                     number: 8080
-        - name: catalog-193
+        - name: catalog-195
           match:
             - method:
                 exact: POST
@@ -2370,7 +2396,7 @@ spec:
                 host: auth-sidecar.saas-starter.svc.cluster.local
                 port:
                     number: 8080
-        - name: catalog-194
+        - name: catalog-196
           match:
             - method:
                 exact: POST
@@ -2381,7 +2407,7 @@ spec:
                 host: auth-sidecar.saas-starter.svc.cluster.local
                 port:
                     number: 8080
-        - name: catalog-195
+        - name: catalog-197
           match:
             - method:
                 exact: POST
@@ -2392,7 +2418,7 @@ spec:
                 host: auth-sidecar.saas-starter.svc.cluster.local
                 port:
                     number: 8080
-        - name: catalog-196
+        - name: catalog-198
           match:
             - method:
                 exact: POST
@@ -2403,7 +2429,7 @@ spec:
                 host: auth-sidecar.saas-starter.svc.cluster.local
                 port:
                     number: 8080
-        - name: catalog-197
+        - name: catalog-199
           match:
             - method:
                 exact: POST
@@ -2414,7 +2440,7 @@ spec:
                 host: auth-sidecar.saas-starter.svc.cluster.local
                 port:
                     number: 8080
-        - name: catalog-198
+        - name: catalog-200
           match:
             - method:
                 exact: POST
@@ -2425,7 +2451,7 @@ spec:
                 host: auth-sidecar.saas-starter.svc.cluster.local
                 port:
                     number: 8080
-        - name: catalog-199
+        - name: catalog-201
           match:
             - method:
                 exact: POST
@@ -2436,7 +2462,7 @@ spec:
                 host: auth-sidecar.saas-starter.svc.cluster.local
                 port:
                     number: 8080
-        - name: catalog-200
+        - name: catalog-202
           match:
             - method:
                 exact: POST
@@ -2447,7 +2473,7 @@ spec:
                 host: auth-sidecar.saas-starter.svc.cluster.local
                 port:
                     number: 8080
-        - name: catalog-201
+        - name: catalog-203
           match:
             - method:
                 exact: POST
@@ -2458,7 +2484,7 @@ spec:
                 host: auth-sidecar.saas-starter.svc.cluster.local
                 port:
                     number: 8080
-        - name: catalog-202
+        - name: catalog-204
           match:
             - method:
                 exact: POST
@@ -2469,7 +2495,7 @@ spec:
                 host: auth-sidecar.saas-starter.svc.cluster.local
                 port:
                     number: 8080
-        - name: catalog-203
+        - name: catalog-205
           match:
             - method:
                 exact: POST
@@ -2480,7 +2506,7 @@ spec:
                 host: auth-sidecar.saas-starter.svc.cluster.local
                 port:
                     number: 8080
-        - name: catalog-204
+        - name: catalog-206
           match:
             - method:
                 exact: POST
@@ -2491,7 +2517,7 @@ spec:
                 host: auth-sidecar.saas-starter.svc.cluster.local
                 port:
                     number: 8080
-        - name: catalog-205
+        - name: catalog-207
           match:
             - method:
                 exact: POST
@@ -2502,7 +2528,7 @@ spec:
                 host: auth-sidecar.saas-starter.svc.cluster.local
                 port:
                     number: 8080
-        - name: catalog-206
+        - name: catalog-208
           match:
             - method:
                 exact: POST
@@ -2513,7 +2539,7 @@ spec:
                 host: auth-sidecar.saas-starter.svc.cluster.local
                 port:
                     number: 8080
-        - name: catalog-207
+        - name: catalog-209
           match:
             - method:
                 exact: POST
@@ -2524,7 +2550,7 @@ spec:
                 host: auth-sidecar.saas-starter.svc.cluster.local
                 port:
                     number: 8080
-        - name: catalog-208
+        - name: catalog-210
           match:
             - method:
                 exact: POST
@@ -2535,7 +2561,7 @@ spec:
                 host: auth-sidecar.saas-starter.svc.cluster.local
                 port:
                     number: 8080
-        - name: catalog-209
+        - name: catalog-211
           match:
             - method:
                 exact: POST
@@ -2546,7 +2572,7 @@ spec:
                 host: auth-sidecar.saas-starter.svc.cluster.local
                 port:
                     number: 8080
-        - name: catalog-210
+        - name: catalog-212
           match:
             - method:
                 exact: POST
@@ -2557,7 +2583,7 @@ spec:
                 host: auth-sidecar.saas-starter.svc.cluster.local
                 port:
                     number: 8080
-        - name: catalog-211
+        - name: catalog-213
           match:
             - method:
                 exact: POST
@@ -2568,7 +2594,7 @@ spec:
                 host: auth-sidecar.saas-starter.svc.cluster.local
                 port:
                     number: 8080
-        - name: catalog-212
+        - name: catalog-214
           match:
             - method:
                 exact: POST
@@ -2579,34 +2605,12 @@ spec:
                 host: auth-sidecar.saas-starter.svc.cluster.local
                 port:
                     number: 8080
-        - name: catalog-213
-          match:
-            - method:
-                exact: POST
-              uri:
-                exact: /saas.accounts.v1.UserService/AddIdentity
-          route:
-            - destination:
-                host: auth-sidecar.saas-starter.svc.cluster.local
-                port:
-                    number: 8080
-        - name: catalog-214
-          match:
-            - method:
-                exact: POST
-              uri:
-                exact: /saas.accounts.v1.UserService/DeleteUser
-          route:
-            - destination:
-                host: auth-sidecar.saas-starter.svc.cluster.local
-                port:
-                    number: 8080
         - name: catalog-215
           match:
             - method:
                 exact: POST
               uri:
-                exact: /saas.accounts.v1.UserService/FindUserByIdentity
+                exact: /saas.accounts.v1.UsageService/GetUsageHistory
           route:
             - destination:
                 host: auth-sidecar.saas-starter.svc.cluster.local
@@ -2617,7 +2621,7 @@ spec:
             - method:
                 exact: POST
               uri:
-                exact: /saas.accounts.v1.UserService/GetSelf
+                exact: /saas.accounts.v1.UsageService/ListUsageMeters
           route:
             - destination:
                 host: auth-sidecar.saas-starter.svc.cluster.local
@@ -2628,7 +2632,7 @@ spec:
             - method:
                 exact: POST
               uri:
-                exact: /saas.accounts.v1.UserService/GetUser
+                exact: /saas.accounts.v1.UserService/AddIdentity
           route:
             - destination:
                 host: auth-sidecar.saas-starter.svc.cluster.local
@@ -2639,7 +2643,7 @@ spec:
             - method:
                 exact: POST
               uri:
-                exact: /saas.accounts.v1.UserService/ListUserIdentities
+                exact: /saas.accounts.v1.UserService/DeleteUser
           route:
             - destination:
                 host: auth-sidecar.saas-starter.svc.cluster.local
@@ -2650,7 +2654,7 @@ spec:
             - method:
                 exact: POST
               uri:
-                exact: /saas.accounts.v1.UserService/ListUsers
+                exact: /saas.accounts.v1.UserService/FindUserByIdentity
           route:
             - destination:
                 host: auth-sidecar.saas-starter.svc.cluster.local
@@ -2661,7 +2665,7 @@ spec:
             - method:
                 exact: POST
               uri:
-                exact: /saas.accounts.v1.UserService/RegisterUser
+                exact: /saas.accounts.v1.UserService/GetSelf
           route:
             - destination:
                 host: auth-sidecar.saas-starter.svc.cluster.local
@@ -2672,7 +2676,7 @@ spec:
             - method:
                 exact: POST
               uri:
-                exact: /saas.accounts.v1.UserService/UpdateUser
+                exact: /saas.accounts.v1.UserService/GetUser
           route:
             - destination:
                 host: auth-sidecar.saas-starter.svc.cluster.local
@@ -2683,7 +2687,7 @@ spec:
             - method:
                 exact: POST
               uri:
-                exact: /saas.accounts.v1.UserService/Version
+                exact: /saas.accounts.v1.UserService/ListUserIdentities
           route:
             - destination:
                 host: auth-sidecar.saas-starter.svc.cluster.local
@@ -2694,7 +2698,7 @@ spec:
             - method:
                 exact: POST
               uri:
-                exact: /saas.accounts.v1.UserSettingsService/Get
+                exact: /saas.accounts.v1.UserService/ListUsers
           route:
             - destination:
                 host: auth-sidecar.saas-starter.svc.cluster.local
@@ -2705,7 +2709,7 @@ spec:
             - method:
                 exact: POST
               uri:
-                exact: /saas.accounts.v1.UserSettingsService/Update
+                exact: /saas.accounts.v1.UserService/RegisterUser
           route:
             - destination:
                 host: auth-sidecar.saas-starter.svc.cluster.local
@@ -2716,7 +2720,7 @@ spec:
             - method:
                 exact: POST
               uri:
-                exact: /saas.accounts.v1.WebhookService/CreateSubscription
+                exact: /saas.accounts.v1.UserService/UpdateUser
           route:
             - destination:
                 host: auth-sidecar.saas-starter.svc.cluster.local
@@ -2727,7 +2731,7 @@ spec:
             - method:
                 exact: POST
               uri:
-                exact: /saas.accounts.v1.WebhookService/DeleteSubscription
+                exact: /saas.accounts.v1.UserService/Version
           route:
             - destination:
                 host: auth-sidecar.saas-starter.svc.cluster.local
@@ -2738,7 +2742,7 @@ spec:
             - method:
                 exact: POST
               uri:
-                exact: /saas.accounts.v1.WebhookService/GetDelivery
+                exact: /saas.accounts.v1.UserSettingsService/Get
           route:
             - destination:
                 host: auth-sidecar.saas-starter.svc.cluster.local
@@ -2749,7 +2753,7 @@ spec:
             - method:
                 exact: POST
               uri:
-                exact: /saas.accounts.v1.WebhookService/ListDeliveries
+                exact: /saas.accounts.v1.UserSettingsService/Update
           route:
             - destination:
                 host: auth-sidecar.saas-starter.svc.cluster.local
@@ -2760,7 +2764,7 @@ spec:
             - method:
                 exact: POST
               uri:
-                exact: /saas.accounts.v1.WebhookService/ListSubscriptions
+                exact: /saas.accounts.v1.WebhookService/CreateSubscription
           route:
             - destination:
                 host: auth-sidecar.saas-starter.svc.cluster.local
@@ -2771,7 +2775,7 @@ spec:
             - method:
                 exact: POST
               uri:
-                exact: /saas.accounts.v1.WebhookService/ReplayDelivery
+                exact: /saas.accounts.v1.WebhookService/DeleteSubscription
           route:
             - destination:
                 host: auth-sidecar.saas-starter.svc.cluster.local
@@ -2782,7 +2786,7 @@ spec:
             - method:
                 exact: POST
               uri:
-                exact: /saas.accounts.v1.WebhookService/RotateSecret
+                exact: /saas.accounts.v1.WebhookService/GetDelivery
           route:
             - destination:
                 host: auth-sidecar.saas-starter.svc.cluster.local
@@ -2793,7 +2797,7 @@ spec:
             - method:
                 exact: POST
               uri:
-                exact: /saas.accounts.v1.WebhookService/TestWebhook
+                exact: /saas.accounts.v1.WebhookService/ListDeliveries
           route:
             - destination:
                 host: auth-sidecar.saas-starter.svc.cluster.local
@@ -2804,7 +2808,7 @@ spec:
             - method:
                 exact: POST
               uri:
-                exact: /saas.accounts.v1.WorkContextService/ExchangeAudience
+                exact: /saas.accounts.v1.WebhookService/ListSubscriptions
           route:
             - destination:
                 host: auth-sidecar.saas-starter.svc.cluster.local
@@ -2815,7 +2819,7 @@ spec:
             - method:
                 exact: POST
               uri:
-                exact: /saas.accounts.v1.WorkContextService/StartChildSession
+                exact: /saas.accounts.v1.WebhookService/ReplayDelivery
           route:
             - destination:
                 host: auth-sidecar.saas-starter.svc.cluster.local
@@ -2826,7 +2830,7 @@ spec:
             - method:
                 exact: POST
               uri:
-                exact: /saas.accounts.v1.WorkContextService/StartRootSession
+                exact: /saas.accounts.v1.WebhookService/RotateSecret
           route:
             - destination:
                 host: auth-sidecar.saas-starter.svc.cluster.local
@@ -2837,7 +2841,7 @@ spec:
             - method:
                 exact: POST
               uri:
-                exact: /saas.accounts.v1.WorkContextService/StartTask
+                exact: /saas.accounts.v1.WebhookService/TestWebhook
           route:
             - destination:
                 host: auth-sidecar.saas-starter.svc.cluster.local
@@ -2846,9 +2850,9 @@ spec:
         - name: catalog-237
           match:
             - method:
-                exact: DELETE
+                exact: POST
               uri:
-                regex: ^/v1/api-keys/[^/]+$
+                exact: /saas.accounts.v1.WorkContextService/ExchangeAudience
           route:
             - destination:
                 host: auth-sidecar.saas-starter.svc.cluster.local
@@ -2857,9 +2861,9 @@ spec:
         - name: catalog-238
           match:
             - method:
-                exact: DELETE
+                exact: POST
               uri:
-                regex: ^/v1/audit-export/[^/]+$
+                exact: /saas.accounts.v1.WorkContextService/StartChildSession
           route:
             - destination:
                 host: auth-sidecar.saas-starter.svc.cluster.local
@@ -2868,9 +2872,9 @@ spec:
         - name: catalog-239
           match:
             - method:
-                exact: DELETE
+                exact: POST
               uri:
-                regex: ^/v1/invitations/[^/]+$
+                exact: /saas.accounts.v1.WorkContextService/StartRootSession
           route:
             - destination:
                 host: auth-sidecar.saas-starter.svc.cluster.local
@@ -2879,9 +2883,9 @@ spec:
         - name: catalog-240
           match:
             - method:
-                exact: DELETE
+                exact: POST
               uri:
-                regex: ^/v1/mfa/devices/[^/]+$
+                exact: /saas.accounts.v1.WorkContextService/StartTask
           route:
             - destination:
                 host: auth-sidecar.saas-starter.svc.cluster.local
@@ -2892,7 +2896,7 @@ spec:
             - method:
                 exact: DELETE
               uri:
-                regex: ^/v1/notifications/[^/]+$
+                regex: ^/v1/api-keys/[^/]+$
           route:
             - destination:
                 host: auth-sidecar.saas-starter.svc.cluster.local
@@ -2903,7 +2907,7 @@ spec:
             - method:
                 exact: DELETE
               uri:
-                regex: ^/v1/organizations/[^/]+/members/[^/]+$
+                regex: ^/v1/audit-export/[^/]+$
           route:
             - destination:
                 host: auth-sidecar.saas-starter.svc.cluster.local
@@ -2914,7 +2918,7 @@ spec:
             - method:
                 exact: DELETE
               uri:
-                regex: ^/v1/platform/admins/[^/]+$
+                regex: ^/v1/invitations/[^/]+$
           route:
             - destination:
                 host: auth-sidecar.saas-starter.svc.cluster.local
@@ -2925,7 +2929,7 @@ spec:
             - method:
                 exact: DELETE
               uri:
-                regex: ^/v1/platform/sessions/[^/]+$
+                regex: ^/v1/mfa/devices/[^/]+$
           route:
             - destination:
                 host: auth-sidecar.saas-starter.svc.cluster.local
@@ -2936,7 +2940,7 @@ spec:
             - method:
                 exact: DELETE
               uri:
-                exact: /v1/role-assignments
+                regex: ^/v1/notifications/[^/]+$
           route:
             - destination:
                 host: auth-sidecar.saas-starter.svc.cluster.local
@@ -2947,7 +2951,7 @@ spec:
             - method:
                 exact: DELETE
               uri:
-                regex: ^/v1/roles/[^/]+$
+                regex: ^/v1/organizations/[^/]+/members/[^/]+$
           route:
             - destination:
                 host: auth-sidecar.saas-starter.svc.cluster.local
@@ -2958,7 +2962,7 @@ spec:
             - method:
                 exact: DELETE
               uri:
-                regex: ^/v1/teams/[^/]+$
+                regex: ^/v1/platform/admins/[^/]+$
           route:
             - destination:
                 host: auth-sidecar.saas-starter.svc.cluster.local
@@ -2969,7 +2973,7 @@ spec:
             - method:
                 exact: DELETE
               uri:
-                regex: ^/v1/teams/[^/]+/members/[^/]+$
+                regex: ^/v1/platform/sessions/[^/]+$
           route:
             - destination:
                 host: auth-sidecar.saas-starter.svc.cluster.local
@@ -2980,7 +2984,7 @@ spec:
             - method:
                 exact: DELETE
               uri:
-                regex: ^/v1/users/[^/]+$
+                exact: /v1/role-assignments
           route:
             - destination:
                 host: auth-sidecar.saas-starter.svc.cluster.local
@@ -2991,7 +2995,7 @@ spec:
             - method:
                 exact: DELETE
               uri:
-                regex: ^/v1/webhooks/[^/]+$
+                regex: ^/v1/roles/[^/]+$
           route:
             - destination:
                 host: auth-sidecar.saas-starter.svc.cluster.local
@@ -3000,9 +3004,9 @@ spec:
         - name: catalog-251
           match:
             - method:
-                exact: GET
+                exact: DELETE
               uri:
-                exact: /v1/.well-known/service-info
+                regex: ^/v1/teams/[^/]+$
           route:
             - destination:
                 host: auth-sidecar.saas-starter.svc.cluster.local
@@ -3011,9 +3015,9 @@ spec:
         - name: catalog-252
           match:
             - method:
-                exact: GET
+                exact: DELETE
               uri:
-                exact: /v1/api-keys
+                regex: ^/v1/teams/[^/]+/members/[^/]+$
           route:
             - destination:
                 host: auth-sidecar.saas-starter.svc.cluster.local
@@ -3022,9 +3026,9 @@ spec:
         - name: catalog-253
           match:
             - method:
-                exact: GET
+                exact: DELETE
               uri:
-                regex: ^/v1/audit-export/[^/]+$
+                regex: ^/v1/users/[^/]+$
           route:
             - destination:
                 host: auth-sidecar.saas-starter.svc.cluster.local
@@ -3033,9 +3037,9 @@ spec:
         - name: catalog-254
           match:
             - method:
-                exact: GET
+                exact: DELETE
               uri:
-                exact: /v1/audit-log
+                regex: ^/v1/webhooks/[^/]+$
           route:
             - destination:
                 host: auth-sidecar.saas-starter.svc.cluster.local
@@ -3046,7 +3050,7 @@ spec:
             - method:
                 exact: GET
               uri:
-                exact: /v1/auth/.well-known/jwks.json
+                exact: /v1/.well-known/service-info
           route:
             - destination:
                 host: auth-sidecar.saas-starter.svc.cluster.local
@@ -3057,7 +3061,7 @@ spec:
             - method:
                 exact: GET
               uri:
-                regex: ^/v1/billing/invoices/[^/]+$
+                exact: /v1/api-keys
           route:
             - destination:
                 host: auth-sidecar.saas-starter.svc.cluster.local
@@ -3068,7 +3072,7 @@ spec:
             - method:
                 exact: GET
               uri:
-                exact: /v1/consent/status
+                regex: ^/v1/audit-export/[^/]+$
           route:
             - destination:
                 host: auth-sidecar.saas-starter.svc.cluster.local
@@ -3079,7 +3083,7 @@ spec:
             - method:
                 exact: GET
               uri:
-                regex: ^/v1/delegations/[^/]+:wait$
+                exact: /v1/audit-log
           route:
             - destination:
                 host: auth-sidecar.saas-starter.svc.cluster.local
@@ -3090,7 +3094,7 @@ spec:
             - method:
                 exact: GET
               uri:
-                exact: /v1/delegations:pending
+                exact: /v1/auth/.well-known/jwks.json
           route:
             - destination:
                 host: auth-sidecar.saas-starter.svc.cluster.local
@@ -3101,7 +3105,7 @@ spec:
             - method:
                 exact: GET
               uri:
-                regex: ^/v1/gdpr/delete/[^/]+$
+                regex: ^/v1/billing/invoices/[^/]+$
           route:
             - destination:
                 host: auth-sidecar.saas-starter.svc.cluster.local
@@ -3112,7 +3116,7 @@ spec:
             - method:
                 exact: GET
               uri:
-                regex: ^/v1/gdpr/export/[^/]+$
+                exact: /v1/consent/status
           route:
             - destination:
                 host: auth-sidecar.saas-starter.svc.cluster.local
@@ -3123,7 +3127,7 @@ spec:
             - method:
                 exact: GET
               uri:
-                exact: /v1/invitations
+                regex: ^/v1/delegations/[^/]+:wait$
           route:
             - destination:
                 host: auth-sidecar.saas-starter.svc.cluster.local
@@ -3134,7 +3138,7 @@ spec:
             - method:
                 exact: GET
               uri:
-                exact: /v1/mfa/devices
+                exact: /v1/delegations:pending
           route:
             - destination:
                 host: auth-sidecar.saas-starter.svc.cluster.local
@@ -3145,7 +3149,7 @@ spec:
             - method:
                 exact: GET
               uri:
-                exact: /v1/notifications
+                regex: ^/v1/gdpr/delete/[^/]+$
           route:
             - destination:
                 host: auth-sidecar.saas-starter.svc.cluster.local
@@ -3156,7 +3160,7 @@ spec:
             - method:
                 exact: GET
               uri:
-                exact: /v1/notifications/unread-count
+                regex: ^/v1/gdpr/export/[^/]+$
           route:
             - destination:
                 host: auth-sidecar.saas-starter.svc.cluster.local
@@ -3167,7 +3171,7 @@ spec:
             - method:
                 exact: GET
               uri:
-                exact: /v1/onboarding
+                exact: /v1/invitations
           route:
             - destination:
                 host: auth-sidecar.saas-starter.svc.cluster.local
@@ -3178,7 +3182,7 @@ spec:
             - method:
                 exact: GET
               uri:
-                exact: /v1/organizations
+                exact: /v1/mfa/devices
           route:
             - destination:
                 host: auth-sidecar.saas-starter.svc.cluster.local
@@ -3189,7 +3193,7 @@ spec:
             - method:
                 exact: GET
               uri:
-                regex: ^/v1/organizations/[^/]+$
+                exact: /v1/notifications
           route:
             - destination:
                 host: auth-sidecar.saas-starter.svc.cluster.local
@@ -3200,7 +3204,7 @@ spec:
             - method:
                 exact: GET
               uri:
-                regex: ^/v1/organizations/[^/]+/members$
+                exact: /v1/notifications/unread-count
           route:
             - destination:
                 host: auth-sidecar.saas-starter.svc.cluster.local
@@ -3211,7 +3215,7 @@ spec:
             - method:
                 exact: GET
               uri:
-                regex: ^/v1/organizations/[^/]+/settings$
+                exact: /v1/onboarding
           route:
             - destination:
                 host: auth-sidecar.saas-starter.svc.cluster.local
@@ -3222,7 +3226,7 @@ spec:
             - method:
                 exact: GET
               uri:
-                regex: ^/v1/organizations/[^/]+/teams$
+                exact: /v1/organizations
           route:
             - destination:
                 host: auth-sidecar.saas-starter.svc.cluster.local
@@ -3233,7 +3237,7 @@ spec:
             - method:
                 exact: GET
               uri:
-                regex: ^/v1/organizations/[^/]+/usage/[^/]+$
+                regex: ^/v1/organizations/[^/]+$
           route:
             - destination:
                 host: auth-sidecar.saas-starter.svc.cluster.local
@@ -3244,7 +3248,7 @@ spec:
             - method:
                 exact: GET
               uri:
-                exact: /v1/platform/admins
+                regex: ^/v1/organizations/[^/]+/members$
           route:
             - destination:
                 host: auth-sidecar.saas-starter.svc.cluster.local
@@ -3255,7 +3259,7 @@ spec:
             - method:
                 exact: GET
               uri:
-                exact: /v1/platform/feature-flags
+                regex: ^/v1/organizations/[^/]+/settings$
           route:
             - destination:
                 host: auth-sidecar.saas-starter.svc.cluster.local
@@ -3266,7 +3270,7 @@ spec:
             - method:
                 exact: GET
               uri:
-                exact: /v1/platform/jobs
+                regex: ^/v1/organizations/[^/]+/teams$
           route:
             - destination:
                 host: auth-sidecar.saas-starter.svc.cluster.local
@@ -3277,7 +3281,7 @@ spec:
             - method:
                 exact: GET
               uri:
-                exact: /v1/platform/jobs/operations
+                regex: ^/v1/organizations/[^/]+/usage$
           route:
             - destination:
                 host: auth-sidecar.saas-starter.svc.cluster.local
@@ -3288,7 +3292,7 @@ spec:
             - method:
                 exact: GET
               uri:
-                regex: ^/v1/platform/jobs/[^/]+$
+                regex: ^/v1/organizations/[^/]+/usage/[^/]+$
           route:
             - destination:
                 host: auth-sidecar.saas-starter.svc.cluster.local
@@ -3299,7 +3303,7 @@ spec:
             - method:
                 exact: GET
               uri:
-                regex: ^/v1/platform/organizations/[^/]+/entitlements$
+                regex: ^/v1/organizations/[^/]+/usage/[^/]+/history$
           route:
             - destination:
                 host: auth-sidecar.saas-starter.svc.cluster.local
@@ -3310,7 +3314,7 @@ spec:
             - method:
                 exact: GET
               uri:
-                exact: /v1/platform/sessions
+                exact: /v1/platform/admins
           route:
             - destination:
                 host: auth-sidecar.saas-starter.svc.cluster.local
@@ -3321,7 +3325,7 @@ spec:
             - method:
                 exact: GET
               uri:
-                exact: /v1/platform/users
+                exact: /v1/platform/feature-flags
           route:
             - destination:
                 host: auth-sidecar.saas-starter.svc.cluster.local
@@ -3332,7 +3336,7 @@ spec:
             - method:
                 exact: GET
               uri:
-                exact: /v1/principals
+                exact: /v1/platform/jobs
           route:
             - destination:
                 host: auth-sidecar.saas-starter.svc.cluster.local
@@ -3343,7 +3347,7 @@ spec:
             - method:
                 exact: GET
               uri:
-                exact: /v1/role-assignments
+                exact: /v1/platform/jobs/operations
           route:
             - destination:
                 host: auth-sidecar.saas-starter.svc.cluster.local
@@ -3354,7 +3358,7 @@ spec:
             - method:
                 exact: GET
               uri:
-                exact: /v1/roles
+                regex: ^/v1/platform/jobs/[^/]+$
           route:
             - destination:
                 host: auth-sidecar.saas-starter.svc.cluster.local
@@ -3365,7 +3369,7 @@ spec:
             - method:
                 exact: GET
               uri:
-                regex: ^/v1/sso/[^/]+$
+                regex: ^/v1/platform/organizations/[^/]+/entitlements$
           route:
             - destination:
                 host: auth-sidecar.saas-starter.svc.cluster.local
@@ -3376,7 +3380,7 @@ spec:
             - method:
                 exact: GET
               uri:
-                regex: ^/v1/teams/[^/]+/members$
+                exact: /v1/platform/sessions
           route:
             - destination:
                 host: auth-sidecar.saas-starter.svc.cluster.local
@@ -3387,7 +3391,7 @@ spec:
             - method:
                 exact: GET
               uri:
-                exact: /v1/user/settings
+                exact: /v1/platform/users
           route:
             - destination:
                 host: auth-sidecar.saas-starter.svc.cluster.local
@@ -3398,7 +3402,7 @@ spec:
             - method:
                 exact: GET
               uri:
-                exact: /v1/users
+                exact: /v1/principals
           route:
             - destination:
                 host: auth-sidecar.saas-starter.svc.cluster.local
@@ -3409,7 +3413,7 @@ spec:
             - method:
                 exact: GET
               uri:
-                exact: /v1/users/self
+                exact: /v1/role-assignments
           route:
             - destination:
                 host: auth-sidecar.saas-starter.svc.cluster.local
@@ -3420,7 +3424,7 @@ spec:
             - method:
                 exact: GET
               uri:
-                regex: ^/v1/users/[^/]+/identities$
+                exact: /v1/roles
           route:
             - destination:
                 host: auth-sidecar.saas-starter.svc.cluster.local
@@ -3431,7 +3435,7 @@ spec:
             - method:
                 exact: GET
               uri:
-                regex: ^/v1/users/[^/]+$
+                regex: ^/v1/sso/[^/]+$
           route:
             - destination:
                 host: auth-sidecar.saas-starter.svc.cluster.local
@@ -3442,7 +3446,7 @@ spec:
             - method:
                 exact: GET
               uri:
-                exact: /v1/users:byEmail
+                regex: ^/v1/teams/[^/]+/members$
           route:
             - destination:
                 host: auth-sidecar.saas-starter.svc.cluster.local
@@ -3453,7 +3457,7 @@ spec:
             - method:
                 exact: GET
               uri:
-                exact: /v1/users:findByIdentity
+                exact: /v1/user/settings
           route:
             - destination:
                 host: auth-sidecar.saas-starter.svc.cluster.local
@@ -3464,7 +3468,7 @@ spec:
             - method:
                 exact: GET
               uri:
-                exact: /v1/version
+                exact: /v1/users
           route:
             - destination:
                 host: auth-sidecar.saas-starter.svc.cluster.local
@@ -3475,7 +3479,7 @@ spec:
             - method:
                 exact: GET
               uri:
-                exact: /v1/webhooks
+                exact: /v1/users/self
           route:
             - destination:
                 host: auth-sidecar.saas-starter.svc.cluster.local
@@ -3486,7 +3490,7 @@ spec:
             - method:
                 exact: GET
               uri:
-                regex: ^/v1/webhooks/deliveries/[^/]+$
+                regex: ^/v1/users/[^/]+/identities$
           route:
             - destination:
                 host: auth-sidecar.saas-starter.svc.cluster.local
@@ -3497,13 +3501,79 @@ spec:
             - method:
                 exact: GET
               uri:
-                regex: ^/v1/webhooks/[^/]+/deliveries$
+                regex: ^/v1/users/[^/]+$
           route:
             - destination:
                 host: auth-sidecar.saas-starter.svc.cluster.local
                 port:
                     number: 8080
         - name: catalog-297
+          match:
+            - method:
+                exact: GET
+              uri:
+                exact: /v1/users:byEmail
+          route:
+            - destination:
+                host: auth-sidecar.saas-starter.svc.cluster.local
+                port:
+                    number: 8080
+        - name: catalog-298
+          match:
+            - method:
+                exact: GET
+              uri:
+                exact: /v1/users:findByIdentity
+          route:
+            - destination:
+                host: auth-sidecar.saas-starter.svc.cluster.local
+                port:
+                    number: 8080
+        - name: catalog-299
+          match:
+            - method:
+                exact: GET
+              uri:
+                exact: /v1/version
+          route:
+            - destination:
+                host: auth-sidecar.saas-starter.svc.cluster.local
+                port:
+                    number: 8080
+        - name: catalog-300
+          match:
+            - method:
+                exact: GET
+              uri:
+                exact: /v1/webhooks
+          route:
+            - destination:
+                host: auth-sidecar.saas-starter.svc.cluster.local
+                port:
+                    number: 8080
+        - name: catalog-301
+          match:
+            - method:
+                exact: GET
+              uri:
+                regex: ^/v1/webhooks/deliveries/[^/]+$
+          route:
+            - destination:
+                host: auth-sidecar.saas-starter.svc.cluster.local
+                port:
+                    number: 8080
+        - name: catalog-302
+          match:
+            - method:
+                exact: GET
+              uri:
+                regex: ^/v1/webhooks/[^/]+/deliveries$
+          route:
+            - destination:
+                host: auth-sidecar.saas-starter.svc.cluster.local
+                port:
+                    number: 8080
+        - name: catalog-303
           match:
             - method:
                 exact: PATCH
@@ -3514,7 +3584,7 @@ spec:
                 host: auth-sidecar.saas-starter.svc.cluster.local
                 port:
                     number: 8080
-        - name: catalog-298
+        - name: catalog-304
           match:
             - method:
                 exact: PATCH
@@ -3525,7 +3595,7 @@ spec:
                 host: auth-sidecar.saas-starter.svc.cluster.local
                 port:
                     number: 8080
-        - name: catalog-299
+        - name: catalog-305
           match:
             - method:
                 exact: POST
@@ -3536,7 +3606,7 @@ spec:
                 host: auth-sidecar.saas-starter.svc.cluster.local
                 port:
                     number: 8080
-        - name: catalog-300
+        - name: catalog-306
           match:
             - method:
                 exact: POST
@@ -3547,7 +3617,7 @@ spec:
                 host: auth-sidecar.saas-starter.svc.cluster.local
                 port:
                     number: 8080
-        - name: catalog-301
+        - name: catalog-307
           match:
             - method:
                 exact: POST
@@ -3558,7 +3628,7 @@ spec:
                 host: auth-sidecar.saas-starter.svc.cluster.local
                 port:
                     number: 8080
-        - name: catalog-302
+        - name: catalog-308
           match:
             - method:
                 exact: POST
@@ -3569,7 +3639,7 @@ spec:
                 host: auth-sidecar.saas-starter.svc.cluster.local
                 port:
                     number: 8080
-        - name: catalog-303
+        - name: catalog-309
           match:
             - method:
                 exact: POST
@@ -3580,7 +3650,7 @@ spec:
                 host: auth-sidecar.saas-starter.svc.cluster.local
                 port:
                     number: 8080
-        - name: catalog-304
+        - name: catalog-310
           match:
             - method:
                 exact: POST
@@ -3591,7 +3661,7 @@ spec:
                 host: auth-sidecar.saas-starter.svc.cluster.local
                 port:
                     number: 8080
-        - name: catalog-305
+        - name: catalog-311
           match:
             - method:
                 exact: POST
@@ -3602,7 +3672,7 @@ spec:
                 host: auth-sidecar.saas-starter.svc.cluster.local
                 port:
                     number: 8080
-        - name: catalog-306
+        - name: catalog-312
           match:
             - method:
                 exact: POST
@@ -3613,7 +3683,7 @@ spec:
                 host: auth-sidecar.saas-starter.svc.cluster.local
                 port:
                     number: 8080
-        - name: catalog-307
+        - name: catalog-313
           match:
             - method:
                 exact: POST
@@ -3624,7 +3694,7 @@ spec:
                 host: auth-sidecar.saas-starter.svc.cluster.local
                 port:
                     number: 8080
-        - name: catalog-308
+        - name: catalog-314
           match:
             - method:
                 exact: POST
@@ -3635,7 +3705,7 @@ spec:
                 host: auth-sidecar.saas-starter.svc.cluster.local
                 port:
                     number: 8080
-        - name: catalog-309
+        - name: catalog-315
           match:
             - method:
                 exact: POST
@@ -3646,7 +3716,7 @@ spec:
                 host: auth-sidecar.saas-starter.svc.cluster.local
                 port:
                     number: 8080
-        - name: catalog-310
+        - name: catalog-316
           match:
             - method:
                 exact: POST
@@ -3657,7 +3727,7 @@ spec:
                 host: auth-sidecar.saas-starter.svc.cluster.local
                 port:
                     number: 8080
-        - name: catalog-311
+        - name: catalog-317
           match:
             - method:
                 exact: POST
@@ -3668,7 +3738,7 @@ spec:
                 host: auth-sidecar.saas-starter.svc.cluster.local
                 port:
                     number: 8080
-        - name: catalog-312
+        - name: catalog-318
           match:
             - method:
                 exact: POST
@@ -3679,7 +3749,7 @@ spec:
                 host: auth-sidecar.saas-starter.svc.cluster.local
                 port:
                     number: 8080
-        - name: catalog-313
+        - name: catalog-319
           match:
             - method:
                 exact: POST
@@ -3690,7 +3760,7 @@ spec:
                 host: auth-sidecar.saas-starter.svc.cluster.local
                 port:
                     number: 8080
-        - name: catalog-314
+        - name: catalog-320
           match:
             - method:
                 exact: POST
@@ -3701,7 +3771,7 @@ spec:
                 host: auth-sidecar.saas-starter.svc.cluster.local
                 port:
                     number: 8080
-        - name: catalog-315
+        - name: catalog-321
           match:
             - method:
                 exact: POST
@@ -3712,7 +3782,7 @@ spec:
                 host: auth-sidecar.saas-starter.svc.cluster.local
                 port:
                     number: 8080
-        - name: catalog-316
+        - name: catalog-322
           match:
             - method:
                 exact: POST
@@ -3723,7 +3793,7 @@ spec:
                 host: auth-sidecar.saas-starter.svc.cluster.local
                 port:
                     number: 8080
-        - name: catalog-317
+        - name: catalog-323
           match:
             - method:
                 exact: POST
@@ -3734,7 +3804,7 @@ spec:
                 host: auth-sidecar.saas-starter.svc.cluster.local
                 port:
                     number: 8080
-        - name: catalog-318
+        - name: catalog-324
           match:
             - method:
                 exact: POST
@@ -3745,7 +3815,7 @@ spec:
                 host: auth-sidecar.saas-starter.svc.cluster.local
                 port:
                     number: 8080
-        - name: catalog-319
+        - name: catalog-325
           match:
             - method:
                 exact: POST
@@ -3756,7 +3826,7 @@ spec:
                 host: auth-sidecar.saas-starter.svc.cluster.local
                 port:
                     number: 8080
-        - name: catalog-320
+        - name: catalog-326
           match:
             - method:
                 exact: POST
@@ -3767,7 +3837,7 @@ spec:
                 host: auth-sidecar.saas-starter.svc.cluster.local
                 port:
                     number: 8080
-        - name: catalog-321
+        - name: catalog-327
           match:
             - method:
                 exact: POST
@@ -3778,7 +3848,7 @@ spec:
                 host: auth-sidecar.saas-starter.svc.cluster.local
                 port:
                     number: 8080
-        - name: catalog-322
+        - name: catalog-328
           match:
             - method:
                 exact: POST
@@ -3789,7 +3859,7 @@ spec:
                 host: auth-sidecar.saas-starter.svc.cluster.local
                 port:
                     number: 8080
-        - name: catalog-323
+        - name: catalog-329
           match:
             - method:
                 exact: POST
@@ -3800,7 +3870,7 @@ spec:
                 host: auth-sidecar.saas-starter.svc.cluster.local
                 port:
                     number: 8080
-        - name: catalog-324
+        - name: catalog-330
           match:
             - method:
                 exact: POST
@@ -3811,7 +3881,7 @@ spec:
                 host: auth-sidecar.saas-starter.svc.cluster.local
                 port:
                     number: 8080
-        - name: catalog-325
+        - name: catalog-331
           match:
             - method:
                 exact: POST
@@ -3822,7 +3892,7 @@ spec:
                 host: auth-sidecar.saas-starter.svc.cluster.local
                 port:
                     number: 8080
-        - name: catalog-326
+        - name: catalog-332
           match:
             - method:
                 exact: POST
@@ -3833,7 +3903,7 @@ spec:
                 host: auth-sidecar.saas-starter.svc.cluster.local
                 port:
                     number: 8080
-        - name: catalog-327
+        - name: catalog-333
           match:
             - method:
                 exact: POST
@@ -3844,7 +3914,7 @@ spec:
                 host: auth-sidecar.saas-starter.svc.cluster.local
                 port:
                     number: 8080
-        - name: catalog-328
+        - name: catalog-334
           match:
             - method:
                 exact: POST
@@ -3855,7 +3925,7 @@ spec:
                 host: auth-sidecar.saas-starter.svc.cluster.local
                 port:
                     number: 8080
-        - name: catalog-329
+        - name: catalog-335
           match:
             - method:
                 exact: POST
@@ -3866,7 +3936,7 @@ spec:
                 host: auth-sidecar.saas-starter.svc.cluster.local
                 port:
                     number: 8080
-        - name: catalog-330
+        - name: catalog-336
           match:
             - method:
                 exact: POST
@@ -3877,7 +3947,7 @@ spec:
                 host: auth-sidecar.saas-starter.svc.cluster.local
                 port:
                     number: 8080
-        - name: catalog-331
+        - name: catalog-337
           match:
             - method:
                 exact: POST
@@ -3888,7 +3958,7 @@ spec:
                 host: auth-sidecar.saas-starter.svc.cluster.local
                 port:
                     number: 8080
-        - name: catalog-332
+        - name: catalog-338
           match:
             - method:
                 exact: POST
@@ -3899,7 +3969,7 @@ spec:
                 host: auth-sidecar.saas-starter.svc.cluster.local
                 port:
                     number: 8080
-        - name: catalog-333
+        - name: catalog-339
           match:
             - method:
                 exact: POST
@@ -3910,7 +3980,7 @@ spec:
                 host: auth-sidecar.saas-starter.svc.cluster.local
                 port:
                     number: 8080
-        - name: catalog-334
+        - name: catalog-340
           match:
             - method:
                 exact: POST
@@ -3921,7 +3991,7 @@ spec:
                 host: auth-sidecar.saas-starter.svc.cluster.local
                 port:
                     number: 8080
-        - name: catalog-335
+        - name: catalog-341
           match:
             - method:
                 exact: POST
@@ -3932,7 +4002,7 @@ spec:
                 host: auth-sidecar.saas-starter.svc.cluster.local
                 port:
                     number: 8080
-        - name: catalog-336
+        - name: catalog-342
           match:
             - method:
                 exact: POST
@@ -3943,7 +4013,7 @@ spec:
                 host: auth-sidecar.saas-starter.svc.cluster.local
                 port:
                     number: 8080
-        - name: catalog-337
+        - name: catalog-343
           match:
             - method:
                 exact: POST
@@ -3954,7 +4024,7 @@ spec:
                 host: auth-sidecar.saas-starter.svc.cluster.local
                 port:
                     number: 8080
-        - name: catalog-338
+        - name: catalog-344
           match:
             - method:
                 exact: POST
@@ -3965,7 +4035,7 @@ spec:
                 host: auth-sidecar.saas-starter.svc.cluster.local
                 port:
                     number: 8080
-        - name: catalog-339
+        - name: catalog-345
           match:
             - method:
                 exact: POST
@@ -3976,7 +4046,7 @@ spec:
                 host: auth-sidecar.saas-starter.svc.cluster.local
                 port:
                     number: 8080
-        - name: catalog-340
+        - name: catalog-346
           match:
             - method:
                 exact: POST
@@ -3987,7 +4057,7 @@ spec:
                 host: auth-sidecar.saas-starter.svc.cluster.local
                 port:
                     number: 8080
-        - name: catalog-341
+        - name: catalog-347
           match:
             - method:
                 exact: POST
@@ -3998,7 +4068,7 @@ spec:
                 host: auth-sidecar.saas-starter.svc.cluster.local
                 port:
                     number: 8080
-        - name: catalog-342
+        - name: catalog-348
           match:
             - method:
                 exact: POST
@@ -4009,7 +4079,7 @@ spec:
                 host: auth-sidecar.saas-starter.svc.cluster.local
                 port:
                     number: 8080
-        - name: catalog-343
+        - name: catalog-349
           match:
             - method:
                 exact: POST
@@ -4020,7 +4090,7 @@ spec:
                 host: auth-sidecar.saas-starter.svc.cluster.local
                 port:
                     number: 8080
-        - name: catalog-344
+        - name: catalog-350
           match:
             - method:
                 exact: POST
@@ -4031,7 +4101,7 @@ spec:
                 host: auth-sidecar.saas-starter.svc.cluster.local
                 port:
                     number: 8080
-        - name: catalog-345
+        - name: catalog-351
           match:
             - method:
                 exact: POST
@@ -4042,7 +4112,7 @@ spec:
                 host: auth-sidecar.saas-starter.svc.cluster.local
                 port:
                     number: 8080
-        - name: catalog-346
+        - name: catalog-352
           match:
             - method:
                 exact: POST
@@ -4053,7 +4123,7 @@ spec:
                 host: auth-sidecar.saas-starter.svc.cluster.local
                 port:
                     number: 8080
-        - name: catalog-347
+        - name: catalog-353
           match:
             - method:
                 exact: POST
@@ -4064,7 +4134,7 @@ spec:
                 host: auth-sidecar.saas-starter.svc.cluster.local
                 port:
                     number: 8080
-        - name: catalog-348
+        - name: catalog-354
           match:
             - method:
                 exact: POST
@@ -4075,7 +4145,7 @@ spec:
                 host: auth-sidecar.saas-starter.svc.cluster.local
                 port:
                     number: 8080
-        - name: catalog-349
+        - name: catalog-355
           match:
             - method:
                 exact: POST
@@ -4086,7 +4156,7 @@ spec:
                 host: auth-sidecar.saas-starter.svc.cluster.local
                 port:
                     number: 8080
-        - name: catalog-350
+        - name: catalog-356
           match:
             - method:
                 exact: POST
@@ -4097,7 +4167,7 @@ spec:
                 host: auth-sidecar.saas-starter.svc.cluster.local
                 port:
                     number: 8080
-        - name: catalog-351
+        - name: catalog-357
           match:
             - method:
                 exact: POST
@@ -4108,7 +4178,7 @@ spec:
                 host: auth-sidecar.saas-starter.svc.cluster.local
                 port:
                     number: 8080
-        - name: catalog-352
+        - name: catalog-358
           match:
             - method:
                 exact: POST
@@ -4119,7 +4189,7 @@ spec:
                 host: auth-sidecar.saas-starter.svc.cluster.local
                 port:
                     number: 8080
-        - name: catalog-353
+        - name: catalog-359
           match:
             - method:
                 exact: POST
@@ -4130,7 +4200,7 @@ spec:
                 host: auth-sidecar.saas-starter.svc.cluster.local
                 port:
                     number: 8080
-        - name: catalog-354
+        - name: catalog-360
           match:
             - method:
                 exact: PUT
@@ -4141,7 +4211,7 @@ spec:
                 host: auth-sidecar.saas-starter.svc.cluster.local
                 port:
                     number: 8080
-        - name: catalog-355
+        - name: catalog-361
           match:
             - method:
                 exact: PUT

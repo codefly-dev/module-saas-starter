@@ -215,6 +215,54 @@ func (s *PostgresStore) GetUsageTotal(ctx context.Context, orgID string, meter s
 	return quantity, nil
 }
 
+func (s *PostgresStore) GetUsageBuckets(
+	ctx context.Context,
+	orgID string,
+	meter string,
+	from time.Time,
+	to time.Time,
+	bucket business.UsageBucketInterval,
+) ([]business.UsageBucketValue, error) {
+	var truncate string
+	switch bucket {
+	case business.UsageBucketHour:
+		truncate = "hour"
+	case business.UsageBucketDay:
+		truncate = "day"
+	case business.UsageBucketMonth:
+		truncate = "month"
+	default:
+		return nil, errors.New("unsupported usage bucket")
+	}
+	rows, err := s.getQueryExecutor(ctx).Query(ctx, `
+		SELECT date_trunc($5, occurred_at AT TIME ZONE 'UTC') AT TIME ZONE 'UTC' AS bucket_start,
+		       SUM(quantity)
+		FROM usage_events
+		WHERE org_id = $1
+		  AND meter = $2
+		  AND occurred_at >= $3
+		  AND occurred_at < $4
+		  AND accepted = TRUE
+		GROUP BY bucket_start
+		ORDER BY bucket_start`,
+		orgID, meter, from, to, truncate,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []business.UsageBucketValue
+	for rows.Next() {
+		var value business.UsageBucketValue
+		if err := rows.Scan(&value.Start, &value.Quantity); err != nil {
+			return nil, err
+		}
+		value.Start = value.Start.UTC()
+		out = append(out, value)
+	}
+	return out, rows.Err()
+}
+
 func (s *PostgresStore) ConsumeUsage(ctx context.Context, consumption business.UsageConsumption) (*business.UsageReceipt, error) {
 	// The advisory idempotency lock and aggregate row lock only have meaning in
 	// one explicit transaction. The business layer always enters through
