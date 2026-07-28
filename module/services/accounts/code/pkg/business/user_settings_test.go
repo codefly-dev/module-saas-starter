@@ -158,6 +158,21 @@ func TestUpdateUserSettingsRejectsInvalidTheme(t *testing.T) {
 	require.Error(t, err)
 }
 
+func TestUpdateUserSettingsRejectsDisablingSecurityEmail(t *testing.T) {
+	service := newSettingsService(newSettingsFakeStore())
+	patch := &gen.UserSettings{}
+	require.NoError(t, usersettings.Fields.Email.Security.Set(patch, false))
+
+	_, err := service.UpdateUserSettings(
+		context.Background(),
+		"user-1",
+		patch,
+		nil,
+	)
+
+	require.Error(t, err)
+}
+
 func TestUpdateUserSettingsResetReturnsDefaultAndPrunesLastParent(t *testing.T) {
 	store := newSettingsFakeStore()
 	service := newSettingsService(store)

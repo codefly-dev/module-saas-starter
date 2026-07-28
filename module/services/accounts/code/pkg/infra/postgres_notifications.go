@@ -2,6 +2,7 @@ package infra
 
 import (
 	"context"
+	"errors"
 	"time"
 
 	"accounts/pkg/business"
@@ -9,11 +10,24 @@ import (
 
 func (s *PostgresStore) CreateNotification(ctx context.Context, n *business.Notification) error {
 	q := s.getQueryExecutor(ctx)
-	_, err := q.Exec(ctx, `
+	result, err := q.Exec(ctx, `
 		INSERT INTO notifications (id, user_id, org_id, title, body, type, action_url)
-		VALUES ($1, $2, $3, $4, $5, $6, $7)`,
+		VALUES ($1, $2, $3, $4, $5, $6, $7)
+		ON CONFLICT (id) DO UPDATE SET id = EXCLUDED.id
+		WHERE notifications.user_id = EXCLUDED.user_id
+		  AND notifications.org_id IS NOT DISTINCT FROM EXCLUDED.org_id
+		  AND notifications.title = EXCLUDED.title
+		  AND notifications.body = EXCLUDED.body
+		  AND notifications.type = EXCLUDED.type
+		  AND notifications.action_url IS NOT DISTINCT FROM EXCLUDED.action_url`,
 		n.ID, n.UserID, nilIfEmpty(n.OrgID), n.Title, n.Body, n.Type, nilIfEmpty(n.ActionURL))
-	return err
+	if err != nil {
+		return err
+	}
+	if result.RowsAffected() == 0 {
+		return errors.New("notification idempotency key conflicts with an existing notification")
+	}
+	return nil
 }
 
 func (s *PostgresStore) ListNotifications(ctx context.Context, userID string, pageSize int, pageToken string) ([]*business.Notification, string, error) {

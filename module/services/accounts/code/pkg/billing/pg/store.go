@@ -71,25 +71,27 @@ func (s *Store) OrgByStripeCustomerID(ctx context.Context, stripeCustomerID stri
 	return id, nil
 }
 
-// OwnerEmailByStripeCustomerID resolves the billing contact email for
-// a Stripe customer. Joins organizations → users via owner_id to find
-// the primary email. Returns "" (no error) if no email is found.
-func (s *Store) OwnerEmailByStripeCustomerID(ctx context.Context, stripeCustomerID string) (string, error) {
-	var email string
+// BillingRecipientByStripeCustomerID resolves the organization owner who
+// receives billing lifecycle communication.
+func (s *Store) BillingRecipientByStripeCustomerID(
+	ctx context.Context,
+	stripeCustomerID string,
+) (*billing.BillingRecipient, error) {
+	var recipient billing.BillingRecipient
 	err := s.pool.QueryRow(ctx, `
-		SELECT u.primary_email
+		SELECT o.id::text, o.owner_id::text, u.primary_email
 		FROM organizations o
 		JOIN users u ON u.uuid = o.owner_id
 		WHERE o.stripe_customer_id = $1`,
 		stripeCustomerID,
-	).Scan(&email)
+	).Scan(&recipient.OrganizationID, &recipient.UserID, &recipient.Email)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
-			return "", nil
+			return nil, billing.ErrOrgNotFound
 		}
-		return "", err
+		return nil, err
 	}
-	return email, nil
+	return &recipient, nil
 }
 
 // ============================================================================

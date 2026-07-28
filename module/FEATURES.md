@@ -262,13 +262,13 @@ see `JOBS.md` for the exact boundary and sequencing.
 
 | Feature                | Status | Notes                                                               |
 |------------------------|--------|---------------------------------------------------------------------|
-| In-app notifications   | ✅    | DB-backed, list / mark-read / unread-count                          |
+| In-app notifications   | ✅    | DB-backed, actionable, list / mark-read / unread-count; optional writes honor the user opt-out |
 | SSE notification stream| ✅    | `/api/notifications/stream` Server-Sent-Events                      |
 | Email transactional    | ✅    | Invitation, magic-link, and billing emails use a generated transactional outbox and isolated worker |
 | Email templates        | ✅    | Versioned DB catalog; strict variable resolution, HTML escaping, and immutable rendered job payloads |
-| User notification prefs| ❌    | No opt-out per category                                             |
+| User notification prefs| 🟡    | Optional in-app and product/marketing/digest email policy is enforced; per-workflow overrides and unsubscribe are not yet available |
 | Outbound webhooks      | ✅    | Generated transactional outbox, Vault keys, SSRF-safe exact-body signing, generic fenced retries/dead letters, replay |
-| Push notifications     | ❌    | No web push or mobile push                                          |
+| Push notifications     | ❌    | No web/mobile push implementation or user-facing control            |
 | SMS notifications      | ❌    | No SMS provider                                                     |
 | Slack / Teams hooks    | 🟡    | Internal Slack notifier (errors/health); not customer-facing        |
 

@@ -3,10 +3,10 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { CheckCheck, X } from "lucide-react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import { Button, Separator, Skeleton } from "@/shared/ui";
 import { timeAgo } from "../model/transforms";
-import type { Notification } from "../model/types";
 import { notificationMutations } from "../service/mutations";
 import { notificationQueries } from "../service/queries";
 
@@ -16,10 +16,9 @@ interface NotificationPanelProps {
 
 export function NotificationPanel({ onClose }: NotificationPanelProps) {
 	const queryClient = useQueryClient();
+	const router = useRouter();
 	const { data, isLoading } = useQuery(notificationQueries.list(10));
-	const notifications: Notification[] =
-		(data as { notifications?: Notification[] } | undefined)?.notifications ??
-		[];
+	const notifications = data?.notifications ?? [];
 
 	const markReadMutation = useMutation({
 		mutationFn: (id: string) => notificationMutations.markRead(id),
@@ -77,6 +76,7 @@ export function NotificationPanel({ onClose }: NotificationPanelProps) {
 				) : (
 					notifications.map((notification) => (
 						<button
+							type="button"
 							key={notification.id}
 							className={`w-full text-left px-4 py-3 hover:bg-muted/50 transition-colors ${
 								!notification.read ? "bg-muted/30" : ""
@@ -84,6 +84,10 @@ export function NotificationPanel({ onClose }: NotificationPanelProps) {
 							onClick={() => {
 								if (!notification.read) {
 									markReadMutation.mutate(notification.id);
+								}
+								if (notification.actionUrl) {
+									onClose();
+									router.push(notification.actionUrl);
 								}
 							}}
 						>
