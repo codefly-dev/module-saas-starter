@@ -1045,6 +1045,7 @@ environments:
 	runGit(t, root, "init", "-b", "main")
 	runGit(t, root, "config", "user.name", "Codefly Test")
 	runGit(t, root, "config", "user.email", "test@codefly.dev")
+	runGit(t, root, "config", "commit.gpgsign", "false")
 	runGit(t, root, "remote", "add", "origin", "git@github.com:acme/platform-config.git")
 	runGit(t, root, "add", ".")
 	runGit(t, root, "commit", "-m", "immutable GitOps snapshot")
