@@ -680,8 +680,9 @@ async function renderRoute(
     segments[1] === "author" &&
     segments.length === 3
   ) {
-    const author = (await repositoryContentProvider.authors(locale)).find(
-      (candidate) => authorSlug(candidate) === segments[2],
+    const author = resolveAuthorBySlug(
+      await repositoryContentProvider.authors(locale),
+      segments[2],
     );
     if (!author) notFound();
     return (
@@ -846,9 +847,10 @@ export async function metadataForRoute(segments: string[]): Promise<{
     routeSegments[1] === "author" &&
     routeSegments.length === 3
   ) {
-    const author = (
-      await repositoryContentProvider.authors(localizedRoute.locale)
-    ).find((candidate) => authorSlug(candidate) === routeSegments[2]);
+    const author = resolveAuthorBySlug(
+      await repositoryContentProvider.authors(localizedRoute.locale),
+      routeSegments[2],
+    );
     if (!author) {
       return {
         title: "Page not found",
@@ -883,6 +885,13 @@ export async function metadataForRoute(segments: string[]): Promise<{
 
 export function authorSlug(author: string): string {
   return author.toLocaleLowerCase("en").replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
+}
+
+export function resolveAuthorBySlug(
+  authors: string[],
+  slug: string,
+): string | undefined {
+  return authors.find((author) => authorSlug(author) === slug);
 }
 
 export function localizedSegments(
