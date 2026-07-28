@@ -154,7 +154,7 @@ export function LoginPage() {
 					</div>
 
 					<p className="text-xs text-primary-foreground/60">
-						{branding.description}
+						Production claims require current evidence for your environment.
 					</p>
 				</div>
 			</div>
