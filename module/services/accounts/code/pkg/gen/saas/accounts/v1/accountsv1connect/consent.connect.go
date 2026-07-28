@@ -37,14 +37,19 @@ const (
 	// ConsentServiceGetStatusProcedure is the fully-qualified name of the ConsentService's GetStatus
 	// RPC.
 	ConsentServiceGetStatusProcedure = "/saas.accounts.v1.ConsentService/GetStatus"
-	// ConsentServiceAcceptProcedure is the fully-qualified name of the ConsentService's Accept RPC.
-	ConsentServiceAcceptProcedure = "/saas.accounts.v1.ConsentService/Accept"
+	// ConsentServiceAcceptTermsProcedure is the fully-qualified name of the ConsentService's
+	// AcceptTerms RPC.
+	ConsentServiceAcceptTermsProcedure = "/saas.accounts.v1.ConsentService/AcceptTerms"
+	// ConsentServiceUpdatePreferencesProcedure is the fully-qualified name of the ConsentService's
+	// UpdatePreferences RPC.
+	ConsentServiceUpdatePreferencesProcedure = "/saas.accounts.v1.ConsentService/UpdatePreferences"
 )
 
 // ConsentServiceClient is a client for the saas.accounts.v1.ConsentService service.
 type ConsentServiceClient interface {
 	GetStatus(context.Context, *connect.Request[v1.GetConsentStatusRequest]) (*connect.Response[v1.ConsentStatus], error)
-	Accept(context.Context, *connect.Request[v1.AcceptConsentRequest]) (*connect.Response[v1.ConsentStatus], error)
+	AcceptTerms(context.Context, *connect.Request[v1.AcceptTermsRequest]) (*connect.Response[v1.ConsentStatus], error)
+	UpdatePreferences(context.Context, *connect.Request[v1.UpdateConsentPreferencesRequest]) (*connect.Response[v1.ConsentStatus], error)
 }
 
 // NewConsentServiceClient constructs a client for the saas.accounts.v1.ConsentService service. By
@@ -64,10 +69,16 @@ func NewConsentServiceClient(httpClient connect.HTTPClient, baseURL string, opts
 			connect.WithSchema(consentServiceMethods.ByName("GetStatus")),
 			connect.WithClientOptions(opts...),
 		),
-		accept: connect.NewClient[v1.AcceptConsentRequest, v1.ConsentStatus](
+		acceptTerms: connect.NewClient[v1.AcceptTermsRequest, v1.ConsentStatus](
 			httpClient,
-			baseURL+ConsentServiceAcceptProcedure,
-			connect.WithSchema(consentServiceMethods.ByName("Accept")),
+			baseURL+ConsentServiceAcceptTermsProcedure,
+			connect.WithSchema(consentServiceMethods.ByName("AcceptTerms")),
+			connect.WithClientOptions(opts...),
+		),
+		updatePreferences: connect.NewClient[v1.UpdateConsentPreferencesRequest, v1.ConsentStatus](
+			httpClient,
+			baseURL+ConsentServiceUpdatePreferencesProcedure,
+			connect.WithSchema(consentServiceMethods.ByName("UpdatePreferences")),
 			connect.WithClientOptions(opts...),
 		),
 	}
@@ -75,8 +86,9 @@ func NewConsentServiceClient(httpClient connect.HTTPClient, baseURL string, opts
 
 // consentServiceClient implements ConsentServiceClient.
 type consentServiceClient struct {
-	getStatus *connect.Client[v1.GetConsentStatusRequest, v1.ConsentStatus]
-	accept    *connect.Client[v1.AcceptConsentRequest, v1.ConsentStatus]
+	getStatus         *connect.Client[v1.GetConsentStatusRequest, v1.ConsentStatus]
+	acceptTerms       *connect.Client[v1.AcceptTermsRequest, v1.ConsentStatus]
+	updatePreferences *connect.Client[v1.UpdateConsentPreferencesRequest, v1.ConsentStatus]
 }
 
 // GetStatus calls saas.accounts.v1.ConsentService.GetStatus.
@@ -84,15 +96,21 @@ func (c *consentServiceClient) GetStatus(ctx context.Context, req *connect.Reque
 	return c.getStatus.CallUnary(ctx, req)
 }
 
-// Accept calls saas.accounts.v1.ConsentService.Accept.
-func (c *consentServiceClient) Accept(ctx context.Context, req *connect.Request[v1.AcceptConsentRequest]) (*connect.Response[v1.ConsentStatus], error) {
-	return c.accept.CallUnary(ctx, req)
+// AcceptTerms calls saas.accounts.v1.ConsentService.AcceptTerms.
+func (c *consentServiceClient) AcceptTerms(ctx context.Context, req *connect.Request[v1.AcceptTermsRequest]) (*connect.Response[v1.ConsentStatus], error) {
+	return c.acceptTerms.CallUnary(ctx, req)
+}
+
+// UpdatePreferences calls saas.accounts.v1.ConsentService.UpdatePreferences.
+func (c *consentServiceClient) UpdatePreferences(ctx context.Context, req *connect.Request[v1.UpdateConsentPreferencesRequest]) (*connect.Response[v1.ConsentStatus], error) {
+	return c.updatePreferences.CallUnary(ctx, req)
 }
 
 // ConsentServiceHandler is an implementation of the saas.accounts.v1.ConsentService service.
 type ConsentServiceHandler interface {
 	GetStatus(context.Context, *connect.Request[v1.GetConsentStatusRequest]) (*connect.Response[v1.ConsentStatus], error)
-	Accept(context.Context, *connect.Request[v1.AcceptConsentRequest]) (*connect.Response[v1.ConsentStatus], error)
+	AcceptTerms(context.Context, *connect.Request[v1.AcceptTermsRequest]) (*connect.Response[v1.ConsentStatus], error)
+	UpdatePreferences(context.Context, *connect.Request[v1.UpdateConsentPreferencesRequest]) (*connect.Response[v1.ConsentStatus], error)
 }
 
 // NewConsentServiceHandler builds an HTTP handler from the service implementation. It returns the
@@ -108,18 +126,26 @@ func NewConsentServiceHandler(svc ConsentServiceHandler, opts ...connect.Handler
 		connect.WithSchema(consentServiceMethods.ByName("GetStatus")),
 		connect.WithHandlerOptions(opts...),
 	)
-	consentServiceAcceptHandler := connect.NewUnaryHandler(
-		ConsentServiceAcceptProcedure,
-		svc.Accept,
-		connect.WithSchema(consentServiceMethods.ByName("Accept")),
+	consentServiceAcceptTermsHandler := connect.NewUnaryHandler(
+		ConsentServiceAcceptTermsProcedure,
+		svc.AcceptTerms,
+		connect.WithSchema(consentServiceMethods.ByName("AcceptTerms")),
+		connect.WithHandlerOptions(opts...),
+	)
+	consentServiceUpdatePreferencesHandler := connect.NewUnaryHandler(
+		ConsentServiceUpdatePreferencesProcedure,
+		svc.UpdatePreferences,
+		connect.WithSchema(consentServiceMethods.ByName("UpdatePreferences")),
 		connect.WithHandlerOptions(opts...),
 	)
 	return "/saas.accounts.v1.ConsentService/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case ConsentServiceGetStatusProcedure:
 			consentServiceGetStatusHandler.ServeHTTP(w, r)
-		case ConsentServiceAcceptProcedure:
-			consentServiceAcceptHandler.ServeHTTP(w, r)
+		case ConsentServiceAcceptTermsProcedure:
+			consentServiceAcceptTermsHandler.ServeHTTP(w, r)
+		case ConsentServiceUpdatePreferencesProcedure:
+			consentServiceUpdatePreferencesHandler.ServeHTTP(w, r)
 		default:
 			http.NotFound(w, r)
 		}
@@ -133,6 +159,10 @@ func (UnimplementedConsentServiceHandler) GetStatus(context.Context, *connect.Re
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("saas.accounts.v1.ConsentService.GetStatus is not implemented"))
 }
 
-func (UnimplementedConsentServiceHandler) Accept(context.Context, *connect.Request[v1.AcceptConsentRequest]) (*connect.Response[v1.ConsentStatus], error) {
-	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("saas.accounts.v1.ConsentService.Accept is not implemented"))
+func (UnimplementedConsentServiceHandler) AcceptTerms(context.Context, *connect.Request[v1.AcceptTermsRequest]) (*connect.Response[v1.ConsentStatus], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("saas.accounts.v1.ConsentService.AcceptTerms is not implemented"))
+}
+
+func (UnimplementedConsentServiceHandler) UpdatePreferences(context.Context, *connect.Request[v1.UpdateConsentPreferencesRequest]) (*connect.Response[v1.ConsentStatus], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("saas.accounts.v1.ConsentService.UpdatePreferences is not implemented"))
 }

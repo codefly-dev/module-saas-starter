@@ -28,8 +28,6 @@ const (
 // OnboardingServiceClient is the client API for OnboardingService service.
 //
 // For semantics around ctx use and closing/ending streaming RPCs, please refer to https://pkg.go.dev/google.golang.org/grpc/?tab=doc#ClientConn.NewStream.
-//
-// OnboardingService — user onboarding flow management
 type OnboardingServiceClient interface {
 	GetProgress(ctx context.Context, in *GetOnboardingProgressRequest, opts ...grpc.CallOption) (*OnboardingProgress, error)
 	CompleteStep(ctx context.Context, in *CompleteOnboardingStepRequest, opts ...grpc.CallOption) (*OnboardingProgress, error)
@@ -77,8 +75,6 @@ func (c *onboardingServiceClient) SkipStep(ctx context.Context, in *SkipOnboardi
 // OnboardingServiceServer is the server API for OnboardingService service.
 // All implementations must embed UnimplementedOnboardingServiceServer
 // for forward compatibility.
-//
-// OnboardingService — user onboarding flow management
 type OnboardingServiceServer interface {
 	GetProgress(context.Context, *GetOnboardingProgressRequest) (*OnboardingProgress, error)
 	CompleteStep(context.Context, *CompleteOnboardingStepRequest) (*OnboardingProgress, error)

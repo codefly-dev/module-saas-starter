@@ -26,22 +26,142 @@ const (
 	_ = protoimpl.EnforceVersion(protoimpl.MaxVersion - 20)
 )
 
+type ConsentPurpose int32
+
+const (
+	ConsentPurpose_CONSENT_PURPOSE_UNSPECIFIED ConsentPurpose = 0
+	ConsentPurpose_CONSENT_PURPOSE_NECESSARY   ConsentPurpose = 1
+	ConsentPurpose_CONSENT_PURPOSE_ANALYTICS   ConsentPurpose = 2
+	ConsentPurpose_CONSENT_PURPOSE_MARKETING   ConsentPurpose = 3
+)
+
+// Enum value maps for ConsentPurpose.
+var (
+	ConsentPurpose_name = map[int32]string{
+		0: "CONSENT_PURPOSE_UNSPECIFIED",
+		1: "CONSENT_PURPOSE_NECESSARY",
+		2: "CONSENT_PURPOSE_ANALYTICS",
+		3: "CONSENT_PURPOSE_MARKETING",
+	}
+	ConsentPurpose_value = map[string]int32{
+		"CONSENT_PURPOSE_UNSPECIFIED": 0,
+		"CONSENT_PURPOSE_NECESSARY":   1,
+		"CONSENT_PURPOSE_ANALYTICS":   2,
+		"CONSENT_PURPOSE_MARKETING":   3,
+	}
+)
+
+func (x ConsentPurpose) Enum() *ConsentPurpose {
+	p := new(ConsentPurpose)
+	*p = x
+	return p
+}
+
+func (x ConsentPurpose) String() string {
+	return protoimpl.X.EnumStringOf(x.Descriptor(), protoreflect.EnumNumber(x))
+}
+
+func (ConsentPurpose) Descriptor() protoreflect.EnumDescriptor {
+	return file_saas_accounts_v1_consent_proto_enumTypes[0].Descriptor()
+}
+
+func (ConsentPurpose) Type() protoreflect.EnumType {
+	return &file_saas_accounts_v1_consent_proto_enumTypes[0]
+}
+
+func (x ConsentPurpose) Number() protoreflect.EnumNumber {
+	return protoreflect.EnumNumber(x)
+}
+
+// Deprecated: Use ConsentPurpose.Descriptor instead.
+func (ConsentPurpose) EnumDescriptor() ([]byte, []int) {
+	return file_saas_accounts_v1_consent_proto_rawDescGZIP(), []int{0}
+}
+
+type PurposeConsent struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Purpose       ConsentPurpose         `protobuf:"varint,1,opt,name=purpose,proto3,enum=saas.accounts.v1.ConsentPurpose" json:"purpose,omitempty"`
+	Granted       bool                   `protobuf:"varint,2,opt,name=granted,proto3" json:"granted,omitempty"`
+	UpdatedAt     *timestamppb.Timestamp `protobuf:"bytes,3,opt,name=updated_at,json=updatedAt,proto3" json:"updated_at,omitempty"`
+	WithdrawnAt   *timestamppb.Timestamp `protobuf:"bytes,4,opt,name=withdrawn_at,json=withdrawnAt,proto3" json:"withdrawn_at,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *PurposeConsent) Reset() {
+	*x = PurposeConsent{}
+	mi := &file_saas_accounts_v1_consent_proto_msgTypes[0]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *PurposeConsent) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*PurposeConsent) ProtoMessage() {}
+
+func (x *PurposeConsent) ProtoReflect() protoreflect.Message {
+	mi := &file_saas_accounts_v1_consent_proto_msgTypes[0]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use PurposeConsent.ProtoReflect.Descriptor instead.
+func (*PurposeConsent) Descriptor() ([]byte, []int) {
+	return file_saas_accounts_v1_consent_proto_rawDescGZIP(), []int{0}
+}
+
+func (x *PurposeConsent) GetPurpose() ConsentPurpose {
+	if x != nil {
+		return x.Purpose
+	}
+	return ConsentPurpose_CONSENT_PURPOSE_UNSPECIFIED
+}
+
+func (x *PurposeConsent) GetGranted() bool {
+	if x != nil {
+		return x.Granted
+	}
+	return false
+}
+
+func (x *PurposeConsent) GetUpdatedAt() *timestamppb.Timestamp {
+	if x != nil {
+		return x.UpdatedAt
+	}
+	return nil
+}
+
+func (x *PurposeConsent) GetWithdrawnAt() *timestamppb.Timestamp {
+	if x != nil {
+		return x.WithdrawnAt
+	}
+	return nil
+}
+
 type ConsentStatus struct {
-	state protoimpl.MessageState `protogen:"open.v1"`
-	// accepted_version is the CONSENT_VERSION string the user clicked
-	// Accept on. Empty when the user has never accepted.
-	AcceptedVersion string                 `protobuf:"bytes,1,opt,name=accepted_version,json=acceptedVersion,proto3" json:"accepted_version,omitempty"`
-	AcceptedAt      *timestamppb.Timestamp `protobuf:"bytes,2,opt,name=accepted_at,json=acceptedAt,proto3" json:"accepted_at,omitempty"`
-	// current_version is the version the api considers active. The FE
-	// shows the banner whenever accepted_version != current_version.
-	CurrentVersion string `protobuf:"bytes,3,opt,name=current_version,json=currentVersion,proto3" json:"current_version,omitempty"`
-	unknownFields  protoimpl.UnknownFields
-	sizeCache      protoimpl.SizeCache
+	state                    protoimpl.MessageState `protogen:"open.v1"`
+	TermsAcceptedVersion     string                 `protobuf:"bytes,1,opt,name=terms_accepted_version,json=termsAcceptedVersion,proto3" json:"terms_accepted_version,omitempty"`
+	TermsAcceptedAt          *timestamppb.Timestamp `protobuf:"bytes,2,opt,name=terms_accepted_at,json=termsAcceptedAt,proto3" json:"terms_accepted_at,omitempty"`
+	CurrentTermsVersion      string                 `protobuf:"bytes,3,opt,name=current_terms_version,json=currentTermsVersion,proto3" json:"current_terms_version,omitempty"`
+	PolicyVersion            string                 `protobuf:"bytes,4,opt,name=policy_version,json=policyVersion,proto3" json:"policy_version,omitempty"`
+	Purposes                 []*PurposeConsent      `protobuf:"bytes,5,rep,name=purposes,proto3" json:"purposes,omitempty"`
+	PreferencesRecorded      bool                   `protobuf:"varint,6,opt,name=preferences_recorded,json=preferencesRecorded,proto3" json:"preferences_recorded,omitempty"`
+	PreferencesPolicyVersion string                 `protobuf:"bytes,7,opt,name=preferences_policy_version,json=preferencesPolicyVersion,proto3" json:"preferences_policy_version,omitempty"`
+	unknownFields            protoimpl.UnknownFields
+	sizeCache                protoimpl.SizeCache
 }
 
 func (x *ConsentStatus) Reset() {
 	*x = ConsentStatus{}
-	mi := &file_saas_accounts_v1_consent_proto_msgTypes[0]
+	mi := &file_saas_accounts_v1_consent_proto_msgTypes[1]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -53,7 +173,7 @@ func (x *ConsentStatus) String() string {
 func (*ConsentStatus) ProtoMessage() {}
 
 func (x *ConsentStatus) ProtoReflect() protoreflect.Message {
-	mi := &file_saas_accounts_v1_consent_proto_msgTypes[0]
+	mi := &file_saas_accounts_v1_consent_proto_msgTypes[1]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -66,26 +186,54 @@ func (x *ConsentStatus) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ConsentStatus.ProtoReflect.Descriptor instead.
 func (*ConsentStatus) Descriptor() ([]byte, []int) {
-	return file_saas_accounts_v1_consent_proto_rawDescGZIP(), []int{0}
+	return file_saas_accounts_v1_consent_proto_rawDescGZIP(), []int{1}
 }
 
-func (x *ConsentStatus) GetAcceptedVersion() string {
+func (x *ConsentStatus) GetTermsAcceptedVersion() string {
 	if x != nil {
-		return x.AcceptedVersion
+		return x.TermsAcceptedVersion
 	}
 	return ""
 }
 
-func (x *ConsentStatus) GetAcceptedAt() *timestamppb.Timestamp {
+func (x *ConsentStatus) GetTermsAcceptedAt() *timestamppb.Timestamp {
 	if x != nil {
-		return x.AcceptedAt
+		return x.TermsAcceptedAt
 	}
 	return nil
 }
 
-func (x *ConsentStatus) GetCurrentVersion() string {
+func (x *ConsentStatus) GetCurrentTermsVersion() string {
 	if x != nil {
-		return x.CurrentVersion
+		return x.CurrentTermsVersion
+	}
+	return ""
+}
+
+func (x *ConsentStatus) GetPolicyVersion() string {
+	if x != nil {
+		return x.PolicyVersion
+	}
+	return ""
+}
+
+func (x *ConsentStatus) GetPurposes() []*PurposeConsent {
+	if x != nil {
+		return x.Purposes
+	}
+	return nil
+}
+
+func (x *ConsentStatus) GetPreferencesRecorded() bool {
+	if x != nil {
+		return x.PreferencesRecorded
+	}
+	return false
+}
+
+func (x *ConsentStatus) GetPreferencesPolicyVersion() string {
+	if x != nil {
+		return x.PreferencesPolicyVersion
 	}
 	return ""
 }
@@ -98,7 +246,7 @@ type GetConsentStatusRequest struct {
 
 func (x *GetConsentStatusRequest) Reset() {
 	*x = GetConsentStatusRequest{}
-	mi := &file_saas_accounts_v1_consent_proto_msgTypes[1]
+	mi := &file_saas_accounts_v1_consent_proto_msgTypes[2]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -110,7 +258,7 @@ func (x *GetConsentStatusRequest) String() string {
 func (*GetConsentStatusRequest) ProtoMessage() {}
 
 func (x *GetConsentStatusRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_saas_accounts_v1_consent_proto_msgTypes[1]
+	mi := &file_saas_accounts_v1_consent_proto_msgTypes[2]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -123,31 +271,32 @@ func (x *GetConsentStatusRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetConsentStatusRequest.ProtoReflect.Descriptor instead.
 func (*GetConsentStatusRequest) Descriptor() ([]byte, []int) {
-	return file_saas_accounts_v1_consent_proto_rawDescGZIP(), []int{1}
+	return file_saas_accounts_v1_consent_proto_rawDescGZIP(), []int{2}
 }
 
-type AcceptConsentRequest struct {
+type AcceptTermsRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Version       string                 `protobuf:"bytes,1,opt,name=version,proto3" json:"version,omitempty"`
+	Context       string                 `protobuf:"bytes,2,opt,name=context,proto3" json:"context,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
 
-func (x *AcceptConsentRequest) Reset() {
-	*x = AcceptConsentRequest{}
-	mi := &file_saas_accounts_v1_consent_proto_msgTypes[2]
+func (x *AcceptTermsRequest) Reset() {
+	*x = AcceptTermsRequest{}
+	mi := &file_saas_accounts_v1_consent_proto_msgTypes[3]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
 
-func (x *AcceptConsentRequest) String() string {
+func (x *AcceptTermsRequest) String() string {
 	return protoimpl.X.MessageStringOf(x)
 }
 
-func (*AcceptConsentRequest) ProtoMessage() {}
+func (*AcceptTermsRequest) ProtoMessage() {}
 
-func (x *AcceptConsentRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_saas_accounts_v1_consent_proto_msgTypes[2]
+func (x *AcceptTermsRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_saas_accounts_v1_consent_proto_msgTypes[3]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -158,14 +307,97 @@ func (x *AcceptConsentRequest) ProtoReflect() protoreflect.Message {
 	return mi.MessageOf(x)
 }
 
-// Deprecated: Use AcceptConsentRequest.ProtoReflect.Descriptor instead.
-func (*AcceptConsentRequest) Descriptor() ([]byte, []int) {
-	return file_saas_accounts_v1_consent_proto_rawDescGZIP(), []int{2}
+// Deprecated: Use AcceptTermsRequest.ProtoReflect.Descriptor instead.
+func (*AcceptTermsRequest) Descriptor() ([]byte, []int) {
+	return file_saas_accounts_v1_consent_proto_rawDescGZIP(), []int{3}
 }
 
-func (x *AcceptConsentRequest) GetVersion() string {
+func (x *AcceptTermsRequest) GetVersion() string {
 	if x != nil {
 		return x.Version
+	}
+	return ""
+}
+
+func (x *AcceptTermsRequest) GetContext() string {
+	if x != nil {
+		return x.Context
+	}
+	return ""
+}
+
+type UpdateConsentPreferencesRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	PolicyVersion string                 `protobuf:"bytes,1,opt,name=policy_version,json=policyVersion,proto3" json:"policy_version,omitempty"`
+	Analytics     bool                   `protobuf:"varint,2,opt,name=analytics,proto3" json:"analytics,omitempty"`
+	Marketing     bool                   `protobuf:"varint,3,opt,name=marketing,proto3" json:"marketing,omitempty"`
+	Region        string                 `protobuf:"bytes,4,opt,name=region,proto3" json:"region,omitempty"`
+	Context       string                 `protobuf:"bytes,5,opt,name=context,proto3" json:"context,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *UpdateConsentPreferencesRequest) Reset() {
+	*x = UpdateConsentPreferencesRequest{}
+	mi := &file_saas_accounts_v1_consent_proto_msgTypes[4]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *UpdateConsentPreferencesRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*UpdateConsentPreferencesRequest) ProtoMessage() {}
+
+func (x *UpdateConsentPreferencesRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_saas_accounts_v1_consent_proto_msgTypes[4]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use UpdateConsentPreferencesRequest.ProtoReflect.Descriptor instead.
+func (*UpdateConsentPreferencesRequest) Descriptor() ([]byte, []int) {
+	return file_saas_accounts_v1_consent_proto_rawDescGZIP(), []int{4}
+}
+
+func (x *UpdateConsentPreferencesRequest) GetPolicyVersion() string {
+	if x != nil {
+		return x.PolicyVersion
+	}
+	return ""
+}
+
+func (x *UpdateConsentPreferencesRequest) GetAnalytics() bool {
+	if x != nil {
+		return x.Analytics
+	}
+	return false
+}
+
+func (x *UpdateConsentPreferencesRequest) GetMarketing() bool {
+	if x != nil {
+		return x.Marketing
+	}
+	return false
+}
+
+func (x *UpdateConsentPreferencesRequest) GetRegion() string {
+	if x != nil {
+		return x.Region
+	}
+	return ""
+}
+
+func (x *UpdateConsentPreferencesRequest) GetContext() string {
+	if x != nil {
+		return x.Context
 	}
 	return ""
 }
@@ -174,19 +406,42 @@ var File_saas_accounts_v1_consent_proto protoreflect.FileDescriptor
 
 const file_saas_accounts_v1_consent_proto_rawDesc = "" +
 	"\n" +
-	"\x1esaas/accounts/v1/consent.proto\x12\x10saas.accounts.v1\x1a\x1bbuf/validate/validate.proto\x1a\x1cgoogle/api/annotations.proto\x1a\x1fgoogle/protobuf/timestamp.proto\x1a\x1csaas/policy/v1/options.proto\"\xa0\x01\n" +
-	"\rConsentStatus\x12)\n" +
-	"\x10accepted_version\x18\x01 \x01(\tR\x0facceptedVersion\x12;\n" +
-	"\vaccepted_at\x18\x02 \x01(\v2\x1a.google.protobuf.TimestampR\n" +
-	"acceptedAt\x12'\n" +
-	"\x0fcurrent_version\x18\x03 \x01(\tR\x0ecurrentVersion\"\x19\n" +
-	"\x17GetConsentStatusRequest\"9\n" +
-	"\x14AcceptConsentRequest\x12!\n" +
-	"\aversion\x18\x01 \x01(\tB\a\xbaH\x04r\x02\x10\x01R\aversion2\xbb\x02\n" +
+	"\x1esaas/accounts/v1/consent.proto\x12\x10saas.accounts.v1\x1a\x1bbuf/validate/validate.proto\x1a\x1cgoogle/api/annotations.proto\x1a\x1fgoogle/protobuf/timestamp.proto\x1a\x1csaas/policy/v1/options.proto\"\xea\x01\n" +
+	"\x0ePurposeConsent\x12D\n" +
+	"\apurpose\x18\x01 \x01(\x0e2 .saas.accounts.v1.ConsentPurposeB\b\xbaH\x05\x82\x01\x02\x10\x01R\apurpose\x12\x18\n" +
+	"\agranted\x18\x02 \x01(\bR\agranted\x129\n" +
+	"\n" +
+	"updated_at\x18\x03 \x01(\v2\x1a.google.protobuf.TimestampR\tupdatedAt\x12=\n" +
+	"\fwithdrawn_at\x18\x04 \x01(\v2\x1a.google.protobuf.TimestampR\vwithdrawnAt\"\x97\x03\n" +
+	"\rConsentStatus\x124\n" +
+	"\x16terms_accepted_version\x18\x01 \x01(\tR\x14termsAcceptedVersion\x12F\n" +
+	"\x11terms_accepted_at\x18\x02 \x01(\v2\x1a.google.protobuf.TimestampR\x0ftermsAcceptedAt\x122\n" +
+	"\x15current_terms_version\x18\x03 \x01(\tR\x13currentTermsVersion\x12%\n" +
+	"\x0epolicy_version\x18\x04 \x01(\tR\rpolicyVersion\x12<\n" +
+	"\bpurposes\x18\x05 \x03(\v2 .saas.accounts.v1.PurposeConsentR\bpurposes\x121\n" +
+	"\x14preferences_recorded\x18\x06 \x01(\bR\x13preferencesRecorded\x12<\n" +
+	"\x1apreferences_policy_version\x18\a \x01(\tR\x18preferencesPolicyVersion\"\x19\n" +
+	"\x17GetConsentStatusRequest\"Z\n" +
+	"\x12AcceptTermsRequest\x12!\n" +
+	"\aversion\x18\x01 \x01(\tB\a\xbaH\x04r\x02\x10\x01R\aversion\x12!\n" +
+	"\acontext\x18\x02 \x01(\tB\a\xbaH\x04r\x02\x18dR\acontext\"\xd1\x01\n" +
+	"\x1fUpdateConsentPreferencesRequest\x12.\n" +
+	"\x0epolicy_version\x18\x01 \x01(\tB\a\xbaH\x04r\x02\x10\x01R\rpolicyVersion\x12\x1c\n" +
+	"\tanalytics\x18\x02 \x01(\bR\tanalytics\x12\x1c\n" +
+	"\tmarketing\x18\x03 \x01(\bR\tmarketing\x12\x1f\n" +
+	"\x06region\x18\x04 \x01(\tB\a\xbaH\x04r\x02\x18 R\x06region\x12!\n" +
+	"\acontext\x18\x05 \x01(\tB\a\xbaH\x04r\x02\x18dR\acontext*\x8e\x01\n" +
+	"\x0eConsentPurpose\x12\x1f\n" +
+	"\x1bCONSENT_PURPOSE_UNSPECIFIED\x10\x00\x12\x1d\n" +
+	"\x19CONSENT_PURPOSE_NECESSARY\x10\x01\x12\x1d\n" +
+	"\x19CONSENT_PURPOSE_ANALYTICS\x10\x02\x12\x1d\n" +
+	"\x19CONSENT_PURPOSE_MARKETING\x10\x032\x86\x04\n" +
 	"\x0eConsentService\x12\x8b\x01\n" +
-	"\tGetStatus\x12).saas.accounts.v1.GetConsentStatusRequest\x1a\x1f.saas.accounts.v1.ConsentStatus\"2\xc2\xf3\x18\x14\b\x02\x10\x020\x01:\x02\x10\x01@\x01H\x03P\x03X\x03`\x01\x82\xd3\xe4\x93\x02\x14\x12\x12/v1/consent/status\x12\x9a\x01\n" +
-	"\x06Accept\x12&.saas.accounts.v1.AcceptConsentRequest\x1a\x1f.saas.accounts.v1.ConsentStatus\"G\xc2\xf3\x18&\b\x02\x10\x020\x01:\x14\n" +
-	"\x10consent.accepted\x10\x02@\x01H\x04P\x03X\x03`\x01\x82\xd3\xe4\x93\x02\x17:\x01*\"\x12/v1/consent/acceptB\xb4\x01\n" +
+	"\tGetStatus\x12).saas.accounts.v1.GetConsentStatusRequest\x1a\x1f.saas.accounts.v1.ConsentStatus\"2\xc2\xf3\x18\x14\b\x02\x10\x020\x01:\x02\x10\x01@\x01H\x03P\x03X\x03`\x01\x82\xd3\xe4\x93\x02\x14\x12\x12/v1/consent/status\x12\xa2\x01\n" +
+	"\vAcceptTerms\x12$.saas.accounts.v1.AcceptTermsRequest\x1a\x1f.saas.accounts.v1.ConsentStatus\"L\xc2\xf3\x18,\b\x02\x10\x020\x01:\x1a\n" +
+	"\x16consent.terms_accepted\x10\x02@\x01H\x04P\x03X\x03`\x01\x82\xd3\xe4\x93\x02\x16:\x01*\"\x11/v1/consent/terms\x12\xc0\x01\n" +
+	"\x11UpdatePreferences\x121.saas.accounts.v1.UpdateConsentPreferencesRequest\x1a\x1f.saas.accounts.v1.ConsentStatus\"W\xc2\xf3\x181\b\x02\x10\x020\x01:\x1f\n" +
+	"\x1bconsent.preferences_updated\x10\x02@\x01H\x04P\x03X\x03`\x01\x82\xd3\xe4\x93\x02\x1c:\x01*\x1a\x17/v1/consent/preferencesB\xb4\x01\n" +
 	"\x14com.saas.accounts.v1B\fConsentProtoP\x01Z,accounts/pkg/gen/saas/accounts/v1;accountsv1\xa2\x02\x03SAX\xaa\x02\x10Saas.Accounts.V1\xca\x02\x10Saas\\Accounts\\V1\xe2\x02\x1cSaas\\Accounts\\V1\\GPBMetadata\xea\x02\x12Saas::Accounts::V1b\x06proto3"
 
 var (
@@ -201,24 +456,34 @@ func file_saas_accounts_v1_consent_proto_rawDescGZIP() []byte {
 	return file_saas_accounts_v1_consent_proto_rawDescData
 }
 
-var file_saas_accounts_v1_consent_proto_msgTypes = make([]protoimpl.MessageInfo, 3)
+var file_saas_accounts_v1_consent_proto_enumTypes = make([]protoimpl.EnumInfo, 1)
+var file_saas_accounts_v1_consent_proto_msgTypes = make([]protoimpl.MessageInfo, 5)
 var file_saas_accounts_v1_consent_proto_goTypes = []any{
-	(*ConsentStatus)(nil),           // 0: saas.accounts.v1.ConsentStatus
-	(*GetConsentStatusRequest)(nil), // 1: saas.accounts.v1.GetConsentStatusRequest
-	(*AcceptConsentRequest)(nil),    // 2: saas.accounts.v1.AcceptConsentRequest
-	(*timestamppb.Timestamp)(nil),   // 3: google.protobuf.Timestamp
+	(ConsentPurpose)(0),                     // 0: saas.accounts.v1.ConsentPurpose
+	(*PurposeConsent)(nil),                  // 1: saas.accounts.v1.PurposeConsent
+	(*ConsentStatus)(nil),                   // 2: saas.accounts.v1.ConsentStatus
+	(*GetConsentStatusRequest)(nil),         // 3: saas.accounts.v1.GetConsentStatusRequest
+	(*AcceptTermsRequest)(nil),              // 4: saas.accounts.v1.AcceptTermsRequest
+	(*UpdateConsentPreferencesRequest)(nil), // 5: saas.accounts.v1.UpdateConsentPreferencesRequest
+	(*timestamppb.Timestamp)(nil),           // 6: google.protobuf.Timestamp
 }
 var file_saas_accounts_v1_consent_proto_depIdxs = []int32{
-	3, // 0: saas.accounts.v1.ConsentStatus.accepted_at:type_name -> google.protobuf.Timestamp
-	1, // 1: saas.accounts.v1.ConsentService.GetStatus:input_type -> saas.accounts.v1.GetConsentStatusRequest
-	2, // 2: saas.accounts.v1.ConsentService.Accept:input_type -> saas.accounts.v1.AcceptConsentRequest
-	0, // 3: saas.accounts.v1.ConsentService.GetStatus:output_type -> saas.accounts.v1.ConsentStatus
-	0, // 4: saas.accounts.v1.ConsentService.Accept:output_type -> saas.accounts.v1.ConsentStatus
-	3, // [3:5] is the sub-list for method output_type
-	1, // [1:3] is the sub-list for method input_type
-	1, // [1:1] is the sub-list for extension type_name
-	1, // [1:1] is the sub-list for extension extendee
-	0, // [0:1] is the sub-list for field type_name
+	0, // 0: saas.accounts.v1.PurposeConsent.purpose:type_name -> saas.accounts.v1.ConsentPurpose
+	6, // 1: saas.accounts.v1.PurposeConsent.updated_at:type_name -> google.protobuf.Timestamp
+	6, // 2: saas.accounts.v1.PurposeConsent.withdrawn_at:type_name -> google.protobuf.Timestamp
+	6, // 3: saas.accounts.v1.ConsentStatus.terms_accepted_at:type_name -> google.protobuf.Timestamp
+	1, // 4: saas.accounts.v1.ConsentStatus.purposes:type_name -> saas.accounts.v1.PurposeConsent
+	3, // 5: saas.accounts.v1.ConsentService.GetStatus:input_type -> saas.accounts.v1.GetConsentStatusRequest
+	4, // 6: saas.accounts.v1.ConsentService.AcceptTerms:input_type -> saas.accounts.v1.AcceptTermsRequest
+	5, // 7: saas.accounts.v1.ConsentService.UpdatePreferences:input_type -> saas.accounts.v1.UpdateConsentPreferencesRequest
+	2, // 8: saas.accounts.v1.ConsentService.GetStatus:output_type -> saas.accounts.v1.ConsentStatus
+	2, // 9: saas.accounts.v1.ConsentService.AcceptTerms:output_type -> saas.accounts.v1.ConsentStatus
+	2, // 10: saas.accounts.v1.ConsentService.UpdatePreferences:output_type -> saas.accounts.v1.ConsentStatus
+	8, // [8:11] is the sub-list for method output_type
+	5, // [5:8] is the sub-list for method input_type
+	5, // [5:5] is the sub-list for extension type_name
+	5, // [5:5] is the sub-list for extension extendee
+	0, // [0:5] is the sub-list for field type_name
 }
 
 func init() { file_saas_accounts_v1_consent_proto_init() }
@@ -231,13 +496,14 @@ func file_saas_accounts_v1_consent_proto_init() {
 		File: protoimpl.DescBuilder{
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_saas_accounts_v1_consent_proto_rawDesc), len(file_saas_accounts_v1_consent_proto_rawDesc)),
-			NumEnums:      0,
-			NumMessages:   3,
+			NumEnums:      1,
+			NumMessages:   5,
 			NumExtensions: 0,
 			NumServices:   1,
 		},
 		GoTypes:           file_saas_accounts_v1_consent_proto_goTypes,
 		DependencyIndexes: file_saas_accounts_v1_consent_proto_depIdxs,
+		EnumInfos:         file_saas_accounts_v1_consent_proto_enumTypes,
 		MessageInfos:      file_saas_accounts_v1_consent_proto_msgTypes,
 	}.Build()
 	File_saas_accounts_v1_consent_proto = out.File

@@ -34,6 +34,23 @@ func quotaStatusError(err error) error {
 	return err
 }
 
+func invitationStatusError(err error) error {
+	switch {
+	case err == nil:
+		return nil
+	case errors.Is(err, business.ErrInvitationUnavailable):
+		return status.Error(codes.NotFound, err.Error())
+	case errors.Is(err, business.ErrInvitationEmailMismatch):
+		return status.Error(codes.PermissionDenied, err.Error())
+	case errors.Is(err, business.ErrInvitationExpired):
+		return status.Error(codes.FailedPrecondition, err.Error())
+	case errors.Is(err, business.ErrEntitlementQuotaExceeded):
+		return status.Error(codes.ResourceExhausted, err.Error())
+	default:
+		return status.Error(codes.Internal, "invitation operation failed")
+	}
+}
+
 func jobOperationStatusError(err error) error {
 	switch {
 	case err == nil:
@@ -910,6 +927,17 @@ func (s *InvitationServer) CreateInvitation(ctx context.Context, req *gen.Create
 	return response, quotaStatusError(err)
 }
 
+func (s *InvitationServer) InspectInvitation(ctx context.Context, req *gen.InspectInvitationRequest) (*gen.InvitationSummary, error) {
+	if err := Validate(req); err != nil {
+		return nil, err
+	}
+	summary, err := service.InspectInvitation(ctx, req)
+	if err != nil && !errors.Is(err, business.ErrInvitationUnavailable) {
+		return nil, status.Error(codes.Unavailable, "invitation inspection unavailable")
+	}
+	return summary, invitationStatusError(err)
+}
+
 func (s *InvitationServer) AcceptInvitation(ctx context.Context, req *gen.AcceptInvitationRequest) (*gen.AcceptInvitationResponse, error) {
 	if err := Validate(req); err != nil {
 		return nil, err
@@ -920,7 +948,33 @@ func (s *InvitationServer) AcceptInvitation(ctx context.Context, req *gen.Accept
 	if !found {
 		return nil, status.Error(codes.Unauthenticated, "user id not found")
 	}
-	return service.AcceptInvitation(ctx, userID, req)
+	response, err := service.AcceptInvitation(ctx, userID, req)
+	return response, invitationStatusError(err)
+}
+
+func (s *InvitationServer) ResendInvitation(ctx context.Context, req *gen.ResendInvitationRequest) (*gen.Invitation, error) {
+	if err := Validate(req); err != nil {
+		return nil, err
+	}
+	actorID, err := requireAuth(ctx)
+	if err != nil {
+		return nil, err
+	}
+	var orgID string
+	if err := service.Store().WithControlPlane(ctx, func(ctx context.Context) error {
+		var resolveErr error
+		orgID, resolveErr = service.Store().GetInvitationOrgID(ctx, req.Id)
+		return resolveErr
+	}); err != nil {
+		return nil, status.Errorf(codes.Internal, "cannot resolve invitation organization: %v", err)
+	}
+	if orgID == "" {
+		return nil, status.Error(codes.NotFound, "invitation not found")
+	}
+	if err := requireOrgAdmin(ctx, actorID, orgID); err != nil {
+		return nil, err
+	}
+	return service.ResendInvitation(ctx, actorID, req)
 }
 
 func (s *InvitationServer) ListInvitations(ctx context.Context, req *gen.ListInvitationsRequest) (*gen.ListInvitationsResponse, error) {

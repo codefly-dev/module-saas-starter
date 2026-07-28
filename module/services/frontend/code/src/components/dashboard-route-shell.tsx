@@ -1,11 +1,12 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { useEffect, type ReactNode } from "react";
+import { type ReactNode, useEffect } from "react";
 import { AdminLayout } from "@/components/admin-layout";
 import { CommandPalette } from "@/components/command-palette";
 import { ImpersonationBanner } from "@/components/impersonation-banner";
 import { Skeleton } from "@/components/ui/skeleton";
+import { OnboardingGate } from "@/features/onboarding/ui/onboarding-gate";
 import { useAuth } from "@/lib/auth";
 
 export function DashboardRouteShell({ children }: { children: ReactNode }) {
@@ -29,7 +30,9 @@ export function DashboardRouteShell({ children }: { children: ReactNode }) {
 		<>
 			<ImpersonationBanner />
 			<CommandPalette />
-			<AdminLayout>{children}</AdminLayout>
+			<OnboardingGate>
+				<AdminLayout>{children}</AdminLayout>
+			</OnboardingGate>
 		</>
 	);
 }

@@ -136,10 +136,22 @@ type Store interface {
 	CreateInvitation(ctx context.Context, inv *Invitation) error
 	ExpirePendingInvitations(ctx context.Context, orgID string) error
 	GetInvitationByTokenHash(ctx context.Context, hash string) (*Invitation, error)
+	GetInvitationByID(ctx context.Context, id string) (*Invitation, error)
 	GetInvitationOrgID(ctx context.Context, id string) (string, error)
 	ListInvitations(ctx context.Context, orgID string, status string) ([]*Invitation, error)
+	RotateInvitationToken(ctx context.Context, inv *Invitation) error
 	UpdateInvitationStatus(ctx context.Context, id string, status string, acceptedBy string) error
 	CountPendingInvitations(ctx context.Context, orgID string) (int32, error)
+	HasPendingInvitationForEmail(ctx context.Context, email string) (bool, error)
+
+	// Waitlist
+	GetWaitlistReferralID(ctx context.Context, code string) (string, error)
+	UpsertWaitlistEntry(ctx context.Context, entry *WaitlistEntry, cooldown time.Duration) (*WaitlistEntry, bool, error)
+	VerifyWaitlistEntry(ctx context.Context, tokenHash string, now time.Time) (*WaitlistEntry, error)
+	ListWaitlistEntries(ctx context.Context, state, query, source, campaign string, pageSize int32, pageToken string) ([]*WaitlistEntry, string, error)
+	UpdateWaitlistState(ctx context.Context, id, state, notes string, tags []string, now time.Time) (*WaitlistEntry, error)
+	GetWaitlistStateByEmail(ctx context.Context, email string) (string, error)
+	ConvertWaitlistEntry(ctx context.Context, email, userID, orgID string, now time.Time) (*WaitlistEntry, error)
 
 	// SSO
 	GetOrgSSO(ctx context.Context, orgID string) (*OrgSSOConfig, error)
@@ -222,8 +234,10 @@ type Store interface {
 	HasVerifiedMFA(ctx context.Context, userID string) (bool, error)
 
 	// Onboarding
-	GetOnboardingProgress(ctx context.Context, userID string) ([]*OnboardingStep, error)
-	UpsertOnboardingStep(ctx context.Context, userID string, stepName string, status string) error
+	GetOnboardingProgress(ctx context.Context, userID, orgID, flowID string, flowVersion uint32) ([]*OnboardingStep, error)
+	UpsertOnboardingStep(ctx context.Context, userID, orgID, flowID string, flowVersion uint32, step *OnboardingStep) error
+	GetOrganizationActivation(ctx context.Context, orgID, flowID string, flowVersion uint32, milestone string) (*time.Time, error)
+	RecordOrganizationActivation(ctx context.Context, orgID, flowID string, flowVersion uint32, milestone, actorID string) error
 
 	// Magic Links
 	CreateMagicLink(ctx context.Context, ml *MagicLink) error
@@ -241,6 +255,8 @@ type Store interface {
 	// User consent — server-side TOS/privacy acceptance trail.
 	GetUserConsent(ctx context.Context, userID string) (version string, acceptedAt *time.Time, err error)
 	SetUserConsent(ctx context.Context, userID, version string, acceptedAt time.Time) error
+	GetUserConsentPreferences(ctx context.Context, userID string) ([]*ConsentPreference, error)
+	SetUserConsentPreferences(ctx context.Context, userID string, preferences []*ConsentPreference, region, consentContext string) error
 
 	// Data Retention
 	GetRetentionPolicies(ctx context.Context) ([]*RetentionPolicy, error)

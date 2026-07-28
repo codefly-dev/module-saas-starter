@@ -308,9 +308,9 @@
     {
       "protocol": "GATEWAY_PROTOCOL_CONNECT",
       "method": "POST",
-      "path": "/customers.ConsentService/Accept",
+      "path": "/customers.ConsentService/AcceptTerms",
       "match": "GATEWAY_MATCH_EXACT",
-      "procedure": "/saas.accounts.v1.ConsentService/Accept",
+      "procedure": "/saas.accounts.v1.ConsentService/AcceptTerms",
       "owner": {
         "module": "saas-starter",
         "service": "accounts"
@@ -318,7 +318,7 @@
       "upstream_endpoint": "connect",
       "exposure": "EXPOSURE_AUTHENTICATED",
       "source": "GATEWAY_ROUTE_SOURCE_COMPATIBILITY_ALIAS",
-      "rewrite_path": "/saas.accounts.v1.ConsentService/Accept",
+      "rewrite_path": "/saas.accounts.v1.ConsentService/AcceptTerms",
       "remove_after": "2026-10-11"
     },
     {
@@ -335,6 +335,22 @@
       "exposure": "EXPOSURE_AUTHENTICATED",
       "source": "GATEWAY_ROUTE_SOURCE_COMPATIBILITY_ALIAS",
       "rewrite_path": "/saas.accounts.v1.ConsentService/GetStatus",
+      "remove_after": "2026-10-11"
+    },
+    {
+      "protocol": "GATEWAY_PROTOCOL_CONNECT",
+      "method": "POST",
+      "path": "/customers.ConsentService/UpdatePreferences",
+      "match": "GATEWAY_MATCH_EXACT",
+      "procedure": "/saas.accounts.v1.ConsentService/UpdatePreferences",
+      "owner": {
+        "module": "saas-starter",
+        "service": "accounts"
+      },
+      "upstream_endpoint": "connect",
+      "exposure": "EXPOSURE_AUTHENTICATED",
+      "source": "GATEWAY_ROUTE_SOURCE_COMPATIBILITY_ALIAS",
+      "rewrite_path": "/saas.accounts.v1.ConsentService/UpdatePreferences",
       "remove_after": "2026-10-11"
     },
     {
@@ -516,6 +532,22 @@
     {
       "protocol": "GATEWAY_PROTOCOL_CONNECT",
       "method": "POST",
+      "path": "/customers.InvitationService/InspectInvitation",
+      "match": "GATEWAY_MATCH_EXACT",
+      "procedure": "/saas.accounts.v1.InvitationService/InspectInvitation",
+      "owner": {
+        "module": "saas-starter",
+        "service": "accounts"
+      },
+      "upstream_endpoint": "connect",
+      "exposure": "EXPOSURE_PUBLIC",
+      "source": "GATEWAY_ROUTE_SOURCE_COMPATIBILITY_ALIAS",
+      "rewrite_path": "/saas.accounts.v1.InvitationService/InspectInvitation",
+      "remove_after": "2026-10-11"
+    },
+    {
+      "protocol": "GATEWAY_PROTOCOL_CONNECT",
+      "method": "POST",
       "path": "/customers.InvitationService/ListInvitations",
       "match": "GATEWAY_MATCH_EXACT",
       "procedure": "/saas.accounts.v1.InvitationService/ListInvitations",
@@ -527,6 +559,22 @@
       "exposure": "EXPOSURE_AUTHENTICATED",
       "source": "GATEWAY_ROUTE_SOURCE_COMPATIBILITY_ALIAS",
       "rewrite_path": "/saas.accounts.v1.InvitationService/ListInvitations",
+      "remove_after": "2026-10-11"
+    },
+    {
+      "protocol": "GATEWAY_PROTOCOL_CONNECT",
+      "method": "POST",
+      "path": "/customers.InvitationService/ResendInvitation",
+      "match": "GATEWAY_MATCH_EXACT",
+      "procedure": "/saas.accounts.v1.InvitationService/ResendInvitation",
+      "owner": {
+        "module": "saas-starter",
+        "service": "accounts"
+      },
+      "upstream_endpoint": "connect",
+      "exposure": "EXPOSURE_AUTHENTICATED",
+      "source": "GATEWAY_ROUTE_SOURCE_COMPATIBILITY_ALIAS",
+      "rewrite_path": "/saas.accounts.v1.InvitationService/ResendInvitation",
       "remove_after": "2026-10-11"
     },
     {
@@ -1700,6 +1748,102 @@
     {
       "protocol": "GATEWAY_PROTOCOL_CONNECT",
       "method": "POST",
+      "path": "/customers.WaitlistService/GetAcquisitionStatus",
+      "match": "GATEWAY_MATCH_EXACT",
+      "procedure": "/saas.accounts.v1.WaitlistService/GetAcquisitionStatus",
+      "owner": {
+        "module": "saas-starter",
+        "service": "accounts"
+      },
+      "upstream_endpoint": "connect",
+      "exposure": "EXPOSURE_PUBLIC",
+      "source": "GATEWAY_ROUTE_SOURCE_COMPATIBILITY_ALIAS",
+      "rewrite_path": "/saas.accounts.v1.WaitlistService/GetAcquisitionStatus",
+      "remove_after": "2026-10-11"
+    },
+    {
+      "protocol": "GATEWAY_PROTOCOL_CONNECT",
+      "method": "POST",
+      "path": "/customers.WaitlistService/Invite",
+      "match": "GATEWAY_MATCH_EXACT",
+      "procedure": "/saas.accounts.v1.WaitlistService/Invite",
+      "owner": {
+        "module": "saas-starter",
+        "service": "accounts"
+      },
+      "upstream_endpoint": "connect",
+      "exposure": "EXPOSURE_AUTHENTICATED",
+      "source": "GATEWAY_ROUTE_SOURCE_COMPATIBILITY_ALIAS",
+      "rewrite_path": "/saas.accounts.v1.WaitlistService/Invite",
+      "remove_after": "2026-10-11"
+    },
+    {
+      "protocol": "GATEWAY_PROTOCOL_CONNECT",
+      "method": "POST",
+      "path": "/customers.WaitlistService/Join",
+      "match": "GATEWAY_MATCH_EXACT",
+      "procedure": "/saas.accounts.v1.WaitlistService/Join",
+      "owner": {
+        "module": "saas-starter",
+        "service": "accounts"
+      },
+      "upstream_endpoint": "connect",
+      "exposure": "EXPOSURE_PUBLIC",
+      "source": "GATEWAY_ROUTE_SOURCE_COMPATIBILITY_ALIAS",
+      "rewrite_path": "/saas.accounts.v1.WaitlistService/Join",
+      "remove_after": "2026-10-11"
+    },
+    {
+      "protocol": "GATEWAY_PROTOCOL_CONNECT",
+      "method": "POST",
+      "path": "/customers.WaitlistService/List",
+      "match": "GATEWAY_MATCH_EXACT",
+      "procedure": "/saas.accounts.v1.WaitlistService/List",
+      "owner": {
+        "module": "saas-starter",
+        "service": "accounts"
+      },
+      "upstream_endpoint": "connect",
+      "exposure": "EXPOSURE_AUTHENTICATED",
+      "source": "GATEWAY_ROUTE_SOURCE_COMPATIBILITY_ALIAS",
+      "rewrite_path": "/saas.accounts.v1.WaitlistService/List",
+      "remove_after": "2026-10-11"
+    },
+    {
+      "protocol": "GATEWAY_PROTOCOL_CONNECT",
+      "method": "POST",
+      "path": "/customers.WaitlistService/Review",
+      "match": "GATEWAY_MATCH_EXACT",
+      "procedure": "/saas.accounts.v1.WaitlistService/Review",
+      "owner": {
+        "module": "saas-starter",
+        "service": "accounts"
+      },
+      "upstream_endpoint": "connect",
+      "exposure": "EXPOSURE_AUTHENTICATED",
+      "source": "GATEWAY_ROUTE_SOURCE_COMPATIBILITY_ALIAS",
+      "rewrite_path": "/saas.accounts.v1.WaitlistService/Review",
+      "remove_after": "2026-10-11"
+    },
+    {
+      "protocol": "GATEWAY_PROTOCOL_CONNECT",
+      "method": "POST",
+      "path": "/customers.WaitlistService/Verify",
+      "match": "GATEWAY_MATCH_EXACT",
+      "procedure": "/saas.accounts.v1.WaitlistService/Verify",
+      "owner": {
+        "module": "saas-starter",
+        "service": "accounts"
+      },
+      "upstream_endpoint": "connect",
+      "exposure": "EXPOSURE_PUBLIC",
+      "source": "GATEWAY_ROUTE_SOURCE_COMPATIBILITY_ALIAS",
+      "rewrite_path": "/saas.accounts.v1.WaitlistService/Verify",
+      "remove_after": "2026-10-11"
+    },
+    {
+      "protocol": "GATEWAY_PROTOCOL_CONNECT",
+      "method": "POST",
       "path": "/customers.WebhookService/CreateSubscription",
       "match": "GATEWAY_MATCH_EXACT",
       "procedure": "/saas.accounts.v1.WebhookService/CreateSubscription",
@@ -2196,9 +2340,9 @@
     {
       "protocol": "GATEWAY_PROTOCOL_CONNECT",
       "method": "POST",
-      "path": "/saas.accounts.v1.ConsentService/Accept",
+      "path": "/saas.accounts.v1.ConsentService/AcceptTerms",
       "match": "GATEWAY_MATCH_EXACT",
-      "procedure": "/saas.accounts.v1.ConsentService/Accept",
+      "procedure": "/saas.accounts.v1.ConsentService/AcceptTerms",
       "owner": {
         "module": "saas-starter",
         "service": "accounts"
@@ -2215,6 +2359,22 @@
       "path": "/saas.accounts.v1.ConsentService/GetStatus",
       "match": "GATEWAY_MATCH_EXACT",
       "procedure": "/saas.accounts.v1.ConsentService/GetStatus",
+      "owner": {
+        "module": "saas-starter",
+        "service": "accounts"
+      },
+      "upstream_endpoint": "connect",
+      "exposure": "EXPOSURE_AUTHENTICATED",
+      "source": "GATEWAY_ROUTE_SOURCE_DESCRIPTOR",
+      "rewrite_path": "",
+      "remove_after": ""
+    },
+    {
+      "protocol": "GATEWAY_PROTOCOL_CONNECT",
+      "method": "POST",
+      "path": "/saas.accounts.v1.ConsentService/UpdatePreferences",
+      "match": "GATEWAY_MATCH_EXACT",
+      "procedure": "/saas.accounts.v1.ConsentService/UpdatePreferences",
       "owner": {
         "module": "saas-starter",
         "service": "accounts"
@@ -2404,9 +2564,41 @@
     {
       "protocol": "GATEWAY_PROTOCOL_CONNECT",
       "method": "POST",
+      "path": "/saas.accounts.v1.InvitationService/InspectInvitation",
+      "match": "GATEWAY_MATCH_EXACT",
+      "procedure": "/saas.accounts.v1.InvitationService/InspectInvitation",
+      "owner": {
+        "module": "saas-starter",
+        "service": "accounts"
+      },
+      "upstream_endpoint": "connect",
+      "exposure": "EXPOSURE_PUBLIC",
+      "source": "GATEWAY_ROUTE_SOURCE_DESCRIPTOR",
+      "rewrite_path": "",
+      "remove_after": ""
+    },
+    {
+      "protocol": "GATEWAY_PROTOCOL_CONNECT",
+      "method": "POST",
       "path": "/saas.accounts.v1.InvitationService/ListInvitations",
       "match": "GATEWAY_MATCH_EXACT",
       "procedure": "/saas.accounts.v1.InvitationService/ListInvitations",
+      "owner": {
+        "module": "saas-starter",
+        "service": "accounts"
+      },
+      "upstream_endpoint": "connect",
+      "exposure": "EXPOSURE_AUTHENTICATED",
+      "source": "GATEWAY_ROUTE_SOURCE_DESCRIPTOR",
+      "rewrite_path": "",
+      "remove_after": ""
+    },
+    {
+      "protocol": "GATEWAY_PROTOCOL_CONNECT",
+      "method": "POST",
+      "path": "/saas.accounts.v1.InvitationService/ResendInvitation",
+      "match": "GATEWAY_MATCH_EXACT",
+      "procedure": "/saas.accounts.v1.InvitationService/ResendInvitation",
       "owner": {
         "module": "saas-starter",
         "service": "accounts"
@@ -3588,6 +3780,102 @@
     {
       "protocol": "GATEWAY_PROTOCOL_CONNECT",
       "method": "POST",
+      "path": "/saas.accounts.v1.WaitlistService/GetAcquisitionStatus",
+      "match": "GATEWAY_MATCH_EXACT",
+      "procedure": "/saas.accounts.v1.WaitlistService/GetAcquisitionStatus",
+      "owner": {
+        "module": "saas-starter",
+        "service": "accounts"
+      },
+      "upstream_endpoint": "connect",
+      "exposure": "EXPOSURE_PUBLIC",
+      "source": "GATEWAY_ROUTE_SOURCE_DESCRIPTOR",
+      "rewrite_path": "",
+      "remove_after": ""
+    },
+    {
+      "protocol": "GATEWAY_PROTOCOL_CONNECT",
+      "method": "POST",
+      "path": "/saas.accounts.v1.WaitlistService/Invite",
+      "match": "GATEWAY_MATCH_EXACT",
+      "procedure": "/saas.accounts.v1.WaitlistService/Invite",
+      "owner": {
+        "module": "saas-starter",
+        "service": "accounts"
+      },
+      "upstream_endpoint": "connect",
+      "exposure": "EXPOSURE_AUTHENTICATED",
+      "source": "GATEWAY_ROUTE_SOURCE_DESCRIPTOR",
+      "rewrite_path": "",
+      "remove_after": ""
+    },
+    {
+      "protocol": "GATEWAY_PROTOCOL_CONNECT",
+      "method": "POST",
+      "path": "/saas.accounts.v1.WaitlistService/Join",
+      "match": "GATEWAY_MATCH_EXACT",
+      "procedure": "/saas.accounts.v1.WaitlistService/Join",
+      "owner": {
+        "module": "saas-starter",
+        "service": "accounts"
+      },
+      "upstream_endpoint": "connect",
+      "exposure": "EXPOSURE_PUBLIC",
+      "source": "GATEWAY_ROUTE_SOURCE_DESCRIPTOR",
+      "rewrite_path": "",
+      "remove_after": ""
+    },
+    {
+      "protocol": "GATEWAY_PROTOCOL_CONNECT",
+      "method": "POST",
+      "path": "/saas.accounts.v1.WaitlistService/List",
+      "match": "GATEWAY_MATCH_EXACT",
+      "procedure": "/saas.accounts.v1.WaitlistService/List",
+      "owner": {
+        "module": "saas-starter",
+        "service": "accounts"
+      },
+      "upstream_endpoint": "connect",
+      "exposure": "EXPOSURE_AUTHENTICATED",
+      "source": "GATEWAY_ROUTE_SOURCE_DESCRIPTOR",
+      "rewrite_path": "",
+      "remove_after": ""
+    },
+    {
+      "protocol": "GATEWAY_PROTOCOL_CONNECT",
+      "method": "POST",
+      "path": "/saas.accounts.v1.WaitlistService/Review",
+      "match": "GATEWAY_MATCH_EXACT",
+      "procedure": "/saas.accounts.v1.WaitlistService/Review",
+      "owner": {
+        "module": "saas-starter",
+        "service": "accounts"
+      },
+      "upstream_endpoint": "connect",
+      "exposure": "EXPOSURE_AUTHENTICATED",
+      "source": "GATEWAY_ROUTE_SOURCE_DESCRIPTOR",
+      "rewrite_path": "",
+      "remove_after": ""
+    },
+    {
+      "protocol": "GATEWAY_PROTOCOL_CONNECT",
+      "method": "POST",
+      "path": "/saas.accounts.v1.WaitlistService/Verify",
+      "match": "GATEWAY_MATCH_EXACT",
+      "procedure": "/saas.accounts.v1.WaitlistService/Verify",
+      "owner": {
+        "module": "saas-starter",
+        "service": "accounts"
+      },
+      "upstream_endpoint": "connect",
+      "exposure": "EXPOSURE_PUBLIC",
+      "source": "GATEWAY_ROUTE_SOURCE_DESCRIPTOR",
+      "rewrite_path": "",
+      "remove_after": ""
+    },
+    {
+      "protocol": "GATEWAY_PROTOCOL_CONNECT",
+      "method": "POST",
       "path": "/saas.accounts.v1.WebhookService/CreateSubscription",
       "match": "GATEWAY_MATCH_EXACT",
       "procedure": "/saas.accounts.v1.WebhookService/CreateSubscription",
@@ -4020,6 +4308,22 @@
     {
       "protocol": "GATEWAY_PROTOCOL_REST",
       "method": "GET",
+      "path": "/v1/acquisition",
+      "match": "GATEWAY_MATCH_EXACT",
+      "procedure": "/saas.accounts.v1.WaitlistService/GetAcquisitionStatus",
+      "owner": {
+        "module": "saas-starter",
+        "service": "accounts"
+      },
+      "upstream_endpoint": "rest",
+      "exposure": "EXPOSURE_PUBLIC",
+      "source": "GATEWAY_ROUTE_SOURCE_DESCRIPTOR",
+      "rewrite_path": "",
+      "remove_after": ""
+    },
+    {
+      "protocol": "GATEWAY_PROTOCOL_REST",
+      "method": "GET",
       "path": "/v1/api-keys",
       "match": "GATEWAY_MATCH_EXACT",
       "procedure": "/saas.accounts.v1.APIKeyService/ListAPIKeys",
@@ -4244,22 +4548,6 @@
     {
       "protocol": "GATEWAY_PROTOCOL_REST",
       "method": "GET",
-      "path": "/v1/onboarding",
-      "match": "GATEWAY_MATCH_EXACT",
-      "procedure": "/saas.accounts.v1.OnboardingService/GetProgress",
-      "owner": {
-        "module": "saas-starter",
-        "service": "accounts"
-      },
-      "upstream_endpoint": "rest",
-      "exposure": "EXPOSURE_AUTHENTICATED",
-      "source": "GATEWAY_ROUTE_SOURCE_DESCRIPTOR",
-      "rewrite_path": "",
-      "remove_after": ""
-    },
-    {
-      "protocol": "GATEWAY_PROTOCOL_REST",
-      "method": "GET",
       "path": "/v1/organizations",
       "match": "GATEWAY_MATCH_EXACT",
       "procedure": "/saas.accounts.v1.OrganizationService/ListOrganizations",
@@ -4327,6 +4615,22 @@
       "path": "/v1/organizations/{org_id}/teams",
       "match": "GATEWAY_MATCH_PATH_TEMPLATE",
       "procedure": "/saas.accounts.v1.TeamService/ListTeams",
+      "owner": {
+        "module": "saas-starter",
+        "service": "accounts"
+      },
+      "upstream_endpoint": "rest",
+      "exposure": "EXPOSURE_AUTHENTICATED",
+      "source": "GATEWAY_ROUTE_SOURCE_DESCRIPTOR",
+      "rewrite_path": "",
+      "remove_after": ""
+    },
+    {
+      "protocol": "GATEWAY_PROTOCOL_REST",
+      "method": "GET",
+      "path": "/v1/organizations/{organization_id}/onboarding",
+      "match": "GATEWAY_MATCH_PATH_TEMPLATE",
+      "procedure": "/saas.accounts.v1.OnboardingService/GetProgress",
       "owner": {
         "module": "saas-starter",
         "service": "accounts"
@@ -4471,6 +4775,22 @@
       "path": "/v1/platform/users",
       "match": "GATEWAY_MATCH_EXACT",
       "procedure": "/saas.accounts.v1.PlatformAdminService/SearchUsers",
+      "owner": {
+        "module": "saas-starter",
+        "service": "accounts"
+      },
+      "upstream_endpoint": "rest",
+      "exposure": "EXPOSURE_AUTHENTICATED",
+      "source": "GATEWAY_ROUTE_SOURCE_DESCRIPTOR",
+      "rewrite_path": "",
+      "remove_after": ""
+    },
+    {
+      "protocol": "GATEWAY_PROTOCOL_REST",
+      "method": "GET",
+      "path": "/v1/platform/waitlist",
+      "match": "GATEWAY_MATCH_EXACT",
+      "procedure": "/saas.accounts.v1.WaitlistService/List",
       "owner": {
         "module": "saas-starter",
         "service": "accounts"
@@ -4964,9 +5284,9 @@
     {
       "protocol": "GATEWAY_PROTOCOL_REST",
       "method": "POST",
-      "path": "/v1/consent/accept",
+      "path": "/v1/consent/terms",
       "match": "GATEWAY_MATCH_EXACT",
-      "procedure": "/saas.accounts.v1.ConsentService/Accept",
+      "procedure": "/saas.accounts.v1.ConsentService/AcceptTerms",
       "owner": {
         "module": "saas-starter",
         "service": "accounts"
@@ -5060,6 +5380,22 @@
     {
       "protocol": "GATEWAY_PROTOCOL_REST",
       "method": "POST",
+      "path": "/v1/invitations/{id}:resend",
+      "match": "GATEWAY_MATCH_PATH_TEMPLATE",
+      "procedure": "/saas.accounts.v1.InvitationService/ResendInvitation",
+      "owner": {
+        "module": "saas-starter",
+        "service": "accounts"
+      },
+      "upstream_endpoint": "rest",
+      "exposure": "EXPOSURE_AUTHENTICATED",
+      "source": "GATEWAY_ROUTE_SOURCE_DESCRIPTOR",
+      "rewrite_path": "",
+      "remove_after": ""
+    },
+    {
+      "protocol": "GATEWAY_PROTOCOL_REST",
+      "method": "POST",
       "path": "/v1/invitations:accept",
       "match": "GATEWAY_MATCH_EXACT",
       "procedure": "/saas.accounts.v1.InvitationService/AcceptInvitation",
@@ -5069,6 +5405,22 @@
       },
       "upstream_endpoint": "rest",
       "exposure": "EXPOSURE_AUTHENTICATED",
+      "source": "GATEWAY_ROUTE_SOURCE_DESCRIPTOR",
+      "rewrite_path": "",
+      "remove_after": ""
+    },
+    {
+      "protocol": "GATEWAY_PROTOCOL_REST",
+      "method": "POST",
+      "path": "/v1/invitations:inspect",
+      "match": "GATEWAY_MATCH_EXACT",
+      "procedure": "/saas.accounts.v1.InvitationService/InspectInvitation",
+      "owner": {
+        "module": "saas-starter",
+        "service": "accounts"
+      },
+      "upstream_endpoint": "rest",
+      "exposure": "EXPOSURE_PUBLIC",
       "source": "GATEWAY_ROUTE_SOURCE_DESCRIPTOR",
       "rewrite_path": "",
       "remove_after": ""
@@ -5188,38 +5540,6 @@
     {
       "protocol": "GATEWAY_PROTOCOL_REST",
       "method": "POST",
-      "path": "/v1/onboarding/{step_name}:complete",
-      "match": "GATEWAY_MATCH_PATH_TEMPLATE",
-      "procedure": "/saas.accounts.v1.OnboardingService/CompleteStep",
-      "owner": {
-        "module": "saas-starter",
-        "service": "accounts"
-      },
-      "upstream_endpoint": "rest",
-      "exposure": "EXPOSURE_AUTHENTICATED",
-      "source": "GATEWAY_ROUTE_SOURCE_DESCRIPTOR",
-      "rewrite_path": "",
-      "remove_after": ""
-    },
-    {
-      "protocol": "GATEWAY_PROTOCOL_REST",
-      "method": "POST",
-      "path": "/v1/onboarding/{step_name}:skip",
-      "match": "GATEWAY_MATCH_PATH_TEMPLATE",
-      "procedure": "/saas.accounts.v1.OnboardingService/SkipStep",
-      "owner": {
-        "module": "saas-starter",
-        "service": "accounts"
-      },
-      "upstream_endpoint": "rest",
-      "exposure": "EXPOSURE_AUTHENTICATED",
-      "source": "GATEWAY_ROUTE_SOURCE_DESCRIPTOR",
-      "rewrite_path": "",
-      "remove_after": ""
-    },
-    {
-      "protocol": "GATEWAY_PROTOCOL_REST",
-      "method": "POST",
       "path": "/v1/organizations",
       "match": "GATEWAY_MATCH_EXACT",
       "procedure": "/saas.accounts.v1.OrganizationService/CreateOrganization",
@@ -5255,6 +5575,38 @@
       "path": "/v1/organizations/{org_id}/teams",
       "match": "GATEWAY_MATCH_PATH_TEMPLATE",
       "procedure": "/saas.accounts.v1.TeamService/CreateTeam",
+      "owner": {
+        "module": "saas-starter",
+        "service": "accounts"
+      },
+      "upstream_endpoint": "rest",
+      "exposure": "EXPOSURE_AUTHENTICATED",
+      "source": "GATEWAY_ROUTE_SOURCE_DESCRIPTOR",
+      "rewrite_path": "",
+      "remove_after": ""
+    },
+    {
+      "protocol": "GATEWAY_PROTOCOL_REST",
+      "method": "POST",
+      "path": "/v1/organizations/{organization_id}/onboarding/{step_id}:complete",
+      "match": "GATEWAY_MATCH_PATH_TEMPLATE",
+      "procedure": "/saas.accounts.v1.OnboardingService/CompleteStep",
+      "owner": {
+        "module": "saas-starter",
+        "service": "accounts"
+      },
+      "upstream_endpoint": "rest",
+      "exposure": "EXPOSURE_AUTHENTICATED",
+      "source": "GATEWAY_ROUTE_SOURCE_DESCRIPTOR",
+      "rewrite_path": "",
+      "remove_after": ""
+    },
+    {
+      "protocol": "GATEWAY_PROTOCOL_REST",
+      "method": "POST",
+      "path": "/v1/organizations/{organization_id}/onboarding/{step_id}:skip",
+      "match": "GATEWAY_MATCH_PATH_TEMPLATE",
+      "procedure": "/saas.accounts.v1.OnboardingService/SkipStep",
       "owner": {
         "module": "saas-starter",
         "service": "accounts"
@@ -5351,6 +5703,38 @@
       "path": "/v1/platform/users/{user_id}:unsuspend",
       "match": "GATEWAY_MATCH_PATH_TEMPLATE",
       "procedure": "/saas.accounts.v1.PlatformAdminService/UnsuspendUser",
+      "owner": {
+        "module": "saas-starter",
+        "service": "accounts"
+      },
+      "upstream_endpoint": "rest",
+      "exposure": "EXPOSURE_AUTHENTICATED",
+      "source": "GATEWAY_ROUTE_SOURCE_DESCRIPTOR",
+      "rewrite_path": "",
+      "remove_after": ""
+    },
+    {
+      "protocol": "GATEWAY_PROTOCOL_REST",
+      "method": "POST",
+      "path": "/v1/platform/waitlist/{id}:invite",
+      "match": "GATEWAY_MATCH_PATH_TEMPLATE",
+      "procedure": "/saas.accounts.v1.WaitlistService/Invite",
+      "owner": {
+        "module": "saas-starter",
+        "service": "accounts"
+      },
+      "upstream_endpoint": "rest",
+      "exposure": "EXPOSURE_AUTHENTICATED",
+      "source": "GATEWAY_ROUTE_SOURCE_DESCRIPTOR",
+      "rewrite_path": "",
+      "remove_after": ""
+    },
+    {
+      "protocol": "GATEWAY_PROTOCOL_REST",
+      "method": "POST",
+      "path": "/v1/platform/waitlist/{id}:review",
+      "match": "GATEWAY_MATCH_PATH_TEMPLATE",
+      "procedure": "/saas.accounts.v1.WaitlistService/Review",
       "owner": {
         "module": "saas-starter",
         "service": "accounts"
@@ -5524,6 +5908,38 @@
     {
       "protocol": "GATEWAY_PROTOCOL_REST",
       "method": "POST",
+      "path": "/v1/waitlist",
+      "match": "GATEWAY_MATCH_EXACT",
+      "procedure": "/saas.accounts.v1.WaitlistService/Join",
+      "owner": {
+        "module": "saas-starter",
+        "service": "accounts"
+      },
+      "upstream_endpoint": "rest",
+      "exposure": "EXPOSURE_PUBLIC",
+      "source": "GATEWAY_ROUTE_SOURCE_DESCRIPTOR",
+      "rewrite_path": "",
+      "remove_after": ""
+    },
+    {
+      "protocol": "GATEWAY_PROTOCOL_REST",
+      "method": "POST",
+      "path": "/v1/waitlist:verify",
+      "match": "GATEWAY_MATCH_EXACT",
+      "procedure": "/saas.accounts.v1.WaitlistService/Verify",
+      "owner": {
+        "module": "saas-starter",
+        "service": "accounts"
+      },
+      "upstream_endpoint": "rest",
+      "exposure": "EXPOSURE_PUBLIC",
+      "source": "GATEWAY_ROUTE_SOURCE_DESCRIPTOR",
+      "rewrite_path": "",
+      "remove_after": ""
+    },
+    {
+      "protocol": "GATEWAY_PROTOCOL_REST",
+      "method": "POST",
       "path": "/v1/webhooks",
       "match": "GATEWAY_MATCH_EXACT",
       "procedure": "/saas.accounts.v1.WebhookService/CreateSubscription",
@@ -5639,6 +6055,22 @@
       "path": "/v1/work-contexts:task",
       "match": "GATEWAY_MATCH_EXACT",
       "procedure": "/saas.accounts.v1.WorkContextService/StartTask",
+      "owner": {
+        "module": "saas-starter",
+        "service": "accounts"
+      },
+      "upstream_endpoint": "rest",
+      "exposure": "EXPOSURE_AUTHENTICATED",
+      "source": "GATEWAY_ROUTE_SOURCE_DESCRIPTOR",
+      "rewrite_path": "",
+      "remove_after": ""
+    },
+    {
+      "protocol": "GATEWAY_PROTOCOL_REST",
+      "method": "PUT",
+      "path": "/v1/consent/preferences",
+      "match": "GATEWAY_MATCH_EXACT",
+      "procedure": "/saas.accounts.v1.ConsentService/UpdatePreferences",
       "owner": {
         "module": "saas-starter",
         "service": "accounts"

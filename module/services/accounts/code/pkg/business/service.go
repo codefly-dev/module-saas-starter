@@ -12,30 +12,32 @@ import (
 )
 
 type Service struct {
-	store         Store
-	hasher        KeyHasher
-	validator     auth.TokenValidator // production: validates provider tokens after OAuth code exchange
-	exchanger     CodeExchanger       // production: exchanges OAuth codes for provider tokens
-	devValidator  auth.TokenValidator // development only: allowlists explicit fixture identities
-	resolver      auth.IdentityResolver
-	minter        auth.JWTMinter
-	emailOutbox   *email.Outbox    // optional durable email producer; transport is worker-only
-	billing       BillingClient    // optional: Stripe client for checkout/portal
-	billingURLs   BillingRedirects // server-owned Stripe return destinations
-	appBaseURL    string           // public URL of the frontend, used in email bodies
-	audit         AuditEmitter
-	entitlements  EntitlementChecker
-	features      FeatureChecker
-	membership    MembershipInvalidator
-	slack         *SlackNotifier // optional: sends critical notifications to Slack
-	oauthState    *auth.OAuthStateSigner
-	oauthPolicy   *auth.OAuthRequestPolicy
-	webhookJobs   jobs.Producer // request-scoped, transactional outbound producer
-	mfaCipher     SecretCipher  // required for TOTP enrollment and verification
-	webhookCipher SecretCipher  // required for outbound-webhook signing keys
-	webhookPolicy *WebhookEndpointPolicy
-	webAuthn      WebAuthnEngine  // required for passkey registration and assertion
-	jobOperations jobs.Operations // isolated, payload-free platform operations
+	store                     Store
+	hasher                    KeyHasher
+	validator                 auth.TokenValidator // production: validates provider tokens after OAuth code exchange
+	exchanger                 CodeExchanger       // production: exchanges OAuth codes for provider tokens
+	devValidator              auth.TokenValidator // development only: allowlists explicit fixture identities
+	resolver                  auth.IdentityResolver
+	minter                    auth.JWTMinter
+	emailOutbox               *email.Outbox    // optional durable email producer; transport is worker-only
+	billing                   BillingClient    // optional: Stripe client for checkout/portal
+	billingURLs               BillingRedirects // server-owned Stripe return destinations
+	appBaseURL                string           // public URL of the frontend, used in email bodies
+	audit                     AuditEmitter
+	entitlements              EntitlementChecker
+	features                  FeatureChecker
+	membership                MembershipInvalidator
+	slack                     *SlackNotifier // optional: sends critical notifications to Slack
+	oauthState                *auth.OAuthStateSigner
+	oauthPolicy               *auth.OAuthRequestPolicy
+	webhookJobs               jobs.Producer // request-scoped, transactional outbound producer
+	mfaCipher                 SecretCipher  // required for TOTP enrollment and verification
+	webhookCipher             SecretCipher  // required for outbound-webhook signing keys
+	webhookPolicy             *WebhookEndpointPolicy
+	webAuthn                  WebAuthnEngine  // required for passkey registration and assertion
+	jobOperations             jobs.Operations // isolated, payload-free platform operations
+	acquisitionMode           gen.AcquisitionMode
+	waitlistEmailVerification bool
 }
 
 // CodeExchanger abstracts the OAuth 2.0 code-for-token exchange so the
@@ -60,7 +62,11 @@ type ExchangedTokens struct {
 }
 
 func NewService(store Store) (*Service, error) {
-	return &Service{store: store}, nil
+	return &Service{
+		store:                     store,
+		acquisitionMode:           gen.AcquisitionMode_ACQUISITION_MODE_OPEN_SIGNUP,
+		waitlistEmailVerification: true,
+	}, nil
 }
 
 func (s *Service) SetHasher(h KeyHasher) {

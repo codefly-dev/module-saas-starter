@@ -8,11 +8,12 @@ import {
 	ShieldCheck,
 	Sparkles,
 } from "lucide-react";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
 import { BrandMark } from "@/components/brand-mark";
 import { useAppearance } from "@/lib/appearance-provider";
 import { availableProviders, useAuth } from "@/lib/auth";
+import { safeReturnPath } from "@/lib/auth-return";
 import type { FixtureUser } from "@/lib/fixtures/types";
 
 interface FixtureResponse {
@@ -24,6 +25,8 @@ export function LoginPage() {
 	const { signInWith, login } = useAuth();
 	const { branding } = useAppearance();
 	const router = useRouter();
+	const searchParams = useSearchParams();
+	const destination = safeReturnPath(searchParams.get("next"));
 	const providers = useMemo(() => availableProviders(), []);
 	const [error, setError] = useState<string | null>(null);
 	const [fixtureUsers, setFixtureUsers] = useState<FixtureUser[]>([]);
@@ -56,7 +59,7 @@ export function LoginPage() {
 			// renders immediately. A full window.location reload would drop that
 			// state and force a cross-origin refresh round-trip (fragile when the
 			// FE and api are on different ports, e.g. the e2e direct-to-api setup).
-			if (authenticated) router.push("/");
+			if (authenticated) router.push(destination);
 		} catch (err) {
 			setError(err instanceof Error ? err.message : "Login failed");
 			setLoading(null);
@@ -198,7 +201,7 @@ export function LoginPage() {
 											key={p.id}
 											onClick={async () => {
 												try {
-													await signInWith(p.id);
+													await signInWith(p.id, destination);
 												} catch {}
 											}}
 											className="w-full flex items-center justify-center gap-2.5 h-11 rounded-lg border bg-background hover:bg-accent/50 text-sm font-medium transition-colors"
@@ -256,7 +259,15 @@ export function LoginPage() {
 
 					{/* Footer */}
 					<p className="text-center text-xs text-muted-foreground mt-6">
-						By continuing, you agree to our Terms of Service and Privacy Policy.
+						By continuing, you agree to our{" "}
+						<a href="/legal/terms" className="underline">
+							Terms of Service
+						</a>{" "}
+						and acknowledge our{" "}
+						<a href="/legal/privacy" className="underline">
+							Privacy Policy
+						</a>
+						.
 					</p>
 				</div>
 			</div>

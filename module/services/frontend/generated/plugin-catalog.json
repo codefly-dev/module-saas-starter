@@ -108,6 +108,12 @@
       "access": "FRONTEND_ROUTE_ACCESS_SUPER_ADMIN"
     },
     {
+      "path": "/admin/platform/waitlist",
+      "source_path": "src/app/admin/platform/waitlist/page.tsx",
+      "match": "FRONTEND_ROUTE_MATCH_EXACT",
+      "access": "FRONTEND_ROUTE_ACCESS_SUPER_ADMIN"
+    },
+    {
       "path": "/admin/roles",
       "source_path": "src/app/admin/roles/page.tsx",
       "match": "FRONTEND_ROUTE_MATCH_EXACT",
@@ -192,6 +198,24 @@
       "access": "FRONTEND_ROUTE_ACCESS_AUTHENTICATED"
     },
     {
+      "path": "/invitations/accept",
+      "source_path": "src/app/(auth)/invitations/accept/page.tsx",
+      "match": "FRONTEND_ROUTE_MATCH_EXACT",
+      "access": "FRONTEND_ROUTE_ACCESS_PUBLIC"
+    },
+    {
+      "path": "/legal/privacy",
+      "source_path": "src/app/(auth)/legal/privacy/page.tsx",
+      "match": "FRONTEND_ROUTE_MATCH_EXACT",
+      "access": "FRONTEND_ROUTE_ACCESS_PUBLIC"
+    },
+    {
+      "path": "/legal/terms",
+      "source_path": "src/app/(auth)/legal/terms/page.tsx",
+      "match": "FRONTEND_ROUTE_MATCH_EXACT",
+      "access": "FRONTEND_ROUTE_ACCESS_PUBLIC"
+    },
+    {
       "path": "/notifications",
       "source_path": "src/app/(dashboard)/notifications/page.tsx",
       "match": "FRONTEND_ROUTE_MATCH_EXACT",
@@ -228,8 +252,26 @@
       "access": "FRONTEND_ROUTE_ACCESS_AUTHENTICATED"
     },
     {
+      "path": "/settings/privacy",
+      "source_path": "src/app/(dashboard)/settings/privacy/page.tsx",
+      "match": "FRONTEND_ROUTE_MATCH_EXACT",
+      "access": "FRONTEND_ROUTE_ACCESS_AUTHENTICATED"
+    },
+    {
       "path": "/status",
       "source_path": "src/app/(auth)/status/page.tsx",
+      "match": "FRONTEND_ROUTE_MATCH_EXACT",
+      "access": "FRONTEND_ROUTE_ACCESS_PUBLIC"
+    },
+    {
+      "path": "/waitlist",
+      "source_path": "src/app/(auth)/waitlist/page.tsx",
+      "match": "FRONTEND_ROUTE_MATCH_EXACT",
+      "access": "FRONTEND_ROUTE_ACCESS_PUBLIC"
+    },
+    {
+      "path": "/waitlist/verify",
+      "source_path": "src/app/(auth)/waitlist/verify/page.tsx",
       "match": "FRONTEND_ROUTE_MATCH_EXACT",
       "access": "FRONTEND_ROUTE_ACCESS_PUBLIC"
     }
@@ -400,6 +442,21 @@
         "FRONTEND_NAVIGATION_SURFACE_SIDEBAR"
       ],
       "order": 210
+    },
+    {
+      "id": "admin-waitlist",
+      "plugin": "platform-admin",
+      "label": "Waitlist",
+      "path": "/admin/platform/waitlist",
+      "icon": "Mail",
+      "group": "Platform",
+      "access": "FRONTEND_ROUTE_ACCESS_SUPER_ADMIN",
+      "surfaces": [
+        "FRONTEND_NAVIGATION_SURFACE_COMMAND_PALETTE",
+        "FRONTEND_NAVIGATION_SURFACE_PLUGIN_REGISTRY",
+        "FRONTEND_NAVIGATION_SURFACE_SIDEBAR"
+      ],
+      "order": 215
     },
     {
       "id": "admin-sessions",
@@ -621,6 +678,21 @@
         "FRONTEND_NAVIGATION_SURFACE_USER_MENU"
       ],
       "order": 620
+    },
+    {
+      "id": "privacy-choices",
+      "plugin": "core-users",
+      "label": "Privacy Choices",
+      "path": "/settings/privacy",
+      "icon": "ShieldCheck",
+      "group": "Settings",
+      "access": "FRONTEND_ROUTE_ACCESS_AUTHENTICATED",
+      "surfaces": [
+        "FRONTEND_NAVIGATION_SURFACE_COMMAND_PALETTE",
+        "FRONTEND_NAVIGATION_SURFACE_PLUGIN_REGISTRY",
+        "FRONTEND_NAVIGATION_SURFACE_USER_MENU"
+      ],
+      "order": 625
     }
   ]
 }

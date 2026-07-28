@@ -22,8 +22,8 @@ func TestConnectRegistrationIsDeterministicAndCurrent(t *testing.T) {
 
 	checkedIn := readFixture(t, "../adapters/connect_registration_catalog_gen.go")
 	require.Equal(t, string(first), string(checkedIn), "run: go generate ./pkg/adapters")
-	require.Equal(t, 25, strings.Count(string(first), "genconnect.New"))
-	require.Equal(t, 25, strings.Count(string(first), ")(nil)"))
+	require.Equal(t, 26, strings.Count(string(first), "genconnect.New"))
+	require.Equal(t, 26, strings.Count(string(first), ")(nil)"))
 	require.Contains(t, string(first), "&apiKeyConnectHandler{inner: server.grpc.APIKey}")
 	require.Contains(t, string(first), "&webhookConnectHandler{svc: server.service}")
 	require.Contains(t, string(first), "&delegationConnectHandler{inner: DelegationSingleton()}")

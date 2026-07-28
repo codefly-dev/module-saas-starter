@@ -4,7 +4,7 @@
 > a world-class SaaS starter. Source-of-truth checklist for both end users
 > picking a starter and contributors deciding what to build next.
 
-Last updated: 2026-07-19
+Last updated: 2026-07-28
 
 ---
 
@@ -140,8 +140,12 @@ non-admins; **server is still authoritative**.
 /saas.accounts.v1.AuthService/Logout
 /saas.accounts.v1.AuthService/GetJWKS
 /saas.accounts.v1.IntrospectionService/GetServiceInfo
+/saas.accounts.v1.InvitationService/InspectInvitation
 /saas.accounts.v1.UserService/RegisterUser
 /saas.accounts.v1.UserService/Version
+/saas.accounts.v1.WaitlistService/GetAcquisitionStatus
+/saas.accounts.v1.WaitlistService/Join
+/saas.accounts.v1.WaitlistService/Verify
 ```
 
 This list is projected from protobuf `method_policy` exposure and pinned by
@@ -196,12 +200,41 @@ Legend: ✅ production-ready · 🟡 partial / scoped · ❌ stubbed / not imple
 | Organizations                | ✅    | Create / get / list / update / delete                                  |
 | Members + roles              | ✅    | owner / admin / member (built-in roles)                                |
 | Teams within orgs            | ✅    | Create / list members; team admins                                     |
-| Invitations                  | ✅    | Email-based; accept, revoke, list pending                              |
+| Invitations                  | 🟡    | Hashed seven-day credential, member/admin roles, email/auth handoff, acceptance, resend cooldown, revoke, and queued delivery state; provider delivery projection and scheduled reminders are not included |
 | Org branding                 | 🟡    | Logo + name stored; update RPC missing                                 |
 | Transfer ownership           | ❌    | No explicit RPC; only role reassignment                                |
 | Leave org                    | ❌    | Member must be removed by admin                                        |
 | Org switcher (multi-org user)| ✅    | Generated `SwitchOrganization` exchange; signed session context drives one global FE selector and all tenant-scoped queries |
 | Org-scoped subdomain         | ❌    | All routing is `app.example.com/admin/...` not `<org>.example.com`     |
+
+### Acquisition, onboarding & activation
+
+| Feature | Status | Notes |
+|---------|--------|-------|
+| Signup modes | ✅ | Server-enforced `open_signup` (default), `invite_only`, `approval_required`, and `closed` |
+| Public waitlist | 🟡 | Enumeration-safe case-folded join, honeypot, public rate limit, optional verification, and source/campaign/referral capture; self-service suppression/deletion is not included |
+| Waitlist administration | 🟡 | Platform-admin search/filter, notes/tags, individual approve/reject/invite, authorization, and audit events; batch actions, CSV, and retention automation are not included |
+| Auth conversion | ✅ | Existing accounts continue; new accounts are gated by mode and approved/invited email, then attribution is converted |
+| Onboarding contract | ✅ | Generated canonical step enum and explicit protobuf-to-UI transform; organization-scoped flow/version state |
+| Required setup | ✅ | Organization configuration is server-authoritative and mounted as the required gate |
+| Optional checklist | ✅ | Invitation, plan, and API-key steps deep-link to their real product surfaces and remain resumable/skippable |
+| Product activation | ✅ | Versioned organization milestone separate from checklist completion |
+
+Onboarding flow `starter_activation` version `1` preserves its own progress
+instead of reinterpreting legacy user-global rows. A generated product records
+its core value milestone with `RecordProductActivation`; additional milestone
+names can use the same organization/flow/version record without changing the
+starter checklist.
+
+Invitation credentials are random, expiring, and SHA-256 hashed at rest. The
+plaintext appears only in the transactional delivery command and the initial
+email URL; it is never returned from `CreateInvitation`. The frontend captures
+the query credential into a short-lived HttpOnly, SameSite cookie, immediately
+redirects to a redacted URL, sets `no-referrer`, and clears the cookie after
+acceptance. Acceptance always re-resolves the authenticated primary email and
+performs the membership/status transition in one tenant transaction. Ordinary
+invitations allow only `member` or `admin`; ownership transfer remains a
+separate, unimplemented high-assurance operation.
 
 ### RBAC / permissions
 
@@ -302,9 +335,18 @@ see `JOBS.md` for the exact boundary and sequencing.
 | GDPR data export         | ✅    | User-initiated; emailed when ready                               |
 | GDPR data deletion       | ✅    | Cascade through all PII tables                                   |
 | Audit retention          | ✅    | 90 days default, configurable                                    |
-| Consent / TOS versioning | ❌    | No `terms_accepted_at`, no policy version table                   |
-| Cookie consent           | ❌    | No banner / consent record                                       |
+| Terms acceptance         | ✅    | Versioned authenticated evidence, separate from optional tracking choices |
+| Purpose consent          | ✅    | Necessary, analytics, and marketing choices with policy version, context, timestamp, and withdrawal |
+| Legal routes             | ✅    | `/legal/terms` and `/legal/privacy`; production operator content must be configured and legally reviewed |
+| Optional SDK gating      | ✅    | Analytics and marketing default off; `consentchange` is emitted immediately on grant or withdrawal |
 | SOC2 evidence collection | 🟡    | Audit log + access reviews would feed into SOC2; no auto-pack    |
+
+The included legal text is a technical placeholder, not legal advice.
+`NEXT_PUBLIC_LEGAL_ENTITY_NAME` and `NEXT_PUBLIC_LEGAL_CONTACT_EMAIL` must be
+configured before Terms can be accepted, and adopters must replace/review the
+content for their product and jurisdictions. Anonymous browser preferences are
+used only to fail optional SDKs closed; they are not treated as authenticated
+legal evidence.
 
 ### Frontend (Next.js)
 
@@ -314,21 +356,21 @@ implementations without rewriting the route handlers.
 
 | Surface                | Pages                                                                          |
 |------------------------|--------------------------------------------------------------------------------|
-| Auth                   | `/auth/login`, `/auth/callback`, `/auth/magic-link`                            |
-| Dashboard (every user) | `/`, `/notifications`, `/settings/{mfa,notifications,data}`                    |
+| Auth & acquisition     | `/auth/login`, `/auth/callback`, `/auth/magic-link`, `/invitations/accept`, `/waitlist`, `/waitlist/verify` |
+| Legal                  | `/legal/terms`, `/legal/privacy`                                                 |
+| Dashboard (every user) | `/`, `/notifications`, `/onboarding`, `/settings/{mfa,notifications,data,privacy}` |
 | Subscription           | `/admin/billing`, `/admin/billing/success`                                     |
-| Onboarding             | `/onboarding`                                                                  |
 | Org admin (`/admin/*`) | `users`, `organizations`, `teams`, `roles`, `invitations`, `api-keys`, `audit-log`, `webhooks`, `entitlements`, `billing` |
-| Platform admin         | `/admin/platform/{admins,feature-flags}`, `/admin/sessions`                    |
+| Platform admin         | `/admin/platform/{admins,feature-flags,waitlist}`, `/admin/sessions`           |
 | Docs                   | `/docs/sdks`, `/docs/compliance`                                               |
 
 ### Tests
 
 | Layer       | Coverage                                                                |
 |-------------|-------------------------------------------------------------------------|
-| Unit (Go)   | Auth/identity/business — `*_test.go` per package                        |
-| Integration | Sidecar↔backend gateway, audit retention, billing handler               |
-| e2e (Playwright) | 32 specs across 8 files (login, navigation, admin-flow, webhooks, auth-boundary, revocation, command-palette, sdk-smoke), full stack via `withDependencies` (~54s warm, ~2min cold) |
+| Unit (Go/TS) | Waitlist enumeration/modes and consent version checks; generated onboarding transforms, invitation roles, auth return paths, and secret redaction |
+| Integration | Postgres organization/version onboarding scope, migration authority, sidecar↔backend gateway, audit retention, billing handler |
+| e2e (Playwright) | Real-stack auth/admin suites plus `tests/e2e/acquisition-journey.spec.ts` for legal links, acquisition-mode UI, and browser token redaction |
 | Coverage gates | None enforced today                                                  |
 
 ### Observability
@@ -383,7 +425,7 @@ starters, and large-scale enterprise SaaS expectations.
 | SSE / real-time                                | ✅          | 🟡 (often WebSocket; SSE is simpler & sufficient) |
 | Dark mode                                      | ✅          | Same              |
 | Sidebar navigation + breadcrumbs               | ✅          | Same              |
-| Onboarding checklist                           | 🟡          | ✅                |
+| Onboarding checklist                           | ✅          | Same               |
 | Org-scoped subdomains (`acme.example.com`)     | ❌          | ✅ (multi-tenant best practice for B2B) |
 | Custom SSO (SAML / OIDC dynamic clients)       | ✅          | ✅ (2026-04-25: SSOAdminService + /admin/sso self-serve WorkOS Admin Portal flow with stub-mode for dev) |
 | Webhooks UI (test event, replay, signing key)  | ✅          | ✅ (Stripe-style; v2 added 2026-04-25: replay, rotate-secret, deliveries inspector) |
@@ -411,8 +453,8 @@ prioritized by leverage:
    role grants, GDPR delete. We have the storage; we need the gate.
 5. **Org-scoped subdomains** — biggest UX/multi-tenancy upgrade for
    B2B SaaS. Cookie scope, branding, white-label all flow from this.
-6. **Onboarding checklist with sample data toggle** — convert sign-ups
-   to active users. We have fixtures already; surface as "load demo data".
+6. **Sample data extension** — optionally let products add a demo-data action
+   after required organization setup.
 7. **System status page** — `/status` reading internal probes; protects
    incident response and shows up well during sales demos.
 8. **Self-serve SSO admin** — paying enterprise plans should be able to
@@ -481,13 +523,13 @@ In priority order, based on "where we'd lose deals or land in a CVE":
 **Quarter 2 — growth features**
 6. Org-scoped subdomains + cookie scoping (~1 week).
 7. Self-serve SSO admin UI (WorkOS Connections passthrough) (~3 days).
-8. Onboarding checklist + sample-data toggle (~3 days).
+8. Sample-data onboarding extension (~2 days).
 9. Usage dashboards (~1 week).
 10. Status page + internal probes (~3 days).
 
 **Quarter 3 — enterprise**
 11. Audit log streaming to customer S3 / SIEM (~1 week).
-12. Consent / TOS versioning (~3 days).
+12. Jurisdiction-specific legal content and consent review (deployment work).
 13. ABAC / row-level rules where useful (selective; ~ 2 weeks scoped).
 14. i18n (~2 weeks for full pass).
 
@@ -511,6 +553,8 @@ Environment variables consumed by the api:
 | `RESEND_API_KEY`               | Switches email sender from log-only to Resend               |
 | `EMAIL_FROM`                   | Default sender address                                      |
 | `APP_BASE_URL`                 | Exact HTTPS production origin for email and server-owned Stripe redirects |
+| `ACQUISITION_MODE`             | `open_signup` (default), `invite_only`, `approval_required`, or `closed` |
+| `WAITLIST_EMAIL_VERIFICATION`  | Require a time-limited verification email before waitlist approval |
 | `SLACK_WEBHOOK_URL`            | Internal alerts (optional)                                  |
 | `CODEFLY__FIXTURE`             | Loads fixture YAML (e.g. `dev-admin`); FE login picker too |
 
@@ -521,6 +565,8 @@ Frontend browser configuration (`NEXT_PUBLIC_*` values are baked into the client
 | `NEXT_PUBLIC_WORKOS_*`       | OAuth provider preset (presence enables provider in UI)     |
 | `NEXT_PUBLIC_AUTH0_*`        | Same, for Auth0                                             |
 | `NEXT_PUBLIC_GOOGLE_*`       | Same, for Google                                            |
+| `NEXT_PUBLIC_LEGAL_ENTITY_NAME` | Operator named in configured legal content                |
+| `NEXT_PUBLIC_LEGAL_CONTACT_EMAIL` | Legal/privacy contact; required before Terms acceptance |
 
 Accounts REST and Connect browser calls are relative and same-origin. The
 server-only `API_REST_INTERNAL` and `API_CONNECT_INTERNAL` Codefly bindings are
@@ -536,7 +582,7 @@ If you're picking a starter, ask:
 1. Does it support our identity provider? **WorkOS / Auth0 / Google ✅; SAML via WorkOS ✅; LDAP ❌**
 2. Multi-tenant from day one? **Yes — orgs/teams/roles built in.**
 3. Stripe integration that won't bite us in prod? **Webhook signature + idempotency + portal + checkout ✅.** Dunning flows are basic.
-4. Audit + compliance ready for an early SOC 2 push? **Audit retention, GDPR export/delete, impersonation tracking — yes.** Cookie consent + TOS versioning — no, add yourself.
+4. Audit + compliance ready for an early SOC 2 push? **Audit retention, GDPR export/delete, impersonation tracking, versioned Terms evidence, and purpose consent are included.** Legal content still requires jurisdiction-specific review.
 5. Real tests that actually exercise auth/billing/audit? **Yes — Playwright e2e against the running stack.**
 6. Easy to run locally? **One command (`codefly run service --fixture dev-admin`); no docker-compose surgery.**
 7. What will I have to build that's "obviously missing"? Per the gap list above: rate limiting, command palette, webhooks v2 dashboard, self-serve SSO admin, org subdomains. These are 1–5 days each.

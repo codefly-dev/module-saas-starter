@@ -2,6 +2,7 @@ package business
 
 import (
 	"context"
+	"strings"
 	"time"
 
 	"github.com/codefly-dev/core/wool"
@@ -9,232 +10,302 @@ import (
 	gen "accounts/pkg/gen/saas/accounts/v1"
 )
 
-// OnboardingStep represents a single step in the onboarding flow.
+const (
+	CurrentOnboardingFlowID      = "starter_activation"
+	CurrentOnboardingFlowVersion = 1
+	CurrentOnboardingVariant     = "default"
+)
+
 type OnboardingStep struct {
-	StepName    string
-	Status      string // "pending", "completed", "skipped"
-	CompletedAt *time.Time
+	ID               gen.OnboardingStepId
+	StepName         string
+	Status           string
+	Required         bool
+	Prerequisites    []gen.OnboardingStepId
+	FirstSeenAt      time.Time
+	LastSeenAt       time.Time
+	CompletedAt      *time.Time
+	SkippedAt        *time.Time
+	CompletionMethod string
+	SkipReason       string
 }
 
-// OnboardingProgress aggregates all onboarding steps for a user.
 type OnboardingProgress struct {
-	Steps     []*OnboardingStep
-	Completed bool
+	OrganizationID     string
+	FlowID             string
+	FlowVersion        uint32
+	Variant            string
+	Audience           string
+	Persona            string
+	Steps              []*OnboardingStep
+	CurrentStep        gen.OnboardingStepId
+	NextStep           gen.OnboardingStepId
+	RequiredComplete   bool
+	ChecklistComplete  bool
+	ActivationAchieved bool
+	StartedAt          *time.Time
+	CompletedAt        *time.Time
+	ActivatedAt        *time.Time
 }
 
-// OnboardingStepNames defines the ordered set of onboarding steps.
-var OnboardingStepNames = []string{
-	"create_org",
-	"invite_team",
-	"choose_plan",
-	"setup_api_key",
+type onboardingStepDefinition struct {
+	ID            gen.OnboardingStepId
+	Required      bool
+	Prerequisites []gen.OnboardingStepId
 }
 
-// GetProgress returns the onboarding progress for a user, auto-detecting
-// steps that have already been completed by normal product usage.
-//
-// Auto-detection beats requiring callers to remember a `CompleteStep`
-// call from every place the underlying action can happen: a user who
-// creates their first org through the API never visits the onboarding
-// page, but their progress should still reflect reality. Each
-// detection is best-effort — failures don't abort the call, the worst
-// case is the step keeps showing as pending until next refresh.
-func (s *Service) GetProgress(ctx context.Context, userID string) (*OnboardingProgress, error) {
+var onboardingStepDefinitions = []onboardingStepDefinition{
+	{ID: gen.OnboardingStepId_ONBOARDING_STEP_ID_CONFIGURE_ORGANIZATION, Required: true},
+	{ID: gen.OnboardingStepId_ONBOARDING_STEP_ID_INVITE_TEAM},
+	{ID: gen.OnboardingStepId_ONBOARDING_STEP_ID_CHOOSE_PLAN},
+	{ID: gen.OnboardingStepId_ONBOARDING_STEP_ID_SETUP_API_KEY},
+}
+
+func onboardingStepName(id gen.OnboardingStepId) string {
+	return strings.ToLower(strings.TrimPrefix(id.String(), "ONBOARDING_STEP_ID_"))
+}
+
+func onboardingStepID(name string) gen.OnboardingStepId {
+	value, ok := gen.OnboardingStepId_value["ONBOARDING_STEP_ID_"+strings.ToUpper(name)]
+	if !ok {
+		return gen.OnboardingStepId_ONBOARDING_STEP_ID_UNSPECIFIED
+	}
+	return gen.OnboardingStepId(value)
+}
+
+func (s *Service) GetProgress(ctx context.Context, userID, orgID string) (*OnboardingProgress, error) {
 	w := wool.Get(ctx).In("GetProgress")
+	identity := Identity{UserID: userID, OrgID: orgID}
 
-	var steps []*OnboardingStep
-	err := s.store.As(Identity{UserID: userID}).Within(ctx, func(ctx context.Context) error {
-		var e error
-		steps, e = s.store.GetOnboardingProgress(ctx, userID)
-		return e
+	var stored []*OnboardingStep
+	var organization *gen.Organization
+	var pendingInvitations int32
+	var subscription *Subscription
+	var apiKeys []*gen.APIKey
+	var activatedAt *time.Time
+
+	err := s.store.As(identity).Within(ctx, func(ctx context.Context) error {
+		var err error
+		stored, err = s.store.GetOnboardingProgress(
+			ctx, userID, orgID, CurrentOnboardingFlowID, CurrentOnboardingFlowVersion,
+		)
+		if err != nil {
+			return err
+		}
+		organization, err = s.store.GetOrganization(ctx, orgID)
+		if err != nil {
+			return err
+		}
+		pendingInvitations, err = s.store.CountPendingInvitations(ctx, orgID)
+		if err != nil {
+			return err
+		}
+		subscription, err = s.store.GetSubscription(ctx, orgID)
+		if err != nil {
+			return err
+		}
+		apiKeys, _, err = s.store.ListAPIKeys(ctx, orgID, 1, "")
+		if err != nil {
+			return err
+		}
+		activatedAt, err = s.store.GetOrganizationActivation(
+			ctx, orgID, CurrentOnboardingFlowID, CurrentOnboardingFlowVersion, "core_action",
+		)
+		return err
 	})
 	if err != nil {
 		return nil, w.Wrapf(err, "cannot get onboarding progress")
 	}
 
-	stepMap := make(map[string]*OnboardingStep, len(steps))
-	for _, step := range steps {
-		stepMap[step.StepName] = step
-	}
-
-	autoComplete := func(name string, detected bool) {
-		if detected {
-			now := time.Now()
-			stepMap[name] = &OnboardingStep{
-				StepName:    name,
-				Status:      "completed",
-				CompletedAt: &now,
-			}
-			_ = s.store.As(Identity{UserID: userID}).Within(ctx, func(ctx context.Context) error {
-				return s.store.UpsertOnboardingStep(ctx, userID, name, "completed")
-			})
+	stepMap := make(map[gen.OnboardingStepId]*OnboardingStep, len(stored))
+	for _, step := range stored {
+		step.ID = onboardingStepID(step.StepName)
+		if step.ID != gen.OnboardingStepId_ONBOARDING_STEP_ID_UNSPECIFIED {
+			stepMap[step.ID] = step
 		}
 	}
 
-	pending := func(name string) bool {
-		st, ok := stepMap[name]
-		return !ok || st.Status == "pending"
+	detected := map[gen.OnboardingStepId]bool{
+		gen.OnboardingStepId_ONBOARDING_STEP_ID_CONFIGURE_ORGANIZATION: organization != nil &&
+			(organization.Name != "Personal" || !strings.HasPrefix(organization.Slug, "personal-")),
+		gen.OnboardingStepId_ONBOARDING_STEP_ID_INVITE_TEAM:   pendingInvitations > 0,
+		gen.OnboardingStepId_ONBOARDING_STEP_ID_CHOOSE_PLAN:   subscriptionCompletesOnboarding(subscription),
+		gen.OnboardingStepId_ONBOARDING_STEP_ID_SETUP_API_KEY: len(apiKeys) > 0,
 	}
 
-	// listOrgs is shared across the steps — ListOrganizationsForUser
-	// is cross-tenant by definition (the user can be in many orgs)
-	// so it runs under WithControlPlane. Org-scoped reads below re-enter
-	// WithOrgTx for each org.
-	listOrgs := func() []*gen.Organization {
-		var orgs []*gen.Organization
-		_ = s.store.WithControlPlane(ctx, func(ctx context.Context) error {
-			os, err := s.store.ListOrganizationsForUser(ctx, userID)
-			orgs = os
-			return err
-		})
-		return orgs
-	}
-
-	// create_org — user belongs to at least one org. Set is the trigger;
-	// our resolver auto-creates a personal org on first login so this
-	// completes immediately for fixture users (which is fine — the wizard
-	// step is "you have an org", not "you created one through the wizard").
-	if pending("create_org") {
-		orgs := listOrgs()
-		autoComplete("create_org", len(orgs) > 0)
-	}
-
-	// invite_team — any invitation has been issued from any org the
-	// user is a member of. Inviting a teammate is the user-visible
-	// action; we detect by counting invitations across their orgs.
-	if pending("invite_team") {
-		orgs := listOrgs()
-		invited := false
-		for _, o := range orgs {
-			_ = s.store.WithOrgTx(ctx, o.Id, func(ctx context.Context) error {
-				if n, _ := s.store.CountPendingInvitations(ctx, o.Id); n > 0 {
-					invited = true
-					return nil
+	now := time.Now()
+	if err := s.store.As(identity).Within(ctx, func(ctx context.Context) error {
+		for _, definition := range onboardingStepDefinitions {
+			step := stepMap[definition.ID]
+			if step == nil {
+				step = &OnboardingStep{
+					ID:            definition.ID,
+					StepName:      onboardingStepName(definition.ID),
+					Status:        "pending",
+					Required:      definition.Required,
+					Prerequisites: append([]gen.OnboardingStepId(nil), definition.Prerequisites...),
+					FirstSeenAt:   now,
+					LastSeenAt:    now,
 				}
-				if invs, _ := s.store.ListInvitations(ctx, o.Id, ""); len(invs) > 0 {
-					invited = true
+				stepMap[definition.ID] = step
+				if err := s.store.UpsertOnboardingStep(
+					ctx, userID, orgID, CurrentOnboardingFlowID, CurrentOnboardingFlowVersion, step,
+				); err != nil {
+					return err
 				}
-				return nil
-			})
-			if invited {
-				break
 			}
-		}
-		autoComplete("invite_team", invited)
-	}
-
-	// choose_plan — user's primary org has any non-zero subscription.
-	// We don't gate on plan tier; any active subscription means the
-	// billing flow ran end-to-end at least once.
-	if pending("choose_plan") {
-		orgs := listOrgs()
-		picked := false
-		for _, o := range orgs {
-			_ = s.store.WithOrgTx(ctx, o.Id, func(ctx context.Context) error {
-				sub, serr := s.store.GetSubscription(ctx, o.Id)
-				if serr == nil && sub != nil && sub.Status != "" {
-					picked = true
+			step.Required = definition.Required
+			step.Prerequisites = append([]gen.OnboardingStepId(nil), definition.Prerequisites...)
+			step.LastSeenAt = now
+			if detected[definition.ID] && step.Status == "pending" {
+				step.Status = "completed"
+				step.CompletedAt = &now
+				step.CompletionMethod = "detected"
+				if err := s.store.UpsertOnboardingStep(
+					ctx, userID, orgID, CurrentOnboardingFlowID, CurrentOnboardingFlowVersion, step,
+				); err != nil {
+					return err
 				}
-				return nil
-			})
-			if picked {
-				break
 			}
 		}
-		autoComplete("choose_plan", picked)
-	}
-
-	// setup_api_key — at least one API key exists in any of the
-	// user's orgs.
-	if pending("setup_api_key") {
-		orgs := listOrgs()
-		hasKey := false
-		for _, o := range orgs {
-			_ = s.store.WithOrgTx(ctx, o.Id, func(ctx context.Context) error {
-				keys, _, _ := s.store.ListAPIKeys(ctx, o.Id, 1, "")
-				if len(keys) > 0 {
-					hasKey = true
-				}
-				return nil
-			})
-			if hasKey {
-				break
-			}
-		}
-		autoComplete("setup_api_key", hasKey)
-	}
-
-	var result []*OnboardingStep
-	allDone := true
-	for _, name := range OnboardingStepNames {
-		if step, ok := stepMap[name]; ok {
-			result = append(result, step)
-			if step.Status == "pending" {
-				allDone = false
-			}
-		} else {
-			result = append(result, &OnboardingStep{
-				StepName: name,
-				Status:   "pending",
-			})
-			allDone = false
-		}
-	}
-
-	return &OnboardingProgress{
-		Steps:     result,
-		Completed: allDone,
-	}, nil
-}
-
-// CompleteStep marks an onboarding step as completed.
-func (s *Service) CompleteStep(ctx context.Context, userID, stepName string) error {
-	w := wool.Get(ctx).In("CompleteStep")
-
-	if !isValidStepName(stepName) {
-		return w.NewError("invalid onboarding step: %s", stepName)
-	}
-
-	if err := s.store.As(Identity{UserID: userID}).Within(ctx, func(ctx context.Context) error {
-		return s.store.UpsertOnboardingStep(ctx, userID, stepName, "completed")
+		return nil
 	}); err != nil {
-		return w.Wrapf(err, "cannot complete onboarding step")
+		return nil, w.Wrapf(err, "cannot reconcile onboarding progress")
 	}
 
-	return nil
+	progress := &OnboardingProgress{
+		OrganizationID:     orgID,
+		FlowID:             CurrentOnboardingFlowID,
+		FlowVersion:        CurrentOnboardingFlowVersion,
+		Variant:            CurrentOnboardingVariant,
+		RequiredComplete:   true,
+		ChecklistComplete:  true,
+		ActivationAchieved: activatedAt != nil,
+		ActivatedAt:        activatedAt,
+	}
+	for _, definition := range onboardingStepDefinitions {
+		step := stepMap[definition.ID]
+		progress.Steps = append(progress.Steps, step)
+		if progress.StartedAt == nil || step.FirstSeenAt.Before(*progress.StartedAt) {
+			started := step.FirstSeenAt
+			progress.StartedAt = &started
+		}
+		if definition.Required && step.Status != "completed" {
+			progress.RequiredComplete = false
+		}
+		if step.Status == "pending" {
+			progress.ChecklistComplete = false
+			if progress.CurrentStep == gen.OnboardingStepId_ONBOARDING_STEP_ID_UNSPECIFIED {
+				progress.CurrentStep = definition.ID
+			} else if progress.NextStep == gen.OnboardingStepId_ONBOARDING_STEP_ID_UNSPECIFIED {
+				progress.NextStep = definition.ID
+			}
+		}
+	}
+	if progress.ChecklistComplete {
+		var completed time.Time
+		for _, step := range progress.Steps {
+			at := step.CompletedAt
+			if at == nil {
+				at = step.SkippedAt
+			}
+			if at != nil && at.After(completed) {
+				completed = *at
+			}
+		}
+		progress.CompletedAt = &completed
+	}
+	return progress, nil
 }
 
-// SkipStep marks an onboarding step as skipped.
-func (s *Service) SkipStep(ctx context.Context, userID, stepName string) error {
-	w := wool.Get(ctx).In("SkipStep")
-
-	if !isValidStepName(stepName) {
-		return w.NewError("invalid onboarding step: %s", stepName)
+func (s *Service) CompleteStep(
+	ctx context.Context,
+	userID, orgID string,
+	stepID gen.OnboardingStepId,
+) error {
+	if !validOnboardingStep(stepID) {
+		return wool.Get(ctx).NewError("invalid onboarding step")
 	}
-
-	if err := s.store.As(Identity{UserID: userID}).Within(ctx, func(ctx context.Context) error {
-		return s.store.UpsertOnboardingStep(ctx, userID, stepName, "skipped")
-	}); err != nil {
-		return w.Wrapf(err, "cannot skip onboarding step")
-	}
-
-	return nil
-}
-
-// IsOnboardingComplete checks if all onboarding steps are either completed or skipped.
-func (s *Service) IsOnboardingComplete(ctx context.Context, userID string) (bool, error) {
-	progress, err := s.GetProgress(ctx, userID)
+	progress, err := s.GetProgress(ctx, userID, orgID)
 	if err != nil {
-		return false, err
+		return err
 	}
-	return progress.Completed, nil
+	for _, step := range progress.Steps {
+		if step.ID == stepID {
+			if step.Status != "completed" {
+				return wool.Get(ctx).NewError("complete the represented product action first")
+			}
+			s.emit(ctx, userID, "user", "onboarding.step_completed", "organization", orgID, orgID)
+			return nil
+		}
+	}
+	return wool.Get(ctx).NewError("invalid onboarding step")
 }
 
-func isValidStepName(name string) bool {
-	for _, s := range OnboardingStepNames {
-		if s == name {
+func (s *Service) SkipStep(
+	ctx context.Context,
+	userID, orgID string,
+	stepID gen.OnboardingStepId,
+	reason string,
+) error {
+	if !validOnboardingStep(stepID) {
+		return wool.Get(ctx).NewError("invalid onboarding step")
+	}
+	for _, definition := range onboardingStepDefinitions {
+		if definition.ID == stepID && definition.Required {
+			return wool.Get(ctx).NewError("required onboarding steps cannot be skipped")
+		}
+	}
+	now := time.Now()
+	step := &OnboardingStep{
+		ID:               stepID,
+		StepName:         onboardingStepName(stepID),
+		Status:           "skipped",
+		FirstSeenAt:      now,
+		SkippedAt:        &now,
+		CompletionMethod: "user_skip",
+		SkipReason:       strings.TrimSpace(reason),
+		LastSeenAt:       now,
+	}
+	if err := s.store.As(Identity{UserID: userID, OrgID: orgID}).Within(ctx, func(ctx context.Context) error {
+		return s.store.UpsertOnboardingStep(
+			ctx, userID, orgID, CurrentOnboardingFlowID, CurrentOnboardingFlowVersion, step,
+		)
+	}); err != nil {
+		return wool.Get(ctx).Wrapf(err, "cannot skip onboarding step")
+	}
+	s.emit(ctx, userID, "user", "onboarding.step_skipped", "organization", orgID, orgID)
+	return nil
+}
+
+func (s *Service) RecordProductActivation(
+	ctx context.Context,
+	actorID, orgID, milestone string,
+) error {
+	if milestone == "" {
+		milestone = "core_action"
+	}
+	err := s.store.As(Identity{UserID: actorID, OrgID: orgID}).Within(ctx, func(ctx context.Context) error {
+		return s.store.RecordOrganizationActivation(
+			ctx, orgID, CurrentOnboardingFlowID, CurrentOnboardingFlowVersion, milestone, actorID,
+		)
+	})
+	if err == nil {
+		s.emit(ctx, actorID, "user", "activation.achieved", "organization", orgID, orgID)
+	}
+	return err
+}
+
+func validOnboardingStep(id gen.OnboardingStepId) bool {
+	for _, definition := range onboardingStepDefinitions {
+		if definition.ID == id {
 			return true
 		}
 	}
 	return false
+}
+
+func subscriptionCompletesOnboarding(subscription *Subscription) bool {
+	return subscription != nil &&
+		(subscription.Status == "active" || subscription.Status == "trialing")
 }

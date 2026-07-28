@@ -17,7 +17,7 @@ import type { Message } from "@bufbuild/protobuf";
  * Describes the file saas/accounts/v1/invitations.proto.
  */
 export const file_saas_accounts_v1_invitations: GenFile = /*@__PURE__*/
-  fileDesc("CiJzYWFzL2FjY291bnRzL3YxL2ludml0YXRpb25zLnByb3RvEhBzYWFzLmFjY291bnRzLnYxIu0BCgpJbnZpdGF0aW9uEgoKAmlkGAEgASgJEg4KBm9yZ19pZBgCIAEoCRISCgppbnZpdGVyX2lkGAMgASgJEg0KBWVtYWlsGAQgASgJEgwKBHJvbGUYBSABKAkSMgoGc3RhdHVzGAYgASgOMiIuc2Fhcy5hY2NvdW50cy52MS5JbnZpdGF0aW9uU3RhdHVzEi4KCmV4cGlyZXNfYXQYByABKAsyGi5nb29nbGUucHJvdG9idWYuVGltZXN0YW1wEi4KCmNyZWF0ZWRfYXQYCCABKAsyGi5nb29nbGUucHJvdG9idWYuVGltZXN0YW1wIlkKF0NyZWF0ZUludml0YXRpb25SZXF1ZXN0EhgKBm9yZ19pZBgBIAEoCUIIukgFcgOwAQESFgoFZW1haWwYAiABKAlCB7pIBHICYAESDAoEcm9sZRgDIAEoCSJiChhDcmVhdGVJbnZpdGF0aW9uUmVzcG9uc2USMAoKaW52aXRhdGlvbhgBIAEoCzIcLnNhYXMuYWNjb3VudHMudjEuSW52aXRhdGlvbhIUCgxpbnZpdGVfdG9rZW4YAiABKAkiMQoXQWNjZXB0SW52aXRhdGlvblJlcXVlc3QSFgoFdG9rZW4YASABKAlCB7pIBHICEAEiUAoYQWNjZXB0SW52aXRhdGlvblJlc3BvbnNlEjQKDG9yZ2FuaXphdGlvbhgBIAEoCzIeLnNhYXMuYWNjb3VudHMudjEuT3JnYW5pemF0aW9uImYKFkxpc3RJbnZpdGF0aW9uc1JlcXVlc3QSGAoGb3JnX2lkGAEgASgJQgi6SAVyA7ABARIyCgZzdGF0dXMYAiABKA4yIi5zYWFzLmFjY291bnRzLnYxLkludml0YXRpb25TdGF0dXMiTAoXTGlzdEludml0YXRpb25zUmVzcG9uc2USMQoLaW52aXRhdGlvbnMYASADKAsyHC5zYWFzLmFjY291bnRzLnYxLkludml0YXRpb24iLwoXUmV2b2tlSW52aXRhdGlvblJlcXVlc3QSFAoCaWQYASABKAlCCLpIBXIDsAEBKrIBChBJbnZpdGF0aW9uU3RhdHVzEiEKHUlOVklUQVRJT05fU1RBVFVTX1VOU1BFQ0lGSUVEEAASHQoZSU5WSVRBVElPTl9TVEFUVVNfUEVORElORxABEh4KGklOVklUQVRJT05fU1RBVFVTX0FDQ0VQVEVEEAISHQoZSU5WSVRBVElPTl9TVEFUVVNfUkVWT0tFRBADEh0KGUlOVklUQVRJT05fU1RBVFVTX0VYUElSRUQQBDLlBQoRSW52aXRhdGlvblNlcnZpY2USvwEKEENyZWF0ZUludml0YXRpb24SKS5zYWFzLmFjY291bnRzLnYxLkNyZWF0ZUludml0YXRpb25SZXF1ZXN0Giouc2Fhcy5hY2NvdW50cy52MS5DcmVhdGVJbnZpdGF0aW9uUmVzcG9uc2UiVMLzGDYIAhAEKgwKBm9yZ19pZBACGAEwAToWChJpbnZpdGF0aW9uLmNyZWF0ZWQQAkABSARQA1gDYAGC0+STAhQ6ASoiDy92MS9pbnZpdGF0aW9ucxK5AQoQQWNjZXB0SW52aXRhdGlvbhIpLnNhYXMuYWNjb3VudHMudjEuQWNjZXB0SW52aXRhdGlvblJlcXVlc3QaKi5zYWFzLmFjY291bnRzLnYxLkFjY2VwdEludml0YXRpb25SZXNwb25zZSJOwvMYKQgCEAIwAToXChNpbnZpdGF0aW9uLmFjY2VwdGVkEAJAAUgEUARYA2ABgtPkkwIbOgEqIhYvdjEvaW52aXRhdGlvbnM6YWNjZXB0EqUBCg9MaXN0SW52aXRhdGlvbnMSKC5zYWFzLmFjY291bnRzLnYxLkxpc3RJbnZpdGF0aW9uc1JlcXVlc3QaKS5zYWFzLmFjY291bnRzLnYxLkxpc3RJbnZpdGF0aW9uc1Jlc3BvbnNlIj3C8xgiCAIQBCoMCgZvcmdfaWQQAhgBMAE6AhABQAFIA1ADWANgAYLT5JMCERIPL3YxL2ludml0YXRpb25zEqkBChBSZXZva2VJbnZpdGF0aW9uEikuc2Fhcy5hY2NvdW50cy52MS5SZXZva2VJbnZpdGF0aW9uUmVxdWVzdBoWLmdvb2dsZS5wcm90b2J1Zi5FbXB0eSJSwvMYMggCEAQqCAoCaWQQBBgDMAE6FgoSaW52aXRhdGlvbi5yZXZva2VkEAJAAUgEUANYA2ABgtPkkwIWKhQvdjEvaW52aXRhdGlvbnMve2lkfUK4AQoUY29tLnNhYXMuYWNjb3VudHMudjFCEEludml0YXRpb25zUHJvdG9QAVosYWNjb3VudHMvcGtnL2dlbi9zYWFzL2FjY291bnRzL3YxO2FjY291bnRzdjGiAgNTQViqAhBTYWFzLkFjY291bnRzLlYxygIQU2Fhc1xBY2NvdW50c1xWMeICHFNhYXNcQWNjb3VudHNcVjFcR1BCTWV0YWRhdGHqAhJTYWFzOjpBY2NvdW50czo6VjFiBnByb3RvMw", [file_buf_validate_validate, file_google_api_annotations, file_google_protobuf_empty, file_google_protobuf_timestamp, file_saas_accounts_v1_common, file_saas_policy_v1_options]);
+  fileDesc("CiJzYWFzL2FjY291bnRzL3YxL2ludml0YXRpb25zLnByb3RvEhBzYWFzLmFjY291bnRzLnYxItYDCgpJbnZpdGF0aW9uEgoKAmlkGAEgASgJEg4KBm9yZ19pZBgCIAEoCRISCgppbnZpdGVyX2lkGAMgASgJEhwKFGludml0ZXJfZGlzcGxheV9uYW1lGAQgASgJEg0KBWVtYWlsGAUgASgJEjgKBHJvbGUYBiABKA4yIC5zYWFzLmFjY291bnRzLnYxLkludml0YXRpb25Sb2xlQgi6SAWCAQIQARI8CgZzdGF0dXMYByABKA4yIi5zYWFzLmFjY291bnRzLnYxLkludml0YXRpb25TdGF0dXNCCLpIBYIBAhABEk0KD2RlbGl2ZXJ5X3N0YXR1cxgIIAEoDjIqLnNhYXMuYWNjb3VudHMudjEuSW52aXRhdGlvbkRlbGl2ZXJ5U3RhdHVzQgi6SAWCAQIQARIuCgpleHBpcmVzX2F0GAkgASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcBIuCgpjcmVhdGVkX2F0GAogASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcBIwCgxsYXN0X3NlbnRfYXQYCyABKAsyGi5nb29nbGUucHJvdG9idWYuVGltZXN0YW1wEhIKCnNlbmRfY291bnQYDCABKA0izwEKEUludml0YXRpb25TdW1tYXJ5EjwKBnN0YXR1cxgBIAEoDjIiLnNhYXMuYWNjb3VudHMudjEuSW52aXRhdGlvblN0YXR1c0IIukgFggECEAESOAoEcm9sZRgCIAEoDjIgLnNhYXMuYWNjb3VudHMudjEuSW52aXRhdGlvblJvbGVCCLpIBYIBAhABEhIKCmVtYWlsX2hpbnQYAyABKAkSLgoKZXhwaXJlc19hdBgEIAEoCzIaLmdvb2dsZS5wcm90b2J1Zi5UaW1lc3RhbXAihwEKF0NyZWF0ZUludml0YXRpb25SZXF1ZXN0EhgKBm9yZ19pZBgBIAEoCUIIukgFcgOwAQESFgoFZW1haWwYAiABKAlCB7pIBHICYAESOgoEcm9sZRgDIAEoDjIgLnNhYXMuYWNjb3VudHMudjEuSW52aXRhdGlvblJvbGVCCrpIB4IBBBABIAAiTAoYQ3JlYXRlSW52aXRhdGlvblJlc3BvbnNlEjAKCmludml0YXRpb24YASABKAsyHC5zYWFzLmFjY291bnRzLnYxLkludml0YXRpb24iNQoYSW5zcGVjdEludml0YXRpb25SZXF1ZXN0EhkKBXRva2VuGAEgASgJQgq6SAdyBRAgGIAEIm4KF0FjY2VwdEludml0YXRpb25SZXF1ZXN0EhsKBXRva2VuGAEgASgJQgq6SAdyBRAgGIAESAASIQoNaW52aXRhdGlvbl9pZBgCIAEoCUIIukgFcgOwAQFIAEITCgpjcmVkZW50aWFsEgW6SAIIASJqChhBY2NlcHRJbnZpdGF0aW9uUmVzcG9uc2USNAoMb3JnYW5pemF0aW9uGAEgASgLMh4uc2Fhcy5hY2NvdW50cy52MS5Pcmdhbml6YXRpb24SGAoQYWxyZWFkeV9hY2NlcHRlZBgCIAEoCCJwChZMaXN0SW52aXRhdGlvbnNSZXF1ZXN0EhgKBm9yZ19pZBgBIAEoCUIIukgFcgOwAQESPAoGc3RhdHVzGAIgASgOMiIuc2Fhcy5hY2NvdW50cy52MS5JbnZpdGF0aW9uU3RhdHVzQgi6SAWCAQIQASJMChdMaXN0SW52aXRhdGlvbnNSZXNwb25zZRIxCgtpbnZpdGF0aW9ucxgBIAMoCzIcLnNhYXMuYWNjb3VudHMudjEuSW52aXRhdGlvbiIvChdSZXZva2VJbnZpdGF0aW9uUmVxdWVzdBIUCgJpZBgBIAEoCUIIukgFcgOwAQEiLwoXUmVzZW5kSW52aXRhdGlvblJlcXVlc3QSFAoCaWQYASABKAlCCLpIBXIDsAEBKrIBChBJbnZpdGF0aW9uU3RhdHVzEiEKHUlOVklUQVRJT05fU1RBVFVTX1VOU1BFQ0lGSUVEEAASHQoZSU5WSVRBVElPTl9TVEFUVVNfUEVORElORxABEh4KGklOVklUQVRJT05fU1RBVFVTX0FDQ0VQVEVEEAISHQoZSU5WSVRBVElPTl9TVEFUVVNfUkVWT0tFRBADEh0KGUlOVklUQVRJT05fU1RBVFVTX0VYUElSRUQQBCpoCg5JbnZpdGF0aW9uUm9sZRIfChtJTlZJVEFUSU9OX1JPTEVfVU5TUEVDSUZJRUQQABIaChZJTlZJVEFUSU9OX1JPTEVfTUVNQkVSEAESGQoVSU5WSVRBVElPTl9ST0xFX0FETUlOEAIquAIKGEludml0YXRpb25EZWxpdmVyeVN0YXR1cxIqCiZJTlZJVEFUSU9OX0RFTElWRVJZX1NUQVRVU19VTlNQRUNJRklFRBAAEicKI0lOVklUQVRJT05fREVMSVZFUllfU1RBVFVTX0RJU0FCTEVEEAESJQohSU5WSVRBVElPTl9ERUxJVkVSWV9TVEFUVVNfUVVFVUVEEAISIwofSU5WSVRBVElPTl9ERUxJVkVSWV9TVEFUVVNfU0VOVBADEigKJElOVklUQVRJT05fREVMSVZFUllfU1RBVFVTX0RFTElWRVJFRBAEEiYKIklOVklUQVRJT05fREVMSVZFUllfU1RBVFVTX0JPVU5DRUQQBRIpCiVJTlZJVEFUSU9OX0RFTElWRVJZX1NUQVRVU19DT01QTEFJTkVEEAYy2gkKEUludml0YXRpb25TZXJ2aWNlEuUBChBDcmVhdGVJbnZpdGF0aW9uEikuc2Fhcy5hY2NvdW50cy52MS5DcmVhdGVJbnZpdGF0aW9uUmVxdWVzdBoqLnNhYXMuYWNjb3VudHMudjEuQ3JlYXRlSW52aXRhdGlvblJlc3BvbnNlInrC8xhcCAIQBBoRaW52aXRhdGlvbnM6d3JpdGUiEWludml0YXRpb25zOndyaXRlKgwKBm9yZ19pZBACGAEwAToWChJpbnZpdGF0aW9uLmNyZWF0ZWQQAkABSARQA1gDYAGC0+STAhQ6ASoiDy92MS9pbnZpdGF0aW9ucxKgAQoRSW5zcGVjdEludml0YXRpb24SKi5zYWFzLmFjY291bnRzLnYxLkluc3BlY3RJbnZpdGF0aW9uUmVxdWVzdBojLnNhYXMuYWNjb3VudHMudjEuSW52aXRhdGlvblN1bW1hcnkiOsLzGBQIARABMAE6AhABQAFIAVAEWANgAYLT5JMCHDoBKiIXL3YxL2ludml0YXRpb25zOmluc3BlY3QSuQEKEEFjY2VwdEludml0YXRpb24SKS5zYWFzLmFjY291bnRzLnYxLkFjY2VwdEludml0YXRpb25SZXF1ZXN0Giouc2Fhcy5hY2NvdW50cy52MS5BY2NlcHRJbnZpdGF0aW9uUmVzcG9uc2UiTsLzGCkIAhACMAE6FwoTaW52aXRhdGlvbi5hY2NlcHRlZBACQAFIBFAEWANgAYLT5JMCGzoBKiIWL3YxL2ludml0YXRpb25zOmFjY2VwdBLJAQoPTGlzdEludml0YXRpb25zEiguc2Fhcy5hY2NvdW50cy52MS5MaXN0SW52aXRhdGlvbnNSZXF1ZXN0Gikuc2Fhcy5hY2NvdW50cy52MS5MaXN0SW52aXRhdGlvbnNSZXNwb25zZSJhwvMYRggCEAQaEGludml0YXRpb25zOnJlYWQiEGludml0YXRpb25zOnJlYWQqDAoGb3JnX2lkEAIYATABOgIQAUABSANQA1gDYAGC0+STAhESDy92MS9pbnZpdGF0aW9ucxLfAQoQUmVzZW5kSW52aXRhdGlvbhIpLnNhYXMuYWNjb3VudHMudjEuUmVzZW5kSW52aXRhdGlvblJlcXVlc3QaHC5zYWFzLmFjY291bnRzLnYxLkludml0YXRpb24igQHC8xhXCAIQBBoRaW52aXRhdGlvbnM6d3JpdGUiEWludml0YXRpb25zOndyaXRlKggKAmlkEAQYAzABOhUKEWludml0YXRpb24ucmVzZW50EAJAA0gEUANYA2ABgtPkkwIgOgEqIhsvdjEvaW52aXRhdGlvbnMve2lkfTpyZXNlbmQSzwEKEFJldm9rZUludml0YXRpb24SKS5zYWFzLmFjY291bnRzLnYxLlJldm9rZUludml0YXRpb25SZXF1ZXN0GhYuZ29vZ2xlLnByb3RvYnVmLkVtcHR5InjC8xhYCAIQBBoRaW52aXRhdGlvbnM6d3JpdGUiEWludml0YXRpb25zOndyaXRlKggKAmlkEAQYAzABOhYKEmludml0YXRpb24ucmV2b2tlZBACQAFIBFADWANgAYLT5JMCFioUL3YxL2ludml0YXRpb25zL3tpZH1CuAEKFGNvbS5zYWFzLmFjY291bnRzLnYxQhBJbnZpdGF0aW9uc1Byb3RvUAFaLGFjY291bnRzL3BrZy9nZW4vc2Fhcy9hY2NvdW50cy92MTthY2NvdW50c3YxogIDU0FYqgIQU2Fhcy5BY2NvdW50cy5WMcoCEFNhYXNcQWNjb3VudHNcVjHiAhxTYWFzXEFjY291bnRzXFYxXEdQQk1ldGFkYXRh6gISU2Fhczo6QWNjb3VudHM6OlYxYgZwcm90bzM", [file_buf_validate_validate, file_google_api_annotations, file_google_protobuf_empty, file_google_protobuf_timestamp, file_saas_accounts_v1_common, file_saas_policy_v1_options]);
 
 /**
  * @generated from message saas.accounts.v1.Invitation
@@ -39,29 +39,49 @@ export type Invitation = Message<"saas.accounts.v1.Invitation"> & {
   inviterId: string;
 
   /**
-   * @generated from field: string email = 4;
+   * @generated from field: string inviter_display_name = 4;
+   */
+  inviterDisplayName: string;
+
+  /**
+   * @generated from field: string email = 5;
    */
   email: string;
 
   /**
-   * @generated from field: string role = 5;
+   * @generated from field: saas.accounts.v1.InvitationRole role = 6;
    */
-  role: string;
+  role: InvitationRole;
 
   /**
-   * @generated from field: saas.accounts.v1.InvitationStatus status = 6;
+   * @generated from field: saas.accounts.v1.InvitationStatus status = 7;
    */
   status: InvitationStatus;
 
   /**
-   * @generated from field: google.protobuf.Timestamp expires_at = 7;
+   * @generated from field: saas.accounts.v1.InvitationDeliveryStatus delivery_status = 8;
+   */
+  deliveryStatus: InvitationDeliveryStatus;
+
+  /**
+   * @generated from field: google.protobuf.Timestamp expires_at = 9;
    */
   expiresAt?: Timestamp;
 
   /**
-   * @generated from field: google.protobuf.Timestamp created_at = 8;
+   * @generated from field: google.protobuf.Timestamp created_at = 10;
    */
   createdAt?: Timestamp;
+
+  /**
+   * @generated from field: google.protobuf.Timestamp last_sent_at = 11;
+   */
+  lastSentAt?: Timestamp;
+
+  /**
+   * @generated from field: uint32 send_count = 12;
+   */
+  sendCount: number;
 };
 
 /**
@@ -70,6 +90,38 @@ export type Invitation = Message<"saas.accounts.v1.Invitation"> & {
  */
 export const InvitationSchema: GenMessage<Invitation> = /*@__PURE__*/
   messageDesc(file_saas_accounts_v1_invitations, 0);
+
+/**
+ * @generated from message saas.accounts.v1.InvitationSummary
+ */
+export type InvitationSummary = Message<"saas.accounts.v1.InvitationSummary"> & {
+  /**
+   * @generated from field: saas.accounts.v1.InvitationStatus status = 1;
+   */
+  status: InvitationStatus;
+
+  /**
+   * @generated from field: saas.accounts.v1.InvitationRole role = 2;
+   */
+  role: InvitationRole;
+
+  /**
+   * @generated from field: string email_hint = 3;
+   */
+  emailHint: string;
+
+  /**
+   * @generated from field: google.protobuf.Timestamp expires_at = 4;
+   */
+  expiresAt?: Timestamp;
+};
+
+/**
+ * Describes the message saas.accounts.v1.InvitationSummary.
+ * Use `create(InvitationSummarySchema)` to create a new message.
+ */
+export const InvitationSummarySchema: GenMessage<InvitationSummary> = /*@__PURE__*/
+  messageDesc(file_saas_accounts_v1_invitations, 1);
 
 /**
  * @generated from message saas.accounts.v1.CreateInvitationRequest
@@ -86,9 +138,9 @@ export type CreateInvitationRequest = Message<"saas.accounts.v1.CreateInvitation
   email: string;
 
   /**
-   * @generated from field: string role = 3;
+   * @generated from field: saas.accounts.v1.InvitationRole role = 3;
    */
-  role: string;
+  role: InvitationRole;
 };
 
 /**
@@ -96,7 +148,7 @@ export type CreateInvitationRequest = Message<"saas.accounts.v1.CreateInvitation
  * Use `create(CreateInvitationRequestSchema)` to create a new message.
  */
 export const CreateInvitationRequestSchema: GenMessage<CreateInvitationRequest> = /*@__PURE__*/
-  messageDesc(file_saas_accounts_v1_invitations, 1);
+  messageDesc(file_saas_accounts_v1_invitations, 2);
 
 /**
  * @generated from message saas.accounts.v1.CreateInvitationResponse
@@ -106,11 +158,6 @@ export type CreateInvitationResponse = Message<"saas.accounts.v1.CreateInvitatio
    * @generated from field: saas.accounts.v1.Invitation invitation = 1;
    */
   invitation?: Invitation;
-
-  /**
-   * @generated from field: string invite_token = 2;
-   */
-  inviteToken: string;
 };
 
 /**
@@ -118,12 +165,12 @@ export type CreateInvitationResponse = Message<"saas.accounts.v1.CreateInvitatio
  * Use `create(CreateInvitationResponseSchema)` to create a new message.
  */
 export const CreateInvitationResponseSchema: GenMessage<CreateInvitationResponse> = /*@__PURE__*/
-  messageDesc(file_saas_accounts_v1_invitations, 2);
+  messageDesc(file_saas_accounts_v1_invitations, 3);
 
 /**
- * @generated from message saas.accounts.v1.AcceptInvitationRequest
+ * @generated from message saas.accounts.v1.InspectInvitationRequest
  */
-export type AcceptInvitationRequest = Message<"saas.accounts.v1.AcceptInvitationRequest"> & {
+export type InspectInvitationRequest = Message<"saas.accounts.v1.InspectInvitationRequest"> & {
   /**
    * @generated from field: string token = 1;
    */
@@ -131,11 +178,40 @@ export type AcceptInvitationRequest = Message<"saas.accounts.v1.AcceptInvitation
 };
 
 /**
+ * Describes the message saas.accounts.v1.InspectInvitationRequest.
+ * Use `create(InspectInvitationRequestSchema)` to create a new message.
+ */
+export const InspectInvitationRequestSchema: GenMessage<InspectInvitationRequest> = /*@__PURE__*/
+  messageDesc(file_saas_accounts_v1_invitations, 4);
+
+/**
+ * @generated from message saas.accounts.v1.AcceptInvitationRequest
+ */
+export type AcceptInvitationRequest = Message<"saas.accounts.v1.AcceptInvitationRequest"> & {
+  /**
+   * @generated from oneof saas.accounts.v1.AcceptInvitationRequest.credential
+   */
+  credential: {
+    /**
+     * @generated from field: string token = 1;
+     */
+    value: string;
+    case: "token";
+  } | {
+    /**
+     * @generated from field: string invitation_id = 2;
+     */
+    value: string;
+    case: "invitationId";
+  } | { case: undefined; value?: undefined };
+};
+
+/**
  * Describes the message saas.accounts.v1.AcceptInvitationRequest.
  * Use `create(AcceptInvitationRequestSchema)` to create a new message.
  */
 export const AcceptInvitationRequestSchema: GenMessage<AcceptInvitationRequest> = /*@__PURE__*/
-  messageDesc(file_saas_accounts_v1_invitations, 3);
+  messageDesc(file_saas_accounts_v1_invitations, 5);
 
 /**
  * @generated from message saas.accounts.v1.AcceptInvitationResponse
@@ -145,6 +221,11 @@ export type AcceptInvitationResponse = Message<"saas.accounts.v1.AcceptInvitatio
    * @generated from field: saas.accounts.v1.Organization organization = 1;
    */
   organization?: Organization;
+
+  /**
+   * @generated from field: bool already_accepted = 2;
+   */
+  alreadyAccepted: boolean;
 };
 
 /**
@@ -152,7 +233,7 @@ export type AcceptInvitationResponse = Message<"saas.accounts.v1.AcceptInvitatio
  * Use `create(AcceptInvitationResponseSchema)` to create a new message.
  */
 export const AcceptInvitationResponseSchema: GenMessage<AcceptInvitationResponse> = /*@__PURE__*/
-  messageDesc(file_saas_accounts_v1_invitations, 4);
+  messageDesc(file_saas_accounts_v1_invitations, 6);
 
 /**
  * @generated from message saas.accounts.v1.ListInvitationsRequest
@@ -174,7 +255,7 @@ export type ListInvitationsRequest = Message<"saas.accounts.v1.ListInvitationsRe
  * Use `create(ListInvitationsRequestSchema)` to create a new message.
  */
 export const ListInvitationsRequestSchema: GenMessage<ListInvitationsRequest> = /*@__PURE__*/
-  messageDesc(file_saas_accounts_v1_invitations, 5);
+  messageDesc(file_saas_accounts_v1_invitations, 7);
 
 /**
  * @generated from message saas.accounts.v1.ListInvitationsResponse
@@ -191,7 +272,7 @@ export type ListInvitationsResponse = Message<"saas.accounts.v1.ListInvitationsR
  * Use `create(ListInvitationsResponseSchema)` to create a new message.
  */
 export const ListInvitationsResponseSchema: GenMessage<ListInvitationsResponse> = /*@__PURE__*/
-  messageDesc(file_saas_accounts_v1_invitations, 6);
+  messageDesc(file_saas_accounts_v1_invitations, 8);
 
 /**
  * @generated from message saas.accounts.v1.RevokeInvitationRequest
@@ -208,7 +289,24 @@ export type RevokeInvitationRequest = Message<"saas.accounts.v1.RevokeInvitation
  * Use `create(RevokeInvitationRequestSchema)` to create a new message.
  */
 export const RevokeInvitationRequestSchema: GenMessage<RevokeInvitationRequest> = /*@__PURE__*/
-  messageDesc(file_saas_accounts_v1_invitations, 7);
+  messageDesc(file_saas_accounts_v1_invitations, 9);
+
+/**
+ * @generated from message saas.accounts.v1.ResendInvitationRequest
+ */
+export type ResendInvitationRequest = Message<"saas.accounts.v1.ResendInvitationRequest"> & {
+  /**
+   * @generated from field: string id = 1;
+   */
+  id: string;
+};
+
+/**
+ * Describes the message saas.accounts.v1.ResendInvitationRequest.
+ * Use `create(ResendInvitationRequestSchema)` to create a new message.
+ */
+export const ResendInvitationRequestSchema: GenMessage<ResendInvitationRequest> = /*@__PURE__*/
+  messageDesc(file_saas_accounts_v1_invitations, 10);
 
 /**
  * @generated from enum saas.accounts.v1.InvitationStatus
@@ -247,8 +345,78 @@ export const InvitationStatusSchema: GenEnum<InvitationStatus> = /*@__PURE__*/
   enumDesc(file_saas_accounts_v1_invitations, 0);
 
 /**
- * InvitationService — org member invitation management
- *
+ * @generated from enum saas.accounts.v1.InvitationRole
+ */
+export enum InvitationRole {
+  /**
+   * @generated from enum value: INVITATION_ROLE_UNSPECIFIED = 0;
+   */
+  UNSPECIFIED = 0,
+
+  /**
+   * @generated from enum value: INVITATION_ROLE_MEMBER = 1;
+   */
+  MEMBER = 1,
+
+  /**
+   * @generated from enum value: INVITATION_ROLE_ADMIN = 2;
+   */
+  ADMIN = 2,
+}
+
+/**
+ * Describes the enum saas.accounts.v1.InvitationRole.
+ */
+export const InvitationRoleSchema: GenEnum<InvitationRole> = /*@__PURE__*/
+  enumDesc(file_saas_accounts_v1_invitations, 1);
+
+/**
+ * @generated from enum saas.accounts.v1.InvitationDeliveryStatus
+ */
+export enum InvitationDeliveryStatus {
+  /**
+   * @generated from enum value: INVITATION_DELIVERY_STATUS_UNSPECIFIED = 0;
+   */
+  UNSPECIFIED = 0,
+
+  /**
+   * @generated from enum value: INVITATION_DELIVERY_STATUS_DISABLED = 1;
+   */
+  DISABLED = 1,
+
+  /**
+   * @generated from enum value: INVITATION_DELIVERY_STATUS_QUEUED = 2;
+   */
+  QUEUED = 2,
+
+  /**
+   * @generated from enum value: INVITATION_DELIVERY_STATUS_SENT = 3;
+   */
+  SENT = 3,
+
+  /**
+   * @generated from enum value: INVITATION_DELIVERY_STATUS_DELIVERED = 4;
+   */
+  DELIVERED = 4,
+
+  /**
+   * @generated from enum value: INVITATION_DELIVERY_STATUS_BOUNCED = 5;
+   */
+  BOUNCED = 5,
+
+  /**
+   * @generated from enum value: INVITATION_DELIVERY_STATUS_COMPLAINED = 6;
+   */
+  COMPLAINED = 6,
+}
+
+/**
+ * Describes the enum saas.accounts.v1.InvitationDeliveryStatus.
+ */
+export const InvitationDeliveryStatusSchema: GenEnum<InvitationDeliveryStatus> = /*@__PURE__*/
+  enumDesc(file_saas_accounts_v1_invitations, 2);
+
+/**
  * @generated from service saas.accounts.v1.InvitationService
  */
 export const InvitationService: GenService<{
@@ -259,6 +427,14 @@ export const InvitationService: GenService<{
     methodKind: "unary";
     input: typeof CreateInvitationRequestSchema;
     output: typeof CreateInvitationResponseSchema;
+  },
+  /**
+   * @generated from rpc saas.accounts.v1.InvitationService.InspectInvitation
+   */
+  inspectInvitation: {
+    methodKind: "unary";
+    input: typeof InspectInvitationRequestSchema;
+    output: typeof InvitationSummarySchema;
   },
   /**
    * @generated from rpc saas.accounts.v1.InvitationService.AcceptInvitation
@@ -275,6 +451,14 @@ export const InvitationService: GenService<{
     methodKind: "unary";
     input: typeof ListInvitationsRequestSchema;
     output: typeof ListInvitationsResponseSchema;
+  },
+  /**
+   * @generated from rpc saas.accounts.v1.InvitationService.ResendInvitation
+   */
+  resendInvitation: {
+    methodKind: "unary";
+    input: typeof ResendInvitationRequestSchema;
+    output: typeof InvitationSchema;
   },
   /**
    * @generated from rpc saas.accounts.v1.InvitationService.RevokeInvitation

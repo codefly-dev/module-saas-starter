@@ -5,7 +5,7 @@
     "service": "accounts"
   },
   "api_package": "saas.accounts.v1",
-  "api_version": "0.2.0",
+  "api_version": "0.3.0",
   "services": [
     {
       "name": "APIKeyService",
@@ -61,8 +61,9 @@
       "name": "ConsentService",
       "full_name": "saas.accounts.v1.ConsentService",
       "procedures": [
-        "/saas.accounts.v1.ConsentService/Accept",
-        "/saas.accounts.v1.ConsentService/GetStatus"
+        "/saas.accounts.v1.ConsentService/AcceptTerms",
+        "/saas.accounts.v1.ConsentService/GetStatus",
+        "/saas.accounts.v1.ConsentService/UpdatePreferences"
       ]
     },
     {
@@ -105,7 +106,9 @@
       "procedures": [
         "/saas.accounts.v1.InvitationService/AcceptInvitation",
         "/saas.accounts.v1.InvitationService/CreateInvitation",
+        "/saas.accounts.v1.InvitationService/InspectInvitation",
         "/saas.accounts.v1.InvitationService/ListInvitations",
+        "/saas.accounts.v1.InvitationService/ResendInvitation",
         "/saas.accounts.v1.InvitationService/RevokeInvitation"
       ]
     },
@@ -256,6 +259,18 @@
       "procedures": [
         "/saas.accounts.v1.UserSettingsService/Get",
         "/saas.accounts.v1.UserSettingsService/Update"
+      ]
+    },
+    {
+      "name": "WaitlistService",
+      "full_name": "saas.accounts.v1.WaitlistService",
+      "procedures": [
+        "/saas.accounts.v1.WaitlistService/GetAcquisitionStatus",
+        "/saas.accounts.v1.WaitlistService/Invite",
+        "/saas.accounts.v1.WaitlistService/Join",
+        "/saas.accounts.v1.WaitlistService/List",
+        "/saas.accounts.v1.WaitlistService/Review",
+        "/saas.accounts.v1.WaitlistService/Verify"
       ]
     },
     {
@@ -1368,11 +1383,11 @@
       }
     },
     {
-      "procedure": "/saas.accounts.v1.ConsentService/Accept",
+      "procedure": "/saas.accounts.v1.ConsentService/AcceptTerms",
       "service": "ConsentService",
       "full_service": "saas.accounts.v1.ConsentService",
-      "method": "Accept",
-      "input_type": "saas.accounts.v1.AcceptConsentRequest",
+      "method": "AcceptTerms",
+      "input_type": "saas.accounts.v1.AcceptTermsRequest",
       "output_type": "saas.accounts.v1.ConsentStatus",
       "client_streaming": false,
       "server_streaming": false,
@@ -1386,7 +1401,7 @@
       "http_bindings": [
         {
           "method": "POST",
-          "path": "/v1/consent/accept",
+          "path": "/v1/consent/terms",
           "body": "*",
           "response_body": ""
         }
@@ -1400,7 +1415,7 @@
         "mfa": "MFA_REQUIREMENT_NONE",
         "audit": {
           "events": [
-            "consent.accepted"
+            "consent.terms_accepted"
           ],
           "emission": "AUDIT_EMISSION_SUCCESS"
         },
@@ -1412,7 +1427,7 @@
         "authentication_factor_attempt": false
       },
       "policy_tier": "auth",
-      "description": "Record TOS acceptance.",
+      "description": "Record acceptance of the exact Terms version presented.",
       "owner": {
         "module": "saas-starter",
         "service": "accounts"
@@ -1462,6 +1477,57 @@
       },
       "policy_tier": "auth",
       "description": "Read TOS acceptance state.",
+      "owner": {
+        "module": "saas-starter",
+        "service": "accounts"
+      }
+    },
+    {
+      "procedure": "/saas.accounts.v1.ConsentService/UpdatePreferences",
+      "service": "ConsentService",
+      "full_service": "saas.accounts.v1.ConsentService",
+      "method": "UpdatePreferences",
+      "input_type": "saas.accounts.v1.UpdateConsentPreferencesRequest",
+      "output_type": "saas.accounts.v1.ConsentStatus",
+      "client_streaming": false,
+      "server_streaming": false,
+      "deprecated": false,
+      "source_proto": "saas/accounts/v1/consent.proto",
+      "protocols": [
+        "PROTOCOL_GRPC",
+        "PROTOCOL_CONNECT",
+        "PROTOCOL_REST"
+      ],
+      "http_bindings": [
+        {
+          "method": "PUT",
+          "path": "/v1/consent/preferences",
+          "body": "*",
+          "response_body": ""
+        }
+      ],
+      "policy": {
+        "exposure": "EXPOSURE_AUTHENTICATED",
+        "tenant": "TENANT_REQUIREMENT_USER",
+        "permissions": [],
+        "scopes": [],
+        "resource_bindings": [],
+        "mfa": "MFA_REQUIREMENT_NONE",
+        "audit": {
+          "events": [
+            "consent.preferences_updated"
+          ],
+          "emission": "AUDIT_EMISSION_SUCCESS"
+        },
+        "idempotency": "IDEMPOTENCY_REQUIREMENT_FORBIDDEN",
+        "rate_limit": "RATE_LIMIT_CLASS_STANDARD_WRITE",
+        "request_sensitivity": "SENSITIVITY_CONFIDENTIAL",
+        "response_sensitivity": "SENSITIVITY_CONFIDENTIAL",
+        "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
+        "authentication_factor_attempt": false
+      },
+      "policy_tier": "auth",
+      "description": "Persist purpose-based optional tracking choices and withdrawals.",
       "owner": {
         "module": "saas-starter",
         "service": "accounts"
@@ -2061,8 +2127,12 @@
       "policy": {
         "exposure": "EXPOSURE_AUTHENTICATED",
         "tenant": "TENANT_REQUIREMENT_ORG_ADMIN",
-        "permissions": [],
-        "scopes": [],
+        "permissions": [
+          "invitations:write"
+        ],
+        "scopes": [
+          "invitations:write"
+        ],
         "resource_bindings": [
           {
             "request_field": "org_id",
@@ -2086,6 +2156,55 @@
       },
       "policy_tier": "org_admin",
       "description": "Invite a user to an org.",
+      "owner": {
+        "module": "saas-starter",
+        "service": "accounts"
+      }
+    },
+    {
+      "procedure": "/saas.accounts.v1.InvitationService/InspectInvitation",
+      "service": "InvitationService",
+      "full_service": "saas.accounts.v1.InvitationService",
+      "method": "InspectInvitation",
+      "input_type": "saas.accounts.v1.InspectInvitationRequest",
+      "output_type": "saas.accounts.v1.InvitationSummary",
+      "client_streaming": false,
+      "server_streaming": false,
+      "deprecated": false,
+      "source_proto": "saas/accounts/v1/invitations.proto",
+      "protocols": [
+        "PROTOCOL_GRPC",
+        "PROTOCOL_CONNECT",
+        "PROTOCOL_REST"
+      ],
+      "http_bindings": [
+        {
+          "method": "POST",
+          "path": "/v1/invitations:inspect",
+          "body": "*",
+          "response_body": ""
+        }
+      ],
+      "policy": {
+        "exposure": "EXPOSURE_PUBLIC",
+        "tenant": "TENANT_REQUIREMENT_NONE",
+        "permissions": [],
+        "scopes": [],
+        "resource_bindings": [],
+        "mfa": "MFA_REQUIREMENT_NONE",
+        "audit": {
+          "events": [],
+          "emission": "AUDIT_EMISSION_NONE"
+        },
+        "idempotency": "IDEMPOTENCY_REQUIREMENT_FORBIDDEN",
+        "rate_limit": "RATE_LIMIT_CLASS_PUBLIC",
+        "request_sensitivity": "SENSITIVITY_SECRET",
+        "response_sensitivity": "SENSITIVITY_CONFIDENTIAL",
+        "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
+        "authentication_factor_attempt": false
+      },
+      "policy_tier": "public",
+      "description": "Resolve a privacy-limited invitation summary from a secret credential.",
       "owner": {
         "module": "saas-starter",
         "service": "accounts"
@@ -2118,8 +2237,12 @@
       "policy": {
         "exposure": "EXPOSURE_AUTHENTICATED",
         "tenant": "TENANT_REQUIREMENT_ORG_ADMIN",
-        "permissions": [],
-        "scopes": [],
+        "permissions": [
+          "invitations:read"
+        ],
+        "scopes": [
+          "invitations:read"
+        ],
         "resource_bindings": [
           {
             "request_field": "org_id",
@@ -2141,6 +2264,67 @@
       },
       "policy_tier": "org_admin",
       "description": "List pending invites for an org.",
+      "owner": {
+        "module": "saas-starter",
+        "service": "accounts"
+      }
+    },
+    {
+      "procedure": "/saas.accounts.v1.InvitationService/ResendInvitation",
+      "service": "InvitationService",
+      "full_service": "saas.accounts.v1.InvitationService",
+      "method": "ResendInvitation",
+      "input_type": "saas.accounts.v1.ResendInvitationRequest",
+      "output_type": "saas.accounts.v1.Invitation",
+      "client_streaming": false,
+      "server_streaming": false,
+      "deprecated": false,
+      "source_proto": "saas/accounts/v1/invitations.proto",
+      "protocols": [
+        "PROTOCOL_GRPC",
+        "PROTOCOL_CONNECT",
+        "PROTOCOL_REST"
+      ],
+      "http_bindings": [
+        {
+          "method": "POST",
+          "path": "/v1/invitations/{id}:resend",
+          "body": "*",
+          "response_body": ""
+        }
+      ],
+      "policy": {
+        "exposure": "EXPOSURE_AUTHENTICATED",
+        "tenant": "TENANT_REQUIREMENT_ORG_ADMIN",
+        "permissions": [
+          "invitations:write"
+        ],
+        "scopes": [
+          "invitations:write"
+        ],
+        "resource_bindings": [
+          {
+            "request_field": "id",
+            "target": "RESOURCE_TARGET_OWNED_RESOURCE",
+            "lookup": "RESOURCE_LOOKUP_RESOURCE_TO_ORGANIZATION"
+          }
+        ],
+        "mfa": "MFA_REQUIREMENT_NONE",
+        "audit": {
+          "events": [
+            "invitation.resent"
+          ],
+          "emission": "AUDIT_EMISSION_SUCCESS"
+        },
+        "idempotency": "IDEMPOTENCY_REQUIREMENT_REQUIRED",
+        "rate_limit": "RATE_LIMIT_CLASS_STANDARD_WRITE",
+        "request_sensitivity": "SENSITIVITY_CONFIDENTIAL",
+        "response_sensitivity": "SENSITIVITY_CONFIDENTIAL",
+        "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
+        "authentication_factor_attempt": false
+      },
+      "policy_tier": "org_admin",
+      "description": "Rotate and requeue a pending invitation after its cooldown.",
       "owner": {
         "module": "saas-starter",
         "service": "accounts"
@@ -2173,8 +2357,12 @@
       "policy": {
         "exposure": "EXPOSURE_AUTHENTICATED",
         "tenant": "TENANT_REQUIREMENT_ORG_ADMIN",
-        "permissions": [],
-        "scopes": [],
+        "permissions": [
+          "invitations:write"
+        ],
+        "scopes": [
+          "invitations:write"
+        ],
         "resource_bindings": [
           {
             "request_field": "id",
@@ -2822,21 +3010,29 @@
       "http_bindings": [
         {
           "method": "POST",
-          "path": "/v1/onboarding/{step_name}:complete",
+          "path": "/v1/organizations/{organization_id}/onboarding/{step_id}:complete",
           "body": "*",
           "response_body": ""
         }
       ],
       "policy": {
         "exposure": "EXPOSURE_AUTHENTICATED",
-        "tenant": "TENANT_REQUIREMENT_USER",
+        "tenant": "TENANT_REQUIREMENT_ORG_MEMBER",
         "permissions": [],
         "scopes": [],
-        "resource_bindings": [],
+        "resource_bindings": [
+          {
+            "request_field": "organization_id",
+            "target": "RESOURCE_TARGET_ORGANIZATION",
+            "lookup": "RESOURCE_LOOKUP_DIRECT_ID"
+          }
+        ],
         "mfa": "MFA_REQUIREMENT_NONE",
         "audit": {
-          "events": [],
-          "emission": "AUDIT_EMISSION_NONE"
+          "events": [
+            "onboarding.step_completed"
+          ],
+          "emission": "AUDIT_EMISSION_SUCCESS"
         },
         "idempotency": "IDEMPOTENCY_REQUIREMENT_FORBIDDEN",
         "rate_limit": "RATE_LIMIT_CLASS_STANDARD_WRITE",
@@ -2845,8 +3041,8 @@
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
         "authentication_factor_attempt": false
       },
-      "policy_tier": "auth",
-      "description": "Mark a step done.",
+      "policy_tier": "org_member",
+      "description": "Confirm a step only after its represented product state exists.",
       "owner": {
         "module": "saas-starter",
         "service": "accounts"
@@ -2871,17 +3067,23 @@
       "http_bindings": [
         {
           "method": "GET",
-          "path": "/v1/onboarding",
+          "path": "/v1/organizations/{organization_id}/onboarding",
           "body": "",
           "response_body": ""
         }
       ],
       "policy": {
         "exposure": "EXPOSURE_AUTHENTICATED",
-        "tenant": "TENANT_REQUIREMENT_USER",
+        "tenant": "TENANT_REQUIREMENT_ORG_MEMBER",
         "permissions": [],
         "scopes": [],
-        "resource_bindings": [],
+        "resource_bindings": [
+          {
+            "request_field": "organization_id",
+            "target": "RESOURCE_TARGET_ORGANIZATION",
+            "lookup": "RESOURCE_LOOKUP_DIRECT_ID"
+          }
+        ],
         "mfa": "MFA_REQUIREMENT_NONE",
         "audit": {
           "events": [],
@@ -2894,8 +3096,8 @@
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
         "authentication_factor_attempt": false
       },
-      "policy_tier": "auth",
-      "description": "Wizard step status for the caller.",
+      "policy_tier": "org_member",
+      "description": "Versioned organization activation checklist for the caller.",
       "owner": {
         "module": "saas-starter",
         "service": "accounts"
@@ -2920,21 +3122,29 @@
       "http_bindings": [
         {
           "method": "POST",
-          "path": "/v1/onboarding/{step_name}:skip",
+          "path": "/v1/organizations/{organization_id}/onboarding/{step_id}:skip",
           "body": "*",
           "response_body": ""
         }
       ],
       "policy": {
         "exposure": "EXPOSURE_AUTHENTICATED",
-        "tenant": "TENANT_REQUIREMENT_USER",
+        "tenant": "TENANT_REQUIREMENT_ORG_MEMBER",
         "permissions": [],
         "scopes": [],
-        "resource_bindings": [],
+        "resource_bindings": [
+          {
+            "request_field": "organization_id",
+            "target": "RESOURCE_TARGET_ORGANIZATION",
+            "lookup": "RESOURCE_LOOKUP_DIRECT_ID"
+          }
+        ],
         "mfa": "MFA_REQUIREMENT_NONE",
         "audit": {
-          "events": [],
-          "emission": "AUDIT_EMISSION_NONE"
+          "events": [
+            "onboarding.step_skipped"
+          ],
+          "emission": "AUDIT_EMISSION_SUCCESS"
         },
         "idempotency": "IDEMPOTENCY_REQUIREMENT_FORBIDDEN",
         "rate_limit": "RATE_LIMIT_CLASS_STANDARD_WRITE",
@@ -2943,8 +3153,8 @@
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
         "authentication_factor_attempt": false
       },
-      "policy_tier": "auth",
-      "description": "Mark a step skipped.",
+      "policy_tier": "org_member",
+      "description": "Record an explicit skip for an optional step.",
       "owner": {
         "module": "saas-starter",
         "service": "accounts"
@@ -6153,6 +6363,304 @@
       },
       "policy_tier": "auth",
       "description": "Patch user prefs.",
+      "owner": {
+        "module": "saas-starter",
+        "service": "accounts"
+      }
+    },
+    {
+      "procedure": "/saas.accounts.v1.WaitlistService/GetAcquisitionStatus",
+      "service": "WaitlistService",
+      "full_service": "saas.accounts.v1.WaitlistService",
+      "method": "GetAcquisitionStatus",
+      "input_type": "saas.accounts.v1.GetAcquisitionStatusRequest",
+      "output_type": "saas.accounts.v1.AcquisitionStatus",
+      "client_streaming": false,
+      "server_streaming": false,
+      "deprecated": false,
+      "source_proto": "saas/accounts/v1/waitlist.proto",
+      "protocols": [
+        "PROTOCOL_GRPC",
+        "PROTOCOL_CONNECT",
+        "PROTOCOL_REST"
+      ],
+      "http_bindings": [
+        {
+          "method": "GET",
+          "path": "/v1/acquisition",
+          "body": "",
+          "response_body": ""
+        }
+      ],
+      "policy": {
+        "exposure": "EXPOSURE_PUBLIC",
+        "tenant": "TENANT_REQUIREMENT_NONE",
+        "permissions": [],
+        "scopes": [],
+        "resource_bindings": [],
+        "mfa": "MFA_REQUIREMENT_NONE",
+        "audit": {
+          "events": [],
+          "emission": "AUDIT_EMISSION_NONE"
+        },
+        "idempotency": "IDEMPOTENCY_REQUIREMENT_FORBIDDEN",
+        "rate_limit": "RATE_LIMIT_CLASS_PUBLIC",
+        "request_sensitivity": "SENSITIVITY_PUBLIC",
+        "response_sensitivity": "SENSITIVITY_PUBLIC",
+        "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
+        "authentication_factor_attempt": false
+      },
+      "policy_tier": "public",
+      "description": "Read the configured signup and waitlist mode.",
+      "owner": {
+        "module": "saas-starter",
+        "service": "accounts"
+      }
+    },
+    {
+      "procedure": "/saas.accounts.v1.WaitlistService/Invite",
+      "service": "WaitlistService",
+      "full_service": "saas.accounts.v1.WaitlistService",
+      "method": "Invite",
+      "input_type": "saas.accounts.v1.InviteWaitlistRequest",
+      "output_type": "saas.accounts.v1.WaitlistEntry",
+      "client_streaming": false,
+      "server_streaming": false,
+      "deprecated": false,
+      "source_proto": "saas/accounts/v1/waitlist.proto",
+      "protocols": [
+        "PROTOCOL_GRPC",
+        "PROTOCOL_CONNECT",
+        "PROTOCOL_REST"
+      ],
+      "http_bindings": [
+        {
+          "method": "POST",
+          "path": "/v1/platform/waitlist/{id}:invite",
+          "body": "*",
+          "response_body": ""
+        }
+      ],
+      "policy": {
+        "exposure": "EXPOSURE_AUTHENTICATED",
+        "tenant": "TENANT_REQUIREMENT_NONE",
+        "permissions": [],
+        "scopes": [],
+        "resource_bindings": [],
+        "mfa": "MFA_REQUIREMENT_IF_ENROLLED_RECENT_STEP_UP",
+        "audit": {
+          "events": [
+            "waitlist.invited"
+          ],
+          "emission": "AUDIT_EMISSION_SUCCESS"
+        },
+        "idempotency": "IDEMPOTENCY_REQUIREMENT_FORBIDDEN",
+        "rate_limit": "RATE_LIMIT_CLASS_SENSITIVE",
+        "request_sensitivity": "SENSITIVITY_CONFIDENTIAL",
+        "response_sensitivity": "SENSITIVITY_CONFIDENTIAL",
+        "platform_role": "PLATFORM_ROLE_REQUIREMENT_ANY",
+        "authentication_factor_attempt": false
+      },
+      "policy_tier": "platform_admin",
+      "description": "Queue the approved signup handoff for one waitlist entry.",
+      "owner": {
+        "module": "saas-starter",
+        "service": "accounts"
+      }
+    },
+    {
+      "procedure": "/saas.accounts.v1.WaitlistService/Join",
+      "service": "WaitlistService",
+      "full_service": "saas.accounts.v1.WaitlistService",
+      "method": "Join",
+      "input_type": "saas.accounts.v1.JoinWaitlistRequest",
+      "output_type": "saas.accounts.v1.JoinWaitlistResponse",
+      "client_streaming": false,
+      "server_streaming": false,
+      "deprecated": false,
+      "source_proto": "saas/accounts/v1/waitlist.proto",
+      "protocols": [
+        "PROTOCOL_GRPC",
+        "PROTOCOL_CONNECT",
+        "PROTOCOL_REST"
+      ],
+      "http_bindings": [
+        {
+          "method": "POST",
+          "path": "/v1/waitlist",
+          "body": "*",
+          "response_body": ""
+        }
+      ],
+      "policy": {
+        "exposure": "EXPOSURE_PUBLIC",
+        "tenant": "TENANT_REQUIREMENT_NONE",
+        "permissions": [],
+        "scopes": [],
+        "resource_bindings": [],
+        "mfa": "MFA_REQUIREMENT_NONE",
+        "audit": {
+          "events": [],
+          "emission": "AUDIT_EMISSION_NONE"
+        },
+        "idempotency": "IDEMPOTENCY_REQUIREMENT_FORBIDDEN",
+        "rate_limit": "RATE_LIMIT_CLASS_PUBLIC",
+        "request_sensitivity": "SENSITIVITY_CONFIDENTIAL",
+        "response_sensitivity": "SENSITIVITY_PUBLIC",
+        "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
+        "authentication_factor_attempt": false
+      },
+      "policy_tier": "public",
+      "description": "Submit an enumeration-safe public waitlist request.",
+      "owner": {
+        "module": "saas-starter",
+        "service": "accounts"
+      }
+    },
+    {
+      "procedure": "/saas.accounts.v1.WaitlistService/List",
+      "service": "WaitlistService",
+      "full_service": "saas.accounts.v1.WaitlistService",
+      "method": "List",
+      "input_type": "saas.accounts.v1.ListWaitlistRequest",
+      "output_type": "saas.accounts.v1.ListWaitlistResponse",
+      "client_streaming": false,
+      "server_streaming": false,
+      "deprecated": false,
+      "source_proto": "saas/accounts/v1/waitlist.proto",
+      "protocols": [
+        "PROTOCOL_GRPC",
+        "PROTOCOL_CONNECT",
+        "PROTOCOL_REST"
+      ],
+      "http_bindings": [
+        {
+          "method": "GET",
+          "path": "/v1/platform/waitlist",
+          "body": "",
+          "response_body": ""
+        }
+      ],
+      "policy": {
+        "exposure": "EXPOSURE_AUTHENTICATED",
+        "tenant": "TENANT_REQUIREMENT_NONE",
+        "permissions": [],
+        "scopes": [],
+        "resource_bindings": [],
+        "mfa": "MFA_REQUIREMENT_NONE",
+        "audit": {
+          "events": [],
+          "emission": "AUDIT_EMISSION_NONE"
+        },
+        "idempotency": "IDEMPOTENCY_REQUIREMENT_FORBIDDEN",
+        "rate_limit": "RATE_LIMIT_CLASS_SENSITIVE",
+        "request_sensitivity": "SENSITIVITY_CONFIDENTIAL",
+        "response_sensitivity": "SENSITIVITY_CONFIDENTIAL",
+        "platform_role": "PLATFORM_ROLE_REQUIREMENT_ANY",
+        "authentication_factor_attempt": false
+      },
+      "policy_tier": "platform_admin",
+      "description": "Search and filter the waitlist as a platform administrator.",
+      "owner": {
+        "module": "saas-starter",
+        "service": "accounts"
+      }
+    },
+    {
+      "procedure": "/saas.accounts.v1.WaitlistService/Review",
+      "service": "WaitlistService",
+      "full_service": "saas.accounts.v1.WaitlistService",
+      "method": "Review",
+      "input_type": "saas.accounts.v1.ReviewWaitlistRequest",
+      "output_type": "saas.accounts.v1.WaitlistEntry",
+      "client_streaming": false,
+      "server_streaming": false,
+      "deprecated": false,
+      "source_proto": "saas/accounts/v1/waitlist.proto",
+      "protocols": [
+        "PROTOCOL_GRPC",
+        "PROTOCOL_CONNECT",
+        "PROTOCOL_REST"
+      ],
+      "http_bindings": [
+        {
+          "method": "POST",
+          "path": "/v1/platform/waitlist/{id}:review",
+          "body": "*",
+          "response_body": ""
+        }
+      ],
+      "policy": {
+        "exposure": "EXPOSURE_AUTHENTICATED",
+        "tenant": "TENANT_REQUIREMENT_NONE",
+        "permissions": [],
+        "scopes": [],
+        "resource_bindings": [],
+        "mfa": "MFA_REQUIREMENT_IF_ENROLLED_RECENT_STEP_UP",
+        "audit": {
+          "events": [
+            "waitlist.reviewed"
+          ],
+          "emission": "AUDIT_EMISSION_SUCCESS"
+        },
+        "idempotency": "IDEMPOTENCY_REQUIREMENT_FORBIDDEN",
+        "rate_limit": "RATE_LIMIT_CLASS_SENSITIVE",
+        "request_sensitivity": "SENSITIVITY_CONFIDENTIAL",
+        "response_sensitivity": "SENSITIVITY_CONFIDENTIAL",
+        "platform_role": "PLATFORM_ROLE_REQUIREMENT_ANY",
+        "authentication_factor_attempt": false
+      },
+      "policy_tier": "platform_admin",
+      "description": "Approve or reject a waitlist entry with audit context.",
+      "owner": {
+        "module": "saas-starter",
+        "service": "accounts"
+      }
+    },
+    {
+      "procedure": "/saas.accounts.v1.WaitlistService/Verify",
+      "service": "WaitlistService",
+      "full_service": "saas.accounts.v1.WaitlistService",
+      "method": "Verify",
+      "input_type": "saas.accounts.v1.VerifyWaitlistRequest",
+      "output_type": "saas.accounts.v1.VerifyWaitlistResponse",
+      "client_streaming": false,
+      "server_streaming": false,
+      "deprecated": false,
+      "source_proto": "saas/accounts/v1/waitlist.proto",
+      "protocols": [
+        "PROTOCOL_GRPC",
+        "PROTOCOL_CONNECT",
+        "PROTOCOL_REST"
+      ],
+      "http_bindings": [
+        {
+          "method": "POST",
+          "path": "/v1/waitlist:verify",
+          "body": "*",
+          "response_body": ""
+        }
+      ],
+      "policy": {
+        "exposure": "EXPOSURE_PUBLIC",
+        "tenant": "TENANT_REQUIREMENT_NONE",
+        "permissions": [],
+        "scopes": [],
+        "resource_bindings": [],
+        "mfa": "MFA_REQUIREMENT_NONE",
+        "audit": {
+          "events": [],
+          "emission": "AUDIT_EMISSION_NONE"
+        },
+        "idempotency": "IDEMPOTENCY_REQUIREMENT_FORBIDDEN",
+        "rate_limit": "RATE_LIMIT_CLASS_PUBLIC",
+        "request_sensitivity": "SENSITIVITY_SECRET",
+        "response_sensitivity": "SENSITIVITY_PUBLIC",
+        "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
+        "authentication_factor_attempt": false
+      },
+      "policy_tier": "public",
+      "description": "Verify a waitlist email using an expiring hashed credential.",
       "owner": {
         "module": "saas-starter",
         "service": "accounts"

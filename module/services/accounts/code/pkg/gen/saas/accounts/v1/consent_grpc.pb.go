@@ -20,8 +20,9 @@ import (
 const _ = grpc.SupportPackageIsVersion9
 
 const (
-	ConsentService_GetStatus_FullMethodName = "/saas.accounts.v1.ConsentService/GetStatus"
-	ConsentService_Accept_FullMethodName    = "/saas.accounts.v1.ConsentService/Accept"
+	ConsentService_GetStatus_FullMethodName         = "/saas.accounts.v1.ConsentService/GetStatus"
+	ConsentService_AcceptTerms_FullMethodName       = "/saas.accounts.v1.ConsentService/AcceptTerms"
+	ConsentService_UpdatePreferences_FullMethodName = "/saas.accounts.v1.ConsentService/UpdatePreferences"
 )
 
 // ConsentServiceClient is the client API for ConsentService service.
@@ -29,7 +30,8 @@ const (
 // For semantics around ctx use and closing/ending streaming RPCs, please refer to https://pkg.go.dev/google.golang.org/grpc/?tab=doc#ClientConn.NewStream.
 type ConsentServiceClient interface {
 	GetStatus(ctx context.Context, in *GetConsentStatusRequest, opts ...grpc.CallOption) (*ConsentStatus, error)
-	Accept(ctx context.Context, in *AcceptConsentRequest, opts ...grpc.CallOption) (*ConsentStatus, error)
+	AcceptTerms(ctx context.Context, in *AcceptTermsRequest, opts ...grpc.CallOption) (*ConsentStatus, error)
+	UpdatePreferences(ctx context.Context, in *UpdateConsentPreferencesRequest, opts ...grpc.CallOption) (*ConsentStatus, error)
 }
 
 type consentServiceClient struct {
@@ -50,10 +52,20 @@ func (c *consentServiceClient) GetStatus(ctx context.Context, in *GetConsentStat
 	return out, nil
 }
 
-func (c *consentServiceClient) Accept(ctx context.Context, in *AcceptConsentRequest, opts ...grpc.CallOption) (*ConsentStatus, error) {
+func (c *consentServiceClient) AcceptTerms(ctx context.Context, in *AcceptTermsRequest, opts ...grpc.CallOption) (*ConsentStatus, error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(ConsentStatus)
-	err := c.cc.Invoke(ctx, ConsentService_Accept_FullMethodName, in, out, cOpts...)
+	err := c.cc.Invoke(ctx, ConsentService_AcceptTerms_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *consentServiceClient) UpdatePreferences(ctx context.Context, in *UpdateConsentPreferencesRequest, opts ...grpc.CallOption) (*ConsentStatus, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ConsentStatus)
+	err := c.cc.Invoke(ctx, ConsentService_UpdatePreferences_FullMethodName, in, out, cOpts...)
 	if err != nil {
 		return nil, err
 	}
@@ -65,7 +77,8 @@ func (c *consentServiceClient) Accept(ctx context.Context, in *AcceptConsentRequ
 // for forward compatibility.
 type ConsentServiceServer interface {
 	GetStatus(context.Context, *GetConsentStatusRequest) (*ConsentStatus, error)
-	Accept(context.Context, *AcceptConsentRequest) (*ConsentStatus, error)
+	AcceptTerms(context.Context, *AcceptTermsRequest) (*ConsentStatus, error)
+	UpdatePreferences(context.Context, *UpdateConsentPreferencesRequest) (*ConsentStatus, error)
 	mustEmbedUnimplementedConsentServiceServer()
 }
 
@@ -79,8 +92,11 @@ type UnimplementedConsentServiceServer struct{}
 func (UnimplementedConsentServiceServer) GetStatus(context.Context, *GetConsentStatusRequest) (*ConsentStatus, error) {
 	return nil, status.Error(codes.Unimplemented, "method GetStatus not implemented")
 }
-func (UnimplementedConsentServiceServer) Accept(context.Context, *AcceptConsentRequest) (*ConsentStatus, error) {
-	return nil, status.Error(codes.Unimplemented, "method Accept not implemented")
+func (UnimplementedConsentServiceServer) AcceptTerms(context.Context, *AcceptTermsRequest) (*ConsentStatus, error) {
+	return nil, status.Error(codes.Unimplemented, "method AcceptTerms not implemented")
+}
+func (UnimplementedConsentServiceServer) UpdatePreferences(context.Context, *UpdateConsentPreferencesRequest) (*ConsentStatus, error) {
+	return nil, status.Error(codes.Unimplemented, "method UpdatePreferences not implemented")
 }
 func (UnimplementedConsentServiceServer) mustEmbedUnimplementedConsentServiceServer() {}
 func (UnimplementedConsentServiceServer) testEmbeddedByValue()                        {}
@@ -121,20 +137,38 @@ func _ConsentService_GetStatus_Handler(srv interface{}, ctx context.Context, dec
 	return interceptor(ctx, in, info, handler)
 }
 
-func _ConsentService_Accept_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
-	in := new(AcceptConsentRequest)
+func _ConsentService_AcceptTerms_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(AcceptTermsRequest)
 	if err := dec(in); err != nil {
 		return nil, err
 	}
 	if interceptor == nil {
-		return srv.(ConsentServiceServer).Accept(ctx, in)
+		return srv.(ConsentServiceServer).AcceptTerms(ctx, in)
 	}
 	info := &grpc.UnaryServerInfo{
 		Server:     srv,
-		FullMethod: ConsentService_Accept_FullMethodName,
+		FullMethod: ConsentService_AcceptTerms_FullMethodName,
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
-		return srv.(ConsentServiceServer).Accept(ctx, req.(*AcceptConsentRequest))
+		return srv.(ConsentServiceServer).AcceptTerms(ctx, req.(*AcceptTermsRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _ConsentService_UpdatePreferences_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(UpdateConsentPreferencesRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(ConsentServiceServer).UpdatePreferences(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: ConsentService_UpdatePreferences_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(ConsentServiceServer).UpdatePreferences(ctx, req.(*UpdateConsentPreferencesRequest))
 	}
 	return interceptor(ctx, in, info, handler)
 }
@@ -151,8 +185,12 @@ var ConsentService_ServiceDesc = grpc.ServiceDesc{
 			Handler:    _ConsentService_GetStatus_Handler,
 		},
 		{
-			MethodName: "Accept",
-			Handler:    _ConsentService_Accept_Handler,
+			MethodName: "AcceptTerms",
+			Handler:    _ConsentService_AcceptTerms_Handler,
+		},
+		{
+			MethodName: "UpdatePreferences",
+			Handler:    _ConsentService_UpdatePreferences_Handler,
 		},
 	},
 	Streams:  []grpc.StreamDesc{},

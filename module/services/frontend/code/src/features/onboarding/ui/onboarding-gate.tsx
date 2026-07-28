@@ -1,40 +1,57 @@
 "use client";
 
 import { useQuery } from "@tanstack/react-query";
+import Link from "next/link";
+import { usePathname } from "next/navigation";
 import type { ReactNode } from "react";
+import { Button } from "@/components/ui/button";
 import { useAuth } from "@/lib/auth";
-import { isWizardComplete } from "../model/transforms";
-import type { OnboardingProgress } from "../model/types";
 import { onboardingQueries } from "../service/queries";
 import { OnboardingWizard } from "./onboarding-wizard";
 
-interface OnboardingGateProps {
-	children: ReactNode;
-}
-
-export function OnboardingGate({ children }: OnboardingGateProps) {
-	const { isAuthenticated } = useAuth();
-	const { data, isLoading } = useQuery({
-		...onboardingQueries.progress(),
-		enabled: isAuthenticated,
+export function OnboardingGate({ children }: { children: ReactNode }) {
+	const { isAuthenticated, organizationId = "" } = useAuth();
+	const pathname = usePathname();
+	const query = useQuery({
+		...onboardingQueries.progress(organizationId),
+		enabled: isAuthenticated && Boolean(organizationId),
 	});
 
-	// Don't block if not authenticated, still loading, or explicitly dismissed
-	const dismissed = useQuery({
-		queryKey: ["onboarding", "dismissed"],
-		queryFn: () => false,
-		staleTime: Infinity,
-	});
-
-	if (!isAuthenticated || isLoading || dismissed.data === true) {
-		return <>{children}</>;
+	if (
+		isAuthenticated &&
+		!query.isLoading &&
+		!query.isError &&
+		query.data &&
+		!query.data.requiredComplete
+	) {
+		return (
+			<main className="flex min-h-screen items-center justify-center bg-background">
+				<OnboardingWizard requiredOnly />
+			</main>
+		);
 	}
 
-	const progress = data as OnboardingProgress | undefined;
-
-	if (progress && !isWizardComplete(progress)) {
-		return <OnboardingWizard />;
-	}
-
-	return <>{children}</>;
+	return (
+		<>
+			{children}
+			{pathname !== "/onboarding" &&
+				query.data?.requiredComplete &&
+				!query.data.checklistComplete && (
+					<div className="fixed bottom-4 right-4 z-40 max-w-sm rounded-xl border bg-card p-4 shadow-lg">
+						<p className="font-medium">Finish workspace setup</p>
+						<p className="mt-1 text-sm text-muted-foreground">
+							Optional setup is saved and never blocks the product.
+						</p>
+						<Button
+							size="sm"
+							className="mt-3"
+							nativeButton={false}
+							render={<Link href="/onboarding" />}
+						>
+							Resume checklist
+						</Button>
+					</div>
+				)}
+		</>
+	);
 }

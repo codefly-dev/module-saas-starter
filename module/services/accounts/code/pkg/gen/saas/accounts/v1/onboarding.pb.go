@@ -26,6 +26,61 @@ const (
 	_ = protoimpl.EnforceVersion(protoimpl.MaxVersion - 20)
 )
 
+type OnboardingStepId int32
+
+const (
+	OnboardingStepId_ONBOARDING_STEP_ID_UNSPECIFIED            OnboardingStepId = 0
+	OnboardingStepId_ONBOARDING_STEP_ID_CONFIGURE_ORGANIZATION OnboardingStepId = 1
+	OnboardingStepId_ONBOARDING_STEP_ID_INVITE_TEAM            OnboardingStepId = 2
+	OnboardingStepId_ONBOARDING_STEP_ID_CHOOSE_PLAN            OnboardingStepId = 3
+	OnboardingStepId_ONBOARDING_STEP_ID_SETUP_API_KEY          OnboardingStepId = 4
+)
+
+// Enum value maps for OnboardingStepId.
+var (
+	OnboardingStepId_name = map[int32]string{
+		0: "ONBOARDING_STEP_ID_UNSPECIFIED",
+		1: "ONBOARDING_STEP_ID_CONFIGURE_ORGANIZATION",
+		2: "ONBOARDING_STEP_ID_INVITE_TEAM",
+		3: "ONBOARDING_STEP_ID_CHOOSE_PLAN",
+		4: "ONBOARDING_STEP_ID_SETUP_API_KEY",
+	}
+	OnboardingStepId_value = map[string]int32{
+		"ONBOARDING_STEP_ID_UNSPECIFIED":            0,
+		"ONBOARDING_STEP_ID_CONFIGURE_ORGANIZATION": 1,
+		"ONBOARDING_STEP_ID_INVITE_TEAM":            2,
+		"ONBOARDING_STEP_ID_CHOOSE_PLAN":            3,
+		"ONBOARDING_STEP_ID_SETUP_API_KEY":          4,
+	}
+)
+
+func (x OnboardingStepId) Enum() *OnboardingStepId {
+	p := new(OnboardingStepId)
+	*p = x
+	return p
+}
+
+func (x OnboardingStepId) String() string {
+	return protoimpl.X.EnumStringOf(x.Descriptor(), protoreflect.EnumNumber(x))
+}
+
+func (OnboardingStepId) Descriptor() protoreflect.EnumDescriptor {
+	return file_saas_accounts_v1_onboarding_proto_enumTypes[0].Descriptor()
+}
+
+func (OnboardingStepId) Type() protoreflect.EnumType {
+	return &file_saas_accounts_v1_onboarding_proto_enumTypes[0]
+}
+
+func (x OnboardingStepId) Number() protoreflect.EnumNumber {
+	return protoreflect.EnumNumber(x)
+}
+
+// Deprecated: Use OnboardingStepId.Descriptor instead.
+func (OnboardingStepId) EnumDescriptor() ([]byte, []int) {
+	return file_saas_accounts_v1_onboarding_proto_rawDescGZIP(), []int{0}
+}
+
 type OnboardingStepStatus int32
 
 const (
@@ -62,11 +117,11 @@ func (x OnboardingStepStatus) String() string {
 }
 
 func (OnboardingStepStatus) Descriptor() protoreflect.EnumDescriptor {
-	return file_saas_accounts_v1_onboarding_proto_enumTypes[0].Descriptor()
+	return file_saas_accounts_v1_onboarding_proto_enumTypes[1].Descriptor()
 }
 
 func (OnboardingStepStatus) Type() protoreflect.EnumType {
-	return &file_saas_accounts_v1_onboarding_proto_enumTypes[0]
+	return &file_saas_accounts_v1_onboarding_proto_enumTypes[1]
 }
 
 func (x OnboardingStepStatus) Number() protoreflect.EnumNumber {
@@ -75,16 +130,78 @@ func (x OnboardingStepStatus) Number() protoreflect.EnumNumber {
 
 // Deprecated: Use OnboardingStepStatus.Descriptor instead.
 func (OnboardingStepStatus) EnumDescriptor() ([]byte, []int) {
-	return file_saas_accounts_v1_onboarding_proto_rawDescGZIP(), []int{0}
+	return file_saas_accounts_v1_onboarding_proto_rawDescGZIP(), []int{1}
+}
+
+type OnboardingCompletionMethod int32
+
+const (
+	OnboardingCompletionMethod_ONBOARDING_COMPLETION_METHOD_UNSPECIFIED   OnboardingCompletionMethod = 0
+	OnboardingCompletionMethod_ONBOARDING_COMPLETION_METHOD_DETECTED      OnboardingCompletionMethod = 1
+	OnboardingCompletionMethod_ONBOARDING_COMPLETION_METHOD_DOMAIN_ACTION OnboardingCompletionMethod = 2
+	OnboardingCompletionMethod_ONBOARDING_COMPLETION_METHOD_USER_SKIP     OnboardingCompletionMethod = 3
+	OnboardingCompletionMethod_ONBOARDING_COMPLETION_METHOD_MIGRATED      OnboardingCompletionMethod = 4
+)
+
+// Enum value maps for OnboardingCompletionMethod.
+var (
+	OnboardingCompletionMethod_name = map[int32]string{
+		0: "ONBOARDING_COMPLETION_METHOD_UNSPECIFIED",
+		1: "ONBOARDING_COMPLETION_METHOD_DETECTED",
+		2: "ONBOARDING_COMPLETION_METHOD_DOMAIN_ACTION",
+		3: "ONBOARDING_COMPLETION_METHOD_USER_SKIP",
+		4: "ONBOARDING_COMPLETION_METHOD_MIGRATED",
+	}
+	OnboardingCompletionMethod_value = map[string]int32{
+		"ONBOARDING_COMPLETION_METHOD_UNSPECIFIED":   0,
+		"ONBOARDING_COMPLETION_METHOD_DETECTED":      1,
+		"ONBOARDING_COMPLETION_METHOD_DOMAIN_ACTION": 2,
+		"ONBOARDING_COMPLETION_METHOD_USER_SKIP":     3,
+		"ONBOARDING_COMPLETION_METHOD_MIGRATED":      4,
+	}
+)
+
+func (x OnboardingCompletionMethod) Enum() *OnboardingCompletionMethod {
+	p := new(OnboardingCompletionMethod)
+	*p = x
+	return p
+}
+
+func (x OnboardingCompletionMethod) String() string {
+	return protoimpl.X.EnumStringOf(x.Descriptor(), protoreflect.EnumNumber(x))
+}
+
+func (OnboardingCompletionMethod) Descriptor() protoreflect.EnumDescriptor {
+	return file_saas_accounts_v1_onboarding_proto_enumTypes[2].Descriptor()
+}
+
+func (OnboardingCompletionMethod) Type() protoreflect.EnumType {
+	return &file_saas_accounts_v1_onboarding_proto_enumTypes[2]
+}
+
+func (x OnboardingCompletionMethod) Number() protoreflect.EnumNumber {
+	return protoreflect.EnumNumber(x)
+}
+
+// Deprecated: Use OnboardingCompletionMethod.Descriptor instead.
+func (OnboardingCompletionMethod) EnumDescriptor() ([]byte, []int) {
+	return file_saas_accounts_v1_onboarding_proto_rawDescGZIP(), []int{2}
 }
 
 type OnboardingStep struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	StepName      string                 `protobuf:"bytes,1,opt,name=step_name,json=stepName,proto3" json:"step_name,omitempty"`
-	Status        OnboardingStepStatus   `protobuf:"varint,2,opt,name=status,proto3,enum=saas.accounts.v1.OnboardingStepStatus" json:"status,omitempty"`
-	CompletedAt   *timestamppb.Timestamp `protobuf:"bytes,3,opt,name=completed_at,json=completedAt,proto3" json:"completed_at,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	state            protoimpl.MessageState     `protogen:"open.v1"`
+	Id               OnboardingStepId           `protobuf:"varint,1,opt,name=id,proto3,enum=saas.accounts.v1.OnboardingStepId" json:"id,omitempty"`
+	Status           OnboardingStepStatus       `protobuf:"varint,2,opt,name=status,proto3,enum=saas.accounts.v1.OnboardingStepStatus" json:"status,omitempty"`
+	Required         bool                       `protobuf:"varint,3,opt,name=required,proto3" json:"required,omitempty"`
+	Prerequisites    []OnboardingStepId         `protobuf:"varint,4,rep,packed,name=prerequisites,proto3,enum=saas.accounts.v1.OnboardingStepId" json:"prerequisites,omitempty"`
+	FirstSeenAt      *timestamppb.Timestamp     `protobuf:"bytes,5,opt,name=first_seen_at,json=firstSeenAt,proto3" json:"first_seen_at,omitempty"`
+	LastSeenAt       *timestamppb.Timestamp     `protobuf:"bytes,6,opt,name=last_seen_at,json=lastSeenAt,proto3" json:"last_seen_at,omitempty"`
+	CompletedAt      *timestamppb.Timestamp     `protobuf:"bytes,7,opt,name=completed_at,json=completedAt,proto3" json:"completed_at,omitempty"`
+	SkippedAt        *timestamppb.Timestamp     `protobuf:"bytes,8,opt,name=skipped_at,json=skippedAt,proto3" json:"skipped_at,omitempty"`
+	CompletionMethod OnboardingCompletionMethod `protobuf:"varint,9,opt,name=completion_method,json=completionMethod,proto3,enum=saas.accounts.v1.OnboardingCompletionMethod" json:"completion_method,omitempty"`
+	SkipReason       string                     `protobuf:"bytes,10,opt,name=skip_reason,json=skipReason,proto3" json:"skip_reason,omitempty"`
+	unknownFields    protoimpl.UnknownFields
+	sizeCache        protoimpl.SizeCache
 }
 
 func (x *OnboardingStep) Reset() {
@@ -117,11 +234,11 @@ func (*OnboardingStep) Descriptor() ([]byte, []int) {
 	return file_saas_accounts_v1_onboarding_proto_rawDescGZIP(), []int{0}
 }
 
-func (x *OnboardingStep) GetStepName() string {
+func (x *OnboardingStep) GetId() OnboardingStepId {
 	if x != nil {
-		return x.StepName
+		return x.Id
 	}
-	return ""
+	return OnboardingStepId_ONBOARDING_STEP_ID_UNSPECIFIED
 }
 
 func (x *OnboardingStep) GetStatus() OnboardingStepStatus {
@@ -131,6 +248,34 @@ func (x *OnboardingStep) GetStatus() OnboardingStepStatus {
 	return OnboardingStepStatus_ONBOARDING_STEP_STATUS_UNSPECIFIED
 }
 
+func (x *OnboardingStep) GetRequired() bool {
+	if x != nil {
+		return x.Required
+	}
+	return false
+}
+
+func (x *OnboardingStep) GetPrerequisites() []OnboardingStepId {
+	if x != nil {
+		return x.Prerequisites
+	}
+	return nil
+}
+
+func (x *OnboardingStep) GetFirstSeenAt() *timestamppb.Timestamp {
+	if x != nil {
+		return x.FirstSeenAt
+	}
+	return nil
+}
+
+func (x *OnboardingStep) GetLastSeenAt() *timestamppb.Timestamp {
+	if x != nil {
+		return x.LastSeenAt
+	}
+	return nil
+}
+
 func (x *OnboardingStep) GetCompletedAt() *timestamppb.Timestamp {
 	if x != nil {
 		return x.CompletedAt
@@ -138,12 +283,46 @@ func (x *OnboardingStep) GetCompletedAt() *timestamppb.Timestamp {
 	return nil
 }
 
+func (x *OnboardingStep) GetSkippedAt() *timestamppb.Timestamp {
+	if x != nil {
+		return x.SkippedAt
+	}
+	return nil
+}
+
+func (x *OnboardingStep) GetCompletionMethod() OnboardingCompletionMethod {
+	if x != nil {
+		return x.CompletionMethod
+	}
+	return OnboardingCompletionMethod_ONBOARDING_COMPLETION_METHOD_UNSPECIFIED
+}
+
+func (x *OnboardingStep) GetSkipReason() string {
+	if x != nil {
+		return x.SkipReason
+	}
+	return ""
+}
+
 type OnboardingProgress struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Steps         []*OnboardingStep      `protobuf:"bytes,1,rep,name=steps,proto3" json:"steps,omitempty"`
-	Completed     bool                   `protobuf:"varint,2,opt,name=completed,proto3" json:"completed,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	state              protoimpl.MessageState `protogen:"open.v1"`
+	OrganizationId     string                 `protobuf:"bytes,1,opt,name=organization_id,json=organizationId,proto3" json:"organization_id,omitempty"`
+	FlowId             string                 `protobuf:"bytes,2,opt,name=flow_id,json=flowId,proto3" json:"flow_id,omitempty"`
+	FlowVersion        uint32                 `protobuf:"varint,3,opt,name=flow_version,json=flowVersion,proto3" json:"flow_version,omitempty"`
+	Variant            string                 `protobuf:"bytes,4,opt,name=variant,proto3" json:"variant,omitempty"`
+	Audience           string                 `protobuf:"bytes,5,opt,name=audience,proto3" json:"audience,omitempty"`
+	Persona            string                 `protobuf:"bytes,6,opt,name=persona,proto3" json:"persona,omitempty"`
+	Steps              []*OnboardingStep      `protobuf:"bytes,7,rep,name=steps,proto3" json:"steps,omitempty"`
+	CurrentStep        OnboardingStepId       `protobuf:"varint,8,opt,name=current_step,json=currentStep,proto3,enum=saas.accounts.v1.OnboardingStepId" json:"current_step,omitempty"`
+	NextStep           OnboardingStepId       `protobuf:"varint,9,opt,name=next_step,json=nextStep,proto3,enum=saas.accounts.v1.OnboardingStepId" json:"next_step,omitempty"`
+	RequiredComplete   bool                   `protobuf:"varint,10,opt,name=required_complete,json=requiredComplete,proto3" json:"required_complete,omitempty"`
+	ChecklistComplete  bool                   `protobuf:"varint,11,opt,name=checklist_complete,json=checklistComplete,proto3" json:"checklist_complete,omitempty"`
+	ActivationAchieved bool                   `protobuf:"varint,12,opt,name=activation_achieved,json=activationAchieved,proto3" json:"activation_achieved,omitempty"`
+	StartedAt          *timestamppb.Timestamp `protobuf:"bytes,13,opt,name=started_at,json=startedAt,proto3" json:"started_at,omitempty"`
+	CompletedAt        *timestamppb.Timestamp `protobuf:"bytes,14,opt,name=completed_at,json=completedAt,proto3" json:"completed_at,omitempty"`
+	ActivatedAt        *timestamppb.Timestamp `protobuf:"bytes,15,opt,name=activated_at,json=activatedAt,proto3" json:"activated_at,omitempty"`
+	unknownFields      protoimpl.UnknownFields
+	sizeCache          protoimpl.SizeCache
 }
 
 func (x *OnboardingProgress) Reset() {
@@ -176,6 +355,48 @@ func (*OnboardingProgress) Descriptor() ([]byte, []int) {
 	return file_saas_accounts_v1_onboarding_proto_rawDescGZIP(), []int{1}
 }
 
+func (x *OnboardingProgress) GetOrganizationId() string {
+	if x != nil {
+		return x.OrganizationId
+	}
+	return ""
+}
+
+func (x *OnboardingProgress) GetFlowId() string {
+	if x != nil {
+		return x.FlowId
+	}
+	return ""
+}
+
+func (x *OnboardingProgress) GetFlowVersion() uint32 {
+	if x != nil {
+		return x.FlowVersion
+	}
+	return 0
+}
+
+func (x *OnboardingProgress) GetVariant() string {
+	if x != nil {
+		return x.Variant
+	}
+	return ""
+}
+
+func (x *OnboardingProgress) GetAudience() string {
+	if x != nil {
+		return x.Audience
+	}
+	return ""
+}
+
+func (x *OnboardingProgress) GetPersona() string {
+	if x != nil {
+		return x.Persona
+	}
+	return ""
+}
+
 func (x *OnboardingProgress) GetSteps() []*OnboardingStep {
 	if x != nil {
 		return x.Steps
@@ -183,17 +404,67 @@ func (x *OnboardingProgress) GetSteps() []*OnboardingStep {
 	return nil
 }
 
-func (x *OnboardingProgress) GetCompleted() bool {
+func (x *OnboardingProgress) GetCurrentStep() OnboardingStepId {
 	if x != nil {
-		return x.Completed
+		return x.CurrentStep
+	}
+	return OnboardingStepId_ONBOARDING_STEP_ID_UNSPECIFIED
+}
+
+func (x *OnboardingProgress) GetNextStep() OnboardingStepId {
+	if x != nil {
+		return x.NextStep
+	}
+	return OnboardingStepId_ONBOARDING_STEP_ID_UNSPECIFIED
+}
+
+func (x *OnboardingProgress) GetRequiredComplete() bool {
+	if x != nil {
+		return x.RequiredComplete
 	}
 	return false
 }
 
+func (x *OnboardingProgress) GetChecklistComplete() bool {
+	if x != nil {
+		return x.ChecklistComplete
+	}
+	return false
+}
+
+func (x *OnboardingProgress) GetActivationAchieved() bool {
+	if x != nil {
+		return x.ActivationAchieved
+	}
+	return false
+}
+
+func (x *OnboardingProgress) GetStartedAt() *timestamppb.Timestamp {
+	if x != nil {
+		return x.StartedAt
+	}
+	return nil
+}
+
+func (x *OnboardingProgress) GetCompletedAt() *timestamppb.Timestamp {
+	if x != nil {
+		return x.CompletedAt
+	}
+	return nil
+}
+
+func (x *OnboardingProgress) GetActivatedAt() *timestamppb.Timestamp {
+	if x != nil {
+		return x.ActivatedAt
+	}
+	return nil
+}
+
 type GetOnboardingProgressRequest struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	state          protoimpl.MessageState `protogen:"open.v1"`
+	OrganizationId string                 `protobuf:"bytes,1,opt,name=organization_id,json=organizationId,proto3" json:"organization_id,omitempty"`
+	unknownFields  protoimpl.UnknownFields
+	sizeCache      protoimpl.SizeCache
 }
 
 func (x *GetOnboardingProgressRequest) Reset() {
@@ -226,11 +497,19 @@ func (*GetOnboardingProgressRequest) Descriptor() ([]byte, []int) {
 	return file_saas_accounts_v1_onboarding_proto_rawDescGZIP(), []int{2}
 }
 
+func (x *GetOnboardingProgressRequest) GetOrganizationId() string {
+	if x != nil {
+		return x.OrganizationId
+	}
+	return ""
+}
+
 type CompleteOnboardingStepRequest struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	StepName      string                 `protobuf:"bytes,1,opt,name=step_name,json=stepName,proto3" json:"step_name,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	state          protoimpl.MessageState `protogen:"open.v1"`
+	OrganizationId string                 `protobuf:"bytes,1,opt,name=organization_id,json=organizationId,proto3" json:"organization_id,omitempty"`
+	StepId         OnboardingStepId       `protobuf:"varint,2,opt,name=step_id,json=stepId,proto3,enum=saas.accounts.v1.OnboardingStepId" json:"step_id,omitempty"`
+	unknownFields  protoimpl.UnknownFields
+	sizeCache      protoimpl.SizeCache
 }
 
 func (x *CompleteOnboardingStepRequest) Reset() {
@@ -263,18 +542,27 @@ func (*CompleteOnboardingStepRequest) Descriptor() ([]byte, []int) {
 	return file_saas_accounts_v1_onboarding_proto_rawDescGZIP(), []int{3}
 }
 
-func (x *CompleteOnboardingStepRequest) GetStepName() string {
+func (x *CompleteOnboardingStepRequest) GetOrganizationId() string {
 	if x != nil {
-		return x.StepName
+		return x.OrganizationId
 	}
 	return ""
 }
 
+func (x *CompleteOnboardingStepRequest) GetStepId() OnboardingStepId {
+	if x != nil {
+		return x.StepId
+	}
+	return OnboardingStepId_ONBOARDING_STEP_ID_UNSPECIFIED
+}
+
 type SkipOnboardingStepRequest struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	StepName      string                 `protobuf:"bytes,1,opt,name=step_name,json=stepName,proto3" json:"step_name,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	state          protoimpl.MessageState `protogen:"open.v1"`
+	OrganizationId string                 `protobuf:"bytes,1,opt,name=organization_id,json=organizationId,proto3" json:"organization_id,omitempty"`
+	StepId         OnboardingStepId       `protobuf:"varint,2,opt,name=step_id,json=stepId,proto3,enum=saas.accounts.v1.OnboardingStepId" json:"step_id,omitempty"`
+	Reason         string                 `protobuf:"bytes,3,opt,name=reason,proto3" json:"reason,omitempty"`
+	unknownFields  protoimpl.UnknownFields
+	sizeCache      protoimpl.SizeCache
 }
 
 func (x *SkipOnboardingStepRequest) Reset() {
@@ -307,9 +595,23 @@ func (*SkipOnboardingStepRequest) Descriptor() ([]byte, []int) {
 	return file_saas_accounts_v1_onboarding_proto_rawDescGZIP(), []int{4}
 }
 
-func (x *SkipOnboardingStepRequest) GetStepName() string {
+func (x *SkipOnboardingStepRequest) GetOrganizationId() string {
 	if x != nil {
-		return x.StepName
+		return x.OrganizationId
+	}
+	return ""
+}
+
+func (x *SkipOnboardingStepRequest) GetStepId() OnboardingStepId {
+	if x != nil {
+		return x.StepId
+	}
+	return OnboardingStepId_ONBOARDING_STEP_ID_UNSPECIFIED
+}
+
+func (x *SkipOnboardingStepRequest) GetReason() string {
+	if x != nil {
+		return x.Reason
 	}
 	return ""
 }
@@ -318,28 +620,77 @@ var File_saas_accounts_v1_onboarding_proto protoreflect.FileDescriptor
 
 const file_saas_accounts_v1_onboarding_proto_rawDesc = "" +
 	"\n" +
-	"!saas/accounts/v1/onboarding.proto\x12\x10saas.accounts.v1\x1a\x1bbuf/validate/validate.proto\x1a\x1cgoogle/api/annotations.proto\x1a\x1fgoogle/protobuf/timestamp.proto\x1a\x1csaas/policy/v1/options.proto\"\xb5\x01\n" +
-	"\x0eOnboardingStep\x12$\n" +
-	"\tstep_name\x18\x01 \x01(\tB\a\xbaH\x04r\x02\x10\x01R\bstepName\x12>\n" +
-	"\x06status\x18\x02 \x01(\x0e2&.saas.accounts.v1.OnboardingStepStatusR\x06status\x12=\n" +
-	"\fcompleted_at\x18\x03 \x01(\v2\x1a.google.protobuf.TimestampR\vcompletedAt\"j\n" +
-	"\x12OnboardingProgress\x126\n" +
-	"\x05steps\x18\x01 \x03(\v2 .saas.accounts.v1.OnboardingStepR\x05steps\x12\x1c\n" +
-	"\tcompleted\x18\x02 \x01(\bR\tcompleted\"\x1e\n" +
-	"\x1cGetOnboardingProgressRequest\"E\n" +
-	"\x1dCompleteOnboardingStepRequest\x12$\n" +
-	"\tstep_name\x18\x01 \x01(\tB\a\xbaH\x04r\x02\x10\x01R\bstepName\"A\n" +
-	"\x19SkipOnboardingStepRequest\x12$\n" +
-	"\tstep_name\x18\x01 \x01(\tB\a\xbaH\x04r\x02\x10\x01R\bstepName*\xac\x01\n" +
+	"!saas/accounts/v1/onboarding.proto\x12\x10saas.accounts.v1\x1a\x1bbuf/validate/validate.proto\x1a\x1cgoogle/api/annotations.proto\x1a\x1fgoogle/protobuf/timestamp.proto\x1a\x1csaas/policy/v1/options.proto\"\x86\x05\n" +
+	"\x0eOnboardingStep\x12<\n" +
+	"\x02id\x18\x01 \x01(\x0e2\".saas.accounts.v1.OnboardingStepIdB\b\xbaH\x05\x82\x01\x02\x10\x01R\x02id\x12H\n" +
+	"\x06status\x18\x02 \x01(\x0e2&.saas.accounts.v1.OnboardingStepStatusB\b\xbaH\x05\x82\x01\x02\x10\x01R\x06status\x12\x1a\n" +
+	"\brequired\x18\x03 \x01(\bR\brequired\x12H\n" +
+	"\rprerequisites\x18\x04 \x03(\x0e2\".saas.accounts.v1.OnboardingStepIdR\rprerequisites\x12>\n" +
+	"\rfirst_seen_at\x18\x05 \x01(\v2\x1a.google.protobuf.TimestampR\vfirstSeenAt\x12<\n" +
+	"\flast_seen_at\x18\x06 \x01(\v2\x1a.google.protobuf.TimestampR\n" +
+	"lastSeenAt\x12=\n" +
+	"\fcompleted_at\x18\a \x01(\v2\x1a.google.protobuf.TimestampR\vcompletedAt\x129\n" +
+	"\n" +
+	"skipped_at\x18\b \x01(\v2\x1a.google.protobuf.TimestampR\tskippedAt\x12c\n" +
+	"\x11completion_method\x18\t \x01(\x0e2,.saas.accounts.v1.OnboardingCompletionMethodB\b\xbaH\x05\x82\x01\x02\x10\x01R\x10completionMethod\x12)\n" +
+	"\vskip_reason\x18\n" +
+	" \x01(\tB\b\xbaH\x05r\x03\x18\xf4\x03R\n" +
+	"skipReason\"\x88\x06\n" +
+	"\x12OnboardingProgress\x121\n" +
+	"\x0forganization_id\x18\x01 \x01(\tB\b\xbaH\x05r\x03\xb0\x01\x01R\x0eorganizationId\x12 \n" +
+	"\aflow_id\x18\x02 \x01(\tB\a\xbaH\x04r\x02\x10\x01R\x06flowId\x12*\n" +
+	"\fflow_version\x18\x03 \x01(\rB\a\xbaH\x04*\x02(\x01R\vflowVersion\x12!\n" +
+	"\avariant\x18\x04 \x01(\tB\a\xbaH\x04r\x02\x10\x01R\avariant\x12\x1a\n" +
+	"\baudience\x18\x05 \x01(\tR\baudience\x12\x18\n" +
+	"\apersona\x18\x06 \x01(\tR\apersona\x126\n" +
+	"\x05steps\x18\a \x03(\v2 .saas.accounts.v1.OnboardingStepR\x05steps\x12O\n" +
+	"\fcurrent_step\x18\b \x01(\x0e2\".saas.accounts.v1.OnboardingStepIdB\b\xbaH\x05\x82\x01\x02\x10\x01R\vcurrentStep\x12I\n" +
+	"\tnext_step\x18\t \x01(\x0e2\".saas.accounts.v1.OnboardingStepIdB\b\xbaH\x05\x82\x01\x02\x10\x01R\bnextStep\x12+\n" +
+	"\x11required_complete\x18\n" +
+	" \x01(\bR\x10requiredComplete\x12-\n" +
+	"\x12checklist_complete\x18\v \x01(\bR\x11checklistComplete\x12/\n" +
+	"\x13activation_achieved\x18\f \x01(\bR\x12activationAchieved\x129\n" +
+	"\n" +
+	"started_at\x18\r \x01(\v2\x1a.google.protobuf.TimestampR\tstartedAt\x12=\n" +
+	"\fcompleted_at\x18\x0e \x01(\v2\x1a.google.protobuf.TimestampR\vcompletedAt\x12=\n" +
+	"\factivated_at\x18\x0f \x01(\v2\x1a.google.protobuf.TimestampR\vactivatedAt\"Q\n" +
+	"\x1cGetOnboardingProgressRequest\x121\n" +
+	"\x0forganization_id\x18\x01 \x01(\tB\b\xbaH\x05r\x03\xb0\x01\x01R\x0eorganizationId\"\x9b\x01\n" +
+	"\x1dCompleteOnboardingStepRequest\x121\n" +
+	"\x0forganization_id\x18\x01 \x01(\tB\b\xbaH\x05r\x03\xb0\x01\x01R\x0eorganizationId\x12G\n" +
+	"\astep_id\x18\x02 \x01(\x0e2\".saas.accounts.v1.OnboardingStepIdB\n" +
+	"\xbaH\a\x82\x01\x04\x10\x01 \x00R\x06stepId\"\xb9\x01\n" +
+	"\x19SkipOnboardingStepRequest\x121\n" +
+	"\x0forganization_id\x18\x01 \x01(\tB\b\xbaH\x05r\x03\xb0\x01\x01R\x0eorganizationId\x12G\n" +
+	"\astep_id\x18\x02 \x01(\x0e2\".saas.accounts.v1.OnboardingStepIdB\n" +
+	"\xbaH\a\x82\x01\x04\x10\x01 \x00R\x06stepId\x12 \n" +
+	"\x06reason\x18\x03 \x01(\tB\b\xbaH\x05r\x03\x18\xf4\x03R\x06reason*\xd3\x01\n" +
+	"\x10OnboardingStepId\x12\"\n" +
+	"\x1eONBOARDING_STEP_ID_UNSPECIFIED\x10\x00\x12-\n" +
+	")ONBOARDING_STEP_ID_CONFIGURE_ORGANIZATION\x10\x01\x12\"\n" +
+	"\x1eONBOARDING_STEP_ID_INVITE_TEAM\x10\x02\x12\"\n" +
+	"\x1eONBOARDING_STEP_ID_CHOOSE_PLAN\x10\x03\x12$\n" +
+	" ONBOARDING_STEP_ID_SETUP_API_KEY\x10\x04*\xac\x01\n" +
 	"\x14OnboardingStepStatus\x12&\n" +
 	"\"ONBOARDING_STEP_STATUS_UNSPECIFIED\x10\x00\x12\"\n" +
 	"\x1eONBOARDING_STEP_STATUS_PENDING\x10\x01\x12$\n" +
 	" ONBOARDING_STEP_STATUS_COMPLETED\x10\x02\x12\"\n" +
-	"\x1eONBOARDING_STEP_STATUS_SKIPPED\x10\x032\xfd\x03\n" +
-	"\x11OnboardingService\x12\x93\x01\n" +
-	"\vGetProgress\x12..saas.accounts.v1.GetOnboardingProgressRequest\x1a$.saas.accounts.v1.OnboardingProgress\".\xc2\xf3\x18\x14\b\x02\x10\x020\x01:\x02\x10\x01@\x01H\x03P\x03X\x03`\x01\x82\xd3\xe4\x93\x02\x10\x12\x0e/v1/onboarding\x12\xad\x01\n" +
-	"\fCompleteStep\x12/.saas.accounts.v1.CompleteOnboardingStepRequest\x1a$.saas.accounts.v1.OnboardingProgress\"F\xc2\xf3\x18\x14\b\x02\x10\x020\x01:\x02\x10\x01@\x01H\x04P\x03X\x03`\x01\x82\xd3\xe4\x93\x02(:\x01*\"#/v1/onboarding/{step_name}:complete\x12\xa1\x01\n" +
-	"\bSkipStep\x12+.saas.accounts.v1.SkipOnboardingStepRequest\x1a$.saas.accounts.v1.OnboardingProgress\"B\xc2\xf3\x18\x14\b\x02\x10\x020\x01:\x02\x10\x01@\x01H\x04P\x03X\x03`\x01\x82\xd3\xe4\x93\x02$:\x01*\"\x1f/v1/onboarding/{step_name}:skipB\xb7\x01\n" +
+	"\x1eONBOARDING_STEP_STATUS_SKIPPED\x10\x03*\xfc\x01\n" +
+	"\x1aOnboardingCompletionMethod\x12,\n" +
+	"(ONBOARDING_COMPLETION_METHOD_UNSPECIFIED\x10\x00\x12)\n" +
+	"%ONBOARDING_COMPLETION_METHOD_DETECTED\x10\x01\x12.\n" +
+	"*ONBOARDING_COMPLETION_METHOD_DOMAIN_ACTION\x10\x02\x12*\n" +
+	"&ONBOARDING_COMPLETION_METHOD_USER_SKIP\x10\x03\x12)\n" +
+	"%ONBOARDING_COMPLETION_METHOD_MIGRATED\x10\x042\xd4\x05\n" +
+	"\x11OnboardingService\x12\xca\x01\n" +
+	"\vGetProgress\x12..saas.accounts.v1.GetOnboardingProgressRequest\x1a$.saas.accounts.v1.OnboardingProgress\"e\xc2\xf3\x18+\b\x02\x10\x03*\x15\n" +
+	"\x0forganization_id\x10\x02\x18\x010\x01:\x02\x10\x01@\x01H\x03P\x03X\x03`\x01\x82\xd3\xe4\x93\x020\x12./v1/organizations/{organization_id}/onboarding\x12\xfe\x01\n" +
+	"\fCompleteStep\x12/.saas.accounts.v1.CompleteOnboardingStepRequest\x1a$.saas.accounts.v1.OnboardingProgress\"\x96\x01\xc2\xf3\x18F\b\x02\x10\x03*\x15\n" +
+	"\x0forganization_id\x10\x02\x18\x010\x01:\x1d\n" +
+	"\x19onboarding.step_completed\x10\x02@\x01H\x04P\x03X\x03`\x01\x82\xd3\xe4\x93\x02F:\x01*\"A/v1/organizations/{organization_id}/onboarding/{step_id}:complete\x12\xf0\x01\n" +
+	"\bSkipStep\x12+.saas.accounts.v1.SkipOnboardingStepRequest\x1a$.saas.accounts.v1.OnboardingProgress\"\x90\x01\xc2\xf3\x18D\b\x02\x10\x03*\x15\n" +
+	"\x0forganization_id\x10\x02\x18\x010\x01:\x1b\n" +
+	"\x17onboarding.step_skipped\x10\x02@\x01H\x04P\x03X\x03`\x01\x82\xd3\xe4\x93\x02B:\x01*\"=/v1/organizations/{organization_id}/onboarding/{step_id}:skipB\xb7\x01\n" +
 	"\x14com.saas.accounts.v1B\x0fOnboardingProtoP\x01Z,accounts/pkg/gen/saas/accounts/v1;accountsv1\xa2\x02\x03SAX\xaa\x02\x10Saas.Accounts.V1\xca\x02\x10Saas\\Accounts\\V1\xe2\x02\x1cSaas\\Accounts\\V1\\GPBMetadata\xea\x02\x12Saas::Accounts::V1b\x06proto3"
 
 var (
@@ -354,32 +705,47 @@ func file_saas_accounts_v1_onboarding_proto_rawDescGZIP() []byte {
 	return file_saas_accounts_v1_onboarding_proto_rawDescData
 }
 
-var file_saas_accounts_v1_onboarding_proto_enumTypes = make([]protoimpl.EnumInfo, 1)
+var file_saas_accounts_v1_onboarding_proto_enumTypes = make([]protoimpl.EnumInfo, 3)
 var file_saas_accounts_v1_onboarding_proto_msgTypes = make([]protoimpl.MessageInfo, 5)
 var file_saas_accounts_v1_onboarding_proto_goTypes = []any{
-	(OnboardingStepStatus)(0),             // 0: saas.accounts.v1.OnboardingStepStatus
-	(*OnboardingStep)(nil),                // 1: saas.accounts.v1.OnboardingStep
-	(*OnboardingProgress)(nil),            // 2: saas.accounts.v1.OnboardingProgress
-	(*GetOnboardingProgressRequest)(nil),  // 3: saas.accounts.v1.GetOnboardingProgressRequest
-	(*CompleteOnboardingStepRequest)(nil), // 4: saas.accounts.v1.CompleteOnboardingStepRequest
-	(*SkipOnboardingStepRequest)(nil),     // 5: saas.accounts.v1.SkipOnboardingStepRequest
-	(*timestamppb.Timestamp)(nil),         // 6: google.protobuf.Timestamp
+	(OnboardingStepId)(0),                 // 0: saas.accounts.v1.OnboardingStepId
+	(OnboardingStepStatus)(0),             // 1: saas.accounts.v1.OnboardingStepStatus
+	(OnboardingCompletionMethod)(0),       // 2: saas.accounts.v1.OnboardingCompletionMethod
+	(*OnboardingStep)(nil),                // 3: saas.accounts.v1.OnboardingStep
+	(*OnboardingProgress)(nil),            // 4: saas.accounts.v1.OnboardingProgress
+	(*GetOnboardingProgressRequest)(nil),  // 5: saas.accounts.v1.GetOnboardingProgressRequest
+	(*CompleteOnboardingStepRequest)(nil), // 6: saas.accounts.v1.CompleteOnboardingStepRequest
+	(*SkipOnboardingStepRequest)(nil),     // 7: saas.accounts.v1.SkipOnboardingStepRequest
+	(*timestamppb.Timestamp)(nil),         // 8: google.protobuf.Timestamp
 }
 var file_saas_accounts_v1_onboarding_proto_depIdxs = []int32{
-	0, // 0: saas.accounts.v1.OnboardingStep.status:type_name -> saas.accounts.v1.OnboardingStepStatus
-	6, // 1: saas.accounts.v1.OnboardingStep.completed_at:type_name -> google.protobuf.Timestamp
-	1, // 2: saas.accounts.v1.OnboardingProgress.steps:type_name -> saas.accounts.v1.OnboardingStep
-	3, // 3: saas.accounts.v1.OnboardingService.GetProgress:input_type -> saas.accounts.v1.GetOnboardingProgressRequest
-	4, // 4: saas.accounts.v1.OnboardingService.CompleteStep:input_type -> saas.accounts.v1.CompleteOnboardingStepRequest
-	5, // 5: saas.accounts.v1.OnboardingService.SkipStep:input_type -> saas.accounts.v1.SkipOnboardingStepRequest
-	2, // 6: saas.accounts.v1.OnboardingService.GetProgress:output_type -> saas.accounts.v1.OnboardingProgress
-	2, // 7: saas.accounts.v1.OnboardingService.CompleteStep:output_type -> saas.accounts.v1.OnboardingProgress
-	2, // 8: saas.accounts.v1.OnboardingService.SkipStep:output_type -> saas.accounts.v1.OnboardingProgress
-	6, // [6:9] is the sub-list for method output_type
-	3, // [3:6] is the sub-list for method input_type
-	3, // [3:3] is the sub-list for extension type_name
-	3, // [3:3] is the sub-list for extension extendee
-	0, // [0:3] is the sub-list for field type_name
+	0,  // 0: saas.accounts.v1.OnboardingStep.id:type_name -> saas.accounts.v1.OnboardingStepId
+	1,  // 1: saas.accounts.v1.OnboardingStep.status:type_name -> saas.accounts.v1.OnboardingStepStatus
+	0,  // 2: saas.accounts.v1.OnboardingStep.prerequisites:type_name -> saas.accounts.v1.OnboardingStepId
+	8,  // 3: saas.accounts.v1.OnboardingStep.first_seen_at:type_name -> google.protobuf.Timestamp
+	8,  // 4: saas.accounts.v1.OnboardingStep.last_seen_at:type_name -> google.protobuf.Timestamp
+	8,  // 5: saas.accounts.v1.OnboardingStep.completed_at:type_name -> google.protobuf.Timestamp
+	8,  // 6: saas.accounts.v1.OnboardingStep.skipped_at:type_name -> google.protobuf.Timestamp
+	2,  // 7: saas.accounts.v1.OnboardingStep.completion_method:type_name -> saas.accounts.v1.OnboardingCompletionMethod
+	3,  // 8: saas.accounts.v1.OnboardingProgress.steps:type_name -> saas.accounts.v1.OnboardingStep
+	0,  // 9: saas.accounts.v1.OnboardingProgress.current_step:type_name -> saas.accounts.v1.OnboardingStepId
+	0,  // 10: saas.accounts.v1.OnboardingProgress.next_step:type_name -> saas.accounts.v1.OnboardingStepId
+	8,  // 11: saas.accounts.v1.OnboardingProgress.started_at:type_name -> google.protobuf.Timestamp
+	8,  // 12: saas.accounts.v1.OnboardingProgress.completed_at:type_name -> google.protobuf.Timestamp
+	8,  // 13: saas.accounts.v1.OnboardingProgress.activated_at:type_name -> google.protobuf.Timestamp
+	0,  // 14: saas.accounts.v1.CompleteOnboardingStepRequest.step_id:type_name -> saas.accounts.v1.OnboardingStepId
+	0,  // 15: saas.accounts.v1.SkipOnboardingStepRequest.step_id:type_name -> saas.accounts.v1.OnboardingStepId
+	5,  // 16: saas.accounts.v1.OnboardingService.GetProgress:input_type -> saas.accounts.v1.GetOnboardingProgressRequest
+	6,  // 17: saas.accounts.v1.OnboardingService.CompleteStep:input_type -> saas.accounts.v1.CompleteOnboardingStepRequest
+	7,  // 18: saas.accounts.v1.OnboardingService.SkipStep:input_type -> saas.accounts.v1.SkipOnboardingStepRequest
+	4,  // 19: saas.accounts.v1.OnboardingService.GetProgress:output_type -> saas.accounts.v1.OnboardingProgress
+	4,  // 20: saas.accounts.v1.OnboardingService.CompleteStep:output_type -> saas.accounts.v1.OnboardingProgress
+	4,  // 21: saas.accounts.v1.OnboardingService.SkipStep:output_type -> saas.accounts.v1.OnboardingProgress
+	19, // [19:22] is the sub-list for method output_type
+	16, // [16:19] is the sub-list for method input_type
+	16, // [16:16] is the sub-list for extension type_name
+	16, // [16:16] is the sub-list for extension extendee
+	0,  // [0:16] is the sub-list for field type_name
 }
 
 func init() { file_saas_accounts_v1_onboarding_proto_init() }
@@ -392,7 +758,7 @@ func file_saas_accounts_v1_onboarding_proto_init() {
 		File: protoimpl.DescBuilder{
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_saas_accounts_v1_onboarding_proto_rawDesc), len(file_saas_accounts_v1_onboarding_proto_rawDesc)),
-			NumEnums:      1,
+			NumEnums:      3,
 			NumMessages:   5,
 			NumExtensions: 0,
 			NumServices:   1,

@@ -82,18 +82,132 @@ func (InvitationStatus) EnumDescriptor() ([]byte, []int) {
 	return file_saas_accounts_v1_invitations_proto_rawDescGZIP(), []int{0}
 }
 
+type InvitationRole int32
+
+const (
+	InvitationRole_INVITATION_ROLE_UNSPECIFIED InvitationRole = 0
+	InvitationRole_INVITATION_ROLE_MEMBER      InvitationRole = 1
+	InvitationRole_INVITATION_ROLE_ADMIN       InvitationRole = 2
+)
+
+// Enum value maps for InvitationRole.
+var (
+	InvitationRole_name = map[int32]string{
+		0: "INVITATION_ROLE_UNSPECIFIED",
+		1: "INVITATION_ROLE_MEMBER",
+		2: "INVITATION_ROLE_ADMIN",
+	}
+	InvitationRole_value = map[string]int32{
+		"INVITATION_ROLE_UNSPECIFIED": 0,
+		"INVITATION_ROLE_MEMBER":      1,
+		"INVITATION_ROLE_ADMIN":       2,
+	}
+)
+
+func (x InvitationRole) Enum() *InvitationRole {
+	p := new(InvitationRole)
+	*p = x
+	return p
+}
+
+func (x InvitationRole) String() string {
+	return protoimpl.X.EnumStringOf(x.Descriptor(), protoreflect.EnumNumber(x))
+}
+
+func (InvitationRole) Descriptor() protoreflect.EnumDescriptor {
+	return file_saas_accounts_v1_invitations_proto_enumTypes[1].Descriptor()
+}
+
+func (InvitationRole) Type() protoreflect.EnumType {
+	return &file_saas_accounts_v1_invitations_proto_enumTypes[1]
+}
+
+func (x InvitationRole) Number() protoreflect.EnumNumber {
+	return protoreflect.EnumNumber(x)
+}
+
+// Deprecated: Use InvitationRole.Descriptor instead.
+func (InvitationRole) EnumDescriptor() ([]byte, []int) {
+	return file_saas_accounts_v1_invitations_proto_rawDescGZIP(), []int{1}
+}
+
+type InvitationDeliveryStatus int32
+
+const (
+	InvitationDeliveryStatus_INVITATION_DELIVERY_STATUS_UNSPECIFIED InvitationDeliveryStatus = 0
+	InvitationDeliveryStatus_INVITATION_DELIVERY_STATUS_DISABLED    InvitationDeliveryStatus = 1
+	InvitationDeliveryStatus_INVITATION_DELIVERY_STATUS_QUEUED      InvitationDeliveryStatus = 2
+	InvitationDeliveryStatus_INVITATION_DELIVERY_STATUS_SENT        InvitationDeliveryStatus = 3
+	InvitationDeliveryStatus_INVITATION_DELIVERY_STATUS_DELIVERED   InvitationDeliveryStatus = 4
+	InvitationDeliveryStatus_INVITATION_DELIVERY_STATUS_BOUNCED     InvitationDeliveryStatus = 5
+	InvitationDeliveryStatus_INVITATION_DELIVERY_STATUS_COMPLAINED  InvitationDeliveryStatus = 6
+)
+
+// Enum value maps for InvitationDeliveryStatus.
+var (
+	InvitationDeliveryStatus_name = map[int32]string{
+		0: "INVITATION_DELIVERY_STATUS_UNSPECIFIED",
+		1: "INVITATION_DELIVERY_STATUS_DISABLED",
+		2: "INVITATION_DELIVERY_STATUS_QUEUED",
+		3: "INVITATION_DELIVERY_STATUS_SENT",
+		4: "INVITATION_DELIVERY_STATUS_DELIVERED",
+		5: "INVITATION_DELIVERY_STATUS_BOUNCED",
+		6: "INVITATION_DELIVERY_STATUS_COMPLAINED",
+	}
+	InvitationDeliveryStatus_value = map[string]int32{
+		"INVITATION_DELIVERY_STATUS_UNSPECIFIED": 0,
+		"INVITATION_DELIVERY_STATUS_DISABLED":    1,
+		"INVITATION_DELIVERY_STATUS_QUEUED":      2,
+		"INVITATION_DELIVERY_STATUS_SENT":        3,
+		"INVITATION_DELIVERY_STATUS_DELIVERED":   4,
+		"INVITATION_DELIVERY_STATUS_BOUNCED":     5,
+		"INVITATION_DELIVERY_STATUS_COMPLAINED":  6,
+	}
+)
+
+func (x InvitationDeliveryStatus) Enum() *InvitationDeliveryStatus {
+	p := new(InvitationDeliveryStatus)
+	*p = x
+	return p
+}
+
+func (x InvitationDeliveryStatus) String() string {
+	return protoimpl.X.EnumStringOf(x.Descriptor(), protoreflect.EnumNumber(x))
+}
+
+func (InvitationDeliveryStatus) Descriptor() protoreflect.EnumDescriptor {
+	return file_saas_accounts_v1_invitations_proto_enumTypes[2].Descriptor()
+}
+
+func (InvitationDeliveryStatus) Type() protoreflect.EnumType {
+	return &file_saas_accounts_v1_invitations_proto_enumTypes[2]
+}
+
+func (x InvitationDeliveryStatus) Number() protoreflect.EnumNumber {
+	return protoreflect.EnumNumber(x)
+}
+
+// Deprecated: Use InvitationDeliveryStatus.Descriptor instead.
+func (InvitationDeliveryStatus) EnumDescriptor() ([]byte, []int) {
+	return file_saas_accounts_v1_invitations_proto_rawDescGZIP(), []int{2}
+}
+
 type Invitation struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Id            string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
-	OrgId         string                 `protobuf:"bytes,2,opt,name=org_id,json=orgId,proto3" json:"org_id,omitempty"`
-	InviterId     string                 `protobuf:"bytes,3,opt,name=inviter_id,json=inviterId,proto3" json:"inviter_id,omitempty"`
-	Email         string                 `protobuf:"bytes,4,opt,name=email,proto3" json:"email,omitempty"`
-	Role          string                 `protobuf:"bytes,5,opt,name=role,proto3" json:"role,omitempty"`
-	Status        InvitationStatus       `protobuf:"varint,6,opt,name=status,proto3,enum=saas.accounts.v1.InvitationStatus" json:"status,omitempty"`
-	ExpiresAt     *timestamppb.Timestamp `protobuf:"bytes,7,opt,name=expires_at,json=expiresAt,proto3" json:"expires_at,omitempty"`
-	CreatedAt     *timestamppb.Timestamp `protobuf:"bytes,8,opt,name=created_at,json=createdAt,proto3" json:"created_at,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	state              protoimpl.MessageState   `protogen:"open.v1"`
+	Id                 string                   `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
+	OrgId              string                   `protobuf:"bytes,2,opt,name=org_id,json=orgId,proto3" json:"org_id,omitempty"`
+	InviterId          string                   `protobuf:"bytes,3,opt,name=inviter_id,json=inviterId,proto3" json:"inviter_id,omitempty"`
+	InviterDisplayName string                   `protobuf:"bytes,4,opt,name=inviter_display_name,json=inviterDisplayName,proto3" json:"inviter_display_name,omitempty"`
+	Email              string                   `protobuf:"bytes,5,opt,name=email,proto3" json:"email,omitempty"`
+	Role               InvitationRole           `protobuf:"varint,6,opt,name=role,proto3,enum=saas.accounts.v1.InvitationRole" json:"role,omitempty"`
+	Status             InvitationStatus         `protobuf:"varint,7,opt,name=status,proto3,enum=saas.accounts.v1.InvitationStatus" json:"status,omitempty"`
+	DeliveryStatus     InvitationDeliveryStatus `protobuf:"varint,8,opt,name=delivery_status,json=deliveryStatus,proto3,enum=saas.accounts.v1.InvitationDeliveryStatus" json:"delivery_status,omitempty"`
+	ExpiresAt          *timestamppb.Timestamp   `protobuf:"bytes,9,opt,name=expires_at,json=expiresAt,proto3" json:"expires_at,omitempty"`
+	CreatedAt          *timestamppb.Timestamp   `protobuf:"bytes,10,opt,name=created_at,json=createdAt,proto3" json:"created_at,omitempty"`
+	LastSentAt         *timestamppb.Timestamp   `protobuf:"bytes,11,opt,name=last_sent_at,json=lastSentAt,proto3" json:"last_sent_at,omitempty"`
+	SendCount          uint32                   `protobuf:"varint,12,opt,name=send_count,json=sendCount,proto3" json:"send_count,omitempty"`
+	unknownFields      protoimpl.UnknownFields
+	sizeCache          protoimpl.SizeCache
 }
 
 func (x *Invitation) Reset() {
@@ -147,6 +261,13 @@ func (x *Invitation) GetInviterId() string {
 	return ""
 }
 
+func (x *Invitation) GetInviterDisplayName() string {
+	if x != nil {
+		return x.InviterDisplayName
+	}
+	return ""
+}
+
 func (x *Invitation) GetEmail() string {
 	if x != nil {
 		return x.Email
@@ -154,11 +275,11 @@ func (x *Invitation) GetEmail() string {
 	return ""
 }
 
-func (x *Invitation) GetRole() string {
+func (x *Invitation) GetRole() InvitationRole {
 	if x != nil {
 		return x.Role
 	}
-	return ""
+	return InvitationRole_INVITATION_ROLE_UNSPECIFIED
 }
 
 func (x *Invitation) GetStatus() InvitationStatus {
@@ -166,6 +287,13 @@ func (x *Invitation) GetStatus() InvitationStatus {
 		return x.Status
 	}
 	return InvitationStatus_INVITATION_STATUS_UNSPECIFIED
+}
+
+func (x *Invitation) GetDeliveryStatus() InvitationDeliveryStatus {
+	if x != nil {
+		return x.DeliveryStatus
+	}
+	return InvitationDeliveryStatus_INVITATION_DELIVERY_STATUS_UNSPECIFIED
 }
 
 func (x *Invitation) GetExpiresAt() *timestamppb.Timestamp {
@@ -182,18 +310,100 @@ func (x *Invitation) GetCreatedAt() *timestamppb.Timestamp {
 	return nil
 }
 
+func (x *Invitation) GetLastSentAt() *timestamppb.Timestamp {
+	if x != nil {
+		return x.LastSentAt
+	}
+	return nil
+}
+
+func (x *Invitation) GetSendCount() uint32 {
+	if x != nil {
+		return x.SendCount
+	}
+	return 0
+}
+
+type InvitationSummary struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Status        InvitationStatus       `protobuf:"varint,1,opt,name=status,proto3,enum=saas.accounts.v1.InvitationStatus" json:"status,omitempty"`
+	Role          InvitationRole         `protobuf:"varint,2,opt,name=role,proto3,enum=saas.accounts.v1.InvitationRole" json:"role,omitempty"`
+	EmailHint     string                 `protobuf:"bytes,3,opt,name=email_hint,json=emailHint,proto3" json:"email_hint,omitempty"`
+	ExpiresAt     *timestamppb.Timestamp `protobuf:"bytes,4,opt,name=expires_at,json=expiresAt,proto3" json:"expires_at,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *InvitationSummary) Reset() {
+	*x = InvitationSummary{}
+	mi := &file_saas_accounts_v1_invitations_proto_msgTypes[1]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *InvitationSummary) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*InvitationSummary) ProtoMessage() {}
+
+func (x *InvitationSummary) ProtoReflect() protoreflect.Message {
+	mi := &file_saas_accounts_v1_invitations_proto_msgTypes[1]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use InvitationSummary.ProtoReflect.Descriptor instead.
+func (*InvitationSummary) Descriptor() ([]byte, []int) {
+	return file_saas_accounts_v1_invitations_proto_rawDescGZIP(), []int{1}
+}
+
+func (x *InvitationSummary) GetStatus() InvitationStatus {
+	if x != nil {
+		return x.Status
+	}
+	return InvitationStatus_INVITATION_STATUS_UNSPECIFIED
+}
+
+func (x *InvitationSummary) GetRole() InvitationRole {
+	if x != nil {
+		return x.Role
+	}
+	return InvitationRole_INVITATION_ROLE_UNSPECIFIED
+}
+
+func (x *InvitationSummary) GetEmailHint() string {
+	if x != nil {
+		return x.EmailHint
+	}
+	return ""
+}
+
+func (x *InvitationSummary) GetExpiresAt() *timestamppb.Timestamp {
+	if x != nil {
+		return x.ExpiresAt
+	}
+	return nil
+}
+
 type CreateInvitationRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	OrgId         string                 `protobuf:"bytes,1,opt,name=org_id,json=orgId,proto3" json:"org_id,omitempty"`
 	Email         string                 `protobuf:"bytes,2,opt,name=email,proto3" json:"email,omitempty"`
-	Role          string                 `protobuf:"bytes,3,opt,name=role,proto3" json:"role,omitempty"`
+	Role          InvitationRole         `protobuf:"varint,3,opt,name=role,proto3,enum=saas.accounts.v1.InvitationRole" json:"role,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
 
 func (x *CreateInvitationRequest) Reset() {
 	*x = CreateInvitationRequest{}
-	mi := &file_saas_accounts_v1_invitations_proto_msgTypes[1]
+	mi := &file_saas_accounts_v1_invitations_proto_msgTypes[2]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -205,7 +415,7 @@ func (x *CreateInvitationRequest) String() string {
 func (*CreateInvitationRequest) ProtoMessage() {}
 
 func (x *CreateInvitationRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_saas_accounts_v1_invitations_proto_msgTypes[1]
+	mi := &file_saas_accounts_v1_invitations_proto_msgTypes[2]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -218,7 +428,7 @@ func (x *CreateInvitationRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CreateInvitationRequest.ProtoReflect.Descriptor instead.
 func (*CreateInvitationRequest) Descriptor() ([]byte, []int) {
-	return file_saas_accounts_v1_invitations_proto_rawDescGZIP(), []int{1}
+	return file_saas_accounts_v1_invitations_proto_rawDescGZIP(), []int{2}
 }
 
 func (x *CreateInvitationRequest) GetOrgId() string {
@@ -235,24 +445,23 @@ func (x *CreateInvitationRequest) GetEmail() string {
 	return ""
 }
 
-func (x *CreateInvitationRequest) GetRole() string {
+func (x *CreateInvitationRequest) GetRole() InvitationRole {
 	if x != nil {
 		return x.Role
 	}
-	return ""
+	return InvitationRole_INVITATION_ROLE_UNSPECIFIED
 }
 
 type CreateInvitationResponse struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Invitation    *Invitation            `protobuf:"bytes,1,opt,name=invitation,proto3" json:"invitation,omitempty"`
-	InviteToken   string                 `protobuf:"bytes,2,opt,name=invite_token,json=inviteToken,proto3" json:"invite_token,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
 
 func (x *CreateInvitationResponse) Reset() {
 	*x = CreateInvitationResponse{}
-	mi := &file_saas_accounts_v1_invitations_proto_msgTypes[2]
+	mi := &file_saas_accounts_v1_invitations_proto_msgTypes[3]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -264,7 +473,7 @@ func (x *CreateInvitationResponse) String() string {
 func (*CreateInvitationResponse) ProtoMessage() {}
 
 func (x *CreateInvitationResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_saas_accounts_v1_invitations_proto_msgTypes[2]
+	mi := &file_saas_accounts_v1_invitations_proto_msgTypes[3]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -277,7 +486,7 @@ func (x *CreateInvitationResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CreateInvitationResponse.ProtoReflect.Descriptor instead.
 func (*CreateInvitationResponse) Descriptor() ([]byte, []int) {
-	return file_saas_accounts_v1_invitations_proto_rawDescGZIP(), []int{2}
+	return file_saas_accounts_v1_invitations_proto_rawDescGZIP(), []int{3}
 }
 
 func (x *CreateInvitationResponse) GetInvitation() *Invitation {
@@ -287,23 +496,64 @@ func (x *CreateInvitationResponse) GetInvitation() *Invitation {
 	return nil
 }
 
-func (x *CreateInvitationResponse) GetInviteToken() string {
-	if x != nil {
-		return x.InviteToken
-	}
-	return ""
-}
-
-type AcceptInvitationRequest struct {
+type InspectInvitationRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Token         string                 `protobuf:"bytes,1,opt,name=token,proto3" json:"token,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
 
+func (x *InspectInvitationRequest) Reset() {
+	*x = InspectInvitationRequest{}
+	mi := &file_saas_accounts_v1_invitations_proto_msgTypes[4]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *InspectInvitationRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*InspectInvitationRequest) ProtoMessage() {}
+
+func (x *InspectInvitationRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_saas_accounts_v1_invitations_proto_msgTypes[4]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use InspectInvitationRequest.ProtoReflect.Descriptor instead.
+func (*InspectInvitationRequest) Descriptor() ([]byte, []int) {
+	return file_saas_accounts_v1_invitations_proto_rawDescGZIP(), []int{4}
+}
+
+func (x *InspectInvitationRequest) GetToken() string {
+	if x != nil {
+		return x.Token
+	}
+	return ""
+}
+
+type AcceptInvitationRequest struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// Types that are valid to be assigned to Credential:
+	//
+	//	*AcceptInvitationRequest_Token
+	//	*AcceptInvitationRequest_InvitationId
+	Credential    isAcceptInvitationRequest_Credential `protobuf_oneof:"credential"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
 func (x *AcceptInvitationRequest) Reset() {
 	*x = AcceptInvitationRequest{}
-	mi := &file_saas_accounts_v1_invitations_proto_msgTypes[3]
+	mi := &file_saas_accounts_v1_invitations_proto_msgTypes[5]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -315,7 +565,7 @@ func (x *AcceptInvitationRequest) String() string {
 func (*AcceptInvitationRequest) ProtoMessage() {}
 
 func (x *AcceptInvitationRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_saas_accounts_v1_invitations_proto_msgTypes[3]
+	mi := &file_saas_accounts_v1_invitations_proto_msgTypes[5]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -328,26 +578,61 @@ func (x *AcceptInvitationRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use AcceptInvitationRequest.ProtoReflect.Descriptor instead.
 func (*AcceptInvitationRequest) Descriptor() ([]byte, []int) {
-	return file_saas_accounts_v1_invitations_proto_rawDescGZIP(), []int{3}
+	return file_saas_accounts_v1_invitations_proto_rawDescGZIP(), []int{5}
+}
+
+func (x *AcceptInvitationRequest) GetCredential() isAcceptInvitationRequest_Credential {
+	if x != nil {
+		return x.Credential
+	}
+	return nil
 }
 
 func (x *AcceptInvitationRequest) GetToken() string {
 	if x != nil {
-		return x.Token
+		if x, ok := x.Credential.(*AcceptInvitationRequest_Token); ok {
+			return x.Token
+		}
 	}
 	return ""
 }
 
+func (x *AcceptInvitationRequest) GetInvitationId() string {
+	if x != nil {
+		if x, ok := x.Credential.(*AcceptInvitationRequest_InvitationId); ok {
+			return x.InvitationId
+		}
+	}
+	return ""
+}
+
+type isAcceptInvitationRequest_Credential interface {
+	isAcceptInvitationRequest_Credential()
+}
+
+type AcceptInvitationRequest_Token struct {
+	Token string `protobuf:"bytes,1,opt,name=token,proto3,oneof"`
+}
+
+type AcceptInvitationRequest_InvitationId struct {
+	InvitationId string `protobuf:"bytes,2,opt,name=invitation_id,json=invitationId,proto3,oneof"`
+}
+
+func (*AcceptInvitationRequest_Token) isAcceptInvitationRequest_Credential() {}
+
+func (*AcceptInvitationRequest_InvitationId) isAcceptInvitationRequest_Credential() {}
+
 type AcceptInvitationResponse struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Organization  *Organization          `protobuf:"bytes,1,opt,name=organization,proto3" json:"organization,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	state           protoimpl.MessageState `protogen:"open.v1"`
+	Organization    *Organization          `protobuf:"bytes,1,opt,name=organization,proto3" json:"organization,omitempty"`
+	AlreadyAccepted bool                   `protobuf:"varint,2,opt,name=already_accepted,json=alreadyAccepted,proto3" json:"already_accepted,omitempty"`
+	unknownFields   protoimpl.UnknownFields
+	sizeCache       protoimpl.SizeCache
 }
 
 func (x *AcceptInvitationResponse) Reset() {
 	*x = AcceptInvitationResponse{}
-	mi := &file_saas_accounts_v1_invitations_proto_msgTypes[4]
+	mi := &file_saas_accounts_v1_invitations_proto_msgTypes[6]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -359,7 +644,7 @@ func (x *AcceptInvitationResponse) String() string {
 func (*AcceptInvitationResponse) ProtoMessage() {}
 
 func (x *AcceptInvitationResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_saas_accounts_v1_invitations_proto_msgTypes[4]
+	mi := &file_saas_accounts_v1_invitations_proto_msgTypes[6]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -372,7 +657,7 @@ func (x *AcceptInvitationResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use AcceptInvitationResponse.ProtoReflect.Descriptor instead.
 func (*AcceptInvitationResponse) Descriptor() ([]byte, []int) {
-	return file_saas_accounts_v1_invitations_proto_rawDescGZIP(), []int{4}
+	return file_saas_accounts_v1_invitations_proto_rawDescGZIP(), []int{6}
 }
 
 func (x *AcceptInvitationResponse) GetOrganization() *Organization {
@@ -380,6 +665,13 @@ func (x *AcceptInvitationResponse) GetOrganization() *Organization {
 		return x.Organization
 	}
 	return nil
+}
+
+func (x *AcceptInvitationResponse) GetAlreadyAccepted() bool {
+	if x != nil {
+		return x.AlreadyAccepted
+	}
+	return false
 }
 
 type ListInvitationsRequest struct {
@@ -392,7 +684,7 @@ type ListInvitationsRequest struct {
 
 func (x *ListInvitationsRequest) Reset() {
 	*x = ListInvitationsRequest{}
-	mi := &file_saas_accounts_v1_invitations_proto_msgTypes[5]
+	mi := &file_saas_accounts_v1_invitations_proto_msgTypes[7]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -404,7 +696,7 @@ func (x *ListInvitationsRequest) String() string {
 func (*ListInvitationsRequest) ProtoMessage() {}
 
 func (x *ListInvitationsRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_saas_accounts_v1_invitations_proto_msgTypes[5]
+	mi := &file_saas_accounts_v1_invitations_proto_msgTypes[7]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -417,7 +709,7 @@ func (x *ListInvitationsRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListInvitationsRequest.ProtoReflect.Descriptor instead.
 func (*ListInvitationsRequest) Descriptor() ([]byte, []int) {
-	return file_saas_accounts_v1_invitations_proto_rawDescGZIP(), []int{5}
+	return file_saas_accounts_v1_invitations_proto_rawDescGZIP(), []int{7}
 }
 
 func (x *ListInvitationsRequest) GetOrgId() string {
@@ -443,7 +735,7 @@ type ListInvitationsResponse struct {
 
 func (x *ListInvitationsResponse) Reset() {
 	*x = ListInvitationsResponse{}
-	mi := &file_saas_accounts_v1_invitations_proto_msgTypes[6]
+	mi := &file_saas_accounts_v1_invitations_proto_msgTypes[8]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -455,7 +747,7 @@ func (x *ListInvitationsResponse) String() string {
 func (*ListInvitationsResponse) ProtoMessage() {}
 
 func (x *ListInvitationsResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_saas_accounts_v1_invitations_proto_msgTypes[6]
+	mi := &file_saas_accounts_v1_invitations_proto_msgTypes[8]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -468,7 +760,7 @@ func (x *ListInvitationsResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListInvitationsResponse.ProtoReflect.Descriptor instead.
 func (*ListInvitationsResponse) Descriptor() ([]byte, []int) {
-	return file_saas_accounts_v1_invitations_proto_rawDescGZIP(), []int{6}
+	return file_saas_accounts_v1_invitations_proto_rawDescGZIP(), []int{8}
 }
 
 func (x *ListInvitationsResponse) GetInvitations() []*Invitation {
@@ -487,7 +779,7 @@ type RevokeInvitationRequest struct {
 
 func (x *RevokeInvitationRequest) Reset() {
 	*x = RevokeInvitationRequest{}
-	mi := &file_saas_accounts_v1_invitations_proto_msgTypes[7]
+	mi := &file_saas_accounts_v1_invitations_proto_msgTypes[9]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -499,7 +791,7 @@ func (x *RevokeInvitationRequest) String() string {
 func (*RevokeInvitationRequest) ProtoMessage() {}
 
 func (x *RevokeInvitationRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_saas_accounts_v1_invitations_proto_msgTypes[7]
+	mi := &file_saas_accounts_v1_invitations_proto_msgTypes[9]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -512,10 +804,54 @@ func (x *RevokeInvitationRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RevokeInvitationRequest.ProtoReflect.Descriptor instead.
 func (*RevokeInvitationRequest) Descriptor() ([]byte, []int) {
-	return file_saas_accounts_v1_invitations_proto_rawDescGZIP(), []int{7}
+	return file_saas_accounts_v1_invitations_proto_rawDescGZIP(), []int{9}
 }
 
 func (x *RevokeInvitationRequest) GetId() string {
+	if x != nil {
+		return x.Id
+	}
+	return ""
+}
+
+type ResendInvitationRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Id            string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ResendInvitationRequest) Reset() {
+	*x = ResendInvitationRequest{}
+	mi := &file_saas_accounts_v1_invitations_proto_msgTypes[10]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ResendInvitationRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ResendInvitationRequest) ProtoMessage() {}
+
+func (x *ResendInvitationRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_saas_accounts_v1_invitations_proto_msgTypes[10]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ResendInvitationRequest.ProtoReflect.Descriptor instead.
+func (*ResendInvitationRequest) Descriptor() ([]byte, []int) {
+	return file_saas_accounts_v1_invitations_proto_rawDescGZIP(), []int{10}
+}
+
+func (x *ResendInvitationRequest) GetId() string {
 	if x != nil {
 		return x.Id
 	}
@@ -526,55 +862,95 @@ var File_saas_accounts_v1_invitations_proto protoreflect.FileDescriptor
 
 const file_saas_accounts_v1_invitations_proto_rawDesc = "" +
 	"\n" +
-	"\"saas/accounts/v1/invitations.proto\x12\x10saas.accounts.v1\x1a\x1bbuf/validate/validate.proto\x1a\x1cgoogle/api/annotations.proto\x1a\x1bgoogle/protobuf/empty.proto\x1a\x1fgoogle/protobuf/timestamp.proto\x1a\x1dsaas/accounts/v1/common.proto\x1a\x1csaas/policy/v1/options.proto\"\xae\x02\n" +
+	"\"saas/accounts/v1/invitations.proto\x12\x10saas.accounts.v1\x1a\x1bbuf/validate/validate.proto\x1a\x1cgoogle/api/annotations.proto\x1a\x1bgoogle/protobuf/empty.proto\x1a\x1fgoogle/protobuf/timestamp.proto\x1a\x1dsaas/accounts/v1/common.proto\x1a\x1csaas/policy/v1/options.proto\"\xd2\x04\n" +
 	"\n" +
 	"Invitation\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x15\n" +
 	"\x06org_id\x18\x02 \x01(\tR\x05orgId\x12\x1d\n" +
 	"\n" +
-	"inviter_id\x18\x03 \x01(\tR\tinviterId\x12\x14\n" +
-	"\x05email\x18\x04 \x01(\tR\x05email\x12\x12\n" +
-	"\x04role\x18\x05 \x01(\tR\x04role\x12:\n" +
-	"\x06status\x18\x06 \x01(\x0e2\".saas.accounts.v1.InvitationStatusR\x06status\x129\n" +
+	"inviter_id\x18\x03 \x01(\tR\tinviterId\x120\n" +
+	"\x14inviter_display_name\x18\x04 \x01(\tR\x12inviterDisplayName\x12\x14\n" +
+	"\x05email\x18\x05 \x01(\tR\x05email\x12>\n" +
+	"\x04role\x18\x06 \x01(\x0e2 .saas.accounts.v1.InvitationRoleB\b\xbaH\x05\x82\x01\x02\x10\x01R\x04role\x12D\n" +
+	"\x06status\x18\a \x01(\x0e2\".saas.accounts.v1.InvitationStatusB\b\xbaH\x05\x82\x01\x02\x10\x01R\x06status\x12]\n" +
+	"\x0fdelivery_status\x18\b \x01(\x0e2*.saas.accounts.v1.InvitationDeliveryStatusB\b\xbaH\x05\x82\x01\x02\x10\x01R\x0edeliveryStatus\x129\n" +
 	"\n" +
-	"expires_at\x18\a \x01(\v2\x1a.google.protobuf.TimestampR\texpiresAt\x129\n" +
+	"expires_at\x18\t \x01(\v2\x1a.google.protobuf.TimestampR\texpiresAt\x129\n" +
 	"\n" +
-	"created_at\x18\b \x01(\v2\x1a.google.protobuf.TimestampR\tcreatedAt\"m\n" +
+	"created_at\x18\n" +
+	" \x01(\v2\x1a.google.protobuf.TimestampR\tcreatedAt\x12<\n" +
+	"\flast_sent_at\x18\v \x01(\v2\x1a.google.protobuf.TimestampR\n" +
+	"lastSentAt\x12\x1d\n" +
+	"\n" +
+	"send_count\x18\f \x01(\rR\tsendCount\"\xf3\x01\n" +
+	"\x11InvitationSummary\x12D\n" +
+	"\x06status\x18\x01 \x01(\x0e2\".saas.accounts.v1.InvitationStatusB\b\xbaH\x05\x82\x01\x02\x10\x01R\x06status\x12>\n" +
+	"\x04role\x18\x02 \x01(\x0e2 .saas.accounts.v1.InvitationRoleB\b\xbaH\x05\x82\x01\x02\x10\x01R\x04role\x12\x1d\n" +
+	"\n" +
+	"email_hint\x18\x03 \x01(\tR\temailHint\x129\n" +
+	"\n" +
+	"expires_at\x18\x04 \x01(\v2\x1a.google.protobuf.TimestampR\texpiresAt\"\x9b\x01\n" +
 	"\x17CreateInvitationRequest\x12\x1f\n" +
 	"\x06org_id\x18\x01 \x01(\tB\b\xbaH\x05r\x03\xb0\x01\x01R\x05orgId\x12\x1d\n" +
-	"\x05email\x18\x02 \x01(\tB\a\xbaH\x04r\x02`\x01R\x05email\x12\x12\n" +
-	"\x04role\x18\x03 \x01(\tR\x04role\"{\n" +
+	"\x05email\x18\x02 \x01(\tB\a\xbaH\x04r\x02`\x01R\x05email\x12@\n" +
+	"\x04role\x18\x03 \x01(\x0e2 .saas.accounts.v1.InvitationRoleB\n" +
+	"\xbaH\a\x82\x01\x04\x10\x01 \x00R\x04role\"X\n" +
 	"\x18CreateInvitationResponse\x12<\n" +
 	"\n" +
 	"invitation\x18\x01 \x01(\v2\x1c.saas.accounts.v1.InvitationR\n" +
-	"invitation\x12!\n" +
-	"\finvite_token\x18\x02 \x01(\tR\vinviteToken\"8\n" +
-	"\x17AcceptInvitationRequest\x12\x1d\n" +
-	"\x05token\x18\x01 \x01(\tB\a\xbaH\x04r\x02\x10\x01R\x05token\"^\n" +
+	"invitation\"<\n" +
+	"\x18InspectInvitationRequest\x12 \n" +
+	"\x05token\x18\x01 \x01(\tB\n" +
+	"\xbaH\ar\x05\x10 \x18\x80\x04R\x05token\"\x83\x01\n" +
+	"\x17AcceptInvitationRequest\x12\"\n" +
+	"\x05token\x18\x01 \x01(\tB\n" +
+	"\xbaH\ar\x05\x10 \x18\x80\x04H\x00R\x05token\x12/\n" +
+	"\rinvitation_id\x18\x02 \x01(\tB\b\xbaH\x05r\x03\xb0\x01\x01H\x00R\finvitationIdB\x13\n" +
+	"\n" +
+	"credential\x12\x05\xbaH\x02\b\x01\"\x89\x01\n" +
 	"\x18AcceptInvitationResponse\x12B\n" +
-	"\forganization\x18\x01 \x01(\v2\x1e.saas.accounts.v1.OrganizationR\forganization\"u\n" +
+	"\forganization\x18\x01 \x01(\v2\x1e.saas.accounts.v1.OrganizationR\forganization\x12)\n" +
+	"\x10already_accepted\x18\x02 \x01(\bR\x0falreadyAccepted\"\x7f\n" +
 	"\x16ListInvitationsRequest\x12\x1f\n" +
-	"\x06org_id\x18\x01 \x01(\tB\b\xbaH\x05r\x03\xb0\x01\x01R\x05orgId\x12:\n" +
-	"\x06status\x18\x02 \x01(\x0e2\".saas.accounts.v1.InvitationStatusR\x06status\"Y\n" +
+	"\x06org_id\x18\x01 \x01(\tB\b\xbaH\x05r\x03\xb0\x01\x01R\x05orgId\x12D\n" +
+	"\x06status\x18\x02 \x01(\x0e2\".saas.accounts.v1.InvitationStatusB\b\xbaH\x05\x82\x01\x02\x10\x01R\x06status\"Y\n" +
 	"\x17ListInvitationsResponse\x12>\n" +
 	"\vinvitations\x18\x01 \x03(\v2\x1c.saas.accounts.v1.InvitationR\vinvitations\"3\n" +
 	"\x17RevokeInvitationRequest\x12\x18\n" +
+	"\x02id\x18\x01 \x01(\tB\b\xbaH\x05r\x03\xb0\x01\x01R\x02id\"3\n" +
+	"\x17ResendInvitationRequest\x12\x18\n" +
 	"\x02id\x18\x01 \x01(\tB\b\xbaH\x05r\x03\xb0\x01\x01R\x02id*\xb2\x01\n" +
 	"\x10InvitationStatus\x12!\n" +
 	"\x1dINVITATION_STATUS_UNSPECIFIED\x10\x00\x12\x1d\n" +
 	"\x19INVITATION_STATUS_PENDING\x10\x01\x12\x1e\n" +
 	"\x1aINVITATION_STATUS_ACCEPTED\x10\x02\x12\x1d\n" +
 	"\x19INVITATION_STATUS_REVOKED\x10\x03\x12\x1d\n" +
-	"\x19INVITATION_STATUS_EXPIRED\x10\x042\xe5\x05\n" +
-	"\x11InvitationService\x12\xbf\x01\n" +
-	"\x10CreateInvitation\x12).saas.accounts.v1.CreateInvitationRequest\x1a*.saas.accounts.v1.CreateInvitationResponse\"T\xc2\xf3\x186\b\x02\x10\x04*\f\n" +
+	"\x19INVITATION_STATUS_EXPIRED\x10\x04*h\n" +
+	"\x0eInvitationRole\x12\x1f\n" +
+	"\x1bINVITATION_ROLE_UNSPECIFIED\x10\x00\x12\x1a\n" +
+	"\x16INVITATION_ROLE_MEMBER\x10\x01\x12\x19\n" +
+	"\x15INVITATION_ROLE_ADMIN\x10\x02*\xb8\x02\n" +
+	"\x18InvitationDeliveryStatus\x12*\n" +
+	"&INVITATION_DELIVERY_STATUS_UNSPECIFIED\x10\x00\x12'\n" +
+	"#INVITATION_DELIVERY_STATUS_DISABLED\x10\x01\x12%\n" +
+	"!INVITATION_DELIVERY_STATUS_QUEUED\x10\x02\x12#\n" +
+	"\x1fINVITATION_DELIVERY_STATUS_SENT\x10\x03\x12(\n" +
+	"$INVITATION_DELIVERY_STATUS_DELIVERED\x10\x04\x12&\n" +
+	"\"INVITATION_DELIVERY_STATUS_BOUNCED\x10\x05\x12)\n" +
+	"%INVITATION_DELIVERY_STATUS_COMPLAINED\x10\x062\xda\t\n" +
+	"\x11InvitationService\x12\xe5\x01\n" +
+	"\x10CreateInvitation\x12).saas.accounts.v1.CreateInvitationRequest\x1a*.saas.accounts.v1.CreateInvitationResponse\"z\xc2\xf3\x18\\\b\x02\x10\x04\x1a\x11invitations:write\"\x11invitations:write*\f\n" +
 	"\x06org_id\x10\x02\x18\x010\x01:\x16\n" +
-	"\x12invitation.created\x10\x02@\x01H\x04P\x03X\x03`\x01\x82\xd3\xe4\x93\x02\x14:\x01*\"\x0f/v1/invitations\x12\xb9\x01\n" +
+	"\x12invitation.created\x10\x02@\x01H\x04P\x03X\x03`\x01\x82\xd3\xe4\x93\x02\x14:\x01*\"\x0f/v1/invitations\x12\xa0\x01\n" +
+	"\x11InspectInvitation\x12*.saas.accounts.v1.InspectInvitationRequest\x1a#.saas.accounts.v1.InvitationSummary\":\xc2\xf3\x18\x14\b\x01\x10\x010\x01:\x02\x10\x01@\x01H\x01P\x04X\x03`\x01\x82\xd3\xe4\x93\x02\x1c:\x01*\"\x17/v1/invitations:inspect\x12\xb9\x01\n" +
 	"\x10AcceptInvitation\x12).saas.accounts.v1.AcceptInvitationRequest\x1a*.saas.accounts.v1.AcceptInvitationResponse\"N\xc2\xf3\x18)\b\x02\x10\x020\x01:\x17\n" +
-	"\x13invitation.accepted\x10\x02@\x01H\x04P\x04X\x03`\x01\x82\xd3\xe4\x93\x02\x1b:\x01*\"\x16/v1/invitations:accept\x12\xa5\x01\n" +
-	"\x0fListInvitations\x12(.saas.accounts.v1.ListInvitationsRequest\x1a).saas.accounts.v1.ListInvitationsResponse\"=\xc2\xf3\x18\"\b\x02\x10\x04*\f\n" +
-	"\x06org_id\x10\x02\x18\x010\x01:\x02\x10\x01@\x01H\x03P\x03X\x03`\x01\x82\xd3\xe4\x93\x02\x11\x12\x0f/v1/invitations\x12\xa9\x01\n" +
-	"\x10RevokeInvitation\x12).saas.accounts.v1.RevokeInvitationRequest\x1a\x16.google.protobuf.Empty\"R\xc2\xf3\x182\b\x02\x10\x04*\b\n" +
+	"\x13invitation.accepted\x10\x02@\x01H\x04P\x04X\x03`\x01\x82\xd3\xe4\x93\x02\x1b:\x01*\"\x16/v1/invitations:accept\x12\xc9\x01\n" +
+	"\x0fListInvitations\x12(.saas.accounts.v1.ListInvitationsRequest\x1a).saas.accounts.v1.ListInvitationsResponse\"a\xc2\xf3\x18F\b\x02\x10\x04\x1a\x10invitations:read\"\x10invitations:read*\f\n" +
+	"\x06org_id\x10\x02\x18\x010\x01:\x02\x10\x01@\x01H\x03P\x03X\x03`\x01\x82\xd3\xe4\x93\x02\x11\x12\x0f/v1/invitations\x12\xdf\x01\n" +
+	"\x10ResendInvitation\x12).saas.accounts.v1.ResendInvitationRequest\x1a\x1c.saas.accounts.v1.Invitation\"\x81\x01\xc2\xf3\x18W\b\x02\x10\x04\x1a\x11invitations:write\"\x11invitations:write*\b\n" +
+	"\x02id\x10\x04\x18\x030\x01:\x15\n" +
+	"\x11invitation.resent\x10\x02@\x03H\x04P\x03X\x03`\x01\x82\xd3\xe4\x93\x02 :\x01*\"\x1b/v1/invitations/{id}:resend\x12\xcf\x01\n" +
+	"\x10RevokeInvitation\x12).saas.accounts.v1.RevokeInvitationRequest\x1a\x16.google.protobuf.Empty\"x\xc2\xf3\x18X\b\x02\x10\x04\x1a\x11invitations:write\"\x11invitations:write*\b\n" +
 	"\x02id\x10\x04\x18\x030\x01:\x16\n" +
 	"\x12invitation.revoked\x10\x02@\x01H\x04P\x03X\x03`\x01\x82\xd3\xe4\x93\x02\x16*\x14/v1/invitations/{id}B\xb8\x01\n" +
 	"\x14com.saas.accounts.v1B\x10InvitationsProtoP\x01Z,accounts/pkg/gen/saas/accounts/v1;accountsv1\xa2\x02\x03SAX\xaa\x02\x10Saas.Accounts.V1\xca\x02\x10Saas\\Accounts\\V1\xe2\x02\x1cSaas\\Accounts\\V1\\GPBMetadata\xea\x02\x12Saas::Accounts::V1b\x06proto3"
@@ -591,43 +967,59 @@ func file_saas_accounts_v1_invitations_proto_rawDescGZIP() []byte {
 	return file_saas_accounts_v1_invitations_proto_rawDescData
 }
 
-var file_saas_accounts_v1_invitations_proto_enumTypes = make([]protoimpl.EnumInfo, 1)
-var file_saas_accounts_v1_invitations_proto_msgTypes = make([]protoimpl.MessageInfo, 8)
+var file_saas_accounts_v1_invitations_proto_enumTypes = make([]protoimpl.EnumInfo, 3)
+var file_saas_accounts_v1_invitations_proto_msgTypes = make([]protoimpl.MessageInfo, 11)
 var file_saas_accounts_v1_invitations_proto_goTypes = []any{
 	(InvitationStatus)(0),            // 0: saas.accounts.v1.InvitationStatus
-	(*Invitation)(nil),               // 1: saas.accounts.v1.Invitation
-	(*CreateInvitationRequest)(nil),  // 2: saas.accounts.v1.CreateInvitationRequest
-	(*CreateInvitationResponse)(nil), // 3: saas.accounts.v1.CreateInvitationResponse
-	(*AcceptInvitationRequest)(nil),  // 4: saas.accounts.v1.AcceptInvitationRequest
-	(*AcceptInvitationResponse)(nil), // 5: saas.accounts.v1.AcceptInvitationResponse
-	(*ListInvitationsRequest)(nil),   // 6: saas.accounts.v1.ListInvitationsRequest
-	(*ListInvitationsResponse)(nil),  // 7: saas.accounts.v1.ListInvitationsResponse
-	(*RevokeInvitationRequest)(nil),  // 8: saas.accounts.v1.RevokeInvitationRequest
-	(*timestamppb.Timestamp)(nil),    // 9: google.protobuf.Timestamp
-	(*Organization)(nil),             // 10: saas.accounts.v1.Organization
-	(*emptypb.Empty)(nil),            // 11: google.protobuf.Empty
+	(InvitationRole)(0),              // 1: saas.accounts.v1.InvitationRole
+	(InvitationDeliveryStatus)(0),    // 2: saas.accounts.v1.InvitationDeliveryStatus
+	(*Invitation)(nil),               // 3: saas.accounts.v1.Invitation
+	(*InvitationSummary)(nil),        // 4: saas.accounts.v1.InvitationSummary
+	(*CreateInvitationRequest)(nil),  // 5: saas.accounts.v1.CreateInvitationRequest
+	(*CreateInvitationResponse)(nil), // 6: saas.accounts.v1.CreateInvitationResponse
+	(*InspectInvitationRequest)(nil), // 7: saas.accounts.v1.InspectInvitationRequest
+	(*AcceptInvitationRequest)(nil),  // 8: saas.accounts.v1.AcceptInvitationRequest
+	(*AcceptInvitationResponse)(nil), // 9: saas.accounts.v1.AcceptInvitationResponse
+	(*ListInvitationsRequest)(nil),   // 10: saas.accounts.v1.ListInvitationsRequest
+	(*ListInvitationsResponse)(nil),  // 11: saas.accounts.v1.ListInvitationsResponse
+	(*RevokeInvitationRequest)(nil),  // 12: saas.accounts.v1.RevokeInvitationRequest
+	(*ResendInvitationRequest)(nil),  // 13: saas.accounts.v1.ResendInvitationRequest
+	(*timestamppb.Timestamp)(nil),    // 14: google.protobuf.Timestamp
+	(*Organization)(nil),             // 15: saas.accounts.v1.Organization
+	(*emptypb.Empty)(nil),            // 16: google.protobuf.Empty
 }
 var file_saas_accounts_v1_invitations_proto_depIdxs = []int32{
-	0,  // 0: saas.accounts.v1.Invitation.status:type_name -> saas.accounts.v1.InvitationStatus
-	9,  // 1: saas.accounts.v1.Invitation.expires_at:type_name -> google.protobuf.Timestamp
-	9,  // 2: saas.accounts.v1.Invitation.created_at:type_name -> google.protobuf.Timestamp
-	1,  // 3: saas.accounts.v1.CreateInvitationResponse.invitation:type_name -> saas.accounts.v1.Invitation
-	10, // 4: saas.accounts.v1.AcceptInvitationResponse.organization:type_name -> saas.accounts.v1.Organization
-	0,  // 5: saas.accounts.v1.ListInvitationsRequest.status:type_name -> saas.accounts.v1.InvitationStatus
-	1,  // 6: saas.accounts.v1.ListInvitationsResponse.invitations:type_name -> saas.accounts.v1.Invitation
-	2,  // 7: saas.accounts.v1.InvitationService.CreateInvitation:input_type -> saas.accounts.v1.CreateInvitationRequest
-	4,  // 8: saas.accounts.v1.InvitationService.AcceptInvitation:input_type -> saas.accounts.v1.AcceptInvitationRequest
-	6,  // 9: saas.accounts.v1.InvitationService.ListInvitations:input_type -> saas.accounts.v1.ListInvitationsRequest
-	8,  // 10: saas.accounts.v1.InvitationService.RevokeInvitation:input_type -> saas.accounts.v1.RevokeInvitationRequest
-	3,  // 11: saas.accounts.v1.InvitationService.CreateInvitation:output_type -> saas.accounts.v1.CreateInvitationResponse
-	5,  // 12: saas.accounts.v1.InvitationService.AcceptInvitation:output_type -> saas.accounts.v1.AcceptInvitationResponse
-	7,  // 13: saas.accounts.v1.InvitationService.ListInvitations:output_type -> saas.accounts.v1.ListInvitationsResponse
-	11, // 14: saas.accounts.v1.InvitationService.RevokeInvitation:output_type -> google.protobuf.Empty
-	11, // [11:15] is the sub-list for method output_type
-	7,  // [7:11] is the sub-list for method input_type
-	7,  // [7:7] is the sub-list for extension type_name
-	7,  // [7:7] is the sub-list for extension extendee
-	0,  // [0:7] is the sub-list for field type_name
+	1,  // 0: saas.accounts.v1.Invitation.role:type_name -> saas.accounts.v1.InvitationRole
+	0,  // 1: saas.accounts.v1.Invitation.status:type_name -> saas.accounts.v1.InvitationStatus
+	2,  // 2: saas.accounts.v1.Invitation.delivery_status:type_name -> saas.accounts.v1.InvitationDeliveryStatus
+	14, // 3: saas.accounts.v1.Invitation.expires_at:type_name -> google.protobuf.Timestamp
+	14, // 4: saas.accounts.v1.Invitation.created_at:type_name -> google.protobuf.Timestamp
+	14, // 5: saas.accounts.v1.Invitation.last_sent_at:type_name -> google.protobuf.Timestamp
+	0,  // 6: saas.accounts.v1.InvitationSummary.status:type_name -> saas.accounts.v1.InvitationStatus
+	1,  // 7: saas.accounts.v1.InvitationSummary.role:type_name -> saas.accounts.v1.InvitationRole
+	14, // 8: saas.accounts.v1.InvitationSummary.expires_at:type_name -> google.protobuf.Timestamp
+	1,  // 9: saas.accounts.v1.CreateInvitationRequest.role:type_name -> saas.accounts.v1.InvitationRole
+	3,  // 10: saas.accounts.v1.CreateInvitationResponse.invitation:type_name -> saas.accounts.v1.Invitation
+	15, // 11: saas.accounts.v1.AcceptInvitationResponse.organization:type_name -> saas.accounts.v1.Organization
+	0,  // 12: saas.accounts.v1.ListInvitationsRequest.status:type_name -> saas.accounts.v1.InvitationStatus
+	3,  // 13: saas.accounts.v1.ListInvitationsResponse.invitations:type_name -> saas.accounts.v1.Invitation
+	5,  // 14: saas.accounts.v1.InvitationService.CreateInvitation:input_type -> saas.accounts.v1.CreateInvitationRequest
+	7,  // 15: saas.accounts.v1.InvitationService.InspectInvitation:input_type -> saas.accounts.v1.InspectInvitationRequest
+	8,  // 16: saas.accounts.v1.InvitationService.AcceptInvitation:input_type -> saas.accounts.v1.AcceptInvitationRequest
+	10, // 17: saas.accounts.v1.InvitationService.ListInvitations:input_type -> saas.accounts.v1.ListInvitationsRequest
+	13, // 18: saas.accounts.v1.InvitationService.ResendInvitation:input_type -> saas.accounts.v1.ResendInvitationRequest
+	12, // 19: saas.accounts.v1.InvitationService.RevokeInvitation:input_type -> saas.accounts.v1.RevokeInvitationRequest
+	6,  // 20: saas.accounts.v1.InvitationService.CreateInvitation:output_type -> saas.accounts.v1.CreateInvitationResponse
+	4,  // 21: saas.accounts.v1.InvitationService.InspectInvitation:output_type -> saas.accounts.v1.InvitationSummary
+	9,  // 22: saas.accounts.v1.InvitationService.AcceptInvitation:output_type -> saas.accounts.v1.AcceptInvitationResponse
+	11, // 23: saas.accounts.v1.InvitationService.ListInvitations:output_type -> saas.accounts.v1.ListInvitationsResponse
+	3,  // 24: saas.accounts.v1.InvitationService.ResendInvitation:output_type -> saas.accounts.v1.Invitation
+	16, // 25: saas.accounts.v1.InvitationService.RevokeInvitation:output_type -> google.protobuf.Empty
+	20, // [20:26] is the sub-list for method output_type
+	14, // [14:20] is the sub-list for method input_type
+	14, // [14:14] is the sub-list for extension type_name
+	14, // [14:14] is the sub-list for extension extendee
+	0,  // [0:14] is the sub-list for field type_name
 }
 
 func init() { file_saas_accounts_v1_invitations_proto_init() }
@@ -636,13 +1028,17 @@ func file_saas_accounts_v1_invitations_proto_init() {
 		return
 	}
 	file_saas_accounts_v1_common_proto_init()
+	file_saas_accounts_v1_invitations_proto_msgTypes[5].OneofWrappers = []any{
+		(*AcceptInvitationRequest_Token)(nil),
+		(*AcceptInvitationRequest_InvitationId)(nil),
+	}
 	type x struct{}
 	out := protoimpl.TypeBuilder{
 		File: protoimpl.DescBuilder{
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_saas_accounts_v1_invitations_proto_rawDesc), len(file_saas_accounts_v1_invitations_proto_rawDesc)),
-			NumEnums:      1,
-			NumMessages:   8,
+			NumEnums:      3,
+			NumMessages:   11,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

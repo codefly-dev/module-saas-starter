@@ -113,6 +113,9 @@ func (s *Service) Authenticate(ctx context.Context, req *gen.AuthenticateRequest
 	if err := claims.Valid(); err != nil {
 		return nil, w.Wrapf(err, "provider claims")
 	}
+	if err := s.authorizeAccountCreation(ctx, claims.Email); err != nil {
+		return nil, err
+	}
 
 	identity, err := s.resolver.Resolve(ctx, claims, orgNameOnSignup)
 	if err != nil {
@@ -124,6 +127,12 @@ func (s *Service) Authenticate(ctx context.Context, req *gen.AuthenticateRequest
 	}
 	identity.AuthenticatedAt = time.Now()
 	identity.AssuranceLevel = auth.AssuranceLevelAAL1
+	s.convertWaitlistLead(
+		ctx,
+		claims.Email,
+		identity.UserID.String(),
+		identity.OrgID.String(),
+	)
 	if fixtureMFAWasVerified {
 		identity.AuthenticationMethods = append(identity.AuthenticationMethods, auth.AuthenticationMethodOTP)
 		identity.AssuranceLevel = auth.AssuranceLevelAAL2

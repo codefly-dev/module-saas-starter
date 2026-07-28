@@ -3,67 +3,135 @@ package business
 import (
 	"context"
 	"time"
+
+	"github.com/codefly-dev/core/wool"
 )
 
-// CurrentTermsVersion is the version string the api considers
-// authoritative. Bumped by hand when the operator publishes a new
-// TOS / privacy policy. Frontend reads this through GetConsentStatus
-// to decide whether to show the ConsentBanner.
-//
-// Format is intentionally a date — easy to grok at a glance, sorts
-// monotonically, doesn't collide. If you want semver, swap in
-// "v1" / "v2" — the comparison is byte-equality, not <.
-const CurrentTermsVersion = "2026-04-25"
+const CurrentTermsVersion = "2026-07-28"
 
-// UserConsentStatus is the resolved view of where a user stands
-// against the current terms. Empty AcceptedVersion = never accepted.
-type UserConsentStatus struct {
-	AcceptedVersion string
-	AcceptedAt      *time.Time
-	CurrentVersion  string
+type ConsentPreference struct {
+	Purpose       string
+	Granted       bool
+	PolicyVersion string
+	UpdatedAt     time.Time
+	WithdrawnAt   *time.Time
 }
 
-// GetConsentStatus returns the user's last-accepted version + the
-// current authoritative version. The FE compares; if they differ
-// (including AcceptedVersion empty), it shows the banner.
-func (s *Service) GetConsentStatus(ctx context.Context, userID string) (*UserConsentStatus, error) {
-	var v string
-	var at *time.Time
-	if err := s.store.As(Identity{UserID: userID}).Within(ctx, func(ctx context.Context) error {
+type UserConsentStatus struct {
+	TermsAcceptedVersion     string
+	TermsAcceptedAt          *time.Time
+	CurrentTermsVersion      string
+	PolicyVersion            string
+	PreferencesRecorded      bool
+	PreferencesPolicyVersion string
+	Preferences              []*ConsentPreference
+}
+
+func (s *Service) GetConsentStatus(
+	ctx context.Context,
+	userID string,
+) (*UserConsentStatus, error) {
+	var termsVersion string
+	var termsAt *time.Time
+	var preferences []*ConsentPreference
+	err := s.store.As(Identity{UserID: userID}).Within(ctx, func(ctx context.Context) error {
 		var err error
-		v, at, err = s.store.GetUserConsent(ctx, userID)
+		termsVersion, termsAt, err = s.store.GetUserConsent(ctx, userID)
+		if err != nil {
+			return err
+		}
+		preferences, err = s.store.GetUserConsentPreferences(ctx, userID)
 		return err
-	}); err != nil {
+	})
+	if err != nil {
 		return nil, err
 	}
+	preferencesRecorded := len(preferences) > 0
+	preferencesPolicyVersion := ""
+	preferenceMap := make(map[string]*ConsentPreference, len(preferences))
+	for _, preference := range preferences {
+		preferenceMap[preference.Purpose] = preference
+		if preferencesPolicyVersion == "" {
+			preferencesPolicyVersion = preference.PolicyVersion
+		}
+	}
+	now := time.Now()
+	necessary := preferenceMap["necessary"]
+	if necessary == nil {
+		necessary = &ConsentPreference{
+			Purpose:       "necessary",
+			Granted:       true,
+			PolicyVersion: CurrentConsentPolicyVersion,
+			UpdatedAt:     now,
+		}
+	}
+	analytics := preferenceMap["analytics"]
+	if analytics == nil {
+		analytics = &ConsentPreference{
+			Purpose:       "analytics",
+			Granted:       false,
+			PolicyVersion: CurrentConsentPolicyVersion,
+			UpdatedAt:     now,
+		}
+	}
+	marketing := preferenceMap["marketing"]
+	if marketing == nil {
+		marketing = &ConsentPreference{
+			Purpose:       "marketing",
+			Granted:       false,
+			PolicyVersion: CurrentConsentPolicyVersion,
+			UpdatedAt:     now,
+		}
+	}
 	return &UserConsentStatus{
-		AcceptedVersion: v,
-		AcceptedAt:      at,
-		CurrentVersion:  CurrentTermsVersion,
+		TermsAcceptedVersion:     termsVersion,
+		TermsAcceptedAt:          termsAt,
+		CurrentTermsVersion:      CurrentTermsVersion,
+		PolicyVersion:            CurrentConsentPolicyVersion,
+		PreferencesRecorded:      preferencesRecorded,
+		PreferencesPolicyVersion: preferencesPolicyVersion,
+		Preferences:              []*ConsentPreference{necessary, analytics, marketing},
 	}, nil
 }
 
-// AcceptConsent records that userID accepted version. Idempotent —
-// re-accepting the same (user, version) pair just refreshes the
-// timestamp, which is fine. The audit-log entry is the
-// immutable acceptance record (see emit below).
-//
-// We deliberately accept ANY version string the FE submits rather
-// than requiring it == CurrentTermsVersion. Reason: a long-running
-// browser session may still have an older banner cached when the
-// operator bumps CurrentTermsVersion mid-deploy; recording the
-// version the user actually saw is more honest than refusing the
-// click. Next page load they'll see the new version and accept it.
-func (s *Service) AcceptConsent(ctx context.Context, userID, version string) error {
-	// The write targets the caller's own users row, which is RLS-protected
-	// (users_update: uuid == app.current_user_id). Scope the tx to the user so
-	// the GUC is set — without this the UPDATE matches zero rows under the
-	// app_tenant role and consent silently never persists (banner reappears).
+func (s *Service) AcceptTerms(
+	ctx context.Context,
+	userID, version string,
+) error {
+	if version != CurrentTermsVersion {
+		return wool.Get(ctx).NewError("terms version is not current")
+	}
 	if err := s.store.As(Identity{UserID: userID}).Within(ctx, func(ctx context.Context) error {
 		return s.store.SetUserConsent(ctx, userID, version, time.Now())
 	}); err != nil {
 		return err
 	}
-	s.emit(ctx, userID, "user", "consent.accepted", "user", userID, "")
+	s.emit(ctx, userID, "user", "consent.terms_accepted", "user", userID, "")
+	return nil
+}
+
+func (s *Service) UpdateConsentPreferences(
+	ctx context.Context,
+	userID, policyVersion string,
+	analytics, marketing bool,
+	region, consentContext string,
+) error {
+	if policyVersion != CurrentConsentPolicyVersion {
+		return wool.Get(ctx).NewError("consent policy version is not current")
+	}
+	now := time.Now()
+	preferences := []*ConsentPreference{
+		{Purpose: "necessary", Granted: true, PolicyVersion: policyVersion, UpdatedAt: now},
+		{Purpose: "analytics", Granted: analytics, PolicyVersion: policyVersion, UpdatedAt: now},
+		{Purpose: "marketing", Granted: marketing, PolicyVersion: policyVersion, UpdatedAt: now},
+	}
+	if err := s.store.As(Identity{UserID: userID}).Within(ctx, func(ctx context.Context) error {
+		return s.store.SetUserConsentPreferences(
+			ctx, userID, preferences, region, consentContext,
+		)
+	}); err != nil {
+		return err
+	}
+	s.emit(ctx, userID, "user", "consent.preferences_updated", "user", userID, "")
 	return nil
 }
