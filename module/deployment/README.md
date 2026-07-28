@@ -1,18 +1,46 @@
 # Module-level deployment
 
-The module agent generates `deployment/kustomize` for the workspace that
-installs the Starter. It does not copy the canonical repository's Argo CD
-files. Generation consumes:
+The module agent generates `deployment/kustomize` from the installed product
+and an immutable service render. The canonical module does not ship an Argo CD
+tree, so module sync removes legacy Starter placeholders instead of releasing
+them to consumer ownership.
 
-- the workspace name and `gitops.repo-url`, `gitops.path`, and
-  `gitops.branch` contract;
-- each declared environment's name, cluster kind, and namespace; and
-- the installed module's exact declared service inventory and service paths.
+Generation consumes:
 
-Generation fails when this contract is incomplete, a service path is missing
-or extra, a production revision is mutable, or the rendered policy contains a
-placeholder, wildcard AppProject authority, secret data, or an unexpected
-Application.
+- the workspace name and exact GitOps repository, checkout, owned path, and
+  revision;
+- every environment's cluster kind and namespace;
+- the installed module's declared service inventory and deployment topology;
+- the service overlays already present at the immutable revision; and
+- explicit AWS managed-service endpoints, network CIDRs, and external secret
+  references.
+
+The declared checkout defaults to the workspace root. Set `gitops.checkout`
+when the rendered GitOps repository is a separate checkout. Its `origin` must
+match `gitops.repo-url`.
+
+## Required sequence
+
+The revision is a rendered input, not the branch used for a future render:
+
+1. Render each service overlay into
+   `<gitops.path>/deployments/modules/<module>/services/<service>/overlays/<environment>`.
+2. Ensure remote environments omit overlays for services handed to the cloud
+   provider.
+3. Commit that tree in the declared GitOps checkout.
+4. Set `gitops.revision` to that commit SHA, or to a signed immutable tag for a
+   remote environment.
+5. Run the module generator.
+6. Apply `deployment/kustomize/overlays/<environment>` as the bootstrap.
+
+Generation fails if an Application path is absent from the selected commit.
+For k3d, kind, and minikube, the selected commit must also equal the checkout's
+current `HEAD`. This prevents an Application from pointing at the pre-render
+commit.
+
+The current CLI's deterministic render/publish flow is tracked by
+`codefly-dev/cli#152`. Until that flow invokes module generation after the
+snapshot is committed, callers must perform the sequence above explicitly.
 
 ## Generated layout
 
@@ -29,52 +57,46 @@ deployment/kustomize/
         limit-range.yaml
         network-policy.yaml
         istio-mtls.yaml
+        istio-gateway.yaml
+        handoffs/
+          <managed-service>.yaml
       applications/
-        <declared in-cluster service>.yaml
+        <in-cluster-service>.yaml
 ```
 
-`inventory.json` binds the workspace, module, repository, owned render path,
-environment namespaces, immutable revisions, exact in-cluster services, AWS
-managed-service handoffs, and the Core reference-only secret-manifest contract.
-It contains references and identities only, never resolved secret bytes.
+The generator renders every committed service overlay before writing the
+bootstrap. It rejects missing or extra service paths, managed services that
+still have an in-cluster remote overlay, cluster-scoped child resources,
+unresolved placeholders, and Kubernetes Secrets anywhere in the owned tree.
+This closes the module boundary even while Core's versioned reference-only
+secret renderer is completed in `codefly-dev/core#101`.
 
-Every environment gets its own AppProject. Its source repository and
-destination are single exact values. Namespace and cluster resource authority
-is an enumerated allowlist; no wildcard is emitted.
+The AppProject repository and destination are exact. Its namespaced resource
+allowlist is derived from the Kubernetes kinds in the immutable child renders;
+it grants no cluster-resource authority.
 
-## Revision policy
+## AWS handoffs
 
-For a local k3d, kind, or minikube environment, a configured branch is accepted
-only when it resolves to the checked-out harness `HEAD`; the generated
-Applications contain that full commit SHA. A remote EKS environment accepts a
-full commit SHA or a locally verified signed tag. Signed tags are resolved to
-their commit before rendering, so Argo CD never receives a floating revision.
+EKS environments declare each module-owned managed service under
+`managed-services`. The module generates an `ExternalName` Service and
+topology-derived egress policy. Optional `secret-references` generate
+ExternalSecret objects containing only provider keys and SecretStore
+references:
 
-## Service inventory and AWS handoffs
-
-Local overlays contain one Application for every declared module service. EKS
-overlays keep application services in-cluster and record the Starter's
-`store`, `cache`, `object-storage`, and `vault` dependencies as RDS,
-ElastiCache, S3, and Secrets Manager handoffs. Provider behavior remains at
-this module boundary rather than entering generic service plugins.
-
-Service agents render their owned paths under:
-
-```text
-<gitops.path>/deployments/modules/<module>/services/<service>/overlays/<environment>
+```yaml
+managed-services:
+  store:
+    kind: rds-postgresql
+    external-name: identity.cluster.example.com
+    egress-cidrs:
+      - 10.42.0.0/24
+    secret-references:
+      - name: store-runtime
+        remote-key: products/identity/store
+        secret-store:
+          name: aws-secrets-manager
+          kind: ClusterSecretStore
 ```
 
-The module generator validates that the declarations and installed service
-directories match exactly before it emits Applications.
-
-## GitOps flow
-
-1. Run the module generator after declaring the workspace GitOps contract.
-2. Render service overlays with `codefly deploy module --env <name>
-   --render-only`.
-3. Validate and commit the owned deployment tree.
-4. Bootstrap the generated module overlay with `kubectl apply -k
-   deployment/kustomize/overlays/<name>`.
-5. Argo CD reconciles each Application at the immutable revision.
-
-Direct local apply and remote publish/observation policy remain CLI-owned.
+No AWS behavior is added to the generic Postgres, Redis, S3, or Vault service
+plugins.

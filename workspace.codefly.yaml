@@ -3,13 +3,15 @@ layout: modules
 modules:
     - name: saas-starter
 
-# GitOps target used by the module generator and `codefly deploy
-# --render-only`. Configure it before adding the module; generation fails
-# closed when any field is absent instead of emitting placeholders.
+# GitOps snapshot consumed by the module generator. Render and commit the
+# owned service overlays first; generation verifies every Application path
+# exists in this immutable revision.
 # gitops:
 #   repo-url: git@github.com:my-org/saas-starter.git
 #   path: ""        # repository subtree that owns rendered deployments
-#   branch: <40-character-commit-sha>
+#   branch: main    # mutable branch used only as the publish destination
+#   revision: <40-character-commit-sha>
+#   checkout: .     # local checkout of repo-url; defaults to workspace root
 #
 # A local-only workspace may name the checked-out harness branch; the
 # generator resolves it to HEAD. Any remote environment requires a full
@@ -45,3 +47,11 @@ environments:
           url: 621829027644.dkr.ecr.us-east-1.amazonaws.com/saas-starter
           auth: ecr
       namespace: saas-starter
+      # Every module-managed AWS dependency requires an exact endpoint and
+      # egress CIDR. Optional secret-references contain provider references,
+      # never resolved values. See module/deployment/README.md.
+      # managed-services:
+      #     store:
+      #         kind: rds-postgresql
+      #         external-name: database.internal.example.com
+      #         egress-cidrs: [10.42.0.0/24]

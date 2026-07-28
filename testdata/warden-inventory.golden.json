@@ -4,7 +4,6 @@
   "module": "identity",
   "repository": "git@github.com:acme/platform-config.git",
   "ownedPath": "clusters/codefly/deployments/modules/identity/services",
-  "secretReferenceContract": "github.com/codefly-dev/core/configurations@v0.2.47#reference-only-secret-manifest",
   "environments": [
     {
       "name": "local",
@@ -32,19 +31,23 @@
       "managedServiceHandoffs": [
         {
           "service": "cache",
-          "awsKind": "elasticache"
+          "awsKind": "elasticache",
+          "externalName": "cache.internal.example.com"
         },
         {
           "service": "object-storage",
-          "awsKind": "s3"
+          "awsKind": "s3",
+          "externalName": "object-storage.internal.example.com"
         },
         {
           "service": "store",
-          "awsKind": "rds-postgresql"
+          "awsKind": "rds-postgresql",
+          "externalName": "store.internal.example.com"
         },
         {
           "service": "vault",
-          "awsKind": "secrets-manager"
+          "awsKind": "secrets-manager",
+          "externalName": "vault.internal.example.com"
         }
       ]
     }
