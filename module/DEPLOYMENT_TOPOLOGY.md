@@ -16,7 +16,7 @@ deployment ports, and public egress. The runtime `module.codefly.yaml` and every
 | `deployment/generated/service-topology.json` | Typed `saas.deployment.topology.v1` inventory. |
 | `module.codefly.yaml` | Generated Codefly module interface and service list. |
 | `services/*/service.codefly.yaml` | Generated agents, endpoint-scoped dependencies, endpoints, workspace configuration dependencies, and specs. |
-| `deployment/kustomize/base/network-policy.yaml` | Generated default-deny and least-privilege Kubernetes policies. |
+| `services/accounts/code/pkg/cataloggen/testdata/network-policy.golden.yaml` | Test-only topology-policy golden; installed GitOps policies are rendered structurally per environment. |
 | `services/accounts/code/pkg/cataloggen/deployment_topology.go` | Strict compiler, semantic validator, and renderers. |
 
 The normalized inventory currently contains seven services, 11 endpoints,

@@ -35,7 +35,7 @@ func TestDeploymentTopologyIsDeterministicAndCurrent(t *testing.T) {
 
 	require.Equal(t, string(readFixture(t, "../../../../../deployment/generated/service-topology.json")), string(first.CatalogJSON), "run: go generate ./pkg/cataloggen")
 	require.Equal(t, string(readFixture(t, "../../../../../module.codefly.yaml")), string(first.ModuleManifest), "run: go generate ./pkg/cataloggen")
-	require.Equal(t, string(readFixture(t, "../../../../../deployment/kustomize/base/network-policy.yaml")), string(first.NetworkPolicy), "run: go generate ./pkg/cataloggen")
+	require.Equal(t, string(readFixture(t, "testdata/network-policy.golden.yaml")), string(first.NetworkPolicy), "run: go generate ./pkg/cataloggen")
 	for service, document := range first.ServiceManifests {
 		checkedIn := readFixture(t, filepath.Join("../../../../../services", service, "service.codefly.yaml"))
 		require.Equal(t, string(checkedIn), string(document), "service %s: run go generate ./pkg/cataloggen", service)
@@ -278,7 +278,7 @@ func TestGeneratedCodeflyAndNetworkManifestsParseStrictly(t *testing.T) {
 		}
 	}
 
-	decoder := yaml.NewDecoder(strings.NewReader(string(readFixture(t, "../../../../../deployment/kustomize/base/network-policy.yaml"))))
+	decoder := yaml.NewDecoder(strings.NewReader(string(readFixture(t, "testdata/network-policy.golden.yaml"))))
 	names := make(map[string]bool)
 	for {
 		var document struct {

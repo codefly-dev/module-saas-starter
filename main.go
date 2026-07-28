@@ -2,11 +2,14 @@ package main
 
 import (
 	"context"
+	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"io/fs"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 
 	"github.com/codefly-dev/core/shared"
@@ -68,13 +71,23 @@ func Create(ctx context.Context, dir, name string) error {
 	if err != nil {
 		return w.Wrapf(err, "cannot create module staging directory")
 	}
-	defer os.RemoveAll(stage)
+	defer func() { _ = os.RemoveAll(stage) }()
 
 	if err := copyTree(dir, stage, "", false); err != nil {
 		return w.Wrapf(err, "cannot stage existing module scaffold")
 	}
-	if err := copyTree(src, stage, name, true); err != nil {
+	existing, hasConsumerInventory, err := existingModuleInventory(dir)
+	if err != nil {
+		return w.Wrapf(err, "cannot read existing module inventory")
+	}
+	if hasConsumerInventory && existing.Name != name {
+		return fmt.Errorf("existing module name %q does not match requested name %q", existing.Name, name)
+	}
+	if err := copyModuleSource(src, stage, name, existing, hasConsumerInventory); err != nil {
 		return w.Wrapf(err, "cannot stage module source")
+	}
+	if err := normalizeDeploymentMetadata(stage); err != nil {
+		return w.Wrapf(err, "cannot normalize module deployment metadata")
 	}
 	if err := generateGitOps(ctx, stage, workspace); err != nil {
 		return w.Wrapf(err, "cannot generate GitOps manifests")
@@ -96,6 +109,294 @@ func Create(ctx context.Context, dir, name string) error {
 
 	w.Info("module created", wool.Field("name", name), wool.Field("source", src))
 	return nil
+}
+
+func existingModuleInventory(dir string) (moduleManifest, bool, error) {
+	data, err := os.ReadFile(filepath.Join(dir, moduleYamlPath))
+	if errors.Is(err, os.ErrNotExist) {
+		return moduleManifest{}, false, nil
+	}
+	if err != nil {
+		return moduleManifest{}, false, err
+	}
+	var manifest moduleManifest
+	if err := yaml.Unmarshal(data, &manifest); err != nil {
+		return moduleManifest{}, false, err
+	}
+	return manifest, len(manifest.Services) > 0, nil
+}
+
+func copyModuleSource(
+	src,
+	dst,
+	name string,
+	consumer moduleManifest,
+	preserveInventory bool,
+) error {
+	declared := make(map[string]*string, len(consumer.Services))
+	for _, service := range consumer.Services {
+		declared[service.Name] = service.Path
+	}
+	return filepath.WalkDir(src, func(file string, entry fs.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		relative, err := filepath.Rel(src, file)
+		if err != nil {
+			return err
+		}
+		if relative == "." {
+			return nil
+		}
+		slashRelative := filepath.ToSlash(relative)
+		targetRelative := relative
+		skip := slashRelative == gitOpsRelativeDir ||
+			strings.HasPrefix(slashRelative, gitOpsRelativeDir+"/")
+		if preserveInventory {
+			skip = skip ||
+				slashRelative == moduleYamlPath ||
+				slashRelative == "deployment/topology.bindings.codefly.yaml" ||
+				slashRelative == "deployment/generated" ||
+				strings.HasPrefix(slashRelative, "deployment/generated/")
+			parts := strings.Split(slashRelative, "/")
+			if len(parts) >= 2 && parts[0] == "services" {
+				override, exists := declared[parts[1]]
+				if !exists {
+					skip = true
+				} else if override != nil && filepath.IsAbs(*override) {
+					skip = true
+				} else if override != nil {
+					targetRelative = filepath.Join(
+						"services",
+						filepath.FromSlash(*override),
+						filepath.Join(parts[2:]...),
+					)
+				}
+			}
+		}
+		if skip {
+			if entry.IsDir() {
+				return filepath.SkipDir
+			}
+			return nil
+		}
+		target := filepath.Join(dst, targetRelative)
+		if entry.IsDir() {
+			return os.MkdirAll(target, 0o755)
+		}
+		info, err := entry.Info()
+		if err != nil {
+			return err
+		}
+		return copyFile(file, target, info.Mode().Perm(), relative == moduleYamlPath, name)
+	})
+}
+
+func normalizeDeploymentMetadata(moduleDir string) error {
+	manifest, err := loadModuleManifest(moduleDir)
+	if err != nil {
+		return err
+	}
+	topologyPath := filepath.Join(moduleDir, "deployment", "topology.bindings.codefly.yaml")
+	data, err := os.ReadFile(topologyPath)
+	if err != nil {
+		return fmt.Errorf("read deployment topology: %w", err)
+	}
+	var topology deploymentTopology
+	if err := yaml.Unmarshal(data, &topology); err != nil {
+		return fmt.Errorf("parse deployment topology: %w", err)
+	}
+	declared := make(map[string]struct{}, len(manifest.Services))
+	for _, service := range manifest.Services {
+		declared[service.Name] = struct{}{}
+	}
+	previousName := topology.Module.Name
+	previousNamespace := topology.Module.Namespace
+	topology.Module.Name = manifest.Name
+	topology.Module.Namespace = manifest.Name
+	if manifest.ServiceEntry != "" {
+		topology.Module.ServiceEntry = manifest.ServiceEntry
+	}
+	topology.Services = slices.DeleteFunc(topology.Services, func(service topologyService) bool {
+		return !containsService(declared, service.Name)
+	})
+	for index := range topology.Services {
+		topology.Services[index].Dependencies = slices.DeleteFunc(
+			topology.Services[index].Dependencies,
+			func(dependency topologyDependency) bool {
+				return !containsService(declared, dependency.Service)
+			},
+		)
+	}
+	topology.Interface = slices.DeleteFunc(topology.Interface, func(exposed topologyInterface) bool {
+		return !containsService(declared, exposed.Service)
+	})
+	if _, exists := declared[topology.Module.ServiceEntry]; !exists {
+		return fmt.Errorf("deployment service entry %q is not declared by module %q", topology.Module.ServiceEntry, manifest.Name)
+	}
+	encoded, err := yaml.Marshal(topology)
+	if err != nil {
+		return fmt.Errorf("render deployment topology: %w", err)
+	}
+	if err := os.WriteFile(topologyPath, encoded, 0o644); err != nil {
+		return err
+	}
+	return normalizeGeneratedDeploymentMetadata(moduleDir, topology, previousName, previousNamespace)
+}
+
+func containsService(services map[string]struct{}, name string) bool {
+	_, exists := services[name]
+	return exists
+}
+
+func normalizeGeneratedDeploymentMetadata(
+	moduleDir string,
+	topology deploymentTopology,
+	previousName,
+	previousNamespace string,
+) error {
+	generatedRoot := filepath.Join(moduleDir, "deployment", "generated")
+	if err := os.MkdirAll(generatedRoot, 0o755); err != nil {
+		return err
+	}
+	services := make([]any, 0, len(topology.Services))
+	var publicEgress []any
+	for _, service := range topology.Services {
+		endpoints := make([]any, 0, len(service.Endpoints))
+		for _, endpoint := range service.Endpoints {
+			endpoints = append(endpoints, map[string]any{
+				"name":       endpoint.Name,
+				"api":        "CODEFLY_API_" + strings.ToUpper(endpoint.API),
+				"visibility": "ENDPOINT_VISIBILITY_" + strings.ToUpper(endpoint.Visibility),
+				"port":       endpoint.Port,
+			})
+		}
+		dependencies := make([]any, 0, len(service.Dependencies))
+		for _, dependency := range service.Dependencies {
+			dependencies = append(dependencies, map[string]any{
+				"service":   dependency.Service,
+				"endpoints": dependency.Endpoints,
+			})
+		}
+		entry := map[string]any{"name": service.Name, "endpoints": endpoints}
+		if len(dependencies) > 0 {
+			entry["dependencies"] = dependencies
+		}
+		services = append(services, entry)
+		if len(service.PublicEgressPorts) > 0 {
+			publicEgress = append(publicEgress, map[string]any{
+				"service": service.Name,
+				"ports":   service.PublicEgressPorts,
+			})
+		}
+	}
+	interfaces := make([]any, 0, len(topology.Interface))
+	for _, exposed := range topology.Interface {
+		interfaces = append(interfaces, map[string]any{
+			"service":    exposed.Service,
+			"endpoint":   exposed.Endpoint,
+			"visibility": "ENDPOINT_VISIBILITY_" + strings.ToUpper(exposed.Visibility),
+		})
+	}
+	catalog := map[string]any{
+		"schema_version":      "saas.deployment.topology.v1",
+		"module":              topology.Module.Name,
+		"namespace":           topology.Module.Namespace,
+		"services":            services,
+		"interface_endpoints": interfaces,
+		"public_egress":       publicEgress,
+	}
+	data, err := json.MarshalIndent(catalog, "", "  ")
+	if err != nil {
+		return err
+	}
+	data = append(data, '\n')
+	if err := os.WriteFile(filepath.Join(generatedRoot, "service-topology.json"), data, 0o644); err != nil {
+		return err
+	}
+	return normalizeGeneratedGatewayRoute(generatedRoot, topology, previousName, previousNamespace)
+}
+
+func normalizeGeneratedGatewayRoute(
+	generatedRoot string,
+	topology deploymentTopology,
+	previousName,
+	previousNamespace string,
+) error {
+	routePath := filepath.Join(generatedRoot, "accounts-routes.virtualservice.yaml")
+	if _, exists := topologyServiceByName(topology, "accounts"); !exists {
+		if err := os.Remove(routePath); err != nil && !errors.Is(err, os.ErrNotExist) {
+			return err
+		}
+		return nil
+	}
+	data, err := os.ReadFile(routePath)
+	if errors.Is(err, os.ErrNotExist) {
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	var route map[string]any
+	if err := yaml.Unmarshal(data, &route); err != nil {
+		return fmt.Errorf("parse generated gateway route: %w", err)
+	}
+	metadata, ok := route["metadata"].(map[string]any)
+	if !ok {
+		return errors.New("generated gateway route metadata must be an object")
+	}
+	metadata["name"] = topology.Module.Name + "-accounts-catalog"
+	metadata["namespace"] = topology.Module.Namespace
+	spec, ok := route["spec"].(map[string]any)
+	if !ok {
+		return errors.New("generated gateway route spec must be an object")
+	}
+	spec["gateways"] = []any{topology.Module.Name}
+	rewriteGeneratedRouteStrings(
+		spec["http"],
+		previousName,
+		previousNamespace,
+		topology.Module.Name,
+		topology.Module.Namespace,
+		topology.Module.ServiceEntry,
+	)
+	encoded, err := yaml.Marshal(route)
+	if err != nil {
+		return err
+	}
+	return os.WriteFile(routePath, encoded, 0o644)
+}
+
+func rewriteGeneratedRouteStrings(
+	value any,
+	previousName,
+	previousNamespace,
+	moduleName,
+	namespace,
+	serviceEntry string,
+) {
+	switch typed := value.(type) {
+	case []any:
+		for _, item := range typed {
+			rewriteGeneratedRouteStrings(item, previousName, previousNamespace, moduleName, namespace, serviceEntry)
+		}
+	case map[string]any:
+		for key, item := range typed {
+			text, ok := item.(string)
+			if !ok {
+				rewriteGeneratedRouteStrings(item, previousName, previousNamespace, moduleName, namespace, serviceEntry)
+				continue
+			}
+			if text == previousName {
+				typed[key] = moduleName
+				continue
+			}
+			suffix := "." + previousNamespace + ".svc.cluster.local"
+			if strings.HasSuffix(text, suffix) {
+				typed[key] = serviceEntry + "." + namespace + ".svc.cluster.local"
+			}
+		}
+	}
 }
 
 func findWorkspaceRoot(start string) (string, error) {
@@ -186,14 +487,16 @@ func copyFile(srcPath, dstPath string, mode os.FileMode, rewriteName bool, name 
 	if err != nil {
 		return err
 	}
-	defer in.Close()
+	defer func() { _ = in.Close() }()
 	out, err := os.OpenFile(dstPath, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, mode)
 	if err != nil {
 		return err
 	}
-	defer out.Close()
-	_, err = io.Copy(out, in)
-	return err
+	if _, err = io.Copy(out, in); err != nil {
+		_ = out.Close()
+		return err
+	}
+	return out.Close()
 }
 
 func main() {
