@@ -9,34 +9,12 @@ import (
 
 	"accounts/pkg/billing"
 	"accounts/pkg/business"
-	gen "accounts/pkg/gen/saas/accounts/v1"
-	"accounts/pkg/usersettings"
 )
 
 type billingStoreFake struct {
 	business.Store
 	plan       *business.PlanFull
 	customerID string
-}
-
-type paymentFailedStore struct {
-	notificationPreferenceStore
-	organization *gen.Organization
-}
-
-func (store *paymentFailedStore) WithOrgTx(
-	ctx context.Context,
-	_ string,
-	fn func(context.Context) error,
-) error {
-	return fn(ctx)
-}
-
-func (store *paymentFailedStore) GetOrganization(
-	context.Context,
-	string,
-) (*gen.Organization, error) {
-	return store.organization, nil
 }
 
 func (f *billingStoreFake) WithOrgTx(ctx context.Context, _ string, fn func(context.Context) error) error {
@@ -187,27 +165,4 @@ func TestBillingMutationsRequireStableCallerKeyAndNamespaceOperations(t *testing
 	require.NoError(t, err)
 	require.NotEqual(t, client.portalCalls[0].idempotencyKey, client.checkoutCalls[0].IdempotencyKey,
 		"one caller token must not collide across Stripe operation types")
-}
-
-func TestPaymentFailureNotificationIsMandatoryAndActionable(t *testing.T) {
-	settings := &gen.UserSettings{}
-	require.NoError(t, usersettings.Fields.Notifications.InApp.Set(settings, false))
-	store := &paymentFailedStore{
-		notificationPreferenceStore: notificationPreferenceStore{
-			settings: settings,
-		},
-		organization: &gen.Organization{
-			Id:      "org-1",
-			Name:    "Acme",
-			OwnerId: "owner-1",
-		},
-	}
-	service, err := business.NewService(store)
-	require.NoError(t, err)
-
-	require.NoError(t, service.HandlePaymentFailed(context.Background(), "org-1"))
-	require.Len(t, store.notifications, 1)
-	require.Equal(t, "billing", store.notifications[0].Type)
-	require.Equal(t, "org-1", store.notifications[0].OrgID)
-	require.Equal(t, "/admin/billing", store.notifications[0].ActionURL)
 }

@@ -43,4 +43,18 @@ describe("notification transforms", () => {
 			actionUrl: undefined,
 		});
 	});
+
+	it.each([
+		"//evil.example/path",
+		"/\\evil.example/path",
+		"https://evil.example/path",
+		"javascript:alert(document.cookie)",
+	])("rejects non-local action URL %s", (actionUrl) => {
+		const message = create(NotificationSchema, {
+			id: "notification-3",
+			actionUrl,
+		});
+
+		expect(toNotification(message).actionUrl).toBeUndefined();
+	});
 });

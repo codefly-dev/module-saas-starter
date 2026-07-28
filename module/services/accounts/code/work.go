@@ -350,9 +350,10 @@ func doWork(ctx context.Context) (Clean, error) {
 			PortalReturnURL:    billingBaseURL + "/admin/billing",
 		})
 
-		billingNotifier := &billingEmailNotifier{
-			outbox:     workerEmailOutbox,
-			billingURL: billingBaseURL + "/admin/billing",
+		billingNotifier := &billingNotifier{
+			outbox:        workerEmailOutbox,
+			notifications: service,
+			billingURL:    billingBaseURL + "/admin/billing",
 		}
 
 		adapters.RegisterHTTPRoute("/v1/billing/webhook", billing.NewHandler(billing.HandlerDeps{
@@ -800,16 +801,17 @@ func loadSigningKey(ctx context.Context) (ed25519core.PrivateKey, error) {
 	return priv, err
 }
 
-// billingEmailNotifier converts a completed billing projection into a second
-// durable outbox command. It never owns or calls the email transport.
-type billingEmailNotifier struct {
-	outbox     *email.Outbox
-	billingURL string
+// billingNotifier converts a completed billing projection into channel-specific
+// delivery commands.
+type billingNotifier struct {
+	outbox        *email.Outbox
+	notifications *business.Service
+	billingURL    string
 }
 
-func (n *billingEmailNotifier) EnqueueBillingEmail(ctx context.Context, message billing.BillingEmail) error {
+func (n *billingNotifier) EnqueueBillingEmail(ctx context.Context, message billing.BillingEmail) error {
 	if n == nil || n.outbox == nil {
-		return nil
+		return fmt.Errorf("billing: email notifier is not configured")
 	}
 	variables := make(map[string]string, len(message.Variables)+1)
 	for key, value := range message.Variables {
@@ -824,4 +826,24 @@ func (n *billingEmailNotifier) EnqueueBillingEmail(ctx context.Context, message 
 		To:          message.To,
 		Variables:   variables,
 	})
+}
+
+func (n *billingNotifier) CreateBillingNotification(
+	ctx context.Context,
+	message billing.BillingNotification,
+) error {
+	if n == nil || n.notifications == nil {
+		return fmt.Errorf("billing: in-app notifier is not configured")
+	}
+	_, err := n.notifications.CreateNotification(ctx, business.CreateNotificationInput{
+		UserID:         message.RecipientID,
+		OrgID:          message.OrganizationID,
+		Title:          message.Title,
+		Body:           message.Body,
+		Type:           "billing",
+		ActionURL:      message.ActionURL,
+		Category:       business.NotificationCategoryBilling,
+		IdempotencyKey: message.DeliveryKey,
+	})
+	return err
 }

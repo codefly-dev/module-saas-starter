@@ -31,13 +31,16 @@ The generated `UserSettings` protobuf is the only application model. Postgres
 stores sparse ProtoJSON in `users.settings`; raw JSON is confined to the
 Postgres adapter.
 
-Only `notifications.in_app` describes an implemented notification behavior.
-Optional in-app writes enforce it inside the recipient's user-scoped
-transaction. Account-protection notices are mandatory and bypass that optional
-path; `email.security` therefore cannot be disabled. The push and sound fields
-remain reserved in the common settings schema for product overlays, but the
-Starter does not expose controls for them because it has no push sender,
-subscription registry, service worker, or notification sound behavior.
+`notifications.in_app` and invitation delivery through `email.product`
+describe implemented optional notification behavior. Optional in-app writes
+enforce the recipient's setting inside a user-scoped transaction.
+Account-protection in-app notices are mandatory and bypass that optional path.
+`email.security` reserves the same mandatory policy for a future security-email
+producer and cannot be disabled, but the Starter does not claim or expose
+security-email delivery. The push and sound fields remain reserved in the
+common settings schema for product overlays, but the Starter does not expose
+controls for them because it has no push sender, subscription registry, service
+worker, or notification sound behavior.
 
 Notification delivery uses one category/channel policy:
 
@@ -46,7 +49,7 @@ Notification delivery uses one category/channel policy:
 | product | `email.product` | `notifications.in_app` | no |
 | marketing | `email.marketing` | `notifications.in_app` | no |
 | digest | `email.weekly_digest` | `notifications.in_app` | no |
-| security | always on | always on | yes |
+| security | reserved; no Starter producer | always on | yes |
 | billing | always on | always on | yes |
 
 An unavailable preference read fails closed for optional delivery. A recipient

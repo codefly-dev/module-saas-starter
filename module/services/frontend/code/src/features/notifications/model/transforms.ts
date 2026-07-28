@@ -2,6 +2,23 @@ import { timestampDate } from "@bufbuild/protobuf/wkt";
 import type { Notification as NotificationMessage } from "@/gen/saas/accounts/v1/notifications_pb";
 import type { Notification, NotificationType } from "./types";
 
+const notificationActionBase = new URL("https://notification.invalid");
+
+function notificationActionUrl(actionUrl: string): string | undefined {
+	if (!actionUrl.startsWith("/")) {
+		return undefined;
+	}
+	try {
+		const resolved = new URL(actionUrl, notificationActionBase);
+		if (resolved.origin !== notificationActionBase.origin) {
+			return undefined;
+		}
+		return `${resolved.pathname}${resolved.search}${resolved.hash}`;
+	} catch {
+		return undefined;
+	}
+}
+
 export function toNotification(message: NotificationMessage): Notification {
 	return {
 		id: message.id,
@@ -12,10 +29,7 @@ export function toNotification(message: NotificationMessage): Notification {
 		createdAt: message.createdAt
 			? timestampDate(message.createdAt).toISOString()
 			: new Date(0).toISOString(),
-		actionUrl:
-			message.actionUrl.startsWith("/") && !message.actionUrl.startsWith("//")
-				? message.actionUrl
-				: undefined,
+		actionUrl: notificationActionUrl(message.actionUrl),
 	};
 }
 

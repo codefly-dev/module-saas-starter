@@ -30,6 +30,19 @@ type DeliveryDecision struct {
 	Reason    string
 }
 
+func notificationCategoryIsMandatory(category NotificationCategory) (bool, error) {
+	switch category {
+	case NotificationCategorySecurity, NotificationCategoryBilling:
+		return true, nil
+	case NotificationCategoryProduct,
+		NotificationCategoryMarketing,
+		NotificationCategoryDigest:
+		return false, nil
+	default:
+		return false, fmt.Errorf("notification category %q is invalid", category)
+	}
+}
+
 func EvaluateNotificationDelivery(
 	settings *gen.UserSettings,
 	category NotificationCategory,

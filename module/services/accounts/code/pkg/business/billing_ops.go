@@ -25,7 +25,6 @@ import (
 	"github.com/codefly-dev/core/wool"
 
 	"accounts/pkg/billing"
-	gen "accounts/pkg/gen/saas/accounts/v1"
 )
 
 // BillingClient is the subset of billing.Client we need here. Kept
@@ -205,46 +204,6 @@ func (s *Service) ListInvoices(ctx context.Context, orgID string, limit int) ([]
 		return nil, w.Wrapf(err, "stripe list invoices")
 	}
 	return invoices, nil
-}
-
-// HandlePaymentFailed is called when a Stripe webhook reports a failed payment.
-// It notifies the org owner and sends a critical alert to Slack.
-//
-// Stripe webhooks arrive without a tenant context (the webhook handler
-// is unauthenticated by network boundary; the orgID comes from the
-// Stripe customer mapping). Wrap the org read in WithOrgTx so RLS
-// (Phase 2F) lets us resolve the owner.
-func (s *Service) HandlePaymentFailed(ctx context.Context, orgID string) error {
-	w := wool.Get(ctx).In("HandlePaymentFailed")
-
-	var org *gen.Organization
-	if err := s.store.WithOrgTx(ctx, orgID, func(ctx context.Context) error {
-		o, err := s.store.GetOrganization(ctx, orgID)
-		org = o
-		return err
-	}); err != nil {
-		return w.Wrapf(err, "cannot get organization")
-	}
-	if org == nil {
-		return w.NewError("organization not found: %s", orgID)
-	}
-
-	_, _ = s.CreateNotification(
-		ctx,
-		org.OwnerId,
-		orgID,
-		"Payment failed",
-		fmt.Sprintf("Payment failed for %s. Please update your payment method.", org.Name),
-		"billing",
-		"/admin/billing",
-	)
-
-	// Critical event: also notify via Slack
-	s.notifySlack(ctx, fmt.Sprintf(":rotating_light: Payment failed for org %s (%s)", org.Name, orgID))
-
-	s.emit(ctx, "system", "system", "billing.payment_failed", "organization", orgID, orgID)
-
-	return nil
 }
 
 // ensureStripeCustomer loads or creates the Stripe customer for an org.

@@ -22,6 +22,17 @@ import (
 	"google.golang.org/protobuf/proto"
 )
 
+type rejectingNotificationStore struct {
+	business.Store
+}
+
+func (rejectingNotificationStore) CreateNotification(
+	context.Context,
+	*business.Notification,
+) error {
+	return errors.New("reject invitation notification")
+}
+
 func TestPostgresJobProducerRequiresTransactionAndResolvesIdempotency(t *testing.T) {
 	worker, err := infra.NewJobWorkerPool(testCtx)
 	require.NoError(t, err)
@@ -388,6 +399,44 @@ func TestInvitationAndEmailJobCommitOrRollBackTogether(t *testing.T) {
 	require.NoError(t, proto.Unmarshal(encoded, payload))
 	require.Equal(t, []string{"queued-invite@example.com"}, payload.GetTo())
 	require.Contains(t, payload.GetHtmlBody(), response.GetInviteToken())
+}
+
+func TestInvitationAndNotificationCommitOrRollBackTogether(t *testing.T) {
+	ownerID := seedUser(t)
+	orgID := seedOrg(t, ownerID)
+	inviteeID := seedUser(t)
+
+	var invitee *accountsv1.User
+	require.NoError(t, testStore.As(business.System()).Within(testCtx, func(ctx context.Context) error {
+		var err error
+		invitee, err = testStore.GetUser(ctx, inviteeID)
+		return err
+	}))
+
+	store := rejectingNotificationStore{Store: testStore}
+	service, err := business.NewService(store)
+	require.NoError(t, err)
+	service.SetEntitlementChecker(business.NewDefaultEntitlementChecker(store))
+
+	_, err = service.CreateInvitation(testCtx, ownerID, &accountsv1.CreateInvitationRequest{
+		OrgId: orgID, Email: invitee.GetPrimaryEmail(), Role: "member",
+	})
+
+	require.ErrorContains(t, err, "reject invitation notification")
+	require.NoError(t, testStore.WithOrgTx(testCtx, orgID, func(ctx context.Context) error {
+		invitations, err := testStore.ListInvitations(ctx, orgID, "")
+		require.NoError(t, err)
+		for _, invitation := range invitations {
+			require.NotEqual(t, invitee.GetPrimaryEmail(), invitation.Email)
+		}
+		return nil
+	}))
+	require.NoError(t, testStore.WithUserTx(testCtx, inviteeID, func(ctx context.Context) error {
+		notifications, _, err := testStore.ListNotifications(ctx, inviteeID, 20, "")
+		require.NoError(t, err)
+		require.Empty(t, notifications)
+		return nil
+	}))
 }
 
 func TestInvitationCreatesActionableNotificationForExistingUser(t *testing.T) {

@@ -216,6 +216,29 @@ func TestOrgByStripeCustomerID_NotFound(t *testing.T) {
 	require.True(t, errors.Is(err, billing.ErrOrgNotFound))
 }
 
+func TestBillingRecipientByStripeCustomerID(t *testing.T) {
+	resetBilling(t)
+	ctx := context.Background()
+	s := pgbilling.New(testPool)
+
+	userID, orgID := seedOrg(t, "cus_recipient")
+	recipient, err := s.BillingRecipientByStripeCustomerID(ctx, "cus_recipient")
+
+	require.NoError(t, err)
+	require.Equal(t, orgID.String(), recipient.OrganizationID)
+	require.Equal(t, userID.String(), recipient.UserID)
+	require.Equal(t, "user-"+userID.String()+"@test.local", recipient.Email)
+}
+
+func TestBillingRecipientByStripeCustomerIDNotFound(t *testing.T) {
+	resetBilling(t)
+	s := pgbilling.New(testPool)
+
+	_, err := s.BillingRecipientByStripeCustomerID(context.Background(), "cus_nope")
+
+	require.ErrorIs(t, err, billing.ErrOrgNotFound)
+}
+
 // ============================================================================
 // UpsertSubscription — the three cases
 // ============================================================================

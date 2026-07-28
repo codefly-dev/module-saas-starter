@@ -45,6 +45,11 @@ func (store *notificationPreferenceStore) CreateNotification(
 	_ context.Context,
 	notification *business.Notification,
 ) error {
+	for _, existing := range store.notifications {
+		if existing.ID == notification.ID {
+			return nil
+		}
+	}
 	store.notifications = append(store.notifications, notification)
 	return nil
 }
@@ -56,12 +61,11 @@ func TestCreateNotificationUsesEnabledDefault(t *testing.T) {
 
 	notification, err := service.CreateNotification(
 		context.Background(),
-		"user-1",
-		"org-1",
-		"Invitation",
-		"You have been invited",
-		"info",
-		"/invitations/accept?token=token",
+		business.CreateNotificationInput{
+			UserID: "user-1", OrgID: "org-1", Category: business.NotificationCategoryProduct,
+			Title: "Invitation", Body: "You have been invited",
+			Type: "info", ActionURL: "/invitations/accept?token=token",
+		},
 	)
 
 	require.NoError(t, err)
@@ -79,12 +83,10 @@ func TestCreateNotificationSkipsUserOptOut(t *testing.T) {
 
 	notification, err := service.CreateNotification(
 		context.Background(),
-		"user-1",
-		"",
-		"Optional update",
-		"Body",
-		"info",
-		"",
+		business.CreateNotificationInput{
+			UserID: "user-1", Category: business.NotificationCategoryProduct,
+			Title: "Optional update", Body: "Body", Type: "info",
+		},
 	)
 
 	require.NoError(t, err)
@@ -96,20 +98,22 @@ func TestCreateNotificationDoesNotSuppressMandatoryCategories(t *testing.T) {
 	settings := &gen.UserSettings{}
 	require.NoError(t, usersettings.Fields.Notifications.InApp.Set(settings, false))
 
-	for _, notificationType := range []string{"security", "billing"} {
-		t.Run(notificationType, func(t *testing.T) {
+	for _, category := range []business.NotificationCategory{
+		business.NotificationCategorySecurity,
+		business.NotificationCategoryBilling,
+	} {
+		t.Run(string(category), func(t *testing.T) {
 			store := &notificationPreferenceStore{settings: settings}
 			service, err := business.NewService(store)
 			require.NoError(t, err)
 
 			notification, err := service.CreateNotification(
 				context.Background(),
-				"user-1",
-				"org-1",
-				"Required update",
-				"Body",
-				notificationType,
-				"/settings/security",
+				business.CreateNotificationInput{
+					UserID: "user-1", OrgID: "org-1", Category: category,
+					Title: "Required update", Body: "Body",
+					Type: "warning", ActionURL: "/settings/security",
+				},
 			)
 
 			require.NoError(t, err)
@@ -126,15 +130,51 @@ func TestCreateNotificationFailsClosedWhenPreferenceCannotBeRead(t *testing.T) {
 
 	notification, err := service.CreateNotification(
 		context.Background(),
-		"user-1",
-		"",
-		"Optional update",
-		"Body",
-		"info",
-		"",
+		business.CreateNotificationInput{
+			UserID: "user-1", Category: business.NotificationCategoryProduct,
+			Title: "Optional update", Body: "Body", Type: "security",
+		},
 	)
 
 	require.Error(t, err)
+	require.Nil(t, notification)
+	require.Empty(t, store.notifications)
+}
+
+func TestCreateNotificationConvergesIdempotentRetries(t *testing.T) {
+	store := &notificationPreferenceStore{}
+	service, err := business.NewService(store)
+	require.NoError(t, err)
+	input := business.CreateNotificationInput{
+		UserID: "user-1", OrgID: "org-1",
+		Title: "Payment failed", Body: "Update your payment method.",
+		Type: "billing", Category: business.NotificationCategoryBilling,
+		ActionURL: "/admin/billing", IdempotencyKey: "stripe-notification/event-1",
+	}
+
+	first, err := service.CreateNotification(context.Background(), input)
+	require.NoError(t, err)
+	second, err := service.CreateNotification(context.Background(), input)
+
+	require.NoError(t, err)
+	require.Equal(t, first.ID, second.ID)
+	require.Len(t, store.notifications, 1)
+}
+
+func TestCreateNotificationRejectsInvalidCategoryBeforeReadingPreferences(t *testing.T) {
+	store := &notificationPreferenceStore{settingsErr: errors.New("settings unavailable")}
+	service, err := business.NewService(store)
+	require.NoError(t, err)
+
+	notification, err := service.CreateNotification(
+		context.Background(),
+		business.CreateNotificationInput{
+			UserID: "user-1", Category: "unknown",
+			Title: "Update", Body: "Body",
+		},
+	)
+
+	require.ErrorContains(t, err, `notification category "unknown" is invalid`)
 	require.Nil(t, notification)
 	require.Empty(t, store.notifications)
 }

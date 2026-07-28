@@ -87,34 +87,16 @@ func (s *Service) CreateInvitation(ctx context.Context, inviterID string, req *g
 		invitee = nil
 	}
 
-	sendInvitationEmail := true
-	if invitee != nil {
-		if err := s.store.WithUserTx(ctx, invitee.Uuid, func(ctx context.Context) error {
-			settings, err := s.store.GetUserSettings(ctx, invitee.Uuid)
-			if err != nil {
-				return err
-			}
-			decision, err := EvaluateNotificationDelivery(
-				settings,
-				NotificationCategoryProduct,
-				NotificationChannelEmail,
-			)
-			if err != nil {
-				return err
-			}
-			sendInvitationEmail = decision.Deliver
-			return nil
-		}); err != nil {
-			return nil, w.Wrapf(err, "cannot evaluate invitation delivery")
-		}
-	}
-
 	// The pending invitation reserves one seat. Quota inspection, stale
 	// reservation cleanup, insertion, and the organization read all share the
-	// same tenant transaction and per-org quota lock. When email is enabled, the
-	// exact rendered delivery command commits in this transaction as well.
+	// same transaction and per-org quota lock. Existing recipients also supply a
+	// user scope so preference evaluation and the in-app row commit atomically.
 	var orgName string
-	if err := s.store.WithOrgTx(ctx, req.OrgId, func(ctx context.Context) error {
+	identity := Identity{OrgID: req.OrgId}
+	if invitee != nil {
+		identity.UserID = invitee.Uuid
+	}
+	if err := s.store.As(identity).Within(ctx, func(ctx context.Context) error {
 		quota, err := s.cardinalityQuotaInTx(ctx, req.OrgId, EntitlementSeats)
 		if err != nil {
 			return w.Wrapf(err, "cannot check seat quota")
@@ -131,11 +113,40 @@ func (s *Service) CreateInvitation(ctx context.Context, inviterID string, req *g
 		if org, err := s.store.GetOrganization(ctx, req.OrgId); err == nil && org != nil {
 			orgName = org.Name
 		}
-		if s.emailOutbox != nil && sendInvitationEmail {
-			if orgName == "" {
-				orgName = req.OrgId
+
+		if orgName == "" {
+			orgName = req.OrgId
+		}
+		sendInvitationEmail := true
+		if invitee != nil {
+			settings, err := s.store.GetUserSettings(ctx, invitee.Uuid)
+			if err != nil {
+				return w.Wrapf(err, "cannot read invitation preferences")
 			}
-			return s.emailOutbox.EnqueueTemplate(ctx, email.TemplateRequest{
+			emailDecision, err := EvaluateNotificationDelivery(
+				settings,
+				NotificationCategoryProduct,
+				NotificationChannelEmail,
+			)
+			if err != nil {
+				return err
+			}
+			sendInvitationEmail = emailDecision.Deliver
+			if _, err := s.createNotificationWithSettings(ctx, CreateNotificationInput{
+				UserID:    invitee.Uuid,
+				OrgID:     req.OrgId,
+				Title:     "You've been invited",
+				Body:      fmt.Sprintf("You've been invited to %s", orgName),
+				Type:      "info",
+				ActionURL: acceptPath,
+				Category:  NotificationCategoryProduct,
+			}, settings); err != nil {
+				return w.Wrapf(err, "cannot create invitation notification")
+			}
+		}
+
+		if s.emailOutbox != nil && sendInvitationEmail {
+			if err := s.emailOutbox.EnqueueTemplate(ctx, email.TemplateRequest{
 				DeliveryKey: inv.ID,
 				Scope:       email.TenantScope(req.OrgId),
 				Source:      invitationEmailSource,
@@ -156,7 +167,9 @@ func (s *Service) CreateInvitation(ctx context.Context, inviterID string, req *g
 					TextBody: renderInviteText(acceptURL, inv.Role),
 					Tags:     map[string]string{"type": "invitation", "org_id": inv.OrgID},
 				},
-			})
+			}); err != nil {
+				return err
+			}
 		}
 		return nil
 	}); err != nil {
@@ -164,24 +177,6 @@ func (s *Service) CreateInvitation(ctx context.Context, inviterID string, req *g
 	}
 
 	s.emit(ctx, inviterID, "user", "invitation.created", "invitation", inv.ID, req.OrgId)
-
-	// Notify an existing invitee. This is an exact pre-auth-style lookup: the
-	// invite target is not yet in the organization, so no user/org scope can
-	// authorize the read. Keep it behind the named control-plane operation.
-	if invitee != nil {
-		if orgName == "" {
-			orgName = req.OrgId
-		}
-		_, _ = s.CreateNotification(
-			ctx,
-			invitee.Uuid,
-			req.OrgId,
-			"You've been invited",
-			fmt.Sprintf("You've been invited to %s", orgName),
-			"info",
-			acceptPath,
-		)
-	}
 
 	return &gen.CreateInvitationResponse{
 		Invitation:  invitationToProto(inv),
