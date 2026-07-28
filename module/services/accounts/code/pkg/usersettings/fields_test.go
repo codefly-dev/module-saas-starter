@@ -83,7 +83,7 @@ func TestResolvePreservesExplicitFalseInsteadOfApplyingDefault(t *testing.T) {
 	require.False(t, resolved.Email.GetProduct())
 }
 
-func TestResolvePreservesEveryExplicitZeroAndEmptyValue(t *testing.T) {
+func TestResolvePreservesExplicitZeroValuesExceptMandatorySecurityEmail(t *testing.T) {
 	stored := &gen.UserSettings{}
 	require.NoError(t, usersettings.Fields.Appearance.Theme.Set(
 		stored,
@@ -122,7 +122,7 @@ func TestResolvePreservesEveryExplicitZeroAndEmptyValue(t *testing.T) {
 	require.NotNil(t, resolved.Email.Marketing)
 	require.False(t, resolved.Email.GetMarketing())
 	require.NotNil(t, resolved.Email.Security)
-	require.False(t, resolved.Email.GetSecurity())
+	require.True(t, resolved.Email.GetSecurity())
 	require.NotNil(t, resolved.Email.WeeklyDigest)
 	require.False(t, resolved.Email.GetWeeklyDigest())
 	require.NotNil(t, resolved.Notifications.InApp)

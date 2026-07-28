@@ -6,6 +6,7 @@ import (
 	"crypto/sha256"
 	"encoding/base64"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"strings"
 	"time"
@@ -69,7 +70,44 @@ func (s *Service) CreateInvitation(ctx context.Context, inviterID string, req *g
 	if appBase == "" {
 		appBase = "http://localhost:21931"
 	}
-	acceptURL := fmt.Sprintf("%s/invitations/accept?token=%s", appBase, plaintext)
+	acceptPath := fmt.Sprintf("/invitations/accept?token=%s", plaintext)
+	acceptURL := appBase + acceptPath
+
+	var invitee *gen.User
+	err := s.store.As(System()).Within(ctx, func(ctx context.Context) error {
+		var err error
+		invitee, err = s.store.GetUserByEmail(ctx, req.Email)
+		return err
+	})
+	if err != nil {
+		var storeErr *StoreError
+		if !errors.As(err, &storeErr) || storeErr.StoreErrorType != ErrTypeNotFound {
+			return nil, w.Wrapf(err, "cannot resolve invitation recipient")
+		}
+		invitee = nil
+	}
+
+	sendInvitationEmail := true
+	if invitee != nil {
+		if err := s.store.WithUserTx(ctx, invitee.Uuid, func(ctx context.Context) error {
+			settings, err := s.store.GetUserSettings(ctx, invitee.Uuid)
+			if err != nil {
+				return err
+			}
+			decision, err := EvaluateNotificationDelivery(
+				settings,
+				NotificationCategoryProduct,
+				NotificationChannelEmail,
+			)
+			if err != nil {
+				return err
+			}
+			sendInvitationEmail = decision.Deliver
+			return nil
+		}); err != nil {
+			return nil, w.Wrapf(err, "cannot evaluate invitation delivery")
+		}
+	}
 
 	// The pending invitation reserves one seat. Quota inspection, stale
 	// reservation cleanup, insertion, and the organization read all share the
@@ -93,7 +131,7 @@ func (s *Service) CreateInvitation(ctx context.Context, inviterID string, req *g
 		if org, err := s.store.GetOrganization(ctx, req.OrgId); err == nil && org != nil {
 			orgName = org.Name
 		}
-		if s.emailOutbox != nil {
+		if s.emailOutbox != nil && sendInvitationEmail {
 			if orgName == "" {
 				orgName = req.OrgId
 			}
@@ -130,17 +168,19 @@ func (s *Service) CreateInvitation(ctx context.Context, inviterID string, req *g
 	// Notify an existing invitee. This is an exact pre-auth-style lookup: the
 	// invite target is not yet in the organization, so no user/org scope can
 	// authorize the read. Keep it behind the named control-plane operation.
-	var invitee *gen.User
-	_ = s.store.As(System()).Within(ctx, func(ctx context.Context) error {
-		var err error
-		invitee, err = s.store.GetUserByEmail(ctx, req.Email)
-		return err
-	})
 	if invitee != nil {
 		if orgName == "" {
 			orgName = req.OrgId
 		}
-		_ = s.NotifyUser(ctx, invitee.Uuid, "You've been invited", fmt.Sprintf("You've been invited to %s", orgName))
+		_, _ = s.CreateNotification(
+			ctx,
+			invitee.Uuid,
+			req.OrgId,
+			"You've been invited",
+			fmt.Sprintf("You've been invited to %s", orgName),
+			"info",
+			acceptPath,
+		)
 	}
 
 	return &gen.CreateInvitationResponse{

@@ -14,6 +14,7 @@ import (
 	notificationsv1 "accounts/pkg/gen/saas/notifications/v1"
 	"accounts/pkg/infra"
 	"accounts/pkg/jobs"
+	"accounts/pkg/usersettings"
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
@@ -387,6 +388,67 @@ func TestInvitationAndEmailJobCommitOrRollBackTogether(t *testing.T) {
 	require.NoError(t, proto.Unmarshal(encoded, payload))
 	require.Equal(t, []string{"queued-invite@example.com"}, payload.GetTo())
 	require.Contains(t, payload.GetHtmlBody(), response.GetInviteToken())
+}
+
+func TestInvitationCreatesActionableNotificationForExistingUser(t *testing.T) {
+	ownerID := seedUser(t)
+	orgID := seedOrg(t, ownerID)
+	inviteeID := seedUser(t)
+
+	var invitee *accountsv1.User
+	require.NoError(t, testStore.As(business.System()).Within(testCtx, func(ctx context.Context) error {
+		var err error
+		invitee, err = testStore.GetUser(ctx, inviteeID)
+		return err
+	}))
+
+	service, err := business.NewService(testStore)
+	require.NoError(t, err)
+	service.SetEntitlementChecker(business.NewDefaultEntitlementChecker(testStore))
+	outbox, err := email.NewOutbox(
+		testStore,
+		infra.NewPostgresTemplateStore(testStore),
+		"no-reply@example.com",
+	)
+	require.NoError(t, err)
+	service.SetEmailOutbox(outbox, "https://app.example.com")
+
+	settings := &accountsv1.UserSettings{}
+	require.NoError(t, usersettings.Fields.Email.Product.Set(settings, false))
+	_, err = service.UpdateUserSettings(testCtx, inviteeID, settings, nil)
+	require.NoError(t, err)
+
+	response, err := service.CreateInvitation(
+		testCtx,
+		ownerID,
+		&accountsv1.CreateInvitationRequest{
+			OrgId: orgID,
+			Email: invitee.GetPrimaryEmail(),
+			Role:  "member",
+		},
+	)
+	require.NoError(t, err)
+
+	notifications, _, err := service.ListNotifications(testCtx, inviteeID, 20, "")
+	require.NoError(t, err)
+	require.Len(t, notifications, 1)
+	require.Equal(t, orgID, notifications[0].OrgID)
+	require.Equal(
+		t,
+		"/invitations/accept?token="+response.GetInviteToken(),
+		notifications[0].ActionURL,
+	)
+
+	workerPool, err := infra.NewJobWorkerPool(testCtx)
+	require.NoError(t, err)
+	t.Cleanup(workerPool.Close)
+	var emailJobs int
+	require.NoError(t, workerPool.QueryRow(
+		testCtx,
+		`SELECT COUNT(*) FROM job_messages WHERE idempotency_key = $1`,
+		response.GetInvitation().GetId(),
+	).Scan(&emailJobs))
+	require.Zero(t, emailJobs)
 }
 
 func testEmailMessage() *email.Message {

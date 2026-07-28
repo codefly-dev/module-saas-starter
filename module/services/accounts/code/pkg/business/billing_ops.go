@@ -229,8 +229,15 @@ func (s *Service) HandlePaymentFailed(ctx context.Context, orgID string) error {
 		return w.NewError("organization not found: %s", orgID)
 	}
 
-	// Notify the org owner
-	_ = s.NotifyUser(ctx, org.OwnerId, "Payment failed", fmt.Sprintf("Payment failed for %s. Please update your payment method.", org.Name))
+	_, _ = s.CreateNotification(
+		ctx,
+		org.OwnerId,
+		orgID,
+		"Payment failed",
+		fmt.Sprintf("Payment failed for %s. Please update your payment method.", org.Name),
+		"billing",
+		"/admin/billing",
+	)
 
 	// Critical event: also notify via Slack
 	s.notifySlack(ctx, fmt.Sprintf(":rotating_light: Payment failed for org %s (%s)", org.Name, orgID))

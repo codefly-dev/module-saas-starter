@@ -31,10 +31,35 @@ The generated `UserSettings` protobuf is the only application model. Postgres
 stores sparse ProtoJSON in `users.settings`; raw JSON is confined to the
 Postgres adapter.
 
+Only `notifications.in_app` describes an implemented notification behavior.
+Optional in-app writes enforce it inside the recipient's user-scoped
+transaction. Account-protection notices are mandatory and bypass that optional
+path; `email.security` therefore cannot be disabled. The push and sound fields
+remain reserved in the common settings schema for product overlays, but the
+Starter does not expose controls for them because it has no push sender,
+subscription registry, service worker, or notification sound behavior.
+
+Notification delivery uses one category/channel policy:
+
+| Category | Optional email setting | In-app | Mandatory |
+| --- | --- | --- | --- |
+| product | `email.product` | `notifications.in_app` | no |
+| marketing | `email.marketing` | `notifications.in_app` | no |
+| digest | `email.weekly_digest` | `notifications.in_app` | no |
+| security | always on | always on | yes |
+| billing | always on | always on | yes |
+
+An unavailable preference read fails closed for optional delivery. A recipient
+without a Starter account has no user preference, so an invitation email
+remains deliverable; once the recipient has an account, the product email
+setting is enforced.
+
 ## Presence and defaults
 
 - An absent scalar inherits the typed field catalog default.
 - A present scalar is an explicit override, including `false`, `""`, or `0`.
+- `email.security` is the sole exception: reads always resolve it to `true` and
+  updates that attempt to disable it are rejected.
 - ProtoJSON `null` is treated as absent, not as a third scalar state.
 - Clearing an override uses `UpdateUserSettingsRequest.clear_mask`.
 - API reads materialize all common defaults without writing them to Postgres.

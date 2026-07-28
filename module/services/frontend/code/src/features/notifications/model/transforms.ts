@@ -1,4 +1,23 @@
-import type { NotificationType } from "./types";
+import { timestampDate } from "@bufbuild/protobuf/wkt";
+import type { Notification as NotificationMessage } from "@/gen/saas/accounts/v1/notifications_pb";
+import type { Notification, NotificationType } from "./types";
+
+export function toNotification(message: NotificationMessage): Notification {
+	return {
+		id: message.id,
+		title: message.title,
+		body: message.body,
+		type: message.type as NotificationType,
+		read: message.readAt !== undefined,
+		createdAt: message.createdAt
+			? timestampDate(message.createdAt).toISOString()
+			: new Date(0).toISOString(),
+		actionUrl:
+			message.actionUrl.startsWith("/") && !message.actionUrl.startsWith("//")
+				? message.actionUrl
+				: undefined,
+	};
+}
 
 export function formatNotificationType(type: NotificationType): string {
 	switch (type) {
@@ -10,12 +29,10 @@ export function formatNotificationType(type: NotificationType): string {
 			return "Warning";
 		case "error":
 			return "Error";
-		case "invite":
-			return "Invitation";
-		case "mention":
-			return "Mention";
-		case "system":
-			return "System";
+		case "billing":
+			return "Billing";
+		case "security":
+			return "Security";
 		default:
 			return "Notification";
 	}
@@ -32,12 +49,10 @@ export function getNotificationIcon(type: NotificationType): string {
 			return "AlertTriangle";
 		case "error":
 			return "XCircle";
-		case "invite":
-			return "Mail";
-		case "mention":
-			return "AtSign";
-		case "system":
-			return "Settings";
+		case "billing":
+			return "CreditCard";
+		case "security":
+			return "Shield";
 		default:
 			return "Bell";
 	}

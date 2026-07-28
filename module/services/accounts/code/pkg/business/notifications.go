@@ -14,17 +14,16 @@ type Notification struct {
 	OrgID     string
 	Title     string
 	Body      string
-	Type      string // "info", "warning", "success", "error"
+	Type      string
 	ActionURL string
 	ReadAt    *time.Time
 	CreatedAt time.Time
 }
 
-// CreateNotification creates and stores a new notification for a
-// user. notifications is RLS-protected by user_id (Phase 2G); the
-// write runs inside WithUserTx scoped to the recipient. Callers from
-// system paths (no actor) should still pass a userID — the recipient
-// is the right scope here.
+// CreateNotification creates an optional in-app notification when the
+// recipient has the channel enabled. Mandatory security notifications are
+// written by their owning transaction so a user preference cannot suppress
+// account-protection messages.
 func (s *Service) CreateNotification(ctx context.Context, userID, orgID, title, body, notifType, actionURL string) (*Notification, error) {
 	w := wool.Get(ctx).In("CreateNotification")
 
@@ -42,10 +41,50 @@ func (s *Service) CreateNotification(ctx context.Context, userID, orgID, title, 
 		ActionURL: actionURL,
 	}
 
+	var deliver bool
 	if err := s.store.WithUserTx(ctx, userID, func(ctx context.Context) error {
+		category := NotificationCategoryProduct
+		switch notifType {
+		case "security":
+			category = NotificationCategorySecurity
+		case "billing":
+			category = NotificationCategoryBilling
+		}
+		if category == NotificationCategorySecurity ||
+			category == NotificationCategoryBilling {
+			decision, err := EvaluateNotificationDelivery(
+				nil,
+				category,
+				NotificationChannelInApp,
+			)
+			if err != nil {
+				return err
+			}
+			deliver = decision.Deliver
+			return s.store.CreateNotification(ctx, n)
+		}
+		settings, err := s.store.GetUserSettings(ctx, userID)
+		if err != nil {
+			return err
+		}
+		decision, err := EvaluateNotificationDelivery(
+			settings,
+			category,
+			NotificationChannelInApp,
+		)
+		if err != nil {
+			return err
+		}
+		deliver = decision.Deliver
+		if !deliver {
+			return nil
+		}
 		return s.store.CreateNotification(ctx, n)
 	}); err != nil {
 		return nil, w.Wrapf(err, "cannot create notification")
+	}
+	if !deliver {
+		return nil, nil
 	}
 
 	return n, nil
