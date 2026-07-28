@@ -1,7 +1,7 @@
 apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
 
-# AWS EKS production overlay. Only the three application services run
+# AWS EKS production overlay. Only the four application services run
 # in-cluster. Stateful dependencies (store / cache / vault / object-storage)
 # are AWS-managed:
 #
@@ -25,6 +25,7 @@ resources:
   - applications/accounts.yaml
   - applications/auth-sidecar.yaml
   - applications/frontend.yaml
+  - applications/marketing.yaml
 
   # External-name shims so saas-starter:5432 resolves to the RDS
   # endpoint, etc. Uncomment + fill in once your AWS resources are

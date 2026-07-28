@@ -49,6 +49,7 @@ func generatedCatalogRESTRoutes() []*RouteEntry {
 		{Service: "accounts", Method: "GET", Path: "/v1/platform/sessions", Procedure: "/saas.accounts.v1.PlatformAdminService/ListActiveSessions"},
 		{Service: "accounts", Method: "GET", Path: "/v1/platform/users", Procedure: "/saas.accounts.v1.PlatformAdminService/SearchUsers"},
 		{Service: "accounts", Method: "GET", Path: "/v1/principals", Procedure: "/saas.accounts.v1.PrincipalService/ListPrincipals"},
+		{Service: "accounts", Method: "GET", Path: "/v1/public/plans", Procedure: "/saas.accounts.v1.BillingService/ListPublicPlans"},
 		{Service: "accounts", Method: "GET", Path: "/v1/role-assignments", Procedure: "/saas.accounts.v1.PermissionService/ListRoleAssignments"},
 		{Service: "accounts", Method: "GET", Path: "/v1/roles", Procedure: "/saas.accounts.v1.PermissionService/ListRoles"},
 		{Service: "accounts", Method: "GET", Path: "/v1/sso/{org_id}", Procedure: "/saas.accounts.v1.SSOAdminService/GetSSO"},

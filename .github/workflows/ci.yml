@@ -16,6 +16,24 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  marketing:
+    name: Marketing isolation
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: module/services/marketing/code/package-lock.json
+      - name: Validate public configuration generator
+        run: |
+          node --test module/tools/generate-public-config.test.mjs
+          node module/tools/generate-public-config.mjs --check
+      - name: Build marketing in an isolated context
+        run: node module/tools/marketing-extraction.mjs
+
   sdk-boundary:
     name: Codefly SDK boundary
     runs-on: ubuntu-latest
@@ -119,3 +137,4 @@ jobs:
           codefly audit service accounts --outdated=false --fail-on-vuln
           codefly audit service auth-sidecar --outdated=false --fail-on-vuln
           npm --prefix module/services/frontend/code audit --omit=dev --audit-level=high
+          npm --prefix module/services/marketing/code audit --omit=dev --audit-level=high

@@ -1793,6 +1793,21 @@
       },
       "type": "object"
     },
+    "v1ListPublicPlansResponse": {
+      "properties": {
+        "plans": {
+          "items": {
+            "$ref": "#/definitions/v1PublicPlan",
+            "type": "object"
+          },
+          "type": "array"
+        },
+        "revision": {
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
     "v1ListRoleAssignmentsResponse": {
       "properties": {
         "assignments": {
@@ -2274,6 +2289,65 @@
         "PRINCIPAL_KIND_AGENT"
       ],
       "type": "string"
+    },
+    "v1PublicPlan": {
+      "properties": {
+        "amountMinor": {
+          "format": "int64",
+          "type": "string"
+        },
+        "checkoutEnabled": {
+          "type": "boolean"
+        },
+        "contactSales": {
+          "type": "boolean"
+        },
+        "currency": {
+          "type": "string"
+        },
+        "description": {
+          "type": "string"
+        },
+        "entitlements": {
+          "items": {
+            "$ref": "#/definitions/v1PublicPlanEntitlement",
+            "type": "object"
+          },
+          "type": "array"
+        },
+        "fixture": {
+          "type": "boolean"
+        },
+        "interval": {
+          "type": "string"
+        },
+        "key": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        },
+        "taxBehavior": {
+          "type": "string"
+        },
+        "trialDays": {
+          "format": "int32",
+          "type": "integer"
+        }
+      },
+      "type": "object"
+    },
+    "v1PublicPlanEntitlement": {
+      "properties": {
+        "key": {
+          "type": "string"
+        },
+        "limit": {
+          "format": "int64",
+          "type": "string"
+        }
+      },
+      "type": "object"
     },
     "v1QueryAuditLogResponse": {
       "properties": {
@@ -6053,6 +6127,28 @@
         },
         "tags": [
           "PrincipalService"
+        ]
+      }
+    },
+    "/v1/public/plans": {
+      "get": {
+        "operationId": "BillingService_ListPublicPlans",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1ListPublicPlansResponse"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/rpcStatus"
+            }
+          }
+        },
+        "tags": [
+          "BillingService"
         ]
       }
     },

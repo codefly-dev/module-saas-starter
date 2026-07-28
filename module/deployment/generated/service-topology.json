@@ -130,6 +130,17 @@
       ]
     },
     {
+      "name": "marketing",
+      "endpoints": [
+        {
+          "name": "http",
+          "api": "CODEFLY_API_HTTP",
+          "visibility": "ENDPOINT_VISIBILITY_MODULE",
+          "port": 3000
+        }
+      ]
+    },
+    {
       "name": "object-storage",
       "endpoints": [
         {
@@ -184,6 +195,12 @@
     },
     {
       "service": "frontend",
+      "ports": [
+        443
+      ]
+    },
+    {
+      "service": "marketing",
       "ports": [
         443
       ]

@@ -44,9 +44,43 @@ spec:
   gateways:
     - saas-starter
   http:
-    # All public traffic enters via auth-sidecar — it's the
-    # JWT-validation + reverse-proxy layer that fronts api +
-    # frontend. It then routes internally based on path.
+    # Local host routing preserves independent public and authenticated
+    # runtimes. Production overlays replace these .localhost authorities with
+    # exact adopter domains.
+    - name: marketing
+      match:
+        - authority:
+            regex: "^((www|docs)\\.)?saas\\.localhost(:[0-9]+)?$"
+      route:
+        - destination:
+            host: marketing.saas-starter.svc.cluster.local
+            port:
+              number: 3000
+      timeout: 10s
+      retries:
+        attempts: 1
+        perTryTimeout: 5s
+        retryOn: gateway-error,connect-failure,refused-stream
+      headers:
+        response:
+          set:
+            Cache-Control: "public, max-age=60, stale-while-revalidate=300"
+    # Product traffic continues through auth-sidecar so the gateway remains
+    # the only browser-facing authentication and API boundary.
+    - match:
+        - authority:
+            regex: "^app\\.saas\\.localhost(:[0-9]+)?$"
+      route:
+        - destination:
+            host: auth-sidecar.saas-starter.svc.cluster.local
+            port:
+              number: 8080
+      timeout: 30s
+      retries:
+        attempts: 2
+        perTryTimeout: 10s
+        retryOn: gateway-error,connect-failure,refused-stream
+    # Backward-compatible local fallback for existing localhost workflows.
     - match:
         - uri:
             prefix: /

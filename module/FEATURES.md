@@ -4,7 +4,7 @@
 > a world-class SaaS starter. Source-of-truth checklist for both end users
 > picking a starter and contributors deciding what to build next.
 
-Last updated: 2026-07-19
+Last updated: 2026-07-28
 
 ---
 
@@ -37,6 +37,7 @@ the sidecar in front so this code path isn't reached.
 |--------------|------------------------------------------------------|
 | Backend      | Go, Connect-RPC + gRPC + grpc-gateway REST (one impl)|
 | Frontend     | Next.js 16 (App Router) + Connect-ES + TanStack Query|
+| Public site  | Separate Next.js 16 service + repository Markdown     |
 | Auth tokens  | Ed25519 JWT, OWASP refresh-token rotation            |
 | Identity     | WorkOS / Auth0 / Google OIDC (prod), fixture (dev)   |
 | Database     | Postgres                                             |
@@ -48,9 +49,11 @@ the sidecar in front so this code path isn't reached.
 | Test infra   | Playwright e2e against the real stack via `withDependencies` |
 
 Everything is orchestrated by Codefly: `codefly run service --fixture
-dev-admin` resolves the module's `auth-sidecar` service entry and brings up all
-seven services—Postgres + Vault + Redis + object storage + accounts + frontend
-+ the public auth gateway—with seed data in one command.
+dev-admin` resolves the module's service graph and brings up all eight
+services—Postgres + Vault + Redis + object storage + accounts + frontend +
+marketing + the public auth gateway—with seed data in one command. Marketing
+remains a separate runtime and may be deployed, rolled back, or disabled
+without changing the authenticated product.
 
 ---
 
@@ -139,6 +142,7 @@ non-admins; **server is still authoritative**.
 /saas.accounts.v1.AuthService/RefreshToken
 /saas.accounts.v1.AuthService/Logout
 /saas.accounts.v1.AuthService/GetJWKS
+/saas.accounts.v1.BillingService/ListPublicPlans
 /saas.accounts.v1.IntrospectionService/GetServiceInfo
 /saas.accounts.v1.UserService/RegisterUser
 /saas.accounts.v1.UserService/Version
@@ -321,6 +325,28 @@ implementations without rewriting the route handlers.
 | Org admin (`/admin/*`) | `users`, `organizations`, `teams`, `roles`, `invitations`, `api-keys`, `audit-log`, `webhooks`, `entitlements`, `billing` |
 | Platform admin         | `/admin/platform/{admins,feature-flags}`, `/admin/sessions`                    |
 | Docs                   | `/docs/sdks`, `/docs/compliance`                                               |
+
+### Marketing (Next.js, separate deployable)
+
+The public service owns apex/`www` content and never imports product sessions,
+dashboard packages, server secrets, tenant data, or database stores. It ships
+home, product, use-case, pricing, company, contact, blog, docs, changelog,
+security, legal, consent, accessibility, maintenance, 404, and error surfaces.
+Content comes from a strict repository Markdown provider; drafts and scheduled
+items are excluded from routes, feeds, search, and indexing.
+
+Public pricing is fetched from `GET /v1/public/plans`, a sanitized projection
+of the accounts plan catalog. Marketing does not define prices, currencies,
+intervals, trials, limits, or checkout eligibility. A catalog outage produces
+an explicit degraded CTA while cached public content and readiness remain
+available.
+
+Brand, domains, locales, contacts, acquisition mode, attribution fields, and
+public plan visibility come from validated `public/site.config.json`. The
+checked-in values are unmistakable development fixtures, and strict production
+readiness rejects placeholder claims, domains, contacts, or disabled indexing.
+See `services/marketing/README.md` for deployment, caching, disablement, and
+extraction contracts.
 
 ### Tests
 

@@ -55,7 +55,48 @@ message ListInvoicesResponse {
   repeated Invoice invoices = 1;
 }
 
+message PublicPlanEntitlement {
+  string key = 1;
+  int64 limit = 2;
+}
+
+message PublicPlan {
+  string key = 1;
+  string name = 2;
+  string description = 3;
+  string currency = 4;
+  int64 amount_minor = 5;
+  string interval = 6;
+  bool checkout_enabled = 7;
+  bool contact_sales = 8;
+  int32 trial_days = 9;
+  string tax_behavior = 10;
+  bool fixture = 11;
+  repeated PublicPlanEntitlement entitlements = 12;
+}
+
+message ListPublicPlansRequest {}
+
+message ListPublicPlansResponse {
+  string revision = 1;
+  repeated PublicPlan plans = 2;
+}
+
 service BillingService {
+  rpc ListPublicPlans(ListPublicPlansRequest) returns (ListPublicPlansResponse) {
+    option (saas.policy.v1.method_policy) = {
+      exposure: EXPOSURE_PUBLIC
+      tenant: TENANT_REQUIREMENT_NONE
+      mfa: MFA_REQUIREMENT_NONE
+      audit: {emission: AUDIT_EMISSION_NONE}
+      idempotency: IDEMPOTENCY_REQUIREMENT_FORBIDDEN
+      rate_limit: RATE_LIMIT_CLASS_PUBLIC
+      request_sensitivity: SENSITIVITY_PUBLIC
+      response_sensitivity: SENSITIVITY_PUBLIC
+      platform_role: PLATFORM_ROLE_REQUIREMENT_NONE
+    };
+    option (google.api.http) = {get: "/v1/public/plans"};
+  }
   rpc OpenPortal(OpenBillingPortalRequest) returns (OpenBillingPortalResponse) {
     option (saas.policy.v1.method_policy) = {
       exposure: EXPOSURE_AUTHENTICATED

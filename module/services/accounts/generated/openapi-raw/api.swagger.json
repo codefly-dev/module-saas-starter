@@ -2842,6 +2842,28 @@
         ]
       }
     },
+    "/v1/public/plans": {
+      "get": {
+        "operationId": "BillingService_ListPublicPlans",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1ListPublicPlansResponse"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/rpcStatus"
+            }
+          }
+        },
+        "tags": [
+          "BillingService"
+        ]
+      }
+    },
     "/v1/role-assignments": {
       "get": {
         "operationId": "PermissionService_ListRoleAssignments",
@@ -5973,6 +5995,21 @@
         }
       }
     },
+    "v1ListPublicPlansResponse": {
+      "type": "object",
+      "properties": {
+        "revision": {
+          "type": "string"
+        },
+        "plans": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "$ref": "#/definitions/v1PublicPlan"
+          }
+        }
+      }
+    },
     "v1ListRoleAssignmentsResponse": {
       "type": "object",
       "properties": {
@@ -6454,6 +6491,65 @@
       ],
       "default": "PRINCIPAL_KIND_UNSPECIFIED",
       "description": "PrincipalKind classifies a principal — humans, services, or agents\n— for filtering/UI without affecting authorization. The auth layer\nitself treats every Principal uniformly. ANY change here MUST stay\nin sync with the SQL CHECK constraint on principals.kind and with\ncodefly's policy.Principal Kind constants."
+    },
+    "v1PublicPlan": {
+      "type": "object",
+      "properties": {
+        "key": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        },
+        "description": {
+          "type": "string"
+        },
+        "currency": {
+          "type": "string"
+        },
+        "amountMinor": {
+          "type": "string",
+          "format": "int64"
+        },
+        "interval": {
+          "type": "string"
+        },
+        "checkoutEnabled": {
+          "type": "boolean"
+        },
+        "contactSales": {
+          "type": "boolean"
+        },
+        "trialDays": {
+          "type": "integer",
+          "format": "int32"
+        },
+        "taxBehavior": {
+          "type": "string"
+        },
+        "fixture": {
+          "type": "boolean"
+        },
+        "entitlements": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "$ref": "#/definitions/v1PublicPlanEntitlement"
+          }
+        }
+      }
+    },
+    "v1PublicPlanEntitlement": {
+      "type": "object",
+      "properties": {
+        "key": {
+          "type": "string"
+        },
+        "limit": {
+          "type": "string",
+          "format": "int64"
+        }
+      }
     },
     "v1QueryAuditLogResponse": {
       "type": "object",

@@ -17,12 +17,12 @@ manifest is reviewable but intentionally not added to kustomize until
 | `services/auth-sidecar/code/routing_rest_catalog_gen.go` | Runtime descriptor REST whitelist. |
 | `deployment/generated/accounts-routes.virtualservice.yaml` | Exact/path-template Istio VirtualService candidate. |
 
-Current descriptor output contains 343 public-edge routes:
+Current descriptor output contains 358 public-edge routes:
 
-- 114 canonical Connect procedures;
-- 114 exact `customers.*` compatibility aliases rewritten to canonical
+- 119 canonical Connect procedures;
+- 119 exact `customers.*` compatibility aliases rewritten to canonical
   `saas.accounts.v1.*` procedures;
-- 115 REST bindings from `google.api.http` annotations;
+- 120 REST bindings from `google.api.http` annotations;
 - zero of the seven `EXPOSURE_INTERNAL` procedures.
 
 ## Generation
@@ -92,7 +92,7 @@ leave the alias with stale auth behavior.
 
 ## REST and frontend boundary
 
-The running gateway consumes all 115 descriptor REST routes from
+The running gateway consumes all 120 descriptor REST routes from
 `saas.rest.surface.v1`. Non-protobuf billing and magic-link endpoints remain
 explicit extensions. Accounts uses the same generated surface for service
 registration and a fail-closed method/path allowlist; the checked-in OpenAPI

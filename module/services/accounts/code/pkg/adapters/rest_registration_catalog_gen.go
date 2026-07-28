@@ -119,6 +119,7 @@ var catalogRESTExactRoutes = map[string]struct{}{
 	"GET /v1/platform/sessions":                {},
 	"GET /v1/platform/users":                   {},
 	"GET /v1/principals":                       {},
+	"GET /v1/public/plans":                     {},
 	"GET /v1/role-assignments":                 {},
 	"GET /v1/roles":                            {},
 	"GET /v1/user/settings":                    {},

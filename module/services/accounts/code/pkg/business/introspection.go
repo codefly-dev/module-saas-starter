@@ -85,6 +85,7 @@ var rpcDescriptions = map[string]string{
 	"AuthService/RefreshToken":                 "Refresh access token.",
 	"AuthService/SwitchOrganization":           "Exchange the active device session for an access token scoped to another current membership.",
 	"BillingService/ListInvoices":              "Past Stripe invoices.",
+	"BillingService/ListPublicPlans":           "Sanitized public pricing and entitlement catalog.",
 	"BillingService/OpenPortal":                "Stripe billing-portal session; requires billing:write and recent MFA.",
 	"ConsentService/Accept":                    "Record TOS acceptance.",
 	"ConsentService/GetStatus":                 "Read TOS acceptance state.",

@@ -19,8 +19,8 @@ deployment ports, and public egress. The runtime `module.codefly.yaml` and every
 | `deployment/kustomize/base/network-policy.yaml` | Generated default-deny and least-privilege Kubernetes policies. |
 | `services/accounts/code/pkg/cataloggen/deployment_topology.go` | Strict compiler, semantic validator, and renderers. |
 
-The normalized inventory currently contains seven services, 11 endpoints,
-eight dependency edges, two module-interface endpoints, and two explicit
+The normalized inventory currently contains eight services, 12 endpoints,
+eight dependency edges, two module-interface endpoints, and three explicit
 public-egress grants. The accounts descriptor catalog is an input: if its RPCs
 use gRPC, Connect, or REST without a corresponding accounts endpoint,
 generation fails.
@@ -38,21 +38,22 @@ generation fails.
 | `auth-sidecar` | `frontend/http` | TCP 3000 |
 | `frontend` | `accounts/connect`, `accounts/rest` | TCP 8080 |
 
-The public module interface exposes only `auth-sidecar/rest`; its gRPC
-ext-authz endpoint has module visibility. Accounts and frontend may reach
-public IP space only over TCP 443. The public rules exclude private, loopback,
-link-local, metadata, documentation, benchmark, multicast, and other
-special-purpose IPv4/IPv6 ranges.
+The Codefly module interface exposes `auth-sidecar/rest`; its gRPC ext-authz
+endpoint has module visibility. Istio separately routes apex/`www`/docs hosts
+to `marketing/http` and `app` to `auth-sidecar/rest`. Accounts, frontend, and
+marketing may reach public IP space only over TCP 443. The public rules exclude
+private, loopback, link-local, metadata, documentation, benchmark, multicast,
+and other special-purpose IPv4/IPv6 ranges.
 
 ## Network-policy model
 
-The generated base contains 15 `NetworkPolicy` resources:
+The generated base contains 16 `NetworkPolicy` resources:
 
 - one namespace-wide ingress/egress default deny;
 - DNS and Istio control-plane egress for all injected workloads;
-- Istio ingress only to the public auth-sidecar HTTP port;
+- Istio ingress only to the public auth-sidecar and marketing HTTP ports;
 - target ingress and caller egress policies for every declared dependency;
-- HTTPS public egress only for accounts and frontend.
+- HTTPS public egress only for accounts, frontend, and marketing.
 
 There is no `allow-intra-namespace` rule. Adding a service dependency or port
 requires changing the topology binding and reviewing both generated directions
@@ -92,7 +93,7 @@ exports, and missing descriptor-required accounts protocols.
 
 Parity tests build every artifact twice, compare all checked-in outputs, parse
 the generated files through Codefly's resource model, and strictly inspect all
-15 Kubernetes documents. The deployment trees can be rendered locally with:
+16 Kubernetes documents. The deployment trees can be rendered locally with:
 
 ```sh
 kubectl kustomize module/deployment/kustomize/base
@@ -101,7 +102,10 @@ kubectl kustomize module/deployment/kustomize/overlays/aws
 ```
 
 CI regenerates and clean-diff checks the normalized catalog, module manifest,
-all seven service manifests, and NetworkPolicy file.
+all eight service manifests, and NetworkPolicy file. A separate CI job copies
+only marketing into an isolated build context, installs its own dependency
+lock, and runs unit, content, boundary, build, budget, and degraded-product
+smoke checks.
 
 Applications that install backend products may add
 `deployment/application.bindings.codefly.yaml` without editing Starter topology:

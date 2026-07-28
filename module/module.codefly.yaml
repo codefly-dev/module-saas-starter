@@ -16,6 +16,7 @@ services:
     - name: auth-sidecar
     - name: cache
     - name: frontend
+    - name: marketing
     - name: object-storage
     - name: store
     - name: vault
