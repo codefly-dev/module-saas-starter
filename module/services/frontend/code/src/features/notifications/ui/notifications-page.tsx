@@ -2,19 +2,18 @@
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { CheckCheck, Trash2 } from "lucide-react";
+import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import { Badge, Button, Card, CardContent, Skeleton } from "@/shared/ui";
 import { formatNotificationType, timeAgo } from "../model/transforms";
-import type { Notification } from "../model/types";
 import { notificationMutations } from "../service/mutations";
 import { notificationQueries } from "../service/queries";
 
 export function NotificationsPage() {
 	const queryClient = useQueryClient();
+	const router = useRouter();
 	const { data, isLoading } = useQuery(notificationQueries.list(50));
-	const notifications: Notification[] =
-		(data as { notifications?: Notification[] } | undefined)?.notifications ??
-		[];
+	const notifications = data?.notifications ?? [];
 
 	const markReadMutation = useMutation({
 		mutationFn: (id: string) => notificationMutations.markRead(id),
@@ -78,10 +77,14 @@ export function NotificationsPage() {
 						>
 							<CardContent className="flex items-start justify-between py-4">
 								<button
+									type="button"
 									className="flex-1 text-left"
 									onClick={() => {
 										if (!notification.read) {
 											markReadMutation.mutate(notification.id);
+										}
+										if (notification.actionUrl) {
+											router.push(notification.actionUrl);
 										}
 									}}
 								>

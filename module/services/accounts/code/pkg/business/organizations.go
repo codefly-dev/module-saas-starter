@@ -104,7 +104,13 @@ func (s *Service) AddOrgMember(ctx context.Context, actorID string, req *gen.Add
 	if orgName == "" {
 		orgName = req.OrgId
 	}
-	_ = s.NotifyUser(ctx, req.UserId, "Organization membership", fmt.Sprintf("You were added to %s", orgName))
+	_ = s.NotifyUser(
+		ctx,
+		req.UserId,
+		NotificationCategoryProduct,
+		"Organization membership",
+		fmt.Sprintf("You were added to %s", orgName),
+	)
 
 	return nil
 }
