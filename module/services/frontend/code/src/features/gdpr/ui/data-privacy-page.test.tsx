@@ -11,7 +11,7 @@ describe("DataPrivacyPage", () => {
 		});
 		render(
 			<QueryClientProvider client={queryClient}>
-				<DataPrivacyPage />
+				<DataPrivacyPage exportAvailable={false} deletionAvailable={false} />
 			</QueryClientProvider>,
 		);
 
@@ -37,5 +37,29 @@ describe("DataPrivacyPage", () => {
 				/permanently delete your account and all associated data/i,
 			),
 		).toBeNull();
+	});
+
+	it("enables actions only when the server projection makes them available", () => {
+		const queryClient = new QueryClient();
+		render(
+			<QueryClientProvider client={queryClient}>
+				<DataPrivacyPage exportAvailable deletionAvailable />
+			</QueryClientProvider>,
+		);
+
+		expect(
+			(
+				screen.getByRole("button", {
+					name: "Request Export",
+				}) as HTMLButtonElement
+			).disabled,
+		).toBe(false);
+		expect(
+			(
+				screen.getByRole("button", {
+					name: "Delete Account",
+				}) as HTMLButtonElement
+			).disabled,
+		).toBe(false);
 	});
 });

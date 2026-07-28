@@ -1,14 +1,18 @@
 import { describe, expect, it } from "vitest";
 
+import rawManifest from "../capability-manifest.json";
 import {
 	type CapabilityContext,
 	type CapabilityDefinition,
 	type CapabilityEvidence,
-	capabilityManifest,
+	type CapabilityManifest,
+	capabilityStateAtLeast,
 	effectiveCapabilityState,
 	publicCapabilities,
 	starterDefaultCapabilityContext,
 } from "./capabilities";
+
+const capabilityManifest = rawManifest as CapabilityManifest;
 
 const configuredBackupCapability = capabilityManifest.capabilities.find(
 	(capability) => capability.id === "operations.backup-restore",
@@ -55,7 +59,7 @@ describe("capability evidence", () => {
 	it("keeps unsupported starter-default claims absent", () => {
 		const capabilities = publicCapabilities(
 			capabilityManifest,
-			starterDefaultCapabilityContext,
+			starterDefaultCapabilityContext(new Date("2026-07-28T12:00:00Z")),
 		);
 		for (const id of [
 			"privacy.export-artifact",
@@ -107,9 +111,7 @@ describe("capability evidence", () => {
 		expect(
 			effectiveCapabilityState(
 				backupCapability,
-				configuredContext([
-					evidence({ performedAt: "2026-07-29T10:00:00Z" }),
-				]),
+				configuredContext([evidence({ performedAt: "2026-07-29T10:00:00Z" })]),
 			),
 		).toBe("configured");
 
@@ -130,8 +132,6 @@ describe("capability evidence", () => {
 		const publicRecord = publicCapabilities(
 			{
 				...capabilityManifest,
-				environment: context.environment,
-				scope: context.scope,
 				capabilities: [backupCapability],
 			},
 			context,
@@ -158,5 +158,11 @@ describe("capability evidence", () => {
 				configuredSettings: [],
 			}),
 		).toBe("operationally_verified");
+	});
+
+	it("treats external attestation as satisfying operational verification", () => {
+		expect(
+			capabilityStateAtLeast("externally_attested", "operationally_verified"),
+		).toBe(true);
 	});
 });

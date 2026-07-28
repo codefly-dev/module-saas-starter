@@ -1,5 +1,3 @@
-import rawManifest from "../capability-manifest.json";
-
 export const capabilityStates = [
 	"absent",
 	"implemented",
@@ -51,9 +49,15 @@ export interface CapabilityDefinition {
 
 export interface CapabilityManifest {
 	schemaVersion: number;
+	capabilities: CapabilityDefinition[];
+}
+
+export interface CapabilityContextDocument {
+	schemaVersion: number;
 	environment: string;
 	scope: string;
-	capabilities: CapabilityDefinition[];
+	configuredProviders: string[];
+	configuredSettings: string[];
 	evidence: CapabilityEvidence[];
 }
 
@@ -77,16 +81,16 @@ export interface PublicCapability {
 	evidenceSummary?: string;
 }
 
-export const capabilityManifest = rawManifest as CapabilityManifest;
-
-export const starterDefaultCapabilityContext: CapabilityContext = {
-	environment: capabilityManifest.environment,
-	scope: capabilityManifest.scope,
-	configuredProviders: [],
-	configuredSettings: [],
-	evidence: capabilityManifest.evidence,
-	now: new Date(),
-};
+export function starterDefaultCapabilityContext(now: Date): CapabilityContext {
+	return {
+		environment: "starter-default",
+		scope: "Unconfigured starter distribution",
+		configuredProviders: [],
+		configuredSettings: [],
+		evidence: [],
+		now,
+	};
+}
 
 export function capabilityStateLabel(state: CapabilityState): string {
 	switch (state) {
@@ -172,6 +176,13 @@ export function publicCapabilities(
 			evidenceSummary: supportingEvidence?.publicSummary,
 		};
 	});
+}
+
+export function capabilityStateAtLeast(
+	state: CapabilityState,
+	minimum: CapabilityState,
+): boolean {
+	return rank(state) >= rank(minimum);
 }
 
 function rank(state: CapabilityState): number {

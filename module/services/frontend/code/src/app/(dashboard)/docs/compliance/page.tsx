@@ -1,15 +1,11 @@
-import {
-	capabilityManifest,
-	publicCapabilities,
-	starterDefaultCapabilityContext,
-} from "@/features/trust/model/capabilities";
+import type { PublicCapability } from "@/features/trust/model/capabilities";
+import { loadPublicCapabilities } from "@/features/trust/model/capabilities.server";
 import { ComplianceSection as Section } from "./compliance-section";
 
+export const dynamic = "force-dynamic";
+
 export default function CompliancePage() {
-	const capabilities = publicCapabilities(
-		capabilityManifest,
-		starterDefaultCapabilityContext,
-	);
+	const capabilities = loadPublicCapabilities();
 	const available = capabilities.filter(
 		(capability) => capability.state !== "absent",
 	);
@@ -96,7 +92,7 @@ export default function CompliancePage() {
 function CapabilityList({
 	capabilities,
 }: {
-	capabilities: ReturnType<typeof publicCapabilities>;
+	capabilities: PublicCapability[];
 }) {
 	return (
 		<ul className="not-prose space-y-3">

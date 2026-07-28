@@ -1,9 +1,29 @@
 # Trust capability and evidence model
 
 `services/frontend/code/src/features/trust/capability-manifest.json` is the
-machine-readable source for the starter's security, privacy, recovery, legal,
-and assurance claims. The `/docs/compliance` readiness view consumes it
-directly.
+public, machine-readable source for the starter's security, privacy, recovery,
+legal, and assurance capability definitions. It cannot contain environment
+configuration or evidence.
+
+Deployments supply private runtime state through a JSON file named by
+`TRUST_CAPABILITY_CONTEXT_FILE`. The frontend server reads that file for each
+readiness request; it never imports it into browser code. The file has this
+shape:
+
+```json
+{
+  "schemaVersion": 1,
+  "environment": "production",
+  "scope": "primary region",
+  "configuredProviders": ["backup-provider"],
+  "configuredSettings": ["recovery.policy"],
+  "evidence": []
+}
+```
+
+Leaving the variable unset selects the fail-closed, unconfigured starter
+context. The `/docs/compliance` readiness view projects only public capability
+fields and reviewed `publicSummary` values.
 
 The manifest separates five states:
 
@@ -23,7 +43,7 @@ performed time, review time, optional expiry, status, and the highest state it
 supports. Evidence from another environment or scope cannot promote a claim.
 Expired, revoked, rejected, or review-overdue evidence is ignored.
 
-Evidence sources are private by default. A record may expose a separate
+Evidence context files and their sources are private by default. A record may expose a separate
 `publicSummary`; the public projection never includes its source, owner, or
 verifier. Legal and security owners must review even a safe summary before
 adopters use it in customer-facing material.
@@ -43,18 +63,21 @@ claims until the named environment has current evidence.
 
 ## Release gate
 
-`node tools/base-integrity.mjs check` validates the manifest and scans public
-starter documentation and frontend source for unsupported fixed claims. The
-same validation runs before regenerating the base manifest, so canonical and
-composed-module release paths fail together.
+`node tools/base-integrity.mjs check` validates that the public manifest
+contains definitions only and scans repository documentation, nested module
+documentation, frontend source/public text, fixtures, SVGs, and manifest
+summaries for unsupported fixed claims. The same validation runs before
+regenerating the base manifest, so canonical and composed-module release paths
+fail together. Runtime context parsing rejects unknown capabilities, malformed
+or duplicate evidence, and non-ISO timestamps.
 
 When adding a public claim:
 
 1. add or update the capability instead of hard-coding deployment behavior;
 2. declare starter, provider, adopter, or shared responsibility;
 3. choose the minimum state required to render the summary;
-4. add environment-scoped evidence only after the control is exercised or
-   externally attested; and
+4. add environment-scoped evidence to the private runtime context only after
+   the control is exercised or externally attested; and
 5. verify that removing configuration or expiring evidence downgrades the
    readiness view.
 

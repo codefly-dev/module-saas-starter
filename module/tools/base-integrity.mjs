@@ -272,16 +272,15 @@ export function capabilityManifestErrors(manifest) {
   if (manifest.schemaVersion !== 1) {
     errors.push("capability manifest schemaVersion must be 1");
   }
-  for (const field of ["environment", "scope"]) {
-    if (typeof manifest[field] !== "string" || !manifest[field].trim()) {
-      errors.push(`capability manifest ${field} must be a non-empty string`);
-    }
+  const manifestFields = new Set(["schemaVersion", "capabilities"]);
+  const unknownManifestField = Object.keys(manifest).find((field) => !manifestFields.has(field));
+  if (unknownManifestField) {
+    errors.push(
+      `capability manifest contains private or unknown field: ${unknownManifestField}`,
+    );
   }
   if (!Array.isArray(manifest.capabilities) || manifest.capabilities.length === 0) {
     return [...errors, "capability manifest must declare at least one capability"];
-  }
-  if (!Array.isArray(manifest.evidence)) {
-    return [...errors, "capability manifest evidence must be an array"];
   }
 
   const ids = new Set();
@@ -333,8 +332,52 @@ export function capabilityManifestErrors(manifest) {
     }
   }
 
+  return errors;
+}
+
+export function capabilityContextErrors(context, manifest) {
+  if (!context || Array.isArray(context) || typeof context !== "object") {
+    return ["capability context must be a JSON object"];
+  }
+  const errors = [];
+  const contextFields = new Set([
+    "schemaVersion",
+    "environment",
+    "scope",
+    "configuredProviders",
+    "configuredSettings",
+    "evidence",
+  ]);
+  const unknownContextField = Object.keys(context).find((field) => !contextFields.has(field));
+  if (unknownContextField) {
+    errors.push(`capability context contains unknown field: ${unknownContextField}`);
+  }
+  if (context.schemaVersion !== 1) {
+    errors.push("capability context schemaVersion must be 1");
+  }
+  for (const field of ["environment", "scope"]) {
+    if (typeof context[field] !== "string" || !context[field].trim()) {
+      errors.push(`capability context ${field} must be a non-empty string`);
+    }
+  }
+  for (const field of ["configuredProviders", "configuredSettings"]) {
+    const values = context[field];
+    if (!Array.isArray(values) || values.some((value) => typeof value !== "string" || !value.trim())) {
+      errors.push(`capability context ${field} must be an array of non-empty strings`);
+    } else if (new Set(values).size !== values.length) {
+      errors.push(`capability context ${field} contains duplicates`);
+    }
+  }
+  if (!Array.isArray(context.evidence)) {
+    return [...errors, "capability context evidence must be an array"];
+  }
+  const ids = new Set(
+    Array.isArray(manifest?.capabilities)
+      ? manifest.capabilities.map((capability) => capability.id)
+      : [],
+  );
   const evidenceIDs = new Set();
-  for (const [index, record] of manifest.evidence.entries()) {
+  for (const [index, record] of context.evidence.entries()) {
     const prefix = `evidence[${index}]`;
     if (!record || Array.isArray(record) || typeof record !== "object") {
       errors.push(`${prefix} must be an object`);
@@ -397,23 +440,53 @@ export function capabilityManifestErrors(manifest) {
   return errors;
 }
 
-function publicClaimFiles(moduleRoot) {
-  const rootDocuments = new Set([
-    "FEATURES.md",
-    "GETTING_STARTED.md",
-    "MODULE.md",
-    "PRODUCTION_READY.md",
-  ]);
-  return walk(moduleRoot, [], moduleRoot).filter((rel) => {
-    if (rootDocuments.has(rel)) return true;
-    if (!rel.startsWith("services/frontend/code/src/")) return false;
-    if (!/\.(?:ts|tsx)$/.test(rel)) return false;
-    return !/(?:^|\/)(?:__tests__|test|tests|gen)(?:\/|$)/.test(rel) &&
-      !/\.test\.(?:ts|tsx)$/.test(rel);
+function canonicalClaimRoot(moduleRoot) {
+  const repositoryRoot = dirname(moduleRoot);
+  if (
+    resolve(join(repositoryRoot, "module")) === resolve(moduleRoot) &&
+    existsSync(join(repositoryRoot, "workspace.codefly.yaml"))
+  ) {
+    return repositoryRoot;
+  }
+  return moduleRoot;
+}
+
+function publicClaimFiles(moduleRoot, claimRoot) {
+  const modulePrefix = relative(claimRoot, moduleRoot);
+  const asModulePath = (rel) => {
+    if (!modulePrefix) return rel;
+    return rel.startsWith(`${modulePrefix}/`) ? rel.slice(modulePrefix.length + 1) : null;
+  };
+  return walk(claimRoot, [], claimRoot).filter((rel) => {
+    if (/(?:^|\/)(?:__tests__|test|tests|gen|tools)(?:\/|$)/.test(rel)) return false;
+    if (/\.test\.(?:[cm]?[jt]sx?)$/.test(rel)) return false;
+    if (/\.(?:md|mdx|svg)$/.test(rel)) return true;
+
+    const moduleRel = asModulePath(rel);
+    if (!moduleRel) return false;
+    if (moduleRel === CAPABILITY_MANIFEST_REL) return true;
+    if (
+      moduleRel.startsWith("services/frontend/code/src/") &&
+      /\.(?:[cm]?[jt]sx?)$/.test(moduleRel)
+    ) {
+      return true;
+    }
+    if (
+      (moduleRel.startsWith("fixtures/") ||
+        moduleRel.includes("/fixtures/") ||
+        moduleRel.startsWith("services/frontend/code/public/")) &&
+      /\.(?:html|json|txt|ya?ml)$/.test(moduleRel)
+    ) {
+      return true;
+    }
+    return false;
   });
 }
 
-export function productionTruthErrors(moduleRoot = MODULE_ROOT) {
+export function productionTruthErrors(
+  moduleRoot = MODULE_ROOT,
+  claimRoot = canonicalClaimRoot(moduleRoot),
+) {
   const errors = [];
   const manifestPath = join(moduleRoot, CAPABILITY_MANIFEST_REL);
   if (!existsSync(manifestPath)) {
@@ -430,8 +503,8 @@ export function productionTruthErrors(moduleRoot = MODULE_ROOT) {
     }
   }
 
-  for (const rel of publicClaimFiles(moduleRoot)) {
-    const source = readFileSync(join(moduleRoot, rel), "utf8");
+  for (const rel of publicClaimFiles(moduleRoot, claimRoot)) {
+    const source = readFileSync(join(claimRoot, rel), "utf8");
     for (const [claim, pattern] of UNSUPPORTED_PUBLIC_CLAIMS) {
       if (pattern.test(source)) errors.push(`${rel}: unsupported ${claim}`);
     }

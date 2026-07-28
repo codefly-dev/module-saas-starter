@@ -1,7 +1,9 @@
 import { fireEvent, render, screen } from "@testing-library/react";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
 import CompliancePage from "./page";
+
+vi.mock("server-only", () => ({}));
 
 describe("CompliancePage", () => {
 	it("renders starter state and adopter responsibilities without unsupported claims", () => {

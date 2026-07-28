@@ -5,6 +5,7 @@ import { join } from "node:path";
 import test from "node:test";
 
 import {
+  capabilityContextErrors,
   capabilityManifestErrors,
   isExcludedFile,
   productionTruthErrors,
@@ -166,8 +167,6 @@ test("rejects unsafe or undocumented required additions", (t) => {
 function capabilityManifest() {
   return {
     schemaVersion: 1,
-    environment: "starter-default",
-    scope: "Unconfigured starter distribution",
     capabilities: [{
       id: "operations.backup-restore",
       category: "Operations",
@@ -183,13 +182,33 @@ function capabilityManifest() {
         summary: "Recovery has current scoped exercise evidence.",
       },
     }],
+  };
+}
+
+function capabilityContext() {
+  return {
+    schemaVersion: 1,
+    environment: "production",
+    scope: "primary region",
+    configuredProviders: ["backup-provider"],
+    configuredSettings: ["recovery.policy"],
     evidence: [],
   };
 }
 
-test("validates complete evidence records without exposing private artifacts", () => {
+test("keeps private evidence out of the public capability manifest", () => {
   const manifest = capabilityManifest();
-  manifest.evidence.push({
+  manifest.evidence = [];
+  assert.ok(
+    capabilityManifestErrors(manifest).some((error) =>
+      error.includes("private or unknown field: evidence")),
+  );
+});
+
+test("validates complete private capability context records", () => {
+  const manifest = capabilityManifest();
+  const context = capabilityContext();
+  context.evidence.push({
     id: "ev-restore",
     capabilityId: "operations.backup-restore",
     environment: "production",
@@ -204,12 +223,13 @@ test("validates complete evidence records without exposing private artifacts", (
     state: "operationally_verified",
     visibility: "private",
   });
-  assert.deepEqual(capabilityManifestErrors(manifest), []);
+  assert.deepEqual(capabilityContextErrors(context, manifest), []);
 });
 
 test("rejects incomplete, orphaned, or unsafe public evidence metadata", () => {
   const manifest = capabilityManifest();
-  manifest.evidence.push({
+  const context = capabilityContext();
+  context.evidence.push({
     id: "ev-orphan",
     capabilityId: "missing.capability",
     environment: "production",
@@ -223,7 +243,7 @@ test("rejects incomplete, orphaned, or unsafe public evidence metadata", () => {
     state: "implemented",
     visibility: "public_summary",
   });
-  const errors = capabilityManifestErrors(manifest);
+  const errors = capabilityContextErrors(context, manifest);
   assert.ok(errors.some((error) => error.includes("does not reference")));
   assert.ok(errors.some((error) => error.includes("operationally_verified")));
   assert.ok(errors.some((error) => error.includes("publicSummary")));
@@ -266,6 +286,38 @@ test("rejects unsupported promises in customer-visible source", (t) => {
     "unverified audit immutability",
   ]) {
     assert.ok(errors.some((error) => error.includes(claim)));
+  }
+});
+
+test("scans public manifest summaries, repository docs, nested docs, and fixtures", (t) => {
+  const root = mkdtempSync(join(tmpdir(), "saas-production-truth-repository-"));
+  t.after(() => rmSync(root, { recursive: true, force: true }));
+  const moduleRoot = join(root, "module");
+  const manifestPath = join(
+    moduleRoot,
+    "services/frontend/code/src/features/trust/capability-manifest.json",
+  );
+  const nestedDoc = join(moduleRoot, "deployment", "README.md");
+  const fixturePath = join(moduleRoot, "fixtures", "customer.json");
+  mkdirSync(join(manifestPath, ".."), { recursive: true });
+  mkdirSync(join(nestedDoc, ".."), { recursive: true });
+  mkdirSync(join(fixturePath, ".."), { recursive: true });
+
+  const manifest = capabilityManifest();
+  manifest.capabilities[0].public.summary = "Backups are retained for 90 days";
+  writeJSON(manifestPath, manifest);
+  writeFileSync(join(root, "PRODUCTION_READY.md"), "production-grade from day one\n");
+  writeFileSync(nestedDoc, "Trusted by teams shipping\n");
+  writeJSON(fixturePath, { claim: "SOC 2 / enterprise-compliant path" });
+
+  const errors = productionTruthErrors(moduleRoot, root);
+  for (const path of [
+    "module/services/frontend/code/src/features/trust/capability-manifest.json",
+    "PRODUCTION_READY.md",
+    "module/deployment/README.md",
+    "module/fixtures/customer.json",
+  ]) {
+    assert.ok(errors.some((error) => error.startsWith(`${path}:`)), path);
   }
 });
 

@@ -4,11 +4,6 @@ import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { Download, FileArchive, Loader2, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 import {
-	capabilityManifest,
-	publicCapabilities,
-	starterDefaultCapabilityContext,
-} from "@/features/trust/model/capabilities";
-import {
 	AlertDialog,
 	AlertDialogAction,
 	AlertDialogCancel,
@@ -28,20 +23,16 @@ import {
 } from "@/shared/ui";
 import { gdprMutations } from "../service/mutations";
 
-export function DataPrivacyPage() {
+export interface DataPrivacyPageProps {
+	exportAvailable: boolean;
+	deletionAvailable: boolean;
+}
+
+export function DataPrivacyPage({
+	exportAvailable,
+	deletionAvailable,
+}: DataPrivacyPageProps) {
 	const queryClient = useQueryClient();
-	const capabilities = publicCapabilities(
-		capabilityManifest,
-		starterDefaultCapabilityContext,
-	);
-	const exportAvailable =
-		capabilities.find(
-			(capability) => capability.id === "privacy.export-artifact",
-		)?.state === "operationally_verified";
-	const deletionAvailable =
-		capabilities.find(
-			(capability) => capability.id === "privacy.deletion-completion",
-		)?.state === "operationally_verified";
 
 	const exportMutation = useMutation({
 		mutationFn: () => gdprMutations.requestExport(),
@@ -86,10 +77,10 @@ export function DataPrivacyPage() {
 					</CardHeader>
 					<CardContent>
 						<p className="text-sm text-muted-foreground">
-							The starter includes a request and status workflow, but its
-							placeholder artifact is not a production download. Configure
-							subject-bound encrypted storage, expiry, deletion, and dataset
-							completeness before enabling this action.
+							The starter includes a request and status workflow, but its server
+							fails closed until a complete production implementation is wired.
+							Configure subject-bound encrypted storage, expiry, deletion, and
+							dataset completeness before enabling this action.
 						</p>
 					</CardContent>
 					<CardFooter>

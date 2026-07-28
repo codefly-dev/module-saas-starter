@@ -1,7 +1,5 @@
 {
 	"schemaVersion": 1,
-	"environment": "starter-default",
-	"scope": "Unconfigured starter distribution",
 	"capabilities": [
 		{
 			"id": "trust.claim-release-gate",
@@ -198,6 +196,5 @@
 				"summary": "A current external attestation covers the stated legal entity, system, criteria, and period."
 			}
 		}
-	],
-	"evidence": []
+	]
 }

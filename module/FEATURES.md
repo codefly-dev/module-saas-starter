@@ -188,8 +188,8 @@ readiness view are documented in `TRUST_CAPABILITIES.md`.
 | Add identity             | ✅    | `AddIdentity` — gated to self or platform-admin (security fix 2026-04-25)      |
 | Find by identity         | ✅    | `FindUserByIdentity` — platform-admin only (security fix 2026-04-25)           |
 | List identities          | ✅    | `ListUserIdentities` — gated to self or platform-admin (security fix 2026-04-25) |
-| Account deletion request | 🟡    | User anonymization/session revocation exists; ownership, billing, holds, provider cleanup, and backup expiry are incomplete |
-| Privacy export           | ❌    | Request/status scaffolding still produces a placeholder rather than a secure expiring artifact |
+| Account deletion request | ❌    | Request/status scaffolding fails closed until a complete deletion, retention, provider-cleanup, and legal-hold workflow is wired |
+| Privacy export           | ❌    | Request/status scaffolding fails closed until a complete secure-artifact workflow is wired |
 | Verified privacy delete  | ❌    | No complete dataset/provider inventory, retention authority, legal-hold handling, or completion receipt |
 
 ### Multi-tenancy (orgs / teams)
