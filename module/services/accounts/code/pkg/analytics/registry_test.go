@@ -137,6 +137,30 @@ func TestRegistryCompatibilityRequiresVersionsForBreakingChanges(t *testing.T) {
 	require.NoError(t, analytics.CheckCompatible(previous, versionedBreakingChange))
 }
 
+func TestRegistryVersionsEventsIndependently(t *testing.T) {
+	registry := mustParseRegistry(t, `{
+		"contract_version":1,
+		"defaults":{"schema_version":1,"pii_classification":"pseudonymous","retention_days":30,"property_type":"string"},
+		"events":[
+			{"name":"first_completed","owner":"product","description":"first","schema_version":2,"sources":["api"],"purpose":"product","properties":[]},
+			{"name":"second_completed","owner":"product","description":"second","sources":["api"],"purpose":"product","properties":[]}
+		]
+	}`)
+
+	first, ok := registry.Definition("first_completed")
+	require.True(t, ok)
+	second, ok := registry.Definition("second_completed")
+	require.True(t, ok)
+	require.Equal(t, uint32(2), first.SchemaVersion)
+	require.Equal(t, uint32(1), second.SchemaVersion)
+}
+
+func TestDefaultRegistryIsCompatibleWithTheFullVersionOneTaxonomy(t *testing.T) {
+	registry, err := analytics.DefaultRegistry()
+	require.NoError(t, err)
+	require.Len(t, registry.Definitions(), 52)
+}
+
 func mustParseRegistry(t *testing.T, body string) *analytics.Registry {
 	t.Helper()
 	registry, err := analytics.ParseRegistry([]byte(body))

@@ -3,6 +3,7 @@ package business_test
 import (
 	"context"
 	"testing"
+	"time"
 
 	"accounts/pkg/analytics"
 	"accounts/pkg/business"
@@ -37,8 +38,13 @@ func (f *onboardingStoreFake) UpsertOnboardingStep(
 	_ string,
 	stepName string,
 	status string,
+	_ time.Time,
 ) error {
 	f.statuses[stepName] = status
+	return nil
+}
+
+func (f *onboardingStoreFake) LockOnboardingProgress(context.Context, string) error {
 	return nil
 }
 
@@ -71,6 +77,14 @@ func (f *onboardingEmitterFake) Capture(
 	return nil
 }
 
+func (f *onboardingEmitterFake) Suppress(
+	context.Context,
+	analytics.Suppression,
+	analytics.CommandScope,
+) error {
+	return nil
+}
+
 func TestOnboardingEventsAreTransitionBasedAndIdempotent(t *testing.T) {
 	store := &onboardingStoreFake{statuses: map[string]string{
 		"create_org":  "completed",
@@ -90,7 +104,7 @@ func TestOnboardingEventsAreTransitionBasedAndIdempotent(t *testing.T) {
 	require.Len(t, emitter.events, 2)
 	require.Equal(t, "onboarding_step_completed", emitter.events[0].GetEventName())
 	require.Equal(t, "onboarding_completed", emitter.events[1].GetEventName())
-	require.Equal(
+	require.NotEqual(
 		t,
 		analytics.DeterministicEventID(
 			"onboarding_step_completed",
@@ -98,4 +112,9 @@ func TestOnboardingEventsAreTransitionBasedAndIdempotent(t *testing.T) {
 		),
 		emitter.events[0].GetEventId(),
 	)
+
+	firstCompletionID := emitter.events[0].GetEventId()
+	require.NoError(t, service.SkipStep(t.Context(), userID, "setup_api_key"))
+	require.NoError(t, service.CompleteStep(t.Context(), userID, "setup_api_key"))
+	require.NotEqual(t, firstCompletionID, emitter.events[3].GetEventId())
 }

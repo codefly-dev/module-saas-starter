@@ -25,7 +25,7 @@ func TestMRRWaterfall(t *testing.T) {
 		{Month: april, OrganizationID: "alpha", Currency: "usd", Amount: 12000},
 		{Month: april, OrganizationID: "bravo", Currency: "usd", Amount: 8000},
 		{Month: april, OrganizationID: "charlie", Currency: "usd", Amount: 0, ChurnKind: ChurnInvoluntary},
-	})
+	}, april)
 	require.NoError(t, err)
 	require.Len(t, waterfall, 4)
 
@@ -56,12 +56,51 @@ func TestMRRWaterfallRejectsAmbiguousInputs(t *testing.T) {
 	_, err := MRRWaterfall([]MonthlyRecurringRevenue{
 		{Month: month, OrganizationID: "alpha", Currency: "USD", Amount: 100},
 		{Month: month, OrganizationID: "bravo", Currency: "EUR", Amount: 100},
-	})
+	}, month)
 	require.ErrorContains(t, err, "multi-currency")
 
 	_, err = MRRWaterfall([]MonthlyRecurringRevenue{
 		{Month: month, OrganizationID: "alpha", Currency: "USD", Amount: 100},
 		{Month: month, OrganizationID: "alpha", Currency: "USD", Amount: 100},
-	})
+	}, month)
 	require.ErrorContains(t, err, "duplicate")
+}
+
+func TestMRRWaterfallIncludesTerminalChurnWithAnExplicitCause(t *testing.T) {
+	january := time.Date(2026, time.January, 1, 0, 0, 0, 0, time.UTC)
+	february := january.AddDate(0, 1, 0)
+
+	waterfall, err := MRRWaterfall([]MonthlyRecurringRevenue{
+		{Month: january, OrganizationID: "alpha", Currency: "USD", Amount: 100},
+		{
+			Month: february, OrganizationID: "alpha", Currency: "USD",
+			Amount: 0, ChurnKind: ChurnVoluntary,
+		},
+	}, february)
+
+	require.NoError(t, err)
+	require.Len(t, waterfall, 2)
+	require.Equal(t, int64(100), waterfall[1].ChurnedMRR)
+	require.Equal(t, 1, waterfall[1].VoluntaryChurnedOrganizations)
+}
+
+func TestMRRWaterfallRejectsMissingOrUnclassifiedSnapshots(t *testing.T) {
+	january := time.Date(2026, time.January, 1, 0, 0, 0, 0, time.UTC)
+	february := january.AddDate(0, 1, 0)
+
+	_, err := MRRWaterfall([]MonthlyRecurringRevenue{
+		{Month: january, OrganizationID: "alpha", Currency: "USD", Amount: 100},
+	}, february)
+	require.ErrorContains(t, err, "missing MRR snapshot")
+
+	_, err = MRRWaterfall([]MonthlyRecurringRevenue{
+		{Month: january, OrganizationID: "alpha", Currency: "USD", Amount: 100},
+		{Month: february, OrganizationID: "alpha", Currency: "USD", Amount: 0},
+	}, february)
+	require.ErrorContains(t, err, "requires a cause")
+
+	_, err = MRRWaterfall([]MonthlyRecurringRevenue{
+		{Month: february, OrganizationID: "alpha", Currency: "USD", Amount: 100},
+	}, january)
+	require.ErrorContains(t, err, "after the waterfall end")
 }

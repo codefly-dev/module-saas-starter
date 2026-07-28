@@ -11,6 +11,13 @@ import { MetricProvenance, MetricStateBadge } from "@/components/metric-state";
 import { OrgSelector } from "@/components/org-selector";
 import { Sparkline } from "@/components/sparkline";
 import {
+	normalizeUsageSeries,
+	projectUsage,
+	usageHistoryPresentation,
+	usagePercent,
+	usageTone,
+} from "@/features/billing/model/usage-display";
+import {
 	useUsageHistory,
 	useUsageMeters,
 } from "@/features/billing/service/usage-queries";
@@ -356,28 +363,33 @@ function MeterUsageRow({
 	observedAt?: string;
 }) {
 	const meter = snapshot.meter;
-	const used = Number(snapshot.used);
-	const limit = Number(snapshot.limit);
-	const ratio = limit > 0 ? used / limit : 0;
-	const percent = Math.min(100, Math.round(ratio * 100));
-	const tone =
-		ratio > 0.9
-			? "bg-destructive"
-			: ratio > 0.7
-				? "bg-amber-500"
-				: "bg-emerald-500";
+	const used = snapshot.used;
+	const limit = snapshot.limit;
+	const percent = usagePercent(used, limit);
+	const tone = {
+		critical: "bg-destructive",
+		warning: "bg-amber-500",
+		healthy: "bg-emerald-500",
+	}[usageTone(used, limit)];
 	const fromISO = snapshot.periodStart
 		? timestampDate(snapshot.periodStart).toISOString()
 		: "";
 	const toISO = observedAt ?? "";
 	const history = useUsageHistory(orgId, meter?.key ?? "", fromISO, toISO);
-	const points =
-		history.data?.buckets.map((bucket) => Number(bucket.quantity)) ?? [];
+	const points = normalizeUsageSeries(
+		history.data?.buckets.map((bucket) => bucket.quantity) ?? [],
+	);
+	const historyPresentation = usageHistoryPresentation(
+		history.isLoading,
+		history.isError,
+		points.length,
+		used,
+	);
 	const forecast = usageForecast(snapshot, observedAt);
 	const limitLabel =
-		limit === -1
+		limit === BigInt(-1)
 			? "unlimited"
-			: limit === 0
+			: limit === BigInt(0)
 				? "disabled"
 				: limit.toLocaleString();
 
@@ -393,11 +405,13 @@ function MeterUsageRow({
 					</div>
 				</div>
 				<div className="flex items-center gap-3">
-					{history.isError ? (
+					{historyPresentation === "loading" ? (
+						<MetricStateBadge state="loading" />
+					) : historyPresentation === "partial" ? (
 						<MetricStateBadge state="partial" />
-					) : points.length > 1 ? (
+					) : historyPresentation === "chart" ? (
 						<Sparkline points={points} className="text-primary/70" />
-					) : used === 0 ? (
+					) : historyPresentation === "no_data" ? (
 						<MetricStateBadge state="no_data" />
 					) : null}
 					<span className="font-mono text-xs text-muted-foreground">
@@ -405,7 +419,7 @@ function MeterUsageRow({
 					</span>
 				</div>
 			</div>
-			{limit > 0 && (
+			{limit > BigInt(0) && (
 				<div className="h-2 rounded-full bg-muted">
 					<div
 						className={`h-2 rounded-full ${tone}`}
@@ -433,7 +447,7 @@ function MeterUsageRow({
 function usageForecast(
 	snapshot: UsageMeterSnapshot,
 	observedAt?: string,
-): number | undefined {
+): bigint | undefined {
 	if (!snapshot.periodStart || !snapshot.periodEnd || !observedAt)
 		return undefined;
 	const start = timestampDate(snapshot.periodStart).getTime();
@@ -441,6 +455,5 @@ function usageForecast(
 	const observed = new Date(observedAt).getTime();
 	const elapsed = Math.max(observed - start, 24 * 60 * 60 * 1000);
 	const period = end - start;
-	if (period <= 0) return undefined;
-	return Math.round(Number(snapshot.used) * (period / elapsed));
+	return projectUsage(snapshot.used, period, elapsed);
 }

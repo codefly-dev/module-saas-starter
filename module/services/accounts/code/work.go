@@ -16,6 +16,7 @@ import (
 	"accounts/pkg/email"
 	"accounts/pkg/infra"
 	"accounts/pkg/jobs"
+	"accounts/pkg/metrics"
 	"accounts/pkg/permissionsplugin"
 	"context"
 	ed25519core "crypto/ed25519"
@@ -29,6 +30,7 @@ import (
 	"github.com/codefly-dev/core/wool"
 	wooltel "github.com/codefly-dev/core/wool/otel"
 	codefly "github.com/codefly-dev/sdk-go"
+	"go.opentelemetry.io/otel"
 )
 
 func init() {
@@ -37,6 +39,15 @@ func init() {
 
 func doWork(ctx context.Context) (Clean, error) {
 	w := wool.Get(ctx).In("doWork")
+	measurementPack, err := metrics.DefaultSeedBundle()
+	if err != nil {
+		return nil, fmt.Errorf("load measurement seed pack: %w", err)
+	}
+	w.Info(
+		"measurement seed pack loaded",
+		wool.Field("dashboard.version", measurementPack.DashboardPack.Version),
+		wool.Field("slo.version", measurementPack.SLOPack.Version),
+	)
 	selectedFixture, err := fixtures.SelectedName()
 	if err != nil {
 		return nil, err
@@ -105,6 +116,17 @@ func doWork(ctx context.Context) (Clean, error) {
 		return nil, fmt.Errorf("configure job operations database pool: %w", err)
 	}
 	jobStore := infra.NewPostgresJobStore(jobWorkerPool)
+	var jobOperationsMonitor *jobs.OperationsMonitor
+	if otelMetricProvider != nil {
+		jobOperationsMonitor, err = jobs.NewOperationsMonitor(
+			jobStore,
+			otel.Meter("github.com/codefly-dev/module-saas-starter/job-operations"),
+			30*time.Second,
+		)
+		if err != nil {
+			return nil, fmt.Errorf("configure durable job metrics: %w", err)
+		}
+	}
 	service.SetJobOperations(jobStore)
 	service.SetWebhookJobProducer(store)
 
@@ -123,7 +145,10 @@ func doWork(ctx context.Context) (Clean, error) {
 			return nil, err
 		}
 		service.SetProductAnalytics(eventRegistry, productEventOutbox)
-		analyticsHandler, err := analytics.NewExportHandler(eventRegistry, analyticsSink)
+		analyticsHandler, err := analytics.NewExportHandler(analytics.ExportHandlerConfig{
+			Destination: analyticsSink,
+			Deliveries:  jobStore,
+		})
 		if err != nil {
 			return nil, err
 		}
@@ -476,6 +501,9 @@ func doWork(ctx context.Context) (Clean, error) {
 	if stripeWebhookWorker != nil {
 		stripeWebhookWorker.Start(ctx)
 	}
+	if jobOperationsMonitor != nil {
+		jobOperationsMonitor.Start(ctx)
+	}
 	if analyticsWorker != nil {
 		analyticsWorker.Start(ctx)
 	}
@@ -497,6 +525,14 @@ func doWork(ctx context.Context) (Clean, error) {
 			shutdownCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 			if err := analyticsWorker.Shutdown(shutdownCtx); err != nil {
 				sw.Warn("product analytics worker shutdown timed out", wool.ErrField(err))
+			}
+			cancel()
+		}
+		if jobOperationsMonitor != nil {
+			sw.Info("stopping durable job metrics monitor")
+			shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+			if err := jobOperationsMonitor.Shutdown(shutdownCtx); err != nil {
+				sw.Warn("job metrics monitor shutdown timed out", wool.ErrField(err))
 			}
 			cancel()
 		}
@@ -559,7 +595,7 @@ func doWork(ctx context.Context) (Clean, error) {
 	}, nil
 }
 
-func configuredAnalyticsSink() (analytics.Sink, bool, error) {
+func configuredAnalyticsSink() (analytics.Destination, bool, error) {
 	switch strings.ToLower(strings.TrimSpace(os.Getenv("PRODUCT_ANALYTICS_MODE"))) {
 	case "", "disabled":
 		return analytics.NoopSink{}, false, nil
@@ -567,8 +603,10 @@ func configuredAnalyticsSink() (analytics.Sink, bool, error) {
 		return analytics.NoopSink{}, true, nil
 	case "posthog":
 		sink, err := analytics.NewPostHog(analytics.PostHogConfig{
-			APIKey: os.Getenv("POSTHOG_PROJECT_API_KEY"),
-			Host:   os.Getenv("POSTHOG_HOST"),
+			APIKey:         os.Getenv("POSTHOG_PROJECT_API_KEY"),
+			PersonalAPIKey: os.Getenv("POSTHOG_PERSONAL_API_KEY"),
+			ProjectID:      os.Getenv("POSTHOG_PROJECT_ID"),
+			Host:           os.Getenv("POSTHOG_HOST"),
 		})
 		if err != nil {
 			return nil, false, err

@@ -9,6 +9,7 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"strconv"
 	"strings"
 	"time"
 
@@ -18,21 +19,32 @@ import (
 const postHogBatchLimit = 100
 
 type PostHogConfig struct {
-	APIKey     string
-	Host       string
-	Timeout    time.Duration
-	HTTPClient *http.Client
+	APIKey         string
+	PersonalAPIKey string
+	ProjectID      string
+	Host           string
+	Timeout        time.Duration
+	HTTPClient     *http.Client
 }
 
 type PostHog struct {
-	apiKey   string
-	endpoint *url.URL
-	client   *http.Client
+	apiKey              string
+	personalAPIKey      string
+	captureEndpoint     *url.URL
+	suppressionEndpoint *url.URL
+	client              *http.Client
 }
 
 func NewPostHog(config PostHogConfig) (*PostHog, error) {
 	if strings.TrimSpace(config.APIKey) == "" {
 		return nil, errors.New("analytics: PostHog API key is required")
+	}
+	if strings.TrimSpace(config.PersonalAPIKey) == "" {
+		return nil, errors.New("analytics: PostHog personal API key is required")
+	}
+	projectID, err := strconv.ParseInt(strings.TrimSpace(config.ProjectID), 10, 64)
+	if err != nil || projectID <= 0 {
+		return nil, errors.New("analytics: PostHog project ID must be a positive integer")
 	}
 	if strings.TrimSpace(config.Host) == "" {
 		return nil, errors.New("analytics: PostHog host is required")
@@ -57,8 +69,17 @@ func NewPostHog(config PostHogConfig) (*PostHog, error) {
 		cloned.Timeout = timeout
 		client = &cloned
 	}
-	endpoint := host.ResolveReference(&url.URL{Path: "/batch/"})
-	return &PostHog{apiKey: config.APIKey, endpoint: endpoint, client: client}, nil
+	captureEndpoint := host.ResolveReference(&url.URL{Path: "/batch/"})
+	suppressionEndpoint := host.ResolveReference(&url.URL{
+		Path: fmt.Sprintf("/api/projects/%d/persons/bulk_delete/", projectID),
+	})
+	return &PostHog{
+		apiKey:              config.APIKey,
+		personalAPIKey:      config.PersonalAPIKey,
+		captureEndpoint:     captureEndpoint,
+		suppressionEndpoint: suppressionEndpoint,
+		client:              client,
+	}, nil
 }
 
 func (p *PostHog) Capture(
@@ -131,8 +152,26 @@ func (p *PostHog) Group(ctx context.Context, command Group) error {
 	})
 }
 
-func (p *PostHog) Suppress(context.Context, Suppression) error {
-	return errors.New("analytics: PostHog suppression requires a configured personal-API deletion adapter")
+func (p *PostHog) Suppress(
+	ctx context.Context,
+	command Suppression,
+) (Delivery, error) {
+	if command.CommandID == "" ||
+		(command.UserID == "") == (command.OrganizationID == "") {
+		return Delivery{}, errors.New("analytics: suppression requires one identity and a command ID")
+	}
+	if command.OrganizationID != "" {
+		return Delivery{}, ErrSuppressionUnsupported
+	}
+	err := p.sendTo(ctx, p.suppressionEndpoint, map[string]any{
+		"distinct_ids":      []string{command.UserID},
+		"delete_events":     true,
+		"delete_recordings": true,
+	}, p.personalAPIKey)
+	if err != nil {
+		return Delivery{}, err
+	}
+	return Delivery{Reference: command.CommandID}, nil
 }
 
 func (p *PostHog) sendEvents(ctx context.Context, event map[string]any) error {
@@ -140,15 +179,32 @@ func (p *PostHog) sendEvents(ctx context.Context, event map[string]any) error {
 }
 
 func (p *PostHog) send(ctx context.Context, payload map[string]any) error {
+	return p.sendTo(ctx, p.captureEndpoint, payload, "")
+}
+
+func (p *PostHog) sendTo(
+	ctx context.Context,
+	endpoint *url.URL,
+	payload map[string]any,
+	bearerToken string,
+) error {
 	body, err := json.Marshal(payload)
 	if err != nil {
 		return fmt.Errorf("analytics: encode PostHog request: %w", err)
 	}
-	request, err := http.NewRequestWithContext(ctx, http.MethodPost, p.endpoint.String(), bytes.NewReader(body))
+	request, err := http.NewRequestWithContext(
+		ctx,
+		http.MethodPost,
+		endpoint.String(),
+		bytes.NewReader(body),
+	)
 	if err != nil {
 		return fmt.Errorf("analytics: create PostHog request: %w", err)
 	}
 	request.Header.Set("Content-Type", "application/json")
+	if bearerToken != "" {
+		request.Header.Set("Authorization", "Bearer "+bearerToken)
+	}
 	response, err := p.client.Do(request)
 	if err != nil {
 		return fmt.Errorf("analytics: deliver to PostHog: %w", err)
@@ -178,7 +234,7 @@ func postHogEvent(event *analyticsv1.ProductEvent) map[string]any {
 	properties["distinct_id"] = distinctID
 	properties["event_id"] = event.GetEventId()
 	properties["schema_version"] = event.GetSchemaVersion()
-	properties["source"] = event.GetSource().String()
+	properties["source"] = eventSourceName(event.GetSource())
 	if event.GetOrganizationId() != "" {
 		properties["$groups"] = map[string]string{"organization": event.GetOrganizationId()}
 	}
@@ -205,5 +261,22 @@ func postHogEvent(event *analyticsv1.ProductEvent) map[string]any {
 		"uuid":       event.GetEventId(),
 		"timestamp":  event.GetOccurredAt().AsTime().Format(time.RFC3339Nano),
 		"properties": properties,
+	}
+}
+
+func eventSourceName(source analyticsv1.EventSource) string {
+	switch source {
+	case analyticsv1.EventSource_EVENT_SOURCE_WEB:
+		return "web"
+	case analyticsv1.EventSource_EVENT_SOURCE_API:
+		return "api"
+	case analyticsv1.EventSource_EVENT_SOURCE_WORKER:
+		return "worker"
+	case analyticsv1.EventSource_EVENT_SOURCE_WEBHOOK:
+		return "webhook"
+	case analyticsv1.EventSource_EVENT_SOURCE_IMPORT:
+		return "import"
+	default:
+		return ""
 	}
 }

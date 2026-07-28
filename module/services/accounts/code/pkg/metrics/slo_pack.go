@@ -21,10 +21,12 @@ type SLODefinition struct {
 }
 
 type AlertDefinition struct {
-	ID        string `json:"id"`
-	Signal    string `json:"signal"`
-	Condition string `json:"condition"`
-	Runbook   string `json:"runbook"`
+	ID                 string `json:"id"`
+	Signal             string `json:"signal"`
+	Condition          string `json:"condition"`
+	ExpressionLanguage string `json:"expression_language"`
+	Expression         string `json:"expression"`
+	Runbook            string `json:"runbook"`
 }
 
 type SLOPack struct {
@@ -64,7 +66,9 @@ func ParseSLOPack(body []byte) (SLOPack, error) {
 		return SLOPack{}, errors.New("metrics: SLOs and alerts are required")
 	}
 	for _, alert := range pack.Alerts {
-		if alert.ID == "" || alert.Signal == "" || alert.Condition == "" || alert.Runbook == "" {
+		if alert.ID == "" || alert.Signal == "" || alert.Condition == "" ||
+			alert.ExpressionLanguage != "promql" || alert.Expression == "" ||
+			alert.Runbook == "" {
 			return SLOPack{}, errors.New("metrics: alert definition is incomplete")
 		}
 		if _, exists := ids[alert.ID]; exists {

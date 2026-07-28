@@ -13,10 +13,12 @@ import (
 var dashboardPackJSON []byte
 
 type MetricDefinition struct {
-	Key        string `json:"key"`
-	Title      string `json:"title"`
-	Definition string `json:"definition"`
-	Source     string `json:"source"`
+	Key           string `json:"key"`
+	Title         string `json:"title"`
+	Definition    string `json:"definition"`
+	Source        string `json:"source"`
+	QueryLanguage string `json:"query_language"`
+	Query         string `json:"query"`
 }
 
 type DashboardDefinition struct {
@@ -75,7 +77,8 @@ func ParseDashboardPack(body []byte) (DashboardPack, error) {
 		}
 		for _, metric := range dashboard.Metrics {
 			if metric.Key == "" || metric.Title == "" || metric.Definition == "" ||
-				metric.Source == "" {
+				metric.Source == "" || metric.QueryLanguage != "sql" ||
+				!strings.HasPrefix(strings.TrimSpace(metric.Query), "SELECT ") {
 				return DashboardPack{}, fmt.Errorf(
 					"metrics: dashboard %q has incomplete metric metadata",
 					dashboard.ID,

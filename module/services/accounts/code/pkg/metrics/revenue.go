@@ -51,7 +51,13 @@ type organizationMonth struct {
 	churnKind ChurnKind
 }
 
-func MRRWaterfall(rows []MonthlyRecurringRevenue) ([]MRRMovement, error) {
+func MRRWaterfall(
+	rows []MonthlyRecurringRevenue,
+	throughMonth time.Time,
+) ([]MRRMovement, error) {
+	if !isUTCMonth(throughMonth) {
+		return nil, errors.New("metrics: waterfall end must be a UTC calendar-month boundary")
+	}
 	if len(rows) == 0 {
 		return nil, nil
 	}
@@ -66,6 +72,9 @@ func MRRWaterfall(rows []MonthlyRecurringRevenue) ([]MRRMovement, error) {
 		}
 		if !isUTCMonth(row.Month) {
 			return nil, errors.New("metrics: MRR month must be a UTC calendar-month boundary")
+		}
+		if row.Month.After(throughMonth) {
+			return nil, errors.New("metrics: MRR snapshot falls after the waterfall end")
 		}
 		normalizedCurrency := strings.ToUpper(strings.TrimSpace(row.Currency))
 		if normalizedCurrency == "" {
@@ -102,27 +111,41 @@ func MRRWaterfall(rows []MonthlyRecurringRevenue) ([]MRRMovement, error) {
 		months = append(months, month)
 	}
 	sort.Slice(months, func(i, j int) bool { return months[i].Before(months[j]) })
-	first, last := months[0], months[len(months)-1]
+	first := months[0]
+	if throughMonth.Before(first) {
+		return nil, errors.New("metrics: waterfall end precedes its first snapshot")
+	}
 	everPaid := map[string]bool{}
+	tracked := map[string]bool{}
 	previous := map[string]organizationMonth{}
-	waterfall := make([]MRRMovement, 0, monthsBetween(first, last)+1)
+	waterfall := make([]MRRMovement, 0, monthsBetween(first, throughMonth)+1)
 
-	for month := first; !month.After(last); month = month.AddDate(0, 1, 0) {
+	for month := first; !month.After(throughMonth); month = month.AddDate(0, 1, 0) {
 		current := byMonth[month]
 		if current == nil {
 			current = map[string]organizationMonth{}
 		}
 		movement := MRRMovement{Month: month, Currency: currency}
-		organizations := make(map[string]struct{}, len(previous)+len(current))
-		for organizationID := range previous {
-			organizations[organizationID] = struct{}{}
-		}
 		for organizationID := range current {
-			organizations[organizationID] = struct{}{}
+			tracked[organizationID] = true
 		}
-		for organizationID := range organizations {
+		for organizationID := range tracked {
 			before := previous[organizationID]
-			after := current[organizationID]
+			after, exists := current[organizationID]
+			if !exists {
+				return nil, fmt.Errorf(
+					"metrics: missing MRR snapshot for organization %q in %s",
+					organizationID,
+					month.Format("2006-01"),
+				)
+			}
+			if after.amount > 0 && after.churnKind != ChurnNone {
+				return nil, fmt.Errorf(
+					"metrics: organization %q has a churn cause while still paying in %s",
+					organizationID,
+					month.Format("2006-01"),
+				)
+			}
 			movement.OpeningMRR += before.amount
 			movement.ClosingMRR += after.amount
 			if after.amount > 0 {
@@ -136,6 +159,13 @@ func MRRWaterfall(rows []MonthlyRecurringRevenue) ([]MRRMovement, error) {
 				movement.NewMRR += after.amount
 				movement.NewOrganizations++
 			case before.amount > 0 && after.amount == 0:
+				if after.churnKind == ChurnNone {
+					return nil, fmt.Errorf(
+						"metrics: organization %q churn in %s requires a cause",
+						organizationID,
+						month.Format("2006-01"),
+					)
+				}
 				movement.ChurnedMRR += before.amount
 				movement.ChurnedOrganizations++
 				switch after.churnKind {
@@ -148,6 +178,13 @@ func MRRWaterfall(rows []MonthlyRecurringRevenue) ([]MRRMovement, error) {
 				movement.ExpansionMRR += after.amount - before.amount
 			case after.amount < before.amount:
 				movement.ContractionMRR += before.amount - after.amount
+			}
+			if before.amount == 0 && after.amount == 0 && after.churnKind != ChurnNone {
+				return nil, fmt.Errorf(
+					"metrics: organization %q churn cause in %s has no churn transition",
+					organizationID,
+					month.Format("2006-01"),
+				)
 			}
 			if after.amount > 0 {
 				everPaid[organizationID] = true

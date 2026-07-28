@@ -47,8 +47,9 @@ provider responses into an incident channel.
 1. Inspect only the `analytics` queue. Compare depth, oldest ready age, retry
    count, schema rejection codes, idempotency conflicts, terminal failures,
    and worker duration.
-2. Validate `PRODUCT_ANALYTICS_MODE`, the regional `POSTHOG_HOST`, and project
-   key presence without printing the key. Check the destination status page.
+2. Validate `PRODUCT_ANALYTICS_MODE`, the regional `POSTHOG_HOST`, project ID,
+   capture-key presence, and personal deletion-key presence without printing
+   either key. Check the destination status page.
 3. A schema reject is not retryable. Compare the event name/version/source,
    allowed properties, and privacy purpose with `registry.json`; correct the
    producer or registry deliberately.

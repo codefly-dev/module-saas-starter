@@ -5,13 +5,17 @@ import (
 	"crypto/sha256"
 	"errors"
 	"sync"
+	"time"
 
 	analyticsv1 "accounts/pkg/gen/saas/analytics/v1"
 
 	"google.golang.org/protobuf/proto"
 )
 
-var ErrEventConflict = errors.New("analytics: event id was reused with different content")
+var (
+	ErrEventConflict          = errors.New("analytics: event id was reused with different content")
+	ErrSuppressionUnsupported = errors.New("analytics: destination does not support this suppression target")
+)
 
 type Delivery struct {
 	Reference string
@@ -20,6 +24,11 @@ type Delivery struct {
 
 type Sink interface {
 	Capture(context.Context, *analyticsv1.ProductEvent) (Delivery, error)
+}
+
+type Destination interface {
+	Sink
+	IdentitySink
 }
 
 type Identity struct {
@@ -39,6 +48,7 @@ type Group struct {
 }
 
 type Suppression struct {
+	CommandID      string
 	UserID         string
 	OrganizationID string
 }
@@ -47,39 +57,63 @@ type IdentitySink interface {
 	Identify(context.Context, Identity) error
 	Alias(context.Context, Alias) error
 	Group(context.Context, Group) error
-	Suppress(context.Context, Suppression) error
+	Suppress(context.Context, Suppression) (Delivery, error)
+}
+
+type DeliveryRecord struct {
+	JobID             string
+	CommandID         string
+	Kind              string
+	ProviderReference string
+	Duplicate         bool
+	DeliveredAt       time.Time
+}
+
+type DeliveryRecorder interface {
+	RecordDelivery(context.Context, DeliveryRecord) error
 }
 
 type NoopSink struct{}
 
-func (NoopSink) Capture(context.Context, *analyticsv1.ProductEvent) (Delivery, error) {
-	return Delivery{}, nil
+func (NoopSink) Capture(
+	_ context.Context,
+	event *analyticsv1.ProductEvent,
+) (Delivery, error) {
+	return Delivery{Reference: event.GetEventId()}, nil
 }
 
-func (NoopSink) Identify(context.Context, Identity) error    { return nil }
-func (NoopSink) Alias(context.Context, Alias) error          { return nil }
-func (NoopSink) Group(context.Context, Group) error          { return nil }
-func (NoopSink) Suppress(context.Context, Suppression) error { return nil }
+func (NoopSink) Identify(context.Context, Identity) error { return nil }
+func (NoopSink) Alias(context.Context, Alias) error       { return nil }
+func (NoopSink) Group(context.Context, Group) error       { return nil }
+func (NoopSink) Suppress(_ context.Context, command Suppression) (Delivery, error) {
+	return Delivery{Reference: command.CommandID}, nil
+}
 
 type MemorySink struct {
-	mu       sync.Mutex
-	events   []*analyticsv1.ProductEvent
-	byID     map[string][sha256.Size]byte
-	identity []Identity
-	aliases  []Alias
-	groups   []Group
-	suppress []Suppression
+	mu              sync.Mutex
+	events          []*analyticsv1.ProductEvent
+	byID            map[string][sha256.Size]byte
+	identity        []Identity
+	aliases         []Alias
+	groups          []Group
+	suppress        []Suppression
+	bySuppressionID map[string]Suppression
 }
 
 func NewMemorySink() *MemorySink {
-	return &MemorySink{byID: make(map[string][sha256.Size]byte)}
+	return &MemorySink{
+		byID:            make(map[string][sha256.Size]byte),
+		bySuppressionID: make(map[string]Suppression),
+	}
 }
 
 func (s *MemorySink) Capture(
 	_ context.Context,
 	event *analyticsv1.ProductEvent,
 ) (Delivery, error) {
-	encoded, err := (proto.MarshalOptions{Deterministic: true}).Marshal(event)
+	logicalEvent := proto.Clone(event).(*analyticsv1.ProductEvent)
+	logicalEvent.ReceivedAt = nil
+	encoded, err := (proto.MarshalOptions{Deterministic: true}).Marshal(logicalEvent)
 	if err != nil {
 		return Delivery{}, err
 	}
@@ -128,9 +162,50 @@ func (s *MemorySink) Group(_ context.Context, command Group) error {
 	return nil
 }
 
-func (s *MemorySink) Suppress(_ context.Context, command Suppression) error {
+func (s *MemorySink) Suppress(
+	_ context.Context,
+	command Suppression,
+) (Delivery, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	if existing, ok := s.bySuppressionID[command.CommandID]; ok {
+		if existing != command {
+			return Delivery{}, ErrEventConflict
+		}
+		return Delivery{Reference: command.CommandID, Duplicate: true}, nil
+	}
+	s.bySuppressionID[command.CommandID] = command
 	s.suppress = append(s.suppress, command)
+	return Delivery{Reference: command.CommandID}, nil
+}
+
+func (s *MemorySink) Suppressions() []Suppression {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return append([]Suppression(nil), s.suppress...)
+}
+
+type MemoryDeliveryRecorder struct {
+	mu      sync.Mutex
+	records []DeliveryRecord
+}
+
+func NewMemoryDeliveryRecorder() *MemoryDeliveryRecorder {
+	return &MemoryDeliveryRecorder{}
+}
+
+func (r *MemoryDeliveryRecorder) RecordDelivery(
+	_ context.Context,
+	record DeliveryRecord,
+) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.records = append(r.records, record)
 	return nil
+}
+
+func (r *MemoryDeliveryRecorder) Records() []DeliveryRecord {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return append([]DeliveryRecord(nil), r.records...)
 }

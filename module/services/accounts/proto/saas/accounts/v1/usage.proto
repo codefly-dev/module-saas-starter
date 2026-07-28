@@ -72,8 +72,7 @@ message GetUsageResponse {
 enum UsageAggregation {
   USAGE_AGGREGATION_UNSPECIFIED = 0;
   USAGE_AGGREGATION_SUM = 1;
-  USAGE_AGGREGATION_MAX = 2;
-  USAGE_AGGREGATION_LAST = 3;
+  reserved 2, 3;
 }
 
 enum UsageVisibility {

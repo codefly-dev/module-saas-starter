@@ -12,31 +12,41 @@
           "key": "weekly_activated_organizations",
           "title": "Weekly Activated Organizations",
           "definition": "Distinct organizations completing the event selected by the effective activation-definition version during a calendar week.",
-          "source": "product_events"
+          "source": "product_events",
+          "query_language": "sql",
+          "query": "SELECT observed_at, value, dimensions, source_fresh_at FROM measurement.metric_values WHERE metric_key = 'weekly_activated_organizations' ORDER BY observed_at"
         },
         {
           "key": "signup_activation_conversion",
           "title": "Signup to activation conversion",
           "definition": "Accounts with activation_achieved divided by accounts with account_created in the selected signup cohort.",
-          "source": "product_events"
+          "source": "product_events",
+          "query_language": "sql",
+          "query": "SELECT observed_at, value, dimensions, source_fresh_at FROM measurement.metric_values WHERE metric_key = 'signup_activation_conversion' ORDER BY observed_at"
         },
         {
           "key": "time_to_first_value",
           "title": "Time to first value",
           "definition": "Median and p90 elapsed time from account_created to the first activation_achieved for the account organization.",
-          "source": "product_events"
+          "source": "product_events",
+          "query_language": "sql",
+          "query": "SELECT observed_at, value, dimensions, source_fresh_at FROM measurement.metric_values WHERE metric_key = 'time_to_first_value' ORDER BY observed_at"
         },
         {
           "key": "mrr_waterfall",
           "title": "MRR waterfall",
           "definition": "Opening MRR plus new, expansion, and reactivated MRR minus contraction and churned MRR equals closing MRR.",
-          "source": "mrr_waterfall_v1"
+          "source": "mrr_waterfall_v1",
+          "query_language": "sql",
+          "query": "SELECT observed_at, value, dimensions, source_fresh_at FROM measurement.metric_values WHERE metric_key = 'mrr_waterfall' ORDER BY observed_at"
         },
         {
           "key": "critical_reliability",
           "title": "Critical reliability",
           "definition": "Current SLO burn, dead letters, analytics export lag, and reconciliation discrepancies.",
-          "source": "operational_metrics"
+          "source": "operational_metrics",
+          "query_language": "sql",
+          "query": "SELECT observed_at, value, dimensions, source_fresh_at FROM measurement.metric_values WHERE metric_key = 'critical_reliability' ORDER BY observed_at"
         }
       ]
     },
@@ -51,19 +61,25 @@
           "key": "acquisition_funnel",
           "title": "Acquisition funnel",
           "definition": "Unique identities progressing through landing, waitlist, signup, account creation, and activation facts in order.",
-          "source": "product_events"
+          "source": "product_events",
+          "query_language": "sql",
+          "query": "SELECT observed_at, value, dimensions, source_fresh_at FROM measurement.metric_values WHERE metric_key = 'acquisition_funnel' ORDER BY observed_at"
         },
         {
           "key": "campaign_activation",
           "title": "Activation by campaign",
           "definition": "Signup and activation counts segmented independently by immutable first-touch and mutable last-touch source and campaign.",
-          "source": "product_events"
+          "source": "product_events",
+          "query_language": "sql",
+          "query": "SELECT observed_at, value, dimensions, source_fresh_at FROM measurement.metric_values WHERE metric_key = 'campaign_activation' ORDER BY observed_at"
         },
         {
           "key": "invitation_funnel",
           "title": "Invitation funnel",
           "definition": "Distinct invitations progressing through created, delivered, opened, and accepted server or consented browser facts.",
-          "source": "product_events"
+          "source": "product_events",
+          "query_language": "sql",
+          "query": "SELECT observed_at, value, dimensions, source_fresh_at FROM measurement.metric_values WHERE metric_key = 'invitation_funnel' ORDER BY observed_at"
         }
       ]
     },
@@ -78,19 +94,25 @@
           "key": "onboarding_step_funnel",
           "title": "Step completion and drop-off",
           "definition": "Distinct onboarding identities viewing, completing, or skipping each step by flow version.",
-          "source": "product_events"
+          "source": "product_events",
+          "query_language": "sql",
+          "query": "SELECT observed_at, value, dimensions, source_fresh_at FROM measurement.metric_values WHERE metric_key = 'onboarding_step_funnel' ORDER BY observed_at"
         },
         {
           "key": "onboarding_time_to_value",
           "title": "Onboarding time to value",
           "definition": "Elapsed time from onboarding_started to activation_achieved, segmented by flow version and variant.",
-          "source": "product_events"
+          "source": "product_events",
+          "query_language": "sql",
+          "query": "SELECT observed_at, value, dimensions, source_fresh_at FROM measurement.metric_values WHERE metric_key = 'onboarding_time_to_value' ORDER BY observed_at"
         },
         {
           "key": "activation_after_onboarding",
           "title": "Activation after onboarding",
           "definition": "Organizations achieving activation after onboarding_completed divided by organizations completing onboarding.",
-          "source": "product_events"
+          "source": "product_events",
+          "query_language": "sql",
+          "query": "SELECT observed_at, value, dimensions, source_fresh_at FROM measurement.metric_values WHERE metric_key = 'activation_after_onboarding' ORDER BY observed_at"
         }
       ]
     },
@@ -105,25 +127,33 @@
           "key": "active_users_organizations",
           "title": "Active users and organizations",
           "definition": "Distinct users and organizations with at least one registered qualifying product-value event in the selected period.",
-          "source": "product_events"
+          "source": "product_events",
+          "query_language": "sql",
+          "query": "SELECT observed_at, value, dimensions, source_fresh_at FROM measurement.metric_values WHERE metric_key = 'active_users_organizations' ORDER BY observed_at"
         },
         {
           "key": "dau_wau_mau",
           "title": "DAU, WAU, and MAU",
           "definition": "Distinct active users and organizations in rolling 1, 7, and 30 day UTC windows; stickiness is WAU divided by MAU.",
-          "source": "product_events"
+          "source": "product_events",
+          "query_language": "sql",
+          "query": "SELECT observed_at, value, dimensions, source_fresh_at FROM measurement.metric_values WHERE metric_key = 'dau_wau_mau' ORDER BY observed_at"
         },
         {
           "key": "core_action_frequency",
           "title": "Core-action frequency",
           "definition": "Count and active-day distribution of deduplicated core_action_completed facts per active organization.",
-          "source": "product_events"
+          "source": "product_events",
+          "query_language": "sql",
+          "query": "SELECT observed_at, value, dimensions, source_fresh_at FROM measurement.metric_values WHERE metric_key = 'core_action_frequency' ORDER BY observed_at"
         },
         {
           "key": "product_lifecycle",
           "title": "Lifecycle",
           "definition": "New, retained, resurrected, and dormant identities based on activity in the current and preceding equal period.",
-          "source": "product_events"
+          "source": "product_events",
+          "query_language": "sql",
+          "query": "SELECT observed_at, value, dimensions, source_fresh_at FROM measurement.metric_values WHERE metric_key = 'product_lifecycle' ORDER BY observed_at"
         }
       ]
     },
@@ -138,25 +168,33 @@
           "key": "weekly_monthly_cohorts",
           "title": "User and organization cohorts",
           "definition": "Percent of each signup or activation cohort returning with a qualifying value event in subsequent week or month offsets.",
-          "source": "product_events"
+          "source": "product_events",
+          "query_language": "sql",
+          "query": "SELECT observed_at, value, dimensions, source_fresh_at FROM measurement.metric_values WHERE metric_key = 'weekly_monthly_cohorts' ORDER BY observed_at"
         },
         {
           "key": "logo_revenue_retention",
           "title": "Logo and revenue retention",
           "definition": "Retained paying organizations and recurring revenue from the opening cohort, excluding new business.",
-          "source": "mrr_waterfall_v1"
+          "source": "mrr_waterfall_v1",
+          "query_language": "sql",
+          "query": "SELECT observed_at, value, dimensions, source_fresh_at FROM measurement.metric_values WHERE metric_key = 'logo_revenue_retention' ORDER BY observed_at"
         },
         {
           "key": "voluntary_involuntary_churn",
           "title": "Churn by cause",
           "definition": "Churned organizations and MRR split by explicit voluntary cancellation versus failed-payment exhaustion.",
-          "source": "mrr_waterfall_v1"
+          "source": "mrr_waterfall_v1",
+          "query_language": "sql",
+          "query": "SELECT observed_at, value, dimensions, source_fresh_at FROM measurement.metric_values WHERE metric_key = 'voluntary_involuntary_churn' ORDER BY observed_at"
         },
         {
           "key": "pre_churn_signals",
           "title": "Pre-churn signals",
           "definition": "Product usage, support, and feedback facts in the 30 days preceding a churn movement.",
-          "source": "product_events+mrr_waterfall_v1"
+          "source": "product_events+mrr_waterfall_v1",
+          "query_language": "sql",
+          "query": "SELECT observed_at, value, dimensions, source_fresh_at FROM measurement.metric_values WHERE metric_key = 'pre_churn_signals' ORDER BY observed_at"
         }
       ]
     },
@@ -171,31 +209,41 @@
           "key": "mrr_arr",
           "title": "MRR and ARR",
           "definition": "Normalized recurring subscription value at month end; ARR is closing MRR multiplied by 12.",
-          "source": "mrr_waterfall_v1"
+          "source": "mrr_waterfall_v1",
+          "query_language": "sql",
+          "query": "SELECT observed_at, value, dimensions, source_fresh_at FROM measurement.metric_values WHERE metric_key = 'mrr_arr' ORDER BY observed_at"
         },
         {
           "key": "mrr_movements",
           "title": "MRR movements",
           "definition": "New, expansion, contraction, churned, and reactivated MRR classified by consecutive organization-month snapshots.",
-          "source": "mrr_waterfall_v1"
+          "source": "mrr_waterfall_v1",
+          "query_language": "sql",
+          "query": "SELECT observed_at, value, dimensions, source_fresh_at FROM measurement.metric_values WHERE metric_key = 'mrr_movements' ORDER BY observed_at"
         },
         {
           "key": "grr_nrr",
           "title": "GRR and NRR",
           "definition": "GRR excludes expansion and new business; NRR adds expansion and reactivation to opening recurring revenue while excluding new business.",
-          "source": "mrr_waterfall_v1"
+          "source": "mrr_waterfall_v1",
+          "query_language": "sql",
+          "query": "SELECT observed_at, value, dimensions, source_fresh_at FROM measurement.metric_values WHERE metric_key = 'grr_nrr' ORDER BY observed_at"
         },
         {
           "key": "arpa_concentration",
           "title": "ARPA and concentration",
           "definition": "Closing MRR per paying organization and the share of closing MRR held by the largest organizations.",
-          "source": "mrr_waterfall_v1"
+          "source": "mrr_waterfall_v1",
+          "query_language": "sql",
+          "query": "SELECT observed_at, value, dimensions, source_fresh_at FROM measurement.metric_values WHERE metric_key = 'arpa_concentration' ORDER BY observed_at"
         },
         {
           "key": "trial_conversion",
           "title": "Trial conversion",
           "definition": "Organizations reaching subscription_started after trial_started, with elapsed-time distribution.",
-          "source": "product_events"
+          "source": "product_events",
+          "query_language": "sql",
+          "query": "SELECT observed_at, value, dimensions, source_fresh_at FROM measurement.metric_values WHERE metric_key = 'trial_conversion' ORDER BY observed_at"
         }
       ]
     },
@@ -210,25 +258,33 @@
           "key": "usage_history",
           "title": "Usage history",
           "definition": "Accepted immutable usage-event quantity bucketed in UTC for each catalogued customer-visible meter.",
-          "source": "usage_service"
+          "source": "usage_service",
+          "query_language": "sql",
+          "query": "SELECT observed_at, value, dimensions, source_fresh_at FROM measurement.metric_values WHERE metric_key = 'usage_history' ORDER BY observed_at"
         },
         {
           "key": "usage_headroom",
           "title": "Limit headroom",
           "definition": "Current accepted monthly quantity compared with the effective plan or organization override limit.",
-          "source": "usage_service"
+          "source": "usage_service",
+          "query_language": "sql",
+          "query": "SELECT observed_at, value, dimensions, source_fresh_at FROM measurement.metric_values WHERE metric_key = 'usage_headroom' ORDER BY observed_at"
         },
         {
           "key": "usage_forecast",
           "title": "Near-limit forecast",
           "definition": "Current-period quantity projected linearly across the remaining UTC billing period and compared with the effective limit.",
-          "source": "usage_service"
+          "source": "usage_service",
+          "query_language": "sql",
+          "query": "SELECT observed_at, value, dimensions, source_fresh_at FROM measurement.metric_values WHERE metric_key = 'usage_forecast' ORDER BY observed_at"
         },
         {
           "key": "usage_reconciliation",
           "title": "Reconciliation discrepancy",
           "definition": "Difference between immutable accepted usage-event sums, usage totals, and configured provider-reported quantity.",
-          "source": "usage_reconciliation"
+          "source": "usage_reconciliation",
+          "query_language": "sql",
+          "query": "SELECT observed_at, value, dimensions, source_fresh_at FROM measurement.metric_values WHERE metric_key = 'usage_reconciliation' ORDER BY observed_at"
         }
       ]
     },
@@ -243,25 +299,33 @@
           "key": "journey_slos",
           "title": "Core journey SLOs",
           "definition": "Availability, latency, and error budget burn for signup, login, invitation acceptance, checkout, core action, notification delivery, event export, and usage consumption.",
-          "source": "operational_metrics"
+          "source": "operational_metrics",
+          "query_language": "sql",
+          "query": "SELECT observed_at, value, dimensions, source_fresh_at FROM measurement.metric_values WHERE metric_key = 'journey_slos' ORDER BY observed_at"
         },
         {
           "key": "job_health",
           "title": "Jobs and integrations",
           "definition": "Durable queue depth, oldest ready age, retries, dead letters, expired leases, and low-cardinality worker outcomes.",
-          "source": "job_queue_projection+otel"
+          "source": "job_queue_projection+otel",
+          "query_language": "sql",
+          "query": "SELECT observed_at, value, dimensions, source_fresh_at FROM measurement.metric_values WHERE metric_key = 'job_health' ORDER BY observed_at"
         },
         {
           "key": "analytics_delivery_health",
           "title": "Analytics delivery",
           "definition": "Analytics queue depth, oldest-event age, retries, schema rejects, idempotency conflicts, terminal failures, and provider latency.",
-          "source": "job_queue_projection+otel"
+          "source": "job_queue_projection+otel",
+          "query_language": "sql",
+          "query": "SELECT observed_at, value, dimensions, source_fresh_at FROM measurement.metric_values WHERE metric_key = 'analytics_delivery_health' ORDER BY observed_at"
         },
         {
           "key": "source_freshness",
           "title": "Source freshness",
           "definition": "Elapsed time since the latest successful source observation compared with each card's refresh expectation.",
-          "source": "dashboard_metadata"
+          "source": "dashboard_metadata",
+          "query_language": "sql",
+          "query": "SELECT observed_at, value, dimensions, source_fresh_at FROM measurement.metric_values WHERE metric_key = 'source_freshness' ORDER BY observed_at"
         }
       ]
     }

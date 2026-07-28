@@ -16,9 +16,7 @@ var defaultUsageMetersJSON []byte
 type UsageAggregation string
 
 const (
-	UsageAggregationSum  UsageAggregation = "sum"
-	UsageAggregationMax  UsageAggregation = "max"
-	UsageAggregationLast UsageAggregation = "last"
+	UsageAggregationSum UsageAggregation = "sum"
 )
 
 type UsageVisibility string
@@ -89,10 +87,11 @@ func ParseUsageMeterCatalog(body []byte) (*UsageMeterCatalog, error) {
 			meter.Source == "" || meter.ReconciliationRule == "" {
 			return nil, fmt.Errorf("usage meter %q is missing required metadata", meter.Key)
 		}
-		if meter.Aggregation != UsageAggregationSum &&
-			meter.Aggregation != UsageAggregationMax &&
-			meter.Aggregation != UsageAggregationLast {
-			return nil, fmt.Errorf("usage meter %q has an unknown aggregation", meter.Key)
+		if meter.Aggregation != UsageAggregationSum {
+			return nil, fmt.Errorf(
+				"usage meter %q aggregation must be sum because usage events are additive",
+				meter.Key,
+			)
 		}
 		if meter.Visibility != UsageVisibilityCustomer &&
 			meter.Visibility != UsageVisibilityOperator {
@@ -101,6 +100,14 @@ func ParseUsageMeterCatalog(body []byte) (*UsageMeterCatalog, error) {
 		catalog.meters[meter.Key] = meter
 	}
 	return catalog, nil
+}
+
+func (c *UsageMeterCatalog) Definition(key string) (UsageMeterDefinition, bool) {
+	if c == nil {
+		return UsageMeterDefinition{}, false
+	}
+	meter, ok := c.meters[key]
+	return meter, ok
 }
 
 func (c *UsageMeterCatalog) Definitions(visibility UsageVisibility) []UsageMeterDefinition {

@@ -171,8 +171,8 @@ their next owning change.
 | Consent-gated browser analytics, attribution, and aliasing | `component_only` | [browser contract](services/frontend/code/src/lib/analytics/browser.ts) and [consent/shared-device tests](services/frontend/code/src/lib/analytics/browser.test.ts); consent UI is owned by its companion feature |
 | Usage catalog, history, and customer billing view | `component_only` | [`UsageService` API](services/accounts/proto/saas/accounts/v1/usage.proto), durable `usage_events`, [Postgres tests](services/accounts/code/pkg/infra/postgres_usage_test.go), and `/admin/billing`; automated provider reconciliation remains planned |
 | Activation and subscription-revenue semantics | `component_only` | [metric functions and exact fixtures](services/accounts/code/pkg/metrics) |
-| Founder/growth/product/finance/success/engineering dashboard pack | `experimental` | [versioned semantic pack](services/accounts/code/pkg/metrics/dashboard_pack.json); provider seeding and cross-domain warehouse materialization are deployment work |
-| Operational SLO and alert pack | `component_only` | [SLO pack](services/accounts/code/pkg/metrics/slo_pack.json), [OTel worker instruments](services/accounts/code/pkg/jobs/telemetry.go), and [runbooks](MEASUREMENT_RUNBOOKS.md) |
+| Founder/growth/product/finance/success/engineering dashboard pack | `experimental` | [versioned executable SQL pack](services/accounts/code/pkg/metrics/dashboard_pack.json) and [`measurement-pack` deployment bundle](services/accounts/code/cmd/measurement-pack); cross-domain value materialization remains deployment work |
+| Operational SLO and alert pack | `component_only` | [executable PromQL pack](services/accounts/code/pkg/metrics/slo_pack.json), [OTel worker instruments](services/accounts/code/pkg/jobs/telemetry.go), [durable queue monitor](services/accounts/code/pkg/jobs/operations_telemetry.go), and [runbooks](MEASUREMENT_RUNBOOKS.md) |
 
 ### Authentication & sessions
 
@@ -533,6 +533,8 @@ Environment variables consumed by the api:
 | `SLACK_WEBHOOK_URL`            | Internal alerts (optional)                                  |
 | `PRODUCT_ANALYTICS_MODE`       | `disabled` (default), durable `noop`, or `posthog`           |
 | `POSTHOG_PROJECT_API_KEY`      | PostHog project capture key; required only in PostHog mode   |
+| `POSTHOG_PERSONAL_API_KEY`     | PostHog person-deletion key; required only in PostHog mode   |
+| `POSTHOG_PROJECT_ID`           | Positive PostHog project ID; required only in PostHog mode   |
 | `POSTHOG_HOST`                 | Explicit HTTPS or local PostHog endpoint                     |
 | `OTEL_EXPORTER_OTLP_ENDPOINT`  | Enables the backend OpenTelemetry provider                   |
 | `OTEL_SERVICE_NAME`            | Enables the backend OTel provider in local/stdout mode       |

@@ -158,7 +158,10 @@ func (s *Service) DeleteUser(ctx context.Context, actorID string, access Identit
 		return w.NewError("uuid required for delete")
 	}
 	if err := s.store.As(access).Within(ctx, func(ctx context.Context) error {
-		return s.store.DeleteUser(ctx, targetID)
+		if err := s.store.DeleteUser(ctx, targetID); err != nil {
+			return err
+		}
+		return s.suppressProductIdentity(ctx, userAnalyticsSuppression(targetID), access)
 	}); err != nil {
 		return w.Wrapf(err, "cannot delete user")
 	}

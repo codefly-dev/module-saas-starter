@@ -135,10 +135,17 @@ type Store interface {
 	// Invitations
 	CreateInvitation(ctx context.Context, inv *Invitation) error
 	ExpirePendingInvitations(ctx context.Context, orgID string) error
+	GetInvitationByID(ctx context.Context, id string) (*Invitation, error)
 	GetInvitationByTokenHash(ctx context.Context, hash string) (*Invitation, error)
 	GetInvitationOrgID(ctx context.Context, id string) (string, error)
 	ListInvitations(ctx context.Context, orgID string, status string) ([]*Invitation, error)
-	UpdateInvitationStatus(ctx context.Context, id string, status string, acceptedBy string) error
+	UpdateInvitationStatus(
+		ctx context.Context,
+		id string,
+		status string,
+		acceptedBy string,
+		occurredAt time.Time,
+	) error
 	CountPendingInvitations(ctx context.Context, orgID string) (int32, error)
 
 	// SSO
@@ -224,7 +231,14 @@ type Store interface {
 
 	// Onboarding
 	GetOnboardingProgress(ctx context.Context, userID string) ([]*OnboardingStep, error)
-	UpsertOnboardingStep(ctx context.Context, userID string, stepName string, status string) error
+	LockOnboardingProgress(ctx context.Context, userID string) error
+	UpsertOnboardingStep(
+		ctx context.Context,
+		userID string,
+		stepName string,
+		status string,
+		occurredAt time.Time,
+	) error
 
 	// Magic Links
 	CreateMagicLink(ctx context.Context, ml *MagicLink) error

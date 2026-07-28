@@ -37,15 +37,8 @@ var (
 )
 
 func (r *Registry) Validate(event *analyticsv1.ProductEvent) error {
-	if event == nil {
-		return errors.New("analytics: product event is required")
-	}
-	validator, err := protovalidate.New()
-	if err != nil {
-		return fmt.Errorf("analytics: initialize event validator: %w", err)
-	}
-	if err := validator.Validate(event); err != nil {
-		return fmt.Errorf("analytics: invalid event envelope: %w", err)
+	if err := validatePersistedEvent(event); err != nil {
+		return err
 	}
 	definition, ok := r.Definition(event.GetEventName())
 	if !ok {
@@ -66,13 +59,30 @@ func (r *Registry) Validate(event *analyticsv1.ProductEvent) error {
 	if event.GetPrivacy().GetPiiClassification() != definition.PIIClassification {
 		return fmt.Errorf("analytics: event %q PII classification does not match registry", event.GetEventName())
 	}
+	if err := validateProperties(definition, event.GetProperties()); err != nil {
+		return fmt.Errorf("analytics: event %q: %w", event.GetEventName(), err)
+	}
+	return nil
+}
+
+func validatePersistedEvent(event *analyticsv1.ProductEvent) error {
+	if event == nil {
+		return errors.New("analytics: product event is required")
+	}
+	validator, err := protovalidate.New()
+	if err != nil {
+		return fmt.Errorf("analytics: initialize event validator: %w", err)
+	}
+	if err := validator.Validate(event); err != nil {
+		return fmt.Errorf("analytics: invalid event envelope: %w", err)
+	}
 	consent := event.GetPrivacy().GetConsentState()
 	if consent == analyticsv1.ConsentState_CONSENT_STATE_DENIED ||
 		consent == analyticsv1.ConsentState_CONSENT_STATE_WITHDRAWN {
 		return errors.New("analytics: resolved consent forbids collection")
 	}
 	if event.GetSource() == analyticsv1.EventSource_EVENT_SOURCE_WEB &&
-		definition.Purpose != analyticsv1.AnalyticsPurpose_ANALYTICS_PURPOSE_ESSENTIAL &&
+		event.GetPrivacy().GetPurpose() != analyticsv1.AnalyticsPurpose_ANALYTICS_PURPOSE_ESSENTIAL &&
 		consent != analyticsv1.ConsentState_CONSENT_STATE_GRANTED {
 		return errors.New("analytics: optional browser collection requires granted consent")
 	}
@@ -91,8 +101,22 @@ func (r *Registry) Validate(event *analyticsv1.ProductEvent) error {
 	if err := validateContext(event.GetContext()); err != nil {
 		return fmt.Errorf("analytics: event %q context: %w", event.GetEventName(), err)
 	}
-	if err := validateProperties(definition, event.GetProperties()); err != nil {
+	if err := validatePersistedProperties(event.GetProperties()); err != nil {
 		return fmt.Errorf("analytics: event %q: %w", event.GetEventName(), err)
+	}
+	return nil
+}
+
+func validateSuppressionCommand(command *analyticsv1.SuppressionCommand) error {
+	if command == nil {
+		return errors.New("analytics: suppression command is required")
+	}
+	validator, err := protovalidate.New()
+	if err != nil {
+		return fmt.Errorf("analytics: initialize suppression validator: %w", err)
+	}
+	if err := validator.Validate(command); err != nil {
+		return fmt.Errorf("analytics: invalid suppression command: %w", err)
 	}
 	return nil
 }
@@ -160,6 +184,24 @@ func validateProperties(definition Definition, properties *structpb.Struct) erro
 			return fmt.Errorf("property %q: %w", key, err)
 		}
 		if err := validatePropertyType(value, propertyType); err != nil {
+			return fmt.Errorf("property %q: %w", key, err)
+		}
+	}
+	return nil
+}
+
+func validatePersistedProperties(properties *structpb.Struct) error {
+	if properties == nil {
+		return nil
+	}
+	if len(properties.GetFields()) > maxProperties {
+		return fmt.Errorf("properties contain more than %d entries", maxProperties)
+	}
+	for key, value := range properties.GetFields() {
+		if !canonicalNamePattern.MatchString(key) || forbiddenPropertyName(key) {
+			return fmt.Errorf("property %q is forbidden", key)
+		}
+		if err := validatePropertyValue(value, 0); err != nil {
 			return fmt.Errorf("property %q: %w", key, err)
 		}
 	}

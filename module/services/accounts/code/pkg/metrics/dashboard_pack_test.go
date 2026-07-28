@@ -20,6 +20,9 @@ func TestDefaultDashboardPack(t *testing.T) {
 		for _, metric := range dashboard.Metrics {
 			require.NotEmpty(t, metric.Definition)
 			require.NotEmpty(t, metric.Source)
+			require.Equal(t, "sql", metric.QueryLanguage)
+			require.Contains(t, metric.Query, "SELECT ")
+			require.Contains(t, metric.Query, metric.Key)
 		}
 	}
 	require.Equal(t, map[string]bool{
@@ -43,7 +46,36 @@ func TestDashboardPackRejectsMissingProvenance(t *testing.T) {
 			"owner": "finance",
 			"timezone": "UTC",
 			"refresh_seconds": 60,
-			"metrics": [{"key": "mrr", "title": "MRR", "definition": "Recurring revenue", "source": ""}]
+			"metrics": [{
+				"key": "mrr",
+				"title": "MRR",
+				"definition": "Recurring revenue",
+				"source": "",
+				"query_language": "sql",
+				"query": "SELECT * FROM mrr"
+			}]
+		}]
+	}`))
+	require.ErrorContains(t, err, "incomplete metric metadata")
+}
+
+func TestDashboardPackRejectsNonExecutableMetric(t *testing.T) {
+	_, err := ParseDashboardPack([]byte(`{
+		"version": 1,
+		"dashboards": [{
+			"id": "revenue",
+			"title": "Revenue",
+			"owner": "finance",
+			"timezone": "UTC",
+			"refresh_seconds": 60,
+			"metrics": [{
+				"key": "mrr",
+				"title": "MRR",
+				"definition": "Recurring revenue",
+				"source": "billing",
+				"query_language": "sql",
+				"query": ""
+			}]
 		}]
 	}`))
 	require.ErrorContains(t, err, "incomplete metric metadata")

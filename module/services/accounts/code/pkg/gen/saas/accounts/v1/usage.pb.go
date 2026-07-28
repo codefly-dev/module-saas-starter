@@ -31,8 +31,6 @@ type UsageAggregation int32
 const (
 	UsageAggregation_USAGE_AGGREGATION_UNSPECIFIED UsageAggregation = 0
 	UsageAggregation_USAGE_AGGREGATION_SUM         UsageAggregation = 1
-	UsageAggregation_USAGE_AGGREGATION_MAX         UsageAggregation = 2
-	UsageAggregation_USAGE_AGGREGATION_LAST        UsageAggregation = 3
 )
 
 // Enum value maps for UsageAggregation.
@@ -40,14 +38,10 @@ var (
 	UsageAggregation_name = map[int32]string{
 		0: "USAGE_AGGREGATION_UNSPECIFIED",
 		1: "USAGE_AGGREGATION_SUM",
-		2: "USAGE_AGGREGATION_MAX",
-		3: "USAGE_AGGREGATION_LAST",
 	}
 	UsageAggregation_value = map[string]int32{
 		"USAGE_AGGREGATION_UNSPECIFIED": 0,
 		"USAGE_AGGREGATION_SUM":         1,
-		"USAGE_AGGREGATION_MAX":         2,
-		"USAGE_AGGREGATION_LAST":        3,
 	}
 )
 
@@ -1190,12 +1184,10 @@ const file_saas_accounts_v1_usage_proto_rawDesc = "" +
 	"\x04from\x18\x06 \x01(\v2\x1a.google.protobuf.TimestampR\x04from\x12*\n" +
 	"\x02to\x18\a \x01(\v2\x1a.google.protobuf.TimestampR\x02to\x12;\n" +
 	"\vobserved_at\x18\b \x01(\v2\x1a.google.protobuf.TimestampR\n" +
-	"observedAt*\x87\x01\n" +
+	"observedAt*\\\n" +
 	"\x10UsageAggregation\x12!\n" +
 	"\x1dUSAGE_AGGREGATION_UNSPECIFIED\x10\x00\x12\x19\n" +
-	"\x15USAGE_AGGREGATION_SUM\x10\x01\x12\x19\n" +
-	"\x15USAGE_AGGREGATION_MAX\x10\x02\x12\x1a\n" +
-	"\x16USAGE_AGGREGATION_LAST\x10\x03*q\n" +
+	"\x15USAGE_AGGREGATION_SUM\x10\x01\"\x04\b\x02\x10\x02\"\x04\b\x03\x10\x03*q\n" +
 	"\x0fUsageVisibility\x12 \n" +
 	"\x1cUSAGE_VISIBILITY_UNSPECIFIED\x10\x00\x12\x1d\n" +
 	"\x19USAGE_VISIBILITY_CUSTOMER\x10\x01\x12\x1d\n" +

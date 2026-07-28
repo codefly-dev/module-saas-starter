@@ -69,12 +69,13 @@ The request-scoped Postgres producer requires the surrounding user or
 organization transaction, so the domain mutation and event command commit or
 roll back together.
 
-The leased worker revalidates the envelope, tenant scope, event identity, and
-registry before delivery. Retries preserve the event UUID; PostHog receives it
-as both its logical UUID and an ordinary `event_id`. Provider failure cannot
-extend or fail the original domain transaction. The existing job operations
-surface supplies durable queue depth, oldest age, attempts, terminal failures,
-and idempotent re-drive without exposing payloads.
+The leased worker revalidates the immutable envelope, tenant scope, event
+identity, privacy constraints, and payload bounds before delivery. Registry
+validation happens before enqueue so a compatible deployment cannot reject an
+older, already-durable schema after rollout. Retries preserve the event UUID;
+PostHog receives it as both its logical UUID and an ordinary `event_id`.
+Provider failure cannot extend or fail the original domain transaction.
+Successful provider references are recorded in `analytics_deliveries`.
 
 Modes are disabled by default:
 
@@ -84,10 +85,12 @@ Modes are disabled by default:
 | `noop` | Durable, validated delivery to a no-network sink |
 | `posthog` | Durable server delivery through the PostHog adapter |
 
-PostHog mode requires `POSTHOG_PROJECT_API_KEY` and an absolute
-`POSTHOG_HOST`. Non-local hosts must use HTTPS. The adapter has a five-second
-default request timeout and a maximum batch of 100. Application and domain
-packages do not import a PostHog SDK.
+PostHog mode requires `POSTHOG_PROJECT_API_KEY`, `POSTHOG_PERSONAL_API_KEY`,
+`POSTHOG_PROJECT_ID`, and an absolute `POSTHOG_HOST`. The personal key needs
+the person-deletion permission and is used only by durable suppression
+commands. Non-local hosts must use HTTPS. The adapter has a five-second default
+request timeout and a maximum batch of 100. Application and domain packages do
+not import a PostHog SDK.
 
 The in-memory sink is deterministic and rejects conflicting reuse of an event
 UUID. It is the reference sink for contract and journey tests.
@@ -144,10 +147,12 @@ instead of combining unlike historical definitions.
 ## Recurring revenue
 
 `pkg/metrics.MRRWaterfall` consumes one normalized organization/month snapshot
-per currency. It classifies new, expansion, contraction, churned, and
-reactivated MRR, then calculates closing MRR, ARR, paying organizations, ARPA,
-logo movements, voluntary/involuntary churn, GRR, and NRR. Exact synthetic
-fixtures pin the expected amounts.
+per currency through an explicit inclusive end month. Once an organization
+appears, every month through that boundary requires a row; a transition to
+zero requires an explicit voluntary or involuntary cause. It classifies new,
+expansion, contraction, churned, and reactivated MRR, then calculates closing
+MRR, ARR, paying organizations, ARPA, logo movements, GRR, and NRR. Exact
+synthetic fixtures pin the expected amounts.
 
 The input MRR amount is recurring subscription value after recurring discounts
 and before tax. It excludes refunds, credits, one-time charges, usage
@@ -170,9 +175,11 @@ NRR.
 `pkg/metrics/dashboard_pack.json` is the versioned provider-neutral seed pack
 for founder, acquisition, onboarding, product adoption, retention/churn,
 revenue, usage/entitlement, and reliability/data-quality views. Every card has
-a definition, source, UTC reporting timezone, refresh expectation, and owner.
-Behavioral exploration maps to PostHog; curated cross-domain views map to the
-metric functions or a warehouse/SQL implementation of the same definitions.
+a definition, source, executable SQL query, UTC reporting timezone, refresh
+expectation, and owner. `go run ./cmd/measurement-pack` emits the dashboards,
+PromQL alerts, and the generic warehouse materialization schema as one
+deployable JSON bundle. Behavioral exploration maps to PostHog; curated
+cross-domain values populate `measurement.metric_values`.
 
 Frontend metric cards use the shared states `loading`, `no_data`, `partial`,
 `stale`, `provider_unavailable`, `not_configured`, `sample`, and `ready`.
@@ -186,15 +193,17 @@ active organization.
 Job workers emit OpenTelemetry `saas.jobs.polls`, `claimed`, `active`,
 `completed`, and `duration` instruments. Labels are limited to queue plus
 bounded result/outcome vocabulary; user, organization, payload, event, and
-provider identifiers are not metric labels. Durable queue depth, oldest-event
-age, retries, dead letters, and expired leases remain database projections.
+provider identifiers are not metric labels. A production monitor exports
+database-derived `saas.jobs.depth` and `saas.jobs.oldest_ready_age` gauges.
+Analytics export adds delivery, duplicate, rejection, and provider-latency
+instruments, while worker outcomes supply retry and terminal-failure counts.
 
 `pkg/metrics/slo_pack.json` defines 30-day availability and p95 latency SLOs
 for signup, login, invitation acceptance, checkout, the core action,
 notification delivery, analytics export, and usage consumption. It also seeds
-multi-window burn, dead-letter, queue-age, integration, export-health, and
-usage-reconciliation alerts. Diagnosis and recovery procedures are in
-`MEASUREMENT_RUNBOOKS.md`.
+executable PromQL for multi-window burn, dead-letter, queue-age, integration,
+export-health, and usage-reconciliation alerts. Diagnosis and recovery
+procedures are in `MEASUREMENT_RUNBOOKS.md`.
 
 ## Retention, volume, and deployment
 

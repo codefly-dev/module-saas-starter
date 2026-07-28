@@ -39,13 +39,28 @@ func (s *PostgresStore) GetOnboardingProgress(ctx context.Context, userID string
 	return steps, nil
 }
 
-func (s *PostgresStore) UpsertOnboardingStep(ctx context.Context, userID string, stepName string, status string) error {
+func (s *PostgresStore) LockOnboardingProgress(ctx context.Context, userID string) error {
+	_, err := s.getQueryExecutor(ctx).Exec(
+		ctx,
+		`SELECT pg_advisory_xact_lock(hashtextextended($1, 0))`,
+		"onboarding:"+userID,
+	)
+	return err
+}
+
+func (s *PostgresStore) UpsertOnboardingStep(
+	ctx context.Context,
+	userID string,
+	stepName string,
+	status string,
+	occurredAt time.Time,
+) error {
 	q := s.getQueryExecutor(ctx)
 
 	var completedAt *time.Time
 	if status == "completed" || status == "skipped" {
-		now := time.Now()
-		completedAt = &now
+		value := occurredAt.UTC()
+		completedAt = &value
 	}
 
 	_, err := q.Exec(ctx, `

@@ -72,43 +72,57 @@
       "id": "slo_fast_burn",
       "signal": "error_budget_burn",
       "condition": "burn rate > 14.4 for 5m and > 14.4 for 1h",
-      "runbook": "slo-burn"
+      "runbook": "slo-burn",
+      "expression_language": "promql",
+      "expression": "max_over_time(measurement_slo_error_budget_burn[5m]) > 14.4 and max_over_time(measurement_slo_error_budget_burn[1h]) > 14.4"
     },
     {
       "id": "slo_slow_burn",
       "signal": "error_budget_burn",
       "condition": "burn rate > 1 for 6h and > 1 for 3d",
-      "runbook": "slo-burn"
+      "runbook": "slo-burn",
+      "expression_language": "promql",
+      "expression": "max_over_time(measurement_slo_error_budget_burn[6h]) > 1 and max_over_time(measurement_slo_error_budget_burn[3d]) > 1"
     },
     {
       "id": "job_dead_letters",
       "signal": "job_queue_projection.dead_letter",
       "condition": "new terminal failures > 0 for 5m",
-      "runbook": "jobs"
+      "runbook": "jobs",
+      "expression_language": "promql",
+      "expression": "increase(saas_jobs_completed_total{outcome=\"dead_letter\"}[5m]) > 0"
     },
     {
       "id": "job_queue_age",
       "signal": "job_queue_projection.oldest_ready_age",
       "condition": "oldest ready age exceeds the queue SLO for 10m",
-      "runbook": "jobs"
+      "runbook": "jobs",
+      "expression_language": "promql",
+      "expression": "max_over_time(saas_jobs_oldest_ready_age_seconds[10m]) > 300"
     },
     {
       "id": "integration_failures",
       "signal": "saas.jobs.completed",
       "condition": "webhook or email retry and dead-letter rate exceeds baseline for 15m",
-      "runbook": "integrations"
+      "runbook": "integrations",
+      "expression_language": "promql",
+      "expression": "sum(rate(saas_jobs_completed_total{queue=~\"email|webhooks\",outcome=~\"retry|dead_letter\"}[15m])) > 0"
     },
     {
       "id": "analytics_export_health",
       "signal": "analytics queue projection and saas.jobs.duration",
       "condition": "export age exceeds 5m, schema rejects occur, or terminal failures increase",
-      "runbook": "analytics-export"
+      "runbook": "analytics-export",
+      "expression_language": "promql",
+      "expression": "saas_jobs_oldest_ready_age_seconds{queue=\"analytics\"} > 300 or increase(saas_analytics_rejected_total[5m]) > 0 or increase(saas_jobs_completed_total{queue=\"analytics\",outcome=\"dead_letter\"}[5m]) > 0"
     },
     {
       "id": "usage_reconciliation",
       "signal": "usage reconciliation discrepancy",
       "condition": "source, aggregate, or provider quantities differ after the allowed late-arrival window",
-      "runbook": "usage-reconciliation"
+      "runbook": "usage-reconciliation",
+      "expression_language": "promql",
+      "expression": "max_over_time(saas_usage_reconciliation_discrepancy[1h]) != 0"
     }
   ]
 }

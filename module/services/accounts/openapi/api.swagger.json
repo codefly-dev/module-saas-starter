@@ -3037,9 +3037,7 @@
       "default": "USAGE_AGGREGATION_UNSPECIFIED",
       "enum": [
         "USAGE_AGGREGATION_UNSPECIFIED",
-        "USAGE_AGGREGATION_SUM",
-        "USAGE_AGGREGATION_MAX",
-        "USAGE_AGGREGATION_LAST"
+        "USAGE_AGGREGATION_SUM"
       ],
       "type": "string"
     },

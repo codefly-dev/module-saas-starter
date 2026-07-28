@@ -62,10 +62,15 @@ export function ActivityFeed({
 }) {
 	const { user, organizationId } = useAuth();
 	const resolvedOrgId = orgId ?? organizationId ?? "";
-	const { data, isLoading } = useAuditLog({
-		orgId: resolvedOrgId,
-		pageSize: limit,
-	});
+	const { data, isLoading } = useAuditLog(
+		{
+			orgId: resolvedOrgId,
+			pageSize: limit,
+		},
+		{
+			enabled: resolvedOrgId !== "",
+		},
+	);
 
 	const events: RawEvent[] = (data?.events as RawEvent[] | undefined) ?? [];
 

@@ -298,6 +298,13 @@ func (s *Service) processDeletion(ctx context.Context, gdprStore GDPRStore, req 
 		if err := s.store.DeleteUser(ctx, req.UserID); err != nil {
 			return err
 		}
+		if err := s.suppressProductIdentity(
+			ctx,
+			userAnalyticsSuppression(req.UserID),
+			Identity{UserID: req.UserID},
+		); err != nil {
+			return err
+		}
 		return gdprStore.UpdateGDPRRequest(ctx, req)
 	}); err != nil {
 		s.failGDPRRequest(ctx, gdprStore, req, fmt.Sprintf("delete user data: %v", err))

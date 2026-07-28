@@ -30,4 +30,32 @@ func TestDefaultSLOPack(t *testing.T) {
 	} {
 		require.True(t, ids[required])
 	}
+	for _, alert := range pack.Alerts {
+		require.Equal(t, "promql", alert.ExpressionLanguage)
+		require.NotEmpty(t, alert.Expression)
+	}
+}
+
+func TestSLOPackRejectsAlertWithoutExecutableExpression(t *testing.T) {
+	_, err := ParseSLOPack([]byte(`{
+		"version": 1,
+		"window_days": 30,
+		"slos": [{
+			"id": "signup",
+			"owner": "growth",
+			"availability_target": 0.995,
+			"latency_p95_ms": 1500,
+			"success": "account created",
+			"population": "valid signups"
+		}],
+		"alerts": [{
+			"id": "signup_burn",
+			"signal": "error_budget_burn",
+			"condition": "burn rate too high",
+			"expression_language": "promql",
+			"expression": "",
+			"runbook": "slo-burn"
+		}]
+	}`))
+	require.ErrorContains(t, err, "alert definition is incomplete")
 }

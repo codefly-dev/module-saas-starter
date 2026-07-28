@@ -108,3 +108,14 @@ message ProductEvent {
   google.protobuf.Struct properties = 12;
   EventPrivacy privacy = 13 [(buf.validate.field).required = true];
 }
+
+// SuppressionCommand durably propagates deletion of one analytics identity.
+message SuppressionCommand {
+  string command_id = 1 [(buf.validate.field).string.uuid = true];
+  oneof target {
+    option (buf.validate.oneof).required = true;
+
+    string user_id = 2 [(buf.validate.field).string.uuid = true];
+    string organization_id = 3 [(buf.validate.field).string.uuid = true];
+  }
+}

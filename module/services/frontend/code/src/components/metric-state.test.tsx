@@ -1,5 +1,5 @@
 import { render, screen } from "@testing-library/react";
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import {
 	assertSampleModeAllowed,
 	MetricProvenance,
@@ -8,6 +8,7 @@ import {
 } from "./metric-state";
 
 describe("metric state taxonomy", () => {
+	afterEach(() => vi.unstubAllEnvs());
 	it.each([
 		["loading", "Loading"],
 		["no_data", "No data"],
@@ -26,6 +27,10 @@ describe("metric state taxonomy", () => {
 			"disabled in production",
 		);
 		expect(() => assertSampleModeAllowed(false, "production")).not.toThrow();
+		vi.stubEnv("NODE_ENV", "production");
+		expect(() => render(<MetricStateBadge state="sample" />)).toThrow(
+			"disabled in production",
+		);
 	});
 
 	it("shows source, freshness, timezone, and owner", () => {

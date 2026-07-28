@@ -37,8 +37,8 @@ var OnboardingStepNames = []string{
 // call from every place the underlying action can happen: a user who
 // creates their first org through the API never visits the onboarding
 // page, but their progress should still reflect reality. Each
-// detection is best-effort — failures don't abort the call, the worst
-// case is the step keeps showing as pending until next refresh.
+// Detection reads are best-effort. Once a completed fact is detected, its
+// progress transition and analytics command commit atomically.
 func (s *Service) GetProgress(ctx context.Context, userID string) (*OnboardingProgress, error) {
 	w := wool.Get(ctx).In("GetProgress")
 
@@ -57,18 +57,26 @@ func (s *Service) GetProgress(ctx context.Context, userID string) (*OnboardingPr
 		stepMap[step.StepName] = step
 	}
 
-	autoComplete := func(name string, detected bool) {
-		if detected {
-			now := time.Now()
-			stepMap[name] = &OnboardingStep{
-				StepName:    name,
-				Status:      "completed",
-				CompletedAt: &now,
-			}
-			_ = s.store.As(Identity{UserID: userID}).Within(ctx, func(ctx context.Context) error {
-				return s.store.UpsertOnboardingStep(ctx, userID, name, "completed")
-			})
+	autoComplete := func(name string, detected bool) error {
+		if !detected {
+			return nil
 		}
+		occurredAt := time.Now().UTC()
+		if err := s.transitionOnboardingStep(
+			ctx,
+			userID,
+			name,
+			"completed",
+			occurredAt,
+		); err != nil {
+			return err
+		}
+		stepMap[name] = &OnboardingStep{
+			StepName:    name,
+			Status:      "completed",
+			CompletedAt: &occurredAt,
+		}
+		return nil
 	}
 
 	pending := func(name string) bool {
@@ -96,7 +104,9 @@ func (s *Service) GetProgress(ctx context.Context, userID string) (*OnboardingPr
 	// step is "you have an org", not "you created one through the wizard").
 	if pending("create_org") {
 		orgs := listOrgs()
-		autoComplete("create_org", len(orgs) > 0)
+		if err := autoComplete("create_org", len(orgs) > 0); err != nil {
+			return nil, w.Wrapf(err, "cannot auto-complete create_org")
+		}
 	}
 
 	// invite_team — any invitation has been issued from any org the
@@ -120,7 +130,9 @@ func (s *Service) GetProgress(ctx context.Context, userID string) (*OnboardingPr
 				break
 			}
 		}
-		autoComplete("invite_team", invited)
+		if err := autoComplete("invite_team", invited); err != nil {
+			return nil, w.Wrapf(err, "cannot auto-complete invite_team")
+		}
 	}
 
 	// choose_plan — user's primary org has any non-zero subscription.
@@ -141,7 +153,9 @@ func (s *Service) GetProgress(ctx context.Context, userID string) (*OnboardingPr
 				break
 			}
 		}
-		autoComplete("choose_plan", picked)
+		if err := autoComplete("choose_plan", picked); err != nil {
+			return nil, w.Wrapf(err, "cannot auto-complete choose_plan")
+		}
 	}
 
 	// setup_api_key — at least one API key exists in any of the
@@ -161,7 +175,9 @@ func (s *Service) GetProgress(ctx context.Context, userID string) (*OnboardingPr
 				break
 			}
 		}
-		autoComplete("setup_api_key", hasKey)
+		if err := autoComplete("setup_api_key", hasKey); err != nil {
+			return nil, w.Wrapf(err, "cannot auto-complete setup_api_key")
+		}
 	}
 
 	var result []*OnboardingStep
@@ -189,12 +205,12 @@ func (s *Service) GetProgress(ctx context.Context, userID string) (*OnboardingPr
 
 // CompleteStep marks an onboarding step as completed.
 func (s *Service) CompleteStep(ctx context.Context, userID, stepName string) error {
-	return s.transitionOnboardingStep(ctx, userID, stepName, "completed")
+	return s.transitionOnboardingStep(ctx, userID, stepName, "completed", time.Now().UTC())
 }
 
 // SkipStep marks an onboarding step as skipped.
 func (s *Service) SkipStep(ctx context.Context, userID, stepName string) error {
-	return s.transitionOnboardingStep(ctx, userID, stepName, "skipped")
+	return s.transitionOnboardingStep(ctx, userID, stepName, "skipped", time.Now().UTC())
 }
 
 // IsOnboardingComplete checks if all onboarding steps are either completed or skipped.
@@ -220,12 +236,16 @@ func (s *Service) transitionOnboardingStep(
 	userID string,
 	stepName string,
 	status string,
+	occurredAt time.Time,
 ) error {
 	w := wool.Get(ctx).In("TransitionOnboardingStep")
 	if !isValidStepName(stepName) {
 		return w.NewError("invalid onboarding step: %s", stepName)
 	}
 	if err := s.store.As(Identity{UserID: userID}).Within(ctx, func(ctx context.Context) error {
+		if err := s.store.LockOnboardingProgress(ctx, userID); err != nil {
+			return err
+		}
 		steps, err := s.store.GetOnboardingProgress(ctx, userID)
 		if err != nil {
 			return err
@@ -238,16 +258,23 @@ func (s *Service) transitionOnboardingStep(
 			return nil
 		}
 		wasComplete := onboardingStepsComplete(current)
-		if err := s.store.UpsertOnboardingStep(ctx, userID, stepName, status); err != nil {
+		if err := s.store.UpsertOnboardingStep(
+			ctx,
+			userID,
+			stepName,
+			status,
+			occurredAt,
+		); err != nil {
 			return err
 		}
 		current[stepName] = status
 		if err := s.captureProductEvent(
 			ctx,
 			"onboarding_step_"+status,
-			userID+":"+stepName+":"+status,
+			userID+":"+stepName+":"+status+":"+occurredAt.Format(time.RFC3339Nano),
 			userID,
 			"",
+			occurredAt,
 			map[string]any{"step_name": stepName, "flow_version": "v1"},
 		); err != nil {
 			return err
@@ -256,7 +283,13 @@ func (s *Service) transitionOnboardingStep(
 			return nil
 		}
 		return s.captureProductEvent(
-			ctx, "onboarding_completed", userID+":v1", userID, "", map[string]any{
+			ctx,
+			"onboarding_completed",
+			userID+":v1:"+occurredAt.Format(time.RFC3339Nano),
+			userID,
+			"",
+			occurredAt,
+			map[string]any{
 				"flow_version": "v1",
 			},
 		)

@@ -15,6 +15,7 @@ var (
 	// semantically different consumption operation.
 	ErrUsageIdempotencyConflict = errors.New("usage idempotency key was reused with a different request")
 	ErrInvalidUsageRange        = errors.New("invalid usage range")
+	ErrUsageMeterNotFound       = errors.New("usage meter is not customer-visible or registered")
 	usageMeterPattern           = regexp.MustCompile(`^[a-z][a-z0-9_]{0,127}$`)
 	usageDimensionPattern       = regexp.MustCompile(`^[a-z][a-z0-9_.-]{0,63}$`)
 )
@@ -112,6 +113,10 @@ func (s *Service) ConsumeUsage(ctx context.Context, in ConsumeUsageInput) (*Usag
 	if !usageMeterPattern.MatchString(in.Meter) {
 		return nil, errors.New("meter must be a canonical lowercase identifier")
 	}
+	meter, ok := s.usageMeters.Definition(in.Meter)
+	if !ok {
+		return nil, ErrUsageMeterNotFound
+	}
 	if in.Quantity <= 0 {
 		return nil, errors.New("usage quantity must be positive")
 	}
@@ -148,7 +153,9 @@ func (s *Service) ConsumeUsage(ctx context.Context, in ConsumeUsageInput) (*Usag
 
 	var receipt *UsageReceipt
 	if err := s.store.WithOrgTx(ctx, in.OrgID, func(ctx context.Context) error {
-		limit, err := resolveEffectiveLimitInTx(ctx, s.store, in.OrgID, in.Meter, now)
+		limit, err := resolveEffectiveLimitInTx(
+			ctx, s.store, in.OrgID, meter.EntitlementKey, now,
+		)
 		if err != nil {
 			return err
 		}
@@ -170,6 +177,10 @@ func (s *Service) GetUsage(ctx context.Context, orgID, meter string) (*UsageSnap
 	if !usageMeterPattern.MatchString(meter) {
 		return nil, errors.New("meter must be a canonical lowercase identifier")
 	}
+	definition, ok := s.usageMeters.Definition(meter)
+	if !ok || definition.Visibility != UsageVisibilityCustomer {
+		return nil, ErrUsageMeterNotFound
+	}
 
 	now := time.Now().UTC()
 	periodStart, periodEnd := monthlyUsagePeriod(now)
@@ -177,7 +188,9 @@ func (s *Service) GetUsage(ctx context.Context, orgID, meter string) (*UsageSnap
 		OrgID: orgID, Meter: meter, PeriodStart: periodStart, PeriodEnd: periodEnd,
 	}
 	if err := s.store.WithOrgTx(ctx, orgID, func(ctx context.Context) error {
-		limit, err := resolveEffectiveLimitInTx(ctx, s.store, orgID, meter, now)
+		limit, err := resolveEffectiveLimitInTx(
+			ctx, s.store, orgID, definition.EntitlementKey, now,
+		)
 		if err != nil {
 			return err
 		}
@@ -239,6 +252,10 @@ func (s *Service) GetUsageHistory(
 	}
 	if !usageMeterPattern.MatchString(meter) {
 		return nil, time.Time{}, errors.New("meter must be a canonical lowercase identifier")
+	}
+	definition, ok := s.usageMeters.Definition(meter)
+	if !ok || definition.Visibility != UsageVisibilityCustomer {
+		return nil, time.Time{}, ErrUsageMeterNotFound
 	}
 	from = from.UTC()
 	to = to.UTC()

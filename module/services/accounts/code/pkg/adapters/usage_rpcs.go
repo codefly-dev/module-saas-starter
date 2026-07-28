@@ -45,6 +45,9 @@ func (s *UsageServer) ConsumeUsage(ctx context.Context, req *gen.ConsumeUsageReq
 		if errors.Is(err, business.ErrUsageIdempotencyConflict) {
 			return nil, status.Error(codes.AlreadyExists, business.ErrUsageIdempotencyConflict.Error())
 		}
+		if errors.Is(err, business.ErrUsageMeterNotFound) {
+			return nil, status.Error(codes.NotFound, business.ErrUsageMeterNotFound.Error())
+		}
 		return nil, status.Error(codes.Internal, err.Error())
 	}
 	return &gen.ConsumeUsageResponse{Receipt: usageReceiptToProto(receipt)}, nil
@@ -66,6 +69,9 @@ func (s *UsageServer) GetUsage(ctx context.Context, req *gen.GetUsageRequest) (*
 	}
 	snapshot, err := service.GetUsage(ctx, req.GetOrganizationId(), req.GetMeter())
 	if err != nil {
+		if errors.Is(err, business.ErrUsageMeterNotFound) {
+			return nil, status.Error(codes.NotFound, business.ErrUsageMeterNotFound.Error())
+		}
 		return nil, status.Error(codes.Internal, err.Error())
 	}
 	return &gen.GetUsageResponse{
@@ -135,6 +141,9 @@ func (s *UsageServer) GetUsageHistory(
 		if errors.Is(err, business.ErrInvalidUsageRange) {
 			return nil, status.Error(codes.InvalidArgument, err.Error())
 		}
+		if errors.Is(err, business.ErrUsageMeterNotFound) {
+			return nil, status.Error(codes.NotFound, business.ErrUsageMeterNotFound.Error())
+		}
 		return nil, status.Error(codes.Internal, err.Error())
 	}
 	buckets := make([]*gen.UsageBucket, 0, len(history.Values))
@@ -173,10 +182,6 @@ func usageMeterToProto(meter business.UsageMeterDefinition) *gen.UsageMeter {
 	switch meter.Aggregation {
 	case business.UsageAggregationSum:
 		aggregation = gen.UsageAggregation_USAGE_AGGREGATION_SUM
-	case business.UsageAggregationMax:
-		aggregation = gen.UsageAggregation_USAGE_AGGREGATION_MAX
-	case business.UsageAggregationLast:
-		aggregation = gen.UsageAggregation_USAGE_AGGREGATION_LAST
 	}
 	visibility := gen.UsageVisibility_USAGE_VISIBILITY_UNSPECIFIED
 	switch meter.Visibility {

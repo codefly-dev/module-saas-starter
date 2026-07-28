@@ -31,6 +31,7 @@ export function assertSampleModeAllowed(
 
 export function MetricStateBadge({ state }: { state: MetricState }) {
 	if (state === "ready") return null;
+	assertSampleModeAllowed(state === "sample");
 	return (
 		<Badge
 			variant={state === "provider_unavailable" ? "destructive" : "outline"}

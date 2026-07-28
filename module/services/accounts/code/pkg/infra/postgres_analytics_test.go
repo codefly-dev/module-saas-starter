@@ -42,9 +42,12 @@ func TestAnalyticsOutboxCommitsAndRollsBackWithDomainTransaction(t *testing.T) {
 		return outbox.Capture(ctx, newEvent("committed"))
 	}))
 
-	_, jobStore := newJobExecutionHarness(t)
+	workerPool, jobStore := newJobExecutionHarness(t)
 	sink := analytics.NewMemorySink()
-	handler, err := analytics.NewExportHandler(registry, sink)
+	handler, err := analytics.NewExportHandler(analytics.ExportHandlerConfig{
+		Destination: sink,
+		Deliveries:  jobStore,
+	})
 	require.NoError(t, err)
 	worker, err := jobs.NewWorker(jobs.WorkerConfig{
 		Store: jobStore, Queue: analytics.ExportQueue, Handler: handler,
@@ -59,4 +62,16 @@ func TestAnalyticsOutboxCommitsAndRollsBackWithDomainTransaction(t *testing.T) {
 		analytics.DeterministicEventID("invite_created", "committed"),
 		sink.Events()[0].GetEventId(),
 	)
+	var commandID, kind, providerReference string
+	require.NoError(t, workerPool.QueryRow(testCtx, `
+		SELECT command_id::text, kind, provider_reference
+		FROM analytics_deliveries`,
+	).Scan(&commandID, &kind, &providerReference))
+	require.Equal(
+		t,
+		analytics.DeterministicEventID("invite_created", "committed"),
+		commandID,
+	)
+	require.Equal(t, "event", kind)
+	require.Equal(t, commandID, providerReference)
 }

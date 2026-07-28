@@ -16,6 +16,9 @@ import (
 //go:embed registry.json
 var defaultRegistryJSON []byte
 
+//go:embed registry_v1.json
+var registryV1JSON []byte
+
 var canonicalNamePattern = regexp.MustCompile(`^[a-z][a-z0-9_]{0,127}$`)
 
 type Definition struct {
@@ -54,12 +57,13 @@ type registryDocument struct {
 	} `json:"defaults"`
 	PropertyTypes map[string]string `json:"property_types"`
 	Events        []struct {
-		Name        string   `json:"name"`
-		Owner       string   `json:"owner"`
-		Description string   `json:"description"`
-		Sources     []string `json:"sources"`
-		Purpose     string   `json:"purpose"`
-		Properties  []string `json:"properties"`
+		Name          string   `json:"name"`
+		Owner         string   `json:"owner"`
+		Description   string   `json:"description"`
+		SchemaVersion uint32   `json:"schema_version"`
+		Sources       []string `json:"sources"`
+		Purpose       string   `json:"purpose"`
+		Properties    []string `json:"properties"`
 	} `json:"events"`
 }
 
@@ -72,6 +76,15 @@ var (
 func DefaultRegistry() (*Registry, error) {
 	defaultRegistryOnce.Do(func() {
 		defaultRegistry, defaultRegistryErr = ParseRegistry(defaultRegistryJSON)
+		if defaultRegistryErr != nil {
+			return
+		}
+		baseline, err := ParseRegistry(registryV1JSON)
+		if err != nil {
+			defaultRegistryErr = fmt.Errorf("analytics: parse registry v1 baseline: %w", err)
+			return
+		}
+		defaultRegistryErr = CheckCompatible(baseline, defaultRegistry)
 	})
 	return defaultRegistry, defaultRegistryErr
 }
@@ -167,11 +180,15 @@ func ParseRegistry(body []byte) (*Registry, error) {
 			}
 			eventPropertyTypes[property] = propertyType
 		}
+		schemaVersion := item.SchemaVersion
+		if schemaVersion == 0 {
+			schemaVersion = document.Defaults.SchemaVersion
+		}
 		registry.events[item.Name] = Definition{
 			Name:              item.Name,
 			Owner:             item.Owner,
 			Description:       item.Description,
-			SchemaVersion:     document.Defaults.SchemaVersion,
+			SchemaVersion:     schemaVersion,
 			PIIClassification: classification,
 			RetentionDays:     document.Defaults.RetentionDays,
 			Purpose:           purpose,

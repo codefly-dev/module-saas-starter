@@ -76,7 +76,7 @@ func TestConsumeUsageBuildsStableCanonicalCommand(t *testing.T) {
 	dimensions := map[string]string{"region": "us-east", "source.service": "product"}
 
 	first, err := service.ConsumeUsage(context.Background(), business.ConsumeUsageInput{
-		OrgID: "11111111-1111-4111-8111-111111111111", Meter: "jobs_monthly",
+		OrgID: "11111111-1111-4111-8111-111111111111", Meter: "api_calls_monthly",
 		Quantity: 3, IdempotencyKey: "job:1", OccurredAt: &eventTime,
 		Dimensions: dimensions,
 	})
@@ -94,7 +94,7 @@ func TestConsumeUsageBuildsStableCanonicalCommand(t *testing.T) {
 	// Map insertion order and idempotency-key choice are not semantic payload
 	// differences, so independently built retries produce the same request hash.
 	_, err = service.ConsumeUsage(context.Background(), business.ConsumeUsageInput{
-		OrgID: "11111111-1111-4111-8111-111111111111", Meter: "jobs_monthly",
+		OrgID: "11111111-1111-4111-8111-111111111111", Meter: "api_calls_monthly",
 		Quantity: 3, IdempotencyKey: "job:2", OccurredAt: &eventTime,
 		Dimensions: map[string]string{"source.service": "product", "region": "us-east"},
 	})
@@ -107,11 +107,12 @@ func TestConsumeUsageRejectsInvalidDomainInputBeforeStorage(t *testing.T) {
 		name  string
 		input business.ConsumeUsageInput
 	}{
-		{name: "missing organization", input: business.ConsumeUsageInput{Meter: "jobs_monthly", Quantity: 1, IdempotencyKey: "op:1"}},
+		{name: "missing organization", input: business.ConsumeUsageInput{Meter: "api_calls_monthly", Quantity: 1, IdempotencyKey: "op:1"}},
 		{name: "noncanonical meter", input: business.ConsumeUsageInput{OrgID: "org", Meter: "Jobs", Quantity: 1, IdempotencyKey: "op:1"}},
-		{name: "nonpositive quantity", input: business.ConsumeUsageInput{OrgID: "org", Meter: "jobs_monthly", Quantity: 0, IdempotencyKey: "op:1"}},
-		{name: "missing idempotency key", input: business.ConsumeUsageInput{OrgID: "org", Meter: "jobs_monthly", Quantity: 1}},
-		{name: "invalid dimension", input: business.ConsumeUsageInput{OrgID: "org", Meter: "jobs_monthly", Quantity: 1, IdempotencyKey: "op:1", Dimensions: map[string]string{"Not Canonical": "value"}}},
+		{name: "unregistered meter", input: business.ConsumeUsageInput{OrgID: "org", Meter: "jobs_monthly", Quantity: 1, IdempotencyKey: "op:1"}},
+		{name: "nonpositive quantity", input: business.ConsumeUsageInput{OrgID: "org", Meter: "api_calls_monthly", Quantity: 0, IdempotencyKey: "op:1"}},
+		{name: "missing idempotency key", input: business.ConsumeUsageInput{OrgID: "org", Meter: "api_calls_monthly", Quantity: 1}},
+		{name: "invalid dimension", input: business.ConsumeUsageInput{OrgID: "org", Meter: "api_calls_monthly", Quantity: 1, IdempotencyKey: "op:1", Dimensions: map[string]string{"Not Canonical": "value"}}},
 	}
 
 	for _, test := range tests {
@@ -127,7 +128,7 @@ func TestConsumeUsageRejectsInvalidDomainInputBeforeStorage(t *testing.T) {
 func TestGetUsageReturnsCurrentAggregateAndEffectiveLimit(t *testing.T) {
 	store := &usageStoreFake{limit: -1, used: 42}
 	snapshot, err := newUsageService(t, store).GetUsage(
-		context.Background(), "11111111-1111-4111-8111-111111111111", "jobs_monthly",
+		context.Background(), "11111111-1111-4111-8111-111111111111", "api_calls_monthly",
 	)
 	require.NoError(t, err)
 	require.Equal(t, int64(42), snapshot.Used)
@@ -200,4 +201,22 @@ func TestUsageMeterCatalogRejectsMissingReconciliationRule(t *testing.T) {
 		}]
 	}`))
 	require.ErrorContains(t, err, "missing required metadata")
+}
+
+func TestUsageMeterCatalogRejectsUnsupportedAggregation(t *testing.T) {
+	_, err := business.ParseUsageMeterCatalog([]byte(`{
+		"version":1,
+		"meters":[{
+			"key":"concurrent_jobs",
+			"display_name":"Concurrent jobs",
+			"unit":"job",
+			"aggregation":"max",
+			"owner":"product",
+			"source":"UsageService.ConsumeUsage",
+			"entitlement_key":"concurrent_jobs",
+			"reconciliation_rule":"maximum concurrent jobs equals the aggregate",
+			"visibility":"customer"
+		}]
+	}`))
+	require.ErrorContains(t, err, "aggregation must be sum")
 }
