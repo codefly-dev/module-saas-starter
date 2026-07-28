@@ -11,11 +11,15 @@ interface:
         - service: auth-sidecar
           endpoint: rest
           visibility: public
+        - service: marketing
+          endpoint: http
+          visibility: public
 services:
     - name: accounts
     - name: auth-sidecar
     - name: cache
     - name: frontend
+    - name: marketing
     - name: object-storage
     - name: store
     - name: vault

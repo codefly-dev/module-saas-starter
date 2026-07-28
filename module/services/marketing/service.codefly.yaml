@@ -1,0 +1,21 @@
+# Code generated from deployment/topology.bindings.codefly.yaml. DO NOT EDIT.
+name: marketing
+version: 0.0.0
+description: |
+    Independently deployable public company site. Owns public content,
+    metadata, pricing presentation, and safe product handoff without product
+    sessions, tenant state, database access, or secrets.
+agent:
+    kind: codefly:service
+    name: nextjs
+    version: 0.0.118
+    publisher: codefly.dev
+endpoints:
+    - name: http
+      visibility: public
+spec:
+    execution-profiles:
+        local: development
+        production: production
+    hot-reload: false
+    mode: ssr

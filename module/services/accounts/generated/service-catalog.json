@@ -54,6 +54,7 @@
       "full_name": "saas.accounts.v1.BillingService",
       "procedures": [
         "/saas.accounts.v1.BillingService/ListInvoices",
+        "/saas.accounts.v1.BillingService/ListPublicPlans",
         "/saas.accounts.v1.BillingService/OpenPortal"
       ]
     },
@@ -1303,6 +1304,55 @@
       },
       "policy_tier": "org_admin",
       "description": "Past Stripe invoices.",
+      "owner": {
+        "module": "saas-starter",
+        "service": "accounts"
+      }
+    },
+    {
+      "procedure": "/saas.accounts.v1.BillingService/ListPublicPlans",
+      "service": "BillingService",
+      "full_service": "saas.accounts.v1.BillingService",
+      "method": "ListPublicPlans",
+      "input_type": "saas.accounts.v1.ListPublicPlansRequest",
+      "output_type": "saas.accounts.v1.ListPublicPlansResponse",
+      "client_streaming": false,
+      "server_streaming": false,
+      "deprecated": false,
+      "source_proto": "saas/accounts/v1/billing.proto",
+      "protocols": [
+        "PROTOCOL_GRPC",
+        "PROTOCOL_CONNECT",
+        "PROTOCOL_REST"
+      ],
+      "http_bindings": [
+        {
+          "method": "GET",
+          "path": "/v1/public/plans",
+          "body": "",
+          "response_body": ""
+        }
+      ],
+      "policy": {
+        "exposure": "EXPOSURE_PUBLIC",
+        "tenant": "TENANT_REQUIREMENT_NONE",
+        "permissions": [],
+        "scopes": [],
+        "resource_bindings": [],
+        "mfa": "MFA_REQUIREMENT_NONE",
+        "audit": {
+          "events": [],
+          "emission": "AUDIT_EMISSION_NONE"
+        },
+        "idempotency": "IDEMPOTENCY_REQUIREMENT_FORBIDDEN",
+        "rate_limit": "RATE_LIMIT_CLASS_PUBLIC",
+        "request_sensitivity": "SENSITIVITY_PUBLIC",
+        "response_sensitivity": "SENSITIVITY_PUBLIC",
+        "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
+        "authentication_factor_attempt": false
+      },
+      "policy_tier": "public",
+      "description": "Sanitized public pricing and entitlement catalog.",
       "owner": {
         "module": "saas-starter",
         "service": "accounts"

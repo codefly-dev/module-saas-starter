@@ -351,6 +351,278 @@ func (x *ListInvoicesResponse) GetInvoices() []*Invoice {
 	return nil
 }
 
+type PublicPlanEntitlement struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Key           string                 `protobuf:"bytes,1,opt,name=key,proto3" json:"key,omitempty"`
+	Limit         int64                  `protobuf:"varint,2,opt,name=limit,proto3" json:"limit,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *PublicPlanEntitlement) Reset() {
+	*x = PublicPlanEntitlement{}
+	mi := &file_saas_accounts_v1_billing_proto_msgTypes[5]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *PublicPlanEntitlement) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*PublicPlanEntitlement) ProtoMessage() {}
+
+func (x *PublicPlanEntitlement) ProtoReflect() protoreflect.Message {
+	mi := &file_saas_accounts_v1_billing_proto_msgTypes[5]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use PublicPlanEntitlement.ProtoReflect.Descriptor instead.
+func (*PublicPlanEntitlement) Descriptor() ([]byte, []int) {
+	return file_saas_accounts_v1_billing_proto_rawDescGZIP(), []int{5}
+}
+
+func (x *PublicPlanEntitlement) GetKey() string {
+	if x != nil {
+		return x.Key
+	}
+	return ""
+}
+
+func (x *PublicPlanEntitlement) GetLimit() int64 {
+	if x != nil {
+		return x.Limit
+	}
+	return 0
+}
+
+type PublicPlan struct {
+	state           protoimpl.MessageState   `protogen:"open.v1"`
+	Key             string                   `protobuf:"bytes,1,opt,name=key,proto3" json:"key,omitempty"`
+	Name            string                   `protobuf:"bytes,2,opt,name=name,proto3" json:"name,omitempty"`
+	Description     string                   `protobuf:"bytes,3,opt,name=description,proto3" json:"description,omitempty"`
+	Currency        string                   `protobuf:"bytes,4,opt,name=currency,proto3" json:"currency,omitempty"`
+	AmountMinor     int64                    `protobuf:"varint,5,opt,name=amount_minor,json=amountMinor,proto3" json:"amount_minor,omitempty"`
+	Interval        string                   `protobuf:"bytes,6,opt,name=interval,proto3" json:"interval,omitempty"`
+	CheckoutEnabled bool                     `protobuf:"varint,7,opt,name=checkout_enabled,json=checkoutEnabled,proto3" json:"checkout_enabled,omitempty"`
+	ContactSales    bool                     `protobuf:"varint,8,opt,name=contact_sales,json=contactSales,proto3" json:"contact_sales,omitempty"`
+	TrialDays       int32                    `protobuf:"varint,9,opt,name=trial_days,json=trialDays,proto3" json:"trial_days,omitempty"`
+	TaxBehavior     string                   `protobuf:"bytes,10,opt,name=tax_behavior,json=taxBehavior,proto3" json:"tax_behavior,omitempty"`
+	Fixture         bool                     `protobuf:"varint,11,opt,name=fixture,proto3" json:"fixture,omitempty"`
+	Entitlements    []*PublicPlanEntitlement `protobuf:"bytes,12,rep,name=entitlements,proto3" json:"entitlements,omitempty"`
+	unknownFields   protoimpl.UnknownFields
+	sizeCache       protoimpl.SizeCache
+}
+
+func (x *PublicPlan) Reset() {
+	*x = PublicPlan{}
+	mi := &file_saas_accounts_v1_billing_proto_msgTypes[6]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *PublicPlan) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*PublicPlan) ProtoMessage() {}
+
+func (x *PublicPlan) ProtoReflect() protoreflect.Message {
+	mi := &file_saas_accounts_v1_billing_proto_msgTypes[6]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use PublicPlan.ProtoReflect.Descriptor instead.
+func (*PublicPlan) Descriptor() ([]byte, []int) {
+	return file_saas_accounts_v1_billing_proto_rawDescGZIP(), []int{6}
+}
+
+func (x *PublicPlan) GetKey() string {
+	if x != nil {
+		return x.Key
+	}
+	return ""
+}
+
+func (x *PublicPlan) GetName() string {
+	if x != nil {
+		return x.Name
+	}
+	return ""
+}
+
+func (x *PublicPlan) GetDescription() string {
+	if x != nil {
+		return x.Description
+	}
+	return ""
+}
+
+func (x *PublicPlan) GetCurrency() string {
+	if x != nil {
+		return x.Currency
+	}
+	return ""
+}
+
+func (x *PublicPlan) GetAmountMinor() int64 {
+	if x != nil {
+		return x.AmountMinor
+	}
+	return 0
+}
+
+func (x *PublicPlan) GetInterval() string {
+	if x != nil {
+		return x.Interval
+	}
+	return ""
+}
+
+func (x *PublicPlan) GetCheckoutEnabled() bool {
+	if x != nil {
+		return x.CheckoutEnabled
+	}
+	return false
+}
+
+func (x *PublicPlan) GetContactSales() bool {
+	if x != nil {
+		return x.ContactSales
+	}
+	return false
+}
+
+func (x *PublicPlan) GetTrialDays() int32 {
+	if x != nil {
+		return x.TrialDays
+	}
+	return 0
+}
+
+func (x *PublicPlan) GetTaxBehavior() string {
+	if x != nil {
+		return x.TaxBehavior
+	}
+	return ""
+}
+
+func (x *PublicPlan) GetFixture() bool {
+	if x != nil {
+		return x.Fixture
+	}
+	return false
+}
+
+func (x *PublicPlan) GetEntitlements() []*PublicPlanEntitlement {
+	if x != nil {
+		return x.Entitlements
+	}
+	return nil
+}
+
+type ListPublicPlansRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ListPublicPlansRequest) Reset() {
+	*x = ListPublicPlansRequest{}
+	mi := &file_saas_accounts_v1_billing_proto_msgTypes[7]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ListPublicPlansRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ListPublicPlansRequest) ProtoMessage() {}
+
+func (x *ListPublicPlansRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_saas_accounts_v1_billing_proto_msgTypes[7]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ListPublicPlansRequest.ProtoReflect.Descriptor instead.
+func (*ListPublicPlansRequest) Descriptor() ([]byte, []int) {
+	return file_saas_accounts_v1_billing_proto_rawDescGZIP(), []int{7}
+}
+
+type ListPublicPlansResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Revision      string                 `protobuf:"bytes,1,opt,name=revision,proto3" json:"revision,omitempty"`
+	Plans         []*PublicPlan          `protobuf:"bytes,2,rep,name=plans,proto3" json:"plans,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ListPublicPlansResponse) Reset() {
+	*x = ListPublicPlansResponse{}
+	mi := &file_saas_accounts_v1_billing_proto_msgTypes[8]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ListPublicPlansResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ListPublicPlansResponse) ProtoMessage() {}
+
+func (x *ListPublicPlansResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_saas_accounts_v1_billing_proto_msgTypes[8]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ListPublicPlansResponse.ProtoReflect.Descriptor instead.
+func (*ListPublicPlansResponse) Descriptor() ([]byte, []int) {
+	return file_saas_accounts_v1_billing_proto_rawDescGZIP(), []int{8}
+}
+
+func (x *ListPublicPlansResponse) GetRevision() string {
+	if x != nil {
+		return x.Revision
+	}
+	return ""
+}
+
+func (x *ListPublicPlansResponse) GetPlans() []*PublicPlan {
+	if x != nil {
+		return x.Plans
+	}
+	return nil
+}
+
 var File_saas_accounts_v1_billing_proto protoreflect.FileDescriptor
 
 const file_saas_accounts_v1_billing_proto_rawDesc = "" +
@@ -383,8 +655,32 @@ const file_saas_accounts_v1_billing_proto_rawDesc = "" +
 	"\x06org_id\x18\x01 \x01(\tB\b\xbaH\x05r\x03\xb0\x01\x01R\x05orgId\x12\x14\n" +
 	"\x05limit\x18\x02 \x01(\x05R\x05limit\"M\n" +
 	"\x14ListInvoicesResponse\x125\n" +
-	"\binvoices\x18\x01 \x03(\v2\x19.saas.accounts.v1.InvoiceR\binvoices2\xc4\x03\n" +
-	"\x0eBillingService\x12\xe8\x01\n" +
+	"\binvoices\x18\x01 \x03(\v2\x19.saas.accounts.v1.InvoiceR\binvoices\"?\n" +
+	"\x15PublicPlanEntitlement\x12\x10\n" +
+	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
+	"\x05limit\x18\x02 \x01(\x03R\x05limit\"\xa8\x03\n" +
+	"\n" +
+	"PublicPlan\x12\x10\n" +
+	"\x03key\x18\x01 \x01(\tR\x03key\x12\x12\n" +
+	"\x04name\x18\x02 \x01(\tR\x04name\x12 \n" +
+	"\vdescription\x18\x03 \x01(\tR\vdescription\x12\x1a\n" +
+	"\bcurrency\x18\x04 \x01(\tR\bcurrency\x12!\n" +
+	"\famount_minor\x18\x05 \x01(\x03R\vamountMinor\x12\x1a\n" +
+	"\binterval\x18\x06 \x01(\tR\binterval\x12)\n" +
+	"\x10checkout_enabled\x18\a \x01(\bR\x0fcheckoutEnabled\x12#\n" +
+	"\rcontact_sales\x18\b \x01(\bR\fcontactSales\x12\x1d\n" +
+	"\n" +
+	"trial_days\x18\t \x01(\x05R\ttrialDays\x12!\n" +
+	"\ftax_behavior\x18\n" +
+	" \x01(\tR\vtaxBehavior\x12\x18\n" +
+	"\afixture\x18\v \x01(\bR\afixture\x12K\n" +
+	"\fentitlements\x18\f \x03(\v2'.saas.accounts.v1.PublicPlanEntitlementR\fentitlements\"\x18\n" +
+	"\x16ListPublicPlansRequest\"i\n" +
+	"\x17ListPublicPlansResponse\x12\x1a\n" +
+	"\brevision\x18\x01 \x01(\tR\brevision\x122\n" +
+	"\x05plans\x18\x02 \x03(\v2\x1c.saas.accounts.v1.PublicPlanR\x05plans2\xdf\x04\n" +
+	"\x0eBillingService\x12\x98\x01\n" +
+	"\x0fListPublicPlans\x12(.saas.accounts.v1.ListPublicPlansRequest\x1a).saas.accounts.v1.ListPublicPlansResponse\"0\xc2\xf3\x18\x14\b\x01\x10\x010\x01:\x02\x10\x01@\x01H\x01P\x01X\x01`\x01\x82\xd3\xe4\x93\x02\x12\x12\x10/v1/public/plans\x12\xe8\x01\n" +
 	"\n" +
 	"OpenPortal\x12*.saas.accounts.v1.OpenBillingPortalRequest\x1a+.saas.accounts.v1.OpenBillingPortalResponse\"\x80\x01\xc2\xf3\x18W\b\x02\x10\x04\x1a\rbilling:write\"\rbilling:write*\f\n" +
 	"\x06org_id\x10\x02\x18\x010\x03:\x19\n" +
@@ -405,29 +701,37 @@ func file_saas_accounts_v1_billing_proto_rawDescGZIP() []byte {
 	return file_saas_accounts_v1_billing_proto_rawDescData
 }
 
-var file_saas_accounts_v1_billing_proto_msgTypes = make([]protoimpl.MessageInfo, 5)
+var file_saas_accounts_v1_billing_proto_msgTypes = make([]protoimpl.MessageInfo, 9)
 var file_saas_accounts_v1_billing_proto_goTypes = []any{
 	(*OpenBillingPortalRequest)(nil),  // 0: saas.accounts.v1.OpenBillingPortalRequest
 	(*OpenBillingPortalResponse)(nil), // 1: saas.accounts.v1.OpenBillingPortalResponse
 	(*Invoice)(nil),                   // 2: saas.accounts.v1.Invoice
 	(*ListInvoicesRequest)(nil),       // 3: saas.accounts.v1.ListInvoicesRequest
 	(*ListInvoicesResponse)(nil),      // 4: saas.accounts.v1.ListInvoicesResponse
-	(*timestamppb.Timestamp)(nil),     // 5: google.protobuf.Timestamp
+	(*PublicPlanEntitlement)(nil),     // 5: saas.accounts.v1.PublicPlanEntitlement
+	(*PublicPlan)(nil),                // 6: saas.accounts.v1.PublicPlan
+	(*ListPublicPlansRequest)(nil),    // 7: saas.accounts.v1.ListPublicPlansRequest
+	(*ListPublicPlansResponse)(nil),   // 8: saas.accounts.v1.ListPublicPlansResponse
+	(*timestamppb.Timestamp)(nil),     // 9: google.protobuf.Timestamp
 }
 var file_saas_accounts_v1_billing_proto_depIdxs = []int32{
-	5, // 0: saas.accounts.v1.Invoice.created:type_name -> google.protobuf.Timestamp
-	5, // 1: saas.accounts.v1.Invoice.period_start:type_name -> google.protobuf.Timestamp
-	5, // 2: saas.accounts.v1.Invoice.period_end:type_name -> google.protobuf.Timestamp
+	9, // 0: saas.accounts.v1.Invoice.created:type_name -> google.protobuf.Timestamp
+	9, // 1: saas.accounts.v1.Invoice.period_start:type_name -> google.protobuf.Timestamp
+	9, // 2: saas.accounts.v1.Invoice.period_end:type_name -> google.protobuf.Timestamp
 	2, // 3: saas.accounts.v1.ListInvoicesResponse.invoices:type_name -> saas.accounts.v1.Invoice
-	0, // 4: saas.accounts.v1.BillingService.OpenPortal:input_type -> saas.accounts.v1.OpenBillingPortalRequest
-	3, // 5: saas.accounts.v1.BillingService.ListInvoices:input_type -> saas.accounts.v1.ListInvoicesRequest
-	1, // 6: saas.accounts.v1.BillingService.OpenPortal:output_type -> saas.accounts.v1.OpenBillingPortalResponse
-	4, // 7: saas.accounts.v1.BillingService.ListInvoices:output_type -> saas.accounts.v1.ListInvoicesResponse
-	6, // [6:8] is the sub-list for method output_type
-	4, // [4:6] is the sub-list for method input_type
-	4, // [4:4] is the sub-list for extension type_name
-	4, // [4:4] is the sub-list for extension extendee
-	0, // [0:4] is the sub-list for field type_name
+	5, // 4: saas.accounts.v1.PublicPlan.entitlements:type_name -> saas.accounts.v1.PublicPlanEntitlement
+	6, // 5: saas.accounts.v1.ListPublicPlansResponse.plans:type_name -> saas.accounts.v1.PublicPlan
+	7, // 6: saas.accounts.v1.BillingService.ListPublicPlans:input_type -> saas.accounts.v1.ListPublicPlansRequest
+	0, // 7: saas.accounts.v1.BillingService.OpenPortal:input_type -> saas.accounts.v1.OpenBillingPortalRequest
+	3, // 8: saas.accounts.v1.BillingService.ListInvoices:input_type -> saas.accounts.v1.ListInvoicesRequest
+	8, // 9: saas.accounts.v1.BillingService.ListPublicPlans:output_type -> saas.accounts.v1.ListPublicPlansResponse
+	1, // 10: saas.accounts.v1.BillingService.OpenPortal:output_type -> saas.accounts.v1.OpenBillingPortalResponse
+	4, // 11: saas.accounts.v1.BillingService.ListInvoices:output_type -> saas.accounts.v1.ListInvoicesResponse
+	9, // [9:12] is the sub-list for method output_type
+	6, // [6:9] is the sub-list for method input_type
+	6, // [6:6] is the sub-list for extension type_name
+	6, // [6:6] is the sub-list for extension extendee
+	0, // [0:6] is the sub-list for field type_name
 }
 
 func init() { file_saas_accounts_v1_billing_proto_init() }
@@ -441,7 +745,7 @@ func file_saas_accounts_v1_billing_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_saas_accounts_v1_billing_proto_rawDesc), len(file_saas_accounts_v1_billing_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   5,
+			NumMessages:   9,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

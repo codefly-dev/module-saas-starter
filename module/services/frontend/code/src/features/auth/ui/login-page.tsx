@@ -8,12 +8,13 @@ import {
 	ShieldCheck,
 	Sparkles,
 } from "lucide-react";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
 import { BrandMark } from "@/components/brand-mark";
 import { useAppearance } from "@/lib/appearance-provider";
 import { availableProviders, useAuth } from "@/lib/auth";
 import type { FixtureUser } from "@/lib/fixtures/types";
+import { publicHandoffDestination } from "@/lib/public-handoff";
 
 interface FixtureResponse {
 	name: string;
@@ -24,7 +25,12 @@ export function LoginPage() {
 	const { signInWith, login } = useAuth();
 	const { branding } = useAppearance();
 	const router = useRouter();
+	const searchParams = useSearchParams();
 	const providers = useMemo(() => availableProviders(), []);
+	const postLoginDestination = useMemo(
+		() => publicHandoffDestination(searchParams),
+		[searchParams],
+	);
 	const [error, setError] = useState<string | null>(null);
 	const [fixtureUsers, setFixtureUsers] = useState<FixtureUser[]>([]);
 	const [loading, setLoading] = useState<string | null>(null);
@@ -56,7 +62,7 @@ export function LoginPage() {
 			// renders immediately. A full window.location reload would drop that
 			// state and force a cross-origin refresh round-trip (fragile when the
 			// FE and api are on different ports, e.g. the e2e direct-to-api setup).
-			if (authenticated) router.push("/");
+			if (authenticated) router.push(postLoginDestination);
 		} catch (err) {
 			setError(err instanceof Error ? err.message : "Login failed");
 			setLoading(null);
@@ -112,12 +118,11 @@ export function LoginPage() {
 					<div className="space-y-8 max-w-md">
 						<div>
 							<h2 className="text-4xl font-bold tracking-tight leading-tight">
-								The starter you actually want to ship.
+								Welcome back to {branding.name}.
 							</h2>
 							<p className="mt-4 text-lg text-primary-foreground/80 leading-relaxed">
-								Auth, multi-tenancy, billing, audit, and MFA controls are
-								included in the starter. Configure and verify them for your
-								deployment.
+								Continue to the authenticated product without coupling this
+								session to the public company site.
 							</p>
 						</div>
 
@@ -125,24 +130,24 @@ export function LoginPage() {
 							<li className="flex items-start gap-3">
 								<ShieldCheck className="h-5 w-5 mt-0.5 text-primary-foreground/90 shrink-0" />
 								<span className="text-primary-foreground/90">
-									<span className="font-medium">Server-validated auth</span> —
-									Ed25519 JWT, OWASP refresh rotation, MFA gates, JTI
-									revocation.
+									<span className="font-medium">Server-validated access</span> —
+									authenticated requests are checked again at the service
+									boundary.
 								</span>
 							</li>
 							<li className="flex items-start gap-3">
 								<Building2 className="h-5 w-5 mt-0.5 text-primary-foreground/90 shrink-0" />
 								<span className="text-primary-foreground/90">
-									<span className="font-medium">Multi-tenant orgs + teams</span>{" "}
-									— RBAC, invitations, impersonation, and audit logging with a
-									configurable purge policy.
+									<span className="font-medium">Tenant-aware navigation</span>{" "}
+									— organization context and permissions shape the product
+									shell.
 								</span>
 							</li>
 							<li className="flex items-start gap-3">
 								<Sparkles className="h-5 w-5 mt-0.5 text-primary-foreground/90 shrink-0" />
 								<span className="text-primary-foreground/90">
-									<span className="font-medium">Stripe billing wired</span> —
-									checkout, customer portal, signed webhooks, idempotent.
+									<span className="font-medium">Independent public site</span> —
+									company content and pricing can release on their own cadence.
 								</span>
 							</li>
 						</ul>
@@ -200,7 +205,7 @@ export function LoginPage() {
 											key={p.id}
 											onClick={async () => {
 												try {
-													await signInWith(p.id);
+													await signInWith(p.id, postLoginDestination);
 												} catch {}
 											}}
 											className="w-full flex items-center justify-center gap-2.5 h-11 rounded-lg border bg-background hover:bg-accent/50 text-sm font-medium transition-colors"

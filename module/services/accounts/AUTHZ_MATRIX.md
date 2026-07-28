@@ -2,7 +2,7 @@
 
 > Generated from protobuf service descriptors and `saas.policy.v1.method_policy`; only the prose description is joined from `pkg/business/introspection.go`. Do not edit by hand. Run `go generate ./pkg/business` from `module/services/accounts/code`.
 
-Inventory: **127 RPCs** across **25 services**. Missing, invalid, or unclassified procedures are denied by both Connect and gRPC interceptors.
+Inventory: **128 RPCs** across **25 services**. Missing, invalid, or unclassified procedures are denied by both Connect and gRPC interceptors.
 
 The compact tier is retained for compatibility. Guards, resource bindings, audit events, limiter class, and data sensitivity are descriptor-authoritative. Domain handlers may enforce stronger state-dependent rules but may not weaken this floor.
 
@@ -27,6 +27,7 @@ The compact tier is retained for compatibility. Guards, resource bindings, audit
 | `/saas.accounts.v1.AuthService/RefreshToken` | unary | `POST /v1/auth/refresh` | `public` | exposure=PUBLIC; tenant=NONE | — | — | — | FORBIDDEN / AUTHENTICATION | SECRET → SECRET | Refresh access token. |
 | `/saas.accounts.v1.AuthService/SwitchOrganization` | unary | `POST /v1/auth/switch-organization` | `auth` | exposure=AUTHENTICATED; tenant=NONE | — | — | SUCCESS: auth.organization_switched | FORBIDDEN / SENSITIVE | CONFIDENTIAL → SECRET | Exchange the active device session for an access token scoped to another current membership. |
 | `/saas.accounts.v1.BillingService/ListInvoices` | unary | `GET /v1/billing/invoices/{org_id}` | `org_admin` | exposure=AUTHENTICATED; tenant=ORG_ADMIN | perm=billing:read; scope=billing:read | org_id → ORGANIZATION/DIRECT_ID | — | FORBIDDEN / STANDARD_READ | CONFIDENTIAL → CONFIDENTIAL | Past Stripe invoices. |
+| `/saas.accounts.v1.BillingService/ListPublicPlans` | unary | `GET /v1/public/plans` | `public` | exposure=PUBLIC; tenant=NONE | — | — | — | FORBIDDEN / PUBLIC | PUBLIC → PUBLIC | Sanitized public pricing and entitlement catalog. |
 | `/saas.accounts.v1.BillingService/OpenPortal` | unary | `POST /v1/billing/connect/portal` | `mfa` | exposure=AUTHENTICATED; tenant=ORG_ADMIN; mfa=RECENT_STEP_UP | perm=billing:write; scope=billing:write | org_id → ORGANIZATION/DIRECT_ID | SUCCESS: billing.portal_opened | FORBIDDEN / SENSITIVE | CONFIDENTIAL → SECRET | Stripe billing-portal session; requires billing:write and recent MFA. |
 | `/saas.accounts.v1.ConsentService/Accept` | unary | `POST /v1/consent/accept` | `auth` | exposure=AUTHENTICATED; tenant=USER | — | — | SUCCESS: consent.accepted | FORBIDDEN / STANDARD_WRITE | CONFIDENTIAL → CONFIDENTIAL | Record TOS acceptance. |
 | `/saas.accounts.v1.ConsentService/GetStatus` | unary | `GET /v1/consent/status` | `auth` | exposure=AUTHENTICATED; tenant=USER | — | — | — | FORBIDDEN / STANDARD_READ | CONFIDENTIAL → CONFIDENTIAL | Read TOS acceptance state. |
@@ -144,4 +145,4 @@ The compact tier is retained for compatibility. Guards, resource bindings, audit
 - `org_admin`: 27
 - `org_member`: 22
 - `platform_admin`: 19
-- `public`: 11
+- `public`: 12

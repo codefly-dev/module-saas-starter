@@ -34,6 +34,9 @@ const (
 // reflection-formatted method names, remove the leading slash and convert the remaining slash to a
 // period.
 const (
+	// BillingServiceListPublicPlansProcedure is the fully-qualified name of the BillingService's
+	// ListPublicPlans RPC.
+	BillingServiceListPublicPlansProcedure = "/saas.accounts.v1.BillingService/ListPublicPlans"
 	// BillingServiceOpenPortalProcedure is the fully-qualified name of the BillingService's OpenPortal
 	// RPC.
 	BillingServiceOpenPortalProcedure = "/saas.accounts.v1.BillingService/OpenPortal"
@@ -44,6 +47,7 @@ const (
 
 // BillingServiceClient is a client for the saas.accounts.v1.BillingService service.
 type BillingServiceClient interface {
+	ListPublicPlans(context.Context, *connect.Request[v1.ListPublicPlansRequest]) (*connect.Response[v1.ListPublicPlansResponse], error)
 	OpenPortal(context.Context, *connect.Request[v1.OpenBillingPortalRequest]) (*connect.Response[v1.OpenBillingPortalResponse], error)
 	ListInvoices(context.Context, *connect.Request[v1.ListInvoicesRequest]) (*connect.Response[v1.ListInvoicesResponse], error)
 }
@@ -59,6 +63,12 @@ func NewBillingServiceClient(httpClient connect.HTTPClient, baseURL string, opts
 	baseURL = strings.TrimRight(baseURL, "/")
 	billingServiceMethods := v1.File_saas_accounts_v1_billing_proto.Services().ByName("BillingService").Methods()
 	return &billingServiceClient{
+		listPublicPlans: connect.NewClient[v1.ListPublicPlansRequest, v1.ListPublicPlansResponse](
+			httpClient,
+			baseURL+BillingServiceListPublicPlansProcedure,
+			connect.WithSchema(billingServiceMethods.ByName("ListPublicPlans")),
+			connect.WithClientOptions(opts...),
+		),
 		openPortal: connect.NewClient[v1.OpenBillingPortalRequest, v1.OpenBillingPortalResponse](
 			httpClient,
 			baseURL+BillingServiceOpenPortalProcedure,
@@ -76,8 +86,14 @@ func NewBillingServiceClient(httpClient connect.HTTPClient, baseURL string, opts
 
 // billingServiceClient implements BillingServiceClient.
 type billingServiceClient struct {
-	openPortal   *connect.Client[v1.OpenBillingPortalRequest, v1.OpenBillingPortalResponse]
-	listInvoices *connect.Client[v1.ListInvoicesRequest, v1.ListInvoicesResponse]
+	listPublicPlans *connect.Client[v1.ListPublicPlansRequest, v1.ListPublicPlansResponse]
+	openPortal      *connect.Client[v1.OpenBillingPortalRequest, v1.OpenBillingPortalResponse]
+	listInvoices    *connect.Client[v1.ListInvoicesRequest, v1.ListInvoicesResponse]
+}
+
+// ListPublicPlans calls saas.accounts.v1.BillingService.ListPublicPlans.
+func (c *billingServiceClient) ListPublicPlans(ctx context.Context, req *connect.Request[v1.ListPublicPlansRequest]) (*connect.Response[v1.ListPublicPlansResponse], error) {
+	return c.listPublicPlans.CallUnary(ctx, req)
 }
 
 // OpenPortal calls saas.accounts.v1.BillingService.OpenPortal.
@@ -92,6 +108,7 @@ func (c *billingServiceClient) ListInvoices(ctx context.Context, req *connect.Re
 
 // BillingServiceHandler is an implementation of the saas.accounts.v1.BillingService service.
 type BillingServiceHandler interface {
+	ListPublicPlans(context.Context, *connect.Request[v1.ListPublicPlansRequest]) (*connect.Response[v1.ListPublicPlansResponse], error)
 	OpenPortal(context.Context, *connect.Request[v1.OpenBillingPortalRequest]) (*connect.Response[v1.OpenBillingPortalResponse], error)
 	ListInvoices(context.Context, *connect.Request[v1.ListInvoicesRequest]) (*connect.Response[v1.ListInvoicesResponse], error)
 }
@@ -103,6 +120,12 @@ type BillingServiceHandler interface {
 // and JSON codecs. They also support gzip compression.
 func NewBillingServiceHandler(svc BillingServiceHandler, opts ...connect.HandlerOption) (string, http.Handler) {
 	billingServiceMethods := v1.File_saas_accounts_v1_billing_proto.Services().ByName("BillingService").Methods()
+	billingServiceListPublicPlansHandler := connect.NewUnaryHandler(
+		BillingServiceListPublicPlansProcedure,
+		svc.ListPublicPlans,
+		connect.WithSchema(billingServiceMethods.ByName("ListPublicPlans")),
+		connect.WithHandlerOptions(opts...),
+	)
 	billingServiceOpenPortalHandler := connect.NewUnaryHandler(
 		BillingServiceOpenPortalProcedure,
 		svc.OpenPortal,
@@ -117,6 +140,8 @@ func NewBillingServiceHandler(svc BillingServiceHandler, opts ...connect.Handler
 	)
 	return "/saas.accounts.v1.BillingService/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
+		case BillingServiceListPublicPlansProcedure:
+			billingServiceListPublicPlansHandler.ServeHTTP(w, r)
 		case BillingServiceOpenPortalProcedure:
 			billingServiceOpenPortalHandler.ServeHTTP(w, r)
 		case BillingServiceListInvoicesProcedure:
@@ -129,6 +154,10 @@ func NewBillingServiceHandler(svc BillingServiceHandler, opts ...connect.Handler
 
 // UnimplementedBillingServiceHandler returns CodeUnimplemented from all methods.
 type UnimplementedBillingServiceHandler struct{}
+
+func (UnimplementedBillingServiceHandler) ListPublicPlans(context.Context, *connect.Request[v1.ListPublicPlansRequest]) (*connect.Response[v1.ListPublicPlansResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("saas.accounts.v1.BillingService.ListPublicPlans is not implemented"))
+}
 
 func (UnimplementedBillingServiceHandler) OpenPortal(context.Context, *connect.Request[v1.OpenBillingPortalRequest]) (*connect.Response[v1.OpenBillingPortalResponse], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("saas.accounts.v1.BillingService.OpenPortal is not implemented"))

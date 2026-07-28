@@ -15,7 +15,7 @@ import type { Message } from "@bufbuild/protobuf";
  * Describes the file saas/accounts/v1/billing.proto.
  */
 export const file_saas_accounts_v1_billing: GenFile = /*@__PURE__*/
-  fileDesc("Ch5zYWFzL2FjY291bnRzL3YxL2JpbGxpbmcucHJvdG8SEHNhYXMuYWNjb3VudHMudjEiUgoYT3BlbkJpbGxpbmdQb3J0YWxSZXF1ZXN0EhgKBm9yZ19pZBgBIAEoCUIIukgFcgOwAQESHAoKcmV0dXJuX3VybBgCIAEoCUIIGAG6SAPYAQMiKAoZT3BlbkJpbGxpbmdQb3J0YWxSZXNwb25zZRILCgN1cmwYASABKAkisAIKB0ludm9pY2USCgoCaWQYASABKAkSDgoGbnVtYmVyGAIgASgJEg4KBnN0YXR1cxgDIAEoCRISCgphbW91bnRfZHVlGAQgASgDEhMKC2Ftb3VudF9wYWlkGAUgASgDEhAKCGN1cnJlbmN5GAYgASgJEisKB2NyZWF0ZWQYByABKAsyGi5nb29nbGUucHJvdG9idWYuVGltZXN0YW1wEhoKEmhvc3RlZF9pbnZvaWNlX3VybBgIIAEoCRITCgtpbnZvaWNlX3BkZhgJIAEoCRIwCgxwZXJpb2Rfc3RhcnQYCiABKAsyGi5nb29nbGUucHJvdG9idWYuVGltZXN0YW1wEi4KCnBlcmlvZF9lbmQYCyABKAsyGi5nb29nbGUucHJvdG9idWYuVGltZXN0YW1wIj4KE0xpc3RJbnZvaWNlc1JlcXVlc3QSGAoGb3JnX2lkGAEgASgJQgi6SAVyA7ABARINCgVsaW1pdBgCIAEoBSJDChRMaXN0SW52b2ljZXNSZXNwb25zZRIrCghpbnZvaWNlcxgBIAMoCzIZLnNhYXMuYWNjb3VudHMudjEuSW52b2ljZTLEAwoOQmlsbGluZ1NlcnZpY2US6AEKCk9wZW5Qb3J0YWwSKi5zYWFzLmFjY291bnRzLnYxLk9wZW5CaWxsaW5nUG9ydGFsUmVxdWVzdBorLnNhYXMuYWNjb3VudHMudjEuT3BlbkJpbGxpbmdQb3J0YWxSZXNwb25zZSKAAcLzGFcIAhAEGg1iaWxsaW5nOndyaXRlIg1iaWxsaW5nOndyaXRlKgwKBm9yZ19pZBACGAEwAzoZChViaWxsaW5nLnBvcnRhbF9vcGVuZWQQAkABSAVQA1gEYAGC0+STAh86ASoiGi92MS9iaWxsaW5nL2Nvbm5lY3QvcG9ydGFsEsYBCgxMaXN0SW52b2ljZXMSJS5zYWFzLmFjY291bnRzLnYxLkxpc3RJbnZvaWNlc1JlcXVlc3QaJi5zYWFzLmFjY291bnRzLnYxLkxpc3RJbnZvaWNlc1Jlc3BvbnNlImfC8xg+CAIQBBoMYmlsbGluZzpyZWFkIgxiaWxsaW5nOnJlYWQqDAoGb3JnX2lkEAIYATABOgIQAUABSANQA1gDYAGC0+STAh8SHS92MS9iaWxsaW5nL2ludm9pY2VzL3tvcmdfaWR9QrQBChRjb20uc2Fhcy5hY2NvdW50cy52MUIMQmlsbGluZ1Byb3RvUAFaLGFjY291bnRzL3BrZy9nZW4vc2Fhcy9hY2NvdW50cy92MTthY2NvdW50c3YxogIDU0FYqgIQU2Fhcy5BY2NvdW50cy5WMcoCEFNhYXNcQWNjb3VudHNcVjHiAhxTYWFzXEFjY291bnRzXFYxXEdQQk1ldGFkYXRh6gISU2Fhczo6QWNjb3VudHM6OlYxYgZwcm90bzM", [file_buf_validate_validate, file_google_api_annotations, file_google_protobuf_timestamp, file_saas_policy_v1_options]);
+  fileDesc("Ch5zYWFzL2FjY291bnRzL3YxL2JpbGxpbmcucHJvdG8SEHNhYXMuYWNjb3VudHMudjEiUgoYT3BlbkJpbGxpbmdQb3J0YWxSZXF1ZXN0EhgKBm9yZ19pZBgBIAEoCUIIukgFcgOwAQESHAoKcmV0dXJuX3VybBgCIAEoCUIIGAG6SAPYAQMiKAoZT3BlbkJpbGxpbmdQb3J0YWxSZXNwb25zZRILCgN1cmwYASABKAkisAIKB0ludm9pY2USCgoCaWQYASABKAkSDgoGbnVtYmVyGAIgASgJEg4KBnN0YXR1cxgDIAEoCRISCgphbW91bnRfZHVlGAQgASgDEhMKC2Ftb3VudF9wYWlkGAUgASgDEhAKCGN1cnJlbmN5GAYgASgJEisKB2NyZWF0ZWQYByABKAsyGi5nb29nbGUucHJvdG9idWYuVGltZXN0YW1wEhoKEmhvc3RlZF9pbnZvaWNlX3VybBgIIAEoCRITCgtpbnZvaWNlX3BkZhgJIAEoCRIwCgxwZXJpb2Rfc3RhcnQYCiABKAsyGi5nb29nbGUucHJvdG9idWYuVGltZXN0YW1wEi4KCnBlcmlvZF9lbmQYCyABKAsyGi5nb29nbGUucHJvdG9idWYuVGltZXN0YW1wIj4KE0xpc3RJbnZvaWNlc1JlcXVlc3QSGAoGb3JnX2lkGAEgASgJQgi6SAVyA7ABARINCgVsaW1pdBgCIAEoBSJDChRMaXN0SW52b2ljZXNSZXNwb25zZRIrCghpbnZvaWNlcxgBIAMoCzIZLnNhYXMuYWNjb3VudHMudjEuSW52b2ljZSIzChVQdWJsaWNQbGFuRW50aXRsZW1lbnQSCwoDa2V5GAEgASgJEg0KBWxpbWl0GAIgASgDIqECCgpQdWJsaWNQbGFuEgsKA2tleRgBIAEoCRIMCgRuYW1lGAIgASgJEhMKC2Rlc2NyaXB0aW9uGAMgASgJEhAKCGN1cnJlbmN5GAQgASgJEhQKDGFtb3VudF9taW5vchgFIAEoAxIQCghpbnRlcnZhbBgGIAEoCRIYChBjaGVja291dF9lbmFibGVkGAcgASgIEhUKDWNvbnRhY3Rfc2FsZXMYCCABKAgSEgoKdHJpYWxfZGF5cxgJIAEoBRIUCgx0YXhfYmVoYXZpb3IYCiABKAkSDwoHZml4dHVyZRgLIAEoCBI9CgxlbnRpdGxlbWVudHMYDCADKAsyJy5zYWFzLmFjY291bnRzLnYxLlB1YmxpY1BsYW5FbnRpdGxlbWVudCIYChZMaXN0UHVibGljUGxhbnNSZXF1ZXN0IlgKF0xpc3RQdWJsaWNQbGFuc1Jlc3BvbnNlEhAKCHJldmlzaW9uGAEgASgJEisKBXBsYW5zGAIgAygLMhwuc2Fhcy5hY2NvdW50cy52MS5QdWJsaWNQbGFuMt8ECg5CaWxsaW5nU2VydmljZRKYAQoPTGlzdFB1YmxpY1BsYW5zEiguc2Fhcy5hY2NvdW50cy52MS5MaXN0UHVibGljUGxhbnNSZXF1ZXN0Gikuc2Fhcy5hY2NvdW50cy52MS5MaXN0UHVibGljUGxhbnNSZXNwb25zZSIwwvMYFAgBEAEwAToCEAFAAUgBUAFYAWABgtPkkwISEhAvdjEvcHVibGljL3BsYW5zEugBCgpPcGVuUG9ydGFsEiouc2Fhcy5hY2NvdW50cy52MS5PcGVuQmlsbGluZ1BvcnRhbFJlcXVlc3QaKy5zYWFzLmFjY291bnRzLnYxLk9wZW5CaWxsaW5nUG9ydGFsUmVzcG9uc2UigAHC8xhXCAIQBBoNYmlsbGluZzp3cml0ZSINYmlsbGluZzp3cml0ZSoMCgZvcmdfaWQQAhgBMAM6GQoVYmlsbGluZy5wb3J0YWxfb3BlbmVkEAJAAUgFUANYBGABgtPkkwIfOgEqIhovdjEvYmlsbGluZy9jb25uZWN0L3BvcnRhbBLGAQoMTGlzdEludm9pY2VzEiUuc2Fhcy5hY2NvdW50cy52MS5MaXN0SW52b2ljZXNSZXF1ZXN0GiYuc2Fhcy5hY2NvdW50cy52MS5MaXN0SW52b2ljZXNSZXNwb25zZSJnwvMYPggCEAQaDGJpbGxpbmc6cmVhZCIMYmlsbGluZzpyZWFkKgwKBm9yZ19pZBACGAEwAToCEAFAAUgDUANYA2ABgtPkkwIfEh0vdjEvYmlsbGluZy9pbnZvaWNlcy97b3JnX2lkfUK0AQoUY29tLnNhYXMuYWNjb3VudHMudjFCDEJpbGxpbmdQcm90b1ABWixhY2NvdW50cy9wa2cvZ2VuL3NhYXMvYWNjb3VudHMvdjE7YWNjb3VudHN2MaICA1NBWKoCEFNhYXMuQWNjb3VudHMuVjHKAhBTYWFzXEFjY291bnRzXFYx4gIcU2Fhc1xBY2NvdW50c1xWMVxHUEJNZXRhZGF0YeoCElNhYXM6OkFjY291bnRzOjpWMWIGcHJvdG8z", [file_buf_validate_validate, file_google_api_annotations, file_google_protobuf_timestamp, file_saas_policy_v1_options]);
 
 /**
  * @generated from message saas.accounts.v1.OpenBillingPortalRequest
@@ -177,9 +177,146 @@ export const ListInvoicesResponseSchema: GenMessage<ListInvoicesResponse> = /*@_
   messageDesc(file_saas_accounts_v1_billing, 4);
 
 /**
+ * @generated from message saas.accounts.v1.PublicPlanEntitlement
+ */
+export type PublicPlanEntitlement = Message<"saas.accounts.v1.PublicPlanEntitlement"> & {
+  /**
+   * @generated from field: string key = 1;
+   */
+  key: string;
+
+  /**
+   * @generated from field: int64 limit = 2;
+   */
+  limit: bigint;
+};
+
+/**
+ * Describes the message saas.accounts.v1.PublicPlanEntitlement.
+ * Use `create(PublicPlanEntitlementSchema)` to create a new message.
+ */
+export const PublicPlanEntitlementSchema: GenMessage<PublicPlanEntitlement> = /*@__PURE__*/
+  messageDesc(file_saas_accounts_v1_billing, 5);
+
+/**
+ * @generated from message saas.accounts.v1.PublicPlan
+ */
+export type PublicPlan = Message<"saas.accounts.v1.PublicPlan"> & {
+  /**
+   * @generated from field: string key = 1;
+   */
+  key: string;
+
+  /**
+   * @generated from field: string name = 2;
+   */
+  name: string;
+
+  /**
+   * @generated from field: string description = 3;
+   */
+  description: string;
+
+  /**
+   * @generated from field: string currency = 4;
+   */
+  currency: string;
+
+  /**
+   * @generated from field: int64 amount_minor = 5;
+   */
+  amountMinor: bigint;
+
+  /**
+   * @generated from field: string interval = 6;
+   */
+  interval: string;
+
+  /**
+   * @generated from field: bool checkout_enabled = 7;
+   */
+  checkoutEnabled: boolean;
+
+  /**
+   * @generated from field: bool contact_sales = 8;
+   */
+  contactSales: boolean;
+
+  /**
+   * @generated from field: int32 trial_days = 9;
+   */
+  trialDays: number;
+
+  /**
+   * @generated from field: string tax_behavior = 10;
+   */
+  taxBehavior: string;
+
+  /**
+   * @generated from field: bool fixture = 11;
+   */
+  fixture: boolean;
+
+  /**
+   * @generated from field: repeated saas.accounts.v1.PublicPlanEntitlement entitlements = 12;
+   */
+  entitlements: PublicPlanEntitlement[];
+};
+
+/**
+ * Describes the message saas.accounts.v1.PublicPlan.
+ * Use `create(PublicPlanSchema)` to create a new message.
+ */
+export const PublicPlanSchema: GenMessage<PublicPlan> = /*@__PURE__*/
+  messageDesc(file_saas_accounts_v1_billing, 6);
+
+/**
+ * @generated from message saas.accounts.v1.ListPublicPlansRequest
+ */
+export type ListPublicPlansRequest = Message<"saas.accounts.v1.ListPublicPlansRequest"> & {
+};
+
+/**
+ * Describes the message saas.accounts.v1.ListPublicPlansRequest.
+ * Use `create(ListPublicPlansRequestSchema)` to create a new message.
+ */
+export const ListPublicPlansRequestSchema: GenMessage<ListPublicPlansRequest> = /*@__PURE__*/
+  messageDesc(file_saas_accounts_v1_billing, 7);
+
+/**
+ * @generated from message saas.accounts.v1.ListPublicPlansResponse
+ */
+export type ListPublicPlansResponse = Message<"saas.accounts.v1.ListPublicPlansResponse"> & {
+  /**
+   * @generated from field: string revision = 1;
+   */
+  revision: string;
+
+  /**
+   * @generated from field: repeated saas.accounts.v1.PublicPlan plans = 2;
+   */
+  plans: PublicPlan[];
+};
+
+/**
+ * Describes the message saas.accounts.v1.ListPublicPlansResponse.
+ * Use `create(ListPublicPlansResponseSchema)` to create a new message.
+ */
+export const ListPublicPlansResponseSchema: GenMessage<ListPublicPlansResponse> = /*@__PURE__*/
+  messageDesc(file_saas_accounts_v1_billing, 8);
+
+/**
  * @generated from service saas.accounts.v1.BillingService
  */
 export const BillingService: GenService<{
+  /**
+   * @generated from rpc saas.accounts.v1.BillingService.ListPublicPlans
+   */
+  listPublicPlans: {
+    methodKind: "unary";
+    input: typeof ListPublicPlansRequestSchema;
+    output: typeof ListPublicPlansResponseSchema;
+  },
   /**
    * @generated from rpc saas.accounts.v1.BillingService.OpenPortal
    */

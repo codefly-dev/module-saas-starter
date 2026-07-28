@@ -11,6 +11,9 @@ interface:
   - service: auth-sidecar
     endpoint: rest
     visibility: public
+  - service: marketing
+    endpoint: http
+    visibility: public
 services:
   - name: accounts
     version: 0.0.0
@@ -146,6 +149,30 @@ services:
       # every TS/TSX save invalidates browser chunks instead of applying HMR.
       hot-reload: false
       auth-provider: workos
+      execution-profiles:
+        local: development
+        production: production
+      mode: ssr
+  - name: marketing
+    version: 0.0.0
+    description: |
+      Independently deployable public company site. Owns public content,
+      metadata, pricing presentation, and safe product handoff without product
+      sessions, tenant state, database access, or secrets.
+    agent:
+      kind: codefly:service
+      name: nextjs
+      version: 0.0.118
+      publisher: codefly.dev
+    endpoints:
+      - name: http
+        api: http
+        visibility: public
+        port: 3000
+    public_egress_ports:
+      - 443
+    spec:
+      hot-reload: false
       execution-profiles:
         local: development
         production: production

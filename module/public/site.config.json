@@ -1,0 +1,74 @@
+{
+  "schemaVersion": 1,
+  "developmentFixture": true,
+  "company": {
+    "name": "Example Company",
+    "productName": "Launchpad",
+    "shortDescription": "A configurable SaaS starter for building your own product.",
+    "longDescription": "This development fixture demonstrates the public company site and authenticated product shell. Replace every example value before launch."
+  },
+  "brand": {
+    "mark": "L",
+    "logoAlt": "Launchpad development fixture",
+    "favicon": "/icon",
+    "colors": {
+      "primary": "#5B44F2",
+      "accent": "#D8FF5F",
+      "background": "#F7F5EF",
+      "foreground": "#17171A"
+    },
+    "typography": {
+      "sans": "Arial, Helvetica, sans-serif",
+      "heading": "Arial, Helvetica, sans-serif"
+    }
+  },
+  "urls": {
+    "apex": "https://example.com",
+    "marketing": "https://www.example.com",
+    "app": "https://app.example.com",
+    "docs": "https://www.example.com/docs",
+    "status": "https://status.example.com"
+  },
+  "socialProfiles": [],
+  "contacts": {
+    "support": "support@example.invalid",
+    "privacy": "privacy@example.invalid",
+    "security": "security@example.invalid",
+    "legal": "legal@example.invalid",
+    "sales": "sales@example.invalid"
+  },
+  "locales": {
+    "default": "en",
+    "enabled": [
+      "en"
+    ]
+  },
+  "acquisition": {
+    "mode": "invite_only",
+    "signupPath": "/auth/login",
+    "loginPath": "/auth/login",
+    "waitlistPath": null,
+    "allowedAttribution": [
+      "referral",
+      "referrer",
+      "utm_campaign",
+      "utm_content",
+      "utm_medium",
+      "utm_source",
+      "utm_term"
+    ]
+  },
+  "analytics": {
+    "adapter": "none",
+    "consentRequired": true
+  },
+  "pricing": {
+    "visible": true,
+    "catalogPath": "/v1/public/plans"
+  },
+  "content": {
+    "provider": "repository"
+  },
+  "customers": [],
+  "testimonials": []
+}

@@ -1,0 +1,7 @@
+code/node_modules
+code/.next
+code/.git
+code/tsconfig.tsbuildinfo
+.cache
+builder
+deployment

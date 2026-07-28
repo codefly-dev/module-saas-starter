@@ -30,6 +30,7 @@ type billingAuthorizationStore struct {
 	platformRole      string
 	customerID        string
 	plan              *business.PlanFull
+	publicPlans       []business.PublicPlan
 }
 
 func (f *billingAuthorizationStore) WithOrgTx(ctx context.Context, _ string, fn func(context.Context) error) error {
@@ -60,6 +61,10 @@ func (f *billingAuthorizationStore) GetOrgStripeCustomerID(context.Context, stri
 func (f *billingAuthorizationStore) GetPlanByName(context.Context, string) (*business.PlanFull, error) {
 	copy := *f.plan
 	return &copy, nil
+}
+
+func (f *billingAuthorizationStore) ListPublicPlans(context.Context) ([]business.PublicPlan, error) {
+	return append([]business.PublicPlan(nil), f.publicPlans...), nil
 }
 
 type billingAuthorizationClient struct {
@@ -189,6 +194,27 @@ func TestBillingPortalRequiresRecentMFA(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, "https://billing.stripe.test/bps_test", resp.Msg.Url)
 	require.Equal(t, 1, client.portalCalls)
+}
+
+func TestListPublicPlansNeedsNoProductIdentity(t *testing.T) {
+	store := &billingAuthorizationStore{publicPlans: []business.PublicPlan{{
+		Key: "pro", Name: "Pro", Description: "Fixture plan", Currency: "USD",
+		AmountMinor: 4900, Interval: "month", CheckoutEnabled: true,
+		TrialDays: 14, TaxBehavior: "automatic", Fixture: true,
+		Entitlements: []business.PlanFeatureLimit{{Feature: "seats", Limit: 50}},
+	}}}
+	svc := installBillingAuthorizationService(t, store, &billingAuthorizationClient{})
+	handler := &billingConnectHandler{svc: svc}
+
+	response, err := handler.ListPublicPlans(
+		context.Background(),
+		connect.NewRequest(&gen.ListPublicPlansRequest{}),
+	)
+	require.NoError(t, err)
+	require.Regexp(t, `^sha256:[0-9a-f]{64}$`, response.Msg.Revision)
+	require.Len(t, response.Msg.Plans, 1)
+	require.Equal(t, int64(4900), response.Msg.Plans[0].AmountMinor)
+	require.Equal(t, int64(50), response.Msg.Plans[0].Entitlements[0].Limit)
 }
 
 func TestBillingHTTPCheckoutRequiresPermissionRecentMFAAndIdempotency(t *testing.T) {
