@@ -231,7 +231,9 @@
       "full_name": "saas.accounts.v1.UsageService",
       "procedures": [
         "/saas.accounts.v1.UsageService/ConsumeUsage",
-        "/saas.accounts.v1.UsageService/GetUsage"
+        "/saas.accounts.v1.UsageService/GetUsage",
+        "/saas.accounts.v1.UsageService/GetUsageHistory",
+        "/saas.accounts.v1.UsageService/ListUsageMeters"
       ]
     },
     {
@@ -5537,6 +5539,124 @@
       },
       "policy_tier": "org_member",
       "description": "Current monthly meter total and effective limit.",
+      "owner": {
+        "module": "saas-starter",
+        "service": "accounts"
+      }
+    },
+    {
+      "procedure": "/saas.accounts.v1.UsageService/GetUsageHistory",
+      "service": "UsageService",
+      "full_service": "saas.accounts.v1.UsageService",
+      "method": "GetUsageHistory",
+      "input_type": "saas.accounts.v1.GetUsageHistoryRequest",
+      "output_type": "saas.accounts.v1.GetUsageHistoryResponse",
+      "client_streaming": false,
+      "server_streaming": false,
+      "deprecated": false,
+      "source_proto": "saas/accounts/v1/usage.proto",
+      "protocols": [
+        "PROTOCOL_GRPC",
+        "PROTOCOL_CONNECT",
+        "PROTOCOL_REST"
+      ],
+      "http_bindings": [
+        {
+          "method": "GET",
+          "path": "/v1/organizations/{organization_id}/usage/{meter}/history",
+          "body": "",
+          "response_body": ""
+        }
+      ],
+      "policy": {
+        "exposure": "EXPOSURE_AUTHENTICATED",
+        "tenant": "TENANT_REQUIREMENT_ORG_MEMBER",
+        "permissions": [
+          "entitlements:read"
+        ],
+        "scopes": [
+          "entitlements:read"
+        ],
+        "resource_bindings": [
+          {
+            "request_field": "organization_id",
+            "target": "RESOURCE_TARGET_ORGANIZATION",
+            "lookup": "RESOURCE_LOOKUP_DIRECT_ID"
+          }
+        ],
+        "mfa": "MFA_REQUIREMENT_NONE",
+        "audit": {
+          "events": [],
+          "emission": "AUDIT_EMISSION_NONE"
+        },
+        "idempotency": "IDEMPOTENCY_REQUIREMENT_FORBIDDEN",
+        "rate_limit": "RATE_LIMIT_CLASS_STANDARD_READ",
+        "request_sensitivity": "SENSITIVITY_CONFIDENTIAL",
+        "response_sensitivity": "SENSITIVITY_CONFIDENTIAL",
+        "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
+        "authentication_factor_attempt": false
+      },
+      "policy_tier": "org_member",
+      "description": "UTC hourly, daily, or monthly usage buckets for a bounded range.",
+      "owner": {
+        "module": "saas-starter",
+        "service": "accounts"
+      }
+    },
+    {
+      "procedure": "/saas.accounts.v1.UsageService/ListUsageMeters",
+      "service": "UsageService",
+      "full_service": "saas.accounts.v1.UsageService",
+      "method": "ListUsageMeters",
+      "input_type": "saas.accounts.v1.ListUsageMetersRequest",
+      "output_type": "saas.accounts.v1.ListUsageMetersResponse",
+      "client_streaming": false,
+      "server_streaming": false,
+      "deprecated": false,
+      "source_proto": "saas/accounts/v1/usage.proto",
+      "protocols": [
+        "PROTOCOL_GRPC",
+        "PROTOCOL_CONNECT",
+        "PROTOCOL_REST"
+      ],
+      "http_bindings": [
+        {
+          "method": "GET",
+          "path": "/v1/organizations/{organization_id}/usage",
+          "body": "",
+          "response_body": ""
+        }
+      ],
+      "policy": {
+        "exposure": "EXPOSURE_AUTHENTICATED",
+        "tenant": "TENANT_REQUIREMENT_ORG_MEMBER",
+        "permissions": [
+          "entitlements:read"
+        ],
+        "scopes": [
+          "entitlements:read"
+        ],
+        "resource_bindings": [
+          {
+            "request_field": "organization_id",
+            "target": "RESOURCE_TARGET_ORGANIZATION",
+            "lookup": "RESOURCE_LOOKUP_DIRECT_ID"
+          }
+        ],
+        "mfa": "MFA_REQUIREMENT_NONE",
+        "audit": {
+          "events": [],
+          "emission": "AUDIT_EMISSION_NONE"
+        },
+        "idempotency": "IDEMPOTENCY_REQUIREMENT_FORBIDDEN",
+        "rate_limit": "RATE_LIMIT_CLASS_STANDARD_READ",
+        "request_sensitivity": "SENSITIVITY_CONFIDENTIAL",
+        "response_sensitivity": "SENSITIVITY_CONFIDENTIAL",
+        "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
+        "authentication_factor_attempt": false
+      },
+      "policy_tier": "org_member",
+      "description": "Customer-visible meter catalog with current totals and limits.",
       "owner": {
         "module": "saas-starter",
         "service": "accounts"

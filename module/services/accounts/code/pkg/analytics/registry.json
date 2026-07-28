@@ -1,0 +1,72 @@
+{
+  "contract_version": 1,
+  "defaults": {
+    "schema_version": 1,
+    "pii_classification": "pseudonymous",
+    "retention_days": 400,
+    "property_type": "string"
+  },
+  "property_types": {
+    "referral_present": "boolean",
+    "score": "number",
+    "voluntary": "boolean"
+  },
+  "events": [
+    {"name":"landing_viewed","owner":"growth","description":"A visitor viewed a public landing route.","sources":["web"],"purpose":"marketing","properties":["page_kind"]},
+    {"name":"waitlist_joined","owner":"growth","description":"A visitor completed a waitlist join request.","sources":["api"],"purpose":"marketing","properties":["flow_version","referral_present"]},
+    {"name":"waitlist_verified","owner":"growth","description":"A waitlist member verified their address.","sources":["api"],"purpose":"marketing","properties":["flow_version"]},
+    {"name":"waitlist_referred","owner":"growth","description":"A waitlist referral was attributed.","sources":["api"],"purpose":"marketing","properties":["flow_version"]},
+    {"name":"waitlist_approved","owner":"growth","description":"A waitlist member was approved.","sources":["worker","api"],"purpose":"product","properties":["flow_version"]},
+    {"name":"waitlist_converted","owner":"growth","description":"An approved waitlist member created an account.","sources":["api"],"purpose":"product","properties":["flow_version"]},
+    {"name":"signup_started","owner":"identity","description":"A visitor began the signup journey.","sources":["web"],"purpose":"product","properties":["flow_version","provider"]},
+    {"name":"account_created","owner":"identity","description":"A user account was durably created.","sources":["api"],"purpose":"essential","properties":["provider"]},
+    {"name":"login_succeeded","owner":"identity","description":"An authentication attempt completed successfully.","sources":["api"],"purpose":"essential","properties":["provider","method"]},
+    {"name":"email_verified","owner":"identity","description":"A user verified their primary address.","sources":["api"],"purpose":"essential","properties":["method"]},
+
+    {"name":"organization_created","owner":"onboarding","description":"An organization was durably created.","sources":["api"],"purpose":"essential","properties":["kind"]},
+    {"name":"organization_configured","owner":"onboarding","description":"An organization completed its required configuration.","sources":["api"],"purpose":"product","properties":["configuration_version"]},
+    {"name":"invite_created","owner":"onboarding","description":"An organization invitation was durably created.","sources":["api"],"purpose":"essential","properties":["role"]},
+    {"name":"invite_queued","owner":"onboarding","description":"An invitation delivery was queued.","sources":["api","worker"],"purpose":"essential","properties":["provider"]},
+    {"name":"invite_delivered","owner":"onboarding","description":"An invitation delivery provider accepted the message.","sources":["worker","webhook"],"purpose":"essential","properties":["provider"]},
+    {"name":"invite_opened","owner":"onboarding","description":"An invitation recipient opened the invitation.","sources":["web"],"purpose":"product","properties":["flow_version"]},
+    {"name":"invite_accepted","owner":"onboarding","description":"An invitation was accepted and membership was created.","sources":["api"],"purpose":"essential","properties":["role"]},
+    {"name":"invite_expired","owner":"onboarding","description":"A pending invitation expired.","sources":["api","worker"],"purpose":"essential","properties":[]},
+    {"name":"invite_revoked","owner":"onboarding","description":"An administrator revoked an invitation.","sources":["api"],"purpose":"essential","properties":[]},
+    {"name":"onboarding_started","owner":"onboarding","description":"A user began an onboarding flow.","sources":["web","api"],"purpose":"product","properties":["flow_version","variant"]},
+    {"name":"onboarding_step_viewed","owner":"onboarding","description":"A user viewed a named onboarding step.","sources":["web"],"purpose":"product","properties":["step_name","flow_version","variant"]},
+    {"name":"onboarding_step_completed","owner":"onboarding","description":"A named onboarding step was completed.","sources":["api"],"purpose":"product","properties":["step_name","flow_version"]},
+    {"name":"onboarding_step_skipped","owner":"onboarding","description":"A named onboarding step was skipped.","sources":["api"],"purpose":"product","properties":["step_name","flow_version"]},
+    {"name":"onboarding_completed","owner":"onboarding","description":"Every required onboarding step was completed or skipped.","sources":["api","worker"],"purpose":"product","properties":["flow_version"]},
+    {"name":"activation_achieved","owner":"product","description":"The configured versioned activation predicate became true.","sources":["api","worker"],"purpose":"product","properties":["definition_version","milestone"]},
+
+    {"name":"core_action_started","owner":"product","description":"A user began the configured core value action.","sources":["web","api"],"purpose":"product","properties":["action","definition_version"]},
+    {"name":"core_action_completed","owner":"product","description":"The configured core value action completed successfully.","sources":["api","worker"],"purpose":"product","properties":["action","definition_version"]},
+
+    {"name":"trial_started","owner":"billing","description":"An organization entered a free trial.","sources":["webhook","worker"],"purpose":"essential","properties":["plan","currency"]},
+    {"name":"checkout_started","owner":"billing","description":"An organization created a checkout session.","sources":["api"],"purpose":"essential","properties":["plan","currency"]},
+    {"name":"subscription_started","owner":"billing","description":"A paid subscription became active.","sources":["webhook","worker"],"purpose":"essential","properties":["plan","currency","billing_interval"]},
+    {"name":"trial_converted","owner":"billing","description":"A trial became a paid subscription.","sources":["webhook","worker"],"purpose":"essential","properties":["plan","currency"]},
+    {"name":"subscription_changed","owner":"billing","description":"A subscription changed plan or quantity.","sources":["webhook","worker"],"purpose":"essential","properties":["from_plan","to_plan","currency","movement"]},
+    {"name":"subscription_canceled","owner":"billing","description":"A subscription became canceled.","sources":["webhook","worker"],"purpose":"essential","properties":["reason_code","voluntary"]},
+    {"name":"subscription_reactivated","owner":"billing","description":"A canceled subscription became active again.","sources":["webhook","worker"],"purpose":"essential","properties":["plan","currency"]},
+    {"name":"payment_failed","owner":"billing","description":"A recurring subscription payment failed.","sources":["webhook","worker"],"purpose":"essential","properties":["currency","failure_code"]},
+
+    {"name":"feedback_opened","owner":"customer_success","description":"A user opened a feedback entry point.","sources":["web"],"purpose":"product","properties":["surface"]},
+    {"name":"feedback_submitted","owner":"customer_success","description":"A feedback response was submitted.","sources":["api"],"purpose":"product","properties":["category","sentiment","surface"]},
+    {"name":"survey_shown","owner":"customer_success","description":"A survey was shown to a user.","sources":["web"],"purpose":"product","properties":["survey_key","variant"]},
+    {"name":"survey_responded","owner":"customer_success","description":"A survey response was submitted.","sources":["api"],"purpose":"product","properties":["survey_key","score"]},
+    {"name":"feature_request_voted","owner":"customer_success","description":"A user voted for a feature request.","sources":["api"],"purpose":"product","properties":["feature_key"]},
+    {"name":"feedback_closed_loop","owner":"customer_success","description":"A feedback item received a customer-visible resolution.","sources":["api","worker"],"purpose":"product","properties":["category","resolution"]},
+    {"name":"support_conversation_started","owner":"customer_success","description":"A support conversation was created.","sources":["api","webhook"],"purpose":"essential","properties":["channel"]},
+    {"name":"support_escalated","owner":"customer_success","description":"A support conversation was escalated.","sources":["api","webhook"],"purpose":"essential","properties":["reason_code"]},
+    {"name":"support_resolved","owner":"customer_success","description":"A support conversation was resolved.","sources":["api","webhook"],"purpose":"essential","properties":["resolution_code"]},
+    {"name":"support_rated","owner":"customer_success","description":"A resolved support conversation was rated.","sources":["api"],"purpose":"product","properties":["score"]},
+    {"name":"notification_queued","owner":"notifications","description":"A lifecycle notification was queued.","sources":["api","worker"],"purpose":"essential","properties":["channel","template_key"]},
+    {"name":"notification_sent","owner":"notifications","description":"A notification was submitted to its provider.","sources":["worker"],"purpose":"essential","properties":["channel","provider","template_key"]},
+    {"name":"notification_delivered","owner":"notifications","description":"A provider confirmed notification delivery.","sources":["webhook","worker"],"purpose":"essential","properties":["channel","provider","template_key"]},
+    {"name":"notification_opened","owner":"notifications","description":"A recipient opened a notification.","sources":["web","webhook"],"purpose":"product","properties":["channel","template_key"]},
+    {"name":"notification_clicked","owner":"notifications","description":"A recipient followed a named notification action.","sources":["web","webhook"],"purpose":"product","properties":["channel","template_key","action"]},
+    {"name":"notification_failed","owner":"notifications","description":"A notification reached a terminal delivery failure.","sources":["worker","webhook"],"purpose":"essential","properties":["channel","provider","failure_code","template_key"]},
+    {"name":"notification_unsubscribed","owner":"notifications","description":"A recipient disabled a notification category.","sources":["api","webhook"],"purpose":"essential","properties":["channel","category"]}
+  ]
+}

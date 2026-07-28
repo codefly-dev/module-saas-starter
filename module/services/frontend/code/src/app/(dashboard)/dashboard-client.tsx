@@ -1,7 +1,6 @@
 "use client";
 
 import {
-	Activity,
 	ArrowUpRight,
 	Bell,
 	FileText,
@@ -12,7 +11,6 @@ import Link from "next/link";
 import { ActivityFeed } from "@/components/activity-feed";
 import { RoleGate } from "@/components/auth/role-gate";
 import { Slot } from "@/components/slot";
-import { Sparkline } from "@/components/sparkline";
 import {
 	Card,
 	CardContent,
@@ -33,9 +31,7 @@ import { useAuth } from "@/lib/auth";
  *     for visual personality.
  *   - Three personal-account utility cards (Security / Notifications
  *     / Data & Privacy) — visible to every authenticated user.
- *   - Admin tile gated by <RoleGate require="admin">. Shown with a
- *     mini sparkline (placeholder until we wire real audit-volume
- *     data) so the surface looks alive instead of static.
+ *   - Admin tile gated by <RoleGate require="admin">.
  */
 export default function DashboardClient() {
 	const { user, platformRole, orgRole } = useAuth();
@@ -112,11 +108,6 @@ export default function DashboardClient() {
 				/>
 			</div>
 
-			{/* ── ADMIN ─────────────────────────────────────────────
-          Gated so only admin+ sessions see it. The mini sparkline
-          is a placeholder — wire to ListAuditEvents once the
-          aggregate-by-day query lands.
-          ─────────────────────────────────────────────────────── */}
 			{/* ── ACTIVITY FEED ───────────────────────────────────
           Read-only view of recent audit events scoped to the user's
           primary org. Hides itself when there are no events so a
@@ -153,18 +144,6 @@ export default function DashboardClient() {
 										Users, organizations, teams, permissions, API keys, audit
 										log
 									</CardDescription>
-									<div className="flex items-end justify-between pt-2">
-										<div>
-											<div className="text-xs text-muted-foreground flex items-center gap-1.5">
-												<Activity className="h-3 w-3" />
-												Audit activity (7d)
-											</div>
-										</div>
-										<Sparkline
-											points={[3, 5, 4, 8, 6, 12, 9]}
-											className="text-primary/70"
-										/>
-									</div>
 								</CardContent>
 							</Card>
 						</Link>

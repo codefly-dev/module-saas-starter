@@ -14,8 +14,8 @@ import (
 )
 
 // UsageServer is shared by raw gRPC and Connect registration. The descriptor
-// policy exposes ConsumeUsage only on the internal listener and GetUsage only
-// on tenant-facing listeners.
+// policy exposes consumption only on the internal listener and reads only on
+// tenant-facing listeners.
 type UsageServer struct {
 	gen.UnimplementedUsageServiceServer
 }
@@ -45,6 +45,9 @@ func (s *UsageServer) ConsumeUsage(ctx context.Context, req *gen.ConsumeUsageReq
 		if errors.Is(err, business.ErrUsageIdempotencyConflict) {
 			return nil, status.Error(codes.AlreadyExists, business.ErrUsageIdempotencyConflict.Error())
 		}
+		if errors.Is(err, business.ErrUsageMeterNotFound) {
+			return nil, status.Error(codes.NotFound, business.ErrUsageMeterNotFound.Error())
+		}
 		return nil, status.Error(codes.Internal, err.Error())
 	}
 	return &gen.ConsumeUsageResponse{Receipt: usageReceiptToProto(receipt)}, nil
@@ -66,6 +69,9 @@ func (s *UsageServer) GetUsage(ctx context.Context, req *gen.GetUsageRequest) (*
 	}
 	snapshot, err := service.GetUsage(ctx, req.GetOrganizationId(), req.GetMeter())
 	if err != nil {
+		if errors.Is(err, business.ErrUsageMeterNotFound) {
+			return nil, status.Error(codes.NotFound, business.ErrUsageMeterNotFound.Error())
+		}
 		return nil, status.Error(codes.Internal, err.Error())
 	}
 	return &gen.GetUsageResponse{
@@ -76,6 +82,134 @@ func (s *UsageServer) GetUsage(ctx context.Context, req *gen.GetUsageRequest) (*
 		PeriodStart:    timestamppb.New(snapshot.PeriodStart),
 		PeriodEnd:      timestamppb.New(snapshot.PeriodEnd),
 	}, nil
+}
+
+func (s *UsageServer) ListUsageMeters(
+	ctx context.Context,
+	req *gen.ListUsageMetersRequest,
+) (*gen.ListUsageMetersResponse, error) {
+	if err := Validate(req); err != nil {
+		return nil, err
+	}
+	if err := authorizeUsageRead(ctx, req.GetOrganizationId()); err != nil {
+		return nil, err
+	}
+	snapshots, observedAt, err := service.ListUsageMeters(ctx, req.GetOrganizationId())
+	if err != nil {
+		return nil, status.Error(codes.Internal, err.Error())
+	}
+	out := make([]*gen.UsageMeterSnapshot, 0, len(snapshots))
+	for _, snapshot := range snapshots {
+		out = append(out, &gen.UsageMeterSnapshot{
+			Meter:       usageMeterToProto(snapshot.Meter),
+			Used:        snapshot.Used,
+			Limit:       snapshot.Limit,
+			PeriodStart: timestamppb.New(snapshot.PeriodStart),
+			PeriodEnd:   timestamppb.New(snapshot.PeriodEnd),
+		})
+	}
+	return &gen.ListUsageMetersResponse{
+		Meters: out, ObservedAt: timestamppb.New(observedAt),
+	}, nil
+}
+
+func (s *UsageServer) GetUsageHistory(
+	ctx context.Context,
+	req *gen.GetUsageHistoryRequest,
+) (*gen.GetUsageHistoryResponse, error) {
+	if err := Validate(req); err != nil {
+		return nil, err
+	}
+	if err := req.GetFrom().CheckValid(); err != nil {
+		return nil, status.Error(codes.InvalidArgument, "from is invalid")
+	}
+	if err := req.GetTo().CheckValid(); err != nil {
+		return nil, status.Error(codes.InvalidArgument, "to is invalid")
+	}
+	if err := authorizeUsageRead(ctx, req.GetOrganizationId()); err != nil {
+		return nil, err
+	}
+	history, observedAt, err := service.GetUsageHistory(
+		ctx,
+		req.GetOrganizationId(),
+		req.GetMeter(),
+		req.GetFrom().AsTime(),
+		req.GetTo().AsTime(),
+		usageBucketFromProto(req.GetBucket()),
+	)
+	if err != nil {
+		if errors.Is(err, business.ErrInvalidUsageRange) {
+			return nil, status.Error(codes.InvalidArgument, err.Error())
+		}
+		if errors.Is(err, business.ErrUsageMeterNotFound) {
+			return nil, status.Error(codes.NotFound, business.ErrUsageMeterNotFound.Error())
+		}
+		return nil, status.Error(codes.Internal, err.Error())
+	}
+	buckets := make([]*gen.UsageBucket, 0, len(history.Values))
+	for _, bucket := range history.Values {
+		buckets = append(buckets, &gen.UsageBucket{
+			Start:    timestamppb.New(bucket.Start),
+			End:      timestamppb.New(bucket.End),
+			Quantity: bucket.Quantity,
+		})
+	}
+	return &gen.GetUsageHistoryResponse{
+		OrganizationId: history.OrgID,
+		Meter:          history.Meter,
+		Bucket:         req.GetBucket(),
+		Buckets:        buckets,
+		Total:          history.Total,
+		From:           timestamppb.New(history.From),
+		To:             timestamppb.New(history.To),
+		ObservedAt:     timestamppb.New(observedAt),
+	}, nil
+}
+
+func authorizeUsageRead(ctx context.Context, orgID string) error {
+	if err := requireScope(ctx, "entitlements:read"); err != nil {
+		return err
+	}
+	actorID, err := requireAuth(ctx)
+	if err != nil {
+		return err
+	}
+	return requireOrgPermission(ctx, actorID, orgID, "entitlements", "read")
+}
+
+func usageMeterToProto(meter business.UsageMeterDefinition) *gen.UsageMeter {
+	aggregation := gen.UsageAggregation_USAGE_AGGREGATION_UNSPECIFIED
+	switch meter.Aggregation {
+	case business.UsageAggregationSum:
+		aggregation = gen.UsageAggregation_USAGE_AGGREGATION_SUM
+	}
+	visibility := gen.UsageVisibility_USAGE_VISIBILITY_UNSPECIFIED
+	switch meter.Visibility {
+	case business.UsageVisibilityCustomer:
+		visibility = gen.UsageVisibility_USAGE_VISIBILITY_CUSTOMER
+	case business.UsageVisibilityOperator:
+		visibility = gen.UsageVisibility_USAGE_VISIBILITY_OPERATOR
+	}
+	return &gen.UsageMeter{
+		Key: meter.Key, DisplayName: meter.DisplayName, Unit: meter.Unit,
+		Aggregation: aggregation, Owner: meter.Owner, Source: meter.Source,
+		EntitlementKey:     meter.EntitlementKey,
+		ReconciliationRule: meter.ReconciliationRule,
+		Visibility:         visibility,
+	}
+}
+
+func usageBucketFromProto(bucket gen.UsageBucketInterval) business.UsageBucketInterval {
+	switch bucket {
+	case gen.UsageBucketInterval_USAGE_BUCKET_INTERVAL_HOUR:
+		return business.UsageBucketHour
+	case gen.UsageBucketInterval_USAGE_BUCKET_INTERVAL_DAY:
+		return business.UsageBucketDay
+	case gen.UsageBucketInterval_USAGE_BUCKET_INTERVAL_MONTH:
+		return business.UsageBucketMonth
+	default:
+		return ""
+	}
 }
 
 func usageReceiptToProto(receipt *business.UsageReceipt) *gen.UsageReceipt {

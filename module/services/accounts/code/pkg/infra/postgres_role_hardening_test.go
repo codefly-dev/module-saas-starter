@@ -79,6 +79,7 @@ var relationsByScope = map[relationScope][]string{
 	relationScopePreAuth: {"magic_links"},
 	relationScopeJob:     {"job_messages"},
 	relationScopeWorker: {
+		"analytics_deliveries",
 		"job_attempts",
 		"job_state_transitions",
 	},
@@ -124,6 +125,7 @@ var appTenantRelationPrivileges = map[string]relationPrivileges{
 	"bootstrap_state":         {selectRows: true, updateRows: true},
 	"feature_flags":           {selectRows: true, insertRows: true, updateRows: true},
 	"platform_admins":         {selectRows: true, insertRows: true, updateRows: true, deleteRows: true},
+	"analytics_deliveries":    {},
 	"job_attempts":            {},
 	"job_messages":            {},
 	"job_state_transitions":   {},
@@ -456,6 +458,47 @@ func TestWebhookProjectionRoleHasProjectionOnlyAuthority(t *testing.T) {
 		}
 		require.NoError(t, rows.Err())
 		return nil
+	}))
+}
+
+func TestAnalyticsDeliveryRoleHasProjectionOnlyAuthority(t *testing.T) {
+	require.NoError(t, testStore.WithControlPlane(testCtx, func(ctx context.Context) error {
+		tx := ctx.Value("tx").(pgx.Tx) //nolint:staticcheck // shared transaction context key
+		var canSelect, canInsert, canUpdate, canDelete, canTruncate bool
+		require.NoError(t, tx.QueryRow(ctx, `
+			SELECT has_table_privilege('app_job_worker', 'analytics_deliveries', 'SELECT'),
+			       has_table_privilege('app_job_worker', 'analytics_deliveries', 'INSERT'),
+			       has_table_privilege('app_job_worker', 'analytics_deliveries', 'UPDATE'),
+			       has_table_privilege('app_job_worker', 'analytics_deliveries', 'DELETE'),
+			       has_table_privilege('app_job_worker', 'analytics_deliveries', 'TRUNCATE')`,
+		).Scan(&canSelect, &canInsert, &canUpdate, &canDelete, &canTruncate))
+		require.True(t, canSelect)
+		require.True(t, canInsert)
+		require.False(t, canUpdate)
+		require.False(t, canDelete)
+		require.False(t, canTruncate)
+
+		mutableColumns := map[string]bool{
+			"provider_reference": true,
+			"duplicate":          true,
+			"delivered_at":       true,
+		}
+		rows, err := tx.Query(ctx, `
+			SELECT column_name,
+			       has_column_privilege(
+			           'app_job_worker', 'analytics_deliveries', column_name, 'UPDATE'
+			       )
+			FROM information_schema.columns
+			WHERE table_schema = 'public' AND table_name = 'analytics_deliveries'`)
+		require.NoError(t, err)
+		defer rows.Close()
+		for rows.Next() {
+			var column string
+			var canUpdateColumn bool
+			require.NoError(t, rows.Scan(&column, &canUpdateColumn))
+			require.Equal(t, mutableColumns[column], canUpdateColumn, column)
+		}
+		return rows.Err()
 	}))
 }
 

@@ -26,6 +26,153 @@ const (
 	_ = protoimpl.EnforceVersion(protoimpl.MaxVersion - 20)
 )
 
+type UsageAggregation int32
+
+const (
+	UsageAggregation_USAGE_AGGREGATION_UNSPECIFIED UsageAggregation = 0
+	UsageAggregation_USAGE_AGGREGATION_SUM         UsageAggregation = 1
+)
+
+// Enum value maps for UsageAggregation.
+var (
+	UsageAggregation_name = map[int32]string{
+		0: "USAGE_AGGREGATION_UNSPECIFIED",
+		1: "USAGE_AGGREGATION_SUM",
+	}
+	UsageAggregation_value = map[string]int32{
+		"USAGE_AGGREGATION_UNSPECIFIED": 0,
+		"USAGE_AGGREGATION_SUM":         1,
+	}
+)
+
+func (x UsageAggregation) Enum() *UsageAggregation {
+	p := new(UsageAggregation)
+	*p = x
+	return p
+}
+
+func (x UsageAggregation) String() string {
+	return protoimpl.X.EnumStringOf(x.Descriptor(), protoreflect.EnumNumber(x))
+}
+
+func (UsageAggregation) Descriptor() protoreflect.EnumDescriptor {
+	return file_saas_accounts_v1_usage_proto_enumTypes[0].Descriptor()
+}
+
+func (UsageAggregation) Type() protoreflect.EnumType {
+	return &file_saas_accounts_v1_usage_proto_enumTypes[0]
+}
+
+func (x UsageAggregation) Number() protoreflect.EnumNumber {
+	return protoreflect.EnumNumber(x)
+}
+
+// Deprecated: Use UsageAggregation.Descriptor instead.
+func (UsageAggregation) EnumDescriptor() ([]byte, []int) {
+	return file_saas_accounts_v1_usage_proto_rawDescGZIP(), []int{0}
+}
+
+type UsageVisibility int32
+
+const (
+	UsageVisibility_USAGE_VISIBILITY_UNSPECIFIED UsageVisibility = 0
+	UsageVisibility_USAGE_VISIBILITY_CUSTOMER    UsageVisibility = 1
+	UsageVisibility_USAGE_VISIBILITY_OPERATOR    UsageVisibility = 2
+)
+
+// Enum value maps for UsageVisibility.
+var (
+	UsageVisibility_name = map[int32]string{
+		0: "USAGE_VISIBILITY_UNSPECIFIED",
+		1: "USAGE_VISIBILITY_CUSTOMER",
+		2: "USAGE_VISIBILITY_OPERATOR",
+	}
+	UsageVisibility_value = map[string]int32{
+		"USAGE_VISIBILITY_UNSPECIFIED": 0,
+		"USAGE_VISIBILITY_CUSTOMER":    1,
+		"USAGE_VISIBILITY_OPERATOR":    2,
+	}
+)
+
+func (x UsageVisibility) Enum() *UsageVisibility {
+	p := new(UsageVisibility)
+	*p = x
+	return p
+}
+
+func (x UsageVisibility) String() string {
+	return protoimpl.X.EnumStringOf(x.Descriptor(), protoreflect.EnumNumber(x))
+}
+
+func (UsageVisibility) Descriptor() protoreflect.EnumDescriptor {
+	return file_saas_accounts_v1_usage_proto_enumTypes[1].Descriptor()
+}
+
+func (UsageVisibility) Type() protoreflect.EnumType {
+	return &file_saas_accounts_v1_usage_proto_enumTypes[1]
+}
+
+func (x UsageVisibility) Number() protoreflect.EnumNumber {
+	return protoreflect.EnumNumber(x)
+}
+
+// Deprecated: Use UsageVisibility.Descriptor instead.
+func (UsageVisibility) EnumDescriptor() ([]byte, []int) {
+	return file_saas_accounts_v1_usage_proto_rawDescGZIP(), []int{1}
+}
+
+type UsageBucketInterval int32
+
+const (
+	UsageBucketInterval_USAGE_BUCKET_INTERVAL_UNSPECIFIED UsageBucketInterval = 0
+	UsageBucketInterval_USAGE_BUCKET_INTERVAL_HOUR        UsageBucketInterval = 1
+	UsageBucketInterval_USAGE_BUCKET_INTERVAL_DAY         UsageBucketInterval = 2
+	UsageBucketInterval_USAGE_BUCKET_INTERVAL_MONTH       UsageBucketInterval = 3
+)
+
+// Enum value maps for UsageBucketInterval.
+var (
+	UsageBucketInterval_name = map[int32]string{
+		0: "USAGE_BUCKET_INTERVAL_UNSPECIFIED",
+		1: "USAGE_BUCKET_INTERVAL_HOUR",
+		2: "USAGE_BUCKET_INTERVAL_DAY",
+		3: "USAGE_BUCKET_INTERVAL_MONTH",
+	}
+	UsageBucketInterval_value = map[string]int32{
+		"USAGE_BUCKET_INTERVAL_UNSPECIFIED": 0,
+		"USAGE_BUCKET_INTERVAL_HOUR":        1,
+		"USAGE_BUCKET_INTERVAL_DAY":         2,
+		"USAGE_BUCKET_INTERVAL_MONTH":       3,
+	}
+)
+
+func (x UsageBucketInterval) Enum() *UsageBucketInterval {
+	p := new(UsageBucketInterval)
+	*p = x
+	return p
+}
+
+func (x UsageBucketInterval) String() string {
+	return protoimpl.X.EnumStringOf(x.Descriptor(), protoreflect.EnumNumber(x))
+}
+
+func (UsageBucketInterval) Descriptor() protoreflect.EnumDescriptor {
+	return file_saas_accounts_v1_usage_proto_enumTypes[2].Descriptor()
+}
+
+func (UsageBucketInterval) Type() protoreflect.EnumType {
+	return &file_saas_accounts_v1_usage_proto_enumTypes[2]
+}
+
+func (x UsageBucketInterval) Number() protoreflect.EnumNumber {
+	return protoreflect.EnumNumber(x)
+}
+
+// Deprecated: Use UsageBucketInterval.Descriptor instead.
+func (UsageBucketInterval) EnumDescriptor() ([]byte, []int) {
+	return file_saas_accounts_v1_usage_proto_rawDescGZIP(), []int{2}
+}
+
 // ConsumeUsageRequest records one logical usage operation. Callers must reuse
 // idempotency_key when retrying the same operation.
 type ConsumeUsageRequest struct {
@@ -428,6 +575,522 @@ func (x *GetUsageResponse) GetPeriodEnd() *timestamppb.Timestamp {
 	return nil
 }
 
+type UsageMeter struct {
+	state              protoimpl.MessageState `protogen:"open.v1"`
+	Key                string                 `protobuf:"bytes,1,opt,name=key,proto3" json:"key,omitempty"`
+	DisplayName        string                 `protobuf:"bytes,2,opt,name=display_name,json=displayName,proto3" json:"display_name,omitempty"`
+	Unit               string                 `protobuf:"bytes,3,opt,name=unit,proto3" json:"unit,omitempty"`
+	Aggregation        UsageAggregation       `protobuf:"varint,4,opt,name=aggregation,proto3,enum=saas.accounts.v1.UsageAggregation" json:"aggregation,omitempty"`
+	Owner              string                 `protobuf:"bytes,5,opt,name=owner,proto3" json:"owner,omitempty"`
+	Source             string                 `protobuf:"bytes,6,opt,name=source,proto3" json:"source,omitempty"`
+	EntitlementKey     string                 `protobuf:"bytes,7,opt,name=entitlement_key,json=entitlementKey,proto3" json:"entitlement_key,omitempty"`
+	ReconciliationRule string                 `protobuf:"bytes,8,opt,name=reconciliation_rule,json=reconciliationRule,proto3" json:"reconciliation_rule,omitempty"`
+	Visibility         UsageVisibility        `protobuf:"varint,9,opt,name=visibility,proto3,enum=saas.accounts.v1.UsageVisibility" json:"visibility,omitempty"`
+	unknownFields      protoimpl.UnknownFields
+	sizeCache          protoimpl.SizeCache
+}
+
+func (x *UsageMeter) Reset() {
+	*x = UsageMeter{}
+	mi := &file_saas_accounts_v1_usage_proto_msgTypes[5]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *UsageMeter) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*UsageMeter) ProtoMessage() {}
+
+func (x *UsageMeter) ProtoReflect() protoreflect.Message {
+	mi := &file_saas_accounts_v1_usage_proto_msgTypes[5]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use UsageMeter.ProtoReflect.Descriptor instead.
+func (*UsageMeter) Descriptor() ([]byte, []int) {
+	return file_saas_accounts_v1_usage_proto_rawDescGZIP(), []int{5}
+}
+
+func (x *UsageMeter) GetKey() string {
+	if x != nil {
+		return x.Key
+	}
+	return ""
+}
+
+func (x *UsageMeter) GetDisplayName() string {
+	if x != nil {
+		return x.DisplayName
+	}
+	return ""
+}
+
+func (x *UsageMeter) GetUnit() string {
+	if x != nil {
+		return x.Unit
+	}
+	return ""
+}
+
+func (x *UsageMeter) GetAggregation() UsageAggregation {
+	if x != nil {
+		return x.Aggregation
+	}
+	return UsageAggregation_USAGE_AGGREGATION_UNSPECIFIED
+}
+
+func (x *UsageMeter) GetOwner() string {
+	if x != nil {
+		return x.Owner
+	}
+	return ""
+}
+
+func (x *UsageMeter) GetSource() string {
+	if x != nil {
+		return x.Source
+	}
+	return ""
+}
+
+func (x *UsageMeter) GetEntitlementKey() string {
+	if x != nil {
+		return x.EntitlementKey
+	}
+	return ""
+}
+
+func (x *UsageMeter) GetReconciliationRule() string {
+	if x != nil {
+		return x.ReconciliationRule
+	}
+	return ""
+}
+
+func (x *UsageMeter) GetVisibility() UsageVisibility {
+	if x != nil {
+		return x.Visibility
+	}
+	return UsageVisibility_USAGE_VISIBILITY_UNSPECIFIED
+}
+
+type UsageMeterSnapshot struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Meter         *UsageMeter            `protobuf:"bytes,1,opt,name=meter,proto3" json:"meter,omitempty"`
+	Used          int64                  `protobuf:"varint,2,opt,name=used,proto3" json:"used,omitempty"`
+	Limit         int64                  `protobuf:"varint,3,opt,name=limit,proto3" json:"limit,omitempty"`
+	PeriodStart   *timestamppb.Timestamp `protobuf:"bytes,4,opt,name=period_start,json=periodStart,proto3" json:"period_start,omitempty"`
+	PeriodEnd     *timestamppb.Timestamp `protobuf:"bytes,5,opt,name=period_end,json=periodEnd,proto3" json:"period_end,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *UsageMeterSnapshot) Reset() {
+	*x = UsageMeterSnapshot{}
+	mi := &file_saas_accounts_v1_usage_proto_msgTypes[6]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *UsageMeterSnapshot) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*UsageMeterSnapshot) ProtoMessage() {}
+
+func (x *UsageMeterSnapshot) ProtoReflect() protoreflect.Message {
+	mi := &file_saas_accounts_v1_usage_proto_msgTypes[6]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use UsageMeterSnapshot.ProtoReflect.Descriptor instead.
+func (*UsageMeterSnapshot) Descriptor() ([]byte, []int) {
+	return file_saas_accounts_v1_usage_proto_rawDescGZIP(), []int{6}
+}
+
+func (x *UsageMeterSnapshot) GetMeter() *UsageMeter {
+	if x != nil {
+		return x.Meter
+	}
+	return nil
+}
+
+func (x *UsageMeterSnapshot) GetUsed() int64 {
+	if x != nil {
+		return x.Used
+	}
+	return 0
+}
+
+func (x *UsageMeterSnapshot) GetLimit() int64 {
+	if x != nil {
+		return x.Limit
+	}
+	return 0
+}
+
+func (x *UsageMeterSnapshot) GetPeriodStart() *timestamppb.Timestamp {
+	if x != nil {
+		return x.PeriodStart
+	}
+	return nil
+}
+
+func (x *UsageMeterSnapshot) GetPeriodEnd() *timestamppb.Timestamp {
+	if x != nil {
+		return x.PeriodEnd
+	}
+	return nil
+}
+
+type ListUsageMetersRequest struct {
+	state          protoimpl.MessageState `protogen:"open.v1"`
+	OrganizationId string                 `protobuf:"bytes,1,opt,name=organization_id,json=organizationId,proto3" json:"organization_id,omitempty"`
+	unknownFields  protoimpl.UnknownFields
+	sizeCache      protoimpl.SizeCache
+}
+
+func (x *ListUsageMetersRequest) Reset() {
+	*x = ListUsageMetersRequest{}
+	mi := &file_saas_accounts_v1_usage_proto_msgTypes[7]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ListUsageMetersRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ListUsageMetersRequest) ProtoMessage() {}
+
+func (x *ListUsageMetersRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_saas_accounts_v1_usage_proto_msgTypes[7]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ListUsageMetersRequest.ProtoReflect.Descriptor instead.
+func (*ListUsageMetersRequest) Descriptor() ([]byte, []int) {
+	return file_saas_accounts_v1_usage_proto_rawDescGZIP(), []int{7}
+}
+
+func (x *ListUsageMetersRequest) GetOrganizationId() string {
+	if x != nil {
+		return x.OrganizationId
+	}
+	return ""
+}
+
+type ListUsageMetersResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Meters        []*UsageMeterSnapshot  `protobuf:"bytes,1,rep,name=meters,proto3" json:"meters,omitempty"`
+	ObservedAt    *timestamppb.Timestamp `protobuf:"bytes,2,opt,name=observed_at,json=observedAt,proto3" json:"observed_at,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ListUsageMetersResponse) Reset() {
+	*x = ListUsageMetersResponse{}
+	mi := &file_saas_accounts_v1_usage_proto_msgTypes[8]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ListUsageMetersResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ListUsageMetersResponse) ProtoMessage() {}
+
+func (x *ListUsageMetersResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_saas_accounts_v1_usage_proto_msgTypes[8]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ListUsageMetersResponse.ProtoReflect.Descriptor instead.
+func (*ListUsageMetersResponse) Descriptor() ([]byte, []int) {
+	return file_saas_accounts_v1_usage_proto_rawDescGZIP(), []int{8}
+}
+
+func (x *ListUsageMetersResponse) GetMeters() []*UsageMeterSnapshot {
+	if x != nil {
+		return x.Meters
+	}
+	return nil
+}
+
+func (x *ListUsageMetersResponse) GetObservedAt() *timestamppb.Timestamp {
+	if x != nil {
+		return x.ObservedAt
+	}
+	return nil
+}
+
+type UsageBucket struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Start         *timestamppb.Timestamp `protobuf:"bytes,1,opt,name=start,proto3" json:"start,omitempty"`
+	End           *timestamppb.Timestamp `protobuf:"bytes,2,opt,name=end,proto3" json:"end,omitempty"`
+	Quantity      int64                  `protobuf:"varint,3,opt,name=quantity,proto3" json:"quantity,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *UsageBucket) Reset() {
+	*x = UsageBucket{}
+	mi := &file_saas_accounts_v1_usage_proto_msgTypes[9]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *UsageBucket) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*UsageBucket) ProtoMessage() {}
+
+func (x *UsageBucket) ProtoReflect() protoreflect.Message {
+	mi := &file_saas_accounts_v1_usage_proto_msgTypes[9]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use UsageBucket.ProtoReflect.Descriptor instead.
+func (*UsageBucket) Descriptor() ([]byte, []int) {
+	return file_saas_accounts_v1_usage_proto_rawDescGZIP(), []int{9}
+}
+
+func (x *UsageBucket) GetStart() *timestamppb.Timestamp {
+	if x != nil {
+		return x.Start
+	}
+	return nil
+}
+
+func (x *UsageBucket) GetEnd() *timestamppb.Timestamp {
+	if x != nil {
+		return x.End
+	}
+	return nil
+}
+
+func (x *UsageBucket) GetQuantity() int64 {
+	if x != nil {
+		return x.Quantity
+	}
+	return 0
+}
+
+type GetUsageHistoryRequest struct {
+	state          protoimpl.MessageState `protogen:"open.v1"`
+	OrganizationId string                 `protobuf:"bytes,1,opt,name=organization_id,json=organizationId,proto3" json:"organization_id,omitempty"`
+	Meter          string                 `protobuf:"bytes,2,opt,name=meter,proto3" json:"meter,omitempty"`
+	From           *timestamppb.Timestamp `protobuf:"bytes,3,opt,name=from,proto3" json:"from,omitempty"`
+	To             *timestamppb.Timestamp `protobuf:"bytes,4,opt,name=to,proto3" json:"to,omitempty"`
+	Bucket         UsageBucketInterval    `protobuf:"varint,5,opt,name=bucket,proto3,enum=saas.accounts.v1.UsageBucketInterval" json:"bucket,omitempty"`
+	unknownFields  protoimpl.UnknownFields
+	sizeCache      protoimpl.SizeCache
+}
+
+func (x *GetUsageHistoryRequest) Reset() {
+	*x = GetUsageHistoryRequest{}
+	mi := &file_saas_accounts_v1_usage_proto_msgTypes[10]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *GetUsageHistoryRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*GetUsageHistoryRequest) ProtoMessage() {}
+
+func (x *GetUsageHistoryRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_saas_accounts_v1_usage_proto_msgTypes[10]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use GetUsageHistoryRequest.ProtoReflect.Descriptor instead.
+func (*GetUsageHistoryRequest) Descriptor() ([]byte, []int) {
+	return file_saas_accounts_v1_usage_proto_rawDescGZIP(), []int{10}
+}
+
+func (x *GetUsageHistoryRequest) GetOrganizationId() string {
+	if x != nil {
+		return x.OrganizationId
+	}
+	return ""
+}
+
+func (x *GetUsageHistoryRequest) GetMeter() string {
+	if x != nil {
+		return x.Meter
+	}
+	return ""
+}
+
+func (x *GetUsageHistoryRequest) GetFrom() *timestamppb.Timestamp {
+	if x != nil {
+		return x.From
+	}
+	return nil
+}
+
+func (x *GetUsageHistoryRequest) GetTo() *timestamppb.Timestamp {
+	if x != nil {
+		return x.To
+	}
+	return nil
+}
+
+func (x *GetUsageHistoryRequest) GetBucket() UsageBucketInterval {
+	if x != nil {
+		return x.Bucket
+	}
+	return UsageBucketInterval_USAGE_BUCKET_INTERVAL_UNSPECIFIED
+}
+
+type GetUsageHistoryResponse struct {
+	state          protoimpl.MessageState `protogen:"open.v1"`
+	OrganizationId string                 `protobuf:"bytes,1,opt,name=organization_id,json=organizationId,proto3" json:"organization_id,omitempty"`
+	Meter          string                 `protobuf:"bytes,2,opt,name=meter,proto3" json:"meter,omitempty"`
+	Bucket         UsageBucketInterval    `protobuf:"varint,3,opt,name=bucket,proto3,enum=saas.accounts.v1.UsageBucketInterval" json:"bucket,omitempty"`
+	Buckets        []*UsageBucket         `protobuf:"bytes,4,rep,name=buckets,proto3" json:"buckets,omitempty"`
+	Total          int64                  `protobuf:"varint,5,opt,name=total,proto3" json:"total,omitempty"`
+	From           *timestamppb.Timestamp `protobuf:"bytes,6,opt,name=from,proto3" json:"from,omitempty"`
+	To             *timestamppb.Timestamp `protobuf:"bytes,7,opt,name=to,proto3" json:"to,omitempty"`
+	ObservedAt     *timestamppb.Timestamp `protobuf:"bytes,8,opt,name=observed_at,json=observedAt,proto3" json:"observed_at,omitempty"`
+	unknownFields  protoimpl.UnknownFields
+	sizeCache      protoimpl.SizeCache
+}
+
+func (x *GetUsageHistoryResponse) Reset() {
+	*x = GetUsageHistoryResponse{}
+	mi := &file_saas_accounts_v1_usage_proto_msgTypes[11]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *GetUsageHistoryResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*GetUsageHistoryResponse) ProtoMessage() {}
+
+func (x *GetUsageHistoryResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_saas_accounts_v1_usage_proto_msgTypes[11]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use GetUsageHistoryResponse.ProtoReflect.Descriptor instead.
+func (*GetUsageHistoryResponse) Descriptor() ([]byte, []int) {
+	return file_saas_accounts_v1_usage_proto_rawDescGZIP(), []int{11}
+}
+
+func (x *GetUsageHistoryResponse) GetOrganizationId() string {
+	if x != nil {
+		return x.OrganizationId
+	}
+	return ""
+}
+
+func (x *GetUsageHistoryResponse) GetMeter() string {
+	if x != nil {
+		return x.Meter
+	}
+	return ""
+}
+
+func (x *GetUsageHistoryResponse) GetBucket() UsageBucketInterval {
+	if x != nil {
+		return x.Bucket
+	}
+	return UsageBucketInterval_USAGE_BUCKET_INTERVAL_UNSPECIFIED
+}
+
+func (x *GetUsageHistoryResponse) GetBuckets() []*UsageBucket {
+	if x != nil {
+		return x.Buckets
+	}
+	return nil
+}
+
+func (x *GetUsageHistoryResponse) GetTotal() int64 {
+	if x != nil {
+		return x.Total
+	}
+	return 0
+}
+
+func (x *GetUsageHistoryResponse) GetFrom() *timestamppb.Timestamp {
+	if x != nil {
+		return x.From
+	}
+	return nil
+}
+
+func (x *GetUsageHistoryResponse) GetTo() *timestamppb.Timestamp {
+	if x != nil {
+		return x.To
+	}
+	return nil
+}
+
+func (x *GetUsageHistoryResponse) GetObservedAt() *timestamppb.Timestamp {
+	if x != nil {
+		return x.ObservedAt
+	}
+	return nil
+}
+
 var File_saas_accounts_v1_usage_proto protoreflect.FileDescriptor
 
 const file_saas_accounts_v1_usage_proto_rawDesc = "" +
@@ -474,11 +1137,74 @@ const file_saas_accounts_v1_usage_proto_rawDesc = "" +
 	"\x05limit\x18\x04 \x01(\x03R\x05limit\x12=\n" +
 	"\fperiod_start\x18\x05 \x01(\v2\x1a.google.protobuf.TimestampR\vperiodStart\x129\n" +
 	"\n" +
-	"period_end\x18\x06 \x01(\v2\x1a.google.protobuf.TimestampR\tperiodEnd2\xec\x02\n" +
+	"period_end\x18\x06 \x01(\v2\x1a.google.protobuf.TimestampR\tperiodEnd\"\xe6\x02\n" +
+	"\n" +
+	"UsageMeter\x12\x10\n" +
+	"\x03key\x18\x01 \x01(\tR\x03key\x12!\n" +
+	"\fdisplay_name\x18\x02 \x01(\tR\vdisplayName\x12\x12\n" +
+	"\x04unit\x18\x03 \x01(\tR\x04unit\x12D\n" +
+	"\vaggregation\x18\x04 \x01(\x0e2\".saas.accounts.v1.UsageAggregationR\vaggregation\x12\x14\n" +
+	"\x05owner\x18\x05 \x01(\tR\x05owner\x12\x16\n" +
+	"\x06source\x18\x06 \x01(\tR\x06source\x12'\n" +
+	"\x0fentitlement_key\x18\a \x01(\tR\x0eentitlementKey\x12/\n" +
+	"\x13reconciliation_rule\x18\b \x01(\tR\x12reconciliationRule\x12A\n" +
+	"\n" +
+	"visibility\x18\t \x01(\x0e2!.saas.accounts.v1.UsageVisibilityR\n" +
+	"visibility\"\xec\x01\n" +
+	"\x12UsageMeterSnapshot\x122\n" +
+	"\x05meter\x18\x01 \x01(\v2\x1c.saas.accounts.v1.UsageMeterR\x05meter\x12\x12\n" +
+	"\x04used\x18\x02 \x01(\x03R\x04used\x12\x14\n" +
+	"\x05limit\x18\x03 \x01(\x03R\x05limit\x12=\n" +
+	"\fperiod_start\x18\x04 \x01(\v2\x1a.google.protobuf.TimestampR\vperiodStart\x129\n" +
+	"\n" +
+	"period_end\x18\x05 \x01(\v2\x1a.google.protobuf.TimestampR\tperiodEnd\"K\n" +
+	"\x16ListUsageMetersRequest\x121\n" +
+	"\x0forganization_id\x18\x01 \x01(\tB\b\xbaH\x05r\x03\xb0\x01\x01R\x0eorganizationId\"\x94\x01\n" +
+	"\x17ListUsageMetersResponse\x12<\n" +
+	"\x06meters\x18\x01 \x03(\v2$.saas.accounts.v1.UsageMeterSnapshotR\x06meters\x12;\n" +
+	"\vobserved_at\x18\x02 \x01(\v2\x1a.google.protobuf.TimestampR\n" +
+	"observedAt\"\x89\x01\n" +
+	"\vUsageBucket\x120\n" +
+	"\x05start\x18\x01 \x01(\v2\x1a.google.protobuf.TimestampR\x05start\x12,\n" +
+	"\x03end\x18\x02 \x01(\v2\x1a.google.protobuf.TimestampR\x03end\x12\x1a\n" +
+	"\bquantity\x18\x03 \x01(\x03R\bquantity\"\xb8\x02\n" +
+	"\x16GetUsageHistoryRequest\x121\n" +
+	"\x0forganization_id\x18\x01 \x01(\tB\b\xbaH\x05r\x03\xb0\x01\x01R\x0eorganizationId\x124\n" +
+	"\x05meter\x18\x02 \x01(\tB\x1e\xbaH\x1br\x192\x17^[a-z][a-z0-9_]{0,127}$R\x05meter\x126\n" +
+	"\x04from\x18\x03 \x01(\v2\x1a.google.protobuf.TimestampB\x06\xbaH\x03\xc8\x01\x01R\x04from\x122\n" +
+	"\x02to\x18\x04 \x01(\v2\x1a.google.protobuf.TimestampB\x06\xbaH\x03\xc8\x01\x01R\x02to\x12I\n" +
+	"\x06bucket\x18\x05 \x01(\x0e2%.saas.accounts.v1.UsageBucketIntervalB\n" +
+	"\xbaH\a\x82\x01\x04\x10\x01 \x00R\x06bucket\"\xff\x02\n" +
+	"\x17GetUsageHistoryResponse\x12'\n" +
+	"\x0forganization_id\x18\x01 \x01(\tR\x0eorganizationId\x12\x14\n" +
+	"\x05meter\x18\x02 \x01(\tR\x05meter\x12=\n" +
+	"\x06bucket\x18\x03 \x01(\x0e2%.saas.accounts.v1.UsageBucketIntervalR\x06bucket\x127\n" +
+	"\abuckets\x18\x04 \x03(\v2\x1d.saas.accounts.v1.UsageBucketR\abuckets\x12\x14\n" +
+	"\x05total\x18\x05 \x01(\x03R\x05total\x12.\n" +
+	"\x04from\x18\x06 \x01(\v2\x1a.google.protobuf.TimestampR\x04from\x12*\n" +
+	"\x02to\x18\a \x01(\v2\x1a.google.protobuf.TimestampR\x02to\x12;\n" +
+	"\vobserved_at\x18\b \x01(\v2\x1a.google.protobuf.TimestampR\n" +
+	"observedAt*\\\n" +
+	"\x10UsageAggregation\x12!\n" +
+	"\x1dUSAGE_AGGREGATION_UNSPECIFIED\x10\x00\x12\x19\n" +
+	"\x15USAGE_AGGREGATION_SUM\x10\x01\"\x04\b\x02\x10\x02\"\x04\b\x03\x10\x03*q\n" +
+	"\x0fUsageVisibility\x12 \n" +
+	"\x1cUSAGE_VISIBILITY_UNSPECIFIED\x10\x00\x12\x1d\n" +
+	"\x19USAGE_VISIBILITY_CUSTOMER\x10\x01\x12\x1d\n" +
+	"\x19USAGE_VISIBILITY_OPERATOR\x10\x02*\x9c\x01\n" +
+	"\x13UsageBucketInterval\x12%\n" +
+	"!USAGE_BUCKET_INTERVAL_UNSPECIFIED\x10\x00\x12\x1e\n" +
+	"\x1aUSAGE_BUCKET_INTERVAL_HOUR\x10\x01\x12\x1d\n" +
+	"\x19USAGE_BUCKET_INTERVAL_DAY\x10\x02\x12\x1f\n" +
+	"\x1bUSAGE_BUCKET_INTERVAL_MONTH\x10\x032\xe0\x06\n" +
 	"\fUsageService\x12w\n" +
 	"\fConsumeUsage\x12%.saas.accounts.v1.ConsumeUsageRequest\x1a&.saas.accounts.v1.ConsumeUsageResponse\"\x18\xc2\xf3\x18\x14\b\x03\x10\x010\x01:\x02\x10\x01@\x03H\aP\x03X\x03`\x01\x12\xe2\x01\n" +
 	"\bGetUsage\x12!.saas.accounts.v1.GetUsageRequest\x1a\".saas.accounts.v1.GetUsageResponse\"\x8e\x01\xc2\xf3\x18Q\b\x02\x10\x03\x1a\x11entitlements:read\"\x11entitlements:read*\x15\n" +
-	"\x0forganization_id\x10\x02\x18\x010\x01:\x02\x10\x01@\x01H\x03P\x03X\x03`\x01\x82\xd3\xe4\x93\x023\x121/v1/organizations/{organization_id}/usage/{meter}B\xb2\x01\n" +
+	"\x0forganization_id\x10\x02\x18\x010\x01:\x02\x10\x01@\x01H\x03P\x03X\x03`\x01\x82\xd3\xe4\x93\x023\x121/v1/organizations/{organization_id}/usage/{meter}\x12\xef\x01\n" +
+	"\x0fListUsageMeters\x12(.saas.accounts.v1.ListUsageMetersRequest\x1a).saas.accounts.v1.ListUsageMetersResponse\"\x86\x01\xc2\xf3\x18Q\b\x02\x10\x03\x1a\x11entitlements:read\"\x11entitlements:read*\x15\n" +
+	"\x0forganization_id\x10\x02\x18\x010\x01:\x02\x10\x01@\x01H\x03P\x03X\x03`\x01\x82\xd3\xe4\x93\x02+\x12)/v1/organizations/{organization_id}/usage\x12\xff\x01\n" +
+	"\x0fGetUsageHistory\x12(.saas.accounts.v1.GetUsageHistoryRequest\x1a).saas.accounts.v1.GetUsageHistoryResponse\"\x96\x01\xc2\xf3\x18Q\b\x02\x10\x03\x1a\x11entitlements:read\"\x11entitlements:read*\x15\n" +
+	"\x0forganization_id\x10\x02\x18\x010\x01:\x02\x10\x01@\x01H\x03P\x03X\x03`\x01\x82\xd3\xe4\x93\x02;\x129/v1/organizations/{organization_id}/usage/{meter}/historyB\xb2\x01\n" +
 	"\x14com.saas.accounts.v1B\n" +
 	"UsageProtoP\x01Z,accounts/pkg/gen/saas/accounts/v1;accountsv1\xa2\x02\x03SAX\xaa\x02\x10Saas.Accounts.V1\xca\x02\x10Saas\\Accounts\\V1\xe2\x02\x1cSaas\\Accounts\\V1\\GPBMetadata\xea\x02\x12Saas::Accounts::V1b\x06proto3"
 
@@ -494,34 +1220,66 @@ func file_saas_accounts_v1_usage_proto_rawDescGZIP() []byte {
 	return file_saas_accounts_v1_usage_proto_rawDescData
 }
 
-var file_saas_accounts_v1_usage_proto_msgTypes = make([]protoimpl.MessageInfo, 6)
+var file_saas_accounts_v1_usage_proto_enumTypes = make([]protoimpl.EnumInfo, 3)
+var file_saas_accounts_v1_usage_proto_msgTypes = make([]protoimpl.MessageInfo, 13)
 var file_saas_accounts_v1_usage_proto_goTypes = []any{
-	(*ConsumeUsageRequest)(nil),   // 0: saas.accounts.v1.ConsumeUsageRequest
-	(*UsageReceipt)(nil),          // 1: saas.accounts.v1.UsageReceipt
-	(*ConsumeUsageResponse)(nil),  // 2: saas.accounts.v1.ConsumeUsageResponse
-	(*GetUsageRequest)(nil),       // 3: saas.accounts.v1.GetUsageRequest
-	(*GetUsageResponse)(nil),      // 4: saas.accounts.v1.GetUsageResponse
-	nil,                           // 5: saas.accounts.v1.ConsumeUsageRequest.DimensionsEntry
-	(*timestamppb.Timestamp)(nil), // 6: google.protobuf.Timestamp
+	(UsageAggregation)(0),           // 0: saas.accounts.v1.UsageAggregation
+	(UsageVisibility)(0),            // 1: saas.accounts.v1.UsageVisibility
+	(UsageBucketInterval)(0),        // 2: saas.accounts.v1.UsageBucketInterval
+	(*ConsumeUsageRequest)(nil),     // 3: saas.accounts.v1.ConsumeUsageRequest
+	(*UsageReceipt)(nil),            // 4: saas.accounts.v1.UsageReceipt
+	(*ConsumeUsageResponse)(nil),    // 5: saas.accounts.v1.ConsumeUsageResponse
+	(*GetUsageRequest)(nil),         // 6: saas.accounts.v1.GetUsageRequest
+	(*GetUsageResponse)(nil),        // 7: saas.accounts.v1.GetUsageResponse
+	(*UsageMeter)(nil),              // 8: saas.accounts.v1.UsageMeter
+	(*UsageMeterSnapshot)(nil),      // 9: saas.accounts.v1.UsageMeterSnapshot
+	(*ListUsageMetersRequest)(nil),  // 10: saas.accounts.v1.ListUsageMetersRequest
+	(*ListUsageMetersResponse)(nil), // 11: saas.accounts.v1.ListUsageMetersResponse
+	(*UsageBucket)(nil),             // 12: saas.accounts.v1.UsageBucket
+	(*GetUsageHistoryRequest)(nil),  // 13: saas.accounts.v1.GetUsageHistoryRequest
+	(*GetUsageHistoryResponse)(nil), // 14: saas.accounts.v1.GetUsageHistoryResponse
+	nil,                             // 15: saas.accounts.v1.ConsumeUsageRequest.DimensionsEntry
+	(*timestamppb.Timestamp)(nil),   // 16: google.protobuf.Timestamp
 }
 var file_saas_accounts_v1_usage_proto_depIdxs = []int32{
-	6,  // 0: saas.accounts.v1.ConsumeUsageRequest.occurred_at:type_name -> google.protobuf.Timestamp
-	5,  // 1: saas.accounts.v1.ConsumeUsageRequest.dimensions:type_name -> saas.accounts.v1.ConsumeUsageRequest.DimensionsEntry
-	6,  // 2: saas.accounts.v1.UsageReceipt.period_start:type_name -> google.protobuf.Timestamp
-	6,  // 3: saas.accounts.v1.UsageReceipt.period_end:type_name -> google.protobuf.Timestamp
-	6,  // 4: saas.accounts.v1.UsageReceipt.occurred_at:type_name -> google.protobuf.Timestamp
-	1,  // 5: saas.accounts.v1.ConsumeUsageResponse.receipt:type_name -> saas.accounts.v1.UsageReceipt
-	6,  // 6: saas.accounts.v1.GetUsageResponse.period_start:type_name -> google.protobuf.Timestamp
-	6,  // 7: saas.accounts.v1.GetUsageResponse.period_end:type_name -> google.protobuf.Timestamp
-	0,  // 8: saas.accounts.v1.UsageService.ConsumeUsage:input_type -> saas.accounts.v1.ConsumeUsageRequest
-	3,  // 9: saas.accounts.v1.UsageService.GetUsage:input_type -> saas.accounts.v1.GetUsageRequest
-	2,  // 10: saas.accounts.v1.UsageService.ConsumeUsage:output_type -> saas.accounts.v1.ConsumeUsageResponse
-	4,  // 11: saas.accounts.v1.UsageService.GetUsage:output_type -> saas.accounts.v1.GetUsageResponse
-	10, // [10:12] is the sub-list for method output_type
-	8,  // [8:10] is the sub-list for method input_type
-	8,  // [8:8] is the sub-list for extension type_name
-	8,  // [8:8] is the sub-list for extension extendee
-	0,  // [0:8] is the sub-list for field type_name
+	16, // 0: saas.accounts.v1.ConsumeUsageRequest.occurred_at:type_name -> google.protobuf.Timestamp
+	15, // 1: saas.accounts.v1.ConsumeUsageRequest.dimensions:type_name -> saas.accounts.v1.ConsumeUsageRequest.DimensionsEntry
+	16, // 2: saas.accounts.v1.UsageReceipt.period_start:type_name -> google.protobuf.Timestamp
+	16, // 3: saas.accounts.v1.UsageReceipt.period_end:type_name -> google.protobuf.Timestamp
+	16, // 4: saas.accounts.v1.UsageReceipt.occurred_at:type_name -> google.protobuf.Timestamp
+	4,  // 5: saas.accounts.v1.ConsumeUsageResponse.receipt:type_name -> saas.accounts.v1.UsageReceipt
+	16, // 6: saas.accounts.v1.GetUsageResponse.period_start:type_name -> google.protobuf.Timestamp
+	16, // 7: saas.accounts.v1.GetUsageResponse.period_end:type_name -> google.protobuf.Timestamp
+	0,  // 8: saas.accounts.v1.UsageMeter.aggregation:type_name -> saas.accounts.v1.UsageAggregation
+	1,  // 9: saas.accounts.v1.UsageMeter.visibility:type_name -> saas.accounts.v1.UsageVisibility
+	8,  // 10: saas.accounts.v1.UsageMeterSnapshot.meter:type_name -> saas.accounts.v1.UsageMeter
+	16, // 11: saas.accounts.v1.UsageMeterSnapshot.period_start:type_name -> google.protobuf.Timestamp
+	16, // 12: saas.accounts.v1.UsageMeterSnapshot.period_end:type_name -> google.protobuf.Timestamp
+	9,  // 13: saas.accounts.v1.ListUsageMetersResponse.meters:type_name -> saas.accounts.v1.UsageMeterSnapshot
+	16, // 14: saas.accounts.v1.ListUsageMetersResponse.observed_at:type_name -> google.protobuf.Timestamp
+	16, // 15: saas.accounts.v1.UsageBucket.start:type_name -> google.protobuf.Timestamp
+	16, // 16: saas.accounts.v1.UsageBucket.end:type_name -> google.protobuf.Timestamp
+	16, // 17: saas.accounts.v1.GetUsageHistoryRequest.from:type_name -> google.protobuf.Timestamp
+	16, // 18: saas.accounts.v1.GetUsageHistoryRequest.to:type_name -> google.protobuf.Timestamp
+	2,  // 19: saas.accounts.v1.GetUsageHistoryRequest.bucket:type_name -> saas.accounts.v1.UsageBucketInterval
+	2,  // 20: saas.accounts.v1.GetUsageHistoryResponse.bucket:type_name -> saas.accounts.v1.UsageBucketInterval
+	12, // 21: saas.accounts.v1.GetUsageHistoryResponse.buckets:type_name -> saas.accounts.v1.UsageBucket
+	16, // 22: saas.accounts.v1.GetUsageHistoryResponse.from:type_name -> google.protobuf.Timestamp
+	16, // 23: saas.accounts.v1.GetUsageHistoryResponse.to:type_name -> google.protobuf.Timestamp
+	16, // 24: saas.accounts.v1.GetUsageHistoryResponse.observed_at:type_name -> google.protobuf.Timestamp
+	3,  // 25: saas.accounts.v1.UsageService.ConsumeUsage:input_type -> saas.accounts.v1.ConsumeUsageRequest
+	6,  // 26: saas.accounts.v1.UsageService.GetUsage:input_type -> saas.accounts.v1.GetUsageRequest
+	10, // 27: saas.accounts.v1.UsageService.ListUsageMeters:input_type -> saas.accounts.v1.ListUsageMetersRequest
+	13, // 28: saas.accounts.v1.UsageService.GetUsageHistory:input_type -> saas.accounts.v1.GetUsageHistoryRequest
+	5,  // 29: saas.accounts.v1.UsageService.ConsumeUsage:output_type -> saas.accounts.v1.ConsumeUsageResponse
+	7,  // 30: saas.accounts.v1.UsageService.GetUsage:output_type -> saas.accounts.v1.GetUsageResponse
+	11, // 31: saas.accounts.v1.UsageService.ListUsageMeters:output_type -> saas.accounts.v1.ListUsageMetersResponse
+	14, // 32: saas.accounts.v1.UsageService.GetUsageHistory:output_type -> saas.accounts.v1.GetUsageHistoryResponse
+	29, // [29:33] is the sub-list for method output_type
+	25, // [25:29] is the sub-list for method input_type
+	25, // [25:25] is the sub-list for extension type_name
+	25, // [25:25] is the sub-list for extension extendee
+	0,  // [0:25] is the sub-list for field type_name
 }
 
 func init() { file_saas_accounts_v1_usage_proto_init() }
@@ -534,13 +1292,14 @@ func file_saas_accounts_v1_usage_proto_init() {
 		File: protoimpl.DescBuilder{
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_saas_accounts_v1_usage_proto_rawDesc), len(file_saas_accounts_v1_usage_proto_rawDesc)),
-			NumEnums:      0,
-			NumMessages:   6,
+			NumEnums:      3,
+			NumMessages:   13,
 			NumExtensions: 0,
 			NumServices:   1,
 		},
 		GoTypes:           file_saas_accounts_v1_usage_proto_goTypes,
 		DependencyIndexes: file_saas_accounts_v1_usage_proto_depIdxs,
+		EnumInfos:         file_saas_accounts_v1_usage_proto_enumTypes,
 		MessageInfos:      file_saas_accounts_v1_usage_proto_msgTypes,
 	}.Build()
 	File_saas_accounts_v1_usage_proto = out.File
