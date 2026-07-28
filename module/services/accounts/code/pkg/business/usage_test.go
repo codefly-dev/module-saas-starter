@@ -13,6 +13,7 @@ import (
 type usageStoreFake struct {
 	business.Store
 	commands []business.UsageConsumption
+	buckets  []business.UsageBucketValue
 	used     int64
 	limit    int64
 }
@@ -46,6 +47,17 @@ func (f *usageStoreFake) ConsumeUsage(_ context.Context, command business.UsageC
 
 func (f *usageStoreFake) GetUsageTotal(context.Context, string, string, time.Time) (int64, error) {
 	return f.used, nil
+}
+
+func (f *usageStoreFake) GetUsageBuckets(
+	context.Context,
+	string,
+	string,
+	time.Time,
+	time.Time,
+	business.UsageBucketInterval,
+) ([]business.UsageBucketValue, error) {
+	return f.buckets, nil
 }
 
 func newUsageService(t *testing.T, store business.Store) *business.Service {
@@ -122,4 +134,70 @@ func TestGetUsageReturnsCurrentAggregateAndEffectiveLimit(t *testing.T) {
 	require.Equal(t, int64(-1), snapshot.Limit)
 	require.True(t, snapshot.PeriodStart.Before(snapshot.PeriodEnd))
 	require.Equal(t, time.UTC, snapshot.PeriodStart.Location())
+}
+
+func TestUsageHistoryFillsEmptyUTCBucketsAndPreservesPartialRange(t *testing.T) {
+	from := time.Date(2026, time.March, 28, 22, 30, 0, 0, time.FixedZone("UTC+2", 2*60*60))
+	to := from.Add(3 * time.Hour)
+	firstUTCBucket := from.UTC().Truncate(time.Hour)
+	store := &usageStoreFake{buckets: []business.UsageBucketValue{
+		{Start: firstUTCBucket.Add(time.Hour), Quantity: 7},
+	}}
+	history, observedAt, err := newUsageService(t, store).GetUsageHistory(
+		context.Background(),
+		"11111111-1111-4111-8111-111111111111",
+		"api_calls_monthly",
+		from,
+		to,
+		business.UsageBucketHour,
+	)
+	require.NoError(t, err)
+	require.Len(t, history.Values, 4)
+	require.Equal(t, from.UTC(), history.Values[0].Start)
+	require.Equal(t, int64(0), history.Values[0].Quantity)
+	require.Equal(t, int64(7), history.Values[1].Quantity)
+	require.Equal(t, to.UTC(), history.Values[3].End)
+	require.Equal(t, int64(7), history.Total)
+	require.Equal(t, time.UTC, observedAt.Location())
+}
+
+func TestUsageHistoryRejectsUnboundedRanges(t *testing.T) {
+	from := time.Date(2026, time.January, 1, 0, 0, 0, 0, time.UTC)
+	_, _, err := newUsageService(t, &usageStoreFake{}).GetUsageHistory(
+		context.Background(),
+		"11111111-1111-4111-8111-111111111111",
+		"api_calls_monthly",
+		from,
+		from.Add(45*24*time.Hour),
+		business.UsageBucketHour,
+	)
+	require.ErrorContains(t, err, "more than 1000 buckets")
+}
+
+func TestDefaultUsageMeterCatalogIsComplete(t *testing.T) {
+	catalog, err := business.DefaultUsageMeterCatalog()
+	require.NoError(t, err)
+	meters := catalog.Definitions(business.UsageVisibilityCustomer)
+	require.Len(t, meters, 1)
+	require.Equal(t, "api_calls_monthly", meters[0].Key)
+	require.Equal(t, "api_calls_monthly", meters[0].EntitlementKey)
+	require.NotEmpty(t, meters[0].ReconciliationRule)
+}
+
+func TestUsageMeterCatalogRejectsMissingReconciliationRule(t *testing.T) {
+	_, err := business.ParseUsageMeterCatalog([]byte(`{
+		"version":1,
+		"meters":[{
+			"key":"api_calls_monthly",
+			"display_name":"API calls",
+			"unit":"request",
+			"aggregation":"sum",
+			"owner":"product",
+			"source":"UsageService.ConsumeUsage",
+			"entitlement_key":"api_calls_monthly",
+			"reconciliation_rule":"",
+			"visibility":"customer"
+		}]
+	}`))
+	require.ErrorContains(t, err, "missing required metadata")
 }

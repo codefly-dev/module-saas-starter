@@ -2049,6 +2049,36 @@
         ]
       }
     },
+    "/v1/organizations/{organizationId}/usage": {
+      "get": {
+        "operationId": "UsageService_ListUsageMeters",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1ListUsageMetersResponse"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/rpcStatus"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "organizationId",
+            "in": "path",
+            "required": true,
+            "type": "string"
+          }
+        ],
+        "tags": [
+          "UsageService"
+        ]
+      }
+    },
     "/v1/organizations/{organizationId}/usage/{meter}": {
       "get": {
         "summary": "GetUsage returns the caller organization's current UTC month for one\nmeter. Cardinality quotas such as seats remain entitlement gauges rather\nthan usage events.",
@@ -2079,6 +2109,69 @@
             "in": "path",
             "required": true,
             "type": "string"
+          }
+        ],
+        "tags": [
+          "UsageService"
+        ]
+      }
+    },
+    "/v1/organizations/{organizationId}/usage/{meter}/history": {
+      "get": {
+        "operationId": "UsageService_GetUsageHistory",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1GetUsageHistoryResponse"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/rpcStatus"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "organizationId",
+            "in": "path",
+            "required": true,
+            "type": "string"
+          },
+          {
+            "name": "meter",
+            "in": "path",
+            "required": true,
+            "type": "string"
+          },
+          {
+            "name": "from",
+            "in": "query",
+            "required": false,
+            "type": "string",
+            "format": "date-time"
+          },
+          {
+            "name": "to",
+            "in": "query",
+            "required": false,
+            "type": "string",
+            "format": "date-time"
+          },
+          {
+            "name": "bucket",
+            "in": "query",
+            "required": false,
+            "type": "string",
+            "enum": [
+              "USAGE_BUCKET_INTERVAL_UNSPECIFIED",
+              "USAGE_BUCKET_INTERVAL_HOUR",
+              "USAGE_BUCKET_INTERVAL_DAY",
+              "USAGE_BUCKET_INTERVAL_MONTH"
+            ],
+            "default": "USAGE_BUCKET_INTERVAL_UNSPECIFIED"
           }
         ],
         "tags": [
@@ -5302,6 +5395,43 @@
         }
       }
     },
+    "v1GetUsageHistoryResponse": {
+      "type": "object",
+      "properties": {
+        "organizationId": {
+          "type": "string"
+        },
+        "meter": {
+          "type": "string"
+        },
+        "bucket": {
+          "$ref": "#/definitions/v1UsageBucketInterval"
+        },
+        "buckets": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "$ref": "#/definitions/v1UsageBucket"
+          }
+        },
+        "total": {
+          "type": "string",
+          "format": "int64"
+        },
+        "from": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "to": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "observedAt": {
+          "type": "string",
+          "format": "date-time"
+        }
+      }
+    },
     "v1GetUsageResponse": {
       "type": "object",
       "properties": {
@@ -6018,6 +6148,22 @@
             "type": "object",
             "$ref": "#/definitions/v1Team"
           }
+        }
+      }
+    },
+    "v1ListUsageMetersResponse": {
+      "type": "object",
+      "properties": {
+        "meters": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "$ref": "#/definitions/v1UsageMeterSnapshot"
+          }
+        },
+        "observedAt": {
+          "type": "string",
+          "format": "date-time"
         }
       }
     },
@@ -7159,6 +7305,108 @@
           "type": "string"
         }
       }
+    },
+    "v1UsageAggregation": {
+      "type": "string",
+      "enum": [
+        "USAGE_AGGREGATION_UNSPECIFIED",
+        "USAGE_AGGREGATION_SUM",
+        "USAGE_AGGREGATION_MAX",
+        "USAGE_AGGREGATION_LAST"
+      ],
+      "default": "USAGE_AGGREGATION_UNSPECIFIED"
+    },
+    "v1UsageBucket": {
+      "type": "object",
+      "properties": {
+        "start": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "end": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "quantity": {
+          "type": "string",
+          "format": "int64"
+        }
+      }
+    },
+    "v1UsageBucketInterval": {
+      "type": "string",
+      "enum": [
+        "USAGE_BUCKET_INTERVAL_UNSPECIFIED",
+        "USAGE_BUCKET_INTERVAL_HOUR",
+        "USAGE_BUCKET_INTERVAL_DAY",
+        "USAGE_BUCKET_INTERVAL_MONTH"
+      ],
+      "default": "USAGE_BUCKET_INTERVAL_UNSPECIFIED"
+    },
+    "v1UsageMeter": {
+      "type": "object",
+      "properties": {
+        "key": {
+          "type": "string"
+        },
+        "displayName": {
+          "type": "string"
+        },
+        "unit": {
+          "type": "string"
+        },
+        "aggregation": {
+          "$ref": "#/definitions/v1UsageAggregation"
+        },
+        "owner": {
+          "type": "string"
+        },
+        "source": {
+          "type": "string"
+        },
+        "entitlementKey": {
+          "type": "string"
+        },
+        "reconciliationRule": {
+          "type": "string"
+        },
+        "visibility": {
+          "$ref": "#/definitions/v1UsageVisibility"
+        }
+      }
+    },
+    "v1UsageMeterSnapshot": {
+      "type": "object",
+      "properties": {
+        "meter": {
+          "$ref": "#/definitions/v1UsageMeter"
+        },
+        "used": {
+          "type": "string",
+          "format": "int64"
+        },
+        "limit": {
+          "type": "string",
+          "format": "int64"
+        },
+        "periodStart": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "periodEnd": {
+          "type": "string",
+          "format": "date-time"
+        }
+      }
+    },
+    "v1UsageVisibility": {
+      "type": "string",
+      "enum": [
+        "USAGE_VISIBILITY_UNSPECIFIED",
+        "USAGE_VISIBILITY_CUSTOMER",
+        "USAGE_VISIBILITY_OPERATOR"
+      ],
+      "default": "USAGE_VISIBILITY_UNSPECIFIED"
     },
     "v1User": {
       "type": "object",

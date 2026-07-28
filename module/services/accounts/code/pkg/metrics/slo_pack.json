@@ -1,0 +1,114 @@
+{
+  "version": 1,
+  "window_days": 30,
+  "slos": [
+    {
+      "id": "signup",
+      "owner": "growth",
+      "availability_target": 0.995,
+      "latency_p95_ms": 1500,
+      "success": "account_created is exported for an accepted signup command",
+      "population": "valid signup commands excluding explicit policy rejection"
+    },
+    {
+      "id": "login",
+      "owner": "identity",
+      "availability_target": 0.999,
+      "latency_p95_ms": 1000,
+      "success": "a valid identity exchange creates or refreshes a session",
+      "population": "valid provider responses excluding invalid credentials and policy rejection"
+    },
+    {
+      "id": "invite_acceptance",
+      "owner": "growth",
+      "availability_target": 0.995,
+      "latency_p95_ms": 1500,
+      "success": "membership and invite_accepted outbox command commit atomically",
+      "population": "unexpired invitations accepted by their intended identity"
+    },
+    {
+      "id": "checkout",
+      "owner": "finance",
+      "availability_target": 0.995,
+      "latency_p95_ms": 2500,
+      "success": "Stripe returns a server-policy-compliant checkout session",
+      "population": "authorized checkout commands while Stripe is configured"
+    },
+    {
+      "id": "core_action",
+      "owner": "product",
+      "availability_target": 0.995,
+      "latency_p95_ms": 2000,
+      "success": "the configured core value action and core_action_completed outbox command commit",
+      "population": "authorized core value commands accepted by product validation"
+    },
+    {
+      "id": "notification_delivery",
+      "owner": "lifecycle",
+      "availability_target": 0.99,
+      "latency_p95_ms": 300000,
+      "success": "a queued notification reaches its configured provider without terminal failure",
+      "population": "valid notification commands for non-suppressed recipients"
+    },
+    {
+      "id": "analytics_export",
+      "owner": "data",
+      "availability_target": 0.999,
+      "latency_p95_ms": 300000,
+      "success": "a valid analytics outbox event reaches the configured sink exactly once logically",
+      "population": "registered analytics events committed to the analytics queue"
+    },
+    {
+      "id": "usage_consumption",
+      "owner": "billing",
+      "availability_target": 0.999,
+      "latency_p95_ms": 500,
+      "success": "a valid usage command returns its durable accepted or quota-rejected receipt",
+      "population": "authorized catalogued-meter commands including exact retries"
+    }
+  ],
+  "alerts": [
+    {
+      "id": "slo_fast_burn",
+      "signal": "error_budget_burn",
+      "condition": "burn rate > 14.4 for 5m and > 14.4 for 1h",
+      "runbook": "slo-burn"
+    },
+    {
+      "id": "slo_slow_burn",
+      "signal": "error_budget_burn",
+      "condition": "burn rate > 1 for 6h and > 1 for 3d",
+      "runbook": "slo-burn"
+    },
+    {
+      "id": "job_dead_letters",
+      "signal": "job_queue_projection.dead_letter",
+      "condition": "new terminal failures > 0 for 5m",
+      "runbook": "jobs"
+    },
+    {
+      "id": "job_queue_age",
+      "signal": "job_queue_projection.oldest_ready_age",
+      "condition": "oldest ready age exceeds the queue SLO for 10m",
+      "runbook": "jobs"
+    },
+    {
+      "id": "integration_failures",
+      "signal": "saas.jobs.completed",
+      "condition": "webhook or email retry and dead-letter rate exceeds baseline for 15m",
+      "runbook": "integrations"
+    },
+    {
+      "id": "analytics_export_health",
+      "signal": "analytics queue projection and saas.jobs.duration",
+      "condition": "export age exceeds 5m, schema rejects occur, or terminal failures increase",
+      "runbook": "analytics-export"
+    },
+    {
+      "id": "usage_reconciliation",
+      "signal": "usage reconciliation discrepancy",
+      "condition": "source, aggregate, or provider quantities differ after the allowed late-arrival window",
+      "runbook": "usage-reconciliation"
+    }
+  ]
+}

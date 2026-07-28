@@ -1,0 +1,110 @@
+syntax = "proto3";
+
+package saas.analytics.v1;
+
+import "buf/validate/validate.proto";
+import "google/protobuf/struct.proto";
+import "google/protobuf/timestamp.proto";
+
+// EventSource identifies the boundary that authored a product fact.
+enum EventSource {
+  EVENT_SOURCE_UNSPECIFIED = 0;
+  EVENT_SOURCE_WEB = 1;
+  EVENT_SOURCE_API = 2;
+  EVENT_SOURCE_WORKER = 3;
+  EVENT_SOURCE_WEBHOOK = 4;
+  EVENT_SOURCE_IMPORT = 5;
+}
+
+// AnalyticsPurpose is the consent purpose governing collection.
+enum AnalyticsPurpose {
+  ANALYTICS_PURPOSE_UNSPECIFIED = 0;
+  ANALYTICS_PURPOSE_ESSENTIAL = 1;
+  ANALYTICS_PURPOSE_PRODUCT = 2;
+  ANALYTICS_PURPOSE_MARKETING = 3;
+  ANALYTICS_PURPOSE_REPLAY = 4;
+}
+
+// ConsentState records the resolved policy at collection time.
+enum ConsentState {
+  CONSENT_STATE_UNSPECIFIED = 0;
+  CONSENT_STATE_NOT_REQUIRED = 1;
+  CONSENT_STATE_GRANTED = 2;
+  CONSENT_STATE_DENIED = 3;
+  CONSENT_STATE_WITHDRAWN = 4;
+}
+
+// PIIClassification is the maximum data class permitted by the registry.
+enum PIIClassification {
+  PII_CLASSIFICATION_UNSPECIFIED = 0;
+  PII_CLASSIFICATION_NONE = 1;
+  PII_CLASSIFICATION_PSEUDONYMOUS = 2;
+  PII_CLASSIFICATION_INTERNAL = 3;
+}
+
+// EventContext carries bounded attribution and execution context.
+message EventContext {
+  string route = 1 [(buf.validate.field).string.max_len = 256];
+  string release = 2 [(buf.validate.field).string.max_len = 128];
+  string environment = 3 [(buf.validate.field).string.max_len = 64];
+  string locale = 4 [(buf.validate.field).string.max_len = 32];
+  string device = 5 [(buf.validate.field).string.max_len = 64];
+  string first_touch_source = 6 [(buf.validate.field).string.max_len = 128];
+  string first_touch_campaign = 7 [(buf.validate.field).string.max_len = 128];
+  string last_touch_source = 8 [(buf.validate.field).string.max_len = 128];
+  string last_touch_campaign = 9 [(buf.validate.field).string.max_len = 128];
+  map<string, string> feature_flags = 10 [
+    (buf.validate.field).map.max_pairs = 32,
+    (buf.validate.field).map.keys = {string: {
+      pattern: "^[a-z][a-z0-9_.-]{0,63}$"
+    }},
+    (buf.validate.field).map.values = {string: {max_len: 128}}
+  ];
+}
+
+// EventPrivacy makes the collection policy inspectable with the fact.
+message EventPrivacy {
+  AnalyticsPurpose purpose = 1 [(buf.validate.field).enum.defined_only = true];
+  ConsentState consent_state = 2 [(buf.validate.field).enum.defined_only = true];
+  PIIClassification pii_classification = 3 [(buf.validate.field).enum.defined_only = true];
+}
+
+// ProductEvent is the vendor-neutral canonical analytics envelope.
+message ProductEvent {
+  string event_id = 1 [(buf.validate.field).string.uuid = true];
+  string event_name = 2 [(buf.validate.field).string = {
+    pattern: "^[a-z][a-z0-9_]{0,127}$"
+  }];
+  uint32 schema_version = 3 [(buf.validate.field).uint32.gte = 1];
+  google.protobuf.Timestamp occurred_at = 4 [(buf.validate.field).required = true];
+  google.protobuf.Timestamp received_at = 5 [(buf.validate.field).required = true];
+  string actor_user_id = 6 [
+    (buf.validate.field).ignore = IGNORE_IF_ZERO_VALUE,
+    (buf.validate.field).string.uuid = true
+  ];
+  string anonymous_id = 7 [
+    (buf.validate.field).ignore = IGNORE_IF_ZERO_VALUE,
+    (buf.validate.field).string = {
+      min_len: 16
+      max_len: 128
+    }
+  ];
+  string organization_id = 8 [
+    (buf.validate.field).ignore = IGNORE_IF_ZERO_VALUE,
+    (buf.validate.field).string.uuid = true
+  ];
+  string session_id = 9 [
+    (buf.validate.field).ignore = IGNORE_IF_ZERO_VALUE,
+    (buf.validate.field).string = {
+      min_len: 16
+      max_len: 128
+    }
+  ];
+  EventSource source = 10 [(buf.validate.field).enum = {
+    defined_only: true
+    not_in: 0
+  }];
+  EventContext context = 11;
+  google.protobuf.Struct properties = 12;
+  EventPrivacy privacy = 13 [(buf.validate.field).required = true];
+}

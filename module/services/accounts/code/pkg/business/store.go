@@ -160,6 +160,7 @@ type Store interface {
 	CreateEntitlementOverride(ctx context.Context, override *EntitlementOverride) error
 	LockEntitlementQuota(ctx context.Context, orgID string, feature string) error
 	GetUsageTotal(ctx context.Context, orgID string, meter string, periodStart time.Time) (int64, error)
+	GetUsageBuckets(ctx context.Context, orgID string, meter string, from, to time.Time, bucket UsageBucketInterval) ([]UsageBucketValue, error)
 	ConsumeUsage(ctx context.Context, consumption UsageConsumption) (*UsageReceipt, error)
 	GetSubscription(ctx context.Context, orgID string) (*Subscription, error)
 	CreateSubscription(ctx context.Context, sub *Subscription) error

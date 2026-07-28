@@ -14,6 +14,7 @@ var (
 	// ErrUsageIdempotencyConflict means an idempotency key was reused for a
 	// semantically different consumption operation.
 	ErrUsageIdempotencyConflict = errors.New("usage idempotency key was reused with a different request")
+	ErrInvalidUsageRange        = errors.New("invalid usage range")
 	usageMeterPattern           = regexp.MustCompile(`^[a-z][a-z0-9_]{0,127}$`)
 	usageDimensionPattern       = regexp.MustCompile(`^[a-z][a-z0-9_.-]{0,63}$`)
 )
@@ -57,6 +58,38 @@ type UsageSnapshot struct {
 	Limit       int64
 	PeriodStart time.Time
 	PeriodEnd   time.Time
+}
+
+type UsageMeterSnapshot struct {
+	Meter       UsageMeterDefinition
+	Used        int64
+	Limit       int64
+	PeriodStart time.Time
+	PeriodEnd   time.Time
+}
+
+type UsageBucketInterval string
+
+const (
+	UsageBucketHour  UsageBucketInterval = "hour"
+	UsageBucketDay   UsageBucketInterval = "day"
+	UsageBucketMonth UsageBucketInterval = "month"
+)
+
+type UsageBucketValue struct {
+	Start    time.Time
+	End      time.Time
+	Quantity int64
+}
+
+type UsageHistory struct {
+	OrgID  string
+	Meter  string
+	Bucket UsageBucketInterval
+	From   time.Time
+	To     time.Time
+	Total  int64
+	Values []UsageBucketValue
 }
 
 // ConsumeUsageInput is protocol-independent so internal Go callers and the
@@ -159,6 +192,134 @@ func (s *Service) GetUsage(ctx context.Context, orgID, meter string) (*UsageSnap
 		return nil, fmt.Errorf("get usage: %w", err)
 	}
 	return out, nil
+}
+
+func (s *Service) ListUsageMeters(ctx context.Context, orgID string) ([]UsageMeterSnapshot, time.Time, error) {
+	if orgID == "" {
+		return nil, time.Time{}, errors.New("organization id is required")
+	}
+	observedAt := time.Now().UTC()
+	periodStart, periodEnd := monthlyUsagePeriod(observedAt)
+	definitions := s.usageMeters.Definitions(UsageVisibilityCustomer)
+	snapshots := make([]UsageMeterSnapshot, 0, len(definitions))
+	if err := s.store.WithOrgTx(ctx, orgID, func(ctx context.Context) error {
+		for _, definition := range definitions {
+			limit, err := resolveEffectiveLimitInTx(
+				ctx, s.store, orgID, definition.EntitlementKey, observedAt,
+			)
+			if err != nil {
+				return err
+			}
+			used, err := s.store.GetUsageTotal(ctx, orgID, definition.Key, periodStart)
+			if err != nil {
+				return err
+			}
+			snapshots = append(snapshots, UsageMeterSnapshot{
+				Meter: definition, Used: used, Limit: limit,
+				PeriodStart: periodStart, PeriodEnd: periodEnd,
+			})
+		}
+		return nil
+	}); err != nil {
+		return nil, time.Time{}, fmt.Errorf("list usage meters: %w", err)
+	}
+	return snapshots, observedAt, nil
+}
+
+func (s *Service) GetUsageHistory(
+	ctx context.Context,
+	orgID string,
+	meter string,
+	from time.Time,
+	to time.Time,
+	bucket UsageBucketInterval,
+) (*UsageHistory, time.Time, error) {
+	if orgID == "" {
+		return nil, time.Time{}, errors.New("organization id is required")
+	}
+	if !usageMeterPattern.MatchString(meter) {
+		return nil, time.Time{}, errors.New("meter must be a canonical lowercase identifier")
+	}
+	from = from.UTC()
+	to = to.UTC()
+	if from.IsZero() || to.IsZero() || !from.Before(to) {
+		return nil, time.Time{}, fmt.Errorf("%w: from must be before to", ErrInvalidUsageRange)
+	}
+	if to.Sub(from) > 366*24*time.Hour {
+		return nil, time.Time{}, fmt.Errorf("%w: range must not exceed 366 days", ErrInvalidUsageRange)
+	}
+	if bucket != UsageBucketHour && bucket != UsageBucketDay && bucket != UsageBucketMonth {
+		return nil, time.Time{}, fmt.Errorf("%w: bucket must be hour, day, or month", ErrInvalidUsageRange)
+	}
+	firstBucket := floorUsageBucket(from, bucket)
+	bucketCount := 0
+	for at := firstBucket; at.Before(to); at = nextUsageBucket(at, bucket) {
+		bucketCount++
+		if bucketCount > 1000 {
+			return nil, time.Time{}, fmt.Errorf("%w: range produces more than 1000 buckets", ErrInvalidUsageRange)
+		}
+	}
+
+	var stored []UsageBucketValue
+	if err := s.store.WithOrgTx(ctx, orgID, func(ctx context.Context) error {
+		var err error
+		stored, err = s.store.GetUsageBuckets(ctx, orgID, meter, from, to, bucket)
+		return err
+	}); err != nil {
+		return nil, time.Time{}, fmt.Errorf("get usage history: %w", err)
+	}
+	quantities := make(map[time.Time]int64, len(stored))
+	for _, value := range stored {
+		quantities[value.Start.UTC()] = value.Quantity
+	}
+	history := &UsageHistory{
+		OrgID: orgID, Meter: meter, Bucket: bucket, From: from, To: to,
+		Values: make([]UsageBucketValue, 0, bucketCount),
+	}
+	for start := firstBucket; start.Before(to); start = nextUsageBucket(start, bucket) {
+		end := nextUsageBucket(start, bucket)
+		displayStart := start
+		if displayStart.Before(from) {
+			displayStart = from
+		}
+		displayEnd := end
+		if displayEnd.After(to) {
+			displayEnd = to
+		}
+		quantity := quantities[start]
+		history.Total += quantity
+		history.Values = append(history.Values, UsageBucketValue{
+			Start: displayStart, End: displayEnd, Quantity: quantity,
+		})
+	}
+	return history, time.Now().UTC(), nil
+}
+
+func floorUsageBucket(at time.Time, bucket UsageBucketInterval) time.Time {
+	at = at.UTC()
+	switch bucket {
+	case UsageBucketHour:
+		return at.Truncate(time.Hour)
+	case UsageBucketDay:
+		return time.Date(at.Year(), at.Month(), at.Day(), 0, 0, 0, 0, time.UTC)
+	case UsageBucketMonth:
+		return time.Date(at.Year(), at.Month(), 1, 0, 0, 0, 0, time.UTC)
+	default:
+		return at
+	}
+}
+
+func nextUsageBucket(at time.Time, bucket UsageBucketInterval) time.Time {
+	switch bucket {
+	case UsageBucketHour:
+		return at.Add(time.Hour)
+	case UsageBucketDay:
+		return at.AddDate(0, 0, 1)
+	case UsageBucketMonth:
+		return at.AddDate(0, 1, 0)
+	default:
+		return at
+	}
 }
 
 func monthlyUsagePeriod(at time.Time) (time.Time, time.Time) {

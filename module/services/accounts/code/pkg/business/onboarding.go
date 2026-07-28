@@ -189,36 +189,12 @@ func (s *Service) GetProgress(ctx context.Context, userID string) (*OnboardingPr
 
 // CompleteStep marks an onboarding step as completed.
 func (s *Service) CompleteStep(ctx context.Context, userID, stepName string) error {
-	w := wool.Get(ctx).In("CompleteStep")
-
-	if !isValidStepName(stepName) {
-		return w.NewError("invalid onboarding step: %s", stepName)
-	}
-
-	if err := s.store.As(Identity{UserID: userID}).Within(ctx, func(ctx context.Context) error {
-		return s.store.UpsertOnboardingStep(ctx, userID, stepName, "completed")
-	}); err != nil {
-		return w.Wrapf(err, "cannot complete onboarding step")
-	}
-
-	return nil
+	return s.transitionOnboardingStep(ctx, userID, stepName, "completed")
 }
 
 // SkipStep marks an onboarding step as skipped.
 func (s *Service) SkipStep(ctx context.Context, userID, stepName string) error {
-	w := wool.Get(ctx).In("SkipStep")
-
-	if !isValidStepName(stepName) {
-		return w.NewError("invalid onboarding step: %s", stepName)
-	}
-
-	if err := s.store.As(Identity{UserID: userID}).Within(ctx, func(ctx context.Context) error {
-		return s.store.UpsertOnboardingStep(ctx, userID, stepName, "skipped")
-	}); err != nil {
-		return w.Wrapf(err, "cannot skip onboarding step")
-	}
-
-	return nil
+	return s.transitionOnboardingStep(ctx, userID, stepName, "skipped")
 }
 
 // IsOnboardingComplete checks if all onboarding steps are either completed or skipped.
@@ -237,4 +213,64 @@ func isValidStepName(name string) bool {
 		}
 	}
 	return false
+}
+
+func (s *Service) transitionOnboardingStep(
+	ctx context.Context,
+	userID string,
+	stepName string,
+	status string,
+) error {
+	w := wool.Get(ctx).In("TransitionOnboardingStep")
+	if !isValidStepName(stepName) {
+		return w.NewError("invalid onboarding step: %s", stepName)
+	}
+	if err := s.store.As(Identity{UserID: userID}).Within(ctx, func(ctx context.Context) error {
+		steps, err := s.store.GetOnboardingProgress(ctx, userID)
+		if err != nil {
+			return err
+		}
+		current := make(map[string]string, len(steps))
+		for _, step := range steps {
+			current[step.StepName] = step.Status
+		}
+		if current[stepName] == status {
+			return nil
+		}
+		wasComplete := onboardingStepsComplete(current)
+		if err := s.store.UpsertOnboardingStep(ctx, userID, stepName, status); err != nil {
+			return err
+		}
+		current[stepName] = status
+		if err := s.captureProductEvent(
+			ctx,
+			"onboarding_step_"+status,
+			userID+":"+stepName+":"+status,
+			userID,
+			"",
+			map[string]any{"step_name": stepName, "flow_version": "v1"},
+		); err != nil {
+			return err
+		}
+		if wasComplete || !onboardingStepsComplete(current) {
+			return nil
+		}
+		return s.captureProductEvent(
+			ctx, "onboarding_completed", userID+":v1", userID, "", map[string]any{
+				"flow_version": "v1",
+			},
+		)
+	}); err != nil {
+		return w.Wrapf(err, "cannot transition onboarding step")
+	}
+	return nil
+}
+
+func onboardingStepsComplete(statuses map[string]string) bool {
+	for _, name := range OnboardingStepNames {
+		if statuses[name] != "completed" && statuses[name] != "skipped" {
+			return false
+		}
+	}
+	return true
 }

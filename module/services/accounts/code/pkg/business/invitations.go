@@ -97,7 +97,7 @@ func (s *Service) CreateInvitation(ctx context.Context, inviterID string, req *g
 			if orgName == "" {
 				orgName = req.OrgId
 			}
-			return s.emailOutbox.EnqueueTemplate(ctx, email.TemplateRequest{
+			if err := s.emailOutbox.EnqueueTemplate(ctx, email.TemplateRequest{
 				DeliveryKey: inv.ID,
 				Scope:       email.TenantScope(req.OrgId),
 				Source:      invitationEmailSource,
@@ -118,9 +118,13 @@ func (s *Service) CreateInvitation(ctx context.Context, inviterID string, req *g
 					TextBody: renderInviteText(acceptURL, inv.Role),
 					Tags:     map[string]string{"type": "invitation", "org_id": inv.OrgID},
 				},
-			})
+			}); err != nil {
+				return err
+			}
 		}
-		return nil
+		return s.captureProductEvent(ctx, "invite_created", inv.ID, inviterID, req.OrgId, map[string]any{
+			"role": inv.Role,
+		})
 	}); err != nil {
 		return nil, w.Wrapf(err, "cannot create invitation")
 	}
@@ -207,7 +211,10 @@ func (s *Service) AcceptInvitation(ctx context.Context, userID string, req *gen.
 	}
 	if time.Now().After(inv.ExpiresAt) {
 		_ = s.store.WithOrgTx(ctx, inv.OrgID, func(ctx context.Context) error {
-			return s.store.UpdateInvitationStatus(ctx, inv.ID, "expired", "")
+			if err := s.store.UpdateInvitationStatus(ctx, inv.ID, "expired", ""); err != nil {
+				return err
+			}
+			return s.captureProductEvent(ctx, "invite_expired", inv.ID, userID, inv.OrgID, nil)
 		})
 		return nil, w.NewError("invitation has expired")
 	}
@@ -248,7 +255,9 @@ func (s *Service) AcceptInvitation(ctx context.Context, userID string, req *gen.
 			return w.Wrapf(err, "cannot get organization")
 		}
 		org = o
-		return nil
+		return s.captureProductEvent(txCtx, "invite_accepted", inv.ID, userID, inv.OrgID, map[string]any{
+			"role": inv.Role,
+		})
 	}); txErr != nil {
 		return nil, txErr
 	}
@@ -282,17 +291,30 @@ func (s *Service) ListInvitations(ctx context.Context, req *gen.ListInvitationsR
 }
 
 // RevokeInvitation marks an invitation as revoked. The proto only carries the
-// invitation id, so the handler first resolves its organization under a narrow
-// bypass and requires that tenant's admin role. This update then uses bypass
-// because no organization id reaches the storage mutation itself.
+// invitation id, so the handler first resolves its organization under the
+// control-plane role before entering the tenant transaction.
 func (s *Service) RevokeInvitation(ctx context.Context, inviterID string, req *gen.RevokeInvitationRequest) error {
 	w := wool.Get(ctx).In("RevokeInvitation")
+	var orgID string
 	if err := s.store.WithControlPlane(ctx, func(ctx context.Context) error {
-		return s.store.UpdateInvitationStatus(ctx, req.Id, "revoked", "")
+		var err error
+		orgID, err = s.store.GetInvitationOrgID(ctx, req.Id)
+		return err
+	}); err != nil {
+		return w.Wrapf(err, "cannot resolve invitation organization")
+	}
+	if orgID == "" {
+		return w.NewError("invitation not found")
+	}
+	if err := s.store.WithOrgTx(ctx, orgID, func(ctx context.Context) error {
+		if err := s.store.UpdateInvitationStatus(ctx, req.Id, "revoked", ""); err != nil {
+			return err
+		}
+		return s.captureProductEvent(ctx, "invite_revoked", req.Id, inviterID, orgID, nil)
 	}); err != nil {
 		return w.Wrapf(err, "cannot revoke invitation")
 	}
-	s.emit(ctx, inviterID, "user", "invitation.revoked", "invitation", req.Id, "")
+	s.emit(ctx, inviterID, "user", "invitation.revoked", "invitation", req.Id, orgID)
 	return nil
 }
 

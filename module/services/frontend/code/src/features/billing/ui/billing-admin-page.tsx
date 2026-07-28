@@ -1,14 +1,25 @@
 "use client";
 
+import { timestampDate } from "@bufbuild/protobuf/wkt";
 import { createClient } from "@connectrpc/connect";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { CreditCard, Download, ExternalLink, FileText } from "lucide-react";
 import Link from "next/link";
 import { toast } from "sonner";
 import { EmptyState } from "@/components/empty-state";
+import { MetricProvenance, MetricStateBadge } from "@/components/metric-state";
 import { OrgSelector } from "@/components/org-selector";
+import { Sparkline } from "@/components/sparkline";
+import {
+	useUsageHistory,
+	useUsageMeters,
+} from "@/features/billing/service/usage-queries";
 import { useOrgEntitlements } from "@/features/platform/service/queries";
 import { BillingService } from "@/gen/saas/accounts/v1/billing_pb";
+import {
+	UsageAggregation,
+	type UsageMeterSnapshot,
+} from "@/gen/saas/accounts/v1/usage_pb";
 import { useAuth } from "@/lib/auth";
 import { apiTransport } from "@/lib/connect/transport";
 import {
@@ -24,20 +35,15 @@ import {
 
 const billingClient = createClient(BillingService, apiTransport);
 
-/**
- * BillingAdminPage — current plan summary + Stripe-portal jump-off.
- * Power-user destination after the post-checkout success screen:
- * "see your plan, see your usage, change card / cancel /
- * upgrade".
- *
- * Usage cards reuse the same GetOrgEntitlements RPC the platform
- * Entitlements page hits — different framing (operator vs platform
- * admin), same data shape.
- */
 export function BillingAdminPage() {
 	const { organizationId: orgId = "" } = useAuth();
 
 	const { data: entitlements, isLoading } = useOrgEntitlements(orgId || null);
+	const {
+		data: usage,
+		isLoading: usageLoading,
+		error: usageError,
+	} = useUsageMeters(orgId || null);
 
 	const {
 		data: invoicesResp,
@@ -140,38 +146,66 @@ export function BillingAdminPage() {
 						{/* ── Usage summary ── */}
 						<Card>
 							<CardHeader>
-								<CardTitle className="text-base">Usage this period</CardTitle>
+								<CardTitle className="flex items-center justify-between text-base">
+									<span>Billable usage this period</span>
+									{usageError && (
+										<MetricStateBadge state="provider_unavailable" />
+									)}
+								</CardTitle>
 								<CardDescription>
-									Top features by approach-to-limit. See{" "}
+									Accepted usage events, history, entitlement headroom, and a
+									run-rate forecast. Cardinality gauges remain in{" "}
 									<Link
 										href="/admin/entitlements"
 										className="underline underline-offset-2"
 									>
 										Entitlements
-									</Link>{" "}
-									for the full breakdown.
+									</Link>
+									.
 								</CardDescription>
 							</CardHeader>
-							<CardContent>
-								{isLoading ? (
+							<CardContent className="space-y-4">
+								{usageLoading ? (
 									<div className="space-y-2">
 										<Skeleton className="h-6 w-full" />
 										<Skeleton className="h-6 w-full" />
 										<Skeleton className="h-6 w-full" />
 									</div>
-								) : entitlements?.entitlements.length ? (
-									<div className="space-y-3">
-										{topThreeByPercentUsed(entitlements.entitlements).map(
-											(e) => (
-												<UsageRow key={e.feature} e={e} />
-											),
-										)}
+								) : usageError ? (
+									<div className="text-sm text-muted-foreground">
+										Usage is temporarily unavailable. Subscription management is
+										unaffected.
+									</div>
+								) : usage?.meters.length ? (
+									<div className="space-y-5">
+										{usage.meters.map((snapshot) => (
+											<MeterUsageRow
+												key={snapshot.meter?.key}
+												orgId={orgId}
+												snapshot={snapshot}
+												observedAt={
+													usage.observedAt
+														? timestampDate(usage.observedAt).toISOString()
+														: undefined
+												}
+											/>
+										))}
 									</div>
 								) : (
-									<div className="text-sm text-muted-foreground">
-										No metered features on this plan.
+									<div className="flex items-center justify-between text-sm text-muted-foreground">
+										<span>No customer-visible meters are configured.</span>
+										<MetricStateBadge state="not_configured" />
 									</div>
 								)}
+								<MetricProvenance
+									source="UsageService"
+									observedAt={
+										usage?.observedAt
+											? timestampDate(usage.observedAt).toISOString()
+											: undefined
+									}
+									owner="product"
+								/>
 							</CardContent>
 						</Card>
 					</div>
@@ -312,30 +346,19 @@ function formatMoney(amount: number, currency: string): string {
 	}
 }
 
-interface E {
-	feature: string;
-	limit: bigint;
-	used: bigint;
-}
-
-function topThreeByPercentUsed<T extends E>(entitlements: T[]): T[] {
-	return [...entitlements]
-		.filter((e) => Number(e.limit) > 0) // skip unlimited (-1) + disabled (0)
-		.sort((a, b) => pct(b) - pct(a))
-		.slice(0, 3);
-}
-
-function pct(e: E): number {
-	const limit = Number(e.limit);
-	const used = Number(e.used);
-	if (limit <= 0) return 0;
-	return used / limit;
-}
-
-function UsageRow({ e }: { e: E }) {
-	const used = Number(e.used);
-	const limit = Number(e.limit);
-	const ratio = pct(e);
+function MeterUsageRow({
+	orgId,
+	snapshot,
+	observedAt,
+}: {
+	orgId: string;
+	snapshot: UsageMeterSnapshot;
+	observedAt?: string;
+}) {
+	const meter = snapshot.meter;
+	const used = Number(snapshot.used);
+	const limit = Number(snapshot.limit);
+	const ratio = limit > 0 ? used / limit : 0;
 	const percent = Math.min(100, Math.round(ratio * 100));
 	const tone =
 		ratio > 0.9
@@ -343,22 +366,81 @@ function UsageRow({ e }: { e: E }) {
 			: ratio > 0.7
 				? "bg-amber-500"
 				: "bg-emerald-500";
+	const fromISO = snapshot.periodStart
+		? timestampDate(snapshot.periodStart).toISOString()
+		: "";
+	const toISO = observedAt ?? "";
+	const history = useUsageHistory(orgId, meter?.key ?? "", fromISO, toISO);
+	const points =
+		history.data?.buckets.map((bucket) => Number(bucket.quantity)) ?? [];
+	const forecast = usageForecast(snapshot, observedAt);
+	const limitLabel =
+		limit === -1
+			? "unlimited"
+			: limit === 0
+				? "disabled"
+				: limit.toLocaleString();
+
 	return (
-		<div className="space-y-1">
+		<div className="space-y-2 border-b pb-4 last:border-0 last:pb-0">
 			<div className="flex items-center justify-between text-sm">
-				<span className="font-medium capitalize">
-					{e.feature.replace(/_/g, " ")}
-				</span>
-				<span className="font-mono text-xs text-muted-foreground">
-					{used.toLocaleString()} / {limit.toLocaleString()}
-				</span>
+				<div>
+					<div className="font-medium">
+						{meter?.displayName || meter?.key || "Meter"}
+					</div>
+					<div className="text-[11px] text-muted-foreground">
+						{meter?.reconciliationRule}
+					</div>
+				</div>
+				<div className="flex items-center gap-3">
+					{history.isError ? (
+						<MetricStateBadge state="partial" />
+					) : points.length > 1 ? (
+						<Sparkline points={points} className="text-primary/70" />
+					) : used === 0 ? (
+						<MetricStateBadge state="no_data" />
+					) : null}
+					<span className="font-mono text-xs text-muted-foreground">
+						{used.toLocaleString()} / {limitLabel}
+					</span>
+				</div>
 			</div>
-			<div className="h-2 rounded-full bg-muted">
-				<div
-					className={`h-2 rounded-full ${tone}`}
-					style={{ width: `${percent}%` }}
-				/>
+			{limit > 0 && (
+				<div className="h-2 rounded-full bg-muted">
+					<div
+						className={`h-2 rounded-full ${tone}`}
+						style={{ width: `${percent}%` }}
+					/>
+				</div>
+			)}
+			<div className="flex justify-between text-[11px] text-muted-foreground">
+				<span>
+					Unit: {meter?.unit || "unit"} · Aggregation:{" "}
+					{UsageAggregation[
+						meter?.aggregation ?? UsageAggregation.SUM
+					].toLowerCase()}
+				</span>
+				<span>
+					{forecast === undefined
+						? "Forecast unavailable"
+						: `Forecast: ${forecast.toLocaleString()}`}
+				</span>
 			</div>
 		</div>
 	);
+}
+
+function usageForecast(
+	snapshot: UsageMeterSnapshot,
+	observedAt?: string,
+): number | undefined {
+	if (!snapshot.periodStart || !snapshot.periodEnd || !observedAt)
+		return undefined;
+	const start = timestampDate(snapshot.periodStart).getTime();
+	const end = timestampDate(snapshot.periodEnd).getTime();
+	const observed = new Date(observedAt).getTime();
+	const elapsed = Math.max(observed - start, 24 * 60 * 60 * 1000);
+	const period = end - start;
+	if (period <= 0) return undefined;
+	return Math.round(Number(snapshot.used) * (period / elapsed));
 }

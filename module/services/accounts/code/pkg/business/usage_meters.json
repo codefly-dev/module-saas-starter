@@ -1,0 +1,16 @@
+{
+  "version": 1,
+  "meters": [
+    {
+      "key": "api_calls_monthly",
+      "display_name": "API calls",
+      "unit": "request",
+      "aggregation": "sum",
+      "owner": "product",
+      "source": "UsageService.ConsumeUsage",
+      "entitlement_key": "api_calls_monthly",
+      "reconciliation_rule": "accepted usage event quantities equal the monthly usage total",
+      "visibility": "customer"
+    }
+  ]
+}

@@ -3,6 +3,7 @@ package main
 import (
 	"accounts/fixtures"
 	"accounts/pkg/adapters"
+	"accounts/pkg/analytics"
 	"accounts/pkg/auth"
 	devvalidator "accounts/pkg/auth/dev"
 	ed25519minter "accounts/pkg/auth/ed25519"
@@ -64,6 +65,9 @@ func doWork(ctx context.Context) (Clean, error) {
 	// browser click to SQL query require both this provider AND the
 	// CORS allowlist for `traceparent` / `baggage` (connect_gen.go).
 	var otelProvider *wooltel.Provider
+	var otelMetricProvider interface {
+		Shutdown(context.Context) error
+	}
 	if os.Getenv("OTEL_EXPORTER_OTLP_ENDPOINT") != "" || os.Getenv("OTEL_SERVICE_NAME") != "" {
 		p, oerr := wooltel.Enable(wooltel.WithServiceName("saas-starter-api"))
 		if oerr != nil {
@@ -73,6 +77,14 @@ func doWork(ctx context.Context) (Clean, error) {
 			w.Info("OTEL enabled",
 				wool.Field("endpoint", os.Getenv("OTEL_EXPORTER_OTLP_ENDPOINT")),
 				wool.Field("service.name", "saas-starter-api"))
+		}
+	}
+	if os.Getenv("OTEL_EXPORTER_OTLP_ENDPOINT") != "" {
+		p, oerr := enableOTLPMetrics(ctx, "saas-starter-api")
+		if oerr != nil {
+			w.Warn("OTEL metrics setup failed; continuing without metric export", wool.ErrField(oerr))
+		} else {
+			otelMetricProvider = p
 		}
 	}
 
@@ -95,6 +107,36 @@ func doWork(ctx context.Context) (Clean, error) {
 	jobStore := infra.NewPostgresJobStore(jobWorkerPool)
 	service.SetJobOperations(jobStore)
 	service.SetWebhookJobProducer(store)
+
+	eventRegistry, err := analytics.DefaultRegistry()
+	if err != nil {
+		return nil, err
+	}
+	analyticsSink, analyticsEnabled, err := configuredAnalyticsSink()
+	if err != nil {
+		return nil, err
+	}
+	var analyticsWorker *jobs.Worker
+	if analyticsEnabled {
+		productEventOutbox, err := analytics.NewOutbox(store, eventRegistry)
+		if err != nil {
+			return nil, err
+		}
+		service.SetProductAnalytics(eventRegistry, productEventOutbox)
+		analyticsHandler, err := analytics.NewExportHandler(eventRegistry, analyticsSink)
+		if err != nil {
+			return nil, err
+		}
+		analyticsWorker, err = jobs.NewWorker(jobs.WorkerConfig{
+			Store:      jobStore,
+			Queue:      analytics.ExportQueue,
+			Handler:    analyticsHandler,
+			RetryDelay: analytics.ExportRetryDelay,
+		})
+		if err != nil {
+			return nil, err
+		}
+	}
 
 	// Vault is a required security dependency: API-key HMAC and TOTP seed
 	// encryption must be stable across replicas and fail closed.
@@ -434,6 +476,9 @@ func doWork(ctx context.Context) (Clean, error) {
 	if stripeWebhookWorker != nil {
 		stripeWebhookWorker.Start(ctx)
 	}
+	if analyticsWorker != nil {
+		analyticsWorker.Start(ctx)
+	}
 	emailWorker.Start(ctx)
 	webhookWorker.Start(ctx)
 
@@ -444,6 +489,14 @@ func doWork(ctx context.Context) (Clean, error) {
 			shutdownCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 			if err := stripeWebhookWorker.Shutdown(shutdownCtx); err != nil {
 				sw.Warn("Stripe webhook worker shutdown timed out", wool.ErrField(err))
+			}
+			cancel()
+		}
+		if analyticsWorker != nil {
+			sw.Info("stopping product analytics export worker")
+			shutdownCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+			if err := analyticsWorker.Shutdown(shutdownCtx); err != nil {
+				sw.Warn("product analytics worker shutdown timed out", wool.ErrField(err))
 			}
 			cancel()
 		}
@@ -495,7 +548,35 @@ func doWork(ctx context.Context) (Clean, error) {
 				sw.Warn("OTEL shutdown failed", wool.ErrField(err))
 			}
 		}
+		if otelMetricProvider != nil {
+			sw.Info("flushing OTEL metrics provider")
+			shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+			defer cancel()
+			if err := otelMetricProvider.Shutdown(shutdownCtx); err != nil {
+				sw.Warn("OTEL metrics shutdown failed", wool.ErrField(err))
+			}
+		}
 	}, nil
+}
+
+func configuredAnalyticsSink() (analytics.Sink, bool, error) {
+	switch strings.ToLower(strings.TrimSpace(os.Getenv("PRODUCT_ANALYTICS_MODE"))) {
+	case "", "disabled":
+		return analytics.NoopSink{}, false, nil
+	case "noop":
+		return analytics.NoopSink{}, true, nil
+	case "posthog":
+		sink, err := analytics.NewPostHog(analytics.PostHogConfig{
+			APIKey: os.Getenv("POSTHOG_PROJECT_API_KEY"),
+			Host:   os.Getenv("POSTHOG_HOST"),
+		})
+		if err != nil {
+			return nil, false, err
+		}
+		return sink, true, nil
+	default:
+		return nil, false, fmt.Errorf("PRODUCT_ANALYTICS_MODE must be disabled, noop, or posthog")
+	}
 }
 
 func configuredMFAStepUpMaxAge() (time.Duration, error) {

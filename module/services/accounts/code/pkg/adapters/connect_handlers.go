@@ -478,6 +478,14 @@ func (h *usageConnectHandler) GetUsage(ctx context.Context, req *connect.Request
 	return unary(ctx, req, h.inner.GetUsage)
 }
 
+func (h *usageConnectHandler) ListUsageMeters(ctx context.Context, req *connect.Request[gen.ListUsageMetersRequest]) (*connect.Response[gen.ListUsageMetersResponse], error) {
+	return unary(ctx, req, h.inner.ListUsageMeters)
+}
+
+func (h *usageConnectHandler) GetUsageHistory(ctx context.Context, req *connect.Request[gen.GetUsageHistoryRequest]) (*connect.Response[gen.GetUsageHistoryResponse], error) {
+	return unary(ctx, req, h.inner.GetUsageHistory)
+}
+
 // ============================================================================
 // WebhookService — backed by business.Service, no gRPC Server struct yet.
 // Secret is server-generated, encrypted at rest, and revealed only in the

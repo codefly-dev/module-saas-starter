@@ -19,6 +19,7 @@ export function useAuditLog(params: AuditLogParams) {
 				actorId: params.actorId ?? "",
 				pageSize: params.pageSize ?? 50,
 			}),
+		enabled: !!params.orgId,
 		select: (data) => ({
 			events: data.events,
 			totalCount: data.totalCount,

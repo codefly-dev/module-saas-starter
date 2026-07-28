@@ -119,6 +119,40 @@ func TestCardinalityQuotaLockRequiresTenantTransaction(t *testing.T) {
 	require.EqualError(t, err, "entitlement quota lock requires a tenant transaction")
 }
 
+func TestGetUsageBucketsReadsAcceptedEventsOnly(t *testing.T) {
+	userID := seedUser(t)
+	orgID := seedOrg(t, userID)
+	periodStart, periodEnd := usageTestPeriod(time.Now())
+	first := usageTestConsumption(
+		orgID, "history-first", 3, 11, periodStart.Add(time.Hour), periodStart, periodEnd,
+	)
+	rejected := usageTestConsumption(
+		orgID, "history-rejected", 20, 12, periodStart.Add(2*time.Hour), periodStart, periodEnd,
+	)
+	require.NoError(t, testStore.WithOrgTx(testCtx, orgID, func(ctx context.Context) error {
+		if _, err := testStore.ConsumeUsage(ctx, first); err != nil {
+			return err
+		}
+		if _, err := testStore.ConsumeUsage(ctx, rejected); err != nil {
+			return err
+		}
+		buckets, err := testStore.GetUsageBuckets(
+			ctx, orgID, first.Meter, periodStart, periodStart.Add(3*time.Hour), business.UsageBucketHour,
+		)
+		require.NoError(t, err)
+		require.Len(t, buckets, 1)
+		require.Equal(t, int64(3), buckets[0].Quantity)
+		require.Equal(t, periodStart.Add(time.Hour), buckets[0].Start)
+		daily, err := testStore.GetUsageBuckets(
+			ctx, orgID, first.Meter, periodStart, periodStart.AddDate(0, 0, 1), business.UsageBucketDay,
+		)
+		require.NoError(t, err)
+		require.Len(t, daily, 1)
+		require.Equal(t, periodStart, daily[0].Start)
+		return nil
+	}))
+}
+
 func usageTestConsumption(orgID, key string, quantity int64, hashByte byte, occurredAt, periodStart, periodEnd time.Time) business.UsageConsumption {
 	var requestHash [32]byte
 	for index := range requestHash {

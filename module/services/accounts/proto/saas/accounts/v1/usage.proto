@@ -69,6 +69,83 @@ message GetUsageResponse {
   google.protobuf.Timestamp period_end = 6;
 }
 
+enum UsageAggregation {
+  USAGE_AGGREGATION_UNSPECIFIED = 0;
+  USAGE_AGGREGATION_SUM = 1;
+  USAGE_AGGREGATION_MAX = 2;
+  USAGE_AGGREGATION_LAST = 3;
+}
+
+enum UsageVisibility {
+  USAGE_VISIBILITY_UNSPECIFIED = 0;
+  USAGE_VISIBILITY_CUSTOMER = 1;
+  USAGE_VISIBILITY_OPERATOR = 2;
+}
+
+enum UsageBucketInterval {
+  USAGE_BUCKET_INTERVAL_UNSPECIFIED = 0;
+  USAGE_BUCKET_INTERVAL_HOUR = 1;
+  USAGE_BUCKET_INTERVAL_DAY = 2;
+  USAGE_BUCKET_INTERVAL_MONTH = 3;
+}
+
+message UsageMeter {
+  string key = 1;
+  string display_name = 2;
+  string unit = 3;
+  UsageAggregation aggregation = 4;
+  string owner = 5;
+  string source = 6;
+  string entitlement_key = 7;
+  string reconciliation_rule = 8;
+  UsageVisibility visibility = 9;
+}
+
+message UsageMeterSnapshot {
+  UsageMeter meter = 1;
+  int64 used = 2;
+  int64 limit = 3;
+  google.protobuf.Timestamp period_start = 4;
+  google.protobuf.Timestamp period_end = 5;
+}
+
+message ListUsageMetersRequest {
+  string organization_id = 1 [(buf.validate.field).string.uuid = true];
+}
+
+message ListUsageMetersResponse {
+  repeated UsageMeterSnapshot meters = 1;
+  google.protobuf.Timestamp observed_at = 2;
+}
+
+message UsageBucket {
+  google.protobuf.Timestamp start = 1;
+  google.protobuf.Timestamp end = 2;
+  int64 quantity = 3;
+}
+
+message GetUsageHistoryRequest {
+  string organization_id = 1 [(buf.validate.field).string.uuid = true];
+  string meter = 2 [(buf.validate.field).string = {pattern: "^[a-z][a-z0-9_]{0,127}$"}];
+  google.protobuf.Timestamp from = 3 [(buf.validate.field).required = true];
+  google.protobuf.Timestamp to = 4 [(buf.validate.field).required = true];
+  UsageBucketInterval bucket = 5 [(buf.validate.field).enum = {
+    defined_only: true
+    not_in: 0
+  }];
+}
+
+message GetUsageHistoryResponse {
+  string organization_id = 1;
+  string meter = 2;
+  UsageBucketInterval bucket = 3;
+  repeated UsageBucket buckets = 4;
+  int64 total = 5;
+  google.protobuf.Timestamp from = 6;
+  google.protobuf.Timestamp to = 7;
+  google.protobuf.Timestamp observed_at = 8;
+}
+
 // UsageService is the generic monthly metering boundary for product services.
 service UsageService {
   // ConsumeUsage is service-to-service only. It atomically enforces the
@@ -110,5 +187,49 @@ service UsageService {
       platform_role: PLATFORM_ROLE_REQUIREMENT_NONE
     };
     option (google.api.http) = {get: "/v1/organizations/{organization_id}/usage/{meter}"};
+  }
+
+  rpc ListUsageMeters(ListUsageMetersRequest) returns (ListUsageMetersResponse) {
+    option (saas.policy.v1.method_policy) = {
+      exposure: EXPOSURE_AUTHENTICATED
+      tenant: TENANT_REQUIREMENT_ORG_MEMBER
+      permissions: "entitlements:read"
+      scopes: "entitlements:read"
+      resource_bindings: {
+        request_field: "organization_id"
+        target: RESOURCE_TARGET_ORGANIZATION
+        lookup: RESOURCE_LOOKUP_DIRECT_ID
+      }
+      mfa: MFA_REQUIREMENT_NONE
+      audit: {emission: AUDIT_EMISSION_NONE}
+      idempotency: IDEMPOTENCY_REQUIREMENT_FORBIDDEN
+      rate_limit: RATE_LIMIT_CLASS_STANDARD_READ
+      request_sensitivity: SENSITIVITY_CONFIDENTIAL
+      response_sensitivity: SENSITIVITY_CONFIDENTIAL
+      platform_role: PLATFORM_ROLE_REQUIREMENT_NONE
+    };
+    option (google.api.http) = {get: "/v1/organizations/{organization_id}/usage"};
+  }
+
+  rpc GetUsageHistory(GetUsageHistoryRequest) returns (GetUsageHistoryResponse) {
+    option (saas.policy.v1.method_policy) = {
+      exposure: EXPOSURE_AUTHENTICATED
+      tenant: TENANT_REQUIREMENT_ORG_MEMBER
+      permissions: "entitlements:read"
+      scopes: "entitlements:read"
+      resource_bindings: {
+        request_field: "organization_id"
+        target: RESOURCE_TARGET_ORGANIZATION
+        lookup: RESOURCE_LOOKUP_DIRECT_ID
+      }
+      mfa: MFA_REQUIREMENT_NONE
+      audit: {emission: AUDIT_EMISSION_NONE}
+      idempotency: IDEMPOTENCY_REQUIREMENT_FORBIDDEN
+      rate_limit: RATE_LIMIT_CLASS_STANDARD_READ
+      request_sensitivity: SENSITIVITY_CONFIDENTIAL
+      response_sensitivity: SENSITIVITY_CONFIDENTIAL
+      platform_role: PLATFORM_ROLE_REQUIREMENT_NONE
+    };
+    option (google.api.http) = {get: "/v1/organizations/{organization_id}/usage/{meter}/history"};
   }
 }
