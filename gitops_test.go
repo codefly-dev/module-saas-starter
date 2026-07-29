@@ -105,6 +105,51 @@ func TestGenerateGitOpsGoldenShapes(t *testing.T) {
 	}
 }
 
+func TestRunGitOpsCommandWritesSelectedEnvironmentToTarget(t *testing.T) {
+	t.Parallel()
+
+	root, moduleDir := writeGitOpsFixture(
+		t,
+		"mind-control",
+		"users",
+		[]string{"store", "vault", "accounts", "cache", "frontend", "forge-edge", "object-storage"},
+	)
+	source := filepath.Join(moduleDir, filepath.FromSlash(gitOpsRelativeDir))
+	target := filepath.Join(t.TempDir(), "kustomize")
+
+	if err := runGitOpsCommand(context.Background(), moduleDir, root, "local", target); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(filepath.Join(target, "inventory.json")); err != nil {
+		t.Fatalf("inspect generated inventory: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(target, "overlays", "local", "kustomization.yaml")); err != nil {
+		t.Fatalf("inspect generated local overlay: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(target, "overlays", "aws")); !os.IsNotExist(err) {
+		t.Fatalf("AWS overlay should not be generated for local command, stat error = %v", err)
+	}
+	if _, err := os.Stat(source); !os.IsNotExist(err) {
+		t.Fatalf("source deployment tree should be unchanged, stat error = %v", err)
+	}
+}
+
+func TestRunGitOpsCommandRejectsUnknownEnvironment(t *testing.T) {
+	t.Parallel()
+
+	root, moduleDir := writeGitOpsFixture(t, "mind-control", "users", []string{"accounts"})
+	err := runGitOpsCommand(
+		context.Background(),
+		moduleDir,
+		root,
+		"production",
+		filepath.Join(t.TempDir(), "kustomize"),
+	)
+	if err == nil || !strings.Contains(err.Error(), `does not declare environment "production"`) {
+		t.Fatalf("runGitOpsCommand() error = %v, want unknown environment rejection", err)
+	}
+}
+
 func TestGenerateGitOpsRejectsHostileContracts(t *testing.T) {
 	t.Parallel()
 
