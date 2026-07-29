@@ -32,7 +32,7 @@ const (
 	cliRenderInventorySchema   = gitopscontract.SchemaVersion
 	coreManifestContract       = "codefly.dev/kubernetes-manifest/v1"
 	inClusterServer            = "https://kubernetes.default.svc"
-	gitOpsInventorySchema      = "codefly.dev/module-gitops/v2"
+	gitOpsInventorySchema      = "codefly.dev/module-gitops/v3"
 )
 
 var (
@@ -50,7 +50,6 @@ type moduleManifest struct {
 
 type workspaceManifest struct {
 	Name         string               `yaml:"name"`
-	Gitops       *workspaceGitOps     `yaml:"gitops,omitempty"`
 	Environments []*environmentConfig `yaml:"environments,omitempty"`
 	root         string
 }
@@ -64,13 +63,13 @@ type workspaceGitOps struct {
 	Revision             string `yaml:"revision"`
 	Checkout             string `yaml:"checkout,omitempty"`
 	Inventory            string `yaml:"inventory"`
-	Environment          string `yaml:"environment"`
 }
 
 type environmentConfig struct {
 	Name            string                          `yaml:"name"`
 	Namespace       string                          `yaml:"namespace"`
 	Cluster         environmentCluster              `yaml:"cluster"`
+	Gitops          *workspaceGitOps                `yaml:"gitops,omitempty"`
 	Ingress         []environmentIngressRoute       `yaml:"ingress,omitempty"`
 	ManagedServices map[string]managedServiceConfig `yaml:"managed-services,omitempty"`
 }
@@ -106,7 +105,6 @@ type gitOpsInventory struct {
 	SchemaVersion string                 `json:"schemaVersion"`
 	Workspace     string                 `json:"workspace"`
 	Module        string                 `json:"module"`
-	Repository    string                 `json:"repository"`
 	OwnedPath     string                 `json:"ownedPath"`
 	Environments  []environmentInventory `json:"environments"`
 }
@@ -114,6 +112,7 @@ type gitOpsInventory struct {
 type environmentInventory struct {
 	Name                   string                  `json:"name"`
 	Namespace              string                  `json:"namespace"`
+	Repository             string                  `json:"repository"`
 	Revision               string                  `json:"revision"`
 	Services               []string                `json:"services"`
 	ServicePaths           map[string]string       `json:"servicePaths"`
@@ -217,6 +216,7 @@ type environmentPlan struct {
 	managed      map[string]managedServiceConfig
 	allowlist    []argoResourceAllow
 	project      string
+	local        bool
 }
 
 type gitOpsContract struct {
@@ -243,10 +243,11 @@ type deploymentTopology struct {
 }
 
 type topologyModule struct {
-	Name         string `yaml:"name"`
-	Namespace    string `yaml:"namespace"`
-	ServiceEntry string `yaml:"service_entry"`
-	Description  string `yaml:"description"`
+	Name         string         `yaml:"name"`
+	Namespace    string         `yaml:"namespace"`
+	ServiceEntry string         `yaml:"service_entry"`
+	Description  string         `yaml:"description"`
+	Agent        map[string]any `yaml:"agent,omitempty"`
 }
 
 type topologyInterface struct {
@@ -256,15 +257,25 @@ type topologyInterface struct {
 }
 
 type topologyService struct {
-	Name                               string               `yaml:"name"`
-	Version                            string               `yaml:"version,omitempty"`
-	Description                        string               `yaml:"description,omitempty"`
-	Agent                              map[string]any       `yaml:"agent,omitempty"`
-	WorkspaceConfigurationDependencies []string             `yaml:"workspace_configuration_dependencies,omitempty"`
-	Endpoints                          []topologyEndpoint   `yaml:"endpoints"`
-	Dependencies                       []topologyDependency `yaml:"dependencies,omitempty"`
-	PublicEgressPorts                  []uint32             `yaml:"public_egress_ports,omitempty"`
-	Spec                               map[string]any       `yaml:"spec,omitempty"`
+	Name                               string                               `yaml:"name"`
+	Version                            string                               `yaml:"version,omitempty"`
+	Description                        string                               `yaml:"description,omitempty"`
+	Agent                              map[string]any                       `yaml:"agent,omitempty"`
+	WorkspaceConfigurationDependencies []string                             `yaml:"workspace_configuration_dependencies,omitempty"`
+	SecretServiceConfigurations        []topologySecretServiceConfiguration `yaml:"secret_service_configurations,omitempty"`
+	Endpoints                          []topologyEndpoint                   `yaml:"endpoints"`
+	Dependencies                       []topologyDependency                 `yaml:"dependencies,omitempty"`
+	PublicEgressPorts                  []uint32                             `yaml:"public_egress_ports,omitempty"`
+	Spec                               map[string]any                       `yaml:"spec,omitempty"`
+}
+
+type topologySecretServiceConfiguration struct {
+	Name    string                                    `yaml:"name"`
+	Entries []topologySecretServiceConfigurationEntry `yaml:"entries"`
+}
+
+type topologySecretServiceConfigurationEntry struct {
+	Key string `yaml:"key"`
 }
 
 type topologyEndpoint struct {
@@ -305,42 +316,7 @@ func generateGitOps(ctx context.Context, moduleDir string, workspace *workspaceM
 	if err != nil {
 		return err
 	}
-	if workspace.Gitops == nil {
-		return fmt.Errorf("workspace %q must declare the CLI GitOps publication contract", workspace.Name)
-	}
-	environment, err := selectGitOpsEnvironment(workspace)
-	if err != nil {
-		return err
-	}
-	local, aws, err := classifyEnvironment(environment)
-	if err != nil {
-		return err
-	}
-	contract, err := validateGitOpsContract(workspace, local)
-	if err != nil {
-		return err
-	}
-	plan, err := planEnvironment(
-		ctx,
-		workspace,
-		environment,
-		manifest.Name,
-		serviceNames(services),
-		topology,
-		contract.checkout,
-		local,
-		aws,
-	)
-	if err != nil {
-		return err
-	}
-	renderInventory, err := inspectGitOpsSnapshot(
-		ctx,
-		contract,
-		manifest.Name,
-		serviceNames(services),
-		&plan,
-	)
+	environments, err := validateGitOpsEnvironments(workspace)
 	if err != nil {
 		return err
 	}
@@ -359,27 +335,69 @@ func generateGitOps(ctx context.Context, moduleDir string, workspace *workspaceM
 		SchemaVersion: gitOpsInventorySchema,
 		Workspace:     workspace.Name,
 		Module:        manifest.Name,
-		Repository:    contract.fetchRepository,
-		OwnedPath:     renderInventory.OwnedPath,
 	}
-	if err := renderEnvironment(
-		stage,
-		workspace.Name,
-		manifest.Name,
-		contract.fetchRepository,
-		topology,
-		plan,
-	); err != nil {
-		return err
+	for _, environment := range environments {
+		local, aws, err := classifyEnvironment(environment)
+		if err != nil {
+			return err
+		}
+		contract, err := validateGitOpsContract(workspace, environment, local)
+		if err != nil {
+			return err
+		}
+		plan, err := planEnvironment(
+			ctx,
+			environment,
+			manifest.Name,
+			serviceNames(services),
+			topology,
+			contract.checkout,
+			local,
+			aws,
+		)
+		if err != nil {
+			return err
+		}
+		renderInventory, err := inspectGitOpsSnapshot(
+			ctx,
+			contract,
+			manifest.Name,
+			serviceNames(services),
+			&plan,
+		)
+		if err != nil {
+			return err
+		}
+		if inventory.OwnedPath == "" {
+			inventory.OwnedPath = renderInventory.OwnedPath
+		} else if inventory.OwnedPath != renderInventory.OwnedPath {
+			return fmt.Errorf(
+				"environment %q owns path %q, want shared module path %q",
+				environment.Name,
+				renderInventory.OwnedPath,
+				inventory.OwnedPath,
+			)
+		}
+		if err := renderEnvironment(
+			stage,
+			workspace.Name,
+			manifest.Name,
+			contract.fetchRepository,
+			topology,
+			plan,
+		); err != nil {
+			return err
+		}
+		inventory.Environments = append(inventory.Environments, environmentInventory{
+			Name:                   plan.environment.Name,
+			Namespace:              plan.environment.Namespace,
+			Repository:             contract.fetchRepository,
+			Revision:               plan.revision,
+			Services:               append([]string(nil), plan.services...),
+			ServicePaths:           cloneStringMap(plan.servicePaths),
+			ManagedServiceHandoffs: append([]managedServiceHandoff(nil), plan.handoffs...),
+		})
 	}
-	inventory.Environments = append(inventory.Environments, environmentInventory{
-		Name:                   plan.environment.Name,
-		Namespace:              plan.environment.Namespace,
-		Revision:               plan.revision,
-		Services:               append([]string(nil), plan.services...),
-		ServicePaths:           cloneStringMap(plan.servicePaths),
-		ManagedServiceHandoffs: append([]managedServiceHandoff(nil), plan.handoffs...),
-	})
 	if err := writeJSON(filepath.Join(stage, "inventory.json"), inventory); err != nil {
 		return err
 	}
@@ -571,13 +589,11 @@ func cloneStringMap(values map[string]string) map[string]string {
 	return cloned
 }
 
-func selectGitOpsEnvironment(workspace *workspaceManifest) (*environmentConfig, error) {
-	selected := strings.TrimSpace(workspace.Gitops.Environment)
-	if err := validateDNSLabel("gitops environment", selected); err != nil {
-		return nil, err
+func validateGitOpsEnvironments(workspace *workspaceManifest) ([]*environmentConfig, error) {
+	if len(workspace.Environments) == 0 {
+		return nil, fmt.Errorf("workspace %q must declare GitOps environments", workspace.Name)
 	}
 	seen := make(map[string]struct{}, len(workspace.Environments))
-	var match *environmentConfig
 	for _, environment := range workspace.Environments {
 		if environment == nil {
 			return nil, fmt.Errorf("workspace contains an empty environment")
@@ -589,42 +605,47 @@ func selectGitOpsEnvironment(workspace *workspaceManifest) (*environmentConfig, 
 			return nil, fmt.Errorf("workspace declares environment %q more than once", environment.Name)
 		}
 		seen[environment.Name] = struct{}{}
-		if environment.Name == selected {
-			match = environment
+		if environment.Gitops == nil {
+			return nil, fmt.Errorf("environment %q must declare its GitOps publication contract", environment.Name)
+		}
+		if err := validateDNSLabel("environment namespace", environment.Namespace); err != nil {
+			return nil, fmt.Errorf("environment %q: %w", environment.Name, err)
 		}
 	}
-	if match == nil {
-		return nil, fmt.Errorf("gitops environment %q is not declared by workspace %q", selected, workspace.Name)
-	}
-	if err := validateDNSLabel("environment namespace", match.Namespace); err != nil {
-		return nil, fmt.Errorf("environment %q: %w", match.Name, err)
-	}
-	return match, nil
+	return workspace.Environments, nil
 }
 
-func validateGitOpsContract(workspace *workspaceManifest, local bool) (gitOpsContract, error) {
+func validateGitOpsContract(
+	workspace *workspaceManifest,
+	environment *environmentConfig,
+	local bool,
+) (gitOpsContract, error) {
 	if err := validateDNSLabel("workspace name", workspace.Name); err != nil {
 		return gitOpsContract{}, err
 	}
-	repository := strings.TrimSpace(workspace.Gitops.RepoURL)
+	config := environment.Gitops
+	repository := strings.TrimSpace(config.RepoURL)
 	if err := validatePublicationRepository(repository, local); err != nil {
-		return gitOpsContract{}, err
+		return gitOpsContract{}, fmt.Errorf("environment %q: %w", environment.Name, err)
 	}
-	fetchRepository := strings.TrimSpace(workspace.Gitops.FetchRepoURL)
-	fetchVerificationRepository := strings.TrimSpace(workspace.Gitops.FetchVerificationURL)
+	fetchRepository := strings.TrimSpace(config.FetchRepoURL)
+	fetchVerificationRepository := strings.TrimSpace(config.FetchVerificationURL)
 	if local {
 		if err := validateLocalFetchRepository(fetchRepository); err != nil {
-			return gitOpsContract{}, err
+			return gitOpsContract{}, fmt.Errorf("environment %q: %w", environment.Name, err)
 		}
 		if err := validateLocalFetchVerificationRepository(
 			fetchVerificationRepository,
 			fetchRepository,
 		); err != nil {
-			return gitOpsContract{}, err
+			return gitOpsContract{}, fmt.Errorf("environment %q: %w", environment.Name, err)
 		}
 	} else {
 		if fetchVerificationRepository != "" {
-			return gitOpsContract{}, fmt.Errorf("workspace gitops fetch-verification-url is only allowed for local qualification")
+			return gitOpsContract{}, fmt.Errorf(
+				"environment %q: workspace gitops fetch-verification-url is only allowed for local qualification",
+				environment.Name,
+			)
 		}
 		if fetchRepository == "" {
 			fetchRepository = repository
@@ -636,29 +657,29 @@ func validateGitOpsContract(workspace *workspaceManifest, local bool) (gitOpsCon
 			return gitOpsContract{}, fmt.Errorf("workspace gitops fetch-repo-url must identify repo-url")
 		}
 	}
-	base, err := cleanOptionalRelativePath(workspace.Gitops.Path)
+	base, err := cleanOptionalRelativePath(config.Path)
 	if err != nil {
 		return gitOpsContract{}, fmt.Errorf("workspace gitops path: %w", err)
 	}
-	inventoryPath, err := cleanRelativePath(workspace.Gitops.Inventory)
+	inventoryPath, err := cleanRelativePath(config.Inventory)
 	if err != nil {
 		return gitOpsContract{}, fmt.Errorf("workspace gitops inventory: %w", err)
 	}
 	if base != "" && inventoryPath != base && !strings.HasPrefix(inventoryPath, base+"/") {
 		return gitOpsContract{}, fmt.Errorf("workspace gitops inventory %q is outside path %q", inventoryPath, base)
 	}
-	if strings.TrimSpace(workspace.Gitops.Branch) == "" {
+	if strings.TrimSpace(config.Branch) == "" {
 		return gitOpsContract{}, fmt.Errorf("workspace gitops branch must name the publish branch")
 	}
-	if strings.TrimSpace(workspace.Gitops.Revision) == "" {
+	if strings.TrimSpace(config.Revision) == "" {
 		return gitOpsContract{}, fmt.Errorf("workspace gitops revision must select the immutable rendered snapshot")
 	}
 	checkout := workspace.root
-	if strings.TrimSpace(workspace.Gitops.Checkout) != "" {
-		if filepath.IsAbs(workspace.Gitops.Checkout) {
-			checkout = filepath.Clean(workspace.Gitops.Checkout)
+	if strings.TrimSpace(config.Checkout) != "" {
+		if filepath.IsAbs(config.Checkout) {
+			checkout = filepath.Clean(config.Checkout)
 		} else {
-			relative, pathErr := cleanRelativeFilesystemPath(workspace.Gitops.Checkout)
+			relative, pathErr := cleanRelativeFilesystemPath(config.Checkout)
 			if pathErr != nil {
 				return gitOpsContract{}, fmt.Errorf("workspace gitops checkout: %w", pathErr)
 			}
@@ -773,7 +794,6 @@ func validSCPRepository(value string) bool {
 
 func planEnvironment(
 	ctx context.Context,
-	workspace *workspaceManifest,
 	environment *environmentConfig,
 	moduleName string,
 	services []string,
@@ -781,7 +801,7 @@ func planEnvironment(
 	checkout string,
 	local, aws bool,
 ) (environmentPlan, error) {
-	revision, err := resolveRevision(ctx, checkout, workspace.Gitops.Revision, local)
+	revision, err := resolveRevision(ctx, checkout, environment.Gitops.Revision, local)
 	if err != nil {
 		return environmentPlan{}, fmt.Errorf("environment %q: %w", environment.Name, err)
 	}
@@ -790,7 +810,7 @@ func planEnvironment(
 		revision:     revision,
 		managed:      make(map[string]managedServiceConfig),
 		servicePaths: make(map[string]string),
-		project:      kubernetesName(workspace.Name, moduleName, environment.Name),
+		local:        local,
 	}
 	if err := validateManagedServices(environment, services, topology, aws, &plan); err != nil {
 		return environmentPlan{}, err
@@ -1073,7 +1093,7 @@ func inspectGitOpsSnapshot(
 		return cliRenderInventory{}, err
 	}
 	if err := validatePublishedRevision(ctx, contract.checkout, contract.repository, plan.revision); err != nil {
-		return cliRenderInventory{}, err
+		return cliRenderInventory{}, fmt.Errorf("environment %q: %w", plan.environment.Name, err)
 	}
 	if contract.fetchVerificationRepository != "" {
 		if err := validatePublishedRevision(
@@ -1082,7 +1102,7 @@ func inspectGitOpsSnapshot(
 			contract.fetchVerificationRepository,
 			plan.revision,
 		); err != nil {
-			return cliRenderInventory{}, err
+			return cliRenderInventory{}, fmt.Errorf("environment %q: %w", plan.environment.Name, err)
 		}
 	}
 	data, err := gitFile(ctx, contract.checkout, plan.revision, contract.inventoryPath)
@@ -1180,13 +1200,10 @@ func loadCLIRenderInventory(
 			plan.environment.Name,
 		)
 	}
-	if inventory.AppProject != plan.project {
-		return cliRenderInventory{}, nil, fmt.Errorf(
-			"CLI render inventory AppProject %q differs from selected AppProject %q",
-			inventory.AppProject,
-			plan.project,
-		)
+	if err := validateDNSLabel("CLI render inventory AppProject", inventory.AppProject); err != nil {
+		return cliRenderInventory{}, nil, err
 	}
+	plan.project = inventory.AppProject
 	ownedPath, err := cleanRelativePath(inventory.OwnedPath)
 	if err != nil || ownedPath != inventory.OwnedPath {
 		return cliRenderInventory{}, nil, fmt.Errorf("CLI render inventory ownedPath must be a canonical relative repository path")
@@ -1259,6 +1276,15 @@ func validateCLIRenderGraph(
 		if err != nil || servicePath != service.Path {
 			return fmt.Errorf("CLI render inventory service %q path must be canonical and relative", service.Service)
 		}
+		expectedPath := path.Join("services", service.Service)
+		if servicePath != expectedPath {
+			return fmt.Errorf(
+				"CLI render inventory service %q path is %q, want %q",
+				service.Service,
+				servicePath,
+				expectedPath,
+			)
+		}
 		if owner, exists := paths[servicePath]; exists {
 			return fmt.Errorf("CLI render inventory services %q and %q share path %q", owner, service.Service, servicePath)
 		}
@@ -1274,10 +1300,15 @@ func validateCLIRenderGraph(
 			}
 		}
 		paths[servicePath] = service.Service
-		if err := validateCorePromotableOutput(service.Service, service.Output); err != nil {
+		if err := validateCorePromotableOutput(service.Service, service.Output, plan.local); err != nil {
 			return err
 		}
-		plan.servicePaths[service.Service] = path.Join(inventory.OwnedPath, servicePath)
+		plan.servicePaths[service.Service] = path.Join(
+			inventory.OwnedPath,
+			servicePath,
+			"overlays",
+			plan.environment.Name,
+		)
 	}
 	for _, service := range services {
 		if _, exists := seen[service]; !exists {
@@ -1287,7 +1318,7 @@ func validateCLIRenderGraph(
 	return nil
 }
 
-func validateCorePromotableOutput(service string, output *cliKubernetesOutput) error {
+func validateCorePromotableOutput(service string, output *cliKubernetesOutput, local bool) error {
 	if output == nil || output.Validation == nil {
 		return fmt.Errorf("CLI render inventory service %q has no Core Kubernetes output evidence", service)
 	}
@@ -1312,8 +1343,11 @@ func validateCorePromotableOutput(service string, output *cliKubernetesOutput) e
 		)
 	}
 	passed := builderv0.KubernetesManifestValidation_STATUS_PASSED.String()
+	notRun := builderv0.KubernetesManifestValidation_STATUS_NOT_RUN.String()
+	serverValidation := output.Validation.ServerSideValidation
 	if output.Validation.StaticValidation != passed ||
-		output.Validation.ServerSideValidation != passed ||
+		(local && serverValidation != passed) ||
+		(!local && serverValidation != passed && serverValidation != notRun) ||
 		!output.Validation.Promotable ||
 		len(output.Validation.Violations) != 0 {
 		return fmt.Errorf("CLI render inventory service %q Core output is not promotable", service)
@@ -2467,7 +2501,7 @@ func validateRenderedObjects(objects []map[string]any, inventory gitOpsInventory
 				return fmt.Errorf("app project contains wildcard authority")
 			}
 			repositories, _ := spec["sourceRepos"].([]any)
-			if len(repositories) != 1 || repositories[0] != inventory.Repository {
+			if len(repositories) != 1 || repositories[0] != environment.Repository {
 				return fmt.Errorf("app project source repository is not exact")
 			}
 		case "Application":
@@ -2477,7 +2511,7 @@ func validateRenderedObjects(objects []map[string]any, inventory gitOpsInventory
 			if !fullCommitPattern.MatchString(revision) {
 				return fmt.Errorf("application revision %q is mutable", revision)
 			}
-			if source["repoURL"] != inventory.Repository {
+			if source["repoURL"] != environment.Repository {
 				return fmt.Errorf("application repository does not match workspace contract")
 			}
 			labels, _ := metadata["labels"].(map[string]any)

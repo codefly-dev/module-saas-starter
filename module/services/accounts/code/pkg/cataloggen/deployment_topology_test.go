@@ -339,6 +339,75 @@ func TestDeploymentTopologyRejectsUnsafeOrIncompleteBindings(t *testing.T) {
 	require.ErrorContains(t, err, "contains a cycle")
 }
 
+func TestDeploymentTopologyGeneratesValidatedSecretServiceConfigurations(t *testing.T) {
+	serviceCatalog := readFixture(t, "../../../generated/service-catalog.json")
+	bindings := string(readFixture(t, "../../../../../deployment/topology.bindings.codefly.yaml"))
+
+	artifacts, err := cataloggen.BuildDeploymentArtifacts(serviceCatalog, []byte(bindings))
+	require.NoError(t, err)
+	objectStorage := string(artifacts.ServiceManifests["object-storage"])
+	require.Contains(t, objectStorage, `secret-service-configurations:
+    - name: s3
+      entries:
+        - key: minio_root_password
+        - key: minio_root_user`)
+	require.Contains(t, string(artifacts.ServiceManifests["vault"]), `secret-service-configurations:
+    - name: vault
+      entries:
+        - key: vault_token`)
+
+	unsortedEntries := strings.Replace(bindings,
+		"          - key: minio_root_password\n          - key: minio_root_user",
+		"          - key: minio_root_user\n          - key: minio_root_password",
+		1,
+	)
+	_, err = cataloggen.BuildDeploymentArtifacts(serviceCatalog, []byte(unsortedEntries))
+	require.ErrorContains(t, err, "entries are invalid or unsorted")
+
+	duplicateGroups := strings.Replace(bindings,
+		"      - name: s3\n        entries:\n          - key: minio_root_password\n          - key: minio_root_user",
+		"      - name: s3\n        entries:\n          - key: minio_root_password\n          - key: minio_root_user\n      - name: s3\n        entries:\n          - key: minio_root_user",
+		1,
+	)
+	_, err = cataloggen.BuildDeploymentArtifacts(serviceCatalog, []byte(duplicateGroups))
+	require.ErrorContains(t, err, "secret service configurations are invalid or unsorted")
+
+	emptyEntries := strings.Replace(bindings,
+		"      - name: vault\n        entries:\n          - key: vault_token",
+		"      - name: vault\n        entries: []",
+		1,
+	)
+	_, err = cataloggen.BuildDeploymentArtifacts(serviceCatalog, []byte(emptyEntries))
+	require.ErrorContains(t, err, "secret service configurations are invalid or unsorted")
+}
+
+func TestDeploymentTopologyPreservesCompleteModuleAgentIdentity(t *testing.T) {
+	serviceCatalog := readFixture(t, "../../../generated/service-catalog.json")
+	bindings := string(readFixture(t, "../../../../../deployment/topology.bindings.codefly.yaml"))
+	withAgent := strings.Replace(bindings,
+		`  description: "SaaS foundation — auth, multi-tenancy, generated RPC policy, RBAC, impersonation, audit"`,
+		`  description: "SaaS foundation — auth, multi-tenancy, generated RPC policy, RBAC, impersonation, audit"
+  agent:
+    kind: codefly:module
+    name: saas-starter
+    version: 0.0.28
+    publisher: codefly.dev`,
+		1,
+	)
+
+	artifacts, err := cataloggen.BuildDeploymentArtifacts(serviceCatalog, []byte(withAgent))
+	require.NoError(t, err)
+	require.Contains(t, string(artifacts.ModuleManifest), `agent:
+    kind: codefly:module
+    name: saas-starter
+    version: 0.0.28
+    publisher: codefly.dev`)
+
+	incomplete := strings.Replace(withAgent, "    publisher: codefly.dev\n", "", 1)
+	_, err = cataloggen.BuildDeploymentArtifacts(serviceCatalog, []byte(incomplete))
+	require.ErrorContains(t, err, "module agent identity is incomplete")
+}
+
 func TestDeploymentCatalogValidationRejectsConsumerUnsafeDrift(t *testing.T) {
 	document := readFixture(t, "../../../../../deployment/generated/service-topology.json")
 	catalog := &catalogv1.DeploymentCatalog{}

@@ -9,47 +9,49 @@ Generation consumes:
 
 - the CLI's canonical render inventory at the reviewed revision, including its
   exact owned path, module/service graph, file digests, and Core output evidence;
-- the selected environment's cluster kind, namespace, and optional exact ingress
-  routes;
+- every environment's cluster kind, namespace, immutable GitOps publication,
+  and optional exact ingress routes;
 - the installed module's declared service inventory and deployment topology;
 - explicit AWS managed-service endpoints, network CIDRs, and external secret
   references.
 
-The declared checkout defaults to the workspace root. Set `gitops.checkout`
-when the rendered GitOps repository is a separate checkout. Its `origin` must
-match `gitops.repo-url`. `gitops.inventory` names the exact repository-relative
+Each environment's declared checkout defaults to the workspace root. Set
+`environment.gitops.checkout` when the rendered GitOps repository is a separate
+checkout. Its `origin` must match `environment.gitops.repo-url`.
+`environment.gitops.inventory` names the exact repository-relative
 `.codefly-render.json` selected by the CLI; the inventory's `ownedPath` is the
 only source of Application paths.
 
 ## CLI publication contract
 
 The CLI owns the render, review, immutable publication, and module-generation
-sequence. Module generation starts only after `gitops.revision` selects the
-reviewed service snapshot:
+sequence. Module generation starts only after every environment's
+`gitops.revision` selects its reviewed service snapshot:
 
 ```yaml
-gitops:
-  repo-url: git@github.com:my-org/platform-config.git
-  path: clusters/codefly
-  branch: main
-  revision: 0123456789abcdef0123456789abcdef01234567
-  checkout: ../platform-config
-  inventory: clusters/codefly/deployments/modules/users/.codefly-render.json
-  environment: aws
+environments:
+  - name: aws
+    gitops:
+      repo-url: git@github.com:my-org/platform-config.git
+      path: clusters/codefly
+      branch: main
+      revision: 0123456789abcdef0123456789abcdef01234567
+      checkout: ../platform-config
+      inventory: clusters/codefly/deployments/modules/users/.codefly-render.json
 ```
 
-The version 2 CLI inventory is canonical JSON. Its shared Go types and
+The version 2 CLI render inventory is canonical JSON. Its public types and
 serializer live in this module's `gitopscontract` package for the CLI producer
-and module consumer. It records the selected module, environment, AppProject,
-owned repository path, sorted exact service graph, sorted file hashes and
-sizes, and aggregate digest. Every in-cluster service records its exact path
-and the returned Core Kubernetes output:
+and module consumer to share. It records the selected module, environment,
+AppProject, owned repository path, sorted exact service graph, sorted file
+hashes and sizes, and aggregate digest. Every in-cluster service records its
+exact path and the returned Core Kubernetes output:
 
 ```json
 {
   "module": "users",
   "service": "accounts",
-  "path": "services/accounts/overlays/aws",
+  "path": "services/accounts",
   "output": {
     "kind": "KUSTOMIZE",
     "profile": "KUBERNETES_OUTPUT_PROFILE_PROMOTABLE_GITOPS_V1",
@@ -71,22 +73,25 @@ that is not promotable under the released v1 contract.
 
 For k3d qualification, `repo-url` may be an absolute credential-free `file://`
 remote used by the CLI. Argo CD cannot read that host path, so the CLI also
-sets an exact `fetch-repo-url` served on `host.k3d.internal`:
+sets an exact `fetch-repo-url` served on `host.k3d.internal` and the matching
+loopback `fetch-verification-url` that module generation can fetch from the
+host:
 
 ```yaml
-gitops:
-  repo-url: file:///tmp/codefly-gitops/platform-config.git
-  fetch-repo-url: http://host.k3d.internal:8080/platform-config.git
-  fetch-verification-url: http://127.0.0.1:8080/platform-config.git
+environments:
+  - name: local
+    gitops:
+      repo-url: file:///tmp/codefly-gitops/platform-config.git
+      fetch-repo-url: http://host.k3d.internal:8080/platform-config.git
+      fetch-verification-url: http://127.0.0.1:8080/platform-config.git
 ```
 
-Applications use only the fetch URL and the resolved 40-character commit. The
-loopback verification URL addresses the same HTTP server from the generator
-host, so publication checks never depend on cluster-only DNS. Local generation
-requires both the publication repository and this Argo-facing mirror to
-advertise the selected checkout `HEAD`. Remote generation requires a full
-commit SHA or a locally verified signed tag and verifies that revision against
-the publication remote. The checkout origin, committed inventory, every
+Applications use only the fetch URL and the resolved 40-character commit.
+Local generation additionally requires the selected revision to equal checkout
+`HEAD` and verifies that both the publication remote and the host-side Argo
+mirror advertise that revision. Remote generation requires a full commit SHA
+or a locally verified signed tag and verifies it against the publication
+remote. The fetch URL contract, checkout origin, committed inventory, every
 inventoried byte, and every rendered Application path are verified before
 output is replaced.
 
@@ -112,12 +117,11 @@ deployment/kustomize/
         <in-cluster-service>.yaml
 ```
 
-The tree contains only `gitops.environment`; generation replaces the previous
-tree instead of retaining Applications or AppProjects from other environments.
-The generator renders every inventoried service path before writing the
-bootstrap. It rejects missing or extra services, managed services with
-in-cluster output, cluster-scoped child resources, unresolved placeholders,
-and Kubernetes Secrets anywhere in the owned tree.
+The tree contains every declared environment. Generation validates all
+inventories and renders every service path before atomically replacing the
+bootstrap. It rejects missing or extra environments or services, managed
+services with in-cluster output, cluster-scoped child resources, unresolved
+placeholders, and Kubernetes Secrets anywhere in the owned tree.
 
 The AppProject repository and destination are exact. Its namespaced resource
 allowlist is derived from the Kubernetes kinds in the immutable child renders;

@@ -6,6 +6,11 @@ agent:
     name: s3
     version: 0.0.16
     publisher: codefly.dev
+secret-service-configurations:
+    - name: s3
+      entries:
+        - key: minio_root_password
+        - key: minio_root_user
 endpoints:
     - name: accounts
       api: tcp
