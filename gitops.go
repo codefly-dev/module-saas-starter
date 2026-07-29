@@ -21,18 +21,23 @@ import (
 	"strconv"
 	"strings"
 
+	builderv0 "github.com/codefly-dev/core/generated/go/codefly/services/builder/v0"
 	"gopkg.in/yaml.v3"
 )
 
 const (
-	argoNamespace         = "argocd"
-	inClusterServer       = "https://kubernetes.default.svc"
-	gitOpsInventorySchema = "codefly.dev/module-gitops/v1"
+	argoNamespace              = "argocd"
+	cliRenderInventoryFilename = ".codefly-render.json"
+	cliRenderInventorySchema   = 2
+	coreManifestContract       = "codefly.dev/kubernetes-manifest/v1"
+	inClusterServer            = "https://kubernetes.default.svc"
+	gitOpsInventorySchema      = "codefly.dev/module-gitops/v2"
 )
 
 var (
 	fullCommitPattern = regexp.MustCompile(`^[0-9a-f]{40}$`)
 	dnsLabelPattern   = regexp.MustCompile(`^[a-z0-9](?:[-a-z0-9]*[a-z0-9])?$`)
+	sha256Pattern     = regexp.MustCompile(`^sha256:[a-f0-9]{64}$`)
 	unresolvedPattern = regexp.MustCompile(`(?i)REPLACE_ME|saas-starter|\$\{[^}]+\}|<[^>]*replace[^>]*>`)
 )
 
@@ -50,11 +55,14 @@ type workspaceManifest struct {
 }
 
 type workspaceGitOps struct {
-	RepoURL  string `yaml:"repo-url"`
-	Path     string `yaml:"path"`
-	Branch   string `yaml:"branch"`
-	Revision string `yaml:"revision"`
-	Checkout string `yaml:"checkout,omitempty"`
+	RepoURL      string `yaml:"repo-url"`
+	FetchRepoURL string `yaml:"fetch-repo-url,omitempty"`
+	Path         string `yaml:"path"`
+	Branch       string `yaml:"branch"`
+	Revision     string `yaml:"revision"`
+	Checkout     string `yaml:"checkout,omitempty"`
+	Inventory    string `yaml:"inventory"`
+	Environment  string `yaml:"environment"`
 }
 
 type environmentConfig struct {
@@ -86,6 +94,45 @@ type serviceDefinition struct {
 	directory string
 }
 
+type cliRenderInventory struct {
+	SchemaVersion int                      `json:"schemaVersion"`
+	Module        string                   `json:"module"`
+	Environment   string                   `json:"environment"`
+	AppProject    string                   `json:"appProject"`
+	OwnedPath     string                   `json:"ownedPath"`
+	ServiceGraph  []cliRenderService       `json:"serviceGraph"`
+	Files         []cliRenderInventoryFile `json:"files"`
+	Digest        string                   `json:"digest"`
+}
+
+type cliRenderService struct {
+	Module  string               `json:"module"`
+	Service string               `json:"service"`
+	Path    string               `json:"path,omitempty"`
+	Managed bool                 `json:"managed,omitempty"`
+	Output  *cliKubernetesOutput `json:"output,omitempty"`
+}
+
+type cliKubernetesOutput struct {
+	Kind            string                   `json:"kind"`
+	Profile         string                   `json:"profile"`
+	ContractVersion string                   `json:"contractVersion"`
+	Validation      *cliKubernetesValidation `json:"validation"`
+}
+
+type cliKubernetesValidation struct {
+	StaticValidation     string   `json:"staticValidation"`
+	ServerSideValidation string   `json:"serverSideValidation"`
+	Promotable           bool     `json:"promotable"`
+	Violations           []string `json:"violations"`
+}
+
+type cliRenderInventoryFile struct {
+	Path   string `json:"path"`
+	SHA256 string `json:"sha256"`
+	Size   int64  `json:"size"`
+}
+
 type gitOpsInventory struct {
 	SchemaVersion string                 `json:"schemaVersion"`
 	Workspace     string                 `json:"workspace"`
@@ -100,6 +147,7 @@ type environmentInventory struct {
 	Namespace              string                  `json:"namespace"`
 	Revision               string                  `json:"revision"`
 	Services               []string                `json:"services"`
+	ServicePaths           map[string]string       `json:"servicePaths"`
 	ManagedServiceHandoffs []managedServiceHandoff `json:"managedServiceHandoffs,omitempty"`
 }
 
@@ -121,21 +169,6 @@ type managedSecretReference struct {
 	Name        string         `yaml:"name"`
 	RemoteKey   string         `yaml:"remote-key"`
 	SecretStore secretStoreRef `yaml:"secret-store"`
-}
-
-type cliRenderInventory struct {
-	SchemaVersion int                      `json:"schemaVersion"`
-	Module        string                   `json:"module"`
-	Service       string                   `json:"service,omitempty"`
-	Environment   string                   `json:"environment"`
-	Files         []cliRenderInventoryFile `json:"files"`
-	Digest        string                   `json:"digest"`
-}
-
-type cliRenderInventoryFile struct {
-	Path   string `json:"path"`
-	SHA256 string `json:"sha256"`
-	Size   int64  `json:"size"`
 }
 
 type secretStoreRef struct {
@@ -206,14 +239,22 @@ type automatedSync struct {
 }
 
 type environmentPlan struct {
-	environment *environmentConfig
-	revision    string
-	services    []string
-	ingress     []ingressRoutePlan
-	handoffs    []managedServiceHandoff
-	managed     map[string]managedServiceConfig
-	allowlist   []argoResourceAllow
-	project     string
+	environment  *environmentConfig
+	revision     string
+	services     []string
+	servicePaths map[string]string
+	ingress      []ingressRoutePlan
+	handoffs     []managedServiceHandoff
+	managed      map[string]managedServiceConfig
+	allowlist    []argoResourceAllow
+	project      string
+}
+
+type gitOpsContract struct {
+	repository      string
+	fetchRepository string
+	inventoryPath   string
+	checkout        string
 }
 
 type ingressRoutePlan struct {
@@ -282,22 +323,6 @@ func loadWorkspaceManifest(root string) (*workspaceManifest, error) {
 }
 
 func generateGitOps(ctx context.Context, moduleDir string, workspace *workspaceManifest) error {
-	return generateGitOpsTo(
-		ctx,
-		moduleDir,
-		workspace,
-		filepath.Join(moduleDir, filepath.FromSlash(gitOpsRelativeDir)),
-		false,
-	)
-}
-
-func generateGitOpsTo(
-	ctx context.Context,
-	moduleDir string,
-	workspace *workspaceManifest,
-	root string,
-	requireCLIRenderInventory bool,
-) error {
 	manifest, err := loadModuleManifest(moduleDir)
 	if err != nil {
 		return err
@@ -311,35 +336,46 @@ func generateGitOpsTo(
 		return err
 	}
 	if workspace.Gitops == nil {
-		return fmt.Errorf("workspace %q must declare gitops repository, path, and branch", workspace.Name)
+		return fmt.Errorf("workspace %q must declare the CLI GitOps publication contract", workspace.Name)
 	}
-	repository, ownedPath, checkout, err := validateGitOpsContract(workspace, manifest.Name)
+	environment, err := selectGitOpsEnvironment(workspace)
 	if err != nil {
 		return err
 	}
-	plans, err := planEnvironments(ctx, workspace, manifest.Name, serviceNames(services), topology, checkout)
+	local, aws, err := classifyEnvironment(environment)
 	if err != nil {
 		return err
 	}
-	if err := inspectGitOpsSnapshot(ctx, checkout, repository, ownedPath, plans); err != nil {
+	contract, err := validateGitOpsContract(workspace, local)
+	if err != nil {
 		return err
 	}
-	if requireCLIRenderInventory {
-		moduleRoot := path.Dir(ownedPath)
-		for _, plan := range plans {
-			if err := validateCLIRenderInventory(
-				ctx,
-				checkout,
-				plan.revision,
-				moduleRoot,
-				manifest.Name,
-				plan.environment.Name,
-			); err != nil {
-				return fmt.Errorf("environment %q: %w", plan.environment.Name, err)
-			}
-		}
+	plan, err := planEnvironment(
+		ctx,
+		workspace,
+		environment,
+		manifest.Name,
+		serviceNames(services),
+		topology,
+		contract.checkout,
+		local,
+		aws,
+	)
+	if err != nil {
+		return err
+	}
+	renderInventory, err := inspectGitOpsSnapshot(
+		ctx,
+		contract,
+		manifest.Name,
+		serviceNames(services),
+		&plan,
+	)
+	if err != nil {
+		return err
 	}
 
+	root := filepath.Join(moduleDir, filepath.FromSlash(gitOpsRelativeDir))
 	if err := os.MkdirAll(filepath.Dir(root), 0o755); err != nil {
 		return fmt.Errorf("create deployment directory: %w", err)
 	}
@@ -353,21 +389,27 @@ func generateGitOpsTo(
 		SchemaVersion: gitOpsInventorySchema,
 		Workspace:     workspace.Name,
 		Module:        manifest.Name,
-		Repository:    repository,
-		OwnedPath:     ownedPath,
+		Repository:    contract.fetchRepository,
+		OwnedPath:     renderInventory.OwnedPath,
 	}
-	for _, plan := range plans {
-		if err := renderEnvironment(stage, workspace.Name, manifest.Name, repository, ownedPath, topology, plan); err != nil {
-			return err
-		}
-		inventory.Environments = append(inventory.Environments, environmentInventory{
-			Name:                   plan.environment.Name,
-			Namespace:              plan.environment.Namespace,
-			Revision:               plan.revision,
-			Services:               append([]string(nil), plan.services...),
-			ManagedServiceHandoffs: append([]managedServiceHandoff(nil), plan.handoffs...),
-		})
+	if err := renderEnvironment(
+		stage,
+		workspace.Name,
+		manifest.Name,
+		contract.fetchRepository,
+		topology,
+		plan,
+	); err != nil {
+		return err
 	}
+	inventory.Environments = append(inventory.Environments, environmentInventory{
+		Name:                   plan.environment.Name,
+		Namespace:              plan.environment.Namespace,
+		Revision:               plan.revision,
+		Services:               append([]string(nil), plan.services...),
+		ServicePaths:           cloneStringMap(plan.servicePaths),
+		ManagedServiceHandoffs: append([]managedServiceHandoff(nil), plan.handoffs...),
+	})
 	if err := writeJSON(filepath.Join(stage, "inventory.json"), inventory); err != nil {
 		return err
 	}
@@ -378,126 +420,6 @@ func generateGitOpsTo(
 		return err
 	}
 	return nil
-}
-
-func generateGitOpsEnvironment(
-	ctx context.Context,
-	moduleDir,
-	workspaceRoot,
-	environment,
-	destination string,
-) error {
-	workspace, err := loadWorkspaceManifest(workspaceRoot)
-	if err != nil {
-		return fmt.Errorf("load workspace: %w", err)
-	}
-	selected := *workspace
-	selected.Environments = nil
-	for _, candidate := range workspace.Environments {
-		if candidate != nil && candidate.Name == environment {
-			selected.Environments = []*environmentConfig{candidate}
-			break
-		}
-	}
-	if len(selected.Environments) == 0 {
-		return fmt.Errorf("workspace %q does not declare environment %q", workspace.Name, environment)
-	}
-	return generateGitOpsTo(ctx, moduleDir, &selected, destination, true)
-}
-
-func validateCLIRenderInventory(
-	ctx context.Context,
-	checkout,
-	revision,
-	moduleRoot,
-	module,
-	environment string,
-) error {
-	inventoryPath := path.Join(moduleRoot, ".codefly-render.json")
-	data, err := gitFile(ctx, checkout, revision, inventoryPath)
-	if err != nil {
-		return fmt.Errorf("immutable snapshot has no CLI render inventory at %s: %w", inventoryPath, err)
-	}
-	var inventory cliRenderInventory
-	if err := json.Unmarshal(data, &inventory); err != nil {
-		return fmt.Errorf("decode CLI render inventory: %w", err)
-	}
-	if inventory.SchemaVersion != 1 || inventory.Module != module ||
-		inventory.Environment != environment || inventory.Service != "" {
-		return fmt.Errorf(
-			"CLI render inventory targets schema %d module %q environment %q service %q",
-			inventory.SchemaVersion,
-			inventory.Module,
-			inventory.Environment,
-			inventory.Service,
-		)
-	}
-	canonical, err := json.MarshalIndent(inventory, "", "  ")
-	if err != nil {
-		return err
-	}
-	canonical = append(canonical, '\n')
-	if !bytes.Equal(data, canonical) {
-		return fmt.Errorf("CLI render inventory is not canonical")
-	}
-	slices.SortFunc(inventory.Files, func(left, right cliRenderInventoryFile) int {
-		return strings.Compare(left.Path, right.Path)
-	})
-	hash := sha256.New()
-	serviceFiles := make(map[string]struct{})
-	for _, file := range inventory.Files {
-		clean, err := cleanRelativeFilesystemPath(file.Path)
-		if err != nil || filepath.ToSlash(clean) != file.Path {
-			return fmt.Errorf("CLI render inventory contains unsafe path %q", file.Path)
-		}
-		content, err := gitFile(ctx, checkout, revision, path.Join(moduleRoot, file.Path))
-		if err != nil {
-			return fmt.Errorf("CLI render inventory file %q is missing: %w", file.Path, err)
-		}
-		actual := sha256.Sum256(content)
-		if file.SHA256 != "sha256:"+hex.EncodeToString(actual[:]) || file.Size != int64(len(content)) {
-			return fmt.Errorf("CLI render inventory file %q differs from its recorded digest", file.Path)
-		}
-		fmt.Fprintf(hash, "%s\x00%s\x00%d\n", file.Path, file.SHA256, file.Size)
-		if strings.HasPrefix(file.Path, "services/") {
-			serviceFiles[file.Path] = struct{}{}
-		}
-	}
-	if inventory.Digest != "sha256:"+hex.EncodeToString(hash.Sum(nil)) {
-		return fmt.Errorf("CLI render inventory digest is invalid")
-	}
-	tree, err := gitLines(ctx, checkout, "ls-tree", "-r", "--name-only", revision, "--", path.Join(moduleRoot, "services"))
-	if err != nil {
-		return fmt.Errorf("list immutable service snapshot: %w", err)
-	}
-	if len(tree) != len(serviceFiles) {
-		return fmt.Errorf("CLI render inventory does not own the exact immutable service snapshot")
-	}
-	for _, file := range tree {
-		relative := strings.TrimPrefix(file, moduleRoot+"/")
-		if _, exists := serviceFiles[relative]; !exists {
-			return fmt.Errorf("immutable service file %q is absent from the CLI render inventory", relative)
-		}
-	}
-	return nil
-}
-
-func gitFile(ctx context.Context, checkout, revision, file string) ([]byte, error) {
-	command := exec.CommandContext(ctx, "git", "-C", checkout, "show", revision+":"+file)
-	return command.Output()
-}
-
-func gitLines(ctx context.Context, checkout string, arguments ...string) ([]string, error) {
-	command := exec.CommandContext(ctx, "git", append([]string{"-C", checkout}, arguments...)...)
-	output, err := command.Output()
-	if err != nil {
-		return nil, err
-	}
-	value := strings.TrimSpace(string(output))
-	if value == "" {
-		return nil, nil
-	}
-	return strings.Split(value, "\n"), nil
 }
 
 func replaceGeneratedTree(stage, root string) error {
@@ -671,43 +593,86 @@ func serviceNames(services []serviceDefinition) []string {
 	return names
 }
 
-func validateGitOpsContract(workspace *workspaceManifest, moduleName string) (string, string, string, error) {
+func cloneStringMap(values map[string]string) map[string]string {
+	cloned := make(map[string]string, len(values))
+	for key, value := range values {
+		cloned[key] = value
+	}
+	return cloned
+}
+
+func selectGitOpsEnvironment(workspace *workspaceManifest) (*environmentConfig, error) {
+	selected := strings.TrimSpace(workspace.Gitops.Environment)
+	if err := validateDNSLabel("gitops environment", selected); err != nil {
+		return nil, err
+	}
+	seen := make(map[string]struct{}, len(workspace.Environments))
+	var match *environmentConfig
+	for _, environment := range workspace.Environments {
+		if environment == nil {
+			return nil, fmt.Errorf("workspace contains an empty environment")
+		}
+		if err := validateDNSLabel("environment name", environment.Name); err != nil {
+			return nil, err
+		}
+		if _, exists := seen[environment.Name]; exists {
+			return nil, fmt.Errorf("workspace declares environment %q more than once", environment.Name)
+		}
+		seen[environment.Name] = struct{}{}
+		if environment.Name == selected {
+			match = environment
+		}
+	}
+	if match == nil {
+		return nil, fmt.Errorf("gitops environment %q is not declared by workspace %q", selected, workspace.Name)
+	}
+	if err := validateDNSLabel("environment namespace", match.Namespace); err != nil {
+		return nil, fmt.Errorf("environment %q: %w", match.Name, err)
+	}
+	return match, nil
+}
+
+func validateGitOpsContract(workspace *workspaceManifest, local bool) (gitOpsContract, error) {
 	if err := validateDNSLabel("workspace name", workspace.Name); err != nil {
-		return "", "", "", err
+		return gitOpsContract{}, err
 	}
 	repository := strings.TrimSpace(workspace.Gitops.RepoURL)
-	lowerRepository := strings.ToLower(repository)
-	if repository == "" || strings.Contains(repository, "*") ||
-		strings.Contains(lowerRepository, "replace_me") || strings.ContainsAny(repository, "\r\n\t ") {
-		return "", "", "", fmt.Errorf("workspace gitops repo-url must be an exact repository URL")
+	if err := validatePublicationRepository(repository, local); err != nil {
+		return gitOpsContract{}, err
 	}
-	if strings.Contains(repository, "://") {
-		parsed, err := url.Parse(repository)
-		if err != nil || parsed.Host == "" || parsed.Path == "" ||
-			(parsed.Scheme != "https" && parsed.Scheme != "ssh") ||
-			parsed.RawQuery != "" || parsed.Fragment != "" {
-			return "", "", "", fmt.Errorf("workspace gitops repo-url must be an exact HTTPS or SSH repository URL")
+	fetchRepository := strings.TrimSpace(workspace.Gitops.FetchRepoURL)
+	if local {
+		if err := validateLocalFetchRepository(fetchRepository); err != nil {
+			return gitOpsContract{}, err
 		}
-		if parsed.User != nil {
-			if _, password := parsed.User.Password(); password ||
-				parsed.Scheme == "https" || parsed.User.Username() != "git" {
-				return "", "", "", fmt.Errorf("workspace gitops repo-url must not contain credentials")
-			}
+	} else {
+		if fetchRepository == "" {
+			fetchRepository = repository
 		}
-	} else if !validSCPRepository(repository) {
-		return "", "", "", fmt.Errorf("workspace gitops repo-url must be an exact HTTPS or SSH repository URL")
+		if err := validateRemoteRepository(fetchRepository); err != nil {
+			return gitOpsContract{}, fmt.Errorf("workspace gitops fetch-repo-url: %w", err)
+		}
+		if canonicalRepository(fetchRepository) != canonicalRepository(repository) {
+			return gitOpsContract{}, fmt.Errorf("workspace gitops fetch-repo-url must identify repo-url")
+		}
 	}
 	base, err := cleanOptionalRelativePath(workspace.Gitops.Path)
 	if err != nil {
-		return "", "", "", fmt.Errorf("workspace gitops path: %w", err)
+		return gitOpsContract{}, fmt.Errorf("workspace gitops path: %w", err)
+	}
+	inventoryPath, err := cleanRelativePath(workspace.Gitops.Inventory)
+	if err != nil {
+		return gitOpsContract{}, fmt.Errorf("workspace gitops inventory: %w", err)
+	}
+	if base != "" && inventoryPath != base && !strings.HasPrefix(inventoryPath, base+"/") {
+		return gitOpsContract{}, fmt.Errorf("workspace gitops inventory %q is outside path %q", inventoryPath, base)
 	}
 	if strings.TrimSpace(workspace.Gitops.Branch) == "" {
-		return "", "", "", fmt.Errorf("workspace gitops branch must name the publish branch")
+		return gitOpsContract{}, fmt.Errorf("workspace gitops branch must name the publish branch")
 	}
 	if strings.TrimSpace(workspace.Gitops.Revision) == "" {
-		return "", "", "", fmt.Errorf("workspace gitops revision must select the immutable rendered snapshot")
+		return gitOpsContract{}, fmt.Errorf("workspace gitops revision must select the immutable rendered snapshot")
 	}
-	owned := path.Join(base, "deployments", "modules", moduleName, "services")
 	checkout := workspace.root
 	if strings.TrimSpace(workspace.Gitops.Checkout) != "" {
 		if filepath.IsAbs(workspace.Gitops.Checkout) {
@@ -715,16 +680,81 @@ func validateGitOpsContract(workspace *workspaceManifest, moduleName string) (st
 		} else {
 			relative, pathErr := cleanRelativeFilesystemPath(workspace.Gitops.Checkout)
 			if pathErr != nil {
-				return "", "", "", fmt.Errorf("workspace gitops checkout: %w", pathErr)
+				return gitOpsContract{}, fmt.Errorf("workspace gitops checkout: %w", pathErr)
 			}
 			checkout = filepath.Join(workspace.root, relative)
 		}
 	}
 	info, err := os.Stat(checkout)
 	if err != nil || !info.IsDir() {
-		return "", "", "", fmt.Errorf("workspace gitops checkout %q is not a directory", checkout)
+		return gitOpsContract{}, fmt.Errorf("workspace gitops checkout %q is not a directory", checkout)
 	}
-	return repository, owned, checkout, nil
+	return gitOpsContract{
+		repository:      repository,
+		fetchRepository: fetchRepository,
+		inventoryPath:   inventoryPath,
+		checkout:        checkout,
+	}, nil
+}
+
+func validatePublicationRepository(repository string, local bool) error {
+	lowerRepository := strings.ToLower(repository)
+	if repository == "" || strings.Contains(repository, "*") ||
+		strings.Contains(lowerRepository, "replace_me") || strings.ContainsAny(repository, "\r\n\t ") {
+		return fmt.Errorf("workspace gitops repo-url must be an exact repository URL")
+	}
+	if strings.HasPrefix(repository, "file://") {
+		if !local {
+			return fmt.Errorf("workspace gitops repo-url file transport is only allowed for local qualification")
+		}
+		parsed, err := url.Parse(repository)
+		if err != nil || parsed.Scheme != "file" || parsed.Host != "" || parsed.User != nil ||
+			!filepath.IsAbs(filepath.FromSlash(parsed.Path)) || parsed.Path == "/" ||
+			!strings.HasSuffix(parsed.Path, ".git") ||
+			parsed.RawQuery != "" || parsed.Fragment != "" {
+			return fmt.Errorf("workspace gitops repo-url must be an absolute credential-free file URL")
+		}
+		return nil
+	}
+	if err := validateRemoteRepository(repository); err != nil {
+		return fmt.Errorf("workspace gitops repo-url: %w", err)
+	}
+	return nil
+}
+
+func validateRemoteRepository(repository string) error {
+	if strings.Contains(repository, "://") {
+		parsed, err := url.Parse(repository)
+		if err != nil || parsed.Host == "" || parsed.Path == "" ||
+			(parsed.Scheme != "https" && parsed.Scheme != "ssh") ||
+			parsed.RawQuery != "" || parsed.Fragment != "" {
+			return fmt.Errorf("must be an exact HTTPS or SSH repository URL")
+		}
+		if parsed.User != nil {
+			if _, password := parsed.User.Password(); password ||
+				parsed.Scheme == "https" || parsed.User.Username() != "git" {
+				return fmt.Errorf("must not contain credentials")
+			}
+		}
+		return nil
+	}
+	if !validSCPRepository(repository) {
+		return fmt.Errorf("must be an exact HTTPS or SSH repository URL")
+	}
+	return nil
+}
+
+func validateLocalFetchRepository(repository string) error {
+	parsed, err := url.Parse(repository)
+	if err != nil || (parsed.Scheme != "http" && parsed.Scheme != "https") ||
+		parsed.Host == "" || parsed.Path == "" || parsed.Path == "/" ||
+		!strings.HasSuffix(parsed.Path, ".git") ||
+		parsed.Hostname() != "host.k3d.internal" ||
+		parsed.User != nil || parsed.RawQuery != "" || parsed.Fragment != "" ||
+		strings.Contains(repository, "*") {
+		return fmt.Errorf("workspace gitops fetch-repo-url must be an exact credential-free HTTP(S) URL on host.k3d.internal")
+	}
+	return nil
 }
 
 func validSCPRepository(value string) bool {
@@ -739,61 +769,38 @@ func validSCPRepository(value string) bool {
 		repositoryPath != ".." && !strings.HasPrefix(repositoryPath, "../")
 }
 
-func planEnvironments(
+func planEnvironment(
 	ctx context.Context,
 	workspace *workspaceManifest,
+	environment *environmentConfig,
 	moduleName string,
 	services []string,
 	topology deploymentTopology,
 	checkout string,
-) ([]environmentPlan, error) {
-	if len(workspace.Environments) == 0 {
-		return nil, fmt.Errorf("workspace %q must declare at least one GitOps environment", workspace.Name)
+	local, aws bool,
+) (environmentPlan, error) {
+	revision, err := resolveRevision(ctx, checkout, workspace.Gitops.Revision, local)
+	if err != nil {
+		return environmentPlan{}, fmt.Errorf("environment %q: %w", environment.Name, err)
 	}
-	seen := make(map[string]struct{}, len(workspace.Environments))
-	plans := make([]environmentPlan, 0, len(workspace.Environments))
-	for _, environment := range workspace.Environments {
-		if environment == nil {
-			return nil, fmt.Errorf("workspace contains an empty environment")
-		}
-		if err := validateDNSLabel("environment name", environment.Name); err != nil {
-			return nil, err
-		}
-		if _, exists := seen[environment.Name]; exists {
-			return nil, fmt.Errorf("workspace declares environment %q more than once", environment.Name)
-		}
-		seen[environment.Name] = struct{}{}
-		if err := validateDNSLabel("environment namespace", environment.Namespace); err != nil {
-			return nil, fmt.Errorf("environment %q: %w", environment.Name, err)
-		}
-		local, aws, err := classifyEnvironment(environment)
-		if err != nil {
-			return nil, err
-		}
-		revision, err := resolveRevision(ctx, checkout, workspace.Gitops.Revision, local)
-		if err != nil {
-			return nil, fmt.Errorf("environment %q: %w", environment.Name, err)
-		}
-		plan := environmentPlan{
-			environment: environment,
-			revision:    revision,
-			managed:     make(map[string]managedServiceConfig),
-			project:     kubernetesName(workspace.Name, moduleName, environment.Name),
-		}
-		if err := validateManagedServices(environment, services, topology, aws, &plan); err != nil {
-			return nil, err
-		}
-		for _, service := range services {
-			if _, managed := plan.managed[service]; !managed {
-				plan.services = append(plan.services, service)
-			}
-		}
-		if err := validateIngressRoutes(environment, topology, &plan); err != nil {
-			return nil, err
-		}
-		plans = append(plans, plan)
+	plan := environmentPlan{
+		environment:  environment,
+		revision:     revision,
+		managed:      make(map[string]managedServiceConfig),
+		servicePaths: make(map[string]string),
 	}
-	return plans, nil
+	if err := validateManagedServices(environment, services, topology, aws, &plan); err != nil {
+		return environmentPlan{}, err
+	}
+	for _, service := range services {
+		if _, managed := plan.managed[service]; !managed {
+			plan.services = append(plan.services, service)
+		}
+	}
+	if err := validateIngressRoutes(environment, topology, &plan); err != nil {
+		return environmentPlan{}, err
+	}
+	return plan, nil
 }
 
 func validateIngressRoutes(
@@ -802,40 +809,7 @@ func validateIngressRoutes(
 	plan *environmentPlan,
 ) error {
 	if len(environment.Ingress) == 0 {
-		entry, exists := topologyServiceByName(topology, topology.Module.ServiceEntry)
-		if !exists || !slices.Contains(plan.services, entry.Name) {
-			return fmt.Errorf(
-				"environment %q service entry %q is not an in-cluster service",
-				environment.Name,
-				topology.Module.ServiceEntry,
-			)
-		}
-		for _, exposed := range topology.Interface {
-			if exposed.Service != entry.Name || exposed.Visibility != "public" {
-				continue
-			}
-			endpoint, found := topologyEndpointByName(entry, exposed.Endpoint)
-			if !found {
-				return fmt.Errorf(
-					"environment %q public interface references missing endpoint %s/%s",
-					environment.Name,
-					entry.Name,
-					exposed.Endpoint,
-				)
-			}
-			plan.ingress = []ingressRoutePlan{{
-				name:     entry.Name,
-				service:  entry.Name,
-				endpoint: exposed.Endpoint,
-				port:     endpoint.Port,
-			}}
-			return nil
-		}
-		return fmt.Errorf(
-			"environment %q service entry %q has no public interface endpoint",
-			environment.Name,
-			entry.Name,
-		)
+		return fmt.Errorf("environment %q must declare at least one exact ingress route", environment.Name)
 	}
 
 	routeNames := make(map[string]struct{}, len(environment.Ingress))
@@ -1087,30 +1061,303 @@ func gitRevision(ctx context.Context, root, revision string) (string, error) {
 
 func inspectGitOpsSnapshot(
 	ctx context.Context,
-	checkout string,
-	repository string,
-	ownedPath string,
-	plans []environmentPlan,
-) error {
-	if err := validateCheckoutRepository(ctx, checkout, repository); err != nil {
-		return err
+	contract gitOpsContract,
+	moduleName string,
+	services []string,
+	plan *environmentPlan,
+) (cliRenderInventory, error) {
+	if err := validateCheckoutRepository(ctx, contract.checkout, contract.repository); err != nil {
+		return cliRenderInventory{}, err
 	}
-	snapshots := make(map[string]string)
-	for index := range plans {
-		plan := &plans[index]
-		snapshot, exists := snapshots[plan.revision]
-		if !exists {
-			var err error
-			snapshot, err = archiveGitOpsSnapshot(ctx, checkout, plan.revision, ownedPath)
-			if err != nil {
-				return fmt.Errorf("environment %q: %w", plan.environment.Name, err)
+	data, err := gitFile(ctx, contract.checkout, plan.revision, contract.inventoryPath)
+	if err != nil {
+		return cliRenderInventory{}, fmt.Errorf(
+			"environment %q immutable revision has no CLI render inventory %q: %w",
+			plan.environment.Name,
+			contract.inventoryPath,
+			err,
+		)
+	}
+	inventory, canonical, err := loadCLIRenderInventory(
+		data,
+		contract.inventoryPath,
+		moduleName,
+		services,
+		plan,
+	)
+	if err != nil {
+		return cliRenderInventory{}, fmt.Errorf("environment %q: %w", plan.environment.Name, err)
+	}
+	snapshot, err := archiveGitOpsSnapshot(ctx, contract.checkout, plan.revision, inventory.OwnedPath)
+	if err != nil {
+		return cliRenderInventory{}, fmt.Errorf("environment %q: %w", plan.environment.Name, err)
+	}
+	defer func() { _ = os.RemoveAll(snapshot) }()
+	if err := validateSnapshotInventory(snapshot, inventory, canonical); err != nil {
+		return cliRenderInventory{}, fmt.Errorf("environment %q: %w", plan.environment.Name, err)
+	}
+	if err := inspectEnvironmentSnapshot(snapshot, inventory, plan); err != nil {
+		return cliRenderInventory{}, fmt.Errorf("environment %q: %w", plan.environment.Name, err)
+	}
+	return inventory, nil
+}
+
+func gitFile(ctx context.Context, checkout, revision, file string) ([]byte, error) {
+	command := exec.CommandContext(ctx, "git", "-C", checkout, "show", revision+":"+file)
+	var stderr bytes.Buffer
+	command.Stderr = &stderr
+	data, err := command.Output()
+	if err != nil {
+		return nil, fmt.Errorf("%w: %s", err, strings.TrimSpace(stderr.String()))
+	}
+	return data, nil
+}
+
+func loadCLIRenderInventory(
+	data []byte,
+	inventoryPath,
+	moduleName string,
+	services []string,
+	plan *environmentPlan,
+) (cliRenderInventory, []byte, error) {
+	var inventory cliRenderInventory
+	decoder := json.NewDecoder(bytes.NewReader(data))
+	decoder.DisallowUnknownFields()
+	if err := decoder.Decode(&inventory); err != nil {
+		return cliRenderInventory{}, nil, fmt.Errorf("decode CLI render inventory: %w", err)
+	}
+	if decoder.Decode(&struct{}{}) != io.EOF {
+		return cliRenderInventory{}, nil, fmt.Errorf("CLI render inventory contains trailing data")
+	}
+	canonical, err := json.MarshalIndent(inventory, "", "  ")
+	if err != nil {
+		return cliRenderInventory{}, nil, fmt.Errorf("encode CLI render inventory: %w", err)
+	}
+	canonical = append(canonical, '\n')
+	if !bytes.Equal(data, canonical) {
+		return cliRenderInventory{}, nil, fmt.Errorf("CLI render inventory is not canonical")
+	}
+	if inventory.SchemaVersion != cliRenderInventorySchema {
+		return cliRenderInventory{}, nil, fmt.Errorf(
+			"CLI render inventory schema is %d, want %d",
+			inventory.SchemaVersion,
+			cliRenderInventorySchema,
+		)
+	}
+	if inventory.Module != moduleName || inventory.Environment != plan.environment.Name {
+		return cliRenderInventory{}, nil, fmt.Errorf(
+			"CLI render inventory targets module %q environment %q, want module %q environment %q",
+			inventory.Module,
+			inventory.Environment,
+			moduleName,
+			plan.environment.Name,
+		)
+	}
+	if err := validateDNSLabel("CLI render inventory AppProject", inventory.AppProject); err != nil {
+		return cliRenderInventory{}, nil, err
+	}
+	plan.project = inventory.AppProject
+	ownedPath, err := cleanRelativePath(inventory.OwnedPath)
+	if err != nil || ownedPath != inventory.OwnedPath {
+		return cliRenderInventory{}, nil, fmt.Errorf("CLI render inventory ownedPath must be a canonical relative repository path")
+	}
+	if inventoryPath != path.Join(ownedPath, cliRenderInventoryFilename) {
+		return cliRenderInventory{}, nil, fmt.Errorf(
+			"CLI render inventory path %q must equal owned path inventory %q",
+			inventoryPath,
+			path.Join(ownedPath, cliRenderInventoryFilename),
+		)
+	}
+	if err := validateCLIRenderGraph(&inventory, moduleName, services, plan); err != nil {
+		return cliRenderInventory{}, nil, err
+	}
+	if err := validateCLIRenderFiles(inventory); err != nil {
+		return cliRenderInventory{}, nil, err
+	}
+	return inventory, canonical, nil
+}
+
+func validateCLIRenderGraph(
+	inventory *cliRenderInventory,
+	moduleName string,
+	services []string,
+	plan *environmentPlan,
+) error {
+	expected := make(map[string]struct{}, len(services))
+	for _, service := range services {
+		expected[service] = struct{}{}
+	}
+	seen := make(map[string]struct{}, len(inventory.ServiceGraph))
+	paths := make(map[string]string, len(plan.services))
+	previous := ""
+	for _, service := range inventory.ServiceGraph {
+		if service.Module != moduleName {
+			return fmt.Errorf(
+				"CLI render inventory service %q belongs to module %q, want %q",
+				service.Service,
+				service.Module,
+				moduleName,
+			)
+		}
+		if _, exists := expected[service.Service]; !exists {
+			return fmt.Errorf("CLI render inventory contains extra service %q", service.Service)
+		}
+		if _, exists := seen[service.Service]; exists {
+			return fmt.Errorf("CLI render inventory repeats service %q", service.Service)
+		}
+		if previous != "" && service.Service <= previous {
+			return fmt.Errorf("CLI render inventory serviceGraph is not sorted by service")
+		}
+		previous = service.Service
+		seen[service.Service] = struct{}{}
+		_, managed := plan.managed[service.Service]
+		if service.Managed != managed {
+			return fmt.Errorf(
+				"CLI render inventory service %q managed=%t, want %t",
+				service.Service,
+				service.Managed,
+				managed,
+			)
+		}
+		if managed {
+			if service.Path != "" || service.Output != nil {
+				return fmt.Errorf("managed service %q must not contain in-cluster render output", service.Service)
 			}
-			defer func() { _ = os.RemoveAll(snapshot) }()
-			snapshots[plan.revision] = snapshot
+			continue
 		}
-		if err := inspectEnvironmentSnapshot(snapshot, ownedPath, plan); err != nil {
-			return fmt.Errorf("environment %q: %w", plan.environment.Name, err)
+		servicePath, err := cleanRelativePath(service.Path)
+		if err != nil || servicePath != service.Path {
+			return fmt.Errorf("CLI render inventory service %q path must be canonical and relative", service.Service)
 		}
+		expectedPath := path.Join("services", service.Service)
+		if servicePath != expectedPath {
+			return fmt.Errorf(
+				"CLI render inventory service %q path is %q, want %q",
+				service.Service,
+				servicePath,
+				expectedPath,
+			)
+		}
+		if owner, exists := paths[servicePath]; exists {
+			return fmt.Errorf("CLI render inventory services %q and %q share path %q", owner, service.Service, servicePath)
+		}
+		for existing, owner := range paths {
+			if strings.HasPrefix(servicePath, existing+"/") || strings.HasPrefix(existing, servicePath+"/") {
+				return fmt.Errorf(
+					"CLI render inventory services %q and %q have overlapping paths %q and %q",
+					owner,
+					service.Service,
+					existing,
+					servicePath,
+				)
+			}
+		}
+		paths[servicePath] = service.Service
+		if err := validateCorePromotableOutput(service.Service, service.Output); err != nil {
+			return err
+		}
+		plan.servicePaths[service.Service] = path.Join(
+			inventory.OwnedPath,
+			servicePath,
+			"overlays",
+			plan.environment.Name,
+		)
+	}
+	for _, service := range services {
+		if _, exists := seen[service]; !exists {
+			return fmt.Errorf("CLI render inventory is missing service %q", service)
+		}
+	}
+	return nil
+}
+
+func validateCorePromotableOutput(service string, output *cliKubernetesOutput) error {
+	if output == nil || output.Validation == nil {
+		return fmt.Errorf("CLI render inventory service %q has no Core Kubernetes output evidence", service)
+	}
+	if output.Kind != builderv0.KubernetesDeploymentOutput_KUSTOMIZE.String() {
+		return fmt.Errorf("CLI render inventory service %q output kind %q is not KUSTOMIZE", service, output.Kind)
+	}
+	wantProfile := builderv0.KubernetesOutputProfile_KUBERNETES_OUTPUT_PROFILE_PROMOTABLE_GITOPS_V1.String()
+	if output.Profile != wantProfile {
+		return fmt.Errorf(
+			"CLI render inventory service %q output profile %q is not %s",
+			service,
+			output.Profile,
+			wantProfile,
+		)
+	}
+	if output.ContractVersion != coreManifestContract {
+		return fmt.Errorf(
+			"CLI render inventory service %q Core contract is %q, want %q",
+			service,
+			output.ContractVersion,
+			coreManifestContract,
+		)
+	}
+	passed := builderv0.KubernetesManifestValidation_STATUS_PASSED.String()
+	if output.Validation.StaticValidation != passed ||
+		output.Validation.ServerSideValidation != passed ||
+		!output.Validation.Promotable ||
+		len(output.Validation.Violations) != 0 {
+		return fmt.Errorf("CLI render inventory service %q Core output is not promotable", service)
+	}
+	if output.Validation.Violations == nil {
+		return fmt.Errorf("CLI render inventory service %q Core output has no recorded violations result", service)
+	}
+	return nil
+}
+
+func validateCLIRenderFiles(inventory cliRenderInventory) error {
+	graphPaths := make(map[string]string)
+	for _, service := range inventory.ServiceGraph {
+		if !service.Managed {
+			graphPaths[service.Path] = service.Service
+		}
+	}
+	covered := make(map[string]bool, len(graphPaths))
+	digest := sha256.New()
+	previous := ""
+	for _, file := range inventory.Files {
+		clean, err := cleanRelativePath(file.Path)
+		if err != nil || clean != file.Path {
+			return fmt.Errorf("CLI render inventory file path %q is not canonical and relative", file.Path)
+		}
+		if file.Path == cliRenderInventoryFilename {
+			return fmt.Errorf("CLI render inventory must not include itself in files")
+		}
+		if previous != "" && file.Path <= previous {
+			return fmt.Errorf("CLI render inventory files are not strictly sorted by path")
+		}
+		previous = file.Path
+		if !sha256Pattern.MatchString(file.SHA256) || file.Size < 0 {
+			return fmt.Errorf("CLI render inventory file %q has invalid digest or size", file.Path)
+		}
+		owner := ""
+		for servicePath, service := range graphPaths {
+			if file.Path == servicePath || strings.HasPrefix(file.Path, servicePath+"/") {
+				if owner != "" {
+					return fmt.Errorf("CLI render inventory file %q belongs to overlapping service paths", file.Path)
+				}
+				owner = service
+				covered[servicePath] = true
+			}
+		}
+		if owner == "" {
+			return fmt.Errorf("CLI render inventory file %q is outside the exact service graph", file.Path)
+		}
+		if _, err := fmt.Fprintf(digest, "%s\x00%s\x00%d\n", file.Path, file.SHA256, file.Size); err != nil {
+			return fmt.Errorf("digest CLI render inventory: %w", err)
+		}
+	}
+	for servicePath, service := range graphPaths {
+		if !covered[servicePath] {
+			return fmt.Errorf("CLI render inventory service %q path %q contains no files", service, servicePath)
+		}
+	}
+	wantDigest := "sha256:" + hex.EncodeToString(digest.Sum(nil))
+	if inventory.Digest != wantDigest {
+		return fmt.Errorf("CLI render inventory digest is %q, want %q", inventory.Digest, wantDigest)
 	}
 	return nil
 }
@@ -1176,41 +1423,83 @@ func archiveGitOpsSnapshot(ctx context.Context, checkout, revision, ownedPath st
 	return snapshot, nil
 }
 
-func inspectEnvironmentSnapshot(snapshot, ownedPath string, plan *environmentPlan) error {
-	ownedRoot := filepath.Join(snapshot, filepath.FromSlash(ownedPath))
-	expectedServices := make(map[string]struct{}, len(plan.services)+len(plan.managed))
-	for _, service := range plan.services {
-		expectedServices[service] = struct{}{}
+func validateSnapshotInventory(snapshot string, inventory cliRenderInventory, canonical []byte) error {
+	ownedRoot := filepath.Join(snapshot, filepath.FromSlash(inventory.OwnedPath))
+	expected := make(map[string]cliRenderInventoryFile, len(inventory.Files))
+	for _, file := range inventory.Files {
+		expected[file.Path] = file
 	}
-	for service := range plan.managed {
-		expectedServices[service] = struct{}{}
-	}
-	entries, err := os.ReadDir(ownedRoot)
+	foundInventory := false
+	err := filepath.WalkDir(ownedRoot, func(file string, entry os.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		if entry.Type()&os.ModeSymlink != 0 {
+			return fmt.Errorf("immutable owned tree contains symbolic link %q", file)
+		}
+		if entry.IsDir() {
+			return nil
+		}
+		if !entry.Type().IsRegular() {
+			return fmt.Errorf("immutable owned tree contains non-regular file %q", file)
+		}
+		relative, err := filepath.Rel(ownedRoot, file)
+		if err != nil {
+			return err
+		}
+		relative = filepath.ToSlash(relative)
+		data, err := os.ReadFile(file)
+		if err != nil {
+			return err
+		}
+		if relative == cliRenderInventoryFilename {
+			foundInventory = true
+			if !bytes.Equal(data, canonical) {
+				return fmt.Errorf("immutable CLI render inventory differs from selected revision evidence")
+			}
+			return nil
+		}
+		record, exists := expected[relative]
+		if !exists {
+			return fmt.Errorf("immutable snapshot contains file %q outside the CLI render inventory", relative)
+		}
+		sum := sha256.Sum256(data)
+		if record.Size != int64(len(data)) || record.SHA256 != "sha256:"+hex.EncodeToString(sum[:]) {
+			return fmt.Errorf("immutable snapshot file %q differs from the CLI render inventory", relative)
+		}
+		delete(expected, relative)
+		return nil
+	})
 	if err != nil {
-		return fmt.Errorf("read immutable owned service inventory: %w", err)
+		return err
 	}
-	actualServices := make(map[string]struct{}, len(entries))
-	for _, entry := range entries {
-		if !entry.IsDir() {
-			return fmt.Errorf("owned service path contains unexpected file %q", entry.Name())
-		}
-		if _, declared := expectedServices[entry.Name()]; !declared {
-			return fmt.Errorf("immutable snapshot contains extra service path %q", entry.Name())
-		}
-		actualServices[entry.Name()] = struct{}{}
+	if !foundInventory {
+		return fmt.Errorf("immutable owned tree is missing %s", cliRenderInventoryFilename)
 	}
-	for service := range expectedServices {
-		if _, exists := actualServices[service]; !exists {
-			return fmt.Errorf("immutable snapshot is missing service path %q", service)
+	if len(expected) != 0 {
+		missing := make([]string, 0, len(expected))
+		for file := range expected {
+			missing = append(missing, file)
 		}
+		sort.Strings(missing)
+		return fmt.Errorf("immutable snapshot is missing inventoried file %q", missing[0])
 	}
+	return nil
+}
+
+func inspectEnvironmentSnapshot(
+	snapshot string,
+	inventory cliRenderInventory,
+	plan *environmentPlan,
+) error {
+	ownedRoot := filepath.Join(snapshot, filepath.FromSlash(inventory.OwnedPath))
 	if err := scanOwnedTree(ownedRoot); err != nil {
 		return err
 	}
 
 	allow := make(map[string]argoResourceAllow)
 	for _, service := range plan.services {
-		overlay := filepath.Join(ownedRoot, service, "overlays", plan.environment.Name)
+		overlay := filepath.Join(snapshot, filepath.FromSlash(plan.servicePaths[service]))
 		objects, err := renderOwnedKustomization(overlay)
 		if err != nil {
 			return fmt.Errorf("service %q immutable overlay is missing or invalid: %w", service, err)
@@ -1224,14 +1513,6 @@ func inspectEnvironmentSnapshot(snapshot, ownedPath string, plan *environmentPla
 				return fmt.Errorf("service %q: %w", service, err)
 			}
 			allow[resource.Group+"\x00"+resource.Kind] = resource
-		}
-	}
-	for service := range plan.managed {
-		overlay := filepath.Join(ownedRoot, service, "overlays", plan.environment.Name)
-		if _, err := os.Stat(overlay); err == nil {
-			return fmt.Errorf("managed service %q has an unexpected in-cluster overlay", service)
-		} else if !errors.Is(err, os.ErrNotExist) {
-			return fmt.Errorf("inspect managed service %q overlay: %w", service, err)
 		}
 	}
 	plan.allowlist = make([]argoResourceAllow, 0, len(allow))
@@ -1342,8 +1623,7 @@ func renderEnvironment(
 	root,
 	workspaceName,
 	moduleName,
-	repository,
-	ownedPath string,
+	repository string,
 	topology deploymentTopology,
 	plan environmentPlan,
 ) error {
@@ -1431,7 +1711,7 @@ func renderEnvironment(
 				Source: applicationGit{
 					RepoURL:        repository,
 					TargetRevision: plan.revision,
-					Path:           path.Join(ownedPath, service, "overlays", plan.environment.Name),
+					Path:           plan.servicePaths[service],
 				},
 				Destination: argoDestination{Namespace: plan.environment.Namespace, Server: inClusterServer},
 				SyncPolicy: applicationSync{
@@ -2133,6 +2413,12 @@ func validateRenderedObjects(objects []map[string]any, inventory gitOpsInventory
 	expectedServices := make(map[string]struct{}, len(environment.Services))
 	for _, service := range environment.Services {
 		expectedServices[service] = struct{}{}
+		if environment.ServicePaths[service] == "" {
+			return fmt.Errorf("service %q has no exact Application path", service)
+		}
+	}
+	if len(environment.ServicePaths) != len(expectedServices) {
+		return fmt.Errorf("service path inventory does not match in-cluster service inventory")
 	}
 	applications := make(map[string]struct{}, len(environment.Services))
 	projectCount := 0
@@ -2176,7 +2462,10 @@ func validateRenderedObjects(objects []map[string]any, inventory gitOpsInventory
 			if _, exists := expectedServices[service]; !exists {
 				return fmt.Errorf("application references undeclared service %q", service)
 			}
-			expectedPath := path.Join(inventory.OwnedPath, service, "overlays", environment.Name)
+			expectedPath := environment.ServicePaths[service]
+			if expectedPath == "" {
+				return fmt.Errorf("application service %q has no inventoried path", service)
+			}
 			if source["path"] != expectedPath {
 				return fmt.Errorf("application service %q path is %v, want %s", service, source["path"], expectedPath)
 			}

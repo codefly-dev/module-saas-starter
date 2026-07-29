@@ -500,23 +500,6 @@ func copyFile(srcPath, dstPath string, mode os.FileMode, rewriteName bool, name 
 }
 
 func main() {
-	if len(os.Args) > 1 && os.Args[1] == "gitops" {
-		if len(os.Args) != 6 {
-			fmt.Fprintf(os.Stderr, "Usage: saas-starter gitops <module-dir> <workspace-root> <environment> <destination>\n")
-			os.Exit(1)
-		}
-		if err := generateGitOpsEnvironment(
-			context.Background(),
-			strings.TrimSpace(os.Args[2]),
-			strings.TrimSpace(os.Args[3]),
-			strings.TrimSpace(os.Args[4]),
-			strings.TrimSpace(os.Args[5]),
-		); err != nil {
-			fmt.Fprintf(os.Stderr, "Error: %v\n", err)
-			os.Exit(1)
-		}
-		return
-	}
 	if len(os.Args) < 3 {
 		fmt.Fprintf(os.Stderr, "Usage: saas-starter <dir> <name>\n")
 		os.Exit(1)
