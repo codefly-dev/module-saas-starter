@@ -1756,6 +1756,7 @@ func renderEnvironment(
 			SourceRepos:                []string{repository},
 			Destinations:               []argoDestination{{Namespace: plan.environment.Namespace, Server: inClusterServer}},
 			NamespaceResourceWhitelist: plan.allowlist,
+			ClusterResourceWhitelist:   []argoResourceAllow{{Group: "", Kind: "Namespace"}},
 		},
 	}
 	if err := writeYAML(filepath.Join(resourceRoot, "project.yaml"), project); err != nil {

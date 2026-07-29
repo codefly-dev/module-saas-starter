@@ -1010,8 +1010,13 @@ func TestGeneratedPoliciesAndProjectMatchRenderedTopology(t *testing.T) {
 		t.Fatal(err)
 	}
 	spec := project["spec"].(map[string]any)
-	if _, exists := spec["clusterResourceWhitelist"]; exists {
-		t.Fatal("AppProject grants cluster-scoped authority even though child Applications create no cluster resources")
+	clusterWhitelist := spec["clusterResourceWhitelist"].([]any)
+	if len(clusterWhitelist) != 1 {
+		t.Fatalf("cluster allowlist = %#v, want exact Namespace authority", clusterWhitelist)
+	}
+	namespaceAuthority := clusterWhitelist[0].(map[string]any)
+	if namespaceAuthority["group"] != "" || namespaceAuthority["kind"] != "Namespace" {
+		t.Fatalf("cluster allowlist = %#v, want core Namespace only", clusterWhitelist)
 	}
 	whitelist := spec["namespaceResourceWhitelist"].([]any)
 	if len(whitelist) != 2 {
