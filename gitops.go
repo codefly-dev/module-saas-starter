@@ -285,15 +285,25 @@ type topologyInterface struct {
 }
 
 type topologyService struct {
-	Name                               string               `yaml:"name"`
-	Version                            string               `yaml:"version,omitempty"`
-	Description                        string               `yaml:"description,omitempty"`
-	Agent                              map[string]any       `yaml:"agent,omitempty"`
-	WorkspaceConfigurationDependencies []string             `yaml:"workspace_configuration_dependencies,omitempty"`
-	Endpoints                          []topologyEndpoint   `yaml:"endpoints"`
-	Dependencies                       []topologyDependency `yaml:"dependencies,omitempty"`
-	PublicEgressPorts                  []uint32             `yaml:"public_egress_ports,omitempty"`
-	Spec                               map[string]any       `yaml:"spec,omitempty"`
+	Name                               string                               `yaml:"name"`
+	Version                            string                               `yaml:"version,omitempty"`
+	Description                        string                               `yaml:"description,omitempty"`
+	Agent                              map[string]any                       `yaml:"agent,omitempty"`
+	WorkspaceConfigurationDependencies []string                             `yaml:"workspace_configuration_dependencies,omitempty"`
+	SecretServiceConfigurations        []topologySecretServiceConfiguration `yaml:"secret_service_configurations,omitempty"`
+	Endpoints                          []topologyEndpoint                   `yaml:"endpoints"`
+	Dependencies                       []topologyDependency                 `yaml:"dependencies,omitempty"`
+	PublicEgressPorts                  []uint32                             `yaml:"public_egress_ports,omitempty"`
+	Spec                               map[string]any                       `yaml:"spec,omitempty"`
+}
+
+type topologySecretServiceConfiguration struct {
+	Name    string                                    `yaml:"name"`
+	Entries []topologySecretServiceConfigurationEntry `yaml:"entries"`
+}
+
+type topologySecretServiceConfigurationEntry struct {
+	Key string `yaml:"key"`
 }
 
 type topologyEndpoint struct {
