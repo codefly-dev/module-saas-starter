@@ -60,7 +60,14 @@ var (
 )
 
 func TestMain(m *testing.M) {
-	os.Exit(runPostgresInfraTests(m))
+	exitCode, err := testdb.RunWithPackageLock(func() int {
+		return runPostgresInfraTests(m)
+	})
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "integration test lifecycle lock: %v\n", err)
+		os.Exit(1)
+	}
+	os.Exit(exitCode)
 }
 
 func runPostgresInfraTests(m *testing.M) int {
@@ -94,16 +101,6 @@ func runPostgresInfraTests(m *testing.M) int {
 	testStore = store
 	testPool = store.Pool()
 	testCtx = ctx
-	releasePackageLock, err := testdb.AcquirePackageLock(ctx, testPool)
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "integration test lock: %v\n", err)
-		return 1
-	}
-	defer func() {
-		if err := releasePackageLock(); err != nil {
-			fmt.Fprintf(os.Stderr, "release integration test lock: %v\n", err)
-		}
-	}()
 
 	return m.Run()
 }

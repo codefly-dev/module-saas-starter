@@ -73,7 +73,14 @@ var (
 )
 
 func TestMain(m *testing.M) {
-	os.Exit(runBusinessTests(m))
+	exitCode, err := testdb.RunWithPackageLock(func() int {
+		return runBusinessTests(m)
+	})
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "integration test lifecycle lock: %v\n", err)
+		os.Exit(1)
+	}
+	os.Exit(exitCode)
 }
 
 func runBusinessTests(m *testing.M) int {
@@ -111,16 +118,6 @@ func runBusinessTests(m *testing.M) int {
 		return 1
 	}
 	defer store.Close()
-	releasePackageLock, err := testdb.AcquirePackageLock(ctx, store.Pool())
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "integration test lock: %v\n", err)
-		return 1
-	}
-	defer func() {
-		if err := releasePackageLock(); err != nil {
-			fmt.Fprintf(os.Stderr, "release integration test lock: %v\n", err)
-		}
-	}()
 
 	service, err := business.NewService(store)
 	if err != nil {

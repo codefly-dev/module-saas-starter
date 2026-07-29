@@ -43,7 +43,14 @@ var (
 // holds a pgxpool for the whole package. Matches the pattern in
 // pkg/business/service_test.go so the two suites can run back-to-back.
 func TestMain(m *testing.M) {
-	os.Exit(runSessionStoreTests(m))
+	exitCode, err := testdb.RunWithPackageLock(func() int {
+		return runSessionStoreTests(m)
+	})
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "integration test lifecycle lock: %v\n", err)
+		os.Exit(1)
+	}
+	os.Exit(exitCode)
 }
 
 func runSessionStoreTests(m *testing.M) int {
@@ -81,16 +88,6 @@ func runSessionStoreTests(m *testing.M) int {
 	defer store.Close()
 	testStore = store
 	testPool = store.Pool()
-	releasePackageLock, err := testdb.AcquirePackageLock(ctx, testPool)
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "integration test lock: %v\n", err)
-		return 1
-	}
-	defer func() {
-		if err := releasePackageLock(); err != nil {
-			fmt.Fprintf(os.Stderr, "release integration test lock: %v\n", err)
-		}
-	}()
 
 	return m.Run()
 }
