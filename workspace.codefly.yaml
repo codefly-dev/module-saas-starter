@@ -3,20 +3,6 @@ layout: modules
 modules:
     - name: saas-starter
 
-# GitOps publication supplied by the CLI after it reviews and commits one
-# environment's promotable service snapshot. The module generator verifies the
-# canonical inventory and binds every Application to the immutable revision.
-# gitops:
-#   repo-url: git@github.com:my-org/saas-starter.git
-#   # Local k3d qualification instead uses a file:// repo-url and an exact
-#   # http://host.k3d.internal:<port>/<repo>.git fetch-repo-url for Argo CD.
-#   path: ""        # repository subtree containing the CLI-owned render
-#   branch: main    # mutable publication destination; never used by Applications
-#   revision: <40-character-commit-sha>
-#   checkout: .     # local checkout of repo-url; defaults to workspace root
-#   inventory: deployments/modules/saas-starter/.codefly-render.json
-#   environment: local
-
 # Deploy targets the CLI knows about. `codefly deploy --env <name>` and
 # `codefly build --env <name>` look these up to resolve cluster +
 # registry. Empty env block = bare-name behavior (legacy defaults).
@@ -32,6 +18,16 @@ environments:
       registry:
           url: localhost:5001
       namespace: saas-starter
+      # Supplied after the CLI commits this environment's promotable snapshot.
+      # Local Argo reads the exact fetch URL at the immutable revision.
+      # gitops:
+      #     repo-url: file:///tmp/codefly-gitops/saas-starter.git
+      #     fetch-repo-url: http://host.k3d.internal:8080/saas-starter.git
+      #     path: ""
+      #     branch: main
+      #     revision: <40-character-commit-sha>
+      #     checkout: .
+      #     inventory: deployments/modules/saas-starter/.codefly-render.json
       ingress:
           - name: marketing
             service: marketing
@@ -61,6 +57,13 @@ environments:
           url: 621829027644.dkr.ecr.us-east-1.amazonaws.com/saas-starter
           auth: ecr
       namespace: saas-starter
+      # gitops:
+      #     repo-url: git@github.com:my-org/saas-starter.git
+      #     path: ""
+      #     branch: main
+      #     revision: <40-character-signed-commit-sha>
+      #     checkout: .
+      #     inventory: deployments/modules/saas-starter/.codefly-render.json
       # Every module-managed AWS dependency requires an exact endpoint and
       # egress CIDR. Optional secret-references contain provider references,
       # never resolved values. See module/deployment/README.md.

@@ -1,13 +1,13 @@
 {
-  "schemaVersion": "codefly.dev/module-gitops/v2",
+  "schemaVersion": "codefly.dev/module-gitops/v3",
   "workspace": "mind-control",
   "module": "users",
-  "repository": "http://host.k3d.internal:8080/platform-config.git",
   "ownedPath": "clusters/codefly/deployments/modules/users",
   "environments": [
     {
       "name": "local",
       "namespace": "users-local",
+      "repository": "http://host.k3d.internal:8080/platform-config.git",
       "revision": "0123456789abcdef0123456789abcdef01234567",
       "services": [
         "store",
@@ -27,6 +27,44 @@
         "store": "clusters/codefly/deployments/modules/users/services/store/overlays/local",
         "vault": "clusters/codefly/deployments/modules/users/services/vault/overlays/local"
       }
+    },
+    {
+      "name": "aws",
+      "namespace": "users-aws",
+      "repository": "git@github.com:acme/platform-config.git",
+      "revision": "0123456789abcdef0123456789abcdef01234567",
+      "services": [
+        "accounts",
+        "frontend",
+        "forge-edge"
+      ],
+      "servicePaths": {
+        "accounts": "clusters/codefly/deployments/modules/users/services/accounts/overlays/aws",
+        "forge-edge": "clusters/codefly/deployments/modules/users/services/forge-edge/overlays/aws",
+        "frontend": "clusters/codefly/deployments/modules/users/services/frontend/overlays/aws"
+      },
+      "managedServiceHandoffs": [
+        {
+          "service": "cache",
+          "awsKind": "elasticache",
+          "externalName": "cache.internal.example.com"
+        },
+        {
+          "service": "object-storage",
+          "awsKind": "s3",
+          "externalName": "object-storage.internal.example.com"
+        },
+        {
+          "service": "store",
+          "awsKind": "rds-postgresql",
+          "externalName": "store.internal.example.com"
+        },
+        {
+          "service": "vault",
+          "awsKind": "secrets-manager",
+          "externalName": "vault.internal.example.com"
+        }
+      ]
     }
   ]
 }
