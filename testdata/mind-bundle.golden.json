@@ -1,0 +1,78 @@
+{
+  "schemaVersion": "codefly.dev/module-bundle/v1",
+  "module": "users",
+  "namespace": "users",
+  "serviceEntry": "forge-edge",
+  "environments": [
+    {
+      "name": "local",
+      "namespace": "users-local",
+      "cluster": "k3d",
+      "resourcePath": "overlays/local",
+      "services": [
+        "accounts",
+        "cache",
+        "forge-edge",
+        "frontend",
+        "object-storage",
+        "store",
+        "vault"
+      ],
+      "ingress": [
+        {
+          "name": "product",
+          "service": "forge-edge",
+          "endpoint": "http",
+          "port": 8080,
+          "hosts": [
+            "users.localhost"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "aws",
+      "namespace": "users-aws",
+      "cluster": "eks",
+      "resourcePath": "overlays/aws",
+      "services": [
+        "accounts",
+        "forge-edge",
+        "frontend"
+      ],
+      "ingress": [
+        {
+          "name": "product",
+          "service": "forge-edge",
+          "endpoint": "http",
+          "port": 8080,
+          "hosts": [
+            "users.example.com"
+          ]
+        }
+      ],
+      "managedServiceHandoffs": [
+        {
+          "service": "cache",
+          "awsKind": "elasticache",
+          "externalName": "cache.internal.example.com"
+        },
+        {
+          "service": "object-storage",
+          "awsKind": "s3",
+          "externalName": "object-storage.internal.example.com"
+        },
+        {
+          "service": "store",
+          "awsKind": "rds-postgresql",
+          "externalName": "store.internal.example.com"
+        },
+        {
+          "service": "vault",
+          "awsKind": "secrets-manager",
+          "externalName": "vault.internal.example.com"
+        }
+      ]
+    }
+  ]
+}

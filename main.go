@@ -21,7 +21,7 @@ const (
 	moduleYamlPath    = "module.codefly.yaml"
 	moduleDirName     = "module"
 	sourceEnvVar      = "SAAS_STARTER_MODULE_SRC"
-	gitOpsRelativeDir = "deployment/kustomize"
+	bundleRelativeDir = "deployment/kustomize"
 	workspaceYamlPath = "workspace.codefly.yaml"
 )
 
@@ -89,8 +89,8 @@ func Create(ctx context.Context, dir, name string) error {
 	if err := normalizeDeploymentMetadata(stage); err != nil {
 		return w.Wrapf(err, "cannot normalize module deployment metadata")
 	}
-	if err := generateGitOps(ctx, stage, workspace); err != nil {
-		return w.Wrapf(err, "cannot generate GitOps manifests")
+	if err := generateDeploymentBundle(stage, workspace); err != nil {
+		return w.Wrapf(err, "cannot generate deployment bundle")
 	}
 
 	backup := stage + "-previous"
@@ -150,8 +150,8 @@ func copyModuleSource(
 		}
 		slashRelative := filepath.ToSlash(relative)
 		targetRelative := relative
-		skip := slashRelative == gitOpsRelativeDir ||
-			strings.HasPrefix(slashRelative, gitOpsRelativeDir+"/")
+		skip := slashRelative == bundleRelativeDir ||
+			strings.HasPrefix(slashRelative, bundleRelativeDir+"/")
 		if preserveInventory {
 			skip = skip ||
 				slashRelative == moduleYamlPath ||
@@ -430,8 +430,8 @@ func copyTree(src, dst, name string, skipGitOps bool) error {
 		if rel == "." {
 			return nil
 		}
-		if skipGitOps && (rel == gitOpsRelativeDir ||
-			strings.HasPrefix(rel, gitOpsRelativeDir+string(filepath.Separator))) {
+		if skipGitOps && (rel == bundleRelativeDir ||
+			strings.HasPrefix(rel, bundleRelativeDir+string(filepath.Separator))) {
 			if d.IsDir() {
 				return filepath.SkipDir
 			}

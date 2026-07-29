@@ -3,19 +3,12 @@ layout: modules
 modules:
     - name: saas-starter
 
-# GitOps publication supplied by the CLI after it reviews and commits one
-# environment's promotable service snapshot. The module generator verifies the
-# canonical inventory and binds every Application to the immutable revision.
-# gitops:
-#   repo-url: git@github.com:my-org/saas-starter.git
-#   # Local k3d qualification instead uses a file:// repo-url and an exact
-#   # http://host.k3d.internal:<port>/<repo>.git fetch-repo-url for Argo CD.
-#   path: ""        # repository subtree containing the CLI-owned render
-#   branch: main    # mutable publication destination; never used by Applications
-#   revision: <40-character-commit-sha>
-#   checkout: .     # local checkout of repo-url; defaults to workspace root
-#   inventory: deployments/modules/saas-starter/.codefly-render.json
-#   environment: local
+# Repository publication (repo-url, branch, revision, checkout, Argo/Flux
+# Application assembly) is owned by the CLI/server promotion driver, not the
+# module plugin. The plugin renders module-owned Kubernetes overlays and a
+# transport-neutral `deployment/kustomize/bundle.json` from the environments
+# below; the promotion driver composes and publishes that bundle. Any legacy
+# `gitops:` block left here from an earlier release is ignored.
 
 # Deploy targets the CLI knows about. `codefly deploy --env <name>` and
 # `codefly build --env <name>` look these up to resolve cluster +
