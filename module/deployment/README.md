@@ -110,9 +110,11 @@ ingress:
 ```
 
 The generator rejects duplicate or wildcard hosts, managed or undeclared
-targets, and endpoints that are not public module interfaces. Every declared
-environment must declare at least one exact route; no catch-all host is
-generated.
+targets, and endpoints that are not public module interfaces; no catch-all host
+is generated. Ingress is optional: an environment that declares no `ingress:`
+renders module-owned baseline resources (namespace, quotas, NetworkPolicies,
+mTLS, handoffs) without a Gateway/VirtualService, and its bundle entry records
+an empty ingress list.
 
 ## AWS handoffs
 

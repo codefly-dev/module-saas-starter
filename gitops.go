@@ -530,8 +530,11 @@ func validateIngressRoutes(
 	topology deploymentTopology,
 	plan *environmentPlan,
 ) error {
+	// Public ingress is optional: an environment may front the mesh with a
+	// gateway this module does not own, or expose nothing publicly yet. Such an
+	// environment renders module-owned baseline resources without a Gateway.
 	if len(environment.Ingress) == 0 {
-		return fmt.Errorf("environment %q must declare at least one exact ingress route", environment.Name)
+		return nil
 	}
 
 	routeNames := make(map[string]struct{}, len(environment.Ingress))
@@ -885,7 +888,8 @@ func topologyIstioResources(
 		},
 	}
 	if len(plan.ingress) == 0 {
-		return nil, nil, fmt.Errorf("environment %q has no ingress plan", plan.environment.Name)
+		// No public ingress: emit the mTLS baseline only, no Gateway.
+		return istio, nil, nil
 	}
 	ingressPorts := make(map[string]map[uint32]struct{})
 	for _, route := range plan.ingress {

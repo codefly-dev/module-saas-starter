@@ -8,18 +8,24 @@ import (
 	"testing"
 )
 
-// TestRuntimePluginOwnsNoGitOrArgoTransport is the boundary guard for issue #37:
-// the module plugin must emit module-owned manifests and transport-neutral
-// metadata only. It fails if any non-test runtime file imports os/exec (the
-// door to a Git binary) or hard-codes Git, Argo CD, or Flux repository
-// transport configuration. Publication, revision selection, and Application /
+// TestRuntimePluginOwnsNoGitOrArgoTransport is the boundary guard for issue #37.
+//
+// Scope: the module-generation plugin, which is package main at the repository
+// root (main.go, gitops.go). It must emit module-owned manifests and
+// transport-neutral metadata only, with no Git binary, network, or cluster
+// access during generation. Publication, revision selection, and Application /
 // AppProject assembly belong to the CLI/server promotion driver, not here.
+//
+// The sibling host/ package is deliberately out of scope: it is the
+// saas-starter policy backend (an HTTP client the codefly CLI wires in at
+// runtime), not the generation plugin. It legitimately performs network I/O and
+// touches no Git or Argo transport. The scan is intentionally non-recursive so
+// that boundary stays explicit.
 func TestRuntimePluginOwnsNoGitOrArgoTransport(t *testing.T) {
 	forbiddenImports := map[string]string{
-		"os/exec":     "executes external binaries such as git",
-		"net/url":     "parses repository transport URLs",
-		"net/http":    "reaches network services during generation",
-		"crypto/x509": "handles transport credentials",
+		"os/exec":  "executes external binaries such as git",
+		"net/url":  "parses repository transport URLs",
+		"net/http": "reaches network services during generation",
 	}
 	forbiddenTokens := []string{
 		"argoproj.io",

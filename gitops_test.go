@@ -162,6 +162,53 @@ gitops:
 	}
 }
 
+func TestGenerateBundleRendersEnvironmentWithoutPublicIngress(t *testing.T) {
+	t.Parallel()
+	root, moduleDir := writeModuleFixture(t, "mixed-control", "identity", []string{"accounts", "store"})
+	workspace, err := loadWorkspaceManifest(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// aws is a declared deploy target that has not configured public ingress.
+	// A single incompletely-exposed environment must not fail the whole bundle
+	// or the sibling environments that are fully configured.
+	workspace.Environments[1].Ingress = nil
+	if err := generateDeploymentBundle(moduleDir, workspace); err != nil {
+		t.Fatalf("generateDeploymentBundle() with an ingress-less environment: %v", err)
+	}
+
+	overlays := filepath.Join(moduleDir, filepath.FromSlash(bundleRelativeDir), "overlays")
+	if _, err := os.Stat(filepath.Join(overlays, "local", "resources", "istio-gateway.yaml")); err != nil {
+		t.Fatalf("fully configured local overlay is missing its gateway: %v", err)
+	}
+	awsResources := filepath.Join(overlays, "aws", "resources")
+	if _, err := os.Stat(filepath.Join(awsResources, "istio-gateway.yaml")); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("ingress-less aws overlay emitted a public gateway: %v", err)
+	}
+	for _, base := range []string{"namespace.yaml", "network-policy.yaml", "istio-mtls.yaml"} {
+		if _, err := os.Stat(filepath.Join(awsResources, base)); err != nil {
+			t.Errorf("ingress-less aws overlay is missing module-owned %s: %v", base, err)
+		}
+	}
+	for _, object := range overlayObjects(t, moduleDir, "aws") {
+		if kind := object["kind"]; kind == "Gateway" || kind == "VirtualService" {
+			t.Fatalf("ingress-less aws overlay still emits %v", kind)
+		}
+	}
+
+	var bundle moduleBundle
+	data, err := os.ReadFile(filepath.Join(moduleDir, filepath.FromSlash(bundleRelativeDir), "bundle.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := json.Unmarshal(data, &bundle); err != nil {
+		t.Fatal(err)
+	}
+	if len(bundle.Environments) != 2 || bundle.Environments[1].Name != "aws" || len(bundle.Environments[1].Ingress) != 0 {
+		t.Fatalf("bundle did not record the ingress-less aws environment: %#v", bundle.Environments)
+	}
+}
+
 func TestGenerateBundleRejectsHostileContracts(t *testing.T) {
 	t.Parallel()
 
@@ -202,13 +249,6 @@ func TestGenerateBundleRejectsHostileContracts(t *testing.T) {
 				}}
 			},
 			want: "is not an exact DNS name",
-		},
-		{
-			name: "missing exact ingress route",
-			mutate: func(_ *testing.T, _ string, workspace *workspaceManifest) {
-				workspace.Environments[0].Ingress = nil
-			},
-			want: "must declare at least one exact ingress route",
 		},
 		{
 			name: "ingress targets private endpoint",
