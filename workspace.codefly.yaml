@@ -23,6 +23,7 @@ environments:
       # gitops:
       #     repo-url: file:///tmp/codefly-gitops/saas-starter.git
       #     fetch-repo-url: http://host.k3d.internal:8080/saas-starter.git
+      #     fetch-verification-url: http://127.0.0.1:8080/saas-starter.git
       #     path: ""
       #     branch: main
       #     revision: <40-character-commit-sha>

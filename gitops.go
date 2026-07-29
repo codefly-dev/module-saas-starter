@@ -21,14 +21,15 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/codefly-dev/agents/modules/saas-starter/gitopscontract"
 	builderv0 "github.com/codefly-dev/core/generated/go/codefly/services/builder/v0"
 	"gopkg.in/yaml.v3"
 )
 
 const (
 	argoNamespace              = "argocd"
-	cliRenderInventoryFilename = ".codefly-render.json"
-	cliRenderInventorySchema   = 2
+	cliRenderInventoryFilename = gitopscontract.InventoryFilename
+	cliRenderInventorySchema   = gitopscontract.SchemaVersion
 	coreManifestContract       = "codefly.dev/kubernetes-manifest/v1"
 	inClusterServer            = "https://kubernetes.default.svc"
 	gitOpsInventorySchema      = "codefly.dev/module-gitops/v3"
@@ -54,13 +55,14 @@ type workspaceManifest struct {
 }
 
 type workspaceGitOps struct {
-	RepoURL      string `yaml:"repo-url"`
-	FetchRepoURL string `yaml:"fetch-repo-url,omitempty"`
-	Path         string `yaml:"path"`
-	Branch       string `yaml:"branch"`
-	Revision     string `yaml:"revision"`
-	Checkout     string `yaml:"checkout,omitempty"`
-	Inventory    string `yaml:"inventory"`
+	RepoURL              string `yaml:"repo-url"`
+	FetchRepoURL         string `yaml:"fetch-repo-url,omitempty"`
+	FetchVerificationURL string `yaml:"fetch-verification-url,omitempty"`
+	Path                 string `yaml:"path"`
+	Branch               string `yaml:"branch"`
+	Revision             string `yaml:"revision"`
+	Checkout             string `yaml:"checkout,omitempty"`
+	Inventory            string `yaml:"inventory"`
 }
 
 type environmentConfig struct {
@@ -93,44 +95,11 @@ type serviceDefinition struct {
 	directory string
 }
 
-type cliRenderInventory struct {
-	SchemaVersion int                      `json:"schemaVersion"`
-	Module        string                   `json:"module"`
-	Environment   string                   `json:"environment"`
-	AppProject    string                   `json:"appProject"`
-	OwnedPath     string                   `json:"ownedPath"`
-	ServiceGraph  []cliRenderService       `json:"serviceGraph"`
-	Files         []cliRenderInventoryFile `json:"files"`
-	Digest        string                   `json:"digest"`
-}
-
-type cliRenderService struct {
-	Module  string               `json:"module"`
-	Service string               `json:"service"`
-	Path    string               `json:"path,omitempty"`
-	Managed bool                 `json:"managed,omitempty"`
-	Output  *cliKubernetesOutput `json:"output,omitempty"`
-}
-
-type cliKubernetesOutput struct {
-	Kind            string                   `json:"kind"`
-	Profile         string                   `json:"profile"`
-	ContractVersion string                   `json:"contractVersion"`
-	Validation      *cliKubernetesValidation `json:"validation"`
-}
-
-type cliKubernetesValidation struct {
-	StaticValidation     string   `json:"staticValidation"`
-	ServerSideValidation string   `json:"serverSideValidation"`
-	Promotable           bool     `json:"promotable"`
-	Violations           []string `json:"violations"`
-}
-
-type cliRenderInventoryFile struct {
-	Path   string `json:"path"`
-	SHA256 string `json:"sha256"`
-	Size   int64  `json:"size"`
-}
+type cliRenderInventory = gitopscontract.Inventory
+type cliRenderService = gitopscontract.Service
+type cliKubernetesOutput = gitopscontract.KubernetesOutput
+type cliKubernetesValidation = gitopscontract.KubernetesValidation
+type cliRenderInventoryFile = gitopscontract.InventoryFile
 
 type gitOpsInventory struct {
 	SchemaVersion string                 `json:"schemaVersion"`
@@ -251,10 +220,11 @@ type environmentPlan struct {
 }
 
 type gitOpsContract struct {
-	repository      string
-	fetchRepository string
-	inventoryPath   string
-	checkout        string
+	repository                  string
+	fetchRepository             string
+	fetchVerificationRepository string
+	inventoryPath               string
+	checkout                    string
 }
 
 type ingressRoutePlan struct {
@@ -686,11 +656,24 @@ func validateGitOpsContract(
 		return gitOpsContract{}, fmt.Errorf("environment %q: %w", environment.Name, err)
 	}
 	fetchRepository := strings.TrimSpace(config.FetchRepoURL)
+	fetchVerificationRepository := strings.TrimSpace(config.FetchVerificationURL)
 	if local {
 		if err := validateLocalFetchRepository(fetchRepository); err != nil {
 			return gitOpsContract{}, fmt.Errorf("environment %q: %w", environment.Name, err)
 		}
+		if err := validateLocalFetchVerificationRepository(
+			fetchVerificationRepository,
+			fetchRepository,
+		); err != nil {
+			return gitOpsContract{}, fmt.Errorf("environment %q: %w", environment.Name, err)
+		}
 	} else {
+		if fetchVerificationRepository != "" {
+			return gitOpsContract{}, fmt.Errorf(
+				"environment %q: workspace gitops fetch-verification-url is only allowed for local qualification",
+				environment.Name,
+			)
+		}
 		if fetchRepository == "" {
 			fetchRepository = repository
 		}
@@ -735,10 +718,11 @@ func validateGitOpsContract(
 		return gitOpsContract{}, fmt.Errorf("workspace gitops checkout %q is not a directory", checkout)
 	}
 	return gitOpsContract{
-		repository:      repository,
-		fetchRepository: fetchRepository,
-		inventoryPath:   inventoryPath,
-		checkout:        checkout,
+		repository:                  repository,
+		fetchRepository:             fetchRepository,
+		fetchVerificationRepository: fetchVerificationRepository,
+		inventoryPath:               inventoryPath,
+		checkout:                    checkout,
 	}, nil
 }
 
@@ -798,6 +782,27 @@ func validateLocalFetchRepository(repository string) error {
 		parsed.User != nil || parsed.RawQuery != "" || parsed.Fragment != "" ||
 		strings.Contains(repository, "*") {
 		return fmt.Errorf("workspace gitops fetch-repo-url must be an exact credential-free HTTP(S) URL on host.k3d.internal")
+	}
+	return nil
+}
+
+func validateLocalFetchVerificationRepository(repository, fetchRepository string) error {
+	parsed, err := url.Parse(repository)
+	if err != nil || (parsed.Scheme != "http" && parsed.Scheme != "https") ||
+		parsed.Host == "" || parsed.Path == "" || parsed.Path == "/" ||
+		!strings.HasSuffix(parsed.Path, ".git") ||
+		parsed.User != nil || parsed.RawQuery != "" || parsed.Fragment != "" ||
+		strings.Contains(repository, "*") {
+		return fmt.Errorf("workspace gitops fetch-verification-url must be an exact credential-free loopback HTTP(S) repository URL")
+	}
+	host := parsed.Hostname()
+	ip := net.ParseIP(host)
+	if host != "localhost" && (ip == nil || !ip.IsLoopback()) {
+		return fmt.Errorf("workspace gitops fetch-verification-url must use a loopback host")
+	}
+	fetch, _ := url.Parse(fetchRepository)
+	if parsed.Scheme != fetch.Scheme || parsed.Port() != fetch.Port() || parsed.EscapedPath() != fetch.EscapedPath() {
+		return fmt.Errorf("workspace gitops fetch-verification-url must identify the host side of fetch-repo-url")
 	}
 	return nil
 }
@@ -1034,7 +1039,7 @@ func validExternalName(value string) bool {
 func classifyEnvironment(environment *environmentConfig) (local bool, aws bool, err error) {
 	kind := strings.TrimSpace(environment.Cluster.Kind)
 	switch kind {
-	case "k3d", "kind", "minikube":
+	case "k3d":
 		return true, false, nil
 	case "eks":
 		return false, true, nil
@@ -1114,6 +1119,19 @@ func inspectGitOpsSnapshot(
 	if err := validateCheckoutRepository(ctx, contract.checkout, contract.repository); err != nil {
 		return cliRenderInventory{}, err
 	}
+	if err := validatePublishedRevision(ctx, contract.checkout, contract.repository, plan.revision); err != nil {
+		return cliRenderInventory{}, fmt.Errorf("environment %q: %w", plan.environment.Name, err)
+	}
+	if contract.fetchVerificationRepository != "" {
+		if err := validatePublishedRevision(
+			ctx,
+			contract.checkout,
+			contract.fetchVerificationRepository,
+			plan.revision,
+		); err != nil {
+			return cliRenderInventory{}, fmt.Errorf("environment %q: %w", plan.environment.Name, err)
+		}
+	}
 	data, err := gitFile(ctx, contract.checkout, plan.revision, contract.inventoryPath)
 	if err != nil {
 		return cliRenderInventory{}, fmt.Errorf(
@@ -1147,6 +1165,33 @@ func inspectGitOpsSnapshot(
 	return inventory, nil
 }
 
+func validatePublishedRevision(
+	ctx context.Context,
+	checkout,
+	repository,
+	revision string,
+) error {
+	command := exec.CommandContext(ctx, "git", "-C", checkout, "ls-remote", repository)
+	var stderr bytes.Buffer
+	command.Stderr = &stderr
+	output, err := command.Output()
+	if err != nil {
+		return fmt.Errorf(
+			"GitOps publication repository %q is not reachable: %w: %s",
+			repository,
+			err,
+			strings.TrimSpace(stderr.String()),
+		)
+	}
+	for _, line := range strings.Split(string(output), "\n") {
+		fields := strings.Fields(line)
+		if len(fields) == 2 && fields[0] == revision {
+			return nil
+		}
+	}
+	return fmt.Errorf("GitOps publication repository %q does not advertise revision %s", repository, revision)
+}
+
 func gitFile(ctx context.Context, checkout, revision, file string) ([]byte, error) {
 	command := exec.CommandContext(ctx, "git", "-C", checkout, "show", revision+":"+file)
 	var stderr bytes.Buffer
@@ -1165,29 +1210,13 @@ func loadCLIRenderInventory(
 	services []string,
 	plan *environmentPlan,
 ) (cliRenderInventory, []byte, error) {
-	var inventory cliRenderInventory
-	decoder := json.NewDecoder(bytes.NewReader(data))
-	decoder.DisallowUnknownFields()
-	if err := decoder.Decode(&inventory); err != nil {
-		return cliRenderInventory{}, nil, fmt.Errorf("decode CLI render inventory: %w", err)
-	}
-	if decoder.Decode(&struct{}{}) != io.EOF {
-		return cliRenderInventory{}, nil, fmt.Errorf("CLI render inventory contains trailing data")
-	}
-	canonical, err := json.MarshalIndent(inventory, "", "  ")
+	inventory, err := gitopscontract.Decode(data)
 	if err != nil {
-		return cliRenderInventory{}, nil, fmt.Errorf("encode CLI render inventory: %w", err)
+		return cliRenderInventory{}, nil, err
 	}
-	canonical = append(canonical, '\n')
-	if !bytes.Equal(data, canonical) {
-		return cliRenderInventory{}, nil, fmt.Errorf("CLI render inventory is not canonical")
-	}
-	if inventory.SchemaVersion != cliRenderInventorySchema {
-		return cliRenderInventory{}, nil, fmt.Errorf(
-			"CLI render inventory schema is %d, want %d",
-			inventory.SchemaVersion,
-			cliRenderInventorySchema,
-		)
+	canonical, err := gitopscontract.Encode(inventory)
+	if err != nil {
+		return cliRenderInventory{}, nil, err
 	}
 	if inventory.Module != moduleName || inventory.Environment != plan.environment.Name {
 		return cliRenderInventory{}, nil, fmt.Errorf(
@@ -1411,7 +1440,7 @@ func validateCLIRenderFiles(inventory cliRenderInventory) error {
 }
 
 func validateCheckoutRepository(ctx context.Context, checkout, repository string) error {
-	command := exec.CommandContext(ctx, "git", "-C", checkout, "remote", "get-url", "--all", "origin")
+	command := exec.CommandContext(ctx, "git", "-C", checkout, "config", "--get-all", "remote.origin.url")
 	output, err := command.Output()
 	if err != nil {
 		return fmt.Errorf("GitOps checkout %q has no origin remote", checkout)
@@ -2082,6 +2111,13 @@ func loadDeploymentTopology(moduleDir, moduleName string, services []serviceDefi
 			target, exists := topologyServices[dependency.Service]
 			if !exists {
 				return deploymentTopology{}, fmt.Errorf("deployment topology service %q references undeclared dependency %q", service.Name, dependency.Service)
+			}
+			if len(dependency.Endpoints) == 0 {
+				return deploymentTopology{}, fmt.Errorf(
+					"deployment topology service %q dependency %q declares no endpoints",
+					service.Name,
+					dependency.Service,
+				)
 			}
 			for _, endpoint := range dependency.Endpoints {
 				if _, exists := topologyEndpointByName(target, endpoint); !exists {

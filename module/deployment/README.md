@@ -40,10 +40,12 @@ environments:
       inventory: clusters/codefly/deployments/modules/users/.codefly-render.json
 ```
 
-The version 2 CLI render inventory is canonical JSON. It records the selected module,
-environment, AppProject, owned repository path, sorted exact service graph,
-sorted file hashes and sizes, and aggregate digest. Every in-cluster service
-records its exact path and the returned Core Kubernetes output:
+The version 2 CLI render inventory is canonical JSON. Its public types and
+serializer live in this module's `gitopscontract` package for the CLI producer
+and module consumer to share. It records the selected module, environment,
+AppProject, owned repository path, sorted exact service graph, sorted file
+hashes and sizes, and aggregate digest. Every in-cluster service records its
+exact path and the returned Core Kubernetes output:
 
 ```json
 {
@@ -71,7 +73,9 @@ that is not promotable under the released v1 contract.
 
 For k3d qualification, `repo-url` may be an absolute credential-free `file://`
 remote used by the CLI. Argo CD cannot read that host path, so the CLI also
-sets an exact `fetch-repo-url` served on `host.k3d.internal`:
+sets an exact `fetch-repo-url` served on `host.k3d.internal` and the matching
+loopback `fetch-verification-url` that module generation can fetch from the
+host:
 
 ```yaml
 environments:
@@ -79,15 +83,17 @@ environments:
     gitops:
       repo-url: file:///tmp/codefly-gitops/platform-config.git
       fetch-repo-url: http://host.k3d.internal:8080/platform-config.git
+      fetch-verification-url: http://127.0.0.1:8080/platform-config.git
 ```
 
 Applications use only the fetch URL and the resolved 40-character commit.
 Local generation additionally requires the selected revision to equal checkout
-`HEAD`. Remote generation requires a full commit SHA or a locally verified
-signed tag. The fetch URL contract, checkout origin, committed inventory, every
+`HEAD` and verifies that both the publication remote and the host-side Argo
+mirror advertise that revision. Remote generation requires a full commit SHA
+or a locally verified signed tag and verifies it against the publication
+remote. The fetch URL contract, checkout origin, committed inventory, every
 inventoried byte, and every rendered Application path are verified before
-output is replaced. The CLI then publishes the generated bootstrap so the
-Argo-facing repository can advertise the selected snapshot commit.
+output is replaced.
 
 ## Generated layout
 

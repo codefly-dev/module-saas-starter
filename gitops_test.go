@@ -8,6 +8,8 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -234,6 +236,27 @@ func TestGenerateGitOpsRejectsHostileContracts(t *testing.T) {
 			want: "host.k3d.internal",
 		},
 		{
+			name: "missing local fetch verification repository",
+			mutate: func(_ *testing.T, _, _ string, workspace *workspaceManifest) {
+				workspace.Environments[0].Gitops.FetchVerificationURL = ""
+			},
+			want: "fetch-verification-url",
+		},
+		{
+			name: "non-loopback local fetch verification repository",
+			mutate: func(_ *testing.T, _, _ string, workspace *workspaceManifest) {
+				workspace.Environments[0].Gitops.FetchVerificationURL = "http://example.com:8080/platform-config.git"
+			},
+			want: "must use a loopback host",
+		},
+		{
+			name: "mismatched local fetch verification repository",
+			mutate: func(_ *testing.T, _, _ string, workspace *workspaceManifest) {
+				workspace.Environments[0].Gitops.FetchVerificationURL = "http://127.0.0.1:8081/platform-config.git"
+			},
+			want: "must identify the host side of fetch-repo-url",
+		},
+		{
 			name: "missing immutable revision",
 			mutate: func(_ *testing.T, _, _ string, workspace *workspaceManifest) {
 				workspace.Environments[0].Gitops.Revision = ""
@@ -280,6 +303,20 @@ func TestGenerateGitOpsRejectsHostileContracts(t *testing.T) {
 				workspace.Environments[0].Cluster.Kind = "gke"
 			},
 			want: "is not supported",
+		},
+		{
+			name: "kind cannot use k3d fetch contract",
+			mutate: func(_ *testing.T, _, _ string, workspace *workspaceManifest) {
+				workspace.Environments[0].Cluster.Kind = "kind"
+			},
+			want: `cluster kind "kind" is not supported`,
+		},
+		{
+			name: "minikube cannot use k3d fetch contract",
+			mutate: func(_ *testing.T, _, _ string, workspace *workspaceManifest) {
+				workspace.Environments[0].Cluster.Kind = "minikube"
+			},
+			want: `cluster kind "minikube" is not supported`,
 		},
 		{
 			name: "missing service path",
@@ -624,8 +661,18 @@ func TestGenerateGitOpsVerifiesCanonicalInventoryAndEveryOwnedByte(t *testing.T)
 func TestLocalQualificationBindsArgoFetchRepositoryAtExactRevision(t *testing.T) {
 	t.Parallel()
 	root, moduleDir := writeGitOpsFixture(t, "local-control", "identity", []string{"accounts"})
-	bare := filepath.Join(t.TempDir(), "platform-config.git")
-	runGit(t, "", "init", "--bare", bare)
+	remoteRoot := t.TempDir()
+	bare := filepath.Join(remoteRoot, "platform-config.git")
+	runGit(t, "", "clone", "--bare", "--no-local", root, bare)
+	runGit(t, "", "--git-dir", bare, "update-server-info")
+	server := httptest.NewServer(http.FileServer(http.Dir(remoteRoot)))
+	defer server.Close()
+	hostPort := strings.TrimPrefix(server.URL, "http://")
+	_, port, found := strings.Cut(hostPort, ":")
+	if !found {
+		t.Fatalf("test Git server has no port: %s", server.URL)
+	}
+	fetchBase := "http://host.k3d.internal:" + port + "/"
 	repository := "file://" + filepath.ToSlash(bare)
 	runGit(t, root, "remote", "set-url", "origin", repository)
 	workspace, err := loadWorkspaceManifest(root)
@@ -633,7 +680,8 @@ func TestLocalQualificationBindsArgoFetchRepositoryAtExactRevision(t *testing.T)
 		t.Fatal(err)
 	}
 	workspace.Environments[0].Gitops.RepoURL = repository
-	workspace.Environments[0].Gitops.FetchRepoURL = "http://host.k3d.internal:65535/platform-config.git"
+	workspace.Environments[0].Gitops.FetchRepoURL = fetchBase + "platform-config.git"
+	workspace.Environments[0].Gitops.FetchVerificationURL = server.URL + "/platform-config.git"
 	workspace.Environments = workspace.Environments[:1]
 
 	if err := generateGitOps(context.Background(), moduleDir, workspace); err != nil {
@@ -652,9 +700,61 @@ func TestLocalQualificationBindsArgoFetchRepositoryAtExactRevision(t *testing.T)
 		t.Fatal(err)
 	}
 	head := strings.TrimSpace(runGit(t, root, "rev-parse", "HEAD"))
-	if !strings.Contains(string(data), "repoURL: http://host.k3d.internal:65535/platform-config.git") ||
+	if !strings.Contains(string(data), "repoURL: "+fetchBase+"platform-config.git") ||
 		!strings.Contains(string(data), "targetRevision: "+head) {
 		t.Fatalf("local Application does not bind the Argo repository at HEAD:\n%s", data)
+	}
+}
+
+func TestLocalQualificationRejectsStaleArgoMirror(t *testing.T) {
+	t.Parallel()
+	root, moduleDir := writeGitOpsFixture(t, "mirror-control", "identity", []string{"accounts"})
+	remoteRoot := t.TempDir()
+	bare := filepath.Join(remoteRoot, "platform-config.git")
+	runGit(t, "", "clone", "--bare", "--no-local", root, bare)
+	runGit(t, "", "--git-dir", bare, "update-server-info")
+	server := httptest.NewServer(http.FileServer(http.Dir(remoteRoot)))
+	defer server.Close()
+	_, port, found := strings.Cut(strings.TrimPrefix(server.URL, "http://"), ":")
+	if !found {
+		t.Fatalf("test Git server has no port: %s", server.URL)
+	}
+	writeTestFile(t, filepath.Join(root, "reviewed-marker"), "reviewed snapshot\n")
+	runGit(t, root, "add", "reviewed-marker")
+	runGit(t, root, "commit", "-m", "publish reviewed snapshot")
+	runGit(t, root, "push", "origin", "HEAD:refs/heads/main")
+	head := strings.TrimSpace(runGit(t, root, "rev-parse", "HEAD"))
+	workspace, err := loadWorkspaceManifest(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	workspace.Environments[0].Gitops.Revision = head
+	workspace.Environments[0].Gitops.FetchRepoURL = "http://host.k3d.internal:" + port + "/platform-config.git"
+	workspace.Environments[0].Gitops.FetchVerificationURL = server.URL + "/platform-config.git"
+	workspace.Environments = workspace.Environments[:1]
+
+	err = generateGitOps(context.Background(), moduleDir, workspace)
+	if err == nil || !strings.Contains(err.Error(), "does not advertise revision "+head) {
+		t.Fatalf("generateGitOps() error = %v, want stale Argo mirror rejection", err)
+	}
+}
+
+func TestGenerateGitOpsRejectsUnpublishedRemoteRevision(t *testing.T) {
+	t.Parallel()
+	root, moduleDir := writeGitOpsFixture(t, "publish-control", "identity", []string{"accounts"})
+	workspace, err := loadWorkspaceManifest(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	selectFixtureEnvironment(t, root, workspace, "aws")
+	writeTestFile(t, filepath.Join(root, "unpublished"), "not reviewed or published\n")
+	runGit(t, root, "add", "unpublished")
+	runGit(t, root, "commit", "-m", "unpublished snapshot")
+	workspace.Environments[0].Gitops.Revision = strings.TrimSpace(runGit(t, root, "rev-parse", "HEAD"))
+
+	err = generateGitOps(context.Background(), moduleDir, workspace)
+	if err == nil || !strings.Contains(err.Error(), "does not advertise revision") {
+		t.Fatalf("generateGitOps() error = %v, want unpublished revision rejection", err)
 	}
 }
 
@@ -940,6 +1040,40 @@ func TestGeneratedPoliciesAndProjectMatchRenderedTopology(t *testing.T) {
 	}
 }
 
+func TestGenerateGitOpsRejectsDependencyWithoutEndpointAuthority(t *testing.T) {
+	t.Parallel()
+	root, moduleDir := writeGitOpsFixture(
+		t,
+		"policy-control",
+		"identity",
+		[]string{"accounts", "store"},
+	)
+	topologyFile := filepath.Join(moduleDir, "deployment", "topology.bindings.codefly.yaml")
+	data, err := os.ReadFile(topologyFile)
+	if err != nil {
+		t.Fatal(err)
+	}
+	topology := strings.Replace(
+		string(data),
+		"        endpoints:\n          - http\n",
+		"        endpoints: []\n",
+		1,
+	)
+	if topology == string(data) {
+		t.Fatal("fixture topology has no dependency endpoint block")
+	}
+	writeTestFile(t, topologyFile, topology)
+	workspace, err := loadWorkspaceManifest(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	err = generateGitOps(context.Background(), moduleDir, workspace)
+	if err == nil || !strings.Contains(err.Error(), `dependency "store" declares no endpoints`) {
+		t.Fatalf("generateGitOps() error = %v, want empty dependency authority rejection", err)
+	}
+}
+
 func TestGeneratedMarketingIngressUsesExactEnvironmentRoutes(t *testing.T) {
 	t.Parallel()
 	root, moduleDir := writeGitOpsFixture(
@@ -1216,6 +1350,7 @@ func TestRevisionMustContainEveryApplicationPath(t *testing.T) {
 	}
 	runGit(t, root, "add", "-A")
 	runGit(t, root, "commit", "-m", "remove immutable application path")
+	runGit(t, root, "push", "origin", "HEAD:refs/heads/aws")
 	head := strings.TrimSpace(runGit(t, root, "rev-parse", "HEAD"))
 	workspace.Environments[0].Gitops.Revision = head
 	err = generateGitOps(context.Background(), moduleDir, workspace)
@@ -1709,6 +1844,7 @@ environments:
     gitops:
       repo-url: git@github.com:acme/platform-config.git
       fetch-repo-url: http://host.k3d.internal:8080/platform-config.git
+      fetch-verification-url: http://127.0.0.1:8080/platform-config.git
       path: clusters/codefly
       branch: main
       revision: LOCAL_REVISION
@@ -1764,6 +1900,25 @@ environments:
 	runGit(t, root, "add", "-A")
 	runGit(t, root, "commit", "-m", "immutable AWS GitOps snapshot")
 	awsHead := strings.TrimSpace(runGit(t, root, "rev-parse", "HEAD"))
+	remoteRoot := t.TempDir()
+	bare := filepath.Join(remoteRoot, "platform-config.git")
+	runGit(t, "", "clone", "--bare", "--no-local", root, bare)
+	runGit(
+		t,
+		root,
+		"config",
+		"--add",
+		"url.file://"+filepath.ToSlash(bare)+".insteadOf",
+		"git@github.com:acme/platform-config.git",
+	)
+	runGit(
+		t,
+		root,
+		"config",
+		"--add",
+		"url.file://"+filepath.ToSlash(bare)+".insteadOf",
+		"http://127.0.0.1:8080/platform-config.git",
+	)
 	runGit(t, root, "checkout", "main")
 	workspaceData := strings.Replace(workspacePrefix, "LOCAL_REVISION", localHead, 1)
 	workspaceData = strings.Replace(workspaceData, "AWS_REVISION", awsHead, 1)
@@ -1967,6 +2122,8 @@ func commitFixtureSnapshot(t *testing.T, root, moduleName, message string) strin
 	t.Helper()
 	runGit(t, root, "add", filepath.ToSlash(filepath.Join("clusters", "codefly", "deployments", "modules", moduleName)))
 	runGit(t, root, "commit", "-m", message)
+	branch := strings.TrimSpace(runGit(t, root, "branch", "--show-current"))
+	runGit(t, root, "push", "origin", "HEAD:refs/heads/"+branch)
 	return strings.TrimSpace(runGit(t, root, "rev-parse", "HEAD"))
 }
 
