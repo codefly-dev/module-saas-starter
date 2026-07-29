@@ -1725,14 +1725,33 @@ func assertMindRouteAndPolicies(
 		t.Fatal(err)
 	}
 	var route map[string]any
+	var destinationRuleHosts []string
 	for _, object := range objects {
-		if object["kind"] == "VirtualService" {
+		switch object["kind"] {
+		case "VirtualService":
 			route = object
-			break
+		case "DestinationRule":
+			spec := object["spec"].(map[string]any)
+			ruleHost := spec["host"].(string)
+			if strings.Contains(ruleHost, "*") {
+				t.Errorf("%s DestinationRule retains wildcard authority %q", environment, ruleHost)
+			}
+			destinationRuleHosts = append(destinationRuleHosts, ruleHost)
 		}
 	}
 	if route == nil {
 		t.Fatal("Mind bootstrap has no VirtualService")
+	}
+	expectedServices := []string{"accounts", "cache", "forge-edge", "frontend", "object-storage", "store", "vault"}
+	if aws {
+		expectedServices = []string{"accounts", "forge-edge", "frontend"}
+	}
+	expectedRuleHosts := make([]string, 0, len(expectedServices))
+	for _, service := range expectedServices {
+		expectedRuleHosts = append(expectedRuleHosts, service+".users-"+environment+".svc.cluster.local")
+	}
+	if !slices.Equal(destinationRuleHosts, expectedRuleHosts) {
+		t.Fatalf("%s DestinationRule hosts = %v, want %v", environment, destinationRuleHosts, expectedRuleHosts)
 	}
 	spec := route["spec"].(map[string]any)
 	if got := spec["hosts"].([]any); !slices.Equal(got, []any{host}) {
