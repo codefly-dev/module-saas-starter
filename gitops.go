@@ -264,6 +264,7 @@ type topologyService struct {
 	WorkspaceConfigurationDependencies []string                             `yaml:"workspace_configuration_dependencies,omitempty"`
 	SecretServiceConfigurations        []topologySecretServiceConfiguration `yaml:"secret_service_configurations,omitempty"`
 	Endpoints                          []topologyEndpoint                   `yaml:"endpoints"`
+	BootstrapJobEndpoints              []string                             `yaml:"bootstrap_job_endpoints,omitempty"`
 	Dependencies                       []topologyDependency                 `yaml:"dependencies,omitempty"`
 	PublicEgressPorts                  []uint32                             `yaml:"public_egress_ports,omitempty"`
 	Spec                               map[string]any                       `yaml:"spec,omitempty"`
@@ -2103,6 +2104,11 @@ func loadDeploymentTopology(moduleDir, moduleName string, services []serviceDefi
 			}
 			endpoints[endpoint.Name] = struct{}{}
 		}
+		for _, endpoint := range service.BootstrapJobEndpoints {
+			if _, exists := endpoints[endpoint]; !exists {
+				return deploymentTopology{}, fmt.Errorf("deployment topology service %q bootstrap Job references missing endpoint %q", service.Name, endpoint)
+			}
+		}
 		topologyServices[service.Name] = service
 	}
 	for service := range declared {
@@ -2252,6 +2258,28 @@ func topologyNetworkPolicies(
 		}
 		policies = append(policies, managedEgressPolicy(namespace, labels, current.caller, current.target, current.ports, config.EgressCIDRs))
 	}
+	for _, service := range topology.Services {
+		if len(service.BootstrapJobEndpoints) == 0 {
+			continue
+		}
+		if _, exists := inCluster[service.Name]; !exists {
+			continue
+		}
+		portSet := make(map[uint32]struct{}, len(service.BootstrapJobEndpoints))
+		for _, endpointName := range service.BootstrapJobEndpoints {
+			endpoint, _ := topologyEndpointByName(service, endpointName)
+			portSet[endpoint.Port] = struct{}{}
+		}
+		ports := make([]uint32, 0, len(portSet))
+		for port := range portSet {
+			ports = append(ports, port)
+		}
+		slices.Sort(ports)
+		policies = append(policies,
+			bootstrapJobIngressPolicy(namespace, labels, service.Name, ports),
+			bootstrapJobEgressPolicy(namespace, labels, service.Name, ports),
+		)
+	}
 	ingressPorts := make(map[string]map[uint32]struct{})
 	for _, route := range plan.ingress {
 		if ingressPorts[route.service] == nil {
@@ -2322,6 +2350,38 @@ func dependencyEgressPolicy(namespace string, labels map[string]string, caller, 
 			"policyTypes": []string{"Egress"},
 			"egress": []any{map[string]any{
 				"to":    []any{map[string]any{"podSelector": map[string]any{"matchLabels": map[string]string{"app": target}}}},
+				"ports": networkPorts(ports),
+			}},
+		},
+	}
+}
+
+func bootstrapJobIngressPolicy(namespace string, labels map[string]string, service string, ports []uint32) kubeObject {
+	return kubeObject{
+		APIVersion: "networking.k8s.io/v1",
+		Kind:       "NetworkPolicy",
+		Metadata:   objectMeta{Name: kubernetesName("allow", service, "from", "bootstrap"), Namespace: namespace, Labels: labels},
+		Spec: map[string]any{
+			"podSelector": map[string]any{"matchLabels": map[string]string{"app": service}},
+			"policyTypes": []string{"Ingress"},
+			"ingress": []any{map[string]any{
+				"from":  []any{map[string]any{"podSelector": map[string]any{"matchLabels": map[string]string{"job-name": service}}}},
+				"ports": networkPorts(ports),
+			}},
+		},
+	}
+}
+
+func bootstrapJobEgressPolicy(namespace string, labels map[string]string, service string, ports []uint32) kubeObject {
+	return kubeObject{
+		APIVersion: "networking.k8s.io/v1",
+		Kind:       "NetworkPolicy",
+		Metadata:   objectMeta{Name: kubernetesName("allow", service, "bootstrap", "to", service), Namespace: namespace, Labels: labels},
+		Spec: map[string]any{
+			"podSelector": map[string]any{"matchLabels": map[string]string{"job-name": service}},
+			"policyTypes": []string{"Egress"},
+			"egress": []any{map[string]any{
+				"to":    []any{map[string]any{"podSelector": map[string]any{"matchLabels": map[string]string{"app": service}}}},
 				"ports": networkPorts(ports),
 			}},
 		},

@@ -208,6 +208,8 @@ services:
         api: tcp
         visibility: external
         port: 5432
+    bootstrap_job_endpoints:
+      - tcp
     spec:
       database-name: users
       debug: false

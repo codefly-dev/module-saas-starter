@@ -339,6 +339,46 @@ spec:
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
+  name: allow-store-from-bootstrap
+  namespace: saas-starter
+spec:
+  podSelector:
+    matchLabels:
+      app: store
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              job-name: store
+      ports:
+        - protocol: TCP
+          port: 5432
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-store-bootstrap-to-store
+  namespace: saas-starter
+spec:
+  podSelector:
+    matchLabels:
+      job-name: store
+  policyTypes:
+    - Egress
+  egress:
+    - to:
+        - podSelector:
+            matchLabels:
+              app: store
+      ports:
+        - protocol: TCP
+          port: 5432
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
   name: allow-accounts-public-egress
   namespace: saas-starter
 spec:
