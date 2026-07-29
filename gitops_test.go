@@ -971,6 +971,9 @@ func TestGeneratedPoliciesAndProjectMatchRenderedTopology(t *testing.T) {
 			t.Errorf("local network policy is missing %q", policy)
 		}
 	}
+	if count := strings.Count(string(localNetwork), "codefly.dev/bootstrap-service: store"); count != 2 {
+		t.Errorf("local network policy has %d bootstrap service selectors, want 2", count)
+	}
 	for _, file := range []string{
 		filepath.Join(generated, "local", "resources", "istio-gateway.yaml"),
 		filepath.Join(generated, "local", "resources", "istio-mtls.yaml"),
