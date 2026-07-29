@@ -9,7 +9,8 @@ modules:
 # gitops:
 #   repo-url: git@github.com:my-org/saas-starter.git
 #   # Local k3d qualification instead uses a file:// repo-url and an exact
-#   # http://host.k3d.internal:<port>/<repo>.git fetch-repo-url for Argo CD.
+#   # http://host.k3d.internal:<port>/<repo>.git fetch-repo-url for Argo CD,
+#   # plus its http://127.0.0.1:<port>/<repo>.git fetch-verification-url.
 #   path: ""        # repository subtree containing the CLI-owned render
 #   branch: main    # mutable publication destination; never used by Applications
 #   revision: <40-character-commit-sha>

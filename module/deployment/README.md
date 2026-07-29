@@ -38,10 +38,12 @@ gitops:
   environment: aws
 ```
 
-The version 2 CLI inventory is canonical JSON. It records the selected module,
-environment, AppProject, owned repository path, sorted exact service graph,
-sorted file hashes and sizes, and aggregate digest. Every in-cluster service
-records its exact path and the returned Core Kubernetes output:
+The version 2 CLI inventory is canonical JSON. Its shared Go types and
+serializer live in this module's `gitopscontract` package for the CLI producer
+and module consumer. It records the selected module, environment, AppProject,
+owned repository path, sorted exact service graph, sorted file hashes and
+sizes, and aggregate digest. Every in-cluster service records its exact path
+and the returned Core Kubernetes output:
 
 ```json
 {
@@ -75,13 +77,18 @@ sets an exact `fetch-repo-url` served on `host.k3d.internal`:
 gitops:
   repo-url: file:///tmp/codefly-gitops/platform-config.git
   fetch-repo-url: http://host.k3d.internal:8080/platform-config.git
+  fetch-verification-url: http://127.0.0.1:8080/platform-config.git
 ```
 
-Applications use only the fetch URL and the resolved 40-character commit.
-Local generation additionally requires the selected revision to equal checkout
-`HEAD`. Remote generation requires a full commit SHA or a locally verified
-signed tag. The checkout origin, committed inventory, every inventoried byte,
-and every rendered Application path are verified before output is replaced.
+Applications use only the fetch URL and the resolved 40-character commit. The
+loopback verification URL addresses the same HTTP server from the generator
+host, so publication checks never depend on cluster-only DNS. Local generation
+requires both the publication repository and this Argo-facing mirror to
+advertise the selected checkout `HEAD`. Remote generation requires a full
+commit SHA or a locally verified signed tag and verifies that revision against
+the publication remote. The checkout origin, committed inventory, every
+inventoried byte, and every rendered Application path are verified before
+output is replaced.
 
 ## Generated layout
 

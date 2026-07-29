@@ -21,7 +21,7 @@
     "TRUST_CAPABILITIES.md": "c5a1ed15f2e0933c4a47c64baff13adb007db53ed4203baf9a02425bb557debb",
     "USAGE_METERING.md": "764b3d457f663169fa0f4a28d0a21374f14862a16b16cea43be62a30d64bd492",
     "WEBHOOKS.md": "47850362c1576d8447c1c53a17fcbb4ffaacb1b8f1472802c9c9dea28966d018",
-    "deployment/README.md": "f1882cca7c9776111d80bb5b10e81d530af745e403dd068dffef42b179a6f95c",
+    "deployment/README.md": "3d9d014332372badb48687966ec18a025df7639731ca04129b3808dddf25fcbb",
     "deployment/generated/accounts-routes.virtualservice.yaml": "75d688e14600ad90109553b463751c05e291479dbed47f81f9dfb66d7cc2a5b8",
     "deployment/generated/service-topology.json": "3ece2da322032d73a160863151e6b5122994655f7a676ac536cf020125239bc7",
     "deployment/topology.bindings.codefly.yaml": "654e7639895e03c0ac36422f1e736c010271a5bc6fbfd4cd04c8354c5ef1e35b",
