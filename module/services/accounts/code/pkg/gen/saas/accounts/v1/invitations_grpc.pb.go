@@ -21,21 +21,25 @@ import (
 const _ = grpc.SupportPackageIsVersion9
 
 const (
-	InvitationService_CreateInvitation_FullMethodName = "/saas.accounts.v1.InvitationService/CreateInvitation"
-	InvitationService_AcceptInvitation_FullMethodName = "/saas.accounts.v1.InvitationService/AcceptInvitation"
-	InvitationService_ListInvitations_FullMethodName  = "/saas.accounts.v1.InvitationService/ListInvitations"
-	InvitationService_RevokeInvitation_FullMethodName = "/saas.accounts.v1.InvitationService/RevokeInvitation"
+	InvitationService_CreateInvitation_FullMethodName      = "/saas.accounts.v1.InvitationService/CreateInvitation"
+	InvitationService_InspectInvitation_FullMethodName     = "/saas.accounts.v1.InvitationService/InspectInvitation"
+	InvitationService_InspectInvitationById_FullMethodName = "/saas.accounts.v1.InvitationService/InspectInvitationById"
+	InvitationService_AcceptInvitation_FullMethodName      = "/saas.accounts.v1.InvitationService/AcceptInvitation"
+	InvitationService_ListInvitations_FullMethodName       = "/saas.accounts.v1.InvitationService/ListInvitations"
+	InvitationService_ResendInvitation_FullMethodName      = "/saas.accounts.v1.InvitationService/ResendInvitation"
+	InvitationService_RevokeInvitation_FullMethodName      = "/saas.accounts.v1.InvitationService/RevokeInvitation"
 )
 
 // InvitationServiceClient is the client API for InvitationService service.
 //
 // For semantics around ctx use and closing/ending streaming RPCs, please refer to https://pkg.go.dev/google.golang.org/grpc/?tab=doc#ClientConn.NewStream.
-//
-// InvitationService — org member invitation management
 type InvitationServiceClient interface {
 	CreateInvitation(ctx context.Context, in *CreateInvitationRequest, opts ...grpc.CallOption) (*CreateInvitationResponse, error)
+	InspectInvitation(ctx context.Context, in *InspectInvitationRequest, opts ...grpc.CallOption) (*InvitationSummary, error)
+	InspectInvitationById(ctx context.Context, in *InspectInvitationByIdRequest, opts ...grpc.CallOption) (*InvitationSummary, error)
 	AcceptInvitation(ctx context.Context, in *AcceptInvitationRequest, opts ...grpc.CallOption) (*AcceptInvitationResponse, error)
 	ListInvitations(ctx context.Context, in *ListInvitationsRequest, opts ...grpc.CallOption) (*ListInvitationsResponse, error)
+	ResendInvitation(ctx context.Context, in *ResendInvitationRequest, opts ...grpc.CallOption) (*Invitation, error)
 	RevokeInvitation(ctx context.Context, in *RevokeInvitationRequest, opts ...grpc.CallOption) (*emptypb.Empty, error)
 }
 
@@ -51,6 +55,26 @@ func (c *invitationServiceClient) CreateInvitation(ctx context.Context, in *Crea
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(CreateInvitationResponse)
 	err := c.cc.Invoke(ctx, InvitationService_CreateInvitation_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *invitationServiceClient) InspectInvitation(ctx context.Context, in *InspectInvitationRequest, opts ...grpc.CallOption) (*InvitationSummary, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(InvitationSummary)
+	err := c.cc.Invoke(ctx, InvitationService_InspectInvitation_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *invitationServiceClient) InspectInvitationById(ctx context.Context, in *InspectInvitationByIdRequest, opts ...grpc.CallOption) (*InvitationSummary, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(InvitationSummary)
+	err := c.cc.Invoke(ctx, InvitationService_InspectInvitationById_FullMethodName, in, out, cOpts...)
 	if err != nil {
 		return nil, err
 	}
@@ -77,6 +101,16 @@ func (c *invitationServiceClient) ListInvitations(ctx context.Context, in *ListI
 	return out, nil
 }
 
+func (c *invitationServiceClient) ResendInvitation(ctx context.Context, in *ResendInvitationRequest, opts ...grpc.CallOption) (*Invitation, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(Invitation)
+	err := c.cc.Invoke(ctx, InvitationService_ResendInvitation_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 func (c *invitationServiceClient) RevokeInvitation(ctx context.Context, in *RevokeInvitationRequest, opts ...grpc.CallOption) (*emptypb.Empty, error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(emptypb.Empty)
@@ -90,12 +124,13 @@ func (c *invitationServiceClient) RevokeInvitation(ctx context.Context, in *Revo
 // InvitationServiceServer is the server API for InvitationService service.
 // All implementations must embed UnimplementedInvitationServiceServer
 // for forward compatibility.
-//
-// InvitationService — org member invitation management
 type InvitationServiceServer interface {
 	CreateInvitation(context.Context, *CreateInvitationRequest) (*CreateInvitationResponse, error)
+	InspectInvitation(context.Context, *InspectInvitationRequest) (*InvitationSummary, error)
+	InspectInvitationById(context.Context, *InspectInvitationByIdRequest) (*InvitationSummary, error)
 	AcceptInvitation(context.Context, *AcceptInvitationRequest) (*AcceptInvitationResponse, error)
 	ListInvitations(context.Context, *ListInvitationsRequest) (*ListInvitationsResponse, error)
+	ResendInvitation(context.Context, *ResendInvitationRequest) (*Invitation, error)
 	RevokeInvitation(context.Context, *RevokeInvitationRequest) (*emptypb.Empty, error)
 	mustEmbedUnimplementedInvitationServiceServer()
 }
@@ -110,11 +145,20 @@ type UnimplementedInvitationServiceServer struct{}
 func (UnimplementedInvitationServiceServer) CreateInvitation(context.Context, *CreateInvitationRequest) (*CreateInvitationResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method CreateInvitation not implemented")
 }
+func (UnimplementedInvitationServiceServer) InspectInvitation(context.Context, *InspectInvitationRequest) (*InvitationSummary, error) {
+	return nil, status.Error(codes.Unimplemented, "method InspectInvitation not implemented")
+}
+func (UnimplementedInvitationServiceServer) InspectInvitationById(context.Context, *InspectInvitationByIdRequest) (*InvitationSummary, error) {
+	return nil, status.Error(codes.Unimplemented, "method InspectInvitationById not implemented")
+}
 func (UnimplementedInvitationServiceServer) AcceptInvitation(context.Context, *AcceptInvitationRequest) (*AcceptInvitationResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method AcceptInvitation not implemented")
 }
 func (UnimplementedInvitationServiceServer) ListInvitations(context.Context, *ListInvitationsRequest) (*ListInvitationsResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method ListInvitations not implemented")
+}
+func (UnimplementedInvitationServiceServer) ResendInvitation(context.Context, *ResendInvitationRequest) (*Invitation, error) {
+	return nil, status.Error(codes.Unimplemented, "method ResendInvitation not implemented")
 }
 func (UnimplementedInvitationServiceServer) RevokeInvitation(context.Context, *RevokeInvitationRequest) (*emptypb.Empty, error) {
 	return nil, status.Error(codes.Unimplemented, "method RevokeInvitation not implemented")
@@ -158,6 +202,42 @@ func _InvitationService_CreateInvitation_Handler(srv interface{}, ctx context.Co
 	return interceptor(ctx, in, info, handler)
 }
 
+func _InvitationService_InspectInvitation_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(InspectInvitationRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(InvitationServiceServer).InspectInvitation(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: InvitationService_InspectInvitation_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(InvitationServiceServer).InspectInvitation(ctx, req.(*InspectInvitationRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _InvitationService_InspectInvitationById_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(InspectInvitationByIdRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(InvitationServiceServer).InspectInvitationById(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: InvitationService_InspectInvitationById_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(InvitationServiceServer).InspectInvitationById(ctx, req.(*InspectInvitationByIdRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 func _InvitationService_AcceptInvitation_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
 	in := new(AcceptInvitationRequest)
 	if err := dec(in); err != nil {
@@ -194,6 +274,24 @@ func _InvitationService_ListInvitations_Handler(srv interface{}, ctx context.Con
 	return interceptor(ctx, in, info, handler)
 }
 
+func _InvitationService_ResendInvitation_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ResendInvitationRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(InvitationServiceServer).ResendInvitation(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: InvitationService_ResendInvitation_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(InvitationServiceServer).ResendInvitation(ctx, req.(*ResendInvitationRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 func _InvitationService_RevokeInvitation_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
 	in := new(RevokeInvitationRequest)
 	if err := dec(in); err != nil {
@@ -224,12 +322,24 @@ var InvitationService_ServiceDesc = grpc.ServiceDesc{
 			Handler:    _InvitationService_CreateInvitation_Handler,
 		},
 		{
+			MethodName: "InspectInvitation",
+			Handler:    _InvitationService_InspectInvitation_Handler,
+		},
+		{
+			MethodName: "InspectInvitationById",
+			Handler:    _InvitationService_InspectInvitationById_Handler,
+		},
+		{
 			MethodName: "AcceptInvitation",
 			Handler:    _InvitationService_AcceptInvitation_Handler,
 		},
 		{
 			MethodName: "ListInvitations",
 			Handler:    _InvitationService_ListInvitations_Handler,
+		},
+		{
+			MethodName: "ResendInvitation",
+			Handler:    _InvitationService_ResendInvitation_Handler,
 		},
 		{
 			MethodName: "RevokeInvitation",

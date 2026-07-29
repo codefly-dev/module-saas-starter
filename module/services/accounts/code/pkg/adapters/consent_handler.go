@@ -10,54 +10,117 @@ import (
 	gen "accounts/pkg/gen/saas/accounts/v1"
 )
 
-// consentConnectHandler exposes per-user TOS / privacy acceptance
-// state. Both methods require auth — anonymous traffic doesn't have
-// a user to record consent against. The FE drops the ConsentBanner
-// based on (acceptedVersion, currentVersion) inequality.
-type consentConnectHandler struct{ svc *business.Service }
+type consentConnectHandler struct {
+	svc *business.Service
+}
 
 func (h *consentConnectHandler) GetStatus(
 	ctx context.Context,
 	req *connect.Request[gen.GetConsentStatusRequest],
 ) (*connect.Response[gen.ConsentStatus], error) {
 	ctx = connectCtx(ctx, req.Header())
+	if err := Validate(req.Msg); err != nil {
+		return nil, err
+	}
 	userID, err := callerID(ctx)
 	if err != nil {
 		return nil, err
 	}
-	st, err := h.svc.GetConsentStatus(ctx, userID)
+	status, err := h.svc.GetConsentStatus(ctx, userID)
 	if err != nil {
 		return nil, translateGRPCError(err)
 	}
-	return connect.NewResponse(consentToProto(st)), nil
+	return connect.NewResponse(consentToProto(status)), nil
 }
 
-func (h *consentConnectHandler) Accept(
+func (h *consentConnectHandler) AcceptTerms(
 	ctx context.Context,
-	req *connect.Request[gen.AcceptConsentRequest],
+	req *connect.Request[gen.AcceptTermsRequest],
 ) (*connect.Response[gen.ConsentStatus], error) {
 	ctx = connectCtx(ctx, req.Header())
+	if err := Validate(req.Msg); err != nil {
+		return nil, err
+	}
 	userID, err := callerID(ctx)
 	if err != nil {
 		return nil, err
 	}
-	if err := h.svc.AcceptConsent(ctx, userID, req.Msg.Version); err != nil {
+	if err := h.svc.AcceptTerms(ctx, userID, req.Msg.Version, req.Msg.Context); err != nil {
 		return nil, translateGRPCError(err)
 	}
-	st, _ := h.svc.GetConsentStatus(ctx, userID)
-	return connect.NewResponse(consentToProto(st)), nil
+	status, err := h.svc.GetConsentStatus(ctx, userID)
+	if err != nil {
+		return nil, translateGRPCError(err)
+	}
+	return connect.NewResponse(consentToProto(status)), nil
 }
 
-func consentToProto(st *business.UserConsentStatus) *gen.ConsentStatus {
-	if st == nil {
-		return &gen.ConsentStatus{CurrentVersion: business.CurrentTermsVersion}
+func (h *consentConnectHandler) UpdatePreferences(
+	ctx context.Context,
+	req *connect.Request[gen.UpdateConsentPreferencesRequest],
+) (*connect.Response[gen.ConsentStatus], error) {
+	ctx = connectCtx(ctx, req.Header())
+	if err := Validate(req.Msg); err != nil {
+		return nil, err
+	}
+	userID, err := callerID(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if err := h.svc.UpdateConsentPreferences(
+		ctx,
+		userID,
+		req.Msg.PolicyVersion,
+		req.Msg.Analytics,
+		req.Msg.Marketing,
+		req.Msg.Region,
+		req.Msg.Context,
+	); err != nil {
+		return nil, translateGRPCError(err)
+	}
+	status, err := h.svc.GetConsentStatus(ctx, userID)
+	if err != nil {
+		return nil, translateGRPCError(err)
+	}
+	return connect.NewResponse(consentToProto(status)), nil
+}
+
+func consentToProto(status *business.UserConsentStatus) *gen.ConsentStatus {
+	if status == nil {
+		return &gen.ConsentStatus{
+			CurrentTermsVersion: business.CurrentTermsVersion,
+			PolicyVersion:       business.CurrentConsentPolicyVersion,
+		}
 	}
 	out := &gen.ConsentStatus{
-		AcceptedVersion: st.AcceptedVersion,
-		CurrentVersion:  st.CurrentVersion,
+		TermsAcceptedVersion:     status.TermsAcceptedVersion,
+		CurrentTermsVersion:      status.CurrentTermsVersion,
+		PolicyVersion:            status.PolicyVersion,
+		PreferencesRecorded:      status.PreferencesRecorded,
+		PreferencesPolicyVersion: status.PreferencesPolicyVersion,
 	}
-	if st.AcceptedAt != nil {
-		out.AcceptedAt = timestamppb.New(*st.AcceptedAt)
+	if status.TermsAcceptedAt != nil {
+		out.TermsAcceptedAt = timestamppb.New(*status.TermsAcceptedAt)
+	}
+	for _, preference := range status.Preferences {
+		purpose := gen.ConsentPurpose_CONSENT_PURPOSE_UNSPECIFIED
+		switch preference.Purpose {
+		case "necessary":
+			purpose = gen.ConsentPurpose_CONSENT_PURPOSE_NECESSARY
+		case "analytics":
+			purpose = gen.ConsentPurpose_CONSENT_PURPOSE_ANALYTICS
+		case "marketing":
+			purpose = gen.ConsentPurpose_CONSENT_PURPOSE_MARKETING
+		}
+		item := &gen.PurposeConsent{
+			Purpose:   purpose,
+			Granted:   preference.Granted,
+			UpdatedAt: timestamppb.New(preference.UpdatedAt),
+		}
+		if preference.WithdrawnAt != nil {
+			item.WithdrawnAt = timestamppb.New(*preference.WithdrawnAt)
+		}
+		out.Purposes = append(out.Purposes, item)
 	}
 	return out
 }

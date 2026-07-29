@@ -15,7 +15,7 @@ import (
 //
 // Module-level version is a separate concern owned by the module
 // declaration (module.codefly.yaml), not by this service.
-const ServiceVersion = "0.2.0"
+const ServiceVersion = "0.3.0"
 
 // GetServiceInfo returns the machine-readable catalog of THIS
 // service: its RPC surface, RBAC vocabulary, RLS-protected tables,
@@ -87,8 +87,9 @@ var rpcDescriptions = map[string]string{
 	"BillingService/ListInvoices":              "Past Stripe invoices.",
 	"BillingService/ListPublicPlans":           "Sanitized public pricing and entitlement catalog.",
 	"BillingService/OpenPortal":                "Stripe billing-portal session; requires billing:write and recent MFA.",
-	"ConsentService/Accept":                    "Record TOS acceptance.",
+	"ConsentService/AcceptTerms":               "Record acceptance of the exact Terms version presented.",
 	"ConsentService/GetStatus":                 "Read TOS acceptance state.",
+	"ConsentService/UpdatePreferences":         "Persist purpose-based optional tracking choices and withdrawals.",
 	"DelegationService/DecideDelegation":       "Approve or deny a delegation request.",
 	"DelegationService/ListPendingDelegations": "List pending organization delegations.",
 	"DelegationService/RequestDelegation":      "Request a scoped authority delegation.",
@@ -101,7 +102,10 @@ var rpcDescriptions = map[string]string{
 	"IntrospectionService/GetServiceInfo":      "Self-describing service catalog (this RPC).",
 	"InvitationService/AcceptInvitation":       "Accept an invite by token.",
 	"InvitationService/CreateInvitation":       "Invite a user to an org.",
+	"InvitationService/InspectInvitation":      "Resolve a privacy-limited invitation summary from a secret credential.",
+	"InvitationService/InspectInvitationById":  "Resolve an authenticated invitee's invitation summary.",
 	"InvitationService/ListInvitations":        "List pending invites for an org.",
+	"InvitationService/ResendInvitation":       "Rotate and requeue a pending invitation after its cooldown.",
 	"InvitationService/RevokeInvitation":       "Revoke a pending invite.",
 	"MFAService/BeginWebAuthnRegistration":     "Begin passkey registration with server-side ceremony state.",
 	"MFAService/FinishWebAuthnRegistration":    "Verify and persist a passkey credential.",
@@ -115,9 +119,9 @@ var rpcDescriptions = map[string]string{
 	"NotificationService/ListNotifications":    "List the caller's notifications.",
 	"NotificationService/MarkAllRead":          "Mark all read.",
 	"NotificationService/MarkRead":             "Mark one read.",
-	"OnboardingService/CompleteStep":           "Mark a step done.",
-	"OnboardingService/GetProgress":            "Wizard step status for the caller.",
-	"OnboardingService/SkipStep":               "Mark a step skipped.",
+	"OnboardingService/CompleteStep":           "Confirm a step only after its represented product state exists.",
+	"OnboardingService/GetProgress":            "Versioned organization activation checklist for the caller.",
+	"OnboardingService/SkipStep":               "Record an explicit skip for an optional step.",
 	"OrganizationService/AddMember":            "Add a user to an org.",
 	"OrganizationService/CreateOrganization":   "Create a new org; caller becomes owner.",
 	"OrganizationService/GetOrgSettings":       "Read branding.",
@@ -186,6 +190,12 @@ var rpcDescriptions = map[string]string{
 	"WorkContextService/StartTask":             "Issue a signed Work Context for a new Task and root Session.",
 	"UserSettingsService/Get":                  "JSONB user prefs.",
 	"UserSettingsService/Update":               "Patch user prefs.",
+	"WaitlistService/GetAcquisitionStatus":     "Read the configured signup and waitlist mode.",
+	"WaitlistService/Invite":                   "Queue the approved signup handoff for one waitlist entry.",
+	"WaitlistService/Join":                     "Submit an enumeration-safe public waitlist request.",
+	"WaitlistService/List":                     "Search and filter the waitlist as a platform administrator.",
+	"WaitlistService/Review":                   "Approve or reject a waitlist entry with audit context.",
+	"WaitlistService/Verify":                   "Verify a waitlist email using an expiring hashed credential.",
 	"WebhookService/CreateSubscription":        "Create a public-HTTPS endpoint and reveal its encrypted-at-rest signing secret once.",
 	"WebhookService/DeleteSubscription":        "Delete a subscription.",
 	"WebhookService/GetDelivery":               "Read one delivery.",
@@ -268,6 +278,7 @@ var serviceRLSTables = []*gen.RLSPolicyInfo{
 	{Table: "api_keys", PolicyShape: "direct", FailClosed: true, ScopeColumn: "organization_id"},
 	{Table: "org_settings", PolicyShape: "direct", FailClosed: true, ScopeColumn: "org_id"},
 	{Table: "invitations", PolicyShape: "direct", FailClosed: true, ScopeColumn: "org_id"},
+	{Table: "organization_activations", PolicyShape: "direct", FailClosed: true, ScopeColumn: "org_id"},
 	{Table: "organization_members", PolicyShape: "direct", FailClosed: true, ScopeColumn: "org_id"},
 	{Table: "subscriptions", PolicyShape: "direct", FailClosed: true, ScopeColumn: "org_id"},
 	{Table: "entitlement_overrides", PolicyShape: "direct", FailClosed: true, ScopeColumn: "org_id"},
@@ -284,4 +295,7 @@ var serviceRLSTables = []*gen.RLSPolicyInfo{
 	{Table: "mfa_login_transactions", PolicyShape: "direct", FailClosed: true, ScopeColumn: "user_id", Notes: "Public completion uses exact opaque-token hash lookup under audited bypass."},
 	{Table: "webauthn_credentials", PolicyShape: "direct", FailClosed: true, ScopeColumn: "user_id", Notes: "Complete credential record is Vault-encrypted; public credential ID is unique."},
 	{Table: "webauthn_ceremonies", PolicyShape: "direct", FailClosed: true, ScopeColumn: "user_id", Notes: "Short-lived server-side state; login ceremonies are bound to an MFA login transaction."},
+	{Table: "waitlist_entries", PolicyShape: "control_plane", FailClosed: true, ScopeColumn: "id", Notes: "Public writes and platform administration use bounded service operations under the control-plane role."},
+	{Table: "user_consent_preferences", PolicyShape: "direct", FailClosed: true, ScopeColumn: "user_id"},
+	{Table: "user_consent_events", PolicyShape: "direct", FailClosed: true, ScopeColumn: "user_id"},
 }

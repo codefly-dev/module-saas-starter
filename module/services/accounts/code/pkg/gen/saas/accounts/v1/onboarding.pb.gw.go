@@ -39,9 +39,18 @@ func request_OnboardingService_GetProgress_0(ctx context.Context, marshaler runt
 	var (
 		protoReq GetOnboardingProgressRequest
 		metadata runtime.ServerMetadata
+		err      error
 	)
 	if req.Body != nil {
 		_, _ = io.Copy(io.Discard, req.Body)
+	}
+	val, ok := pathParams["organization_id"]
+	if !ok {
+		return nil, metadata, status.Errorf(codes.InvalidArgument, "missing parameter %s", "organization_id")
+	}
+	protoReq.OrganizationId, err = runtime.String(val)
+	if err != nil {
+		return nil, metadata, status.Errorf(codes.InvalidArgument, "type mismatch, parameter: %s, error: %v", "organization_id", err)
 	}
 	msg, err := client.GetProgress(ctx, &protoReq, grpc.Header(&metadata.HeaderMD), grpc.Trailer(&metadata.TrailerMD))
 	return msg, metadata, err
@@ -51,7 +60,16 @@ func local_request_OnboardingService_GetProgress_0(ctx context.Context, marshale
 	var (
 		protoReq GetOnboardingProgressRequest
 		metadata runtime.ServerMetadata
+		err      error
 	)
+	val, ok := pathParams["organization_id"]
+	if !ok {
+		return nil, metadata, status.Errorf(codes.InvalidArgument, "missing parameter %s", "organization_id")
+	}
+	protoReq.OrganizationId, err = runtime.String(val)
+	if err != nil {
+		return nil, metadata, status.Errorf(codes.InvalidArgument, "type mismatch, parameter: %s, error: %v", "organization_id", err)
+	}
 	msg, err := server.GetProgress(ctx, &protoReq)
 	return msg, metadata, err
 }
@@ -60,6 +78,7 @@ func request_OnboardingService_CompleteStep_0(ctx context.Context, marshaler run
 	var (
 		protoReq CompleteOnboardingStepRequest
 		metadata runtime.ServerMetadata
+		e        int32
 		err      error
 	)
 	if err := marshaler.NewDecoder(req.Body).Decode(&protoReq); err != nil && !errors.Is(err, io.EOF) {
@@ -68,14 +87,23 @@ func request_OnboardingService_CompleteStep_0(ctx context.Context, marshaler run
 	if req.Body != nil {
 		_, _ = io.Copy(io.Discard, req.Body)
 	}
-	val, ok := pathParams["step_name"]
+	val, ok := pathParams["organization_id"]
 	if !ok {
-		return nil, metadata, status.Errorf(codes.InvalidArgument, "missing parameter %s", "step_name")
+		return nil, metadata, status.Errorf(codes.InvalidArgument, "missing parameter %s", "organization_id")
 	}
-	protoReq.StepName, err = runtime.String(val)
+	protoReq.OrganizationId, err = runtime.String(val)
 	if err != nil {
-		return nil, metadata, status.Errorf(codes.InvalidArgument, "type mismatch, parameter: %s, error: %v", "step_name", err)
+		return nil, metadata, status.Errorf(codes.InvalidArgument, "type mismatch, parameter: %s, error: %v", "organization_id", err)
 	}
+	val, ok = pathParams["step_id"]
+	if !ok {
+		return nil, metadata, status.Errorf(codes.InvalidArgument, "missing parameter %s", "step_id")
+	}
+	e, err = runtime.Enum(val, OnboardingStepId_value)
+	if err != nil {
+		return nil, metadata, status.Errorf(codes.InvalidArgument, "type mismatch, parameter: %s, error: %v", "step_id", err)
+	}
+	protoReq.StepId = OnboardingStepId(e)
 	msg, err := client.CompleteStep(ctx, &protoReq, grpc.Header(&metadata.HeaderMD), grpc.Trailer(&metadata.TrailerMD))
 	return msg, metadata, err
 }
@@ -84,19 +112,29 @@ func local_request_OnboardingService_CompleteStep_0(ctx context.Context, marshal
 	var (
 		protoReq CompleteOnboardingStepRequest
 		metadata runtime.ServerMetadata
+		e        int32
 		err      error
 	)
 	if err := marshaler.NewDecoder(req.Body).Decode(&protoReq); err != nil && !errors.Is(err, io.EOF) {
 		return nil, metadata, status.Errorf(codes.InvalidArgument, "%v", err)
 	}
-	val, ok := pathParams["step_name"]
+	val, ok := pathParams["organization_id"]
 	if !ok {
-		return nil, metadata, status.Errorf(codes.InvalidArgument, "missing parameter %s", "step_name")
+		return nil, metadata, status.Errorf(codes.InvalidArgument, "missing parameter %s", "organization_id")
 	}
-	protoReq.StepName, err = runtime.String(val)
+	protoReq.OrganizationId, err = runtime.String(val)
 	if err != nil {
-		return nil, metadata, status.Errorf(codes.InvalidArgument, "type mismatch, parameter: %s, error: %v", "step_name", err)
+		return nil, metadata, status.Errorf(codes.InvalidArgument, "type mismatch, parameter: %s, error: %v", "organization_id", err)
 	}
+	val, ok = pathParams["step_id"]
+	if !ok {
+		return nil, metadata, status.Errorf(codes.InvalidArgument, "missing parameter %s", "step_id")
+	}
+	e, err = runtime.Enum(val, OnboardingStepId_value)
+	if err != nil {
+		return nil, metadata, status.Errorf(codes.InvalidArgument, "type mismatch, parameter: %s, error: %v", "step_id", err)
+	}
+	protoReq.StepId = OnboardingStepId(e)
 	msg, err := server.CompleteStep(ctx, &protoReq)
 	return msg, metadata, err
 }
@@ -105,6 +143,7 @@ func request_OnboardingService_SkipStep_0(ctx context.Context, marshaler runtime
 	var (
 		protoReq SkipOnboardingStepRequest
 		metadata runtime.ServerMetadata
+		e        int32
 		err      error
 	)
 	if err := marshaler.NewDecoder(req.Body).Decode(&protoReq); err != nil && !errors.Is(err, io.EOF) {
@@ -113,14 +152,23 @@ func request_OnboardingService_SkipStep_0(ctx context.Context, marshaler runtime
 	if req.Body != nil {
 		_, _ = io.Copy(io.Discard, req.Body)
 	}
-	val, ok := pathParams["step_name"]
+	val, ok := pathParams["organization_id"]
 	if !ok {
-		return nil, metadata, status.Errorf(codes.InvalidArgument, "missing parameter %s", "step_name")
+		return nil, metadata, status.Errorf(codes.InvalidArgument, "missing parameter %s", "organization_id")
 	}
-	protoReq.StepName, err = runtime.String(val)
+	protoReq.OrganizationId, err = runtime.String(val)
 	if err != nil {
-		return nil, metadata, status.Errorf(codes.InvalidArgument, "type mismatch, parameter: %s, error: %v", "step_name", err)
+		return nil, metadata, status.Errorf(codes.InvalidArgument, "type mismatch, parameter: %s, error: %v", "organization_id", err)
 	}
+	val, ok = pathParams["step_id"]
+	if !ok {
+		return nil, metadata, status.Errorf(codes.InvalidArgument, "missing parameter %s", "step_id")
+	}
+	e, err = runtime.Enum(val, OnboardingStepId_value)
+	if err != nil {
+		return nil, metadata, status.Errorf(codes.InvalidArgument, "type mismatch, parameter: %s, error: %v", "step_id", err)
+	}
+	protoReq.StepId = OnboardingStepId(e)
 	msg, err := client.SkipStep(ctx, &protoReq, grpc.Header(&metadata.HeaderMD), grpc.Trailer(&metadata.TrailerMD))
 	return msg, metadata, err
 }
@@ -129,19 +177,29 @@ func local_request_OnboardingService_SkipStep_0(ctx context.Context, marshaler r
 	var (
 		protoReq SkipOnboardingStepRequest
 		metadata runtime.ServerMetadata
+		e        int32
 		err      error
 	)
 	if err := marshaler.NewDecoder(req.Body).Decode(&protoReq); err != nil && !errors.Is(err, io.EOF) {
 		return nil, metadata, status.Errorf(codes.InvalidArgument, "%v", err)
 	}
-	val, ok := pathParams["step_name"]
+	val, ok := pathParams["organization_id"]
 	if !ok {
-		return nil, metadata, status.Errorf(codes.InvalidArgument, "missing parameter %s", "step_name")
+		return nil, metadata, status.Errorf(codes.InvalidArgument, "missing parameter %s", "organization_id")
 	}
-	protoReq.StepName, err = runtime.String(val)
+	protoReq.OrganizationId, err = runtime.String(val)
 	if err != nil {
-		return nil, metadata, status.Errorf(codes.InvalidArgument, "type mismatch, parameter: %s, error: %v", "step_name", err)
+		return nil, metadata, status.Errorf(codes.InvalidArgument, "type mismatch, parameter: %s, error: %v", "organization_id", err)
 	}
+	val, ok = pathParams["step_id"]
+	if !ok {
+		return nil, metadata, status.Errorf(codes.InvalidArgument, "missing parameter %s", "step_id")
+	}
+	e, err = runtime.Enum(val, OnboardingStepId_value)
+	if err != nil {
+		return nil, metadata, status.Errorf(codes.InvalidArgument, "type mismatch, parameter: %s, error: %v", "step_id", err)
+	}
+	protoReq.StepId = OnboardingStepId(e)
 	msg, err := server.SkipStep(ctx, &protoReq)
 	return msg, metadata, err
 }
@@ -158,7 +216,7 @@ func RegisterOnboardingServiceHandlerServer(ctx context.Context, mux *runtime.Se
 		var stream runtime.ServerTransportStream
 		ctx = grpc.NewContextWithServerTransportStream(ctx, &stream)
 		inboundMarshaler, outboundMarshaler := runtime.MarshalerForRequest(mux, req)
-		annotatedContext, err := runtime.AnnotateIncomingContext(ctx, mux, req, "/saas.accounts.v1.OnboardingService/GetProgress", runtime.WithHTTPPathPattern("/v1/onboarding"))
+		annotatedContext, err := runtime.AnnotateIncomingContext(ctx, mux, req, "/saas.accounts.v1.OnboardingService/GetProgress", runtime.WithHTTPPathPattern("/v1/organizations/{organization_id}/onboarding"))
 		if err != nil {
 			runtime.HTTPError(ctx, mux, outboundMarshaler, w, req, err)
 			return
@@ -178,7 +236,7 @@ func RegisterOnboardingServiceHandlerServer(ctx context.Context, mux *runtime.Se
 		var stream runtime.ServerTransportStream
 		ctx = grpc.NewContextWithServerTransportStream(ctx, &stream)
 		inboundMarshaler, outboundMarshaler := runtime.MarshalerForRequest(mux, req)
-		annotatedContext, err := runtime.AnnotateIncomingContext(ctx, mux, req, "/saas.accounts.v1.OnboardingService/CompleteStep", runtime.WithHTTPPathPattern("/v1/onboarding/{step_name}:complete"))
+		annotatedContext, err := runtime.AnnotateIncomingContext(ctx, mux, req, "/saas.accounts.v1.OnboardingService/CompleteStep", runtime.WithHTTPPathPattern("/v1/organizations/{organization_id}/onboarding/{step_id}:complete"))
 		if err != nil {
 			runtime.HTTPError(ctx, mux, outboundMarshaler, w, req, err)
 			return
@@ -198,7 +256,7 @@ func RegisterOnboardingServiceHandlerServer(ctx context.Context, mux *runtime.Se
 		var stream runtime.ServerTransportStream
 		ctx = grpc.NewContextWithServerTransportStream(ctx, &stream)
 		inboundMarshaler, outboundMarshaler := runtime.MarshalerForRequest(mux, req)
-		annotatedContext, err := runtime.AnnotateIncomingContext(ctx, mux, req, "/saas.accounts.v1.OnboardingService/SkipStep", runtime.WithHTTPPathPattern("/v1/onboarding/{step_name}:skip"))
+		annotatedContext, err := runtime.AnnotateIncomingContext(ctx, mux, req, "/saas.accounts.v1.OnboardingService/SkipStep", runtime.WithHTTPPathPattern("/v1/organizations/{organization_id}/onboarding/{step_id}:skip"))
 		if err != nil {
 			runtime.HTTPError(ctx, mux, outboundMarshaler, w, req, err)
 			return
@@ -256,7 +314,7 @@ func RegisterOnboardingServiceHandlerClient(ctx context.Context, mux *runtime.Se
 		ctx, cancel := context.WithCancel(req.Context())
 		defer cancel()
 		inboundMarshaler, outboundMarshaler := runtime.MarshalerForRequest(mux, req)
-		annotatedContext, err := runtime.AnnotateContext(ctx, mux, req, "/saas.accounts.v1.OnboardingService/GetProgress", runtime.WithHTTPPathPattern("/v1/onboarding"))
+		annotatedContext, err := runtime.AnnotateContext(ctx, mux, req, "/saas.accounts.v1.OnboardingService/GetProgress", runtime.WithHTTPPathPattern("/v1/organizations/{organization_id}/onboarding"))
 		if err != nil {
 			runtime.HTTPError(ctx, mux, outboundMarshaler, w, req, err)
 			return
@@ -273,7 +331,7 @@ func RegisterOnboardingServiceHandlerClient(ctx context.Context, mux *runtime.Se
 		ctx, cancel := context.WithCancel(req.Context())
 		defer cancel()
 		inboundMarshaler, outboundMarshaler := runtime.MarshalerForRequest(mux, req)
-		annotatedContext, err := runtime.AnnotateContext(ctx, mux, req, "/saas.accounts.v1.OnboardingService/CompleteStep", runtime.WithHTTPPathPattern("/v1/onboarding/{step_name}:complete"))
+		annotatedContext, err := runtime.AnnotateContext(ctx, mux, req, "/saas.accounts.v1.OnboardingService/CompleteStep", runtime.WithHTTPPathPattern("/v1/organizations/{organization_id}/onboarding/{step_id}:complete"))
 		if err != nil {
 			runtime.HTTPError(ctx, mux, outboundMarshaler, w, req, err)
 			return
@@ -290,7 +348,7 @@ func RegisterOnboardingServiceHandlerClient(ctx context.Context, mux *runtime.Se
 		ctx, cancel := context.WithCancel(req.Context())
 		defer cancel()
 		inboundMarshaler, outboundMarshaler := runtime.MarshalerForRequest(mux, req)
-		annotatedContext, err := runtime.AnnotateContext(ctx, mux, req, "/saas.accounts.v1.OnboardingService/SkipStep", runtime.WithHTTPPathPattern("/v1/onboarding/{step_name}:skip"))
+		annotatedContext, err := runtime.AnnotateContext(ctx, mux, req, "/saas.accounts.v1.OnboardingService/SkipStep", runtime.WithHTTPPathPattern("/v1/organizations/{organization_id}/onboarding/{step_id}:skip"))
 		if err != nil {
 			runtime.HTTPError(ctx, mux, outboundMarshaler, w, req, err)
 			return
@@ -307,9 +365,9 @@ func RegisterOnboardingServiceHandlerClient(ctx context.Context, mux *runtime.Se
 }
 
 var (
-	pattern_OnboardingService_GetProgress_0  = runtime.MustPattern(runtime.NewPattern(1, []int{2, 0, 2, 1}, []string{"v1", "onboarding"}, ""))
-	pattern_OnboardingService_CompleteStep_0 = runtime.MustPattern(runtime.NewPattern(1, []int{2, 0, 2, 1, 1, 0, 4, 1, 5, 2}, []string{"v1", "onboarding", "step_name"}, "complete"))
-	pattern_OnboardingService_SkipStep_0     = runtime.MustPattern(runtime.NewPattern(1, []int{2, 0, 2, 1, 1, 0, 4, 1, 5, 2}, []string{"v1", "onboarding", "step_name"}, "skip"))
+	pattern_OnboardingService_GetProgress_0  = runtime.MustPattern(runtime.NewPattern(1, []int{2, 0, 2, 1, 1, 0, 4, 1, 5, 2, 2, 3}, []string{"v1", "organizations", "organization_id", "onboarding"}, ""))
+	pattern_OnboardingService_CompleteStep_0 = runtime.MustPattern(runtime.NewPattern(1, []int{2, 0, 2, 1, 1, 0, 4, 1, 5, 2, 2, 3, 1, 0, 4, 1, 5, 4}, []string{"v1", "organizations", "organization_id", "onboarding", "step_id"}, "complete"))
+	pattern_OnboardingService_SkipStep_0     = runtime.MustPattern(runtime.NewPattern(1, []int{2, 0, 2, 1, 1, 0, 4, 1, 5, 2, 2, 3, 1, 0, 4, 1, 5, 4}, []string{"v1", "organizations", "organization_id", "onboarding", "step_id"}, "skip"))
 )
 
 var (

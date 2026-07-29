@@ -13,34 +13,36 @@ import (
 )
 
 type Service struct {
-	store         Store
-	hasher        KeyHasher
-	validator     auth.TokenValidator // production: validates provider tokens after OAuth code exchange
-	exchanger     CodeExchanger       // production: exchanges OAuth codes for provider tokens
-	devValidator  auth.TokenValidator // development only: allowlists explicit fixture identities
-	resolver      auth.IdentityResolver
-	minter        auth.JWTMinter
-	emailOutbox   *email.Outbox    // optional durable email producer; transport is worker-only
-	billing       BillingClient    // optional: Stripe client for checkout/portal
-	billingURLs   BillingRedirects // server-owned Stripe return destinations
-	appBaseURL    string           // public URL of the frontend, used in email bodies
-	audit         AuditEmitter
-	entitlements  EntitlementChecker
-	features      FeatureChecker
-	membership    MembershipInvalidator
-	slack         *SlackNotifier // optional: sends critical notifications to Slack
-	oauthState    *auth.OAuthStateSigner
-	oauthPolicy   *auth.OAuthRequestPolicy
-	webhookJobs   jobs.Producer // request-scoped, transactional outbound producer
-	mfaCipher     SecretCipher  // required for TOTP enrollment and verification
-	webhookCipher SecretCipher  // required for outbound-webhook signing keys
-	webhookPolicy *WebhookEndpointPolicy
-	webAuthn      WebAuthnEngine  // required for passkey registration and assertion
-	jobOperations jobs.Operations // isolated, payload-free platform operations
-	eventRegistry *analytics.Registry
-	productEvents analytics.Emitter
-	usageMeters   *UsageMeterCatalog
-	privacy       PrivacyWorkflow
+	store                     Store
+	hasher                    KeyHasher
+	validator                 auth.TokenValidator // production: validates provider tokens after OAuth code exchange
+	exchanger                 CodeExchanger       // production: exchanges OAuth codes for provider tokens
+	devValidator              auth.TokenValidator // development only: allowlists explicit fixture identities
+	resolver                  auth.IdentityResolver
+	minter                    auth.JWTMinter
+	emailOutbox               *email.Outbox    // optional durable email producer; transport is worker-only
+	billing                   BillingClient    // optional: Stripe client for checkout/portal
+	billingURLs               BillingRedirects // server-owned Stripe return destinations
+	appBaseURL                string           // public URL of the frontend, used in email bodies
+	audit                     AuditEmitter
+	entitlements              EntitlementChecker
+	features                  FeatureChecker
+	membership                MembershipInvalidator
+	slack                     *SlackNotifier // optional: sends critical notifications to Slack
+	oauthState                *auth.OAuthStateSigner
+	oauthPolicy               *auth.OAuthRequestPolicy
+	webhookJobs               jobs.Producer // request-scoped, transactional outbound producer
+	mfaCipher                 SecretCipher  // required for TOTP enrollment and verification
+	webhookCipher             SecretCipher  // required for outbound-webhook signing keys
+	webhookPolicy             *WebhookEndpointPolicy
+	webAuthn                  WebAuthnEngine  // required for passkey registration and assertion
+	jobOperations             jobs.Operations // isolated, payload-free platform operations
+	acquisitionMode           gen.AcquisitionMode
+	waitlistEmailVerification bool
+	eventRegistry             *analytics.Registry
+	productEvents             analytics.Emitter
+	usageMeters               *UsageMeterCatalog
+	privacy                   PrivacyWorkflow
 }
 
 // CodeExchanger abstracts the OAuth 2.0 code-for-token exchange so the
@@ -69,7 +71,12 @@ func NewService(store Store) (*Service, error) {
 	if err != nil {
 		return nil, err
 	}
-	return &Service{store: store, usageMeters: usageMeters}, nil
+	return &Service{
+		store:                     store,
+		acquisitionMode:           gen.AcquisitionMode_ACQUISITION_MODE_OPEN_SIGNUP,
+		waitlistEmailVerification: true,
+		usageMeters:               usageMeters,
+	}, nil
 }
 
 func (s *Service) SetHasher(h KeyHasher) {
@@ -237,6 +244,10 @@ func (s *Service) Store() Store {
 // RegisterUser creates a new user with identity and a default personal organization.
 func (s *Service) RegisterUser(ctx context.Context, input *gen.RegisterUserRequest) (*gen.RegisterUserResponse, error) {
 	w := wool.Get(ctx).In("RegisterUser")
+
+	if err := s.authorizeAccountCreation(ctx, input.PrimaryEmail); err != nil {
+		return nil, err
+	}
 
 	userID := NewIDString()
 	identityID := NewIDString()

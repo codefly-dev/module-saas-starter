@@ -1,32 +1,59 @@
-import type { OnboardingProgress, OnboardingStepId } from "./types";
-import { ONBOARDING_STEPS } from "./types";
+import { timestampDate } from "@bufbuild/protobuf/wkt";
+import type {
+	OnboardingProgress as OnboardingProgressMessage,
+	OnboardingStep as OnboardingStepMessage,
+} from "@/gen/saas/accounts/v1/onboarding_pb";
+import {
+	ONBOARDING_STEP_CONTENT,
+	type OnboardingProgress,
+	type OnboardingStep,
+	OnboardingStepId,
+} from "./types";
 
-/** Lucide icon name for each onboarding step. */
-export function getStepIcon(stepId: OnboardingStepId): string {
-	switch (stepId) {
-		case "create_org":
-			return "Building2";
-		case "invite_team":
-			return "UsersRound";
-		case "select_plan":
-			return "CreditCard";
-		case "create_api_key":
-			return "Key";
-		default:
-			return "Circle";
+function timestamp(
+	value: OnboardingStepMessage["completedAt"],
+): string | undefined {
+	return value ? timestampDate(value).toISOString() : undefined;
+}
+
+export function transformOnboardingStep(
+	message: OnboardingStepMessage,
+): OnboardingStep {
+	if (message.id === OnboardingStepId.UNSPECIFIED) {
+		throw new Error("Onboarding response contains an unspecified step");
 	}
+	const content = ONBOARDING_STEP_CONTENT[message.id];
+	if (!content) {
+		throw new Error(`Onboarding response contains unknown step ${message.id}`);
+	}
+	return {
+		id: message.id as OnboardingStep["id"],
+		label: content.label,
+		description: content.description,
+		required: message.required,
+		status: message.status,
+		skipReason: message.skipReason,
+		completedAt: timestamp(message.completedAt),
+		skippedAt: timestamp(message.skippedAt),
+	};
 }
 
-export function getStepDescription(stepId: OnboardingStepId): string {
-	const step = ONBOARDING_STEPS.find((s) => s.id === stepId);
-	return step?.description ?? "";
-}
-
-export function isWizardComplete(progress: OnboardingProgress | null): boolean {
-	if (!progress) return false;
-	return ONBOARDING_STEPS.every(
-		(step) =>
-			progress.completedSteps.includes(step.id) ||
-			progress.skippedSteps.includes(step.id),
-	);
+export function transformOnboardingProgress(
+	message: OnboardingProgressMessage,
+): OnboardingProgress {
+	return {
+		organizationId: message.organizationId,
+		flowId: message.flowId,
+		flowVersion: message.flowVersion,
+		variant: message.variant,
+		steps: message.steps.map(transformOnboardingStep),
+		currentStep: message.currentStep,
+		nextStep: message.nextStep,
+		requiredComplete: message.requiredComplete,
+		checklistComplete: message.checklistComplete,
+		activationAchieved: message.activationAchieved,
+		startedAt: timestamp(message.startedAt),
+		completedAt: timestamp(message.completedAt),
+		activatedAt: timestamp(message.activatedAt),
+	};
 }

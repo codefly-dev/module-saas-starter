@@ -1,0 +1,232 @@
+syntax = "proto3";
+
+package saas.accounts.v1;
+
+import "buf/validate/validate.proto";
+import "google/api/annotations.proto";
+import "google/protobuf/timestamp.proto";
+import "saas/policy/v1/options.proto";
+
+enum AcquisitionMode {
+  ACQUISITION_MODE_UNSPECIFIED = 0;
+  ACQUISITION_MODE_OPEN_SIGNUP = 1;
+  ACQUISITION_MODE_INVITE_ONLY = 2;
+  ACQUISITION_MODE_APPROVAL_REQUIRED = 3;
+  ACQUISITION_MODE_CLOSED = 4;
+}
+
+enum WaitlistState {
+  WAITLIST_STATE_UNSPECIFIED = 0;
+  WAITLIST_STATE_PENDING = 1;
+  WAITLIST_STATE_VERIFIED = 2;
+  WAITLIST_STATE_APPROVED = 3;
+  WAITLIST_STATE_INVITED = 4;
+  WAITLIST_STATE_CONVERTED = 5;
+  WAITLIST_STATE_REJECTED = 6;
+  WAITLIST_STATE_UNSUBSCRIBED = 7;
+}
+
+message AcquisitionStatus {
+  AcquisitionMode mode = 1 [(buf.validate.field).enum.defined_only = true];
+  bool waitlist_enabled = 2;
+  bool email_verification_required = 3;
+  string consent_policy_version = 4;
+}
+
+message WaitlistEntry {
+  string id = 1 [(buf.validate.field).string.uuid = true];
+  string email = 2 [(buf.validate.field).string.email = true];
+  string name = 3;
+  string company = 4;
+  string use_case = 5;
+  WaitlistState state = 6 [(buf.validate.field).enum.defined_only = true];
+  string source = 7;
+  string campaign = 8;
+  string referrer = 9;
+  string referral_code = 10;
+  string referred_by = 11;
+  repeated string tags = 12;
+  string admin_notes = 13;
+  google.protobuf.Timestamp created_at = 14;
+  google.protobuf.Timestamp verified_at = 15;
+  google.protobuf.Timestamp approved_at = 16;
+  google.protobuf.Timestamp invited_at = 17;
+  google.protobuf.Timestamp converted_at = 18;
+  google.protobuf.Timestamp unsubscribed_at = 19;
+}
+
+message GetAcquisitionStatusRequest {}
+
+message JoinWaitlistRequest {
+  string email = 1 [(buf.validate.field).string.email = true];
+  string name = 2 [(buf.validate.field).string.max_len = 200];
+  string company = 3 [(buf.validate.field).string.max_len = 200];
+  string use_case = 4 [(buf.validate.field).string.max_len = 2000];
+  string source = 5 [(buf.validate.field).string.max_len = 200];
+  string campaign = 6 [(buf.validate.field).string.max_len = 200];
+  string referrer = 7 [(buf.validate.field).string.max_len = 2048];
+  string referral_code = 8 [(buf.validate.field).string.max_len = 64];
+  bool marketing_consent = 9;
+  string policy_version = 10 [(buf.validate.field).string.min_len = 1];
+  string website = 11 [(buf.validate.field).string.max_len = 500];
+}
+
+message JoinWaitlistResponse {
+  string message = 1;
+}
+
+message VerifyWaitlistRequest {
+  string token = 1 [(buf.validate.field).string = {
+    min_len: 32
+    max_len: 512
+  }];
+}
+
+message VerifyWaitlistResponse {
+  WaitlistState state = 1 [(buf.validate.field).enum.defined_only = true];
+  string message = 2;
+}
+
+message ListWaitlistRequest {
+  WaitlistState state = 1 [(buf.validate.field).enum.defined_only = true];
+  string query = 2 [(buf.validate.field).string.max_len = 200];
+  string source = 3 [(buf.validate.field).string.max_len = 200];
+  string campaign = 4 [(buf.validate.field).string.max_len = 200];
+  int32 page_size = 5 [(buf.validate.field).int32 = {
+    gte: 1
+    lte: 200
+  }];
+  string page_token = 6;
+}
+
+message ListWaitlistResponse {
+  repeated WaitlistEntry entries = 1;
+  string next_page_token = 2;
+}
+
+message ReviewWaitlistRequest {
+  string id = 1 [(buf.validate.field).string.uuid = true];
+  WaitlistState state = 2 [(buf.validate.field).enum = {
+    defined_only: true
+    in: [
+      3,
+      6
+    ]
+  }];
+  string admin_notes = 3 [(buf.validate.field).string.max_len = 5000];
+  repeated string tags = 4 [(buf.validate.field).repeated.max_items = 20];
+}
+
+message InviteWaitlistRequest {
+  string id = 1 [(buf.validate.field).string.uuid = true];
+}
+
+service WaitlistService {
+  rpc GetAcquisitionStatus(GetAcquisitionStatusRequest) returns (AcquisitionStatus) {
+    option (saas.policy.v1.method_policy) = {
+      exposure: EXPOSURE_PUBLIC
+      tenant: TENANT_REQUIREMENT_NONE
+      mfa: MFA_REQUIREMENT_NONE
+      audit: {emission: AUDIT_EMISSION_NONE}
+      idempotency: IDEMPOTENCY_REQUIREMENT_FORBIDDEN
+      rate_limit: RATE_LIMIT_CLASS_PUBLIC
+      request_sensitivity: SENSITIVITY_PUBLIC
+      response_sensitivity: SENSITIVITY_PUBLIC
+      platform_role: PLATFORM_ROLE_REQUIREMENT_NONE
+    };
+    option (google.api.http) = {get: "/v1/acquisition"};
+  }
+
+  rpc Join(JoinWaitlistRequest) returns (JoinWaitlistResponse) {
+    option (saas.policy.v1.method_policy) = {
+      exposure: EXPOSURE_PUBLIC
+      tenant: TENANT_REQUIREMENT_NONE
+      mfa: MFA_REQUIREMENT_NONE
+      audit: {emission: AUDIT_EMISSION_NONE}
+      idempotency: IDEMPOTENCY_REQUIREMENT_FORBIDDEN
+      rate_limit: RATE_LIMIT_CLASS_PUBLIC
+      request_sensitivity: SENSITIVITY_CONFIDENTIAL
+      response_sensitivity: SENSITIVITY_PUBLIC
+      platform_role: PLATFORM_ROLE_REQUIREMENT_NONE
+    };
+    option (google.api.http) = {
+      post: "/v1/waitlist"
+      body: "*"
+    };
+  }
+
+  rpc Verify(VerifyWaitlistRequest) returns (VerifyWaitlistResponse) {
+    option (saas.policy.v1.method_policy) = {
+      exposure: EXPOSURE_PUBLIC
+      tenant: TENANT_REQUIREMENT_NONE
+      mfa: MFA_REQUIREMENT_NONE
+      audit: {emission: AUDIT_EMISSION_NONE}
+      idempotency: IDEMPOTENCY_REQUIREMENT_FORBIDDEN
+      rate_limit: RATE_LIMIT_CLASS_PUBLIC
+      request_sensitivity: SENSITIVITY_SECRET
+      response_sensitivity: SENSITIVITY_PUBLIC
+      platform_role: PLATFORM_ROLE_REQUIREMENT_NONE
+    };
+    option (google.api.http) = {
+      post: "/v1/waitlist:verify"
+      body: "*"
+    };
+  }
+
+  rpc List(ListWaitlistRequest) returns (ListWaitlistResponse) {
+    option (saas.policy.v1.method_policy) = {
+      exposure: EXPOSURE_AUTHENTICATED
+      tenant: TENANT_REQUIREMENT_NONE
+      mfa: MFA_REQUIREMENT_NONE
+      audit: {emission: AUDIT_EMISSION_NONE}
+      idempotency: IDEMPOTENCY_REQUIREMENT_FORBIDDEN
+      rate_limit: RATE_LIMIT_CLASS_SENSITIVE
+      request_sensitivity: SENSITIVITY_CONFIDENTIAL
+      response_sensitivity: SENSITIVITY_CONFIDENTIAL
+      platform_role: PLATFORM_ROLE_REQUIREMENT_ANY
+    };
+    option (google.api.http) = {get: "/v1/platform/waitlist"};
+  }
+
+  rpc Review(ReviewWaitlistRequest) returns (WaitlistEntry) {
+    option (saas.policy.v1.method_policy) = {
+      exposure: EXPOSURE_AUTHENTICATED
+      tenant: TENANT_REQUIREMENT_NONE
+      mfa: MFA_REQUIREMENT_IF_ENROLLED_RECENT_STEP_UP
+      audit: {
+        events: "waitlist.reviewed"
+        emission: AUDIT_EMISSION_SUCCESS
+      }
+      idempotency: IDEMPOTENCY_REQUIREMENT_FORBIDDEN
+      rate_limit: RATE_LIMIT_CLASS_SENSITIVE
+      request_sensitivity: SENSITIVITY_CONFIDENTIAL
+      response_sensitivity: SENSITIVITY_CONFIDENTIAL
+      platform_role: PLATFORM_ROLE_REQUIREMENT_ANY
+    };
+    option (google.api.http) = {
+      post: "/v1/platform/waitlist/{id}:review"
+      body: "*"
+    };
+  }
+
+  rpc Invite(InviteWaitlistRequest) returns (WaitlistEntry) {
+    option (saas.policy.v1.method_policy) = {
+      exposure: EXPOSURE_AUTHENTICATED
+      tenant: TENANT_REQUIREMENT_NONE
+      mfa: MFA_REQUIREMENT_IF_ENROLLED_RECENT_STEP_UP
+      audit: {
+        events: "waitlist.invited"
+        emission: AUDIT_EMISSION_SUCCESS
+      }
+      idempotency: IDEMPOTENCY_REQUIREMENT_FORBIDDEN
+      rate_limit: RATE_LIMIT_CLASS_SENSITIVE
+      request_sensitivity: SENSITIVITY_CONFIDENTIAL
+      response_sensitivity: SENSITIVITY_CONFIDENTIAL
+      platform_role: PLATFORM_ROLE_REQUIREMENT_ANY
+    };
+    option (google.api.http) = {
+      post: "/v1/platform/waitlist/{id}:invite"
+      body: "*"
+    };
+  }
+}

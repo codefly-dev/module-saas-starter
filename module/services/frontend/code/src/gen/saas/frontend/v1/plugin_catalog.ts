@@ -56,6 +56,7 @@ export const FRONTEND_ROUTES = [
   { path: "/admin/platform/admins", sourcePath: "src/app/admin/platform/admins/page.tsx", match: "exact", access: "super_admin" },
   { path: "/admin/platform/feature-flags", sourcePath: "src/app/admin/platform/feature-flags/page.tsx", match: "exact", access: "super_admin" },
   { path: "/admin/platform/jobs", sourcePath: "src/app/admin/platform/jobs/page.tsx", match: "exact", access: "super_admin" },
+  { path: "/admin/platform/waitlist", sourcePath: "src/app/admin/platform/waitlist/page.tsx", match: "exact", access: "super_admin" },
   { path: "/admin/roles", sourcePath: "src/app/admin/roles/page.tsx", match: "exact", access: "admin" },
   { path: "/admin/sessions", sourcePath: "src/app/admin/sessions/page.tsx", match: "exact", access: "admin" },
   { path: "/admin/sso", sourcePath: "src/app/admin/sso/page.tsx", match: "exact", access: "admin" },
@@ -70,14 +71,19 @@ export const FRONTEND_ROUTES = [
   { path: "/docs", sourcePath: "src/app/(dashboard)/docs/page.tsx", match: "exact", access: "authenticated" },
   { path: "/docs/compliance", sourcePath: "src/app/(dashboard)/docs/compliance/page.tsx", match: "exact", access: "authenticated" },
   { path: "/docs/sdks", sourcePath: "src/app/(dashboard)/docs/sdks/page.tsx", match: "exact", access: "authenticated" },
-  { path: "/invitations/accept", sourcePath: "src/app/(dashboard)/invitations/accept/page.tsx", match: "exact", access: "authenticated" },
+  { path: "/invitations/accept", sourcePath: "src/app/(auth)/invitations/accept/page.tsx", match: "exact", access: "public" },
+  { path: "/legal/privacy", sourcePath: "src/app/(auth)/legal/privacy/page.tsx", match: "exact", access: "public" },
+  { path: "/legal/terms", sourcePath: "src/app/(auth)/legal/terms/page.tsx", match: "exact", access: "public" },
   { path: "/notifications", sourcePath: "src/app/(dashboard)/notifications/page.tsx", match: "exact", access: "authenticated" },
   { path: "/onboarding", sourcePath: "src/app/(dashboard)/onboarding/page.tsx", match: "exact", access: "authenticated" },
   { path: "/settings", sourcePath: "src/app/(dashboard)/settings/page.tsx", match: "exact", access: "authenticated" },
   { path: "/settings/data", sourcePath: "src/app/(dashboard)/settings/data/page.tsx", match: "exact", access: "authenticated" },
   { path: "/settings/mfa", sourcePath: "src/app/(dashboard)/settings/mfa/page.tsx", match: "exact", access: "authenticated" },
   { path: "/settings/notifications", sourcePath: "src/app/(dashboard)/settings/notifications/page.tsx", match: "exact", access: "authenticated" },
+  { path: "/settings/privacy", sourcePath: "src/app/(dashboard)/settings/privacy/page.tsx", match: "exact", access: "authenticated" },
   { path: "/status", sourcePath: "src/app/(auth)/status/page.tsx", match: "exact", access: "public" },
+  { path: "/waitlist", sourcePath: "src/app/(auth)/waitlist/page.tsx", match: "exact", access: "public" },
+  { path: "/waitlist/verify", sourcePath: "src/app/(auth)/waitlist/verify/page.tsx", match: "exact", access: "public" },
 ] as const satisfies readonly FrontendRouteDefinition[];
 
 export type FrontendNavigationIcon =
@@ -117,6 +123,7 @@ export const FRONTEND_NAVIGATION: readonly FrontendNavigationItem[] = [
   { id: "admin-platform-overview", plugin: "platform-admin", label: "Platform Overview", href: "/admin/platform", icon: "Layers", group: "Platform", access: "super_admin", requiredRole: "super_admin", surfaces: ["plugin_registry"], order: 190 },
   { id: "admin-platform-users", plugin: "platform-admin", label: "Platform Users", href: "/admin/platform/admins", icon: "UserSearch", group: "Platform", access: "super_admin", requiredRole: "super_admin", requiredPermission: "users:read", surfaces: ["command_palette", "plugin_registry", "sidebar"], order: 200 },
   { id: "admin-feature-flags", plugin: "platform-admin", label: "Feature Flags", href: "/admin/platform/feature-flags", icon: "Flag", group: "Platform", access: "super_admin", requiredRole: "super_admin", surfaces: ["command_palette", "plugin_registry", "sidebar"], order: 210 },
+  { id: "admin-waitlist", plugin: "platform-admin", label: "Waitlist", href: "/admin/platform/waitlist", icon: "Mail", group: "Platform", access: "super_admin", requiredRole: "super_admin", surfaces: ["command_palette", "plugin_registry", "sidebar"], order: 215 },
   { id: "admin-sessions", plugin: "platform-admin", label: "Sessions", href: "/admin/sessions", icon: "Monitor", group: "Platform", access: "super_admin", requiredRole: "super_admin", surfaces: ["command_palette", "plugin_registry", "sidebar"], order: 220 },
   { id: "admin-entitlements", plugin: "platform-admin", label: "Entitlements", href: "/admin/entitlements", icon: "ShieldCheck", group: "Platform", access: "admin", requiredRole: "admin", requiredPermission: "entitlements:read", surfaces: ["command_palette", "plugin_registry", "sidebar"], order: 230 },
   { id: "admin-job-operations", plugin: "platform-admin", label: "Job Operations", href: "/admin/platform/jobs", icon: "ListChecks", group: "Platform", access: "super_admin", requiredRole: "super_admin", surfaces: ["command_palette", "plugin_registry", "sidebar"], order: 235 },
@@ -132,6 +139,7 @@ export const FRONTEND_NAVIGATION: readonly FrontendNavigationItem[] = [
   { id: "security", plugin: "core-users", label: "Security", href: "/settings/mfa", icon: "Shield", group: "Settings", access: "authenticated", surfaces: ["command_palette", "plugin_registry", "user_menu"], order: 600 },
   { id: "notifications", plugin: "core-users", label: "Notifications", href: "/settings/notifications", icon: "Bell", group: "Settings", access: "authenticated", surfaces: ["command_palette", "plugin_registry", "user_menu"], order: 610 },
   { id: "data-privacy", plugin: "core-users", label: "Data & Privacy", href: "/settings/data", icon: "FileText", group: "Settings", access: "authenticated", surfaces: ["command_palette", "plugin_registry", "user_menu"], order: 620 },
+  { id: "privacy-choices", plugin: "core-users", label: "Privacy Choices", href: "/settings/privacy", icon: "ShieldCheck", group: "Settings", access: "authenticated", surfaces: ["command_palette", "plugin_registry", "user_menu"], order: 625 },
 ];
 
 export const SIDEBAR_NAVIGATION = FRONTEND_NAVIGATION.filter((item) => item.surfaces.includes("sidebar"));

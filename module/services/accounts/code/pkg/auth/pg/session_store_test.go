@@ -43,7 +43,14 @@ var (
 // holds a pgxpool for the whole package. Matches the pattern in
 // pkg/business/service_test.go so the two suites can run back-to-back.
 func TestMain(m *testing.M) {
-	os.Exit(runSessionStoreTests(m))
+	exitCode, err := testdb.RunWithPackageLock(func() int {
+		return runSessionStoreTests(m)
+	})
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "integration test lifecycle lock: %v\n", err)
+		os.Exit(1)
+	}
+	os.Exit(exitCode)
 }
 
 func runSessionStoreTests(m *testing.M) int {
@@ -81,16 +88,6 @@ func runSessionStoreTests(m *testing.M) int {
 	defer store.Close()
 	testStore = store
 	testPool = store.Pool()
-	releasePackageLock, err := testdb.AcquirePackageLock(ctx, testPool)
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "integration test lock: %v\n", err)
-		return 1
-	}
-	defer func() {
-		if err := releasePackageLock(); err != nil {
-			fmt.Fprintf(os.Stderr, "release integration test lock: %v\n", err)
-		}
-	}()
 
 	return m.Run()
 }
@@ -714,7 +711,7 @@ func TestAuthorizationInvalidation_OrganizationRoleChangeIsScopedAndAtomic(t *te
 	require.Nil(t, active.RevokedAt, "removing one tenant must not revoke another selected tenant")
 }
 
-func TestAuthorizationInvalidation_OrganizationMembershipAdditionRevokesOrglessSessions(t *testing.T) {
+func TestAuthorizationInvalidation_OrganizationMembershipAdditionAllowsExplicitExchange(t *testing.T) {
 	ctx := context.Background()
 	store := pgauth.NewSessionStore(testStore)
 	userID := seedUser(t)
@@ -746,11 +743,25 @@ func TestAuthorizationInvalidation_OrganizationMembershipAdditionRevokesOrglessS
 		return err
 	}))
 
-	revoked, err := store.FindByRefreshHash(ctx, orglessSession.RefreshHash)
+	active, err := store.FindByRefreshHash(ctx, orglessSession.RefreshHash)
 	require.NoError(t, err)
-	require.NotNil(t, revoked.RevokedAt)
-	require.Equal(t, "organization_membership_added", revoked.RevokedReason)
-	active, err := store.FindByRefreshHash(ctx, existingOrgSession.RefreshHash)
+	require.Nil(t, active.RevokedAt)
+
+	var authorization auth.RefreshAuthorization
+	require.NoError(t, store.ExchangeOrganization(
+		ctx,
+		userID,
+		orglessSession.ID,
+		newOrgID,
+		func(_ *auth.SessionRecord, current auth.RefreshAuthorization) error {
+			authorization = current
+			return nil
+		},
+	))
+	require.Equal(t, newOrgID, authorization.OrgID)
+	require.Equal(t, "member", authorization.OrgRole)
+
+	active, err = store.FindByRefreshHash(ctx, existingOrgSession.RefreshHash)
 	require.NoError(t, err)
 	require.Nil(t, active.RevokedAt, "adding a tenant must not revoke another selected tenant")
 }

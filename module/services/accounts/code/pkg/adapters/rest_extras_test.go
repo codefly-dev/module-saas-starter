@@ -97,6 +97,23 @@ func TestRefreshCookie_DoesNotTrustForwardedProto(t *testing.T) {
 	}
 }
 
+func TestRefreshCookie_LoopbackHTTPOriginCanStoreCookie(t *testing.T) {
+	h := refreshTokenCookie(downstream(`{"accessToken":"at","refreshToken":"rt-secret"}`))
+	req := httptest.NewRequest(http.MethodPost, "http://localhost:21931/v1/auth/authenticate", strings.NewReader(`{}`))
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, req)
+
+	for _, cookie := range rec.Result().Cookies() {
+		if cookie.Name == refreshTokenCookieName {
+			if cookie.Secure {
+				t.Fatal("loopback HTTP refresh cookie must be accepted by the browser")
+			}
+			return
+		}
+	}
+	t.Fatal("refresh-token cookie was not set")
+}
+
 func TestRefreshCookie_RefreshRequest_InjectsCookieIntoBody(t *testing.T) {
 	h := refreshTokenCookie(downstream(`{"accessToken":"at2","refreshToken":"rt2"}`))
 

@@ -32,8 +32,8 @@ func TestFrontendPluginCatalogIsDeterministicAndCurrent(t *testing.T) {
 	require.Equal(t, string(readFixture(t, "../../../../auth-sidecar/code/frontend_routes_catalog_gen.go")), string(first.GatewayGo), "run: go generate ./pkg/cataloggen")
 
 	require.Len(t, first.Catalog.GetPlugins(), 3)
-	require.Len(t, first.Catalog.GetRoutes(), 37)
-	require.Len(t, first.Catalog.GetNavigation(), 26)
+	require.Len(t, first.Catalog.GetRoutes(), 43)
+	require.Len(t, first.Catalog.GetNavigation(), 28)
 	require.Contains(t, string(first.TypeScript), `path: "/admin/{*slug}"`)
 
 	surfaceCounts := map[catalogv1.FrontendNavigationSurface]int{}
@@ -42,16 +42,16 @@ func TestFrontendPluginCatalogIsDeterministicAndCurrent(t *testing.T) {
 			surfaceCounts[surface]++
 		}
 	}
-	require.Equal(t, 17, surfaceCounts[catalogv1.FrontendNavigationSurface_FRONTEND_NAVIGATION_SURFACE_COMMAND_PALETTE])
-	require.Equal(t, 22, surfaceCounts[catalogv1.FrontendNavigationSurface_FRONTEND_NAVIGATION_SURFACE_PLUGIN_REGISTRY])
-	require.Equal(t, 20, surfaceCounts[catalogv1.FrontendNavigationSurface_FRONTEND_NAVIGATION_SURFACE_SIDEBAR])
-	require.Equal(t, 4, surfaceCounts[catalogv1.FrontendNavigationSurface_FRONTEND_NAVIGATION_SURFACE_USER_MENU])
+	require.Equal(t, 19, surfaceCounts[catalogv1.FrontendNavigationSurface_FRONTEND_NAVIGATION_SURFACE_COMMAND_PALETTE])
+	require.Equal(t, 24, surfaceCounts[catalogv1.FrontendNavigationSurface_FRONTEND_NAVIGATION_SURFACE_PLUGIN_REGISTRY])
+	require.Equal(t, 21, surfaceCounts[catalogv1.FrontendNavigationSurface_FRONTEND_NAVIGATION_SURFACE_SIDEBAR])
+	require.Equal(t, 5, surfaceCounts[catalogv1.FrontendNavigationSurface_FRONTEND_NAVIGATION_SURFACE_USER_MENU])
 }
 
 func TestFrontendPageDiscoveryPinsAccessAndMatch(t *testing.T) {
 	routes, err := cataloggen.DiscoverNextPageRoutes(filepath.Clean("../../../../frontend/code"))
 	require.NoError(t, err)
-	require.Len(t, routes, 37)
+	require.Len(t, routes, 43)
 	byPath := make(map[string]*catalogv1.FrontendRoute, len(routes))
 	for _, route := range routes {
 		byPath[route.GetPath()] = route
