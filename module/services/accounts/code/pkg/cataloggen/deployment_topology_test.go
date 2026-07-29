@@ -381,6 +381,33 @@ func TestDeploymentTopologyGeneratesValidatedSecretServiceConfigurations(t *test
 	require.ErrorContains(t, err, "secret service configurations are invalid or unsorted")
 }
 
+func TestDeploymentTopologyPreservesCompleteModuleAgentIdentity(t *testing.T) {
+	serviceCatalog := readFixture(t, "../../../generated/service-catalog.json")
+	bindings := string(readFixture(t, "../../../../../deployment/topology.bindings.codefly.yaml"))
+	withAgent := strings.Replace(bindings,
+		`  description: "SaaS foundation — auth, multi-tenancy, generated RPC policy, RBAC, impersonation, audit"`,
+		`  description: "SaaS foundation — auth, multi-tenancy, generated RPC policy, RBAC, impersonation, audit"
+  agent:
+    kind: codefly:module
+    name: saas-starter
+    version: 0.0.28
+    publisher: codefly.dev`,
+		1,
+	)
+
+	artifacts, err := cataloggen.BuildDeploymentArtifacts(serviceCatalog, []byte(withAgent))
+	require.NoError(t, err)
+	require.Contains(t, string(artifacts.ModuleManifest), `agent:
+    kind: codefly:module
+    name: saas-starter
+    version: 0.0.28
+    publisher: codefly.dev`)
+
+	incomplete := strings.Replace(withAgent, "    publisher: codefly.dev\n", "", 1)
+	_, err = cataloggen.BuildDeploymentArtifacts(serviceCatalog, []byte(incomplete))
+	require.ErrorContains(t, err, "module agent identity is incomplete")
+}
+
 func TestDeploymentCatalogValidationRejectsConsumerUnsafeDrift(t *testing.T) {
 	document := readFixture(t, "../../../../../deployment/generated/service-topology.json")
 	catalog := &catalogv1.DeploymentCatalog{}

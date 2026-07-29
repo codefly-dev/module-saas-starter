@@ -27,10 +27,11 @@ type deploymentBindings struct {
 }
 
 type deploymentModuleBinding struct {
-	Name         string `yaml:"name"`
-	Namespace    string `yaml:"namespace"`
-	ServiceEntry string `yaml:"service_entry"`
-	Description  string `yaml:"description"`
+	Name         string                  `yaml:"name"`
+	Namespace    string                  `yaml:"namespace"`
+	ServiceEntry string                  `yaml:"service_entry"`
+	Description  string                  `yaml:"description"`
+	Agent        *deploymentAgentBinding `yaml:"agent,omitempty"`
 }
 
 type deploymentInterfaceBinding struct {
@@ -158,6 +159,23 @@ func validateDeploymentBindings(serviceCatalog *catalogv1.ServiceCatalog, bindin
 	}
 	if serviceCatalog.GetOwner().GetModule() != bindings.Module.Name {
 		return fmt.Errorf("service catalog module %q does not match deployment module %q", serviceCatalog.GetOwner().GetModule(), bindings.Module.Name)
+	}
+	if bindings.Module.Agent != nil {
+		moduleAgentFields := []string{
+			bindings.Module.Agent.Kind,
+			bindings.Module.Agent.Name,
+			bindings.Module.Agent.Version,
+			bindings.Module.Agent.Publisher,
+		}
+		var moduleAgentValues int
+		for _, value := range moduleAgentFields {
+			if value != "" {
+				moduleAgentValues++
+			}
+		}
+		if moduleAgentValues != len(moduleAgentFields) {
+			return fmt.Errorf("deployment module agent identity is incomplete")
+		}
 	}
 	if len(bindings.Services) == 0 {
 		return fmt.Errorf("deployment topology contains no services")
@@ -560,6 +578,7 @@ type moduleManifest struct {
 	Kind         string                  `yaml:"kind"`
 	Name         string                  `yaml:"name"`
 	Description  string                  `yaml:"description"`
+	Agent        *deploymentAgentBinding `yaml:"agent,omitempty"`
 	ServiceEntry string                  `yaml:"service-entry"`
 	Interface    moduleManifestInterface `yaml:"interface"`
 	Services     []manifestServiceRef    `yaml:"services"`
@@ -610,7 +629,7 @@ type manifestEndpoint struct {
 func renderModuleManifest(bindings deploymentBindings) ([]byte, error) {
 	manifest := moduleManifest{
 		Kind: "module", Name: bindings.Module.Name, Description: bindings.Module.Description,
-		ServiceEntry: bindings.Module.ServiceEntry,
+		Agent: bindings.Module.Agent, ServiceEntry: bindings.Module.ServiceEntry,
 	}
 	for _, exposed := range bindings.Interface {
 		manifest.Interface.Endpoints = append(manifest.Interface.Endpoints, manifestInterfaceEndpoint(exposed))
