@@ -368,7 +368,8 @@ func (s *PostgresStore) GetSubscription(ctx context.Context, orgID string) (*bus
 	q := s.getQueryExecutor(ctx)
 	var sub business.Subscription
 	err := q.QueryRow(ctx, `
-		SELECT id, org_id, plan_id, status, stripe_subscription_id, current_period_start, current_period_end
+		SELECT id, org_id, plan_id, status, COALESCE(stripe_subscription_id, ''),
+		       current_period_start, current_period_end
 		FROM subscriptions
 		WHERE org_id = $1
 		  AND status IN ('incomplete', 'trialing', 'active', 'past_due', 'unpaid', 'paused')

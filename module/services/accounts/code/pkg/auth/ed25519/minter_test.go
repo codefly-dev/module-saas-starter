@@ -345,6 +345,48 @@ func TestSwitchOrganizationPreservesDeviceSessionAndRefreshCredential(t *testing
 	require.Equal(t, "member", refreshed.OrgRole)
 }
 
+func TestSwitchOrganizationPreservesDevelopmentFixtureAssurance(t *testing.T) {
+	ctx := context.Background()
+	m, store := newMinter(t)
+	identity := newIdentity()
+	identity.MFASatisfied = true
+	identity.AuthenticationMethods = []string{
+		auth.AuthenticationMethodFixture,
+		auth.AuthenticationMethodOTP,
+	}
+	identity.AuthenticatedAt = time.Now().Add(-time.Minute).Truncate(time.Second)
+	identity.AssuranceLevel = auth.AssuranceLevelAAL2
+	identity.MFAVerifiedAt = identity.AuthenticatedAt
+
+	_, err := m.Mint(ctx, identity)
+	require.NoError(t, err)
+	store.mu.Lock()
+	sessionID := store.records[0].ID
+	store.mu.Unlock()
+
+	targetOrgID := uuid.Must(uuid.NewV7())
+	store.refreshAuthorization = &auth.RefreshAuthorization{
+		OrgID:        targetOrgID,
+		OrgRole:      "owner",
+		PlatformRole: "super_admin",
+		MFAEnrolled:  false,
+	}
+	accessToken, err := m.SwitchOrganization(
+		ctx,
+		identity.UserID,
+		sessionID,
+		targetOrgID,
+	)
+	require.NoError(t, err)
+
+	switched, err := m.VerifyAccess(accessToken)
+	require.NoError(t, err)
+	require.Equal(t, auth.AssuranceLevelAAL2, switched.AssuranceLevel)
+	require.Equal(t, identity.AuthenticationMethods, switched.AuthenticationMethods)
+	require.Equal(t, identity.MFAVerifiedAt, switched.MFAVerifiedAt)
+	require.True(t, switched.MFASatisfied)
+}
+
 func TestRefreshRequiresReauthenticationWhenMFAWasNewlyEnrolled(t *testing.T) {
 	ctx := context.Background()
 	m, store := newMinter(t)

@@ -395,11 +395,15 @@ func doWork(ctx context.Context) (Clean, error) {
 		return nil, err
 	}
 
-	// Billing: wire Stripe webhook handler at /v1/billing/webhook AND
-	// the authenticated /v1/billing/checkout + /v1/billing/portal
-	// endpoints. The sidecar's public-path allowlist covers the
-	// webhook; checkout + portal are authenticated via forwarded
-	// identity headers.
+	// Selecting the free plan is a first-party operation and must remain
+	// available when Stripe is not configured (the default local/test setup).
+	billingHTTPHandler := adapters.NewBillingHTTPHandler(service)
+	adapters.RegisterHTTPRoute("/v1/billing/free-plan", billingHTTPHandler)
+
+	// Billing: when Stripe is configured, wire its webhook plus the
+	// authenticated checkout and portal endpoints. The sidecar's public-path
+	// allowlist covers the webhook; user-facing actions are authenticated via
+	// forwarded identity headers.
 	var stripeWebhookWorker *jobs.Worker
 	var billingWorkerPool interface{ Close() }
 	if stripeKey := os.Getenv("STRIPE_API_KEY"); stripeKey != "" {
@@ -461,8 +465,8 @@ func doWork(ctx context.Context) (Clean, error) {
 			return nil, err
 		}
 		service.SetBillingClient(stripeClient)
-		adapters.RegisterHTTPRoute("/v1/billing/checkout", adapters.NewBillingHTTPHandler(service))
-		adapters.RegisterHTTPRoute("/v1/billing/portal", adapters.NewBillingHTTPHandler(service))
+		adapters.RegisterHTTPRoute("/v1/billing/checkout", billingHTTPHandler)
+		adapters.RegisterHTTPRoute("/v1/billing/portal", billingHTTPHandler)
 	}
 
 	// Start background data retention goroutine. Runs once on startup and
