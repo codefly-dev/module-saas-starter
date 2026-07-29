@@ -963,6 +963,8 @@ func TestGeneratedPoliciesAndProjectMatchRenderedTopology(t *testing.T) {
 		"allow-istio-ingress-to-auth-sidecar",
 		"allow-accounts-to-store",
 		"allow-store-from-accounts",
+		"allow-store-from-bootstrap",
+		"allow-store-bootstrap-to-store",
 		"allow-auth-sidecar-public-egress",
 	} {
 		if !strings.Contains(string(localNetwork), "name: "+policy) {
@@ -1042,6 +1044,10 @@ func TestGeneratedPoliciesAndProjectMatchRenderedTopology(t *testing.T) {
 	if !strings.Contains(string(awsNetwork), "cidr: 10.42.0.0/24") ||
 		!strings.Contains(string(awsNetwork), "name: allow-accounts-to-store") {
 		t.Errorf("AWS network policy does not bind the managed store CIDR:\n%s", awsNetwork)
+	}
+	if strings.Contains(string(awsNetwork), "allow-store-from-bootstrap") ||
+		strings.Contains(string(awsNetwork), "allow-store-bootstrap-to-store") {
+		t.Errorf("AWS network policy retains bootstrap authority for managed Postgres:\n%s", awsNetwork)
 	}
 }
 
@@ -1846,6 +1852,9 @@ func writeGitOpsFixture(t *testing.T, workspaceName, moduleName string, services
 			service,
 			port,
 		)
+		if service == "store" {
+			topology.WriteString("    bootstrap_job_endpoints:\n      - http\n")
+		}
 		if service == entry {
 			topology.WriteString("    public_egress_ports:\n      - 443\n")
 		}
