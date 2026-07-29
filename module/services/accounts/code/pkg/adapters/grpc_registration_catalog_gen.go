@@ -58,5 +58,6 @@ var catalogConnectOnlyServiceNames = []string{
 	"saas.accounts.v1.OnboardingService",
 	"saas.accounts.v1.SSOAdminService",
 	"saas.accounts.v1.UserSettingsService",
+	"saas.accounts.v1.WaitlistService",
 	"saas.accounts.v1.WebhookService",
 }

@@ -29,6 +29,7 @@ import {
 } from "@/gen/saas/accounts/v1/usage_pb";
 import { useAuth } from "@/lib/auth";
 import { apiTransport } from "@/lib/connect/transport";
+import { billingMutations } from "../service/mutations";
 import {
 	Badge,
 	Button,
@@ -43,7 +44,7 @@ import {
 const billingClient = createClient(BillingService, apiTransport);
 
 export function BillingAdminPage() {
-	const { organizationId: orgId = "" } = useAuth();
+	const { organizationId: orgId = "", getToken } = useAuth();
 
 	const { data: entitlements, isLoading } = useOrgEntitlements(orgId || null);
 	const {
@@ -88,6 +89,22 @@ export function BillingAdminPage() {
 		},
 		onError: (err) =>
 			toast.error("Couldn't open portal", { description: err.message }),
+	});
+	const freePlan = useMutation({
+		mutationFn: () => billingMutations.selectFreePlan(getToken()),
+		onSuccess: () => toast.success("Free plan activated"),
+		onError: (err) =>
+			toast.error("Couldn't activate the free plan", {
+				description: err.message,
+			}),
+	});
+	const checkout = useMutation({
+		mutationFn: () => billingMutations.startCheckout(getToken(), "pro"),
+		onSuccess: (url) => {
+			window.location.href = url;
+		},
+		onError: (err) =>
+			toast.error("Couldn't start checkout", { description: err.message }),
 	});
 
 	return (
@@ -135,9 +152,22 @@ export function BillingAdminPage() {
 											: "No active plan"}
 									</div>
 								)}
-								<div className="pt-2">
+								<div className="grid gap-2 pt-2 sm:grid-cols-2">
 									<Button
-										className="w-full"
+										variant="outline"
+										onClick={() => freePlan.mutate()}
+										disabled={freePlan.isPending || checkout.isPending}
+									>
+										{freePlan.isPending ? "Activating…" : "Use Free plan"}
+									</Button>
+									<Button
+										onClick={() => checkout.mutate()}
+										disabled={freePlan.isPending || checkout.isPending}
+									>
+										{checkout.isPending ? "Opening checkout…" : "Choose Pro"}
+									</Button>
+									<Button
+										className="w-full sm:col-span-2"
 										onClick={() => portal.mutate()}
 										disabled={portal.isPending}
 									>

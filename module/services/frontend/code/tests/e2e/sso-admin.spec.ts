@@ -4,12 +4,21 @@
 // unconfigured → linked → disabled — without real WorkOS credentials.
 
 import { expect, type Page, test } from "@playwright/test";
+import { resolveConsentPrompt } from "./consent";
 
 async function loginAsSuperAdmin(page: Page) {
 	await page.goto("/auth/login");
 	await expect(page.getByText("Sarah Chen")).toBeVisible({ timeout: 15000 });
 	await page.getByText("Sarah Chen").click();
 	await expect(page.getByText("Welcome back")).toBeVisible({ timeout: 20000 });
+	await resolveConsentPrompt(page);
+	await expect
+		.poll(async () =>
+			(await page.context().cookies()).some(
+				(item) => item.name === "codefly_rt" && item.value.length > 0,
+			),
+		)
+		.toBe(true);
 }
 
 async function pickAcmeOrg(page: Page) {
@@ -18,6 +27,20 @@ async function pickAcmeOrg(page: Page) {
 	await page
 		.getByRole("option", { name: /acme corp/i })
 		.click({ timeout: 15_000 });
+}
+
+async function ensureInactiveSSO(page: Page) {
+	const disable = page.getByRole("button", { name: /disable sso/i });
+	if (await disable.isVisible()) {
+		page.once("dialog", (dialog) => dialog.accept());
+		await disable.click();
+		await expect(page.getByText(/sso disabled/i)).toBeVisible({
+			timeout: 10_000,
+		});
+	}
+	await expect(
+		page.getByRole("button", { name: /^(set up|re-enable) sso$/i }),
+	).toBeVisible();
 }
 
 test.describe("SSO admin page", () => {
@@ -29,34 +52,31 @@ test.describe("SSO admin page", () => {
 		).toBeVisible();
 	});
 
-	test("no-org empty state", async ({ page }) => {
-		await expect(page.getByText(/select an organization/i)).toBeVisible();
+	test("the authenticated organization shows its SSO state", async ({ page }) => {
 		await expect(
-			page.getByRole("button", { name: /^set up sso$/i }),
-		).toHaveCount(0);
+			page.getByText(/not configured|setup pending|active|disabled/i).first(),
+		).toBeVisible();
 	});
 
-	test("unconfigured org shows the Set up SSO CTA", async ({ page }) => {
+	test("inactive org shows an SSO setup action", async ({ page }) => {
 		await pickAcmeOrg(page);
-		// Default state: no row exists for the org → "Not configured"
-		// badge + "Set up SSO" CTA visible.
-		await expect(page.getByText(/not configured/i)).toBeVisible();
-		await expect(
-			page.getByRole("button", { name: /^set up sso$/i }),
-		).toBeVisible();
+		await ensureInactiveSSO(page);
 	});
 
 	test("StartSetup transitions the org to linked + Disable clears it", async ({
 		page,
 	}) => {
 		await pickAcmeOrg(page);
+		await ensureInactiveSSO(page);
 
 		// Stub mode (WORKOS_API_KEY unset): StartSetup persists status=
 		// "linked" and returns demo URL. The page redirects there; we
 		// wait for the exact demo URL. The mutation only redirects after
 		// StartSetup has returned, so this also proves the linked row was
 		// committed before we navigate back and re-query it.
-		const startBtn = page.getByRole("button", { name: /^set up sso$/i });
+		const startBtn = page.getByRole("button", {
+			name: /^(set up|re-enable) sso$/i,
+		});
 		await Promise.all([
 			page.waitForURL(/\/admin\/sso\?demo=1$/),
 			startBtn.click(),

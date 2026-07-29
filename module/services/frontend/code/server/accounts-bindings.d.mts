@@ -8,6 +8,7 @@ export interface AccountsBindings {
 export interface AccountsBindingOptions {
   readonly endpoints?: readonly ServiceEndpoint[];
   readonly currentModule?: string;
+  readonly environment?: Readonly<Record<string, string | undefined>>;
 }
 
 export function resolveAccountsBindings(options?: AccountsBindingOptions): AccountsBindings;

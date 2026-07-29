@@ -112,6 +112,10 @@ services:
     handler: userSettingsConnectHandler
     source:
       kind: business
+  WaitlistService:
+    handler: waitlistConnectHandler
+    source:
+      kind: business
   WebhookService:
     handler: webhookConnectHandler
     source:

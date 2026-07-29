@@ -3,6 +3,7 @@
 import { Plus } from "lucide-react";
 import { useState } from "react";
 import { toast } from "sonner";
+import { InvitationRole } from "@/gen/saas/accounts/v1/invitations_pb";
 import {
 	Button,
 	Dialog,
@@ -25,13 +26,13 @@ import { useCreateInvitation } from "../service/mutations";
 export function InvitationForm({ orgId }: { orgId: string }) {
 	const [open, setOpen] = useState(false);
 	const [email, setEmail] = useState("");
-	const [role, setRole] = useState("member");
+	const [role, setRole] = useState(InvitationRole.MEMBER);
 
 	const createInvitation = useCreateInvitation();
 
 	function reset() {
 		setEmail("");
-		setRole("member");
+		setRole(InvitationRole.MEMBER);
 	}
 
 	function handleSubmit() {
@@ -78,18 +79,21 @@ export function InvitationForm({ orgId }: { orgId: string }) {
 					<div className="space-y-2">
 						<Label>Role</Label>
 						<Select
-							value={role}
+							value={String(role)}
 							onValueChange={(v) => {
-								if (v) setRole(v);
+								if (v) setRole(Number(v) as InvitationRole);
 							}}
 						>
 							<SelectTrigger>
 								<SelectValue />
 							</SelectTrigger>
 							<SelectContent>
-								<SelectItem value="member">Member</SelectItem>
-								<SelectItem value="admin">Admin</SelectItem>
-								<SelectItem value="owner">Owner</SelectItem>
+								<SelectItem value={String(InvitationRole.MEMBER)}>
+									Member
+								</SelectItem>
+								<SelectItem value={String(InvitationRole.ADMIN)}>
+									Admin
+								</SelectItem>
 							</SelectContent>
 						</Select>
 					</div>

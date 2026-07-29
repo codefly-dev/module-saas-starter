@@ -358,7 +358,7 @@ func TestInvitationAndEmailJobCommitOrRollBackTogether(t *testing.T) {
 	rejectingService.SetEntitlementChecker(business.NewDefaultEntitlementChecker(testStore))
 	rejectingService.SetEmailOutbox(rejectingOutbox, "https://app.example.com")
 	_, err = rejectingService.CreateInvitation(testCtx, ownerID, &accountsv1.CreateInvitationRequest{
-		OrgId: orgID, Email: "rollback-invite@example.com", Role: "member",
+		OrgId: orgID, Email: "rollback-invite@example.com", Role: accountsv1.InvitationRole_INVITATION_ROLE_MEMBER,
 	})
 	require.ErrorContains(t, err, "reject generated webhook job")
 	require.NoError(t, testStore.WithOrgTx(testCtx, orgID, func(ctx context.Context) error {
@@ -377,7 +377,7 @@ func TestInvitationAndEmailJobCommitOrRollBackTogether(t *testing.T) {
 	service.SetEntitlementChecker(business.NewDefaultEntitlementChecker(testStore))
 	service.SetEmailOutbox(outbox, "https://app.example.com")
 	response, err := service.CreateInvitation(testCtx, ownerID, &accountsv1.CreateInvitationRequest{
-		OrgId: orgID, Email: "queued-invite@example.com", Role: "member",
+		OrgId: orgID, Email: "queued-invite@example.com", Role: accountsv1.InvitationRole_INVITATION_ROLE_MEMBER,
 	})
 	require.NoError(t, err)
 	require.NotNil(t, response.GetInvitation())
@@ -398,7 +398,7 @@ func TestInvitationAndEmailJobCommitOrRollBackTogether(t *testing.T) {
 	payload := &notificationsv1.EmailDeliveryJob{}
 	require.NoError(t, proto.Unmarshal(encoded, payload))
 	require.Equal(t, []string{"queued-invite@example.com"}, payload.GetTo())
-	require.Contains(t, payload.GetHtmlBody(), response.GetInviteToken())
+	require.Contains(t, payload.GetHtmlBody(), "/invitations/accept?token=")
 }
 
 func TestInvitationAndNotificationCommitOrRollBackTogether(t *testing.T) {
@@ -419,7 +419,7 @@ func TestInvitationAndNotificationCommitOrRollBackTogether(t *testing.T) {
 	service.SetEntitlementChecker(business.NewDefaultEntitlementChecker(store))
 
 	_, err = service.CreateInvitation(testCtx, ownerID, &accountsv1.CreateInvitationRequest{
-		OrgId: orgID, Email: invitee.GetPrimaryEmail(), Role: "member",
+		OrgId: orgID, Email: invitee.GetPrimaryEmail(), Role: accountsv1.InvitationRole_INVITATION_ROLE_MEMBER,
 	})
 
 	require.ErrorContains(t, err, "reject invitation notification")
@@ -473,7 +473,7 @@ func TestInvitationCreatesActionableNotificationForExistingUser(t *testing.T) {
 		&accountsv1.CreateInvitationRequest{
 			OrgId: orgID,
 			Email: invitee.GetPrimaryEmail(),
-			Role:  "member",
+			Role:  accountsv1.InvitationRole_INVITATION_ROLE_MEMBER,
 		},
 	)
 	require.NoError(t, err)
@@ -484,7 +484,7 @@ func TestInvitationCreatesActionableNotificationForExistingUser(t *testing.T) {
 	require.Equal(t, orgID, notifications[0].OrgID)
 	require.Equal(
 		t,
-		"/invitations/accept?token="+response.GetInviteToken(),
+		"/invitations/accept?id="+response.GetInvitation().GetId(),
 		notifications[0].ActionURL,
 	)
 

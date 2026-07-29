@@ -13,6 +13,7 @@ import {
 	useState,
 } from "react";
 import { AuthService } from "@/gen/saas/accounts/v1/authentication_pb";
+import { safePostLoginDestination } from "@/lib/public-handoff";
 import type { OrgRole, PlatformRole } from "./auth-session";
 import {
 	clearRefreshToken,
@@ -26,7 +27,6 @@ import {
 } from "./auth-session";
 import { setToken as setConnectToken } from "./connect/token-store";
 import { apiTransport } from "./connect/transport";
-import { safePostLoginDestination } from "./public-handoff";
 
 const authClient = createClient(AuthService, apiTransport);
 
@@ -161,10 +161,7 @@ interface AuthContextType extends AuthState {
 	// browser to the provider's hosted login. The callback page completes
 	// the handshake. Async because we mint a server-signed state via
 	// BeginOAuth before the redirect.
-	signInWith: (
-		providerID: string,
-		postLoginDestination: string,
-	) => Promise<void>;
+	signInWith: (providerID: string, destination?: string) => Promise<void>;
 	// Completes the OAuth flow from /auth/callback: POSTs the code to the
 	// backend, stores the returned tokens, redirects to the post-login
 	// destination (or "/").
@@ -346,46 +343,49 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 	// and PKCE binds the code redemption to this specific browser session
 	// (so a stolen code can't be redeemed elsewhere).
 	//
-	const signInWith = useCallback(async (
-		providerID: string,
-		postLoginDestination: string,
-	) => {
-		const presets = availableProviders();
-		const preset = presets.find((p) => p.id === providerID);
-		if (!preset) {
-			throw new Error(`OAuth provider not configured: ${providerID}`);
-		}
-		const redirectURI = `${window.location.origin}/auth/callback`;
-		const pkce = await newPkce();
+	const signInWith = useCallback(
+		async (providerID: string, destination?: string) => {
+			const presets = availableProviders();
+			const preset = presets.find((p) => p.id === providerID);
+			if (!preset) {
+				throw new Error(`OAuth provider not configured: ${providerID}`);
+			}
+			const redirectURI = `${window.location.origin}/auth/callback`;
+			const pkce = await newPkce();
 
-		const res = await fetch("/v1/auth/oauth/begin", {
-			method: "POST",
-			credentials: "include",
-			headers: { "Content-Type": "application/json" },
-			body: JSON.stringify({ provider: providerID, redirect_uri: redirectURI }),
-		});
-		if (!res.ok) throw new Error(`BeginOAuth failed: ${res.status}`);
-		const data = await res.json();
-		if (typeof data.state !== "string" || data.state.length === 0) {
-			throw new Error("BeginOAuth returned no signed state");
-		}
-		const state = data.state;
+			const res = await fetch("/v1/auth/oauth/begin", {
+				method: "POST",
+				credentials: "include",
+				headers: { "Content-Type": "application/json" },
+				body: JSON.stringify({
+					provider: providerID,
+					redirect_uri: redirectURI,
+				}),
+			});
+			if (!res.ok) throw new Error(`BeginOAuth failed: ${res.status}`);
+			const data = await res.json();
+			if (typeof data.state !== "string" || data.state.length === 0) {
+				throw new Error("BeginOAuth returned no signed state");
+			}
+			const state = data.state;
 
-		sessionStorage.setItem(`oauth_state_${providerID}`, state);
-		sessionStorage.setItem(`oauth_pkce_${providerID}`, pkce.verifier);
-		sessionStorage.setItem("oauth_provider", providerID);
-		sessionStorage.setItem("oauth_redirect_uri", redirectURI);
-		sessionStorage.setItem(
-			"post_login_destination",
-			safePostLoginDestination(postLoginDestination),
-		);
-		window.location.href = buildAuthorizeURL(
-			preset,
-			redirectURI,
-			state,
-			pkce.challenge,
-		);
-	}, []);
+			sessionStorage.setItem(`oauth_state_${providerID}`, state);
+			sessionStorage.setItem(`oauth_pkce_${providerID}`, pkce.verifier);
+			sessionStorage.setItem("oauth_provider", providerID);
+			sessionStorage.setItem("oauth_redirect_uri", redirectURI);
+			sessionStorage.setItem(
+				"post_login_destination",
+				safePostLoginDestination(destination ?? "/"),
+			);
+			window.location.href = buildAuthorizeURL(
+				preset,
+				redirectURI,
+				state,
+				pkce.challenge,
+			);
+		},
+		[],
+	);
 
 	// OAuth callback completion. Verifies state client-side, then POSTs
 	// {code, redirect_uri, state, code_verifier} to /v1/auth/authenticate.
@@ -439,7 +439,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 			}
 			setTokens(data.accessToken, data.refreshToken, data.user?.uuid);
 
-			const dest = sessionStorage.getItem("post_login_destination") || "/";
+			const dest = safePostLoginDestination(
+				sessionStorage.getItem("post_login_destination") ?? "/",
+			);
 			sessionStorage.removeItem("post_login_destination");
 			if (typeof window !== "undefined") {
 				window.location.replace(dest);
@@ -470,7 +472,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 				data.user?.primaryEmail,
 			);
 
-			const dest = sessionStorage.getItem("post_login_destination") || "/";
+			const dest = safePostLoginDestination(
+				sessionStorage.getItem("post_login_destination") ?? "/",
+			);
 			sessionStorage.removeItem("post_login_destination");
 			window.location.replace(dest);
 		},
@@ -534,7 +538,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 			data.user?.primaryEmail,
 		);
 
-		const dest = sessionStorage.getItem("post_login_destination") || "/";
+		const dest = safePostLoginDestination(
+			sessionStorage.getItem("post_login_destination") ?? "/",
+		);
 		sessionStorage.removeItem("post_login_destination");
 		window.location.replace(dest);
 	}, [setTokens]);

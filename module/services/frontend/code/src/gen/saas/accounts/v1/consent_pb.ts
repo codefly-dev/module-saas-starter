@@ -2,8 +2,8 @@
 // @generated from file saas/accounts/v1/consent.proto (package saas.accounts.v1, syntax proto3)
 /* eslint-disable */
 
-import type { GenFile, GenMessage, GenService } from "@bufbuild/protobuf/codegenv2";
-import { fileDesc, messageDesc, serviceDesc } from "@bufbuild/protobuf/codegenv2";
+import type { GenEnum, GenFile, GenMessage, GenService } from "@bufbuild/protobuf/codegenv2";
+import { enumDesc, fileDesc, messageDesc, serviceDesc } from "@bufbuild/protobuf/codegenv2";
 import { file_buf_validate_validate } from "../../../buf/validate/validate_pb";
 import { file_google_api_annotations } from "../../../google/api/annotations_pb";
 import type { Timestamp } from "@bufbuild/protobuf/wkt";
@@ -15,32 +15,78 @@ import type { Message } from "@bufbuild/protobuf";
  * Describes the file saas/accounts/v1/consent.proto.
  */
 export const file_saas_accounts_v1_consent: GenFile = /*@__PURE__*/
-  fileDesc("Ch5zYWFzL2FjY291bnRzL3YxL2NvbnNlbnQucHJvdG8SEHNhYXMuYWNjb3VudHMudjEicwoNQ29uc2VudFN0YXR1cxIYChBhY2NlcHRlZF92ZXJzaW9uGAEgASgJEi8KC2FjY2VwdGVkX2F0GAIgASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcBIXCg9jdXJyZW50X3ZlcnNpb24YAyABKAkiGQoXR2V0Q29uc2VudFN0YXR1c1JlcXVlc3QiMAoUQWNjZXB0Q29uc2VudFJlcXVlc3QSGAoHdmVyc2lvbhgBIAEoCUIHukgEcgIQATK7AgoOQ29uc2VudFNlcnZpY2USiwEKCUdldFN0YXR1cxIpLnNhYXMuYWNjb3VudHMudjEuR2V0Q29uc2VudFN0YXR1c1JlcXVlc3QaHy5zYWFzLmFjY291bnRzLnYxLkNvbnNlbnRTdGF0dXMiMsLzGBQIAhACMAE6AhABQAFIA1ADWANgAYLT5JMCFBISL3YxL2NvbnNlbnQvc3RhdHVzEpoBCgZBY2NlcHQSJi5zYWFzLmFjY291bnRzLnYxLkFjY2VwdENvbnNlbnRSZXF1ZXN0Gh8uc2Fhcy5hY2NvdW50cy52MS5Db25zZW50U3RhdHVzIkfC8xgmCAIQAjABOhQKEGNvbnNlbnQuYWNjZXB0ZWQQAkABSARQA1gDYAGC0+STAhc6ASoiEi92MS9jb25zZW50L2FjY2VwdEK0AQoUY29tLnNhYXMuYWNjb3VudHMudjFCDENvbnNlbnRQcm90b1ABWixhY2NvdW50cy9wa2cvZ2VuL3NhYXMvYWNjb3VudHMvdjE7YWNjb3VudHN2MaICA1NBWKoCEFNhYXMuQWNjb3VudHMuVjHKAhBTYWFzXEFjY291bnRzXFYx4gIcU2Fhc1xBY2NvdW50c1xWMVxHUEJNZXRhZGF0YeoCElNhYXM6OkFjY291bnRzOjpWMWIGcHJvdG8z", [file_buf_validate_validate, file_google_api_annotations, file_google_protobuf_timestamp, file_saas_policy_v1_options]);
+  fileDesc("Ch5zYWFzL2FjY291bnRzL3YxL2NvbnNlbnQucHJvdG8SEHNhYXMuYWNjb3VudHMudjEiwAEKDlB1cnBvc2VDb25zZW50EjsKB3B1cnBvc2UYASABKA4yIC5zYWFzLmFjY291bnRzLnYxLkNvbnNlbnRQdXJwb3NlQgi6SAWCAQIQARIPCgdncmFudGVkGAIgASgIEi4KCnVwZGF0ZWRfYXQYAyABKAsyGi5nb29nbGUucHJvdG9idWYuVGltZXN0YW1wEjAKDHdpdGhkcmF3bl9hdBgEIAEoCzIaLmdvb2dsZS5wcm90b2J1Zi5UaW1lc3RhbXAikwIKDUNvbnNlbnRTdGF0dXMSHgoWdGVybXNfYWNjZXB0ZWRfdmVyc2lvbhgBIAEoCRI1ChF0ZXJtc19hY2NlcHRlZF9hdBgCIAEoCzIaLmdvb2dsZS5wcm90b2J1Zi5UaW1lc3RhbXASHQoVY3VycmVudF90ZXJtc192ZXJzaW9uGAMgASgJEhYKDnBvbGljeV92ZXJzaW9uGAQgASgJEjIKCHB1cnBvc2VzGAUgAygLMiAuc2Fhcy5hY2NvdW50cy52MS5QdXJwb3NlQ29uc2VudBIcChRwcmVmZXJlbmNlc19yZWNvcmRlZBgGIAEoCBIiChpwcmVmZXJlbmNlc19wb2xpY3lfdmVyc2lvbhgHIAEoCSIZChdHZXRDb25zZW50U3RhdHVzUmVxdWVzdCJIChJBY2NlcHRUZXJtc1JlcXVlc3QSGAoHdmVyc2lvbhgBIAEoCUIHukgEcgIQARIYCgdjb250ZXh0GAIgASgJQge6SARyAhhkIpsBCh9VcGRhdGVDb25zZW50UHJlZmVyZW5jZXNSZXF1ZXN0Eh8KDnBvbGljeV92ZXJzaW9uGAEgASgJQge6SARyAhABEhEKCWFuYWx5dGljcxgCIAEoCBIRCgltYXJrZXRpbmcYAyABKAgSFwoGcmVnaW9uGAQgASgJQge6SARyAhggEhgKB2NvbnRleHQYBSABKAlCB7pIBHICGGQqjgEKDkNvbnNlbnRQdXJwb3NlEh8KG0NPTlNFTlRfUFVSUE9TRV9VTlNQRUNJRklFRBAAEh0KGUNPTlNFTlRfUFVSUE9TRV9ORUNFU1NBUlkQARIdChlDT05TRU5UX1BVUlBPU0VfQU5BTFlUSUNTEAISHQoZQ09OU0VOVF9QVVJQT1NFX01BUktFVElORxADMoYECg5Db25zZW50U2VydmljZRKLAQoJR2V0U3RhdHVzEikuc2Fhcy5hY2NvdW50cy52MS5HZXRDb25zZW50U3RhdHVzUmVxdWVzdBofLnNhYXMuYWNjb3VudHMudjEuQ29uc2VudFN0YXR1cyIywvMYFAgCEAIwAToCEAFAAUgDUANYA2ABgtPkkwIUEhIvdjEvY29uc2VudC9zdGF0dXMSogEKC0FjY2VwdFRlcm1zEiQuc2Fhcy5hY2NvdW50cy52MS5BY2NlcHRUZXJtc1JlcXVlc3QaHy5zYWFzLmFjY291bnRzLnYxLkNvbnNlbnRTdGF0dXMiTMLzGCwIAhACMAE6GgoWY29uc2VudC50ZXJtc19hY2NlcHRlZBACQAFIBFADWANgAYLT5JMCFjoBKiIRL3YxL2NvbnNlbnQvdGVybXMSwAEKEVVwZGF0ZVByZWZlcmVuY2VzEjEuc2Fhcy5hY2NvdW50cy52MS5VcGRhdGVDb25zZW50UHJlZmVyZW5jZXNSZXF1ZXN0Gh8uc2Fhcy5hY2NvdW50cy52MS5Db25zZW50U3RhdHVzIlfC8xgxCAIQAjABOh8KG2NvbnNlbnQucHJlZmVyZW5jZXNfdXBkYXRlZBACQAFIBFADWANgAYLT5JMCHDoBKhoXL3YxL2NvbnNlbnQvcHJlZmVyZW5jZXNCtAEKFGNvbS5zYWFzLmFjY291bnRzLnYxQgxDb25zZW50UHJvdG9QAVosYWNjb3VudHMvcGtnL2dlbi9zYWFzL2FjY291bnRzL3YxO2FjY291bnRzdjGiAgNTQViqAhBTYWFzLkFjY291bnRzLlYxygIQU2Fhc1xBY2NvdW50c1xWMeICHFNhYXNcQWNjb3VudHNcVjFcR1BCTWV0YWRhdGHqAhJTYWFzOjpBY2NvdW50czo6VjFiBnByb3RvMw", [file_buf_validate_validate, file_google_api_annotations, file_google_protobuf_timestamp, file_saas_policy_v1_options]);
+
+/**
+ * @generated from message saas.accounts.v1.PurposeConsent
+ */
+export type PurposeConsent = Message<"saas.accounts.v1.PurposeConsent"> & {
+  /**
+   * @generated from field: saas.accounts.v1.ConsentPurpose purpose = 1;
+   */
+  purpose: ConsentPurpose;
+
+  /**
+   * @generated from field: bool granted = 2;
+   */
+  granted: boolean;
+
+  /**
+   * @generated from field: google.protobuf.Timestamp updated_at = 3;
+   */
+  updatedAt?: Timestamp;
+
+  /**
+   * @generated from field: google.protobuf.Timestamp withdrawn_at = 4;
+   */
+  withdrawnAt?: Timestamp;
+};
+
+/**
+ * Describes the message saas.accounts.v1.PurposeConsent.
+ * Use `create(PurposeConsentSchema)` to create a new message.
+ */
+export const PurposeConsentSchema: GenMessage<PurposeConsent> = /*@__PURE__*/
+  messageDesc(file_saas_accounts_v1_consent, 0);
 
 /**
  * @generated from message saas.accounts.v1.ConsentStatus
  */
 export type ConsentStatus = Message<"saas.accounts.v1.ConsentStatus"> & {
   /**
-   * accepted_version is the CONSENT_VERSION string the user clicked
-   * Accept on. Empty when the user has never accepted.
-   *
-   * @generated from field: string accepted_version = 1;
+   * @generated from field: string terms_accepted_version = 1;
    */
-  acceptedVersion: string;
+  termsAcceptedVersion: string;
 
   /**
-   * @generated from field: google.protobuf.Timestamp accepted_at = 2;
+   * @generated from field: google.protobuf.Timestamp terms_accepted_at = 2;
    */
-  acceptedAt?: Timestamp;
+  termsAcceptedAt?: Timestamp;
 
   /**
-   * current_version is the version the api considers active. The FE
-   * shows the banner whenever accepted_version != current_version.
-   *
-   * @generated from field: string current_version = 3;
+   * @generated from field: string current_terms_version = 3;
    */
-  currentVersion: string;
+  currentTermsVersion: string;
+
+  /**
+   * @generated from field: string policy_version = 4;
+   */
+  policyVersion: string;
+
+  /**
+   * @generated from field: repeated saas.accounts.v1.PurposeConsent purposes = 5;
+   */
+  purposes: PurposeConsent[];
+
+  /**
+   * @generated from field: bool preferences_recorded = 6;
+   */
+  preferencesRecorded: boolean;
+
+  /**
+   * @generated from field: string preferences_policy_version = 7;
+   */
+  preferencesPolicyVersion: string;
 };
 
 /**
@@ -48,7 +94,7 @@ export type ConsentStatus = Message<"saas.accounts.v1.ConsentStatus"> & {
  * Use `create(ConsentStatusSchema)` to create a new message.
  */
 export const ConsentStatusSchema: GenMessage<ConsentStatus> = /*@__PURE__*/
-  messageDesc(file_saas_accounts_v1_consent, 0);
+  messageDesc(file_saas_accounts_v1_consent, 1);
 
 /**
  * @generated from message saas.accounts.v1.GetConsentStatusRequest
@@ -61,24 +107,97 @@ export type GetConsentStatusRequest = Message<"saas.accounts.v1.GetConsentStatus
  * Use `create(GetConsentStatusRequestSchema)` to create a new message.
  */
 export const GetConsentStatusRequestSchema: GenMessage<GetConsentStatusRequest> = /*@__PURE__*/
-  messageDesc(file_saas_accounts_v1_consent, 1);
+  messageDesc(file_saas_accounts_v1_consent, 2);
 
 /**
- * @generated from message saas.accounts.v1.AcceptConsentRequest
+ * @generated from message saas.accounts.v1.AcceptTermsRequest
  */
-export type AcceptConsentRequest = Message<"saas.accounts.v1.AcceptConsentRequest"> & {
+export type AcceptTermsRequest = Message<"saas.accounts.v1.AcceptTermsRequest"> & {
   /**
    * @generated from field: string version = 1;
    */
   version: string;
+
+  /**
+   * @generated from field: string context = 2;
+   */
+  context: string;
 };
 
 /**
- * Describes the message saas.accounts.v1.AcceptConsentRequest.
- * Use `create(AcceptConsentRequestSchema)` to create a new message.
+ * Describes the message saas.accounts.v1.AcceptTermsRequest.
+ * Use `create(AcceptTermsRequestSchema)` to create a new message.
  */
-export const AcceptConsentRequestSchema: GenMessage<AcceptConsentRequest> = /*@__PURE__*/
-  messageDesc(file_saas_accounts_v1_consent, 2);
+export const AcceptTermsRequestSchema: GenMessage<AcceptTermsRequest> = /*@__PURE__*/
+  messageDesc(file_saas_accounts_v1_consent, 3);
+
+/**
+ * @generated from message saas.accounts.v1.UpdateConsentPreferencesRequest
+ */
+export type UpdateConsentPreferencesRequest = Message<"saas.accounts.v1.UpdateConsentPreferencesRequest"> & {
+  /**
+   * @generated from field: string policy_version = 1;
+   */
+  policyVersion: string;
+
+  /**
+   * @generated from field: bool analytics = 2;
+   */
+  analytics: boolean;
+
+  /**
+   * @generated from field: bool marketing = 3;
+   */
+  marketing: boolean;
+
+  /**
+   * @generated from field: string region = 4;
+   */
+  region: string;
+
+  /**
+   * @generated from field: string context = 5;
+   */
+  context: string;
+};
+
+/**
+ * Describes the message saas.accounts.v1.UpdateConsentPreferencesRequest.
+ * Use `create(UpdateConsentPreferencesRequestSchema)` to create a new message.
+ */
+export const UpdateConsentPreferencesRequestSchema: GenMessage<UpdateConsentPreferencesRequest> = /*@__PURE__*/
+  messageDesc(file_saas_accounts_v1_consent, 4);
+
+/**
+ * @generated from enum saas.accounts.v1.ConsentPurpose
+ */
+export enum ConsentPurpose {
+  /**
+   * @generated from enum value: CONSENT_PURPOSE_UNSPECIFIED = 0;
+   */
+  UNSPECIFIED = 0,
+
+  /**
+   * @generated from enum value: CONSENT_PURPOSE_NECESSARY = 1;
+   */
+  NECESSARY = 1,
+
+  /**
+   * @generated from enum value: CONSENT_PURPOSE_ANALYTICS = 2;
+   */
+  ANALYTICS = 2,
+
+  /**
+   * @generated from enum value: CONSENT_PURPOSE_MARKETING = 3;
+   */
+  MARKETING = 3,
+}
+
+/**
+ * Describes the enum saas.accounts.v1.ConsentPurpose.
+ */
+export const ConsentPurposeSchema: GenEnum<ConsentPurpose> = /*@__PURE__*/
+  enumDesc(file_saas_accounts_v1_consent, 0);
 
 /**
  * @generated from service saas.accounts.v1.ConsentService
@@ -93,11 +212,19 @@ export const ConsentService: GenService<{
     output: typeof ConsentStatusSchema;
   },
   /**
-   * @generated from rpc saas.accounts.v1.ConsentService.Accept
+   * @generated from rpc saas.accounts.v1.ConsentService.AcceptTerms
    */
-  accept: {
+  acceptTerms: {
     methodKind: "unary";
-    input: typeof AcceptConsentRequestSchema;
+    input: typeof AcceptTermsRequestSchema;
+    output: typeof ConsentStatusSchema;
+  },
+  /**
+   * @generated from rpc saas.accounts.v1.ConsentService.UpdatePreferences
+   */
+  updatePreferences: {
+    methodKind: "unary";
+    input: typeof UpdateConsentPreferencesRequestSchema;
     output: typeof ConsentStatusSchema;
   },
 }> = /*@__PURE__*/

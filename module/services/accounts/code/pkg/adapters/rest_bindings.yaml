@@ -49,5 +49,7 @@ services:
     plugin: permissions
   UserSettingsService:
     kind: generated
+  WaitlistService:
+    kind: generated
   WebhookService:
     kind: generated

@@ -37,13 +37,16 @@ function accountsEndpoint(endpoints, currentModule, name, protocol) {
 export function resolveAccountsBindings(options = {}) {
 	const endpoints = options.endpoints ?? getEndpoints();
 	const currentModule = options.currentModule ?? getCurrentModule();
+	const environment = options.environment ?? process.env;
 	return Object.freeze({
 		rest: optionalServiceURL(
-			accountsEndpoint(endpoints, currentModule, "rest", "REST"),
+			accountsEndpoint(endpoints, currentModule, "rest", "REST") ??
+				environment.API_REST_INTERNAL,
 			"Codefly accounts/rest endpoint",
 		),
 		connect: optionalServiceURL(
-			accountsEndpoint(endpoints, currentModule, "connect", "CONNECT"),
+			accountsEndpoint(endpoints, currentModule, "connect", "CONNECT") ??
+				environment.API_CONNECT_INTERNAL,
 			"Codefly accounts/connect endpoint",
 		),
 	});

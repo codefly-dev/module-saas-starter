@@ -76,6 +76,9 @@ func registerCatalogRESTHandlers(ctx context.Context, mux *runtime.ServeMux, end
 	if err := gen.RegisterUserSettingsServiceHandlerFromEndpoint(ctx, mux, endpoint, options); err != nil {
 		return fmt.Errorf("register generated REST service UserSettingsService: %w", err)
 	}
+	if err := gen.RegisterWaitlistServiceHandlerFromEndpoint(ctx, mux, endpoint, options); err != nil {
+		return fmt.Errorf("register generated REST service WaitlistService: %w", err)
+	}
 	if err := gen.RegisterWebhookServiceHandlerFromEndpoint(ctx, mux, endpoint, options); err != nil {
 		return fmt.Errorf("register generated REST service WebhookService: %w", err)
 	}
@@ -101,6 +104,7 @@ func registerCatalogRESTHandlers(ctx context.Context, mux *runtime.ServeMux, end
 var catalogRESTExactRoutes = map[string]struct{}{
 	"DELETE /v1/role-assignments":              {},
 	"GET /v1/.well-known/service-info":         {},
+	"GET /v1/acquisition":                      {},
 	"GET /v1/api-keys":                         {},
 	"GET /v1/audit-log":                        {},
 	"GET /v1/auth/.well-known/jwks.json":       {},
@@ -110,7 +114,6 @@ var catalogRESTExactRoutes = map[string]struct{}{
 	"GET /v1/mfa/devices":                      {},
 	"GET /v1/notifications":                    {},
 	"GET /v1/notifications/unread-count":       {},
-	"GET /v1/onboarding":                       {},
 	"GET /v1/organizations":                    {},
 	"GET /v1/platform/admins":                  {},
 	"GET /v1/platform/feature-flags":           {},
@@ -118,6 +121,7 @@ var catalogRESTExactRoutes = map[string]struct{}{
 	"GET /v1/platform/jobs/operations":         {},
 	"GET /v1/platform/sessions":                {},
 	"GET /v1/platform/users":                   {},
+	"GET /v1/platform/waitlist":                {},
 	"GET /v1/principals":                       {},
 	"GET /v1/public/plans":                     {},
 	"GET /v1/role-assignments":                 {},
@@ -141,12 +145,14 @@ var catalogRESTExactRoutes = map[string]struct{}{
 	"POST /v1/auth/refresh":                    {},
 	"POST /v1/auth/switch-organization":        {},
 	"POST /v1/billing/connect/portal":          {},
-	"POST /v1/consent/accept":                  {},
+	"POST /v1/consent/terms":                   {},
 	"POST /v1/delegations":                     {},
 	"POST /v1/gdpr/delete":                     {},
 	"POST /v1/gdpr/export":                     {},
 	"POST /v1/invitations":                     {},
 	"POST /v1/invitations:accept":              {},
+	"POST /v1/invitations:inspect":             {},
+	"POST /v1/invitations:inspect-id":          {},
 	"POST /v1/mfa/backup-codes":                {},
 	"POST /v1/mfa/totp/setup":                  {},
 	"POST /v1/mfa/totp/verify":                 {},
@@ -162,11 +168,14 @@ var catalogRESTExactRoutes = map[string]struct{}{
 	"POST /v1/sso/setup":                       {},
 	"POST /v1/user/settings":                   {},
 	"POST /v1/users":                           {},
+	"POST /v1/waitlist":                        {},
+	"POST /v1/waitlist:verify":                 {},
 	"POST /v1/webhooks":                        {},
 	"POST /v1/work-contexts:child-session":     {},
 	"POST /v1/work-contexts:exchange-audience": {},
 	"POST /v1/work-contexts:root-session":      {},
 	"POST /v1/work-contexts:task":              {},
+	"PUT /v1/consent/preferences":              {},
 }
 
 type catalogRESTTemplateRoute struct {
@@ -197,6 +206,7 @@ var catalogRESTTemplateRoutes = []catalogRESTTemplateRoute{
 	{method: "GET", path: regexp.MustCompile("^/v1/organizations/[^/]+/members$")},
 	{method: "GET", path: regexp.MustCompile("^/v1/organizations/[^/]+/settings$")},
 	{method: "GET", path: regexp.MustCompile("^/v1/organizations/[^/]+/teams$")},
+	{method: "GET", path: regexp.MustCompile("^/v1/organizations/[^/]+/onboarding$")},
 	{method: "GET", path: regexp.MustCompile("^/v1/organizations/[^/]+/usage$")},
 	{method: "GET", path: regexp.MustCompile("^/v1/organizations/[^/]+/usage/[^/]+$")},
 	{method: "GET", path: regexp.MustCompile("^/v1/organizations/[^/]+/usage/[^/]+/history$")},
@@ -211,16 +221,19 @@ var catalogRESTTemplateRoutes = []catalogRESTTemplateRoute{
 	{method: "PATCH", path: regexp.MustCompile("^/v1/teams/[^/]+$")},
 	{method: "PATCH", path: regexp.MustCompile("^/v1/users/[^/]+$")},
 	{method: "POST", path: regexp.MustCompile("^/v1/delegations/[^/]+:decide$")},
+	{method: "POST", path: regexp.MustCompile("^/v1/invitations/[^/]+:resend$")},
 	{method: "POST", path: regexp.MustCompile("^/v1/notifications/[^/]+:read$")},
-	{method: "POST", path: regexp.MustCompile("^/v1/onboarding/[^/]+:complete$")},
-	{method: "POST", path: regexp.MustCompile("^/v1/onboarding/[^/]+:skip$")},
 	{method: "POST", path: regexp.MustCompile("^/v1/organizations/[^/]+/members$")},
 	{method: "POST", path: regexp.MustCompile("^/v1/organizations/[^/]+/teams$")},
+	{method: "POST", path: regexp.MustCompile("^/v1/organizations/[^/]+/onboarding/[^/]+:complete$")},
+	{method: "POST", path: regexp.MustCompile("^/v1/organizations/[^/]+/onboarding/[^/]+:skip$")},
 	{method: "POST", path: regexp.MustCompile("^/v1/platform/jobs/[^/]+:replay$")},
 	{method: "POST", path: regexp.MustCompile("^/v1/platform/organizations/[^/]+/entitlements$")},
 	{method: "POST", path: regexp.MustCompile("^/v1/platform/users/[^/]+:impersonate$")},
 	{method: "POST", path: regexp.MustCompile("^/v1/platform/users/[^/]+:suspend$")},
 	{method: "POST", path: regexp.MustCompile("^/v1/platform/users/[^/]+:unsuspend$")},
+	{method: "POST", path: regexp.MustCompile("^/v1/platform/waitlist/[^/]+:invite$")},
+	{method: "POST", path: regexp.MustCompile("^/v1/platform/waitlist/[^/]+:review$")},
 	{method: "POST", path: regexp.MustCompile("^/v1/principals/[^/]+:revoke$")},
 	{method: "POST", path: regexp.MustCompile("^/v1/teams/[^/]+/members$")},
 	{method: "POST", path: regexp.MustCompile("^/v1/users/[^/]+/identities$")},

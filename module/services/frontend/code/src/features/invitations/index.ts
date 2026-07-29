@@ -1,7 +1,8 @@
-export type { Invitation, InvitationStatusValue } from "./model/types";
+export type { Invitation } from "./model/types";
 export {
 	useAcceptInvitation,
 	useCreateInvitation,
+	useResendInvitation,
 	useRevokeInvitation,
 } from "./service/mutations";
 export { useInvitations } from "./service/queries";

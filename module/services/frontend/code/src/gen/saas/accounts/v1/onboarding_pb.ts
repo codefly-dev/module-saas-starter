@@ -15,16 +15,16 @@ import type { Message } from "@bufbuild/protobuf";
  * Describes the file saas/accounts/v1/onboarding.proto.
  */
 export const file_saas_accounts_v1_onboarding: GenFile = /*@__PURE__*/
-  fileDesc("CiFzYWFzL2FjY291bnRzL3YxL29uYm9hcmRpbmcucHJvdG8SEHNhYXMuYWNjb3VudHMudjEilgEKDk9uYm9hcmRpbmdTdGVwEhoKCXN0ZXBfbmFtZRgBIAEoCUIHukgEcgIQARI2CgZzdGF0dXMYAiABKA4yJi5zYWFzLmFjY291bnRzLnYxLk9uYm9hcmRpbmdTdGVwU3RhdHVzEjAKDGNvbXBsZXRlZF9hdBgDIAEoCzIaLmdvb2dsZS5wcm90b2J1Zi5UaW1lc3RhbXAiWAoST25ib2FyZGluZ1Byb2dyZXNzEi8KBXN0ZXBzGAEgAygLMiAuc2Fhcy5hY2NvdW50cy52MS5PbmJvYXJkaW5nU3RlcBIRCgljb21wbGV0ZWQYAiABKAgiHgocR2V0T25ib2FyZGluZ1Byb2dyZXNzUmVxdWVzdCI7Ch1Db21wbGV0ZU9uYm9hcmRpbmdTdGVwUmVxdWVzdBIaCglzdGVwX25hbWUYASABKAlCB7pIBHICEAEiNwoZU2tpcE9uYm9hcmRpbmdTdGVwUmVxdWVzdBIaCglzdGVwX25hbWUYASABKAlCB7pIBHICEAEqrAEKFE9uYm9hcmRpbmdTdGVwU3RhdHVzEiYKIk9OQk9BUkRJTkdfU1RFUF9TVEFUVVNfVU5TUEVDSUZJRUQQABIiCh5PTkJPQVJESU5HX1NURVBfU1RBVFVTX1BFTkRJTkcQARIkCiBPTkJPQVJESU5HX1NURVBfU1RBVFVTX0NPTVBMRVRFRBACEiIKHk9OQk9BUkRJTkdfU1RFUF9TVEFUVVNfU0tJUFBFRBADMv0DChFPbmJvYXJkaW5nU2VydmljZRKTAQoLR2V0UHJvZ3Jlc3MSLi5zYWFzLmFjY291bnRzLnYxLkdldE9uYm9hcmRpbmdQcm9ncmVzc1JlcXVlc3QaJC5zYWFzLmFjY291bnRzLnYxLk9uYm9hcmRpbmdQcm9ncmVzcyIuwvMYFAgCEAIwAToCEAFAAUgDUANYA2ABgtPkkwIQEg4vdjEvb25ib2FyZGluZxKtAQoMQ29tcGxldGVTdGVwEi8uc2Fhcy5hY2NvdW50cy52MS5Db21wbGV0ZU9uYm9hcmRpbmdTdGVwUmVxdWVzdBokLnNhYXMuYWNjb3VudHMudjEuT25ib2FyZGluZ1Byb2dyZXNzIkbC8xgUCAIQAjABOgIQAUABSARQA1gDYAGC0+STAig6ASoiIy92MS9vbmJvYXJkaW5nL3tzdGVwX25hbWV9OmNvbXBsZXRlEqEBCghTa2lwU3RlcBIrLnNhYXMuYWNjb3VudHMudjEuU2tpcE9uYm9hcmRpbmdTdGVwUmVxdWVzdBokLnNhYXMuYWNjb3VudHMudjEuT25ib2FyZGluZ1Byb2dyZXNzIkLC8xgUCAIQAjABOgIQAUABSARQA1gDYAGC0+STAiQ6ASoiHy92MS9vbmJvYXJkaW5nL3tzdGVwX25hbWV9OnNraXBCtwEKFGNvbS5zYWFzLmFjY291bnRzLnYxQg9PbmJvYXJkaW5nUHJvdG9QAVosYWNjb3VudHMvcGtnL2dlbi9zYWFzL2FjY291bnRzL3YxO2FjY291bnRzdjGiAgNTQViqAhBTYWFzLkFjY291bnRzLlYxygIQU2Fhc1xBY2NvdW50c1xWMeICHFNhYXNcQWNjb3VudHNcVjFcR1BCTWV0YWRhdGHqAhJTYWFzOjpBY2NvdW50czo6VjFiBnByb3RvMw", [file_buf_validate_validate, file_google_api_annotations, file_google_protobuf_timestamp, file_saas_policy_v1_options]);
+  fileDesc("CiFzYWFzL2FjY291bnRzL3YxL29uYm9hcmRpbmcucHJvdG8SEHNhYXMuYWNjb3VudHMudjEikgQKDk9uYm9hcmRpbmdTdGVwEjgKAmlkGAEgASgOMiIuc2Fhcy5hY2NvdW50cy52MS5PbmJvYXJkaW5nU3RlcElkQgi6SAWCAQIQARJACgZzdGF0dXMYAiABKA4yJi5zYWFzLmFjY291bnRzLnYxLk9uYm9hcmRpbmdTdGVwU3RhdHVzQgi6SAWCAQIQARIQCghyZXF1aXJlZBgDIAEoCBI5Cg1wcmVyZXF1aXNpdGVzGAQgAygOMiIuc2Fhcy5hY2NvdW50cy52MS5PbmJvYXJkaW5nU3RlcElkEjEKDWZpcnN0X3NlZW5fYXQYBSABKAsyGi5nb29nbGUucHJvdG9idWYuVGltZXN0YW1wEjAKDGxhc3Rfc2Vlbl9hdBgGIAEoCzIaLmdvb2dsZS5wcm90b2J1Zi5UaW1lc3RhbXASMAoMY29tcGxldGVkX2F0GAcgASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcBIuCgpza2lwcGVkX2F0GAggASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcBJRChFjb21wbGV0aW9uX21ldGhvZBgJIAEoDjIsLnNhYXMuYWNjb3VudHMudjEuT25ib2FyZGluZ0NvbXBsZXRpb25NZXRob2RCCLpIBYIBAhABEh0KC3NraXBfcmVhc29uGAogASgJQgi6SAVyAxj0AyLLBAoST25ib2FyZGluZ1Byb2dyZXNzEiEKD29yZ2FuaXphdGlvbl9pZBgBIAEoCUIIukgFcgOwAQESGAoHZmxvd19pZBgCIAEoCUIHukgEcgIQARIdCgxmbG93X3ZlcnNpb24YAyABKA1CB7pIBCoCKAESGAoHdmFyaWFudBgEIAEoCUIHukgEcgIQARIQCghhdWRpZW5jZRgFIAEoCRIPCgdwZXJzb25hGAYgASgJEi8KBXN0ZXBzGAcgAygLMiAuc2Fhcy5hY2NvdW50cy52MS5PbmJvYXJkaW5nU3RlcBJCCgxjdXJyZW50X3N0ZXAYCCABKA4yIi5zYWFzLmFjY291bnRzLnYxLk9uYm9hcmRpbmdTdGVwSWRCCLpIBYIBAhABEj8KCW5leHRfc3RlcBgJIAEoDjIiLnNhYXMuYWNjb3VudHMudjEuT25ib2FyZGluZ1N0ZXBJZEIIukgFggECEAESGQoRcmVxdWlyZWRfY29tcGxldGUYCiABKAgSGgoSY2hlY2tsaXN0X2NvbXBsZXRlGAsgASgIEhsKE2FjdGl2YXRpb25fYWNoaWV2ZWQYDCABKAgSLgoKc3RhcnRlZF9hdBgNIAEoCzIaLmdvb2dsZS5wcm90b2J1Zi5UaW1lc3RhbXASMAoMY29tcGxldGVkX2F0GA4gASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcBIwCgxhY3RpdmF0ZWRfYXQYDyABKAsyGi5nb29nbGUucHJvdG9idWYuVGltZXN0YW1wIkEKHEdldE9uYm9hcmRpbmdQcm9ncmVzc1JlcXVlc3QSIQoPb3JnYW5pemF0aW9uX2lkGAEgASgJQgi6SAVyA7ABASKDAQodQ29tcGxldGVPbmJvYXJkaW5nU3RlcFJlcXVlc3QSIQoPb3JnYW5pemF0aW9uX2lkGAEgASgJQgi6SAVyA7ABARI/CgdzdGVwX2lkGAIgASgOMiIuc2Fhcy5hY2NvdW50cy52MS5PbmJvYXJkaW5nU3RlcElkQgq6SAeCAQQQASAAIpkBChlTa2lwT25ib2FyZGluZ1N0ZXBSZXF1ZXN0EiEKD29yZ2FuaXphdGlvbl9pZBgBIAEoCUIIukgFcgOwAQESPwoHc3RlcF9pZBgCIAEoDjIiLnNhYXMuYWNjb3VudHMudjEuT25ib2FyZGluZ1N0ZXBJZEIKukgHggEEEAEgABIYCgZyZWFzb24YAyABKAlCCLpIBXIDGPQDKtMBChBPbmJvYXJkaW5nU3RlcElkEiIKHk9OQk9BUkRJTkdfU1RFUF9JRF9VTlNQRUNJRklFRBAAEi0KKU9OQk9BUkRJTkdfU1RFUF9JRF9DT05GSUdVUkVfT1JHQU5JWkFUSU9OEAESIgoeT05CT0FSRElOR19TVEVQX0lEX0lOVklURV9URUFNEAISIgoeT05CT0FSRElOR19TVEVQX0lEX0NIT09TRV9QTEFOEAMSJAogT05CT0FSRElOR19TVEVQX0lEX1NFVFVQX0FQSV9LRVkQBCqsAQoUT25ib2FyZGluZ1N0ZXBTdGF0dXMSJgoiT05CT0FSRElOR19TVEVQX1NUQVRVU19VTlNQRUNJRklFRBAAEiIKHk9OQk9BUkRJTkdfU1RFUF9TVEFUVVNfUEVORElORxABEiQKIE9OQk9BUkRJTkdfU1RFUF9TVEFUVVNfQ09NUExFVEVEEAISIgoeT05CT0FSRElOR19TVEVQX1NUQVRVU19TS0lQUEVEEAMq/AEKGk9uYm9hcmRpbmdDb21wbGV0aW9uTWV0aG9kEiwKKE9OQk9BUkRJTkdfQ09NUExFVElPTl9NRVRIT0RfVU5TUEVDSUZJRUQQABIpCiVPTkJPQVJESU5HX0NPTVBMRVRJT05fTUVUSE9EX0RFVEVDVEVEEAESLgoqT05CT0FSRElOR19DT01QTEVUSU9OX01FVEhPRF9ET01BSU5fQUNUSU9OEAISKgomT05CT0FSRElOR19DT01QTEVUSU9OX01FVEhPRF9VU0VSX1NLSVAQAxIpCiVPTkJPQVJESU5HX0NPTVBMRVRJT05fTUVUSE9EX01JR1JBVEVEEAQy1AUKEU9uYm9hcmRpbmdTZXJ2aWNlEsoBCgtHZXRQcm9ncmVzcxIuLnNhYXMuYWNjb3VudHMudjEuR2V0T25ib2FyZGluZ1Byb2dyZXNzUmVxdWVzdBokLnNhYXMuYWNjb3VudHMudjEuT25ib2FyZGluZ1Byb2dyZXNzImXC8xgrCAIQAyoVCg9vcmdhbml6YXRpb25faWQQAhgBMAE6AhABQAFIA1ADWANgAYLT5JMCMBIuL3YxL29yZ2FuaXphdGlvbnMve29yZ2FuaXphdGlvbl9pZH0vb25ib2FyZGluZxL+AQoMQ29tcGxldGVTdGVwEi8uc2Fhcy5hY2NvdW50cy52MS5Db21wbGV0ZU9uYm9hcmRpbmdTdGVwUmVxdWVzdBokLnNhYXMuYWNjb3VudHMudjEuT25ib2FyZGluZ1Byb2dyZXNzIpYBwvMYRggCEAMqFQoPb3JnYW5pemF0aW9uX2lkEAIYATABOh0KGW9uYm9hcmRpbmcuc3RlcF9jb21wbGV0ZWQQAkABSARQA1gDYAGC0+STAkY6ASoiQS92MS9vcmdhbml6YXRpb25zL3tvcmdhbml6YXRpb25faWR9L29uYm9hcmRpbmcve3N0ZXBfaWR9OmNvbXBsZXRlEvABCghTa2lwU3RlcBIrLnNhYXMuYWNjb3VudHMudjEuU2tpcE9uYm9hcmRpbmdTdGVwUmVxdWVzdBokLnNhYXMuYWNjb3VudHMudjEuT25ib2FyZGluZ1Byb2dyZXNzIpABwvMYRAgCEAMqFQoPb3JnYW5pemF0aW9uX2lkEAIYATABOhsKF29uYm9hcmRpbmcuc3RlcF9za2lwcGVkEAJAAUgEUANYA2ABgtPkkwJCOgEqIj0vdjEvb3JnYW5pemF0aW9ucy97b3JnYW5pemF0aW9uX2lkfS9vbmJvYXJkaW5nL3tzdGVwX2lkfTpza2lwQrcBChRjb20uc2Fhcy5hY2NvdW50cy52MUIPT25ib2FyZGluZ1Byb3RvUAFaLGFjY291bnRzL3BrZy9nZW4vc2Fhcy9hY2NvdW50cy92MTthY2NvdW50c3YxogIDU0FYqgIQU2Fhcy5BY2NvdW50cy5WMcoCEFNhYXNcQWNjb3VudHNcVjHiAhxTYWFzXEFjY291bnRzXFYxXEdQQk1ldGFkYXRh6gISU2Fhczo6QWNjb3VudHM6OlYxYgZwcm90bzM", [file_buf_validate_validate, file_google_api_annotations, file_google_protobuf_timestamp, file_saas_policy_v1_options]);
 
 /**
  * @generated from message saas.accounts.v1.OnboardingStep
  */
 export type OnboardingStep = Message<"saas.accounts.v1.OnboardingStep"> & {
   /**
-   * @generated from field: string step_name = 1;
+   * @generated from field: saas.accounts.v1.OnboardingStepId id = 1;
    */
-  stepName: string;
+  id: OnboardingStepId;
 
   /**
    * @generated from field: saas.accounts.v1.OnboardingStepStatus status = 2;
@@ -32,9 +32,44 @@ export type OnboardingStep = Message<"saas.accounts.v1.OnboardingStep"> & {
   status: OnboardingStepStatus;
 
   /**
-   * @generated from field: google.protobuf.Timestamp completed_at = 3;
+   * @generated from field: bool required = 3;
+   */
+  required: boolean;
+
+  /**
+   * @generated from field: repeated saas.accounts.v1.OnboardingStepId prerequisites = 4;
+   */
+  prerequisites: OnboardingStepId[];
+
+  /**
+   * @generated from field: google.protobuf.Timestamp first_seen_at = 5;
+   */
+  firstSeenAt?: Timestamp;
+
+  /**
+   * @generated from field: google.protobuf.Timestamp last_seen_at = 6;
+   */
+  lastSeenAt?: Timestamp;
+
+  /**
+   * @generated from field: google.protobuf.Timestamp completed_at = 7;
    */
   completedAt?: Timestamp;
+
+  /**
+   * @generated from field: google.protobuf.Timestamp skipped_at = 8;
+   */
+  skippedAt?: Timestamp;
+
+  /**
+   * @generated from field: saas.accounts.v1.OnboardingCompletionMethod completion_method = 9;
+   */
+  completionMethod: OnboardingCompletionMethod;
+
+  /**
+   * @generated from field: string skip_reason = 10;
+   */
+  skipReason: string;
 };
 
 /**
@@ -49,14 +84,79 @@ export const OnboardingStepSchema: GenMessage<OnboardingStep> = /*@__PURE__*/
  */
 export type OnboardingProgress = Message<"saas.accounts.v1.OnboardingProgress"> & {
   /**
-   * @generated from field: repeated saas.accounts.v1.OnboardingStep steps = 1;
+   * @generated from field: string organization_id = 1;
+   */
+  organizationId: string;
+
+  /**
+   * @generated from field: string flow_id = 2;
+   */
+  flowId: string;
+
+  /**
+   * @generated from field: uint32 flow_version = 3;
+   */
+  flowVersion: number;
+
+  /**
+   * @generated from field: string variant = 4;
+   */
+  variant: string;
+
+  /**
+   * @generated from field: string audience = 5;
+   */
+  audience: string;
+
+  /**
+   * @generated from field: string persona = 6;
+   */
+  persona: string;
+
+  /**
+   * @generated from field: repeated saas.accounts.v1.OnboardingStep steps = 7;
    */
   steps: OnboardingStep[];
 
   /**
-   * @generated from field: bool completed = 2;
+   * @generated from field: saas.accounts.v1.OnboardingStepId current_step = 8;
    */
-  completed: boolean;
+  currentStep: OnboardingStepId;
+
+  /**
+   * @generated from field: saas.accounts.v1.OnboardingStepId next_step = 9;
+   */
+  nextStep: OnboardingStepId;
+
+  /**
+   * @generated from field: bool required_complete = 10;
+   */
+  requiredComplete: boolean;
+
+  /**
+   * @generated from field: bool checklist_complete = 11;
+   */
+  checklistComplete: boolean;
+
+  /**
+   * @generated from field: bool activation_achieved = 12;
+   */
+  activationAchieved: boolean;
+
+  /**
+   * @generated from field: google.protobuf.Timestamp started_at = 13;
+   */
+  startedAt?: Timestamp;
+
+  /**
+   * @generated from field: google.protobuf.Timestamp completed_at = 14;
+   */
+  completedAt?: Timestamp;
+
+  /**
+   * @generated from field: google.protobuf.Timestamp activated_at = 15;
+   */
+  activatedAt?: Timestamp;
 };
 
 /**
@@ -70,6 +170,10 @@ export const OnboardingProgressSchema: GenMessage<OnboardingProgress> = /*@__PUR
  * @generated from message saas.accounts.v1.GetOnboardingProgressRequest
  */
 export type GetOnboardingProgressRequest = Message<"saas.accounts.v1.GetOnboardingProgressRequest"> & {
+  /**
+   * @generated from field: string organization_id = 1;
+   */
+  organizationId: string;
 };
 
 /**
@@ -84,9 +188,14 @@ export const GetOnboardingProgressRequestSchema: GenMessage<GetOnboardingProgres
  */
 export type CompleteOnboardingStepRequest = Message<"saas.accounts.v1.CompleteOnboardingStepRequest"> & {
   /**
-   * @generated from field: string step_name = 1;
+   * @generated from field: string organization_id = 1;
    */
-  stepName: string;
+  organizationId: string;
+
+  /**
+   * @generated from field: saas.accounts.v1.OnboardingStepId step_id = 2;
+   */
+  stepId: OnboardingStepId;
 };
 
 /**
@@ -101,9 +210,19 @@ export const CompleteOnboardingStepRequestSchema: GenMessage<CompleteOnboardingS
  */
 export type SkipOnboardingStepRequest = Message<"saas.accounts.v1.SkipOnboardingStepRequest"> & {
   /**
-   * @generated from field: string step_name = 1;
+   * @generated from field: string organization_id = 1;
    */
-  stepName: string;
+  organizationId: string;
+
+  /**
+   * @generated from field: saas.accounts.v1.OnboardingStepId step_id = 2;
+   */
+  stepId: OnboardingStepId;
+
+  /**
+   * @generated from field: string reason = 3;
+   */
+  reason: string;
 };
 
 /**
@@ -112,6 +231,42 @@ export type SkipOnboardingStepRequest = Message<"saas.accounts.v1.SkipOnboarding
  */
 export const SkipOnboardingStepRequestSchema: GenMessage<SkipOnboardingStepRequest> = /*@__PURE__*/
   messageDesc(file_saas_accounts_v1_onboarding, 4);
+
+/**
+ * @generated from enum saas.accounts.v1.OnboardingStepId
+ */
+export enum OnboardingStepId {
+  /**
+   * @generated from enum value: ONBOARDING_STEP_ID_UNSPECIFIED = 0;
+   */
+  UNSPECIFIED = 0,
+
+  /**
+   * @generated from enum value: ONBOARDING_STEP_ID_CONFIGURE_ORGANIZATION = 1;
+   */
+  CONFIGURE_ORGANIZATION = 1,
+
+  /**
+   * @generated from enum value: ONBOARDING_STEP_ID_INVITE_TEAM = 2;
+   */
+  INVITE_TEAM = 2,
+
+  /**
+   * @generated from enum value: ONBOARDING_STEP_ID_CHOOSE_PLAN = 3;
+   */
+  CHOOSE_PLAN = 3,
+
+  /**
+   * @generated from enum value: ONBOARDING_STEP_ID_SETUP_API_KEY = 4;
+   */
+  SETUP_API_KEY = 4,
+}
+
+/**
+ * Describes the enum saas.accounts.v1.OnboardingStepId.
+ */
+export const OnboardingStepIdSchema: GenEnum<OnboardingStepId> = /*@__PURE__*/
+  enumDesc(file_saas_accounts_v1_onboarding, 0);
 
 /**
  * @generated from enum saas.accounts.v1.OnboardingStepStatus
@@ -142,11 +297,45 @@ export enum OnboardingStepStatus {
  * Describes the enum saas.accounts.v1.OnboardingStepStatus.
  */
 export const OnboardingStepStatusSchema: GenEnum<OnboardingStepStatus> = /*@__PURE__*/
-  enumDesc(file_saas_accounts_v1_onboarding, 0);
+  enumDesc(file_saas_accounts_v1_onboarding, 1);
 
 /**
- * OnboardingService — user onboarding flow management
- *
+ * @generated from enum saas.accounts.v1.OnboardingCompletionMethod
+ */
+export enum OnboardingCompletionMethod {
+  /**
+   * @generated from enum value: ONBOARDING_COMPLETION_METHOD_UNSPECIFIED = 0;
+   */
+  UNSPECIFIED = 0,
+
+  /**
+   * @generated from enum value: ONBOARDING_COMPLETION_METHOD_DETECTED = 1;
+   */
+  DETECTED = 1,
+
+  /**
+   * @generated from enum value: ONBOARDING_COMPLETION_METHOD_DOMAIN_ACTION = 2;
+   */
+  DOMAIN_ACTION = 2,
+
+  /**
+   * @generated from enum value: ONBOARDING_COMPLETION_METHOD_USER_SKIP = 3;
+   */
+  USER_SKIP = 3,
+
+  /**
+   * @generated from enum value: ONBOARDING_COMPLETION_METHOD_MIGRATED = 4;
+   */
+  MIGRATED = 4,
+}
+
+/**
+ * Describes the enum saas.accounts.v1.OnboardingCompletionMethod.
+ */
+export const OnboardingCompletionMethodSchema: GenEnum<OnboardingCompletionMethod> = /*@__PURE__*/
+  enumDesc(file_saas_accounts_v1_onboarding, 2);
+
+/**
  * @generated from service saas.accounts.v1.OnboardingService
  */
 export const OnboardingService: GenService<{

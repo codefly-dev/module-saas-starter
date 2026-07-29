@@ -3,8 +3,8 @@ package adapters
 import (
 	"context"
 	"testing"
-	"time"
 
+	"connectrpc.com/connect"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
@@ -22,9 +22,12 @@ const (
 
 type invitationAuthorizationStore struct {
 	business.Store
-	invitationOrgID string
-	members         map[string][]*gen.OrgMembership
-	revoked         bool
+	invitationOrgID  string
+	members          map[string][]*gen.OrgMembership
+	revoked          bool
+	platformRole     string
+	mfaEnrolled      bool
+	invitationStatus string
 }
 
 func (f *invitationAuthorizationStore) WithControlPlane(ctx context.Context, fn func(context.Context) error) error {
@@ -39,13 +42,6 @@ func (f *invitationAuthorizationStore) GetInvitationOrgID(context.Context, strin
 	return f.invitationOrgID, nil
 }
 
-func (f *invitationAuthorizationStore) GetInvitationByID(
-	_ context.Context,
-	id string,
-) (*business.Invitation, error) {
-	return &business.Invitation{ID: id, OrgID: f.invitationOrgID, Status: "pending"}, nil
-}
-
 func (f *invitationAuthorizationStore) GetOrgMembership(_ context.Context, orgID, userID string) (*gen.OrgMembership, error) {
 	for _, member := range f.members[orgID] {
 		if member.UserId == userID {
@@ -56,18 +52,29 @@ func (f *invitationAuthorizationStore) GetOrgMembership(_ context.Context, orgID
 }
 
 func (f *invitationAuthorizationStore) GetPlatformRole(context.Context, string) (string, error) {
-	return "", nil
+	return f.platformRole, nil
 }
 
-func (f *invitationAuthorizationStore) UpdateInvitationStatus(
-	context.Context,
-	string,
-	string,
-	string,
-	time.Time,
-) error {
+func (f *invitationAuthorizationStore) WithUserTx(ctx context.Context, _ string, fn func(context.Context) error) error {
+	return fn(ctx)
+}
+
+func (f *invitationAuthorizationStore) HasVerifiedMFA(context.Context, string) (bool, error) {
+	return f.mfaEnrolled, nil
+}
+
+func (f *invitationAuthorizationStore) GetInvitationByID(context.Context, string) (*business.Invitation, error) {
+	return &business.Invitation{
+		ID:     "00000000-0000-4000-8000-000000000001",
+		OrgID:  f.invitationOrgID,
+		Status: f.invitationStatus,
+	}, nil
+}
+
+func (f *invitationAuthorizationStore) UpdateInvitationStatus(context.Context, string, string, string) (bool, error) {
 	f.revoked = true
-	return nil
+	f.invitationStatus = "revoked"
+	return true, nil
 }
 
 func invitationActorContext(userID, orgID string) context.Context {
@@ -99,7 +106,8 @@ func TestRevokeInvitationRejectsForeignTenantID(t *testing.T) {
 
 func TestRevokeInvitationAllowsOwningTenantAdmin(t *testing.T) {
 	store := &invitationAuthorizationStore{
-		invitationOrgID: invitationOrgAID,
+		invitationOrgID:  invitationOrgAID,
+		invitationStatus: "pending",
 		members: map[string][]*gen.OrgMembership{
 			invitationOrgAID: {{UserId: invitationActorID, Role: gen.OrgRole_ORG_ROLE_ADMIN}},
 		},
@@ -109,4 +117,47 @@ func TestRevokeInvitationAllowsOwningTenantAdmin(t *testing.T) {
 	_, err := (&InvitationServer{}).RevokeInvitation(invitationActorContext(invitationActorID, invitationOrgAID), &gen.RevokeInvitationRequest{Id: "00000000-0000-4000-8000-000000000001"})
 	require.NoError(t, err)
 	require.True(t, store.revoked)
+}
+
+func TestResendInvitationRequiresAndForwardsIdempotencyKey(t *testing.T) {
+	store := &invitationAuthorizationStore{
+		invitationOrgID:  invitationOrgAID,
+		invitationStatus: "pending",
+		members: map[string][]*gen.OrgMembership{
+			invitationOrgAID: {{UserId: invitationActorID, Role: gen.OrgRole_ORG_ROLE_ADMIN}},
+		},
+	}
+	installInvitationAuthorizationService(t, store)
+	handler := &invitationConnectHandler{inner: &InvitationServer{}}
+
+	missing := connect.NewRequest(&gen.ResendInvitationRequest{
+		Id: "00000000-0000-4000-8000-000000000001",
+	})
+	_, err := handler.ResendInvitation(
+		invitationActorContext(invitationActorID, invitationOrgAID),
+		missing,
+	)
+	require.Equal(t, connect.CodeInvalidArgument, connect.CodeOf(err))
+
+	present := connect.NewRequest(&gen.ResendInvitationRequest{
+		Id: "00000000-0000-4000-8000-000000000001",
+	})
+	present.Header().Set("Idempotency-Key", "resend-operation")
+	_, err = handler.ResendInvitation(
+		invitationActorContext(invitationActorID, invitationOrgAID),
+		present,
+	)
+	require.NotEqual(t, connect.CodeInvalidArgument, connect.CodeOf(err))
+	require.ErrorContains(t, err, "delivery is unavailable")
+}
+
+func TestInspectInvitationByIdRequiresAuthentication(t *testing.T) {
+	_, err := (&InvitationServer{}).InspectInvitationById(
+		context.Background(),
+		&gen.InspectInvitationByIdRequest{
+			InvitationId: "00000000-0000-4000-8000-000000000001",
+		},
+	)
+
+	require.Equal(t, codes.Unauthenticated, status.Code(err))
 }

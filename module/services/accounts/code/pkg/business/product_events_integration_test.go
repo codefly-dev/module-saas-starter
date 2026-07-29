@@ -1,16 +1,21 @@
 package business_test
 
 import (
+	"strings"
 	"sync"
 	"testing"
 
 	"accounts/pkg/analytics"
 	"accounts/pkg/business"
+	"accounts/pkg/email"
 	gen "accounts/pkg/gen/saas/accounts/v1"
+	jobsv1 "accounts/pkg/gen/saas/jobs/v1"
+	notificationsv1 "accounts/pkg/gen/saas/notifications/v1"
 	"accounts/pkg/infra"
 	"accounts/pkg/jobs"
 
 	"github.com/stretchr/testify/require"
+	"google.golang.org/protobuf/proto"
 )
 
 func TestInvitationOutcomesExportCanonicalEvents(t *testing.T) {
@@ -40,23 +45,34 @@ func TestInvitationOutcomesExportCanonicalEvents(t *testing.T) {
 	outbox, err := analytics.NewOutbox(testStore, registry)
 	require.NoError(t, err)
 	service.SetProductAnalytics(registry, outbox)
+	invitationProducer := &invitationJobProducer{}
+	emailOutbox, err := email.NewOutbox(
+		invitationProducer,
+		nil,
+		"no-reply@example.com",
+	)
+	require.NoError(t, err)
+	service.SetEmailOutbox(emailOutbox, "https://app.example.com")
 
 	accepted, err := service.CreateInvitation(testCtx, ownerID, &gen.CreateInvitationRequest{
 		OrgId: orgID,
 		Email: invitee.User.GetPrimaryEmail(),
-		Role:  "member",
+		Role:  gen.InvitationRole_INVITATION_ROLE_MEMBER,
 	})
 	require.NoError(t, err)
+	acceptToken := invitationTokenFromDelivery(t, invitationProducer.requests[0])
 	_, err = service.AcceptInvitation(
 		testCtx,
 		invitee.User.GetUuid(),
-		&gen.AcceptInvitationRequest{Token: accepted.GetInviteToken()},
+		&gen.AcceptInvitationRequest{
+			Credential: &gen.AcceptInvitationRequest_Token{Token: acceptToken},
+		},
 	)
 	require.NoError(t, err)
 	revoked, err := service.CreateInvitation(testCtx, ownerID, &gen.CreateInvitationRequest{
 		OrgId: orgID,
 		Email: "revoked-invitee@test.invalid",
-		Role:  "admin",
+		Role:  gen.InvitationRole_INVITATION_ROLE_ADMIN,
 	})
 	require.NoError(t, err)
 	require.NoError(t, service.RevokeInvitation(
@@ -150,7 +166,7 @@ func TestDeleteUserExportsDurableAnalyticsSuppression(t *testing.T) {
 
 func TestAutoDetectedOnboardingStepExportsCanonicalEvent(t *testing.T) {
 	clearData(t)
-	userID, _ := mustUserAndOrg(
+	userID, orgID := mustUserAndOrg(
 		t,
 		testCtx,
 		"analytics-onboarding-auto@test.invalid",
@@ -159,15 +175,15 @@ func TestAutoDetectedOnboardingStepExportsCanonicalEvent(t *testing.T) {
 	)
 	service, _ := analyticsService(t)
 
-	progress, err := service.GetProgress(testCtx, userID)
+	progress, err := service.GetProgress(testCtx, userID, orgID)
 	require.NoError(t, err)
-	require.True(t, progressStepCompleted(progress, "create_org"))
+	require.True(t, progressStepCompleted(progress, "configure_organization"))
 
 	sink, _ := drainAnalytics(t)
 	var found bool
 	for _, event := range sink.Events() {
 		if event.GetEventName() == "onboarding_step_completed" &&
-			event.GetProperties().GetFields()["step_name"].GetStringValue() == "create_org" {
+			event.GetProperties().GetFields()["step_name"].GetStringValue() == "configure_organization" {
 			found = true
 		}
 	}
@@ -176,28 +192,44 @@ func TestAutoDetectedOnboardingStepExportsCanonicalEvent(t *testing.T) {
 
 func TestConcurrentFinalOnboardingStepsExportCompletionExactlyOnce(t *testing.T) {
 	clearData(t)
-	registered, err := testService.RegisterUser(testCtx, &gen.RegisterUserRequest{
-		PrimaryEmail: "analytics-onboarding-race@test.invalid",
-		Identity: &gen.UserIdentity{
-			Provider:      "email",
-			ProviderId:    "analytics-onboarding-race",
-			ProviderEmail: "analytics-onboarding-race@test.invalid",
-		},
-	})
-	require.NoError(t, err)
-	userID := registered.GetUser().GetUuid()
+	userID, orgID := mustUserAndOrg(
+		t,
+		testCtx,
+		"analytics-onboarding-race@test.invalid",
+		"analytics-onboarding-race",
+		"Analytics Race Org",
+	)
 	service, _ := analyticsService(t)
-	require.NoError(t, service.CompleteStep(testCtx, userID, "create_org"))
-	require.NoError(t, service.CompleteStep(testCtx, userID, "invite_team"))
+	_, err := service.GetProgress(testCtx, userID, orgID)
+	require.NoError(t, err)
+	require.NoError(t, service.SkipStep(
+		testCtx,
+		userID,
+		orgID,
+		gen.OnboardingStepId_ONBOARDING_STEP_ID_INVITE_TEAM,
+		"later",
+	))
+	require.NoError(t, service.SkipStep(
+		testCtx,
+		userID,
+		orgID,
+		gen.OnboardingStepId_ONBOARDING_STEP_ID_CHOOSE_PLAN,
+		"later",
+	))
 
 	var wait sync.WaitGroup
 	errorsFound := make(chan error, 2)
-	for _, step := range []string{"choose_plan", "setup_api_key"} {
-		step := step
+	for range 2 {
 		wait.Add(1)
 		go func() {
 			defer wait.Done()
-			errorsFound <- service.CompleteStep(testCtx, userID, step)
+			errorsFound <- service.SkipStep(
+				testCtx,
+				userID,
+				orgID,
+				gen.OnboardingStepId_ONBOARDING_STEP_ID_SETUP_API_KEY,
+				"later",
+			)
 		}()
 	}
 	wait.Wait()
@@ -258,4 +290,18 @@ func progressStepCompleted(progress *business.OnboardingProgress, name string) b
 		}
 	}
 	return false
+}
+
+func invitationTokenFromDelivery(
+	t *testing.T,
+	request *jobsv1.EnqueueJobRequest,
+) string {
+	t.Helper()
+	delivery := &notificationsv1.EmailDeliveryJob{}
+	require.NoError(t, proto.Unmarshal(request.GetJob().GetPayload(), delivery))
+	_, tokenAndSuffix, found := strings.Cut(delivery.GetTextBody(), "?token=")
+	require.True(t, found)
+	token, _, _ := strings.Cut(tokenAndSuffix, "\n")
+	require.NotEmpty(t, token)
+	return token
 }

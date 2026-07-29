@@ -22,6 +22,13 @@ const PUBLIC_PATHS = [
 	"/auth/mfa",
 	"/auth/magic-link",
 	"/auth/logout",
+	"/invitations/accept",
+	"/invitations/accept/api",
+	"/waitlist",
+	"/waitlist/verify",
+	"/waitlist/verify/api",
+	"/legal/terms",
+	"/legal/privacy",
 	"/health",
 	"/favicon.ico",
 ];
@@ -46,8 +53,36 @@ function isPublic(pathname: string): boolean {
 export function proxy(req: NextRequest) {
 	const { pathname, search } = req.nextUrl;
 
+	const secretReturn =
+		pathname === "/invitations/accept"
+			? { query: "token", cookie: "invitation_return_token" }
+			: pathname === "/waitlist/verify"
+				? { query: "token", cookie: "waitlist_verification_token" }
+				: null;
+	if (secretReturn && req.nextUrl.searchParams.has(secretReturn.query)) {
+		const token = req.nextUrl.searchParams.get(secretReturn.query) ?? "";
+		const cleanURL = req.nextUrl.clone();
+		cleanURL.searchParams.delete(secretReturn.query);
+		const response = NextResponse.redirect(cleanURL);
+		response.headers.set("Referrer-Policy", "no-referrer");
+		if (token.length >= 32 && token.length <= 512) {
+			response.cookies.set(secretReturn.cookie, token, {
+				httpOnly: true,
+				secure: process.env.NODE_ENV === "production",
+				sameSite: "strict",
+				path: pathname,
+				maxAge: 15 * 60,
+			});
+		}
+		return response;
+	}
+
 	if (isPublic(pathname)) {
-		return NextResponse.next();
+		const response = NextResponse.next();
+		if (pathname === "/invitations/accept" || pathname === "/waitlist/verify") {
+			response.headers.set("Referrer-Policy", "no-referrer");
+		}
+		return response;
 	}
 
 	// Check the session cookie set by AuthProvider on login. The

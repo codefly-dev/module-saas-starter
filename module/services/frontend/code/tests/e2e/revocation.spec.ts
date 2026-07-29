@@ -32,18 +32,41 @@ async function loginAndGrabTokens(
 	await page.getByText(fixtureName).click();
 	await expect(page.getByText("Welcome back")).toBeVisible({ timeout: 20000 });
 
+	await expect
+		.poll(async () =>
+			(await page.context().cookies()).some(
+				(item) => item.name === "codefly_rt" && item.value.length > 0,
+			),
+		)
+		.toBe(true);
 	const cookie = (await page.context().cookies()).find(
 		(item) => item.name === "codefly_rt",
 	);
 	if (!cookie?.value) throw new Error("no httpOnly refresh cookie after login");
 
-	// page.request shares the browser cookie jar and rotates the httpOnly
-	// refresh token. Capture the new cookie through Playwright's browser API.
-	const res = await page.request.post("/v1/auth/refresh", { data: {} });
-	if (!res.ok()) {
-		throw new Error(`refresh failed: ${res.status()} ${await res.text()}`);
+	const refresh = await page.evaluate(async () => {
+		const response = await fetch("/v1/auth/refresh", {
+			method: "POST",
+			credentials: "include",
+			headers: { "Content-Type": "application/json" },
+			body: JSON.stringify({}),
+		});
+		return {
+			status: response.status,
+			body: await response.text(),
+		};
+	});
+	if (refresh.status < 200 || refresh.status >= 300) {
+		throw new Error(`refresh failed: ${refresh.status} ${refresh.body}`);
 	}
-	const data = (await res.json()) as { accessToken: string };
+	const data = JSON.parse(refresh.body) as { accessToken: string };
+	await expect
+		.poll(async () =>
+			(await page.context().cookies()).some(
+				(item) => item.name === "codefly_rt" && item.value !== cookie.value,
+			),
+		)
+		.toBe(true);
 	const rotated = (await page.context().cookies()).find(
 		(item) => item.name === "codefly_rt",
 	);

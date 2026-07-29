@@ -8,12 +8,14 @@
 // proves SearchUsers is platform-admin-gated server-side.
 
 import { expect, type Page, test } from "@playwright/test";
+import { resolveConsentPrompt } from "./consent";
 
 async function loginAs(page: Page, fixtureName: string) {
 	await page.goto("/auth/login");
 	await expect(page.getByText(fixtureName)).toBeVisible({ timeout: 15000 });
 	await page.getByText(fixtureName).click();
 	await expect(page.getByText("Welcome back")).toBeVisible({ timeout: 20000 });
+	await resolveConsentPrompt(page);
 }
 
 test.describe("Command palette", () => {

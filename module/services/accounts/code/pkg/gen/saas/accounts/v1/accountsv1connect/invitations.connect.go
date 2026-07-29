@@ -38,12 +38,21 @@ const (
 	// InvitationServiceCreateInvitationProcedure is the fully-qualified name of the InvitationService's
 	// CreateInvitation RPC.
 	InvitationServiceCreateInvitationProcedure = "/saas.accounts.v1.InvitationService/CreateInvitation"
+	// InvitationServiceInspectInvitationProcedure is the fully-qualified name of the
+	// InvitationService's InspectInvitation RPC.
+	InvitationServiceInspectInvitationProcedure = "/saas.accounts.v1.InvitationService/InspectInvitation"
+	// InvitationServiceInspectInvitationByIdProcedure is the fully-qualified name of the
+	// InvitationService's InspectInvitationById RPC.
+	InvitationServiceInspectInvitationByIdProcedure = "/saas.accounts.v1.InvitationService/InspectInvitationById"
 	// InvitationServiceAcceptInvitationProcedure is the fully-qualified name of the InvitationService's
 	// AcceptInvitation RPC.
 	InvitationServiceAcceptInvitationProcedure = "/saas.accounts.v1.InvitationService/AcceptInvitation"
 	// InvitationServiceListInvitationsProcedure is the fully-qualified name of the InvitationService's
 	// ListInvitations RPC.
 	InvitationServiceListInvitationsProcedure = "/saas.accounts.v1.InvitationService/ListInvitations"
+	// InvitationServiceResendInvitationProcedure is the fully-qualified name of the InvitationService's
+	// ResendInvitation RPC.
+	InvitationServiceResendInvitationProcedure = "/saas.accounts.v1.InvitationService/ResendInvitation"
 	// InvitationServiceRevokeInvitationProcedure is the fully-qualified name of the InvitationService's
 	// RevokeInvitation RPC.
 	InvitationServiceRevokeInvitationProcedure = "/saas.accounts.v1.InvitationService/RevokeInvitation"
@@ -52,8 +61,11 @@ const (
 // InvitationServiceClient is a client for the saas.accounts.v1.InvitationService service.
 type InvitationServiceClient interface {
 	CreateInvitation(context.Context, *connect.Request[v1.CreateInvitationRequest]) (*connect.Response[v1.CreateInvitationResponse], error)
+	InspectInvitation(context.Context, *connect.Request[v1.InspectInvitationRequest]) (*connect.Response[v1.InvitationSummary], error)
+	InspectInvitationById(context.Context, *connect.Request[v1.InspectInvitationByIdRequest]) (*connect.Response[v1.InvitationSummary], error)
 	AcceptInvitation(context.Context, *connect.Request[v1.AcceptInvitationRequest]) (*connect.Response[v1.AcceptInvitationResponse], error)
 	ListInvitations(context.Context, *connect.Request[v1.ListInvitationsRequest]) (*connect.Response[v1.ListInvitationsResponse], error)
+	ResendInvitation(context.Context, *connect.Request[v1.ResendInvitationRequest]) (*connect.Response[v1.Invitation], error)
 	RevokeInvitation(context.Context, *connect.Request[v1.RevokeInvitationRequest]) (*connect.Response[emptypb.Empty], error)
 }
 
@@ -74,6 +86,18 @@ func NewInvitationServiceClient(httpClient connect.HTTPClient, baseURL string, o
 			connect.WithSchema(invitationServiceMethods.ByName("CreateInvitation")),
 			connect.WithClientOptions(opts...),
 		),
+		inspectInvitation: connect.NewClient[v1.InspectInvitationRequest, v1.InvitationSummary](
+			httpClient,
+			baseURL+InvitationServiceInspectInvitationProcedure,
+			connect.WithSchema(invitationServiceMethods.ByName("InspectInvitation")),
+			connect.WithClientOptions(opts...),
+		),
+		inspectInvitationById: connect.NewClient[v1.InspectInvitationByIdRequest, v1.InvitationSummary](
+			httpClient,
+			baseURL+InvitationServiceInspectInvitationByIdProcedure,
+			connect.WithSchema(invitationServiceMethods.ByName("InspectInvitationById")),
+			connect.WithClientOptions(opts...),
+		),
 		acceptInvitation: connect.NewClient[v1.AcceptInvitationRequest, v1.AcceptInvitationResponse](
 			httpClient,
 			baseURL+InvitationServiceAcceptInvitationProcedure,
@@ -84,6 +108,12 @@ func NewInvitationServiceClient(httpClient connect.HTTPClient, baseURL string, o
 			httpClient,
 			baseURL+InvitationServiceListInvitationsProcedure,
 			connect.WithSchema(invitationServiceMethods.ByName("ListInvitations")),
+			connect.WithClientOptions(opts...),
+		),
+		resendInvitation: connect.NewClient[v1.ResendInvitationRequest, v1.Invitation](
+			httpClient,
+			baseURL+InvitationServiceResendInvitationProcedure,
+			connect.WithSchema(invitationServiceMethods.ByName("ResendInvitation")),
 			connect.WithClientOptions(opts...),
 		),
 		revokeInvitation: connect.NewClient[v1.RevokeInvitationRequest, emptypb.Empty](
@@ -97,15 +127,28 @@ func NewInvitationServiceClient(httpClient connect.HTTPClient, baseURL string, o
 
 // invitationServiceClient implements InvitationServiceClient.
 type invitationServiceClient struct {
-	createInvitation *connect.Client[v1.CreateInvitationRequest, v1.CreateInvitationResponse]
-	acceptInvitation *connect.Client[v1.AcceptInvitationRequest, v1.AcceptInvitationResponse]
-	listInvitations  *connect.Client[v1.ListInvitationsRequest, v1.ListInvitationsResponse]
-	revokeInvitation *connect.Client[v1.RevokeInvitationRequest, emptypb.Empty]
+	createInvitation      *connect.Client[v1.CreateInvitationRequest, v1.CreateInvitationResponse]
+	inspectInvitation     *connect.Client[v1.InspectInvitationRequest, v1.InvitationSummary]
+	inspectInvitationById *connect.Client[v1.InspectInvitationByIdRequest, v1.InvitationSummary]
+	acceptInvitation      *connect.Client[v1.AcceptInvitationRequest, v1.AcceptInvitationResponse]
+	listInvitations       *connect.Client[v1.ListInvitationsRequest, v1.ListInvitationsResponse]
+	resendInvitation      *connect.Client[v1.ResendInvitationRequest, v1.Invitation]
+	revokeInvitation      *connect.Client[v1.RevokeInvitationRequest, emptypb.Empty]
 }
 
 // CreateInvitation calls saas.accounts.v1.InvitationService.CreateInvitation.
 func (c *invitationServiceClient) CreateInvitation(ctx context.Context, req *connect.Request[v1.CreateInvitationRequest]) (*connect.Response[v1.CreateInvitationResponse], error) {
 	return c.createInvitation.CallUnary(ctx, req)
+}
+
+// InspectInvitation calls saas.accounts.v1.InvitationService.InspectInvitation.
+func (c *invitationServiceClient) InspectInvitation(ctx context.Context, req *connect.Request[v1.InspectInvitationRequest]) (*connect.Response[v1.InvitationSummary], error) {
+	return c.inspectInvitation.CallUnary(ctx, req)
+}
+
+// InspectInvitationById calls saas.accounts.v1.InvitationService.InspectInvitationById.
+func (c *invitationServiceClient) InspectInvitationById(ctx context.Context, req *connect.Request[v1.InspectInvitationByIdRequest]) (*connect.Response[v1.InvitationSummary], error) {
+	return c.inspectInvitationById.CallUnary(ctx, req)
 }
 
 // AcceptInvitation calls saas.accounts.v1.InvitationService.AcceptInvitation.
@@ -118,6 +161,11 @@ func (c *invitationServiceClient) ListInvitations(ctx context.Context, req *conn
 	return c.listInvitations.CallUnary(ctx, req)
 }
 
+// ResendInvitation calls saas.accounts.v1.InvitationService.ResendInvitation.
+func (c *invitationServiceClient) ResendInvitation(ctx context.Context, req *connect.Request[v1.ResendInvitationRequest]) (*connect.Response[v1.Invitation], error) {
+	return c.resendInvitation.CallUnary(ctx, req)
+}
+
 // RevokeInvitation calls saas.accounts.v1.InvitationService.RevokeInvitation.
 func (c *invitationServiceClient) RevokeInvitation(ctx context.Context, req *connect.Request[v1.RevokeInvitationRequest]) (*connect.Response[emptypb.Empty], error) {
 	return c.revokeInvitation.CallUnary(ctx, req)
@@ -126,8 +174,11 @@ func (c *invitationServiceClient) RevokeInvitation(ctx context.Context, req *con
 // InvitationServiceHandler is an implementation of the saas.accounts.v1.InvitationService service.
 type InvitationServiceHandler interface {
 	CreateInvitation(context.Context, *connect.Request[v1.CreateInvitationRequest]) (*connect.Response[v1.CreateInvitationResponse], error)
+	InspectInvitation(context.Context, *connect.Request[v1.InspectInvitationRequest]) (*connect.Response[v1.InvitationSummary], error)
+	InspectInvitationById(context.Context, *connect.Request[v1.InspectInvitationByIdRequest]) (*connect.Response[v1.InvitationSummary], error)
 	AcceptInvitation(context.Context, *connect.Request[v1.AcceptInvitationRequest]) (*connect.Response[v1.AcceptInvitationResponse], error)
 	ListInvitations(context.Context, *connect.Request[v1.ListInvitationsRequest]) (*connect.Response[v1.ListInvitationsResponse], error)
+	ResendInvitation(context.Context, *connect.Request[v1.ResendInvitationRequest]) (*connect.Response[v1.Invitation], error)
 	RevokeInvitation(context.Context, *connect.Request[v1.RevokeInvitationRequest]) (*connect.Response[emptypb.Empty], error)
 }
 
@@ -144,6 +195,18 @@ func NewInvitationServiceHandler(svc InvitationServiceHandler, opts ...connect.H
 		connect.WithSchema(invitationServiceMethods.ByName("CreateInvitation")),
 		connect.WithHandlerOptions(opts...),
 	)
+	invitationServiceInspectInvitationHandler := connect.NewUnaryHandler(
+		InvitationServiceInspectInvitationProcedure,
+		svc.InspectInvitation,
+		connect.WithSchema(invitationServiceMethods.ByName("InspectInvitation")),
+		connect.WithHandlerOptions(opts...),
+	)
+	invitationServiceInspectInvitationByIdHandler := connect.NewUnaryHandler(
+		InvitationServiceInspectInvitationByIdProcedure,
+		svc.InspectInvitationById,
+		connect.WithSchema(invitationServiceMethods.ByName("InspectInvitationById")),
+		connect.WithHandlerOptions(opts...),
+	)
 	invitationServiceAcceptInvitationHandler := connect.NewUnaryHandler(
 		InvitationServiceAcceptInvitationProcedure,
 		svc.AcceptInvitation,
@@ -156,6 +219,12 @@ func NewInvitationServiceHandler(svc InvitationServiceHandler, opts ...connect.H
 		connect.WithSchema(invitationServiceMethods.ByName("ListInvitations")),
 		connect.WithHandlerOptions(opts...),
 	)
+	invitationServiceResendInvitationHandler := connect.NewUnaryHandler(
+		InvitationServiceResendInvitationProcedure,
+		svc.ResendInvitation,
+		connect.WithSchema(invitationServiceMethods.ByName("ResendInvitation")),
+		connect.WithHandlerOptions(opts...),
+	)
 	invitationServiceRevokeInvitationHandler := connect.NewUnaryHandler(
 		InvitationServiceRevokeInvitationProcedure,
 		svc.RevokeInvitation,
@@ -166,10 +235,16 @@ func NewInvitationServiceHandler(svc InvitationServiceHandler, opts ...connect.H
 		switch r.URL.Path {
 		case InvitationServiceCreateInvitationProcedure:
 			invitationServiceCreateInvitationHandler.ServeHTTP(w, r)
+		case InvitationServiceInspectInvitationProcedure:
+			invitationServiceInspectInvitationHandler.ServeHTTP(w, r)
+		case InvitationServiceInspectInvitationByIdProcedure:
+			invitationServiceInspectInvitationByIdHandler.ServeHTTP(w, r)
 		case InvitationServiceAcceptInvitationProcedure:
 			invitationServiceAcceptInvitationHandler.ServeHTTP(w, r)
 		case InvitationServiceListInvitationsProcedure:
 			invitationServiceListInvitationsHandler.ServeHTTP(w, r)
+		case InvitationServiceResendInvitationProcedure:
+			invitationServiceResendInvitationHandler.ServeHTTP(w, r)
 		case InvitationServiceRevokeInvitationProcedure:
 			invitationServiceRevokeInvitationHandler.ServeHTTP(w, r)
 		default:
@@ -185,12 +260,24 @@ func (UnimplementedInvitationServiceHandler) CreateInvitation(context.Context, *
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("saas.accounts.v1.InvitationService.CreateInvitation is not implemented"))
 }
 
+func (UnimplementedInvitationServiceHandler) InspectInvitation(context.Context, *connect.Request[v1.InspectInvitationRequest]) (*connect.Response[v1.InvitationSummary], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("saas.accounts.v1.InvitationService.InspectInvitation is not implemented"))
+}
+
+func (UnimplementedInvitationServiceHandler) InspectInvitationById(context.Context, *connect.Request[v1.InspectInvitationByIdRequest]) (*connect.Response[v1.InvitationSummary], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("saas.accounts.v1.InvitationService.InspectInvitationById is not implemented"))
+}
+
 func (UnimplementedInvitationServiceHandler) AcceptInvitation(context.Context, *connect.Request[v1.AcceptInvitationRequest]) (*connect.Response[v1.AcceptInvitationResponse], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("saas.accounts.v1.InvitationService.AcceptInvitation is not implemented"))
 }
 
 func (UnimplementedInvitationServiceHandler) ListInvitations(context.Context, *connect.Request[v1.ListInvitationsRequest]) (*connect.Response[v1.ListInvitationsResponse], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("saas.accounts.v1.InvitationService.ListInvitations is not implemented"))
+}
+
+func (UnimplementedInvitationServiceHandler) ResendInvitation(context.Context, *connect.Request[v1.ResendInvitationRequest]) (*connect.Response[v1.Invitation], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("saas.accounts.v1.InvitationService.ResendInvitation is not implemented"))
 }
 
 func (UnimplementedInvitationServiceHandler) RevokeInvitation(context.Context, *connect.Request[v1.RevokeInvitationRequest]) (*connect.Response[emptypb.Empty], error) {

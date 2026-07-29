@@ -36,6 +36,9 @@ func NewBillingHTTPHandler(svc *business.Service) http.Handler {
 	mux.HandleFunc("/v1/billing/checkout", func(w http.ResponseWriter, r *http.Request) {
 		handleCheckout(svc, w, r)
 	})
+	mux.HandleFunc("/v1/billing/free-plan", func(w http.ResponseWriter, r *http.Request) {
+		handleFreePlan(svc, w, r)
+	})
 	mux.HandleFunc("/v1/billing/portal", func(w http.ResponseWriter, r *http.Request) {
 		handlePortal(svc, w, r)
 	})
@@ -97,6 +100,36 @@ func handleCheckout(svc *business.Service, w http.ResponseWriter, r *http.Reques
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]string{"url": url})
+}
+
+func handleFreePlan(svc *business.Service, w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		writeJSONError(w, http.StatusMethodNotAllowed, "POST required")
+		return
+	}
+	ctx, userID, orgID, err := authenticateBillingHTTPRequest(svc, r)
+	if err != nil {
+		writeJSONError(w, http.StatusUnauthorized, "authentication required")
+		return
+	}
+	r = r.WithContext(ctx)
+	if err := requireBillingAdmin(ctx, userID, orgID); err != nil {
+		writeHTTPBillingAuthzError(w, err)
+		return
+	}
+	if err := requireRecentMFA(ctx); err != nil {
+		writeJSONError(w, http.StatusPreconditionFailed, err.Error())
+		return
+	}
+	if r.Header.Get("Idempotency-Key") == "" {
+		writeJSONError(w, http.StatusBadRequest, "Idempotency-Key header required")
+		return
+	}
+	if err := svc.SelectFreePlan(r.Context(), userID, orgID); err != nil {
+		writeJSONError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]string{"status": "active"})
 }
 
 func handlePortal(svc *business.Service, w http.ResponseWriter, r *http.Request) {

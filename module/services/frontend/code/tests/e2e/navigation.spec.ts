@@ -1,4 +1,5 @@
 import { expect, test } from "@playwright/test";
+import { resolveConsentPrompt } from "./consent";
 
 // Helper: log in as Sarah Chen (super_admin) before each test. Keys off
 // the dashboard's "Welcome back" heading rather than a bare URL match —
@@ -9,11 +10,13 @@ async function loginAsSuperAdmin(page: import("@playwright/test").Page) {
 	await expect(page.getByText("Sarah Chen")).toBeVisible({ timeout: 15000 });
 	await page.getByText("Sarah Chen").click();
 	await expect(page.getByText("Welcome back")).toBeVisible({ timeout: 20000 });
+	await resolveConsentPrompt(page);
 }
 
 test.describe("Dashboard navigation", () => {
 	test.beforeEach(async ({ page }) => {
 		await loginAsSuperAdmin(page);
+		await page.getByRole("button", { name: "Admin", exact: true }).click();
 	});
 
 	// URL paths migrated in 2026-04-23: all admin surfaces now live under
