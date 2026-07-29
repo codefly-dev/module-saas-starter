@@ -334,6 +334,26 @@ func loadWorkspaceManifest(root string) (*workspaceManifest, error) {
 }
 
 func generateGitOps(ctx context.Context, moduleDir string, workspace *workspaceManifest) error {
+	return generateGitOpsTree(ctx, moduleDir, workspace, "", filepath.Join(moduleDir, filepath.FromSlash(gitOpsRelativeDir)))
+}
+
+func generateGitOpsEnvironment(
+	ctx context.Context,
+	moduleDir string,
+	workspace *workspaceManifest,
+	environmentName,
+	target string,
+) error {
+	return generateGitOpsTree(ctx, moduleDir, workspace, environmentName, target)
+}
+
+func generateGitOpsTree(
+	ctx context.Context,
+	moduleDir string,
+	workspace *workspaceManifest,
+	environmentName,
+	root string,
+) error {
 	manifest, err := loadModuleManifest(moduleDir)
 	if err != nil {
 		return err
@@ -351,7 +371,6 @@ func generateGitOps(ctx context.Context, moduleDir string, workspace *workspaceM
 		return err
 	}
 
-	root := filepath.Join(moduleDir, filepath.FromSlash(gitOpsRelativeDir))
 	if err := os.MkdirAll(filepath.Dir(root), 0o755); err != nil {
 		return fmt.Errorf("create deployment directory: %w", err)
 	}
@@ -366,7 +385,12 @@ func generateGitOps(ctx context.Context, moduleDir string, workspace *workspaceM
 		Workspace:     workspace.Name,
 		Module:        manifest.Name,
 	}
+	foundEnvironment := environmentName == ""
 	for _, environment := range environments {
+		if environmentName != "" && environment.Name != environmentName {
+			continue
+		}
+		foundEnvironment = true
 		local, aws, err := classifyEnvironment(environment)
 		if err != nil {
 			return err
@@ -427,6 +451,9 @@ func generateGitOps(ctx context.Context, moduleDir string, workspace *workspaceM
 			ServicePaths:           cloneStringMap(plan.servicePaths),
 			ManagedServiceHandoffs: append([]managedServiceHandoff(nil), plan.handoffs...),
 		})
+	}
+	if !foundEnvironment {
+		return fmt.Errorf("workspace %q does not declare environment %q", workspace.Name, environmentName)
 	}
 	if err := writeJSON(filepath.Join(stage, "inventory.json"), inventory); err != nil {
 		return err
