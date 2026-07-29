@@ -61,6 +61,7 @@ func TestDeploymentTopologyIsDeterministicAndCurrent(t *testing.T) {
 	require.Contains(t, string(first.NetworkPolicy), "name: allow-auth-sidecar-to-dependencies")
 	require.Contains(t, string(first.NetworkPolicy), "name: allow-store-from-bootstrap")
 	require.Contains(t, string(first.NetworkPolicy), "name: allow-store-bootstrap-to-store")
+	require.Equal(t, 2, strings.Count(string(first.NetworkPolicy), "codefly.dev/bootstrap-service: store"))
 	require.Contains(t, string(first.NetworkPolicy), "name: allow-frontend-public-egress")
 	require.Contains(t, string(first.NetworkPolicy), "name: allow-marketing-public-egress")
 	require.Contains(t, string(first.NetworkPolicy), "name: allow-istio-ingress-to-marketing")

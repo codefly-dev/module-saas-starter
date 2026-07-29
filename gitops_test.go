@@ -960,6 +960,7 @@ func TestGeneratedPoliciesAndProjectMatchRenderedTopology(t *testing.T) {
 		t.Fatal(err)
 	}
 	for _, policy := range []string{
+		"allow-ambient-hbone-transport",
 		"allow-istio-ingress-to-auth-sidecar",
 		"allow-accounts-to-store",
 		"allow-store-from-accounts",
@@ -970,6 +971,32 @@ func TestGeneratedPoliciesAndProjectMatchRenderedTopology(t *testing.T) {
 		if !strings.Contains(string(localNetwork), "name: "+policy) {
 			t.Errorf("local network policy is missing %q", policy)
 		}
+	}
+	if count := strings.Count(string(localNetwork), "port: 15008"); count != 2 {
+		t.Errorf("local network policy has %d ambient HBONE transport exceptions, want 2", count)
+	}
+	if count := strings.Count(string(localNetwork), "codefly.dev/bootstrap-service: store"); count != 2 {
+		t.Errorf("local network policy has %d bootstrap service selectors, want 2", count)
+	}
+	localIstio, err := os.ReadFile(filepath.Join(generated, "local", "resources", "istio-mtls.yaml"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, expected := range []string{
+		"name: allow-store-from-internal-topology",
+		"cluster.local/ns/identity-local/sa/default",
+		`- "8080"`,
+	} {
+		if !strings.Contains(string(localIstio), expected) {
+			t.Errorf("local Istio policy is missing %q", expected)
+		}
+	}
+	awsIstio, err := os.ReadFile(filepath.Join(generated, "aws", "resources", "istio-mtls.yaml"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(awsIstio), "allow-store-from-internal-topology") {
+		t.Error("AWS Istio policy grants internal authority to managed Postgres")
 	}
 	for _, file := range []string{
 		filepath.Join(generated, "local", "resources", "istio-gateway.yaml"),
@@ -1782,6 +1809,7 @@ func assertMindRouteAndPolicies(
 	rendered := string(data)
 	for _, name := range []string{
 		"default-deny-all",
+		"allow-ambient-hbone-transport",
 		"allow-istio-ingress-to-forge-edge",
 		"allow-forge-edge-to-accounts",
 		"allow-accounts-from-forge-edge",
@@ -1791,6 +1819,9 @@ func assertMindRouteAndPolicies(
 		if !strings.Contains(rendered, "name: "+name) {
 			t.Errorf("%s network policy is missing %q", environment, name)
 		}
+	}
+	if count := strings.Count(rendered, "port: 15008"); count != 2 {
+		t.Errorf("%s network policy has %d ambient HBONE transport exceptions, want 2", environment, count)
 	}
 	if aws {
 		for _, name := range []string{
