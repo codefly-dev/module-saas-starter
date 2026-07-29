@@ -1915,6 +1915,7 @@ func topologyIstioResources(
 			Spec:       map[string]any{},
 		},
 	}
+	istio = append(istio, topologyInternalAuthorizationPolicies(topology, plan, namespace, labels)...)
 	if len(plan.ingress) == 0 {
 		return nil, nil, fmt.Errorf("environment %q has no ingress plan", plan.environment.Name)
 	}
@@ -2056,6 +2057,89 @@ func topologyIstioResources(
 		})
 	}
 	return istio, gateway, nil
+}
+
+func topologyInternalAuthorizationPolicies(
+	topology deploymentTopology,
+	plan environmentPlan,
+	namespace string,
+	labels map[string]string,
+) []kubeObject {
+	inCluster := make(map[string]struct{}, len(plan.services))
+	for _, service := range plan.services {
+		inCluster[service] = struct{}{}
+	}
+	targetPorts := make(map[string]map[uint32]struct{})
+	addPort := func(service string, port uint32) {
+		if targetPorts[service] == nil {
+			targetPorts[service] = make(map[uint32]struct{})
+		}
+		targetPorts[service][port] = struct{}{}
+	}
+	for _, caller := range topology.Services {
+		if _, exists := inCluster[caller.Name]; !exists {
+			continue
+		}
+		for _, dependency := range caller.Dependencies {
+			if _, exists := inCluster[dependency.Service]; !exists {
+				continue
+			}
+			target, _ := topologyServiceByName(topology, dependency.Service)
+			for _, endpointName := range dependency.Endpoints {
+				endpoint, _ := topologyEndpointByName(target, endpointName)
+				addPort(target.Name, endpoint.Port)
+			}
+		}
+	}
+	for _, service := range topology.Services {
+		if _, exists := inCluster[service.Name]; !exists {
+			continue
+		}
+		for _, endpointName := range service.BootstrapJobEndpoints {
+			endpoint, _ := topologyEndpointByName(service, endpointName)
+			addPort(service.Name, endpoint.Port)
+		}
+	}
+
+	targets := make([]string, 0, len(targetPorts))
+	for target := range targetPorts {
+		targets = append(targets, target)
+	}
+	slices.Sort(targets)
+	policies := make([]kubeObject, 0, len(targets))
+	principal := "cluster.local/ns/" + namespace + "/sa/default"
+	for _, target := range targets {
+		ports := make([]uint32, 0, len(targetPorts[target]))
+		for port := range targetPorts[target] {
+			ports = append(ports, port)
+		}
+		slices.Sort(ports)
+		renderedPorts := make([]string, 0, len(ports))
+		for _, port := range ports {
+			renderedPorts = append(renderedPorts, strconv.FormatUint(uint64(port), 10))
+		}
+		policies = append(policies, kubeObject{
+			APIVersion: "security.istio.io/v1",
+			Kind:       "AuthorizationPolicy",
+			Metadata: objectMeta{
+				Name:      "allow-" + target + "-from-internal-topology",
+				Namespace: namespace,
+				Labels:    labels,
+			},
+			Spec: map[string]any{
+				"selector": map[string]any{"matchLabels": map[string]string{"app": target}},
+				"rules": []any{map[string]any{
+					"from": []any{map[string]any{"source": map[string]any{
+						"principals": []string{principal},
+					}}},
+					"to": []any{map[string]any{"operation": map[string]any{
+						"ports": renderedPorts,
+					}}},
+				}},
+			},
+		})
+	}
+	return policies
 }
 
 func loadDeploymentTopology(moduleDir, moduleName string, services []serviceDefinition) (deploymentTopology, error) {

@@ -974,6 +974,26 @@ func TestGeneratedPoliciesAndProjectMatchRenderedTopology(t *testing.T) {
 	if count := strings.Count(string(localNetwork), "codefly.dev/bootstrap-service: store"); count != 2 {
 		t.Errorf("local network policy has %d bootstrap service selectors, want 2", count)
 	}
+	localIstio, err := os.ReadFile(filepath.Join(generated, "local", "resources", "istio-mtls.yaml"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, expected := range []string{
+		"name: allow-store-from-internal-topology",
+		"cluster.local/ns/identity-local/sa/default",
+		`- "8080"`,
+	} {
+		if !strings.Contains(string(localIstio), expected) {
+			t.Errorf("local Istio policy is missing %q", expected)
+		}
+	}
+	awsIstio, err := os.ReadFile(filepath.Join(generated, "aws", "resources", "istio-mtls.yaml"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(awsIstio), "allow-store-from-internal-topology") {
+		t.Error("AWS Istio policy grants internal authority to managed Postgres")
+	}
 	for _, file := range []string{
 		filepath.Join(generated, "local", "resources", "istio-gateway.yaml"),
 		filepath.Join(generated, "local", "resources", "istio-mtls.yaml"),
