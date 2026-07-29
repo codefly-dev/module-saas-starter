@@ -3,13 +3,19 @@ layout: modules
 modules:
     - name: saas-starter
 
-# Gitops target — where `codefly deploy --render-only` writes manifests
-# for ArgoCD/Flux to sync from. Optional. When nil, the module/deployment
-# Applications keep REPLACE_ME placeholders and you patch them by hand.
+# GitOps snapshot consumed by the module generator. Render and commit the
+# owned service overlays first; generation verifies every Application path
+# exists in this immutable revision.
 # gitops:
 #   repo-url: git@github.com:my-org/saas-starter.git
-#   path: ""        # leave empty when the workspace is the repo root
-#   branch: main
+#   path: ""        # repository subtree that owns rendered deployments
+#   branch: main    # mutable branch used only as the publish destination
+#   revision: <40-character-commit-sha>
+#   checkout: .     # local checkout of repo-url; defaults to workspace root
+#
+# A local-only workspace may name the checked-out harness branch; the
+# generator resolves it to HEAD. Any remote environment requires a full
+# commit SHA or a locally verified signed tag, which is resolved to its SHA.
 
 # Deploy targets the CLI knows about. `codefly deploy --env <name>` and
 # `codefly build --env <name>` look these up to resolve cluster +
@@ -26,6 +32,20 @@ environments:
       registry:
           url: localhost:5001
       namespace: saas-starter
+      ingress:
+          - name: marketing
+            service: marketing
+            endpoint: http
+            hosts:
+                - saas.localhost
+                - www.saas.localhost
+                - docs.saas.localhost
+          - name: product
+            service: auth-sidecar
+            endpoint: rest
+            hosts:
+                - app.saas.localhost
+                - localhost
 
     # AWS EKS production target. Replace registry URL with your ECR
     # repo + bump kubeconfig path to wherever your cluster's config
@@ -41,3 +61,11 @@ environments:
           url: 621829027644.dkr.ecr.us-east-1.amazonaws.com/saas-starter
           auth: ecr
       namespace: saas-starter
+      # Every module-managed AWS dependency requires an exact endpoint and
+      # egress CIDR. Optional secret-references contain provider references,
+      # never resolved values. See module/deployment/README.md.
+      # managed-services:
+      #     store:
+      #         kind: rds-postgresql
+      #         external-name: database.internal.example.com
+      #         egress-cidrs: [10.42.0.0/24]

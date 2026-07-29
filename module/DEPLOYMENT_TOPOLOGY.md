@@ -16,7 +16,7 @@ deployment ports, and public egress. The runtime `module.codefly.yaml` and every
 | `deployment/generated/service-topology.json` | Typed `saas.deployment.topology.v1` inventory. |
 | `module.codefly.yaml` | Generated Codefly module interface and service list. |
 | `services/*/service.codefly.yaml` | Generated agents, endpoint-scoped dependencies, endpoints, workspace configuration dependencies, and specs. |
-| `deployment/kustomize/base/network-policy.yaml` | Generated default-deny and least-privilege Kubernetes policies. |
+| `services/accounts/code/pkg/cataloggen/testdata/network-policy.golden.yaml` | Test-only topology-policy golden; installed GitOps policies are rendered structurally per environment. |
 | `services/accounts/code/pkg/cataloggen/deployment_topology.go` | Strict compiler, semantic validator, and renderers. |
 
 The normalized inventory currently contains eight services, 12 endpoints,
@@ -48,7 +48,7 @@ special-purpose IPv4/IPv6 ranges.
 
 ## Network-policy model
 
-The generated base contains 17 `NetworkPolicy` resources:
+The topology-policy golden contains 17 `NetworkPolicy` resources:
 
 - one namespace-wide ingress/egress default deny;
 - DNS and Istio control-plane egress for all injected workloads;
@@ -94,12 +94,11 @@ exports, and missing descriptor-required accounts protocols.
 
 Parity tests build every artifact twice, compare all checked-in outputs, parse
 the generated files through Codefly's resource model, and strictly inspect all
-17 Kubernetes documents. The deployment trees can be rendered locally with:
+17 NetworkPolicy golden documents. After the module generator creates the
+consumer-owned GitOps tree, render an environment with:
 
 ```sh
-kubectl kustomize module/deployment/kustomize/base
-kubectl kustomize module/deployment/kustomize/overlays/local
-kubectl kustomize module/deployment/kustomize/overlays/aws
+kubectl kustomize modules/<module>/deployment/kustomize/overlays/<environment>
 ```
 
 CI regenerates and clean-diff checks the normalized catalog, module manifest,

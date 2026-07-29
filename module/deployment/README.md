@@ -1,131 +1,131 @@
 # Module-level deployment
 
-Shared, module-wide Kubernetes resources for saas-starter. Per-service
-manifests are rendered by each service's agent at `codefly deploy` time
-(into `<workspace>/deployments/modules/saas-starter/services/<svc>/`).
-The Codefly topology feeding those agents is generated from
-`topology.bindings.codefly.yaml`; see `../DEPLOYMENT_TOPOLOGY.md`. This
-directory also owns everything that **spans services**:
+The module agent generates `deployment/kustomize` from the installed product
+and an immutable service render. The canonical module does not ship an Argo CD
+tree, so module sync removes legacy Starter placeholders instead of releasing
+them to consumer ownership.
 
-- The `saas-starter` namespace.
-- The ArgoCD `AppProject` (RBAC scope for all module Applications).
-- The ArgoCD `Application` per service (app-of-apps pattern).
-- Generated default-deny and service-dependency `NetworkPolicy` resources.
-- Shared Istio ingress/mTLS policy, quotas, limits, and environment overlays.
+Generation consumes:
 
-## Layout
+- the workspace name and exact GitOps repository, checkout, owned path, and
+  revision;
+- every environment's cluster kind, namespace, and optional exact ingress
+  routes;
+- the installed module's declared service inventory and deployment topology;
+- the service overlays already present at the immutable revision; and
+- explicit AWS managed-service endpoints, network CIDRs, and external secret
+  references.
 
-```
-module/deployment/
-  topology.bindings.codefly.yaml         endpoint/dependency/egress source
-  generated/
-    service-topology.json                typed normalized topology
-  kustomize/
-    base/                         shared across environments
+The declared checkout defaults to the workspace root. Set `gitops.checkout`
+when the rendered GitOps repository is a separate checkout. Its `origin` must
+match `gitops.repo-url`.
+
+## Required sequence
+
+The revision is a rendered input, not the branch used for a future render:
+
+1. Render each service overlay into
+   `<gitops.path>/deployments/modules/<module>/services/<service>/overlays/<environment>`.
+2. Ensure remote environments omit overlays for services handed to the cloud
+   provider.
+3. Commit that tree in the declared GitOps checkout.
+4. Set `gitops.revision` to that commit SHA, or to a signed immutable tag for a
+   remote environment.
+5. Run the module generator.
+6. Apply `deployment/kustomize/overlays/<environment>` as the bootstrap.
+
+Generation fails if an Application path is absent from the selected commit.
+For k3d, kind, and minikube, the selected commit must also equal the checkout's
+current `HEAD`. This prevents an Application from pointing at the pre-render
+commit.
+
+The current CLI's deterministic render/publish flow is tracked by
+`codefly-dev/cli#152`. Until that flow invokes module generation after the
+snapshot is committed, callers must perform the sequence above explicitly.
+
+## Generated layout
+
+```text
+deployment/kustomize/
+  inventory.json
+  overlays/
+    <environment>/
       kustomization.yaml
-      namespace.yaml
-      project.yaml                ArgoCD AppProject "saas-starter"
-      network-policy.yaml         generated least-privilege policies
-    overlays/
-      local/                      k3d / kind / minikube
-        kustomization.yaml
-        applications/             ArgoCD Application per service
-          accounts.yaml
-          auth-sidecar.yaml
-          frontend.yaml
-          marketing.yaml
-          store.yaml
-          cache.yaml
-          vault.yaml
-          object-storage.yaml
-      aws/                        EKS production
-        kustomization.yaml
-        applications/
-          accounts.yaml
-          auth-sidecar.yaml
-          frontend.yaml
-          marketing.yaml
-          # store / cache / vault / object-storage are intentionally
-          # external in prod (RDS, ElastiCache, Secrets Manager, S3).
+      resources/
+        namespace.yaml
+        project.yaml
+        resource-quota.yaml
+        limit-range.yaml
+        network-policy.yaml
+        istio-mtls.yaml
+        istio-gateway.yaml
+        handoffs/
+          <managed-service>.yaml
+      applications/
+        <in-cluster-service>.yaml
 ```
 
-The `overlays/<env>` directory names match the `env.Name` field in
-`workspace.codefly.yaml` — same convention as agent-rendered per-service
-overlays at `<workspace>/deployments/modules/<module>/services/<svc>/overlays/<env>/`.
+The generator renders every committed service overlay before writing the
+bootstrap. It rejects missing or extra service paths, managed services that
+still have an in-cluster remote overlay, cluster-scoped child resources,
+unresolved placeholders, and Kubernetes Secrets anywhere in the owned tree.
+This closes the module boundary even while Core's versioned reference-only
+secret renderer is completed in `codefly-dev/core#101`.
 
-## Gitops flow
+The AppProject repository and destination are exact. Its namespaced resource
+allowlist is derived from the Kubernetes kinds in the immutable child renders;
+it grants no cluster-resource authority.
 
-1. **Render**: `codefly deploy --env <env>` (or a future `--render-only`
-   flag — see "Open gap" below) writes per-service kustomize overlays
-   to the workspace's `deployments/` tree.
-2. **Commit**: the rendered tree is committed to a git repository
-   ArgoCD watches.
-3. **Bootstrap**: apply `module/deployment/kustomize/overlays/<env>`
-   directly with `kubectl apply -k`. This creates the namespace, the
-   AppProject, and every child Application.
-4. **Sync**: ArgoCD pulls each Application's `path:` from git and
-   syncs to the cluster — no further `codefly deploy` needed for
-   subsequent updates.
+## Ingress routes
 
-```bash
-# Bootstrap once
-kubectl apply -k module/deployment/kustomize/overlays/local
+An environment may map exact hosts to public module-interface endpoints:
 
-# Subsequent deploys
-codefly deploy --env local --render-only && \
-  git add deployments/ && git commit -m "deploy: …" && git push
-# ArgoCD sees the new commit and syncs.
+```yaml
+ingress:
+  - name: marketing
+    service: marketing
+    endpoint: http
+    hosts:
+      - www.example.com
+      - docs.example.com
+  - name: product
+    service: auth-sidecar
+    endpoint: rest
+    hosts:
+      - app.example.com
 ```
 
-## Open gap
+The generator rejects duplicate or wildcard hosts, managed or undeclared
+targets, and endpoints that are not public module interfaces. When the block is
+omitted, the service entry remains the only catch-all route.
 
-`codefly deploy` today **applies** the rendered kustomize via `kubectl
-apply` directly — it doesn't expose a `--render-only` mode that just
-writes the rendered manifests to disk for git-commit. The `gitops`
-loop above assumes that mode exists. Until it does:
+## AWS handoffs
 
-- For local-k3d, `codefly deploy --env local` is the simpler path
-  (skip ArgoCD entirely; the LocalApplyManager imports built images
-  into k3d and applies manifests directly).
-- For EKS, render-then-commit can be done by hand: `codefly deploy
-  --env aws --dry-run` exists but emits to logs, not to disk. Need a
-  `--render-only` or `--output <dir>` flag that writes the rendered
-  tree without applying.
+EKS environments declare each module-owned managed service under
+`managed-services`. The module generates an `ExternalName` Service and
+topology-derived egress policy. Optional `secret-references` generate
+ExternalSecret objects containing only provider keys and SecretStore
+references:
 
-Tracked as a follow-up — once that's in, the gitops flow above is the
-default for non-local environments.
+```yaml
+managed-services:
+  store:
+    kind: rds-postgresql
+    external-name: identity.cluster.example.com
+    egress-cidrs:
+      - 10.42.0.0/24
+    secret-references:
+      - name: store-runtime
+        remote-key: products/identity/store
+        secret-store:
+          name: aws-secrets-manager
+          kind: ClusterSecretStore
+```
 
-## Environment-specific notes
+No AWS behavior is added to the generic Postgres, Redis, S3, or Vault service
+plugins.
 
-### local (k3d)
-
-All eight services run in-cluster. Postgres, Redis, Vault, MinIO are
-deployed as StatefulSets with PVCs. Suitable for dev and integration
-testing.
-
-The gateway routes `saas.localhost`, `www.saas.localhost`, and
-`docs.saas.localhost` to marketing; `app.saas.localhost` and the legacy
-`localhost` fallback go through auth-sidecar to the product.
-
-### aws (EKS)
-
-Only the four application services (`accounts`, `auth-sidecar`, `frontend`,
-`marketing`) are Applications here. The rest are AWS-managed:
-
-- `store` → Amazon RDS for Postgres.
-- `cache` → Amazon ElastiCache for Redis.
-- `vault` → AWS Secrets Manager (or a dedicated Vault cluster — see
-  `agents/services/vault/templates/deployment/` for the dev shape and
-  swap the overlay).
-- `object-storage` → Amazon S3.
-
-The connection strings flow into the apps via Kubernetes Secrets
-sourced from External Secrets Operator (which reads from Secrets
-Manager / SSM Parameter Store). Wire that up in the app overlays
-or via a SecretStore CRD in this module.
-
-`overlays/aws/marketing-domains.example.patch.yaml` is a production domain
-example, not an enabled default. Copy it into the overlay, replace every
-example host and certificate name, then add exact authentication callback
-origins. `status.example.com` remains external and must not route through this
-Gateway.
+The installed Starter topology includes an independently deployable marketing
+service. Local hosts and production domains belong to the consumer's
+environment contract; the module generator derives their exact Applications
+and gateway policy without shipping a placeholder domain patch.
