@@ -272,10 +272,11 @@ type deploymentTopology struct {
 }
 
 type topologyModule struct {
-	Name         string `yaml:"name"`
-	Namespace    string `yaml:"namespace"`
-	ServiceEntry string `yaml:"service_entry"`
-	Description  string `yaml:"description"`
+	Name         string         `yaml:"name"`
+	Namespace    string         `yaml:"namespace"`
+	ServiceEntry string         `yaml:"service_entry"`
+	Description  string         `yaml:"description"`
+	Agent        map[string]any `yaml:"agent,omitempty"`
 }
 
 type topologyInterface struct {
