@@ -123,6 +123,21 @@ type managedSecretReference struct {
 	SecretStore secretStoreRef `yaml:"secret-store"`
 }
 
+type cliRenderInventory struct {
+	SchemaVersion int                      `json:"schemaVersion"`
+	Module        string                   `json:"module"`
+	Service       string                   `json:"service,omitempty"`
+	Environment   string                   `json:"environment"`
+	Files         []cliRenderInventoryFile `json:"files"`
+	Digest        string                   `json:"digest"`
+}
+
+type cliRenderInventoryFile struct {
+	Path   string `json:"path"`
+	SHA256 string `json:"sha256"`
+	Size   int64  `json:"size"`
+}
+
 type secretStoreRef struct {
 	Name string `yaml:"name"`
 	Kind string `yaml:"kind"`
@@ -267,6 +282,22 @@ func loadWorkspaceManifest(root string) (*workspaceManifest, error) {
 }
 
 func generateGitOps(ctx context.Context, moduleDir string, workspace *workspaceManifest) error {
+	return generateGitOpsTo(
+		ctx,
+		moduleDir,
+		workspace,
+		filepath.Join(moduleDir, filepath.FromSlash(gitOpsRelativeDir)),
+		false,
+	)
+}
+
+func generateGitOpsTo(
+	ctx context.Context,
+	moduleDir string,
+	workspace *workspaceManifest,
+	root string,
+	requireCLIRenderInventory bool,
+) error {
 	manifest, err := loadModuleManifest(moduleDir)
 	if err != nil {
 		return err
@@ -293,8 +324,22 @@ func generateGitOps(ctx context.Context, moduleDir string, workspace *workspaceM
 	if err := inspectGitOpsSnapshot(ctx, checkout, repository, ownedPath, plans); err != nil {
 		return err
 	}
+	if requireCLIRenderInventory {
+		moduleRoot := path.Dir(ownedPath)
+		for _, plan := range plans {
+			if err := validateCLIRenderInventory(
+				ctx,
+				checkout,
+				plan.revision,
+				moduleRoot,
+				manifest.Name,
+				plan.environment.Name,
+			); err != nil {
+				return fmt.Errorf("environment %q: %w", plan.environment.Name, err)
+			}
+		}
+	}
 
-	root := filepath.Join(moduleDir, filepath.FromSlash(gitOpsRelativeDir))
 	if err := os.MkdirAll(filepath.Dir(root), 0o755); err != nil {
 		return fmt.Errorf("create deployment directory: %w", err)
 	}
@@ -333,6 +378,126 @@ func generateGitOps(ctx context.Context, moduleDir string, workspace *workspaceM
 		return err
 	}
 	return nil
+}
+
+func generateGitOpsEnvironment(
+	ctx context.Context,
+	moduleDir,
+	workspaceRoot,
+	environment,
+	destination string,
+) error {
+	workspace, err := loadWorkspaceManifest(workspaceRoot)
+	if err != nil {
+		return fmt.Errorf("load workspace: %w", err)
+	}
+	selected := *workspace
+	selected.Environments = nil
+	for _, candidate := range workspace.Environments {
+		if candidate != nil && candidate.Name == environment {
+			selected.Environments = []*environmentConfig{candidate}
+			break
+		}
+	}
+	if len(selected.Environments) == 0 {
+		return fmt.Errorf("workspace %q does not declare environment %q", workspace.Name, environment)
+	}
+	return generateGitOpsTo(ctx, moduleDir, &selected, destination, true)
+}
+
+func validateCLIRenderInventory(
+	ctx context.Context,
+	checkout,
+	revision,
+	moduleRoot,
+	module,
+	environment string,
+) error {
+	inventoryPath := path.Join(moduleRoot, ".codefly-render.json")
+	data, err := gitFile(ctx, checkout, revision, inventoryPath)
+	if err != nil {
+		return fmt.Errorf("immutable snapshot has no CLI render inventory at %s: %w", inventoryPath, err)
+	}
+	var inventory cliRenderInventory
+	if err := json.Unmarshal(data, &inventory); err != nil {
+		return fmt.Errorf("decode CLI render inventory: %w", err)
+	}
+	if inventory.SchemaVersion != 1 || inventory.Module != module ||
+		inventory.Environment != environment || inventory.Service != "" {
+		return fmt.Errorf(
+			"CLI render inventory targets schema %d module %q environment %q service %q",
+			inventory.SchemaVersion,
+			inventory.Module,
+			inventory.Environment,
+			inventory.Service,
+		)
+	}
+	canonical, err := json.MarshalIndent(inventory, "", "  ")
+	if err != nil {
+		return err
+	}
+	canonical = append(canonical, '\n')
+	if !bytes.Equal(data, canonical) {
+		return fmt.Errorf("CLI render inventory is not canonical")
+	}
+	slices.SortFunc(inventory.Files, func(left, right cliRenderInventoryFile) int {
+		return strings.Compare(left.Path, right.Path)
+	})
+	hash := sha256.New()
+	serviceFiles := make(map[string]struct{})
+	for _, file := range inventory.Files {
+		clean, err := cleanRelativeFilesystemPath(file.Path)
+		if err != nil || filepath.ToSlash(clean) != file.Path {
+			return fmt.Errorf("CLI render inventory contains unsafe path %q", file.Path)
+		}
+		content, err := gitFile(ctx, checkout, revision, path.Join(moduleRoot, file.Path))
+		if err != nil {
+			return fmt.Errorf("CLI render inventory file %q is missing: %w", file.Path, err)
+		}
+		actual := sha256.Sum256(content)
+		if file.SHA256 != "sha256:"+hex.EncodeToString(actual[:]) || file.Size != int64(len(content)) {
+			return fmt.Errorf("CLI render inventory file %q differs from its recorded digest", file.Path)
+		}
+		fmt.Fprintf(hash, "%s\x00%s\x00%d\n", file.Path, file.SHA256, file.Size)
+		if strings.HasPrefix(file.Path, "services/") {
+			serviceFiles[file.Path] = struct{}{}
+		}
+	}
+	if inventory.Digest != "sha256:"+hex.EncodeToString(hash.Sum(nil)) {
+		return fmt.Errorf("CLI render inventory digest is invalid")
+	}
+	tree, err := gitLines(ctx, checkout, "ls-tree", "-r", "--name-only", revision, "--", path.Join(moduleRoot, "services"))
+	if err != nil {
+		return fmt.Errorf("list immutable service snapshot: %w", err)
+	}
+	if len(tree) != len(serviceFiles) {
+		return fmt.Errorf("CLI render inventory does not own the exact immutable service snapshot")
+	}
+	for _, file := range tree {
+		relative := strings.TrimPrefix(file, moduleRoot+"/")
+		if _, exists := serviceFiles[relative]; !exists {
+			return fmt.Errorf("immutable service file %q is absent from the CLI render inventory", relative)
+		}
+	}
+	return nil
+}
+
+func gitFile(ctx context.Context, checkout, revision, file string) ([]byte, error) {
+	command := exec.CommandContext(ctx, "git", "-C", checkout, "show", revision+":"+file)
+	return command.Output()
+}
+
+func gitLines(ctx context.Context, checkout string, arguments ...string) ([]string, error) {
+	command := exec.CommandContext(ctx, "git", append([]string{"-C", checkout}, arguments...)...)
+	output, err := command.Output()
+	if err != nil {
+		return nil, err
+	}
+	value := strings.TrimSpace(string(output))
+	if value == "" {
+		return nil, nil
+	}
+	return strings.Split(value, "\n"), nil
 }
 
 func replaceGeneratedTree(stage, root string) error {

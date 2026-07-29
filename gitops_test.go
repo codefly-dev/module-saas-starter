@@ -2,6 +2,8 @@ package main
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -762,6 +764,40 @@ func TestLocalRevisionBindsCheckedOutHarnessSnapshot(t *testing.T) {
 	}
 }
 
+func TestGenerateGitOpsEnvironmentWritesOnlySelectedBootstrap(t *testing.T) {
+	t.Parallel()
+	root, moduleDir := writeGitOpsFixture(t, "selected-control", "identity", []string{"accounts"})
+	writeCLIRenderInventory(t, root, "identity", "local")
+	destination := filepath.Join(t.TempDir(), "kustomize")
+
+	if err := generateGitOpsEnvironment(
+		context.Background(),
+		moduleDir,
+		root,
+		"local",
+		destination,
+	); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(filepath.Join(destination, "overlays", "local", "kustomization.yaml")); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(filepath.Join(destination, "overlays", "aws")); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("unselected AWS bootstrap exists: %v", err)
+	}
+	data, err := os.ReadFile(filepath.Join(destination, "inventory.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var inventory gitOpsInventory
+	if err := json.Unmarshal(data, &inventory); err != nil {
+		t.Fatal(err)
+	}
+	if len(inventory.Environments) != 1 || inventory.Environments[0].Name != "local" {
+		t.Fatalf("selected inventory = %+v", inventory.Environments)
+	}
+}
+
 func TestLocalFullSHARejectsStaleHarnessSnapshot(t *testing.T) {
 	t.Parallel()
 	root, moduleDir := writeGitOpsFixture(t, "stale-control", "identity", []string{"accounts"})
@@ -1216,6 +1252,71 @@ environments:
 	head := strings.TrimSpace(runGit(t, root, "rev-parse", "HEAD"))
 	writeTestFile(t, filepath.Join(root, workspaceYamlPath), strings.Replace(workspacePrefix, "REVISION", head, 1))
 	return root, moduleDir
+}
+
+func writeCLIRenderInventory(t *testing.T, root, module, environment string) {
+	t.Helper()
+	moduleRoot := filepath.Join(root, "clusters", "codefly", "deployments", "modules", module)
+	var inventory cliRenderInventory
+	inventory.SchemaVersion = 1
+	inventory.Module = module
+	inventory.Environment = environment
+	err := filepath.Walk(filepath.Join(moduleRoot, "services"), func(file string, info os.FileInfo, walkErr error) error {
+		if walkErr != nil {
+			return walkErr
+		}
+		if info.IsDir() {
+			return nil
+		}
+		content, err := os.ReadFile(file)
+		if err != nil {
+			return err
+		}
+		digest := sha256.Sum256(content)
+		relative, err := filepath.Rel(moduleRoot, file)
+		if err != nil {
+			return err
+		}
+		inventory.Files = append(inventory.Files, cliRenderInventoryFile{
+			Path:   filepath.ToSlash(relative),
+			SHA256: "sha256:" + hex.EncodeToString(digest[:]),
+			Size:   info.Size(),
+		})
+		return nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	slices.SortFunc(inventory.Files, func(left, right cliRenderInventoryFile) int {
+		return strings.Compare(left.Path, right.Path)
+	})
+	hash := sha256.New()
+	for _, file := range inventory.Files {
+		fmt.Fprintf(hash, "%s\x00%s\x00%d\n", file.Path, file.SHA256, file.Size)
+	}
+	inventory.Digest = "sha256:" + hex.EncodeToString(hash.Sum(nil))
+	data, err := json.MarshalIndent(inventory, "", "  ")
+	if err != nil {
+		t.Fatal(err)
+	}
+	writeTestFile(t, filepath.Join(moduleRoot, ".codefly-render.json"), string(append(data, '\n')))
+	runGit(t, root, "add", ".")
+	runGit(t, root, "commit", "-m", "record CLI service snapshot")
+	head := strings.TrimSpace(runGit(t, root, "rev-parse", "HEAD"))
+	workspacePath := filepath.Join(root, workspaceYamlPath)
+	workspace, err := os.ReadFile(workspacePath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	lines := strings.Split(string(workspace), "\n")
+	for index, line := range lines {
+		if strings.HasPrefix(strings.TrimSpace(line), "revision:") {
+			indent := line[:len(line)-len(strings.TrimLeft(line, " "))]
+			lines[index] = indent + "revision: " + head
+			break
+		}
+	}
+	writeTestFile(t, workspacePath, strings.Join(lines, "\n"))
 }
 
 func assertEnvironmentApplications(t *testing.T, moduleDir, environment string, want []string) {
