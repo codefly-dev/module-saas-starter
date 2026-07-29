@@ -1,11 +1,12 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import type { InvitationRole } from "@/gen/saas/accounts/v1/invitations_pb";
 import { useInvitationService } from "./use-api-client";
 
 export function useInvitations(orgId: string | null) {
 	const svc = useInvitationService();
 	return useQuery({
 		queryKey: ["invitations", orgId],
-		queryFn: () => svc.listInvitations({ orgId: orgId! }),
+		queryFn: () => svc.listInvitations({ orgId: orgId ?? "" }),
 		enabled: !!orgId,
 		select: (data) => data.invitations,
 	});
@@ -22,7 +23,7 @@ export function useCreateInvitation() {
 		}: {
 			orgId: string;
 			email: string;
-			role: string;
+			role: InvitationRole;
 		}) => svc.createInvitation({ orgId, email, role }),
 		onSuccess: () =>
 			queryClient.invalidateQueries({ queryKey: ["invitations"] }),
@@ -32,7 +33,10 @@ export function useCreateInvitation() {
 export function useAcceptInvitation() {
 	const svc = useInvitationService();
 	return useMutation({
-		mutationFn: (token: string) => svc.acceptInvitation({ token }),
+		mutationFn: (token: string) =>
+			svc.acceptInvitation({
+				credential: { case: "token", value: token },
+			}),
 	});
 }
 

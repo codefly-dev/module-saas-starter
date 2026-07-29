@@ -39,6 +39,9 @@ func connectCtx(ctx context.Context, h http.Header) context.Context {
 	if v := h.Values("X-Scopes"); len(v) > 0 {
 		md.Set("x-scopes", v...)
 	}
+	if v := h.Values("Idempotency-Key"); len(v) > 0 {
+		md.Set("idempotency-key", v...)
+	}
 	return metadata.NewIncomingContext(ctx, md)
 }
 
@@ -396,6 +399,12 @@ type invitationConnectHandler struct{ inner *InvitationServer }
 func (h *invitationConnectHandler) CreateInvitation(ctx context.Context, req *connect.Request[gen.CreateInvitationRequest]) (*connect.Response[gen.CreateInvitationResponse], error) {
 	return unary(ctx, req, h.inner.CreateInvitation)
 }
+func (h *invitationConnectHandler) InspectInvitation(ctx context.Context, req *connect.Request[gen.InspectInvitationRequest]) (*connect.Response[gen.InvitationSummary], error) {
+	return unary(ctx, req, h.inner.InspectInvitation)
+}
+func (h *invitationConnectHandler) InspectInvitationById(ctx context.Context, req *connect.Request[gen.InspectInvitationByIdRequest]) (*connect.Response[gen.InvitationSummary], error) {
+	return unary(ctx, req, h.inner.InspectInvitationById)
+}
 func (h *invitationConnectHandler) AcceptInvitation(ctx context.Context, req *connect.Request[gen.AcceptInvitationRequest]) (*connect.Response[gen.AcceptInvitationResponse], error) {
 	return unary(ctx, req, h.inner.AcceptInvitation)
 }
@@ -404,6 +413,9 @@ func (h *invitationConnectHandler) ListInvitations(ctx context.Context, req *con
 }
 func (h *invitationConnectHandler) RevokeInvitation(ctx context.Context, req *connect.Request[gen.RevokeInvitationRequest]) (*connect.Response[emptypb.Empty], error) {
 	return unary(ctx, req, h.inner.RevokeInvitation)
+}
+func (h *invitationConnectHandler) ResendInvitation(ctx context.Context, req *connect.Request[gen.ResendInvitationRequest]) (*connect.Response[gen.Invitation], error) {
+	return unary(ctx, req, h.inner.ResendInvitation)
 }
 
 // ============================================================================
@@ -771,11 +783,17 @@ type onboardingConnectHandler struct{ svc *business.Service }
 
 func (h *onboardingConnectHandler) GetProgress(ctx context.Context, req *connect.Request[gen.GetOnboardingProgressRequest]) (*connect.Response[gen.OnboardingProgress], error) {
 	ctx = connectCtx(ctx, req.Header())
+	if err := Validate(req.Msg); err != nil {
+		return nil, err
+	}
 	userID, err := callerID(ctx)
 	if err != nil {
 		return nil, err
 	}
-	p, err := h.svc.GetProgress(ctx, userID)
+	if err := requireOrgMember(ctx, userID, req.Msg.OrganizationId); err != nil {
+		return nil, translateGRPCError(err)
+	}
+	p, err := h.svc.GetProgress(ctx, userID, req.Msg.OrganizationId)
 	if err != nil {
 		return nil, err
 	}
@@ -784,14 +802,20 @@ func (h *onboardingConnectHandler) GetProgress(ctx context.Context, req *connect
 
 func (h *onboardingConnectHandler) CompleteStep(ctx context.Context, req *connect.Request[gen.CompleteOnboardingStepRequest]) (*connect.Response[gen.OnboardingProgress], error) {
 	ctx = connectCtx(ctx, req.Header())
+	if err := Validate(req.Msg); err != nil {
+		return nil, err
+	}
 	userID, err := callerID(ctx)
 	if err != nil {
 		return nil, err
 	}
-	if err := h.svc.CompleteStep(ctx, userID, req.Msg.StepName); err != nil {
+	if err := requireOrgMember(ctx, userID, req.Msg.OrganizationId); err != nil {
+		return nil, translateGRPCError(err)
+	}
+	if err := h.svc.CompleteStep(ctx, userID, req.Msg.OrganizationId, req.Msg.StepId); err != nil {
 		return nil, err
 	}
-	p, err := h.svc.GetProgress(ctx, userID)
+	p, err := h.svc.GetProgress(ctx, userID, req.Msg.OrganizationId)
 	if err != nil {
 		return nil, err
 	}
@@ -800,14 +824,20 @@ func (h *onboardingConnectHandler) CompleteStep(ctx context.Context, req *connec
 
 func (h *onboardingConnectHandler) SkipStep(ctx context.Context, req *connect.Request[gen.SkipOnboardingStepRequest]) (*connect.Response[gen.OnboardingProgress], error) {
 	ctx = connectCtx(ctx, req.Header())
+	if err := Validate(req.Msg); err != nil {
+		return nil, err
+	}
 	userID, err := callerID(ctx)
 	if err != nil {
 		return nil, err
 	}
-	if err := h.svc.SkipStep(ctx, userID, req.Msg.StepName); err != nil {
+	if err := requireOrgMember(ctx, userID, req.Msg.OrganizationId); err != nil {
+		return nil, translateGRPCError(err)
+	}
+	if err := h.svc.SkipStep(ctx, userID, req.Msg.OrganizationId, req.Msg.StepId, req.Msg.Reason); err != nil {
 		return nil, err
 	}
-	p, err := h.svc.GetProgress(ctx, userID)
+	p, err := h.svc.GetProgress(ctx, userID, req.Msg.OrganizationId)
 	if err != nil {
 		return nil, err
 	}
@@ -1078,15 +1108,51 @@ func onboardingToProto(p *business.OnboardingProgress) *gen.OnboardingProgress {
 	steps := make([]*gen.OnboardingStep, 0, len(p.Steps))
 	for _, s := range p.Steps {
 		step := &gen.OnboardingStep{
-			StepName: s.StepName,
-			Status:   onboardingStepStatusToProto(s.Status),
+			Id:               s.ID,
+			Status:           onboardingStepStatusToProto(s.Status),
+			Required:         s.Required,
+			Prerequisites:    append([]gen.OnboardingStepId(nil), s.Prerequisites...),
+			CompletionMethod: onboardingCompletionMethodToProto(s.CompletionMethod),
+			SkipReason:       s.SkipReason,
+		}
+		if !s.FirstSeenAt.IsZero() {
+			step.FirstSeenAt = timestamppb.New(s.FirstSeenAt)
+		}
+		if !s.LastSeenAt.IsZero() {
+			step.LastSeenAt = timestamppb.New(s.LastSeenAt)
 		}
 		if s.CompletedAt != nil {
 			step.CompletedAt = timestamppb.New(*s.CompletedAt)
 		}
+		if s.SkippedAt != nil {
+			step.SkippedAt = timestamppb.New(*s.SkippedAt)
+		}
 		steps = append(steps, step)
 	}
-	return &gen.OnboardingProgress{Steps: steps, Completed: p.Completed}
+	out := &gen.OnboardingProgress{
+		OrganizationId:     p.OrganizationID,
+		FlowId:             p.FlowID,
+		FlowVersion:        p.FlowVersion,
+		Variant:            p.Variant,
+		Audience:           p.Audience,
+		Persona:            p.Persona,
+		Steps:              steps,
+		CurrentStep:        p.CurrentStep,
+		NextStep:           p.NextStep,
+		RequiredComplete:   p.RequiredComplete,
+		ChecklistComplete:  p.ChecklistComplete,
+		ActivationAchieved: p.ActivationAchieved,
+	}
+	if p.StartedAt != nil {
+		out.StartedAt = timestamppb.New(*p.StartedAt)
+	}
+	if p.CompletedAt != nil {
+		out.CompletedAt = timestamppb.New(*p.CompletedAt)
+	}
+	if p.ActivatedAt != nil {
+		out.ActivatedAt = timestamppb.New(*p.ActivatedAt)
+	}
+	return out
 }
 
 func onboardingStepStatusToProto(s string) gen.OnboardingStepStatus {
@@ -1099,6 +1165,21 @@ func onboardingStepStatusToProto(s string) gen.OnboardingStepStatus {
 		return gen.OnboardingStepStatus_ONBOARDING_STEP_STATUS_SKIPPED
 	}
 	return gen.OnboardingStepStatus_ONBOARDING_STEP_STATUS_UNSPECIFIED
+}
+
+func onboardingCompletionMethodToProto(s string) gen.OnboardingCompletionMethod {
+	switch s {
+	case "detected":
+		return gen.OnboardingCompletionMethod_ONBOARDING_COMPLETION_METHOD_DETECTED
+	case "domain_action":
+		return gen.OnboardingCompletionMethod_ONBOARDING_COMPLETION_METHOD_DOMAIN_ACTION
+	case "user_skip":
+		return gen.OnboardingCompletionMethod_ONBOARDING_COMPLETION_METHOD_USER_SKIP
+	case "migrated":
+		return gen.OnboardingCompletionMethod_ONBOARDING_COMPLETION_METHOD_MIGRATED
+	default:
+		return gen.OnboardingCompletionMethod_ONBOARDING_COMPLETION_METHOD_UNSPECIFIED
+	}
 }
 
 func gdprToProto(r *business.GDPRRequest) *gen.GDPRRequest {

@@ -75,11 +75,11 @@ func TestRLS_Invitations_CrossTenantBlocked(t *testing.T) {
 
 	// CreateInvitation goes through Service (WithOrgTx-wrapped).
 	_, err := testService.CreateInvitation(ctx, userA, &gen.CreateInvitationRequest{
-		OrgId: orgA, Email: "newhire-a@example.com", Role: "member",
+		OrgId: orgA, Email: "newhire-a@example.com", Role: gen.InvitationRole_INVITATION_ROLE_MEMBER,
 	})
 	require.NoError(t, err)
 	_, err = testService.CreateInvitation(ctx, userA /* fixture, not real auth */, &gen.CreateInvitationRequest{
-		OrgId: orgB, Email: "newhire-b@example.com", Role: "member",
+		OrgId: orgB, Email: "newhire-b@example.com", Role: gen.InvitationRole_INVITATION_ROLE_MEMBER,
 	})
 	require.NoError(t, err)
 

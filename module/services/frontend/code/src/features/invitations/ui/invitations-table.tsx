@@ -7,7 +7,7 @@ import {
 	getSortedRowModel,
 	useReactTable,
 } from "@tanstack/react-table";
-import { Ban } from "lucide-react";
+import { Ban, RefreshCw } from "lucide-react";
 import { useMemo } from "react";
 import { toast } from "sonner";
 import { formatDate } from "@/shared/lib/utils";
@@ -25,9 +25,13 @@ import {
 	Button,
 } from "@/shared/ui";
 import { DataTable } from "@/shared/ui/data-table";
-import { formatInvitationStatus } from "../model/transforms";
+import {
+	formatDeliveryStatus,
+	formatInvitationRole,
+	formatInvitationStatus,
+} from "../model/transforms";
 import type { Invitation } from "../model/types";
-import { useRevokeInvitation } from "../service/mutations";
+import { useResendInvitation, useRevokeInvitation } from "../service/mutations";
 
 const col = createColumnHelper<Invitation>();
 
@@ -39,6 +43,7 @@ export function InvitationsTable({
 	isLoading: boolean;
 }) {
 	const revokeInvitation = useRevokeInvitation();
+	const resendInvitation = useResendInvitation();
 
 	const columns = useMemo(
 		() => [
@@ -47,9 +52,13 @@ export function InvitationsTable({
 				header: "Role",
 				cell: (info) => (
 					<Badge variant="outline" className="capitalize">
-						{info.getValue()}
+						{formatInvitationRole(info.getValue())}
 					</Badge>
 				),
+			}),
+			col.accessor("deliveryStatus", {
+				header: "Delivery",
+				cell: (info) => formatDeliveryStatus(info.getValue()),
 			}),
 			col.accessor("status", {
 				header: "Status",
@@ -82,40 +91,67 @@ export function InvitationsTable({
 					// status 1 = PENDING
 					if (inv.status !== 1) return null;
 					return (
-						<AlertDialog>
-							<AlertDialogTrigger render={<Button variant="ghost" size="sm" />}>
-								<Ban className="h-4 w-4 text-destructive" />
-							</AlertDialogTrigger>
-							<AlertDialogContent>
-								<AlertDialogHeader>
-									<AlertDialogTitle>Revoke invitation</AlertDialogTitle>
-									<AlertDialogDescription>
-										This will revoke the invitation sent to {inv.email}. They
-										will no longer be able to join the organization with this
-										invite.
-									</AlertDialogDescription>
-								</AlertDialogHeader>
-								<AlertDialogFooter>
-									<AlertDialogCancel>Cancel</AlertDialogCancel>
-									<AlertDialogAction
-										onClick={() =>
-											revokeInvitation.mutate(inv.id, {
-												onSuccess: () => toast.success("Invitation revoked"),
-												onError: () =>
-													toast.error("Failed to revoke invitation"),
-											})
-										}
-									>
-										Revoke
-									</AlertDialogAction>
-								</AlertDialogFooter>
-							</AlertDialogContent>
-						</AlertDialog>
+						<div className="flex justify-end gap-1">
+							<Button
+								variant="ghost"
+								size="sm"
+								aria-label={`Resend invitation to ${inv.email}`}
+								disabled={resendInvitation.isPending}
+								onClick={() =>
+									resendInvitation.mutate(inv.id, {
+										onSuccess: () => toast.success("Invitation resent"),
+										onError: () =>
+											toast.error(
+												"Invitation could not be resent yet. Try again later.",
+											),
+									})
+								}
+							>
+								<RefreshCw className="h-4 w-4" />
+							</Button>
+							<AlertDialog>
+								<AlertDialogTrigger
+									render={
+										<Button
+											variant="ghost"
+											size="sm"
+											aria-label={`Revoke invitation to ${inv.email}`}
+										/>
+									}
+								>
+									<Ban className="h-4 w-4 text-destructive" />
+								</AlertDialogTrigger>
+								<AlertDialogContent>
+									<AlertDialogHeader>
+										<AlertDialogTitle>Revoke invitation</AlertDialogTitle>
+										<AlertDialogDescription>
+											This will revoke the invitation sent to {inv.email}. They
+											will no longer be able to join the organization with this
+											invite.
+										</AlertDialogDescription>
+									</AlertDialogHeader>
+									<AlertDialogFooter>
+										<AlertDialogCancel>Cancel</AlertDialogCancel>
+										<AlertDialogAction
+											onClick={() =>
+												revokeInvitation.mutate(inv.id, {
+													onSuccess: () => toast.success("Invitation revoked"),
+													onError: () =>
+														toast.error("Failed to revoke invitation"),
+												})
+											}
+										>
+											Revoke
+										</AlertDialogAction>
+									</AlertDialogFooter>
+								</AlertDialogContent>
+							</AlertDialog>
+						</div>
 					);
 				},
 			}),
 		],
-		[revokeInvitation],
+		[resendInvitation, revokeInvitation],
 	);
 
 	const table = useReactTable({

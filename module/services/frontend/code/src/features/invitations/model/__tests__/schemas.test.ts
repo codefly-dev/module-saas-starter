@@ -40,11 +40,11 @@ describe("createInvitationSchema", () => {
 		expect(result.success).toBe(false);
 	});
 
-	it("accepts owner role", () => {
+	it("rejects ownership transfer through an invitation", () => {
 		const result = createInvitationSchema.safeParse({
 			email: "a@b.com",
 			role: "owner",
 		});
-		expect(result.success).toBe(true);
+		expect(result.success).toBe(false);
 	});
 });

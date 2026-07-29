@@ -1,4 +1,5 @@
 import { expect, test } from "@playwright/test";
+import { resolveConsentPrompt } from "./consent";
 
 test.describe("Login flow", () => {
 	test("login page loads without sidebar", async ({ page }) => {
@@ -49,6 +50,8 @@ test.describe("Login flow", () => {
 		await expect(page.getByText("Sarah Chen")).toBeVisible({ timeout: 10000 });
 		await page.getByText("Sarah Chen").click();
 		await page.waitForURL("/", { timeout: 15000 });
+		await resolveConsentPrompt(page);
+		await page.getByRole("button", { name: "Admin", exact: true }).click();
 
 		// Admin nav sections should be visible for super_admin. Use exact
 		// matching to pin to the sidebar group headers — without `exact`,
@@ -57,7 +60,9 @@ test.describe("Login flow", () => {
 		await expect(
 			page.getByText("Users & Access", { exact: true }),
 		).toBeVisible();
-		await expect(page.getByText("Platform", { exact: true })).toBeVisible();
+		await expect(
+			page.getByRole("link", { name: "Platform Users", exact: true }),
+		).toBeVisible();
 	});
 
 	test("unauthenticated user redirected to login", async ({ page }) => {

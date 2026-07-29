@@ -12,12 +12,12 @@ import {
 
 describe("generated frontend catalog", () => {
 	it("covers every accounts service and procedure", () => {
-		expect(Object.keys(ACCOUNT_SERVICE_DESCRIPTORS)).toHaveLength(25);
+		expect(Object.keys(ACCOUNT_SERVICE_DESCRIPTORS)).toHaveLength(26);
 		const procedureCount = Object.values(ACCOUNT_SERVICE_DESCRIPTORS).reduce(
 			(count, service) => count + Object.keys(service.method).length,
 			0,
 		);
-		expect(procedureCount).toBe(128);
+		expect(procedureCount).toBe(138);
 		expect(
 			ACCOUNT_SERVICE_DESCRIPTORS.WorkContextService.method.exchangeAudience,
 		).toBeDefined();

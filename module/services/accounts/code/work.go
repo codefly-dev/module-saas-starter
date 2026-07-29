@@ -108,6 +108,16 @@ func doWork(ctx context.Context) (Clean, error) {
 	if err != nil {
 		return nil, err
 	}
+	if err := service.SetAcquisitionMode(os.Getenv("ACQUISITION_MODE")); err != nil {
+		return nil, err
+	}
+	if configured := strings.TrimSpace(os.Getenv("WAITLIST_EMAIL_VERIFICATION")); configured != "" {
+		required, parseErr := strconv.ParseBool(configured)
+		if parseErr != nil {
+			return nil, fmt.Errorf("configure waitlist email verification: %w", parseErr)
+		}
+		service.SetWaitlistEmailVerification(required)
+	}
 	// Cross-tenant job administration is isolated from request traffic at the
 	// connection-pool boundary. The API exposes payload-free metadata only;
 	// replay copies payload bytes inside PostgreSQL under app_job_worker.
