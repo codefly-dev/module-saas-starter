@@ -2365,7 +2365,10 @@ func bootstrapJobIngressPolicy(namespace string, labels map[string]string, servi
 			"podSelector": map[string]any{"matchLabels": map[string]string{"app": service}},
 			"policyTypes": []string{"Ingress"},
 			"ingress": []any{map[string]any{
-				"from":  []any{map[string]any{"podSelector": map[string]any{"matchLabels": map[string]string{"job-name": service}}}},
+				"from": []any{map[string]any{"podSelector": map[string]any{"matchLabels": map[string]string{
+					"app":      service,
+					"job-name": service,
+				}}}},
 				"ports": networkPorts(ports),
 			}},
 		},
@@ -2378,7 +2381,10 @@ func bootstrapJobEgressPolicy(namespace string, labels map[string]string, servic
 		Kind:       "NetworkPolicy",
 		Metadata:   objectMeta{Name: kubernetesName("allow", service, "bootstrap", "to", service), Namespace: namespace, Labels: labels},
 		Spec: map[string]any{
-			"podSelector": map[string]any{"matchLabels": map[string]string{"job-name": service}},
+			"podSelector": map[string]any{"matchLabels": map[string]string{
+				"app":      service,
+				"job-name": service,
+			}},
 			"policyTypes": []string{"Egress"},
 			"egress": []any{map[string]any{
 				"to":    []any{map[string]any{"podSelector": map[string]any{"matchLabels": map[string]string{"app": service}}}},

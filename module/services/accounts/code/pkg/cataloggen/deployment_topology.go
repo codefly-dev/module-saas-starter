@@ -934,9 +934,10 @@ spec:
     - from:
         - podSelector:
             matchLabels:
+              app: %s
               job-name: %s
       ports:
-`, service, namespace, service, service)
+`, service, namespace, service, service, service)
 	writeNetworkPorts(source, ports, 8)
 	fmt.Fprintf(source, `---
 apiVersion: networking.k8s.io/v1
@@ -947,6 +948,7 @@ metadata:
 spec:
   podSelector:
     matchLabels:
+      app: %s
       job-name: %s
   policyTypes:
     - Egress
@@ -956,7 +958,7 @@ spec:
             matchLabels:
               app: %s
       ports:
-`, service, service, namespace, service, service)
+`, service, service, namespace, service, service, service)
 	writeNetworkPorts(source, ports, 8)
 }
 

@@ -351,6 +351,7 @@ spec:
     - from:
         - podSelector:
             matchLabels:
+              app: store
               job-name: store
       ports:
         - protocol: TCP
@@ -364,6 +365,7 @@ metadata:
 spec:
   podSelector:
     matchLabels:
+      app: store
       job-name: store
   policyTypes:
     - Egress
