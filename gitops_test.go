@@ -475,7 +475,7 @@ func TestLocalQualificationUsesFetchableRepositoryAtExactRevision(t *testing.T) 
 	root, moduleDir := writeGitOpsFixture(t, "local-control", "identity", []string{"accounts"})
 	remoteRoot := t.TempDir()
 	bare := filepath.Join(remoteRoot, "platform-config.git")
-	runGit(t, "", "clone", "--bare", root, bare)
+	runGit(t, "", "clone", "--bare", "--no-local", root, bare)
 	runGit(t, "", "--git-dir", bare, "update-server-info")
 	server := httptest.NewServer(http.FileServer(http.Dir(remoteRoot)))
 	defer server.Close()
@@ -522,7 +522,7 @@ func TestLocalQualificationRejectsStaleArgoMirror(t *testing.T) {
 	root, moduleDir := writeGitOpsFixture(t, "mirror-control", "identity", []string{"accounts"})
 	remoteRoot := t.TempDir()
 	bare := filepath.Join(remoteRoot, "platform-config.git")
-	runGit(t, "", "clone", "--bare", root, bare)
+	runGit(t, "", "clone", "--bare", "--no-local", root, bare)
 	runGit(t, "", "--git-dir", bare, "update-server-info")
 	server := httptest.NewServer(http.FileServer(http.Dir(remoteRoot)))
 	defer server.Close()
@@ -1704,7 +1704,7 @@ environments:
 	runGit(t, root, "commit", "-m", "immutable AWS GitOps snapshot")
 	remoteRoot := t.TempDir()
 	bare := filepath.Join(remoteRoot, "platform-config.git")
-	runGit(t, "", "clone", "--bare", root, bare)
+	runGit(t, "", "clone", "--bare", "--no-local", root, bare)
 	runGit(
 		t,
 		root,
