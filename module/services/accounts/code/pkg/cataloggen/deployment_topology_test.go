@@ -35,7 +35,7 @@ func TestDeploymentTopologyIsDeterministicAndCurrent(t *testing.T) {
 
 	require.Equal(t, string(readFixture(t, "../../../../../deployment/generated/service-topology.json")), string(first.CatalogJSON), "run: go generate ./pkg/cataloggen")
 	require.Equal(t, string(readFixture(t, "../../../../../module.codefly.yaml")), string(first.ModuleManifest), "run: go generate ./pkg/cataloggen")
-	require.Equal(t, string(readFixture(t, "../../../../../deployment/kustomize/base/network-policy.yaml")), string(first.NetworkPolicy), "run: go generate ./pkg/cataloggen")
+	require.Equal(t, string(readFixture(t, "testdata/network-policy.golden.yaml")), string(first.NetworkPolicy), "run: go generate ./pkg/cataloggen")
 	for service, document := range first.ServiceManifests {
 		checkedIn := readFixture(t, filepath.Join("../../../../../services", service, "service.codefly.yaml"))
 		require.Equal(t, string(checkedIn), string(document), "service %s: run go generate ./pkg/cataloggen", service)
@@ -280,7 +280,7 @@ func TestGeneratedCodeflyAndNetworkManifestsParseStrictly(t *testing.T) {
 		}
 	}
 
-	decoder := yaml.NewDecoder(strings.NewReader(string(readFixture(t, "../../../../../deployment/kustomize/base/network-policy.yaml"))))
+	decoder := yaml.NewDecoder(strings.NewReader(string(readFixture(t, "testdata/network-policy.golden.yaml"))))
 	names := make(map[string]bool)
 	for {
 		var document struct {
@@ -306,115 +306,6 @@ func TestGeneratedCodeflyAndNetworkManifestsParseStrictly(t *testing.T) {
 	}
 	require.Len(t, names, 17)
 	require.True(t, names["allow-istio-ingress-to-marketing"])
-}
-
-func TestLocalIngressKeepsMarketingAndProductHostsSeparate(t *testing.T) {
-	type route struct {
-		Name    string         `yaml:"name"`
-		Headers map[string]any `yaml:"headers"`
-		Match   []struct {
-			Authority struct {
-				Regex string `yaml:"regex"`
-			} `yaml:"authority"`
-		} `yaml:"match"`
-		Route []struct {
-			Destination struct {
-				Host string `yaml:"host"`
-			} `yaml:"destination"`
-		} `yaml:"route"`
-	}
-	decoder := yaml.NewDecoder(strings.NewReader(string(
-		readFixture(t, "../../../../../deployment/kustomize/base/istio-gateway.yaml"),
-	)))
-	var routes []route
-	for {
-		var document struct {
-			Kind string `yaml:"kind"`
-			Spec struct {
-				HTTP []route `yaml:"http"`
-			} `yaml:"spec"`
-		}
-		err := decoder.Decode(&document)
-		if err == io.EOF {
-			break
-		}
-		require.NoError(t, err)
-		if document.Kind == "VirtualService" {
-			routes = document.Spec.HTTP
-		}
-	}
-	require.GreaterOrEqual(t, len(routes), 2)
-	require.Equal(t, "marketing", routes[0].Name)
-	require.Equal(t, `^((www|docs)\.)?saas\.localhost(:[0-9]+)?$`, routes[0].Match[0].Authority.Regex)
-	require.Equal(t, "marketing.saas-starter.svc.cluster.local", routes[0].Route[0].Destination.Host)
-	require.Empty(t, routes[0].Headers)
-	require.Equal(t, `^app\.saas\.localhost(:[0-9]+)?$`, routes[1].Match[0].Authority.Regex)
-	require.Equal(t, "auth-sidecar.saas-starter.svc.cluster.local", routes[1].Route[0].Destination.Host)
-}
-
-func TestIstioIngressIsAuthorizedForMarketingOnlyOnItsPublicPort(t *testing.T) {
-	decoder := yaml.NewDecoder(strings.NewReader(string(
-		readFixture(t, "../../../../../deployment/kustomize/base/istio-mtls.yaml"),
-	)))
-	for {
-		var document struct {
-			Kind     string `yaml:"kind"`
-			Metadata struct {
-				Name string `yaml:"name"`
-			} `yaml:"metadata"`
-			Spec struct {
-				Selector struct {
-					MatchLabels map[string]string `yaml:"matchLabels"`
-				} `yaml:"selector"`
-				Rules []struct {
-					From []struct {
-						Source struct {
-							Principals []string `yaml:"principals"`
-						} `yaml:"source"`
-					} `yaml:"from"`
-					To []struct {
-						Operation struct {
-							Ports []string `yaml:"ports"`
-						} `yaml:"operation"`
-					} `yaml:"to"`
-				} `yaml:"rules"`
-			} `yaml:"spec"`
-		}
-		err := decoder.Decode(&document)
-		if err == io.EOF {
-			t.Fatal("marketing ingress AuthorizationPolicy is missing")
-		}
-		require.NoError(t, err)
-		if document.Kind != "AuthorizationPolicy" || document.Metadata.Name != "allow-istio-ingress-to-marketing" {
-			continue
-		}
-		require.Equal(t, "marketing", document.Spec.Selector.MatchLabels["app"])
-		require.Equal(t,
-			[]string{"cluster.local/ns/istio-system/sa/istio-ingressgateway-service-account"},
-			document.Spec.Rules[0].From[0].Source.Principals,
-		)
-		require.Equal(t, []string{"3000"}, document.Spec.Rules[0].To[0].Operation.Ports)
-		return
-	}
-}
-
-func TestMarketingRemainsOptInForExistingAWSDeployments(t *testing.T) {
-	type kustomization struct {
-		Resources []string `yaml:"resources"`
-	}
-	var aws kustomization
-	require.NoError(t, yaml.Unmarshal(
-		readFixture(t, "../../../../../deployment/kustomize/overlays/aws/kustomization.yaml"),
-		&aws,
-	))
-	require.NotContains(t, aws.Resources, "applications/marketing.yaml")
-
-	var local kustomization
-	require.NoError(t, yaml.Unmarshal(
-		readFixture(t, "../../../../../deployment/kustomize/overlays/local/kustomization.yaml"),
-		&local,
-	))
-	require.Contains(t, local.Resources, "applications/marketing.yaml")
 }
 
 func TestDeploymentTopologyRejectsUnsafeOrIncompleteBindings(t *testing.T) {

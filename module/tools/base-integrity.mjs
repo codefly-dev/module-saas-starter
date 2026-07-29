@@ -80,6 +80,8 @@ const PRUNE_DIRS = new Set([
 export const isExcludedFile = (rel) =>
   rel === "tools/base-manifest.json" ||      // the manifest can't hash itself
   rel === "tools/base-integrity-allow.json" || // consumer-local escape hatch (logged, not hashed)
+  rel === "module.codefly.yaml" ||           // consumer identity and exact service inventory
+  rel.startsWith("deployment/kustomize/") || // generated from workspace/environment GitOps inputs
   rel === "services/store/code/store-migrator" || // `go build ./...` output; source and migrations remain protected
   rel === "services/frontend/code/frontend.config.ts" || // FP-001: application-owned composition root
   rel === "services/frontend/code/package-lock.json" || // FP-010A: generated workspace install graph

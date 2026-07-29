@@ -1,0 +1,55 @@
+{
+  "schemaVersion": "codefly.dev/module-gitops/v1",
+  "workspace": "warden-control",
+  "module": "identity",
+  "repository": "git@github.com:acme/platform-config.git",
+  "ownedPath": "clusters/codefly/deployments/modules/identity/services",
+  "environments": [
+    {
+      "name": "local",
+      "namespace": "identity-local",
+      "revision": "0123456789abcdef0123456789abcdef01234567",
+      "services": [
+        "accounts",
+        "auth-sidecar",
+        "cache",
+        "frontend",
+        "object-storage",
+        "store",
+        "vault"
+      ]
+    },
+    {
+      "name": "aws",
+      "namespace": "identity-aws",
+      "revision": "0123456789abcdef0123456789abcdef01234567",
+      "services": [
+        "accounts",
+        "auth-sidecar",
+        "frontend"
+      ],
+      "managedServiceHandoffs": [
+        {
+          "service": "cache",
+          "awsKind": "elasticache",
+          "externalName": "cache.internal.example.com"
+        },
+        {
+          "service": "object-storage",
+          "awsKind": "s3",
+          "externalName": "object-storage.internal.example.com"
+        },
+        {
+          "service": "store",
+          "awsKind": "rds-postgresql",
+          "externalName": "store.internal.example.com"
+        },
+        {
+          "service": "vault",
+          "awsKind": "secrets-manager",
+          "externalName": "vault.internal.example.com"
+        }
+      ]
+    }
+  ]
+}
