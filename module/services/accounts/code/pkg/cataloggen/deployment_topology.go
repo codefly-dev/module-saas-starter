@@ -934,7 +934,7 @@ spec:
     - from:
         - podSelector:
             matchLabels:
-              app: %s
+              codefly.dev/bootstrap-service: %s
               job-name: %s
       ports:
 `, service, namespace, service, service, service)
@@ -948,7 +948,7 @@ metadata:
 spec:
   podSelector:
     matchLabels:
-      app: %s
+      codefly.dev/bootstrap-service: %s
       job-name: %s
   policyTypes:
     - Egress

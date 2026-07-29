@@ -351,7 +351,7 @@ spec:
     - from:
         - podSelector:
             matchLabels:
-              app: store
+              codefly.dev/bootstrap-service: store
               job-name: store
       ports:
         - protocol: TCP
@@ -365,7 +365,7 @@ metadata:
 spec:
   podSelector:
     matchLabels:
-      app: store
+      codefly.dev/bootstrap-service: store
       job-name: store
   policyTypes:
     - Egress
