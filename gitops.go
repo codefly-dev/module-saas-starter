@@ -2025,12 +2025,18 @@ func topologyIstioResources(
 				"http":     httpRoutes,
 			},
 		},
-		{
+	}
+	for _, service := range plan.services {
+		gateway = append(gateway, kubeObject{
 			APIVersion: "networking.istio.io/v1",
 			Kind:       "DestinationRule",
-			Metadata:   objectMeta{Name: name + "-defaults", Namespace: namespace, Labels: labels},
+			Metadata: objectMeta{
+				Name:      kubernetesName(name, service, "defaults"),
+				Namespace: namespace,
+				Labels:    labels,
+			},
 			Spec: map[string]any{
-				"host":     "*." + namespace + ".svc.cluster.local",
+				"host":     service + "." + namespace + ".svc.cluster.local",
 				"exportTo": []string{"."},
 				"trafficPolicy": map[string]any{
 					"connectionPool": map[string]any{
@@ -2045,7 +2051,7 @@ func topologyIstioResources(
 					},
 				},
 			},
-		},
+		})
 	}
 	return istio, gateway, nil
 }
