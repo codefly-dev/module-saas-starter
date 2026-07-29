@@ -130,6 +130,17 @@
       ]
     },
     {
+      "name": "marketing",
+      "endpoints": [
+        {
+          "name": "http",
+          "api": "CODEFLY_API_HTTP",
+          "visibility": "ENDPOINT_VISIBILITY_PUBLIC",
+          "port": 3000
+        }
+      ]
+    },
+    {
       "name": "object-storage",
       "endpoints": [
         {
@@ -173,6 +184,11 @@
       "service": "auth-sidecar",
       "endpoint": "rest",
       "visibility": "ENDPOINT_VISIBILITY_PUBLIC"
+    },
+    {
+      "service": "marketing",
+      "endpoint": "http",
+      "visibility": "ENDPOINT_VISIBILITY_PUBLIC"
     }
   ],
   "public_egress": [
@@ -184,6 +200,12 @@
     },
     {
       "service": "frontend",
+      "ports": [
+        443
+      ]
+    },
+    {
+      "service": "marketing",
       "ports": [
         443
       ]

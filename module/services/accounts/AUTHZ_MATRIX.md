@@ -2,7 +2,7 @@
 
 > Generated from protobuf service descriptors and `saas.policy.v1.method_policy`; only the prose description is joined from `pkg/business/introspection.go`. Do not edit by hand. Run `go generate ./pkg/business` from `module/services/accounts/code`.
 
-Inventory: **135 RPCs** across **26 services**. Missing, invalid, or unclassified procedures are denied by both Connect and gRPC interceptors.
+Inventory: **138 RPCs** across **26 services**. Missing, invalid, or unclassified procedures are denied by both Connect and gRPC interceptors.
 
 The compact tier is retained for compatibility. Guards, resource bindings, audit events, limiter class, and data sensitivity are descriptor-authoritative. Domain handlers may enforce stronger state-dependent rules but may not weaken this floor.
 
@@ -27,6 +27,7 @@ The compact tier is retained for compatibility. Guards, resource bindings, audit
 | `/saas.accounts.v1.AuthService/RefreshToken` | unary | `POST /v1/auth/refresh` | `public` | exposure=PUBLIC; tenant=NONE | — | — | — | FORBIDDEN / AUTHENTICATION | SECRET → SECRET | Refresh access token. |
 | `/saas.accounts.v1.AuthService/SwitchOrganization` | unary | `POST /v1/auth/switch-organization` | `auth` | exposure=AUTHENTICATED; tenant=NONE | — | — | SUCCESS: auth.organization_switched | FORBIDDEN / SENSITIVE | CONFIDENTIAL → SECRET | Exchange the active device session for an access token scoped to another current membership. |
 | `/saas.accounts.v1.BillingService/ListInvoices` | unary | `GET /v1/billing/invoices/{org_id}` | `org_admin` | exposure=AUTHENTICATED; tenant=ORG_ADMIN | perm=billing:read; scope=billing:read | org_id → ORGANIZATION/DIRECT_ID | — | FORBIDDEN / STANDARD_READ | CONFIDENTIAL → CONFIDENTIAL | Past Stripe invoices. |
+| `/saas.accounts.v1.BillingService/ListPublicPlans` | unary | `GET /v1/public/plans` | `public` | exposure=PUBLIC; tenant=NONE | — | — | — | FORBIDDEN / PUBLIC | PUBLIC → PUBLIC | Sanitized public pricing and entitlement catalog. |
 | `/saas.accounts.v1.BillingService/OpenPortal` | unary | `POST /v1/billing/connect/portal` | `mfa` | exposure=AUTHENTICATED; tenant=ORG_ADMIN; mfa=RECENT_STEP_UP | perm=billing:write; scope=billing:write | org_id → ORGANIZATION/DIRECT_ID | SUCCESS: billing.portal_opened | FORBIDDEN / SENSITIVE | CONFIDENTIAL → SECRET | Stripe billing-portal session; requires billing:write and recent MFA. |
 | `/saas.accounts.v1.ConsentService/AcceptTerms` | unary | `POST /v1/consent/terms` | `auth` | exposure=AUTHENTICATED; tenant=USER | — | — | SUCCESS: consent.terms_accepted | FORBIDDEN / STANDARD_WRITE | CONFIDENTIAL → CONFIDENTIAL | Record acceptance of the exact Terms version presented. |
 | `/saas.accounts.v1.ConsentService/GetStatus` | unary | `GET /v1/consent/status` | `auth` | exposure=AUTHENTICATED; tenant=USER | — | — | — | FORBIDDEN / STANDARD_READ | CONFIDENTIAL → CONFIDENTIAL | Read TOS acceptance state. |
@@ -37,8 +38,8 @@ The compact tier is retained for compatibility. Guards, resource bindings, audit
 | `/saas.accounts.v1.DelegationService/WaitForDelegation` | server stream | `GET /v1/delegations/{id}:wait` | `org_member` | exposure=AUTHENTICATED; tenant=ORG_MEMBER | — | org_id → ORGANIZATION/DIRECT_ID | — | FORBIDDEN / STANDARD_READ | CONFIDENTIAL → CONFIDENTIAL | Stream the terminal delegation decision. |
 | `/saas.accounts.v1.GDPRService/GetDeletionStatus` | unary | `GET /v1/gdpr/delete/{id}` | `auth` | exposure=AUTHENTICATED; tenant=USER | — | — | — | FORBIDDEN / STANDARD_READ | CONFIDENTIAL → CONFIDENTIAL | Status of a GDPR deletion request. |
 | `/saas.accounts.v1.GDPRService/GetExportStatus` | unary | `GET /v1/gdpr/export/{id}` | `auth` | exposure=AUTHENTICATED; tenant=USER | — | — | — | FORBIDDEN / STANDARD_READ | CONFIDENTIAL → CONFIDENTIAL | Status of a GDPR export request. |
-| `/saas.accounts.v1.GDPRService/RequestDeletion` | unary | `POST /v1/gdpr/delete` | `mfa` | exposure=AUTHENTICATED; tenant=USER; mfa=IF_ENROLLED_RECENT_STEP_UP | — | — | SUCCESS: gdpr.deletion_requested | FORBIDDEN / SENSITIVE | CONFIDENTIAL → CONFIDENTIAL | Request account deletion. Requires MFA. |
-| `/saas.accounts.v1.GDPRService/RequestExport` | unary | `POST /v1/gdpr/export` | `auth` | exposure=AUTHENTICATED; tenant=USER | — | — | SUCCESS: gdpr.export_requested | FORBIDDEN / STANDARD_WRITE | CONFIDENTIAL → CONFIDENTIAL | Request data export. Async. |
+| `/saas.accounts.v1.GDPRService/RequestDeletion` | unary | `POST /v1/gdpr/delete` | `mfa` | exposure=AUTHENTICATED; tenant=USER; mfa=IF_ENROLLED_RECENT_STEP_UP | — | — | SUCCESS: gdpr.deletion_requested | FORBIDDEN / SENSITIVE | CONFIDENTIAL → CONFIDENTIAL | Request account deletion when a complete privacy workflow is configured. Requires MFA. |
+| `/saas.accounts.v1.GDPRService/RequestExport` | unary | `POST /v1/gdpr/export` | `auth` | exposure=AUTHENTICATED; tenant=USER | — | — | SUCCESS: gdpr.export_requested | FORBIDDEN / STANDARD_WRITE | CONFIDENTIAL → CONFIDENTIAL | Request data export when a complete privacy workflow is configured. |
 | `/saas.accounts.v1.IdentityService/ResolveIdentity` | unary | `—` | `internal` | exposure=INTERNAL; tenant=NONE | — | — | — | FORBIDDEN / INTERNAL | SECRET → CONFIDENTIAL | Internal: provider id → user/org/roles. |
 | `/saas.accounts.v1.IntrospectionService/GetServiceInfo` | unary | `GET /v1/.well-known/service-info` | `public` | exposure=PUBLIC; tenant=NONE | — | — | — | FORBIDDEN / PUBLIC | PUBLIC → PUBLIC | Self-describing service catalog (this RPC). |
 | `/saas.accounts.v1.InvitationService/AcceptInvitation` | unary | `POST /v1/invitations:accept` | `auth` | exposure=AUTHENTICATED; tenant=USER | — | — | SUCCESS: invitation.accepted | FORBIDDEN / STANDARD_WRITE | SECRET → CONFIDENTIAL | Accept an invite by token. |
@@ -113,6 +114,8 @@ The compact tier is retained for compatibility. Guards, resource bindings, audit
 | `/saas.accounts.v1.TeamService/UpdateTeam` | unary | `PATCH /v1/teams/{team_id}` | `org_admin` | exposure=AUTHENTICATED; tenant=ORG_ADMIN | — | team_id → TEAM/TEAM_TO_ORGANIZATION | SUCCESS: team.updated | FORBIDDEN / STANDARD_WRITE | CONFIDENTIAL → CONFIDENTIAL | Update a team's name or description. |
 | `/saas.accounts.v1.UsageService/ConsumeUsage` | unary | `—` | `internal` | exposure=INTERNAL; tenant=NONE | — | — | — | REQUIRED / INTERNAL | CONFIDENTIAL → CONFIDENTIAL | Atomically consume a monthly meter with an idempotent receipt. |
 | `/saas.accounts.v1.UsageService/GetUsage` | unary | `GET /v1/organizations/{organization_id}/usage/{meter}` | `org_member` | exposure=AUTHENTICATED; tenant=ORG_MEMBER | perm=entitlements:read; scope=entitlements:read | organization_id → ORGANIZATION/DIRECT_ID | — | FORBIDDEN / STANDARD_READ | CONFIDENTIAL → CONFIDENTIAL | Current monthly meter total and effective limit. |
+| `/saas.accounts.v1.UsageService/GetUsageHistory` | unary | `GET /v1/organizations/{organization_id}/usage/{meter}/history` | `org_member` | exposure=AUTHENTICATED; tenant=ORG_MEMBER | perm=entitlements:read; scope=entitlements:read | organization_id → ORGANIZATION/DIRECT_ID | — | FORBIDDEN / STANDARD_READ | CONFIDENTIAL → CONFIDENTIAL | UTC hourly, daily, or monthly usage buckets for a bounded range. |
+| `/saas.accounts.v1.UsageService/ListUsageMeters` | unary | `GET /v1/organizations/{organization_id}/usage` | `org_member` | exposure=AUTHENTICATED; tenant=ORG_MEMBER | perm=entitlements:read; scope=entitlements:read | organization_id → ORGANIZATION/DIRECT_ID | — | FORBIDDEN / STANDARD_READ | CONFIDENTIAL → CONFIDENTIAL | Customer-visible meter catalog with current totals and limits. |
 | `/saas.accounts.v1.UserService/AddIdentity` | unary | `POST /v1/users/{user_uuid}/identities` | `auth` | exposure=AUTHENTICATED; tenant=USER | — | — | SUCCESS: user.identity_added | FORBIDDEN / STANDARD_WRITE | CONFIDENTIAL → CONFIDENTIAL | Link an additional auth provider. |
 | `/saas.accounts.v1.UserService/DeleteUser` | unary | `DELETE /v1/users/{uuid}` | `auth` | exposure=AUTHENTICATED; tenant=USER | perm=users:write; scope=users:write | — | SUCCESS: user.deleted | FORBIDDEN / STANDARD_WRITE | CONFIDENTIAL → CONFIDENTIAL | Soft-delete a user (self or platform admin). |
 | `/saas.accounts.v1.UserService/FindUserByIdentity` | unary | `GET /v1/users:findByIdentity` | `platform_admin` | exposure=AUTHENTICATED; tenant=NONE; platform=ANY | — | — | — | FORBIDDEN / SENSITIVE | CONFIDENTIAL → CONFIDENTIAL | Platform-admin identity lookup. |
@@ -150,6 +153,6 @@ The compact tier is retained for compatibility. Guards, resource bindings, audit
 - `internal`: 7
 - `mfa`: 3
 - `org_admin`: 28
-- `org_member`: 23
+- `org_member`: 25
 - `platform_admin`: 22
-- `public`: 15
+- `public`: 16

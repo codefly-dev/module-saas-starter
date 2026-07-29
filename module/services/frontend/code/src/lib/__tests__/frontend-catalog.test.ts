@@ -17,9 +17,12 @@ describe("generated frontend catalog", () => {
 			(count, service) => count + Object.keys(service.method).length,
 			0,
 		);
-		expect(procedureCount).toBe(135);
+		expect(procedureCount).toBe(138);
 		expect(
 			ACCOUNT_SERVICE_DESCRIPTORS.WorkContextService.method.exchangeAudience,
+		).toBeDefined();
+		expect(
+			ACCOUNT_SERVICE_DESCRIPTORS.UsageService.method.getUsageHistory,
 		).toBeDefined();
 	});
 

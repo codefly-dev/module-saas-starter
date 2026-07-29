@@ -464,7 +464,7 @@ with Codefly ownership and named endpoints. Internal methods are omitted and
 public/protected behavior is descriptor-derived. Istio activation waits for the
 frontend/static route catalog so deployment cannot regress to an API-only
 surface. The authorization compiler now emits `saas.authz.methods.v1` for all
-125 procedures with complete policy, deterministic policy fingerprints, and
+126 procedures with complete policy, deterministic policy fingerprints, and
 edge limiter behavior. Auth-sidecar joins Connect and known REST routes to its
 generated policy lookup; parity repaired stale registration exposure and URL
 classification is gone from limiter failure handling. The generated
@@ -475,9 +475,9 @@ remain explicit extensions. The frontend projection now generates typed
 Connect clients for all 25 accounts services plus finite permission, API-key
 scope, and entitlement constants. Frontend role gates, common client hooks,
 and entitlement administration consume those types, while Go and Vitest parity
-tests pin all 125 procedures. The deployment projection now compiles a strict
+tests pin all 126 procedures. The deployment projection now compiles a strict
 module topology into the actual Codefly module/service manifests, a typed
-7-service/11-endpoint/8-dependency inventory, and 15 default-deny Kubernetes
+8-service/12-endpoint/8-dependency inventory, and 16 default-deny Kubernetes
 NetworkPolicies. Each service edge is limited to declared endpoint ports;
 descriptor parity requires accounts gRPC, Connect, and REST endpoints. The
 final P1 producer now discovers all 36 Next.js pages and joins them with a
@@ -500,17 +500,19 @@ fixtures and rejects future collisions.
 - Generate Codefly endpoints and network policies from service ownership.
 
 Implemented: `deployment/topology.bindings.codefly.yaml` is the single topology
-source for all seven Codefly services, 11 endpoints, eight dependency edges,
+source for all eight Codefly services, 12 endpoints, eight dependency edges,
 two module-interface exports, and finite public egress. Generation writes the
 runtime `module.codefly.yaml`/`service.codefly.yaml` files and removes the broad
 intra-namespace allow policy in favor of dependency-specific ingress/egress.
 DNS, Istio control-plane/ingress, and HTTPS egress remain explicit exceptions.
 The same source declares `auth-sidecar` as the module service entry. Because the
 sidecar depends on the frontend, accounts, and cache—and those dependencies pull
-in the remaining infrastructure—Codefly resolves the complete seven-service
+in the remaining infrastructure—Codefly resolves the complete eight-service
 graph from either the module directory or the repository's single-module
 workspace without a manually repeated service name. Its public HTTP endpoint is
-the application ingress; the frontend remains private behind it.
+the product ingress; the frontend remains private behind it. The separate
+marketing service owns apex/`www`/docs ingress and consumes pricing only through
+the configured public HTTPS projection, without a Codefly product dependency.
 
 Reference: <https://connectrpc.com/docs/go/getting-started/> and
 <https://www.envoyproxy.io/docs/envoy/latest/configuration/http/http_filters/ext_authz_filter>.

@@ -18,7 +18,7 @@ type fakeProcessingStore struct {
 	mu            sync.Mutex
 	plans         map[string]billing.PlanRef
 	orgs          map[string]string
-	ownerEmails   map[string]string
+	recipients    map[string]billing.BillingRecipient
 	subscriptions []billing.SubscriptionUpsert
 	upsertErr     error
 }
@@ -67,9 +67,9 @@ func readerWith(subscription *billing.Subscription) *fakeSubscriptionReader {
 
 func newFakeProcessingStore() *fakeProcessingStore {
 	return &fakeProcessingStore{
-		plans:       make(map[string]billing.PlanRef),
-		orgs:        make(map[string]string),
-		ownerEmails: make(map[string]string),
+		plans:      make(map[string]billing.PlanRef),
+		orgs:       make(map[string]string),
+		recipients: make(map[string]billing.BillingRecipient),
 	}
 }
 
@@ -103,20 +103,40 @@ func (f *fakeProcessingStore) UpsertSubscription(_ context.Context, subscription
 	return nil
 }
 
-func (f *fakeProcessingStore) OwnerEmailByStripeCustomerID(_ context.Context, customerID string) (string, error) {
+func (f *fakeProcessingStore) BillingRecipientByStripeCustomerID(
+	_ context.Context,
+	customerID string,
+) (*billing.BillingRecipient, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
-	return f.ownerEmails[customerID], nil
+	recipient, ok := f.recipients[customerID]
+	if !ok {
+		return nil, billing.ErrOrgNotFound
+	}
+	return &recipient, nil
 }
 
-type recordingEmailNotifier struct {
-	messages []billing.BillingEmail
-	err      error
+type recordingBillingNotifier struct {
+	emails          []billing.BillingEmail
+	notifications   []billing.BillingNotification
+	emailErr        error
+	notificationErr error
 }
 
-func (notifier *recordingEmailNotifier) EnqueueBillingEmail(_ context.Context, message billing.BillingEmail) error {
-	notifier.messages = append(notifier.messages, message)
-	return notifier.err
+func (notifier *recordingBillingNotifier) EnqueueBillingEmail(
+	_ context.Context,
+	message billing.BillingEmail,
+) error {
+	notifier.emails = append(notifier.emails, message)
+	return notifier.emailErr
+}
+
+func (notifier *recordingBillingNotifier) CreateBillingNotification(
+	_ context.Context,
+	message billing.BillingNotification,
+) error {
+	notifier.notifications = append(notifier.notifications, message)
+	return notifier.notificationErr
 }
 
 func (f *fakeProcessingStore) subscriptionsFor(orgID string) []billing.SubscriptionUpsert {
@@ -214,9 +234,13 @@ func TestProcessor_InvoicePaymentFailedMarksPastDue(t *testing.T) {
 func TestProcessorBillingEmailUsesStableEventOutboxIdentity(t *testing.T) {
 	store := newFakeProcessingStore()
 	store.orgs["cus_acme"] = "org-acme"
-	store.ownerEmails["cus_acme"] = "owner@example.com"
+	store.recipients["cus_acme"] = billing.BillingRecipient{
+		OrganizationID: "org-acme",
+		UserID:         "owner-user",
+		Email:          "owner@example.com",
+	}
 	store.plans["price_pro"] = billing.PlanRef{ID: "plan-pro"}
-	notifier := &recordingEmailNotifier{}
+	notifier := &recordingBillingNotifier{}
 	processor := billing.NewProcessor(billing.ProcessorDeps{
 		Store: store,
 		Client: readerWith(currentSubscription(
@@ -235,20 +259,30 @@ func TestProcessorBillingEmailUsesStableEventOutboxIdentity(t *testing.T) {
 
 	require.NoError(t, processor.ProcessWebhook(context.Background(), event))
 	require.NoError(t, processor.ProcessWebhook(context.Background(), event))
-	require.Len(t, notifier.messages, 2)
-	require.NotEmpty(t, notifier.messages[0].DeliveryKey)
-	require.Equal(t, notifier.messages[0].DeliveryKey, notifier.messages[1].DeliveryKey)
-	require.Equal(t, "org-acme", notifier.messages[0].OrganizationID)
-	require.Equal(t, "payment_failed", notifier.messages[0].Template)
-	require.Equal(t, "owner@example.com", notifier.messages[0].To)
+	require.Len(t, notifier.emails, 2)
+	require.NotEmpty(t, notifier.emails[0].DeliveryKey)
+	require.Equal(t, notifier.emails[0].DeliveryKey, notifier.emails[1].DeliveryKey)
+	require.Equal(t, "org-acme", notifier.emails[0].OrganizationID)
+	require.Equal(t, "payment_failed", notifier.emails[0].Template)
+	require.Equal(t, "owner@example.com", notifier.emails[0].To)
+	require.Len(t, notifier.notifications, 2)
+	require.NotEmpty(t, notifier.notifications[0].DeliveryKey)
+	require.Equal(t, notifier.notifications[0].DeliveryKey, notifier.notifications[1].DeliveryKey)
+	require.Equal(t, "owner-user", notifier.notifications[0].RecipientID)
+	require.Equal(t, "org-acme", notifier.notifications[0].OrganizationID)
+	require.Equal(t, "/admin/billing", notifier.notifications[0].ActionURL)
 }
 
 func TestProcessorBillingEmailEnqueueFailureRemainsRetryable(t *testing.T) {
 	store := newFakeProcessingStore()
 	store.orgs["cus_acme"] = "org-acme"
-	store.ownerEmails["cus_acme"] = "owner@example.com"
+	store.recipients["cus_acme"] = billing.BillingRecipient{
+		OrganizationID: "org-acme",
+		UserID:         "owner-user",
+		Email:          "owner@example.com",
+	}
 	store.plans["price_pro"] = billing.PlanRef{ID: "plan-pro"}
-	notifier := &recordingEmailNotifier{err: errors.New("job store unavailable")}
+	notifier := &recordingBillingNotifier{emailErr: errors.New("job store unavailable")}
 	processor := billing.NewProcessor(billing.ProcessorDeps{
 		Store: store,
 		Client: readerWith(currentSubscription(
@@ -266,6 +300,41 @@ func TestProcessorBillingEmailEnqueueFailureRemainsRetryable(t *testing.T) {
 		EventId: "evt_retry_email", EventType: "invoice.payment_failed", RawBody: payload,
 	})
 	require.ErrorContains(t, err, "job store unavailable")
+	require.Empty(t, notifier.notifications)
+}
+
+func TestProcessorBillingNotificationFailureRemainsRetryable(t *testing.T) {
+	store := newFakeProcessingStore()
+	store.orgs["cus_acme"] = "org-acme"
+	store.recipients["cus_acme"] = billing.BillingRecipient{
+		OrganizationID: "org-acme",
+		UserID:         "owner-user",
+		Email:          "owner@example.com",
+	}
+	store.plans["price_pro"] = billing.PlanRef{ID: "plan-pro"}
+	notifier := &recordingBillingNotifier{
+		notificationErr: errors.New("notification store unavailable"),
+	}
+	processor := billing.NewProcessor(billing.ProcessorDeps{
+		Store: store,
+		Client: readerWith(currentSubscription(
+			"sub_01", "cus_acme", "price_pro", "past_due",
+		)),
+		Notifier: notifier,
+	})
+	payload := []byte(`{
+		"id":"evt_retry_notification",
+		"type":"invoice.payment_failed",
+		"data":{"object":{"subscription":"sub_01","customer":"cus_acme"}}
+	}`)
+
+	err := processor.ProcessWebhook(context.Background(), &billingv1.StripeWebhookJob{
+		EventId: "evt_retry_notification", EventType: "invoice.payment_failed", RawBody: payload,
+	})
+
+	require.ErrorContains(t, err, "notification store unavailable")
+	require.Len(t, notifier.emails, 1)
+	require.Len(t, notifier.notifications, 1)
 }
 
 func TestProcessor_UnknownCustomerAndPlanRemainRetryableErrors(t *testing.T) {

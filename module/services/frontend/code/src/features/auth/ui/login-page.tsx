@@ -13,8 +13,8 @@ import { useEffect, useMemo, useState } from "react";
 import { BrandMark } from "@/components/brand-mark";
 import { useAppearance } from "@/lib/appearance-provider";
 import { availableProviders, useAuth } from "@/lib/auth";
-import { safeReturnPath } from "@/lib/auth-return";
 import type { FixtureUser } from "@/lib/fixtures/types";
+import { publicHandoffDestination } from "@/lib/public-handoff";
 
 interface FixtureResponse {
 	name: string;
@@ -26,7 +26,10 @@ export function LoginPage() {
 	const { branding } = useAppearance();
 	const router = useRouter();
 	const searchParams = useSearchParams();
-	const destination = safeReturnPath(searchParams.get("next"));
+	const destination = useMemo(
+		() => publicHandoffDestination(searchParams),
+		[searchParams],
+	);
 	const providers = useMemo(() => availableProviders(), []);
 	const [error, setError] = useState<string | null>(null);
 	const [fixtureUsers, setFixtureUsers] = useState<FixtureUser[]>([]);
@@ -115,11 +118,11 @@ export function LoginPage() {
 					<div className="space-y-8 max-w-md">
 						<div>
 							<h2 className="text-4xl font-bold tracking-tight leading-tight">
-								The starter you actually want to ship.
+								Welcome back to {branding.name}.
 							</h2>
 							<p className="mt-4 text-lg text-primary-foreground/80 leading-relaxed">
-								Auth, multi-tenancy, billing, audit, MFA — production-grade from
-								day one. Pick up where you left off.
+								Continue to the authenticated product without coupling this
+								session to the public company site.
 							</p>
 						</div>
 
@@ -127,30 +130,31 @@ export function LoginPage() {
 							<li className="flex items-start gap-3">
 								<ShieldCheck className="h-5 w-5 mt-0.5 text-primary-foreground/90 shrink-0" />
 								<span className="text-primary-foreground/90">
-									<span className="font-medium">Server-validated auth</span> —
-									Ed25519 JWT, OWASP refresh rotation, MFA gates, JTI
-									revocation.
+									<span className="font-medium">Server-validated access</span> —
+									authenticated requests are checked again at the service
+									boundary.
 								</span>
 							</li>
 							<li className="flex items-start gap-3">
 								<Building2 className="h-5 w-5 mt-0.5 text-primary-foreground/90 shrink-0" />
 								<span className="text-primary-foreground/90">
-									<span className="font-medium">Multi-tenant orgs + teams</span>{" "}
-									— RBAC, invitations, impersonation, audit log with retention.
+									<span className="font-medium">Tenant-aware navigation</span>{" "}
+									— organization context and permissions shape the product
+									shell.
 								</span>
 							</li>
 							<li className="flex items-start gap-3">
 								<Sparkles className="h-5 w-5 mt-0.5 text-primary-foreground/90 shrink-0" />
 								<span className="text-primary-foreground/90">
-									<span className="font-medium">Stripe billing wired</span> —
-									checkout, customer portal, signed webhooks, idempotent.
+									<span className="font-medium">Independent public site</span> —
+									company content and pricing can release on their own cadence.
 								</span>
 							</li>
 						</ul>
 					</div>
 
 					<p className="text-xs text-primary-foreground/60">
-						Trusted by teams shipping the next great product.
+						Production claims require current evidence for your environment.
 					</p>
 				</div>
 			</div>

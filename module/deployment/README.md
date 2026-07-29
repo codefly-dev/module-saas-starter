@@ -33,6 +33,7 @@ module/deployment/
           accounts.yaml
           auth-sidecar.yaml
           frontend.yaml
+          marketing.yaml
           store.yaml
           cache.yaml
           vault.yaml
@@ -43,6 +44,7 @@ module/deployment/
           accounts.yaml
           auth-sidecar.yaml
           frontend.yaml
+          marketing.yaml
           # store / cache / vault / object-storage are intentionally
           # external in prod (RDS, ElastiCache, Secrets Manager, S3).
 ```
@@ -97,14 +99,18 @@ default for non-local environments.
 
 ### local (k3d)
 
-All seven services run in-cluster. Postgres, Redis, Vault, MinIO are
+All eight services run in-cluster. Postgres, Redis, Vault, MinIO are
 deployed as StatefulSets with PVCs. Suitable for dev and integration
 testing.
 
+The gateway routes `saas.localhost`, `www.saas.localhost`, and
+`docs.saas.localhost` to marketing; `app.saas.localhost` and the legacy
+`localhost` fallback go through auth-sidecar to the product.
+
 ### aws (EKS)
 
-Only the three application services (`accounts`, `auth-sidecar`,
-`frontend`) are Applications here. The rest are AWS-managed:
+Only the four application services (`accounts`, `auth-sidecar`, `frontend`,
+`marketing`) are Applications here. The rest are AWS-managed:
 
 - `store` → Amazon RDS for Postgres.
 - `cache` → Amazon ElastiCache for Redis.
@@ -117,3 +123,9 @@ The connection strings flow into the apps via Kubernetes Secrets
 sourced from External Secrets Operator (which reads from Secrets
 Manager / SSM Parameter Store). Wire that up in the app overlays
 or via a SecretStore CRD in this module.
+
+`overlays/aws/marketing-domains.example.patch.yaml` is a production domain
+example, not an enabled default. Copy it into the overlay, replace every
+example host and certificate name, then add exact authentication callback
+origins. `status.example.com` remains external and must not route through this
+Gateway.

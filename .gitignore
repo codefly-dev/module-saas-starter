@@ -16,6 +16,9 @@ dist/
 # build artifacts inside embedded module
 module/services/*/code/backend
 module/services/*/code/local
+module/services/*/code/node_modules/
+module/services/*/code/.next/
+module/services/*/code/*.tsbuildinfo
 module/services/store/code/store-migrator
 module/services/*/.cache/
 

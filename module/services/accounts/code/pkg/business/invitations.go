@@ -78,15 +78,7 @@ func (s *Service) CreateInvitation(
 	if err != nil {
 		return nil, w.Wrapf(err, "cannot generate invitation credential")
 	}
-	now := time.Now()
-	deliveryStatus := "disabled"
-	sendCount := uint32(0)
-	var lastSentAt *time.Time
-	if s.emailOutbox != nil {
-		deliveryStatus = "queued"
-		sendCount = 1
-		lastSentAt = &now
-	}
+	now := time.Now().UTC()
 	inv := &Invitation{
 		ID:                 NewIDString(),
 		OrgID:              req.OrgId,
@@ -96,14 +88,31 @@ func (s *Service) CreateInvitation(
 		Role:               role,
 		TokenHash:          tokenHash,
 		Status:             "pending",
-		DeliveryStatus:     deliveryStatus,
+		DeliveryStatus:     "disabled",
 		ExpiresAt:          now.Add(invitationTTL),
-		LastSentAt:         lastSentAt,
-		SendCount:          sendCount,
+		CreatedAt:          now,
+	}
+
+	var invitee *gen.User
+	err = s.store.As(System()).Within(ctx, func(ctx context.Context) error {
+		var lookupErr error
+		invitee, lookupErr = s.store.GetUserByEmail(ctx, normalizedEmail)
+		return lookupErr
+	})
+	if err != nil {
+		var storeErr *StoreError
+		if !errors.As(err, &storeErr) || storeErr.StoreErrorType != ErrTypeNotFound {
+			return nil, w.Wrapf(err, "cannot resolve invitation recipient")
+		}
+		invitee = nil
 	}
 
 	var orgName string
-	if err := s.store.WithOrgTx(ctx, req.OrgId, func(ctx context.Context) error {
+	identity := Identity{OrgID: req.OrgId}
+	if invitee != nil {
+		identity.UserID = invitee.Uuid
+	}
+	if err := s.store.As(identity).Within(ctx, func(ctx context.Context) error {
 		if err := s.store.ExpirePendingInvitations(ctx, req.OrgId); err != nil {
 			return w.Wrapf(err, "cannot expire stale invitations")
 		}
@@ -114,39 +123,69 @@ func (s *Service) CreateInvitation(
 		if err := quota.RequireAvailable(); err != nil {
 			return err
 		}
-		if err := s.store.CreateInvitation(ctx, inv); err != nil {
-			return err
-		}
 		if org, err := s.store.GetOrganization(ctx, req.OrgId); err == nil && org != nil {
 			orgName = org.Name
 		}
-		if s.emailOutbox != nil {
-			return s.enqueueInvitationEmail(ctx, inv, plaintext, orgName, inv.ID)
+
+		sendInvitationEmail := s.emailOutbox != nil
+		var settings *gen.UserSettings
+		if invitee != nil {
+			var err error
+			settings, err = s.store.GetUserSettings(ctx, invitee.Uuid)
+			if err != nil {
+				return w.Wrapf(err, "cannot read invitation preferences")
+			}
+			emailDecision, err := EvaluateNotificationDelivery(
+				settings,
+				NotificationCategoryProduct,
+				NotificationChannelEmail,
+			)
+			if err != nil {
+				return err
+			}
+			sendInvitationEmail = sendInvitationEmail && emailDecision.Deliver
 		}
-		return nil
+		if sendInvitationEmail {
+			inv.DeliveryStatus = "queued"
+			inv.LastSentAt = &now
+			inv.SendCount = 1
+		}
+		if err := s.store.CreateInvitation(ctx, inv); err != nil {
+			return err
+		}
+		if invitee != nil {
+			if _, err := s.createNotificationWithSettings(ctx, CreateNotificationInput{
+				UserID:         invitee.Uuid,
+				OrgID:          req.OrgId,
+				Title:          "You've been invited",
+				Body:           fmt.Sprintf("%s invited you to join %s", inviterName, nonEmpty(orgName, "an organization")),
+				Type:           "info",
+				ActionURL:      "/invitations/accept?id=" + inv.ID,
+				Category:       NotificationCategoryProduct,
+				IdempotencyKey: "invitation:" + inv.ID,
+			}, settings); err != nil {
+				return w.Wrapf(err, "cannot create invitation notification")
+			}
+		}
+		if sendInvitationEmail {
+			if err := s.enqueueInvitationEmail(ctx, inv, plaintext, orgName, inv.ID); err != nil {
+				return err
+			}
+		}
+		return s.captureProductEvent(
+			ctx,
+			"invite_created",
+			inv.ID,
+			inviterID,
+			req.OrgId,
+			inv.CreatedAt,
+			map[string]any{"role": inv.Role},
+		)
 	}); err != nil {
 		return nil, w.Wrapf(err, "cannot create invitation")
 	}
 
 	s.emit(ctx, inviterID, "user", "invitation.created", "invitation", inv.ID, req.OrgId)
-
-	var invitee *gen.User
-	_ = s.store.As(System()).Within(ctx, func(ctx context.Context) error {
-		var lookupErr error
-		invitee, lookupErr = s.store.GetUserByEmail(ctx, normalizedEmail)
-		return lookupErr
-	})
-	if invitee != nil {
-		_, _ = s.CreateNotification(
-			ctx,
-			invitee.Uuid,
-			req.OrgId,
-			"You've been invited",
-			fmt.Sprintf("%s invited you to join %s", inviterName, nonEmpty(orgName, "an organization")),
-			"info",
-			"/invitations/accept?id="+inv.ID,
-		)
-	}
 
 	return &gen.CreateInvitationResponse{Invitation: invitationToProto(inv)}, nil
 }
@@ -204,7 +243,15 @@ func (s *Service) summarizeInvitation(
 			}
 			if transitioned {
 				inv.Status = "expired"
-				return nil
+				return s.captureProductEvent(
+					ctx,
+					"invite_expired",
+					inv.ID,
+					"",
+					inv.OrgID,
+					inv.ExpiresAt,
+					nil,
+				)
 			}
 			inv, err = s.store.GetInvitationByID(ctx, inv.ID)
 			return err
@@ -295,12 +342,24 @@ func (s *Service) AcceptInvitation(
 			if err := s.store.AddOrgMember(ctx, inv.OrgID, userID, inv.Role); err != nil {
 				return w.Wrapf(err, "cannot add member to organization")
 			}
+			acceptedAt := time.Now().UTC()
 			updated, err := s.store.UpdateInvitationStatus(ctx, inv.ID, "accepted", userID)
 			if err != nil {
 				return w.Wrapf(err, "cannot accept invitation")
 			}
 			if !updated {
 				return ErrInvitationUnavailable
+			}
+			if err := s.captureProductEvent(
+				ctx,
+				"invite_accepted",
+				inv.ID,
+				userID,
+				inv.OrgID,
+				acceptedAt,
+				map[string]any{"role": inv.Role},
+			); err != nil {
+				return err
 			}
 		}
 		var getErr error
@@ -313,15 +372,15 @@ func (s *Service) AcceptInvitation(
 	s.invalidateMembership(ctx, inv.OrgID, userID)
 	if !alreadyAccepted {
 		s.emit(ctx, userID, "user", "invitation.accepted", "invitation", inv.ID, inv.OrgID)
-		_, _ = s.CreateNotification(
-			ctx,
-			inv.InviterID,
-			inv.OrgID,
-			"Invitation accepted",
-			fmt.Sprintf("%s joined %s", inv.Email, org.Name),
-			"success",
-			"/admin/invitations",
-		)
+		_, _ = s.CreateNotification(ctx, CreateNotificationInput{
+			UserID:    inv.InviterID,
+			OrgID:     inv.OrgID,
+			Title:     "Invitation accepted",
+			Body:      fmt.Sprintf("%s joined %s", inv.Email, org.Name),
+			Type:      "success",
+			ActionURL: "/admin/invitations",
+			Category:  NotificationCategoryProduct,
+		})
 	}
 	return &gen.AcceptInvitationResponse{Organization: org, AlreadyAccepted: alreadyAccepted}, nil
 }
@@ -453,8 +512,29 @@ func (s *Service) RevokeInvitation(
 		if inv.Status != "pending" {
 			return ErrInvitationUnavailable
 		}
+		return nil
+	}); err != nil {
+		return wool.Get(ctx).Wrapf(err, "cannot revoke invitation")
+	}
+	if inv.Status == "revoked" {
+		return nil
+	}
+	revokedAt := time.Now().UTC()
+	if err := s.store.WithOrgTx(ctx, inv.OrgID, func(ctx context.Context) error {
+		var err error
 		revoked, err = s.store.UpdateInvitationStatus(ctx, req.Id, "revoked", "")
-		return err
+		if err != nil || !revoked {
+			return err
+		}
+		return s.captureProductEvent(
+			ctx,
+			"invite_revoked",
+			req.Id,
+			inviterID,
+			inv.OrgID,
+			revokedAt,
+			nil,
+		)
 	}); err != nil {
 		return wool.Get(ctx).Wrapf(err, "cannot revoke invitation")
 	}

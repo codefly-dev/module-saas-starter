@@ -1,6 +1,8 @@
 # saas-starter — Module Reference
 
-Multi-tenant SaaS backend with three-layer authorization (handler gates + RBAC + Postgres RLS), a Next.js admin frontend, and per-service introspection endpoints.
+Multi-tenant SaaS backend with three-layer authorization (handler gates + RBAC
++ Postgres RLS), a Next.js authenticated product, a separately deployable
+public marketing site, and per-service introspection endpoints.
 
 A codefly **module** is a collection of **services**; each service owns its own proto. The accounts service of saas-starter exposes a self-describing catalog of its OWN RPCs / RBAC vocabulary / RLS-protected tables / scopes. A "module-level" view = aggregation across every service's catalog and is a separate concern (CLI / gateway / Mind aggregator) — not encoded in any single proto.
 
@@ -16,8 +18,11 @@ A codefly **module** is a collection of **services**; each service owns its own 
 - Generated frontend clients and vocabulary: `module/FRONTEND_CATALOG.md`
 - Generated frontend plugin routes/navigation: `module/FRONTEND_PLUGINS.md`
 - Generic event meters, quota semantics, and product integration: `module/USAGE_METERING.md`
+- Evidence-bound trust claims and adopter responsibilities: `module/TRUST_CAPABILITIES.md`
 - Postgres roles, grant rules, and RLS authority: `module/DATABASE_AUTHORITY.md`
 - Generated Codefly topology and NetworkPolicies: `module/DEPLOYMENT_TOPOLOGY.md`
+- Marketing runtime, deployment, and extraction contract: `module/services/marketing/README.md`
+- Typed public brand and site configuration: `module/public/site.config.json`
 - Generated PDP input: `module/services/accounts/generated/authz-methods.json`
 - Authorization catalog and enforcement boundary: `module/AUTHORIZATION_CATALOG.md`
 - Generated gateway inventory: `module/services/accounts/generated/gateway-routes.json`
@@ -27,8 +32,19 @@ A codefly **module** is a collection of **services**; each service owns its own 
 
 ## Architecture
 
-```
-Browser
+```text
+example.com / www.example.com             app.example.com
+  ↓                                         ↓
+marketing service                         auth-sidecar
+  ├─ repository content                     ↓
+  ├─ public plan projection                product frontend
+  └─ fixed auth handoff                      ↓
+                                           accounts service
+                                             ├─ adapters/ — gRPC + Connect + REST gateway servers
+                                             ├─ business/ — RBAC + RLS wrappers
+                                             └─ infra/ — Postgres + Redis + Vault
+
+Product API traffic
   ↓ Connect-ES (TS, generated from buf)
 Gateway (Envoy/KrakenD) — merges per-service REST endpoints
   ↓ Bearer JWT or X-API-Key, plus X-Scopes
@@ -43,6 +59,10 @@ accounts service
      ↓
      RLS-enforced reads / writes
 ```
+
+The marketing process has no authentication session, database, Vault, object
+store, admin client, or product feature dependency. Product and marketing have
+independent build, health, deployment, rollback, cache, and hostname policies.
 
 ## Three layers of authorization
 
@@ -150,6 +170,14 @@ tenant-scoped pages do not maintain independent organization filters.
 ### TeamService
 
 `CreateTeam`, `ListTeams`, `AddMember`, `RemoveMember`, `ListMembers` — team_id-scoped operations resolve team→org via `WithBypass` first, then enter `WithOrgTx` for the actual write.
+
+### BillingService public catalog
+
+`ListPublicPlans` (`GET /v1/public/plans`) is a public, credential-free
+projection of the authoritative server catalog. It exposes only presentation,
+checkout eligibility, trial/tax terms, and entitlement limits, plus a
+deterministic revision. The marketing service never copies pricing into
+content and disables a plan CTA when the catalog says checkout is unavailable.
 
 ### Other domain services
 

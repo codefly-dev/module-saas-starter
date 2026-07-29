@@ -20,7 +20,7 @@ func TestRESTSurfaceCompilationAndExposure(t *testing.T) {
 	require.NoError(t, cataloggen.ValidateRESTSurfaceCatalog(surface))
 	require.Equal(t, "saas.rest.surface.v1", surface.GetSchemaVersion())
 	require.Equal(t, "accounts", surface.GetOwner().GetService())
-	require.Len(t, surface.GetRoutes(), 129)
+	require.Len(t, surface.GetRoutes(), 132)
 
 	publicCount := 0
 	services := make(map[string]struct{})
@@ -33,7 +33,7 @@ func TestRESTSurfaceCompilationAndExposure(t *testing.T) {
 			publicCount++
 		}
 	}
-	require.Equal(t, 15, publicCount)
+	require.Equal(t, 16, publicCount)
 	require.Len(t, services, 25)
 	require.Nil(t, routes["POST /v1/permissions:check"])
 	require.Nil(t, routes["POST /v1/api-keys:validate"])
@@ -42,6 +42,8 @@ func TestRESTSurfaceCompilationAndExposure(t *testing.T) {
 	require.Equal(t, "/saas.accounts.v1.PlatformAdminService/GetJobOperations", routes["GET /v1/platform/jobs/operations"].GetProcedure())
 	require.Equal(t, "/saas.accounts.v1.PlatformAdminService/ReplayJob", routes["POST /v1/platform/jobs/{source_job_id}:replay"].GetProcedure())
 	require.Equal(t, "/saas.accounts.v1.WorkContextService/ExchangeAudience", routes["POST /v1/work-contexts:exchange-audience"].GetProcedure())
+	require.Equal(t, "/saas.accounts.v1.UsageService/ListUsageMeters", routes["GET /v1/organizations/{organization_id}/usage"].GetProcedure())
+	require.Equal(t, "/saas.accounts.v1.UsageService/GetUsageHistory", routes["GET /v1/organizations/{organization_id}/usage/{meter}/history"].GetProcedure())
 	require.Equal(t, policyv1.Exposure_EXPOSURE_AUTHENTICATED, routes["POST /v1/invitations:inspect-id"].GetExposure())
 }
 
@@ -75,7 +77,7 @@ func TestRESTSurfaceArtifactsAreDeterministicAndCurrent(t *testing.T) {
 	sidecarRuntime, err := cataloggen.RenderAuthSidecarRESTRoutes(surface)
 	require.NoError(t, err)
 	require.Equal(t, string(readFixture(t, "../../../../auth-sidecar/code/routing_rest_catalog_gen.go")), string(sidecarRuntime), "run: go generate ./pkg/cataloggen")
-	require.Equal(t, 129, strings.Count(string(sidecarRuntime), `{Service: "accounts"`))
+	require.Equal(t, 132, strings.Count(string(sidecarRuntime), `{Service: "accounts"`))
 
 	publicOpenAPI, err := cataloggen.RenderPublicOpenAPI(rawOpenAPI, surface, service)
 	require.NoError(t, err)
@@ -87,8 +89,8 @@ func TestRESTSurfaceArtifactsAreDeterministicAndCurrent(t *testing.T) {
 	var raw, public map[string]any
 	require.NoError(t, json.Unmarshal(rawOpenAPI, &raw))
 	require.NoError(t, json.Unmarshal(publicOpenAPI, &public))
-	require.Equal(t, 129, openAPIOperationCount(t, raw))
-	require.Equal(t, 129, openAPIOperationCount(t, public))
+	require.Equal(t, 132, openAPIOperationCount(t, raw))
+	require.Equal(t, 132, openAPIOperationCount(t, public))
 	require.Equal(t, "saas.rest.surface.v1", public["x-codefly-rest-schema"])
 	publicPaths := public["paths"].(map[string]any)
 	require.NotContains(t, publicPaths, "/v1/permissions:check")

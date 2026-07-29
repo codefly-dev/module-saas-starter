@@ -2,6 +2,7 @@ package business
 
 import (
 	"context"
+	"fmt"
 	"strings"
 	"time"
 
@@ -184,8 +185,30 @@ func (s *Service) GetProgress(ctx context.Context, userID, orgID string) (*Onboa
 				stepMap[definition.ID] = current
 				if transitioned {
 					completedTransitions = append(completedTransitions, definition.ID)
+					if err := s.captureProductEvent(
+						ctx,
+						"onboarding_step_completed",
+						onboardingStepEventFactID(orgID, definition.ID, "completed"),
+						userID,
+						orgID,
+						now,
+						onboardingStepEventProperties(definition.ID),
+					); err != nil {
+						return err
+					}
 				}
 			}
+		}
+		if len(completedTransitions) > 0 && onboardingChecklistComplete(stepMap) {
+			return s.captureProductEvent(
+				ctx,
+				"onboarding_completed",
+				onboardingFlowEventFactID(orgID),
+				userID,
+				orgID,
+				now,
+				map[string]any{"flow_version": fmt.Sprint(CurrentOnboardingFlowVersion)},
+			)
 		}
 		return nil
 	}); err != nil {
@@ -328,7 +351,37 @@ func (s *Service) SkipStep(
 		if !changed && authoritative.Status == "completed" {
 			return wool.Get(ctx).NewError("completed onboarding steps cannot be skipped")
 		}
-		return nil
+		if !changed {
+			return nil
+		}
+		if err := s.captureProductEvent(
+			ctx,
+			"onboarding_step_skipped",
+			onboardingStepEventFactID(orgID, stepID, "skipped"),
+			userID,
+			orgID,
+			now,
+			onboardingStepEventProperties(stepID),
+		); err != nil {
+			return err
+		}
+		for _, progressStep := range progress.Steps {
+			if progressStep.ID == stepID {
+				progressStep = step
+			}
+			if progressStep.Status == "pending" && progressStep.ID != stepID {
+				return nil
+			}
+		}
+		return s.captureProductEvent(
+			ctx,
+			"onboarding_completed",
+			onboardingFlowEventFactID(orgID),
+			userID,
+			orgID,
+			now,
+			map[string]any{"flow_version": fmt.Sprint(CurrentOnboardingFlowVersion)},
+		)
 	}); err != nil {
 		return wool.Get(ctx).Wrapf(err, "cannot skip onboarding step")
 	}
@@ -346,8 +399,28 @@ func (s *Service) RecordProductActivation(
 		milestone = "core_action"
 	}
 	err := s.store.As(Identity{UserID: actorID, OrgID: orgID}).Within(ctx, func(ctx context.Context) error {
-		return s.store.RecordOrganizationActivation(
+		if err := s.store.RecordOrganizationActivation(
 			ctx, orgID, CurrentOnboardingFlowID, CurrentOnboardingFlowVersion, milestone, actorID,
+		); err != nil {
+			return err
+		}
+		return s.captureProductEvent(
+			ctx,
+			"activation_achieved",
+			fmt.Sprintf(
+				"%s:%s:%d:%s",
+				orgID,
+				CurrentOnboardingFlowID,
+				CurrentOnboardingFlowVersion,
+				milestone,
+			),
+			actorID,
+			orgID,
+			time.Now().UTC(),
+			map[string]any{
+				"definition_version": fmt.Sprint(CurrentOnboardingFlowVersion),
+				"milestone":          milestone,
+			},
 		)
 	})
 	if err == nil {
@@ -368,4 +441,47 @@ func validOnboardingStep(id gen.OnboardingStepId) bool {
 func subscriptionCompletesOnboarding(subscription *Subscription) bool {
 	return subscription != nil &&
 		(subscription.Status == "active" || subscription.Status == "trialing")
+}
+
+func onboardingStepEventFactID(
+	orgID string,
+	stepID gen.OnboardingStepId,
+	status string,
+) string {
+	return fmt.Sprintf(
+		"%s:%s:%d:%s:%s",
+		orgID,
+		CurrentOnboardingFlowID,
+		CurrentOnboardingFlowVersion,
+		onboardingStepName(stepID),
+		status,
+	)
+}
+
+func onboardingFlowEventFactID(orgID string) string {
+	return fmt.Sprintf(
+		"%s:%s:%d",
+		orgID,
+		CurrentOnboardingFlowID,
+		CurrentOnboardingFlowVersion,
+	)
+}
+
+func onboardingStepEventProperties(stepID gen.OnboardingStepId) map[string]any {
+	return map[string]any{
+		"step_name":    onboardingStepName(stepID),
+		"flow_version": fmt.Sprint(CurrentOnboardingFlowVersion),
+	}
+}
+
+func onboardingChecklistComplete(
+	steps map[gen.OnboardingStepId]*OnboardingStep,
+) bool {
+	for _, definition := range onboardingStepDefinitions {
+		step := steps[definition.ID]
+		if step == nil || step.Status == "pending" {
+			return false
+		}
+	}
+	return true
 }

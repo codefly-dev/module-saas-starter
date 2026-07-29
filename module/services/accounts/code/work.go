@@ -3,6 +3,7 @@ package main
 import (
 	"accounts/fixtures"
 	"accounts/pkg/adapters"
+	"accounts/pkg/analytics"
 	"accounts/pkg/auth"
 	devvalidator "accounts/pkg/auth/dev"
 	ed25519minter "accounts/pkg/auth/ed25519"
@@ -15,6 +16,7 @@ import (
 	"accounts/pkg/email"
 	"accounts/pkg/infra"
 	"accounts/pkg/jobs"
+	"accounts/pkg/metrics"
 	"accounts/pkg/permissionsplugin"
 	"context"
 	ed25519core "crypto/ed25519"
@@ -28,6 +30,7 @@ import (
 	"github.com/codefly-dev/core/wool"
 	wooltel "github.com/codefly-dev/core/wool/otel"
 	codefly "github.com/codefly-dev/sdk-go"
+	"go.opentelemetry.io/otel"
 )
 
 func init() {
@@ -36,6 +39,15 @@ func init() {
 
 func doWork(ctx context.Context) (Clean, error) {
 	w := wool.Get(ctx).In("doWork")
+	measurementPack, err := metrics.DefaultSeedBundle()
+	if err != nil {
+		return nil, fmt.Errorf("load measurement seed pack: %w", err)
+	}
+	w.Info(
+		"measurement seed pack loaded",
+		wool.Field("dashboard.version", measurementPack.DashboardPack.Version),
+		wool.Field("slo.version", measurementPack.SLOPack.Version),
+	)
 	selectedFixture, err := fixtures.SelectedName()
 	if err != nil {
 		return nil, err
@@ -64,6 +76,9 @@ func doWork(ctx context.Context) (Clean, error) {
 	// browser click to SQL query require both this provider AND the
 	// CORS allowlist for `traceparent` / `baggage` (connect_gen.go).
 	var otelProvider *wooltel.Provider
+	var otelMetricProvider interface {
+		Shutdown(context.Context) error
+	}
 	if os.Getenv("OTEL_EXPORTER_OTLP_ENDPOINT") != "" || os.Getenv("OTEL_SERVICE_NAME") != "" {
 		p, oerr := wooltel.Enable(wooltel.WithServiceName("saas-starter-api"))
 		if oerr != nil {
@@ -73,6 +88,14 @@ func doWork(ctx context.Context) (Clean, error) {
 			w.Info("OTEL enabled",
 				wool.Field("endpoint", os.Getenv("OTEL_EXPORTER_OTLP_ENDPOINT")),
 				wool.Field("service.name", "saas-starter-api"))
+		}
+	}
+	if os.Getenv("OTEL_EXPORTER_OTLP_ENDPOINT") != "" {
+		p, oerr := enableOTLPMetrics(ctx, "saas-starter-api")
+		if oerr != nil {
+			w.Warn("OTEL metrics setup failed; continuing without metric export", wool.ErrField(oerr))
+		} else {
+			otelMetricProvider = p
 		}
 	}
 
@@ -103,8 +126,52 @@ func doWork(ctx context.Context) (Clean, error) {
 		return nil, fmt.Errorf("configure job operations database pool: %w", err)
 	}
 	jobStore := infra.NewPostgresJobStore(jobWorkerPool)
+	var jobOperationsMonitor *jobs.OperationsMonitor
+	if otelMetricProvider != nil {
+		jobOperationsMonitor, err = jobs.NewOperationsMonitor(
+			jobStore,
+			otel.Meter("github.com/codefly-dev/module-saas-starter/job-operations"),
+			30*time.Second,
+		)
+		if err != nil {
+			return nil, fmt.Errorf("configure durable job metrics: %w", err)
+		}
+	}
 	service.SetJobOperations(jobStore)
 	service.SetWebhookJobProducer(store)
+
+	eventRegistry, err := analytics.DefaultRegistry()
+	if err != nil {
+		return nil, err
+	}
+	analyticsSink, analyticsEnabled, err := configuredAnalyticsSink()
+	if err != nil {
+		return nil, err
+	}
+	var analyticsWorker *jobs.Worker
+	if analyticsEnabled {
+		productEventOutbox, err := analytics.NewOutbox(store, eventRegistry)
+		if err != nil {
+			return nil, err
+		}
+		service.SetProductAnalytics(eventRegistry, productEventOutbox)
+		analyticsHandler, err := analytics.NewExportHandler(analytics.ExportHandlerConfig{
+			Destination: analyticsSink,
+			Deliveries:  jobStore,
+		})
+		if err != nil {
+			return nil, err
+		}
+		analyticsWorker, err = jobs.NewWorker(jobs.WorkerConfig{
+			Store:      jobStore,
+			Queue:      analytics.ExportQueue,
+			Handler:    analyticsHandler,
+			RetryDelay: analytics.ExportRetryDelay,
+		})
+		if err != nil {
+			return nil, err
+		}
+	}
 
 	// Vault is a required security dependency: API-key HMAC and TOTP seed
 	// encryption must be stable across replicas and fail closed.
@@ -360,9 +427,10 @@ func doWork(ctx context.Context) (Clean, error) {
 			PortalReturnURL:    billingBaseURL + "/admin/billing",
 		})
 
-		billingNotifier := &billingEmailNotifier{
-			outbox:     workerEmailOutbox,
-			billingURL: billingBaseURL + "/admin/billing",
+		billingNotifier := &billingNotifier{
+			outbox:        workerEmailOutbox,
+			notifications: service,
+			billingURL:    billingBaseURL + "/admin/billing",
 		}
 
 		adapters.RegisterHTTPRoute("/v1/billing/webhook", billing.NewHandler(billing.HandlerDeps{
@@ -444,6 +512,12 @@ func doWork(ctx context.Context) (Clean, error) {
 	if stripeWebhookWorker != nil {
 		stripeWebhookWorker.Start(ctx)
 	}
+	if jobOperationsMonitor != nil {
+		jobOperationsMonitor.Start(ctx)
+	}
+	if analyticsWorker != nil {
+		analyticsWorker.Start(ctx)
+	}
 	emailWorker.Start(ctx)
 	webhookWorker.Start(ctx)
 
@@ -454,6 +528,22 @@ func doWork(ctx context.Context) (Clean, error) {
 			shutdownCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 			if err := stripeWebhookWorker.Shutdown(shutdownCtx); err != nil {
 				sw.Warn("Stripe webhook worker shutdown timed out", wool.ErrField(err))
+			}
+			cancel()
+		}
+		if analyticsWorker != nil {
+			sw.Info("stopping product analytics export worker")
+			shutdownCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+			if err := analyticsWorker.Shutdown(shutdownCtx); err != nil {
+				sw.Warn("product analytics worker shutdown timed out", wool.ErrField(err))
+			}
+			cancel()
+		}
+		if jobOperationsMonitor != nil {
+			sw.Info("stopping durable job metrics monitor")
+			shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+			if err := jobOperationsMonitor.Shutdown(shutdownCtx); err != nil {
+				sw.Warn("job metrics monitor shutdown timed out", wool.ErrField(err))
 			}
 			cancel()
 		}
@@ -505,7 +595,37 @@ func doWork(ctx context.Context) (Clean, error) {
 				sw.Warn("OTEL shutdown failed", wool.ErrField(err))
 			}
 		}
+		if otelMetricProvider != nil {
+			sw.Info("flushing OTEL metrics provider")
+			shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+			defer cancel()
+			if err := otelMetricProvider.Shutdown(shutdownCtx); err != nil {
+				sw.Warn("OTEL metrics shutdown failed", wool.ErrField(err))
+			}
+		}
 	}, nil
+}
+
+func configuredAnalyticsSink() (analytics.Destination, bool, error) {
+	switch strings.ToLower(strings.TrimSpace(os.Getenv("PRODUCT_ANALYTICS_MODE"))) {
+	case "", "disabled":
+		return analytics.NoopSink{}, false, nil
+	case "noop":
+		return analytics.NoopSink{}, true, nil
+	case "posthog":
+		sink, err := analytics.NewPostHog(analytics.PostHogConfig{
+			APIKey:         os.Getenv("POSTHOG_PROJECT_API_KEY"),
+			PersonalAPIKey: os.Getenv("POSTHOG_PERSONAL_API_KEY"),
+			ProjectID:      os.Getenv("POSTHOG_PROJECT_ID"),
+			Host:           os.Getenv("POSTHOG_HOST"),
+		})
+		if err != nil {
+			return nil, false, err
+		}
+		return sink, true, nil
+	default:
+		return nil, false, fmt.Errorf("PRODUCT_ANALYTICS_MODE must be disabled, noop, or posthog")
+	}
 }
 
 func configuredMFAStepUpMaxAge() (time.Duration, error) {
@@ -810,16 +930,17 @@ func loadSigningKey(ctx context.Context) (ed25519core.PrivateKey, error) {
 	return priv, err
 }
 
-// billingEmailNotifier converts a completed billing projection into a second
-// durable outbox command. It never owns or calls the email transport.
-type billingEmailNotifier struct {
-	outbox     *email.Outbox
-	billingURL string
+// billingNotifier converts a completed billing projection into channel-specific
+// delivery commands.
+type billingNotifier struct {
+	outbox        *email.Outbox
+	notifications *business.Service
+	billingURL    string
 }
 
-func (n *billingEmailNotifier) EnqueueBillingEmail(ctx context.Context, message billing.BillingEmail) error {
+func (n *billingNotifier) EnqueueBillingEmail(ctx context.Context, message billing.BillingEmail) error {
 	if n == nil || n.outbox == nil {
-		return nil
+		return fmt.Errorf("billing: email notifier is not configured")
 	}
 	variables := make(map[string]string, len(message.Variables)+1)
 	for key, value := range message.Variables {
@@ -834,4 +955,24 @@ func (n *billingEmailNotifier) EnqueueBillingEmail(ctx context.Context, message 
 		To:          message.To,
 		Variables:   variables,
 	})
+}
+
+func (n *billingNotifier) CreateBillingNotification(
+	ctx context.Context,
+	message billing.BillingNotification,
+) error {
+	if n == nil || n.notifications == nil {
+		return fmt.Errorf("billing: in-app notifier is not configured")
+	}
+	_, err := n.notifications.CreateNotification(ctx, business.CreateNotificationInput{
+		UserID:         message.RecipientID,
+		OrgID:          message.OrganizationID,
+		Title:          message.Title,
+		Body:           message.Body,
+		Type:           "billing",
+		ActionURL:      message.ActionURL,
+		Category:       business.NotificationCategoryBilling,
+		IdempotencyKey: message.DeliveryKey,
+	})
+	return err
 }

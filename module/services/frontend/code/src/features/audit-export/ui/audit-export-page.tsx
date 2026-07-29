@@ -100,8 +100,8 @@ export function AuditExportPage() {
 					<h1 className="text-2xl font-bold tracking-tight">Audit Export</h1>
 					<p className="text-muted-foreground">
 						Stream your audit log to S3 (or any S3-compatible store) on a
-						schedule. Compliance teams get a tamper-evident copy outside the
-						platform.
+						schedule. Configure and verify retention, access, and immutability
+						controls on the destination.
 					</p>
 				</div>
 				<OrgSelector />

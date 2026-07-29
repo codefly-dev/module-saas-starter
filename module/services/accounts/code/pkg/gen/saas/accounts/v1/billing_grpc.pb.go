@@ -20,14 +20,16 @@ import (
 const _ = grpc.SupportPackageIsVersion9
 
 const (
-	BillingService_OpenPortal_FullMethodName   = "/saas.accounts.v1.BillingService/OpenPortal"
-	BillingService_ListInvoices_FullMethodName = "/saas.accounts.v1.BillingService/ListInvoices"
+	BillingService_ListPublicPlans_FullMethodName = "/saas.accounts.v1.BillingService/ListPublicPlans"
+	BillingService_OpenPortal_FullMethodName      = "/saas.accounts.v1.BillingService/OpenPortal"
+	BillingService_ListInvoices_FullMethodName    = "/saas.accounts.v1.BillingService/ListInvoices"
 )
 
 // BillingServiceClient is the client API for BillingService service.
 //
 // For semantics around ctx use and closing/ending streaming RPCs, please refer to https://pkg.go.dev/google.golang.org/grpc/?tab=doc#ClientConn.NewStream.
 type BillingServiceClient interface {
+	ListPublicPlans(ctx context.Context, in *ListPublicPlansRequest, opts ...grpc.CallOption) (*ListPublicPlansResponse, error)
 	OpenPortal(ctx context.Context, in *OpenBillingPortalRequest, opts ...grpc.CallOption) (*OpenBillingPortalResponse, error)
 	ListInvoices(ctx context.Context, in *ListInvoicesRequest, opts ...grpc.CallOption) (*ListInvoicesResponse, error)
 }
@@ -38,6 +40,16 @@ type billingServiceClient struct {
 
 func NewBillingServiceClient(cc grpc.ClientConnInterface) BillingServiceClient {
 	return &billingServiceClient{cc}
+}
+
+func (c *billingServiceClient) ListPublicPlans(ctx context.Context, in *ListPublicPlansRequest, opts ...grpc.CallOption) (*ListPublicPlansResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ListPublicPlansResponse)
+	err := c.cc.Invoke(ctx, BillingService_ListPublicPlans_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
 }
 
 func (c *billingServiceClient) OpenPortal(ctx context.Context, in *OpenBillingPortalRequest, opts ...grpc.CallOption) (*OpenBillingPortalResponse, error) {
@@ -64,6 +76,7 @@ func (c *billingServiceClient) ListInvoices(ctx context.Context, in *ListInvoice
 // All implementations must embed UnimplementedBillingServiceServer
 // for forward compatibility.
 type BillingServiceServer interface {
+	ListPublicPlans(context.Context, *ListPublicPlansRequest) (*ListPublicPlansResponse, error)
 	OpenPortal(context.Context, *OpenBillingPortalRequest) (*OpenBillingPortalResponse, error)
 	ListInvoices(context.Context, *ListInvoicesRequest) (*ListInvoicesResponse, error)
 	mustEmbedUnimplementedBillingServiceServer()
@@ -76,6 +89,9 @@ type BillingServiceServer interface {
 // pointer dereference when methods are called.
 type UnimplementedBillingServiceServer struct{}
 
+func (UnimplementedBillingServiceServer) ListPublicPlans(context.Context, *ListPublicPlansRequest) (*ListPublicPlansResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method ListPublicPlans not implemented")
+}
 func (UnimplementedBillingServiceServer) OpenPortal(context.Context, *OpenBillingPortalRequest) (*OpenBillingPortalResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method OpenPortal not implemented")
 }
@@ -101,6 +117,24 @@ func RegisterBillingServiceServer(s grpc.ServiceRegistrar, srv BillingServiceSer
 		t.testEmbeddedByValue()
 	}
 	s.RegisterService(&BillingService_ServiceDesc, srv)
+}
+
+func _BillingService_ListPublicPlans_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ListPublicPlansRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(BillingServiceServer).ListPublicPlans(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: BillingService_ListPublicPlans_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(BillingServiceServer).ListPublicPlans(ctx, req.(*ListPublicPlansRequest))
+	}
+	return interceptor(ctx, in, info, handler)
 }
 
 func _BillingService_OpenPortal_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
@@ -146,6 +180,10 @@ var BillingService_ServiceDesc = grpc.ServiceDesc{
 	ServiceName: "saas.accounts.v1.BillingService",
 	HandlerType: (*BillingServiceServer)(nil),
 	Methods: []grpc.MethodDesc{
+		{
+			MethodName: "ListPublicPlans",
+			Handler:    _BillingService_ListPublicPlans_Handler,
+		},
 		{
 			MethodName: "OpenPortal",
 			Handler:    _BillingService_OpenPortal_Handler,

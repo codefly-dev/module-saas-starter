@@ -13,7 +13,7 @@ import {
 	useState,
 } from "react";
 import { AuthService } from "@/gen/saas/accounts/v1/authentication_pb";
-import { safeReturnPath } from "@/lib/auth-return";
+import { safePostLoginDestination } from "@/lib/public-handoff";
 import type { OrgRole, PlatformRole } from "./auth-session";
 import {
 	clearRefreshToken,
@@ -375,7 +375,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 			sessionStorage.setItem("oauth_redirect_uri", redirectURI);
 			sessionStorage.setItem(
 				"post_login_destination",
-				safeReturnPath(destination),
+				safePostLoginDestination(destination ?? "/"),
 			);
 			window.location.href = buildAuthorizeURL(
 				preset,
@@ -439,8 +439,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 			}
 			setTokens(data.accessToken, data.refreshToken, data.user?.uuid);
 
-			const dest = safeReturnPath(
-				sessionStorage.getItem("post_login_destination"),
+			const dest = safePostLoginDestination(
+				sessionStorage.getItem("post_login_destination") ?? "/",
 			);
 			sessionStorage.removeItem("post_login_destination");
 			if (typeof window !== "undefined") {
@@ -472,8 +472,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 				data.user?.primaryEmail,
 			);
 
-			const dest = safeReturnPath(
-				sessionStorage.getItem("post_login_destination"),
+			const dest = safePostLoginDestination(
+				sessionStorage.getItem("post_login_destination") ?? "/",
 			);
 			sessionStorage.removeItem("post_login_destination");
 			window.location.replace(dest);
@@ -538,8 +538,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 			data.user?.primaryEmail,
 		);
 
-		const dest = safeReturnPath(
-			sessionStorage.getItem("post_login_destination"),
+		const dest = safePostLoginDestination(
+			sessionStorage.getItem("post_login_destination") ?? "/",
 		);
 		sessionStorage.removeItem("post_login_destination");
 		window.location.replace(dest);

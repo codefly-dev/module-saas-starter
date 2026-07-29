@@ -13,7 +13,7 @@ import (
 func TestGeneratedRESTSurfaceAndExtensions(t *testing.T) {
 	generated, err := LoadRESTRoutesFromCatalog()
 	require.NoError(t, err)
-	require.Len(t, generated, 129)
+	require.Len(t, generated, 132)
 
 	paths := make(map[string]*RouteEntry, len(generated))
 	publicCount := 0
@@ -25,9 +25,11 @@ func TestGeneratedRESTSurfaceAndExtensions(t *testing.T) {
 			publicCount++
 		}
 	}
-	require.Equal(t, 15, publicCount)
+	require.Equal(t, 16, publicCount)
 	require.NotNil(t, paths["POST /v1/audit-export"])
 	require.NotNil(t, paths["GET /v1/.well-known/service-info"])
+	require.NotNil(t, paths["GET /v1/public/plans"])
+	require.False(t, paths["GET /v1/public/plans"].Protected)
 	require.NotNil(t, paths["GET /v1/acquisition"])
 	require.False(t, paths["GET /v1/acquisition"].Protected)
 	require.NotNil(t, paths["POST /v1/waitlist"])
@@ -42,6 +44,10 @@ func TestGeneratedRESTSurfaceAndExtensions(t *testing.T) {
 	require.True(t, paths["POST /v1/platform/jobs/{source_job_id}:replay"].Protected)
 	require.NotNil(t, paths["POST /v1/work-contexts:exchange-audience"])
 	require.True(t, paths["POST /v1/work-contexts:exchange-audience"].Protected)
+	require.NotNil(t, paths["GET /v1/organizations/{organization_id}/usage"])
+	require.True(t, paths["GET /v1/organizations/{organization_id}/usage"].Protected)
+	require.NotNil(t, paths["GET /v1/organizations/{organization_id}/usage/{meter}/history"])
+	require.True(t, paths["GET /v1/organizations/{organization_id}/usage/{meter}/history"].Protected)
 	require.Nil(t, paths["POST /v1/permissions:check"])
 	require.False(t, paths["POST /v1/users"].Protected)
 
@@ -66,7 +72,7 @@ func TestGeneratedRESTSurfaceAndExtensions(t *testing.T) {
 
 	all, err := LoadAllRESTRoutes(context.Background(), DefaultRoutingDir())
 	require.NoError(t, err)
-	require.Len(t, all, 134)
+	require.Len(t, all, 137)
 	matcher := NewRouteMatcher(all, nil)
 	require.NotNil(t, matcher.MatchREST(http.MethodGet, "/v1/audit-export/org-1"))
 	require.NotNil(t, matcher.MatchREST(http.MethodPost, "/v1/auth/magic-link"))

@@ -20,7 +20,7 @@ func TestGatewayRouteCatalogCompilationAndParity(t *testing.T) {
 	routes, err := cataloggen.BuildGatewayRouteCatalog(serviceDocument, bindingDocument, topologyDocument)
 	require.NoError(t, err)
 	require.NoError(t, cataloggen.ValidateGatewayRouteCatalog(routes))
-	require.Len(t, routes.GetRoutes(), 385)
+	require.Len(t, routes.GetRoutes(), 394)
 
 	var connectCount, restCount, aliasCount, publicCount int
 	byMatch := make(map[string]*catalogv1.GatewayRoute, len(routes.GetRoutes()))
@@ -40,10 +40,10 @@ func TestGatewayRouteCatalogCompilationAndParity(t *testing.T) {
 		}
 		require.NotEqual(t, policyv1.Exposure_EXPOSURE_INTERNAL, route.GetExposure())
 	}
-	require.Equal(t, 256, connectCount)
-	require.Equal(t, 129, restCount)
-	require.Equal(t, 128, aliasCount)
-	require.Equal(t, 45, publicCount)
+	require.Equal(t, 262, connectCount)
+	require.Equal(t, 132, restCount)
+	require.Equal(t, 131, aliasCount)
+	require.Equal(t, 48, publicCount)
 
 	require.Nil(t, byMatch["POST /saas.accounts.v1.APIKeyService/ValidateAPIKey"])
 	require.Equal(t, policyv1.Exposure_EXPOSURE_PUBLIC, byMatch["POST /saas.accounts.v1.AuthService/BeginOAuth"].GetExposure())
@@ -51,6 +51,7 @@ func TestGatewayRouteCatalogCompilationAndParity(t *testing.T) {
 	require.Equal(t, "/saas.accounts.v1.PlatformAdminService/GetJobOperations", byMatch["GET /v1/platform/jobs/operations"].GetProcedure())
 	require.Equal(t, "/saas.accounts.v1.PlatformAdminService/ReplayJob", byMatch["POST /v1/platform/jobs/{source_job_id}:replay"].GetProcedure())
 	require.Equal(t, "/saas.accounts.v1.WorkContextService/ExchangeAudience", byMatch["POST /v1/work-contexts:exchange-audience"].GetProcedure())
+	require.Equal(t, "/saas.accounts.v1.UsageService/GetUsageHistory", byMatch["GET /v1/organizations/{organization_id}/usage/{meter}/history"].GetProcedure())
 	require.Equal(t, policyv1.Exposure_EXPOSURE_AUTHENTICATED, byMatch["POST /v1/invitations:inspect-id"].GetExposure())
 	legacy := byMatch["POST /customers.UserService/GetSelf"]
 	require.Equal(t, "/saas.accounts.v1.UserService/GetSelf", legacy.GetRewritePath())
@@ -86,12 +87,12 @@ func TestGatewayArtifactsAreDeterministicAndCurrent(t *testing.T) {
 	goRoutes, err := cataloggen.RenderAuthSidecarConnectRoutes(routes)
 	require.NoError(t, err)
 	require.Equal(t, string(goRoutes), string(readFixture(t, "../../../../auth-sidecar/code/routing_catalog_gen.go")), "run: go generate ./pkg/cataloggen")
-	require.Equal(t, 256, strings.Count(string(goRoutes), `{Service: "accounts_connect"`))
+	require.Equal(t, 262, strings.Count(string(goRoutes), `{Service: "accounts_connect"`))
 
 	istio, err := cataloggen.RenderIstioVirtualService(routes, bindingDocument)
 	require.NoError(t, err)
 	require.Equal(t, string(istio), string(readFixture(t, "../../../../../deployment/generated/accounts-routes.virtualservice.yaml")), "run: go generate ./pkg/cataloggen")
-	require.Equal(t, 385, strings.Count(string(istio), "- name: catalog-"))
+	require.Equal(t, 394, strings.Count(string(istio), "- name: catalog-"))
 	require.NotContains(t, string(istio), "prefix:")
 	require.Contains(t, string(istio), "regex: ^/v1/users/[^/]+$")
 }

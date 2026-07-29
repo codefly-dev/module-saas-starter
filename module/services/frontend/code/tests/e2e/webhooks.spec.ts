@@ -18,6 +18,13 @@ async function loginAsSuperAdmin(page: Page) {
 	await page.getByText("Sarah Chen").click();
 	await expect(page.getByText("Welcome back")).toBeVisible({ timeout: 20000 });
 	await resolveConsentPrompt(page);
+	await expect
+		.poll(async () =>
+			(await page.context().cookies()).some(
+				(item) => item.name === "codefly_rt" && item.value.length > 0,
+			),
+		)
+		.toBe(true);
 }
 
 test.describe("Webhooks admin page", () => {

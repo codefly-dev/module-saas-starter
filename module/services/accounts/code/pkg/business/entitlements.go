@@ -71,6 +71,21 @@ type PlanFull struct {
 	TaxBehavior     string
 }
 
+type PublicPlan struct {
+	Key             string
+	Name            string
+	Description     string
+	Currency        string
+	AmountMinor     int64
+	Interval        string
+	CheckoutEnabled bool
+	ContactSales    bool
+	TrialDays       int
+	TaxBehavior     string
+	Fixture         bool
+	Entitlements    []PlanFeatureLimit
+}
+
 // Subscription links an org to a plan.
 type Subscription struct {
 	ID                   string

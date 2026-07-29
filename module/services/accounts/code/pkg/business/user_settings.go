@@ -61,6 +61,13 @@ func (s *Service) UpdateUserSettings(
 			return nil, status.Error(codes.InvalidArgument, "theme preference is invalid")
 		}
 	}
+	securityEmail, present, err := usersettings.Fields.Email.Security.Lookup(patch)
+	if err != nil {
+		return nil, status.Error(codes.InvalidArgument, "invalid security email preference")
+	}
+	if present && !securityEmail {
+		return nil, status.Error(codes.InvalidArgument, "security email cannot be disabled")
+	}
 
 	var settings *gen.UserSettings
 	if err := s.store.As(Identity{UserID: userID}).Within(ctx, func(ctx context.Context) error {

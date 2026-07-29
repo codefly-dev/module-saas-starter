@@ -75,13 +75,15 @@ func (f *invitationLifecycleStore) UpdateInvitationStatus(
 
 type invitationJobProducer struct {
 	enqueued int
+	requests []*jobsv1.EnqueueJobRequest
 }
 
 func (p *invitationJobProducer) EnqueueJob(
-	context.Context,
-	*jobsv1.EnqueueJobRequest,
+	_ context.Context,
+	request *jobsv1.EnqueueJobRequest,
 ) (*jobsv1.EnqueueJobResponse, error) {
 	p.enqueued++
+	p.requests = append(p.requests, request)
 	return &jobsv1.EnqueueJobResponse{
 		Disposition: jobsv1.JobEnqueueDisposition_JOB_ENQUEUE_DISPOSITION_INSERTED,
 	}, nil

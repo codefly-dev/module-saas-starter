@@ -1,6 +1,7 @@
 import { type FrontendServiceBinding } from "@codefly/saas-plugin-contract";
 import { defineReactFrontend } from "@codefly/saas-plugin-react";
 import { FRONTEND_ROUTES } from "@/gen/saas/frontend/v1/plugin_catalog";
+import { publicSiteConfig } from "@/generated/public-site-config";
 import { auditPlugin } from "@/plugins/audit";
 import { coreUsersPlugin } from "@/plugins/core-users";
 import { platformAdminPlugin } from "@/plugins/platform-admin";
@@ -28,10 +29,21 @@ export const serviceBindings =
 
 const frontendConfig = defineReactFrontend({
 	branding: {
-		name: "SaaS Application",
-		mark: "S",
-		title: "SaaS Application",
-		description: "A secure multi-tenant application.",
+		name: publicSiteConfig.company.productName,
+		mark: publicSiteConfig.brand.mark,
+		title: `${publicSiteConfig.company.productName} application`,
+		description: publicSiteConfig.company.shortDescription,
+		favicon: publicSiteConfig.brand.favicon,
+	},
+	appearance: {
+		fontSans: publicSiteConfig.brand.typography.sans,
+		fontHeading: publicSiteConfig.brand.typography.heading,
+		light: {
+			primary: publicSiteConfig.brand.colors.primary,
+			background: publicSiteConfig.brand.colors.background,
+			foreground: publicSiteConfig.brand.colors.foreground,
+			accent: publicSiteConfig.brand.colors.accent,
+		},
 	},
 	plugins: installedPlugins,
 	filesystemRoutes: FRONTEND_ROUTES.map((route) => route.path),

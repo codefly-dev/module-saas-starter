@@ -173,6 +173,7 @@ type Store interface {
 	CreateEntitlementOverride(ctx context.Context, override *EntitlementOverride) error
 	LockEntitlementQuota(ctx context.Context, orgID string, feature string) error
 	GetUsageTotal(ctx context.Context, orgID string, meter string, periodStart time.Time) (int64, error)
+	GetUsageBuckets(ctx context.Context, orgID string, meter string, from, to time.Time, bucket UsageBucketInterval) ([]UsageBucketValue, error)
 	ConsumeUsage(ctx context.Context, consumption UsageConsumption) (*UsageReceipt, error)
 	GetSubscription(ctx context.Context, orgID string) (*Subscription, error)
 	CreateSubscription(ctx context.Context, sub *Subscription) error
@@ -183,6 +184,7 @@ type Store interface {
 	GetOrgStripeCustomerID(ctx context.Context, orgID string) (string, error)
 	SetOrgStripeCustomerID(ctx context.Context, orgID, stripeCustomerID string) error
 	GetPlanByName(ctx context.Context, name string) (*PlanFull, error)
+	ListPublicPlans(ctx context.Context) ([]PublicPlan, error)
 
 	// Feature Flags
 	GetFeatureFlag(ctx context.Context, name string) (*FeatureFlag, error)

@@ -39,6 +39,12 @@ const (
 	UsageServiceConsumeUsageProcedure = "/saas.accounts.v1.UsageService/ConsumeUsage"
 	// UsageServiceGetUsageProcedure is the fully-qualified name of the UsageService's GetUsage RPC.
 	UsageServiceGetUsageProcedure = "/saas.accounts.v1.UsageService/GetUsage"
+	// UsageServiceListUsageMetersProcedure is the fully-qualified name of the UsageService's
+	// ListUsageMeters RPC.
+	UsageServiceListUsageMetersProcedure = "/saas.accounts.v1.UsageService/ListUsageMeters"
+	// UsageServiceGetUsageHistoryProcedure is the fully-qualified name of the UsageService's
+	// GetUsageHistory RPC.
+	UsageServiceGetUsageHistoryProcedure = "/saas.accounts.v1.UsageService/GetUsageHistory"
 )
 
 // UsageServiceClient is a client for the saas.accounts.v1.UsageService service.
@@ -50,6 +56,8 @@ type UsageServiceClient interface {
 	// meter. Cardinality quotas such as seats remain entitlement gauges rather
 	// than usage events.
 	GetUsage(context.Context, *connect.Request[v1.GetUsageRequest]) (*connect.Response[v1.GetUsageResponse], error)
+	ListUsageMeters(context.Context, *connect.Request[v1.ListUsageMetersRequest]) (*connect.Response[v1.ListUsageMetersResponse], error)
+	GetUsageHistory(context.Context, *connect.Request[v1.GetUsageHistoryRequest]) (*connect.Response[v1.GetUsageHistoryResponse], error)
 }
 
 // NewUsageServiceClient constructs a client for the saas.accounts.v1.UsageService service. By
@@ -75,13 +83,27 @@ func NewUsageServiceClient(httpClient connect.HTTPClient, baseURL string, opts .
 			connect.WithSchema(usageServiceMethods.ByName("GetUsage")),
 			connect.WithClientOptions(opts...),
 		),
+		listUsageMeters: connect.NewClient[v1.ListUsageMetersRequest, v1.ListUsageMetersResponse](
+			httpClient,
+			baseURL+UsageServiceListUsageMetersProcedure,
+			connect.WithSchema(usageServiceMethods.ByName("ListUsageMeters")),
+			connect.WithClientOptions(opts...),
+		),
+		getUsageHistory: connect.NewClient[v1.GetUsageHistoryRequest, v1.GetUsageHistoryResponse](
+			httpClient,
+			baseURL+UsageServiceGetUsageHistoryProcedure,
+			connect.WithSchema(usageServiceMethods.ByName("GetUsageHistory")),
+			connect.WithClientOptions(opts...),
+		),
 	}
 }
 
 // usageServiceClient implements UsageServiceClient.
 type usageServiceClient struct {
-	consumeUsage *connect.Client[v1.ConsumeUsageRequest, v1.ConsumeUsageResponse]
-	getUsage     *connect.Client[v1.GetUsageRequest, v1.GetUsageResponse]
+	consumeUsage    *connect.Client[v1.ConsumeUsageRequest, v1.ConsumeUsageResponse]
+	getUsage        *connect.Client[v1.GetUsageRequest, v1.GetUsageResponse]
+	listUsageMeters *connect.Client[v1.ListUsageMetersRequest, v1.ListUsageMetersResponse]
+	getUsageHistory *connect.Client[v1.GetUsageHistoryRequest, v1.GetUsageHistoryResponse]
 }
 
 // ConsumeUsage calls saas.accounts.v1.UsageService.ConsumeUsage.
@@ -94,6 +116,16 @@ func (c *usageServiceClient) GetUsage(ctx context.Context, req *connect.Request[
 	return c.getUsage.CallUnary(ctx, req)
 }
 
+// ListUsageMeters calls saas.accounts.v1.UsageService.ListUsageMeters.
+func (c *usageServiceClient) ListUsageMeters(ctx context.Context, req *connect.Request[v1.ListUsageMetersRequest]) (*connect.Response[v1.ListUsageMetersResponse], error) {
+	return c.listUsageMeters.CallUnary(ctx, req)
+}
+
+// GetUsageHistory calls saas.accounts.v1.UsageService.GetUsageHistory.
+func (c *usageServiceClient) GetUsageHistory(ctx context.Context, req *connect.Request[v1.GetUsageHistoryRequest]) (*connect.Response[v1.GetUsageHistoryResponse], error) {
+	return c.getUsageHistory.CallUnary(ctx, req)
+}
+
 // UsageServiceHandler is an implementation of the saas.accounts.v1.UsageService service.
 type UsageServiceHandler interface {
 	// ConsumeUsage is service-to-service only. It atomically enforces the
@@ -103,6 +135,8 @@ type UsageServiceHandler interface {
 	// meter. Cardinality quotas such as seats remain entitlement gauges rather
 	// than usage events.
 	GetUsage(context.Context, *connect.Request[v1.GetUsageRequest]) (*connect.Response[v1.GetUsageResponse], error)
+	ListUsageMeters(context.Context, *connect.Request[v1.ListUsageMetersRequest]) (*connect.Response[v1.ListUsageMetersResponse], error)
+	GetUsageHistory(context.Context, *connect.Request[v1.GetUsageHistoryRequest]) (*connect.Response[v1.GetUsageHistoryResponse], error)
 }
 
 // NewUsageServiceHandler builds an HTTP handler from the service implementation. It returns the
@@ -124,12 +158,28 @@ func NewUsageServiceHandler(svc UsageServiceHandler, opts ...connect.HandlerOpti
 		connect.WithSchema(usageServiceMethods.ByName("GetUsage")),
 		connect.WithHandlerOptions(opts...),
 	)
+	usageServiceListUsageMetersHandler := connect.NewUnaryHandler(
+		UsageServiceListUsageMetersProcedure,
+		svc.ListUsageMeters,
+		connect.WithSchema(usageServiceMethods.ByName("ListUsageMeters")),
+		connect.WithHandlerOptions(opts...),
+	)
+	usageServiceGetUsageHistoryHandler := connect.NewUnaryHandler(
+		UsageServiceGetUsageHistoryProcedure,
+		svc.GetUsageHistory,
+		connect.WithSchema(usageServiceMethods.ByName("GetUsageHistory")),
+		connect.WithHandlerOptions(opts...),
+	)
 	return "/saas.accounts.v1.UsageService/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case UsageServiceConsumeUsageProcedure:
 			usageServiceConsumeUsageHandler.ServeHTTP(w, r)
 		case UsageServiceGetUsageProcedure:
 			usageServiceGetUsageHandler.ServeHTTP(w, r)
+		case UsageServiceListUsageMetersProcedure:
+			usageServiceListUsageMetersHandler.ServeHTTP(w, r)
+		case UsageServiceGetUsageHistoryProcedure:
+			usageServiceGetUsageHistoryHandler.ServeHTTP(w, r)
 		default:
 			http.NotFound(w, r)
 		}
@@ -145,4 +195,12 @@ func (UnimplementedUsageServiceHandler) ConsumeUsage(context.Context, *connect.R
 
 func (UnimplementedUsageServiceHandler) GetUsage(context.Context, *connect.Request[v1.GetUsageRequest]) (*connect.Response[v1.GetUsageResponse], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("saas.accounts.v1.UsageService.GetUsage is not implemented"))
+}
+
+func (UnimplementedUsageServiceHandler) ListUsageMeters(context.Context, *connect.Request[v1.ListUsageMetersRequest]) (*connect.Response[v1.ListUsageMetersResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("saas.accounts.v1.UsageService.ListUsageMeters is not implemented"))
+}
+
+func (UnimplementedUsageServiceHandler) GetUsageHistory(context.Context, *connect.Request[v1.GetUsageHistoryRequest]) (*connect.Response[v1.GetUsageHistoryResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("saas.accounts.v1.UsageService.GetUsageHistory is not implemented"))
 }

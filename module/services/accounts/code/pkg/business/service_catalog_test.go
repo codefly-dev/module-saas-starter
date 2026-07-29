@@ -23,7 +23,7 @@ func TestServiceCatalogCompilation(t *testing.T) {
 	require.Equal(t, "saas.accounts.v1", catalog.GetApiPackage())
 	require.Equal(t, business.ServiceVersion, catalog.GetApiVersion())
 	require.Len(t, catalog.GetServices(), 26)
-	require.Len(t, catalog.GetMethods(), 135)
+	require.Len(t, catalog.GetMethods(), 138)
 	require.Len(t, catalog.GetPermissions(), 21)
 	require.Len(t, catalog.GetEntitlements(), 5)
 	require.Equal(t, "*:*", catalog.GetPermissions()[0].GetPermission())
@@ -66,6 +66,10 @@ func TestServiceCatalogCompilation(t *testing.T) {
 	require.Equal(t, policyv1.PlatformRoleRequirement_PLATFORM_ROLE_REQUIREMENT_SUPER_ADMIN, replayJob.GetPolicy().GetPlatformRole())
 	require.Equal(t, policyv1.MFARequirement_MFA_REQUIREMENT_RECENT_STEP_UP, replayJob.GetPolicy().GetMfa())
 	require.Equal(t, "/v1/platform/jobs/{source_job_id}:replay", replayJob.GetHttpBindings()[0].GetPath())
+
+	usageHistory := methods["/saas.accounts.v1.UsageService/GetUsageHistory"]
+	require.NotNil(t, usageHistory)
+	require.Equal(t, "/v1/organizations/{organization_id}/usage/{meter}/history", usageHistory.GetHttpBindings()[0].GetPath())
 }
 
 func TestServiceCatalogJSONIsDeterministicAndCurrent(t *testing.T) {
