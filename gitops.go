@@ -247,6 +247,7 @@ type environmentPlan struct {
 	managed      map[string]managedServiceConfig
 	allowlist    []argoResourceAllow
 	project      string
+	local        bool
 }
 
 type gitOpsContract struct {
@@ -804,6 +805,7 @@ func planEnvironment(
 		revision:     revision,
 		managed:      make(map[string]managedServiceConfig),
 		servicePaths: make(map[string]string),
+		local:        local,
 	}
 	if err := validateManagedServices(environment, services, topology, aws, &plan); err != nil {
 		return environmentPlan{}, err
@@ -1269,7 +1271,7 @@ func validateCLIRenderGraph(
 			}
 		}
 		paths[servicePath] = service.Service
-		if err := validateCorePromotableOutput(service.Service, service.Output); err != nil {
+		if err := validateCorePromotableOutput(service.Service, service.Output, plan.local); err != nil {
 			return err
 		}
 		plan.servicePaths[service.Service] = path.Join(
@@ -1287,7 +1289,7 @@ func validateCLIRenderGraph(
 	return nil
 }
 
-func validateCorePromotableOutput(service string, output *cliKubernetesOutput) error {
+func validateCorePromotableOutput(service string, output *cliKubernetesOutput, local bool) error {
 	if output == nil || output.Validation == nil {
 		return fmt.Errorf("CLI render inventory service %q has no Core Kubernetes output evidence", service)
 	}
@@ -1312,8 +1314,11 @@ func validateCorePromotableOutput(service string, output *cliKubernetesOutput) e
 		)
 	}
 	passed := builderv0.KubernetesManifestValidation_STATUS_PASSED.String()
+	notRun := builderv0.KubernetesManifestValidation_STATUS_NOT_RUN.String()
+	serverValidation := output.Validation.ServerSideValidation
 	if output.Validation.StaticValidation != passed ||
-		output.Validation.ServerSideValidation != passed ||
+		(local && serverValidation != passed) ||
+		(!local && serverValidation != passed && serverValidation != notRun) ||
 		!output.Validation.Promotable ||
 		len(output.Validation.Violations) != 0 {
 		return fmt.Errorf("CLI render inventory service %q Core output is not promotable", service)

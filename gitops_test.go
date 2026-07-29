@@ -411,6 +411,18 @@ func TestGenerateGitOpsVerifiesReleasedCorePromotableOutput(t *testing.T) {
 	}
 }
 
+func TestCorePromotableOutputAllowsOfflineValidationOnlyForRemote(t *testing.T) {
+	output := fixturePromotableOutput()
+	output.Validation.ServerSideValidation = "STATUS_NOT_RUN"
+
+	if err := validateCorePromotableOutput("accounts", output, false); err != nil {
+		t.Fatalf("remote offline validation rejected: %v", err)
+	}
+	if err := validateCorePromotableOutput("accounts", output, true); err == nil {
+		t.Fatal("local offline validation was accepted")
+	}
+}
+
 func TestGenerateGitOpsUsesCLISelectedAppProjectAndServiceRoots(t *testing.T) {
 	t.Parallel()
 	root, moduleDir := writeGitOpsFixture(t, "project-control", "identity", []string{"accounts"})
