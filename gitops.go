@@ -61,11 +61,19 @@ type environmentConfig struct {
 	Name            string                          `yaml:"name"`
 	Namespace       string                          `yaml:"namespace"`
 	Cluster         environmentCluster              `yaml:"cluster"`
+	Ingress         []environmentIngressRoute       `yaml:"ingress,omitempty"`
 	ManagedServices map[string]managedServiceConfig `yaml:"managed-services,omitempty"`
 }
 
 type environmentCluster struct {
 	Kind string `yaml:"kind"`
+}
+
+type environmentIngressRoute struct {
+	Name     string   `yaml:"name"`
+	Service  string   `yaml:"service"`
+	Endpoint string   `yaml:"endpoint"`
+	Hosts    []string `yaml:"hosts"`
 }
 
 type serviceReference struct {
@@ -186,10 +194,19 @@ type environmentPlan struct {
 	environment *environmentConfig
 	revision    string
 	services    []string
+	ingress     []ingressRoutePlan
 	handoffs    []managedServiceHandoff
 	managed     map[string]managedServiceConfig
 	allowlist   []argoResourceAllow
 	project     string
+}
+
+type ingressRoutePlan struct {
+	name     string
+	service  string
+	endpoint string
+	port     uint32
+	hosts    []string
 }
 
 type deploymentTopology struct {
@@ -606,9 +623,135 @@ func planEnvironments(
 				plan.services = append(plan.services, service)
 			}
 		}
+		if err := validateIngressRoutes(environment, topology, &plan); err != nil {
+			return nil, err
+		}
 		plans = append(plans, plan)
 	}
 	return plans, nil
+}
+
+func validateIngressRoutes(
+	environment *environmentConfig,
+	topology deploymentTopology,
+	plan *environmentPlan,
+) error {
+	if len(environment.Ingress) == 0 {
+		entry, exists := topologyServiceByName(topology, topology.Module.ServiceEntry)
+		if !exists || !slices.Contains(plan.services, entry.Name) {
+			return fmt.Errorf(
+				"environment %q service entry %q is not an in-cluster service",
+				environment.Name,
+				topology.Module.ServiceEntry,
+			)
+		}
+		for _, exposed := range topology.Interface {
+			if exposed.Service != entry.Name || exposed.Visibility != "public" {
+				continue
+			}
+			endpoint, found := topologyEndpointByName(entry, exposed.Endpoint)
+			if !found {
+				return fmt.Errorf(
+					"environment %q public interface references missing endpoint %s/%s",
+					environment.Name,
+					entry.Name,
+					exposed.Endpoint,
+				)
+			}
+			plan.ingress = []ingressRoutePlan{{
+				name:     entry.Name,
+				service:  entry.Name,
+				endpoint: exposed.Endpoint,
+				port:     endpoint.Port,
+			}}
+			return nil
+		}
+		return fmt.Errorf(
+			"environment %q service entry %q has no public interface endpoint",
+			environment.Name,
+			entry.Name,
+		)
+	}
+
+	routeNames := make(map[string]struct{}, len(environment.Ingress))
+	hosts := make(map[string]string)
+	for _, route := range environment.Ingress {
+		if err := validateDNSLabel("ingress route name", route.Name); err != nil {
+			return fmt.Errorf("environment %q: %w", environment.Name, err)
+		}
+		if _, duplicate := routeNames[route.Name]; duplicate {
+			return fmt.Errorf("environment %q repeats ingress route %q", environment.Name, route.Name)
+		}
+		routeNames[route.Name] = struct{}{}
+		if !slices.Contains(plan.services, route.Service) {
+			return fmt.Errorf(
+				"environment %q ingress route %q targets service %q outside its in-cluster inventory",
+				environment.Name,
+				route.Name,
+				route.Service,
+			)
+		}
+		service, exists := topologyServiceByName(topology, route.Service)
+		if !exists {
+			return fmt.Errorf(
+				"environment %q ingress route %q targets unknown service %q",
+				environment.Name,
+				route.Name,
+				route.Service,
+			)
+		}
+		endpoint, exists := topologyEndpointByName(service, route.Endpoint)
+		if !exists || !topologyExposesPublicEndpoint(topology, route.Service, route.Endpoint) {
+			return fmt.Errorf(
+				"environment %q ingress route %q target %s/%s is not a public module interface",
+				environment.Name,
+				route.Name,
+				route.Service,
+				route.Endpoint,
+			)
+		}
+		if len(route.Hosts) == 0 {
+			return fmt.Errorf("environment %q ingress route %q declares no exact hosts", environment.Name, route.Name)
+		}
+		planned := ingressRoutePlan{
+			name:     route.Name,
+			service:  route.Service,
+			endpoint: route.Endpoint,
+			port:     endpoint.Port,
+		}
+		for _, host := range route.Hosts {
+			host = strings.TrimSpace(host)
+			if !validExternalName(host) {
+				return fmt.Errorf(
+					"environment %q ingress route %q host %q is not an exact DNS name",
+					environment.Name,
+					route.Name,
+					host,
+				)
+			}
+			if owner, duplicate := hosts[host]; duplicate {
+				return fmt.Errorf(
+					"environment %q ingress host %q is declared by routes %q and %q",
+					environment.Name,
+					host,
+					owner,
+					route.Name,
+				)
+			}
+			hosts[host] = route.Name
+			planned.hosts = append(planned.hosts, host)
+		}
+		plan.ingress = append(plan.ingress, planned)
+	}
+	return nil
+}
+
+func topologyExposesPublicEndpoint(topology deploymentTopology, service, endpoint string) bool {
+	return slices.ContainsFunc(topology.Interface, func(exposed topologyInterface) bool {
+		return exposed.Service == service &&
+			exposed.Endpoint == endpoint &&
+			exposed.Visibility == "public"
+	})
 }
 
 func validateManagedServices(
@@ -1248,40 +1391,94 @@ func topologyIstioResources(
 			Spec:       map[string]any{},
 		},
 	}
-	entry, exists := topologyServiceByName(topology, topology.Module.ServiceEntry)
-	if !exists || !slices.Contains(plan.services, entry.Name) {
-		return nil, nil, fmt.Errorf("service entry %q is not an in-cluster service in environment %q", topology.Module.ServiceEntry, plan.environment.Name)
+	if len(plan.ingress) == 0 {
+		return nil, nil, fmt.Errorf("environment %q has no ingress plan", plan.environment.Name)
 	}
-	publicPort := uint32(0)
-	for _, exposed := range topology.Interface {
-		if exposed.Service != entry.Name || exposed.Visibility != "public" {
-			continue
+	ingressPorts := make(map[string]map[uint32]struct{})
+	for _, route := range plan.ingress {
+		if ingressPorts[route.service] == nil {
+			ingressPorts[route.service] = make(map[uint32]struct{})
 		}
-		endpoint, found := topologyEndpointByName(entry, exposed.Endpoint)
-		if !found {
-			return nil, nil, fmt.Errorf("public interface references missing endpoint %s/%s", entry.Name, exposed.Endpoint)
+		ingressPorts[route.service][route.port] = struct{}{}
+	}
+	ingressServices := make([]string, 0, len(ingressPorts))
+	for service := range ingressPorts {
+		ingressServices = append(ingressServices, service)
+	}
+	slices.Sort(ingressServices)
+	for _, service := range ingressServices {
+		ports := make([]uint32, 0, len(ingressPorts[service]))
+		for port := range ingressPorts[service] {
+			ports = append(ports, port)
 		}
-		publicPort = endpoint.Port
+		slices.Sort(ports)
+		renderedPorts := make([]string, 0, len(ports))
+		for _, port := range ports {
+			renderedPorts = append(renderedPorts, strconv.FormatUint(uint64(port), 10))
+		}
+		istio = append(istio, kubeObject{
+			APIVersion: "security.istio.io/v1",
+			Kind:       "AuthorizationPolicy",
+			Metadata: objectMeta{
+				Name:      "allow-istio-ingress-to-" + service,
+				Namespace: namespace,
+				Labels:    labels,
+			},
+			Spec: map[string]any{
+				"selector": map[string]any{"matchLabels": map[string]string{"app": service}},
+				"rules": []any{map[string]any{
+					"from": []any{map[string]any{"source": map[string]any{
+						"principals": []string{"cluster.local/ns/istio-system/sa/istio-ingressgateway-service-account"},
+					}}},
+					"to": []any{map[string]any{"operation": map[string]any{
+						"ports": renderedPorts,
+					}}},
+				}},
+			},
+		})
 	}
-	if publicPort == 0 {
-		return nil, nil, fmt.Errorf("service entry %q has no public interface endpoint", entry.Name)
+
+	gatewayHosts := []string{"*"}
+	var httpRoutes []any
+	if len(plan.ingress[0].hosts) == 0 {
+		route := plan.ingress[0]
+		httpRoutes = []any{map[string]any{
+			"name":  route.name,
+			"match": []any{map[string]any{"uri": map[string]string{"prefix": "/"}}},
+			"route": []any{map[string]any{"destination": map[string]any{
+				"host": route.service + "." + namespace + ".svc.cluster.local",
+				"port": map[string]any{"number": route.port},
+			}}},
+			"timeout": "30s",
+		}}
+	} else {
+		gatewayHosts = nil
+		hostSet := make(map[string]struct{})
+		for _, route := range plan.ingress {
+			matches := make([]any, 0, len(route.hosts))
+			for _, host := range route.hosts {
+				if _, exists := hostSet[host]; !exists {
+					hostSet[host] = struct{}{}
+					gatewayHosts = append(gatewayHosts, host)
+				}
+				matches = append(matches, map[string]any{
+					"authority": map[string]string{
+						"regex": "^" + regexp.QuoteMeta(host) + "(:[0-9]+)?$",
+					},
+				})
+			}
+			httpRoutes = append(httpRoutes, map[string]any{
+				"name":  route.name,
+				"match": matches,
+				"route": []any{map[string]any{"destination": map[string]any{
+					"host": route.service + "." + namespace + ".svc.cluster.local",
+					"port": map[string]any{"number": route.port},
+				}}},
+				"timeout": "30s",
+			})
+		}
+		slices.Sort(gatewayHosts)
 	}
-	istio = append(istio, kubeObject{
-		APIVersion: "security.istio.io/v1",
-		Kind:       "AuthorizationPolicy",
-		Metadata:   objectMeta{Name: "allow-from-istio-ingress", Namespace: namespace, Labels: labels},
-		Spec: map[string]any{
-			"selector": map[string]any{"matchLabels": map[string]string{"app": entry.Name}},
-			"rules": []any{map[string]any{
-				"from": []any{map[string]any{"source": map[string]any{
-					"principals": []string{"cluster.local/ns/istio-system/sa/istio-ingressgateway-service-account"},
-				}}},
-				"to": []any{map[string]any{"operation": map[string]any{
-					"ports": []string{strconv.FormatUint(uint64(publicPort), 10)},
-				}}},
-			}},
-		},
-	})
 	gatewayName := topology.Module.Name
 	gateway := []kubeObject{
 		{
@@ -1292,7 +1489,7 @@ func topologyIstioResources(
 				"selector": map[string]string{"istio": "ingressgateway"},
 				"servers": []any{map[string]any{
 					"port":  map[string]any{"number": 80, "name": "http", "protocol": "HTTP"},
-					"hosts": []string{"*"},
+					"hosts": gatewayHosts,
 				}},
 			},
 		},
@@ -1301,16 +1498,9 @@ func topologyIstioResources(
 			Kind:       "VirtualService",
 			Metadata:   objectMeta{Name: name, Namespace: namespace, Labels: labels},
 			Spec: map[string]any{
-				"hosts":    []string{"*"},
+				"hosts":    gatewayHosts,
 				"gateways": []string{gatewayName},
-				"http": []any{map[string]any{
-					"match": []any{map[string]any{"uri": map[string]string{"prefix": "/"}}},
-					"route": []any{map[string]any{"destination": map[string]any{
-						"host": entry.Name + "." + namespace + ".svc.cluster.local",
-						"port": map[string]any{"number": publicPort},
-					}}},
-					"timeout": "30s",
-				}},
+				"http":     httpRoutes,
 			},
 		},
 		{
@@ -1526,25 +1716,37 @@ func topologyNetworkPolicies(
 		}
 		policies = append(policies, managedEgressPolicy(namespace, labels, current.caller, current.target, current.ports, config.EgressCIDRs))
 	}
-	for _, exposed := range topology.Interface {
-		if exposed.Visibility != "public" || !slices.Contains(plan.services, exposed.Service) {
-			continue
+	ingressPorts := make(map[string]map[uint32]struct{})
+	for _, route := range plan.ingress {
+		if ingressPorts[route.service] == nil {
+			ingressPorts[route.service] = make(map[uint32]struct{})
 		}
-		service, _ := topologyServiceByName(topology, exposed.Service)
-		endpoint, _ := topologyEndpointByName(service, exposed.Endpoint)
+		ingressPorts[route.service][route.port] = struct{}{}
+	}
+	ingressServices := make([]string, 0, len(ingressPorts))
+	for service := range ingressPorts {
+		ingressServices = append(ingressServices, service)
+	}
+	slices.Sort(ingressServices)
+	for _, service := range ingressServices {
+		ports := make([]uint32, 0, len(ingressPorts[service]))
+		for port := range ingressPorts[service] {
+			ports = append(ports, port)
+		}
+		slices.Sort(ports)
 		policies = append(policies, kubeObject{
 			APIVersion: "networking.k8s.io/v1",
 			Kind:       "NetworkPolicy",
-			Metadata:   objectMeta{Name: "allow-istio-ingress-to-" + exposed.Service, Namespace: namespace, Labels: labels},
+			Metadata:   objectMeta{Name: "allow-istio-ingress-to-" + service, Namespace: namespace, Labels: labels},
 			Spec: map[string]any{
-				"podSelector": map[string]any{"matchLabels": map[string]string{"app": exposed.Service}},
+				"podSelector": map[string]any{"matchLabels": map[string]string{"app": service}},
 				"policyTypes": []string{"Ingress"},
 				"ingress": []any{map[string]any{
 					"from": []any{map[string]any{
 						"namespaceSelector": map[string]any{"matchLabels": map[string]string{"kubernetes.io/metadata.name": "istio-system"}},
 						"podSelector":       map[string]any{"matchLabels": map[string]string{"istio": "ingressgateway"}},
 					}},
-					"ports": networkPorts([]uint32{endpoint.Port}),
+					"ports": networkPorts(ports),
 				}},
 			},
 		})

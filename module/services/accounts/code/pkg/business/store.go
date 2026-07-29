@@ -178,6 +178,7 @@ type Store interface {
 	GetOrgStripeCustomerID(ctx context.Context, orgID string) (string, error)
 	SetOrgStripeCustomerID(ctx context.Context, orgID, stripeCustomerID string) error
 	GetPlanByName(ctx context.Context, name string) (*PlanFull, error)
+	ListPublicPlans(ctx context.Context) ([]PublicPlan, error)
 
 	// Feature Flags
 	GetFeatureFlag(ctx context.Context, name string) (*FeatureFlag, error)

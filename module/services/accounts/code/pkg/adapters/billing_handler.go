@@ -12,16 +12,44 @@ import (
 	gen "accounts/pkg/gen/saas/accounts/v1"
 )
 
-// billingConnectHandler — Connect-RPC surface for billing flows that
-// the FE needs to invoke directly (without going through the
-// auth-sidecar HTTP passthrough). Currently just OpenPortal; checkout
-// stays on the REST path so paying customer flows match the documented
-// auth-sidecar shape.
-//
-// Auth: org-admin gated. The portal session lets the holder change
-// payment method / cancel subscription; we don't want a non-admin
-// member to be able to do that.
 type billingConnectHandler struct{ svc *business.Service }
+
+func (h *billingConnectHandler) ListPublicPlans(
+	ctx context.Context,
+	req *connect.Request[gen.ListPublicPlansRequest],
+) (*connect.Response[gen.ListPublicPlansResponse], error) {
+	if err := Validate(req.Msg); err != nil {
+		return nil, translateGRPCError(err)
+	}
+	plans, revision, err := h.svc.ListPublicPlans(ctx)
+	if err != nil {
+		return nil, translateGRPCError(err)
+	}
+	response := &gen.ListPublicPlansResponse{Revision: revision}
+	for _, plan := range plans {
+		entry := &gen.PublicPlan{
+			Key:             plan.Key,
+			Name:            plan.Name,
+			Description:     plan.Description,
+			Currency:        plan.Currency,
+			AmountMinor:     plan.AmountMinor,
+			Interval:        plan.Interval,
+			CheckoutEnabled: plan.CheckoutEnabled,
+			ContactSales:    plan.ContactSales,
+			TrialDays:       int32(plan.TrialDays),
+			TaxBehavior:     plan.TaxBehavior,
+			Fixture:         plan.Fixture,
+		}
+		for _, entitlement := range plan.Entitlements {
+			entry.Entitlements = append(entry.Entitlements, &gen.PublicPlanEntitlement{
+				Key:   entitlement.Feature,
+				Limit: entitlement.Limit,
+			})
+		}
+		response.Plans = append(response.Plans, entry)
+	}
+	return connect.NewResponse(response), nil
+}
 
 func (h *billingConnectHandler) OpenPortal(
 	ctx context.Context,

@@ -186,6 +186,18 @@ func TestGenerateGitOpsRejectsHostileContracts(t *testing.T) {
 			want: "Kubernetes DNS label",
 		},
 		{
+			name: "wildcard ingress host",
+			mutate: func(_ *testing.T, _, _ string, workspace *workspaceManifest) {
+				workspace.Environments[0].Ingress = []environmentIngressRoute{{
+					Name:     "product",
+					Service:  "accounts",
+					Endpoint: "http",
+					Hosts:    []string{"*"},
+				}}
+			},
+			want: "is not an exact DNS name",
+		},
+		{
 			name: "unsupported remote cluster",
 			mutate: func(_ *testing.T, _, _ string, workspace *workspaceManifest) {
 				workspace.Environments[1].Cluster.Kind = "gke"
@@ -466,7 +478,7 @@ func TestGeneratedPoliciesAndProjectMatchRenderedTopology(t *testing.T) {
 			t.Fatal(err)
 		}
 		if !strings.Contains(string(data), "kind: Gateway") &&
-			!strings.Contains(string(data), "name: allow-from-istio-ingress") {
+			!strings.Contains(string(data), "name: allow-istio-ingress-to-auth-sidecar") {
 			t.Errorf("%s does not contain the ingress boundary", file)
 		}
 	}
@@ -513,6 +525,145 @@ func TestGeneratedPoliciesAndProjectMatchRenderedTopology(t *testing.T) {
 	}
 	if strings.Contains(encoded, "StatefulSet") || strings.Contains(encoded, "ConfigMap") {
 		t.Errorf("AppProject contains resources absent from the immutable render:\n%s", encoded)
+	}
+}
+
+func TestGeneratedMarketingIngressUsesExactEnvironmentRoutes(t *testing.T) {
+	t.Parallel()
+	root, moduleDir := writeGitOpsFixture(
+		t,
+		"website-control",
+		"identity",
+		[]string{"auth-sidecar", "marketing"},
+	)
+	workspace, err := loadWorkspaceManifest(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	workspace.Environments[0].Ingress = []environmentIngressRoute{
+		{
+			Name:     "marketing",
+			Service:  "marketing",
+			Endpoint: "http",
+			Hosts:    []string{"identity.localhost", "www.identity.localhost", "docs.identity.localhost"},
+		},
+		{
+			Name:     "product",
+			Service:  "auth-sidecar",
+			Endpoint: "http",
+			Hosts:    []string{"app.identity.localhost", "localhost"},
+		},
+	}
+	if err := generateGitOps(context.Background(), moduleDir, workspace); err != nil {
+		t.Fatal(err)
+	}
+
+	assertEnvironmentApplications(t, moduleDir, "local", []string{"auth-sidecar", "marketing"})
+	assertEnvironmentApplications(t, moduleDir, "aws", []string{"auth-sidecar", "marketing"})
+
+	generated := filepath.Join(moduleDir, filepath.FromSlash(gitOpsRelativeDir), "overlays", "local", "resources")
+	gatewayObjects, err := decodeYAMLDocuments(filepath.Join(generated, "istio-gateway.yaml"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var virtualService map[string]any
+	for _, object := range gatewayObjects {
+		if object["kind"] == "VirtualService" {
+			virtualService = object
+			break
+		}
+	}
+	if virtualService == nil {
+		t.Fatal("generated ingress is missing its VirtualService")
+	}
+	spec := virtualService["spec"].(map[string]any)
+	hosts := spec["hosts"].([]any)
+	for _, host := range []string{
+		"app.identity.localhost",
+		"docs.identity.localhost",
+		"identity.localhost",
+		"localhost",
+		"www.identity.localhost",
+	} {
+		if !slices.Contains(hosts, any(host)) {
+			t.Errorf("VirtualService hosts %v do not include %q", hosts, host)
+		}
+	}
+	if slices.Contains(hosts, any("*")) {
+		t.Fatalf("VirtualService retains wildcard authority: %v", hosts)
+	}
+
+	routes := make(map[string]map[string]any)
+	for _, value := range spec["http"].([]any) {
+		route := value.(map[string]any)
+		routes[route["name"].(string)] = route
+	}
+	assertRoute := func(name, regex, host string, port int) {
+		t.Helper()
+		route, exists := routes[name]
+		if !exists {
+			t.Fatalf("VirtualService route %q is missing", name)
+		}
+		matches := route["match"].([]any)
+		found := false
+		for _, value := range matches {
+			match := value.(map[string]any)
+			authority := match["authority"].(map[string]any)
+			if authority["regex"] == regex {
+				found = true
+			}
+		}
+		if !found {
+			t.Errorf("VirtualService route %q does not match %q", name, regex)
+		}
+		destinations := route["route"].([]any)
+		destination := destinations[0].(map[string]any)["destination"].(map[string]any)
+		if destination["host"] != host {
+			t.Errorf("VirtualService route %q host = %v, want %s", name, destination["host"], host)
+		}
+		renderedPort := destination["port"].(map[string]any)["number"]
+		if renderedPort != port {
+			t.Errorf("VirtualService route %q port = %v, want %d", name, renderedPort, port)
+		}
+	}
+	assertRoute(
+		"marketing",
+		`^www\.identity\.localhost(:[0-9]+)?$`,
+		"marketing.identity-local.svc.cluster.local",
+		3000,
+	)
+	assertRoute(
+		"product",
+		`^app\.identity\.localhost(:[0-9]+)?$`,
+		"auth-sidecar.identity-local.svc.cluster.local",
+		8080,
+	)
+
+	authorizationObjects, err := decodeYAMLDocuments(filepath.Join(generated, "istio-mtls.yaml"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	authorizedPorts := make(map[string][]any)
+	for _, object := range authorizationObjects {
+		if object["kind"] != "AuthorizationPolicy" {
+			continue
+		}
+		metadata := object["metadata"].(map[string]any)
+		name, _ := metadata["name"].(string)
+		if !strings.HasPrefix(name, "allow-istio-ingress-to-") {
+			continue
+		}
+		policySpec := object["spec"].(map[string]any)
+		rules := policySpec["rules"].([]any)
+		to := rules[0].(map[string]any)["to"].([]any)
+		operation := to[0].(map[string]any)["operation"].(map[string]any)
+		authorizedPorts[name] = operation["ports"].([]any)
+	}
+	if got := authorizedPorts["allow-istio-ingress-to-marketing"]; !slices.Equal(got, []any{"3000"}) {
+		t.Errorf("marketing ingress ports = %v, want [3000]", got)
+	}
+	if got := authorizedPorts["allow-istio-ingress-to-auth-sidecar"]; !slices.Equal(got, []any{"8080"}) {
+		t.Errorf("product ingress ports = %v, want [8080]", got)
 	}
 }
 
@@ -943,10 +1094,23 @@ func writeGitOpsFixture(t *testing.T, workspaceName, moduleName string, services
 	module.WriteString("kind: module\nname: " + moduleName + "\nservice-entry: " + entry + "\nservices:\n")
 	var topology strings.Builder
 	topology.WriteString("version: v1\nmodule:\n  name: " + moduleName + "\n  namespace: " + moduleName + "\n  service_entry: " + entry + "\n  description: test\n")
-	topology.WriteString("interface:\n  - service: " + entry + "\n    endpoint: http\n    visibility: public\nservices:\n")
+	topology.WriteString("interface:\n  - service: " + entry + "\n    endpoint: http\n    visibility: public\n")
+	if entry != "marketing" && slices.Contains(services, "marketing") {
+		topology.WriteString("  - service: marketing\n    endpoint: http\n    visibility: public\n")
+	}
+	topology.WriteString("services:\n")
 	for _, service := range services {
+		port := 8080
+		if service == "marketing" {
+			port = 3000
+		}
 		module.WriteString("  - name: " + service + "\n")
-		topology.WriteString("  - name: " + service + "\n    version: 0.0.0\n    endpoints:\n      - name: http\n        api: http\n        visibility: private\n        port: 8080\n")
+		fmt.Fprintf(
+			&topology,
+			"  - name: %s\n    version: 0.0.0\n    endpoints:\n      - name: http\n        api: http\n        visibility: private\n        port: %d\n",
+			service,
+			port,
+		)
 		if service == entry {
 			topology.WriteString("    public_egress_ports:\n      - 443\n")
 		}
@@ -1006,7 +1170,7 @@ spec:
     app: `+service+`
   ports:
     - name: http
-      port: 8080
+      port: `+fmt.Sprint(port)+`
 `)
 		}
 	}

@@ -9,7 +9,8 @@ Generation consumes:
 
 - the workspace name and exact GitOps repository, checkout, owned path, and
   revision;
-- every environment's cluster kind and namespace;
+- every environment's cluster kind, namespace, and optional exact ingress
+  routes;
 - the installed module's declared service inventory and deployment topology;
 - the service overlays already present at the immutable revision; and
 - explicit AWS managed-service endpoints, network CIDRs, and external secret
@@ -75,6 +76,29 @@ The AppProject repository and destination are exact. Its namespaced resource
 allowlist is derived from the Kubernetes kinds in the immutable child renders;
 it grants no cluster-resource authority.
 
+## Ingress routes
+
+An environment may map exact hosts to public module-interface endpoints:
+
+```yaml
+ingress:
+  - name: marketing
+    service: marketing
+    endpoint: http
+    hosts:
+      - www.example.com
+      - docs.example.com
+  - name: product
+    service: auth-sidecar
+    endpoint: rest
+    hosts:
+      - app.example.com
+```
+
+The generator rejects duplicate or wildcard hosts, managed or undeclared
+targets, and endpoints that are not public module interfaces. When the block is
+omitted, the service entry remains the only catch-all route.
+
 ## AWS handoffs
 
 EKS environments declare each module-owned managed service under
@@ -100,3 +124,8 @@ managed-services:
 
 No AWS behavior is added to the generic Postgres, Redis, S3, or Vault service
 plugins.
+
+The installed Starter topology includes an independently deployable marketing
+service. Local hosts and production domains belong to the consumer's
+environment contract; the module generator derives their exact Applications
+and gateway policy without shipping a placeholder domain patch.

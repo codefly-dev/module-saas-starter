@@ -32,6 +32,20 @@ environments:
       registry:
           url: localhost:5001
       namespace: saas-starter
+      ingress:
+          - name: marketing
+            service: marketing
+            endpoint: http
+            hosts:
+                - saas.localhost
+                - www.saas.localhost
+                - docs.saas.localhost
+          - name: product
+            service: auth-sidecar
+            endpoint: rest
+            hosts:
+                - app.saas.localhost
+                - localhost
 
     # AWS EKS production target. Replace registry URL with your ECR
     # repo + bump kubeconfig path to wherever your cluster's config

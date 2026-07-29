@@ -39,7 +39,7 @@ presence, reset, and extension rules.
 
 ```bash
 # From the repository root. The module declares auth-sidecar as its service
-# entry, so Codefly starts the complete seven-service dependency graph.
+# entry, so Codefly starts the complete eight-service dependency graph.
 codefly run service --fixture dev-admin
 ```
 

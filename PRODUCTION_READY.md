@@ -2,6 +2,34 @@
 
 Scope of this document: **Tier 1 (ship-blockers)** only. Observability, Sentry, backups, Directory Sync, Admin Portal are out of scope here — separate docs later.
 
+## Public launch readiness
+
+The public company site is a separate `marketing` runtime. Before a production
+build, replace the development fixture in `module/public/site.config.json` and
+run:
+
+```sh
+node module/tools/generate-public-config.mjs
+cd module/services/marketing/code
+MARKETING_INDEXABLE=true \
+MARKETING_CATALOG_URL=https://api.example.com \
+MARKETING_STRICT_READINESS=1 \
+npm run readiness
+```
+
+Readiness rejects example domains and contacts, development claims, a
+non-indexable production site, unsafe URLs, and missing public pricing
+configuration. Configure apex-to-`www`, `www`, `app`, docs, and external status
+DNS explicitly; the copy-only AWS patch in
+`module/deployment/kustomize/overlays/aws/marketing-domains.example.patch.yaml`
+does not change an adopter's hosts automatically. Authentication callback
+origins and cookies remain app-host scoped.
+
+Production content, legal text, security claims, public prices, contact paths,
+and optional analytics providers require adopter review. Repository defaults
+are fixtures, not legal, compliance, customer, accessibility-certification, or
+performance claims.
+
 ## Architectural decisions (locked)
 
 0. **Gateway is the single ingress.** Every request — including the public OAuth, primary-authentication, MFA, refresh, logout, registration, and discovery ceremonies — enters through the sidecar/gateway. No service is reachable directly. Exposure, rate-limit class, tenant requirements, sensitivity, and audit behavior come from each protobuf method's `saas.policy.v1.method_policy`; unclassified methods fail descriptor validation and are denied at runtime.
