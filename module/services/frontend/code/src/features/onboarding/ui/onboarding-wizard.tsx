@@ -6,12 +6,18 @@ import {
 	Check,
 	CreditCard,
 	Key,
-	type LucideIcon,
+	Loader2,
 	PartyPopper,
+	RotateCcw,
 	SkipForward,
 	UsersRound,
 } from "lucide-react";
+import Link from "next/link";
+import { useRouter } from "next/navigation";
+import { useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
+import { orgMutations } from "@/features/organizations/service/mutations";
+import { useAuth } from "@/lib/auth";
 import {
 	Button,
 	Card,
@@ -22,228 +28,329 @@ import {
 	CardTitle,
 	Input,
 	Label,
+	Skeleton,
 } from "@/shared/ui";
-import { isWizardComplete } from "../model/transforms";
 import {
-	ONBOARDING_STEPS,
-	type OnboardingProgress,
-	type OnboardingStepId,
+	ONBOARDING_STEP_CONTENT,
+	type OnboardingStep,
+	OnboardingStepId,
+	OnboardingStepStatus,
 } from "../model/types";
 import { onboardingMutations } from "../service/mutations";
 import { onboardingQueries } from "../service/queries";
 
-const stepIcons: Record<OnboardingStepId, LucideIcon> = {
-	create_org: Building2,
-	invite_team: UsersRound,
-	select_plan: CreditCard,
-	create_api_key: Key,
+const DRAFT_KEY = "saas-starter:onboarding-organization-draft";
+
+const stepIcons = {
+	[OnboardingStepId.CONFIGURE_ORGANIZATION]: Building2,
+	[OnboardingStepId.INVITE_TEAM]: UsersRound,
+	[OnboardingStepId.CHOOSE_PLAN]: CreditCard,
+	[OnboardingStepId.SETUP_API_KEY]: Key,
 };
 
-export function OnboardingWizard() {
+function OrganizationAction() {
+	const { switchOrganization } = useAuth();
 	const queryClient = useQueryClient();
-	const { data } = useQuery(onboardingQueries.progress());
-	const progress = data as OnboardingProgress | undefined;
+	const [name, setName] = useState("");
+	const [slug, setSlug] = useState("");
 
-	const completeMutation = useMutation({
-		mutationFn: (stepId: string) => onboardingMutations.completeStep(stepId),
-		onSuccess: () => {
-			toast.success("Step completed!");
-			queryClient.invalidateQueries({ queryKey: ["onboarding"] });
+	useEffect(() => {
+		const frame = window.requestAnimationFrame(() => {
+			const draft = window.sessionStorage.getItem(DRAFT_KEY);
+			if (!draft) return;
+			try {
+				const parsed = JSON.parse(draft) as { name?: string; slug?: string };
+				setName(parsed.name ?? "");
+				setSlug(parsed.slug ?? "");
+			} catch {
+				window.sessionStorage.removeItem(DRAFT_KEY);
+			}
+		});
+		return () => window.cancelAnimationFrame(frame);
+	}, []);
+
+	useEffect(() => {
+		window.sessionStorage.setItem(DRAFT_KEY, JSON.stringify({ name, slug }));
+	}, [name, slug]);
+
+	const createOrganization = useMutation({
+		mutationFn: () => orgMutations.create(name.trim(), slug.trim()),
+		onSuccess: async (response) => {
+			if (!response.organization)
+				throw new Error("Organization was not returned");
+			window.sessionStorage.removeItem(DRAFT_KEY);
+			await switchOrganization(response.organization.id);
+			await queryClient.invalidateQueries({ queryKey: ["onboarding"] });
+			toast.success("Organization created");
 		},
-		onError: () => toast.error("Failed to complete step"),
+		onError: (error) =>
+			toast.error("Organization could not be created", {
+				description: error instanceof Error ? error.message : "Try again.",
+			}),
 	});
 
-	const skipMutation = useMutation({
-		mutationFn: (stepId: string) => onboardingMutations.skipStep(stepId),
-		onSuccess: () => {
-			queryClient.invalidateQueries({ queryKey: ["onboarding"] });
-		},
-		onError: () => toast.error("Failed to skip step"),
-	});
-
-	if (!progress) return null;
-
-	const complete = isWizardComplete(progress);
-
-	if (complete) {
-		return (
-			<div className="fixed inset-0 z-50 flex items-center justify-center bg-background/95 backdrop-blur-sm">
-				<Card className="w-full max-w-md text-center">
-					<CardHeader>
-						<div className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-full bg-primary/10">
-							<PartyPopper className="h-8 w-8 text-primary" />
-						</div>
-						<CardTitle className="text-2xl">You are all set!</CardTitle>
-						<CardDescription>
-							Your workspace is configured and ready to go.
-						</CardDescription>
-					</CardHeader>
-					<CardFooter className="justify-center">
-						<Button
-							size="lg"
-							onClick={() =>
-								queryClient.setQueryData(["onboarding", "dismissed"], true)
-							}
-						>
-							Go to Dashboard
-						</Button>
-					</CardFooter>
-				</Card>
-			</div>
-		);
+	function changeName(value: string) {
+		setName(value);
+		if (!slug) {
+			setSlug(
+				value
+					.toLowerCase()
+					.trim()
+					.replace(/[^a-z0-9]+/g, "-")
+					.replace(/^-|-$/g, ""),
+			);
+		}
 	}
 
-	const currentStepIndex = ONBOARDING_STEPS.findIndex(
-		(s) => s.id === progress.currentStep,
-	);
-	const currentStep = ONBOARDING_STEPS[currentStepIndex];
-
 	return (
-		<div className="fixed inset-0 z-50 flex items-center justify-center bg-background/95 backdrop-blur-sm">
-			<div className="w-full max-w-lg space-y-6 p-6">
-				{/* Step indicator */}
-				<div className="flex items-center justify-center gap-3">
-					{ONBOARDING_STEPS.map((step, i) => {
-						const done =
-							progress.completedSteps.includes(step.id) ||
-							progress.skippedSteps.includes(step.id);
-						const isCurrent = step.id === progress.currentStep;
-						return (
-							<div key={step.id} className="flex items-center gap-3">
-								<div className="flex flex-col items-center gap-1">
-									<div
-										className={`flex h-8 w-8 items-center justify-center rounded-full border-2 text-sm font-medium transition-colors ${
-											done
-												? "border-primary bg-primary text-primary-foreground"
-												: isCurrent
-													? "border-primary text-primary"
-													: "border-muted text-muted-foreground"
-										}`}
-									>
-										{done ? <Check className="h-4 w-4" /> : i + 1}
-									</div>
-									<span className="text-xs text-muted-foreground whitespace-nowrap">
-										{step.label}
-									</span>
-								</div>
-								{i < ONBOARDING_STEPS.length - 1 && (
-									<div
-										className={`h-0.5 w-8 ${done ? "bg-primary" : "bg-muted"}`}
-									/>
-								)}
-							</div>
-						);
-					})}
-				</div>
-
-				{/* Current step card */}
-				{currentStep && (
-					<Card>
-						<CardHeader>
-							<div className="flex items-center gap-3">
-								{(() => {
-									const Icon = stepIcons[currentStep.id];
-									return Icon ? (
-										<Icon className="h-5 w-5 text-primary" />
-									) : null;
-								})()}
-								<div>
-									<CardTitle>{currentStep.label}</CardTitle>
-									<CardDescription>{currentStep.description}</CardDescription>
-								</div>
-							</div>
-						</CardHeader>
-						<CardContent>
-							<StepContent stepId={currentStep.id} />
-						</CardContent>
-						<CardFooter className="flex justify-between">
-							{currentStep.optional && (
-								<Button
-									variant="ghost"
-									onClick={() => skipMutation.mutate(currentStep.id)}
-									disabled={skipMutation.isPending}
-								>
-									<SkipForward className="mr-2 h-4 w-4" />
-									Skip
-								</Button>
-							)}
-							<Button
-								onClick={() => completeMutation.mutate(currentStep.id)}
-								disabled={completeMutation.isPending}
-								className={!currentStep.optional ? "ml-auto" : ""}
-							>
-								{completeMutation.isPending ? "Saving..." : "Continue"}
-							</Button>
-						</CardFooter>
-					</Card>
-				)}
+		<form
+			className="space-y-4"
+			onSubmit={(event) => {
+				event.preventDefault();
+				createOrganization.mutate();
+			}}
+		>
+			<div className="space-y-2">
+				<Label htmlFor="org-name">Organization name</Label>
+				<Input
+					id="org-name"
+					autoComplete="organization"
+					value={name}
+					onChange={(event) => changeName(event.target.value)}
+					placeholder="Acme Inc."
+					required
+				/>
 			</div>
+			<div className="space-y-2">
+				<Label htmlFor="org-slug">Workspace slug</Label>
+				<Input
+					id="org-slug"
+					value={slug}
+					onChange={(event) => setSlug(event.target.value.toLowerCase())}
+					pattern="[a-z0-9]+(?:-[a-z0-9]+)*"
+					placeholder="acme-inc"
+					required
+				/>
+			</div>
+			<Button
+				type="submit"
+				disabled={!name.trim() || !slug.trim() || createOrganization.isPending}
+				className="w-full"
+			>
+				{createOrganization.isPending && (
+					<Loader2 className="mr-2 h-4 w-4 animate-spin" />
+				)}
+				Create organization
+			</Button>
+		</form>
+	);
+}
+
+function StepAction({ step }: { step: OnboardingStep }) {
+	if (step.id === OnboardingStepId.CONFIGURE_ORGANIZATION) {
+		return <OrganizationAction />;
+	}
+	const href = ONBOARDING_STEP_CONTENT[step.id]?.href ?? "/";
+	return (
+		<div className="space-y-3">
+			<p className="text-sm text-muted-foreground">
+				This checklist item is completed from its canonical admin surface and
+				updates automatically when you return.
+			</p>
+			<Button
+				nativeButton={false}
+				render={<Link href={href} />}
+				className="w-full"
+			>
+				Open {step.label}
+			</Button>
 		</div>
 	);
 }
 
-/** Render step-specific form content. */
-function StepContent({ stepId }: { stepId: OnboardingStepId }) {
-	switch (stepId) {
-		case "create_org":
-			return (
-				<div className="space-y-3">
-					<div className="space-y-2">
-						<Label htmlFor="org-name">Organization Name</Label>
-						<Input id="org-name" placeholder="Acme Inc." />
-					</div>
-					<div className="space-y-2">
-						<Label htmlFor="org-slug">Slug</Label>
-						<Input id="org-slug" placeholder="acme-inc" />
-					</div>
+export function OnboardingWizard({
+	requiredOnly = false,
+}: {
+	requiredOnly?: boolean;
+}) {
+	const { organizationId = "" } = useAuth();
+	const queryClient = useQueryClient();
+	const router = useRouter();
+	const query = useQuery({
+		...onboardingQueries.progress(organizationId),
+		enabled: Boolean(organizationId),
+	});
+
+	const skipMutation = useMutation({
+		mutationFn: (stepId: OnboardingStepId) =>
+			onboardingMutations.skipStep(organizationId, stepId, "not_now"),
+		onSuccess: () =>
+			queryClient.invalidateQueries({ queryKey: ["onboarding"] }),
+		onError: () => toast.error("This step could not be skipped"),
+	});
+
+	const visibleSteps = useMemo(
+		() =>
+			(query.data?.steps ?? []).filter(
+				(step) => !requiredOnly || step.required,
+			),
+		[query.data, requiredOnly],
+	);
+	const currentStep =
+		visibleSteps.find((step) => step.status === OnboardingStepStatus.PENDING) ??
+		visibleSteps[visibleSteps.length - 1];
+
+	if (!organizationId) {
+		return (
+			<Card className="mx-auto w-full max-w-lg">
+				<CardHeader>
+					<CardTitle>Create your workspace</CardTitle>
+					<CardDescription>
+						Set up the organization that will own your team and product
+						resources.
+					</CardDescription>
+				</CardHeader>
+				<CardContent>
+					<OrganizationAction />
+				</CardContent>
+			</Card>
+		);
+	}
+
+	if (query.isLoading) {
+		return (
+			<div className="mx-auto w-full max-w-xl space-y-4 p-6">
+				<Skeleton className="h-7 w-52" />
+				<Skeleton className="h-80 w-full" />
+			</div>
+		);
+	}
+
+	if (query.isError) {
+		return (
+			<Card className="mx-auto w-full max-w-lg">
+				<CardHeader>
+					<CardTitle>Setup is temporarily unavailable</CardTitle>
+					<CardDescription>
+						Your progress is still stored on the server. Retry when the
+						connection is available.
+					</CardDescription>
+				</CardHeader>
+				<CardFooter>
+					<Button onClick={() => query.refetch()}>
+						<RotateCcw className="mr-2 h-4 w-4" />
+						Retry
+					</Button>
+				</CardFooter>
+			</Card>
+		);
+	}
+
+	const progress = query.data;
+	const complete = requiredOnly
+		? progress?.requiredComplete
+		: progress?.checklistComplete;
+
+	if (complete) {
+		return (
+			<Card className="mx-auto w-full max-w-md text-center">
+				<CardHeader>
+					<PartyPopper className="mx-auto mb-3 h-10 w-10 text-primary" />
+					<CardTitle>
+						{requiredOnly ? "Workspace ready" : "Checklist complete"}
+					</CardTitle>
+					<CardDescription>
+						{progress?.activationAchieved
+							? "Your organization has reached its configured activation milestone."
+							: "Setup is saved. Product activation is tracked separately."}
+					</CardDescription>
+				</CardHeader>
+				<CardFooter className="justify-center">
+					<Button onClick={() => router.replace("/")}>Go to dashboard</Button>
+				</CardFooter>
+			</Card>
+		);
+	}
+
+	if (!currentStep) return null;
+	const Icon = stepIcons[currentStep.id];
+
+	return (
+		<div className="mx-auto w-full max-w-xl space-y-6 p-4 sm:p-6">
+			<section aria-label="Onboarding progress" className="space-y-2">
+				<div className="flex justify-between text-sm text-muted-foreground">
+					<span>
+						{
+							visibleSteps.filter(
+								(step) => step.status === OnboardingStepStatus.COMPLETED,
+							).length
+						}{" "}
+						of {visibleSteps.length} completed
+					</span>
+					<span>
+						Flow {progress?.flowId} v{progress?.flowVersion}
+					</span>
 				</div>
-			);
-		case "invite_team":
-			return (
-				<div className="space-y-3">
-					<div className="space-y-2">
-						<Label htmlFor="invite-emails">Team Member Emails</Label>
-						<Input
-							id="invite-emails"
-							placeholder="alice@example.com, bob@example.com"
-						/>
-						<p className="text-xs text-muted-foreground">
-							Separate multiple emails with commas.
-						</p>
-					</div>
-				</div>
-			);
-		case "select_plan":
-			return (
-				<div className="grid grid-cols-2 gap-3">
-					{["Free", "Pro"].map((plan) => (
-						<button
-							key={plan}
-							className="rounded-lg border-2 p-4 text-left hover:border-primary transition-colors focus:border-primary focus:outline-none"
+				<div className="grid grid-cols-4 gap-2">
+					{visibleSteps.map((step) => (
+						<div
+							key={step.id}
+							className={`h-2 rounded-full ${
+								step.status === OnboardingStepStatus.COMPLETED
+									? "bg-primary"
+									: step.status === OnboardingStepStatus.SKIPPED
+										? "bg-muted-foreground/40"
+										: "bg-muted"
+							}`}
 						>
-							<p className="font-semibold">{plan}</p>
-							<p className="text-sm text-muted-foreground">
-								{plan === "Free"
-									? "For individuals getting started"
-									: "For teams that need more"}
-							</p>
-						</button>
+							<span className="sr-only">
+								{step.label}: {OnboardingStepStatus[step.status].toLowerCase()}
+							</span>
+						</div>
 					))}
 				</div>
-			);
-		case "create_api_key":
-			return (
-				<div className="space-y-3">
-					<div className="space-y-2">
-						<Label htmlFor="key-name">API Key Name</Label>
-						<Input id="key-name" placeholder="My first API key" />
+			</section>
+
+			<Card>
+				<CardHeader>
+					<div className="flex items-start gap-3">
+						<div className="rounded-lg bg-primary/10 p-2">
+							<Icon className="h-5 w-5 text-primary" />
+						</div>
+						<div>
+							<CardTitle>{currentStep.label}</CardTitle>
+							<CardDescription>{currentStep.description}</CardDescription>
+						</div>
 					</div>
-					<p className="text-xs text-muted-foreground">
-						You can always create more API keys later from Settings.
-					</p>
-				</div>
-			);
-		default:
-			return null;
-	}
+				</CardHeader>
+				<CardContent>
+					<StepAction step={currentStep} />
+				</CardContent>
+				{!currentStep.required && (
+					<CardFooter className="justify-between">
+						<Button
+							variant="ghost"
+							onClick={() => skipMutation.mutate(currentStep.id)}
+							disabled={skipMutation.isPending}
+						>
+							<SkipForward className="mr-2 h-4 w-4" />
+							Do this later
+						</Button>
+						<Button
+							variant="outline"
+							onClick={() => query.refetch()}
+							disabled={query.isFetching}
+						>
+							{query.isFetching ? (
+								<Loader2 className="mr-2 h-4 w-4 animate-spin" />
+							) : (
+								<Check className="mr-2 h-4 w-4" />
+							)}
+							Check progress
+						</Button>
+					</CardFooter>
+				)}
+			</Card>
+		</div>
+	);
 }

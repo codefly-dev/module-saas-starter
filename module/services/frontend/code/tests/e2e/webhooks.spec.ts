@@ -10,12 +10,21 @@
 // log in as super_admin, navigate, assert.
 
 import { expect, type Page, test } from "@playwright/test";
+import { resolveConsentPrompt } from "./consent";
 
 async function loginAsSuperAdmin(page: Page) {
 	await page.goto("/auth/login");
 	await expect(page.getByText("Sarah Chen")).toBeVisible({ timeout: 15000 });
 	await page.getByText("Sarah Chen").click();
 	await expect(page.getByText("Welcome back")).toBeVisible({ timeout: 20000 });
+	await resolveConsentPrompt(page);
+	await expect
+		.poll(async () =>
+			(await page.context().cookies()).some(
+				(item) => item.name === "codefly_rt" && item.value.length > 0,
+			),
+		)
+		.toBe(true);
 }
 
 test.describe("Webhooks admin page", () => {
@@ -23,9 +32,10 @@ test.describe("Webhooks admin page", () => {
 		await loginAsSuperAdmin(page);
 	});
 
-	test("shows OrgSelector and the no-org empty state by default", async ({
+	test("shows the authenticated organization's webhooks by default", async ({
 		page,
 	}) => {
+		await page.getByRole("button", { name: "Admin", exact: true }).click();
 		await page.getByRole("link", { name: "Webhooks" }).click();
 		await page.waitForURL(/\/admin\/webhooks/);
 
@@ -36,18 +46,12 @@ test.describe("Webhooks admin page", () => {
 			page.getByRole("heading", { name: "Webhooks", exact: true }),
 		).toBeVisible();
 
-		// OrgSelector is the same trigger pattern other admin pages use —
-		// pre-selection it shows a placeholder, not a chosen org name.
-		// Empty state asks the user to pick an org.
 		await expect(
 			page.getByText(/select an organization to view webhooks/i),
-		).toBeVisible();
-
-		// Create button is gated until an org is picked. Was visible
-		// unconditionally before the fix.
+		).toHaveCount(0);
 		await expect(
 			page.getByRole("button", { name: /create webhook/i }),
-		).toHaveCount(0);
+		).toBeVisible();
 	});
 
 	test("picking an org reveals the table + Create button", async ({ page }) => {
@@ -121,6 +125,11 @@ async function createWebhook(page: Page, url: string) {
 	await secretDialog.getByRole("button", { name: /copy secret/i }).click();
 	await secretDialog.getByRole("button", { name: /i've saved it/i }).click();
 	await expect(secretDialog).toHaveCount(0);
+
+	await page.reload();
+	await expect(actionsTriggerForUrl(page, url)).toBeVisible({
+		timeout: 10_000,
+	});
 }
 
 // Use the trigger's exact accessible name so retries remain deterministic even
@@ -146,7 +155,7 @@ test.describe("Webhooks v2 — replay + rotate", () => {
 		// by the time the success toast lands the row is in the db.
 		await actionsTriggerForUrl(page, url).click();
 		await page.getByRole("menuitem", { name: /^test$/i }).click();
-		await expect(page.getByText(/test delivery sent/i)).toBeVisible({
+		await expect(page.getByText(/test delivery queued/i)).toBeVisible({
 			timeout: 10_000,
 		});
 
@@ -173,7 +182,7 @@ test.describe("Webhooks v2 — replay + rotate", () => {
 		// The detail pane on the right has the Replay button — there's
 		// exactly one in the panel.
 		await page.getByRole("button", { name: /^replay$/i }).click();
-		await expect(page.getByText(/replayed delivery/i)).toBeVisible({
+		await expect(page.getByText(/replay queued/i)).toBeVisible({
 			timeout: 10_000,
 		});
 
@@ -183,7 +192,7 @@ test.describe("Webhooks v2 — replay + rotate", () => {
 		});
 	});
 
-	test("Rotate secret surfaces the one-shot New-Secret dialog", async ({
+	test("Rotate secret requires fresh MFA assurance", async ({
 		page,
 	}) => {
 		const url = `https://example.com/webhook-rotate-${Date.now()}`;
@@ -196,28 +205,11 @@ test.describe("Webhooks v2 — replay + rotate", () => {
 		await actionsTriggerForUrl(page, url).click();
 		await page.getByRole("menuitem", { name: /rotate secret/i }).click();
 
-		// The RotatedSecretDialog renders as an actual <Dialog> with the
-		// "New signing secret" title. The "I've saved it" CTA stays
-		// disabled until Copy succeeds — proves the friction is wired.
-		const dialog = page.getByRole("dialog", {
-			name: /new signing secret/i,
-		});
 		await expect(
-			dialog.getByRole("heading", { name: /new signing secret/i }),
+			page.getByText("Couldn't rotate secret", { exact: true }),
 		).toBeVisible({ timeout: 10_000 });
 		await expect(
-			dialog.getByRole("button", { name: /i've saved it/i }),
-		).toBeDisabled();
-
-		// The Copy button click triggers navigator.clipboard.writeText.
-		// The Playwright project grants clipboard permission explicitly; if the
-		// click rejects we still want the test to fail here loudly.
-		await dialog.getByRole("button", { name: /copy secret/i }).click();
-		await expect(
-			dialog.getByRole("button", { name: /i've saved it/i }),
-		).toBeEnabled({ timeout: 5_000 });
-
-		await dialog.getByRole("button", { name: /i've saved it/i }).click();
-		await expect(dialog).toHaveCount(0);
+			page.getByText(/mfa_required/),
+		).toBeVisible();
 	});
 });

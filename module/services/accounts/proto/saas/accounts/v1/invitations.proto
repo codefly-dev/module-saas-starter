@@ -9,10 +9,6 @@ import "google/protobuf/timestamp.proto";
 import "saas/accounts/v1/common.proto";
 import "saas/policy/v1/options.proto";
 
-// ============================================================================
-// Invitations
-// ============================================================================
-
 enum InvitationStatus {
   INVITATION_STATUS_UNSPECIFIED = 0;
   INVITATION_STATUS_PENDING = 1;
@@ -21,39 +17,87 @@ enum InvitationStatus {
   INVITATION_STATUS_EXPIRED = 4;
 }
 
+enum InvitationRole {
+  INVITATION_ROLE_UNSPECIFIED = 0;
+  INVITATION_ROLE_MEMBER = 1;
+  INVITATION_ROLE_ADMIN = 2;
+}
+
+enum InvitationDeliveryStatus {
+  INVITATION_DELIVERY_STATUS_UNSPECIFIED = 0;
+  INVITATION_DELIVERY_STATUS_DISABLED = 1;
+  INVITATION_DELIVERY_STATUS_QUEUED = 2;
+  INVITATION_DELIVERY_STATUS_SENT = 3;
+  INVITATION_DELIVERY_STATUS_DELIVERED = 4;
+  INVITATION_DELIVERY_STATUS_BOUNCED = 5;
+  INVITATION_DELIVERY_STATUS_COMPLAINED = 6;
+}
+
 message Invitation {
   string id = 1;
   string org_id = 2;
   string inviter_id = 3;
-  string email = 4;
-  string role = 5;
-  InvitationStatus status = 6;
-  google.protobuf.Timestamp expires_at = 7;
-  google.protobuf.Timestamp created_at = 8;
+  string inviter_display_name = 4;
+  string email = 5;
+  InvitationRole role = 6 [(buf.validate.field).enum.defined_only = true];
+  InvitationStatus status = 7 [(buf.validate.field).enum.defined_only = true];
+  InvitationDeliveryStatus delivery_status = 8 [(buf.validate.field).enum.defined_only = true];
+  google.protobuf.Timestamp expires_at = 9;
+  google.protobuf.Timestamp created_at = 10;
+  google.protobuf.Timestamp last_sent_at = 11;
+  uint32 send_count = 12;
+}
+
+message InvitationSummary {
+  InvitationStatus status = 1 [(buf.validate.field).enum.defined_only = true];
+  InvitationRole role = 2 [(buf.validate.field).enum.defined_only = true];
+  string email_hint = 3;
+  google.protobuf.Timestamp expires_at = 4;
 }
 
 message CreateInvitationRequest {
   string org_id = 1 [(buf.validate.field).string.uuid = true];
   string email = 2 [(buf.validate.field).string.email = true];
-  string role = 3;
+  InvitationRole role = 3 [(buf.validate.field).enum = {
+    defined_only: true
+    not_in: [0]
+  }];
 }
 
 message CreateInvitationResponse {
   Invitation invitation = 1;
-  string invite_token = 2;
+}
+
+message InspectInvitationRequest {
+  string token = 1 [(buf.validate.field).string = {
+    min_len: 32
+    max_len: 512
+  }];
+}
+
+message InspectInvitationByIdRequest {
+  string invitation_id = 1 [(buf.validate.field).string.uuid = true];
 }
 
 message AcceptInvitationRequest {
-  string token = 1 [(buf.validate.field).string.min_len = 1];
+  oneof credential {
+    option (buf.validate.oneof).required = true;
+    string token = 1 [(buf.validate.field).string = {
+      min_len: 32
+      max_len: 512
+    }];
+    string invitation_id = 2 [(buf.validate.field).string.uuid = true];
+  }
 }
 
 message AcceptInvitationResponse {
   Organization organization = 1;
+  bool already_accepted = 2;
 }
 
 message ListInvitationsRequest {
   string org_id = 1 [(buf.validate.field).string.uuid = true];
-  InvitationStatus status = 2;
+  InvitationStatus status = 2 [(buf.validate.field).enum.defined_only = true];
 }
 
 message ListInvitationsResponse {
@@ -64,7 +108,10 @@ message RevokeInvitationRequest {
   string id = 1 [(buf.validate.field).string.uuid = true];
 }
 
-// InvitationService — org member invitation management
+message ResendInvitationRequest {
+  string id = 1 [(buf.validate.field).string.uuid = true];
+}
+
 service InvitationService {
   rpc CreateInvitation(CreateInvitationRequest) returns (CreateInvitationResponse) {
     option (saas.policy.v1.method_policy) = {
@@ -75,6 +122,8 @@ service InvitationService {
         target: RESOURCE_TARGET_ORGANIZATION
         lookup: RESOURCE_LOOKUP_DIRECT_ID
       }
+      permissions: "invitations:write"
+      scopes: "invitations:write"
       mfa: MFA_REQUIREMENT_NONE
       audit: {
         events: "invitation.created"
@@ -91,6 +140,43 @@ service InvitationService {
       body: "*"
     };
   }
+
+  rpc InspectInvitation(InspectInvitationRequest) returns (InvitationSummary) {
+    option (saas.policy.v1.method_policy) = {
+      exposure: EXPOSURE_PUBLIC
+      tenant: TENANT_REQUIREMENT_NONE
+      mfa: MFA_REQUIREMENT_NONE
+      audit: {emission: AUDIT_EMISSION_NONE}
+      idempotency: IDEMPOTENCY_REQUIREMENT_FORBIDDEN
+      rate_limit: RATE_LIMIT_CLASS_PUBLIC
+      request_sensitivity: SENSITIVITY_SECRET
+      response_sensitivity: SENSITIVITY_CONFIDENTIAL
+      platform_role: PLATFORM_ROLE_REQUIREMENT_NONE
+    };
+    option (google.api.http) = {
+      post: "/v1/invitations:inspect"
+      body: "*"
+    };
+  }
+
+  rpc InspectInvitationById(InspectInvitationByIdRequest) returns (InvitationSummary) {
+    option (saas.policy.v1.method_policy) = {
+      exposure: EXPOSURE_AUTHENTICATED
+      tenant: TENANT_REQUIREMENT_USER
+      mfa: MFA_REQUIREMENT_NONE
+      audit: {emission: AUDIT_EMISSION_NONE}
+      idempotency: IDEMPOTENCY_REQUIREMENT_FORBIDDEN
+      rate_limit: RATE_LIMIT_CLASS_STANDARD_READ
+      request_sensitivity: SENSITIVITY_CONFIDENTIAL
+      response_sensitivity: SENSITIVITY_CONFIDENTIAL
+      platform_role: PLATFORM_ROLE_REQUIREMENT_NONE
+    };
+    option (google.api.http) = {
+      post: "/v1/invitations:inspect-id"
+      body: "*"
+    };
+  }
+
   rpc AcceptInvitation(AcceptInvitationRequest) returns (AcceptInvitationResponse) {
     option (saas.policy.v1.method_policy) = {
       exposure: EXPOSURE_AUTHENTICATED
@@ -111,6 +197,7 @@ service InvitationService {
       body: "*"
     };
   }
+
   rpc ListInvitations(ListInvitationsRequest) returns (ListInvitationsResponse) {
     option (saas.policy.v1.method_policy) = {
       exposure: EXPOSURE_AUTHENTICATED
@@ -120,6 +207,8 @@ service InvitationService {
         target: RESOURCE_TARGET_ORGANIZATION
         lookup: RESOURCE_LOOKUP_DIRECT_ID
       }
+      permissions: "invitations:read"
+      scopes: "invitations:read"
       mfa: MFA_REQUIREMENT_NONE
       audit: {emission: AUDIT_EMISSION_NONE}
       idempotency: IDEMPOTENCY_REQUIREMENT_FORBIDDEN
@@ -130,6 +219,35 @@ service InvitationService {
     };
     option (google.api.http) = {get: "/v1/invitations"};
   }
+
+  rpc ResendInvitation(ResendInvitationRequest) returns (Invitation) {
+    option (saas.policy.v1.method_policy) = {
+      exposure: EXPOSURE_AUTHENTICATED
+      tenant: TENANT_REQUIREMENT_ORG_ADMIN
+      resource_bindings: {
+        request_field: "id"
+        target: RESOURCE_TARGET_OWNED_RESOURCE
+        lookup: RESOURCE_LOOKUP_RESOURCE_TO_ORGANIZATION
+      }
+      permissions: "invitations:write"
+      scopes: "invitations:write"
+      mfa: MFA_REQUIREMENT_NONE
+      audit: {
+        events: "invitation.resent"
+        emission: AUDIT_EMISSION_SUCCESS
+      }
+      idempotency: IDEMPOTENCY_REQUIREMENT_REQUIRED
+      rate_limit: RATE_LIMIT_CLASS_STANDARD_WRITE
+      request_sensitivity: SENSITIVITY_CONFIDENTIAL
+      response_sensitivity: SENSITIVITY_CONFIDENTIAL
+      platform_role: PLATFORM_ROLE_REQUIREMENT_NONE
+    };
+    option (google.api.http) = {
+      post: "/v1/invitations/{id}:resend"
+      body: "*"
+    };
+  }
+
   rpc RevokeInvitation(RevokeInvitationRequest) returns (google.protobuf.Empty) {
     option (saas.policy.v1.method_policy) = {
       exposure: EXPOSURE_AUTHENTICATED
@@ -139,6 +257,8 @@ service InvitationService {
         target: RESOURCE_TARGET_OWNED_RESOURCE
         lookup: RESOURCE_LOOKUP_RESOURCE_TO_ORGANIZATION
       }
+      permissions: "invitations:write"
+      scopes: "invitations:write"
       mfa: MFA_REQUIREMENT_NONE
       audit: {
         events: "invitation.revoked"

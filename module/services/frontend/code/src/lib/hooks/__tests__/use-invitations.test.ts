@@ -2,6 +2,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { renderHook, waitFor } from "@testing-library/react";
 import React from "react";
 import { describe, expect, it } from "vitest";
+import { InvitationRole } from "@/gen/saas/accounts/v1/invitations_pb";
 import {
 	useAcceptInvitation,
 	useCreateInvitation,
@@ -25,7 +26,7 @@ describe("useInvitations", () => {
 		await waitFor(() => expect(result.current.isSuccess).toBe(true));
 		expect(result.current.data).toBeDefined();
 		expect(Array.isArray(result.current.data)).toBe(true);
-		expect(result.current.data!.length).toBeGreaterThan(0);
+		expect(result.current.data?.length).toBeGreaterThan(0);
 	});
 
 	it("does not fetch when orgId is null", () => {
@@ -44,7 +45,7 @@ describe("useCreateInvitation", () => {
 		const response = await result.current.mutateAsync({
 			orgId: "org-1",
 			email: "new@test.com",
-			role: "member",
+			role: InvitationRole.MEMBER,
 		});
 		expect(response).toBeDefined();
 		expect(response.invitation).toBeDefined();

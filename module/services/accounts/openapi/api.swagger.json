@@ -19,6 +19,9 @@
       },
       "type": "object"
     },
+    "InvitationServiceResendInvitationBody": {
+      "type": "object"
+    },
     "NotificationServiceMarkReadBody": {
       "type": "object"
     },
@@ -26,6 +29,11 @@
       "type": "object"
     },
     "OnboardingServiceSkipStepBody": {
+      "properties": {
+        "reason": {
+          "type": "string"
+        }
+      },
       "type": "object"
     },
     "OrganizationServiceUpdateOrgSettingsBody": {
@@ -146,6 +154,26 @@
       },
       "type": "object"
     },
+    "WaitlistServiceInviteBody": {
+      "type": "object"
+    },
+    "WaitlistServiceReviewBody": {
+      "properties": {
+        "adminNotes": {
+          "type": "string"
+        },
+        "state": {
+          "$ref": "#/definitions/v1WaitlistState"
+        },
+        "tags": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        }
+      },
+      "type": "object"
+    },
     "WebhookServiceReplayDeliveryBody": {
       "type": "object"
     },
@@ -251,16 +279,11 @@
       ],
       "type": "string"
     },
-    "v1AcceptConsentRequest": {
-      "properties": {
-        "version": {
-          "type": "string"
-        }
-      },
-      "type": "object"
-    },
     "v1AcceptInvitationRequest": {
       "properties": {
+        "invitationId": {
+          "type": "string"
+        },
         "token": {
           "type": "string"
         }
@@ -269,8 +292,50 @@
     },
     "v1AcceptInvitationResponse": {
       "properties": {
+        "alreadyAccepted": {
+          "type": "boolean"
+        },
         "organization": {
           "$ref": "#/definitions/v1Organization"
+        }
+      },
+      "type": "object"
+    },
+    "v1AcceptTermsRequest": {
+      "properties": {
+        "context": {
+          "type": "string"
+        },
+        "version": {
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
+    "v1AcquisitionMode": {
+      "default": "ACQUISITION_MODE_UNSPECIFIED",
+      "enum": [
+        "ACQUISITION_MODE_UNSPECIFIED",
+        "ACQUISITION_MODE_OPEN_SIGNUP",
+        "ACQUISITION_MODE_INVITE_ONLY",
+        "ACQUISITION_MODE_APPROVAL_REQUIRED",
+        "ACQUISITION_MODE_CLOSED"
+      ],
+      "type": "string"
+    },
+    "v1AcquisitionStatus": {
+      "properties": {
+        "consentPolicyVersion": {
+          "type": "string"
+        },
+        "emailVerificationRequired": {
+          "type": "boolean"
+        },
+        "mode": {
+          "$ref": "#/definitions/v1AcquisitionMode"
+        },
+        "waitlistEnabled": {
+          "type": "boolean"
         }
       },
       "type": "object"
@@ -554,18 +619,42 @@
       },
       "type": "object"
     },
+    "v1ConsentPurpose": {
+      "default": "CONSENT_PURPOSE_UNSPECIFIED",
+      "enum": [
+        "CONSENT_PURPOSE_UNSPECIFIED",
+        "CONSENT_PURPOSE_NECESSARY",
+        "CONSENT_PURPOSE_ANALYTICS",
+        "CONSENT_PURPOSE_MARKETING"
+      ],
+      "type": "string"
+    },
     "v1ConsentStatus": {
       "properties": {
-        "acceptedAt": {
+        "currentTermsVersion": {
+          "type": "string"
+        },
+        "policyVersion": {
+          "type": "string"
+        },
+        "preferencesPolicyVersion": {
+          "type": "string"
+        },
+        "preferencesRecorded": {
+          "type": "boolean"
+        },
+        "purposes": {
+          "items": {
+            "$ref": "#/definitions/v1PurposeConsent",
+            "type": "object"
+          },
+          "type": "array"
+        },
+        "termsAcceptedAt": {
           "format": "date-time",
           "type": "string"
         },
-        "acceptedVersion": {
-          "description": "accepted_version is the CONSENT_VERSION string the user clicked\nAccept on. Empty when the user has never accepted.",
-          "type": "string"
-        },
-        "currentVersion": {
-          "description": "current_version is the version the api considers active. The FE\nshows the banner whenever accepted_version != current_version.",
+        "termsAcceptedVersion": {
           "type": "string"
         }
       },
@@ -631,7 +720,7 @@
           "type": "string"
         },
         "role": {
-          "type": "string"
+          "$ref": "#/definitions/v1InvitationRole"
         }
       },
       "type": "object"
@@ -640,9 +729,6 @@
       "properties": {
         "invitation": {
           "$ref": "#/definitions/v1Invitation"
-        },
-        "inviteToken": {
-          "type": "string"
         }
       },
       "type": "object"
@@ -1211,11 +1297,30 @@
       },
       "type": "object"
     },
+    "v1InspectInvitationByIdRequest": {
+      "properties": {
+        "invitationId": {
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
+    "v1InspectInvitationRequest": {
+      "properties": {
+        "token": {
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
     "v1Invitation": {
       "properties": {
         "createdAt": {
           "format": "date-time",
           "type": "string"
+        },
+        "deliveryStatus": {
+          "$ref": "#/definitions/v1InvitationDeliveryStatus"
         },
         "email": {
           "type": "string"
@@ -1227,20 +1332,53 @@
         "id": {
           "type": "string"
         },
+        "inviterDisplayName": {
+          "type": "string"
+        },
         "inviterId": {
+          "type": "string"
+        },
+        "lastSentAt": {
+          "format": "date-time",
           "type": "string"
         },
         "orgId": {
           "type": "string"
         },
         "role": {
-          "type": "string"
+          "$ref": "#/definitions/v1InvitationRole"
+        },
+        "sendCount": {
+          "format": "int64",
+          "type": "integer"
         },
         "status": {
           "$ref": "#/definitions/v1InvitationStatus"
         }
       },
       "type": "object"
+    },
+    "v1InvitationDeliveryStatus": {
+      "default": "INVITATION_DELIVERY_STATUS_UNSPECIFIED",
+      "enum": [
+        "INVITATION_DELIVERY_STATUS_UNSPECIFIED",
+        "INVITATION_DELIVERY_STATUS_DISABLED",
+        "INVITATION_DELIVERY_STATUS_QUEUED",
+        "INVITATION_DELIVERY_STATUS_SENT",
+        "INVITATION_DELIVERY_STATUS_DELIVERED",
+        "INVITATION_DELIVERY_STATUS_BOUNCED",
+        "INVITATION_DELIVERY_STATUS_COMPLAINED"
+      ],
+      "type": "string"
+    },
+    "v1InvitationRole": {
+      "default": "INVITATION_ROLE_UNSPECIFIED",
+      "enum": [
+        "INVITATION_ROLE_UNSPECIFIED",
+        "INVITATION_ROLE_MEMBER",
+        "INVITATION_ROLE_ADMIN"
+      ],
+      "type": "string"
     },
     "v1InvitationStatus": {
       "default": "INVITATION_STATUS_UNSPECIFIED",
@@ -1252,6 +1390,24 @@
         "INVITATION_STATUS_EXPIRED"
       ],
       "type": "string"
+    },
+    "v1InvitationSummary": {
+      "properties": {
+        "emailHint": {
+          "type": "string"
+        },
+        "expiresAt": {
+          "format": "date-time",
+          "type": "string"
+        },
+        "role": {
+          "$ref": "#/definitions/v1InvitationRole"
+        },
+        "status": {
+          "$ref": "#/definitions/v1InvitationStatus"
+        }
+      },
+      "type": "object"
     },
     "v1Invoice": {
       "description": "Invoice — trimmed view of Stripe's invoice object. Amounts are in\nthe smallest currency unit (cents for USD/EUR); FE divides by 100.",
@@ -1656,6 +1812,52 @@
       },
       "type": "object"
     },
+    "v1JoinWaitlistRequest": {
+      "properties": {
+        "campaign": {
+          "type": "string"
+        },
+        "company": {
+          "type": "string"
+        },
+        "email": {
+          "type": "string"
+        },
+        "marketingConsent": {
+          "type": "boolean"
+        },
+        "name": {
+          "type": "string"
+        },
+        "policyVersion": {
+          "type": "string"
+        },
+        "referralCode": {
+          "type": "string"
+        },
+        "referrer": {
+          "type": "string"
+        },
+        "source": {
+          "type": "string"
+        },
+        "useCase": {
+          "type": "string"
+        },
+        "website": {
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
+    "v1JoinWaitlistResponse": {
+      "properties": {
+        "message": {
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
     "v1ListAPIKeysResponse": {
       "properties": {
         "keys": {
@@ -1936,6 +2138,21 @@
       },
       "type": "object"
     },
+    "v1ListWaitlistResponse": {
+      "properties": {
+        "entries": {
+          "items": {
+            "$ref": "#/definitions/v1WaitlistEntry",
+            "type": "object"
+          },
+          "type": "array"
+        },
+        "nextPageToken": {
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
     "v1ListWebhookDeliveriesResponse": {
       "properties": {
         "deliveries": {
@@ -2066,10 +2283,61 @@
       },
       "type": "object"
     },
+    "v1OnboardingCompletionMethod": {
+      "default": "ONBOARDING_COMPLETION_METHOD_UNSPECIFIED",
+      "enum": [
+        "ONBOARDING_COMPLETION_METHOD_UNSPECIFIED",
+        "ONBOARDING_COMPLETION_METHOD_DETECTED",
+        "ONBOARDING_COMPLETION_METHOD_DOMAIN_ACTION",
+        "ONBOARDING_COMPLETION_METHOD_USER_SKIP",
+        "ONBOARDING_COMPLETION_METHOD_MIGRATED"
+      ],
+      "type": "string"
+    },
     "v1OnboardingProgress": {
       "properties": {
-        "completed": {
+        "activatedAt": {
+          "format": "date-time",
+          "type": "string"
+        },
+        "activationAchieved": {
           "type": "boolean"
+        },
+        "audience": {
+          "type": "string"
+        },
+        "checklistComplete": {
+          "type": "boolean"
+        },
+        "completedAt": {
+          "format": "date-time",
+          "type": "string"
+        },
+        "currentStep": {
+          "$ref": "#/definitions/v1OnboardingStepId"
+        },
+        "flowId": {
+          "type": "string"
+        },
+        "flowVersion": {
+          "format": "int64",
+          "type": "integer"
+        },
+        "nextStep": {
+          "$ref": "#/definitions/v1OnboardingStepId"
+        },
+        "organizationId": {
+          "type": "string"
+        },
+        "persona": {
+          "type": "string"
+        },
+        "requiredComplete": {
+          "type": "boolean"
+        },
+        "startedAt": {
+          "format": "date-time",
+          "type": "string"
         },
         "steps": {
           "items": {
@@ -2077,6 +2345,9 @@
             "type": "object"
           },
           "type": "array"
+        },
+        "variant": {
+          "type": "string"
         }
       },
       "type": "object"
@@ -2087,14 +2358,52 @@
           "format": "date-time",
           "type": "string"
         },
+        "completionMethod": {
+          "$ref": "#/definitions/v1OnboardingCompletionMethod"
+        },
+        "firstSeenAt": {
+          "format": "date-time",
+          "type": "string"
+        },
+        "id": {
+          "$ref": "#/definitions/v1OnboardingStepId"
+        },
+        "lastSeenAt": {
+          "format": "date-time",
+          "type": "string"
+        },
+        "prerequisites": {
+          "items": {
+            "$ref": "#/definitions/v1OnboardingStepId"
+          },
+          "type": "array"
+        },
+        "required": {
+          "type": "boolean"
+        },
+        "skipReason": {
+          "type": "string"
+        },
+        "skippedAt": {
+          "format": "date-time",
+          "type": "string"
+        },
         "status": {
           "$ref": "#/definitions/v1OnboardingStepStatus"
-        },
-        "stepName": {
-          "type": "string"
         }
       },
       "type": "object"
+    },
+    "v1OnboardingStepId": {
+      "default": "ONBOARDING_STEP_ID_UNSPECIFIED",
+      "enum": [
+        "ONBOARDING_STEP_ID_UNSPECIFIED",
+        "ONBOARDING_STEP_ID_CONFIGURE_ORGANIZATION",
+        "ONBOARDING_STEP_ID_INVITE_TEAM",
+        "ONBOARDING_STEP_ID_CHOOSE_PLAN",
+        "ONBOARDING_STEP_ID_SETUP_API_KEY"
+      ],
+      "type": "string"
     },
     "v1OnboardingStepStatus": {
       "default": "ONBOARDING_STEP_STATUS_UNSPECIFIED",
@@ -2397,6 +2706,25 @@
         },
         "limit": {
           "format": "int64",
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
+    "v1PurposeConsent": {
+      "properties": {
+        "granted": {
+          "type": "boolean"
+        },
+        "purpose": {
+          "$ref": "#/definitions/v1ConsentPurpose"
+        },
+        "updatedAt": {
+          "format": "date-time",
+          "type": "string"
+        },
+        "withdrawnAt": {
+          "format": "date-time",
           "type": "string"
         }
       },
@@ -3078,6 +3406,26 @@
       ],
       "type": "string"
     },
+    "v1UpdateConsentPreferencesRequest": {
+      "properties": {
+        "analytics": {
+          "type": "boolean"
+        },
+        "context": {
+          "type": "string"
+        },
+        "marketing": {
+          "type": "boolean"
+        },
+        "policyVersion": {
+          "type": "string"
+        },
+        "region": {
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
     "v1UpdateTeamResponse": {
       "properties": {
         "team": {
@@ -3392,6 +3740,25 @@
       },
       "type": "object"
     },
+    "v1VerifyWaitlistRequest": {
+      "properties": {
+        "token": {
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
+    "v1VerifyWaitlistResponse": {
+      "properties": {
+        "message": {
+          "type": "string"
+        },
+        "state": {
+          "$ref": "#/definitions/v1WaitlistState"
+        }
+      },
+      "type": "object"
+    },
     "v1VersionResponse": {
       "properties": {
         "version": {
@@ -3399,6 +3766,91 @@
         }
       },
       "type": "object"
+    },
+    "v1WaitlistEntry": {
+      "properties": {
+        "adminNotes": {
+          "type": "string"
+        },
+        "approvedAt": {
+          "format": "date-time",
+          "type": "string"
+        },
+        "campaign": {
+          "type": "string"
+        },
+        "company": {
+          "type": "string"
+        },
+        "convertedAt": {
+          "format": "date-time",
+          "type": "string"
+        },
+        "createdAt": {
+          "format": "date-time",
+          "type": "string"
+        },
+        "email": {
+          "type": "string"
+        },
+        "id": {
+          "type": "string"
+        },
+        "invitedAt": {
+          "format": "date-time",
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        },
+        "referralCode": {
+          "type": "string"
+        },
+        "referredBy": {
+          "type": "string"
+        },
+        "referrer": {
+          "type": "string"
+        },
+        "source": {
+          "type": "string"
+        },
+        "state": {
+          "$ref": "#/definitions/v1WaitlistState"
+        },
+        "tags": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "unsubscribedAt": {
+          "format": "date-time",
+          "type": "string"
+        },
+        "useCase": {
+          "type": "string"
+        },
+        "verifiedAt": {
+          "format": "date-time",
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
+    "v1WaitlistState": {
+      "default": "WAITLIST_STATE_UNSPECIFIED",
+      "enum": [
+        "WAITLIST_STATE_UNSPECIFIED",
+        "WAITLIST_STATE_PENDING",
+        "WAITLIST_STATE_VERIFIED",
+        "WAITLIST_STATE_APPROVED",
+        "WAITLIST_STATE_INVITED",
+        "WAITLIST_STATE_CONVERTED",
+        "WAITLIST_STATE_REJECTED",
+        "WAITLIST_STATE_UNSUBSCRIBED"
+      ],
+      "type": "string"
     },
     "v1WebhookDelivery": {
       "properties": {
@@ -3548,6 +4000,28 @@
         },
         "tags": [
           "IntrospectionService"
+        ]
+      }
+    },
+    "/v1/acquisition": {
+      "get": {
+        "operationId": "WaitlistService_GetAcquisitionStatus",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1AcquisitionStatus"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/rpcStatus"
+            }
+          }
+        },
+        "tags": [
+          "WaitlistService"
         ]
       }
     },
@@ -4222,16 +4696,16 @@
         ]
       }
     },
-    "/v1/consent/accept": {
-      "post": {
-        "operationId": "ConsentService_Accept",
+    "/v1/consent/preferences": {
+      "put": {
+        "operationId": "ConsentService_UpdatePreferences",
         "parameters": [
           {
             "in": "body",
             "name": "body",
             "required": true,
             "schema": {
-              "$ref": "#/definitions/v1AcceptConsentRequest"
+              "$ref": "#/definitions/v1UpdateConsentPreferencesRequest"
             }
           }
         ],
@@ -4257,6 +4731,38 @@
     "/v1/consent/status": {
       "get": {
         "operationId": "ConsentService_GetStatus",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1ConsentStatus"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/rpcStatus"
+            }
+          }
+        },
+        "tags": [
+          "ConsentService"
+        ]
+      }
+    },
+    "/v1/consent/terms": {
+      "post": {
+        "operationId": "ConsentService_AcceptTerms",
+        "parameters": [
+          {
+            "in": "body",
+            "name": "body",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/v1AcceptTermsRequest"
+            }
+          }
+        ],
         "responses": {
           "200": {
             "description": "A successful response.",
@@ -4667,6 +5173,44 @@
         ]
       }
     },
+    "/v1/invitations/{id}:resend": {
+      "post": {
+        "operationId": "InvitationService_ResendInvitation",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "type": "string"
+          },
+          {
+            "in": "body",
+            "name": "body",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/InvitationServiceResendInvitationBody"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1Invitation"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/rpcStatus"
+            }
+          }
+        },
+        "tags": [
+          "InvitationService"
+        ]
+      }
+    },
     "/v1/invitations:accept": {
       "post": {
         "operationId": "InvitationService_AcceptInvitation",
@@ -4685,6 +5229,70 @@
             "description": "A successful response.",
             "schema": {
               "$ref": "#/definitions/v1AcceptInvitationResponse"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/rpcStatus"
+            }
+          }
+        },
+        "tags": [
+          "InvitationService"
+        ]
+      }
+    },
+    "/v1/invitations:inspect": {
+      "post": {
+        "operationId": "InvitationService_InspectInvitation",
+        "parameters": [
+          {
+            "in": "body",
+            "name": "body",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/v1InspectInvitationRequest"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1InvitationSummary"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/rpcStatus"
+            }
+          }
+        },
+        "tags": [
+          "InvitationService"
+        ]
+      }
+    },
+    "/v1/invitations:inspect-id": {
+      "post": {
+        "operationId": "InvitationService_InspectInvitationById",
+        "parameters": [
+          {
+            "in": "body",
+            "name": "body",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/v1InspectInvitationByIdRequest"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1InvitationSummary"
             }
           },
           "default": {
@@ -5074,104 +5682,6 @@
         ]
       }
     },
-    "/v1/onboarding": {
-      "get": {
-        "operationId": "OnboardingService_GetProgress",
-        "responses": {
-          "200": {
-            "description": "A successful response.",
-            "schema": {
-              "$ref": "#/definitions/v1OnboardingProgress"
-            }
-          },
-          "default": {
-            "description": "An unexpected error response.",
-            "schema": {
-              "$ref": "#/definitions/rpcStatus"
-            }
-          }
-        },
-        "tags": [
-          "OnboardingService"
-        ]
-      }
-    },
-    "/v1/onboarding/{stepName}:complete": {
-      "post": {
-        "operationId": "OnboardingService_CompleteStep",
-        "parameters": [
-          {
-            "in": "path",
-            "name": "stepName",
-            "required": true,
-            "type": "string"
-          },
-          {
-            "in": "body",
-            "name": "body",
-            "required": true,
-            "schema": {
-              "$ref": "#/definitions/OnboardingServiceCompleteStepBody"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "A successful response.",
-            "schema": {
-              "$ref": "#/definitions/v1OnboardingProgress"
-            }
-          },
-          "default": {
-            "description": "An unexpected error response.",
-            "schema": {
-              "$ref": "#/definitions/rpcStatus"
-            }
-          }
-        },
-        "tags": [
-          "OnboardingService"
-        ]
-      }
-    },
-    "/v1/onboarding/{stepName}:skip": {
-      "post": {
-        "operationId": "OnboardingService_SkipStep",
-        "parameters": [
-          {
-            "in": "path",
-            "name": "stepName",
-            "required": true,
-            "type": "string"
-          },
-          {
-            "in": "body",
-            "name": "body",
-            "required": true,
-            "schema": {
-              "$ref": "#/definitions/OnboardingServiceSkipStepBody"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "A successful response.",
-            "schema": {
-              "$ref": "#/definitions/v1OnboardingProgress"
-            }
-          },
-          "default": {
-            "description": "An unexpected error response.",
-            "schema": {
-              "$ref": "#/definitions/rpcStatus"
-            }
-          }
-        },
-        "tags": [
-          "OnboardingService"
-        ]
-      }
-    },
     "/v1/organizations": {
       "get": {
         "operationId": "OrganizationService_ListOrganizations",
@@ -5487,6 +5997,138 @@
         },
         "tags": [
           "TeamService"
+        ]
+      }
+    },
+    "/v1/organizations/{organizationId}/onboarding": {
+      "get": {
+        "operationId": "OnboardingService_GetProgress",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "organizationId",
+            "required": true,
+            "type": "string"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1OnboardingProgress"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/rpcStatus"
+            }
+          }
+        },
+        "tags": [
+          "OnboardingService"
+        ]
+      }
+    },
+    "/v1/organizations/{organizationId}/onboarding/{stepId}:complete": {
+      "post": {
+        "operationId": "OnboardingService_CompleteStep",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "organizationId",
+            "required": true,
+            "type": "string"
+          },
+          {
+            "enum": [
+              "ONBOARDING_STEP_ID_UNSPECIFIED",
+              "ONBOARDING_STEP_ID_CONFIGURE_ORGANIZATION",
+              "ONBOARDING_STEP_ID_INVITE_TEAM",
+              "ONBOARDING_STEP_ID_CHOOSE_PLAN",
+              "ONBOARDING_STEP_ID_SETUP_API_KEY"
+            ],
+            "in": "path",
+            "name": "stepId",
+            "required": true,
+            "type": "string"
+          },
+          {
+            "in": "body",
+            "name": "body",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/OnboardingServiceCompleteStepBody"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1OnboardingProgress"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/rpcStatus"
+            }
+          }
+        },
+        "tags": [
+          "OnboardingService"
+        ]
+      }
+    },
+    "/v1/organizations/{organizationId}/onboarding/{stepId}:skip": {
+      "post": {
+        "operationId": "OnboardingService_SkipStep",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "organizationId",
+            "required": true,
+            "type": "string"
+          },
+          {
+            "enum": [
+              "ONBOARDING_STEP_ID_UNSPECIFIED",
+              "ONBOARDING_STEP_ID_CONFIGURE_ORGANIZATION",
+              "ONBOARDING_STEP_ID_INVITE_TEAM",
+              "ONBOARDING_STEP_ID_CHOOSE_PLAN",
+              "ONBOARDING_STEP_ID_SETUP_API_KEY"
+            ],
+            "in": "path",
+            "name": "stepId",
+            "required": true,
+            "type": "string"
+          },
+          {
+            "in": "body",
+            "name": "body",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/OnboardingServiceSkipStepBody"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1OnboardingProgress"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/rpcStatus"
+            }
+          }
+        },
+        "tags": [
+          "OnboardingService"
         ]
       }
     },
@@ -6245,6 +6887,154 @@
         },
         "tags": [
           "PlatformAdminService"
+        ]
+      }
+    },
+    "/v1/platform/waitlist": {
+      "get": {
+        "operationId": "WaitlistService_List",
+        "parameters": [
+          {
+            "default": "WAITLIST_STATE_UNSPECIFIED",
+            "enum": [
+              "WAITLIST_STATE_UNSPECIFIED",
+              "WAITLIST_STATE_PENDING",
+              "WAITLIST_STATE_VERIFIED",
+              "WAITLIST_STATE_APPROVED",
+              "WAITLIST_STATE_INVITED",
+              "WAITLIST_STATE_CONVERTED",
+              "WAITLIST_STATE_REJECTED",
+              "WAITLIST_STATE_UNSUBSCRIBED"
+            ],
+            "in": "query",
+            "name": "state",
+            "required": false,
+            "type": "string"
+          },
+          {
+            "in": "query",
+            "name": "query",
+            "required": false,
+            "type": "string"
+          },
+          {
+            "in": "query",
+            "name": "source",
+            "required": false,
+            "type": "string"
+          },
+          {
+            "in": "query",
+            "name": "campaign",
+            "required": false,
+            "type": "string"
+          },
+          {
+            "format": "int32",
+            "in": "query",
+            "name": "pageSize",
+            "required": false,
+            "type": "integer"
+          },
+          {
+            "in": "query",
+            "name": "pageToken",
+            "required": false,
+            "type": "string"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1ListWaitlistResponse"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/rpcStatus"
+            }
+          }
+        },
+        "tags": [
+          "WaitlistService"
+        ]
+      }
+    },
+    "/v1/platform/waitlist/{id}:invite": {
+      "post": {
+        "operationId": "WaitlistService_Invite",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "type": "string"
+          },
+          {
+            "in": "body",
+            "name": "body",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/WaitlistServiceInviteBody"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1WaitlistEntry"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/rpcStatus"
+            }
+          }
+        },
+        "tags": [
+          "WaitlistService"
+        ]
+      }
+    },
+    "/v1/platform/waitlist/{id}:review": {
+      "post": {
+        "operationId": "WaitlistService_Review",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "type": "string"
+          },
+          {
+            "in": "body",
+            "name": "body",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/WaitlistServiceReviewBody"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1WaitlistEntry"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/rpcStatus"
+            }
+          }
+        },
+        "tags": [
+          "WaitlistService"
         ]
       }
     },
@@ -7307,6 +8097,70 @@
         ]
       }
     },
+    "/v1/waitlist": {
+      "post": {
+        "operationId": "WaitlistService_Join",
+        "parameters": [
+          {
+            "in": "body",
+            "name": "body",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/v1JoinWaitlistRequest"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1JoinWaitlistResponse"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/rpcStatus"
+            }
+          }
+        },
+        "tags": [
+          "WaitlistService"
+        ]
+      }
+    },
+    "/v1/waitlist:verify": {
+      "post": {
+        "operationId": "WaitlistService_Verify",
+        "parameters": [
+          {
+            "in": "body",
+            "name": "body",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/v1VerifyWaitlistRequest"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1VerifyWaitlistResponse"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/rpcStatus"
+            }
+          }
+        },
+        "tags": [
+          "WaitlistService"
+        ]
+      }
+    },
     "/v1/webhooks": {
       "get": {
         "operationId": "WebhookService_ListSubscriptions",
@@ -7803,6 +8657,9 @@
     },
     {
       "name": "UserSettingsService"
+    },
+    {
+      "name": "WaitlistService"
     },
     {
       "name": "WebhookService"

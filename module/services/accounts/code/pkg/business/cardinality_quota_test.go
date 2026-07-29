@@ -61,7 +61,7 @@ func TestSeatQuotaSerializesInvitationReservations(t *testing.T) {
 
 	errs := runConcurrently(2, func(index int) error {
 		_, err := testService.CreateInvitation(ctx, ownerID, &gen.CreateInvitationRequest{
-			OrgId: orgID, Email: fmt.Sprintf("candidate-%d@test.invalid", index), Role: "member",
+			OrgId: orgID, Email: fmt.Sprintf("candidate-%d@test.invalid", index), Role: gen.InvitationRole_INVITATION_ROLE_MEMBER,
 		})
 		return err
 	})
@@ -128,7 +128,7 @@ func TestExpiredCardinalityResourcesReleaseCapacity(t *testing.T) {
 	require.NoError(t, err, "an expired key must not consume active-key capacity")
 
 	_, err = testService.CreateInvitation(ctx, ownerID, &gen.CreateInvitationRequest{
-		OrgId: orgID, Email: "retry@test.invalid", Role: "member",
+		OrgId: orgID, Email: "retry@test.invalid", Role: gen.InvitationRole_INVITATION_ROLE_MEMBER,
 	})
 	require.NoError(t, err, "an expired pending invitation must release its seat and uniqueness reservation")
 

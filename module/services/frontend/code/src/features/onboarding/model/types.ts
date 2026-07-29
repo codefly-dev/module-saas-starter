@@ -1,48 +1,64 @@
-/** Clean domain types for the Onboarding feature. */
+import {
+	OnboardingStepId,
+	OnboardingStepStatus,
+} from "@/gen/saas/accounts/v1/onboarding_pb";
 
-export type OnboardingStepId =
-	| "create_org"
-	| "invite_team"
-	| "select_plan"
-	| "create_api_key";
+export { OnboardingStepId, OnboardingStepStatus };
+
+export type KnownOnboardingStepId = Exclude<
+	OnboardingStepId,
+	OnboardingStepId.UNSPECIFIED
+>;
 
 export interface OnboardingStep {
-	id: OnboardingStepId;
+	id: KnownOnboardingStepId;
 	label: string;
 	description: string;
-	optional: boolean;
+	required: boolean;
+	status: OnboardingStepStatus;
+	skipReason: string;
+	completedAt?: string;
+	skippedAt?: string;
 }
 
 export interface OnboardingProgress {
-	completedSteps: OnboardingStepId[];
-	skippedSteps: OnboardingStepId[];
+	organizationId: string;
+	flowId: string;
+	flowVersion: number;
+	variant: string;
+	steps: OnboardingStep[];
 	currentStep: OnboardingStepId;
-	startedAt: string;
+	nextStep: OnboardingStepId;
+	requiredComplete: boolean;
+	checklistComplete: boolean;
+	activationAchieved: boolean;
+	startedAt?: string;
+	completedAt?: string;
+	activatedAt?: string;
 }
 
-export const ONBOARDING_STEPS: OnboardingStep[] = [
-	{
-		id: "create_org",
-		label: "Create Organization",
-		description: "Set up your organization to get started.",
-		optional: false,
+export const ONBOARDING_STEP_CONTENT: Record<
+	KnownOnboardingStepId,
+	{ label: string; description: string; href?: string }
+> = {
+	[OnboardingStepId.CONFIGURE_ORGANIZATION]: {
+		label: "Configure organization",
+		description: "Create the workspace where your team and product live.",
 	},
-	{
-		id: "invite_team",
-		label: "Invite Your Team",
-		description: "Add team members to collaborate together.",
-		optional: true,
+	[OnboardingStepId.INVITE_TEAM]: {
+		label: "Invite your team",
+		description: "Send secure invitations from the organization admin page.",
+		href: "/admin/invitations",
 	},
-	{
-		id: "select_plan",
-		label: "Select a Plan",
-		description: "Choose the plan that fits your needs.",
-		optional: true,
+	[OnboardingStepId.CHOOSE_PLAN]: {
+		label: "Choose a plan",
+		description: "Select a free or paid plan through the billing flow.",
+		href: "/admin/billing",
 	},
-	{
-		id: "create_api_key",
-		label: "Create API Key",
-		description: "Generate an API key to integrate with your tools.",
-		optional: true,
+	[OnboardingStepId.SETUP_API_KEY]: {
+		label: "Create an API key",
+		description:
+			"Create a key and reveal its secret once on the API keys page.",
+		href: "/admin/api-keys",
 	},
-];
+};

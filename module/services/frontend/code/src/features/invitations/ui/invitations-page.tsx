@@ -2,7 +2,6 @@
 
 import { OrgSelector } from "@/components/org-selector";
 import { useAuth } from "@/lib/auth";
-import type { Invitation } from "../model/types";
 import { useInvitations } from "../service/queries";
 import { InvitationForm } from "./invitation-form";
 import { InvitationsTable } from "./invitations-table";
@@ -27,7 +26,7 @@ export function InvitationsPage() {
 			</div>
 
 			<InvitationsTable
-				invitations={invitations as Invitation[]}
+				invitations={invitations}
 				isLoading={orgId ? isLoading : false}
 			/>
 		</div>

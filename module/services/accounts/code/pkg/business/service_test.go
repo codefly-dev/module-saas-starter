@@ -73,7 +73,14 @@ var (
 )
 
 func TestMain(m *testing.M) {
-	os.Exit(runBusinessTests(m))
+	exitCode, err := testdb.RunWithPackageLock(func() int {
+		return runBusinessTests(m)
+	})
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "integration test lifecycle lock: %v\n", err)
+		os.Exit(1)
+	}
+	os.Exit(exitCode)
 }
 
 func runBusinessTests(m *testing.M) int {
@@ -111,16 +118,6 @@ func runBusinessTests(m *testing.M) int {
 		return 1
 	}
 	defer store.Close()
-	releasePackageLock, err := testdb.AcquirePackageLock(ctx, store.Pool())
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "integration test lock: %v\n", err)
-		return 1
-	}
-	defer func() {
-		if err := releasePackageLock(); err != nil {
-			fmt.Fprintf(os.Stderr, "release integration test lock: %v\n", err)
-		}
-	}()
 
 	service, err := business.NewService(store)
 	if err != nil {
@@ -203,6 +200,29 @@ func TestRegisterUser(t *testing.T) {
 	require.NotNil(t, resp.Identity)
 	require.Equal(t, "google", resp.Identity.Provider)
 	require.Equal(t, "google-123", resp.Identity.ProviderId)
+}
+
+func TestRegisterUserHonorsClosedAcquisitionMode(t *testing.T) {
+	clearData(t)
+	require.NoError(t, testService.SetAcquisitionMode("closed"))
+	t.Cleanup(func() {
+		require.NoError(t, testService.SetAcquisitionMode("open_signup"))
+	})
+
+	_, err := testService.RegisterUser(testCtx, &gen.RegisterUserRequest{
+		PrimaryEmail: "closed-signup@test.com",
+		Identity: &gen.UserIdentity{
+			Provider:      "email",
+			ProviderId:    "closed-signup",
+			ProviderEmail: "closed-signup@test.com",
+			EmailVerified: true,
+		},
+	})
+	require.ErrorContains(t, err, "account creation is not available")
+
+	resolved, lookupErr := testStore.ResolveIdentity(testCtx, "email", "closed-signup")
+	require.NoError(t, lookupErr)
+	require.False(t, resolved.Found)
 }
 
 func TestRegisterUser_DuplicateIdentity(t *testing.T) {

@@ -36,6 +36,7 @@ var (
 	_ genconnect.UsageServiceHandler         = (*usageConnectHandler)(nil)
 	_ genconnect.UserServiceHandler          = (*userConnectHandler)(nil)
 	_ genconnect.UserSettingsServiceHandler  = (*userSettingsConnectHandler)(nil)
+	_ genconnect.WaitlistServiceHandler      = (*waitlistConnectHandler)(nil)
 	_ genconnect.WebhookServiceHandler       = (*webhookConnectHandler)(nil)
 	_ genconnect.WorkContextServiceHandler   = (*workContextConnectHandler)(nil)
 )
@@ -66,6 +67,7 @@ func registerCatalogConnectServices(mux *http.ServeMux, server *ConnectServer, o
 	mux.Handle(genconnect.NewUsageServiceHandler(&usageConnectHandler{inner: UsageSingleton()}, options...))
 	mux.Handle(genconnect.NewUserServiceHandler(&userConnectHandler{inner: server.grpc.User}, options...))
 	mux.Handle(genconnect.NewUserSettingsServiceHandler(&userSettingsConnectHandler{svc: server.service}, options...))
+	mux.Handle(genconnect.NewWaitlistServiceHandler(&waitlistConnectHandler{svc: server.service}, options...))
 	mux.Handle(genconnect.NewWebhookServiceHandler(&webhookConnectHandler{svc: server.service}, options...))
 	mux.Handle(genconnect.NewWorkContextServiceHandler(&workContextConnectHandler{inner: WorkContextSingleton()}, options...))
 }

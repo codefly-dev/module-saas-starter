@@ -7,9 +7,13 @@ import "google/api/annotations.proto";
 import "google/protobuf/timestamp.proto";
 import "saas/policy/v1/options.proto";
 
-// ============================================================================
-// Onboarding
-// ============================================================================
+enum OnboardingStepId {
+  ONBOARDING_STEP_ID_UNSPECIFIED = 0;
+  ONBOARDING_STEP_ID_CONFIGURE_ORGANIZATION = 1;
+  ONBOARDING_STEP_ID_INVITE_TEAM = 2;
+  ONBOARDING_STEP_ID_CHOOSE_PLAN = 3;
+  ONBOARDING_STEP_ID_SETUP_API_KEY = 4;
+}
 
 enum OnboardingStepStatus {
   ONBOARDING_STEP_STATUS_UNSPECIFIED = 0;
@@ -18,33 +22,76 @@ enum OnboardingStepStatus {
   ONBOARDING_STEP_STATUS_SKIPPED = 3;
 }
 
+enum OnboardingCompletionMethod {
+  ONBOARDING_COMPLETION_METHOD_UNSPECIFIED = 0;
+  ONBOARDING_COMPLETION_METHOD_DETECTED = 1;
+  ONBOARDING_COMPLETION_METHOD_DOMAIN_ACTION = 2;
+  ONBOARDING_COMPLETION_METHOD_USER_SKIP = 3;
+  ONBOARDING_COMPLETION_METHOD_MIGRATED = 4;
+}
+
 message OnboardingStep {
-  string step_name = 1 [(buf.validate.field).string.min_len = 1];
-  OnboardingStepStatus status = 2;
-  google.protobuf.Timestamp completed_at = 3;
+  OnboardingStepId id = 1 [(buf.validate.field).enum.defined_only = true];
+  OnboardingStepStatus status = 2 [(buf.validate.field).enum.defined_only = true];
+  bool required = 3;
+  repeated OnboardingStepId prerequisites = 4;
+  google.protobuf.Timestamp first_seen_at = 5;
+  google.protobuf.Timestamp last_seen_at = 6;
+  google.protobuf.Timestamp completed_at = 7;
+  google.protobuf.Timestamp skipped_at = 8;
+  OnboardingCompletionMethod completion_method = 9 [(buf.validate.field).enum.defined_only = true];
+  string skip_reason = 10 [(buf.validate.field).string.max_len = 500];
 }
 
 message OnboardingProgress {
-  repeated OnboardingStep steps = 1;
-  bool completed = 2;
+  string organization_id = 1 [(buf.validate.field).string.uuid = true];
+  string flow_id = 2 [(buf.validate.field).string.min_len = 1];
+  uint32 flow_version = 3 [(buf.validate.field).uint32.gte = 1];
+  string variant = 4 [(buf.validate.field).string.min_len = 1];
+  string audience = 5;
+  string persona = 6;
+  repeated OnboardingStep steps = 7;
+  OnboardingStepId current_step = 8 [(buf.validate.field).enum.defined_only = true];
+  OnboardingStepId next_step = 9 [(buf.validate.field).enum.defined_only = true];
+  bool required_complete = 10;
+  bool checklist_complete = 11;
+  bool activation_achieved = 12;
+  google.protobuf.Timestamp started_at = 13;
+  google.protobuf.Timestamp completed_at = 14;
+  google.protobuf.Timestamp activated_at = 15;
 }
 
-message GetOnboardingProgressRequest {}
+message GetOnboardingProgressRequest {
+  string organization_id = 1 [(buf.validate.field).string.uuid = true];
+}
 
 message CompleteOnboardingStepRequest {
-  string step_name = 1 [(buf.validate.field).string.min_len = 1];
+  string organization_id = 1 [(buf.validate.field).string.uuid = true];
+  OnboardingStepId step_id = 2 [(buf.validate.field).enum = {
+    defined_only: true
+    not_in: [0]
+  }];
 }
 
 message SkipOnboardingStepRequest {
-  string step_name = 1 [(buf.validate.field).string.min_len = 1];
+  string organization_id = 1 [(buf.validate.field).string.uuid = true];
+  OnboardingStepId step_id = 2 [(buf.validate.field).enum = {
+    defined_only: true
+    not_in: [0]
+  }];
+  string reason = 3 [(buf.validate.field).string.max_len = 500];
 }
 
-// OnboardingService — user onboarding flow management
 service OnboardingService {
   rpc GetProgress(GetOnboardingProgressRequest) returns (OnboardingProgress) {
     option (saas.policy.v1.method_policy) = {
       exposure: EXPOSURE_AUTHENTICATED
-      tenant: TENANT_REQUIREMENT_USER
+      tenant: TENANT_REQUIREMENT_ORG_MEMBER
+      resource_bindings: {
+        request_field: "organization_id"
+        target: RESOURCE_TARGET_ORGANIZATION
+        lookup: RESOURCE_LOOKUP_DIRECT_ID
+      }
       mfa: MFA_REQUIREMENT_NONE
       audit: {emission: AUDIT_EMISSION_NONE}
       idempotency: IDEMPOTENCY_REQUIREMENT_FORBIDDEN
@@ -53,14 +100,23 @@ service OnboardingService {
       response_sensitivity: SENSITIVITY_CONFIDENTIAL
       platform_role: PLATFORM_ROLE_REQUIREMENT_NONE
     };
-    option (google.api.http) = {get: "/v1/onboarding"};
+    option (google.api.http) = {get: "/v1/organizations/{organization_id}/onboarding"};
   }
+
   rpc CompleteStep(CompleteOnboardingStepRequest) returns (OnboardingProgress) {
     option (saas.policy.v1.method_policy) = {
       exposure: EXPOSURE_AUTHENTICATED
-      tenant: TENANT_REQUIREMENT_USER
+      tenant: TENANT_REQUIREMENT_ORG_MEMBER
+      resource_bindings: {
+        request_field: "organization_id"
+        target: RESOURCE_TARGET_ORGANIZATION
+        lookup: RESOURCE_LOOKUP_DIRECT_ID
+      }
       mfa: MFA_REQUIREMENT_NONE
-      audit: {emission: AUDIT_EMISSION_NONE}
+      audit: {
+        events: "onboarding.step_completed"
+        emission: AUDIT_EMISSION_SUCCESS
+      }
       idempotency: IDEMPOTENCY_REQUIREMENT_FORBIDDEN
       rate_limit: RATE_LIMIT_CLASS_STANDARD_WRITE
       request_sensitivity: SENSITIVITY_CONFIDENTIAL
@@ -68,16 +124,25 @@ service OnboardingService {
       platform_role: PLATFORM_ROLE_REQUIREMENT_NONE
     };
     option (google.api.http) = {
-      post: "/v1/onboarding/{step_name}:complete"
+      post: "/v1/organizations/{organization_id}/onboarding/{step_id}:complete"
       body: "*"
     };
   }
+
   rpc SkipStep(SkipOnboardingStepRequest) returns (OnboardingProgress) {
     option (saas.policy.v1.method_policy) = {
       exposure: EXPOSURE_AUTHENTICATED
-      tenant: TENANT_REQUIREMENT_USER
+      tenant: TENANT_REQUIREMENT_ORG_MEMBER
+      resource_bindings: {
+        request_field: "organization_id"
+        target: RESOURCE_TARGET_ORGANIZATION
+        lookup: RESOURCE_LOOKUP_DIRECT_ID
+      }
       mfa: MFA_REQUIREMENT_NONE
-      audit: {emission: AUDIT_EMISSION_NONE}
+      audit: {
+        events: "onboarding.step_skipped"
+        emission: AUDIT_EMISSION_SUCCESS
+      }
       idempotency: IDEMPOTENCY_REQUIREMENT_FORBIDDEN
       rate_limit: RATE_LIMIT_CLASS_STANDARD_WRITE
       request_sensitivity: SENSITIVITY_CONFIDENTIAL
@@ -85,7 +150,7 @@ service OnboardingService {
       platform_role: PLATFORM_ROLE_REQUIREMENT_NONE
     };
     option (google.api.http) = {
-      post: "/v1/onboarding/{step_name}:skip"
+      post: "/v1/organizations/{organization_id}/onboarding/{step_id}:skip"
       body: "*"
     };
   }

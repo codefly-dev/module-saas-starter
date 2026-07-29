@@ -43,6 +43,8 @@ func TestConnectRouteDiscoveryExcludesInternalRPCs(t *testing.T) {
 	require.False(t, protected["/customers.BillingService/ListPublicPlans"])
 	require.True(t, paths["/saas.accounts.v1.UserService/RegisterUser"])
 	require.False(t, protected["/saas.accounts.v1.UserService/RegisterUser"])
+	require.True(t, paths["/saas.accounts.v1.WaitlistService/Join"])
+	require.False(t, protected["/saas.accounts.v1.WaitlistService/Join"])
 	require.True(t, paths["/saas.accounts.v1.PlatformAdminService/GetJobOperations"])
 	require.True(t, protected["/saas.accounts.v1.PlatformAdminService/GetJobOperations"])
 	require.True(t, paths["/saas.accounts.v1.PlatformAdminService/ReplayJob"])
@@ -57,7 +59,7 @@ func TestConnectRouteDiscoveryExcludesInternalRPCs(t *testing.T) {
 	require.True(t, protected["/saas.accounts.v1.UsageService/GetUsageHistory"])
 	require.True(t, paths["/customers.UsageService/GetUsageHistory"])
 	require.True(t, protected["/customers.UsageService/GetUsageHistory"])
-	require.Len(t, entries, 242)
+	require.Len(t, entries, 262)
 
 	var legacy *RouteEntry
 	for _, entry := range entries {

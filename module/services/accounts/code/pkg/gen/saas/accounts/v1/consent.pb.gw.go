@@ -56,9 +56,9 @@ func local_request_ConsentService_GetStatus_0(ctx context.Context, marshaler run
 	return msg, metadata, err
 }
 
-func request_ConsentService_Accept_0(ctx context.Context, marshaler runtime.Marshaler, client ConsentServiceClient, req *http.Request, pathParams map[string]string) (proto.Message, runtime.ServerMetadata, error) {
+func request_ConsentService_AcceptTerms_0(ctx context.Context, marshaler runtime.Marshaler, client ConsentServiceClient, req *http.Request, pathParams map[string]string) (proto.Message, runtime.ServerMetadata, error) {
 	var (
-		protoReq AcceptConsentRequest
+		protoReq AcceptTermsRequest
 		metadata runtime.ServerMetadata
 	)
 	if err := marshaler.NewDecoder(req.Body).Decode(&protoReq); err != nil && !errors.Is(err, io.EOF) {
@@ -67,19 +67,46 @@ func request_ConsentService_Accept_0(ctx context.Context, marshaler runtime.Mars
 	if req.Body != nil {
 		_, _ = io.Copy(io.Discard, req.Body)
 	}
-	msg, err := client.Accept(ctx, &protoReq, grpc.Header(&metadata.HeaderMD), grpc.Trailer(&metadata.TrailerMD))
+	msg, err := client.AcceptTerms(ctx, &protoReq, grpc.Header(&metadata.HeaderMD), grpc.Trailer(&metadata.TrailerMD))
 	return msg, metadata, err
 }
 
-func local_request_ConsentService_Accept_0(ctx context.Context, marshaler runtime.Marshaler, server ConsentServiceServer, req *http.Request, pathParams map[string]string) (proto.Message, runtime.ServerMetadata, error) {
+func local_request_ConsentService_AcceptTerms_0(ctx context.Context, marshaler runtime.Marshaler, server ConsentServiceServer, req *http.Request, pathParams map[string]string) (proto.Message, runtime.ServerMetadata, error) {
 	var (
-		protoReq AcceptConsentRequest
+		protoReq AcceptTermsRequest
 		metadata runtime.ServerMetadata
 	)
 	if err := marshaler.NewDecoder(req.Body).Decode(&protoReq); err != nil && !errors.Is(err, io.EOF) {
 		return nil, metadata, status.Errorf(codes.InvalidArgument, "%v", err)
 	}
-	msg, err := server.Accept(ctx, &protoReq)
+	msg, err := server.AcceptTerms(ctx, &protoReq)
+	return msg, metadata, err
+}
+
+func request_ConsentService_UpdatePreferences_0(ctx context.Context, marshaler runtime.Marshaler, client ConsentServiceClient, req *http.Request, pathParams map[string]string) (proto.Message, runtime.ServerMetadata, error) {
+	var (
+		protoReq UpdateConsentPreferencesRequest
+		metadata runtime.ServerMetadata
+	)
+	if err := marshaler.NewDecoder(req.Body).Decode(&protoReq); err != nil && !errors.Is(err, io.EOF) {
+		return nil, metadata, status.Errorf(codes.InvalidArgument, "%v", err)
+	}
+	if req.Body != nil {
+		_, _ = io.Copy(io.Discard, req.Body)
+	}
+	msg, err := client.UpdatePreferences(ctx, &protoReq, grpc.Header(&metadata.HeaderMD), grpc.Trailer(&metadata.TrailerMD))
+	return msg, metadata, err
+}
+
+func local_request_ConsentService_UpdatePreferences_0(ctx context.Context, marshaler runtime.Marshaler, server ConsentServiceServer, req *http.Request, pathParams map[string]string) (proto.Message, runtime.ServerMetadata, error) {
+	var (
+		protoReq UpdateConsentPreferencesRequest
+		metadata runtime.ServerMetadata
+	)
+	if err := marshaler.NewDecoder(req.Body).Decode(&protoReq); err != nil && !errors.Is(err, io.EOF) {
+		return nil, metadata, status.Errorf(codes.InvalidArgument, "%v", err)
+	}
+	msg, err := server.UpdatePreferences(ctx, &protoReq)
 	return msg, metadata, err
 }
 
@@ -109,25 +136,45 @@ func RegisterConsentServiceHandlerServer(ctx context.Context, mux *runtime.Serve
 		}
 		forward_ConsentService_GetStatus_0(annotatedContext, mux, outboundMarshaler, w, req, resp, mux.GetForwardResponseOptions()...)
 	})
-	mux.Handle(http.MethodPost, pattern_ConsentService_Accept_0, func(w http.ResponseWriter, req *http.Request, pathParams map[string]string) {
+	mux.Handle(http.MethodPost, pattern_ConsentService_AcceptTerms_0, func(w http.ResponseWriter, req *http.Request, pathParams map[string]string) {
 		ctx, cancel := context.WithCancel(req.Context())
 		defer cancel()
 		var stream runtime.ServerTransportStream
 		ctx = grpc.NewContextWithServerTransportStream(ctx, &stream)
 		inboundMarshaler, outboundMarshaler := runtime.MarshalerForRequest(mux, req)
-		annotatedContext, err := runtime.AnnotateIncomingContext(ctx, mux, req, "/saas.accounts.v1.ConsentService/Accept", runtime.WithHTTPPathPattern("/v1/consent/accept"))
+		annotatedContext, err := runtime.AnnotateIncomingContext(ctx, mux, req, "/saas.accounts.v1.ConsentService/AcceptTerms", runtime.WithHTTPPathPattern("/v1/consent/terms"))
 		if err != nil {
 			runtime.HTTPError(ctx, mux, outboundMarshaler, w, req, err)
 			return
 		}
-		resp, md, err := local_request_ConsentService_Accept_0(annotatedContext, inboundMarshaler, server, req, pathParams)
+		resp, md, err := local_request_ConsentService_AcceptTerms_0(annotatedContext, inboundMarshaler, server, req, pathParams)
 		md.HeaderMD, md.TrailerMD = metadata.Join(md.HeaderMD, stream.Header()), metadata.Join(md.TrailerMD, stream.Trailer())
 		annotatedContext = runtime.NewServerMetadataContext(annotatedContext, md)
 		if err != nil {
 			runtime.HTTPError(annotatedContext, mux, outboundMarshaler, w, req, err)
 			return
 		}
-		forward_ConsentService_Accept_0(annotatedContext, mux, outboundMarshaler, w, req, resp, mux.GetForwardResponseOptions()...)
+		forward_ConsentService_AcceptTerms_0(annotatedContext, mux, outboundMarshaler, w, req, resp, mux.GetForwardResponseOptions()...)
+	})
+	mux.Handle(http.MethodPut, pattern_ConsentService_UpdatePreferences_0, func(w http.ResponseWriter, req *http.Request, pathParams map[string]string) {
+		ctx, cancel := context.WithCancel(req.Context())
+		defer cancel()
+		var stream runtime.ServerTransportStream
+		ctx = grpc.NewContextWithServerTransportStream(ctx, &stream)
+		inboundMarshaler, outboundMarshaler := runtime.MarshalerForRequest(mux, req)
+		annotatedContext, err := runtime.AnnotateIncomingContext(ctx, mux, req, "/saas.accounts.v1.ConsentService/UpdatePreferences", runtime.WithHTTPPathPattern("/v1/consent/preferences"))
+		if err != nil {
+			runtime.HTTPError(ctx, mux, outboundMarshaler, w, req, err)
+			return
+		}
+		resp, md, err := local_request_ConsentService_UpdatePreferences_0(annotatedContext, inboundMarshaler, server, req, pathParams)
+		md.HeaderMD, md.TrailerMD = metadata.Join(md.HeaderMD, stream.Header()), metadata.Join(md.TrailerMD, stream.Trailer())
+		annotatedContext = runtime.NewServerMetadataContext(annotatedContext, md)
+		if err != nil {
+			runtime.HTTPError(annotatedContext, mux, outboundMarshaler, w, req, err)
+			return
+		}
+		forward_ConsentService_UpdatePreferences_0(annotatedContext, mux, outboundMarshaler, w, req, resp, mux.GetForwardResponseOptions()...)
 	})
 
 	return nil
@@ -186,32 +233,51 @@ func RegisterConsentServiceHandlerClient(ctx context.Context, mux *runtime.Serve
 		}
 		forward_ConsentService_GetStatus_0(annotatedContext, mux, outboundMarshaler, w, req, resp, mux.GetForwardResponseOptions()...)
 	})
-	mux.Handle(http.MethodPost, pattern_ConsentService_Accept_0, func(w http.ResponseWriter, req *http.Request, pathParams map[string]string) {
+	mux.Handle(http.MethodPost, pattern_ConsentService_AcceptTerms_0, func(w http.ResponseWriter, req *http.Request, pathParams map[string]string) {
 		ctx, cancel := context.WithCancel(req.Context())
 		defer cancel()
 		inboundMarshaler, outboundMarshaler := runtime.MarshalerForRequest(mux, req)
-		annotatedContext, err := runtime.AnnotateContext(ctx, mux, req, "/saas.accounts.v1.ConsentService/Accept", runtime.WithHTTPPathPattern("/v1/consent/accept"))
+		annotatedContext, err := runtime.AnnotateContext(ctx, mux, req, "/saas.accounts.v1.ConsentService/AcceptTerms", runtime.WithHTTPPathPattern("/v1/consent/terms"))
 		if err != nil {
 			runtime.HTTPError(ctx, mux, outboundMarshaler, w, req, err)
 			return
 		}
-		resp, md, err := request_ConsentService_Accept_0(annotatedContext, inboundMarshaler, client, req, pathParams)
+		resp, md, err := request_ConsentService_AcceptTerms_0(annotatedContext, inboundMarshaler, client, req, pathParams)
 		annotatedContext = runtime.NewServerMetadataContext(annotatedContext, md)
 		if err != nil {
 			runtime.HTTPError(annotatedContext, mux, outboundMarshaler, w, req, err)
 			return
 		}
-		forward_ConsentService_Accept_0(annotatedContext, mux, outboundMarshaler, w, req, resp, mux.GetForwardResponseOptions()...)
+		forward_ConsentService_AcceptTerms_0(annotatedContext, mux, outboundMarshaler, w, req, resp, mux.GetForwardResponseOptions()...)
+	})
+	mux.Handle(http.MethodPut, pattern_ConsentService_UpdatePreferences_0, func(w http.ResponseWriter, req *http.Request, pathParams map[string]string) {
+		ctx, cancel := context.WithCancel(req.Context())
+		defer cancel()
+		inboundMarshaler, outboundMarshaler := runtime.MarshalerForRequest(mux, req)
+		annotatedContext, err := runtime.AnnotateContext(ctx, mux, req, "/saas.accounts.v1.ConsentService/UpdatePreferences", runtime.WithHTTPPathPattern("/v1/consent/preferences"))
+		if err != nil {
+			runtime.HTTPError(ctx, mux, outboundMarshaler, w, req, err)
+			return
+		}
+		resp, md, err := request_ConsentService_UpdatePreferences_0(annotatedContext, inboundMarshaler, client, req, pathParams)
+		annotatedContext = runtime.NewServerMetadataContext(annotatedContext, md)
+		if err != nil {
+			runtime.HTTPError(annotatedContext, mux, outboundMarshaler, w, req, err)
+			return
+		}
+		forward_ConsentService_UpdatePreferences_0(annotatedContext, mux, outboundMarshaler, w, req, resp, mux.GetForwardResponseOptions()...)
 	})
 	return nil
 }
 
 var (
-	pattern_ConsentService_GetStatus_0 = runtime.MustPattern(runtime.NewPattern(1, []int{2, 0, 2, 1, 2, 2}, []string{"v1", "consent", "status"}, ""))
-	pattern_ConsentService_Accept_0    = runtime.MustPattern(runtime.NewPattern(1, []int{2, 0, 2, 1, 2, 2}, []string{"v1", "consent", "accept"}, ""))
+	pattern_ConsentService_GetStatus_0         = runtime.MustPattern(runtime.NewPattern(1, []int{2, 0, 2, 1, 2, 2}, []string{"v1", "consent", "status"}, ""))
+	pattern_ConsentService_AcceptTerms_0       = runtime.MustPattern(runtime.NewPattern(1, []int{2, 0, 2, 1, 2, 2}, []string{"v1", "consent", "terms"}, ""))
+	pattern_ConsentService_UpdatePreferences_0 = runtime.MustPattern(runtime.NewPattern(1, []int{2, 0, 2, 1, 2, 2}, []string{"v1", "consent", "preferences"}, ""))
 )
 
 var (
-	forward_ConsentService_GetStatus_0 = runtime.ForwardResponseMessage
-	forward_ConsentService_Accept_0    = runtime.ForwardResponseMessage
+	forward_ConsentService_GetStatus_0         = runtime.ForwardResponseMessage
+	forward_ConsentService_AcceptTerms_0       = runtime.ForwardResponseMessage
+	forward_ConsentService_UpdatePreferences_0 = runtime.ForwardResponseMessage
 )

@@ -60,7 +60,7 @@ func TestIntrospection_GetServiceInfo(t *testing.T) {
 			"table %q must declare fail_closed=true", tbl.Table)
 		require.NotEmpty(t, tbl.Table)
 		require.Contains(t,
-			[]string{"direct", "join", "polymorphic", "self_referential"},
+			[]string{"control_plane", "direct", "join", "polymorphic", "self_referential"},
 			tbl.PolicyShape,
 			"table %q has unexpected policy_shape %q", tbl.Table, tbl.PolicyShape)
 	}

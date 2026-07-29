@@ -12,6 +12,7 @@
 
 import { expect, type Page, test } from "@playwright/test";
 import { endpoint } from "codefly";
+import { resolveConsentPrompt } from "./consent";
 
 // resolveFrontendURL prefers codefly's injected endpoint env vars
 // (CODEFLY__ENDPOINT__saas-starter__FRONTEND__WEB__REST) and falls back
@@ -41,6 +42,7 @@ async function loginAs(page: Page, fixtureName: string) {
 	await expect(page.getByText(fixtureName)).toBeVisible({ timeout: 15000 });
 	await page.getByText(fixtureName).click();
 	await expect(page.getByText("Welcome back")).toBeVisible({ timeout: 20000 });
+	await resolveConsentPrompt(page);
 }
 
 test.describe("admin golden path", () => {
@@ -77,7 +79,7 @@ test.describe("admin golden path", () => {
 		await expect(page.getByText("Admin panel")).toHaveCount(0);
 	});
 
-	test("super_admin can open the admin hub and see Access + Platform sections", async ({
+	test("super_admin can open the admin hub and see Users & Access + Platform sections", async ({
 		page,
 	}) => {
 		await loginAs(page, "Sarah Chen");
@@ -85,12 +87,12 @@ test.describe("admin golden path", () => {
 		await page.getByText("Admin panel").click();
 		await page.waitForURL(/\/admin\/?$/, { timeout: 10000 });
 		await expect(page.getByRole("heading", { name: /^Admin$/ })).toBeVisible();
-		// "Access" section is visible to any admin; "Platform" section is
+		// "Users & Access" is visible to any admin; "Platform" is
 		// wrapped in <RoleGate require="super_admin"> — Sarah is super_admin
 		// so both should show. Scope by role=heading because the sidebar
 		// also has "Platform" as a group label, which would collide.
 		await expect(
-			page.getByRole("heading", { name: "Access", exact: true }),
+			page.getByRole("heading", { name: "Users & Access", exact: true }),
 		).toBeVisible();
 		await expect(
 			page.getByRole("heading", { name: "Platform", exact: true }),

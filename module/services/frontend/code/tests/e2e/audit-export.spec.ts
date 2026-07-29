@@ -9,12 +9,14 @@
 // fixture, pick Acme Corp, exercise the form.
 
 import { expect, type Page, test } from "@playwright/test";
+import { resolveConsentPrompt } from "./consent";
 
 async function loginAsSuperAdmin(page: Page) {
 	await page.goto("/auth/login");
 	await expect(page.getByText("Sarah Chen")).toBeVisible({ timeout: 15000 });
 	await page.getByText("Sarah Chen").click();
 	await expect(page.getByText("Welcome back")).toBeVisible({ timeout: 20000 });
+	await resolveConsentPrompt(page);
 }
 
 async function pickAcmeOrg(page: Page) {
@@ -38,12 +40,11 @@ test.describe("Audit Export admin page", () => {
 		).toBeVisible();
 	});
 
-	test("no-org empty state shows the org-picker prompt", async ({ page }) => {
-		// EmptyState title is "Select an organization" — appears only
-		// when no org is picked. Save button is gated until an org is
-		// selected because the form lives behind the org check.
-		await expect(page.getByText(/select an organization/i)).toBeVisible();
-		await expect(page.getByRole("button", { name: /^save$/i })).toHaveCount(0);
+	test("the authenticated organization shows the export form", async ({
+		page,
+	}) => {
+		await expect(page.getByLabel(/^bucket$/i)).toBeVisible();
+		await expect(page.getByRole("button", { name: /^save$/i })).toBeVisible();
 	});
 
 	test("Save with unreachable endpoint surfaces the pre-flight error", async ({

@@ -7,67 +7,20 @@ import (
 
 	"accounts/pkg/analytics"
 	"accounts/pkg/business"
+	gen "accounts/pkg/gen/saas/accounts/v1"
 	analyticsv1 "accounts/pkg/gen/saas/analytics/v1"
 
-	"github.com/google/uuid"
 	"github.com/stretchr/testify/require"
 )
-
-type onboardingStoreFake struct {
-	business.Store
-	statuses map[string]string
-}
-
-func (f *onboardingStoreFake) As(identity business.Identity) business.Scoped {
-	return &onboardingScopedFake{store: f, identity: identity}
-}
-
-func (f *onboardingStoreFake) GetOnboardingProgress(
-	context.Context,
-	string,
-) ([]*business.OnboardingStep, error) {
-	steps := make([]*business.OnboardingStep, 0, len(f.statuses))
-	for name, status := range f.statuses {
-		steps = append(steps, &business.OnboardingStep{StepName: name, Status: status})
-	}
-	return steps, nil
-}
-
-func (f *onboardingStoreFake) UpsertOnboardingStep(
-	_ context.Context,
-	_ string,
-	stepName string,
-	status string,
-	_ time.Time,
-) error {
-	f.statuses[stepName] = status
-	return nil
-}
-
-func (f *onboardingStoreFake) LockOnboardingProgress(context.Context, string) error {
-	return nil
-}
-
-type onboardingScopedFake struct {
-	business.Scoped
-	store    *onboardingStoreFake
-	identity business.Identity
-}
-
-func (f *onboardingScopedFake) Within(
-	ctx context.Context,
-	fn func(context.Context) error,
-) error {
-	return fn(ctx)
-}
-
-func (f *onboardingScopedFake) Identity() business.Identity {
-	return f.identity
-}
 
 type onboardingEmitterFake struct {
 	events []*analyticsv1.ProductEvent
 }
+
+const (
+	onboardingEventUserID = "00000000-0000-4000-8000-000000000101"
+	onboardingEventOrgID  = "00000000-0000-4000-8000-000000000102"
+)
 
 func (f *onboardingEmitterFake) Capture(
 	_ context.Context,
@@ -77,7 +30,7 @@ func (f *onboardingEmitterFake) Capture(
 	return nil
 }
 
-func (f *onboardingEmitterFake) Suppress(
+func (*onboardingEmitterFake) Suppress(
 	context.Context,
 	analytics.Suppression,
 	analytics.CommandScope,
@@ -85,36 +38,86 @@ func (f *onboardingEmitterFake) Suppress(
 	return nil
 }
 
-func TestOnboardingEventsAreTransitionBasedAndIdempotent(t *testing.T) {
-	store := &onboardingStoreFake{statuses: map[string]string{
-		"create_org":  "completed",
-		"invite_team": "completed",
-		"choose_plan": "skipped",
-	}}
+func TestDetectedOnboardingEventsAreTransitionBasedAndIdempotent(t *testing.T) {
+	now := time.Now()
+	store := newOnboardingStoreFake()
+	for _, stepName := range []string{"invite_team", "choose_plan", "setup_api_key"} {
+		store.steps[stepName] = &business.OnboardingStep{
+			StepName:    stepName,
+			Status:      "skipped",
+			FirstSeenAt: now,
+			SkippedAt:   &now,
+		}
+	}
 	service, err := business.NewService(store)
 	require.NoError(t, err)
 	registry, err := analytics.DefaultRegistry()
 	require.NoError(t, err)
 	emitter := &onboardingEmitterFake{}
 	service.SetProductAnalytics(registry, emitter)
-	userID := uuid.NewString()
 
-	require.NoError(t, service.CompleteStep(t.Context(), userID, "setup_api_key"))
-	require.NoError(t, service.CompleteStep(t.Context(), userID, "setup_api_key"))
+	for range 2 {
+		progress, err := service.GetProgress(
+			t.Context(),
+			onboardingEventUserID,
+			onboardingEventOrgID,
+		)
+		require.NoError(t, err)
+		require.True(t, progress.ChecklistComplete)
+	}
+
 	require.Len(t, emitter.events, 2)
 	require.Equal(t, "onboarding_step_completed", emitter.events[0].GetEventName())
-	require.Equal(t, "onboarding_completed", emitter.events[1].GetEventName())
-	require.NotEqual(
+	require.Equal(
 		t,
 		analytics.DeterministicEventID(
 			"onboarding_step_completed",
-			userID+":setup_api_key:completed",
+			onboardingEventOrgID+":starter_activation:1:configure_organization:completed",
 		),
 		emitter.events[0].GetEventId(),
 	)
+	require.Equal(t, "onboarding_completed", emitter.events[1].GetEventName())
+	require.Equal(
+		t,
+		analytics.DeterministicEventID(
+			"onboarding_completed",
+			onboardingEventOrgID+":starter_activation:1",
+		),
+		emitter.events[1].GetEventId(),
+	)
+}
 
-	firstCompletionID := emitter.events[0].GetEventId()
-	require.NoError(t, service.SkipStep(t.Context(), userID, "setup_api_key"))
-	require.NoError(t, service.CompleteStep(t.Context(), userID, "setup_api_key"))
-	require.NotEqual(t, firstCompletionID, emitter.events[3].GetEventId())
+func TestSkippedOnboardingStepEmitsItsAuthoritativeTransition(t *testing.T) {
+	store := newOnboardingStoreFake()
+	service, err := business.NewService(store)
+	require.NoError(t, err)
+	registry, err := analytics.DefaultRegistry()
+	require.NoError(t, err)
+	emitter := &onboardingEmitterFake{}
+	service.SetProductAnalytics(registry, emitter)
+	_, err = service.GetProgress(
+		t.Context(),
+		onboardingEventUserID,
+		onboardingEventOrgID,
+	)
+	require.NoError(t, err)
+
+	require.NoError(t, service.SkipStep(
+		t.Context(),
+		onboardingEventUserID,
+		onboardingEventOrgID,
+		gen.OnboardingStepId_ONBOARDING_STEP_ID_INVITE_TEAM,
+		"later",
+	))
+
+	require.Len(t, emitter.events, 2)
+	require.Equal(t, "onboarding_step_skipped", emitter.events[1].GetEventName())
+	require.Equal(
+		t,
+		analytics.DeterministicEventID(
+			"onboarding_step_skipped",
+			onboardingEventOrgID+":starter_activation:1:invite_team:skipped",
+		),
+		emitter.events[1].GetEventId(),
+	)
 }

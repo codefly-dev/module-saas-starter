@@ -209,3 +209,33 @@ func TestLoginReturnsUserDetails(t *testing.T) {
 	require.Equal(t, "known@example.com", authResp.User.PrimaryEmail)
 	require.Equal(t, gen.UserStatus_USER_STATUS_ACTIVE, authResp.User.Status)
 }
+
+func TestExistingProviderIdentityCanAuthenticateAfterProviderEmailChanges(t *testing.T) {
+	clearData(t)
+
+	_, err := testService.RegisterUser(testCtx, &gen.RegisterUserRequest{
+		PrimaryEmail: "original@example.com",
+		Identity: &gen.UserIdentity{
+			Provider:      "email",
+			ProviderId:    "stable-provider-subject",
+			ProviderEmail: "original@example.com",
+			EmailVerified: true,
+		},
+	})
+	require.NoError(t, err)
+	require.NoError(t, testService.SetAcquisitionMode("closed"))
+	t.Cleanup(func() {
+		require.NoError(t, testService.SetAcquisitionMode("open_signup"))
+	})
+
+	response, err := authenticateFixture(testCtx, &gen.AuthenticateRequest{
+		Provider:      "email",
+		ProviderId:    "stable-provider-subject",
+		ProviderEmail: "renamed@example.com",
+		EmailVerified: true,
+	})
+
+	require.NoError(t, err)
+	require.NotEmpty(t, response.AccessToken)
+	require.Equal(t, "original@example.com", response.User.PrimaryEmail)
+}

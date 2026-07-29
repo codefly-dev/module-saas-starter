@@ -22,6 +22,7 @@ import { SSOAdminService } from "./sso_pb";
 import { TeamService } from "./teams_pb";
 import { UsageService } from "./usage_pb";
 import { UserSettingsService } from "./user_settings_pb";
+import { WaitlistService } from "./waitlist_pb";
 import { WebhookService } from "./webhooks_pb";
 import { WorkContextService } from "./work_contexts_pb";
 
@@ -176,6 +177,7 @@ export const ACCOUNT_SERVICE_DESCRIPTORS = {
   UsageService,
   UserService,
   UserSettingsService,
+  WaitlistService,
   WebhookService,
   WorkContextService,
 } as const;
@@ -206,6 +208,7 @@ export interface AccountsClients {
   readonly UsageService: Client<typeof UsageService>;
   readonly UserService: Client<typeof UserService>;
   readonly UserSettingsService: Client<typeof UserSettingsService>;
+  readonly WaitlistService: Client<typeof WaitlistService>;
   readonly WebhookService: Client<typeof WebhookService>;
   readonly WorkContextService: Client<typeof WorkContextService>;
 }
@@ -235,6 +238,7 @@ export function createAccountsClients(transport: Transport): AccountsClients {
     UsageService: createClient(UsageService, transport),
     UserService: createClient(UserService, transport),
     UserSettingsService: createClient(UserSettingsService, transport),
+    WaitlistService: createClient(WaitlistService, transport),
     WebhookService: createClient(WebhookService, transport),
     WorkContextService: createClient(WorkContextService, transport),
   };

@@ -23,7 +23,7 @@ func TestFrontendCatalogIsDeterministicAndCurrent(t *testing.T) {
 	require.Equal(t, string(readFixture(t, "../../../../frontend/code/src/gen/saas/accounts/v1/frontend_catalog.ts")), string(first), "run: go generate ./pkg/cataloggen")
 
 	source := string(first)
-	require.Equal(t, 25, strings.Count(source, ": createClient("))
+	require.Equal(t, 26, strings.Count(source, ": createClient("))
 	require.Contains(t, source, `ROLES_WRITE: "roles:write"`)
 	require.Contains(t, source, `API_CALLS_MONTHLY: "api_calls_monthly"`)
 	require.Contains(t, source, "export type PermissionGrant")

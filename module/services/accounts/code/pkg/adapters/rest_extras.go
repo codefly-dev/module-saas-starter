@@ -16,6 +16,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"io"
+	"net"
 	"net/http"
 	"strings"
 	"sync"
@@ -151,10 +152,19 @@ func extractAndStripRefreshToken(body []byte) (token string, stripped []byte, ok
 	return token, out, true
 }
 
-func isSecureRequest(r *http.Request) bool {
-	// Refresh tokens are always Secure. Never derive cookie security from
-	// caller-controlled forwarding headers; browsers treat localhost as a
-	// secure cookie context for local development.
+func secureRefreshCookie(r *http.Request) bool {
+	// Public hosts stay fail-closed behind TLS-terminating proxies. Loopback
+	// HTTP is the only exception because browsers otherwise discard the cookie.
+	host := r.Host
+	if parsedHost, _, err := net.SplitHostPort(host); err == nil {
+		host = parsedHost
+	}
+	if strings.EqualFold(host, "localhost") || strings.HasSuffix(strings.ToLower(host), ".localhost") {
+		return false
+	}
+	if ip := net.ParseIP(host); ip != nil && ip.IsLoopback() {
+		return false
+	}
 	return true
 }
 
@@ -164,7 +174,7 @@ func setRefreshCookie(w http.ResponseWriter, r *http.Request, token string) {
 		Value:    token,
 		Path:     "/v1/auth",
 		HttpOnly: true,
-		Secure:   isSecureRequest(r),
+		Secure:   secureRefreshCookie(r),
 		SameSite: http.SameSiteStrictMode,
 		MaxAge:   7 * 24 * 60 * 60, // 7 days, matches refresh-token TTL
 	})
@@ -176,7 +186,7 @@ func clearRefreshCookie(w http.ResponseWriter, r *http.Request) {
 		Value:    "",
 		Path:     "/v1/auth",
 		HttpOnly: true,
-		Secure:   isSecureRequest(r),
+		Secure:   secureRefreshCookie(r),
 		SameSite: http.SameSiteStrictMode,
 		MaxAge:   -1,
 		Expires:  time.Unix(0, 0),

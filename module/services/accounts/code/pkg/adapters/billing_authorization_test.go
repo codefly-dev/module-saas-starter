@@ -30,6 +30,7 @@ type billingAuthorizationStore struct {
 	platformRole      string
 	customerID        string
 	plan              *business.PlanFull
+	subscription      *business.Subscription
 	publicPlans       []business.PublicPlan
 }
 
@@ -65,6 +66,16 @@ func (f *billingAuthorizationStore) GetPlanByName(context.Context, string) (*bus
 
 func (f *billingAuthorizationStore) ListPublicPlans(context.Context) ([]business.PublicPlan, error) {
 	return append([]business.PublicPlan(nil), f.publicPlans...), nil
+}
+
+func (f *billingAuthorizationStore) GetSubscription(context.Context, string) (*business.Subscription, error) {
+	return f.subscription, nil
+}
+
+func (f *billingAuthorizationStore) CreateSubscription(_ context.Context, subscription *business.Subscription) error {
+	copy := *subscription
+	f.subscription = &copy
+	return nil
 }
 
 type billingAuthorizationClient struct {
@@ -265,4 +276,36 @@ func TestBillingHTTPCheckoutRequiresPermissionRecentMFAAndIdempotency(t *testing
 	success := request("recent-token", "checkout-operation")
 	require.Equal(t, http.StatusOK, success.Code)
 	require.Equal(t, 1, client.checkoutCalls)
+}
+
+func TestBillingHTTPFreePlanPersistsARealSubscription(t *testing.T) {
+	store := &billingAuthorizationStore{
+		members: []*gen.OrgMembership{{UserId: billingUserID, Role: gen.OrgRole_ORG_ROLE_ADMIN}},
+		plan: &business.PlanFull{
+			Plan: business.Plan{ID: "free-plan-id", Name: "free", IsDefault: true},
+		},
+	}
+	client := &billingAuthorizationClient{}
+	svc := installBillingAuthorizationService(t, store, client)
+	svc.SetJWTMinter(&fixedAccessMinter{identity: recentBillingIdentity()})
+	handler := NewBillingHTTPHandler(svc)
+
+	req := httptest.NewRequest(http.MethodPost, "/v1/billing/free-plan", http.NoBody)
+	req.Header.Set("Authorization", "Bearer recent-token")
+	req.Header.Set("Idempotency-Key", "choose-free")
+	response := httptest.NewRecorder()
+	handler.ServeHTTP(response, req)
+
+	require.Equal(t, http.StatusOK, response.Code)
+	require.NotNil(t, store.subscription)
+	require.Equal(t, billingOrgID, store.subscription.OrgID)
+	require.Equal(t, "free-plan-id", store.subscription.PlanID)
+	require.Equal(t, "active", store.subscription.Status)
+
+	replay := httptest.NewRequest(http.MethodPost, "/v1/billing/free-plan", http.NoBody)
+	replay.Header.Set("Authorization", "Bearer recent-token")
+	replay.Header.Set("Idempotency-Key", "choose-free")
+	replayResponse := httptest.NewRecorder()
+	handler.ServeHTTP(replayResponse, replay)
+	require.Equal(t, http.StatusOK, replayResponse.Code)
 }

@@ -36,14 +36,30 @@ async function loginAs(page: Page, fixtureName: string): Promise<string> {
 	await expect(page.getByText(fixtureName)).toBeVisible({ timeout: 15000 });
 	await page.getByText(fixtureName).click();
 	await expect(page.getByText("Welcome back")).toBeVisible({ timeout: 20000 });
+	await expect
+		.poll(async () =>
+			(await page.context().cookies()).some(
+				(item) => item.name === "codefly_rt" && item.value.length > 0,
+			),
+		)
+		.toBe(true);
 
-	// page.request shares the browser context's httpOnly cookie jar. Refresh
-	// tokens intentionally aren't readable from page JS/localStorage anymore.
-	const res = await page.request.post("/v1/auth/refresh", { data: {} });
-	if (!res.ok()) {
-		throw new Error(`refresh failed: ${res.status()} ${await res.text()}`);
+	const refresh = await page.evaluate(async () => {
+		const response = await fetch("/v1/auth/refresh", {
+			method: "POST",
+			credentials: "include",
+			headers: { "Content-Type": "application/json" },
+			body: JSON.stringify({}),
+		});
+		return {
+			status: response.status,
+			body: await response.text(),
+		};
+	});
+	if (refresh.status < 200 || refresh.status >= 300) {
+		throw new Error(`refresh failed: ${refresh.status} ${refresh.body}`);
 	}
-	const data = (await res.json()) as { accessToken: string };
+	const data = JSON.parse(refresh.body) as { accessToken: string };
 	return data.accessToken;
 }
 
