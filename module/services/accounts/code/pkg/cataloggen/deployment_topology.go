@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
+	"regexp"
 	"sort"
 	"strings"
 
@@ -15,6 +16,8 @@ import (
 )
 
 const deploymentTopologySchemaVersion = "saas.deployment.topology.v1"
+
+var configurationKeyPattern = regexp.MustCompile(`^[a-z][a-z0-9_-]*$`)
 
 type deploymentBindings struct {
 	Version   string                       `yaml:"version"`
@@ -42,6 +45,7 @@ type deploymentServiceBinding struct {
 	Description                        string                        `yaml:"description,omitempty"`
 	Agent                              deploymentAgentBinding        `yaml:"agent"`
 	WorkspaceConfigurationDependencies []string                      `yaml:"workspace_configuration_dependencies,omitempty"`
+	SecretServiceConfigurations        []secretServiceConfiguration  `yaml:"secret_service_configurations,omitempty"`
 	Endpoints                          []deploymentEndpointBinding   `yaml:"endpoints"`
 	Dependencies                       []deploymentDependencyBinding `yaml:"dependencies,omitempty"`
 	PublicEgressPorts                  []uint32                      `yaml:"public_egress_ports,omitempty"`
@@ -53,6 +57,15 @@ type deploymentAgentBinding struct {
 	Name      string `yaml:"name"`
 	Version   string `yaml:"version"`
 	Publisher string `yaml:"publisher"`
+}
+
+type secretServiceConfiguration struct {
+	Name    string                            `yaml:"name"`
+	Entries []secretServiceConfigurationEntry `yaml:"entries"`
+}
+
+type secretServiceConfigurationEntry struct {
+	Key string `yaml:"key"`
 }
 
 type deploymentEndpointBinding struct {
@@ -169,6 +182,22 @@ func validateDeploymentBindings(serviceCatalog *catalogv1.ServiceCatalog, bindin
 				return fmt.Errorf("service %q workspace configuration dependencies are invalid or unsorted", service.Name)
 			}
 			previousConfiguration = configuration
+		}
+
+		previousSecretConfiguration := ""
+		for _, configuration := range service.SecretServiceConfigurations {
+			if !endpointNamePattern.MatchString(configuration.Name) || len(configuration.Entries) == 0 ||
+				(previousSecretConfiguration != "" && configuration.Name <= previousSecretConfiguration) {
+				return fmt.Errorf("service %q secret service configurations are invalid or unsorted at %q", service.Name, configuration.Name)
+			}
+			previousSecretConfiguration = configuration.Name
+			previousEntry := ""
+			for _, entry := range configuration.Entries {
+				if !configurationKeyPattern.MatchString(entry.Key) || (previousEntry != "" && entry.Key <= previousEntry) {
+					return fmt.Errorf("service %q secret service configuration %q entries are invalid or unsorted", service.Name, configuration.Name)
+				}
+				previousEntry = entry.Key
+			}
 		}
 
 		previousEndpoint := ""
@@ -551,14 +580,15 @@ type manifestServiceRef struct {
 }
 
 type serviceManifest struct {
-	Name                               string                      `yaml:"name"`
-	Version                            string                      `yaml:"version"`
-	Description                        string                      `yaml:"description,omitempty"`
-	Agent                              deploymentAgentBinding      `yaml:"agent"`
-	ServiceDependencies                []manifestServiceDependency `yaml:"service-dependencies,omitempty"`
-	WorkspaceConfigurationDependencies []string                    `yaml:"workspace-configuration-dependencies,omitempty"`
-	Endpoints                          []manifestEndpoint          `yaml:"endpoints"`
-	Spec                               map[string]any              `yaml:"spec,omitempty"`
+	Name                               string                       `yaml:"name"`
+	Version                            string                       `yaml:"version"`
+	Description                        string                       `yaml:"description,omitempty"`
+	Agent                              deploymentAgentBinding       `yaml:"agent"`
+	ServiceDependencies                []manifestServiceDependency  `yaml:"service-dependencies,omitempty"`
+	WorkspaceConfigurationDependencies []string                     `yaml:"workspace-configuration-dependencies,omitempty"`
+	SecretServiceConfigurations        []secretServiceConfiguration `yaml:"secret-service-configurations,omitempty"`
+	Endpoints                          []manifestEndpoint           `yaml:"endpoints"`
+	Spec                               map[string]any               `yaml:"spec,omitempty"`
 }
 
 type manifestServiceDependency struct {
@@ -606,7 +636,9 @@ func renderServiceManifestWithExternalDependencies(
 ) ([]byte, error) {
 	manifest := serviceManifest{
 		Name: service.Name, Version: service.Version, Description: service.Description, Agent: service.Agent,
-		WorkspaceConfigurationDependencies: append([]string(nil), service.WorkspaceConfigurationDependencies...), Spec: service.Spec,
+		WorkspaceConfigurationDependencies: append([]string(nil), service.WorkspaceConfigurationDependencies...),
+		SecretServiceConfigurations:        append([]secretServiceConfiguration(nil), service.SecretServiceConfigurations...),
+		Spec:                               service.Spec,
 	}
 	for _, dependency := range service.Dependencies {
 		entry := manifestServiceDependency{Name: dependency.Service}
