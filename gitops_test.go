@@ -2,13 +2,19 @@ package main
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"slices"
+	"sort"
 	"strings"
 	"testing"
 
@@ -88,6 +94,19 @@ func TestGenerateGitOpsGoldenShapes(t *testing.T) {
 			}
 
 			assertEnvironmentApplications(t, moduleDir, "local", test.services)
+			if _, err := os.Stat(filepath.Join(
+				moduleDir,
+				filepath.FromSlash(gitOpsRelativeDir),
+				"overlays",
+				"aws",
+			)); !errors.Is(err, os.ErrNotExist) {
+				t.Fatalf("local generation copied unrelated AWS bootstrap: %v", err)
+			}
+
+			selectFixtureEnvironment(t, root, workspace, "aws")
+			if err := generateGitOps(context.Background(), moduleDir, workspace); err != nil {
+				t.Fatal(err)
+			}
 			awsServices := make([]string, 0, len(test.services))
 			for _, service := range test.services {
 				if _, managed := fixtureAWSManagedServices[service]; !managed {
@@ -95,6 +114,14 @@ func TestGenerateGitOpsGoldenShapes(t *testing.T) {
 				}
 			}
 			assertEnvironmentApplications(t, moduleDir, "aws", awsServices)
+			if _, err := os.Stat(filepath.Join(
+				moduleDir,
+				filepath.FromSlash(gitOpsRelativeDir),
+				"overlays",
+				"local",
+			)); !errors.Is(err, os.ErrNotExist) {
+				t.Fatalf("AWS generation copied unrelated local bootstrap: %v", err)
+			}
 		})
 	}
 }
@@ -112,7 +139,7 @@ func TestGenerateGitOpsRejectsHostileContracts(t *testing.T) {
 			mutate: func(_ *testing.T, _, _ string, workspace *workspaceManifest) {
 				workspace.Gitops = nil
 			},
-			want: "must declare gitops",
+			want: "must declare the CLI GitOps publication contract",
 		},
 		{
 			name: "placeholder repository",
@@ -164,6 +191,27 @@ func TestGenerateGitOpsRejectsHostileContracts(t *testing.T) {
 			want: "publish branch",
 		},
 		{
+			name: "missing CLI inventory",
+			mutate: func(_ *testing.T, _, _ string, workspace *workspaceManifest) {
+				workspace.Gitops.Inventory = ""
+			},
+			want: "workspace gitops inventory",
+		},
+		{
+			name: "missing selected environment",
+			mutate: func(_ *testing.T, _, _ string, workspace *workspaceManifest) {
+				workspace.Gitops.Environment = ""
+			},
+			want: "gitops environment",
+		},
+		{
+			name: "unfetchable local repository",
+			mutate: func(_ *testing.T, _, _ string, workspace *workspaceManifest) {
+				workspace.Gitops.FetchRepoURL = "http://localhost:8080/platform-config.git"
+			},
+			want: "host.k3d.internal",
+		},
+		{
 			name: "missing immutable revision",
 			mutate: func(_ *testing.T, _, _ string, workspace *workspaceManifest) {
 				workspace.Gitops.Revision = ""
@@ -172,16 +220,16 @@ func TestGenerateGitOpsRejectsHostileContracts(t *testing.T) {
 		},
 		{
 			name: "mutable production revision",
-			mutate: func(_ *testing.T, _, _ string, workspace *workspaceManifest) {
+			mutate: func(t *testing.T, root, _ string, workspace *workspaceManifest) {
+				selectFixtureEnvironment(t, root, workspace, "aws")
 				workspace.Gitops.Revision = "main"
-				workspace.Environments = workspace.Environments[1:]
 			},
 			want: "full commit SHA or a signed tag",
 		},
 		{
 			name: "missing namespace",
 			mutate: func(_ *testing.T, _, _ string, workspace *workspaceManifest) {
-				workspace.Environments[1].Namespace = ""
+				workspace.Environments[0].Namespace = ""
 			},
 			want: "Kubernetes DNS label",
 		},
@@ -198,9 +246,16 @@ func TestGenerateGitOpsRejectsHostileContracts(t *testing.T) {
 			want: "is not an exact DNS name",
 		},
 		{
+			name: "missing exact ingress route",
+			mutate: func(_ *testing.T, _, _ string, workspace *workspaceManifest) {
+				workspace.Environments[0].Ingress = nil
+			},
+			want: "must declare at least one exact ingress route",
+		},
+		{
 			name: "unsupported remote cluster",
 			mutate: func(_ *testing.T, _, _ string, workspace *workspaceManifest) {
-				workspace.Environments[1].Cluster.Kind = "gke"
+				workspace.Environments[0].Cluster.Kind = "gke"
 			},
 			want: "is not supported",
 		},
@@ -311,6 +366,185 @@ services:
 	}
 }
 
+func TestGenerateGitOpsVerifiesReleasedCorePromotableOutput(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name   string
+		mutate func(output *cliKubernetesOutput)
+		want   string
+	}{
+		{
+			name: "ephemeral profile",
+			mutate: func(output *cliKubernetesOutput) {
+				output.Profile = "KUBERNETES_OUTPUT_PROFILE_EPHEMERAL_LOCAL_APPLY_V1"
+			},
+			want: "is not KUBERNETES_OUTPUT_PROFILE_PROMOTABLE_GITOPS_V1",
+		},
+		{
+			name: "unknown contract",
+			mutate: func(output *cliKubernetesOutput) {
+				output.ContractVersion = "codefly.dev/kubernetes-manifest/v0"
+			},
+			want: `want "codefly.dev/kubernetes-manifest/v1"`,
+		},
+		{
+			name: "failed static validation",
+			mutate: func(output *cliKubernetesOutput) {
+				output.Validation.StaticValidation = "STATUS_FAILED"
+				output.Validation.Promotable = false
+				output.Validation.Violations = []string{"Secret is forbidden"}
+			},
+			want: "Core output is not promotable",
+		},
+		{
+			name: "failed server validation",
+			mutate: func(output *cliKubernetesOutput) {
+				output.Validation.ServerSideValidation = "STATUS_FAILED"
+				output.Validation.Promotable = false
+			},
+			want: "Core output is not promotable",
+		},
+	}
+
+	for _, test := range tests {
+		test := test
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+			root, moduleDir := writeGitOpsFixture(t, "profile-control", "identity", []string{"accounts"})
+			inventory := loadFixtureInventory(t, root, "identity")
+			test.mutate(inventory.ServiceGraph[0].Output)
+			if err := writeJSON(
+				filepath.Join(fixtureOwnedRoot(root, "identity"), cliRenderInventoryFilename),
+				inventory,
+			); err != nil {
+				t.Fatal(err)
+			}
+			head := commitFixtureSnapshot(t, root, "identity", "record hostile Core output")
+			workspace, err := loadWorkspaceManifest(root)
+			if err != nil {
+				t.Fatal(err)
+			}
+			workspace.Gitops.Revision = head
+			err = generateGitOps(context.Background(), moduleDir, workspace)
+			if err == nil || !strings.Contains(err.Error(), test.want) {
+				t.Fatalf("generateGitOps() error = %v, want substring %q", err, test.want)
+			}
+		})
+	}
+}
+
+func TestLocalQualificationUsesFetchableRepositoryAtExactRevision(t *testing.T) {
+	t.Parallel()
+	root, moduleDir := writeGitOpsFixture(t, "local-control", "identity", []string{"accounts"})
+	remoteRoot := t.TempDir()
+	bare := filepath.Join(remoteRoot, "platform-config.git")
+	runGit(t, "", "clone", "--bare", root, bare)
+	runGit(t, "", "--git-dir", bare, "update-server-info")
+	server := httptest.NewServer(http.FileServer(http.Dir(remoteRoot)))
+	defer server.Close()
+	hostPort := strings.TrimPrefix(server.URL, "http://")
+	_, port, found := strings.Cut(hostPort, ":")
+	if !found {
+		t.Fatalf("test Git server has no port: %s", server.URL)
+	}
+	fetchBase := "http://host.k3d.internal:" + port + "/"
+	runGit(t, root, "config", "url."+server.URL+"/.insteadOf", fetchBase)
+	repository := "file://" + filepath.ToSlash(bare)
+	runGit(t, root, "remote", "set-url", "origin", repository)
+	workspace, err := loadWorkspaceManifest(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	workspace.Gitops.RepoURL = repository
+	workspace.Gitops.FetchRepoURL = fetchBase + "platform-config.git"
+
+	if err := generateGitOps(context.Background(), moduleDir, workspace); err != nil {
+		t.Fatal(err)
+	}
+	application := filepath.Join(
+		moduleDir,
+		filepath.FromSlash(gitOpsRelativeDir),
+		"overlays",
+		"local",
+		"applications",
+		"accounts.yaml",
+	)
+	data, err := os.ReadFile(application)
+	if err != nil {
+		t.Fatal(err)
+	}
+	head := strings.TrimSpace(runGit(t, root, "rev-parse", "HEAD"))
+	if !strings.Contains(string(data), "repoURL: "+fetchBase+"platform-config.git") ||
+		!strings.Contains(string(data), "targetRevision: "+head) {
+		t.Fatalf("local Application does not bind the fetchable repository at HEAD:\n%s", data)
+	}
+}
+
+func TestMindRenderUsesExactCLIServiceGraphRoutesAndPolicies(t *testing.T) {
+	t.Parallel()
+	services := []string{"accounts", "cache", "forge-edge", "frontend", "object-storage", "store", "vault"}
+	root, moduleDir := writeGitOpsFixture(t, "mind-control", "users", services)
+	writeMindTopology(t, moduleDir)
+	workspace, err := loadWorkspaceManifest(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	workspace.Environments[0].Ingress = []environmentIngressRoute{{
+		Name: "product", Service: "forge-edge", Endpoint: "rest",
+		Hosts: []string{"app.mind.localhost"},
+	}}
+	workspace.Environments[1].Ingress = []environmentIngressRoute{{
+		Name: "product", Service: "forge-edge", Endpoint: "rest",
+		Hosts: []string{"app.mind.example.com"},
+	}}
+
+	if err := generateGitOps(context.Background(), moduleDir, workspace); err != nil {
+		t.Fatal(err)
+	}
+	assertEnvironmentApplications(t, moduleDir, "local", services)
+	assertMindRouteAndPolicies(t, moduleDir, "local", "app.mind.localhost", false)
+
+	selectFixtureEnvironment(t, root, workspace, "aws")
+	if err := generateGitOps(context.Background(), moduleDir, workspace); err != nil {
+		t.Fatal(err)
+	}
+	assertEnvironmentApplications(t, moduleDir, "aws", []string{"accounts", "forge-edge", "frontend"})
+	assertMindRouteAndPolicies(t, moduleDir, "aws", "app.mind.example.com", true)
+}
+
+func TestMindRenderRejectsAuthSidecarOutsideCLIServiceGraph(t *testing.T) {
+	t.Parallel()
+	services := []string{"accounts", "cache", "forge-edge", "frontend", "object-storage", "store", "vault"}
+	root, moduleDir := writeGitOpsFixture(t, "mind-control", "users", services)
+	inventory := loadFixtureInventory(t, root, "users")
+	inventory.ServiceGraph = append(inventory.ServiceGraph, cliRenderService{
+		Module:  "users",
+		Service: "auth-sidecar",
+		Path:    "services/auth-sidecar/overlays/local",
+		Output:  fixturePromotableOutput(),
+	})
+	sort.Slice(inventory.ServiceGraph, func(i, j int) bool {
+		return inventory.ServiceGraph[i].Service < inventory.ServiceGraph[j].Service
+	})
+	if err := writeJSON(
+		filepath.Join(fixtureOwnedRoot(root, "users"), cliRenderInventoryFilename),
+		inventory,
+	); err != nil {
+		t.Fatal(err)
+	}
+	head := commitFixtureSnapshot(t, root, "users", "inject auth-sidecar")
+	workspace, err := loadWorkspaceManifest(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	workspace.Gitops.Revision = head
+	err = generateGitOps(context.Background(), moduleDir, workspace)
+	if err == nil || !strings.Contains(err.Error(), `contains extra service "auth-sidecar"`) {
+		t.Fatalf("generateGitOps() error = %v, want auth-sidecar graph rejection", err)
+	}
+}
+
 func TestGenerateGitOpsReplacesStaleSecretBearingTree(t *testing.T) {
 	t.Parallel()
 	root, moduleDir := writeGitOpsFixture(t, "safe-control", "identity", []string{"accounts"})
@@ -361,15 +595,13 @@ metadata:
 stringData:
   password: hostile-canary
 `)
-	runGit(t, root, "add", ".")
-	runGit(t, root, "commit", "-m", "render secret")
-	head := strings.TrimSpace(runGit(t, root, "rev-parse", "HEAD"))
+	rewriteFixtureInventoryFiles(t, root, "identity")
+	head := commitFixtureSnapshot(t, root, "identity", "render secret")
 	workspace, err := loadWorkspaceManifest(root)
 	if err != nil {
 		t.Fatal(err)
 	}
 	workspace.Gitops.Revision = head
-	workspace.Environments = workspace.Environments[:1]
 	err = generateGitOps(context.Background(), moduleDir, workspace)
 	if err == nil || !strings.Contains(err.Error(), "Kubernetes Secret") {
 		t.Fatalf("generateGitOps() error = %v, want immutable Secret rejection", err)
@@ -379,28 +611,26 @@ stringData:
 func TestGenerateGitOpsRejectsManagedServiceWorkloadInAWS(t *testing.T) {
 	t.Parallel()
 	root, moduleDir := writeGitOpsFixture(t, "aws-control", "identity", []string{"accounts", "store"})
-	localOverlay := filepath.Join(
+	workspace, err := loadWorkspaceManifest(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	selectFixtureEnvironment(t, root, workspace, "aws")
+	renderedOverlay := filepath.Join(
 		root,
-		"clusters/codefly/deployments/modules/identity/services/store/overlays/local",
+		"clusters/codefly/deployments/modules/identity/services/accounts/overlays/aws",
 	)
 	awsOverlay := filepath.Join(
 		root,
 		"clusters/codefly/deployments/modules/identity/services/store/overlays/aws",
 	)
-	if err := copyTree(localOverlay, awsOverlay, "", false); err != nil {
+	if err := copyTree(renderedOverlay, awsOverlay, "", false); err != nil {
 		t.Fatal(err)
 	}
-	runGit(t, root, "add", ".")
-	runGit(t, root, "commit", "-m", "render managed workload")
-	head := strings.TrimSpace(runGit(t, root, "rev-parse", "HEAD"))
-	workspace, err := loadWorkspaceManifest(root)
-	if err != nil {
-		t.Fatal(err)
-	}
+	head := commitFixtureSnapshot(t, root, "identity", "render managed workload")
 	workspace.Gitops.Revision = head
-	workspace.Environments = workspace.Environments[1:]
 	err = generateGitOps(context.Background(), moduleDir, workspace)
-	if err == nil || !strings.Contains(err.Error(), "unexpected in-cluster overlay") {
+	if err == nil || !strings.Contains(err.Error(), "outside the CLI render inventory") {
 		t.Fatalf("generateGitOps() error = %v, want managed workload rejection", err)
 	}
 }
@@ -408,25 +638,26 @@ func TestGenerateGitOpsRejectsManagedServiceWorkloadInAWS(t *testing.T) {
 func TestGenerateGitOpsRejectsMissingManagedServicePath(t *testing.T) {
 	t.Parallel()
 	root, moduleDir := writeGitOpsFixture(t, "aws-control", "identity", []string{"accounts", "store"})
-	serviceRoot := filepath.Join(
-		root,
-		"clusters/codefly/deployments/modules/identity/services/store",
-	)
-	if err := os.RemoveAll(serviceRoot); err != nil {
-		t.Fatal(err)
-	}
-	runGit(t, root, "add", ".")
-	runGit(t, root, "commit", "-m", "remove managed service")
-	head := strings.TrimSpace(runGit(t, root, "rev-parse", "HEAD"))
 	workspace, err := loadWorkspaceManifest(root)
 	if err != nil {
 		t.Fatal(err)
 	}
+	selectFixtureEnvironment(t, root, workspace, "aws")
+	inventory := loadFixtureInventory(t, root, "identity")
+	inventory.ServiceGraph = slices.DeleteFunc(inventory.ServiceGraph, func(service cliRenderService) bool {
+		return service.Service == "store"
+	})
+	if err := writeJSON(
+		filepath.Join(fixtureOwnedRoot(root, "identity"), cliRenderInventoryFilename),
+		inventory,
+	); err != nil {
+		t.Fatal(err)
+	}
+	head := commitFixtureSnapshot(t, root, "identity", "remove managed service evidence")
 	workspace.Gitops.Revision = head
-	workspace.Environments = workspace.Environments[1:]
 
 	err = generateGitOps(context.Background(), moduleDir, workspace)
-	if err == nil || !strings.Contains(err.Error(), `missing service path "store"`) {
+	if err == nil || !strings.Contains(err.Error(), `missing service "store"`) {
 		t.Fatalf("generateGitOps() error = %v, want missing managed service path rejection", err)
 	}
 }
@@ -460,14 +691,6 @@ func TestGeneratedPoliciesAndProjectMatchRenderedTopology(t *testing.T) {
 		if !strings.Contains(string(localNetwork), "name: "+policy) {
 			t.Errorf("local network policy is missing %q", policy)
 		}
-	}
-	awsNetwork, err := os.ReadFile(filepath.Join(generated, "aws", "resources", "network-policy.yaml"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	if !strings.Contains(string(awsNetwork), "cidr: 10.42.0.0/24") ||
-		!strings.Contains(string(awsNetwork), "name: allow-accounts-to-store") {
-		t.Errorf("AWS network policy does not bind the managed store CIDR:\n%s", awsNetwork)
 	}
 	for _, file := range []string{
 		filepath.Join(generated, "local", "resources", "istio-gateway.yaml"),
@@ -526,6 +749,18 @@ func TestGeneratedPoliciesAndProjectMatchRenderedTopology(t *testing.T) {
 	if strings.Contains(encoded, "StatefulSet") || strings.Contains(encoded, "ConfigMap") {
 		t.Errorf("AppProject contains resources absent from the immutable render:\n%s", encoded)
 	}
+	selectFixtureEnvironment(t, root, workspace, "aws")
+	if err := generateGitOps(context.Background(), moduleDir, workspace); err != nil {
+		t.Fatal(err)
+	}
+	awsNetwork, err := os.ReadFile(filepath.Join(generated, "aws", "resources", "network-policy.yaml"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(awsNetwork), "cidr: 10.42.0.0/24") ||
+		!strings.Contains(string(awsNetwork), "name: allow-accounts-to-store") {
+		t.Errorf("AWS network policy does not bind the managed store CIDR:\n%s", awsNetwork)
+	}
 }
 
 func TestGeneratedMarketingIngressUsesExactEnvironmentRoutes(t *testing.T) {
@@ -559,7 +794,6 @@ func TestGeneratedMarketingIngressUsesExactEnvironmentRoutes(t *testing.T) {
 	}
 
 	assertEnvironmentApplications(t, moduleDir, "local", []string{"auth-sidecar", "marketing"})
-	assertEnvironmentApplications(t, moduleDir, "aws", []string{"auth-sidecar", "marketing"})
 
 	generated := filepath.Join(moduleDir, filepath.FromSlash(gitOpsRelativeDir), "overlays", "local", "resources")
 	gatewayObjects, err := decodeYAMLDocuments(filepath.Join(generated, "istio-gateway.yaml"))
@@ -665,6 +899,11 @@ func TestGeneratedMarketingIngressUsesExactEnvironmentRoutes(t *testing.T) {
 	if got := authorizedPorts["allow-istio-ingress-to-auth-sidecar"]; !slices.Equal(got, []any{"8080"}) {
 		t.Errorf("product ingress ports = %v, want [8080]", got)
 	}
+	selectFixtureEnvironment(t, root, workspace, "aws")
+	if err := generateGitOps(context.Background(), moduleDir, workspace); err != nil {
+		t.Fatal(err)
+	}
+	assertEnvironmentApplications(t, moduleDir, "aws", []string{"auth-sidecar", "marketing"})
 }
 
 func TestManagedHandoffUsesExternalReferencesWithoutSecretValues(t *testing.T) {
@@ -674,7 +913,8 @@ func TestManagedHandoffUsesExternalReferencesWithoutSecretValues(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	workspace.Environments[1].ManagedServices["store"] = managedServiceConfig{
+	selectFixtureEnvironment(t, root, workspace, "aws")
+	workspace.Environments[0].ManagedServices["store"] = managedServiceConfig{
 		Kind:         "rds-postgresql",
 		ExternalName: "db.internal.example.com",
 		EgressCIDRs:  []string{"10.42.0.0/24"},
@@ -785,6 +1025,11 @@ func TestLocalFullSHARejectsStaleHarnessSnapshot(t *testing.T) {
 func TestRevisionMustContainEveryApplicationPath(t *testing.T) {
 	t.Parallel()
 	root, moduleDir := writeGitOpsFixture(t, "path-control", "identity", []string{"accounts"})
+	workspace, err := loadWorkspaceManifest(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	selectFixtureEnvironment(t, root, workspace, "aws")
 	overlay := filepath.Join(
 		root,
 		"clusters/codefly/deployments/modules/identity/services/accounts/overlays/aws",
@@ -795,14 +1040,9 @@ func TestRevisionMustContainEveryApplicationPath(t *testing.T) {
 	runGit(t, root, "add", "-A")
 	runGit(t, root, "commit", "-m", "remove immutable application path")
 	head := strings.TrimSpace(runGit(t, root, "rev-parse", "HEAD"))
-	workspace, err := loadWorkspaceManifest(root)
-	if err != nil {
-		t.Fatal(err)
-	}
 	workspace.Gitops.Revision = head
-	workspace.Environments = workspace.Environments[1:]
 	err = generateGitOps(context.Background(), moduleDir, workspace)
-	if err == nil || !strings.Contains(err.Error(), "immutable overlay is missing") {
+	if err == nil || !strings.Contains(err.Error(), "missing inventoried file") {
 		t.Fatalf("generateGitOps() error = %v, want missing committed path rejection", err)
 	}
 }
@@ -828,9 +1068,9 @@ func TestRevisionResolvesInExplicitGitOpsCheckout(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	selectFixtureEnvironment(t, checkout, workspace, "aws")
 	workspace.root = t.TempDir()
 	workspace.Gitops.Checkout = checkout
-	workspace.Environments = workspace.Environments[1:]
 	if err := generateGitOps(context.Background(), moduleDir, workspace); err != nil {
 		t.Fatalf("generateGitOps() with a separate declared checkout: %v", err)
 	}
@@ -839,6 +1079,11 @@ func TestRevisionResolvesInExplicitGitOpsCheckout(t *testing.T) {
 func TestProductionSignedTagResolvesImmutableCommit(t *testing.T) {
 	t.Parallel()
 	root, moduleDir := writeGitOpsFixture(t, "production-control", "identity", []string{"accounts"})
+	workspace, err := loadWorkspaceManifest(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	selectFixtureEnvironment(t, root, workspace, "aws")
 	head := strings.TrimSpace(runGit(t, root, "rev-parse", "HEAD"))
 
 	signingKey := filepath.Join(root, "test-signing-key")
@@ -858,12 +1103,7 @@ func TestProductionSignedTagResolvesImmutableCommit(t *testing.T) {
 	runGit(t, root, "config", "gpg.ssh.allowedSignersFile", allowedSigners)
 	runGit(t, root, "tag", "-s", "v1.0.0", "-m", "signed release")
 
-	workspace, err := loadWorkspaceManifest(root)
-	if err != nil {
-		t.Fatal(err)
-	}
 	workspace.Gitops.Revision = "refs/tags/v1.0.0"
-	workspace.Environments = workspace.Environments[1:]
 	if err := generateGitOps(context.Background(), moduleDir, workspace); err != nil {
 		t.Fatal(err)
 	}
@@ -1079,6 +1319,165 @@ func TestCanonicalSourceDoesNotShipConsumerOwnedGitOpsTree(t *testing.T) {
 	}
 }
 
+func writeMindTopology(t *testing.T, moduleDir string) {
+	t.Helper()
+	writeTestFile(t, filepath.Join(moduleDir, "deployment", "topology.bindings.codefly.yaml"), `version: v1
+module:
+  name: users
+  namespace: users
+  service_entry: forge-edge
+  description: Mind users boundary
+interface:
+  - service: forge-edge
+    endpoint: rest
+    visibility: public
+services:
+  - name: accounts
+    endpoints:
+      - name: grpc
+        api: grpc
+        visibility: private
+        port: 8080
+    dependencies:
+      - service: cache
+        endpoints: [redis]
+      - service: object-storage
+        endpoints: [http]
+      - service: store
+        endpoints: [postgres]
+      - service: vault
+        endpoints: [http]
+  - name: cache
+    endpoints:
+      - name: redis
+        api: redis
+        visibility: private
+        port: 6379
+  - name: forge-edge
+    endpoints:
+      - name: rest
+        api: http
+        visibility: public
+        port: 8080
+    dependencies:
+      - service: accounts
+        endpoints: [grpc]
+    public_egress_ports: [443]
+  - name: frontend
+    endpoints:
+      - name: http
+        api: http
+        visibility: private
+        port: 3000
+    dependencies:
+      - service: forge-edge
+        endpoints: [rest]
+  - name: object-storage
+    endpoints:
+      - name: http
+        api: http
+        visibility: private
+        port: 9000
+  - name: store
+    endpoints:
+      - name: postgres
+        api: postgres
+        visibility: private
+        port: 5432
+  - name: vault
+    endpoints:
+      - name: http
+        api: http
+        visibility: private
+        port: 8200
+`)
+}
+
+func assertMindRouteAndPolicies(
+	t *testing.T,
+	moduleDir,
+	environment,
+	host string,
+	aws bool,
+) {
+	t.Helper()
+	resources := filepath.Join(
+		moduleDir,
+		filepath.FromSlash(gitOpsRelativeDir),
+		"overlays",
+		environment,
+		"resources",
+	)
+	objects, err := decodeYAMLDocuments(filepath.Join(resources, "istio-gateway.yaml"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var route map[string]any
+	for _, object := range objects {
+		if object["kind"] == "VirtualService" {
+			route = object
+			break
+		}
+	}
+	if route == nil {
+		t.Fatal("Mind bootstrap has no VirtualService")
+	}
+	spec := route["spec"].(map[string]any)
+	if got := spec["hosts"].([]any); !slices.Equal(got, []any{host}) {
+		t.Fatalf("%s route hosts = %v, want [%s]", environment, got, host)
+	}
+	httpRoutes := spec["http"].([]any)
+	destination := httpRoutes[0].(map[string]any)["route"].([]any)[0].(map[string]any)["destination"].(map[string]any)
+	if destination["host"] != "forge-edge.users-"+environment+".svc.cluster.local" ||
+		destination["port"].(map[string]any)["number"] != 8080 {
+		t.Fatalf("%s route destination = %#v", environment, destination)
+	}
+
+	data, err := os.ReadFile(filepath.Join(resources, "network-policy.yaml"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	rendered := string(data)
+	for _, name := range []string{
+		"default-deny-all",
+		"allow-istio-ingress-to-forge-edge",
+		"allow-forge-edge-to-accounts",
+		"allow-accounts-from-forge-edge",
+		"allow-frontend-to-forge-edge",
+		"allow-forge-edge-from-frontend",
+	} {
+		if !strings.Contains(rendered, "name: "+name) {
+			t.Errorf("%s network policy is missing %q", environment, name)
+		}
+	}
+	if aws {
+		for _, name := range []string{
+			"allow-accounts-to-cache",
+			"allow-accounts-to-object-storage",
+			"allow-accounts-to-store",
+			"allow-accounts-to-vault",
+		} {
+			if !strings.Contains(rendered, "name: "+name) {
+				t.Errorf("AWS network policy is missing managed exception %q", name)
+			}
+		}
+		if !strings.Contains(rendered, "cidr: 10.42.0.0/24") {
+			t.Error("AWS network policy has no exact managed-service CIDR")
+		}
+		return
+	}
+	for _, name := range []string{
+		"allow-cache-from-accounts",
+		"allow-object-storage-from-accounts",
+		"allow-store-from-accounts",
+		"allow-vault-from-accounts",
+	} {
+		if !strings.Contains(rendered, "name: "+name) {
+			t.Errorf("local network policy is missing topology exception %q", name)
+		}
+	}
+}
+
 func writeGitOpsFixture(t *testing.T, workspaceName, moduleName string, services []string) (string, string) {
 	t.Helper()
 	root := t.TempDir()
@@ -1120,59 +1519,6 @@ func writeGitOpsFixture(t *testing.T, workspaceName, moduleName string, services
 		if err := os.MkdirAll(filepath.Join(moduleDir, "services", service), 0o755); err != nil {
 			t.Fatal(err)
 		}
-		for _, environment := range []string{"local", "aws"} {
-			if environment == "aws" {
-				if _, managed := fixtureAWSManagedServices[service]; managed {
-					continue
-				}
-			}
-			overlay := filepath.Join(
-				root,
-				"clusters",
-				"codefly",
-				"deployments",
-				"modules",
-				moduleName,
-				"services",
-				service,
-				"overlays",
-				environment,
-			)
-			writeTestFile(t, filepath.Join(overlay, "kustomization.yaml"), `apiVersion: kustomize.config.k8s.io/v1beta1
-kind: Kustomization
-namespace: `+moduleName+`-`+environment+`
-resources:
-  - workload.yaml
-`)
-			writeTestFile(t, filepath.Join(overlay, "workload.yaml"), `apiVersion: apps/v1
-kind: Deployment
-metadata:
-  name: `+service+`
-spec:
-  selector:
-    matchLabels:
-      app: `+service+`
-  template:
-    metadata:
-      labels:
-        app: `+service+`
-    spec:
-      containers:
-        - name: service
-          image: example.invalid/`+service+`:test
----
-apiVersion: v1
-kind: Service
-metadata:
-  name: `+service+`
-spec:
-  selector:
-    app: `+service+`
-  ports:
-    - name: http
-      port: `+fmt.Sprint(port)+`
-`)
-		}
 	}
 	writeTestFile(t, filepath.Join(moduleDir, moduleYamlPath), module.String())
 	writeTestFile(t, filepath.Join(moduleDir, "deployment", "topology.bindings.codefly.yaml"), topology.String())
@@ -1180,18 +1526,31 @@ spec:
 layout: modules
 gitops:
   repo-url: git@github.com:acme/platform-config.git
+  fetch-repo-url: http://host.k3d.internal:8080/platform-config.git
   path: clusters/codefly
   branch: main
   revision: REVISION
+  inventory: clusters/codefly/deployments/modules/` + moduleName + `/.codefly-render.json
+  environment: local
 environments:
   - name: local
     cluster:
       kind: k3d
     namespace: ` + moduleName + `-local
+    ingress:
+      - name: product
+        service: ` + entry + `
+        endpoint: http
+        hosts: [` + moduleName + `.localhost]
   - name: aws
     cluster:
       kind: eks
     namespace: ` + moduleName + `-aws
+    ingress:
+      - name: product
+        service: ` + entry + `
+        endpoint: http
+        hosts: [` + moduleName + `.example.com]
     managed-services:
 `
 	for _, service := range services {
@@ -1211,11 +1570,234 @@ environments:
 	runGit(t, root, "config", "user.email", "test@codefly.dev")
 	runGit(t, root, "config", "commit.gpgsign", "false")
 	runGit(t, root, "remote", "add", "origin", "git@github.com:acme/platform-config.git")
+	writeFixtureRenderSnapshot(t, root, workspaceName, moduleName, "local", services)
 	runGit(t, root, "add", ".")
-	runGit(t, root, "commit", "-m", "immutable GitOps snapshot")
-	head := strings.TrimSpace(runGit(t, root, "rev-parse", "HEAD"))
-	writeTestFile(t, filepath.Join(root, workspaceYamlPath), strings.Replace(workspacePrefix, "REVISION", head, 1))
+	runGit(t, root, "commit", "-m", "immutable local GitOps snapshot")
+	localHead := strings.TrimSpace(runGit(t, root, "rev-parse", "HEAD"))
+	runGit(t, root, "checkout", "-b", "aws")
+	if err := os.RemoveAll(fixtureOwnedRoot(root, moduleName)); err != nil {
+		t.Fatal(err)
+	}
+	writeFixtureRenderSnapshot(t, root, workspaceName, moduleName, "aws", services)
+	runGit(t, root, "add", "-A")
+	runGit(t, root, "commit", "-m", "immutable AWS GitOps snapshot")
+	runGit(t, root, "checkout", "main")
+	writeTestFile(t, filepath.Join(root, workspaceYamlPath), strings.Replace(workspacePrefix, "REVISION", localHead, 1))
 	return root, moduleDir
+}
+
+func fixtureOwnedRoot(root, moduleName string) string {
+	return filepath.Join(root, "clusters", "codefly", "deployments", "modules", moduleName)
+}
+
+func writeFixtureRenderSnapshot(
+	t *testing.T,
+	root,
+	workspaceName,
+	moduleName,
+	environment string,
+	services []string,
+) {
+	t.Helper()
+	ownedRoot := fixtureOwnedRoot(root, moduleName)
+	graphServices := append([]string(nil), services...)
+	sort.Strings(graphServices)
+	inventory := cliRenderInventory{
+		SchemaVersion: cliRenderInventorySchema,
+		Module:        moduleName,
+		Environment:   environment,
+		AppProject:    kubernetesName(workspaceName, moduleName, environment),
+		OwnedPath: filepath.ToSlash(filepath.Join(
+			"clusters",
+			"codefly",
+			"deployments",
+			"modules",
+			moduleName,
+		)),
+	}
+	for _, service := range graphServices {
+		_, managed := fixtureAWSManagedServices[service]
+		managed = environment == "aws" && managed
+		entry := cliRenderService{Module: moduleName, Service: service, Managed: managed}
+		if managed {
+			inventory.ServiceGraph = append(inventory.ServiceGraph, entry)
+			continue
+		}
+		port := 8080
+		if service == "marketing" {
+			port = 3000
+		}
+		entry.Path = filepath.ToSlash(filepath.Join("services", service, "overlays", environment))
+		entry.Output = fixturePromotableOutput()
+		inventory.ServiceGraph = append(inventory.ServiceGraph, entry)
+		overlay := filepath.Join(ownedRoot, filepath.FromSlash(entry.Path))
+		writeTestFile(t, filepath.Join(overlay, "kustomization.yaml"), `apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+namespace: `+moduleName+`-`+environment+`
+resources:
+  - workload.yaml
+`)
+		writeTestFile(t, filepath.Join(overlay, "workload.yaml"), `apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: `+service+`
+spec:
+  selector:
+    matchLabels:
+      app: `+service+`
+  template:
+    metadata:
+      labels:
+        app: `+service+`
+    spec:
+      containers:
+        - name: service
+          image: example.invalid/`+service+`@sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: `+service+`
+spec:
+  selector:
+    app: `+service+`
+  ports:
+    - name: http
+      port: `+fmt.Sprint(port)+`
+`)
+	}
+	inventory.Files = fixtureInventoryFiles(t, ownedRoot)
+	digest := sha256.New()
+	for _, file := range inventory.Files {
+		if _, err := fmt.Fprintf(digest, "%s\x00%s\x00%d\n", file.Path, file.SHA256, file.Size); err != nil {
+			t.Fatal(err)
+		}
+	}
+	inventory.Digest = "sha256:" + hex.EncodeToString(digest.Sum(nil))
+	if err := writeJSON(filepath.Join(ownedRoot, cliRenderInventoryFilename), inventory); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func fixturePromotableOutput() *cliKubernetesOutput {
+	return &cliKubernetesOutput{
+		Kind:            "KUSTOMIZE",
+		Profile:         "KUBERNETES_OUTPUT_PROFILE_PROMOTABLE_GITOPS_V1",
+		ContractVersion: coreManifestContract,
+		Validation: &cliKubernetesValidation{
+			StaticValidation:     "STATUS_PASSED",
+			ServerSideValidation: "STATUS_PASSED",
+			Promotable:           true,
+			Violations:           []string{},
+		},
+	}
+}
+
+func fixtureInventoryFiles(t *testing.T, root string) []cliRenderInventoryFile {
+	t.Helper()
+	var files []cliRenderInventoryFile
+	err := filepath.Walk(root, func(file string, info os.FileInfo, err error) error {
+		if err != nil {
+			return err
+		}
+		if file == root || info.IsDir() {
+			return nil
+		}
+		relative, err := filepath.Rel(root, file)
+		if err != nil {
+			return err
+		}
+		if filepath.ToSlash(relative) == cliRenderInventoryFilename {
+			return nil
+		}
+		input, err := os.Open(file)
+		if err != nil {
+			return err
+		}
+		digest := sha256.New()
+		if _, err := io.Copy(digest, input); err != nil {
+			_ = input.Close()
+			return err
+		}
+		if err := input.Close(); err != nil {
+			return err
+		}
+		files = append(files, cliRenderInventoryFile{
+			Path:   filepath.ToSlash(relative),
+			SHA256: "sha256:" + hex.EncodeToString(digest.Sum(nil)),
+			Size:   info.Size(),
+		})
+		return nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	sort.Slice(files, func(i, j int) bool { return files[i].Path < files[j].Path })
+	return files
+}
+
+func rewriteFixtureInventoryFiles(t *testing.T, root, moduleName string) {
+	t.Helper()
+	ownedRoot := fixtureOwnedRoot(root, moduleName)
+	data, err := os.ReadFile(filepath.Join(ownedRoot, cliRenderInventoryFilename))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var inventory cliRenderInventory
+	if err := json.Unmarshal(data, &inventory); err != nil {
+		t.Fatal(err)
+	}
+	inventory.Files = fixtureInventoryFiles(t, ownedRoot)
+	digest := sha256.New()
+	for _, file := range inventory.Files {
+		if _, err := fmt.Fprintf(digest, "%s\x00%s\x00%d\n", file.Path, file.SHA256, file.Size); err != nil {
+			t.Fatal(err)
+		}
+	}
+	inventory.Digest = "sha256:" + hex.EncodeToString(digest.Sum(nil))
+	if err := writeJSON(filepath.Join(ownedRoot, cliRenderInventoryFilename), inventory); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func loadFixtureInventory(t *testing.T, root, moduleName string) cliRenderInventory {
+	t.Helper()
+	data, err := os.ReadFile(filepath.Join(fixtureOwnedRoot(root, moduleName), cliRenderInventoryFilename))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var inventory cliRenderInventory
+	if err := json.Unmarshal(data, &inventory); err != nil {
+		t.Fatal(err)
+	}
+	return inventory
+}
+
+func commitFixtureSnapshot(t *testing.T, root, moduleName, message string) string {
+	t.Helper()
+	runGit(t, root, "add", filepath.ToSlash(filepath.Join("clusters", "codefly", "deployments", "modules", moduleName)))
+	runGit(t, root, "commit", "-m", message)
+	return strings.TrimSpace(runGit(t, root, "rev-parse", "HEAD"))
+}
+
+func selectFixtureEnvironment(
+	t *testing.T,
+	root string,
+	workspace *workspaceManifest,
+	environment string,
+) {
+	t.Helper()
+	if environment == "aws" {
+		runGit(t, root, "checkout", "aws")
+		workspace.Environments = workspace.Environments[1:]
+		workspace.Gitops.FetchRepoURL = workspace.Gitops.RepoURL
+	} else {
+		runGit(t, root, "checkout", "main")
+		workspace.Environments = workspace.Environments[:1]
+		workspace.Gitops.FetchRepoURL = "http://host.k3d.internal:8080/platform-config.git"
+	}
+	workspace.Gitops.Environment = environment
+	workspace.Gitops.Revision = strings.TrimSpace(runGit(t, root, "rev-parse", "HEAD"))
 }
 
 func assertEnvironmentApplications(t *testing.T, moduleDir, environment string, want []string) {

@@ -7,41 +7,81 @@ them to consumer ownership.
 
 Generation consumes:
 
-- the workspace name and exact GitOps repository, checkout, owned path, and
-  revision;
-- every environment's cluster kind, namespace, and optional exact ingress
+- the CLI's canonical render inventory at the reviewed revision, including its
+  exact owned path, module/service graph, file digests, and Core output evidence;
+- the selected environment's cluster kind, namespace, and optional exact ingress
   routes;
 - the installed module's declared service inventory and deployment topology;
-- the service overlays already present at the immutable revision; and
 - explicit AWS managed-service endpoints, network CIDRs, and external secret
   references.
 
 The declared checkout defaults to the workspace root. Set `gitops.checkout`
 when the rendered GitOps repository is a separate checkout. Its `origin` must
-match `gitops.repo-url`.
+match `gitops.repo-url`. `gitops.inventory` names the exact repository-relative
+`.codefly-render.json` selected by the CLI; the inventory's `ownedPath` is the
+only source of Application paths.
 
-## Required sequence
+## CLI publication contract
 
-The revision is a rendered input, not the branch used for a future render:
+The CLI owns the render, review, immutable publication, and module-generation
+sequence. Module generation starts only after `gitops.revision` selects the
+reviewed service snapshot:
 
-1. Render each service overlay into
-   `<gitops.path>/deployments/modules/<module>/services/<service>/overlays/<environment>`.
-2. Ensure remote environments omit overlays for services handed to the cloud
-   provider.
-3. Commit that tree in the declared GitOps checkout.
-4. Set `gitops.revision` to that commit SHA, or to a signed immutable tag for a
-   remote environment.
-5. Run the module generator.
-6. Apply `deployment/kustomize/overlays/<environment>` as the bootstrap.
+```yaml
+gitops:
+  repo-url: git@github.com:my-org/platform-config.git
+  path: clusters/codefly
+  branch: main
+  revision: 0123456789abcdef0123456789abcdef01234567
+  checkout: ../platform-config
+  inventory: clusters/codefly/deployments/modules/users/.codefly-render.json
+  environment: aws
+```
 
-Generation fails if an Application path is absent from the selected commit.
-For k3d, kind, and minikube, the selected commit must also equal the checkout's
-current `HEAD`. This prevents an Application from pointing at the pre-render
-commit.
+The version 2 CLI inventory is canonical JSON. It records the selected module,
+environment, AppProject, owned repository path, sorted exact service graph,
+sorted file hashes and sizes, and aggregate digest. Every in-cluster service
+records its exact path and the returned Core Kubernetes output:
 
-The current CLI's deterministic render/publish flow is tracked by
-`codefly-dev/cli#152`. Until that flow invokes module generation after the
-snapshot is committed, callers must perform the sequence above explicitly.
+```json
+{
+  "module": "users",
+  "service": "accounts",
+  "path": "services/accounts/overlays/aws",
+  "output": {
+    "kind": "KUSTOMIZE",
+    "profile": "KUBERNETES_OUTPUT_PROFILE_PROMOTABLE_GITOPS_V1",
+    "contractVersion": "codefly.dev/kubernetes-manifest/v1",
+    "validation": {
+      "staticValidation": "STATUS_PASSED",
+      "serverSideValidation": "STATUS_PASSED",
+      "promotable": true,
+      "violations": []
+    }
+  }
+}
+```
+
+Managed AWS services remain in the graph with `managed: true` and no in-cluster
+path or output. Generation rejects a graph that differs from the installed
+module, any file outside that graph, any digest mismatch, and any Core response
+that is not promotable under the released v1 contract.
+
+For k3d qualification, `repo-url` may be an absolute credential-free `file://`
+remote used by the CLI. Argo CD cannot read that host path, so the CLI also
+sets an exact `fetch-repo-url` served on `host.k3d.internal`:
+
+```yaml
+gitops:
+  repo-url: file:///tmp/codefly-gitops/platform-config.git
+  fetch-repo-url: http://host.k3d.internal:8080/platform-config.git
+```
+
+Applications use only the fetch URL and the resolved 40-character commit.
+Local generation additionally requires the selected revision to equal checkout
+`HEAD`. Remote generation requires a full commit SHA or a locally verified
+signed tag. The checkout origin, committed inventory, every inventoried byte,
+and every rendered Application path are verified before output is replaced.
 
 ## Generated layout
 
@@ -65,12 +105,12 @@ deployment/kustomize/
         <in-cluster-service>.yaml
 ```
 
-The generator renders every committed service overlay before writing the
-bootstrap. It rejects missing or extra service paths, managed services that
-still have an in-cluster remote overlay, cluster-scoped child resources,
-unresolved placeholders, and Kubernetes Secrets anywhere in the owned tree.
-This closes the module boundary even while Core's versioned reference-only
-secret renderer is completed in `codefly-dev/core#101`.
+The tree contains only `gitops.environment`; generation replaces the previous
+tree instead of retaining Applications or AppProjects from other environments.
+The generator renders every inventoried service path before writing the
+bootstrap. It rejects missing or extra services, managed services with
+in-cluster output, cluster-scoped child resources, unresolved placeholders,
+and Kubernetes Secrets anywhere in the owned tree.
 
 The AppProject repository and destination are exact. Its namespaced resource
 allowlist is derived from the Kubernetes kinds in the immutable child renders;
@@ -96,8 +136,9 @@ ingress:
 ```
 
 The generator rejects duplicate or wildcard hosts, managed or undeclared
-targets, and endpoints that are not public module interfaces. When the block is
-omitted, the service entry remains the only catch-all route.
+targets, and endpoints that are not public module interfaces. Every selected
+environment must declare at least one exact route; no catch-all host is
+generated.
 
 ## AWS handoffs
 
