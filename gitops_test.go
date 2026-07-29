@@ -960,6 +960,7 @@ func TestGeneratedPoliciesAndProjectMatchRenderedTopology(t *testing.T) {
 		t.Fatal(err)
 	}
 	for _, policy := range []string{
+		"allow-ambient-hbone-ingress",
 		"allow-istio-ingress-to-auth-sidecar",
 		"allow-accounts-to-store",
 		"allow-store-from-accounts",
@@ -970,6 +971,9 @@ func TestGeneratedPoliciesAndProjectMatchRenderedTopology(t *testing.T) {
 		if !strings.Contains(string(localNetwork), "name: "+policy) {
 			t.Errorf("local network policy is missing %q", policy)
 		}
+	}
+	if !strings.Contains(string(localNetwork), "port: 15008") {
+		t.Error("local network policy does not allow ambient HBONE ingress")
 	}
 	if count := strings.Count(string(localNetwork), "codefly.dev/bootstrap-service: store"); count != 2 {
 		t.Errorf("local network policy has %d bootstrap service selectors, want 2", count)
@@ -1805,6 +1809,7 @@ func assertMindRouteAndPolicies(
 	rendered := string(data)
 	for _, name := range []string{
 		"default-deny-all",
+		"allow-ambient-hbone-ingress",
 		"allow-istio-ingress-to-forge-edge",
 		"allow-forge-edge-to-accounts",
 		"allow-accounts-from-forge-edge",
@@ -1814,6 +1819,9 @@ func assertMindRouteAndPolicies(
 		if !strings.Contains(rendered, "name: "+name) {
 			t.Errorf("%s network policy is missing %q", environment, name)
 		}
+	}
+	if !strings.Contains(rendered, "port: 15008") {
+		t.Errorf("%s network policy does not allow ambient HBONE ingress", environment)
 	}
 	if aws {
 		for _, name := range []string{

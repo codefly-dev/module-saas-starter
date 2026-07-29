@@ -2298,6 +2298,20 @@ func topologyNetworkPolicies(
 				}},
 			},
 		},
+		{
+			APIVersion: "networking.k8s.io/v1",
+			Kind:       "NetworkPolicy",
+			Metadata:   objectMeta{Name: "allow-ambient-hbone-ingress", Namespace: namespace, Labels: labels},
+			Spec: map[string]any{
+				"podSelector": map[string]any{},
+				"policyTypes": []string{"Ingress"},
+				"ingress": []any{map[string]any{
+					"ports": []any{
+						map[string]any{"protocol": "TCP", "port": 15008},
+					},
+				}},
+			},
+		},
 	}
 	inCluster := make(map[string]struct{}, len(plan.services))
 	for _, service := range plan.services {
