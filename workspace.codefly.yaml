@@ -3,19 +3,19 @@ layout: modules
 modules:
     - name: saas-starter
 
-# GitOps snapshot consumed by the module generator. Render and commit the
-# owned service overlays first; generation verifies every Application path
-# exists in this immutable revision.
+# GitOps publication supplied by the CLI after it reviews and commits one
+# environment's promotable service snapshot. The module generator verifies the
+# canonical inventory and binds every Application to the immutable revision.
 # gitops:
 #   repo-url: git@github.com:my-org/saas-starter.git
-#   path: ""        # repository subtree that owns rendered deployments
-#   branch: main    # mutable branch used only as the publish destination
+#   # Local k3d qualification instead uses a file:// repo-url and an exact
+#   # http://host.k3d.internal:<port>/<repo>.git fetch-repo-url for Argo CD.
+#   path: ""        # repository subtree containing the CLI-owned render
+#   branch: main    # mutable publication destination; never used by Applications
 #   revision: <40-character-commit-sha>
 #   checkout: .     # local checkout of repo-url; defaults to workspace root
-#
-# A local-only workspace may name the checked-out harness branch; the
-# generator resolves it to HEAD. Any remote environment requires a full
-# commit SHA or a locally verified signed tag, which is resolved to its SHA.
+#   inventory: deployments/modules/saas-starter/.codefly-render.json
+#   environment: local
 
 # Deploy targets the CLI knows about. `codefly deploy --env <name>` and
 # `codefly build --env <name>` look these up to resolve cluster +
