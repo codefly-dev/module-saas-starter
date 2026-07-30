@@ -10,6 +10,7 @@ import (
 	"os"
 	"path/filepath"
 	"slices"
+	"sort"
 	"strings"
 
 	"github.com/codefly-dev/core/shared"
@@ -264,6 +265,7 @@ type generatedServiceManifest struct {
 
 type generatedServiceDependency struct {
 	Name      string                              `yaml:"name"`
+	Module    string                              `yaml:"module,omitempty"`
 	Endpoints []generatedServiceEndpointReference `yaml:"endpoints"`
 }
 
@@ -307,6 +309,15 @@ func regenerateServiceManifests(moduleDir string, manifest moduleManifest, topol
 			}
 			generated.ServiceDependencies = append(generated.ServiceDependencies, entry)
 		}
+		source := "deployment/topology.bindings.codefly.yaml"
+		if service.Name == "frontend" {
+			external, err := frontendPluginServiceDependencies(moduleDir, serviceDir, topology.Module.Name)
+			if err != nil {
+				return err
+			}
+			generated.ServiceDependencies = append(generated.ServiceDependencies, external...)
+			source += " and services/frontend/code/server/plugin-service-allowlist.generated.json"
+		}
 		for _, endpoint := range service.Endpoints {
 			entry := generatedServiceEndpoint{Name: endpoint.Name}
 			if endpoint.Visibility != "private" {
@@ -321,13 +332,94 @@ func regenerateServiceManifests(moduleDir string, manifest moduleManifest, topol
 		if err != nil {
 			return fmt.Errorf("render service manifest %q: %w", service.Name, err)
 		}
-		header := []byte("# Code generated from deployment/topology.bindings.codefly.yaml. DO NOT EDIT.\n")
+		header := []byte("# Code generated from " + source + ". DO NOT EDIT.\n")
 		path := filepath.Join(moduleDir, "services", serviceDir, "service.codefly.yaml")
 		if err := os.WriteFile(path, append(header, data...), 0o644); err != nil {
 			return fmt.Errorf("write service manifest %q: %w", service.Name, err)
 		}
 	}
 	return nil
+}
+
+type frontendPluginAllowlist struct {
+	SchemaVersion   int `json:"schemaVersion"`
+	ContractVersion int `json:"contractVersion"`
+	Entries         []struct {
+		Target struct {
+			Module   string `json:"module"`
+			Service  string `json:"service"`
+			Endpoint string `json:"endpoint"`
+		} `json:"target"`
+	} `json:"entries"`
+}
+
+func frontendPluginServiceDependencies(moduleDir, serviceDir, moduleName string) ([]generatedServiceDependency, error) {
+	path := filepath.Join(
+		moduleDir,
+		"services",
+		serviceDir,
+		"code",
+		"server",
+		"plugin-service-allowlist.generated.json",
+	)
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return nil, fmt.Errorf("read frontend plugin service allowlist: %w", err)
+	}
+	var allowlist frontendPluginAllowlist
+	if err := json.Unmarshal(data, &allowlist); err != nil {
+		return nil, fmt.Errorf("parse frontend plugin service allowlist: %w", err)
+	}
+	if allowlist.SchemaVersion != 1 || allowlist.ContractVersion != 2 {
+		return nil, fmt.Errorf(
+			"unsupported frontend plugin service allowlist schema=%d contract=%d",
+			allowlist.SchemaVersion,
+			allowlist.ContractVersion,
+		)
+	}
+	targets := make(map[string]map[string]struct{})
+	for _, entry := range allowlist.Entries {
+		target := entry.Target
+		if !dnsLabelPattern.MatchString(target.Module) || !dnsLabelPattern.MatchString(target.Service) {
+			return nil, fmt.Errorf("frontend plugin service allowlist contains invalid target %q/%q", target.Module, target.Service)
+		}
+		if target.Module == moduleName {
+			return nil, fmt.Errorf("frontend plugin service target %q/%q is not external", target.Module, target.Service)
+		}
+		if target.Endpoint != "connect" && target.Endpoint != "rest" {
+			return nil, fmt.Errorf(
+				"frontend plugin service target %q/%q has unsupported endpoint %q",
+				target.Module,
+				target.Service,
+				target.Endpoint,
+			)
+		}
+		key := target.Module + "/" + target.Service
+		if targets[key] == nil {
+			targets[key] = make(map[string]struct{})
+		}
+		targets[key][target.Endpoint] = struct{}{}
+	}
+	keys := make([]string, 0, len(targets))
+	for key := range targets {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+	dependencies := make([]generatedServiceDependency, 0, len(keys))
+	for _, key := range keys {
+		module, service, _ := strings.Cut(key, "/")
+		dependency := generatedServiceDependency{Name: service, Module: module}
+		endpoints := make([]string, 0, len(targets[key]))
+		for endpoint := range targets[key] {
+			endpoints = append(endpoints, endpoint)
+		}
+		sort.Strings(endpoints)
+		for _, endpoint := range endpoints {
+			dependency.Endpoints = append(dependency.Endpoints, generatedServiceEndpointReference{Name: endpoint})
+		}
+		dependencies = append(dependencies, dependency)
+	}
+	return dependencies, nil
 }
 
 func normalizeGeneratedDeploymentMetadata(

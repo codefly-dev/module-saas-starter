@@ -911,6 +911,60 @@ targetRevision: main
 	}
 }
 
+func TestRegenerateServiceManifestsIncludesFrontendPluginDependencies(t *testing.T) {
+	moduleDir := t.TempDir()
+	writeTestFile(
+		t,
+		filepath.Join(moduleDir, "services", "frontend", "code", "server", "plugin-service-allowlist.generated.json"),
+		`{
+  "schemaVersion": 1,
+  "contractVersion": 2,
+  "entries": [
+    {
+      "target": {
+        "module": "billing",
+        "service": "subscriptions",
+        "endpoint": "rest"
+      }
+    }
+  ]
+}
+`,
+	)
+	manifest := moduleManifest{Services: []serviceReference{{Name: "frontend"}}}
+	topology := deploymentTopology{
+		Module: topologyModule{Name: "users"},
+		Services: []topologyService{{
+			Name:    "frontend",
+			Version: "0.0.0",
+			Agent:   map[string]any{"version": "0.2.0"},
+			Endpoints: []topologyEndpoint{{
+				Name:       "http",
+				API:        "http",
+				Visibility: "module",
+			}},
+		}},
+	}
+
+	if err := regenerateServiceManifests(moduleDir, manifest, topology); err != nil {
+		t.Fatal(err)
+	}
+	data, err := os.ReadFile(filepath.Join(moduleDir, "services", "frontend", "service.codefly.yaml"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, required := range []string{
+		"deployment/topology.bindings.codefly.yaml and services/frontend/code/server/plugin-service-allowlist.generated.json",
+		"name: subscriptions",
+		"module: billing",
+		"name: rest",
+	} {
+		if !strings.Contains(string(data), required) {
+			t.Fatalf("frontend service manifest is missing plugin dependency %q:\n%s", required, data)
+		}
+	}
+}
+
 func TestServiceInventoryAcceptsAbsoluteMonorepoPath(t *testing.T) {
 	t.Parallel()
 	moduleDir := t.TempDir()
