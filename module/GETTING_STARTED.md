@@ -50,10 +50,12 @@ the application. Stop the complete stack with Ctrl-C. Use
 releases that do not yet resolve module service entries.
 
 The local Codefly `security` workspace configuration supplies the MFA step-up
-window, completion rate limit, and WebAuthn relying-party policy. For a hosted
-environment set `WEBAUTHN_RP_ID` to the application host without scheme/port
-and `WEBAUTHN_RP_ORIGINS` to a comma-separated list of exact HTTPS browser
-origins. Startup fails closed when this policy is missing or malformed.
+window, completion rate limit, and WebAuthn relying-party ID. Auth-sidecar
+obtains its public origin from the Codefly SDK and passes it through the trusted
+gateway boundary, so no local port is copied into configuration. For a hosted
+environment set `WEBAUTHN_RP_ID` to the application host without scheme/port.
+Set `WEBAUTHN_RP_ORIGINS` only when supporting intentional traffic that
+bypasses auth-sidecar.
 
 ## Adding this module to a workspace
 

@@ -35,4 +35,4 @@ spec:
     hot-reload: true
     protocol-output-dirs:
         - code/pkg/gen
-    rest-endpoint: false
+    rest-endpoint: true

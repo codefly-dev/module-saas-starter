@@ -131,9 +131,9 @@ Implementation instructions:
 1. Split production provider validation from development fixture validation in
    the business service. They must not share an implicit fallback.
 2. Production `Authenticate` accepts only a provider authorization code that is
-   exchanged and validated. Fixture authentication requires both an explicit
-   Codefly fixture and `CODEFLY__ENVIRONMENT=local`; `AUTH_PROVIDER=dev` alone
-   fails closed.
+   exchanged and validated. Fixture authentication requires both a Codefly
+   identity profile that explicitly selects fixture mode and an explicit
+   Codefly fixture; either input alone fails closed.
 3. The development path treats `provider_id` as an opaque fixture token and
    obtains provider, subject, and email exclusively from the allowlisted fixture
    validator. Request-supplied email and verification flags are never trusted.

@@ -6,7 +6,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
-	"os"
 	"time"
 )
 
@@ -53,12 +52,13 @@ func (s *Service) GetOrgSSO(ctx context.Context, orgID string) (*OrgSSOConfig, e
 // actorID — the authenticated platform/org admin who initiated the
 // flow; recorded as the audit-event actor (NOT the org id).
 //
-// Stub mode: when WORKOS_API_KEY is unset we don't make HTTP calls
+// Stub mode: when the optional Codefly identity management credential is not
+// wired we don't make HTTP calls
 // to WorkOS — instead we return a placeholder URL that points back
 // at /admin/sso?demo=1. Lets local dev exercise the FE without
 // needing real WorkOS credentials.
 func (s *Service) StartSSOSetup(ctx context.Context, actorID, orgID, returnURL string) (string, error) {
-	apiKey := os.Getenv("WORKOS_API_KEY")
+	apiKey := s.ssoManagementAPIKey
 	if apiKey == "" {
 		// Dev / unit-test mode. Mark the row as "linked" so the FE
 		// transitions to the post-setup view (and an operator can

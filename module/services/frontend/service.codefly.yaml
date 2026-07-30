@@ -12,14 +12,14 @@ service-dependencies:
         - name: connect
         - name: rest
 workspace-configuration-dependencies:
-    - workos
+    - identity
 endpoints:
     - name: http
       visibility: module
 spec:
-    auth-provider: workos
     execution-profiles:
         local: development
+        local-dogfood: development
         production: production
     hot-reload: false
     mode: ssr

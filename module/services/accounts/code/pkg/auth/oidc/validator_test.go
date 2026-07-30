@@ -159,6 +159,34 @@ func TestValidate_MissingEmail(t *testing.T) {
 	require.True(t, errors.Is(err, auth.ErrMissingEmail))
 }
 
+func TestValidate_AllowsProviderAdapterToSupplyEmailAndChecksClientIDClaim(t *testing.T) {
+	ctx := context.Background()
+	fi := newFakeIdP(t)
+	v, err := oidc.New(oidc.Config{
+		ProviderName:      "workos",
+		Issuer:            fi.issuer,
+		JWKSURL:           fi.jwksURL(),
+		OrgClaim:          "org_id",
+		AllowMissingEmail: true,
+		ClientIDClaim:     "client_id",
+		ClientID:          "client_123",
+	})
+	require.NoError(t, err)
+
+	c := fi.validClaims()
+	delete(c, "email")
+	c["client_id"] = "client_123"
+	c["org_id"] = "org_123"
+	claims, err := v.Validate(ctx, fi.sign(t, c))
+	require.NoError(t, err)
+	require.Empty(t, claims.Email)
+	require.Equal(t, "org_123", claims.ProviderOrgID)
+
+	c["client_id"] = "different-client"
+	_, err = v.Validate(ctx, fi.sign(t, c))
+	require.ErrorIs(t, err, auth.ErrTokenWrongAudience)
+}
+
 func TestValidate_UnknownKid(t *testing.T) {
 	ctx := context.Background()
 	fi := newFakeIdP(t)
@@ -237,8 +265,12 @@ func TestValidate_JWKSCaching(t *testing.T) {
 func TestWorkOSConfig(t *testing.T) {
 	c := oidc.WorkOSConfig("client_01ABC")
 	require.Equal(t, "workos", c.ProviderName)
-	require.Contains(t, c.Issuer, "client_01ABC")
-	require.Contains(t, c.JWKSURL, "client_01ABC")
+	require.Equal(t, "https://api.workos.com", c.Issuer)
+	require.Equal(t, "https://api.workos.com/sso/jwks/client_01ABC", c.JWKSURL)
+	require.Equal(t, "client_id", c.ClientIDClaim)
+	require.Equal(t, "client_01ABC", c.ClientID)
+	require.Equal(t, "org_id", c.OrgClaim)
+	require.True(t, c.AllowMissingEmail)
 }
 
 func TestAuth0Config(t *testing.T) {
@@ -279,9 +311,13 @@ func TestWorkOSPresetWithFakeJWKS(t *testing.T) {
 	v, err := oidc.New(cfg)
 	require.NoError(t, err)
 
-	claims, err := v.Validate(ctx, fi.sign(t, fi.validClaims()))
+	workOSClaims := fi.validClaims()
+	delete(workOSClaims, "organization_id")
+	workOSClaims["org_id"] = "org_01DEFGHI"
+	workOSClaims["client_id"] = "client_01ABC"
+	claims, err := v.Validate(ctx, fi.sign(t, workOSClaims))
 	require.NoError(t, err)
 	require.Equal(t, "workos", claims.Provider)
 	require.Equal(t, "org_01DEFGHI", claims.ProviderOrgID,
-		"WorkOS preset must use the default 'organization_id' claim name")
+		"WorkOS preset must use the 'org_id' claim name")
 }

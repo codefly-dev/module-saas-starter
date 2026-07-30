@@ -33,14 +33,18 @@ const authClient = createClient(AuthService, apiTransport);
 // Browser REST is always same-origin. Next/gateway resolves the accounts
 // service server-side from Codefly bindings (CONV-004).
 
-// OAuth provider configuration — read from env at build time. Add new
-// providers here as presets; the sign-in button takes a provider id.
+// Identity-provider configuration is supplied by the Codefly `identity`
+// workspace configuration. The Next.js agent exposes only its non-secret
+// IDENTITY_* values to the browser as NEXT_PUBLIC_IDENTITY_*.
 //
-// Required env per provider:
-//   NEXT_PUBLIC_{PROVIDER}_AUTHORIZE_URL  — hosted authorize endpoint
-//   NEXT_PUBLIC_{PROVIDER}_CLIENT_ID      — OAuth client id
+// Required:
+//   NEXT_PUBLIC_IDENTITY_PROVIDER       — workos | auth0 | google
+//   NEXT_PUBLIC_IDENTITY_AUTHORIZE_URL  — hosted authorize endpoint
+//   NEXT_PUBLIC_IDENTITY_CLIENT_ID      — OAuth client id
 // Optional:
-//   NEXT_PUBLIC_{PROVIDER}_SCOPE          — space-separated scopes
+//   NEXT_PUBLIC_IDENTITY_DISPLAY_NAME
+//   NEXT_PUBLIC_IDENTITY_SCOPE
+//   NEXT_PUBLIC_IDENTITY_AUTHORIZE_SELECTOR — WorkOS AuthKit selector
 //
 // The client secret lives ONLY on the backend. Never put it in NEXT_PUBLIC_*.
 export interface ProviderPreset {
@@ -48,41 +52,36 @@ export interface ProviderPreset {
 	displayName: string;
 	authorizeURL: string;
 	clientID: string;
-	scope: string;
+	scope?: string;
+	authorizeParams?: Readonly<Record<string, string>>;
 }
 
-function readProviderPreset(
-	id: string,
-	displayName: string,
-): ProviderPreset | null {
-	const upper = id.toUpperCase();
-	const authorizeURL = process.env[`NEXT_PUBLIC_${upper}_AUTHORIZE_URL`] as
-		| string
-		| undefined;
-	const clientID = process.env[`NEXT_PUBLIC_${upper}_CLIENT_ID`] as
-		| string
-		| undefined;
+function readIdentityProvider(): ProviderPreset | null {
+	const id = process.env.NEXT_PUBLIC_IDENTITY_PROVIDER?.trim().toLowerCase();
+	if (!id || id === "fixture" || id === "dev") return null;
+	const authorizeURL = process.env.NEXT_PUBLIC_IDENTITY_AUTHORIZE_URL;
+	const clientID = process.env.NEXT_PUBLIC_IDENTITY_CLIENT_ID;
 	if (!authorizeURL || !clientID) return null;
+	const selector = process.env.NEXT_PUBLIC_IDENTITY_AUTHORIZE_SELECTOR?.trim();
+	const authorizeParams =
+		id === "workos"
+			? { provider: selector || "authkit" }
+			: undefined;
 	return {
 		id,
-		displayName,
+		displayName:
+			process.env.NEXT_PUBLIC_IDENTITY_DISPLAY_NAME?.trim() ||
+			id[0].toUpperCase() + id.slice(1),
 		authorizeURL,
 		clientID,
-		scope:
-			(process.env[`NEXT_PUBLIC_${upper}_SCOPE`] as string | undefined) ||
-			"openid email profile",
+		scope: process.env.NEXT_PUBLIC_IDENTITY_SCOPE?.trim() || undefined,
+		authorizeParams,
 	};
 }
 
 export function availableProviders(): ProviderPreset[] {
-	const presets: ProviderPreset[] = [];
-	const workos = readProviderPreset("workos", "WorkOS");
-	if (workos) presets.push(workos);
-	const google = readProviderPreset("google", "Google");
-	if (google) presets.push(google);
-	const auth0 = readProviderPreset("auth0", "Auth0");
-	if (auth0) presets.push(auth0);
-	return presets;
+	const provider = readIdentityProvider();
+	return provider ? [provider] : [];
 }
 
 // Build the provider's authorize URL for the authorization-code flow.
@@ -98,9 +97,12 @@ export function buildAuthorizeURL(
 		response_type: "code",
 		client_id: preset.clientID,
 		redirect_uri: redirectURI,
-		scope: preset.scope,
 		state,
 	});
+	if (preset.scope) params.set("scope", preset.scope);
+	for (const [key, value] of Object.entries(preset.authorizeParams ?? {})) {
+		params.set(key, value);
+	}
 	if (codeChallenge) {
 		params.set("code_challenge", codeChallenge);
 		params.set("code_challenge_method", "S256");

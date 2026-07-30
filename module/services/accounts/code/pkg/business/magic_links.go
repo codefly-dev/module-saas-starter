@@ -52,9 +52,9 @@ func (s *Service) SendMagicLink(ctx context.Context, emailAddr string) error {
 	}
 
 	// Build the link URL.
-	appBase := s.appBaseURL
+	appBase := s.publicBaseURL(ctx)
 	if appBase == "" {
-		appBase = "http://localhost:21931"
+		return w.NewError("public application origin is unavailable")
 	}
 	linkURL := fmt.Sprintf("%s/auth/magic-link?token=%s", appBase, plaintext)
 

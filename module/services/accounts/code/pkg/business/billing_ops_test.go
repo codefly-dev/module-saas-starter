@@ -7,6 +7,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 
+	"accounts/pkg/auth"
 	"accounts/pkg/billing"
 	"accounts/pkg/business"
 )
@@ -112,6 +113,30 @@ func TestStartCheckoutUsesOnlyServerCatalogPolicy(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, got.IdempotencyKey, client.checkoutCalls[1].IdempotencyKey,
 		"the same logical retry must reach Stripe with the same key")
+}
+
+func TestStartCheckoutUsesVerifiedCodeflyOrigin(t *testing.T) {
+	store := &billingStoreFake{
+		customerID: "cus_existing",
+		plan: &business.PlanFull{
+			Plan:            business.Plan{ID: "plan-id", Name: "pro", DisplayName: "Pro"},
+			StripePriceID:   "price_server_owned",
+			Currency:        "eur",
+			CheckoutEnabled: true,
+			TaxBehavior:     "automatic",
+		},
+	}
+	client := &billingClientFake{}
+	svc := newBillingService(t, store, client)
+	ctx, err := auth.WithVerifiedPublicOrigin(context.Background(), "http://localhost:54321")
+	require.NoError(t, err)
+
+	_, err = svc.StartCheckout(ctx, business.StartCheckoutInput{
+		UserID: "user-1", OrgID: "org-1", PlanName: "pro", IdempotencyKey: "codefly-origin",
+	})
+	require.NoError(t, err)
+	require.Equal(t, "http://localhost:54321/admin/billing/success?session_id={CHECKOUT_SESSION_ID}", client.checkoutCalls[0].SuccessURL)
+	require.Equal(t, "http://localhost:54321/admin/billing", client.checkoutCalls[0].CancelURL)
 }
 
 func TestStartCheckoutRejectsDisabledCatalogEntryBeforeStripe(t *testing.T) {

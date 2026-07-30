@@ -34,8 +34,6 @@ func TestOAuthRequestPolicyExactMatch(t *testing.T) {
 
 func TestOAuthRequestPolicyRejectsUnsafeConfiguration(t *testing.T) {
 	for _, redirect := range []string{
-		"",
-		"REPLACE_ME",
 		"/auth/callback",
 		"http://app.example.com/auth/callback",
 		"javascript:alert(1)",
@@ -47,10 +45,41 @@ func TestOAuthRequestPolicyRejectsUnsafeConfiguration(t *testing.T) {
 	}
 }
 
+func TestOAuthRequestPolicyEmptyFallbackFailsClosed(t *testing.T) {
+	for _, redirects := range [][]string{nil, {""}, {"REPLACE_ME"}} {
+		policy, err := auth.NewOAuthRequestPolicy("workos", redirects)
+		require.NoError(t, err)
+		require.ErrorIs(t, policy.Validate("workos", "https://app.example.com/auth/callback"), auth.ErrInvalidOAuthRequest)
+	}
+}
+
 func TestOAuthRequestPolicyUsesGenericRuntimeError(t *testing.T) {
 	policy, err := auth.NewOAuthRequestPolicy("workos", []string{"https://app.example.com/auth/callback"})
 	require.NoError(t, err)
 	err = policy.Validate("workos", "https://evil.example/auth/callback")
 	require.True(t, errors.Is(err, auth.ErrInvalidOAuthRequest))
 	require.Equal(t, auth.ErrInvalidOAuthRequest, err)
+}
+
+func TestOAuthRequestPolicyBindsCallbackToVerifiedCodeflyOrigin(t *testing.T) {
+	policy, err := auth.NewOAuthRequestPolicy("workos", nil)
+	require.NoError(t, err)
+	require.ErrorIs(t, policy.Validate("workos", "http://localhost:54321/auth/callback"), auth.ErrInvalidOAuthRequest)
+	require.NoError(t, policy.ValidateForPublicOrigin(
+		"workos",
+		"http://localhost:54321/auth/callback",
+		"http://localhost:54321",
+	))
+
+	for _, redirect := range []string{
+		"http://localhost:54322/auth/callback",
+		"http://localhost:54321/auth/callback/extra",
+		"https://evil.example/auth/callback",
+	} {
+		require.ErrorIs(t, policy.ValidateForPublicOrigin(
+			"workos",
+			redirect,
+			"http://localhost:54321",
+		), auth.ErrInvalidOAuthRequest)
+	}
 }

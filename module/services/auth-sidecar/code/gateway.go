@@ -36,21 +36,35 @@ type Gateway struct {
 	sidecar           *Sidecar
 	matcher           *RouteMatcher
 	upstreams         map[string]*url.URL // service name → upstream URL
-	selfHandler       http.Handler        // handler for "self" routes (health checks)
+	publicOrigin      string
+	selfHandler       http.Handler // handler for "self" routes (health checks)
 	rateLimiter       *RateLimiter
 	requiredUpstreams []string
+}
+
+type GatewayOption func(*Gateway)
+
+// WithPublicOrigin supplies the browser-facing origin resolved by the Codefly
+// SDK for this service's REST endpoint.
+func WithPublicOrigin(origin string) GatewayOption {
+	return func(g *Gateway) {
+		g.publicOrigin = origin
+	}
 }
 
 // NewGateway constructs a gateway with explicit route matching.
 // upstreams maps service names (from routes.codefly.yaml) to their URLs.
 // rateLimiter may be nil to disable rate limiting.
-func NewGateway(sidecar *Sidecar, matcher *RouteMatcher, upstreams map[string]*url.URL, rateLimiter *RateLimiter) *Gateway {
+func NewGateway(sidecar *Sidecar, matcher *RouteMatcher, upstreams map[string]*url.URL, rateLimiter *RateLimiter, options ...GatewayOption) *Gateway {
 	g := &Gateway{
 		sidecar:           sidecar,
 		matcher:           matcher,
 		upstreams:         upstreams,
 		rateLimiter:       rateLimiter,
 		requiredUpstreams: matcher.RequiredServices(),
+	}
+	for _, option := range options {
+		option(g)
 	}
 	if !containsString(g.requiredUpstreams, "frontend") {
 		g.requiredUpstreams = append(g.requiredUpstreams, "frontend")
@@ -285,6 +299,18 @@ func limiterFailureModeFor(entry *RouteEntry) limiterFailureMode {
 }
 
 func (g *Gateway) proxyTo(w http.ResponseWriter, r *http.Request, upstream *url.URL, entry *RouteEntry) {
+	// Public origin and gateway credentials are backend capabilities owned by
+	// this process. They are stamped after all caller-supplied trust headers
+	// have been removed, including for public Accounts routes without a bearer
+	// token. Never expose these capabilities to the frontend upstream.
+	r.Header.Del("X-Codefly-Gateway-Token")
+	r.Header.Del("X-Codefly-Public-Origin")
+	if isAccountsRoute(entry) && g.sidecar != nil && g.sidecar.gatewayToken != "" {
+		r.Header.Set("X-Codefly-Gateway-Token", g.sidecar.gatewayToken)
+		if g.publicOrigin != "" {
+			r.Header.Set("X-Codefly-Public-Origin", g.publicOrigin)
+		}
+	}
 	if entry != nil && entry.UpstreamPath != "" {
 		r.URL.Path = entry.UpstreamPath
 		r.URL.RawPath = ""
@@ -294,6 +320,13 @@ func (g *Gateway) proxyTo(w http.ResponseWriter, r *http.Request, upstream *url.
 		httpError(w, http.StatusBadGateway, "upstream error: "+err.Error())
 	}
 	proxy.ServeHTTP(w, r)
+}
+
+func isAccountsRoute(entry *RouteEntry) bool {
+	if entry == nil {
+		return false
+	}
+	return entry.Service == "accounts" || entry.Service == "accounts_connect"
 }
 
 // buildCheckRequest translates an incoming *http.Request into an Envoy
@@ -350,7 +383,7 @@ var untrustedAuthHeaders = []string{
 	"x-auth-id", "x-user-email", "x-user-name", "x-session-id",
 	"x-acting-as-user-id", "x-scopes", "x-mfa-satisfied",
 	"x-authentication-methods", "x-auth-time", "x-assurance-level", "x-mfa-verified-at",
-	"x-codefly-gateway-token", "x-codefly-internal-token",
+	"x-codefly-gateway-token", "x-codefly-internal-token", "x-codefly-public-origin",
 }
 
 // httpError writes a plain-text error response. Bodies are short,

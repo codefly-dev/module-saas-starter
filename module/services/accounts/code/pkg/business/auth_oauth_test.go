@@ -408,6 +408,28 @@ func TestBeginOAuth_RequiresPolicyAndSigner(t *testing.T) {
 	require.Error(t, err)
 }
 
+func TestBeginOAuth_UsesVerifiedCodeflyPublicOriginWithoutStaticPort(t *testing.T) {
+	policy, err := auth.NewOAuthRequestPolicy("workos", nil)
+	require.NoError(t, err)
+	signer := auth.NewOAuthStateSigner([]byte("test OAuth state signing seed with sufficient entropy"))
+	testService.SetOAuthRequestPolicy(policy)
+	testService.SetOAuthStateSigner(signer)
+	t.Cleanup(func() {
+		testService.SetOAuthRequestPolicy(nil)
+		testService.SetOAuthStateSigner(nil)
+	})
+
+	ctx, err := auth.WithVerifiedPublicOrigin(testCtx, "http://localhost:54321")
+	require.NoError(t, err)
+	redirectURI := "http://localhost:54321/auth/callback"
+	state, err := testService.BeginOAuth(ctx, "workos", redirectURI)
+	require.NoError(t, err)
+	require.NoError(t, signer.Verify(state, "workos", redirectURI))
+
+	_, err = testService.BeginOAuth(ctx, "workos", "http://localhost:54322/auth/callback")
+	require.ErrorIs(t, err, auth.ErrInvalidOAuthRequest)
+}
+
 // Sanity: prove errors.Is propagation still works across the path.
 func TestAuthenticate_OAuthCodeFlow_RealError(t *testing.T) {
 	clearData(t)

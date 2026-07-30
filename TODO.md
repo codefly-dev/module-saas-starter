@@ -692,7 +692,9 @@ Add completion records here in the form:
   artifacts with Buf/Codefly, and migrated frontend consumers.
 - 2026-07-12 `P0-AUTH-009`–`P0-AUTH-010` — OAuth initiation and exchange now
   fail closed without a server signer and exact provider/redirect policy;
-  startup requires `OAUTH_ALLOWED_REDIRECT_URIS`; backend state/policy tests,
+  the original static `IDENTITY_ALLOWED_REDIRECT_URIS` startup requirement was
+  superseded by the trusted Codefly public-origin capability (the static list
+  remains an optional direct-access fallback); backend state/policy tests,
   frontend typecheck, and the production build pass.
 - 2026-07-12 `P0-CI-005` — Playwright endpoint resolution and readiness now use
   the generated `accounts` service name; the real Codefly fixture login suite

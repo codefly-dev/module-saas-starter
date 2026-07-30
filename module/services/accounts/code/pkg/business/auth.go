@@ -206,9 +206,6 @@ func (s *Service) authenticateWithCode(ctx context.Context, provider, code, redi
 	if s.exchanger == nil {
 		return nil, errors.New("oauth code flow: exchanger not wired")
 	}
-	if s.validator == nil {
-		return nil, errors.New("oauth code flow: validator not wired")
-	}
 	if redirectURI == "" {
 		return nil, errors.New("oauth code flow: redirect_uri required")
 	}
@@ -218,14 +215,26 @@ func (s *Service) authenticateWithCode(ctx context.Context, provider, code, redi
 		return nil, err
 	}
 
-	// Prefer id_token when present (standard OIDC); fall back to access_token.
-	tokenToValidate := tokens.IDToken
-	if tokenToValidate == "" {
-		tokenToValidate = tokens.AccessToken
-	}
+	claims := tokens.Claims
+	if claims == nil {
+		if s.validator == nil {
+			return nil, errors.New("oauth code flow: validator not wired")
+		}
+		// Prefer id_token when present (standard OIDC); fall back to access_token.
+		tokenToValidate := tokens.IDToken
+		if tokenToValidate == "" {
+			tokenToValidate = tokens.AccessToken
+		}
 
-	claims, err := s.validator.Validate(ctx, tokenToValidate)
-	if err != nil {
+		claims, err = s.validator.Validate(ctx, tokenToValidate)
+		if err != nil {
+			return nil, err
+		}
+	}
+	if claims == nil {
+		return nil, auth.ErrMissingClaims
+	}
+	if err := claims.Valid(); err != nil {
 		return nil, err
 	}
 	// Make sure the claims provider matches what the request said — prevents
@@ -307,8 +316,15 @@ func (s *Service) SwitchOrganization(
 // and short-lived (10 min by default). On callback, Authenticate
 // verifies the same token before exchanging the code, blocking CSRF
 // attempts that would otherwise complete only on FE state checks.
-func (s *Service) BeginOAuth(_ context.Context, provider, redirectURI string) (string, error) {
-	if s.oauthPolicy == nil || s.oauthPolicy.Validate(provider, redirectURI) != nil {
+func (s *Service) BeginOAuth(ctx context.Context, provider, redirectURI string) (string, error) {
+	if s.oauthPolicy == nil {
+		return "", auth.ErrInvalidOAuthRequest
+	}
+	if publicOrigin, ok := auth.VerifiedPublicOrigin(ctx); ok {
+		if s.oauthPolicy.ValidateForPublicOrigin(provider, redirectURI, publicOrigin) != nil {
+			return "", auth.ErrInvalidOAuthRequest
+		}
+	} else if s.oauthPolicy.Validate(provider, redirectURI) != nil {
 		return "", auth.ErrInvalidOAuthRequest
 	}
 	if s.oauthState == nil {

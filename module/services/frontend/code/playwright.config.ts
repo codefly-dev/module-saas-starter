@@ -68,14 +68,10 @@ export default defineConfig({
 			// Rewrite destinations — the api's real, codefly-resolved ports.
 			API_REST_INTERNAL: apiRest,
 			API_CONNECT_INTERNAL: apiConnect,
-			// Force the fixture login flow even if the dev has NEXT_PUBLIC_WORKOS_*
-			// set in their shell.
-			NEXT_PUBLIC_WORKOS_AUTHORIZE_URL: "",
-			NEXT_PUBLIC_WORKOS_CLIENT_ID: "",
-			NEXT_PUBLIC_GOOGLE_AUTHORIZE_URL: "",
-			NEXT_PUBLIC_GOOGLE_CLIENT_ID: "",
-			NEXT_PUBLIC_AUTH0_AUTHORIZE_URL: "",
-			NEXT_PUBLIC_AUTH0_CLIENT_ID: "",
+			// Force the Codefly fixture identity adapter for this browser suite.
+			NEXT_PUBLIC_IDENTITY_PROVIDER: "fixture",
+			NEXT_PUBLIC_IDENTITY_AUTHORIZE_URL: "",
+			NEXT_PUBLIC_IDENTITY_CLIENT_ID: "",
 			NEXT_PUBLIC_LEGAL_ENTITY_NAME: "Codefly E2E",
 			NEXT_PUBLIC_LEGAL_CONTACT_EMAIL: "legal@example.test",
 			NEXT_PUBLIC_LEGAL_TERMS_CONTENT:

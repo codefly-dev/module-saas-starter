@@ -163,9 +163,13 @@ func (s *Service) JoinWaitlist(
 		}
 		entry = result.Entry
 		if result.ShouldSendVerification && s.emailOutbox != nil {
+			appBase := s.publicBaseURL(ctx)
+			if appBase == "" {
+				return wool.Get(ctx).NewError("public application origin is unavailable")
+			}
 			verifyURL := fmt.Sprintf(
 				"%s/waitlist/verify?token=%s",
-				nonEmpty(s.appBaseURL, "http://localhost:21931"),
+				appBase,
 				plaintext,
 			)
 			return s.emailOutbox.EnqueueTemplate(ctx, email.TemplateRequest{
@@ -303,7 +307,11 @@ func (s *Service) InviteWaitlist(
 		if updateErr != nil || entry == nil {
 			return updateErr
 		}
-		signupURL := nonEmpty(s.appBaseURL, "http://localhost:21931") + "/auth/login?next=/onboarding"
+		appBase := s.publicBaseURL(ctx)
+		if appBase == "" {
+			return wool.Get(ctx).NewError("public application origin is unavailable")
+		}
+		signupURL := appBase + "/auth/login?next=/onboarding"
 		return s.emailOutbox.EnqueueTemplate(ctx, email.TemplateRequest{
 			DeliveryKey: entry.ID + ":approved",
 			Scope:       email.GlobalScope(),
