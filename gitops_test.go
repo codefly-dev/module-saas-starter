@@ -809,6 +809,16 @@ services:
 	if err := os.MkdirAll(filepath.Join(source, "services", "auth-sidecar"), 0o755); err != nil {
 		t.Fatal(err)
 	}
+	writeTestFile(t, filepath.Join(source, "services", "accounts", "service.codefly.yaml"), `name: accounts
+version: 0.0.0
+agent:
+  kind: codefly:service
+  name: go-grpc
+  publisher: codefly.dev
+  version: 0.1.0
+endpoints:
+  - name: http
+`)
 	writeTestFile(t, filepath.Join(source, "services", "README.md"), "canonical service documentation\n")
 	writeTestFile(t, filepath.Join(target, "services", "README.md"), "stale consumer copy\n")
 	topology := filepath.Join(target, "deployment", "topology.bindings.codefly.yaml")
@@ -824,6 +834,12 @@ interface:
     visibility: public
 services:
   - name: accounts
+    version: 0.0.0
+    agent:
+      kind: codefly:service
+      name: go-grpc
+      publisher: codefly.dev
+      version: 0.2.0
     endpoints:
       - name: http
         api: http
@@ -865,6 +881,11 @@ targetRevision: main
 	if data, err := os.ReadFile(filepath.Join(target, "services", "README.md")); err != nil ||
 		string(data) != "canonical service documentation\n" {
 		t.Fatalf("canonical service documentation was not refreshed: data=%q error=%v", data, err)
+	}
+	if data, err := os.ReadFile(filepath.Join(target, "services", "accounts", "service.codefly.yaml")); err != nil ||
+		!strings.Contains(string(data), "version: 0.2.0") ||
+		strings.Contains(string(data), "version: 0.1.0") {
+		t.Fatalf("service manifest was not regenerated from consumer topology: data=%q error=%v", data, err)
 	}
 	if topologyData, err := os.ReadFile(topology); err != nil ||
 		strings.Contains(string(topologyData), "saas-starter") {

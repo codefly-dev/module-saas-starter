@@ -239,12 +239,95 @@ func normalizeDeploymentMetadata(moduleDir string) error {
 	if err := os.WriteFile(topologyPath, encoded, 0o644); err != nil {
 		return err
 	}
+	if err := regenerateServiceManifests(moduleDir, manifest, topology); err != nil {
+		return err
+	}
 	return normalizeGeneratedDeploymentMetadata(moduleDir, topology)
 }
 
 func containsService(services map[string]struct{}, name string) bool {
 	_, exists := services[name]
 	return exists
+}
+
+type generatedServiceManifest struct {
+	Name                               string                               `yaml:"name"`
+	Version                            string                               `yaml:"version"`
+	Description                        string                               `yaml:"description,omitempty"`
+	Agent                              map[string]any                       `yaml:"agent"`
+	ServiceDependencies                []generatedServiceDependency         `yaml:"service-dependencies,omitempty"`
+	WorkspaceConfigurationDependencies []string                             `yaml:"workspace-configuration-dependencies,omitempty"`
+	SecretServiceConfigurations        []topologySecretServiceConfiguration `yaml:"secret-service-configurations,omitempty"`
+	Endpoints                          []generatedServiceEndpoint           `yaml:"endpoints"`
+	Spec                               map[string]any                       `yaml:"spec,omitempty"`
+}
+
+type generatedServiceDependency struct {
+	Name      string                              `yaml:"name"`
+	Endpoints []generatedServiceEndpointReference `yaml:"endpoints"`
+}
+
+type generatedServiceEndpointReference struct {
+	Name string `yaml:"name"`
+}
+
+type generatedServiceEndpoint struct {
+	Name       string `yaml:"name"`
+	Visibility string `yaml:"visibility,omitempty"`
+	API        string `yaml:"api,omitempty"`
+}
+
+func regenerateServiceManifests(moduleDir string, manifest moduleManifest, topology deploymentTopology) error {
+	references := make(map[string]serviceReference, len(manifest.Services))
+	for _, reference := range manifest.Services {
+		references[reference.Name] = reference
+	}
+	for _, service := range topology.Services {
+		reference := references[service.Name]
+		if reference.Path != nil && filepath.IsAbs(*reference.Path) {
+			continue
+		}
+		serviceDir := service.Name
+		if reference.Path != nil {
+			serviceDir = *reference.Path
+		}
+		generated := generatedServiceManifest{
+			Name:                               service.Name,
+			Version:                            service.Version,
+			Description:                        service.Description,
+			Agent:                              service.Agent,
+			WorkspaceConfigurationDependencies: service.WorkspaceConfigurationDependencies,
+			SecretServiceConfigurations:        service.SecretServiceConfigurations,
+			Spec:                               service.Spec,
+		}
+		for _, dependency := range service.Dependencies {
+			entry := generatedServiceDependency{Name: dependency.Service}
+			for _, endpoint := range dependency.Endpoints {
+				entry.Endpoints = append(entry.Endpoints, generatedServiceEndpointReference{Name: endpoint})
+			}
+			generated.ServiceDependencies = append(generated.ServiceDependencies, entry)
+		}
+		for _, endpoint := range service.Endpoints {
+			entry := generatedServiceEndpoint{Name: endpoint.Name}
+			if endpoint.Visibility != "private" {
+				entry.Visibility = endpoint.Visibility
+			}
+			if endpoint.API != endpoint.Name {
+				entry.API = endpoint.API
+			}
+			generated.Endpoints = append(generated.Endpoints, entry)
+		}
+		data, err := yaml.Marshal(generated)
+		if err != nil {
+			return fmt.Errorf("render service manifest %q: %w", service.Name, err)
+		}
+		header := []byte("# Code generated from deployment/topology.bindings.codefly.yaml. DO NOT EDIT.\n")
+		path := filepath.Join(moduleDir, "services", serviceDir, "service.codefly.yaml")
+		if err := os.WriteFile(path, append(header, data...), 0o644); err != nil {
+			return fmt.Errorf("write service manifest %q: %w", service.Name, err)
+		}
+	}
+	return nil
 }
 
 func normalizeGeneratedDeploymentMetadata(
