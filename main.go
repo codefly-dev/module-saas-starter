@@ -145,6 +145,15 @@ func removePreviouslyOwnedBaseFiles(moduleDir string) error {
 		return fmt.Errorf("parse base manifest: %w", err)
 	}
 	for relative := range manifest.Files {
+		slashRelative := filepath.ToSlash(relative)
+		if slashRelative == moduleYamlPath ||
+			slashRelative == "deployment/topology.bindings.codefly.yaml" ||
+			slashRelative == "deployment/generated" ||
+			strings.HasPrefix(slashRelative, "deployment/generated/") ||
+			slashRelative == bundleRelativeDir ||
+			strings.HasPrefix(slashRelative, bundleRelativeDir+"/") {
+			continue
+		}
 		clean := filepath.Clean(filepath.FromSlash(relative))
 		if clean == "." || filepath.IsAbs(clean) ||
 			clean == ".." || strings.HasPrefix(clean, ".."+string(filepath.Separator)) {

@@ -826,7 +826,10 @@ endpoints:
 	writeTestFile(
 		t,
 		filepath.Join(target, "tools", "base-manifest.json"),
-		`{"files":{"services/accounts/removed.go":"previous-base-hash"}}`,
+		`{"files":{
+  "deployment/topology.bindings.codefly.yaml":"previous-base-hash",
+  "services/accounts/removed.go":"previous-base-hash"
+}}`,
 	)
 	writeTestFile(t, filepath.Join(source, "tools", "base-manifest.json"), `{"files":{}}`)
 	topology := filepath.Join(target, "deployment", "topology.bindings.codefly.yaml")
