@@ -836,6 +836,7 @@ services:
 `)
 	writeTestFile(t, filepath.Join(target, "deployment", "generated", "service-topology.json"), `{"module":"saas-starter"}`)
 	writeTestFile(t, filepath.Join(target, "deployment", "generated", "consumer-artifact.json"), `{"owner":"consumer"}`)
+	writeTestFile(t, filepath.Join(target, "deployment", "generated", "accounts-routes.virtualservice.yaml"), `stale`)
 	// A stale plugin-owned tree from the previous release must be regenerated,
 	// never carried forward.
 	writeTestFile(t, filepath.Join(source, filepath.FromSlash(bundleRelativeDir), "overlays", "local", "application.yaml"), `repoURL: REPLACE_ME
