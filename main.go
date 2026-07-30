@@ -2,6 +2,9 @@ package main
 
 import (
 	"context"
+	"crypto/sha256"
+	"embed"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -10,12 +13,16 @@ import (
 	"os"
 	"path/filepath"
 	"slices"
+	"sort"
 	"strings"
 
 	"github.com/codefly-dev/core/shared"
 	"github.com/codefly-dev/core/wool"
 	"gopkg.in/yaml.v3"
 )
+
+//go:embed all:module
+var embeddedModule embed.FS
 
 const (
 	moduleYamlPath    = "module.codefly.yaml"
@@ -26,29 +33,62 @@ const (
 )
 
 // resolveSource finds the module/ directory to copy from.
-// Priority: SAAS_STARTER_MODULE_SRC env var → <executable-dir>/module.
-func resolveSource() (string, error) {
+// Priority: SAAS_STARTER_MODULE_SRC env var → <executable-dir>/module → embedded package.
+func resolveSource() (string, func(), error) {
 	if src := os.Getenv(sourceEnvVar); src != "" {
-		return src, nil
+		return src, func() {}, nil
 	}
 	exe, err := os.Executable()
 	if err != nil {
-		return "", fmt.Errorf("cannot resolve executable path: %w", err)
+		return "", nil, fmt.Errorf("cannot resolve executable path: %w", err)
 	}
 	exe, err = filepath.EvalSymlinks(exe)
 	if err != nil {
-		return "", fmt.Errorf("cannot eval executable symlinks: %w", err)
+		return "", nil, fmt.Errorf("cannot eval executable symlinks: %w", err)
 	}
-	return filepath.Join(filepath.Dir(exe), moduleDirName), nil
+	sibling := filepath.Join(filepath.Dir(exe), moduleDirName)
+	if _, err := os.Stat(filepath.Join(sibling, moduleYamlPath)); err == nil {
+		return sibling, func() {}, nil
+	} else if !errors.Is(err, os.ErrNotExist) {
+		return "", nil, fmt.Errorf("inspect packaged module source: %w", err)
+	}
+	root, err := os.MkdirTemp("", "saas-starter-module-")
+	if err != nil {
+		return "", nil, fmt.Errorf("create embedded module source: %w", err)
+	}
+	cleanup := func() { _ = os.RemoveAll(root) }
+	if err := fs.WalkDir(embeddedModule, moduleDirName, func(path string, entry fs.DirEntry, walkErr error) error {
+		if walkErr != nil {
+			return walkErr
+		}
+		relative, err := filepath.Rel(moduleDirName, path)
+		if err != nil {
+			return err
+		}
+		target := filepath.Join(root, moduleDirName, relative)
+		if entry.IsDir() {
+			return os.MkdirAll(target, 0o755)
+		}
+		data, err := fs.ReadFile(embeddedModule, path)
+		if err != nil {
+			return err
+		}
+		return os.WriteFile(target, data, 0o644)
+	}); err != nil {
+		cleanup()
+		return "", nil, fmt.Errorf("materialize embedded module source: %w", err)
+	}
+	return filepath.Join(root, moduleDirName), cleanup, nil
 }
 
 func Create(ctx context.Context, dir, name string) error {
 	w := wool.Get(ctx).In("saas-starter::Create")
 
-	src, err := resolveSource()
+	src, cleanupSource, err := resolveSource()
 	if err != nil {
 		return w.Wrapf(err, "cannot resolve source")
 	}
+	defer cleanupSource()
 	if _, err := os.Stat(filepath.Join(src, moduleYamlPath)); err != nil {
 		return w.Wrapf(err, "source %q is not a module directory (missing %s)", src, moduleYamlPath)
 	}
@@ -83,7 +123,11 @@ func Create(ctx context.Context, dir, name string) error {
 	if hasConsumerInventory && existing.Name != name {
 		return fmt.Errorf("existing module name %q does not match requested name %q", existing.Name, name)
 	}
-	if err := copyModuleSource(src, stage, name, existing, hasConsumerInventory); err != nil {
+	preservedBaseFiles, err := reconcilePreviouslyOwnedBaseFiles(stage, existing)
+	if err != nil {
+		return w.Wrapf(err, "cannot reconcile previous module base")
+	}
+	if err := copyModuleSource(src, stage, name, existing, hasConsumerInventory, preservedBaseFiles); err != nil {
 		return w.Wrapf(err, "cannot stage module source")
 	}
 	if err := normalizeDeploymentMetadata(stage); err != nil {
@@ -126,17 +170,125 @@ func existingModuleInventory(dir string) (moduleManifest, bool, error) {
 	return manifest, len(manifest.Services) > 0, nil
 }
 
+func servicePathOverrides(manifest moduleManifest) map[string]*string {
+	overrides := make(map[string]*string, len(manifest.Services))
+	for _, service := range manifest.Services {
+		overrides[service.Name] = service.Path
+	}
+	return overrides
+}
+
+func remapServicePath(relative string, override *string) (string, bool, error) {
+	if override == nil {
+		return relative, true, nil
+	}
+	if filepath.IsAbs(*override) {
+		return "", false, nil
+	}
+	serviceDir, err := cleanRelativeFilesystemPath(*override)
+	if err != nil {
+		return "", false, err
+	}
+	parts := strings.Split(filepath.ToSlash(relative), "/")
+	target := filepath.Join("services", serviceDir)
+	if len(parts) > 2 {
+		target = filepath.Join(target, filepath.FromSlash(strings.Join(parts[2:], "/")))
+	}
+	return target, true, nil
+}
+
+func fileSHA256Status(path, expected string) (bool, bool, error) {
+	info, err := os.Lstat(path)
+	if errors.Is(err, os.ErrNotExist) {
+		return false, false, nil
+	}
+	if err != nil {
+		return false, false, err
+	}
+	if !info.Mode().IsRegular() {
+		return true, false, nil
+	}
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return true, false, err
+	}
+	digest := sha256.Sum256(data)
+	return true, hex.EncodeToString(digest[:]) == expected, nil
+}
+
+func reconcilePreviouslyOwnedBaseFiles(moduleDir string, consumer moduleManifest) (map[string]struct{}, error) {
+	preserved := make(map[string]struct{})
+	data, err := os.ReadFile(filepath.Join(moduleDir, "tools", "base-manifest.json"))
+	if errors.Is(err, os.ErrNotExist) {
+		return preserved, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	var manifest struct {
+		Files map[string]string `json:"files"`
+	}
+	if err := json.Unmarshal(data, &manifest); err != nil {
+		return nil, fmt.Errorf("parse base manifest: %w", err)
+	}
+	overrides := servicePathOverrides(consumer)
+	for relative, expectedHash := range manifest.Files {
+		slashRelative := filepath.ToSlash(relative)
+		if slashRelative == moduleYamlPath ||
+			slashRelative == "deployment/topology.bindings.codefly.yaml" ||
+			slashRelative == "deployment/generated" ||
+			strings.HasPrefix(slashRelative, "deployment/generated/") ||
+			slashRelative == bundleRelativeDir ||
+			strings.HasPrefix(slashRelative, bundleRelativeDir+"/") {
+			continue
+		}
+		clean := filepath.Clean(filepath.FromSlash(relative))
+		if clean == "." || filepath.IsAbs(clean) ||
+			clean == ".." || strings.HasPrefix(clean, ".."+string(filepath.Separator)) {
+			return nil, fmt.Errorf("base manifest path %q escapes the module", relative)
+		}
+		targetRelative := clean
+		parts := strings.Split(filepath.ToSlash(clean), "/")
+		if len(parts) >= 3 && parts[0] == "services" {
+			if override, declared := overrides[parts[1]]; declared {
+				mapped, local, mapErr := remapServicePath(clean, override)
+				if mapErr != nil {
+					return nil, fmt.Errorf("service %q path: %w", parts[1], mapErr)
+				}
+				if !local {
+					continue
+				}
+				targetRelative = mapped
+			}
+		}
+		target := filepath.Join(moduleDir, targetRelative)
+		exists, matches, err := fileSHA256Status(target, expectedHash)
+		if err != nil {
+			return nil, fmt.Errorf("inspect previous base file %q: %w", relative, err)
+		}
+		if !exists {
+			continue
+		}
+		if !matches {
+			preserved[filepath.Clean(targetRelative)] = struct{}{}
+			continue
+		}
+		if err := os.Remove(target); err != nil && !errors.Is(err, os.ErrNotExist) {
+			return nil, fmt.Errorf("remove previous base file %q: %w", relative, err)
+		}
+	}
+	return preserved, nil
+}
+
 func copyModuleSource(
 	src,
 	dst,
 	name string,
 	consumer moduleManifest,
 	preserveInventory bool,
+	preservedBaseFiles map[string]struct{},
 ) error {
-	declared := make(map[string]*string, len(consumer.Services))
-	for _, service := range consumer.Services {
-		declared[service.Name] = service.Path
-	}
+	declared := servicePathOverrides(consumer)
 	return filepath.WalkDir(src, func(file string, entry fs.DirEntry, err error) error {
 		if err != nil {
 			return err
@@ -159,20 +311,26 @@ func copyModuleSource(
 				slashRelative == "deployment/generated" ||
 				strings.HasPrefix(slashRelative, "deployment/generated/")
 			parts := strings.Split(slashRelative, "/")
-			if len(parts) >= 2 && parts[0] == "services" {
+			if len(parts) >= 2 && parts[0] == "services" && (len(parts) >= 3 || entry.IsDir()) {
 				override, exists := declared[parts[1]]
 				if !exists {
 					skip = true
-				} else if override != nil && filepath.IsAbs(*override) {
-					skip = true
-				} else if override != nil {
-					targetRelative = filepath.Join(
-						"services",
-						filepath.FromSlash(*override),
-						filepath.Join(parts[2:]...),
-					)
+				} else {
+					mapped, local, mapErr := remapServicePath(relative, override)
+					if mapErr != nil {
+						return fmt.Errorf("service %q path: %w", parts[1], mapErr)
+					}
+					if !local {
+						skip = true
+					} else {
+						targetRelative = mapped
+					}
 				}
 			}
+		}
+		if !entry.IsDir() {
+			_, preserve := preservedBaseFiles[filepath.Clean(targetRelative)]
+			skip = skip || preserve
 		}
 		if skip {
 			if entry.IsDir() {
@@ -210,8 +368,6 @@ func normalizeDeploymentMetadata(moduleDir string) error {
 	for _, service := range manifest.Services {
 		declared[service.Name] = struct{}{}
 	}
-	previousName := topology.Module.Name
-	previousNamespace := topology.Module.Namespace
 	topology.Module.Name = manifest.Name
 	topology.Module.Namespace = manifest.Name
 	if manifest.ServiceEntry != "" {
@@ -241,7 +397,10 @@ func normalizeDeploymentMetadata(moduleDir string) error {
 	if err := os.WriteFile(topologyPath, encoded, 0o644); err != nil {
 		return err
 	}
-	return normalizeGeneratedDeploymentMetadata(moduleDir, topology, previousName, previousNamespace)
+	if err := regenerateServiceManifests(moduleDir, manifest, topology); err != nil {
+		return err
+	}
+	return normalizeGeneratedDeploymentMetadata(moduleDir, topology)
 }
 
 func containsService(services map[string]struct{}, name string) bool {
@@ -249,11 +408,180 @@ func containsService(services map[string]struct{}, name string) bool {
 	return exists
 }
 
+type generatedServiceManifest struct {
+	Name                               string                               `yaml:"name"`
+	Version                            string                               `yaml:"version"`
+	Description                        string                               `yaml:"description,omitempty"`
+	Agent                              map[string]any                       `yaml:"agent"`
+	ServiceDependencies                []generatedServiceDependency         `yaml:"service-dependencies,omitempty"`
+	WorkspaceConfigurationDependencies []string                             `yaml:"workspace-configuration-dependencies,omitempty"`
+	SecretServiceConfigurations        []topologySecretServiceConfiguration `yaml:"secret-service-configurations,omitempty"`
+	Endpoints                          []generatedServiceEndpoint           `yaml:"endpoints"`
+	Spec                               map[string]any                       `yaml:"spec,omitempty"`
+}
+
+type generatedServiceDependency struct {
+	Name      string                              `yaml:"name"`
+	Module    string                              `yaml:"module,omitempty"`
+	Endpoints []generatedServiceEndpointReference `yaml:"endpoints"`
+}
+
+type generatedServiceEndpointReference struct {
+	Name string `yaml:"name"`
+}
+
+type generatedServiceEndpoint struct {
+	Name       string `yaml:"name"`
+	Visibility string `yaml:"visibility,omitempty"`
+	API        string `yaml:"api,omitempty"`
+}
+
+func regenerateServiceManifests(moduleDir string, manifest moduleManifest, topology deploymentTopology) error {
+	references := make(map[string]serviceReference, len(manifest.Services))
+	for _, reference := range manifest.Services {
+		references[reference.Name] = reference
+	}
+	for _, service := range topology.Services {
+		reference := references[service.Name]
+		if reference.Path != nil && filepath.IsAbs(*reference.Path) {
+			continue
+		}
+		serviceDir := service.Name
+		if reference.Path != nil {
+			serviceDir = *reference.Path
+		}
+		generated := generatedServiceManifest{
+			Name:                               service.Name,
+			Version:                            service.Version,
+			Description:                        service.Description,
+			Agent:                              service.Agent,
+			WorkspaceConfigurationDependencies: service.WorkspaceConfigurationDependencies,
+			SecretServiceConfigurations:        service.SecretServiceConfigurations,
+			Spec:                               service.Spec,
+		}
+		for _, dependency := range service.Dependencies {
+			entry := generatedServiceDependency{Name: dependency.Service}
+			for _, endpoint := range dependency.Endpoints {
+				entry.Endpoints = append(entry.Endpoints, generatedServiceEndpointReference{Name: endpoint})
+			}
+			generated.ServiceDependencies = append(generated.ServiceDependencies, entry)
+		}
+		source := "deployment/topology.bindings.codefly.yaml"
+		if service.Name == "frontend" {
+			external, err := frontendPluginServiceDependencies(moduleDir, serviceDir, topology.Module.Name)
+			if err != nil {
+				return err
+			}
+			generated.ServiceDependencies = append(generated.ServiceDependencies, external...)
+			source += " and services/frontend/code/server/plugin-service-allowlist.generated.json"
+		}
+		for _, endpoint := range service.Endpoints {
+			entry := generatedServiceEndpoint{Name: endpoint.Name}
+			if endpoint.Visibility != "private" {
+				entry.Visibility = endpoint.Visibility
+			}
+			if endpoint.API != endpoint.Name {
+				entry.API = endpoint.API
+			}
+			generated.Endpoints = append(generated.Endpoints, entry)
+		}
+		data, err := yaml.Marshal(generated)
+		if err != nil {
+			return fmt.Errorf("render service manifest %q: %w", service.Name, err)
+		}
+		header := []byte("# Code generated from " + source + ". DO NOT EDIT.\n")
+		path := filepath.Join(moduleDir, "services", serviceDir, "service.codefly.yaml")
+		if err := os.WriteFile(path, append(header, data...), 0o644); err != nil {
+			return fmt.Errorf("write service manifest %q: %w", service.Name, err)
+		}
+	}
+	return nil
+}
+
+type frontendPluginAllowlist struct {
+	SchemaVersion   int `json:"schemaVersion"`
+	ContractVersion int `json:"contractVersion"`
+	Entries         []struct {
+		Target struct {
+			Module   string `json:"module"`
+			Service  string `json:"service"`
+			Endpoint string `json:"endpoint"`
+		} `json:"target"`
+	} `json:"entries"`
+}
+
+func frontendPluginServiceDependencies(moduleDir, serviceDir, moduleName string) ([]generatedServiceDependency, error) {
+	path := filepath.Join(
+		moduleDir,
+		"services",
+		serviceDir,
+		"code",
+		"server",
+		"plugin-service-allowlist.generated.json",
+	)
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return nil, fmt.Errorf("read frontend plugin service allowlist: %w", err)
+	}
+	var allowlist frontendPluginAllowlist
+	if err := json.Unmarshal(data, &allowlist); err != nil {
+		return nil, fmt.Errorf("parse frontend plugin service allowlist: %w", err)
+	}
+	if allowlist.SchemaVersion != 1 || allowlist.ContractVersion != 2 {
+		return nil, fmt.Errorf(
+			"unsupported frontend plugin service allowlist schema=%d contract=%d",
+			allowlist.SchemaVersion,
+			allowlist.ContractVersion,
+		)
+	}
+	targets := make(map[string]map[string]struct{})
+	for _, entry := range allowlist.Entries {
+		target := entry.Target
+		if !dnsLabelPattern.MatchString(target.Module) || !dnsLabelPattern.MatchString(target.Service) {
+			return nil, fmt.Errorf("frontend plugin service allowlist contains invalid target %q/%q", target.Module, target.Service)
+		}
+		if target.Module == moduleName {
+			return nil, fmt.Errorf("frontend plugin service target %q/%q is not external", target.Module, target.Service)
+		}
+		if target.Endpoint != "connect" && target.Endpoint != "rest" {
+			return nil, fmt.Errorf(
+				"frontend plugin service target %q/%q has unsupported endpoint %q",
+				target.Module,
+				target.Service,
+				target.Endpoint,
+			)
+		}
+		key := target.Module + "/" + target.Service
+		if targets[key] == nil {
+			targets[key] = make(map[string]struct{})
+		}
+		targets[key][target.Endpoint] = struct{}{}
+	}
+	keys := make([]string, 0, len(targets))
+	for key := range targets {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+	dependencies := make([]generatedServiceDependency, 0, len(keys))
+	for _, key := range keys {
+		module, service, _ := strings.Cut(key, "/")
+		dependency := generatedServiceDependency{Name: service, Module: module}
+		endpoints := make([]string, 0, len(targets[key]))
+		for endpoint := range targets[key] {
+			endpoints = append(endpoints, endpoint)
+		}
+		sort.Strings(endpoints)
+		for _, endpoint := range endpoints {
+			dependency.Endpoints = append(dependency.Endpoints, generatedServiceEndpointReference{Name: endpoint})
+		}
+		dependencies = append(dependencies, dependency)
+	}
+	return dependencies, nil
+}
+
 func normalizeGeneratedDeploymentMetadata(
 	moduleDir string,
 	topology deploymentTopology,
-	previousName,
-	previousNamespace string,
 ) error {
 	generatedRoot := filepath.Join(moduleDir, "deployment", "generated")
 	if err := os.MkdirAll(generatedRoot, 0o755); err != nil {
@@ -314,89 +642,11 @@ func normalizeGeneratedDeploymentMetadata(
 	if err := os.WriteFile(filepath.Join(generatedRoot, "service-topology.json"), data, 0o644); err != nil {
 		return err
 	}
-	return normalizeGeneratedGatewayRoute(generatedRoot, topology, previousName, previousNamespace)
-}
-
-func normalizeGeneratedGatewayRoute(
-	generatedRoot string,
-	topology deploymentTopology,
-	previousName,
-	previousNamespace string,
-) error {
-	routePath := filepath.Join(generatedRoot, "accounts-routes.virtualservice.yaml")
-	if _, exists := topologyServiceByName(topology, "accounts"); !exists {
-		if err := os.Remove(routePath); err != nil && !errors.Is(err, os.ErrNotExist) {
-			return err
-		}
-		return nil
-	}
-	data, err := os.ReadFile(routePath)
-	if errors.Is(err, os.ErrNotExist) {
-		return nil
-	}
-	if err != nil {
+	if err := os.Remove(filepath.Join(generatedRoot, "accounts-routes.virtualservice.yaml")); err != nil &&
+		!errors.Is(err, os.ErrNotExist) {
 		return err
 	}
-	var route map[string]any
-	if err := yaml.Unmarshal(data, &route); err != nil {
-		return fmt.Errorf("parse generated gateway route: %w", err)
-	}
-	metadata, ok := route["metadata"].(map[string]any)
-	if !ok {
-		return errors.New("generated gateway route metadata must be an object")
-	}
-	metadata["name"] = topology.Module.Name + "-accounts-catalog"
-	metadata["namespace"] = topology.Module.Namespace
-	spec, ok := route["spec"].(map[string]any)
-	if !ok {
-		return errors.New("generated gateway route spec must be an object")
-	}
-	spec["gateways"] = []any{topology.Module.Name}
-	rewriteGeneratedRouteStrings(
-		spec["http"],
-		previousName,
-		previousNamespace,
-		topology.Module.Name,
-		topology.Module.Namespace,
-		topology.Module.ServiceEntry,
-	)
-	encoded, err := yaml.Marshal(route)
-	if err != nil {
-		return err
-	}
-	return os.WriteFile(routePath, encoded, 0o644)
-}
-
-func rewriteGeneratedRouteStrings(
-	value any,
-	previousName,
-	previousNamespace,
-	moduleName,
-	namespace,
-	serviceEntry string,
-) {
-	switch typed := value.(type) {
-	case []any:
-		for _, item := range typed {
-			rewriteGeneratedRouteStrings(item, previousName, previousNamespace, moduleName, namespace, serviceEntry)
-		}
-	case map[string]any:
-		for key, item := range typed {
-			text, ok := item.(string)
-			if !ok {
-				rewriteGeneratedRouteStrings(item, previousName, previousNamespace, moduleName, namespace, serviceEntry)
-				continue
-			}
-			if text == previousName {
-				typed[key] = moduleName
-				continue
-			}
-			suffix := "." + previousNamespace + ".svc.cluster.local"
-			if strings.HasSuffix(text, suffix) {
-				typed[key] = serviceEntry + "." + namespace + ".svc.cluster.local"
-			}
-		}
-	}
+	return nil
 }
 
 func findWorkspaceRoot(start string) (string, error) {

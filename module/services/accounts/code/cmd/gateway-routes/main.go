@@ -15,10 +15,9 @@ func main() {
 	topologyPath := flag.String("topology", "", "path to deployment topology bindings YAML")
 	routeOutput := flag.String("route-output", "", "path for normalized gateway route JSON")
 	goOutput := flag.String("go-output", "", "path for auth-sidecar generated Go routes")
-	istioOutput := flag.String("istio-output", "", "path for generated Istio VirtualService")
 	flag.Parse()
 
-	if *catalogPath == "" || *configPath == "" || *topologyPath == "" || *routeOutput == "" || *goOutput == "" || *istioOutput == "" {
+	if *catalogPath == "" || *configPath == "" || *topologyPath == "" || *routeOutput == "" || *goOutput == "" {
 		_, _ = fmt.Fprintln(os.Stderr, "compile gateway routes: all input and output flags are required")
 		os.Exit(2)
 	}
@@ -37,13 +36,8 @@ func main() {
 	if err != nil {
 		fatal("render auth-sidecar routes", err)
 	}
-	istioDocument, err := cataloggen.RenderIstioVirtualService(routes, bindingDocument)
-	if err != nil {
-		fatal("render Istio routes", err)
-	}
 	mustWrite(*routeOutput, routeDocument)
 	mustWrite(*goOutput, goDocument)
-	mustWrite(*istioOutput, istioDocument)
 }
 
 func mustRead(path, name string) []byte {

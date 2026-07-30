@@ -4,8 +4,3 @@ compatibility_aliases:
     from_package: saas.accounts.v1
     to_package: customers
     remove_after: "2026-10-11"
-istio:
-  namespace: saas-starter
-  gateway: saas-starter
-  destination_host: auth-sidecar.saas-starter.svc.cluster.local
-  destination_port: 8080

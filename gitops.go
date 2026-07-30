@@ -764,7 +764,7 @@ func renderEnvironment(
 		Metadata: objectMeta{
 			Name: plan.environment.Namespace,
 			Labels: mergeLabels(identityLabels, map[string]string{
-				"istio-injection":                            "enabled",
+				"istio.io/dataplane-mode":                    "ambient",
 				"pod-security.kubernetes.io/enforce":         "baseline",
 				"pod-security.kubernetes.io/enforce-version": "latest",
 				"pod-security.kubernetes.io/audit":           "restricted",

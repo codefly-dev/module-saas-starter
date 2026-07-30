@@ -89,12 +89,6 @@ func TestGatewayArtifactsAreDeterministicAndCurrent(t *testing.T) {
 	require.Equal(t, string(goRoutes), string(readFixture(t, "../../../../auth-sidecar/code/routing_catalog_gen.go")), "run: go generate ./pkg/cataloggen")
 	require.Equal(t, 262, strings.Count(string(goRoutes), `{Service: "accounts_connect"`))
 
-	istio, err := cataloggen.RenderIstioVirtualService(routes, bindingDocument)
-	require.NoError(t, err)
-	require.Equal(t, string(istio), string(readFixture(t, "../../../../../deployment/generated/accounts-routes.virtualservice.yaml")), "run: go generate ./pkg/cataloggen")
-	require.Equal(t, 394, strings.Count(string(istio), "- name: catalog-"))
-	require.NotContains(t, string(istio), "prefix:")
-	require.Contains(t, string(istio), "regex: ^/v1/users/[^/]+$")
 }
 
 func TestGatewayRouteValidationRejectsUnsafeDrift(t *testing.T) {

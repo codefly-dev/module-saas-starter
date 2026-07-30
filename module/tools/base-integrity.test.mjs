@@ -8,6 +8,7 @@ import {
   capabilityContextErrors,
   capabilityManifestErrors,
   isExcludedFile,
+  migrationVersionErrors,
   productionTruthErrors,
   requiredAdditionsErrors,
   workspaceInstallGraphErrors,
@@ -64,6 +65,25 @@ test("excludes compiled service binaries without excluding their source", () => 
   assert.equal(isExcludedFile("services/store/migrations/1_create.up.sql"), false);
 });
 
+test("rejects multiple logical migrations with the same version", (t) => {
+  const root = mkdtempSync(join(tmpdir(), "saas-migration-integrity-"));
+  t.after(() => rmSync(root, { recursive: true, force: true }));
+  const migrations = join(root, "services", "store", "migrations");
+  mkdirSync(migrations, { recursive: true });
+  for (const name of [
+    "78_authorization_revisions.up.sql",
+    "78_authorization_revisions.down.sql",
+    "78_inbound_forge_edge.up.sql",
+    "78_inbound_forge_edge.down.sql",
+  ]) {
+    writeFileSync(join(migrations, name), "-- migration\n");
+  }
+
+  assert.deepEqual(migrationVersionErrors(root), [
+    "store migration version 78 is used by multiple migrations: authorization_revisions, inbound_forge_edge",
+  ]);
+});
+
 test("excludes runtime-owned secret configuration from the canonical base", () => {
   assert.equal(
     isExcludedFile("services/store/configurations/local/postgres.secret.env"),
@@ -77,6 +97,7 @@ test("excludes runtime-owned secret configuration from the canonical base", () =
 
 test("excludes consumer-generated module and GitOps manifests", () => {
   assert.equal(isExcludedFile("module.codefly.yaml"), true);
+  assert.equal(isExcludedFile("deployment/generated/service-topology.json"), true);
   assert.equal(isExcludedFile("deployment/kustomize/inventory.json"), true);
   assert.equal(
     isExcludedFile("deployment/kustomize/overlays/aws/applications/accounts.yaml"),

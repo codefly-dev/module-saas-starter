@@ -1,8 +1,8 @@
 # Generated gateway routes
 
-Status: generated and runtime-active for Connect and REST. The generated Istio
-manifest is reviewable but intentionally not added to kustomize until
-`P1-NET-003` catalogs frontend/static routes.
+Status: generated and runtime-active for Connect and REST. Deployment transport
+resources are generated separately from the environment topology and ingress
+contract.
 
 ## Source and artifacts
 
@@ -10,12 +10,11 @@ manifest is reviewable but intentionally not added to kustomize until
 | --- | --- |
 | `services/accounts/generated/service-catalog.json` | Descriptor, transport, policy, and owner source. |
 | `deployment/topology.bindings.codefly.yaml` | Named Codefly services, endpoints, dependencies, and visibility. |
-| `services/accounts/gateway.bindings.codefly.yaml` | Dated compatibility aliases and Istio destination binding. |
+| `services/accounts/gateway.bindings.codefly.yaml` | Dated compatibility aliases. |
 | `services/accounts/generated/gateway-routes.json` | Typed target-neutral `saas.gateway.routes.v1` inventory. |
 | `services/accounts/generated/rest-surface.json` | Strict descriptor REST projection. |
 | `services/auth-sidecar/code/routing_catalog_gen.go` | Runtime Connect whitelist consumed by the Go gateway and Envoy generator. |
 | `services/auth-sidecar/code/routing_rest_catalog_gen.go` | Runtime descriptor REST whitelist. |
-| `deployment/generated/accounts-routes.virtualservice.yaml` | Exact/path-template Istio VirtualService candidate. |
 
 Current descriptor output contains 358 public-edge routes:
 
@@ -79,8 +78,9 @@ path comparisons.
 
 The temporary Go gateway key `accounts_connect` maps the owned `accounts`
 service plus its named `connect` endpoint. The target-neutral JSON retains those
-as separate owner and endpoint fields so Envoy, Istio, Codefly networking, and
-future multi-service aggregation do not need to parse that compatibility key.
+as separate owner and endpoint fields so runtime gateways, Codefly networking,
+and future multi-service aggregation do not need to parse that compatibility
+key.
 
 ## Compatibility aliases
 
@@ -98,11 +98,7 @@ explicit extensions. Accounts uses the same generated surface for service
 registration and a fail-closed method/path allowlist; the checked-in OpenAPI
 document is filtered and verified against it. See `REST_SURFACE.md`.
 
-Likewise, `deployment/generated/accounts-routes.virtualservice.yaml` routes all
-catalog matches through `auth-sidecar`. `saas.frontend.plugins.v1` now catalogs
-all 36 Next.js pages and the admin plugin catch-all, but static Next.js assets
-and the Istio frontend fallback are not generated yet. Adding the API-only
-resource to `kustomize/base` before `P1-NET-003` would still break the web
-application. The deployed catch-all VirtualService therefore remains unchanged
-until API matches, page/static routes, and the fallback can replace it in one
-parity-tested cutover.
+`saas.frontend.plugins.v1` catalogs all 36 Next.js pages and the admin plugin
+catch-all. The environment topology generator owns the deployed ingress
+VirtualService, so the target-neutral route catalog does not carry a namespace,
+gateway, or destination host.

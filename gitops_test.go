@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"crypto/sha256"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -389,6 +390,18 @@ func TestGeneratedPoliciesAndGatewayMatchTopology(t *testing.T) {
 		t.Fatal(err)
 	}
 	generated := filepath.Join(moduleDir, filepath.FromSlash(bundleRelativeDir), "overlays")
+	namespaceObjects, err := decodeYAMLDocuments(filepath.Join(generated, "local", "resources", "namespace.yaml"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	namespaceMetadata := namespaceObjects[0]["metadata"].(map[string]any)
+	namespaceLabels := namespaceMetadata["labels"].(map[string]any)
+	if namespaceLabels["istio.io/dataplane-mode"] != "ambient" {
+		t.Fatalf("local namespace dataplane mode = %v, want ambient", namespaceLabels["istio.io/dataplane-mode"])
+	}
+	if _, sidecarInjection := namespaceLabels["istio-injection"]; sidecarInjection {
+		t.Fatal("local namespace enables sidecar injection alongside the ambient mesh")
+	}
 	localNetwork, err := os.ReadFile(filepath.Join(generated, "local", "resources", "network-policy.yaml"))
 	if err != nil {
 		t.Fatal(err)
@@ -809,6 +822,43 @@ services:
 	if err := os.MkdirAll(filepath.Join(source, "services", "auth-sidecar"), 0o755); err != nil {
 		t.Fatal(err)
 	}
+	writeTestFile(t, filepath.Join(source, "services", "accounts", "service.codefly.yaml"), `name: accounts
+version: 0.0.0
+agent:
+  kind: codefly:service
+  name: go-grpc
+  publisher: codefly.dev
+  version: 0.1.0
+endpoints:
+  - name: http
+`)
+	writeTestFile(t, filepath.Join(source, "services", "README.md"), "canonical service documentation\n")
+	writeTestFile(t, filepath.Join(target, "services", "README.md"), "stale consumer copy\n")
+	removedBase := "package accounts\n"
+	divergedBase := "package accounts\n\nconst Mode = \"canonical\"\n"
+	updatedBase := "package accounts\n\nconst Mode = \"updated\"\n"
+	divergedConsumer := "package accounts\n\nconst Mode = \"consumer\"\n"
+	removedDigest := sha256.Sum256([]byte(removedBase))
+	divergedDigest := sha256.Sum256([]byte(divergedBase))
+	writeTestFile(t, filepath.Join(target, "services", "accounts", "removed.go"), removedBase)
+	writeTestFile(t, filepath.Join(target, "services", "accounts", "diverged.go"), divergedConsumer)
+	writeTestFile(t, filepath.Join(target, "services", "accounts", "consumer.go"), "package accounts\n")
+	writeTestFile(
+		t,
+		filepath.Join(target, "tools", "base-manifest.json"),
+		fmt.Sprintf(`{"files":{
+  "deployment/topology.bindings.codefly.yaml":"previous-base-hash",
+  "services/accounts/diverged.go":"%x",
+  "services/accounts/removed.go":"%x"
+}}`, divergedDigest, removedDigest),
+	)
+	writeTestFile(
+		t,
+		filepath.Join(target, "tools", "base-integrity-allow.json"),
+		`{"services/accounts/diverged.go":"consumer-owned integration"}`,
+	)
+	writeTestFile(t, filepath.Join(source, "services", "accounts", "diverged.go"), updatedBase)
+	writeTestFile(t, filepath.Join(source, "tools", "base-manifest.json"), `{"files":{}}`)
 	topology := filepath.Join(target, "deployment", "topology.bindings.codefly.yaml")
 	writeTestFile(t, topology, `version: v1
 module:
@@ -822,6 +872,12 @@ interface:
     visibility: public
 services:
   - name: accounts
+    version: 0.0.0
+    agent:
+      kind: codefly:service
+      name: go-grpc
+      publisher: codefly.dev
+      version: 0.2.0
     endpoints:
       - name: http
         api: http
@@ -836,6 +892,7 @@ services:
 `)
 	writeTestFile(t, filepath.Join(target, "deployment", "generated", "service-topology.json"), `{"module":"saas-starter"}`)
 	writeTestFile(t, filepath.Join(target, "deployment", "generated", "consumer-artifact.json"), `{"owner":"consumer"}`)
+	writeTestFile(t, filepath.Join(target, "deployment", "generated", "accounts-routes.virtualservice.yaml"), `stale`)
 	// A stale plugin-owned tree from the previous release must be regenerated,
 	// never carried forward.
 	writeTestFile(t, filepath.Join(source, filepath.FromSlash(bundleRelativeDir), "overlays", "local", "application.yaml"), `repoURL: REPLACE_ME
@@ -859,6 +916,26 @@ targetRevision: main
 	if _, err := os.Stat(filepath.Join(target, "services", "auth-sidecar")); !os.IsNotExist(err) {
 		t.Fatalf("undeclared source service was copied: %v", err)
 	}
+	if data, err := os.ReadFile(filepath.Join(target, "services", "README.md")); err != nil ||
+		string(data) != "canonical service documentation\n" {
+		t.Fatalf("canonical service documentation was not refreshed: data=%q error=%v", data, err)
+	}
+	if _, err := os.Stat(filepath.Join(target, "services", "accounts", "removed.go")); !os.IsNotExist(err) {
+		t.Fatalf("file removed from the canonical base survived sync: %v", err)
+	}
+	if data, err := os.ReadFile(filepath.Join(target, "services", "accounts", "diverged.go")); err != nil ||
+		string(data) != divergedConsumer {
+		t.Fatalf("consumer-diverged base file was not preserved: data=%q error=%v", data, err)
+	}
+	if data, err := os.ReadFile(filepath.Join(target, "services", "accounts", "consumer.go")); err != nil ||
+		string(data) != "package accounts\n" {
+		t.Fatalf("consumer addition was removed during base reconciliation: data=%q error=%v", data, err)
+	}
+	if data, err := os.ReadFile(filepath.Join(target, "services", "accounts", "service.codefly.yaml")); err != nil ||
+		!strings.Contains(string(data), "version: 0.2.0") ||
+		strings.Contains(string(data), "version: 0.1.0") {
+		t.Fatalf("service manifest was not regenerated from consumer topology: data=%q error=%v", data, err)
+	}
 	if topologyData, err := os.ReadFile(topology); err != nil ||
 		strings.Contains(string(topologyData), "saas-starter") {
 		t.Fatalf("deployment topology retained starter identity: data=%q error=%v", topologyData, err)
@@ -866,6 +943,9 @@ targetRevision: main
 	if data, err := os.ReadFile(filepath.Join(target, "deployment", "generated", "consumer-artifact.json")); err != nil ||
 		string(data) != `{"owner":"consumer"}` {
 		t.Fatalf("consumer generated artifact was not preserved: data=%q error=%v", data, err)
+	}
+	if _, err := os.Stat(filepath.Join(target, "deployment", "generated", "accounts-routes.virtualservice.yaml")); !os.IsNotExist(err) {
+		t.Fatalf("transport-specific route artifact was copied: %v", err)
 	}
 	bundleRoot := filepath.Join(target, filepath.FromSlash(bundleRelativeDir))
 	if _, err := os.Stat(filepath.Join(bundleRoot, "overlays", "local", "application.yaml")); !os.IsNotExist(err) {
@@ -880,25 +960,117 @@ targetRevision: main
 	}
 }
 
-func TestNormalizeGeneratedGatewayRouteRejectsMalformedDocument(t *testing.T) {
-	generatedRoot := t.TempDir()
-	writeTestFile(t, filepath.Join(generatedRoot, "accounts-routes.virtualservice.yaml"), `apiVersion: networking.istio.io/v1
-kind: VirtualService
-metadata: invalid
-spec: invalid
+func TestCreateReconcilesRemovedBaseFileAtRelativeServicePath(t *testing.T) {
+	_, target := writeModuleFixture(t, "relative-path-control", "identity", []string{"accounts"})
+	if err := os.RemoveAll(filepath.Join(target, "services", "accounts")); err != nil {
+		t.Fatal(err)
+	}
+	writeTestFile(t, filepath.Join(target, moduleYamlPath), `kind: module
+name: identity
+service-entry: accounts
+services:
+  - name: accounts
+    path: backend
 `)
+	removedBase := "package accounts\n"
+	removedDigest := sha256.Sum256([]byte(removedBase))
+	writeTestFile(t, filepath.Join(target, "services", "backend", "removed.go"), removedBase)
+	writeTestFile(
+		t,
+		filepath.Join(target, "tools", "base-manifest.json"),
+		fmt.Sprintf(`{"files":{"services/accounts/removed.go":"%x"}}`, removedDigest),
+	)
+
+	source := t.TempDir()
+	writeTestFile(t, filepath.Join(source, moduleYamlPath), `kind: module
+name: saas-starter
+service-entry: accounts
+services:
+  - name: accounts
+`)
+	writeTestFile(t, filepath.Join(source, "services", "accounts", "current.go"), "package accounts\n")
+	writeTestFile(t, filepath.Join(source, "tools", "base-manifest.json"), `{"files":{}}`)
+	t.Setenv(sourceEnvVar, source)
+
+	if err := Create(context.Background(), target, "identity"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(filepath.Join(target, "services", "backend", "removed.go")); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("removed base file survived under the relative service path: %v", err)
+	}
+	if data, err := os.ReadFile(filepath.Join(target, "services", "backend", "current.go")); err != nil ||
+		string(data) != "package accounts\n" {
+		t.Fatalf("current base file was not installed under the relative service path: data=%q error=%v", data, err)
+	}
+}
+
+func TestResolveSourceFallsBackToPackagedModule(t *testing.T) {
+	t.Setenv(sourceEnvVar, "")
+	source, cleanup, err := resolveSource()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer cleanup()
+	data, err := os.ReadFile(filepath.Join(source, moduleYamlPath))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(data), "name: saas-starter") {
+		t.Fatalf("packaged source is not the canonical module:\n%s", data)
+	}
+}
+
+func TestRegenerateServiceManifestsIncludesFrontendPluginDependencies(t *testing.T) {
+	moduleDir := t.TempDir()
+	writeTestFile(
+		t,
+		filepath.Join(moduleDir, "services", "frontend", "code", "server", "plugin-service-allowlist.generated.json"),
+		`{
+  "schemaVersion": 1,
+  "contractVersion": 2,
+  "entries": [
+    {
+      "target": {
+        "module": "billing",
+        "service": "subscriptions",
+        "endpoint": "rest"
+      }
+    }
+  ]
+}
+`,
+	)
+	manifest := moduleManifest{Services: []serviceReference{{Name: "frontend"}}}
 	topology := deploymentTopology{
-		Module: topologyModule{
-			Name:         "identity",
-			Namespace:    "identity",
-			ServiceEntry: "accounts",
-		},
-		Services: []topologyService{{Name: "accounts"}},
+		Module: topologyModule{Name: "users"},
+		Services: []topologyService{{
+			Name:    "frontend",
+			Version: "0.0.0",
+			Agent:   map[string]any{"version": "0.2.0"},
+			Endpoints: []topologyEndpoint{{
+				Name:       "http",
+				API:        "http",
+				Visibility: "module",
+			}},
+		}},
 	}
 
-	err := normalizeGeneratedGatewayRoute(generatedRoot, topology, "saas-starter", "saas-starter")
-	if err == nil || !strings.Contains(err.Error(), "metadata must be an object") {
-		t.Fatalf("normalize malformed gateway route error = %v", err)
+	if err := regenerateServiceManifests(moduleDir, manifest, topology); err != nil {
+		t.Fatal(err)
+	}
+	data, err := os.ReadFile(filepath.Join(moduleDir, "services", "frontend", "service.codefly.yaml"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, required := range []string{
+		"deployment/topology.bindings.codefly.yaml and services/frontend/code/server/plugin-service-allowlist.generated.json",
+		"name: subscriptions",
+		"module: billing",
+		"name: rest",
+	} {
+		if !strings.Contains(string(data), required) {
+			t.Fatalf("frontend service manifest is missing plugin dependency %q:\n%s", required, data)
+		}
 	}
 }
 
