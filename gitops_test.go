@@ -821,6 +821,14 @@ endpoints:
 `)
 	writeTestFile(t, filepath.Join(source, "services", "README.md"), "canonical service documentation\n")
 	writeTestFile(t, filepath.Join(target, "services", "README.md"), "stale consumer copy\n")
+	writeTestFile(t, filepath.Join(target, "services", "accounts", "removed.go"), "package accounts\n")
+	writeTestFile(t, filepath.Join(target, "services", "accounts", "consumer.go"), "package accounts\n")
+	writeTestFile(
+		t,
+		filepath.Join(target, "tools", "base-manifest.json"),
+		`{"files":{"services/accounts/removed.go":"previous-base-hash"}}`,
+	)
+	writeTestFile(t, filepath.Join(source, "tools", "base-manifest.json"), `{"files":{}}`)
 	topology := filepath.Join(target, "deployment", "topology.bindings.codefly.yaml")
 	writeTestFile(t, topology, `version: v1
 module:
@@ -881,6 +889,13 @@ targetRevision: main
 	if data, err := os.ReadFile(filepath.Join(target, "services", "README.md")); err != nil ||
 		string(data) != "canonical service documentation\n" {
 		t.Fatalf("canonical service documentation was not refreshed: data=%q error=%v", data, err)
+	}
+	if _, err := os.Stat(filepath.Join(target, "services", "accounts", "removed.go")); !os.IsNotExist(err) {
+		t.Fatalf("file removed from the canonical base survived sync: %v", err)
+	}
+	if data, err := os.ReadFile(filepath.Join(target, "services", "accounts", "consumer.go")); err != nil ||
+		string(data) != "package accounts\n" {
+		t.Fatalf("consumer addition was removed during base reconciliation: data=%q error=%v", data, err)
 	}
 	if data, err := os.ReadFile(filepath.Join(target, "services", "accounts", "service.codefly.yaml")); err != nil ||
 		!strings.Contains(string(data), "version: 0.2.0") ||

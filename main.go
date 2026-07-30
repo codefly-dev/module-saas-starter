@@ -84,6 +84,9 @@ func Create(ctx context.Context, dir, name string) error {
 	if hasConsumerInventory && existing.Name != name {
 		return fmt.Errorf("existing module name %q does not match requested name %q", existing.Name, name)
 	}
+	if err := removePreviouslyOwnedBaseFiles(stage); err != nil {
+		return w.Wrapf(err, "cannot reconcile previous module base")
+	}
 	if err := copyModuleSource(src, stage, name, existing, hasConsumerInventory); err != nil {
 		return w.Wrapf(err, "cannot stage module source")
 	}
@@ -125,6 +128,33 @@ func existingModuleInventory(dir string) (moduleManifest, bool, error) {
 		return moduleManifest{}, false, err
 	}
 	return manifest, len(manifest.Services) > 0, nil
+}
+
+func removePreviouslyOwnedBaseFiles(moduleDir string) error {
+	data, err := os.ReadFile(filepath.Join(moduleDir, "tools", "base-manifest.json"))
+	if errors.Is(err, os.ErrNotExist) {
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	var manifest struct {
+		Files map[string]string `json:"files"`
+	}
+	if err := json.Unmarshal(data, &manifest); err != nil {
+		return fmt.Errorf("parse base manifest: %w", err)
+	}
+	for relative := range manifest.Files {
+		clean := filepath.Clean(filepath.FromSlash(relative))
+		if clean == "." || filepath.IsAbs(clean) ||
+			clean == ".." || strings.HasPrefix(clean, ".."+string(filepath.Separator)) {
+			return fmt.Errorf("base manifest path %q escapes the module", relative)
+		}
+		if err := os.Remove(filepath.Join(moduleDir, clean)); err != nil && !errors.Is(err, os.ErrNotExist) {
+			return fmt.Errorf("remove previous base file %q: %w", relative, err)
+		}
+	}
+	return nil
 }
 
 func copyModuleSource(
