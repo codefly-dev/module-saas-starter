@@ -339,6 +339,48 @@ spec:
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
+  name: allow-store-from-bootstrap
+  namespace: saas-starter
+spec:
+  podSelector:
+    matchLabels:
+      app: store
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              codefly.dev/bootstrap-service: store
+              job-name: store
+      ports:
+        - protocol: TCP
+          port: 5432
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-store-bootstrap-to-store
+  namespace: saas-starter
+spec:
+  podSelector:
+    matchLabels:
+      codefly.dev/bootstrap-service: store
+      job-name: store
+  policyTypes:
+    - Egress
+  egress:
+    - to:
+        - podSelector:
+            matchLabels:
+              app: store
+      ports:
+        - protocol: TCP
+          port: 5432
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
   name: allow-accounts-public-egress
   namespace: saas-starter
 spec:
@@ -375,7 +417,6 @@ spec:
             except:
               - ::/128
               - ::1/128
-              - ::ffff:0:0/96
               - 64:ff9b::/96
               - 64:ff9b:1::/48
               - 100::/64
@@ -428,7 +469,6 @@ spec:
             except:
               - ::/128
               - ::1/128
-              - ::ffff:0:0/96
               - 64:ff9b::/96
               - 64:ff9b:1::/48
               - 100::/64
@@ -481,7 +521,6 @@ spec:
             except:
               - ::/128
               - ::1/128
-              - ::ffff:0:0/96
               - 64:ff9b::/96
               - 64:ff9b:1::/48
               - 100::/64

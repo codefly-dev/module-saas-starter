@@ -394,14 +394,44 @@ func TestGeneratedPoliciesAndGatewayMatchTopology(t *testing.T) {
 		t.Fatal(err)
 	}
 	for _, policy := range []string{
+		"allow-ambient-hbone-transport",
 		"allow-istio-ingress-to-auth-sidecar",
 		"allow-accounts-to-store",
 		"allow-store-from-accounts",
+		"allow-store-from-bootstrap",
+		"allow-store-bootstrap-to-store",
 		"allow-auth-sidecar-public-egress",
 	} {
 		if !strings.Contains(string(localNetwork), "name: "+policy) {
 			t.Errorf("local network policy is missing %q", policy)
 		}
+	}
+	if count := strings.Count(string(localNetwork), "port: 15008"); count != 2 {
+		t.Errorf("local network policy has %d ambient HBONE transport exceptions, want 2", count)
+	}
+	if count := strings.Count(string(localNetwork), "codefly.dev/bootstrap-service: store"); count != 2 {
+		t.Errorf("local network policy has %d bootstrap service selectors, want 2", count)
+	}
+
+	localIstio, err := os.ReadFile(filepath.Join(generated, "local", "resources", "istio-mtls.yaml"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, expected := range []string{
+		"name: allow-store-from-internal-topology",
+		"cluster.local/ns/identity-local/sa/default",
+		`- "8080"`,
+	} {
+		if !strings.Contains(string(localIstio), expected) {
+			t.Errorf("local Istio policy is missing %q", expected)
+		}
+	}
+	awsIstio, err := os.ReadFile(filepath.Join(generated, "aws", "resources", "istio-mtls.yaml"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(awsIstio), "allow-store-from-internal-topology") {
+		t.Error("AWS Istio policy grants internal authority to managed Postgres")
 	}
 
 	gatewayObjects, err := decodeYAMLDocuments(filepath.Join(generated, "local", "resources", "istio-gateway.yaml"))
@@ -441,6 +471,43 @@ func TestGeneratedPoliciesAndGatewayMatchTopology(t *testing.T) {
 	if !strings.Contains(string(awsNetwork), "cidr: 10.42.0.0/24") ||
 		!strings.Contains(string(awsNetwork), "name: allow-accounts-to-store") {
 		t.Errorf("AWS network policy does not bind the managed store CIDR:\n%s", awsNetwork)
+	}
+	if strings.Contains(string(awsNetwork), "allow-store-from-bootstrap") ||
+		strings.Contains(string(awsNetwork), "allow-store-bootstrap-to-store") {
+		t.Errorf("AWS network policy retains bootstrap authority for managed Postgres:\n%s", awsNetwork)
+	}
+}
+
+func TestGenerateBundleRejectsDependencyWithoutEndpointAuthority(t *testing.T) {
+	t.Parallel()
+	root, moduleDir := writeModuleFixture(
+		t,
+		"policy-control",
+		"identity",
+		[]string{"accounts", "store"},
+	)
+	topologyFile := filepath.Join(moduleDir, "deployment", "topology.bindings.codefly.yaml")
+	data, err := os.ReadFile(topologyFile)
+	if err != nil {
+		t.Fatal(err)
+	}
+	topology := strings.Replace(
+		string(data),
+		"        endpoints:\n          - http\n",
+		"        endpoints: []\n",
+		1,
+	)
+	if topology == string(data) {
+		t.Fatal("fixture topology has no dependency endpoint block")
+	}
+	writeTestFile(t, topologyFile, topology)
+	workspace, err := loadWorkspaceManifest(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	err = generateDeploymentBundle(moduleDir, workspace)
+	if err == nil || !strings.Contains(err.Error(), `dependency "store" declares no endpoints`) {
+		t.Fatalf("generateDeploymentBundle() error = %v, want empty dependency authority rejection", err)
 	}
 }
 
@@ -955,6 +1022,9 @@ func writeModuleFixture(t *testing.T, workspaceName, moduleName string, services
 			service,
 			port,
 		)
+		if service == "store" {
+			topology.WriteString("    bootstrap_job_endpoints:\n      - http\n")
+		}
 		if service == entry {
 			topology.WriteString("    public_egress_ports:\n      - 443\n")
 		}
@@ -1111,14 +1181,33 @@ func assertMindRouteAndPolicies(
 		t.Fatal(err)
 	}
 	var route map[string]any
+	var destinationRuleHosts []string
 	for _, object := range objects {
-		if object["kind"] == "VirtualService" {
+		switch object["kind"] {
+		case "VirtualService":
 			route = object
-			break
+		case "DestinationRule":
+			spec := object["spec"].(map[string]any)
+			ruleHost := spec["host"].(string)
+			if strings.Contains(ruleHost, "*") {
+				t.Errorf("%s DestinationRule retains wildcard authority %q", environment, ruleHost)
+			}
+			destinationRuleHosts = append(destinationRuleHosts, ruleHost)
 		}
 	}
 	if route == nil {
 		t.Fatal("Mind bootstrap has no VirtualService")
+	}
+	expectedServices := []string{"accounts", "cache", "forge-edge", "frontend", "object-storage", "store", "vault"}
+	if aws {
+		expectedServices = []string{"accounts", "forge-edge", "frontend"}
+	}
+	expectedRuleHosts := make([]string, 0, len(expectedServices))
+	for _, service := range expectedServices {
+		expectedRuleHosts = append(expectedRuleHosts, service+".users-"+environment+".svc.cluster.local")
+	}
+	if !slices.Equal(destinationRuleHosts, expectedRuleHosts) {
+		t.Fatalf("%s DestinationRule hosts = %v, want %v", environment, destinationRuleHosts, expectedRuleHosts)
 	}
 	spec := route["spec"].(map[string]any)
 	if got := spec["hosts"].([]any); !slices.Equal(got, []any{host}) {
@@ -1138,6 +1227,7 @@ func assertMindRouteAndPolicies(
 	rendered := string(data)
 	for _, name := range []string{
 		"default-deny-all",
+		"allow-ambient-hbone-transport",
 		"allow-istio-ingress-to-forge-edge",
 		"allow-forge-edge-to-accounts",
 		"allow-accounts-from-forge-edge",
@@ -1147,6 +1237,9 @@ func assertMindRouteAndPolicies(
 		if !strings.Contains(rendered, "name: "+name) {
 			t.Errorf("%s network policy is missing %q", environment, name)
 		}
+	}
+	if count := strings.Count(rendered, "port: 15008"); count != 2 {
+		t.Errorf("%s network policy has %d ambient HBONE transport exceptions, want 2", environment, count)
 	}
 	if aws {
 		for _, name := range []string{

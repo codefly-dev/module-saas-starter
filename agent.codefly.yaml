@@ -1,5 +1,5 @@
 publisher: codefly.dev
 kind: codefly:module
 name: saas-starter
-version: 0.0.29
+version: 0.0.33
 description: "Complete SaaS foundation — auth, multi-tenancy, generated RPC policy, RBAC, impersonation, audit, billing-ready"

@@ -55,10 +55,13 @@ func TestDeploymentTopologyIsDeterministicAndCurrent(t *testing.T) {
 	require.Contains(t, frontendManifest, "execution-profiles:")
 	require.Contains(t, frontendManifest, "local: development")
 	require.Contains(t, frontendManifest, "production: production")
-	require.Equal(t, 17, strings.Count(string(first.NetworkPolicy), "\nkind: NetworkPolicy\n"))
+	require.Equal(t, 19, strings.Count(string(first.NetworkPolicy), "\nkind: NetworkPolicy\n"))
 	require.NotContains(t, string(first.NetworkPolicy), "allow-intra-namespace")
 	require.Contains(t, string(first.NetworkPolicy), "name: allow-accounts-from-dependents")
 	require.Contains(t, string(first.NetworkPolicy), "name: allow-auth-sidecar-to-dependencies")
+	require.Contains(t, string(first.NetworkPolicy), "name: allow-store-from-bootstrap")
+	require.Contains(t, string(first.NetworkPolicy), "name: allow-store-bootstrap-to-store")
+	require.Equal(t, 2, strings.Count(string(first.NetworkPolicy), "codefly.dev/bootstrap-service: store"))
 	require.Contains(t, string(first.NetworkPolicy), "name: allow-frontend-public-egress")
 	require.Contains(t, string(first.NetworkPolicy), "name: allow-marketing-public-egress")
 	require.Contains(t, string(first.NetworkPolicy), "name: allow-istio-ingress-to-marketing")
@@ -304,8 +307,10 @@ func TestGeneratedCodeflyAndNetworkManifestsParseStrictly(t *testing.T) {
 		require.False(t, names[document.Metadata.Name], "duplicate NetworkPolicy %s", document.Metadata.Name)
 		names[document.Metadata.Name] = true
 	}
-	require.Len(t, names, 17)
+	require.Len(t, names, 19)
 	require.True(t, names["allow-istio-ingress-to-marketing"])
+	require.True(t, names["allow-store-from-bootstrap"])
+	require.True(t, names["allow-store-bootstrap-to-store"])
 }
 
 func TestDeploymentTopologyRejectsUnsafeOrIncompleteBindings(t *testing.T) {
@@ -319,6 +324,10 @@ func TestDeploymentTopologyRejectsUnsafeOrIncompleteBindings(t *testing.T) {
 	unknownEndpoint := strings.Replace(bindings, "          - read\n          - write", "          - missing\n          - write", 1)
 	_, err = cataloggen.BuildDeploymentArtifacts(serviceCatalog, []byte(unknownEndpoint))
 	require.ErrorContains(t, err, "unknown endpoint")
+
+	unknownBootstrapEndpoint := strings.Replace(bindings, "    bootstrap_job_endpoints:\n      - tcp", "    bootstrap_job_endpoints:\n      - missing", 1)
+	_, err = cataloggen.BuildDeploymentArtifacts(serviceCatalog, []byte(unknownBootstrapEndpoint))
+	require.ErrorContains(t, err, "bootstrap Job references unknown endpoint")
 
 	missingProtocol := strings.Replace(bindings, "        api: connect", "        api: http", 1)
 	_, err = cataloggen.BuildDeploymentArtifacts(serviceCatalog, []byte(missingProtocol))

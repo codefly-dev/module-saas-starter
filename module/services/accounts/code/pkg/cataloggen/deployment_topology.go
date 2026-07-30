@@ -48,6 +48,7 @@ type deploymentServiceBinding struct {
 	WorkspaceConfigurationDependencies []string                      `yaml:"workspace_configuration_dependencies,omitempty"`
 	SecretServiceConfigurations        []secretServiceConfiguration  `yaml:"secret_service_configurations,omitempty"`
 	Endpoints                          []deploymentEndpointBinding   `yaml:"endpoints"`
+	BootstrapJobEndpoints              []string                      `yaml:"bootstrap_job_endpoints,omitempty"`
 	Dependencies                       []deploymentDependencyBinding `yaml:"dependencies,omitempty"`
 	PublicEgressPorts                  []uint32                      `yaml:"public_egress_ports,omitempty"`
 	Spec                               map[string]any                `yaml:"spec,omitempty"`
@@ -233,6 +234,17 @@ func validateDeploymentBindings(serviceCatalog *catalogv1.ServiceCatalog, bindin
 			if _, err := endpointVisibility(endpoint.Visibility); err != nil {
 				return fmt.Errorf("service %q endpoint %q: %w", service.Name, endpoint.Name, err)
 			}
+		}
+		knownEndpoints := endpointBindingsByName(service.Endpoints)
+		previousBootstrapEndpoint := ""
+		for _, endpoint := range service.BootstrapJobEndpoints {
+			if !endpointNamePattern.MatchString(endpoint) || (previousBootstrapEndpoint != "" && endpoint <= previousBootstrapEndpoint) {
+				return fmt.Errorf("service %q bootstrap Job endpoints are invalid or unsorted", service.Name)
+			}
+			if _, exists := knownEndpoints[endpoint]; !exists {
+				return fmt.Errorf("service %q bootstrap Job references unknown endpoint %q", service.Name, endpoint)
+			}
+			previousBootstrapEndpoint = endpoint
 		}
 
 		previousDependency := ""
@@ -738,6 +750,17 @@ func renderNetworkPolicy(bindings deploymentBindings) []byte {
 		writeDependencyEgressPolicy(&source, bindings.Module.Namespace, caller, byCaller[caller])
 	}
 	for _, service := range bindings.Services {
+		if len(service.BootstrapJobEndpoints) == 0 {
+			continue
+		}
+		endpoints := endpointBindingsByName(service.Endpoints)
+		ports := make([]uint32, 0, len(service.BootstrapJobEndpoints))
+		for _, endpoint := range service.BootstrapJobEndpoints {
+			ports = append(ports, endpoints[endpoint].Port)
+		}
+		writeBootstrapJobPolicies(&source, bindings.Module.Namespace, service.Name, ports)
+	}
+	for _, service := range bindings.Services {
 		if len(service.PublicEgressPorts) > 0 {
 			writePublicEgressPolicy(&source, bindings.Module.Namespace, service.Name, service.PublicEgressPorts)
 		}
@@ -894,6 +917,51 @@ spec:
 	}
 }
 
+func writeBootstrapJobPolicies(source *strings.Builder, namespace, service string, ports []uint32) {
+	fmt.Fprintf(source, `---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-%s-from-bootstrap
+  namespace: %s
+spec:
+  podSelector:
+    matchLabels:
+      app: %s
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              codefly.dev/bootstrap-service: %s
+              job-name: %s
+      ports:
+`, service, namespace, service, service, service)
+	writeNetworkPorts(source, ports, 8)
+	fmt.Fprintf(source, `---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-%s-bootstrap-to-%s
+  namespace: %s
+spec:
+  podSelector:
+    matchLabels:
+      codefly.dev/bootstrap-service: %s
+      job-name: %s
+  policyTypes:
+    - Egress
+  egress:
+    - to:
+        - podSelector:
+            matchLabels:
+              app: %s
+      ports:
+`, service, service, namespace, service, service, service)
+	writeNetworkPorts(source, ports, 8)
+}
+
 func writeNetworkPorts(source *strings.Builder, ports []uint32, indent int) {
 	padding := strings.Repeat(" ", indent)
 	for _, port := range ports {
@@ -908,7 +976,7 @@ var publicIPv4Exceptions = []string{
 }
 
 var publicIPv6Exceptions = []string{
-	"::/128", "::1/128", "::ffff:0:0/96", "64:ff9b::/96", "64:ff9b:1::/48", "100::/64", "2001::/23", "2001:db8::/32",
+	"::/128", "::1/128", "64:ff9b::/96", "64:ff9b:1::/48", "100::/64", "2001::/23", "2001:db8::/32",
 	"2002::/16", "fc00::/7", "fe80::/10", "ff00::/8",
 }
 

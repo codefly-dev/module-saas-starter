@@ -170,10 +170,11 @@ type deploymentTopology struct {
 }
 
 type topologyModule struct {
-	Name         string `yaml:"name"`
-	Namespace    string `yaml:"namespace"`
-	ServiceEntry string `yaml:"service_entry"`
-	Description  string `yaml:"description"`
+	Name         string         `yaml:"name"`
+	Namespace    string         `yaml:"namespace"`
+	ServiceEntry string         `yaml:"service_entry"`
+	Description  string         `yaml:"description"`
+	Agent        map[string]any `yaml:"agent,omitempty"`
 }
 
 type topologyInterface struct {
@@ -183,15 +184,26 @@ type topologyInterface struct {
 }
 
 type topologyService struct {
-	Name                               string               `yaml:"name"`
-	Version                            string               `yaml:"version,omitempty"`
-	Description                        string               `yaml:"description,omitempty"`
-	Agent                              map[string]any       `yaml:"agent,omitempty"`
-	WorkspaceConfigurationDependencies []string             `yaml:"workspace_configuration_dependencies,omitempty"`
-	Endpoints                          []topologyEndpoint   `yaml:"endpoints"`
-	Dependencies                       []topologyDependency `yaml:"dependencies,omitempty"`
-	PublicEgressPorts                  []uint32             `yaml:"public_egress_ports,omitempty"`
-	Spec                               map[string]any       `yaml:"spec,omitempty"`
+	Name                               string                               `yaml:"name"`
+	Version                            string                               `yaml:"version,omitempty"`
+	Description                        string                               `yaml:"description,omitempty"`
+	Agent                              map[string]any                       `yaml:"agent,omitempty"`
+	WorkspaceConfigurationDependencies []string                             `yaml:"workspace_configuration_dependencies,omitempty"`
+	SecretServiceConfigurations        []topologySecretServiceConfiguration `yaml:"secret_service_configurations,omitempty"`
+	Endpoints                          []topologyEndpoint                   `yaml:"endpoints"`
+	BootstrapJobEndpoints              []string                             `yaml:"bootstrap_job_endpoints,omitempty"`
+	Dependencies                       []topologyDependency                 `yaml:"dependencies,omitempty"`
+	PublicEgressPorts                  []uint32                             `yaml:"public_egress_ports,omitempty"`
+	Spec                               map[string]any                       `yaml:"spec,omitempty"`
+}
+
+type topologySecretServiceConfiguration struct {
+	Name    string                                    `yaml:"name"`
+	Entries []topologySecretServiceConfigurationEntry `yaml:"entries"`
+}
+
+type topologySecretServiceConfigurationEntry struct {
+	Key string `yaml:"key"`
 }
 
 type topologyEndpoint struct {
@@ -714,7 +726,7 @@ func validExternalName(value string) bool {
 func classifyEnvironment(environment *environmentConfig) (local bool, aws bool, cluster string, err error) {
 	kind := strings.TrimSpace(environment.Cluster.Kind)
 	switch kind {
-	case "k3d", "kind", "minikube":
+	case "k3d":
 		return true, false, kind, nil
 	case "eks":
 		return false, true, kind, nil
@@ -887,6 +899,7 @@ func topologyIstioResources(
 			Spec:       map[string]any{},
 		},
 	}
+	istio = append(istio, topologyInternalAuthorizationPolicies(topology, plan, namespace, labels)...)
 	if len(plan.ingress) == 0 {
 		// No public ingress: emit the mTLS baseline only, no Gateway.
 		return istio, nil, nil
@@ -1000,12 +1013,18 @@ func topologyIstioResources(
 				"http":     httpRoutes,
 			},
 		},
-		{
+	}
+	for _, service := range plan.services {
+		gateway = append(gateway, kubeObject{
 			APIVersion: "networking.istio.io/v1",
 			Kind:       "DestinationRule",
-			Metadata:   objectMeta{Name: name + "-defaults", Namespace: namespace, Labels: labels},
+			Metadata: objectMeta{
+				Name:      kubernetesName(name, service, "defaults"),
+				Namespace: namespace,
+				Labels:    labels,
+			},
 			Spec: map[string]any{
-				"host":     "*." + namespace + ".svc.cluster.local",
+				"host":     service + "." + namespace + ".svc.cluster.local",
 				"exportTo": []string{"."},
 				"trafficPolicy": map[string]any{
 					"connectionPool": map[string]any{
@@ -1020,9 +1039,92 @@ func topologyIstioResources(
 					},
 				},
 			},
-		},
+		})
 	}
 	return istio, gateway, nil
+}
+
+func topologyInternalAuthorizationPolicies(
+	topology deploymentTopology,
+	plan environmentPlan,
+	namespace string,
+	labels map[string]string,
+) []kubeObject {
+	inCluster := make(map[string]struct{}, len(plan.services))
+	for _, service := range plan.services {
+		inCluster[service] = struct{}{}
+	}
+	targetPorts := make(map[string]map[uint32]struct{})
+	addPort := func(service string, port uint32) {
+		if targetPorts[service] == nil {
+			targetPorts[service] = make(map[uint32]struct{})
+		}
+		targetPorts[service][port] = struct{}{}
+	}
+	for _, caller := range topology.Services {
+		if _, exists := inCluster[caller.Name]; !exists {
+			continue
+		}
+		for _, dependency := range caller.Dependencies {
+			if _, exists := inCluster[dependency.Service]; !exists {
+				continue
+			}
+			target, _ := topologyServiceByName(topology, dependency.Service)
+			for _, endpointName := range dependency.Endpoints {
+				endpoint, _ := topologyEndpointByName(target, endpointName)
+				addPort(target.Name, endpoint.Port)
+			}
+		}
+	}
+	for _, service := range topology.Services {
+		if _, exists := inCluster[service.Name]; !exists {
+			continue
+		}
+		for _, endpointName := range service.BootstrapJobEndpoints {
+			endpoint, _ := topologyEndpointByName(service, endpointName)
+			addPort(service.Name, endpoint.Port)
+		}
+	}
+
+	targets := make([]string, 0, len(targetPorts))
+	for target := range targetPorts {
+		targets = append(targets, target)
+	}
+	slices.Sort(targets)
+	policies := make([]kubeObject, 0, len(targets))
+	principal := "cluster.local/ns/" + namespace + "/sa/default"
+	for _, target := range targets {
+		ports := make([]uint32, 0, len(targetPorts[target]))
+		for port := range targetPorts[target] {
+			ports = append(ports, port)
+		}
+		slices.Sort(ports)
+		renderedPorts := make([]string, 0, len(ports))
+		for _, port := range ports {
+			renderedPorts = append(renderedPorts, strconv.FormatUint(uint64(port), 10))
+		}
+		policies = append(policies, kubeObject{
+			APIVersion: "security.istio.io/v1",
+			Kind:       "AuthorizationPolicy",
+			Metadata: objectMeta{
+				Name:      "allow-" + target + "-from-internal-topology",
+				Namespace: namespace,
+				Labels:    labels,
+			},
+			Spec: map[string]any{
+				"selector": map[string]any{"matchLabels": map[string]string{"app": target}},
+				"rules": []any{map[string]any{
+					"from": []any{map[string]any{"source": map[string]any{
+						"principals": []string{principal},
+					}}},
+					"to": []any{map[string]any{"operation": map[string]any{
+						"ports": renderedPorts,
+					}}},
+				}},
+			},
+		})
+	}
+	return policies
 }
 
 func loadDeploymentTopology(moduleDir, moduleName string, services []serviceDefinition) (deploymentTopology, error) {
@@ -1071,6 +1173,11 @@ func loadDeploymentTopology(moduleDir, moduleName string, services []serviceDefi
 			}
 			endpoints[endpoint.Name] = struct{}{}
 		}
+		for _, endpoint := range service.BootstrapJobEndpoints {
+			if _, exists := endpoints[endpoint]; !exists {
+				return deploymentTopology{}, fmt.Errorf("deployment topology service %q bootstrap Job references missing endpoint %q", service.Name, endpoint)
+			}
+		}
 		topologyServices[service.Name] = service
 	}
 	for service := range declared {
@@ -1086,6 +1193,13 @@ func loadDeploymentTopology(moduleDir, moduleName string, services []serviceDefi
 			target, exists := topologyServices[dependency.Service]
 			if !exists {
 				return deploymentTopology{}, fmt.Errorf("deployment topology service %q references undeclared dependency %q", service.Name, dependency.Service)
+			}
+			if len(dependency.Endpoints) == 0 {
+				return deploymentTopology{}, fmt.Errorf(
+					"deployment topology service %q dependency %q declares no endpoints",
+					service.Name,
+					dependency.Service,
+				)
 			}
 			for _, endpoint := range dependency.Endpoints {
 				if _, exists := topologyEndpointByName(target, endpoint); !exists {
@@ -1169,6 +1283,25 @@ func topologyNetworkPolicies(
 				}},
 			},
 		},
+		{
+			APIVersion: "networking.k8s.io/v1",
+			Kind:       "NetworkPolicy",
+			Metadata:   objectMeta{Name: "allow-ambient-hbone-transport", Namespace: namespace, Labels: labels},
+			Spec: map[string]any{
+				"podSelector": map[string]any{},
+				"policyTypes": []string{"Ingress", "Egress"},
+				"ingress": []any{map[string]any{
+					"ports": []any{
+						map[string]any{"protocol": "TCP", "port": 15008},
+					},
+				}},
+				"egress": []any{map[string]any{
+					"ports": []any{
+						map[string]any{"protocol": "TCP", "port": 15008},
+					},
+				}},
+			},
+		},
 	}
 	inCluster := make(map[string]struct{}, len(plan.services))
 	for _, service := range plan.services {
@@ -1212,6 +1345,28 @@ func topologyNetworkPolicies(
 			return nil, fmt.Errorf("dependency %s -> %s has no in-cluster service or managed handoff", current.caller, current.target)
 		}
 		policies = append(policies, managedEgressPolicy(namespace, labels, current.caller, current.target, current.ports, config.EgressCIDRs))
+	}
+	for _, service := range topology.Services {
+		if len(service.BootstrapJobEndpoints) == 0 {
+			continue
+		}
+		if _, exists := inCluster[service.Name]; !exists {
+			continue
+		}
+		portSet := make(map[uint32]struct{}, len(service.BootstrapJobEndpoints))
+		for _, endpointName := range service.BootstrapJobEndpoints {
+			endpoint, _ := topologyEndpointByName(service, endpointName)
+			portSet[endpoint.Port] = struct{}{}
+		}
+		ports := make([]uint32, 0, len(portSet))
+		for port := range portSet {
+			ports = append(ports, port)
+		}
+		slices.Sort(ports)
+		policies = append(policies,
+			bootstrapJobIngressPolicy(namespace, labels, service.Name, ports),
+			bootstrapJobEgressPolicy(namespace, labels, service.Name, ports),
+		)
 	}
 	ingressPorts := make(map[string]map[uint32]struct{})
 	for _, route := range plan.ingress {
@@ -1289,6 +1444,44 @@ func dependencyEgressPolicy(namespace string, labels map[string]string, caller, 
 	}
 }
 
+func bootstrapJobIngressPolicy(namespace string, labels map[string]string, service string, ports []uint32) kubeObject {
+	return kubeObject{
+		APIVersion: "networking.k8s.io/v1",
+		Kind:       "NetworkPolicy",
+		Metadata:   objectMeta{Name: kubernetesName("allow", service, "from", "bootstrap"), Namespace: namespace, Labels: labels},
+		Spec: map[string]any{
+			"podSelector": map[string]any{"matchLabels": map[string]string{"app": service}},
+			"policyTypes": []string{"Ingress"},
+			"ingress": []any{map[string]any{
+				"from": []any{map[string]any{"podSelector": map[string]any{"matchLabels": map[string]string{
+					"codefly.dev/bootstrap-service": service,
+					"job-name":                      service,
+				}}}},
+				"ports": networkPorts(ports),
+			}},
+		},
+	}
+}
+
+func bootstrapJobEgressPolicy(namespace string, labels map[string]string, service string, ports []uint32) kubeObject {
+	return kubeObject{
+		APIVersion: "networking.k8s.io/v1",
+		Kind:       "NetworkPolicy",
+		Metadata:   objectMeta{Name: kubernetesName("allow", service, "bootstrap", "to", service), Namespace: namespace, Labels: labels},
+		Spec: map[string]any{
+			"podSelector": map[string]any{"matchLabels": map[string]string{
+				"codefly.dev/bootstrap-service": service,
+				"job-name":                      service,
+			}},
+			"policyTypes": []string{"Egress"},
+			"egress": []any{map[string]any{
+				"to":    []any{map[string]any{"podSelector": map[string]any{"matchLabels": map[string]string{"app": service}}}},
+				"ports": networkPorts(ports),
+			}},
+		},
+	}
+}
+
 func managedEgressPolicy(
 	namespace string,
 	labels map[string]string,
@@ -1328,7 +1521,7 @@ var publicIPv4Exceptions = []string{
 }
 
 var publicIPv6Exceptions = []string{
-	"::/128", "::1/128", "::ffff:0:0/96", "64:ff9b::/96", "64:ff9b:1::/48", "100::/64", "2001::/23", "2001:db8::/32",
+	"::/128", "::1/128", "64:ff9b::/96", "64:ff9b:1::/48", "100::/64", "2001::/23", "2001:db8::/32",
 	"2002::/16", "fc00::/7", "fe80::/10", "ff00::/8",
 }
 
