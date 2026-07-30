@@ -1,40 +1,36 @@
 "use client";
 
-import { useQuery } from "@tanstack/react-query";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import type { ReactNode } from "react";
 import { Button } from "@/components/ui/button";
 import { useAuth } from "@/lib/auth";
-import { onboardingQueries } from "../service/queries";
-import { OnboardingWizard } from "./onboarding-wizard";
+import { useOnboardingController } from "../react/use-onboarding-controller";
+import { OnboardingWizardView } from "./onboarding-wizard";
 
 export function OnboardingGate({ children }: { children: ReactNode }) {
 	const { isAuthenticated, organizationId = "" } = useAuth();
 	const pathname = usePathname();
-	const query = useQuery({
-		...onboardingQueries.progress(organizationId),
-		enabled: isAuthenticated && Boolean(organizationId),
-	});
+	const { controller, model } = useOnboardingController(false);
 
 	if (isAuthenticated && !organizationId) {
 		return (
 			<main className="flex min-h-screen items-center justify-center bg-background">
-				<OnboardingWizard requiredOnly />
+				<OnboardingWizardView controller={controller} model={model} />
 			</main>
 		);
 	}
 
 	if (
 		isAuthenticated &&
-		!query.isLoading &&
-		!query.isError &&
-		query.data &&
-		!query.data.requiredComplete
+		model.phase !== "loading" &&
+		model.phase !== "error" &&
+		model.progress &&
+		!model.progress.requiredComplete
 	) {
 		return (
 			<main className="flex min-h-screen items-center justify-center bg-background">
-				<OnboardingWizard requiredOnly />
+				<OnboardingWizardView controller={controller} model={model} />
 			</main>
 		);
 	}
@@ -43,8 +39,8 @@ export function OnboardingGate({ children }: { children: ReactNode }) {
 		<>
 			{children}
 			{pathname !== "/onboarding" &&
-				query.data?.requiredComplete &&
-				!query.data.checklistComplete && (
+				model.progress?.requiredComplete &&
+				!model.progress.checklistComplete && (
 					<div className="fixed bottom-4 right-4 z-40 max-w-sm rounded-xl border bg-card p-4 shadow-lg">
 						<p className="font-medium">Finish workspace setup</p>
 						<p className="mt-1 text-sm text-muted-foreground">

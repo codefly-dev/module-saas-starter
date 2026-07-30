@@ -9,14 +9,18 @@ import (
 
 // OAuthRequestPolicy restricts OAuth initiation and callback exchange to the
 // single provider configured for this service and an exact set of redirect
-// URIs registered by the operator. Exact matching avoids suffix, wildcard,
-// alternate-port, and path-confusion bypasses.
+// URIs registered by the operator. At the Codefly ingress, the request can
+// instead be bound to the SDK-injected public origin carried across the trusted
+// gateway boundary. Exact matching avoids suffix, wildcard, alternate-port,
+// and path-confusion bypasses.
 type OAuthRequestPolicy struct {
 	provider     string
 	redirectURIs map[string]struct{}
 }
 
-// NewOAuthRequestPolicy validates startup configuration. HTTP redirects are
+// NewOAuthRequestPolicy validates startup configuration. An empty static list
+// is valid because Codefly ingress requests use ValidateForPublicOrigin; direct
+// requests remain denied by Validate. HTTP redirects are
 // accepted only for loopback development hosts; non-loopback callbacks require
 // HTTPS. Query strings are allowed when explicitly configured, but fragments
 // and userinfo are never valid OAuth callback targets.
@@ -53,9 +57,6 @@ func NewOAuthRequestPolicy(provider string, redirectURIs []string) (*OAuthReques
 		}
 		policy.redirectURIs[candidate] = struct{}{}
 	}
-	if len(policy.redirectURIs) == 0 {
-		return nil, fmt.Errorf("oauth policy: at least one OAUTH_ALLOWED_REDIRECT_URIS entry is required")
-	}
 	return policy, nil
 }
 
@@ -66,6 +67,20 @@ func (p *OAuthRequestPolicy) Validate(provider, redirectURI string) error {
 		return ErrInvalidOAuthRequest
 	}
 	if _, ok := p.redirectURIs[redirectURI]; !ok {
+		return ErrInvalidOAuthRequest
+	}
+	return nil
+}
+
+// ValidateForPublicOrigin binds OAuth initiation to the public endpoint that
+// Codefly injected into auth-sidecar. The callback path is server-owned; the
+// browser may not select an alternate path, host, or port.
+func (p *OAuthRequestPolicy) ValidateForPublicOrigin(provider, redirectURI, publicOrigin string) error {
+	if p == nil || provider != p.provider {
+		return ErrInvalidOAuthRequest
+	}
+	origin, err := CanonicalPublicOrigin(publicOrigin)
+	if err != nil || redirectURI != origin+"/auth/callback" {
 		return ErrInvalidOAuthRequest
 	}
 	return nil

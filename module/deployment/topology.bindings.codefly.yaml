@@ -23,9 +23,10 @@ services:
       version: 0.1.21
       publisher: codefly.dev
     workspace_configuration_dependencies:
+      - application
+      - identity
       - internal-auth
       - security
-      - workos
     endpoints:
       - name: connect
         api: connect
@@ -101,7 +102,7 @@ services:
           - http
     spec:
       hot-reload: true
-      rest-endpoint: false
+      rest-endpoint: true
       protocol-output-dirs:
         - code/pkg/gen
   - name: cache
@@ -128,10 +129,10 @@ services:
     agent:
       kind: codefly:service
       name: nextjs
-      version: 0.0.121
+      version: 0.0.124
       publisher: codefly.dev
     workspace_configuration_dependencies:
-      - workos
+      - identity
     endpoints:
       - name: http
         api: http
@@ -148,9 +149,9 @@ services:
       # Next dev/Turbopack owns source HMR. Restarting the entire dev server on
       # every TS/TSX save invalidates browser chunks instead of applying HMR.
       hot-reload: false
-      auth-provider: workos
       execution-profiles:
         local: development
+        local-dogfood: development
         production: production
       mode: ssr
   - name: marketing

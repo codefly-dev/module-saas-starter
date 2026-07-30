@@ -25,3 +25,10 @@ module/services/*/.cache/
 # nix caches + materialized per-service nix envs (machine-local, regenerated)
 **/.nix-cache/
 module/services/*/nix/
+
+# Local identity dogfood configuration is consumed by Codefly but owned by
+# the operator. Examples are committed alongside it; resolved provider
+# credentials and client identifiers never are.
+/configurations/local-dogfood/identity.env
+/configurations/local-dogfood/identity.secret.env
+/configurations/local-dogfood/identity.secret.yaml

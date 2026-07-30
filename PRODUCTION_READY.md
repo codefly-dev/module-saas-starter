@@ -56,7 +56,7 @@ performance claims.
 
 8. **Token and device-session policy**: access tokens live 15 minutes. A refresh family has a fixed seven-day absolute lifetime and a 24-hour idle window by default; rotation advances only idle expiry and cannot slide the absolute boundary. Initial login atomically enforces the configured active-device cap (default ten) and evicts the least-recently active family. Bounded display-only device metadata survives MFA and rotation, while management uses the stable family id and revokes the whole device. Refresh consumption, current-authorization resolution, family revocation, and successor insertion are one locked PostgreSQL transaction. Each refresh requires an active user and current selected-org membership, projects current org/platform roles, and evaluates current verified MFA enrollment. Concurrent reuse of a token consumed by rotation commits revocation of every active refresh session for the affected user; logout and administrative revocation are not misclassified as replay. Database triggers revoke affected refresh sessions atomically when user status, membership/org role, platform role, or verified MFA enrollment changes. Organization switching is a separate authenticated access-token exchange serialized on the exact active session row: the server resolves current target membership/roles, signs a fresh access token with the same `sid`, and updates only the selected organization projection. It does not rotate the refresh credential, create a device, or advance session lifetime, so a switch racing refresh cannot be misclassified as replay. An already-issued access token remains a signed snapshot for at most its 15-minute lifetime; high-risk deployments can shorten that TTL or add a stateful gateway session check without weakening refresh invariants.
 
-9. **`AUTH_PROVIDER=workos|dev`** env var selects the validator used at login. `dev` replaces today's `X-Dev-Role` header bypass with a dev validator reading the fixture seed. The sidecar does not read this env var — it only validates our JWT.
+9. **Codefly `identity` configuration selects the login adapter.** Fixture mode additionally requires an explicit Codefly fixture; WorkOS, Auth0, and Google use the same generic configuration contract. The sidecar does not select a provider—it only validates our JWT.
 
 10. **Orgs are canonical in our DB.** `orgs.provider_org_id` is a nullable link to a WorkOS organization for SSO configuration, but not the source of truth.
 
@@ -128,7 +128,7 @@ same provider-code exchange as every returning user.
 
 ## What gets deleted
 
-- `X-Dev-Role` / `X-Dev-User-ID` header bypass → replaced by `AUTH_PROVIDER=dev`
+- `X-Dev-Role` / `X-Dev-User-ID` header bypass → replaced by explicitly configured fixture identity plus a Codefly-selected fixture
 - Caller-asserted provider subjects, emails, roles, organizations, or session ids; the server derives all identity and authorization state
 - Any `pkg/business/*.go` import of `jwt`, `auth`, or session/token parsing
 - Method admission is derived from the protobuf RPC inventory and enforced by deny-by-default Connect/gRPC interceptors. Resource ownership and tenant checks remain in handlers and PostgreSQL RLS; the sidecar only validates credentials and stamps canonical identity.
@@ -267,11 +267,13 @@ State-of-the-art, not "good enough". Every item below lands as part of the phase
   routes fail closed on limiter-operation errors; local development may use
   the in-memory backend.
 - **WebAuthn/passkeys**: registration and assertion options are generated
-  server-side with required user verification. `WEBAUTHN_RP_ID` and the exact
-  `WEBAUTHN_RP_ORIGINS` allowlist are supplied by Codefly's `security`
-  configuration and fail startup when absent or malformed. Full credentials
-  and ceremony state are Vault-encrypted; one-use state, authenticator counter
-  updates, and session creation are transactionally locked.
+  server-side with required user verification. `WEBAUTHN_RP_ID` is supplied by
+  Codefly's `security` configuration; the exact request origin comes from
+  auth-sidecar's SDK-injected endpoint after gateway-token verification.
+  `WEBAUTHN_RP_ORIGINS` remains an optional direct-access fallback. Full
+  credentials and ceremony state are Vault-encrypted; one-use state,
+  authenticator counter updates, and session creation are transactionally
+  locked.
 - **Generic inbox/outbox foundation**: product-neutral `saas.jobs.v1`
   protobufs generate the shared envelope, scope, lease, failure, attempt, and
   state vocabulary for Go and TypeScript. Migration 72 stores exact payload

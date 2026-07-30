@@ -5,6 +5,8 @@ import (
 	"net/http"
 	"testing"
 
+	"accounts/pkg/auth"
+
 	"connectrpc.com/connect"
 	"github.com/codefly-dev/core/wool"
 	"github.com/stretchr/testify/require"
@@ -137,4 +139,43 @@ func TestForwardedIdentityRequiresGatewayCredential(t *testing.T) {
 	userID, ok = wool.Get(grpcCtx).UserID()
 	require.True(t, ok)
 	require.Equal(t, "user-1", userID)
+}
+
+func TestPublicOriginRequiresGatewayCredential(t *testing.T) {
+	previousToken := gatewayToken
+	SetGatewayToken("test-gateway-token")
+	t.Cleanup(func() { SetGatewayToken(previousToken) })
+
+	connectPolicy := &connectPolicyInterceptor{getMinter: nil}
+	headers := http.Header{
+		"X-Codefly-Gateway-Token": []string{"test-gateway-token"},
+		publicOriginHeader:        []string{"http://localhost:54321"},
+	}
+	ctx, err := connectPolicy.authorize(context.Background(), "/saas.accounts.v1.AuthService/BeginOAuth", headers)
+	require.NoError(t, err)
+	origin, ok := auth.VerifiedPublicOrigin(ctx)
+	require.True(t, ok)
+	require.Equal(t, "http://localhost:54321", origin)
+	require.Empty(t, headers.Get(publicOriginHeader))
+
+	spoofed := http.Header{publicOriginHeader: []string{"https://evil.example"}}
+	ctx, err = connectPolicy.authorize(context.Background(), "/saas.accounts.v1.AuthService/BeginOAuth", spoofed)
+	require.NoError(t, err)
+	_, ok = auth.VerifiedPublicOrigin(ctx)
+	require.False(t, ok)
+
+	grpcPolicy := &grpcPolicyAuthorizer{getMinter: nil, exposure: rpcExposureTenant}
+	grpcCtx := metadata.NewIncomingContext(context.Background(), metadata.Pairs(
+		"x-codefly-gateway-token", "test-gateway-token",
+		"x-codefly-public-origin", "http://localhost:54321",
+	))
+	grpcCtx, err = grpcPolicy.authorize(grpcCtx, "/saas.accounts.v1.AuthService/BeginOAuth")
+	require.NoError(t, err)
+	origin, ok = auth.VerifiedPublicOrigin(grpcCtx)
+	require.True(t, ok)
+	require.Equal(t, "http://localhost:54321", origin)
+	grpcHeaders, ok := metadata.FromIncomingContext(grpcCtx)
+	require.True(t, ok)
+	require.Empty(t, grpcHeaders.Get("x-codefly-gateway-token"))
+	require.Empty(t, grpcHeaders.Get("x-codefly-public-origin"))
 }

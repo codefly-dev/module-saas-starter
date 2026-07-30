@@ -1,9 +1,13 @@
 # Dogfooding the saas-starter
 
 > A scripted walk-through of every shipped feature, organized by what
-> you need wired (nothing → fixture → real Stripe → real WorkOS).
+> you need wired (nothing → fixture → real Stripe → real identity).
 > Tick boxes as you go; report regressions inline as commits or
 > issues.
+
+For a runnable local product with a real external identity provider, begin
+with [LOCAL_DOGFOODING.md](./LOCAL_DOGFOODING.md). This checklist then
+exercises capabilities inside that Codefly-managed dogfood graph.
 
 ---
 
@@ -19,8 +23,8 @@ cd ~/Development/deus/codefly.dev/agents/services/s3 && codefly agent build
 # 2. Enter the standalone starter repository
 cd ~/Development/deus/codefly/module-saas-starter
 
-# 3. Boot the stack
-codefly run service --fixture dev-admin
+# 3. Boot the product ingress and its complete dependency graph
+codefly run service auth-sidecar --fixture dev-admin
 ```
 
 Expected graph: `vault + store + cache + object-storage (s3 plugin
@@ -108,7 +112,8 @@ SMTP. Every box should pass cleanly with just the dev-admin fixture.
 
 ### SSO admin — stub mode (new)
 
-- [ ] Ensure WORKOS_API_KEY is **unset**.
+- [ ] Ensure `IDENTITY_MANAGEMENT_API_KEY` is absent from the selected
+      Codefly `identity` configuration.
 - [ ] `/admin/sso` — pick Acme Corp. Status = "Not configured", "Set up SSO" CTA visible.
 - [ ] Click "Set up SSO". Same-tab redirect to `/admin/sso?demo=1`.
 - [ ] After redirect, status = "Setup pending". "Continue setup" + "Disable SSO" buttons.
@@ -179,13 +184,19 @@ codefly run service --fixture dev-admin
 
 ---
 
-## Tier 3 — with `WORKOS_API_KEY` (real SSO)
+## Tier 3 — real WorkOS identity and SSO management
 
-Set `WORKOS_API_KEY` in your api secret.
+Configure WorkOS exclusively through the `local-dogfood` Codefly profile:
 
 ```bash
-codefly secret set api WORKOS_API_KEY sk_live_or_test_xxxxxx
+codefly doctor workspace --env local-dogfood
+codefly run service auth-sidecar --env local-dogfood
 ```
+
+See [LOCAL_DOGFOODING.md](./LOCAL_DOGFOODING.md) for the generic public and
+secret identity manifests. `IDENTITY_MANAGEMENT_API_KEY` enables the WorkOS
+Admin Portal integration; `IDENTITY_CLIENT_ID` and
+`IDENTITY_CLIENT_SECRET` enable actual hosted login.
 
 - [ ] `/admin/sso` — pick Acme Corp. Click "Set up SSO".
 - [ ] Browser redirects to `https://api.workos.com/portal/...` admin portal.
@@ -207,15 +218,16 @@ codefly secret set api WORKOS_API_KEY sk_live_or_test_xxxxxx
 Run them:
 
 ```bash
-# Backend — full pkg/business suite spins up the dependency graph
-# via WithDependencies. ~30s warm; first cold run pulls images.
-cd module/services/api/code && go test ./...
+# Backend — Codefly asks the service agent to run the Go suites.
+cd module/services/accounts
+codefly test service
 
-# FE unit
-cd module/services/frontend/code && npm test
+# FE unit — Codefly asks the service agent to run Vitest.
+cd ../frontend
+codefly test service
 
-# FE e2e (heavy — boots the whole stack)
-cd module/services/frontend/code && npx playwright test
+# FE e2e (heavy — Codefly owns the dependency graph)
+codefly test service --suite e2e
 ```
 
 ---

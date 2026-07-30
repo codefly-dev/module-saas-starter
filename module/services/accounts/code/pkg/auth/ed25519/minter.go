@@ -397,7 +397,12 @@ func identityFromCurrentAuthorization(
 	assuranceLevel := rec.AssuranceLevel
 	mfaVerifiedAt := rec.MFAVerifiedAt
 	mfaSatisfied := rec.MFASatisfied
-	if !authorization.MFAEnrolled {
+	developmentFixtureAssurance :=
+		slices.Contains(rec.AuthenticationMethods, auth.AuthenticationMethodFixture) &&
+			rec.MFASatisfied &&
+			assurance.HasMFAEvidence() &&
+			!rec.MFAVerifiedAt.After(now.Add(time.Minute))
+	if !authorization.MFAEnrolled && !developmentFixtureAssurance {
 		authenticationMethods = slices.DeleteFunc(authenticationMethods, isMFAMethod)
 		assuranceLevel = auth.AssuranceLevelAAL1
 		mfaVerifiedAt = time.Time{}

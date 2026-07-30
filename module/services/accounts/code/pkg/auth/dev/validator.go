@@ -7,8 +7,9 @@
 // prevents a fixture shortcut from changing the identity trusted clients
 // resolve.
 //
-// Only wired when AUTH_PROVIDER=dev or Codefly explicitly selects a fixture.
-// Production startup leaves this validator disconnected from Authenticate.
+// Only wired when the Codefly identity profile selects fixture mode and the
+// runtime explicitly selects a fixture. External-provider profiles leave this
+// validator disconnected from Authenticate even when they seed fixture data.
 package devvalidator
 
 import (

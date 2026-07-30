@@ -47,8 +47,15 @@ func main() {
 
 	grpcPort := codefly.For(ctx).WithDefaultNetwork().API(standards.GRPC).NetworkInstance().Port
 	var httpPort uint16
-	if httpNet := codefly.For(ctx).WithDefaultNetwork().API(standards.REST).NetworkInstance(); httpNet != nil {
-		httpPort = httpNet.Port
+	publicOrigin := ""
+	httpNet, httpNetErr := codefly.For(ctx).API(standards.REST).ResolveNetworkInstance()
+	if httpNetErr != nil || httpNet == nil {
+		panic(fmt.Sprintf("Codefly REST endpoint is unavailable: %v", httpNetErr))
+	}
+	httpPort = httpNet.Port
+	publicOrigin, err = canonicalPublicOrigin(httpNet.Address)
+	if err != nil {
+		panic(fmt.Sprintf("invalid Codefly REST endpoint address: %v", err))
 	}
 
 	apiNet := codefly.For(ctx).Service("accounts").Endpoint("grpc").API("grpc").NetworkInstance()
@@ -155,7 +162,7 @@ func main() {
 			WithRedisURL(redisURL),
 			WithAuthenticationAttemptLimit(authenticationAttemptLimit),
 		) // 1000 req/min per org/IP; stricter MFA budget is configured separately.
-		gateway := NewGateway(sidecar, matcher, upstreams, rateLimiter)
+		gateway := NewGateway(sidecar, matcher, upstreams, rateLimiter, WithPublicOrigin(publicOrigin))
 		httpServer = &http.Server{
 			Addr:    fmt.Sprintf(":%d", httpPort),
 			Handler: gateway,
@@ -203,6 +210,23 @@ func main() {
 	if err := grpcServer.Serve(grpcLis); err != nil {
 		fmt.Fprintf(os.Stderr, "grpc server error: %v\n", err)
 	}
+}
+
+func canonicalPublicOrigin(candidate string) (string, error) {
+	candidate = strings.TrimSpace(candidate)
+	parsed, err := url.Parse(candidate)
+	if err != nil || !parsed.IsAbs() || parsed.Host == "" {
+		return "", fmt.Errorf("expected an absolute URL, got %q", candidate)
+	}
+	if parsed.User != nil || parsed.Opaque != "" || parsed.RawPath != "" ||
+		(parsed.Path != "" && parsed.Path != "/") || parsed.RawQuery != "" ||
+		parsed.ForceQuery || parsed.Fragment != "" {
+		return "", fmt.Errorf("expected an exact origin, got %q", candidate)
+	}
+	if parsed.Scheme != "http" && parsed.Scheme != "https" {
+		return "", fmt.Errorf("expected an HTTP(S) origin, got %q", candidate)
+	}
+	return strings.TrimSuffix(candidate, "/"), nil
 }
 
 func configuredAuthenticationAttemptLimit() (int, error) {

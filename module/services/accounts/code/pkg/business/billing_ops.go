@@ -56,6 +56,17 @@ func (s *Service) SetBillingRedirects(redirects BillingRedirects) {
 	s.billingURLs = redirects
 }
 
+func (s *Service) billingRedirects(ctx context.Context) BillingRedirects {
+	if origin := s.publicBaseURL(ctx); origin != "" {
+		return BillingRedirects{
+			CheckoutSuccessURL: origin + "/admin/billing/success?session_id={CHECKOUT_SESSION_ID}",
+			CheckoutCancelURL:  origin + "/admin/billing",
+			PortalReturnURL:    origin + "/admin/billing",
+		}
+	}
+	return s.billingURLs
+}
+
 // StartCheckoutInput is what the HTTP route passes in.
 type StartCheckoutInput struct {
 	UserID         string // the caller (for audit)
@@ -85,7 +96,8 @@ func (s *Service) StartCheckout(ctx context.Context, in StartCheckoutInput) (str
 	if err := validateBillingIdempotencyKey(in.IdempotencyKey); err != nil {
 		return "", w.Wrapf(err, "invalid checkout idempotency key")
 	}
-	if s.billingURLs.CheckoutSuccessURL == "" || s.billingURLs.CheckoutCancelURL == "" {
+	redirects := s.billingRedirects(ctx)
+	if redirects.CheckoutSuccessURL == "" || redirects.CheckoutCancelURL == "" {
 		return "", w.NewError("billing checkout redirects are not configured")
 	}
 
@@ -108,8 +120,8 @@ func (s *Service) StartCheckout(ctx context.Context, in StartCheckoutInput) (str
 	session, err := s.billing.CreateCheckoutSession(ctx, billing.CheckoutParams{
 		CustomerID:     customerID,
 		PriceID:        plan.StripePriceID,
-		SuccessURL:     s.billingURLs.CheckoutSuccessURL,
-		CancelURL:      s.billingURLs.CheckoutCancelURL,
+		SuccessURL:     redirects.CheckoutSuccessURL,
+		CancelURL:      redirects.CheckoutCancelURL,
 		OrgID:          in.OrgID,
 		TrialDays:      plan.TrialDays,
 		Currency:       plan.Currency,
@@ -194,7 +206,8 @@ func (s *Service) OpenBillingPortal(ctx context.Context, in OpenBillingPortalInp
 	if err := validateBillingIdempotencyKey(in.IdempotencyKey); err != nil {
 		return "", w.Wrapf(err, "invalid portal idempotency key")
 	}
-	if s.billingURLs.PortalReturnURL == "" {
+	redirects := s.billingRedirects(ctx)
+	if redirects.PortalReturnURL == "" {
 		return "", w.NewError("billing portal return URL is not configured")
 	}
 
@@ -214,7 +227,7 @@ func (s *Service) OpenBillingPortal(ctx context.Context, in OpenBillingPortalInp
 	session, err := s.billing.CreateBillingPortalSession(
 		ctx,
 		customerID,
-		s.billingURLs.PortalReturnURL,
+		redirects.PortalReturnURL,
 		billingMutationKey("portal", in.IdempotencyKey),
 	)
 	if err != nil {

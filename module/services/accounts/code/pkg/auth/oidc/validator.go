@@ -55,9 +55,18 @@ type Config struct {
 	// EmailClaim is the claim name carrying the user's email.
 	// Defaults to "email".
 	EmailClaim string
+	// AllowMissingEmail permits a provider adapter to validate the signed
+	// token first and then supply a verified email from the authenticated token
+	// exchange response. Generic OIDC flows should leave this false.
+	AllowMissingEmail bool
 	// OrgClaim is the claim name carrying the provider's organization id.
 	// Defaults to "organization_id". Empty string disables org extraction.
 	OrgClaim string
+	// ClientIDClaim and ClientID validate providers such as WorkOS that bind an
+	// access token to an application with a non-standard `client_id` claim
+	// instead of the OAuth `aud` claim.
+	ClientIDClaim string
+	ClientID      string
 	// AllowedAlgs restricts acceptable signing algs. Defaults to RS256 only.
 	AllowedAlgs []string
 	// HTTPClient used to fetch the JWKS. Defaults to http.DefaultClient.
@@ -148,8 +157,14 @@ func (v *Validator) Validate(ctx context.Context, token string) (*auth.Claims, e
 		return nil, auth.ErrMissingSubject
 	}
 	email, _ := claims[v.cfg.EmailClaim].(string)
-	if email == "" {
+	if email == "" && !v.cfg.AllowMissingEmail {
 		return nil, auth.ErrMissingEmail
+	}
+	if v.cfg.ClientIDClaim != "" {
+		clientID, _ := claims[v.cfg.ClientIDClaim].(string)
+		if clientID == "" || clientID != v.cfg.ClientID {
+			return nil, auth.ErrTokenWrongAudience
+		}
 	}
 	var providerOrg string
 	if v.cfg.OrgClaim != "" {

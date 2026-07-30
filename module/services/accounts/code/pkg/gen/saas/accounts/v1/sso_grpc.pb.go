@@ -32,7 +32,8 @@ const (
 //
 // SSOAdminService — org-admin-gated. Lets paying customers wire up
 // SAML / OIDC themselves through the WorkOS Admin Portal without a
-// support ticket. Stub-mode (no WORKOS_API_KEY env) returns a
+// support ticket. Stub-mode (no IDENTITY_MANAGEMENT_API_KEY in the selected
+// Codefly identity configuration) returns a
 // placeholder portal link pointing back at /admin/sso?demo=1 so dev
 // environments can exercise the FE flow.
 type SSOAdminServiceClient interface {
@@ -85,7 +86,8 @@ func (c *sSOAdminServiceClient) Disable(ctx context.Context, in *DisableSSOReque
 //
 // SSOAdminService — org-admin-gated. Lets paying customers wire up
 // SAML / OIDC themselves through the WorkOS Admin Portal without a
-// support ticket. Stub-mode (no WORKOS_API_KEY env) returns a
+// support ticket. Stub-mode (no IDENTITY_MANAGEMENT_API_KEY in the selected
+// Codefly identity configuration) returns a
 // placeholder portal link pointing back at /admin/sso?demo=1 so dev
 // environments can exercise the FE flow.
 type SSOAdminServiceServer interface {

@@ -180,7 +180,7 @@ func TestRLS_Subscriptions_CrossTenantBlocked(t *testing.T) {
 	require.NoError(t, testStore.WithControlPlane(ctx, func(ctx context.Context) error {
 		if err := testStore.CreateSubscription(ctx, &business.Subscription{
 			ID: business.NewIDString(), OrgID: orgA, PlanID: freePlanID, Status: "active",
-			StripeSubscriptionID: "sub_a", CurrentPeriodStart: &now, CurrentPeriodEnd: &end,
+			CurrentPeriodStart: &now, CurrentPeriodEnd: &end,
 		}); err != nil {
 			return err
 		}
@@ -195,7 +195,8 @@ func TestRLS_Subscriptions_CrossTenantBlocked(t *testing.T) {
 		mine, err := testStore.GetSubscription(ctx, orgA)
 		require.NoError(t, err)
 		require.NotNil(t, mine, "org A should see its own subscription")
-		require.Equal(t, "sub_a", mine.StripeSubscriptionID)
+		require.Empty(t, mine.StripeSubscriptionID,
+			"a first-party free plan has no Stripe subscription id")
 
 		stolen, err := testStore.GetSubscription(ctx, orgB)
 		require.NoError(t, err)

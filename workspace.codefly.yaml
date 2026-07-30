@@ -40,6 +40,18 @@ environments:
                 - app.saas.localhost
                 - localhost
 
+    # Real local product use. This remains a local Codefly runtime, but loads
+    # operator-owned identity credentials from configurations/local-dogfood instead
+    # of enabling fixture authentication.
+    - name: local-dogfood
+      description: Local SaaS dogfood with an external identity provider
+      cluster:
+          kind: k3d
+          kubeconfig: ~/.kube/config
+      registry:
+          url: localhost:5001
+      namespace: saas-starter-dogfood
+
     # AWS EKS production target. Replace registry URL with your ECR
     # repo + bump kubeconfig path to wherever your cluster's config
     # lives (or set $KUBECONFIG and drop the kubeconfig line). `auth:

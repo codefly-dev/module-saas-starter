@@ -9,6 +9,7 @@ import (
 	ed25519minter "accounts/pkg/auth/ed25519"
 	"accounts/pkg/auth/oidc"
 	pgauth "accounts/pkg/auth/pg"
+	workosauth "accounts/pkg/auth/workos"
 	"accounts/pkg/billing"
 	pgbilling "accounts/pkg/billing/pg"
 	"accounts/pkg/business"
@@ -212,6 +213,7 @@ func doWork(ctx context.Context) (Clean, error) {
 	// implements them.
 	sessionStore := pgauth.NewSessionStore(store, sessionPolicy)
 	resolver := pgauth.NewResolver(store)
+	resolver.SetBootstrapAdminEmail(applicationEnv("BOOTSTRAP_ADMIN_EMAIL"))
 	priv, err := loadSigningKey(ctx)
 	if err != nil {
 		return nil, err
@@ -252,10 +254,10 @@ func doWork(ctx context.Context) (Clean, error) {
 	// not defense-in-depth.
 	service.SetOAuthStateSigner(auth.NewOAuthStateSigner(priv))
 
-	// Authentication mode is explicit. A selected Codefly fixture implies
-	// dev mode; otherwise AUTH_PROVIDER is required. Empty or incomplete
-	// production configuration fails startup instead of silently enabling
-	// caller-supplied identities.
+	// Authentication mode is explicit in the Codefly identity configuration.
+	// A selected fixture is an optional data seed and cannot replace the
+	// configured provider. Fixture authentication must itself be selected and
+	// additionally requires an explicit fixture.
 	authProvider := configuredAuthProvider(selectedFixture)
 	v, ex, err := buildProviderStack(authProvider, selectedFixture)
 	if err != nil {
@@ -264,13 +266,19 @@ func doWork(ctx context.Context) (Clean, error) {
 	if authProvider == "dev" {
 		service.SetDevelopmentTokenValidator(v)
 	} else {
+		if authProvider == "workos" {
+			// SSO administration is a WorkOS-specific optional adapter. Other
+			// identity providers cannot accidentally activate it by exposing a
+			// similarly named management credential.
+			service.SetSSOManagementAPIKey(identityEnv("IDENTITY_MANAGEMENT_API_KEY"))
+		}
 		oauthPolicy, err := buildOAuthRequestPolicy(authProvider)
 		if err != nil {
 			return nil, fmt.Errorf("configure OAuth request policy: %w", err)
 		}
 		service.SetOAuthRequestPolicy(oauthPolicy)
 		service.SetTokenValidator(v)
-		service.SetCodeExchanger(oidc.AsBusinessExchanger(ex))
+		service.SetCodeExchanger(ex)
 	}
 
 	// Audit persistence and matching webhook fan-out share one database
@@ -365,13 +373,13 @@ func doWork(ctx context.Context) (Clean, error) {
 	// Email production and transport are split by the generic outbox. Request
 	// paths render templates and enqueue exact messages in their product
 	// transaction; this worker is the only owner of the provider adapter.
-	fromAddr := os.Getenv("EMAIL_FROM")
+	fromAddr := applicationEnv("EMAIL_FROM")
 	if fromAddr == "" {
 		fromAddr = "no-reply@localhost"
 	}
-	appBase := os.Getenv("APP_BASE_URL")
-	if appBase == "" {
-		appBase = "http://localhost:21931"
+	appBase, err := configuredApplicationBaseURL()
+	if err != nil {
+		return nil, err
 	}
 	templateStore := infra.NewPostgresTemplateStore(store)
 	requestEmailOutbox, err := email.NewOutbox(store, templateStore, fromAddr)
@@ -395,11 +403,15 @@ func doWork(ctx context.Context) (Clean, error) {
 		return nil, err
 	}
 
-	// Billing: wire Stripe webhook handler at /v1/billing/webhook AND
-	// the authenticated /v1/billing/checkout + /v1/billing/portal
-	// endpoints. The sidecar's public-path allowlist covers the
-	// webhook; checkout + portal are authenticated via forwarded
-	// identity headers.
+	// Selecting the free plan is a first-party operation and must remain
+	// available when Stripe is not configured (the default local/test setup).
+	billingHTTPHandler := adapters.NewBillingHTTPHandler(service)
+	adapters.RegisterHTTPRoute("/v1/billing/free-plan", billingHTTPHandler)
+
+	// Billing: when Stripe is configured, wire its webhook plus the
+	// authenticated checkout and portal endpoints. The sidecar's public-path
+	// allowlist covers the webhook; user-facing actions are authenticated via
+	// forwarded identity headers.
 	var stripeWebhookWorker *jobs.Worker
 	var billingWorkerPool interface{ Close() }
 	if stripeKey := os.Getenv("STRIPE_API_KEY"); stripeKey != "" {
@@ -461,8 +473,8 @@ func doWork(ctx context.Context) (Clean, error) {
 			return nil, err
 		}
 		service.SetBillingClient(stripeClient)
-		adapters.RegisterHTTPRoute("/v1/billing/checkout", adapters.NewBillingHTTPHandler(service))
-		adapters.RegisterHTTPRoute("/v1/billing/portal", adapters.NewBillingHTTPHandler(service))
+		adapters.RegisterHTTPRoute("/v1/billing/checkout", billingHTTPHandler)
+		adapters.RegisterHTTPRoute("/v1/billing/portal", billingHTTPHandler)
 	}
 
 	// Start background data retention goroutine. Runs once on startup and
@@ -684,25 +696,26 @@ func configuredSessionPolicy() (auth.SessionPolicy, error) {
 	return policy, nil
 }
 
-func configuredBillingBaseURL() (string, error) {
-	raw := strings.TrimSpace(os.Getenv("APP_BASE_URL"))
+func configuredApplicationBaseURL() (string, error) {
+	raw := strings.TrimSpace(applicationEnv("APP_BASE_URL"))
 	if raw == "" {
-		if codefly.IsLocal() {
-			return "http://localhost:21931", nil
-		}
-		return "", fmt.Errorf("billing: APP_BASE_URL is required when Stripe is configured")
+		return "", nil
 	}
 	parsed, err := url.Parse(raw)
 	if err != nil || parsed.Host == "" || parsed.User != nil || parsed.Opaque != "" ||
 		(parsed.Scheme != "https" && parsed.Scheme != "http") ||
 		(parsed.Path != "" && parsed.Path != "/") || parsed.RawPath != "" ||
 		parsed.RawQuery != "" || parsed.ForceQuery || parsed.Fragment != "" {
-		return "", fmt.Errorf("billing: APP_BASE_URL must be an exact http(s) origin")
+		return "", fmt.Errorf("application: APP_BASE_URL must be an exact http(s) origin")
 	}
 	if parsed.Scheme != "https" && parsed.Hostname() != "localhost" && parsed.Hostname() != "127.0.0.1" {
-		return "", fmt.Errorf("billing: APP_BASE_URL must use https outside local development")
+		return "", fmt.Errorf("application: APP_BASE_URL must use https outside local development")
 	}
 	return strings.TrimSuffix(raw, "/"), nil
+}
+
+func configuredBillingBaseURL() (string, error) {
+	return configuredApplicationBaseURL()
 }
 
 func configuredWebAuthn() (rpID, displayName string, origins []string, err error) {
@@ -725,23 +738,18 @@ func configuredWebAuthn() (rpID, displayName string, origins []string, err error
 		}
 		origins = append(origins, strings.TrimSuffix(origin, "/"))
 	}
-	if len(origins) == 0 {
-		return "", "", nil, fmt.Errorf("WEBAUTHN_RP_ORIGINS must contain at least one exact browser origin")
-	}
 	return rpID, displayName, origins, nil
 }
 
 // buildProviderStack returns the (TokenValidator, Exchanger) pair
-// matching AUTH_PROVIDER. Supported values:
+// selected by the Codefly `identity` workspace configuration. Supported values:
 //
-//	dev        — DevValidator reading the dev-admin fixture seed. No
-//	             exchanger (no OAuth code flow). Used for local iter.
+//	fixture    — DevValidator reading the explicitly selected Codefly fixture.
+//	             No exchanger (no OAuth code flow). Used for local iteration.
 //	workos     — oidc.Validator + oidc.Exchanger preconfigured for
-//	             WorkOS via WORKOS_CLIENT_ID + WORKOS_CLIENT_SECRET.
-//	auth0      — same shape, Auth0 preset. Requires AUTH0_DOMAIN +
-//	             AUTH0_AUDIENCE + AUTH0_CLIENT_ID/SECRET.
-//	google     — google sign-in. GOOGLE_CLIENT_ID + GOOGLE_CLIENT_SECRET.
-//	(empty)    — invalid unless the Codefly SDK reports an explicit fixture.
+//	             WorkOS through the same generic identity contract.
+//	auth0      — generic OIDC flow with Auth0 defaults.
+//	google     — generic OIDC flow with Google defaults.
 //
 // Empty, unknown, and incomplete provider configurations return an error so
 // the service cannot start with an ambiguous authentication boundary.
@@ -755,16 +763,33 @@ func workspaceEnv(configuration, key string) string {
 	return os.Getenv(key)
 }
 
-func workosEnv(key string) string { return workspaceEnv("workos", key) }
+// identityEnv is intentionally Codefly-only. Local dogfood, tests, and
+// deployments all select a workspace configuration profile; raw process
+// variables must not become a second, divergent identity authority.
+func identityEnv(key string) string {
+	value, _ := codefly.For(codefly.Context()).WorkspaceValue("identity", key)
+	return value
+}
+
+// applicationEnv is also Codefly-only. Local product origins and bootstrap
+// identity must come from the selected workspace configuration, never from an
+// ambient shell file that can disagree with the browser runtime.
+func applicationEnv(key string) string {
+	value, _ := codefly.For(codefly.Context()).WorkspaceValue("application", key)
+	return value
+}
 
 func configuredAuthProvider(selectedFixture string) string {
-	if selectedFixture != "" {
+	provider := strings.ToLower(strings.TrimSpace(identityEnv("IDENTITY_PROVIDER")))
+	switch provider {
+	case "fixture", "dev":
+		if selectedFixture == "" {
+			return "fixture"
+		}
 		return "dev"
-	}
-	if provider := strings.ToLower(strings.TrimSpace(workosEnv("AUTH_PROVIDER"))); provider != "" {
+	default:
 		return provider
 	}
-	return ""
 }
 
 func hasConfiguredValue(value string) bool {
@@ -773,7 +798,7 @@ func hasConfiguredValue(value string) bool {
 }
 
 func configuredOAuthRedirectURIs() []string {
-	raw := workosEnv("OAUTH_ALLOWED_REDIRECT_URIS")
+	raw := identityEnv("IDENTITY_ALLOWED_REDIRECT_URIS")
 	parts := strings.Split(raw, ",")
 	redirectURIs := make([]string, 0, len(parts))
 	for _, part := range parts {
@@ -788,7 +813,7 @@ func buildOAuthRequestPolicy(provider string) (*auth.OAuthRequestPolicy, error) 
 	return auth.NewOAuthRequestPolicy(provider, configuredOAuthRedirectURIs())
 }
 
-func buildProviderStack(provider, selectedFixture string) (auth.TokenValidator, *oidc.Exchanger, error) {
+func buildProviderStack(provider, selectedFixture string) (auth.TokenValidator, business.CodeExchanger, error) {
 	switch provider {
 	case "dev":
 		if selectedFixture == "" {
@@ -805,31 +830,32 @@ func buildProviderStack(provider, selectedFixture string) (auth.TokenValidator, 
 		return v, nil, nil
 
 	case "workos":
-		clientID := workosEnv("WORKOS_CLIENT_ID")
-		clientSecret := workosEnv("WORKOS_CLIENT_SECRET")
+		clientID := identityEnv("IDENTITY_CLIENT_ID")
+		clientSecret := identityEnv("IDENTITY_CLIENT_SECRET")
 		if !hasConfiguredValue(clientID) || !hasConfiguredValue(clientSecret) {
-			return nil, nil, fmt.Errorf("AUTH_PROVIDER=workos requires WORKOS_CLIENT_ID and WORKOS_CLIENT_SECRET")
+			return nil, nil, fmt.Errorf("identity provider workos requires IDENTITY_CLIENT_ID and IDENTITY_CLIENT_SECRET")
 		}
 		cfg := oidc.WorkOSConfig(clientID)
-		// Allow env override for self-hosted / WorkOS-compatible tenants.
-		if iss := workosEnv("WORKOS_ISSUER"); iss != "" {
+		// Allow Codefly configuration overrides for custom WorkOS domains.
+		if iss := identityEnv("IDENTITY_ISSUER"); iss != "" {
 			cfg.Issuer = iss
 		}
-		if j := workosEnv("WORKOS_JWKS_URL"); j != "" {
+		if j := identityEnv("IDENTITY_JWKS_URL"); j != "" {
 			cfg.JWKSURL = j
 		}
 		v, err := oidc.New(cfg)
 		if err != nil {
 			return nil, nil, fmt.Errorf("initialize WorkOS validator: %w", err)
 		}
-		tokenURL := workosEnv("WORKOS_TOKEN_URL")
+		tokenURL := identityEnv("IDENTITY_TOKEN_URL")
 		if tokenURL == "" {
 			tokenURL = "https://api.workos.com/user_management/authenticate"
 		}
-		ex, err := oidc.NewExchanger(oidc.ExchangerConfig{
+		ex, err := workosauth.NewExchanger(workosauth.Config{
 			TokenURL:     tokenURL,
 			ClientID:     clientID,
 			ClientSecret: clientSecret,
+			Validator:    v,
 		})
 		if err != nil {
 			return nil, nil, fmt.Errorf("initialize WorkOS exchanger: %w", err)
@@ -837,12 +863,12 @@ func buildProviderStack(provider, selectedFixture string) (auth.TokenValidator, 
 		return v, ex, nil
 
 	case "auth0":
-		domain := os.Getenv("AUTH0_DOMAIN")
-		audience := os.Getenv("AUTH0_AUDIENCE")
-		clientID := os.Getenv("AUTH0_CLIENT_ID")
-		clientSecret := os.Getenv("AUTH0_CLIENT_SECRET")
+		domain := identityEnv("IDENTITY_DOMAIN")
+		audience := identityEnv("IDENTITY_AUDIENCE")
+		clientID := identityEnv("IDENTITY_CLIENT_ID")
+		clientSecret := identityEnv("IDENTITY_CLIENT_SECRET")
 		if !hasConfiguredValue(domain) || !hasConfiguredValue(clientID) || !hasConfiguredValue(clientSecret) {
-			return nil, nil, fmt.Errorf("AUTH_PROVIDER=auth0 requires AUTH0_DOMAIN, AUTH0_CLIENT_ID, and AUTH0_CLIENT_SECRET")
+			return nil, nil, fmt.Errorf("identity provider auth0 requires IDENTITY_DOMAIN, IDENTITY_CLIENT_ID, and IDENTITY_CLIENT_SECRET")
 		}
 		v, err := oidc.New(oidc.Auth0Config(domain, audience))
 		if err != nil {
@@ -856,13 +882,13 @@ func buildProviderStack(provider, selectedFixture string) (auth.TokenValidator, 
 		if err != nil {
 			return nil, nil, fmt.Errorf("initialize Auth0 exchanger: %w", err)
 		}
-		return v, ex, nil
+		return v, oidc.AsBusinessExchanger(ex), nil
 
 	case "google":
-		clientID := os.Getenv("GOOGLE_CLIENT_ID")
-		clientSecret := os.Getenv("GOOGLE_CLIENT_SECRET")
+		clientID := identityEnv("IDENTITY_CLIENT_ID")
+		clientSecret := identityEnv("IDENTITY_CLIENT_SECRET")
 		if !hasConfiguredValue(clientID) || !hasConfiguredValue(clientSecret) {
-			return nil, nil, fmt.Errorf("AUTH_PROVIDER=google requires GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET")
+			return nil, nil, fmt.Errorf("identity provider google requires IDENTITY_CLIENT_ID and IDENTITY_CLIENT_SECRET")
 		}
 		v, err := oidc.New(oidc.GoogleConfig(clientID))
 		if err != nil {
@@ -876,12 +902,14 @@ func buildProviderStack(provider, selectedFixture string) (auth.TokenValidator, 
 		if err != nil {
 			return nil, nil, fmt.Errorf("initialize Google exchanger: %w", err)
 		}
-		return v, ex, nil
+		return v, oidc.AsBusinessExchanger(ex), nil
 
+	case "fixture":
+		return nil, nil, fmt.Errorf("identity provider fixture requires an explicit Codefly fixture")
 	case "":
-		return nil, nil, fmt.Errorf("AUTH_PROVIDER is required (use dev only with an explicit local fixture)")
+		return nil, nil, fmt.Errorf("IDENTITY_PROVIDER is required in the Codefly identity workspace configuration")
 	default:
-		return nil, nil, fmt.Errorf("unsupported AUTH_PROVIDER %q", provider)
+		return nil, nil, fmt.Errorf("unsupported identity provider %q", provider)
 	}
 }
 

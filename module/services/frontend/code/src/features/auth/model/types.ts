@@ -12,5 +12,6 @@ export interface ProviderPreset {
 	displayName: string;
 	authorizeURL: string;
 	clientID: string;
-	scope: string;
+	scope?: string;
+	authorizeParams?: Readonly<Record<string, string>>;
 }

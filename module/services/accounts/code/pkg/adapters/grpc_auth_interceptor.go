@@ -84,10 +84,24 @@ func (stream *contextServerStream) Context() context.Context { return stream.ctx
 func (i *grpcPolicyAuthorizer) authorize(ctx context.Context, fullMethod string) (context.Context, error) {
 	md, _ := metadata.FromIncomingContext(ctx)
 	trustedForwarded := validGatewayToken(firstMetadataValue(md, "x-codefly-gateway-token"))
+	forwardedPublicOrigin := firstMetadataValue(md, "x-codefly-public-origin")
 	if !trustedForwarded {
 		ctx = stripForwardedIdentity(ctx)
 		md, _ = metadata.FromIncomingContext(ctx)
 	}
+	if trustedForwarded && forwardedPublicOrigin != "" {
+		var err error
+		ctx, err = auth.WithVerifiedPublicOrigin(ctx, forwardedPublicOrigin)
+		if err != nil {
+			return ctx, status.Error(codes.PermissionDenied, "invalid trusted public origin")
+		}
+	}
+	// Gateway credentials prove trust at this adapter boundary; application
+	// handlers must not receive or reuse the raw capabilities.
+	md = md.Copy()
+	md.Delete("x-codefly-gateway-token")
+	md.Delete("x-codefly-public-origin")
+	ctx = metadata.NewIncomingContext(ctx, md)
 	policy, classified := business.LookupRPCPolicy(fullMethod)
 	if !classified {
 		return ctx, status.Error(codes.PermissionDenied, "RPC is not classified by the authorization policy")

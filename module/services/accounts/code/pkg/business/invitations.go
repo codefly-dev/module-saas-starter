@@ -586,9 +586,13 @@ func (s *Service) enqueueInvitationEmail(
 	if s.emailOutbox == nil {
 		return nil
 	}
+	appBase := s.publicBaseURL(ctx)
+	if appBase == "" {
+		return wool.Get(ctx).NewError("public application origin is unavailable")
+	}
 	acceptURL := fmt.Sprintf(
 		"%s/invitations/accept?token=%s",
-		nonEmpty(s.appBaseURL, "http://localhost:21931"),
+		appBase,
 		plaintext,
 	)
 	return s.emailOutbox.EnqueueTemplate(ctx, email.TemplateRequest{

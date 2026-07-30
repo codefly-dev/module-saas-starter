@@ -99,7 +99,13 @@ func newGatewayHarness(t *testing.T) (*Gateway, *fakeUpstream, *fakeUpstream, ed
 		"frontend": frontendURL,
 	}
 
-	gateway := NewGateway(sidecar, matcher, upstreams, nil)
+	gateway := NewGateway(
+		sidecar,
+		matcher,
+		upstreams,
+		nil,
+		WithPublicOrigin("http://localhost:54321"),
+	)
 
 	return gateway, apiFake, frontendFake, priv
 }
@@ -143,6 +149,8 @@ func TestGateway_PublicAuthPath_NoToken_Forwarded(t *testing.T) {
 	require.Equal(t, "/v1/auth/authenticate", apiFake.lastPath)
 	// Public path: no x-user-id header should be present
 	require.Equal(t, "", apiFake.lastHeaders.Get("x-user-id"))
+	require.Equal(t, "test-gateway-token", apiFake.lastHeaders.Get("x-codefly-gateway-token"))
+	require.Equal(t, "http://localhost:54321", apiFake.lastHeaders.Get("x-codefly-public-origin"))
 }
 
 // ============================================================================
@@ -191,7 +199,31 @@ func TestGateway_StripsCallerIdentityAndTrustCredentials(t *testing.T) {
 
 	require.Equal(t, http.StatusOK, w.Code)
 	for _, key := range untrustedAuthHeaders {
+		if key == "x-codefly-gateway-token" {
+			require.Equal(t, "test-gateway-token", apiFake.lastHeaders.Get(key))
+			continue
+		}
+		if key == "x-codefly-public-origin" {
+			require.Equal(t, "http://localhost:54321", apiFake.lastHeaders.Get(key))
+			continue
+		}
 		require.Empty(t, apiFake.lastHeaders.Get(key), "caller-controlled %s must be stripped", key)
+	}
+}
+
+func TestCanonicalPublicOriginAcceptsCodeflyEndpointAddress(t *testing.T) {
+	origin, err := canonicalPublicOrigin("http://localhost:54321")
+	require.NoError(t, err)
+	require.Equal(t, "http://localhost:54321", origin)
+
+	for _, candidate := range []string{
+		"localhost:54321",
+		"http://localhost:54321/auth/callback",
+		"http://localhost:54321?spoof=true",
+		"ftp://localhost:54321",
+	} {
+		_, err := canonicalPublicOrigin(candidate)
+		require.Error(t, err, candidate)
 	}
 }
 
@@ -422,6 +454,34 @@ func TestGateway_StripsCallerInjectedIdentityHeaders(t *testing.T) {
 		"caller-injected x-org-role must be stripped")
 	require.Equal(t, "", apiFake.lastHeaders.Get("x-platform-role"),
 		"caller-injected x-platform-role must be stripped")
+}
+
+func TestGateway_PublicAccountsRouteReceivesBackendCapabilities(t *testing.T) {
+	gw, apiFake, _, _ := newGatewayHarness(t)
+
+	req := httptest.NewRequest(http.MethodPost, "/v1/auth/authenticate", strings.NewReader(`{}`))
+	req.Header.Set("X-Codefly-Gateway-Token", "caller-controlled")
+	req.Header.Set("X-Codefly-Public-Origin", "https://evil.example")
+	w := httptest.NewRecorder()
+	gw.ServeHTTP(w, req)
+
+	require.Equal(t, http.StatusOK, w.Code)
+	require.Equal(t, "test-gateway-token", apiFake.lastHeaders.Get("X-Codefly-Gateway-Token"))
+	require.Equal(t, "http://localhost:54321", apiFake.lastHeaders.Get("X-Codefly-Public-Origin"))
+}
+
+func TestGateway_DoesNotForwardBackendCapabilitiesToFrontend(t *testing.T) {
+	gw, _, frontendFake, _ := newGatewayHarness(t)
+
+	req := httptest.NewRequest(http.MethodGet, "/", nil)
+	req.Header.Set("X-Codefly-Gateway-Token", "caller-controlled")
+	req.Header.Set("X-Codefly-Public-Origin", "https://evil.example")
+	w := httptest.NewRecorder()
+	gw.ServeHTTP(w, req)
+
+	require.Equal(t, http.StatusOK, w.Code)
+	require.Empty(t, frontendFake.lastHeaders.Get("X-Codefly-Gateway-Token"))
+	require.Empty(t, frontendFake.lastHeaders.Get("X-Codefly-Public-Origin"))
 }
 
 func TestGateway_AuthenticatedRequest_CallerHeadersOverridden(t *testing.T) {

@@ -12,15 +12,18 @@ import (
 // Callers who need full control still use New(Config{...}) directly.
 
 // WorkOSConfig returns a Config preconfigured for WorkOS given a client id.
-// Falls back to env vars WORKOS_CLIENT_ID / WORKOS_ISSUER / WORKOS_JWKS_URL
-// when fields are empty.
+// The composition root supplies that id from the Codefly identity
+// configuration; this package does not read process environment variables.
 func WorkOSConfig(clientID string) Config {
 	clientID = strings.TrimSpace(clientID)
 	return Config{
-		ProviderName: "workos",
-		Issuer:       fmt.Sprintf("https://api.workos.com/user_management/%s", clientID),
-		JWKSURL:      fmt.Sprintf("https://api.workos.com/sso/jwks/%s", clientID),
-		// WorkOS uses the standard "email" claim and "organization_id".
+		ProviderName:      "workos",
+		Issuer:            "https://api.workos.com",
+		JWKSURL:           fmt.Sprintf("https://api.workos.com/sso/jwks/%s", clientID),
+		OrgClaim:          "org_id",
+		ClientIDClaim:     "client_id",
+		ClientID:          clientID,
+		AllowMissingEmail: true,
 	}
 }
 

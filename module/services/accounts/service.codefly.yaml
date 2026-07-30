@@ -21,9 +21,10 @@ service-dependencies:
       endpoints:
         - name: http
 workspace-configuration-dependencies:
+    - application
+    - identity
     - internal-auth
     - security
-    - workos
 endpoints:
     - name: connect
     - name: grpc

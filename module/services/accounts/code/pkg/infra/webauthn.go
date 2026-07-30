@@ -8,8 +8,10 @@ import (
 	"fmt"
 	"net/http"
 	"strings"
+	"sync"
 	"time"
 
+	"accounts/pkg/auth"
 	"accounts/pkg/business"
 
 	"github.com/go-webauthn/webauthn/protocol"
@@ -17,7 +19,11 @@ import (
 )
 
 type webAuthnEngine struct {
-	inner *webauthnlib.WebAuthn
+	rpID            string
+	rpDisplayName   string
+	fallbackOrigins []string
+	mu              sync.Mutex
+	byOrigin        map[string]*webauthnlib.WebAuthn
 }
 
 var _ business.WebAuthnEngine = (*webAuthnEngine)(nil)
@@ -29,12 +35,40 @@ func NewWebAuthnEngine(rpID, displayName string, origins []string) (business.Web
 	if strings.TrimSpace(displayName) == "" {
 		return nil, errors.New("WebAuthn RP display name is required")
 	}
-	if len(origins) == 0 {
-		return nil, errors.New("at least one WebAuthn RP origin is required")
+	engine := &webAuthnEngine{
+		rpID:            strings.TrimSpace(rpID),
+		rpDisplayName:   strings.TrimSpace(displayName),
+		fallbackOrigins: append([]string(nil), origins...),
+		byOrigin:        make(map[string]*webauthnlib.WebAuthn),
 	}
-	engine, err := webauthnlib.New(&webauthnlib.Config{
-		RPID:          rpID,
-		RPDisplayName: displayName,
+	if len(origins) > 0 {
+		if _, err := engine.innerForOrigins(origins); err != nil {
+			return nil, err
+		}
+	}
+	return engine, nil
+}
+
+func (e *webAuthnEngine) innerForContext(ctx context.Context) (*webauthnlib.WebAuthn, error) {
+	if origin, ok := auth.VerifiedPublicOrigin(ctx); ok {
+		return e.innerForOrigins([]string{origin})
+	}
+	if len(e.fallbackOrigins) == 0 {
+		return nil, errors.New("WebAuthn requires a verified Codefly public origin or configured fallback origin")
+	}
+	return e.innerForOrigins(e.fallbackOrigins)
+}
+
+func (e *webAuthnEngine) innerForOrigins(origins []string) (*webauthnlib.WebAuthn, error) {
+	key := strings.Join(origins, "\x00")
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	if inner := e.byOrigin[key]; inner != nil {
+		return inner, nil
+	}
+	inner, err := webauthnlib.New(&webauthnlib.Config{
+		RPID:          e.rpID,
+		RPDisplayName: e.rpDisplayName,
 		RPOrigins:     origins,
 		AuthenticatorSelection: protocol.AuthenticatorSelection{
 			ResidentKey:      protocol.ResidentKeyRequirementPreferred,
@@ -48,15 +82,20 @@ func NewWebAuthnEngine(rpID, displayName string, origins []string) (business.Web
 	if err != nil {
 		return nil, fmt.Errorf("configure WebAuthn relying party: %w", err)
 	}
-	return &webAuthnEngine{inner: engine}, nil
+	e.byOrigin[key] = inner
+	return inner, nil
 }
 
-func (e *webAuthnEngine) BeginRegistration(_ context.Context, user business.WebAuthnUser) ([]byte, []byte, time.Time, error) {
+func (e *webAuthnEngine) BeginRegistration(ctx context.Context, user business.WebAuthnUser) ([]byte, []byte, time.Time, error) {
+	inner, err := e.innerForContext(ctx)
+	if err != nil {
+		return nil, nil, time.Time{}, err
+	}
 	wu, err := decodeWebAuthnUser(user)
 	if err != nil {
 		return nil, nil, time.Time{}, err
 	}
-	creation, session, err := e.inner.BeginRegistration(wu)
+	creation, session, err := inner.BeginRegistration(wu)
 	if err != nil {
 		return nil, nil, time.Time{}, err
 	}
@@ -72,6 +111,10 @@ func (e *webAuthnEngine) BeginRegistration(_ context.Context, user business.WebA
 }
 
 func (e *webAuthnEngine) FinishRegistration(ctx context.Context, user business.WebAuthnUser, sessionJSON, responseJSON []byte) (*business.WebAuthnCredentialResult, error) {
+	inner, err := e.innerForContext(ctx)
+	if err != nil {
+		return nil, err
+	}
 	wu, err := decodeWebAuthnUser(user)
 	if err != nil {
 		return nil, err
@@ -84,19 +127,23 @@ func (e *webAuthnEngine) FinishRegistration(ctx context.Context, user business.W
 	if err != nil {
 		return nil, err
 	}
-	credential, err := e.inner.FinishRegistration(wu, session, req)
+	credential, err := inner.FinishRegistration(wu, session, req)
 	if err != nil {
 		return nil, err
 	}
 	return encodeCredentialResult(credential)
 }
 
-func (e *webAuthnEngine) BeginLogin(_ context.Context, user business.WebAuthnUser) ([]byte, []byte, time.Time, error) {
+func (e *webAuthnEngine) BeginLogin(ctx context.Context, user business.WebAuthnUser) ([]byte, []byte, time.Time, error) {
+	inner, err := e.innerForContext(ctx)
+	if err != nil {
+		return nil, nil, time.Time{}, err
+	}
 	wu, err := decodeWebAuthnUser(user)
 	if err != nil {
 		return nil, nil, time.Time{}, err
 	}
-	assertion, session, err := e.inner.BeginLogin(wu, webauthnlib.WithUserVerification(protocol.VerificationRequired))
+	assertion, session, err := inner.BeginLogin(wu, webauthnlib.WithUserVerification(protocol.VerificationRequired))
 	if err != nil {
 		return nil, nil, time.Time{}, err
 	}
@@ -112,6 +159,10 @@ func (e *webAuthnEngine) BeginLogin(_ context.Context, user business.WebAuthnUse
 }
 
 func (e *webAuthnEngine) FinishLogin(ctx context.Context, user business.WebAuthnUser, sessionJSON, responseJSON []byte) (*business.WebAuthnCredentialResult, error) {
+	inner, err := e.innerForContext(ctx)
+	if err != nil {
+		return nil, err
+	}
 	wu, err := decodeWebAuthnUser(user)
 	if err != nil {
 		return nil, err
@@ -124,7 +175,7 @@ func (e *webAuthnEngine) FinishLogin(ctx context.Context, user business.WebAuthn
 	if err != nil {
 		return nil, err
 	}
-	credential, err := e.inner.FinishLogin(wu, session, req)
+	credential, err := inner.FinishLogin(wu, session, req)
 	if err != nil {
 		return nil, err
 	}

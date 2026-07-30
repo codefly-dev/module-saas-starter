@@ -43,6 +43,7 @@ type Service struct {
 	productEvents             analytics.Emitter
 	usageMeters               *UsageMeterCatalog
 	privacy                   PrivacyWorkflow
+	ssoManagementAPIKey       string
 }
 
 // CodeExchanger abstracts the OAuth 2.0 code-for-token exchange so the
@@ -64,6 +65,11 @@ type CodeExchanger interface {
 type ExchangedTokens struct {
 	AccessToken string
 	IDToken     string
+	// Claims is populated by provider adapters whose verified identity data is
+	// split between a signed access token and the authenticated exchange
+	// response. WorkOS is one example: its access token proves subject/session,
+	// while the response's user object carries the verified primary email.
+	Claims *auth.Claims
 }
 
 func NewService(store Store) (*Service, error) {
@@ -176,12 +182,27 @@ func (s *Service) SetCodeExchanger(e CodeExchanger) {
 	s.exchanger = e
 }
 
+// SetSSOManagementAPIKey wires the optional provider-management credential
+// used by the WorkOS Admin Portal adapter. Runtime composition supplies this
+// from Codefly's secret workspace configuration; business code never reads
+// process environment directly.
+func (s *Service) SetSSOManagementAPIKey(apiKey string) {
+	s.ssoManagementAPIKey = strings.TrimSpace(apiKey)
+}
+
 // SetEmailOutbox wires the transactional producer used by invitations,
 // authentication, and other request paths. The provider sender is deliberately
 // absent from Service: only the generic email worker may perform delivery.
 func (s *Service) SetEmailOutbox(outbox *email.Outbox, appBaseURL string) {
 	s.emailOutbox = outbox
 	s.appBaseURL = appBaseURL
+}
+
+func (s *Service) publicBaseURL(ctx context.Context) string {
+	if origin, ok := auth.VerifiedPublicOrigin(ctx); ok {
+		return origin
+	}
+	return strings.TrimSuffix(strings.TrimSpace(s.appBaseURL), "/")
 }
 
 func (s *Service) SetAuditEmitter(a AuditEmitter) {

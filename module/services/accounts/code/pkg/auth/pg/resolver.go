@@ -15,8 +15,9 @@ import (
 	"accounts/pkg/business"
 )
 
-// BootstrapAdminEmailEnv is the env var read by Resolver to promote the
-// first matching identity to super_admin. Empty disables the feature.
+// BootstrapAdminEmailEnv is the compatibility environment key used only when
+// runtime composition has not supplied an explicit bootstrap email. Codefly
+// composition calls SetBootstrapAdminEmail and remains authoritative.
 const BootstrapAdminEmailEnv = "BOOTSTRAP_ADMIN_EMAIL"
 
 // Resolver is the production IdentityResolver backed by Postgres.
@@ -36,7 +37,8 @@ const BootstrapAdminEmailEnv = "BOOTSTRAP_ADMIN_EMAIL"
 // All of the above runs inside a single serializable transaction so
 // concurrent first-logins of the same identity converge on a single user row.
 type Resolver struct {
-	bootstrap BootstrapStore
+	bootstrap           BootstrapStore
+	bootstrapAdminEmail *string
 }
 
 // BootstrapStore is the narrow pre-auth database capability. It deliberately
@@ -49,6 +51,14 @@ type BootstrapStore interface {
 
 func NewResolver(bootstrap BootstrapStore) *Resolver {
 	return &Resolver{bootstrap: bootstrap}
+}
+
+// SetBootstrapAdminEmail makes runtime composition authoritative for the
+// one-time bootstrap identity. Tests and legacy standalone callers that do not
+// call this setter retain the environment-based compatibility path.
+func (r *Resolver) SetBootstrapAdminEmail(email string) {
+	normalized := strings.ToLower(strings.TrimSpace(email))
+	r.bootstrapAdminEmail = &normalized
 }
 
 // Resolve implements auth.IdentityResolver.
@@ -280,7 +290,12 @@ func (r *Resolver) bootstrapOrLoadPlatformRole(
 	}
 
 	// Check bootstrap eligibility.
-	target := strings.ToLower(strings.TrimSpace(os.Getenv(BootstrapAdminEmailEnv)))
+	target := ""
+	if r.bootstrapAdminEmail != nil {
+		target = *r.bootstrapAdminEmail
+	} else {
+		target = strings.ToLower(strings.TrimSpace(os.Getenv(BootstrapAdminEmailEnv)))
+	}
 	if target == "" || target != strings.ToLower(strings.TrimSpace(email)) {
 		return "", nil
 	}

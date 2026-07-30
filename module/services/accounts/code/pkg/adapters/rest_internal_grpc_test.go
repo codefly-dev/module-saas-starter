@@ -66,3 +66,14 @@ func TestPrivateRESTListenerMultiplexesInternalGRPC(t *testing.T) {
 	require.NoError(t, err)
 	require.True(t, resp.Valid)
 }
+
+func TestRESTAnnotatorCarriesOnlyGatewayVerifiablePublicOrigin(t *testing.T) {
+	req, err := http.NewRequest(http.MethodPost, "http://accounts/v1/auth/oauth/begin", nil)
+	require.NoError(t, err)
+	req.Header.Set("X-Codefly-Gateway-Token", "test-gateway-token")
+	req.Header.Set(publicOriginHeader, "http://localhost:54321")
+
+	md := CustomHeaderToGRPCMetadataAnnotator(context.Background(), req)
+	require.Equal(t, []string{"test-gateway-token"}, md.Get("x-codefly-gateway-token"))
+	require.Equal(t, []string{"http://localhost:54321"}, md.Get("x-codefly-public-origin"))
+}

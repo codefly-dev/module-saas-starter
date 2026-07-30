@@ -39,7 +39,13 @@ func NewRestServer(c *Configuration, grpc *GrpcServer) (*RestServer, error) {
 }
 
 func CustomHeaderToGRPCMetadataAnnotator(ctx context.Context, req *http.Request) metadata.MD {
-	return wool.MetadataFromRequest(ctx, req)
+	md := wool.MetadataFromRequest(ctx, req)
+	for _, header := range []string{"X-Codefly-Gateway-Token", publicOriginHeader} {
+		if values := req.Header.Values(header); len(values) > 0 {
+			md.Set(strings.ToLower(header), values...)
+		}
+	}
+	return md
 }
 
 func customErrorHandler(ctx context.Context, mux *runtime.ServeMux, marshaler runtime.Marshaler, w http.ResponseWriter, r *http.Request, err error) {

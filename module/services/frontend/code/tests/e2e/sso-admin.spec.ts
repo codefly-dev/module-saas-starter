@@ -1,5 +1,6 @@
-// SSO admin E2E. The api runs in stub mode (WORKOS_API_KEY unset in
-// the test fixtures) so StartSetup returns a placeholder URL pointing
+// SSO admin E2E. Accounts runs in stub mode
+// (IDENTITY_MANAGEMENT_API_KEY absent from the fixture identity configuration),
+// so StartSetup returns a placeholder URL pointing
 // at /admin/sso?demo=1. We can verify the full state-machine —
 // unconfigured → linked → disabled — without real WorkOS credentials.
 
@@ -69,7 +70,7 @@ test.describe("SSO admin page", () => {
 		await pickAcmeOrg(page);
 		await ensureInactiveSSO(page);
 
-		// Stub mode (WORKOS_API_KEY unset): StartSetup persists status=
+		// Stub mode (no identity management API key): StartSetup persists status=
 		// "linked" and returns demo URL. The page redirects there; we
 		// wait for the exact demo URL. The mutation only redirects after
 		// StartSetup has returned, so this also proves the linked row was

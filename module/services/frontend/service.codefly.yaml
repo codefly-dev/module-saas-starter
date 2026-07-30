@@ -4,7 +4,7 @@ version: 0.0.0
 agent:
     kind: codefly:service
     name: nextjs
-    version: 0.0.121
+    version: 0.0.124
     publisher: codefly.dev
 service-dependencies:
     - name: accounts
@@ -12,14 +12,14 @@ service-dependencies:
         - name: connect
         - name: rest
 workspace-configuration-dependencies:
-    - workos
+    - identity
 endpoints:
     - name: http
       visibility: module
 spec:
-    auth-provider: workos
     execution-profiles:
         local: development
+        local-dogfood: development
         production: production
     hot-reload: false
     mode: ssr

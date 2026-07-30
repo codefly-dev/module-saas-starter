@@ -1,3 +1,5 @@
+export { OnboardingBackend } from "./application/backend";
+export { OnboardingController } from "./application/controller";
 export type {
 	KnownOnboardingStepId,
 	OnboardingProgress,

@@ -10,23 +10,28 @@ import (
 func clearAuthProviderEnvironment(t *testing.T) {
 	t.Helper()
 	for _, key := range []string{
-		"AUTH_PROVIDER",
+		"IDENTITY_PROVIDER",
 		"CODEFLY__FIXTURE",
 		"CODEFLY__ENVIRONMENT",
-		"CODEFLY__WORKSPACE_CONFIGURATION__WORKOS__AUTH_PROVIDER",
-		"CODEFLY__WORKSPACE_SECRET_CONFIGURATION__WORKOS__AUTH_PROVIDER",
-		"WORKOS_CLIENT_ID",
-		"WORKOS_CLIENT_SECRET",
-		"OAUTH_ALLOWED_REDIRECT_URIS",
-		"CODEFLY__WORKSPACE_CONFIGURATION__WORKOS__WORKOS_CLIENT_ID",
-		"CODEFLY__WORKSPACE_CONFIGURATION__WORKOS__WORKOS_CLIENT_SECRET",
-		"CODEFLY__WORKSPACE_SECRET_CONFIGURATION__WORKOS__WORKOS_CLIENT_ID",
-		"CODEFLY__WORKSPACE_SECRET_CONFIGURATION__WORKOS__WORKOS_CLIENT_SECRET",
-		"CODEFLY__WORKSPACE_CONFIGURATION__WORKOS__OAUTH_ALLOWED_REDIRECT_URIS",
-		"CODEFLY__WORKSPACE_SECRET_CONFIGURATION__WORKOS__OAUTH_ALLOWED_REDIRECT_URIS",
+		"IDENTITY_CLIENT_ID",
+		"IDENTITY_CLIENT_SECRET",
+		"IDENTITY_ALLOWED_REDIRECT_URIS",
+		"CODEFLY__WORKSPACE_CONFIGURATION__IDENTITY__IDENTITY_PROVIDER",
+		"CODEFLY__WORKSPACE_SECRET_CONFIGURATION__IDENTITY__IDENTITY_PROVIDER",
+		"CODEFLY__WORKSPACE_CONFIGURATION__IDENTITY__IDENTITY_CLIENT_ID",
+		"CODEFLY__WORKSPACE_CONFIGURATION__IDENTITY__IDENTITY_CLIENT_SECRET",
+		"CODEFLY__WORKSPACE_SECRET_CONFIGURATION__IDENTITY__IDENTITY_CLIENT_ID",
+		"CODEFLY__WORKSPACE_SECRET_CONFIGURATION__IDENTITY__IDENTITY_CLIENT_SECRET",
+		"CODEFLY__WORKSPACE_CONFIGURATION__IDENTITY__IDENTITY_ALLOWED_REDIRECT_URIS",
+		"CODEFLY__WORKSPACE_SECRET_CONFIGURATION__IDENTITY__IDENTITY_ALLOWED_REDIRECT_URIS",
 	} {
 		t.Setenv(key, "")
 	}
+}
+
+func setIdentityConfiguration(t *testing.T, key, value string) {
+	t.Helper()
+	t.Setenv("CODEFLY__WORKSPACE_CONFIGURATION__IDENTITY__"+key, value)
 }
 
 func TestWorkspaceEnvPreservesExactCodeflyConfigurationName(t *testing.T) {
@@ -115,6 +120,9 @@ func TestConfiguredSessionPolicy(t *testing.T) {
 }
 
 func TestConfiguredBillingBaseURLRequiresExactSafeOrigin(t *testing.T) {
+	t.Setenv("CODEFLY__WORKSPACE_CONFIGURATION__APPLICATION__APP_BASE_URL", "")
+	t.Setenv("CODEFLY__WORKSPACE_SECRET_CONFIGURATION__APPLICATION__APP_BASE_URL", "")
+	t.Setenv("APP_BASE_URL", "")
 	for _, tc := range []struct {
 		name        string
 		baseURL     string
@@ -125,15 +133,15 @@ func TestConfiguredBillingBaseURLRequiresExactSafeOrigin(t *testing.T) {
 		{name: "production https", baseURL: "https://app.example.com", want: "https://app.example.com"},
 		{name: "trailing slash normalized", baseURL: "https://app.example.com/", want: "https://app.example.com"},
 		{name: "local http", baseURL: "http://localhost:21931", want: "http://localhost:21931"},
-		{name: "codefly local default", environment: "local", want: "http://localhost:21931"},
-		{name: "missing outside local", wantError: true},
+		{name: "codefly local uses trusted request origin", environment: "local", want: ""},
+		{name: "missing uses trusted request origin", want: ""},
 		{name: "remote http rejected", baseURL: "http://app.example.com", wantError: true},
 		{name: "path rejected", baseURL: "https://app.example.com/base", wantError: true},
 		{name: "query rejected", baseURL: "https://app.example.com?tenant=x", wantError: true},
 		{name: "credentials rejected", baseURL: "https://user@app.example.com", wantError: true},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			t.Setenv("APP_BASE_URL", tc.baseURL)
+			t.Setenv("CODEFLY__WORKSPACE_CONFIGURATION__APPLICATION__APP_BASE_URL", tc.baseURL)
 			t.Setenv("CODEFLY__ENVIRONMENT", tc.environment)
 			got, err := configuredBillingBaseURL()
 			if tc.wantError {
@@ -144,6 +152,29 @@ func TestConfiguredBillingBaseURLRequiresExactSafeOrigin(t *testing.T) {
 			require.Equal(t, tc.want, got)
 		})
 	}
+}
+
+func TestConfiguredApplicationBaseURLPrefersCodeflyConfiguration(t *testing.T) {
+	t.Setenv("APP_BASE_URL", "https://raw-env.example.com")
+	t.Setenv(
+		"CODEFLY__WORKSPACE_CONFIGURATION__APPLICATION__APP_BASE_URL",
+		"http://localhost:54321",
+	)
+
+	got, err := configuredApplicationBaseURL()
+	require.NoError(t, err)
+	require.Equal(t, "http://localhost:54321", got)
+}
+
+func TestConfiguredApplicationBaseURLDoesNotTrustAmbientShell(t *testing.T) {
+	t.Setenv("APP_BASE_URL", "https://ambient-shell.example.com")
+	t.Setenv("CODEFLY__ENVIRONMENT", "production")
+	t.Setenv("CODEFLY__WORKSPACE_CONFIGURATION__APPLICATION__APP_BASE_URL", "")
+	t.Setenv("CODEFLY__WORKSPACE_SECRET_CONFIGURATION__APPLICATION__APP_BASE_URL", "")
+
+	got, err := configuredApplicationBaseURL()
+	require.NoError(t, err)
+	require.Empty(t, got)
 }
 
 func TestConfiguredWebAuthnRequiresExactRelyingPartyPolicy(t *testing.T) {
@@ -194,19 +225,25 @@ func TestConfiguredWebAuthnReadsCodeflySecurityConfiguration(t *testing.T) {
 	require.Equal(t, []string{"http://localhost:21931"}, origins)
 }
 
-func TestBuildOAuthRequestPolicyRequiresExactConfiguredRedirects(t *testing.T) {
+func TestBuildOAuthRequestPolicySupportsCodeflyOriginAndExactFallbackRedirects(t *testing.T) {
 	clearAuthProviderEnvironment(t)
 
-	_, err := buildOAuthRequestPolicy("workos")
-	require.Error(t, err)
-	require.Contains(t, err.Error(), "OAUTH_ALLOWED_REDIRECT_URIS")
-
-	t.Setenv("OAUTH_ALLOWED_REDIRECT_URIS", "REPLACE_ME")
-	_, err = buildOAuthRequestPolicy("workos")
-	require.Error(t, err, "checked-in placeholder redirect must fail startup")
-
-	t.Setenv("OAUTH_ALLOWED_REDIRECT_URIS", "http://localhost:21931/auth/callback, https://app.acme.com/auth/callback")
 	policy, err := buildOAuthRequestPolicy("workos")
+	require.NoError(t, err)
+	require.NoError(t, policy.ValidateForPublicOrigin(
+		"workos",
+		"http://localhost:54321/auth/callback",
+		"http://localhost:54321",
+	))
+	require.Error(t, policy.Validate("workos", "http://localhost:54321/auth/callback"))
+
+	setIdentityConfiguration(t, "IDENTITY_ALLOWED_REDIRECT_URIS", "REPLACE_ME")
+	policy, err = buildOAuthRequestPolicy("workos")
+	require.NoError(t, err)
+	require.Error(t, policy.Validate("workos", "REPLACE_ME"))
+
+	setIdentityConfiguration(t, "IDENTITY_ALLOWED_REDIRECT_URIS", "http://localhost:21931/auth/callback, https://app.acme.com/auth/callback")
+	policy, err = buildOAuthRequestPolicy("workos")
 	require.NoError(t, err)
 	require.NoError(t, policy.Validate("workos", "https://app.acme.com/auth/callback"))
 	require.Error(t, policy.Validate("workos", "https://app.acme.com/auth/callback/"))
@@ -218,11 +255,12 @@ func TestConfiguredAuthProviderDoesNotImplicitlyEnableDevelopment(t *testing.T) 
 
 	_, _, err := buildProviderStack(configuredAuthProvider(""), "")
 	require.Error(t, err)
-	require.Contains(t, err.Error(), "AUTH_PROVIDER is required")
+	require.Contains(t, err.Error(), "IDENTITY_PROVIDER is required")
 }
 
 func TestConfiguredAuthProviderAllowsExplicitFixtureMode(t *testing.T) {
 	clearAuthProviderEnvironment(t)
+	setIdentityConfiguration(t, "IDENTITY_PROVIDER", "fixture")
 	require.Equal(t, "dev", configuredAuthProvider("dev-admin"))
 
 	validator, exchanger, err := buildProviderStack(configuredAuthProvider("dev-admin"), "dev-admin")
@@ -233,27 +271,28 @@ func TestConfiguredAuthProviderAllowsExplicitFixtureMode(t *testing.T) {
 
 func TestConfiguredAuthProviderNormalizesExplicitProvider(t *testing.T) {
 	clearAuthProviderEnvironment(t)
-	t.Setenv("AUTH_PROVIDER", "  GoOgLe  ")
+	setIdentityConfiguration(t, "IDENTITY_PROVIDER", "  GoOgLe  ")
 	require.Equal(t, "google", configuredAuthProvider(""))
 }
 
-func TestConfiguredAuthProviderExplicitFixtureOverridesLocalProviderConfig(t *testing.T) {
+func TestConfiguredAuthProviderKeepsExternalIdentityWhenDataFixtureIsSelected(t *testing.T) {
 	clearAuthProviderEnvironment(t)
-	t.Setenv("AUTH_PROVIDER", "workos")
-	require.Equal(t, "dev", configuredAuthProvider("dev-admin"), "SDK-selected fixture must deterministically select fixture auth")
+	setIdentityConfiguration(t, "IDENTITY_PROVIDER", "workos")
+	require.Equal(t, "workos", configuredAuthProvider("dev-admin"), "data fixtures must not replace the Codefly-configured identity provider")
 }
 
 func TestFixtureAuthenticationRequiresSDKSelectedFixture(t *testing.T) {
 	clearAuthProviderEnvironment(t)
-	require.Empty(t, configuredAuthProvider(""))
-	_, _, err := buildProviderStack("dev", "")
+	setIdentityConfiguration(t, "IDENTITY_PROVIDER", "fixture")
+	require.Equal(t, "fixture", configuredAuthProvider(""))
+	_, _, err := buildProviderStack(configuredAuthProvider(""), "")
 	require.Error(t, err)
-	require.Contains(t, err.Error(), "SDK-selected fixture")
+	require.Contains(t, err.Error(), "explicit Codefly fixture")
 }
 
 func TestFixtureVariableCannotOverrideProductionProvider(t *testing.T) {
 	clearAuthProviderEnvironment(t)
-	t.Setenv("AUTH_PROVIDER", "workos")
+	setIdentityConfiguration(t, "IDENTITY_PROVIDER", "workos")
 	require.Equal(t, "workos", configuredAuthProvider(""))
 }
 
@@ -262,14 +301,14 @@ func TestBuildProviderStackRejectsUnknownAndIncompleteProviders(t *testing.T) {
 
 	_, _, err := buildProviderStack("unknown", "")
 	require.Error(t, err)
-	require.Contains(t, err.Error(), "unsupported AUTH_PROVIDER")
+	require.Contains(t, err.Error(), "unsupported identity provider")
 
 	_, _, err = buildProviderStack("workos", "")
 	require.Error(t, err)
-	require.Contains(t, err.Error(), "WORKOS_CLIENT_ID")
+	require.Contains(t, err.Error(), "IDENTITY_CLIENT_ID")
 
-	t.Setenv("WORKOS_CLIENT_ID", "REPLACE_ME")
-	t.Setenv("WORKOS_CLIENT_SECRET", "REPLACE_ME")
+	setIdentityConfiguration(t, "IDENTITY_CLIENT_ID", "REPLACE_ME")
+	t.Setenv("CODEFLY__WORKSPACE_SECRET_CONFIGURATION__IDENTITY__IDENTITY_CLIENT_SECRET", "REPLACE_ME")
 	_, _, err = buildProviderStack("workos", "")
 	require.Error(t, err, "checked-in placeholder credentials must fail startup")
 }

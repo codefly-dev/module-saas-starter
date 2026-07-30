@@ -62,13 +62,13 @@ without changing the authenticated product.
 ### Fixture (dev / test)
 
 `dev-admin.yaml` seeds 4 users: Sarah Chen (super_admin), Alice (admin),
-Bob (member), Carol (member). The login page detects fixture mode (no
-`NEXT_PUBLIC_*_AUTHORIZE_URL` configured) and renders a one-click user
-picker. Explicit `AUTH_PROVIDER=dev` or `CODEFLY__FIXTURE=dev-admin` wires a
-fixture allowlist. Click → POST `/v1/auth/authenticate` with `{provider:
+Bob (member), Carol (member). The local Codefly `identity` configuration
+explicitly selects `IDENTITY_PROVIDER=fixture`; an explicit
+`--fixture dev-admin` then wires the corresponding fixture allowlist and
+renders a one-click user picker. Click → POST `/v1/auth/authenticate` with `{provider:
 "email", fixture: {token: "dev-bob"}}`; the backend obtains the subject and email
 from the selected fixture rather than trusting request fields, then mints JWTs.
-An explicit Codefly fixture takes precedence over local OAuth configuration.
+A fixture seeds data only and never overrides an external identity profile.
 
 Used by: every Playwright spec, every contributor running `codefly run`.
 
@@ -84,14 +84,18 @@ Standard OAuth 2.0 authorization-code flow:
 3. Frontend verifies state matches the stored nonce.
 4. Frontend POSTs `{provider: "workos", oauth_code: {code, redirect_uri,
    state, code_verifier}}` to `/v1/auth/authenticate`.
-5. Backend `Exchanger.Exchange` calls WorkOS's token endpoint with
-   `grant_type=authorization_code`, gets `id_token`.
-6. Backend `Validator.Validate` verifies WorkOS's signature via JWKS.
+5. The WorkOS adapter JSON-POSTs `grant_type=authorization_code`, the code,
+   and PKCE verifier to `/user_management/authenticate`, obtaining the signed
+   access token and authenticated user object.
+6. Backend `Validator.Validate` verifies the access-token signature, issuer,
+   client binding, subject, and organization through WorkOS JWKS; the adapter
+   then joins the response's verified primary email.
 7. `IdentityResolver.Resolve` upserts the user in Postgres, returns an
    internal Identity.
 8. `JWTMinter.Mint` issues our own Ed25519 access + refresh pair.
 
-Switching providers is one env var: `AUTH_PROVIDER=workos|auth0|google`.
+Switching providers means selecting another Codefly `identity` configuration
+profile. Product services keep the same generic configuration contract.
 
 ### Token lifecycle
 
@@ -189,7 +193,7 @@ their next owning change.
 
 | Feature                             | Status | Notes                                                            |
 |-------------------------------------|--------|------------------------------------------------------------------|
-| OAuth code-grant (WorkOS/Auth0/Google) | ✅  | Generic OIDC exchanger; provider chosen via `AUTH_PROVIDER` env  |
+| OAuth code-grant (WorkOS/Auth0/Google) | ✅  | Generic Codefly `identity` capability with provider-specific exchange adapters |
 | Magic link                          | 🟡    | Token gen/verify in `business/magic_links.go`; needs email-send wiring |
 | Password login                       | ❌    | Intentional — provider-only; account recovery routed via OAuth    |
 | Fixture login (dev)                 | ✅    | Click-to-login in dev mode; not exposed in prod build            |
@@ -528,7 +532,7 @@ _All previously-open gaps closed 2026-04-25._
 - ✅ **GetOrgEntitlements had no authz** — any authenticated user could read any org's plan + usage. Now gated by `requireOrgMember` (platform admins implicitly satisfy via membership).
 - ✅ **OverrideEntitlement had no authz** — implicit JWT-only. Now requires `platformAdmin`.
 - ✅ **API key scopes enforced on more endpoints** — webhooks (Create/Delete/List/Test/GetDelivery/ReplayDelivery/RotateSecret) and api-keys (Create/List/Revoke). 5 new unit tests pin the wildcard semantics + the JWT pass-through.
-- ✅ **Self-serve SSO admin (WorkOS Connections)** — proto SSOAdminService + business / handler / WorkOS HTTP client + migration 21 + /admin/sso FE. Stub-mode when no `WORKOS_API_KEY` so dev exercises the full flow.
+- ✅ **Self-serve SSO admin (WorkOS Connections)** — proto SSOAdminService + business / handler / WorkOS HTTP client + migration 21 + /admin/sso FE. Stub-mode when the selected Codefly identity configuration has no `IDENTITY_MANAGEMENT_API_KEY`, so dev exercises the full flow.
 - ✅ **Audit-export FE admin form** — was backend-only; /admin/audit-export now lets org admins configure their bucket through the UI. Pre-flight connection probe at Save time so bad creds fail fast.
 - ✅ **s3 plugin now actually runs MinIO** — was a redis-template scaffold (port 6379, redis ping readiness); now real (port 9000, /minio/health/live, structured conn keys, agent v0.0.2).
 - ✅ **User settings API** — JSONB-backed (`users.settings`) + UserSettingsService + /settings hub (theme / locale / timezone / date-time format / email opt-ins).
@@ -547,7 +551,7 @@ _All previously-open gaps closed 2026-04-25._
 - ✅ **Access tokens not individually revocable** — Logout only killed the refresh chain; old access tokens stayed valid up to 15 min. New `auth.TokenRevoker` interface + `cache.NewTokenRevoker` Redis impl. `Logout(refresh, accessToken)` now calls `JWTMinter.RevokeAccess` which adds the jti to the revocation list with TTL = remaining `exp`. `VerifyAccess` consults the list. Falls back to `NoopTokenRevoker` (no Redis) → original behavior.
 - ✅ **Impersonation had no time limit** — admin "view-as" sessions inherited the normal 15-min TTL. New `Config.ImpersonationTokenTTL` (default 5 min) auto-applied when minting tokens with `acting` claim set.
 - ✅ **Cache invalidation on member-remove** — confirmed correct on a closer read. `CacheInvalidator.InvalidateMembership` calls `cache.Delete` against shared Redis, so all api instances see the change immediately. The 30s TTL is safety net, not staleness window.
-- ✅ **OAuth `state` not validated server-side** — added `auth.OAuthStateSigner` (HMAC-SHA256, key derived from the JWT private key with a domain label, 10-min TTL). `BeginOAuth(provider, redirect_uri) → state` mints a server-signed token bound to provider + redirect URI. `Authenticate` requires and re-verifies it; mismatch returns the canonical `ErrInvalidOAuthState` without an oracle. The frontend fails closed if state cannot be minted. Exact redirects are enforced by `OAUTH_ALLOWED_REDIRECT_URIS` during both initiation and exchange.
+- ✅ **OAuth `state` not validated server-side** — added `auth.OAuthStateSigner` (HMAC-SHA256, key derived from the JWT private key with a domain label, 10-min TTL). `BeginOAuth(provider, redirect_uri) → state` mints a server-signed token bound to provider + redirect URI. `Authenticate` requires and re-verifies it; mismatch returns the canonical `ErrInvalidOAuthState` without an oracle. The frontend fails closed if state cannot be minted. At ingress, the exact callback is derived from auth-sidecar's Codefly SDK-injected public origin and carried across the gateway-token trust boundary; `IDENTITY_ALLOWED_REDIRECT_URIS` is only an optional fallback for intentional direct access.
 - ✅ **PKCE for OAuth code flow** — FE now generates a 64-byte `code_verifier` per sign-in, computes SHA-256 `code_challenge`, and includes both in the authorize URL. `code_verifier` rides through `Authenticate` to `Exchanger.Exchange`, which forwards it as the standard `code_verifier` form parameter to the provider's token endpoint. Belt-and-suspenders alongside the existing `client_secret` flow — recommended even for confidential clients per OAuth 2.1.
 - ✅ **Connect error code translation** — handlers return `status.Error(codes.X, ...)` (gRPC) but Connect-Go didn't recognize the wrapper, defaulting every error to `CodeUnknown` → HTTP 500. Added `translateGRPCError` in the Connect `unary` adapter mapping all 16 gRPC codes to their Connect equivalents. Without this, the auth-boundary tests showed Bob's `PermissionDenied` as 500 instead of 403, masking the real behaviour.
 - ✅ **Rate limiting per org / API key** — `cache.RateLimiter` (Redis-backed fixed-window) + Connect/gRPC interceptors. Key derivation: API-key id > org id > user id. Default 1000 req/min, configurable. Returns `ResourceExhausted` (gRPC 8 / HTTP 429) with `Retry-After` and `X-RateLimit-*` headers; nil-receiver / nil-cache / zero-limit all degrade to allow-all so an unconfigured Redis can't mass-reject. 5 unit tests cover budget exhaustion, per-key isolation, and graceful degradation.
@@ -592,16 +596,11 @@ Environment variables consumed by the api:
 |--------------------------------|-------------------------------------------------------------|
 | `POSTGRES_URL`                 | DB connection (codefly auto-injects)                        |
 | `VAULT_ADDR`, `VAULT_TOKEN`    | Signing-key storage; falls back to ephemeral key in dev     |
-| `BOOTSTRAP_ADMIN_EMAIL`        | First login matching this becomes super_admin              |
-| `AUTH_PROVIDER`                | Required: `workos` / `auth0` / `google`; `dev` only for explicit local fixtures |
-| `WORKOS_CLIENT_ID/SECRET`      | OAuth client credentials                                   |
-| `WORKOS_ISSUER`, `WORKOS_JWKS_URL` | Override discovery URLs (optional)                      |
-| `OAUTH_ALLOWED_REDIRECT_URIS`  | Required exact callback URI allowlist (comma-separated)     |
+| Codefly `application` configuration | Canonical product origin, email sender, and optional one-time bootstrap admin email |
+| Codefly `identity` configuration | Required provider adapter, browser endpoints, client credentials, token validation, and exact redirect allowlist; see `LOCAL_DOGFOODING.md` |
 | `STRIPE_API_KEY`               | Enables billing endpoints                                   |
 | `STRIPE_WEBHOOK_SECRET`        | Required with Stripe API key; exact-body webhook verification |
 | `RESEND_API_KEY`               | Switches email sender from log-only to Resend               |
-| `EMAIL_FROM`                   | Default sender address                                      |
-| `APP_BASE_URL`                 | Exact HTTPS production origin for email and server-owned Stripe redirects |
 | `ACQUISITION_MODE`             | `open_signup` (default), `invite_only`, `approval_required`, or `closed` |
 | `WAITLIST_EMAIL_VERIFICATION`  | Require a time-limited verification email before waitlist approval |
 | `SLACK_WEBHOOK_URL`            | Internal alerts (optional)                                  |
@@ -618,9 +617,7 @@ Frontend browser configuration (`NEXT_PUBLIC_*` values are baked into the client
 
 | Var                          | Used for                                                    |
 |------------------------------|-------------------------------------------------------------|
-| `NEXT_PUBLIC_WORKOS_*`       | OAuth provider preset (presence enables provider in UI)     |
-| `NEXT_PUBLIC_AUTH0_*`        | Same, for Auth0                                             |
-| `NEXT_PUBLIC_GOOGLE_*`       | Same, for Google                                            |
+| `NEXT_PUBLIC_IDENTITY_*`     | Non-secret projection of the selected Codefly `identity` configuration |
 | `NEXT_PUBLIC_LEGAL_ENTITY_NAME` | Operator named in configured legal content                |
 | `NEXT_PUBLIC_LEGAL_CONTACT_EMAIL` | Legal/privacy contact; required before Terms acceptance |
 | `NEXT_PUBLIC_LEGAL_TERMS_CONTENT` | Operator-supplied Terms; required before Terms acceptance |

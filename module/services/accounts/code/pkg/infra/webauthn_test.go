@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"testing"
 
+	"accounts/pkg/auth"
 	"accounts/pkg/business"
 
 	"github.com/stretchr/testify/require"
@@ -37,5 +38,24 @@ func TestWebAuthnEngineRejectsIncompleteRelyingPartyConfig(t *testing.T) {
 	_, err := NewWebAuthnEngine("", "Example", []string{"https://app.example.com"})
 	require.Error(t, err)
 	_, err = NewWebAuthnEngine("example.com", "Example", nil)
-	require.Error(t, err)
+	require.NoError(t, err, "Codefly supplies the exact browser origin at request time")
+}
+
+func TestWebAuthnEngineUsesVerifiedCodeflyOrigin(t *testing.T) {
+	engine, err := NewWebAuthnEngine("localhost", "Example", nil)
+	require.NoError(t, err)
+	ctx, err := auth.WithVerifiedPublicOrigin(context.Background(), "http://localhost:54321")
+	require.NoError(t, err)
+
+	options, _, _, err := engine.BeginRegistration(ctx, business.WebAuthnUser{
+		ID:          []byte("stable-user-id"),
+		Name:        "alex@example.com",
+		DisplayName: "Alex",
+	})
+	require.NoError(t, err)
+
+	var decoded map[string]any
+	require.NoError(t, json.Unmarshal(options, &decoded))
+	rp := decoded["rp"].(map[string]any)
+	require.Equal(t, "localhost", rp["id"])
 }

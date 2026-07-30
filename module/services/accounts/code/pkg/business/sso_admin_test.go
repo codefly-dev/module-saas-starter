@@ -3,7 +3,6 @@ package business_test
 import (
 	"context"
 	"errors"
-	"os"
 	"sync"
 	"testing"
 
@@ -42,7 +41,6 @@ func (f *ssoFakeStore) UpsertOrgSSO(_ context.Context, cfg *business.OrgSSOConfi
 }
 
 func TestStartSSOSetup_StubModeFailsWhenStateCannotBePersisted(t *testing.T) {
-	t.Setenv("WORKOS_API_KEY", "")
 	store := newSSOFakeStore()
 	store.upsertErr = errors.New("database unavailable")
 	svc := newSSOService(store)
@@ -73,17 +71,13 @@ func newSSOService(store business.Store) *business.Service {
 	return svc
 }
 
-// TestStartSSOSetup_StubMode pins the dev/no-WORKOS_API_KEY behaviour:
+// TestStartSSOSetup_StubMode pins the dev/no-management-provider behaviour:
 // a placeholder URL is returned (return_url + ?demo=1) and the org's
 // SSO row is stamped with status=linked. Without this stub-path
 // behaviour, every dev session on the SSO page would error with
-// "WORKOS_API_KEY missing" — the whole point of the stub is that
+// "identity management API key missing" — the whole point of the stub is that
 // operators can exercise the FE flow with no creds wired.
 func TestStartSSOSetup_StubMode(t *testing.T) {
-	prev := os.Getenv("WORKOS_API_KEY")
-	_ = os.Unsetenv("WORKOS_API_KEY")
-	t.Cleanup(func() { _ = os.Setenv("WORKOS_API_KEY", prev) })
-
 	store := newSSOFakeStore()
 	svc := newSSOService(store)
 

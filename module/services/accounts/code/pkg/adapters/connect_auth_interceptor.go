@@ -24,6 +24,8 @@ var forwardedIdentityHeaders = []string{
 	"X-Authentication-Methods", "X-Auth-Time", "X-Assurance-Level", "X-MFA-Verified-At",
 }
 
+const publicOriginHeader = "X-Codefly-Public-Origin"
+
 type connectPolicyInterceptor struct {
 	getMinter func() auth.JWTMinter
 }
@@ -64,12 +66,21 @@ func (i *connectPolicyInterceptor) WrapStreamingHandler(next connect.StreamingHa
 
 func (i *connectPolicyInterceptor) authorize(ctx context.Context, procedure string, headers http.Header) (context.Context, error) {
 	trustedForwarded := validGatewayToken(headers.Get("X-Codefly-Gateway-Token"))
+	forwardedPublicOrigin := headers.Get(publicOriginHeader)
 	if !trustedForwarded {
 		for _, header := range forwardedIdentityHeaders {
 			headers.Del(header)
 		}
 	}
 	headers.Del("X-Codefly-Gateway-Token")
+	headers.Del(publicOriginHeader)
+	if trustedForwarded && forwardedPublicOrigin != "" {
+		var err error
+		ctx, err = auth.WithVerifiedPublicOrigin(ctx, forwardedPublicOrigin)
+		if err != nil {
+			return ctx, connect.NewError(connect.CodePermissionDenied, errors.New("invalid trusted public origin"))
+		}
+	}
 
 	policy, classified := business.LookupRPCPolicy(procedure)
 	if !classified {
