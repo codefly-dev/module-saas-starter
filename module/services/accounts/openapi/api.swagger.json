@@ -1841,6 +1841,9 @@
         "source": {
           "type": "string"
         },
+        "turnstileToken": {
+          "type": "string"
+        },
         "useCase": {
           "type": "string"
         },
@@ -2848,6 +2851,9 @@
             "type": "string"
           },
           "type": "object"
+        },
+        "turnstileToken": {
+          "type": "string"
         }
       },
       "type": "object"

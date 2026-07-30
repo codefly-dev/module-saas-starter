@@ -83,6 +83,7 @@ var relationsByScope = map[relationScope][]string{
 	relationScopeJob:     {"job_messages"},
 	relationScopeWorker: {
 		"analytics_deliveries",
+		"email_delivery_events",
 		"job_attempts",
 		"job_state_transitions",
 	},
@@ -129,6 +130,7 @@ var appTenantRelationPrivileges = map[string]relationPrivileges{
 	"feature_flags":           {selectRows: true, insertRows: true, updateRows: true},
 	"platform_admins":         {selectRows: true, insertRows: true, updateRows: true, deleteRows: true},
 	"analytics_deliveries":    {},
+	"email_delivery_events":   {},
 	"job_attempts":            {},
 	"job_messages":            {},
 	"job_state_transitions":   {},

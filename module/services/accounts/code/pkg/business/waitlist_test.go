@@ -10,6 +10,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 
+	"accounts/pkg/abuse"
 	"accounts/pkg/business"
 	"accounts/pkg/email"
 	gen "accounts/pkg/gen/saas/accounts/v1"
@@ -126,6 +127,45 @@ func (f *waitlistStoreFake) InviteWaitlistEntry(
 
 type waitlistJobProducer struct {
 	enqueued int
+}
+
+type rejectingAbuseVerifier struct {
+	challenges []abuse.Challenge
+}
+
+func (v *rejectingAbuseVerifier) Verify(_ context.Context, challenge abuse.Challenge) error {
+	v.challenges = append(v.challenges, challenge)
+	return abuse.ErrChallengeRejected
+}
+
+func TestAbuseChallengeFailurePreventsRegistrationAndWaitlistWrites(t *testing.T) {
+	store := newWaitlistStoreFake()
+	service, err := business.NewService(store)
+	require.NoError(t, err)
+	require.NoError(t, service.SetAcquisitionMode("approval_required"))
+	verifier := &rejectingAbuseVerifier{}
+	service.SetAbuseVerifier(verifier)
+
+	_, err = service.JoinWaitlist(context.Background(), &gen.JoinWaitlistRequest{
+		Email:          "person@example.com",
+		PolicyVersion:  business.CurrentConsentPolicyVersion,
+		TurnstileToken: "waitlist-token",
+	})
+	require.ErrorIs(t, err, abuse.ErrChallengeRejected)
+	require.Empty(t, store.entries)
+	require.Equal(t, abuse.Challenge{
+		Token: "waitlist-token", Action: "waitlist_join",
+	}, verifier.challenges[0])
+
+	_, err = service.RegisterUser(context.Background(), &gen.RegisterUserRequest{
+		PrimaryEmail:   "person@example.com",
+		TurnstileToken: "registration-token",
+	})
+	require.ErrorIs(t, err, abuse.ErrChallengeRejected)
+	require.Empty(t, store.entries)
+	require.Equal(t, abuse.Challenge{
+		Token: "registration-token", Action: "register_user",
+	}, verifier.challenges[1])
 }
 
 func (p *waitlistJobProducer) EnqueueJob(

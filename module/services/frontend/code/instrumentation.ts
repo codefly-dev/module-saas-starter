@@ -9,10 +9,15 @@
 // Pairs with instrumentation-client.ts (browser) for full coverage.
 
 import * as Sentry from "@sentry/nextjs";
+import { configuredErrorTracking } from "./src/lib/error-tracking";
 
 export async function register() {
-	const dsn = process.env.SENTRY_DSN || process.env.NEXT_PUBLIC_SENTRY_DSN;
-	if (!dsn) return;
+	const configuration = configuredErrorTracking(
+		process.env.ERROR_TRACKING_MODE,
+		process.env.SENTRY_DSN || process.env.NEXT_PUBLIC_SENTRY_DSN,
+	);
+	if (!configuration.enabled) return;
+	const dsn = configuration.dsn;
 
 	if (process.env.NEXT_RUNTIME === "nodejs") {
 		Sentry.init({

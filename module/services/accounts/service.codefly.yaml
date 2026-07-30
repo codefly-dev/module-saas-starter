@@ -17,13 +17,20 @@ service-dependencies:
     - name: store
       endpoints:
         - name: tcp
+    - name: telemetry
+      endpoints:
+        - name: grpc
     - name: vault
       endpoints:
         - name: http
 workspace-configuration-dependencies:
+    - abuse-protection
     - application
+    - billing
+    - email
     - identity
     - internal-auth
+    - product-analytics
     - security
 endpoints:
     - name: connect

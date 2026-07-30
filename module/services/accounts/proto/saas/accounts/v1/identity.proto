@@ -19,6 +19,7 @@ message RegisterUserRequest {
   string primary_email = 1 [(buf.validate.field).string.email = true];
   map<string, string> profile = 2;
   UserIdentity identity = 3;
+  string turnstile_token = 4 [(buf.validate.field).string.max_len = 4096];
 }
 
 message RegisterUserResponse {

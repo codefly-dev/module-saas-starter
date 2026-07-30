@@ -22,4 +22,5 @@ services:
     - name: marketing
     - name: object-storage
     - name: store
+    - name: telemetry
     - name: vault

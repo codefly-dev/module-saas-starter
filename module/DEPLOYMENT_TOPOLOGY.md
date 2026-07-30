@@ -19,8 +19,8 @@ deployment ports, and public egress. The runtime `module.codefly.yaml` and every
 | `services/accounts/code/pkg/cataloggen/testdata/network-policy.golden.yaml` | Test-only topology-policy golden; installed GitOps policies are rendered structurally per environment. |
 | `services/accounts/code/pkg/cataloggen/deployment_topology.go` | Strict compiler, semantic validator, and renderers. |
 
-The normalized inventory currently contains eight services, 12 endpoints,
-eight dependency edges, three module-interface endpoints, and three explicit
+The normalized inventory currently contains nine services, 13 endpoints,
+nine dependency edges, three module-interface endpoints, and four explicit
 public-egress grants. The accounts descriptor catalog is an input: if its RPCs
 use gRPC, Connect, or REST without a corresponding accounts endpoint,
 generation fails.
@@ -32,6 +32,7 @@ generation fails.
 | `accounts` | `cache/read`, `cache/write` | TCP 6379 |
 | `accounts` | `object-storage/accounts` | TCP 9000 |
 | `accounts` | `store/tcp` | TCP 5432 |
+| `accounts` | `telemetry/grpc` | Codefly-assigned OTLP gRPC port |
 | `accounts` | `vault/http` | TCP 8200 |
 | `auth-sidecar` | `accounts/connect`, `accounts/rest`, `accounts/grpc` | TCP 8080, 9090 |
 | `auth-sidecar` | `cache/write` | TCP 6379 |
@@ -41,20 +42,20 @@ generation fails.
 The Codefly module interface exposes the public `auth-sidecar/rest` and
 `marketing/http` endpoints; the auth-sidecar gRPC ext-authz endpoint has module
 visibility. Istio routes apex/`www`/docs hosts to `marketing/http` and `app` to
-`auth-sidecar/rest`. Accounts, frontend, and marketing may reach public IP
-space only over TCP 443. The public rules exclude private, loopback,
+`auth-sidecar/rest`. Accounts, frontend, marketing, and telemetry may reach
+public IP space only over TCP 443. The public rules exclude private, loopback,
 link-local, metadata, documentation, benchmark, multicast, and other
 special-purpose IPv4/IPv6 ranges.
 
 ## Network-policy model
 
-The topology-policy golden contains 17 `NetworkPolicy` resources:
+The topology-policy golden contains 21 `NetworkPolicy` resources:
 
 - one namespace-wide ingress/egress default deny;
 - DNS and Istio control-plane egress for all injected workloads;
 - Istio ingress only to the public auth-sidecar and marketing HTTP ports;
 - target ingress and caller egress policies for every declared dependency;
-- HTTPS public egress only for accounts, frontend, and marketing.
+- HTTPS public egress only for accounts, frontend, marketing, and telemetry.
 
 There is no `allow-intra-namespace` rule. Adding a service dependency or port
 requires changing the topology binding and reviewing both generated directions
@@ -67,10 +68,10 @@ changes must update the topology binding in the same change; pinned deployment
 schema/render validation is tracked by `P1-CI-004`.
 
 The generated Codefly dependency declarations contain exact endpoint
-references. The currently pinned runtime still injects every endpoint of a
-declared dependency into the service environment, so the generated
-NetworkPolicy is the hard endpoint/port enforcement boundary until runtime
-injection applies those references too.
+references. Accounts resolves `telemetry/grpc` through the SDK and passes that
+exact Codefly-owned address to both tracing and metrics; no product
+configuration owns a local collector port. The generated NetworkPolicy remains
+the hard endpoint/port enforcement boundary.
 
 The AWS overlay replaces stateful services with managed dependencies. A
 pod-selector rule cannot authorize an RDS, ElastiCache, external Vault, or S3
@@ -94,7 +95,7 @@ exports, and missing descriptor-required accounts protocols.
 
 Parity tests build every artifact twice, compare all checked-in outputs, parse
 the generated files through Codefly's resource model, and strictly inspect all
-17 NetworkPolicy golden documents. After the module generator creates the
+21 NetworkPolicy golden documents. After the module generator creates the
 consumer-owned GitOps tree, render an environment with:
 
 ```sh
@@ -102,7 +103,7 @@ kubectl kustomize modules/<module>/deployment/kustomize/overlays/<environment>
 ```
 
 CI regenerates and clean-diff checks the normalized catalog, module manifest,
-all eight service manifests, and NetworkPolicy file. A separate CI job copies
+all nine service manifests, and NetworkPolicy file. A separate CI job copies
 only marketing into an isolated build context, installs its own dependency
 lock, and runs unit, content, boundary, build, budget, and degraded-product
 smoke checks.

@@ -65,6 +65,7 @@ type TemplateRequest struct {
 	Template    string
 	To          string
 	Variables   map[string]string
+	Tags        map[string]string
 	Fallback    *Message
 }
 
@@ -82,6 +83,14 @@ func (o *Outbox) EnqueueTemplate(ctx context.Context, request TemplateRequest) e
 		message = cloneMessage(request.Fallback)
 		if message.From == "" {
 			message.From = o.from
+		}
+	}
+	if len(request.Tags) > 0 {
+		if message.Tags == nil {
+			message.Tags = make(map[string]string, len(request.Tags))
+		}
+		for key, value := range request.Tags {
+			message.Tags[key] = value
 		}
 	}
 	return o.Enqueue(ctx, request.DeliveryKey, request.Scope, request.Source, message)

@@ -26,9 +26,21 @@ module/services/*/.cache/
 **/.nix-cache/
 module/services/*/nix/
 
-# Local identity dogfood configuration is consumed by Codefly but owned by
-# the operator. Examples are committed alongside it; resolved provider
-# credentials and client identifiers never are.
+# Local external-provider dogfood configuration is consumed by Codefly but
+# owned by the operator. Examples are committed alongside it; resolved
+# provider credentials and account identifiers never are.
+/configurations/local-dogfood/billing.env
+/configurations/local-dogfood/billing.secret.env
+/configurations/local-dogfood/email.env
+/configurations/local-dogfood/email.secret.env
 /configurations/local-dogfood/identity.env
 /configurations/local-dogfood/identity.secret.env
 /configurations/local-dogfood/identity.secret.yaml
+/configurations/local-dogfood/product-analytics.env
+/configurations/local-dogfood/product-analytics.secret.env
+/configurations/local-dogfood/error-tracking.env
+/configurations/local-dogfood/error-tracking.secret.env
+/configurations/local-dogfood/observability.env
+/configurations/local-dogfood/observability.secret.env
+/configurations/local-dogfood/abuse-protection.env
+/configurations/local-dogfood/abuse-protection.secret.env

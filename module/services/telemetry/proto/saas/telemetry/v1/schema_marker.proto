@@ -1,0 +1,7 @@
+syntax = "proto3";
+
+package saas.telemetry.v1;
+
+// SchemaMarker keeps the Codefly protobuf sync input valid without duplicating
+// the standard OpenTelemetry Protocol service definitions.
+message SchemaMarker {}

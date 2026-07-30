@@ -4,12 +4,14 @@ import { createClient } from "@connectrpc/connect";
 import { CheckCircle2, Loader2 } from "lucide-react";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
+import { TurnstileWidget } from "@/components/turnstile-widget";
 import {
 	AcquisitionMode,
 	WaitlistService,
 } from "@/gen/saas/accounts/v1/waitlist_pb";
 import { apiTransport } from "@/lib/connect/transport";
+import { configuredAbuseProtection } from "@/lib/abuse-protection";
 import {
 	Button,
 	Card,
@@ -33,6 +35,15 @@ export function WaitlistPage() {
 	const [message, setMessage] = useState("");
 	const [error, setError] = useState("");
 	const [policyVersion, setPolicyVersion] = useState("");
+	const [turnstileToken, setTurnstileToken] = useState("");
+	const [turnstileAttempt, setTurnstileAttempt] = useState(0);
+	const abuseProtection = configuredAbuseProtection(
+		process.env.NEXT_PUBLIC_ABUSE_PROTECTION_MODE,
+		process.env.NEXT_PUBLIC_TURNSTILE_SITE_KEY,
+	);
+	const updateTurnstileToken = useCallback((token: string) => {
+		setTurnstileToken(token);
+	}, []);
 
 	useEffect(() => {
 		client
@@ -60,9 +71,12 @@ export function WaitlistPage() {
 				referralCode: params.get("ref") ?? "",
 				marketingConsent: form.get("marketing") === "on",
 				policyVersion,
+				turnstileToken,
 			});
 			setMessage(response.message);
 		} catch {
+			setTurnstileToken("");
+			setTurnstileAttempt((attempt) => attempt + 1);
 			setError(
 				"We could not submit this request. Check your connection and try again.",
 			);
@@ -196,6 +210,11 @@ export function WaitlistPage() {
 							</Link>
 							.
 						</p>
+						<TurnstileWidget
+							key={turnstileAttempt}
+							action="waitlist_join"
+							onTokenChange={updateTurnstileToken}
+						/>
 						{error && (
 							<p
 								id="waitlist-error"
@@ -212,7 +231,12 @@ export function WaitlistPage() {
 						type="submit"
 						form="waitlist-form"
 						className="w-full"
-						disabled={submitting || mode === undefined || !policyVersion}
+						disabled={
+							submitting ||
+							mode === undefined ||
+							!policyVersion ||
+							(abuseProtection.enabled && !turnstileToken)
+						}
 					>
 						{submitting && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
 						Join waitlist

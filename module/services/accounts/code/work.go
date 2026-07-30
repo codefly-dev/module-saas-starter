@@ -2,6 +2,7 @@ package main
 
 import (
 	"accounts/fixtures"
+	"accounts/pkg/abuse"
 	"accounts/pkg/adapters"
 	"accounts/pkg/analytics"
 	"accounts/pkg/auth"
@@ -63,11 +64,10 @@ func doWork(ctx context.Context) (Clean, error) {
 		return nil, err
 	}
 
-	// OpenTelemetry — enabled when OTEL_EXPORTER_OTLP_ENDPOINT is
-	// set (or by setting OTEL_SERVICE_NAME for stdout-fallback dev
-	// mode). The provider exports to any OTLP-compatible collector
-	// (Tempo, Jaeger, signoz, Honeycomb, Datadog…). Empty env → no
-	// provider registered → all spans are no-ops.
+	// OpenTelemetry always targets the in-graph collector. Codefly owns its
+	// host and port; the accounts process never reads or hardcodes a collector
+	// address. The collector configuration independently selects debug output
+	// or an external OTLP/HTTP destination.
 	//
 	// FE→BE trace continuation: the browser stamps W3C `traceparent`
 	// on every Connect-ES fetch (Sentry's browserTracingIntegration),
@@ -80,25 +80,31 @@ func doWork(ctx context.Context) (Clean, error) {
 	var otelMetricProvider interface {
 		Shutdown(context.Context) error
 	}
-	if os.Getenv("OTEL_EXPORTER_OTLP_ENDPOINT") != "" || os.Getenv("OTEL_SERVICE_NAME") != "" {
-		p, oerr := wooltel.Enable(wooltel.WithServiceName("saas-starter-api"))
-		if oerr != nil {
-			w.Warn("OTEL setup failed; continuing without tracing", wool.ErrField(oerr))
-		} else {
-			otelProvider = p
-			w.Info("OTEL enabled",
-				wool.Field("endpoint", os.Getenv("OTEL_EXPORTER_OTLP_ENDPOINT")),
-				wool.Field("service.name", "saas-starter-api"))
-		}
+	collectorNetwork, err := codefly.For(ctx).
+		Service("telemetry").
+		Endpoint("grpc").
+		API("grpc").
+		ResolveNetworkInstance()
+	if err != nil {
+		return nil, fmt.Errorf("resolve telemetry collector through Codefly: %w", err)
 	}
-	if os.Getenv("OTEL_EXPORTER_OTLP_ENDPOINT") != "" {
-		p, oerr := enableOTLPMetrics(ctx, "saas-starter-api")
-		if oerr != nil {
-			w.Warn("OTEL metrics setup failed; continuing without metric export", wool.ErrField(oerr))
-		} else {
-			otelMetricProvider = p
-		}
+	p, oerr := wooltel.Enable(
+		wooltel.WithServiceName("saas-starter-api"),
+		wooltel.WithEndpoint(collectorNetwork.Host),
+		wooltel.WithInsecure(),
+	)
+	if oerr != nil {
+		return nil, fmt.Errorf("configure OTEL tracing: %w", oerr)
 	}
+	otelProvider = p
+	w.Info("OTEL enabled",
+		wool.Field("endpoint", collectorNetwork.Host),
+		wool.Field("service.name", "saas-starter-api"))
+	metricProvider, oerr := enableOTLPMetrics(ctx, "saas-starter-api", collectorNetwork.Host)
+	if oerr != nil {
+		return nil, fmt.Errorf("configure OTEL metrics: %w", oerr)
+	}
+	otelMetricProvider = metricProvider
 
 	store, err := infra.NewPostgresStore(ctx)
 	if err != nil {
@@ -109,6 +115,11 @@ func doWork(ctx context.Context) (Clean, error) {
 	if err != nil {
 		return nil, err
 	}
+	abuseVerifier, err := configuredAbuseVerifier()
+	if err != nil {
+		return nil, err
+	}
+	service.SetAbuseVerifier(abuseVerifier)
 	if err := service.SetAcquisitionMode(os.Getenv("ACQUISITION_MODE")); err != nil {
 		return nil, err
 	}
@@ -391,7 +402,21 @@ func doWork(ctx context.Context) (Clean, error) {
 	if err != nil {
 		return nil, err
 	}
-	emailJobHandler, err := email.NewJobHandler(pickEmailSender(ctx))
+	emailSender, err := configuredEmailSender(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if strings.EqualFold(strings.TrimSpace(os.Getenv("EMAIL_PROVIDER")), "resend") {
+		resendWebhook, err := email.NewResendWebhookHandler(email.ResendWebhookConfig{
+			SigningSecret: os.Getenv("RESEND_WEBHOOK_SECRET"),
+			Recorder:      jobStore,
+		})
+		if err != nil {
+			return nil, err
+		}
+		adapters.RegisterHTTPRoute("/v1/email/webhook/resend", resendWebhook)
+	}
+	emailJobHandler, err := email.NewJobHandler(emailSender)
 	if err != nil {
 		return nil, err
 	}
@@ -414,12 +439,22 @@ func doWork(ctx context.Context) (Clean, error) {
 	// forwarded identity headers.
 	var stripeWebhookWorker *jobs.Worker
 	var billingWorkerPool interface{ Close() }
-	if stripeKey := os.Getenv("STRIPE_API_KEY"); stripeKey != "" {
-		whSecret := os.Getenv("STRIPE_WEBHOOK_SECRET")
-		if whSecret == "" {
-			return nil, fmt.Errorf("billing: STRIPE_WEBHOOK_SECRET is required when STRIPE_API_KEY is configured")
+	billingProvider := strings.ToLower(strings.TrimSpace(os.Getenv("BILLING_PROVIDER")))
+	switch billingProvider {
+	case "", "disabled":
+		if os.Getenv("STRIPE_API_KEY") != "" || os.Getenv("STRIPE_WEBHOOK_SECRET") != "" {
+			return nil, fmt.Errorf("billing: Stripe credentials are present while BILLING_PROVIDER is disabled")
 		}
-		stripeClient, err := billing.New(billing.Config{APIKey: stripeKey})
+	case "stripe":
+		stripeKey := strings.TrimSpace(os.Getenv("STRIPE_API_KEY"))
+		whSecret := strings.TrimSpace(os.Getenv("STRIPE_WEBHOOK_SECRET"))
+		if stripeKey == "" || whSecret == "" {
+			return nil, fmt.Errorf("billing: STRIPE_API_KEY and STRIPE_WEBHOOK_SECRET are required when BILLING_PROVIDER=stripe")
+		}
+		stripeClient, err := billing.New(billing.Config{
+			APIKey:  stripeKey,
+			BaseURL: strings.TrimSpace(os.Getenv("STRIPE_API_BASE")),
+		})
 		if err != nil {
 			return nil, fmt.Errorf("billing: %w", err)
 		}
@@ -475,6 +510,8 @@ func doWork(ctx context.Context) (Clean, error) {
 		service.SetBillingClient(stripeClient)
 		adapters.RegisterHTTPRoute("/v1/billing/checkout", billingHTTPHandler)
 		adapters.RegisterHTTPRoute("/v1/billing/portal", billingHTTPHandler)
+	default:
+		return nil, fmt.Errorf("BILLING_PROVIDER must be disabled or stripe")
 	}
 
 	// Start background data retention goroutine. Runs once on startup and
@@ -630,6 +667,7 @@ func configuredAnalyticsSink() (analytics.Destination, bool, error) {
 			PersonalAPIKey: os.Getenv("POSTHOG_PERSONAL_API_KEY"),
 			ProjectID:      os.Getenv("POSTHOG_PROJECT_ID"),
 			Host:           os.Getenv("POSTHOG_HOST"),
+			APIHost:        os.Getenv("POSTHOG_API_HOST"),
 		})
 		if err != nil {
 			return nil, false, err
@@ -637,6 +675,27 @@ func configuredAnalyticsSink() (analytics.Destination, bool, error) {
 		return sink, true, nil
 	default:
 		return nil, false, fmt.Errorf("PRODUCT_ANALYTICS_MODE must be disabled, noop, or posthog")
+	}
+}
+
+func configuredAbuseVerifier() (abuse.Verifier, error) {
+	mode := strings.ToLower(strings.TrimSpace(os.Getenv("ABUSE_PROTECTION_MODE")))
+	secret := strings.TrimSpace(os.Getenv("TURNSTILE_SECRET_KEY"))
+	switch mode {
+	case "", "disabled":
+		if secret != "" {
+			return nil, fmt.Errorf("abuse: Turnstile secret is present while ABUSE_PROTECTION_MODE is disabled")
+		}
+		return abuse.DisabledVerifier{}, nil
+	case "turnstile":
+		allowed := strings.Split(os.Getenv("TURNSTILE_ALLOWED_HOSTNAMES"), ",")
+		return abuse.NewTurnstileVerifier(abuse.TurnstileConfig{
+			SecretKey:        secret,
+			VerifyURL:        strings.TrimSpace(os.Getenv("TURNSTILE_VERIFY_URL")),
+			AllowedHostnames: allowed,
+		})
+	default:
+		return nil, fmt.Errorf("ABUSE_PROTECTION_MODE must be disabled or turnstile")
 	}
 }
 
@@ -913,24 +972,36 @@ func buildProviderStack(provider, selectedFixture string) (auth.TokenValidator, 
 	}
 }
 
-// pickEmailSender chooses a Sender based on environment.
-//
-//	RESEND_API_KEY set → ResendSender (production)
-//	otherwise          → LogSender writing through wool (dev)
-func pickEmailSender(ctx context.Context) email.Sender {
+// configuredEmailSender makes provider selection explicit. Production never
+// silently downgrades to a log sink because one Resend value is missing.
+func configuredEmailSender(ctx context.Context) (email.Sender, error) {
 	w := wool.Get(ctx).In("pickEmailSender")
 	logFn := func(format string, args ...any) {
 		w.Info(fmt.Sprintf(format, args...))
 	}
-	if key := os.Getenv("RESEND_API_KEY"); key != "" {
-		s, err := email.NewResendSender(email.ResendConfig{APIKey: key})
-		if err != nil {
-			w.Warn("resend init failed — falling back to log sender", wool.ErrField(err))
-			return email.NewLogSender(logFn)
+	switch strings.ToLower(strings.TrimSpace(os.Getenv("EMAIL_PROVIDER"))) {
+	case "", "log":
+		if os.Getenv("RESEND_API_KEY") != "" || os.Getenv("RESEND_WEBHOOK_SECRET") != "" {
+			return nil, fmt.Errorf("email: Resend credentials are present while EMAIL_PROVIDER is log")
 		}
-		return s
+		return email.NewLogSender(logFn), nil
+	case "resend":
+		key := strings.TrimSpace(os.Getenv("RESEND_API_KEY"))
+		webhookSecret := strings.TrimSpace(os.Getenv("RESEND_WEBHOOK_SECRET"))
+		if key == "" || webhookSecret == "" {
+			return nil, fmt.Errorf("email: RESEND_API_KEY and RESEND_WEBHOOK_SECRET are required when EMAIL_PROVIDER=resend")
+		}
+		s, err := email.NewResendSender(email.ResendConfig{
+			APIKey:  key,
+			BaseURL: strings.TrimSpace(os.Getenv("RESEND_API_BASE")),
+		})
+		if err != nil {
+			return nil, err
+		}
+		return s, nil
+	default:
+		return nil, fmt.Errorf("EMAIL_PROVIDER must be log or resend")
 	}
-	return email.NewLogSender(logFn)
 }
 
 // loadSigningKey returns the Ed25519 private key used to sign access and

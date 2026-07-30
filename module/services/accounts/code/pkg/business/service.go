@@ -1,6 +1,7 @@
 package business
 
 import (
+	"accounts/pkg/abuse"
 	"accounts/pkg/analytics"
 	"accounts/pkg/auth"
 	"accounts/pkg/email"
@@ -44,6 +45,7 @@ type Service struct {
 	usageMeters               *UsageMeterCatalog
 	privacy                   PrivacyWorkflow
 	ssoManagementAPIKey       string
+	abuseVerifier             abuse.Verifier
 }
 
 // CodeExchanger abstracts the OAuth 2.0 code-for-token exchange so the
@@ -82,7 +84,16 @@ func NewService(store Store) (*Service, error) {
 		acquisitionMode:           gen.AcquisitionMode_ACQUISITION_MODE_OPEN_SIGNUP,
 		waitlistEmailVerification: true,
 		usageMeters:               usageMeters,
+		abuseVerifier:             abuse.DisabledVerifier{},
 	}, nil
+}
+
+func (s *Service) SetAbuseVerifier(verifier abuse.Verifier) {
+	if verifier == nil {
+		s.abuseVerifier = abuse.DisabledVerifier{}
+		return
+	}
+	s.abuseVerifier = verifier
 }
 
 func (s *Service) SetHasher(h KeyHasher) {
@@ -266,6 +277,11 @@ func (s *Service) Store() Store {
 func (s *Service) RegisterUser(ctx context.Context, input *gen.RegisterUserRequest) (*gen.RegisterUserResponse, error) {
 	w := wool.Get(ctx).In("RegisterUser")
 
+	if err := s.abuseVerifier.Verify(ctx, abuse.Challenge{
+		Token: input.GetTurnstileToken(), Action: "register_user",
+	}); err != nil {
+		return nil, err
+	}
 	if err := s.authorizeAccountCreation(ctx, input.PrimaryEmail); err != nil {
 		return nil, err
 	}
