@@ -92,6 +92,10 @@ jobs:
         shell: bash
         env:
           CODEFLY_BASE: ${{ github.event.pull_request.base.sha || github.event.before }}
+          # Select the Codefly fixture used by dependency-backed frontend tests.
+          # Accounts reads this through the Codefly SDK; application code never
+          # reaches into Codefly's runtime carrier directly.
+          CODEFLY__FIXTURE: dev-admin
         run: |
           # Keep the complete audit in the Codefly evidence report, including
           # vendor runtime images. Those images have their own release cadence
