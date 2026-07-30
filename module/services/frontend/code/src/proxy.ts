@@ -14,6 +14,35 @@
 
 import type { NextRequest } from "next/server";
 import { NextResponse } from "next/server";
+import {
+	type CodeflyGatewayContext,
+	resolveCodeflyGatewayContext,
+} from "@/lib/codefly-gateway-context";
+
+const PRODUCT_API_PREFIXES = ["/v1/", "/saas.accounts.v1."] as const;
+const INTERNAL_TOKEN_HEADER = "X-Codefly-Internal-Token";
+const PUBLIC_ORIGIN_HEADER = "X-Codefly-Public-Origin";
+
+function isProductAPI(pathname: string): boolean {
+	return PRODUCT_API_PREFIXES.some((prefix) => pathname.startsWith(prefix));
+}
+
+export function trustedGatewayRequestHeaders(
+	req: NextRequest,
+	context: CodeflyGatewayContext | undefined,
+): Headers | undefined {
+	if (!isProductAPI(req.nextUrl.pathname)) return undefined;
+	if (!context) return undefined;
+
+	const headers = new Headers(req.headers);
+	// Caller-supplied trust headers are never forwarded. The server replaces
+	// them from Codefly's secret configuration and the actual browser origin.
+	headers.delete(INTERNAL_TOKEN_HEADER);
+	headers.delete(PUBLIC_ORIGIN_HEADER);
+	headers.set(INTERNAL_TOKEN_HEADER, context.internalToken);
+	headers.set(PUBLIC_ORIGIN_HEADER, context.publicOrigin);
+	return headers;
+}
 
 const PUBLIC_PATHS = [
 	"/",
@@ -52,6 +81,10 @@ function isPublic(pathname: string): boolean {
 
 export function proxy(req: NextRequest) {
 	const { pathname, search } = req.nextUrl;
+	const gatewayHeaders = trustedGatewayRequestHeaders(
+		req,
+		resolveCodeflyGatewayContext(req.nextUrl.origin),
+	);
 
 	const secretReturn =
 		pathname === "/invitations/accept"
@@ -78,7 +111,9 @@ export function proxy(req: NextRequest) {
 	}
 
 	if (isPublic(pathname)) {
-		const response = NextResponse.next();
+		const response = gatewayHeaders
+			? NextResponse.next({ request: { headers: gatewayHeaders } })
+			: NextResponse.next();
 		if (pathname === "/invitations/accept" || pathname === "/waitlist/verify") {
 			response.headers.set("Referrer-Policy", "no-referrer");
 		}
@@ -97,7 +132,9 @@ export function proxy(req: NextRequest) {
 		return NextResponse.redirect(loginURL);
 	}
 
-	return NextResponse.next();
+	return gatewayHeaders
+		? NextResponse.next({ request: { headers: gatewayHeaders } })
+		: NextResponse.next();
 }
 
 export const config = {

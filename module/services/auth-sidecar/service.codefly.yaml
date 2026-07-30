@@ -4,7 +4,7 @@ version: 0.0.0
 description: |
     Single ingress + auth brain. Hosts two listeners:
       - gRPC ext_authz for Envoy
-      - HTTP reverse proxy for public and local traffic
+      - private HTTP API gateway behind the frontend entry
 agent:
     kind: codefly:service
     name: go-grpc
@@ -19,9 +19,6 @@ service-dependencies:
     - name: cache
       endpoints:
         - name: write
-    - name: frontend
-      endpoints:
-        - name: http
 workspace-configuration-dependencies:
     - gateway
     - internal-auth
@@ -30,7 +27,6 @@ endpoints:
     - name: grpc
       visibility: module
     - name: rest
-      visibility: public
 spec:
     hot-reload: true
     protocol-output-dirs:

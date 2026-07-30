@@ -26,10 +26,8 @@ func TestFrontendPluginCatalogIsDeterministicAndCurrent(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, first.CatalogJSON, second.CatalogJSON)
 	require.Equal(t, first.TypeScript, second.TypeScript)
-	require.Equal(t, first.GatewayGo, second.GatewayGo)
 	require.Equal(t, string(readFixture(t, "../../../../frontend/generated/plugin-catalog.json")), string(first.CatalogJSON), "run: go generate ./pkg/cataloggen")
 	require.Equal(t, string(readFixture(t, "../../../../frontend/code/src/gen/saas/frontend/v1/plugin_catalog.ts")), string(first.TypeScript), "run: go generate ./pkg/cataloggen")
-	require.Equal(t, string(readFixture(t, "../../../../auth-sidecar/code/frontend_routes_catalog_gen.go")), string(first.GatewayGo), "run: go generate ./pkg/cataloggen")
 
 	require.Len(t, first.Catalog.GetPlugins(), 3)
 	require.Len(t, first.Catalog.GetRoutes(), 43)

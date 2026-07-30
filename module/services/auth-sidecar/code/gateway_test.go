@@ -62,8 +62,6 @@ func testRouteEntries() []*RouteEntry {
 		{Service: "accounts", Method: "POST", Path: "/v1/billing/webhook", Protected: false},
 		// Resend delivery webhook (public, signed by Svix)
 		{Service: "accounts", Method: "POST", Path: "/v1/email/webhook/resend", Protected: false},
-		// Frontend
-		{Service: "frontend", Method: "GET", Path: "/", Protected: false},
 		// Health checks
 		{Service: "self", Method: "GET", Path: "/health", Protected: false},
 		{Service: "self", Method: "GET", Path: "/healthz", Protected: false},
@@ -78,10 +76,11 @@ func newGatewayHarness(t *testing.T) (*Gateway, *fakeUpstream, *fakeUpstream, ed
 	require.NoError(t, err)
 
 	sidecar := &Sidecar{
-		publicKey:    pub,
-		issuer:       "saas-starter",
-		audience:     "saas-starter",
-		gatewayToken: "test-gateway-token",
+		publicKey:     pub,
+		issuer:        "saas-starter",
+		audience:      "saas-starter",
+		internalToken: "test-internal-token",
+		gatewayToken:  "test-gateway-token",
 	}
 
 	apiFake := &fakeUpstream{body: "api-response"}
@@ -106,10 +105,14 @@ func newGatewayHarness(t *testing.T) (*Gateway, *fakeUpstream, *fakeUpstream, ed
 		matcher,
 		upstreams,
 		nil,
-		WithPublicOrigin("http://localhost:54321"),
 	)
 
 	return gateway, apiFake, frontendFake, priv
+}
+
+func authenticateFrontendOrigin(req *http.Request, origin string) {
+	req.Header.Set("X-Codefly-Internal-Token", "test-internal-token")
+	req.Header.Set("X-Codefly-Public-Origin", origin)
 }
 
 func signValidToken(t *testing.T, priv ed25519.PrivateKey) string {
@@ -143,6 +146,7 @@ func TestGateway_PublicAuthPath_NoToken_Forwarded(t *testing.T) {
 	gw, apiFake, _, _ := newGatewayHarness(t)
 
 	req := httptest.NewRequest(http.MethodPost, "/v1/auth/authenticate", strings.NewReader(`{}`))
+	authenticateFrontendOrigin(req, "http://localhost:54321")
 	w := httptest.NewRecorder()
 	gw.ServeHTTP(w, req)
 
@@ -205,12 +209,45 @@ func TestGateway_StripsCallerIdentityAndTrustCredentials(t *testing.T) {
 			require.Equal(t, "test-gateway-token", apiFake.lastHeaders.Get(key))
 			continue
 		}
-		if key == "x-codefly-public-origin" {
-			require.Equal(t, "http://localhost:54321", apiFake.lastHeaders.Get(key))
-			continue
-		}
 		require.Empty(t, apiFake.lastHeaders.Get(key), "caller-controlled %s must be stripped", key)
 	}
+}
+
+func TestGateway_TrustsPublicOriginOnlyFromAuthenticatedFrontend(t *testing.T) {
+	gw, apiFake, _, _ := newGatewayHarness(t)
+
+	req := httptest.NewRequest(http.MethodPost, "/v1/auth/authenticate", strings.NewReader(`{}`))
+	req.Header.Set("X-Codefly-Internal-Token", "wrong-token")
+	req.Header.Set("X-Codefly-Public-Origin", "https://evil.example")
+	w := httptest.NewRecorder()
+	gw.ServeHTTP(w, req)
+
+	require.Equal(t, http.StatusOK, w.Code)
+	require.Equal(t, "test-gateway-token", apiFake.lastHeaders.Get("X-Codefly-Gateway-Token"))
+	require.Empty(t, apiFake.lastHeaders.Get("X-Codefly-Internal-Token"))
+	require.Empty(t, apiFake.lastHeaders.Get("X-Codefly-Public-Origin"))
+
+	apiFake.lastHeaders = nil
+	req = httptest.NewRequest(http.MethodPost, "/v1/auth/authenticate", strings.NewReader(`{}`))
+	authenticateFrontendOrigin(req, "https://app.example")
+	w = httptest.NewRecorder()
+	gw.ServeHTTP(w, req)
+
+	require.Equal(t, http.StatusOK, w.Code)
+	require.Equal(t, "https://app.example", apiFake.lastHeaders.Get("X-Codefly-Public-Origin"))
+	require.Empty(t, apiFake.lastHeaders.Get("X-Codefly-Internal-Token"))
+}
+
+func TestGateway_RejectsMalformedOriginFromAuthenticatedFrontend(t *testing.T) {
+	gw, apiFake, _, _ := newGatewayHarness(t)
+
+	req := httptest.NewRequest(http.MethodPost, "/v1/auth/authenticate", strings.NewReader(`{}`))
+	authenticateFrontendOrigin(req, "https://app.example/auth/callback")
+	w := httptest.NewRecorder()
+	gw.ServeHTTP(w, req)
+
+	require.Equal(t, http.StatusOK, w.Code)
+	require.Empty(t, apiFake.lastHeaders.Get("X-Codefly-Public-Origin"))
 }
 
 func TestCanonicalPublicOriginAcceptsCodeflyEndpointAddress(t *testing.T) {
@@ -321,43 +358,27 @@ func TestGateway_ConnectRPC_UnlistedMethod_404(t *testing.T) {
 }
 
 // ============================================================================
-// Route selection — frontend
+// Frontend is the module entry and is never proxied by the API gateway.
 // ============================================================================
 
-func TestGateway_RoutesFrontendByDefault(t *testing.T) {
+func TestGateway_DoesNotProxyFrontendRoutes(t *testing.T) {
 	gw, _, frontendFake, _ := newGatewayHarness(t)
 
-	req := httptest.NewRequest(http.MethodGet, "/", nil)
-	w := httptest.NewRecorder()
-	gw.ServeHTTP(w, req)
-
-	require.Equal(t, 200, w.Code)
-	require.Equal(t, "frontend-response", w.Body.String())
-	require.Equal(t, "/", frontendFake.lastPath)
-}
-
-func TestGateway_RoutesGeneratedFrontendPagesAssetsAndHandlers(t *testing.T) {
-	gw, _, frontendFake, _ := newGatewayHarness(t)
-
-	cases := []struct {
-		method string
-		path   string
-	}{
-		{http.MethodGet, "/auth/login"},
-		{http.MethodGet, "/admin/installed-plugin/page"},
-		{http.MethodGet, "/_next/static/chunks/app.js"},
-		{http.MethodGet, "/api/fixtures"},
-		{http.MethodPost, "/api/plugins/example/accounts/v1/action"},
-	}
-	for _, tc := range cases {
-		t.Run(tc.method+" "+tc.path, func(t *testing.T) {
-			req := httptest.NewRequest(tc.method, tc.path, nil)
+	for _, path := range []string{
+		"/",
+		"/auth/login",
+		"/admin/installed-plugin/page",
+		"/_next/static/chunks/app.js",
+		"/api/fixtures",
+	} {
+		t.Run(path, func(t *testing.T) {
+			frontendFake.lastPath = ""
+			req := httptest.NewRequest(http.MethodGet, path, nil)
 			w := httptest.NewRecorder()
 			gw.ServeHTTP(w, req)
 
-			require.Equal(t, http.StatusOK, w.Code)
-			require.Equal(t, tc.path, frontendFake.lastPath)
-			require.Equal(t, tc.method, frontendFake.lastMethod)
+			require.Equal(t, http.StatusNotFound, w.Code)
+			require.Empty(t, frontendFake.lastPath)
 		})
 	}
 }
@@ -411,26 +432,25 @@ func TestGateway_ReadinessRequiresEveryRoutedUpstream(t *testing.T) {
 
 	matcher := NewRouteMatcher([]*RouteEntry{
 		{Service: "accounts", Method: "GET", Path: "/v1/users", Protected: true},
-		{Service: "frontend", Method: "GET", Path: "/", Protected: false},
 		{Service: "self", Method: "GET", Path: "/ready", Protected: false},
 	}, nil)
-
-	gateway := NewGateway(&Sidecar{}, matcher, map[string]*url.URL{"accounts": availableURL}, nil)
-	req := httptest.NewRequest(http.MethodGet, "/ready", nil)
-	w := httptest.NewRecorder()
-	gateway.ServeHTTP(w, req)
-	require.Equal(t, http.StatusServiceUnavailable, w.Code)
-	require.Contains(t, w.Body.String(), "frontend")
 
 	unavailable := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(http.StatusOK) }))
 	unavailableURL, err := url.Parse(unavailable.URL)
 	require.NoError(t, err)
 	unavailable.Close()
-	gateway = NewGateway(&Sidecar{}, matcher, map[string]*url.URL{"accounts": availableURL, "frontend": unavailableURL}, nil)
-	w = httptest.NewRecorder()
+
+	gateway := NewGateway(&Sidecar{}, matcher, map[string]*url.URL{"accounts": unavailableURL}, nil)
+	req := httptest.NewRequest(http.MethodGet, "/ready", nil)
+	w := httptest.NewRecorder()
 	gateway.ServeHTTP(w, req)
 	require.Equal(t, http.StatusServiceUnavailable, w.Code)
-	require.Contains(t, w.Body.String(), "frontend")
+	require.Contains(t, w.Body.String(), "accounts")
+
+	gateway = NewGateway(&Sidecar{}, matcher, map[string]*url.URL{"accounts": availableURL}, nil)
+	w = httptest.NewRecorder()
+	gateway.ServeHTTP(w, req)
+	require.Equal(t, http.StatusOK, w.Code)
 }
 
 // ============================================================================
@@ -470,21 +490,7 @@ func TestGateway_PublicAccountsRouteReceivesBackendCapabilities(t *testing.T) {
 
 	require.Equal(t, http.StatusOK, w.Code)
 	require.Equal(t, "test-gateway-token", apiFake.lastHeaders.Get("X-Codefly-Gateway-Token"))
-	require.Equal(t, "http://localhost:54321", apiFake.lastHeaders.Get("X-Codefly-Public-Origin"))
-}
-
-func TestGateway_DoesNotForwardBackendCapabilitiesToFrontend(t *testing.T) {
-	gw, _, frontendFake, _ := newGatewayHarness(t)
-
-	req := httptest.NewRequest(http.MethodGet, "/", nil)
-	req.Header.Set("X-Codefly-Gateway-Token", "caller-controlled")
-	req.Header.Set("X-Codefly-Public-Origin", "https://evil.example")
-	w := httptest.NewRecorder()
-	gw.ServeHTTP(w, req)
-
-	require.Equal(t, http.StatusOK, w.Code)
-	require.Empty(t, frontendFake.lastHeaders.Get("X-Codefly-Gateway-Token"))
-	require.Empty(t, frontendFake.lastHeaders.Get("X-Codefly-Public-Origin"))
+	require.Empty(t, apiFake.lastHeaders.Get("X-Codefly-Public-Origin"))
 }
 
 func TestGateway_AuthenticatedRequest_CallerHeadersOverridden(t *testing.T) {

@@ -19,33 +19,75 @@ function optionalServiceURL(value, variable) {
 	return parsed.toString().replace(/\/$/, "");
 }
 
-function accountsEndpoint(endpoints, currentModule, name, protocol) {
+function serviceEndpoint(
+	endpoints,
+	currentModule,
+	service,
+	name,
+	protocol,
+) {
 	const matches = endpoints.filter(
 		(endpoint) =>
 			endpoint.module === currentModule &&
-			endpoint.service === "accounts" &&
+			endpoint.service === service &&
 			endpoint.name === name &&
 			endpoint.protocol === protocol,
 	);
 	if (matches.length > 1) {
-		throw new Error(`Codefly returned multiple accounts/${name} endpoints`);
+		throw new Error(
+			`Codefly returned multiple ${service}/${name} endpoints`,
+		);
 	}
 	return matches[0]?.address;
 }
 
-/** Server-only Accounts binding resolution through the Codefly SDK. */
+/**
+ * Server-only product API resolution through the Codefly SDK.
+ *
+ * In a complete module flow, the frontend reaches Accounts exclusively through
+ * auth-sidecar/rest. Both REST and Connect are served by that exact HTTP
+ * gateway. Direct Accounts bindings remain only as an explicit fallback for
+ * isolated frontend/Playwright tests that do not start the module graph.
+ */
 export function resolveAccountsBindings(options = {}) {
 	const endpoints = options.endpoints ?? getEndpoints();
 	const currentModule = options.currentModule ?? getCurrentModule();
 	const environment = options.environment ?? process.env;
+	const gateway =
+		serviceEndpoint(
+			endpoints,
+			currentModule,
+			"auth-sidecar",
+			"rest",
+			"REST",
+		) ?? environment.PRODUCT_GATEWAY_INTERNAL;
+	if (gateway) {
+		const normalized = optionalServiceURL(
+			gateway,
+			"Codefly auth-sidecar/rest endpoint",
+		);
+		return Object.freeze({ rest: normalized, connect: normalized });
+	}
 	return Object.freeze({
 		rest: optionalServiceURL(
-			accountsEndpoint(endpoints, currentModule, "rest", "REST") ??
+			serviceEndpoint(
+				endpoints,
+				currentModule,
+				"accounts",
+				"rest",
+				"REST",
+			) ??
 				environment.API_REST_INTERNAL,
 			"Codefly accounts/rest endpoint",
 		),
 		connect: optionalServiceURL(
-			accountsEndpoint(endpoints, currentModule, "connect", "CONNECT") ??
+			serviceEndpoint(
+				endpoints,
+				currentModule,
+				"accounts",
+				"connect",
+				"CONNECT",
+			) ??
 				environment.API_CONNECT_INTERNAL,
 			"Codefly accounts/connect endpoint",
 		),
@@ -56,7 +98,7 @@ export function requireAccountsConnect(options = {}) {
 	const { connect } = resolveAccountsBindings(options);
 	if (!connect)
 		throw new Error(
-			"Codefly accounts/connect endpoint is required for server-side accounts RPCs",
+			"Codefly product API gateway is required for server-side Accounts RPCs",
 		);
 	return connect;
 }

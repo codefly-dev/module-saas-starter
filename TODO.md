@@ -241,14 +241,13 @@ Keep IDs stable so commits, PRs, tests, and release notes can reference them.
 
 - [ ] `P1-NET-001` Serve Connect, gRPC, and gRPC-Web from one Connect-Go port.
 - [ ] `P1-NET-002` Make REST transcoding explicitly opt-in.
-- [ ] `P1-NET-003` Add frontend page/static/catch-all routes to the generated catalog.
-  The 36 page routes and admin plugin catch-all now exist in
-  `saas.frontend.plugins.v1` and generate the local gateway's finite page
-  allowlist. Next.js assets and explicit route handlers also traverse the local
-  gateway. The generated Istio frontend fallback remains before this gate can
-  close.
+- [x] `P1-NET-003` Keep frontend page/static/plugin routes at the frontend
+  product entry instead of duplicating them in the backend gateway. The
+  auth-sidecar accepts only generated API routes; unknown page-like paths fail
+  closed.
 - [ ] `P1-NET-004` Deploy one edge data path using Istio/Envoy plus auth/PDP.
-- [ ] `P1-NET-005` Remove or repurpose the competing Go gateway implementation.
+- [x] `P1-NET-005` Repurpose the Go gateway as the private authenticated API
+  gateway behind the frontend's same-origin proxy.
 - [x] `P1-NET-006` Add generated service-to-service network allow policies.
   The broad namespace allow is gone. Generated caller/target policies permit
   only declared dependency endpoint ports, plus finite DNS, Istio control
@@ -259,11 +258,12 @@ Keep IDs stable so commits, PRs, tests, and release notes can reference them.
   visibility and generate least-privilege dependency/network-policy edges for
   installed product services. `UsageService.ConsumeUsage` is the first
   cross-module acceptance slice; do not expose the mixed listener meanwhile.
-- [x] `P1-NET-008` Declare and validate `auth-sidecar` as the module service
-  entry, teach Codefly to resolve it from a module or single-module workspace,
-  and smoke-test the full seven-service fixture stack from the repository root.
-  The sidecar's public HTTP endpoint is the application ingress; selecting the
-  raw frontend would omit authentication routing.
+- [x] `P1-NET-008` Declare and validate `frontend` as the module service entry,
+  teach Codefly to resolve it from a module or single-module workspace, and
+  smoke-test the complete fixture stack from the repository root. Frontend is
+  the public product endpoint and depends on private `auth-sidecar/rest`;
+  auth-sidecar depends on Accounts and infrastructure, so the graph is acyclic
+  and one default command starts the whole product.
 - [ ] `P1-NET-009` Make the generated public OpenAPI document available inside
   the standalone frontend artifact and serve it through `/api/openapi`.
   The current route still resolves the removed

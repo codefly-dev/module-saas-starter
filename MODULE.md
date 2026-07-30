@@ -37,9 +37,9 @@ A codefly **module** is a collection of **services**; each service owns its own 
 ```text
 example.com / www.example.com             app.example.com
   ↓                                         ↓
-marketing service                         auth-sidecar
-  ├─ repository content                     ↓
-  ├─ public plan projection                product frontend
+marketing service                         product frontend
+  ├─ repository content                     ↓ same-origin API proxy
+  ├─ public plan projection                auth-sidecar
   └─ fixed auth handoff                      ↓
                                            accounts service
                                              ├─ adapters/ — gRPC + Connect + REST gateway servers

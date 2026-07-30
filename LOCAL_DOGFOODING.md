@@ -23,9 +23,10 @@ The module services depend only on the generic Codefly workspace
 configuration named `identity`. WorkOS is one adapter for that capability;
 the onboarding application library does not import or select WorkOS.
 
-Auth-sidecar reads its own public REST endpoint through the Codefly SDK and
-stamps that origin onto trusted upstream requests. Accounts uses the verified
-origin for OAuth callbacks, WebAuthn, email links, and request-driven billing
+Frontend is the public product endpoint. Its same-origin proxy stamps the
+actual request origin with Codefly's internal service credential before
+forwarding an API request to auth-sidecar. Accounts uses that verified origin
+for OAuth callbacks, WebAuthn, email links, and request-driven billing
 redirects. The optional Codefly `application` origin remains only as a
 production/background fallback; a local port never belongs in product config.
 
@@ -64,7 +65,7 @@ Codefly doctor. Provider-side creation is opt-in where supported. See
 safe provisioning flags, and per-provider acceptance checks.
 
 The product callback address always comes from
-`codefly endpoint auth-sidecar --type rest`. WorkOS and the browser can use its
+`codefly endpoint frontend --type http`. WorkOS and the browser can use its
 loopback URL directly. Stripe CLI can forward to it. Resend and remotely
 registered Stripe webhooks need a public HTTPS tunnel or deployed ingress;
 pass only that external origin with `--webhook-origin`. The scripts reject
@@ -76,7 +77,7 @@ internal host and port.
 See the product-ingress URL before starting it:
 
 ```bash
-codefly endpoint auth-sidecar --type rest
+codefly endpoint frontend --type http
 ```
 
 Append `/auth/callback` and register that exact URI in the WorkOS staging
@@ -134,13 +135,13 @@ codefly doctor workspace --env local-dogfood
 Start with a genuinely new WorkOS user and no seeded product state:
 
 ```bash
-codefly run service auth-sidecar --env local-dogfood
+codefly run service --env local-dogfood
 ```
 
 Start the same real provider with an optional state pack:
 
 ```bash
-codefly run service auth-sidecar \
+codefly run service \
   --env local-dogfood \
   --fixture dev-admin
 ```
@@ -160,7 +161,7 @@ strings match.
 Open the product ingress printed by:
 
 ```bash
-codefly endpoint auth-sidecar --type rest --require-up
+codefly endpoint frontend --type http --require-up
 ```
 
 The hosted WorkOS ceremony is the only browser-owned authentication boundary.

@@ -32,18 +32,14 @@ const nextConfig = {
 	// that expose TypeScript under the development condition then participate in
 	// Next HMR without a separate dist rebuild race.
 	transpilePackages: ["codefly", ...workspacePackageNames],
-	// Same-origin API proxy for local dev / e2e, where there is no auth-sidecar
-	// gateway in front of the frontend. The browser only ever talks to the
-	// frontend's own origin, and the Next
-	// server proxies API traffic to the api service. This keeps auth cookies
-	// FIRST-PARTY, so a full page load / reload re-establishes the session — a
-	// cross-origin frontend→api setup drops the cookie and bounces to login.
+	// The frontend is the module's public product entry. The browser only talks
+	// to this origin; Next proxies API traffic to auth-sidecar/rest, which
+	// enforces the generated route/auth policy before Accounts. This keeps auth
+	// cookies first-party while preserving the backend trust boundary.
 	//
-	// Only registered when the internal api addresses are provided (dev/e2e):
-	//   API_REST_INTERNAL    — api REST endpoint    (e.g. http://localhost:10122)
-	//   API_CONNECT_INTERNAL — api Connect endpoint (e.g. http://localhost:16910)
-	// In production the gateway fronts these paths, the env vars are unset, and
-	// these rewrites are simply not registered.
+	// Complete Codefly runs resolve auth-sidecar through the SDK. Isolated
+	// Playwright runs may provide direct API_* fallbacks because they
+	// intentionally do not start the module graph.
 	async rewrites() {
 		const { rest: apiRest, connect: apiConnect } = resolveAccountsBindings();
 		const rules = [];

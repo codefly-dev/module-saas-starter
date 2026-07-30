@@ -202,7 +202,7 @@ var (
 // wins over the grpc-gateway mux whenever the request path starts
 // with the given prefix.
 //
-// Call from work.go / cmd/local/main.go AFTER constructing the
+// Call from work.go after constructing the
 // handler and BEFORE adapters.NewServer().Run(). Intended for
 // webhook endpoints that don't fit the proto model.
 func RegisterHTTPRoute(path string, h http.Handler) {

@@ -50,7 +50,7 @@ func TestDeploymentTopologyIsDeterministicAndCurrent(t *testing.T) {
 		dependencyCount += len(service.GetDependencies())
 	}
 	require.Equal(t, 13, endpointCount)
-	require.Equal(t, 9, dependencyCount)
+	require.Equal(t, 8, dependencyCount)
 	frontendManifest := string(first.ServiceManifests["frontend"])
 	require.Contains(t, frontendManifest, "execution-profiles:")
 	require.Contains(t, frontendManifest, "local: development")
@@ -58,7 +58,9 @@ func TestDeploymentTopologyIsDeterministicAndCurrent(t *testing.T) {
 	require.Equal(t, 21, strings.Count(string(first.NetworkPolicy), "\nkind: NetworkPolicy\n"))
 	require.NotContains(t, string(first.NetworkPolicy), "allow-intra-namespace")
 	require.Contains(t, string(first.NetworkPolicy), "name: allow-accounts-from-dependents")
+	require.Contains(t, string(first.NetworkPolicy), "name: allow-auth-sidecar-from-dependents")
 	require.Contains(t, string(first.NetworkPolicy), "name: allow-auth-sidecar-to-dependencies")
+	require.Contains(t, string(first.NetworkPolicy), "name: allow-frontend-to-dependencies")
 	require.Contains(t, string(first.NetworkPolicy), "name: allow-store-from-bootstrap")
 	require.Contains(t, string(first.NetworkPolicy), "name: allow-store-bootstrap-to-store")
 	require.Equal(t, 2, strings.Count(string(first.NetworkPolicy), "codefly.dev/bootstrap-service: store"))
@@ -67,6 +69,8 @@ func TestDeploymentTopologyIsDeterministicAndCurrent(t *testing.T) {
 	require.Contains(t, string(first.NetworkPolicy), "name: allow-telemetry-from-dependents")
 	require.Contains(t, string(first.NetworkPolicy), "name: allow-telemetry-public-egress")
 	require.Contains(t, string(first.NetworkPolicy), "name: allow-istio-ingress-to-marketing")
+	require.Contains(t, string(first.NetworkPolicy), "name: allow-istio-ingress-to-frontend")
+	require.NotContains(t, string(first.NetworkPolicy), "name: allow-istio-ingress-to-auth-sidecar")
 	require.Contains(t, string(first.NetworkPolicy), "192.175.48.0/24")
 	require.Contains(t, string(first.NetworkPolicy), "64:ff9b::/96")
 }
@@ -262,7 +266,7 @@ func TestGeneratedCodeflyAndNetworkManifestsParseStrictly(t *testing.T) {
 		ServiceEntry string `yaml:"service-entry"`
 	}
 	require.NoError(t, yaml.Unmarshal(moduleDocument, &moduleEntry))
-	require.Equal(t, "auth-sidecar", moduleEntry.ServiceEntry)
+	require.Equal(t, "frontend", moduleEntry.ServiceEntry)
 	var module resources.Module
 	require.NoError(t, yaml.Unmarshal(moduleDocument, &module))
 	_, err = module.Proto(ctx)
@@ -311,6 +315,8 @@ func TestGeneratedCodeflyAndNetworkManifestsParseStrictly(t *testing.T) {
 	}
 	require.Len(t, names, 21)
 	require.True(t, names["allow-istio-ingress-to-marketing"])
+	require.True(t, names["allow-istio-ingress-to-frontend"])
+	require.False(t, names["allow-istio-ingress-to-auth-sidecar"])
 	require.True(t, names["allow-store-from-bootstrap"])
 	require.True(t, names["allow-store-bootstrap-to-store"])
 	require.True(t, names["allow-telemetry-from-dependents"])
@@ -337,7 +343,7 @@ func TestDeploymentTopologyRejectsUnsafeOrIncompleteBindings(t *testing.T) {
 	_, err = cataloggen.BuildDeploymentArtifacts(serviceCatalog, []byte(missingProtocol))
 	require.ErrorContains(t, err, "required API CODEFLY_API_CONNECT")
 
-	unknownServiceEntry := strings.Replace(bindings, "service_entry: auth-sidecar", "service_entry: missing", 1)
+	unknownServiceEntry := strings.Replace(bindings, "service_entry: frontend", "service_entry: missing", 1)
 	_, err = cataloggen.BuildDeploymentArtifacts(serviceCatalog, []byte(unknownServiceEntry))
 	require.ErrorContains(t, err, "service entry references unknown service")
 

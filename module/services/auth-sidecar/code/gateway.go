@@ -1,18 +1,19 @@
 package main
 
-// HTTP gateway: the single public ingress for the module during local dev.
+// HTTP API gateway behind the frontend product entry.
 //
-// In production, Envoy (or Envoy Gateway) runs in front and talks to the
-// sidecar's gRPC ext_authz endpoint. The Go gateway below is functionally
-// equivalent for local iteration — it calls Sidecar.Check in-process (zero
-// gRPC round-trip) and does the same header injection + routing.
+// The browser talks only to the frontend origin. Next.js forwards exact API
+// routes here and authenticates the observed browser origin with Codefly's
+// internal service token. In production, Envoy may also use the sidecar's gRPC
+// ext_authz endpoint.
 //
-// Routing is WHITELIST-ONLY: backend endpoints come from generated and explicit
-// REST catalogs; frontend pages come from the generated Next.js page catalog,
-// with finite allowances for Next.js assets and route handlers. Everything else
-// returns 404.
+// Routing is WHITELIST-ONLY: backend endpoints come from generated and
+// explicit REST/Connect catalogs. Frontend pages are never proxied by this
+// service. Everything else returns 404.
 
 import (
+	"context"
+	"crypto/subtle"
 	"fmt"
 	"io"
 	"log"
@@ -36,38 +37,21 @@ type Gateway struct {
 	sidecar           *Sidecar
 	matcher           *RouteMatcher
 	upstreams         map[string]*url.URL // service name → upstream URL
-	publicOrigin      string
-	selfHandler       http.Handler // handler for "self" routes (health checks)
+	selfHandler       http.Handler        // handler for "self" routes (health checks)
 	rateLimiter       *RateLimiter
 	requiredUpstreams []string
-}
-
-type GatewayOption func(*Gateway)
-
-// WithPublicOrigin supplies the browser-facing origin resolved by the Codefly
-// SDK for this service's REST endpoint.
-func WithPublicOrigin(origin string) GatewayOption {
-	return func(g *Gateway) {
-		g.publicOrigin = origin
-	}
 }
 
 // NewGateway constructs a gateway with explicit route matching.
 // upstreams maps service names (from routes.codefly.yaml) to their URLs.
 // rateLimiter may be nil to disable rate limiting.
-func NewGateway(sidecar *Sidecar, matcher *RouteMatcher, upstreams map[string]*url.URL, rateLimiter *RateLimiter, options ...GatewayOption) *Gateway {
+func NewGateway(sidecar *Sidecar, matcher *RouteMatcher, upstreams map[string]*url.URL, rateLimiter *RateLimiter) *Gateway {
 	g := &Gateway{
 		sidecar:           sidecar,
 		matcher:           matcher,
 		upstreams:         upstreams,
 		rateLimiter:       rateLimiter,
 		requiredUpstreams: matcher.RequiredServices(),
-	}
-	for _, option := range options {
-		option(g)
-	}
-	if !containsString(g.requiredUpstreams, "frontend") {
-		g.requiredUpstreams = append(g.requiredUpstreams, "frontend")
 	}
 	mux := http.NewServeMux()
 	mux.HandleFunc("/health", g.healthHandler)
@@ -138,10 +122,8 @@ func (g *Gateway) readyHandler(w http.ResponseWriter, _ *http.Request) {
 // Unlisted paths are rejected with 404. Every request must match an explicit
 // entry in the route config.
 func (g *Gateway) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	r = g.withTrustedFrontendOrigin(r)
 	entry := g.matcher.Match(r.Method, r.URL.Path)
-	if entry == nil {
-		entry = matchFrontendGatewayRoute(r.Method, r.URL.Path)
-	}
 	if entry == nil {
 		log.Printf("WARN: blocked request: method=%s path=%s reason=no_matching_route", r.Method, r.URL.Path)
 		httpError(w, http.StatusNotFound, "endpoint not exposed")
@@ -268,15 +250,6 @@ func (g *Gateway) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-func containsString(values []string, wanted string) bool {
-	for _, value := range values {
-		if value == wanted {
-			return true
-		}
-	}
-	return false
-}
-
 // rateLimitThenProxy applies rate limiting (if configured) then proxies.
 func (g *Gateway) rateLimitThenProxy(w http.ResponseWriter, r *http.Request, upstream *url.URL, entry *RouteEntry) {
 	if g.rateLimiter != nil {
@@ -304,11 +277,12 @@ func (g *Gateway) proxyTo(w http.ResponseWriter, r *http.Request, upstream *url.
 	// have been removed, including for public Accounts routes without a bearer
 	// token. Never expose these capabilities to the frontend upstream.
 	r.Header.Del("X-Codefly-Gateway-Token")
+	r.Header.Del("X-Codefly-Internal-Token")
 	r.Header.Del("X-Codefly-Public-Origin")
 	if isAccountsRoute(entry) && g.sidecar != nil && g.sidecar.gatewayToken != "" {
 		r.Header.Set("X-Codefly-Gateway-Token", g.sidecar.gatewayToken)
-		if g.publicOrigin != "" {
-			r.Header.Set("X-Codefly-Public-Origin", g.publicOrigin)
+		if publicOrigin, ok := trustedFrontendOrigin(r.Context()); ok {
+			r.Header.Set("X-Codefly-Public-Origin", publicOrigin)
 		}
 	}
 	if entry != nil && entry.UpstreamPath != "" {
@@ -320,6 +294,32 @@ func (g *Gateway) proxyTo(w http.ResponseWriter, r *http.Request, upstream *url.
 		httpError(w, http.StatusBadGateway, "upstream error: "+err.Error())
 	}
 	proxy.ServeHTTP(w, r)
+}
+
+type trustedFrontendOriginContextKey struct{}
+
+func (g *Gateway) withTrustedFrontendOrigin(r *http.Request) *http.Request {
+	claimedOrigin := r.Header.Get("X-Codefly-Public-Origin")
+	presentedToken := r.Header.Get("X-Codefly-Internal-Token")
+	r.Header.Del("X-Codefly-Public-Origin")
+	r.Header.Del("X-Codefly-Internal-Token")
+
+	if g.sidecar == nil || g.sidecar.internalToken == "" ||
+		len(presentedToken) != len(g.sidecar.internalToken) ||
+		subtle.ConstantTimeCompare([]byte(presentedToken), []byte(g.sidecar.internalToken)) != 1 {
+		return r
+	}
+	origin, err := canonicalPublicOrigin(claimedOrigin)
+	if err != nil {
+		return r
+	}
+	ctx := context.WithValue(r.Context(), trustedFrontendOriginContextKey{}, origin)
+	return r.WithContext(ctx)
+}
+
+func trustedFrontendOrigin(ctx context.Context) (string, bool) {
+	origin, ok := ctx.Value(trustedFrontendOriginContextKey{}).(string)
+	return origin, ok && origin != ""
 }
 
 func isAccountsRoute(entry *RouteEntry) bool {

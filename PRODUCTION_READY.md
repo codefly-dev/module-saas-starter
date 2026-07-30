@@ -32,7 +32,7 @@ performance claims.
 
 ## Architectural decisions (locked)
 
-0. **Gateway is the single ingress.** Every request — including the public OAuth, primary-authentication, MFA, refresh, logout, registration, and discovery ceremonies — enters through the sidecar/gateway. No service is reachable directly. Exposure, rate-limit class, tenant requirements, sensitivity, and audit behavior come from each protobuf method's `saas.policy.v1.method_policy`; unclassified methods fail descriptor validation and are denied at runtime.
+0. **Frontend is the product entry; the gateway is the only API path.** Pages and static assets enter through `frontend/http`. Every backend request — including public OAuth, primary-authentication, MFA, refresh, logout, registration, and discovery ceremonies — is same-origin proxied through the private sidecar gateway. Accounts is never publicly reachable. Exposure, rate-limit class, tenant requirements, sensitivity, and audit behavior come from each protobuf method's `saas.policy.v1.method_policy`; unclassified methods fail descriptor validation and are denied at runtime.
 
 1. **Two auth paths, hard-separated.** Authentication ceremonies, refresh/logout, and organization token exchange go through the accounts backend via the gateway. Normal product requests use the sidecar-verified runtime identity. The switch endpoint is authenticated by the current access token; it never accepts identity or role claims from the browser.
 

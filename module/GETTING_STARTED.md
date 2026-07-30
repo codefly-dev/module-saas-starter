@@ -16,10 +16,11 @@ This module provides a complete SaaS foundation.
 
 This module exposes only:
 
-- `auth-sidecar/rest` — the public application ingress
+- `frontend/http` — the public product application
 - `auth-sidecar/grpc` — module-visible Envoy ext-authz
 
-Accounts transports and the frontend stay private behind the auth sidecar.
+Accounts transports and the auth-sidecar HTTP gateway stay private behind the
+frontend's same-origin API proxy.
 Internal product RPC export is tracked separately by `P1-NET-007`.
 
 ## Usage metering
@@ -38,24 +39,24 @@ presence, reset, and extension rules.
 ## Development
 
 ```bash
-# From the repository root. The module declares auth-sidecar as its service
-# entry, so Codefly starts the complete eight-service dependency graph.
+# From the repository root. The module declares frontend as its service entry,
+# so Codefly starts the complete product dependency graph.
 codefly run service --fixture dev-admin
 ```
 
-Open the public HTTP URL printed for `auth-sidecar`. That gateway routes the
-private frontend and API; do not use the frontend's direct development URL for
-the application. Stop the complete stack with Ctrl-C. Use
-`codefly run service auth-sidecar --fixture dev-admin` with older Codefly
-releases that do not yet resolve module service entries.
+Open the public HTTP URL printed for `frontend`. Next.js forwards exact API
+routes to the private auth-sidecar gateway; the browser never receives an
+internal service address. Stop the complete stack with Ctrl-C. Use
+`codefly run service frontend --fixture dev-admin` with older Codefly releases
+that do not yet resolve module service entries.
 
 The local Codefly `security` workspace configuration supplies the MFA step-up
-window, completion rate limit, and WebAuthn relying-party ID. Auth-sidecar
-obtains its public origin from the Codefly SDK and passes it through the trusted
-gateway boundary, so no local port is copied into configuration. For a hosted
-environment set `WEBAUTHN_RP_ID` to the application host without scheme/port.
-Set `WEBAUTHN_RP_ORIGINS` only when supporting intentional traffic that
-bypasses auth-sidecar.
+window, completion rate limit, and WebAuthn relying-party ID. Frontend stamps
+its actual browser origin onto API proxy requests using Codefly's internal
+service credential; auth-sidecar verifies that credential before forwarding
+the origin to Accounts. No local port is copied into configuration. For a
+hosted environment set `WEBAUTHN_RP_ID` to the application host without
+scheme/port.
 
 ## Adding this module to a workspace
 

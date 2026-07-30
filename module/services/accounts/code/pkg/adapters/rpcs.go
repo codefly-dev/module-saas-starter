@@ -287,11 +287,9 @@ func (s *OrgServer) CreateOrganization(ctx context.Context, req *gen.CreateOrgan
 	if err := Validate(req); err != nil {
 		return nil, err
 	}
-	w := wool.Get(ctx).In("CreateOrganization")
-	w.GRPC().Inject()
-	userID, found := w.UserAuthID()
-	if !found {
-		return nil, status.Error(codes.Unauthenticated, "user id not found")
+	userID, err := requireAuth(ctx)
+	if err != nil {
+		return nil, err
 	}
 	return service.CreateOrganization(ctx, userID, req)
 }

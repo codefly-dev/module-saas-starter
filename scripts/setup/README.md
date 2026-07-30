@@ -61,7 +61,7 @@ WORKOS_API_KEY=sk_...
 The script configures authentication and reuses the same staging API key for
 the optional WorkOS-backed SSO administration adapter. It validates the API key
 and application JWKS without exposing either credential. It resolves
-auth-sidecar's public endpoint through Codefly, exercises the hosted
+frontend's public product endpoint through Codefly, exercises the hosted
 authorization endpoint, and fails if that exact callback has not been
 registered. It never writes the resolved port into runtime configuration.
 
@@ -104,7 +104,7 @@ Resolve the callback at runtime; do not copy its port into configuration:
 
 ```bash
 stripe listen --forward-to \
-  "$(codefly endpoint auth-sidecar --type rest)/v1/billing/webhook"
+  "$(codefly endpoint frontend --type http)/v1/billing/webhook"
 ```
 
 Put the `whsec_...` printed by that listener in the webhook secret file, run
@@ -245,10 +245,10 @@ After configuring any subset:
 
 ```bash
 codefly doctor workspace --env local-dogfood
-codefly run service auth-sidecar --env local-dogfood
+codefly run service --env local-dogfood
 ```
 
-Use `codefly endpoint auth-sidecar --type rest --require-up` for the product
+Use `codefly endpoint frontend --type http --require-up` for the product
 URL. Provider scripts resolve this endpoint themselves; generated ports and
 URLs must never be copied into application configuration. WorkOS redirects
 and Stripe CLI forwarding can use that loopback endpoint. A remote webhook

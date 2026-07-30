@@ -182,11 +182,11 @@ fi
 workspace="$(CDPATH= cd -- "${workspace}" && pwd)"
 
 if ! command -v codefly >/dev/null 2>&1; then
-  fail "codefly is required to resolve the injected auth-sidecar endpoint"
+  fail "codefly is required to resolve the injected frontend endpoint"
 fi
 callback_origin="$(
   cd "${workspace}"
-  codefly endpoint auth-sidecar --type rest
+  codefly endpoint frontend --type http
 )"
 callback_origin="${callback_origin%/}"
 callback_uri="${callback_origin}/auth/callback"
@@ -373,5 +373,5 @@ if [[ "${remote_validation_complete}" -eq 1 ]]; then
 else
   printf 'Callback to verify in the WorkOS Dashboard:\n  %s\n' "${callback_uri}"
 fi
-printf 'Start the product:\n  codefly run service auth-sidecar --env local-dogfood\n'
-printf 'Resolve the product URL:\n  codefly endpoint auth-sidecar --type rest --require-up\n'
+printf 'Start the product:\n  codefly run service --env local-dogfood\n'
+printf 'Resolve the product URL:\n  codefly endpoint frontend --type http --require-up\n'

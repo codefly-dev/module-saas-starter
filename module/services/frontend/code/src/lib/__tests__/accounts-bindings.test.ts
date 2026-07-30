@@ -6,7 +6,7 @@ import {
 } from "../../../server/accounts-bindings.mjs";
 
 describe("server-only accounts bindings", () => {
-	const endpoint = (
+	const accountsEndpoint = (
 		name: "rest" | "connect",
 		protocol: "REST" | "CONNECT",
 		address: string,
@@ -18,6 +18,39 @@ describe("server-only accounts bindings", () => {
 		address,
 		routes: [],
 	});
+	const gatewayEndpoint = (address: string) => ({
+		module: "saas",
+		service: "auth-sidecar",
+		name: "rest",
+		protocol: "REST" as const,
+		address,
+		routes: [],
+	});
+
+	it("uses auth-sidecar as the REST and Connect gateway in a module run", () => {
+		expect(
+			resolveAccountsBindings({
+				currentModule: "saas",
+				environment: {},
+				endpoints: [
+					accountsEndpoint(
+						"rest",
+						"REST",
+						"http://accounts-rest.internal/",
+					),
+					accountsEndpoint(
+						"connect",
+						"CONNECT",
+						"http://accounts-connect.internal/",
+					),
+					gatewayEndpoint("http://auth-sidecar.internal/"),
+				],
+			}),
+		).toEqual({
+			rest: "http://auth-sidecar.internal",
+			connect: "http://auth-sidecar.internal",
+		});
+	});
 
 	it("normalizes Codefly REST and Connect endpoints", () => {
 		expect(
@@ -25,8 +58,12 @@ describe("server-only accounts bindings", () => {
 				currentModule: "saas",
 				environment: {},
 				endpoints: [
-					endpoint("rest", "REST", "http://accounts-rest.internal/"),
-					endpoint("connect", "CONNECT", "https://accounts-connect.internal/"),
+					accountsEndpoint("rest", "REST", "http://accounts-rest.internal/"),
+					accountsEndpoint(
+						"connect",
+						"CONNECT",
+						"https://accounts-connect.internal/",
+					),
 				],
 			}),
 		).toEqual({
@@ -45,7 +82,7 @@ describe("server-only accounts bindings", () => {
 			resolveAccountsBindings({
 				currentModule: "saas",
 				environment: {},
-				endpoints: [endpoint("connect", "CONNECT", value)],
+				endpoints: [accountsEndpoint("connect", "CONNECT", value)],
 			}),
 		).toThrow();
 	});
@@ -73,6 +110,6 @@ describe("server-only accounts bindings", () => {
 				endpoints: [],
 				environment: {},
 			}),
-		).toThrow(/Codefly accounts\/connect endpoint/);
+		).toThrow(/Codefly product API gateway/);
 	});
 });

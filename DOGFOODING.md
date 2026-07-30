@@ -24,7 +24,7 @@ cd ~/Development/deus/codefly.dev/agents/services/s3 && codefly agent build
 cd ~/Development/deus/codefly/module-saas-starter
 
 # 3. Boot the product ingress and its complete dependency graph
-codefly run service auth-sidecar --fixture dev-admin
+codefly run service --fixture dev-admin
 ```
 
 Expected graph: `vault + store + cache + object-storage (s3 plugin
@@ -32,9 +32,9 @@ Expected graph: `vault + store + cache + object-storage (s3 plugin
 services may start concurrently. If any service
 hangs at "waiting for ready", check that step's `--debug` output.
 
-The TUI shows green dots when each service is up. Wait for **auth-sidecar**
-to report its public HTTP URL. Open that URL; the frontend's direct URL bypasses
-authentication routing and is not the application ingress.
+The TUI shows green dots when each service is up. Wait for **frontend** to
+report its public HTTP URL. Open that URL; its same-origin API proxy routes
+backend traffic through auth-sidecar.
 
 ---
 
@@ -175,13 +175,13 @@ keys and resolves the local signed-webhook callback from the product ingress:
 ```bash
 # Terminal A: keep this running and save the displayed signing secret.
 stripe listen --forward-to \
-  "$(codefly endpoint auth-sidecar --type rest)/v1/billing/webhook"
+  "$(codefly endpoint frontend --type http)/v1/billing/webhook"
 
 # Terminal B: configure the secret from that same listener, then run the stack.
 scripts/setup/stripe.sh \
   --api-key-file /secure/path/stripe.env \
   --webhook-secret-file /secure/path/stripe-webhook.env
-codefly run service auth-sidecar --env local-dogfood --fixture dev-admin
+codefly run service --env local-dogfood --fixture dev-admin
 ```
 
 Use the signing secret printed by the same Stripe CLI listener. For a remotely
@@ -202,7 +202,7 @@ Configure WorkOS exclusively through the `local-dogfood` Codefly profile:
 
 ```bash
 codefly doctor workspace --env local-dogfood
-codefly run service auth-sidecar --env local-dogfood
+codefly run service --env local-dogfood
 ```
 
 See [LOCAL_DOGFOODING.md](./LOCAL_DOGFOODING.md) for the generic public and
@@ -241,7 +241,7 @@ scripts/setup/sentry.sh \
   --project saas-starter
 scripts/setup/otel.sh --debug
 scripts/setup/turnstile.sh --fixture pass
-codefly run service auth-sidecar --env local-dogfood
+codefly run service --env local-dogfood
 ```
 
 - [ ] Create and resend an invitation. Resend shows one provider message and the admin invitation changes `queued → sent → delivered`.

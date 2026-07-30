@@ -146,7 +146,14 @@ func (*CacheInvalidator) InvalidateMembership(ctx context.Context, orgID, userID
 func requireAuth(ctx context.Context) (string, error) {
 	w := wool.Get(ctx)
 	w.GRPC().Inject()
-	actorID, found := w.UserAuthID()
+	// The authenticated gateway identity is carried as X-User-Id/user.id.
+	// Direct JWT adapters also stamp user.auth.id for compatibility. Accept
+	// either verified representation, preferring the canonical user id, and
+	// never treat an empty context value as authenticated.
+	actorID, found := w.UserID()
+	if !found || actorID == "" {
+		actorID, found = w.UserAuthID()
+	}
 	if !found || actorID == "" {
 		return "", status.Error(codes.Unauthenticated, "authentication required")
 	}

@@ -8,6 +8,7 @@ import (
 	"go/token"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strconv"
 	"strings"
 	"testing"
@@ -63,65 +64,137 @@ func TestShellToolsDoNotReadCodeflyCarriers(t *testing.T) {
 // canonical module and composed workspaces. Runtime carriers belong to sdk-go;
 // production services consume typed SDK methods.
 func TestProductionGoUsesCodeflySDK(t *testing.T) {
-	root := findProductionScanRoot(t)
+	repositoryRoot, roots := findProductionScanRoots(t)
 	fset := token.NewFileSet()
 
-	err := filepath.WalkDir(root, func(path string, entry os.DirEntry, walkErr error) error {
-		if walkErr != nil {
-			return walkErr
-		}
-		if entry.IsDir() {
-			if entry.Name() == "vendor" || entry.Name() == "node_modules" || entry.Name() == ".git" {
-				return filepath.SkipDir
+	for _, root := range roots {
+		err := filepath.WalkDir(root, func(path string, entry os.DirEntry, walkErr error) error {
+			if walkErr != nil {
+				return walkErr
 			}
-			return nil
-		}
-		if filepath.Ext(path) != ".go" || strings.HasSuffix(path, "_test.go") {
-			return nil
-		}
+			if entry.IsDir() {
+				if entry.Name() == "vendor" || entry.Name() == "node_modules" || entry.Name() == ".git" {
+					return filepath.SkipDir
+				}
+				return nil
+			}
+			if filepath.Ext(path) != ".go" || strings.HasSuffix(path, "_test.go") {
+				return nil
+			}
 
-		file, parseErr := parser.ParseFile(fset, path, nil, 0)
-		if parseErr != nil {
-			return parseErr
-		}
-		resourceAliases := map[string]struct{}{}
-		for _, imported := range file.Imports {
-			importPath, unquoteErr := strconv.Unquote(imported.Path.Value)
-			if unquoteErr != nil || importPath != "github.com/codefly-dev/core/resources" {
-				continue
+			file, parseErr := parser.ParseFile(fset, path, nil, 0)
+			if parseErr != nil {
+				return parseErr
 			}
-			alias := "resources"
-			if imported.Name != nil {
-				alias = imported.Name.Name
+			resourceAliases := map[string]struct{}{}
+			for _, imported := range file.Imports {
+				importPath, unquoteErr := strconv.Unquote(imported.Path.Value)
+				if unquoteErr != nil || importPath != "github.com/codefly-dev/core/resources" {
+					continue
+				}
+				alias := "resources"
+				if imported.Name != nil {
+					alias = imported.Name.Name
+				}
+				resourceAliases[alias] = struct{}{}
 			}
-			resourceAliases[alias] = struct{}{}
-		}
-		ast.Inspect(file, func(node ast.Node) bool {
-			switch value := node.(type) {
-			case *ast.BasicLit:
-				if value.Kind != token.STRING {
-					return true
+			ast.Inspect(file, func(node ast.Node) bool {
+				switch value := node.(type) {
+				case *ast.BasicLit:
+					if value.Kind != token.STRING {
+						return true
+					}
+					literal, unquoteErr := strconv.Unquote(value.Value)
+					if unquoteErr == nil && (strings.Contains(literal, "CODEFLY__") || strings.Contains(literal, "CODEFLY_SCOPED_AUTH_SECRET")) {
+						reportSDKBoundaryViolation(t, fset, repositoryRoot, path, value.Pos(), "hard-codes Codefly runtime carrier %q", literal)
+					}
+				case *ast.SelectorExpr:
+					qualifier, ok := value.X.(*ast.Ident)
+					if !ok {
+						return true
+					}
+					if _, ok := resourceAliases[qualifier.Name]; ok && codeflyCarrierResourceSelectors[value.Sel.Name] {
+						reportSDKBoundaryViolation(t, fset, repositoryRoot, path, value.Pos(), "accesses Codefly carrier constant %s.%s", qualifier.Name, value.Sel.Name)
+					}
 				}
-				literal, unquoteErr := strconv.Unquote(value.Value)
-				if unquoteErr == nil && (strings.Contains(literal, "CODEFLY__") || strings.Contains(literal, "CODEFLY_SCOPED_AUTH_SECRET")) {
-					reportSDKBoundaryViolation(t, fset, root, path, value.Pos(), "hard-codes Codefly runtime carrier %q", literal)
-				}
-			case *ast.SelectorExpr:
-				qualifier, ok := value.X.(*ast.Ident)
-				if !ok {
-					return true
-				}
-				if _, ok := resourceAliases[qualifier.Name]; ok && codeflyCarrierResourceSelectors[value.Sel.Name] {
-					reportSDKBoundaryViolation(t, fset, root, path, value.Pos(), "accesses Codefly carrier constant %s.%s", qualifier.Name, value.Sel.Name)
-				}
-			}
-			return true
+				return true
+			})
+			return nil
 		})
-		return nil
-	})
-	if err != nil {
-		t.Fatalf("scan production Go code: %v", err)
+		if err != nil {
+			t.Fatalf("scan production Go code under %s: %v", root, err)
+		}
 	}
+}
+
+var loopbackPortLiteral = regexp.MustCompile(`(?i)(?:https?://)?(?:localhost|127(?:\.[0-9]{1,3}){3}|\[::1\]):[0-9]{1,5}`)
+
+// TestProductionCodeDoesNotPinCodeflyPorts prevents the other half of the
+// runtime-carrier bug: knowing a service's local port out of band. Codefly
+// allocates and injects runtime endpoints; production code consumes the typed
+// SDK, while shell setup tools use `codefly endpoint`.
+func TestProductionCodeDoesNotPinCodeflyPorts(t *testing.T) {
+	repositoryRoot, roots := findProductionScanRoots(t)
+	fset := token.NewFileSet()
+	scriptExtensions := map[string]bool{
+		".cjs": true, ".js": true, ".jsx": true, ".mjs": true,
+		".rs": true, ".sh": true, ".ts": true, ".tsx": true,
+	}
+
+	for _, root := range roots {
+		err := filepath.WalkDir(root, func(path string, entry os.DirEntry, walkErr error) error {
+			if walkErr != nil {
+				return walkErr
+			}
+			if entry.IsDir() {
+				switch entry.Name() {
+				case ".git", ".next", "node_modules", "target", "vendor":
+					return filepath.SkipDir
+				}
+				return nil
+			}
+			if isTestSource(path) {
+				return nil
+			}
+			if filepath.Ext(path) == ".go" {
+				file, parseErr := parser.ParseFile(fset, path, nil, 0)
+				if parseErr != nil {
+					return parseErr
+				}
+				ast.Inspect(file, func(node ast.Node) bool {
+					literal, ok := node.(*ast.BasicLit)
+					if !ok || literal.Kind != token.STRING {
+						return true
+					}
+					value, unquoteErr := strconv.Unquote(literal.Value)
+					if unquoteErr == nil && loopbackPortLiteral.MatchString(value) {
+						reportPinnedPort(t, fset, repositoryRoot, path, literal.Pos(), value)
+					}
+					return true
+				})
+				return nil
+			}
+			if !scriptExtensions[filepath.Ext(path)] {
+				return nil
+			}
+			contents, readErr := os.ReadFile(path)
+			if readErr != nil {
+				return readErr
+			}
+			for index, line := range strings.Split(stripSourceComments(string(contents)), "\n") {
+				if loopbackPortLiteral.MatchString(line) {
+					relative, _ := filepath.Rel(repositoryRoot, path)
+					t.Errorf("%s:%d pins a loopback port; resolve it through the Codefly SDK/CLI", relative, index+1)
+				}
+			}
+			return nil
+		})
+		if err != nil {
+			t.Fatalf("scan production port literals under %s: %v", root, err)
+		}
+	}
+
+	scanRuntimeConfigurationsForPinnedPorts(t, repositoryRoot)
 }
 
 // TestProductionRustAndTypeScriptUseCodeflySDK closes the same architecture
@@ -130,7 +203,7 @@ func TestProductionGoUsesCodeflySDK(t *testing.T) {
 // a private carrier, but executable product code may only reach it through the
 // language SDK.
 func TestProductionRustAndTypeScriptUseCodeflySDK(t *testing.T) {
-	root := findProductionScanRoot(t)
+	repositoryRoot, roots := findProductionScanRoots(t)
 	extensions := map[string]bool{
 		".rs":  true,
 		".ts":  true,
@@ -141,35 +214,37 @@ func TestProductionRustAndTypeScriptUseCodeflySDK(t *testing.T) {
 		".cjs": true,
 	}
 
-	err := filepath.WalkDir(root, func(path string, entry os.DirEntry, walkErr error) error {
-		if walkErr != nil {
-			return walkErr
-		}
-		if entry.IsDir() {
-			switch entry.Name() {
-			case ".git", ".next", "node_modules", "target", "vendor":
-				return filepath.SkipDir
+	for _, root := range roots {
+		err := filepath.WalkDir(root, func(path string, entry os.DirEntry, walkErr error) error {
+			if walkErr != nil {
+				return walkErr
+			}
+			if entry.IsDir() {
+				switch entry.Name() {
+				case ".git", ".next", "node_modules", "target", "vendor":
+					return filepath.SkipDir
+				}
+				return nil
+			}
+			if !extensions[filepath.Ext(path)] || isTestSource(path) {
+				return nil
+			}
+			contents, readErr := os.ReadFile(path)
+			if readErr != nil {
+				return readErr
+			}
+			for index, line := range strings.Split(stripSourceComments(string(contents)), "\n") {
+				if !containsCodeflyCarrier(line) {
+					continue
+				}
+				relative, _ := filepath.Rel(repositoryRoot, path)
+				t.Errorf("%s:%d hard-codes a Codefly runtime carrier; add/use the language SDK instead", relative, index+1)
 			}
 			return nil
+		})
+		if err != nil {
+			t.Fatalf("scan production Rust/TypeScript code under %s: %v", root, err)
 		}
-		if !extensions[filepath.Ext(path)] || isTestSource(path) {
-			return nil
-		}
-		contents, readErr := os.ReadFile(path)
-		if readErr != nil {
-			return readErr
-		}
-		for index, line := range strings.Split(stripSourceComments(string(contents)), "\n") {
-			if !containsCodeflyCarrier(line) {
-				continue
-			}
-			relative, _ := filepath.Rel(root, path)
-			t.Errorf("%s:%d hard-codes a Codefly runtime carrier; add/use the language SDK instead", relative, index+1)
-		}
-		return nil
-	})
-	if err != nil {
-		t.Fatalf("scan production Rust/TypeScript code: %v", err)
 	}
 }
 
@@ -186,10 +261,14 @@ func isTestSource(path string) bool {
 		}
 	}
 	name := filepath.Base(path)
-	for _, marker := range []string{".test.", ".spec.", "playwright.config."} {
+	for _, marker := range []string{"_test.go", ".test.", ".spec.", "playwright.config."} {
 		if strings.Contains(name, marker) {
 			return true
 		}
+	}
+	if strings.Contains(slashPath, "/scripts/smoke.") ||
+		strings.Contains(slashPath, "/tools/marketing-extraction.") {
+		return true
 	}
 	return false
 }
@@ -291,13 +370,82 @@ func reportSDKBoundaryViolation(t *testing.T, fset *token.FileSet, root, path st
 	t.Errorf("%s:%d %s; add/use an sdk-go API instead", relative, location.Line, fmt.Sprintf(format, args...))
 }
 
-func findProductionScanRoot(t *testing.T) string {
+func reportPinnedPort(t *testing.T, fset *token.FileSet, root, path string, position token.Pos, literal string) {
+	t.Helper()
+	location := fset.Position(position)
+	relative, _ := filepath.Rel(root, path)
+	t.Errorf("%s:%d pins Codefly runtime address %q; resolve it through the language SDK", relative, location.Line, literal)
+}
+
+func scanRuntimeConfigurationsForPinnedPorts(t *testing.T, repositoryRoot string) {
+	t.Helper()
+	configurationRoots := []string{filepath.Join(repositoryRoot, "configurations")}
+	modulesRoot := filepath.Join(repositoryRoot, "modules")
+	if entries, err := os.ReadDir(modulesRoot); err == nil {
+		for _, entry := range entries {
+			if entry.IsDir() {
+				configurationRoots = append(configurationRoots, filepath.Join(modulesRoot, entry.Name(), "configurations"))
+			}
+		}
+	}
+	for _, root := range configurationRoots {
+		if _, err := os.Stat(root); err != nil {
+			continue
+		}
+		err := filepath.WalkDir(root, func(path string, entry os.DirEntry, walkErr error) error {
+			if walkErr != nil {
+				return walkErr
+			}
+			if entry.IsDir() || !strings.Contains(filepath.Base(path), ".env") ||
+				strings.Contains(filepath.Base(path), ".secret.") {
+				return nil
+			}
+			file, err := os.Open(path)
+			if err != nil {
+				return err
+			}
+			defer file.Close()
+			scanner := bufio.NewScanner(file)
+			line := 0
+			for scanner.Scan() {
+				line++
+				text := strings.TrimSpace(scanner.Text())
+				if text == "" || strings.HasPrefix(text, "#") {
+					continue
+				}
+				if loopbackPortLiteral.MatchString(text) {
+					relative, _ := filepath.Rel(repositoryRoot, path)
+					t.Errorf("%s:%d pins a loopback port; Codefly must inject the endpoint", relative, line)
+				}
+			}
+			return scanner.Err()
+		})
+		if err != nil {
+			t.Fatalf("scan runtime configurations under %s: %v", root, err)
+		}
+	}
+}
+
+func findProductionScanRoots(t *testing.T) (string, []string) {
 	t.Helper()
 	root := findRepositoryRoot(t)
-	if _, err := os.Stat(filepath.Join(root, "workspace.codefly.yaml")); err == nil {
-		return filepath.Join(root, "modules")
+	candidates := []string{
+		filepath.Join(root, "module"),
+		filepath.Join(root, "modules"),
 	}
-	return root
+	if _, err := os.Stat(filepath.Join(root, "module.codefly.yaml")); err == nil {
+		candidates = append(candidates, root)
+	}
+	var roots []string
+	for _, candidate := range candidates {
+		if info, err := os.Stat(candidate); err == nil && info.IsDir() {
+			roots = append(roots, candidate)
+		}
+	}
+	if len(roots) == 0 {
+		t.Fatal("no Codefly production module roots found")
+	}
+	return root, roots
 }
 
 func findRepositoryRoot(t *testing.T) string {
