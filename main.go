@@ -21,7 +21,7 @@ const (
 	moduleYamlPath    = "module.codefly.yaml"
 	moduleDirName     = "module"
 	sourceEnvVar      = "SAAS_STARTER_MODULE_SRC"
-	gitOpsRelativeDir = "deployment/kustomize"
+	bundleRelativeDir = "deployment/kustomize"
 	workspaceYamlPath = "workspace.codefly.yaml"
 )
 
@@ -89,8 +89,8 @@ func Create(ctx context.Context, dir, name string) error {
 	if err := normalizeDeploymentMetadata(stage); err != nil {
 		return w.Wrapf(err, "cannot normalize module deployment metadata")
 	}
-	if err := generateGitOps(ctx, stage, workspace); err != nil {
-		return w.Wrapf(err, "cannot generate GitOps manifests")
+	if err := generateDeploymentBundle(stage, workspace); err != nil {
+		return w.Wrapf(err, "cannot generate deployment bundle")
 	}
 
 	backup := stage + "-previous"
@@ -150,8 +150,8 @@ func copyModuleSource(
 		}
 		slashRelative := filepath.ToSlash(relative)
 		targetRelative := relative
-		skip := slashRelative == gitOpsRelativeDir ||
-			strings.HasPrefix(slashRelative, gitOpsRelativeDir+"/")
+		skip := slashRelative == bundleRelativeDir ||
+			strings.HasPrefix(slashRelative, bundleRelativeDir+"/")
 		if preserveInventory {
 			skip = skip ||
 				slashRelative == moduleYamlPath ||
@@ -430,8 +430,8 @@ func copyTree(src, dst, name string, skipGitOps bool) error {
 		if rel == "." {
 			return nil
 		}
-		if skipGitOps && (rel == gitOpsRelativeDir ||
-			strings.HasPrefix(rel, gitOpsRelativeDir+string(filepath.Separator))) {
+		if skipGitOps && (rel == bundleRelativeDir ||
+			strings.HasPrefix(rel, bundleRelativeDir+string(filepath.Separator))) {
 			if d.IsDir() {
 				return filepath.SkipDir
 			}
@@ -500,17 +500,6 @@ func copyFile(srcPath, dstPath string, mode os.FileMode, rewriteName bool, name 
 }
 
 func main() {
-	if len(os.Args) > 1 && os.Args[1] == "gitops" {
-		if len(os.Args) != 6 {
-			fmt.Fprintf(os.Stderr, "Usage: saas-starter gitops <module-dir> <workspace-dir> <environment> <target>\n")
-			os.Exit(1)
-		}
-		if err := runGitOpsCommand(context.Background(), os.Args[2], os.Args[3], os.Args[4], os.Args[5]); err != nil {
-			fmt.Fprintf(os.Stderr, "Error: %v\n", err)
-			os.Exit(1)
-		}
-		return
-	}
 	if len(os.Args) < 3 {
 		fmt.Fprintf(os.Stderr, "Usage: saas-starter <dir> <name>\n")
 		os.Exit(1)
@@ -525,19 +514,4 @@ func main() {
 		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 		os.Exit(1)
 	}
-}
-
-func runGitOpsCommand(ctx context.Context, moduleDir, workspaceDir, environment, target string) error {
-	moduleDir = strings.TrimSpace(moduleDir)
-	workspaceDir = strings.TrimSpace(workspaceDir)
-	environment = strings.TrimSpace(environment)
-	target = strings.TrimSpace(target)
-	if moduleDir == "" || workspaceDir == "" || environment == "" || target == "" {
-		return fmt.Errorf("module dir, workspace dir, environment, and target must be non-empty")
-	}
-	workspace, err := loadWorkspaceManifest(workspaceDir)
-	if err != nil {
-		return fmt.Errorf("load workspace: %w", err)
-	}
-	return generateGitOpsEnvironment(ctx, moduleDir, workspace, environment, target)
 }

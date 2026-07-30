@@ -2,7 +2,6 @@ package main
 
 import (
 	"bytes"
-	"context"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
@@ -10,35 +9,21 @@ import (
 	"fmt"
 	"io"
 	"net"
-	"net/url"
 	"os"
-	"os/exec"
 	"path"
 	"path/filepath"
 	"regexp"
 	"slices"
-	"sort"
 	"strconv"
 	"strings"
 
-	"github.com/codefly-dev/agents/modules/saas-starter/gitopscontract"
-	builderv0 "github.com/codefly-dev/core/generated/go/codefly/services/builder/v0"
 	"gopkg.in/yaml.v3"
 )
 
-const (
-	argoNamespace              = "argocd"
-	cliRenderInventoryFilename = gitopscontract.InventoryFilename
-	cliRenderInventorySchema   = gitopscontract.SchemaVersion
-	coreManifestContract       = "codefly.dev/kubernetes-manifest/v1"
-	inClusterServer            = "https://kubernetes.default.svc"
-	gitOpsInventorySchema      = "codefly.dev/module-gitops/v3"
-)
+const moduleBundleSchema = "codefly.dev/module-bundle/v1"
 
 var (
-	fullCommitPattern = regexp.MustCompile(`^[0-9a-f]{40}$`)
 	dnsLabelPattern   = regexp.MustCompile(`^[a-z0-9](?:[-a-z0-9]*[a-z0-9])?$`)
-	sha256Pattern     = regexp.MustCompile(`^sha256:[a-f0-9]{64}$`)
 	unresolvedPattern = regexp.MustCompile(`(?i)REPLACE_ME|saas-starter|\$\{[^}]+\}|<[^>]*replace[^>]*>`)
 )
 
@@ -54,22 +39,10 @@ type workspaceManifest struct {
 	root         string
 }
 
-type workspaceGitOps struct {
-	RepoURL              string `yaml:"repo-url"`
-	FetchRepoURL         string `yaml:"fetch-repo-url,omitempty"`
-	FetchVerificationURL string `yaml:"fetch-verification-url,omitempty"`
-	Path                 string `yaml:"path"`
-	Branch               string `yaml:"branch"`
-	Revision             string `yaml:"revision"`
-	Checkout             string `yaml:"checkout,omitempty"`
-	Inventory            string `yaml:"inventory"`
-}
-
 type environmentConfig struct {
 	Name            string                          `yaml:"name"`
 	Namespace       string                          `yaml:"namespace"`
 	Cluster         environmentCluster              `yaml:"cluster"`
-	Gitops          *workspaceGitOps                `yaml:"gitops,omitempty"`
 	Ingress         []environmentIngressRoute       `yaml:"ingress,omitempty"`
 	ManagedServices map[string]managedServiceConfig `yaml:"managed-services,omitempty"`
 }
@@ -95,28 +68,36 @@ type serviceDefinition struct {
 	directory string
 }
 
-type cliRenderInventory = gitopscontract.Inventory
-type cliRenderService = gitopscontract.Service
-type cliKubernetesOutput = gitopscontract.KubernetesOutput
-type cliKubernetesValidation = gitopscontract.KubernetesValidation
-type cliRenderInventoryFile = gitopscontract.InventoryFile
-
-type gitOpsInventory struct {
-	SchemaVersion string                 `json:"schemaVersion"`
-	Workspace     string                 `json:"workspace"`
-	Module        string                 `json:"module"`
-	OwnedPath     string                 `json:"ownedPath"`
-	Environments  []environmentInventory `json:"environments"`
+// moduleBundle is the typed, transport-neutral output the module plugin emits.
+// It carries the module identity and, per declared environment, the
+// module-owned Kubernetes overlay path plus the topology and placement metadata
+// a promotion driver needs to compose repository transport (Argo, Flux, or
+// otherwise) on its own. The plugin never records repositories, revisions, or
+// Argo resources.
+type moduleBundle struct {
+	SchemaVersion string              `json:"schemaVersion"`
+	Module        string              `json:"module"`
+	Namespace     string              `json:"namespace"`
+	ServiceEntry  string              `json:"serviceEntry"`
+	Environments  []bundleEnvironment `json:"environments"`
 }
 
-type environmentInventory struct {
+type bundleEnvironment struct {
 	Name                   string                  `json:"name"`
 	Namespace              string                  `json:"namespace"`
-	Repository             string                  `json:"repository"`
-	Revision               string                  `json:"revision"`
+	Cluster                string                  `json:"cluster"`
+	ResourcePath           string                  `json:"resourcePath"`
 	Services               []string                `json:"services"`
-	ServicePaths           map[string]string       `json:"servicePaths"`
+	Ingress                []bundleIngressRoute    `json:"ingress"`
 	ManagedServiceHandoffs []managedServiceHandoff `json:"managedServiceHandoffs,omitempty"`
+}
+
+type bundleIngressRoute struct {
+	Name     string   `json:"name"`
+	Service  string   `json:"service"`
+	Endpoint string   `json:"endpoint"`
+	Port     uint32   `json:"port"`
+	Hosts    []string `json:"hosts"`
 }
 
 type managedServiceHandoff struct {
@@ -164,67 +145,13 @@ type kustomization struct {
 	Resources  []string `yaml:"resources"`
 }
 
-type appProjectSpec struct {
-	Description                string              `yaml:"description"`
-	SourceRepos                []string            `yaml:"sourceRepos"`
-	Destinations               []argoDestination   `yaml:"destinations"`
-	NamespaceResourceWhitelist []argoResourceAllow `yaml:"namespaceResourceWhitelist"`
-	ClusterResourceWhitelist   []argoResourceAllow `yaml:"clusterResourceWhitelist,omitempty"`
-}
-
-type argoDestination struct {
-	Namespace string `yaml:"namespace"`
-	Server    string `yaml:"server"`
-}
-
-type argoResourceAllow struct {
-	Group string `yaml:"group"`
-	Kind  string `yaml:"kind"`
-	Name  string `yaml:"name,omitempty"`
-}
-
-type applicationSpec struct {
-	Project     string          `yaml:"project"`
-	Source      applicationGit  `yaml:"source"`
-	Destination argoDestination `yaml:"destination"`
-	SyncPolicy  applicationSync `yaml:"syncPolicy"`
-}
-
-type applicationGit struct {
-	RepoURL        string `yaml:"repoURL"`
-	TargetRevision string `yaml:"targetRevision"`
-	Path           string `yaml:"path"`
-}
-
-type applicationSync struct {
-	Automated   automatedSync `yaml:"automated"`
-	SyncOptions []string      `yaml:"syncOptions"`
-}
-
-type automatedSync struct {
-	Prune    bool `yaml:"prune"`
-	SelfHeal bool `yaml:"selfHeal"`
-}
-
 type environmentPlan struct {
-	environment  *environmentConfig
-	revision     string
-	services     []string
-	servicePaths map[string]string
-	ingress      []ingressRoutePlan
-	handoffs     []managedServiceHandoff
-	managed      map[string]managedServiceConfig
-	allowlist    []argoResourceAllow
-	project      string
-	local        bool
-}
-
-type gitOpsContract struct {
-	repository                  string
-	fetchRepository             string
-	fetchVerificationRepository string
-	inventoryPath               string
-	checkout                    string
+	environment *environmentConfig
+	cluster     string
+	services    []string
+	ingress     []ingressRoutePlan
+	handoffs    []managedServiceHandoff
+	managed     map[string]managedServiceConfig
 }
 
 type ingressRoutePlan struct {
@@ -304,27 +231,10 @@ func loadWorkspaceManifest(root string) (*workspaceManifest, error) {
 	return &workspace, nil
 }
 
-func generateGitOps(ctx context.Context, moduleDir string, workspace *workspaceManifest) error {
-	return generateGitOpsTree(ctx, moduleDir, workspace, "", filepath.Join(moduleDir, filepath.FromSlash(gitOpsRelativeDir)))
-}
-
-func generateGitOpsEnvironment(
-	ctx context.Context,
-	moduleDir string,
-	workspace *workspaceManifest,
-	environmentName,
-	target string,
-) error {
-	return generateGitOpsTree(ctx, moduleDir, workspace, environmentName, target)
-}
-
-func generateGitOpsTree(
-	ctx context.Context,
-	moduleDir string,
-	workspace *workspaceManifest,
-	environmentName,
-	root string,
-) error {
+// generateDeploymentBundle renders the module-owned Kubernetes overlay for every
+// declared environment and writes a typed, transport-neutral bundle manifest.
+// It requires no Git binary, checkout, network, or cluster access.
+func generateDeploymentBundle(moduleDir string, workspace *workspaceManifest) error {
 	manifest, err := loadModuleManifest(moduleDir)
 	if err != nil {
 		return err
@@ -337,135 +247,100 @@ func generateGitOpsTree(
 	if err != nil {
 		return err
 	}
-	environments, err := validateGitOpsEnvironments(workspace)
+	environments, err := selectEnvironments(workspace)
 	if err != nil {
 		return err
 	}
 
+	root := filepath.Join(moduleDir, filepath.FromSlash(bundleRelativeDir))
 	if err := os.MkdirAll(filepath.Dir(root), 0o755); err != nil {
 		return fmt.Errorf("create deployment directory: %w", err)
 	}
 	stage, err := os.MkdirTemp(filepath.Dir(root), ".kustomize-stage-*")
 	if err != nil {
-		return fmt.Errorf("create GitOps staging directory: %w", err)
+		return fmt.Errorf("create bundle staging directory: %w", err)
 	}
 	defer func() { _ = os.RemoveAll(stage) }()
 
-	inventory := gitOpsInventory{
-		SchemaVersion: gitOpsInventorySchema,
-		Workspace:     workspace.Name,
+	bundle := moduleBundle{
+		SchemaVersion: moduleBundleSchema,
 		Module:        manifest.Name,
+		Namespace:     topology.Module.Namespace,
+		ServiceEntry:  topology.Module.ServiceEntry,
 	}
-	foundEnvironment := environmentName == ""
 	for _, environment := range environments {
-		if environmentName != "" && environment.Name != environmentName {
-			continue
-		}
-		foundEnvironment = true
-		local, aws, err := classifyEnvironment(environment)
+		_, aws, kind, err := classifyEnvironment(environment)
 		if err != nil {
 			return err
 		}
-		contract, err := validateGitOpsContract(workspace, environment, local)
+		plan, err := planEnvironment(environment, serviceNames(services), topology, kind, aws)
 		if err != nil {
 			return err
 		}
-		plan, err := planEnvironment(
-			ctx,
-			environment,
-			manifest.Name,
-			serviceNames(services),
-			topology,
-			contract.checkout,
-			local,
-			aws,
-		)
-		if err != nil {
+		if err := renderEnvironment(stage, workspace.Name, manifest.Name, topology, plan); err != nil {
 			return err
 		}
-		renderInventory, err := inspectGitOpsSnapshot(
-			ctx,
-			contract,
-			manifest.Name,
-			serviceNames(services),
-			&plan,
-		)
-		if err != nil {
-			return err
-		}
-		if inventory.OwnedPath == "" {
-			inventory.OwnedPath = renderInventory.OwnedPath
-		} else if inventory.OwnedPath != renderInventory.OwnedPath {
-			return fmt.Errorf(
-				"environment %q owns path %q, want shared module path %q",
-				environment.Name,
-				renderInventory.OwnedPath,
-				inventory.OwnedPath,
-			)
-		}
-		if err := renderEnvironment(
-			stage,
-			workspace.Name,
-			manifest.Name,
-			contract.fetchRepository,
-			topology,
-			plan,
-		); err != nil {
-			return err
-		}
-		inventory.Environments = append(inventory.Environments, environmentInventory{
+		bundle.Environments = append(bundle.Environments, bundleEnvironment{
 			Name:                   plan.environment.Name,
 			Namespace:              plan.environment.Namespace,
-			Repository:             contract.fetchRepository,
-			Revision:               plan.revision,
+			Cluster:                plan.cluster,
+			ResourcePath:           path.Join("overlays", plan.environment.Name),
 			Services:               append([]string(nil), plan.services...),
-			ServicePaths:           cloneStringMap(plan.servicePaths),
+			Ingress:                bundleIngress(plan.ingress),
 			ManagedServiceHandoffs: append([]managedServiceHandoff(nil), plan.handoffs...),
 		})
 	}
-	if !foundEnvironment {
-		return fmt.Errorf("workspace %q does not declare environment %q", workspace.Name, environmentName)
-	}
-	if err := writeJSON(filepath.Join(stage, "inventory.json"), inventory); err != nil {
+	if err := writeJSON(filepath.Join(stage, "bundle.json"), bundle); err != nil {
 		return err
 	}
-	if err := validateGeneratedGitOps(stage, inventory); err != nil {
+	if err := validateGeneratedBundle(stage, bundle); err != nil {
 		return err
 	}
-	if err := replaceGeneratedTree(stage, root); err != nil {
-		return err
+	return replaceGeneratedTree(stage, root)
+}
+
+func bundleIngress(routes []ingressRoutePlan) []bundleIngressRoute {
+	result := make([]bundleIngressRoute, 0, len(routes))
+	for _, route := range routes {
+		result = append(result, bundleIngressRoute{
+			Name:     route.name,
+			Service:  route.service,
+			Endpoint: route.endpoint,
+			Port:     route.port,
+			Hosts:    append([]string(nil), route.hosts...),
+		})
 	}
-	return nil
+	return result
 }
 
 func replaceGeneratedTree(stage, root string) error {
 	if _, err := os.Lstat(root); errors.Is(err, os.ErrNotExist) {
 		if err := os.Rename(stage, root); err != nil {
-			return fmt.Errorf("install generated GitOps directory: %w", err)
+			return fmt.Errorf("install generated bundle directory: %w", err)
 		}
 		return nil
 	} else if err != nil {
-		return fmt.Errorf("inspect generated GitOps directory: %w", err)
+		return fmt.Errorf("inspect generated bundle directory: %w", err)
 	}
 
 	backup, err := os.MkdirTemp(filepath.Dir(root), ".kustomize-backup-*")
 	if err != nil {
-		return fmt.Errorf("create GitOps backup path: %w", err)
+		return fmt.Errorf("create bundle backup path: %w", err)
 	}
 	if err := os.Remove(backup); err != nil {
-		return fmt.Errorf("prepare GitOps backup path: %w", err)
+		return fmt.Errorf("prepare bundle backup path: %w", err)
 	}
 	if err := os.Rename(root, backup); err != nil {
-		return fmt.Errorf("back up generated GitOps directory: %w", err)
+		return fmt.Errorf("back up generated bundle directory: %w", err)
 	}
 	if err := os.Rename(stage, root); err != nil {
 		if rollbackErr := os.Rename(backup, root); rollbackErr != nil {
-			return fmt.Errorf("install generated GitOps directory: %w (rollback failed: %v; previous tree remains at %s)", err, rollbackErr, backup)
+			return fmt.Errorf("install generated bundle directory: %w (rollback failed: %v; previous tree remains at %s)", err, rollbackErr, backup)
 		}
-		return fmt.Errorf("install generated GitOps directory: %w", err)
+		return fmt.Errorf("install generated bundle directory: %w", err)
 	}
 	if err := os.RemoveAll(backup); err != nil {
-		return fmt.Errorf("remove previous GitOps directory: %w", err)
+		return fmt.Errorf("remove previous bundle directory: %w", err)
 	}
 	return nil
 }
@@ -609,17 +484,12 @@ func serviceNames(services []serviceDefinition) []string {
 	return names
 }
 
-func cloneStringMap(values map[string]string) map[string]string {
-	cloned := make(map[string]string, len(values))
-	for key, value := range values {
-		cloned[key] = value
+func selectEnvironments(workspace *workspaceManifest) ([]*environmentConfig, error) {
+	if err := validateDNSLabel("workspace name", workspace.Name); err != nil {
+		return nil, err
 	}
-	return cloned
-}
-
-func validateGitOpsEnvironments(workspace *workspaceManifest) ([]*environmentConfig, error) {
 	if len(workspace.Environments) == 0 {
-		return nil, fmt.Errorf("workspace %q must declare GitOps environments", workspace.Name)
+		return nil, fmt.Errorf("workspace %q declares no deployment environments", workspace.Name)
 	}
 	seen := make(map[string]struct{}, len(workspace.Environments))
 	for _, environment := range workspace.Environments {
@@ -633,9 +503,6 @@ func validateGitOpsEnvironments(workspace *workspaceManifest) ([]*environmentCon
 			return nil, fmt.Errorf("workspace declares environment %q more than once", environment.Name)
 		}
 		seen[environment.Name] = struct{}{}
-		if environment.Gitops == nil {
-			return nil, fmt.Errorf("environment %q must declare its GitOps publication contract", environment.Name)
-		}
 		if err := validateDNSLabel("environment namespace", environment.Namespace); err != nil {
 			return nil, fmt.Errorf("environment %q: %w", environment.Name, err)
 		}
@@ -643,202 +510,17 @@ func validateGitOpsEnvironments(workspace *workspaceManifest) ([]*environmentCon
 	return workspace.Environments, nil
 }
 
-func validateGitOpsContract(
-	workspace *workspaceManifest,
-	environment *environmentConfig,
-	local bool,
-) (gitOpsContract, error) {
-	if err := validateDNSLabel("workspace name", workspace.Name); err != nil {
-		return gitOpsContract{}, err
-	}
-	config := environment.Gitops
-	repository := strings.TrimSpace(config.RepoURL)
-	if err := validatePublicationRepository(repository, local); err != nil {
-		return gitOpsContract{}, fmt.Errorf("environment %q: %w", environment.Name, err)
-	}
-	fetchRepository := strings.TrimSpace(config.FetchRepoURL)
-	fetchVerificationRepository := strings.TrimSpace(config.FetchVerificationURL)
-	if local {
-		if err := validateLocalFetchRepository(fetchRepository); err != nil {
-			return gitOpsContract{}, fmt.Errorf("environment %q: %w", environment.Name, err)
-		}
-		if err := validateLocalFetchVerificationRepository(
-			fetchVerificationRepository,
-			fetchRepository,
-		); err != nil {
-			return gitOpsContract{}, fmt.Errorf("environment %q: %w", environment.Name, err)
-		}
-	} else {
-		if fetchVerificationRepository != "" {
-			return gitOpsContract{}, fmt.Errorf(
-				"environment %q: workspace gitops fetch-verification-url is only allowed for local qualification",
-				environment.Name,
-			)
-		}
-		if fetchRepository == "" {
-			fetchRepository = repository
-		}
-		if err := validateRemoteRepository(fetchRepository); err != nil {
-			return gitOpsContract{}, fmt.Errorf("workspace gitops fetch-repo-url: %w", err)
-		}
-		if canonicalRepository(fetchRepository) != canonicalRepository(repository) {
-			return gitOpsContract{}, fmt.Errorf("workspace gitops fetch-repo-url must identify repo-url")
-		}
-	}
-	base, err := cleanOptionalRelativePath(config.Path)
-	if err != nil {
-		return gitOpsContract{}, fmt.Errorf("workspace gitops path: %w", err)
-	}
-	inventoryPath, err := cleanRelativePath(config.Inventory)
-	if err != nil {
-		return gitOpsContract{}, fmt.Errorf("workspace gitops inventory: %w", err)
-	}
-	if base != "" && inventoryPath != base && !strings.HasPrefix(inventoryPath, base+"/") {
-		return gitOpsContract{}, fmt.Errorf("workspace gitops inventory %q is outside path %q", inventoryPath, base)
-	}
-	if strings.TrimSpace(config.Branch) == "" {
-		return gitOpsContract{}, fmt.Errorf("workspace gitops branch must name the publish branch")
-	}
-	if strings.TrimSpace(config.Revision) == "" {
-		return gitOpsContract{}, fmt.Errorf("workspace gitops revision must select the immutable rendered snapshot")
-	}
-	checkout := workspace.root
-	if strings.TrimSpace(config.Checkout) != "" {
-		if filepath.IsAbs(config.Checkout) {
-			checkout = filepath.Clean(config.Checkout)
-		} else {
-			relative, pathErr := cleanRelativeFilesystemPath(config.Checkout)
-			if pathErr != nil {
-				return gitOpsContract{}, fmt.Errorf("workspace gitops checkout: %w", pathErr)
-			}
-			checkout = filepath.Join(workspace.root, relative)
-		}
-	}
-	info, err := os.Stat(checkout)
-	if err != nil || !info.IsDir() {
-		return gitOpsContract{}, fmt.Errorf("workspace gitops checkout %q is not a directory", checkout)
-	}
-	return gitOpsContract{
-		repository:                  repository,
-		fetchRepository:             fetchRepository,
-		fetchVerificationRepository: fetchVerificationRepository,
-		inventoryPath:               inventoryPath,
-		checkout:                    checkout,
-	}, nil
-}
-
-func validatePublicationRepository(repository string, local bool) error {
-	lowerRepository := strings.ToLower(repository)
-	if repository == "" || strings.Contains(repository, "*") ||
-		strings.Contains(lowerRepository, "replace_me") || strings.ContainsAny(repository, "\r\n\t ") {
-		return fmt.Errorf("workspace gitops repo-url must be an exact repository URL")
-	}
-	if strings.HasPrefix(repository, "file://") {
-		if !local {
-			return fmt.Errorf("workspace gitops repo-url file transport is only allowed for local qualification")
-		}
-		parsed, err := url.Parse(repository)
-		if err != nil || parsed.Scheme != "file" || parsed.Host != "" || parsed.User != nil ||
-			!filepath.IsAbs(filepath.FromSlash(parsed.Path)) || parsed.Path == "/" ||
-			!strings.HasSuffix(parsed.Path, ".git") ||
-			parsed.RawQuery != "" || parsed.Fragment != "" {
-			return fmt.Errorf("workspace gitops repo-url must be an absolute credential-free file URL")
-		}
-		return nil
-	}
-	if err := validateRemoteRepository(repository); err != nil {
-		return fmt.Errorf("workspace gitops repo-url: %w", err)
-	}
-	return nil
-}
-
-func validateRemoteRepository(repository string) error {
-	if strings.Contains(repository, "://") {
-		parsed, err := url.Parse(repository)
-		if err != nil || parsed.Host == "" || parsed.Path == "" ||
-			(parsed.Scheme != "https" && parsed.Scheme != "ssh") ||
-			parsed.RawQuery != "" || parsed.Fragment != "" {
-			return fmt.Errorf("must be an exact HTTPS or SSH repository URL")
-		}
-		if parsed.User != nil {
-			if _, password := parsed.User.Password(); password ||
-				parsed.Scheme == "https" || parsed.User.Username() != "git" {
-				return fmt.Errorf("must not contain credentials")
-			}
-		}
-		return nil
-	}
-	if !validSCPRepository(repository) {
-		return fmt.Errorf("must be an exact HTTPS or SSH repository URL")
-	}
-	return nil
-}
-
-func validateLocalFetchRepository(repository string) error {
-	parsed, err := url.Parse(repository)
-	if err != nil || (parsed.Scheme != "http" && parsed.Scheme != "https") ||
-		parsed.Host == "" || parsed.Path == "" || parsed.Path == "/" ||
-		!strings.HasSuffix(parsed.Path, ".git") ||
-		parsed.Hostname() != "host.k3d.internal" ||
-		parsed.User != nil || parsed.RawQuery != "" || parsed.Fragment != "" ||
-		strings.Contains(repository, "*") {
-		return fmt.Errorf("workspace gitops fetch-repo-url must be an exact credential-free HTTP(S) URL on host.k3d.internal")
-	}
-	return nil
-}
-
-func validateLocalFetchVerificationRepository(repository, fetchRepository string) error {
-	parsed, err := url.Parse(repository)
-	if err != nil || (parsed.Scheme != "http" && parsed.Scheme != "https") ||
-		parsed.Host == "" || parsed.Path == "" || parsed.Path == "/" ||
-		!strings.HasSuffix(parsed.Path, ".git") ||
-		parsed.User != nil || parsed.RawQuery != "" || parsed.Fragment != "" ||
-		strings.Contains(repository, "*") {
-		return fmt.Errorf("workspace gitops fetch-verification-url must be an exact credential-free loopback HTTP(S) repository URL")
-	}
-	host := parsed.Hostname()
-	ip := net.ParseIP(host)
-	if host != "localhost" && (ip == nil || !ip.IsLoopback()) {
-		return fmt.Errorf("workspace gitops fetch-verification-url must use a loopback host")
-	}
-	fetch, _ := url.Parse(fetchRepository)
-	if parsed.Scheme != fetch.Scheme || parsed.Port() != fetch.Port() || parsed.EscapedPath() != fetch.EscapedPath() {
-		return fmt.Errorf("workspace gitops fetch-verification-url must identify the host side of fetch-repo-url")
-	}
-	return nil
-}
-
-func validSCPRepository(value string) bool {
-	if !strings.HasPrefix(value, "git@") {
-		return false
-	}
-	hostAndPath := strings.TrimPrefix(value, "git@")
-	host, repositoryPath, found := strings.Cut(hostAndPath, ":")
-	return found && host != "" && !strings.ContainsAny(host, "/@") &&
-		repositoryPath != "" && !strings.ContainsAny(repositoryPath, "?#") &&
-		!strings.HasPrefix(repositoryPath, "/") && path.Clean(repositoryPath) == repositoryPath &&
-		repositoryPath != ".." && !strings.HasPrefix(repositoryPath, "../")
-}
-
 func planEnvironment(
-	ctx context.Context,
 	environment *environmentConfig,
-	moduleName string,
 	services []string,
 	topology deploymentTopology,
-	checkout string,
-	local, aws bool,
+	cluster string,
+	aws bool,
 ) (environmentPlan, error) {
-	revision, err := resolveRevision(ctx, checkout, environment.Gitops.Revision, local)
-	if err != nil {
-		return environmentPlan{}, fmt.Errorf("environment %q: %w", environment.Name, err)
-	}
 	plan := environmentPlan{
-		environment:  environment,
-		revision:     revision,
-		managed:      make(map[string]managedServiceConfig),
-		servicePaths: make(map[string]string),
-		local:        local,
+		environment: environment,
+		cluster:     cluster,
+		managed:     make(map[string]managedServiceConfig),
 	}
 	if err := validateManagedServices(environment, services, topology, aws, &plan); err != nil {
 		return environmentPlan{}, err
@@ -848,6 +530,7 @@ func planEnvironment(
 			plan.services = append(plan.services, service)
 		}
 	}
+	slices.Sort(plan.services)
 	if err := validateIngressRoutes(environment, topology, &plan); err != nil {
 		return environmentPlan{}, err
 	}
@@ -859,8 +542,11 @@ func validateIngressRoutes(
 	topology deploymentTopology,
 	plan *environmentPlan,
 ) error {
+	// Public ingress is optional: an environment may front the mesh with a
+	// gateway this module does not own, or expose nothing publicly yet. Such an
+	// environment renders module-owned baseline resources without a Gateway.
 	if len(environment.Ingress) == 0 {
-		return fmt.Errorf("environment %q must declare at least one exact ingress route", environment.Name)
+		return nil
 	}
 
 	routeNames := make(map[string]struct{}, len(environment.Ingress))
@@ -1037,681 +723,31 @@ func validExternalName(value string) bool {
 	return true
 }
 
-func classifyEnvironment(environment *environmentConfig) (local bool, aws bool, err error) {
+func classifyEnvironment(environment *environmentConfig) (local bool, aws bool, cluster string, err error) {
 	kind := strings.TrimSpace(environment.Cluster.Kind)
 	switch kind {
 	case "k3d":
-		return true, false, nil
+		return true, false, kind, nil
 	case "eks":
-		return false, true, nil
+		return false, true, kind, nil
 	case "":
 		if strings.HasPrefix(environment.Name, "local") {
-			return true, false, nil
+			return true, false, "k3d", nil
 		}
 	}
-	return false, false, fmt.Errorf("environment %q cluster kind %q is not supported by the SaaS GitOps generator", environment.Name, kind)
-}
-
-func resolveRevision(ctx context.Context, workspaceRoot, configured string, local bool) (string, error) {
-	revision := strings.TrimSpace(configured)
-	if fullCommitPattern.MatchString(revision) {
-		resolved, err := gitRevision(ctx, workspaceRoot, revision+"^{commit}")
-		if err != nil || resolved != revision {
-			return "", fmt.Errorf("configured commit %q does not exist in the GitOps repository checkout", revision)
-		}
-		if local {
-			head, err := gitRevision(ctx, workspaceRoot, "HEAD")
-			if err != nil {
-				return "", fmt.Errorf("resolve local harness snapshot: %w", err)
-			}
-			if revision != head {
-				return "", fmt.Errorf("local revision %s is not the harness snapshot %s", revision, head)
-			}
-		}
-		return revision, nil
-	}
-	if local {
-		selected, err := gitRevision(ctx, workspaceRoot, revision+"^{commit}")
-		if err != nil {
-			return "", fmt.Errorf("resolve local harness branch %q: %w", revision, err)
-		}
-		head, err := gitRevision(ctx, workspaceRoot, "HEAD")
-		if err != nil {
-			return "", fmt.Errorf("resolve local harness snapshot: %w", err)
-		}
-		if selected != head {
-			return "", fmt.Errorf("local branch %q resolves to %s, not harness snapshot %s", revision, selected, head)
-		}
-		return head, nil
-	}
-
-	tag := strings.TrimPrefix(revision, "refs/tags/")
-	verify := exec.CommandContext(ctx, "git", "-C", workspaceRoot, "verify-tag", tag)
-	if err := verify.Run(); err != nil {
-		return "", fmt.Errorf("production revision must be a full commit SHA or a signed tag")
-	}
-	commit, err := gitRevision(ctx, workspaceRoot, "refs/tags/"+tag+"^{commit}")
-	if err != nil {
-		return "", fmt.Errorf("resolve signed production tag %q: %w", tag, err)
-	}
-	return commit, nil
-}
-
-func gitRevision(ctx context.Context, root, revision string) (string, error) {
-	command := exec.CommandContext(ctx, "git", "-C", root, "rev-parse", "--verify", revision)
-	output, err := command.Output()
-	if err != nil {
-		return "", err
-	}
-	commit := strings.TrimSpace(string(output))
-	if !fullCommitPattern.MatchString(commit) {
-		return "", fmt.Errorf("git resolved invalid commit %q", commit)
-	}
-	return commit, nil
-}
-
-func inspectGitOpsSnapshot(
-	ctx context.Context,
-	contract gitOpsContract,
-	moduleName string,
-	services []string,
-	plan *environmentPlan,
-) (cliRenderInventory, error) {
-	if err := validateCheckoutRepository(ctx, contract.checkout, contract.repository); err != nil {
-		return cliRenderInventory{}, err
-	}
-	if err := validatePublishedRevision(ctx, contract.checkout, contract.repository, plan.revision); err != nil {
-		return cliRenderInventory{}, fmt.Errorf("environment %q: %w", plan.environment.Name, err)
-	}
-	if contract.fetchVerificationRepository != "" {
-		if err := validatePublishedRevision(
-			ctx,
-			contract.checkout,
-			contract.fetchVerificationRepository,
-			plan.revision,
-		); err != nil {
-			return cliRenderInventory{}, fmt.Errorf("environment %q: %w", plan.environment.Name, err)
-		}
-	}
-	data, err := gitFile(ctx, contract.checkout, plan.revision, contract.inventoryPath)
-	if err != nil {
-		return cliRenderInventory{}, fmt.Errorf(
-			"environment %q immutable revision has no CLI render inventory %q: %w",
-			plan.environment.Name,
-			contract.inventoryPath,
-			err,
-		)
-	}
-	inventory, canonical, err := loadCLIRenderInventory(
-		data,
-		contract.inventoryPath,
-		moduleName,
-		services,
-		plan,
-	)
-	if err != nil {
-		return cliRenderInventory{}, fmt.Errorf("environment %q: %w", plan.environment.Name, err)
-	}
-	snapshot, err := archiveGitOpsSnapshot(ctx, contract.checkout, plan.revision, inventory.OwnedPath)
-	if err != nil {
-		return cliRenderInventory{}, fmt.Errorf("environment %q: %w", plan.environment.Name, err)
-	}
-	defer func() { _ = os.RemoveAll(snapshot) }()
-	if err := validateSnapshotInventory(snapshot, inventory, canonical); err != nil {
-		return cliRenderInventory{}, fmt.Errorf("environment %q: %w", plan.environment.Name, err)
-	}
-	if err := inspectEnvironmentSnapshot(snapshot, inventory, plan); err != nil {
-		return cliRenderInventory{}, fmt.Errorf("environment %q: %w", plan.environment.Name, err)
-	}
-	return inventory, nil
-}
-
-func validatePublishedRevision(
-	ctx context.Context,
-	checkout,
-	repository,
-	revision string,
-) error {
-	command := exec.CommandContext(ctx, "git", "-C", checkout, "ls-remote", repository)
-	var stderr bytes.Buffer
-	command.Stderr = &stderr
-	output, err := command.Output()
-	if err != nil {
-		return fmt.Errorf(
-			"GitOps publication repository %q is not reachable: %w: %s",
-			repository,
-			err,
-			strings.TrimSpace(stderr.String()),
-		)
-	}
-	for _, line := range strings.Split(string(output), "\n") {
-		fields := strings.Fields(line)
-		if len(fields) == 2 && fields[0] == revision {
-			return nil
-		}
-	}
-	return fmt.Errorf("GitOps publication repository %q does not advertise revision %s", repository, revision)
-}
-
-func gitFile(ctx context.Context, checkout, revision, file string) ([]byte, error) {
-	command := exec.CommandContext(ctx, "git", "-C", checkout, "show", revision+":"+file)
-	var stderr bytes.Buffer
-	command.Stderr = &stderr
-	data, err := command.Output()
-	if err != nil {
-		return nil, fmt.Errorf("%w: %s", err, strings.TrimSpace(stderr.String()))
-	}
-	return data, nil
-}
-
-func loadCLIRenderInventory(
-	data []byte,
-	inventoryPath,
-	moduleName string,
-	services []string,
-	plan *environmentPlan,
-) (cliRenderInventory, []byte, error) {
-	inventory, err := gitopscontract.Decode(data)
-	if err != nil {
-		return cliRenderInventory{}, nil, err
-	}
-	canonical, err := gitopscontract.Encode(inventory)
-	if err != nil {
-		return cliRenderInventory{}, nil, err
-	}
-	if inventory.Module != moduleName || inventory.Environment != plan.environment.Name {
-		return cliRenderInventory{}, nil, fmt.Errorf(
-			"CLI render inventory targets module %q environment %q, want module %q environment %q",
-			inventory.Module,
-			inventory.Environment,
-			moduleName,
-			plan.environment.Name,
-		)
-	}
-	if err := validateDNSLabel("CLI render inventory AppProject", inventory.AppProject); err != nil {
-		return cliRenderInventory{}, nil, err
-	}
-	plan.project = inventory.AppProject
-	ownedPath, err := cleanRelativePath(inventory.OwnedPath)
-	if err != nil || ownedPath != inventory.OwnedPath {
-		return cliRenderInventory{}, nil, fmt.Errorf("CLI render inventory ownedPath must be a canonical relative repository path")
-	}
-	if inventoryPath != path.Join(ownedPath, cliRenderInventoryFilename) {
-		return cliRenderInventory{}, nil, fmt.Errorf(
-			"CLI render inventory path %q must equal owned path inventory %q",
-			inventoryPath,
-			path.Join(ownedPath, cliRenderInventoryFilename),
-		)
-	}
-	if err := validateCLIRenderGraph(&inventory, moduleName, services, plan); err != nil {
-		return cliRenderInventory{}, nil, err
-	}
-	if err := validateCLIRenderFiles(inventory); err != nil {
-		return cliRenderInventory{}, nil, err
-	}
-	return inventory, canonical, nil
-}
-
-func validateCLIRenderGraph(
-	inventory *cliRenderInventory,
-	moduleName string,
-	services []string,
-	plan *environmentPlan,
-) error {
-	expected := make(map[string]struct{}, len(services))
-	for _, service := range services {
-		expected[service] = struct{}{}
-	}
-	seen := make(map[string]struct{}, len(inventory.ServiceGraph))
-	paths := make(map[string]string, len(plan.services))
-	previous := ""
-	for _, service := range inventory.ServiceGraph {
-		if service.Module != moduleName {
-			return fmt.Errorf(
-				"CLI render inventory service %q belongs to module %q, want %q",
-				service.Service,
-				service.Module,
-				moduleName,
-			)
-		}
-		if _, exists := expected[service.Service]; !exists {
-			return fmt.Errorf("CLI render inventory contains extra service %q", service.Service)
-		}
-		if _, exists := seen[service.Service]; exists {
-			return fmt.Errorf("CLI render inventory repeats service %q", service.Service)
-		}
-		if previous != "" && service.Service <= previous {
-			return fmt.Errorf("CLI render inventory serviceGraph is not sorted by service")
-		}
-		previous = service.Service
-		seen[service.Service] = struct{}{}
-		_, managed := plan.managed[service.Service]
-		if service.Managed != managed {
-			return fmt.Errorf(
-				"CLI render inventory service %q managed=%t, want %t",
-				service.Service,
-				service.Managed,
-				managed,
-			)
-		}
-		if managed {
-			if service.Path != "" || service.Output != nil {
-				return fmt.Errorf("managed service %q must not contain in-cluster render output", service.Service)
-			}
-			continue
-		}
-		servicePath, err := cleanRelativePath(service.Path)
-		if err != nil || servicePath != service.Path {
-			return fmt.Errorf("CLI render inventory service %q path must be canonical and relative", service.Service)
-		}
-		expectedPath := path.Join("services", service.Service)
-		if servicePath != expectedPath {
-			return fmt.Errorf(
-				"CLI render inventory service %q path is %q, want %q",
-				service.Service,
-				servicePath,
-				expectedPath,
-			)
-		}
-		if owner, exists := paths[servicePath]; exists {
-			return fmt.Errorf("CLI render inventory services %q and %q share path %q", owner, service.Service, servicePath)
-		}
-		for existing, owner := range paths {
-			if strings.HasPrefix(servicePath, existing+"/") || strings.HasPrefix(existing, servicePath+"/") {
-				return fmt.Errorf(
-					"CLI render inventory services %q and %q have overlapping paths %q and %q",
-					owner,
-					service.Service,
-					existing,
-					servicePath,
-				)
-			}
-		}
-		paths[servicePath] = service.Service
-		if err := validateCorePromotableOutput(service.Service, service.Output, plan.local); err != nil {
-			return err
-		}
-		plan.servicePaths[service.Service] = path.Join(
-			inventory.OwnedPath,
-			servicePath,
-			"overlays",
-			plan.environment.Name,
-		)
-	}
-	for _, service := range services {
-		if _, exists := seen[service]; !exists {
-			return fmt.Errorf("CLI render inventory is missing service %q", service)
-		}
-	}
-	return nil
-}
-
-func validateCorePromotableOutput(service string, output *cliKubernetesOutput, local bool) error {
-	if output == nil || output.Validation == nil {
-		return fmt.Errorf("CLI render inventory service %q has no Core Kubernetes output evidence", service)
-	}
-	if output.Kind != builderv0.KubernetesDeploymentOutput_KUSTOMIZE.String() {
-		return fmt.Errorf("CLI render inventory service %q output kind %q is not KUSTOMIZE", service, output.Kind)
-	}
-	wantProfile := builderv0.KubernetesOutputProfile_KUBERNETES_OUTPUT_PROFILE_PROMOTABLE_GITOPS_V1.String()
-	if output.Profile != wantProfile {
-		return fmt.Errorf(
-			"CLI render inventory service %q output profile %q is not %s",
-			service,
-			output.Profile,
-			wantProfile,
-		)
-	}
-	if output.ContractVersion != coreManifestContract {
-		return fmt.Errorf(
-			"CLI render inventory service %q Core contract is %q, want %q",
-			service,
-			output.ContractVersion,
-			coreManifestContract,
-		)
-	}
-	passed := builderv0.KubernetesManifestValidation_STATUS_PASSED.String()
-	notRun := builderv0.KubernetesManifestValidation_STATUS_NOT_RUN.String()
-	serverValidation := output.Validation.ServerSideValidation
-	if output.Validation.StaticValidation != passed ||
-		(local && serverValidation != passed) ||
-		(!local && serverValidation != passed && serverValidation != notRun) ||
-		!output.Validation.Promotable ||
-		len(output.Validation.Violations) != 0 {
-		return fmt.Errorf("CLI render inventory service %q Core output is not promotable", service)
-	}
-	if output.Validation.Violations == nil {
-		return fmt.Errorf("CLI render inventory service %q Core output has no recorded violations result", service)
-	}
-	return nil
-}
-
-func validateCLIRenderFiles(inventory cliRenderInventory) error {
-	graphPaths := make(map[string]string)
-	for _, service := range inventory.ServiceGraph {
-		if !service.Managed {
-			graphPaths[service.Path] = service.Service
-		}
-	}
-	covered := make(map[string]bool, len(graphPaths))
-	digest := sha256.New()
-	previous := ""
-	for _, file := range inventory.Files {
-		clean, err := cleanRelativePath(file.Path)
-		if err != nil || clean != file.Path {
-			return fmt.Errorf("CLI render inventory file path %q is not canonical and relative", file.Path)
-		}
-		if file.Path == cliRenderInventoryFilename {
-			return fmt.Errorf("CLI render inventory must not include itself in files")
-		}
-		if previous != "" && file.Path <= previous {
-			return fmt.Errorf("CLI render inventory files are not strictly sorted by path")
-		}
-		previous = file.Path
-		if !sha256Pattern.MatchString(file.SHA256) || file.Size < 0 {
-			return fmt.Errorf("CLI render inventory file %q has invalid digest or size", file.Path)
-		}
-		owner := ""
-		for servicePath, service := range graphPaths {
-			if file.Path == servicePath || strings.HasPrefix(file.Path, servicePath+"/") {
-				if owner != "" {
-					return fmt.Errorf("CLI render inventory file %q belongs to overlapping service paths", file.Path)
-				}
-				owner = service
-				covered[servicePath] = true
-			}
-		}
-		if owner == "" {
-			return fmt.Errorf("CLI render inventory file %q is outside the exact service graph", file.Path)
-		}
-		if _, err := fmt.Fprintf(digest, "%s\x00%s\x00%d\n", file.Path, file.SHA256, file.Size); err != nil {
-			return fmt.Errorf("digest CLI render inventory: %w", err)
-		}
-	}
-	for servicePath, service := range graphPaths {
-		if !covered[servicePath] {
-			return fmt.Errorf("CLI render inventory service %q path %q contains no files", service, servicePath)
-		}
-	}
-	wantDigest := "sha256:" + hex.EncodeToString(digest.Sum(nil))
-	if inventory.Digest != wantDigest {
-		return fmt.Errorf("CLI render inventory digest is %q, want %q", inventory.Digest, wantDigest)
-	}
-	return nil
-}
-
-func validateCheckoutRepository(ctx context.Context, checkout, repository string) error {
-	command := exec.CommandContext(ctx, "git", "-C", checkout, "config", "--get-all", "remote.origin.url")
-	output, err := command.Output()
-	if err != nil {
-		return fmt.Errorf("GitOps checkout %q has no origin remote", checkout)
-	}
-	want := canonicalRepository(repository)
-	for _, remote := range strings.Fields(string(output)) {
-		if canonicalRepository(remote) == want {
-			return nil
-		}
-	}
-	return fmt.Errorf("GitOps checkout %q origin does not match repository %q", checkout, repository)
-}
-
-func canonicalRepository(repository string) string {
-	value := strings.TrimSuffix(strings.TrimSpace(repository), "/")
-	value = strings.TrimSuffix(value, ".git")
-	if strings.HasPrefix(value, "git@") {
-		value = strings.TrimPrefix(value, "git@")
-		value = strings.Replace(value, ":", "/", 1)
-	}
-	if parsed, err := url.Parse(value); err == nil && parsed.Host != "" {
-		value = parsed.Host + parsed.Path
-	}
-	return strings.ToLower(strings.TrimSuffix(value, "/"))
-}
-
-func archiveGitOpsSnapshot(ctx context.Context, checkout, revision, ownedPath string) (string, error) {
-	snapshot, err := os.MkdirTemp("", "saas-gitops-snapshot-*")
-	if err != nil {
-		return "", fmt.Errorf("create GitOps snapshot: %w", err)
-	}
-	archive := exec.CommandContext(ctx, "git", "-C", checkout, "archive", "--format=tar", revision, "--", ownedPath)
-	extract := exec.CommandContext(ctx, "tar", "-x", "-C", snapshot)
-	reader, err := archive.StdoutPipe()
-	if err != nil {
-		_ = os.RemoveAll(snapshot)
-		return "", fmt.Errorf("read GitOps snapshot: %w", err)
-	}
-	extract.Stdin = reader
-	var archiveError bytes.Buffer
-	var extractError bytes.Buffer
-	archive.Stderr = &archiveError
-	extract.Stderr = &extractError
-	if err := extract.Start(); err != nil {
-		_ = os.RemoveAll(snapshot)
-		return "", fmt.Errorf("extract GitOps snapshot: %w", err)
-	}
-	if err := archive.Run(); err != nil {
-		_ = extract.Wait()
-		_ = os.RemoveAll(snapshot)
-		return "", fmt.Errorf("revision %s does not contain owned path %s: %s", revision, ownedPath, strings.TrimSpace(archiveError.String()))
-	}
-	if err := extract.Wait(); err != nil {
-		_ = os.RemoveAll(snapshot)
-		return "", fmt.Errorf("extract GitOps snapshot: %w: %s", err, strings.TrimSpace(extractError.String()))
-	}
-	return snapshot, nil
-}
-
-func validateSnapshotInventory(snapshot string, inventory cliRenderInventory, canonical []byte) error {
-	ownedRoot := filepath.Join(snapshot, filepath.FromSlash(inventory.OwnedPath))
-	expected := make(map[string]cliRenderInventoryFile, len(inventory.Files))
-	for _, file := range inventory.Files {
-		expected[file.Path] = file
-	}
-	foundInventory := false
-	err := filepath.WalkDir(ownedRoot, func(file string, entry os.DirEntry, err error) error {
-		if err != nil {
-			return err
-		}
-		if entry.Type()&os.ModeSymlink != 0 {
-			return fmt.Errorf("immutable owned tree contains symbolic link %q", file)
-		}
-		if entry.IsDir() {
-			return nil
-		}
-		if !entry.Type().IsRegular() {
-			return fmt.Errorf("immutable owned tree contains non-regular file %q", file)
-		}
-		relative, err := filepath.Rel(ownedRoot, file)
-		if err != nil {
-			return err
-		}
-		relative = filepath.ToSlash(relative)
-		data, err := os.ReadFile(file)
-		if err != nil {
-			return err
-		}
-		if relative == cliRenderInventoryFilename {
-			foundInventory = true
-			if !bytes.Equal(data, canonical) {
-				return fmt.Errorf("immutable CLI render inventory differs from selected revision evidence")
-			}
-			return nil
-		}
-		record, exists := expected[relative]
-		if !exists {
-			return fmt.Errorf("immutable snapshot contains file %q outside the CLI render inventory", relative)
-		}
-		sum := sha256.Sum256(data)
-		if record.Size != int64(len(data)) || record.SHA256 != "sha256:"+hex.EncodeToString(sum[:]) {
-			return fmt.Errorf("immutable snapshot file %q differs from the CLI render inventory", relative)
-		}
-		delete(expected, relative)
-		return nil
-	})
-	if err != nil {
-		return err
-	}
-	if !foundInventory {
-		return fmt.Errorf("immutable owned tree is missing %s", cliRenderInventoryFilename)
-	}
-	if len(expected) != 0 {
-		missing := make([]string, 0, len(expected))
-		for file := range expected {
-			missing = append(missing, file)
-		}
-		sort.Strings(missing)
-		return fmt.Errorf("immutable snapshot is missing inventoried file %q", missing[0])
-	}
-	return nil
-}
-
-func inspectEnvironmentSnapshot(
-	snapshot string,
-	inventory cliRenderInventory,
-	plan *environmentPlan,
-) error {
-	ownedRoot := filepath.Join(snapshot, filepath.FromSlash(inventory.OwnedPath))
-	if err := scanOwnedTree(ownedRoot); err != nil {
-		return err
-	}
-
-	allow := make(map[string]argoResourceAllow)
-	for _, service := range plan.services {
-		overlay := filepath.Join(snapshot, filepath.FromSlash(plan.servicePaths[service]))
-		objects, err := renderOwnedKustomization(overlay)
-		if err != nil {
-			return fmt.Errorf("service %q immutable overlay is missing or invalid: %w", service, err)
-		}
-		if len(objects) == 0 {
-			return fmt.Errorf("service %q immutable overlay renders no resources", service)
-		}
-		for _, object := range objects {
-			resource, err := validateOwnedObject(object, plan.environment.Namespace)
-			if err != nil {
-				return fmt.Errorf("service %q: %w", service, err)
-			}
-			allow[resource.Group+"\x00"+resource.Kind] = resource
-		}
-	}
-	plan.allowlist = make([]argoResourceAllow, 0, len(allow))
-	for _, resource := range allow {
-		plan.allowlist = append(plan.allowlist, resource)
-	}
-	sort.Slice(plan.allowlist, func(i, j int) bool {
-		if plan.allowlist[i].Group != plan.allowlist[j].Group {
-			return plan.allowlist[i].Group < plan.allowlist[j].Group
-		}
-		return plan.allowlist[i].Kind < plan.allowlist[j].Kind
-	})
-	return nil
-}
-
-func scanOwnedTree(root string) error {
-	return filepath.WalkDir(root, func(file string, entry os.DirEntry, err error) error {
-		if err != nil {
-			return err
-		}
-		if entry.IsDir() {
-			return nil
-		}
-		relative, err := filepath.Rel(root, file)
-		if err != nil {
-			return err
-		}
-		if strings.Contains(filepath.Base(file), ".secret.") {
-			return fmt.Errorf("immutable owned tree contains secret file %q", filepath.ToSlash(relative))
-		}
-		data, err := os.ReadFile(file)
-		if err != nil {
-			return err
-		}
-		if unresolvedPattern.Match(data) {
-			return fmt.Errorf("immutable owned tree file %q contains an unresolved placeholder or starter identity", filepath.ToSlash(relative))
-		}
-		if filepath.Ext(file) != ".yaml" && filepath.Ext(file) != ".yml" {
-			return nil
-		}
-		decoder := yaml.NewDecoder(bytes.NewReader(data))
-		for {
-			var document map[string]any
-			if err := decoder.Decode(&document); err == io.EOF {
-				break
-			} else if err != nil {
-				return fmt.Errorf("parse immutable owned tree file %q: %w", filepath.ToSlash(relative), err)
-			}
-			if document["kind"] == "Secret" {
-				return fmt.Errorf("immutable owned tree contains Kubernetes Secret %q", filepath.ToSlash(relative))
-			}
-		}
-		return nil
-	})
-}
-
-func renderOwnedKustomization(root string) ([]map[string]any, error) {
-	command := exec.Command("kubectl", "kustomize", root)
-	output, err := command.Output()
-	if err != nil {
-		var exitError *exec.ExitError
-		if errors.As(err, &exitError) {
-			return nil, fmt.Errorf("%w: %s", err, strings.TrimSpace(string(exitError.Stderr)))
-		}
-		return nil, err
-	}
-	return decodeYAMLBytes(output, root)
-}
-
-func validateOwnedObject(object map[string]any, namespace string) (argoResourceAllow, error) {
-	kind, _ := object["kind"].(string)
-	apiVersion, _ := object["apiVersion"].(string)
-	metadata, _ := object["metadata"].(map[string]any)
-	if kind == "" || apiVersion == "" || metadata == nil {
-		return argoResourceAllow{}, fmt.Errorf("rendered an incomplete Kubernetes object")
-	}
-	if kind == "Secret" {
-		return argoResourceAllow{}, fmt.Errorf("immutable overlay contains a Kubernetes Secret")
-	}
-	if isClusterScopedKind(apiVersion, kind) {
-		return argoResourceAllow{}, fmt.Errorf("immutable overlay contains cluster-scoped %s %q", kind, metadata["name"])
-	}
-	if renderedNamespace, _ := metadata["namespace"].(string); renderedNamespace != "" && renderedNamespace != namespace {
-		return argoResourceAllow{}, fmt.Errorf("%s %q targets namespace %q, want %q", kind, metadata["name"], renderedNamespace, namespace)
-	}
-	group := ""
-	if prefix, _, found := strings.Cut(apiVersion, "/"); found {
-		group = prefix
-	}
-	return argoResourceAllow{Group: group, Kind: kind}, nil
-}
-
-func isClusterScopedKind(apiVersion, kind string) bool {
-	key := apiVersion + "/" + kind
-	switch key {
-	case "v1/Namespace", "v1/Node", "v1/PersistentVolume",
-		"apiextensions.k8s.io/v1/CustomResourceDefinition",
-		"rbac.authorization.k8s.io/v1/ClusterRole",
-		"rbac.authorization.k8s.io/v1/ClusterRoleBinding",
-		"storage.k8s.io/v1/StorageClass":
-		return true
-	default:
-		return false
-	}
+	return false, false, "", fmt.Errorf("environment %q cluster kind %q is not supported by the SaaS deployment generator", environment.Name, kind)
 }
 
 func renderEnvironment(
 	root,
 	workspaceName,
-	moduleName,
-	repository string,
+	moduleName string,
 	topology deploymentTopology,
 	plan environmentPlan,
 ) error {
 	environmentRoot := filepath.Join(root, "overlays", plan.environment.Name)
 	resourceRoot := filepath.Join(environmentRoot, "resources")
-	applicationRoot := filepath.Join(environmentRoot, "applications")
 	if err := os.MkdirAll(resourceRoot, 0o755); err != nil {
-		return err
-	}
-	if err := os.MkdirAll(applicationRoot, 0o755); err != nil {
 		return err
 	}
 
@@ -1742,27 +778,6 @@ func renderEnvironment(
 	if err := writeYAML(filepath.Join(resourceRoot, "namespace.yaml"), namespace); err != nil {
 		return err
 	}
-
-	project := kubeObject{
-		APIVersion: "argoproj.io/v1alpha1",
-		Kind:       "AppProject",
-		Metadata: objectMeta{
-			Name:       plan.project,
-			Namespace:  argoNamespace,
-			Labels:     identityLabels,
-			Finalizers: []string{"resources-finalizer.argocd.argoproj.io"},
-		},
-		Spec: appProjectSpec{
-			Description:                fmt.Sprintf("%s/%s %s GitOps boundary", workspaceName, moduleName, plan.environment.Name),
-			SourceRepos:                []string{repository},
-			Destinations:               []argoDestination{{Namespace: plan.environment.Namespace, Server: inClusterServer}},
-			NamespaceResourceWhitelist: plan.allowlist,
-			ClusterResourceWhitelist:   []argoResourceAllow{{Group: "", Kind: "Namespace"}},
-		},
-	}
-	if err := writeYAML(filepath.Join(resourceRoot, "project.yaml"), project); err != nil {
-		return err
-	}
 	sharedPaths, err := renderSharedResources(resourceRoot, plan.environment.Namespace, identityLabels, topology, plan)
 	if err != nil {
 		return err
@@ -1770,41 +785,10 @@ func renderEnvironment(
 
 	resourcePaths := []string{
 		"resources/namespace.yaml",
-		"resources/project.yaml",
 		"resources/resource-quota.yaml",
 		"resources/limit-range.yaml",
 	}
 	resourcePaths = append(resourcePaths, sharedPaths...)
-	for _, service := range plan.services {
-		application := kubeObject{
-			APIVersion: "argoproj.io/v1alpha1",
-			Kind:       "Application",
-			Metadata: objectMeta{
-				Name:       kubernetesName(workspaceName, moduleName, service, plan.environment.Name),
-				Namespace:  argoNamespace,
-				Labels:     mergeLabels(identityLabels, map[string]string{"codefly.dev/service": service}),
-				Finalizers: []string{"resources-finalizer.argocd.argoproj.io"},
-			},
-			Spec: applicationSpec{
-				Project: plan.project,
-				Source: applicationGit{
-					RepoURL:        repository,
-					TargetRevision: plan.revision,
-					Path:           plan.servicePaths[service],
-				},
-				Destination: argoDestination{Namespace: plan.environment.Namespace, Server: inClusterServer},
-				SyncPolicy: applicationSync{
-					Automated:   automatedSync{Prune: true, SelfHeal: true},
-					SyncOptions: []string{"CreateNamespace=false"},
-				},
-			},
-		}
-		relative := path.Join("applications", service+".yaml")
-		if err := writeYAML(filepath.Join(environmentRoot, filepath.FromSlash(relative)), application); err != nil {
-			return err
-		}
-		resourcePaths = append(resourcePaths, relative)
-	}
 	if err := writeYAML(filepath.Join(environmentRoot, "kustomization.yaml"), kustomization{
 		APIVersion: "kustomize.config.k8s.io/v1beta1",
 		Kind:       "Kustomization",
@@ -1917,7 +901,8 @@ func topologyIstioResources(
 	}
 	istio = append(istio, topologyInternalAuthorizationPolicies(topology, plan, namespace, labels)...)
 	if len(plan.ingress) == 0 {
-		return nil, nil, fmt.Errorf("environment %q has no ingress plan", plan.environment.Name)
+		// No public ingress: emit the mTLS baseline only, no Gateway.
+		return istio, nil, nil
 	}
 	ingressPorts := make(map[string]map[uint32]struct{})
 	for _, route := range plan.ingress {
@@ -2613,13 +1598,13 @@ func renderManagedServiceHandoffs(
 	return paths, nil
 }
 
-func validateGeneratedGitOps(root string, inventory gitOpsInventory) error {
-	for _, environment := range inventory.Environments {
+func validateGeneratedBundle(root string, bundle moduleBundle) error {
+	for _, environment := range bundle.Environments {
 		rendered, err := renderKustomization(filepath.Join(root, "overlays", environment.Name))
 		if err != nil {
 			return fmt.Errorf("render environment %q: %w", environment.Name, err)
 		}
-		if err := validateRenderedObjects(rendered, inventory, environment); err != nil {
+		if err := validateRenderedObjects(rendered, environment); err != nil {
 			return fmt.Errorf("validate environment %q: %w", environment.Name, err)
 		}
 	}
@@ -2669,99 +1654,44 @@ func renderKustomization(root string) ([]map[string]any, error) {
 	return objects, nil
 }
 
-func validateRenderedObjects(objects []map[string]any, inventory gitOpsInventory, environment environmentInventory) error {
-	expectedServices := make(map[string]struct{}, len(environment.Services))
-	for _, service := range environment.Services {
-		expectedServices[service] = struct{}{}
-		if environment.ServicePaths[service] == "" {
-			return fmt.Errorf("service %q has no exact Application path", service)
-		}
-	}
-	if len(environment.ServicePaths) != len(expectedServices) {
-		return fmt.Errorf("service path inventory does not match in-cluster service inventory")
-	}
-	applications := make(map[string]struct{}, len(environment.Services))
-	projectCount := 0
+// moduleOwnedAPIVersions is the closed set of apiVersions the module plugin is
+// allowed to emit. Any object outside it — a repository-transport resource such
+// as an Argo or Flux kind, for example — fails generation. Expressing the
+// boundary as a positive allowlist keeps repository-transport identifiers out
+// of runtime code entirely (see TestRuntimePluginOwnsNoGitOrArgoTransport).
+var moduleOwnedAPIVersions = map[string]struct{}{
+	"v1":                     {},
+	"networking.k8s.io/v1":   {},
+	"security.istio.io/v1":   {},
+	"networking.istio.io/v1": {},
+	"external-secrets.io/v1": {},
+}
+
+// validateRenderedObjects proves the generated overlay is module-owned only: no
+// Secret material and no object outside the module-owned apiVersion allowlist.
+func validateRenderedObjects(objects []map[string]any, environment bundleEnvironment) error {
 	namespaceCount := 0
 	for _, object := range objects {
 		kind, _ := object["kind"].(string)
+		apiVersion, _ := object["apiVersion"].(string)
 		metadata, _ := object["metadata"].(map[string]any)
-		switch kind {
-		case "Secret":
-			return fmt.Errorf("GitOps output contains a Kubernetes Secret")
-		case "Namespace":
+		if kind == "Secret" {
+			return fmt.Errorf("bundle output contains a Kubernetes Secret")
+		}
+		if _, owned := moduleOwnedAPIVersions[apiVersion]; !owned {
+			return fmt.Errorf("bundle output contains non-module-owned resource %s/%s", apiVersion, kind)
+		}
+		if kind == "Namespace" {
 			namespaceCount++
 			if metadata["name"] != environment.Namespace {
 				return fmt.Errorf("namespace resource targets %v", metadata["name"])
 			}
-		case "AppProject":
-			projectCount++
-			spec, _ := object["spec"].(map[string]any)
-			if containsWildcard(spec["sourceRepos"]) ||
-				containsWildcard(spec["destinations"]) ||
-				containsWildcard(spec["namespaceResourceWhitelist"]) ||
-				containsWildcard(spec["clusterResourceWhitelist"]) {
-				return fmt.Errorf("app project contains wildcard authority")
-			}
-			repositories, _ := spec["sourceRepos"].([]any)
-			if len(repositories) != 1 || repositories[0] != environment.Repository {
-				return fmt.Errorf("app project source repository is not exact")
-			}
-		case "Application":
-			spec, _ := object["spec"].(map[string]any)
-			source, _ := spec["source"].(map[string]any)
-			revision, _ := source["targetRevision"].(string)
-			if !fullCommitPattern.MatchString(revision) {
-				return fmt.Errorf("application revision %q is mutable", revision)
-			}
-			if source["repoURL"] != environment.Repository {
-				return fmt.Errorf("application repository does not match workspace contract")
-			}
-			labels, _ := metadata["labels"].(map[string]any)
-			service, _ := labels["codefly.dev/service"].(string)
-			if _, exists := expectedServices[service]; !exists {
-				return fmt.Errorf("application references undeclared service %q", service)
-			}
-			expectedPath := environment.ServicePaths[service]
-			if expectedPath == "" {
-				return fmt.Errorf("application service %q has no inventoried path", service)
-			}
-			if source["path"] != expectedPath {
-				return fmt.Errorf("application service %q path is %v, want %s", service, source["path"], expectedPath)
-			}
-			if _, exists := applications[service]; exists {
-				return fmt.Errorf("service %q has more than one Application", service)
-			}
-			applications[service] = struct{}{}
 		}
 	}
-	if namespaceCount != 1 || projectCount != 1 {
-		return fmt.Errorf("render must contain one Namespace and one AppProject")
-	}
-	if len(applications) != len(expectedServices) {
-		return fmt.Errorf("rendered %d Applications for %d in-cluster services", len(applications), len(expectedServices))
+	if namespaceCount != 1 {
+		return fmt.Errorf("render must contain exactly one Namespace")
 	}
 	return nil
-}
-
-func containsWildcard(value any) bool {
-	switch typed := value.(type) {
-	case string:
-		return typed == "*"
-	case []any:
-		for _, item := range typed {
-			if containsWildcard(item) {
-				return true
-			}
-		}
-	case map[string]any:
-		for _, item := range typed {
-			if containsWildcard(item) {
-				return true
-			}
-		}
-	}
-	return false
 }
 
 func decodeYAMLDocuments(file string) ([]map[string]any, error) {
@@ -2843,13 +1773,6 @@ func writeFile(file string, data []byte) error {
 		return err
 	}
 	return os.WriteFile(file, data, 0o644)
-}
-
-func cleanOptionalRelativePath(value string) (string, error) {
-	if strings.TrimSpace(value) == "" {
-		return "", nil
-	}
-	return cleanRelativePath(value)
 }
 
 func cleanRelativePath(value string) (string, error) {
