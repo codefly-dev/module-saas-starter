@@ -1,6 +1,6 @@
 {
   "note": "Base-file integrity manifest for the saas-starter module. Generated FROM canonical by `node tools/base-integrity.mjs gen`. Consumers MUST NOT hand-edit base files — only add files on the side. Regenerated on every codefly sync from canonical.",
-  "fileCount": 1433,
+  "fileCount": 1432,
   "files": {
     "AUTHORIZATION_CATALOG.md": "b2ea5d41f0098e80315e02e7c4bdbda03b65c8eef463426242552fd3c047ca0a",
     "CONTRACT_VERSIONING.md": "02031aa87922ab5ec573ea582cf584271873481de6ceabbda52b1bfda005ffbd",
@@ -22,7 +22,6 @@
     "USAGE_METERING.md": "764b3d457f663169fa0f4a28d0a21374f14862a16b16cea43be62a30d64bd492",
     "WEBHOOKS.md": "47850362c1576d8447c1c53a17fcbb4ffaacb1b8f1472802c9c9dea28966d018",
     "deployment/README.md": "0cd1681bc9fdd01ea44adf7106c3f8120e4346e90531fd1e37fa430d990f4094",
-    "deployment/generated/service-topology.json": "3ece2da322032d73a160863151e6b5122994655f7a676ac536cf020125239bc7",
     "deployment/topology.bindings.codefly.yaml": "2818654d6a7466949725955f11cca76b0e33b7a55eb0ae8c6123614ef0b67d4a",
     "docs/adr/0001-frontend-plugin-packaging.md": "6fe5b3fc0e345d0e002ddf4165d86243567411377520fd22f922e4127babd02b",
     "docs/frontend-plugin-architecture.md": "92b3aedb71d819d9ebfcf65bc472b5638830164c55ded5734033880068b3f5c7",
@@ -1426,8 +1425,8 @@
     "services/store/old_migration/2_create_organizations_table.up.sql": "8a0967db380bfeb7efe8c237b66cb88cb4eebbc171d73d302b40d07911a0f6b3",
     "services/store/old_migration/3_create_teams_table.down.sql": "96b049baec3557a064554373a176bcc4a74e04af66a7d23dd84e43e7c926e151",
     "services/store/old_migration/3_create_teams_table.up.sql": "8dfa5332db49a1385ad73150c6952f9d4aec728f289317946ac4da3970065a48",
-    "tools/base-integrity.mjs": "eae85b7eb8c63db8ba0c3a82eb67da1c772ee96fa1baed23270a18d62b6f0b1b",
-    "tools/base-integrity.test.mjs": "f394b4b17a73e0031e5cb41997dd211236827a3f84c6939ebe8cbfe2ab7d4df8",
+    "tools/base-integrity.mjs": "c2f5aae7c6086eae445e64f17a9b3bb9a3143ad27543304e6a9420509a6a6268",
+    "tools/base-integrity.test.mjs": "2e5fecb61c4cb846b20ca549f27e4828fe62b6fd0a627940c459a170ed96151b",
     "tools/codefly_sdk_boundary_test.go": "6d66ca1ba95db634bcd72ab5846da61411c1361313a8fcd365fe0172517bc2c5",
     "tools/generate-public-config.mjs": "30728d543f12933939bb59277aef1e8d812ec0b1b1b7d19172600c7625fa47a7",
     "tools/generate-public-config.test.mjs": "761d7b971a5a9ea9362adc31ed14137a983886bda82b36bd7e5ca37b847e47e4",

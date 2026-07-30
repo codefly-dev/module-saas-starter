@@ -809,6 +809,8 @@ services:
 	if err := os.MkdirAll(filepath.Join(source, "services", "auth-sidecar"), 0o755); err != nil {
 		t.Fatal(err)
 	}
+	writeTestFile(t, filepath.Join(source, "services", "README.md"), "canonical service documentation\n")
+	writeTestFile(t, filepath.Join(target, "services", "README.md"), "stale consumer copy\n")
 	topology := filepath.Join(target, "deployment", "topology.bindings.codefly.yaml")
 	writeTestFile(t, topology, `version: v1
 module:
@@ -858,6 +860,10 @@ targetRevision: main
 	}
 	if _, err := os.Stat(filepath.Join(target, "services", "auth-sidecar")); !os.IsNotExist(err) {
 		t.Fatalf("undeclared source service was copied: %v", err)
+	}
+	if data, err := os.ReadFile(filepath.Join(target, "services", "README.md")); err != nil ||
+		string(data) != "canonical service documentation\n" {
+		t.Fatalf("canonical service documentation was not refreshed: data=%q error=%v", data, err)
 	}
 	if topologyData, err := os.ReadFile(topology); err != nil ||
 		strings.Contains(string(topologyData), "saas-starter") {

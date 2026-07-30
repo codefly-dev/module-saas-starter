@@ -159,7 +159,7 @@ func copyModuleSource(
 				slashRelative == "deployment/generated" ||
 				strings.HasPrefix(slashRelative, "deployment/generated/")
 			parts := strings.Split(slashRelative, "/")
-			if len(parts) >= 2 && parts[0] == "services" {
+			if len(parts) >= 2 && parts[0] == "services" && (len(parts) >= 3 || entry.IsDir()) {
 				override, exists := declared[parts[1]]
 				if !exists {
 					skip = true

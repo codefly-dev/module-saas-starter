@@ -77,6 +77,7 @@ test("excludes runtime-owned secret configuration from the canonical base", () =
 
 test("excludes consumer-generated module and GitOps manifests", () => {
   assert.equal(isExcludedFile("module.codefly.yaml"), true);
+  assert.equal(isExcludedFile("deployment/generated/service-topology.json"), true);
   assert.equal(isExcludedFile("deployment/kustomize/inventory.json"), true);
   assert.equal(
     isExcludedFile("deployment/kustomize/overlays/aws/applications/accounts.yaml"),
