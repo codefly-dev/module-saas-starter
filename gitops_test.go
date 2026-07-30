@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"crypto/sha256"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -821,15 +822,27 @@ endpoints:
 `)
 	writeTestFile(t, filepath.Join(source, "services", "README.md"), "canonical service documentation\n")
 	writeTestFile(t, filepath.Join(target, "services", "README.md"), "stale consumer copy\n")
-	writeTestFile(t, filepath.Join(target, "services", "accounts", "removed.go"), "package accounts\n")
+	removedBase := "package accounts\n"
+	divergedBase := "package accounts\n\nconst Mode = \"canonical\"\n"
+	divergedConsumer := "package accounts\n\nconst Mode = \"consumer\"\n"
+	removedDigest := sha256.Sum256([]byte(removedBase))
+	divergedDigest := sha256.Sum256([]byte(divergedBase))
+	writeTestFile(t, filepath.Join(target, "services", "accounts", "removed.go"), removedBase)
+	writeTestFile(t, filepath.Join(target, "services", "accounts", "diverged.go"), divergedConsumer)
 	writeTestFile(t, filepath.Join(target, "services", "accounts", "consumer.go"), "package accounts\n")
 	writeTestFile(
 		t,
 		filepath.Join(target, "tools", "base-manifest.json"),
-		`{"files":{
+		fmt.Sprintf(`{"files":{
   "deployment/topology.bindings.codefly.yaml":"previous-base-hash",
-  "services/accounts/removed.go":"previous-base-hash"
-}}`,
+  "services/accounts/diverged.go":"%x",
+  "services/accounts/removed.go":"%x"
+}}`, divergedDigest, removedDigest),
+	)
+	writeTestFile(
+		t,
+		filepath.Join(target, "tools", "base-integrity-allow.json"),
+		`{"services/accounts/diverged.go":"consumer-owned integration"}`,
 	)
 	writeTestFile(t, filepath.Join(source, "tools", "base-manifest.json"), `{"files":{}}`)
 	topology := filepath.Join(target, "deployment", "topology.bindings.codefly.yaml")
@@ -896,6 +909,10 @@ targetRevision: main
 	if _, err := os.Stat(filepath.Join(target, "services", "accounts", "removed.go")); !os.IsNotExist(err) {
 		t.Fatalf("file removed from the canonical base survived sync: %v", err)
 	}
+	if data, err := os.ReadFile(filepath.Join(target, "services", "accounts", "diverged.go")); err != nil ||
+		string(data) != divergedConsumer {
+		t.Fatalf("consumer-diverged base file was not preserved: data=%q error=%v", data, err)
+	}
 	if data, err := os.ReadFile(filepath.Join(target, "services", "accounts", "consumer.go")); err != nil ||
 		string(data) != "package accounts\n" {
 		t.Fatalf("consumer addition was removed during base reconciliation: data=%q error=%v", data, err)
@@ -926,6 +943,50 @@ targetRevision: main
 	overlayObjects(t, target, "local")
 	if _, err := os.Stat(filepath.Join(root, workspaceYamlPath)); err != nil {
 		t.Fatal(err)
+	}
+}
+
+func TestCreateReconcilesRemovedBaseFileAtRelativeServicePath(t *testing.T) {
+	_, target := writeModuleFixture(t, "relative-path-control", "identity", []string{"accounts"})
+	if err := os.RemoveAll(filepath.Join(target, "services", "accounts")); err != nil {
+		t.Fatal(err)
+	}
+	writeTestFile(t, filepath.Join(target, moduleYamlPath), `kind: module
+name: identity
+service-entry: accounts
+services:
+  - name: accounts
+    path: backend
+`)
+	removedBase := "package accounts\n"
+	removedDigest := sha256.Sum256([]byte(removedBase))
+	writeTestFile(t, filepath.Join(target, "services", "backend", "removed.go"), removedBase)
+	writeTestFile(
+		t,
+		filepath.Join(target, "tools", "base-manifest.json"),
+		fmt.Sprintf(`{"files":{"services/accounts/removed.go":"%x"}}`, removedDigest),
+	)
+
+	source := t.TempDir()
+	writeTestFile(t, filepath.Join(source, moduleYamlPath), `kind: module
+name: saas-starter
+service-entry: accounts
+services:
+  - name: accounts
+`)
+	writeTestFile(t, filepath.Join(source, "services", "accounts", "current.go"), "package accounts\n")
+	writeTestFile(t, filepath.Join(source, "tools", "base-manifest.json"), `{"files":{}}`)
+	t.Setenv(sourceEnvVar, source)
+
+	if err := Create(context.Background(), target, "identity"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(filepath.Join(target, "services", "backend", "removed.go")); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("removed base file survived under the relative service path: %v", err)
+	}
+	if data, err := os.ReadFile(filepath.Join(target, "services", "backend", "current.go")); err != nil ||
+		string(data) != "package accounts\n" {
+		t.Fatalf("current base file was not installed under the relative service path: data=%q error=%v", data, err)
 	}
 }
 
