@@ -1060,7 +1060,7 @@
     "services/frontend/code/src/gen/buf/validate/validate_pb.ts": "6b475f037f1c56f1c895ad1d4c88ac712812ada2b7b2e19be092b2758c4d3110",
     "services/frontend/code/src/gen/google/api/annotations_pb.ts": "709420566bd6cdb6223276c16c309bff5680cad0c8779c3490c4d4d4d7c70666",
     "services/frontend/code/src/gen/google/api/http_pb.ts": "157c0e1b1bf4ecbce777e69811e9c03847d56c207947d51c1e1a2be9b1761f11",
-    "services/frontend/code/src/gen/saas-starter_accounts_grpc_pb.ts": "23b8feb16c14d690a60e8a9ca5f2be396414b8924a757b5ba923aa291c0697f2",
+    "services/frontend/code/src/gen/saas-starter_auth-sidecar_grpc_pb.ts": "253f2f40304d37e667c9faf54d929e7a4a7cb02cb3700884db634526d7a3c93a",
     "services/frontend/code/src/gen/saas/accounts/v1/api_keys_pb.ts": "38c9b51c812e1b50609310a427093132c90ad11b6ac5458cf63a1acf4238a5aa",
     "services/frontend/code/src/gen/saas/accounts/v1/audit_export_pb.ts": "108b615d1751b7c775ecee0daec24b645f4cc8277bc53c88ec97f4c4cf2305cb",
     "services/frontend/code/src/gen/saas/accounts/v1/audit_pb.ts": "e42324876d6750b93c6d4239ceaa05bcaeb3782c1390bcd0339af670674bd7e0",
