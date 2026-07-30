@@ -1,0 +1,78 @@
+{
+  "schemaVersion": "codefly.dev/module-bundle/v1",
+  "module": "identity",
+  "namespace": "identity",
+  "serviceEntry": "auth-sidecar",
+  "environments": [
+    {
+      "name": "local",
+      "namespace": "identity-local",
+      "cluster": "k3d",
+      "resourcePath": "overlays/local",
+      "services": [
+        "accounts",
+        "auth-sidecar",
+        "cache",
+        "frontend",
+        "object-storage",
+        "store",
+        "vault"
+      ],
+      "ingress": [
+        {
+          "name": "product",
+          "service": "auth-sidecar",
+          "endpoint": "http",
+          "port": 8080,
+          "hosts": [
+            "identity.localhost"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "aws",
+      "namespace": "identity-aws",
+      "cluster": "eks",
+      "resourcePath": "overlays/aws",
+      "services": [
+        "accounts",
+        "auth-sidecar",
+        "frontend"
+      ],
+      "ingress": [
+        {
+          "name": "product",
+          "service": "auth-sidecar",
+          "endpoint": "http",
+          "port": 8080,
+          "hosts": [
+            "identity.example.com"
+          ]
+        }
+      ],
+      "managedServiceHandoffs": [
+        {
+          "service": "cache",
+          "awsKind": "elasticache",
+          "externalName": "cache.internal.example.com"
+        },
+        {
+          "service": "object-storage",
+          "awsKind": "s3",
+          "externalName": "object-storage.internal.example.com"
+        },
+        {
+          "service": "store",
+          "awsKind": "rds-postgresql",
+          "externalName": "store.internal.example.com"
+        },
+        {
+          "service": "vault",
+          "awsKind": "secrets-manager",
+          "externalName": "vault.internal.example.com"
+        }
+      ]
+    }
+  ]
+}
