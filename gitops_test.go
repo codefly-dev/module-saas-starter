@@ -389,6 +389,18 @@ func TestGeneratedPoliciesAndGatewayMatchTopology(t *testing.T) {
 		t.Fatal(err)
 	}
 	generated := filepath.Join(moduleDir, filepath.FromSlash(bundleRelativeDir), "overlays")
+	namespaceObjects, err := decodeYAMLDocuments(filepath.Join(generated, "local", "resources", "namespace.yaml"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	namespaceMetadata := namespaceObjects[0]["metadata"].(map[string]any)
+	namespaceLabels := namespaceMetadata["labels"].(map[string]any)
+	if namespaceLabels["istio.io/dataplane-mode"] != "ambient" {
+		t.Fatalf("local namespace dataplane mode = %v, want ambient", namespaceLabels["istio.io/dataplane-mode"])
+	}
+	if _, sidecarInjection := namespaceLabels["istio-injection"]; sidecarInjection {
+		t.Fatal("local namespace enables sidecar injection alongside the ambient mesh")
+	}
 	localNetwork, err := os.ReadFile(filepath.Join(generated, "local", "resources", "network-policy.yaml"))
 	if err != nil {
 		t.Fatal(err)
