@@ -123,10 +123,11 @@ func Create(ctx context.Context, dir, name string) error {
 	if hasConsumerInventory && existing.Name != name {
 		return fmt.Errorf("existing module name %q does not match requested name %q", existing.Name, name)
 	}
-	if err := removePreviouslyOwnedBaseFiles(stage, existing); err != nil {
+	preservedBaseFiles, err := reconcilePreviouslyOwnedBaseFiles(stage, existing)
+	if err != nil {
 		return w.Wrapf(err, "cannot reconcile previous module base")
 	}
-	if err := copyModuleSource(src, stage, name, existing, hasConsumerInventory); err != nil {
+	if err := copyModuleSource(src, stage, name, existing, hasConsumerInventory, preservedBaseFiles); err != nil {
 		return w.Wrapf(err, "cannot stage module source")
 	}
 	if err := normalizeDeploymentMetadata(stage); err != nil {
@@ -196,38 +197,39 @@ func remapServicePath(relative string, override *string) (string, bool, error) {
 	return target, true, nil
 }
 
-func fileMatchesSHA256(path, expected string) (bool, error) {
+func fileSHA256Status(path, expected string) (bool, bool, error) {
 	info, err := os.Lstat(path)
 	if errors.Is(err, os.ErrNotExist) {
-		return false, nil
+		return false, false, nil
 	}
 	if err != nil {
-		return false, err
+		return false, false, err
 	}
 	if !info.Mode().IsRegular() {
-		return false, nil
+		return true, false, nil
 	}
 	data, err := os.ReadFile(path)
 	if err != nil {
-		return false, err
+		return true, false, err
 	}
 	digest := sha256.Sum256(data)
-	return hex.EncodeToString(digest[:]) == expected, nil
+	return true, hex.EncodeToString(digest[:]) == expected, nil
 }
 
-func removePreviouslyOwnedBaseFiles(moduleDir string, consumer moduleManifest) error {
+func reconcilePreviouslyOwnedBaseFiles(moduleDir string, consumer moduleManifest) (map[string]struct{}, error) {
+	preserved := make(map[string]struct{})
 	data, err := os.ReadFile(filepath.Join(moduleDir, "tools", "base-manifest.json"))
 	if errors.Is(err, os.ErrNotExist) {
-		return nil
+		return preserved, nil
 	}
 	if err != nil {
-		return err
+		return nil, err
 	}
 	var manifest struct {
 		Files map[string]string `json:"files"`
 	}
 	if err := json.Unmarshal(data, &manifest); err != nil {
-		return fmt.Errorf("parse base manifest: %w", err)
+		return nil, fmt.Errorf("parse base manifest: %w", err)
 	}
 	overrides := servicePathOverrides(consumer)
 	for relative, expectedHash := range manifest.Files {
@@ -243,7 +245,7 @@ func removePreviouslyOwnedBaseFiles(moduleDir string, consumer moduleManifest) e
 		clean := filepath.Clean(filepath.FromSlash(relative))
 		if clean == "." || filepath.IsAbs(clean) ||
 			clean == ".." || strings.HasPrefix(clean, ".."+string(filepath.Separator)) {
-			return fmt.Errorf("base manifest path %q escapes the module", relative)
+			return nil, fmt.Errorf("base manifest path %q escapes the module", relative)
 		}
 		targetRelative := clean
 		parts := strings.Split(filepath.ToSlash(clean), "/")
@@ -251,7 +253,7 @@ func removePreviouslyOwnedBaseFiles(moduleDir string, consumer moduleManifest) e
 			if override, declared := overrides[parts[1]]; declared {
 				mapped, local, mapErr := remapServicePath(clean, override)
 				if mapErr != nil {
-					return fmt.Errorf("service %q path: %w", parts[1], mapErr)
+					return nil, fmt.Errorf("service %q path: %w", parts[1], mapErr)
 				}
 				if !local {
 					continue
@@ -260,18 +262,22 @@ func removePreviouslyOwnedBaseFiles(moduleDir string, consumer moduleManifest) e
 			}
 		}
 		target := filepath.Join(moduleDir, targetRelative)
-		matches, err := fileMatchesSHA256(target, expectedHash)
+		exists, matches, err := fileSHA256Status(target, expectedHash)
 		if err != nil {
-			return fmt.Errorf("inspect previous base file %q: %w", relative, err)
+			return nil, fmt.Errorf("inspect previous base file %q: %w", relative, err)
+		}
+		if !exists {
+			continue
 		}
 		if !matches {
+			preserved[filepath.Clean(targetRelative)] = struct{}{}
 			continue
 		}
 		if err := os.Remove(target); err != nil && !errors.Is(err, os.ErrNotExist) {
-			return fmt.Errorf("remove previous base file %q: %w", relative, err)
+			return nil, fmt.Errorf("remove previous base file %q: %w", relative, err)
 		}
 	}
-	return nil
+	return preserved, nil
 }
 
 func copyModuleSource(
@@ -280,6 +286,7 @@ func copyModuleSource(
 	name string,
 	consumer moduleManifest,
 	preserveInventory bool,
+	preservedBaseFiles map[string]struct{},
 ) error {
 	declared := servicePathOverrides(consumer)
 	return filepath.WalkDir(src, func(file string, entry fs.DirEntry, err error) error {
@@ -320,6 +327,10 @@ func copyModuleSource(
 					}
 				}
 			}
+		}
+		if !entry.IsDir() {
+			_, preserve := preservedBaseFiles[filepath.Clean(targetRelative)]
+			skip = skip || preserve
 		}
 		if skip {
 			if entry.IsDir() {

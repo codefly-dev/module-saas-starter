@@ -836,6 +836,7 @@ endpoints:
 	writeTestFile(t, filepath.Join(target, "services", "README.md"), "stale consumer copy\n")
 	removedBase := "package accounts\n"
 	divergedBase := "package accounts\n\nconst Mode = \"canonical\"\n"
+	updatedBase := "package accounts\n\nconst Mode = \"updated\"\n"
 	divergedConsumer := "package accounts\n\nconst Mode = \"consumer\"\n"
 	removedDigest := sha256.Sum256([]byte(removedBase))
 	divergedDigest := sha256.Sum256([]byte(divergedBase))
@@ -856,6 +857,7 @@ endpoints:
 		filepath.Join(target, "tools", "base-integrity-allow.json"),
 		`{"services/accounts/diverged.go":"consumer-owned integration"}`,
 	)
+	writeTestFile(t, filepath.Join(source, "services", "accounts", "diverged.go"), updatedBase)
 	writeTestFile(t, filepath.Join(source, "tools", "base-manifest.json"), `{"files":{}}`)
 	topology := filepath.Join(target, "deployment", "topology.bindings.codefly.yaml")
 	writeTestFile(t, topology, `version: v1
