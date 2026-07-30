@@ -16,10 +16,9 @@ func main() {
 	codeRoot := flag.String("code-root", "", "path to the frontend code root")
 	catalogOutput := flag.String("catalog-output", "", "path for normalized frontend plugin catalog JSON")
 	typescriptOutput := flag.String("typescript-output", "", "path for generated frontend plugin TypeScript")
-	gatewayGoOutput := flag.String("gateway-go-output", "", "path for generated auth-sidecar frontend routes")
 	flag.Parse()
 
-	if *catalogPath == "" || *topologyPath == "" || *configPath == "" || *codeRoot == "" || *catalogOutput == "" || *typescriptOutput == "" || *gatewayGoOutput == "" {
+	if *catalogPath == "" || *topologyPath == "" || *configPath == "" || *codeRoot == "" || *catalogOutput == "" || *typescriptOutput == "" {
 		_, _ = fmt.Fprintln(os.Stderr, "compile frontend plugins: all input and output flags are required")
 		os.Exit(2)
 	}
@@ -34,7 +33,6 @@ func main() {
 	}
 	mustWrite(*catalogOutput, artifacts.CatalogJSON)
 	mustWrite(*typescriptOutput, artifacts.TypeScript)
-	mustWrite(*gatewayGoOutput, artifacts.GatewayGo)
 }
 
 func mustRead(path, name string) []byte {

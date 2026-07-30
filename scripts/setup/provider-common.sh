@@ -105,7 +105,7 @@ setup_public_origin() {
   local origin
   origin="$(
     cd "${workspace}"
-    codefly endpoint auth-sidecar --type rest
+    codefly endpoint frontend --type http
   )"
   origin="${origin%/}"
   [[ "${origin}" =~ ^https?://[^[:space:]]+$ ]] ||

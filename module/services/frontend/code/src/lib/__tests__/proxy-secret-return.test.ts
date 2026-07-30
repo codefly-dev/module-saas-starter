@@ -1,6 +1,6 @@
 import { NextRequest } from "next/server";
 import { describe, expect, it } from "vitest";
-import { proxy } from "@/proxy";
+import { proxy, trustedGatewayRequestHeaders } from "@/proxy";
 
 describe("secret return handling", () => {
 	it("captures an invitation token in an HttpOnly cookie and redacts the URL", () => {
@@ -40,4 +40,38 @@ describe("secret return handling", () => {
 			expect(response.headers.get("location")).toBeNull();
 		},
 	);
+
+	it("authenticates the actual frontend origin on proxied API requests", () => {
+		const request = new NextRequest(
+			"https://app.example/saas.accounts.v1.AuthService/BeginOAuth",
+			{
+				method: "POST",
+				headers: {
+					"X-Codefly-Internal-Token": "caller-controlled",
+					"X-Codefly-Public-Origin": "https://evil.example",
+				},
+			},
+		);
+
+		const headers = trustedGatewayRequestHeaders(request, {
+			internalToken: "internal-test-token",
+			publicOrigin: "http://localhost:42152",
+		});
+		expect(headers?.get("x-codefly-internal-token")).toBe(
+			"internal-test-token",
+		);
+		expect(headers?.get("x-codefly-public-origin")).toBe(
+			"http://localhost:42152",
+		);
+	});
+
+	it("fails closed when the SDK cannot resolve a gateway context", () => {
+		const headers = trustedGatewayRequestHeaders(
+			new NextRequest(
+				"https://app.example/saas.accounts.v1.AuthService/BeginOAuth",
+			),
+			undefined,
+		);
+		expect(headers).toBeUndefined();
+	});
 });

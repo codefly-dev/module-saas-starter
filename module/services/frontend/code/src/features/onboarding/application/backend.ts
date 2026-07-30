@@ -38,6 +38,15 @@ export interface OnboardingBackendOptions {
 	restBaseUrl: string;
 	accessToken?: string;
 	fetch?: typeof globalThis.fetch;
+	/**
+	 * Server-to-server trust headers normally stamped by the Next proxy on
+	 * same-origin product API requests. In the browser the frontend origin adds
+	 * them, so the React controller never sets this. A headless caller that
+	 * addresses the private gateway directly must supply the headers the proxy
+	 * would have produced, otherwise the gateway cannot establish a verified
+	 * public origin and origin-dependent flows fail closed.
+	 */
+	trustedGatewayHeaders?: Record<string, string>;
 }
 
 /**
@@ -53,6 +62,7 @@ export class OnboardingBackend {
 	private accessToken: string;
 	private readonly fetcher: typeof globalThis.fetch;
 	private readonly restBaseUrl: string;
+	private readonly trustedGatewayHeaders: Record<string, string>;
 	private readonly auth;
 	private readonly organizations;
 	private readonly invitations;
@@ -63,10 +73,12 @@ export class OnboardingBackend {
 		this.accessToken = options.accessToken ?? "";
 		this.fetcher = options.fetch ?? globalThis.fetch;
 		this.restBaseUrl = options.restBaseUrl.replace(/\/$/, "");
+		this.trustedGatewayHeaders = { ...(options.trustedGatewayHeaders ?? {}) };
 
 		const transport = authenticatedTransport(
 			options.connectBaseUrl,
 			() => this.accessToken,
+			this.trustedGatewayHeaders,
 		);
 		this.auth = createClient(AuthService, transport);
 		this.organizations = createClient(OrganizationService, transport);
@@ -156,6 +168,7 @@ export class OnboardingBackend {
 			{
 				method: "POST",
 				headers: {
+					...this.trustedGatewayHeaders,
 					Authorization: `Bearer ${this.requiredToken()}`,
 					"Content-Type": "application/json",
 					"Idempotency-Key": crypto.randomUUID(),
@@ -213,11 +226,15 @@ export class OnboardingBackend {
 function authenticatedTransport(
 	baseUrl: string,
 	token: () => string,
+	trustedGatewayHeaders: Record<string, string> = {},
 ): Transport {
 	const authentication: Interceptor = (next) => async (request) => {
 		const accessToken = token();
 		if (accessToken) {
 			request.header.set("Authorization", `Bearer ${accessToken}`);
+		}
+		for (const [name, value] of Object.entries(trustedGatewayHeaders)) {
+			request.header.set(name, value);
 		}
 		return next(request);
 	};

@@ -11,5 +11,9 @@ export interface AccountsBindingOptions {
   readonly environment?: Readonly<Record<string, string | undefined>>;
 }
 
+/**
+ * Resolves auth-sidecar/rest for complete module runs. Direct Accounts
+ * endpoints are accepted only for isolated frontend tests.
+ */
 export function resolveAccountsBindings(options?: AccountsBindingOptions): AccountsBindings;
 export function requireAccountsConnect(options?: AccountsBindingOptions): string;

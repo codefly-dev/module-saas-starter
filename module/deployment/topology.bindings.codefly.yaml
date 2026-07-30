@@ -2,14 +2,14 @@ version: v1
 module:
   name: saas-starter
   namespace: saas-starter
-  service_entry: auth-sidecar
+  service_entry: frontend
   description: "SaaS foundation — auth, multi-tenancy, generated RPC policy, RBAC, impersonation, audit"
 interface:
   - service: auth-sidecar
     endpoint: grpc
     visibility: module
-  - service: auth-sidecar
-    endpoint: rest
+  - service: frontend
+    endpoint: http
     visibility: public
   - service: marketing
     endpoint: http
@@ -76,7 +76,7 @@ services:
     description: |
       Single ingress + auth brain. Hosts two listeners:
         - gRPC ext_authz for Envoy
-        - HTTP reverse proxy for public and local traffic
+        - private HTTP API gateway behind the frontend entry
     agent:
       kind: codefly:service
       name: go-grpc
@@ -93,7 +93,7 @@ services:
         port: 9090
       - name: rest
         api: rest
-        visibility: public
+        visibility: private
         port: 8080
     dependencies:
       - service: accounts
@@ -104,9 +104,6 @@ services:
       - service: cache
         endpoints:
           - write
-      - service: frontend
-        endpoints:
-          - http
     spec:
       hot-reload: true
       rest-endpoint: true
@@ -142,16 +139,16 @@ services:
       - abuse-protection
       - error-tracking
       - identity
+      - internal-auth
       - product-analytics
     endpoints:
       - name: http
         api: http
-        visibility: module
+        visibility: public
         port: 3000
     dependencies:
-      - service: accounts
+      - service: auth-sidecar
         endpoints:
-          - connect
           - rest
     public_egress_ports:
       - 443

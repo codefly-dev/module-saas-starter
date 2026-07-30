@@ -71,7 +71,7 @@
         {
           "name": "rest",
           "api": "CODEFLY_API_REST",
-          "visibility": "ENDPOINT_VISIBILITY_PUBLIC",
+          "visibility": "ENDPOINT_VISIBILITY_PRIVATE",
           "port": 8080
         }
       ],
@@ -88,12 +88,6 @@
           "service": "cache",
           "endpoints": [
             "write"
-          ]
-        },
-        {
-          "service": "frontend",
-          "endpoints": [
-            "http"
           ]
         }
       ]
@@ -121,15 +115,14 @@
         {
           "name": "http",
           "api": "CODEFLY_API_HTTP",
-          "visibility": "ENDPOINT_VISIBILITY_MODULE",
+          "visibility": "ENDPOINT_VISIBILITY_PUBLIC",
           "port": 3000
         }
       ],
       "dependencies": [
         {
-          "service": "accounts",
+          "service": "auth-sidecar",
           "endpoints": [
-            "connect",
             "rest"
           ]
         }
@@ -198,8 +191,8 @@
       "visibility": "ENDPOINT_VISIBILITY_MODULE"
     },
     {
-      "service": "auth-sidecar",
-      "endpoint": "rest",
+      "service": "frontend",
+      "endpoint": "http",
       "visibility": "ENDPOINT_VISIBILITY_PUBLIC"
     },
     {

@@ -20,7 +20,7 @@ deployment ports, and public egress. The runtime `module.codefly.yaml` and every
 | `services/accounts/code/pkg/cataloggen/deployment_topology.go` | Strict compiler, semantic validator, and renderers. |
 
 The normalized inventory currently contains nine services, 13 endpoints,
-nine dependency edges, three module-interface endpoints, and four explicit
+eight dependency edges, three module-interface endpoints, and four explicit
 public-egress grants. The accounts descriptor catalog is an input: if its RPCs
 use gRPC, Connect, or REST without a corresponding accounts endpoint,
 generation fails.
@@ -36,13 +36,12 @@ generation fails.
 | `accounts` | `vault/http` | TCP 8200 |
 | `auth-sidecar` | `accounts/connect`, `accounts/rest`, `accounts/grpc` | TCP 8080, 9090 |
 | `auth-sidecar` | `cache/write` | TCP 6379 |
-| `auth-sidecar` | `frontend/http` | TCP 3000 |
-| `frontend` | `accounts/connect`, `accounts/rest` | TCP 8080 |
+| `frontend` | `auth-sidecar/rest` | TCP 8080 |
 
-The Codefly module interface exposes the public `auth-sidecar/rest` and
+The Codefly module interface exposes the public `frontend/http` and
 `marketing/http` endpoints; the auth-sidecar gRPC ext-authz endpoint has module
 visibility. Istio routes apex/`www`/docs hosts to `marketing/http` and `app` to
-`auth-sidecar/rest`. Accounts, frontend, marketing, and telemetry may reach
+`frontend/http`. Accounts, frontend, marketing, and telemetry may reach
 public IP space only over TCP 443. The public rules exclude private, loopback,
 link-local, metadata, documentation, benchmark, multicast, and other
 special-purpose IPv4/IPv6 ranges.
@@ -53,7 +52,7 @@ The topology-policy golden contains 21 `NetworkPolicy` resources:
 
 - one namespace-wide ingress/egress default deny;
 - DNS and Istio control-plane egress for all injected workloads;
-- Istio ingress only to the public auth-sidecar and marketing HTTP ports;
+- Istio ingress only to the public frontend and marketing HTTP ports;
 - target ingress and caller egress policies for every declared dependency;
 - HTTPS public egress only for accounts, frontend, marketing, and telemetry.
 

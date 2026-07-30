@@ -19,6 +19,10 @@ environments:
     # still set so manifests reference predictable image names.
     - name: local
       description: Local k3d cluster for development
+      # The default local product graph is deterministic fake-auth. Codefly
+      # injects this fixture into every runtime; local-dogfood intentionally
+      # omits it and loads the real identity-provider configuration instead.
+      fixture: dev-admin
       cluster:
           kind: k3d
           kubeconfig: ~/.kube/config
@@ -34,8 +38,8 @@ environments:
                 - www.saas.localhost
                 - docs.saas.localhost
           - name: product
-            service: auth-sidecar
-            endpoint: rest
+            service: frontend
+            endpoint: http
             hosts:
                 - app.saas.localhost
                 - localhost

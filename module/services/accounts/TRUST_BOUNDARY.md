@@ -1,8 +1,9 @@
 # Accounts trust boundary
 
-The module has one public ingress: `auth-sidecar/rest`. The accounts REST,
-Connect, tenant gRPC, internal gRPC, and frontend endpoints stay private to the
-Codefly module and are not exported by `module.codefly.yaml`.
+The authenticated product has one public entry: `frontend/http`. The frontend
+same-origin proxy reaches the private `auth-sidecar/rest` gateway, which then
+reaches private Accounts REST/Connect endpoints. Accounts transports and the
+auth-sidecar HTTP endpoint are not publicly exported by `module.codefly.yaml`.
 
 ## Listener contract
 
@@ -25,6 +26,11 @@ exposes internal methods such as `ConsumeUsage`.
 
 ## Forwarded identity
 
+The frontend removes caller-supplied origin trust headers, stamps the actual
+browser origin with `CODEFLY_INTERNAL_TOKEN`, and forwards only API routes to
+auth-sidecar. Auth-sidecar accepts that origin only after constant-time token
+validation.
+
 The gateway removes all caller-supplied identity, organization, role, scope,
 MFA/assurance, gateway-token, and internal-token headers before authorization.
 After a successful JWT or API-key check, auth-sidecar emits canonical identity
@@ -37,9 +43,11 @@ Bearer JWT itself. `CODEFLY_GATEWAY_TOKEN` is deliberately different from
 `CODEFLY_INTERNAL_TOKEN`: proving identity-header provenance never grants
 access to internal RPCs.
 
-Both values are secret Codefly workspace configuration dependencies shared by
-accounts and auth-sidecar. Production environments must supply independent,
-high-entropy values and rotate them together across both services.
+Both values are secret Codefly workspace configuration dependencies.
+`CODEFLY_INTERNAL_TOKEN` is shared by frontend, accounts, and auth-sidecar;
+`CODEFLY_GATEWAY_TOKEN` is shared only by accounts and auth-sidecar. Production
+environments must supply independent, high-entropy values and rotate them
+together across their consumers.
 
 ## Forwarded client addresses
 
@@ -78,8 +86,8 @@ the same public rejection.
 
 ## Gateway probes
 
-`/health` is process-only liveness and never depends on Redis, accounts, or the
-frontend. `/ready` is generated from the exact route catalog: every referenced
+`/health` is process-only liveness and never depends on Redis or Accounts.
+`/ready` is generated from the exact API route catalog: every referenced
 upstream must be configured and accept a TCP connection. Missing, malformed,
 or partially unavailable upstream sets return `503`, so orchestration cannot
 send traffic to a partially assembled gateway.

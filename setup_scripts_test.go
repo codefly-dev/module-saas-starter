@@ -11,7 +11,7 @@ import (
 
 func TestProviderSetupScriptsExposeHelp(t *testing.T) {
 	for _, provider := range []string{
-		"stripe", "resend", "posthog", "sentry", "otel", "turnstile",
+		"workos", "stripe", "resend", "posthog", "sentry", "otel", "turnstile",
 	} {
 		t.Run(provider, func(t *testing.T) {
 			command := exec.Command("bash", setupScript(t, provider), "--help")
@@ -32,7 +32,7 @@ func TestProviderSetupScriptsInstallSecretSafeIndependentConfigurations(t *testi
 	bin := filepath.Join(t.TempDir(), "bin")
 	mustMkdir(t, bin)
 	codefly := filepath.Join(bin, "codefly")
-	mustWrite(t, codefly, "#!/usr/bin/env bash\nif [[ \"$1\" == endpoint ]]; then printf 'http://localhost:42152\\n'; exit 0; fi\nexit 0\n", 0o755)
+	mustWrite(t, codefly, "#!/usr/bin/env bash\nif [[ \"$1\" == endpoint ]]; then [[ \"$2 $3 $4\" == \"frontend --type http\" ]] || exit 64; printf 'http://localhost:42152\\n'; exit 0; fi\nexit 0\n", 0o755)
 	path := bin + string(os.PathListSeparator) + os.Getenv("PATH")
 
 	cases := []struct {
@@ -123,12 +123,71 @@ func TestProviderSetupScriptsInstallSecretSafeIndependentConfigurations(t *testi
 	}
 }
 
+func TestWorkOSSetupUsesFrontendEntrypointWithoutPrintingSecret(t *testing.T) {
+	workspace := newSetupWorkspace(t)
+	bin := filepath.Join(t.TempDir(), "bin")
+	mustMkdir(t, bin)
+	codefly := filepath.Join(bin, "codefly")
+	mustWrite(t, codefly, "#!/usr/bin/env bash\nprintf '%s\\n' \"$*\" >>\"$CODEFLY_TEST_LOG\"\nif [[ \"$1\" == endpoint ]]; then printf 'http://localhost:42152\\n'; fi\n", 0o755)
+	logFile := filepath.Join(t.TempDir(), "codefly.log")
+	apiKey := "sk_codeflyfixture"
+	command := exec.Command(
+		"bash",
+		setupScript(t, "workos"),
+		"--client-id", "client_01CODEFLY",
+		"--api-key-file", secretFile(t, apiKey),
+		"--workspace", workspace,
+		"--skip-remote-validation",
+		"--skip-doctor",
+	)
+	command.Env = append(
+		os.Environ(),
+		"PATH="+bin+string(os.PathListSeparator)+os.Getenv("PATH"),
+		"CODEFLY_TEST_LOG="+logFile,
+	)
+	output, err := command.CombinedOutput()
+	if err != nil {
+		t.Fatalf("workos setup: %v\n%s", err, output)
+	}
+	if strings.Contains(string(output), apiKey) {
+		t.Fatal("workos setup printed its API key")
+	}
+	logged, err := os.ReadFile(logFile)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(logged), "endpoint frontend --type http") {
+		t.Fatalf("workos setup did not resolve the frontend endpoint:\n%s", logged)
+	}
+	if !strings.Contains(string(output), "codefly run service --env local-dogfood") {
+		t.Fatalf("workos setup did not print the module-entry run command:\n%s", output)
+	}
+	publicPath := filepath.Join(workspace, "configurations/local-dogfood", "identity.env")
+	secretPath := filepath.Join(workspace, "configurations/local-dogfood", "identity.secret.env")
+	assertPrivateFile(t, publicPath)
+	assertPrivateFile(t, secretPath)
+	public, err := os.ReadFile(publicPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(public), "IDENTITY_CLIENT_ID=client_01CODEFLY") {
+		t.Fatalf("workos public configuration did not contain the client ID:\n%s", public)
+	}
+	secret, err := os.ReadFile(secretPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(secret), "IDENTITY_CLIENT_SECRET="+apiKey) {
+		t.Fatal("workos secret configuration did not contain the API key")
+	}
+}
+
 func TestRemoteWebhookProvisioningRejectsCodeflyLoopbackOrigin(t *testing.T) {
 	workspace := newSetupWorkspace(t)
 	bin := filepath.Join(t.TempDir(), "bin")
 	mustMkdir(t, bin)
 	codefly := filepath.Join(bin, "codefly")
-	mustWrite(t, codefly, "#!/usr/bin/env bash\nif [[ \"$1\" == endpoint ]]; then printf 'http://localhost:42152\\n'; exit 0; fi\nexit 0\n", 0o755)
+	mustWrite(t, codefly, "#!/usr/bin/env bash\nif [[ \"$1\" == endpoint ]]; then [[ \"$2 $3 $4\" == \"frontend --type http\" ]] || exit 64; printf 'http://localhost:42152\\n'; exit 0; fi\nexit 0\n", 0o755)
 	path := bin + string(os.PathListSeparator) + os.Getenv("PATH")
 
 	cases := []struct {

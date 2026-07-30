@@ -30,13 +30,6 @@ import (
 )
 
 func main() {
-	// Envoy config generation mode — produces envoy.yaml and exits.
-	// Triggered by GENERATE_ENVOY_CONFIG env var or --generate-envoy flag.
-	if shouldGenerateEnvoy() {
-		generateEnvoyAndExit()
-		return
-	}
-
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
 
@@ -47,16 +40,11 @@ func main() {
 
 	grpcPort := codefly.For(ctx).WithDefaultNetwork().API(standards.GRPC).NetworkInstance().Port
 	var httpPort uint16
-	publicOrigin := ""
 	httpNet, httpNetErr := codefly.For(ctx).API(standards.REST).ResolveNetworkInstance()
 	if httpNetErr != nil || httpNet == nil {
 		panic(fmt.Sprintf("Codefly REST endpoint is unavailable: %v", httpNetErr))
 	}
 	httpPort = httpNet.Port
-	publicOrigin, err = canonicalPublicOrigin(httpNet.Address)
-	if err != nil {
-		panic(fmt.Sprintf("invalid Codefly REST endpoint address: %v", err))
-	}
 
 	apiNet := codefly.For(ctx).Service("accounts").Endpoint("grpc").API("grpc").NetworkInstance()
 	if apiNet == nil {
@@ -79,12 +67,6 @@ func main() {
 	if apiConnectNet != nil {
 		apiConnectURL = fmt.Sprintf("http://%s:%d", apiConnectNet.Hostname, apiConnectNet.Port)
 	}
-	frontendNet := codefly.For(ctx).Service("frontend").API("http").NetworkInstance()
-	frontendURL := ""
-	if frontendNet != nil {
-		frontendURL = fmt.Sprintf("http://%s:%d", frontendNet.Hostname, frontendNet.Port)
-	}
-
 	apiConn, err := grpc.NewClient(apiAddr, grpc.WithTransportCredentials(insecure.NewCredentials()))
 	if err != nil {
 		panic(fmt.Sprintf("cannot connect to api at %s: %v", apiAddr, err))
@@ -132,7 +114,7 @@ func main() {
 	matcher := NewRouteMatcher(restEntries, connectEntries)
 	routeEntries := append(restEntries, connectEntries...)
 
-	// HTTP gateway listener — the single public ingress in dev.
+	// Private HTTP API gateway listener behind the frontend product entry.
 	var httpServer *http.Server
 	var rateLimiter *RateLimiter
 	if httpPort > 0 {
@@ -145,9 +127,6 @@ func main() {
 		}
 		if apiConnectURL != "" {
 			upstreams["accounts_connect"] = MustURL(apiConnectURL)
-		}
-		if frontendURL != "" {
-			upstreams["frontend"] = MustURL(frontendURL)
 		}
 		redisURL, redisErr := codefly.For(ctx).Service("cache").Secret("redis", "connection")
 		if redisErr != nil || redisURL == "" {
@@ -162,14 +141,14 @@ func main() {
 			WithRedisURL(redisURL),
 			WithAuthenticationAttemptLimit(authenticationAttemptLimit),
 		) // 1000 req/min per org/IP; stricter MFA budget is configured separately.
-		gateway := NewGateway(sidecar, matcher, upstreams, rateLimiter, WithPublicOrigin(publicOrigin))
+		gateway := NewGateway(sidecar, matcher, upstreams, rateLimiter)
 		httpServer = &http.Server{
 			Addr:    fmt.Sprintf(":%d", httpPort),
 			Handler: gateway,
 		}
 		go func() {
-			fmt.Printf("auth-sidecar gateway (HTTP) listening on :%d (api: %s, frontend: %s, routes: %d)\n",
-				httpPort, apiHTTPURL, frontendURL, len(routeEntries))
+			fmt.Printf("auth-sidecar API gateway (HTTP) listening on :%d (api: %s, routes: %d)\n",
+				httpPort, apiHTTPURL, len(routeEntries))
 			if err := httpServer.ListenAndServe(); err != nil && err != http.ErrServerClosed {
 				fmt.Fprintf(os.Stderr, "gateway http server error: %v\n", err)
 			}
@@ -287,123 +266,4 @@ func fetchPublicKey(ctx context.Context, conn *grpc.ClientConn) ed25519.PublicKe
 
 	log.Printf("WARNING: no Ed25519 key found in JWKS (JWT validation disabled)")
 	return nil
-}
-
-// shouldGenerateEnvoy returns true if the binary should generate Envoy config
-// instead of starting the server.
-func shouldGenerateEnvoy() bool {
-	if os.Getenv("GENERATE_ENVOY_CONFIG") != "" {
-		return true
-	}
-	for _, arg := range os.Args[1:] {
-		if arg == "--generate-envoy" {
-			return true
-		}
-	}
-	return false
-}
-
-// generateEnvoyAndExit reads generated routes plus explicit extensions, builds
-// an Envoy config, and writes it to stdout (or ENVOY_CONFIG_OUTPUT).
-func generateEnvoyAndExit() {
-	routingDir := DefaultRoutingDir()
-	entries, err := LoadAllRESTRoutes(context.Background(), routingDir)
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "error loading routes from %s: %v\n", routingDir, err)
-		os.Exit(1)
-	}
-	connectEntries, err := LoadConnectRoutesFromCatalog()
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "error loading generated Connect routes: %v\n", err)
-		os.Exit(1)
-	}
-	entries = append(entries, connectEntries...)
-
-	// Parse upstream definitions from environment variables.
-	// Format: ENVOY_UPSTREAM_<SERVICE>=<host>:<port>
-	// Example: ENVOY_UPSTREAM_API=api:5962
-	upstreams := parseUpstreamsFromEnv("ENVOY_UPSTREAM_")
-	connectUpstreams := parseUpstreamsFromEnv("ENVOY_CONNECT_UPSTREAM_")
-
-	// ext_authz cluster — the sidecar itself.
-	extAuthz := Upstream{Address: "127.0.0.1", Port: 9000}
-	if v := os.Getenv("ENVOY_EXT_AUTHZ"); v != "" {
-		u, parseErr := parseHostPort(v)
-		if parseErr != nil {
-			fmt.Fprintf(os.Stderr, "error parsing ENVOY_EXT_AUTHZ=%q: %v\n", v, parseErr)
-			os.Exit(1)
-		}
-		extAuthz = u
-	}
-
-	listenPort := uint32(8080)
-	if v := os.Getenv("ENVOY_LISTEN_PORT"); v != "" {
-		p, parseErr := strconv.ParseUint(v, 10, 32)
-		if parseErr != nil {
-			fmt.Fprintf(os.Stderr, "error parsing ENVOY_LISTEN_PORT=%q: %v\n", v, parseErr)
-			os.Exit(1)
-		}
-		listenPort = uint32(p)
-	}
-
-	// Default upstreams if none provided (sensible defaults for the module).
-	if len(upstreams) == 0 {
-		upstreams = map[string]Upstream{
-			"accounts": {Address: "accounts", Port: 5962},
-			"frontend": {Address: "frontend", Port: 3000},
-		}
-	}
-
-	yamlBytes, err := GenerateEnvoyConfig(ToEnvoyConfig(entries), upstreams, connectUpstreams, extAuthz, listenPort)
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "error generating envoy config: %v\n", err)
-		os.Exit(1)
-	}
-
-	output := os.Getenv("ENVOY_CONFIG_OUTPUT")
-	if output != "" {
-		if writeErr := os.WriteFile(output, yamlBytes, 0644); writeErr != nil {
-			fmt.Fprintf(os.Stderr, "error writing to %s: %v\n", output, writeErr)
-			os.Exit(1)
-		}
-		fmt.Printf("envoy config written to %s (%d routes)\n", output, len(entries))
-	} else {
-		fmt.Print(string(yamlBytes))
-	}
-}
-
-// parseUpstreamsFromEnv reads all environment variables with the given prefix
-// and parses them as host:port upstream definitions.
-func parseUpstreamsFromEnv(prefix string) map[string]Upstream {
-	result := make(map[string]Upstream)
-	for _, env := range os.Environ() {
-		if !strings.HasPrefix(env, prefix) {
-			continue
-		}
-		parts := strings.SplitN(env, "=", 2)
-		if len(parts) != 2 {
-			continue
-		}
-		name := strings.ToLower(strings.TrimPrefix(parts[0], prefix))
-		u, err := parseHostPort(parts[1])
-		if err != nil {
-			fmt.Fprintf(os.Stderr, "warning: ignoring %s: %v\n", parts[0], err)
-			continue
-		}
-		result[name] = u
-	}
-	return result
-}
-
-// parseHostPort parses "host:port" into an Upstream.
-func parseHostPort(s string) (Upstream, error) {
-	parts := strings.SplitN(s, ":", 2)
-	if len(parts) != 2 {
-		return Upstream{}, fmt.Errorf("expected host:port, got %q", s)
-	}
-	port, err := strconv.ParseUint(parts[1], 10, 32)
-	if err != nil {
-		return Upstream{}, fmt.Errorf("invalid port in %q: %w", s, err)
-	}
-	return Upstream{Address: parts[0], Port: uint32(port)}, nil
 }

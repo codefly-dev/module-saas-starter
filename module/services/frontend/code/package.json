@@ -47,7 +47,7 @@
 		"class-variance-authority": "^0.7.1",
 		"clsx": "^2.1.1",
 		"cmdk": "^1.1.1",
-		"codefly": "https://github.com/codefly-dev/sdk-js/releases/download/v0.0.29/codefly-0.0.29.tgz",
+		"codefly": "https://github.com/codefly-dev/sdk-js/archive/9f3bb78682a0c2b9a70631d35c2ae0094c281ac5.tar.gz",
 		"js-yaml": "^4.1.1",
 		"lucide-react": "^1.8.0",
 		"next": "^16.2.12",

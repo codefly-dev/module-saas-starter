@@ -10,10 +10,10 @@ import (
 
 type verifiedPublicOriginKey struct{}
 
-// CanonicalPublicOrigin validates an exact browser origin. The trusted gateway
-// uses this for the Codefly SDK-injected public endpoint before placing it in a
-// request context; business code never derives security-sensitive URLs from
-// caller-controlled Host or forwarding headers.
+// CanonicalPublicOrigin validates an exact browser origin. Frontend derives the
+// origin from the actual request and authenticates it to the trusted gateway;
+// business code never derives security-sensitive URLs from caller-controlled
+// forwarding headers.
 func CanonicalPublicOrigin(candidate string) (string, error) {
 	candidate = strings.TrimSpace(candidate)
 	parsed, err := url.Parse(candidate)

@@ -14,12 +14,6 @@ import (
 
 ----------------------------------------------------------------- */
 
-// defaultAllowedOrigins is used when CORS_ALLOWED_ORIGINS is not set.
-var defaultAllowedOrigins = []string{
-	"http://localhost:3000",
-	"http://localhost:21931",
-}
-
 func Cors() *cors.Cors {
 	return cors.New(cors.Options{
 		AllowedOrigins: configuredCORSOrigins(),
@@ -41,14 +35,11 @@ func Cors() *cors.Cors {
 }
 
 func configuredCORSOrigins() []string {
-	origins := append([]string(nil), defaultAllowedOrigins...)
-	if env := os.Getenv("CORS_ALLOWED_ORIGINS"); env != "" {
-		origins = nil
-		for _, o := range strings.Split(env, ",") {
-			o = strings.TrimSpace(o)
-			if validExactOrigin(o) {
-				origins = append(origins, o)
-			}
+	var origins []string
+	for _, o := range strings.Split(os.Getenv("CORS_ALLOWED_ORIGINS"), ",") {
+		o = strings.TrimSpace(o)
+		if validExactOrigin(o) {
+			origins = append(origins, o)
 		}
 	}
 	return origins

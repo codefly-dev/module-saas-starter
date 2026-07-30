@@ -7,18 +7,18 @@ agent:
     version: 0.0.124
     publisher: codefly.dev
 service-dependencies:
-    - name: accounts
+    - name: auth-sidecar
       endpoints:
-        - name: connect
         - name: rest
 workspace-configuration-dependencies:
     - abuse-protection
     - error-tracking
     - identity
+    - internal-auth
     - product-analytics
 endpoints:
     - name: http
-      visibility: module
+      visibility: public
 spec:
     execution-profiles:
         local: development

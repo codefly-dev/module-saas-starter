@@ -50,8 +50,7 @@ func TestCredentialedCORSRejectsWildcardAndMalformedConfiguration(t *testing.T) 
 	require.Empty(t, configuredCORSOrigins())
 }
 
-func TestCredentialedCORSDevelopmentDefaultsAreExact(t *testing.T) {
+func TestCredentialedCORSFailsClosedWithoutConfiguration(t *testing.T) {
 	t.Setenv("CORS_ALLOWED_ORIGINS", "")
-	require.Equal(t, defaultAllowedOrigins, configuredCORSOrigins())
-	require.NotContains(t, configuredCORSOrigins(), "http://localhost:*")
+	require.Empty(t, configuredCORSOrigins())
 }

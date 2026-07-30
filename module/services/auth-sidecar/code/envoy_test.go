@@ -15,7 +15,6 @@ import (
 func testUpstreams() map[string]Upstream {
 	return map[string]Upstream{
 		"accounts": {Address: "accounts", Port: 5962},
-		"frontend": {Address: "frontend", Port: 3000},
 	}
 }
 
@@ -228,7 +227,7 @@ func TestGenerateEnvoyConfig_AllRoutesFromFile(t *testing.T) {
 
 	// We expect at least one Envoy route per route entry in the config.
 	// Routes with both REST and Connect produce 2 Envoy routes each.
-	// Routes with only REST (billing webhook, frontend, self) produce 1.
+	// Routes with only REST (billing webhook and self routes) produce 1.
 	// Count REST routes and Connect routes separately.
 	expectedREST := 0
 	expectedConnect := 0
@@ -308,25 +307,6 @@ func TestGenerateEnvoyConfig_NilConfig(t *testing.T) {
 	assert.Error(t, err)
 }
 
-func TestGenerateEnvoyConfig_FrontendRoute(t *testing.T) {
-	config := &EnvoyRouteConfig{
-		Routes: []EnvoyRouteEntry{
-			{
-				Service: "frontend",
-				Rest:    &RestPath{Method: "GET", Path: "/"},
-				Auth:    "public",
-			},
-		},
-	}
-
-	yamlBytes, err := GenerateEnvoyConfig(config, testUpstreams(), nil, testExtAuthz(), 8080)
-	require.NoError(t, err)
-
-	output := string(yamlBytes)
-	assert.Contains(t, output, "frontend_rest")
-	assert.Contains(t, output, "disabled: true") // public route
-}
-
 func TestGenerateEnvoyConfig_SeparateConnectUpstreams(t *testing.T) {
 	config := &EnvoyRouteConfig{
 		Routes: []EnvoyRouteEntry{
@@ -375,19 +355,6 @@ func TestRegexEscapeLiteral(t *testing.T) {
 	assert.Equal(t, `hello\.world`, regexEscapeLiteral("hello.world"))
 	assert.Equal(t, `noop`, regexEscapeLiteral("noop"))
 	assert.Equal(t, `a\+b`, regexEscapeLiteral("a+b"))
-}
-
-func TestParseHostPort(t *testing.T) {
-	u, err := parseHostPort("api:5962")
-	require.NoError(t, err)
-	assert.Equal(t, "api", u.Address)
-	assert.Equal(t, uint32(5962), u.Port)
-
-	_, err = parseHostPort("bad")
-	assert.Error(t, err)
-
-	_, err = parseHostPort("host:notanumber")
-	assert.Error(t, err)
 }
 
 func TestGenerateEnvoyConfig_NoUnmatchedRoutes(t *testing.T) {

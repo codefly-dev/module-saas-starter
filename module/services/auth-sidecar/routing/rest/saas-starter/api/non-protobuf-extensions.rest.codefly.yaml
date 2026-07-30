@@ -26,6 +26,11 @@ routes:
       extension:
         exposed: true
         protected: true
+    - path: /v1/billing/free-plan
+      method: POST
+      extension:
+        exposed: true
+        protected: true
     - path: /v1/billing/portal
       method: POST
       extension:
