@@ -129,7 +129,7 @@ services:
     agent:
       kind: codefly:service
       name: nextjs
-      version: 0.0.121
+      version: 0.0.124
       publisher: codefly.dev
     workspace_configuration_dependencies:
       - identity

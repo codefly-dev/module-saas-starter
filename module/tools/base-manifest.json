@@ -24,7 +24,7 @@
     "deployment/README.md": "0cd1681bc9fdd01ea44adf7106c3f8120e4346e90531fd1e37fa430d990f4094",
     "deployment/generated/accounts-routes.virtualservice.yaml": "75d688e14600ad90109553b463751c05e291479dbed47f81f9dfb66d7cc2a5b8",
     "deployment/generated/service-topology.json": "3ece2da322032d73a160863151e6b5122994655f7a676ac536cf020125239bc7",
-    "deployment/topology.bindings.codefly.yaml": "b25123f8a4388a46b80d7b38f3da9d458aada4cc4b456b8dbef8c9bb89328510",
+    "deployment/topology.bindings.codefly.yaml": "2818654d6a7466949725955f11cca76b0e33b7a55eb0ae8c6123614ef0b67d4a",
     "docs/adr/0001-frontend-plugin-packaging.md": "6fe5b3fc0e345d0e002ddf4165d86243567411377520fd22f922e4127babd02b",
     "docs/frontend-plugin-architecture.md": "92b3aedb71d819d9ebfcf65bc472b5638830164c55ded5734033880068b3f5c7",
     "docs/frontend-plugin-auth-tenant-matrix.md": "60c70b8abad4f3d420eb7de0e8ca7fecc9b8901ba94fa43bfb9d2ead846a90e9",

@@ -4,7 +4,7 @@ version: 0.0.0
 agent:
     kind: codefly:service
     name: nextjs
-    version: 0.0.121
+    version: 0.0.124
     publisher: codefly.dev
 service-dependencies:
     - name: accounts
