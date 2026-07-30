@@ -326,6 +326,7 @@ see `JOBS.md` for the exact boundary and sequencing.
 | SSE notification stream| ✅    | `/api/notifications/stream` Server-Sent-Events                      |
 | Email transactional    | ✅    | Invitation, magic-link, and billing emails use a generated transactional outbox and isolated worker |
 | Email templates        | ✅    | Versioned DB catalog; strict variable resolution, HTML escaping, and immutable rendered job payloads |
+| Resend delivery events | ✅    | Exact-body Svix verification, stale/tamper rejection, durable `svix-id` dedup, PII-minimized history, monotonic invitation projection |
 | User notification prefs| 🟡    | Optional in-app and product/marketing/digest email policy is enforced; per-workflow overrides and unsubscribe are not yet available |
 | Outbound webhooks      | ✅    | Generated transactional outbox, Vault keys, SSRF-safe exact-body signing, generic fenced retries/dead letters, replay |
 | Push notifications     | ❌    | No web/mobile push implementation or user-facing control            |
@@ -432,9 +433,9 @@ extraction contracts.
 |----------------|--------|-----------------------------------------------------------------|
 | Structured logs| ✅    | `wool` everywhere; user/org/action context auto-attached         |
 | Audit trail    | ✅    | Separate from app logs; queryable                                |
-| Metrics        | 🟡    | Job-worker OTel instruments plus durable queue projections; HTTP/service SLIs remain scoped |
-| Tracing        | ✅    | OTLP-enabled backend traces and browser-to-backend W3C propagation |
-| Error tracking | ✅    | Optional server/browser Sentry, disabled when no DSN is configured |
+| Metrics        | ✅    | Job-worker OTel instruments, durable queue projections, and an in-graph OTLP gateway |
+| Tracing        | ✅    | Accounts resolves the Codefly collector endpoint; browser-to-backend W3C propagation |
+| Error tracking | ✅    | Explicit fail-closed Sentry mode for server/browser capture |
 | Dashboards     | 🟡    | Versioned provider-neutral business dashboard pack; provider materialization is deployment-specific |
 
 ---
@@ -598,9 +599,12 @@ Environment variables consumed by the api:
 | `VAULT_ADDR`, `VAULT_TOKEN`    | Signing-key storage; falls back to ephemeral key in dev     |
 | Codefly `application` configuration | Canonical product origin, email sender, and optional one-time bootstrap admin email |
 | Codefly `identity` configuration | Required provider adapter, browser endpoints, client credentials, token validation, and exact redirect allowlist; see `LOCAL_DOGFOODING.md` |
-| `STRIPE_API_KEY`               | Enables billing endpoints                                   |
-| `STRIPE_WEBHOOK_SECRET`        | Required with Stripe API key; exact-body webhook verification |
-| `RESEND_API_KEY`               | Switches email sender from log-only to Resend               |
+| `BILLING_PROVIDER`             | Explicit `disabled` (default) or `stripe` adapter            |
+| `STRIPE_API_KEY`               | Required in Stripe mode; test/live scope is operator-owned   |
+| `STRIPE_WEBHOOK_SECRET`        | Required in Stripe mode; exact-body webhook verification     |
+| `EMAIL_PROVIDER`               | Explicit `log` (default) or `resend` adapter                 |
+| `RESEND_API_KEY`               | Required in Resend mode                                      |
+| `RESEND_WEBHOOK_SECRET`        | Required in Resend mode; Svix verification and replay defense |
 | `ACQUISITION_MODE`             | `open_signup` (default), `invite_only`, `approval_required`, or `closed` |
 | `WAITLIST_EMAIL_VERIFICATION`  | Require a time-limited verification email before waitlist approval |
 | `SLACK_WEBHOOK_URL`            | Internal alerts (optional)                                  |
@@ -608,9 +612,16 @@ Environment variables consumed by the api:
 | `POSTHOG_PROJECT_API_KEY`      | PostHog project capture key; required only in PostHog mode   |
 | `POSTHOG_PERSONAL_API_KEY`     | PostHog person-deletion key; required only in PostHog mode   |
 | `POSTHOG_PROJECT_ID`           | Positive PostHog project ID; required only in PostHog mode   |
-| `POSTHOG_HOST`                 | Explicit HTTPS or local PostHog endpoint                     |
-| `OTEL_EXPORTER_OTLP_ENDPOINT`  | Enables the backend OpenTelemetry provider                   |
-| `OTEL_SERVICE_NAME`            | Enables the backend OTel provider in local/stdout mode       |
+| `POSTHOG_HOST`                 | Explicit HTTPS or local capture origin                       |
+| `POSTHOG_API_HOST`             | Separate PostHog management/deletion origin                  |
+| `ERROR_TRACKING_MODE`          | Explicit `disabled` or `sentry`; rejects partial config      |
+| `SENTRY_DSN`                   | Server Sentry DSN, required in Sentry mode                   |
+| `OBSERVABILITY_EXPORTER`       | In-graph collector output: `debug` or `otlphttp`             |
+| `OTEL_EXPORTER_OTLP_ENDPOINT`  | External OTLP/HTTP destination used only by the collector    |
+| `OTEL_EXPORTER_OTLP_HEADERS`   | Secret external collector headers                            |
+| `ABUSE_PROTECTION_MODE`        | Explicit `disabled` or `turnstile`                           |
+| `TURNSTILE_SECRET_KEY`         | Server-only Siteverify credential                            |
+| `TURNSTILE_ALLOWED_HOSTNAMES`  | Exact accepted Turnstile response hostnames                  |
 | `CODEFLY__FIXTURE`             | Loads fixture YAML (e.g. `dev-admin`); FE login picker too |
 
 Frontend browser configuration (`NEXT_PUBLIC_*` values are baked into the client bundle):
@@ -622,8 +633,15 @@ Frontend browser configuration (`NEXT_PUBLIC_*` values are baked into the client
 | `NEXT_PUBLIC_LEGAL_CONTACT_EMAIL` | Legal/privacy contact; required before Terms acceptance |
 | `NEXT_PUBLIC_LEGAL_TERMS_CONTENT` | Operator-supplied Terms; required before Terms acceptance |
 | `NEXT_PUBLIC_LEGAL_PRIVACY_CONTENT` | Operator-supplied Privacy Policy; required before Terms acceptance |
-| `NEXT_PUBLIC_SENTRY_DSN`     | Enables browser Sentry; empty is a no-op                    |
+| `NEXT_PUBLIC_PRODUCT_ANALYTICS_MODE` | Explicit `disabled` or `posthog` browser analytics mode |
+| `NEXT_PUBLIC_POSTHOG_KEY`      | Public PostHog capture key in PostHog mode                    |
+| `NEXT_PUBLIC_POSTHOG_HOST`   | Browser capture origin                                      |
+| `NEXT_PUBLIC_ERROR_TRACKING_MODE` | Explicit `disabled` or `sentry` browser mode            |
+| `NEXT_PUBLIC_SENTRY_DSN`     | Required browser DSN in Sentry mode                         |
+| `NEXT_PUBLIC_SENTRY_ENVIRONMENT` | Environment tag for browser error and trace grouping     |
 | `NEXT_PUBLIC_SENTRY_RELEASE` | Correlates frontend errors and traces with a release         |
+| `NEXT_PUBLIC_ABUSE_PROTECTION_MODE` | Explicit `disabled` or `turnstile` widget mode          |
+| `NEXT_PUBLIC_TURNSTILE_SITE_KEY` | Public Turnstile widget key                              |
 
 Accounts REST and Connect browser calls are relative and same-origin. The
 server-only `API_REST_INTERNAL` and `API_CONNECT_INTERNAL` Codefly bindings are

@@ -11,7 +11,7 @@ Two Codefly inputs are intentionally independent:
 
 | Input | Authority | Purpose |
 |---|---|---|
-| `--env local-dogfood` | `configurations/local-dogfood/identity*` | Select and configure the real identity provider |
+| `--env local-dogfood` | `configurations/local-dogfood/*` | Select independently configured identity, billing, email, analytics, error, telemetry, and abuse adapters |
 | optional `--fixture <name>` | `module/fixtures/<name>.yaml` | Seed a useful starting product state |
 
 A fixture never changes the identity provider. The ordinary `local`
@@ -29,7 +29,49 @@ origin for OAuth callbacks, WebAuthn, email links, and request-driven billing
 redirects. The optional Codefly `application` origin remains only as a
 production/background fallback; a local port never belongs in product config.
 
-## Configure WorkOS through Codefly
+## Configure providers through Codefly
+
+WorkOS is the identity adapter. The optional production-grade dogfood stack
+also includes Stripe, Resend, PostHog, Sentry, the in-graph OpenTelemetry
+gateway, and Cloudflare Turnstile:
+
+```bash
+scripts/setup/workos.sh --env-file /secure/path/workos.env
+scripts/setup/stripe.sh \
+  --api-key-file /secure/path/stripe.env \
+  --webhook-secret-file /secure/path/stripe-webhook.env
+scripts/setup/resend.sh \
+  --api-key-file /secure/path/resend.env \
+  --webhook-secret-file /secure/path/resend-webhook.env \
+  --from 'Example <onboarding@example.com>'
+scripts/setup/posthog.sh \
+  --project-key-file /secure/path/posthog-project.env \
+  --personal-key-file /secure/path/posthog-personal.env \
+  --project-id 12345 \
+  --host https://eu.i.posthog.com \
+  --api-host https://eu.posthog.com
+scripts/setup/sentry.sh \
+  --token-file /secure/path/sentry.env \
+  --org example \
+  --project saas-starter
+scripts/setup/otel.sh --debug
+scripts/setup/turnstile.sh --fixture pass
+```
+
+Every script is independent, secret-safe, idempotent, and finishes with the
+Codefly doctor. Provider-side creation is opt-in where supported. See
+[`scripts/setup/README.md`](./scripts/setup/README.md) for exact requirements,
+safe provisioning flags, and per-provider acceptance checks.
+
+The product callback address always comes from
+`codefly endpoint auth-sidecar --type rest`. WorkOS and the browser can use its
+loopback URL directly. Stripe CLI can forward to it. Resend and remotely
+registered Stripe webhooks need a public HTTPS tunnel or deployed ingress;
+pass only that external origin with `--webhook-origin`. The scripts reject
+remote provisioning against localhost, while Codefly continues to own every
+internal host and port.
+
+### WorkOS
 
 See the product-ingress URL before starting it:
 

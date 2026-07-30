@@ -23,9 +23,13 @@ services:
       version: 0.1.21
       publisher: codefly.dev
     workspace_configuration_dependencies:
+      - abuse-protection
       - application
+      - billing
+      - email
       - identity
       - internal-auth
+      - product-analytics
       - security
     endpoints:
       - name: connect
@@ -51,6 +55,9 @@ services:
       - service: store
         endpoints:
           - tcp
+      - service: telemetry
+        endpoints:
+          - grpc
       - service: vault
         endpoints:
           - http
@@ -132,7 +139,10 @@ services:
       version: 0.0.124
       publisher: codefly.dev
     workspace_configuration_dependencies:
+      - abuse-protection
+      - error-tracking
       - identity
+      - product-analytics
     endpoints:
       - name: http
         api: http
@@ -224,6 +234,28 @@ services:
       silent: true
       watch: true
       without-ssl: false
+  - name: telemetry
+    version: 0.0.0
+    description: |
+      In-graph OTLP gateway. Accounts resolves this endpoint exclusively
+      through the Codefly SDK; the collector either logs locally or forwards
+      trace, metric, and log protobufs to a configured OTLP/HTTP destination.
+    agent:
+      kind: codefly:service
+      name: go-grpc
+      version: 0.1.21
+      publisher: codefly.dev
+    workspace_configuration_dependencies:
+      - observability
+    endpoints:
+      - name: grpc
+        api: grpc
+        visibility: private
+        port: 8080
+    public_egress_ports:
+      - 443
+    spec:
+      hot-reload: true
   - name: vault
     version: 0.0.0
     agent:

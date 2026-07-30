@@ -86,11 +86,12 @@ Modes are disabled by default:
 | `posthog` | Durable server delivery through the PostHog adapter |
 
 PostHog mode requires `POSTHOG_PROJECT_API_KEY`, `POSTHOG_PERSONAL_API_KEY`,
-`POSTHOG_PROJECT_ID`, and an absolute `POSTHOG_HOST`. The personal key needs
-the person-deletion permission and is used only by durable suppression
-commands. Non-local hosts must use HTTPS. The adapter has a five-second default
-request timeout and a maximum batch of 100. Application and domain packages do
-not import a PostHog SDK.
+`POSTHOG_PROJECT_ID`, an absolute capture `POSTHOG_HOST`, and a separate
+absolute management `POSTHOG_API_HOST`. The personal key needs the
+person-deletion permission and is used only by durable suppression commands.
+Non-local hosts must use HTTPS. The adapter has a five-second default request
+timeout and a maximum batch of 100. Application and domain packages do not
+import a PostHog SDK.
 
 The in-memory sink is deterministic and rejects conflicting reuse of an event
 UUID. It is the reference sink for contract and journey tests.
@@ -120,10 +121,10 @@ The companion consent feature owns the UI and durable preference API; this
 module consumes its resolved policy.
 
 User or organization suppression is represented by the server adapter
-interface. PostHog deletion needs a separately scoped personal-API integration;
-the reference adapter fails closed instead of pretending capture credentials
-can delete data. Do not enable PostHog for personal data until that deployment
-integration and regional endpoint have been reviewed.
+interface. PostHog deletion uses the separately scoped personal key and the
+management API origin; capture credentials are never treated as deletion
+authority. Review both regional origins and the personal-key scope before
+enabling PostHog for personal data.
 
 ## Activation and North Star
 
@@ -215,7 +216,8 @@ labels. Do not send repeated timers, cursor movement, full URLs, payload
 contents, or autocapture by default.
 
 For local and deterministic tests, use `disabled`, `noop`, or the memory sink.
-For a hosted deployment, set the regional PostHog host explicitly and keep the
-project key in server or consent-gated browser configuration. A
+For a hosted deployment, set the regional PostHog capture and management hosts
+explicitly and keep the project key in server or consent-gated browser
+configuration. A
 privacy-oriented deployment can retain the no-op sink, point the same interface
 at a regional warehouse adapter, and keep browser capture disabled.

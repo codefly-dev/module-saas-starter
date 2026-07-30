@@ -23,6 +23,7 @@ type PostHogConfig struct {
 	PersonalAPIKey string
 	ProjectID      string
 	Host           string
+	APIHost        string
 	Timeout        time.Duration
 	HTTPClient     *http.Client
 }
@@ -49,13 +50,13 @@ func NewPostHog(config PostHogConfig) (*PostHog, error) {
 	if strings.TrimSpace(config.Host) == "" {
 		return nil, errors.New("analytics: PostHog host is required")
 	}
-	host, err := url.Parse(config.Host)
-	if err != nil || host.Scheme == "" || host.Host == "" {
-		return nil, errors.New("analytics: PostHog host must be an absolute URL")
+	host, err := parsePostHogOrigin(config.Host, "capture")
+	if err != nil {
+		return nil, err
 	}
-	localHost := host.Hostname() == "localhost" || host.Hostname() == "127.0.0.1"
-	if host.Scheme != "https" && (host.Scheme != "http" || !localHost) {
-		return nil, errors.New("analytics: PostHog host must use HTTPS")
+	apiHost, err := parsePostHogOrigin(config.APIHost, "management API")
+	if err != nil {
+		return nil, err
 	}
 	timeout := config.Timeout
 	if timeout <= 0 {
@@ -70,7 +71,7 @@ func NewPostHog(config PostHogConfig) (*PostHog, error) {
 		client = &cloned
 	}
 	captureEndpoint := host.ResolveReference(&url.URL{Path: "/batch/"})
-	suppressionEndpoint := host.ResolveReference(&url.URL{
+	suppressionEndpoint := apiHost.ResolveReference(&url.URL{
 		Path: fmt.Sprintf("/api/projects/%d/persons/bulk_delete/", projectID),
 	})
 	return &PostHog{
@@ -80,6 +81,25 @@ func NewPostHog(config PostHogConfig) (*PostHog, error) {
 		suppressionEndpoint: suppressionEndpoint,
 		client:              client,
 	}, nil
+}
+
+func parsePostHogOrigin(raw, purpose string) (*url.URL, error) {
+	if strings.TrimSpace(raw) == "" {
+		return nil, fmt.Errorf("analytics: PostHog %s host is required", purpose)
+	}
+	host, err := url.Parse(raw)
+	if err != nil || host.Scheme == "" || host.Host == "" {
+		return nil, fmt.Errorf("analytics: PostHog %s host must be an absolute URL", purpose)
+	}
+	localHost := host.Hostname() == "localhost" || host.Hostname() == "127.0.0.1"
+	if host.Scheme != "https" && (host.Scheme != "http" || !localHost) {
+		return nil, fmt.Errorf("analytics: PostHog %s host must use HTTPS", purpose)
+	}
+	if host.RawQuery != "" || host.Fragment != "" || host.User != nil {
+		return nil, fmt.Errorf("analytics: PostHog %s host must be an origin", purpose)
+	}
+	host.Path = ""
+	return host, nil
 }
 
 func (p *PostHog) Capture(

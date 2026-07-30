@@ -7,6 +7,9 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(CDPATH= cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck source=provider-common.sh
+source "${SCRIPT_DIR}/provider-common.sh"
+SETUP_PROVIDER="workos"
 DEFAULT_WORKSPACE="$(CDPATH= cd -- "${SCRIPT_DIR}/../.." && pwd)"
 
 workspace="${DEFAULT_WORKSPACE}"
@@ -243,6 +246,7 @@ secret_config="${configuration_dir}/identity.secret.env"
 if [[ ! -d "${configuration_dir}" ]]; then
   fail "Codefly dogfood configuration directory is missing: ${configuration_dir}"
 fi
+setup_materialize_dogfood_defaults
 
 if command -v git >/dev/null 2>&1 &&
   git -C "${workspace}" rev-parse --is-inside-work-tree >/dev/null 2>&1; then

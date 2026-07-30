@@ -60,6 +60,8 @@ func testRouteEntries() []*RouteEntry {
 		{Service: "accounts", Method: "GET", Path: "/v1/version", Protected: false},
 		// Billing webhook (public)
 		{Service: "accounts", Method: "POST", Path: "/v1/billing/webhook", Protected: false},
+		// Resend delivery webhook (public, signed by Svix)
+		{Service: "accounts", Method: "POST", Path: "/v1/email/webhook/resend", Protected: false},
 		// Frontend
 		{Service: "frontend", Method: "GET", Path: "/", Protected: false},
 		// Health checks
@@ -243,6 +245,7 @@ func TestGateway_UnlistedPath_Returns404(t *testing.T) {
 		{"GET", "/api/v1/something"},
 		{"DELETE", "/v1/auth/authenticate"}, // wrong method
 		{"GET", "/v1/billing/webhook"},      // POST only
+		{"GET", "/v1/email/webhook/resend"}, // POST only
 		{"GET", "/random"},
 		{"GET", "/v2/users"},
 	}

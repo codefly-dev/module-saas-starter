@@ -13,6 +13,7 @@ import (
 
 	"github.com/codefly-dev/core/wool"
 
+	"accounts/pkg/abuse"
 	"accounts/pkg/auth"
 	"accounts/pkg/business"
 	gen "accounts/pkg/gen/saas/accounts/v1"
@@ -77,6 +78,13 @@ func privacyStatusError(err error) error {
 	return err
 }
 
+func abuseStatusError(err error) error {
+	if errors.Is(err, abuse.ErrChallengeRejected) {
+		return status.Error(codes.PermissionDenied, "challenge verification failed")
+	}
+	return err
+}
+
 // userDataIdentity converts an already-authenticated authorization decision
 // into the database identity used by user-scoped operations. Self-service uses
 // RLS; cross-user access requires platform administration and uses the named
@@ -109,7 +117,8 @@ func (s *UserServer) RegisterUser(ctx context.Context, req *gen.RegisterUserRequ
 	if err := Validate(req); err != nil {
 		return nil, err
 	}
-	return service.RegisterUser(ctx, req)
+	response, err := service.RegisterUser(ctx, req)
+	return response, abuseStatusError(err)
 }
 
 func (s *UserServer) GetUser(ctx context.Context, req *gen.GetUserRequest) (*gen.User, error) {

@@ -28,12 +28,13 @@ const (
 )
 
 type RegisterUserRequest struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	PrimaryEmail  string                 `protobuf:"bytes,1,opt,name=primary_email,json=primaryEmail,proto3" json:"primary_email,omitempty"`
-	Profile       map[string]string      `protobuf:"bytes,2,rep,name=profile,proto3" json:"profile,omitempty" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"bytes,2,opt,name=value"`
-	Identity      *UserIdentity          `protobuf:"bytes,3,opt,name=identity,proto3" json:"identity,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	state          protoimpl.MessageState `protogen:"open.v1"`
+	PrimaryEmail   string                 `protobuf:"bytes,1,opt,name=primary_email,json=primaryEmail,proto3" json:"primary_email,omitempty"`
+	Profile        map[string]string      `protobuf:"bytes,2,rep,name=profile,proto3" json:"profile,omitempty" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"bytes,2,opt,name=value"`
+	Identity       *UserIdentity          `protobuf:"bytes,3,opt,name=identity,proto3" json:"identity,omitempty"`
+	TurnstileToken string                 `protobuf:"bytes,4,opt,name=turnstile_token,json=turnstileToken,proto3" json:"turnstile_token,omitempty"`
+	unknownFields  protoimpl.UnknownFields
+	sizeCache      protoimpl.SizeCache
 }
 
 func (x *RegisterUserRequest) Reset() {
@@ -85,6 +86,13 @@ func (x *RegisterUserRequest) GetIdentity() *UserIdentity {
 		return x.Identity
 	}
 	return nil
+}
+
+func (x *RegisterUserRequest) GetTurnstileToken() string {
+	if x != nil {
+		return x.TurnstileToken
+	}
+	return ""
 }
 
 type RegisterUserResponse struct {
@@ -829,11 +837,12 @@ var File_saas_accounts_v1_identity_proto protoreflect.FileDescriptor
 
 const file_saas_accounts_v1_identity_proto_rawDesc = "" +
 	"\n" +
-	"\x1fsaas/accounts/v1/identity.proto\x12\x10saas.accounts.v1\x1a\x1bbuf/validate/validate.proto\x1a\x1cgoogle/api/annotations.proto\x1a\x1bgoogle/protobuf/empty.proto\x1a google/protobuf/field_mask.proto\x1a\x1dsaas/accounts/v1/common.proto\x1a\x1csaas/policy/v1/options.proto\"\x89\x02\n" +
+	"\x1fsaas/accounts/v1/identity.proto\x12\x10saas.accounts.v1\x1a\x1bbuf/validate/validate.proto\x1a\x1cgoogle/api/annotations.proto\x1a\x1bgoogle/protobuf/empty.proto\x1a google/protobuf/field_mask.proto\x1a\x1dsaas/accounts/v1/common.proto\x1a\x1csaas/policy/v1/options.proto\"\xbc\x02\n" +
 	"\x13RegisterUserRequest\x12,\n" +
 	"\rprimary_email\x18\x01 \x01(\tB\a\xbaH\x04r\x02`\x01R\fprimaryEmail\x12L\n" +
 	"\aprofile\x18\x02 \x03(\v22.saas.accounts.v1.RegisterUserRequest.ProfileEntryR\aprofile\x12:\n" +
-	"\bidentity\x18\x03 \x01(\v2\x1e.saas.accounts.v1.UserIdentityR\bidentity\x1a:\n" +
+	"\bidentity\x18\x03 \x01(\v2\x1e.saas.accounts.v1.UserIdentityR\bidentity\x121\n" +
+	"\x0fturnstile_token\x18\x04 \x01(\tB\b\xbaH\x05r\x03\x18\x80 R\x0eturnstileToken\x1a:\n" +
 	"\fProfileEntry\x12\x10\n" +
 	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
 	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01\"~\n" +

@@ -6547,6 +6547,9 @@
         },
         "website": {
           "type": "string"
+        },
+        "turnstileToken": {
+          "type": "string"
         }
       }
     },
@@ -7549,6 +7552,9 @@
         },
         "identity": {
           "$ref": "#/definitions/v1UserIdentity"
+        },
+        "turnstileToken": {
+          "type": "string"
         }
       }
     },

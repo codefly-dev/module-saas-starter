@@ -609,12 +609,17 @@ func (s *Service) enqueueInvitationEmail(
 			"role":         inv.Role,
 			"email":        inv.Email,
 		},
+		Tags: map[string]string{
+			"type":          "invitation",
+			"org_id":        inv.OrgID,
+			"invitation_id": inv.ID,
+		},
 		Fallback: &email.Message{
 			To:       []string{inv.Email},
 			Subject:  "You're invited",
 			HTMLBody: renderInviteHTML(acceptURL, inv.Role),
 			TextBody: renderInviteText(acceptURL, inv.Role),
-			Tags:     map[string]string{"type": "invitation", "org_id": inv.OrgID},
+			Tags:     map[string]string{"type": "invitation", "org_id": inv.OrgID, "invitation_id": inv.ID},
 		},
 	})
 }

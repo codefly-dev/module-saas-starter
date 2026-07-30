@@ -1,20 +1,23 @@
 // instrumentation-client.ts — Sentry browser SDK init.
 //
-// Loaded by Next.js on the client side. Only fires when
-// NEXT_PUBLIC_SENTRY_DSN is set (no-op in dev / for self-hosted
-// runs that don't want to ship telemetry).
+// Loaded by Next.js on the client side. It initializes only when the explicit
+// browser error-tracking mode is "sentry" and a matching DSN is present.
 //
 // Why client + server are separate files in Next 15+: the App
 // Router runs different runtimes; Sentry needs to register hooks
 // with each. Server-side init lives in instrumentation.ts.
 
 import * as Sentry from "@sentry/nextjs";
+import { configuredErrorTracking } from "./src/lib/error-tracking";
 
-const dsn = process.env.NEXT_PUBLIC_SENTRY_DSN;
+const errorTracking = configuredErrorTracking(
+	process.env.NEXT_PUBLIC_ERROR_TRACKING_MODE,
+	process.env.NEXT_PUBLIC_SENTRY_DSN,
+);
 
-if (dsn) {
+if (errorTracking.enabled) {
 	Sentry.init({
-		dsn,
+		dsn: errorTracking.dsn,
 
 		// Environment label for sorting events (dev / staging / prod).
 		// Falls back to NODE_ENV which Next sets automatically.
