@@ -167,15 +167,27 @@ SMTP. Every box should pass cleanly with just the dev-admin fixture.
 
 ---
 
-## Tier 2 — with `STRIPE_API_KEY` (test mode)
+## Tier 2 — Stripe test mode
 
-Set `STRIPE_API_KEY=sk_test_...` in your codefly secret for the api
-service. Use a Stripe test-mode key.
+Configure the generic Codefly `billing` capability. The script refuses live
+keys and resolves the local signed-webhook callback from the product ingress:
 
 ```bash
-codefly secret set api STRIPE_API_KEY sk_test_xxxxxxxxxxxx
-codefly run service --fixture dev-admin
+# Terminal A: keep this running and save the displayed signing secret.
+stripe listen --forward-to \
+  "$(codefly endpoint auth-sidecar --type rest)/v1/billing/webhook"
+
+# Terminal B: configure the secret from that same listener, then run the stack.
+scripts/setup/stripe.sh \
+  --api-key-file /secure/path/stripe.env \
+  --webhook-secret-file /secure/path/stripe-webhook.env
+codefly run service auth-sidecar --env local-dogfood --fixture dev-admin
 ```
+
+Use the signing secret printed by the same Stripe CLI listener. For a remotely
+registered webhook, expose the ingress through public HTTPS and use
+`--webhook-origin ... --provision-webhook`; the script rejects remote
+provisioning to localhost.
 
 - [ ] `/admin/billing` — Plan card shows **Pro** badge.
 - [ ] Click **Manage subscription** — redirects to Stripe-hosted billing portal.
@@ -203,6 +215,44 @@ Admin Portal integration; `IDENTITY_CLIENT_ID` and
 - [ ] Configure a connection (SAML or OIDC) using your test IdP.
 - [ ] After the portal flow, redirect back to `/admin/sso`. Status = "Active". connection_id populated.
 - [ ] (Optional, big spend) Configure your IdP to allow a test user with email matching Acme's domain. Log out, attempt login with that email — auth-sidecar should route to WorkOS via the connection_id.
+
+---
+
+## Tier 4 — full provider telemetry and abuse stack
+
+Configure the remaining adapters using
+[`scripts/setup/README.md`](./scripts/setup/README.md), then start the same
+Codefly-managed graph:
+
+```bash
+scripts/setup/resend.sh \
+  --api-key-file /secure/path/resend.env \
+  --webhook-secret-file /secure/path/resend-webhook.env \
+  --from 'Example <onboarding@example.com>'
+scripts/setup/posthog.sh \
+  --project-key-file /secure/path/posthog-project.env \
+  --personal-key-file /secure/path/posthog-personal.env \
+  --project-id 12345 \
+  --host https://eu.i.posthog.com \
+  --api-host https://eu.posthog.com
+scripts/setup/sentry.sh \
+  --token-file /secure/path/sentry.env \
+  --org example \
+  --project saas-starter
+scripts/setup/otel.sh --debug
+scripts/setup/turnstile.sh --fixture pass
+codefly run service auth-sidecar --env local-dogfood
+```
+
+- [ ] Create and resend an invitation. Resend shows one provider message and the admin invitation changes `queued → sent → delivered`.
+- [ ] Replay a Resend webhook. The API returns `200`, but the `svix-id` ledger contains only one event and state does not regress.
+- [ ] Tamper with a forwarded Resend payload or use an old timestamp. The receiver returns `400` and writes nothing.
+- [ ] Grant analytics consent, navigate through onboarding, and verify bounded browser plus durable backend events in PostHog.
+- [ ] Withdraw analytics consent or log out. Browser capture stops immediately and identity resets.
+- [ ] Trigger controlled browser and backend errors. Sentry correlates release, environment, and W3C trace context.
+- [ ] With `otel.sh --debug`, exercise login/onboarding and observe trace/metric/log summaries from the in-graph telemetry service.
+- [ ] Switch Turnstile to `--fixture fail --force`. Registration and waitlist submission fail without database writes.
+- [ ] Switch Turnstile to `--fixture replay --force`. The first deterministic verification follows Cloudflare's fixture behavior; replay rejection leaves state unchanged.
 
 ---
 

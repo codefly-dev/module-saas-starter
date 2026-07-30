@@ -53,11 +53,12 @@ func TestGeneratedRESTSurfaceAndExtensions(t *testing.T) {
 
 	extensions, err := LoadRESTExtensionsFromDir(context.Background(), DefaultRoutingDir())
 	require.NoError(t, err)
-	require.Len(t, extensions, 5)
+	require.Len(t, extensions, 6)
 	wantExtensions := map[string]bool{
 		"POST /v1/auth/magic-link":        false,
 		"POST /v1/auth/magic-link/verify": false,
 		"POST /v1/billing/webhook":        false,
+		"POST /v1/email/webhook/resend":   false,
 		"POST /v1/billing/checkout":       true,
 		"POST /v1/billing/portal":         true,
 	}
@@ -72,7 +73,7 @@ func TestGeneratedRESTSurfaceAndExtensions(t *testing.T) {
 
 	all, err := LoadAllRESTRoutes(context.Background(), DefaultRoutingDir())
 	require.NoError(t, err)
-	require.Len(t, all, 137)
+	require.Len(t, all, 138)
 	matcher := NewRouteMatcher(all, nil)
 	require.NotNil(t, matcher.MatchREST(http.MethodGet, "/v1/audit-export/org-1"))
 	require.NotNil(t, matcher.MatchREST(http.MethodPost, "/v1/auth/magic-link"))

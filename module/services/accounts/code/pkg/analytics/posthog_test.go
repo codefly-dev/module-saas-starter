@@ -30,6 +30,7 @@ func TestPostHogMapsCanonicalIdentityGroupAndContext(t *testing.T) {
 		PersonalAPIKey: "phx_test",
 		ProjectID:      "42",
 		Host:           server.URL,
+		APIHost:        server.URL,
 	})
 	require.NoError(t, err)
 	registry, err := analytics.DefaultRegistry()
@@ -89,6 +90,7 @@ func TestPostHogDeletesSuppressedIdentityAndEvents(t *testing.T) {
 		PersonalAPIKey: "phx_personal",
 		ProjectID:      "42",
 		Host:           server.URL,
+		APIHost:        server.URL,
 	})
 	require.NoError(t, err)
 	delivery, err := client.Suppress(t.Context(), analytics.Suppression{
@@ -110,6 +112,7 @@ func TestPostHogRejectsUnsupportedGroupSuppressionWithoutPartialDeletion(t *test
 		PersonalAPIKey: "phx_personal",
 		ProjectID:      "42",
 		Host:           server.URL,
+		APIHost:        server.URL,
 	})
 	require.NoError(t, err)
 
@@ -136,6 +139,7 @@ func TestPostHogUsesOrganizationAsIdentityForOrganizationOnlyFacts(t *testing.T)
 		PersonalAPIKey: "phx_test",
 		ProjectID:      "42",
 		Host:           server.URL,
+		APIHost:        server.URL,
 	})
 	require.NoError(t, err)
 	orgID := uuid.NewString()
@@ -161,6 +165,7 @@ func TestPostHogEnforcesHTTPSTimeoutAndLocalHTTP(t *testing.T) {
 		PersonalAPIKey: "phx_test",
 		ProjectID:      "42",
 		Host:           "ftp://localhost",
+		APIHost:        "https://posthog.example",
 	})
 	require.ErrorContains(t, err, "HTTPS")
 
@@ -175,6 +180,7 @@ func TestPostHogEnforcesHTTPSTimeoutAndLocalHTTP(t *testing.T) {
 		PersonalAPIKey: "phx_test",
 		ProjectID:      "42",
 		Host:           server.URL,
+		APIHost:        server.URL,
 		Timeout:        time.Millisecond,
 		HTTPClient:     client,
 	})
@@ -194,6 +200,7 @@ func TestPostHogProviderFailureRemainsRetryable(t *testing.T) {
 		PersonalAPIKey: "phx_test",
 		ProjectID:      "42",
 		Host:           server.URL,
+		APIHost:        server.URL,
 	})
 	require.NoError(t, err)
 	_, err = client.Capture(t.Context(), &analyticsv1.ProductEvent{EventId: uuid.NewString()})

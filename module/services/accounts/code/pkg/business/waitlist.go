@@ -1,6 +1,7 @@
 package business
 
 import (
+	"accounts/pkg/abuse"
 	"context"
 	"crypto/rand"
 	"crypto/sha256"
@@ -108,6 +109,11 @@ func (s *Service) JoinWaitlist(
 	}
 	if req.Website != "" || s.acquisitionMode == gen.AcquisitionMode_ACQUISITION_MODE_CLOSED {
 		return generic, nil
+	}
+	if err := s.abuseVerifier.Verify(ctx, abuse.Challenge{
+		Token: req.GetTurnstileToken(), Action: "waitlist_join",
+	}); err != nil {
+		return nil, err
 	}
 	if req.PolicyVersion != CurrentConsentPolicyVersion {
 		return nil, wool.Get(ctx).NewError("consent policy version is no longer current")

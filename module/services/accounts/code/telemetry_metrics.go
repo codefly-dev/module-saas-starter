@@ -11,8 +11,12 @@ import (
 	"go.opentelemetry.io/otel/sdk/resource"
 )
 
-func enableOTLPMetrics(ctx context.Context, serviceName string) (*metric.MeterProvider, error) {
-	exporter, err := otlpmetricgrpc.New(ctx)
+func enableOTLPMetrics(ctx context.Context, serviceName, endpoint string) (*metric.MeterProvider, error) {
+	exporter, err := otlpmetricgrpc.New(
+		ctx,
+		otlpmetricgrpc.WithEndpoint(endpoint),
+		otlpmetricgrpc.WithInsecure(),
+	)
 	if err != nil {
 		return nil, err
 	}

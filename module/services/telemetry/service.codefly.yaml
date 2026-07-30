@@ -1,0 +1,20 @@
+# Code generated from deployment/topology.bindings.codefly.yaml. DO NOT EDIT.
+name: telemetry
+version: 0.0.0
+description: |
+    In-graph OTLP gateway. Accounts resolves this endpoint exclusively
+    through the Codefly SDK; the collector either logs locally or forwards
+    trace, metric, and log protobufs to a configured OTLP/HTTP destination.
+agent:
+    kind: codefly:service
+    name: go-grpc
+    version: 0.1.21
+    publisher: codefly.dev
+workspace-configuration-dependencies:
+    - observability
+endpoints:
+    - name: grpc
+spec:
+    hot-reload: true
+    protocol-output-dirs:
+        - code/pkg/gen

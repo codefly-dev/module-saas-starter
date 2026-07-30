@@ -450,6 +450,7 @@ type JoinWaitlistRequest struct {
 	MarketingConsent bool                   `protobuf:"varint,9,opt,name=marketing_consent,json=marketingConsent,proto3" json:"marketing_consent,omitempty"`
 	PolicyVersion    string                 `protobuf:"bytes,10,opt,name=policy_version,json=policyVersion,proto3" json:"policy_version,omitempty"`
 	Website          string                 `protobuf:"bytes,11,opt,name=website,proto3" json:"website,omitempty"`
+	TurnstileToken   string                 `protobuf:"bytes,12,opt,name=turnstile_token,json=turnstileToken,proto3" json:"turnstile_token,omitempty"`
 	unknownFields    protoimpl.UnknownFields
 	sizeCache        protoimpl.SizeCache
 }
@@ -557,6 +558,13 @@ func (x *JoinWaitlistRequest) GetPolicyVersion() string {
 func (x *JoinWaitlistRequest) GetWebsite() string {
 	if x != nil {
 		return x.Website
+	}
+	return ""
+}
+
+func (x *JoinWaitlistRequest) GetTurnstileToken() string {
+	if x != nil {
+		return x.TurnstileToken
 	}
 	return ""
 }
@@ -986,7 +994,7 @@ const file_saas_accounts_v1_waitlist_proto_rawDesc = "" +
 	"invited_at\x18\x11 \x01(\v2\x1a.google.protobuf.TimestampR\tinvitedAt\x12=\n" +
 	"\fconverted_at\x18\x12 \x01(\v2\x1a.google.protobuf.TimestampR\vconvertedAt\x12C\n" +
 	"\x0funsubscribed_at\x18\x13 \x01(\v2\x1a.google.protobuf.TimestampR\x0eunsubscribedAt\"\x1d\n" +
-	"\x1bGetAcquisitionStatusRequest\"\xb8\x03\n" +
+	"\x1bGetAcquisitionStatusRequest\"\xeb\x03\n" +
 	"\x13JoinWaitlistRequest\x12\x1d\n" +
 	"\x05email\x18\x01 \x01(\tB\a\xbaH\x04r\x02`\x01R\x05email\x12\x1c\n" +
 	"\x04name\x18\x02 \x01(\tB\b\xbaH\x05r\x03\x18\xc8\x01R\x04name\x12\"\n" +
@@ -999,7 +1007,8 @@ const file_saas_accounts_v1_waitlist_proto_rawDesc = "" +
 	"\x11marketing_consent\x18\t \x01(\bR\x10marketingConsent\x12.\n" +
 	"\x0epolicy_version\x18\n" +
 	" \x01(\tB\a\xbaH\x04r\x02\x10\x01R\rpolicyVersion\x12\"\n" +
-	"\awebsite\x18\v \x01(\tB\b\xbaH\x05r\x03\x18\xf4\x03R\awebsite\"0\n" +
+	"\awebsite\x18\v \x01(\tB\b\xbaH\x05r\x03\x18\xf4\x03R\awebsite\x121\n" +
+	"\x0fturnstile_token\x18\f \x01(\tB\b\xbaH\x05r\x03\x18\x80 R\x0eturnstileToken\"0\n" +
 	"\x14JoinWaitlistResponse\x12\x18\n" +
 	"\amessage\x18\x01 \x01(\tR\amessage\"9\n" +
 	"\x15VerifyWaitlistRequest\x12 \n" +

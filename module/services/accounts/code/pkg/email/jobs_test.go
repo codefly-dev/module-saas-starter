@@ -120,6 +120,7 @@ func TestOutboxPersistsExactRenderedGeneratedMessage(t *testing.T) {
 		Template:    "welcome",
 		To:          "user@example.com",
 		Variables:   map[string]string{"name": "Ada"},
+		Tags:        map[string]string{"invitation_id": deliveryKey},
 	}))
 
 	job := producer.request.GetJob()
@@ -140,6 +141,7 @@ func TestOutboxPersistsExactRenderedGeneratedMessage(t *testing.T) {
 	require.Equal(t, "Hello Ada", payload.GetTextBody())
 	require.Equal(t, "welcome", payload.GetTags()["template"])
 	require.Equal(t, "7", payload.GetTags()["template_version"])
+	require.Equal(t, deliveryKey, payload.GetTags()["invitation_id"])
 }
 
 func TestOutboxUsesValidatedFallbackAndRequiresDurableDisposition(t *testing.T) {

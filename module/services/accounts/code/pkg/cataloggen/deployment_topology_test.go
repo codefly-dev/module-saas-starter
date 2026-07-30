@@ -41,21 +41,21 @@ func TestDeploymentTopologyIsDeterministicAndCurrent(t *testing.T) {
 		require.Equal(t, string(checkedIn), string(document), "service %s: run go generate ./pkg/cataloggen", service)
 	}
 
-	require.Len(t, first.Catalog.GetServices(), 8)
+	require.Len(t, first.Catalog.GetServices(), 9)
 	require.Len(t, first.Catalog.GetInterfaceEndpoints(), 3)
-	require.Len(t, first.Catalog.GetPublicEgress(), 3)
+	require.Len(t, first.Catalog.GetPublicEgress(), 4)
 	endpointCount, dependencyCount := 0, 0
 	for _, service := range first.Catalog.GetServices() {
 		endpointCount += len(service.GetEndpoints())
 		dependencyCount += len(service.GetDependencies())
 	}
-	require.Equal(t, 12, endpointCount)
-	require.Equal(t, 8, dependencyCount)
+	require.Equal(t, 13, endpointCount)
+	require.Equal(t, 9, dependencyCount)
 	frontendManifest := string(first.ServiceManifests["frontend"])
 	require.Contains(t, frontendManifest, "execution-profiles:")
 	require.Contains(t, frontendManifest, "local: development")
 	require.Contains(t, frontendManifest, "production: production")
-	require.Equal(t, 19, strings.Count(string(first.NetworkPolicy), "\nkind: NetworkPolicy\n"))
+	require.Equal(t, 21, strings.Count(string(first.NetworkPolicy), "\nkind: NetworkPolicy\n"))
 	require.NotContains(t, string(first.NetworkPolicy), "allow-intra-namespace")
 	require.Contains(t, string(first.NetworkPolicy), "name: allow-accounts-from-dependents")
 	require.Contains(t, string(first.NetworkPolicy), "name: allow-auth-sidecar-to-dependencies")
@@ -64,6 +64,8 @@ func TestDeploymentTopologyIsDeterministicAndCurrent(t *testing.T) {
 	require.Equal(t, 2, strings.Count(string(first.NetworkPolicy), "codefly.dev/bootstrap-service: store"))
 	require.Contains(t, string(first.NetworkPolicy), "name: allow-frontend-public-egress")
 	require.Contains(t, string(first.NetworkPolicy), "name: allow-marketing-public-egress")
+	require.Contains(t, string(first.NetworkPolicy), "name: allow-telemetry-from-dependents")
+	require.Contains(t, string(first.NetworkPolicy), "name: allow-telemetry-public-egress")
 	require.Contains(t, string(first.NetworkPolicy), "name: allow-istio-ingress-to-marketing")
 	require.Contains(t, string(first.NetworkPolicy), "192.175.48.0/24")
 	require.Contains(t, string(first.NetworkPolicy), "64:ff9b::/96")
@@ -253,7 +255,7 @@ func TestGeneratedCodeflyAndNetworkManifestsParseStrictly(t *testing.T) {
 	require.NoError(t, loadedModule.ValidateInterface(ctx))
 	loadedServices, err := loadedModule.LoadServices(ctx)
 	require.NoError(t, err)
-	require.Len(t, loadedServices, 8)
+	require.Len(t, loadedServices, 9)
 
 	moduleDocument := readFixture(t, "../../../../../module.codefly.yaml")
 	var moduleEntry struct {
@@ -265,7 +267,7 @@ func TestGeneratedCodeflyAndNetworkManifestsParseStrictly(t *testing.T) {
 	require.NoError(t, yaml.Unmarshal(moduleDocument, &module))
 	_, err = module.Proto(ctx)
 	require.NoError(t, err)
-	require.Len(t, module.ServiceReferences, 8)
+	require.Len(t, module.ServiceReferences, 9)
 
 	for _, reference := range module.ServiceReferences {
 		document := readFixture(t, filepath.Join("../../../../../services", reference.Name, "service.codefly.yaml"))
@@ -307,10 +309,12 @@ func TestGeneratedCodeflyAndNetworkManifestsParseStrictly(t *testing.T) {
 		require.False(t, names[document.Metadata.Name], "duplicate NetworkPolicy %s", document.Metadata.Name)
 		names[document.Metadata.Name] = true
 	}
-	require.Len(t, names, 19)
+	require.Len(t, names, 21)
 	require.True(t, names["allow-istio-ingress-to-marketing"])
 	require.True(t, names["allow-store-from-bootstrap"])
 	require.True(t, names["allow-store-bootstrap-to-store"])
+	require.True(t, names["allow-telemetry-from-dependents"])
+	require.True(t, names["allow-telemetry-public-egress"])
 }
 
 func TestDeploymentTopologyRejectsUnsafeOrIncompleteBindings(t *testing.T) {

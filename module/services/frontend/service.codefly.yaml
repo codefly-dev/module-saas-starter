@@ -12,7 +12,10 @@ service-dependencies:
         - name: connect
         - name: rest
 workspace-configuration-dependencies:
+    - abuse-protection
+    - error-tracking
     - identity
+    - product-analytics
 endpoints:
     - name: http
       visibility: module

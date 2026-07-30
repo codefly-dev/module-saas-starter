@@ -30,7 +30,7 @@ func (h *waitlistConnectHandler) Join(
 	}
 	response, err := h.svc.JoinWaitlist(ctx, req.Msg)
 	if err != nil {
-		return nil, err
+		return nil, translateGRPCError(abuseStatusError(err))
 	}
 	return connect.NewResponse(response), nil
 }

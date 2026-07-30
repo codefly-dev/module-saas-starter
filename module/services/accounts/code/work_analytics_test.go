@@ -28,6 +28,7 @@ func TestConfiguredAnalyticsSinkRequiresExplicitValidPostHogConfig(t *testing.T)
 
 	t.Setenv("POSTHOG_PERSONAL_API_KEY", "personal-key")
 	t.Setenv("POSTHOG_PROJECT_ID", "42")
+	t.Setenv("POSTHOG_API_HOST", "http://localhost:8081")
 	sink, enabled, err := configuredAnalyticsSink()
 	require.NoError(t, err)
 	require.True(t, enabled)
