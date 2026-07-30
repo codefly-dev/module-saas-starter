@@ -929,6 +929,22 @@ targetRevision: main
 	}
 }
 
+func TestResolveSourceFallsBackToPackagedModule(t *testing.T) {
+	t.Setenv(sourceEnvVar, "")
+	source, cleanup, err := resolveSource()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer cleanup()
+	data, err := os.ReadFile(filepath.Join(source, moduleYamlPath))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(data), "name: saas-starter") {
+		t.Fatalf("packaged source is not the canonical module:\n%s", data)
+	}
+}
+
 func TestRegenerateServiceManifestsIncludesFrontendPluginDependencies(t *testing.T) {
 	moduleDir := t.TempDir()
 	writeTestFile(

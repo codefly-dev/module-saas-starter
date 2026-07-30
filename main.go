@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"embed"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -18,6 +19,9 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
+//go:embed all:module
+var embeddedModule embed.FS
+
 const (
 	moduleYamlPath    = "module.codefly.yaml"
 	moduleDirName     = "module"
@@ -27,29 +31,62 @@ const (
 )
 
 // resolveSource finds the module/ directory to copy from.
-// Priority: SAAS_STARTER_MODULE_SRC env var → <executable-dir>/module.
-func resolveSource() (string, error) {
+// Priority: SAAS_STARTER_MODULE_SRC env var → <executable-dir>/module → embedded package.
+func resolveSource() (string, func(), error) {
 	if src := os.Getenv(sourceEnvVar); src != "" {
-		return src, nil
+		return src, func() {}, nil
 	}
 	exe, err := os.Executable()
 	if err != nil {
-		return "", fmt.Errorf("cannot resolve executable path: %w", err)
+		return "", nil, fmt.Errorf("cannot resolve executable path: %w", err)
 	}
 	exe, err = filepath.EvalSymlinks(exe)
 	if err != nil {
-		return "", fmt.Errorf("cannot eval executable symlinks: %w", err)
+		return "", nil, fmt.Errorf("cannot eval executable symlinks: %w", err)
 	}
-	return filepath.Join(filepath.Dir(exe), moduleDirName), nil
+	sibling := filepath.Join(filepath.Dir(exe), moduleDirName)
+	if _, err := os.Stat(filepath.Join(sibling, moduleYamlPath)); err == nil {
+		return sibling, func() {}, nil
+	} else if !errors.Is(err, os.ErrNotExist) {
+		return "", nil, fmt.Errorf("inspect packaged module source: %w", err)
+	}
+	root, err := os.MkdirTemp("", "saas-starter-module-")
+	if err != nil {
+		return "", nil, fmt.Errorf("create embedded module source: %w", err)
+	}
+	cleanup := func() { _ = os.RemoveAll(root) }
+	if err := fs.WalkDir(embeddedModule, moduleDirName, func(path string, entry fs.DirEntry, walkErr error) error {
+		if walkErr != nil {
+			return walkErr
+		}
+		relative, err := filepath.Rel(moduleDirName, path)
+		if err != nil {
+			return err
+		}
+		target := filepath.Join(root, moduleDirName, relative)
+		if entry.IsDir() {
+			return os.MkdirAll(target, 0o755)
+		}
+		data, err := fs.ReadFile(embeddedModule, path)
+		if err != nil {
+			return err
+		}
+		return os.WriteFile(target, data, 0o644)
+	}); err != nil {
+		cleanup()
+		return "", nil, fmt.Errorf("materialize embedded module source: %w", err)
+	}
+	return filepath.Join(root, moduleDirName), cleanup, nil
 }
 
 func Create(ctx context.Context, dir, name string) error {
 	w := wool.Get(ctx).In("saas-starter::Create")
 
-	src, err := resolveSource()
+	src, cleanupSource, err := resolveSource()
 	if err != nil {
 		return w.Wrapf(err, "cannot resolve source")
 	}
+	defer cleanupSource()
 	if _, err := os.Stat(filepath.Join(src, moduleYamlPath)); err != nil {
 		return w.Wrapf(err, "source %q is not a module directory (missing %s)", src, moduleYamlPath)
 	}
