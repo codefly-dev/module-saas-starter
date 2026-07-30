@@ -310,6 +310,10 @@ func normalizeGeneratedDeploymentMetadata(
 	if err := os.WriteFile(filepath.Join(generatedRoot, "service-topology.json"), data, 0o644); err != nil {
 		return err
 	}
+	if err := os.Remove(filepath.Join(generatedRoot, "accounts-routes.virtualservice.yaml")); err != nil &&
+		!errors.Is(err, os.ErrNotExist) {
+		return err
+	}
 	return nil
 }
 
