@@ -867,6 +867,9 @@ targetRevision: main
 		string(data) != `{"owner":"consumer"}` {
 		t.Fatalf("consumer generated artifact was not preserved: data=%q error=%v", data, err)
 	}
+	if _, err := os.Stat(filepath.Join(target, "deployment", "generated", "accounts-routes.virtualservice.yaml")); !os.IsNotExist(err) {
+		t.Fatalf("transport-specific route artifact was copied: %v", err)
+	}
 	bundleRoot := filepath.Join(target, filepath.FromSlash(bundleRelativeDir))
 	if _, err := os.Stat(filepath.Join(bundleRoot, "overlays", "local", "application.yaml")); !os.IsNotExist(err) {
 		t.Fatalf("placeholder Application was copied: %v", err)
@@ -877,28 +880,6 @@ targetRevision: main
 	overlayObjects(t, target, "local")
 	if _, err := os.Stat(filepath.Join(root, workspaceYamlPath)); err != nil {
 		t.Fatal(err)
-	}
-}
-
-func TestNormalizeGeneratedGatewayRouteRejectsMalformedDocument(t *testing.T) {
-	generatedRoot := t.TempDir()
-	writeTestFile(t, filepath.Join(generatedRoot, "accounts-routes.virtualservice.yaml"), `apiVersion: networking.istio.io/v1
-kind: VirtualService
-metadata: invalid
-spec: invalid
-`)
-	topology := deploymentTopology{
-		Module: topologyModule{
-			Name:         "identity",
-			Namespace:    "identity",
-			ServiceEntry: "accounts",
-		},
-		Services: []topologyService{{Name: "accounts"}},
-	}
-
-	err := normalizeGeneratedGatewayRoute(generatedRoot, topology, "saas-starter", "saas-starter")
-	if err == nil || !strings.Contains(err.Error(), "metadata must be an object") {
-		t.Fatalf("normalize malformed gateway route error = %v", err)
 	}
 }
 

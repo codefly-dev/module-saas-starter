@@ -50,8 +50,8 @@ descriptor graph into `generated/service-catalog.json` and refreshes
 implementation bindings and emits registration plus interface assertions. The
 fourth command generates typed authorization/PDP metadata, the auth-sidecar
 policy lookup, target-neutral gateway routes, auth-sidecar Connect/REST wiring,
-strict accounts REST registration, filtered OpenAPI, exact Istio matches, and
-the frontend client/vocabulary catalog. It also joins descriptor protocol
+strict accounts REST registration, filtered OpenAPI, and the frontend
+client/vocabulary catalog. It also joins descriptor protocol
 requirements with the strict module topology and writes the actual Codefly
 manifests, normalized deployment catalog, and NetworkPolicies. CI repeats all
 commands and rejects any diff. Finally, it discovers the Next.js page tree and

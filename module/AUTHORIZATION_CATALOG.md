@@ -81,8 +81,8 @@ go generate ./pkg/adapters
 go generate ./pkg/cataloggen
 ```
 
-The last command emits `authz-methods.json`, the auth-sidecar lookup, gateway
-routes, and the Istio candidate. Tests verify 121-method projection parity,
+The last command emits `authz-methods.json`, the auth-sidecar lookup, and
+target-neutral gateway routes. Tests verify 121-method projection parity,
 policy hashes, seven internal methods, two factor-attempt methods, deterministic
 bytes, checked-in runtime source, REST joins, internal-route rejection, and
 limiter behavior. CI regenerates both authorization artifacts and rejects any

@@ -29,7 +29,6 @@ var (
 type gatewayBindings struct {
 	Version              string                      `yaml:"version"`
 	CompatibilityAliases []gatewayCompatibilityAlias `yaml:"compatibility_aliases"`
-	Istio                istioBinding                `yaml:"istio"`
 }
 
 type gatewayEndpoints struct {
@@ -42,13 +41,6 @@ type gatewayCompatibilityAlias struct {
 	FromPackage string `yaml:"from_package"`
 	ToPackage   string `yaml:"to_package"`
 	RemoveAfter string `yaml:"remove_after"`
-}
-
-type istioBinding struct {
-	Namespace       string `yaml:"namespace"`
-	Gateway         string `yaml:"gateway"`
-	DestinationHost string `yaml:"destination_host"`
-	DestinationPort uint32 `yaml:"destination_port"`
 }
 
 // BuildGatewayRouteCatalog derives the complete public protobuf edge surface.
@@ -181,9 +173,6 @@ func decodeGatewayBindings(document []byte) (gatewayBindings, error) {
 		if _, err := time.Parse("2006-01-02", alias.RemoveAfter); err != nil {
 			return gatewayBindings{}, fmt.Errorf("compatibility alias %d has invalid remove_after %q", index, alias.RemoveAfter)
 		}
-	}
-	if bindings.Istio.Namespace == "" || bindings.Istio.Gateway == "" || bindings.Istio.DestinationHost == "" || bindings.Istio.DestinationPort == 0 {
-		return gatewayBindings{}, fmt.Errorf("Istio binding is incomplete")
 	}
 	return bindings, nil
 }
@@ -365,116 +354,6 @@ func generatedCatalogConnectRoutes() []*RouteEntry {
 		return nil, fmt.Errorf("format auth-sidecar gateway routes: %w", err)
 	}
 	return formatted, nil
-}
-
-type generatedIstioVirtualService struct {
-	APIVersion string                           `yaml:"apiVersion"`
-	Kind       string                           `yaml:"kind"`
-	Metadata   generatedIstioMetadata           `yaml:"metadata"`
-	Spec       generatedIstioVirtualServiceSpec `yaml:"spec"`
-}
-
-type generatedIstioMetadata struct {
-	Name      string `yaml:"name"`
-	Namespace string `yaml:"namespace"`
-}
-
-type generatedIstioVirtualServiceSpec struct {
-	Hosts    []string                  `yaml:"hosts"`
-	Gateways []string                  `yaml:"gateways"`
-	HTTP     []generatedIstioHTTPRoute `yaml:"http"`
-}
-
-type generatedIstioHTTPRoute struct {
-	Name    string                      `yaml:"name"`
-	Match   []generatedIstioHTTPMatch   `yaml:"match"`
-	Rewrite *generatedIstioHTTPRewrite  `yaml:"rewrite,omitempty"`
-	Route   []generatedIstioDestination `yaml:"route"`
-}
-
-type generatedIstioHTTPMatch struct {
-	Method generatedIstioStringMatch `yaml:"method"`
-	URI    generatedIstioURIMatch    `yaml:"uri"`
-}
-
-type generatedIstioStringMatch struct {
-	Exact string `yaml:"exact"`
-}
-
-type generatedIstioURIMatch struct {
-	Exact string `yaml:"exact,omitempty"`
-	Regex string `yaml:"regex,omitempty"`
-}
-
-type generatedIstioHTTPRewrite struct {
-	URI string `yaml:"uri"`
-}
-
-type generatedIstioDestination struct {
-	Destination generatedIstioDestinationTarget `yaml:"destination"`
-}
-
-type generatedIstioDestinationTarget struct {
-	Host string                        `yaml:"host"`
-	Port generatedIstioDestinationPort `yaml:"port"`
-}
-
-type generatedIstioDestinationPort struct {
-	Number uint32 `yaml:"number"`
-}
-
-// RenderIstioVirtualService emits exact and bounded-regex matches that still
-// traverse auth-sidecar. Deployment activation waits for frontend route work.
-func RenderIstioVirtualService(catalog *catalogv1.GatewayRouteCatalog, bindingDocument []byte) ([]byte, error) {
-	if err := ValidateGatewayRouteCatalog(catalog); err != nil {
-		return nil, err
-	}
-	bindings, err := decodeGatewayBindings(bindingDocument)
-	if err != nil {
-		return nil, err
-	}
-	virtualService := generatedIstioVirtualService{
-		APIVersion: "networking.istio.io/v1",
-		Kind:       "VirtualService",
-		Metadata: generatedIstioMetadata{
-			Name:      "saas-starter-accounts-catalog",
-			Namespace: bindings.Istio.Namespace,
-		},
-		Spec: generatedIstioVirtualServiceSpec{
-			Hosts:    []string{"*"},
-			Gateways: []string{bindings.Istio.Gateway},
-			HTTP:     make([]generatedIstioHTTPRoute, 0, len(catalog.GetRoutes())),
-		},
-	}
-	for index, route := range catalog.GetRoutes() {
-		uri := generatedIstioURIMatch{Exact: route.GetPath()}
-		if route.GetMatch() == catalogv1.GatewayMatch_GATEWAY_MATCH_PATH_TEMPLATE {
-			uri = generatedIstioURIMatch{Regex: pathTemplateToRegex(route.GetPath())}
-		}
-		entry := generatedIstioHTTPRoute{
-			Name: fmt.Sprintf("catalog-%03d", index+1),
-			Match: []generatedIstioHTTPMatch{{
-				Method: generatedIstioStringMatch{Exact: route.GetMethod()},
-				URI:    uri,
-			}},
-			Route: []generatedIstioDestination{{
-				Destination: generatedIstioDestinationTarget{
-					Host: bindings.Istio.DestinationHost,
-					Port: generatedIstioDestinationPort{Number: bindings.Istio.DestinationPort},
-				},
-			}},
-		}
-		if route.GetRewritePath() != "" {
-			entry.Rewrite = &generatedIstioHTTPRewrite{URI: route.GetRewritePath()}
-		}
-		virtualService.Spec.HTTP = append(virtualService.Spec.HTTP, entry)
-	}
-	document, err := yaml.Marshal(&virtualService)
-	if err != nil {
-		return nil, fmt.Errorf("marshal generated Istio VirtualService: %w", err)
-	}
-	header := []byte("# Code generated by cmd/gateway-routes. DO NOT EDIT.\n# Not added to kustomize until frontend/static routes are cataloged by P1-NET-003.\n")
-	return append(header, document...), nil
 }
 
 func pathTemplateToRegex(path string) string {

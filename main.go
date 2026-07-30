@@ -210,8 +210,6 @@ func normalizeDeploymentMetadata(moduleDir string) error {
 	for _, service := range manifest.Services {
 		declared[service.Name] = struct{}{}
 	}
-	previousName := topology.Module.Name
-	previousNamespace := topology.Module.Namespace
 	topology.Module.Name = manifest.Name
 	topology.Module.Namespace = manifest.Name
 	if manifest.ServiceEntry != "" {
@@ -241,7 +239,7 @@ func normalizeDeploymentMetadata(moduleDir string) error {
 	if err := os.WriteFile(topologyPath, encoded, 0o644); err != nil {
 		return err
 	}
-	return normalizeGeneratedDeploymentMetadata(moduleDir, topology, previousName, previousNamespace)
+	return normalizeGeneratedDeploymentMetadata(moduleDir, topology)
 }
 
 func containsService(services map[string]struct{}, name string) bool {
@@ -252,8 +250,6 @@ func containsService(services map[string]struct{}, name string) bool {
 func normalizeGeneratedDeploymentMetadata(
 	moduleDir string,
 	topology deploymentTopology,
-	previousName,
-	previousNamespace string,
 ) error {
 	generatedRoot := filepath.Join(moduleDir, "deployment", "generated")
 	if err := os.MkdirAll(generatedRoot, 0o755); err != nil {
@@ -314,89 +310,7 @@ func normalizeGeneratedDeploymentMetadata(
 	if err := os.WriteFile(filepath.Join(generatedRoot, "service-topology.json"), data, 0o644); err != nil {
 		return err
 	}
-	return normalizeGeneratedGatewayRoute(generatedRoot, topology, previousName, previousNamespace)
-}
-
-func normalizeGeneratedGatewayRoute(
-	generatedRoot string,
-	topology deploymentTopology,
-	previousName,
-	previousNamespace string,
-) error {
-	routePath := filepath.Join(generatedRoot, "accounts-routes.virtualservice.yaml")
-	if _, exists := topologyServiceByName(topology, "accounts"); !exists {
-		if err := os.Remove(routePath); err != nil && !errors.Is(err, os.ErrNotExist) {
-			return err
-		}
-		return nil
-	}
-	data, err := os.ReadFile(routePath)
-	if errors.Is(err, os.ErrNotExist) {
-		return nil
-	}
-	if err != nil {
-		return err
-	}
-	var route map[string]any
-	if err := yaml.Unmarshal(data, &route); err != nil {
-		return fmt.Errorf("parse generated gateway route: %w", err)
-	}
-	metadata, ok := route["metadata"].(map[string]any)
-	if !ok {
-		return errors.New("generated gateway route metadata must be an object")
-	}
-	metadata["name"] = topology.Module.Name + "-accounts-catalog"
-	metadata["namespace"] = topology.Module.Namespace
-	spec, ok := route["spec"].(map[string]any)
-	if !ok {
-		return errors.New("generated gateway route spec must be an object")
-	}
-	spec["gateways"] = []any{topology.Module.Name}
-	rewriteGeneratedRouteStrings(
-		spec["http"],
-		previousName,
-		previousNamespace,
-		topology.Module.Name,
-		topology.Module.Namespace,
-		topology.Module.ServiceEntry,
-	)
-	encoded, err := yaml.Marshal(route)
-	if err != nil {
-		return err
-	}
-	return os.WriteFile(routePath, encoded, 0o644)
-}
-
-func rewriteGeneratedRouteStrings(
-	value any,
-	previousName,
-	previousNamespace,
-	moduleName,
-	namespace,
-	serviceEntry string,
-) {
-	switch typed := value.(type) {
-	case []any:
-		for _, item := range typed {
-			rewriteGeneratedRouteStrings(item, previousName, previousNamespace, moduleName, namespace, serviceEntry)
-		}
-	case map[string]any:
-		for key, item := range typed {
-			text, ok := item.(string)
-			if !ok {
-				rewriteGeneratedRouteStrings(item, previousName, previousNamespace, moduleName, namespace, serviceEntry)
-				continue
-			}
-			if text == previousName {
-				typed[key] = moduleName
-				continue
-			}
-			suffix := "." + previousNamespace + ".svc.cluster.local"
-			if strings.HasSuffix(text, suffix) {
-				typed[key] = serviceEntry + "." + namespace + ".svc.cluster.local"
-			}
-		}
-	}
+	return nil
 }
 
 func findWorkspaceRoot(start string) (string, error) {
