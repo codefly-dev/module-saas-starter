@@ -158,7 +158,11 @@ func (b *Backend) Decide(ctx context.Context, principalID, action, resource, org
 	if err != nil {
 		return false, "", "", fmt.Errorf("saas-host: decide round-trip: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() {
+		if closeErr := resp.Body.Close(); closeErr != nil {
+			err = errors.Join(err, fmt.Errorf("saas-host: close decide response: %w", closeErr))
+		}
+	}()
 
 	if resp.StatusCode/100 != 2 {
 		return false, "", "", fmt.Errorf("saas-host: decide HTTP %d", resp.StatusCode)
@@ -290,8 +294,17 @@ func (g *Grantor) Request(ctx context.Context, req policy.EscalationRequest) (*p
 	if err != nil {
 		return nil, fmt.Errorf("saas-host: file delegation: %w", err)
 	}
-	body0, _ := io.ReadAll(resp.Body)
-	resp.Body.Close()
+	body0, readErr := io.ReadAll(resp.Body)
+	closeErr := resp.Body.Close()
+	if readErr != nil {
+		readErr = fmt.Errorf("saas-host: read delegation response: %w", readErr)
+	}
+	if closeErr != nil {
+		closeErr = fmt.Errorf("saas-host: close delegation response: %w", closeErr)
+	}
+	if err := errors.Join(readErr, closeErr); err != nil {
+		return nil, err
+	}
 	if resp.StatusCode/100 != 2 {
 		return nil, fmt.Errorf("saas-host: file delegation HTTP %d: %s", resp.StatusCode, string(body0))
 	}
@@ -317,7 +330,7 @@ func (g *Grantor) Request(ctx context.Context, req policy.EscalationRequest) (*p
 // `{"result": <event>}` envelope (grpc-gateway's standard wrapper
 // for server-streaming JSON); we read until we get one with a
 // terminal status.
-func (g *Grantor) waitForTerminal(ctx context.Context, grantID, orgID string) (*delegationEvent, error) {
+func (g *Grantor) waitForTerminal(ctx context.Context, grantID, orgID string) (event *delegationEvent, err error) {
 	q := url.Values{}
 	q.Set("org_id", orgID)
 	waitURL := fmt.Sprintf("%s/v1/delegations/%s:wait?%s",
@@ -336,7 +349,11 @@ func (g *Grantor) waitForTerminal(ctx context.Context, grantID, orgID string) (*
 	if err != nil {
 		return nil, fmt.Errorf("saas-host: wait round-trip: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() {
+		if closeErr := resp.Body.Close(); closeErr != nil {
+			err = errors.Join(err, fmt.Errorf("saas-host: close wait response: %w", closeErr))
+		}
+	}()
 	if resp.StatusCode/100 != 2 {
 		body, _ := io.ReadAll(resp.Body)
 		return nil, fmt.Errorf("saas-host: wait HTTP %d: %s", resp.StatusCode, string(body))

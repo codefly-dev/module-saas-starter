@@ -6,6 +6,10 @@ agent:
     name: vault
     version: 0.0.15
     publisher: codefly.dev
+secret-service-configurations:
+    - name: vault
+      entries:
+        - key: vault_token
 endpoints:
     - name: http
       visibility: module
