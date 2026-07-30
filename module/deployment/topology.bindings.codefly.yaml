@@ -256,6 +256,8 @@ services:
       - 443
     spec:
       hot-reload: true
+      protocol-output-dirs:
+        - code/pkg/gen
   - name: vault
     version: 0.0.0
     agent:

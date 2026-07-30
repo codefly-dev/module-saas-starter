@@ -16,3 +16,5 @@ endpoints:
     - name: grpc
 spec:
     hot-reload: true
+    protocol-output-dirs:
+        - code/pkg/gen

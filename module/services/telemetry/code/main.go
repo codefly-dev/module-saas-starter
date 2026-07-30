@@ -12,7 +12,7 @@ import (
 
 	"telemetry/collector"
 
-	"github.com/codefly-dev/sdk-go"
+	codefly "github.com/codefly-dev/sdk-go"
 	collectorlogsv1 "go.opentelemetry.io/proto/otlp/collector/logs/v1"
 	collectormetricsv1 "go.opentelemetry.io/proto/otlp/collector/metrics/v1"
 	collectortracev1 "go.opentelemetry.io/proto/otlp/collector/trace/v1"
