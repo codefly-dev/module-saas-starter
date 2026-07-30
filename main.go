@@ -2,7 +2,9 @@ package main
 
 import (
 	"context"
+	"crypto/sha256"
 	"embed"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -121,7 +123,7 @@ func Create(ctx context.Context, dir, name string) error {
 	if hasConsumerInventory && existing.Name != name {
 		return fmt.Errorf("existing module name %q does not match requested name %q", existing.Name, name)
 	}
-	if err := removePreviouslyOwnedBaseFiles(stage); err != nil {
+	if err := removePreviouslyOwnedBaseFiles(stage, existing); err != nil {
 		return w.Wrapf(err, "cannot reconcile previous module base")
 	}
 	if err := copyModuleSource(src, stage, name, existing, hasConsumerInventory); err != nil {
@@ -167,7 +169,53 @@ func existingModuleInventory(dir string) (moduleManifest, bool, error) {
 	return manifest, len(manifest.Services) > 0, nil
 }
 
-func removePreviouslyOwnedBaseFiles(moduleDir string) error {
+func servicePathOverrides(manifest moduleManifest) map[string]*string {
+	overrides := make(map[string]*string, len(manifest.Services))
+	for _, service := range manifest.Services {
+		overrides[service.Name] = service.Path
+	}
+	return overrides
+}
+
+func remapServicePath(relative string, override *string) (string, bool, error) {
+	if override == nil {
+		return relative, true, nil
+	}
+	if filepath.IsAbs(*override) {
+		return "", false, nil
+	}
+	serviceDir, err := cleanRelativeFilesystemPath(*override)
+	if err != nil {
+		return "", false, err
+	}
+	parts := strings.Split(filepath.ToSlash(relative), "/")
+	target := filepath.Join("services", serviceDir)
+	if len(parts) > 2 {
+		target = filepath.Join(target, filepath.FromSlash(strings.Join(parts[2:], "/")))
+	}
+	return target, true, nil
+}
+
+func fileMatchesSHA256(path, expected string) (bool, error) {
+	info, err := os.Lstat(path)
+	if errors.Is(err, os.ErrNotExist) {
+		return false, nil
+	}
+	if err != nil {
+		return false, err
+	}
+	if !info.Mode().IsRegular() {
+		return false, nil
+	}
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return false, err
+	}
+	digest := sha256.Sum256(data)
+	return hex.EncodeToString(digest[:]) == expected, nil
+}
+
+func removePreviouslyOwnedBaseFiles(moduleDir string, consumer moduleManifest) error {
 	data, err := os.ReadFile(filepath.Join(moduleDir, "tools", "base-manifest.json"))
 	if errors.Is(err, os.ErrNotExist) {
 		return nil
@@ -181,7 +229,8 @@ func removePreviouslyOwnedBaseFiles(moduleDir string) error {
 	if err := json.Unmarshal(data, &manifest); err != nil {
 		return fmt.Errorf("parse base manifest: %w", err)
 	}
-	for relative := range manifest.Files {
+	overrides := servicePathOverrides(consumer)
+	for relative, expectedHash := range manifest.Files {
 		slashRelative := filepath.ToSlash(relative)
 		if slashRelative == moduleYamlPath ||
 			slashRelative == "deployment/topology.bindings.codefly.yaml" ||
@@ -196,7 +245,29 @@ func removePreviouslyOwnedBaseFiles(moduleDir string) error {
 			clean == ".." || strings.HasPrefix(clean, ".."+string(filepath.Separator)) {
 			return fmt.Errorf("base manifest path %q escapes the module", relative)
 		}
-		if err := os.Remove(filepath.Join(moduleDir, clean)); err != nil && !errors.Is(err, os.ErrNotExist) {
+		targetRelative := clean
+		parts := strings.Split(filepath.ToSlash(clean), "/")
+		if len(parts) >= 3 && parts[0] == "services" {
+			if override, declared := overrides[parts[1]]; declared {
+				mapped, local, mapErr := remapServicePath(clean, override)
+				if mapErr != nil {
+					return fmt.Errorf("service %q path: %w", parts[1], mapErr)
+				}
+				if !local {
+					continue
+				}
+				targetRelative = mapped
+			}
+		}
+		target := filepath.Join(moduleDir, targetRelative)
+		matches, err := fileMatchesSHA256(target, expectedHash)
+		if err != nil {
+			return fmt.Errorf("inspect previous base file %q: %w", relative, err)
+		}
+		if !matches {
+			continue
+		}
+		if err := os.Remove(target); err != nil && !errors.Is(err, os.ErrNotExist) {
 			return fmt.Errorf("remove previous base file %q: %w", relative, err)
 		}
 	}
@@ -210,10 +281,7 @@ func copyModuleSource(
 	consumer moduleManifest,
 	preserveInventory bool,
 ) error {
-	declared := make(map[string]*string, len(consumer.Services))
-	for _, service := range consumer.Services {
-		declared[service.Name] = service.Path
-	}
+	declared := servicePathOverrides(consumer)
 	return filepath.WalkDir(src, func(file string, entry fs.DirEntry, err error) error {
 		if err != nil {
 			return err
@@ -240,14 +308,16 @@ func copyModuleSource(
 				override, exists := declared[parts[1]]
 				if !exists {
 					skip = true
-				} else if override != nil && filepath.IsAbs(*override) {
-					skip = true
-				} else if override != nil {
-					targetRelative = filepath.Join(
-						"services",
-						filepath.FromSlash(*override),
-						filepath.Join(parts[2:]...),
-					)
+				} else {
+					mapped, local, mapErr := remapServicePath(relative, override)
+					if mapErr != nil {
+						return fmt.Errorf("service %q path: %w", parts[1], mapErr)
+					}
+					if !local {
+						skip = true
+					} else {
+						targetRelative = mapped
+					}
 				}
 			}
 		}
