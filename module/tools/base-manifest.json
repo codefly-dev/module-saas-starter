@@ -1210,7 +1210,7 @@
     "services/frontend/code/tests/e2e/webhooks.spec.ts": "45bc08e3b0d278d8e856866d2e4297061fb0b216e5fdb15d86be0aaba5c638ec",
     "services/frontend/code/tests/sdk-smoke.mjs": "2cd24d8b9bfbbccd05eb674e4d42c65e157e436c2c730a2c5ba71da09bb4ab5e",
     "services/frontend/code/tsconfig.json": "84bc7afb83ea58e56a63754132b130f028e26a00d7eb47c9aa7fe002bbb2a659",
-    "services/frontend/code/vitest.config.ts": "e2a81195aff7e2564c731882cb3a2fca3084a8c7b340ed3ebf260ee2196c02b9",
+    "services/frontend/code/vitest.config.ts": "d1d6492b965f7d789c1607afee3a653efddb31b4da3794cafc16c919603a3697",
     "services/frontend/frontend.bindings.codefly.yaml": "8b7b52a76438ad975262f3151e2e49adbf3c5e866e2d7b4fa0e256e5490551da",
     "services/frontend/generated/plugin-catalog.json": "55c38675a80e42fdc1f42075e49060eef8ca513ee39d636a78da290df861ee38",
     "services/marketing/README.md": "520be237052378dc9528cce1fd6c1029123c61a1ac70d086959287a9aff800a3",
