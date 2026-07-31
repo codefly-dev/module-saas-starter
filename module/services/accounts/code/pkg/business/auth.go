@@ -69,7 +69,7 @@ func (s *Service) Authenticate(ctx context.Context, req *gen.AuthenticateRequest
 		if oauthCode == nil || oauthCode.Code == "" || oauthCode.RedirectUri == "" || oauthCode.State == "" || oauthCode.CodeVerifier == "" {
 			return nil, w.Wrapf(auth.ErrInvalidOAuthRequest, "oauth code flow: required credential missing")
 		}
-		if s.oauthPolicy == nil || s.oauthPolicy.Validate(req.Provider, oauthCode.RedirectUri) != nil {
+		if s.validateOAuthRequest(ctx, req.Provider, oauthCode.RedirectUri) != nil {
 			return nil, w.Wrapf(auth.ErrInvalidOAuthRequest, "oauth code flow: provider or redirect rejected")
 		}
 		if s.oauthState == nil {
@@ -311,21 +311,40 @@ func (s *Service) SwitchOrganization(
 	}, nil
 }
 
+// validateOAuthRequest authorizes both halves of the OAuth flow — initiation
+// and the callback code exchange — so the two can never disagree about which
+// redirect is acceptable.
+//
+// At the Codefly frontend entry there is no operator-registered redirect list:
+// the gateway authenticates the browser origin and Accounts binds the callback
+// to it, so the only valid target is that origin's own /auth/callback. A direct
+// request that never crossed the trusted frontend boundary carries no verified
+// origin and stays restricted to the static allowlist, which is empty unless an
+// operator deliberately configures IDENTITY_ALLOWED_REDIRECT_URIS.
+func (s *Service) validateOAuthRequest(ctx context.Context, provider, redirectURI string) error {
+	if s.oauthPolicy == nil {
+		return auth.ErrInvalidOAuthRequest
+	}
+	if publicOrigin, ok := auth.VerifiedPublicOrigin(ctx); ok {
+		if s.oauthPolicy.ValidateForPublicOrigin(provider, redirectURI, publicOrigin) != nil {
+			return auth.ErrInvalidOAuthRequest
+		}
+		return nil
+	}
+	if s.oauthPolicy.Validate(provider, redirectURI) != nil {
+		return auth.ErrInvalidOAuthRequest
+	}
+	return nil
+}
+
 // BeginOAuth issues a server-signed `state` token for the FE to embed
 // in the authorize URL. The token is bound to (provider, redirect_uri)
 // and short-lived (10 min by default). On callback, Authenticate
 // verifies the same token before exchanging the code, blocking CSRF
 // attempts that would otherwise complete only on FE state checks.
 func (s *Service) BeginOAuth(ctx context.Context, provider, redirectURI string) (string, error) {
-	if s.oauthPolicy == nil {
-		return "", auth.ErrInvalidOAuthRequest
-	}
-	if publicOrigin, ok := auth.VerifiedPublicOrigin(ctx); ok {
-		if s.oauthPolicy.ValidateForPublicOrigin(provider, redirectURI, publicOrigin) != nil {
-			return "", auth.ErrInvalidOAuthRequest
-		}
-	} else if s.oauthPolicy.Validate(provider, redirectURI) != nil {
-		return "", auth.ErrInvalidOAuthRequest
+	if err := s.validateOAuthRequest(ctx, provider, redirectURI); err != nil {
+		return "", err
 	}
 	if s.oauthState == nil {
 		return "", errors.New("oauth-state: signer not wired")

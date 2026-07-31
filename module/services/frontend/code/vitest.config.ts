@@ -26,6 +26,17 @@ export default defineConfig({
 					globals: true,
 					environment: "node",
 					include: ["src/**/*.pipeline.test.{ts,tsx}"],
+					// Starts the Codefly dependency graph once for the whole
+					// project when Codefly has not already provided one.
+					globalSetup: ["./src/test/pipeline-setup.ts"],
+					// Every pipeline file shares one Postgres. Tests namespace
+					// their own rows, but serial files keep failures readable and
+					// stop suites from contending over the same graph.
+					fileParallelism: false,
+					// A cold graph start plus real RPC work needs more than the
+					// 5s default.
+					testTimeout: 120_000,
+					hookTimeout: 180_000,
 				},
 			},
 		],
