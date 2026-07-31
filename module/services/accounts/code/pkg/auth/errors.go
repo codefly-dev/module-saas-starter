@@ -31,6 +31,7 @@ var (
 
 	// Identity resolution
 	ErrUnknownIdentity  = errors.New("auth: identity not found")
+	ErrNoAccount        = errors.New("auth: no account for this identity")
 	ErrAccountInactive  = errors.New("auth: account is not active")
 	ErrOrgRequired      = errors.New("auth: org required for this operation")
 	ErrBootstrapClaimed = errors.New("auth: bootstrap already claimed")

@@ -64,15 +64,41 @@ type Identity struct {
 	IPAddress  string
 }
 
+// Intent names why an authenticated caller is being resolved. It is a sealed
+// set: only this package defines the variants, so a resolver can switch over
+// them exhaustively.
+//
+//   - LoginIntent  authenticates an identity that must already exist.
+//   - InviteIntent authenticates against a pending invitation, provisioning the
+//     invitee if needed and binding them to the invitation's organization.
+//   - SignupIntent provisions a first-seen identity and optionally its first org.
+//
+// Only Signup and Invite may create a user; Login never does.
+type Intent interface{ isIntent() }
+
+// LoginIntent resolves an identity that must already exist. A resolver returns
+// ErrNoAccount when no identity backs the claims.
+type LoginIntent struct{}
+
+// InviteIntent resolves an identity against a pending invitation. Token is the
+// plaintext invitation credential delivered to the invitee.
+type InviteIntent struct{ Token string }
+
+// SignupIntent provisions a first-seen identity. OrganizationName, when
+// non-empty, also creates the caller's first organization with them as owner.
+type SignupIntent struct{ OrganizationName string }
+
+func (LoginIntent) isIntent()  {}
+func (InviteIntent) isIntent() {}
+func (SignupIntent) isIntent() {}
+
 // IdentityResolver translates provider Claims into an internal Identity.
-// Performs JIT user provisioning on first-seen (provider, subject) pairs,
-// loads session/org/role state, runs the first-super-admin bootstrap check,
-// and inserts the backing sessions row — all inside a single transaction.
+// Provisioning is gated by Intent: SignupIntent and InviteIntent may create a
+// user on a first-seen (provider, subject) pair, LoginIntent never does. The
+// resolver also loads session/org/role state and runs the first-super-admin
+// bootstrap check — all inside a single transaction.
 //
 // Runs once per login/signup. NEVER on the request hot path.
 type IdentityResolver interface {
-	// Resolve is called at login. orgNameOnSignup is empty for /auth/login
-	// and non-empty for /auth/signup when a brand-new user is creating
-	// their first org.
-	Resolve(ctx context.Context, c *Claims, orgNameOnSignup string) (*Identity, error)
+	Resolve(ctx context.Context, c *Claims, intent Intent) (*Identity, error)
 }

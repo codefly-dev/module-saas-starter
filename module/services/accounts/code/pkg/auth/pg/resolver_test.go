@@ -14,6 +14,7 @@ import (
 
 	"accounts/pkg/auth"
 	pgauth "accounts/pkg/auth/pg"
+	"accounts/pkg/business"
 )
 
 // Reset clears the rows Resolver touches so each test starts from a clean
@@ -23,6 +24,7 @@ func resetAuthTables(t *testing.T) {
 	ctx := context.Background()
 	queries := []string{
 		`DELETE FROM sessions`,
+		`DELETE FROM invitations`,
 		`DELETE FROM platform_admins`,
 		`DELETE FROM organization_members`,
 		`DELETE FROM organizations`,
@@ -50,12 +52,50 @@ func claims(email, sub string) *auth.Claims {
 	}
 }
 
-func TestResolver_NewUser_JITProvisioning(t *testing.T) {
+// seedInviteOrg creates an inviter and their owned organization, returning
+// (inviterID, orgID).
+func seedInviteOrg(t *testing.T) (uuid.UUID, uuid.UUID) {
+	t.Helper()
+	inviterID := seedUser(t)
+	orgID := business.NewID()
+	require.NoError(t, testStore.WithControlPlane(context.Background(), func(ctx context.Context) error {
+		tx := ctx.Value("tx").(pgx.Tx) //nolint:staticcheck // shared transaction context key
+		if _, err := tx.Exec(ctx, `
+			INSERT INTO organizations (id, name, slug, owner_id)
+			VALUES ($1, $2, $3, $4)`,
+			orgID, "Invite Org", fmt.Sprintf("invite-org-%s", orgID), inviterID); err != nil {
+			return err
+		}
+		_, err := tx.Exec(ctx, `
+			INSERT INTO organization_members (org_id, user_id, role)
+			VALUES ($1, $2, 'owner')`, orgID, inviterID)
+		return err
+	}))
+	return inviterID, orgID
+}
+
+// seedInvitation writes an invitation row and returns its plaintext token.
+func seedInvitation(t *testing.T, orgID, inviterID uuid.UUID, email, role, status string, expiresAt time.Time) string {
+	t.Helper()
+	token := business.NewID().String()
+	require.NoError(t, testStore.WithControlPlane(context.Background(), func(ctx context.Context) error {
+		tx := ctx.Value("tx").(pgx.Tx) //nolint:staticcheck // shared transaction context key
+		_, err := tx.Exec(ctx, `
+			INSERT INTO invitations (id, org_id, inviter_id, email, role, token_hash, status, expires_at)
+			VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
+			business.NewID(), orgID, inviterID, email, role,
+			business.HashInvitationToken(token), status, expiresAt)
+		return err
+	}))
+	return token
+}
+
+func TestResolver_Signup_NewUser_Provisioning(t *testing.T) {
 	resetAuthTables(t)
 	ctx := context.Background()
 	r := pgauth.NewResolver(testStore)
 
-	id, err := r.Resolve(ctx, claims("alice@test.local", "dev-alice"), "")
+	id, err := r.Resolve(ctx, claims("alice@test.local", "dev-alice"), auth.SignupIntent{})
 	require.NoError(t, err)
 	require.NotEqual(t, uuid.Nil, id.UserID)
 	require.Equal(t, uuid.Nil, id.OrgID, "new user with no signup org has no org")
@@ -71,15 +111,31 @@ func TestResolver_NewUser_JITProvisioning(t *testing.T) {
 	require.Equal(t, 1, count)
 }
 
+func TestResolver_Login_UnknownIdentity_ReturnsNoAccount(t *testing.T) {
+	resetAuthTables(t)
+	ctx := context.Background()
+	r := pgauth.NewResolver(testStore)
+
+	_, err := r.Resolve(ctx, claims("stranger@test.local", "dev-stranger"), auth.LoginIntent{})
+	require.ErrorIs(t, err, auth.ErrNoAccount)
+
+	// Login must never provision: assert zero rows written.
+	var count int
+	scanControlPlane(t, &count, `SELECT COUNT(*) FROM users WHERE primary_email = 'stranger@test.local'`)
+	require.Equal(t, 0, count, "login of an unknown identity must write nothing")
+	scanControlPlane(t, &count, `SELECT COUNT(*) FROM user_identities WHERE provider_id = 'dev-stranger'`)
+	require.Equal(t, 0, count)
+}
+
 func TestResolver_ExistingUser_Idempotent(t *testing.T) {
 	resetAuthTables(t)
 	ctx := context.Background()
 	r := pgauth.NewResolver(testStore)
 
-	first, err := r.Resolve(ctx, claims("bob@test.local", "dev-bob"), "")
+	first, err := r.Resolve(ctx, claims("bob@test.local", "dev-bob"), auth.SignupIntent{})
 	require.NoError(t, err)
 
-	second, err := r.Resolve(ctx, claims("bob@test.local", "dev-bob"), "")
+	second, err := r.Resolve(ctx, claims("bob@test.local", "dev-bob"), auth.LoginIntent{})
 	require.NoError(t, err)
 
 	require.Equal(t, first.UserID, second.UserID, "same (provider, sub) → same user_id")
@@ -95,12 +151,12 @@ func TestResolver_LastUsedIsInitializedCoalescedAndRefreshed(t *testing.T) {
 	r := pgauth.NewResolver(testStore)
 	loginClaims := claims("last-used@test.local", "dev-last-used")
 
-	identity, err := r.Resolve(ctx, loginClaims, "")
+	identity, err := r.Resolve(ctx, loginClaims, auth.SignupIntent{})
 	require.NoError(t, err)
 	initial := identityLastUsed(t, identity.UserID)
 	require.WithinDuration(t, time.Now(), initial, 5*time.Second)
 
-	_, err = r.Resolve(ctx, loginClaims, "")
+	_, err = r.Resolve(ctx, loginClaims, auth.LoginIntent{})
 	require.NoError(t, err)
 	require.Equal(t, initial, identityLastUsed(t, identity.UserID),
 		"immediate repeat authentication must not rewrite the hot identity row")
@@ -116,7 +172,7 @@ func TestResolver_LastUsedIsInitializedCoalescedAndRefreshed(t *testing.T) {
 		return err
 	}))
 
-	_, err = r.Resolve(ctx, loginClaims, "")
+	_, err = r.Resolve(ctx, loginClaims, auth.LoginIntent{})
 	require.NoError(t, err)
 	require.True(t, identityLastUsed(t, identity.UserID).After(stale))
 }
@@ -126,7 +182,7 @@ func TestResolver_ConcurrentExistingLogin_AllSucceed(t *testing.T) {
 	ctx := context.Background()
 	r := pgauth.NewResolver(testStore)
 
-	first, err := r.Resolve(ctx, claims("concurrent@test.local", "dev-concurrent"), "")
+	first, err := r.Resolve(ctx, claims("concurrent@test.local", "dev-concurrent"), auth.SignupIntent{})
 	require.NoError(t, err)
 
 	const n = 16
@@ -142,7 +198,7 @@ func TestResolver_ConcurrentExistingLogin_AllSucceed(t *testing.T) {
 			results[i], errs[i] = r.Resolve(
 				ctx,
 				claims("concurrent@test.local", "dev-concurrent"),
-				"",
+				auth.LoginIntent{},
 			)
 		}(i)
 	}
@@ -171,7 +227,7 @@ func TestResolver_ExistingInactiveUserRejected(t *testing.T) {
 	ctx := context.Background()
 	r := pgauth.NewResolver(testStore)
 
-	identity, err := r.Resolve(ctx, claims("suspended@test.local", "dev-suspended"), "")
+	identity, err := r.Resolve(ctx, claims("suspended@test.local", "dev-suspended"), auth.SignupIntent{})
 	require.NoError(t, err)
 	require.NoError(t, testStore.WithControlPlane(ctx, func(ctx context.Context) error {
 		tx := ctx.Value("tx").(pgx.Tx) //nolint:staticcheck // shared transaction context key
@@ -179,7 +235,7 @@ func TestResolver_ExistingInactiveUserRejected(t *testing.T) {
 		return err
 	}))
 
-	_, err = r.Resolve(ctx, claims("suspended@test.local", "dev-suspended"), "")
+	_, err = r.Resolve(ctx, claims("suspended@test.local", "dev-suspended"), auth.LoginIntent{})
 	require.ErrorIs(t, err, auth.ErrAccountInactive)
 }
 
@@ -188,7 +244,7 @@ func TestResolver_Signup_CreatesOrg(t *testing.T) {
 	ctx := context.Background()
 	r := pgauth.NewResolver(testStore)
 
-	id, err := r.Resolve(ctx, claims("carol@test.local", "dev-carol"), "Carol's Corp")
+	id, err := r.Resolve(ctx, claims("carol@test.local", "dev-carol"), auth.SignupIntent{OrganizationName: "Carol's Corp"})
 	require.NoError(t, err)
 	require.NotEqual(t, uuid.Nil, id.OrgID)
 	require.Equal(t, "owner", id.OrgRole)
@@ -212,7 +268,7 @@ func TestResolver_Signup_NoOrgNameDoesNotCreateOrg(t *testing.T) {
 	ctx := context.Background()
 	r := pgauth.NewResolver(testStore)
 
-	id, err := r.Resolve(ctx, claims("dave@test.local", "dev-dave"), "")
+	id, err := r.Resolve(ctx, claims("dave@test.local", "dev-dave"), auth.SignupIntent{})
 	require.NoError(t, err)
 	require.Equal(t, uuid.Nil, id.OrgID)
 }
@@ -223,14 +279,134 @@ func TestResolver_ExistingOrgIsLoaded(t *testing.T) {
 	r := pgauth.NewResolver(testStore)
 
 	// Provision user + org
-	first, err := r.Resolve(ctx, claims("erin@test.local", "dev-erin"), "Erin Inc")
+	first, err := r.Resolve(ctx, claims("erin@test.local", "dev-erin"), auth.SignupIntent{OrganizationName: "Erin Inc"})
 	require.NoError(t, err)
 
 	// Second login should load the existing org, not create a new one
-	second, err := r.Resolve(ctx, claims("erin@test.local", "dev-erin"), "")
+	second, err := r.Resolve(ctx, claims("erin@test.local", "dev-erin"), auth.LoginIntent{})
 	require.NoError(t, err)
 	require.Equal(t, first.OrgID, second.OrgID)
 	require.Equal(t, "owner", second.OrgRole)
+}
+
+func TestResolver_Invite_ProvisionsUserAndMembershipAtomically(t *testing.T) {
+	resetAuthTables(t)
+	ctx := context.Background()
+	r := pgauth.NewResolver(testStore)
+
+	inviterID, orgID := seedInviteOrg(t)
+	token := seedInvitation(t, orgID, inviterID, "invitee@test.local", "admin", "pending", time.Now().Add(24*time.Hour))
+
+	id, err := r.Resolve(ctx, claims("invitee@test.local", "dev-invitee"), auth.InviteIntent{Token: token})
+	require.NoError(t, err)
+	require.NotEqual(t, uuid.Nil, id.UserID)
+	require.Equal(t, orgID, id.OrgID, "invitee lands on the inviting org")
+	require.Equal(t, "admin", id.OrgRole, "invitee assumes the invitation's role")
+
+	var count int
+	scanControlPlane(t, &count, `SELECT COUNT(*) FROM users WHERE primary_email = 'invitee@test.local'`)
+	require.Equal(t, 1, count, "invitee is provisioned exactly once")
+	scanControlPlane(t, &count,
+		`SELECT COUNT(*) FROM organization_members WHERE org_id = $1 AND user_id = $2 AND role = 'admin'`,
+		orgID, id.UserID)
+	require.Equal(t, 1, count, "membership is added in the same transaction")
+
+	var status string
+	var acceptedBy uuid.UUID
+	scanControlPlane(t, &status, `SELECT status FROM invitations WHERE org_id = $1`, orgID)
+	require.Equal(t, "accepted", status)
+	scanControlPlane(t, &acceptedBy, `SELECT accepted_by FROM invitations WHERE org_id = $1`, orgID)
+	require.Equal(t, id.UserID, acceptedBy)
+}
+
+func TestResolver_Invite_EmailMismatchRejectedAndProvisionsNothing(t *testing.T) {
+	resetAuthTables(t)
+	ctx := context.Background()
+	r := pgauth.NewResolver(testStore)
+
+	inviterID, orgID := seedInviteOrg(t)
+	token := seedInvitation(t, orgID, inviterID, "invitee@test.local", "member", "pending", time.Now().Add(24*time.Hour))
+
+	// Authenticate with a different email than the invitation was addressed to.
+	_, err := r.Resolve(ctx, claims("attacker@test.local", "dev-attacker"), auth.InviteIntent{Token: token})
+	require.ErrorIs(t, err, business.ErrInvitationEmailMismatch)
+
+	var count int
+	scanControlPlane(t, &count, `SELECT COUNT(*) FROM users WHERE primary_email = 'attacker@test.local'`)
+	require.Equal(t, 0, count, "a mismatched email must not provision a user")
+	scanControlPlane(t, &count, `SELECT COUNT(*) FROM organization_members WHERE org_id = $1`, orgID)
+	require.Equal(t, 1, count, "only the inviter remains a member")
+
+	var status string
+	scanControlPlane(t, &status, `SELECT status FROM invitations WHERE org_id = $1`, orgID)
+	require.Equal(t, "pending", status, "the invitation stays pending")
+}
+
+func TestResolver_Invite_NonPendingFailsClosed(t *testing.T) {
+	ctx := context.Background()
+	r := pgauth.NewResolver(testStore)
+
+	cases := []struct {
+		name      string
+		status    string
+		expiresAt time.Time
+		wantErr   error
+	}{
+		{"expired", "pending", time.Now().Add(-time.Hour), business.ErrInvitationExpired},
+		{"revoked", "revoked", time.Now().Add(24 * time.Hour), business.ErrInvitationUnavailable},
+		{"accepted", "accepted", time.Now().Add(24 * time.Hour), business.ErrInvitationUnavailable},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			resetAuthTables(t)
+			inviterID, orgID := seedInviteOrg(t)
+			token := seedInvitation(t, orgID, inviterID, "invitee@test.local", "member", tc.status, tc.expiresAt)
+
+			_, err := r.Resolve(ctx, claims("invitee@test.local", "dev-invitee"), auth.InviteIntent{Token: token})
+			require.ErrorIs(t, err, tc.wantErr)
+
+			var count int
+			scanControlPlane(t, &count, `SELECT COUNT(*) FROM users WHERE primary_email = 'invitee@test.local'`)
+			require.Equal(t, 0, count, "a closed invitation must not provision a user")
+		})
+	}
+}
+
+func TestResolver_Invite_UnknownTokenFailsClosed(t *testing.T) {
+	resetAuthTables(t)
+	ctx := context.Background()
+	r := pgauth.NewResolver(testStore)
+
+	_, err := r.Resolve(ctx, claims("invitee@test.local", "dev-invitee"), auth.InviteIntent{Token: "not-a-real-token"})
+	require.ErrorIs(t, err, business.ErrInvitationUnavailable)
+}
+
+func TestResolver_Invite_ExistingUserJoinsAndReacceptIsIdempotent(t *testing.T) {
+	resetAuthTables(t)
+	ctx := context.Background()
+	r := pgauth.NewResolver(testStore)
+
+	// The invitee already has an account (e.g. member of another org).
+	existing, err := r.Resolve(ctx, claims("member@test.local", "dev-member"), auth.SignupIntent{})
+	require.NoError(t, err)
+
+	inviterID, orgID := seedInviteOrg(t)
+	token := seedInvitation(t, orgID, inviterID, "member@test.local", "member", "pending", time.Now().Add(24*time.Hour))
+
+	joined, err := r.Resolve(ctx, claims("member@test.local", "dev-member"), auth.InviteIntent{Token: token})
+	require.NoError(t, err)
+	require.Equal(t, existing.UserID, joined.UserID, "no second user is provisioned")
+	require.Equal(t, orgID, joined.OrgID)
+
+	// Re-authenticating with the redeemed token is idempotent.
+	again, err := r.Resolve(ctx, claims("member@test.local", "dev-member"), auth.InviteIntent{Token: token})
+	require.NoError(t, err)
+	require.Equal(t, existing.UserID, again.UserID)
+	require.Equal(t, orgID, again.OrgID)
+
+	var count int
+	scanControlPlane(t, &count, `SELECT COUNT(*) FROM organization_members WHERE org_id = $1 AND user_id = $2`, orgID, existing.UserID)
+	require.Equal(t, 1, count, "membership is added exactly once")
 }
 
 func TestResolver_Bootstrap_FirstMatchGetsSuperAdmin(t *testing.T) {
@@ -240,7 +416,7 @@ func TestResolver_Bootstrap_FirstMatchGetsSuperAdmin(t *testing.T) {
 	t.Setenv(pgauth.BootstrapAdminEmailEnv, "boss@test.local")
 
 	r := pgauth.NewResolver(testStore)
-	id, err := r.Resolve(ctx, claims("boss@test.local", "dev-boss"), "")
+	id, err := r.Resolve(ctx, claims("boss@test.local", "dev-boss"), auth.SignupIntent{})
 	require.NoError(t, err)
 	require.Equal(t, "super_admin", id.PlatformRole)
 
@@ -265,7 +441,7 @@ func TestResolver_Bootstrap_SelfDisarms(t *testing.T) {
 	r := pgauth.NewResolver(testStore)
 
 	// First call grants
-	id1, err := r.Resolve(ctx, claims("first@test.local", "dev-first"), "")
+	id1, err := r.Resolve(ctx, claims("first@test.local", "dev-first"), auth.SignupIntent{})
 	require.NoError(t, err)
 	require.Equal(t, "super_admin", id1.PlatformRole)
 
@@ -273,12 +449,12 @@ func TestResolver_Bootstrap_SelfDisarms(t *testing.T) {
 	t.Setenv(pgauth.BootstrapAdminEmailEnv, "second@test.local")
 
 	// Second call for another matching email must NOT grant
-	id2, err := r.Resolve(ctx, claims("second@test.local", "dev-second"), "")
+	id2, err := r.Resolve(ctx, claims("second@test.local", "dev-second"), auth.SignupIntent{})
 	require.NoError(t, err)
 	require.Equal(t, "", id2.PlatformRole)
 
 	// And the original super_admin is still super_admin on re-login
-	id1Again, err := r.Resolve(ctx, claims("first@test.local", "dev-first"), "")
+	id1Again, err := r.Resolve(ctx, claims("first@test.local", "dev-first"), auth.LoginIntent{})
 	require.NoError(t, err)
 	require.Equal(t, "super_admin", id1Again.PlatformRole)
 	require.Equal(t, id1.UserID, id1Again.UserID)
@@ -291,7 +467,7 @@ func TestResolver_Bootstrap_NoEnvNoGrant(t *testing.T) {
 	os.Unsetenv(pgauth.BootstrapAdminEmailEnv)
 	r := pgauth.NewResolver(testStore)
 
-	id, err := r.Resolve(ctx, claims("anyone@test.local", "dev-anyone"), "")
+	id, err := r.Resolve(ctx, claims("anyone@test.local", "dev-anyone"), auth.SignupIntent{})
 	require.NoError(t, err)
 	require.Equal(t, "", id.PlatformRole)
 }
@@ -303,18 +479,18 @@ func TestResolver_Bootstrap_CaseInsensitiveEmail(t *testing.T) {
 	t.Setenv(pgauth.BootstrapAdminEmailEnv, "  Boss@Test.LOCAL  ")
 	r := pgauth.NewResolver(testStore)
 
-	id, err := r.Resolve(ctx, claims("BOSS@test.local", "dev-boss-caps"), "")
+	id, err := r.Resolve(ctx, claims("BOSS@test.local", "dev-boss-caps"), auth.SignupIntent{})
 	require.NoError(t, err)
 	require.Equal(t, "super_admin", id.PlatformRole,
 		"bootstrap email match must be case-insensitive and whitespace-tolerant")
 }
 
-func TestResolver_ConcurrentFirstLogin_OneUser(t *testing.T) {
+func TestResolver_ConcurrentFirstSignup_OneUser(t *testing.T) {
 	resetAuthTables(t)
 	ctx := context.Background()
 	r := pgauth.NewResolver(testStore)
 
-	// Fire 10 concurrent first logins for the same identity — must converge
+	// Fire 10 concurrent first signups for the same identity — must converge
 	// on a single user row without deadlocking or duplicating rows.
 	const n = 10
 	var wg sync.WaitGroup
@@ -325,7 +501,7 @@ func TestResolver_ConcurrentFirstLogin_OneUser(t *testing.T) {
 	for i := 0; i < n; i++ {
 		go func(i int) {
 			defer wg.Done()
-			id, err := r.Resolve(ctx, claims("race@test.local", "dev-race"), "")
+			id, err := r.Resolve(ctx, claims("race@test.local", "dev-race"), auth.SignupIntent{})
 			if id != nil {
 				results[i] = id.UserID
 			}
@@ -342,20 +518,20 @@ func TestResolver_ConcurrentFirstLogin_OneUser(t *testing.T) {
 
 	var count int
 	scanControlPlane(t, &count, `SELECT COUNT(*) FROM users WHERE primary_email = 'race@test.local'`)
-	require.Equal(t, 1, count, "concurrent first logins must produce exactly one user")
+	require.Equal(t, 1, count, "concurrent first signups must produce exactly one user")
 }
 
 func TestResolver_InvalidClaims_Rejected(t *testing.T) {
 	ctx := context.Background()
 	r := pgauth.NewResolver(testStore)
 
-	_, err := r.Resolve(ctx, &auth.Claims{Provider: "dev"}, "")
+	_, err := r.Resolve(ctx, &auth.Claims{Provider: "dev"}, auth.LoginIntent{})
 	require.Error(t, err)
 
-	_, err = r.Resolve(ctx, &auth.Claims{Provider: "dev", Subject: "x"}, "")
+	_, err = r.Resolve(ctx, &auth.Claims{Provider: "dev", Subject: "x"}, auth.LoginIntent{})
 	require.Error(t, err) // missing email
 
-	_, err = r.Resolve(ctx, nil, "")
+	_, err = r.Resolve(ctx, nil, auth.LoginIntent{})
 	require.Error(t, err)
 }
 

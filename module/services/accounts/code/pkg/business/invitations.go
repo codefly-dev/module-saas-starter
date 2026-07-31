@@ -545,14 +545,22 @@ func (s *Service) RevokeInvitation(
 }
 
 func (s *Service) invitationByToken(ctx context.Context, token string) (*Invitation, error) {
-	hash := sha256.Sum256([]byte(token))
 	var inv *Invitation
 	err := s.store.As(System()).Within(ctx, func(ctx context.Context) error {
 		var lookupErr error
-		inv, lookupErr = s.store.GetInvitationByTokenHash(ctx, hex.EncodeToString(hash[:]))
+		inv, lookupErr = s.store.GetInvitationByTokenHash(ctx, HashInvitationToken(token))
 		return lookupErr
 	})
 	return inv, err
+}
+
+// HashInvitationToken derives the stored token_hash for a plaintext invitation
+// credential. It is the single canonical hashing used both when persisting an
+// invitation and when redeeming one, including from the auth resolver's invite
+// flow.
+func HashInvitationToken(token string) string {
+	hash := sha256.Sum256([]byte(token))
+	return hex.EncodeToString(hash[:])
 }
 
 func (s *Service) organizationForInvitation(

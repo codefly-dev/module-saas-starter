@@ -36,9 +36,11 @@ const AccessTokenLifetime = 15 * time.Minute
 //     subject, and email come exclusively from the allowlisted fixture;
 //     caller-supplied identity claims are never trusted.
 //
-// The optional "org_name" in the profile map triggers signup-style
-// behaviour: if the user is brand new, an org is created with them as
-// owner.
+// The profile map carries the resolution intent. An "invitation_token" routes
+// to the invite flow, which provisions the invitee against a pending
+// invitation and joins them to the inviting org. Otherwise the request is a
+// signup: a first-seen identity is provisioned, and an "org_name" additionally
+// creates their first org with them as owner.
 func (s *Service) Authenticate(ctx context.Context, req *gen.AuthenticateRequest) (*gen.AuthenticateResponse, error) {
 	w := wool.Get(ctx).In("Authenticate")
 
@@ -53,10 +55,7 @@ func (s *Service) Authenticate(ctx context.Context, req *gen.AuthenticateRequest
 		return nil, w.Wrapf(auth.ErrInvalidOAuthRequest, "device info exceeds 512 bytes")
 	}
 
-	orgNameOnSignup := ""
-	if req.Profile != nil {
-		orgNameOnSignup = req.Profile["org_name"]
-	}
+	intent := intentFromProfile(req.Profile)
 
 	var claims *auth.Claims
 	var err error
@@ -117,7 +116,7 @@ func (s *Service) Authenticate(ctx context.Context, req *gen.AuthenticateRequest
 		return nil, err
 	}
 
-	identity, err := s.resolver.Resolve(ctx, claims, orgNameOnSignup)
+	identity, err := s.resolver.Resolve(ctx, claims, intent)
 	if err != nil {
 		return nil, w.Wrapf(err, "identity resolution")
 	}
@@ -194,6 +193,17 @@ func (s *Service) Authenticate(ctx context.Context, req *gen.AuthenticateRequest
 		ExpiresIn:    int64(AccessTokenLifetime.Seconds()),
 		User:         user,
 	}, nil
+}
+
+// intentFromProfile maps the request profile to a resolution intent. A pending
+// invitation is honoured first so an invitee is always provisioned through the
+// invite flow; every other authentication is a signup that provisions a
+// first-seen identity. Gating signup behind an access policy is issue #A2.
+func intentFromProfile(profile map[string]string) auth.Intent {
+	if token := strings.TrimSpace(profile["invitation_token"]); token != "" {
+		return auth.InviteIntent{Token: token}
+	}
+	return auth.SignupIntent{OrganizationName: profile["org_name"]}
 }
 
 // authenticateWithCode runs the full OAuth authorization-code flow:
