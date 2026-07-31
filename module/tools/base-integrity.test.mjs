@@ -5,8 +5,10 @@ import { join } from "node:path";
 import test from "node:test";
 
 import {
+  baseManifestFreshnessErrors,
   capabilityContextErrors,
   capabilityManifestErrors,
+  computeBaseManifest,
   isExcludedFile,
   migrationVersionErrors,
   productionTruthErrors,
@@ -350,6 +352,37 @@ test("scans public manifest summaries, repository docs, nested docs, and fixture
   ]) {
     assert.ok(errors.some((error) => error.startsWith(`${path}:`)), path);
   }
+});
+
+test("the committed canonical manifest matches the tree it ships with", () => {
+  // This is the release gate: had it run for v0.0.32, the stale digests for
+  // deployment_topology.go and network-policy.golden.yaml would have failed here.
+  assert.deepEqual(baseManifestFreshnessErrors(), []);
+});
+
+test("flags changed, unrecorded, and removed base files against a fresh regeneration", (t) => {
+  const root = mkdtempSync(join(tmpdir(), "saas-manifest-freshness-"));
+  t.after(() => rmSync(root, { recursive: true, force: true }));
+  mkdirSync(join(root, "nested"), { recursive: true });
+  mkdirSync(join(root, "tools"), { recursive: true });
+  writeFileSync(join(root, "a.txt"), "alpha\n");
+  writeFileSync(join(root, "nested/b.txt"), "bravo\n");
+
+  const manifestPath = join(root, "tools/base-manifest.json");
+  writeJSON(manifestPath, computeBaseManifest(root));
+  assert.deepEqual(baseManifestFreshnessErrors(root), []);
+
+  const stale = computeBaseManifest(root);
+  stale.files["a.txt"] = "0".repeat(64); // v0.0.32-style: file changed, manifest not regenerated
+  delete stale.files["nested/b.txt"]; // base file present on disk but absent from the manifest
+  stale.files["gone.txt"] = "0".repeat(64); // manifest entry with no file behind it
+  writeJSON(manifestPath, stale);
+
+  assert.deepEqual(baseManifestFreshnessErrors(root).sort(), [
+    "manifest lists a removed file: gone.txt",
+    "stale hash: a.txt",
+    "unrecorded base file: nested/b.txt",
+  ]);
 });
 
 test("does not require the frontend capability manifest when frontend is omitted", (t) => {
