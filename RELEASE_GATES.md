@@ -30,6 +30,21 @@ logic, and evidence normalization belong to the service plugins. If a required
 gate is missing, extend the generic Codefly/Core contract and the applicable
 plugin; never add a repository-specific implementation to provider YAML.
 
+## Canonical manifest freshness
+
+Phase 1 verifies that base files match `tools/base-manifest.json` — it trusts
+the committed manifest as the source of truth. That protects consumers, but it
+cannot catch the manifest itself drifting from the canonical tree it was
+generated from: a base file edited without re-running
+`node tools/base-integrity.mjs gen` ships a stale digest, and every consumer
+sync then aborts on an unreconcilable source-path mismatch (v0.0.32).
+
+Provider CI closes that gap with `base-integrity.mjs verify`, which re-derives
+the manifest from the tree and fails on any changed, unrecorded, or removed base
+file. This is the one repository-specific gate in provider YAML: it guards the
+canonical artifact that seeds every other consumer, so it must run here rather
+than in a consumer copy.
+
 ## Evidence
 
 Every run writes the schema-versioned report to `.codefly/ci/report.json` and

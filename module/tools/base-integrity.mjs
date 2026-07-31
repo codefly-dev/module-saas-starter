@@ -22,6 +22,10 @@ import { fileURLToPath } from "node:url";
 const SCRIPT_PATH = fileURLToPath(import.meta.url);
 const MODULE_ROOT = join(dirname(SCRIPT_PATH), "..");
 const MANIFEST_PATH = join(MODULE_ROOT, "tools", "base-manifest.json");
+const MANIFEST_NOTE =
+  "Base-file integrity manifest for the saas-starter module. Generated FROM canonical by "
+  + "`node tools/base-integrity.mjs gen`. Consumers MUST NOT hand-edit base files — only add "
+  + "files on the side. Regenerated on every codefly sync from canonical.";
 const ALLOW_PATH = join(MODULE_ROOT, "tools", "base-integrity-allow.json");
 const CAPABILITY_MANIFEST_REL =
   "services/frontend/code/src/features/trust/capability-manifest.json";
@@ -563,6 +567,52 @@ const serviceOf = (rel) => {
   return segments[0] === "services" && segments.length > 2 ? segments[1] : null;
 };
 
+// Re-derive the manifest a fresh `gen` would write for `moduleRoot`, without touching disk.
+// `gen` persists this; the release gate compares it against the committed manifest.
+export function computeBaseManifest(moduleRoot = MODULE_ROOT) {
+  const files = walk(moduleRoot, [], moduleRoot).sort();
+  const hashes = {};
+  for (const rel of files) hashes[rel] = sha(join(moduleRoot, rel));
+  return { note: MANIFEST_NOTE, fileCount: files.length, files: hashes };
+}
+
+// The canonical release gate: the committed manifest must equal a fresh regeneration of the
+// tree — every field `gen` writes, so a passing `verify` proves `gen` is a no-op. `check`
+// re-hashes only the paths already in the manifest, so a base file changed without a `gen`
+// (v0.0.32: deployment_topology.go / network-policy.golden.yaml) sails through it — the stale
+// digest is exactly what `check` trusts. Comparing against a fresh recomputation catches changed,
+// unrecorded, and removed base files, plus a fileCount or note that drifted from the tree.
+// Canonical-only: a consumer legitimately adds files, so this must never run against a consumer tree.
+export function baseManifestFreshnessErrors(moduleRoot = MODULE_ROOT) {
+  const manifestPath = join(moduleRoot, "tools", "base-manifest.json");
+  if (!existsSync(manifestPath)) {
+    return ["tools/base-manifest.json is missing — run `node tools/base-integrity.mjs gen`."];
+  }
+  let committed;
+  try {
+    committed = JSON.parse(readFileSync(manifestPath, "utf8"));
+  } catch (error) {
+    return [`tools/base-manifest.json is not valid JSON: ${error.message}`];
+  }
+  const fresh = computeBaseManifest(moduleRoot);
+  const committedFiles = committed.files ?? {};
+  const errors = [];
+  for (const [rel, want] of Object.entries(fresh.files)) {
+    if (!(rel in committedFiles)) errors.push(`unrecorded base file: ${rel}`);
+    else if (committedFiles[rel] !== want) errors.push(`stale hash: ${rel}`);
+  }
+  for (const rel of Object.keys(committedFiles)) {
+    if (!(rel in fresh.files)) errors.push(`manifest lists a removed file: ${rel}`);
+  }
+  if (committed.fileCount !== fresh.fileCount) {
+    errors.push(`fileCount ${committed.fileCount} does not match ${fresh.fileCount} base files`);
+  }
+  if (committed.note !== fresh.note) {
+    errors.push("note does not match the canonical manifest note");
+  }
+  return errors;
+}
+
 function gen() {
   const truthErrors = productionTruthErrors();
   if (truthErrors.length) {
@@ -579,18 +629,23 @@ function gen() {
     migrationErrors.forEach((error) => console.error(`base-integrity: ${error}`));
     process.exit(1);
   }
-  const files = walk(MODULE_ROOT).sort();
-  const hashes = {};
-  for (const rel of files) hashes[rel] = sha(join(MODULE_ROOT, rel));
-  const manifest = {
-    note: "Base-file integrity manifest for the saas-starter module. Generated FROM canonical by "
-      + "`node tools/base-integrity.mjs gen`. Consumers MUST NOT hand-edit base files — only add "
-      + "files on the side. Regenerated on every codefly sync from canonical.",
-    fileCount: files.length,
-    files: hashes,
-  };
+  const manifest = computeBaseManifest();
   writeFileSync(MANIFEST_PATH, JSON.stringify(manifest, null, 2) + "\n");
-  console.log(`base-integrity: wrote ${files.length} base-file hashes to tools/base-manifest.json`);
+  console.log(`base-integrity: wrote ${manifest.fileCount} base-file hashes to tools/base-manifest.json`);
+}
+
+function verify() {
+  const errors = baseManifestFreshnessErrors();
+  if (errors.length) {
+    console.error(
+      "base-integrity: base-manifest.json does not match the canonical tree — "
+      + "regenerate it with `node tools/base-integrity.mjs gen` and commit the result:",
+    );
+    errors.forEach((error) => console.error(`    ${error}`));
+    process.exit(1);
+  }
+  const { fileCount } = JSON.parse(readFileSync(MANIFEST_PATH, "utf8"));
+  console.log(`✓ base-manifest.json matches the canonical tree (${fileCount} base files).`);
 }
 
 function check() {
@@ -651,5 +706,6 @@ if (resolve(process.argv[1] ?? "") === resolve(SCRIPT_PATH)) {
   const cmd = process.argv[2];
   if (cmd === "gen") gen();
   else if (cmd === "check") check();
-  else { console.error("usage: base-integrity.mjs <gen|check>"); process.exit(2); }
+  else if (cmd === "verify") verify();
+  else { console.error("usage: base-integrity.mjs <gen|check|verify>"); process.exit(2); }
 }
