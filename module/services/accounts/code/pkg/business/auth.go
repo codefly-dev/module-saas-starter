@@ -116,9 +116,24 @@ func (s *Service) Authenticate(ctx context.Context, req *gen.AuthenticateRequest
 		return nil, err
 	}
 
+	// An invite authentication accepts the invitation transactionally inside the
+	// resolver. Capture its pre-state here so the business layer — which owns the
+	// event pipeline the resolver cannot reach — can emit the accepted side
+	// effects on success, and lazily expire it when the resolver fails it closed.
+	var priorInvitation *Invitation
+	if invite, ok := intent.(auth.InviteIntent); ok {
+		priorInvitation, _ = s.invitationByToken(ctx, invite.Token)
+	}
+
 	identity, err := s.resolver.Resolve(ctx, claims, intent)
 	if err != nil {
+		if priorInvitation != nil && priorInvitation.Status == "pending" && errors.Is(err, ErrInvitationExpired) {
+			s.expireInvitation(ctx, priorInvitation)
+		}
 		return nil, w.Wrapf(err, "identity resolution")
+	}
+	if priorInvitation != nil && priorInvitation.Status == "pending" {
+		s.announceInvitationAccepted(ctx, priorInvitation, identity.UserID.String())
 	}
 	identity.AuthenticationMethods = []string{authenticationMethod}
 	if deviceDescription != "" {

@@ -342,6 +342,66 @@ func TestResolver_Invite_EmailMismatchRejectedAndProvisionsNothing(t *testing.T)
 	require.Equal(t, "pending", status, "the invitation stays pending")
 }
 
+func TestResolver_Invite_ExistingMemberRoleUpgraded(t *testing.T) {
+	resetAuthTables(t)
+	ctx := context.Background()
+	r := pgauth.NewResolver(testStore)
+
+	inviterID, orgID := seedInviteOrg(t)
+
+	// The invitee already exists and is a plain member of the inviting org.
+	existing, err := r.Resolve(ctx, claims("promote@test.local", "dev-promote"), auth.SignupIntent{})
+	require.NoError(t, err)
+	require.NoError(t, testStore.WithControlPlane(ctx, func(ctx context.Context) error {
+		tx := ctx.Value("tx").(pgx.Tx) //nolint:staticcheck // shared transaction context key
+		_, e := tx.Exec(ctx,
+			`INSERT INTO organization_members (org_id, user_id, role) VALUES ($1, $2, 'member')`,
+			orgID, existing.UserID)
+		return e
+	}))
+
+	token := seedInvitation(t, orgID, inviterID, "promote@test.local", "admin", "pending", time.Now().Add(24*time.Hour))
+
+	id, err := r.Resolve(ctx, claims("promote@test.local", "dev-promote"), auth.InviteIntent{Token: token})
+	require.NoError(t, err)
+	require.Equal(t, existing.UserID, id.UserID)
+	require.Equal(t, orgID, id.OrgID)
+	require.Equal(t, "admin", id.OrgRole, "accepting an admin invitation upgrades the returned role")
+
+	var dbRole string
+	scanControlPlane(t, &dbRole,
+		`SELECT role FROM organization_members WHERE org_id = $1 AND user_id = $2`, orgID, existing.UserID)
+	require.Equal(t, "admin", dbRole,
+		"the persisted membership role must match the accepted invitation, not stay stale")
+}
+
+func TestResolver_Invite_IdempotentReacceptReportsCurrentRole(t *testing.T) {
+	resetAuthTables(t)
+	ctx := context.Background()
+	r := pgauth.NewResolver(testStore)
+
+	inviterID, orgID := seedInviteOrg(t)
+	token := seedInvitation(t, orgID, inviterID, "current@test.local", "member", "pending", time.Now().Add(24*time.Hour))
+
+	joined, err := r.Resolve(ctx, claims("current@test.local", "dev-current"), auth.InviteIntent{Token: token})
+	require.NoError(t, err)
+	require.Equal(t, "member", joined.OrgRole)
+
+	// Promote the member out of band after acceptance.
+	require.NoError(t, testStore.WithControlPlane(ctx, func(ctx context.Context) error {
+		tx := ctx.Value("tx").(pgx.Tx) //nolint:staticcheck // shared transaction context key
+		_, e := tx.Exec(ctx,
+			`UPDATE organization_members SET role = 'owner' WHERE org_id = $1 AND user_id = $2`,
+			orgID, joined.UserID)
+		return e
+	}))
+
+	again, err := r.Resolve(ctx, claims("current@test.local", "dev-current"), auth.InviteIntent{Token: token})
+	require.NoError(t, err)
+	require.Equal(t, "owner", again.OrgRole,
+		"idempotent re-acceptance reports the current membership role, not the invitation's")
+}
+
 func TestResolver_Invite_NonPendingFailsClosed(t *testing.T) {
 	ctx := context.Background()
 	r := pgauth.NewResolver(testStore)

@@ -563,6 +563,55 @@ func HashInvitationToken(token string) string {
 	return hex.EncodeToString(hash[:])
 }
 
+// announceInvitationAccepted performs the non-transactional side effects that
+// follow an invitation accepted through the authentication path: the analytics
+// event, the inviter notification, the audit event, and membership-cache
+// invalidation. The acceptance itself is committed transactionally by the
+// identity resolver; this mirrors the tail of AcceptInvitation for the
+// auth-time flow, where the resolver has no access to the event pipeline.
+func (s *Service) announceInvitationAccepted(ctx context.Context, inv *Invitation, userID string) {
+	acceptedAt := time.Now().UTC()
+	_ = s.store.As(Identity{UserID: userID, OrgID: inv.OrgID}).Within(ctx, func(ctx context.Context) error {
+		return s.captureProductEvent(
+			ctx,
+			"invite_accepted",
+			inv.ID,
+			userID,
+			inv.OrgID,
+			acceptedAt,
+			map[string]any{"role": inv.Role},
+		)
+	})
+	s.invalidateMembership(ctx, inv.OrgID, userID)
+	s.emit(ctx, userID, "user", "invitation.accepted", "invitation", inv.ID, inv.OrgID)
+
+	orgName := "the organization"
+	if org, err := s.organizationForInvitation(ctx, inv); err == nil && org != nil && org.Name != "" {
+		orgName = org.Name
+	}
+	_, _ = s.CreateNotification(ctx, CreateNotificationInput{
+		UserID:    inv.InviterID,
+		OrgID:     inv.OrgID,
+		Title:     "Invitation accepted",
+		Body:      fmt.Sprintf("%s joined %s", inv.Email, orgName),
+		Type:      "success",
+		ActionURL: "/admin/invitations",
+		Category:  NotificationCategoryProduct,
+	})
+}
+
+// expireInvitation transitions a time-expired invitation to the expired state
+// in its own transaction. The identity resolver fails an expired invite closed
+// inside its serializable transaction, which therefore rolls back and cannot
+// persist the transition; the status change happens here at the business layer,
+// matching AcceptInvitation's lazy expiry.
+func (s *Service) expireInvitation(ctx context.Context, inv *Invitation) {
+	_ = s.store.WithOrgTx(ctx, inv.OrgID, func(ctx context.Context) error {
+		_, err := s.store.UpdateInvitationStatus(ctx, inv.ID, "expired", "")
+		return err
+	})
+}
+
 func (s *Service) organizationForInvitation(
 	ctx context.Context,
 	inv *Invitation,

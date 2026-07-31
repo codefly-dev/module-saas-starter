@@ -253,6 +253,23 @@ func (r *Resolver) loadOrg(ctx context.Context, tx pgx.Tx, userID uuid.UUID) (uu
 	return orgID, orgRole, nil
 }
 
+// memberRole returns the user's role in a specific org, or fallback when they
+// hold no membership row there.
+func (r *Resolver) memberRole(ctx context.Context, tx pgx.Tx, orgID, userID uuid.UUID, fallback string) (string, error) {
+	var role string
+	err := tx.QueryRow(ctx, `
+		SELECT role FROM organization_members WHERE org_id = $1 AND user_id = $2`,
+		orgID, userID,
+	).Scan(&role)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return fallback, nil
+	}
+	if err != nil {
+		return "", fmt.Errorf("pgauth: load member role: %w", err)
+	}
+	return role, nil
+}
+
 // ensureOrg loads the user's active org, or provisions a new org on signup when
 // an organization name is supplied and the user has none. A user with no org
 // and no orgName is a legitimate orgless state — the frontend will ask them to
@@ -335,9 +352,15 @@ func (r *Resolver) resolveInvite(
 		return uuid.Nil, uuid.Nil, "", fmt.Errorf("pgauth: load invitation: %w", err)
 	}
 
-	// Idempotent re-acceptance by the same user returns their membership.
+	// Idempotent re-acceptance by the same user returns their membership. Report
+	// their current role in the org, which may have changed since acceptance —
+	// not the (possibly stale) role the invitation carried.
 	if found && status == "accepted" && acceptedBy != nil && *acceptedBy == existingUserID {
-		return existingUserID, orgID, role, nil
+		effectiveRole, err := r.memberRole(ctx, tx, orgID, existingUserID, role)
+		if err != nil {
+			return uuid.Nil, uuid.Nil, "", err
+		}
+		return existingUserID, orgID, effectiveRole, nil
 	}
 	if status != "pending" {
 		return uuid.Nil, uuid.Nil, "", business.ErrInvitationUnavailable
@@ -357,10 +380,14 @@ func (r *Resolver) resolveInvite(
 		}
 	}
 
+	// Mirror AddOrgMember: the accepted invitation's role is authoritative, so
+	// upsert it on conflict rather than leaving an existing membership's role
+	// behind. Otherwise the role returned below (and minted into the JWT) could
+	// disagree with the persisted membership.
 	if _, err := tx.Exec(ctx, `
 		INSERT INTO organization_members (org_id, user_id, role)
 		VALUES ($1, $2, $3)
-		ON CONFLICT (org_id, user_id) DO NOTHING`,
+		ON CONFLICT (org_id, user_id) DO UPDATE SET role = $3`,
 		orgID, userID, role,
 	); err != nil {
 		return uuid.Nil, uuid.Nil, "", fmt.Errorf("pgauth: add invited member: %w", err)
