@@ -577,11 +577,12 @@ export function computeBaseManifest(moduleRoot = MODULE_ROOT) {
 }
 
 // The canonical release gate: the committed manifest must equal a fresh regeneration of the
-// tree. `check` re-hashes only the paths already in the manifest, so a base file changed without
-// a `gen` (v0.0.32: deployment_topology.go / network-policy.golden.yaml) sails through it — the
-// stale digest is exactly what `check` trusts. Comparing against a fresh recomputation catches
-// changed, unrecorded, and removed base files alike. Canonical-only: a consumer legitimately adds
-// files, so this must never run against a consumer tree.
+// tree — every field `gen` writes, so a passing `verify` proves `gen` is a no-op. `check`
+// re-hashes only the paths already in the manifest, so a base file changed without a `gen`
+// (v0.0.32: deployment_topology.go / network-policy.golden.yaml) sails through it — the stale
+// digest is exactly what `check` trusts. Comparing against a fresh recomputation catches changed,
+// unrecorded, and removed base files, plus a fileCount or note that drifted from the tree.
+// Canonical-only: a consumer legitimately adds files, so this must never run against a consumer tree.
 export function baseManifestFreshnessErrors(moduleRoot = MODULE_ROOT) {
   const manifestPath = join(moduleRoot, "tools", "base-manifest.json");
   if (!existsSync(manifestPath)) {
@@ -593,15 +594,21 @@ export function baseManifestFreshnessErrors(moduleRoot = MODULE_ROOT) {
   } catch (error) {
     return [`tools/base-manifest.json is not valid JSON: ${error.message}`];
   }
+  const fresh = computeBaseManifest(moduleRoot);
   const committedFiles = committed.files ?? {};
-  const fresh = computeBaseManifest(moduleRoot).files;
   const errors = [];
-  for (const [rel, want] of Object.entries(fresh)) {
+  for (const [rel, want] of Object.entries(fresh.files)) {
     if (!(rel in committedFiles)) errors.push(`unrecorded base file: ${rel}`);
     else if (committedFiles[rel] !== want) errors.push(`stale hash: ${rel}`);
   }
   for (const rel of Object.keys(committedFiles)) {
-    if (!(rel in fresh)) errors.push(`manifest lists a removed file: ${rel}`);
+    if (!(rel in fresh.files)) errors.push(`manifest lists a removed file: ${rel}`);
+  }
+  if (committed.fileCount !== fresh.fileCount) {
+    errors.push(`fileCount ${committed.fileCount} does not match ${fresh.fileCount} base files`);
+  }
+  if (committed.note !== fresh.note) {
+    errors.push("note does not match the canonical manifest note");
   }
   return errors;
 }

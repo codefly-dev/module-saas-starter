@@ -385,6 +385,26 @@ test("flags changed, unrecorded, and removed base files against a fresh regenera
   ]);
 });
 
+test("flags a fileCount or note that drifts even when every hash is current", (t) => {
+  const root = mkdtempSync(join(tmpdir(), "saas-manifest-metadata-"));
+  t.after(() => rmSync(root, { recursive: true, force: true }));
+  mkdirSync(join(root, "tools"), { recursive: true });
+  writeFileSync(join(root, "a.txt"), "alpha\n");
+  const manifestPath = join(root, "tools/base-manifest.json");
+
+  // Correct hashes, but the recorded fileCount and note no longer match what
+  // `gen` would write — the artifact is stale even though `check` would pass.
+  const drifted = computeBaseManifest(root);
+  drifted.fileCount = 999;
+  drifted.note = "hand-edited note";
+  writeJSON(manifestPath, drifted);
+
+  const errors = baseManifestFreshnessErrors(root);
+  assert.ok(errors.some((error) => error === "fileCount 999 does not match 1 base files"));
+  assert.ok(errors.some((error) => error === "note does not match the canonical manifest note"));
+  assert.ok(!errors.some((error) => error.startsWith("stale hash")));
+});
+
 test("does not require the frontend capability manifest when frontend is omitted", (t) => {
   const root = mkdtempSync(join(tmpdir(), "saas-production-truth-"));
   t.after(() => rmSync(root, { recursive: true, force: true }));
