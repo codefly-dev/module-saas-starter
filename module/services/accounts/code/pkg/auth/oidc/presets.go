@@ -11,21 +11,13 @@ import (
 //
 // Callers who need full control still use New(Config{...}) directly.
 
-// WorkOSConfig returns a Config preconfigured for WorkOS given a client id.
-// The composition root supplies that id from the Codefly identity
-// configuration; this package does not read process environment variables.
-func WorkOSConfig(clientID string) Config {
-	clientID = strings.TrimSpace(clientID)
-	return Config{
-		ProviderName:      "workos",
-		Issuer:            "https://api.workos.com",
-		JWKSURL:           fmt.Sprintf("https://api.workos.com/sso/jwks/%s", clientID),
-		OrgClaim:          "org_id",
-		ClientIDClaim:     "client_id",
-		ClientID:          clientID,
-		AllowMissingEmail: true,
-	}
-}
+// WorkOS is not a preset: it is configured entirely from discovery plus the
+// Codefly `identity` workspace configuration (see buildDiscoveredOIDCStack).
+// Its endpoints are published at the provider's well-known document rather than
+// compiled in, and its claim mapping (org_id, the client_id claim, and the
+// email supplied from the token-exchange response) is expressed as IDENTITY_*
+// configuration. A hardcoded preset would only reintroduce constants that drift
+// from the provider.
 
 // Auth0Config returns a Config preconfigured for an Auth0 tenant.
 //

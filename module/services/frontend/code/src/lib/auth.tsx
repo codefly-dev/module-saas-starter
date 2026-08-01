@@ -118,14 +118,25 @@ export function buildAuthorizeURL(
 // provider's token endpoint as `code_verifier`. The provider re-hashes
 // it and compares — this binds the code redemption to the original
 // authorize request and blocks a stolen-code replay.
-async function newPkce(): Promise<{ verifier: string; challenge: string }> {
+export async function newPkce(): Promise<{
+	verifier: string;
+	challenge: string;
+}> {
 	// 64 bytes → 86 char base64url, well within the 43–128 RFC range.
 	const bytes = new Uint8Array(64);
 	if (typeof window !== "undefined" && window.crypto) {
 		window.crypto.getRandomValues(bytes);
 	}
 	const verifier = base64urlEncode(bytes);
-	const digest = await window.crypto.subtle.digest("SHA-256", bytes);
+	// RFC 7636: code_challenge = BASE64URL(SHA256(ASCII(code_verifier))).
+	// The digest is taken over the verifier *string*, not the random bytes it
+	// was encoded from. Hashing the raw bytes yields a challenge the provider
+	// can never reproduce, because it only ever sees the string — every
+	// exchange then fails with "invalid_grant: Invalid code verifier".
+	const digest = await window.crypto.subtle.digest(
+		"SHA-256",
+		new TextEncoder().encode(verifier),
+	);
 	const challenge = base64urlEncode(new Uint8Array(digest));
 	return { verifier, challenge };
 }
