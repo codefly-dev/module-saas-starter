@@ -6,10 +6,12 @@
 // stay correct under an isolated naming scope.
 
 import {
+	type EndpointProtocol,
 	getCurrentModule,
 	getCurrentService,
 	getEndpoints,
 	resolveServiceAddressSync,
+	type ServiceEndpoint,
 } from "codefly";
 import { NextRequest } from "next/server";
 import { resolveCodeflyGatewayContext } from "@/lib/codefly-gateway-context";
@@ -41,38 +43,61 @@ export function codeflyInjectedGateway(): boolean {
 }
 
 /**
- * The private product gateway. In a browser this is never addressed directly:
- * Next rewrites the product API namespaces onto it. The pipeline tier runs
- * headless with no Next server, so it addresses the gateway and reproduces the
- * proxy's stamping with the real production libraries below.
+ * The Codefly runtime values the endpoint resolvers below depend on. Injected
+ * with `runtimeSDK` in production so the callers stay argument-free, but
+ * overridable in a unit test — the same seam `CodeflyRuntimeReader` gives the
+ * frontend gateway context — so the fail-closed behavior can be exercised
+ * without a live dependency graph.
  */
-export function productGatewayURL(): string {
-	const currentModule = getCurrentModule();
-	const injected = getEndpoints().filter(
-		(endpoint) =>
-			endpoint.service === "auth-sidecar" &&
-			endpoint.name === "rest" &&
-			endpoint.protocol === "REST" &&
-			(!currentModule || endpoint.module === currentModule),
-	);
-	if (injected.length === 1 && injected[0].address) {
-		return injected[0].address;
-	}
+export interface PipelineRuntimeReader {
+	currentModule(): string;
+	currentService(): string;
+	endpoints(): ServiceEndpoint[];
+	resolveAddress(service: string, apiType: EndpointProtocol): string | null;
+}
+
+const runtimeSDK: PipelineRuntimeReader = {
+	currentModule: getCurrentModule,
+	currentService: getCurrentService,
+	endpoints: getEndpoints,
+	resolveAddress: (service, apiType) =>
+		resolveServiceAddressSync(service, apiType, {
+			scope: testScope(),
+			cwd: process.cwd(),
+		}),
+};
+
+/**
+ * Resolve the single endpoint the pipeline harness must address. Under `codefly
+ * test service` Codefly injects the endpoints into this process; a plain
+ * `vitest --project pipeline` run resolves them from the SDK within the scope
+ * the harness started the graph under. Either way exactly one match is legal:
+ * more than one injected candidate means this is not the frontend's own graph,
+ * so it fails closed rather than silently addressing the wrong service. Both
+ * resolvers share this so that guard cannot drift between them.
+ */
+function resolvePipelineEndpoint(
+	label: string,
+	fallback: { service: string; apiType: EndpointProtocol },
+	matches: (endpoint: ServiceEndpoint) => boolean,
+	runtime: PipelineRuntimeReader,
+): string {
+	const injected = runtime.endpoints().filter(matches);
 	if (injected.length > 1) {
 		throw new Error(
-			"Codefly injected multiple auth-sidecar/rest endpoints into the frontend test runtime.",
+			`Codefly injected multiple ${label} endpoints into the frontend test runtime.`,
 		);
+	}
+	if (injected.length === 1 && injected[0].address) {
+		return injected[0].address;
 	}
 
 	// The harness started the graph itself (plain `vitest --project pipeline`).
 	// Resolve deterministically within the scope it used.
-	const endpoint = resolveServiceAddressSync("auth-sidecar", "rest", {
-		scope: testScope(),
-		cwd: process.cwd(),
-	});
+	const endpoint = runtime.resolveAddress(fallback.service, fallback.apiType);
 	if (!endpoint) {
 		throw new Error(
-			"Codefly did not resolve auth-sidecar/rest; run this through " +
+			`Codefly did not resolve ${label}; run this through ` +
 				"`codefly test service frontend --suite integration`.",
 		);
 	}
@@ -80,34 +105,47 @@ export function productGatewayURL(): string {
 }
 
 /**
+ * The private product gateway. In a browser this is never addressed directly:
+ * Next rewrites the product API namespaces onto it. The pipeline tier runs
+ * headless with no Next server, so it addresses the gateway and reproduces the
+ * proxy's stamping with the real production libraries below.
+ */
+export function productGatewayURL(
+	runtime: PipelineRuntimeReader = runtimeSDK,
+): string {
+	const currentModule = runtime.currentModule();
+	return resolvePipelineEndpoint(
+		"auth-sidecar/rest",
+		{ service: "auth-sidecar", apiType: "rest" },
+		(endpoint) =>
+			endpoint.service === "auth-sidecar" &&
+			endpoint.name === "rest" &&
+			endpoint.protocol === "REST" &&
+			(!currentModule || endpoint.module === currentModule),
+		runtime,
+	);
+}
+
+/**
  * The frontend's own HTTP origin is the module's public product entry, and the
  * origin the gateway must end up treating as verified. It comes from the SDK,
  * never from a literal or an assumed port.
  */
-export function productOrigin(): string {
-	const currentModule = getCurrentModule();
-	const currentService = getCurrentService();
-	const injected = getEndpoints().filter(
+export function productOrigin(
+	runtime: PipelineRuntimeReader = runtimeSDK,
+): string {
+	const currentModule = runtime.currentModule();
+	const currentService = runtime.currentService();
+	return resolvePipelineEndpoint(
+		"frontend/http",
+		{ service: "frontend", apiType: "http" },
 		(endpoint) =>
 			endpoint.name === "http" &&
 			endpoint.protocol === "HTTP" &&
 			(!currentModule || endpoint.module === currentModule) &&
 			(!currentService || endpoint.service === currentService),
+		runtime,
 	);
-	if (injected.length === 1 && injected[0].address) {
-		return injected[0].address;
-	}
-
-	const endpoint = resolveServiceAddressSync("frontend", "http", {
-		scope: testScope(),
-		cwd: process.cwd(),
-	});
-	if (!endpoint) {
-		throw new Error(
-			"Codefly did not resolve the frontend/http product origin.",
-		);
-	}
-	return endpoint;
 }
 
 /**

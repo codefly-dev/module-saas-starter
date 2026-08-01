@@ -1,6 +1,6 @@
 {
   "note": "Base-file integrity manifest for the saas-starter module. Generated FROM canonical by `node tools/base-integrity.mjs gen`. Consumers MUST NOT hand-edit base files — only add files on the side. Regenerated on every codefly sync from canonical.",
-  "fileCount": 1465,
+  "fileCount": 1466,
   "files": {
     "AUTHORIZATION_CATALOG.md": "b2ea5d41f0098e80315e02e7c4bdbda03b65c8eef463426242552fd3c047ca0a",
     "CONTRACT_VERSIONING.md": "02031aa87922ab5ec573ea582cf584271873481de6ceabbda52b1bfda005ffbd",
@@ -1191,7 +1191,8 @@
     "services/frontend/code/src/test/fixtures/reference-frontend-plugin.ts": "a3d78f8bd6b8f91d6011f2e7895932a0f70781ed8652e0cda7a6a5672b118c09",
     "services/frontend/code/src/test/msw/fixtures.ts": "f9b42d41ac17fc1b1a3c6549d177d44a71ff239e5589faabdfa9af9af14fcfb9",
     "services/frontend/code/src/test/msw/handlers.ts": "b266776651fcb83730a46605dd5107998190e4b1346d5ebe8f1a55d7ea105e7c",
-    "services/frontend/code/src/test/pipeline-gateway.ts": "d8928c2bfcc468d07d223f98398baf95fe5eab83e17d6188ed715de9e013278e",
+    "services/frontend/code/src/test/pipeline-gateway.test.ts": "bdc6bff46ef6db11d2601b34fef10bd960e330b2be5bc26987c138d3665c9a82",
+    "services/frontend/code/src/test/pipeline-gateway.ts": "eba81300b3b0eacc17c59b84e7fb79e33e520d873c97e53b849587945885b2f8",
     "services/frontend/code/src/test/pipeline-setup.ts": "f51fa59b56fe8f5b65fb9c7e5290394013265962ec9ffe0a4d481cd11338a542",
     "services/frontend/code/src/test/setup.ts": "bdd5f725751dc861a404f76c298c40582383f3567a829763c6b51d50fc28ff32",
     "services/frontend/code/tailwind.config.ts": "016d6108dab1f29309e3263f3e65b37df4412d919ea3060f1710af2166278a67",
