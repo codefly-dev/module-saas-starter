@@ -205,6 +205,107 @@ test("DROP TABLE removes a table from the tenant set", () => {
   assert.deepEqual(analyzeSql(sql), []);
 });
 
+test("a JOIN ... USING (col) inside a predicate is not mistaken for the policy's USING clause", () => {
+  const sql =
+    tenantSetup +
+    `
+    CREATE POLICY t_ins ON t FOR INSERT
+        WITH CHECK (EXISTS (
+            SELECT 1 FROM parent p JOIN grandparent g USING (gid)
+            WHERE p.id = t.org_id
+              AND g.org_id::text = current_setting('app.current_org_id', true)
+        ));
+    `;
+  assert.deepEqual(analyzeSql(sql), []);
+});
+
+test("a restrictive policy with an orthogonal predicate is not flagged as unconditional", () => {
+  const sql =
+    tenantSetup +
+    forAllPolicy +
+    "CREATE POLICY t_soft ON t AS RESTRICTIVE FOR ALL USING (archived_at IS NULL);";
+  assert.deepEqual(analyzeSql(sql), []);
+});
+
+test("a restrictive-only policy does not admit an append-only-guarded verb", () => {
+  const sql =
+    tenantSetup +
+    `
+    CREATE POLICY t_r ON t AS RESTRICTIVE
+        USING (org_id::text = current_setting('app.current_org_id', true))
+        WITH CHECK (org_id::text = current_setting('app.current_org_id', true));
+    ` +
+    appendOnlyTrigger;
+  const errors = analyzeSql(sql);
+  assert.equal(errors.length, 2);
+  assert.ok(errors.every((e) => /no RLS policy admits/.test(e)));
+});
+
+test("a DO block using plain EXECUTE literals to force RLS is recognized", () => {
+  const sql = `
+    CREATE TABLE t (org_id UUID);
+    DO $$ BEGIN
+        EXECUTE 'ALTER TABLE t ENABLE ROW LEVEL SECURITY';
+        EXECUTE 'ALTER TABLE t FORCE ROW LEVEL SECURITY';
+        EXECUTE 'CREATE POLICY p ON t USING (org_id::text = current_setting(''app.current_org_id'', true)) WITH CHECK (org_id::text = current_setting(''app.current_org_id'', true))';
+    END $$;
+  `;
+  assert.deepEqual(analyzeSql(sql), []);
+});
+
+test("a DO block whose EXECUTE literals forget FORCE is still caught", () => {
+  const sql = `
+    CREATE TABLE t (org_id UUID);
+    DO $$ BEGIN
+        EXECUTE 'ALTER TABLE t ENABLE ROW LEVEL SECURITY';
+        EXECUTE 'CREATE POLICY p ON t USING (org_id::text = current_setting(''app.current_org_id'', true))';
+    END $$;
+  `;
+  const errors = analyzeSql(sql);
+  assert.equal(errors.length, 1);
+  assert.match(errors[0], /missing FORCE/);
+});
+
+test("doubled single quotes inside string literals do not break scanning", () => {
+  const sql = `
+    CREATE TABLE t (note TEXT DEFAULT 'it''s; ok)', org_id UUID);
+    ALTER TABLE t ENABLE ROW LEVEL SECURITY; ALTER TABLE t FORCE ROW LEVEL SECURITY;
+    CREATE POLICY p ON t
+        USING (note <> 'a'')b' AND org_id::text = current_setting('app.current_org_id', true))
+        WITH CHECK (org_id::text = current_setting('app.current_org_id', true));
+  `;
+  assert.deepEqual(analyzeSql(sql), []);
+});
+
+test("an append-only trigger on UPDATE OF a quoted column binds to the table, not the column", () => {
+  const sql =
+    tenantSetup +
+    `
+    CREATE POLICY s ON t FOR SELECT USING (org_id::text = current_setting('app.current_org_id', true));
+    CREATE POLICY i ON t FOR INSERT WITH CHECK (org_id::text = current_setting('app.current_org_id', true));
+    CREATE FUNCTION reject() RETURNS TRIGGER AS $$ BEGIN RAISE EXCEPTION 'no'; END; $$ LANGUAGE plpgsql;
+    CREATE TRIGGER t_ao BEFORE UPDATE OF "on" ON t FOR EACH ROW EXECUTE FUNCTION reject();
+    `;
+  const errors = analyzeSql(sql);
+  assert.equal(errors.length, 1);
+  assert.match(errors[0], /rejects UPDATE but no RLS policy admits UPDATE/);
+});
+
+test("files without a numeric migration version are ignored", () => {
+  const root = mkdtempSync(join(tmpdir(), "rls-gate-"));
+  const migrations = join(root, "services", "store", "migrations");
+  try {
+    mkdirSync(migrations, { recursive: true });
+    writeFileSync(join(migrations, "1_ok.up.sql"), "CREATE TABLE a (id UUID);");
+    // A scratch file that is not a real migration: an unprotected tenant table that
+    // golang-migrate would never apply, so the gate must not analyze it either.
+    writeFileSync(join(migrations, "scratch.up.sql"), "CREATE TABLE b (org_id UUID);");
+    assert.deepEqual(rlsGateErrors(root), []);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
 test("the shipped store migrations satisfy the gate", () => {
   assert.deepEqual(rlsGateErrors(join(import.meta.dirname, "..")), []);
 });

@@ -42,8 +42,35 @@ const SCOPING_SETTING = /current_setting\(\s*'app\.current_(?:org|user|tenant)_i
 
 const MUTATION_VERBS = ["UPDATE", "DELETE"];
 
+// A single trigger event: one of the four DML events, with UPDATE's optional column
+// list. Constraining the event list (rather than matching ` ON ` greedily) keeps a
+// column named like a keyword inside `UPDATE OF <col>` from being read as the table.
+const TRIGGER_EVENT = String.raw`(?:INSERT|DELETE|TRUNCATE|UPDATE(?:\s+OF\s+[\w",\s]+?)?)`;
+const TRIGGER_RE = new RegExp(
+  String.raw`^\s*CREATE\s+(?:OR\s+REPLACE\s+)?(?:CONSTRAINT\s+)?TRIGGER\s+"?\w+"?\s+` +
+    String.raw`(?:BEFORE|AFTER|INSTEAD\s+OF)\s+` +
+    String.raw`(${TRIGGER_EVENT}(?:\s+OR\s+${TRIGGER_EVENT})*)\s+ON\s+("?[\w.]+"?)` +
+    String.raw`[\s\S]*?EXECUTE\s+(?:FUNCTION|PROCEDURE)\s+("?[\w.]+"?)`,
+  "i",
+);
+
 const stripName = (raw) =>
   raw.trim().replace(/^public\./i, "").replace(/"/g, "").toLowerCase();
+
+// Index of the quote that closes the single-quoted string opened at `open`,
+// treating a doubled '' as an escaped quote rather than a terminator (SQL string
+// escaping). Returns -1 when the string is never closed.
+function endOfString(sql, open) {
+  for (let i = open + 1; i < sql.length; i++) {
+    if (sql[i] !== "'") continue;
+    if (sql[i + 1] === "'") {
+      i++;
+      continue;
+    }
+    return i;
+  }
+  return -1;
+}
 
 // Walk `sql` from `open` (the index of an opening paren) to its matching close,
 // ignoring parens inside single-quoted or dollar-quoted regions. Returns the
@@ -53,7 +80,7 @@ function balanced(sql, open) {
   for (let i = open; i < sql.length; i++) {
     const ch = sql[i];
     if (ch === "'") {
-      i = sql.indexOf("'", i + 1);
+      i = endOfString(sql, i);
       if (i < 0) break;
       continue;
     }
@@ -74,14 +101,42 @@ function balanced(sql, open) {
   return { inner: "", end: sql.length };
 }
 
-// The parenthesised expression following a clause keyword (USING / WITH CHECK),
-// or null when the clause is absent.
+// The parenthesised expression of a top-level policy clause. `keyword` matches the
+// clause introducer immediately followed by its opening paren (e.g. /^USING\s*\(/).
+// The introducer is honoured only at paren depth 0, so a `USING (` from a JOIN or a
+// `CHECK` inside a subquery predicate is never mistaken for the policy's own clause.
+// Returns null when the clause is absent.
 function clauseExpr(rest, keyword) {
-  const at = rest.search(keyword);
-  if (at < 0) return null;
-  const open = rest.indexOf("(", at);
-  if (open < 0) return null;
-  return balanced(rest, open).inner;
+  let depth = 0;
+  for (let i = 0; i < rest.length; i++) {
+    const ch = rest[i];
+    if (ch === "'") {
+      i = endOfString(rest, i);
+      if (i < 0) break;
+      continue;
+    }
+    if (ch === "$") {
+      const tag = /^\$\w*\$/.exec(rest.slice(i));
+      if (tag) {
+        const end = rest.indexOf(tag[0], i + tag[0].length);
+        if (end < 0) break;
+        i = end + tag[0].length - 1;
+        continue;
+      }
+    }
+    if (ch === "(") {
+      depth++;
+      continue;
+    }
+    if (ch === ")") {
+      depth--;
+      continue;
+    }
+    if (depth !== 0 || (i > 0 && /\w/.test(rest[i - 1]))) continue;
+    const m = keyword.exec(rest.slice(i));
+    if (m) return balanced(rest, i + m[0].length - 1).inner;
+  }
+  return null;
 }
 
 // Remove `--` line comments and `/* */` block comments without disturbing string
@@ -92,7 +147,7 @@ function stripComments(sql) {
   for (let i = 0; i < sql.length; i++) {
     const ch = sql[i];
     if (ch === "'") {
-      const end = sql.indexOf("'", i + 1);
+      const end = endOfString(sql, i);
       out += sql.slice(i, end < 0 ? sql.length : end + 1);
       i = end < 0 ? sql.length : end;
       continue;
@@ -130,7 +185,7 @@ function splitStatements(sql) {
   for (let i = 0; i < sql.length; i++) {
     const ch = sql[i];
     if (ch === "'") {
-      i = sql.indexOf("'", i + 1);
+      i = endOfString(sql, i);
       if (i < 0) break;
       continue;
     }
@@ -162,7 +217,7 @@ function splitTopLevel(text, sep) {
   for (let i = 0; i < text.length; i++) {
     const ch = text[i];
     if (ch === "'") {
-      i = text.indexOf("'", i + 1);
+      i = endOfString(text, i);
       if (i < 0) break;
       continue;
     }
@@ -177,27 +232,48 @@ function splitTopLevel(text, sep) {
   return parts;
 }
 
-// Consumers inherit the starter's idiom of applying one RLS recipe to a list of
-// tables through `DO $$ ... FOREACH t IN ARRAY ARRAY[...] LOOP EXECUTE format(...)
-// END LOOP $$`. Expand that specific shape into the concrete statements it runs so
-// the classifier below sees them as if written out. Any format() argument we can't
-// resolve to the loop variable (e.g. a GRANT to current_user) drops that call —
-// those never touch table/policy structure.
+// The text of a single-quoted literal starting at `open`, or null if `at` is not a
+// quote. Unescapes doubled quotes.
+function literalAt(sql, at) {
+  if (sql[at] !== "'") return null;
+  const end = endOfString(sql, at);
+  if (end < 0) return null;
+  return { text: sql.slice(at + 1, end).replace(/''/g, "'"), end };
+}
+
+// Consumers set up RLS on many tables through a `DO $$ ... $$` block: either a
+// `FOREACH t IN ARRAY ARRAY[...] LOOP EXECUTE format('... %I ...', t) END LOOP`, or
+// plain `EXECUTE 'ALTER TABLE ... ROW LEVEL SECURITY'` statements. Expand every
+// EXECUTE we can resolve into the concrete SQL it runs so the classifier sees it as
+// if written out. An argument that is neither the loop variable nor a literal (a
+// function call, a role name, a concatenation) is unresolvable and drops that call —
+// otherwise a partial statement could set false state.
 function expandDoBlock(stmt) {
   const loop = /FOREACH\s+(\w+)\s+IN\s+ARRAY\s+ARRAY\s*\[([\s\S]*?)\]/i.exec(stmt);
-  if (!loop) return [];
-  const loopVar = loop[1];
-  const items = [...loop[2].matchAll(/'((?:[^']|'')*)'/g)].map((m) =>
-    m[1].replace(/''/g, "'"),
-  );
-  if (!items.length) return [];
+  const loopVar = loop ? loop[1] : null;
+  const items = loop
+    ? [...loop[2].matchAll(/'((?:[^']|'')*)'/g)].map((m) => m[1].replace(/''/g, "'"))
+    : [];
 
   const expanded = [];
-  const formatRe = /\bformat\s*\(/gi;
+  const execRe = /\bEXECUTE\s+/gi;
   let m;
-  while ((m = formatRe.exec(stmt))) {
+  while ((m = execRe.exec(stmt))) {
     let i = m.index + m[0].length;
-    while (stmt[i] === " " || stmt[i] === "\n") i++;
+
+    const literal = literalAt(stmt, i);
+    if (literal) {
+      // Bare dynamic SQL. A trailing `|| var` concatenation we cannot resolve would
+      // make this a fragment, so skip those rather than emit half a statement.
+      if (!/^\s*\|\|/.test(stmt.slice(literal.end + 1))) expanded.push(literal.text);
+      continue;
+    }
+
+    const fmt = /^format\s*\(/i.exec(stmt.slice(i));
+    if (!fmt) continue;
+    i += fmt[0].length;
+    while (/\s/.test(stmt[i] ?? "")) i++;
+
     let template;
     const tag = /^\$\w*\$/.exec(stmt.slice(i));
     if (tag) {
@@ -205,14 +281,13 @@ function expandDoBlock(stmt) {
       if (end < 0) continue;
       template = stmt.slice(i + tag[0].length, end);
       i = end + tag[0].length;
-    } else if (stmt[i] === "'") {
-      const end = stmt.indexOf("'", i + 1);
-      if (end < 0) continue;
-      template = stmt.slice(i + 1, end).replace(/''/g, "'");
-      i = end + 1;
     } else {
-      continue;
+      const tmpl = literalAt(stmt, i);
+      if (!tmpl) continue;
+      template = tmpl.text;
+      i = tmpl.end + 1;
     }
+
     const close = stmt.indexOf(")", i);
     const args = stmt
       .slice(i, close < 0 ? stmt.length : close)
@@ -220,10 +295,24 @@ function expandDoBlock(stmt) {
       .split(",")
       .map((a) => a.trim())
       .filter(Boolean);
-    if (args.length && !args.every((a) => a === loopVar)) continue;
-    for (const item of items) {
-      expanded.push(template.replace(/%[Is]/g, () => item));
-    }
+    // Resolve each %I/%s to its argument: the loop variable → the current item, a
+    // quoted literal → its text. Any other argument is unresolvable → drop the call.
+    const literalArg = (a) => {
+      const q = /^'((?:[^']|'')*)'$/.exec(a);
+      return q ? q[1].replace(/''/g, "'") : null;
+    };
+    const resolvable = args.every((a) => a === loopVar || literalArg(a) !== null);
+    if (!resolvable) continue;
+    const usesLoop = args.includes(loopVar);
+    const substitute = (item) => {
+      let k = 0;
+      return template.replace(/%[Is]/g, () => {
+        const a = args[k++];
+        return a === loopVar ? item : literalArg(a);
+      });
+    };
+    if (usesLoop) items.forEach((item) => expanded.push(substitute(item)));
+    else expanded.push(substitute(null));
   }
   return expanded;
 }
@@ -266,14 +355,18 @@ export function analyzeSql(sql) {
     } else if ((m = /^\s*CREATE\s+POLICY\s+("?\w+"?)\s+ON\s+("?[\w.]+"?)([\s\S]*)$/i.exec(stmt))) {
       const table = stripName(m[2]);
       const rest = m[3];
-      const using = clauseExpr(rest, /\bUSING\s*\(/i);
-      const check = clauseExpr(rest, /\bWITH\s+CHECK\s*\(/i);
+      const using = clauseExpr(rest, /^USING\s*\(/i);
+      const check = clauseExpr(rest, /^WITH\s+CHECK\s*\(/i);
       const head = rest.slice(0, rest.search(/\b(USING|WITH\s+CHECK)\b/i) + 1 || rest.length);
       const verb = /\bFOR\s+(ALL|SELECT|INSERT|UPDATE|DELETE)\b/i.exec(head);
       const list = policies.get(table) ?? [];
       list.push({
         policy: stripName(m[1]),
         verb: verb ? verb[1].toUpperCase() : "ALL",
+        // PERMISSIVE (the default) policies OR-combine and grant access; RESTRICTIVE
+        // policies only AND-tighten. Only permissive policies admit rows to a verb or
+        // can loosen isolation, so the invariants below apply only to them.
+        permissive: !/\bAS\s+RESTRICTIVE\b/i.test(head),
         using,
         check,
       });
@@ -282,8 +375,8 @@ export function analyzeSql(sql) {
       const list = policies.get(stripName(m[2])) ?? [];
       const target = list.find((p) => p.policy === stripName(m[1]));
       if (target) {
-        const using = clauseExpr(m[3], /\bUSING\s*\(/i);
-        const check = clauseExpr(m[3], /\bWITH\s+CHECK\s*\(/i);
+        const using = clauseExpr(m[3], /^USING\s*\(/i);
+        const check = clauseExpr(m[3], /^WITH\s+CHECK\s*\(/i);
         if (using !== null) target.using = using;
         if (check !== null) target.check = check;
       }
@@ -298,7 +391,7 @@ export function analyzeSql(sql) {
           /RAISE\s+EXCEPTION/i.test(body[2]) && !/RETURN\s+(NEW|OLD)\b/i.test(body[2]),
         );
       }
-    } else if ((m = /^\s*CREATE\s+(?:OR\s+REPLACE\s+)?(?:CONSTRAINT\s+)?TRIGGER\s+"?\w+"?\s+(?:BEFORE|AFTER|INSTEAD\s+OF)\s+([\s\S]*?)\s+ON\s+("?[\w.]+"?)[\s\S]*?EXECUTE\s+(?:FUNCTION|PROCEDURE)\s+("?[\w.]+"?)/i.exec(stmt))) {
+    } else if ((m = TRIGGER_RE.exec(stmt))) {
       const events = m[1].toUpperCase();
       triggers.push({
         table: stripName(m[2]),
@@ -329,7 +422,9 @@ export function analyzeSql(sql) {
 
     const list = policies.get(name) ?? [];
     const admitted = new Set(
-      list.flatMap((p) => (p.verb === "ALL" ? ["SELECT", "INSERT", "UPDATE", "DELETE"] : [p.verb])),
+      list
+        .filter((p) => p.permissive)
+        .flatMap((p) => (p.verb === "ALL" ? ["SELECT", "INSERT", "UPDATE", "DELETE"] : [p.verb])),
     );
     for (const verb of guarded.get(name) ?? []) {
       if (!admitted.has(verb)) {
@@ -340,6 +435,7 @@ export function analyzeSql(sql) {
     }
 
     for (const p of list) {
+      if (!p.permissive) continue;
       for (const [clause, expr] of [["USING", p.using], ["WITH CHECK", p.check]]) {
         if (expr !== null && !SCOPING_SETTING.test(expr)) {
           errors.push(
@@ -357,8 +453,9 @@ export function rlsGateErrors(moduleRoot = MODULE_ROOT) {
   if (!existsSync(migrationRoot)) return [];
 
   const files = readdirSync(migrationRoot)
-    .filter((name) => name.endsWith(".up.sql"))
-    .map((name) => ({ name, version: Number.parseInt(name, 10) }))
+    .map((name) => ({ name, match: /^(\d+)_.*\.up\.sql$/.exec(name) }))
+    .filter((f) => f.match)
+    .map((f) => ({ name: f.name, version: Number(f.match[1]) }))
     .sort((a, b) => a.version - b.version || a.name.localeCompare(b.name));
 
   const combined = files

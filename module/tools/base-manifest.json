@@ -1463,7 +1463,7 @@
     "tools/go.sum": "e42794fa9b56301ad073de55cac1dea683b320ed951454d8709ffc7156088dd2",
     "tools/marketing-extraction.mjs": "20a7e8abd1fd04cc84aaed7333405c0813149220dd8122a70771c4917c4e0e93",
     "tools/proto_generation_test.go": "993e2bc7f10bde428ad9b9bea8c7c88a6fa129a8a092689a33f9bc1a9a40509f",
-    "tools/rls-migration-gate.mjs": "7f3761b7f62a89bfadc40c9b180c61837fa652486574a4737304c5b2acff61df",
-    "tools/rls-migration-gate.test.mjs": "d3d32f4e29bb443fab4350c7c91ff13087b7f64ea9aebc670fd9258855fd1ca5"
+    "tools/rls-migration-gate.mjs": "fd258aca45acc801b35e3abd1ae70518f8e62f44ef7c03f7ca6e7a9b9422bb03",
+    "tools/rls-migration-gate.test.mjs": "0466eb37910c6a780d31df07a2d2df1d2339adc453271a1584e7dec02547b92f"
   }
 }
