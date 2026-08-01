@@ -34,6 +34,18 @@ jobs:
       - name: Enforce tenant RLS coverage in store migrations
         run: node module/tools/rls-migration-gate.mjs check
 
+  provider-shim:
+    name: Provider setup shims
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+      - name: Statically test the Stripe non-writing shim
+        run: node --test scripts/setup/stripe-shim.test.mjs
+
   marketing:
     name: Marketing isolation
     runs-on: ubuntu-latest

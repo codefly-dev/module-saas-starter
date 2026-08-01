@@ -91,44 +91,29 @@ projected through Codefly's configuration model rather than read from a local
 
 ### Stripe
 
-Use a test-mode restricted key and an existing webhook secret:
+`stripe.sh` is now a non-writing compatibility shim. Account validation, webhook
+create/observe, signing-secret capture, and billing configuration projection
+moved to the [`codefly-dev/provider-stripe`](https://github.com/codefly-dev/provider-stripe)
+plugin. The shim contacts nothing, writes nothing, and manages no remote
+resource. It only classifies a supplied test-mode key locally — accepting both
+`sk_test_` and `rk_test_` and refusing live keys — so a live credential is caught
+before it reaches the plugin:
 
 ```bash
-scripts/setup/stripe.sh \
-  --api-key-file /secure/path/stripe-api-key.env \
-  --webhook-secret-file /secure/path/stripe-webhook-secret.env
+scripts/setup/stripe.sh --api-key-file /secure/path/stripe-api-key.env
 ```
 
-For local delivery, keep Stripe CLI forwarding to the Codefly-owned callback.
-Resolve the callback at runtime; do not copy its port into configuration:
+The key is never stored; hand it, and any webhook signing secret, to the plugin.
+Removed flags fail closed with exact guidance: `--provision-webhook`,
+`--skip-remote-validation`, `--webhook-origin`, `--webhook-secret-file`,
+`--force`, `--workspace`, and `--skip-doctor` no longer have shim-side semantics.
 
-```bash
-stripe listen --forward-to \
-  "$(codefly endpoint frontend --type http)/v1/billing/webhook"
-```
+If an earlier run of the old script created a Stripe webhook endpoint, import it
+into the plugin by its exact endpoint id (`we_...`), not by URL — the plugin
+never adopts an endpoint from its URL.
 
-Put the `whsec_...` printed by that listener in the webhook secret file, run
-the setup script, and keep the listener running while dogfooding.
-
-Alternatively, expose the Codefly ingress through a public HTTPS tunnel and
-explicitly let the script create the remote webhook:
-
-```bash
-scripts/setup/stripe.sh \
-  --api-key-file /secure/path/stripe-api-key.env \
-  --webhook-origin https://YOUR-TUNNEL.example \
-  --provision-webhook
-```
-
-Remote provisioning deliberately rejects the loopback URL returned by
-`codefly endpoint`: Stripe cannot deliver to localhost. The external tunnel
-origin is provider-side ingress configuration; every local host and port behind
-it remains Codefly-owned.
-
-The script refuses live keys. Product names, pricing, metering, and tax choices
-remain operator-owned decisions. Dogfood with Stripe test cards, then verify
-checkout, portal return, duplicate webhook delivery, and out-of-order
-subscription convergence.
+Product names, pricing, metering, and tax choices remain operator-owned
+decisions.
 
 ### Resend
 
