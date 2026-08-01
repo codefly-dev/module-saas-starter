@@ -872,6 +872,98 @@ func buildOAuthRequestPolicy(provider string) (*auth.OAuthRequestPolicy, error) 
 	return auth.NewOAuthRequestPolicy(provider, configuredOAuthRedirectURIs())
 }
 
+// buildDiscoveredOIDCStack configures an identity provider entirely from
+// workspace configuration plus the provider's own OpenID metadata.
+//
+// The issuer, key set and token endpoint are facts the provider publishes at
+// /.well-known/openid-configuration, so they are discovered rather than
+// compiled in. Hardcoding them per provider is how this service ended up
+// rejecting every WorkOS token with "issuer mismatch" after a successful code
+// exchange — the constant was wrong in Go and no configuration could fix it.
+//
+// Discovery is skipped only when the operator has pinned everything it would
+// supply: both IDENTITY_JWKS_URL and IDENTITY_TOKEN_URL, with IDENTITY_ISSUER as
+// the expected `iss`. That is the escape hatch for air-gapped environments that
+// cannot reach the well-known endpoint — otherwise a partial pin still discovers
+// the rest, and any discovery outage fails startup closed rather than guessing.
+func buildDiscoveredOIDCStack(provider string) (auth.TokenValidator, business.CodeExchanger, error) {
+	clientID := identityEnv("IDENTITY_CLIENT_ID")
+	clientSecret := identityEnv("IDENTITY_CLIENT_SECRET")
+	issuer := identityEnv("IDENTITY_ISSUER")
+	if !hasConfiguredValue(clientID) || !hasConfiguredValue(clientSecret) {
+		return nil, nil, fmt.Errorf(
+			"identity provider %s requires IDENTITY_CLIENT_ID and IDENTITY_CLIENT_SECRET", provider)
+	}
+	if !hasConfiguredValue(issuer) {
+		return nil, nil, fmt.Errorf(
+			"identity provider %s requires IDENTITY_ISSUER to discover provider metadata", provider)
+	}
+
+	// Start from any explicitly pinned endpoints; discovery fills only the gaps.
+	expectedIssuer := issuer
+	jwksURL := identityEnv("IDENTITY_JWKS_URL")
+	tokenURL := identityEnv("IDENTITY_TOKEN_URL")
+	if !hasConfiguredValue(jwksURL) || !hasConfiguredValue(tokenURL) {
+		ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+		defer cancel()
+		discovered, err := oidc.Discover(ctx, issuer, nil)
+		if err != nil {
+			return nil, nil, fmt.Errorf("discover %s provider metadata: %w", provider, err)
+		}
+		expectedIssuer = discovered.Issuer
+		if !hasConfiguredValue(jwksURL) {
+			jwksURL = discovered.JWKSURI
+		}
+		if !hasConfiguredValue(tokenURL) {
+			tokenURL = discovered.TokenEndpoint
+		}
+	}
+
+	cfg := oidc.Config{
+		ProviderName:  provider,
+		Issuer:        expectedIssuer,
+		JWKSURL:       jwksURL,
+		Audience:      identityEnv("IDENTITY_AUDIENCE"),
+		OrgClaim:      identityEnvOrDefault("IDENTITY_ORG_CLAIM", "organization_id"),
+		ClientIDClaim: identityEnv("IDENTITY_CLIENT_ID_CLAIM"),
+		ClientID:      clientID,
+		// Providers that return the verified profile in the token response
+		// rather than in the signed token declare it here.
+		AllowMissingEmail: identityEnv("IDENTITY_EMAIL_FROM_TOKEN_RESPONSE") == "true",
+	}
+	if claim := identityEnv("IDENTITY_EMAIL_CLAIM"); claim != "" {
+		cfg.EmailClaim = claim
+	}
+
+	validator, err := oidc.New(cfg)
+	if err != nil {
+		return nil, nil, fmt.Errorf("initialize %s validator: %w", provider, err)
+	}
+
+	if strings.TrimSpace(tokenURL) == "" {
+		return nil, nil, fmt.Errorf(
+			"identity provider %s published no token endpoint; set IDENTITY_TOKEN_URL", provider)
+	}
+
+	exchanger, err := workosauth.NewExchanger(workosauth.Config{
+		TokenURL:     tokenURL,
+		ClientID:     clientID,
+		ClientSecret: clientSecret,
+		Validator:    validator,
+	})
+	if err != nil {
+		return nil, nil, fmt.Errorf("initialize %s exchanger: %w", provider, err)
+	}
+	return validator, exchanger, nil
+}
+
+func identityEnvOrDefault(key, fallback string) string {
+	if value := identityEnv(key); hasConfiguredValue(value) {
+		return value
+	}
+	return fallback
+}
+
 func buildProviderStack(provider, selectedFixture string) (auth.TokenValidator, business.CodeExchanger, error) {
 	switch provider {
 	case "dev":
@@ -889,37 +981,7 @@ func buildProviderStack(provider, selectedFixture string) (auth.TokenValidator, 
 		return v, nil, nil
 
 	case "workos":
-		clientID := identityEnv("IDENTITY_CLIENT_ID")
-		clientSecret := identityEnv("IDENTITY_CLIENT_SECRET")
-		if !hasConfiguredValue(clientID) || !hasConfiguredValue(clientSecret) {
-			return nil, nil, fmt.Errorf("identity provider workos requires IDENTITY_CLIENT_ID and IDENTITY_CLIENT_SECRET")
-		}
-		cfg := oidc.WorkOSConfig(clientID)
-		// Allow Codefly configuration overrides for custom WorkOS domains.
-		if iss := identityEnv("IDENTITY_ISSUER"); iss != "" {
-			cfg.Issuer = iss
-		}
-		if j := identityEnv("IDENTITY_JWKS_URL"); j != "" {
-			cfg.JWKSURL = j
-		}
-		v, err := oidc.New(cfg)
-		if err != nil {
-			return nil, nil, fmt.Errorf("initialize WorkOS validator: %w", err)
-		}
-		tokenURL := identityEnv("IDENTITY_TOKEN_URL")
-		if tokenURL == "" {
-			tokenURL = "https://api.workos.com/user_management/authenticate"
-		}
-		ex, err := workosauth.NewExchanger(workosauth.Config{
-			TokenURL:     tokenURL,
-			ClientID:     clientID,
-			ClientSecret: clientSecret,
-			Validator:    v,
-		})
-		if err != nil {
-			return nil, nil, fmt.Errorf("initialize WorkOS exchanger: %w", err)
-		}
-		return v, ex, nil
+		return buildDiscoveredOIDCStack(provider)
 
 	case "auth0":
 		domain := identityEnv("IDENTITY_DOMAIN")
