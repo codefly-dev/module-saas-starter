@@ -25,6 +25,7 @@ func resetAuthTables(t *testing.T) {
 	ctx := context.Background()
 	queries := []string{
 		`DELETE FROM sessions`,
+		`DELETE FROM waitlist_entries`,
 		`DELETE FROM invitations`,
 		`DELETE FROM platform_admins`,
 		`DELETE FROM organization_members`,
@@ -927,6 +928,125 @@ func TestResolver_InvalidClaims_Rejected(t *testing.T) {
 
 	_, err = r.Resolve(ctx, nil, auth.LoginIntent{})
 	require.Error(t, err)
+}
+
+func resolverWithSignupMode(mode auth.SignupMode) *pgauth.Resolver {
+	r := pgauth.NewResolver(testStore)
+	r.SetSignupMode(mode)
+	return r
+}
+
+// seedWaitlistEntry writes a waitlist row in the given state for email.
+func seedWaitlistEntry(t *testing.T, email, state string) {
+	t.Helper()
+	require.NoError(t, testStore.WithControlPlane(context.Background(), func(ctx context.Context) error {
+		tx := ctx.Value("tx").(pgx.Tx) //nolint:staticcheck // shared transaction context key
+		id := business.NewID()
+		_, err := tx.Exec(ctx, `
+			INSERT INTO waitlist_entries (
+				id, normalized_email, name, company, use_case, source, campaign,
+				referrer, referral_code, consent_policy_version, state)
+			VALUES ($1, LOWER(BTRIM($2)), '', '', '', '', '', '', $3, '', $4)`,
+			id, email, id.String(), state)
+		return err
+	}))
+}
+
+func TestResolver_SignupMode_Open_UnknownSignsUp(t *testing.T) {
+	resetAuthTables(t)
+	ctx := context.Background()
+	r := resolverWithSignupMode(auth.SignupModeOpen)
+
+	id, err := r.Resolve(ctx, claims("open-unknown@test.local", "dev-open-unknown"), auth.SignupIntent{})
+	require.NoError(t, err)
+	require.NotEqual(t, uuid.Nil, id.UserID)
+
+	var count int
+	scanControlPlane(t, &count, `SELECT COUNT(*) FROM users WHERE primary_email = 'open-unknown@test.local'`)
+	require.Equal(t, 1, count)
+}
+
+func TestResolver_SignupMode_Invite_StrangerRejectedAndProvisionsNothing(t *testing.T) {
+	resetAuthTables(t)
+	ctx := context.Background()
+	r := resolverWithSignupMode(auth.SignupModeInvite)
+
+	_, err := r.Resolve(ctx, claims("stranger@test.local", "dev-invite-stranger"), auth.SignupIntent{})
+	require.ErrorIs(t, err, auth.ErrSignupNotAllowed)
+
+	var count int
+	scanControlPlane(t, &count, `SELECT COUNT(*) FROM users WHERE primary_email = 'stranger@test.local'`)
+	require.Equal(t, 0, count, "a rejected signup must write no user")
+	scanControlPlane(t, &count, `SELECT COUNT(*) FROM user_identities WHERE provider_id = 'dev-invite-stranger'`)
+	require.Equal(t, 0, count)
+}
+
+func TestResolver_SignupMode_Invite_InvitedSignsUpIntoOrg(t *testing.T) {
+	resetAuthTables(t)
+	ctx := context.Background()
+	inviterID, orgID := seedInviteOrg(t)
+	seedInvitation(t, orgID, inviterID, "invitee@test.local", "admin", "pending", time.Now().Add(24*time.Hour))
+
+	r := resolverWithSignupMode(auth.SignupModeInvite)
+	id, err := r.Resolve(ctx, claims("invitee@test.local", "dev-invitee"), auth.SignupIntent{})
+	require.NoError(t, err)
+	require.Equal(t, orgID, id.OrgID, "invited signup lands in the inviting org")
+	require.Equal(t, "admin", id.OrgRole)
+
+	var count int
+	scanControlPlane(t, &count,
+		`SELECT COUNT(*) FROM organization_members WHERE org_id = $1 AND user_id = $2 AND role = 'admin'`,
+		orgID, id.UserID)
+	require.Equal(t, 1, count)
+
+	var status string
+	scanControlPlane(t, &status,
+		`SELECT status FROM invitations WHERE email = 'invitee@test.local'`)
+	require.Equal(t, "accepted", status, "the matched invitation is consumed")
+}
+
+func TestResolver_SignupMode_Invite_ExistingUserCanLogin(t *testing.T) {
+	resetAuthTables(t)
+	ctx := context.Background()
+
+	// Provision the user while signup is open, then flip to invite mode.
+	open := resolverWithSignupMode(auth.SignupModeOpen)
+	first, err := open.Resolve(ctx, claims("member@test.local", "dev-member"), auth.SignupIntent{})
+	require.NoError(t, err)
+
+	invite := resolverWithSignupMode(auth.SignupModeInvite)
+	second, err := invite.Resolve(ctx, claims("member@test.local", "dev-member"), auth.LoginIntent{})
+	require.NoError(t, err, "login is never gated by signup mode")
+	require.Equal(t, first.UserID, second.UserID)
+}
+
+func TestResolver_SignupMode_Waitlist_PendingRejected(t *testing.T) {
+	resetAuthTables(t)
+	ctx := context.Background()
+	seedWaitlistEntry(t, "pending@test.local", "pending")
+
+	r := resolverWithSignupMode(auth.SignupModeWaitlist)
+	_, err := r.Resolve(ctx, claims("pending@test.local", "dev-waitlist-pending"), auth.SignupIntent{})
+	require.ErrorIs(t, err, auth.ErrSignupNotAllowed)
+
+	var count int
+	scanControlPlane(t, &count, `SELECT COUNT(*) FROM users WHERE primary_email = 'pending@test.local'`)
+	require.Equal(t, 0, count)
+}
+
+func TestResolver_SignupMode_Waitlist_ApprovedAccepted(t *testing.T) {
+	resetAuthTables(t)
+	ctx := context.Background()
+	seedWaitlistEntry(t, "approved@test.local", "approved")
+
+	r := resolverWithSignupMode(auth.SignupModeWaitlist)
+	id, err := r.Resolve(ctx, claims("approved@test.local", "dev-waitlist-approved"), auth.SignupIntent{})
+	require.NoError(t, err)
+	require.NotEqual(t, uuid.Nil, id.UserID)
+
+	var count int
+	scanControlPlane(t, &count, `SELECT COUNT(*) FROM users WHERE primary_email = 'approved@test.local'`)
+	require.Equal(t, 1, count)
 }
 
 // sanity: compile-time interface assertion
