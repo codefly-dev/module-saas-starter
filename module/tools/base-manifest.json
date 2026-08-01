@@ -204,7 +204,7 @@
     "services/accounts/code/pkg/business/audit_export_s3.go": "7c03d51cfe1d3cd921850728e95a0c5aad2ca2be04ed1873a294912f92e4b58e",
     "services/accounts/code/pkg/business/audit_exporter.go": "b3271e31b3101e668bdb745d6cb25204b374f838e02d1e99173f8d21ef0b62d9",
     "services/accounts/code/pkg/business/audit_exporter_test.go": "d69c233d807e45c634e474194d69885d403a84fa2ef8bf7b0895b17fbb63e58e",
-    "services/accounts/code/pkg/business/auth.go": "90093259de30f012286fe221638b4a71e7fcd5486730572cd999487afb1fc12c",
+    "services/accounts/code/pkg/business/auth.go": "2a770f02dd0a6758dba48d25bf21c544031733aec96a3876e6739b81963e8608",
     "services/accounts/code/pkg/business/auth_invitation_test.go": "da54c839c04575798d6f8f71053e5f11eda70e2d6491295b58b33e0e6cfb3c64",
     "services/accounts/code/pkg/business/auth_login_flow_test.go": "74000ffdd2b1f0ca6abe3899614c0652e29d15125362e7f5c7c0ad12272c2ebe",
     "services/accounts/code/pkg/business/auth_oauth_test.go": "e79661c1afc2febff22a4cb6b1e5e06194929c6294229add7e8a65bdb5d56e04",

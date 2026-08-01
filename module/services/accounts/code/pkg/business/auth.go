@@ -336,7 +336,6 @@ func (s *Service) SwitchOrganization(
 	}, nil
 }
 
-// BeginOAuth issues a server-signed `state` token for the FE to embed
 // validateOAuthRequest authorizes both halves of the OAuth flow — initiation
 // and the callback code exchange — so the two can never disagree about which
 // redirect is acceptable.
@@ -363,6 +362,7 @@ func (s *Service) validateOAuthRequest(ctx context.Context, provider, redirectUR
 	return nil
 }
 
+// BeginOAuth issues a server-signed `state` token for the FE to embed
 // in the authorize URL. The token is bound to (provider, redirect_uri)
 // and short-lived (10 min by default). On callback, Authenticate
 // verifies the same token before exchanging the code, blocking CSRF

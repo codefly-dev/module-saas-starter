@@ -344,16 +344,22 @@ fi
 temporary_public="${temporary_dir}/identity.env"
 temporary_secret="${temporary_dir}/identity.secret.env"
 
-# Only the issuer and the application identity are written. The token endpoint,
-# authorization endpoint and key set are published by the provider at
-# ${issuer}/.well-known/openid-configuration and are discovered at startup, so
-# they are never pinned here — a pinned value that drifts from the provider is
-# how a login fails after a successful code exchange.
+# The token endpoint and key set are backend-only facts: accounts fetches
+# ${issuer}/.well-known/openid-configuration at startup and takes token_endpoint
+# and jwks_uri from it, so they are never pinned here — a pinned value that
+# drifts from the provider is how a login fails after a successful code exchange.
+#
+# The authorize endpoint is different: the browser redirects the user there to
+# begin the flow, and the browser never performs OIDC discovery — it only sees
+# the non-secret IDENTITY_* values the Next.js agent exposes as
+# NEXT_PUBLIC_IDENTITY_*. So the authorize URL must be written for the frontend;
+# without it readIdentityProvider() returns null and the sign-in button vanishes.
 printf '%s\n' \
   "IDENTITY_PROVIDER=workos" \
   "IDENTITY_DISPLAY_NAME=${display_name}" \
   "IDENTITY_CLIENT_ID=${client_id}" \
   "IDENTITY_ISSUER=https://api.workos.com/user_management/${client_id}" \
+  "IDENTITY_AUTHORIZE_URL=https://api.workos.com/user_management/authorize" \
   "IDENTITY_AUTHORIZE_SELECTOR=authkit" \
   "IDENTITY_CLIENT_ID_CLAIM=client_id" \
   "IDENTITY_ORG_CLAIM=org_id" \
