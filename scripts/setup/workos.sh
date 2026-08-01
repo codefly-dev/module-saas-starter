@@ -17,6 +17,10 @@ env_file=""
 api_key_file=""
 client_id="${WORKOS_CLIENT_ID:-}"
 api_key="${WORKOS_API_KEY:-}"
+# The sign-in button renders "Continue with <display name>". WorkOS is B2B
+# infrastructure the end user has no relationship with, so the default names the
+# capability rather than the vendor. Override with --display-name.
+display_name="SSO"
 force=0
 skip_remote_validation=0
 skip_doctor=0
@@ -40,6 +44,9 @@ Options:
   --api-key-file PATH     Read the API key from a raw one-line file or a
                           WORKOS_API_KEY=... dotenv file. The key is never
                           accepted as a command-line argument.
+  --display-name NAME     Label shown on the sign-in button, rendered as
+                          "Continue with NAME". Defaults to "SSO" — end users
+                          should never see the identity vendor's name.
   --workspace PATH        Target SaaS starter checkout.
   --force                 Replace differing resolved configuration files.
   --skip-remote-validation
@@ -85,6 +92,11 @@ while [[ $# -gt 0 ]]; do
     --client-id)
       require_value "$1" "${2:-}"
       client_id="$2"
+      shift 2
+      ;;
+    --display-name)
+      require_value "$1" "${2:-}"
+      display_name="$2"
       shift 2
       ;;
     --api-key-file)
@@ -332,15 +344,26 @@ fi
 temporary_public="${temporary_dir}/identity.env"
 temporary_secret="${temporary_dir}/identity.secret.env"
 
+# The token endpoint and key set are backend-only facts: accounts fetches
+# ${issuer}/.well-known/openid-configuration at startup and takes token_endpoint
+# and jwks_uri from it, so they are never pinned here — a pinned value that
+# drifts from the provider is how a login fails after a successful code exchange.
+#
+# The authorize endpoint is different: the browser redirects the user there to
+# begin the flow, and the browser never performs OIDC discovery — it only sees
+# the non-secret IDENTITY_* values the Next.js agent exposes as
+# NEXT_PUBLIC_IDENTITY_*. So the authorize URL must be written for the frontend;
+# without it readIdentityProvider() returns null and the sign-in button vanishes.
 printf '%s\n' \
   "IDENTITY_PROVIDER=workos" \
-  "IDENTITY_DISPLAY_NAME=WorkOS" \
+  "IDENTITY_DISPLAY_NAME=${display_name}" \
   "IDENTITY_CLIENT_ID=${client_id}" \
+  "IDENTITY_ISSUER=https://api.workos.com/user_management/${client_id}" \
   "IDENTITY_AUTHORIZE_URL=https://api.workos.com/user_management/authorize" \
-  "IDENTITY_TOKEN_URL=https://api.workos.com/user_management/authenticate" \
-  "IDENTITY_ISSUER=https://api.workos.com" \
-  "IDENTITY_JWKS_URL=https://api.workos.com/sso/jwks/${client_id}" \
   "IDENTITY_AUTHORIZE_SELECTOR=authkit" \
+  "IDENTITY_CLIENT_ID_CLAIM=client_id" \
+  "IDENTITY_ORG_CLAIM=org_id" \
+  "IDENTITY_EMAIL_FROM_TOKEN_RESPONSE=true" \
   >"${temporary_public}"
 
 printf '%s\n' \
