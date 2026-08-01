@@ -203,8 +203,8 @@ func (r *Resolver) provisionIdentity(ctx context.Context, tx pgx.Tx, c *auth.Cla
 
 	_, err := tx.Exec(ctx, `
 		INSERT INTO users (uuid, primary_email, status, email_verified)
-		VALUES ($1, $2, 'active', true)`,
-		userID, email,
+		VALUES ($1, $2, 'active', $3)`,
+		userID, email, c.EmailVerified,
 	)
 	if err != nil {
 		return uuid.Nil, fmt.Errorf("pgauth: insert user: %w", err)
@@ -214,8 +214,8 @@ func (r *Resolver) provisionIdentity(ctx context.Context, tx pgx.Tx, c *auth.Cla
 		INSERT INTO user_identities (
 			uuid, user_uuid, provider, provider_id,
 			provider_email, email_verified, last_used
-		) VALUES ($1, $2, $3, $4, $5, true, NOW())`,
-		identityID, userID, c.Provider, c.Subject, email,
+		) VALUES ($1, $2, $3, $4, $5, $6, NOW())`,
+		identityID, userID, c.Provider, c.Subject, email, c.EmailVerified,
 	)
 	if err != nil {
 		return uuid.Nil, fmt.Errorf("pgauth: insert identity: %w", err)
@@ -370,6 +370,12 @@ func (r *Resolver) resolveInvite(
 	}
 	if !strings.EqualFold(c.Email, invEmail) {
 		return uuid.Nil, uuid.Nil, "", business.ErrInvitationEmailMismatch
+	}
+	// Email equality is only trustworthy when the provider verified the
+	// address. An unverified identity may sign in but cannot claim membership
+	// addressed to an email it has not proven it controls.
+	if !c.EmailVerified {
+		return uuid.Nil, uuid.Nil, "", business.ErrInvitationEmailUnverified
 	}
 
 	userID := existingUserID

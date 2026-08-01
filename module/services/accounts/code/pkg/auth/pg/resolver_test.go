@@ -44,12 +44,34 @@ func resetAuthTables(t *testing.T) {
 }
 
 func claims(email, sub string) *auth.Claims {
+	c := claimsUnverified(email, sub)
+	c.EmailVerified = true
+	return c
+}
+
+// claimsUnverified builds claims whose provider did not assert a verified
+// email — the case a second identity provider makes reachable.
+func claimsUnverified(email, sub string) *auth.Claims {
 	return &auth.Claims{
 		Provider:  "dev",
 		Subject:   sub,
 		Email:     email,
 		ExpiresAt: time.Now().Add(1 * time.Hour),
 	}
+}
+
+func userEmailVerified(t *testing.T, userID uuid.UUID) bool {
+	t.Helper()
+	var verified bool
+	scanControlPlane(t, &verified, `SELECT email_verified FROM users WHERE uuid = $1`, userID)
+	return verified
+}
+
+func identityEmailVerified(t *testing.T, userID uuid.UUID) bool {
+	t.Helper()
+	var verified bool
+	scanControlPlane(t, &verified, `SELECT email_verified FROM user_identities WHERE user_uuid = $1`, userID)
+	return verified
 }
 
 // seedInviteOrg creates an inviter and their owned organization, returning
@@ -340,6 +362,89 @@ func TestResolver_Invite_EmailMismatchRejectedAndProvisionsNothing(t *testing.T)
 	var status string
 	scanControlPlane(t, &status, `SELECT status FROM invitations WHERE org_id = $1`, orgID)
 	require.Equal(t, "pending", status, "the invitation stays pending")
+}
+
+func TestResolver_Invite_UnverifiedEmailRejectedAndProvisionsNothing(t *testing.T) {
+	resetAuthTables(t)
+	ctx := context.Background()
+	r := pgauth.NewResolver(testStore)
+
+	inviterID, orgID := seedInviteOrg(t)
+	token := seedInvitation(t, orgID, inviterID, "invitee@test.local", "admin", "pending", time.Now().Add(24*time.Hour))
+
+	// The email matches the invitation, but the provider did not verify it —
+	// acceptance must fail closed so an unverified claim cannot inherit someone
+	// else's organization.
+	_, err := r.Resolve(ctx, claimsUnverified("invitee@test.local", "dev-invitee"), auth.InviteIntent{Token: token})
+	require.ErrorIs(t, err, business.ErrInvitationEmailUnverified)
+
+	var count int
+	scanControlPlane(t, &count, `SELECT COUNT(*) FROM users WHERE primary_email = 'invitee@test.local'`)
+	require.Equal(t, 0, count, "an unverified email must not provision a user")
+	scanControlPlane(t, &count, `SELECT COUNT(*) FROM organization_members WHERE org_id = $1`, orgID)
+	require.Equal(t, 1, count, "only the inviter remains a member")
+
+	var status string
+	scanControlPlane(t, &status, `SELECT status FROM invitations WHERE org_id = $1`, orgID)
+	require.Equal(t, "pending", status, "the invitation stays pending")
+}
+
+func TestResolver_Invite_VerifiedEmailIsAccepted(t *testing.T) {
+	resetAuthTables(t)
+	ctx := context.Background()
+	r := pgauth.NewResolver(testStore)
+
+	inviterID, orgID := seedInviteOrg(t)
+	token := seedInvitation(t, orgID, inviterID, "invitee@test.local", "admin", "pending", time.Now().Add(24*time.Hour))
+
+	id, err := r.Resolve(ctx, claims("invitee@test.local", "dev-invitee"), auth.InviteIntent{Token: token})
+	require.NoError(t, err)
+	require.Equal(t, orgID, id.OrgID)
+	require.Equal(t, "admin", id.OrgRole)
+	require.True(t, userEmailVerified(t, id.UserID))
+	require.True(t, identityEmailVerified(t, id.UserID))
+}
+
+func TestResolver_EmailVerifiedPersistsAndSurvivesRelogin(t *testing.T) {
+	resetAuthTables(t)
+	ctx := context.Background()
+	r := pgauth.NewResolver(testStore)
+
+	// An unverified signup persists the provider's actual assertion, not a
+	// hardcoded true.
+	unverified, err := r.Resolve(ctx, claimsUnverified("unverified@test.local", "dev-unverified"), auth.SignupIntent{})
+	require.NoError(t, err)
+	require.False(t, userEmailVerified(t, unverified.UserID))
+	require.False(t, identityEmailVerified(t, unverified.UserID))
+
+	// A verified signup persists true on both tables and keeps it across a
+	// later login.
+	verified, err := r.Resolve(ctx, claims("verified@test.local", "dev-verified"), auth.SignupIntent{})
+	require.NoError(t, err)
+	require.True(t, userEmailVerified(t, verified.UserID))
+	require.True(t, identityEmailVerified(t, verified.UserID))
+
+	_, err = r.Resolve(ctx, claims("verified@test.local", "dev-verified"), auth.LoginIntent{})
+	require.NoError(t, err)
+	require.True(t, userEmailVerified(t, verified.UserID), "verification survives re-login")
+	require.True(t, identityEmailVerified(t, verified.UserID))
+}
+
+func TestResolver_VerifiedUserNotDowngradedByLaterUnverifiedLogin(t *testing.T) {
+	resetAuthTables(t)
+	ctx := context.Background()
+	r := pgauth.NewResolver(testStore)
+
+	verified, err := r.Resolve(ctx, claims("stable@test.local", "dev-stable"), auth.SignupIntent{})
+	require.NoError(t, err)
+	require.True(t, userEmailVerified(t, verified.UserID))
+
+	// A later login from the same identity whose provider omits the claim must
+	// not clear the recorded verification.
+	_, err = r.Resolve(ctx, claimsUnverified("stable@test.local", "dev-stable"), auth.LoginIntent{})
+	require.NoError(t, err)
+	require.True(t, userEmailVerified(t, verified.UserID), "an omitted claim must not downgrade a verified user")
+	require.True(t, identityEmailVerified(t, verified.UserID))
 }
 
 func TestResolver_Invite_ExistingMemberRoleUpgraded(t *testing.T) {

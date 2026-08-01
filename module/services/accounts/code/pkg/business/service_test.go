@@ -55,10 +55,13 @@ func authenticateFixture(ctx context.Context, req *gen.AuthenticateRequest) (*ge
 	testService.SetDevelopmentTokenValidator(&requestFixtureValidator{
 		token: token,
 		claims: &authcore.Claims{
-			Provider:  req.Provider,
-			Subject:   token,
-			Email:     email,
-			ExpiresAt: time.Now().Add(time.Hour),
+			Provider: req.Provider,
+			Subject:  token,
+			Email:    email,
+			// Mirror the real dev validator: fixture identities are seeded and
+			// trusted, so the token double asserts them as verified.
+			EmailVerified: true,
+			ExpiresAt:     time.Now().Add(time.Hour),
 		},
 	})
 	defer testService.SetDevelopmentTokenValidator(nil)

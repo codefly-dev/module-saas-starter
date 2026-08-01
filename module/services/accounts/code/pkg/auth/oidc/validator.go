@@ -31,6 +31,7 @@ import (
 	"io"
 	"math/big"
 	"net/http"
+	"strings"
 	"sync"
 	"time"
 
@@ -55,6 +56,10 @@ type Config struct {
 	// EmailClaim is the claim name carrying the user's email.
 	// Defaults to "email".
 	EmailClaim string
+	// EmailVerifiedClaim is the claim name carrying the provider's assertion
+	// that the user controls the email. Defaults to "email_verified". An
+	// absent or non-affirmative claim is treated as unverified.
+	EmailVerifiedClaim string
 	// AllowMissingEmail permits a provider adapter to validate the signed
 	// token first and then supply a verified email from the authenticated token
 	// exchange response. Generic OIDC flows should leave this false.
@@ -81,6 +86,9 @@ type Config struct {
 func (c *Config) withDefaults() {
 	if c.EmailClaim == "" {
 		c.EmailClaim = "email"
+	}
+	if c.EmailVerifiedClaim == "" {
+		c.EmailVerifiedClaim = "email_verified"
 	}
 	if c.OrgClaim == "" {
 		c.OrgClaim = "organization_id"
@@ -180,9 +188,24 @@ func (v *Validator) Validate(ctx context.Context, token string) (*auth.Claims, e
 		Provider:      v.cfg.ProviderName,
 		Subject:       subject,
 		Email:         email,
+		EmailVerified: claimBool(claims[v.cfg.EmailVerifiedClaim]),
 		ProviderOrgID: providerOrg,
 		ExpiresAt:     exp,
 	}, nil
+}
+
+// claimBool interprets an OIDC claim as a boolean. Providers publish
+// email_verified as either a JSON boolean or a "true"/"false" string; any
+// other shape — including an absent claim — is treated as false.
+func claimBool(v any) bool {
+	switch t := v.(type) {
+	case bool:
+		return t
+	case string:
+		return strings.EqualFold(t, "true")
+	default:
+		return false
+	}
 }
 
 func algAllowed(allowed []string, have string) bool {

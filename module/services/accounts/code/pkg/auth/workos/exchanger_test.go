@@ -83,6 +83,7 @@ func TestExchangeJoinsVerifiedTokenAndWorkOSUser(t *testing.T) {
 	require.Equal(t, "signed-workos-token", tokenValidator.token)
 	require.Equal(t, "owner@example.com", tokens.Claims.Email)
 	require.Equal(t, "user_123", tokens.Claims.Subject)
+	require.True(t, tokens.Claims.EmailVerified, "the provider's verification fact is propagated to the claims")
 }
 
 func TestExchangeRejectsSubjectMismatch(t *testing.T) {
