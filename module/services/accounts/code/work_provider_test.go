@@ -1,12 +1,64 @@
 package main
 
 import (
+	"net/http"
+	"net/http/httptest"
 	"testing"
 
 	"accounts/pkg/email"
 
 	"github.com/stretchr/testify/require"
 )
+
+func TestBuildDiscoveredOIDCStackSkipsDiscoveryWhenEndpointsPinned(t *testing.T) {
+	clearAuthProviderEnvironment(t)
+	setIdentityConfiguration(t, "IDENTITY_CLIENT_ID", "client_01TEST")
+	t.Setenv("CODEFLY__WORKSPACE_SECRET_CONFIGURATION__IDENTITY__IDENTITY_CLIENT_SECRET", "sk_test")
+	// An unreachable issuer: when both the key set and the token endpoint are
+	// pinned, an air-gapped deploy must start without ever contacting the
+	// well-known endpoint. Before discovery was made conditional, this issuer was
+	// fetched anyway and startup failed closed.
+	setIdentityConfiguration(t, "IDENTITY_ISSUER", "https://identity.invalid/tenant")
+	setIdentityConfiguration(t, "IDENTITY_JWKS_URL", "https://identity.invalid/tenant/jwks")
+	setIdentityConfiguration(t, "IDENTITY_TOKEN_URL", "https://identity.invalid/tenant/token")
+
+	validator, exchanger, err := buildProviderStack("workos", "")
+	require.NoError(t, err)
+	require.NotNil(t, validator)
+	require.NotNil(t, exchanger)
+}
+
+func TestBuildDiscoveredOIDCStackDiscoversMissingEndpoints(t *testing.T) {
+	clearAuthProviderEnvironment(t)
+
+	var issuer string
+	hits := 0
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		require.Equal(t, "/.well-known/openid-configuration", r.URL.Path)
+		hits++
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{
+			"issuer": "` + issuer + `",
+			"authorization_endpoint": "` + issuer + `/authorize",
+			"token_endpoint": "` + issuer + `/token",
+			"jwks_uri": "` + issuer + `/jwks"
+		}`))
+	}))
+	defer server.Close()
+	issuer = server.URL
+
+	setIdentityConfiguration(t, "IDENTITY_CLIENT_ID", "client_01TEST")
+	t.Setenv("CODEFLY__WORKSPACE_SECRET_CONFIGURATION__IDENTITY__IDENTITY_CLIENT_SECRET", "sk_test")
+	setIdentityConfiguration(t, "IDENTITY_ISSUER", issuer)
+	// No IDENTITY_JWKS_URL / IDENTITY_TOKEN_URL: both must be filled from the
+	// provider's published metadata.
+
+	validator, exchanger, err := buildProviderStack("workos", "")
+	require.NoError(t, err)
+	require.NotNil(t, validator)
+	require.NotNil(t, exchanger)
+	require.Equal(t, 1, hits, "provider metadata must be discovered exactly once")
+}
 
 func TestConfiguredEmailSenderDefaultsToLog(t *testing.T) {
 	t.Setenv("EMAIL_PROVIDER", "")

@@ -262,18 +262,6 @@ func TestValidate_JWKSCaching(t *testing.T) {
 // Presets
 // ============================================================================
 
-func TestWorkOSConfig(t *testing.T) {
-	c := oidc.WorkOSConfig("client_01ABC")
-	require.Equal(t, "workos", c.ProviderName)
-	require.Equal(t,
-		"https://api.workos.com/user_management/client_01ABC", c.Issuer)
-	require.Equal(t, "https://api.workos.com/sso/jwks/client_01ABC", c.JWKSURL)
-	require.Equal(t, "client_id", c.ClientIDClaim)
-	require.Equal(t, "client_01ABC", c.ClientID)
-	require.Equal(t, "org_id", c.OrgClaim)
-	require.True(t, c.AllowMissingEmail)
-}
-
 func TestAuth0Config(t *testing.T) {
 	c := oidc.Auth0Config("acme.auth0.com", "https://api.acme.com")
 	require.Equal(t, "auth0", c.ProviderName)
@@ -301,13 +289,24 @@ func TestGoogleConfig(t *testing.T) {
 // Preset → Validator smoke: make sure presets plug into the generic New.
 // ============================================================================
 
-func TestWorkOSPresetWithFakeJWKS(t *testing.T) {
+func TestWorkOSStyleClaimMappingWithFakeJWKS(t *testing.T) {
 	ctx := context.Background()
 	fi := newFakeIdP(t)
 
-	cfg := oidc.WorkOSConfig("client_01ABC")
-	cfg.Issuer = fi.issuer
-	cfg.JWKSURL = fi.jwksURL()
+	// Mirror the WorkOS claim mapping the composition root applies from
+	// discovery + IDENTITY_* configuration (see buildDiscoveredOIDCStack): the
+	// organization under "org_id", the application bound through the "client_id"
+	// claim, and a verified email supplied from the token-exchange response
+	// rather than the signed token.
+	cfg := oidc.Config{
+		ProviderName:      "workos",
+		Issuer:            fi.issuer,
+		JWKSURL:           fi.jwksURL(),
+		OrgClaim:          "org_id",
+		ClientIDClaim:     "client_id",
+		ClientID:          "client_01ABC",
+		AllowMissingEmail: true,
+	}
 
 	v, err := oidc.New(cfg)
 	require.NoError(t, err)
@@ -320,5 +319,5 @@ func TestWorkOSPresetWithFakeJWKS(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, "workos", claims.Provider)
 	require.Equal(t, "org_01DEFGHI", claims.ProviderOrgID,
-		"WorkOS preset must use the 'org_id' claim name")
+		"WorkOS mapping must use the 'org_id' claim name")
 }

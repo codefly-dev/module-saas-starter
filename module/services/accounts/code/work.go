@@ -881,8 +881,11 @@ func buildOAuthRequestPolicy(provider string) (*auth.OAuthRequestPolicy, error) 
 // rejecting every WorkOS token with "issuer mismatch" after a successful code
 // exchange — the constant was wrong in Go and no configuration could fix it.
 //
-// Explicit IDENTITY_JWKS_URL / IDENTITY_TOKEN_URL still win, for providers or
-// air-gapped environments that cannot serve discovery.
+// Discovery is skipped only when the operator has pinned everything it would
+// supply: both IDENTITY_JWKS_URL and IDENTITY_TOKEN_URL, with IDENTITY_ISSUER as
+// the expected `iss`. That is the escape hatch for air-gapped environments that
+// cannot reach the well-known endpoint — otherwise a partial pin still discovers
+// the rest, and any discovery outage fails startup closed rather than guessing.
 func buildDiscoveredOIDCStack(provider string) (auth.TokenValidator, business.CodeExchanger, error) {
 	clientID := identityEnv("IDENTITY_CLIENT_ID")
 	clientSecret := identityEnv("IDENTITY_CLIENT_SECRET")
@@ -896,17 +899,30 @@ func buildDiscoveredOIDCStack(provider string) (auth.TokenValidator, business.Co
 			"identity provider %s requires IDENTITY_ISSUER to discover provider metadata", provider)
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
-	defer cancel()
-	discovered, err := oidc.Discover(ctx, issuer, nil)
-	if err != nil {
-		return nil, nil, fmt.Errorf("discover %s provider metadata: %w", provider, err)
+	// Start from any explicitly pinned endpoints; discovery fills only the gaps.
+	expectedIssuer := issuer
+	jwksURL := identityEnv("IDENTITY_JWKS_URL")
+	tokenURL := identityEnv("IDENTITY_TOKEN_URL")
+	if !hasConfiguredValue(jwksURL) || !hasConfiguredValue(tokenURL) {
+		ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+		defer cancel()
+		discovered, err := oidc.Discover(ctx, issuer, nil)
+		if err != nil {
+			return nil, nil, fmt.Errorf("discover %s provider metadata: %w", provider, err)
+		}
+		expectedIssuer = discovered.Issuer
+		if !hasConfiguredValue(jwksURL) {
+			jwksURL = discovered.JWKSURI
+		}
+		if !hasConfiguredValue(tokenURL) {
+			tokenURL = discovered.TokenEndpoint
+		}
 	}
 
 	cfg := oidc.Config{
 		ProviderName:  provider,
-		Issuer:        discovered.Issuer,
-		JWKSURL:       discovered.JWKSURI,
+		Issuer:        expectedIssuer,
+		JWKSURL:       jwksURL,
 		Audience:      identityEnv("IDENTITY_AUDIENCE"),
 		OrgClaim:      identityEnvOrDefault("IDENTITY_ORG_CLAIM", "organization_id"),
 		ClientIDClaim: identityEnv("IDENTITY_CLIENT_ID_CLAIM"),
@@ -918,19 +934,12 @@ func buildDiscoveredOIDCStack(provider string) (auth.TokenValidator, business.Co
 	if claim := identityEnv("IDENTITY_EMAIL_CLAIM"); claim != "" {
 		cfg.EmailClaim = claim
 	}
-	if j := identityEnv("IDENTITY_JWKS_URL"); hasConfiguredValue(j) {
-		cfg.JWKSURL = j
-	}
 
 	validator, err := oidc.New(cfg)
 	if err != nil {
 		return nil, nil, fmt.Errorf("initialize %s validator: %w", provider, err)
 	}
 
-	tokenURL := identityEnv("IDENTITY_TOKEN_URL")
-	if !hasConfiguredValue(tokenURL) {
-		tokenURL = discovered.TokenEndpoint
-	}
 	if strings.TrimSpace(tokenURL) == "" {
 		return nil, nil, fmt.Errorf(
 			"identity provider %s published no token endpoint; set IDENTITY_TOKEN_URL", provider)

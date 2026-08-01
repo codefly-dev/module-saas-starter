@@ -84,6 +84,50 @@ func TestDiscoverRejectsIncompleteMetadata(t *testing.T) {
 	}
 }
 
+func TestDiscoverRejectsIssuerMismatch(t *testing.T) {
+	// A document that declares an issuer other than the one it was fetched under
+	// must be rejected (OIDC Discovery §4.3): otherwise a provider or proxy could
+	// name itself the authority for a different issuer and have its `iss` trusted.
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = w.Write([]byte(`{
+			"issuer": "https://impersonated.example.com",
+			"token_endpoint": "https://impersonated.example.com/token",
+			"jwks_uri": "https://impersonated.example.com/jwks"
+		}`))
+	}))
+	defer server.Close()
+
+	_, err := oidc.Discover(context.Background(), server.URL, server.Client())
+	require.ErrorContains(t, err, "declares issuer")
+}
+
+func TestDiscoverAcceptsTrailingSlashAndWellKnownIssuerForms(t *testing.T) {
+	// The issuer identifier is compared modulo a trailing slash, and an operator
+	// may configure either the issuer or the document URL directly.
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte(`{
+			"issuer": "http://` + r.Host + `/",
+			"token_endpoint": "http://` + r.Host + `/token",
+			"jwks_uri": "http://` + r.Host + `/jwks"
+		}`))
+	}))
+	defer server.Close()
+
+	// Requested without a trailing slash; document carries one.
+	discovered, err := oidc.Discover(context.Background(), server.URL, server.Client())
+	require.NoError(t, err)
+	require.Equal(t, server.URL+"/", discovered.Issuer)
+
+	// Requested as the well-known document URL directly.
+	discovered, err = oidc.Discover(
+		context.Background(),
+		server.URL+"/.well-known/openid-configuration",
+		server.Client(),
+	)
+	require.NoError(t, err)
+	require.Equal(t, server.URL+"/", discovered.Issuer)
+}
+
 func TestDiscoverSurfacesTransportFailure(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusNotFound)

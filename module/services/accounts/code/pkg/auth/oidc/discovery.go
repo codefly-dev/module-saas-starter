@@ -98,7 +98,28 @@ func Discover(ctx context.Context, issuer string, client *http.Client) (Discover
 	if strings.TrimSpace(discovered.JWKSURI) == "" {
 		return Discovery{}, fmt.Errorf("oidc: provider metadata at %s declares no jwks_uri", endpoint)
 	}
+	// OpenID Connect Discovery §4.3: the returned `issuer` MUST be identical to
+	// the issuer identifier used to fetch this document. Skipping this check
+	// would let a document served under one issuer declare itself the authority
+	// for another and be trusted as the expected `iss` for every token.
+	if want := issuerIdentifier(issuer); want != issuerIdentifier(discovered.Issuer) {
+		return Discovery{}, fmt.Errorf(
+			"oidc: provider metadata at %s declares issuer %q, expected %q",
+			endpoint, discovered.Issuer, want)
+	}
 	return discovered, nil
+}
+
+// issuerIdentifier normalizes an issuer for the §4.3 equality check: it drops a
+// well-known metadata suffix (so an operator may configure either the issuer or
+// the document URL) and a single trailing slash (which providers include
+// inconsistently).
+func issuerIdentifier(issuer string) string {
+	issuer = strings.TrimSpace(issuer)
+	if i := strings.Index(issuer, "/.well-known/"); i >= 0 {
+		issuer = issuer[:i]
+	}
+	return strings.TrimRight(issuer, "/")
 }
 
 func isLoopbackDiscoveryHost(host string) bool {
