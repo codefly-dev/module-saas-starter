@@ -74,6 +74,48 @@ func identityEmailVerified(t *testing.T, userID uuid.UUID) bool {
 	return verified
 }
 
+func claimsWithProviderOrg(email, sub, providerOrgID string) *auth.Claims {
+	c := claims(email, sub)
+	c.ProviderOrgID = providerOrgID
+	return c
+}
+
+// seedOrg inserts an organization owned by ownerID, optionally stamped with the
+// WorkOS-side organization id (empty leaves sso_organization_id NULL).
+func seedOrg(t *testing.T, ownerID uuid.UUID, name, ssoOrgID string) uuid.UUID {
+	t.Helper()
+	orgID := business.NewID()
+	require.NoError(t, testStore.WithControlPlane(context.Background(), func(ctx context.Context) error {
+		tx := ctx.Value("tx").(pgx.Tx) //nolint:staticcheck // shared transaction context key
+		_, err := tx.Exec(ctx, `
+			INSERT INTO organizations (id, name, slug, owner_id, sso_organization_id)
+			VALUES ($1, $2, $3, $4, NULLIF($5, ''))`,
+			orgID, name, fmt.Sprintf("%s-%s", name, orgID), ownerID, ssoOrgID)
+		return err
+	}))
+	return orgID
+}
+
+func addMember(t *testing.T, orgID, userID uuid.UUID, role string, joinedAt time.Time) {
+	t.Helper()
+	require.NoError(t, testStore.WithControlPlane(context.Background(), func(ctx context.Context) error {
+		tx := ctx.Value("tx").(pgx.Tx) //nolint:staticcheck // shared transaction context key
+		_, err := tx.Exec(ctx, `
+			INSERT INTO organization_members (org_id, user_id, role, joined_at)
+			VALUES ($1, $2, $3, $4)`, orgID, userID, role, joinedAt)
+		return err
+	}))
+}
+
+func setDefaultOrg(t *testing.T, userID, orgID uuid.UUID) {
+	t.Helper()
+	require.NoError(t, testStore.WithControlPlane(context.Background(), func(ctx context.Context) error {
+		tx := ctx.Value("tx").(pgx.Tx) //nolint:staticcheck // shared transaction context key
+		_, err := tx.Exec(ctx, `UPDATE users SET default_org_id = $2 WHERE uuid = $1`, userID, orgID)
+		return err
+	}))
+}
+
 // seedInviteOrg creates an inviter and their owned organization, returning
 // (inviterID, orgID).
 func seedInviteOrg(t *testing.T) (uuid.UUID, uuid.UUID) {
@@ -309,6 +351,117 @@ func TestResolver_ExistingOrgIsLoaded(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, first.OrgID, second.OrgID)
 	require.Equal(t, "owner", second.OrgRole)
+}
+
+func TestResolver_Login_DefaultOrgWins_NotMostRecentMembership(t *testing.T) {
+	resetAuthTables(t)
+	ctx := context.Background()
+	r := pgauth.NewResolver(testStore)
+
+	id, err := r.Resolve(ctx, claims("multi@test.local", "dev-multi"), auth.SignupIntent{})
+	require.NoError(t, err)
+
+	orgA := seedOrg(t, id.UserID, "Org A", "")
+	orgB := seedOrg(t, id.UserID, "Org B", "")
+	addMember(t, orgA, id.UserID, "owner", time.Now().Add(-48*time.Hour))
+	addMember(t, orgB, id.UserID, "member", time.Now()) // most recently joined
+	setDefaultOrg(t, id.UserID, orgA)                   // but A is the recorded default
+
+	got, err := r.Resolve(ctx, claims("multi@test.local", "dev-multi"), auth.LoginIntent{})
+	require.NoError(t, err)
+	require.Equal(t, orgA, got.OrgID, "session lands on default_org_id, not the most recently joined org")
+	require.Equal(t, "owner", got.OrgRole)
+}
+
+func TestResolver_Login_MultipleMembershipsNoDefault_Orgless(t *testing.T) {
+	resetAuthTables(t)
+	ctx := context.Background()
+	r := pgauth.NewResolver(testStore)
+
+	id, err := r.Resolve(ctx, claims("ambig@test.local", "dev-ambig"), auth.SignupIntent{})
+	require.NoError(t, err)
+	orgA := seedOrg(t, id.UserID, "Amb A", "")
+	orgB := seedOrg(t, id.UserID, "Amb B", "")
+	addMember(t, orgA, id.UserID, "member", time.Now().Add(-time.Hour))
+	addMember(t, orgB, id.UserID, "member", time.Now())
+
+	got, err := r.Resolve(ctx, claims("ambig@test.local", "dev-ambig"), auth.LoginIntent{})
+	require.NoError(t, err)
+	require.True(t, got.Orgless(), "several memberships with no default resolve to an explicit orgless session")
+	require.Equal(t, "", got.OrgRole)
+}
+
+func TestResolver_Login_SSOProviderOrgWins_OverMoreRecentMembership(t *testing.T) {
+	resetAuthTables(t)
+	ctx := context.Background()
+	r := pgauth.NewResolver(testStore)
+
+	id, err := r.Resolve(ctx, claims("sso@test.local", "dev-sso"), auth.SignupIntent{})
+	require.NoError(t, err)
+	ssoOrg := seedOrg(t, id.UserID, "SSO Org", "workos-org-sso")
+	otherOrg := seedOrg(t, id.UserID, "Other Org", "")
+	addMember(t, ssoOrg, id.UserID, "admin", time.Now().Add(-72*time.Hour))
+	addMember(t, otherOrg, id.UserID, "member", time.Now()) // more recent
+	setDefaultOrg(t, id.UserID, otherOrg)                   // and even the default points elsewhere
+
+	got, err := r.Resolve(ctx,
+		claimsWithProviderOrg("sso@test.local", "dev-sso", "workos-org-sso"),
+		auth.LoginIntent{})
+	require.NoError(t, err)
+	require.Equal(t, ssoOrg, got.OrgID, "the IdP-asserted organization is authoritative for SSO logins")
+	require.Equal(t, "admin", got.OrgRole)
+}
+
+func TestResolver_Login_SSOProviderOrgNonMember_Rejected(t *testing.T) {
+	resetAuthTables(t)
+	ctx := context.Background()
+	r := pgauth.NewResolver(testStore)
+
+	id, err := r.Resolve(ctx, claims("outsider@test.local", "dev-outsider"), auth.SignupIntent{})
+	require.NoError(t, err)
+	memberOrg := seedOrg(t, id.UserID, "Member Org", "")
+	addMember(t, memberOrg, id.UserID, "member", time.Now())
+
+	// A different org carries the asserted WorkOS id, but the user is not a member.
+	owner := seedUser(t)
+	seedOrg(t, owner, "Foreign SSO Org", "workos-org-foreign")
+
+	_, err = r.Resolve(ctx,
+		claimsWithProviderOrg("outsider@test.local", "dev-outsider", "workos-org-foreign"),
+		auth.LoginIntent{})
+	require.ErrorIs(t, err, auth.ErrOrganizationAccessDenied,
+		"an asserted org the user does not belong to is rejected, not silently honoured")
+}
+
+func TestResolver_Login_SingleMembershipNoDefault_ResolvesToIt(t *testing.T) {
+	resetAuthTables(t)
+	ctx := context.Background()
+	r := pgauth.NewResolver(testStore)
+
+	id, err := r.Resolve(ctx, claims("solo@test.local", "dev-solo"), auth.SignupIntent{})
+	require.NoError(t, err)
+	org := seedOrg(t, id.UserID, "Solo Org", "")
+	addMember(t, org, id.UserID, "owner", time.Now())
+
+	got, err := r.Resolve(ctx, claims("solo@test.local", "dev-solo"), auth.LoginIntent{})
+	require.NoError(t, err)
+	require.Equal(t, org, got.OrgID, "exactly one membership and no default resolves to that org")
+	require.Equal(t, "owner", got.OrgRole)
+}
+
+func TestResolver_Login_ZeroMemberships_OrglessSuccess(t *testing.T) {
+	resetAuthTables(t)
+	ctx := context.Background()
+	r := pgauth.NewResolver(testStore)
+
+	signup, err := r.Resolve(ctx, claims("lonely@test.local", "dev-lonely"), auth.SignupIntent{})
+	require.NoError(t, err)
+	require.True(t, signup.Orgless())
+
+	got, err := r.Resolve(ctx, claims("lonely@test.local", "dev-lonely"), auth.LoginIntent{})
+	require.NoError(t, err)
+	require.True(t, got.Orgless(), "a user with no memberships authenticates and reports orgless")
+	require.NotEqual(t, uuid.Nil, got.SessionID)
 }
 
 func TestResolver_Invite_ProvisionsUserAndMembershipAtomically(t *testing.T) {
