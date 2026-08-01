@@ -1,6 +1,6 @@
 {
   "note": "Base-file integrity manifest for the saas-starter module. Generated FROM canonical by `node tools/base-integrity.mjs gen`. Consumers MUST NOT hand-edit base files — only add files on the side. Regenerated on every codefly sync from canonical.",
-  "fileCount": 1469,
+  "fileCount": 1471,
   "files": {
     "AUTHORIZATION_CATALOG.md": "b2ea5d41f0098e80315e02e7c4bdbda03b65c8eef463426242552fd3c047ca0a",
     "CONTRACT_VERSIONING.md": "02031aa87922ab5ec573ea582cf584271873481de6ceabbda52b1bfda005ffbd",
@@ -1462,7 +1462,7 @@
     "services/telemetry/proto/buf.gen.yaml": "b9c08bb6f69ed7ad3da3a506afb9349dc253471fa74387db51e4ee0a01208834",
     "services/telemetry/proto/buf.yaml": "cfc17c0c357505380e451ced144f756c88e5d7f391dba2f6a88376612ac1e16d",
     "services/telemetry/proto/saas/telemetry/v1/schema_marker.proto": "456f93eddbe9452c7406611724ca31dbd9835251fe8f8455c682003f0a98f577",
-    "tools/base-integrity.mjs": "8bb43fc0952fed8e4cf9488f2a478ad7a2643c56907ef04960e18cc017bbc101",
+    "tools/base-integrity.mjs": "922b7dc550c3dfebd91ed703abdba71ba6839d808e7decae1d1375ec42333978",
     "tools/base-integrity.test.mjs": "b02b41b7cc51aba0148241bcd3907fecb112abd6192d667c4489ba8a0d192c97",
     "tools/codefly_sdk_boundary_test.go": "5ba7ca7bd01489ca2877d9a29fc8af4ab7fff9e93116ff8205d0bf32f8c9af68",
     "tools/generate-public-config.mjs": "30728d543f12933939bb59277aef1e8d812ec0b1b1b7d19172600c7625fa47a7",
@@ -1470,6 +1470,8 @@
     "tools/go.mod": "4581b764afe74c43631f4de1accbfb5874483b1590cf3fcee1071883f1ca65af",
     "tools/go.sum": "e42794fa9b56301ad073de55cac1dea683b320ed951454d8709ffc7156088dd2",
     "tools/marketing-extraction.mjs": "20a7e8abd1fd04cc84aaed7333405c0813149220dd8122a70771c4917c4e0e93",
-    "tools/proto_generation_test.go": "993e2bc7f10bde428ad9b9bea8c7c88a6fa129a8a092689a33f9bc1a9a40509f"
+    "tools/proto_generation_test.go": "993e2bc7f10bde428ad9b9bea8c7c88a6fa129a8a092689a33f9bc1a9a40509f",
+    "tools/rls-migration-gate.mjs": "fd258aca45acc801b35e3abd1ae70518f8e62f44ef7c03f7ca6e7a9b9422bb03",
+    "tools/rls-migration-gate.test.mjs": "0466eb37910c6a780d31df07a2d2df1d2339adc453271a1584e7dec02547b92f"
   }
 }
