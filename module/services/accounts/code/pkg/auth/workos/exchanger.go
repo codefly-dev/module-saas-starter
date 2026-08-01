@@ -18,6 +18,8 @@ import (
 	"net/http"
 	"strings"
 	"time"
+
+	"github.com/codefly-dev/core/wool"
 )
 
 type Config struct {
@@ -113,6 +115,17 @@ func (e *Exchanger) Exchange(
 		return business.ExchangedTokens{}, fmt.Errorf("workos: read authentication response: %w", err)
 	}
 	if resp.StatusCode != http.StatusOK {
+		// WorkOS explains the rejection in the response body ("code": e.g.
+		// invalid_grant / authorization_code_expired, plus a message). Losing it
+		// leaves a bare status code and no way to tell a consumed code from a
+		// PKCE mismatch or bad credentials. Log it for operators; the returned
+		// error stays status-only because it reaches the browser, and provider
+		// internals are not the end user's business.
+		wool.Get(ctx).Warn(
+			"workos authentication endpoint rejected the code exchange",
+			wool.Field("status", resp.StatusCode),
+			wool.Field("body", string(responseBody)),
+		)
 		return business.ExchangedTokens{}, fmt.Errorf(
 			"workos: authentication endpoint http %d",
 			resp.StatusCode,

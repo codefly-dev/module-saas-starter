@@ -17,8 +17,15 @@ import (
 func WorkOSConfig(clientID string) Config {
 	clientID = strings.TrimSpace(clientID)
 	return Config{
-		ProviderName:      "workos",
-		Issuer:            "https://api.workos.com",
+		ProviderName: "workos",
+		// AuthKit scopes the issuer to the application, as its own discovery
+		// document reports:
+		//   GET https://api.workos.com/user_management/<client id>/.well-known/openid-configuration
+		//   → "issuer": "https://api.workos.com/user_management/<client id>"
+		// The bare host never appears as `iss`, so expecting it rejects every
+		// token with "token issuer mismatch" only after the code exchange has
+		// already succeeded.
+		Issuer:            fmt.Sprintf("https://api.workos.com/user_management/%s", clientID),
 		JWKSURL:           fmt.Sprintf("https://api.workos.com/sso/jwks/%s", clientID),
 		OrgClaim:          "org_id",
 		ClientIDClaim:     "client_id",

@@ -265,7 +265,8 @@ func TestValidate_JWKSCaching(t *testing.T) {
 func TestWorkOSConfig(t *testing.T) {
 	c := oidc.WorkOSConfig("client_01ABC")
 	require.Equal(t, "workos", c.ProviderName)
-	require.Equal(t, "https://api.workos.com", c.Issuer)
+	require.Equal(t,
+		"https://api.workos.com/user_management/client_01ABC", c.Issuer)
 	require.Equal(t, "https://api.workos.com/sso/jwks/client_01ABC", c.JWKSURL)
 	require.Equal(t, "client_id", c.ClientIDClaim)
 	require.Equal(t, "client_01ABC", c.ClientID)
