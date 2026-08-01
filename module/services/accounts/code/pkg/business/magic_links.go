@@ -129,7 +129,8 @@ func (s *Service) VerifyMagicLink(ctx context.Context, token string) (*gen.Authe
 
 	// Synthesize claims using the email as both provider subject and email.
 	// The "magic_link" provider + email-as-subject ensures JIT provisioning
-	// via the standard Resolve pipeline.
+	// via the standard Resolve pipeline; a verified magic link is itself proof
+	// of address ownership, so it resolves as a signup.
 	claims := &auth.Claims{
 		Provider:  "magic_link",
 		Subject:   ml.Email,
@@ -137,7 +138,7 @@ func (s *Service) VerifyMagicLink(ctx context.Context, token string) (*gen.Authe
 		ExpiresAt: time.Now().Add(1 * time.Hour),
 	}
 
-	identity, err := s.resolver.Resolve(ctx, claims, "")
+	identity, err := s.resolver.Resolve(ctx, claims, auth.SignupIntent{})
 	if err != nil {
 		return nil, w.Wrapf(err, "cannot resolve identity for magic link")
 	}
