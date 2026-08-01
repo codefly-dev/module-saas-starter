@@ -545,14 +545,71 @@ func (s *Service) RevokeInvitation(
 }
 
 func (s *Service) invitationByToken(ctx context.Context, token string) (*Invitation, error) {
-	hash := sha256.Sum256([]byte(token))
 	var inv *Invitation
 	err := s.store.As(System()).Within(ctx, func(ctx context.Context) error {
 		var lookupErr error
-		inv, lookupErr = s.store.GetInvitationByTokenHash(ctx, hex.EncodeToString(hash[:]))
+		inv, lookupErr = s.store.GetInvitationByTokenHash(ctx, HashInvitationToken(token))
 		return lookupErr
 	})
 	return inv, err
+}
+
+// HashInvitationToken derives the stored token_hash for a plaintext invitation
+// credential. It is the single canonical hashing used both when persisting an
+// invitation and when redeeming one, including from the auth resolver's invite
+// flow.
+func HashInvitationToken(token string) string {
+	hash := sha256.Sum256([]byte(token))
+	return hex.EncodeToString(hash[:])
+}
+
+// announceInvitationAccepted performs the non-transactional side effects that
+// follow an invitation accepted through the authentication path: the analytics
+// event, the inviter notification, the audit event, and membership-cache
+// invalidation. The acceptance itself is committed transactionally by the
+// identity resolver; this mirrors the tail of AcceptInvitation for the
+// auth-time flow, where the resolver has no access to the event pipeline.
+func (s *Service) announceInvitationAccepted(ctx context.Context, inv *Invitation, userID string) {
+	acceptedAt := time.Now().UTC()
+	_ = s.store.As(Identity{UserID: userID, OrgID: inv.OrgID}).Within(ctx, func(ctx context.Context) error {
+		return s.captureProductEvent(
+			ctx,
+			"invite_accepted",
+			inv.ID,
+			userID,
+			inv.OrgID,
+			acceptedAt,
+			map[string]any{"role": inv.Role},
+		)
+	})
+	s.invalidateMembership(ctx, inv.OrgID, userID)
+	s.emit(ctx, userID, "user", "invitation.accepted", "invitation", inv.ID, inv.OrgID)
+
+	orgName := "the organization"
+	if org, err := s.organizationForInvitation(ctx, inv); err == nil && org != nil && org.Name != "" {
+		orgName = org.Name
+	}
+	_, _ = s.CreateNotification(ctx, CreateNotificationInput{
+		UserID:    inv.InviterID,
+		OrgID:     inv.OrgID,
+		Title:     "Invitation accepted",
+		Body:      fmt.Sprintf("%s joined %s", inv.Email, orgName),
+		Type:      "success",
+		ActionURL: "/admin/invitations",
+		Category:  NotificationCategoryProduct,
+	})
+}
+
+// expireInvitation transitions a time-expired invitation to the expired state
+// in its own transaction. The identity resolver fails an expired invite closed
+// inside its serializable transaction, which therefore rolls back and cannot
+// persist the transition; the status change happens here at the business layer,
+// matching AcceptInvitation's lazy expiry.
+func (s *Service) expireInvitation(ctx context.Context, inv *Invitation) {
+	_ = s.store.WithOrgTx(ctx, inv.OrgID, func(ctx context.Context) error {
+		_, err := s.store.UpdateInvitationStatus(ctx, inv.ID, "expired", "")
+		return err
+	})
 }
 
 func (s *Service) organizationForInvitation(

@@ -22,20 +22,23 @@ const BootstrapAdminEmailEnv = "BOOTSTRAP_ADMIN_EMAIL"
 
 // Resolver is the production IdentityResolver backed by Postgres.
 //
-// On every login/signup it:
-//  1. Looks up user_identities by (provider, subject).
-//  2. If found, loads user_id, primary org, org_role, platform_role.
-//  3. If not found, JIT-provisions a users row + user_identities row.
-//  4. For signup (orgNameOnSignup != ""), creates an organizations row and
-//     org membership as owner if the user doesn't already belong to one.
-//  5. Runs the bootstrap check: if BOOTSTRAP_ADMIN_EMAIL matches (case
+// On every authentication it:
+//  1. Looks up user_identities by (provider, subject) without writing.
+//  2. Branches on Intent:
+//     - Login rejects an absent identity with ErrNoAccount.
+//     - Signup provisions the identity and optionally its first org.
+//     - Invite validates a pending invitation, provisions the invitee if
+//     needed, and joins them to the inviting org — all atomically.
+//  3. Loads the active org membership (Login) or the provisioned one.
+//  4. Runs the bootstrap check: if BOOTSTRAP_ADMIN_EMAIL matches (case
 //     insensitive) and bootstrap_state has no bootstrapped_at, grants
 //     super_admin and stamps bootstrap_state. Self-disarms forever.
-//  6. Returns an Identity with canonical internal ids ready to be minted
+//  5. Returns an Identity with canonical internal ids ready to be minted
 //     into a JWT.
 //
 // All of the above runs inside a single serializable transaction so
-// concurrent first-logins of the same identity converge on a single user row.
+// concurrent first authentications of the same identity converge on a single
+// user row.
 type Resolver struct {
 	bootstrap           BootstrapStore
 	bootstrapAdminEmail *string
@@ -62,7 +65,7 @@ func (r *Resolver) SetBootstrapAdminEmail(email string) {
 }
 
 // Resolve implements auth.IdentityResolver.
-func (r *Resolver) Resolve(ctx context.Context, c *auth.Claims, orgNameOnSignup string) (*auth.Identity, error) {
+func (r *Resolver) Resolve(ctx context.Context, c *auth.Claims, intent auth.Intent) (*auth.Identity, error) {
 	if err := c.Valid(); err != nil {
 		return nil, err
 	}
@@ -80,7 +83,7 @@ func (r *Resolver) Resolve(ctx context.Context, c *auth.Claims, orgNameOnSignup 
 	var identity *auth.Identity
 	err := r.bootstrap.WithAuthBootstrapTx(ctx, func(ctx context.Context, tx pgx.Tx) error {
 		var err error
-		identity, err = r.resolveInTx(ctx, tx, c, orgNameOnSignup)
+		identity, err = r.resolveInTx(ctx, tx, c, intent)
 		return err
 	})
 	if err != nil {
@@ -93,22 +96,46 @@ func (r *Resolver) resolveInTx(
 	ctx context.Context,
 	tx pgx.Tx,
 	c *auth.Claims,
-	orgNameOnSignup string,
+	intent auth.Intent,
 ) (*auth.Identity, error) {
-	// 1. Lookup existing (provider, sub) → user_id
-	userID, isNew, err := r.upsertIdentity(ctx, tx, c)
+	// 1. Look up the existing (provider, sub) → user_id without writing.
+	userID, found, err := r.findIdentity(ctx, tx, c)
+	if err != nil {
+		return nil, err
+	}
+	if found {
+		if err := r.touchIdentityLastUsed(ctx, tx, c); err != nil {
+			return nil, err
+		}
+	}
+
+	// 2. Branch on intent to decide provisioning and org membership.
+	var orgID uuid.UUID
+	var orgRole string
+	switch intent := intent.(type) {
+	case auth.LoginIntent:
+		if !found {
+			return nil, auth.ErrNoAccount
+		}
+		orgID, orgRole, err = r.loadOrg(ctx, tx, userID)
+	case auth.SignupIntent:
+		if !found {
+			userID, err = r.provisionIdentity(ctx, tx, c)
+			if err != nil {
+				return nil, err
+			}
+		}
+		orgID, orgRole, err = r.ensureOrg(ctx, tx, userID, intent.OrganizationName)
+	case auth.InviteIntent:
+		userID, orgID, orgRole, err = r.resolveInvite(ctx, tx, c, userID, found, intent.Token)
+	default:
+		return nil, fmt.Errorf("pgauth: unsupported intent %T", intent)
+	}
 	if err != nil {
 		return nil, err
 	}
 
-	// 2. Make sure the user has an org — either existing, or created now
-	//    for signup flows.
-	orgID, orgRole, err := r.ensureOrg(ctx, tx, userID, orgNameOnSignup, isNew)
-	if err != nil {
-		return nil, err
-	}
-
-	// 3. Bootstrap admin check — runs for every login but only grants
+	// 3. Bootstrap admin check — runs for every authentication but only grants
 	//    platform role once per deployment.
 	platformRole, err := r.bootstrapOrLoadPlatformRole(ctx, tx, userID, c.Email)
 	if err != nil {
@@ -124,12 +151,12 @@ func (r *Resolver) resolveInTx(
 	}, nil
 }
 
-// upsertIdentity finds or creates a user for the given provider claims.
-// Returns (userID, wasNewlyProvisioned, error).
-func (r *Resolver) upsertIdentity(ctx context.Context, tx pgx.Tx, c *auth.Claims) (uuid.UUID, bool, error) {
+// findIdentity resolves an existing user for the given provider claims without
+// writing. Returns (userID, found, error); a found identity whose user is not
+// active yields ErrAccountInactive.
+func (r *Resolver) findIdentity(ctx context.Context, tx pgx.Tx, c *auth.Claims) (uuid.UUID, bool, error) {
 	var userID uuid.UUID
 	var userStatus string
-
 	err := tx.QueryRow(ctx, `
 		SELECT u.uuid, u.status::text
 		FROM users u
@@ -137,43 +164,50 @@ func (r *Resolver) upsertIdentity(ctx context.Context, tx pgx.Tx, c *auth.Claims
 		WHERE ui.provider = $1 AND ui.provider_id = $2`,
 		c.Provider, c.Subject,
 	).Scan(&userID, &userStatus)
-
-	if err == nil {
-		if userStatus != "active" {
-			return uuid.Nil, false, auth.ErrAccountInactive
-		}
-		// Existing identity — coalesce last_used touches to avoid turning a
-		// burst of authenticated reads into a hot-row write storm. The value is
-		// operational recency, not a per-request audit log; one-minute
-		// precision is sufficient, while the serializable transaction retry
-		// remains the safety net at the refresh boundary.
-		_, err = tx.Exec(ctx, `
-			UPDATE user_identities
-			   SET last_used = NOW()
-			 WHERE provider = $1 AND provider_id = $2
-			   AND (last_used IS NULL OR last_used < NOW() - INTERVAL '1 minute')`,
-			c.Provider, c.Subject)
-		if err != nil {
-			return uuid.Nil, false, fmt.Errorf("pgauth: update last_used: %w", err)
-		}
-		return userID, false, nil
+	if errors.Is(err, pgx.ErrNoRows) {
+		return uuid.Nil, false, nil
 	}
-	if !errors.Is(err, pgx.ErrNoRows) {
+	if err != nil {
 		return uuid.Nil, false, fmt.Errorf("pgauth: lookup identity: %w", err)
 	}
+	if userStatus != "active" {
+		return uuid.Nil, false, auth.ErrAccountInactive
+	}
+	return userID, true, nil
+}
 
-	// JIT provision: create users + user_identities rows atomically.
-	userID = business.NewID()
+// touchIdentityLastUsed coalesces the operational recency write for an existing
+// identity. It lives outside findIdentity so identity lookup stays read-only.
+// The value is operational recency, not a per-request audit log; one-minute
+// precision is sufficient, while the serializable transaction retry remains the
+// safety net at the refresh boundary.
+func (r *Resolver) touchIdentityLastUsed(ctx context.Context, tx pgx.Tx, c *auth.Claims) error {
+	_, err := tx.Exec(ctx, `
+		UPDATE user_identities
+		   SET last_used = NOW()
+		 WHERE provider = $1 AND provider_id = $2
+		   AND (last_used IS NULL OR last_used < NOW() - INTERVAL '1 minute')`,
+		c.Provider, c.Subject)
+	if err != nil {
+		return fmt.Errorf("pgauth: update last_used: %w", err)
+	}
+	return nil
+}
+
+// provisionIdentity creates the users + user_identities rows for a first-seen
+// identity. Reachable only from Signup and Invite intents; Login never writes.
+func (r *Resolver) provisionIdentity(ctx context.Context, tx pgx.Tx, c *auth.Claims) (uuid.UUID, error) {
+	userID := business.NewID()
 	identityID := business.NewID()
 	email := strings.ToLower(c.Email)
 
-	_, err = tx.Exec(ctx, `
+	_, err := tx.Exec(ctx, `
 		INSERT INTO users (uuid, primary_email, status, email_verified)
 		VALUES ($1, $2, 'active', true)`,
 		userID, email,
 	)
 	if err != nil {
-		return uuid.Nil, false, fmt.Errorf("pgauth: insert user: %w", err)
+		return uuid.Nil, fmt.Errorf("pgauth: insert user: %w", err)
 	}
 
 	_, err = tx.Exec(ctx, `
@@ -184,34 +218,24 @@ func (r *Resolver) upsertIdentity(ctx context.Context, tx pgx.Tx, c *auth.Claims
 		identityID, userID, c.Provider, c.Subject, email,
 	)
 	if err != nil {
-		return uuid.Nil, false, fmt.Errorf("pgauth: insert identity: %w", err)
+		return uuid.Nil, fmt.Errorf("pgauth: insert identity: %w", err)
 	}
 
-	return userID, true, nil
+	return userID, nil
 }
 
-// ensureOrg either loads the user's existing org membership or provisions a
-// new org on signup. If the user has no org and no orgNameOnSignup was
-// provided, returns zero values — the caller may still issue a token (the
-// Identity will have OrgID = Nil, OrgRole = "") so the user can subsequently
-// create an org through the normal API.
-func (r *Resolver) ensureOrg(
-	ctx context.Context,
-	tx pgx.Tx,
-	userID uuid.UUID,
-	orgNameOnSignup string,
-	isNewUser bool,
-) (uuid.UUID, string, error) {
+// loadOrg returns the user's active org membership, or (Nil, "", nil) when they
+// belong to none.
+//
+// Most-recent membership wins. A user can be in multiple orgs (e.g. their
+// auto-created "Personal" org from RegisterUser PLUS shared orgs they were
+// added to later); ASC by joined_at would always pick Personal and lock the
+// session into the wrong tenant. DESC reflects "currently active" semantics —
+// the last context the user was added to. A future iteration can replace this
+// with an explicit users.default_org_id column / org switcher.
+func (r *Resolver) loadOrg(ctx context.Context, tx pgx.Tx, userID uuid.UUID) (uuid.UUID, string, error) {
 	var orgID uuid.UUID
 	var orgRole string
-
-	// Most-recent membership wins. A user can be in multiple orgs (e.g.
-	// their auto-created "Personal" org from RegisterUser PLUS shared
-	// orgs they were added to later); ASC by joined_at would always
-	// pick Personal and lock the session into the wrong tenant.
-	// DESC reflects "currently active" semantics — the last context the
-	// user was added to. A future iteration can replace this with an
-	// explicit users.default_org_id column / org switcher.
 	err := tx.QueryRow(ctx, `
 		SELECT org_id, role
 		FROM organization_members
@@ -220,32 +244,60 @@ func (r *Resolver) ensureOrg(
 		LIMIT 1`,
 		userID,
 	).Scan(&orgID, &orgRole)
-
-	if err == nil {
-		return orgID, orgRole, nil
+	if errors.Is(err, pgx.ErrNoRows) {
+		return uuid.Nil, "", nil
 	}
-	if !errors.Is(err, pgx.ErrNoRows) {
+	if err != nil {
 		return uuid.Nil, "", fmt.Errorf("pgauth: load org membership: %w", err)
 	}
+	return orgID, orgRole, nil
+}
 
-	// No org. Create one if this is a signup flow with an explicit org name.
-	if orgNameOnSignup == "" {
-		if isNewUser {
-			// Fine — new user, no org yet. The frontend will ask them to
-			// create one via the normal CreateOrganization RPC.
-			return uuid.Nil, "", nil
-		}
-		// Existing user with no org — unusual but not an error.
+// memberRole returns the user's role in a specific org, or fallback when they
+// hold no membership row there.
+func (r *Resolver) memberRole(ctx context.Context, tx pgx.Tx, orgID, userID uuid.UUID, fallback string) (string, error) {
+	var role string
+	err := tx.QueryRow(ctx, `
+		SELECT role FROM organization_members WHERE org_id = $1 AND user_id = $2`,
+		orgID, userID,
+	).Scan(&role)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return fallback, nil
+	}
+	if err != nil {
+		return "", fmt.Errorf("pgauth: load member role: %w", err)
+	}
+	return role, nil
+}
+
+// ensureOrg loads the user's active org, or provisions a new org on signup when
+// an organization name is supplied and the user has none. A user with no org
+// and no orgName is a legitimate orgless state — the frontend will ask them to
+// create one via the normal CreateOrganization RPC.
+func (r *Resolver) ensureOrg(
+	ctx context.Context,
+	tx pgx.Tx,
+	userID uuid.UUID,
+	orgName string,
+) (uuid.UUID, string, error) {
+	orgID, orgRole, err := r.loadOrg(ctx, tx, userID)
+	if err != nil {
+		return uuid.Nil, "", err
+	}
+	if orgID != uuid.Nil {
+		return orgID, orgRole, nil
+	}
+	if orgName == "" {
 		return uuid.Nil, "", nil
 	}
 
 	orgID = business.NewID()
-	slug := slugify(orgNameOnSignup)
+	slug := slugify(orgName)
 
 	_, err = tx.Exec(ctx, `
 		INSERT INTO organizations (id, name, slug, owner_id)
 		VALUES ($1, $2, $3, $4)`,
-		orgID, orgNameOnSignup, slug, userID,
+		orgID, orgName, slug, userID,
 	)
 	if err != nil {
 		return uuid.Nil, "", fmt.Errorf("pgauth: create org on signup: %w", err)
@@ -261,6 +313,96 @@ func (r *Resolver) ensureOrg(
 	}
 
 	return orgID, "owner", nil
+}
+
+// resolveInvite authenticates against a pending invitation. Ordering is
+// security-relevant: the invitation must be located, be pending and unexpired,
+// and match the authenticated email BEFORE any user row is provisioned. Only
+// then is the invitee joined to the inviting org and the invitation marked
+// accepted — all inside the caller's serializable transaction.
+//
+// Re-authenticating with a token this same user already redeemed is idempotent.
+func (r *Resolver) resolveInvite(
+	ctx context.Context,
+	tx pgx.Tx,
+	c *auth.Claims,
+	existingUserID uuid.UUID,
+	found bool,
+	token string,
+) (uuid.UUID, uuid.UUID, string, error) {
+	if token == "" {
+		return uuid.Nil, uuid.Nil, "", business.ErrInvitationUnavailable
+	}
+
+	var invID, orgID uuid.UUID
+	var invEmail, role, status string
+	var expiresAt time.Time
+	var acceptedBy *uuid.UUID
+	err := tx.QueryRow(ctx, `
+		SELECT id, org_id, email, role, status, expires_at, accepted_by
+		FROM invitations
+		WHERE token_hash = $1
+		FOR UPDATE`,
+		business.HashInvitationToken(token),
+	).Scan(&invID, &orgID, &invEmail, &role, &status, &expiresAt, &acceptedBy)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return uuid.Nil, uuid.Nil, "", business.ErrInvitationUnavailable
+	}
+	if err != nil {
+		return uuid.Nil, uuid.Nil, "", fmt.Errorf("pgauth: load invitation: %w", err)
+	}
+
+	// Idempotent re-acceptance by the same user returns their membership. Report
+	// their current role in the org, which may have changed since acceptance —
+	// not the (possibly stale) role the invitation carried.
+	if found && status == "accepted" && acceptedBy != nil && *acceptedBy == existingUserID {
+		effectiveRole, err := r.memberRole(ctx, tx, orgID, existingUserID, role)
+		if err != nil {
+			return uuid.Nil, uuid.Nil, "", err
+		}
+		return existingUserID, orgID, effectiveRole, nil
+	}
+	if status != "pending" {
+		return uuid.Nil, uuid.Nil, "", business.ErrInvitationUnavailable
+	}
+	if time.Now().After(expiresAt) {
+		return uuid.Nil, uuid.Nil, "", business.ErrInvitationExpired
+	}
+	if !strings.EqualFold(c.Email, invEmail) {
+		return uuid.Nil, uuid.Nil, "", business.ErrInvitationEmailMismatch
+	}
+
+	userID := existingUserID
+	if !found {
+		userID, err = r.provisionIdentity(ctx, tx, c)
+		if err != nil {
+			return uuid.Nil, uuid.Nil, "", err
+		}
+	}
+
+	// Mirror AddOrgMember: the accepted invitation's role is authoritative, so
+	// upsert it on conflict rather than leaving an existing membership's role
+	// behind. Otherwise the role returned below (and minted into the JWT) could
+	// disagree with the persisted membership.
+	if _, err := tx.Exec(ctx, `
+		INSERT INTO organization_members (org_id, user_id, role)
+		VALUES ($1, $2, $3)
+		ON CONFLICT (org_id, user_id) DO UPDATE SET role = $3`,
+		orgID, userID, role,
+	); err != nil {
+		return uuid.Nil, uuid.Nil, "", fmt.Errorf("pgauth: add invited member: %w", err)
+	}
+
+	if _, err := tx.Exec(ctx, `
+		UPDATE invitations
+		   SET status = 'accepted', accepted_at = NOW(), accepted_by = $2
+		 WHERE id = $1 AND status = 'pending'`,
+		invID, userID,
+	); err != nil {
+		return uuid.Nil, uuid.Nil, "", fmt.Errorf("pgauth: accept invitation: %w", err)
+	}
+
+	return userID, orgID, role, nil
 }
 
 // bootstrapOrLoadPlatformRole checks BOOTSTRAP_ADMIN_EMAIL against the current
