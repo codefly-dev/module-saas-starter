@@ -1,0 +1,1 @@
+DROP INDEX IF EXISTS idx_organizations_sso_organization_id;

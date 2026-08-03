@@ -245,11 +245,13 @@ func (r *Resolver) provisionIdentity(ctx context.Context, tx pgx.Tx, c *auth.Cla
 //     or create an org.
 func (r *Resolver) selectOrg(ctx context.Context, tx pgx.Tx, userID uuid.UUID, providerOrgID string) (uuid.UUID, string, error) {
 	if providerOrgID != "" {
-		// LEFT JOIN so an existing tenant with no membership row still returns
-		// the org (with a NULL role), separating "the org exists but this user
-		// is not a member" — which must fail closed — from "we have never
-		// provisioned this IdP org", where there are no rows at all and
-		// resolution falls through to the user's own default.
+		// sso_organization_id is UNIQUE (partial index, migration 86), so this
+		// resolves to a single tenant. LEFT JOIN so an existing tenant with no
+		// membership row still returns the org (with a NULL role), separating
+		// "the org exists but this user is not a member" — which must fail
+		// closed — from "we have never provisioned this IdP org", where there
+		// are no rows at all and resolution falls through to the user's own
+		// default.
 		var orgID uuid.UUID
 		var orgRole *string
 		err := tx.QueryRow(ctx, `

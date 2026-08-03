@@ -10,6 +10,7 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/stretchr/testify/require"
 
 	"accounts/pkg/auth"
@@ -431,6 +432,58 @@ func TestResolver_Login_SSOProviderOrgNonMember_Rejected(t *testing.T) {
 		auth.LoginIntent{})
 	require.ErrorIs(t, err, auth.ErrOrganizationAccessDenied,
 		"an asserted org the user does not belong to is rejected, not silently honoured")
+}
+
+// TestOrganizations_SSOOrganizationIDIsUnique pins the invariant selectOrg's
+// SSO branch depends on: the reverse mapping from a WorkOS org id to one of our
+// tenants must be single-valued. Without it, two organizations could share an
+// sso_organization_id and the resolver's single-row lookup would pick an
+// arbitrary tenant — or, when the user is a member of only one duplicate,
+// non-deterministically deny access.
+func TestOrganizations_SSOOrganizationIDIsUnique(t *testing.T) {
+	resetAuthTables(t)
+	owner := seedUser(t)
+	seedOrg(t, owner, "Primary", "workos-org-dup")
+
+	err := testStore.WithControlPlane(context.Background(), func(ctx context.Context) error {
+		tx := ctx.Value("tx").(pgx.Tx) //nolint:staticcheck // shared transaction context key
+		_, e := tx.Exec(ctx, `
+			INSERT INTO organizations (id, name, slug, owner_id, sso_organization_id)
+			VALUES ($1, $2, $3, $4, $5)`,
+			business.NewID(), "Duplicate", "duplicate-org", owner, "workos-org-dup")
+		return e
+	})
+	require.Error(t, err, "a second organization must not claim an already-mapped WorkOS org id")
+	var pgErr *pgconn.PgError
+	require.ErrorAs(t, err, &pgErr)
+	require.Equal(t, "23505", pgErr.Code, "the collision is a unique-constraint violation")
+	require.Equal(t, "idx_organizations_sso_organization_id", pgErr.ConstraintName,
+		"specifically the sso_organization_id uniqueness index, not some other constraint")
+}
+
+func TestResolver_Signup_SSOProviderOrgNonMember_Rejected(t *testing.T) {
+	resetAuthTables(t)
+	ctx := context.Background()
+	r := pgauth.NewResolver(testStore)
+
+	// A provisioned tenant already carries the asserted WorkOS org id.
+	owner := seedUser(t)
+	seedOrg(t, owner, "Existing SSO Org", "workos-org-existing")
+
+	// A first-seen user signs up via SSO asserting that org. They are not a
+	// member, so resolution fails closed rather than silently placing them
+	// elsewhere or provisioning a rogue membership — even on the signup path,
+	// which provisions the identity before resolving the org.
+	_, err := r.Resolve(ctx,
+		claimsWithProviderOrg("newcomer@test.local", "dev-newcomer", "workos-org-existing"),
+		auth.SignupIntent{})
+	require.ErrorIs(t, err, auth.ErrOrganizationAccessDenied)
+
+	// The rejection is atomic: the just-provisioned identity was rolled back,
+	// so a subsequent login finds no account rather than a half-created one.
+	resolved, err := r.Resolve(ctx, claims("newcomer@test.local", "dev-newcomer"), auth.LoginIntent{})
+	require.ErrorIs(t, err, auth.ErrNoAccount, "the rejected signup left no half-provisioned account")
+	require.Nil(t, resolved)
 }
 
 func TestResolver_Login_SSOProviderOrgUnknown_FallsThroughToDefault(t *testing.T) {
