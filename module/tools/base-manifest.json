@@ -1,6 +1,6 @@
 {
   "note": "Base-file integrity manifest for the saas-starter module. Generated FROM canonical by `node tools/base-integrity.mjs gen`. Consumers MUST NOT hand-edit base files — only add files on the side. Regenerated on every codefly sync from canonical.",
-  "fileCount": 1471,
+  "fileCount": 1472,
   "files": {
     "AUTHORIZATION_CATALOG.md": "b2ea5d41f0098e80315e02e7c4bdbda03b65c8eef463426242552fd3c047ca0a",
     "CONTRACT_VERSIONING.md": "02031aa87922ab5ec573ea582cf584271873481de6ceabbda52b1bfda005ffbd",
@@ -684,7 +684,7 @@
     "services/frontend/code/instrumentation-client.ts": "5c590de3453dbba68945c4584164b37636ce56bf93bb8df37f8147a382c8a381",
     "services/frontend/code/instrumentation.ts": "41c169de2e928d30bdbc4ea559c2d6d6e4d95695854e35351412137420cc492a",
     "services/frontend/code/next.config.mjs": "01287ae79d02e9faa47b93ac793482860436a9c29bdda893145334e8879a695e",
-    "services/frontend/code/package.json": "31ca41248ec4c4d463f0c40e9fcc4d456284a57b4b6df60244e3b7560a7509a4",
+    "services/frontend/code/package.json": "278264729d6ae5d80a82e2b4d8cd57dd2910cad610717dedabe31240f7f29a8f",
     "services/frontend/code/packages/saas-plugin-contract/README.md": "a2763de59eeb823a9e8a3cb22d4ed6330ae54fd5397f2cedac157b6a040cf120",
     "services/frontend/code/packages/saas-plugin-contract/buf.gen.local.yaml": "8b234b5eddfe02f93327fbb4cecfa30a4ed7d57660b27bb0c1a6af6839b3f2d7",
     "services/frontend/code/packages/saas-plugin-contract/buf.gen.yaml": "104d34fbc5f80d9f63edf4399d2a211f8bcd16b5467c77bcdaf9e7ce7e94f06b",
@@ -730,6 +730,7 @@
     "services/frontend/code/scripts/build-plugin-workspaces.mjs": "f8fdaffb8b8dfd6541c2af8bcc2500f1f8ff57280d80914bea509bd15e0001ea",
     "services/frontend/code/scripts/build-plugin-workspaces.test.mjs": "1bc0a6180a551c8ed91a1e7adcb6e3d2124846dda21908950d32b359403f3f87",
     "services/frontend/code/scripts/check-plugin-service-dependencies.ts": "600af5097296618b92f7e4c49aae2fb4b1191059883d35944ebe80ec424c9a45",
+    "services/frontend/code/scripts/dev-heap-ceiling.test.mjs": "2eb28f72c0a4030d0268572ddf585c72f0c4c24ced815883da043cd9b4b93534",
     "services/frontend/code/scripts/generate-plugin-service-allowlist.ts": "bfb2d3aa6af85439e9b51d90f2c53f5827c00f6a9f8c0286ca55ba2fe705d14e",
     "services/frontend/code/server/accounts-bindings.d.mts": "dd9bdf14ecdbe5fdb6241c6ac5f9e09272c4ef41e5e3a465dbc71508e2c7e21d",
     "services/frontend/code/server/accounts-bindings.mjs": "3e9ffa25910286ace824db95a093e70249e32ccc3ab572503689085cc31ae299",

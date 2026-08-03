@@ -15,7 +15,7 @@
 		"check:plugin-allowlist": "npm run build:plugin-packages && tsx scripts/generate-plugin-service-allowlist.ts --check",
 		"generate:plugin-codefly-dependencies": "npm run generate:plugin-allowlist && cd ../../accounts/code && go run ./cmd/frontend-service-manifest -catalog ../generated/service-catalog.json -topology ../../../deployment/topology.bindings.codefly.yaml -allowlist ../../frontend/code/server/plugin-service-allowlist.generated.json -output ../../frontend/service.codefly.yaml",
 		"check:plugin-codefly-dependencies": "npm run check:plugin-allowlist && tsx scripts/check-plugin-service-dependencies.ts",
-		"dev": "npm run prepare:frontend && next dev",
+		"dev": "npm run prepare:frontend && NODE_OPTIONS=--max-old-space-size=8192 next dev",
 		"build": "npm run prepare:frontend && next build",
 		"start": "next start",
 		"lint": "npm run build:plugin-packages && eslint",
