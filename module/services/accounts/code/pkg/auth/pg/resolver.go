@@ -228,12 +228,15 @@ func (r *Resolver) provisionIdentity(ctx context.Context, tx pgx.Tx, c *auth.Cla
 // strict priority order:
 //
 //  1. The SSO-asserted organization. When the provider names an org
-//     (claims.ProviderOrgID), it is mapped to ours through
-//     organizations.sso_organization_id and the user MUST hold a membership
-//     there. An asserted org the user does not belong to — or one we do not
-//     recognise — is rejected with ErrOrganizationAccessDenied, never silently
-//     downgraded to a heuristic. This is authoritative for SSO: the IdP already
-//     decided which tenant this person belongs to.
+//     (claims.ProviderOrgID) that we recognise — i.e. an organizations row
+//     carries that sso_organization_id — it is authoritative and the user MUST
+//     hold a membership there: an asserted org they do not belong to is rejected
+//     with ErrOrganizationAccessDenied, never silently downgraded to a
+//     heuristic. An org the provider asserts but we have never provisioned is a
+//     different case: there is no tenant to reject them from, so resolution
+//     falls through to the rules below. This keeps a first-seen SSO signup —
+//     whose IdP org has no counterpart in our system yet — from being locked out
+//     of its own account.
 //  2. The user's persisted default_org_id, when it still names an active
 //     membership.
 //  3. The sole membership, when the user belongs to exactly one org.
@@ -242,22 +245,30 @@ func (r *Resolver) provisionIdentity(ctx context.Context, tx pgx.Tx, c *auth.Cla
 //     or create an org.
 func (r *Resolver) selectOrg(ctx context.Context, tx pgx.Tx, userID uuid.UUID, providerOrgID string) (uuid.UUID, string, error) {
 	if providerOrgID != "" {
+		// LEFT JOIN so an existing tenant with no membership row still returns
+		// the org (with a NULL role), separating "the org exists but this user
+		// is not a member" — which must fail closed — from "we have never
+		// provisioned this IdP org", where there are no rows at all and
+		// resolution falls through to the user's own default.
 		var orgID uuid.UUID
-		var orgRole string
+		var orgRole *string
 		err := tx.QueryRow(ctx, `
 			SELECT o.id, m.role
 			FROM organizations o
-			JOIN organization_members m ON m.org_id = o.id AND m.user_id = $1
+			LEFT JOIN organization_members m ON m.org_id = o.id AND m.user_id = $1
 			WHERE o.sso_organization_id = $2`,
 			userID, providerOrgID,
 		).Scan(&orgID, &orgRole)
-		if errors.Is(err, pgx.ErrNoRows) {
-			return uuid.Nil, "", auth.ErrOrganizationAccessDenied
+		if err == nil {
+			if orgRole == nil {
+				return uuid.Nil, "", auth.ErrOrganizationAccessDenied
+			}
+			return orgID, *orgRole, nil
 		}
-		if err != nil {
+		if !errors.Is(err, pgx.ErrNoRows) {
 			return uuid.Nil, "", fmt.Errorf("pgauth: resolve provider organization: %w", err)
 		}
-		return orgID, orgRole, nil
+		// Fall through: the asserted org is unknown to us.
 	}
 
 	var orgID uuid.UUID

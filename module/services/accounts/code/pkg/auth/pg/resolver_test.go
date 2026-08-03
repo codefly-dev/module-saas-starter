@@ -433,6 +433,29 @@ func TestResolver_Login_SSOProviderOrgNonMember_Rejected(t *testing.T) {
 		"an asserted org the user does not belong to is rejected, not silently honoured")
 }
 
+func TestResolver_Login_SSOProviderOrgUnknown_FallsThroughToDefault(t *testing.T) {
+	resetAuthTables(t)
+	ctx := context.Background()
+	r := pgauth.NewResolver(testStore)
+
+	id, err := r.Resolve(ctx, claims("firstsso@test.local", "dev-firstsso"), auth.SignupIntent{})
+	require.NoError(t, err)
+	org := seedOrg(t, id.UserID, "Home Org", "")
+	addMember(t, org, id.UserID, "owner", time.Now())
+	setDefaultOrg(t, id.UserID, org)
+
+	// The IdP asserts an org id we have never provisioned. There is no tenant
+	// to reject the user from, so resolution falls through to their default
+	// rather than failing closed — the case that locks a first-seen SSO signup
+	// out of its own account.
+	got, err := r.Resolve(ctx,
+		claimsWithProviderOrg("firstsso@test.local", "dev-firstsso", "workos-org-unprovisioned"),
+		auth.LoginIntent{})
+	require.NoError(t, err)
+	require.Equal(t, org, got.OrgID, "an unknown asserted org falls through to the user's default, not a rejection")
+	require.Equal(t, "owner", got.OrgRole)
+}
+
 func TestResolver_Login_SingleMembershipNoDefault_ResolvesToIt(t *testing.T) {
 	resetAuthTables(t)
 	ctx := context.Background()
