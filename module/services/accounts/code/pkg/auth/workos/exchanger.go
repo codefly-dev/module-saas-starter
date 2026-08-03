@@ -155,6 +155,7 @@ func (e *Exchanger) Exchange(
 		return business.ExchangedTokens{}, fmt.Errorf("workos: access-token organization does not match authentication response")
 	}
 	claims.Email = strings.ToLower(strings.TrimSpace(result.User.Email))
+	claims.EmailVerified = result.User.EmailVerified
 	if claims.ProviderOrgID == "" {
 		claims.ProviderOrgID = result.OrganizationID
 	}

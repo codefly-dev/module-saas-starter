@@ -14,6 +14,18 @@
 //   - pkg/auth/ed25519/    — concrete JWTMinter signing our own access + refresh
 //
 // pkg/business/* MUST NOT import this package. Ever.
+//
+// # Unverified email policy
+//
+// A provider may assert an identity whose email it has not verified. Such a
+// login is PERMITTED but RESTRICTED: the user may sign in and create their own
+// organization, but may NOT accept an invitation, because invitation
+// acceptance authorizes on email equality and an unverified address is not a
+// proof of control. The restriction is enforced at both the JIT invite path
+// (pkg/auth/pg Resolver) and the business AcceptInvitation call, and surfaces
+// as ErrInvitationEmailUnverified so the user is told to verify rather than
+// being silently rejected. Claims.EmailVerified carries the provider's fact;
+// an absent claim means false.
 package auth
 
 import (
@@ -33,8 +45,16 @@ type Claims struct {
 	// provider_identities.provider_sub. Never leaves the auth package.
 	Subject string
 
-	// Email is the verified primary email for this identity at the provider.
+	// Email is the primary email for this identity at the provider. Whether
+	// the provider actually verified it is carried separately in EmailVerified
+	// — never assume this address is verified just because it is present.
 	Email string
+
+	// EmailVerified is the provider's own assertion that the caller controls
+	// Email. An absent or falsy claim means false: we record the provider's
+	// fact, not an assumption. Invitation acceptance authorizes on email
+	// equality and therefore requires this to be true.
+	EmailVerified bool
 
 	// ProviderOrgID is the optional WorkOS organization id (or equivalent).
 	// Empty when the provider has no org concept or the user has no org yet.

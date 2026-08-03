@@ -25,9 +25,10 @@ const (
 )
 
 var (
-	ErrInvitationUnavailable   = errors.New("invitation unavailable")
-	ErrInvitationEmailMismatch = errors.New("sign in with the email address that received this invitation")
-	ErrInvitationExpired       = errors.New("invitation expired; ask the inviter to send a new one")
+	ErrInvitationUnavailable     = errors.New("invitation unavailable")
+	ErrInvitationEmailMismatch   = errors.New("sign in with the email address that received this invitation")
+	ErrInvitationEmailUnverified = errors.New("verify your email address before accepting this invitation")
+	ErrInvitationExpired         = errors.New("invitation expired; ask the inviter to send a new one")
 )
 
 type Invitation struct {
@@ -304,6 +305,13 @@ func (s *Service) AcceptInvitation(
 	}
 	if caller == nil || !strings.EqualFold(caller.PrimaryEmail, inv.Email) {
 		return nil, ErrInvitationEmailMismatch
+	}
+	// Acceptance authorizes on email equality, so it is only sound when the
+	// caller's address is verified. An unverified account may sign in but
+	// cannot join an organization addressed to an email it has not proven it
+	// controls. Inspection stays open — it grants no membership.
+	if !caller.EmailVerified {
+		return nil, ErrInvitationEmailUnverified
 	}
 	if inv.Status == "accepted" && inv.AcceptedBy == userID {
 		org, getErr := s.organizationForInvitation(ctx, inv)

@@ -33,6 +33,7 @@ func TestInvitationOutcomesExportCanonicalEvents(t *testing.T) {
 			Provider:      "email",
 			ProviderId:    "analytics-invitee",
 			ProviderEmail: "analytics-invitee@test.invalid",
+			EmailVerified: true,
 		},
 	})
 	require.NoError(t, err)

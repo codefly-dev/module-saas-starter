@@ -88,10 +88,13 @@ func New(path string) (*Validator, error) {
 			token = u.ProviderID // backwards-compatible fixtures
 		}
 		v.seeds[token] = &auth.Claims{
-			Provider:  provider,
-			Subject:   u.ProviderID,
-			Email:     u.Email,
-			ExpiresAt: time.Now().Add(24 * time.Hour),
+			Provider: provider,
+			Subject:  u.ProviderID,
+			Email:    u.Email,
+			// Fixture identities are operator-seeded and therefore trusted as
+			// verified; this keeps development invitation flows working.
+			EmailVerified: true,
+			ExpiresAt:     time.Now().Add(24 * time.Hour),
 		}
 		v.mfaVerified[token] = u.MFAVerified
 	}

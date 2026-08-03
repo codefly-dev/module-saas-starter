@@ -43,6 +43,8 @@ func invitationStatusError(err error) error {
 		return status.Error(codes.NotFound, err.Error())
 	case errors.Is(err, business.ErrInvitationEmailMismatch):
 		return status.Error(codes.PermissionDenied, err.Error())
+	case errors.Is(err, business.ErrInvitationEmailUnverified):
+		return status.Error(codes.FailedPrecondition, err.Error())
 	case errors.Is(err, business.ErrInvitationExpired):
 		return status.Error(codes.FailedPrecondition, err.Error())
 	case errors.Is(err, business.ErrEntitlementQuotaExceeded):

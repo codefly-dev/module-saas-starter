@@ -114,8 +114,41 @@ func TestValidate_Happy(t *testing.T) {
 	require.Equal(t, "test-provider", claims.Provider)
 	require.Equal(t, "user_01ABCXYZ", claims.Subject)
 	require.Equal(t, "user@acme.com", claims.Email)
+	require.True(t, claims.EmailVerified)
 	require.Equal(t, "org_01DEFGHI", claims.ProviderOrgID)
 	require.False(t, claims.ExpiresAt.IsZero())
+}
+
+func TestValidate_EmailVerifiedClaimMapping(t *testing.T) {
+	ctx := context.Background()
+	fi := newFakeIdP(t)
+	v := newValidator(t, fi)
+
+	cases := []struct {
+		name  string
+		value any
+		want  bool
+	}{
+		{"boolean true", true, true},
+		{"boolean false", false, false},
+		{"string true", "true", true},
+		{"string false", "false", false},
+		{"absent claim", nil, false},
+		{"unexpected shape", 1, false},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			c := fi.validClaims()
+			if tc.name == "absent claim" {
+				delete(c, "email_verified")
+			} else {
+				c["email_verified"] = tc.value
+			}
+			claims, err := v.Validate(ctx, fi.sign(t, c))
+			require.NoError(t, err)
+			require.Equal(t, tc.want, claims.EmailVerified)
+		})
+	}
 }
 
 func TestValidate_Expired(t *testing.T) {
