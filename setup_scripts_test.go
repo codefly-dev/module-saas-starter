@@ -10,8 +10,9 @@ import (
 )
 
 func TestProviderSetupScriptsExposeHelp(t *testing.T) {
+	// stripe is a non-writing shim; its contract is TestStripeSetupIsNonWritingShim.
 	for _, provider := range []string{
-		"workos", "stripe", "resend", "posthog", "sentry", "otel", "turnstile",
+		"workos", "resend", "posthog", "sentry", "otel", "turnstile",
 	} {
 		t.Run(provider, func(t *testing.T) {
 			command := exec.Command("bash", setupScript(t, provider), "--help")
@@ -42,16 +43,6 @@ func TestProviderSetupScriptsInstallSecretSafeIndependentConfigurations(t *testi
 		public  string
 		secret  string
 	}{
-		{
-			name: "stripe",
-			args: []string{
-				"--api-key-file", secretFile(t, "STRIPE_API_KEY=sk_test_codeflyfixture"),
-				"--webhook-secret-file", secretFile(t, "STRIPE_WEBHOOK_SECRET=whsec_codeflyfixture"),
-				"--skip-remote-validation",
-			},
-			secrets: []string{"sk_test_codeflyfixture", "whsec_codeflyfixture"},
-			public:  "billing.env", secret: "billing.secret.env",
-		},
 		{
 			name: "resend",
 			args: []string{
@@ -195,13 +186,6 @@ func TestRemoteWebhookProvisioningRejectsCodeflyLoopbackOrigin(t *testing.T) {
 		args []string
 	}{
 		{
-			name: "stripe",
-			args: []string{
-				"--api-key-file", secretFile(t, "STRIPE_API_KEY=sk_test_codeflyfixture"),
-				"--provision-webhook",
-			},
-		},
-		{
 			name: "resend",
 			args: []string{
 				"--api-key-file", secretFile(t, "RESEND_API_KEY=re_codeflyfixture"),
@@ -226,6 +210,74 @@ func TestRemoteWebhookProvisioningRejectsCodeflyLoopbackOrigin(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestStripeSetupIsNonWritingShim(t *testing.T) {
+	script := setupScript(t, "stripe")
+
+	// Every flag whose writing semantics moved to the provider plugin fails
+	// closed with migration guidance rather than acting.
+	for _, flag := range []string{
+		"--provision-webhook", "--skip-remote-validation", "--webhook-origin",
+		"--webhook-secret-file", "--force", "--workspace", "--skip-doctor",
+	} {
+		t.Run("removed"+flag, func(t *testing.T) {
+			output, err := exec.Command("bash", script, flag, "unused").CombinedOutput()
+			if err == nil {
+				t.Fatalf("%s was accepted; the shim must reject it:\n%s", flag, output)
+			}
+			if !strings.Contains(string(output), "is removed") ||
+				!strings.Contains(string(output), "codefly-dev/provider-stripe") {
+				t.Fatalf("%s did not explain the migration:\n%s", flag, output)
+			}
+		})
+	}
+
+	// A test-mode key is classified without being printed, and the shim writes
+	// no configuration into its working directory.
+	for _, key := range []string{"sk_test_codeflyfixture", "rk_test_codeflyfixture"} {
+		t.Run("accept/"+key, func(t *testing.T) {
+			dir := t.TempDir()
+			command := exec.Command("bash", script,
+				"--api-key-file", secretFile(t, "STRIPE_API_KEY="+key))
+			command.Dir = dir
+			output, err := command.CombinedOutput()
+			if err != nil {
+				t.Fatalf("%s was refused: %v\n%s", key, err, output)
+			}
+			if strings.Contains(string(output), key) {
+				t.Fatalf("shim printed the %s key", key)
+			}
+			entries, err := os.ReadDir(dir)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if len(entries) != 0 {
+				t.Fatalf("shim wrote %d file(s) into its working directory", len(entries))
+			}
+		})
+	}
+
+	t.Run("refuses live key", func(t *testing.T) {
+		output, err := exec.Command("bash", script,
+			"--api-key-file", secretFile(t, "STRIPE_API_KEY=sk_live_codeflyfixture")).CombinedOutput()
+		if err == nil {
+			t.Fatalf("shim accepted a live-mode key:\n%s", output)
+		}
+		if !strings.Contains(string(output), "live-mode key") {
+			t.Fatalf("shim did not explain the live-key refusal:\n%s", output)
+		}
+	})
+
+	t.Run("help points at the plugin", func(t *testing.T) {
+		output, err := exec.Command("bash", script, "--help").CombinedOutput()
+		if err != nil {
+			t.Fatalf("stripe --help: %v\n%s", err, output)
+		}
+		if !strings.Contains(string(output), "codefly-dev/provider-stripe") {
+			t.Fatalf("stripe --help did not point at the plugin:\n%s", output)
+		}
+	})
 }
 
 func newSetupWorkspace(t *testing.T) string {
