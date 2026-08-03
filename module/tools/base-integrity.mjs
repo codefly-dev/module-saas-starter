@@ -19,6 +19,8 @@ import { readFileSync, writeFileSync, readdirSync, statSync, existsSync } from "
 import { join, relative, dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
+import { rlsGateErrors } from "./rls-migration-gate.mjs";
+
 const SCRIPT_PATH = fileURLToPath(import.meta.url);
 const MODULE_ROOT = join(dirname(SCRIPT_PATH), "..");
 const MANIFEST_PATH = join(MODULE_ROOT, "tools", "base-manifest.json");
@@ -629,6 +631,11 @@ function gen() {
     migrationErrors.forEach((error) => console.error(`base-integrity: ${error}`));
     process.exit(1);
   }
+  const rlsErrors = rlsGateErrors();
+  if (rlsErrors.length) {
+    rlsErrors.forEach((error) => console.error(`rls-migration-gate: ${error}`));
+    process.exit(1);
+  }
   const manifest = computeBaseManifest();
   writeFileSync(MANIFEST_PATH, JSON.stringify(manifest, null, 2) + "\n");
   console.log(`base-integrity: wrote ${manifest.fileCount} base-file hashes to tools/base-manifest.json`);
@@ -683,6 +690,7 @@ function check() {
   const badMissing = allowed(missing);
   const installGraphErrors = workspaceInstallGraphErrors();
   const migrationErrors = migrationVersionErrors();
+  const rlsErrors = rlsGateErrors();
   const additionErrors = requiredAdditionsErrors(MODULE_ROOT, allow);
   const truthErrors = productionTruthErrors();
 
@@ -691,11 +699,12 @@ function check() {
   if (badModified.length) { console.error(`\n✗ MODIFIED base files (add on the side, never edit the base):`); badModified.forEach((r) => console.error(`    ${r}`)); }
   if (installGraphErrors.length) { console.error(`\n✗ INVALID frontend workspace install graph:`); installGraphErrors.forEach((error) => console.error(`    ${error}`)); }
   if (migrationErrors.length) { console.error(`\n✗ COLLIDING store migration versions:`); migrationErrors.forEach((error) => console.error(`    ${error}`)); }
+  if (rlsErrors.length) { console.error(`\n✗ UNPROTECTED tenant-scoped tables (see tools/rls-migration-gate.mjs):`); rlsErrors.forEach((error) => console.error(`    ${error}`)); }
   if (additionErrors.length) { console.error(`\n✗ MISSING OR INVALID required consumer additions:`); additionErrors.forEach((error) => console.error(`    ${error}`)); }
   if (truthErrors.length) { console.error(`\n✗ INVALID production capability claims:`); truthErrors.forEach((error) => console.error(`    ${error}`)); }
 
-  if (badModified.length || badMissing.length || installGraphErrors.length || migrationErrors.length || additionErrors.length || truthErrors.length) {
-    console.error(`\nFAIL: ${badModified.length} modified, ${badMissing.length} missing, ${installGraphErrors.length} invalid install-graph checks, ${migrationErrors.length} colliding migration-version checks, ${additionErrors.length} invalid required-addition checks, ${truthErrors.length} invalid production-truth checks. `
+  if (badModified.length || badMissing.length || installGraphErrors.length || migrationErrors.length || rlsErrors.length || additionErrors.length || truthErrors.length) {
+    console.error(`\nFAIL: ${badModified.length} modified, ${badMissing.length} missing, ${installGraphErrors.length} invalid install-graph checks, ${migrationErrors.length} colliding migration-version checks, ${rlsErrors.length} unprotected tenant-table checks, ${additionErrors.length} invalid required-addition checks, ${truthErrors.length} invalid production-truth checks. `
       + `Move your change upstream into canonical (making the original stronger), or express it as a side-addition.`);
     process.exit(1);
   }

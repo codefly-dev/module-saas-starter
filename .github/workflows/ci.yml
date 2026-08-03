@@ -27,8 +27,12 @@ jobs:
           node-version: 24
       - name: Test the base-integrity guard
         run: node --test module/tools/base-integrity.test.mjs
+      - name: Test the RLS migration gate
+        run: node --test module/tools/rls-migration-gate.test.mjs
       - name: Verify the shipped manifest matches the canonical tree
         run: node module/tools/base-integrity.mjs verify
+      - name: Enforce tenant RLS coverage in store migrations
+        run: node module/tools/rls-migration-gate.mjs check
 
   marketing:
     name: Marketing isolation
