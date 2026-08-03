@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
-import { mkdtempSync, readFileSync, readdirSync, writeFileSync } from "node:fs";
+import { mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import test from "node:test";
@@ -11,11 +11,12 @@ const SHIM = join(HERE, "stripe.sh");
 const SOURCE = readFileSync(SHIM, "utf8");
 
 // Run the shim and capture status + streams without throwing on non-zero exit.
-function run(args, { env = {} } = {}) {
+function run(args, { env = {}, cwd } = {}) {
   try {
     const stdout = execFileSync("bash", [SHIM, ...args], {
       encoding: "utf8",
       stdio: ["ignore", "pipe", "pipe"],
+      cwd,
       env: { ...process.env, STRIPE_API_KEY: "", ...env },
     });
     return { code: 0, stdout, stderr: "" };
@@ -28,18 +29,22 @@ function run(args, { env = {} } = {}) {
   }
 }
 
-function withKeyFile(contents, fn) {
+// Run fn with a fresh temp dir that is always removed afterward.
+function withTempDir(fn) {
   const dir = mkdtempSync(join(tmpdir(), "stripe-shim-"));
-  const file = join(dir, "key.env");
-  writeFileSync(file, contents);
   try {
-    return fn(file, dir);
+    return fn(dir);
   } finally {
-    // Leave the temp dir contents assertable to the caller before cleanup.
-    for (const name of readdirSync(dir)) {
-      if (name !== "key.env") throw new Error(`shim wrote an unexpected file: ${name}`);
-    }
+    rmSync(dir, { recursive: true, force: true });
   }
+}
+
+function withKeyFile(contents, fn) {
+  return withTempDir((dir) => {
+    const file = join(dir, "key.env");
+    writeFileSync(file, contents);
+    return fn(file);
+  });
 }
 
 test("shim never contacts Stripe or writes configuration", () => {
@@ -99,6 +104,36 @@ test("live-mode keys are refused for both sk_ and rk_ prefixes", () => {
       assert.doesNotMatch(stderr, /SECRET/, "the key value must never be echoed");
     });
   }
+});
+
+test("a live key supplied through the STRIPE_API_KEY env is refused", () => {
+  const { code, stdout, stderr } = run([], { env: { STRIPE_API_KEY: "sk_live_SECRET" } });
+  assert.equal(code, 1, "an ambient live key must be classified and refused");
+  assert.match(stderr, /live-mode key/);
+  assert.doesNotMatch(stdout + stderr, /SECRET/, "the key value must never be echoed");
+});
+
+test("--env-file classifies the api key and never handles the webhook secret", () => {
+  withKeyFile(
+    "STRIPE_API_KEY=sk_test_ABC123xyz\nSTRIPE_WEBHOOK_SECRET=whsec_LEAKME\n",
+    (file) => {
+      const { code, stdout, stderr } = run(["--env-file", file]);
+      assert.equal(code, 0);
+      assert.match(stdout, /Recognized a Stripe test-mode key/);
+      assert.doesNotMatch(stdout + stderr, /whsec_LEAKME/, "the webhook secret must never be read or echoed");
+    },
+  );
+});
+
+test("the shim writes nothing to its working directory or TMPDIR", () => {
+  withTempDir((sandbox) => {
+    withKeyFile("sk_test_ABC123xyz\n", (file) => {
+      // The old script mktemp'd a workdir under TMPDIR and wrote billing config.
+      const { code } = run(["--api-key-file", file], { cwd: sandbox, env: { TMPDIR: sandbox } });
+      assert.equal(code, 0);
+    });
+    assert.deepEqual(readdirSync(sandbox), [], "shim must not create any files while running");
+  });
 });
 
 test("import guidance is import-by-id, not URL adoption", () => {
