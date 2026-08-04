@@ -117,7 +117,7 @@ func (r *Resolver) resolveInTx(
 		if !found {
 			return nil, auth.ErrNoAccount
 		}
-		orgID, orgRole, err = r.loadOrg(ctx, tx, userID)
+		orgID, orgRole, err = r.selectOrg(ctx, tx, userID, c.ProviderOrgID)
 	case auth.SignupIntent:
 		if !found {
 			userID, err = r.provisionIdentity(ctx, tx, c)
@@ -125,7 +125,7 @@ func (r *Resolver) resolveInTx(
 				return nil, err
 			}
 		}
-		orgID, orgRole, err = r.ensureOrg(ctx, tx, userID, intent.OrganizationName)
+		orgID, orgRole, err = r.ensureOrg(ctx, tx, userID, c.ProviderOrgID, intent.OrganizationName)
 	case auth.InviteIntent:
 		userID, orgID, orgRole, err = r.resolveInvite(ctx, tx, c, userID, found, intent.Token)
 	default:
@@ -224,31 +224,86 @@ func (r *Resolver) provisionIdentity(ctx context.Context, tx pgx.Tx, c *auth.Cla
 	return userID, nil
 }
 
-// loadOrg returns the user's active org membership, or (Nil, "", nil) when they
-// belong to none.
+// selectOrg deterministically resolves the session organization for a user, in
+// strict priority order:
 //
-// Most-recent membership wins. A user can be in multiple orgs (e.g. their
-// auto-created "Personal" org from RegisterUser PLUS shared orgs they were
-// added to later); ASC by joined_at would always pick Personal and lock the
-// session into the wrong tenant. DESC reflects "currently active" semantics —
-// the last context the user was added to. A future iteration can replace this
-// with an explicit users.default_org_id column / org switcher.
-func (r *Resolver) loadOrg(ctx context.Context, tx pgx.Tx, userID uuid.UUID) (uuid.UUID, string, error) {
+//  1. The SSO-asserted organization. When the provider names an org
+//     (claims.ProviderOrgID) that we recognise — i.e. an organizations row
+//     carries that sso_organization_id — it is authoritative and the user MUST
+//     hold a membership there: an asserted org they do not belong to is rejected
+//     with ErrOrganizationAccessDenied, never silently downgraded to a
+//     heuristic. An org the provider asserts but we have never provisioned is a
+//     different case: there is no tenant to reject them from, so resolution
+//     falls through to the rules below. This keeps a first-seen SSO signup —
+//     whose IdP org has no counterpart in our system yet — from being locked out
+//     of its own account.
+//  2. The user's persisted default_org_id, when it still names an active
+//     membership.
+//  3. The sole membership, when the user belongs to exactly one org.
+//  4. Otherwise none: (Nil, "", nil), the explicit orgless state
+//     (auth.Identity.Orgless) the frontend resolves by asking the user to pick
+//     or create an org.
+func (r *Resolver) selectOrg(ctx context.Context, tx pgx.Tx, userID uuid.UUID, providerOrgID string) (uuid.UUID, string, error) {
+	if providerOrgID != "" {
+		// sso_organization_id is UNIQUE (partial index, migration 86), so this
+		// resolves to a single tenant. LEFT JOIN so an existing tenant with no
+		// membership row still returns the org (with a NULL role), separating
+		// "the org exists but this user is not a member" — which must fail
+		// closed — from "we have never provisioned this IdP org", where there
+		// are no rows at all and resolution falls through to the user's own
+		// default.
+		var orgID uuid.UUID
+		var orgRole *string
+		err := tx.QueryRow(ctx, `
+			SELECT o.id, m.role
+			FROM organizations o
+			LEFT JOIN organization_members m ON m.org_id = o.id AND m.user_id = $1
+			WHERE o.sso_organization_id = $2`,
+			userID, providerOrgID,
+		).Scan(&orgID, &orgRole)
+		if err == nil {
+			if orgRole == nil {
+				return uuid.Nil, "", auth.ErrOrganizationAccessDenied
+			}
+			return orgID, *orgRole, nil
+		}
+		if !errors.Is(err, pgx.ErrNoRows) {
+			return uuid.Nil, "", fmt.Errorf("pgauth: resolve provider organization: %w", err)
+		}
+		// Fall through: the asserted org is unknown to us.
+	}
+
 	var orgID uuid.UUID
 	var orgRole string
 	err := tx.QueryRow(ctx, `
+		SELECT m.org_id, m.role
+		FROM users u
+		JOIN organization_members m ON m.org_id = u.default_org_id AND m.user_id = u.uuid
+		WHERE u.uuid = $1`,
+		userID,
+	).Scan(&orgID, &orgRole)
+	if err == nil {
+		return orgID, orgRole, nil
+	}
+	if !errors.Is(err, pgx.ErrNoRows) {
+		return uuid.Nil, "", fmt.Errorf("pgauth: load default organization: %w", err)
+	}
+
+	// Exactly one membership is unambiguous. The count subquery is a per-row
+	// constant, so it yields the single row when the user has one membership and
+	// no rows for zero or several — both of which are the orgless state.
+	err = tx.QueryRow(ctx, `
 		SELECT org_id, role
 		FROM organization_members
 		WHERE user_id = $1
-		ORDER BY joined_at DESC
-		LIMIT 1`,
+		  AND (SELECT COUNT(*) FROM organization_members WHERE user_id = $1) = 1`,
 		userID,
 	).Scan(&orgID, &orgRole)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return uuid.Nil, "", nil
 	}
 	if err != nil {
-		return uuid.Nil, "", fmt.Errorf("pgauth: load org membership: %w", err)
+		return uuid.Nil, "", fmt.Errorf("pgauth: load sole membership: %w", err)
 	}
 	return orgID, orgRole, nil
 }
@@ -270,17 +325,19 @@ func (r *Resolver) memberRole(ctx context.Context, tx pgx.Tx, orgID, userID uuid
 	return role, nil
 }
 
-// ensureOrg loads the user's active org, or provisions a new org on signup when
-// an organization name is supplied and the user has none. A user with no org
-// and no orgName is a legitimate orgless state — the frontend will ask them to
-// create one via the normal CreateOrganization RPC.
+// ensureOrg resolves the user's session org deterministically (see selectOrg),
+// or provisions a new org on signup when an organization name is supplied and
+// the resolution came back orgless. A user with no org and no orgName is a
+// legitimate orgless state — the frontend will ask them to create one via the
+// normal CreateOrganization RPC.
 func (r *Resolver) ensureOrg(
 	ctx context.Context,
 	tx pgx.Tx,
 	userID uuid.UUID,
+	providerOrgID string,
 	orgName string,
 ) (uuid.UUID, string, error) {
-	orgID, orgRole, err := r.loadOrg(ctx, tx, userID)
+	orgID, orgRole, err := r.selectOrg(ctx, tx, userID, providerOrgID)
 	if err != nil {
 		return uuid.Nil, "", err
 	}

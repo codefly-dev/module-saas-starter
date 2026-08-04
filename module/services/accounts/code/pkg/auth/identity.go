@@ -18,8 +18,10 @@ type Identity struct {
 	// identities linked.
 	UserID uuid.UUID
 
-	// OrgID is the active org for this session. Zero value means the user
-	// has no active org (signup flow before org creation).
+	// OrgID is the active org for this session. Zero value is the explicit
+	// orgless state (see Orgless): the resolver found no single organization to
+	// place this session in. Never a guess — an orgless identity still
+	// authenticates and mints a token.
 	OrgID uuid.UUID
 
 	// OrgRole is the user's role inside OrgID: "owner" | "admin" | "member".
@@ -63,6 +65,14 @@ type Identity struct {
 	DeviceInfo map[string]string
 	IPAddress  string
 }
+
+// Orgless reports whether this identity resolved to no active organization. It
+// is a first-class session state, not an error: a user who belongs to no org —
+// or to several with no recorded preference and no SSO assertion — authenticates
+// successfully and the frontend renders an organization chooser rather than
+// guessing a tenant. A resolution *failure* returns an error and no Identity;
+// an orgless *success* returns this.
+func (i *Identity) Orgless() bool { return i.OrgID == uuid.Nil }
 
 // Intent names why an authenticated caller is being resolved. It is a sealed
 // set: only this package defines the variants, so a resolver can switch over
