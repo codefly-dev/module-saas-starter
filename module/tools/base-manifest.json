@@ -687,7 +687,7 @@
     "services/frontend/code/instrumentation-client.ts": "5c590de3453dbba68945c4584164b37636ce56bf93bb8df37f8147a382c8a381",
     "services/frontend/code/instrumentation.ts": "41c169de2e928d30bdbc4ea559c2d6d6e4d95695854e35351412137420cc492a",
     "services/frontend/code/next.config.mjs": "01287ae79d02e9faa47b93ac793482860436a9c29bdda893145334e8879a695e",
-    "services/frontend/code/package.json": "22dede932e8f0a79f1591429804743f2d97b6c8f2df7c5b794565d3a6290320b",
+    "services/frontend/code/package.json": "2f35c125b109c75b1e2b5ed4e11c12fdf57cd11e09a7c5f634312c2af85f0a33",
     "services/frontend/code/packages/saas-plugin-contract/README.md": "a2763de59eeb823a9e8a3cb22d4ed6330ae54fd5397f2cedac157b6a040cf120",
     "services/frontend/code/packages/saas-plugin-contract/buf.gen.local.yaml": "8b234b5eddfe02f93327fbb4cecfa30a4ed7d57660b27bb0c1a6af6839b3f2d7",
     "services/frontend/code/packages/saas-plugin-contract/buf.gen.yaml": "104d34fbc5f80d9f63edf4399d2a211f8bcd16b5467c77bcdaf9e7ce7e94f06b",
