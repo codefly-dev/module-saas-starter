@@ -952,6 +952,17 @@ func seedWaitlistEntry(t *testing.T, email, state string) {
 	}))
 }
 
+// execControlPlane runs a statement against the shared control-plane transaction,
+// mirroring scanControlPlane for tests that need to fix up seeded rows.
+func execControlPlane(t *testing.T, query string, args ...any) {
+	t.Helper()
+	require.NoError(t, testStore.WithControlPlane(context.Background(), func(ctx context.Context) error {
+		tx := ctx.Value("tx").(pgx.Tx) //nolint:staticcheck // shared transaction context key
+		_, err := tx.Exec(ctx, query, args...)
+		return err
+	}))
+}
+
 func TestResolver_SignupMode_Open_UnknownSignsUp(t *testing.T) {
 	resetAuthTables(t)
 	ctx := context.Background()
@@ -1047,6 +1058,78 @@ func TestResolver_SignupMode_Waitlist_ApprovedAccepted(t *testing.T) {
 	var count int
 	scanControlPlane(t, &count, `SELECT COUNT(*) FROM users WHERE primary_email = 'approved@test.local'`)
 	require.Equal(t, 1, count)
+}
+
+func TestResolver_SignupMode_Invite_UnverifiedEmailRejectedAndProvisionsNothing(t *testing.T) {
+	resetAuthTables(t)
+	ctx := context.Background()
+	inviterID, orgID := seedInviteOrg(t)
+	seedInvitation(t, orgID, inviterID, "invitee@test.local", "admin", "pending", time.Now().Add(24*time.Hour))
+
+	r := resolverWithSignupMode(auth.SignupModeInvite)
+	// The email matches a pending invitation, but the provider did not verify it.
+	// Authorising on an unverified email would let a stranger inherit the org, so
+	// the gate must reject it and leave every table untouched.
+	_, err := r.Resolve(ctx, claimsUnverified("invitee@test.local", "dev-unverified-invitee"), auth.SignupIntent{})
+	require.ErrorIs(t, err, auth.ErrSignupNotAllowed)
+
+	var count int
+	scanControlPlane(t, &count, `SELECT COUNT(*) FROM users WHERE primary_email = 'invitee@test.local'`)
+	require.Equal(t, 0, count, "an unverified email must not provision a user")
+	scanControlPlane(t, &count, `SELECT COUNT(*) FROM organization_members WHERE org_id = $1`, orgID)
+	require.Equal(t, 1, count, "only the inviter remains a member")
+
+	var status string
+	scanControlPlane(t, &status, `SELECT status FROM invitations WHERE org_id = $1`, orgID)
+	require.Equal(t, "pending", status, "the invitation stays pending")
+}
+
+func TestResolver_SignupMode_Waitlist_UnverifiedEmailRejectedAndProvisionsNothing(t *testing.T) {
+	resetAuthTables(t)
+	ctx := context.Background()
+	seedWaitlistEntry(t, "approved@test.local", "approved")
+
+	r := resolverWithSignupMode(auth.SignupModeWaitlist)
+	// An approved waitlist entry matches by email, but an unverified claim has not
+	// proven it controls that address and must not clear the gate.
+	_, err := r.Resolve(ctx, claimsUnverified("approved@test.local", "dev-unverified-approved"), auth.SignupIntent{})
+	require.ErrorIs(t, err, auth.ErrSignupNotAllowed)
+
+	var count int
+	scanControlPlane(t, &count, `SELECT COUNT(*) FROM users WHERE primary_email = 'approved@test.local'`)
+	require.Equal(t, 0, count, "an unverified email must not provision a user")
+}
+
+func TestResolver_SignupMode_Invite_NewerExpiredInvitationDoesNotShadowValidOne(t *testing.T) {
+	resetAuthTables(t)
+	ctx := context.Background()
+
+	// Two different orgs each hold a pending invitation for the same email — the
+	// pending-uniqueness index is scoped per org, so this is allowed. The most
+	// recently created invitation is expired; an older one is still valid.
+	inviterValid, orgValid := seedInviteOrg(t)
+	seedInvitation(t, orgValid, inviterValid, "invitee@test.local", "member", "pending", time.Now().Add(24*time.Hour))
+
+	inviterExpired, orgExpired := seedInviteOrg(t)
+	seedInvitation(t, orgExpired, inviterExpired, "invitee@test.local", "admin", "pending", time.Now().Add(-1*time.Hour))
+
+	// Pin created_at so the expired invitation is unambiguously the newest,
+	// independent of insertion timing — that is the shadowing the fix must avoid.
+	execControlPlane(t, `UPDATE invitations SET created_at = NOW() - INTERVAL '2 hours' WHERE org_id = $1`, orgValid)
+	execControlPlane(t, `UPDATE invitations SET created_at = NOW() - INTERVAL '1 hour' WHERE org_id = $1`, orgExpired)
+
+	r := resolverWithSignupMode(auth.SignupModeInvite)
+	id, err := r.Resolve(ctx, claims("invitee@test.local", "dev-shadowed-invitee"), auth.SignupIntent{})
+	require.NoError(t, err, "a valid invitation must not be shadowed by a newer expired one")
+	require.Equal(t, orgValid, id.OrgID, "signup lands in the org whose invitation is still valid")
+	require.Equal(t, "member", id.OrgRole)
+
+	// The valid invitation is consumed; the expired one is left untouched.
+	var status string
+	scanControlPlane(t, &status, `SELECT status FROM invitations WHERE org_id = $1`, orgValid)
+	require.Equal(t, "accepted", status)
+	scanControlPlane(t, &status, `SELECT status FROM invitations WHERE org_id = $1`, orgExpired)
+	require.Equal(t, "pending", status, "the expired invitation stays pending")
 }
 
 // sanity: compile-time interface assertion

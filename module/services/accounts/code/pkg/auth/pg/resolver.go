@@ -391,7 +391,7 @@ func (r *Resolver) resolveSignup(
 		case auth.SignupModeInvite:
 			return r.provisionInvitedSignup(ctx, tx, c)
 		case auth.SignupModeWaitlist:
-			if err := r.requireApprovedWaitlist(ctx, tx, c.Email); err != nil {
+			if err := r.requireApprovedWaitlist(ctx, tx, c); err != nil {
 				return uuid.Nil, uuid.Nil, "", err
 			}
 		}
@@ -416,26 +416,37 @@ func (r *Resolver) provisionInvitedSignup(
 	tx pgx.Tx,
 	c *auth.Claims,
 ) (uuid.UUID, uuid.UUID, string, error) {
+	// Binding an invitation authorises on email equality, so the address must be
+	// one the provider verified — otherwise an unverified claim could inherit an
+	// organization addressed to an email it has not proven it controls. Checked
+	// before the lookup so an unverified caller cannot probe which emails have a
+	// pending invitation; the response is indistinguishable from "not invited".
+	if !c.EmailVerified {
+		return uuid.Nil, uuid.Nil, "", auth.ErrSignupNotAllowed
+	}
+
 	var invID, orgID uuid.UUID
 	var role string
-	var expiresAt time.Time
+	// The expiry predicate lives in SQL so a newer but expired invitation cannot
+	// shadow an older still-valid one: only unexpired invitations are candidates,
+	// and the most recent of those wins. CURRENT_TIMESTAMP also compares against
+	// the database clock rather than this process's, matching the rest of the
+	// invitation queries.
 	err := tx.QueryRow(ctx, `
-		SELECT id, org_id, role, expires_at
+		SELECT id, org_id, role
 		FROM invitations
 		WHERE LOWER(email) = LOWER($1) AND status = 'pending'
+		  AND expires_at > CURRENT_TIMESTAMP
 		ORDER BY created_at DESC
 		LIMIT 1
 		FOR UPDATE`,
 		c.Email,
-	).Scan(&invID, &orgID, &role, &expiresAt)
+	).Scan(&invID, &orgID, &role)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return uuid.Nil, uuid.Nil, "", auth.ErrSignupNotAllowed
 	}
 	if err != nil {
 		return uuid.Nil, uuid.Nil, "", fmt.Errorf("pgauth: load signup invitation: %w", err)
-	}
-	if time.Now().After(expiresAt) {
-		return uuid.Nil, uuid.Nil, "", auth.ErrSignupNotAllowed
 	}
 
 	userID, err := r.provisionIdentity(ctx, tx, c)
@@ -451,12 +462,22 @@ func (r *Resolver) provisionInvitedSignup(
 // requireApprovedWaitlist authorises a first-seen identity under waitlist mode.
 // Signup is permitted only when a waitlist entry for the verified email has been
 // approved or invited; pending, rejected, and absent entries are rejected.
-func (r *Resolver) requireApprovedWaitlist(ctx context.Context, tx pgx.Tx, email string) error {
+//
+// It takes the whole Claims rather than a bare email because the authorisation
+// turns on email equality: the verification fact must travel with the address,
+// so an unverified claim cannot match a waitlist entry it has not proven it owns.
+func (r *Resolver) requireApprovedWaitlist(ctx context.Context, tx pgx.Tx, c *auth.Claims) error {
+	// Fail closed before the lookup so an unverified caller cannot probe which
+	// emails hold an approved waitlist entry.
+	if !c.EmailVerified {
+		return auth.ErrSignupNotAllowed
+	}
+
 	var state string
 	err := tx.QueryRow(ctx, `
 		SELECT state FROM waitlist_entries
 		WHERE normalized_email = LOWER(BTRIM($1))`,
-		email,
+		c.Email,
 	).Scan(&state)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return auth.ErrSignupNotAllowed
