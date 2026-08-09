@@ -225,6 +225,11 @@ func doWork(ctx context.Context) (Clean, error) {
 	sessionStore := pgauth.NewSessionStore(store, sessionPolicy)
 	resolver := pgauth.NewResolver(store)
 	resolver.SetBootstrapAdminEmail(applicationEnv("BOOTSTRAP_ADMIN_EMAIL"))
+	signupMode, err := auth.ParseSignupMode(identityEnv("IDENTITY_SIGNUP_MODE"))
+	if err != nil {
+		return nil, err
+	}
+	resolver.SetSignupMode(signupMode)
 	priv, err := loadSigningKey(ctx)
 	if err != nil {
 		return nil, err

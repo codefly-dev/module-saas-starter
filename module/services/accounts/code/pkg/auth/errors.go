@@ -33,6 +33,7 @@ var (
 	ErrUnknownIdentity  = errors.New("auth: identity not found")
 	ErrNoAccount        = errors.New("auth: no account for this identity")
 	ErrAccountInactive  = errors.New("auth: account is not active")
+	ErrSignupNotAllowed = errors.New("auth: signup is not permitted for this identity")
 	ErrOrgRequired      = errors.New("auth: org required for this operation")
 	ErrBootstrapClaimed = errors.New("auth: bootstrap already claimed")
 

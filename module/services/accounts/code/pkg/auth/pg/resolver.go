@@ -42,6 +42,7 @@ const BootstrapAdminEmailEnv = "BOOTSTRAP_ADMIN_EMAIL"
 type Resolver struct {
 	bootstrap           BootstrapStore
 	bootstrapAdminEmail *string
+	signupMode          auth.SignupMode
 }
 
 // BootstrapStore is the narrow pre-auth database capability. It deliberately
@@ -62,6 +63,13 @@ func NewResolver(bootstrap BootstrapStore) *Resolver {
 func (r *Resolver) SetBootstrapAdminEmail(email string) {
 	normalized := strings.ToLower(strings.TrimSpace(email))
 	r.bootstrapAdminEmail = &normalized
+}
+
+// SetSignupMode selects the access policy applied to first-seen identities. The
+// zero value (open) is the default, so a Resolver constructed without this
+// setter provisions every authenticated identity as before.
+func (r *Resolver) SetSignupMode(mode auth.SignupMode) {
+	r.signupMode = mode
 }
 
 // Resolve implements auth.IdentityResolver.
@@ -119,13 +127,7 @@ func (r *Resolver) resolveInTx(
 		}
 		orgID, orgRole, err = r.selectOrg(ctx, tx, userID, c.ProviderOrgID)
 	case auth.SignupIntent:
-		if !found {
-			userID, err = r.provisionIdentity(ctx, tx, c)
-			if err != nil {
-				return nil, err
-			}
-		}
-		orgID, orgRole, err = r.ensureOrg(ctx, tx, userID, c.ProviderOrgID, intent.OrganizationName)
+		userID, orgID, orgRole, err = r.resolveSignup(ctx, tx, c, userID, found, intent.OrganizationName)
 	case auth.InviteIntent:
 		userID, orgID, orgRole, err = r.resolveInvite(ctx, tx, c, userID, found, intent.Token)
 	default:
@@ -372,6 +374,152 @@ func (r *Resolver) ensureOrg(
 	return orgID, "owner", nil
 }
 
+// resolveSignup provisions and situates a first-seen identity according to the
+// configured SignupMode. An already-existing identity (found) is never gated:
+// it resolves like a login through the signup path, so gating never locks out
+// established users. Only genuine provisioning of a new identity is gated.
+func (r *Resolver) resolveSignup(
+	ctx context.Context,
+	tx pgx.Tx,
+	c *auth.Claims,
+	userID uuid.UUID,
+	found bool,
+	orgName string,
+) (uuid.UUID, uuid.UUID, string, error) {
+	if !found {
+		switch r.signupMode {
+		case auth.SignupModeInvite:
+			return r.provisionInvitedSignup(ctx, tx, c)
+		case auth.SignupModeWaitlist:
+			if err := r.requireApprovedWaitlist(ctx, tx, c); err != nil {
+				return uuid.Nil, uuid.Nil, "", err
+			}
+		}
+		var err error
+		userID, err = r.provisionIdentity(ctx, tx, c)
+		if err != nil {
+			return uuid.Nil, uuid.Nil, "", err
+		}
+	}
+
+	orgID, orgRole, err := r.ensureOrg(ctx, tx, userID, c.ProviderOrgID, orgName)
+	return userID, orgID, orgRole, err
+}
+
+// provisionInvitedSignup authorises a first-seen identity under invite mode.
+// Signup is permitted only when a pending, unexpired invitation matches the
+// verified email; the invitee is then provisioned and bound to the inviting org,
+// exactly as accepting the invitation by token would. A stranger with no
+// invitation is rejected before any row is written.
+func (r *Resolver) provisionInvitedSignup(
+	ctx context.Context,
+	tx pgx.Tx,
+	c *auth.Claims,
+) (uuid.UUID, uuid.UUID, string, error) {
+	// Binding an invitation authorises on email equality, so the address must be
+	// one the provider verified — otherwise an unverified claim could inherit an
+	// organization addressed to an email it has not proven it controls. Checked
+	// before the lookup so an unverified caller cannot probe which emails have a
+	// pending invitation; the response is indistinguishable from "not invited".
+	if !c.EmailVerified {
+		return uuid.Nil, uuid.Nil, "", auth.ErrSignupNotAllowed
+	}
+
+	var invID, orgID uuid.UUID
+	var role string
+	// The expiry predicate lives in SQL so a newer but expired invitation cannot
+	// shadow an older still-valid one: only unexpired invitations are candidates,
+	// and the most recent of those wins. CURRENT_TIMESTAMP also compares against
+	// the database clock rather than this process's, matching the rest of the
+	// invitation queries.
+	err := tx.QueryRow(ctx, `
+		SELECT id, org_id, role
+		FROM invitations
+		WHERE LOWER(email) = LOWER($1) AND status = 'pending'
+		  AND expires_at > CURRENT_TIMESTAMP
+		ORDER BY created_at DESC
+		LIMIT 1
+		FOR UPDATE`,
+		c.Email,
+	).Scan(&invID, &orgID, &role)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return uuid.Nil, uuid.Nil, "", auth.ErrSignupNotAllowed
+	}
+	if err != nil {
+		return uuid.Nil, uuid.Nil, "", fmt.Errorf("pgauth: load signup invitation: %w", err)
+	}
+
+	userID, err := r.provisionIdentity(ctx, tx, c)
+	if err != nil {
+		return uuid.Nil, uuid.Nil, "", err
+	}
+	if err := r.acceptInvitation(ctx, tx, invID, orgID, userID, role); err != nil {
+		return uuid.Nil, uuid.Nil, "", err
+	}
+	return userID, orgID, role, nil
+}
+
+// requireApprovedWaitlist authorises a first-seen identity under waitlist mode.
+// Signup is permitted only when a waitlist entry for the verified email has been
+// approved or invited; pending, rejected, and absent entries are rejected.
+//
+// It takes the whole Claims rather than a bare email because the authorisation
+// turns on email equality: the verification fact must travel with the address,
+// so an unverified claim cannot match a waitlist entry it has not proven it owns.
+func (r *Resolver) requireApprovedWaitlist(ctx context.Context, tx pgx.Tx, c *auth.Claims) error {
+	// Fail closed before the lookup so an unverified caller cannot probe which
+	// emails hold an approved waitlist entry.
+	if !c.EmailVerified {
+		return auth.ErrSignupNotAllowed
+	}
+
+	var state string
+	err := tx.QueryRow(ctx, `
+		SELECT state FROM waitlist_entries
+		WHERE normalized_email = LOWER(BTRIM($1))`,
+		c.Email,
+	).Scan(&state)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return auth.ErrSignupNotAllowed
+	}
+	if err != nil {
+		return fmt.Errorf("pgauth: load waitlist state: %w", err)
+	}
+	if state != "approved" && state != "invited" {
+		return auth.ErrSignupNotAllowed
+	}
+	return nil
+}
+
+// acceptInvitation joins userID to the invitation's org with the invitation's
+// role and marks the invitation accepted. The membership upsert mirrors
+// AddOrgMember: the accepted invitation's role is authoritative, so it wins over
+// any pre-existing membership rather than leaving a stale role behind.
+func (r *Resolver) acceptInvitation(
+	ctx context.Context,
+	tx pgx.Tx,
+	invID, orgID, userID uuid.UUID,
+	role string,
+) error {
+	if _, err := tx.Exec(ctx, `
+		INSERT INTO organization_members (org_id, user_id, role)
+		VALUES ($1, $2, $3)
+		ON CONFLICT (org_id, user_id) DO UPDATE SET role = $3`,
+		orgID, userID, role,
+	); err != nil {
+		return fmt.Errorf("pgauth: add invited member: %w", err)
+	}
+	if _, err := tx.Exec(ctx, `
+		UPDATE invitations
+		   SET status = 'accepted', accepted_at = NOW(), accepted_by = $2
+		 WHERE id = $1 AND status = 'pending'`,
+		invID, userID,
+	); err != nil {
+		return fmt.Errorf("pgauth: accept invitation: %w", err)
+	}
+	return nil
+}
+
 // resolveInvite authenticates against a pending invitation. Ordering is
 // security-relevant: the invitation must be located, be pending and unexpired,
 // and match the authenticated email BEFORE any user row is provisioned. Only
@@ -443,26 +591,8 @@ func (r *Resolver) resolveInvite(
 		}
 	}
 
-	// Mirror AddOrgMember: the accepted invitation's role is authoritative, so
-	// upsert it on conflict rather than leaving an existing membership's role
-	// behind. Otherwise the role returned below (and minted into the JWT) could
-	// disagree with the persisted membership.
-	if _, err := tx.Exec(ctx, `
-		INSERT INTO organization_members (org_id, user_id, role)
-		VALUES ($1, $2, $3)
-		ON CONFLICT (org_id, user_id) DO UPDATE SET role = $3`,
-		orgID, userID, role,
-	); err != nil {
-		return uuid.Nil, uuid.Nil, "", fmt.Errorf("pgauth: add invited member: %w", err)
-	}
-
-	if _, err := tx.Exec(ctx, `
-		UPDATE invitations
-		   SET status = 'accepted', accepted_at = NOW(), accepted_by = $2
-		 WHERE id = $1 AND status = 'pending'`,
-		invID, userID,
-	); err != nil {
-		return uuid.Nil, uuid.Nil, "", fmt.Errorf("pgauth: accept invitation: %w", err)
+	if err := r.acceptInvitation(ctx, tx, invID, orgID, userID, role); err != nil {
+		return uuid.Nil, uuid.Nil, "", err
 	}
 
 	return userID, orgID, role, nil
