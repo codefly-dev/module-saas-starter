@@ -41,8 +41,8 @@ type WorkContextServiceClient interface {
 	// previously issued Work Context. It succeeds only while every subject's
 	// requested authority still resolves to the exact sealed revision.
 	CheckAuthorizationRevision(ctx context.Context, in *CheckAuthorizationRevisionRequest, opts ...grpc.CallOption) (*emptypb.Empty, error)
-	// AuthorizeEvidenceRead is deliberately Evidence-specific. It prevents the
-	// Warden consumer from acquiring a generic Accounts permission oracle.
+	// AuthorizeEvidenceRead is deliberately Evidence-specific. It prevents a
+	// consumer from acquiring a generic Accounts permission oracle.
 	AuthorizeEvidenceRead(ctx context.Context, in *AuthorizeEvidenceReadRequest, opts ...grpc.CallOption) (*emptypb.Empty, error)
 	StartTask(ctx context.Context, in *StartTaskWorkContextRequest, opts ...grpc.CallOption) (*IssuedWorkContext, error)
 	StartRootSession(ctx context.Context, in *StartRootSessionWorkContextRequest, opts ...grpc.CallOption) (*IssuedWorkContext, error)
@@ -132,8 +132,8 @@ type WorkContextServiceServer interface {
 	// previously issued Work Context. It succeeds only while every subject's
 	// requested authority still resolves to the exact sealed revision.
 	CheckAuthorizationRevision(context.Context, *CheckAuthorizationRevisionRequest) (*emptypb.Empty, error)
-	// AuthorizeEvidenceRead is deliberately Evidence-specific. It prevents the
-	// Warden consumer from acquiring a generic Accounts permission oracle.
+	// AuthorizeEvidenceRead is deliberately Evidence-specific. It prevents a
+	// consumer from acquiring a generic Accounts permission oracle.
 	AuthorizeEvidenceRead(context.Context, *AuthorizeEvidenceReadRequest) (*emptypb.Empty, error)
 	StartTask(context.Context, *StartTaskWorkContextRequest) (*IssuedWorkContext, error)
 	StartRootSession(context.Context, *StartRootSessionWorkContextRequest) (*IssuedWorkContext, error)

@@ -481,8 +481,8 @@ export const WorkContextService: GenService<{
     output: typeof EmptySchema;
   },
   /**
-   * AuthorizeEvidenceRead is deliberately Evidence-specific. It prevents the
-   * Warden consumer from acquiring a generic Accounts permission oracle.
+   * AuthorizeEvidenceRead is deliberately Evidence-specific. It prevents a
+   * consumer from acquiring a generic Accounts permission oracle.
    *
    * @generated from rpc saas.accounts.v1.WorkContextService.AuthorizeEvidenceRead
    */

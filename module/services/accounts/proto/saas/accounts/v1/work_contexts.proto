@@ -214,8 +214,8 @@ service WorkContextService {
     };
   }
 
-  // AuthorizeEvidenceRead is deliberately Evidence-specific. It prevents the
-  // Warden consumer from acquiring a generic Accounts permission oracle.
+  // AuthorizeEvidenceRead is deliberately Evidence-specific. It prevents a
+  // consumer from acquiring a generic Accounts permission oracle.
   rpc AuthorizeEvidenceRead(AuthorizeEvidenceReadRequest) returns (google.protobuf.Empty) {
     option (saas.policy.v1.method_policy) = {
       exposure: EXPOSURE_INTERNAL

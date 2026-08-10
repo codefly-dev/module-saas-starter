@@ -61,8 +61,8 @@ type WorkContextServiceClient interface {
 	// previously issued Work Context. It succeeds only while every subject's
 	// requested authority still resolves to the exact sealed revision.
 	CheckAuthorizationRevision(context.Context, *connect.Request[v1.CheckAuthorizationRevisionRequest]) (*connect.Response[emptypb.Empty], error)
-	// AuthorizeEvidenceRead is deliberately Evidence-specific. It prevents the
-	// Warden consumer from acquiring a generic Accounts permission oracle.
+	// AuthorizeEvidenceRead is deliberately Evidence-specific. It prevents a
+	// consumer from acquiring a generic Accounts permission oracle.
 	AuthorizeEvidenceRead(context.Context, *connect.Request[v1.AuthorizeEvidenceReadRequest]) (*connect.Response[emptypb.Empty], error)
 	StartTask(context.Context, *connect.Request[v1.StartTaskWorkContextRequest]) (*connect.Response[v1.IssuedWorkContext], error)
 	StartRootSession(context.Context, *connect.Request[v1.StartRootSessionWorkContextRequest]) (*connect.Response[v1.IssuedWorkContext], error)
@@ -169,8 +169,8 @@ type WorkContextServiceHandler interface {
 	// previously issued Work Context. It succeeds only while every subject's
 	// requested authority still resolves to the exact sealed revision.
 	CheckAuthorizationRevision(context.Context, *connect.Request[v1.CheckAuthorizationRevisionRequest]) (*connect.Response[emptypb.Empty], error)
-	// AuthorizeEvidenceRead is deliberately Evidence-specific. It prevents the
-	// Warden consumer from acquiring a generic Accounts permission oracle.
+	// AuthorizeEvidenceRead is deliberately Evidence-specific. It prevents a
+	// consumer from acquiring a generic Accounts permission oracle.
 	AuthorizeEvidenceRead(context.Context, *connect.Request[v1.AuthorizeEvidenceReadRequest]) (*connect.Response[emptypb.Empty], error)
 	StartTask(context.Context, *connect.Request[v1.StartTaskWorkContextRequest]) (*connect.Response[v1.IssuedWorkContext], error)
 	StartRootSession(context.Context, *connect.Request[v1.StartRootSessionWorkContextRequest]) (*connect.Response[v1.IssuedWorkContext], error)

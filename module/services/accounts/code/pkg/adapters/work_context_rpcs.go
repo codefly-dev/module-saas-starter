@@ -30,7 +30,7 @@ type WorkContextAuthorityConfiguration struct {
 }
 
 // WorkContextAuthorityServer is the permissions-plugin-owned issuer. It never
-// owns Warden Task/Session rows: it binds current Accounts identity and RBAC
+// owns consumer Task/Session rows: it binds current Accounts identity and RBAC
 // facts into a short-lived Codefly capability.
 type WorkContextAuthorityServer struct {
 	gen.UnimplementedWorkContextServiceServer
