@@ -4,8 +4,10 @@ import (
 	"context"
 	"crypto/ed25519"
 	"crypto/rand"
+	"errors"
 	"testing"
 
+	accountsauth "accounts/pkg/auth"
 	"accounts/pkg/business"
 	gen "accounts/pkg/gen/saas/accounts/v1"
 
@@ -13,6 +15,7 @@ import (
 	codefly "github.com/codefly-dev/sdk-go"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/status"
 )
 
@@ -29,6 +32,55 @@ func (f *workContextAuthorityFake) ResolveWorkContextAuthority(
 	_ []business.WorkContextPermission,
 ) (*business.WorkContextAuthorityFacts, error) {
 	return f.facts, f.err
+}
+
+type workContextConsumerAuthorityFake struct {
+	workContextAuthorityFake
+	revisionOrg      string
+	revisionOwner    string
+	revisionExpected uint64
+	revisionSubjects []business.WorkContextRevisionSubject
+	revisionErr      error
+	readOrg          string
+	readCaller       string
+	readOwner        string
+	readTask         string
+	readSession      string
+	readErr          error
+	verifiedTenant   string
+	verifiedUser     string
+}
+
+func (fake *workContextConsumerAuthorityFake) CheckWorkContextAuthorizationRevision(
+	ctx context.Context,
+	orgID string,
+	ownerPrincipalID string,
+	expectedRevision uint64,
+	subjects []business.WorkContextRevisionSubject,
+) error {
+	fake.revisionOrg = orgID
+	fake.revisionOwner = ownerPrincipalID
+	fake.revisionExpected = expectedRevision
+	fake.revisionSubjects = subjects
+	fake.verifiedTenant, fake.verifiedUser, _ = accountsauth.VerifiedDatabaseIdentity(ctx)
+	return fake.revisionErr
+}
+
+func (fake *workContextConsumerAuthorityFake) AuthorizeEvidenceRead(
+	ctx context.Context,
+	orgID string,
+	callerPrincipalID string,
+	ownerPrincipalID string,
+	taskID string,
+	sessionID string,
+) error {
+	fake.readOrg = orgID
+	fake.readCaller = callerPrincipalID
+	fake.readOwner = ownerPrincipalID
+	fake.readTask = taskID
+	fake.readSession = sessionID
+	fake.verifiedTenant, fake.verifiedUser, _ = accountsauth.VerifiedDatabaseIdentity(ctx)
+	return fake.readErr
 }
 
 func TestWorkContextScopesMapExactPermissionChecks(t *testing.T) {
@@ -99,4 +151,88 @@ func TestWorkContextAuthorityConfigurationFailsClosed(t *testing.T) {
 	require.Nil(t, server.signer)
 	require.Nil(t, server.verifier)
 	require.Nil(t, server.authority)
+}
+
+func TestWorkContextConsumerAuthorityRequiresInternalCredentialAndProjectsExactFacts(t *testing.T) {
+	_, privateKey, err := ed25519.GenerateKey(rand.Reader)
+	require.NoError(t, err)
+	fake := &workContextConsumerAuthorityFake{}
+	server := &WorkContextAuthorityServer{}
+	server.Configure(WorkContextAuthorityConfiguration{
+		Issuer:     "accounts.test",
+		KeyID:      "accounts-test-key",
+		PrivateKey: privateKey,
+		Authority:  fake,
+	})
+	require.NoError(t, server.configureErr)
+
+	orgID := "019fec91-1000-7000-8000-000000000001"
+	ownerID := "019fec91-1000-7000-8000-000000000002"
+	actorID := "019fec91-1000-7000-8000-000000000003"
+	revisionRequest := &gen.CheckAuthorizationRevisionRequest{
+		OrgId:                 orgID,
+		OwnerPrincipalId:      ownerID,
+		AuthorizationRevision: 29,
+		Subjects: []*gen.WorkContextRevisionSubject{
+			{
+				PrincipalId: ownerID,
+				Scopes: []*gen.WorkContextScope{{
+					ResourceKind: "evidence",
+					Actions:      []string{"append"},
+					ResourceIds:  []string{"task:one"},
+				}},
+			},
+			{PrincipalId: actorID},
+		},
+	}
+	_, err = server.CheckAuthorizationRevision(context.Background(), revisionRequest)
+	require.Equal(t, codes.Unauthenticated, status.Code(err))
+
+	SetInternalToken("consumer-authority-test-token")
+	t.Cleanup(func() { SetInternalToken("") })
+	internalContext := metadata.NewIncomingContext(
+		context.Background(),
+		metadata.Pairs("x-codefly-internal-token", "consumer-authority-test-token"),
+	)
+	_, err = server.CheckAuthorizationRevision(internalContext, revisionRequest)
+	require.NoError(t, err)
+	require.Equal(t, orgID, fake.revisionOrg)
+	require.Equal(t, ownerID, fake.revisionOwner)
+	require.Equal(t, uint64(29), fake.revisionExpected)
+	require.Len(t, fake.revisionSubjects, 2)
+	require.Equal(t, "evidence", fake.revisionSubjects[0].Permissions[0].ResourceKind)
+	require.Equal(t, orgID, fake.verifiedTenant)
+	require.Equal(t, ownerID, fake.verifiedUser)
+
+	fake.revisionErr = business.ErrWorkContextAuthorizationStale
+	_, err = server.CheckAuthorizationRevision(internalContext, revisionRequest)
+	require.Equal(t, codes.FailedPrecondition, status.Code(err))
+	fake.revisionErr = errors.New("database unavailable")
+	_, err = server.CheckAuthorizationRevision(internalContext, revisionRequest)
+	require.Equal(t, codes.Internal, status.Code(err))
+
+	fake.revisionErr = nil
+	callerID := "019fec91-1000-7000-8000-000000000004"
+	taskID := "task:one"
+	_, err = server.AuthorizeEvidenceRead(internalContext, &gen.AuthorizeEvidenceReadRequest{
+		OrgId:             orgID,
+		CallerPrincipalId: callerID,
+		OwnerPrincipalId:  &ownerID,
+		TaskId:            &taskID,
+	})
+	require.NoError(t, err)
+	require.Equal(t, orgID, fake.readOrg)
+	require.Equal(t, callerID, fake.readCaller)
+	require.Equal(t, ownerID, fake.readOwner)
+	require.Equal(t, "task:one", fake.readTask)
+	require.Equal(t, callerID, fake.verifiedUser)
+
+	fake.readErr = business.ErrEvidenceReadDenied
+	_, err = server.AuthorizeEvidenceRead(internalContext, &gen.AuthorizeEvidenceReadRequest{
+		OrgId:             orgID,
+		CallerPrincipalId: callerID,
+		OwnerPrincipalId:  &ownerID,
+		TaskId:            &taskID,
+	})
+	require.Equal(t, codes.PermissionDenied, status.Code(err))
 }

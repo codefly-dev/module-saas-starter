@@ -103,7 +103,7 @@ func TestRPCPolicyInventoryIsCompleteAndClassified(t *testing.T) {
 	require.NotEmpty(t, policies)
 	seen := make(map[string]struct{}, len(policies))
 	streaming := make(map[string]bool)
-	internalWithoutHTTP := 0
+	var internalWithoutHTTP []string
 	for _, policy := range policies {
 		require.Empty(t, policy.PolicyError, "%s has invalid descriptor policy", policy.FullMethod)
 		require.NotNil(t, policy.MethodPolicy, "%s has no descriptor policy", policy.FullMethod)
@@ -111,7 +111,7 @@ func TestRPCPolicyInventoryIsCompleteAndClassified(t *testing.T) {
 		if policy.MethodPolicy.GetExposure() == policyv1.Exposure_EXPOSURE_INTERNAL {
 			require.Empty(t, policy.HTTPMethod, "%s must not opt into REST", policy.FullMethod)
 			require.Empty(t, policy.HTTPPath, "%s must not opt into REST", policy.FullMethod)
-			internalWithoutHTTP++
+			internalWithoutHTTP = append(internalWithoutHTTP, policy.FullMethod)
 		} else {
 			require.Equal(t, policy.HTTPMethod == "", policy.HTTPPath == "", "%s has incomplete HTTP metadata", policy.FullMethod)
 		}
@@ -121,7 +121,17 @@ func TestRPCPolicyInventoryIsCompleteAndClassified(t *testing.T) {
 		seen[policy.FullMethod] = struct{}{}
 		streaming[policy.FullMethod] = policy.Streaming
 	}
-	require.Equal(t, 7, internalWithoutHTTP, "all internal RPCs must remain off the REST surface")
+	require.ElementsMatch(t, []string{
+		"/saas.accounts.v1.APIKeyService/ValidateAPIKey",
+		"/saas.accounts.v1.IdentityService/ResolveIdentity",
+		"/saas.accounts.v1.PermissionService/CheckPermission",
+		"/saas.accounts.v1.PermissionService/Decide",
+		"/saas.accounts.v1.PrincipalService/GetAgentPrincipal",
+		"/saas.accounts.v1.PrincipalService/GetPrincipal",
+		"/saas.accounts.v1.UsageService/ConsumeUsage",
+		"/saas.accounts.v1.WorkContextService/AuthorizeEvidenceRead",
+		"/saas.accounts.v1.WorkContextService/CheckAuthorizationRevision",
+	}, internalWithoutHTTP, "the exact internal RPC inventory must remain off the REST surface")
 	require.True(t, streaming["/saas.accounts.v1.DelegationService/WaitForDelegation"], "server-streaming RPC must be present and marked streaming")
 }
 

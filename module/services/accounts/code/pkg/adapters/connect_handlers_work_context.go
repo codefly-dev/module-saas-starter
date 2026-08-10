@@ -4,6 +4,7 @@ import (
 	"context"
 
 	"connectrpc.com/connect"
+	"google.golang.org/protobuf/types/known/emptypb"
 
 	gen "accounts/pkg/gen/saas/accounts/v1"
 )
@@ -13,6 +14,20 @@ import (
 // finite adapter and behavior.
 type workContextConnectHandler struct {
 	inner *WorkContextAuthorityServer
+}
+
+func (h *workContextConnectHandler) CheckAuthorizationRevision(
+	ctx context.Context,
+	req *connect.Request[gen.CheckAuthorizationRevisionRequest],
+) (*connect.Response[emptypb.Empty], error) {
+	return unary(ctx, req, h.inner.CheckAuthorizationRevision)
+}
+
+func (h *workContextConnectHandler) AuthorizeEvidenceRead(
+	ctx context.Context,
+	req *connect.Request[gen.AuthorizeEvidenceReadRequest],
+) (*connect.Response[emptypb.Empty], error) {
+	return unary(ctx, req, h.inner.AuthorizeEvidenceRead)
 }
 
 func (h *workContextConnectHandler) StartTask(

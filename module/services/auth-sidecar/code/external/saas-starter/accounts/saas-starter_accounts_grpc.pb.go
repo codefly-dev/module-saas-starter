@@ -1108,6 +1108,265 @@ func (x *CreateAPIKeyResponse) GetPlaintextKey() string {
 	return ""
 }
 
+// Narrow dependency-client mirror of the canonical WorkContextService
+// consumer authority methods. Field numbers and full wire method names must
+// stay aligned with saas/accounts/v1/work_contexts.proto.
+type WorkContextScope struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	ResourceKind  string                 `protobuf:"bytes,1,opt,name=resource_kind,json=resourceKind,proto3" json:"resource_kind,omitempty"`
+	Actions       []string               `protobuf:"bytes,2,rep,name=actions,proto3" json:"actions,omitempty"`
+	ResourceIds   []string               `protobuf:"bytes,3,rep,name=resource_ids,json=resourceIds,proto3" json:"resource_ids,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *WorkContextScope) Reset() {
+	*x = WorkContextScope{}
+	mi := &file_saas_starter_accounts_grpc_proto_msgTypes[18]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *WorkContextScope) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*WorkContextScope) ProtoMessage() {}
+
+func (x *WorkContextScope) ProtoReflect() protoreflect.Message {
+	mi := &file_saas_starter_accounts_grpc_proto_msgTypes[18]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use WorkContextScope.ProtoReflect.Descriptor instead.
+func (*WorkContextScope) Descriptor() ([]byte, []int) {
+	return file_saas_starter_accounts_grpc_proto_rawDescGZIP(), []int{18}
+}
+
+func (x *WorkContextScope) GetResourceKind() string {
+	if x != nil {
+		return x.ResourceKind
+	}
+	return ""
+}
+
+func (x *WorkContextScope) GetActions() []string {
+	if x != nil {
+		return x.Actions
+	}
+	return nil
+}
+
+func (x *WorkContextScope) GetResourceIds() []string {
+	if x != nil {
+		return x.ResourceIds
+	}
+	return nil
+}
+
+type WorkContextRevisionSubject struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	PrincipalId   string                 `protobuf:"bytes,1,opt,name=principal_id,json=principalId,proto3" json:"principal_id,omitempty"`
+	Scopes        []*WorkContextScope    `protobuf:"bytes,2,rep,name=scopes,proto3" json:"scopes,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *WorkContextRevisionSubject) Reset() {
+	*x = WorkContextRevisionSubject{}
+	mi := &file_saas_starter_accounts_grpc_proto_msgTypes[19]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *WorkContextRevisionSubject) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*WorkContextRevisionSubject) ProtoMessage() {}
+
+func (x *WorkContextRevisionSubject) ProtoReflect() protoreflect.Message {
+	mi := &file_saas_starter_accounts_grpc_proto_msgTypes[19]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use WorkContextRevisionSubject.ProtoReflect.Descriptor instead.
+func (*WorkContextRevisionSubject) Descriptor() ([]byte, []int) {
+	return file_saas_starter_accounts_grpc_proto_rawDescGZIP(), []int{19}
+}
+
+func (x *WorkContextRevisionSubject) GetPrincipalId() string {
+	if x != nil {
+		return x.PrincipalId
+	}
+	return ""
+}
+
+func (x *WorkContextRevisionSubject) GetScopes() []*WorkContextScope {
+	if x != nil {
+		return x.Scopes
+	}
+	return nil
+}
+
+type CheckAuthorizationRevisionRequest struct {
+	state                 protoimpl.MessageState        `protogen:"open.v1"`
+	OrgId                 string                        `protobuf:"bytes,1,opt,name=org_id,json=orgId,proto3" json:"org_id,omitempty"`
+	OwnerPrincipalId      string                        `protobuf:"bytes,2,opt,name=owner_principal_id,json=ownerPrincipalId,proto3" json:"owner_principal_id,omitempty"`
+	AuthorizationRevision uint64                        `protobuf:"varint,3,opt,name=authorization_revision,json=authorizationRevision,proto3" json:"authorization_revision,omitempty"`
+	Subjects              []*WorkContextRevisionSubject `protobuf:"bytes,4,rep,name=subjects,proto3" json:"subjects,omitempty"`
+	unknownFields         protoimpl.UnknownFields
+	sizeCache             protoimpl.SizeCache
+}
+
+func (x *CheckAuthorizationRevisionRequest) Reset() {
+	*x = CheckAuthorizationRevisionRequest{}
+	mi := &file_saas_starter_accounts_grpc_proto_msgTypes[20]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *CheckAuthorizationRevisionRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*CheckAuthorizationRevisionRequest) ProtoMessage() {}
+
+func (x *CheckAuthorizationRevisionRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_saas_starter_accounts_grpc_proto_msgTypes[20]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use CheckAuthorizationRevisionRequest.ProtoReflect.Descriptor instead.
+func (*CheckAuthorizationRevisionRequest) Descriptor() ([]byte, []int) {
+	return file_saas_starter_accounts_grpc_proto_rawDescGZIP(), []int{20}
+}
+
+func (x *CheckAuthorizationRevisionRequest) GetOrgId() string {
+	if x != nil {
+		return x.OrgId
+	}
+	return ""
+}
+
+func (x *CheckAuthorizationRevisionRequest) GetOwnerPrincipalId() string {
+	if x != nil {
+		return x.OwnerPrincipalId
+	}
+	return ""
+}
+
+func (x *CheckAuthorizationRevisionRequest) GetAuthorizationRevision() uint64 {
+	if x != nil {
+		return x.AuthorizationRevision
+	}
+	return 0
+}
+
+func (x *CheckAuthorizationRevisionRequest) GetSubjects() []*WorkContextRevisionSubject {
+	if x != nil {
+		return x.Subjects
+	}
+	return nil
+}
+
+type AuthorizeEvidenceReadRequest struct {
+	state             protoimpl.MessageState `protogen:"open.v1"`
+	OrgId             string                 `protobuf:"bytes,1,opt,name=org_id,json=orgId,proto3" json:"org_id,omitempty"`
+	CallerPrincipalId string                 `protobuf:"bytes,2,opt,name=caller_principal_id,json=callerPrincipalId,proto3" json:"caller_principal_id,omitempty"`
+	OwnerPrincipalId  *string                `protobuf:"bytes,3,opt,name=owner_principal_id,json=ownerPrincipalId,proto3,oneof" json:"owner_principal_id,omitempty"`
+	TaskId            *string                `protobuf:"bytes,4,opt,name=task_id,json=taskId,proto3,oneof" json:"task_id,omitempty"`
+	SessionId         *string                `protobuf:"bytes,5,opt,name=session_id,json=sessionId,proto3,oneof" json:"session_id,omitempty"`
+	unknownFields     protoimpl.UnknownFields
+	sizeCache         protoimpl.SizeCache
+}
+
+func (x *AuthorizeEvidenceReadRequest) Reset() {
+	*x = AuthorizeEvidenceReadRequest{}
+	mi := &file_saas_starter_accounts_grpc_proto_msgTypes[21]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *AuthorizeEvidenceReadRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*AuthorizeEvidenceReadRequest) ProtoMessage() {}
+
+func (x *AuthorizeEvidenceReadRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_saas_starter_accounts_grpc_proto_msgTypes[21]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use AuthorizeEvidenceReadRequest.ProtoReflect.Descriptor instead.
+func (*AuthorizeEvidenceReadRequest) Descriptor() ([]byte, []int) {
+	return file_saas_starter_accounts_grpc_proto_rawDescGZIP(), []int{21}
+}
+
+func (x *AuthorizeEvidenceReadRequest) GetOrgId() string {
+	if x != nil {
+		return x.OrgId
+	}
+	return ""
+}
+
+func (x *AuthorizeEvidenceReadRequest) GetCallerPrincipalId() string {
+	if x != nil {
+		return x.CallerPrincipalId
+	}
+	return ""
+}
+
+func (x *AuthorizeEvidenceReadRequest) GetOwnerPrincipalId() string {
+	if x != nil && x.OwnerPrincipalId != nil {
+		return *x.OwnerPrincipalId
+	}
+	return ""
+}
+
+func (x *AuthorizeEvidenceReadRequest) GetTaskId() string {
+	if x != nil && x.TaskId != nil {
+		return *x.TaskId
+	}
+	return ""
+}
+
+func (x *AuthorizeEvidenceReadRequest) GetSessionId() string {
+	if x != nil && x.SessionId != nil {
+		return *x.SessionId
+	}
+	return ""
+}
+
 var File_saas_starter_accounts_grpc_proto protoreflect.FileDescriptor
 
 const file_saas_starter_accounts_grpc_proto_rawDesc = "" +
@@ -1192,7 +1451,30 @@ const file_saas_starter_accounts_grpc_proto_rawDesc = "" +
 	"\x06scopes\x18\x03 \x03(\v2\x1c.saas.accounts.v1.PermissionR\x06scopes\x12E\n" +
 	"\venvironment\x18\x04 \x01(\x0e2#.saas.accounts.v1.APIKeyEnvironmentR\venvironment\";\n" +
 	"\x14CreateAPIKeyResponse\x12#\n" +
-	"\rplaintext_key\x18\x02 \x01(\tR\fplaintextKey*t\n" +
+	"\rplaintext_key\x18\x02 \x01(\tR\fplaintextKey\"t\n" +
+	"\x10WorkContextScope\x12#\n" +
+	"\rresource_kind\x18\x01 \x01(\tR\fresourceKind\x12\x18\n" +
+	"\aactions\x18\x02 \x03(\tR\aactions\x12!\n" +
+	"\fresource_ids\x18\x03 \x03(\tR\vresourceIds\"{\n" +
+	"\x1aWorkContextRevisionSubject\x12!\n" +
+	"\fprincipal_id\x18\x01 \x01(\tR\vprincipalId\x12:\n" +
+	"\x06scopes\x18\x02 \x03(\v2\".saas.accounts.v1.WorkContextScopeR\x06scopes\"\xe9\x01\n" +
+	"!CheckAuthorizationRevisionRequest\x12\x15\n" +
+	"\x06org_id\x18\x01 \x01(\tR\x05orgId\x12,\n" +
+	"\x12owner_principal_id\x18\x02 \x01(\tR\x10ownerPrincipalId\x125\n" +
+	"\x16authorization_revision\x18\x03 \x01(\x04R\x15authorizationRevision\x12H\n" +
+	"\bsubjects\x18\x04 \x03(\v2,.saas.accounts.v1.WorkContextRevisionSubjectR\bsubjects\"\x8c\x02\n" +
+	"\x1cAuthorizeEvidenceReadRequest\x12\x15\n" +
+	"\x06org_id\x18\x01 \x01(\tR\x05orgId\x12.\n" +
+	"\x13caller_principal_id\x18\x02 \x01(\tR\x11callerPrincipalId\x121\n" +
+	"\x12owner_principal_id\x18\x03 \x01(\tH\x00R\x10ownerPrincipalId\x88\x01\x01\x12\x1c\n" +
+	"\atask_id\x18\x04 \x01(\tH\x01R\x06taskId\x88\x01\x01\x12\"\n" +
+	"\n" +
+	"session_id\x18\x05 \x01(\tH\x02R\tsessionId\x88\x01\x01B\x15\n" +
+	"\x13_owner_principal_idB\n" +
+	"\n" +
+	"\b_task_idB\r\n" +
+	"\v_session_id*t\n" +
 	"\x11APIKeyEnvironment\x12#\n" +
 	"\x1fAPI_KEY_ENVIRONMENT_UNSPECIFIED\x10\x00\x12\x1c\n" +
 	"\x18API_KEY_ENVIRONMENT_LIVE\x10\x01\x12\x1c\n" +
@@ -1208,7 +1490,10 @@ const file_saas_starter_accounts_grpc_proto_rawDesc = "" +
 	"\x0fResolveIdentity\x12(.saas.accounts.v1.ResolveIdentityRequest\x1a).saas.accounts.v1.ResolveIdentityResponse2\xd3\x01\n" +
 	"\rAPIKeyService\x12]\n" +
 	"\fCreateAPIKey\x12%.saas.accounts.v1.CreateAPIKeyRequest\x1a&.saas.accounts.v1.CreateAPIKeyResponse\x12c\n" +
-	"\x0eValidateAPIKey\x12'.saas.accounts.v1.ValidateAPIKeyRequest\x1a(.saas.accounts.v1.ValidateAPIKeyResponseB\xe7\x01\n" +
+	"\x0eValidateAPIKey\x12'.saas.accounts.v1.ValidateAPIKeyRequest\x1a(.saas.accounts.v1.ValidateAPIKeyResponse2\xe0\x01\n" +
+	"\x12WorkContextService\x12i\n" +
+	"\x1aCheckAuthorizationRevision\x123.saas.accounts.v1.CheckAuthorizationRevisionRequest\x1a\x16.google.protobuf.Empty\x12_\n" +
+	"\x15AuthorizeEvidenceRead\x12..saas.accounts.v1.AuthorizeEvidenceReadRequest\x1a\x16.google.protobuf.EmptyB\xe7\x01\n" +
 	"\x14com.saas.accounts.v1B\x1cSaasStarterAccountsGrpcProtoP\x01ZOgithub.com/codefly-dev/cli/pkg/builder/clients/saas-starter/accounts;accountsv1\xa2\x02\x03SAX\xaa\x02\x10Saas.Accounts.V1\xca\x02\x10Saas\\Accounts\\V1\xe2\x02\x1cSaas\\Accounts\\V1\\GPBMetadata\xea\x02\x12Saas::Accounts::V1b\x06proto3"
 
 var (
@@ -1224,60 +1509,70 @@ func file_saas_starter_accounts_grpc_proto_rawDescGZIP() []byte {
 }
 
 var file_saas_starter_accounts_grpc_proto_enumTypes = make([]protoimpl.EnumInfo, 1)
-var file_saas_starter_accounts_grpc_proto_msgTypes = make([]protoimpl.MessageInfo, 20)
+var file_saas_starter_accounts_grpc_proto_msgTypes = make([]protoimpl.MessageInfo, 24)
 var file_saas_starter_accounts_grpc_proto_goTypes = []any{
-	(APIKeyEnvironment)(0),            // 0: saas.accounts.v1.APIKeyEnvironment
-	(*FixtureAuthentication)(nil),     // 1: saas.accounts.v1.FixtureAuthentication
-	(*AuthenticateRequest)(nil),       // 2: saas.accounts.v1.AuthenticateRequest
-	(*User)(nil),                      // 3: saas.accounts.v1.User
-	(*AuthenticateResponse)(nil),      // 4: saas.accounts.v1.AuthenticateResponse
-	(*RefreshTokenRequest)(nil),       // 5: saas.accounts.v1.RefreshTokenRequest
-	(*RefreshTokenResponse)(nil),      // 6: saas.accounts.v1.RefreshTokenResponse
-	(*LogoutRequest)(nil),             // 7: saas.accounts.v1.LogoutRequest
-	(*JWKSResponse)(nil),              // 8: saas.accounts.v1.JWKSResponse
-	(*ListOrganizationsRequest)(nil),  // 9: saas.accounts.v1.ListOrganizationsRequest
-	(*Organization)(nil),              // 10: saas.accounts.v1.Organization
-	(*ListOrganizationsResponse)(nil), // 11: saas.accounts.v1.ListOrganizationsResponse
-	(*ResolveIdentityRequest)(nil),    // 12: saas.accounts.v1.ResolveIdentityRequest
-	(*ResolveIdentityResponse)(nil),   // 13: saas.accounts.v1.ResolveIdentityResponse
-	(*ValidateAPIKeyRequest)(nil),     // 14: saas.accounts.v1.ValidateAPIKeyRequest
-	(*ValidateAPIKeyResponse)(nil),    // 15: saas.accounts.v1.ValidateAPIKeyResponse
-	(*Permission)(nil),                // 16: saas.accounts.v1.Permission
-	(*CreateAPIKeyRequest)(nil),       // 17: saas.accounts.v1.CreateAPIKeyRequest
-	(*CreateAPIKeyResponse)(nil),      // 18: saas.accounts.v1.CreateAPIKeyResponse
-	nil,                               // 19: saas.accounts.v1.AuthenticateRequest.ProfileEntry
-	nil,                               // 20: saas.accounts.v1.ValidateAPIKeyResponse.AttributesEntry
-	(*emptypb.Empty)(nil),             // 21: google.protobuf.Empty
+	(APIKeyEnvironment)(0),                    // 0: saas.accounts.v1.APIKeyEnvironment
+	(*FixtureAuthentication)(nil),             // 1: saas.accounts.v1.FixtureAuthentication
+	(*AuthenticateRequest)(nil),               // 2: saas.accounts.v1.AuthenticateRequest
+	(*User)(nil),                              // 3: saas.accounts.v1.User
+	(*AuthenticateResponse)(nil),              // 4: saas.accounts.v1.AuthenticateResponse
+	(*RefreshTokenRequest)(nil),               // 5: saas.accounts.v1.RefreshTokenRequest
+	(*RefreshTokenResponse)(nil),              // 6: saas.accounts.v1.RefreshTokenResponse
+	(*LogoutRequest)(nil),                     // 7: saas.accounts.v1.LogoutRequest
+	(*JWKSResponse)(nil),                      // 8: saas.accounts.v1.JWKSResponse
+	(*ListOrganizationsRequest)(nil),          // 9: saas.accounts.v1.ListOrganizationsRequest
+	(*Organization)(nil),                      // 10: saas.accounts.v1.Organization
+	(*ListOrganizationsResponse)(nil),         // 11: saas.accounts.v1.ListOrganizationsResponse
+	(*ResolveIdentityRequest)(nil),            // 12: saas.accounts.v1.ResolveIdentityRequest
+	(*ResolveIdentityResponse)(nil),           // 13: saas.accounts.v1.ResolveIdentityResponse
+	(*ValidateAPIKeyRequest)(nil),             // 14: saas.accounts.v1.ValidateAPIKeyRequest
+	(*ValidateAPIKeyResponse)(nil),            // 15: saas.accounts.v1.ValidateAPIKeyResponse
+	(*Permission)(nil),                        // 16: saas.accounts.v1.Permission
+	(*CreateAPIKeyRequest)(nil),               // 17: saas.accounts.v1.CreateAPIKeyRequest
+	(*CreateAPIKeyResponse)(nil),              // 18: saas.accounts.v1.CreateAPIKeyResponse
+	(*WorkContextScope)(nil),                  // 19: saas.accounts.v1.WorkContextScope
+	(*WorkContextRevisionSubject)(nil),        // 20: saas.accounts.v1.WorkContextRevisionSubject
+	(*CheckAuthorizationRevisionRequest)(nil), // 21: saas.accounts.v1.CheckAuthorizationRevisionRequest
+	(*AuthorizeEvidenceReadRequest)(nil),      // 22: saas.accounts.v1.AuthorizeEvidenceReadRequest
+	nil,                                       // 23: saas.accounts.v1.AuthenticateRequest.ProfileEntry
+	nil,                                       // 24: saas.accounts.v1.ValidateAPIKeyResponse.AttributesEntry
+	(*emptypb.Empty)(nil),                     // 25: google.protobuf.Empty
 }
 var file_saas_starter_accounts_grpc_proto_depIdxs = []int32{
-	19, // 0: saas.accounts.v1.AuthenticateRequest.profile:type_name -> saas.accounts.v1.AuthenticateRequest.ProfileEntry
+	23, // 0: saas.accounts.v1.AuthenticateRequest.profile:type_name -> saas.accounts.v1.AuthenticateRequest.ProfileEntry
 	1,  // 1: saas.accounts.v1.AuthenticateRequest.fixture:type_name -> saas.accounts.v1.FixtureAuthentication
 	3,  // 2: saas.accounts.v1.AuthenticateResponse.user:type_name -> saas.accounts.v1.User
 	10, // 3: saas.accounts.v1.ListOrganizationsResponse.organizations:type_name -> saas.accounts.v1.Organization
-	20, // 4: saas.accounts.v1.ValidateAPIKeyResponse.attributes:type_name -> saas.accounts.v1.ValidateAPIKeyResponse.AttributesEntry
+	24, // 4: saas.accounts.v1.ValidateAPIKeyResponse.attributes:type_name -> saas.accounts.v1.ValidateAPIKeyResponse.AttributesEntry
 	16, // 5: saas.accounts.v1.CreateAPIKeyRequest.scopes:type_name -> saas.accounts.v1.Permission
 	0,  // 6: saas.accounts.v1.CreateAPIKeyRequest.environment:type_name -> saas.accounts.v1.APIKeyEnvironment
-	2,  // 7: saas.accounts.v1.AuthService.Authenticate:input_type -> saas.accounts.v1.AuthenticateRequest
-	5,  // 8: saas.accounts.v1.AuthService.RefreshToken:input_type -> saas.accounts.v1.RefreshTokenRequest
-	7,  // 9: saas.accounts.v1.AuthService.Logout:input_type -> saas.accounts.v1.LogoutRequest
-	21, // 10: saas.accounts.v1.AuthService.GetJWKS:input_type -> google.protobuf.Empty
-	9,  // 11: saas.accounts.v1.OrganizationService.ListOrganizations:input_type -> saas.accounts.v1.ListOrganizationsRequest
-	12, // 12: saas.accounts.v1.IdentityService.ResolveIdentity:input_type -> saas.accounts.v1.ResolveIdentityRequest
-	17, // 13: saas.accounts.v1.APIKeyService.CreateAPIKey:input_type -> saas.accounts.v1.CreateAPIKeyRequest
-	14, // 14: saas.accounts.v1.APIKeyService.ValidateAPIKey:input_type -> saas.accounts.v1.ValidateAPIKeyRequest
-	4,  // 15: saas.accounts.v1.AuthService.Authenticate:output_type -> saas.accounts.v1.AuthenticateResponse
-	6,  // 16: saas.accounts.v1.AuthService.RefreshToken:output_type -> saas.accounts.v1.RefreshTokenResponse
-	21, // 17: saas.accounts.v1.AuthService.Logout:output_type -> google.protobuf.Empty
-	8,  // 18: saas.accounts.v1.AuthService.GetJWKS:output_type -> saas.accounts.v1.JWKSResponse
-	11, // 19: saas.accounts.v1.OrganizationService.ListOrganizations:output_type -> saas.accounts.v1.ListOrganizationsResponse
-	13, // 20: saas.accounts.v1.IdentityService.ResolveIdentity:output_type -> saas.accounts.v1.ResolveIdentityResponse
-	18, // 21: saas.accounts.v1.APIKeyService.CreateAPIKey:output_type -> saas.accounts.v1.CreateAPIKeyResponse
-	15, // 22: saas.accounts.v1.APIKeyService.ValidateAPIKey:output_type -> saas.accounts.v1.ValidateAPIKeyResponse
-	15, // [15:23] is the sub-list for method output_type
-	7,  // [7:15] is the sub-list for method input_type
-	7,  // [7:7] is the sub-list for extension type_name
-	7,  // [7:7] is the sub-list for extension extendee
-	0,  // [0:7] is the sub-list for field type_name
+	19, // 7: saas.accounts.v1.WorkContextRevisionSubject.scopes:type_name -> saas.accounts.v1.WorkContextScope
+	20, // 8: saas.accounts.v1.CheckAuthorizationRevisionRequest.subjects:type_name -> saas.accounts.v1.WorkContextRevisionSubject
+	2,  // 9: saas.accounts.v1.AuthService.Authenticate:input_type -> saas.accounts.v1.AuthenticateRequest
+	5,  // 10: saas.accounts.v1.AuthService.RefreshToken:input_type -> saas.accounts.v1.RefreshTokenRequest
+	7,  // 11: saas.accounts.v1.AuthService.Logout:input_type -> saas.accounts.v1.LogoutRequest
+	25, // 12: saas.accounts.v1.AuthService.GetJWKS:input_type -> google.protobuf.Empty
+	9,  // 13: saas.accounts.v1.OrganizationService.ListOrganizations:input_type -> saas.accounts.v1.ListOrganizationsRequest
+	12, // 14: saas.accounts.v1.IdentityService.ResolveIdentity:input_type -> saas.accounts.v1.ResolveIdentityRequest
+	17, // 15: saas.accounts.v1.APIKeyService.CreateAPIKey:input_type -> saas.accounts.v1.CreateAPIKeyRequest
+	14, // 16: saas.accounts.v1.APIKeyService.ValidateAPIKey:input_type -> saas.accounts.v1.ValidateAPIKeyRequest
+	21, // 17: saas.accounts.v1.WorkContextService.CheckAuthorizationRevision:input_type -> saas.accounts.v1.CheckAuthorizationRevisionRequest
+	22, // 18: saas.accounts.v1.WorkContextService.AuthorizeEvidenceRead:input_type -> saas.accounts.v1.AuthorizeEvidenceReadRequest
+	4,  // 19: saas.accounts.v1.AuthService.Authenticate:output_type -> saas.accounts.v1.AuthenticateResponse
+	6,  // 20: saas.accounts.v1.AuthService.RefreshToken:output_type -> saas.accounts.v1.RefreshTokenResponse
+	25, // 21: saas.accounts.v1.AuthService.Logout:output_type -> google.protobuf.Empty
+	8,  // 22: saas.accounts.v1.AuthService.GetJWKS:output_type -> saas.accounts.v1.JWKSResponse
+	11, // 23: saas.accounts.v1.OrganizationService.ListOrganizations:output_type -> saas.accounts.v1.ListOrganizationsResponse
+	13, // 24: saas.accounts.v1.IdentityService.ResolveIdentity:output_type -> saas.accounts.v1.ResolveIdentityResponse
+	18, // 25: saas.accounts.v1.APIKeyService.CreateAPIKey:output_type -> saas.accounts.v1.CreateAPIKeyResponse
+	15, // 26: saas.accounts.v1.APIKeyService.ValidateAPIKey:output_type -> saas.accounts.v1.ValidateAPIKeyResponse
+	25, // 27: saas.accounts.v1.WorkContextService.CheckAuthorizationRevision:output_type -> google.protobuf.Empty
+	25, // 28: saas.accounts.v1.WorkContextService.AuthorizeEvidenceRead:output_type -> google.protobuf.Empty
+	19, // [19:29] is the sub-list for method output_type
+	9,  // [9:19] is the sub-list for method input_type
+	9,  // [9:9] is the sub-list for extension type_name
+	9,  // [9:9] is the sub-list for extension extendee
+	0,  // [0:9] is the sub-list for field type_name
 }
 
 func init() { file_saas_starter_accounts_grpc_proto_init() }
@@ -1288,15 +1583,16 @@ func file_saas_starter_accounts_grpc_proto_init() {
 	file_saas_starter_accounts_grpc_proto_msgTypes[1].OneofWrappers = []any{
 		(*AuthenticateRequest_Fixture)(nil),
 	}
+	file_saas_starter_accounts_grpc_proto_msgTypes[21].OneofWrappers = []any{}
 	type x struct{}
 	out := protoimpl.TypeBuilder{
 		File: protoimpl.DescBuilder{
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_saas_starter_accounts_grpc_proto_rawDesc), len(file_saas_starter_accounts_grpc_proto_rawDesc)),
 			NumEnums:      1,
-			NumMessages:   20,
+			NumMessages:   24,
 			NumExtensions: 0,
-			NumServices:   4,
+			NumServices:   5,
 		},
 		GoTypes:           file_saas_starter_accounts_grpc_proto_goTypes,
 		DependencyIndexes: file_saas_starter_accounts_grpc_proto_depIdxs,

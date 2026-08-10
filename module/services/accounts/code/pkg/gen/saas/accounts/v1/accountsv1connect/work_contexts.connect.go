@@ -12,6 +12,7 @@ import (
 	strings "strings"
 
 	connect "connectrpc.com/connect"
+	emptypb "google.golang.org/protobuf/types/known/emptypb"
 )
 
 // This is a compile-time assertion to ensure that this generated file and the connect package are
@@ -34,6 +35,12 @@ const (
 // reflection-formatted method names, remove the leading slash and convert the remaining slash to a
 // period.
 const (
+	// WorkContextServiceCheckAuthorizationRevisionProcedure is the fully-qualified name of the
+	// WorkContextService's CheckAuthorizationRevision RPC.
+	WorkContextServiceCheckAuthorizationRevisionProcedure = "/saas.accounts.v1.WorkContextService/CheckAuthorizationRevision"
+	// WorkContextServiceAuthorizeEvidenceReadProcedure is the fully-qualified name of the
+	// WorkContextService's AuthorizeEvidenceRead RPC.
+	WorkContextServiceAuthorizeEvidenceReadProcedure = "/saas.accounts.v1.WorkContextService/AuthorizeEvidenceRead"
 	// WorkContextServiceStartTaskProcedure is the fully-qualified name of the WorkContextService's
 	// StartTask RPC.
 	WorkContextServiceStartTaskProcedure = "/saas.accounts.v1.WorkContextService/StartTask"
@@ -50,6 +57,13 @@ const (
 
 // WorkContextServiceClient is a client for the saas.accounts.v1.WorkContextService service.
 type WorkContextServiceClient interface {
+	// CheckAuthorizationRevision is the consumer-side revocation seam for a
+	// previously issued Work Context. It succeeds only while every subject's
+	// requested authority still resolves to the exact sealed revision.
+	CheckAuthorizationRevision(context.Context, *connect.Request[v1.CheckAuthorizationRevisionRequest]) (*connect.Response[emptypb.Empty], error)
+	// AuthorizeEvidenceRead is deliberately Evidence-specific. It prevents a
+	// consumer from acquiring a generic Accounts permission oracle.
+	AuthorizeEvidenceRead(context.Context, *connect.Request[v1.AuthorizeEvidenceReadRequest]) (*connect.Response[emptypb.Empty], error)
 	StartTask(context.Context, *connect.Request[v1.StartTaskWorkContextRequest]) (*connect.Response[v1.IssuedWorkContext], error)
 	StartRootSession(context.Context, *connect.Request[v1.StartRootSessionWorkContextRequest]) (*connect.Response[v1.IssuedWorkContext], error)
 	// ExchangeAudience derives a least-privilege, audience-bound capability
@@ -69,6 +83,18 @@ func NewWorkContextServiceClient(httpClient connect.HTTPClient, baseURL string, 
 	baseURL = strings.TrimRight(baseURL, "/")
 	workContextServiceMethods := v1.File_saas_accounts_v1_work_contexts_proto.Services().ByName("WorkContextService").Methods()
 	return &workContextServiceClient{
+		checkAuthorizationRevision: connect.NewClient[v1.CheckAuthorizationRevisionRequest, emptypb.Empty](
+			httpClient,
+			baseURL+WorkContextServiceCheckAuthorizationRevisionProcedure,
+			connect.WithSchema(workContextServiceMethods.ByName("CheckAuthorizationRevision")),
+			connect.WithClientOptions(opts...),
+		),
+		authorizeEvidenceRead: connect.NewClient[v1.AuthorizeEvidenceReadRequest, emptypb.Empty](
+			httpClient,
+			baseURL+WorkContextServiceAuthorizeEvidenceReadProcedure,
+			connect.WithSchema(workContextServiceMethods.ByName("AuthorizeEvidenceRead")),
+			connect.WithClientOptions(opts...),
+		),
 		startTask: connect.NewClient[v1.StartTaskWorkContextRequest, v1.IssuedWorkContext](
 			httpClient,
 			baseURL+WorkContextServiceStartTaskProcedure,
@@ -98,10 +124,22 @@ func NewWorkContextServiceClient(httpClient connect.HTTPClient, baseURL string, 
 
 // workContextServiceClient implements WorkContextServiceClient.
 type workContextServiceClient struct {
-	startTask         *connect.Client[v1.StartTaskWorkContextRequest, v1.IssuedWorkContext]
-	startRootSession  *connect.Client[v1.StartRootSessionWorkContextRequest, v1.IssuedWorkContext]
-	exchangeAudience  *connect.Client[v1.ExchangeWorkContextAudienceRequest, v1.IssuedWorkContext]
-	startChildSession *connect.Client[v1.StartChildSessionWorkContextRequest, v1.IssuedWorkContext]
+	checkAuthorizationRevision *connect.Client[v1.CheckAuthorizationRevisionRequest, emptypb.Empty]
+	authorizeEvidenceRead      *connect.Client[v1.AuthorizeEvidenceReadRequest, emptypb.Empty]
+	startTask                  *connect.Client[v1.StartTaskWorkContextRequest, v1.IssuedWorkContext]
+	startRootSession           *connect.Client[v1.StartRootSessionWorkContextRequest, v1.IssuedWorkContext]
+	exchangeAudience           *connect.Client[v1.ExchangeWorkContextAudienceRequest, v1.IssuedWorkContext]
+	startChildSession          *connect.Client[v1.StartChildSessionWorkContextRequest, v1.IssuedWorkContext]
+}
+
+// CheckAuthorizationRevision calls saas.accounts.v1.WorkContextService.CheckAuthorizationRevision.
+func (c *workContextServiceClient) CheckAuthorizationRevision(ctx context.Context, req *connect.Request[v1.CheckAuthorizationRevisionRequest]) (*connect.Response[emptypb.Empty], error) {
+	return c.checkAuthorizationRevision.CallUnary(ctx, req)
+}
+
+// AuthorizeEvidenceRead calls saas.accounts.v1.WorkContextService.AuthorizeEvidenceRead.
+func (c *workContextServiceClient) AuthorizeEvidenceRead(ctx context.Context, req *connect.Request[v1.AuthorizeEvidenceReadRequest]) (*connect.Response[emptypb.Empty], error) {
+	return c.authorizeEvidenceRead.CallUnary(ctx, req)
 }
 
 // StartTask calls saas.accounts.v1.WorkContextService.StartTask.
@@ -127,6 +165,13 @@ func (c *workContextServiceClient) StartChildSession(ctx context.Context, req *c
 // WorkContextServiceHandler is an implementation of the saas.accounts.v1.WorkContextService
 // service.
 type WorkContextServiceHandler interface {
+	// CheckAuthorizationRevision is the consumer-side revocation seam for a
+	// previously issued Work Context. It succeeds only while every subject's
+	// requested authority still resolves to the exact sealed revision.
+	CheckAuthorizationRevision(context.Context, *connect.Request[v1.CheckAuthorizationRevisionRequest]) (*connect.Response[emptypb.Empty], error)
+	// AuthorizeEvidenceRead is deliberately Evidence-specific. It prevents a
+	// consumer from acquiring a generic Accounts permission oracle.
+	AuthorizeEvidenceRead(context.Context, *connect.Request[v1.AuthorizeEvidenceReadRequest]) (*connect.Response[emptypb.Empty], error)
 	StartTask(context.Context, *connect.Request[v1.StartTaskWorkContextRequest]) (*connect.Response[v1.IssuedWorkContext], error)
 	StartRootSession(context.Context, *connect.Request[v1.StartRootSessionWorkContextRequest]) (*connect.Response[v1.IssuedWorkContext], error)
 	// ExchangeAudience derives a least-privilege, audience-bound capability
@@ -142,6 +187,18 @@ type WorkContextServiceHandler interface {
 // and JSON codecs. They also support gzip compression.
 func NewWorkContextServiceHandler(svc WorkContextServiceHandler, opts ...connect.HandlerOption) (string, http.Handler) {
 	workContextServiceMethods := v1.File_saas_accounts_v1_work_contexts_proto.Services().ByName("WorkContextService").Methods()
+	workContextServiceCheckAuthorizationRevisionHandler := connect.NewUnaryHandler(
+		WorkContextServiceCheckAuthorizationRevisionProcedure,
+		svc.CheckAuthorizationRevision,
+		connect.WithSchema(workContextServiceMethods.ByName("CheckAuthorizationRevision")),
+		connect.WithHandlerOptions(opts...),
+	)
+	workContextServiceAuthorizeEvidenceReadHandler := connect.NewUnaryHandler(
+		WorkContextServiceAuthorizeEvidenceReadProcedure,
+		svc.AuthorizeEvidenceRead,
+		connect.WithSchema(workContextServiceMethods.ByName("AuthorizeEvidenceRead")),
+		connect.WithHandlerOptions(opts...),
+	)
 	workContextServiceStartTaskHandler := connect.NewUnaryHandler(
 		WorkContextServiceStartTaskProcedure,
 		svc.StartTask,
@@ -168,6 +225,10 @@ func NewWorkContextServiceHandler(svc WorkContextServiceHandler, opts ...connect
 	)
 	return "/saas.accounts.v1.WorkContextService/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
+		case WorkContextServiceCheckAuthorizationRevisionProcedure:
+			workContextServiceCheckAuthorizationRevisionHandler.ServeHTTP(w, r)
+		case WorkContextServiceAuthorizeEvidenceReadProcedure:
+			workContextServiceAuthorizeEvidenceReadHandler.ServeHTTP(w, r)
 		case WorkContextServiceStartTaskProcedure:
 			workContextServiceStartTaskHandler.ServeHTTP(w, r)
 		case WorkContextServiceStartRootSessionProcedure:
@@ -184,6 +245,14 @@ func NewWorkContextServiceHandler(svc WorkContextServiceHandler, opts ...connect
 
 // UnimplementedWorkContextServiceHandler returns CodeUnimplemented from all methods.
 type UnimplementedWorkContextServiceHandler struct{}
+
+func (UnimplementedWorkContextServiceHandler) CheckAuthorizationRevision(context.Context, *connect.Request[v1.CheckAuthorizationRevisionRequest]) (*connect.Response[emptypb.Empty], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("saas.accounts.v1.WorkContextService.CheckAuthorizationRevision is not implemented"))
+}
+
+func (UnimplementedWorkContextServiceHandler) AuthorizeEvidenceRead(context.Context, *connect.Request[v1.AuthorizeEvidenceReadRequest]) (*connect.Response[emptypb.Empty], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("saas.accounts.v1.WorkContextService.AuthorizeEvidenceRead is not implemented"))
+}
 
 func (UnimplementedWorkContextServiceHandler) StartTask(context.Context, *connect.Request[v1.StartTaskWorkContextRequest]) (*connect.Response[v1.IssuedWorkContext], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("saas.accounts.v1.WorkContextService.StartTask is not implemented"))

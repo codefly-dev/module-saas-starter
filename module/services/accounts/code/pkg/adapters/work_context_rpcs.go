@@ -10,12 +10,14 @@ import (
 
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
+	"google.golang.org/protobuf/types/known/emptypb"
 	"google.golang.org/protobuf/types/known/timestamppb"
 
 	basev0 "github.com/codefly-dev/core/generated/go/codefly/base/v0"
 	codefly "github.com/codefly-dev/sdk-go"
 	"github.com/google/uuid"
 
+	accountsauth "accounts/pkg/auth"
 	"accounts/pkg/business"
 	gen "accounts/pkg/gen/saas/accounts/v1"
 )
@@ -28,7 +30,7 @@ type WorkContextAuthorityConfiguration struct {
 }
 
 // WorkContextAuthorityServer is the permissions-plugin-owned issuer. It never
-// owns Warden Task/Session rows: it binds current Accounts identity and RBAC
+// owns consumer Task/Session rows: it binds current Accounts identity and RBAC
 // facts into a short-lived Codefly capability.
 type WorkContextAuthorityServer struct {
 	gen.UnimplementedWorkContextServiceServer
@@ -37,6 +39,7 @@ type WorkContextAuthorityServer struct {
 	signer       *codefly.WorkContextSigner
 	verifier     *codefly.WorkContextVerifier
 	authority    business.WorkContextAuthorityStore
+	consumer     business.WorkContextConsumerAuthorityStore
 	configureErr error
 }
 
@@ -45,6 +48,7 @@ func (s *WorkContextAuthorityServer) Configure(config WorkContextAuthorityConfig
 	s.signer = nil
 	s.verifier = nil
 	s.authority = nil
+	s.consumer = nil
 	s.configureErr = nil
 
 	if s.issuer == "" || strings.TrimSpace(config.KeyID) == "" {
@@ -84,6 +88,111 @@ func (s *WorkContextAuthorityServer) Configure(config WorkContextAuthorityConfig
 	s.signer = signer
 	s.verifier = verifier
 	s.authority = config.Authority
+	s.consumer, _ = config.Authority.(business.WorkContextConsumerAuthorityStore)
+}
+
+func (s *WorkContextAuthorityServer) CheckAuthorizationRevision(
+	ctx context.Context,
+	req *gen.CheckAuthorizationRevisionRequest,
+) (*emptypb.Empty, error) {
+	if err := Validate(req); err != nil {
+		return nil, err
+	}
+	if err := requireInternalCredential(ctx); err != nil {
+		return nil, err
+	}
+	if s == nil || s.consumer == nil {
+		return nil, status.Error(codes.Unavailable, "Work Context consumer authority is unavailable")
+	}
+	if len(req.GetSubjects()) == 0 ||
+		req.GetSubjects()[0].GetPrincipalId() != req.GetOwnerPrincipalId() {
+		return nil, status.Error(codes.InvalidArgument, "owner must be the first revision subject")
+	}
+	seen := make(map[string]struct{}, len(req.GetSubjects()))
+	subjects := make([]business.WorkContextRevisionSubject, 0, len(req.GetSubjects()))
+	for _, subject := range req.GetSubjects() {
+		if subject == nil {
+			return nil, status.Error(codes.InvalidArgument, "revision subject must not be null")
+		}
+		principalID := subject.GetPrincipalId()
+		if _, duplicate := seen[principalID]; duplicate {
+			return nil, status.Error(codes.InvalidArgument, "revision subjects must be unique")
+		}
+		seen[principalID] = struct{}{}
+		permissions, _, err := workContextScopes(subject.GetScopes())
+		if err != nil {
+			return nil, status.Error(codes.InvalidArgument, err.Error())
+		}
+		subjects = append(subjects, business.WorkContextRevisionSubject{
+			PrincipalID: principalID,
+			Permissions: permissions,
+		})
+	}
+	ctx = accountsauth.WithVerifiedDatabaseIdentity(
+		ctx,
+		req.GetOwnerPrincipalId(),
+		req.GetOrgId(),
+	)
+	err := s.consumer.CheckWorkContextAuthorizationRevision(
+		ctx,
+		req.GetOrgId(),
+		req.GetOwnerPrincipalId(),
+		req.GetAuthorizationRevision(),
+		subjects,
+	)
+	if err != nil {
+		return nil, mapConsumerAuthorityError(err)
+	}
+	return &emptypb.Empty{}, nil
+}
+
+func (s *WorkContextAuthorityServer) AuthorizeEvidenceRead(
+	ctx context.Context,
+	req *gen.AuthorizeEvidenceReadRequest,
+) (*emptypb.Empty, error) {
+	if err := Validate(req); err != nil {
+		return nil, err
+	}
+	if err := requireInternalCredential(ctx); err != nil {
+		return nil, err
+	}
+	if s == nil || s.consumer == nil {
+		return nil, status.Error(codes.Unavailable, "Evidence read authority is unavailable")
+	}
+	ctx = accountsauth.WithVerifiedDatabaseIdentity(
+		ctx,
+		req.GetCallerPrincipalId(),
+		req.GetOrgId(),
+	)
+	err := s.consumer.AuthorizeEvidenceRead(
+		ctx,
+		req.GetOrgId(),
+		req.GetCallerPrincipalId(),
+		req.GetOwnerPrincipalId(),
+		req.GetTaskId(),
+		req.GetSessionId(),
+	)
+	if err != nil {
+		return nil, mapConsumerAuthorityError(err)
+	}
+	return &emptypb.Empty{}, nil
+}
+
+func mapConsumerAuthorityError(err error) error {
+	switch {
+	case err == nil:
+		return nil
+	case errors.Is(err, context.Canceled):
+		return status.Error(codes.Canceled, "consumer authority check canceled")
+	case errors.Is(err, context.DeadlineExceeded):
+		return status.Error(codes.DeadlineExceeded, "consumer authority check timed out")
+	case errors.Is(err, business.ErrWorkContextAuthorizationStale):
+		return status.Error(codes.FailedPrecondition, business.ErrWorkContextAuthorizationStale.Error())
+	case errors.Is(err, business.ErrEvidenceReadDenied):
+		return status.Error(codes.PermissionDenied, business.ErrEvidenceReadDenied.Error())
+	default:
+		return status.Error(codes.Internal, "cannot resolve current consumer authority")
+	}
 }
 
 func (s *WorkContextAuthorityServer) StartTask(
