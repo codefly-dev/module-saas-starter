@@ -65,7 +65,7 @@ var serviceInfo = &gen.ServiceInfo{
 // Routing and enforcement metadata comes exclusively from protobuf method
 // options; descriptions remain editorial prose until source comments are
 // compiled into the service catalog.
-var rpcDescriptions = map[string]string{
+var rpcDescriptions = withWorkContextConsumerDescriptions(map[string]string{
 	"APIKeyService/CreateAPIKey":               "Mint an API key for an administered organization.",
 	"APIKeyService/ListAPIKeys":                "List org's API keys.",
 	"APIKeyService/RevokeAPIKey":               "Revoke an API key in an administered organization.",
@@ -204,6 +204,14 @@ var rpcDescriptions = map[string]string{
 	"WebhookService/ReplayDelivery":            "Create and audit a new attempt for a past delivery using its stable event ID.",
 	"WebhookService/RotateSecret":              "Rotate the reveal-once signing secret with bounded dual-signature overlap. Requires recent MFA.",
 	"WebhookService/TestWebhook":               "Send a test ping.",
+})
+
+func withWorkContextConsumerDescriptions(descriptions map[string]string) map[string]string {
+	descriptions["WorkContextService/AuthorizeEvidenceRead"] =
+		"Authorize a filtered Evidence read from current tenant membership and RBAC facts."
+	descriptions["WorkContextService/CheckAuthorizationRevision"] =
+		"Revalidate every subject and scope in a signed Work Context against current authority."
+	return descriptions
 }
 
 // buildRPCList enumerates every (Service, Method) and its policy from protobuf

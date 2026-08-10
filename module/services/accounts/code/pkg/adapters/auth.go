@@ -408,6 +408,21 @@ func requireInternalOrAuth(ctx context.Context) error {
 	return status.Error(codes.Unauthenticated, "internal endpoint requires an authenticated caller or X-Codefly-Internal-Token")
 }
 
+// requireInternalCredential is stricter than requireInternalOrAuth for RPCs
+// that accept authority questions about arbitrary principals. A tenant JWT
+// must never turn those methods into an authorization oracle.
+func requireInternalCredential(ctx context.Context) error {
+	md, ok := metadata.FromIncomingContext(ctx)
+	if ok {
+		for _, value := range md.Get("x-codefly-internal-token") {
+			if validInternalToken(value) {
+				return nil
+			}
+		}
+	}
+	return status.Error(codes.Unauthenticated, "internal service credential required")
+}
+
 // scopesCtxKey holds the comma-separated scope list forwarded by the
 // auth-sidecar (`X-Scopes`) when the caller authenticated with an API
 // key. Empty when the caller used a JWT (interactive session) — JWT

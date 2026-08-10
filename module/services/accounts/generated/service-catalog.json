@@ -295,6 +295,8 @@
       "name": "WorkContextService",
       "full_name": "saas.accounts.v1.WorkContextService",
       "procedures": [
+        "/saas.accounts.v1.WorkContextService/AuthorizeEvidenceRead",
+        "/saas.accounts.v1.WorkContextService/CheckAuthorizationRevision",
         "/saas.accounts.v1.WorkContextService/ExchangeAudience",
         "/saas.accounts.v1.WorkContextService/StartChildSession",
         "/saas.accounts.v1.WorkContextService/StartRootSession",
@@ -7361,6 +7363,88 @@
       },
       "policy_tier": "org_admin",
       "description": "Send a test ping.",
+      "owner": {
+        "module": "saas-starter",
+        "service": "accounts"
+      }
+    },
+    {
+      "procedure": "/saas.accounts.v1.WorkContextService/AuthorizeEvidenceRead",
+      "service": "WorkContextService",
+      "full_service": "saas.accounts.v1.WorkContextService",
+      "method": "AuthorizeEvidenceRead",
+      "input_type": "saas.accounts.v1.AuthorizeEvidenceReadRequest",
+      "output_type": "google.protobuf.Empty",
+      "client_streaming": false,
+      "server_streaming": false,
+      "deprecated": false,
+      "source_proto": "saas/accounts/v1/work_contexts.proto",
+      "protocols": [
+        "PROTOCOL_GRPC",
+        "PROTOCOL_CONNECT"
+      ],
+      "http_bindings": [],
+      "policy": {
+        "exposure": "EXPOSURE_INTERNAL",
+        "tenant": "TENANT_REQUIREMENT_NONE",
+        "permissions": [],
+        "scopes": [],
+        "resource_bindings": [],
+        "mfa": "MFA_REQUIREMENT_NONE",
+        "audit": {
+          "events": [],
+          "emission": "AUDIT_EMISSION_NONE"
+        },
+        "idempotency": "IDEMPOTENCY_REQUIREMENT_FORBIDDEN",
+        "rate_limit": "RATE_LIMIT_CLASS_INTERNAL",
+        "request_sensitivity": "SENSITIVITY_CONFIDENTIAL",
+        "response_sensitivity": "SENSITIVITY_CONFIDENTIAL",
+        "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
+        "authentication_factor_attempt": false
+      },
+      "policy_tier": "internal",
+      "description": "Authorize a filtered Evidence read from current tenant membership and RBAC facts.",
+      "owner": {
+        "module": "saas-starter",
+        "service": "accounts"
+      }
+    },
+    {
+      "procedure": "/saas.accounts.v1.WorkContextService/CheckAuthorizationRevision",
+      "service": "WorkContextService",
+      "full_service": "saas.accounts.v1.WorkContextService",
+      "method": "CheckAuthorizationRevision",
+      "input_type": "saas.accounts.v1.CheckAuthorizationRevisionRequest",
+      "output_type": "google.protobuf.Empty",
+      "client_streaming": false,
+      "server_streaming": false,
+      "deprecated": false,
+      "source_proto": "saas/accounts/v1/work_contexts.proto",
+      "protocols": [
+        "PROTOCOL_GRPC",
+        "PROTOCOL_CONNECT"
+      ],
+      "http_bindings": [],
+      "policy": {
+        "exposure": "EXPOSURE_INTERNAL",
+        "tenant": "TENANT_REQUIREMENT_NONE",
+        "permissions": [],
+        "scopes": [],
+        "resource_bindings": [],
+        "mfa": "MFA_REQUIREMENT_NONE",
+        "audit": {
+          "events": [],
+          "emission": "AUDIT_EMISSION_NONE"
+        },
+        "idempotency": "IDEMPOTENCY_REQUIREMENT_FORBIDDEN",
+        "rate_limit": "RATE_LIMIT_CLASS_INTERNAL",
+        "request_sensitivity": "SENSITIVITY_CONFIDENTIAL",
+        "response_sensitivity": "SENSITIVITY_CONFIDENTIAL",
+        "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
+        "authentication_factor_attempt": false
+      },
+      "policy_tier": "internal",
+      "description": "Revalidate every subject and scope in a signed Work Context against current authority.",
       "owner": {
         "module": "saas-starter",
         "service": "accounts"

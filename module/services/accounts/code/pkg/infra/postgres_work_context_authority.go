@@ -7,7 +7,6 @@ import (
 
 	"accounts/pkg/business"
 
-	"github.com/codefly-dev/core/wool"
 	"github.com/jackc/pgx/v5"
 )
 
@@ -23,17 +22,38 @@ func (s *PostgresStore) ResolveWorkContextAuthority(
 	actorPrincipalID string,
 	permissions []business.WorkContextPermission,
 ) (*business.WorkContextAuthorityFacts, error) {
-	w := wool.Get(ctx).In("ResolveWorkContextAuthority",
-		wool.Field("org_id", orgID),
-		wool.Field("owner_principal_id", ownerPrincipalID),
-		wool.Field("actor_principal_id", actorPrincipalID))
-
-	facts := &business.WorkContextAuthorityFacts{}
+	var facts *business.WorkContextAuthorityFacts
 	err := s.readAs(ctx, orgID, ownerPrincipalID, func(ctx context.Context, reader ReadQueryExecutor) error {
-		var orgRevision int64
-		var principalRevision int64
-		var teamIDs []string
-		err := reader.QueryRow(ctx, `
+		var resolveErr error
+		facts, resolveErr = resolveWorkContextAuthority(
+			ctx,
+			reader,
+			orgID,
+			ownerPrincipalID,
+			actorPrincipalID,
+			permissions,
+		)
+		return resolveErr
+	})
+	if err != nil {
+		return nil, err
+	}
+	return facts, nil
+}
+
+func resolveWorkContextAuthority(
+	ctx context.Context,
+	reader ReadQueryExecutor,
+	orgID string,
+	ownerPrincipalID string,
+	actorPrincipalID string,
+	permissions []business.WorkContextPermission,
+) (*business.WorkContextAuthorityFacts, error) {
+	facts := &business.WorkContextAuthorityFacts{}
+	var orgRevision int64
+	var principalRevision int64
+	var teamIDs []string
+	err := reader.QueryRow(ctx, `
 			SELECT organization_revision.revision,
 			       principal_revision.revision,
 			       COALESCE(
@@ -55,28 +75,28 @@ func (s *PostgresStore) ResolveWorkContextAuthority(
 			 AND team.org_id = membership.org_id
 			WHERE organization_revision.org_id = $1
 			GROUP BY organization_revision.revision, principal_revision.revision`,
-			orgID, ownerPrincipalID,
-		).Scan(&orgRevision, &principalRevision, &teamIDs)
-		if errors.Is(err, pgx.ErrNoRows) {
-			return business.NewStoreError(
-				errors.New("current organization membership and authorization revision required"),
-				business.ErrTypeNotFound,
-			)
-		}
-		if err != nil {
-			return w.Wrapf(err, "resolve work-context owner facts")
-		}
-		if orgRevision <= 0 || principalRevision <= 0 {
-			return errors.New("authorization revision must be positive")
-		}
-		facts.OrganizationRevision = uint64(orgRevision)
-		facts.PrincipalRevision = uint64(principalRevision)
-		facts.AttributionTeamIDs = append([]string(nil), teamIDs...)
+		orgID, ownerPrincipalID,
+	).Scan(&orgRevision, &principalRevision, &teamIDs)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return nil, business.NewStoreError(
+			errors.New("current organization membership and authorization revision required"),
+			business.ErrTypeNotFound,
+		)
+	}
+	if err != nil {
+		return nil, fmt.Errorf("resolve work-context owner facts: %w", err)
+	}
+	if orgRevision <= 0 || principalRevision <= 0 {
+		return nil, errors.New("authorization revision must be positive")
+	}
+	facts.OrganizationRevision = uint64(orgRevision)
+	facts.PrincipalRevision = uint64(principalRevision)
+	facts.AttributionTeamIDs = append([]string(nil), teamIDs...)
 
-		if actorPrincipalID != "" {
-			var actor business.Principal
-			var orgIDOut, agentIdentifier, createdBy *string
-			err := reader.QueryRow(ctx, `
+	if actorPrincipalID != "" {
+		var actor business.Principal
+		var orgIDOut, agentIdentifier, createdBy *string
+		err := reader.QueryRow(ctx, `
 				SELECT id, kind, display_name, org_id, agent_identifier,
 				       created_at, created_by
 				FROM principals
@@ -84,80 +104,172 @@ func (s *PostgresStore) ResolveWorkContextAuthority(
 				  AND org_id = $1
 				  AND kind = 'agent'
 				  AND revoked_at IS NULL`,
-				orgID, actorPrincipalID,
-			).Scan(
-				&actor.ID,
-				&actor.Kind,
-				&actor.DisplayName,
-				&orgIDOut,
-				&agentIdentifier,
-				&actor.CreatedAt,
-				&createdBy,
+			orgID, actorPrincipalID,
+		).Scan(
+			&actor.ID,
+			&actor.Kind,
+			&actor.DisplayName,
+			&orgIDOut,
+			&agentIdentifier,
+			&actor.CreatedAt,
+			&createdBy,
+		)
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil, business.NewStoreError(
+				errors.New("active registered agent principal required"),
+				business.ErrTypeNotFound,
 			)
-			if errors.Is(err, pgx.ErrNoRows) {
-				return business.NewStoreError(
-					errors.New("active registered agent principal required"),
-					business.ErrTypeNotFound,
-				)
-			}
-			if err != nil {
-				return w.Wrapf(err, "resolve work-context actor")
-			}
-			if orgIDOut != nil {
-				actor.OrgID = *orgIDOut
-			}
-			if agentIdentifier != nil {
-				actor.AgentIdentifier = *agentIdentifier
-			}
-			if createdBy != nil {
-				actor.CreatedBy = *createdBy
-			}
-			facts.Actor = &actor
 		}
+		if err != nil {
+			return nil, fmt.Errorf("resolve work-context actor: %w", err)
+		}
+		if orgIDOut != nil {
+			actor.OrgID = *orgIDOut
+		}
+		if agentIdentifier != nil {
+			actor.AgentIdentifier = *agentIdentifier
+		}
+		if createdBy != nil {
+			actor.CreatedBy = *createdBy
+		}
+		facts.Actor = &actor
+	}
 
-		for _, permission := range permissions {
-			ownerAllowed, err := workContextPermissionAllowed(
-				ctx, reader, orgID, ownerPrincipalID, true, permission,
+	for _, permission := range permissions {
+		ownerAllowed, err := workContextPermissionAllowed(
+			ctx, reader, orgID, ownerPrincipalID, true, permission,
+		)
+		if err != nil {
+			return nil, fmt.Errorf("check owner work-context permission: %w", err)
+		}
+		if !ownerAllowed {
+			return nil, business.NewStoreError(
+				fmt.Errorf(
+					"owner is not allowed %s:%s at requested scope",
+					permission.ResourceKind,
+					permission.Action,
+				),
+				business.ErrTypePermission,
+			)
+		}
+		if actorPrincipalID == "" {
+			continue
+		}
+		actorAllowed, err := workContextPermissionAllowed(
+			ctx, reader, orgID, actorPrincipalID, false, permission,
+		)
+		if err != nil {
+			return nil, fmt.Errorf("check actor work-context permission: %w", err)
+		}
+		if !actorAllowed {
+			return nil, business.NewStoreError(
+				fmt.Errorf(
+					"actor is not allowed %s:%s at requested scope",
+					permission.ResourceKind,
+					permission.Action,
+				),
+				business.ErrTypePermission,
+			)
+		}
+	}
+	return facts, nil
+}
+
+func (s *PostgresStore) CheckWorkContextAuthorizationRevision(
+	ctx context.Context,
+	orgID string,
+	ownerPrincipalID string,
+	expectedRevision uint64,
+	subjects []business.WorkContextRevisionSubject,
+) error {
+	return s.readAs(ctx, orgID, ownerPrincipalID, func(ctx context.Context, reader ReadQueryExecutor) error {
+		for _, subject := range subjects {
+			actorID := subject.PrincipalID
+			if actorID == ownerPrincipalID {
+				actorID = ""
+			}
+			facts, err := resolveWorkContextAuthority(
+				ctx,
+				reader,
+				orgID,
+				ownerPrincipalID,
+				actorID,
+				subject.Permissions,
 			)
 			if err != nil {
-				return w.Wrapf(err, "check owner work-context permission")
+				var storeErr *business.StoreError
+				if errors.As(err, &storeErr) &&
+					(storeErr.StoreErrorType == business.ErrTypeNotFound ||
+						storeErr.StoreErrorType == business.ErrTypePermission) {
+					return fmt.Errorf("%w: %v", business.ErrWorkContextAuthorizationStale, err)
+				}
+				return err
 			}
-			if !ownerAllowed {
-				return business.NewStoreError(
-					fmt.Errorf(
-						"owner is not allowed %s:%s at requested scope",
-						permission.ResourceKind,
-						permission.Action,
-					),
-					business.ErrTypePermission,
-				)
-			}
-			if actorPrincipalID == "" {
-				continue
-			}
-			actorAllowed, err := workContextPermissionAllowed(
-				ctx, reader, orgID, actorPrincipalID, false, permission,
-			)
-			if err != nil {
-				return w.Wrapf(err, "check actor work-context permission")
-			}
-			if !actorAllowed {
-				return business.NewStoreError(
-					fmt.Errorf(
-						"actor is not allowed %s:%s at requested scope",
-						permission.ResourceKind,
-						permission.Action,
-					),
-					business.ErrTypePermission,
-				)
+			if facts.EffectiveRevision() != expectedRevision {
+				return business.ErrWorkContextAuthorizationStale
 			}
 		}
 		return nil
 	})
-	if err != nil {
-		return nil, err
-	}
-	return facts, nil
+}
+
+func (s *PostgresStore) AuthorizeEvidenceRead(
+	ctx context.Context,
+	orgID string,
+	callerPrincipalID string,
+	ownerPrincipalID string,
+	taskID string,
+	_ string,
+) error {
+	return s.readAs(ctx, orgID, callerPrincipalID, func(ctx context.Context, reader ReadQueryExecutor) error {
+		var member bool
+		if err := reader.QueryRow(ctx, `
+			SELECT EXISTS (
+				SELECT 1
+				FROM organization_members
+				WHERE org_id = $1
+				  AND user_id = $2
+			)`,
+			orgID,
+			callerPrincipalID,
+		).Scan(&member); err != nil {
+			return fmt.Errorf("check Evidence reader membership: %w", err)
+		}
+		if !member {
+			return business.ErrEvidenceReadDenied
+		}
+		// A current member may read their own Evidence directory, optionally
+		// narrowed by Task or Session, without acquiring a cross-owner grant.
+		if ownerPrincipalID != "" && callerPrincipalID == ownerPrincipalID {
+			return nil
+		}
+		// A Task filter can be decided by an exact resource-scoped grant. Any
+		// broader filter requires an unscoped assignment; passing an empty
+		// ResourceID deliberately excludes resource-scoped assignments.
+		resourceID := ""
+		if taskID != "" {
+			resourceID = taskID
+		}
+		allowed, err := workContextPermissionAllowed(
+			ctx,
+			reader,
+			orgID,
+			callerPrincipalID,
+			true,
+			business.WorkContextPermission{
+				ResourceKind: "evidence",
+				Action:       "read",
+				ResourceID:   resourceID,
+			},
+		)
+		if err != nil {
+			return fmt.Errorf("check Evidence read permission: %w", err)
+		}
+		if !allowed {
+			return business.ErrEvidenceReadDenied
+		}
+		return nil
+	})
 }
 
 func workContextPermissionAllowed(
@@ -222,3 +334,4 @@ func workContextPermissionAllowed(
 }
 
 var _ business.WorkContextAuthorityStore = (*PostgresStore)(nil)
+var _ business.WorkContextConsumerAuthorityStore = (*PostgresStore)(nil)

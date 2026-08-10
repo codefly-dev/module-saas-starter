@@ -6,8 +6,8 @@ import type { GenEnum, GenFile, GenMessage, GenService } from "@bufbuild/protobu
 import { enumDesc, fileDesc, messageDesc, serviceDesc } from "@bufbuild/protobuf/codegenv2";
 import { file_buf_validate_validate } from "../../../buf/validate/validate_pb";
 import { file_google_api_annotations } from "../../../google/api/annotations_pb";
-import type { Timestamp } from "@bufbuild/protobuf/wkt";
-import { file_google_protobuf_timestamp } from "@bufbuild/protobuf/wkt";
+import type { EmptySchema, Timestamp } from "@bufbuild/protobuf/wkt";
+import { file_google_protobuf_empty, file_google_protobuf_timestamp } from "@bufbuild/protobuf/wkt";
 import { file_saas_policy_v1_options } from "../../policy/v1/options_pb";
 import type { Message } from "@bufbuild/protobuf";
 
@@ -15,7 +15,7 @@ import type { Message } from "@bufbuild/protobuf";
  * Describes the file saas/accounts/v1/work_contexts.proto.
  */
 export const file_saas_accounts_v1_work_contexts: GenFile = /*@__PURE__*/
-  fileDesc("CiRzYWFzL2FjY291bnRzL3YxL3dvcmtfY29udGV4dHMucHJvdG8SEHNhYXMuYWNjb3VudHMudjEiiQEKEFdvcmtDb250ZXh0U2NvcGUSIQoNcmVzb3VyY2Vfa2luZBgBIAEoCUIKukgHcgUQARiAARImCgdhY3Rpb25zGAIgAygJQhW6SBKSAQ8IARBAGAEiB3IFEAEYgAESKgoMcmVzb3VyY2VfaWRzGAMgAygJQhS6SBGSAQ4QgAIYASIHcgUQARiABCLDAwobU3RhcnRUYXNrV29ya0NvbnRleHRSZXF1ZXN0EhgKBm9yZ19pZBgBIAEoCUIIukgFcgOwAQESGQoHdGFza19pZBgCIAEoCUIIukgFcgOwAQESHAoKc2Vzc2lvbl9pZBgDIAEoCUIIukgFcgOwAQESGgoSYWN0b3JfcHJpbmNpcGFsX2lkGAQgASgJEkgKEGF1dGhvcml0eV9zY29wZXMYBSADKAsyIi5zYWFzLmFjY291bnRzLnYxLldvcmtDb250ZXh0U2NvcGVCCrpIB5IBBAgBEEASHAoIYXVkaWVuY2UYBiABKAlCCrpIB3IFEAEYgAQSQAoNcmVwbGF5X3BvbGljeRgHIAEoDjIpLnNhYXMuYWNjb3VudHMudjEuV29ya0NvbnRleHRSZXBsYXlQb2xpY3kSHwoLdHRsX3NlY29uZHMYCCABKAVCCrpIBxoFGIQHKAASJQoMd29ya3NwYWNlX2lkGAkgASgJQgq6SAdyBRABGIAESACIAQESIwoKcHJvamVjdF9pZBgKIAEoCUIKukgHcgUQARiABEgBiAEBQg8KDV93b3Jrc3BhY2VfaWRCDQoLX3Byb2plY3RfaWQijQIKIlN0YXJ0Um9vdFNlc3Npb25Xb3JrQ29udGV4dFJlcXVlc3QSGAoGb3JnX2lkGAEgASgJQgi6SAVyA7ABARIuChlwYXJlbnRfd29ya19jb250ZXh0X3Rva2VuGAIgASgJQgu6SAhyBhABGICAAhIcCgpzZXNzaW9uX2lkGAMgASgJQgi6SAVyA7ABARIcCghhdWRpZW5jZRgEIAEoCUIKukgHcgUQARiABBJACg1yZXBsYXlfcG9saWN5GAUgASgOMikuc2Fhcy5hY2NvdW50cy52MS5Xb3JrQ29udGV4dFJlcGxheVBvbGljeRIfCgt0dGxfc2Vjb25kcxgGIAEoBUIKukgHGgUYhAcoACK6AgoiRXhjaGFuZ2VXb3JrQ29udGV4dEF1ZGllbmNlUmVxdWVzdBIYCgZvcmdfaWQYASABKAlCCLpIBXIDsAEBEi4KGXBhcmVudF93b3JrX2NvbnRleHRfdG9rZW4YAiABKAlCC7pICHIGEAEYgIACEhwKCGF1ZGllbmNlGAMgASgJQgq6SAdyBRABGIAEEkkKEWF0dGVudWF0ZWRfc2NvcGVzGAQgAygLMiIuc2Fhcy5hY2NvdW50cy52MS5Xb3JrQ29udGV4dFNjb3BlQgq6SAeSAQQIARBAEkAKDXJlcGxheV9wb2xpY3kYBSABKA4yKS5zYWFzLmFjY291bnRzLnYxLldvcmtDb250ZXh0UmVwbGF5UG9saWN5Eh8KC3R0bF9zZWNvbmRzGAYgASgFQgq6SAcaBRiEBygAIvwCCiNTdGFydENoaWxkU2Vzc2lvbldvcmtDb250ZXh0UmVxdWVzdBIYCgZvcmdfaWQYASABKAlCCLpIBXIDsAEBEi4KGXBhcmVudF93b3JrX2NvbnRleHRfdG9rZW4YAiABKAlCC7pICHIGEAEYgIACEhwKCnNlc3Npb25faWQYAyABKAlCCLpIBXIDsAEBEiQKEmFjdG9yX3ByaW5jaXBhbF9pZBgEIAEoCUIIukgFcgOwAQESRgoOZ3JhbnRlZF9zY29wZXMYBSADKAsyIi5zYWFzLmFjY291bnRzLnYxLldvcmtDb250ZXh0U2NvcGVCCrpIB5IBBAgBEEASHAoIYXVkaWVuY2UYBiABKAlCCrpIB3IFEAEYgAQSQAoNcmVwbGF5X3BvbGljeRgHIAEoDjIpLnNhYXMuYWNjb3VudHMudjEuV29ya0NvbnRleHRSZXBsYXlQb2xpY3kSHwoLdHRsX3NlY29uZHMYCCABKAVCCrpIBxoFGIQHKAAi8QIKEUlzc3VlZFdvcmtDb250ZXh0Eg0KBXRva2VuGAEgASgJEg4KBm9yZ19pZBgCIAEoCRIaChJvd25lcl9wcmluY2lwYWxfaWQYAyABKAkSDwoHdGFza19pZBgEIAEoCRISCgpzZXNzaW9uX2lkGAUgASgJEh4KEXBhcmVudF9zZXNzaW9uX2lkGAYgASgJSACIAQESIgoaY3VycmVudF9hY3Rvcl9wcmluY2lwYWxfaWQYByABKAkSHgoWYXV0aG9yaXphdGlvbl9yZXZpc2lvbhgIIAEoBBIuCgpleHBpcmVzX2F0GAkgASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcBIZCgx3b3Jrc3BhY2VfaWQYCiABKAlIAYgBARIXCgpwcm9qZWN0X2lkGAsgASgJSAKIAQFCFAoSX3BhcmVudF9zZXNzaW9uX2lkQg8KDV93b3Jrc3BhY2VfaWRCDQoLX3Byb2plY3RfaWQqmwEKF1dvcmtDb250ZXh0UmVwbGF5UG9saWN5EioKJldPUktfQ09OVEVYVF9SRVBMQVlfUE9MSUNZX1VOU1BFQ0lGSUVEEAASKQolV09SS19DT05URVhUX1JFUExBWV9QT0xJQ1lfSURFTVBPVEVOVBABEikKJVdPUktfQ09OVEVYVF9SRVBMQVlfUE9MSUNZX1NJTkdMRV9VU0UQAjKNBwoSV29ya0NvbnRleHRTZXJ2aWNlEsMBCglTdGFydFRhc2sSLS5zYWFzLmFjY291bnRzLnYxLlN0YXJ0VGFza1dvcmtDb250ZXh0UmVxdWVzdBojLnNhYXMuYWNjb3VudHMudjEuSXNzdWVkV29ya0NvbnRleHQiYsLzGD0IAhADKgwKBm9yZ19pZBACGAEwATodChl3b3JrX2NvbnRleHQudGFza19zdGFydGVkEAJAAUgFUANYBGABgtPkkwIbOgEqIhYvdjEvd29yay1jb250ZXh0czp0YXNrEuEBChBTdGFydFJvb3RTZXNzaW9uEjQuc2Fhcy5hY2NvdW50cy52MS5TdGFydFJvb3RTZXNzaW9uV29ya0NvbnRleHRSZXF1ZXN0GiMuc2Fhcy5hY2NvdW50cy52MS5Jc3N1ZWRXb3JrQ29udGV4dCJywvMYRQgCEAMqDAoGb3JnX2lkEAIYATABOiUKIXdvcmtfY29udGV4dC5yb290X3Nlc3Npb25fc3RhcnRlZBACQAFIBVAEWARgAYLT5JMCIzoBKiIeL3YxL3dvcmstY29udGV4dHM6cm9vdC1zZXNzaW9uEuQBChBFeGNoYW5nZUF1ZGllbmNlEjQuc2Fhcy5hY2NvdW50cy52MS5FeGNoYW5nZVdvcmtDb250ZXh0QXVkaWVuY2VSZXF1ZXN0GiMuc2Fhcy5hY2NvdW50cy52MS5Jc3N1ZWRXb3JrQ29udGV4dCJ1wvMYQwgCEAMqDAoGb3JnX2lkEAIYATABOiMKH3dvcmtfY29udGV4dC5hdWRpZW5jZV9leGNoYW5nZWQQAkABSAVQBFgEYAGC0+STAig6ASoiIy92MS93b3JrLWNvbnRleHRzOmV4Y2hhbmdlLWF1ZGllbmNlEuUBChFTdGFydENoaWxkU2Vzc2lvbhI1LnNhYXMuYWNjb3VudHMudjEuU3RhcnRDaGlsZFNlc3Npb25Xb3JrQ29udGV4dFJlcXVlc3QaIy5zYWFzLmFjY291bnRzLnYxLklzc3VlZFdvcmtDb250ZXh0InTC8xhGCAIQAyoMCgZvcmdfaWQQAhgBMAE6Jgoid29ya19jb250ZXh0LmNoaWxkX3Nlc3Npb25fc3RhcnRlZBACQAFIBVAEWARgAYLT5JMCJDoBKiIfL3YxL3dvcmstY29udGV4dHM6Y2hpbGQtc2Vzc2lvbkK5AQoUY29tLnNhYXMuYWNjb3VudHMudjFCEVdvcmtDb250ZXh0c1Byb3RvUAFaLGFjY291bnRzL3BrZy9nZW4vc2Fhcy9hY2NvdW50cy92MTthY2NvdW50c3YxogIDU0FYqgIQU2Fhcy5BY2NvdW50cy5WMcoCEFNhYXNcQWNjb3VudHNcVjHiAhxTYWFzXEFjY291bnRzXFYxXEdQQk1ldGFkYXRh6gISU2Fhczo6QWNjb3VudHM6OlYxYgZwcm90bzM", [file_buf_validate_validate, file_google_api_annotations, file_google_protobuf_timestamp, file_saas_policy_v1_options]);
+  fileDesc("CiRzYWFzL2FjY291bnRzL3YxL3dvcmtfY29udGV4dHMucHJvdG8SEHNhYXMuYWNjb3VudHMudjEiiQEKEFdvcmtDb250ZXh0U2NvcGUSIQoNcmVzb3VyY2Vfa2luZBgBIAEoCUIKukgHcgUQARiAARImCgdhY3Rpb25zGAIgAygJQhW6SBKSAQ8IARBAGAEiB3IFEAEYgAESKgoMcmVzb3VyY2VfaWRzGAMgAygJQhS6SBGSAQ4QgAIYASIHcgUQARiABCLDAwobU3RhcnRUYXNrV29ya0NvbnRleHRSZXF1ZXN0EhgKBm9yZ19pZBgBIAEoCUIIukgFcgOwAQESGQoHdGFza19pZBgCIAEoCUIIukgFcgOwAQESHAoKc2Vzc2lvbl9pZBgDIAEoCUIIukgFcgOwAQESGgoSYWN0b3JfcHJpbmNpcGFsX2lkGAQgASgJEkgKEGF1dGhvcml0eV9zY29wZXMYBSADKAsyIi5zYWFzLmFjY291bnRzLnYxLldvcmtDb250ZXh0U2NvcGVCCrpIB5IBBAgBEEASHAoIYXVkaWVuY2UYBiABKAlCCrpIB3IFEAEYgAQSQAoNcmVwbGF5X3BvbGljeRgHIAEoDjIpLnNhYXMuYWNjb3VudHMudjEuV29ya0NvbnRleHRSZXBsYXlQb2xpY3kSHwoLdHRsX3NlY29uZHMYCCABKAVCCrpIBxoFGIQHKAASJQoMd29ya3NwYWNlX2lkGAkgASgJQgq6SAdyBRABGIAESACIAQESIwoKcHJvamVjdF9pZBgKIAEoCUIKukgHcgUQARiABEgBiAEBQg8KDV93b3Jrc3BhY2VfaWRCDQoLX3Byb2plY3RfaWQijQIKIlN0YXJ0Um9vdFNlc3Npb25Xb3JrQ29udGV4dFJlcXVlc3QSGAoGb3JnX2lkGAEgASgJQgi6SAVyA7ABARIuChlwYXJlbnRfd29ya19jb250ZXh0X3Rva2VuGAIgASgJQgu6SAhyBhABGICAAhIcCgpzZXNzaW9uX2lkGAMgASgJQgi6SAVyA7ABARIcCghhdWRpZW5jZRgEIAEoCUIKukgHcgUQARiABBJACg1yZXBsYXlfcG9saWN5GAUgASgOMikuc2Fhcy5hY2NvdW50cy52MS5Xb3JrQ29udGV4dFJlcGxheVBvbGljeRIfCgt0dGxfc2Vjb25kcxgGIAEoBUIKukgHGgUYhAcoACK6AgoiRXhjaGFuZ2VXb3JrQ29udGV4dEF1ZGllbmNlUmVxdWVzdBIYCgZvcmdfaWQYASABKAlCCLpIBXIDsAEBEi4KGXBhcmVudF93b3JrX2NvbnRleHRfdG9rZW4YAiABKAlCC7pICHIGEAEYgIACEhwKCGF1ZGllbmNlGAMgASgJQgq6SAdyBRABGIAEEkkKEWF0dGVudWF0ZWRfc2NvcGVzGAQgAygLMiIuc2Fhcy5hY2NvdW50cy52MS5Xb3JrQ29udGV4dFNjb3BlQgq6SAeSAQQIARBAEkAKDXJlcGxheV9wb2xpY3kYBSABKA4yKS5zYWFzLmFjY291bnRzLnYxLldvcmtDb250ZXh0UmVwbGF5UG9saWN5Eh8KC3R0bF9zZWNvbmRzGAYgASgFQgq6SAcaBRiEBygAIvwCCiNTdGFydENoaWxkU2Vzc2lvbldvcmtDb250ZXh0UmVxdWVzdBIYCgZvcmdfaWQYASABKAlCCLpIBXIDsAEBEi4KGXBhcmVudF93b3JrX2NvbnRleHRfdG9rZW4YAiABKAlCC7pICHIGEAEYgIACEhwKCnNlc3Npb25faWQYAyABKAlCCLpIBXIDsAEBEiQKEmFjdG9yX3ByaW5jaXBhbF9pZBgEIAEoCUIIukgFcgOwAQESRgoOZ3JhbnRlZF9zY29wZXMYBSADKAsyIi5zYWFzLmFjY291bnRzLnYxLldvcmtDb250ZXh0U2NvcGVCCrpIB5IBBAgBEEASHAoIYXVkaWVuY2UYBiABKAlCCrpIB3IFEAEYgAQSQAoNcmVwbGF5X3BvbGljeRgHIAEoDjIpLnNhYXMuYWNjb3VudHMudjEuV29ya0NvbnRleHRSZXBsYXlQb2xpY3kSHwoLdHRsX3NlY29uZHMYCCABKAVCCrpIBxoFGIQHKAAi8QIKEUlzc3VlZFdvcmtDb250ZXh0Eg0KBXRva2VuGAEgASgJEg4KBm9yZ19pZBgCIAEoCRIaChJvd25lcl9wcmluY2lwYWxfaWQYAyABKAkSDwoHdGFza19pZBgEIAEoCRISCgpzZXNzaW9uX2lkGAUgASgJEh4KEXBhcmVudF9zZXNzaW9uX2lkGAYgASgJSACIAQESIgoaY3VycmVudF9hY3Rvcl9wcmluY2lwYWxfaWQYByABKAkSHgoWYXV0aG9yaXphdGlvbl9yZXZpc2lvbhgIIAEoBBIuCgpleHBpcmVzX2F0GAkgASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcBIZCgx3b3Jrc3BhY2VfaWQYCiABKAlIAYgBARIXCgpwcm9qZWN0X2lkGAsgASgJSAKIAQFCFAoSX3BhcmVudF9zZXNzaW9uX2lkQg8KDV93b3Jrc3BhY2VfaWRCDQoLX3Byb2plY3RfaWQiegoaV29ya0NvbnRleHRSZXZpc2lvblN1YmplY3QSHgoMcHJpbmNpcGFsX2lkGAEgASgJQgi6SAVyA7ABARI8CgZzY29wZXMYAiADKAsyIi5zYWFzLmFjY291bnRzLnYxLldvcmtDb250ZXh0U2NvcGVCCLpIBZIBAhBAItgBCiFDaGVja0F1dGhvcml6YXRpb25SZXZpc2lvblJlcXVlc3QSGAoGb3JnX2lkGAEgASgJQgi6SAVyA7ABARIkChJvd25lcl9wcmluY2lwYWxfaWQYAiABKAlCCLpIBXIDsAEBEicKFmF1dGhvcml6YXRpb25fcmV2aXNpb24YAyABKARCB7pIBDICIAASSgoIc3ViamVjdHMYBCADKAsyLC5zYWFzLmFjY291bnRzLnYxLldvcmtDb250ZXh0UmV2aXNpb25TdWJqZWN0Qgq6SAeSAQQIARARIoMCChxBdXRob3JpemVFdmlkZW5jZVJlYWRSZXF1ZXN0EhgKBm9yZ19pZBgBIAEoCUIIukgFcgOwAQESJQoTY2FsbGVyX3ByaW5jaXBhbF9pZBgCIAEoCUIIukgFcgOwAQESKQoSb3duZXJfcHJpbmNpcGFsX2lkGAMgASgJQgi6SAVyA7ABAUgAiAEBEiAKB3Rhc2tfaWQYBCABKAlCCrpIB3IFEAEYgARIAYgBARIjCgpzZXNzaW9uX2lkGAUgASgJQgq6SAdyBRABGIAESAKIAQFCFQoTX293bmVyX3ByaW5jaXBhbF9pZEIKCghfdGFza19pZEINCgtfc2Vzc2lvbl9pZCqbAQoXV29ya0NvbnRleHRSZXBsYXlQb2xpY3kSKgomV09SS19DT05URVhUX1JFUExBWV9QT0xJQ1lfVU5TUEVDSUZJRUQQABIpCiVXT1JLX0NPTlRFWFRfUkVQTEFZX1BPTElDWV9JREVNUE9URU5UEAESKQolV09SS19DT05URVhUX1JFUExBWV9QT0xJQ1lfU0lOR0xFX1VTRRACMo4JChJXb3JrQ29udGV4dFNlcnZpY2USgwEKGkNoZWNrQXV0aG9yaXphdGlvblJldmlzaW9uEjMuc2Fhcy5hY2NvdW50cy52MS5DaGVja0F1dGhvcml6YXRpb25SZXZpc2lvblJlcXVlc3QaFi5nb29nbGUucHJvdG9idWYuRW1wdHkiGMLzGBQIAxABMAE6AhABQAFIB1ADWANgARJ5ChVBdXRob3JpemVFdmlkZW5jZVJlYWQSLi5zYWFzLmFjY291bnRzLnYxLkF1dGhvcml6ZUV2aWRlbmNlUmVhZFJlcXVlc3QaFi5nb29nbGUucHJvdG9idWYuRW1wdHkiGMLzGBQIAxABMAE6AhABQAFIB1ADWANgARLDAQoJU3RhcnRUYXNrEi0uc2Fhcy5hY2NvdW50cy52MS5TdGFydFRhc2tXb3JrQ29udGV4dFJlcXVlc3QaIy5zYWFzLmFjY291bnRzLnYxLklzc3VlZFdvcmtDb250ZXh0ImLC8xg9CAIQAyoMCgZvcmdfaWQQAhgBMAE6HQoZd29ya19jb250ZXh0LnRhc2tfc3RhcnRlZBACQAFIBVADWARgAYLT5JMCGzoBKiIWL3YxL3dvcmstY29udGV4dHM6dGFzaxLhAQoQU3RhcnRSb290U2Vzc2lvbhI0LnNhYXMuYWNjb3VudHMudjEuU3RhcnRSb290U2Vzc2lvbldvcmtDb250ZXh0UmVxdWVzdBojLnNhYXMuYWNjb3VudHMudjEuSXNzdWVkV29ya0NvbnRleHQicsLzGEUIAhADKgwKBm9yZ19pZBACGAEwATolCiF3b3JrX2NvbnRleHQucm9vdF9zZXNzaW9uX3N0YXJ0ZWQQAkABSAVQBFgEYAGC0+STAiM6ASoiHi92MS93b3JrLWNvbnRleHRzOnJvb3Qtc2Vzc2lvbhLkAQoQRXhjaGFuZ2VBdWRpZW5jZRI0LnNhYXMuYWNjb3VudHMudjEuRXhjaGFuZ2VXb3JrQ29udGV4dEF1ZGllbmNlUmVxdWVzdBojLnNhYXMuYWNjb3VudHMudjEuSXNzdWVkV29ya0NvbnRleHQidcLzGEMIAhADKgwKBm9yZ19pZBACGAEwATojCh93b3JrX2NvbnRleHQuYXVkaWVuY2VfZXhjaGFuZ2VkEAJAAUgFUARYBGABgtPkkwIoOgEqIiMvdjEvd29yay1jb250ZXh0czpleGNoYW5nZS1hdWRpZW5jZRLlAQoRU3RhcnRDaGlsZFNlc3Npb24SNS5zYWFzLmFjY291bnRzLnYxLlN0YXJ0Q2hpbGRTZXNzaW9uV29ya0NvbnRleHRSZXF1ZXN0GiMuc2Fhcy5hY2NvdW50cy52MS5Jc3N1ZWRXb3JrQ29udGV4dCJ0wvMYRggCEAMqDAoGb3JnX2lkEAIYATABOiYKIndvcmtfY29udGV4dC5jaGlsZF9zZXNzaW9uX3N0YXJ0ZWQQAkABSAVQBFgEYAGC0+STAiQ6ASoiHy92MS93b3JrLWNvbnRleHRzOmNoaWxkLXNlc3Npb25CuQEKFGNvbS5zYWFzLmFjY291bnRzLnYxQhFXb3JrQ29udGV4dHNQcm90b1ABWixhY2NvdW50cy9wa2cvZ2VuL3NhYXMvYWNjb3VudHMvdjE7YWNjb3VudHN2MaICA1NBWKoCEFNhYXMuQWNjb3VudHMuVjHKAhBTYWFzXEFjY291bnRzXFYx4gIcU2Fhc1xBY2NvdW50c1xWMVxHUEJNZXRhZGF0YeoCElNhYXM6OkFjY291bnRzOjpWMWIGcHJvdG8z", [file_buf_validate_validate, file_google_api_annotations, file_google_protobuf_empty, file_google_protobuf_timestamp, file_saas_policy_v1_options]);
 
 /**
  * WorkContextScope is one product-neutral authority slice. Product plugins
@@ -330,6 +330,108 @@ export const IssuedWorkContextSchema: GenMessage<IssuedWorkContext> = /*@__PURE_
   messageDesc(file_saas_accounts_v1_work_contexts, 5);
 
 /**
+ * WorkContextRevisionSubject is one owner or delegated actor whose current
+ * authority must still match the revision sealed into a signed Work Context.
+ *
+ * @generated from message saas.accounts.v1.WorkContextRevisionSubject
+ */
+export type WorkContextRevisionSubject = Message<"saas.accounts.v1.WorkContextRevisionSubject"> & {
+  /**
+   * @generated from field: string principal_id = 1;
+   */
+  principalId: string;
+
+  /**
+   * @generated from field: repeated saas.accounts.v1.WorkContextScope scopes = 2;
+   */
+  scopes: WorkContextScope[];
+};
+
+/**
+ * Describes the message saas.accounts.v1.WorkContextRevisionSubject.
+ * Use `create(WorkContextRevisionSubjectSchema)` to create a new message.
+ */
+export const WorkContextRevisionSubjectSchema: GenMessage<WorkContextRevisionSubject> = /*@__PURE__*/
+  messageDesc(file_saas_accounts_v1_work_contexts, 6);
+
+/**
+ * CheckAuthorizationRevisionRequest contains only the immutable authority
+ * facts needed by a Work Context consumer. The signed capability itself never
+ * crosses this internal boundary.
+ *
+ * @generated from message saas.accounts.v1.CheckAuthorizationRevisionRequest
+ */
+export type CheckAuthorizationRevisionRequest = Message<"saas.accounts.v1.CheckAuthorizationRevisionRequest"> & {
+  /**
+   * @generated from field: string org_id = 1;
+   */
+  orgId: string;
+
+  /**
+   * @generated from field: string owner_principal_id = 2;
+   */
+  ownerPrincipalId: string;
+
+  /**
+   * @generated from field: uint64 authorization_revision = 3;
+   */
+  authorizationRevision: bigint;
+
+  /**
+   * @generated from field: repeated saas.accounts.v1.WorkContextRevisionSubject subjects = 4;
+   */
+  subjects: WorkContextRevisionSubject[];
+};
+
+/**
+ * Describes the message saas.accounts.v1.CheckAuthorizationRevisionRequest.
+ * Use `create(CheckAuthorizationRevisionRequestSchema)` to create a new message.
+ */
+export const CheckAuthorizationRevisionRequestSchema: GenMessage<CheckAuthorizationRevisionRequest> = /*@__PURE__*/
+  messageDesc(file_saas_accounts_v1_work_contexts, 7);
+
+/**
+ * AuthorizeEvidenceReadRequest asks Accounts to authorize one filtered
+ * Evidence read using current membership and RBAC state. Empty optional
+ * filters describe a tenant-directory read and require unscoped evidence:read.
+ *
+ * @generated from message saas.accounts.v1.AuthorizeEvidenceReadRequest
+ */
+export type AuthorizeEvidenceReadRequest = Message<"saas.accounts.v1.AuthorizeEvidenceReadRequest"> & {
+  /**
+   * @generated from field: string org_id = 1;
+   */
+  orgId: string;
+
+  /**
+   * @generated from field: string caller_principal_id = 2;
+   */
+  callerPrincipalId: string;
+
+  /**
+   * @generated from field: optional string owner_principal_id = 3;
+   */
+  ownerPrincipalId?: string;
+
+  /**
+   * @generated from field: optional string task_id = 4;
+   */
+  taskId?: string;
+
+  /**
+   * @generated from field: optional string session_id = 5;
+   */
+  sessionId?: string;
+};
+
+/**
+ * Describes the message saas.accounts.v1.AuthorizeEvidenceReadRequest.
+ * Use `create(AuthorizeEvidenceReadRequestSchema)` to create a new message.
+ */
+export const AuthorizeEvidenceReadRequestSchema: GenMessage<AuthorizeEvidenceReadRequest> = /*@__PURE__*/
+  messageDesc(file_saas_accounts_v1_work_contexts, 8);
+
+/**
  * WorkContextReplayPolicy controls how a consumer may accept a signed Work
  * Context. Single-use still requires a durable replay store at the consumer.
  *
@@ -366,6 +468,29 @@ export const WorkContextReplayPolicySchema: GenEnum<WorkContextReplayPolicy> = /
  * @generated from service saas.accounts.v1.WorkContextService
  */
 export const WorkContextService: GenService<{
+  /**
+   * CheckAuthorizationRevision is the consumer-side revocation seam for a
+   * previously issued Work Context. It succeeds only while every subject's
+   * requested authority still resolves to the exact sealed revision.
+   *
+   * @generated from rpc saas.accounts.v1.WorkContextService.CheckAuthorizationRevision
+   */
+  checkAuthorizationRevision: {
+    methodKind: "unary";
+    input: typeof CheckAuthorizationRevisionRequestSchema;
+    output: typeof EmptySchema;
+  },
+  /**
+   * AuthorizeEvidenceRead is deliberately Evidence-specific. It prevents the
+   * Warden consumer from acquiring a generic Accounts permission oracle.
+   *
+   * @generated from rpc saas.accounts.v1.WorkContextService.AuthorizeEvidenceRead
+   */
+  authorizeEvidenceRead: {
+    methodKind: "unary";
+    input: typeof AuthorizeEvidenceReadRequestSchema;
+    output: typeof EmptySchema;
+  },
   /**
    * @generated from rpc saas.accounts.v1.WorkContextService.StartTask
    */

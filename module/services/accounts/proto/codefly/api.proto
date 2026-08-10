@@ -139,3 +139,37 @@ service APIKeyService {
   rpc CreateAPIKey(CreateAPIKeyRequest) returns (CreateAPIKeyResponse);
   rpc ValidateAPIKey(ValidateAPIKeyRequest) returns (ValidateAPIKeyResponse);
 }
+
+// Narrow dependency-client mirror of the canonical WorkContextService
+// consumer authority methods. Field numbers and full wire method names must
+// stay aligned with saas/accounts/v1/work_contexts.proto.
+message WorkContextScope {
+  string resource_kind = 1;
+  repeated string actions = 2;
+  repeated string resource_ids = 3;
+}
+
+message WorkContextRevisionSubject {
+  string principal_id = 1;
+  repeated WorkContextScope scopes = 2;
+}
+
+message CheckAuthorizationRevisionRequest {
+  string org_id = 1;
+  string owner_principal_id = 2;
+  uint64 authorization_revision = 3;
+  repeated WorkContextRevisionSubject subjects = 4;
+}
+
+message AuthorizeEvidenceReadRequest {
+  string org_id = 1;
+  string caller_principal_id = 2;
+  optional string owner_principal_id = 3;
+  optional string task_id = 4;
+  optional string session_id = 5;
+}
+
+service WorkContextService {
+  rpc CheckAuthorizationRevision(CheckAuthorizationRevisionRequest) returns (google.protobuf.Empty);
+  rpc AuthorizeEvidenceRead(AuthorizeEvidenceReadRequest) returns (google.protobuf.Empty);
+}
