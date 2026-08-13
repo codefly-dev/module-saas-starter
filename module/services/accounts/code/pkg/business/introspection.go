@@ -88,6 +88,11 @@ var rpcDescriptions = map[string]string{
 	"BillingService/ListPublicPlans":           "Sanitized public pricing and entitlement catalog.",
 	"BillingService/OpenPortal":                "Stripe billing-portal session; requires billing:write and recent MFA.",
 	"ConsentService/AcceptTerms":               "Record acceptance of the exact Terms version presented.",
+	"DeviceService/ClaimDevice":                "Redeem a claim code from an external device and link it to the code's organization.",
+	"DeviceService/CreateClaimCode":            "Mint a short-lived, single-use device claim code for an administered organization.",
+	"DeviceService/ListDevices":                "List the organization's linked devices.",
+	"DeviceService/RevokeDevice":               "Revoke a linked device; the entitlement check flips to inactive for its key.",
+	"EntitlementCheckService/CheckDeviceEntitlement": "Service-to-service paywall probe: device key → org → live subscription → requested entitlement.",
 	"ConsentService/GetStatus":                 "Read TOS acceptance state.",
 	"ConsentService/UpdatePreferences":         "Persist purpose-based optional tracking choices and withdrawals.",
 	"DelegationService/DecideDelegation":       "Approve or deny a delegation request.",
@@ -298,4 +303,6 @@ var serviceRLSTables = []*gen.RLSPolicyInfo{
 	{Table: "waitlist_entries", PolicyShape: "control_plane", FailClosed: true, ScopeColumn: "id", Notes: "Public writes and platform administration use bounded service operations under the control-plane role."},
 	{Table: "user_consent_preferences", PolicyShape: "direct", FailClosed: true, ScopeColumn: "user_id"},
 	{Table: "user_consent_events", PolicyShape: "direct", FailClosed: true, ScopeColumn: "user_id"},
+	{Table: "linked_devices", PolicyShape: "direct", FailClosed: true, ScopeColumn: "org_id", Notes: "Entitlement check resolves device_public_key → org under the audited control-plane scope."},
+	{Table: "device_claim_codes", PolicyShape: "direct", FailClosed: true, ScopeColumn: "org_id", Notes: "Hashed, expiring claim codes; redemption resolves code_hash → org under the audited control-plane scope."},
 }

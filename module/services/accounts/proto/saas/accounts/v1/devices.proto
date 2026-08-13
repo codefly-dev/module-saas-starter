@@ -1,0 +1,227 @@
+syntax = "proto3";
+
+package saas.accounts.v1;
+
+import "buf/validate/validate.proto";
+import "google/api/annotations.proto";
+import "google/protobuf/empty.proto";
+import "google/protobuf/timestamp.proto";
+import "saas/policy/v1/options.proto";
+
+// ============================================================================
+// Linked devices — generic external-device ↔ organization pairing.
+//
+// An org admin mints a short-lived claim code; the device redeems it
+// (unauthenticated but code-bearing, mirroring the invitation-token flow —
+// only a hash of the code is stored). Claim admission enforces the
+// 'paired_devices' entitlement inside the tenant transaction.
+//
+// EntitlementCheckService is the fail-closed service-to-service paywall
+// probe: device_public_key → owning org → live subscription → the requested
+// entitlement key (e.g. "relay_access"). Unknown keys are a 200 with
+// active=false, never an error.
+// ============================================================================
+
+message Device {
+  string id = 1;
+  string org_id = 2;
+  string device_public_key = 3;
+  string name = 4;
+  string created_by = 5;
+  google.protobuf.Timestamp created_at = 6;
+  // Unset while the device is active.
+  google.protobuf.Timestamp revoked_at = 7;
+}
+
+message CreateDeviceClaimCodeRequest {
+  string org_id = 1 [(buf.validate.field).string.uuid = true];
+}
+
+message CreateDeviceClaimCodeResponse {
+  // Plaintext claim code — returned exactly once; only a hash is stored.
+  string code = 1;
+  google.protobuf.Timestamp expires_at = 2;
+}
+
+message ClaimDeviceRequest {
+  string code = 1 [(buf.validate.field).string = {
+    min_len: 8
+    max_len: 64
+  }];
+  // Public key of the device identity (e.g. base64 Ed25519).
+  string device_public_key = 2 [(buf.validate.field).string = {
+    min_len: 16
+    max_len: 256
+  }];
+  string name = 3 [(buf.validate.field).string.max_len = 200];
+}
+
+message ClaimDeviceResponse {
+  Device device = 1;
+}
+
+message ListDevicesRequest {
+  string org_id = 1 [(buf.validate.field).string.uuid = true];
+}
+
+message ListDevicesResponse {
+  repeated Device devices = 1;
+}
+
+message RevokeDeviceRequest {
+  string org_id = 1 [(buf.validate.field).string.uuid = true];
+  string device_id = 2 [(buf.validate.field).string.uuid = true];
+}
+
+message CheckDeviceEntitlementRequest {
+  // Public key of the device the caller is brokering for.
+  string device_public_key = 1 [(buf.validate.field).string = {
+    min_len: 1
+    max_len: 256
+  }];
+  // Entitlement key to resolve against the owning org's effective plan,
+  // e.g. "relay_access". Unknown keys resolve to disabled (active=false).
+  string entitlement_key = 2 [(buf.validate.field).string = {
+    min_len: 1
+    max_len: 100
+    pattern: "^[a-z0-9_]+$"
+  }];
+}
+
+message CheckDeviceEntitlementResponse {
+  bool active = 1 [json_name = "active"];
+  // Plan key of the owning org's effective plan (e.g. free|pro|cloud|team).
+  // Empty when the device key is unknown.
+  string plan = 2 [json_name = "plan"];
+  // Empty when active. Otherwise one of:
+  // subscription_inactive | unknown_device | device_revoked
+  string reason = 3 [json_name = "reason"];
+  google.protobuf.Timestamp checked_at = 4 [json_name = "checked_at"];
+}
+
+service DeviceService {
+  rpc CreateClaimCode(CreateDeviceClaimCodeRequest) returns (CreateDeviceClaimCodeResponse) {
+    option (saas.policy.v1.method_policy) = {
+      exposure: EXPOSURE_AUTHENTICATED
+      tenant: TENANT_REQUIREMENT_ORG_ADMIN
+      permissions: "devices:write"
+      scopes: "devices:write"
+      resource_bindings: {
+        request_field: "org_id"
+        target: RESOURCE_TARGET_ORGANIZATION
+        lookup: RESOURCE_LOOKUP_DIRECT_ID
+      }
+      mfa: MFA_REQUIREMENT_NONE
+      audit: {
+        events: "device.claim_code_created"
+        emission: AUDIT_EMISSION_SUCCESS
+      }
+      idempotency: IDEMPOTENCY_REQUIREMENT_FORBIDDEN
+      rate_limit: RATE_LIMIT_CLASS_STANDARD_WRITE
+      request_sensitivity: SENSITIVITY_CONFIDENTIAL
+      response_sensitivity: SENSITIVITY_SECRET
+      platform_role: PLATFORM_ROLE_REQUIREMENT_NONE
+    };
+    option (google.api.http) = {
+      post: "/v1/devices/claim-codes"
+      body: "*"
+    };
+  }
+
+  rpc ClaimDevice(ClaimDeviceRequest) returns (ClaimDeviceResponse) {
+    option (saas.policy.v1.method_policy) = {
+      exposure: EXPOSURE_PUBLIC
+      tenant: TENANT_REQUIREMENT_NONE
+      mfa: MFA_REQUIREMENT_NONE
+      audit: {
+        events: "device.claimed"
+        emission: AUDIT_EMISSION_SUCCESS
+      }
+      idempotency: IDEMPOTENCY_REQUIREMENT_FORBIDDEN
+      rate_limit: RATE_LIMIT_CLASS_PUBLIC
+      request_sensitivity: SENSITIVITY_SECRET
+      response_sensitivity: SENSITIVITY_CONFIDENTIAL
+      platform_role: PLATFORM_ROLE_REQUIREMENT_NONE
+    };
+    option (google.api.http) = {
+      post: "/v1/devices/claim"
+      body: "*"
+    };
+  }
+
+  rpc ListDevices(ListDevicesRequest) returns (ListDevicesResponse) {
+    option (saas.policy.v1.method_policy) = {
+      exposure: EXPOSURE_AUTHENTICATED
+      tenant: TENANT_REQUIREMENT_ORG_MEMBER
+      permissions: "devices:read"
+      scopes: "devices:read"
+      resource_bindings: {
+        request_field: "org_id"
+        target: RESOURCE_TARGET_ORGANIZATION
+        lookup: RESOURCE_LOOKUP_DIRECT_ID
+      }
+      mfa: MFA_REQUIREMENT_NONE
+      audit: {emission: AUDIT_EMISSION_NONE}
+      idempotency: IDEMPOTENCY_REQUIREMENT_FORBIDDEN
+      rate_limit: RATE_LIMIT_CLASS_STANDARD_READ
+      request_sensitivity: SENSITIVITY_CONFIDENTIAL
+      response_sensitivity: SENSITIVITY_CONFIDENTIAL
+      platform_role: PLATFORM_ROLE_REQUIREMENT_NONE
+    };
+    option (google.api.http) = {get: "/v1/devices"};
+  }
+
+  rpc RevokeDevice(RevokeDeviceRequest) returns (google.protobuf.Empty) {
+    option (saas.policy.v1.method_policy) = {
+      exposure: EXPOSURE_AUTHENTICATED
+      tenant: TENANT_REQUIREMENT_ORG_ADMIN
+      permissions: "devices:write"
+      scopes: "devices:write"
+      resource_bindings: {
+        request_field: "org_id"
+        target: RESOURCE_TARGET_ORGANIZATION
+        lookup: RESOURCE_LOOKUP_DIRECT_ID
+      }
+      mfa: MFA_REQUIREMENT_NONE
+      audit: {
+        events: "device.revoked"
+        emission: AUDIT_EMISSION_SUCCESS
+      }
+      idempotency: IDEMPOTENCY_REQUIREMENT_FORBIDDEN
+      rate_limit: RATE_LIMIT_CLASS_STANDARD_WRITE
+      request_sensitivity: SENSITIVITY_CONFIDENTIAL
+      response_sensitivity: SENSITIVITY_CONFIDENTIAL
+      platform_role: PLATFORM_ROLE_REQUIREMENT_NONE
+    };
+    option (google.api.http) = {
+      post: "/v1/devices/{device_id}:revoke"
+      body: "*"
+    };
+  }
+}
+
+service EntitlementCheckService {
+  // CheckDeviceEntitlement is the service-to-service paywall probe used by
+  // product infrastructure (e.g. the lazybox relay). Auth: accounts API key
+  // carrying the entitlements:check scope; no user session. Unknown device
+  // keys return active=false/unknown_device with HTTP 200 — callers fail
+  // closed on any non-200.
+  rpc CheckDeviceEntitlement(CheckDeviceEntitlementRequest) returns (CheckDeviceEntitlementResponse) {
+    option (saas.policy.v1.method_policy) = {
+      exposure: EXPOSURE_AUTHENTICATED
+      tenant: TENANT_REQUIREMENT_NONE
+      scopes: "entitlements:check"
+      mfa: MFA_REQUIREMENT_NONE
+      audit: {emission: AUDIT_EMISSION_NONE}
+      idempotency: IDEMPOTENCY_REQUIREMENT_FORBIDDEN
+      rate_limit: RATE_LIMIT_CLASS_STANDARD_READ
+      request_sensitivity: SENSITIVITY_CONFIDENTIAL
+      response_sensitivity: SENSITIVITY_CONFIDENTIAL
+      platform_role: PLATFORM_ROLE_REQUIREMENT_NONE
+    };
+    option (google.api.http) = {
+      post: "/v1/devices/entitlements/check"
+      body: "*"
+    };
+  }
+}

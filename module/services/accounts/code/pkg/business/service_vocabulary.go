@@ -14,6 +14,7 @@ const (
 	EntitlementAPICallsMonthly = "api_calls_monthly"
 	EntitlementSSO             = "sso"
 	EntitlementAuditLog        = "audit_log"
+	EntitlementPairedDevices   = "paired_devices"
 )
 
 type servicePermissionDefinition struct {
@@ -33,6 +34,9 @@ var servicePermissionVocabulary = []servicePermissionDefinition{
 	{Permission: "audit:read", Description: "Read and export audit events.", BuiltInRoles: []string{"admin (via *:*)"}, APIKeyScope: true},
 	{Permission: "billing:read", Description: "View billing state and invoices.", BuiltInRoles: []string{"admin (via *:*)", "editor"}, APIKeyScope: true},
 	{Permission: "billing:write", Description: "Open checkout and billing portal sessions.", BuiltInRoles: []string{"admin (via *:*)"}, APIKeyScope: true},
+	{Permission: "devices:read", Description: "List linked devices.", BuiltInRoles: []string{"admin (via *:*)"}, APIKeyScope: true},
+	{Permission: "devices:write", Description: "Mint device claim codes and revoke linked devices.", BuiltInRoles: []string{"admin (via *:*)"}, APIKeyScope: true},
+	{Permission: "entitlements:check", Description: "Service-to-service device entitlement check (API-key only).", BuiltInRoles: []string{"admin (via *:*)"}, APIKeyScope: true},
 	{Permission: "entitlements:read", Description: "View entitlement limits, overrides, and usage.", BuiltInRoles: []string{"admin (via *:*)"}, APIKeyScope: true},
 	{Permission: "invitations:read", Description: "List organization invitations.", BuiltInRoles: []string{"admin (via *:*)"}, APIKeyScope: true},
 	{Permission: "invitations:write", Description: "Create and revoke organization invitations.", BuiltInRoles: []string{"admin (via *:*)"}, APIKeyScope: true},
@@ -54,6 +58,7 @@ var serviceEntitlementVocabulary = []*catalogv1.EntitlementDefinition{
 	{Key: EntitlementAPICallsMonthly, Kind: catalogv1.EntitlementKind_ENTITLEMENT_KIND_QUOTA, Unit: "requests/month", Description: "Monthly API request allowance."},
 	{Key: EntitlementAPIKeys, Kind: catalogv1.EntitlementKind_ENTITLEMENT_KIND_QUOTA, Unit: "keys", Description: "Active API key allowance."},
 	{Key: EntitlementAuditLog, Kind: catalogv1.EntitlementKind_ENTITLEMENT_KIND_FEATURE, Unit: "enabled", Description: "Audit-log access."},
+	{Key: EntitlementPairedDevices, Kind: catalogv1.EntitlementKind_ENTITLEMENT_KIND_QUOTA, Unit: "devices", Description: "Linked (non-revoked) device allowance."},
 	{Key: EntitlementSeats, Kind: catalogv1.EntitlementKind_ENTITLEMENT_KIND_QUOTA, Unit: "seats", Description: "Organization members plus pending invitations."},
 	{Key: EntitlementSSO, Kind: catalogv1.EntitlementKind_ENTITLEMENT_KIND_FEATURE, Unit: "enabled", Description: "Single sign-on administration."},
 }

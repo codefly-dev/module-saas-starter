@@ -12,6 +12,10 @@ services:
     kind: generated
   ConsentService:
     kind: generated
+  DeviceService:
+    kind: generated
+  EntitlementCheckService:
+    kind: generated
   DelegationService:
     kind: plugin
     plugin: permissions

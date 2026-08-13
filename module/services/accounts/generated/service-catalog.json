@@ -78,6 +78,23 @@
       ]
     },
     {
+      "name": "DeviceService",
+      "full_name": "saas.accounts.v1.DeviceService",
+      "procedures": [
+        "/saas.accounts.v1.DeviceService/ClaimDevice",
+        "/saas.accounts.v1.DeviceService/CreateClaimCode",
+        "/saas.accounts.v1.DeviceService/ListDevices",
+        "/saas.accounts.v1.DeviceService/RevokeDevice"
+      ]
+    },
+    {
+      "name": "EntitlementCheckService",
+      "full_name": "saas.accounts.v1.EntitlementCheckService",
+      "procedures": [
+        "/saas.accounts.v1.EntitlementCheckService/CheckDeviceEntitlement"
+      ]
+    },
+    {
       "name": "GDPRService",
       "full_name": "saas.accounts.v1.GDPRService",
       "procedures": [
@@ -1807,6 +1824,289 @@
       },
       "policy_tier": "org_member",
       "description": "Stream the terminal delegation decision.",
+      "owner": {
+        "module": "saas-starter",
+        "service": "accounts"
+      }
+    },
+    {
+      "procedure": "/saas.accounts.v1.DeviceService/ClaimDevice",
+      "service": "DeviceService",
+      "full_service": "saas.accounts.v1.DeviceService",
+      "method": "ClaimDevice",
+      "input_type": "saas.accounts.v1.ClaimDeviceRequest",
+      "output_type": "saas.accounts.v1.ClaimDeviceResponse",
+      "client_streaming": false,
+      "server_streaming": false,
+      "deprecated": false,
+      "source_proto": "saas/accounts/v1/devices.proto",
+      "protocols": [
+        "PROTOCOL_GRPC",
+        "PROTOCOL_CONNECT",
+        "PROTOCOL_REST"
+      ],
+      "http_bindings": [
+        {
+          "method": "POST",
+          "path": "/v1/devices/claim",
+          "body": "*",
+          "response_body": ""
+        }
+      ],
+      "policy": {
+        "exposure": "EXPOSURE_PUBLIC",
+        "tenant": "TENANT_REQUIREMENT_NONE",
+        "permissions": [],
+        "scopes": [],
+        "resource_bindings": [],
+        "mfa": "MFA_REQUIREMENT_NONE",
+        "audit": {
+          "events": [
+            "device.claimed"
+          ],
+          "emission": "AUDIT_EMISSION_SUCCESS"
+        },
+        "idempotency": "IDEMPOTENCY_REQUIREMENT_FORBIDDEN",
+        "rate_limit": "RATE_LIMIT_CLASS_PUBLIC",
+        "request_sensitivity": "SENSITIVITY_SECRET",
+        "response_sensitivity": "SENSITIVITY_CONFIDENTIAL",
+        "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
+        "authentication_factor_attempt": false
+      },
+      "policy_tier": "public",
+      "description": "Redeem a claim code from an external device and link it to the code's organization.",
+      "owner": {
+        "module": "saas-starter",
+        "service": "accounts"
+      }
+    },
+    {
+      "procedure": "/saas.accounts.v1.DeviceService/CreateClaimCode",
+      "service": "DeviceService",
+      "full_service": "saas.accounts.v1.DeviceService",
+      "method": "CreateClaimCode",
+      "input_type": "saas.accounts.v1.CreateDeviceClaimCodeRequest",
+      "output_type": "saas.accounts.v1.CreateDeviceClaimCodeResponse",
+      "client_streaming": false,
+      "server_streaming": false,
+      "deprecated": false,
+      "source_proto": "saas/accounts/v1/devices.proto",
+      "protocols": [
+        "PROTOCOL_GRPC",
+        "PROTOCOL_CONNECT",
+        "PROTOCOL_REST"
+      ],
+      "http_bindings": [
+        {
+          "method": "POST",
+          "path": "/v1/devices/claim-codes",
+          "body": "*",
+          "response_body": ""
+        }
+      ],
+      "policy": {
+        "exposure": "EXPOSURE_AUTHENTICATED",
+        "tenant": "TENANT_REQUIREMENT_ORG_ADMIN",
+        "permissions": [
+          "devices:write"
+        ],
+        "scopes": [
+          "devices:write"
+        ],
+        "resource_bindings": [
+          {
+            "request_field": "org_id",
+            "target": "RESOURCE_TARGET_ORGANIZATION",
+            "lookup": "RESOURCE_LOOKUP_DIRECT_ID"
+          }
+        ],
+        "mfa": "MFA_REQUIREMENT_NONE",
+        "audit": {
+          "events": [
+            "device.claim_code_created"
+          ],
+          "emission": "AUDIT_EMISSION_SUCCESS"
+        },
+        "idempotency": "IDEMPOTENCY_REQUIREMENT_FORBIDDEN",
+        "rate_limit": "RATE_LIMIT_CLASS_STANDARD_WRITE",
+        "request_sensitivity": "SENSITIVITY_CONFIDENTIAL",
+        "response_sensitivity": "SENSITIVITY_SECRET",
+        "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
+        "authentication_factor_attempt": false
+      },
+      "policy_tier": "org_admin",
+      "description": "Mint a short-lived, single-use device claim code for an administered organization.",
+      "owner": {
+        "module": "saas-starter",
+        "service": "accounts"
+      }
+    },
+    {
+      "procedure": "/saas.accounts.v1.DeviceService/ListDevices",
+      "service": "DeviceService",
+      "full_service": "saas.accounts.v1.DeviceService",
+      "method": "ListDevices",
+      "input_type": "saas.accounts.v1.ListDevicesRequest",
+      "output_type": "saas.accounts.v1.ListDevicesResponse",
+      "client_streaming": false,
+      "server_streaming": false,
+      "deprecated": false,
+      "source_proto": "saas/accounts/v1/devices.proto",
+      "protocols": [
+        "PROTOCOL_GRPC",
+        "PROTOCOL_CONNECT",
+        "PROTOCOL_REST"
+      ],
+      "http_bindings": [
+        {
+          "method": "GET",
+          "path": "/v1/devices",
+          "body": "",
+          "response_body": ""
+        }
+      ],
+      "policy": {
+        "exposure": "EXPOSURE_AUTHENTICATED",
+        "tenant": "TENANT_REQUIREMENT_ORG_MEMBER",
+        "permissions": [
+          "devices:read"
+        ],
+        "scopes": [
+          "devices:read"
+        ],
+        "resource_bindings": [
+          {
+            "request_field": "org_id",
+            "target": "RESOURCE_TARGET_ORGANIZATION",
+            "lookup": "RESOURCE_LOOKUP_DIRECT_ID"
+          }
+        ],
+        "mfa": "MFA_REQUIREMENT_NONE",
+        "audit": {
+          "events": [],
+          "emission": "AUDIT_EMISSION_NONE"
+        },
+        "idempotency": "IDEMPOTENCY_REQUIREMENT_FORBIDDEN",
+        "rate_limit": "RATE_LIMIT_CLASS_STANDARD_READ",
+        "request_sensitivity": "SENSITIVITY_CONFIDENTIAL",
+        "response_sensitivity": "SENSITIVITY_CONFIDENTIAL",
+        "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
+        "authentication_factor_attempt": false
+      },
+      "policy_tier": "org_member",
+      "description": "List the organization's linked devices.",
+      "owner": {
+        "module": "saas-starter",
+        "service": "accounts"
+      }
+    },
+    {
+      "procedure": "/saas.accounts.v1.DeviceService/RevokeDevice",
+      "service": "DeviceService",
+      "full_service": "saas.accounts.v1.DeviceService",
+      "method": "RevokeDevice",
+      "input_type": "saas.accounts.v1.RevokeDeviceRequest",
+      "output_type": "google.protobuf.Empty",
+      "client_streaming": false,
+      "server_streaming": false,
+      "deprecated": false,
+      "source_proto": "saas/accounts/v1/devices.proto",
+      "protocols": [
+        "PROTOCOL_GRPC",
+        "PROTOCOL_CONNECT",
+        "PROTOCOL_REST"
+      ],
+      "http_bindings": [
+        {
+          "method": "POST",
+          "path": "/v1/devices/{device_id}:revoke",
+          "body": "*",
+          "response_body": ""
+        }
+      ],
+      "policy": {
+        "exposure": "EXPOSURE_AUTHENTICATED",
+        "tenant": "TENANT_REQUIREMENT_ORG_ADMIN",
+        "permissions": [
+          "devices:write"
+        ],
+        "scopes": [
+          "devices:write"
+        ],
+        "resource_bindings": [
+          {
+            "request_field": "org_id",
+            "target": "RESOURCE_TARGET_ORGANIZATION",
+            "lookup": "RESOURCE_LOOKUP_DIRECT_ID"
+          }
+        ],
+        "mfa": "MFA_REQUIREMENT_NONE",
+        "audit": {
+          "events": [
+            "device.revoked"
+          ],
+          "emission": "AUDIT_EMISSION_SUCCESS"
+        },
+        "idempotency": "IDEMPOTENCY_REQUIREMENT_FORBIDDEN",
+        "rate_limit": "RATE_LIMIT_CLASS_STANDARD_WRITE",
+        "request_sensitivity": "SENSITIVITY_CONFIDENTIAL",
+        "response_sensitivity": "SENSITIVITY_CONFIDENTIAL",
+        "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
+        "authentication_factor_attempt": false
+      },
+      "policy_tier": "org_admin",
+      "description": "Revoke a linked device; the entitlement check flips to inactive for its key.",
+      "owner": {
+        "module": "saas-starter",
+        "service": "accounts"
+      }
+    },
+    {
+      "procedure": "/saas.accounts.v1.EntitlementCheckService/CheckDeviceEntitlement",
+      "service": "EntitlementCheckService",
+      "full_service": "saas.accounts.v1.EntitlementCheckService",
+      "method": "CheckDeviceEntitlement",
+      "input_type": "saas.accounts.v1.CheckDeviceEntitlementRequest",
+      "output_type": "saas.accounts.v1.CheckDeviceEntitlementResponse",
+      "client_streaming": false,
+      "server_streaming": false,
+      "deprecated": false,
+      "source_proto": "saas/accounts/v1/devices.proto",
+      "protocols": [
+        "PROTOCOL_GRPC",
+        "PROTOCOL_CONNECT",
+        "PROTOCOL_REST"
+      ],
+      "http_bindings": [
+        {
+          "method": "POST",
+          "path": "/v1/devices/entitlements/check",
+          "body": "*",
+          "response_body": ""
+        }
+      ],
+      "policy": {
+        "exposure": "EXPOSURE_AUTHENTICATED",
+        "tenant": "TENANT_REQUIREMENT_NONE",
+        "permissions": [],
+        "scopes": [
+          "entitlements:check"
+        ],
+        "resource_bindings": [],
+        "mfa": "MFA_REQUIREMENT_NONE",
+        "audit": {
+          "events": [],
+          "emission": "AUDIT_EMISSION_NONE"
+        },
+        "idempotency": "IDEMPOTENCY_REQUIREMENT_FORBIDDEN",
+        "rate_limit": "RATE_LIMIT_CLASS_STANDARD_READ",
+        "request_sensitivity": "SENSITIVITY_CONFIDENTIAL",
+        "response_sensitivity": "SENSITIVITY_CONFIDENTIAL",
+        "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
+        "authentication_factor_attempt": false
+      },
+      "policy_tier": "auth",
+      "description": "Service-to-service paywall probe: device key → org → live subscription → requested entitlement.",
       "owner": {
         "module": "saas-starter",
         "service": "accounts"
@@ -7658,6 +7958,36 @@
       "api_key_scope": true
     },
     {
+      "permission": "devices:read",
+      "resource": "devices",
+      "action": "read",
+      "description": "List linked devices.",
+      "built_in_roles": [
+        "admin (via *:*)"
+      ],
+      "api_key_scope": true
+    },
+    {
+      "permission": "devices:write",
+      "resource": "devices",
+      "action": "write",
+      "description": "Mint device claim codes and revoke linked devices.",
+      "built_in_roles": [
+        "admin (via *:*)"
+      ],
+      "api_key_scope": true
+    },
+    {
+      "permission": "entitlements:check",
+      "resource": "entitlements",
+      "action": "check",
+      "description": "Service-to-service device entitlement check (API-key only).",
+      "built_in_roles": [
+        "admin (via *:*)"
+      ],
+      "api_key_scope": true
+    },
+    {
       "permission": "entitlements:read",
       "resource": "entitlements",
       "action": "read",
@@ -7835,6 +8165,12 @@
       "kind": "ENTITLEMENT_KIND_FEATURE",
       "unit": "enabled",
       "description": "Audit-log access."
+    },
+    {
+      "key": "paired_devices",
+      "kind": "ENTITLEMENT_KIND_QUOTA",
+      "unit": "devices",
+      "description": "Linked (non-revoked) device allowance."
     },
     {
       "key": "seats",

@@ -34,6 +34,12 @@ func registerCatalogRESTHandlers(ctx context.Context, mux *runtime.ServeMux, end
 	if err := gen.RegisterConsentServiceHandlerFromEndpoint(ctx, mux, endpoint, options); err != nil {
 		return fmt.Errorf("register generated REST service ConsentService: %w", err)
 	}
+	if err := gen.RegisterDeviceServiceHandlerFromEndpoint(ctx, mux, endpoint, options); err != nil {
+		return fmt.Errorf("register generated REST service DeviceService: %w", err)
+	}
+	if err := gen.RegisterEntitlementCheckServiceHandlerFromEndpoint(ctx, mux, endpoint, options); err != nil {
+		return fmt.Errorf("register generated REST service EntitlementCheckService: %w", err)
+	}
 	if err := gen.RegisterGDPRServiceHandlerFromEndpoint(ctx, mux, endpoint, options); err != nil {
 		return fmt.Errorf("register generated REST service GDPRService: %w", err)
 	}
@@ -110,6 +116,7 @@ var catalogRESTExactRoutes = map[string]struct{}{
 	"GET /v1/auth/.well-known/jwks.json":       {},
 	"GET /v1/consent/status":                   {},
 	"GET /v1/delegations:pending":              {},
+	"GET /v1/devices":                          {},
 	"GET /v1/invitations":                      {},
 	"GET /v1/mfa/devices":                      {},
 	"GET /v1/notifications":                    {},
@@ -147,6 +154,9 @@ var catalogRESTExactRoutes = map[string]struct{}{
 	"POST /v1/billing/connect/portal":          {},
 	"POST /v1/consent/terms":                   {},
 	"POST /v1/delegations":                     {},
+	"POST /v1/devices/claim":                   {},
+	"POST /v1/devices/claim-codes":             {},
+	"POST /v1/devices/entitlements/check":      {},
 	"POST /v1/gdpr/delete":                     {},
 	"POST /v1/gdpr/export":                     {},
 	"POST /v1/invitations":                     {},
@@ -221,6 +231,7 @@ var catalogRESTTemplateRoutes = []catalogRESTTemplateRoute{
 	{method: "PATCH", path: regexp.MustCompile("^/v1/teams/[^/]+$")},
 	{method: "PATCH", path: regexp.MustCompile("^/v1/users/[^/]+$")},
 	{method: "POST", path: regexp.MustCompile("^/v1/delegations/[^/]+:decide$")},
+	{method: "POST", path: regexp.MustCompile("^/v1/devices/[^/]+:revoke$")},
 	{method: "POST", path: regexp.MustCompile("^/v1/invitations/[^/]+:resend$")},
 	{method: "POST", path: regexp.MustCompile("^/v1/notifications/[^/]+:read$")},
 	{method: "POST", path: regexp.MustCompile("^/v1/organizations/[^/]+/members$")},

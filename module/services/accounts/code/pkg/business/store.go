@@ -144,6 +144,21 @@ type Store interface {
 	CountPendingInvitations(ctx context.Context, orgID string) (int32, error)
 	HasPendingInvitationForEmail(ctx context.Context, email string) (bool, error)
 
+	// Linked devices (external-device ↔ org pairing; linked_devices +
+	// device_claim_codes are RLS-protected, migration 86).
+	CreateDevice(ctx context.Context, device *Device) error
+	// GetDeviceByPublicKey is the entitlement check's cross-tenant entry
+	// point; call under As(System()).Within, then enter WithOrgTx for the
+	// tenant-scoped resolution.
+	GetDeviceByPublicKey(ctx context.Context, publicKey string) (*Device, error)
+	ListDevices(ctx context.Context, orgID string) ([]*Device, error)
+	CountActiveDevices(ctx context.Context, orgID string) (int64, error)
+	RevokeDevice(ctx context.Context, deviceID string, orgID string) (bool, error)
+	CreateDeviceClaimCode(ctx context.Context, code *DeviceClaimCode) error
+	GetDeviceClaimCodeByHash(ctx context.Context, hash string) (*DeviceClaimCode, error)
+	MarkDeviceClaimCodeUsed(ctx context.Context, codeID string, deviceID string) (bool, error)
+	ExpirePendingDeviceClaimCodes(ctx context.Context, orgID string) error
+
 	// Waitlist
 	GetWaitlistReferralID(ctx context.Context, code string) (string, error)
 	UpsertWaitlistEntry(ctx context.Context, entry *WaitlistEntry, cooldown time.Duration) (*WaitlistUpsertResult, error)

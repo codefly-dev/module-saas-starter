@@ -9,6 +9,7 @@ import { PermissionService, PrincipalService } from "./authorization_pb";
 import { BillingService } from "./billing_pb";
 import { ConsentService } from "./consent_pb";
 import { DelegationService } from "./delegations_pb";
+import { DeviceService, EntitlementCheckService } from "./devices_pb";
 import { IdentityService, UserService } from "./identity_pb";
 import { IntrospectionService } from "./introspection_pb";
 import { InvitationService } from "./invitations_pb";
@@ -33,6 +34,9 @@ export const PERMISSIONS = {
   AUDIT_READ: "audit:read",
   BILLING_READ: "billing:read",
   BILLING_WRITE: "billing:write",
+  DEVICES_READ: "devices:read",
+  DEVICES_WRITE: "devices:write",
+  ENTITLEMENTS_CHECK: "entitlements:check",
   ENTITLEMENTS_READ: "entitlements:read",
   INVITATIONS_READ: "invitations:read",
   INVITATIONS_WRITE: "invitations:write",
@@ -51,8 +55,8 @@ export const PERMISSIONS = {
 } as const;
 
 export type Permission = (typeof PERMISSIONS)[keyof typeof PERMISSIONS];
-export type PermissionResource = "api_keys" | "audit" | "billing" | "entitlements" | "invitations" | "knowledge" | "orgs" | "roles" | "teams" | "users" | "webhooks";
-export type PermissionAction = "read" | "write";
+export type PermissionResource = "api_keys" | "audit" | "billing" | "devices" | "entitlements" | "invitations" | "knowledge" | "orgs" | "roles" | "teams" | "users" | "webhooks";
+export type PermissionAction = "check" | "read" | "write";
 export type PermissionGrant = Permission | `${PermissionResource}:*` | `*:${PermissionAction}`;
 
 export interface PermissionDefinition {
@@ -70,6 +74,9 @@ export const PERMISSION_DEFINITIONS: Readonly<Record<Permission, PermissionDefin
   [PERMISSIONS.AUDIT_READ]: { resource: "audit", action: "read", description: "Read and export audit events.", builtInRoles: ["admin (via *:*)"], apiKeyScope: true },
   [PERMISSIONS.BILLING_READ]: { resource: "billing", action: "read", description: "View billing state and invoices.", builtInRoles: ["admin (via *:*)", "editor"], apiKeyScope: true },
   [PERMISSIONS.BILLING_WRITE]: { resource: "billing", action: "write", description: "Open checkout and billing portal sessions.", builtInRoles: ["admin (via *:*)"], apiKeyScope: true },
+  [PERMISSIONS.DEVICES_READ]: { resource: "devices", action: "read", description: "List linked devices.", builtInRoles: ["admin (via *:*)"], apiKeyScope: true },
+  [PERMISSIONS.DEVICES_WRITE]: { resource: "devices", action: "write", description: "Mint device claim codes and revoke linked devices.", builtInRoles: ["admin (via *:*)"], apiKeyScope: true },
+  [PERMISSIONS.ENTITLEMENTS_CHECK]: { resource: "entitlements", action: "check", description: "Service-to-service device entitlement check (API-key only).", builtInRoles: ["admin (via *:*)"], apiKeyScope: true },
   [PERMISSIONS.ENTITLEMENTS_READ]: { resource: "entitlements", action: "read", description: "View entitlement limits, overrides, and usage.", builtInRoles: ["admin (via *:*)"], apiKeyScope: true },
   [PERMISSIONS.INVITATIONS_READ]: { resource: "invitations", action: "read", description: "List organization invitations.", builtInRoles: ["admin (via *:*)"], apiKeyScope: true },
   [PERMISSIONS.INVITATIONS_WRITE]: { resource: "invitations", action: "write", description: "Create and revoke organization invitations.", builtInRoles: ["admin (via *:*)"], apiKeyScope: true },
@@ -101,6 +108,9 @@ export const API_KEY_SCOPES = [
   PERMISSIONS.AUDIT_READ,
   PERMISSIONS.BILLING_READ,
   PERMISSIONS.BILLING_WRITE,
+  PERMISSIONS.DEVICES_READ,
+  PERMISSIONS.DEVICES_WRITE,
+  PERMISSIONS.ENTITLEMENTS_CHECK,
   PERMISSIONS.ENTITLEMENTS_READ,
   PERMISSIONS.INVITATIONS_READ,
   PERMISSIONS.INVITATIONS_WRITE,
@@ -117,14 +127,15 @@ export const API_KEY_SCOPES = [
 ] as const;
 
 export type APIKeyScope = (typeof API_KEY_SCOPES)[number];
-export type APIKeyScopeResource = "api_keys" | "audit" | "billing" | "entitlements" | "invitations" | "orgs" | "roles" | "teams" | "users" | "webhooks";
-export type APIKeyScopeAction = "read" | "write";
+export type APIKeyScopeResource = "api_keys" | "audit" | "billing" | "devices" | "entitlements" | "invitations" | "orgs" | "roles" | "teams" | "users" | "webhooks";
+export type APIKeyScopeAction = "check" | "read" | "write";
 export type APIKeyScopeGrant = APIKeyScope | `${APIKeyScopeResource}:*` | `*:${APIKeyScopeAction}`;
 
 export const ENTITLEMENTS = {
   API_CALLS_MONTHLY: "api_calls_monthly",
   API_KEYS: "api_keys",
   AUDIT_LOG: "audit_log",
+  PAIRED_DEVICES: "paired_devices",
   SEATS: "seats",
   SSO: "sso",
 } as const;
@@ -142,6 +153,7 @@ export const ENTITLEMENT_DEFINITIONS: Readonly<Record<Entitlement, EntitlementDe
   [ENTITLEMENTS.API_CALLS_MONTHLY]: { kind: "quota", unit: "requests/month", description: "Monthly API request allowance." },
   [ENTITLEMENTS.API_KEYS]: { kind: "quota", unit: "keys", description: "Active API key allowance." },
   [ENTITLEMENTS.AUDIT_LOG]: { kind: "feature", unit: "enabled", description: "Audit-log access." },
+  [ENTITLEMENTS.PAIRED_DEVICES]: { kind: "quota", unit: "devices", description: "Linked (non-revoked) device allowance." },
   [ENTITLEMENTS.SEATS]: { kind: "quota", unit: "seats", description: "Organization members plus pending invitations." },
   [ENTITLEMENTS.SSO]: { kind: "feature", unit: "enabled", description: "Single sign-on administration." },
 };
@@ -161,6 +173,8 @@ export const ACCOUNT_SERVICE_DESCRIPTORS = {
   BillingService,
   ConsentService,
   DelegationService,
+  DeviceService,
+  EntitlementCheckService,
   GDPRService,
   IdentityService,
   IntrospectionService,
@@ -192,6 +206,8 @@ export interface AccountsClients {
   readonly BillingService: Client<typeof BillingService>;
   readonly ConsentService: Client<typeof ConsentService>;
   readonly DelegationService: Client<typeof DelegationService>;
+  readonly DeviceService: Client<typeof DeviceService>;
+  readonly EntitlementCheckService: Client<typeof EntitlementCheckService>;
   readonly GDPRService: Client<typeof GDPRService>;
   readonly IdentityService: Client<typeof IdentityService>;
   readonly IntrospectionService: Client<typeof IntrospectionService>;
@@ -222,6 +238,8 @@ export function createAccountsClients(transport: Transport): AccountsClients {
     BillingService: createClient(BillingService, transport),
     ConsentService: createClient(ConsentService, transport),
     DelegationService: createClient(DelegationService, transport),
+    DeviceService: createClient(DeviceService, transport),
+    EntitlementCheckService: createClient(EntitlementCheckService, transport),
     GDPRService: createClient(GDPRService, transport),
     IdentityService: createClient(IdentityService, transport),
     IntrospectionService: createClient(IntrospectionService, transport),

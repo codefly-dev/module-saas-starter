@@ -2,7 +2,7 @@
 
 > Generated from protobuf service descriptors and `saas.policy.v1.method_policy`; only the prose description is joined from `pkg/business/introspection.go`. Do not edit by hand. Run `go generate ./pkg/business` from `module/services/accounts/code`.
 
-Inventory: **138 RPCs** across **26 services**. Missing, invalid, or unclassified procedures are denied by both Connect and gRPC interceptors.
+Inventory: **143 RPCs** across **28 services**. Missing, invalid, or unclassified procedures are denied by both Connect and gRPC interceptors.
 
 The compact tier is retained for compatibility. Guards, resource bindings, audit events, limiter class, and data sensitivity are descriptor-authoritative. Domain handlers may enforce stronger state-dependent rules but may not weaken this floor.
 
@@ -36,6 +36,11 @@ The compact tier is retained for compatibility. Guards, resource bindings, audit
 | `/saas.accounts.v1.DelegationService/ListPendingDelegations` | unary | `GET /v1/delegations:pending` | `org_member` | exposure=AUTHENTICATED; tenant=ORG_MEMBER | — | org_id → ORGANIZATION/DIRECT_ID | — | FORBIDDEN / STANDARD_READ | CONFIDENTIAL → CONFIDENTIAL | List pending organization delegations. |
 | `/saas.accounts.v1.DelegationService/RequestDelegation` | unary | `POST /v1/delegations` | `org_member` | exposure=AUTHENTICATED; tenant=ORG_MEMBER | — | org_id → ORGANIZATION/DIRECT_ID | SUCCESS: delegation.requested, delegation.auto_approved | FORBIDDEN / STANDARD_WRITE | CONFIDENTIAL → CONFIDENTIAL | Request a scoped authority delegation. |
 | `/saas.accounts.v1.DelegationService/WaitForDelegation` | server stream | `GET /v1/delegations/{id}:wait` | `org_member` | exposure=AUTHENTICATED; tenant=ORG_MEMBER | — | org_id → ORGANIZATION/DIRECT_ID | — | FORBIDDEN / STANDARD_READ | CONFIDENTIAL → CONFIDENTIAL | Stream the terminal delegation decision. |
+| `/saas.accounts.v1.DeviceService/ClaimDevice` | unary | `POST /v1/devices/claim` | `public` | exposure=PUBLIC; tenant=NONE | — | — | SUCCESS: device.claimed | FORBIDDEN / PUBLIC | SECRET → CONFIDENTIAL | Redeem a claim code from an external device and link it to the code's organization. |
+| `/saas.accounts.v1.DeviceService/CreateClaimCode` | unary | `POST /v1/devices/claim-codes` | `org_admin` | exposure=AUTHENTICATED; tenant=ORG_ADMIN | perm=devices:write; scope=devices:write | org_id → ORGANIZATION/DIRECT_ID | SUCCESS: device.claim_code_created | FORBIDDEN / STANDARD_WRITE | CONFIDENTIAL → SECRET | Mint a short-lived, single-use device claim code for an administered organization. |
+| `/saas.accounts.v1.DeviceService/ListDevices` | unary | `GET /v1/devices` | `org_member` | exposure=AUTHENTICATED; tenant=ORG_MEMBER | perm=devices:read; scope=devices:read | org_id → ORGANIZATION/DIRECT_ID | — | FORBIDDEN / STANDARD_READ | CONFIDENTIAL → CONFIDENTIAL | List the organization's linked devices. |
+| `/saas.accounts.v1.DeviceService/RevokeDevice` | unary | `POST /v1/devices/{device_id}:revoke` | `org_admin` | exposure=AUTHENTICATED; tenant=ORG_ADMIN | perm=devices:write; scope=devices:write | org_id → ORGANIZATION/DIRECT_ID | SUCCESS: device.revoked | FORBIDDEN / STANDARD_WRITE | CONFIDENTIAL → CONFIDENTIAL | Revoke a linked device; the entitlement check flips to inactive for its key. |
+| `/saas.accounts.v1.EntitlementCheckService/CheckDeviceEntitlement` | unary | `POST /v1/devices/entitlements/check` | `auth` | exposure=AUTHENTICATED; tenant=NONE | scope=entitlements:check | — | — | FORBIDDEN / STANDARD_READ | CONFIDENTIAL → CONFIDENTIAL | Service-to-service paywall probe: device key → org → live subscription → requested entitlement. |
 | `/saas.accounts.v1.GDPRService/GetDeletionStatus` | unary | `GET /v1/gdpr/delete/{id}` | `auth` | exposure=AUTHENTICATED; tenant=USER | — | — | — | FORBIDDEN / STANDARD_READ | CONFIDENTIAL → CONFIDENTIAL | Status of a GDPR deletion request. |
 | `/saas.accounts.v1.GDPRService/GetExportStatus` | unary | `GET /v1/gdpr/export/{id}` | `auth` | exposure=AUTHENTICATED; tenant=USER | — | — | — | FORBIDDEN / STANDARD_READ | CONFIDENTIAL → CONFIDENTIAL | Status of a GDPR export request. |
 | `/saas.accounts.v1.GDPRService/RequestDeletion` | unary | `POST /v1/gdpr/delete` | `mfa` | exposure=AUTHENTICATED; tenant=USER; mfa=IF_ENROLLED_RECENT_STEP_UP | — | — | SUCCESS: gdpr.deletion_requested | FORBIDDEN / SENSITIVE | CONFIDENTIAL → CONFIDENTIAL | Request account deletion when a complete privacy workflow is configured. Requires MFA. |
@@ -149,10 +154,10 @@ The compact tier is retained for compatibility. Guards, resource bindings, audit
 
 ## Tier totals
 
-- `auth`: 37
+- `auth`: 38
 - `internal`: 7
 - `mfa`: 3
-- `org_admin`: 28
-- `org_member`: 25
+- `org_admin`: 30
+- `org_member`: 26
 - `platform_admin`: 22
-- `public`: 16
+- `public`: 17

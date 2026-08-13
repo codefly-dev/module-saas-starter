@@ -27,6 +27,14 @@ services:
     handler: consentConnectHandler
     source:
       kind: business
+  DeviceService:
+    handler: deviceConnectHandler
+    source:
+      kind: business
+  EntitlementCheckService:
+    handler: entitlementCheckConnectHandler
+    source:
+      kind: business
   DelegationService:
     handler: delegationConnectHandler
     source:

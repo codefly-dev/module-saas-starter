@@ -573,6 +573,62 @@
       },
       "type": "object"
     },
+    "v1CheckDeviceEntitlementRequest": {
+      "properties": {
+        "devicePublicKey": {
+          "description": "Public key of the device the caller is brokering for.",
+          "type": "string"
+        },
+        "entitlementKey": {
+          "description": "Entitlement key to resolve against the owning org's effective plan,\ne.g. \"relay_access\". Unknown keys resolve to disabled (active=false).",
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
+    "v1CheckDeviceEntitlementResponse": {
+      "properties": {
+        "active": {
+          "type": "boolean"
+        },
+        "checked_at": {
+          "format": "date-time",
+          "type": "string"
+        },
+        "plan": {
+          "description": "Plan key of the owning org's effective plan (e.g. free|pro|cloud|team).\nEmpty when the device key is unknown.",
+          "type": "string"
+        },
+        "reason": {
+          "title": "Empty when active. Otherwise one of:\nsubscription_inactive | unknown_device | device_revoked",
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
+    "v1ClaimDeviceRequest": {
+      "properties": {
+        "code": {
+          "type": "string"
+        },
+        "devicePublicKey": {
+          "description": "Public key of the device identity (e.g. base64 Ed25519).",
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
+    "v1ClaimDeviceResponse": {
+      "properties": {
+        "device": {
+          "$ref": "#/definitions/v1Device"
+        }
+      },
+      "type": "object"
+    },
     "v1CompleteMFAChallengeRequest": {
       "description": "CompleteMFAChallengeRequest is deliberately distinct from VerifyTOTPRequest:\nthis completes a login transaction, while VerifyTOTP only confirms a new\nauthenticator during enrollment.",
       "properties": {
@@ -706,6 +762,27 @@
           "type": "string"
         },
         "orgId": {
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
+    "v1CreateDeviceClaimCodeRequest": {
+      "properties": {
+        "orgId": {
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
+    "v1CreateDeviceClaimCodeResponse": {
+      "properties": {
+        "code": {
+          "description": "Plaintext claim code — returned exactly once; only a hash is stored.",
+          "type": "string"
+        },
+        "expiresAt": {
+          "format": "date-time",
           "type": "string"
         }
       },
@@ -893,6 +970,43 @@
           "type": "string"
         },
         "status": {
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
+    "v1Device": {
+      "properties": {
+        "createdAt": {
+          "format": "date-time",
+          "type": "string"
+        },
+        "createdBy": {
+          "type": "string"
+        },
+        "devicePublicKey": {
+          "type": "string"
+        },
+        "id": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        },
+        "orgId": {
+          "type": "string"
+        },
+        "revokedAt": {
+          "description": "Unset while the device is active.",
+          "format": "date-time",
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
+    "v1DeviceServiceRevokeDeviceBody": {
+      "properties": {
+        "orgId": {
           "type": "string"
         }
       },
@@ -1884,6 +1998,18 @@
         "sessions": {
           "items": {
             "$ref": "#/definitions/v1SessionInfo",
+            "type": "object"
+          },
+          "type": "array"
+        }
+      },
+      "type": "object"
+    },
+    "v1ListDevicesResponse": {
+      "properties": {
+        "devices": {
+          "items": {
+            "$ref": "#/definitions/v1Device",
             "type": "object"
           },
           "type": "array"
@@ -4947,6 +5073,172 @@
         "summary": "ListPendingDelegations returns paginated pending grants for\nthe approver UI. Sorted critical → high → medium → low,\nnewest-first within tier.",
         "tags": [
           "DelegationService"
+        ]
+      }
+    },
+    "/v1/devices": {
+      "get": {
+        "operationId": "DeviceService_ListDevices",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "orgId",
+            "required": false,
+            "type": "string"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1ListDevicesResponse"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/rpcStatus"
+            }
+          }
+        },
+        "tags": [
+          "DeviceService"
+        ]
+      }
+    },
+    "/v1/devices/claim": {
+      "post": {
+        "operationId": "DeviceService_ClaimDevice",
+        "parameters": [
+          {
+            "in": "body",
+            "name": "body",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/v1ClaimDeviceRequest"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1ClaimDeviceResponse"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/rpcStatus"
+            }
+          }
+        },
+        "tags": [
+          "DeviceService"
+        ]
+      }
+    },
+    "/v1/devices/claim-codes": {
+      "post": {
+        "operationId": "DeviceService_CreateClaimCode",
+        "parameters": [
+          {
+            "in": "body",
+            "name": "body",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/v1CreateDeviceClaimCodeRequest"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1CreateDeviceClaimCodeResponse"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/rpcStatus"
+            }
+          }
+        },
+        "tags": [
+          "DeviceService"
+        ]
+      }
+    },
+    "/v1/devices/entitlements/check": {
+      "post": {
+        "operationId": "EntitlementCheckService_CheckDeviceEntitlement",
+        "parameters": [
+          {
+            "in": "body",
+            "name": "body",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/v1CheckDeviceEntitlementRequest"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1CheckDeviceEntitlementResponse"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/rpcStatus"
+            }
+          }
+        },
+        "summary": "CheckDeviceEntitlement is the service-to-service paywall probe used by\nproduct infrastructure (e.g. the lazybox relay). Auth: accounts API key\ncarrying the entitlements:check scope; no user session. Unknown device\nkeys return active=false/unknown_device with HTTP 200 — callers fail\nclosed on any non-200.",
+        "tags": [
+          "EntitlementCheckService"
+        ]
+      }
+    },
+    "/v1/devices/{deviceId}:revoke": {
+      "post": {
+        "operationId": "DeviceService_RevokeDevice",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "deviceId",
+            "required": true,
+            "type": "string"
+          },
+          {
+            "in": "body",
+            "name": "body",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/v1DeviceServiceRevokeDeviceBody"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "properties": {},
+              "type": "object"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/rpcStatus"
+            }
+          }
+        },
+        "tags": [
+          "DeviceService"
         ]
       }
     },
@@ -8621,6 +8913,12 @@
     },
     {
       "name": "DelegationService"
+    },
+    {
+      "name": "DeviceService"
+    },
+    {
+      "name": "EntitlementCheckService"
     },
     {
       "name": "UserService"
