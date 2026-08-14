@@ -1476,7 +1476,7 @@
     "services/store/migrations/8_create_invitations.down.sql": "3c73e2e3f3ea7069041c6308ae0ca084fec38d96799037a8bcfb82a9f1850e08",
     "services/store/migrations/8_create_invitations.up.sql": "53d9df518d74864cdafc59c63253d55edc00f41295a4dc15cbc9fc732c114f09",
     "services/store/migrations/90_org_identity_providers.down.sql": "607220e085d527b8de81b7c00783e74c17ac1061887aebbd803ec7d53e940090",
-    "services/store/migrations/90_org_identity_providers.up.sql": "9278106ec195486b6c26ecb24867699f2ffc57805b6085db849d0e75e9643da6",
+    "services/store/migrations/90_org_identity_providers.up.sql": "304406c9e36d6f1869569b2734be7205aa609a93b84fd26f4c0e5816619afb7d",
     "services/store/migrations/9_create_entitlements.down.sql": "1912ec46c4a21f11ab1b2ca833a5b2a6cc219777f5b241b96d82124f17b20ad2",
     "services/store/migrations/9_create_entitlements.up.sql": "049642b6f6d53c971777178b2804081f3716996e596eecb5e0e1088a3cb09326",
     "services/store/migrations/README.md": "c587b50c9c863e7ed531b9df2d745b7301e77883dd1f9052fee81b91b7dcd9df",

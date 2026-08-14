@@ -47,20 +47,17 @@ CREATE UNIQUE INDEX IF NOT EXISTS idx_org_identity_providers_vanity_host
     ON org_identity_providers (vanity_host)
     WHERE vanity_host IS NOT NULL;
 
--- RLS: same direct-org_id recipe as migration 29. Own-org rows are visible
--- when app.current_org_id matches; cross-tenant workers and the pre-auth
--- discovery path use the bypass/control-plane role.
+-- RLS: request-scoped visibility only (direct-org_id recipe as reconciled by
+-- migration 68). The policy expresses just own-org access; it must never trust a
+-- client-settable GUC like app.bypass. Cross-tenant work — the pre-auth
+-- discovery reads and any retention deletes — assumes the app_control_plane
+-- role, whose BYPASSRLS is an explicit database capability, not something a
+-- caller can manufacture with set_config().
 ALTER TABLE org_identity_providers ENABLE ROW LEVEL SECURITY;
 ALTER TABLE org_identity_providers FORCE  ROW LEVEL SECURITY;
 CREATE POLICY org_identity_providers_tenant ON org_identity_providers
-    USING (
-        org_id::text = current_setting('app.current_org_id', true)
-        OR current_setting('app.bypass', true) = '1'
-    )
-    WITH CHECK (
-        org_id::text = current_setting('app.current_org_id', true)
-        OR current_setting('app.bypass', true) = '1'
-    );
+    USING (org_id::text = current_setting('app.current_org_id', true))
+    WITH CHECK (org_id::text = current_setting('app.current_org_id', true));
 
 -- Exact app_tenant grants (migration 63 convention): request traffic may read,
 -- create, and update its own org's provider. Disable is a status update, not a
