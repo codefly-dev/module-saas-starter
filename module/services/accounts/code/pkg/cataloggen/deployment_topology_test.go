@@ -64,6 +64,22 @@ func TestDeploymentTopologyIsDeterministicAndCurrent(t *testing.T) {
 	require.Equal(t, uint32(7233), temporalService.GetEndpoints()[0].GetPort())
 	require.Equal(t, "http", temporalService.GetEndpoints()[1].GetName())
 	require.Equal(t, uint32(8233), temporalService.GetEndpoints()[1].GetPort())
+	privateAccountsREST := false
+	for _, service := range first.Catalog.GetServices() {
+		if service.GetName() != "accounts" {
+			continue
+		}
+		for _, endpoint := range service.GetEndpoints() {
+			if endpoint.GetName() == "rest" {
+				require.Equal(t, catalogv1.EndpointVisibility_ENDPOINT_VISIBILITY_PRIVATE, endpoint.GetVisibility())
+				privateAccountsREST = true
+			}
+		}
+	}
+	require.True(t, privateAccountsREST)
+	for _, endpoint := range first.Catalog.GetInterfaceEndpoints() {
+		require.NotEqual(t, "accounts", endpoint.GetService())
+	}
 	frontendManifest := string(first.ServiceManifests["frontend"])
 	require.Contains(t, frontendManifest, "execution-profiles:")
 	require.Contains(t, frontendManifest, "local: development")

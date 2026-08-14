@@ -78,9 +78,7 @@ func doWork(ctx context.Context) (Clean, error) {
 	// browser click to SQL query require both this provider AND the
 	// CORS allowlist for `traceparent` / `baggage` (connect_gen.go).
 	var otelProvider *wooltel.Provider
-	var otelMetricProvider interface {
-		Shutdown(context.Context) error
-	}
+	var otelMetricProvider *otelMetrics
 	collectorNetwork, err := codefly.For(ctx).
 		Service("telemetry").
 		Endpoint("grpc").
@@ -101,11 +99,14 @@ func doWork(ctx context.Context) (Clean, error) {
 	w.Info("OTEL enabled",
 		wool.Field("endpoint", collectorNetwork.Host),
 		wool.Field("service.name", "saas-starter-api"))
-	metricProvider, oerr := enableOTLPMetrics(ctx, "saas-starter-api", collectorNetwork.Host)
+	metricProvider, oerr := enableOTELMetrics(ctx, "saas-starter-api", collectorNetwork.Host)
 	if oerr != nil {
 		return nil, fmt.Errorf("configure OTEL metrics: %w", oerr)
 	}
 	otelMetricProvider = metricProvider
+	if otelMetricProvider != nil {
+		adapters.RegisterHTTPRoute("/metrics", otelMetricProvider.Handler())
+	}
 
 	store, err := infra.NewPostgresStore(ctx)
 	if err != nil {

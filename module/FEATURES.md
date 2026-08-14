@@ -670,6 +670,11 @@ Environment variables consumed by the api:
 | `TURNSTILE_ALLOWED_HOSTNAMES`  | Exact accepted Turnstile response hostnames                  |
 | `CODEFLY__FIXTURE`             | Loads fixture YAML (e.g. `dev-admin`); FE login picker too |
 
+The accounts service exports unsampled RPC and Go runtime metrics through the
+in-graph OpenTelemetry collector. Prometheus can alternatively scrape
+`/metrics` on the accounts service's private REST endpoint; the route is not a
+module or public interface endpoint.
+
 Frontend browser configuration (`NEXT_PUBLIC_*` values are baked into the client bundle):
 
 | Var                          | Used for                                                    |
