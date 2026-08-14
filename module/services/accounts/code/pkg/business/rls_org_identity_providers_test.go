@@ -137,3 +137,56 @@ func TestOrgProviderDisableTakesEffect(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, business.IdentityProviderStatusDisabled, stored.Status)
 }
+
+// TestOrgProviderReconfigurePreservesActiveOnMetadataEdit asserts that a
+// metadata-only reconfiguration of an ACTIVE provider keeps it active (and
+// keeps the stored secret when none is re-supplied), while a trust-affecting
+// change forces re-verification back to pending.
+func TestOrgProviderReconfigurePreservesActiveOnMetadataEdit(t *testing.T) {
+	clearData(t)
+	ctx := testCtx
+
+	_, orgA := mustUserAndOrg(t, ctx, "alice-recfg@rls-test.com", "alice-recfg-rls", "Recfg A")
+	created, err := testService.ConfigureOrgIdentityProvider(ctx, oidcInput(orgA, "https://a.example/issuer", "a.example"))
+	require.NoError(t, err)
+	require.NoError(t, testService.ActivateOrgIdentityProvider(ctx, orgA))
+	originalSecretRef := created.ClientSecretRef
+	require.NotEmpty(t, originalSecretRef)
+
+	// Metadata-only edit: new display name + allowlist, no secret supplied.
+	_, err = testService.ConfigureOrgIdentityProvider(ctx, business.OrgIdentityProviderInput{
+		OrgID:               orgA,
+		Kind:                business.IdentityProviderKindOIDC,
+		DisplayName:         "Renamed IdP",
+		Issuer:              "https://a.example/issuer",
+		ClientID:            "client-" + orgA,
+		AllowedEmailDomains: []string{"a.example", "extra.example"},
+	})
+	require.NoError(t, err)
+
+	afterMetadata, err := testService.GetOrgIdentityProvider(ctx, orgA)
+	require.NoError(t, err)
+	require.Equal(t, business.IdentityProviderStatusActive, afterMetadata.Status,
+		"a metadata-only edit must not drop the org out of SSO")
+	require.Equal(t, "Renamed IdP", afterMetadata.DisplayName)
+	require.Equal(t, originalSecretRef, afterMetadata.ClientSecretRef,
+		"omitting the client secret must preserve the stored envelope, not wipe it")
+
+	// Trust-affecting edit: change the issuer, still no secret → back to pending.
+	_, err = testService.ConfigureOrgIdentityProvider(ctx, business.OrgIdentityProviderInput{
+		OrgID:               orgA,
+		Kind:                business.IdentityProviderKindOIDC,
+		DisplayName:         "Renamed IdP",
+		Issuer:              "https://a.example/rotated-issuer",
+		ClientID:            "client-" + orgA,
+		AllowedEmailDomains: []string{"a.example"},
+	})
+	require.NoError(t, err)
+
+	afterTrust, err := testService.GetOrgIdentityProvider(ctx, orgA)
+	require.NoError(t, err)
+	require.Equal(t, business.IdentityProviderStatusPending, afterTrust.Status,
+		"an issuer change must force re-verification back to pending")
+	require.Equal(t, originalSecretRef, afterTrust.ClientSecretRef,
+		"the stored secret is still preserved across a trust-affecting edit with no new secret")
+}

@@ -83,9 +83,15 @@ type OrgIdentityProviderInput struct {
 
 // ConfigureOrgIdentityProvider creates or replaces an org's provider
 // configuration. The client secret is encrypted and stored only as an envelope
-// reference. A new or re-configured provider always lands in 'pending' — a
-// stub/demo configuration never writes status='active'; a deliberate
-// ActivateOrgIdentityProvider call (MFA-gated in the admin surface) promotes it.
+// reference. A brand-new provider, or a change to any trust-affecting field
+// (kind, issuer, client id, endpoints, audience, claim mapping, or a rotated
+// secret), lands in 'pending' so a stub/demo configuration never writes
+// status='active' and a security-relevant change forces re-verification via a
+// deliberate ActivateOrgIdentityProvider call (MFA-gated in the admin surface).
+// A metadata-only edit (display name, allowlists, vanity host) preserves the
+// current status, so touching a label does not silently drop an active org out
+// of SSO. When no client secret is supplied, the stored envelope is preserved
+// rather than wiped.
 func (s *Service) ConfigureOrgIdentityProvider(ctx context.Context, input OrgIdentityProviderInput) (*OrgIdentityProvider, error) {
 	w := wool.Get(ctx).In("ConfigureOrgIdentityProvider")
 
@@ -105,8 +111,9 @@ func (s *Service) ConfigureOrgIdentityProvider(ctx context.Context, input OrgIde
 		return nil, w.NewError("oidc provider requires an issuer")
 	}
 
-	secretRef := ""
-	if strings.TrimSpace(input.ClientSecret) != "" {
+	secretSupplied := strings.TrimSpace(input.ClientSecret) != ""
+	newSecretRef := ""
+	if secretSupplied {
 		if s.identityCipher == nil {
 			return nil, w.NewError("identity provider secret cipher is not configured")
 		}
@@ -114,17 +121,15 @@ func (s *Service) ConfigureOrgIdentityProvider(ctx context.Context, input OrgIde
 		if err != nil {
 			return nil, w.Wrapf(err, "encrypt client secret")
 		}
-		secretRef = envelope
+		newSecretRef = envelope
 	}
 
 	provider := &OrgIdentityProvider{
-		ID:                  NewIDString(),
 		OrgID:               orgID,
 		Kind:                kind,
 		DisplayName:         displayName,
 		Issuer:              strings.TrimSpace(input.Issuer),
 		ClientID:            strings.TrimSpace(input.ClientID),
-		ClientSecretRef:     secretRef,
 		JWKSURL:             strings.TrimSpace(input.JWKSURL),
 		TokenURL:            strings.TrimSpace(input.TokenURL),
 		Audience:            strings.TrimSpace(input.Audience),
@@ -132,16 +137,61 @@ func (s *Service) ConfigureOrgIdentityProvider(ctx context.Context, input OrgIde
 		AllowedEmailDomains: normalizeDomains(input.AllowedEmailDomains),
 		AllowedGroups:       input.AllowedGroups,
 		VanityHost:          normalizeHost(input.VanityHost),
-		Status:              IdentityProviderStatusPending,
 	}
 
 	if err := s.store.WithOrgTx(ctx, orgID, func(ctx context.Context) error {
+		existing, err := s.store.GetOrgIdentityProvider(ctx, orgID)
+		if err != nil {
+			return err
+		}
+		provider.ID = NewIDString()
+		provider.ClientSecretRef = newSecretRef
+		provider.Status = IdentityProviderStatusPending
+		if existing != nil {
+			provider.ID = existing.ID
+			if !secretSupplied {
+				provider.ClientSecretRef = existing.ClientSecretRef
+			}
+			// A metadata-only edit keeps the current status; a trust-affecting
+			// change forces re-verification back to pending.
+			if !orgProviderTrustChanged(existing, provider, secretSupplied) {
+				provider.Status = existing.Status
+			}
+		}
 		return s.store.UpsertOrgIdentityProvider(ctx, provider)
 	}); err != nil {
 		return nil, w.Wrapf(err, "persist org identity provider")
 	}
 	s.invalidateOrgProvider(orgID)
 	return provider, nil
+}
+
+// orgProviderTrustChanged reports whether a reconfiguration changed a field that
+// bears on the trust relationship with the IdP — the identity of the provider,
+// its endpoints, or how its claims are interpreted — or rotated the secret.
+// Metadata fields (display name, allowlists, vanity host) are deliberately
+// excluded: they are the org admin's routing/policy knobs, not IdP trust.
+func orgProviderTrustChanged(existing, candidate *OrgIdentityProvider, secretRotated bool) bool {
+	return secretRotated ||
+		existing.Kind != candidate.Kind ||
+		existing.Issuer != candidate.Issuer ||
+		existing.ClientID != candidate.ClientID ||
+		existing.JWKSURL != candidate.JWKSURL ||
+		existing.TokenURL != candidate.TokenURL ||
+		existing.Audience != candidate.Audience ||
+		!claimMapEqual(existing.ClaimMap, candidate.ClaimMap)
+}
+
+func claimMapEqual(a, b map[string]string) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	for k, v := range a {
+		if b[k] != v {
+			return false
+		}
+	}
+	return true
 }
 
 // ActivateOrgIdentityProvider promotes a configured provider to 'active' and
