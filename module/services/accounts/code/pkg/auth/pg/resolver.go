@@ -2,6 +2,7 @@ package pgauth
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
@@ -48,9 +49,11 @@ type Resolver struct {
 // BootstrapStore is the narrow pre-auth database capability. It deliberately
 // exposes neither a raw pool nor connection credentials; the composition root
 // owns the audited role transition and bounds the capability to one
-// serializable transaction callback.
+// transaction callback. WithAuthLookupTx is the read-only sibling used to route
+// the intent before the writing resolution transaction opens.
 type BootstrapStore interface {
 	WithAuthBootstrapTx(context.Context, func(context.Context, pgx.Tx) error) error
+	WithAuthLookupTx(context.Context, func(context.Context, pgx.Tx) error) error
 }
 
 func NewResolver(bootstrap BootstrapStore) *Resolver {
@@ -70,6 +73,49 @@ func (r *Resolver) SetBootstrapAdminEmail(email string) {
 // setter provisions every authenticated identity as before.
 func (r *Resolver) SetSignupMode(mode auth.SignupMode) {
 	r.signupMode = mode
+}
+
+// ResolveOrgProvisioning maps a provider-asserted organization id to our
+// canonical org id and reports whether that org carries a JIT provisioning
+// policy. The login route calls it to decide whether an org-bound login must be
+// resolved as an SsoJitIntent; a provider with no asserted org, an org we have
+// never provisioned, or an org with no policy configured all return
+// hasPolicy=false so the route keeps its existing intent selection.
+//
+// The lookup is a read-only pre-authentication transaction — the authoritative
+// policy is re-read inside the resolution transaction, so this only gates intent
+// selection and never authorizes a write.
+func (r *Resolver) ResolveOrgProvisioning(ctx context.Context, providerOrgID string) (uuid.UUID, bool, error) {
+	if r.bootstrap == nil {
+		return uuid.Nil, false, errors.New("pgauth: bootstrap store is required")
+	}
+	if providerOrgID == "" {
+		return uuid.Nil, false, nil
+	}
+
+	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
+
+	var orgID uuid.UUID
+	var mode *string
+	err := r.bootstrap.WithAuthLookupTx(ctx, func(ctx context.Context, tx pgx.Tx) error {
+		return tx.QueryRow(ctx, `
+			SELECT id, sso_provision_mode
+			FROM organizations
+			WHERE sso_organization_id = $1`,
+			providerOrgID,
+		).Scan(&orgID, &mode)
+	})
+	if errors.Is(err, pgx.ErrNoRows) {
+		return uuid.Nil, false, nil
+	}
+	if err != nil {
+		return uuid.Nil, false, fmt.Errorf("pgauth: resolve org provisioning: %w", err)
+	}
+	if mode == nil || *mode == "" {
+		return orgID, false, nil
+	}
+	return orgID, true, nil
 }
 
 // Resolve implements auth.IdentityResolver.
@@ -130,6 +176,8 @@ func (r *Resolver) resolveInTx(
 		userID, orgID, orgRole, err = r.resolveSignup(ctx, tx, c, userID, found, intent.OrganizationName)
 	case auth.InviteIntent:
 		userID, orgID, orgRole, err = r.resolveInvite(ctx, tx, c, userID, found, intent.Token)
+	case auth.SsoJitIntent:
+		userID, orgID, orgRole, err = r.resolveSsoJit(ctx, tx, c, userID, found, intent.OrgID)
 	default:
 		return nil, fmt.Errorf("pgauth: unsupported intent %T", intent)
 	}
@@ -596,6 +644,246 @@ func (r *Resolver) resolveInvite(
 	}
 
 	return userID, orgID, role, nil
+}
+
+// ssoProvisioning is an org's JIT provisioning policy, read from the
+// organizations row inside the resolution transaction.
+type ssoProvisioning struct {
+	mode           string
+	defaultRole    string
+	allowedDomains []string
+}
+
+// resolveSsoJit resolves a login through the organization-bound provider for
+// orgID. An identity already holding a membership in orgID short-circuits to a
+// plain login regardless of the provisioning mode; every other case applies the
+// org's policy, which may provision the identity into orgID (jit / invite-only)
+// or reject it (disabled, or a policy precondition that fails). It only ever
+// writes orgID's membership and never creates an organization.
+func (r *Resolver) resolveSsoJit(
+	ctx context.Context,
+	tx pgx.Tx,
+	c *auth.Claims,
+	userID uuid.UUID,
+	found bool,
+	orgID uuid.UUID,
+) (uuid.UUID, uuid.UUID, string, error) {
+	if orgID == uuid.Nil {
+		return uuid.Nil, uuid.Nil, "", fmt.Errorf("pgauth: sso jit intent without org")
+	}
+
+	if found {
+		role, isMember, err := r.orgMembership(ctx, tx, orgID, userID)
+		if err != nil {
+			return uuid.Nil, uuid.Nil, "", err
+		}
+		if isMember {
+			return userID, orgID, role, nil
+		}
+	}
+
+	policy, err := r.loadSsoProvisioning(ctx, tx, orgID)
+	if err != nil {
+		return uuid.Nil, uuid.Nil, "", err
+	}
+
+	switch policy.mode {
+	case "jit":
+		return r.provisionSsoJit(ctx, tx, c, userID, found, orgID, policy)
+	case "invite-only":
+		return r.provisionSsoInvite(ctx, tx, c, userID, found, orgID)
+	case "disabled":
+		return uuid.Nil, uuid.Nil, "", auth.ErrSsoProvisioningDisabled
+	default:
+		return uuid.Nil, uuid.Nil, "", fmt.Errorf("pgauth: org %s has no sso provisioning policy", orgID)
+	}
+}
+
+// provisionSsoJit JIT-provisions a first-seen identity into orgID. The provider
+// verified the email (the enterprise IdP asserts it) — an unverified claim is
+// refused before the domain check so it cannot probe which domains are allowed,
+// mirroring the invitation email-verification rule. The email domain must match
+// the org's allowlist; a non-matching email is rejected with a distinct error
+// and nothing is written.
+func (r *Resolver) provisionSsoJit(
+	ctx context.Context,
+	tx pgx.Tx,
+	c *auth.Claims,
+	userID uuid.UUID,
+	found bool,
+	orgID uuid.UUID,
+	policy ssoProvisioning,
+) (uuid.UUID, uuid.UUID, string, error) {
+	if !c.EmailVerified {
+		return uuid.Nil, uuid.Nil, "", auth.ErrSignupNotAllowed
+	}
+	if !emailDomainAllowed(c.Email, policy.allowedDomains) {
+		return uuid.Nil, uuid.Nil, "", auth.ErrSsoEmailDomainNotAllowed
+	}
+
+	if !found {
+		var err error
+		userID, err = r.provisionIdentity(ctx, tx, c)
+		if err != nil {
+			return uuid.Nil, uuid.Nil, "", err
+		}
+	}
+
+	if err := r.joinOrg(ctx, tx, orgID, userID, policy.defaultRole); err != nil {
+		return uuid.Nil, uuid.Nil, "", err
+	}
+	if err := r.emitSsoJitAudit(ctx, tx, c, userID, orgID); err != nil {
+		return uuid.Nil, uuid.Nil, "", err
+	}
+	return userID, orgID, policy.defaultRole, nil
+}
+
+// provisionSsoInvite authorises a first-seen identity under invite-only mode.
+// Provisioning is permitted only when a pending, unexpired invitation for orgID
+// matches the verified email; the invitee is provisioned, bound to orgID with
+// the invitation's role, and the invitation consumed. A stranger with no
+// invitation is rejected before any row is written.
+func (r *Resolver) provisionSsoInvite(
+	ctx context.Context,
+	tx pgx.Tx,
+	c *auth.Claims,
+	userID uuid.UUID,
+	found bool,
+	orgID uuid.UUID,
+) (uuid.UUID, uuid.UUID, string, error) {
+	if !c.EmailVerified {
+		return uuid.Nil, uuid.Nil, "", auth.ErrSignupNotAllowed
+	}
+
+	var invID uuid.UUID
+	var role string
+	err := tx.QueryRow(ctx, `
+		SELECT id, role
+		FROM invitations
+		WHERE org_id = $1 AND LOWER(email) = LOWER($2) AND status = 'pending'
+		  AND expires_at > CURRENT_TIMESTAMP
+		ORDER BY created_at DESC
+		LIMIT 1
+		FOR UPDATE`,
+		orgID, c.Email,
+	).Scan(&invID, &role)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return uuid.Nil, uuid.Nil, "", auth.ErrSignupNotAllowed
+	}
+	if err != nil {
+		return uuid.Nil, uuid.Nil, "", fmt.Errorf("pgauth: load sso invitation: %w", err)
+	}
+
+	if !found {
+		userID, err = r.provisionIdentity(ctx, tx, c)
+		if err != nil {
+			return uuid.Nil, uuid.Nil, "", err
+		}
+	}
+	if err := r.acceptInvitation(ctx, tx, invID, orgID, userID, role); err != nil {
+		return uuid.Nil, uuid.Nil, "", err
+	}
+	if err := r.emitSsoJitAudit(ctx, tx, c, userID, orgID); err != nil {
+		return uuid.Nil, uuid.Nil, "", err
+	}
+	return userID, orgID, role, nil
+}
+
+// orgMembership returns the user's role in orgID and whether a membership row
+// exists there.
+func (r *Resolver) orgMembership(ctx context.Context, tx pgx.Tx, orgID, userID uuid.UUID) (string, bool, error) {
+	var role string
+	err := tx.QueryRow(ctx, `
+		SELECT role FROM organization_members WHERE org_id = $1 AND user_id = $2`,
+		orgID, userID,
+	).Scan(&role)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return "", false, nil
+	}
+	if err != nil {
+		return "", false, fmt.Errorf("pgauth: load sso membership: %w", err)
+	}
+	return role, true, nil
+}
+
+// joinOrg inserts the membership for a JIT-provisioned identity. A membership
+// that already exists (a concurrent first login won the race) is left as-is:
+// the caller only reaches this after finding no membership, so the conflict is
+// benign and its role is authoritative.
+func (r *Resolver) joinOrg(ctx context.Context, tx pgx.Tx, orgID, userID uuid.UUID, role string) error {
+	_, err := tx.Exec(ctx, `
+		INSERT INTO organization_members (org_id, user_id, role)
+		VALUES ($1, $2, $3)
+		ON CONFLICT (org_id, user_id) DO NOTHING`,
+		orgID, userID, role,
+	)
+	if err != nil {
+		return fmt.Errorf("pgauth: add sso jit member: %w", err)
+	}
+	return nil
+}
+
+// emitSsoJitAudit records a JIT provisioning event inside the resolution
+// transaction, so the audit trail commits atomically with the membership it
+// describes. The provider and org travel in the event for enterprise-tenant
+// forensics.
+func (r *Resolver) emitSsoJitAudit(ctx context.Context, tx pgx.Tx, c *auth.Claims, userID, orgID uuid.UUID) error {
+	metadata, err := json.Marshal(map[string]string{"provider": c.Provider})
+	if err != nil {
+		return fmt.Errorf("pgauth: marshal sso jit audit metadata: %w", err)
+	}
+	_, err = tx.Exec(ctx, `
+		INSERT INTO audit_events (
+			id, actor_id, actor_type, action, resource, resource_id, org_id, metadata
+		) VALUES ($1, $2, 'user', 'auth.sso_jit_provisioned', 'organization', $3, $4, $5::jsonb)`,
+		business.NewID(), userID, orgID.String(), orgID, string(metadata),
+	)
+	if err != nil {
+		return fmt.Errorf("pgauth: insert sso jit audit event: %w", err)
+	}
+	return nil
+}
+
+// loadSsoProvisioning reads the org's JIT provisioning policy inside the
+// resolution transaction, so the mode a write commits under is the mode read
+// under the same serializable snapshot.
+func (r *Resolver) loadSsoProvisioning(ctx context.Context, tx pgx.Tx, orgID uuid.UUID) (ssoProvisioning, error) {
+	var p ssoProvisioning
+	var mode *string
+	err := tx.QueryRow(ctx, `
+		SELECT sso_provision_mode, sso_default_role, sso_allowed_email_domains
+		FROM organizations
+		WHERE id = $1`,
+		orgID,
+	).Scan(&mode, &p.defaultRole, &p.allowedDomains)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return ssoProvisioning{}, auth.ErrOrganizationAccessDenied
+	}
+	if err != nil {
+		return ssoProvisioning{}, fmt.Errorf("pgauth: load sso provisioning policy: %w", err)
+	}
+	if mode != nil {
+		p.mode = *mode
+	}
+	return p, nil
+}
+
+// emailDomainAllowed reports whether the email's domain is in the org's
+// allowlist. It fails closed: an email without a parseable domain, or an empty
+// allowlist, matches nothing — an org enabling JIT provisioning must name the
+// domains it trusts.
+func emailDomainAllowed(email string, allowed []string) bool {
+	at := strings.LastIndex(email, "@")
+	if at < 0 || at == len(email)-1 {
+		return false
+	}
+	domain := strings.ToLower(email[at+1:])
+	for _, d := range allowed {
+		if strings.ToLower(strings.TrimSpace(d)) == domain {
+			return true
+		}
+	}
+	return false
 }
 
 // bootstrapOrLoadPlatformRole checks BOOTSTRAP_ADMIN_EMAIL against the current

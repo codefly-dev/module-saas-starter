@@ -116,6 +116,11 @@ func (s *Service) Authenticate(ctx context.Context, req *gen.AuthenticateRequest
 		return nil, err
 	}
 
+	// An org-bound provider whose org carries a JIT provisioning policy resolves
+	// through the sealed SsoJitIntent instead of the profile-derived default.
+	// Global-provider logins keep the selection above untouched.
+	intent = selectSsoJitIntent(ctx, intent, claims, s.ssoProvisioningRouter())
+
 	// An invite authentication accepts the invitation transactionally inside the
 	// resolver. Capture its pre-state here so the business layer — which owns the
 	// event pipeline the resolver cannot reach — can emit the accepted side
@@ -219,6 +224,41 @@ func intentFromProfile(profile map[string]string) auth.Intent {
 		return auth.InviteIntent{Token: token}
 	}
 	return auth.SignupIntent{OrganizationName: profile["org_name"]}
+}
+
+// ssoProvisioningRouter maps a provider-asserted organization id to our org id
+// and reports whether that org has a JIT provisioning policy. The production
+// resolver (pkg/auth/pg) satisfies it; a resolver that does not is simply never
+// routed to SsoJitIntent.
+type ssoProvisioningRouter interface {
+	ResolveOrgProvisioning(ctx context.Context, providerOrgID string) (uuid.UUID, bool, error)
+}
+
+// ssoProvisioningRouter returns the identity resolver as an SSO router when it
+// supports the capability, or nil.
+func (s *Service) ssoProvisioningRouter() ssoProvisioningRouter {
+	router, _ := s.resolver.(ssoProvisioningRouter)
+	return router
+}
+
+// selectSsoJitIntent upgrades an org-bound login to SsoJitIntent when the
+// asserted org carries a JIT provisioning policy. A global-provider login (no
+// asserted org), a token-carried invitation, an absent router, or an org
+// without a policy all keep the incoming intent, so global paths are unchanged.
+// A router error is non-fatal: the login falls back to the incoming intent
+// rather than failing closed, because that intent is already the safe default.
+func selectSsoJitIntent(ctx context.Context, intent auth.Intent, claims *auth.Claims, router ssoProvisioningRouter) auth.Intent {
+	if router == nil || claims.ProviderOrgID == "" {
+		return intent
+	}
+	if _, isInvite := intent.(auth.InviteIntent); isInvite {
+		return intent
+	}
+	orgID, hasPolicy, err := router.ResolveOrgProvisioning(ctx, claims.ProviderOrgID)
+	if err != nil || !hasPolicy {
+		return intent
+	}
+	return auth.SsoJitIntent{OrgID: orgID}
 }
 
 // authenticateWithCode runs the full OAuth authorization-code flow:

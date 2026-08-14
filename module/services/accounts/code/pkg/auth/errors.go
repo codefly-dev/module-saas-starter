@@ -37,6 +37,10 @@ var (
 	ErrOrgRequired      = errors.New("auth: org required for this operation")
 	ErrBootstrapClaimed = errors.New("auth: bootstrap already claimed")
 
+	// SSO JIT provisioning
+	ErrSsoEmailDomainNotAllowed = errors.New("auth: email domain not permitted for organization sso provisioning")
+	ErrSsoProvisioningDisabled  = errors.New("auth: organization sso provisioning is disabled")
+
 	// Refresh rotation
 	ErrRefreshRevoked           = errors.New("auth: refresh token revoked")
 	ErrRefreshReuse             = errors.New("auth: refresh token reuse detected")
