@@ -195,7 +195,17 @@ The auth-sidecar forwards this to downstream services as the JSON
 it from the request context alone — no callback to accounts:
 
 ```go
-if adapters.HasScopedRole(ctx, "module-a", "analyst") { /* allow */ }
+// The two-value return prevents reading a miss as a denial: on a truncated
+// header (conclusive == false) the caller falls back to the authoritative path.
+granted, conclusive := adapters.HasScopedRole(ctx, "module-a", "analyst")
+switch {
+case granted:
+    // allow
+case !conclusive:
+    // header incomplete — consult CheckPermission (Path B)
+default:
+    // deny
+}
 ```
 
 Properties and limits:

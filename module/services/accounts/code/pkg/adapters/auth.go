@@ -496,16 +496,24 @@ func ScopedRolesTruncatedFromContext(ctx context.Context) bool {
 	return v
 }
 
-// HasScopedRole reports whether the caller holds role within scope, per the
-// scoped-role grants on ctx. It is the header-only authorization primitive: no
-// database call, no callback to accounts.
-func HasScopedRole(ctx context.Context, scope, role string) bool {
+// HasScopedRole reports whether the caller holds role within scope per the
+// header grants on ctx, and whether that answer is conclusive. It is the
+// header-only authorization primitive: no database call, no callback to
+// accounts.
+//
+// The two-value return exists so a miss cannot be silently read as a denial.
+// conclusive is false only when the grant was not found AND the grants were
+// truncated to fit the claim bound (ScopedRolesTruncatedFromContext) — the
+// caller genuinely holds more scoped roles than the header carries. On
+// (false, false) the caller MUST consult CheckPermission rather than deny; on
+// (false, true) the caller may deny (the header is complete and lacks it).
+func HasScopedRole(ctx context.Context, scope, role string) (granted, conclusive bool) {
 	for _, r := range ScopedRolesFromContext(ctx)[scope] {
 		if r == role {
-			return true
+			return true, true
 		}
 	}
-	return false
+	return false, !ScopedRolesTruncatedFromContext(ctx)
 }
 
 // parseScopedRoles decodes the JSON `X-Scoped-Roles` header payload. A malformed

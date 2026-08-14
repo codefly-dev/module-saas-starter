@@ -30,27 +30,49 @@ func TestParseScopedRoles(t *testing.T) {
 }
 
 // TestHasScopedRole is the header-only authorization primitive: a handler can
-// decide a scoped operation from context alone, no callback to accounts.
+// decide a scoped operation from context alone, no callback to accounts. A miss
+// is conclusive unless the grants were truncated.
 func TestHasScopedRole(t *testing.T) {
 	ctx := withScopedRoles(context.Background(), map[string][]string{
 		"module-a": {"analyst"},
 		"module-b": {"admin", "editor"},
 	})
 
-	if !HasScopedRole(ctx, "module-a", "analyst") {
-		t.Error("expected module-a analyst grant")
+	assertScopedRole := func(scope, role string, wantGranted, wantConclusive bool) {
+		t.Helper()
+		granted, conclusive := HasScopedRole(ctx, scope, role)
+		if granted != wantGranted || conclusive != wantConclusive {
+			t.Errorf("HasScopedRole(%q,%q) = (%v,%v), want (%v,%v)",
+				scope, role, granted, conclusive, wantGranted, wantConclusive)
+		}
 	}
-	if !HasScopedRole(ctx, "module-b", "editor") {
-		t.Error("expected module-b editor grant")
+
+	assertScopedRole("module-a", "analyst", true, true)
+	assertScopedRole("module-b", "editor", true, true)
+	// Misses are conclusive denials while the grant set is complete.
+	assertScopedRole("module-a", "admin", false, true)
+	assertScopedRole("module-c", "analyst", false, true)
+
+	if granted, conclusive := HasScopedRole(context.Background(), "module-a", "analyst"); granted || !conclusive {
+		t.Errorf("empty context: got (%v,%v), want (false,true)", granted, conclusive)
 	}
-	if HasScopedRole(ctx, "module-a", "admin") {
-		t.Error("module-a admin was never granted")
+}
+
+// TestHasScopedRoleInconclusiveWhenTruncated proves a miss under truncation is
+// NOT a denial — the caller must fall back to CheckPermission.
+func TestHasScopedRoleInconclusiveWhenTruncated(t *testing.T) {
+	ctx := withScopedRolesTruncated(
+		withScopedRoles(context.Background(), map[string][]string{"module-a": {"analyst"}}),
+		true,
+	)
+
+	// A present grant is still conclusive.
+	if granted, conclusive := HasScopedRole(ctx, "module-a", "analyst"); !granted || !conclusive {
+		t.Errorf("present grant: got (%v,%v), want (true,true)", granted, conclusive)
 	}
-	if HasScopedRole(ctx, "module-c", "analyst") {
-		t.Error("module-c has no grants")
-	}
-	if HasScopedRole(context.Background(), "module-a", "analyst") {
-		t.Error("empty context grants nothing")
+	// A miss is inconclusive: the header is incomplete.
+	if granted, conclusive := HasScopedRole(ctx, "module-z", "analyst"); granted || conclusive {
+		t.Errorf("truncated miss: got (%v,%v), want (false,false)", granted, conclusive)
 	}
 }
 
@@ -64,8 +86,9 @@ func TestStampForwardedHTTPIdentityCarriesScopedRoles(t *testing.T) {
 
 	ctx := stampForwardedHTTPIdentity(context.Background(), headers)
 
-	if !HasScopedRole(ctx, "module-a", "analyst") {
-		t.Fatalf("expected scoped role from header, got %v", ScopedRolesFromContext(ctx))
+	if granted, conclusive := HasScopedRole(ctx, "module-a", "analyst"); !granted || !conclusive {
+		t.Fatalf("expected conclusive scoped role from header, got (%v,%v) from %v",
+			granted, conclusive, ScopedRolesFromContext(ctx))
 	}
 	if ScopedRolesTruncatedFromContext(ctx) {
 		t.Fatal("no truncation header → must not report truncated")

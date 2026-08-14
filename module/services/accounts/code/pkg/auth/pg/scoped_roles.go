@@ -16,6 +16,15 @@ import (
 // CheckPermission path, keeping this claim's staleness bounded by the single
 // role_assignments session-invalidation trigger.
 //
+// Intentional divergence from infra.ListRoleNamesForUser (the API-key `x-roles`
+// claims path), which IS team-inclusive: that path is resolved fresh on every
+// API-key validation, so team-inheritance carries no staleness risk. This claim
+// instead rides a ~15-minute access token. Making it team-inclusive would leave
+// a removed team member holding the team's scoped grants until their next
+// refresh — an over-authorization window — unless team_members/teams also
+// revoked sessions. Direct-only is deliberately chosen so migration 88 is the
+// complete invalidation boundary. Do NOT "harmonize" the two resolvers.
+//
 // The result feeds the compact `sr` access-token claim. To keep token size
 // predictable it retains at most auth.MaxScopedRoleAssignments (scope, role)
 // pairs, in a deterministic order; when the caller holds more, the returned
