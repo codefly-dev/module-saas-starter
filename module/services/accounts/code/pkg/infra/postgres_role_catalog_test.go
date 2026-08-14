@@ -233,8 +233,9 @@ func TestImportRoleCatalogRefusesOrphaningRemovalUnlessForced(t *testing.T) {
 	userID := seedUser(t)
 	orgID := seedOrg(t, userID)
 
-	// Seed a catalog-managed role and assign it.
+	// Seed two catalog-managed roles and assign one of them.
 	seedCatalog := parseCatalog(t, `{"version":1,"roles":[
+		{"name":"catalog-test:keep","permissions":[{"resource":"y","action":"read"}]},
 		{"name":"catalog-test:temp","permissions":[{"resource":"x","action":"read"}]}]}`)
 	_, err := testStore.ImportRoleCatalog(testCtx, seedCatalog, infra.ImportOptions{})
 	require.NoError(t, err)
@@ -249,17 +250,20 @@ func TestImportRoleCatalogRefusesOrphaningRemovalUnlessForced(t *testing.T) {
 		return err
 	}))
 
-	// An empty catalog would remove the assigned role: refused without force.
-	empty := parseCatalog(t, `{"version":1,"roles":[]}`)
-	refused, err := testStore.ImportRoleCatalog(testCtx, empty, infra.ImportOptions{})
+	// A non-empty catalog that drops the assigned role: the orphan guard (not
+	// the empty-catalog guard) refuses it without force.
+	dropTemp := parseCatalog(t, `{"version":1,"roles":[
+		{"name":"catalog-test:keep","permissions":[{"resource":"y","action":"read"}]}]}`)
+	refused, err := testStore.ImportRoleCatalog(testCtx, dropTemp, infra.ImportOptions{})
 	require.NoError(t, err)
 	require.True(t, refused.Refused)
+	require.Contains(t, refused.RefusalReason, "orphan")
 	require.False(t, refused.Applied)
 	_, stillThere := readBuiltinRole(t, "catalog-test:temp")
 	require.True(t, stillThere, "refused import must not remove anything")
 
 	// Force applies the removal; the assignment cascades away.
-	forced, err := testStore.ImportRoleCatalog(testCtx, empty, infra.ImportOptions{Force: true})
+	forced, err := testStore.ImportRoleCatalog(testCtx, dropTemp, infra.ImportOptions{Force: true})
 	require.NoError(t, err)
 	require.True(t, forced.Applied)
 	_, gone := readBuiltinRole(t, "catalog-test:temp")
@@ -274,6 +278,33 @@ func TestImportRoleCatalogRefusesOrphaningRemovalUnlessForced(t *testing.T) {
 		require.Equal(t, 0, n)
 		return nil
 	}))
+}
+
+func TestImportRoleCatalogRefusesEmptyCatalogWipeUnlessForced(t *testing.T) {
+	resetCatalogRoles(t)
+
+	// A catalog-managed role with NO assignments — the orphan guard alone would
+	// not protect it, so an empty catalog would previously delete it silently.
+	seedCatalog := parseCatalog(t, `{"version":1,"roles":[
+		{"name":"catalog-test:unassigned","permissions":[{"resource":"x","action":"read"}]}]}`)
+	_, err := testStore.ImportRoleCatalog(testCtx, seedCatalog, infra.ImportOptions{})
+	require.NoError(t, err)
+
+	empty := parseCatalog(t, `{"version":1,"roles":[]}`)
+	refused, err := testStore.ImportRoleCatalog(testCtx, empty, infra.ImportOptions{})
+	require.NoError(t, err)
+	require.True(t, refused.Refused, "empty catalog must not silently wipe catalog-managed roles")
+	require.Contains(t, refused.RefusalReason, "no roles")
+	require.False(t, refused.Applied)
+	_, stillThere := readBuiltinRole(t, "catalog-test:unassigned")
+	require.True(t, stillThere)
+
+	// Force makes the wipe a deliberate act.
+	forced, err := testStore.ImportRoleCatalog(testCtx, empty, infra.ImportOptions{Force: true})
+	require.NoError(t, err)
+	require.True(t, forced.Applied)
+	_, gone := readBuiltinRole(t, "catalog-test:unassigned")
+	require.False(t, gone)
 }
 
 func TestImportRoleCatalogDryRunWritesNothing(t *testing.T) {

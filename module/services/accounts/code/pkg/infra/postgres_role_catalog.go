@@ -2,6 +2,7 @@ package infra
 
 import (
 	"context"
+	"fmt"
 	"strconv"
 
 	"accounts/pkg/business"
@@ -23,9 +24,10 @@ type ImportResult struct {
 	Plan *rolecatalog.Plan
 	// Applied is true when changes were written and committed.
 	Applied bool
-	// Refused is true when the plan would orphan assignments and Force was not
-	// set; no changes were written.
-	Refused bool
+	// Refused is true when a safety guard blocked the import and Force was not
+	// set; no changes were written. RefusalReason explains which guard fired.
+	Refused       bool
+	RefusalReason string
 }
 
 // ImportRoleCatalog reconciles the built-in role catalog toward cat. It runs
@@ -51,8 +53,9 @@ func (s *PostgresStore) ImportRoleCatalog(ctx context.Context, cat *rolecatalog.
 		if opts.DryRun {
 			return nil
 		}
-		if len(plan.OrphaningRemovals()) > 0 && !opts.Force {
+		if reason, refused := refuseImport(cat, plan, opts.Force); refused {
 			result.Refused = true
+			result.RefusalReason = reason
 			return nil
 		}
 		if err := s.applyRoleCatalogPlan(ctx, plan); err != nil {
@@ -65,6 +68,32 @@ func (s *PostgresStore) ImportRoleCatalog(ctx context.Context, cat *rolecatalog.
 		return nil, w.Wrapf(err, "failed to import role catalog")
 	}
 	return result, nil
+}
+
+// refuseImport decides whether a safety guard blocks applying the plan. Force
+// overrides every guard. Two destructive shapes are refused:
+//
+//   - A catalog that declares no roles at all would remove EVERY catalog-managed
+//     role. That is almost always a truncated or empty file rather than a
+//     deliberate "delete everything", and the orphan guard below does not catch
+//     it for roles that happen to have no assignments. Require an explicit Force
+//     so the wipe is a deliberate act, not an accident.
+//   - Any removal that would cascade away existing role_assignments.
+func refuseImport(cat *rolecatalog.Catalog, plan *rolecatalog.Plan, force bool) (string, bool) {
+	if force {
+		return "", false
+	}
+	if len(cat.Roles) == 0 && len(plan.Removes) > 0 {
+		return fmt.Sprintf(
+			"catalog declares no roles; applying it would remove all %d catalog-managed role(s). Rerun with force to confirm.",
+			len(plan.Removes)), true
+	}
+	if orphaning := plan.OrphaningRemovals(); len(orphaning) > 0 {
+		return fmt.Sprintf(
+			"%d role removal(s) would orphan existing assignments. Rerun with force to apply.",
+			len(orphaning)), true
+	}
+	return "", false
 }
 
 // snapshotBuiltinRoles reads every built-in role (org_id IS NULL) with its
@@ -146,7 +175,7 @@ func (s *PostgresStore) attachAssignmentCounts(ctx context.Context, byID map[str
 	rows, err := executor.Query(ctx, `
 		SELECT role_id, COUNT(*)
 		FROM role_assignments
-		WHERE role_id = ANY($1)
+		WHERE role_id = ANY($1::uuid[])
 		GROUP BY role_id`, managed)
 	if err != nil {
 		return w.Wrapf(err, "failed to count role assignments")

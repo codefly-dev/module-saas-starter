@@ -388,6 +388,10 @@ into the L2 tables without forking migrations, using the catalog importer.
 - `-dry-run` prints the byte-stable plan and writes nothing.
 - A removal that would cascade away existing `role_assignments` is **refused**
   unless `-force` (which then deletes those assignments along with the role).
+- A catalog that declares **no roles at all** would remove every catalog-managed
+  role — almost always a truncated or empty file rather than an intentional
+  "delete everything", and one the assignment guard above can't catch for roles
+  without assignments. It is refused unless `-force`.
 - Same catalog in → same DB state out; a second run is a no-op.
 
 ### Workflow
