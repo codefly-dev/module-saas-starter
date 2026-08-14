@@ -17,7 +17,7 @@ import type { Message } from "@bufbuild/protobuf";
  * Describes the file saas/accounts/v1/authentication.proto.
  */
 export const file_saas_accounts_v1_authentication: GenFile = /*@__PURE__*/
-  fileDesc("CiVzYWFzL2FjY291bnRzL3YxL2F1dGhlbnRpY2F0aW9uLnByb3RvEhBzYWFzLmFjY291bnRzLnYxIqcBChdPQXV0aENvZGVBdXRoZW50aWNhdGlvbhIYCgRjb2RlGAEgASgJQgq6SAdyBRABGIAgEiAKDHJlZGlyZWN0X3VyaRgCIAEoCUIKukgHcgUQARiAEBIZCgVzdGF0ZRgDIAEoCUIKukgHcgUQARiAIBI1Cg1jb2RlX3ZlcmlmaWVyGAQgASgJQh66SBtyGRArGIABMhJeW0EtWmEtejAtOS5ffi1dKyQiMgoVRml4dHVyZUF1dGhlbnRpY2F0aW9uEhkKBXRva2VuGAEgASgJQgq6SAdyBRABGP8BIr8DChNBdXRoZW50aWNhdGVSZXF1ZXN0Ei0KCHByb3ZpZGVyGAEgASgJQhu6SBhyFhABGDIyEF5bYS16QS1aMC05Xy1dKyQSFwoLcHJvdmlkZXJfaWQYAiABKAlCAhgBEhoKDnByb3ZpZGVyX2VtYWlsGAMgASgJQgIYARIaCg5lbWFpbF92ZXJpZmllZBgEIAEoCEICGAESQwoHcHJvZmlsZRgFIAMoCzIyLnNhYXMuYWNjb3VudHMudjEuQXV0aGVudGljYXRlUmVxdWVzdC5Qcm9maWxlRW50cnkSHQoLZGV2aWNlX2luZm8YBiABKAlCCLpIBXIDGIAEEj8KCm9hdXRoX2NvZGUYByABKAsyKS5zYWFzLmFjY291bnRzLnYxLk9BdXRoQ29kZUF1dGhlbnRpY2F0aW9uSAASOgoHZml4dHVyZRgIIAEoCzInLnNhYXMuYWNjb3VudHMudjEuRml4dHVyZUF1dGhlbnRpY2F0aW9uSAAaLgoMUHJvZmlsZUVudHJ5EgsKA2tleRgBIAEoCRINCgV2YWx1ZRgCIAEoCToCOAFCFwoOYXV0aGVudGljYXRpb24SBbpIAggBIqYBChRBdXRoZW50aWNhdGVSZXNwb25zZRIUCgxhY2Nlc3NfdG9rZW4YASABKAkSFQoNcmVmcmVzaF90b2tlbhgCIAEoCRISCgpleHBpcmVzX2luGAMgASgDEiQKBHVzZXIYBCABKAsyFi5zYWFzLmFjY291bnRzLnYxLlVzZXISFAoMbWZhX3JlcXVpcmVkGAUgASgIEhEKCW1mYV90b2tlbhgGIAEoCSJVChtDb21wbGV0ZU1GQUNoYWxsZW5nZVJlcXVlc3QSHQoJbWZhX3Rva2VuGAEgASgJQgq6SAdyBRAgGP8BEhcKBGNvZGUYAiABKAlCCbpIBnIEEAYYQCKFAQocQ29tcGxldGVNRkFDaGFsbGVuZ2VSZXNwb25zZRIUCgxhY2Nlc3NfdG9rZW4YASABKAkSFQoNcmVmcmVzaF90b2tlbhgCIAEoCRISCgpleHBpcmVzX2luGAMgASgDEiQKBHVzZXIYBCABKAsyFi5zYWFzLmFjY291bnRzLnYxLlVzZXIiQQogQmVnaW5XZWJBdXRobk1GQUNoYWxsZW5nZVJlcXVlc3QSHQoJbWZhX3Rva2VuGAEgASgJQgq6SAdyBRAgGP8BIlwKIUJlZ2luV2ViQXV0aG5NRkFDaGFsbGVuZ2VSZXNwb25zZRIWCg5jZXJlbW9ueV90b2tlbhgBIAEoCRIfChdwdWJsaWNfa2V5X29wdGlvbnNfanNvbhgCIAEoCSKXAQojQ29tcGxldGVXZWJBdXRobk1GQUNoYWxsZW5nZVJlcXVlc3QSHQoJbWZhX3Rva2VuGAEgASgJQgq6SAdyBRAgGP8BEiIKDmNlcmVtb255X3Rva2VuGAIgASgJQgq6SAdyBRAgGP8BEi0KGGNyZWRlbnRpYWxfcmVzcG9uc2VfanNvbhgDIAEoCUILukgIcgYQAhiAgAgiNQoTUmVmcmVzaFRva2VuUmVxdWVzdBIeCg1yZWZyZXNoX3Rva2VuGAEgASgJQge6SARyAhABIlcKFFJlZnJlc2hUb2tlblJlc3BvbnNlEhQKDGFjY2Vzc190b2tlbhgBIAEoCRIVCg1yZWZyZXNoX3Rva2VuGAIgASgJEhIKCmV4cGlyZXNfaW4YAyABKAMiPgoZU3dpdGNoT3JnYW5pemF0aW9uUmVxdWVzdBIhCg9vcmdhbml6YXRpb25faWQYASABKAlCCLpIBXIDsAEBIkYKGlN3aXRjaE9yZ2FuaXphdGlvblJlc3BvbnNlEhQKDGFjY2Vzc190b2tlbhgBIAEoCRISCgpleHBpcmVzX2luGAIgASgDIi8KDUxvZ291dFJlcXVlc3QSHgoNcmVmcmVzaF90b2tlbhgBIAEoCUIHukgEcgIQASIhCgxKV0tTUmVzcG9uc2USEQoJa2V5c19qc29uGAEgASgJIk0KEUJlZ2luT0F1dGhSZXF1ZXN0EhkKCHByb3ZpZGVyGAEgASgJQge6SARyAhABEh0KDHJlZGlyZWN0X3VyaRgCIAEoCUIHukgEcgIQASIjChJCZWdpbk9BdXRoUmVzcG9uc2USDQoFc3RhdGUYASABKAkyhw0KC0F1dGhTZXJ2aWNlEpABCgpCZWdpbk9BdXRoEiMuc2Fhcy5hY2NvdW50cy52MS5CZWdpbk9BdXRoUmVxdWVzdBokLnNhYXMuYWNjb3VudHMudjEuQmVnaW5PQXV0aFJlc3BvbnNlIjfC8xgUCAEQATABOgIQAUABSAJQA1gEYAGC0+STAhk6ASoiFC92MS9hdXRoL29hdXRoL2JlZ2luEr8BCgxBdXRoZW50aWNhdGUSJS5zYWFzLmFjY291bnRzLnYxLkF1dGhlbnRpY2F0ZVJlcXVlc3QaJi5zYWFzLmFjY291bnRzLnYxLkF1dGhlbnRpY2F0ZVJlc3BvbnNlImDC8xg8CAEQATABOioKCmF1dGgubG9naW4KGmF1dGgubWZhX2NoYWxsZW5nZV9zdGFydGVkEAJAAUgCUARYBGABgtPkkwIaOgEqIhUvdjEvYXV0aC9hdXRoZW50aWNhdGUS8QEKFENvbXBsZXRlTUZBQ2hhbGxlbmdlEi0uc2Fhcy5hY2NvdW50cy52MS5Db21wbGV0ZU1GQUNoYWxsZW5nZVJlcXVlc3QaLi5zYWFzLmFjY291bnRzLnYxLkNvbXBsZXRlTUZBQ2hhbGxlbmdlUmVzcG9uc2UiesLzGFYIARABMAE6QgoKYXV0aC5sb2dpbgocYXV0aC5tZmFfY2hhbGxlbmdlX2NvbXBsZXRlZAoUbWZhLmJhY2t1cF9jb2RlX3VzZWQQAkABSAJQBFgEYAFoAYLT5JMCGjoBKiIVL3YxL2F1dGgvbWZhL2NvbXBsZXRlEsQBChlCZWdpbldlYkF1dGhuTUZBQ2hhbGxlbmdlEjIuc2Fhcy5hY2NvdW50cy52MS5CZWdpbldlYkF1dGhuTUZBQ2hhbGxlbmdlUmVxdWVzdBozLnNhYXMuYWNjb3VudHMudjEuQmVnaW5XZWJBdXRobk1GQUNoYWxsZW5nZVJlc3BvbnNlIj7C8xgUCAEQATABOgIQAUABSAJQA1gEYAGC0+STAiA6ASoiGy92MS9hdXRoL21mYS93ZWJhdXRobi9iZWdpbhKIAgocQ29tcGxldGVXZWJBdXRobk1GQUNoYWxsZW5nZRI1LnNhYXMuYWNjb3VudHMudjEuQ29tcGxldGVXZWJBdXRobk1GQUNoYWxsZW5nZVJlcXVlc3QaLi5zYWFzLmFjY291bnRzLnYxLkNvbXBsZXRlTUZBQ2hhbGxlbmdlUmVzcG9uc2UigAHC8xhTCAEQATABOj8KCmF1dGgubG9naW4KHGF1dGgubWZhX2NoYWxsZW5nZV9jb21wbGV0ZWQKEW1mYS53ZWJhdXRobl91c2VkEAJAAUgCUARYBGABaAGC0+STAiM6ASoiHi92MS9hdXRoL21mYS93ZWJhdXRobi9jb21wbGV0ZRKSAQoMUmVmcmVzaFRva2VuEiUuc2Fhcy5hY2NvdW50cy52MS5SZWZyZXNoVG9rZW5SZXF1ZXN0GiYuc2Fhcy5hY2NvdW50cy52MS5SZWZyZXNoVG9rZW5SZXNwb25zZSIzwvMYFAgBEAEwAToCEAFAAUgCUARYBGABgtPkkwIVOgEqIhAvdjEvYXV0aC9yZWZyZXNoEswBChJTd2l0Y2hPcmdhbml6YXRpb24SKy5zYWFzLmFjY291bnRzLnYxLlN3aXRjaE9yZ2FuaXphdGlvblJlcXVlc3QaLC5zYWFzLmFjY291bnRzLnYxLlN3aXRjaE9yZ2FuaXphdGlvblJlc3BvbnNlIlvC8xgwCAIQATABOh4KGmF1dGgub3JnYW5pemF0aW9uX3N3aXRjaGVkEAJAAUgFUANYBGABgtPkkwIhOgEqIhwvdjEvYXV0aC9zd2l0Y2gtb3JnYW5pemF0aW9uEnUKBkxvZ291dBIfLnNhYXMuYWNjb3VudHMudjEuTG9nb3V0UmVxdWVzdBoWLmdvb2dsZS5wcm90b2J1Zi5FbXB0eSIywvMYFAgBEAEwAToCEAFAAUgCUARYA2ABgtPkkwIUOgEqIg8vdjEvYXV0aC9sb2dvdXQSgQEKB0dldEpXS1MSFi5nb29nbGUucHJvdG9idWYuRW1wdHkaHi5zYWFzLmFjY291bnRzLnYxLkpXS1NSZXNwb25zZSI+wvMYFAgBEAEwAToCEAFAAUgBUAFYAWABgtPkkwIgEh4vdjEvYXV0aC8ud2VsbC1rbm93bi9qd2tzLmpzb25CuwEKFGNvbS5zYWFzLmFjY291bnRzLnYxQhNBdXRoZW50aWNhdGlvblByb3RvUAFaLGFjY291bnRzL3BrZy9nZW4vc2Fhcy9hY2NvdW50cy92MTthY2NvdW50c3YxogIDU0FYqgIQU2Fhcy5BY2NvdW50cy5WMcoCEFNhYXNcQWNjb3VudHNcVjHiAhxTYWFzXEFjY291bnRzXFYxXEdQQk1ldGFkYXRh6gISU2Fhczo6QWNjb3VudHM6OlYxYgZwcm90bzM", [file_buf_validate_validate, file_google_api_annotations, file_google_protobuf_empty, file_saas_accounts_v1_common, file_saas_policy_v1_options]);
+  fileDesc("CiVzYWFzL2FjY291bnRzL3YxL2F1dGhlbnRpY2F0aW9uLnByb3RvEhBzYWFzLmFjY291bnRzLnYxIqcBChdPQXV0aENvZGVBdXRoZW50aWNhdGlvbhIYCgRjb2RlGAEgASgJQgq6SAdyBRABGIAgEiAKDHJlZGlyZWN0X3VyaRgCIAEoCUIKukgHcgUQARiAEBIZCgVzdGF0ZRgDIAEoCUIKukgHcgUQARiAIBI1Cg1jb2RlX3ZlcmlmaWVyGAQgASgJQh66SBtyGRArGIABMhJeW0EtWmEtejAtOS5ffi1dKyQiMgoVRml4dHVyZUF1dGhlbnRpY2F0aW9uEhkKBXRva2VuGAEgASgJQgq6SAdyBRABGP8BIjQKF0hlYWRlckpXVEF1dGhlbnRpY2F0aW9uEhkKBXRva2VuGAEgASgJQgq6SAdyBRABGIBAIoAEChNBdXRoZW50aWNhdGVSZXF1ZXN0Ei0KCHByb3ZpZGVyGAEgASgJQhu6SBhyFhABGDIyEF5bYS16QS1aMC05Xy1dKyQSFwoLcHJvdmlkZXJfaWQYAiABKAlCAhgBEhoKDnByb3ZpZGVyX2VtYWlsGAMgASgJQgIYARIaCg5lbWFpbF92ZXJpZmllZBgEIAEoCEICGAESQwoHcHJvZmlsZRgFIAMoCzIyLnNhYXMuYWNjb3VudHMudjEuQXV0aGVudGljYXRlUmVxdWVzdC5Qcm9maWxlRW50cnkSHQoLZGV2aWNlX2luZm8YBiABKAlCCLpIBXIDGIAEEj8KCm9hdXRoX2NvZGUYByABKAsyKS5zYWFzLmFjY291bnRzLnYxLk9BdXRoQ29kZUF1dGhlbnRpY2F0aW9uSAASOgoHZml4dHVyZRgIIAEoCzInLnNhYXMuYWNjb3VudHMudjEuRml4dHVyZUF1dGhlbnRpY2F0aW9uSAASPwoKaGVhZGVyX2p3dBgJIAEoCzIpLnNhYXMuYWNjb3VudHMudjEuSGVhZGVySldUQXV0aGVudGljYXRpb25IABouCgxQcm9maWxlRW50cnkSCwoDa2V5GAEgASgJEg0KBXZhbHVlGAIgASgJOgI4AUIXCg5hdXRoZW50aWNhdGlvbhIFukgCCAEipgEKFEF1dGhlbnRpY2F0ZVJlc3BvbnNlEhQKDGFjY2Vzc190b2tlbhgBIAEoCRIVCg1yZWZyZXNoX3Rva2VuGAIgASgJEhIKCmV4cGlyZXNfaW4YAyABKAMSJAoEdXNlchgEIAEoCzIWLnNhYXMuYWNjb3VudHMudjEuVXNlchIUCgxtZmFfcmVxdWlyZWQYBSABKAgSEQoJbWZhX3Rva2VuGAYgASgJIlUKG0NvbXBsZXRlTUZBQ2hhbGxlbmdlUmVxdWVzdBIdCgltZmFfdG9rZW4YASABKAlCCrpIB3IFECAY/wESFwoEY29kZRgCIAEoCUIJukgGcgQQBhhAIoUBChxDb21wbGV0ZU1GQUNoYWxsZW5nZVJlc3BvbnNlEhQKDGFjY2Vzc190b2tlbhgBIAEoCRIVCg1yZWZyZXNoX3Rva2VuGAIgASgJEhIKCmV4cGlyZXNfaW4YAyABKAMSJAoEdXNlchgEIAEoCzIWLnNhYXMuYWNjb3VudHMudjEuVXNlciJBCiBCZWdpbldlYkF1dGhuTUZBQ2hhbGxlbmdlUmVxdWVzdBIdCgltZmFfdG9rZW4YASABKAlCCrpIB3IFECAY/wEiXAohQmVnaW5XZWJBdXRobk1GQUNoYWxsZW5nZVJlc3BvbnNlEhYKDmNlcmVtb255X3Rva2VuGAEgASgJEh8KF3B1YmxpY19rZXlfb3B0aW9uc19qc29uGAIgASgJIpcBCiNDb21wbGV0ZVdlYkF1dGhuTUZBQ2hhbGxlbmdlUmVxdWVzdBIdCgltZmFfdG9rZW4YASABKAlCCrpIB3IFECAY/wESIgoOY2VyZW1vbnlfdG9rZW4YAiABKAlCCrpIB3IFECAY/wESLQoYY3JlZGVudGlhbF9yZXNwb25zZV9qc29uGAMgASgJQgu6SAhyBhACGICACCI1ChNSZWZyZXNoVG9rZW5SZXF1ZXN0Eh4KDXJlZnJlc2hfdG9rZW4YASABKAlCB7pIBHICEAEiVwoUUmVmcmVzaFRva2VuUmVzcG9uc2USFAoMYWNjZXNzX3Rva2VuGAEgASgJEhUKDXJlZnJlc2hfdG9rZW4YAiABKAkSEgoKZXhwaXJlc19pbhgDIAEoAyI+ChlTd2l0Y2hPcmdhbml6YXRpb25SZXF1ZXN0EiEKD29yZ2FuaXphdGlvbl9pZBgBIAEoCUIIukgFcgOwAQEiRgoaU3dpdGNoT3JnYW5pemF0aW9uUmVzcG9uc2USFAoMYWNjZXNzX3Rva2VuGAEgASgJEhIKCmV4cGlyZXNfaW4YAiABKAMiLwoNTG9nb3V0UmVxdWVzdBIeCg1yZWZyZXNoX3Rva2VuGAEgASgJQge6SARyAhABIiEKDEpXS1NSZXNwb25zZRIRCglrZXlzX2pzb24YASABKAkiTQoRQmVnaW5PQXV0aFJlcXVlc3QSGQoIcHJvdmlkZXIYASABKAlCB7pIBHICEAESHQoMcmVkaXJlY3RfdXJpGAIgASgJQge6SARyAhABIiMKEkJlZ2luT0F1dGhSZXNwb25zZRINCgVzdGF0ZRgBIAEoCTKHDQoLQXV0aFNlcnZpY2USkAEKCkJlZ2luT0F1dGgSIy5zYWFzLmFjY291bnRzLnYxLkJlZ2luT0F1dGhSZXF1ZXN0GiQuc2Fhcy5hY2NvdW50cy52MS5CZWdpbk9BdXRoUmVzcG9uc2UiN8LzGBQIARABMAE6AhABQAFIAlADWARgAYLT5JMCGToBKiIUL3YxL2F1dGgvb2F1dGgvYmVnaW4SvwEKDEF1dGhlbnRpY2F0ZRIlLnNhYXMuYWNjb3VudHMudjEuQXV0aGVudGljYXRlUmVxdWVzdBomLnNhYXMuYWNjb3VudHMudjEuQXV0aGVudGljYXRlUmVzcG9uc2UiYMLzGDwIARABMAE6KgoKYXV0aC5sb2dpbgoaYXV0aC5tZmFfY2hhbGxlbmdlX3N0YXJ0ZWQQAkABSAJQBFgEYAGC0+STAho6ASoiFS92MS9hdXRoL2F1dGhlbnRpY2F0ZRLxAQoUQ29tcGxldGVNRkFDaGFsbGVuZ2USLS5zYWFzLmFjY291bnRzLnYxLkNvbXBsZXRlTUZBQ2hhbGxlbmdlUmVxdWVzdBouLnNhYXMuYWNjb3VudHMudjEuQ29tcGxldGVNRkFDaGFsbGVuZ2VSZXNwb25zZSJ6wvMYVggBEAEwATpCCgphdXRoLmxvZ2luChxhdXRoLm1mYV9jaGFsbGVuZ2VfY29tcGxldGVkChRtZmEuYmFja3VwX2NvZGVfdXNlZBACQAFIAlAEWARgAWgBgtPkkwIaOgEqIhUvdjEvYXV0aC9tZmEvY29tcGxldGUSxAEKGUJlZ2luV2ViQXV0aG5NRkFDaGFsbGVuZ2USMi5zYWFzLmFjY291bnRzLnYxLkJlZ2luV2ViQXV0aG5NRkFDaGFsbGVuZ2VSZXF1ZXN0GjMuc2Fhcy5hY2NvdW50cy52MS5CZWdpbldlYkF1dGhuTUZBQ2hhbGxlbmdlUmVzcG9uc2UiPsLzGBQIARABMAE6AhABQAFIAlADWARgAYLT5JMCIDoBKiIbL3YxL2F1dGgvbWZhL3dlYmF1dGhuL2JlZ2luEogCChxDb21wbGV0ZVdlYkF1dGhuTUZBQ2hhbGxlbmdlEjUuc2Fhcy5hY2NvdW50cy52MS5Db21wbGV0ZVdlYkF1dGhuTUZBQ2hhbGxlbmdlUmVxdWVzdBouLnNhYXMuYWNjb3VudHMudjEuQ29tcGxldGVNRkFDaGFsbGVuZ2VSZXNwb25zZSKAAcLzGFMIARABMAE6PwoKYXV0aC5sb2dpbgocYXV0aC5tZmFfY2hhbGxlbmdlX2NvbXBsZXRlZAoRbWZhLndlYmF1dGhuX3VzZWQQAkABSAJQBFgEYAFoAYLT5JMCIzoBKiIeL3YxL2F1dGgvbWZhL3dlYmF1dGhuL2NvbXBsZXRlEpIBCgxSZWZyZXNoVG9rZW4SJS5zYWFzLmFjY291bnRzLnYxLlJlZnJlc2hUb2tlblJlcXVlc3QaJi5zYWFzLmFjY291bnRzLnYxLlJlZnJlc2hUb2tlblJlc3BvbnNlIjPC8xgUCAEQATABOgIQAUABSAJQBFgEYAGC0+STAhU6ASoiEC92MS9hdXRoL3JlZnJlc2gSzAEKElN3aXRjaE9yZ2FuaXphdGlvbhIrLnNhYXMuYWNjb3VudHMudjEuU3dpdGNoT3JnYW5pemF0aW9uUmVxdWVzdBosLnNhYXMuYWNjb3VudHMudjEuU3dpdGNoT3JnYW5pemF0aW9uUmVzcG9uc2UiW8LzGDAIAhABMAE6HgoaYXV0aC5vcmdhbml6YXRpb25fc3dpdGNoZWQQAkABSAVQA1gEYAGC0+STAiE6ASoiHC92MS9hdXRoL3N3aXRjaC1vcmdhbml6YXRpb24SdQoGTG9nb3V0Eh8uc2Fhcy5hY2NvdW50cy52MS5Mb2dvdXRSZXF1ZXN0GhYuZ29vZ2xlLnByb3RvYnVmLkVtcHR5IjLC8xgUCAEQATABOgIQAUABSAJQBFgDYAGC0+STAhQ6ASoiDy92MS9hdXRoL2xvZ291dBKBAQoHR2V0SldLUxIWLmdvb2dsZS5wcm90b2J1Zi5FbXB0eRoeLnNhYXMuYWNjb3VudHMudjEuSldLU1Jlc3BvbnNlIj7C8xgUCAEQATABOgIQAUABSAFQAVgBYAGC0+STAiASHi92MS9hdXRoLy53ZWxsLWtub3duL2p3a3MuanNvbkK7AQoUY29tLnNhYXMuYWNjb3VudHMudjFCE0F1dGhlbnRpY2F0aW9uUHJvdG9QAVosYWNjb3VudHMvcGtnL2dlbi9zYWFzL2FjY291bnRzL3YxO2FjY291bnRzdjGiAgNTQViqAhBTYWFzLkFjY291bnRzLlYxygIQU2Fhc1xBY2NvdW50c1xWMeICHFNhYXNcQWNjb3VudHNcVjFcR1BCTWV0YWRhdGHqAhJTYWFzOjpBY2NvdW50czo6VjFiBnByb3RvMw", [file_buf_validate_validate, file_google_api_annotations, file_google_protobuf_empty, file_saas_accounts_v1_common, file_saas_policy_v1_options]);
 
 /**
  * @generated from message saas.accounts.v1.OAuthCodeAuthentication
@@ -71,6 +71,28 @@ export type FixtureAuthentication = Message<"saas.accounts.v1.FixtureAuthenticat
  */
 export const FixtureAuthenticationSchema: GenMessage<FixtureAuthentication> = /*@__PURE__*/
   messageDesc(file_saas_accounts_v1_authentication, 1);
+
+/**
+ * @generated from message saas.accounts.v1.HeaderJWTAuthentication
+ */
+export type HeaderJWTAuthentication = Message<"saas.accounts.v1.HeaderJWTAuthentication"> & {
+  /**
+   * Signed JWT copied verbatim by the login route from the gateway-injected
+   * identity header. It is verified against the configured JWKS (or, under an
+   * explicit perimeter-trust decode mode, decoded with exp/aud still enforced)
+   * before any claim is trusted.
+   *
+   * @generated from field: string token = 1;
+   */
+  token: string;
+};
+
+/**
+ * Describes the message saas.accounts.v1.HeaderJWTAuthentication.
+ * Use `create(HeaderJWTAuthenticationSchema)` to create a new message.
+ */
+export const HeaderJWTAuthenticationSchema: GenMessage<HeaderJWTAuthentication> = /*@__PURE__*/
+  messageDesc(file_saas_accounts_v1_authentication, 2);
 
 /**
  * @generated from message saas.accounts.v1.AuthenticateRequest
@@ -133,6 +155,12 @@ export type AuthenticateRequest = Message<"saas.accounts.v1.AuthenticateRequest"
      */
     value: FixtureAuthentication;
     case: "fixture";
+  } | {
+    /**
+     * @generated from field: saas.accounts.v1.HeaderJWTAuthentication header_jwt = 9;
+     */
+    value: HeaderJWTAuthentication;
+    case: "headerJwt";
   } | { case: undefined; value?: undefined };
 };
 
@@ -141,7 +169,7 @@ export type AuthenticateRequest = Message<"saas.accounts.v1.AuthenticateRequest"
  * Use `create(AuthenticateRequestSchema)` to create a new message.
  */
 export const AuthenticateRequestSchema: GenMessage<AuthenticateRequest> = /*@__PURE__*/
-  messageDesc(file_saas_accounts_v1_authentication, 2);
+  messageDesc(file_saas_accounts_v1_authentication, 3);
 
 /**
  * @generated from message saas.accounts.v1.AuthenticateResponse
@@ -186,7 +214,7 @@ export type AuthenticateResponse = Message<"saas.accounts.v1.AuthenticateRespons
  * Use `create(AuthenticateResponseSchema)` to create a new message.
  */
 export const AuthenticateResponseSchema: GenMessage<AuthenticateResponse> = /*@__PURE__*/
-  messageDesc(file_saas_accounts_v1_authentication, 3);
+  messageDesc(file_saas_accounts_v1_authentication, 4);
 
 /**
  * CompleteMFAChallengeRequest is deliberately distinct from VerifyTOTPRequest:
@@ -214,7 +242,7 @@ export type CompleteMFAChallengeRequest = Message<"saas.accounts.v1.CompleteMFAC
  * Use `create(CompleteMFAChallengeRequestSchema)` to create a new message.
  */
 export const CompleteMFAChallengeRequestSchema: GenMessage<CompleteMFAChallengeRequest> = /*@__PURE__*/
-  messageDesc(file_saas_accounts_v1_authentication, 4);
+  messageDesc(file_saas_accounts_v1_authentication, 5);
 
 /**
  * @generated from message saas.accounts.v1.CompleteMFAChallengeResponse
@@ -246,7 +274,7 @@ export type CompleteMFAChallengeResponse = Message<"saas.accounts.v1.CompleteMFA
  * Use `create(CompleteMFAChallengeResponseSchema)` to create a new message.
  */
 export const CompleteMFAChallengeResponseSchema: GenMessage<CompleteMFAChallengeResponse> = /*@__PURE__*/
-  messageDesc(file_saas_accounts_v1_authentication, 5);
+  messageDesc(file_saas_accounts_v1_authentication, 6);
 
 /**
  * Begins a WebAuthn assertion for an existing primary-authentication handoff.
@@ -267,7 +295,7 @@ export type BeginWebAuthnMFAChallengeRequest = Message<"saas.accounts.v1.BeginWe
  * Use `create(BeginWebAuthnMFAChallengeRequestSchema)` to create a new message.
  */
 export const BeginWebAuthnMFAChallengeRequestSchema: GenMessage<BeginWebAuthnMFAChallengeRequest> = /*@__PURE__*/
-  messageDesc(file_saas_accounts_v1_authentication, 6);
+  messageDesc(file_saas_accounts_v1_authentication, 7);
 
 /**
  * @generated from message saas.accounts.v1.BeginWebAuthnMFAChallengeResponse
@@ -292,7 +320,7 @@ export type BeginWebAuthnMFAChallengeResponse = Message<"saas.accounts.v1.BeginW
  * Use `create(BeginWebAuthnMFAChallengeResponseSchema)` to create a new message.
  */
 export const BeginWebAuthnMFAChallengeResponseSchema: GenMessage<BeginWebAuthnMFAChallengeResponse> = /*@__PURE__*/
-  messageDesc(file_saas_accounts_v1_authentication, 7);
+  messageDesc(file_saas_accounts_v1_authentication, 8);
 
 /**
  * @generated from message saas.accounts.v1.CompleteWebAuthnMFAChallengeRequest
@@ -321,7 +349,7 @@ export type CompleteWebAuthnMFAChallengeRequest = Message<"saas.accounts.v1.Comp
  * Use `create(CompleteWebAuthnMFAChallengeRequestSchema)` to create a new message.
  */
 export const CompleteWebAuthnMFAChallengeRequestSchema: GenMessage<CompleteWebAuthnMFAChallengeRequest> = /*@__PURE__*/
-  messageDesc(file_saas_accounts_v1_authentication, 8);
+  messageDesc(file_saas_accounts_v1_authentication, 9);
 
 /**
  * @generated from message saas.accounts.v1.RefreshTokenRequest
@@ -338,7 +366,7 @@ export type RefreshTokenRequest = Message<"saas.accounts.v1.RefreshTokenRequest"
  * Use `create(RefreshTokenRequestSchema)` to create a new message.
  */
 export const RefreshTokenRequestSchema: GenMessage<RefreshTokenRequest> = /*@__PURE__*/
-  messageDesc(file_saas_accounts_v1_authentication, 9);
+  messageDesc(file_saas_accounts_v1_authentication, 10);
 
 /**
  * @generated from message saas.accounts.v1.RefreshTokenResponse
@@ -365,7 +393,7 @@ export type RefreshTokenResponse = Message<"saas.accounts.v1.RefreshTokenRespons
  * Use `create(RefreshTokenResponseSchema)` to create a new message.
  */
 export const RefreshTokenResponseSchema: GenMessage<RefreshTokenResponse> = /*@__PURE__*/
-  messageDesc(file_saas_accounts_v1_authentication, 10);
+  messageDesc(file_saas_accounts_v1_authentication, 11);
 
 /**
  * @generated from message saas.accounts.v1.SwitchOrganizationRequest
@@ -385,7 +413,7 @@ export type SwitchOrganizationRequest = Message<"saas.accounts.v1.SwitchOrganiza
  * Use `create(SwitchOrganizationRequestSchema)` to create a new message.
  */
 export const SwitchOrganizationRequestSchema: GenMessage<SwitchOrganizationRequest> = /*@__PURE__*/
-  messageDesc(file_saas_accounts_v1_authentication, 11);
+  messageDesc(file_saas_accounts_v1_authentication, 12);
 
 /**
  * @generated from message saas.accounts.v1.SwitchOrganizationResponse
@@ -411,7 +439,7 @@ export type SwitchOrganizationResponse = Message<"saas.accounts.v1.SwitchOrganiz
  * Use `create(SwitchOrganizationResponseSchema)` to create a new message.
  */
 export const SwitchOrganizationResponseSchema: GenMessage<SwitchOrganizationResponse> = /*@__PURE__*/
-  messageDesc(file_saas_accounts_v1_authentication, 12);
+  messageDesc(file_saas_accounts_v1_authentication, 13);
 
 /**
  * @generated from message saas.accounts.v1.LogoutRequest
@@ -428,7 +456,7 @@ export type LogoutRequest = Message<"saas.accounts.v1.LogoutRequest"> & {
  * Use `create(LogoutRequestSchema)` to create a new message.
  */
 export const LogoutRequestSchema: GenMessage<LogoutRequest> = /*@__PURE__*/
-  messageDesc(file_saas_accounts_v1_authentication, 13);
+  messageDesc(file_saas_accounts_v1_authentication, 14);
 
 /**
  * @generated from message saas.accounts.v1.JWKSResponse
@@ -445,7 +473,7 @@ export type JWKSResponse = Message<"saas.accounts.v1.JWKSResponse"> & {
  * Use `create(JWKSResponseSchema)` to create a new message.
  */
 export const JWKSResponseSchema: GenMessage<JWKSResponse> = /*@__PURE__*/
-  messageDesc(file_saas_accounts_v1_authentication, 14);
+  messageDesc(file_saas_accounts_v1_authentication, 15);
 
 /**
  * BeginOAuthRequest is the FE's first hop on the authorization-code
@@ -473,7 +501,7 @@ export type BeginOAuthRequest = Message<"saas.accounts.v1.BeginOAuthRequest"> & 
  * Use `create(BeginOAuthRequestSchema)` to create a new message.
  */
 export const BeginOAuthRequestSchema: GenMessage<BeginOAuthRequest> = /*@__PURE__*/
-  messageDesc(file_saas_accounts_v1_authentication, 15);
+  messageDesc(file_saas_accounts_v1_authentication, 16);
 
 /**
  * @generated from message saas.accounts.v1.BeginOAuthResponse
@@ -493,7 +521,7 @@ export type BeginOAuthResponse = Message<"saas.accounts.v1.BeginOAuthResponse"> 
  * Use `create(BeginOAuthResponseSchema)` to create a new message.
  */
 export const BeginOAuthResponseSchema: GenMessage<BeginOAuthResponse> = /*@__PURE__*/
-  messageDesc(file_saas_accounts_v1_authentication, 16);
+  messageDesc(file_saas_accounts_v1_authentication, 17);
 
 /**
  * AuthService — JWT token issuance and session management

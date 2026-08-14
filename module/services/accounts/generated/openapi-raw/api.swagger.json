@@ -5188,6 +5188,9 @@
         },
         "fixture": {
           "$ref": "#/definitions/v1FixtureAuthentication"
+        },
+        "headerJwt": {
+          "$ref": "#/definitions/v1HeaderJWTAuthentication"
         }
       }
     },
@@ -5982,6 +5985,15 @@
         },
         "platformRole": {
           "type": "string"
+        }
+      }
+    },
+    "v1HeaderJWTAuthentication": {
+      "type": "object",
+      "properties": {
+        "token": {
+          "type": "string",
+          "description": "Signed JWT copied verbatim by the login route from the gateway-injected\nidentity header. It is verified against the configured JWKS (or, under an\nexplicit perimeter-trust decode mode, decoded with exp/aud still enforced)\nbefore any claim is trusted."
         }
       }
     },
