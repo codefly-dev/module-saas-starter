@@ -19,7 +19,7 @@ import (
 // before policy admission and handler execution.
 var forwardedIdentityHeaders = []string{
 	"X-User-Id", "X-Org-Id", "X-Org-Role", "X-Platform-Role", "X-Roles",
-	"X-Auth-Id", "X-User-Email", "X-User-Name", "X-Session-Id",
+	"X-Scoped-Roles", "X-Auth-Id", "X-User-Email", "X-User-Name", "X-Session-Id",
 	"X-Acting-As-User-Id", "X-Scopes", "X-MFA-Satisfied",
 	"X-Authentication-Methods", "X-Auth-Time", "X-Assurance-Level", "X-MFA-Verified-At",
 }
@@ -115,6 +115,7 @@ func (i *connectPolicyInterceptor) authorize(ctx context.Context, procedure stri
 	}
 
 	ctx = stampVerifiedIdentity(ctx, identity.UserID.String(), identity.OrgID.String(), identity.Assurance())
+	ctx = withScopedRoles(ctx, identity.ScopedRoles)
 	return auth.WithVerifiedSessionID(ctx, identity.SessionID), nil
 }
 
@@ -127,6 +128,9 @@ func stampForwardedHTTPIdentity(ctx context.Context, headers http.Header) contex
 	))
 	if scopes := headers.Get("X-Scopes"); scopes != "" {
 		ctx = withScopes(ctx, parseScopes(scopes))
+	}
+	if scopedRoles := headers.Get("X-Scoped-Roles"); scopedRoles != "" {
+		ctx = withScopedRoles(ctx, parseScopedRoles(scopedRoles))
 	}
 	return auth.WithVerifiedSessionIDString(ctx, headers.Get("X-Session-Id"))
 }

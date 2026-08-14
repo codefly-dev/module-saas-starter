@@ -86,15 +86,16 @@ func (c *Config) withDefaults() error {
 // API surface.
 type accessClaims struct {
 	jwt.RegisteredClaims
-	OrgID                 string           `json:"org,omitempty"`
-	OrgRole               string           `json:"or,omitempty"`
-	PlatformRole          string           `json:"pr,omitempty"`
-	SessionID             string           `json:"sid"`
-	ActingAsUserID        string           `json:"acting,omitempty"`
-	AuthenticationMethods []string         `json:"amr,omitempty"`
-	AuthenticationTime    *jwt.NumericDate `json:"auth_time,omitempty"`
-	AssuranceLevel        string           `json:"acr,omitempty"`
-	MFAVerifiedAt         *jwt.NumericDate `json:"mfa_at,omitempty"`
+	OrgID                 string              `json:"org,omitempty"`
+	OrgRole               string              `json:"or,omitempty"`
+	PlatformRole          string              `json:"pr,omitempty"`
+	ScopedRoles           map[string][]string `json:"sr,omitempty"`
+	SessionID             string              `json:"sid"`
+	ActingAsUserID        string              `json:"acting,omitempty"`
+	AuthenticationMethods []string            `json:"amr,omitempty"`
+	AuthenticationTime    *jwt.NumericDate    `json:"auth_time,omitempty"`
+	AssuranceLevel        string              `json:"acr,omitempty"`
+	MFAVerifiedAt         *jwt.NumericDate    `json:"mfa_at,omitempty"`
 	// MFASatisfied marks tokens minted after a successful MFA challenge
 	// (or by users who haven't enrolled MFA — the gate is "no enrolled
 	// device" OR "satisfied this session", not "always satisfied"). When
@@ -414,6 +415,7 @@ func identityFromCurrentAuthorization(
 		OrgID:                 authorization.OrgID,
 		OrgRole:               authorization.OrgRole,
 		PlatformRole:          authorization.PlatformRole,
+		ScopedRoles:           authorization.ScopedRoles,
 		SessionID:             sessionID,
 		MFASatisfied:          mfaSatisfied,
 		AuthenticationMethods: authenticationMethods,
@@ -521,6 +523,7 @@ func (m *Minter) VerifyAccess(tokenString string) (*auth.Identity, error) {
 		OrgID:                 orgID,
 		OrgRole:               claims.OrgRole,
 		PlatformRole:          claims.PlatformRole,
+		ScopedRoles:           claims.ScopedRoles,
 		SessionID:             sessionID,
 		ActingAsUserID:        actingAs,
 		MFASatisfied:          claims.MFASatisfied,
@@ -591,6 +594,9 @@ func (m *Minter) signAccess(identity *auth.Identity, sessionID uuid.UUID, now ti
 	if identity.OrgID != uuid.Nil {
 		claims.OrgID = identity.OrgID.String()
 		claims.OrgRole = identity.OrgRole
+		if len(identity.ScopedRoles) > 0 {
+			claims.ScopedRoles = identity.ScopedRoles
+		}
 	}
 	claims.PlatformRole = identity.PlatformRole
 	if identity.ActingAsUserID != uuid.Nil {

@@ -24,6 +24,7 @@ package adapters
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"strconv"
 	"strings"
@@ -445,6 +446,57 @@ func withScopes(ctx context.Context, scopes []string) context.Context {
 func scopesFromContext(ctx context.Context) []string {
 	v, _ := ctx.Value(scopesCtxKey).([]string)
 	return v
+}
+
+// scopedRolesCtxKey holds the caller's per-scope role grants, forwarded by the
+// auth-sidecar as the JSON `X-Scoped-Roles` header (or read from the `sr` claim
+// on the direct-JWT path). It lets a handler authorize a scoped operation from
+// the request context alone, without a callback to the authorization service.
+type scopedRolesCtxKeyType struct{}
+
+var scopedRolesCtxKey = scopedRolesCtxKeyType{}
+
+// withScopedRoles stamps the caller's scope->roles map on the context.
+func withScopedRoles(ctx context.Context, scoped map[string][]string) context.Context {
+	if len(scoped) == 0 {
+		return ctx
+	}
+	return context.WithValue(ctx, scopedRolesCtxKey, scoped)
+}
+
+// ScopedRolesFromContext returns the caller's scope->roles grants, or nil when
+// the caller holds none. The map is authoritative as of the token's mint time;
+// role edits revoke the session (see migration 88), so a live token's scoped
+// roles are never staler than one refresh cycle.
+func ScopedRolesFromContext(ctx context.Context) map[string][]string {
+	v, _ := ctx.Value(scopedRolesCtxKey).(map[string][]string)
+	return v
+}
+
+// HasScopedRole reports whether the caller holds role within scope, per the
+// scoped-role grants on ctx. It is the header-only authorization primitive: no
+// database call, no callback to accounts.
+func HasScopedRole(ctx context.Context, scope, role string) bool {
+	for _, r := range ScopedRolesFromContext(ctx)[scope] {
+		if r == role {
+			return true
+		}
+	}
+	return false
+}
+
+// parseScopedRoles decodes the JSON `X-Scoped-Roles` header payload. A malformed
+// payload yields nil rather than an error: the header is advisory transport
+// metadata, and a caller that needs an authoritative answer uses CheckPermission.
+func parseScopedRoles(raw string) map[string][]string {
+	if raw == "" {
+		return nil
+	}
+	var scoped map[string][]string
+	if err := json.Unmarshal([]byte(raw), &scoped); err != nil {
+		return nil
+	}
+	return scoped
 }
 
 // requireScope enforces that an API-key caller has the required scope.

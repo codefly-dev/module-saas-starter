@@ -173,6 +173,78 @@ inside the api process — they're trusted by L1 implicitly. The L3
 bypass is itself audit-able: every WithBypass call logs a wool event,
 making it grep-able.
 
+## Scoped roles downstream: two paths, and when to use which
+
+A product is many backend services, each with per-module roles. A downstream
+service authorizing on a **scoped** role assignment
+(`role_assignments.scope IS NOT NULL`, e.g. `analyst` on `module-a`) has two
+ways to learn the caller's grants. Both are first-class; pick by freshness need.
+
+### Path A — the `X-Scoped-Roles` header (fast, token-fresh)
+
+At mint / refresh / org-switch, accounts resolves the caller's **direct,
+principal-subject** scoped assignments in the active org and stamps them onto
+the access token as the compact `sr` claim:
+
+```json
+"sr": { "module-a": ["analyst"], "module-b": ["admin", "editor"] }
+```
+
+The auth-sidecar forwards this to downstream services as the JSON
+`X-Scoped-Roles` header (like `X-Org-Role` / `X-Platform-Role`). A service reads
+it from the request context alone — no callback to accounts:
+
+```go
+if adapters.HasScopedRole(ctx, "module-a", "analyst") { /* allow */ }
+```
+
+Properties and limits:
+
+- **Freshness:** as fresh as the token. A scoped-assignment change revokes the
+  caller's sessions (migration 88, mirroring how `organization_members` changes
+  revoke sessions in migration 70), so a live token's `sr` claim is never
+  staler than one refresh cycle — but a long-lived, un-refreshed token can lag.
+- **Direct principal grants only.** Team-inherited grants and org-global
+  (NULL-scope) roles are **not** in the claim — those stay on Path B, which
+  honors team inheritance and wildcards.
+- **Bounded.** More than `auth.MaxScopedRoleAssignments` (64) scoped pairs
+  rejects the mint with `ErrScopedRolesExceedLimit` rather than silently
+  truncating into an under-authorized token, keeping token size predictable.
+
+### Path B — `PermissionService.CheckPermission` (authoritative, current)
+
+For callers that must have the current answer — long-lived jobs whose token
+predates a role change, or high-sensitivity operations — call the oracle:
+
+```go
+client := authzclient.New(conn, os.Getenv("CODEFLY_INTERNAL_TOKEN"))
+resp, err := client.CheckPermission(ctx, &accountsv1.CheckPermissionRequest{
+    SubjectId: userID, SubjectKind: accountsv1.SubjectKind_SUBJECT_KIND_PRINCIPAL,
+    Resource:  "deployments", Action: "write",
+    OrgId:     orgID, Scope: "module-a", // empty scope = any scope
+})
+```
+
+`CheckPermission` is `EXPOSURE_INTERNAL` (`generated/authz-methods.json`): it is
+served only on the internal transport and requires the service credential
+(`X-Codefly-Internal-Token`). A caller without it is refused before the handler
+runs; a tenant transport refuses the method outright. It honors the full RBAC
+model — team inheritance, wildcard `resource`/`action`, and `scope` (a NULL
+assignment scope matches any requested scope). Polyglot (Python/TS) services
+call the same RPC over gRPC/Connect with the credential in metadata.
+
+### Which to use
+
+| | Path A — header | Path B — CheckPermission |
+|---|---|---|
+| Cost | zero round-trips | one internal RPC |
+| Freshness | token-fresh (≤ 1 refresh) | live, authoritative |
+| Covers | direct scoped grants | + team inheritance, wildcards, NULL-scope |
+| Reach for it when | per-request checks on the hot path | long-lived jobs, high-sensitivity ops, non-scoped RBAC |
+
+Default to Path A on the request hot path; escalate to Path B when a stale
+answer is unacceptable.
+
 ## Implementation status
 
 | Layer | Status |

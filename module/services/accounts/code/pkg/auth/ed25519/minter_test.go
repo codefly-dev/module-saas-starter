@@ -200,6 +200,17 @@ func newMinter(t *testing.T) (*ed25519minter.Minter, *memoryStore) {
 	return m, store
 }
 
+// decodeJWTPayload returns the decoded JSON claims segment of a JWT so tests
+// can assert on the raw wire shape (e.g. that an omitempty claim is absent).
+func decodeJWTPayload(t *testing.T, token string) string {
+	t.Helper()
+	parts := strings.Split(token, ".")
+	require.Len(t, parts, 3)
+	raw, err := base64.RawURLEncoding.DecodeString(parts[1])
+	require.NoError(t, err)
+	return string(raw)
+}
+
 func newIdentity() *auth.Identity {
 	return &auth.Identity{
 		UserID:       uuid.Must(uuid.NewV7()),
@@ -287,6 +298,64 @@ func TestRefreshProjectsCurrentOrganizationAndPlatformRoles(t *testing.T) {
 	require.Equal(t, currentOrgID, got.OrgID)
 	require.Equal(t, "member", got.OrgRole)
 	require.Equal(t, "support", got.PlatformRole)
+}
+
+func TestMintCarriesScopedRoles(t *testing.T) {
+	ctx := context.Background()
+	m, _ := newMinter(t)
+	want := newIdentity()
+	want.ScopedRoles = map[string][]string{
+		"module-a": {"analyst"},
+		"module-b": {"admin", "editor"},
+	}
+
+	pair, err := m.Mint(ctx, want)
+	require.NoError(t, err)
+
+	got, err := m.VerifyAccess(pair.AccessToken)
+	require.NoError(t, err)
+	require.Equal(t, want.ScopedRoles, got.ScopedRoles)
+}
+
+func TestScopedRolesOmittedForOrglessIdentity(t *testing.T) {
+	ctx := context.Background()
+	m, _ := newMinter(t)
+	want := newIdentity()
+	want.OrgID = uuid.Nil
+	want.OrgRole = ""
+	// A scoped grant with no active org has no org to scope to and must not
+	// leak into the token.
+	want.ScopedRoles = map[string][]string{"module-a": {"analyst"}}
+
+	pair, err := m.Mint(ctx, want)
+	require.NoError(t, err)
+
+	got, err := m.VerifyAccess(pair.AccessToken)
+	require.NoError(t, err)
+	require.Empty(t, got.ScopedRoles)
+
+	// The `sr` key must be absent from the raw payload, not merely empty.
+	require.NotContains(t, decodeJWTPayload(t, pair.AccessToken), `"sr"`)
+}
+
+func TestRefreshReresolvesScopedRoles(t *testing.T) {
+	ctx := context.Background()
+	m, store := newMinter(t)
+	original, err := m.Mint(ctx, newIdentity())
+	require.NoError(t, err)
+
+	currentOrgID := uuid.Must(uuid.NewV7())
+	store.refreshAuthorization = &auth.RefreshAuthorization{
+		OrgID:       currentOrgID,
+		OrgRole:     "member",
+		ScopedRoles: map[string][]string{"module-a": {"admin"}},
+	}
+	rotated, err := m.VerifyRefresh(ctx, original.RefreshToken)
+	require.NoError(t, err)
+
+	got, err := m.VerifyAccess(rotated.AccessToken)
+	require.NoError(t, err)
+	require.Equal(t, map[string][]string{"module-a": {"admin"}}, got.ScopedRoles)
 }
 
 func TestSwitchOrganizationPreservesDeviceSessionAndRefreshCredential(t *testing.T) {

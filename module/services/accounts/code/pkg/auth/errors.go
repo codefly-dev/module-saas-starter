@@ -53,6 +53,9 @@ var (
 	ErrSsoProvisioningDisabled      = errors.New("auth: organization sso provisioning is disabled")
 	ErrSsoProvisioningMisconfigured = errors.New("auth: organization sso jit provisioning has no allowed email domains configured")
 
+	// Scoped-role resolution
+	ErrScopedRolesExceedLimit = errors.New("auth: scoped role assignments exceed claim limit")
+
 	// Refresh rotation
 	ErrRefreshRevoked           = errors.New("auth: refresh token revoked")
 	ErrRefreshReuse             = errors.New("auth: refresh token reuse detected")

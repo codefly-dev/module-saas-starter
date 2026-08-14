@@ -59,12 +59,26 @@ type Identity struct {
 	AssuranceLevel        string
 	MFAVerifiedAt         time.Time
 
+	// ScopedRoles maps a fine-grained scope (e.g. a module or project key) to
+	// the role names granted to the caller within OrgID at that scope. It is
+	// resolved from role_assignments rows whose scope IS NOT NULL and is
+	// emitted as the compact `sr` access-token claim so downstream services can
+	// authorize on per-scope roles without calling back into accounts. Empty
+	// when OrgID is zero or the caller holds no scoped assignments.
+	ScopedRoles map[string][]string
+
 	// DeviceInfo is bounded, caller-supplied display metadata for per-device
 	// session management. It is never used for authorization. IPAddress is
 	// trusted transport metadata when the adapter can provide it.
 	DeviceInfo map[string]string
 	IPAddress  string
 }
+
+// MaxScopedRoleAssignments bounds how many (scope, role) pairs may ride in the
+// `sr` claim so the access token stays a predictable size. A caller resolving
+// more than this is rejected with ErrScopedRolesExceedLimit rather than having
+// their roles silently truncated into an under-authorized token.
+const MaxScopedRoleAssignments = 64
 
 // Orgless reports whether this identity resolved to no active organization. It
 // is a first-class session state, not an error: a user who belongs to no org —

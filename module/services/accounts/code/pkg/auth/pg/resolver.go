@@ -192,11 +192,17 @@ func (r *Resolver) resolveInTx(
 		return nil, err
 	}
 
+	scopedRoles, err := resolveScopedRoles(ctx, tx, userID, orgID)
+	if err != nil {
+		return nil, err
+	}
+
 	return &auth.Identity{
 		UserID:       userID,
 		OrgID:        orgID,
 		OrgRole:      orgRole,
 		PlatformRole: platformRole,
+		ScopedRoles:  scopedRoles,
 		SessionID:    business.NewID(),
 	}, nil
 }
