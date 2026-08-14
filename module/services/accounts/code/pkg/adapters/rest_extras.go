@@ -232,7 +232,76 @@ func combineHandlers(gwMux http.Handler) http.Handler {
 		}
 		gwMux.ServeHTTP(w, r)
 	})
+	// consumeHeaderJWTLogin runs first so the gateway-injected identity header is
+	// resolved into the login credential before grpc-gateway transcodes the body.
 	// Wrap with the refresh-token cookie middleware so the long-lived refresh
 	// token lives in an httpOnly cookie instead of the JS-readable response body.
-	return refreshTokenCookie(dispatch)
+	return consumeHeaderJWTLogin(refreshTokenCookie(dispatch))
+}
+
+// consumeHeaderJWTLogin makes the configured gateway-injected identity header
+// the single source of the header-jwt login credential on the REST surface.
+//
+// The browser logs in via POST /v1/auth/authenticate, which grpc-gateway
+// (rest_gen.go) serves. grpc-gateway forwards only a fixed header allowlist into
+// gRPC metadata (CustomHeaderToGRPCMetadataAnnotator), so the configured header
+// never reaches the downstream connect handler on this path — consumption has to
+// happen here, at the raw HTTP request. This middleware also strips any
+// client-supplied credential from the body, so a caller cannot smuggle a forged
+// header_jwt token (which perimeter-trust decode accepts without a signature
+// check) past the gateway that is supposed to own the header.
+func consumeHeaderJWTLogin(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if headerJWTLoginHeader == "" || r.Method != http.MethodPost || r.URL.Path != "/v1/auth/authenticate" {
+			next.ServeHTTP(w, r)
+			return
+		}
+		next.ServeHTTP(w, rewriteHeaderJWTBody(r, headerJWTLoginHeader))
+	})
+}
+
+// rewriteHeaderJWTBody returns a clone of r whose JSON body carries the
+// header_jwt credential taken exclusively from the named request header. Any
+// client-supplied authentication credential is removed first: in header-jwt mode
+// the login route's credential is the header and nothing else. When the header
+// is absent the body is left credential-less, so grpc-gateway's oneof-required
+// validation rejects the request rather than trusting a client-supplied token.
+func rewriteHeaderJWTBody(r *http.Request, header string) *http.Request {
+	var raw []byte
+	if r.Body != nil {
+		raw, _ = io.ReadAll(r.Body)
+		_ = r.Body.Close()
+	}
+
+	var m map[string]json.RawMessage
+	if len(bytes.TrimSpace(raw)) > 0 {
+		if err := json.Unmarshal(raw, &m); err != nil {
+			// Not a JSON object we can rewrite; forward unchanged and let
+			// grpc-gateway reject it.
+			clone := r.Clone(r.Context())
+			clone.Body = io.NopCloser(bytes.NewReader(raw))
+			clone.ContentLength = int64(len(raw))
+			return clone
+		}
+	}
+	if m == nil {
+		m = map[string]json.RawMessage{}
+	}
+
+	// Emit only proto field names — sending a snake_case and camelCase alias for
+	// the same field makes protojson reject the body as a duplicate.
+	for _, k := range []string{"header_jwt", "headerJwt", "oauth_code", "oauthCode", "fixture"} {
+		delete(m, k)
+	}
+	if token := r.Header.Get(header); token != "" {
+		cred, _ := json.Marshal(map[string]string{"token": token})
+		m["header_jwt"] = cred
+	}
+
+	out, _ := json.Marshal(m)
+	clone := r.Clone(r.Context())
+	clone.Body = io.NopCloser(bytes.NewReader(out))
+	clone.ContentLength = int64(len(out))
+	clone.Header.Set("Content-Type", "application/json")
+	return clone
 }

@@ -468,6 +468,9 @@
         "fixture": {
           "$ref": "#/definitions/v1FixtureAuthentication"
         },
+        "headerJwt": {
+          "$ref": "#/definitions/v1HeaderJWTAuthentication"
+        },
         "oauthCode": {
           "$ref": "#/definitions/v1OAuthCodeAuthentication"
         },
@@ -1280,6 +1283,15 @@
           "type": "string"
         },
         "userId": {
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
+    "v1HeaderJWTAuthentication": {
+      "properties": {
+        "token": {
+          "description": "Signed JWT copied verbatim by the login route from the gateway-injected\nidentity header. It is verified against the configured JWKS (or, under an\nexplicit perimeter-trust decode mode, decoded with exp/aud still enforced)\nbefore any claim is trusted.",
           "type": "string"
         }
       },

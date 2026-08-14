@@ -175,17 +175,44 @@ Public values live in `identity.env`; secrets live in
 
 | Key | Required | Meaning |
 |---|---:|---|
-| `IDENTITY_PROVIDER` | yes | `fixture`, `workos`, `auth0`, or `google` |
+| `IDENTITY_PROVIDER` | yes | `fixture`, `workos`, `auth0`, `google`, or `header-jwt` |
 | `IDENTITY_DISPLAY_NAME` | browser providers | Sign-in button label |
 | `IDENTITY_CLIENT_ID` | browser providers | Provider application Client ID |
 | `IDENTITY_CLIENT_SECRET` | browser providers | Provider exchange credential; secret |
 | `IDENTITY_AUTHORIZE_URL` | browser providers | Hosted authorization endpoint |
 | `IDENTITY_TOKEN_URL` | browser providers | Authorization-code exchange endpoint |
-| `IDENTITY_ISSUER` | optional | Signed-token issuer override |
+| `IDENTITY_ISSUER` | optional | Signed-token issuer override (expected `iss`) |
 | `IDENTITY_JWKS_URL` | optional | Signed-token JWKS override |
 | `IDENTITY_AUTHORIZE_SELECTOR` | WorkOS | `authkit` for hosted AuthKit |
 | `IDENTITY_ALLOWED_REDIRECT_URIS` | optional | Static fallback for trusted traffic that bypasses auth-sidecar |
 | `IDENTITY_MANAGEMENT_API_KEY` | optional WorkOS adapter | WorkOS Admin Portal/SSO-management credential; secret |
+
+### `header-jwt` provider
+
+For deployments behind a customer-operated access gateway (PingAccess, an
+nginx/Apache auth module, some API gateways) that authenticates the user
+upstream and injects a signed JWT in a request header. There is no OAuth
+ceremony: the login route reads the configured header, verifies the JWT, and
+mints our own session.
+
+| Key | Required | Meaning |
+|---|---:|---|
+| `IDENTITY_HEADER_NAME` | yes | Request header the login route reads the JWT from. Consumed at `/auth/login` only; never forwarded downstream. |
+| `IDENTITY_JWKS_URL` | yes¹ | JWKS used to verify the header JWT signature |
+| `IDENTITY_AUDIENCE` | yes | Expected `aud`; always enforced, including under perimeter-trust decode |
+| `IDENTITY_ISSUER` | optional | Expected `iss` when set |
+| `IDENTITY_PROVIDER_NAME` | optional | `user_identities.provider` key; defaults to `header-jwt` |
+| `IDENTITY_SUBJECT_CLAIM` | optional | Subject claim; defaults to `sub` |
+| `IDENTITY_EMAIL_CLAIM` | optional | Email claim; defaults to `email` |
+| `IDENTITY_EMAIL_VERIFIED_CLAIM` | optional | Email-verified claim; defaults to `email_verified` |
+| `IDENTITY_NAME_CLAIMS` | optional | Comma-separated claims joined into the display name (e.g. `given_name,family_name`) |
+| `IDENTITY_GROUP_CLAIM` | optional | Group claim (string or array); enables the group gate |
+| `IDENTITY_ALLOWED_GROUPS` | optional | Comma-separated allow-list; login is denied with a distinct "access not granted" when the group claim does not overlap. Unset skips the gate. |
+| `IDENTITY_PERIMETER_TRUST_DECODE` | optional | `true` decodes the header JWT without signature verification (still enforcing `exp`/`aud`). Off by default. Only safe when the gateway is the sole ingress and strips client-supplied copies of the header. |
+
+¹ Required unless `IDENTITY_PERIMETER_TRUST_DECODE=true`, which is the only mode
+that omits signature verification. Every other configuration fails closed: an
+unreachable JWKS denies the login rather than decoding without verification.
 
 The Next.js service agent exposes only non-secret `IDENTITY_*` values to the
 browser. Accounts reads both public and secret values through the Codefly SDK.

@@ -2,6 +2,7 @@ package pgauth
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
@@ -203,10 +204,17 @@ func (r *Resolver) provisionIdentity(ctx context.Context, tx pgx.Tx, c *auth.Cla
 	identityID := business.NewID()
 	email := strings.ToLower(c.Email)
 
+	profile := []byte("{}")
+	if name := strings.TrimSpace(c.DisplayName); name != "" {
+		if encoded, err := json.Marshal(map[string]string{"display_name": name}); err == nil {
+			profile = encoded
+		}
+	}
+
 	_, err := tx.Exec(ctx, `
-		INSERT INTO users (uuid, primary_email, status, email_verified)
-		VALUES ($1, $2, 'active', $3)`,
-		userID, email, c.EmailVerified,
+		INSERT INTO users (uuid, primary_email, status, email_verified, profile)
+		VALUES ($1, $2, 'active', $3, $4)`,
+		userID, email, c.EmailVerified, profile,
 	)
 	if err != nil {
 		return uuid.Nil, fmt.Errorf("pgauth: insert user: %w", err)

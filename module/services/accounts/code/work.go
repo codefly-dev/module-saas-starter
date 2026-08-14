@@ -8,6 +8,7 @@ import (
 	"accounts/pkg/auth"
 	devvalidator "accounts/pkg/auth/dev"
 	ed25519minter "accounts/pkg/auth/ed25519"
+	"accounts/pkg/auth/headerjwt"
 	"accounts/pkg/auth/oidc"
 	pgauth "accounts/pkg/auth/pg"
 	workosauth "accounts/pkg/auth/workos"
@@ -281,6 +282,16 @@ func doWork(ctx context.Context) (Clean, error) {
 	}
 	if authProvider == "dev" {
 		service.SetDevelopmentTokenValidator(v)
+	} else if authProvider == "header-jwt" {
+		// Gateway-pre-authenticated: no OAuth ceremony, no code exchange. The
+		// login route consumes the configured identity header and hands its
+		// value to the validator; sessions/refresh/MFA are unchanged afterwards.
+		headerName := identityEnv("IDENTITY_HEADER_NAME")
+		if !hasConfiguredValue(headerName) {
+			return nil, fmt.Errorf("identity provider header-jwt requires IDENTITY_HEADER_NAME")
+		}
+		service.SetTokenValidator(v)
+		adapters.SetHeaderJWTLoginHeader(headerName)
 	} else {
 		if authProvider == "workos" {
 			// SSO administration is a WorkOS-specific optional adapter. Other
@@ -1030,6 +1041,13 @@ func buildProviderStack(provider, selectedFixture string) (auth.TokenValidator, 
 		}
 		return v, oidc.AsBusinessExchanger(ex), nil
 
+	case "header-jwt":
+		v, err := buildHeaderJWTValidator()
+		if err != nil {
+			return nil, nil, err
+		}
+		return v, nil, nil
+
 	case "fixture":
 		return nil, nil, fmt.Errorf("identity provider fixture requires an explicit Codefly fixture")
 	case "":
@@ -1037,6 +1055,44 @@ func buildProviderStack(provider, selectedFixture string) (auth.TokenValidator, 
 	default:
 		return nil, nil, fmt.Errorf("unsupported identity provider %q", provider)
 	}
+}
+
+// buildHeaderJWTValidator configures the gateway-pre-authenticated validator
+// from the Codefly identity configuration. Audience is mandatory; JWKS is
+// mandatory unless the operator has deliberately opted into perimeter-trust
+// decode via IDENTITY_PERIMETER_TRUST_DECODE.
+func buildHeaderJWTValidator() (auth.TokenValidator, error) {
+	v, err := headerjwt.New(headerjwt.Config{
+		ProviderName:         identityEnvOrDefault("IDENTITY_PROVIDER_NAME", "header-jwt"),
+		JWKSURL:              identityEnv("IDENTITY_JWKS_URL"),
+		Audience:             identityEnv("IDENTITY_AUDIENCE"),
+		Issuer:               identityEnv("IDENTITY_ISSUER"),
+		SubjectClaim:         identityEnv("IDENTITY_SUBJECT_CLAIM"),
+		EmailClaim:           identityEnv("IDENTITY_EMAIL_CLAIM"),
+		EmailVerifiedClaim:   identityEnv("IDENTITY_EMAIL_VERIFIED_CLAIM"),
+		NameClaims:           identityEnvList("IDENTITY_NAME_CLAIMS"),
+		GroupClaim:           identityEnv("IDENTITY_GROUP_CLAIM"),
+		AllowedGroups:        identityEnvList("IDENTITY_ALLOWED_GROUPS"),
+		PerimeterTrustDecode: identityEnv("IDENTITY_PERIMETER_TRUST_DECODE") == "true",
+	})
+	if err != nil {
+		return nil, fmt.Errorf("initialize header-jwt validator: %w", err)
+	}
+	return v, nil
+}
+
+// identityEnvList reads a comma-separated identity configuration value into a
+// trimmed, non-empty slice.
+func identityEnvList(key string) []string {
+	raw := identityEnv(key)
+	parts := strings.Split(raw, ",")
+	out := make([]string, 0, len(parts))
+	for _, part := range parts {
+		if trimmed := strings.TrimSpace(part); trimmed != "" {
+			out = append(out, trimmed)
+		}
+	}
+	return out
 }
 
 // configuredEmailSender makes provider selection explicit. Production never

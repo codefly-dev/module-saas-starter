@@ -56,6 +56,12 @@ type Claims struct {
 	// equality and therefore requires this to be true.
 	EmailVerified bool
 
+	// DisplayName is the provider's human-readable name for this identity,
+	// persisted on first provisioning. Empty when the provider asserts no name
+	// (most OIDC flows leave it unset). Purely presentational — never an
+	// authentication or authorization signal.
+	DisplayName string
+
 	// ProviderOrgID is the optional WorkOS organization id (or equivalent).
 	// Empty when the provider has no org concept or the user has no org yet.
 	ProviderOrgID string

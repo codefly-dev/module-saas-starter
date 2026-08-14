@@ -83,6 +83,18 @@ func (s *Service) Authenticate(ctx context.Context, req *gen.AuthenticateRequest
 		if err != nil {
 			return nil, w.Wrapf(err, "oauth code exchange")
 		}
+	case *gen.AuthenticateRequest_HeaderJwt:
+		authenticationMethod = auth.AuthenticationMethodHeaderJWT
+		if s.validator == nil {
+			return nil, w.Wrapf(auth.ErrInvalidOAuthRequest, "header-jwt authentication is not enabled")
+		}
+		if credentials.HeaderJwt == nil || credentials.HeaderJwt.Token == "" {
+			return nil, w.Wrapf(auth.ErrMissingClaims, "header-jwt token missing")
+		}
+		claims, err = s.validator.Validate(ctx, credentials.HeaderJwt.Token)
+		if err != nil {
+			return nil, w.Wrapf(err, "header-jwt authentication")
+		}
 	case *gen.AuthenticateRequest_Fixture:
 		authenticationMethod = auth.AuthenticationMethodFixture
 		if s.devValidator == nil {
