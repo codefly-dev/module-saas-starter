@@ -207,9 +207,13 @@ Properties and limits:
 - **Direct principal grants only.** Team-inherited grants and org-global
   (NULL-scope) roles are **not** in the claim — those stay on Path B, which
   honors team inheritance and wildcards.
-- **Bounded.** More than `auth.MaxScopedRoleAssignments` (64) scoped pairs
-  rejects the mint with `ErrScopedRolesExceedLimit` rather than silently
-  truncating into an under-authorized token, keeping token size predictable.
+- **Bounded, and truncation is signalled.** The claim carries at most
+  `auth.MaxScopedRoleAssignments` (64) scoped pairs so token size stays
+  predictable. A caller with more keeps a bounded slice and the token sets the
+  `srt` claim (`X-Scoped-Roles-Truncated: true`); the mint does **not** fail, so
+  the user is never locked out. When that flag is set, an absent grant in the
+  header is *unknown*, not a denial — the service must consult Path B. Use
+  `adapters.ScopedRolesTruncatedFromContext(ctx)` to detect it.
 
 ### Path B — `PermissionService.CheckPermission` (authoritative, current)
 

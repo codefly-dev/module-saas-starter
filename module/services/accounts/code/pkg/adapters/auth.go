@@ -473,6 +473,29 @@ func ScopedRolesFromContext(ctx context.Context) map[string][]string {
 	return v
 }
 
+// scopedRolesTruncatedCtxKey records that the caller's scope->roles map was
+// bounded by MaxScopedRoleAssignments and is therefore incomplete.
+type scopedRolesTruncatedCtxKeyType struct{}
+
+var scopedRolesTruncatedCtxKey = scopedRolesTruncatedCtxKeyType{}
+
+// withScopedRolesTruncated marks the context's scoped-role grants as incomplete.
+func withScopedRolesTruncated(ctx context.Context, truncated bool) context.Context {
+	if !truncated {
+		return ctx
+	}
+	return context.WithValue(ctx, scopedRolesTruncatedCtxKey, true)
+}
+
+// ScopedRolesTruncatedFromContext reports whether the scope->roles grants on ctx
+// were truncated to fit the claim bound. When true, an absent grant is NOT a
+// denial — the caller holds more scoped roles than the header carries, so a
+// service must consult CheckPermission for an authoritative answer.
+func ScopedRolesTruncatedFromContext(ctx context.Context) bool {
+	v, _ := ctx.Value(scopedRolesTruncatedCtxKey).(bool)
+	return v
+}
+
 // HasScopedRole reports whether the caller holds role within scope, per the
 // scoped-role grants on ctx. It is the header-only authorization primitive: no
 // database call, no callback to accounts.

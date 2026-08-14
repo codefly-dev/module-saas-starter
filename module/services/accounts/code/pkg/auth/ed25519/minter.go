@@ -90,6 +90,7 @@ type accessClaims struct {
 	OrgRole               string              `json:"or,omitempty"`
 	PlatformRole          string              `json:"pr,omitempty"`
 	ScopedRoles           map[string][]string `json:"sr,omitempty"`
+	ScopedRolesTruncated  bool                `json:"srt,omitempty"`
 	SessionID             string              `json:"sid"`
 	ActingAsUserID        string              `json:"acting,omitempty"`
 	AuthenticationMethods []string            `json:"amr,omitempty"`
@@ -416,6 +417,7 @@ func identityFromCurrentAuthorization(
 		OrgRole:               authorization.OrgRole,
 		PlatformRole:          authorization.PlatformRole,
 		ScopedRoles:           authorization.ScopedRoles,
+		ScopedRolesTruncated:  authorization.ScopedRolesTruncated,
 		SessionID:             sessionID,
 		MFASatisfied:          mfaSatisfied,
 		AuthenticationMethods: authenticationMethods,
@@ -524,6 +526,7 @@ func (m *Minter) VerifyAccess(tokenString string) (*auth.Identity, error) {
 		OrgRole:               claims.OrgRole,
 		PlatformRole:          claims.PlatformRole,
 		ScopedRoles:           claims.ScopedRoles,
+		ScopedRolesTruncated:  claims.ScopedRolesTruncated,
 		SessionID:             sessionID,
 		ActingAsUserID:        actingAs,
 		MFASatisfied:          claims.MFASatisfied,
@@ -597,6 +600,7 @@ func (m *Minter) signAccess(identity *auth.Identity, sessionID uuid.UUID, now ti
 		if len(identity.ScopedRoles) > 0 {
 			claims.ScopedRoles = identity.ScopedRoles
 		}
+		claims.ScopedRolesTruncated = identity.ScopedRolesTruncated
 	}
 	claims.PlatformRole = identity.PlatformRole
 	if identity.ActingAsUserID != uuid.Nil {

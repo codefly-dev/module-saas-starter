@@ -67,4 +67,24 @@ func TestStampForwardedHTTPIdentityCarriesScopedRoles(t *testing.T) {
 	if !HasScopedRole(ctx, "module-a", "analyst") {
 		t.Fatalf("expected scoped role from header, got %v", ScopedRolesFromContext(ctx))
 	}
+	if ScopedRolesTruncatedFromContext(ctx) {
+		t.Fatal("no truncation header → must not report truncated")
+	}
+}
+
+// TestStampForwardedHTTPIdentityCarriesTruncationSignal proves the incomplete-
+// grants signal survives the header round-trip so a service knows to fall back
+// to CheckPermission rather than treating an absent grant as a denial.
+func TestStampForwardedHTTPIdentityCarriesTruncationSignal(t *testing.T) {
+	headers := http.Header{}
+	headers.Set("X-User-Id", "11111111-1111-1111-1111-111111111111")
+	headers.Set("X-Org-Id", "22222222-2222-2222-2222-222222222222")
+	headers.Set("X-Scoped-Roles", `{"module-a":["analyst"]}`)
+	headers.Set("X-Scoped-Roles-Truncated", "true")
+
+	ctx := stampForwardedHTTPIdentity(context.Background(), headers)
+
+	if !ScopedRolesTruncatedFromContext(ctx) {
+		t.Fatal("expected truncation signal from header")
+	}
 }

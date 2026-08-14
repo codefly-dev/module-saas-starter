@@ -317,6 +317,29 @@ func TestMintCarriesScopedRoles(t *testing.T) {
 	require.Equal(t, want.ScopedRoles, got.ScopedRoles)
 }
 
+func TestScopedRolesTruncatedFlagRoundtrips(t *testing.T) {
+	ctx := context.Background()
+	m, _ := newMinter(t)
+
+	// Absent by default.
+	pair, err := m.Mint(ctx, newIdentity())
+	require.NoError(t, err)
+	require.NotContains(t, decodeJWTPayload(t, pair.AccessToken), `"srt"`)
+	got, err := m.VerifyAccess(pair.AccessToken)
+	require.NoError(t, err)
+	require.False(t, got.ScopedRolesTruncated)
+
+	// Set when the grant set was truncated.
+	want := newIdentity()
+	want.ScopedRoles = map[string][]string{"module-a": {"analyst"}}
+	want.ScopedRolesTruncated = true
+	pair, err = m.Mint(ctx, want)
+	require.NoError(t, err)
+	got, err = m.VerifyAccess(pair.AccessToken)
+	require.NoError(t, err)
+	require.True(t, got.ScopedRolesTruncated)
+}
+
 func TestScopedRolesOmittedForOrglessIdentity(t *testing.T) {
 	ctx := context.Background()
 	m, _ := newMinter(t)

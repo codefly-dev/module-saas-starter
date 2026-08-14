@@ -162,6 +162,30 @@ func TestUnit_ValidJWT_ForwardsScopedRoles(t *testing.T) {
 	require.Equal(t, c.ScopedRoles, got)
 }
 
+func TestUnit_ValidJWT_ForwardsScopedRolesTruncated(t *testing.T) {
+	s, priv := newTestSidecar(t)
+	c := validClaims(time.Now())
+	c.ScopedRoles = map[string][]string{"module-a": {"analyst"}}
+	c.ScopedRolesTruncated = true
+	token := signClaims(t, priv, c)
+
+	resp, err := s.Check(context.Background(), checkReq("/v1/users", map[string]string{
+		"authorization": "Bearer " + token,
+	}))
+	require.NoError(t, err)
+
+	h := headerMap(resp)
+	require.Equal(t, "true", h["x-scoped-roles-truncated"])
+
+	// Absent (empty) when the grant set fit within the bound.
+	c.ScopedRolesTruncated = false
+	resp, err = s.Check(context.Background(), checkReq("/v1/users", map[string]string{
+		"authorization": "Bearer " + signClaims(t, priv, c),
+	}))
+	require.NoError(t, err)
+	require.Empty(t, headerMap(resp)["x-scoped-roles-truncated"])
+}
+
 func TestUnit_ValidJWT_NoScopedRolesOmitsHeader(t *testing.T) {
 	s, priv := newTestSidecar(t)
 	token := signClaims(t, priv, validClaims(time.Now()))

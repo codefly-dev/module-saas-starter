@@ -145,16 +145,19 @@ func TestScopedRoles_AssignmentRevokesSessions(t *testing.T) {
 	require.Equal(t, map[string][]string{"module-a": {"viewer"}}, identity.ScopedRoles)
 }
 
-// TestScopedRoles_ExceedingLimitFailsLoudly proves the claim-size bound: a user
-// with more than auth.MaxScopedRoleAssignments scoped grants is rejected with a
-// defined error rather than a silently truncated, under-authorized token.
-func TestScopedRoles_ExceedingLimitFailsLoudly(t *testing.T) {
+// TestScopedRoles_ExceedingLimitTruncatesAndSignals proves the claim-size
+// bound: a user with more than auth.MaxScopedRoleAssignments scoped grants is
+// NOT locked out — the token carries a bounded slice and the truncation is
+// signalled so a consumer falls back to CheckPermission for the full answer.
+func TestScopedRoles_ExceedingLimitTruncatesAndSignals(t *testing.T) {
 	resetAuthTables(t)
 	ctx := context.Background()
 
 	userID := seedUser(t)
 	orgID := seedOrganizationMembership(t, userID, "member", time.Now())
 	roleID := builtinRoleID(t, "viewer")
+	// One scope per assignment (one role each) so the pair count equals the
+	// scope count: cap+1 assignments must truncate.
 	for i := 0; i <= auth.MaxScopedRoleAssignments; i++ {
 		assignScopedRole(t, userID, orgID, roleID, fmt.Sprintf("module-%03d", i))
 	}
@@ -163,8 +166,14 @@ func TestScopedRoles_ExceedingLimitFailsLoudly(t *testing.T) {
 	minter := newMinterOverStore(store)
 	pair := mintIdentitySession(t, minter, userID, orgID)
 
-	_, err := minter.VerifyRefresh(ctx, pair.RefreshToken)
-	require.ErrorIs(t, err, auth.ErrScopedRolesExceedLimit)
+	rotated, err := minter.VerifyRefresh(ctx, pair.RefreshToken)
+	require.NoError(t, err, "an over-large grant set must not fail the mint")
+	identity, err := minter.VerifyAccess(rotated.AccessToken)
+	require.NoError(t, err)
+
+	require.True(t, identity.ScopedRolesTruncated, "truncation must be signalled")
+	require.Len(t, identity.ScopedRoles, auth.MaxScopedRoleAssignments,
+		"exactly the claim bound of scopes is retained")
 }
 
 func onlyActiveSessionID(t *testing.T, userID uuid.UUID) uuid.UUID {

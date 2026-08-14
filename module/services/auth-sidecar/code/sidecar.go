@@ -29,6 +29,7 @@ type accessClaims struct {
 	OrgRole               string              `json:"or,omitempty"`
 	PlatformRole          string              `json:"pr,omitempty"`
 	ScopedRoles           map[string][]string `json:"sr,omitempty"`
+	ScopedRolesTruncated  bool                `json:"srt,omitempty"`
 	SessionID             string              `json:"sid"`
 	ActingAsUserID        string              `json:"acting,omitempty"`
 	MFASatisfied          bool                `json:"mfa,omitempty"`
@@ -157,6 +158,11 @@ func (s *Sidecar) checkJWT(tokenString string) (*authv3.CheckResponse, error) {
 			hdrs = append(hdrs, hdr("x-scoped-roles", string(encoded)))
 		}
 	}
+	if claims.ScopedRolesTruncated {
+		// The grant set exceeded the claim bound; x-scoped-roles is incomplete
+		// and a service must fall back to CheckPermission for a full answer.
+		hdrs = append(hdrs, hdr("x-scoped-roles-truncated", "true"))
+	}
 	return s.allow(hdrs), nil
 }
 
@@ -212,7 +218,7 @@ func (s *Sidecar) allow(headers []*corev3.HeaderValueOption) *authv3.CheckRespon
 
 var canonicalUpstreamAuthHeaders = []string{
 	"x-user-id", "x-org-id", "x-org-role", "x-platform-role", "x-roles",
-	"x-scoped-roles", "x-auth-id", "x-user-email", "x-user-name", "x-session-id",
+	"x-scoped-roles", "x-scoped-roles-truncated", "x-auth-id", "x-user-email", "x-user-name", "x-session-id",
 	"x-acting-as-user-id", "x-scopes", "x-mfa-satisfied",
 	"x-authentication-methods", "x-auth-time", "x-assurance-level", "x-mfa-verified-at",
 }

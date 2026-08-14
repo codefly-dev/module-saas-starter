@@ -16,14 +16,16 @@ import (
 // CheckPermission path, keeping this claim's staleness bounded by the single
 // role_assignments session-invalidation trigger.
 //
-// The result feeds the compact `sr` access-token claim. More than
-// auth.MaxScopedRoleAssignments pairs returns ErrScopedRolesExceedLimit so an
-// over-large grant set fails loudly rather than minting a silently truncated,
-// under-authorized token. Callers must run inside the same locked, RLS-bypassed
-// transaction that resolves org/platform authorization.
-func resolveScopedRoles(ctx context.Context, tx pgx.Tx, userID, orgID uuid.UUID) (map[string][]string, error) {
+// The result feeds the compact `sr` access-token claim. To keep token size
+// predictable it retains at most auth.MaxScopedRoleAssignments (scope, role)
+// pairs, in a deterministic order; when the caller holds more, the returned
+// truncated flag is true so the excess is signalled (via the `srt` claim) and a
+// consumer falls back to CheckPermission rather than the mint failing outright
+// and locking the user out of authentication. Callers must run inside the same
+// locked, RLS-bypassed transaction that resolves org/platform authorization.
+func resolveScopedRoles(ctx context.Context, tx pgx.Tx, userID, orgID uuid.UUID) (scoped map[string][]string, truncated bool, err error) {
 	if orgID == uuid.Nil {
-		return nil, nil
+		return nil, false, nil
 	}
 	rows, err := tx.Query(ctx, `
 		SELECT DISTINCT a.scope, r.name
@@ -35,28 +37,35 @@ func resolveScopedRoles(ctx context.Context, tx pgx.Tx, userID, orgID uuid.UUID)
 		  AND a.scope IS NOT NULL
 		ORDER BY a.scope, r.name`, userID, orgID)
 	if err != nil {
-		return nil, err
+		return nil, false, err
 	}
 	defer rows.Close()
 
 	var count int
-	scoped := map[string][]string{}
+	scoped = map[string][]string{}
 	for rows.Next() {
+		// Stop scanning once the bound is reached: one more row proves the
+		// grant set is larger than the claim can carry, so mark it truncated
+		// and leave the rest unread (memory stays bounded to the cap).
+		if count >= auth.MaxScopedRoleAssignments {
+			return scopedOrNil(scoped), true, nil
+		}
 		var scope, role string
 		if err := rows.Scan(&scope, &role); err != nil {
-			return nil, err
-		}
-		count++
-		if count > auth.MaxScopedRoleAssignments {
-			return nil, auth.ErrScopedRolesExceedLimit
+			return nil, false, err
 		}
 		scoped[scope] = append(scoped[scope], role)
+		count++
 	}
 	if err := rows.Err(); err != nil {
-		return nil, err
+		return nil, false, err
 	}
+	return scopedOrNil(scoped), false, nil
+}
+
+func scopedOrNil(scoped map[string][]string) map[string][]string {
 	if len(scoped) == 0 {
-		return nil, nil
+		return nil
 	}
-	return scoped, nil
+	return scoped
 }

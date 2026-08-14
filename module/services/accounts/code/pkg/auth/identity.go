@@ -67,6 +67,13 @@ type Identity struct {
 	// when OrgID is zero or the caller holds no scoped assignments.
 	ScopedRoles map[string][]string
 
+	// ScopedRolesTruncated is true when the caller holds more than
+	// MaxScopedRoleAssignments scoped grants and ScopedRoles carries only the
+	// first bounded slice. It is emitted as the `srt` claim so a consumer knows
+	// the header is incomplete and must fall back to CheckPermission for an
+	// authoritative answer rather than treating an absent grant as a denial.
+	ScopedRolesTruncated bool
+
 	// DeviceInfo is bounded, caller-supplied display metadata for per-device
 	// session management. It is never used for authorization. IPAddress is
 	// trusted transport metadata when the adapter can provide it.
@@ -76,8 +83,9 @@ type Identity struct {
 
 // MaxScopedRoleAssignments bounds how many (scope, role) pairs may ride in the
 // `sr` claim so the access token stays a predictable size. A caller resolving
-// more than this is rejected with ErrScopedRolesExceedLimit rather than having
-// their roles silently truncated into an under-authorized token.
+// more than this keeps the first bounded slice and has ScopedRolesTruncated
+// set, so the truncation is signalled (via the `srt` claim) rather than either
+// silently dropping grants or locking the user out of authentication entirely.
 const MaxScopedRoleAssignments = 64
 
 // Orgless reports whether this identity resolved to no active organization. It
