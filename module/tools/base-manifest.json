@@ -1,6 +1,6 @@
 {
   "note": "Base-file integrity manifest for the saas-starter module. Generated FROM canonical by `node tools/base-integrity.mjs gen`. Consumers MUST NOT hand-edit base files — only add files on the side. Regenerated on every codefly sync from canonical.",
-  "fileCount": 1484,
+  "fileCount": 1486,
   "files": {
     "AUTHORIZATION_CATALOG.md": "b2ea5d41f0098e80315e02e7c4bdbda03b65c8eef463426242552fd3c047ca0a",
     "CONTRACT_VERSIONING.md": "02031aa87922ab5ec573ea582cf584271873481de6ceabbda52b1bfda005ffbd",
@@ -1456,6 +1456,8 @@
     "services/store/migrations/86_org_sso_org_id_unique.up.sql": "631c706f9b3e2c9e22805d0fec4ce951a023532a3547937992dd842c81073204",
     "services/store/migrations/87_authorization_revision_cascade_guard.down.sql": "c3cab2da7650d39059e640b6a29c8dfb27bfcd3b43d833a361537b38e28b21af",
     "services/store/migrations/87_authorization_revision_cascade_guard.up.sql": "cb58c3846558aa84aec7d3831ff2a805f7d2190b60cc1833af56add2fc57a086",
+    "services/store/migrations/88_header_jwt_identity_provider.down.sql": "555c8e2fd3a792f7b7e67d4af49e637c2464570be80b0b83d2c9f7c9c0116c47",
+    "services/store/migrations/88_header_jwt_identity_provider.up.sql": "e68d455b7cf2f96a8ab17463496f7e893c7089593b3fadc2b1f5b6a5814b2c02",
     "services/store/migrations/8_create_invitations.down.sql": "3c73e2e3f3ea7069041c6308ae0ca084fec38d96799037a8bcfb82a9f1850e08",
     "services/store/migrations/8_create_invitations.up.sql": "53d9df518d74864cdafc59c63253d55edc00f41295a4dc15cbc9fc732c114f09",
     "services/store/migrations/9_create_entitlements.down.sql": "1912ec46c4a21f11ab1b2ca833a5b2a6cc219777f5b241b96d82124f17b20ad2",
