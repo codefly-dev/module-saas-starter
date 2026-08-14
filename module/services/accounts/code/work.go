@@ -194,6 +194,7 @@ func doWork(ctx context.Context) (Clean, error) {
 	}
 	service.SetHasher(vaultClient)
 	service.SetMFASecretCipher(vaultClient)
+	service.SetOrgIdentityProviderCipher(vaultClient)
 	webhookPolicy := business.NewWebhookEndpointPolicy()
 	service.SetWebhookSecurity(vaultClient, webhookPolicy)
 	webAuthnRPID, webAuthnDisplayName, webAuthnOrigins, err := configuredWebAuthn()
@@ -318,6 +319,13 @@ func doWork(ctx context.Context) (Clean, error) {
 		service.SetOAuthRequestPolicy(oauthPolicy)
 		service.SetTokenValidator(v)
 		service.SetCodeExchanger(ex)
+
+		// Per-org identity provider registry (issue #107). Orgs with an active
+		// row in org_identity_providers resolve to their own stack; every other
+		// org falls back to this global default (v, ex). Stacks build lazily on
+		// first use and are cache-invalidated when their configuration changes.
+		service.SetIdentityProviderRegistry(
+			newIdentityProviderRegistry(store, vaultClient, authProvider, v, ex))
 	}
 
 	// Audit persistence and matching webhook fan-out share one database

@@ -52,6 +52,16 @@ type Store interface {
 	ListUserIdentities(ctx context.Context, userID string) ([]*gen.UserIdentity, error)
 	DeleteUserIdentities(ctx context.Context, userID string) error
 
+	// Org identity providers (per-org IdP registry — issue #107). The upsert,
+	// read, and status update run under the caller's WithOrgTx. The pre-auth
+	// resolvers are cross-org lookups that manage their own control-plane
+	// transaction and return only active, unambiguously-matched providers.
+	UpsertOrgIdentityProvider(ctx context.Context, provider *OrgIdentityProvider) error
+	GetOrgIdentityProvider(ctx context.Context, orgID string) (*OrgIdentityProvider, error)
+	SetOrgIdentityProviderStatus(ctx context.Context, orgID, status string) error
+	ResolveOrgProviderByEmailDomain(ctx context.Context, domain string) (*OrgIdentityProvider, error)
+	ResolveOrgProviderByHost(ctx context.Context, host string) (*OrgIdentityProvider, error)
+
 	// Organizations
 	CreateOrganization(ctx context.Context, org *gen.Organization) error
 	GetOrganization(ctx context.Context, id string) (*gen.Organization, error)
