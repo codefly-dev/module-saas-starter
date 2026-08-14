@@ -302,6 +302,15 @@ func TestNewValidation(t *testing.T) {
 
 	_, err = New(Config{ProviderName: "hj", Audience: "a"})
 	require.Error(t, err, "JWKSURL required unless perimeter-trust")
+
+	// A group allow-list with no claim to read would deny every login at
+	// request time; construction must fail loudly instead.
+	_, err = New(Config{ProviderName: "hj", JWKSURL: "https://x/jwks", Audience: "a", AllowedGroups: []string{"admins"}})
+	require.Error(t, err, "GroupClaim required when AllowedGroups is set")
+
+	// The same allow-list with a claim configured is valid.
+	_, err = New(Config{ProviderName: "hj", JWKSURL: "https://x/jwks", Audience: "a", GroupClaim: "groups", AllowedGroups: []string{"admins"}})
+	require.NoError(t, err)
 }
 
 func TestMissingSubjectAndEmail(t *testing.T) {

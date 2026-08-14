@@ -140,6 +140,11 @@ func New(cfg Config) (*Validator, error) {
 	if !cfg.PerimeterTrustDecode && cfg.JWKSURL == "" {
 		return nil, errors.New("headerjwt: JWKSURL is required unless PerimeterTrustDecode is set")
 	}
+	// A group allow-list with no claim to read would deny every login silently
+	// at request time; fail loudly at construction instead.
+	if len(cfg.AllowedGroups) > 0 && cfg.GroupClaim == "" {
+		return nil, errors.New("headerjwt: GroupClaim is required when AllowedGroups is set")
+	}
 	return &Validator{cfg: cfg, keys: map[string]*rsa.PublicKey{}}, nil
 }
 
