@@ -2,6 +2,7 @@ package infra_test
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"os"
 	"testing"
@@ -97,6 +98,24 @@ func countCatalogAudits(t *testing.T, action string) int {
 			WHERE actor_type = 'system' AND resource = 'role' AND action = $1`, action).Scan(&n)
 	}))
 	return n
+}
+
+func readLatestAuditMetadata(t *testing.T, action, roleID string) map[string]string {
+	t.Helper()
+	metadata := map[string]string{}
+	require.NoError(t, testStore.WithControlPlane(testCtx, func(ctx context.Context) error {
+		tx := ctx.Value("tx").(pgx.Tx) //nolint:staticcheck // shared key with WithControlPlane
+		var raw []byte
+		err := tx.QueryRow(ctx, `
+			SELECT metadata FROM audit_events
+			WHERE resource = 'role' AND resource_id = $1 AND action = $2
+			ORDER BY created_at DESC, id DESC LIMIT 1`, roleID, action).Scan(&raw)
+		if err != nil {
+			return err
+		}
+		return json.Unmarshal(raw, &metadata)
+	}))
+	return metadata
 }
 
 const exampleCatalogPath = "../rolecatalog/testdata/example_catalog.json"
@@ -305,6 +324,34 @@ func TestImportRoleCatalogRefusesEmptyCatalogWipeUnlessForced(t *testing.T) {
 	require.True(t, forced.Applied)
 	_, gone := readBuiltinRole(t, "catalog-test:unassigned")
 	require.False(t, gone)
+}
+
+func TestImportRoleCatalogStampsProvenanceOnAudit(t *testing.T) {
+	resetCatalogRoles(t)
+	catalog := parseCatalog(t, `{"version":1,"roles":[
+		{"name":"catalog-test:provenance","permissions":[{"resource":"x","action":"read"}]}]}`)
+
+	_, err := testStore.ImportRoleCatalog(testCtx, catalog, infra.ImportOptions{Source: "roles.json"})
+	require.NoError(t, err)
+
+	role, found := readBuiltinRole(t, "catalog-test:provenance")
+	require.True(t, found)
+
+	metadata := readLatestAuditMetadata(t, "role.created", role.id)
+	require.Equal(t, catalog.Fingerprint(), metadata["catalog_sha256"])
+	require.Equal(t, "roles.json", metadata["catalog_source"])
+	require.Equal(t, "catalog-test:provenance", metadata["name"])
+}
+
+func TestBuiltinRoleNamesAreUnique(t *testing.T) {
+	err := testStore.WithControlPlane(testCtx, func(ctx context.Context) error {
+		tx := ctx.Value("tx").(pgx.Tx) //nolint:staticcheck // shared key with WithControlPlane
+		_, execErr := tx.Exec(ctx, `
+			INSERT INTO roles (id, name, description, built_in, org_id)
+			VALUES ($1, 'admin', 'duplicate built-in', true, NULL)`, business.NewIDString())
+		return execErr
+	})
+	require.Error(t, err, "a second built-in role named 'admin' must violate the partial unique index")
 }
 
 func TestImportRoleCatalogDryRunWritesNothing(t *testing.T) {

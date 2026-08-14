@@ -63,6 +63,27 @@ func TestParseAllowsWildcardAndEmptyCatalog(t *testing.T) {
 	require.Equal(t, "*", catalog.Roles[0].Permissions[0].Resource)
 }
 
+func TestFingerprintStableAndSensitive(t *testing.T) {
+	a, err := rolecatalog.Parse([]byte(`{"version":1,"roles":[
+		{"name":"b","permissions":[{"resource":"z","action":"read"},{"resource":"a","action":"read"}]},
+		{"name":"a","permissions":[]}]}`))
+	require.NoError(t, err)
+	// Same content, different source ordering → identical fingerprint.
+	b, err := rolecatalog.Parse([]byte(`{"version":1,"roles":[
+		{"name":"a","permissions":[]},
+		{"name":"b","permissions":[{"resource":"a","action":"read"},{"resource":"z","action":"read"}]}]}`))
+	require.NoError(t, err)
+	require.Equal(t, a.Fingerprint(), b.Fingerprint())
+	require.Len(t, a.Fingerprint(), 64)
+
+	// A real change moves the fingerprint.
+	c, err := rolecatalog.Parse([]byte(`{"version":1,"roles":[
+		{"name":"a","permissions":[]},
+		{"name":"b","permissions":[{"resource":"a","action":"write"},{"resource":"z","action":"read"}]}]}`))
+	require.NoError(t, err)
+	require.NotEqual(t, a.Fingerprint(), c.Fingerprint())
+}
+
 func TestParseCanonicalizesOrdering(t *testing.T) {
 	a, err := rolecatalog.Parse([]byte(`{"version":1,"roles":[
 		{"name":"b","permissions":[{"resource":"z","action":"read"},{"resource":"a","action":"read"}]},

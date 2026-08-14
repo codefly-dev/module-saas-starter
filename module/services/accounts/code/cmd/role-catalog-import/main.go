@@ -75,7 +75,7 @@ func run(args []string, stdout, stderr io.Writer) int {
 	}
 	defer store.Close()
 
-	result, err := store.ImportRoleCatalog(ctx, catalog, infra.ImportOptions{DryRun: *dryRun, Force: *force})
+	result, err := store.ImportRoleCatalog(ctx, catalog, infra.ImportOptions{DryRun: *dryRun, Force: *force, Source: *catalogPath})
 	if err != nil {
 		line(stderr, "role-catalog-import:", err)
 		return 1

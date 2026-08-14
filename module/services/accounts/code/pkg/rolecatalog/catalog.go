@@ -11,6 +11,8 @@
 package rolecatalog
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"regexp"
@@ -100,6 +102,20 @@ func Parse(document []byte) (*Catalog, error) {
 
 	sort.Slice(catalog.Roles, func(i, j int) bool { return catalog.Roles[i].Name < catalog.Roles[j].Name })
 	return &catalog, nil
+}
+
+// Fingerprint is a stable SHA-256 over the canonical catalog, recorded on audit
+// events so an operator can trace which catalog version produced a change. Parse
+// canonicalizes ordering, so equivalent documents share a fingerprint.
+func (c *Catalog) Fingerprint() string {
+	encoded, err := json.Marshal(c)
+	if err != nil {
+		// Catalog contains only strings, ints, and slices thereof — Marshal
+		// cannot fail. Guard defensively so a hash is always produced.
+		return ""
+	}
+	sum := sha256.Sum256(encoded)
+	return hex.EncodeToString(sum[:])
 }
 
 func canonicalizePermissions(role *Role) error {

@@ -381,7 +381,9 @@ into the L2 tables without forking migrations, using the catalog importer.
   removal candidates; a catalog that doesn't mention `admin`/`editor`/`viewer`
   leaves them alone. Org-defined custom roles (`org_id` set) are never touched.
 - **One `system`-actor audit event per applied change** (`role.created` /
-  `role.updated` / `role.deleted`, `org_id` NULL).
+  `role.updated` / `role.deleted`, `org_id` NULL), stamped with the catalog's
+  SHA-256 (`catalog_sha256`) and source label (`catalog_source`) so a change is
+  traceable to the exact catalog version that produced it.
 
 ### Safety
 
