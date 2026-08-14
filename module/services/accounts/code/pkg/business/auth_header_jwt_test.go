@@ -1,6 +1,7 @@
 package business_test
 
 import (
+	"context"
 	"crypto/rand"
 	"crypto/rsa"
 	"encoding/base64"
@@ -12,6 +13,7 @@ import (
 	"time"
 
 	"github.com/golang-jwt/jwt/v5"
+	"github.com/jackc/pgx/v5"
 	"github.com/stretchr/testify/require"
 
 	"accounts/pkg/auth"
@@ -112,10 +114,17 @@ func TestAuthenticate_HeaderJWT_NewUser(t *testing.T) {
 	require.True(t, resolved.Found)
 	require.Equal(t, resp.User.Uuid, resolved.UserId)
 
-	// The multi-claim display name is persisted on the provisioned user.
-	user, err := testStore.GetUser(testCtx, resp.User.Uuid)
-	require.NoError(t, err)
-	require.Equal(t, "Grace Hopper", user.Profile["display_name"])
+	// The multi-claim display name is persisted on the provisioned user. The
+	// users row is RLS-protected, so read it through the control-plane role.
+	var displayName string
+	require.NoError(t, testStore.WithControlPlane(testCtx, func(ctx context.Context) error {
+		tx := ctx.Value("tx").(pgx.Tx) //nolint:staticcheck // shared "tx" key
+		return tx.QueryRow(ctx,
+			`SELECT COALESCE(profile->>'display_name', '') FROM users WHERE uuid = $1::uuid`,
+			resp.User.Uuid,
+		).Scan(&displayName)
+	}))
+	require.Equal(t, "Grace Hopper", displayName)
 }
 
 func TestAuthenticate_HeaderJWT_GroupGateRejection(t *testing.T) {

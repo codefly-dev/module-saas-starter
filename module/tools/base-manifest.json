@@ -210,7 +210,7 @@
     "services/accounts/code/pkg/business/audit_exporter.go": "b3271e31b3101e668bdb745d6cb25204b374f838e02d1e99173f8d21ef0b62d9",
     "services/accounts/code/pkg/business/audit_exporter_test.go": "d69c233d807e45c634e474194d69885d403a84fa2ef8bf7b0895b17fbb63e58e",
     "services/accounts/code/pkg/business/auth.go": "29d9c0f36dda280124ee7cfa0056bb2f22efe58d2bf6bf58aed00610e6fd3aa1",
-    "services/accounts/code/pkg/business/auth_header_jwt_test.go": "99bb167e27bb9abd56f449a6d82236efd2a2c6b33eeb1faffbd5e0b54e423002",
+    "services/accounts/code/pkg/business/auth_header_jwt_test.go": "b375c4c577a6a3f8e61b5b4c8b66d5172972030d641aa2210ad9e610b8dd05eb",
     "services/accounts/code/pkg/business/auth_invitation_test.go": "da54c839c04575798d6f8f71053e5f11eda70e2d6491295b58b33e0e6cfb3c64",
     "services/accounts/code/pkg/business/auth_login_flow_test.go": "74000ffdd2b1f0ca6abe3899614c0652e29d15125362e7f5c7c0ad12272c2ebe",
     "services/accounts/code/pkg/business/auth_oauth_test.go": "e79661c1afc2febff22a4cb6b1e5e06194929c6294229add7e8a65bdb5d56e04",
