@@ -82,8 +82,11 @@ func (i *Identity) Orgless() bool { return i.OrgID == uuid.Nil }
 //   - InviteIntent authenticates against a pending invitation, provisioning the
 //     invitee if needed and binding them to the invitation's organization.
 //   - SignupIntent provisions a first-seen identity and optionally its first org.
+//   - SsoJitIntent authenticates claims from an organization-bound provider and,
+//     per that org's provisioning policy, may provision the caller into exactly
+//     that org — never creating an organization.
 //
-// Only Signup and Invite may create a user; Login never does.
+// Only Signup, Invite, and SsoJit may create a user; Login never does.
 type Intent interface{ isIntent() }
 
 // LoginIntent resolves an identity that must already exist. A resolver returns
@@ -98,9 +101,19 @@ type InviteIntent struct{ Token string }
 // non-empty, also creates the caller's first organization with them as owner.
 type SignupIntent struct{ OrganizationName string }
 
+// SsoJitIntent authenticates claims asserted by the identity provider bound to
+// OrgID (the org's own IdP) and applies that org's provisioning policy to a
+// first-seen identity: JIT-provision it into OrgID, gate it behind a pending
+// invitation, or reject it. It may create the user and the OrgID membership row
+// but never an organization, and it only ever touches OrgID's membership — an
+// already-provisioned member resolves as a plain login. OrgID is the canonical
+// internal org id, resolved from the provider's asserted org by the login route.
+type SsoJitIntent struct{ OrgID uuid.UUID }
+
 func (LoginIntent) isIntent()  {}
 func (InviteIntent) isIntent() {}
 func (SignupIntent) isIntent() {}
+func (SsoJitIntent) isIntent() {}
 
 // IdentityResolver translates provider Claims into an internal Identity.
 // Provisioning is gated by Intent: SignupIntent and InviteIntent may create a
