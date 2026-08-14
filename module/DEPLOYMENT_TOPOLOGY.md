@@ -63,10 +63,12 @@ requires changing the topology binding and reviewing both generated directions
 of the edge.
 
 Pod selectors use the `app: <service>` labels emitted by the pinned Codefly
-agents. Endpoint ports are explicit deployment bindings because Codefly's
-logical endpoint manifest does not carry Kubernetes ports. Agent port or label
-changes must update the topology binding in the same change; pinned deployment
-schema/render validation is tracked by `P1-CI-004`.
+agents. Services whose agent uses a different Kubernetes identity declare its
+Service name and app label in the topology. Endpoint ports are explicit
+deployment bindings because Codefly's logical endpoint manifest does not carry
+Kubernetes ports. Agent port, Service-name, or label changes must update the
+topology binding in the same change; pinned deployment schema/render validation
+is tracked by `P1-CI-004`.
 
 The generated Codefly dependency declarations contain exact endpoint
 references. Accounts resolves `telemetry/grpc` through the SDK and passes that
@@ -96,7 +98,7 @@ exports, and missing descriptor-required accounts protocols.
 
 Parity tests build every artifact twice, compare all checked-in outputs, parse
 the generated files through Codefly's resource model, and strictly inspect all
-21 NetworkPolicy golden documents. After the module generator creates the
+25 NetworkPolicy golden documents. After the module generator creates the
 consumer-owned GitOps tree, render an environment with:
 
 ```sh
@@ -104,7 +106,7 @@ kubectl kustomize modules/<module>/deployment/kustomize/overlays/<environment>
 ```
 
 CI regenerates and clean-diff checks the normalized catalog, module manifest,
-all nine service manifests, and NetworkPolicy file. A separate CI job copies
+all eleven service manifests, and NetworkPolicy file. A separate CI job copies
 only marketing into an isolated build context, installs its own dependency
 lock, and runs unit, content, boundary, build, budget, and degraded-product
 smoke checks.

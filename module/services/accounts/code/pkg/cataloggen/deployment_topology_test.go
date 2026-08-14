@@ -90,6 +90,8 @@ func TestDeploymentTopologyIsDeterministicAndCurrent(t *testing.T) {
 	require.Contains(t, string(first.NetworkPolicy), "name: allow-temporal-store-from-dependents")
 	require.Contains(t, string(first.NetworkPolicy), "name: allow-temporal-store-from-bootstrap")
 	require.Contains(t, string(first.NetworkPolicy), "name: allow-temporal-store-bootstrap-to-temporal-store")
+	require.Contains(t, string(first.NetworkPolicy), "name: allow-temporal-to-dependencies\n  namespace: saas-starter\nspec:\n  podSelector:\n    matchLabels:\n      app: temporal-temporal")
+	require.Contains(t, string(first.NetworkPolicy), "name: allow-temporal-store-from-dependents\n  namespace: saas-starter\nspec:\n  podSelector:\n    matchLabels:\n      app: temporal-store\n  policyTypes:\n    - Ingress\n  ingress:\n    - from:\n        - podSelector:\n            matchLabels:\n              app: temporal-temporal")
 	require.Equal(t, 2, strings.Count(string(first.NetworkPolicy), "codefly.dev/bootstrap-service: temporal-store"))
 	require.Contains(t, string(first.NetworkPolicy), "name: allow-frontend-public-egress")
 	require.Contains(t, string(first.NetworkPolicy), "name: allow-marketing-public-egress")
@@ -377,6 +379,14 @@ func TestDeploymentTopologyRejectsUnsafeOrIncompleteBindings(t *testing.T) {
 	unknownServiceEntry := strings.Replace(bindings, "service_entry: frontend", "service_entry: missing", 1)
 	_, err = cataloggen.BuildDeploymentArtifacts(serviceCatalog, []byte(unknownServiceEntry))
 	require.ErrorContains(t, err, "service entry references unknown service")
+
+	incompleteKubernetesIdentity := strings.Replace(bindings, "      app_label: temporal-temporal\n", "", 1)
+	_, err = cataloggen.BuildDeploymentArtifacts(serviceCatalog, []byte(incompleteKubernetesIdentity))
+	require.ErrorContains(t, err, "Kubernetes identity is incomplete or invalid")
+
+	duplicateKubernetesIdentity := strings.Replace(bindings, "service_name: temporal-temporal", "service_name: temporal-store", 1)
+	_, err = cataloggen.BuildDeploymentArtifacts(serviceCatalog, []byte(duplicateKubernetesIdentity))
+	require.ErrorContains(t, err, "share Kubernetes service name")
 
 	cycle := strings.Replace(bindings, "    spec:\n      watch: false\n      with-read-replicas: true", `    dependencies:
       - service: accounts

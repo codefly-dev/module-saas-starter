@@ -247,7 +247,7 @@ spec:
     - from:
         - podSelector:
             matchLabels:
-              app: temporal
+              app: temporal-temporal
       ports:
         - protocol: TCP
           port: 5432
@@ -377,7 +377,7 @@ metadata:
 spec:
   podSelector:
     matchLabels:
-      app: temporal
+      app: temporal-temporal
   policyTypes:
     - Egress
   egress:

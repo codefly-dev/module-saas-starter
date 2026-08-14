@@ -262,6 +262,9 @@ services:
       name: temporal
       version: 0.0.15
       publisher: codefly.dev
+    kubernetes:
+      service_name: temporal-temporal
+      app_label: temporal-temporal
     endpoints:
       - name: grpc
         api: tcp

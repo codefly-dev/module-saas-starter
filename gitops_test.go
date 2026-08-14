@@ -342,6 +342,21 @@ func TestGenerateBundleRejectsHostileContracts(t *testing.T) {
 			want: "has no module service declaration",
 		},
 		{
+			name: "duplicate Kubernetes workload identity",
+			mutate: func(t *testing.T, moduleDir string, _ *workspaceManifest) {
+				t.Helper()
+				file := filepath.Join(moduleDir, "deployment", "topology.bindings.codefly.yaml")
+				data, err := os.ReadFile(file)
+				if err != nil {
+					t.Fatal(err)
+				}
+				topology := strings.Replace(string(data), "  - name: accounts\n    version:", "  - name: accounts\n    kubernetes:\n      service_name: shared\n      app_label: accounts\n    version:", 1)
+				topology = strings.Replace(topology, "  - name: frontend\n    version:", "  - name: frontend\n    kubernetes:\n      service_name: shared\n      app_label: frontend\n    version:", 1)
+				writeTestFile(t, file, topology)
+			},
+			want: "share Kubernetes service name",
+		},
+		{
 			name: "symlinked service path",
 			mutate: func(t *testing.T, moduleDir string, _ *workspaceManifest) {
 				t.Helper()
@@ -1208,13 +1223,27 @@ func TestCanonicalTemporalTopologyRendersLocalAndAWS(t *testing.T) {
 
 		objects := overlayObjects(t, moduleDir, name)
 		policies := make(map[string]bool)
+		var temporalEgressApp string
+		var temporalDestinationHost string
 		for _, object := range objects {
-			if object["kind"] != "NetworkPolicy" {
-				continue
-			}
 			metadata, _ := object["metadata"].(map[string]any)
-			policy, _ := metadata["name"].(string)
-			policies[policy] = true
+			objectName, _ := metadata["name"].(string)
+			switch object["kind"] {
+			case "NetworkPolicy":
+				policies[objectName] = true
+				if objectName == "allow-temporal-to-temporal-store" {
+					spec, _ := object["spec"].(map[string]any)
+					podSelector, _ := spec["podSelector"].(map[string]any)
+					matchLabels, _ := podSelector["matchLabels"].(map[string]any)
+					temporalEgressApp, _ = matchLabels["app"].(string)
+				}
+			case "DestinationRule":
+				spec, _ := object["spec"].(map[string]any)
+				host, _ := spec["host"].(string)
+				if strings.HasPrefix(host, "temporal-temporal.") {
+					temporalDestinationHost = host
+				}
+			}
 		}
 		for _, policy := range []string{
 			"allow-temporal-to-temporal-store",
@@ -1224,6 +1253,15 @@ func TestCanonicalTemporalTopologyRendersLocalAndAWS(t *testing.T) {
 		} {
 			if !policies[policy] {
 				t.Errorf("%s overlay omits %s", name, policy)
+			}
+		}
+		if temporalEgressApp != "temporal-temporal" {
+			t.Errorf("%s temporal egress selects app %q, want temporal-temporal", name, temporalEgressApp)
+		}
+		if name == "local" {
+			wantHost := "temporal-temporal.temporal-test-local.svc.cluster.local"
+			if temporalDestinationHost != wantHost {
+				t.Errorf("%s temporal DestinationRule host = %q, want %q", name, temporalDestinationHost, wantHost)
 			}
 		}
 	}
