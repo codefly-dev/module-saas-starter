@@ -110,16 +110,19 @@ documentation of one concrete instance).
 `IDENTITY_PROVIDER` is the identity's `user_identities.provider` namespace. Use
 `oidc` for a single generic IdP; give two distinct enterprise IdPs distinct
 values (e.g. `IDENTITY_PROVIDER=okta` and `IDENTITY_PROVIDER=ping`) so they do
-not share one `(provider, provider_id)` namespace. Any non-preset value routes
-through this same generic path. The value must match `NEXT_PUBLIC_IDENTITY_PROVIDER`
-so the browser, the OAuth request policy, and the validated token all agree on
-the provider — a disagreement is rejected at login.
+not share one `(provider, provider_id)` namespace. A non-preset name is a
+generic provider only when you also set `IDENTITY_GENERIC_OIDC=true`; without
+that opt-in an unrecognized value (such as a typo of `workos`) fails startup
+closed rather than silently building a mismatched stack. The value must match
+`NEXT_PUBLIC_IDENTITY_PROVIDER` so the browser, the OAuth request policy, and the
+validated token all agree on the provider — a disagreement is rejected at login.
 
 Required Codefly `identity` configuration keys:
 
 | Key                     | Required | Purpose                                                            |
 |-------------------------|----------|--------------------------------------------------------------------|
 | `IDENTITY_PROVIDER`     | yes      | `oidc`, or a distinct name per IdP (`okta`, `ping`, …)            |
+| `IDENTITY_GENERIC_OIDC` | for non-`oidc` names | `true` to enable a generic provider named other than `oidc` |
 | `IDENTITY_ISSUER`       | yes      | Issuer URL; discovers JWKS + token endpoint                        |
 | `IDENTITY_CLIENT_ID`    | yes      | OAuth client id                                                    |
 | `IDENTITY_CLIENT_SECRET`| yes      | OAuth client secret (backend only)                                |

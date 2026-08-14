@@ -160,6 +160,8 @@ func TestGenericOIDCStackRecordsSelectorAsProviderName(t *testing.T) {
 
 	// Two generic IdPs selected by distinct IDENTITY_PROVIDER values key
 	// distinct user_identities (provider, provider_id) rows for the same subject.
+	// A non-preset name is generic only with the explicit opt-in.
+	setIdentityConfiguration(t, "IDENTITY_GENERIC_OIDC", "true")
 	oktaValidator, _, err := buildProviderStack("okta", "")
 	require.NoError(t, err)
 	oktaClaims, err := oktaValidator.Validate(t.Context(), accessToken)
@@ -167,6 +169,26 @@ func TestGenericOIDCStackRecordsSelectorAsProviderName(t *testing.T) {
 	require.Equal(t, "okta", oktaClaims.Provider)
 	require.Equal(t, claims.Subject, oktaClaims.Subject)
 	require.NotEqual(t, claims.Provider, oktaClaims.Provider)
+}
+
+func TestGenericOIDCStackRequiresExplicitOptInForNonPresetNames(t *testing.T) {
+	clearAuthProviderEnvironment(t)
+	f := newFakeOIDCProvider(t)
+	configureGenericOIDC(t, f.issuer)
+
+	// A non-preset name (here a typo of the "workos" preset) with otherwise
+	// valid discovery config must fail startup closed, not silently build a
+	// generic stack that mismatches WorkOS's token shape and fails at first
+	// login. The generic path is reachable only by explicit declaration.
+	_, _, err := buildProviderStack("wrokos", "")
+	require.ErrorContains(t, err, "unsupported identity provider")
+	require.ErrorContains(t, err, "IDENTITY_GENERIC_OIDC")
+
+	setIdentityConfiguration(t, "IDENTITY_GENERIC_OIDC", "true")
+	validator, exchanger, err := buildProviderStack("wrokos", "")
+	require.NoError(t, err)
+	require.NotNil(t, validator)
+	require.NotNil(t, exchanger)
 }
 
 func TestGenericOIDCStackFailsAtStartupOnMisconfiguration(t *testing.T) {

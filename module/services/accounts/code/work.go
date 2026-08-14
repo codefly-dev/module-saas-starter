@@ -829,11 +829,12 @@ func configuredWebAuthn() (rpID, displayName string, origins []string, err error
 //	auth0      — generic OIDC flow with Auth0 defaults.
 //	google     — generic OIDC flow with Google defaults.
 //
-// Any other non-empty value is also a generic OpenID Connect provider, named by
-// IDENTITY_PROVIDER so two enterprise IdPs occupy distinct user_identities
-// (provider, provider_id) namespaces. Empty and incomplete configurations
-// return an error so the service cannot start with an ambiguous authentication
-// boundary.
+// Any other non-empty value is a generic OpenID Connect provider named by
+// IDENTITY_PROVIDER (so two enterprise IdPs occupy distinct user_identities
+// (provider, provider_id) namespaces) but only when the operator opts in with
+// IDENTITY_GENERIC_OIDC=true. Empty, incomplete, and undeclared-unknown
+// configurations return an error so the service cannot start with an ambiguous
+// authentication boundary.
 // workspaceEnv reads a key from a named Codefly workspace configuration,
 // including its secret namespace, and falls back to a plain process variable
 // for deployments that do not use Codefly's configuration provider.
@@ -1104,10 +1105,15 @@ func buildProviderStack(provider, selectedFixture string) (auth.TokenValidator, 
 	case "":
 		return nil, nil, fmt.Errorf("IDENTITY_PROVIDER is required in the Codefly identity workspace configuration")
 	default:
-		// Any other value is treated as a generic OpenID Connect provider named
-		// by IDENTITY_PROVIDER. It is not an ambiguous boundary: the generic
-		// stack still requires IDENTITY_ISSUER and client credentials and fails
-		// startup closed when they are absent.
+		// A non-preset name is a generic OpenID Connect provider only when the
+		// operator explicitly declares it one. Without that opt-in an unrecognized
+		// value fails startup closed — so a typo of a preset (e.g. "wrokos") is
+		// rejected here instead of silently building a generic stack that would
+		// mismatch the intended provider's token shape and fail at first login.
+		if identityEnv("IDENTITY_GENERIC_OIDC") != "true" {
+			return nil, nil, fmt.Errorf(
+				"unsupported identity provider %q; set IDENTITY_GENERIC_OIDC=true to configure it as a generic OpenID Connect provider", provider)
+		}
 		return buildGenericOIDCStack(provider)
 	}
 }
