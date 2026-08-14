@@ -41,7 +41,7 @@ func TestDeploymentTopologyIsDeterministicAndCurrent(t *testing.T) {
 		require.Equal(t, string(checkedIn), string(document), "service %s: run go generate ./pkg/cataloggen", service)
 	}
 
-	require.Len(t, first.Catalog.GetServices(), 9)
+	require.Len(t, first.Catalog.GetServices(), 11)
 	require.Len(t, first.Catalog.GetInterfaceEndpoints(), 3)
 	require.Len(t, first.Catalog.GetPublicEgress(), 4)
 	endpointCount, dependencyCount := 0, 0
@@ -49,13 +49,35 @@ func TestDeploymentTopologyIsDeterministicAndCurrent(t *testing.T) {
 		endpointCount += len(service.GetEndpoints())
 		dependencyCount += len(service.GetDependencies())
 	}
-	require.Equal(t, 13, endpointCount)
-	require.Equal(t, 8, dependencyCount)
+	require.Equal(t, 16, endpointCount)
+	require.Equal(t, 9, dependencyCount)
+	var temporalService *catalogv1.DeploymentService
+	for _, service := range first.Catalog.GetServices() {
+		if service.GetName() == "temporal" {
+			temporalService = service
+			break
+		}
+	}
+	require.NotNil(t, temporalService)
+	require.Len(t, temporalService.GetEndpoints(), 2)
+	require.Equal(t, "grpc", temporalService.GetEndpoints()[0].GetName())
+	require.Equal(t, uint32(7233), temporalService.GetEndpoints()[0].GetPort())
+	require.Equal(t, "http", temporalService.GetEndpoints()[1].GetName())
+	require.Equal(t, uint32(8233), temporalService.GetEndpoints()[1].GetPort())
 	frontendManifest := string(first.ServiceManifests["frontend"])
 	require.Contains(t, frontendManifest, "execution-profiles:")
 	require.Contains(t, frontendManifest, "local: development")
 	require.Contains(t, frontendManifest, "production: production")
-	require.Equal(t, 21, strings.Count(string(first.NetworkPolicy), "\nkind: NetworkPolicy\n"))
+	temporalManifest := string(first.ServiceManifests["temporal"])
+	require.Contains(t, temporalManifest, "name: temporal\n    version: 0.0.15")
+	require.Contains(t, temporalManifest, "name: temporal-store\n      endpoints:\n        - name: tcp")
+	require.Equal(t, 2, strings.Count(temporalManifest, "visibility: module"))
+	temporalStoreManifest := string(first.ServiceManifests["temporal-store"])
+	require.Contains(t, temporalStoreManifest, "name: postgres\n    version: 0.0.108")
+	require.Contains(t, temporalStoreManifest, "database-name: postgres")
+	require.Contains(t, temporalStoreManifest, "no-migration: true")
+	require.NotContains(t, temporalStoreManifest, "runtime-read-write-roles")
+	require.Equal(t, 25, strings.Count(string(first.NetworkPolicy), "\nkind: NetworkPolicy\n"))
 	require.NotContains(t, string(first.NetworkPolicy), "allow-intra-namespace")
 	require.Contains(t, string(first.NetworkPolicy), "name: allow-accounts-from-dependents")
 	require.Contains(t, string(first.NetworkPolicy), "name: allow-auth-sidecar-from-dependents")
@@ -64,6 +86,11 @@ func TestDeploymentTopologyIsDeterministicAndCurrent(t *testing.T) {
 	require.Contains(t, string(first.NetworkPolicy), "name: allow-store-from-bootstrap")
 	require.Contains(t, string(first.NetworkPolicy), "name: allow-store-bootstrap-to-store")
 	require.Equal(t, 2, strings.Count(string(first.NetworkPolicy), "codefly.dev/bootstrap-service: store"))
+	require.Contains(t, string(first.NetworkPolicy), "name: allow-temporal-to-dependencies")
+	require.Contains(t, string(first.NetworkPolicy), "name: allow-temporal-store-from-dependents")
+	require.Contains(t, string(first.NetworkPolicy), "name: allow-temporal-store-from-bootstrap")
+	require.Contains(t, string(first.NetworkPolicy), "name: allow-temporal-store-bootstrap-to-temporal-store")
+	require.Equal(t, 2, strings.Count(string(first.NetworkPolicy), "codefly.dev/bootstrap-service: temporal-store"))
 	require.Contains(t, string(first.NetworkPolicy), "name: allow-frontend-public-egress")
 	require.Contains(t, string(first.NetworkPolicy), "name: allow-marketing-public-egress")
 	require.Contains(t, string(first.NetworkPolicy), "name: allow-telemetry-from-dependents")
@@ -259,7 +286,7 @@ func TestGeneratedCodeflyAndNetworkManifestsParseStrictly(t *testing.T) {
 	require.NoError(t, loadedModule.ValidateInterface(ctx))
 	loadedServices, err := loadedModule.LoadServices(ctx)
 	require.NoError(t, err)
-	require.Len(t, loadedServices, 9)
+	require.Len(t, loadedServices, 11)
 
 	moduleDocument := readFixture(t, "../../../../../module.codefly.yaml")
 	var moduleEntry struct {
@@ -271,7 +298,7 @@ func TestGeneratedCodeflyAndNetworkManifestsParseStrictly(t *testing.T) {
 	require.NoError(t, yaml.Unmarshal(moduleDocument, &module))
 	_, err = module.Proto(ctx)
 	require.NoError(t, err)
-	require.Len(t, module.ServiceReferences, 9)
+	require.Len(t, module.ServiceReferences, 11)
 
 	for _, reference := range module.ServiceReferences {
 		document := readFixture(t, filepath.Join("../../../../../services", reference.Name, "service.codefly.yaml"))
@@ -313,12 +340,16 @@ func TestGeneratedCodeflyAndNetworkManifestsParseStrictly(t *testing.T) {
 		require.False(t, names[document.Metadata.Name], "duplicate NetworkPolicy %s", document.Metadata.Name)
 		names[document.Metadata.Name] = true
 	}
-	require.Len(t, names, 21)
+	require.Len(t, names, 25)
 	require.True(t, names["allow-istio-ingress-to-marketing"])
 	require.True(t, names["allow-istio-ingress-to-frontend"])
 	require.False(t, names["allow-istio-ingress-to-auth-sidecar"])
 	require.True(t, names["allow-store-from-bootstrap"])
 	require.True(t, names["allow-store-bootstrap-to-store"])
+	require.True(t, names["allow-temporal-to-dependencies"])
+	require.True(t, names["allow-temporal-store-from-dependents"])
+	require.True(t, names["allow-temporal-store-from-bootstrap"])
+	require.True(t, names["allow-temporal-store-bootstrap-to-temporal-store"])
 	require.True(t, names["allow-telemetry-from-dependents"])
 	require.True(t, names["allow-telemetry-public-egress"])
 }

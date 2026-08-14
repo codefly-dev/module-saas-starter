@@ -19,8 +19,8 @@ deployment ports, and public egress. The runtime `module.codefly.yaml` and every
 | `services/accounts/code/pkg/cataloggen/testdata/network-policy.golden.yaml` | Test-only topology-policy golden; installed GitOps policies are rendered structurally per environment. |
 | `services/accounts/code/pkg/cataloggen/deployment_topology.go` | Strict compiler, semantic validator, and renderers. |
 
-The normalized inventory currently contains nine services, 13 endpoints,
-eight dependency edges, three module-interface endpoints, and four explicit
+The normalized inventory currently contains eleven services, 16 endpoints,
+nine dependency edges, three module-interface endpoints, and four explicit
 public-egress grants. The accounts descriptor catalog is an input: if its RPCs
 use gRPC, Connect, or REST without a corresponding accounts endpoint,
 generation fails.
@@ -37,6 +37,7 @@ generation fails.
 | `auth-sidecar` | `accounts/connect`, `accounts/rest`, `accounts/grpc` | TCP 8080, 9090 |
 | `auth-sidecar` | `cache/write` | TCP 6379 |
 | `frontend` | `auth-sidecar/rest` | TCP 8080 |
+| `temporal` | `temporal-store/tcp` | TCP 5432 |
 
 The Codefly module interface exposes the public `frontend/http` and
 `marketing/http` endpoints; the auth-sidecar gRPC ext-authz endpoint has module
@@ -44,11 +45,12 @@ visibility. Istio routes apex/`www`/docs hosts to `marketing/http` and `app` to
 `frontend/http`. Accounts, frontend, marketing, and telemetry may reach
 public IP space only over TCP 443. The public rules exclude private, loopback,
 link-local, metadata, documentation, benchmark, multicast, and other
-special-purpose IPv4/IPv6 ranges.
+special-purpose IPv4/IPv6 ranges. Temporal's gRPC frontend and HTTP UI remain
+module-visible without a public ingress route.
 
 ## Network-policy model
 
-The topology-policy golden contains 21 `NetworkPolicy` resources:
+The topology-policy golden contains 25 `NetworkPolicy` resources:
 
 - one namespace-wide ingress/egress default deny;
 - DNS and Istio control-plane egress for all injected workloads;

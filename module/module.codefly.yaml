@@ -23,4 +23,6 @@ services:
     - name: object-storage
     - name: store
     - name: telemetry
+    - name: temporal
+    - name: temporal-store
     - name: vault
