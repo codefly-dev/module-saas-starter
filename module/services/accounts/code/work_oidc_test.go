@@ -142,24 +142,25 @@ func TestGenericOIDCStackHonorsDiscoveryOverrides(t *testing.T) {
 	require.Equal(t, 1, f.tokenHits, "exchange must hit the pinned token endpoint")
 }
 
-func TestGenericOIDCStackRecordsConfigurableProviderName(t *testing.T) {
+func TestGenericOIDCStackRecordsSelectorAsProviderName(t *testing.T) {
 	clearAuthProviderEnvironment(t)
 	f := newFakeOIDCProvider(t)
 	configureGenericOIDC(t, f.issuer)
 	accessToken := f.sign(t)
 
-	// Default provider name is "oidc".
-	setIdentityConfiguration(t, "IDENTITY_PROVIDER_NAME", "")
+	// claims.Provider must equal the IDENTITY_PROVIDER selector verbatim: the
+	// browser, the OAuth request policy, and the mismatch guard all key on that
+	// same string, so a divergent name would fail every login (regression: an
+	// earlier design recorded a separately configured name and broke the guard).
 	validator, _, err := buildProviderStack("oidc", "")
 	require.NoError(t, err)
 	claims, err := validator.Validate(t.Context(), accessToken)
 	require.NoError(t, err)
 	require.Equal(t, "oidc", claims.Provider)
 
-	// Two generic IdPs configured with distinct names key distinct
-	// user_identities (provider, provider_id) rows for the same subject.
-	setIdentityConfiguration(t, "IDENTITY_PROVIDER_NAME", "okta")
-	oktaValidator, _, err := buildProviderStack("oidc", "")
+	// Two generic IdPs selected by distinct IDENTITY_PROVIDER values key
+	// distinct user_identities (provider, provider_id) rows for the same subject.
+	oktaValidator, _, err := buildProviderStack("okta", "")
 	require.NoError(t, err)
 	oktaClaims, err := oktaValidator.Validate(t.Context(), accessToken)
 	require.NoError(t, err)

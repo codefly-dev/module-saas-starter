@@ -299,9 +299,11 @@ func TestFixtureVariableCannotOverrideProductionProvider(t *testing.T) {
 func TestBuildProviderStackRejectsUnknownAndIncompleteProviders(t *testing.T) {
 	clearAuthProviderEnvironment(t)
 
+	// A non-preset provider name is a generic OIDC provider; without
+	// credentials it must still fail startup closed, not at first login.
 	_, _, err := buildProviderStack("unknown", "")
 	require.Error(t, err)
-	require.Contains(t, err.Error(), "unsupported identity provider")
+	require.Contains(t, err.Error(), "identity provider unknown requires IDENTITY_CLIENT_ID")
 
 	_, _, err = buildProviderStack("workos", "")
 	require.Error(t, err)

@@ -829,8 +829,11 @@ func configuredWebAuthn() (rpID, displayName string, origins []string, err error
 //	auth0      — generic OIDC flow with Auth0 defaults.
 //	google     — generic OIDC flow with Google defaults.
 //
-// Empty, unknown, and incomplete provider configurations return an error so
-// the service cannot start with an ambiguous authentication boundary.
+// Any other non-empty value is also a generic OpenID Connect provider, named by
+// IDENTITY_PROVIDER so two enterprise IdPs occupy distinct user_identities
+// (provider, provider_id) namespaces. Empty and incomplete configurations
+// return an error so the service cannot start with an ambiguous authentication
+// boundary.
 // workspaceEnv reads a key from a named Codefly workspace configuration,
 // including its secret namespace, and falls back to a plain process variable
 // for deployments that do not use Codefly's configuration provider.
@@ -906,7 +909,7 @@ func buildOAuthRequestPolicy(provider string) (*auth.OAuthRequestPolicy, error) 
 // cannot reach the well-known endpoint — otherwise a partial pin still discovers
 // the rest, and any discovery outage fails startup closed rather than guessing.
 func buildDiscoveredOIDCStack(provider string) (auth.TokenValidator, business.CodeExchanger, error) {
-	validator, tokenURL, clientID, clientSecret, err := discoverOIDCValidator(provider, provider)
+	validator, tokenURL, clientID, clientSecret, err := discoverOIDCValidator(provider)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -929,12 +932,14 @@ func buildDiscoveredOIDCStack(provider string) (auth.TokenValidator, business.Co
 // exchanger rather than the WorkOS authenticate adapter, which reads the
 // verified email from a WorkOS-specific response shape no other IdP returns.
 //
-// The provider name recorded on each identity is configurable via
-// IDENTITY_PROVIDER_NAME (default "oidc") so two distinct enterprise IdPs do
-// not share one (provider, provider_id) namespace in user_identities.
-func buildGenericOIDCStack() (auth.TokenValidator, business.CodeExchanger, error) {
-	providerName := identityEnvOrDefault("IDENTITY_PROVIDER_NAME", "oidc")
-	validator, tokenURL, clientID, clientSecret, err := discoverOIDCValidator("oidc", providerName)
+// provider is the configured IDENTITY_PROVIDER value; it is recorded on each
+// identity as user_identities.provider. Two distinct enterprise IdPs avoid
+// colliding in that namespace by selecting distinct IDENTITY_PROVIDER values
+// (e.g. "okta", "ping"), each routed here. Using the same string the browser
+// sends and the OAuth request policy enforces is required: authenticateWithCode
+// rejects a login whose token provider disagrees with the request provider.
+func buildGenericOIDCStack(provider string) (auth.TokenValidator, business.CodeExchanger, error) {
+	validator, tokenURL, clientID, clientSecret, err := discoverOIDCValidator(provider)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -944,16 +949,18 @@ func buildGenericOIDCStack() (auth.TokenValidator, business.CodeExchanger, error
 		ClientSecret: clientSecret,
 	})
 	if err != nil {
-		return nil, nil, fmt.Errorf("initialize oidc exchanger: %w", err)
+		return nil, nil, fmt.Errorf("initialize %s exchanger: %w", provider, err)
 	}
 	return validator, oidc.AsBusinessExchanger(exchanger), nil
 }
 
 // discoverOIDCValidator builds the JWKS validator and resolves the token
-// endpoint shared by every discovery-driven provider. providerName is written
-// to Claims.Provider (and thus user_identities.provider); provider names the
-// configured IDENTITY_PROVIDER for error messages.
-func discoverOIDCValidator(provider, providerName string) (validator auth.TokenValidator, tokenURL, clientID, clientSecret string, err error) {
+// endpoint shared by every discovery-driven provider. provider is the
+// configured IDENTITY_PROVIDER value: it is written to Claims.Provider (and thus
+// user_identities.provider) and named in error messages. It is deliberately the
+// same string the browser sends and the OAuth request policy enforces, so the
+// two can never disagree at login.
+func discoverOIDCValidator(provider string) (validator auth.TokenValidator, tokenURL, clientID, clientSecret string, err error) {
 	clientID = identityEnv("IDENTITY_CLIENT_ID")
 	clientSecret = identityEnv("IDENTITY_CLIENT_SECRET")
 	issuer := identityEnv("IDENTITY_ISSUER")
@@ -987,7 +994,7 @@ func discoverOIDCValidator(provider, providerName string) (validator auth.TokenV
 	}
 
 	cfg := oidc.Config{
-		ProviderName:  providerName,
+		ProviderName:  provider,
 		Issuer:        expectedIssuer,
 		JWKSURL:       jwksURL,
 		Audience:      identityEnv("IDENTITY_AUDIENCE"),
@@ -1041,7 +1048,7 @@ func buildProviderStack(provider, selectedFixture string) (auth.TokenValidator, 
 		return buildDiscoveredOIDCStack(provider)
 
 	case "oidc":
-		return buildGenericOIDCStack()
+		return buildGenericOIDCStack(provider)
 
 	case "auth0":
 		domain := identityEnv("IDENTITY_DOMAIN")
@@ -1097,7 +1104,11 @@ func buildProviderStack(provider, selectedFixture string) (auth.TokenValidator, 
 	case "":
 		return nil, nil, fmt.Errorf("IDENTITY_PROVIDER is required in the Codefly identity workspace configuration")
 	default:
-		return nil, nil, fmt.Errorf("unsupported identity provider %q", provider)
+		// Any other value is treated as a generic OpenID Connect provider named
+		// by IDENTITY_PROVIDER. It is not an ambiguous boundary: the generic
+		// stack still requires IDENTITY_ISSUER and client credentials and fails
+		// startup closed when they are absent.
+		return buildGenericOIDCStack(provider)
 	}
 }
 

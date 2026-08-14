@@ -107,15 +107,22 @@ from the provider's `/.well-known/openid-configuration`; nothing about the IdP
 is compiled in (`oidc.OktaConfig` in `pkg/auth/oidc/presets.go` is executable
 documentation of one concrete instance).
 
+`IDENTITY_PROVIDER` is the identity's `user_identities.provider` namespace. Use
+`oidc` for a single generic IdP; give two distinct enterprise IdPs distinct
+values (e.g. `IDENTITY_PROVIDER=okta` and `IDENTITY_PROVIDER=ping`) so they do
+not share one `(provider, provider_id)` namespace. Any non-preset value routes
+through this same generic path. The value must match `NEXT_PUBLIC_IDENTITY_PROVIDER`
+so the browser, the OAuth request policy, and the validated token all agree on
+the provider — a disagreement is rejected at login.
+
 Required Codefly `identity` configuration keys:
 
 | Key                     | Required | Purpose                                                            |
 |-------------------------|----------|--------------------------------------------------------------------|
-| `IDENTITY_PROVIDER`     | yes      | `oidc`                                                              |
+| `IDENTITY_PROVIDER`     | yes      | `oidc`, or a distinct name per IdP (`okta`, `ping`, …)            |
 | `IDENTITY_ISSUER`       | yes      | Issuer URL; discovers JWKS + token endpoint                        |
 | `IDENTITY_CLIENT_ID`    | yes      | OAuth client id                                                    |
 | `IDENTITY_CLIENT_SECRET`| yes      | OAuth client secret (backend only)                                |
-| `IDENTITY_PROVIDER_NAME`| no       | `user_identities.provider` namespace (default `oidc`); set it so two generic IdPs don't collide |
 | `IDENTITY_JWKS_URL`     | no       | Pin the key set for IdPs whose discovery document is incomplete or unreachable |
 | `IDENTITY_TOKEN_URL`    | no       | Pin the token endpoint for the same reason                        |
 | `IDENTITY_AUDIENCE`     | no       | Enforced `aud`                                                     |
