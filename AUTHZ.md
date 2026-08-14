@@ -80,6 +80,26 @@ even though L1 said "you're a member, come on in".
 where `$1` came from the URL not the JWT (cross-tenant leak via
 mass-assignment). Or a missing WHERE clause altogether. That's L3.
 
+### Scope semantics
+
+`role_assignments.scope` is a fine-grained authorization dimension *within*
+an org (a module, product area, project — e.g. "analyst on module-a but not
+module-b"). `CheckPermission` treats it strictly in both directions: a grant
+scoped to `module-a` never widens to satisfy a check that asked for the
+permission unscoped. A NULL-scope assignment is deliberately org-wide and
+subsumes all scopes.
+
+| Grant scope ↓ / Check scope → | `""` (unscoped) | `module-a` | `module-b` |
+|---|---|---|---|
+| `NULL` (org-wide) | ✅ | ✅ | ✅ |
+| `module-a` | ❌ | ✅ | ❌ |
+
+The two edges to note: a scoped grant does **not** satisfy an unscoped check
+(a narrow grant stays narrow), and a NULL-scope grant satisfies every check
+(org-wide subsumes scoped). If per-role subsumption is ever unwanted, that's
+a follow-up design, not the default. Team-inherited assignments follow the
+same matrix.
+
 ## Layer 3 — RLS (DB row-level)
 
 **Where:** Postgres `ROW LEVEL SECURITY` + policies on every per-tenant

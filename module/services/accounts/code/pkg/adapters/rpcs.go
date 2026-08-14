@@ -736,7 +736,14 @@ func (s *AuthServer) Authenticate(ctx context.Context, req *gen.AuthenticateRequ
 	if err := Validate(req); err != nil {
 		return nil, err
 	}
-	return service.Authenticate(ctx, req)
+	resp, err := service.Authenticate(ctx, req)
+	if errors.Is(err, auth.ErrGroupNotAllowed) {
+		// The token verified but the identity is outside the configured group
+		// allow-list. Distinct from an invalid credential so the frontend can
+		// render "access not granted" rather than a generic sign-in failure.
+		return nil, status.Error(codes.PermissionDenied, "access not granted")
+	}
+	return resp, err
 }
 
 func (s *AuthServer) CompleteMFAChallenge(ctx context.Context, req *gen.CompleteMFAChallengeRequest) (*gen.CompleteMFAChallengeResponse, error) {

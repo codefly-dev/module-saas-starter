@@ -309,7 +309,11 @@ func (s *PostgresStore) RevokeRole(ctx context.Context, subjectID string, roleID
 // given permission.
 // It supports:
 //   - Wildcard permissions: resource="*" or action="*" match everything
-//   - Scope matching: assignment scope must match or be empty (global)
+//   - Scope matching (strict): an unscoped check (scope=="") is satisfied only
+//     by NULL-scope assignments; a scoped check is satisfied by an assignment
+//     with the same scope OR a NULL-scope assignment. NULL-scope assignments
+//     are deliberately org-wide and subsume all scopes — a scoped grant never
+//     widens to satisfy an unscoped check.
 //   - Team inheritance: human principals also inherit permissions assigned to
 //     teams they belong to
 func (s *PostgresStore) CheckPermission(ctx context.Context, subjectID string, subjectKind gen.SubjectKind, resource string, action string, orgID string, scope string) (bool, string, error) {
@@ -323,7 +327,8 @@ func (s *PostgresStore) CheckPermission(ctx context.Context, subjectID string, s
 	// 1. Direct principal role assignments
 	// 2. Team role assignments (for human principals who are team members)
 	// 3. Wildcard permission matching (* on resource or action)
-	// 4. Scope matching (NULL scope = global, specific scope = scoped)
+	// 4. Scope matching (strict): unscoped checks match only NULL-scope
+	//    assignments; scoped checks match the same scope or a NULL (org-wide) scope
 	// 5. Org scoping (NULL org = global role, specific org = org role)
 	// Build query dynamically to avoid passing empty strings as UUID parameters
 	var subjectPredicate string
@@ -363,6 +368,8 @@ func (s *PostgresStore) CheckPermission(ctx context.Context, subjectID string, s
 	if scope != "" {
 		query += fmt.Sprintf(` AND (ra.scope IS NULL OR ra.scope = $%d)`, len(args)+1)
 		args = append(args, scope)
+	} else {
+		query += ` AND ra.scope IS NULL`
 	}
 
 	query += ` LIMIT 1`
