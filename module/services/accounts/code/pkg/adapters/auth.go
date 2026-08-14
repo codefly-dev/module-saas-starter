@@ -24,6 +24,7 @@ package adapters
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"strconv"
 	"strings"
@@ -445,6 +446,88 @@ func withScopes(ctx context.Context, scopes []string) context.Context {
 func scopesFromContext(ctx context.Context) []string {
 	v, _ := ctx.Value(scopesCtxKey).([]string)
 	return v
+}
+
+// scopedRolesCtxKey holds the caller's per-scope role grants, forwarded by the
+// auth-sidecar as the JSON `X-Scoped-Roles` header (or read from the `sr` claim
+// on the direct-JWT path). It lets a handler authorize a scoped operation from
+// the request context alone, without a callback to the authorization service.
+type scopedRolesCtxKeyType struct{}
+
+var scopedRolesCtxKey = scopedRolesCtxKeyType{}
+
+// withScopedRoles stamps the caller's scope->roles map on the context.
+func withScopedRoles(ctx context.Context, scoped map[string][]string) context.Context {
+	if len(scoped) == 0 {
+		return ctx
+	}
+	return context.WithValue(ctx, scopedRolesCtxKey, scoped)
+}
+
+// ScopedRolesFromContext returns the caller's scope->roles grants, or nil when
+// the caller holds none. The map is authoritative as of the token's mint time;
+// role edits revoke the session (see migration 91), so a live token's scoped
+// roles are never staler than one refresh cycle.
+func ScopedRolesFromContext(ctx context.Context) map[string][]string {
+	v, _ := ctx.Value(scopedRolesCtxKey).(map[string][]string)
+	return v
+}
+
+// scopedRolesTruncatedCtxKey records that the caller's scope->roles map was
+// bounded by MaxScopedRoleAssignments and is therefore incomplete.
+type scopedRolesTruncatedCtxKeyType struct{}
+
+var scopedRolesTruncatedCtxKey = scopedRolesTruncatedCtxKeyType{}
+
+// withScopedRolesTruncated marks the context's scoped-role grants as incomplete.
+func withScopedRolesTruncated(ctx context.Context, truncated bool) context.Context {
+	if !truncated {
+		return ctx
+	}
+	return context.WithValue(ctx, scopedRolesTruncatedCtxKey, true)
+}
+
+// ScopedRolesTruncatedFromContext reports whether the scope->roles grants on ctx
+// were truncated to fit the claim bound. When true, an absent grant is NOT a
+// denial — the caller holds more scoped roles than the header carries, so a
+// service must consult CheckPermission for an authoritative answer.
+func ScopedRolesTruncatedFromContext(ctx context.Context) bool {
+	v, _ := ctx.Value(scopedRolesTruncatedCtxKey).(bool)
+	return v
+}
+
+// HasScopedRole reports whether the caller holds role within scope per the
+// header grants on ctx, and whether that answer is conclusive. It is the
+// header-only authorization primitive: no database call, no callback to
+// accounts.
+//
+// The two-value return exists so a miss cannot be silently read as a denial.
+// conclusive is false only when the grant was not found AND the grants were
+// truncated to fit the claim bound (ScopedRolesTruncatedFromContext) — the
+// caller genuinely holds more scoped roles than the header carries. On
+// (false, false) the caller MUST consult CheckPermission rather than deny; on
+// (false, true) the caller may deny (the header is complete and lacks it).
+func HasScopedRole(ctx context.Context, scope, role string) (granted, conclusive bool) {
+	for _, r := range ScopedRolesFromContext(ctx)[scope] {
+		if r == role {
+			return true, true
+		}
+	}
+	return false, !ScopedRolesTruncatedFromContext(ctx)
+}
+
+// parseScopedRoles decodes the JSON `X-Scoped-Roles` header payload. A malformed
+// payload yields nil rather than an error: the header is advisory transport
+// metadata, and a caller that needs an authoritative answer uses CheckPermission.
+func parseScopedRoles(raw string) map[string][]string {
+	if raw == "" {
+		return nil
+	}
+	var scoped map[string][]string
+	if err := json.Unmarshal([]byte(raw), &scoped); err != nil {
+		return nil
+	}
+	return scoped
 }
 
 // requireScope enforces that an API-key caller has the required scope.

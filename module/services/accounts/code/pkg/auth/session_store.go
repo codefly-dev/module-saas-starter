@@ -42,6 +42,14 @@ type RefreshAuthorization struct {
 	OrgRole      string
 	PlatformRole string
 	MFAEnrolled  bool
+	// ScopedRoles is the caller's current per-scope role grants in OrgID,
+	// re-resolved from role_assignments so a rotated or org-switched token
+	// reflects scoped-role edits made since the family was minted.
+	ScopedRoles map[string][]string
+	// ScopedRolesTruncated mirrors Identity.ScopedRolesTruncated: the caller
+	// holds more than MaxScopedRoleAssignments scoped grants and ScopedRoles is
+	// a bounded slice.
+	ScopedRolesTruncated bool
 }
 
 // SessionStore is the storage dependency of Ed25519Minter. Production uses a
