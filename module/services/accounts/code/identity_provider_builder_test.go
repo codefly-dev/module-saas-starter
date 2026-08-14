@@ -3,6 +3,8 @@ package main
 import (
 	"context"
 	"errors"
+	"net/http"
+	"net/http/httptest"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -90,6 +92,42 @@ func TestBuilderRequiresIssuerClientAndSecret(t *testing.T) {
 			require.Error(t, err)
 		})
 	}
+}
+
+// TestBuilderDiscoversMissingEndpoints covers the other half of endpoint
+// resolution: when JWKS/token are not pinned, Build fetches them from the
+// provider's published metadata exactly once. A fake well-known server keeps it
+// a fast unit test — the same shape work_provider_test.go uses for the global
+// stack.
+func TestBuilderDiscoversMissingEndpoints(t *testing.T) {
+	var issuer string
+	hits := 0
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		require.Equal(t, "/.well-known/openid-configuration", r.URL.Path)
+		hits++
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{
+			"issuer": "` + issuer + `",
+			"authorization_endpoint": "` + issuer + `/authorize",
+			"token_endpoint": "` + issuer + `/token",
+			"jwks_uri": "` + issuer + `/jwks"
+		}`))
+	}))
+	defer server.Close()
+	issuer = server.URL
+
+	p := pinnedOIDCProvider()
+	p.Issuer = issuer
+	p.JWKSURL = "" // unpinned → discovery must fill both endpoints
+	p.TokenURL = ""
+
+	stack, err := oidcProviderStackBuilder{cipher: &fakeSecretCipher{plaintext: "s3cret"}}.
+		Build(context.Background(), p)
+	require.NoError(t, err)
+	require.Equal(t, "oidc:"+builderOrgID, stack.Name)
+	require.NotNil(t, stack.Validator)
+	require.NotNil(t, stack.Exchanger)
+	require.Equal(t, 1, hits, "missing endpoints must be discovered exactly once")
 }
 
 func TestBuilderPropagatesDecryptError(t *testing.T) {
