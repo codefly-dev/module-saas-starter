@@ -327,7 +327,8 @@ func (s *PostgresStore) CheckPermission(ctx context.Context, subjectID string, s
 	// 1. Direct principal role assignments
 	// 2. Team role assignments (for human principals who are team members)
 	// 3. Wildcard permission matching (* on resource or action)
-	// 4. Scope matching (NULL scope = global, specific scope = scoped)
+	// 4. Scope matching (strict): unscoped checks match only NULL-scope
+	//    assignments; scoped checks match the same scope or a NULL (org-wide) scope
 	// 5. Org scoping (NULL org = global role, specific org = org role)
 	// Build query dynamically to avoid passing empty strings as UUID parameters
 	var subjectPredicate string
