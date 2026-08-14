@@ -823,6 +823,9 @@ func configuredWebAuthn() (rpID, displayName string, origins []string, err error
 //	             No exchanger (no OAuth code flow). Used for local iteration.
 //	workos     — oidc.Validator + oidc.Exchanger preconfigured for
 //	             WorkOS through the same generic identity contract.
+//	oidc       — any spec-compliant OpenID Connect provider (Okta,
+//	             PingFederate, Entra, Keycloak, …), configured entirely
+//	             from discovery plus the IDENTITY_* contract.
 //	auth0      — generic OIDC flow with Auth0 defaults.
 //	google     — generic OIDC flow with Google defaults.
 //
@@ -903,28 +906,76 @@ func buildOAuthRequestPolicy(provider string) (*auth.OAuthRequestPolicy, error) 
 // cannot reach the well-known endpoint — otherwise a partial pin still discovers
 // the rest, and any discovery outage fails startup closed rather than guessing.
 func buildDiscoveredOIDCStack(provider string) (auth.TokenValidator, business.CodeExchanger, error) {
-	clientID := identityEnv("IDENTITY_CLIENT_ID")
-	clientSecret := identityEnv("IDENTITY_CLIENT_SECRET")
+	validator, tokenURL, clientID, clientSecret, err := discoverOIDCValidator(provider, provider)
+	if err != nil {
+		return nil, nil, err
+	}
+	exchanger, err := workosauth.NewExchanger(workosauth.Config{
+		TokenURL:     tokenURL,
+		ClientID:     clientID,
+		ClientSecret: clientSecret,
+		Validator:    validator,
+	})
+	if err != nil {
+		return nil, nil, fmt.Errorf("initialize %s exchanger: %w", provider, err)
+	}
+	return validator, exchanger, nil
+}
+
+// buildGenericOIDCStack configures any spec-compliant OpenID Connect provider
+// (Okta, PingFederate, Azure AD/Entra, Keycloak, …) from discovery plus the
+// Codefly `identity` workspace configuration. It shares WorkOS's discovery and
+// JWKS validation but pairs them with the standard OAuth 2.0 code-grant
+// exchanger rather than the WorkOS authenticate adapter, which reads the
+// verified email from a WorkOS-specific response shape no other IdP returns.
+//
+// The provider name recorded on each identity is configurable via
+// IDENTITY_PROVIDER_NAME (default "oidc") so two distinct enterprise IdPs do
+// not share one (provider, provider_id) namespace in user_identities.
+func buildGenericOIDCStack() (auth.TokenValidator, business.CodeExchanger, error) {
+	providerName := identityEnvOrDefault("IDENTITY_PROVIDER_NAME", "oidc")
+	validator, tokenURL, clientID, clientSecret, err := discoverOIDCValidator("oidc", providerName)
+	if err != nil {
+		return nil, nil, err
+	}
+	exchanger, err := oidc.NewExchanger(oidc.ExchangerConfig{
+		TokenURL:     tokenURL,
+		ClientID:     clientID,
+		ClientSecret: clientSecret,
+	})
+	if err != nil {
+		return nil, nil, fmt.Errorf("initialize oidc exchanger: %w", err)
+	}
+	return validator, oidc.AsBusinessExchanger(exchanger), nil
+}
+
+// discoverOIDCValidator builds the JWKS validator and resolves the token
+// endpoint shared by every discovery-driven provider. providerName is written
+// to Claims.Provider (and thus user_identities.provider); provider names the
+// configured IDENTITY_PROVIDER for error messages.
+func discoverOIDCValidator(provider, providerName string) (validator auth.TokenValidator, tokenURL, clientID, clientSecret string, err error) {
+	clientID = identityEnv("IDENTITY_CLIENT_ID")
+	clientSecret = identityEnv("IDENTITY_CLIENT_SECRET")
 	issuer := identityEnv("IDENTITY_ISSUER")
 	if !hasConfiguredValue(clientID) || !hasConfiguredValue(clientSecret) {
-		return nil, nil, fmt.Errorf(
+		return nil, "", "", "", fmt.Errorf(
 			"identity provider %s requires IDENTITY_CLIENT_ID and IDENTITY_CLIENT_SECRET", provider)
 	}
 	if !hasConfiguredValue(issuer) {
-		return nil, nil, fmt.Errorf(
+		return nil, "", "", "", fmt.Errorf(
 			"identity provider %s requires IDENTITY_ISSUER to discover provider metadata", provider)
 	}
 
 	// Start from any explicitly pinned endpoints; discovery fills only the gaps.
 	expectedIssuer := issuer
 	jwksURL := identityEnv("IDENTITY_JWKS_URL")
-	tokenURL := identityEnv("IDENTITY_TOKEN_URL")
+	tokenURL = identityEnv("IDENTITY_TOKEN_URL")
 	if !hasConfiguredValue(jwksURL) || !hasConfiguredValue(tokenURL) {
 		ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 		defer cancel()
 		discovered, err := oidc.Discover(ctx, issuer, nil)
 		if err != nil {
-			return nil, nil, fmt.Errorf("discover %s provider metadata: %w", provider, err)
+			return nil, "", "", "", fmt.Errorf("discover %s provider metadata: %w", provider, err)
 		}
 		expectedIssuer = discovered.Issuer
 		if !hasConfiguredValue(jwksURL) {
@@ -936,7 +987,7 @@ func buildDiscoveredOIDCStack(provider string) (auth.TokenValidator, business.Co
 	}
 
 	cfg := oidc.Config{
-		ProviderName:  provider,
+		ProviderName:  providerName,
 		Issuer:        expectedIssuer,
 		JWKSURL:       jwksURL,
 		Audience:      identityEnv("IDENTITY_AUDIENCE"),
@@ -951,26 +1002,16 @@ func buildDiscoveredOIDCStack(provider string) (auth.TokenValidator, business.Co
 		cfg.EmailClaim = claim
 	}
 
-	validator, err := oidc.New(cfg)
+	v, err := oidc.New(cfg)
 	if err != nil {
-		return nil, nil, fmt.Errorf("initialize %s validator: %w", provider, err)
+		return nil, "", "", "", fmt.Errorf("initialize %s validator: %w", provider, err)
 	}
 
 	if strings.TrimSpace(tokenURL) == "" {
-		return nil, nil, fmt.Errorf(
+		return nil, "", "", "", fmt.Errorf(
 			"identity provider %s published no token endpoint; set IDENTITY_TOKEN_URL", provider)
 	}
-
-	exchanger, err := workosauth.NewExchanger(workosauth.Config{
-		TokenURL:     tokenURL,
-		ClientID:     clientID,
-		ClientSecret: clientSecret,
-		Validator:    validator,
-	})
-	if err != nil {
-		return nil, nil, fmt.Errorf("initialize %s exchanger: %w", provider, err)
-	}
-	return validator, exchanger, nil
+	return v, tokenURL, clientID, clientSecret, nil
 }
 
 func identityEnvOrDefault(key, fallback string) string {
@@ -998,6 +1039,9 @@ func buildProviderStack(provider, selectedFixture string) (auth.TokenValidator, 
 
 	case "workos":
 		return buildDiscoveredOIDCStack(provider)
+
+	case "oidc":
+		return buildGenericOIDCStack()
 
 	case "auth0":
 		domain := identityEnv("IDENTITY_DOMAIN")

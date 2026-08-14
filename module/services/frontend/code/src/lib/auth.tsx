@@ -38,7 +38,7 @@ const authClient = createClient(AuthService, apiTransport);
 // IDENTITY_* values to the browser as NEXT_PUBLIC_IDENTITY_*.
 //
 // Required:
-//   NEXT_PUBLIC_IDENTITY_PROVIDER       — workos | auth0 | google
+//   NEXT_PUBLIC_IDENTITY_PROVIDER       — workos | auth0 | google | oidc
 //   NEXT_PUBLIC_IDENTITY_AUTHORIZE_URL  — hosted authorize endpoint
 //   NEXT_PUBLIC_IDENTITY_CLIENT_ID      — OAuth client id
 // Optional:

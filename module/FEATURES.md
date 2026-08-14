@@ -39,7 +39,7 @@ the sidecar in front so this code path isn't reached.
 | Frontend     | Next.js 16 (App Router) + Connect-ES + TanStack Query|
 | Public site  | Separate Next.js 16 service + repository Markdown     |
 | Auth tokens  | Ed25519 JWT, OWASP refresh-token rotation            |
-| Identity     | WorkOS / Auth0 / Google OIDC (prod), fixture (dev)   |
+| Identity     | WorkOS / Auth0 / Google / generic OIDC (prod), fixture (dev) |
 | Database     | Postgres                                             |
 | Cache        | Redis (org-membership, 30s TTL, invalidation hooks)  |
 | Secrets      | Vault (signing key + integrations)                   |
@@ -96,6 +96,35 @@ Standard OAuth 2.0 authorization-code flow:
 
 Switching providers means selecting another Codefly `identity` configuration
 profile. Product services keep the same generic configuration contract.
+
+### Generic OIDC (any spec-compliant IdP)
+
+`IDENTITY_PROVIDER=oidc` drives the same discovery-based flow as above for any
+OpenID Connect provider — Okta, PingFederate, Azure AD / Entra, Keycloak, or a
+plain enterprise IdP — with the standard OAuth 2.0 code-grant exchanger rather
+than the WorkOS-specific one. The issuer, JWKS, and token endpoint are read
+from the provider's `/.well-known/openid-configuration`; nothing about the IdP
+is compiled in (`oidc.OktaConfig` in `pkg/auth/oidc/presets.go` is executable
+documentation of one concrete instance).
+
+Required Codefly `identity` configuration keys:
+
+| Key                     | Required | Purpose                                                            |
+|-------------------------|----------|--------------------------------------------------------------------|
+| `IDENTITY_PROVIDER`     | yes      | `oidc`                                                              |
+| `IDENTITY_ISSUER`       | yes      | Issuer URL; discovers JWKS + token endpoint                        |
+| `IDENTITY_CLIENT_ID`    | yes      | OAuth client id                                                    |
+| `IDENTITY_CLIENT_SECRET`| yes      | OAuth client secret (backend only)                                |
+| `IDENTITY_PROVIDER_NAME`| no       | `user_identities.provider` namespace (default `oidc`); set it so two generic IdPs don't collide |
+| `IDENTITY_JWKS_URL`     | no       | Pin the key set for IdPs whose discovery document is incomplete or unreachable |
+| `IDENTITY_TOKEN_URL`    | no       | Pin the token endpoint for the same reason                        |
+| `IDENTITY_AUDIENCE`     | no       | Enforced `aud`                                                     |
+| `IDENTITY_EMAIL_CLAIM`  | no       | Email claim name (default `email`)                                 |
+| `IDENTITY_ORG_CLAIM`    | no       | Organization-id claim name (default `organization_id`)            |
+| `NEXT_PUBLIC_IDENTITY_DISPLAY_NAME` | no | Sign-in button label (frontend)                             |
+
+Missing issuer, client id, or client secret fails startup with a precise error
+rather than at first login.
 
 ### Token lifecycle
 
