@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it } from "vitest";
 import {
 	availableProviders,
 	buildAuthorizeURL,
+	isHeaderInjectedProvider,
 	type ProviderPreset,
 } from "./auth";
 
@@ -22,6 +23,20 @@ describe("Codefly identity provider configuration", () => {
 	it("keeps fixture identity out of the external-provider UI", () => {
 		process.env.NEXT_PUBLIC_IDENTITY_PROVIDER = "fixture";
 		expect(availableProviders()).toEqual([]);
+	});
+
+	it("recognises header-injected identity without an OAuth provider button", () => {
+		process.env.NEXT_PUBLIC_IDENTITY_PROVIDER = "header-jwt";
+		// No hosted authorize URL or client id: there is no OAuth button to render.
+		expect(availableProviders()).toEqual([]);
+		expect(isHeaderInjectedProvider()).toBe(true);
+	});
+
+	it("does not treat OAuth or fixture providers as header-injected", () => {
+		process.env.NEXT_PUBLIC_IDENTITY_PROVIDER = "workos";
+		expect(isHeaderInjectedProvider()).toBe(false);
+		process.env.NEXT_PUBLIC_IDENTITY_PROVIDER = "fixture";
+		expect(isHeaderInjectedProvider()).toBe(false);
 	});
 
 	it("builds the selected WorkOS AuthKit provider from generic identity configuration", () => {
