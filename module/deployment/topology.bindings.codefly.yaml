@@ -29,6 +29,7 @@ services:
       - email
       - identity
       - internal-auth
+      - observability
       - product-analytics
       - security
     endpoints:
@@ -85,6 +86,7 @@ services:
     workspace_configuration_dependencies:
       - gateway
       - internal-auth
+      - observability
       - security
     endpoints:
       - name: grpc
@@ -104,6 +106,9 @@ services:
       - service: cache
         endpoints:
           - write
+      - service: telemetry
+        endpoints:
+          - grpc
     spec:
       hot-reload: true
       rest-endpoint: true

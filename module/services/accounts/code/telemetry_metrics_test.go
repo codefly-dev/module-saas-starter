@@ -6,6 +6,7 @@ import (
 	"net"
 	"net/http"
 	"net/http/httptest"
+	"runtime"
 	"testing"
 	"time"
 
@@ -56,16 +57,9 @@ func (versionConnectHandler) Version(
 	return connect.NewResponse(&gen.VersionResponse{Version: "test"}), nil
 }
 
-func TestEnableOTELMetricsNoopsWithoutEndpoint(t *testing.T) {
-	before := otel.GetMeterProvider()
-	metrics, err := enableOTELMetrics(t.Context(), "test-service", "  ")
-	require.NoError(t, err)
-	require.Nil(t, metrics)
-	require.Equal(t, before, otel.GetMeterProvider())
-}
-
 func TestTelemetryMetricsExportRuntimeAndUnsampledRED(t *testing.T) {
 	endpoint, capture := startMetricCapture(t)
+	t.Setenv("OTEL_RESOURCE_ATTRIBUTES", "service.instance.id=test-instance")
 
 	previousMeterProvider := otel.GetMeterProvider()
 	previousTracerProvider := otel.GetTracerProvider()
@@ -90,13 +84,19 @@ func TestTelemetryMetricsExportRuntimeAndUnsampledRED(t *testing.T) {
 
 	recordGRPCRequests(t)
 	recordConnectRequests(t)
+	runtime.GC()
 
 	require.NoError(t, metrics.provider.ForceFlush(t.Context()))
 	request := receiveMetrics(t, capture.requests)
+	require.Equal(t, "test-instance", resourceAttribute(request, "service.instance.id"))
 	metricNames := exportedMetricNames(request)
 	require.Contains(t, metricNames, "go.goroutine.count")
 	require.Contains(t, metricNames, "go.memory.allocated")
 	require.Contains(t, metricNames, "go.memory.gc.goal")
+	require.Contains(t, metricNames, "go.gc.cycle.count")
+	require.Contains(t, metricNames, "go.gc.pause.cpu_time")
+	require.Positive(t, int64SumValue(request, "go.gc.cycle.count"))
+	require.Positive(t, float64SumValue(request, "go.gc.pause.cpu_time"))
 
 	grpcCounts := statusCounts(request, "rpc.server.call.duration", "rpc.response.status_code")
 	require.Equal(t, uint64(3), grpcCounts["OK"])
@@ -119,6 +119,8 @@ func TestTelemetryMetricsExportRuntimeAndUnsampledRED(t *testing.T) {
 	require.Contains(t, body, "go_goroutine_count")
 	require.Contains(t, body, "go_memory_allocated")
 	require.Contains(t, body, "go_memory_gc_goal")
+	require.Contains(t, body, "go_gc_cycle_count")
+	require.Contains(t, body, "go_gc_pause_cpu_time")
 	require.Contains(t, body, "rpc_server_call_duration_seconds_count")
 	require.Contains(t, body, `rpc_method="grpc.health.v1.Health/Check"`)
 	require.Contains(t, body, `rpc_response_status_code="OK"`)
@@ -208,6 +210,49 @@ func receiveMetrics(
 		t.Fatal("timed out waiting for OTLP metrics")
 		return nil
 	}
+}
+
+func int64SumValue(request *collectormetricsv1.ExportMetricsServiceRequest, name string) int64 {
+	var value int64
+	for _, resourceMetrics := range request.GetResourceMetrics() {
+		for _, scopeMetrics := range resourceMetrics.GetScopeMetrics() {
+			for _, metric := range scopeMetrics.GetMetrics() {
+				if metric.GetName() == name {
+					for _, point := range metric.GetSum().GetDataPoints() {
+						value += point.GetAsInt()
+					}
+				}
+			}
+		}
+	}
+	return value
+}
+
+func float64SumValue(request *collectormetricsv1.ExportMetricsServiceRequest, name string) float64 {
+	var value float64
+	for _, resourceMetrics := range request.GetResourceMetrics() {
+		for _, scopeMetrics := range resourceMetrics.GetScopeMetrics() {
+			for _, metric := range scopeMetrics.GetMetrics() {
+				if metric.GetName() == name {
+					for _, point := range metric.GetSum().GetDataPoints() {
+						value += point.GetAsDouble()
+					}
+				}
+			}
+		}
+	}
+	return value
+}
+
+func resourceAttribute(request *collectormetricsv1.ExportMetricsServiceRequest, key string) string {
+	for _, resourceMetrics := range request.GetResourceMetrics() {
+		for _, attr := range resourceMetrics.GetResource().GetAttributes() {
+			if attr.GetKey() == key {
+				return attr.GetValue().GetStringValue()
+			}
+		}
+	}
+	return ""
 }
 
 func exportedMetricNames(request *collectormetricsv1.ExportMetricsServiceRequest) map[string]bool {

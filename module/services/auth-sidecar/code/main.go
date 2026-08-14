@@ -18,6 +18,7 @@ import (
 	"time"
 
 	"github.com/codefly-dev/core/standards"
+	wooltel "github.com/codefly-dev/core/wool/otel"
 	codefly "github.com/codefly-dev/sdk-go"
 
 	authv3 "github.com/envoyproxy/go-control-plane/envoy/service/auth/v3"
@@ -45,6 +46,47 @@ func main() {
 		panic(fmt.Sprintf("Codefly REST endpoint is unavailable: %v", httpNetErr))
 	}
 	httpPort = httpNet.Port
+	var otelProvider *wooltel.Provider
+	var otelMetricProvider *otelMetrics
+	if observabilityEnabled() {
+		collectorNetwork, err := codefly.For(ctx).
+			Service("telemetry").
+			Endpoint("grpc").
+			API("grpc").
+			ResolveNetworkInstance()
+		if err != nil {
+			panic(fmt.Sprintf("resolve telemetry collector through Codefly: %v", err))
+		}
+		otelProvider, err = wooltel.Enable(
+			wooltel.WithServiceName("saas-starter-auth-sidecar"),
+			wooltel.WithEndpoint(collectorNetwork.Host),
+			wooltel.WithInsecure(),
+		)
+		if err != nil {
+			panic(fmt.Sprintf("configure OTEL tracing: %v", err))
+		}
+		otelMetricProvider, err = enableOTELMetrics(ctx, "saas-starter-auth-sidecar", collectorNetwork.Host)
+		if err != nil {
+			shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+			_ = otelProvider.Shutdown(shutdownCtx)
+			cancel()
+			panic(fmt.Sprintf("configure OTEL metrics: %v", err))
+		}
+	}
+	defer func() {
+		shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		if otelMetricProvider != nil {
+			if err := otelMetricProvider.Shutdown(shutdownCtx); err != nil {
+				log.Printf("shutdown: OTEL metrics: %v", err)
+			}
+		}
+		if otelProvider != nil {
+			if err := otelProvider.Shutdown(shutdownCtx); err != nil {
+				log.Printf("shutdown: OTEL tracing: %v", err)
+			}
+		}
+	}()
 
 	apiNet := codefly.For(ctx).Service("accounts").Endpoint("grpc").API("grpc").NetworkInstance()
 	if apiNet == nil {
@@ -82,7 +124,11 @@ func main() {
 
 	sidecar := NewSidecar(internalAPIConn, publicKey)
 
-	grpcServer := grpc.NewServer()
+	var grpcOptions []grpc.ServerOption
+	if otelMetricProvider != nil {
+		grpcOptions = append(grpcOptions, wooltel.GRPCServerOptions()...)
+	}
+	grpcServer := grpc.NewServer(grpcOptions...)
 	authv3.RegisterAuthorizationServer(grpcServer, sidecar)
 	reflection.Register(grpcServer)
 
@@ -144,7 +190,7 @@ func main() {
 		gateway := NewGateway(sidecar, matcher, upstreams, rateLimiter)
 		httpServer = &http.Server{
 			Addr:    fmt.Sprintf(":%d", httpPort),
-			Handler: gateway,
+			Handler: newGatewayHTTPHandler(gateway, otelMetricProvider),
 		}
 		go func() {
 			fmt.Printf("auth-sidecar API gateway (HTTP) listening on :%d (api: %s, routes: %d)\n",
