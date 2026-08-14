@@ -117,6 +117,13 @@ closed rather than silently building a mismatched stack. The value must match
 `NEXT_PUBLIC_IDENTITY_PROVIDER` so the browser, the OAuth request policy, and the
 validated token all agree on the provider — a disagreement is rejected at login.
 
+`user_identities.provider` is a foreign key into the `identity_providers`
+reference catalog, so the provider name must be seeded there or login fails.
+Migration 90 registers `oidc`, `auth0`, `okta`, and `ping`; a deployment using a
+different generic name adds it via its own migration. Startup verifies the
+configured provider is registered and fails closed with a precise error if not,
+rather than deferring the foreign-key failure to the first login.
+
 Required Codefly `identity` configuration keys:
 
 | Key                     | Required | Purpose                                                            |

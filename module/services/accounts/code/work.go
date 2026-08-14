@@ -293,6 +293,18 @@ func doWork(ctx context.Context) (Clean, error) {
 		service.SetTokenValidator(v)
 		adapters.SetHeaderJWTLoginHeader(headerName)
 	} else {
+		// user_identities.provider is a foreign key into the identity_providers
+		// catalog. Verify the configured provider is registered now so an
+		// unseeded name fails at startup with a precise error instead of a raw
+		// FK violation at the user's first login.
+		registered, err := store.ProviderRegistered(ctx, authProvider)
+		if err != nil {
+			return nil, fmt.Errorf("verify identity provider registration: %w", err)
+		}
+		if !registered {
+			return nil, fmt.Errorf(
+				"identity provider %q is not registered in identity_providers; add a database migration seeding it", authProvider)
+		}
 		if authProvider == "workos" {
 			// SSO administration is a WorkOS-specific optional adapter. Other
 			// identity providers cannot accidentally activate it by exposing a
