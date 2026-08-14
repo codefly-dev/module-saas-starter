@@ -38,8 +38,9 @@ var (
 	ErrBootstrapClaimed = errors.New("auth: bootstrap already claimed")
 
 	// SSO JIT provisioning
-	ErrSsoEmailDomainNotAllowed = errors.New("auth: email domain not permitted for organization sso provisioning")
-	ErrSsoProvisioningDisabled  = errors.New("auth: organization sso provisioning is disabled")
+	ErrSsoEmailDomainNotAllowed     = errors.New("auth: email domain not permitted for organization sso provisioning")
+	ErrSsoProvisioningDisabled      = errors.New("auth: organization sso provisioning is disabled")
+	ErrSsoProvisioningMisconfigured = errors.New("auth: organization sso jit provisioning has no allowed email domains configured")
 
 	// Refresh rotation
 	ErrRefreshRevoked           = errors.New("auth: refresh token revoked")

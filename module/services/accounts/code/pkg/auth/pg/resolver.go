@@ -660,6 +660,13 @@ type ssoProvisioning struct {
 // org's policy, which may provision the identity into orgID (jit / invite-only)
 // or reject it (disabled, or a policy precondition that fails). It only ever
 // writes orgID's membership and never creates an organization.
+//
+// A known identity that is NOT a member (e.g. removed from the org on our side
+// while still present in the customer's IdP) is treated like a first-seen one
+// and re-provisioned under the policy. This is deliberate: for an org that
+// brings its own IdP the IdP is the source of truth for membership, so
+// deprovisioning must happen there — a purely local removal does not stick
+// against a still-valid IdP assertion.
 func (r *Resolver) resolveSsoJit(
 	ctx context.Context,
 	tx pgx.Tx,
@@ -705,6 +712,11 @@ func (r *Resolver) resolveSsoJit(
 // mirroring the invitation email-verification rule. The email domain must match
 // the org's allowlist; a non-matching email is rejected with a distinct error
 // and nothing is written.
+//
+// An empty allowlist is a misconfiguration, not a policy that admits everyone:
+// it is reported with a distinct org-level error so an operator who enabled jit
+// mode but never named a trusted domain sees why every login is rejected,
+// instead of each user getting the generic "domain not allowed".
 func (r *Resolver) provisionSsoJit(
 	ctx context.Context,
 	tx pgx.Tx,
@@ -714,6 +726,9 @@ func (r *Resolver) provisionSsoJit(
 	orgID uuid.UUID,
 	policy ssoProvisioning,
 ) (uuid.UUID, uuid.UUID, string, error) {
+	if len(policy.allowedDomains) == 0 {
+		return uuid.Nil, uuid.Nil, "", auth.ErrSsoProvisioningMisconfigured
+	}
 	if !c.EmailVerified {
 		return uuid.Nil, uuid.Nil, "", auth.ErrSignupNotAllowed
 	}

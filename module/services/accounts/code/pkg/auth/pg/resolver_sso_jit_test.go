@@ -94,6 +94,59 @@ func TestResolver_SsoJit_EmailDomainNotAllowed_RejectedAndProvisionsNothing(t *t
 	require.Equal(t, 0, ssoJitAuditCount(t, orgID))
 }
 
+func TestResolver_SsoJit_EmptyAllowlist_ReportsMisconfiguration(t *testing.T) {
+	resetAuthTables(t)
+	ctx := context.Background()
+	r := pgauth.NewResolver(testStore)
+
+	orgID := seedOrg(t, seedUser(t), "Acme", "workos-acme")
+	// jit enabled but no trusted domains named — a misconfiguration, distinct
+	// from a specific email being outside a configured allowlist.
+	setSsoProvisioning(t, orgID, "jit", "member", []string{})
+
+	_, err := r.Resolve(ctx, claims("worker@acme.test", "sso-worker"), auth.SsoJitIntent{OrgID: orgID})
+	require.ErrorIs(t, err, auth.ErrSsoProvisioningMisconfigured)
+	require.NotErrorIs(t, err, auth.ErrSsoEmailDomainNotAllowed,
+		"an unconfigured allowlist is a distinct org-level error, not a per-user domain rejection")
+
+	var count int
+	scanControlPlane(t, &count, `SELECT COUNT(*) FROM organization_members WHERE org_id = $1`, orgID)
+	require.Equal(t, 0, count, "a misconfigured org provisions nothing")
+}
+
+func TestResolver_SsoJit_ReprovisionsIdentityRemovedFromOrg(t *testing.T) {
+	resetAuthTables(t)
+	ctx := context.Background()
+	r := pgauth.NewResolver(testStore)
+
+	orgID := seedOrg(t, seedUser(t), "Acme", "workos-acme")
+	setSsoProvisioning(t, orgID, "jit", "member", []string{"acme.test"})
+
+	first, err := r.Resolve(ctx, claims("worker@acme.test", "sso-worker"), auth.SsoJitIntent{OrgID: orgID})
+	require.NoError(t, err)
+
+	// Locally remove the member while the identity stays valid at the IdP.
+	require.NoError(t, testStore.WithControlPlane(ctx, func(ctx context.Context) error {
+		tx := ctx.Value("tx").(pgx.Tx) //nolint:staticcheck // shared transaction context key
+		_, err := tx.Exec(ctx, `DELETE FROM organization_members WHERE org_id = $1 AND user_id = $2`,
+			orgID, first.UserID)
+		return err
+	}))
+
+	// The IdP remains the source of truth: the next SSO login re-provisions the
+	// membership rather than treating the still-valid assertion as orgless.
+	second, err := r.Resolve(ctx, claims("worker@acme.test", "sso-worker"), auth.SsoJitIntent{OrgID: orgID})
+	require.NoError(t, err)
+	require.Equal(t, first.UserID, second.UserID, "the same identity, no duplicate user")
+	require.Equal(t, orgID, second.OrgID)
+	require.Equal(t, "member", second.OrgRole)
+
+	var count int
+	scanControlPlane(t, &count,
+		`SELECT COUNT(*) FROM organization_members WHERE org_id = $1 AND user_id = $2`, orgID, first.UserID)
+	require.Equal(t, 1, count, "membership is re-provisioned")
+}
+
 func TestResolver_SsoJit_InviteOnly_RequiresPendingInvitation(t *testing.T) {
 	resetAuthTables(t)
 	ctx := context.Background()

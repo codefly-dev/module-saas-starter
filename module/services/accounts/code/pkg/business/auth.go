@@ -125,9 +125,14 @@ func (s *Service) Authenticate(ctx context.Context, req *gen.AuthenticateRequest
 	// resolver. Capture its pre-state here so the business layer — which owns the
 	// event pipeline the resolver cannot reach — can emit the accepted side
 	// effects on success, and lazily expire it when the resolver fails it closed.
+	// An invite-only SSO login consumes an invitation too, but carries no token,
+	// so its pre-state is found by (org, email) instead.
 	var priorInvitation *Invitation
-	if invite, ok := intent.(auth.InviteIntent); ok {
-		priorInvitation, _ = s.invitationByToken(ctx, invite.Token)
+	switch typed := intent.(type) {
+	case auth.InviteIntent:
+		priorInvitation, _ = s.invitationByToken(ctx, typed.Token)
+	case auth.SsoJitIntent:
+		priorInvitation = s.pendingInvitationForSsoJit(ctx, typed.OrgID, claims.Email)
 	}
 
 	identity, err := s.resolver.Resolve(ctx, claims, intent)
@@ -246,7 +251,11 @@ func (s *Service) ssoProvisioningRouter() ssoProvisioningRouter {
 // asserted org), a token-carried invitation, an absent router, or an org
 // without a policy all keep the incoming intent, so global paths are unchanged.
 // A router error is non-fatal: the login falls back to the incoming intent
-// rather than failing closed, because that intent is already the safe default.
+// (the profile-derived Signup/Invite). That fallback does not reproduce the
+// org's policy — a first-seen org-bound identity is still rejected, but by the
+// resolver's own org-membership check rather than the mode-specific error — so a
+// transient lookup failure degrades to a retryable rejection, never to a login
+// that bypasses the policy.
 func selectSsoJitIntent(ctx context.Context, intent auth.Intent, claims *auth.Claims, router ssoProvisioningRouter) auth.Intent {
 	if router == nil || claims.ProviderOrgID == "" {
 		return intent
