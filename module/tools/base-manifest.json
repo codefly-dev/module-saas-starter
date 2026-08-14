@@ -1,6 +1,6 @@
 {
   "note": "Base-file integrity manifest for the saas-starter module. Generated FROM canonical by `node tools/base-integrity.mjs gen`. Consumers MUST NOT hand-edit base files — only add files on the side. Regenerated on every codefly sync from canonical.",
-  "fileCount": 1531,
+  "fileCount": 1532,
   "files": {
     "AUTHORIZATION_CATALOG.md": "b2ea5d41f0098e80315e02e7c4bdbda03b65c8eef463426242552fd3c047ca0a",
     "CONTRACT_VERSIONING.md": "02031aa87922ab5ec573ea582cf584271873481de6ceabbda52b1bfda005ffbd",
@@ -677,6 +677,7 @@
     "services/auth-sidecar/code/envoy_test.go": "a1f0b93d97e8844f14a68f25d80f9ac21aafb66ba0afaaba9e3d61eaf21139a5",
     "services/auth-sidecar/code/external/saas-starter/accounts/saas-starter_accounts_grpc.pb.go": "560c867a914ea4fe2ced060fd2a00181235639e20e8ee61154743cd8fd64d2f7",
     "services/auth-sidecar/code/external/saas-starter/accounts/saas-starter_accounts_grpc_grpc.pb.go": "b698d5978c562f3aecdc1cd0a98fd8afac981f57229f01fecd249eefcc3d3126",
+    "services/auth-sidecar/code/external/saas-starter/telemetry/saas-starter_telemetry_grpc.pb.go": "e1126e9e3e34b8731711a753fe5702613a2cf05f7667309034dcad9a1c47211e",
     "services/auth-sidecar/code/external/users/backend/README": "f4e492b86f47ef1b263b02b52c11bb3cac9315851ef6f32ddc7ac5dcf83436cb",
     "services/auth-sidecar/code/external/users/backend/users_backend_grpc.pb.go": "75ed07def1cb405513e3cbc0471302157247d4a5ba857b41bd34eb4c55052505",
     "services/auth-sidecar/code/gateway.go": "3bbc80c2a62ca5ce844570af20ba991b312839530ddd4ee7a30549d883a24f27",
