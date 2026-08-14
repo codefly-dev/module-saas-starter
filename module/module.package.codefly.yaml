@@ -1,0 +1,133 @@
+schema: codefly/module-package/v2
+kind: module-package
+id: codefly/saas-starter
+version: 0.1.0
+minimum-codefly-version: 0.3.0
+repository: https://github.com/codefly-dev/module-saas-starter.git
+
+artifact:
+  media-type: application/vnd.codefly.module.v2+tar
+  roots:
+    - .
+  entry-points:
+    module: module.codefly.yaml
+    topology: deployment/topology.bindings.codefly.yaml
+    frontend: services/frontend/code/package.json
+    accounts-proto: services/accounts/proto
+
+provided-services:
+  - name: accounts
+    endpoints:
+      - {name: connect, protocol: connect, visibility: private}
+      - {name: grpc, protocol: grpc, visibility: private}
+      - {name: rest, protocol: rest, visibility: private}
+  - name: auth-sidecar
+    endpoints:
+      - {name: grpc, protocol: grpc, visibility: module}
+      - {name: rest, protocol: rest, visibility: private}
+  - name: cache
+    endpoints:
+      - {name: read, protocol: tcp, visibility: private}
+      - {name: write, protocol: tcp, visibility: private}
+  - name: frontend
+    endpoints:
+      - {name: http, protocol: http, visibility: public}
+  - name: marketing
+    endpoints:
+      - {name: http, protocol: http, visibility: public}
+  - name: object-storage
+    endpoints:
+      - {name: accounts, protocol: tcp, visibility: private}
+  - name: store
+    endpoints:
+      - {name: tcp, protocol: tcp, visibility: external}
+  - name: telemetry
+    endpoints:
+      - {name: grpc, protocol: grpc, visibility: private}
+  - name: vault
+    endpoints:
+      - {name: http, protocol: http, visibility: module}
+
+contribution-contracts:
+  - id: codefly/saas/frontend-plugin
+    versions: ">=1.0.0 <2.0.0"
+    entry-points:
+      metadata: services/frontend/code/packages/saas-plugin-contract/src/index.ts
+      react: services/frontend/code/packages/saas-plugin-react/src/index.ts
+      capabilities: services/frontend/code/packages/saas-plugin-contract/proto/saas/frontend/plugin/v1/capabilities.proto
+  - id: codefly/saas/settings
+    versions: ">=1.0.0 <2.0.0"
+    entry-points:
+      protobuf: services/accounts/proto/saas/accounts/v1/user_settings.proto
+      go-runtime: services/accounts/code/pkg/settings
+      typescript-runtime: services/frontend/code/packages/saas-settings/src/index.ts
+  - id: codefly/saas/permissions
+    versions: ">=1.0.0 <2.0.0"
+    entry-points:
+      catalog: services/accounts/proto/saas/catalog/v1/catalog.proto
+      runtime: services/accounts/code/pkg/business/permissions.go
+  - id: codefly/saas/fixtures
+    versions: ">=1.0.0 <2.0.0"
+    entry-points:
+      examples: fixtures
+      runtime: services/accounts/code/fixtures
+  - id: codefly/saas/topology
+    versions: ">=1.0.0 <2.0.0"
+    entry-points:
+      bindings: deployment/topology.bindings.codefly.yaml
+      generator: services/accounts/code/cmd/deployment-topology
+
+generators:
+  - id: frontend-service-allowlist
+    working-directory: services/frontend/code
+    command: [npm, run, generate:plugin-allowlist]
+    outputs:
+      - services/frontend/code/server/plugin-service-allowlist.generated.json
+  - id: frontend-service-manifest
+    working-directory: services/frontend/code
+    command: [npm, run, generate:plugin-codefly-dependencies]
+    outputs:
+      - services/frontend/service.codefly.yaml
+  - id: deployment-topology
+    working-directory: services/accounts/code
+    command: [go, run, ./cmd/deployment-topology]
+    outputs:
+      - deployment/generated/service-topology.json
+
+conformance-suites:
+  - id: frontend-contract
+    working-directory: services/frontend/code
+    command: [npm, run, test:plugin-contract]
+  - id: frontend-react
+    working-directory: services/frontend/code
+    command: [npm, run, test:plugin-react]
+  - id: settings-runtime
+    working-directory: services/accounts/code
+    command: [go, test, ./pkg/settings, ./pkg/usersettings]
+  - id: package-integrity
+    working-directory: tools
+    command: [go, test, ./...]
+
+release:
+  supported-from: ">=0.0.32 <0.1.0"
+  migrations:
+    - from: ">=0.0.32 <0.1.0"
+      guide: docs/composition-v2-migration.md
+  breaking-changes:
+    - version: 0.1.0
+      summary: Consumers resolve the immutable package instead of copying Starter-owned files into a writable module tree.
+
+reserved-namespaces:
+  - {kind: package, value: "@codefly/saas-"}
+  - {kind: protobuf, value: "saas."}
+  - {kind: permission, value: "saas."}
+  - {kind: settings, value: "common"}
+  - {kind: service, value: "accounts"}
+  - {kind: service, value: "auth-sidecar"}
+  - {kind: service, value: "cache"}
+  - {kind: service, value: "frontend"}
+  - {kind: service, value: "marketing"}
+  - {kind: service, value: "object-storage"}
+  - {kind: service, value: "store"}
+  - {kind: service, value: "telemetry"}
+  - {kind: service, value: "vault"}
