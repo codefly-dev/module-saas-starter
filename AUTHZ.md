@@ -211,7 +211,7 @@ default:
 Properties and limits:
 
 - **Freshness:** as fresh as the token. A scoped-assignment change revokes the
-  caller's sessions (migration 88, mirroring how `organization_members` changes
+  caller's sessions (migration 91, mirroring how `organization_members` changes
   revoke sessions in migration 70), so a live token's `sr` claim is never
   staler than one refresh cycle — but a long-lived, un-refreshed token can lag.
 - **Direct principal grants only.** Team-inherited grants and org-global

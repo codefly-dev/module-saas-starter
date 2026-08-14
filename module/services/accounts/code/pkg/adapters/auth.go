@@ -466,7 +466,7 @@ func withScopedRoles(ctx context.Context, scoped map[string][]string) context.Co
 
 // ScopedRolesFromContext returns the caller's scope->roles grants, or nil when
 // the caller holds none. The map is authoritative as of the token's mint time;
-// role edits revoke the session (see migration 88), so a live token's scoped
+// role edits revoke the session (see migration 91), so a live token's scoped
 // roles are never staler than one refresh cycle.
 func ScopedRolesFromContext(ctx context.Context) map[string][]string {
 	v, _ := ctx.Value(scopedRolesCtxKey).(map[string][]string)

@@ -17,7 +17,7 @@ import (
 
 // These tests cover the scoped-role claim path end to end against Postgres:
 // role_assignments.scope resolves into RefreshAuthorization on refresh and
-// org-switch, an assignment change revokes live sessions via the migration 88
+// org-switch, an assignment change revokes live sessions via the migration 91
 // trigger, and an over-large grant set fails loudly instead of truncating.
 
 func builtinRoleID(t *testing.T, name string) uuid.UUID {
@@ -110,7 +110,7 @@ func TestScopedRoles_OrgSwitchReresolvesTargetOrg(t *testing.T) {
 	require.Equal(t, map[string][]string{"module-b": {"admin"}}, identity.ScopedRoles)
 }
 
-// TestScopedRoles_AssignmentRevokesSessions proves migration 88's trigger
+// TestScopedRoles_AssignmentRevokesSessions proves migration 91's trigger
 // revokes a live session when a scoped assignment changes, and that a
 // re-minted token then reflects the new grant.
 func TestScopedRoles_AssignmentRevokesSessions(t *testing.T) {

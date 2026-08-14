@@ -22,7 +22,7 @@ import (
 // instead rides a ~15-minute access token. Making it team-inclusive would leave
 // a removed team member holding the team's scoped grants until their next
 // refresh — an over-authorization window — unless team_members/teams also
-// revoked sessions. Direct-only is deliberately chosen so migration 88 is the
+// revoked sessions. Direct-only is deliberately chosen so migration 91 is the
 // complete invalidation boundary. Do NOT "harmonize" the two resolvers.
 //
 // The result feeds the compact `sr` access-token claim. To keep token size
