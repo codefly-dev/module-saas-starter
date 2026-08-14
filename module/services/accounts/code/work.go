@@ -293,6 +293,18 @@ func doWork(ctx context.Context) (Clean, error) {
 		service.SetTokenValidator(v)
 		adapters.SetHeaderJWTLoginHeader(headerName)
 	} else {
+		// user_identities.provider is a foreign key into the identity_providers
+		// catalog. Verify the configured provider is registered now so an
+		// unseeded name fails at startup with a precise error instead of a raw
+		// FK violation at the user's first login.
+		registered, err := store.ProviderRegistered(ctx, authProvider)
+		if err != nil {
+			return nil, fmt.Errorf("verify identity provider registration: %w", err)
+		}
+		if !registered {
+			return nil, fmt.Errorf(
+				"identity provider %q is not registered in identity_providers; add a database migration seeding it", authProvider)
+		}
 		if authProvider == "workos" {
 			// SSO administration is a WorkOS-specific optional adapter. Other
 			// identity providers cannot accidentally activate it by exposing a
@@ -823,11 +835,18 @@ func configuredWebAuthn() (rpID, displayName string, origins []string, err error
 //	             No exchanger (no OAuth code flow). Used for local iteration.
 //	workos     — oidc.Validator + oidc.Exchanger preconfigured for
 //	             WorkOS through the same generic identity contract.
+//	oidc       — any spec-compliant OpenID Connect provider (Okta,
+//	             PingFederate, Entra, Keycloak, …), configured entirely
+//	             from discovery plus the IDENTITY_* contract.
 //	auth0      — generic OIDC flow with Auth0 defaults.
 //	google     — generic OIDC flow with Google defaults.
 //
-// Empty, unknown, and incomplete provider configurations return an error so
-// the service cannot start with an ambiguous authentication boundary.
+// Any other non-empty value is a generic OpenID Connect provider named by
+// IDENTITY_PROVIDER (so two enterprise IdPs occupy distinct user_identities
+// (provider, provider_id) namespaces) but only when the operator opts in with
+// IDENTITY_GENERIC_OIDC=true. Empty, incomplete, and undeclared-unknown
+// configurations return an error so the service cannot start with an ambiguous
+// authentication boundary.
 // workspaceEnv reads a key from a named Codefly workspace configuration,
 // including its secret namespace, and falls back to a plain process variable
 // for deployments that do not use Codefly's configuration provider.
@@ -903,28 +922,80 @@ func buildOAuthRequestPolicy(provider string) (*auth.OAuthRequestPolicy, error) 
 // cannot reach the well-known endpoint — otherwise a partial pin still discovers
 // the rest, and any discovery outage fails startup closed rather than guessing.
 func buildDiscoveredOIDCStack(provider string) (auth.TokenValidator, business.CodeExchanger, error) {
-	clientID := identityEnv("IDENTITY_CLIENT_ID")
-	clientSecret := identityEnv("IDENTITY_CLIENT_SECRET")
+	validator, tokenURL, clientID, clientSecret, err := discoverOIDCValidator(provider)
+	if err != nil {
+		return nil, nil, err
+	}
+	exchanger, err := workosauth.NewExchanger(workosauth.Config{
+		TokenURL:     tokenURL,
+		ClientID:     clientID,
+		ClientSecret: clientSecret,
+		Validator:    validator,
+	})
+	if err != nil {
+		return nil, nil, fmt.Errorf("initialize %s exchanger: %w", provider, err)
+	}
+	return validator, exchanger, nil
+}
+
+// buildGenericOIDCStack configures any spec-compliant OpenID Connect provider
+// (Okta, PingFederate, Azure AD/Entra, Keycloak, …) from discovery plus the
+// Codefly `identity` workspace configuration. It shares WorkOS's discovery and
+// JWKS validation but pairs them with the standard OAuth 2.0 code-grant
+// exchanger rather than the WorkOS authenticate adapter, which reads the
+// verified email from a WorkOS-specific response shape no other IdP returns.
+//
+// provider is the configured IDENTITY_PROVIDER value; it is recorded on each
+// identity as user_identities.provider. Two distinct enterprise IdPs avoid
+// colliding in that namespace by selecting distinct IDENTITY_PROVIDER values
+// (e.g. "okta", "ping"), each routed here. Using the same string the browser
+// sends and the OAuth request policy enforces is required: authenticateWithCode
+// rejects a login whose token provider disagrees with the request provider.
+func buildGenericOIDCStack(provider string) (auth.TokenValidator, business.CodeExchanger, error) {
+	validator, tokenURL, clientID, clientSecret, err := discoverOIDCValidator(provider)
+	if err != nil {
+		return nil, nil, err
+	}
+	exchanger, err := oidc.NewExchanger(oidc.ExchangerConfig{
+		TokenURL:     tokenURL,
+		ClientID:     clientID,
+		ClientSecret: clientSecret,
+	})
+	if err != nil {
+		return nil, nil, fmt.Errorf("initialize %s exchanger: %w", provider, err)
+	}
+	return validator, oidc.AsBusinessExchanger(exchanger), nil
+}
+
+// discoverOIDCValidator builds the JWKS validator and resolves the token
+// endpoint shared by every discovery-driven provider. provider is the
+// configured IDENTITY_PROVIDER value: it is written to Claims.Provider (and thus
+// user_identities.provider) and named in error messages. It is deliberately the
+// same string the browser sends and the OAuth request policy enforces, so the
+// two can never disagree at login.
+func discoverOIDCValidator(provider string) (validator auth.TokenValidator, tokenURL, clientID, clientSecret string, err error) {
+	clientID = identityEnv("IDENTITY_CLIENT_ID")
+	clientSecret = identityEnv("IDENTITY_CLIENT_SECRET")
 	issuer := identityEnv("IDENTITY_ISSUER")
 	if !hasConfiguredValue(clientID) || !hasConfiguredValue(clientSecret) {
-		return nil, nil, fmt.Errorf(
+		return nil, "", "", "", fmt.Errorf(
 			"identity provider %s requires IDENTITY_CLIENT_ID and IDENTITY_CLIENT_SECRET", provider)
 	}
 	if !hasConfiguredValue(issuer) {
-		return nil, nil, fmt.Errorf(
+		return nil, "", "", "", fmt.Errorf(
 			"identity provider %s requires IDENTITY_ISSUER to discover provider metadata", provider)
 	}
 
 	// Start from any explicitly pinned endpoints; discovery fills only the gaps.
 	expectedIssuer := issuer
 	jwksURL := identityEnv("IDENTITY_JWKS_URL")
-	tokenURL := identityEnv("IDENTITY_TOKEN_URL")
+	tokenURL = identityEnv("IDENTITY_TOKEN_URL")
 	if !hasConfiguredValue(jwksURL) || !hasConfiguredValue(tokenURL) {
 		ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 		defer cancel()
 		discovered, err := oidc.Discover(ctx, issuer, nil)
 		if err != nil {
-			return nil, nil, fmt.Errorf("discover %s provider metadata: %w", provider, err)
+			return nil, "", "", "", fmt.Errorf("discover %s provider metadata: %w", provider, err)
 		}
 		expectedIssuer = discovered.Issuer
 		if !hasConfiguredValue(jwksURL) {
@@ -951,26 +1022,16 @@ func buildDiscoveredOIDCStack(provider string) (auth.TokenValidator, business.Co
 		cfg.EmailClaim = claim
 	}
 
-	validator, err := oidc.New(cfg)
+	v, err := oidc.New(cfg)
 	if err != nil {
-		return nil, nil, fmt.Errorf("initialize %s validator: %w", provider, err)
+		return nil, "", "", "", fmt.Errorf("initialize %s validator: %w", provider, err)
 	}
 
 	if strings.TrimSpace(tokenURL) == "" {
-		return nil, nil, fmt.Errorf(
+		return nil, "", "", "", fmt.Errorf(
 			"identity provider %s published no token endpoint; set IDENTITY_TOKEN_URL", provider)
 	}
-
-	exchanger, err := workosauth.NewExchanger(workosauth.Config{
-		TokenURL:     tokenURL,
-		ClientID:     clientID,
-		ClientSecret: clientSecret,
-		Validator:    validator,
-	})
-	if err != nil {
-		return nil, nil, fmt.Errorf("initialize %s exchanger: %w", provider, err)
-	}
-	return validator, exchanger, nil
+	return v, tokenURL, clientID, clientSecret, nil
 }
 
 func identityEnvOrDefault(key, fallback string) string {
@@ -998,6 +1059,9 @@ func buildProviderStack(provider, selectedFixture string) (auth.TokenValidator, 
 
 	case "workos":
 		return buildDiscoveredOIDCStack(provider)
+
+	case "oidc":
+		return buildGenericOIDCStack(provider)
 
 	case "auth0":
 		domain := identityEnv("IDENTITY_DOMAIN")
@@ -1053,7 +1117,16 @@ func buildProviderStack(provider, selectedFixture string) (auth.TokenValidator, 
 	case "":
 		return nil, nil, fmt.Errorf("IDENTITY_PROVIDER is required in the Codefly identity workspace configuration")
 	default:
-		return nil, nil, fmt.Errorf("unsupported identity provider %q", provider)
+		// A non-preset name is a generic OpenID Connect provider only when the
+		// operator explicitly declares it one. Without that opt-in an unrecognized
+		// value fails startup closed — so a typo of a preset (e.g. "wrokos") is
+		// rejected here instead of silently building a generic stack that would
+		// mismatch the intended provider's token shape and fail at first login.
+		if identityEnv("IDENTITY_GENERIC_OIDC") != "true" {
+			return nil, nil, fmt.Errorf(
+				"unsupported identity provider %q; set IDENTITY_GENERIC_OIDC=true to configure it as a generic OpenID Connect provider", provider)
+		}
+		return buildGenericOIDCStack(provider)
 	}
 }
 

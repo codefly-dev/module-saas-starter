@@ -52,6 +52,28 @@ func ClerkConfig(frontendAPI string) Config {
 	}
 }
 
+// OktaConfig returns a Config preconfigured for an Okta org or custom
+// authorization server — one concrete instance of the generic
+// IDENTITY_PROVIDER=oidc path, which discovers these same values from the
+// provider's well-known document rather than compiling them in.
+//
+//	issuer: the full issuer URL, e.g. "https://acme.okta.com" (org
+//	        authorization server) or "https://acme.okta.com/oauth2/aus1a2b3c"
+//	        (a custom authorization server).
+//	audience: the access token's `aud`; for ID-token logins this is the
+//	          OAuth client id.
+func OktaConfig(issuer, audience string) Config {
+	issuer = strings.TrimRight(strings.TrimSpace(issuer), "/")
+	return Config{
+		ProviderName: "okta",
+		Issuer:       issuer,
+		JWKSURL:      issuer + "/v1/keys",
+		Audience:     audience,
+		// Okta exposes no organization id on the default token.
+		OrgClaim: "",
+	}
+}
+
 // GoogleConfig returns a Config preconfigured for Google Sign-In.
 //
 //	clientID: OAuth client id used as `aud`.

@@ -15,6 +15,8 @@ func clearAuthProviderEnvironment(t *testing.T) {
 		"CODEFLY__ENVIRONMENT",
 		"IDENTITY_CLIENT_ID",
 		"IDENTITY_CLIENT_SECRET",
+		"IDENTITY_GENERIC_OIDC",
+		"CODEFLY__WORKSPACE_CONFIGURATION__IDENTITY__IDENTITY_GENERIC_OIDC",
 		"IDENTITY_ALLOWED_REDIRECT_URIS",
 		"CODEFLY__WORKSPACE_CONFIGURATION__IDENTITY__IDENTITY_PROVIDER",
 		"CODEFLY__WORKSPACE_SECRET_CONFIGURATION__IDENTITY__IDENTITY_PROVIDER",
@@ -299,6 +301,8 @@ func TestFixtureVariableCannotOverrideProductionProvider(t *testing.T) {
 func TestBuildProviderStackRejectsUnknownAndIncompleteProviders(t *testing.T) {
 	clearAuthProviderEnvironment(t)
 
+	// An undeclared non-preset value (e.g. a typo of a preset) fails startup
+	// closed rather than silently becoming a generic OIDC provider.
 	_, _, err := buildProviderStack("unknown", "")
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "unsupported identity provider")

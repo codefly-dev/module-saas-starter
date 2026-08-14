@@ -441,3 +441,57 @@ func TestAuthenticate_OAuthCodeFlow_RealError(t *testing.T) {
 	require.Error(t, err)
 	require.False(t, errors.Is(err, context.Canceled))
 }
+
+// A generic OIDC provider selected by a non-preset IDENTITY_PROVIDER value must
+// log in through the whole path: the request provider, the OAuth request
+// policy, and the validated token all carry that same name. Regression guard —
+// an earlier design recorded a separately configured provider name on the token
+// while the request still said "oidc", so authenticateWithCode's mismatch check
+// rejected every login for exactly the multi-IdP config the feature exists for.
+func TestAuthenticate_OAuthCodeFlow_GenericProviderNameKeysIdentity(t *testing.T) {
+	clearData(t)
+	fp := newFakeProvider(t)
+
+	const provider = "okta"
+	validator, err := oidc.New(oidc.Config{
+		ProviderName: provider,
+		Issuer:       fp.issuer,
+		JWKSURL:      fp.server.URL + "/jwks",
+	})
+	require.NoError(t, err)
+	testService.SetTokenValidator(validator)
+
+	exchanger, err := oidc.NewExchanger(oidc.ExchangerConfig{
+		TokenURL:     fp.server.URL + "/token",
+		ClientID:     fp.clientID,
+		ClientSecret: fp.secret,
+	})
+	require.NoError(t, err)
+	testService.SetCodeExchanger(oidc.AsBusinessExchanger(exchanger))
+
+	signer := auth.NewOAuthStateSigner([]byte("test OAuth state signing seed with sufficient entropy"))
+	policy, err := auth.NewOAuthRequestPolicy(provider, []string{"https://app.acme.com/auth/callback"})
+	require.NoError(t, err)
+	testService.SetOAuthStateSigner(signer)
+	testService.SetOAuthRequestPolicy(policy)
+	t.Cleanup(func() {
+		testService.SetTokenValidator(nil)
+		testService.SetCodeExchanger(nil)
+		testService.SetOAuthStateSigner(nil)
+		testService.SetOAuthRequestPolicy(nil)
+	})
+
+	fp.issueCode("okta-code-1")
+	resp, err := testService.Authenticate(testCtx, oauthCodeRequest(t, signer, provider, "okta-code-1", "https://app.acme.com/auth/callback"))
+	require.NoError(t, err)
+	require.NotEmpty(t, resp.AccessToken)
+
+	// The identity is keyed under the generic provider name.
+	resolved, err := testService.ResolveIdentity(testCtx, &gen.ResolveIdentityRequest{
+		Provider:   provider,
+		ProviderId: "workos-user-42",
+	})
+	require.NoError(t, err)
+	require.True(t, resolved.Found)
+	require.Equal(t, resp.User.Uuid, resolved.UserId)
+}
