@@ -146,29 +146,63 @@ jobs:
           # and may carry upstream findings that this repository cannot patch.
           # The next step separately fails closed on every first-party service
           # and production frontend dependency.
-          args=(ci run --head "${GITHUB_SHA}")
+          selection_args=(--head "${GITHUB_SHA}")
           if [[ -n "${CODEFLY_BASE}" && "${CODEFLY_BASE}" != "0000000000000000000000000000000000000000" ]]; then
-            args+=(--base "${CODEFLY_BASE}")
+            selection_args+=(--base "${CODEFLY_BASE}")
           else
-            args+=(--all)
+            selection_args+=(--all)
           fi
 
-          codefly "${args[@]}" \
-            --phase verify,sync-drift,lint,compile,test \
+          codefly ci run "${selection_args[@]}" \
+            --phase verify,sync-drift \
             --output .codefly/ci/pre-audit
+
+          validation_plan="$(codefly ci plan "${selection_args[@]}" --format json)"
+          validation_selection_args=()
+          validate_temporal=false
+          while IFS= read -r service; do
+            case "${service}" in
+              saas-starter/temporal|saas-starter/temporal-store)
+                validate_temporal=true
+                ;;
+              *)
+                validation_selection_args+=(
+                  --changed-file "module/services/${service#*/}/service.codefly.yaml"
+                )
+                ;;
+            esac
+          done < <(jq -r '.services[].service' <<<"${validation_plan}")
+
+          if (( ${#validation_selection_args[@]} )); then
+            codefly ci run "${validation_selection_args[@]}" \
+              --phase lint,compile,test \
+              --output .codefly/ci/validation
+          fi
+
+          if [[ "${validate_temporal}" == true ]]; then
+            # temporal@0.0.15 has no static validation actions, and its runtime
+            # requires the dedicated Postgres capability while it initializes.
+            codefly run service saas-starter/temporal \
+              --init-only \
+              --temporary-ports \
+              --headless \
+              --runtime-context container \
+              --start-docker=false \
+              --naming-scope ci-temporal-validation
+          fi
 
           # Several published vendor-image agents predate Core's shared Trivy
           # cache lock. Serialize the audit so those independent agent processes
           # cannot corrupt or time out on the same cache. Keep vendor findings
           # in the evidence report without letting unpatchable upstream images
           # override the first-party vulnerability gate below.
-          codefly "${args[@]}" \
+          codefly ci run "${selection_args[@]}" \
             --phase audit \
             --output .codefly/ci/audit \
             --fail-on-vuln=false \
             --jobs=1
 
-          codefly "${args[@]}" \
+          codefly ci run "${selection_args[@]}" \
             --phase sbom \
             --output .codefly/ci/sbom
 
@@ -178,7 +212,7 @@ jobs:
           build_log="$(mktemp)"
           trap 'rm -f "${build_log}"' EXIT
           for attempt in 1 2 3; do
-            if codefly "${args[@]}" \
+            if codefly ci run "${selection_args[@]}" \
               --phase build \
               --output ".codefly/ci/build-${attempt}" \
               --jobs=1 2>&1 | tee "${build_log}"; then
