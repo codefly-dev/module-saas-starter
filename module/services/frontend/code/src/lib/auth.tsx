@@ -38,7 +38,7 @@ const authClient = createClient(AuthService, apiTransport);
 // IDENTITY_* values to the browser as NEXT_PUBLIC_IDENTITY_*.
 //
 // Required:
-//   NEXT_PUBLIC_IDENTITY_PROVIDER       — workos | auth0 | google
+//   NEXT_PUBLIC_IDENTITY_PROVIDER       — workos | auth0 | google | oidc
 //   NEXT_PUBLIC_IDENTITY_AUTHORIZE_URL  — hosted authorize endpoint
 //   NEXT_PUBLIC_IDENTITY_CLIENT_ID      — OAuth client id
 // Optional:
@@ -82,6 +82,18 @@ function readIdentityProvider(): ProviderPreset | null {
 export function availableProviders(): ProviderPreset[] {
 	const provider = readIdentityProvider();
 	return provider ? [provider] : [];
+}
+
+// Header-injected identity: a customer-operated access gateway authenticates the
+// user upstream and stamps a signed JWT header on every request. There is no
+// OAuth ceremony and no button to click — the app POSTs to /v1/auth/authenticate
+// on load and the accounts login route resolves the header into a session. The
+// header is read server-side; the browser only triggers the exchange.
+export function isHeaderInjectedProvider(): boolean {
+	return (
+		process.env.NEXT_PUBLIC_IDENTITY_PROVIDER?.trim().toLowerCase() ===
+		"header-jwt"
+	);
 }
 
 // Build the provider's authorize URL for the authorization-code flow.
@@ -170,6 +182,11 @@ interface AuthContextType extends AuthState {
 		providerId: string,
 		email: string,
 	) => Promise<boolean>;
+	// Header-injected identity path. POSTs to /v1/auth/authenticate with no
+	// credential in the body — the accounts login route reads the gateway-injected
+	// JWT header server-side. Resolves true when a session was issued, false when
+	// the browser was moved into the MFA challenge continuation.
+	loginWithHeaderInjected: () => Promise<boolean>;
 	// Kicks off the OAuth authorization-code flow by redirecting the
 	// browser to the provider's hosted login. The callback page completes
 	// the handshake. Async because we mint a server-signed state via
@@ -346,6 +363,41 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 		},
 		[beginMFA, setTokens],
 	);
+
+	const loginWithHeaderInjected = useCallback(async () => {
+		const res = await fetch("/v1/auth/authenticate", {
+			method: "POST",
+			credentials: "include", // receive the httpOnly refresh-token cookie
+			headers: { "Content-Type": "application/json" },
+			// No credential in the body: the accounts login route reads the
+			// gateway-injected JWT header server-side. It is the only trusted
+			// source, so a body-supplied credential is stripped there anyway.
+			body: JSON.stringify({
+				provider: "header-jwt",
+				device_info: navigator.userAgent.slice(0, 512),
+			}),
+		});
+		if (!res.ok) {
+			// The validator surfaces a failed group gate as 403 so the UI can say
+			// "access not granted" rather than a generic sign-in failure.
+			if (res.status === 403) {
+				throw new Error("Access not granted for your account.");
+			}
+			throw new Error("Authentication failed");
+		}
+		const data = await res.json();
+		if (data.mfaRequired) {
+			beginMFA(data, data.user?.primaryEmail);
+			return false;
+		}
+		setTokens(
+			data.accessToken,
+			data.refreshToken,
+			data.user?.uuid,
+			data.user?.primaryEmail,
+		);
+		return true;
+	}, [beginMFA, setTokens]);
 
 	// OAuth redirect kickoff. Asks the backend for a server-signed state,
 	// generates a PKCE verifier+challenge, and sends the browser to the
@@ -638,6 +690,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 		() => ({
 			...state,
 			login,
+			loginWithHeaderInjected,
 			signInWith,
 			completeOAuth,
 			completeMFA,
@@ -651,6 +704,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 		[
 			state,
 			login,
+			loginWithHeaderInjected,
 			signInWith,
 			completeOAuth,
 			completeMFA,

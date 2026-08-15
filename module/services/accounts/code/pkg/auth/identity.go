@@ -59,12 +59,34 @@ type Identity struct {
 	AssuranceLevel        string
 	MFAVerifiedAt         time.Time
 
+	// ScopedRoles maps a fine-grained scope (e.g. a module or project key) to
+	// the role names granted to the caller within OrgID at that scope. It is
+	// resolved from role_assignments rows whose scope IS NOT NULL and is
+	// emitted as the compact `sr` access-token claim so downstream services can
+	// authorize on per-scope roles without calling back into accounts. Empty
+	// when OrgID is zero or the caller holds no scoped assignments.
+	ScopedRoles map[string][]string
+
+	// ScopedRolesTruncated is true when the caller holds more than
+	// MaxScopedRoleAssignments scoped grants and ScopedRoles carries only the
+	// first bounded slice. It is emitted as the `srt` claim so a consumer knows
+	// the header is incomplete and must fall back to CheckPermission for an
+	// authoritative answer rather than treating an absent grant as a denial.
+	ScopedRolesTruncated bool
+
 	// DeviceInfo is bounded, caller-supplied display metadata for per-device
 	// session management. It is never used for authorization. IPAddress is
 	// trusted transport metadata when the adapter can provide it.
 	DeviceInfo map[string]string
 	IPAddress  string
 }
+
+// MaxScopedRoleAssignments bounds how many (scope, role) pairs may ride in the
+// `sr` claim so the access token stays a predictable size. A caller resolving
+// more than this keeps the first bounded slice and has ScopedRolesTruncated
+// set, so the truncation is signalled (via the `srt` claim) rather than either
+// silently dropping grants or locking the user out of authentication entirely.
+const MaxScopedRoleAssignments = 64
 
 // Orgless reports whether this identity resolved to no active organization. It
 // is a first-class session state, not an error: a user who belongs to no org —
@@ -82,8 +104,11 @@ func (i *Identity) Orgless() bool { return i.OrgID == uuid.Nil }
 //   - InviteIntent authenticates against a pending invitation, provisioning the
 //     invitee if needed and binding them to the invitation's organization.
 //   - SignupIntent provisions a first-seen identity and optionally its first org.
+//   - SsoJitIntent authenticates claims from an organization-bound provider and,
+//     per that org's provisioning policy, may provision the caller into exactly
+//     that org — never creating an organization.
 //
-// Only Signup and Invite may create a user; Login never does.
+// Only Signup, Invite, and SsoJit may create a user; Login never does.
 type Intent interface{ isIntent() }
 
 // LoginIntent resolves an identity that must already exist. A resolver returns
@@ -98,9 +123,19 @@ type InviteIntent struct{ Token string }
 // non-empty, also creates the caller's first organization with them as owner.
 type SignupIntent struct{ OrganizationName string }
 
+// SsoJitIntent authenticates claims asserted by the identity provider bound to
+// OrgID (the org's own IdP) and applies that org's provisioning policy to a
+// first-seen identity: JIT-provision it into OrgID, gate it behind a pending
+// invitation, or reject it. It may create the user and the OrgID membership row
+// but never an organization, and it only ever touches OrgID's membership — an
+// already-provisioned member resolves as a plain login. OrgID is the canonical
+// internal org id, resolved from the provider's asserted org by the login route.
+type SsoJitIntent struct{ OrgID uuid.UUID }
+
 func (LoginIntent) isIntent()  {}
 func (InviteIntent) isIntent() {}
 func (SignupIntent) isIntent() {}
+func (SsoJitIntent) isIntent() {}
 
 // IdentityResolver translates provider Claims into an internal Identity.
 // Provisioning is gated by Intent: SignupIntent and InviteIntent may create a

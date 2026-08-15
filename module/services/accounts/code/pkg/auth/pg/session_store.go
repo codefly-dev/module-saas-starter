@@ -659,6 +659,11 @@ func resolveGlobalAuthorization(
 		return auth.RefreshAuthorization{}, err
 	}
 
+	authorization.ScopedRoles, authorization.ScopedRolesTruncated, err = resolveScopedRoles(ctx, tx, userID, authorization.OrgID)
+	if err != nil {
+		return auth.RefreshAuthorization{}, err
+	}
+
 	return authorization, nil
 }
 

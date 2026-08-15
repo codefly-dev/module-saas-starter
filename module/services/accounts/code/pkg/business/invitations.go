@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/codefly-dev/core/wool"
+	"github.com/google/uuid"
 	"google.golang.org/protobuf/types/known/timestamppb"
 
 	"accounts/pkg/email"
@@ -560,6 +561,35 @@ func (s *Service) invitationByToken(ctx context.Context, token string) (*Invitat
 		return lookupErr
 	})
 	return inv, err
+}
+
+// pendingInvitationForSsoJit returns the invitation an invite-only SSO login
+// will consume for (orgID, email): the most recent pending, unexpired
+// invitation addressed to that email. It mirrors the resolver's selection
+// (provisionSsoInvite) so the business layer announces the same acceptance the
+// resolver commits — the SSO path carries no token, so there is nothing to look
+// up by token as the invite path does. Returns nil when none matches (e.g. a
+// jit-mode login, which consumes no invitation).
+func (s *Service) pendingInvitationForSsoJit(ctx context.Context, orgID uuid.UUID, email string) *Invitation {
+	var match *Invitation
+	_ = s.store.As(System()).Within(ctx, func(ctx context.Context) error {
+		// ListInvitations already orders by created_at DESC, so the first email
+		// match is the most recent — the one the resolver's ORDER BY ... LIMIT 1
+		// consumes.
+		invitations, err := s.store.ListInvitations(ctx, orgID.String(), "pending")
+		if err != nil {
+			return err
+		}
+		now := time.Now()
+		for _, inv := range invitations {
+			if strings.EqualFold(inv.Email, email) && inv.ExpiresAt.After(now) {
+				match = inv
+				break
+			}
+		}
+		return nil
+	})
+	return match
 }
 
 // HashInvitationToken derives the stored token_hash for a plaintext invitation

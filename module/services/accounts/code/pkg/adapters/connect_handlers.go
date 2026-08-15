@@ -348,12 +348,42 @@ func (h *apiKeyConnectHandler) ValidateAPIKey(ctx context.Context, req *connect.
 
 type authConnectHandler struct{ inner *AuthServer }
 
+// headerJWTLoginHeader names the gateway-injected identity header consumed by
+// the login route under IDENTITY_PROVIDER=header-jwt. Empty for every other
+// provider. Set once at startup from work.go. The header is read here and
+// nowhere else — it is never copied into gRPC metadata (see connectCtx), so it
+// cannot be forwarded downstream.
+var headerJWTLoginHeader string
+
+// SetHeaderJWTLoginHeader installs the configured identity header name. Empty
+// disables header consumption. Idempotent; call before serving.
+func SetHeaderJWTLoginHeader(name string) { headerJWTLoginHeader = name }
+
 func (h *authConnectHandler) BeginOAuth(ctx context.Context, req *connect.Request[gen.BeginOAuthRequest]) (*connect.Response[gen.BeginOAuthResponse], error) {
 	return unary(ctx, req, h.inner.BeginOAuth)
 }
 
 func (h *authConnectHandler) Authenticate(ctx context.Context, req *connect.Request[gen.AuthenticateRequest]) (*connect.Response[gen.AuthenticateResponse], error) {
+	injectHeaderJWTCredential(req.Msg, req.Header())
 	return unary(ctx, req, h.inner.Authenticate)
+}
+
+// injectHeaderJWTCredential turns a gateway-injected identity header into the
+// header-jwt login credential. When the header is configured and present, it is
+// authoritative: the token is verified against the configured JWKS downstream,
+// so this simply forwards the header's value into the request the login flow
+// already understands. A no-op when no header is configured or none is present.
+func injectHeaderJWTCredential(req *gen.AuthenticateRequest, h http.Header) {
+	if headerJWTLoginHeader == "" || req == nil {
+		return
+	}
+	token := h.Get(headerJWTLoginHeader)
+	if token == "" {
+		return
+	}
+	req.Authentication = &gen.AuthenticateRequest_HeaderJwt{
+		HeaderJwt: &gen.HeaderJWTAuthentication{Token: token},
+	}
 }
 func (h *authConnectHandler) CompleteMFAChallenge(ctx context.Context, req *connect.Request[gen.CompleteMFAChallengeRequest]) (*connect.Response[gen.CompleteMFAChallengeResponse], error) {
 	return unary(ctx, req, h.inner.CompleteMFAChallenge)

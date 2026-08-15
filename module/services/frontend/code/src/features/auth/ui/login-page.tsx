@@ -12,7 +12,11 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
 import { BrandMark } from "@/components/brand-mark";
 import { useAppearance } from "@/lib/appearance-provider";
-import { availableProviders, useAuth } from "@/lib/auth";
+import {
+	availableProviders,
+	isHeaderInjectedProvider,
+	useAuth,
+} from "@/lib/auth";
 import type { FixtureUser } from "@/lib/fixtures/types";
 import { publicHandoffDestination } from "@/lib/public-handoff";
 
@@ -22,7 +26,7 @@ interface FixtureResponse {
 }
 
 export function LoginPage() {
-	const { signInWith, login } = useAuth();
+	const { signInWith, login, loginWithHeaderInjected } = useAuth();
 	const { branding } = useAppearance();
 	const router = useRouter();
 	const searchParams = useSearchParams();
@@ -31,11 +35,14 @@ export function LoginPage() {
 		[searchParams],
 	);
 	const providers = useMemo(() => availableProviders(), []);
+	const headerInjected = useMemo(() => isHeaderInjectedProvider(), []);
 	const [error, setError] = useState<string | null>(null);
 	const [fixtureUsers, setFixtureUsers] = useState<FixtureUser[]>([]);
 	const [loading, setLoading] = useState<string | null>(null);
 
-	const devMode = providers.length === 0;
+	// Header-injected mode has no providers to render but is not dev mode; the
+	// fixture list must stay hidden.
+	const devMode = providers.length === 0 && !headerInjected;
 
 	useEffect(() => {
 		if (!devMode) return;
@@ -46,6 +53,25 @@ export function LoginPage() {
 			})
 			.catch(() => {});
 	}, [devMode]);
+
+	// Header-injected identity: no button. The gateway already authenticated the
+	// user upstream, so exchange the injected header for a session on load.
+	useEffect(() => {
+		if (!headerInjected) return;
+		let cancelled = false;
+		loginWithHeaderInjected()
+			.then((authenticated) => {
+				if (authenticated && !cancelled) router.push(destination);
+			})
+			.catch((err) => {
+				if (!cancelled) {
+					setError(err instanceof Error ? err.message : "Login failed");
+				}
+			});
+		return () => {
+			cancelled = true;
+		};
+	}, [headerInjected, loginWithHeaderInjected, router, destination]);
 
 	async function handleFixtureLogin(user: FixtureUser) {
 		setError(null);
@@ -193,6 +219,14 @@ export function LoginPage() {
 								<div className="flex items-center gap-2 rounded-lg bg-destructive/10 border border-destructive/20 p-3 text-sm text-destructive">
 									<AlertCircle className="h-4 w-4 shrink-0" />
 									<span>{error}</span>
+								</div>
+							)}
+
+							{/* Header-injected identity — no button, exchange in progress */}
+							{headerInjected && !error && (
+								<div className="flex items-center gap-3 rounded-lg border bg-background p-4 text-sm text-muted-foreground">
+									<Loader2 className="h-5 w-5 animate-spin shrink-0" />
+									<span>Signing you in…</span>
 								</div>
 							)}
 

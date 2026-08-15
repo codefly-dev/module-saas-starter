@@ -156,6 +156,13 @@ func (s *PostgresStore) ListTeamPathsForUser(ctx context.Context, userID string,
 // ListRoleNamesForUser returns the names of roles assigned to the user in this
 // org (direct principal assignments; team-subject assignments resolve via the
 // teams the human principal is in).
+//
+// This path is team-inclusive because it is resolved fresh on every API-key
+// validation, so team-inheritance carries no staleness risk. The access-token
+// `sr` scoped-roles claim (pkg/auth/pg.resolveScopedRoles) deliberately does
+// NOT mirror this — it is direct-principal-only because it caches into a
+// ~15-minute token, and team-inheritance there would need extra session
+// invalidation to avoid an over-authorization window. Keep the two divergent.
 func (s *PostgresStore) ListRoleNamesForUser(ctx context.Context, userID string, orgID string) ([]string, error) {
 	w := wool.Get(ctx).In("ListRoleNamesForUser")
 	executor := s.getQueryExecutor(ctx)

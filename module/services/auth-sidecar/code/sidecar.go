@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"crypto/ed25519"
+	"encoding/json"
 	"fmt"
 	"log"
 	"strconv"
@@ -24,16 +25,18 @@ import (
 // Field names use short JSON keys matching the backend minter.
 type accessClaims struct {
 	jwt.RegisteredClaims
-	OrgID                 string           `json:"org,omitempty"`
-	OrgRole               string           `json:"or,omitempty"`
-	PlatformRole          string           `json:"pr,omitempty"`
-	SessionID             string           `json:"sid"`
-	ActingAsUserID        string           `json:"acting,omitempty"`
-	MFASatisfied          bool             `json:"mfa,omitempty"`
-	AuthenticationMethods []string         `json:"amr,omitempty"`
-	AuthenticationTime    *jwt.NumericDate `json:"auth_time,omitempty"`
-	AssuranceLevel        string           `json:"acr,omitempty"`
-	MFAVerifiedAt         *jwt.NumericDate `json:"mfa_at,omitempty"`
+	OrgID                 string              `json:"org,omitempty"`
+	OrgRole               string              `json:"or,omitempty"`
+	PlatformRole          string              `json:"pr,omitempty"`
+	ScopedRoles           map[string][]string `json:"sr,omitempty"`
+	ScopedRolesTruncated  bool                `json:"srt,omitempty"`
+	SessionID             string              `json:"sid"`
+	ActingAsUserID        string              `json:"acting,omitempty"`
+	MFASatisfied          bool                `json:"mfa,omitempty"`
+	AuthenticationMethods []string            `json:"amr,omitempty"`
+	AuthenticationTime    *jwt.NumericDate    `json:"auth_time,omitempty"`
+	AssuranceLevel        string              `json:"acr,omitempty"`
+	MFAVerifiedAt         *jwt.NumericDate    `json:"mfa_at,omitempty"`
 }
 
 // Sidecar implements Envoy ext_authz with two auth paths:
@@ -48,6 +51,7 @@ type accessClaims struct {
 // On success, the sidecar forwards canonical internal identity headers:
 //
 //	x-user-id, x-org-id, x-org-role, x-platform-role, x-session-id,
+//	x-scoped-roles (JSON scope->roles, only when the caller has scoped grants),
 //	x-acting-as-user-id (only during impersonation)
 //
 // Provider-specific values (WorkOS sub, WorkOS org id, tokens) NEVER leave
@@ -147,6 +151,18 @@ func (s *Sidecar) checkJWT(tokenString string) (*authv3.CheckResponse, error) {
 	if claims.ActingAsUserID != "" {
 		hdrs = append(hdrs, hdr("x-acting-as-user-id", claims.ActingAsUserID))
 	}
+	if len(claims.ScopedRoles) > 0 {
+		// JSON payload, e.g. {"module-a":["analyst"]}, so downstream services can
+		// authorize per-scope roles without calling back into accounts.
+		if encoded, err := json.Marshal(claims.ScopedRoles); err == nil {
+			hdrs = append(hdrs, hdr("x-scoped-roles", string(encoded)))
+		}
+	}
+	if claims.ScopedRolesTruncated {
+		// The grant set exceeded the claim bound; x-scoped-roles is incomplete
+		// and a service must fall back to CheckPermission for a full answer.
+		hdrs = append(hdrs, hdr("x-scoped-roles-truncated", "true"))
+	}
 	return s.allow(hdrs), nil
 }
 
@@ -202,7 +218,7 @@ func (s *Sidecar) allow(headers []*corev3.HeaderValueOption) *authv3.CheckRespon
 
 var canonicalUpstreamAuthHeaders = []string{
 	"x-user-id", "x-org-id", "x-org-role", "x-platform-role", "x-roles",
-	"x-auth-id", "x-user-email", "x-user-name", "x-session-id",
+	"x-scoped-roles", "x-scoped-roles-truncated", "x-auth-id", "x-user-email", "x-user-name", "x-session-id",
 	"x-acting-as-user-id", "x-scopes", "x-mfa-satisfied",
 	"x-authentication-methods", "x-auth-time", "x-assurance-level", "x-mfa-verified-at",
 }

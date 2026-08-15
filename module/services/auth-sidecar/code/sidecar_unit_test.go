@@ -5,6 +5,7 @@ import (
 	"crypto/ed25519"
 	"crypto/rand"
 	"encoding/base64"
+	"encoding/json"
 	"strconv"
 	"strings"
 	"testing"
@@ -141,6 +142,62 @@ func TestUnit_ValidJWT_ForwardsHeaders(t *testing.T) {
 	require.Equal(t, c.SessionID, h["x-session-id"])
 	require.Equal(t, "test-gateway-token", h["x-codefly-gateway-token"])
 	require.Empty(t, h["x-acting-as-user-id"], "acting header is empty unless impersonating")
+}
+
+func TestUnit_ValidJWT_ForwardsScopedRoles(t *testing.T) {
+	s, priv := newTestSidecar(t)
+	c := validClaims(time.Now())
+	c.ScopedRoles = map[string][]string{"module-a": {"analyst"}, "module-b": {"admin"}}
+	token := signClaims(t, priv, c)
+
+	resp, err := s.Check(context.Background(), checkReq("/v1/users", map[string]string{
+		"authorization": "Bearer " + token,
+	}))
+	require.NoError(t, err)
+	require.NotNil(t, resp.GetOkResponse())
+
+	h := headerMap(resp)
+	var got map[string][]string
+	require.NoError(t, json.Unmarshal([]byte(h["x-scoped-roles"]), &got))
+	require.Equal(t, c.ScopedRoles, got)
+}
+
+func TestUnit_ValidJWT_ForwardsScopedRolesTruncated(t *testing.T) {
+	s, priv := newTestSidecar(t)
+	c := validClaims(time.Now())
+	c.ScopedRoles = map[string][]string{"module-a": {"analyst"}}
+	c.ScopedRolesTruncated = true
+	token := signClaims(t, priv, c)
+
+	resp, err := s.Check(context.Background(), checkReq("/v1/users", map[string]string{
+		"authorization": "Bearer " + token,
+	}))
+	require.NoError(t, err)
+
+	h := headerMap(resp)
+	require.Equal(t, "true", h["x-scoped-roles-truncated"])
+
+	// Absent (empty) when the grant set fit within the bound.
+	c.ScopedRolesTruncated = false
+	resp, err = s.Check(context.Background(), checkReq("/v1/users", map[string]string{
+		"authorization": "Bearer " + signClaims(t, priv, c),
+	}))
+	require.NoError(t, err)
+	require.Empty(t, headerMap(resp)["x-scoped-roles-truncated"])
+}
+
+func TestUnit_ValidJWT_NoScopedRolesOmitsHeader(t *testing.T) {
+	s, priv := newTestSidecar(t)
+	token := signClaims(t, priv, validClaims(time.Now()))
+
+	resp, err := s.Check(context.Background(), checkReq("/v1/users", map[string]string{
+		"authorization": "Bearer " + token,
+	}))
+	require.NoError(t, err)
+
+	// The canonical-header sweep still emits the key so a spoofed value is
+	// overwritten, but with an empty value when the caller has no scoped roles.
+	require.Empty(t, headerMap(resp)["x-scoped-roles"])
 }
 
 func TestUnit_ValidJWT_ForwardsMFAState(t *testing.T) {

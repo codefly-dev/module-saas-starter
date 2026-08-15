@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"time"
 
 	"accounts/pkg/auth"
@@ -143,6 +144,22 @@ var _ business.Store = (*PostgresStore)(nil)
 // (e.g. the pkg/auth/pg package which implements its own interfaces over
 // raw SQL). Prefer using the Store methods when possible.
 func (s *PostgresStore) Pool() *pgxpool.Pool { return s.pool }
+
+// ProviderRegistered reports whether an identity provider id exists in the
+// identity_providers reference catalog. user_identities.provider is a foreign
+// key into that catalog, so an unregistered provider cannot create identities;
+// startup checks this to fail closed before the first login rather than after.
+func (s *PostgresStore) ProviderRegistered(ctx context.Context, providerID string) (bool, error) {
+	var exists bool
+	err := s.pool.QueryRow(ctx,
+		`SELECT EXISTS (SELECT 1 FROM identity_providers WHERE provider_id = $1)`,
+		providerID,
+	).Scan(&exists)
+	if err != nil {
+		return false, fmt.Errorf("query identity provider registration: %w", err)
+	}
+	return exists, nil
+}
 
 func (s *PostgresStore) RunInTransaction(ctx context.Context, fn func(ctx context.Context) error) error {
 	// Begin transaction

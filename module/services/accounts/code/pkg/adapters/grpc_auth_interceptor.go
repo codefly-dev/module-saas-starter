@@ -147,6 +147,8 @@ func (i *grpcPolicyAuthorizer) authorize(ctx context.Context, fullMethod string)
 	}
 	ctx = stampVerifiedIdentity(ctx, identity.UserID.String(), identity.OrgID.String(), identity.Assurance())
 	ctx = auth.WithVerifiedSessionID(ctx, identity.SessionID)
+	ctx = withScopedRoles(ctx, identity.ScopedRoles)
+	ctx = withScopedRolesTruncated(ctx, identity.ScopedRolesTruncated)
 	if values := md.Get("x-scopes"); len(values) > 0 && values[0] != "" {
 		ctx = withScopes(ctx, parseScopes(values[0]))
 	}
@@ -170,6 +172,10 @@ func stampForwardedGRPCIdentity(ctx context.Context, md metadata.MD) context.Con
 	if scopes := firstMetadataValue(md, "x-scopes"); scopes != "" {
 		ctx = withScopes(ctx, parseScopes(scopes))
 	}
+	if scopedRoles := firstMetadataValue(md, "x-scoped-roles"); scopedRoles != "" {
+		ctx = withScopedRoles(ctx, parseScopedRoles(scopedRoles))
+	}
+	ctx = withScopedRolesTruncated(ctx, firstMetadataValue(md, "x-scoped-roles-truncated") == "true")
 	return auth.WithVerifiedSessionIDString(ctx, firstMetadataValue(md, "x-session-id"))
 }
 

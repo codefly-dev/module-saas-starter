@@ -13,12 +13,13 @@ const (
 	AssuranceLevelAAL1 = "aal1"
 	AssuranceLevelAAL2 = "aal2"
 
-	AuthenticationMethodFixture  = "fixture"
-	AuthenticationMethodOAuth    = "oauth"
-	AuthenticationMethodEmail    = "email"
-	AuthenticationMethodOTP      = "otp"
-	AuthenticationMethodRecovery = "recovery"
-	AuthenticationMethodWebAuthn = "webauthn"
+	AuthenticationMethodFixture   = "fixture"
+	AuthenticationMethodOAuth     = "oauth"
+	AuthenticationMethodEmail     = "email"
+	AuthenticationMethodOTP       = "otp"
+	AuthenticationMethodRecovery  = "recovery"
+	AuthenticationMethodWebAuthn  = "webauthn"
+	AuthenticationMethodHeaderJWT = "header_jwt"
 
 	// DefaultRecentStepUpMaxAge is the maximum age accepted by sensitive
 	// operations. Refresh rotation preserves the original verification time;
