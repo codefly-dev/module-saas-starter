@@ -227,6 +227,10 @@ func (manifest Manifest) Validate(moduleRoot string) error {
 }
 
 func isSemver(version string) bool {
+	return IsSemanticVersion(version)
+}
+
+func IsSemanticVersion(version string) bool {
 	withoutBuild, build, hasBuild := strings.Cut(version, "+")
 	if hasBuild && !validSemverLabels(build, false) {
 		return false
@@ -255,8 +259,78 @@ func validSemverLabels(value string, rejectLeadingZero bool) bool {
 
 func isSemverRange(value string) bool {
 	parts := strings.Fields(value)
-	return len(parts) == 2 && strings.HasPrefix(parts[0], ">=") && strings.HasPrefix(parts[1], "<") &&
-		isSemver(strings.TrimPrefix(parts[0], ">=")) && isSemver(strings.TrimPrefix(parts[1], "<"))
+	if len(parts) != 2 || !strings.HasPrefix(parts[0], ">=") || !strings.HasPrefix(parts[1], "<") {
+		return false
+	}
+	lower := strings.TrimPrefix(parts[0], ">=")
+	upper := strings.TrimPrefix(parts[1], "<")
+	return isSemver(lower) && isSemver(upper) && compareSemver(lower, upper) < 0
+}
+
+func compareSemver(left, right string) int {
+	left = strings.SplitN(left, "+", 2)[0]
+	right = strings.SplitN(right, "+", 2)[0]
+	leftCore, leftPrerelease, leftHasPrerelease := strings.Cut(left, "-")
+	rightCore, rightPrerelease, rightHasPrerelease := strings.Cut(right, "-")
+	leftParts := strings.Split(leftCore, ".")
+	rightParts := strings.Split(rightCore, ".")
+	for index := range leftParts {
+		if comparison := compareNumericIdentifier(leftParts[index], rightParts[index]); comparison != 0 {
+			return comparison
+		}
+	}
+	if leftHasPrerelease != rightHasPrerelease {
+		if leftHasPrerelease {
+			return -1
+		}
+		return 1
+	}
+	if !leftHasPrerelease {
+		return 0
+	}
+	leftParts = strings.Split(leftPrerelease, ".")
+	rightParts = strings.Split(rightPrerelease, ".")
+	for index := 0; index < len(leftParts) && index < len(rightParts); index++ {
+		leftNumeric := numericLabelPattern.MatchString(leftParts[index])
+		rightNumeric := numericLabelPattern.MatchString(rightParts[index])
+		switch {
+		case leftNumeric && rightNumeric:
+			if comparison := compareNumericIdentifier(leftParts[index], rightParts[index]); comparison != 0 {
+				return comparison
+			}
+		case leftNumeric:
+			return -1
+		case rightNumeric:
+			return 1
+		case leftParts[index] < rightParts[index]:
+			return -1
+		case leftParts[index] > rightParts[index]:
+			return 1
+		}
+	}
+	switch {
+	case len(leftParts) < len(rightParts):
+		return -1
+	case len(leftParts) > len(rightParts):
+		return 1
+	default:
+		return 0
+	}
+}
+
+func compareNumericIdentifier(left, right string) int {
+	switch {
+	case len(left) < len(right):
+		return -1
+	case len(left) > len(right):
+		return 1
+	case left < right:
+		return -1
+	case left > right:
+		return 1
+	default:
+		return 0
+	}
 }
 
 func validatePath(moduleRoot, relative string, allowDot bool) error {
@@ -336,7 +410,12 @@ func (manifest Manifest) validateTopology(moduleRoot, relative string) error {
 	if len(declared) != len(topology.Services) {
 		return fmt.Errorf("provided-services do not match topology: declared %d services, topology has %d", len(declared), len(topology.Services))
 	}
+	seenServices := make(map[string]struct{}, len(topology.Services))
 	for _, service := range topology.Services {
+		if _, duplicate := seenServices[service.Name]; duplicate {
+			return fmt.Errorf("topology service %q is duplicated", service.Name)
+		}
+		seenServices[service.Name] = struct{}{}
 		endpoints, found := declared[service.Name]
 		if !found {
 			return fmt.Errorf("topology service %q is missing from provided-services", service.Name)
@@ -344,7 +423,12 @@ func (manifest Manifest) validateTopology(moduleRoot, relative string) error {
 		if len(endpoints) != len(service.Endpoints) {
 			return fmt.Errorf("provided service %q endpoints do not match topology", service.Name)
 		}
+		seenEndpoints := make(map[string]struct{}, len(service.Endpoints))
 		for _, endpoint := range service.Endpoints {
+			if _, duplicate := seenEndpoints[endpoint.Name]; duplicate {
+				return fmt.Errorf("topology service %q endpoint %q is duplicated", service.Name, endpoint.Name)
+			}
+			seenEndpoints[endpoint.Name] = struct{}{}
 			candidate, found := endpoints[endpoint.Name]
 			if !found || candidate.Protocol != endpoint.Protocol || candidate.Visibility != endpoint.Visibility {
 				return fmt.Errorf("provided service %q endpoint %q does not match topology", service.Name, endpoint.Name)

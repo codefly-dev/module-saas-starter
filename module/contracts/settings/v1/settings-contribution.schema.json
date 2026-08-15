@@ -1,0 +1,25 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://codefly.dev/schemas/saas/settings-contribution-v1.json",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema", "namespace", "proto-import", "message", "field", "field-range"],
+  "properties": {
+    "schema": {"const": "codefly/saas/settings-contribution/v1"},
+    "namespace": {"type": "string", "pattern": "^[a-z][a-z0-9]*(?:[._-][a-z0-9]+)*$"},
+    "proto-import": {"type": "string", "pattern": "^[A-Za-z0-9_./-]+\\.proto$"},
+    "message": {"type": "string", "pattern": "^[A-Za-z][A-Za-z0-9]*(?:\\.[A-Za-z][A-Za-z0-9_]*)+$"},
+    "field": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name", "number"],
+      "properties": {"name": {"type": "string", "pattern": "^[a-z][a-z0-9_]*$"}, "number": {"type": "integer", "minimum": 1000, "maximum": 536870911}}
+    },
+    "field-range": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["start", "end"],
+      "properties": {"start": {"type": "integer", "minimum": 1000, "maximum": 536870911}, "end": {"type": "integer", "minimum": 1000, "maximum": 536870911}}
+    }
+  }
+}

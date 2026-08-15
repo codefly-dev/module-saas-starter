@@ -101,6 +101,13 @@ jobs:
         with:
           go-version: stable
           cache-dependency-path: module/tools/go.sum
+      - uses: actions/setup-node@6044e13b5cdb70d54f1e0432d7cdb75a5e67a2c4 # v6.3.0
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: module/services/frontend/code/package-lock.json
+      - name: Clean-install frontend dependencies
+        run: npm ci --prefix module/services/frontend/code
       - name: Validate the package contract
         working-directory: module/tools
         env:
@@ -108,6 +115,18 @@ jobs:
         run: |
           go test ./...
           go run ./cmd/module-package validate --module ..
+      - name: Execute declared generators and reject drift
+        working-directory: module/tools
+        env:
+          GOWORK: "off"
+        run: |
+          go run ./cmd/module-package run-generators --module ..
+          git -C ../.. diff --exit-code -- module
+      - name: Execute published contract conformance suites
+        working-directory: module/tools
+        env:
+          GOWORK: "off"
+        run: go run ./cmd/module-package run-conformance --module ..
       - name: Prove canonical archive determinism
         working-directory: module/tools
         env:
@@ -265,12 +284,13 @@ jobs:
         working-directory: module/tools
         env:
           GH_TOKEN: ${{ github.token }}
+          RELEASE_ADMIN_TOKEN: ${{ secrets.RELEASE_ADMIN_TOKEN }}
           GOWORK: "off"
         run: |
-          if [[ "$(gh api "repos/${GITHUB_REPOSITORY}/immutable-releases" --jq .enabled)" != "true" ]]; then
-            echo "GitHub immutable releases must be enabled before publishing" >&2
-            exit 1
-          fi
+          GH_TOKEN="${RELEASE_ADMIN_TOKEN}" gh api \
+            "repos/${GITHUB_REPOSITORY}/immutable-releases" > "${RUNNER_TEMP}/immutable-release-settings.json"
+          go run ./cmd/module-package verify-release-policy \
+            --settings "${RUNNER_TEMP}/immutable-release-settings.json"
           if gh release view "${GITHUB_REF_NAME}" >/dev/null 2>&1; then
             echo "release ${GITHUB_REF_NAME} already exists" >&2
             exit 1
@@ -315,11 +335,32 @@ jobs:
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
+          GOWORK: "off"
         run: |
           gh attestation verify \
             "${RUNNER_TEMP}/release/module.tar" \
             --repo "${GITHUB_REPOSITORY}"
+          draft_created=false
+          cleanup_draft() {
+            if [[ "${draft_created}" == "true" ]]; then
+              gh release delete "${GITHUB_REF_NAME}" --yes
+            fi
+          }
+          trap cleanup_draft EXIT
           gh release create "${GITHUB_REF_NAME}" \
-            "${RUNNER_TEMP}"/release/* \
+            --draft \
             --verify-tag \
             --generate-notes
+          draft_created=true
+          gh release upload "${GITHUB_REF_NAME}" "${RUNNER_TEMP}"/release/*
+          git ls-remote --tags origin \
+            "refs/tags/${GITHUB_REF_NAME}" \
+            "refs/tags/${GITHUB_REF_NAME}^{}" > "${RUNNER_TEMP}/remote-refs-before-publish"
+          go -C module/tools run ./cmd/module-package verify-release-ref \
+            --module module \
+            --tag "${GITHUB_REF_NAME}" \
+            --commit "${GITHUB_SHA}" \
+            --remote-refs "${RUNNER_TEMP}/remote-refs-before-publish"
+          gh release edit "${GITHUB_REF_NAME}" --draft=false
+          draft_created=false
+          gh release verify "${GITHUB_REF_NAME}"

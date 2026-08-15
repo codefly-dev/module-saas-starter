@@ -37,6 +37,11 @@ immutable-release setting is disabled, the release already exists, the tag does
 not match the manifest version, or the remote tag peels to a different commit.
 Once published, GitHub prevents replacement or deletion of the tag and assets.
 
+The repository secret `RELEASE_ADMIN_TOKEN` must contain a fine-grained token
+with read-only repository Administration permission. GitHub's workflow token
+cannot be granted that permission, so this credential is used only to read the
+immutable-release setting; publication uses the job-scoped workflow token.
+
 Verify a downloaded package before materialization:
 
 ```sh

@@ -3,6 +3,9 @@ package fixtures
 import (
 	gen "accounts/pkg/gen/saas/accounts/v1"
 	"context"
+	"os"
+	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -36,6 +39,16 @@ func TestFixtureNamePatternAcceptsProductFixtureNames(t *testing.T) {
 		if !fixtureNamePattern.MatchString(name) {
 			t.Fatalf("fixtureNamePattern rejected %q", name)
 		}
+	}
+}
+
+func TestLoadFixtureRejectsUnknownFields(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "product.yaml")
+	if err := os.WriteFile(path, []byte("users: []\nraw_environment: SECRET\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := loadFixtureFile(path); err == nil || !strings.Contains(err.Error(), "raw_environment") {
+		t.Fatalf("loadFixtureFile() error = %v, want unknown field rejection", err)
 	}
 }
 

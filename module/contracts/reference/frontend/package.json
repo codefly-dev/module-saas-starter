@@ -1,0 +1,30 @@
+{
+	"name": "@codefly-reference/frontend",
+	"version": "1.0.0",
+	"type": "module",
+	"files": [
+		"dist"
+	],
+	"exports": {
+		".": {
+			"types": "./dist/index.d.ts",
+			"import": "./dist/index.js"
+		}
+	},
+	"scripts": {
+		"build": "tsc -p tsconfig.json"
+	},
+	"dependencies": {
+		"@codefly/saas-plugin-contract": "2.1.0",
+		"@codefly/saas-plugin-react": "0.4.1"
+	},
+	"peerDependencies": {
+		"react": ">=19.2 <20"
+	},
+	"devDependencies": {
+		"@types/react": "19.2.17",
+		"react": "19.2.8",
+		"typescript": "5.9.3"
+	},
+	"license": "Apache-2.0"
+}

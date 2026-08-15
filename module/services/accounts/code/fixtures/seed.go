@@ -3,8 +3,10 @@ package fixtures
 import (
 	"accounts/pkg/business"
 	gen "accounts/pkg/gen/saas/accounts/v1"
+	"bytes"
 	"context"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -221,7 +223,16 @@ func loadFixtureFile(path string) (*fixtureFile, error) {
 		return nil, fmt.Errorf("cannot read fixture %q: %w", path, err)
 	}
 	var f fixtureFile
-	if err := yaml.Unmarshal(data, &f); err != nil {
+	decoder := yaml.NewDecoder(bytes.NewReader(data))
+	decoder.KnownFields(true)
+	if err := decoder.Decode(&f); err != nil {
+		return nil, fmt.Errorf("cannot parse fixture %q: %w", path, err)
+	}
+	var trailing any
+	if err := decoder.Decode(&trailing); err != io.EOF {
+		if err == nil {
+			return nil, fmt.Errorf("cannot parse fixture %q: multiple YAML documents are not allowed", path)
+		}
 		return nil, fmt.Errorf("cannot parse fixture %q: %w", path, err)
 	}
 	if err := validateFixture(&f); err != nil {

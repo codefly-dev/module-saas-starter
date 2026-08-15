@@ -81,7 +81,7 @@ const UNSUPPORTED_PUBLIC_CLAIMS = [
 // service manifest is generated from protected topology plus the application plugin allowlist.
 const PRUNE_DIRS = new Set([
   "node_modules", ".next", ".turbo", "dist", "build", "coverage",
-  ".git", "vendor", "__pycache__", ".codefly", ".cache", "test-results", "playwright-report",
+  ".git", "vendor", "__pycache__", ".codefly", ".cache", ".nix-cache", "test-results", "playwright-report",
 ]);
 export const isExcludedFile = (rel) =>
   rel === "tools/base-manifest.json" ||      // the manifest can't hash itself
@@ -90,6 +90,7 @@ export const isExcludedFile = (rel) =>
   rel === "deployment/generated/service-topology.json" || // generated from the consumer topology
   rel.startsWith("deployment/kustomize/") || // generated from workspace/environment GitOps inputs
   rel === "services/store/code/store-migrator" || // `go build ./...` output; source and migrations remain protected
+  rel.includes("/.nix-cache/") ||              // per-service Nix evaluation cache; never release source
   rel === "services/frontend/code/frontend.config.ts" || // FP-001: application-owned composition root
   rel === "services/frontend/code/package-lock.json" || // FP-010A: generated workspace install graph
   /^services\/[^/]+\/configurations\/.*\.secret\.[^/]+$/.test(rel) || // local secret material is SDK/runtime-owned, never canonical base

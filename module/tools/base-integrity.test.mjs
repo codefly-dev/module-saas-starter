@@ -67,6 +67,14 @@ test("excludes compiled service binaries without excluding their source", () => 
   assert.equal(isExcludedFile("services/store/migrations/1_create.up.sql"), false);
 });
 
+test("excludes per-service Nix caches from the canonical package", () => {
+  assert.equal(
+    isExcludedFile("services/vault/.nix-cache/nix-devshell-profile-1-link"),
+    true,
+  );
+  assert.equal(isExcludedFile("services/vault/nix/service.nix"), false);
+});
+
 test("rejects multiple logical migrations with the same version", (t) => {
   const root = mkdtempSync(join(tmpdir(), "saas-migration-integrity-"));
   t.after(() => rmSync(root, { recursive: true, force: true }));

@@ -64,21 +64,43 @@ func Build(options BuildOptions) (ArtifactMetadata, error) {
 	if err != nil {
 		return ArtifactMetadata{}, err
 	}
-	if err := os.MkdirAll(options.OutputDir, 0o755); err != nil {
-		return ArtifactMetadata{}, fmt.Errorf("create release directory: %w", err)
-	}
 	if err := validateGitTree(repositoryRoot, commit); err != nil {
 		return ArtifactMetadata{}, err
 	}
-	for _, name := range []string{ArchiveName, ChecksumName, MetadataName} {
-		if _, err := os.Lstat(filepath.Join(options.OutputDir, name)); err == nil {
-			return ArtifactMetadata{}, fmt.Errorf("refusing to replace existing release asset %s", name)
-		} else if !errors.Is(err, os.ErrNotExist) {
-			return ArtifactMetadata{}, fmt.Errorf("inspect release asset %s: %w", name, err)
-		}
+	outputDir, err := filepath.Abs(options.OutputDir)
+	if err != nil {
+		return ArtifactMetadata{}, fmt.Errorf("resolve release directory: %w", err)
 	}
+	if _, err := os.Lstat(outputDir); err == nil {
+		return ArtifactMetadata{}, fmt.Errorf("refusing to replace existing release directory %s", outputDir)
+	} else if !errors.Is(err, os.ErrNotExist) {
+		return ArtifactMetadata{}, fmt.Errorf("inspect release directory: %w", err)
+	}
+	parent := filepath.Dir(outputDir)
+	if err := os.MkdirAll(parent, 0o755); err != nil {
+		return ArtifactMetadata{}, fmt.Errorf("create release parent directory: %w", err)
+	}
+	lockPath := outputDir + ".lock"
+	lock, err := os.OpenFile(lockPath, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o600)
+	if err != nil {
+		return ArtifactMetadata{}, fmt.Errorf("reserve release directory: %w", err)
+	}
+	defer os.Remove(lockPath)
+	if err := lock.Close(); err != nil {
+		return ArtifactMetadata{}, fmt.Errorf("close release reservation: %w", err)
+	}
+	if _, err := os.Lstat(outputDir); err == nil {
+		return ArtifactMetadata{}, fmt.Errorf("refusing to replace existing release directory %s", outputDir)
+	} else if !errors.Is(err, os.ErrNotExist) {
+		return ArtifactMetadata{}, fmt.Errorf("inspect reserved release directory: %w", err)
+	}
+	stagingDir, err := os.MkdirTemp(parent, ".module-release-*")
+	if err != nil {
+		return ArtifactMetadata{}, fmt.Errorf("create staged release directory: %w", err)
+	}
+	defer os.RemoveAll(stagingDir)
 
-	temporary, err := os.CreateTemp(options.OutputDir, ".module-*.tar")
+	temporary, err := os.CreateTemp(stagingDir, ".module-*.tar")
 	if err != nil {
 		return ArtifactMetadata{}, fmt.Errorf("create temporary archive: %w", err)
 	}
@@ -114,18 +136,18 @@ func Build(options BuildOptions) (ArtifactMetadata, error) {
 	}
 	metadataBody = append(metadataBody, '\n')
 
-	archivePath := filepath.Join(options.OutputDir, ArchiveName)
-	if err := os.Link(temporaryName, archivePath); err != nil {
-		return ArtifactMetadata{}, fmt.Errorf("publish canonical archive: %w", err)
+	archivePath := filepath.Join(stagingDir, ArchiveName)
+	if err := os.Rename(temporaryName, archivePath); err != nil {
+		return ArtifactMetadata{}, fmt.Errorf("stage canonical archive: %w", err)
 	}
-	if err := os.Remove(temporaryName); err != nil {
-		return ArtifactMetadata{}, fmt.Errorf("remove temporary archive: %w", err)
-	}
-	if err := os.WriteFile(filepath.Join(options.OutputDir, ChecksumName), []byte(digest+"  "+ArchiveName+"\n"), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(stagingDir, ChecksumName), []byte(digest+"  "+ArchiveName+"\n"), 0o644); err != nil {
 		return ArtifactMetadata{}, fmt.Errorf("write archive checksum: %w", err)
 	}
-	if err := os.WriteFile(filepath.Join(options.OutputDir, MetadataName), metadataBody, 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(stagingDir, MetadataName), metadataBody, 0o644); err != nil {
 		return ArtifactMetadata{}, fmt.Errorf("write artifact metadata: %w", err)
+	}
+	if err := os.Rename(stagingDir, outputDir); err != nil {
+		return ArtifactMetadata{}, fmt.Errorf("publish release directory: %w", err)
 	}
 	return metadata, nil
 }
@@ -240,6 +262,27 @@ func ValidateReleaseRef(manifest Manifest, tag, commit, remoteRefs string) error
 	}
 	if resolved != commit {
 		return fmt.Errorf("release tag %q resolves to %s, not release commit %s", tag, resolved, commit)
+	}
+	return nil
+}
+
+func ValidateImmutableReleaseSettings(body []byte) error {
+	decoder := json.NewDecoder(bytes.NewReader(body))
+	decoder.DisallowUnknownFields()
+	var settings struct {
+		Enabled bool `json:"enabled"`
+	}
+	if err := decoder.Decode(&settings); err != nil {
+		return fmt.Errorf("decode immutable release settings: %w", err)
+	}
+	if err := decoder.Decode(&struct{}{}); !errors.Is(err, io.EOF) {
+		if err == nil {
+			return fmt.Errorf("decode immutable release settings: multiple JSON values are not allowed")
+		}
+		return fmt.Errorf("decode immutable release settings: %w", err)
+	}
+	if !settings.Enabled {
+		return fmt.Errorf("GitHub immutable releases must be enabled before publishing")
 	}
 	return nil
 }
