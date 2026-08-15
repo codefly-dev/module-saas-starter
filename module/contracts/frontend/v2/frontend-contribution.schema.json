@@ -1,0 +1,14 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://codefly.dev/schemas/saas/frontend-contribution-v2.json",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema", "package", "version", "export", "plugin"],
+  "properties": {
+    "schema": {"const": "codefly/saas/frontend-contribution/v2"},
+    "package": {"type": "string", "pattern": "^(?:@[a-z0-9][a-z0-9._-]*/)?[a-z0-9][a-z0-9._-]*$"},
+    "version": {"type": "string", "pattern": "^(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)(?:-[0-9A-Za-z-]+(?:\\.[0-9A-Za-z-]+)*)?(?:\\+[0-9A-Za-z-]+(?:\\.[0-9A-Za-z-]+)*)?$"},
+    "export": {"type": "string", "pattern": "^[A-Za-z_$][A-Za-z0-9_$]*$"},
+    "plugin": {"type": "string", "pattern": "^[a-z][a-z0-9]*(?:[._-][a-z0-9]+)*$"}
+  }
+}

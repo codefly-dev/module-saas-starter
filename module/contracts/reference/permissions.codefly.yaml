@@ -1,0 +1,6 @@
+schema: codefly/saas/permissions-contribution/v1
+namespace: reference
+permissions:
+  - name: reference.console:read
+    resource: reference.console
+    action: read

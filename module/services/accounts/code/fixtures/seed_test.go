@@ -3,6 +3,9 @@ package fixtures
 import (
 	gen "accounts/pkg/gen/saas/accounts/v1"
 	"context"
+	"os"
+	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -36,6 +39,31 @@ func TestFixtureNamePatternAcceptsProductFixtureNames(t *testing.T) {
 		if !fixtureNamePattern.MatchString(name) {
 			t.Fatalf("fixtureNamePattern rejected %q", name)
 		}
+	}
+}
+
+func TestLoadFixtureRejectsUnknownFields(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "product.yaml")
+	if err := os.WriteFile(path, []byte("users: []\nraw_environment: SECRET\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := loadFixtureFile(path); err == nil || !strings.Contains(err.Error(), "raw_environment") {
+		t.Fatalf("loadFixtureFile() error = %v, want unknown field rejection", err)
+	}
+}
+
+func TestLoadFixtureAcceptsDevelopmentAssuranceField(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "product.yaml")
+	contents := "users:\n  - email: owner@example.com\n    provider: email\n    provider_id: owner\n    mfa_verified: true\n"
+	if err := os.WriteFile(path, []byte(contents), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	fixture, err := loadFixtureFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(fixture.Users) != 1 || !fixture.Users[0].MFAVerified {
+		t.Fatalf("loadFixtureFile() users = %+v, want one MFA-verified user", fixture.Users)
 	}
 }
 
