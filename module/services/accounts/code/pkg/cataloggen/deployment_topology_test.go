@@ -50,7 +50,7 @@ func TestDeploymentTopologyIsDeterministicAndCurrent(t *testing.T) {
 		dependencyCount += len(service.GetDependencies())
 	}
 	require.Equal(t, 16, endpointCount)
-	require.Equal(t, 9, dependencyCount)
+	require.Equal(t, 10, dependencyCount)
 	var temporalService *catalogv1.DeploymentService
 	for _, service := range first.Catalog.GetServices() {
 		if service.GetName() == "temporal" {
@@ -64,6 +64,39 @@ func TestDeploymentTopologyIsDeterministicAndCurrent(t *testing.T) {
 	require.Equal(t, uint32(7233), temporalService.GetEndpoints()[0].GetPort())
 	require.Equal(t, "http", temporalService.GetEndpoints()[1].GetName())
 	require.Equal(t, uint32(8233), temporalService.GetEndpoints()[1].GetPort())
+	privateREST := map[string]bool{"accounts": false, "auth-sidecar": false}
+	authSidecarTelemetry := false
+	for _, service := range first.Catalog.GetServices() {
+		if _, ok := privateREST[service.GetName()]; !ok {
+			continue
+		}
+		for _, endpoint := range service.GetEndpoints() {
+			if endpoint.GetName() == "rest" {
+				require.Equal(t, catalogv1.EndpointVisibility_ENDPOINT_VISIBILITY_PRIVATE, endpoint.GetVisibility())
+				privateREST[service.GetName()] = true
+			}
+		}
+		if service.GetName() == "auth-sidecar" {
+			for _, dependency := range service.GetDependencies() {
+				if dependency.GetService() == "telemetry" {
+					require.Equal(t, []string{"grpc"}, dependency.GetEndpoints())
+					authSidecarTelemetry = true
+				}
+			}
+		}
+	}
+	require.Equal(t, map[string]bool{"accounts": true, "auth-sidecar": true}, privateREST)
+	require.True(t, authSidecarTelemetry)
+	for _, endpoint := range first.Catalog.GetInterfaceEndpoints() {
+		require.False(t,
+			endpoint.GetService() == "accounts" ||
+				(endpoint.GetService() == "auth-sidecar" && endpoint.GetEndpoint() == "rest"),
+		)
+	}
+	require.Contains(t, string(first.ServiceManifests["accounts"]), "- observability")
+	authSidecarManifest := string(first.ServiceManifests["auth-sidecar"])
+	require.Contains(t, authSidecarManifest, "- observability")
+	require.Contains(t, authSidecarManifest, "- name: telemetry")
 	frontendManifest := string(first.ServiceManifests["frontend"])
 	require.Contains(t, frontendManifest, "execution-profiles:")
 	require.Contains(t, frontendManifest, "local: development")

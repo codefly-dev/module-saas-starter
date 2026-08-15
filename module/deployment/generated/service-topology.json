@@ -89,6 +89,12 @@
           "endpoints": [
             "write"
           ]
+        },
+        {
+          "service": "telemetry",
+          "endpoints": [
+            "grpc"
+          ]
         }
       ]
     },
