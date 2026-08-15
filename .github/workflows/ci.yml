@@ -107,6 +107,12 @@ jobs:
           # Same setting Mind's CI uses (scripts/ci-fetch-codefly.sh).
           GOPRIVATE: github.com/codefly-dev/*
         run: go install github.com/codefly-dev/cli/cmd/codefly@latest
+      # Temporal's amd64 image expands beyond Core's managed 512 MiB Syft
+      # scratch volume. A host binary lets Codefly use the runner's disk.
+      - name: Install Syft
+        uses: anchore/sbom-action/download-syft@e22c389904149dbc22b58101806040fa8d37a610 # v0.24.0
+        with:
+          syft-version: v1.50.0
       - name: Reclaim runner disk space
         shell: bash
         run: |
