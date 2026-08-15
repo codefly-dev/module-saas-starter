@@ -22,8 +22,8 @@ func TestStarterManifestDeclaresTheReleaseBoundary(t *testing.T) {
 	if manifest.ID != "codefly/saas-starter" || manifest.Version != "0.1.0" {
 		t.Fatalf("unexpected package identity: %s@%s", manifest.ID, manifest.Version)
 	}
-	if len(manifest.ProvidedServices) != 9 {
-		t.Fatalf("provided service count = %d, want 9", len(manifest.ProvidedServices))
+	if len(manifest.ProvidedServices) != 11 {
+		t.Fatalf("provided service count = %d, want 11", len(manifest.ProvidedServices))
 	}
 	wantedContracts := map[string]bool{
 		"codefly/saas/frontend-plugin": false,

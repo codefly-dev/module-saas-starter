@@ -44,6 +44,13 @@ provided-services:
   - name: telemetry
     endpoints:
       - {name: grpc, protocol: grpc, visibility: private}
+  - name: temporal
+    endpoints:
+      - {name: grpc, protocol: tcp, visibility: module}
+      - {name: http, protocol: tcp, visibility: module}
+  - name: temporal-store
+    endpoints:
+      - {name: tcp, protocol: tcp, visibility: external}
   - name: vault
     endpoints:
       - {name: http, protocol: http, visibility: module}

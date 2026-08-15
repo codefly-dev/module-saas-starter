@@ -69,7 +69,7 @@
     "generated/reference-composition/services/accounts/proto/saas/composed/settings/v1/settings.proto": "410058a92350a35a8c8b9542258db26192dce0bef6cdc46b0e6b2b82a11dd12c",
     "generated/reference-composition/services/frontend/code/src/gen/saas/settings/v1/field_catalog.ts": "3c0382746bd6e0072407423793d735e1cdad41ade081f05b13fb7b87dd384a1e",
     "generated/reference-composition/services/frontend/code/src/generated/frontend-contributions.ts": "057360f7883f3d02d9a313432297bfeb76182ffc1f9b9f4932a9e9254428995e",
-    "module.package.codefly.yaml": "6aad4e4b35699264ed020fc3088a0cddf6c2b0e82ddb5257fa61c61c9969f6a2",
+    "module.package.codefly.yaml": "9581169136beb311cc7d49476e5da88a95b5de6130cf05be423e1baf38f3b4a7",
     "policies/method_permissions/data.json": "b7dcfa74a0d3614a59054c2f63a52406f9a44aba5f5a9c04844ddc209384946b",
     "public/site.config.json": "4a6e76802a6ac46298b0f8ce7fbbb687ca670f1259474f4a8b32c335937916f1",
     "services/README.md": "067296024a1b290957ce270f1d75882c016d620176ac62db487d1e71cc4ec730",
@@ -1575,7 +1575,7 @@
     "tools/modulepackage/archive.go": "ef5a89f7884dd37cf38832d3cb13e33e2c9f044ce686794d78ff5e4bb895afd7",
     "tools/modulepackage/commands.go": "e17a986afb42e0a8af18672fbd2732ac8d1d7c03afb6739b1511e832cb6d8e33",
     "tools/modulepackage/manifest.go": "1d258654cb2c34ccc7c21567286b73c76e330a268d6b359875a92e9149f657e9",
-    "tools/modulepackage/modulepackage_test.go": "33f41ce01c2469d36fb0a2080ae939ec26825ae1012e96d2774658523db42ec7",
+    "tools/modulepackage/modulepackage_test.go": "621c82a40c68174cc1a84242c1a2db62b1137521e84edb8f950e0b2b5c1187fc",
     "tools/proto_generation_test.go": "993e2bc7f10bde428ad9b9bea8c7c88a6fa129a8a092689a33f9bc1a9a40509f",
     "tools/rls-migration-gate.mjs": "fd258aca45acc801b35e3abd1ae70518f8e62f44ef7c03f7ca6e7a9b9422bb03",
     "tools/rls-migration-gate.test.mjs": "0466eb37910c6a780d31df07a2d2df1d2339adc453271a1584e7dec02547b92f"
