@@ -173,6 +173,42 @@
       ]
     },
     {
+      "name": "temporal",
+      "endpoints": [
+        {
+          "name": "grpc",
+          "api": "CODEFLY_API_TCP",
+          "visibility": "ENDPOINT_VISIBILITY_MODULE",
+          "port": 7233
+        },
+        {
+          "name": "http",
+          "api": "CODEFLY_API_TCP",
+          "visibility": "ENDPOINT_VISIBILITY_MODULE",
+          "port": 8233
+        }
+      ],
+      "dependencies": [
+        {
+          "service": "temporal-store",
+          "endpoints": [
+            "tcp"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "temporal-store",
+      "endpoints": [
+        {
+          "name": "tcp",
+          "api": "CODEFLY_API_TCP",
+          "visibility": "ENDPOINT_VISIBILITY_EXTERNAL",
+          "port": 5432
+        }
+      ]
+    },
+    {
       "name": "vault",
       "endpoints": [
         {

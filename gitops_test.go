@@ -342,6 +342,21 @@ func TestGenerateBundleRejectsHostileContracts(t *testing.T) {
 			want: "has no module service declaration",
 		},
 		{
+			name: "duplicate Kubernetes workload identity",
+			mutate: func(t *testing.T, moduleDir string, _ *workspaceManifest) {
+				t.Helper()
+				file := filepath.Join(moduleDir, "deployment", "topology.bindings.codefly.yaml")
+				data, err := os.ReadFile(file)
+				if err != nil {
+					t.Fatal(err)
+				}
+				topology := strings.Replace(string(data), "  - name: accounts\n    version:", "  - name: accounts\n    kubernetes:\n      service_name: shared\n      app_label: accounts\n    version:", 1)
+				topology = strings.Replace(topology, "  - name: frontend\n    version:", "  - name: frontend\n    kubernetes:\n      service_name: shared\n      app_label: frontend\n    version:", 1)
+				writeTestFile(t, file, topology)
+			},
+			want: "share Kubernetes service name",
+		},
+		{
 			name: "symlinked service path",
 			mutate: func(t *testing.T, moduleDir string, _ *workspaceManifest) {
 				t.Helper()
@@ -1143,6 +1158,112 @@ func TestCanonicalSourceDoesNotShipGeneratedBundleTree(t *testing.T) {
 	})
 	if err != nil {
 		t.Fatal(err)
+	}
+}
+
+func TestCanonicalTemporalTopologyRendersLocalAndAWS(t *testing.T) {
+	t.Parallel()
+	source := "module"
+	moduleDir := filepath.Join(t.TempDir(), "module")
+	copySource := func(relative string) {
+		t.Helper()
+		data, err := os.ReadFile(filepath.Join(source, filepath.FromSlash(relative)))
+		if err != nil {
+			t.Fatal(err)
+		}
+		content := strings.ReplaceAll(string(data), "saas-starter", "temporal-test")
+		writeTestFile(t, filepath.Join(moduleDir, filepath.FromSlash(relative)), content)
+	}
+	copySource(moduleYamlPath)
+	copySource("deployment/topology.bindings.codefly.yaml")
+	manifest, err := loadModuleManifest(source)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, service := range manifest.Services {
+		copySource(filepath.Join("services", service.Name, "service.codefly.yaml"))
+	}
+
+	workspace, err := loadWorkspaceManifest(".")
+	if err != nil {
+		t.Fatal(err)
+	}
+	workspace.Name = "temporal-control"
+	for _, environment := range workspace.Environments {
+		environment.Namespace = "temporal-test-" + environment.Name
+	}
+	if err := generateDeploymentBundle(moduleDir, workspace); err != nil {
+		t.Fatal(err)
+	}
+	data, err := os.ReadFile(filepath.Join(moduleDir, filepath.FromSlash(bundleRelativeDir), "bundle.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var bundle moduleBundle
+	if err := json.Unmarshal(data, &bundle); err != nil {
+		t.Fatal(err)
+	}
+
+	for _, name := range []string{"local", "aws"} {
+		var environment *bundleEnvironment
+		for index := range bundle.Environments {
+			if bundle.Environments[index].Name == name {
+				environment = &bundle.Environments[index]
+				break
+			}
+		}
+		if environment == nil {
+			t.Fatalf("generated bundle omits %s", name)
+		}
+		for _, service := range []string{"temporal", "temporal-store"} {
+			if !slices.Contains(environment.Services, service) {
+				t.Errorf("%s bundle omits %s: %v", name, service, environment.Services)
+			}
+		}
+
+		objects := overlayObjects(t, moduleDir, name)
+		policies := make(map[string]bool)
+		var temporalEgressApp string
+		var temporalDestinationHost string
+		for _, object := range objects {
+			metadata, _ := object["metadata"].(map[string]any)
+			objectName, _ := metadata["name"].(string)
+			switch object["kind"] {
+			case "NetworkPolicy":
+				policies[objectName] = true
+				if objectName == "allow-temporal-to-temporal-store" {
+					spec, _ := object["spec"].(map[string]any)
+					podSelector, _ := spec["podSelector"].(map[string]any)
+					matchLabels, _ := podSelector["matchLabels"].(map[string]any)
+					temporalEgressApp, _ = matchLabels["app"].(string)
+				}
+			case "DestinationRule":
+				spec, _ := object["spec"].(map[string]any)
+				host, _ := spec["host"].(string)
+				if strings.HasPrefix(host, "temporal-temporal.") {
+					temporalDestinationHost = host
+				}
+			}
+		}
+		for _, policy := range []string{
+			"allow-temporal-to-temporal-store",
+			"allow-temporal-store-from-temporal",
+			"allow-temporal-store-from-bootstrap",
+			"allow-temporal-store-bootstrap-to-temporal-store",
+		} {
+			if !policies[policy] {
+				t.Errorf("%s overlay omits %s", name, policy)
+			}
+		}
+		if temporalEgressApp != "temporal-temporal" {
+			t.Errorf("%s temporal egress selects app %q, want temporal-temporal", name, temporalEgressApp)
+		}
+		if name == "local" {
+			wantHost := "temporal-temporal.temporal-test-local.svc.cluster.local"
+			if temporalDestinationHost != wantHost {
+				t.Errorf("%s temporal DestinationRule host = %q, want %q", name, temporalDestinationHost, wantHost)
+			}
+		}
 	}
 }
 

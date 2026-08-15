@@ -188,6 +188,7 @@ type topologyService struct {
 	Version                            string                               `yaml:"version,omitempty"`
 	Description                        string                               `yaml:"description,omitempty"`
 	Agent                              map[string]any                       `yaml:"agent,omitempty"`
+	Kubernetes                         *topologyKubernetesIdentity          `yaml:"kubernetes,omitempty"`
 	WorkspaceConfigurationDependencies []string                             `yaml:"workspace_configuration_dependencies,omitempty"`
 	SecretServiceConfigurations        []topologySecretServiceConfiguration `yaml:"secret_service_configurations,omitempty"`
 	Endpoints                          []topologyEndpoint                   `yaml:"endpoints"`
@@ -195,6 +196,11 @@ type topologyService struct {
 	Dependencies                       []topologyDependency                 `yaml:"dependencies,omitempty"`
 	PublicEgressPorts                  []uint32                             `yaml:"public_egress_ports,omitempty"`
 	Spec                               map[string]any                       `yaml:"spec,omitempty"`
+}
+
+type topologyKubernetesIdentity struct {
+	ServiceName string `yaml:"service_name"`
+	AppLabel    string `yaml:"app_label"`
 }
 
 type topologySecretServiceConfiguration struct {
@@ -917,6 +923,7 @@ func topologyIstioResources(
 	}
 	slices.Sort(ingressServices)
 	for _, service := range ingressServices {
+		topologyService, _ := topologyServiceByName(topology, service)
 		ports := make([]uint32, 0, len(ingressPorts[service]))
 		for port := range ingressPorts[service] {
 			ports = append(ports, port)
@@ -935,7 +942,7 @@ func topologyIstioResources(
 				Labels:    labels,
 			},
 			Spec: map[string]any{
-				"selector": map[string]any{"matchLabels": map[string]string{"app": service}},
+				"selector": map[string]any{"matchLabels": map[string]string{"app": topologyKubernetesAppLabel(topologyService)}},
 				"rules": []any{map[string]any{
 					"from": []any{map[string]any{"source": map[string]any{
 						"principals": []string{"cluster.local/ns/istio-system/sa/istio-ingressgateway-service-account"},
@@ -952,11 +959,12 @@ func topologyIstioResources(
 	var httpRoutes []any
 	if len(plan.ingress[0].hosts) == 0 {
 		route := plan.ingress[0]
+		service, _ := topologyServiceByName(topology, route.service)
 		httpRoutes = []any{map[string]any{
 			"name":  route.name,
 			"match": []any{map[string]any{"uri": map[string]string{"prefix": "/"}}},
 			"route": []any{map[string]any{"destination": map[string]any{
-				"host": route.service + "." + namespace + ".svc.cluster.local",
+				"host": topologyKubernetesServiceName(service) + "." + namespace + ".svc.cluster.local",
 				"port": map[string]any{"number": route.port},
 			}}},
 			"timeout": "30s",
@@ -965,6 +973,7 @@ func topologyIstioResources(
 		gatewayHosts = nil
 		hostSet := make(map[string]struct{})
 		for _, route := range plan.ingress {
+			service, _ := topologyServiceByName(topology, route.service)
 			matches := make([]any, 0, len(route.hosts))
 			for _, host := range route.hosts {
 				if _, exists := hostSet[host]; !exists {
@@ -981,7 +990,7 @@ func topologyIstioResources(
 				"name":  route.name,
 				"match": matches,
 				"route": []any{map[string]any{"destination": map[string]any{
-					"host": route.service + "." + namespace + ".svc.cluster.local",
+					"host": topologyKubernetesServiceName(service) + "." + namespace + ".svc.cluster.local",
 					"port": map[string]any{"number": route.port},
 				}}},
 				"timeout": "30s",
@@ -1015,6 +1024,7 @@ func topologyIstioResources(
 		},
 	}
 	for _, service := range plan.services {
+		topologyService, _ := topologyServiceByName(topology, service)
 		gateway = append(gateway, kubeObject{
 			APIVersion: "networking.istio.io/v1",
 			Kind:       "DestinationRule",
@@ -1024,7 +1034,7 @@ func topologyIstioResources(
 				Labels:    labels,
 			},
 			Spec: map[string]any{
-				"host":     service + "." + namespace + ".svc.cluster.local",
+				"host":     topologyKubernetesServiceName(topologyService) + "." + namespace + ".svc.cluster.local",
 				"exportTo": []string{"."},
 				"trafficPolicy": map[string]any{
 					"connectionPool": map[string]any{
@@ -1094,6 +1104,7 @@ func topologyInternalAuthorizationPolicies(
 	policies := make([]kubeObject, 0, len(targets))
 	principal := "cluster.local/ns/" + namespace + "/sa/default"
 	for _, target := range targets {
+		service, _ := topologyServiceByName(topology, target)
 		ports := make([]uint32, 0, len(targetPorts[target]))
 		for port := range targetPorts[target] {
 			ports = append(ports, port)
@@ -1112,7 +1123,7 @@ func topologyInternalAuthorizationPolicies(
 				Labels:    labels,
 			},
 			Spec: map[string]any{
-				"selector": map[string]any{"matchLabels": map[string]string{"app": target}},
+				"selector": map[string]any{"matchLabels": map[string]string{"app": topologyKubernetesAppLabel(service)}},
 				"rules": []any{map[string]any{
 					"from": []any{map[string]any{"source": map[string]any{
 						"principals": []string{principal},
@@ -1153,6 +1164,8 @@ func loadDeploymentTopology(moduleDir, moduleName string, services []serviceDefi
 		declared[service.name] = struct{}{}
 	}
 	topologyServices := make(map[string]topologyService, len(topology.Services))
+	kubernetesServices := make(map[string]string, len(topology.Services))
+	kubernetesApps := make(map[string]string, len(topology.Services))
 	for _, service := range topology.Services {
 		if _, exists := topologyServices[service.Name]; exists {
 			return deploymentTopology{}, fmt.Errorf("deployment topology repeats service %q", service.Name)
@@ -1163,6 +1176,32 @@ func loadDeploymentTopology(moduleDir, moduleName string, services []serviceDefi
 		if len(service.Endpoints) == 0 {
 			return deploymentTopology{}, fmt.Errorf("deployment topology service %q declares no endpoints", service.Name)
 		}
+		kubernetesService := topologyKubernetesServiceName(service)
+		if err := validateDNSLabel("deployment topology Kubernetes service name", kubernetesService); err != nil {
+			return deploymentTopology{}, fmt.Errorf("service %q: %w", service.Name, err)
+		}
+		if owner, exists := kubernetesServices[kubernetesService]; exists {
+			return deploymentTopology{}, fmt.Errorf(
+				"deployment topology services %q and %q share Kubernetes service name %q",
+				owner,
+				service.Name,
+				kubernetesService,
+			)
+		}
+		kubernetesServices[kubernetesService] = service.Name
+		kubernetesApp := topologyKubernetesAppLabel(service)
+		if err := validateDNSLabel("deployment topology Kubernetes app label", kubernetesApp); err != nil {
+			return deploymentTopology{}, fmt.Errorf("service %q: %w", service.Name, err)
+		}
+		if owner, exists := kubernetesApps[kubernetesApp]; exists {
+			return deploymentTopology{}, fmt.Errorf(
+				"deployment topology services %q and %q share Kubernetes app label %q",
+				owner,
+				service.Name,
+				kubernetesApp,
+			)
+		}
+		kubernetesApps[kubernetesApp] = service.Name
 		endpoints := make(map[string]struct{}, len(service.Endpoints))
 		for _, endpoint := range service.Endpoints {
 			if endpoint.Port == 0 || endpoint.Port > 65535 {
@@ -1218,6 +1257,20 @@ func topologyServiceByName(topology deploymentTopology, name string) (topologySe
 		}
 	}
 	return topologyService{}, false
+}
+
+func topologyKubernetesServiceName(service topologyService) string {
+	if service.Kubernetes == nil {
+		return service.Name
+	}
+	return service.Kubernetes.ServiceName
+}
+
+func topologyKubernetesAppLabel(service topologyService) string {
+	if service.Kubernetes == nil {
+		return service.Name
+	}
+	return service.Kubernetes.AppLabel
 }
 
 func topologyEndpointByName(service topologyService, name string) (topologyEndpoint, bool) {
@@ -1308,9 +1361,11 @@ func topologyNetworkPolicies(
 		inCluster[service] = struct{}{}
 	}
 	type edge struct {
-		caller string
-		target string
-		ports  []uint32
+		caller    string
+		callerApp string
+		target    string
+		targetApp string
+		ports     []uint32
 	}
 	var edges []edge
 	for _, caller := range topology.Services {
@@ -1329,14 +1384,20 @@ func topologyNetworkPolicies(
 				ports = append(ports, port)
 			}
 			slices.Sort(ports)
-			edges = append(edges, edge{caller: caller.Name, target: target.Name, ports: ports})
+			edges = append(edges, edge{
+				caller:    caller.Name,
+				callerApp: topologyKubernetesAppLabel(caller),
+				target:    target.Name,
+				targetApp: topologyKubernetesAppLabel(target),
+				ports:     ports,
+			})
 		}
 	}
 	for _, current := range edges {
 		if _, exists := inCluster[current.target]; exists {
 			policies = append(policies,
-				dependencyIngressPolicy(namespace, labels, current.target, current.caller, current.ports),
-				dependencyEgressPolicy(namespace, labels, current.caller, current.target, current.ports),
+				dependencyIngressPolicy(namespace, labels, current.target, current.targetApp, current.caller, current.callerApp, current.ports),
+				dependencyEgressPolicy(namespace, labels, current.caller, current.callerApp, current.target, current.targetApp, current.ports),
 			)
 			continue
 		}
@@ -1344,7 +1405,7 @@ func topologyNetworkPolicies(
 		if !managed {
 			return nil, fmt.Errorf("dependency %s -> %s has no in-cluster service or managed handoff", current.caller, current.target)
 		}
-		policies = append(policies, managedEgressPolicy(namespace, labels, current.caller, current.target, current.ports, config.EgressCIDRs))
+		policies = append(policies, managedEgressPolicy(namespace, labels, current.caller, current.callerApp, current.target, current.ports, config.EgressCIDRs))
 	}
 	for _, service := range topology.Services {
 		if len(service.BootstrapJobEndpoints) == 0 {
@@ -1364,8 +1425,8 @@ func topologyNetworkPolicies(
 		}
 		slices.Sort(ports)
 		policies = append(policies,
-			bootstrapJobIngressPolicy(namespace, labels, service.Name, ports),
-			bootstrapJobEgressPolicy(namespace, labels, service.Name, ports),
+			bootstrapJobIngressPolicy(namespace, labels, service.Name, topologyKubernetesAppLabel(service), ports),
+			bootstrapJobEgressPolicy(namespace, labels, service.Name, topologyKubernetesAppLabel(service), ports),
 		)
 	}
 	ingressPorts := make(map[string]map[uint32]struct{})
@@ -1381,6 +1442,7 @@ func topologyNetworkPolicies(
 	}
 	slices.Sort(ingressServices)
 	for _, service := range ingressServices {
+		topologyService, _ := topologyServiceByName(topology, service)
 		ports := make([]uint32, 0, len(ingressPorts[service]))
 		for port := range ingressPorts[service] {
 			ports = append(ports, port)
@@ -1391,7 +1453,7 @@ func topologyNetworkPolicies(
 			Kind:       "NetworkPolicy",
 			Metadata:   objectMeta{Name: "allow-istio-ingress-to-" + service, Namespace: namespace, Labels: labels},
 			Spec: map[string]any{
-				"podSelector": map[string]any{"matchLabels": map[string]string{"app": service}},
+				"podSelector": map[string]any{"matchLabels": map[string]string{"app": topologyKubernetesAppLabel(topologyService)}},
 				"policyTypes": []string{"Ingress"},
 				"ingress": []any{map[string]any{
 					"from": []any{map[string]any{
@@ -1407,50 +1469,50 @@ func topologyNetworkPolicies(
 		if len(service.PublicEgressPorts) == 0 || !slices.Contains(plan.services, service.Name) {
 			continue
 		}
-		policies = append(policies, publicEgressPolicy(namespace, labels, service.Name, service.PublicEgressPorts))
+		policies = append(policies, publicEgressPolicy(namespace, labels, service.Name, topologyKubernetesAppLabel(service), service.PublicEgressPorts))
 	}
 	return policies, nil
 }
 
-func dependencyIngressPolicy(namespace string, labels map[string]string, target, caller string, ports []uint32) kubeObject {
+func dependencyIngressPolicy(namespace string, labels map[string]string, target, targetApp, caller, callerApp string, ports []uint32) kubeObject {
 	return kubeObject{
 		APIVersion: "networking.k8s.io/v1",
 		Kind:       "NetworkPolicy",
 		Metadata:   objectMeta{Name: kubernetesName("allow", target, "from", caller), Namespace: namespace, Labels: labels},
 		Spec: map[string]any{
-			"podSelector": map[string]any{"matchLabels": map[string]string{"app": target}},
+			"podSelector": map[string]any{"matchLabels": map[string]string{"app": targetApp}},
 			"policyTypes": []string{"Ingress"},
 			"ingress": []any{map[string]any{
-				"from":  []any{map[string]any{"podSelector": map[string]any{"matchLabels": map[string]string{"app": caller}}}},
+				"from":  []any{map[string]any{"podSelector": map[string]any{"matchLabels": map[string]string{"app": callerApp}}}},
 				"ports": networkPorts(ports),
 			}},
 		},
 	}
 }
 
-func dependencyEgressPolicy(namespace string, labels map[string]string, caller, target string, ports []uint32) kubeObject {
+func dependencyEgressPolicy(namespace string, labels map[string]string, caller, callerApp, target, targetApp string, ports []uint32) kubeObject {
 	return kubeObject{
 		APIVersion: "networking.k8s.io/v1",
 		Kind:       "NetworkPolicy",
 		Metadata:   objectMeta{Name: kubernetesName("allow", caller, "to", target), Namespace: namespace, Labels: labels},
 		Spec: map[string]any{
-			"podSelector": map[string]any{"matchLabels": map[string]string{"app": caller}},
+			"podSelector": map[string]any{"matchLabels": map[string]string{"app": callerApp}},
 			"policyTypes": []string{"Egress"},
 			"egress": []any{map[string]any{
-				"to":    []any{map[string]any{"podSelector": map[string]any{"matchLabels": map[string]string{"app": target}}}},
+				"to":    []any{map[string]any{"podSelector": map[string]any{"matchLabels": map[string]string{"app": targetApp}}}},
 				"ports": networkPorts(ports),
 			}},
 		},
 	}
 }
 
-func bootstrapJobIngressPolicy(namespace string, labels map[string]string, service string, ports []uint32) kubeObject {
+func bootstrapJobIngressPolicy(namespace string, labels map[string]string, service, serviceApp string, ports []uint32) kubeObject {
 	return kubeObject{
 		APIVersion: "networking.k8s.io/v1",
 		Kind:       "NetworkPolicy",
 		Metadata:   objectMeta{Name: kubernetesName("allow", service, "from", "bootstrap"), Namespace: namespace, Labels: labels},
 		Spec: map[string]any{
-			"podSelector": map[string]any{"matchLabels": map[string]string{"app": service}},
+			"podSelector": map[string]any{"matchLabels": map[string]string{"app": serviceApp}},
 			"policyTypes": []string{"Ingress"},
 			"ingress": []any{map[string]any{
 				"from": []any{map[string]any{"podSelector": map[string]any{"matchLabels": map[string]string{
@@ -1463,7 +1525,7 @@ func bootstrapJobIngressPolicy(namespace string, labels map[string]string, servi
 	}
 }
 
-func bootstrapJobEgressPolicy(namespace string, labels map[string]string, service string, ports []uint32) kubeObject {
+func bootstrapJobEgressPolicy(namespace string, labels map[string]string, service, serviceApp string, ports []uint32) kubeObject {
 	return kubeObject{
 		APIVersion: "networking.k8s.io/v1",
 		Kind:       "NetworkPolicy",
@@ -1475,7 +1537,7 @@ func bootstrapJobEgressPolicy(namespace string, labels map[string]string, servic
 			}},
 			"policyTypes": []string{"Egress"},
 			"egress": []any{map[string]any{
-				"to":    []any{map[string]any{"podSelector": map[string]any{"matchLabels": map[string]string{"app": service}}}},
+				"to":    []any{map[string]any{"podSelector": map[string]any{"matchLabels": map[string]string{"app": serviceApp}}}},
 				"ports": networkPorts(ports),
 			}},
 		},
@@ -1486,6 +1548,7 @@ func managedEgressPolicy(
 	namespace string,
 	labels map[string]string,
 	caller,
+	callerApp,
 	target string,
 	ports []uint32,
 	cidrs []string,
@@ -1499,7 +1562,7 @@ func managedEgressPolicy(
 		Kind:       "NetworkPolicy",
 		Metadata:   objectMeta{Name: kubernetesName("allow", caller, "to", target), Namespace: namespace, Labels: labels},
 		Spec: map[string]any{
-			"podSelector": map[string]any{"matchLabels": map[string]string{"app": caller}},
+			"podSelector": map[string]any{"matchLabels": map[string]string{"app": callerApp}},
 			"policyTypes": []string{"Egress"},
 			"egress":      []any{map[string]any{"to": destinations, "ports": networkPorts(ports)}},
 		},
@@ -1525,13 +1588,13 @@ var publicIPv6Exceptions = []string{
 	"2002::/16", "fc00::/7", "fe80::/10", "ff00::/8",
 }
 
-func publicEgressPolicy(namespace string, labels map[string]string, service string, ports []uint32) kubeObject {
+func publicEgressPolicy(namespace string, labels map[string]string, service, serviceApp string, ports []uint32) kubeObject {
 	return kubeObject{
 		APIVersion: "networking.k8s.io/v1",
 		Kind:       "NetworkPolicy",
 		Metadata:   objectMeta{Name: "allow-" + service + "-public-egress", Namespace: namespace, Labels: labels},
 		Spec: map[string]any{
-			"podSelector": map[string]any{"matchLabels": map[string]string{"app": service}},
+			"podSelector": map[string]any{"matchLabels": map[string]string{"app": serviceApp}},
 			"policyTypes": []string{"Egress"},
 			"egress": []any{map[string]any{
 				"to": []any{
