@@ -1,0 +1,22 @@
+role catalog plan
+
+create role "module-c:admin"
+  scope module-c
+  description "Admin of module C"
+  + permission *:*
+
+update role "admin"
+  adopt into catalog management
+  description "Full access to all resources" -> "Full platform access"
+
+update role "module-b:writer"
+  description "old" -> "new"
+  - permission docs:delete
+  + permission docs:write
+
+remove role "legacy:auditor" (0 assignment(s))
+  - permission audit:read
+
+remove role "legacy:viewer" (3 assignment(s))
+  - permission x:read
+

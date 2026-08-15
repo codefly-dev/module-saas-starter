@@ -334,6 +334,84 @@ RLS policies see neither match, return zero rows. A bug that forgot
 to wrap surfaces in tests as "expected 1 row, got 0" — loud, not
 silent.
 
+## Built-in role catalog import
+
+Migration 4 seeds `admin` / `editor` / `viewer` as hand-written SQL. Products
+that already maintain a permission catalog outside this repo — a machine-readable
+list of roles and `resource:action` grants reviewed in their own CI — can sync it
+into the L2 tables without forking migrations, using the catalog importer.
+
+> This is **not** the generated authorization catalog in
+> `module/AUTHORIZATION_CATALOG.md`. That projects per-RPC *method policy*; this
+> one seeds *RBAC roles*.
+
+### Catalog format (versioned JSON)
+
+```json
+{
+  "version": 1,
+  "roles": [
+    {
+      "name": "module-a:analyst",
+      "description": "Read access to module A",
+      "scope": "module-a",
+      "permissions": [
+        {"resource": "reports", "action": "read"},
+        {"resource": "queries", "action": "execute"}
+      ]
+    }
+  ]
+}
+```
+
+- `version` must be `1`. `resource`/`action` accept `*` for wildcard grants.
+- `scope` is stored on the role (`roles.scope`) as the default
+  `role_assignments.scope` for later assignments. Deriving it at assignment time
+  lands with strict scope semantics; until then the column is recorded but not
+  yet consulted by the assignment path.
+
+### Semantics
+
+- **Upsert built-in roles keyed by name** (`built_in = true`, `org_id IS NULL`).
+  A role the catalog names but that a hand-seeded built-in already occupies
+  (e.g. `admin`) is *adopted* into catalog management.
+- **Diff-apply permissions** — only the `(resource, action)` rows that differ
+  are inserted or deleted, so changing one permission is exactly one row change.
+- **Provenance bounds deletion.** Only `roles.catalog_managed = true` rows are
+  removal candidates; a catalog that doesn't mention `admin`/`editor`/`viewer`
+  leaves them alone. Org-defined custom roles (`org_id` set) are never touched.
+- **One `system`-actor audit event per applied change** (`role.created` /
+  `role.updated` / `role.deleted`, `org_id` NULL), stamped with the catalog's
+  SHA-256 (`catalog_sha256`) and source label (`catalog_source`) so a change is
+  traceable to the exact catalog version that produced it.
+
+### Safety
+
+- `-dry-run` prints the byte-stable plan and writes nothing.
+- A removal that would cascade away existing `role_assignments` is **refused**
+  unless `-force` (which then deletes those assignments along with the role).
+- A catalog that declares **no roles at all** would remove every catalog-managed
+  role — almost always a truncated or empty file rather than an intentional
+  "delete everything", and one the assignment guard above can't catch for roles
+  without assignments. It is refused unless `-force`.
+- Same catalog in → same DB state out; a second run is a no-op.
+
+### Workflow
+
+Built-in roles can only be written with RLS bypassed (migrations 32, 65), so the
+importer runs under the audited `app_control_plane` role. The connection
+principal must be a member of that role (the same authority migrations run
+under).
+
+```sh
+# from module/services/accounts/code
+go run ./cmd/role-catalog-import -catalog roles.json -database-url "$DATABASE_URL" -dry-run
+go run ./cmd/role-catalog-import -catalog roles.json -database-url "$DATABASE_URL"
+```
+
+Domain core is `pkg/rolecatalog` (parse + diff + deterministic plan, no DB);
+`pkg/infra` snapshots current state and applies the plan in one transaction.
+
 ## Anti-patterns to avoid
 
 - **Don't replace L1+L2 with L3.** RLS is defense-in-depth; it's not
