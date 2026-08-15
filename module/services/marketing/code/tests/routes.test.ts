@@ -47,7 +47,7 @@ test("pricing omits billing intervals from contact-sales labels", async (context
           amountMinor: 3900,
           interval: "month",
           checkoutEnabled: false,
-          contactSales: true,
+          contactSales: false,
           trialDays: 0,
           taxBehavior: "automatic",
           fixture: false,
