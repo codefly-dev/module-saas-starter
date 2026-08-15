@@ -96,6 +96,13 @@ export function isHeaderInjectedProvider(): boolean {
 	);
 }
 
+// True when no real identity provider is configured and the app is not behind a
+// header-injecting gateway — i.e. the fixture/dev login flow is active and the
+// login page renders the fixture user picker.
+export function isFixtureIdentityMode(): boolean {
+	return availableProviders().length === 0 && !isHeaderInjectedProvider();
+}
+
 // Build the provider's authorize URL for the authorization-code flow.
 // State is the server-signed nonce from BeginOAuth. codeChallenge is the SHA-256 of the
 // PKCE verifier — empty disables PKCE for callers that don't need it.
