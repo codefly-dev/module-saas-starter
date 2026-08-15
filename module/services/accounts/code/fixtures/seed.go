@@ -302,17 +302,13 @@ func validateFixture(f *fixtureFile) error {
 	return nil
 }
 
-func orgRoleFromString(s string, w *wool.Wool) gen.OrgRole {
+func orgRoleFromString(s string, w *wool.Wool) string {
 	switch s {
-	case "admin":
-		return gen.OrgRole_ORG_ROLE_ADMIN
-	case "member":
-		return gen.OrgRole_ORG_ROLE_MEMBER
-	case "owner":
-		return gen.OrgRole_ORG_ROLE_OWNER
+	case "admin", "member", "owner":
+		return s
 	default:
 		w.Warn("unknown org role, defaulting to member", wool.Field("role", s))
-		return gen.OrgRole_ORG_ROLE_MEMBER
+		return "member"
 	}
 }
 
@@ -452,10 +448,11 @@ func seedOrganizations(ctx context.Context, w *wool.Wool, service *business.Serv
 				w.Warn("org member not found", wool.Field("email", m.Email))
 				continue
 			}
-			err := service.AddOrgMember(ctx, ownerID, &gen.AddOrgMemberRequest{
-				OrgId:  orgID,
-				UserId: memberID,
-				Role:   orgRoleFromString(m.Role, w),
+			role := orgRoleFromString(m.Role, w)
+			// Fixture membership is bootstrap state, so it bypasses the runtime
+			// seat-admission quota under the audited system scope.
+			err := service.Store().As(business.System()).Within(ctx, func(ctx context.Context) error {
+				return service.Store().AddOrgMember(ctx, orgID, memberID, role)
 			})
 			if err != nil {
 				w.Warn("cannot add org member", wool.Field("email", m.Email), wool.Field("error", err.Error()))

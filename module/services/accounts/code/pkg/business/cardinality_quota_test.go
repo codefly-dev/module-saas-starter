@@ -4,6 +4,8 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"os"
+	"path/filepath"
 	"sync"
 	"testing"
 	"time"
@@ -11,9 +13,77 @@ import (
 	"github.com/stretchr/testify/require"
 	"google.golang.org/protobuf/types/known/timestamppb"
 
+	"accounts/fixtures"
 	"accounts/pkg/business"
 	gen "accounts/pkg/gen/saas/accounts/v1"
 )
+
+func TestFixtureSeedingBypassesSeatQuota(t *testing.T) {
+	clearData(t)
+	ctx := testCtx
+	fixturePath := filepath.Join(t.TempDir(), "zero-seats.yaml")
+	t.Setenv("DEV_FIXTURE_PATH", fixturePath)
+
+	writeFixture := func(members string) {
+		t.Helper()
+		contents := fmt.Sprintf(`users:
+  - email: owner@fixture.test
+    provider: email
+    provider_id: fixture-quota-owner
+  - email: alice@fixture.test
+    provider: email
+    provider_id: fixture-quota-alice
+  - email: bob@fixture.test
+    provider: email
+    provider_id: fixture-quota-bob
+  - email: carol@fixture.test
+    provider: email
+    provider_id: fixture-quota-carol
+organizations:
+  - name: Fixture Quota Org
+    owner: owner@fixture.test
+%s`, members)
+		require.NoError(t, os.WriteFile(fixturePath, []byte(contents), 0o600))
+	}
+
+	writeFixture("")
+	require.NoError(t, fixtures.Seed(ctx, testService, "zero-seats"))
+
+	var owner *gen.User
+	var organizations []*gen.Organization
+	require.NoError(t, testStore.WithControlPlane(ctx, func(ctx context.Context) error {
+		var err error
+		owner, err = testStore.GetUserByIdentity(ctx, &gen.UserIdentity{
+			Provider: "email", ProviderId: "fixture-quota-owner",
+		})
+		if err != nil {
+			return err
+		}
+		organizations, err = testStore.ListOrganizationsForUser(ctx, owner.Uuid)
+		return err
+	}))
+	require.Len(t, organizations, 1)
+	orgID := organizations[0].Id
+	setEntitlementLimit(t, ctx, orgID, owner.Uuid, business.EntitlementSeats, 0)
+
+	writeFixture(`    members:
+      - email: alice@fixture.test
+        role: admin
+      - email: bob@fixture.test
+        role: member
+      - email: carol@fixture.test
+        role: member
+`)
+	require.NoError(t, fixtures.Seed(ctx, testService, "zero-seats"))
+
+	var members []*gen.OrgMembership
+	require.NoError(t, testStore.WithOrgTx(ctx, orgID, func(ctx context.Context) error {
+		var err error
+		members, err = testStore.ListOrgMembers(ctx, orgID)
+		return err
+	}))
+	require.Len(t, members, 4)
+}
 
 func TestSeatQuotaSerializesDirectMemberAdmission(t *testing.T) {
 	clearData(t)
