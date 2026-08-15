@@ -91,6 +91,7 @@ export const isExcludedFile = (rel) =>
   rel.startsWith("deployment/kustomize/") || // generated from workspace/environment GitOps inputs
   rel === "services/store/code/store-migrator" || // `go build ./...` output; source and migrations remain protected
   rel.includes("/.nix-cache/") ||              // per-service Nix evaluation cache; never release source
+  /^services\/[^/]+\/nix\//.test(rel) ||       // service-agent runtime materialization; ignored by git
   rel === "services/frontend/code/frontend.config.ts" || // FP-001: application-owned composition root
   rel === "services/frontend/code/package-lock.json" || // FP-010A: generated workspace install graph
   /^services\/[^/]+\/configurations\/.*\.secret\.[^/]+$/.test(rel) || // local secret material is SDK/runtime-owned, never canonical base

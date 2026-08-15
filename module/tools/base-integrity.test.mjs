@@ -67,12 +67,13 @@ test("excludes compiled service binaries without excluding their source", () => 
   assert.equal(isExcludedFile("services/store/migrations/1_create.up.sql"), false);
 });
 
-test("excludes per-service Nix caches from the canonical package", () => {
+test("excludes per-service Nix runtime directories from the canonical package", () => {
   assert.equal(
     isExcludedFile("services/vault/.nix-cache/nix-devshell-profile-1-link"),
     true,
   );
-  assert.equal(isExcludedFile("services/vault/nix/service.nix"), false);
+  assert.equal(isExcludedFile("services/vault/nix/service.nix"), true);
+  assert.equal(isExcludedFile("services/vault/code/service.go"), false);
 });
 
 test("rejects multiple logical migrations with the same version", (t) => {

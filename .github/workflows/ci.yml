@@ -101,7 +101,7 @@ jobs:
         with:
           go-version: stable
           cache-dependency-path: module/tools/go.sum
-      - uses: actions/setup-node@6044e13b5cdb70d54f1e0432d7cdb75a5e67a2c4 # v6.3.0
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
           node-version: 24
           cache: npm
