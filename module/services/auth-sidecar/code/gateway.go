@@ -26,6 +26,8 @@ import (
 
 	corev3 "github.com/envoyproxy/go-control-plane/envoy/config/core/v3"
 	authv3 "github.com/envoyproxy/go-control-plane/envoy/service/auth/v3"
+	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
+	semconv "go.opentelemetry.io/otel/semconv/v1.40.0"
 	"google.golang.org/grpc/codes"
 )
 
@@ -128,6 +130,9 @@ func (g *Gateway) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		log.Printf("WARN: blocked request: method=%s path=%s reason=no_matching_route", r.Method, r.URL.Path)
 		httpError(w, http.StatusNotFound, "endpoint not exposed")
 		return
+	}
+	if labeler, ok := otelhttp.LabelerFromContext(r.Context()); ok {
+		labeler.Add(semconv.HTTPRoute(entry.Path))
 	}
 
 	// Self-service routes (health checks) — no auth, no proxy.

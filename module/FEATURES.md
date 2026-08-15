@@ -670,6 +670,13 @@ Environment variables consumed by the api:
 | `TURNSTILE_ALLOWED_HOSTNAMES`  | Exact accepted Turnstile response hostnames                  |
 | `CODEFLY__FIXTURE`             | Loads fixture YAML (e.g. `dev-admin`); FE login picker too |
 
+When `OTEL_EXPORTER_OTLP_ENDPOINT` is configured, the accounts service and auth
+sidecar export unsampled request and Go runtime metrics through the in-graph
+OpenTelemetry collector. The auth sidecar covers both its HTTP gateway and gRPC
+authorization service. Prometheus can alternatively scrape `/metrics` on each
+service's private REST endpoint; neither route is a module or public interface
+endpoint.
+
 Frontend browser configuration (`NEXT_PUBLIC_*` values are baked into the client bundle):
 
 | Var                          | Used for                                                    |
