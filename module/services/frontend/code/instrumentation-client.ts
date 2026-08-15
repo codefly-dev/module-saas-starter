@@ -30,6 +30,10 @@ if (errorTracking.enabled) {
 
 		tracesSampleRate: 0,
 		enableLogs: false,
+		integrations: (defaultIntegrations) =>
+			defaultIntegrations.filter(
+				(integration) => integration.name !== "BrowserTracing",
+			),
 
 		// Don't send PII by default. Set NEXT_PUBLIC_SENTRY_SEND_PII=1
 		// in environments where you want IPs / cookies / search params.

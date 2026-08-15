@@ -1,6 +1,7 @@
+import { execFileSync } from "node:child_process";
 import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { dirname, extname, join, relative } from "node:path";
-import { fileURLToPath } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 
 import { describe, expect, it } from "vitest";
 
@@ -37,6 +38,32 @@ function importsIn(source: string): string[] {
 	return [...source.matchAll(/(?:from\s+|import\s*)["']([^"']+)["']/g)].map(
 		(match) => match[1],
 	);
+}
+
+function runIsolatedRuntime(
+	source: string,
+	{
+		browser = false,
+		env = {},
+	}: { browser?: boolean; env?: Record<string, string> } = {},
+): string {
+	return execFileSync(
+		process.execPath,
+		[
+			...(browser ? ["--conditions=browser"] : []),
+			"--import",
+			"tsx",
+			"--input-type=module",
+			"--eval",
+			source,
+		],
+		{
+			cwd: codeDir,
+			encoding: "utf8",
+			env: { ...process.env, ...env },
+			timeout: 10_000,
+		},
+	).trim();
 }
 
 function publicPackageEntrypoint(
@@ -94,32 +121,89 @@ describe("frontend convergence boundaries", () => {
 		expect(violations).toEqual([]);
 	});
 
-	it("keeps Sentry on the error-tracking surface", () => {
-		const client = readFileSync(
-			join(codeDir, "instrumentation-client.ts"),
-			"utf8",
+	it("leaves Node OpenTelemetry available to the designated APM owner", () => {
+		const instrumentation = JSON.stringify(
+			pathToFileURL(join(codeDir, "instrumentation.ts")).href,
 		);
-		const server = readFileSync(join(codeDir, "instrumentation.ts"), "utf8");
-		const build = readFileSync(join(codeDir, "next.config.mjs"), "utf8");
-		const sentryRuntime = `${client}\n${server}`;
+		const output = runIsolatedRuntime(
+			`await import(${instrumentation}).then((module) => module.register());
+const { trace } = await import("@opentelemetry/api");
+const providerAccepted = trace.setGlobalTracerProvider({ getTracer() {} });
+process.stdout.write(JSON.stringify({ providerAccepted }));
+process.exit(0);`,
+			{
+				env: {
+					ERROR_TRACKING_MODE: "sentry",
+					NEXT_RUNTIME: "nodejs",
+					SENTRY_DSN: "https://public@example.invalid/1",
+				},
+			},
+		);
 
-		expect(client).toContain("tracesSampleRate: 0");
-		expect(server.match(/tracesSampleRate: 0/g)).toHaveLength(2);
-		expect(client).toContain("enableLogs: false");
-		expect(server.match(/enableLogs: false/g)).toHaveLength(2);
-		expect(build).toContain("removeTracing: true");
-		expect(build).toContain("routeManifestInjection: false");
-		expect(build).toContain(
-			"delete sentryErrorTrackingConfig.experimental.clientTraceMetadata",
+		expect(JSON.parse(output)).toEqual({ providerAccepted: true });
+	});
+
+	it("initializes browser error tracking without BrowserTracing", () => {
+		const instrumentation = JSON.stringify(
+			pathToFileURL(join(codeDir, "instrumentation-client.ts")).href,
 		);
-		for (const forbidden of [
-			"browserTracingIntegration",
-			"captureRouterTransitionStart",
-			"SENTRY_TRACES_SAMPLE_RATE",
-			"tracePropagationTargets",
-		]) {
-			expect(sentryRuntime).not.toContain(forbidden);
-		}
+		const output = runIsolatedRuntime(
+			`import { Window } from "happy-dom";
+const browser = new Window({ url: "https://app.example" });
+const globals = {
+  window: browser,
+  self: browser,
+  document: browser.document,
+  navigator: browser.navigator,
+  location: browser.location,
+  history: browser.history,
+  XMLHttpRequest: browser.XMLHttpRequest,
+  addEventListener: browser.addEventListener.bind(browser),
+  removeEventListener: browser.removeEventListener.bind(browser),
+  dispatchEvent: browser.dispatchEvent.bind(browser),
+};
+for (const [name, value] of Object.entries(globals)) {
+  Object.defineProperty(globalThis, name, { configurable: true, value, writable: true });
+}
+await import(${instrumentation});
+const Sentry = await import("@sentry/nextjs");
+const client = Sentry.getClient();
+const options = client?.getOptions();
+process.stdout.write(JSON.stringify({
+  tracesSampleRate: options?.tracesSampleRate,
+  enableLogs: options?.enableLogs,
+  browserTracing: client?.getIntegrationByName("BrowserTracing")?.name ?? null,
+}));
+await Sentry.close(0);
+browser.close();
+process.exit(0);`,
+			{
+				browser: true,
+				env: {
+					NEXT_PUBLIC_ERROR_TRACKING_MODE: "sentry",
+					NEXT_PUBLIC_SENTRY_DSN: "https://public@example.invalid/1",
+				},
+			},
+		);
+
+		expect(JSON.parse(output)).toEqual({
+			tracesSampleRate: 0,
+			enableLogs: false,
+			browserTracing: null,
+		});
+	});
+
+	it("does not emit Sentry trace metadata in the resolved Next config", () => {
+		const config = JSON.stringify(
+			pathToFileURL(join(codeDir, "next.config.mjs")).href,
+		);
+		const output = runIsolatedRuntime(
+			`const { default: nextConfig } = await import(${config});
+process.stdout.write(JSON.stringify({
+  clientTraceMetadata: nextConfig.experimental?.clientTraceMetadata ?? null,
+}));`,
+		);
+		expect(JSON.parse(output)).toEqual({ clientTraceMetadata: null });
 	});
 
 	it("keeps Codefly endpoint resolution and plugin proxy policy server-only", () => {

@@ -65,39 +65,42 @@ func doWork(ctx context.Context) (Clean, error) {
 		return nil, err
 	}
 
-	// OpenTelemetry always targets the in-graph collector. Codefly owns its
-	// host and port; the accounts process never reads or hardcodes a collector
-	// address. The collector configuration independently selects debug output
-	// or an external OTLP/HTTP destination.
+	// When external observability is configured, OpenTelemetry always targets
+	// the in-graph collector. Codefly owns its host and port; the accounts
+	// process never reads or hardcodes a collector address.
 	var otelProvider *wooltel.Provider
-	var otelMetricProvider interface {
-		Shutdown(context.Context) error
+	var otelMetricProvider *otelMetrics
+	if observabilityEnabled() {
+		collectorNetwork, err := codefly.For(ctx).
+			Service("telemetry").
+			Endpoint("grpc").
+			API("grpc").
+			ResolveNetworkInstance()
+		if err != nil {
+			return nil, fmt.Errorf("resolve telemetry collector through Codefly: %w", err)
+		}
+		p, oerr := wooltel.Enable(
+			wooltel.WithServiceName("saas-starter-api"),
+			wooltel.WithEndpoint(collectorNetwork.Host),
+			wooltel.WithInsecure(),
+		)
+		if oerr != nil {
+			return nil, fmt.Errorf("configure OTEL tracing: %w", oerr)
+		}
+		otelProvider = p
+		w.Info("OTEL enabled",
+			wool.Field("endpoint", collectorNetwork.Host),
+			wool.Field("service.name", "saas-starter-api"))
+		metricProvider, oerr := enableOTELMetrics(ctx, "saas-starter-api", collectorNetwork.Host)
+		if oerr != nil {
+			shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+			_ = otelProvider.Shutdown(shutdownCtx)
+			cancel()
+			return nil, fmt.Errorf("configure OTEL metrics: %w", oerr)
+		}
+		otelMetricProvider = metricProvider
+		adapters.RegisterHTTPRoute("/metrics", otelMetricProvider.Handler())
 	}
-	collectorNetwork, err := codefly.For(ctx).
-		Service("telemetry").
-		Endpoint("grpc").
-		API("grpc").
-		ResolveNetworkInstance()
-	if err != nil {
-		return nil, fmt.Errorf("resolve telemetry collector through Codefly: %w", err)
-	}
-	p, oerr := wooltel.Enable(
-		wooltel.WithServiceName("saas-starter-api"),
-		wooltel.WithEndpoint(collectorNetwork.Host),
-		wooltel.WithInsecure(),
-	)
-	if oerr != nil {
-		return nil, fmt.Errorf("configure OTEL tracing: %w", oerr)
-	}
-	otelProvider = p
-	w.Info("OTEL enabled",
-		wool.Field("endpoint", collectorNetwork.Host),
-		wool.Field("service.name", "saas-starter-api"))
-	metricProvider, oerr := enableOTLPMetrics(ctx, "saas-starter-api", collectorNetwork.Host)
-	if oerr != nil {
-		return nil, fmt.Errorf("configure OTEL metrics: %w", oerr)
-	}
-	otelMetricProvider = metricProvider
 
 	store, err := infra.NewPostgresStore(ctx)
 	if err != nil {
@@ -852,6 +855,10 @@ func workspaceEnv(configuration, key string) string {
 		return value
 	}
 	return os.Getenv(key)
+}
+
+func observabilityEnabled() bool {
+	return strings.TrimSpace(workspaceEnv("observability", "OTEL_EXPORTER_OTLP_ENDPOINT")) != ""
 }
 
 // identityEnv is intentionally Codefly-only. Local dogfood, tests, and

@@ -8,6 +8,7 @@ import (
 
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
+	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
 	otelruntime "go.opentelemetry.io/contrib/instrumentation/runtime"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
@@ -100,6 +101,16 @@ func startGCActivityMetrics(provider *metric.MeterProvider) error {
 		return nil
 	}, cycleCount, pauseCPUTime)
 	return err
+}
+
+func newGatewayHTTPHandler(gateway http.Handler, metrics *otelMetrics) http.Handler {
+	if metrics == nil {
+		return gateway
+	}
+	mux := http.NewServeMux()
+	mux.Handle("GET /metrics", metrics.Handler())
+	mux.Handle("/", otelhttp.NewHandler(gateway, "auth-sidecar.gateway"))
+	return mux
 }
 
 func (m *otelMetrics) Handler() http.Handler {

@@ -30,6 +30,7 @@ workspace-configuration-dependencies:
     - email
     - identity
     - internal-auth
+    - observability
     - product-analytics
     - security
 endpoints:

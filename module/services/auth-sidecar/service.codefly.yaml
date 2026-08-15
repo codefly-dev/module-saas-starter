@@ -19,9 +19,13 @@ service-dependencies:
     - name: cache
       endpoints:
         - name: write
+    - name: telemetry
+      endpoints:
+        - name: grpc
 workspace-configuration-dependencies:
     - gateway
     - internal-auth
+    - observability
     - security
 endpoints:
     - name: grpc
