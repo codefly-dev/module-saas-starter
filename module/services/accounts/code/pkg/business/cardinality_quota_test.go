@@ -14,9 +14,20 @@ import (
 	"google.golang.org/protobuf/types/known/timestamppb"
 
 	"accounts/fixtures"
+	"accounts/pkg/adapters"
 	"accounts/pkg/business"
+	"accounts/pkg/cache"
 	gen "accounts/pkg/gen/saas/accounts/v1"
 )
+
+type fixtureMembershipFailureStore struct {
+	business.Store
+	err error
+}
+
+func (s *fixtureMembershipFailureStore) AddOrgMember(context.Context, string, string, string) error {
+	return s.err
+}
 
 func TestFixtureSeedingBypassesSeatQuota(t *testing.T) {
 	clearData(t)
@@ -50,6 +61,7 @@ organizations:
 	require.NoError(t, fixtures.Seed(ctx, testService, "zero-seats"))
 
 	var owner *gen.User
+	var fixtureMemberIDs []string
 	var organizations []*gen.Organization
 	require.NoError(t, testStore.WithControlPlane(ctx, func(ctx context.Context) error {
 		var err error
@@ -59,12 +71,31 @@ organizations:
 		if err != nil {
 			return err
 		}
+		for _, providerID := range []string{"fixture-quota-alice", "fixture-quota-bob", "fixture-quota-carol"} {
+			member, lookupErr := testStore.GetUserByIdentity(ctx, &gen.UserIdentity{
+				Provider: "email", ProviderId: providerID,
+			})
+			if lookupErr != nil {
+				return lookupErr
+			}
+			fixtureMemberIDs = append(fixtureMemberIDs, member.Uuid)
+		}
 		organizations, err = testStore.ListOrganizationsForUser(ctx, owner.Uuid)
 		return err
 	}))
 	require.Len(t, organizations, 1)
 	orgID := organizations[0].Id
 	setEntitlementLimit(t, ctx, orgID, owner.Uuid, business.EntitlementSeats, 0)
+	membershipCache := cache.NewOrgMembershipCache(cache.NewMemory())
+	adapters.WithOrgMembershipCache(membershipCache)
+	testService.SetMembershipInvalidator(adapters.NewCacheInvalidator())
+	t.Cleanup(func() {
+		testService.SetMembershipInvalidator(nil)
+		adapters.WithOrgMembershipCache(nil)
+	})
+	for _, memberID := range fixtureMemberIDs {
+		require.NoError(t, membershipCache.Set(ctx, orgID, memberID, &cache.OrgMembership{}))
+	}
 
 	writeFixture(`    members:
       - email: alice@fixture.test
@@ -83,6 +114,41 @@ organizations:
 		return err
 	}))
 	require.Len(t, members, 4)
+	for _, memberID := range fixtureMemberIDs {
+		_, err := membershipCache.Get(ctx, orgID, memberID)
+		require.ErrorIs(t, err, cache.ErrNotFound)
+	}
+}
+
+func TestFixtureSeedingFailsOnMembershipWriteError(t *testing.T) {
+	clearData(t)
+	fixturePath := filepath.Join(t.TempDir(), "membership-failure.yaml")
+	t.Setenv("DEV_FIXTURE_PATH", fixturePath)
+	require.NoError(t, os.WriteFile(fixturePath, []byte(`users:
+  - email: owner@fixture.test
+    provider: email
+    provider_id: fixture-failure-owner
+  - email: member@fixture.test
+    provider: email
+    provider_id: fixture-failure-member
+organizations:
+  - name: Fixture Failure Org
+    owner: owner@fixture.test
+    members:
+      - email: member@fixture.test
+        role: member
+`), 0o600))
+
+	writeErr := errors.New("membership write unavailable")
+	service, err := business.NewService(&fixtureMembershipFailureStore{
+		Store: testStore,
+		err:   writeErr,
+	})
+	require.NoError(t, err)
+
+	err = fixtures.Seed(testCtx, service, "membership-failure")
+	require.ErrorIs(t, err, writeErr)
+	require.ErrorContains(t, err, "member@fixture.test")
 }
 
 func TestSeatQuotaSerializesDirectMemberAdmission(t *testing.T) {
