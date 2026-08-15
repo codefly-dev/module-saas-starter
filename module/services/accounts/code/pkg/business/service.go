@@ -46,6 +46,8 @@ type Service struct {
 	privacy                   PrivacyWorkflow
 	ssoManagementAPIKey       string
 	abuseVerifier             abuse.Verifier
+	identityCipher            SecretCipher              // encrypts per-org IdP client secrets
+	identityRegistry          *IdentityProviderRegistry // resolves org → provider stack, cache-invalidated on config change
 }
 
 // CodeExchanger abstracts the OAuth 2.0 code-for-token exchange so the
@@ -135,6 +137,20 @@ func (s *Service) SetWebhookSecurity(cipher SecretCipher, policy *WebhookEndpoin
 
 func (s *Service) SetPrivacyWorkflow(workflow PrivacyWorkflow) {
 	s.privacy = workflow
+}
+
+// SetOrgIdentityProviderCipher wires fail-closed encryption for per-org IdP
+// client secrets. Production uses Vault Transit; tests may provide an explicit
+// in-memory implementation.
+func (s *Service) SetOrgIdentityProviderCipher(cipher SecretCipher) {
+	s.identityCipher = cipher
+}
+
+// SetIdentityProviderRegistry wires the per-org provider registry so
+// configuration changes invalidate the resolved-stack cache. Nil leaves the
+// service on the global default provider only.
+func (s *Service) SetIdentityProviderRegistry(registry *IdentityProviderRegistry) {
+	s.identityRegistry = registry
 }
 
 // SetIdentityResolver wires the JIT provisioning + bootstrap layer.

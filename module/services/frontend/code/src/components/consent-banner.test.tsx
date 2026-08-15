@@ -10,6 +10,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 const authState = vi.hoisted(() => ({
 	isAuthenticated: false,
 	isLoading: false,
+	fixtureMode: false,
 }));
 
 const clients = vi.hoisted(() => ({
@@ -24,7 +25,11 @@ const clients = vi.hoisted(() => ({
 }));
 
 vi.mock("@/lib/auth", () => ({
-	useAuth: () => authState,
+	useAuth: () => ({
+		isAuthenticated: authState.isAuthenticated,
+		isLoading: authState.isLoading,
+	}),
+	isFixtureIdentityMode: () => authState.fixtureMode,
 }));
 
 vi.mock("@/lib/legal-config", () => ({
@@ -47,6 +52,7 @@ afterEach(() => {
 	vi.clearAllMocks();
 	authState.isAuthenticated = false;
 	authState.isLoading = false;
+	authState.fixtureMode = false;
 });
 
 describe("ConsentBanner", () => {
@@ -65,6 +71,37 @@ describe("ConsentBanner", () => {
 			name: "Accept Terms",
 		});
 		expect(acceptTerms.getAttribute("disabled")).not.toBeNull();
+	});
+
+	it("allows Terms acceptance in fixture/dev mode despite unconfigured legal content", async () => {
+		authState.isAuthenticated = true;
+		authState.fixtureMode = true;
+		clients.consent.getStatus.mockResolvedValue({
+			currentTermsVersion: "terms-v1",
+			termsAcceptedVersion: "",
+			policyVersion: "policy-v2",
+			purposes: [],
+		});
+		clients.consent.acceptTerms.mockResolvedValue({
+			policyVersion: "policy-v2",
+			purposes: [],
+		});
+
+		render(<ConsentBanner />);
+
+		const acceptTerms = await screen.findByRole("button", {
+			name: "Accept Terms",
+		});
+		expect(acceptTerms.getAttribute("disabled")).toBeNull();
+
+		fireEvent.click(acceptTerms);
+
+		await waitFor(() =>
+			expect(clients.consent.acceptTerms).toHaveBeenCalledWith({
+				version: "terms-v1",
+				context: "consent_banner",
+			}),
+		);
 	});
 
 	it("persists the current server policy version for anonymous preferences", async () => {
