@@ -57,19 +57,22 @@ func TestAnalyticsOutboxCommitsAndRollsBackWithDomainTransaction(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, 1, processed)
 	require.Len(t, sink.Events(), 1)
+	committedEventID := analytics.DeterministicEventID("invite_created", "committed")
 	require.Equal(
 		t,
-		analytics.DeterministicEventID("invite_created", "committed"),
+		committedEventID,
 		sink.Events()[0].GetEventId(),
 	)
 	var commandID, kind, providerReference string
 	require.NoError(t, workerPool.QueryRow(testCtx, `
 		SELECT command_id::text, kind, provider_reference
-		FROM analytics_deliveries`,
+		FROM analytics_deliveries
+		WHERE command_id = $1`,
+		committedEventID,
 	).Scan(&commandID, &kind, &providerReference))
 	require.Equal(
 		t,
-		analytics.DeterministicEventID("invite_created", "committed"),
+		committedEventID,
 		commandID,
 	)
 	require.Equal(t, "event", kind)
