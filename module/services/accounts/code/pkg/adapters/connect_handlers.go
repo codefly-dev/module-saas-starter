@@ -158,11 +158,14 @@ func connectCodeFromGRPC(c codes.Code) connect.Code {
 func callerID(ctx context.Context) (string, error) {
 	w := wool.Get(ctx).In("callerID")
 	w.GRPC().Inject()
+	// GRPC().Inject() copies forwarded metadata over the stamped identity, and a
+	// present-but-empty user.id would otherwise be returned as a non-empty-looking
+	// but blank actor. Guard empties the same way requireAuth does.
 	id, ok := w.UserID()
-	if !ok {
+	if !ok || id == "" {
 		id, ok = w.UserAuthID()
 	}
-	if !ok {
+	if !ok || id == "" {
 		return "", status.Error(codes.Unauthenticated, "caller identity not found")
 	}
 	return id, nil

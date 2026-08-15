@@ -11,8 +11,6 @@ import (
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/types/known/emptypb"
 
-	"github.com/codefly-dev/core/wool"
-
 	"accounts/pkg/abuse"
 	"accounts/pkg/auth"
 	"accounts/pkg/business"
@@ -106,11 +104,9 @@ func userDataIdentity(ctx context.Context, actorID, targetID string) (business.I
 // ============================================================================
 
 func (s *UserServer) GetSelf(ctx context.Context, _ *gen.GetSelfRequest) (*gen.GetSelfResponse, error) {
-	w := wool.Get(ctx).In("GetSelf")
-	w.GRPC().Inject()
-	userID, found := w.UserAuthID()
-	if !found {
-		return nil, status.Error(codes.Unauthenticated, "user id not found in headers")
+	userID, err := requireAuth(ctx)
+	if err != nil {
+		return nil, err
 	}
 	return service.GetSelf(ctx, userID)
 }
@@ -318,11 +314,9 @@ func (s *OrgServer) GetOrganization(ctx context.Context, req *gen.GetOrganizatio
 }
 
 func (s *OrgServer) ListOrganizations(ctx context.Context, _ *gen.ListOrganizationsRequest) (*gen.ListOrganizationsResponse, error) {
-	w := wool.Get(ctx).In("ListOrganizations")
-	w.GRPC().Inject()
-	userID, found := w.UserAuthID()
-	if !found {
-		return nil, status.Error(codes.Unauthenticated, "user id not found")
+	userID, err := requireAuth(ctx)
+	if err != nil {
+		return nil, err
 	}
 	return service.ListOrganizations(ctx, userID)
 }
@@ -331,11 +325,9 @@ func (s *OrgServer) AddMember(ctx context.Context, req *gen.AddOrgMemberRequest)
 	if err := Validate(req); err != nil {
 		return nil, err
 	}
-	w := wool.Get(ctx).In("AddMember")
-	w.GRPC().Inject()
-	actorID, found := w.UserAuthID()
-	if !found {
-		return nil, status.Error(codes.Unauthenticated, "user id not found")
+	actorID, err := requireAuth(ctx)
+	if err != nil {
+		return nil, err
 	}
 	if err := requireOrgAdmin(ctx, actorID, req.OrgId); err != nil {
 		return nil, err
@@ -350,11 +342,9 @@ func (s *OrgServer) RemoveMember(ctx context.Context, req *gen.RemoveOrgMemberRe
 	if err := Validate(req); err != nil {
 		return nil, err
 	}
-	w := wool.Get(ctx).In("RemoveMember")
-	w.GRPC().Inject()
-	actorID, found := w.UserAuthID()
-	if !found {
-		return nil, status.Error(codes.Unauthenticated, "user id not found")
+	actorID, err := requireAuth(ctx)
+	if err != nil {
+		return nil, err
 	}
 	if err := requireOrgAdmin(ctx, actorID, req.OrgId); err != nil {
 		return nil, err
@@ -977,11 +967,9 @@ func (s *InvitationServer) AcceptInvitation(ctx context.Context, req *gen.Accept
 	if err := Validate(req); err != nil {
 		return nil, err
 	}
-	w := wool.Get(ctx).In("AcceptInvitation")
-	w.GRPC().Inject()
-	userID, found := w.UserAuthID()
-	if !found {
-		return nil, status.Error(codes.Unauthenticated, "user id not found")
+	userID, err := requireAuth(ctx)
+	if err != nil {
+		return nil, err
 	}
 	response, err := service.AcceptInvitation(ctx, userID, req)
 	return response, invitationStatusError(err)
@@ -1038,11 +1026,9 @@ func (s *InvitationServer) RevokeInvitation(ctx context.Context, req *gen.Revoke
 	if err := Validate(req); err != nil {
 		return nil, err
 	}
-	w := wool.Get(ctx).In("RevokeInvitation")
-	w.GRPC().Inject()
-	userID, found := w.UserAuthID()
-	if !found {
-		return nil, status.Error(codes.Unauthenticated, "user id not found")
+	userID, err := requireAuth(ctx)
+	if err != nil {
+		return nil, err
 	}
 	// The request contains only the invitation id. Resolve its organization
 	// under the narrow bypass, then authorize the actor before the business
@@ -1076,11 +1062,9 @@ func (s *PlatformAdminServer) SearchUsers(ctx context.Context, req *gen.SearchUs
 	if err := Validate(req); err != nil {
 		return nil, err
 	}
-	w := wool.Get(ctx).In("SearchUsers")
-	w.GRPC().Inject()
-	actorID, found := w.UserAuthID()
-	if !found {
-		return nil, status.Error(codes.Unauthenticated, "user id not found")
+	actorID, err := requireAuth(ctx)
+	if err != nil {
+		return nil, err
 	}
 	return service.SearchUsers(ctx, actorID, req)
 }
@@ -1089,11 +1073,9 @@ func (s *PlatformAdminServer) SuspendUser(ctx context.Context, req *gen.SuspendU
 	if err := Validate(req); err != nil {
 		return nil, err
 	}
-	w := wool.Get(ctx).In("SuspendUser")
-	w.GRPC().Inject()
-	actorID, found := w.UserAuthID()
-	if !found {
-		return nil, status.Error(codes.Unauthenticated, "user id not found")
+	actorID, err := requireAuth(ctx)
+	if err != nil {
+		return nil, err
 	}
 	if err := service.SuspendUser(ctx, actorID, req); err != nil {
 		return nil, err
@@ -1105,11 +1087,9 @@ func (s *PlatformAdminServer) UnsuspendUser(ctx context.Context, req *gen.Unsusp
 	if err := Validate(req); err != nil {
 		return nil, err
 	}
-	w := wool.Get(ctx).In("UnsuspendUser")
-	w.GRPC().Inject()
-	actorID, found := w.UserAuthID()
-	if !found {
-		return nil, status.Error(codes.Unauthenticated, "user id not found")
+	actorID, err := requireAuth(ctx)
+	if err != nil {
+		return nil, err
 	}
 	if err := service.UnsuspendUser(ctx, actorID, req); err != nil {
 		return nil, err
@@ -1121,11 +1101,9 @@ func (s *PlatformAdminServer) ImpersonateUser(ctx context.Context, req *gen.Impe
 	if err := Validate(req); err != nil {
 		return nil, err
 	}
-	w := wool.Get(ctx).In("ImpersonateUser")
-	w.GRPC().Inject()
-	actorID, found := w.UserAuthID()
-	if !found {
-		return nil, status.Error(codes.Unauthenticated, "user id not found")
+	actorID, err := requireAuth(ctx)
+	if err != nil {
+		return nil, err
 	}
 	if err := requireMFA(ctx, actorID); err != nil {
 		return nil, err
@@ -1137,11 +1115,9 @@ func (s *PlatformAdminServer) ListActiveSessions(ctx context.Context, req *gen.L
 	if err := Validate(req); err != nil {
 		return nil, err
 	}
-	w := wool.Get(ctx).In("ListActiveSessions")
-	w.GRPC().Inject()
-	actorID, found := w.UserAuthID()
-	if !found {
-		return nil, status.Error(codes.Unauthenticated, "user id not found")
+	actorID, err := requireAuth(ctx)
+	if err != nil {
+		return nil, err
 	}
 	return service.ListActiveSessions(ctx, actorID, req)
 }
@@ -1150,11 +1126,9 @@ func (s *PlatformAdminServer) RevokeSession(ctx context.Context, req *gen.Revoke
 	if err := Validate(req); err != nil {
 		return nil, err
 	}
-	w := wool.Get(ctx).In("RevokeSession")
-	w.GRPC().Inject()
-	actorID, found := w.UserAuthID()
-	if !found {
-		return nil, status.Error(codes.Unauthenticated, "user id not found")
+	actorID, err := requireAuth(ctx)
+	if err != nil {
+		return nil, err
 	}
 	if err := service.RevokeSession(ctx, actorID, req); err != nil {
 		return nil, err
@@ -1200,11 +1174,9 @@ func (s *PlatformAdminServer) OverrideEntitlement(ctx context.Context, req *gen.
 	if err := Validate(req); err != nil {
 		return nil, err
 	}
-	w := wool.Get(ctx).In("OverrideEntitlement")
-	w.GRPC().Inject()
-	actorID, found := w.UserAuthID()
-	if !found {
-		return nil, status.Error(codes.Unauthenticated, "user id not found")
+	actorID, err := requireAuth(ctx)
+	if err != nil {
+		return nil, err
 	}
 	// Override is privileged — only platform admins. Org admins
 	// can't bump their own caps; that's the whole point of the
@@ -1223,11 +1195,9 @@ func (s *PlatformAdminServer) GrantPlatformRole(ctx context.Context, req *gen.Gr
 	if err := Validate(req); err != nil {
 		return nil, err
 	}
-	w := wool.Get(ctx).In("GrantPlatformRole")
-	w.GRPC().Inject()
-	actorID, found := w.UserAuthID()
-	if !found {
-		return nil, status.Error(codes.Unauthenticated, "user id not found")
+	actorID, err := requireAuth(ctx)
+	if err != nil {
+		return nil, err
 	}
 	if err := requireMFA(ctx, actorID); err != nil {
 		return nil, err
@@ -1242,11 +1212,9 @@ func (s *PlatformAdminServer) RevokePlatformRole(ctx context.Context, req *gen.R
 	if err := Validate(req); err != nil {
 		return nil, err
 	}
-	w := wool.Get(ctx).In("RevokePlatformRole")
-	w.GRPC().Inject()
-	actorID, found := w.UserAuthID()
-	if !found {
-		return nil, status.Error(codes.Unauthenticated, "user id not found")
+	actorID, err := requireAuth(ctx)
+	if err != nil {
+		return nil, err
 	}
 	if err := requireMFA(ctx, actorID); err != nil {
 		return nil, err
@@ -1258,21 +1226,17 @@ func (s *PlatformAdminServer) RevokePlatformRole(ctx context.Context, req *gen.R
 }
 
 func (s *PlatformAdminServer) ListPlatformAdmins(ctx context.Context, _ *gen.ListPlatformAdminsRequest) (*gen.ListPlatformAdminsResponse, error) {
-	w := wool.Get(ctx).In("ListPlatformAdmins")
-	w.GRPC().Inject()
-	actorID, found := w.UserAuthID()
-	if !found {
-		return nil, status.Error(codes.Unauthenticated, "user id not found")
+	actorID, err := requireAuth(ctx)
+	if err != nil {
+		return nil, err
 	}
 	return service.ListPlatformAdmins(ctx, actorID)
 }
 
 func (s *PlatformAdminServer) ListFeatureFlags(ctx context.Context, _ *gen.ListFeatureFlagsRequest) (*gen.ListFeatureFlagsResponse, error) {
-	w := wool.Get(ctx).In("ListFeatureFlags")
-	w.GRPC().Inject()
-	actorID, found := w.UserAuthID()
-	if !found {
-		return nil, status.Error(codes.Unauthenticated, "user id not found")
+	actorID, err := requireAuth(ctx)
+	if err != nil {
+		return nil, err
 	}
 	return service.ListFeatureFlags(ctx, actorID)
 }
@@ -1281,11 +1245,9 @@ func (s *PlatformAdminServer) UpsertFeatureFlag(ctx context.Context, req *gen.Up
 	if err := Validate(req); err != nil {
 		return nil, err
 	}
-	w := wool.Get(ctx).In("UpsertFeatureFlag")
-	w.GRPC().Inject()
-	actorID, found := w.UserAuthID()
-	if !found {
-		return nil, status.Error(codes.Unauthenticated, "user id not found")
+	actorID, err := requireAuth(ctx)
+	if err != nil {
+		return nil, err
 	}
 	return service.UpsertFeatureFlag(ctx, actorID, req)
 }
