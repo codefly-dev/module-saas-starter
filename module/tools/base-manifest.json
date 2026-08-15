@@ -341,7 +341,7 @@
     "services/accounts/code/pkg/cataloggen/authz_methods.go": "2e0d0fd449614303108070af1b1e32e53666868c24d364dd1bb8e8871cb3b09c",
     "services/accounts/code/pkg/cataloggen/authz_methods_test.go": "7711b397467b930fdc060cf234c15ce8064088bb09161a9401a98d844e162a8f",
     "services/accounts/code/pkg/cataloggen/connect_registration.go": "3cab1c80e37fe4515fe002de358ef5a64b0cc0aab85401a7b6079ce97931ab30",
-    "services/accounts/code/pkg/cataloggen/connect_registration_test.go": "4f03402c9638e1e8fd1f0e26b7a710e572ba1f2eb3207df189a0251be1a99ccb",
+    "services/accounts/code/pkg/cataloggen/connect_registration_test.go": "c611a556748b9aa767f4b96089ba0612dcef50f8e23904752648e534c72e3d55",
     "services/accounts/code/pkg/cataloggen/deployment_topology.go": "5ae570f6b3d25150470608361c196d09be0bcaeda94a7362be39f74a2e959bbc",
     "services/accounts/code/pkg/cataloggen/deployment_topology_test.go": "a04605879a6ae4352e12d747bcb9822688becc56ec7789b61aaa216c862ea171",
     "services/accounts/code/pkg/cataloggen/frontend_catalog.go": "de43b6122c05006de69c75edeb61e0eff9ad351dd316c5e992a9cc2a3c2ec36c",
