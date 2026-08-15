@@ -1,0 +1,6 @@
+{
+  "schema": "codefly/saas/frontend-install/v1",
+  "dependencies": {
+    "@codefly-reference/frontend": "1.0.0"
+  }
+}

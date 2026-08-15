@@ -1,0 +1,9 @@
+{
+  "schema": "codefly/saas/fixtures-catalog/v1",
+  "fixtures": [
+    {
+      "name": "reference-local",
+      "path": "fixtures/reference-local.yaml"
+    }
+  ]
+}

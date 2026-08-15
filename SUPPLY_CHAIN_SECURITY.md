@@ -19,3 +19,32 @@ artifact.
 When a security capability is absent, add it to the universal Core contract and
 implement it in the applicable generic plugin. Do not compensate with bespoke
 GitHub Actions steps in the SaaS Starter.
+
+## Immutable module releases
+
+`module/module.package.codefly.yaml` is the composition-v2 package contract.
+After the canonical Codefly gate passes for a matching `v<package-version>` tag,
+the release job builds `module.tar` directly from the clean tagged Git tree. The
+archive has a stable path order and metadata because Git produces it from one
+exact commit rather than from a mutable working directory. The job builds it
+twice in CI and compares the archive, checksum, and artifact metadata byte for
+byte.
+
+Each GitHub release contains the canonical archive, `module.tar.sha256`,
+`artifact.json`, a CycloneDX package SBOM, and the Sigstore bundle for GitHub's
+signed build-provenance attestation. Publication fails when the repository's
+immutable-release setting is disabled, the release already exists, the tag does
+not match the manifest version, or the remote tag peels to a different commit.
+Once published, GitHub prevents replacement or deletion of the tag and assets.
+
+The repository secret `RELEASE_ADMIN_TOKEN` must contain a fine-grained token
+with read-only repository Administration permission. GitHub's workflow token
+cannot be granted that permission, so this credential is used only to read the
+immutable-release setting; publication uses the job-scoped workflow token.
+
+Verify a downloaded package before materialization:
+
+```sh
+sha256sum --check module.tar.sha256
+gh attestation verify module.tar --repo codefly-dev/module-saas-starter
+```

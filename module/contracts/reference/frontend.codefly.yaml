@@ -1,0 +1,5 @@
+schema: codefly/saas/frontend-contribution/v2
+package: "@codefly-reference/frontend"
+version: 1.0.0
+export: referenceFrontendPlugin
+plugin: reference-product
