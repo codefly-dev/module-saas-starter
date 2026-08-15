@@ -102,24 +102,6 @@ type externalRelationAuthority struct {
 
 var externalRelationAuthorities = map[string]externalRelationAuthority{}
 
-func registerExternalRelationAuthority(owner string, privileges relationPrivileges, relations ...string) {
-	if owner == "" {
-		panic("external relation authority owner is required")
-	}
-	for _, relation := range relations {
-		if relation == "" {
-			panic("external relation authority name is required")
-		}
-		if existing, found := externalRelationAuthorities[relation]; found {
-			panic("external relation " + relation + " is already owned by " + existing.owner)
-		}
-		externalRelationAuthorities[relation] = externalRelationAuthority{
-			owner:               owner,
-			appTenantPrivileges: privileges,
-		}
-	}
-}
-
 var appTenantRelationPrivileges = map[string]relationPrivileges{
 	// Global catalogs and worker-owned job relations.
 	"identity_providers":      {selectRows: true},

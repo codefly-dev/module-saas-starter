@@ -60,7 +60,7 @@ func (s *WorkContextAuthorityServer) Configure(config WorkContextAuthorityConfig
 		return
 	}
 	if config.Authority == nil {
-		s.configureErr = errors.New("Accounts store does not implement WorkContextAuthorityStore")
+		s.configureErr = errors.New("accounts store does not implement WorkContextAuthorityStore")
 		return
 	}
 	privateKey := append(ed25519.PrivateKey(nil), config.PrivateKey...)

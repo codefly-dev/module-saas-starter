@@ -2,5 +2,11 @@ version: "2"
 
 linters:
   exclusions:
+    # Machine-generated Go is not hand-editable: protoc output (*.pb.go) and the
+    # agent-generated Connect/REST/gRPC listeners (*_gen.go) carry non-standard
+    # generation markers that golangci-lint's generated-file detection misses, so
+    # exclude them by path. Fixing lint there is pointless — the generator wins.
     paths:
       - '(^|/)node_modules/'
+      - '_gen\.go$'
+      - '\.pb\.go$'

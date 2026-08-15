@@ -859,7 +859,7 @@ func TestResolver_Bootstrap_NoEnvNoGrant(t *testing.T) {
 	resetAuthTables(t)
 	ctx := context.Background()
 
-	os.Unsetenv(pgauth.BootstrapAdminEmailEnv)
+	_ = os.Unsetenv(pgauth.BootstrapAdminEmailEnv)
 	r := pgauth.NewResolver(testStore)
 
 	id, err := r.Resolve(ctx, claims("anyone@test.local", "dev-anyone"), auth.SignupIntent{})

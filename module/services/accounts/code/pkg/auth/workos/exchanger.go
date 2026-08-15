@@ -108,7 +108,7 @@ func (e *Exchanger) Exchange(
 	if err != nil {
 		return business.ExchangedTokens{}, fmt.Errorf("workos: authentication endpoint: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	responseBody, err := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
 	if err != nil {

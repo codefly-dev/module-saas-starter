@@ -142,16 +142,18 @@ func doWork(ctx context.Context) (Clean, error) {
 		return nil, fmt.Errorf("configure job operations database pool: %w", err)
 	}
 	jobStore := infra.NewPostgresJobStore(jobWorkerPool)
+	// OTEL metrics are initialized unconditionally above, so durable
+	// job-operations metrics are always enabled. The downstream Start /
+	// Shutdown paths still nil-check the concrete monitor so this stays a
+	// single source of truth if metrics ever become optional.
 	var jobOperationsMonitor *jobs.OperationsMonitor
-	if otelMetricProvider != nil {
-		jobOperationsMonitor, err = jobs.NewOperationsMonitor(
-			jobStore,
-			otel.Meter("github.com/codefly-dev/module-saas-starter/job-operations"),
-			30*time.Second,
-		)
-		if err != nil {
-			return nil, fmt.Errorf("configure durable job metrics: %w", err)
-		}
+	jobOperationsMonitor, err = jobs.NewOperationsMonitor(
+		jobStore,
+		otel.Meter("github.com/codefly-dev/module-saas-starter/job-operations"),
+		30*time.Second,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("configure durable job metrics: %w", err)
 	}
 	service.SetJobOperations(jobStore)
 	service.SetWebhookJobProducer(store)
@@ -284,9 +286,10 @@ func doWork(ctx context.Context) (Clean, error) {
 	if err != nil {
 		return nil, fmt.Errorf("configure authentication: %w", err)
 	}
-	if authProvider == "dev" {
+	switch authProvider {
+	case "dev":
 		service.SetDevelopmentTokenValidator(v)
-	} else if authProvider == "header-jwt" {
+	case "header-jwt":
 		// Gateway-pre-authenticated: no OAuth ceremony, no code exchange. The
 		// login route consumes the configured identity header and hands its
 		// value to the validator; sessions/refresh/MFA are unchanged afterwards.
@@ -296,7 +299,7 @@ func doWork(ctx context.Context) (Clean, error) {
 		}
 		service.SetTokenValidator(v)
 		adapters.SetHeaderJWTLoginHeader(headerName)
-	} else {
+	default:
 		// user_identities.provider is a foreign key into the identity_providers
 		// catalog. Verify the configured provider is registered now so an
 		// unseeded name fails at startup with a precise error instead of a raw

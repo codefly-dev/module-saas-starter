@@ -75,7 +75,7 @@ func Discover(ctx context.Context, issuer string, client *http.Client) (Discover
 	if err != nil {
 		return Discovery{}, fmt.Errorf("oidc: fetch provider metadata from %s: %w", endpoint, err)
 	}
-	defer response.Body.Close()
+	defer func() { _ = response.Body.Close() }()
 
 	body, err := io.ReadAll(io.LimitReader(response.Body, 1<<20))
 	if err != nil {

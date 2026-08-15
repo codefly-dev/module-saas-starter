@@ -174,7 +174,7 @@ func decodeConnectBindings(document []byte) (connectBindings, error) {
 		return connectBindings{}, fmt.Errorf("unsupported Connect bindings version %q", bindings.Version)
 	}
 	if len(bindings.Services) == 0 {
-		return connectBindings{}, fmt.Errorf("Connect bindings contain no services")
+		return connectBindings{}, fmt.Errorf("no services in Connect bindings")
 	}
 	return bindings, nil
 }
@@ -186,29 +186,29 @@ func validateConnectBindingCoverage(catalog *catalogv1.ServiceCatalog, bindings 
 		wanted[name] = struct{}{}
 		binding, exists := bindings.Services[name]
 		if !exists {
-			return fmt.Errorf("Connect binding is missing catalog service %q", name)
+			return fmt.Errorf("missing Connect binding for catalog service %q", name)
 		}
 		if !token.IsIdentifier(binding.Handler) {
-			return fmt.Errorf("Connect service %q has invalid handler identifier %q", name, binding.Handler)
+			return fmt.Errorf("invalid handler identifier %q for Connect service %q", binding.Handler, name)
 		}
 		switch binding.Source.Kind {
 		case "business":
 			if binding.Source.Name != "" {
-				return fmt.Errorf("Connect service %q business source must not declare a name", name)
+				return fmt.Errorf("business source of Connect service %q must not declare a name", name)
 			}
 		case "grpc", "singleton":
 			if !token.IsIdentifier(binding.Source.Name) {
-				return fmt.Errorf("Connect service %q has invalid %s source name %q", name, binding.Source.Kind, binding.Source.Name)
+				return fmt.Errorf("invalid %s source name %q for Connect service %q", binding.Source.Kind, binding.Source.Name, name)
 			}
 		default:
-			return fmt.Errorf("Connect service %q has unsupported source kind %q", name, binding.Source.Kind)
+			return fmt.Errorf("unsupported source kind %q for Connect service %q", binding.Source.Kind, name)
 		}
 		if binding.GRPCServer != "" {
 			if binding.Source.Kind != "business" {
-				return fmt.Errorf("Connect service %q may declare grpc_server only for a business source", name)
+				return fmt.Errorf("grpc_server on Connect service %q is allowed only for a business source", name)
 			}
 			if !token.IsIdentifier(binding.GRPCServer) {
-				return fmt.Errorf("Connect service %q has invalid grpc_server %q", name, binding.GRPCServer)
+				return fmt.Errorf("invalid grpc_server %q for Connect service %q", binding.GRPCServer, name)
 			}
 		}
 	}
@@ -221,7 +221,7 @@ func validateConnectBindingCoverage(catalog *catalogv1.ServiceCatalog, bindings 
 	}
 	if len(extras) > 0 {
 		sort.Strings(extras)
-		return fmt.Errorf("Connect bindings contain services absent from the catalog: %s", strings.Join(extras, ", "))
+		return fmt.Errorf("services in Connect bindings are absent from the catalog: %s", strings.Join(extras, ", "))
 	}
 	return nil
 }
