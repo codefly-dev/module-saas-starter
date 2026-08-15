@@ -48,6 +48,7 @@ export async function register() {
 				process.env.SENTRY_RELEASE || process.env.NEXT_PUBLIC_SENTRY_RELEASE,
 			tracesSampleRate: 0,
 			enableLogs: false,
+			skipOpenTelemetrySetup: true,
 		});
 	}
 }

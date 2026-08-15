@@ -43,14 +43,17 @@ function importsIn(source: string): string[] {
 function runIsolatedRuntime(
 	source: string,
 	{
-		browser = false,
+		condition,
 		env = {},
-	}: { browser?: boolean; env?: Record<string, string> } = {},
+	}: {
+		condition?: "browser" | "edge";
+		env?: Record<string, string>;
+	} = {},
 ): string {
 	return execFileSync(
 		process.execPath,
 		[
-			...(browser ? ["--conditions=browser"] : []),
+			...(condition ? [`--conditions=${condition}`] : []),
 			"--import",
 			"tsx",
 			"--input-type=module",
@@ -143,6 +146,29 @@ process.exit(0);`,
 		expect(JSON.parse(output)).toEqual({ providerAccepted: true });
 	});
 
+	it("leaves Edge OpenTelemetry available to the designated APM owner", () => {
+		const instrumentation = JSON.stringify(
+			pathToFileURL(join(codeDir, "instrumentation.ts")).href,
+		);
+		const output = runIsolatedRuntime(
+			`await import(${instrumentation}).then((module) => module.register());
+const { trace } = await import("@opentelemetry/api");
+const providerAccepted = trace.setGlobalTracerProvider({ getTracer() {} });
+process.stdout.write(JSON.stringify({ providerAccepted }));
+process.exit(0);`,
+			{
+				condition: "edge",
+				env: {
+					ERROR_TRACKING_MODE: "sentry",
+					NEXT_RUNTIME: "edge",
+					SENTRY_DSN: "https://public@example.invalid/1",
+				},
+			},
+		);
+
+		expect(JSON.parse(output)).toEqual({ providerAccepted: true });
+	});
+
 	it("initializes browser error tracking without BrowserTracing", () => {
 		const instrumentation = JSON.stringify(
 			pathToFileURL(join(codeDir, "instrumentation-client.ts")).href,
@@ -178,7 +204,7 @@ await Sentry.close(0);
 browser.close();
 process.exit(0);`,
 			{
-				browser: true,
+				condition: "browser",
 				env: {
 					NEXT_PUBLIC_ERROR_TRACKING_MODE: "sentry",
 					NEXT_PUBLIC_SENTRY_DSN: "https://public@example.invalid/1",
