@@ -52,6 +52,25 @@ type Store interface {
 	ListUserIdentities(ctx context.Context, userID string) ([]*gen.UserIdentity, error)
 	DeleteUserIdentities(ctx context.Context, userID string) error
 
+	// Org identity providers (per-org IdP registry — issue #107).
+	//
+	// These methods have two different transaction ownerships, so read the
+	// contract before calling:
+	//
+	//   - Upsert/Get/SetStatus are org-scoped and MUST run inside the caller's
+	//     WithOrgTx(orgID, …); called bare they hit RLS and see zero rows.
+	//   - ResolveOrgProviderByEmailDomain/ByHost are UNAUTHENTICATED, cross-org
+	//     pre-auth lookups that open their OWN control-plane transaction. Call
+	//     them at the top level only — invoking them inside an existing
+	//     WithOrgTx/WithControlPlane nests a second pooled connection, which the
+	//     no-nesting rule on those helpers forbids. They return only an active,
+	//     unambiguously-matched provider (nil on miss or ambiguity).
+	UpsertOrgIdentityProvider(ctx context.Context, provider *OrgIdentityProvider) error
+	GetOrgIdentityProvider(ctx context.Context, orgID string) (*OrgIdentityProvider, error)
+	SetOrgIdentityProviderStatus(ctx context.Context, orgID, status string) error
+	ResolveOrgProviderByEmailDomain(ctx context.Context, domain string) (*OrgIdentityProvider, error)
+	ResolveOrgProviderByHost(ctx context.Context, host string) (*OrgIdentityProvider, error)
+
 	// Organizations
 	CreateOrganization(ctx context.Context, org *gen.Organization) error
 	GetOrganization(ctx context.Context, id string) (*gen.Organization, error)
