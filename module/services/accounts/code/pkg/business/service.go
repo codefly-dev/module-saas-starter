@@ -27,7 +27,6 @@ type Service struct {
 	appBaseURL                string           // public URL of the frontend, used in email bodies
 	audit                     AuditEmitter
 	entitlements              EntitlementChecker
-	features                  FeatureChecker
 	membership                MembershipInvalidator
 	slack                     *SlackNotifier // optional: sends critical notifications to Slack
 	oauthState                *auth.OAuthStateSigner
@@ -238,10 +237,6 @@ func (s *Service) SetAuditEmitter(a AuditEmitter) {
 
 func (s *Service) SetEntitlementChecker(e EntitlementChecker) {
 	s.entitlements = e
-}
-
-func (s *Service) SetFeatureChecker(f FeatureChecker) {
-	s.features = f
 }
 
 // MembershipInvalidator is called by the business layer on every mutation

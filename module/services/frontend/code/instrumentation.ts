@@ -28,9 +28,8 @@ export async function register() {
 				process.env.NODE_ENV,
 			release:
 				process.env.SENTRY_RELEASE || process.env.NEXT_PUBLIC_SENTRY_RELEASE,
-			tracesSampleRate: parseFloat(
-				process.env.SENTRY_TRACES_SAMPLE_RATE || "0.1",
-			),
+			tracesSampleRate: 0,
+			enableLogs: false,
 			sendDefaultPii: process.env.SENTRY_SEND_PII === "1",
 		});
 	}
@@ -46,9 +45,8 @@ export async function register() {
 				process.env.NODE_ENV,
 			release:
 				process.env.SENTRY_RELEASE || process.env.NEXT_PUBLIC_SENTRY_RELEASE,
-			tracesSampleRate: parseFloat(
-				process.env.SENTRY_TRACES_SAMPLE_RATE || "0.1",
-			),
+			tracesSampleRate: 0,
+			enableLogs: false,
 		});
 	}
 }

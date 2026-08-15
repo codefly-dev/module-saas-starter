@@ -94,6 +94,34 @@ describe("frontend convergence boundaries", () => {
 		expect(violations).toEqual([]);
 	});
 
+	it("keeps Sentry on the error-tracking surface", () => {
+		const client = readFileSync(
+			join(codeDir, "instrumentation-client.ts"),
+			"utf8",
+		);
+		const server = readFileSync(join(codeDir, "instrumentation.ts"), "utf8");
+		const build = readFileSync(join(codeDir, "next.config.mjs"), "utf8");
+		const sentryRuntime = `${client}\n${server}`;
+
+		expect(client).toContain("tracesSampleRate: 0");
+		expect(server.match(/tracesSampleRate: 0/g)).toHaveLength(2);
+		expect(client).toContain("enableLogs: false");
+		expect(server.match(/enableLogs: false/g)).toHaveLength(2);
+		expect(build).toContain("removeTracing: true");
+		expect(build).toContain("routeManifestInjection: false");
+		expect(build).toContain(
+			"delete sentryErrorTrackingConfig.experimental.clientTraceMetadata",
+		);
+		for (const forbidden of [
+			"browserTracingIntegration",
+			"captureRouterTransitionStart",
+			"SENTRY_TRACES_SAMPLE_RATE",
+			"tracePropagationTargets",
+		]) {
+			expect(sentryRuntime).not.toContain(forbidden);
+		}
+	});
+
 	it("keeps Codefly endpoint resolution and plugin proxy policy server-only", () => {
 		const clientFiles = sourceFiles(join(codeDir, "src")).filter((path) =>
 			readFileSync(path, "utf8").startsWith('"use client"'),

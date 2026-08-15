@@ -76,3 +76,30 @@ func TestRuntimePluginOwnsNoGitOrArgoTransport(t *testing.T) {
 		t.Fatal("boundary test scanned no runtime plugin files")
 	}
 }
+
+func TestLegacyFeatureFlagsHaveNoRuntimeEvaluator(t *testing.T) {
+	files := []string{
+		"module/services/accounts/code/work.go",
+		"module/services/accounts/code/pkg/business/features.go",
+		"module/services/accounts/code/pkg/business/service.go",
+		"module/services/accounts/code/pkg/business/store.go",
+		"module/services/accounts/code/pkg/infra/postgres_feature_flags.go",
+	}
+	forbidden := []string{
+		"GetFeatureFlag(",
+		"FeatureChecker interface",
+		"NewDefaultFeatureChecker",
+		"SetFeatureChecker",
+	}
+	for _, file := range files {
+		data, err := os.ReadFile(file)
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, token := range forbidden {
+			if strings.Contains(string(data), token) {
+				t.Errorf("%s contains legacy runtime flag evaluator %q", file, token)
+			}
+		}
+	}
+}

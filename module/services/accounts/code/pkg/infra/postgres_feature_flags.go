@@ -3,30 +3,8 @@ package infra
 import (
 	"context"
 
-	"github.com/jackc/pgx/v5"
-
 	"accounts/pkg/business"
 )
-
-func (s *PostgresStore) GetFeatureFlag(ctx context.Context, name string) (*business.FeatureFlag, error) {
-	q := s.getQueryExecutor(ctx)
-
-	var flag business.FeatureFlag
-	var targetOrgIDs []string
-
-	err := q.QueryRow(ctx, `
-		SELECT id, name, description, enabled, rollout_percent, target_org_ids
-		FROM feature_flags WHERE name = $1`, name).
-		Scan(&flag.ID, &flag.Name, &flag.Description, &flag.Enabled, &flag.RolloutPercent, &targetOrgIDs)
-	if err != nil {
-		if err == pgx.ErrNoRows {
-			return nil, nil // unknown flag = not configured
-		}
-		return nil, err
-	}
-	flag.TargetOrgIDs = targetOrgIDs
-	return &flag, nil
-}
 
 func (s *PostgresStore) ListFeatureFlags(ctx context.Context) ([]*business.FeatureFlag, error) {
 	q := s.getQueryExecutor(ctx)

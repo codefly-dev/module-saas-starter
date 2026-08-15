@@ -147,12 +147,8 @@ func (s *UserServer) Version(ctx context.Context, req *gen.VersionRequest) (*gen
 }
 
 func NewGrpServer(c *Configuration, opts ...grpc.ServerOption) (*GrpcServer, error) {
-	// OTEL stats handler — picks up W3C traceparent from incoming
-	// gRPC metadata and starts a child span. Combined with the
-	// browser-side trace propagation (Sentry/OTEL JS injects
-	// traceparent on Connect-ES requests), every server RPC is a
-	// child of the originating click. No-op when no OTEL provider
-	// is registered (the global tracer is a no-op tracer).
+	// OTEL stats handler picks up W3C trace context from incoming gRPC metadata.
+	// It is a no-op when no OTEL provider is registered.
 	opts = append(opts, wooltel.GRPCServerOptions()...)
 
 	// Auth interceptor (mirror of the Connect one in connect_gen.go).

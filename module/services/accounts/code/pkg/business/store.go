@@ -206,7 +206,6 @@ type Store interface {
 	ListPublicPlans(ctx context.Context) ([]PublicPlan, error)
 
 	// Feature Flags
-	GetFeatureFlag(ctx context.Context, name string) (*FeatureFlag, error)
 	ListFeatureFlags(ctx context.Context) ([]*FeatureFlag, error)
 	UpsertFeatureFlag(ctx context.Context, flag *FeatureFlag) error
 

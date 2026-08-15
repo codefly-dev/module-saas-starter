@@ -79,9 +79,9 @@ materializes fail-closed defaults for the other optional capabilities, so the
 |---|---|---|
 | `stripe.sh` | `billing` | Checkout, customer portal, signed durable lifecycle webhook |
 | `resend.sh` | `email` | Transactional outbox plus signed, replay-safe delivery events |
-| `posthog.sh` | `product-analytics` | Browser/server events and person-deletion workflow |
-| `sentry.sh` | `error-tracking` | Browser/server errors, traces, release correlation |
-| `otel.sh` | `observability` | In-graph OTLP gateway with debug or OTLP/HTTP forwarding |
+| `posthog.sh` | `product-analytics` | Browser/server events, replay ownership, and person-deletion workflow |
+| `sentry.sh` | `error-tracking` | Browser/server errors and release correlation |
+| `otel.sh` | `observability` | In-graph OTLP gateway for the SigNoz traces/metrics/logs backend |
 | `turnstile.sh` | `abuse-protection` | Registration and waitlist challenge verification |
 
 Resolved files are written below `configurations/local-dogfood/`; public and
@@ -162,7 +162,10 @@ scripts/setup/posthog.sh \
 
 The project key may be exposed to the browser; the personal key never is.
 Dogfood consent opt-in/withdrawal, anonymous-to-user identity, logout reset,
-durable backend export, and privacy deletion.
+durable backend export, and privacy deletion. The adapter exposes no PostHog
+flag evaluation, exception capture, or APM surface. Replay is separately
+consent-gated and remains stopped until the product defines its redaction
+policy.
 
 ### Sentry
 
@@ -178,8 +181,9 @@ scripts/setup/sentry.sh \
 ```
 
 Dogfood one controlled browser exception and one backend error. Confirm the
-release/environment tags and browser-to-backend trace correlation. Provider
-mode is explicit and fails closed on partial or conflicting configuration.
+release/environment tags. Sentry performance transactions and tracing
+integrations are disabled; provider mode is explicit and fails closed on
+partial or conflicting configuration.
 
 ### OpenTelemetry
 
@@ -200,7 +204,8 @@ scripts/setup/otel.sh \
 Accounts resolves the collector dependency and its port exclusively through
 the Codefly SDK. The in-graph gateway accepts OTLP gRPC traces, metrics, and
 logs, then either prints a privacy-safe debug summary or forwards protobufs to
-the configured OTLP/HTTP origin.
+the configured OTLP/HTTP origin. SigNoz is the designated backend; optional
+dashboard/alert provisioning does not change this application OTLP contract.
 
 ### Cloudflare Turnstile
 
