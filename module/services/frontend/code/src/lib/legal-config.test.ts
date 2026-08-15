@@ -68,4 +68,15 @@ describe("legalContentConfig", () => {
 		expect(config.entityName).toBe("Acme");
 		expect(config.termsContent).toBe("Acme terms");
 	});
+
+	it("keeps partial fixture operator content and fills only the gaps", async () => {
+		process.env.NEXT_PUBLIC_IDENTITY_PROVIDER = "fixture";
+		process.env.NEXT_PUBLIC_LEGAL_ENTITY_NAME = "Acme";
+		const config = await loadConfig();
+		expect(config.entityName).toBe("Acme");
+		expect(config.contactEmail).toBe("dev@localhost");
+		expect(config.termsContent).toContain("local development only");
+		expect(config.privacyContent).toContain("local development only");
+		expect(legalContentConfigured(config)).toBe(true);
+	});
 });

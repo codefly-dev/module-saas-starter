@@ -22,6 +22,7 @@ import {
 	extractSessionContext,
 	getStoredUserEmail,
 	type ImpersonationInfo,
+	isFixtureIdentityMode,
 	storeRefreshToken,
 	storeUserEmail,
 } from "./auth-session";
@@ -96,15 +97,9 @@ export function isHeaderInjectedProvider(): boolean {
 	);
 }
 
-// True when the operator explicitly configured no external identity provider —
-// NEXT_PUBLIC_IDENTITY_PROVIDER is unset or "fixture"/"dev" — i.e. the fixture/dev
-// login flow is active. A named-but-incomplete real provider (e.g. "workos"
-// without a client id) is a MISCONFIGURATION, not fixture mode: treating it as
-// fixture would silently open the production terms gate on a broken deploy.
-export function isFixtureIdentityMode(): boolean {
-	const id = process.env.NEXT_PUBLIC_IDENTITY_PROVIDER?.trim().toLowerCase();
-	return !id || id === "fixture" || id === "dev";
-}
+// Re-exported from auth-session so client code can keep importing it from
+// "@/lib/auth"; the canonical definition lives in the non-client module.
+export { isFixtureIdentityMode };
 
 // Build the provider's authorize URL for the authorization-code flow.
 // State is the server-signed nonce from BeginOAuth. codeChallenge is the SHA-256 of the

@@ -12,6 +12,18 @@ export interface SessionContext {
 	orgRole?: OrgRole;
 }
 
+// True when the operator explicitly configured no external identity provider —
+// NEXT_PUBLIC_IDENTITY_PROVIDER is unset or "fixture"/"dev" — i.e. the fixture/dev
+// login flow is active. A named-but-incomplete real provider (e.g. "workos"
+// without a client id) is a MISCONFIGURATION, not fixture mode: treating it as
+// fixture would silently open the production terms gate on a broken deploy.
+// Lives here (a non-client module) so both client code and server-shared code
+// can share one definition of the fixture-mode predicate.
+export function isFixtureIdentityMode(): boolean {
+	const id = process.env.NEXT_PUBLIC_IDENTITY_PROVIDER?.trim().toLowerCase();
+	return !id || id === "fixture" || id === "dev";
+}
+
 export function decodeJWTPayload(token: string): Record<string, unknown> {
 	try {
 		const payload = token.split(".")[1];

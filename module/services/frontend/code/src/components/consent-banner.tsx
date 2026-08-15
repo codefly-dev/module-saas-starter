@@ -10,7 +10,7 @@ import {
 	type ConsentStatus,
 } from "@/gen/saas/accounts/v1/consent_pb";
 import { WaitlistService } from "@/gen/saas/accounts/v1/waitlist_pb";
-import { isFixtureIdentityMode, useAuth } from "@/lib/auth";
+import { useAuth } from "@/lib/auth";
 import { apiTransport } from "@/lib/connect/transport";
 import { legalContentConfigured } from "@/lib/legal-config";
 import { Button, Switch } from "@/shared/ui";
@@ -19,11 +19,11 @@ const STORAGE_KEY = "saas-starter:consent-preferences";
 const client = createClient(ConsentService, apiTransport);
 const acquisitionClient = createClient(WaitlistService, apiTransport);
 
-// The production terms gate requires operator-provided legal content, but the
-// fixture/dev stack ships none — relax it there so the first-run flow isn't a
-// dead end.
+// The terms gate requires configured legal content. legalContentConfig already
+// supplies dev placeholders in fixture/dev mode, so this stays usable in the
+// local stack without a separate fixture-mode escape hatch here.
 function termsAcceptanceEnabled(): boolean {
-	return legalContentConfigured() || isFixtureIdentityMode();
+	return legalContentConfigured();
 }
 
 type Choices = { analytics: boolean; marketing: boolean };

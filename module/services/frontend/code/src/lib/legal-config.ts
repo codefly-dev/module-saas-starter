@@ -1,3 +1,5 @@
+import { isFixtureIdentityMode } from "./auth-session";
+
 export interface LegalContentConfig {
 	entityName?: string;
 	contactEmail?: string;
@@ -37,13 +39,37 @@ const devLegalContent: LegalContentConfig = {
 		"Placeholder Privacy Policy for local development only — not legally binding. Set NEXT_PUBLIC_LEGAL_* before production.",
 };
 
-// A real identity provider (production) is anything other than unset/fixture/dev.
-function fixtureIdentityMode(): boolean {
-	const id = process.env.NEXT_PUBLIC_IDENTITY_PROVIDER?.trim().toLowerCase();
-	return !id || id === "fixture" || id === "dev";
+// Keep an operator-supplied value verbatim when present; otherwise fall back to
+// the dev placeholder. Per field, so a fixture stack that sets only some of the
+// NEXT_PUBLIC_LEGAL_* vars keeps the real ones instead of discarding them all.
+function withDevFallback(
+	operator?: string,
+	placeholder?: string,
+): string | undefined {
+	return operator?.trim() ? operator : placeholder;
 }
 
-export const legalContentConfig: LegalContentConfig =
-	legalContentConfigured(operatorLegalContent) || !fixtureIdentityMode()
-		? operatorLegalContent
-		: devLegalContent;
+// In fixture/dev mode, fill each missing legal field with a placeholder so the
+// terms banner and /legal routes work locally; a real identity provider
+// (production) still gets operator content verbatim, unpadded, so the gate stays
+// enforced until real legal content is supplied.
+export const legalContentConfig: LegalContentConfig = isFixtureIdentityMode()
+	? {
+			entityName: withDevFallback(
+				operatorLegalContent.entityName,
+				devLegalContent.entityName,
+			),
+			contactEmail: withDevFallback(
+				operatorLegalContent.contactEmail,
+				devLegalContent.contactEmail,
+			),
+			termsContent: withDevFallback(
+				operatorLegalContent.termsContent,
+				devLegalContent.termsContent,
+			),
+			privacyContent: withDevFallback(
+				operatorLegalContent.privacyContent,
+				devLegalContent.privacyContent,
+			),
+		}
+	: operatorLegalContent;
