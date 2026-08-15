@@ -55,3 +55,48 @@ func TestRequireAuthSurvivesBlankForwardedAuthID(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, "user-3", actorID)
 }
+
+// An API-key caller (cfly_sk_*) forwards the key id as user.auth.id while user.id
+// stays the acting user. Actor resolution must yield the user, never the key id —
+// otherwise platform-role and org-membership checks run against a principal that
+// is not the caller. This locks the user-first contract every rpcs.go handler now
+// depends on.
+func TestRequireAuthPrefersUserOverForwardedAuthKeyID(t *testing.T) {
+	md := metadata.Pairs(
+		string(wool.UserIDKey), "user-4",
+		string(wool.UserAuthIDKey), "cfly_sk_key-id",
+	)
+	ctx := metadata.NewIncomingContext(context.Background(), md)
+
+	actorID, err := requireAuth(ctx)
+	require.NoError(t, err)
+	require.Equal(t, "user-4", actorID)
+}
+
+// callerID is UserID-first like requireAuth. A present-but-empty user.id (the
+// same forwarded-metadata clobber) must fall through to the auth id rather than
+// being returned as a blank actor that later handlers treat as authenticated.
+func TestCallerIDFallsThroughBlankForwardedUserID(t *testing.T) {
+	md := metadata.Pairs(
+		string(wool.UserIDKey), "",
+		string(wool.UserAuthIDKey), "user-5",
+	)
+	ctx := metadata.NewIncomingContext(context.Background(), md)
+
+	id, err := callerID(ctx)
+	require.NoError(t, err)
+	require.Equal(t, "user-5", id)
+}
+
+// With no non-empty identity present at all, callerID must reject rather than
+// hand back an empty-but-authenticated actor.
+func TestCallerIDRejectsAllBlankIdentity(t *testing.T) {
+	md := metadata.Pairs(
+		string(wool.UserIDKey), "",
+		string(wool.UserAuthIDKey), "",
+	)
+	ctx := metadata.NewIncomingContext(context.Background(), md)
+
+	_, err := callerID(ctx)
+	require.Equal(t, codes.Unauthenticated, status.Code(err))
+}
