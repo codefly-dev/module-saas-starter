@@ -255,6 +255,49 @@ services:
       hot-reload: true
       protocol-output-dirs:
         - code/pkg/gen
+  - name: temporal
+    version: 0.0.0
+    agent:
+      kind: codefly:service
+      name: temporal
+      version: 0.0.15
+      publisher: codefly.dev
+    kubernetes:
+      service_name: temporal-temporal
+      app_label: temporal-temporal
+    endpoints:
+      - name: grpc
+        api: tcp
+        visibility: module
+        port: 7233
+      - name: http
+        api: tcp
+        visibility: module
+        port: 8233
+    dependencies:
+      - service: temporal-store
+        endpoints:
+          - tcp
+    spec:
+      watch: false
+  - name: temporal-store
+    version: 0.0.0
+    agent:
+      kind: codefly:service
+      name: postgres
+      version: 0.0.108
+      publisher: codefly.dev
+    endpoints:
+      - name: tcp
+        api: tcp
+        visibility: external
+        port: 5432
+    bootstrap_job_endpoints:
+      - tcp
+    spec:
+      database-name: postgres
+      no-migration: true
+      without-ssl: false
   - name: vault
     version: 0.0.0
     agent:

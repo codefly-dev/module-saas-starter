@@ -19,8 +19,8 @@ deployment ports, and public egress. The runtime `module.codefly.yaml` and every
 | `services/accounts/code/pkg/cataloggen/testdata/network-policy.golden.yaml` | Test-only topology-policy golden; installed GitOps policies are rendered structurally per environment. |
 | `services/accounts/code/pkg/cataloggen/deployment_topology.go` | Strict compiler, semantic validator, and renderers. |
 
-The normalized inventory currently contains nine services, 13 endpoints,
-eight dependency edges, three module-interface endpoints, and four explicit
+The normalized inventory currently contains eleven services, 16 endpoints,
+nine dependency edges, three module-interface endpoints, and four explicit
 public-egress grants. The accounts descriptor catalog is an input: if its RPCs
 use gRPC, Connect, or REST without a corresponding accounts endpoint,
 generation fails.
@@ -37,6 +37,7 @@ generation fails.
 | `auth-sidecar` | `accounts/connect`, `accounts/rest`, `accounts/grpc` | TCP 8080, 9090 |
 | `auth-sidecar` | `cache/write` | TCP 6379 |
 | `frontend` | `auth-sidecar/rest` | TCP 8080 |
+| `temporal` | `temporal-store/tcp` | TCP 5432 |
 
 The Codefly module interface exposes the public `frontend/http` and
 `marketing/http` endpoints; the auth-sidecar gRPC ext-authz endpoint has module
@@ -44,11 +45,12 @@ visibility. Istio routes apex/`www`/docs hosts to `marketing/http` and `app` to
 `frontend/http`. Accounts, frontend, marketing, and telemetry may reach
 public IP space only over TCP 443. The public rules exclude private, loopback,
 link-local, metadata, documentation, benchmark, multicast, and other
-special-purpose IPv4/IPv6 ranges.
+special-purpose IPv4/IPv6 ranges. Temporal's gRPC frontend and HTTP UI remain
+module-visible without a public ingress route.
 
 ## Network-policy model
 
-The topology-policy golden contains 21 `NetworkPolicy` resources:
+The topology-policy golden contains 25 `NetworkPolicy` resources:
 
 - one namespace-wide ingress/egress default deny;
 - DNS and Istio control-plane egress for all injected workloads;
@@ -61,10 +63,12 @@ requires changing the topology binding and reviewing both generated directions
 of the edge.
 
 Pod selectors use the `app: <service>` labels emitted by the pinned Codefly
-agents. Endpoint ports are explicit deployment bindings because Codefly's
-logical endpoint manifest does not carry Kubernetes ports. Agent port or label
-changes must update the topology binding in the same change; pinned deployment
-schema/render validation is tracked by `P1-CI-004`.
+agents. Services whose agent uses a different Kubernetes identity declare its
+Service name and app label in the topology. Endpoint ports are explicit
+deployment bindings because Codefly's logical endpoint manifest does not carry
+Kubernetes ports. Agent port, Service-name, or label changes must update the
+topology binding in the same change; pinned deployment schema/render validation
+is tracked by `P1-CI-004`.
 
 The generated Codefly dependency declarations contain exact endpoint
 references. Accounts resolves `telemetry/grpc` through the SDK and passes that
@@ -94,7 +98,7 @@ exports, and missing descriptor-required accounts protocols.
 
 Parity tests build every artifact twice, compare all checked-in outputs, parse
 the generated files through Codefly's resource model, and strictly inspect all
-21 NetworkPolicy golden documents. After the module generator creates the
+25 NetworkPolicy golden documents. After the module generator creates the
 consumer-owned GitOps tree, render an environment with:
 
 ```sh
@@ -102,7 +106,7 @@ kubectl kustomize modules/<module>/deployment/kustomize/overlays/<environment>
 ```
 
 CI regenerates and clean-diff checks the normalized catalog, module manifest,
-all nine service manifests, and NetworkPolicy file. A separate CI job copies
+all eleven service manifests, and NetworkPolicy file. A separate CI job copies
 only marketing into an isolated build context, installs its own dependency
 lock, and runs unit, content, boundary, build, budget, and degraded-product
 smoke checks.
