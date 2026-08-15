@@ -52,6 +52,21 @@ func TestLoadFixtureRejectsUnknownFields(t *testing.T) {
 	}
 }
 
+func TestLoadFixtureAcceptsDevelopmentAssuranceField(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "product.yaml")
+	contents := "users:\n  - email: owner@example.com\n    provider: email\n    provider_id: owner\n    mfa_verified: true\n"
+	if err := os.WriteFile(path, []byte(contents), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	fixture, err := loadFixtureFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(fixture.Users) != 1 || !fixture.Users[0].MFAVerified {
+		t.Fatalf("loadFixtureFile() users = %+v, want one MFA-verified user", fixture.Users)
+	}
+}
+
 func TestValidateFixtureAcceptsAgentRoleAndAssignment(t *testing.T) {
 	fixture := &fixtureFile{
 		Users: []fixtureUser{{

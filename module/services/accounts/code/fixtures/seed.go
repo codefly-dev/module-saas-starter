@@ -35,6 +35,7 @@ type fixtureUser struct {
 	Provider     string `yaml:"provider"`
 	ProviderID   string `yaml:"provider_id"`
 	FixtureToken string `yaml:"fixture_token"`
+	MFAVerified  bool   `yaml:"mfa_verified"`
 }
 
 type fixtureOrg struct {
