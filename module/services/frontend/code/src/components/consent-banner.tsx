@@ -10,7 +10,7 @@ import {
 	type ConsentStatus,
 } from "@/gen/saas/accounts/v1/consent_pb";
 import { WaitlistService } from "@/gen/saas/accounts/v1/waitlist_pb";
-import { useAuth } from "@/lib/auth";
+import { isFixtureIdentityMode, useAuth } from "@/lib/auth";
 import { apiTransport } from "@/lib/connect/transport";
 import { legalContentConfigured } from "@/lib/legal-config";
 import { Button, Switch } from "@/shared/ui";
@@ -18,7 +18,13 @@ import { Button, Switch } from "@/shared/ui";
 const STORAGE_KEY = "saas-starter:consent-preferences";
 const client = createClient(ConsentService, apiTransport);
 const acquisitionClient = createClient(WaitlistService, apiTransport);
-const LEGAL_CONTENT_CONFIGURED = legalContentConfigured();
+
+// The production terms gate requires operator-provided legal content, but the
+// fixture/dev stack ships none — relax it there so the first-run flow isn't a
+// dead end.
+function termsAcceptanceEnabled(): boolean {
+	return legalContentConfigured() || isFixtureIdentityMode();
+}
 
 type Choices = { analytics: boolean; marketing: boolean };
 type Banner =
@@ -51,6 +57,7 @@ function notifyConsent(choices: Choices, policyVersion: string) {
 export function ConsentBanner() {
 	const { isAuthenticated, isLoading } = useAuth();
 	const [banner, setBanner] = useState<Banner>({ kind: "hidden" });
+	const termsEnabled = termsAcceptanceEnabled();
 
 	useEffect(() => {
 		if (isLoading) return;
@@ -176,7 +183,7 @@ export function ConsentBanner() {
 								</Link>
 								.
 							</p>
-							{!LEGAL_CONTENT_CONFIGURED && (
+							{!termsEnabled && (
 								<p className="mt-2 text-sm text-destructive">
 									Terms acceptance is unavailable until the operator configures
 									its legal content.
@@ -252,7 +259,7 @@ export function ConsentBanner() {
 			<div className="mt-4 flex flex-wrap justify-end gap-2">
 				{banner.kind === "terms" ? (
 					<Button
-						disabled={!LEGAL_CONTENT_CONFIGURED}
+						disabled={!termsEnabled}
 						onClick={async () => {
 							const status = await client.acceptTerms({
 								version: banner.status.currentTermsVersion,
