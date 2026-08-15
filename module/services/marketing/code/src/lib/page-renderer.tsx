@@ -474,6 +474,7 @@ function PlanCard({
           {formatPlanAmount(plan, locale)}
           {plan.amountMinor !== null &&
           plan.amountMinor > 0 &&
+          !plan.contactSales &&
           plan.interval !== "contact" ? (
             <small> / {plan.interval}</small>
           ) : null}

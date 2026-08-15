@@ -1,8 +1,10 @@
 import assert from "node:assert/strict";
 import test from "node:test";
+import { renderToReadableStream } from "react-dom/server";
 import {
   authorSlug,
   localizedPath,
+  renderMarketingPage,
   resolveAuthorBySlug,
 } from "@/lib/page-renderer";
 
@@ -21,4 +23,61 @@ test("author routes use the same canonical slug for generation and lookup", () =
     ),
     "Jean-Luc Picard",
   );
+});
+
+test("pricing omits billing intervals from contact-sales labels", async (context) => {
+  const originalCatalogURL = process.env.MARKETING_CATALOG_URL;
+  process.env.MARKETING_CATALOG_URL = "https://api.example.test";
+  context.after(() => {
+    if (originalCatalogURL === undefined) {
+      delete process.env.MARKETING_CATALOG_URL;
+    } else {
+      process.env.MARKETING_CATALOG_URL = originalCatalogURL;
+    }
+  });
+  context.mock.method(globalThis, "fetch", async () =>
+    Response.json({
+      revision: "catalog-v1",
+      plans: [
+        {
+          key: "cloud",
+          name: "Cloud",
+          description: "For hosted workloads.",
+          currency: "USD",
+          amountMinor: 3900,
+          interval: "month",
+          checkoutEnabled: false,
+          contactSales: true,
+          trialDays: 0,
+          taxBehavior: "automatic",
+          fixture: false,
+          entitlements: [],
+        },
+        {
+          key: "free",
+          name: "Free",
+          description: "For trying the product.",
+          currency: "USD",
+          amountMinor: 0,
+          interval: "month",
+          checkoutEnabled: false,
+          contactSales: false,
+          trialDays: 0,
+          taxBehavior: "automatic",
+          fixture: false,
+          entitlements: [],
+        },
+      ],
+    }),
+  );
+
+  const stream = await renderToReadableStream(
+    await renderMarketingPage({ segments: ["pricing"] }),
+  );
+  await stream.allReady;
+  const markup = await new Response(stream).text();
+
+  assert.match(markup, /<p class="price">Contact sales<\/p>/);
+  assert.match(markup, /<p class="price">Free<\/p>/);
+  assert.doesNotMatch(markup, / \/ month/);
 });
