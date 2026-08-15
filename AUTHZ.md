@@ -281,7 +281,7 @@ answer is unacceptable.
 | `audit_events` | polymorphic (nullable org_id; NULL only via bypass) | 31 |
 | `roles`, `role_assignments` | polymorphic (built-ins NULL globally readable) | 32 |
 | `organizations` | self-referential (id matches setting) | 33 |
-| `org_identity_providers` | direct org_id (pre-auth discovery via control-plane) | 91 |
+| `org_identity_providers` | direct org_id (pre-auth discovery via control-plane) | 92 |
 
 ### Skip-list (intentionally NOT RLS-protected)
 
