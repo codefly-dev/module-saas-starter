@@ -1,5 +1,3 @@
-import { isFixtureIdentityMode } from "./auth-session";
-
 export interface LegalContentConfig {
 	entityName?: string;
 	contactEmail?: string;
@@ -27,9 +25,7 @@ const operatorLegalContent: LegalContentConfig = {
 
 // Non-production dev placeholder. The terms gate requires operator-supplied
 // legal content, so the default fixture/dev stack — which ships none — would
-// otherwise strand the required terms banner and the /legal routes. It applies
-// only when no real identity provider is configured; a configured provider
-// still requires real operator content, keeping production behaviour intact.
+// otherwise strand the required terms banner and the /legal routes.
 const devLegalContent: LegalContentConfig = {
 	entityName: "Local Dev (placeholder)",
 	contactEmail: "dev@localhost",
@@ -49,11 +45,23 @@ function withDevFallback(
 	return operator?.trim() ? operator : placeholder;
 }
 
-// In fixture/dev mode, fill each missing legal field with a placeholder so the
-// terms banner and /legal routes work locally; a real identity provider
-// (production) still gets operator content verbatim, unpadded, so the gate stays
+// Dev placeholders require an EXPLICIT affirmative signal, not the mere absence
+// of a real identity provider. NEXT_PUBLIC_LEGAL_DEV_PLACEHOLDER is inlined at
+// build time from the Codefly fixture boundary (see next.config.mjs), so the
+// local fixture stack gets placeholders with zero config while a real deploy —
+// which never builds under a fixture — defaults to the closed gate rather than
+// silently shipping placeholder terms.
+function devPlaceholdersEnabled(): boolean {
+	const flag =
+		process.env.NEXT_PUBLIC_LEGAL_DEV_PLACEHOLDER?.trim().toLowerCase();
+	return flag === "true" || flag === "1";
+}
+
+// With placeholders enabled, fill each missing legal field so the terms banner
+// and /legal routes work locally; operator-supplied fields are still kept
+// verbatim. Otherwise operator content is used unpadded, so the gate stays
 // enforced until real legal content is supplied.
-export const legalContentConfig: LegalContentConfig = isFixtureIdentityMode()
+export const legalContentConfig: LegalContentConfig = devPlaceholdersEnabled()
 	? {
 			entityName: withDevFallback(
 				operatorLegalContent.entityName,

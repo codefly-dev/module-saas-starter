@@ -22,7 +22,6 @@ import {
 	extractSessionContext,
 	getStoredUserEmail,
 	type ImpersonationInfo,
-	isFixtureIdentityMode,
 	storeRefreshToken,
 	storeUserEmail,
 } from "./auth-session";
@@ -96,10 +95,6 @@ export function isHeaderInjectedProvider(): boolean {
 		"header-jwt"
 	);
 }
-
-// Re-exported from auth-session so client code can keep importing it from
-// "@/lib/auth"; the canonical definition lives in the non-client module.
-export { isFixtureIdentityMode };
 
 // Build the provider's authorize URL for the authorization-code flow.
 // State is the server-signed nonce from BeginOAuth. codeChallenge is the SHA-256 of the

@@ -20,8 +20,9 @@ const client = createClient(ConsentService, apiTransport);
 const acquisitionClient = createClient(WaitlistService, apiTransport);
 
 // The terms gate requires configured legal content. legalContentConfig already
-// supplies dev placeholders in fixture/dev mode, so this stays usable in the
-// local stack without a separate fixture-mode escape hatch here.
+// supplies dev placeholders when the build opts in (NEXT_PUBLIC_LEGAL_DEV_PLACEHOLDER,
+// set from the fixture boundary), so this stays usable in the local stack without
+// a separate fixture-mode escape hatch here.
 function termsAcceptanceEnabled(): boolean {
 	return legalContentConfigured();
 }
@@ -88,9 +89,7 @@ export function ConsentBanner() {
 						});
 					}
 				})
-				.catch(() =>
-					notifyConsent({ analytics: false, marketing: false }, ""),
-				);
+				.catch(() => notifyConsent({ analytics: false, marketing: false }, ""));
 			return () => {
 				cancelled = true;
 			};
@@ -121,9 +120,7 @@ export function ConsentBanner() {
 					});
 				}
 			})
-			.catch(() =>
-				notifyConsent({ analytics: false, marketing: false }, ""),
-			);
+			.catch(() => notifyConsent({ analytics: false, marketing: false }, ""));
 		return () => {
 			cancelled = true;
 		};

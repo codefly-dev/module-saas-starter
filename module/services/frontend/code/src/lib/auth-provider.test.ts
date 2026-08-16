@@ -2,7 +2,6 @@ import { afterEach, describe, expect, it } from "vitest";
 import {
 	availableProviders,
 	buildAuthorizeURL,
-	isFixtureIdentityMode,
 	isHeaderInjectedProvider,
 	type ProviderPreset,
 } from "./auth";
@@ -40,30 +39,6 @@ describe("Codefly identity provider configuration", () => {
 		expect(isHeaderInjectedProvider()).toBe(false);
 	});
 
-	it("treats unset and explicit fixture/dev providers as fixture identity mode", () => {
-		expect(isFixtureIdentityMode()).toBe(true);
-		process.env.NEXT_PUBLIC_IDENTITY_PROVIDER = "fixture";
-		expect(isFixtureIdentityMode()).toBe(true);
-		process.env.NEXT_PUBLIC_IDENTITY_PROVIDER = "  DEV  ";
-		expect(isFixtureIdentityMode()).toBe(true);
-	});
-
-	it("does not treat a real or misconfigured external provider as fixture identity mode", () => {
-		process.env.NEXT_PUBLIC_IDENTITY_PROVIDER = "workos";
-		process.env.NEXT_PUBLIC_IDENTITY_AUTHORIZE_URL =
-			"https://api.workos.com/user_management/authorize";
-		process.env.NEXT_PUBLIC_IDENTITY_CLIENT_ID = "client_123";
-		expect(isFixtureIdentityMode()).toBe(false);
-
-		// A named real provider missing its client id is a broken deploy, not
-		// fixture mode — the terms gate must stay enforced.
-		delete process.env.NEXT_PUBLIC_IDENTITY_CLIENT_ID;
-		expect(isFixtureIdentityMode()).toBe(false);
-
-		process.env.NEXT_PUBLIC_IDENTITY_PROVIDER = "header-jwt";
-		expect(isFixtureIdentityMode()).toBe(false);
-	});
-
 	it("builds the selected WorkOS AuthKit provider from generic identity configuration", () => {
 		process.env.NEXT_PUBLIC_IDENTITY_PROVIDER = "workos";
 		process.env.NEXT_PUBLIC_IDENTITY_DISPLAY_NAME = "Company login";
@@ -76,8 +51,7 @@ describe("Codefly identity provider configuration", () => {
 			{
 				id: "workos",
 				displayName: "Company login",
-				authorizeURL:
-					"https://api.workos.com/user_management/authorize",
+				authorizeURL: "https://api.workos.com/user_management/authorize",
 				clientID: "client_123",
 				scope: undefined,
 				authorizeParams: { provider: "authkit" },

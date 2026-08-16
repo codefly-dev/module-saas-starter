@@ -426,6 +426,15 @@ the supplied content for their product and jurisdictions. Anonymous browser
 preferences are used only to fail optional SDKs closed; they are not treated as
 authenticated legal evidence.
 
+The dev placeholders are opt-in and safe-by-default: they apply only when
+`NEXT_PUBLIC_LEGAL_DEV_PLACEHOLDER` is truthy at build time, which `next.config.mjs`
+derives from the Codefly fixture boundary — so the local fixture stack gets a
+usable Terms gate with zero config, while a real deploy (which never builds under
+a fixture) defaults to the enforced gate rather than silently shipping placeholder
+terms. Because `NEXT_PUBLIC_*` values are inlined at build time, a production build
+that omits the four operator vars ships an un-acceptable gate; the `build` script
+runs `scripts/check-public-legal-env.mjs` to warn when that happens.
+
 ### Frontend (Next.js)
 
 The FE is intentionally MVC-style: most pages are thin shells around
@@ -686,6 +695,7 @@ Frontend browser configuration (`NEXT_PUBLIC_*` values are baked into the client
 | `NEXT_PUBLIC_LEGAL_CONTACT_EMAIL` | Legal/privacy contact; required before Terms acceptance |
 | `NEXT_PUBLIC_LEGAL_TERMS_CONTENT` | Operator-supplied Terms; required before Terms acceptance |
 | `NEXT_PUBLIC_LEGAL_PRIVACY_CONTENT` | Operator-supplied Privacy Policy; required before Terms acceptance |
+| `NEXT_PUBLIC_LEGAL_DEV_PLACEHOLDER` | Opt-in dev legal placeholders; defaults from the fixture boundary via `next.config.mjs`, off for real deploys |
 | `NEXT_PUBLIC_PRODUCT_ANALYTICS_MODE` | Explicit `disabled` or `posthog` browser analytics mode |
 | `NEXT_PUBLIC_POSTHOG_KEY`      | Public PostHog capture key in PostHog mode                    |
 | `NEXT_PUBLIC_POSTHOG_HOST`   | Browser capture origin                                      |
