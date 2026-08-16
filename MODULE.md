@@ -8,6 +8,7 @@ A codefly **module** is a collection of **services**; each service owns its own 
 
 ## Quick links
 
+- Composing this module into a downstream workspace: [Composing this module into a workspace](#composing-this-module-into-a-workspace)
 - Runnable local product with real identity: [LOCAL_DOGFOODING.md](./LOCAL_DOGFOODING.md)
 - External-provider bootstrap scripts: [scripts/setup/README.md](./scripts/setup/README.md)
 - SigNoz dashboard/alert provisioning qualification: [module/SIGNOZ_PROVISIONING.md](./module/SIGNOZ_PROVISIONING.md)
@@ -231,6 +232,98 @@ Every page lives under `frontend/code/src/app/admin/`:
 | `/admin/platform/admins` | platform role grant/revoke |
 
 Client-side gating uses `<RoleGate>` (`src/components/auth/role-gate.tsx`) — display-only; backend remains authoritative.
+
+## Composing this module into a workspace
+
+A downstream workspace does not fork or copy saas-starter. It **composes** the
+module: Codefly writes a copy into the consumer under `modules/<name>/`, records
+where that copy came from, and enforces that the consumer only ever ADDS files
+beside the base — never edits the base in place. All paths below are relative to
+that composed module root (the `modules/<name>/` directory), the same root the
+base-integrity tooling runs against.
+
+### Two-step compose
+
+```bash
+# 1. Create the empty shell (no base files yet).
+codefly add module --agent saas-starter <name>
+
+# 2. Pull the base in from an immutable upstream tag. Dry-run is the default;
+#    review the plan, then re-run with --apply.
+codefly sync module <name> \
+  --source https://github.com/codefly-dev/module-saas-starter.git \
+  --to <tag> \
+  --subdir module
+codefly sync module <name> \
+  --source https://github.com/codefly-dev/module-saas-starter.git \
+  --to <tag> \
+  --subdir module \
+  --apply
+```
+
+`--subdir module` selects saas-starter's composed subtree (this repo ships the
+module under `module/`, not at the repository root). Never compose with `rsync`,
+a directory copy, or a hand-edited manifest — Codefly owns the transaction so
+the result has reproducible provenance.
+
+### The pin and the lock
+
+`--to` takes an **immutable semantic-version tag**, never a branch or a moving
+ref. On `--apply`, Codefly writes the consumer-owned lock `tools/base-source.json`
+recording the repository, tag, peeled commit, and subdir. That file is the
+consumer's provenance and belongs in its git history; sync never overwrites it
+with anything but a newer applied pin.
+
+Once the source is pinned, later updates need only the new tag — source and
+subdir are read back from the lock:
+
+```bash
+codefly sync module <name> --to <newtag>            # dry-run
+codefly sync module <name> --to <newtag> --apply
+```
+
+### Overlay discipline
+
+Base files are **upstream-owned**. Every base file's `sha256` is recorded in
+`tools/base-manifest.json`, shipped into the consumer at sync time. A consumer
+composes by ADDING files on the side — a product plugin package, extra services,
+integration tests — never by editing a base file in place. `codefly verify`
+(and `node tools/base-integrity.mjs check`) re-hash every manifest file in the
+consumer and fail on any drift; files absent from the manifest are legal
+side-additions. Anything indispensable to the product — plugin entry points,
+composition roots, contract tests — should be listed under `requiredAdditions`
+in `tools/base-integrity-allow.json` so verify fails if an update ever leaves
+one missing.
+
+### When a base file genuinely must change
+
+In-place edits fail closed. Resolve the conflict deliberately, preferring the
+option earliest in this list:
+
+1. **Promote it upstream (preferred).** Land the change in canonical
+   saas-starter, cut a new tag, and `sync --to` it down. The base gets stronger
+   and every consumer benefits.
+2. **Accept the upstream version.** When sync reports a base file you diverged
+   on and you want canonical's copy, pin it with `--accept-upstream <path>` to
+   discard the local edit for that path. There is no flag that forces a
+   consumer edit back over upstream — the base only moves via a new tag.
+3. **Whitelist the divergence (last resort).** Add the path to
+   `tools/base-integrity-allow.json` with a human-readable reason. This is
+   logged loudly on every check and is tech debt — prefer a config seam or a
+   side-module.
+
+### Composing a subset of services
+
+A consumer may compose only some of the module's services. The composed set is
+the `services:` list in the consumer's `module.codefly.yaml`. `check` skips
+manifest files that belong to a non-composed service and reports them as an
+expected omission, not a missing base file — module-level files are always
+enforced. So absent base files for a service you never composed are normal;
+missing base files for a service you DID compose are a real failure.
+
+For the frontend product-plugin overlay specifically — package layout,
+generated projections, and gates — see
+[docs/frontend-plugin-installation.md](./module/docs/frontend-plugin-installation.md).
 
 ## How to extend the module
 
