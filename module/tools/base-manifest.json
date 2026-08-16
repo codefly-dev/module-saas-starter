@@ -1,6 +1,6 @@
 {
   "note": "Base-file integrity manifest for the saas-starter module. Generated FROM canonical by `node tools/base-integrity.mjs gen`. Consumers MUST NOT hand-edit base files — only add files on the side. Regenerated on every codefly sync from canonical.",
-  "fileCount": 1534,
+  "fileCount": 1535,
   "files": {
     "AUTHORIZATION_CATALOG.md": "b2ea5d41f0098e80315e02e7c4bdbda03b65c8eef463426242552fd3c047ca0a",
     "CONTRACT_VERSIONING.md": "02031aa87922ab5ec573ea582cf584271873481de6ceabbda52b1bfda005ffbd",
@@ -25,11 +25,12 @@
     "deployment/README.md": "0cd1681bc9fdd01ea44adf7106c3f8120e4346e90531fd1e37fa430d990f4094",
     "deployment/topology.bindings.codefly.yaml": "996ace6501ab462514bd7ea325951f38ba0e3ec10b53c23a95c42b508e0ca752",
     "docs/IDENTITY_ACCESS_PLAN.md": "ad620230ff0a2fafcd57a5b0adc55bc8619c775d367e4605dcdffe96d8185aa7",
-    "docs/adr/0001-frontend-plugin-packaging.md": "6fe5b3fc0e345d0e002ddf4165d86243567411377520fd22f922e4127babd02b",
+    "docs/adr/0001-frontend-plugin-packaging.md": "b82a3be12fdc2ff7d3edf6822fb22fd08c219732c058f97f8fe1eae92a50ae7b",
+    "docs/adr/0002-remote-ui-tier-boundary.md": "a90fa59d7ad82f0c370cbe9ab3cae39c4c4316277cccbe92d40808a73647d1ee",
     "docs/frontend-plugin-architecture.md": "92b3aedb71d819d9ebfcf65bc472b5638830164c55ded5734033880068b3f5c7",
     "docs/frontend-plugin-auth-tenant-matrix.md": "60c70b8abad4f3d420eb7de0e8ca7fecc9b8901ba94fa43bfb9d2ead846a90e9",
     "docs/frontend-plugin-bff-contract.md": "17a6751d670e110a59bc7e8a0d39714904742784177ce9745803096bcd73c52e",
-    "docs/frontend-plugin-convergence-brief.md": "fcb27ef0ca8eaf092d81027ec67b4aec61f38d37d26db4cd8025dbbb2e0294c0",
+    "docs/frontend-plugin-convergence-brief.md": "eea9708c9a8da20189837309952ef3c30b13522dd39281a139a9a8ca0dfa7bbf",
     "docs/frontend-plugin-installation.md": "bfd5c1b57e6b6d4867b13a9ce51787054cfa91edd5a5124e8ba2c95f02827e58",
     "docs/frontend-plugin-maintainers.md": "ca042e41f827ae4eaaebd242e54b4c0da4596ffb4286ad31383f23baa7c8ecd8",
     "docs/frontend-plugin-platform-implementation-plan.md": "3304e78413d506dae9c316a0c900de7b5d237e27c31885abbfba8893e9f1b37b",
