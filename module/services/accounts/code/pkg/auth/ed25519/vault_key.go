@@ -71,7 +71,7 @@ func LoadKeyFromVault(ctx context.Context, cfg VaultKeyLoaderConfig) (ed25519.Pr
 	if err != nil {
 		return nil, fmt.Errorf("ed25519minter: fetch vault key: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {

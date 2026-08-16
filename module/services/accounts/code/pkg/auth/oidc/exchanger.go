@@ -109,7 +109,7 @@ func (e *Exchanger) Exchange(ctx context.Context, code, redirectURI, codeVerifie
 	if err != nil {
 		return nil, fmt.Errorf("oidc: token endpoint: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {

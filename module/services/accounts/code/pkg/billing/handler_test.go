@@ -137,7 +137,7 @@ func TestHandlerVerifiesAndDurablyQueuesGeneratedExactPayload(t *testing.T) {
 	body := eventBody("evt_queued", "customer.subscription.created")
 
 	response := postEvent(t, server, body)
-	defer response.Body.Close()
+	defer func() { _ = response.Body.Close() }()
 
 	require.Equal(t, http.StatusOK, response.StatusCode)
 	require.Equal(t, "queued", decodeStatus(t, response))
@@ -169,14 +169,14 @@ func TestHandlerAcknowledgesExactDuplicateAndRejectsConflictingReuse(t *testing.
 	original := eventBody("evt_duplicate", "customer.subscription.created")
 
 	first := postEvent(t, server, original)
-	first.Body.Close()
+	_ = first.Body.Close()
 	duplicate := postEvent(t, server, original)
-	defer duplicate.Body.Close()
+	defer func() { _ = duplicate.Body.Close() }()
 	require.Equal(t, http.StatusOK, duplicate.StatusCode)
 	require.Equal(t, "duplicate", decodeStatus(t, duplicate))
 
 	conflict := postEvent(t, server, eventBody("evt_duplicate", "customer.subscription.deleted"))
-	defer conflict.Body.Close()
+	defer func() { _ = conflict.Body.Close() }()
 	require.Equal(t, http.StatusConflict, conflict.StatusCode)
 	require.Equal(t, "event conflict", decodeStatus(t, conflict))
 	require.EqualValues(t, 1, producer.inserts.Load())
@@ -196,7 +196,7 @@ func TestHandlerConcurrentDuplicateDeliveryInsertsOnce(t *testing.T) {
 			defer wait.Done()
 			response := postEvent(t, server, body)
 			statuses <- response.StatusCode
-			response.Body.Close()
+			_ = response.Body.Close()
 		}()
 	}
 	wait.Wait()
@@ -216,7 +216,7 @@ func TestHandlerInvalidSignatureDoesNotTouchJobs(t *testing.T) {
 	request.Header.Set("Stripe-Signature", "t=1,v1=deadbeef")
 	response, err := http.DefaultClient.Do(request)
 	require.NoError(t, err)
-	defer response.Body.Close()
+	defer func() { _ = response.Body.Close() }()
 
 	require.Equal(t, http.StatusBadRequest, response.StatusCode)
 	require.EqualValues(t, 0, producer.inserts.Load())
@@ -228,7 +228,7 @@ func TestHandlerPersistenceFailureReturns500ForStripeRetry(t *testing.T) {
 	server := newTestHandler(t, producer)
 
 	response := postEvent(t, server, eventBody("evt_retry", "invoice.paid"))
-	defer response.Body.Close()
+	defer func() { _ = response.Body.Close() }()
 
 	require.Equal(t, http.StatusInternalServerError, response.StatusCode)
 	require.EqualValues(t, 0, producer.inserts.Load())
@@ -240,7 +240,7 @@ func TestHandlerMissingDurableDispositionReturns500ForStripeRetry(t *testing.T) 
 	server := newTestHandler(t, producer)
 
 	response := postEvent(t, server, eventBody("evt_unspecified", "invoice.paid"))
-	defer response.Body.Close()
+	defer func() { _ = response.Body.Close() }()
 
 	require.Equal(t, http.StatusInternalServerError, response.StatusCode)
 }
@@ -249,7 +249,7 @@ func TestHandlerGETRejected(t *testing.T) {
 	server := newTestHandler(t, newFakeJobProducer())
 	response, err := http.Get(server.URL)
 	require.NoError(t, err)
-	defer response.Body.Close()
+	defer func() { _ = response.Body.Close() }()
 	require.Equal(t, http.StatusMethodNotAllowed, response.StatusCode)
 }
 

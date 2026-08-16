@@ -107,16 +107,16 @@ func NewPostgresStoreFromURL(ctx context.Context, connectionURL string) (*Postgr
 		return nil, w.Wrapf(err, "failed to parse connection string")
 	}
 
-	poolConfig.BeforeAcquire = func(ctx context.Context, conn *pgx.Conn) bool {
+	poolConfig.PrepareConn = func(ctx context.Context, conn *pgx.Conn) (bool, error) {
 		// SET ROLE app_tenant — persists for the life of the user's
 		// hold on this connection. Tx-scoped role assumptions inside
 		// WithControlPlane layer on top and revert on
 		// commit/rollback automatically.
 		if _, err := conn.Exec(ctx, "SET ROLE app_tenant"); err != nil {
-			wool.Get(ctx).In("BeforeAcquire").Debug("SET ROLE app_tenant failed", wool.ErrField(err))
-			return false // reject this connection
+			wool.Get(ctx).In("PrepareConn").Debug("SET ROLE app_tenant failed", wool.ErrField(err))
+			return false, nil // destroy this connection; the query retries on a fresh one
 		}
-		return true
+		return true, nil
 	}
 	poolConfig.AfterRelease = func(conn *pgx.Conn) bool {
 		// Best-effort RESET ROLE before returning to pool, in case a
@@ -169,10 +169,10 @@ func (s *PostgresStore) RunInTransaction(ctx context.Context, fn func(ctx contex
 	}
 
 	// Defer a rollback in case anything fails
-	defer tx.Rollback(ctx)
+	defer func() { _ = tx.Rollback(ctx) }()
 
 	// Create a new context with the transaction
-	txCtx := context.WithValue(ctx, "tx", tx)
+	txCtx := context.WithValue(ctx, "tx", tx) //nolint:staticcheck // shared transaction context key
 
 	// Run the provided function
 	if err := fn(txCtx); err != nil {
@@ -309,7 +309,7 @@ func (s *PostgresStore) RegisterUser(ctx context.Context, user *gen.User, identi
 		if _, err := tx.Exec(ctx, "SET LOCAL ROLE "+controlPlaneDatabaseRole); err != nil {
 			return w.Wrapf(err, "assume control-plane role for registration")
 		}
-		ctx = context.WithValue(ctx, "tx", tx)
+		ctx = context.WithValue(ctx, "tx", tx) //nolint:staticcheck // shared transaction context key
 		executor := s.getQueryExecutor(ctx)
 
 		// First check if this identity already exists
@@ -413,7 +413,7 @@ func (s *PostgresStore) LinkIdentity(ctx context.Context, userUUID string, ident
 	return pgx.BeginTxFunc(ctx, s.pool, pgx.TxOptions{
 		IsoLevel: pgx.Serializable,
 	}, func(tx pgx.Tx) error {
-		ctx = context.WithValue(ctx, "tx", tx)
+		ctx = context.WithValue(ctx, "tx", tx) //nolint:staticcheck // shared transaction context key
 		executor := s.getQueryExecutor(ctx)
 
 		// Check if identity already exists

@@ -103,7 +103,7 @@ func (v *TurnstileVerifier) Verify(ctx context.Context, challenge Challenge) err
 	if err != nil {
 		return fmt.Errorf("abuse: verify Turnstile challenge: %w", err)
 	}
-	defer response.Body.Close()
+	defer func() { _ = response.Body.Close() }()
 	body, err := io.ReadAll(io.LimitReader(response.Body, 64*1024))
 	if err != nil {
 		return fmt.Errorf("abuse: read Turnstile response: %w", err)

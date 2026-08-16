@@ -1,5 +1,6 @@
 import { readdirSync, readFileSync } from "node:fs";
 import { withSentryConfig } from "@sentry/nextjs";
+import { getCurrentFixture } from "codefly";
 import { resolveAccountsBindings } from "./server/accounts-bindings.mjs";
 
 const workspacePackageNames = readdirSync(
@@ -23,10 +24,36 @@ const workspacePackageNames = readdirSync(
 		}
 	});
 
+// Legal placeholders (see src/lib/legal-config.ts) are a DEV-ONLY affordance:
+// they keep the required terms gate usable in the local fixture stack, which
+// ships no operator legal content. The trigger must be SAFE-BY-DEFAULT — a real
+// deploy that forgets to configure content must fall to the closed gate, never
+// silently ship placeholder terms.
+//
+// Codefly's fixture selection is that boundary: `--fixture <name>` (and the E2E
+// runner) set the current fixture; a real deploy never runs under one. We surface
+// it to the browser bundle as NEXT_PUBLIC_LEGAL_DEV_PLACEHOLDER, because
+// NEXT_PUBLIC_* vars are inlined at BUILD time and the fixture is not itself a
+// NEXT_PUBLIC_ var. An explicit NEXT_PUBLIC_LEGAL_DEV_PLACEHOLDER in the
+// environment still wins, so operators can force either state.
+function fixtureActive() {
+	return getCurrentFixture().trim() !== "";
+}
+
+const legalDevPlaceholder =
+	process.env.NEXT_PUBLIC_LEGAL_DEV_PLACEHOLDER ??
+	(fixtureActive() ? "true" : "");
+
 /** @type {import('next').NextConfig} */
 const nextConfig = {
 	output: "standalone",
 	reactCompiler: true,
+	// Inlined into client + server bundles at build time; read by legal-config.ts
+	// to decide whether dev legal placeholders apply. Default derives from the
+	// fixture boundary above, so real deploys stay safe-by-default.
+	env: {
+		NEXT_PUBLIC_LEGAL_DEV_PLACEHOLDER: legalDevPlaceholder,
+	},
 	// Product plugins are additive packages/* workspaces. Discover them instead
 	// of requiring each consumer to mutate this protected host config; packages
 	// that expose TypeScript under the development condition then participate in

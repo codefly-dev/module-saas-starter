@@ -239,15 +239,6 @@ func buildRPCList() []*gen.RPCInfo {
 	return out
 }
 
-func lastDot(s string) int {
-	for i := len(s) - 1; i >= 0; i-- {
-		if s[i] == '.' {
-			return i
-		}
-	}
-	return -1
-}
-
 // callerIsAuthenticated reads the wool ctx for a stamped UserAuthID.
 // The auth interceptor (gRPC + Connect) populates it after token
 // validation. Empty / missing → unauthenticated.

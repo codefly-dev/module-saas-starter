@@ -60,7 +60,7 @@ services:
       kind: grpc
       name: APIKey
 `))
-	require.ErrorContains(t, err, "missing catalog service")
+	require.ErrorContains(t, err, "missing Connect binding for catalog service")
 
 	bindings := string(readFixture(t, "../adapters/connect_bindings.yaml"))
 	unsafeExpression := strings.Replace(bindings, "name: APIKey", "name: APIKey()", 1)

@@ -10,7 +10,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 	"golang.org/x/net/http2"
-	"golang.org/x/net/http2/h2c"
+	"golang.org/x/net/http2/h2c" //nolint:staticcheck // SA1019: h2c drives cleartext HTTP/2 for this multiplexing test; migration tracked with the generated listeners
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/credentials/insecure"
@@ -41,7 +41,7 @@ func TestPrivateRESTListenerMultiplexesInternalGRPC(t *testing.T) {
 	})
 	lis, err := net.Listen("tcp", "127.0.0.1:0")
 	require.NoError(t, err)
-	server := &http.Server{Handler: h2c.NewHandler(multiplexInternalGRPC(internal, fallback), &http2.Server{})}
+	server := &http.Server{Handler: h2c.NewHandler(multiplexInternalGRPC(internal, fallback), &http2.Server{})} //nolint:staticcheck // SA1019: cleartext HTTP/2 test server
 	go func() { _ = server.Serve(lis) }()
 	t.Cleanup(func() {
 		_ = server.Shutdown(context.Background())

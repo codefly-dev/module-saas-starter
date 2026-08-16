@@ -77,6 +77,9 @@ func TestGeneratedRESTSurfaceAndExtensions(t *testing.T) {
 	require.Len(t, all, 138)
 	matcher := NewRouteMatcher(all, nil)
 	require.NotNil(t, matcher.MatchREST(http.MethodGet, "/v1/audit-export/org-1"))
+	require.NotNil(t, matcher.MatchREST(http.MethodPost, "/v1/platform/jobs/job-123:replay"))
+	require.Nil(t, matcher.MatchREST(http.MethodPost, "/v1/platform/jobs/:replay"))
+	require.Nil(t, matcher.MatchREST(http.MethodPost, "/v1/platform/jobs/job-123:other"))
 	require.NotNil(t, matcher.MatchREST(http.MethodPost, "/v1/auth/magic-link"))
 	require.Nil(t, matcher.MatchREST(http.MethodPost, "/v1/permissions:check"))
 }

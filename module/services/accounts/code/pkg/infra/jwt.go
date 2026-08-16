@@ -64,7 +64,7 @@ func NewTokenService(ctx context.Context) (*TokenService, error) {
 	if err != nil {
 		return nil, w.Wrapf(err, "cannot fetch JWT key from vault")
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	body, _ := io.ReadAll(resp.Body)
 	if resp.StatusCode != 200 {

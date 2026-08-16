@@ -60,7 +60,7 @@ func (v *VaultClient) Health(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	// Vault docs: 200 standby/active OK, 429 standby (still up),
 	// 472/473 disaster-recovery secondary. Anything else = unhealthy.
 	switch resp.StatusCode {
@@ -186,7 +186,7 @@ func (v *VaultClient) request(ctx context.Context, method, path, body string) (m
 	if err != nil {
 		return nil, err
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	respBody, _ := io.ReadAll(resp.Body)
 
