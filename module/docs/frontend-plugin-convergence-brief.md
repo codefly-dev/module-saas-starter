@@ -53,7 +53,9 @@ Read before changing the plugin boundary:
 9. Backend authorization is authoritative. Presentation access is evaluated by
    one host policy across routes, navigation, widgets, commands, and tiles.
 10. Plugins are trusted compile-time dependencies. Runtime remote JavaScript is
-   not part of this platform.
+   not part of the starter SDK; ADR-0002 scopes this to the trusted compile-time
+   tier and places a vetted first-party Module Federation tier at the consumer
+   boundary.
 11. The generic Next.js service agent supplies the workspace-capable Next.js
    substrate. SaaS Starter remains the only source of truth for the SaaS plugin
    SDK, host shell, composition, BFF, and product installation contract.
