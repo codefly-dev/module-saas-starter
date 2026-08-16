@@ -71,6 +71,10 @@ const UNSUPPORTED_PUBLIC_CLAIMS = [
   ["unverified customer endorsement", /\btrusted by teams shipping\b/i],
   ["unsupported assurance path", /\bSOC ?2\s*\/\s*enterprise-compliant path\b/i],
   ["unverified audit immutability", /\btamper-evident copy outside the platform\b/i],
+  [
+    "direct application OTLP endpoint",
+    /\bapplications?\s+(?:continue\s+to\s+)?send\s+OTLP\s+(?:through|via)\b[\s\S]{0,80}\bOTEL_EXPORTER_OTLP_ENDPOINT\b/i,
+  ],
 ];
 
 // Directory names pruned wholesale (build output, deps, VCS) and per-file patterns that are

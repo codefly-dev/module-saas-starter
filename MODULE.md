@@ -10,6 +10,7 @@ A codefly **module** is a collection of **services**; each service owns its own 
 
 - Runnable local product with real identity: [LOCAL_DOGFOODING.md](./LOCAL_DOGFOODING.md)
 - External-provider bootstrap scripts: [scripts/setup/README.md](./scripts/setup/README.md)
+- SigNoz dashboard/alert provisioning qualification: [module/SIGNOZ_PROVISIONING.md](./module/SIGNOZ_PROVISIONING.md)
 - accounts service introspection (after `codefly run`): `GET /v1/.well-known/service-info`
 - Connect-RPC: `saas.accounts.v1.IntrospectionService/GetServiceInfo`
 - Code: `pkg/business/introspection.go`

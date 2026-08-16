@@ -309,8 +309,13 @@ test("rejects unsupported promises in customer-visible source", (t) => {
       ];
     }\n`,
   );
+  writeFileSync(
+    join(root, "OBSERVABILITY.md"),
+    "Applications continue to\nsend OTLP through OTEL_EXPORTER_OTLP_ENDPOINT.\n",
+  );
 
   const errors = productionTruthErrors(root);
+  assert.ok(errors.includes("OBSERVABILITY.md: unsupported direct application OTLP endpoint"));
   for (const claim of [
     "unsupported fixed backup retention",
     "unsupported production readiness",
