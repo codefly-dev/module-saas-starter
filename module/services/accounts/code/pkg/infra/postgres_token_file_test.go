@@ -60,3 +60,42 @@ func TestTokenFileBeforeConnectMissingFileFailsLoud(t *testing.T) {
 	err = tokenFileBeforeConnect()(context.Background(), connConfig)
 	require.Error(t, err)
 }
+
+func TestTokenFileBeforeConnectHonorsContextCancellation(t *testing.T) {
+	tokenPath := filepath.Join(t.TempDir(), "token")
+	require.NoError(t, os.WriteFile(tokenPath, []byte("token"), 0o600))
+	t.Setenv(databaseTokenFileEnv, tokenPath)
+
+	connConfig, err := pgx.ParseConfig("postgresql://app:embedded@localhost:5432/db?sslmode=disable")
+	require.NoError(t, err)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	err = tokenFileBeforeConnect()(ctx, connConfig)
+	require.ErrorIs(t, err, context.Canceled,
+		"a cancelled connection attempt must not block on the token read")
+	require.Equal(t, "embedded", connConfig.Password,
+		"a cancelled read must not partially apply a password")
+}
+
+// configureConnection is the single seam that attaches the rotation hook to
+// every pool; assert the wiring itself, since the hook's own behavior is covered
+// above but a dropped assignment would silently disable rotation.
+func TestConfigureConnectionWiresHookWhenConfigured(t *testing.T) {
+	t.Setenv(databaseTokenFileEnv, filepath.Join(t.TempDir(), "token"))
+
+	config, err := configureConnection("postgresql://app:pw@localhost:5432/db?sslmode=disable", tokenFileBeforeConnect())
+	require.NoError(t, err)
+	require.NotNil(t, config.BeforeConnect,
+		"a configured token file must reach the pool as a BeforeConnect hook")
+}
+
+func TestConfigureConnectionHasNoHookWhenUnset(t *testing.T) {
+	t.Setenv(databaseTokenFileEnv, "")
+
+	config, err := configureConnection("postgresql://app:pw@localhost:5432/db?sslmode=disable", tokenFileBeforeConnect())
+	require.NoError(t, err)
+	require.Nil(t, config.BeforeConnect,
+		"local password mode must leave the pool without a connection hook")
+}
