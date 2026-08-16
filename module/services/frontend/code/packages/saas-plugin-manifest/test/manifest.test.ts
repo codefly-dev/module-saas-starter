@@ -233,4 +233,119 @@ describe("plugin manifest validation", () => {
 			/Invalid frontend plugin composition/,
 		);
 	});
+
+	it("allows one handler to serve multiple event types", () => {
+		const manifest = validManifest();
+		manifest.events = {
+			subscribes: [
+				{ type: "identity.user.created.v1", handler: "sync" },
+				{ type: "identity.user.deleted.v1", handler: "sync" },
+			],
+		};
+		expect(() => assertPluginManifest(manifest)).not.toThrow();
+	});
+
+	it("rejects subscribing to the same event type twice", () => {
+		expectRejected((manifest) => {
+			manifest.events = {
+				subscribes: [
+					{ type: "identity.user.created.v1", handler: "a" },
+					{ type: "identity.user.created.v1", handler: "b" },
+				],
+			};
+		});
+	});
+
+	it("allows exposing and consuming multiple majors of one contract", () => {
+		const manifest = validManifest();
+		manifest.api = {
+			exposes: [
+				{ contract: "guardrails", major: 1, protocols: ["rest"] },
+				{ contract: "guardrails", major: 2, protocols: ["rest"] },
+			],
+			consumes: [
+				{ contract: "accounts", major: 1 },
+				{ contract: "accounts", major: 2 },
+			],
+		};
+		expect(() => assertPluginManifest(manifest)).not.toThrow();
+	});
+
+	it("rejects an identical contract and major twice", () => {
+		expectRejected((manifest) => {
+			manifest.api = {
+				exposes: [
+					{ contract: "guardrails", major: 1, protocols: ["rest"] },
+					{ contract: "guardrails", major: 1, protocols: ["connect"] },
+				],
+			};
+		});
+	});
+
+	it("allows the same egress host on different ports", () => {
+		const manifest = validManifest();
+		manifest.egress = [
+			{ host: "api.example.com", ports: [443] },
+			{ host: "api.example.com", ports: [8443] },
+		];
+		expect(() => assertPluginManifest(manifest)).not.toThrow();
+	});
+
+	it("rejects a duplicate egress host and port set", () => {
+		expectRejected((manifest) => {
+			manifest.egress = [
+				{ host: "api.example.com", ports: [443] },
+				{ host: "api.example.com" },
+			];
+		});
+	});
+
+	it("accepts a config default whose type matches", () => {
+		const manifest = validManifest();
+		manifest.config = [
+			{ key: "THRESHOLD", type: "int", default: 5 },
+			{ key: "ENABLED", type: "bool", default: true },
+			{ key: "LABEL", type: "string", default: "x" },
+		];
+		expect(() => assertPluginManifest(manifest)).not.toThrow();
+	});
+
+	it("rejects a config default whose type does not match", () => {
+		expectRejected((manifest) => {
+			manifest.config = [{ key: "THRESHOLD", type: "int", default: "five" }];
+		});
+	});
+
+	it("rejects a plaintext default on a secret config key", () => {
+		expectRejected((manifest) => {
+			manifest.config = [
+				{ key: "TOKEN", type: "string", secret: true, default: "hunter2" },
+			];
+		});
+	});
+
+	it("rejects an integrity block with neither signature nor artifacts", () => {
+		expectRejected((manifest) => {
+			manifest.integrity = {};
+		});
+	});
+
+	it("rejects an empty integrity artifacts array", () => {
+		expectRejected((manifest) => {
+			manifest.integrity = { artifacts: [] };
+		});
+	});
+
+	it("freezes the manifest returned by the factories", () => {
+		const manifest = loadPluginManifest(validManifest());
+		expect(Object.isFrozen(manifest)).toBe(true);
+		expect(Object.isFrozen(manifest.needs)).toBe(true);
+		expect(() => {
+			(manifest.needs as unknown as { capability: string }[]).push({
+				capability: "x:y",
+			});
+		}).toThrow();
+		const defined = definePluginManifest(validManifest());
+		expect(Object.isFrozen(defined.permissions?.[0])).toBe(true);
+	});
 });

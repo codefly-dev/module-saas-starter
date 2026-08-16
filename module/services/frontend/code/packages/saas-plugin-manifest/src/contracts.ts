@@ -125,6 +125,8 @@ export interface PluginConfigKey {
 	required?: boolean;
 	/** Marks a value that must be delivered as a secret, never in plain config. */
 	secret?: boolean;
+	/** Default applied when unset; its runtime type must match `type`. */
+	default?: string | number | boolean;
 	description?: string;
 }
 

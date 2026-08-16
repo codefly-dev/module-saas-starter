@@ -27,7 +27,7 @@ describe("reference plugin.codefly.yaml", () => {
 
 		expect(spec.apiVersion).toBe(SOLUTION_SPEC_API_VERSION);
 		expect(spec.kind).toBe("Solution");
-		expect(spec.metadata).toEqual(manifest.metadata);
+		expect(spec.metadata).toBe(manifest.metadata);
 		expect(spec.services).toBe(manifest.services);
 		expect(spec.api).toBe(manifest.api);
 		expect(spec.events).toBe(manifest.events);
@@ -35,6 +35,9 @@ describe("reference plugin.codefly.yaml", () => {
 		expect(spec.needs).toBe(manifest.needs);
 		expect(spec.permissions).toBe(manifest.permissions);
 		expect(spec.lifecycle).toBe(manifest.lifecycle);
+		// The spec shares the manifest's arrays; the manifest is frozen, so a
+		// consumer cannot mutate one through the other.
+		expect(Object.isFrozen(spec.services)).toBe(true);
 	});
 
 	it("carries starter-only sections through the x-codefly extension", () => {

@@ -92,6 +92,10 @@ config:
   - key: GUARDRAILS_REVIEW_WEBHOOK
     type: url
     required: false
+  - key: GUARDRAILS_MODE
+    type: string
+    default: balanced
+    description: Enforcement mode applied when a tenant sets none.
   - key: GUARDRAILS_SIGNING_KEY
     type: string
     required: true

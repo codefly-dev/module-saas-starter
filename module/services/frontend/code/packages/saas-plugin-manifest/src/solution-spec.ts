@@ -93,7 +93,7 @@ export function toSolutionSpec(manifest: PluginManifest): SolutionSpec {
 	const spec: SolutionSpec = {
 		apiVersion: SOLUTION_SPEC_API_VERSION,
 		kind: "Solution",
-		metadata: { ...manifest.metadata },
+		metadata: manifest.metadata,
 	};
 	if (nonEmpty(manifest.services)) spec.services = manifest.services;
 	if (

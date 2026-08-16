@@ -30,6 +30,15 @@ function assertManifest(
 	if (!condition) throw new Error(`Invalid plugin manifest: ${message}`);
 }
 
+function deepFreeze<T>(value: T): T {
+	if (value !== null && typeof value === "object" && !Object.isFrozen(value)) {
+		Object.freeze(value);
+		for (const key of Object.keys(value))
+			deepFreeze((value as Record<string, unknown>)[key]);
+	}
+	return value;
+}
+
 const LOGICAL_ID = /^[a-z][a-z0-9]*(?:[._-][a-z0-9]+)*$/;
 const NAMESPACED_ID = /^[a-z][a-z0-9._-]*(?::[a-z][a-z0-9._-]*)*$/;
 const SEMVER =
@@ -263,7 +272,7 @@ function validateConfigKey(value: unknown): asserts value is PluginConfigKey {
 	assertManifest(isObject(value), "config key must be an object");
 	assertExactKeys(
 		value,
-		["key", "type", "required", "secret", "description"],
+		["key", "type", "required", "secret", "default", "description"],
 		"config key",
 	);
 	assertManifest(
@@ -282,6 +291,23 @@ function validateConfigKey(value: unknown): asserts value is PluginConfigKey {
 		value.secret === undefined || typeof value.secret === "boolean",
 		`config key '${String(value.key)}' secret must be a boolean`,
 	);
+	if (value.default !== undefined) {
+		assertManifest(
+			value.secret !== true,
+			`config key '${String(value.key)}' is secret and cannot declare a plaintext default`,
+		);
+		const type = value.type as (typeof CONFIG_TYPES)[number];
+		const matches =
+			type === "int"
+				? Number.isSafeInteger(value.default)
+				: type === "bool"
+					? typeof value.default === "boolean"
+					: typeof value.default === "string";
+		assertManifest(
+			matches,
+			`config key '${String(value.key)}' default does not match type '${type}'`,
+		);
+	}
 	assertOptionalDescription(value.description, "config key");
 }
 
@@ -372,6 +398,10 @@ function validateLifecycle(value: unknown): asserts value is PluginLifecycle {
 function validateIntegrity(value: unknown): void {
 	assertManifest(isObject(value), "integrity must be an object");
 	assertExactKeys(value, ["signature", "artifacts"], "integrity");
+	assertManifest(
+		value.signature !== undefined || value.artifacts !== undefined,
+		"integrity must declare a signature or artifacts",
+	);
 	if (value.signature !== undefined) {
 		const signature = value.signature;
 		assertManifest(
@@ -389,6 +419,10 @@ function validateIntegrity(value: unknown): void {
 	}
 	if (value.artifacts !== undefined) {
 		assertArray(value.artifacts, "integrity artifacts");
+		assertManifest(
+			value.artifacts.length > 0,
+			"integrity artifacts cannot be empty",
+		);
 		for (const artifact of value.artifacts) {
 			assertManifest(
 				isObject(artifact),
@@ -503,8 +537,8 @@ export function assertPluginManifest(
 				value.api.exposes,
 				"api exposes",
 				validateExpose,
-				(expose) => expose.contract,
-				"api expose contract",
+				(expose) => `${expose.contract}@${expose.major}`,
+				"api expose contract major",
 			);
 		}
 		if (value.api.consumes !== undefined) {
@@ -512,8 +546,8 @@ export function assertPluginManifest(
 				value.api.consumes,
 				"api consumes",
 				validateConsume,
-				(consume) => consume.contract,
-				"api consume contract",
+				(consume) => `${consume.contract}@${consume.major}`,
+				"api consume contract major",
 			);
 		}
 	}
@@ -535,8 +569,8 @@ export function assertPluginManifest(
 				value.events.subscribes,
 				"events subscribes",
 				validateSubscription,
-				(event) => event.handler,
-				"event subscription handler",
+				(event) => event.type,
+				"subscribed event type",
 			);
 		}
 	}
@@ -598,8 +632,9 @@ export function assertPluginManifest(
 			value.egress,
 			"egress",
 			validateEgress,
-			(rule) => rule.host,
-			"egress host",
+			(rule) =>
+				`${rule.host}:${[...(rule.ports ?? [443])].sort((a, b) => a - b).join(",")}`,
+			"egress rule",
 		);
 	}
 
@@ -613,7 +648,7 @@ export function assertPluginManifest(
  */
 export function loadPluginManifest(value: unknown): PluginManifest {
 	assertPluginManifest(value);
-	return value;
+	return deepFreeze(value);
 }
 
 /**
@@ -624,5 +659,5 @@ export function definePluginManifest<const Manifest extends PluginManifest>(
 	manifest: Manifest,
 ): Manifest {
 	assertPluginManifest(manifest);
-	return manifest;
+	return deepFreeze(manifest);
 }
