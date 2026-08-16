@@ -309,6 +309,10 @@ test("rejects unsupported promises in customer-visible source", (t) => {
       ];
     }\n`,
   );
+  writeFileSync(
+    join(root, "OBSERVABILITY.md"),
+    "Applications continue to\nsend OTLP through OTEL_EXPORTER_OTLP_ENDPOINT.\n",
+  );
 
   const errors = productionTruthErrors(root);
   for (const claim of [
@@ -317,6 +321,7 @@ test("rejects unsupported promises in customer-visible source", (t) => {
     "unverified customer endorsement",
     "unsupported assurance path",
     "unverified audit immutability",
+    "direct application OTLP endpoint",
   ]) {
     assert.ok(errors.some((error) => error.includes(claim)));
   }
