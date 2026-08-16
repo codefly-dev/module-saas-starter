@@ -11,7 +11,7 @@ import {
 import { acquisitionMode, siteConfig } from "@/config/site";
 import {
   catalogDisplayState,
-  formatPlanAmount,
+  formatPlanPrice,
   loadPublicPlans,
   type PublicPlan,
 } from "@/lib/catalog";
@@ -456,6 +456,7 @@ function PlanCard({
   locale: string;
   plan: PublicPlan;
 }) {
+  const price = formatPlanPrice(plan, locale);
   const staticHandoff = plan.contactSales
     ? !siteConfig.contacts.sales.endsWith(".invalid")
       ? `mailto:${siteConfig.contacts.sales}?subject=${encodeURIComponent(`${plan.name} plan`)}`
@@ -471,12 +472,8 @@ function PlanCard({
           {plan.fixture ? <span className="tag">Development fixture</span> : null}
         </div>
         <p className="price">
-          {formatPlanAmount(plan, locale)}
-          {plan.amountMinor !== null &&
-          plan.amountMinor > 0 &&
-          plan.interval !== "contact" ? (
-            <small> / {plan.interval}</small>
-          ) : null}
+          {price.label}
+          {price.interval ? <small> / {price.interval}</small> : null}
         </p>
       </div>
       <p>{plan.description}</p>
