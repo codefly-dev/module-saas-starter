@@ -17,7 +17,7 @@ Generation consumes:
 
 - the installed module's declared service inventory and deployment topology;
 - each declared environment's cluster kind, namespace, and exact ingress routes;
-- explicit AWS managed-service endpoints, network CIDRs, and external secret
+- explicit managed-service endpoints, network CIDRs, and external secret
   references.
 
 Any `gitops:` publication block still present in a migrated workspace is
@@ -48,14 +48,14 @@ repository, revision, or Argo resource.
         {"name": "product", "service": "forge-edge", "endpoint": "rest", "port": 8080, "hosts": ["app.example.com"]}
       ],
       "managedServiceHandoffs": [
-        {"service": "store", "awsKind": "rds-postgresql", "externalName": "store.internal.example.com"}
+        {"service": "store", "kind": "rds-postgresql", "externalName": "store.internal.example.com"}
       ]
     }
   ]
 }
 ```
 
-Managed AWS services drop out of the in-cluster `services` list and appear as
+Managed services drop out of the in-cluster `services` list and appear as
 handoffs instead. Generation rejects unsupported cluster kinds, undeclared or
 duplicate environments, managed services that are not declared module services,
 and any object outside the module-owned apiVersion allowlist (a boundary test
@@ -123,31 +123,32 @@ renders module-owned baseline resources (namespace, quotas, NetworkPolicies,
 mTLS, handoffs) without a Gateway/VirtualService, and its bundle entry records
 an empty ingress list.
 
-## AWS handoffs
+## Managed-service handoffs
 
-EKS environments declare each module-owned managed service under
-`managed-services`. The module generates an `ExternalName` Service and
-topology-derived egress policy. Optional `secret-references` generate
-ExternalSecret objects containing only provider keys and SecretStore
-references:
+Managed-capable environments — `eks` on AWS and `aks` on Azure — declare each
+module-owned managed service under `managed-services`. The module generates an
+`ExternalName` Service and topology-derived egress policy. Optional
+`secret-references` generate ExternalSecret objects containing only provider
+keys and SecretStore references. Supported `kind` values are `elasticache`,
+`rds-postgresql`, `s3`, `secrets-manager`, and `azure-postgres-flexible`:
 
 ```yaml
 managed-services:
   store:
-    kind: rds-postgresql
-    external-name: identity.cluster.example.com
+    kind: azure-postgres-flexible
+    external-name: identity.postgres.database.azure.com
     egress-cidrs:
       - 10.42.0.0/24
     secret-references:
       - name: store-runtime
         remote-key: products/identity/store
         secret-store:
-          name: aws-secrets-manager
+          name: azure-key-vault
           kind: ClusterSecretStore
 ```
 
-No AWS behavior is added to the generic Postgres, Redis, S3, or Vault service
-plugins.
+No cloud-provider behavior is added to the generic Postgres, Redis, S3, or
+Vault service plugins.
 
 The installed Starter topology includes an independently deployable marketing
 service. Local hosts and production domains belong to the consumer's

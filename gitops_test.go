@@ -867,6 +867,57 @@ func TestManagedHandoffUsesExternalReferencesWithoutSecretValues(t *testing.T) {
 	}
 }
 
+func TestAKSEnvironmentRendersAzureManagedHandoff(t *testing.T) {
+	t.Parallel()
+	root, moduleDir := writeModuleFixture(t, "handoff-control", "identity", []string{"accounts", "store"})
+	workspace, err := loadWorkspaceManifest(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	workspace.Environments[1].Cluster.Kind = "aks"
+	workspace.Environments[1].ManagedServices["store"] = managedServiceConfig{
+		Kind:         "azure-postgres-flexible",
+		ExternalName: "store.postgres.database.azure.com",
+		EgressCIDRs:  []string{"10.42.0.0/24"},
+	}
+	if err := generateDeploymentBundle(moduleDir, workspace); err != nil {
+		t.Fatal(err)
+	}
+
+	var bundle moduleBundle
+	data, err := os.ReadFile(filepath.Join(moduleDir, filepath.FromSlash(bundleRelativeDir), "bundle.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := json.Unmarshal(data, &bundle); err != nil {
+		t.Fatal(err)
+	}
+	aks := bundle.Environments[1]
+	if aks.Cluster != "aks" {
+		t.Fatalf("aks bundle cluster = %q, want aks", aks.Cluster)
+	}
+	if len(aks.ManagedServiceHandoffs) != 1 ||
+		aks.ManagedServiceHandoffs[0].Service != "store" ||
+		aks.ManagedServiceHandoffs[0].Kind != "azure-postgres-flexible" {
+		t.Fatalf("aks managed handoffs = %#v", aks.ManagedServiceHandoffs)
+	}
+	if slices.Contains(aks.Services, "store") {
+		t.Fatalf("managed store must not appear as an in-cluster workload: %v", aks.Services)
+	}
+
+	handoff, err := os.ReadFile(filepath.Join(
+		moduleDir,
+		filepath.FromSlash(bundleRelativeDir),
+		"overlays/aws/base/handoffs/store.yaml",
+	))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(handoff), "externalName: store.postgres.database.azure.com") {
+		t.Fatalf("azure handoff is missing its ExternalName Service:\n%s", handoff)
+	}
+}
+
 func TestReplaceGeneratedTreeRestoresPreviousTreeOnInstallFailure(t *testing.T) {
 	t.Parallel()
 	parent := t.TempDir()

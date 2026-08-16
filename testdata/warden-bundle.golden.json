@@ -54,22 +54,22 @@
       "managedServiceHandoffs": [
         {
           "service": "cache",
-          "awsKind": "elasticache",
+          "kind": "elasticache",
           "externalName": "cache.internal.example.com"
         },
         {
           "service": "object-storage",
-          "awsKind": "s3",
+          "kind": "s3",
           "externalName": "object-storage.internal.example.com"
         },
         {
           "service": "store",
-          "awsKind": "rds-postgresql",
+          "kind": "rds-postgresql",
           "externalName": "store.internal.example.com"
         },
         {
           "service": "vault",
-          "awsKind": "secrets-manager",
+          "kind": "secrets-manager",
           "externalName": "vault.internal.example.com"
         }
       ]
