@@ -478,7 +478,7 @@
     "services/accounts/code/pkg/infra/postgres.go": "83062e23874abd489be8379822abee3f42edffb42c31dba56fedffcaae7749e4",
     "services/accounts/code/pkg/infra/postgres_acquisition_journey_test.go": "6a7c83f61b895ceca7b30b80bb1a0091477dd013d3121ff2c48c3f0253c7fbf8",
     "services/accounts/code/pkg/infra/postgres_analytics_deliveries.go": "d04b9ad9585dcd3606aee5b95704f18d03cf94832c8642aadc408b3acfc9ce72",
-    "services/accounts/code/pkg/infra/postgres_analytics_test.go": "9eeabf4f47945f44a840f2c5d8193edcb46cc74fc278ca5ce5a75857f1c68582",
+    "services/accounts/code/pkg/infra/postgres_analytics_test.go": "f2adb94580ae1f5d0366283965bfecbee8ad7f9ae1591aa62fa826c47616d491",
     "services/accounts/code/pkg/infra/postgres_api_keys.go": "5c52eb4bbc970989de061f6d239293303bbd0fc338f673ee560e5d2c819a16b2",
     "services/accounts/code/pkg/infra/postgres_audit.go": "58f9aee9d69489d53ff9f4e5373d2f7cf672f9c8b8e773a159fe7ecea02a76b1",
     "services/accounts/code/pkg/infra/postgres_audit_export.go": "20ea0a9be5c279e166cb13caf7953a4f3742ff5cffd0f15b4637abec85f91dea",
