@@ -8,7 +8,7 @@ import (
 // applyGeneratedAuthorizationMetadata joins a route to the method policy
 // projection. Descriptor routes fail closed on a missing join. Unknown
 // non-protobuf REST extensions retain their explicit extension policy.
-func applyGeneratedAuthorizationMetadata(entry *RouteEntry, authz map[string]generatedAuthorizationMetadata) error {
+func applyGeneratedAuthorizationMetadata(entry *RouteEntry, authz *authorizationCatalog) error {
 	if entry == nil {
 		return fmt.Errorf("route entry is nil")
 	}
@@ -22,9 +22,33 @@ func applyGeneratedAuthorizationMetadata(entry *RouteEntry, authz map[string]gen
 		}
 		descriptorRESTRoute = true
 	}
-	metadata, ok := authz[procedure]
+	metadata, ok := authz.methods[procedure]
 	if !ok {
 		return fmt.Errorf("generated authorization metadata is missing for %q", procedure)
+	}
+	if entry.hasArtifactExposure && entry.artifactExposure != metadata.exposure {
+		return fmt.Errorf(
+			"route artifact exposure %s disagrees with authorization exposure %s for %q",
+			entry.artifactExposure,
+			metadata.exposure,
+			procedure,
+		)
+	}
+	if entry.artifactUpstream != nil {
+		owner, ok := authz.owners[procedure]
+		if !ok {
+			return fmt.Errorf("authorization metadata owner is missing for runtime route %q", procedure)
+		}
+		if owner.Module != entry.artifactUpstream.Module || owner.Service != entry.artifactUpstream.Service {
+			return fmt.Errorf(
+				"route artifact owner %s/%s disagrees with authorization owner %s/%s for %q",
+				entry.artifactUpstream.Module,
+				entry.artifactUpstream.Service,
+				owner.Module,
+				owner.Service,
+				procedure,
+			)
+		}
 	}
 	if metadata.exposure == edgeExposureInternal {
 		return fmt.Errorf("internal procedure %q cannot be exposed at the public edge", procedure)

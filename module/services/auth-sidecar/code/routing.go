@@ -42,6 +42,9 @@ type RouteEntry struct {
 	RateLimitBackendFailClosed  bool               // preserve the security budget when the limiter backend fails
 	AuthenticationFactorAttempt bool               // use the dedicated per-client-IP login-factor budget
 	PolicySHA256                string             // stable fingerprint of the complete method policy
+	artifactUpstream            *routeArtifactUpstream
+	artifactExposure            edgeExposure
+	hasArtifactExposure         bool
 }
 
 // RouteMatcher provides fast lookups against the loaded route config.
@@ -159,6 +162,35 @@ func (m *RouteMatcher) RequiredServices() []string {
 	return out
 }
 
+// RequiredArtifactUpstreams returns the typed Codefly endpoint identities
+// carried by runtime-loaded routes. Compiled and explicit extension routes keep
+// using their existing statically resolved upstreams.
+func (m *RouteMatcher) RequiredArtifactUpstreams() []routeArtifactUpstream {
+	byKey := make(map[string]routeArtifactUpstream)
+	for _, routes := range m.restRoutes {
+		for _, route := range routes {
+			if route.entry.artifactUpstream != nil {
+				byKey[route.entry.artifactUpstream.Key] = *route.entry.artifactUpstream
+			}
+		}
+	}
+	for _, entry := range m.connectRoutes {
+		if entry.artifactUpstream != nil {
+			byKey[entry.artifactUpstream.Key] = *entry.artifactUpstream
+		}
+	}
+	keys := make([]string, 0, len(byKey))
+	for key := range byKey {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+	result := make([]routeArtifactUpstream, 0, len(keys))
+	for _, key := range keys {
+		result = append(result, byKey[key])
+	}
+	return result
+}
+
 // MatchREST looks up a REST route by HTTP method and path.
 func (m *RouteMatcher) MatchREST(method, path string) *RouteEntry {
 	method = strings.ToUpper(method)
@@ -207,8 +239,8 @@ func matchSegments(pattern, request []string) bool {
 		return false
 	}
 	for i := range pattern {
-		if isParam(pattern[i]) {
-			if request[i] == "" {
+		if suffix, ok := paramSegmentSuffix(pattern[i]); ok {
+			if len(request[i]) <= len(suffix) || !strings.HasSuffix(request[i], suffix) {
 				return false
 			}
 			continue
@@ -221,7 +253,19 @@ func matchSegments(pattern, request []string) bool {
 }
 
 func isParam(segment string) bool {
-	return len(segment) > 2 && segment[0] == '{' && segment[len(segment)-1] == '}'
+	suffix, ok := paramSegmentSuffix(segment)
+	return ok && suffix == ""
+}
+
+func paramSegmentSuffix(segment string) (string, bool) {
+	if len(segment) <= 2 || segment[0] != '{' {
+		return "", false
+	}
+	closing := strings.IndexByte(segment, '}')
+	if closing <= 1 {
+		return "", false
+	}
+	return segment[closing+1:], true
 }
 
 // authMode returns "public" or "required" based on the entry's Protected field.

@@ -14,7 +14,6 @@ package main
 // generator owns the deep policy validation and the policy fingerprint.
 
 import (
-	"bytes"
 	"encoding/json"
 	"fmt"
 	"log"
@@ -51,9 +50,10 @@ type authzMethodsDocument struct {
 }
 
 type authzMethodItem struct {
-	Procedure    string           `json:"procedure"`
-	Policy       *authzEdgePolicy `json:"policy"`
-	PolicySHA256 string           `json:"policy_sha256"`
+	Procedure    string             `json:"procedure"`
+	Owner        *routeCatalogOwner `json:"owner"`
+	Policy       *authzEdgePolicy   `json:"policy"`
+	PolicySHA256 string             `json:"policy_sha256"`
 }
 
 type authzEdgePolicy struct {
@@ -64,48 +64,65 @@ type authzEdgePolicy struct {
 	AuthenticationFactorAttempt *bool `json:"authentication_factor_attempt"`
 }
 
+type authorizationCatalog struct {
+	methods map[string]generatedAuthorizationMetadata
+	owners  map[string]routeCatalogOwner
+}
+
+func compiledAuthorizationCatalog() *authorizationCatalog {
+	owners := make(map[string]routeCatalogOwner, len(generatedAuthorizationByProcedure))
+	for procedure := range generatedAuthorizationByProcedure {
+		owners[procedure] = routeCatalogOwner{Module: "saas-starter", Service: "accounts"}
+	}
+	return &authorizationCatalog{methods: generatedAuthorizationByProcedure, owners: owners}
+}
+
 // authorizationByProcedure returns the method policy projection, preferring the
 // deployed artifact when AUTHZ_METADATA_CATALOG_PATH names one.
-func authorizationByProcedure() (map[string]generatedAuthorizationMetadata, error) {
+func authorizationByProcedure() (*authorizationCatalog, error) {
 	path := strings.TrimSpace(os.Getenv(authzMetadataCatalogEnv))
 	if path == "" {
-		return generatedAuthorizationByProcedure, nil
+		return compiledAuthorizationCatalog(), nil
 	}
 	metadata, err := loadAuthorizationMetadataFromArtifact(path)
 	if err != nil {
 		return nil, err
 	}
-	log.Printf("routing: loaded %d authorization methods from artifact %s", len(metadata), path)
+	log.Printf("routing: loaded %d authorization methods from artifact %s", len(metadata.methods), path)
 	return metadata, nil
 }
 
 // loadAuthorizationMetadataFromArtifact reads and validates a saas.authz.methods.v1
 // artifact, rejecting schema drift, incomplete identities, unknown policy enums,
 // and malformed fingerprints so an invalid artifact fails the gateway closed.
-func loadAuthorizationMetadataFromArtifact(path string) (map[string]generatedAuthorizationMetadata, error) {
-	raw, err := os.ReadFile(path)
+func loadAuthorizationMetadataFromArtifact(path string) (*authorizationCatalog, error) {
+	raw, err := readRuntimeCatalog(path, "authorization")
 	if err != nil {
-		return nil, fmt.Errorf("routing: cannot read authorization artifact %s: %w", path, err)
+		return nil, err
 	}
-	decoder := json.NewDecoder(bytes.NewReader(raw))
 	var doc authzMethodsDocument
-	if err := decoder.Decode(&doc); err != nil {
+	if err := json.Unmarshal(raw, &doc); err != nil {
 		return nil, fmt.Errorf("routing: cannot decode authorization artifact %s: %w", path, err)
 	}
 	if doc.SchemaVersion != authzMethodsSchemaVersion {
 		return nil, fmt.Errorf("routing: authorization artifact %s has schema version %q, want %q", path, doc.SchemaVersion, authzMethodsSchemaVersion)
 	}
-	if doc.Owner == nil || doc.Owner.Module == "" || doc.Owner.Service == "" {
+	if doc.Owner != nil && (!validCatalogIdentity(doc.Owner.Module) || !validCatalogIdentity(doc.Owner.Service)) {
 		return nil, fmt.Errorf("routing: authorization artifact %s owner is incomplete", path)
 	}
 	if len(doc.Methods) == 0 {
 		return nil, fmt.Errorf("routing: authorization artifact %s contains no methods", path)
 	}
 	metadata := make(map[string]generatedAuthorizationMetadata, len(doc.Methods))
+	owners := make(map[string]routeCatalogOwner, len(doc.Methods))
 	for index := range doc.Methods {
 		method := &doc.Methods[index]
-		if method.Procedure == "" || method.Policy == nil {
+		if !procedurePattern.MatchString(method.Procedure) || method.Policy == nil || method.Owner == nil ||
+			!validCatalogIdentity(method.Owner.Module) || !validCatalogIdentity(method.Owner.Service) {
 			return nil, fmt.Errorf("routing: authorization artifact %s has a method with an incomplete identity", path)
+		}
+		if doc.Owner != nil && (method.Owner.Module != doc.Owner.Module || method.Owner.Service != doc.Owner.Service) {
+			return nil, fmt.Errorf("routing: authorization artifact %s procedure %q owner disagrees with catalog owner", path, method.Procedure)
 		}
 		if method.Policy.AuthenticationFactorAttempt == nil {
 			return nil, fmt.Errorf("routing: authorization artifact %s procedure %q is missing authentication_factor_attempt", path, method.Procedure)
@@ -134,8 +151,9 @@ func loadAuthorizationMetadataFromArtifact(path string) (map[string]generatedAut
 			authenticationFactorAttempt: *method.Policy.AuthenticationFactorAttempt,
 			policySHA256:                method.PolicySHA256,
 		}
+		owners[method.Procedure] = *method.Owner
 	}
-	return metadata, nil
+	return &authorizationCatalog{methods: metadata, owners: owners}, nil
 }
 
 func isPolicySHA256(value string) bool {

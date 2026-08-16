@@ -17,7 +17,7 @@ const authzMethodsArtifact = "../../accounts/generated/authz-methods.json"
 func TestAuthzArtifactMatchesCompiledCatalog(t *testing.T) {
 	fromArtifact, err := loadAuthorizationMetadataFromArtifact(authzMethodsArtifact)
 	require.NoError(t, err)
-	require.Equal(t, generatedAuthorizationByProcedure, fromArtifact)
+	require.Equal(t, generatedAuthorizationByProcedure, fromArtifact.methods)
 }
 
 func TestConnectRoutesUseAuthzArtifact(t *testing.T) {
@@ -43,6 +43,7 @@ func TestRouteAuthorizedByArtifactProcedureWithoutRebuild(t *testing.T) {
 		Owner:         &routeCatalogOwner{Module: "widgets", Service: "widgets"},
 		Methods: []authzMethodItem{{
 			Procedure:    procedure,
+			Owner:        &routeCatalogOwner{Module: "widgets", Service: "widgets"},
 			PolicySHA256: "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
 			Policy:       &authzEdgePolicy{Exposure: exposureAuthenticated, RateLimit: "RATE_LIMIT_CLASS_STANDARD_READ", AuthenticationFactorAttempt: boolPtr(false)},
 		}},
@@ -85,6 +86,7 @@ func TestRouteWithoutArtifactPolicyFailsClosed(t *testing.T) {
 		Owner:         &routeCatalogOwner{Module: "widgets", Service: "widgets"},
 		Methods: []authzMethodItem{{
 			Procedure:    "/saas.plugin.v1.WidgetService/ListWidgets",
+			Owner:        &routeCatalogOwner{Module: "widgets", Service: "widgets"},
 			PolicySHA256: "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
 			Policy:       &authzEdgePolicy{Exposure: exposureAuthenticated, RateLimit: "RATE_LIMIT_CLASS_STANDARD_READ", AuthenticationFactorAttempt: boolPtr(false)},
 		}},
@@ -112,10 +114,59 @@ func TestRouteWithoutArtifactPolicyFailsClosed(t *testing.T) {
 	require.ErrorContains(t, err, "metadata is missing")
 }
 
+func TestRouteArtifactMustAgreeWithAuthorizationOwnerAndExposure(t *testing.T) {
+	const procedure = "/saas.plugin.v1.WidgetService/ListWidgets"
+	baseAuthz := func() authzMethodsDocument {
+		return authzMethodsDocument{
+			SchemaVersion: authzMethodsSchemaVersion,
+			Owner:         &routeCatalogOwner{Module: "widgets", Service: "widgets"},
+			Methods: []authzMethodItem{{
+				Procedure:    procedure,
+				Owner:        &routeCatalogOwner{Module: "widgets", Service: "widgets"},
+				PolicySHA256: "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+				Policy:       &authzEdgePolicy{Exposure: exposureAuthenticated, RateLimit: "RATE_LIMIT_CLASS_STANDARD_READ", AuthenticationFactorAttempt: boolPtr(false)},
+			}},
+		}
+	}
+	baseRoutes := func() routeCatalogDocument {
+		return routeCatalogDocument{
+			SchemaVersion: restSurfaceSchemaVersion,
+			Owner:         &routeCatalogOwner{Module: "widgets", Service: "widgets"},
+			Routes: []routeCatalogItem{{
+				Protocol: gatewayProtocolREST, Method: "GET", Path: "/v1/widgets", Match: matchExact,
+				Procedure: procedure, Owner: &routeCatalogOwner{Module: "widgets", Service: "widgets"},
+				UpstreamEndpoint: "rest", Exposure: exposureAuthenticated, Source: routeSourceDescriptor,
+			}},
+		}
+	}
+
+	t.Run("exposure mismatch", func(t *testing.T) {
+		authz := baseAuthz()
+		routes := baseRoutes()
+		routes.Routes[0].Exposure = exposurePublic
+		t.Setenv(authzMetadataCatalogEnv, writeAuthzArtifact(t, authz))
+		t.Setenv(restSurfaceCatalogEnv, writeArtifact(t, routes))
+		_, err := LoadRESTRoutesFromCatalog()
+		require.ErrorContains(t, err, "disagrees with authorization exposure")
+	})
+
+	t.Run("owner mismatch", func(t *testing.T) {
+		authz := baseAuthz()
+		routes := baseRoutes()
+		routes.Owner = &routeCatalogOwner{Module: "other", Service: "widgets"}
+		routes.Routes[0].Owner = routes.Owner
+		t.Setenv(authzMetadataCatalogEnv, writeAuthzArtifact(t, authz))
+		t.Setenv(restSurfaceCatalogEnv, writeArtifact(t, routes))
+		_, err := LoadRESTRoutesFromCatalog()
+		require.ErrorContains(t, err, "disagrees with authorization owner")
+	})
+}
+
 func TestAuthzArtifactFailsClosed(t *testing.T) {
 	validMethod := func() authzMethodItem {
 		return authzMethodItem{
 			Procedure:    "/saas.plugin.v1.WidgetService/ListWidgets",
+			Owner:        &routeCatalogOwner{Module: "widgets", Service: "widgets"},
 			PolicySHA256: "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
 			Policy:       &authzEdgePolicy{Exposure: exposureAuthenticated, RateLimit: "RATE_LIMIT_CLASS_STANDARD_READ", AuthenticationFactorAttempt: boolPtr(false)},
 		}
@@ -132,9 +183,16 @@ func TestAuthzArtifactFailsClosed(t *testing.T) {
 			wantErr: "schema version",
 		},
 		{
-			name:    "incomplete owner",
-			mutate:  func(doc *authzMethodsDocument) { doc.Owner = nil },
-			wantErr: "owner is incomplete",
+			name:    "incomplete method owner",
+			mutate:  func(doc *authzMethodsDocument) { doc.Methods[0].Owner = nil },
+			wantErr: "incomplete identity",
+		},
+		{
+			name: "method owner disagrees with catalog",
+			mutate: func(doc *authzMethodsDocument) {
+				doc.Methods[0].Owner = &routeCatalogOwner{Module: "other", Service: "widgets"}
+			},
+			wantErr: "owner disagrees with catalog owner",
 		},
 		{
 			name:    "no methods",
@@ -196,11 +254,13 @@ func TestAuthzArtifactDerivesBackendFailClosedFromClass(t *testing.T) {
 		Methods: []authzMethodItem{
 			{
 				Procedure:    "/saas.plugin.v1.AuthService/Login",
+				Owner:        &routeCatalogOwner{Module: "widgets", Service: "widgets"},
 				PolicySHA256: "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
 				Policy:       &authzEdgePolicy{Exposure: exposurePublic, RateLimit: "RATE_LIMIT_CLASS_AUTHENTICATION", AuthenticationFactorAttempt: boolPtr(false)},
 			},
 			{
 				Procedure:    "/saas.plugin.v1.WidgetService/ListWidgets",
+				Owner:        &routeCatalogOwner{Module: "widgets", Service: "widgets"},
 				PolicySHA256: "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcde0",
 				Policy:       &authzEdgePolicy{Exposure: exposureAuthenticated, RateLimit: "RATE_LIMIT_CLASS_STANDARD_READ", AuthenticationFactorAttempt: boolPtr(false)},
 			},
@@ -208,8 +268,8 @@ func TestAuthzArtifactDerivesBackendFailClosedFromClass(t *testing.T) {
 	}
 	metadata, err := loadAuthorizationMetadataFromArtifact(writeAuthzArtifact(t, doc))
 	require.NoError(t, err)
-	require.True(t, metadata["/saas.plugin.v1.AuthService/Login"].rateLimitBackendFailClosed)
-	require.False(t, metadata["/saas.plugin.v1.WidgetService/ListWidgets"].rateLimitBackendFailClosed)
+	require.True(t, metadata.methods["/saas.plugin.v1.AuthService/Login"].rateLimitBackendFailClosed)
+	require.False(t, metadata.methods["/saas.plugin.v1.WidgetService/ListWidgets"].rateLimitBackendFailClosed)
 }
 
 func TestAuthzArtifactMissingFile(t *testing.T) {
