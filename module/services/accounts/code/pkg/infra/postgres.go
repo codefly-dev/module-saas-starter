@@ -5,6 +5,10 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
+	"os"
+	"strings"
+	"sync"
 	"time"
 
 	"accounts/pkg/auth"
@@ -34,6 +38,13 @@ type PostgresStore struct {
 	database *scopedpostgres.Factory
 }
 
+// beforeConnectHook resolves a fresh password for every pool connection attempt.
+// It is the pgxpool.Config.BeforeConnect signature, aliased so one hook wires
+// identically into the legacy pool and the reader/writer capability pools.
+type beforeConnectHook = func(context.Context, *pgx.ConnConfig) error
+
+const scopedBoundaryOperationTimeout = 5 * time.Second
+
 func NewPostgresStore(ctx context.Context) (*PostgresStore, error) {
 	w := wool.Get(ctx).In("NewPostgresStore")
 	readOnlyConnection, err := codefly.For(ctx).Service("store").Secret("postgres", "read-only-connection")
@@ -44,18 +55,25 @@ func NewPostgresStore(ctx context.Context) (*PostgresStore, error) {
 	if err != nil {
 		return nil, w.Wrapf(err, "failed to get read-write connection string")
 	}
-	database, closeDatabase, err := scopedpostgres.Open(
-		ctx,
-		readOnlyConnection,
-		readWriteConnection,
-		postgresAuthenticator{},
-		scopedpostgres.WithScopeSettings("app.current_org_id", "app.current_user_id"),
-		scopedpostgres.WithOperationTimeout(5*time.Second),
-	)
+
+	// One token-resolution path for every pool. In external-identity mode the
+	// database password is a rotating token; the reader, writer, and legacy
+	// pools all attach this same hook so a reconnect after token expiry presents
+	// a current one. nil in local password mode — every pool keeps the password
+	// embedded in its connection URL.
+	hook := tokenFileBeforeConnect()
+
+	database, closeDatabase, err := openScopedBoundary(ctx, readOnlyConnection, readWriteConnection, hook)
 	if err != nil {
 		return nil, w.Wrapf(err, "failed to open authenticated Postgres boundary")
 	}
-	store, err := NewPostgresStoreFromURL(ctx, readWriteConnection)
+
+	legacyConfig, err := configureConnection(readWriteConnection, hook)
+	if err != nil {
+		closeDatabase()
+		return nil, w.Wrapf(err, "failed to parse read-write connection string")
+	}
+	store, err := newPostgresStoreFromConfig(ctx, legacyConfig)
 	if err != nil {
 		closeDatabase()
 		return nil, err
@@ -69,10 +87,110 @@ func NewPostgresStore(ctx context.Context) (*PostgresStore, error) {
 	return store, nil
 }
 
+// openScopedBoundary builds the authenticated reader/writer capability boundary.
+// It mirrors service-postgres's Open — distinct non-owner reader/writer roles,
+// startup ping, single-shot closer — but attaches the token-rotation
+// BeforeConnect hook to both capability pools, which Open (v0.0.107) cannot do:
+// its pools are built internally and it exposes no connection hook. Without this
+// the RLS read/write path would keep authenticating with the token captured at
+// startup and fail once it expired. Revert to scopedpostgres.Open once the
+// library accepts a BeforeConnect (service-postgres#55).
+func openScopedBoundary(ctx context.Context, readOnlyConnection, readWriteConnection string, hook beforeConnectHook) (*scopedpostgres.Factory, func(), error) {
+	if ctx == nil {
+		return nil, nil, errors.New("scoped Postgres context is required")
+	}
+	if strings.TrimSpace(readOnlyConnection) == "" || strings.TrimSpace(readWriteConnection) == "" {
+		return nil, nil, errors.New("distinct read-only and read-write Postgres connections are required")
+	}
+	ctx, cancel := context.WithTimeout(ctx, scopedBoundaryOperationTimeout)
+	defer cancel()
+
+	readerConfig, err := configureConnection(readOnlyConnection, hook)
+	if err != nil {
+		return nil, nil, fmt.Errorf("parse read-only Postgres capability: %w", err)
+	}
+	writerConfig, err := configureConnection(readWriteConnection, hook)
+	if err != nil {
+		return nil, nil, fmt.Errorf("parse read-write Postgres capability: %w", err)
+	}
+	// Distinct non-owner reader/writer roles are the physical separation the RLS
+	// boundary depends on; keep the check service-postgres's Open enforced.
+	readerUser := strings.TrimSpace(readerConfig.ConnConfig.User)
+	writerUser := strings.TrimSpace(writerConfig.ConnConfig.User)
+	if readerUser == "" || writerUser == "" || readerUser == writerUser {
+		return nil, nil, errors.New("read-only and read-write Postgres capabilities must use distinct database roles")
+	}
+
+	readerPool, err := openCapabilityPool(ctx, "read-only", readerConfig)
+	if err != nil {
+		return nil, nil, err
+	}
+	writerPool, err := openCapabilityPool(ctx, "read-write", writerConfig)
+	if err != nil {
+		readerPool.Close()
+		return nil, nil, err
+	}
+	closePools := func() {
+		readerPool.Close()
+		writerPool.Close()
+	}
+	factory, err := scopedpostgres.NewFactory(
+		readerPool,
+		writerPool,
+		postgresAuthenticator{},
+		scopedpostgres.WithScopeSettings("app.current_org_id", "app.current_user_id"),
+		scopedpostgres.WithOperationTimeout(scopedBoundaryOperationTimeout),
+	)
+	if err != nil {
+		closePools()
+		return nil, nil, err
+	}
+	var once sync.Once
+	return factory, func() { once.Do(closePools) }, nil
+}
+
+// openCapabilityPool opens one capability pool and fails fast if it cannot reach
+// Postgres, so a bad credential or unreachable server surfaces at startup rather
+// than on the first query. The caller owns closing every pool opened before a
+// later one fails.
+func openCapabilityPool(ctx context.Context, label string, config *pgxpool.Config) (*pgxpool.Pool, error) {
+	pool, err := pgxpool.NewWithConfig(ctx, config)
+	if err != nil {
+		return nil, fmt.Errorf("open %s Postgres capability: %w", label, err)
+	}
+	if err := pool.Ping(ctx); err != nil {
+		pool.Close()
+		return nil, fmt.Errorf("ping %s Postgres capability: %w", label, err)
+	}
+	return pool, nil
+}
+
+// configureConnection parses a Codefly connection secret into a pool config and
+// attaches the token-rotation hook. It is the single place a pool's password
+// source is wired, so every pool — legacy, reader, writer — resolves the token
+// identically. A nil hook leaves the URL-embedded password in force.
+func configureConnection(connectionURL string, hook beforeConnectHook) (*pgxpool.Config, error) {
+	if strings.TrimSpace(connectionURL) == "" {
+		return nil, errors.New("postgres connection URL is required")
+	}
+	config, err := pgxpool.ParseConfig(connectionURL)
+	if err != nil {
+		return nil, err
+	}
+	config.BeforeConnect = hook
+	return config, nil
+}
+
 // NewPostgresStoreFromURL creates a legacy store from one explicit connection
 // URL for local tools and integration tests. Production must use
 // NewPostgresStore, which requires service-postgres's distinct reader/writer
 // capabilities and verified identity boundary.
+//
+// This path intentionally does NOT attach the token-rotation hook: callers pass
+// a fully specified URL (e.g. an operator's admin credential to
+// role-catalog-import) and must not have that credential silently replaced by a
+// process-wide token file. Token rotation is wired in NewPostgresStore, which
+// owns the production pools.
 //
 // Connection-level role selection: Codefly's Postgres service exports a
 // non-owner read-write principal whose explicit application-role memberships
@@ -106,6 +224,14 @@ func NewPostgresStoreFromURL(ctx context.Context, connectionURL string) (*Postgr
 	if err != nil {
 		return nil, w.Wrapf(err, "failed to parse connection string")
 	}
+	return newPostgresStoreFromConfig(ctx, poolConfig)
+}
+
+// newPostgresStoreFromConfig installs the app_tenant role hooks on an
+// already-parsed pool config and opens the pool. The caller owns whether a
+// token-rotation BeforeConnect hook is attached.
+func newPostgresStoreFromConfig(ctx context.Context, poolConfig *pgxpool.Config) (*PostgresStore, error) {
+	w := wool.Get(ctx).In("NewPostgresStore")
 
 	poolConfig.PrepareConn = func(ctx context.Context, conn *pgx.Conn) (bool, error) {
 		// SET ROLE app_tenant — persists for the life of the user's
@@ -136,6 +262,75 @@ func NewPostgresStoreFromURL(ctx context.Context, connectionURL string) (*Postgr
 		Close: pool.Close,
 		pool:  pool,
 	}, nil
+}
+
+// databaseTokenFileEnv names the file an external-identity sidecar rewrites with
+// a fresh database access token (e.g. an Entra oss-rdbms token) on a rotation
+// interval shorter than the token's ~1h lifetime. External-identity deployments
+// set it; local password deployments leave it unset.
+const databaseTokenFileEnv = "POSTGRES_TOKEN_FILE"
+
+// Database access tokens are compact JWTs. Keep enough headroom for provider
+// claim growth while preventing a malformed projected file from allocating
+// without bound on every connection attempt.
+const maxDatabaseTokenBytes = 64 << 10
+
+// tokenFileBeforeConnect returns a pgx BeforeConnect hook that re-reads the
+// rotating token file for every connection attempt, so a pool reconnect after
+// the previous token expired presents a current one instead of the stale
+// password captured when the pool was built. It returns nil when no token file
+// is configured, leaving the password embedded in the connection URL in force —
+// local password mode and external-identity mode share this single path, gated
+// only by the environment.
+func tokenFileBeforeConnect() beforeConnectHook {
+	path := strings.TrimSpace(os.Getenv(databaseTokenFileEnv))
+	if path == "" {
+		return nil
+	}
+	return func(ctx context.Context, connConfig *pgx.ConnConfig) error {
+		token, err := readTokenFile(ctx, path)
+		if err != nil {
+			return err
+		}
+		connConfig.Password = token
+		return nil
+	}
+}
+
+// readTokenFile reads one bounded rotating-token snapshot. os.File reads cannot
+// be cancelled portably; spawning a goroutine per connection would only return
+// early while leaking blocked readers during a storage failure. The projected
+// file is local, so check cancellation before and after the bounded read instead.
+// The sidecar contract (infra-base #59) is to publish each new token with an
+// atomic rename; without it a read could observe a partial write, which would
+// surface as an authentication failure.
+func readTokenFile(ctx context.Context, path string) (string, error) {
+	if ctx == nil {
+		return "", errors.New("database token read context is required")
+	}
+	if err := ctx.Err(); err != nil {
+		return "", err
+	}
+	file, err := os.Open(path)
+	if err != nil {
+		return "", fmt.Errorf("read database token file %q: %w", path, err)
+	}
+	defer func() { _ = file.Close() }()
+	raw, err := io.ReadAll(io.LimitReader(file, maxDatabaseTokenBytes+1))
+	if err != nil {
+		return "", fmt.Errorf("read database token file %q: %w", path, err)
+	}
+	if err := ctx.Err(); err != nil {
+		return "", err
+	}
+	if len(raw) > maxDatabaseTokenBytes {
+		return "", fmt.Errorf("database token file %q exceeds %d bytes", path, maxDatabaseTokenBytes)
+	}
+	token := strings.TrimSpace(string(raw))
+	if token == "" {
+		return "", fmt.Errorf("database token file %q is empty", path)
+	}
+	return token, nil
 }
 
 var _ business.Store = (*PostgresStore)(nil)
