@@ -42,10 +42,9 @@ func TestRouteAuthorizedByArtifactProcedureWithoutRebuild(t *testing.T) {
 		SchemaVersion: authzMethodsSchemaVersion,
 		Owner:         &routeCatalogOwner{Module: "widgets", Service: "widgets"},
 		Methods: []authzMethodItem{{
-			Procedure:                   procedure,
-			PolicySHA256:                "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
-			RateLimitBackendFailureMode: "RATE_LIMIT_BACKEND_FAILURE_MODE_FAIL_OPEN",
-			Policy:                      &authzEdgePolicy{Exposure: exposureAuthenticated, RateLimit: "RATE_LIMIT_CLASS_STANDARD_READ"},
+			Procedure:    procedure,
+			PolicySHA256: "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+			Policy:       &authzEdgePolicy{Exposure: exposureAuthenticated, RateLimit: "RATE_LIMIT_CLASS_STANDARD_READ"},
 		}},
 	}
 	routes := routeCatalogDocument{
@@ -116,10 +115,9 @@ func TestRouteWithoutArtifactPolicyFailsClosed(t *testing.T) {
 func TestAuthzArtifactFailsClosed(t *testing.T) {
 	validMethod := func() authzMethodItem {
 		return authzMethodItem{
-			Procedure:                   "/saas.plugin.v1.WidgetService/ListWidgets",
-			PolicySHA256:                "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
-			RateLimitBackendFailureMode: "RATE_LIMIT_BACKEND_FAILURE_MODE_FAIL_OPEN",
-			Policy:                      &authzEdgePolicy{Exposure: exposureAuthenticated, RateLimit: "RATE_LIMIT_CLASS_STANDARD_READ"},
+			Procedure:    "/saas.plugin.v1.WidgetService/ListWidgets",
+			PolicySHA256: "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+			Policy:       &authzEdgePolicy{Exposure: exposureAuthenticated, RateLimit: "RATE_LIMIT_CLASS_STANDARD_READ"},
 		}
 	}
 
@@ -182,6 +180,31 @@ func TestAuthzArtifactFailsClosed(t *testing.T) {
 			require.ErrorContains(t, err, test.wantErr)
 		})
 	}
+}
+
+// The limiter must fail closed for the security budgets purely from the class,
+// so an artifact cannot downgrade brute-force protection to fail-open.
+func TestAuthzArtifactDerivesBackendFailClosedFromClass(t *testing.T) {
+	doc := authzMethodsDocument{
+		SchemaVersion: authzMethodsSchemaVersion,
+		Owner:         &routeCatalogOwner{Module: "widgets", Service: "widgets"},
+		Methods: []authzMethodItem{
+			{
+				Procedure:    "/saas.plugin.v1.AuthService/Login",
+				PolicySHA256: "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+				Policy:       &authzEdgePolicy{Exposure: exposurePublic, RateLimit: "RATE_LIMIT_CLASS_AUTHENTICATION"},
+			},
+			{
+				Procedure:    "/saas.plugin.v1.WidgetService/ListWidgets",
+				PolicySHA256: "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcde0",
+				Policy:       &authzEdgePolicy{Exposure: exposureAuthenticated, RateLimit: "RATE_LIMIT_CLASS_STANDARD_READ"},
+			},
+		},
+	}
+	metadata, err := loadAuthorizationMetadataFromArtifact(writeAuthzArtifact(t, doc))
+	require.NoError(t, err)
+	require.True(t, metadata["/saas.plugin.v1.AuthService/Login"].rateLimitBackendFailClosed)
+	require.False(t, metadata["/saas.plugin.v1.WidgetService/ListWidgets"].rateLimitBackendFailClosed)
 }
 
 func TestAuthzArtifactMissingFile(t *testing.T) {

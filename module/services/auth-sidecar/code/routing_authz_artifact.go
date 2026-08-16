@@ -25,7 +25,6 @@ import (
 const (
 	authzMetadataCatalogEnv   = "AUTHZ_METADATA_CATALOG_PATH"
 	authzMethodsSchemaVersion = "saas.authz.methods.v1"
-	rateLimitBackendFailClose = "RATE_LIMIT_BACKEND_FAILURE_MODE_FAIL_CLOSED"
 )
 
 var edgeExposureByName = map[string]edgeExposure{
@@ -52,10 +51,9 @@ type authzMethodsDocument struct {
 }
 
 type authzMethodItem struct {
-	Procedure                   string           `json:"procedure"`
-	Policy                      *authzEdgePolicy `json:"policy"`
-	PolicySHA256                string           `json:"policy_sha256"`
-	RateLimitBackendFailureMode string           `json:"rate_limit_backend_failure_mode"`
+	Procedure    string           `json:"procedure"`
+	Policy       *authzEdgePolicy `json:"policy"`
+	PolicySHA256 string           `json:"policy_sha256"`
 }
 
 type authzEdgePolicy struct {
@@ -122,9 +120,12 @@ func loadAuthorizationMetadataFromArtifact(path string) (map[string]generatedAut
 			return nil, fmt.Errorf("routing: authorization artifact %s procedure %q has unsupported rate-limit class %q", path, method.Procedure, method.Policy.RateLimit)
 		}
 		metadata[method.Procedure] = generatedAuthorizationMetadata{
-			exposure:                    exposure,
-			rateLimitClass:              rateLimit,
-			rateLimitBackendFailClosed:  method.RateLimitBackendFailureMode == rateLimitBackendFailClose,
+			exposure:       exposure,
+			rateLimitClass: rateLimit,
+			// Derived from the class, not read from the artifact: the limiter
+			// must fail closed for the security budgets even if a hand-authored
+			// artifact's backend-failure field disagrees with the class.
+			rateLimitBackendFailClosed:  rateLimit == edgeRateLimitClassAuthentication || rateLimit == edgeRateLimitClassMFA,
 			authenticationFactorAttempt: method.Policy.AuthenticationFactorAttempt,
 			policySHA256:                method.PolicySHA256,
 		}
