@@ -5,6 +5,8 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"os"
+	"strings"
 	"time"
 
 	"accounts/pkg/auth"
@@ -107,6 +109,10 @@ func NewPostgresStoreFromURL(ctx context.Context, connectionURL string) (*Postgr
 		return nil, w.Wrapf(err, "failed to parse connection string")
 	}
 
+	if hook := tokenFileBeforeConnect(); hook != nil {
+		poolConfig.BeforeConnect = hook
+	}
+
 	poolConfig.PrepareConn = func(ctx context.Context, conn *pgx.Conn) (bool, error) {
 		// SET ROLE app_tenant — persists for the life of the user's
 		// hold on this connection. Tx-scoped role assumptions inside
@@ -136,6 +142,38 @@ func NewPostgresStoreFromURL(ctx context.Context, connectionURL string) (*Postgr
 		Close: pool.Close,
 		pool:  pool,
 	}, nil
+}
+
+// databaseTokenFileEnv names the file an external-identity sidecar rewrites with
+// a fresh database access token (e.g. an Entra oss-rdbms token) on a rotation
+// interval shorter than the token's ~1h lifetime. External-identity deployments
+// set it; local password deployments leave it unset.
+const databaseTokenFileEnv = "POSTGRES_TOKEN_FILE"
+
+// tokenFileBeforeConnect returns a pgx BeforeConnect hook that re-reads the
+// rotating token file for every connection attempt, so a pool reconnect after
+// the previous token expired presents a current one instead of the stale
+// password captured when the pool was built. It returns nil when no token file
+// is configured, leaving the password embedded in the connection URL in force —
+// local password mode and external-identity mode share this single path, gated
+// only by the environment.
+func tokenFileBeforeConnect() func(context.Context, *pgx.ConnConfig) error {
+	path := strings.TrimSpace(os.Getenv(databaseTokenFileEnv))
+	if path == "" {
+		return nil
+	}
+	return func(_ context.Context, connConfig *pgx.ConnConfig) error {
+		raw, err := os.ReadFile(path)
+		if err != nil {
+			return fmt.Errorf("read database token file %q: %w", path, err)
+		}
+		token := strings.TrimSpace(string(raw))
+		if token == "" {
+			return fmt.Errorf("database token file %q is empty", path)
+		}
+		connConfig.Password = token
+		return nil
+	}
 }
 
 var _ business.Store = (*PostgresStore)(nil)
