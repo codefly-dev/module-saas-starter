@@ -13,6 +13,12 @@ strict package-manifest validation, deterministic archive construction, digest,
 aggregate SBOM, provenance signing, and immutable GitHub Release publication.
 It does not duplicate service build or test policy.
 
+Publication requires both release-only repository secrets: the read-only
+Administration token `RELEASE_ADMIN_TOKEN` for immutable-release policy checks,
+and the base64 Ed25519 key `RELEASE_PROVENANCE_PRIVATE_KEY` for Core's detached
+module provenance signature. Missing or malformed credentials fail before a
+release is created.
+
 ## What Codefly owns
 
 The complete gate runs these ordered phases:

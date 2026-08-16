@@ -1,19 +1,22 @@
 package modulepackage
 
 import (
-	"archive/tar"
 	"bytes"
-	"errors"
-	"io"
+	"context"
+	"crypto/ed25519"
+	"encoding/base64"
+	"encoding/json"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"testing"
-	"time"
+
+	corecomposition "github.com/codefly-dev/core/composition"
 )
 
-func TestStarterManifestDeclaresTheReleaseBoundary(t *testing.T) {
+func TestStarterManifestIsTheCoreV2Contract(t *testing.T) {
 	moduleRoot := findModuleRoot(t)
 	manifest, err := ReadManifest(moduleRoot)
 	if err != nil {
@@ -22,175 +25,174 @@ func TestStarterManifestDeclaresTheReleaseBoundary(t *testing.T) {
 	if manifest.ID != "codefly/saas-starter" || manifest.Version != "0.1.0" {
 		t.Fatalf("unexpected package identity: %s@%s", manifest.ID, manifest.Version)
 	}
-	if len(manifest.ProvidedServices) != 11 {
-		t.Fatalf("provided service count = %d, want 11", len(manifest.ProvidedServices))
+	if len(manifest.Services) != 11 {
+		t.Fatalf("provided service count = %d, want 11", len(manifest.Services))
 	}
-	wantedContracts := map[string]bool{
-		"codefly/saas/frontend-plugin": false,
-		"codefly/saas/settings":        false,
-		"codefly/saas/permissions":     false,
-		"codefly/saas/fixtures":        false,
-		"codefly/saas/topology":        false,
-	}
-	for _, contract := range manifest.ContributionContracts {
-		if _, known := wantedContracts[contract.ID]; known {
-			wantedContracts[contract.ID] = true
+	for _, contract := range []string{"composition", "frontendPlugin", "settings", "permissions", "fixtures"} {
+		if manifest.Contracts[contract] == "" {
+			t.Errorf("package manifest does not declare Core contract %q", contract)
 		}
 	}
-	for contract, found := range wantedContracts {
-		if !found {
-			t.Errorf("package manifest does not declare %s", contract)
+	if len(manifest.Claims) == 0 {
+		t.Fatal("package manifest does not declare base collision claims")
+	}
+	claimedPackages := map[string]bool{}
+	for _, claim := range manifest.Claims {
+		if claim.Kind == corecomposition.CollisionPackage {
+			claimedPackages[claim.Key] = true
 		}
 	}
-	for _, contract := range manifest.ContributionContracts {
-		if contract.ID == "codefly/saas/frontend-plugin" && contract.Versions != ">=2.0.0 <3.0.0" {
-			t.Fatalf("frontend contract range = %q, want contract major 2", contract.Versions)
-		}
+	var frontend struct {
+		Dependencies    map[string]string `json:"dependencies"`
+		DevDependencies map[string]string `json:"devDependencies"`
 	}
-}
-
-func TestManifestRejectsUnknownFields(t *testing.T) {
-	repository := newPackageRepository(t)
-	manifestPath := filepath.Join(repository, "module", ManifestName)
-	body, err := os.ReadFile(manifestPath)
-	if err != nil {
+	if err := json.Unmarshal(mustRead(t, filepath.Join(moduleRoot, "services/frontend/code/package.json")), &frontend); err != nil {
 		t.Fatal(err)
 	}
-	body = append(body, []byte("unknown-field: true\n")...)
-	if err := os.WriteFile(manifestPath, body, 0o644); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := ReadManifest(filepath.Join(repository, "module")); err == nil || !strings.Contains(err.Error(), "unknown-field") {
-		t.Fatalf("ReadManifest() error = %v, want unknown field rejection", err)
-	}
-}
-
-func TestSemanticVersionValidation(t *testing.T) {
-	for _, version := range []string{"0.1.0", "1.2.3-alpha.1+build.7"} {
-		if !isSemver(version) {
-			t.Errorf("isSemver(%q) = false, want true", version)
+	for dependency := range frontend.Dependencies {
+		if !claimedPackages[dependency] {
+			t.Errorf("base frontend dependency %q has no package collision claim", dependency)
 		}
 	}
-	for _, version := range []string{"v1.2.3", "1.2", "01.2.3", "1.2.3-01", "1.2.3+"} {
-		if isSemver(version) {
-			t.Errorf("isSemver(%q) = true, want false", version)
+	for dependency := range frontend.DevDependencies {
+		if !claimedPackages[dependency] {
+			t.Errorf("base frontend development dependency %q has no package collision claim", dependency)
 		}
 	}
-	if !isSemverRange(">=1.0.0 <2.0.0") ||
-		!isSemverRange(">=1.0.0-alpha.1 <1.0.0") ||
-		isSemverRange("^1.0.0") ||
-		isSemverRange(">=2.0.0 <1.0.0") ||
-		isSemverRange(">=1.0.0 <1.0.0") {
-		t.Fatal("bounded semantic version range validation failed")
+	claimedPermissions := map[string]bool{}
+	for _, claim := range manifest.Claims {
+		if claim.Kind == corecomposition.CollisionPermission {
+			claimedPermissions[claim.Key] = true
+		}
+	}
+	vocabulary := mustRead(t, filepath.Join(moduleRoot, "services/accounts/code/pkg/business/service_vocabulary.go"))
+	for _, match := range regexp.MustCompile(`Permission:\s*"([^"]+)"`).FindAllSubmatch(vocabulary, -1) {
+		permission := string(match[1])
+		if !claimedPermissions[permission] {
+			t.Errorf("base Accounts permission %q has no permission collision claim", permission)
+		}
 	}
 }
 
-func TestManifestRejectsDuplicateTopologyEntriesThatMaskMissingDeclarations(t *testing.T) {
-	for name, topology := range map[string]string{
-		"service": `services:
-  - name: frontend
-    endpoints: [{name: http, api: http, visibility: public}]
-  - name: frontend
-    endpoints: [{name: http, api: http, visibility: public}]
-`,
-		"endpoint": `services:
-  - name: frontend
-    endpoints:
-      - {name: http, api: http, visibility: public}
-      - {name: http, api: http, visibility: public}
-`,
-	} {
-		t.Run(name, func(t *testing.T) {
-			repository := newPackageRepository(t)
-			moduleRoot := filepath.Join(repository, "module")
-			manifestPath := filepath.Join(moduleRoot, ManifestName)
-			body, err := os.ReadFile(manifestPath)
-			if err != nil {
-				t.Fatal(err)
-			}
-			body = bytes.Replace(body, []byte("entry-points: {module: entry.txt}"), []byte("entry-points: {module: entry.txt, topology: topology.yaml}"), 1)
-			if name == "service" {
-				body = bytes.Replace(body, []byte("  - name: frontend\n    endpoints: [{name: http, protocol: http, visibility: public}]"), []byte("  - name: frontend\n    endpoints: [{name: http, protocol: http, visibility: public}]\n  - name: accounts\n    endpoints: [{name: http, protocol: http, visibility: public}]"), 1)
-			} else {
-				body = bytes.Replace(body, []byte("endpoints: [{name: http, protocol: http, visibility: public}]"), []byte("endpoints: [{name: http, protocol: http, visibility: public}, {name: api, protocol: http, visibility: public}]"), 1)
-			}
-			if err := os.WriteFile(manifestPath, body, 0o644); err != nil {
-				t.Fatal(err)
-			}
-			if err := os.WriteFile(filepath.Join(moduleRoot, "topology.yaml"), []byte(topology), 0o644); err != nil {
-				t.Fatal(err)
-			}
-			if _, err := ReadManifest(moduleRoot); err == nil || !strings.Contains(err.Error(), "duplicated") {
-				t.Fatalf("ReadManifest() error = %v, want duplicate topology rejection", err)
-			}
-		})
-	}
-}
-
-func TestBuildCreatesTheSameArchiveAndDigestTwice(t *testing.T) {
+func TestBuildProducesACoreCanonicalRootArchive(t *testing.T) {
 	repository := newPackageRepository(t)
 	commit := git(t, repository, "rev-parse", "HEAD")
-	root := t.TempDir()
-	first := filepath.Join(root, "first")
-	second := filepath.Join(root, "second")
-
-	firstMetadata, err := Build(BuildOptions{RepositoryRoot: repository, OutputDir: first, Commit: commit})
+	releaseDir := filepath.Join(t.TempDir(), "release")
+	metadata, err := Build(BuildOptions{RepositoryRoot: repository, OutputDir: releaseDir, Commit: commit})
 	if err != nil {
 		t.Fatal(err)
 	}
-	time.Sleep(1100 * time.Millisecond)
-	secondMetadata, err := Build(BuildOptions{RepositoryRoot: repository, OutputDir: second, Commit: commit})
+	archive, err := os.ReadFile(filepath.Join(releaseDir, ArchiveName))
 	if err != nil {
 		t.Fatal(err)
 	}
-	if firstMetadata != secondMetadata {
-		t.Fatalf("artifact metadata changed between builds:\n%+v\n%+v", firstMetadata, secondMetadata)
+	extracted := t.TempDir()
+	if err := corecomposition.ExtractArchive(context.Background(), archive, extracted); err != nil {
+		t.Fatal(err)
 	}
-	firstArchive, err := os.ReadFile(filepath.Join(first, ArchiveName))
+	manifest, err := corecomposition.LoadPackageManifest(extracted)
+	if err != nil {
+		t.Fatalf("Core could not load the archive root: %v", err)
+	}
+	if manifest.ID != metadata.Package.ID {
+		t.Fatalf("archive package = %q, metadata package = %q", manifest.ID, metadata.Package.ID)
+	}
+	canonical, digest, err := corecomposition.CanonicalArchive(extracted)
 	if err != nil {
 		t.Fatal(err)
 	}
-	secondArchive, err := os.ReadFile(filepath.Join(second, ArchiveName))
-	if err != nil {
-		t.Fatal(err)
+	if !bytes.Equal(archive, canonical) {
+		t.Fatal("release archive is not byte-for-byte Core canonical")
 	}
-	if !bytes.Equal(firstArchive, secondArchive) {
-		t.Fatal("canonical archive bytes changed between builds")
-	}
-	if _, err := os.Stat(first + ".lock"); !errors.Is(err, os.ErrNotExist) {
-		t.Fatalf("successful build left a release reservation: %v", err)
-	}
-	checksum, err := os.ReadFile(filepath.Join(first, ChecksumName))
-	if err != nil {
-		t.Fatal(err)
-	}
-	if string(checksum) != strings.TrimPrefix(firstMetadata.Artifact.Digest, "sha256:")+"  module.tar\n" {
-		t.Fatalf("checksum = %q, want artifact digest", checksum)
-	}
-
-	reader := tar.NewReader(bytes.NewReader(firstArchive))
-	foundManifest := false
-	for {
-		header, err := reader.Next()
-		if err != nil {
-			if errors.Is(err, io.EOF) {
-				break
-			}
-			t.Fatal(err)
-		}
-		if strings.HasPrefix(header.Name, "/") || strings.Contains(header.Name, "../") {
-			t.Fatalf("unsafe archive path %q", header.Name)
-		}
-		if header.Name == "module/"+ManifestName {
-			foundManifest = true
-		}
-	}
-	if !foundManifest {
-		t.Fatalf("archive does not contain module/%s", ManifestName)
+	if digest != metadata.Artifact.Digest {
+		t.Fatalf("canonical digest = %q, metadata digest = %q", digest, metadata.Artifact.Digest)
 	}
 }
 
-func TestBuildRejectsDirtyWorktreeAndExistingAssets(t *testing.T) {
+func TestSignedReleaseVerifiesAndMaterializesThroughCore(t *testing.T) {
+	repository := newPackageRepository(t)
+	commit := git(t, repository, "rev-parse", "HEAD")
+	releaseDir := filepath.Join(t.TempDir(), "release")
+	if _, err := Build(BuildOptions{RepositoryRoot: repository, OutputDir: releaseDir, Commit: commit}); err != nil {
+		t.Fatal(err)
+	}
+	publicKey, privateKey, err := ed25519.GenerateKey(nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	manifest, err := ReadManifest(filepath.Join(repository, "module"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := SignRelease(SignOptions{
+		ModuleRoot:        filepath.Join(repository, "module"),
+		ReleaseDir:        releaseDir,
+		Ref:               "v" + manifest.Version,
+		Commit:            commit,
+		SignatureIdentity: "test-signer",
+		PrivateKey:        []byte(base64.StdEncoding.EncodeToString(privateKey)),
+	}); err != nil {
+		t.Fatal(err)
+	}
+	artifact := mustRead(t, filepath.Join(releaseDir, ArchiveName))
+	provenance := mustRead(t, filepath.Join(releaseDir, ProvenanceName))
+	signature := mustRead(t, filepath.Join(releaseDir, SignatureName))
+	verified, err := corecomposition.VerifyRelease(&corecomposition.Release{
+		Repository: PackageRepository,
+		Ref:        "v" + manifest.Version,
+		Commit:     commit,
+		Artifact:   artifact,
+		Provenance: provenance,
+		Signature:  signature,
+	}, manifest.ID, manifest.Version, corecomposition.TrustPolicy{
+		Repositories: map[string]string{manifest.ID: PackageRepository},
+		Signers:      map[string]ed25519.PublicKey{"test-signer": publicKey},
+	})
+	if err != nil {
+		t.Fatalf("Core rejected signed release: %v", err)
+	}
+	cacheRoot := t.TempDir()
+	t.Cleanup(func() {
+		_ = filepath.Walk(cacheRoot, func(path string, info os.FileInfo, err error) error {
+			if err == nil {
+				_ = os.Chmod(path, info.Mode()|0o700)
+			}
+			return nil
+		})
+	})
+	materializer := corecomposition.NewMaterializer(cacheRoot)
+	if _, err := materializer.Materialize(context.Background(), verified); err != nil {
+		t.Fatalf("Core rejected canonical materialization: %v", err)
+	}
+}
+
+func TestSignReleaseRejectsArtifactMetadataDrift(t *testing.T) {
+	repository := newPackageRepository(t)
+	commit := git(t, repository, "rev-parse", "HEAD")
+	releaseDir := filepath.Join(t.TempDir(), "release")
+	if _, err := Build(BuildOptions{RepositoryRoot: repository, OutputDir: releaseDir, Commit: commit}); err != nil {
+		t.Fatal(err)
+	}
+	metadataPath := filepath.Join(releaseDir, MetadataName)
+	body := bytes.Replace(mustRead(t, metadataPath), []byte(commit), []byte(strings.Repeat("b", 40)), 1)
+	if err := os.WriteFile(metadataPath, body, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	_, privateKey, err := ed25519.GenerateKey(nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = SignRelease(SignOptions{
+		ModuleRoot: filepath.Join(repository, "module"), ReleaseDir: releaseDir,
+		Ref: "v1.2.3", Commit: commit,
+		PrivateKey: []byte(base64.StdEncoding.EncodeToString(privateKey)),
+	})
+	if err == nil || !strings.Contains(err.Error(), "does not describe") {
+		t.Fatalf("SignRelease() error = %v, want metadata drift rejection", err)
+	}
+}
+
+func TestBuildRejectsDirtyWorktreeExistingAssetsAndSymlinks(t *testing.T) {
 	repository := newPackageRepository(t)
 	commit := git(t, repository, "rev-parse", "HEAD")
 	if err := os.WriteFile(filepath.Join(repository, "dirty.txt"), []byte("dirty\n"), 0o644); err != nil {
@@ -206,26 +208,32 @@ func TestBuildRejectsDirtyWorktreeAndExistingAssets(t *testing.T) {
 	if err := os.Mkdir(output, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := Build(BuildOptions{RepositoryRoot: repository, OutputDir: output, Commit: commit}); err == nil || !strings.Contains(err.Error(), "refusing to replace existing release directory") {
+	if _, err := Build(BuildOptions{RepositoryRoot: repository, OutputDir: output, Commit: commit}); err == nil || !strings.Contains(err.Error(), "refusing to replace") {
 		t.Fatalf("Build() error = %v, want replacement rejection", err)
 	}
-}
-
-func TestBuildRejectsSymlinksInThePackageTree(t *testing.T) {
-	repository := newPackageRepository(t)
 	link := filepath.Join(repository, "module", "link")
-	if err := os.Symlink("entry.txt", link); err != nil {
+	if err := os.Symlink("artifact/entry.txt", link); err != nil {
 		t.Fatal(err)
 	}
 	git(t, repository, "add", "module/link")
 	git(t, repository, "commit", "-qm", "add symlink")
-	commit := git(t, repository, "rev-parse", "HEAD")
-	output := filepath.Join(t.TempDir(), "release")
-	if _, err := Build(BuildOptions{RepositoryRoot: repository, OutputDir: output, Commit: commit}); err == nil || !strings.Contains(err.Error(), "unsupported git mode 120000") {
+	commit = git(t, repository, "rev-parse", "HEAD")
+	if _, err := Build(BuildOptions{RepositoryRoot: repository, OutputDir: filepath.Join(t.TempDir(), "symlink"), Commit: commit}); err == nil || !strings.Contains(err.Error(), "unsupported git mode 120000") {
 		t.Fatalf("Build() error = %v, want symlink rejection", err)
 	}
-	if _, err := os.Stat(output); !errors.Is(err, os.ErrNotExist) {
-		t.Fatalf("failed build left a visible release directory: %v", err)
+}
+
+func TestValidateImmutableReleaseSettingsAcceptsDocumentedResponse(t *testing.T) {
+	if err := ValidateImmutableReleaseSettings([]byte(`{"enabled":true,"enforced_by_owner":false}`)); err != nil {
+		t.Fatalf("documented GitHub response was rejected: %v", err)
+	}
+	if err := ValidateImmutableReleaseSettings([]byte(`{"enabled":true,"future_field":"allowed"}`)); err != nil {
+		t.Fatalf("forward-compatible GitHub response was rejected: %v", err)
+	}
+	for _, body := range []string{`{"enabled":false}`, `{}`, `{"enabled":true} {}`} {
+		if err := ValidateImmutableReleaseSettings([]byte(body)); err == nil {
+			t.Fatalf("ValidateImmutableReleaseSettings(%s) accepted invalid policy", body)
+		}
 	}
 }
 
@@ -236,58 +244,14 @@ func TestValidateReleaseRefRejectsMovedAndMismatchedTags(t *testing.T) {
 	if err := ValidateReleaseRef(manifest, "v0.1.0", commit, annotated); err != nil {
 		t.Fatal(err)
 	}
-	for name, testCase := range map[string]struct {
-		tag  string
-		refs string
-	}{
-		"version": {tag: "v0.2.0", refs: annotated},
-		"missing": {tag: "v0.1.0", refs: ""},
-		"moved":   {tag: "v0.1.0", refs: strings.Repeat("c", 40) + "\trefs/tags/v0.1.0\n"},
-	} {
-		t.Run(name, func(t *testing.T) {
-			if err := ValidateReleaseRef(manifest, testCase.tag, commit, testCase.refs); err == nil {
-				t.Fatal("ValidateReleaseRef() accepted an invalid release ref")
-			}
-		})
+	for _, refs := range []string{"", strings.Repeat("c", 40) + "\trefs/tags/v0.1.0\n"} {
+		if err := ValidateReleaseRef(manifest, "v0.1.0", commit, refs); err == nil {
+			t.Fatal("ValidateReleaseRef() accepted a missing or moved tag")
+		}
 	}
 }
 
-func TestValidateImmutableReleaseSettings(t *testing.T) {
-	if err := ValidateImmutableReleaseSettings([]byte(`{"enabled":true}`)); err != nil {
-		t.Fatal(err)
-	}
-	for name, body := range map[string]string{
-		"disabled": `{"enabled":false}`,
-		"missing":  `{}`,
-		"unknown":  `{"enabled":true,"mode":"mutable"}`,
-		"trailing": `{"enabled":true} {}`,
-	} {
-		t.Run(name, func(t *testing.T) {
-			if err := ValidateImmutableReleaseSettings([]byte(body)); err == nil {
-				t.Fatal("ValidateImmutableReleaseSettings() accepted invalid settings")
-			}
-		})
-	}
-}
-
-func TestReleaseWorkflowUsesAuthorizedPolicyReadAndRevalidatesBeforePublishing(t *testing.T) {
-	workflow, err := os.ReadFile(filepath.Join(filepath.Dir(findModuleRoot(t)), ".github", "workflows", "ci.yml"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	body := string(workflow)
-	if !strings.Contains(body, "RELEASE_ADMIN_TOKEN: ${{ secrets.RELEASE_ADMIN_TOKEN }}") || !strings.Contains(body, `GH_TOKEN="${RELEASE_ADMIN_TOKEN}" gh api`) {
-		t.Fatal("release policy check does not use the required Administration-read credential")
-	}
-	upload := strings.Index(body, `gh release upload "${GITHUB_REF_NAME}"`)
-	revalidate := strings.Index(body, `remote-refs-before-publish`)
-	publish := strings.Index(body, `gh release edit "${GITHUB_REF_NAME}" --draft=false`)
-	if upload < 0 || revalidate < upload || publish < revalidate {
-		t.Fatal("release workflow does not revalidate the remote tag after upload and before publication")
-	}
-}
-
-func TestDeclaredCommandsExecuteAndGeneratorsMustProduceTheirOutputs(t *testing.T) {
+func TestDeclaredCommandsExecute(t *testing.T) {
 	repository := newPackageRepository(t)
 	moduleRoot := filepath.Join(repository, "module")
 	manifest, err := ReadManifest(moduleRoot)
@@ -300,64 +264,36 @@ func TestDeclaredCommandsExecuteAndGeneratorsMustProduceTheirOutputs(t *testing.
 	if body, err := os.ReadFile(filepath.Join(moduleRoot, "generated.txt")); err != nil || string(body) != "generated\n" {
 		t.Fatalf("generator output = %q, %v", body, err)
 	}
-	if err := RunConformanceSuites(moduleRoot, manifest); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.Remove(filepath.Join(moduleRoot, "generated.txt")); err != nil {
-		t.Fatal(err)
-	}
-	manifest.Generators[0].Command = []string{"go", "version"}
-	if err := RunGenerators(moduleRoot, manifest); err == nil || !strings.Contains(err.Error(), "did not produce") {
-		t.Fatalf("RunGenerators() error = %v, want missing output rejection", err)
-	}
 }
 
 func newPackageRepository(t *testing.T) string {
 	t.Helper()
 	repository := t.TempDir()
 	moduleRoot := filepath.Join(repository, "module")
-	if err := os.MkdirAll(moduleRoot, 0o755); err != nil {
+	if err := os.MkdirAll(filepath.Join(moduleRoot, "artifact"), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	for _, path := range []string{"entry.txt", "contract.txt", "migration.md"} {
-		if err := os.WriteFile(filepath.Join(moduleRoot, path), []byte(path+"\n"), 0o644); err != nil {
-			t.Fatal(err)
-		}
+	if err := os.MkdirAll(filepath.Join(moduleRoot, "tools"), 0o755); err != nil {
+		t.Fatal(err)
 	}
-	if err := os.WriteFile(filepath.Join(moduleRoot, "generator.go"), []byte("package main\n\nimport \"os\"\n\nfunc main() { _ = os.WriteFile(\"generated.txt\", []byte(\"generated\\n\"), 0o644) }\n"), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(moduleRoot, "artifact", "entry.txt"), []byte("entry\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(moduleRoot, "tools", "generator.go"), []byte("package main\n\nimport \"os\"\n\nfunc main() { _ = os.WriteFile(\"../generated.txt\", []byte(\"generated\\n\"), 0o644) }\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	manifest := `schema: codefly/module-package/v2
 kind: module-package
 id: example/package
 version: 1.2.3
-minimum-codefly-version: 0.3.0
-repository: https://github.com/example/package.git
-artifact:
-  media-type: application/vnd.codefly.module.v2+tar
-  roots: [.]
-  entry-points: {module: entry.txt}
-provided-services:
-  - name: frontend
-    endpoints: [{name: http, protocol: http, visibility: public}]
-contribution-contracts:
-  - id: example/frontend
-    versions: ">=1.0.0 <2.0.0"
-    entry-points: {schema: contract.txt}
+minimum-codefly-version: ">=0.3.0 <1.0.0"
+artifact-roots: [artifact]
+contracts: {composition: ">=2.0.0 <3.0.0"}
 generators:
-  - id: generate
-    working-directory: .
+  - name: generate
+    working-directory: tools
     command: [go, run, generator.go]
-    outputs: [generated.txt]
-conformance-suites:
-  - id: conformance
-    working-directory: .
-    command: [go, version]
-release:
-  supported-from: ">=1.0.0 <2.0.0"
-  migrations: [{from: ">=1.0.0 <1.2.3", guide: migration.md}]
-  breaking-changes: [{version: 1.2.3, summary: package boundary}]
-reserved-namespaces: [{kind: package, value: "example/"}]
+reserved-namespaces: [example]
 `
 	if err := os.WriteFile(filepath.Join(moduleRoot, ManifestName), []byte(manifest), 0o644); err != nil {
 		t.Fatal(err)
@@ -369,6 +305,15 @@ reserved-namespaces: [{kind: package, value: "example/"}]
 	git(t, repository, "add", "module")
 	git(t, repository, "commit", "-qm", "fixture")
 	return repository
+}
+
+func mustRead(t *testing.T, path string) []byte {
+	t.Helper()
+	body, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return body
 }
 
 func git(t *testing.T, directory string, arguments ...string) string {

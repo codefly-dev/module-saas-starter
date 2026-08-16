@@ -3165,6 +3165,9 @@
       },
       "type": "object"
     },
+    "v1Settings": {
+      "type": "object"
+    },
     "v1SetupTOTPRequest": {
       "type": "object"
     },
@@ -3715,6 +3718,10 @@
       "properties": {
         "appearance": {
           "$ref": "#/definitions/v1UserAppearanceSettings"
+        },
+        "composed": {
+          "$ref": "#/definitions/v1Settings",
+          "description": "Product-contributed settings are generated into this typed container.\nProtoJSON storage and API patching preserve the same schema end to end."
         },
         "email": {
           "$ref": "#/definitions/v1UserEmailSettings"

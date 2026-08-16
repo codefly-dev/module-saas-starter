@@ -8,9 +8,7 @@ type Field struct {
 	Message   string
 }
 
-var fields = [...]Field{
-	{Namespace: "common", Name: "common", Number: 1, Message: "saas.settings.v1.CommonSettings"},
-}
+var fields = [...]Field{}
 
 func Fields() []Field {
 	return append([]Field(nil), fields[:]...)

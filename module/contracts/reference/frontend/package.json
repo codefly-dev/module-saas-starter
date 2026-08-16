@@ -1,6 +1,9 @@
 {
 	"name": "@codefly-reference/frontend",
 	"version": "1.0.0",
+	"codefly": {
+		"frontendPlugin": "reference-product"
+	},
 	"type": "module",
 	"files": [
 		"dist"

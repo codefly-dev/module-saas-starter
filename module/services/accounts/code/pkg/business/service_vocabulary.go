@@ -1,8 +1,12 @@
 package business
 
 import (
+	"fmt"
+	"sort"
+
 	gen "accounts/pkg/gen/saas/accounts/v1"
 	catalogv1 "accounts/pkg/gen/saas/catalog/v1"
+	"accounts/pkg/permissioncatalog"
 )
 
 // Entitlement keys are server-owned product-catalog identifiers. Keep runtime
@@ -50,6 +54,40 @@ var servicePermissionVocabulary = []servicePermissionDefinition{
 	{Permission: "webhooks:write", Description: "Manage, replay, and rotate webhook subscriptions.", BuiltInRoles: []string{"admin (via *:*)"}, APIKeyScope: true},
 }
 
+func composedPermissionVocabulary(
+	base []servicePermissionDefinition,
+	contributed []permissioncatalog.Permission,
+) ([]servicePermissionDefinition, error) {
+	out := append([]servicePermissionDefinition(nil), base...)
+	seen := make(map[string]struct{}, len(base)+len(contributed))
+	for _, definition := range base {
+		seen[definition.Permission] = struct{}{}
+	}
+	for _, permission := range contributed {
+		if permission.Name != permission.Resource+":"+permission.Action {
+			return nil, fmt.Errorf("contributed permission %q does not match resource and action", permission.Name)
+		}
+		if _, exists := seen[permission.Name]; exists {
+			return nil, fmt.Errorf("contributed permission %q collides with the service vocabulary", permission.Name)
+		}
+		seen[permission.Name] = struct{}{}
+		out = append(out, servicePermissionDefinition{
+			Permission:  permission.Name,
+			Description: "Contributed permission " + permission.Name + ".",
+		})
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].Permission < out[j].Permission })
+	return out, nil
+}
+
+func completeServicePermissionVocabulary() []servicePermissionDefinition {
+	definitions, err := composedPermissionVocabulary(servicePermissionVocabulary, permissioncatalog.Permissions())
+	if err != nil {
+		panic(err)
+	}
+	return definitions
+}
+
 var serviceEntitlementVocabulary = []*catalogv1.EntitlementDefinition{
 	{Key: EntitlementAPICallsMonthly, Kind: catalogv1.EntitlementKind_ENTITLEMENT_KIND_QUOTA, Unit: "requests/month", Description: "Monthly API request allowance."},
 	{Key: EntitlementAPIKeys, Kind: catalogv1.EntitlementKind_ENTITLEMENT_KIND_QUOTA, Unit: "keys", Description: "Active API key allowance."},
@@ -68,8 +106,9 @@ func splitPermission(permission string) (string, string) {
 }
 
 func catalogPermissionDefinitions() []*catalogv1.PermissionDefinition {
-	out := make([]*catalogv1.PermissionDefinition, 0, len(servicePermissionVocabulary))
-	for _, definition := range servicePermissionVocabulary {
+	vocabulary := completeServicePermissionVocabulary()
+	out := make([]*catalogv1.PermissionDefinition, 0, len(vocabulary))
+	for _, definition := range vocabulary {
 		resource, action := splitPermission(definition.Permission)
 		out = append(out, &catalogv1.PermissionDefinition{
 			Permission:   definition.Permission,
@@ -97,8 +136,9 @@ func catalogEntitlementDefinitions() []*catalogv1.EntitlementDefinition {
 }
 
 var servicePermissions = func() []*gen.PermissionInfo {
-	out := make([]*gen.PermissionInfo, 0, len(servicePermissionVocabulary))
-	for _, definition := range servicePermissionVocabulary {
+	vocabulary := completeServicePermissionVocabulary()
+	out := make([]*gen.PermissionInfo, 0, len(vocabulary))
+	for _, definition := range vocabulary {
 		resource, action := splitPermission(definition.Permission)
 		out = append(out, &gen.PermissionInfo{
 			Resource: resource, Action: action, Description: definition.Description,
@@ -110,7 +150,7 @@ var servicePermissions = func() []*gen.PermissionInfo {
 
 var serviceScopes = func() []*gen.ScopeInfo {
 	var out []*gen.ScopeInfo
-	for _, definition := range servicePermissionVocabulary {
+	for _, definition := range completeServicePermissionVocabulary() {
 		if definition.APIKeyScope {
 			out = append(out, &gen.ScopeInfo{Scope: definition.Permission, Description: definition.Description})
 		}

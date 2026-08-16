@@ -28,8 +28,9 @@ func main() {
 
 func run(arguments []string) error {
 	flags := flag.NewFlagSet("module-compose", flag.ContinueOnError)
-	moduleRoot := flags.String("module", ".", "module package root")
-	output := flags.String("output", ".", "composed module projection root")
+	input := flags.String("input", os.Getenv("CODEFLY_COMPOSITION_INPUT"), "Core composition input JSON")
+	moduleRoot := flags.String("module", "..", "module package root")
+	output := flags.String("output", "..", "composed module projection root")
 	var frontend, settings, permissions, fixtures, topology paths
 	flags.Var(&frontend, "frontend", "frontend contribution document")
 	flags.Var(&settings, "settings", "settings contribution document")
@@ -43,6 +44,7 @@ func run(arguments []string) error {
 		return fmt.Errorf("unexpected positional arguments: %v", flags.Args())
 	}
 	return composition.Generate(composition.Options{
+		InputPath:   *input,
 		ModuleRoot:  *moduleRoot,
 		OutputRoot:  *output,
 		Frontend:    frontend,

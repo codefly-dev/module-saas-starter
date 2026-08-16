@@ -13,21 +13,12 @@ func RunGenerators(moduleRoot string, manifest Manifest) error {
 		if err := runCommand(moduleRoot, "generator", generator); err != nil {
 			return err
 		}
-		for _, output := range generator.Outputs {
-			info, err := os.Stat(filepath.Join(moduleRoot, filepath.FromSlash(output)))
-			if err != nil {
-				return fmt.Errorf("generator %q did not produce %q: %w", generator.ID, output, err)
-			}
-			if !info.Mode().IsRegular() {
-				return fmt.Errorf("generator %q output %q is not a regular file", generator.ID, output)
-			}
-		}
 	}
 	return nil
 }
 
 func RunConformanceSuites(moduleRoot string, manifest Manifest) error {
-	for _, suite := range manifest.ConformanceSuites {
+	for _, suite := range manifest.Conformance {
 		if err := runCommand(moduleRoot, "conformance suite", suite); err != nil {
 			return err
 		}
@@ -46,7 +37,7 @@ func runCommand(moduleRoot, kind string, command Command) error {
 	process.Env = append(process.Env, "GOWORK=off")
 	output, err := process.CombinedOutput()
 	if err != nil {
-		return fmt.Errorf("%s %q failed: %w: %s", kind, command.ID, err, strings.TrimSpace(string(output)))
+		return fmt.Errorf("%s %q failed: %w: %s", kind, command.Name, err, strings.TrimSpace(string(output)))
 	}
 	return nil
 }

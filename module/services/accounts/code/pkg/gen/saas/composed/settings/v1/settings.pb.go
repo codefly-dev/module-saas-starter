@@ -9,7 +9,6 @@
 package settingsv1
 
 import (
-	v1 "accounts/pkg/gen/saas/settings/v1"
 	reflect "reflect"
 	sync "sync"
 	unsafe "unsafe"
@@ -27,7 +26,6 @@ const (
 
 type Settings struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
-	Common        *v1.CommonSettings     `protobuf:"bytes,1,opt,name=common,proto3" json:"common,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -62,20 +60,13 @@ func (*Settings) Descriptor() ([]byte, []int) {
 	return file_saas_composed_settings_v1_settings_proto_rawDescGZIP(), []int{0}
 }
 
-func (x *Settings) GetCommon() *v1.CommonSettings {
-	if x != nil {
-		return x.Common
-	}
-	return nil
-}
-
 var File_saas_composed_settings_v1_settings_proto protoreflect.FileDescriptor
 
 const file_saas_composed_settings_v1_settings_proto_rawDesc = "" +
 	"\n" +
-	"(saas/composed/settings/v1/settings.proto\x12\x19saas.composed.settings.v1\x1a&saas/settings/v1/common_settings.proto\"D\n" +
-	"\bSettings\x128\n" +
-	"\x06common\x18\x01 \x01(\v2 .saas.settings.v1.CommonSettingsR\x06commonB\xec\x01\n" +
+	"(saas/composed/settings/v1/settings.proto\x12\x19saas.composed.settings.v1\"\n" +
+	"\n" +
+	"\bSettingsB\xec\x01\n" +
 	"\x1dcom.saas.composed.settings.v1B\rSettingsProtoP\x01Z5accounts/pkg/gen/saas/composed/settings/v1;settingsv1\xa2\x02\x03SCS\xaa\x02\x19Saas.Composed.Settings.V1\xca\x02\x19Saas\\Composed\\Settings\\V1\xe2\x02%Saas\\Composed\\Settings\\V1\\GPBMetadata\xea\x02\x1cSaas::Composed::Settings::V1b\x06proto3"
 
 var (
@@ -92,16 +83,14 @@ func file_saas_composed_settings_v1_settings_proto_rawDescGZIP() []byte {
 
 var file_saas_composed_settings_v1_settings_proto_msgTypes = make([]protoimpl.MessageInfo, 1)
 var file_saas_composed_settings_v1_settings_proto_goTypes = []any{
-	(*Settings)(nil),          // 0: saas.composed.settings.v1.Settings
-	(*v1.CommonSettings)(nil), // 1: saas.settings.v1.CommonSettings
+	(*Settings)(nil), // 0: saas.composed.settings.v1.Settings
 }
 var file_saas_composed_settings_v1_settings_proto_depIdxs = []int32{
-	1, // 0: saas.composed.settings.v1.Settings.common:type_name -> saas.settings.v1.CommonSettings
-	1, // [1:1] is the sub-list for method output_type
-	1, // [1:1] is the sub-list for method input_type
-	1, // [1:1] is the sub-list for extension type_name
-	1, // [1:1] is the sub-list for extension extendee
-	0, // [0:1] is the sub-list for field type_name
+	0, // [0:0] is the sub-list for method output_type
+	0, // [0:0] is the sub-list for method input_type
+	0, // [0:0] is the sub-list for extension type_name
+	0, // [0:0] is the sub-list for extension extendee
+	0, // [0:0] is the sub-list for field type_name
 }
 
 func init() { file_saas_composed_settings_v1_settings_proto_init() }

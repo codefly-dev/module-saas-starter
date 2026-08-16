@@ -9,8 +9,7 @@ type Field struct {
 }
 
 var fields = [...]Field{
-	{Namespace: "common", Name: "common", Number: 1, Message: "saas.settings.v1.CommonSettings"},
-	{Namespace: "reference", Name: "reference", Number: 1000, Message: "codefly.reference.settings.v1.ReferenceSettings"},
+	{Namespace: "reference", Name: "reference_settings", Number: 344093794, Message: "codefly.reference.settings.v1.ReferenceSettings"},
 }
 
 func Fields() []Field {

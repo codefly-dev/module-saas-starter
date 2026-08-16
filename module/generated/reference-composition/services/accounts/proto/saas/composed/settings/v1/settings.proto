@@ -3,10 +3,8 @@ syntax = "proto3";
 
 package saas.composed.settings.v1;
 
-import "saas/settings/v1/common_settings.proto";
 import "codefly/reference/settings/v1/reference_settings.proto";
 
 message Settings {
-  saas.settings.v1.CommonSettings common = 1;
-  codefly.reference.settings.v1.ReferenceSettings reference = 1000;
+  codefly.reference.settings.v1.ReferenceSettings reference_settings = 344093794;
 }

@@ -39,7 +39,6 @@ func TestShellToolsDoNotReadCodeflyCarriers(t *testing.T) {
 		if err != nil {
 			return err
 		}
-		defer file.Close()
 		scanner := bufio.NewScanner(file)
 		line := 0
 		for scanner.Scan() {
@@ -53,7 +52,11 @@ func TestShellToolsDoNotReadCodeflyCarriers(t *testing.T) {
 				t.Errorf("%s:%d hard-codes a Codefly runtime carrier; use the SDK/CLI boundary instead", relative, line)
 			}
 		}
-		return scanner.Err()
+		if err := scanner.Err(); err != nil {
+			_ = file.Close()
+			return err
+		}
+		return file.Close()
 	})
 	if err != nil {
 		t.Fatalf("scan shell tools: %v", err)
@@ -404,7 +407,6 @@ func scanRuntimeConfigurationsForPinnedPorts(t *testing.T, repositoryRoot string
 			if err != nil {
 				return err
 			}
-			defer file.Close()
 			scanner := bufio.NewScanner(file)
 			line := 0
 			for scanner.Scan() {
@@ -418,7 +420,11 @@ func scanRuntimeConfigurationsForPinnedPorts(t *testing.T, repositoryRoot string
 					t.Errorf("%s:%d pins a loopback port; Codefly must inject the endpoint", relative, line)
 				}
 			}
-			return scanner.Err()
+			if err := scanner.Err(); err != nil {
+				_ = file.Close()
+				return err
+			}
+			return file.Close()
 		})
 		if err != nil {
 			t.Fatalf("scan runtime configurations under %s: %v", root, err)

@@ -2,7 +2,10 @@ package modulepackage
 
 import (
 	"bytes"
+	"context"
+	"crypto/ed25519"
 	"crypto/sha256"
+	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
@@ -12,12 +15,18 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+
+	corecomposition "github.com/codefly-dev/core/composition"
 )
 
 const (
-	ArchiveName  = "module.tar"
-	ChecksumName = "module.tar.sha256"
-	MetadataName = "artifact.json"
+	ArchiveName              = "module.tar"
+	ChecksumName             = "module.tar.sha256"
+	MetadataName             = "artifact.json"
+	ProvenanceName           = "provenance.json"
+	SignatureName            = "provenance.sig"
+	PackageRepository        = "https://github.com/codefly-dev/module-saas-starter.git"
+	ReleaseSignatureIdentity = "https://github.com/codefly-dev/module-saas-starter/.github/workflows/ci.yml@refs/heads/main"
 )
 
 type ArtifactMetadata struct {
@@ -85,7 +94,7 @@ func Build(options BuildOptions) (ArtifactMetadata, error) {
 	if err != nil {
 		return ArtifactMetadata{}, fmt.Errorf("reserve release directory: %w", err)
 	}
-	defer os.Remove(lockPath)
+	defer func() { _ = os.Remove(lockPath) }()
 	if err := lock.Close(); err != nil {
 		return ArtifactMetadata{}, fmt.Errorf("close release reservation: %w", err)
 	}
@@ -98,7 +107,7 @@ func Build(options BuildOptions) (ArtifactMetadata, error) {
 	if err != nil {
 		return ArtifactMetadata{}, fmt.Errorf("create staged release directory: %w", err)
 	}
-	defer os.RemoveAll(stagingDir)
+	defer func() { _ = os.RemoveAll(stagingDir) }()
 
 	temporary, err := os.CreateTemp(stagingDir, ".module-*.tar")
 	if err != nil {
@@ -108,12 +117,10 @@ func Build(options BuildOptions) (ArtifactMetadata, error) {
 	if err := temporary.Close(); err != nil {
 		return ArtifactMetadata{}, fmt.Errorf("close temporary archive: %w", err)
 	}
-	defer os.Remove(temporaryName)
+	defer func() { _ = os.Remove(temporaryName) }()
 
-	archive := exec.Command("git", "archive", "--format=tar", "--output", temporaryName, commit, "--", "module")
-	archive.Dir = repositoryRoot
-	if output, err := archive.CombinedOutput(); err != nil {
-		return ArtifactMetadata{}, fmt.Errorf("create canonical archive: %w: %s", err, strings.TrimSpace(string(output)))
+	if err := writeCanonicalCommittedModule(repositoryRoot, commit, temporaryName, stagingDir); err != nil {
+		return ArtifactMetadata{}, err
 	}
 	digest, size, err := fileDigest(temporaryName)
 	if err != nil {
@@ -122,10 +129,10 @@ func Build(options BuildOptions) (ArtifactMetadata, error) {
 	metadata := ArtifactMetadata{
 		Schema:  "codefly/module-artifact/v2",
 		Package: PackageSubject{ID: manifest.ID, Version: manifest.Version},
-		Source:  Source{Repository: manifest.Repository, Commit: commit},
+		Source:  Source{Repository: PackageRepository, Commit: commit},
 		Artifact: ArtifactFile{
 			Name:      ArchiveName,
-			MediaType: manifest.Artifact.MediaType,
+			MediaType: corecomposition.ArtifactMediaType,
 			Digest:    "sha256:" + digest,
 			Size:      size,
 		},
@@ -152,16 +159,199 @@ func Build(options BuildOptions) (ArtifactMetadata, error) {
 	return metadata, nil
 }
 
+func writeCanonicalCommittedModule(repositoryRoot, commit, destination, stagingRoot string) error {
+	moduleTree, err := gitOutput(repositoryRoot, "rev-parse", "--verify", commit+":module")
+	if err != nil {
+		return fmt.Errorf("resolve committed module tree: %w", err)
+	}
+	gitArchive, err := os.CreateTemp(stagingRoot, ".git-module-*.tar")
+	if err != nil {
+		return fmt.Errorf("create committed module archive: %w", err)
+	}
+	gitArchivePath := gitArchive.Name()
+	if err := gitArchive.Close(); err != nil {
+		return fmt.Errorf("close committed module archive: %w", err)
+	}
+	defer func() { _ = os.Remove(gitArchivePath) }()
+	archive := exec.Command("git", "archive", "--format=tar", "--output", gitArchivePath, moduleTree)
+	archive.Dir = repositoryRoot
+	if output, err := archive.CombinedOutput(); err != nil {
+		return fmt.Errorf("archive committed module tree: %w: %s", err, strings.TrimSpace(string(output)))
+	}
+	archiveBody, err := os.ReadFile(gitArchivePath)
+	if err != nil {
+		return fmt.Errorf("read committed module archive: %w", err)
+	}
+	committedTree, err := os.MkdirTemp(stagingRoot, ".committed-module-*")
+	if err != nil {
+		return fmt.Errorf("create committed module tree: %w", err)
+	}
+	defer func() { _ = os.RemoveAll(committedTree) }()
+	if err := corecomposition.ExtractArchive(context.Background(), archiveBody, committedTree); err != nil {
+		return fmt.Errorf("extract committed module tree: %w", err)
+	}
+	output, err := os.OpenFile(destination, os.O_WRONLY|os.O_TRUNC, 0o600)
+	if err != nil {
+		return fmt.Errorf("open canonical module archive: %w", err)
+	}
+	writeErr := corecomposition.WriteCanonicalArchive(committedTree, output)
+	closeErr := output.Close()
+	if writeErr != nil {
+		return fmt.Errorf("write canonical module archive: %w", writeErr)
+	}
+	if closeErr != nil {
+		return fmt.Errorf("close canonical module archive: %w", closeErr)
+	}
+	return nil
+}
+
+type SignOptions struct {
+	ModuleRoot        string
+	ReleaseDir        string
+	Repository        string
+	Ref               string
+	Commit            string
+	SignatureIdentity string
+	PrivateKey        []byte
+}
+
+// SignRelease writes the exact provenance and detached signature consumed by
+// Core. The signature covers the persisted JSON bytes, including the trailing
+// newline, so publication cannot accidentally sign a different representation.
+func SignRelease(options SignOptions) (*corecomposition.Provenance, error) {
+	manifest, err := ReadManifest(options.ModuleRoot)
+	if err != nil {
+		return nil, err
+	}
+	repository := options.Repository
+	if repository == "" {
+		repository = PackageRepository
+	}
+	identity := options.SignatureIdentity
+	if identity == "" {
+		identity = ReleaseSignatureIdentity
+	}
+	if options.Ref != "v"+manifest.Version {
+		return nil, fmt.Errorf("provenance ref %q does not match package version %q", options.Ref, manifest.Version)
+	}
+	if len(options.Commit) != 40 || strings.Trim(options.Commit, "0123456789abcdef") != "" {
+		return nil, fmt.Errorf("provenance commit must be a lowercase full SHA")
+	}
+	privateKey, err := decodePrivateKey(options.PrivateKey)
+	if err != nil {
+		return nil, err
+	}
+	archivePath := filepath.Join(options.ReleaseDir, ArchiveName)
+	archive, err := os.ReadFile(archivePath)
+	if err != nil {
+		return nil, fmt.Errorf("read release archive: %w", err)
+	}
+	digest := sha256.Sum256(archive)
+	metadataBody, err := os.ReadFile(filepath.Join(options.ReleaseDir, MetadataName))
+	if err != nil {
+		return nil, fmt.Errorf("read artifact metadata: %w", err)
+	}
+	metadataDecoder := json.NewDecoder(bytes.NewReader(metadataBody))
+	metadataDecoder.DisallowUnknownFields()
+	var metadata ArtifactMetadata
+	if err := metadataDecoder.Decode(&metadata); err != nil {
+		return nil, fmt.Errorf("decode artifact metadata: %w", err)
+	}
+	if err := requireJSONEnd(metadataDecoder); err != nil {
+		return nil, fmt.Errorf("decode artifact metadata: %w", err)
+	}
+	wantedDigest := fmt.Sprintf("sha256:%x", digest)
+	if metadata.Schema != "codefly/module-artifact/v2" ||
+		metadata.Package.ID != manifest.ID || metadata.Package.Version != manifest.Version ||
+		metadata.Source.Repository != repository || metadata.Source.Commit != options.Commit ||
+		metadata.Artifact.Name != ArchiveName || metadata.Artifact.MediaType != corecomposition.ArtifactMediaType ||
+		metadata.Artifact.Digest != wantedDigest || metadata.Artifact.Size != int64(len(archive)) {
+		return nil, fmt.Errorf("artifact metadata does not describe the release being signed")
+	}
+	provenance := &corecomposition.Provenance{
+		Schema:            corecomposition.ProvenanceSchema,
+		Package:           manifest.ID,
+		Version:           manifest.Version,
+		Repository:        repository,
+		Ref:               options.Ref,
+		Commit:            options.Commit,
+		ArtifactMediaType: corecomposition.ArtifactMediaType,
+		ArtifactDigest:    wantedDigest,
+		SignatureIdentity: identity,
+	}
+	body, err := json.MarshalIndent(provenance, "", "  ")
+	if err != nil {
+		return nil, fmt.Errorf("encode module provenance: %w", err)
+	}
+	body = append(body, '\n')
+	signature := ed25519.Sign(privateKey, body)
+	if err := writeNewFile(filepath.Join(options.ReleaseDir, ProvenanceName), body); err != nil {
+		return nil, err
+	}
+	encoded := append([]byte(base64.StdEncoding.EncodeToString(signature)), '\n')
+	if err := writeNewFile(filepath.Join(options.ReleaseDir, SignatureName), encoded); err != nil {
+		_ = os.Remove(filepath.Join(options.ReleaseDir, ProvenanceName))
+		return nil, err
+	}
+	return provenance, nil
+}
+
+func requireJSONEnd(decoder *json.Decoder) error {
+	var trailing any
+	if err := decoder.Decode(&trailing); !errors.Is(err, io.EOF) {
+		if err == nil {
+			return fmt.Errorf("multiple JSON values are not allowed")
+		}
+		return err
+	}
+	return nil
+}
+
+func decodePrivateKey(encoded []byte) (ed25519.PrivateKey, error) {
+	decoded, err := base64.StdEncoding.DecodeString(strings.TrimSpace(string(encoded)))
+	if err != nil {
+		return nil, fmt.Errorf("decode provenance private key: %w", err)
+	}
+	switch len(decoded) {
+	case ed25519.SeedSize:
+		return ed25519.NewKeyFromSeed(decoded), nil
+	case ed25519.PrivateKeySize:
+		return ed25519.PrivateKey(decoded), nil
+	default:
+		return nil, fmt.Errorf("decode provenance private key: got %d bytes, want %d-byte seed or %d-byte key", len(decoded), ed25519.SeedSize, ed25519.PrivateKeySize)
+	}
+}
+
+func writeNewFile(path string, body []byte) error {
+	file, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o600)
+	if err != nil {
+		return fmt.Errorf("create release asset %q: %w", filepath.Base(path), err)
+	}
+	if _, err := file.Write(body); err != nil {
+		_ = file.Close()
+		_ = os.Remove(path)
+		return fmt.Errorf("write release asset %q: %w", filepath.Base(path), err)
+	}
+	if err := file.Close(); err != nil {
+		_ = os.Remove(path)
+		return fmt.Errorf("close release asset %q: %w", filepath.Base(path), err)
+	}
+	return nil
+}
+
 func fileDigest(path string) (string, int64, error) {
 	file, err := os.Open(path)
 	if err != nil {
 		return "", 0, fmt.Errorf("open archive: %w", err)
 	}
-	defer file.Close()
 	hash := sha256.New()
 	size, err := io.Copy(hash, file)
 	if err != nil {
+		_ = file.Close()
 		return "", 0, fmt.Errorf("hash archive: %w", err)
+	}
+	if err := file.Close(); err != nil {
+		return "", 0, fmt.Errorf("close archive: %w", err)
 	}
 	return hex.EncodeToString(hash.Sum(nil)), size, nil
 }
@@ -268,9 +458,9 @@ func ValidateReleaseRef(manifest Manifest, tag, commit, remoteRefs string) error
 
 func ValidateImmutableReleaseSettings(body []byte) error {
 	decoder := json.NewDecoder(bytes.NewReader(body))
-	decoder.DisallowUnknownFields()
 	var settings struct {
-		Enabled bool `json:"enabled"`
+		Enabled         bool `json:"enabled"`
+		EnforcedByOwner bool `json:"enforced_by_owner"`
 	}
 	if err := decoder.Decode(&settings); err != nil {
 		return fmt.Errorf("decode immutable release settings: %w", err)

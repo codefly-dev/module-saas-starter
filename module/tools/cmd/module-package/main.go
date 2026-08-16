@@ -3,6 +3,7 @@ package main
 import (
 	"flag"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 
@@ -18,7 +19,7 @@ func main() {
 
 func run(arguments []string) error {
 	if len(arguments) == 0 {
-		return fmt.Errorf("usage: module-package <validate|build|run-generators|run-conformance|verify-release-policy|verify-release-ref>")
+		return fmt.Errorf("usage: module-package <validate|build|sign-provenance|run-generators|run-conformance|verify-release-policy|verify-release-ref>")
 	}
 	switch arguments[0] {
 	case "validate":
@@ -50,6 +51,35 @@ func run(arguments []string) error {
 			return err
 		}
 		fmt.Println(metadata.Artifact.Digest)
+		return nil
+	case "sign-provenance":
+		flags := flag.NewFlagSet("sign-provenance", flag.ContinueOnError)
+		moduleRoot := flags.String("module", "module", "module package root")
+		releaseDir := flags.String("release", "release", "release asset directory")
+		repository := flags.String("repository", modulepackage.PackageRepository, "canonical repository URL")
+		tag := flags.String("tag", "", "release tag")
+		commit := flags.String("commit", "", "release commit")
+		identity := flags.String("identity", modulepackage.ReleaseSignatureIdentity, "trusted signing identity")
+		if err := flags.Parse(arguments[1:]); err != nil {
+			return err
+		}
+		privateKey, err := io.ReadAll(io.LimitReader(os.Stdin, 16*1024))
+		if err != nil {
+			return fmt.Errorf("read provenance private key: %w", err)
+		}
+		provenance, err := modulepackage.SignRelease(modulepackage.SignOptions{
+			ModuleRoot:        *moduleRoot,
+			ReleaseDir:        *releaseDir,
+			Repository:        *repository,
+			Ref:               *tag,
+			Commit:            *commit,
+			SignatureIdentity: *identity,
+			PrivateKey:        privateKey,
+		})
+		if err != nil {
+			return err
+		}
+		fmt.Println(provenance.ArtifactDigest)
 		return nil
 	case "run-generators", "run-conformance":
 		flags := flag.NewFlagSet(arguments[0], flag.ContinueOnError)

@@ -6,24 +6,18 @@
 
 import type { GenFile, GenMessage } from "@bufbuild/protobuf/codegenv2";
 import { fileDesc, messageDesc } from "@bufbuild/protobuf/codegenv2";
-import type { CommonSettings } from "../../../settings/v1/common_settings_pb";
-import { file_saas_settings_v1_common_settings } from "../../../settings/v1/common_settings_pb";
 import type { Message } from "@bufbuild/protobuf";
 
 /**
  * Describes the file saas/composed/settings/v1/settings.proto.
  */
 export const file_saas_composed_settings_v1_settings: GenFile = /*@__PURE__*/
-  fileDesc("CihzYWFzL2NvbXBvc2VkL3NldHRpbmdzL3YxL3NldHRpbmdzLnByb3RvEhlzYWFzLmNvbXBvc2VkLnNldHRpbmdzLnYxIjwKCFNldHRpbmdzEjAKBmNvbW1vbhgBIAEoCzIgLnNhYXMuc2V0dGluZ3MudjEuQ29tbW9uU2V0dGluZ3NC7AEKHWNvbS5zYWFzLmNvbXBvc2VkLnNldHRpbmdzLnYxQg1TZXR0aW5nc1Byb3RvUAFaNWFjY291bnRzL3BrZy9nZW4vc2Fhcy9jb21wb3NlZC9zZXR0aW5ncy92MTtzZXR0aW5nc3YxogIDU0NTqgIZU2Fhcy5Db21wb3NlZC5TZXR0aW5ncy5WMcoCGVNhYXNcQ29tcG9zZWRcU2V0dGluZ3NcVjHiAiVTYWFzXENvbXBvc2VkXFNldHRpbmdzXFYxXEdQQk1ldGFkYXRh6gIcU2Fhczo6Q29tcG9zZWQ6OlNldHRpbmdzOjpWMWIGcHJvdG8z", [file_saas_settings_v1_common_settings]);
+  fileDesc("CihzYWFzL2NvbXBvc2VkL3NldHRpbmdzL3YxL3NldHRpbmdzLnByb3RvEhlzYWFzLmNvbXBvc2VkLnNldHRpbmdzLnYxIgoKCFNldHRpbmdzQuwBCh1jb20uc2Fhcy5jb21wb3NlZC5zZXR0aW5ncy52MUINU2V0dGluZ3NQcm90b1ABWjVhY2NvdW50cy9wa2cvZ2VuL3NhYXMvY29tcG9zZWQvc2V0dGluZ3MvdjE7c2V0dGluZ3N2MaICA1NDU6oCGVNhYXMuQ29tcG9zZWQuU2V0dGluZ3MuVjHKAhlTYWFzXENvbXBvc2VkXFNldHRpbmdzXFYx4gIlU2Fhc1xDb21wb3NlZFxTZXR0aW5nc1xWMVxHUEJNZXRhZGF0YeoCHFNhYXM6OkNvbXBvc2VkOjpTZXR0aW5nczo6VjFiBnByb3RvMw");
 
 /**
  * @generated from message saas.composed.settings.v1.Settings
  */
 export type Settings = Message<"saas.composed.settings.v1.Settings"> & {
-  /**
-   * @generated from field: saas.settings.v1.CommonSettings common = 1;
-   */
-  common?: CommonSettings;
 };
 
 /**

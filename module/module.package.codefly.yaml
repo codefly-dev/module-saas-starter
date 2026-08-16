@@ -2,191 +2,147 @@ schema: codefly/module-package/v2
 kind: module-package
 id: codefly/saas-starter
 version: 0.1.0
-minimum-codefly-version: 0.3.0
-repository: https://github.com/codefly-dev/module-saas-starter.git
+minimum-codefly-version: ">=0.3.0 <1.0.0"
 
-artifact:
-  media-type: application/vnd.codefly.module.v2+tar
-  roots:
-    - .
-  entry-points:
-    module: module.codefly.yaml
-    topology: deployment/topology.bindings.codefly.yaml
-    frontend: services/frontend/code/package.json
-    accounts-proto: services/accounts/proto
+artifact-roots:
+  - contracts
+  - deployment
+  - docs
+  - fixtures
+  - services
+  - tools
 
-provided-services:
+services:
   - name: accounts
-    endpoints:
-      - {name: connect, protocol: connect, visibility: private}
-      - {name: grpc, protocol: grpc, visibility: private}
-      - {name: rest, protocol: rest, visibility: private}
+    endpoints: [connect, grpc, rest]
   - name: auth-sidecar
-    endpoints:
-      - {name: grpc, protocol: grpc, visibility: module}
-      - {name: rest, protocol: rest, visibility: private}
+    endpoints: [grpc, rest]
   - name: cache
-    endpoints:
-      - {name: read, protocol: tcp, visibility: private}
-      - {name: write, protocol: tcp, visibility: private}
+    endpoints: [read, write]
   - name: frontend
-    endpoints:
-      - {name: http, protocol: http, visibility: public}
+    endpoints: [http]
   - name: marketing
-    endpoints:
-      - {name: http, protocol: http, visibility: public}
+    endpoints: [http]
   - name: object-storage
-    endpoints:
-      - {name: accounts, protocol: tcp, visibility: private}
+    endpoints: [accounts]
   - name: store
-    endpoints:
-      - {name: tcp, protocol: tcp, visibility: external}
+    endpoints: [tcp]
   - name: telemetry
-    endpoints:
-      - {name: grpc, protocol: grpc, visibility: private}
+    endpoints: [grpc]
   - name: temporal
-    endpoints:
-      - {name: grpc, protocol: tcp, visibility: module}
-      - {name: http, protocol: tcp, visibility: module}
+    endpoints: [grpc, http]
   - name: temporal-store
-    endpoints:
-      - {name: tcp, protocol: tcp, visibility: external}
+    endpoints: [tcp]
   - name: vault
-    endpoints:
-      - {name: http, protocol: http, visibility: module}
+    endpoints: [http]
 
-contribution-contracts:
-  - id: codefly/saas/frontend-plugin
-    versions: ">=2.0.0 <3.0.0"
-    entry-points:
-      contribution-schema: contracts/frontend/v2/frontend-contribution.schema.json
-      metadata: services/frontend/code/packages/saas-plugin-contract/src/index.ts
-      react: services/frontend/code/packages/saas-plugin-react/src/index.ts
-      capabilities: services/frontend/code/packages/saas-plugin-contract/proto/saas/frontend/plugin/v1/capabilities.proto
-  - id: codefly/saas/settings
-    versions: ">=1.0.0 <2.0.0"
-    entry-points:
-      contribution-schema: contracts/settings/v1/settings-contribution.schema.json
-      common-settings: services/accounts/proto/saas/settings/v1/common_settings.proto
-      generator: tools/cmd/module-compose
-      go-runtime: services/accounts/code/pkg/settings
-      typescript-runtime: services/frontend/code/packages/saas-settings/src/index.ts
-  - id: codefly/saas/permissions
-    versions: ">=1.0.0 <2.0.0"
-    entry-points:
-      contribution-schema: contracts/permissions/v1/permissions-contribution.schema.json
-      generator: tools/cmd/module-compose
-  - id: codefly/saas/fixtures
-    versions: ">=1.0.0 <2.0.0"
-    entry-points:
-      contribution-schema: contracts/fixtures/v1/fixtures-contribution.schema.json
-      generator: tools/cmd/module-compose
-      runtime: services/accounts/code/fixtures/seed.go
-  - id: codefly/saas/topology
-    versions: ">=1.0.0 <2.0.0"
-    entry-points:
-      contribution-schema: contracts/topology/v1/topology-contribution.schema.json
-      composition-generator: tools/cmd/module-compose
-      deployment-generator: services/accounts/code/cmd/deployment-topology
+contracts:
+  composition: ">=2.0.0 <3.0.0"
+  frontendPlugin: ">=1.0.0 <2.0.0"
+  settings: ">=1.0.0 <2.0.0"
+  permissions: ">=1.0.0 <2.0.0"
+  fixtures: ">=1.0.0 <2.0.0"
 
 generators:
-  - id: composition-default
+  - name: composition
     working-directory: tools
-    command: [go, run, ./cmd/module-compose, --module, .., --output, ..]
-    outputs:
-      - services/frontend/code/src/generated/frontend-contributions.ts
-      - services/frontend/code/frontend.install.generated.json
-      - services/accounts/proto/saas/composed/settings/v1/settings.proto
-      - services/accounts/code/pkg/settingscatalog/catalog_gen.go
-      - services/frontend/code/src/gen/saas/settings/v1/field_catalog.ts
-      - deployment/generated/contributed-permissions.json
-      - deployment/generated/contributed-fixtures.json
-      - deployment/generated/contributed-topology.json
-  - id: composition-reference
+    command: [go, run, ./cmd/module-compose]
+  - name: composed-protobuf
+    working-directory: services/accounts
+    command: [buf, generate, proto, --path, proto/saas/composed/settings/v1/settings.proto, --path, proto/contributed, --template, buf.gen.composition.yaml]
+  - name: composed-go-format
     working-directory: tools
-    command: [go, run, ./cmd/module-compose, --module, .., --output, ../generated/reference-composition, --frontend, ../contracts/reference/frontend.codefly.yaml, --settings, ../contracts/reference/settings.codefly.yaml, --permissions, ../contracts/reference/permissions.codefly.yaml, --fixtures, ../contracts/reference/fixtures.codefly.yaml, --topology, ../contracts/reference/topology.codefly.yaml]
-    outputs:
-      - generated/reference-composition/services/frontend/code/src/generated/frontend-contributions.ts
-      - generated/reference-composition/services/frontend/code/frontend.install.generated.json
-      - generated/reference-composition/services/accounts/proto/saas/composed/settings/v1/settings.proto
-      - generated/reference-composition/services/accounts/code/pkg/settingscatalog/catalog_gen.go
-      - generated/reference-composition/services/frontend/code/src/gen/saas/settings/v1/field_catalog.ts
-      - generated/reference-composition/deployment/generated/contributed-permissions.json
-      - generated/reference-composition/deployment/generated/contributed-fixtures.json
-      - generated/reference-composition/deployment/generated/contributed-topology.json
-  - id: frontend-service-allowlist
-    working-directory: services/frontend/code
-    command: [npm, run, generate:plugin-allowlist]
-    outputs:
-      - services/frontend/code/server/plugin-service-allowlist.generated.json
-  - id: frontend-service-manifest
-    working-directory: services/frontend/code
-    command: [npm, run, generate:plugin-codefly-dependencies]
-    outputs:
-      - services/frontend/service.codefly.yaml
-  - id: deployment-topology
-    working-directory: services/accounts/code
-    command: [go, run, ./cmd/deployment-topology, -catalog, ../generated/service-catalog.json, -config, ../../../deployment/topology.bindings.codefly.yaml, -frontend-plugin-allowlist, ../../frontend/code/server/plugin-service-allowlist.generated.json, -application-config, ../../../deployment/application.bindings.codefly.yaml, -topology-output, ../../../deployment/generated/service-topology.json, -module-output, ../../../module.codefly.yaml, -services-root, ../.., -network-output, pkg/cataloggen/testdata/network-policy.golden.yaml]
-    outputs:
-      - deployment/generated/service-topology.json
-      - module.codefly.yaml
-      - services/accounts/code/pkg/cataloggen/testdata/network-policy.golden.yaml
-      - services/accounts/service.codefly.yaml
-      - services/auth-sidecar/service.codefly.yaml
-      - services/cache/service.codefly.yaml
-      - services/frontend/service.codefly.yaml
-      - services/marketing/service.codefly.yaml
-      - services/object-storage/service.codefly.yaml
-      - services/store/service.codefly.yaml
-      - services/telemetry/service.codefly.yaml
-      - services/vault/service.codefly.yaml
+    command: [go, run, ./cmd/module-format-generated, ../services/accounts/code/pkg/gen/saas/composed/settings/v1, ../services/accounts/code/pkg/gen/contributed]
 
-conformance-suites:
-  - id: frontend-contract
-    working-directory: services/frontend/code
-    command: [npm, run, test:plugin-contract]
-  - id: frontend-react
-    working-directory: services/frontend/code
-    command: [npm, run, test:plugin-react]
-  - id: settings-runtime
-    working-directory: services/accounts/code
-    command: [go, test, ./pkg/settings, ./pkg/usersettings]
-  - id: composition-contracts
+conformance:
+  - name: composition-contracts
     working-directory: tools
     command: [go, test, ./composition]
-  - id: published-frontend-contracts
-    working-directory: services/frontend/code
-    command: [npm, run, test:published-plugin-contract]
-  - id: protobuf-contract-lint
-    working-directory: services/accounts/proto
-    command: [go, run, github.com/bufbuild/buf/cmd/buf@v1.72.0, lint]
-  - id: protobuf-semver
-    working-directory: services/accounts/proto
-    command: [go, run, github.com/bufbuild/buf/cmd/buf@v1.72.0, breaking, --against, "../../../../.git#ref=v0.0.37,subdir=module/services/accounts/proto"]
-  - id: package-integrity
-    working-directory: tools
-    command: [go, test, ./...]
 
-release:
-  supported-from: ">=0.0.32 <0.1.0"
-  migrations:
-    - from: ">=0.0.32 <0.1.0"
-      guide: docs/composition-v2-migration.md
-  breaking-changes:
-    - version: 0.1.0
-      summary: Consumers resolve the immutable package instead of copying Starter-owned files into a writable module tree.
+migrations:
+  - id: composition-v2
+    from: ">=0.0.32 <0.1.0"
+    breaking: true
+
+breaking-changes:
+  - Consumers resolve the immutable package into a disposable projection instead of editing Starter-owned files.
 
 reserved-namespaces:
-  - {kind: package, value: "@codefly/saas-"}
-  - {kind: protobuf, value: "saas."}
-  - {kind: permission, value: "saas."}
-  - {kind: settings, value: "common"}
-  - {kind: service, value: "accounts"}
-  - {kind: service, value: "auth-sidecar"}
-  - {kind: service, value: "cache"}
-  - {kind: service, value: "frontend"}
-  - {kind: service, value: "marketing"}
-  - {kind: service, value: "object-storage"}
-  - {kind: service, value: "store"}
-  - {kind: service, value: "telemetry"}
-  - {kind: service, value: "vault"}
+  - "@codefly/saas-"
+  - saas
+
+claims:
+  - {kind: package, key: "@base-ui/react", owner: base}
+  - {kind: package, key: "@biomejs/biome", owner: base}
+  - {kind: package, key: "@bufbuild/protobuf", owner: base}
+  - {kind: package, key: "@bufbuild/protoc-gen-es", owner: base}
+  - {kind: package, key: "@codefly/saas-plugin-contract", owner: base}
+  - {kind: package, key: "@codefly/saas-plugin-react", owner: base}
+  - {kind: package, key: "@codefly/saas-settings", owner: base}
+  - {kind: package, key: "@connectrpc/connect", owner: base}
+  - {kind: package, key: "@connectrpc/connect-web", owner: base}
+  - {kind: package, key: "@hookform/resolvers", owner: base}
+  - {kind: package, key: "@playwright/test", owner: base}
+  - {kind: package, key: "@sentry/nextjs", owner: base}
+  - {kind: package, key: "@simplewebauthn/browser", owner: base}
+  - {kind: package, key: "@tanstack/react-query", owner: base}
+  - {kind: package, key: "@tanstack/react-table", owner: base}
+  - {kind: package, key: "@tailwindcss/postcss", owner: base}
+  - {kind: package, key: "@testing-library/jest-dom", owner: base}
+  - {kind: package, key: "@testing-library/react", owner: base}
+  - {kind: package, key: "@types/js-yaml", owner: base}
+  - {kind: package, key: "@types/node", owner: base}
+  - {kind: package, key: "@types/react", owner: base}
+  - {kind: package, key: "@types/react-dom", owner: base}
+  - {kind: package, key: babel-plugin-react-compiler, owner: base}
+  - {kind: package, key: class-variance-authority, owner: base}
+  - {kind: package, key: clsx, owner: base}
+  - {kind: package, key: cmdk, owner: base}
+  - {kind: package, key: codefly, owner: base}
+  - {kind: package, key: eslint, owner: base}
+  - {kind: package, key: eslint-config-next, owner: base}
+  - {kind: package, key: happy-dom, owner: base}
+  - {kind: package, key: js-yaml, owner: base}
+  - {kind: package, key: lucide-react, owner: base}
+  - {kind: package, key: jsdom, owner: base}
+  - {kind: package, key: msw, owner: base}
+  - {kind: package, key: next, owner: base}
+  - {kind: package, key: react, owner: base}
+  - {kind: package, key: react-dom, owner: base}
+  - {kind: package, key: react-hook-form, owner: base}
+  - {kind: package, key: server-only, owner: base}
+  - {kind: package, key: sonner, owner: base}
+  - {kind: package, key: tailwindcss, owner: base}
+  - {kind: package, key: tailwind-merge, owner: base}
+  - {kind: package, key: tw-animate-css, owner: base}
+  - {kind: package, key: tsx, owner: base}
+  - {kind: package, key: typescript, owner: base}
+  - {kind: package, key: vitest, owner: base}
+  - {kind: package, key: zod, owner: base}
+  - {kind: package, key: zustand, owner: base}
+  - {kind: route, key: plugin/audit, owner: base}
+  - {kind: route, key: plugin/core-users, owner: base}
+  - {kind: route, key: plugin/platform-admin, owner: base}
+  - {kind: permission, key: "*:*", owner: base}
+  - {kind: permission, key: "api_keys:read", owner: base}
+  - {kind: permission, key: "api_keys:write", owner: base}
+  - {kind: permission, key: "audit:read", owner: base}
+  - {kind: permission, key: "billing:read", owner: base}
+  - {kind: permission, key: "billing:write", owner: base}
+  - {kind: permission, key: "entitlements:read", owner: base}
+  - {kind: permission, key: "invitations:read", owner: base}
+  - {kind: permission, key: "invitations:write", owner: base}
+  - {kind: permission, key: "knowledge:read", owner: base}
+  - {kind: permission, key: "knowledge:write", owner: base}
+  - {kind: permission, key: "orgs:read", owner: base}
+  - {kind: permission, key: "orgs:write", owner: base}
+  - {kind: permission, key: "roles:read", owner: base}
+  - {kind: permission, key: "roles:write", owner: base}
+  - {kind: permission, key: "teams:read", owner: base}
+  - {kind: permission, key: "teams:write", owner: base}
+  - {kind: permission, key: "users:read", owner: base}
+  - {kind: permission, key: "users:write", owner: base}
+  - {kind: permission, key: "webhooks:read", owner: base}
+  - {kind: permission, key: "webhooks:write", owner: base}
+  - {kind: topology, key: fixture/dev-admin, owner: base}
+  - {kind: topology, key: fixture/simple, owner: base}
