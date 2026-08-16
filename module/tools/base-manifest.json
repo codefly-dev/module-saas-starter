@@ -1,6 +1,6 @@
 {
   "note": "Base-file integrity manifest for the saas-starter module. Generated FROM canonical by `node tools/base-integrity.mjs gen`. Consumers MUST NOT hand-edit base files — only add files on the side. Regenerated on every codefly sync from canonical.",
-  "fileCount": 1569,
+  "fileCount": 1568,
   "files": {
     "AUTHORIZATION_CATALOG.md": "b2ea5d41f0098e80315e02e7c4bdbda03b65c8eef463426242552fd3c047ca0a",
     "CONTRACT_VERSIONING.md": "02031aa87922ab5ec573ea582cf584271873481de6ceabbda52b1bfda005ffbd",
@@ -475,7 +475,7 @@
     "services/accounts/code/pkg/gen/saas/webhooks/v1/jobs.pb.go": "f77e7cfe2611be4412d755ca1a9618abb1930ca49cac2f62ea2b0863c0a836f5",
     "services/accounts/code/pkg/infra/README.md": "5e251a6e9149a81efe2fa6ae10026f0979354b56314d83b02ee30d4ba630fa89",
     "services/accounts/code/pkg/infra/jwt.go": "5972fbf0c69fc2793632248f3b87a010ed62c23517a55572a287a8b998862296",
-    "services/accounts/code/pkg/infra/postgres.go": "83062e23874abd489be8379822abee3f42edffb42c31dba56fedffcaae7749e4",
+    "services/accounts/code/pkg/infra/postgres.go": "40d1edd9b5185e4488f22103732c237f9262e43bd0f5df90ae8dee37f7442b76",
     "services/accounts/code/pkg/infra/postgres_acquisition_journey_test.go": "6a7c83f61b895ceca7b30b80bb1a0091477dd013d3121ff2c48c3f0253c7fbf8",
     "services/accounts/code/pkg/infra/postgres_analytics_deliveries.go": "d04b9ad9585dcd3606aee5b95704f18d03cf94832c8642aadc408b3acfc9ce72",
     "services/accounts/code/pkg/infra/postgres_analytics_test.go": "f2adb94580ae1f5d0366283965bfecbee8ad7f9ae1591aa62fa826c47616d491",
@@ -1339,7 +1339,6 @@
     "services/marketing/code/tests/routes.test.ts": "949a0f4d2698a66cc24dd66aa1812cf2d662fceb76a21cf14644b0ab811a4fe4",
     "services/marketing/code/tsconfig.json": "a3b8af357e992b0798c116d58d9b85209509bd5850d210477db5bd90bbd3fe78",
     "services/object-storage/.nix-cache/nix-devshell.json": "f2f6db9faaa682cea58ad15e5091160b2fb99b476cea27d15c9bd5ed265be411",
-    "services/object-storage/minio/.minio.sys/buckets/.heal/mrf/list.bin": "507503b51960cceda8d924904fb85377fe7d177fb8dfcf56b24e4557644ed486",
     "services/object-storage/minio/.minio.sys/config/config.json/xl.meta": "a77a55d660e8612c0e0f350a526af4cf8c3a06d122ddd68901854f9f2796f2cf",
     "services/object-storage/minio/.minio.sys/config/iam/format.json/xl.meta": "862f0b230706df62e0c77f3c5b375ce8a6e052f5db31fa30df22375c798e0006",
     "services/object-storage/minio/.minio.sys/format.json": "10b24fcd03a6127710c3a6f672c987493521f0d4837d0a4ea403f8c700f7acd7",
