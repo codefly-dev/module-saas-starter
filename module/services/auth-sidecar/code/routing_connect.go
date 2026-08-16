@@ -17,10 +17,14 @@ func LoadConnectRoutesFromCatalog() ([]*RouteEntry, error) {
 	if err != nil {
 		return nil, err
 	}
+	authz, err := authorizationByProcedure()
+	if err != nil {
+		return nil, err
+	}
 	entries := make([]*RouteEntry, 0, len(source))
 	for _, entry := range source {
 		copy := *entry
-		if err := applyGeneratedAuthorizationMetadata(&copy); err != nil {
+		if err := applyGeneratedAuthorizationMetadata(&copy, authz); err != nil {
 			return nil, fmt.Errorf("Connect route %q: %w", copy.Path, err)
 		}
 		entries = append(entries, &copy)

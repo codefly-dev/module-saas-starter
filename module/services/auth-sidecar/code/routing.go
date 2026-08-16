@@ -67,6 +67,11 @@ func LoadRESTExtensionsFromDir(ctx context.Context, dir string) ([]*RouteEntry, 
 		return nil, fmt.Errorf("routing: cannot load routes from %s: %w", dir, err)
 	}
 
+	authz, err := authorizationByProcedure()
+	if err != nil {
+		return nil, err
+	}
+
 	var entries []*RouteEntry
 	for _, route := range loader.All() {
 		if !route.Extension.Exposed {
@@ -78,7 +83,7 @@ func LoadRESTExtensionsFromDir(ctx context.Context, dir string) ([]*RouteEntry, 
 			Path:      route.Path,
 			Protected: route.Extension.Protected,
 		}
-		if err := applyGeneratedAuthorizationMetadata(entry); err != nil {
+		if err := applyGeneratedAuthorizationMetadata(entry, authz); err != nil {
 			return nil, fmt.Errorf("routing: %s %s: %w", entry.Method, entry.Path, err)
 		}
 		if entry.Procedure != "" {

@@ -5,10 +5,10 @@ import (
 	"strings"
 )
 
-// applyGeneratedAuthorizationMetadata joins a route to the generated method
-// policy projection. Descriptor routes fail closed on a missing join. Unknown
+// applyGeneratedAuthorizationMetadata joins a route to the method policy
+// projection. Descriptor routes fail closed on a missing join. Unknown
 // non-protobuf REST extensions retain their explicit extension policy.
-func applyGeneratedAuthorizationMetadata(entry *RouteEntry) error {
+func applyGeneratedAuthorizationMetadata(entry *RouteEntry, authz map[string]generatedAuthorizationMetadata) error {
 	if entry == nil {
 		return fmt.Errorf("route entry is nil")
 	}
@@ -22,7 +22,7 @@ func applyGeneratedAuthorizationMetadata(entry *RouteEntry) error {
 		}
 		descriptorRESTRoute = true
 	}
-	metadata, ok := generatedAuthorizationByProcedure[procedure]
+	metadata, ok := authz[procedure]
 	if !ok {
 		return fmt.Errorf("generated authorization metadata is missing for %q", procedure)
 	}
