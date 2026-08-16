@@ -142,16 +142,12 @@ func doWork(ctx context.Context) (Clean, error) {
 		return nil, fmt.Errorf("configure job operations database pool: %w", err)
 	}
 	jobStore := infra.NewPostgresJobStore(jobWorkerPool)
-	// OTEL metrics are initialized unconditionally above, so durable
-	// job-operations metrics are always enabled. The downstream Start /
-	// Shutdown paths still nil-check the concrete monitor so this stays a
-	// single source of truth if metrics ever become optional.
-	var jobOperationsMonitor *jobs.OperationsMonitor
-	jobOperationsMonitor, err = jobs.NewOperationsMonitor(
-		jobStore,
-		otel.Meter("github.com/codefly-dev/module-saas-starter/job-operations"),
-		30*time.Second,
-	)
+	// Durable job-operations metrics are enabled only when OTEL metrics are, i.e.
+	// otelMetricProvider != nil (observabilityEnabled()). With observability off
+	// the global meter is a no-op, so building the monitor would poll the job
+	// store every interval to feed instruments nothing can read; keep it nil and
+	// let the Start/Shutdown nil-checks below skip it entirely.
+	jobOperationsMonitor, err := newDurableJobMetricsMonitor(otelMetricProvider != nil, jobStore)
 	if err != nil {
 		return nil, fmt.Errorf("configure durable job metrics: %w", err)
 	}
@@ -873,6 +869,23 @@ func workspaceEnv(configuration, key string) string {
 
 func observabilityEnabled() bool {
 	return strings.TrimSpace(workspaceEnv("observability", "OTEL_EXPORTER_OTLP_ENDPOINT")) != ""
+}
+
+// newDurableJobMetricsMonitor builds the durable job-operations metrics monitor
+// only when OTEL metrics are enabled (metricsEnabled mirrors a non-nil
+// otelMetricProvider, i.e. observabilityEnabled()). When metrics are disabled the
+// global meter is a no-op, so a monitor would poll the job store every interval
+// only to record into instruments nothing can read; returning a nil monitor lets
+// the caller's Start/Shutdown nil-checks skip that background work entirely.
+func newDurableJobMetricsMonitor(metricsEnabled bool, source jobs.Operations) (*jobs.OperationsMonitor, error) {
+	if !metricsEnabled {
+		return nil, nil
+	}
+	return jobs.NewOperationsMonitor(
+		source,
+		otel.Meter("github.com/codefly-dev/module-saas-starter/job-operations"),
+		30*time.Second,
+	)
 }
 
 // identityEnv is intentionally Codefly-only. Local dogfood, tests, and
