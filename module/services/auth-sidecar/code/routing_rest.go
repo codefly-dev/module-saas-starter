@@ -11,16 +11,19 @@ import (
 // Authorization metadata is joined by canonical procedure and internal methods
 // are absent from the generated source inventory.
 func LoadRESTRoutesFromCatalog() ([]*RouteEntry, error) {
-	generated := generatedCatalogRESTRoutes()
-	entries := make([]*RouteEntry, 0, len(generated))
-	for _, entry := range generated {
+	source, err := restCatalogRoutes()
+	if err != nil {
+		return nil, err
+	}
+	entries := make([]*RouteEntry, 0, len(source))
+	for _, entry := range source {
 		copy := *entry
 		if err := applyGeneratedAuthorizationMetadata(&copy); err != nil {
 			return nil, fmt.Errorf("REST route %s %q: %w", copy.Method, copy.Path, err)
 		}
 		entries = append(entries, &copy)
 	}
-	log.Printf("routing: loaded %d generated REST routes from saas.rest.surface.v1", len(entries))
+	log.Printf("routing: loaded %d REST routes from saas.rest.surface.v1", len(entries))
 	return entries, nil
 }
 
