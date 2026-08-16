@@ -115,6 +115,20 @@ func (s *Service) AddOrgMember(ctx context.Context, actorID string, req *gen.Add
 	return nil
 }
 
+// ConvergeFixtureOrgMember applies fixture-declared membership as bootstrap
+// state. It bypasses runtime seat admission and user-facing side effects while
+// preserving the cache consistency required by every membership mutation.
+func (s *Service) ConvergeFixtureOrgMember(ctx context.Context, req *gen.AddOrgMemberRequest) error {
+	w := wool.Get(ctx).In("ConvergeFixtureOrgMember")
+	if err := s.store.As(System()).Within(ctx, func(ctx context.Context) error {
+		return s.store.AddOrgMember(ctx, req.OrgId, req.UserId, orgRoleToString(req.Role))
+	}); err != nil {
+		return w.Wrapf(err, "cannot converge fixture member")
+	}
+	s.invalidateMembership(ctx, req.OrgId, req.UserId)
+	return nil
+}
+
 // RemoveOrgMember removes a member from an organization.
 //
 // Guards:
