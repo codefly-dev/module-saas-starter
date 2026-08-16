@@ -174,6 +174,27 @@ func main() {
 		if apiConnectURL != "" {
 			upstreams["accounts_connect"] = MustURL(apiConnectURL)
 		}
+		if err := addArtifactUpstreams(ctx, matcher, upstreams, func(ctx context.Context, requirement routeArtifactUpstream) (*url.URL, error) {
+			network, err := codefly.For(ctx).
+				Module(requirement.Module).
+				Service(requirement.Service).
+				Endpoint(requirement.Endpoint).
+				API(requirement.API).
+				ResolveNetworkInstance()
+			if err != nil {
+				return nil, err
+			}
+			host := network.Host
+			if host == "" {
+				host = net.JoinHostPort(network.Hostname, strconv.Itoa(int(network.Port)))
+			}
+			if host == "" {
+				return nil, fmt.Errorf("resolved endpoint has no host")
+			}
+			return &url.URL{Scheme: "http", Host: host}, nil
+		}); err != nil {
+			panic(fmt.Sprintf("resolve runtime route upstreams: %v", err))
+		}
 		redisURL, redisErr := codefly.For(ctx).Service("cache").Secret("redis", "connection")
 		if redisErr != nil || redisURL == "" {
 			redisURL = os.Getenv("REDIS_URL")
@@ -235,6 +256,38 @@ func main() {
 	if err := grpcServer.Serve(grpcLis); err != nil {
 		fmt.Fprintf(os.Stderr, "grpc server error: %v\n", err)
 	}
+}
+
+type routeArtifactResolver func(context.Context, routeArtifactUpstream) (*url.URL, error)
+
+func addArtifactUpstreams(
+	ctx context.Context,
+	matcher *RouteMatcher,
+	upstreams map[string]*url.URL,
+	resolve routeArtifactResolver,
+) error {
+	for _, requirement := range matcher.RequiredArtifactUpstreams() {
+		if _, exists := upstreams[requirement.Key]; exists {
+			continue
+		}
+		upstream, err := resolve(ctx, requirement)
+		if err != nil {
+			return fmt.Errorf(
+				"resolve %s for %s/%s endpoint %s api %s: %w",
+				requirement.Key,
+				requirement.Module,
+				requirement.Service,
+				requirement.Endpoint,
+				requirement.API,
+				err,
+			)
+		}
+		if upstream == nil || upstream.Scheme == "" || upstream.Host == "" {
+			return fmt.Errorf("resolve %s returned an incomplete URL", requirement.Key)
+		}
+		upstreams[requirement.Key] = upstream
+	}
+	return nil
 }
 
 func canonicalPublicOrigin(candidate string) (string, error) {
