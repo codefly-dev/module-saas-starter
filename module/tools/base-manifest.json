@@ -1,6 +1,6 @@
 {
   "note": "Base-file integrity manifest for the saas-starter module. Generated FROM canonical by `node tools/base-integrity.mjs gen`. Consumers MUST NOT hand-edit base files — only add files on the side. Regenerated on every codefly sync from canonical.",
-  "fileCount": 1537,
+  "fileCount": 1556,
   "files": {
     "AUTHORIZATION_CATALOG.md": "b2ea5d41f0098e80315e02e7c4bdbda03b65c8eef463426242552fd3c047ca0a",
     "CONTRACT_VERSIONING.md": "02031aa87922ab5ec573ea582cf584271873481de6ceabbda52b1bfda005ffbd",
@@ -475,7 +475,7 @@
     "services/accounts/code/pkg/gen/saas/webhooks/v1/jobs.pb.go": "f77e7cfe2611be4412d755ca1a9618abb1930ca49cac2f62ea2b0863c0a836f5",
     "services/accounts/code/pkg/infra/README.md": "5e251a6e9149a81efe2fa6ae10026f0979354b56314d83b02ee30d4ba630fa89",
     "services/accounts/code/pkg/infra/jwt.go": "5972fbf0c69fc2793632248f3b87a010ed62c23517a55572a287a8b998862296",
-    "services/accounts/code/pkg/infra/postgres.go": "bdb3c7fc5d1d9aed4f277919536e9c574e2619fdf1a562b1ff81d578eaae3f3c",
+    "services/accounts/code/pkg/infra/postgres.go": "a05657d07bd2f6f4fe58ef1d80ac0673be11bb16e0c8bca2b83ce4b26f61244c",
     "services/accounts/code/pkg/infra/postgres_acquisition_journey_test.go": "6a7c83f61b895ceca7b30b80bb1a0091477dd013d3121ff2c48c3f0253c7fbf8",
     "services/accounts/code/pkg/infra/postgres_analytics_deliveries.go": "d04b9ad9585dcd3606aee5b95704f18d03cf94832c8642aadc408b3acfc9ce72",
     "services/accounts/code/pkg/infra/postgres_analytics_test.go": "9eeabf4f47945f44a840f2c5d8193edcb46cc74fc278ca5ce5a75857f1c68582",
