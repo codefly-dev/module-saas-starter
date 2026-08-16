@@ -140,11 +140,20 @@ func TestRouteArtifactFailsClosed(t *testing.T) {
 	}
 }
 
-func TestRouteArtifactRejectsUnknownField(t *testing.T) {
+// An additive proto field must not fail an older sidecar: unknown fields are
+// tolerated so a newer platform's artifact still loads.
+func TestRouteArtifactToleratesUnknownField(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "rest-surface.json")
-	require.NoError(t, os.WriteFile(path, []byte(`{"schema_version":"saas.rest.surface.v1","routes":[],"unexpected":true}`), 0o600))
-	_, err := loadRESTRoutesFromArtifact(path)
-	require.ErrorContains(t, err, "cannot decode route artifact")
+	route := `{"protocol":"GATEWAY_PROTOCOL_REST","method":"GET","path":"/v1/public/plans","match":"GATEWAY_MATCH_EXACT",` +
+		`"procedure":"/saas.accounts.v1.BillingService/ListPublicPlans","owner":{"module":"saas-starter","service":"accounts"},` +
+		`"upstream_endpoint":"rest","exposure":"EXPOSURE_PUBLIC","source":"GATEWAY_ROUTE_SOURCE_DESCRIPTOR","future_field":42}`
+	body := `{"schema_version":"saas.rest.surface.v1","owner":{"module":"saas-starter","service":"accounts"},"routes":[` + route + `]}`
+	require.NoError(t, os.WriteFile(path, []byte(body), 0o600))
+
+	entries, err := loadRESTRoutesFromArtifact(path)
+	require.NoError(t, err)
+	require.Len(t, entries, 1)
+	require.Equal(t, "/v1/public/plans", entries[0].Path)
 }
 
 func TestRouteArtifactMissingFile(t *testing.T) {

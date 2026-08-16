@@ -1,6 +1,6 @@
 {
   "note": "Base-file integrity manifest for the saas-starter module. Generated FROM canonical by `node tools/base-integrity.mjs gen`. Consumers MUST NOT hand-edit base files — only add files on the side. Regenerated on every codefly sync from canonical.",
-  "fileCount": 1538,
+  "fileCount": 1540,
   "files": {
     "AUTHORIZATION_CATALOG.md": "b2ea5d41f0098e80315e02e7c4bdbda03b65c8eef463426242552fd3c047ca0a",
     "CONTRACT_VERSIONING.md": "02031aa87922ab5ec573ea582cf584271873481de6ceabbda52b1bfda005ffbd",
@@ -697,10 +697,10 @@
     "services/auth-sidecar/code/ratelimit_failure_test.go": "25b3c83a9e22fd2dfe4631766bf47cff7015ad276209e3847596efa3ee1872b0",
     "services/auth-sidecar/code/redis_backend_test.go": "a54a8d5f586b968fff8b45bade40abd4c73ab961209da4b9c2319a1e06f33214",
     "services/auth-sidecar/code/routing.go": "9ca1ea7128c0b28e849d9d02e385d41eff86a2414c03a53ad76a3fdfd3fc4a76",
-    "services/auth-sidecar/code/routing_artifact.go": "85803d266866c959e7460aa49dcf72c8d71a524042813e3561a281dd5340121d",
-    "services/auth-sidecar/code/routing_artifact_test.go": "90e2fd3813cda1d2716ad238505ed757560161ba575e31a20775a6c8e545dd50",
-    "services/auth-sidecar/code/routing_authz_artifact.go": "953a855d1298f33b3bc18172525bd082b907e65ccb266acd03f2692d1c3e4346",
-    "services/auth-sidecar/code/routing_authz_artifact_test.go": "baead96327d17c436368a81ef41fbb02f3f2c8fea66b8beb9bd883362d0b79e0",
+    "services/auth-sidecar/code/routing_artifact.go": "03b45cfc98d78ac064d9a84e1d0450688e2ba7b4a9c137cfa79790c1fdde1dd0",
+    "services/auth-sidecar/code/routing_artifact_test.go": "4a0a90ad527f09a57362857d8674c1c058847d3cf0d9e30de2ee5292a147e658",
+    "services/auth-sidecar/code/routing_authz_artifact.go": "807bc1838a62c1c5a406d9b4076b3a66ed74fc88fbf4cdc5083c2e9d9a5b97f4",
+    "services/auth-sidecar/code/routing_authz_artifact_test.go": "a69f21b13b12547b8c1567a179b954c4a5840e67e57aeaeb0ffcd865cb5a5626",
     "services/auth-sidecar/code/routing_catalog_gen.go": "5bd19808e554e1d0c7ea8561b6df8088a6f5ce0393bcd38e44dad8cd6b244be1",
     "services/auth-sidecar/code/routing_connect.go": "87cea5b4d7d7b49b5b04a26ae2fb4afbeee906395c4c04ed68c33e336a9bbce8",
     "services/auth-sidecar/code/routing_connect_test.go": "b80015bff30bb522b93fafcd0cd6f810f297fde61cefa4c4b9d3a9243bf5c585",

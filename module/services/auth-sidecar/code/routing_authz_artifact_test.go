@@ -44,7 +44,7 @@ func TestRouteAuthorizedByArtifactProcedureWithoutRebuild(t *testing.T) {
 		Methods: []authzMethodItem{{
 			Procedure:    procedure,
 			PolicySHA256: "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
-			Policy:       &authzEdgePolicy{Exposure: exposureAuthenticated, RateLimit: "RATE_LIMIT_CLASS_STANDARD_READ"},
+			Policy:       &authzEdgePolicy{Exposure: exposureAuthenticated, RateLimit: "RATE_LIMIT_CLASS_STANDARD_READ", AuthenticationFactorAttempt: boolPtr(false)},
 		}},
 	}
 	routes := routeCatalogDocument{
@@ -86,7 +86,7 @@ func TestRouteWithoutArtifactPolicyFailsClosed(t *testing.T) {
 		Methods: []authzMethodItem{{
 			Procedure:    "/saas.plugin.v1.WidgetService/ListWidgets",
 			PolicySHA256: "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
-			Policy:       &authzEdgePolicy{Exposure: exposureAuthenticated, RateLimit: "RATE_LIMIT_CLASS_STANDARD_READ"},
+			Policy:       &authzEdgePolicy{Exposure: exposureAuthenticated, RateLimit: "RATE_LIMIT_CLASS_STANDARD_READ", AuthenticationFactorAttempt: boolPtr(false)},
 		}},
 	}
 	routes := routeCatalogDocument{
@@ -117,7 +117,7 @@ func TestAuthzArtifactFailsClosed(t *testing.T) {
 		return authzMethodItem{
 			Procedure:    "/saas.plugin.v1.WidgetService/ListWidgets",
 			PolicySHA256: "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
-			Policy:       &authzEdgePolicy{Exposure: exposureAuthenticated, RateLimit: "RATE_LIMIT_CLASS_STANDARD_READ"},
+			Policy:       &authzEdgePolicy{Exposure: exposureAuthenticated, RateLimit: "RATE_LIMIT_CLASS_STANDARD_READ", AuthenticationFactorAttempt: boolPtr(false)},
 		}
 	}
 
@@ -145,6 +145,11 @@ func TestAuthzArtifactFailsClosed(t *testing.T) {
 			name:    "missing policy",
 			mutate:  func(doc *authzMethodsDocument) { doc.Methods[0].Policy = nil },
 			wantErr: "incomplete identity",
+		},
+		{
+			name:    "missing authentication_factor_attempt",
+			mutate:  func(doc *authzMethodsDocument) { doc.Methods[0].Policy.AuthenticationFactorAttempt = nil },
+			wantErr: "missing authentication_factor_attempt",
 		},
 		{
 			name:    "duplicate procedure",
@@ -192,12 +197,12 @@ func TestAuthzArtifactDerivesBackendFailClosedFromClass(t *testing.T) {
 			{
 				Procedure:    "/saas.plugin.v1.AuthService/Login",
 				PolicySHA256: "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
-				Policy:       &authzEdgePolicy{Exposure: exposurePublic, RateLimit: "RATE_LIMIT_CLASS_AUTHENTICATION"},
+				Policy:       &authzEdgePolicy{Exposure: exposurePublic, RateLimit: "RATE_LIMIT_CLASS_AUTHENTICATION", AuthenticationFactorAttempt: boolPtr(false)},
 			},
 			{
 				Procedure:    "/saas.plugin.v1.WidgetService/ListWidgets",
 				PolicySHA256: "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcde0",
-				Policy:       &authzEdgePolicy{Exposure: exposureAuthenticated, RateLimit: "RATE_LIMIT_CLASS_STANDARD_READ"},
+				Policy:       &authzEdgePolicy{Exposure: exposureAuthenticated, RateLimit: "RATE_LIMIT_CLASS_STANDARD_READ", AuthenticationFactorAttempt: boolPtr(false)},
 			},
 		},
 	}
@@ -211,6 +216,8 @@ func TestAuthzArtifactMissingFile(t *testing.T) {
 	_, err := loadAuthorizationMetadataFromArtifact(filepath.Join(t.TempDir(), "absent.json"))
 	require.ErrorContains(t, err, "cannot read authorization artifact")
 }
+
+func boolPtr(value bool) *bool { return &value }
 
 func writeAuthzArtifact(t *testing.T, doc authzMethodsDocument) string {
 	t.Helper()

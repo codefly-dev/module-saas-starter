@@ -57,9 +57,11 @@ type authzMethodItem struct {
 }
 
 type authzEdgePolicy struct {
-	Exposure                    string `json:"exposure"`
-	RateLimit                   string `json:"rate_limit"`
-	AuthenticationFactorAttempt bool   `json:"authentication_factor_attempt"`
+	Exposure  string `json:"exposure"`
+	RateLimit string `json:"rate_limit"`
+	// Pointer so an omitted or misnamed key is a nil that fails closed rather
+	// than a silent false that would drop the stricter login-factor budget.
+	AuthenticationFactorAttempt *bool `json:"authentication_factor_attempt"`
 }
 
 // authorizationByProcedure returns the method policy projection, preferring the
@@ -105,6 +107,9 @@ func loadAuthorizationMetadataFromArtifact(path string) (map[string]generatedAut
 		if method.Procedure == "" || method.Policy == nil {
 			return nil, fmt.Errorf("routing: authorization artifact %s has a method with an incomplete identity", path)
 		}
+		if method.Policy.AuthenticationFactorAttempt == nil {
+			return nil, fmt.Errorf("routing: authorization artifact %s procedure %q is missing authentication_factor_attempt", path, method.Procedure)
+		}
 		if _, exists := metadata[method.Procedure]; exists {
 			return nil, fmt.Errorf("routing: authorization artifact %s has duplicate procedure %q", path, method.Procedure)
 		}
@@ -126,7 +131,7 @@ func loadAuthorizationMetadataFromArtifact(path string) (map[string]generatedAut
 			// must fail closed for the security budgets even if a hand-authored
 			// artifact's backend-failure field disagrees with the class.
 			rateLimitBackendFailClosed:  rateLimit == edgeRateLimitClassAuthentication || rateLimit == edgeRateLimitClassMFA,
-			authenticationFactorAttempt: method.Policy.AuthenticationFactorAttempt,
+			authenticationFactorAttempt: *method.Policy.AuthenticationFactorAttempt,
 			policySHA256:                method.PolicySHA256,
 		}
 	}
