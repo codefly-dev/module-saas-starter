@@ -13,6 +13,9 @@ import (
 
 	"accounts/pkg/auth"
 
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore/policy"
+	"github.com/Azure/azure-sdk-for-go/sdk/azidentity"
 	codefly "github.com/codefly-dev/sdk-go"
 	scopedpostgres "github.com/codefly-dev/service-postgres/libs/go"
 	"github.com/jackc/pgx/v5"
@@ -61,7 +64,10 @@ func NewPostgresStore(ctx context.Context) (*PostgresStore, error) {
 	// pools all attach this same hook so a reconnect after token expiry presents
 	// a current one. nil in local password mode — every pool keeps the password
 	// embedded in its connection URL.
-	hook := tokenFileBeforeConnect()
+	hook, err := databaseTokenBeforeConnect(ctx)
+	if err != nil {
+		return nil, w.Wrapf(err, "failed to configure database token source")
+	}
 
 	database, closeDatabase, err := openScopedBoundary(ctx, readOnlyConnection, readWriteConnection, hook)
 	if err != nil {
@@ -264,16 +270,96 @@ func newPostgresStoreFromConfig(ctx context.Context, poolConfig *pgxpool.Config)
 	}, nil
 }
 
-// databaseTokenFileEnv names the file an external-identity sidecar rewrites with
-// a fresh database access token (e.g. an Entra oss-rdbms token) on a rotation
-// interval shorter than the token's ~1h lifetime. External-identity deployments
-// set it; local password deployments leave it unset.
-const databaseTokenFileEnv = "POSTGRES_TOKEN_FILE"
+const (
+	// databaseTokenFileEnv names a file an external-identity sidecar rewrites
+	// with a fresh database access token (e.g. an Entra oss-rdbms token) on a
+	// rotation interval shorter than the token's ~1h lifetime. It is the
+	// cloud-neutral fallback lane for workloads that cannot mint a token
+	// in-process, used only when no in-process POSTGRES_TOKEN_SOURCE is set.
+	databaseTokenFileEnv = "POSTGRES_TOKEN_FILE"
+
+	// databaseTokenSourceEnv selects the in-process token minter for
+	// deployments that authenticate to Postgres with a short-lived
+	// managed-identity token instead of a static password. The deployment
+	// layer (infra-base / codefly) sets it per target cloud; it is empty for
+	// local and CI, which keep the password embedded in the connection URL.
+	// The only minter wired today is "azure" (azidentity against the
+	// oss-rdbms scope); other clouds slot in as additional cases.
+	databaseTokenSourceEnv = "POSTGRES_TOKEN_SOURCE"
+
+	// azureOSSRDBMSScope is the AAD scope for Azure Database for PostgreSQL
+	// flexible server access tokens.
+	azureOSSRDBMSScope = "https://ossrdbms-aad.database.windows.net/.default"
+)
 
 // Database access tokens are compact JWTs. Keep enough headroom for provider
 // claim growth while preventing a malformed projected file from allocating
 // without bound on every connection attempt.
 const maxDatabaseTokenBytes = 64 << 10
+
+// databaseTokenSource identifies which credential lane BeforeConnect uses.
+type databaseTokenSource int
+
+const (
+	// databaseTokenPassword keeps the password embedded in the connection URL
+	// (local and CI). It is the zero value.
+	databaseTokenPassword databaseTokenSource = iota
+	// databaseTokenFileSource reads the sidecar-rewritten rotating token file.
+	databaseTokenFileSource
+	// databaseTokenAzure mints an Entra oss-rdbms token in-process.
+	databaseTokenAzure
+)
+
+// resolveDatabaseTokenSource selects the credential lane from the environment.
+// An explicit POSTGRES_TOKEN_SOURCE is the primary path and takes precedence;
+// the token file is the fallback lane, consulted only when no in-process source
+// is selected. An unrecognized source is a configuration error rather than a
+// silent fall-through to the file or the embedded password, so a typo fails the
+// deployment loudly instead of quietly authenticating a different way than
+// intended. tokenFilePath is returned whenever the file env is set, even when an
+// in-process source wins, so the caller can report the ignored leftover.
+func resolveDatabaseTokenSource() (source databaseTokenSource, tokenFilePath string, err error) {
+	tokenFilePath = strings.TrimSpace(os.Getenv(databaseTokenFileEnv))
+	switch name := strings.ToLower(strings.TrimSpace(os.Getenv(databaseTokenSourceEnv))); name {
+	case "":
+		if tokenFilePath != "" {
+			return databaseTokenFileSource, tokenFilePath, nil
+		}
+		return databaseTokenPassword, "", nil
+	case "azure":
+		return databaseTokenAzure, tokenFilePath, nil
+	default:
+		return databaseTokenPassword, "", fmt.Errorf("unsupported %s %q", databaseTokenSourceEnv, name)
+	}
+}
+
+// databaseTokenBeforeConnect returns the pgx BeforeConnect hook shared by every
+// pool. It resolves the credential lane once, logs the selection, and returns a
+// nil hook when the deployment authenticates with the password embedded in the
+// connection URL (local and CI). An explicit POSTGRES_TOKEN_SOURCE selects an
+// in-process minter and wins over a token file; a token file alone is the
+// fallback lane.
+func databaseTokenBeforeConnect(ctx context.Context) (beforeConnectHook, error) {
+	log := wool.Get(ctx).In("databaseTokenBeforeConnect")
+	source, tokenFilePath, err := resolveDatabaseTokenSource()
+	if err != nil {
+		return nil, err
+	}
+	switch source {
+	case databaseTokenFileSource:
+		log.Info("authenticating to Postgres with the rotating token file", wool.Field("path", tokenFilePath))
+		return tokenFileBeforeConnect(), nil
+	case databaseTokenAzure:
+		if tokenFilePath != "" {
+			log.Warn("ignoring POSTGRES_TOKEN_FILE: POSTGRES_TOKEN_SOURCE selects an in-process minter",
+				wool.Field("path", tokenFilePath))
+		}
+		log.Info("authenticating to Postgres with in-process Azure managed-identity tokens")
+		return azureIdentityBeforeConnect()
+	}
+	log.Debug("authenticating to Postgres with the password embedded in the connection URL")
+	return nil, nil
+}
 
 // tokenFileBeforeConnect returns a pgx BeforeConnect hook that re-reads the
 // rotating token file for every connection attempt, so a pool reconnect after
@@ -331,6 +417,49 @@ func readTokenFile(ctx context.Context, path string) (string, error) {
 		return "", fmt.Errorf("database token file %q is empty", path)
 	}
 	return token, nil
+}
+
+// azureIdentityBeforeConnect mints an Entra oss-rdbms access token in-process for
+// every connection attempt. The credential is built once; azidentity caches and
+// refreshes the underlying token, so a per-connection GetToken always yields a
+// currently valid one without a sidecar, shared volume, or refresh loop.
+func azureIdentityBeforeConnect() (beforeConnectHook, error) {
+	cred, err := azureManagedIdentityCredential()
+	if err != nil {
+		return nil, err
+	}
+	return func(ctx context.Context, connConfig *pgx.ConnConfig) error {
+		token, err := cred.GetToken(ctx, policy.TokenRequestOptions{
+			Scopes: []string{azureOSSRDBMSScope},
+		})
+		if err != nil {
+			return fmt.Errorf("mint Azure database token: %w", err)
+		}
+		connConfig.Password = token.Token
+		return nil
+	}, nil
+}
+
+// azureManagedIdentityCredential builds the machine-identity credential used for
+// database tokens. It admits only the workload-identity and managed-identity
+// credentials — the two mechanisms an Azure workload authenticates with — and
+// deliberately excludes the developer credentials (Azure CLI, interactive,
+// environment) that DefaultAzureCredential would otherwise chain in. That keeps
+// the minted identity deterministic across environments and, critically, stops a
+// developer's cached `az login` from minting a personal token against the
+// production database scope. Workload identity is preferred when its pod
+// environment is present; managed identity always backs the chain.
+func azureManagedIdentityCredential() (azcore.TokenCredential, error) {
+	var creds []azcore.TokenCredential
+	if workload, err := azidentity.NewWorkloadIdentityCredential(nil); err == nil {
+		creds = append(creds, workload)
+	}
+	managed, err := azidentity.NewManagedIdentityCredential(nil)
+	if err != nil {
+		return nil, fmt.Errorf("build Azure managed-identity credential for database token: %w", err)
+	}
+	creds = append(creds, managed)
+	return azidentity.NewChainedTokenCredential(creds, nil)
 }
 
 var _ business.Store = (*PostgresStore)(nil)
