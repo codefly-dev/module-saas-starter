@@ -1,6 +1,6 @@
 {
   "note": "Base-file integrity manifest for the saas-starter module. Generated FROM canonical by `node tools/base-integrity.mjs gen`. Consumers MUST NOT hand-edit base files — only add files on the side. Regenerated on every codefly sync from canonical.",
-  "fileCount": 1555,
+  "fileCount": 1537,
   "files": {
     "AUTHORIZATION_CATALOG.md": "b2ea5d41f0098e80315e02e7c4bdbda03b65c8eef463426242552fd3c047ca0a",
     "CONTRACT_VERSIONING.md": "02031aa87922ab5ec573ea582cf584271873481de6ceabbda52b1bfda005ffbd",
@@ -475,7 +475,7 @@
     "services/accounts/code/pkg/gen/saas/webhooks/v1/jobs.pb.go": "f77e7cfe2611be4412d755ca1a9618abb1930ca49cac2f62ea2b0863c0a836f5",
     "services/accounts/code/pkg/infra/README.md": "5e251a6e9149a81efe2fa6ae10026f0979354b56314d83b02ee30d4ba630fa89",
     "services/accounts/code/pkg/infra/jwt.go": "5972fbf0c69fc2793632248f3b87a010ed62c23517a55572a287a8b998862296",
-    "services/accounts/code/pkg/infra/postgres.go": "3bf70e49e7801733391d36fbbb2bba1a22388d0a9b5e89648b8c9a40ab39841f",
+    "services/accounts/code/pkg/infra/postgres.go": "c9a4e4e6c48847da723e7608415359f2d9a5215cfed50e5d1873828812e2f99e",
     "services/accounts/code/pkg/infra/postgres_acquisition_journey_test.go": "6a7c83f61b895ceca7b30b80bb1a0091477dd013d3121ff2c48c3f0253c7fbf8",
     "services/accounts/code/pkg/infra/postgres_analytics_deliveries.go": "d04b9ad9585dcd3606aee5b95704f18d03cf94832c8642aadc408b3acfc9ce72",
     "services/accounts/code/pkg/infra/postgres_analytics_test.go": "9eeabf4f47945f44a840f2c5d8193edcb46cc74fc278ca5ce5a75857f1c68582",
@@ -540,6 +540,7 @@
     "services/accounts/code/pkg/infra/postgres_sso.go": "77cc105773442c40cfc7141f03eab8fd9a7a7c29ed6a5280abdf55e7943ff103",
     "services/accounts/code/pkg/infra/postgres_stripe_jobs_test.go": "8f9eda3d82c4cdb82f4166e3f53b6d4f39f902e698484fa27ef7fc22549c8ae7",
     "services/accounts/code/pkg/infra/postgres_team.go": "7d68831731e97bac8b00493419c3cfb57ead5fccbed641025f28cacd5c77d8fe",
+    "services/accounts/code/pkg/infra/postgres_token_file_test.go": "353c43077770b988413914fb53801fa10378d738536c985de8f7f4fda4460097",
     "services/accounts/code/pkg/infra/postgres_usage_test.go": "fe5f86857d1c29ec1e94917dfcc35ddd0eede98a6d1e4d62ffc5856e8d6cf67f",
     "services/accounts/code/pkg/infra/postgres_user_settings.go": "9d8b618412b8fdd3deb99fded15e63d8b7e739fcafea9e645e0c0ca1e33aec13",
     "services/accounts/code/pkg/infra/postgres_user_settings_test.go": "8d115e065e9d75e5e708e58acc45283e051c34faaf6fd27930380552a02cb014",
