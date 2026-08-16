@@ -315,13 +315,13 @@ test("rejects unsupported promises in customer-visible source", (t) => {
   );
 
   const errors = productionTruthErrors(root);
+  assert.ok(errors.includes("OBSERVABILITY.md: unsupported direct application OTLP endpoint"));
   for (const claim of [
     "unsupported fixed backup retention",
     "unsupported production readiness",
     "unverified customer endorsement",
     "unsupported assurance path",
     "unverified audit immutability",
-    "direct application OTLP endpoint",
   ]) {
     assert.ok(errors.some((error) => error.includes(claim)));
   }

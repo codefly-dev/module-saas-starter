@@ -1525,7 +1525,7 @@
     "services/telemetry/proto/buf.yaml": "cfc17c0c357505380e451ced144f756c88e5d7f391dba2f6a88376612ac1e16d",
     "services/telemetry/proto/saas/telemetry/v1/schema_marker.proto": "456f93eddbe9452c7406611724ca31dbd9835251fe8f8455c682003f0a98f577",
     "tools/base-integrity.mjs": "6074205d77b51e14571fe5440e5fee04eb29d43ba9358970602a5130731462f5",
-    "tools/base-integrity.test.mjs": "b000db5ba6026b822fb58d9912982aeb3aa2ab86c88bf820d8f3eadd2d46080a",
+    "tools/base-integrity.test.mjs": "65d8e4d9328c58dabb32b022bcf86af33a452730daf9eee0cdf9f188aefd6222",
     "tools/codefly_sdk_boundary_test.go": "5ba7ca7bd01489ca2877d9a29fc8af4ab7fff9e93116ff8205d0bf32f8c9af68",
     "tools/generate-public-config.mjs": "30728d543f12933939bb59277aef1e8d812ec0b1b1b7d19172600c7625fa47a7",
     "tools/generate-public-config.test.mjs": "761d7b971a5a9ea9362adc31ed14137a983886bda82b36bd7e5ca37b847e47e4",
