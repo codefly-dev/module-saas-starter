@@ -1,0 +1,38 @@
+{
+	"name": "@codefly/saas-plugin-manifest",
+	"version": "0.1.0",
+	"description": "Unified plugin.codefly.yaml manifest types, validation, and SolutionSpec projection for the Codefly SaaS platform.",
+	"type": "module",
+	"sideEffects": false,
+	"files": [
+		"dist",
+		"plugin.codefly.schema.json",
+		"examples",
+		"README.md"
+	],
+	"exports": {
+		".": {
+			"types": "./dist/index.d.ts",
+			"import": "./dist/index.js",
+			"default": "./dist/index.js"
+		},
+		"./schema": "./plugin.codefly.schema.json"
+	},
+	"scripts": {
+		"build": "tsc -p tsconfig.json",
+		"test": "vitest run --config vitest.config.ts"
+	},
+	"dependencies": {
+		"@codefly/saas-plugin-contract": "2.1.0"
+	},
+	"devDependencies": {
+		"js-yaml": "^4.3.1",
+		"@types/js-yaml": "^4.0.9",
+		"typescript": "5.9.3",
+		"vitest": "^3.0.0"
+	},
+	"publishConfig": {
+		"access": "public"
+	},
+	"license": "Apache-2.0"
+}
