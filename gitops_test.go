@@ -874,6 +874,7 @@ func TestAKSEnvironmentRendersAzureManagedHandoff(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	workspace.Environments[1].Name = "aks"
 	workspace.Environments[1].Cluster.Kind = "aks"
 	workspace.Environments[1].ManagedServices["store"] = managedServiceConfig{
 		Kind:         "azure-postgres-flexible",
@@ -893,12 +894,12 @@ func TestAKSEnvironmentRendersAzureManagedHandoff(t *testing.T) {
 		t.Fatal(err)
 	}
 	aks := bundle.Environments[1]
-	if aks.Cluster != "aks" {
-		t.Fatalf("aks bundle cluster = %q, want aks", aks.Cluster)
+	if aks.Name != "aks" || aks.Cluster != "aks" {
+		t.Fatalf("aks bundle environment = %q/%q, want aks/aks", aks.Name, aks.Cluster)
 	}
 	if len(aks.ManagedServiceHandoffs) != 1 ||
 		aks.ManagedServiceHandoffs[0].Service != "store" ||
-		aks.ManagedServiceHandoffs[0].Kind != "azure-postgres-flexible" {
+		aks.ManagedServiceHandoffs[0].AWSKind != "azure-postgres-flexible" {
 		t.Fatalf("aks managed handoffs = %#v", aks.ManagedServiceHandoffs)
 	}
 	if slices.Contains(aks.Services, "store") {
@@ -908,7 +909,7 @@ func TestAKSEnvironmentRendersAzureManagedHandoff(t *testing.T) {
 	handoff, err := os.ReadFile(filepath.Join(
 		moduleDir,
 		filepath.FromSlash(bundleRelativeDir),
-		"overlays/aws/base/handoffs/store.yaml",
+		"overlays/aks/base/handoffs/store.yaml",
 	))
 	if err != nil {
 		t.Fatal(err)

@@ -48,7 +48,7 @@ repository, revision, or Argo resource.
         {"name": "product", "service": "forge-edge", "endpoint": "rest", "port": 8080, "hosts": ["app.example.com"]}
       ],
       "managedServiceHandoffs": [
-        {"service": "store", "kind": "rds-postgresql", "externalName": "store.internal.example.com"}
+        {"service": "store", "awsKind": "rds-postgresql", "externalName": "store.internal.example.com"}
       ]
     }
   ]
@@ -130,20 +130,22 @@ module-owned managed service under `managed-services`. The module generates an
 `ExternalName` Service and topology-derived egress policy. Optional
 `secret-references` generate ExternalSecret objects containing only provider
 keys and SecretStore references. Supported `kind` values are `elasticache`,
-`rds-postgresql`, `s3`, `secrets-manager`, and `azure-postgres-flexible`:
+`rds-postgresql`, `s3`, `secrets-manager`, and `azure-postgres-flexible`. The
+Azure `ExternalSecret` handoff shape is still in flux under infra's passwordless
+direction, so the worked example below stays on the stable AWS shape:
 
 ```yaml
 managed-services:
   store:
-    kind: azure-postgres-flexible
-    external-name: identity.postgres.database.azure.com
+    kind: rds-postgresql
+    external-name: identity.cluster.example.com
     egress-cidrs:
       - 10.42.0.0/24
     secret-references:
       - name: store-runtime
         remote-key: products/identity/store
         secret-store:
-          name: azure-key-vault
+          name: aws-secrets-manager
           kind: ClusterSecretStore
 ```
 

@@ -102,7 +102,7 @@ type bundleIngressRoute struct {
 
 type managedServiceHandoff struct {
 	Service          string   `json:"service"`
-	Kind             string   `json:"kind"`
+	AWSKind          string   `json:"awsKind"`
 	ExternalName     string   `json:"externalName"`
 	SecretReferences []string `json:"secretReferences,omitempty"`
 }
@@ -672,7 +672,7 @@ func validateManagedServices(
 		referenceNames := make(map[string]struct{}, len(config.SecretReferences))
 		handoff := managedServiceHandoff{
 			Service:      service,
-			Kind:         config.Kind,
+			AWSKind:      config.Kind,
 			ExternalName: config.ExternalName,
 		}
 		for _, reference := range config.SecretReferences {
