@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
 	"time"
 
 	"accounts/pkg/business"
@@ -11,6 +12,8 @@ import (
 
 	"github.com/codefly-dev/core/wool"
 	"github.com/jackc/pgx/v5"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/types/known/timestamppb"
 )
 
@@ -510,6 +513,9 @@ func (s *PostgresStore) ResolveIdentity(ctx context.Context, provider string, pr
 // GetPlatformRole returns the platform role for a user, or "" if not a platform admin.
 func (s *PostgresStore) GetPlatformRole(ctx context.Context, userID string) (string, error) {
 	w := wool.Get(ctx).In("GetPlatformRole")
+	if strings.TrimSpace(userID) == "" {
+		return "", status.Error(codes.InvalidArgument, "user id required")
+	}
 	executor := s.getQueryExecutor(ctx)
 
 	var role string
