@@ -1,0 +1,131 @@
+# Reference plugin.codefly.yaml exercising every manifest section.
+# This file is validated by the package conformance test.
+apiVersion: plugin.codefly.dev/v1
+kind: Plugin
+
+metadata:
+  name: warden-guardrails
+  version: 1.4.0
+  displayName: Warden Guardrails
+  description: Policy guardrails, egress review, and approval workflows for Warden.
+  publisher: codefly.dev
+
+services:
+  - name: guardrails
+    description: Evaluates guardrail policies and records decisions.
+    endpoints: [connect, rest]
+
+api:
+  exposes:
+    - contract: guardrails
+      major: 1
+      protocols: [connect, rest]
+  consumes:
+    - contract: accounts
+      major: 2
+      alias: accounts
+
+events:
+  publishes:
+    - type: guardrail.triggered.v1
+      description: A guardrail policy blocked or flagged an action.
+  subscribes:
+    - type: identity.user.created.v1
+      handler: on_user_created
+      description: Provision default guardrail policy for a new user.
+
+ui:
+  navigation:
+    label: Guardrails
+    placement: admin
+    priority: 40
+  navItems:
+    - id: guardrails_overview
+      label: Guardrails
+      href: /admin/guardrails
+      icon: shield
+      group: security
+      requiredPermission: guardrail:read
+  routes:
+    - id: overview
+      path: /admin/guardrails
+      requiredPermission: guardrail:read
+    - id: policy_editor
+      path: /admin/guardrails/policies
+      requiredRole: super_admin
+  widgets:
+    - id: guardrail_activity
+      slot: security_summary
+      priority: 20
+      requiredPermission: guardrail:read
+  services:
+    - alias: guardrails
+      protocol: rest
+      routePrefix: /api/v1/guardrails
+      compatibility:
+        contract: guardrails
+        major: 1
+        probePath: /api/v1/guardrails/capabilities
+
+needs:
+  - capability: store:postgres
+  - capability: secrets:vault
+  - capability: cache:redis
+    optionality: optional
+
+permissions:
+  - id: guardrail:read
+    description: View guardrail policies and decisions.
+  - id: guardrail:write
+    description: Author and update guardrail policies.
+
+entitlements:
+  - id: guardrails.advanced
+    description: Access advanced approval workflows and custom policies.
+    defaultGranted: false
+
+config:
+  - key: GUARDRAILS_DECISION_THRESHOLD
+    type: int
+    required: true
+    description: Minimum policy score before an action is blocked.
+  - key: GUARDRAILS_REVIEW_WEBHOOK
+    type: url
+    required: false
+  - key: GUARDRAILS_MODE
+    type: string
+    default: balanced
+    description: Enforcement mode applied when a tenant sets none.
+  - key: GUARDRAILS_SIGNING_KEY
+    type: string
+    required: true
+    secret: true
+
+migrations:
+  - id: 0001_init
+    scope: tenant
+    description: Guardrail policy and decision tables.
+  - id: 0002_add_approval_state
+    scope: tenant
+
+egress:
+  - host: api.openai.com
+    ports: [443]
+    description: Policy classification model.
+  - host: "*.slack.com"
+
+lifecycle:
+  install:
+    - job: seed_default_policies
+      description: Install the baseline guardrail policy set.
+  uninstall:
+    - job: purge_decisions
+
+integrity:
+  signature:
+    algorithm: ed25519
+    keyId: codefly-plugin-signing-2026
+    value: MEUCIQD3Zx0kExampleSignatureValueOnlyForConformanceTesting1234567890
+  artifacts:
+    - path: dist/guardrails.tar.gz
+      sha256: 3b1f2c4d5e6a7b8c9d0e1f2a3b4c5d6e7f8091a2b3c4d5e6f7081920a3b4c5d6

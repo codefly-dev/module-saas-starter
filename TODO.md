@@ -568,7 +568,15 @@ Keep IDs stable so commits, PRs, tests, and release notes can reference them.
   public React package binds lazy components by stable metadata ID; the former
   `AdminPlugin`, `admin-core`, private barrels, and parallel framework interface
   are deleted and guarded against resurrection.
-- [ ] `P3-PLUGIN-002` Define `plugin.codefly.yaml` and its JSON/protobuf schema.
+- [x] `P3-PLUGIN-002` Define `plugin.codefly.yaml` and its JSON/protobuf schema.
+  `@codefly/saas-plugin-manifest` defines the unified manifest — identity,
+  services, api exposes/consumes, events, ui, needs, permissions, entitlements,
+  config, migrations, egress, lifecycle, integrity — as a canonical JSON Schema
+  plus a pure JSON-safe validator that reuses the frontend contract for the `ui`
+  block. `toSolutionSpec` projects the shared facts onto obin's lodestar
+  `SolutionSpec` and carries starter-only sections through `extensions`, so the
+  two manifests converge instead of forking. See
+  `module/docs/plugin-manifest-schema.md`.
 - [ ] `P3-PLUGIN-003` Include API compatibility, routes, nav, permissions, entitlements, config, migrations, events, and egress.
 - [ ] `P3-PLUGIN-004` Generate frontend/backend/gateway/networking registration.
 - [ ] `P3-PLUGIN-005` Detect duplicate IDs, routes, permissions, and migrations.

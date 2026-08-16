@@ -276,11 +276,11 @@ func generateDeploymentBundle(moduleDir string, workspace *workspaceManifest) er
 		ServiceEntry:  topology.Module.ServiceEntry,
 	}
 	for _, environment := range environments {
-		_, aws, kind, err := classifyEnvironment(environment)
+		_, managed, kind, err := classifyEnvironment(environment)
 		if err != nil {
 			return err
 		}
-		plan, err := planEnvironment(environment, serviceNames(services), topology, kind, aws)
+		plan, err := planEnvironment(environment, serviceNames(services), topology, kind, managed)
 		if err != nil {
 			return err
 		}
@@ -522,14 +522,14 @@ func planEnvironment(
 	services []string,
 	topology deploymentTopology,
 	cluster string,
-	aws bool,
+	managedCapable bool,
 ) (environmentPlan, error) {
 	plan := environmentPlan{
 		environment: environment,
 		cluster:     cluster,
 		managed:     make(map[string]managedServiceConfig),
 	}
-	if err := validateManagedServices(environment, services, topology, aws, &plan); err != nil {
+	if err := validateManagedServices(environment, services, topology, managedCapable, &plan); err != nil {
 		return environmentPlan{}, err
 	}
 	for _, service := range services {
@@ -641,10 +641,10 @@ func validateManagedServices(
 	environment *environmentConfig,
 	services []string,
 	topology deploymentTopology,
-	aws bool,
+	managedCapable bool,
 	plan *environmentPlan,
 ) error {
-	if !aws && len(environment.ManagedServices) > 0 {
+	if !managedCapable && len(environment.ManagedServices) > 0 {
 		return fmt.Errorf("environment %q declares managed services for an in-cluster environment", environment.Name)
 	}
 	declared := make(map[string]struct{}, len(services))
@@ -657,7 +657,7 @@ func validateManagedServices(
 			return fmt.Errorf("environment %q declares unexpected managed service %q", environment.Name, service)
 		}
 		switch config.Kind {
-		case "elasticache", "rds-postgresql", "s3", "secrets-manager":
+		case "elasticache", "rds-postgresql", "s3", "secrets-manager", "azure-postgres-flexible":
 		default:
 			return fmt.Errorf("environment %q managed service %q kind %q is not supported", environment.Name, service, config.Kind)
 		}
@@ -730,12 +730,12 @@ func validExternalName(value string) bool {
 	return true
 }
 
-func classifyEnvironment(environment *environmentConfig) (local bool, aws bool, cluster string, err error) {
+func classifyEnvironment(environment *environmentConfig) (local bool, managedCapable bool, cluster string, err error) {
 	kind := strings.TrimSpace(environment.Cluster.Kind)
 	switch kind {
 	case "k3d":
 		return true, false, kind, nil
-	case "eks":
+	case "eks", "aks":
 		return false, true, kind, nil
 	case "":
 		if strings.HasPrefix(environment.Name, "local") {
