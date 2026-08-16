@@ -118,6 +118,7 @@ func TestConfigureConnectionRejectsEmptyURL(t *testing.T) {
 }
 
 func TestOpenScopedBoundaryRejectsNilContext(t *testing.T) {
-	_, _, err := openScopedBoundary(nil, "read-only", "read-write", nil)
+	var nilCtx context.Context
+	_, _, err := openScopedBoundary(nilCtx, "read-only", "read-write", nil)
 	require.ErrorContains(t, err, "context is required")
 }

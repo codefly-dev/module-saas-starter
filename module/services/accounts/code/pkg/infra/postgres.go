@@ -171,7 +171,7 @@ func openCapabilityPool(ctx context.Context, label string, config *pgxpool.Confi
 // identically. A nil hook leaves the URL-embedded password in force.
 func configureConnection(connectionURL string, hook beforeConnectHook) (*pgxpool.Config, error) {
 	if strings.TrimSpace(connectionURL) == "" {
-		return nil, errors.New("Postgres connection URL is required")
+		return nil, errors.New("postgres connection URL is required")
 	}
 	config, err := pgxpool.ParseConfig(connectionURL)
 	if err != nil {
@@ -315,7 +315,7 @@ func readTokenFile(ctx context.Context, path string) (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("read database token file %q: %w", path, err)
 	}
-	defer file.Close()
+	defer func() { _ = file.Close() }()
 	raw, err := io.ReadAll(io.LimitReader(file, maxDatabaseTokenBytes+1))
 	if err != nil {
 		return "", fmt.Errorf("read database token file %q: %w", path, err)
