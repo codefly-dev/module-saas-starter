@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"strings"
 	"time"
 
 	"accounts/pkg/business"
@@ -12,12 +13,17 @@ import (
 
 	"github.com/codefly-dev/core/wool"
 	"github.com/jackc/pgx/v5"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/types/known/timestamppb"
 )
 
 // GetUser returns a user by UUID.
 func (s *PostgresStore) GetUser(ctx context.Context, id string) (*gen.User, error) {
 	w := wool.Get(ctx).In("GetUser")
+	if strings.TrimSpace(id) == "" {
+		return nil, status.Error(codes.InvalidArgument, "user id required")
+	}
 	executor := s.getQueryExecutor(ctx)
 
 	var u gen.User

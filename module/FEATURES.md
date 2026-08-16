@@ -482,7 +482,7 @@ extraction contracts.
 | Metrics        | ✅    | Job-worker OTel instruments, durable queue projections, and an in-graph OTLP gateway |
 | Tracing        | ✅    | Accounts resolves the Codefly collector endpoint and exports OTLP for the designated SigNoz backend |
 | Error tracking | ✅    | Explicit fail-closed Sentry mode for server/browser errors; trace sampling is fixed at zero |
-| Dashboards     | 🟡    | Versioned provider-neutral business dashboard pack; provider materialization is deployment-specific |
+| Dashboards     | 🟡    | Versioned provider-neutral business dashboard pack; [SigNoz provisioning remains unsupported pending a pinned service qualification](SIGNOZ_PROVISIONING.md) |
 
 ---
 
