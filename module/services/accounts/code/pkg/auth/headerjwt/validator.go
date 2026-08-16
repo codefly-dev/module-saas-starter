@@ -352,7 +352,7 @@ func (v *Validator) refresh(ctx context.Context) error {
 	if err != nil {
 		return fmt.Errorf("%w: fetch: %v", auth.ErrJWKSUnavailable, err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode != http.StatusOK {
 		return fmt.Errorf("%w: http %d", auth.ErrJWKSUnavailable, resp.StatusCode)
 	}

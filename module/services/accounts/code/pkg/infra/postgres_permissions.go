@@ -219,11 +219,9 @@ func (s *PostgresStore) ListRoleAssignments(ctx context.Context, orgID string, s
 	case gen.SubjectKind_SUBJECT_KIND_PRINCIPAL:
 		query += fmt.Sprintf(" AND subject_kind = $%d", argN)
 		args = append(args, "principal")
-		argN++
 	case gen.SubjectKind_SUBJECT_KIND_TEAM:
 		query += fmt.Sprintf(" AND subject_kind = $%d", argN)
 		args = append(args, "team")
-		argN++
 	default:
 		return nil, fmt.Errorf("list role assignments: unsupported subject kind %s", subjectKind)
 	}

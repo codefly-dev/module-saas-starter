@@ -229,7 +229,7 @@ func (p *PostHog) sendTo(
 	if err != nil {
 		return fmt.Errorf("analytics: deliver to PostHog: %w", err)
 	}
-	defer response.Body.Close()
+	defer func() { _ = response.Body.Close() }()
 	_, _ = io.Copy(io.Discard, io.LimitReader(response.Body, 64*1024))
 	if response.StatusCode < http.StatusOK || response.StatusCode >= http.StatusMultipleChoices {
 		return fmt.Errorf("analytics: PostHog returned HTTP %d", response.StatusCode)

@@ -130,14 +130,14 @@ func SelectedName() (string, error) {
 		return "", nil
 	}
 	if !fixtureNamePattern.MatchString(selected) {
-		return "", fmt.Errorf("Codefly selected invalid fixture name %q", selected)
+		return "", fmt.Errorf("invalid fixture name %q selected by Codefly", selected)
 	}
 	for _, name := range names {
 		if name == selected {
 			return selected, nil
 		}
 	}
-	return "", fmt.Errorf("Codefly selected fixture %q, but %s does not contain %s.yaml", selected, directory, selected)
+	return "", fmt.Errorf("fixture %q selected by Codefly, but %s does not contain %s.yaml", selected, directory, selected)
 }
 
 // FixturePath resolves a validated fixture name to its module-owned YAML file.
@@ -208,14 +208,6 @@ func Seed(ctx context.Context, service *business.Service, name string) error {
 
 	w.Info("fixtures applied", wool.Field("fixture", name))
 	return nil
-}
-
-// fixturePath resolves the YAML fixture relative to the accounts service's working
-// directory. Codefly starts the binary in services/accounts/code/, so the module
-// fixtures live at ../../../fixtures/.
-func fixturePath(name string) string {
-	path, _ := FixturePath(name)
-	return path
 }
 
 func loadFixtureFile(path string) (*fixtureFile, error) {
