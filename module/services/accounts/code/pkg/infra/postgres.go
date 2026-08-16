@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"strings"
 	"sync"
@@ -95,6 +96,12 @@ func NewPostgresStore(ctx context.Context) (*PostgresStore, error) {
 // startup and fail once it expired. Revert to scopedpostgres.Open once the
 // library accepts a BeforeConnect (service-postgres#55).
 func openScopedBoundary(ctx context.Context, readOnlyConnection, readWriteConnection string, hook beforeConnectHook) (*scopedpostgres.Factory, func(), error) {
+	if ctx == nil {
+		return nil, nil, errors.New("scoped Postgres context is required")
+	}
+	if strings.TrimSpace(readOnlyConnection) == "" || strings.TrimSpace(readWriteConnection) == "" {
+		return nil, nil, errors.New("distinct read-only and read-write Postgres connections are required")
+	}
 	ctx, cancel := context.WithTimeout(ctx, scopedBoundaryOperationTimeout)
 	defer cancel()
 
@@ -155,6 +162,9 @@ func openScopedBoundary(ctx context.Context, readOnlyConnection, readWriteConnec
 // source is wired, so every pool — legacy, reader, writer — resolves the token
 // identically. A nil hook leaves the URL-embedded password in force.
 func configureConnection(connectionURL string, hook beforeConnectHook) (*pgxpool.Config, error) {
+	if strings.TrimSpace(connectionURL) == "" {
+		return nil, errors.New("Postgres connection URL is required")
+	}
 	config, err := pgxpool.ParseConfig(connectionURL)
 	if err != nil {
 		return nil, err
@@ -252,6 +262,11 @@ func newPostgresStoreFromConfig(ctx context.Context, poolConfig *pgxpool.Config)
 // set it; local password deployments leave it unset.
 const databaseTokenFileEnv = "POSTGRES_TOKEN_FILE"
 
+// Database access tokens are compact JWTs. Keep enough headroom for provider
+// claim growth while preventing a malformed projected file from allocating
+// without bound on every connection attempt.
+const maxDatabaseTokenBytes = 64 << 10
+
 // tokenFileBeforeConnect returns a pgx BeforeConnect hook that re-reads the
 // rotating token file for every connection attempt, so a pool reconnect after
 // the previous token expired presents a current one instead of the stale
@@ -274,42 +289,40 @@ func tokenFileBeforeConnect() beforeConnectHook {
 	}
 }
 
-// readTokenFile reads the whole rotating token file, bounded by ctx so a stalled
-// token volume cannot block pool connection acquisition past the caller's
-// deadline. The sidecar contract (infra-base #59) is to publish each new token
-// with an atomic rename; without it a read could observe a partial write, which
-// this cannot detect and which would surface as an authentication failure.
+// readTokenFile reads one bounded rotating-token snapshot. os.File reads cannot
+// be cancelled portably; spawning a goroutine per connection would only return
+// early while leaking blocked readers during a storage failure. The projected
+// file is local, so check cancellation before and after the bounded read instead.
+// The sidecar contract (infra-base #59) is to publish each new token with an
+// atomic rename; without it a read could observe a partial write, which would
+// surface as an authentication failure.
 func readTokenFile(ctx context.Context, path string) (string, error) {
+	if ctx == nil {
+		return "", errors.New("database token read context is required")
+	}
 	if err := ctx.Err(); err != nil {
 		return "", err
 	}
-	type result struct {
-		token string
-		err   error
+	file, err := os.Open(path)
+	if err != nil {
+		return "", fmt.Errorf("read database token file %q: %w", path, err)
 	}
-	// Buffered so the reader goroutine can always send and exit even if we have
-	// already returned on ctx.Done — no goroutine leak except an unkillable
-	// syscall on a wedged filesystem, which no user-space code can bound.
-	done := make(chan result, 1)
-	go func() {
-		raw, err := os.ReadFile(path)
-		if err != nil {
-			done <- result{err: fmt.Errorf("read database token file %q: %w", path, err)}
-			return
-		}
-		token := strings.TrimSpace(string(raw))
-		if token == "" {
-			done <- result{err: fmt.Errorf("database token file %q is empty", path)}
-			return
-		}
-		done <- result{token: token}
-	}()
-	select {
-	case <-ctx.Done():
-		return "", ctx.Err()
-	case r := <-done:
-		return r.token, r.err
+	defer file.Close()
+	raw, err := io.ReadAll(io.LimitReader(file, maxDatabaseTokenBytes+1))
+	if err != nil {
+		return "", fmt.Errorf("read database token file %q: %w", path, err)
 	}
+	if err := ctx.Err(); err != nil {
+		return "", err
+	}
+	if len(raw) > maxDatabaseTokenBytes {
+		return "", fmt.Errorf("database token file %q exceeds %d bytes", path, maxDatabaseTokenBytes)
+	}
+	token := strings.TrimSpace(string(raw))
+	if token == "" {
+		return "", fmt.Errorf("database token file %q is empty", path)
+	}
+	return token, nil
 }
 
 var _ business.Store = (*PostgresStore)(nil)

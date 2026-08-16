@@ -61,6 +61,18 @@ func TestTokenFileBeforeConnectMissingFileFailsLoud(t *testing.T) {
 	require.Error(t, err)
 }
 
+func TestTokenFileBeforeConnectRejectsOversizedFile(t *testing.T) {
+	tokenPath := filepath.Join(t.TempDir(), "token")
+	require.NoError(t, os.WriteFile(tokenPath, make([]byte, maxDatabaseTokenBytes+1), 0o600))
+	t.Setenv(databaseTokenFileEnv, tokenPath)
+
+	connConfig, err := pgx.ParseConfig("postgresql://app@localhost:5432/db?sslmode=disable")
+	require.NoError(t, err)
+
+	err = tokenFileBeforeConnect()(context.Background(), connConfig)
+	require.ErrorContains(t, err, "exceeds")
+}
+
 func TestTokenFileBeforeConnectHonorsContextCancellation(t *testing.T) {
 	tokenPath := filepath.Join(t.TempDir(), "token")
 	require.NoError(t, os.WriteFile(tokenPath, []byte("token"), 0o600))
@@ -98,4 +110,14 @@ func TestConfigureConnectionHasNoHookWhenUnset(t *testing.T) {
 	require.NoError(t, err)
 	require.Nil(t, config.BeforeConnect,
 		"local password mode must leave the pool without a connection hook")
+}
+
+func TestConfigureConnectionRejectsEmptyURL(t *testing.T) {
+	_, err := configureConnection("  ", nil)
+	require.ErrorContains(t, err, "connection URL is required")
+}
+
+func TestOpenScopedBoundaryRejectsNilContext(t *testing.T) {
+	_, _, err := openScopedBoundary(nil, "read-only", "read-write", nil)
+	require.ErrorContains(t, err, "context is required")
 }
