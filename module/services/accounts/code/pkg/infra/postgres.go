@@ -114,26 +114,18 @@ func openScopedBoundary(ctx context.Context, readOnlyConnection, readWriteConnec
 		return nil, nil, errors.New("read-only and read-write Postgres capabilities must use distinct database roles")
 	}
 
-	readerPool, err := pgxpool.NewWithConfig(ctx, readerConfig)
+	readerPool, err := openCapabilityPool(ctx, "read-only", readerConfig)
 	if err != nil {
-		return nil, nil, fmt.Errorf("open read-only Postgres capability: %w", err)
+		return nil, nil, err
 	}
-	writerPool, err := pgxpool.NewWithConfig(ctx, writerConfig)
+	writerPool, err := openCapabilityPool(ctx, "read-write", writerConfig)
 	if err != nil {
 		readerPool.Close()
-		return nil, nil, fmt.Errorf("open read-write Postgres capability: %w", err)
+		return nil, nil, err
 	}
 	closePools := func() {
 		readerPool.Close()
 		writerPool.Close()
-	}
-	if err := readerPool.Ping(ctx); err != nil {
-		closePools()
-		return nil, nil, fmt.Errorf("ping read-only Postgres capability: %w", err)
-	}
-	if err := writerPool.Ping(ctx); err != nil {
-		closePools()
-		return nil, nil, fmt.Errorf("ping read-write Postgres capability: %w", err)
 	}
 	factory, err := scopedpostgres.NewFactory(
 		readerPool,
@@ -148,6 +140,22 @@ func openScopedBoundary(ctx context.Context, readOnlyConnection, readWriteConnec
 	}
 	var once sync.Once
 	return factory, func() { once.Do(closePools) }, nil
+}
+
+// openCapabilityPool opens one capability pool and fails fast if it cannot reach
+// Postgres, so a bad credential or unreachable server surfaces at startup rather
+// than on the first query. The caller owns closing every pool opened before a
+// later one fails.
+func openCapabilityPool(ctx context.Context, label string, config *pgxpool.Config) (*pgxpool.Pool, error) {
+	pool, err := pgxpool.NewWithConfig(ctx, config)
+	if err != nil {
+		return nil, fmt.Errorf("open %s Postgres capability: %w", label, err)
+	}
+	if err := pool.Ping(ctx); err != nil {
+		pool.Close()
+		return nil, fmt.Errorf("ping %s Postgres capability: %w", label, err)
+	}
+	return pool, nil
 }
 
 // configureConnection parses a Codefly connection secret into a pool config and
