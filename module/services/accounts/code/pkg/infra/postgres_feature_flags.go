@@ -30,18 +30,3 @@ func (s *PostgresStore) ListFeatureFlags(ctx context.Context) ([]*business.Featu
 	}
 	return flags, nil
 }
-
-func (s *PostgresStore) UpsertFeatureFlag(ctx context.Context, flag *business.FeatureFlag) error {
-	q := s.getQueryExecutor(ctx)
-	_, err := q.Exec(ctx, `
-		INSERT INTO feature_flags (id, name, description, enabled, rollout_percent, target_org_ids)
-		VALUES ($1, $2, $3, $4, $5, $6)
-		ON CONFLICT (name) DO UPDATE SET
-			description = EXCLUDED.description,
-			enabled = EXCLUDED.enabled,
-			rollout_percent = EXCLUDED.rollout_percent,
-			target_org_ids = EXCLUDED.target_org_ids,
-			updated_at = NOW()`,
-		flag.ID, flag.Name, flag.Description, flag.Enabled, flag.RolloutPercent, flag.TargetOrgIDs)
-	return err
-}

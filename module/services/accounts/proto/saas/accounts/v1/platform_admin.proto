@@ -153,18 +153,6 @@ message ListFeatureFlagsResponse {
   repeated FeatureFlagEntry flags = 1;
 }
 
-message UpsertFeatureFlagRequest {
-  string name = 1 [(buf.validate.field).string.min_len = 1];
-  string description = 2;
-  bool enabled = 3;
-  int32 rollout_percent = 4;
-  repeated string target_org_ids = 5;
-}
-
-message UpsertFeatureFlagResponse {
-  string name = 1;
-}
-
 // PlatformAdminService — cross-tenant operations for platform operators.
 // All RPCs require a platform_role in the JWT claims.
 service PlatformAdminService {
@@ -372,7 +360,7 @@ service PlatformAdminService {
     option (google.api.http) = {get: "/v1/platform/admins"};
   }
 
-  // Feature flags (platform-only)
+  // Legacy feature-flag migration inventory (platform-only, read-only)
   rpc ListFeatureFlags(ListFeatureFlagsRequest) returns (ListFeatureFlagsResponse) {
     option (saas.policy.v1.method_policy) = {
       exposure: EXPOSURE_AUTHENTICATED
@@ -387,27 +375,6 @@ service PlatformAdminService {
     };
     option (google.api.http) = {get: "/v1/platform/feature-flags"};
   }
-  rpc UpsertFeatureFlag(UpsertFeatureFlagRequest) returns (UpsertFeatureFlagResponse) {
-    option (saas.policy.v1.method_policy) = {
-      exposure: EXPOSURE_AUTHENTICATED
-      tenant: TENANT_REQUIREMENT_NONE
-      mfa: MFA_REQUIREMENT_NONE
-      audit: {
-        events: "feature_flag.updated"
-        emission: AUDIT_EMISSION_SUCCESS
-      }
-      idempotency: IDEMPOTENCY_REQUIREMENT_FORBIDDEN
-      rate_limit: RATE_LIMIT_CLASS_SENSITIVE
-      request_sensitivity: SENSITIVITY_CONFIDENTIAL
-      response_sensitivity: SENSITIVITY_CONFIDENTIAL
-      platform_role: PLATFORM_ROLE_REQUIREMENT_SUPER_ADMIN
-    };
-    option (google.api.http) = {
-      put: "/v1/platform/feature-flags/{name}"
-      body: "*"
-    };
-  }
-
   // Product-neutral durable job operations. Payload bytes never leave the
   // worker database boundary through these methods.
   rpc GetJobOperations(saas.jobs.v1.GetJobOperationsRequest) returns (saas.jobs.v1.GetJobOperationsResponse) {

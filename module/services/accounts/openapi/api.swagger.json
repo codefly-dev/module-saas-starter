@@ -95,27 +95,6 @@
     "PlatformAdminServiceUnsuspendUserBody": {
       "type": "object"
     },
-    "PlatformAdminServiceUpsertFeatureFlagBody": {
-      "properties": {
-        "description": {
-          "type": "string"
-        },
-        "enabled": {
-          "type": "boolean"
-        },
-        "rolloutPercent": {
-          "format": "int32",
-          "type": "integer"
-        },
-        "targetOrgIds": {
-          "items": {
-            "type": "string"
-          },
-          "type": "array"
-        }
-      },
-      "type": "object"
-    },
     "PrincipalServiceRevokePrincipalBody": {
       "properties": {
         "reason": {
@@ -3465,14 +3444,6 @@
       },
       "type": "object"
     },
-    "v1UpsertFeatureFlagResponse": {
-      "properties": {
-        "name": {
-          "type": "string"
-        }
-      },
-      "type": "object"
-    },
     "v1UsageAggregation": {
       "default": "USAGE_AGGREGATION_UNSPECIFIED",
       "enum": [
@@ -6382,45 +6353,7 @@
             }
           }
         },
-        "summary": "Feature flags (platform-only)",
-        "tags": [
-          "PlatformAdminService"
-        ]
-      }
-    },
-    "/v1/platform/feature-flags/{name}": {
-      "put": {
-        "operationId": "PlatformAdminService_UpsertFeatureFlag",
-        "parameters": [
-          {
-            "in": "path",
-            "name": "name",
-            "required": true,
-            "type": "string"
-          },
-          {
-            "in": "body",
-            "name": "body",
-            "required": true,
-            "schema": {
-              "$ref": "#/definitions/PlatformAdminServiceUpsertFeatureFlagBody"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "A successful response.",
-            "schema": {
-              "$ref": "#/definitions/v1UpsertFeatureFlagResponse"
-            }
-          },
-          "default": {
-            "description": "An unexpected error response.",
-            "schema": {
-              "$ref": "#/definitions/rpcStatus"
-            }
-          }
-        },
+        "summary": "Legacy feature-flag migration inventory (platform-only, read-only)",
         "tags": [
           "PlatformAdminService"
         ]

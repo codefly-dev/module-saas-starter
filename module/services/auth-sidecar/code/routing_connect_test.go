@@ -59,7 +59,7 @@ func TestConnectRouteDiscoveryExcludesInternalRPCs(t *testing.T) {
 	require.True(t, protected["/saas.accounts.v1.UsageService/GetUsageHistory"])
 	require.True(t, paths["/customers.UsageService/GetUsageHistory"])
 	require.True(t, protected["/customers.UsageService/GetUsageHistory"])
-	require.Len(t, entries, 262)
+	require.Len(t, entries, 260)
 
 	var legacy *RouteEntry
 	for _, entry := range entries {

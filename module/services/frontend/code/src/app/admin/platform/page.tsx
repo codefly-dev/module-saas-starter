@@ -17,7 +17,7 @@ const sections = [
 	},
 	{
 		title: "Feature Flags",
-		description: "Create and toggle feature flags for gradual rollouts.",
+		description: "Review the read-only legacy inventory awaiting migration.",
 		href: "/admin/platform/feature-flags",
 		icon: Flag,
 	},

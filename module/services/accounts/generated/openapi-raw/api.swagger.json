@@ -2459,7 +2459,7 @@
     },
     "/v1/platform/feature-flags": {
       "get": {
-        "summary": "Feature flags (platform-only)",
+        "summary": "Legacy feature-flag migration inventory (platform-only, read-only)",
         "operationId": "PlatformAdminService_ListFeatureFlags",
         "responses": {
           "200": {
@@ -2475,44 +2475,6 @@
             }
           }
         },
-        "tags": [
-          "PlatformAdminService"
-        ]
-      }
-    },
-    "/v1/platform/feature-flags/{name}": {
-      "put": {
-        "operationId": "PlatformAdminService_UpsertFeatureFlag",
-        "responses": {
-          "200": {
-            "description": "A successful response.",
-            "schema": {
-              "$ref": "#/definitions/v1UpsertFeatureFlagResponse"
-            }
-          },
-          "default": {
-            "description": "An unexpected error response.",
-            "schema": {
-              "$ref": "#/definitions/rpcStatus"
-            }
-          }
-        },
-        "parameters": [
-          {
-            "name": "name",
-            "in": "path",
-            "required": true,
-            "type": "string"
-          },
-          {
-            "name": "body",
-            "in": "body",
-            "required": true,
-            "schema": {
-              "$ref": "#/definitions/PlatformAdminServiceUpsertFeatureFlagBody"
-            }
-          }
-        ],
         "tags": [
           "PlatformAdminService"
         ]
@@ -4786,27 +4748,6 @@
     },
     "PlatformAdminServiceUnsuspendUserBody": {
       "type": "object"
-    },
-    "PlatformAdminServiceUpsertFeatureFlagBody": {
-      "type": "object",
-      "properties": {
-        "description": {
-          "type": "string"
-        },
-        "enabled": {
-          "type": "boolean"
-        },
-        "rolloutPercent": {
-          "type": "integer",
-          "format": "int32"
-        },
-        "targetOrgIds": {
-          "type": "array",
-          "items": {
-            "type": "string"
-          }
-        }
-      }
     },
     "PrincipalServiceRevokePrincipalBody": {
       "type": "object",
@@ -8162,14 +8103,6 @@
         "clearMask": {
           "type": "string",
           "description": "Paths whose explicit overrides should be removed before applying patch.\nA cleared field resolves to its catalog default on the returned document."
-        }
-      }
-    },
-    "v1UpsertFeatureFlagResponse": {
-      "type": "object",
-      "properties": {
-        "name": {
-          "type": "string"
         }
       }
     },

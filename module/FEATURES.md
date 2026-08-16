@@ -399,7 +399,7 @@ see `JOBS.md` for the exact boundary and sequencing.
 | User search & CRUD     | ✅    | Platform-admin can suspend / unsuspend / delete                    |
 | Impersonation          | ✅    | Mints session with `acting` claim; banner shown to impersonator    |
 | Sessions list          | ✅    | Active device families with description, activity, and both expiries |
-| Feature flags          | 🟡    | Unleash is the designated runtime owner; the DB/API/UI are a migration inventory with no runtime evaluator and are removed after cutover |
+| Feature flags          | 🟡    | Unleash is the designated runtime owner; the DB/API/UI are a read-only migration inventory with no runtime evaluator and are removed after cutover |
 | Entitlements           | ✅    | Per-org plan → feature mapping with overrides                      |
 | Webhooks (system view) | ✅    | List + delete from admin                                           |
 | Time-bound impersonation | ✅  | Access tokens are capped at five minutes by default                 |

@@ -8,7 +8,6 @@ import {
 	useImpersonateUser,
 	usePlatformAdmins,
 	useRevokePlatformRole,
-	useUpsertFeatureFlag,
 } from "../use-platform-admin";
 
 function createWrapper() {
@@ -73,33 +72,5 @@ describe("useFeatureFlags", () => {
 		expect(result.current.data).toBeDefined();
 		expect(Array.isArray(result.current.data)).toBe(true);
 		expect(result.current.data!.length).toBeGreaterThan(0);
-	});
-});
-
-describe("useUpsertFeatureFlag", () => {
-	it("creates a feature flag", async () => {
-		const { result } = renderHook(() => useUpsertFeatureFlag(), {
-			wrapper: createWrapper(),
-		});
-		const response = await result.current.mutateAsync({
-			name: "new-feature",
-			enabled: true,
-			rolloutPercent: 50,
-		});
-		expect(response).toBeDefined();
-	});
-
-	it("creates a feature flag with target orgs", async () => {
-		const { result } = renderHook(() => useUpsertFeatureFlag(), {
-			wrapper: createWrapper(),
-		});
-		const response = await result.current.mutateAsync({
-			name: "org-feature",
-			description: "Only for specific orgs",
-			enabled: true,
-			rolloutPercent: 100,
-			targetOrgIds: ["org-1", "org-2"],
-		});
-		expect(response).toBeDefined();
 	});
 });

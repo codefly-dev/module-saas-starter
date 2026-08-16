@@ -106,24 +106,25 @@ feature.
 
 ### Database-backed feature-flag retirement
 
-The `feature_flags` table, `ListFeatureFlags`/`UpsertFeatureFlag` API, and
+The `feature_flags` table, read-only `ListFeatureFlags` API, and
 `/admin/platform/feature-flags` page are a legacy migration inventory, not a
-runtime flag owner. No application runtime evaluates that table: the former
-database evaluator and its combined flag/entitlement checker have been removed.
-The remaining surface is retired in this order:
+runtime flag owner. No application runtime evaluates or mutates that table: the
+former database evaluator, combined flag/entitlement checker, and mutation API
+have been removed. The remaining surface is retired in this order:
 
 1. Land the
    [`feature-flags@1` contract](https://github.com/codefly-dev/core/issues/281),
    [Unleash service](https://github.com/codefly-dev/module-saas-starter/issues/130),
    and [Unleash provider](https://github.com/codefly-dev/module-saas-starter/issues/128).
-2. Export each legacy row and map `enabled`, `rollout_percent`, and
+2. Export each legacy row through the read-only inventory API and map `enabled`,
+   `rollout_percent`, and
    `target_org_ids` to one explicitly owned Unleash project/environment and its
    strategies. Reject ambiguous mappings, import once, then verify equivalent
    evaluations against fixed organization fixtures. Do not add dual reads or
    dual writes.
-3. Bind consumers to `feature-flags@1`, freeze the legacy API, and remove the
-   admin route/navigation, protobuf RPCs and messages, business/infra methods,
-   generated REST/Connect surfaces, permissions, and tests in the same cutover.
+3. Bind consumers to `feature-flags@1` and remove the admin route/navigation,
+   list RPC and messages, business/infra read methods, generated REST/Connect
+   surfaces, permissions, and tests in the same cutover.
 4. After the imported project is verified and no legacy consumers remain, add
    a forward migration that drops `feature_flags` and its grants/indexes. The
    historical migration that originally created the table remains immutable.

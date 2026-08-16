@@ -2,7 +2,7 @@
 
 > Generated from protobuf service descriptors and `saas.policy.v1.method_policy`; only the prose description is joined from `pkg/business/introspection.go`. Do not edit by hand. Run `go generate ./pkg/business` from `module/services/accounts/code`.
 
-Inventory: **140 RPCs** across **26 services**. Missing, invalid, or unclassified procedures are denied by both Connect and gRPC interceptors.
+Inventory: **139 RPCs** across **26 services**. Missing, invalid, or unclassified procedures are denied by both Connect and gRPC interceptors.
 
 The compact tier is retained for compatibility. Guards, resource bindings, audit events, limiter class, and data sensitivity are descriptor-authoritative. Domain handlers may enforce stronger state-dependent rules but may not weaken this floor.
 
@@ -86,7 +86,7 @@ The compact tier is retained for compatibility. Guards, resource bindings, audit
 | `/saas.accounts.v1.PlatformAdminService/GrantPlatformRole` | unary | `POST /v1/platform/admins` | `platform_admin` | exposure=AUTHENTICATED; tenant=NONE; platform=SUPER_ADMIN; mfa=IF_ENROLLED_RECENT_STEP_UP | — | — | SUCCESS: platform.role_granted | FORBIDDEN / SENSITIVE | CONFIDENTIAL → CONFIDENTIAL | Grant a platform role. |
 | `/saas.accounts.v1.PlatformAdminService/ImpersonateUser` | unary | `POST /v1/platform/users/{user_id}:impersonate` | `platform_admin` | exposure=AUTHENTICATED; tenant=NONE; platform=SUPPORT; mfa=IF_ENROLLED_RECENT_STEP_UP | — | — | SUCCESS: platform.user_impersonated | FORBIDDEN / SENSITIVE | CONFIDENTIAL → SECRET | Mint an impersonation session. |
 | `/saas.accounts.v1.PlatformAdminService/ListActiveSessions` | unary | `GET /v1/platform/sessions` | `platform_admin` | exposure=AUTHENTICATED; tenant=NONE; platform=SUPPORT | — | — | — | FORBIDDEN / SENSITIVE | CONFIDENTIAL → CONFIDENTIAL | Active sessions for a user. |
-| `/saas.accounts.v1.PlatformAdminService/ListFeatureFlags` | unary | `GET /v1/platform/feature-flags` | `platform_admin` | exposure=AUTHENTICATED; tenant=NONE; platform=SUPER_ADMIN | — | — | — | FORBIDDEN / SENSITIVE | CONFIDENTIAL → CONFIDENTIAL | List platform feature flags. |
+| `/saas.accounts.v1.PlatformAdminService/ListFeatureFlags` | unary | `GET /v1/platform/feature-flags` | `platform_admin` | exposure=AUTHENTICATED; tenant=NONE; platform=SUPER_ADMIN | — | — | — | FORBIDDEN / SENSITIVE | CONFIDENTIAL → CONFIDENTIAL | List the legacy feature-flag migration inventory. |
 | `/saas.accounts.v1.PlatformAdminService/ListJobs` | unary | `GET /v1/platform/jobs` | `platform_admin` | exposure=AUTHENTICATED; tenant=NONE; platform=SUPER_ADMIN | — | — | — | FORBIDDEN / SENSITIVE | CONFIDENTIAL → CONFIDENTIAL | Seek-paginated payload-free job operations view. |
 | `/saas.accounts.v1.PlatformAdminService/ListPlatformAdmins` | unary | `GET /v1/platform/admins` | `platform_admin` | exposure=AUTHENTICATED; tenant=NONE; platform=SUPER_ADMIN | — | — | — | FORBIDDEN / SENSITIVE | CONFIDENTIAL → CONFIDENTIAL | List platform admins. |
 | `/saas.accounts.v1.PlatformAdminService/OverrideEntitlement` | unary | `POST /v1/platform/organizations/{org_id}/entitlements` | `platform_admin` | exposure=AUTHENTICATED; tenant=NONE; platform=ANY | — | — | SUCCESS: entitlement.override | FORBIDDEN / SENSITIVE | CONFIDENTIAL → CONFIDENTIAL | Per-org limit override. |
@@ -96,7 +96,6 @@ The compact tier is retained for compatibility. Guards, resource bindings, audit
 | `/saas.accounts.v1.PlatformAdminService/SearchUsers` | unary | `GET /v1/platform/users` | `platform_admin` | exposure=AUTHENTICATED; tenant=NONE; platform=SUPPORT | — | — | — | FORBIDDEN / SENSITIVE | CONFIDENTIAL → CONFIDENTIAL | Search across all users. |
 | `/saas.accounts.v1.PlatformAdminService/SuspendUser` | unary | `POST /v1/platform/users/{user_id}:suspend` | `platform_admin` | exposure=AUTHENTICATED; tenant=NONE; platform=SUPER_ADMIN | — | — | SUCCESS: user.suspended | FORBIDDEN / SENSITIVE | CONFIDENTIAL → CONFIDENTIAL | Suspend a user account. |
 | `/saas.accounts.v1.PlatformAdminService/UnsuspendUser` | unary | `POST /v1/platform/users/{user_id}:unsuspend` | `platform_admin` | exposure=AUTHENTICATED; tenant=NONE; platform=SUPER_ADMIN | — | — | SUCCESS: user.unsuspended | FORBIDDEN / SENSITIVE | CONFIDENTIAL → CONFIDENTIAL | Restore a suspended user. |
-| `/saas.accounts.v1.PlatformAdminService/UpsertFeatureFlag` | unary | `PUT /v1/platform/feature-flags/{name}` | `platform_admin` | exposure=AUTHENTICATED; tenant=NONE; platform=SUPER_ADMIN | — | — | SUCCESS: feature_flag.updated | FORBIDDEN / SENSITIVE | CONFIDENTIAL → CONFIDENTIAL | Create / update a feature flag. |
 | `/saas.accounts.v1.PrincipalService/CreateAgentPrincipal` | unary | `POST /v1/principals:agent` | `org_admin` | exposure=AUTHENTICATED; tenant=ORG_ADMIN | — | org_id → ORGANIZATION/DIRECT_ID | SUCCESS: principal.created | FORBIDDEN / STANDARD_WRITE | CONFIDENTIAL → CONFIDENTIAL | Create an agent principal in an organization. |
 | `/saas.accounts.v1.PrincipalService/GetAgentPrincipal` | unary | `—` | `internal` | exposure=INTERNAL; tenant=NONE | — | — | — | FORBIDDEN / INTERNAL | CONFIDENTIAL → CONFIDENTIAL | Internal agent-principal lookup. |
 | `/saas.accounts.v1.PrincipalService/GetPrincipal` | unary | `—` | `internal` | exposure=INTERNAL; tenant=NONE | — | — | — | FORBIDDEN / INTERNAL | CONFIDENTIAL → CONFIDENTIAL | Internal principal lookup. |
@@ -156,5 +155,5 @@ The compact tier is retained for compatibility. Guards, resource bindings, audit
 - `mfa`: 3
 - `org_admin`: 28
 - `org_member`: 25
-- `platform_admin`: 22
+- `platform_admin`: 21
 - `public`: 16

@@ -135,6 +135,5 @@ func generatedCatalogRESTRoutes() []*RouteEntry {
 		{Service: "accounts", Method: "POST", Path: "/v1/work-contexts:task", Procedure: "/saas.accounts.v1.WorkContextService/StartTask"},
 		{Service: "accounts", Method: "PUT", Path: "/v1/consent/preferences", Procedure: "/saas.accounts.v1.ConsentService/UpdatePreferences"},
 		{Service: "accounts", Method: "PUT", Path: "/v1/organizations/{org_id}/settings", Procedure: "/saas.accounts.v1.OrganizationService/UpdateOrgSettings"},
-		{Service: "accounts", Method: "PUT", Path: "/v1/platform/feature-flags/{name}", Procedure: "/saas.accounts.v1.PlatformAdminService/UpsertFeatureFlag"},
 	}
 }

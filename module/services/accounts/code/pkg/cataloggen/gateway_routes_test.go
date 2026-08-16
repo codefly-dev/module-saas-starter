@@ -20,7 +20,7 @@ func TestGatewayRouteCatalogCompilationAndParity(t *testing.T) {
 	routes, err := cataloggen.BuildGatewayRouteCatalog(serviceDocument, bindingDocument, topologyDocument)
 	require.NoError(t, err)
 	require.NoError(t, cataloggen.ValidateGatewayRouteCatalog(routes))
-	require.Len(t, routes.GetRoutes(), 394)
+	require.Len(t, routes.GetRoutes(), 391)
 
 	var connectCount, restCount, aliasCount, publicCount int
 	byMatch := make(map[string]*catalogv1.GatewayRoute, len(routes.GetRoutes()))
@@ -40,9 +40,9 @@ func TestGatewayRouteCatalogCompilationAndParity(t *testing.T) {
 		}
 		require.NotEqual(t, policyv1.Exposure_EXPOSURE_INTERNAL, route.GetExposure())
 	}
-	require.Equal(t, 262, connectCount)
-	require.Equal(t, 132, restCount)
-	require.Equal(t, 131, aliasCount)
+	require.Equal(t, 260, connectCount)
+	require.Equal(t, 131, restCount)
+	require.Equal(t, 130, aliasCount)
 	require.Equal(t, 48, publicCount)
 
 	require.Nil(t, byMatch["POST /saas.accounts.v1.APIKeyService/ValidateAPIKey"])
@@ -87,7 +87,7 @@ func TestGatewayArtifactsAreDeterministicAndCurrent(t *testing.T) {
 	goRoutes, err := cataloggen.RenderAuthSidecarConnectRoutes(routes)
 	require.NoError(t, err)
 	require.Equal(t, string(goRoutes), string(readFixture(t, "../../../../auth-sidecar/code/routing_catalog_gen.go")), "run: go generate ./pkg/cataloggen")
-	require.Equal(t, 262, strings.Count(string(goRoutes), `{Service: "accounts_connect"`))
+	require.Equal(t, 260, strings.Count(string(goRoutes), `{Service: "accounts_connect"`))
 
 }
 

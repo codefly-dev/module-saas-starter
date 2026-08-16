@@ -23,7 +23,7 @@ func TestServiceCatalogCompilation(t *testing.T) {
 	require.Equal(t, "saas.accounts.v1", catalog.GetApiPackage())
 	require.Equal(t, business.ServiceVersion, catalog.GetApiVersion())
 	require.Len(t, catalog.GetServices(), 26)
-	require.Len(t, catalog.GetMethods(), 140)
+	require.Len(t, catalog.GetMethods(), 139)
 	require.Len(t, catalog.GetPermissions(), 21)
 	require.Len(t, catalog.GetEntitlements(), 5)
 	require.Equal(t, "*:*", catalog.GetPermissions()[0].GetPermission())
@@ -70,6 +70,22 @@ func TestServiceCatalogCompilation(t *testing.T) {
 	usageHistory := methods["/saas.accounts.v1.UsageService/GetUsageHistory"]
 	require.NotNil(t, usageHistory)
 	require.Equal(t, "/v1/organizations/{organization_id}/usage/{meter}/history", usageHistory.GetHttpBindings()[0].GetPath())
+}
+
+func TestLegacyFeatureFlagInventoryIsReadOnly(t *testing.T) {
+	catalog, err := business.BuildServiceCatalog()
+	require.NoError(t, err)
+
+	methods := make(map[string]*catalogv1.Method, len(catalog.GetMethods()))
+	for _, method := range catalog.GetMethods() {
+		methods[method.GetProcedure()] = method
+	}
+
+	list := methods["/saas.accounts.v1.PlatformAdminService/ListFeatureFlags"]
+	require.NotNil(t, list)
+	require.Equal(t, "GET", list.GetHttpBindings()[0].GetMethod())
+	require.Equal(t, "/v1/platform/feature-flags", list.GetHttpBindings()[0].GetPath())
+	require.NotContains(t, methods, "/saas.accounts.v1.PlatformAdminService/UpsertFeatureFlag")
 }
 
 func TestServiceCatalogJSONIsDeterministicAndCurrent(t *testing.T) {

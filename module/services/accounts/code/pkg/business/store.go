@@ -205,9 +205,8 @@ type Store interface {
 	GetPlanByName(ctx context.Context, name string) (*PlanFull, error)
 	ListPublicPlans(ctx context.Context) ([]PublicPlan, error)
 
-	// Feature Flags
+	// Legacy feature-flag migration inventory
 	ListFeatureFlags(ctx context.Context) ([]*FeatureFlag, error)
-	UpsertFeatureFlag(ctx context.Context, flag *FeatureFlag) error
 
 	// Platform admin - user operations
 	SearchUsers(ctx context.Context, query string, pageSize int32, pageToken string) ([]*gen.User, string, error)

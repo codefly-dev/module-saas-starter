@@ -34,7 +34,6 @@ const (
 	PlatformAdminService_RevokePlatformRole_FullMethodName  = "/saas.accounts.v1.PlatformAdminService/RevokePlatformRole"
 	PlatformAdminService_ListPlatformAdmins_FullMethodName  = "/saas.accounts.v1.PlatformAdminService/ListPlatformAdmins"
 	PlatformAdminService_ListFeatureFlags_FullMethodName    = "/saas.accounts.v1.PlatformAdminService/ListFeatureFlags"
-	PlatformAdminService_UpsertFeatureFlag_FullMethodName   = "/saas.accounts.v1.PlatformAdminService/UpsertFeatureFlag"
 	PlatformAdminService_GetJobOperations_FullMethodName    = "/saas.accounts.v1.PlatformAdminService/GetJobOperations"
 	PlatformAdminService_ListJobs_FullMethodName            = "/saas.accounts.v1.PlatformAdminService/ListJobs"
 	PlatformAdminService_GetJob_FullMethodName              = "/saas.accounts.v1.PlatformAdminService/GetJob"
@@ -63,9 +62,8 @@ type PlatformAdminServiceClient interface {
 	GrantPlatformRole(ctx context.Context, in *GrantPlatformRoleRequest, opts ...grpc.CallOption) (*emptypb.Empty, error)
 	RevokePlatformRole(ctx context.Context, in *RevokePlatformRoleRequest, opts ...grpc.CallOption) (*emptypb.Empty, error)
 	ListPlatformAdmins(ctx context.Context, in *ListPlatformAdminsRequest, opts ...grpc.CallOption) (*ListPlatformAdminsResponse, error)
-	// Feature flags (platform-only)
+	// Legacy feature-flag migration inventory (platform-only, read-only)
 	ListFeatureFlags(ctx context.Context, in *ListFeatureFlagsRequest, opts ...grpc.CallOption) (*ListFeatureFlagsResponse, error)
-	UpsertFeatureFlag(ctx context.Context, in *UpsertFeatureFlagRequest, opts ...grpc.CallOption) (*UpsertFeatureFlagResponse, error)
 	// Product-neutral durable job operations. Payload bytes never leave the
 	// worker database boundary through these methods.
 	GetJobOperations(ctx context.Context, in *v1.GetJobOperationsRequest, opts ...grpc.CallOption) (*v1.GetJobOperationsResponse, error)
@@ -202,16 +200,6 @@ func (c *platformAdminServiceClient) ListFeatureFlags(ctx context.Context, in *L
 	return out, nil
 }
 
-func (c *platformAdminServiceClient) UpsertFeatureFlag(ctx context.Context, in *UpsertFeatureFlagRequest, opts ...grpc.CallOption) (*UpsertFeatureFlagResponse, error) {
-	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
-	out := new(UpsertFeatureFlagResponse)
-	err := c.cc.Invoke(ctx, PlatformAdminService_UpsertFeatureFlag_FullMethodName, in, out, cOpts...)
-	if err != nil {
-		return nil, err
-	}
-	return out, nil
-}
-
 func (c *platformAdminServiceClient) GetJobOperations(ctx context.Context, in *v1.GetJobOperationsRequest, opts ...grpc.CallOption) (*v1.GetJobOperationsResponse, error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(v1.GetJobOperationsResponse)
@@ -274,9 +262,8 @@ type PlatformAdminServiceServer interface {
 	GrantPlatformRole(context.Context, *GrantPlatformRoleRequest) (*emptypb.Empty, error)
 	RevokePlatformRole(context.Context, *RevokePlatformRoleRequest) (*emptypb.Empty, error)
 	ListPlatformAdmins(context.Context, *ListPlatformAdminsRequest) (*ListPlatformAdminsResponse, error)
-	// Feature flags (platform-only)
+	// Legacy feature-flag migration inventory (platform-only, read-only)
 	ListFeatureFlags(context.Context, *ListFeatureFlagsRequest) (*ListFeatureFlagsResponse, error)
-	UpsertFeatureFlag(context.Context, *UpsertFeatureFlagRequest) (*UpsertFeatureFlagResponse, error)
 	// Product-neutral durable job operations. Payload bytes never leave the
 	// worker database boundary through these methods.
 	GetJobOperations(context.Context, *v1.GetJobOperationsRequest) (*v1.GetJobOperationsResponse, error)
@@ -328,9 +315,6 @@ func (UnimplementedPlatformAdminServiceServer) ListPlatformAdmins(context.Contex
 }
 func (UnimplementedPlatformAdminServiceServer) ListFeatureFlags(context.Context, *ListFeatureFlagsRequest) (*ListFeatureFlagsResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method ListFeatureFlags not implemented")
-}
-func (UnimplementedPlatformAdminServiceServer) UpsertFeatureFlag(context.Context, *UpsertFeatureFlagRequest) (*UpsertFeatureFlagResponse, error) {
-	return nil, status.Error(codes.Unimplemented, "method UpsertFeatureFlag not implemented")
 }
 func (UnimplementedPlatformAdminServiceServer) GetJobOperations(context.Context, *v1.GetJobOperationsRequest) (*v1.GetJobOperationsResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method GetJobOperations not implemented")
@@ -581,24 +565,6 @@ func _PlatformAdminService_ListFeatureFlags_Handler(srv interface{}, ctx context
 	return interceptor(ctx, in, info, handler)
 }
 
-func _PlatformAdminService_UpsertFeatureFlag_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
-	in := new(UpsertFeatureFlagRequest)
-	if err := dec(in); err != nil {
-		return nil, err
-	}
-	if interceptor == nil {
-		return srv.(PlatformAdminServiceServer).UpsertFeatureFlag(ctx, in)
-	}
-	info := &grpc.UnaryServerInfo{
-		Server:     srv,
-		FullMethod: PlatformAdminService_UpsertFeatureFlag_FullMethodName,
-	}
-	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
-		return srv.(PlatformAdminServiceServer).UpsertFeatureFlag(ctx, req.(*UpsertFeatureFlagRequest))
-	}
-	return interceptor(ctx, in, info, handler)
-}
-
 func _PlatformAdminService_GetJobOperations_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
 	in := new(v1.GetJobOperationsRequest)
 	if err := dec(in); err != nil {
@@ -725,10 +691,6 @@ var PlatformAdminService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "ListFeatureFlags",
 			Handler:    _PlatformAdminService_ListFeatureFlags_Handler,
-		},
-		{
-			MethodName: "UpsertFeatureFlag",
-			Handler:    _PlatformAdminService_UpsertFeatureFlag_Handler,
 		},
 		{
 			MethodName: "GetJobOperations",

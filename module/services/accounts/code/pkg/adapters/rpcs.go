@@ -1241,17 +1241,6 @@ func (s *PlatformAdminServer) ListFeatureFlags(ctx context.Context, _ *gen.ListF
 	return service.ListFeatureFlags(ctx, actorID)
 }
 
-func (s *PlatformAdminServer) UpsertFeatureFlag(ctx context.Context, req *gen.UpsertFeatureFlagRequest) (*gen.UpsertFeatureFlagResponse, error) {
-	if err := Validate(req); err != nil {
-		return nil, err
-	}
-	actorID, err := requireAuth(ctx)
-	if err != nil {
-		return nil, err
-	}
-	return service.UpsertFeatureFlag(ctx, actorID, req)
-}
-
 func (s *PlatformAdminServer) GetJobOperations(ctx context.Context, req *jobsv1.GetJobOperationsRequest) (*jobsv1.GetJobOperationsResponse, error) {
 	if err := Validate(req); err != nil {
 		return nil, err
