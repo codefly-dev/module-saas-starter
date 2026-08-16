@@ -69,11 +69,11 @@ deployment/kustomize/
   bundle.json
   overlays/
     <environment>/
-      kustomization.yaml      # sets `namespace:` and references base + ingress
+      kustomization.yaml      # sets `namespace:` and references base + namespace + ingress
+      namespace.yaml          # Namespace object, named for the environment
       ingress.yaml            # Gateway + VirtualService (host-bearing; omitted without ingress)
       base/
         kustomization.yaml
-        namespace.yaml        # identity-neutral placeholder name
         resource-quota.yaml
         limit-range.yaml
         network-policy.yaml
@@ -83,11 +83,11 @@ deployment/kustomize/
           <managed-service>.yaml
 ```
 
-The base is identity-neutral: its Namespace object carries a placeholder name and
-no host is baked into it. Each environment overlay supplies the identity — its
-`namespace:` transformer names the namespace (and places every resource in it),
-and its `ingress.yaml` owns the host-bearing Gateway and VirtualService — so one
-base can back many namespaces. An overlay contains module-owned Kubernetes
+The base is identity-neutral: it carries neither the Namespace object nor a host.
+Each environment overlay supplies the identity — its `namespace.yaml` names the
+namespace, its `ingress.yaml` owns the host-bearing Gateway and VirtualService,
+and its `namespace:` transformer places every base resource in that namespace —
+so one base can back many namespaces. An overlay contains module-owned Kubernetes
 objects only — namespace, resource-quota, limit-range, NetworkPolicies, Istio
 mTLS/gateway, and managed `ExternalName`/`ExternalSecret` handoffs. It never
 contains a Secret, an `AppProject`, or an `Application`. Render an environment

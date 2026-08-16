@@ -22,13 +22,6 @@ import (
 
 const moduleBundleSchema = "codefly.dev/module-bundle/v1"
 
-// neutralBaseNamespace is the placeholder name the identity-neutral base carries
-// for its Namespace object. Every environment overlay rewrites it (and every
-// resource's metadata.namespace) to the environment namespace through the
-// kustomize namespace transformer, so one base can back many tenants without
-// baking a namespace identity into the shared resources.
-const neutralBaseNamespace = "codefly-tenant"
-
 var (
 	dnsLabelPattern   = regexp.MustCompile(`^[a-z0-9](?:[-a-z0-9]*[a-z0-9])?$`)
 	unresolvedPattern = regexp.MustCompile(`(?i)REPLACE_ME|saas-starter|\$\{[^}]+\}|<[^>]*replace[^>]*>`)
@@ -772,16 +765,16 @@ func renderEnvironment(
 		"codefly.dev/module":           moduleName,
 		"codefly.dev/environment":      plan.environment.Name,
 	}
-	// The base carries a placeholder Namespace name; the overlay's namespace
-	// transformer rewrites it to the environment namespace. The
-	// kubernetes.io/metadata.name label is left off because the apiserver's
-	// NamespaceDefaultLabelName admission plugin sets it to the live namespace
-	// name — baking it here would only reintroduce the identity the base sheds.
+	// The Namespace object carries the environment identity, so — like the
+	// host-bearing Gateway and VirtualService — it lives in the overlay, not the
+	// base. The base stays identity-neutral (no Namespace object, no host); the
+	// overlay names the namespace both on this object and, through its namespace
+	// transformer, on every resource the base contributes.
 	namespace := kubeObject{
 		APIVersion: "v1",
 		Kind:       "Namespace",
 		Metadata: objectMeta{
-			Name: neutralBaseNamespace,
+			Name: plan.environment.Namespace,
 			Labels: mergeLabels(identityLabels, map[string]string{
 				"istio.io/dataplane-mode":                    "ambient",
 				"pod-security.kubernetes.io/enforce":         "baseline",
@@ -790,10 +783,11 @@ func renderEnvironment(
 				"pod-security.kubernetes.io/audit-version":   "latest",
 				"pod-security.kubernetes.io/warn":            "restricted",
 				"pod-security.kubernetes.io/warn-version":    "latest",
+				"kubernetes.io/metadata.name":                plan.environment.Namespace,
 			}),
 		},
 	}
-	if err := writeYAML(filepath.Join(baseRoot, "namespace.yaml"), namespace); err != nil {
+	if err := writeYAML(filepath.Join(environmentRoot, "namespace.yaml"), namespace); err != nil {
 		return err
 	}
 	basePaths, ingress, err := renderSharedResources(baseRoot, plan.environment.Namespace, identityLabels, topology, plan)
@@ -802,7 +796,6 @@ func renderEnvironment(
 	}
 
 	baseResources := []string{
-		"namespace.yaml",
 		"resource-quota.yaml",
 		"limit-range.yaml",
 	}
@@ -815,7 +808,7 @@ func renderEnvironment(
 		return err
 	}
 
-	overlayResources := []string{"base"}
+	overlayResources := []string{"base", "namespace.yaml"}
 	if len(ingress) > 0 {
 		if err := writeYAMLDocuments(filepath.Join(environmentRoot, "ingress.yaml"), ingress); err != nil {
 			return err

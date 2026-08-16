@@ -98,23 +98,9 @@ func TestIdentityNeutralBaseDefersNamespaceAndIstioHost(t *testing.T) {
 	overlayRoot := filepath.Join(moduleDir, filepath.FromSlash(bundleRelativeDir), "overlays", "local")
 	baseRoot := filepath.Join(overlayRoot, "base")
 
-	// The base must not bake the environment namespace: its Namespace object
-	// carries the neutral placeholder and drops the identity-echoing label.
-	namespaceObjects, err := decodeYAMLDocuments(filepath.Join(baseRoot, "namespace.yaml"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	metadata := namespaceObjects[0]["metadata"].(map[string]any)
-	if metadata["name"] != neutralBaseNamespace {
-		t.Errorf("base Namespace name = %v, want neutral %q", metadata["name"], neutralBaseNamespace)
-	}
-	labels := metadata["labels"].(map[string]any)
-	if _, present := labels["kubernetes.io/metadata.name"]; present {
-		t.Error("base Namespace bakes kubernetes.io/metadata.name; it must be left to the apiserver")
-	}
-
-	// The base must not bake the Istio host: no Gateway or VirtualService lives
-	// anywhere beneath it.
+	// The base must carry neither identity-bearing object: no Namespace object
+	// (its name is the tenant identity) and no host-bearing Gateway/VirtualService
+	// live anywhere beneath it.
 	if err := filepath.WalkDir(baseRoot, func(file string, entry os.DirEntry, err error) error {
 		if err != nil || entry.IsDir() || entry.Name() == "kustomization.yaml" {
 			return err
@@ -124,8 +110,9 @@ func TestIdentityNeutralBaseDefersNamespaceAndIstioHost(t *testing.T) {
 			return err
 		}
 		for _, object := range objects {
-			if kind := object["kind"]; kind == "Gateway" || kind == "VirtualService" {
-				t.Errorf("base file %s bakes Istio ingress object %v", file, kind)
+			switch object["kind"] {
+			case "Namespace", "Gateway", "VirtualService":
+				t.Errorf("base file %s bakes identity-bearing object %v", file, object["kind"])
 			}
 		}
 		return nil
@@ -133,8 +120,25 @@ func TestIdentityNeutralBaseDefersNamespaceAndIstioHost(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	// The overlay carries the identity: it names the environment namespace and
-	// owns the host-bearing Gateway and VirtualService.
+	// The overlay owns the Namespace object, named for the environment rather than
+	// a placeholder. This raw name matters: the CLI validates every raw Namespace
+	// against the AppProject destinations before rendering, so a placeholder name
+	// here fails promotion.
+	namespaceObjects, err := decodeYAMLDocuments(filepath.Join(overlayRoot, "namespace.yaml"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	metadata := namespaceObjects[0]["metadata"].(map[string]any)
+	if metadata["name"] != "identity-local" {
+		t.Errorf("overlay Namespace name = %v, want identity-local", metadata["name"])
+	}
+	labels := metadata["labels"].(map[string]any)
+	if labels["kubernetes.io/metadata.name"] != "identity-local" {
+		t.Errorf("overlay Namespace kubernetes.io/metadata.name = %v, want identity-local", labels["kubernetes.io/metadata.name"])
+	}
+
+	// The overlay also owns the host-bearing Gateway/VirtualService and names the
+	// namespace for every resource the base contributes.
 	data, err := os.ReadFile(filepath.Join(overlayRoot, "kustomization.yaml"))
 	if err != nil {
 		t.Fatal(err)
@@ -144,10 +148,12 @@ func TestIdentityNeutralBaseDefersNamespaceAndIstioHost(t *testing.T) {
 		t.Fatal(err)
 	}
 	if overlay.Namespace != "identity-local" {
-		t.Errorf("overlay namespace = %q, want identity-local", overlay.Namespace)
+		t.Errorf("overlay namespace transformer = %q, want identity-local", overlay.Namespace)
 	}
-	if !slices.Contains(overlay.Resources, "base") || !slices.Contains(overlay.Resources, "ingress.yaml") {
-		t.Errorf("overlay resources = %v, want base + ingress.yaml", overlay.Resources)
+	for _, want := range []string{"base", "namespace.yaml", "ingress.yaml"} {
+		if !slices.Contains(overlay.Resources, want) {
+			t.Errorf("overlay resources = %v, missing %q", overlay.Resources, want)
+		}
 	}
 	ingressObjects, err := decodeYAMLDocuments(filepath.Join(overlayRoot, "ingress.yaml"))
 	if err != nil {
@@ -294,8 +300,11 @@ func TestGenerateBundleRendersEnvironmentWithoutPublicIngress(t *testing.T) {
 	if _, err := os.Stat(filepath.Join(overlays, "aws", "ingress.yaml")); !errors.Is(err, os.ErrNotExist) {
 		t.Fatalf("ingress-less aws overlay emitted a public gateway: %v", err)
 	}
+	if _, err := os.Stat(filepath.Join(overlays, "aws", "namespace.yaml")); err != nil {
+		t.Errorf("ingress-less aws overlay is missing its Namespace object: %v", err)
+	}
 	awsBase := filepath.Join(overlays, "aws", "base")
-	for _, base := range []string{"namespace.yaml", "network-policy.yaml", "istio-mtls.yaml"} {
+	for _, base := range []string{"network-policy.yaml", "istio-mtls.yaml"} {
 		if _, err := os.Stat(filepath.Join(awsBase, base)); err != nil {
 			t.Errorf("ingress-less aws overlay is missing module-owned %s: %v", base, err)
 		}
@@ -514,7 +523,7 @@ func TestGeneratedPoliciesAndGatewayMatchTopology(t *testing.T) {
 		t.Fatal(err)
 	}
 	generated := filepath.Join(moduleDir, filepath.FromSlash(bundleRelativeDir), "overlays")
-	namespaceObjects, err := decodeYAMLDocuments(filepath.Join(generated, "local", "base", "namespace.yaml"))
+	namespaceObjects, err := decodeYAMLDocuments(filepath.Join(generated, "local", "namespace.yaml"))
 	if err != nil {
 		t.Fatal(err)
 	}
