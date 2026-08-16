@@ -142,6 +142,7 @@ type kubeObject struct {
 type kustomization struct {
 	APIVersion string   `yaml:"apiVersion"`
 	Kind       string   `yaml:"kind"`
+	Namespace  string   `yaml:"namespace,omitempty"`
 	Resources  []string `yaml:"resources"`
 }
 
@@ -752,8 +753,8 @@ func renderEnvironment(
 	plan environmentPlan,
 ) error {
 	environmentRoot := filepath.Join(root, "overlays", plan.environment.Name)
-	resourceRoot := filepath.Join(environmentRoot, "resources")
-	if err := os.MkdirAll(resourceRoot, 0o755); err != nil {
+	baseRoot := filepath.Join(environmentRoot, "base")
+	if err := os.MkdirAll(baseRoot, 0o755); err != nil {
 		return err
 	}
 
@@ -764,6 +765,11 @@ func renderEnvironment(
 		"codefly.dev/module":           moduleName,
 		"codefly.dev/environment":      plan.environment.Name,
 	}
+	// The Namespace object carries the environment identity, so — like the
+	// host-bearing Gateway and VirtualService — it lives in the overlay, not the
+	// base. The base stays identity-neutral (no Namespace object, no host); the
+	// overlay names the namespace both on this object and, through its namespace
+	// transformer, on every resource the base contributes.
 	namespace := kubeObject{
 		APIVersion: "v1",
 		Kind:       "Namespace",
@@ -781,24 +787,39 @@ func renderEnvironment(
 			}),
 		},
 	}
-	if err := writeYAML(filepath.Join(resourceRoot, "namespace.yaml"), namespace); err != nil {
+	if err := writeYAML(filepath.Join(environmentRoot, "namespace.yaml"), namespace); err != nil {
 		return err
 	}
-	sharedPaths, err := renderSharedResources(resourceRoot, plan.environment.Namespace, identityLabels, topology, plan)
+	basePaths, ingress, err := renderSharedResources(baseRoot, plan.environment.Namespace, identityLabels, topology, plan)
 	if err != nil {
 		return err
 	}
 
-	resourcePaths := []string{
-		"resources/namespace.yaml",
-		"resources/resource-quota.yaml",
-		"resources/limit-range.yaml",
+	baseResources := []string{
+		"resource-quota.yaml",
+		"limit-range.yaml",
 	}
-	resourcePaths = append(resourcePaths, sharedPaths...)
+	baseResources = append(baseResources, basePaths...)
+	if err := writeYAML(filepath.Join(baseRoot, "kustomization.yaml"), kustomization{
+		APIVersion: "kustomize.config.k8s.io/v1beta1",
+		Kind:       "Kustomization",
+		Resources:  baseResources,
+	}); err != nil {
+		return err
+	}
+
+	overlayResources := []string{"base", "namespace.yaml"}
+	if len(ingress) > 0 {
+		if err := writeYAMLDocuments(filepath.Join(environmentRoot, "ingress.yaml"), ingress); err != nil {
+			return err
+		}
+		overlayResources = append(overlayResources, "ingress.yaml")
+	}
 	if err := writeYAML(filepath.Join(environmentRoot, "kustomization.yaml"), kustomization{
 		APIVersion: "kustomize.config.k8s.io/v1beta1",
 		Kind:       "Kustomization",
-		Resources:  resourcePaths,
+		Namespace:  plan.environment.Namespace,
+		Resources:  overlayResources,
 	}); err != nil {
 		return err
 	}
@@ -811,7 +832,7 @@ func renderSharedResources(
 	labels map[string]string,
 	topology deploymentTopology,
 	plan environmentPlan,
-) ([]string, error) {
+) ([]string, []kubeObject, error) {
 	name := labels["app.kubernetes.io/part-of"]
 	quota := kubeObject{
 		APIVersion: "v1",
@@ -831,7 +852,7 @@ func renderSharedResources(
 		}},
 	}
 	if err := writeYAML(filepath.Join(root, "resource-quota.yaml"), quota); err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	limit := kubeObject{
 		APIVersion: "v1",
@@ -853,35 +874,49 @@ func renderSharedResources(
 		}},
 	}
 	if err := writeYAML(filepath.Join(root, "limit-range.yaml"), limit); err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	networkPolicies, err := topologyNetworkPolicies(topology, plan, namespace, labels)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	if err := writeYAMLDocuments(filepath.Join(root, "network-policy.yaml"), networkPolicies); err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	istio, gateway, err := topologyIstioResources(topology, plan, namespace, labels)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	if err := writeYAMLDocuments(filepath.Join(root, "istio-mtls.yaml"), istio); err != nil {
-		return nil, err
+		return nil, nil, err
 	}
-	paths := []string{"resources/network-policy.yaml", "resources/istio-mtls.yaml"}
-	if len(gateway) > 0 {
-		if err := writeYAMLDocuments(filepath.Join(root, "istio-gateway.yaml"), gateway); err != nil {
-			return nil, err
+	paths := []string{"network-policy.yaml", "istio-mtls.yaml"}
+	// The Gateway and VirtualService carry the environment's public host, so they
+	// belong in the overlay rather than the base and are handed back to the
+	// caller. Their DestinationRules carry no public host and stay in the base
+	// with the rest of the mesh baseline.
+	var ingress []kubeObject
+	var destinationRules []kubeObject
+	for _, object := range gateway {
+		switch object.Kind {
+		case "Gateway", "VirtualService":
+			ingress = append(ingress, object)
+		default:
+			destinationRules = append(destinationRules, object)
 		}
-		paths = append(paths, "resources/istio-gateway.yaml")
+	}
+	if len(destinationRules) > 0 {
+		if err := writeYAMLDocuments(filepath.Join(root, "destination-rules.yaml"), destinationRules); err != nil {
+			return nil, nil, err
+		}
+		paths = append(paths, "destination-rules.yaml")
 	}
 	handoffPaths, err := renderManagedServiceHandoffs(root, namespace, labels, topology, plan)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	paths = append(paths, handoffPaths...)
-	return paths, nil
+	return paths, ingress, nil
 }
 
 func topologyIstioResources(
@@ -1652,8 +1687,8 @@ func renderManagedServiceHandoffs(
 				},
 			})
 		}
-		relative := path.Join("resources", "handoffs", handoff.Service+".yaml")
-		if err := writeYAMLDocuments(filepath.Join(filepath.Dir(root), filepath.FromSlash(relative)), objects); err != nil {
+		relative := path.Join("handoffs", handoff.Service+".yaml")
+		if err := writeYAMLDocuments(filepath.Join(root, filepath.FromSlash(relative)), objects); err != nil {
 			return nil, err
 		}
 		paths = append(paths, relative)
@@ -1707,14 +1742,48 @@ func renderKustomization(root string) ([]map[string]any, error) {
 		if err != nil {
 			return nil, err
 		}
-		file := filepath.Join(root, filepath.FromSlash(clean))
-		documents, err := decodeYAMLDocuments(file)
+		target := filepath.Join(root, filepath.FromSlash(clean))
+		info, err := os.Stat(target)
+		if err != nil {
+			return nil, err
+		}
+		if info.IsDir() {
+			nested, err := renderKustomization(target)
+			if err != nil {
+				return nil, err
+			}
+			objects = append(objects, nested...)
+			continue
+		}
+		documents, err := decodeYAMLDocuments(target)
 		if err != nil {
 			return nil, err
 		}
 		objects = append(objects, documents...)
 	}
+	applyNamespaceTransform(objects, configuration.Namespace)
 	return objects, nil
+}
+
+// applyNamespaceTransform mirrors the kustomize namespace transformer over the
+// object set a base emits: a Namespace object is renamed, and every other
+// (namespaced) object is placed in that namespace. It lets the generator
+// validate the effective render without taking on a dependency on kustomize.
+func applyNamespaceTransform(objects []map[string]any, namespace string) {
+	if namespace == "" {
+		return
+	}
+	for _, object := range objects {
+		metadata, ok := object["metadata"].(map[string]any)
+		if !ok {
+			continue
+		}
+		if object["kind"] == "Namespace" {
+			metadata["name"] = namespace
+			continue
+		}
+		metadata["namespace"] = namespace
+	}
 }
 
 // moduleOwnedAPIVersions is the closed set of apiVersions the module plugin is
