@@ -22,7 +22,7 @@
     "TRUST_CAPABILITIES.md": "c5a1ed15f2e0933c4a47c64baff13adb007db53ed4203baf9a02425bb557debb",
     "USAGE_METERING.md": "764b3d457f663169fa0f4a28d0a21374f14862a16b16cea43be62a30d64bd492",
     "WEBHOOKS.md": "47850362c1576d8447c1c53a17fcbb4ffaacb1b8f1472802c9c9dea28966d018",
-    "deployment/README.md": "20bd95b0cb9ffb5fa7d43b84577cb09227fd0764e924295d960ab4e0ca31439d",
+    "deployment/README.md": "150dd4162eca8a1091fa2e801424930b0400fbd4041643d17796361cb947ceca",
     "deployment/topology.bindings.codefly.yaml": "996ace6501ab462514bd7ea325951f38ba0e3ec10b53c23a95c42b508e0ca752",
     "docs/IDENTITY_ACCESS_PLAN.md": "ad620230ff0a2fafcd57a5b0adc55bc8619c775d367e4605dcdffe96d8185aa7",
     "docs/adr/0001-frontend-plugin-packaging.md": "b82a3be12fdc2ff7d3edf6822fb22fd08c219732c058f97f8fe1eae92a50ae7b",
