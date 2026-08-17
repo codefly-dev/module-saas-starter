@@ -11,6 +11,7 @@ A codefly **module** is a collection of **services**; each service owns its own 
 - Composing this module into a downstream workspace: [Composing this module into a workspace](#composing-this-module-into-a-workspace)
 - Runnable local product with real identity: [LOCAL_DOGFOODING.md](./LOCAL_DOGFOODING.md)
 - External-provider bootstrap scripts: [scripts/setup/README.md](./scripts/setup/README.md)
+- Runtime capability owners and provider boundaries: [Runtime capability ownership](#runtime-capability-ownership)
 - SigNoz dashboard/alert provisioning qualification: [module/SIGNOZ_PROVISIONING.md](./module/SIGNOZ_PROVISIONING.md)
 - accounts service introspection (after `codefly run`): `GET /v1/.well-known/service-info`
 - Connect-RPC: `saas.accounts.v1.IntrospectionService/GetServiceInfo`
@@ -67,6 +68,78 @@ accounts service
 The marketing process has no authentication session, database, Vault, object
 store, admin client, or product feature dependency. Product and marketing have
 independent build, health, deployment, rollback, cache, and hostname policies.
+
+## Runtime capability ownership
+
+This is the authoritative ownership decision for
+[epic #98](https://github.com/codefly-dev/module-saas-starter/issues/98) and the
+[PostHog](https://github.com/codefly-dev/module-saas-starter/issues/127),
+[Unleash](https://github.com/codefly-dev/module-saas-starter/issues/128), and
+[SigNoz](https://github.com/codefly-dev/module-saas-starter/issues/131) provider
+implementations. Ownership names the only implementation allowed to serve a
+capability; it does not claim that every planned provider is released yet.
+
+| Capability | Single owner | Allowed SDK and runtime surface | Explicitly excluded |
+|---|---|---|---|
+| Runtime feature flags | Unleash | The provider-neutral `feature-flags@1` SDK may evaluate flags with consumer-scoped Edge/browser or server tokens. The Unleash admin API is module-only; public clients reach only Unleash Edge. | Product analytics, replay, exception capture, and OTLP/APM |
+| Product analytics | PostHog | The `product-analytics@1` browser/server APIs may capture registered events and perform consent-gated identify, alias, organization grouping, and privacy suppression. An event may carry a variant already evaluated by Unleash for experiment analysis. | Flag definition or evaluation, exception capture, and traces, metrics, or logs |
+| Session replay | PostHog | A browser-only recorder may start after separate replay consent and redaction policy resolve to allow. It has no server SDK or implicit analytics-consent fallback. | Flags, errors, and APM signals |
+| Error tracking | Sentry | Browser/server exception events, release/environment tags, source-map upload, and the error-issue workflow. Provisioning credentials remain build/provider-only. | Performance transactions, profiles, replay, logs, metrics, and feature flags |
+| APM traces, metrics, and logs | SigNoz | Applications use OpenTelemetry SDKs and standard OTLP configuration through the in-graph collector. SigNoz receives those signals as the OTLP backend. | Product analytics, replay, feature flags, and the Sentry error-issue contract |
+
+Provider manifests are allowlists. `provider-posthog` may project only
+`product-analytics@1`; its browser initialization must disable flag remote
+configuration and exception autocapture, and replay must remain stopped until
+replay consent is granted. `provider-unleash` may project only
+`feature-flags@1`. Sentry may project only `error-tracking`; the starter fixes
+Sentry trace sampling at zero and installs no Sentry tracing integration.
+`provider-signoz`, if API qualification succeeds, may manage exactly owned
+dashboards and alerts but projects no application runtime configuration. In
+particular, dashboard provisioning is not an application telemetry contract:
+application OTLP endpoints remain instrumentation configuration resolved
+through the telemetry service.
+
+The starter keeps the capability configurations independent. Selecting
+PostHog never selects flags, errors, or observability; selecting Sentry never
+selects tracing; selecting an OTLP exporter never selects error tracking.
+PostHog's current direct HTTP adapters expose capture, identity, grouping, and
+suppression only, so no bundled vendor SDK can silently enable an overlapping
+feature.
+
+### Database-backed feature-flag retirement
+
+The `feature_flags` table, read-only `ListFeatureFlags` API, and
+`/admin/platform/feature-flags` page are a legacy migration inventory, not a
+runtime flag owner. No application runtime evaluates or mutates that table: the
+former database evaluator, combined flag/entitlement checker, and mutation path
+have been removed. The published v1 `UpsertFeatureFlag` RPC remains deprecated
+for wire compatibility, but its handler always fails closed and the runtime
+database roles have no write grants. The remaining surface is retired in this
+order:
+
+1. Land the
+   [`feature-flags@1` contract](https://github.com/codefly-dev/core/issues/281),
+   [Unleash service](https://github.com/codefly-dev/module-saas-starter/issues/130),
+   and [Unleash provider](https://github.com/codefly-dev/module-saas-starter/issues/128).
+2. Export each legacy row through the read-only inventory API and map `enabled`,
+   `rollout_percent`, and
+   `target_org_ids` to one explicitly owned Unleash project/environment and its
+   strategies. Reject ambiguous mappings, import once, then verify equivalent
+   evaluations against fixed organization fixtures. Do not add dual reads or
+   dual writes.
+3. Bind consumers to `feature-flags@1` and remove the admin route/navigation,
+   list RPC and messages, business/infra read methods, generated read surfaces,
+   permissions, and tests in the same cutover. Keep the deprecated v1 mutation
+   compatibility shim until the stable-major support policy permits removal.
+4. After the imported project is verified and no legacy consumers remain, add
+   a forward migration that drops `feature_flags` and its grants/indexes. The
+   historical migration that originally created the table remains immutable.
+
+Entitlements and plan gates stay in Accounts and Postgres. They answer whether
+an organization bought or is allowed a product capability; Unleash answers
+which runtime behavior is rolled out. A flag may disable entitled behavior but
+must never grant an entitlement, raise a quota, or replace authorization. Each
+product path checks its entitlement independently from its flag evaluation.
 
 ## Three layers of authorization
 

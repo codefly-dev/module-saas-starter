@@ -44,6 +44,7 @@ func TestRESTSurfaceCompilationAndExposure(t *testing.T) {
 	require.Equal(t, "/saas.accounts.v1.WorkContextService/ExchangeAudience", routes["POST /v1/work-contexts:exchange-audience"].GetProcedure())
 	require.Equal(t, "/saas.accounts.v1.UsageService/ListUsageMeters", routes["GET /v1/organizations/{organization_id}/usage"].GetProcedure())
 	require.Equal(t, "/saas.accounts.v1.UsageService/GetUsageHistory", routes["GET /v1/organizations/{organization_id}/usage/{meter}/history"].GetProcedure())
+	require.Equal(t, "/saas.accounts.v1.PlatformAdminService/UpsertFeatureFlag", routes["PUT /v1/platform/feature-flags/{name}"].GetProcedure())
 	require.Equal(t, policyv1.Exposure_EXPOSURE_AUTHENTICATED, routes["POST /v1/invitations:inspect-id"].GetExposure())
 }
 

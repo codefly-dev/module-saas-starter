@@ -320,7 +320,7 @@ func (s *Service) ListPlatformAdmins(ctx context.Context, actorID string) (*gen.
 	return &gen.ListPlatformAdminsResponse{Admins: entries}, nil
 }
 
-// ListFeatureFlags returns all feature flags (super_admin only).
+// ListFeatureFlags returns the legacy migration inventory (super_admin only).
 func (s *Service) ListFeatureFlags(ctx context.Context, actorID string) (*gen.ListFeatureFlagsResponse, error) {
 	w := wool.Get(ctx).In("ListFeatureFlags")
 
@@ -345,28 +345,4 @@ func (s *Service) ListFeatureFlags(ctx context.Context, actorID string) (*gen.Li
 	}
 
 	return &gen.ListFeatureFlagsResponse{Flags: entries}, nil
-}
-
-// UpsertFeatureFlag creates or updates a feature flag (super_admin only).
-func (s *Service) UpsertFeatureFlag(ctx context.Context, actorID string, req *gen.UpsertFeatureFlagRequest) (*gen.UpsertFeatureFlagResponse, error) {
-	w := wool.Get(ctx).In("UpsertFeatureFlag")
-
-	if err := s.requirePlatformRole(ctx, actorID, "super_admin"); err != nil {
-		return nil, w.Wrapf(err, "permission denied")
-	}
-
-	flag := &FeatureFlag{
-		Name:           req.Name,
-		Description:    req.Description,
-		Enabled:        req.Enabled,
-		RolloutPercent: int(req.RolloutPercent),
-		TargetOrgIDs:   req.TargetOrgIds,
-	}
-	if err := s.store.UpsertFeatureFlag(ctx, flag); err != nil {
-		return nil, w.Wrapf(err, "cannot upsert feature flag")
-	}
-
-	s.emit(ctx, actorID, "user", "feature_flag.updated", "feature_flag", req.Name, "")
-
-	return &gen.UpsertFeatureFlagResponse{Name: req.Name}, nil
 }

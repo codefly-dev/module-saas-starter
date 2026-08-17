@@ -68,14 +68,6 @@ func doWork(ctx context.Context) (Clean, error) {
 	// When external observability is configured, OpenTelemetry always targets
 	// the in-graph collector. Codefly owns its host and port; the accounts
 	// process never reads or hardcodes a collector address.
-	//
-	// FE→BE trace continuation: the browser stamps W3C `traceparent`
-	// on every Connect-ES fetch (Sentry's browserTracingIntegration),
-	// the api extracts it on the Connect path via otelconnect (see
-	// connect_gen.go) and on the raw-gRPC path via otelgrpc (see
-	// grpc_gen.go), and starts a child span. End-to-end traces from
-	// browser click to SQL query require both this provider AND the
-	// CORS allowlist for `traceparent` / `baggage` (connect_gen.go).
 	var otelProvider *wooltel.Provider
 	var otelMetricProvider *otelMetrics
 	if observabilityEnabled() {
@@ -369,9 +361,6 @@ func doWork(ctx context.Context) (Clean, error) {
 
 	entitlementChecker := business.NewDefaultEntitlementChecker(store)
 	service.SetEntitlementChecker(entitlementChecker)
-
-	featureChecker := business.NewDefaultFeatureChecker(store, entitlementChecker)
-	service.SetFeatureChecker(featureChecker)
 
 	// Cache wiring — optional. When the `cache` dependency is declared in
 	// service.codefly.yaml and Redis is reachable, org-membership lookups

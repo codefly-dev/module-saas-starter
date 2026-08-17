@@ -28,25 +28,12 @@ if (errorTracking.enabled) {
 		// via NEXT_PUBLIC_SENTRY_RELEASE (typically `${git_sha}`).
 		release: process.env.NEXT_PUBLIC_SENTRY_RELEASE,
 
-		// Performance sampling. 0.1 = 10% of transactions traced. Tune
-		// up in staging, down in prod when volume hits the plan limit.
-		// 0 = no perf data; errors-only.
-		tracesSampleRate: parseFloat(
-			process.env.NEXT_PUBLIC_SENTRY_TRACES_SAMPLE_RATE || "0.1",
-		),
-
-		// Browser-only integrations:
-		integrations: [
-			// Auto-instruments fetch/xhr and stamps W3C `traceparent` +
-			// `baggage` headers on outgoing requests, so a browser span
-			// becomes the parent of the corresponding gRPC server span on
-			// the api side (otelgrpc reads the same headers from incoming
-			// metadata — see grpc_gen.go's wooltel.GRPCServerOptions).
-			Sentry.browserTracingIntegration(),
-		],
-
-		// Accounts and plugin browser traffic is same-origin (CONV-004).
-		tracePropagationTargets: ["localhost", /^\//],
+		tracesSampleRate: 0,
+		enableLogs: false,
+		integrations: (defaultIntegrations) =>
+			defaultIntegrations.filter(
+				(integration) => integration.name !== "BrowserTracing",
+			),
 
 		// Don't send PII by default. Set NEXT_PUBLIC_SENTRY_SEND_PII=1
 		// in environments where you want IPs / cookies / search params.
@@ -61,8 +48,3 @@ if (errorTracking.enabled) {
 		],
 	});
 }
-
-// Required export for App Router routing instrumentation. No-op
-// when DSN is unset (Sentry.captureRouterTransitionStart is a stub
-// in that case).
-export const onRouterTransitionStart = Sentry.captureRouterTransitionStart;

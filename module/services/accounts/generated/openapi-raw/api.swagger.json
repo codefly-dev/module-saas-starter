@@ -2459,7 +2459,7 @@
     },
     "/v1/platform/feature-flags": {
       "get": {
-        "summary": "Feature flags (platform-only)",
+        "summary": "Legacy feature-flag migration inventory (platform-only, read-only)",
         "operationId": "PlatformAdminService_ListFeatureFlags",
         "responses": {
           "200": {
@@ -2482,6 +2482,7 @@
     },
     "/v1/platform/feature-flags/{name}": {
       "put": {
+        "summary": "Deprecated: retained for v1 wire compatibility. The legacy inventory is\nread-only; this method always returns FAILED_PRECONDITION.",
         "operationId": "PlatformAdminService_UpsertFeatureFlag",
         "responses": {
           "200": {
@@ -4806,7 +4807,8 @@
             "type": "string"
           }
         }
-      }
+      },
+      "description": "Deprecated: the database-backed flag inventory is read-only while consumers\nmigrate to the provider-neutral feature-flags@1 capability."
     },
     "PrincipalServiceRevokePrincipalBody": {
       "type": "object",
@@ -8171,7 +8173,8 @@
         "name": {
           "type": "string"
         }
-      }
+      },
+      "description": "Deprecated: UpsertFeatureFlag always fails closed and returns no response."
     },
     "v1UsageAggregation": {
       "type": "string",

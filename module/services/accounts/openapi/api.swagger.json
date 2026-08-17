@@ -96,6 +96,7 @@
       "type": "object"
     },
     "PlatformAdminServiceUpsertFeatureFlagBody": {
+      "description": "Deprecated: the database-backed flag inventory is read-only while consumers\nmigrate to the provider-neutral feature-flags@1 capability.",
       "properties": {
         "description": {
           "type": "string"
@@ -3466,6 +3467,7 @@
       "type": "object"
     },
     "v1UpsertFeatureFlagResponse": {
+      "description": "Deprecated: UpsertFeatureFlag always fails closed and returns no response.",
       "properties": {
         "name": {
           "type": "string"
@@ -6382,7 +6384,7 @@
             }
           }
         },
-        "summary": "Feature flags (platform-only)",
+        "summary": "Legacy feature-flag migration inventory (platform-only, read-only)",
         "tags": [
           "PlatformAdminService"
         ]
@@ -6421,6 +6423,7 @@
             }
           }
         },
+        "summary": "Deprecated: retained for v1 wire compatibility. The legacy inventory is\nread-only; this method always returns FAILED_PRECONDITION.",
         "tags": [
           "PlatformAdminService"
         ]

@@ -111,7 +111,7 @@ const nextConfig = {
 //
 // See instrumentation.ts and instrumentation-client.ts for the
 // runtime init.
-export default withSentryConfig(nextConfig, {
+const sentryErrorTrackingConfig = withSentryConfig(nextConfig, {
 	org: process.env.SENTRY_ORG,
 	project: process.env.SENTRY_PROJECT,
 	authToken: process.env.SENTRY_AUTH_TOKEN,
@@ -127,11 +127,22 @@ export default withSentryConfig(nextConfig, {
 	webpack: {
 		treeshake: {
 			removeDebugLogging: true,
+			removeTracing: true,
 		},
 	},
+	routeManifestInjection: false,
+	suppressOnRouterTransitionStartWarning: true,
 
 	// Tunnel Sentry events through the same origin to dodge browser
 	// ad-blockers that block sentry.io. /monitoring is a Next route
 	// we accept will be exposed publicly.
 	tunnelRoute: "/monitoring",
 });
+
+// The Sentry wrapper injects navigation trace metadata independently of the
+// runtime sample rate. Error-only mode must not propagate that trace context.
+if (sentryErrorTrackingConfig.experimental) {
+	delete sentryErrorTrackingConfig.experimental.clientTraceMetadata;
+}
+
+export default sentryErrorTrackingConfig;

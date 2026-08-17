@@ -57,7 +57,9 @@ making an unreviewed table writable.
 ## Global catalog grants
 
 Migration `62_global_catalog_grants` removes the historical full-CRUD grant
-from every relation that intentionally has no tenant RLS.
+from every relation that intentionally has no tenant RLS. Forward migration
+`95_feature_flags_read_only` additionally removes all runtime write authority
+from the retired feature-flag inventory.
 
 | Relation | `app_tenant` authority | Other authority |
 |---|---|---|
@@ -66,7 +68,7 @@ from every relation that intentionally has no tenant RLS.
 | `email_templates` | select | migration principal writes |
 | `data_retention_policies` | select | migration principal writes |
 | `bootstrap_state` | select, update | migration principal seeds |
-| `feature_flags` | select, insert, update | platform-super-admin application gate |
+| `feature_flags` | select | migration principal writes; runtime inventory is read-only |
 | `platform_admins` | select, insert, update, delete | platform-super-admin/bootstrap application gates |
 
 The infrastructure suite checks every operation in this matrix, including the

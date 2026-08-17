@@ -77,19 +77,3 @@ export function useFeatureFlags() {
 		select: (data) => data.flags,
 	});
 }
-
-export function useUpsertFeatureFlag() {
-	const svc = usePlatformAdminService();
-	const queryClient = useQueryClient();
-	return useMutation({
-		mutationFn: (flag: {
-			name: string;
-			description?: string;
-			enabled: boolean;
-			rolloutPercent?: number;
-			targetOrgIds?: string[];
-		}) => svc.upsertFeatureFlag(flag),
-		onSuccess: () =>
-			queryClient.invalidateQueries({ queryKey: ["feature-flags"] }),
-	});
-}

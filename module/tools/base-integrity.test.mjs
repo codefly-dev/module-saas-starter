@@ -67,6 +67,23 @@ test("excludes compiled service binaries without excluding their source", () => 
   assert.equal(isExcludedFile("services/store/migrations/1_create.up.sql"), false);
 });
 
+test("excludes per-service Nix runtime directories from the canonical base", () => {
+  assert.equal(
+    isExcludedFile("services/vault/.nix-cache/nix-devshell-profile-1-link"),
+    true,
+  );
+  assert.equal(isExcludedFile("services/vault/nix/service.nix"), true);
+  assert.equal(isExcludedFile("services/vault/code/service.go"), false);
+});
+
+test("excludes local object-storage runtime data from the canonical base", () => {
+  assert.equal(
+    isExcludedFile("services/object-storage/minio/.minio.sys/format.json"),
+    true,
+  );
+  assert.equal(isExcludedFile("services/object-storage/README.md"), false);
+});
+
 test("rejects multiple logical migrations with the same version", (t) => {
   const root = mkdtempSync(join(tmpdir(), "saas-migration-integrity-"));
   t.after(() => rmSync(root, { recursive: true, force: true }));

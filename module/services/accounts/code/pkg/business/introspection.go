@@ -15,7 +15,7 @@ import (
 //
 // Module-level version is a separate concern owned by the module
 // declaration (module.codefly.yaml), not by this service.
-const ServiceVersion = "0.3.0"
+const ServiceVersion = "0.4.0"
 
 // GetServiceInfo returns the machine-readable catalog of THIS
 // service: its RPC surface, RBAC vocabulary, RLS-protected tables,
@@ -144,7 +144,8 @@ var rpcDescriptions = withWorkContextConsumerDescriptions(map[string]string{
 	"PlatformAdminService/GrantPlatformRole":   "Grant a platform role.",
 	"PlatformAdminService/ImpersonateUser":     "Mint an impersonation session.",
 	"PlatformAdminService/ListActiveSessions":  "Active sessions for a user.",
-	"PlatformAdminService/ListFeatureFlags":    "List platform feature flags.",
+	"PlatformAdminService/ListFeatureFlags":    "List the legacy feature-flag migration inventory.",
+	"PlatformAdminService/UpsertFeatureFlag":   "Deprecated compatibility method; always rejects writes to the legacy feature-flag inventory.",
 	"PlatformAdminService/ListJobs":            "Seek-paginated payload-free job operations view.",
 	"PlatformAdminService/ListPlatformAdmins":  "List platform admins.",
 	"PlatformAdminService/OverrideEntitlement": "Per-org limit override.",
@@ -154,7 +155,6 @@ var rpcDescriptions = withWorkContextConsumerDescriptions(map[string]string{
 	"PlatformAdminService/SearchUsers":         "Search across all users.",
 	"PlatformAdminService/SuspendUser":         "Suspend a user account.",
 	"PlatformAdminService/UnsuspendUser":       "Restore a suspended user.",
-	"PlatformAdminService/UpsertFeatureFlag":   "Create / update a feature flag.",
 	"PrincipalService/CreateAgentPrincipal":    "Create an agent principal in an organization.",
 	"PrincipalService/GetAgentPrincipal":       "Internal agent-principal lookup.",
 	"PrincipalService/GetPrincipal":            "Internal principal lookup.",
