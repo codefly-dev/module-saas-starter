@@ -46,7 +46,7 @@
     "deployment/generated/contributed-fixtures.json": "05b16f72ee62f04b58f8728831a6c4245cc8141a0f0d72498a08acfb317307a7",
     "deployment/generated/contributed-permissions.json": "18448bccc1b6fbde2b88491aee2d682963873a74eba6bc1c521ed11b8d7d73e2",
     "deployment/generated/contributed-topology.json": "2587ff298706c222b76a50b6c47448b1001748f865f98cd0250a2cfe4a64c68f",
-    "deployment/topology.bindings.codefly.yaml": "996ace6501ab462514bd7ea325951f38ba0e3ec10b53c23a95c42b508e0ca752",
+    "deployment/topology.bindings.codefly.yaml": "23901b0bc7a78b051ef602a7df71f03f7668403d4453e5f36e471836a43cf226",
     "docs/IDENTITY_ACCESS_PLAN.md": "ad620230ff0a2fafcd57a5b0adc55bc8619c775d367e4605dcdffe96d8185aa7",
     "docs/adr/0001-frontend-plugin-packaging.md": "b82a3be12fdc2ff7d3edf6822fb22fd08c219732c058f97f8fe1eae92a50ae7b",
     "docs/adr/0002-remote-ui-tier-boundary.md": "a90fa59d7ad82f0c370cbe9ab3cae39c4c4316277cccbe92d40808a73647d1ee",
