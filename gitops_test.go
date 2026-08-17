@@ -1775,3 +1775,49 @@ func writeTestFile(t *testing.T, file, content string) {
 		t.Fatal(err)
 	}
 }
+
+// service.codefly.yaml is generated from the topology binding but excluded from
+// the base-integrity manifest, so nothing hermetic catches a topology agent-pin
+// bump that forgets to regenerate a service manifest. Only the network- and
+// agent-dependent codefly sync-drift gate would — too late and not in unit CI.
+// This proves every committed service manifest still pins the same agent
+// name@version its topology entry declares.
+func TestCanonicalServiceManifestsPinTopologyAgentVersions(t *testing.T) {
+	t.Parallel()
+	source := "module"
+	data, err := os.ReadFile(filepath.Join(source, "deployment", "topology.bindings.codefly.yaml"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var topology deploymentTopology
+	if err := yaml.Unmarshal(data, &topology); err != nil {
+		t.Fatal(err)
+	}
+	if len(topology.Services) == 0 {
+		t.Fatal("topology declares no services")
+	}
+	for _, service := range topology.Services {
+		wantName := fmt.Sprintf("%v", service.Agent["name"])
+		wantVersion := fmt.Sprintf("%v", service.Agent["version"])
+		if service.Agent["name"] == nil || service.Agent["version"] == nil {
+			t.Errorf("%s: topology agent missing name/version: %v", service.Name, service.Agent)
+			continue
+		}
+		manifestData, err := os.ReadFile(filepath.Join(source, "services", service.Name, "service.codefly.yaml"))
+		if err != nil {
+			t.Errorf("%s: read service manifest: %v", service.Name, err)
+			continue
+		}
+		var generated generatedServiceManifest
+		if err := yaml.Unmarshal(manifestData, &generated); err != nil {
+			t.Errorf("%s: parse service manifest: %v", service.Name, err)
+			continue
+		}
+		gotName := fmt.Sprintf("%v", generated.Agent["name"])
+		gotVersion := fmt.Sprintf("%v", generated.Agent["version"])
+		if gotName != wantName || gotVersion != wantVersion {
+			t.Errorf("%s: service manifest pins agent %s@%s but topology declares %s@%s — regenerate service.codefly.yaml",
+				service.Name, gotName, gotVersion, wantName, wantVersion)
+		}
+	}
+}
