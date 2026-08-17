@@ -106,7 +106,7 @@ func TestDeploymentTopologyIsDeterministicAndCurrent(t *testing.T) {
 	require.Contains(t, temporalManifest, "name: temporal-store\n      endpoints:\n        - name: tcp")
 	require.Equal(t, 2, strings.Count(temporalManifest, "visibility: module"))
 	temporalStoreManifest := string(first.ServiceManifests["temporal-store"])
-	require.Contains(t, temporalStoreManifest, "name: postgres\n    version: 0.0.108")
+	require.Contains(t, temporalStoreManifest, "name: postgres\n    version: 0.0.123")
 	require.Contains(t, temporalStoreManifest, "database-name: postgres")
 	require.Contains(t, temporalStoreManifest, "no-migration: true")
 	require.NotContains(t, temporalStoreManifest, "runtime-read-write-roles")
