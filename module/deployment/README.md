@@ -48,7 +48,7 @@ repository, revision, or Argo resource.
         {"name": "product", "service": "forge-edge", "endpoint": "rest", "port": 8080, "hosts": ["app.example.com"]}
       ],
       "managedServiceHandoffs": [
-        {"service": "store", "awsKind": "rds-postgresql", "externalName": "store.internal.example.com"}
+        {"service": "store", "kind": "rds-postgresql", "externalName": "store.internal.example.com"}
       ]
     }
   ]

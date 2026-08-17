@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"context"
 	"crypto/sha256"
 	"encoding/json"
@@ -252,6 +253,32 @@ func TestGeneratedBundleCarriesNoGitOrArgoTransport(t *testing.T) {
 	}
 	if slices.Contains(aws.Services, "store") {
 		t.Fatalf("managed store must not appear as an in-cluster workload: %v", aws.Services)
+	}
+	if bytes.Contains(data, []byte(`"awsKind"`)) {
+		t.Fatalf("bundle.json still emits legacy \"awsKind\" key: %s", data)
+	}
+	if !bytes.Contains(data, []byte(`"kind"`)) {
+		t.Fatalf("bundle.json missing \"kind\" handoff key: %s", data)
+	}
+}
+
+func TestManagedServiceHandoffReadsLegacyAWSKind(t *testing.T) {
+	t.Parallel()
+
+	var current managedServiceHandoff
+	if err := json.Unmarshal([]byte(`{"service":"store","kind":"rds-postgresql"}`), &current); err != nil {
+		t.Fatal(err)
+	}
+	if current.Kind != "rds-postgresql" {
+		t.Fatalf("kind = %q, want rds-postgresql", current.Kind)
+	}
+
+	var legacy managedServiceHandoff
+	if err := json.Unmarshal([]byte(`{"service":"store","awsKind":"azure-postgres-flexible"}`), &legacy); err != nil {
+		t.Fatal(err)
+	}
+	if legacy.Kind != "azure-postgres-flexible" {
+		t.Fatalf("legacy awsKind not read into kind: %q", legacy.Kind)
 	}
 }
 
@@ -899,7 +926,7 @@ func TestAKSEnvironmentRendersAzureManagedHandoff(t *testing.T) {
 	}
 	if len(aks.ManagedServiceHandoffs) != 1 ||
 		aks.ManagedServiceHandoffs[0].Service != "store" ||
-		aks.ManagedServiceHandoffs[0].AWSKind != "azure-postgres-flexible" {
+		aks.ManagedServiceHandoffs[0].Kind != "azure-postgres-flexible" {
 		t.Fatalf("aks managed handoffs = %#v", aks.ManagedServiceHandoffs)
 	}
 	if slices.Contains(aks.Services, "store") {
