@@ -738,7 +738,7 @@
     "services/frontend/code/packages/saas-plugin-contract/README.md": "a2763de59eeb823a9e8a3cb22d4ed6330ae54fd5397f2cedac157b6a040cf120",
     "services/frontend/code/packages/saas-plugin-contract/buf.gen.local.yaml": "8b234b5eddfe02f93327fbb4cecfa30a4ed7d57660b27bb0c1a6af6839b3f2d7",
     "services/frontend/code/packages/saas-plugin-contract/buf.gen.yaml": "104d34fbc5f80d9f63edf4399d2a211f8bcd16b5467c77bcdaf9e7ce7e94f06b",
-    "services/frontend/code/packages/saas-plugin-contract/package.json": "ee8388580b19689234ccb098194f3864c9243a19799dea40653049655c645cbe",
+    "services/frontend/code/packages/saas-plugin-contract/package.json": "c07b96c892b64a4f66815044c8f5b167dfb8d91e14ee9272aaf85174a9e87a46",
     "services/frontend/code/packages/saas-plugin-contract/proto/buf.yaml": "c21a6e1f52f00f8b1ccfafa45589b767bbacc02cc3a698fe13dc96d8cbe8d6f5",
     "services/frontend/code/packages/saas-plugin-contract/proto/saas/frontend/plugin/v1/capabilities.proto": "c2efe55a18a6c9084db361c69ef35da309e522fc2a165c27b7028b2fc8d5d5a6",
     "services/frontend/code/packages/saas-plugin-contract/src/allowlist.ts": "7f49fb8d2a5dcb2f3012e0b4f4608aaa5b24b68685dd7b00e11945a5eff741d8",
