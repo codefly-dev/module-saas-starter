@@ -17,7 +17,7 @@ describe("generated frontend catalog", () => {
 			(count, service) => count + Object.keys(service.method).length,
 			0,
 		);
-		expect(procedureCount).toBe(139);
+		expect(procedureCount).toBe(140);
 		expect(
 			ACCOUNT_SERVICE_DESCRIPTORS.WorkContextService.method.exchangeAudience,
 		).toBeDefined();

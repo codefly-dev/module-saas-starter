@@ -87,6 +87,7 @@ func TestLegacyFeatureFlagsHaveNoRuntimeEvaluator(t *testing.T) {
 	}
 	forbidden := []string{
 		"GetFeatureFlag(",
+		"UpsertFeatureFlag(",
 		"FeatureChecker interface",
 		"NewDefaultFeatureChecker",
 		"SetFeatureChecker",

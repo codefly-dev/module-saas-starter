@@ -493,6 +493,9 @@ func (h *platformAdminConnectHandler) ListPlatformAdmins(ctx context.Context, re
 func (h *platformAdminConnectHandler) ListFeatureFlags(ctx context.Context, req *connect.Request[gen.ListFeatureFlagsRequest]) (*connect.Response[gen.ListFeatureFlagsResponse], error) {
 	return unary(ctx, req, h.inner.ListFeatureFlags)
 }
+func (h *platformAdminConnectHandler) UpsertFeatureFlag(ctx context.Context, req *connect.Request[gen.UpsertFeatureFlagRequest]) (*connect.Response[gen.UpsertFeatureFlagResponse], error) {
+	return unary(ctx, req, h.inner.UpsertFeatureFlag)
+}
 func (h *platformAdminConnectHandler) GetJobOperations(ctx context.Context, req *connect.Request[jobsv1.GetJobOperationsRequest]) (*connect.Response[jobsv1.GetJobOperationsResponse], error) {
 	return unary(ctx, req, h.inner.GetJobOperations)
 }

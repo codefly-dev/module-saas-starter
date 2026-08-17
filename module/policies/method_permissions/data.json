@@ -10,7 +10,8 @@
     "/user.v1.PlatformAdminService/GrantPlatformRole": {"min_role": "super_admin"},
     "/user.v1.PlatformAdminService/RevokePlatformRole": {"min_role": "super_admin"},
     "/user.v1.PlatformAdminService/ListPlatformAdmins": {"min_role": "super_admin"},
-    "/user.v1.PlatformAdminService/ListFeatureFlags": {"min_role": "super_admin"}
+    "/user.v1.PlatformAdminService/ListFeatureFlags": {"min_role": "super_admin"},
+    "/user.v1.PlatformAdminService/UpsertFeatureFlag": {"min_role": "super_admin"}
   },
   "org_scoped": {
     "/user.v1.OrganizationService/AddMember": {"min_role": "admin"},
@@ -64,6 +65,7 @@
     "/user.v1.PlatformAdminService/SuspendUser",
     "/user.v1.PlatformAdminService/UnsuspendUser",
     "/user.v1.PlatformAdminService/OverrideEntitlement",
+    "/user.v1.PlatformAdminService/UpsertFeatureFlag",
     "/user.v1.PermissionService/AssignRole",
     "/user.v1.PermissionService/RevokeRole",
     "/user.v1.PermissionService/DeleteRole",

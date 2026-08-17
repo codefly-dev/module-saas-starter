@@ -2480,6 +2480,45 @@
         ]
       }
     },
+    "/v1/platform/feature-flags/{name}": {
+      "put": {
+        "summary": "Deprecated: retained for v1 wire compatibility. The legacy inventory is\nread-only; this method always returns FAILED_PRECONDITION.",
+        "operationId": "PlatformAdminService_UpsertFeatureFlag",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1UpsertFeatureFlagResponse"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/rpcStatus"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "name",
+            "in": "path",
+            "required": true,
+            "type": "string"
+          },
+          {
+            "name": "body",
+            "in": "body",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/PlatformAdminServiceUpsertFeatureFlagBody"
+            }
+          }
+        ],
+        "tags": [
+          "PlatformAdminService"
+        ]
+      }
+    },
     "/v1/platform/jobs": {
       "get": {
         "operationId": "PlatformAdminService_ListJobs",
@@ -4748,6 +4787,28 @@
     },
     "PlatformAdminServiceUnsuspendUserBody": {
       "type": "object"
+    },
+    "PlatformAdminServiceUpsertFeatureFlagBody": {
+      "type": "object",
+      "properties": {
+        "description": {
+          "type": "string"
+        },
+        "enabled": {
+          "type": "boolean"
+        },
+        "rolloutPercent": {
+          "type": "integer",
+          "format": "int32"
+        },
+        "targetOrgIds": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      },
+      "description": "Deprecated: the database-backed flag inventory is read-only while consumers\nmigrate to the provider-neutral feature-flags@1 capability."
     },
     "PrincipalServiceRevokePrincipalBody": {
       "type": "object",
@@ -8105,6 +8166,15 @@
           "description": "Paths whose explicit overrides should be removed before applying patch.\nA cleared field resolves to its catalog default on the returned document."
         }
       }
+    },
+    "v1UpsertFeatureFlagResponse": {
+      "type": "object",
+      "properties": {
+        "name": {
+          "type": "string"
+        }
+      },
+      "description": "Deprecated: UpsertFeatureFlag always fails closed and returns no response."
     },
     "v1UsageAggregation": {
       "type": "string",

@@ -111,8 +111,11 @@ feature.
 The `feature_flags` table, read-only `ListFeatureFlags` API, and
 `/admin/platform/feature-flags` page are a legacy migration inventory, not a
 runtime flag owner. No application runtime evaluates or mutates that table: the
-former database evaluator, combined flag/entitlement checker, and mutation API
-have been removed. The remaining surface is retired in this order:
+former database evaluator, combined flag/entitlement checker, and mutation path
+have been removed. The published v1 `UpsertFeatureFlag` RPC remains deprecated
+for wire compatibility, but its handler always fails closed and the runtime
+database roles have no write grants. The remaining surface is retired in this
+order:
 
 1. Land the
    [`feature-flags@1` contract](https://github.com/codefly-dev/core/issues/281),
@@ -125,8 +128,9 @@ have been removed. The remaining surface is retired in this order:
    evaluations against fixed organization fixtures. Do not add dual reads or
    dual writes.
 3. Bind consumers to `feature-flags@1` and remove the admin route/navigation,
-   list RPC and messages, business/infra read methods, generated REST/Connect
-   surfaces, permissions, and tests in the same cutover.
+   list RPC and messages, business/infra read methods, generated read surfaces,
+   permissions, and tests in the same cutover. Keep the deprecated v1 mutation
+   compatibility shim until the stable-major support policy permits removal.
 4. After the imported project is verified and no legacy consumers remain, add
    a forward migration that drops `feature_flags` and its grants/indexes. The
    historical migration that originally created the table remains immutable.

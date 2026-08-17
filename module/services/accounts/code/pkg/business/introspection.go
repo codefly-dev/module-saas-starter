@@ -145,6 +145,7 @@ var rpcDescriptions = withWorkContextConsumerDescriptions(map[string]string{
 	"PlatformAdminService/ImpersonateUser":     "Mint an impersonation session.",
 	"PlatformAdminService/ListActiveSessions":  "Active sessions for a user.",
 	"PlatformAdminService/ListFeatureFlags":    "List the legacy feature-flag migration inventory.",
+	"PlatformAdminService/UpsertFeatureFlag":   "Deprecated compatibility method; always rejects writes to the legacy feature-flag inventory.",
 	"PlatformAdminService/ListJobs":            "Seek-paginated payload-free job operations view.",
 	"PlatformAdminService/ListPlatformAdmins":  "List platform admins.",
 	"PlatformAdminService/OverrideEntitlement": "Per-org limit override.",

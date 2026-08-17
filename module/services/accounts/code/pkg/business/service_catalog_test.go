@@ -23,7 +23,7 @@ func TestServiceCatalogCompilation(t *testing.T) {
 	require.Equal(t, "saas.accounts.v1", catalog.GetApiPackage())
 	require.Equal(t, business.ServiceVersion, catalog.GetApiVersion())
 	require.Len(t, catalog.GetServices(), 26)
-	require.Len(t, catalog.GetMethods(), 139)
+	require.Len(t, catalog.GetMethods(), 140)
 	require.Len(t, catalog.GetPermissions(), 21)
 	require.Len(t, catalog.GetEntitlements(), 5)
 	require.Equal(t, "*:*", catalog.GetPermissions()[0].GetPermission())
@@ -85,7 +85,11 @@ func TestLegacyFeatureFlagInventoryIsReadOnly(t *testing.T) {
 	require.NotNil(t, list)
 	require.Equal(t, "GET", list.GetHttpBindings()[0].GetMethod())
 	require.Equal(t, "/v1/platform/feature-flags", list.GetHttpBindings()[0].GetPath())
-	require.NotContains(t, methods, "/saas.accounts.v1.PlatformAdminService/UpsertFeatureFlag")
+	upsert := methods["/saas.accounts.v1.PlatformAdminService/UpsertFeatureFlag"]
+	require.NotNil(t, upsert, "published v1 RPC must remain for wire compatibility")
+	require.Equal(t, policyv1.PlatformRoleRequirement_PLATFORM_ROLE_REQUIREMENT_SUPER_ADMIN, upsert.GetPolicy().GetPlatformRole())
+	require.Equal(t, "PUT", upsert.GetHttpBindings()[0].GetMethod())
+	require.Equal(t, "/v1/platform/feature-flags/{name}", upsert.GetHttpBindings()[0].GetPath())
 }
 
 func TestServiceCatalogJSONIsDeterministicAndCurrent(t *testing.T) {

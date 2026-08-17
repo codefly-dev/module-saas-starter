@@ -2,7 +2,7 @@
 
 > Generated from protobuf service descriptors and `saas.policy.v1.method_policy`; only the prose description is joined from `pkg/business/introspection.go`. Do not edit by hand. Run `go generate ./pkg/business` from `module/services/accounts/code`.
 
-Inventory: **139 RPCs** across **26 services**. Missing, invalid, or unclassified procedures are denied by both Connect and gRPC interceptors.
+Inventory: **140 RPCs** across **26 services**. Missing, invalid, or unclassified procedures are denied by both Connect and gRPC interceptors.
 
 The compact tier is retained for compatibility. Guards, resource bindings, audit events, limiter class, and data sensitivity are descriptor-authoritative. Domain handlers may enforce stronger state-dependent rules but may not weaken this floor.
 
@@ -96,6 +96,7 @@ The compact tier is retained for compatibility. Guards, resource bindings, audit
 | `/saas.accounts.v1.PlatformAdminService/SearchUsers` | unary | `GET /v1/platform/users` | `platform_admin` | exposure=AUTHENTICATED; tenant=NONE; platform=SUPPORT | — | — | — | FORBIDDEN / SENSITIVE | CONFIDENTIAL → CONFIDENTIAL | Search across all users. |
 | `/saas.accounts.v1.PlatformAdminService/SuspendUser` | unary | `POST /v1/platform/users/{user_id}:suspend` | `platform_admin` | exposure=AUTHENTICATED; tenant=NONE; platform=SUPER_ADMIN | — | — | SUCCESS: user.suspended | FORBIDDEN / SENSITIVE | CONFIDENTIAL → CONFIDENTIAL | Suspend a user account. |
 | `/saas.accounts.v1.PlatformAdminService/UnsuspendUser` | unary | `POST /v1/platform/users/{user_id}:unsuspend` | `platform_admin` | exposure=AUTHENTICATED; tenant=NONE; platform=SUPER_ADMIN | — | — | SUCCESS: user.unsuspended | FORBIDDEN / SENSITIVE | CONFIDENTIAL → CONFIDENTIAL | Restore a suspended user. |
+| `/saas.accounts.v1.PlatformAdminService/UpsertFeatureFlag` | unary | `PUT /v1/platform/feature-flags/{name}` | `platform_admin` | exposure=AUTHENTICATED; tenant=NONE; platform=SUPER_ADMIN | — | — | SUCCESS: feature_flag.updated | FORBIDDEN / SENSITIVE | CONFIDENTIAL → CONFIDENTIAL | Deprecated compatibility method; always rejects writes to the legacy feature-flag inventory. |
 | `/saas.accounts.v1.PrincipalService/CreateAgentPrincipal` | unary | `POST /v1/principals:agent` | `org_admin` | exposure=AUTHENTICATED; tenant=ORG_ADMIN | — | org_id → ORGANIZATION/DIRECT_ID | SUCCESS: principal.created | FORBIDDEN / STANDARD_WRITE | CONFIDENTIAL → CONFIDENTIAL | Create an agent principal in an organization. |
 | `/saas.accounts.v1.PrincipalService/GetAgentPrincipal` | unary | `—` | `internal` | exposure=INTERNAL; tenant=NONE | — | — | — | FORBIDDEN / INTERNAL | CONFIDENTIAL → CONFIDENTIAL | Internal agent-principal lookup. |
 | `/saas.accounts.v1.PrincipalService/GetPrincipal` | unary | `—` | `internal` | exposure=INTERNAL; tenant=NONE | — | — | — | FORBIDDEN / INTERNAL | CONFIDENTIAL → CONFIDENTIAL | Internal principal lookup. |
@@ -155,5 +156,5 @@ The compact tier is retained for compatibility. Guards, resource bindings, audit
 - `mfa`: 3
 - `org_admin`: 28
 - `org_member`: 25
-- `platform_admin`: 21
+- `platform_admin`: 22
 - `public`: 16

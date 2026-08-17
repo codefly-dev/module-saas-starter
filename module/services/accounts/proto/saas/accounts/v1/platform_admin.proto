@@ -153,6 +153,25 @@ message ListFeatureFlagsResponse {
   repeated FeatureFlagEntry flags = 1;
 }
 
+// Deprecated: the database-backed flag inventory is read-only while consumers
+// migrate to the provider-neutral feature-flags@1 capability.
+message UpsertFeatureFlagRequest {
+  option deprecated = true;
+
+  string name = 1 [(buf.validate.field).string.min_len = 1];
+  string description = 2;
+  bool enabled = 3;
+  int32 rollout_percent = 4;
+  repeated string target_org_ids = 5;
+}
+
+// Deprecated: UpsertFeatureFlag always fails closed and returns no response.
+message UpsertFeatureFlagResponse {
+  option deprecated = true;
+
+  string name = 1;
+}
+
 // PlatformAdminService — cross-tenant operations for platform operators.
 // All RPCs require a platform_role in the JWT claims.
 service PlatformAdminService {
@@ -374,6 +393,29 @@ service PlatformAdminService {
       platform_role: PLATFORM_ROLE_REQUIREMENT_SUPER_ADMIN
     };
     option (google.api.http) = {get: "/v1/platform/feature-flags"};
+  }
+  // Deprecated: retained for v1 wire compatibility. The legacy inventory is
+  // read-only; this method always returns FAILED_PRECONDITION.
+  rpc UpsertFeatureFlag(UpsertFeatureFlagRequest) returns (UpsertFeatureFlagResponse) {
+    option deprecated = true;
+    option (saas.policy.v1.method_policy) = {
+      exposure: EXPOSURE_AUTHENTICATED
+      tenant: TENANT_REQUIREMENT_NONE
+      mfa: MFA_REQUIREMENT_NONE
+      audit: {
+        events: "feature_flag.updated"
+        emission: AUDIT_EMISSION_SUCCESS
+      }
+      idempotency: IDEMPOTENCY_REQUIREMENT_FORBIDDEN
+      rate_limit: RATE_LIMIT_CLASS_SENSITIVE
+      request_sensitivity: SENSITIVITY_CONFIDENTIAL
+      response_sensitivity: SENSITIVITY_CONFIDENTIAL
+      platform_role: PLATFORM_ROLE_REQUIREMENT_SUPER_ADMIN
+    };
+    option (google.api.http) = {
+      put: "/v1/platform/feature-flags/{name}"
+      body: "*"
+    };
   }
   // Product-neutral durable job operations. Payload bytes never leave the
   // worker database boundary through these methods.

@@ -194,7 +194,8 @@
         "/saas.accounts.v1.PlatformAdminService/RevokeSession",
         "/saas.accounts.v1.PlatformAdminService/SearchUsers",
         "/saas.accounts.v1.PlatformAdminService/SuspendUser",
-        "/saas.accounts.v1.PlatformAdminService/UnsuspendUser"
+        "/saas.accounts.v1.PlatformAdminService/UnsuspendUser",
+        "/saas.accounts.v1.PlatformAdminService/UpsertFeatureFlag"
       ]
     },
     {
@@ -4884,6 +4885,57 @@
       },
       "policy_tier": "platform_admin",
       "description": "Restore a suspended user.",
+      "owner": {
+        "module": "saas-starter",
+        "service": "accounts"
+      }
+    },
+    {
+      "procedure": "/saas.accounts.v1.PlatformAdminService/UpsertFeatureFlag",
+      "service": "PlatformAdminService",
+      "full_service": "saas.accounts.v1.PlatformAdminService",
+      "method": "UpsertFeatureFlag",
+      "input_type": "saas.accounts.v1.UpsertFeatureFlagRequest",
+      "output_type": "saas.accounts.v1.UpsertFeatureFlagResponse",
+      "client_streaming": false,
+      "server_streaming": false,
+      "deprecated": true,
+      "source_proto": "saas/accounts/v1/platform_admin.proto",
+      "protocols": [
+        "PROTOCOL_GRPC",
+        "PROTOCOL_CONNECT",
+        "PROTOCOL_REST"
+      ],
+      "http_bindings": [
+        {
+          "method": "PUT",
+          "path": "/v1/platform/feature-flags/{name}",
+          "body": "*",
+          "response_body": ""
+        }
+      ],
+      "policy": {
+        "exposure": "EXPOSURE_AUTHENTICATED",
+        "tenant": "TENANT_REQUIREMENT_NONE",
+        "permissions": [],
+        "scopes": [],
+        "resource_bindings": [],
+        "mfa": "MFA_REQUIREMENT_NONE",
+        "audit": {
+          "events": [
+            "feature_flag.updated"
+          ],
+          "emission": "AUDIT_EMISSION_SUCCESS"
+        },
+        "idempotency": "IDEMPOTENCY_REQUIREMENT_FORBIDDEN",
+        "rate_limit": "RATE_LIMIT_CLASS_SENSITIVE",
+        "request_sensitivity": "SENSITIVITY_CONFIDENTIAL",
+        "response_sensitivity": "SENSITIVITY_CONFIDENTIAL",
+        "platform_role": "PLATFORM_ROLE_REQUIREMENT_SUPER_ADMIN",
+        "authentication_factor_attempt": false
+      },
+      "policy_tier": "platform_admin",
+      "description": "Deprecated compatibility method; always rejects writes to the legacy feature-flag inventory.",
       "owner": {
         "module": "saas-starter",
         "service": "accounts"

@@ -3391,6 +3391,43 @@
       "rate_limit_backend_failure_mode": "RATE_LIMIT_BACKEND_FAILURE_MODE_FAIL_OPEN"
     },
     {
+      "procedure": "/saas.accounts.v1.PlatformAdminService/UpsertFeatureFlag",
+      "full_service": "saas.accounts.v1.PlatformAdminService",
+      "method": "UpsertFeatureFlag",
+      "input_type": "saas.accounts.v1.UpsertFeatureFlagRequest",
+      "output_type": "saas.accounts.v1.UpsertFeatureFlagResponse",
+      "client_streaming": false,
+      "server_streaming": false,
+      "policy": {
+        "exposure": "EXPOSURE_AUTHENTICATED",
+        "tenant": "TENANT_REQUIREMENT_NONE",
+        "permissions": [],
+        "scopes": [],
+        "resource_bindings": [],
+        "mfa": "MFA_REQUIREMENT_NONE",
+        "audit": {
+          "events": [
+            "feature_flag.updated"
+          ],
+          "emission": "AUDIT_EMISSION_SUCCESS"
+        },
+        "idempotency": "IDEMPOTENCY_REQUIREMENT_FORBIDDEN",
+        "rate_limit": "RATE_LIMIT_CLASS_SENSITIVE",
+        "request_sensitivity": "SENSITIVITY_CONFIDENTIAL",
+        "response_sensitivity": "SENSITIVITY_CONFIDENTIAL",
+        "platform_role": "PLATFORM_ROLE_REQUIREMENT_SUPER_ADMIN",
+        "authentication_factor_attempt": false
+      },
+      "policy_tier": "platform_admin",
+      "owner": {
+        "module": "saas-starter",
+        "service": "accounts"
+      },
+      "source_proto": "saas/accounts/v1/platform_admin.proto",
+      "policy_sha256": "093eeb3d5c0a9a848380977461907c3c39f42c032057757129c4d189db453dc1",
+      "rate_limit_backend_failure_mode": "RATE_LIMIT_BACKEND_FAILURE_MODE_FAIL_OPEN"
+    },
+    {
       "procedure": "/saas.accounts.v1.PrincipalService/CreateAgentPrincipal",
       "full_service": "saas.accounts.v1.PrincipalService",
       "method": "CreateAgentPrincipal",

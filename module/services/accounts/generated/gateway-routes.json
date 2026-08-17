@@ -1348,6 +1348,22 @@
     {
       "protocol": "GATEWAY_PROTOCOL_CONNECT",
       "method": "POST",
+      "path": "/customers.PlatformAdminService/UpsertFeatureFlag",
+      "match": "GATEWAY_MATCH_EXACT",
+      "procedure": "/saas.accounts.v1.PlatformAdminService/UpsertFeatureFlag",
+      "owner": {
+        "module": "saas-starter",
+        "service": "accounts"
+      },
+      "upstream_endpoint": "connect",
+      "exposure": "EXPOSURE_AUTHENTICATED",
+      "source": "GATEWAY_ROUTE_SOURCE_COMPATIBILITY_ALIAS",
+      "rewrite_path": "/saas.accounts.v1.PlatformAdminService/UpsertFeatureFlag",
+      "remove_after": "2026-10-11"
+    },
+    {
+      "protocol": "GATEWAY_PROTOCOL_CONNECT",
+      "method": "POST",
       "path": "/customers.PrincipalService/CreateAgentPrincipal",
       "match": "GATEWAY_MATCH_EXACT",
       "procedure": "/saas.accounts.v1.PrincipalService/CreateAgentPrincipal",
@@ -3415,6 +3431,22 @@
       "path": "/saas.accounts.v1.PlatformAdminService/UnsuspendUser",
       "match": "GATEWAY_MATCH_EXACT",
       "procedure": "/saas.accounts.v1.PlatformAdminService/UnsuspendUser",
+      "owner": {
+        "module": "saas-starter",
+        "service": "accounts"
+      },
+      "upstream_endpoint": "connect",
+      "exposure": "EXPOSURE_AUTHENTICATED",
+      "source": "GATEWAY_ROUTE_SOURCE_DESCRIPTOR",
+      "rewrite_path": "",
+      "remove_after": ""
+    },
+    {
+      "protocol": "GATEWAY_PROTOCOL_CONNECT",
+      "method": "POST",
+      "path": "/saas.accounts.v1.PlatformAdminService/UpsertFeatureFlag",
+      "match": "GATEWAY_MATCH_EXACT",
+      "procedure": "/saas.accounts.v1.PlatformAdminService/UpsertFeatureFlag",
       "owner": {
         "module": "saas-starter",
         "service": "accounts"
@@ -6247,6 +6279,22 @@
       "path": "/v1/organizations/{org_id}/settings",
       "match": "GATEWAY_MATCH_PATH_TEMPLATE",
       "procedure": "/saas.accounts.v1.OrganizationService/UpdateOrgSettings",
+      "owner": {
+        "module": "saas-starter",
+        "service": "accounts"
+      },
+      "upstream_endpoint": "rest",
+      "exposure": "EXPOSURE_AUTHENTICATED",
+      "source": "GATEWAY_ROUTE_SOURCE_DESCRIPTOR",
+      "rewrite_path": "",
+      "remove_after": ""
+    },
+    {
+      "protocol": "GATEWAY_PROTOCOL_REST",
+      "method": "PUT",
+      "path": "/v1/platform/feature-flags/{name}",
+      "match": "GATEWAY_MATCH_PATH_TEMPLATE",
+      "procedure": "/saas.accounts.v1.PlatformAdminService/UpsertFeatureFlag",
       "owner": {
         "module": "saas-starter",
         "service": "accounts"

@@ -110,7 +110,7 @@ var appTenantRelationPrivileges = map[string]relationPrivileges{
 	"email_templates":         {selectRows: true},
 	"data_retention_policies": {selectRows: true},
 	"bootstrap_state":         {selectRows: true, updateRows: true},
-	"feature_flags":           {selectRows: true, insertRows: true, updateRows: true},
+	"feature_flags":           {selectRows: true},
 	"platform_admins":         {selectRows: true, insertRows: true, updateRows: true, deleteRows: true},
 	"analytics_deliveries":    {},
 	"email_delivery_events":   {},
@@ -325,6 +325,9 @@ func TestControlPlaneRelationGrantsAreExact(t *testing.T) {
 			}
 			if scope == relationScopeWorker || scope == relationScopeJob {
 				want = relationPrivileges{}
+			}
+			if relation == "feature_flags" {
+				want = relationPrivileges{selectRows: true}
 			}
 
 			var got relationPrivileges
