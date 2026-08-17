@@ -122,3 +122,89 @@ func TestOpenScopedBoundaryRejectsNilContext(t *testing.T) {
 	_, _, err := openScopedBoundary(nilCtx, "read-only", "read-write", nil)
 	require.ErrorContains(t, err, "context is required")
 }
+
+func TestResolveDatabaseTokenSourcePrecedence(t *testing.T) {
+	tokenPath := filepath.Join(t.TempDir(), "token")
+
+	t.Run("neither set keeps the embedded password", func(t *testing.T) {
+		t.Setenv(databaseTokenFileEnv, "")
+		t.Setenv(databaseTokenSourceEnv, "")
+		source, path, err := resolveDatabaseTokenSource()
+		require.NoError(t, err)
+		require.Equal(t, databaseTokenPassword, source)
+		require.Empty(t, path)
+	})
+
+	t.Run("file alone selects the fallback lane", func(t *testing.T) {
+		t.Setenv(databaseTokenFileEnv, tokenPath)
+		t.Setenv(databaseTokenSourceEnv, "")
+		source, path, err := resolveDatabaseTokenSource()
+		require.NoError(t, err)
+		require.Equal(t, databaseTokenFileSource, source)
+		require.Equal(t, tokenPath, path)
+	})
+
+	t.Run("in-process source wins over a leftover token file", func(t *testing.T) {
+		// The migration footgun: an operator sets the in-process source and
+		// removes the sidecar but leaves POSTGRES_TOKEN_FILE pointing at the now
+		// vanished file. The explicit source must win so the pool does not brick
+		// on a stale/missing file.
+		t.Setenv(databaseTokenFileEnv, tokenPath)
+		t.Setenv(databaseTokenSourceEnv, "azure")
+		source, path, err := resolveDatabaseTokenSource()
+		require.NoError(t, err)
+		require.Equal(t, databaseTokenAzure, source,
+			"an explicit POSTGRES_TOKEN_SOURCE is the primary path and must win over the fallback file")
+		require.Equal(t, tokenPath, path, "the ignored file path is still surfaced so the caller can warn")
+	})
+
+	t.Run("unsupported source fails loud without falling back to the file", func(t *testing.T) {
+		t.Setenv(databaseTokenFileEnv, tokenPath)
+		t.Setenv(databaseTokenSourceEnv, "gcp")
+		source, path, err := resolveDatabaseTokenSource()
+		require.ErrorContains(t, err, "unsupported")
+		require.ErrorContains(t, err, "gcp")
+		require.Equal(t, databaseTokenPassword, source)
+		require.Empty(t, path)
+	})
+}
+
+func TestDatabaseTokenBeforeConnectUnsupportedSourceFailsLoud(t *testing.T) {
+	t.Setenv(databaseTokenFileEnv, "")
+	t.Setenv(databaseTokenSourceEnv, "gcp")
+
+	hook, err := databaseTokenBeforeConnect(context.Background())
+	require.Nil(t, hook)
+	require.ErrorContains(t, err, "unsupported")
+	require.ErrorContains(t, err, "gcp")
+}
+
+func TestDatabaseTokenBeforeConnectAzureSourceSelectsInProcessMinter(t *testing.T) {
+	t.Setenv(databaseTokenFileEnv, "")
+	t.Setenv(databaseTokenSourceEnv, "azure")
+
+	// The credential chain builds without any live Azure environment; minting a
+	// token (which requires a real identity) is deferred to the per-connection
+	// hook and is exercised in deployment, not here.
+	hook, err := databaseTokenBeforeConnect(context.Background())
+	require.NoError(t, err)
+	require.NotNil(t, hook,
+		"the azure source must select the in-process azidentity minter")
+}
+
+func TestDatabaseTokenBeforeConnectFileLaneReadsToken(t *testing.T) {
+	tokenPath := filepath.Join(t.TempDir(), "token")
+	require.NoError(t, os.WriteFile(tokenPath, []byte("file-token"), 0o600))
+	t.Setenv(databaseTokenFileEnv, tokenPath)
+	t.Setenv(databaseTokenSourceEnv, "")
+
+	hook, err := databaseTokenBeforeConnect(context.Background())
+	require.NoError(t, err)
+	require.NotNil(t, hook)
+
+	connConfig, err := pgx.ParseConfig("postgresql://app:stale@localhost:5432/db?sslmode=disable")
+	require.NoError(t, err)
+	require.NoError(t, hook(context.Background(), connConfig))
+	require.Equal(t, "file-token", connConfig.Password,
+		"with no in-process source, the file lane resolves the credential")
+}
