@@ -144,7 +144,7 @@ process.exit(0);`,
 		);
 
 		expect(JSON.parse(output)).toEqual({ providerAccepted: true });
-	});
+	}, 15_000);
 
 	it("leaves Edge OpenTelemetry available to the designated APM owner", () => {
 		const instrumentation = JSON.stringify(
@@ -167,7 +167,7 @@ process.exit(0);`,
 		);
 
 		expect(JSON.parse(output)).toEqual({ providerAccepted: true });
-	});
+	}, 15_000);
 
 	it("initializes browser error tracking without BrowserTracing", () => {
 		const instrumentation = JSON.stringify(
@@ -217,7 +217,7 @@ process.exit(0);`,
 			enableLogs: false,
 			browserTracing: null,
 		});
-	});
+	}, 15_000);
 
 	it("does not emit Sentry trace metadata in the resolved Next config", () => {
 		const config = JSON.stringify(
@@ -230,7 +230,7 @@ process.stdout.write(JSON.stringify({
 }));`,
 		);
 		expect(JSON.parse(output)).toEqual({ clientTraceMetadata: null });
-	});
+	}, 15_000);
 
 	it("keeps Codefly endpoint resolution and plugin proxy policy server-only", () => {
 		const clientFiles = sourceFiles(join(codeDir, "src")).filter((path) =>

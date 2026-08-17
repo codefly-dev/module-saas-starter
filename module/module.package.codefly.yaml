@@ -1,0 +1,148 @@
+schema: codefly/module-package/v2
+kind: module-package
+id: codefly/saas-starter
+version: 0.1.0
+minimum-codefly-version: ">=0.3.0 <1.0.0"
+
+artifact-roots:
+  - contracts
+  - deployment
+  - docs
+  - fixtures
+  - services
+  - tools
+
+services:
+  - name: accounts
+    endpoints: [connect, grpc, rest]
+  - name: auth-sidecar
+    endpoints: [grpc, rest]
+  - name: cache
+    endpoints: [read, write]
+  - name: frontend
+    endpoints: [http]
+  - name: marketing
+    endpoints: [http]
+  - name: object-storage
+    endpoints: [accounts]
+  - name: store
+    endpoints: [tcp]
+  - name: telemetry
+    endpoints: [grpc]
+  - name: temporal
+    endpoints: [grpc, http]
+  - name: temporal-store
+    endpoints: [tcp]
+  - name: vault
+    endpoints: [http]
+
+contracts:
+  composition: ">=2.0.0 <3.0.0"
+  frontendPlugin: ">=1.0.0 <2.0.0"
+  settings: ">=1.0.0 <2.0.0"
+  permissions: ">=1.0.0 <2.0.0"
+  fixtures: ">=1.0.0 <2.0.0"
+
+generators:
+  - name: composition
+    working-directory: tools
+    command: [go, run, ./cmd/module-compose]
+  - name: composed-protobuf
+    working-directory: services/accounts
+    command: [buf, generate, proto, --path, proto/saas/composed/settings/v1/settings.proto, --path, proto/contributed, --template, buf.gen.composition.yaml]
+  - name: composed-go-format
+    working-directory: tools
+    command: [go, run, ./cmd/module-format-generated, ../services/accounts/code/pkg/gen/saas/composed/settings/v1, ../services/accounts/code/pkg/gen/contributed]
+
+conformance:
+  - name: composition-contracts
+    working-directory: tools
+    command: [go, test, ./composition]
+
+migrations:
+  - id: composition-v2
+    from: ">=0.0.32 <0.1.0"
+    breaking: true
+
+breaking-changes:
+  - Consumers resolve the immutable package into a disposable projection instead of editing Starter-owned files.
+
+reserved-namespaces:
+  - "@codefly/saas-"
+  - saas
+
+claims:
+  - {kind: package, key: "@base-ui/react", owner: base}
+  - {kind: package, key: "@biomejs/biome", owner: base}
+  - {kind: package, key: "@bufbuild/protobuf", owner: base}
+  - {kind: package, key: "@bufbuild/protoc-gen-es", owner: base}
+  - {kind: package, key: "@codefly/saas-plugin-contract", owner: base}
+  - {kind: package, key: "@codefly/saas-plugin-react", owner: base}
+  - {kind: package, key: "@codefly/saas-settings", owner: base}
+  - {kind: package, key: "@connectrpc/connect", owner: base}
+  - {kind: package, key: "@connectrpc/connect-web", owner: base}
+  - {kind: package, key: "@hookform/resolvers", owner: base}
+  - {kind: package, key: "@playwright/test", owner: base}
+  - {kind: package, key: "@sentry/nextjs", owner: base}
+  - {kind: package, key: "@simplewebauthn/browser", owner: base}
+  - {kind: package, key: "@tanstack/react-query", owner: base}
+  - {kind: package, key: "@tanstack/react-table", owner: base}
+  - {kind: package, key: "@tailwindcss/postcss", owner: base}
+  - {kind: package, key: "@testing-library/jest-dom", owner: base}
+  - {kind: package, key: "@testing-library/react", owner: base}
+  - {kind: package, key: "@types/js-yaml", owner: base}
+  - {kind: package, key: "@types/node", owner: base}
+  - {kind: package, key: "@types/react", owner: base}
+  - {kind: package, key: "@types/react-dom", owner: base}
+  - {kind: package, key: babel-plugin-react-compiler, owner: base}
+  - {kind: package, key: class-variance-authority, owner: base}
+  - {kind: package, key: clsx, owner: base}
+  - {kind: package, key: cmdk, owner: base}
+  - {kind: package, key: codefly, owner: base}
+  - {kind: package, key: eslint, owner: base}
+  - {kind: package, key: eslint-config-next, owner: base}
+  - {kind: package, key: happy-dom, owner: base}
+  - {kind: package, key: js-yaml, owner: base}
+  - {kind: package, key: lucide-react, owner: base}
+  - {kind: package, key: jsdom, owner: base}
+  - {kind: package, key: msw, owner: base}
+  - {kind: package, key: next, owner: base}
+  - {kind: package, key: react, owner: base}
+  - {kind: package, key: react-dom, owner: base}
+  - {kind: package, key: react-hook-form, owner: base}
+  - {kind: package, key: server-only, owner: base}
+  - {kind: package, key: sonner, owner: base}
+  - {kind: package, key: tailwindcss, owner: base}
+  - {kind: package, key: tailwind-merge, owner: base}
+  - {kind: package, key: tw-animate-css, owner: base}
+  - {kind: package, key: tsx, owner: base}
+  - {kind: package, key: typescript, owner: base}
+  - {kind: package, key: vitest, owner: base}
+  - {kind: package, key: zod, owner: base}
+  - {kind: package, key: zustand, owner: base}
+  - {kind: route, key: plugin/audit, owner: base}
+  - {kind: route, key: plugin/core-users, owner: base}
+  - {kind: route, key: plugin/platform-admin, owner: base}
+  - {kind: permission, key: "*:*", owner: base}
+  - {kind: permission, key: "api_keys:read", owner: base}
+  - {kind: permission, key: "api_keys:write", owner: base}
+  - {kind: permission, key: "audit:read", owner: base}
+  - {kind: permission, key: "billing:read", owner: base}
+  - {kind: permission, key: "billing:write", owner: base}
+  - {kind: permission, key: "entitlements:read", owner: base}
+  - {kind: permission, key: "invitations:read", owner: base}
+  - {kind: permission, key: "invitations:write", owner: base}
+  - {kind: permission, key: "knowledge:read", owner: base}
+  - {kind: permission, key: "knowledge:write", owner: base}
+  - {kind: permission, key: "orgs:read", owner: base}
+  - {kind: permission, key: "orgs:write", owner: base}
+  - {kind: permission, key: "roles:read", owner: base}
+  - {kind: permission, key: "roles:write", owner: base}
+  - {kind: permission, key: "teams:read", owner: base}
+  - {kind: permission, key: "teams:write", owner: base}
+  - {kind: permission, key: "users:read", owner: base}
+  - {kind: permission, key: "users:write", owner: base}
+  - {kind: permission, key: "webhooks:read", owner: base}
+  - {kind: permission, key: "webhooks:write", owner: base}
+  - {kind: topology, key: fixture/dev-admin, owner: base}
+  - {kind: topology, key: fixture/simple, owner: base}

@@ -5,6 +5,7 @@ package saas.accounts.v1;
 import "buf/validate/validate.proto";
 import "google/api/annotations.proto";
 import "google/protobuf/field_mask.proto";
+import "saas/composed/settings/v1/settings.proto";
 import "saas/policy/v1/options.proto";
 
 // ============================================================================
@@ -66,6 +67,9 @@ message UserSettings {
   optional UserRegionalSettings regional = 2;
   optional UserEmailSettings email = 3;
   optional UserNotificationSettings notifications = 4;
+  // Product-contributed settings are generated into this typed container.
+  // ProtoJSON storage and API patching preserve the same schema end to end.
+  saas.composed.settings.v1.Settings composed = 1000;
 }
 
 message GetUserSettingsRequest {}

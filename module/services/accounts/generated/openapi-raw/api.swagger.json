@@ -7867,6 +7867,9 @@
         }
       }
     },
+    "v1Settings": {
+      "type": "object"
+    },
     "v1SetupTOTPRequest": {
       "type": "object"
     },
@@ -8427,6 +8430,10 @@
         },
         "notifications": {
           "$ref": "#/definitions/v1UserNotificationSettings"
+        },
+        "composed": {
+          "$ref": "#/definitions/v1Settings",
+          "description": "Product-contributed settings are generated into this typed container.\nProtoJSON storage and API patching preserve the same schema end to end."
         }
       },
       "description": "UserSettings — common per-user preferences included in every SaaS Starter.\nAll scalar fields below the section messages are optional so an explicit\nfalse/empty value remains distinct from an unset value that resolves to its\ncatalog default. The API recursively merges typed protobuf patches."

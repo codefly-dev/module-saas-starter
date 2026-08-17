@@ -24,6 +24,9 @@ func resetAuthTables(t *testing.T) {
 	t.Helper()
 	ctx := context.Background()
 	queries := []string{
+		// GDPR requests deliberately retain their subjects, so they must be
+		// cleared before resetting the package-owned integration database.
+		`DELETE FROM gdpr_requests`,
 		`DELETE FROM sessions`,
 		`DELETE FROM waitlist_entries`,
 		`DELETE FROM invitations`,

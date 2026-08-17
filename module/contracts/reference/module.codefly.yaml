@@ -1,0 +1,22 @@
+kind: composed-module
+name: reference-product
+base:
+  id: codefly/saas-starter
+  version: ">=0.1.0 <0.2.0"
+contributions:
+  frontend:
+    - path: frontend
+      export: referenceFrontendPlugin
+  settings:
+    - path: codefly/reference/settings/v1/reference_settings.proto
+      message: codefly.reference.settings.v1.ReferenceSettings
+  permissions:
+    - path: permissions.codefly.yaml
+  fixtures:
+    - path: fixtures/reference-local.yaml
+bindings:
+  - plugin: reference-product
+    alias: api
+    target:
+      module: reference
+      service: api

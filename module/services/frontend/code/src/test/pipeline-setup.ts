@@ -22,14 +22,14 @@
 // `codefly run service` dev stack instead of fighting it for the Next dev lock.
 
 import { type Dependencies, withDependencies } from "codefly";
-import { codeflyInjectedGateway } from "./pipeline-gateway";
+import { codeflyInjectedRuntime } from "./pipeline-gateway";
 
 // A scope keeps this graph's ports and database off the default ones, so a
 // test run never collides with a running dev stack.
 const DEFAULT_TEST_SCOPE = "pipeline";
 
 export default async function setup(): Promise<(() => Promise<void>) | void> {
-	if (codeflyInjectedGateway()) {
+	if (codeflyInjectedRuntime()) {
 		return;
 	}
 

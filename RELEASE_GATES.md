@@ -7,6 +7,19 @@ installs the pinned Codefly CLI, supplies the base and head revisions, and
 invokes the gate. It does not encode Go, Rust, Next.js, protobuf, dependency,
 container, or service-specific commands.
 
+For version tags, successful completion of this gate unlocks the immutable
+module-package publication job. That job handles only the release transport:
+strict package-manifest validation, deterministic archive construction, digest,
+aggregate SBOM, provenance signing, and immutable GitHub Release publication.
+It does not duplicate service build or test policy.
+
+Publication requires three release-only repository secrets: the read-only
+Administration token `RELEASE_ADMIN_TOKEN` for immutable-release policy checks,
+the base64 Ed25519 key `RELEASE_PROVENANCE_PRIVATE_KEY` for Core's detached
+module provenance signature, and its independently configured trust-policy key
+`RELEASE_PROVENANCE_PUBLIC_KEY`. Missing, malformed, or mismatched credentials
+fail before a release is created.
+
 ## What Codefly owns
 
 The complete gate runs these ordered phases:

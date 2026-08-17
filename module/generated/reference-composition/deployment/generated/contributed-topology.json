@@ -1,0 +1,13 @@
+{
+  "schema": "codefly/saas/topology-bindings/v1",
+  "bindings": [
+    {
+      "plugin": "reference-product",
+      "alias": "api",
+      "target": {
+        "module": "reference",
+        "service": "api"
+      }
+    }
+  ]
+}

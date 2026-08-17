@@ -1,6 +1,7 @@
 import type { ServiceEndpoint } from "codefly";
 import { describe, expect, it } from "vitest";
 import {
+	codeflyInjectedRuntime,
 	type PipelineRuntimeReader,
 	productGatewayURL,
 	productOrigin,
@@ -46,6 +47,20 @@ function runtime(
 		...overrides,
 	};
 }
+
+describe("codeflyInjectedRuntime", () => {
+	it("recognizes a Codefly-owned test before endpoints are injected", () => {
+		expect(codeflyInjectedRuntime(runtime({ endpoints: () => [] }))).toBe(true);
+	});
+
+	it("leaves a plain Vitest process responsible for starting dependencies", () => {
+		expect(
+			codeflyInjectedRuntime(
+				runtime({ currentModule: () => "", currentService: () => "" }),
+			),
+		).toBe(false);
+	});
+});
 
 describe("productOrigin", () => {
 	it("returns the frontend's own injected HTTP origin", () => {

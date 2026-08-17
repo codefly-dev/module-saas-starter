@@ -26,23 +26,6 @@ function testScope(): string {
 }
 
 /**
- * True when Codefly already injected the dependency graph into this process —
- * i.e. we are running under `codefly test service --suite integration`. The
- * global setup uses this to decide whether it must start a graph itself.
- */
-export function codeflyInjectedGateway(): boolean {
-	const currentModule = getCurrentModule();
-	return getEndpoints().some(
-		(endpoint) =>
-			endpoint.service === "auth-sidecar" &&
-			endpoint.name === "rest" &&
-			endpoint.protocol === "REST" &&
-			(!currentModule || endpoint.module === currentModule) &&
-			Boolean(endpoint.address),
-	);
-}
-
-/**
  * The Codefly runtime values the endpoint resolvers below depend on. Injected
  * with `runtimeSDK` in production so the callers stay argument-free, but
  * overridable in a unit test — the same seam `CodeflyRuntimeReader` gives the
@@ -66,6 +49,20 @@ const runtimeSDK: PipelineRuntimeReader = {
 			cwd: process.cwd(),
 		}),
 };
+
+/**
+ * True when Codefly owns this test process and has already started its service
+ * dependencies. Endpoint injection can occur after Vitest global setup, so the
+ * execution context—not the current endpoint snapshot—is the stable boundary.
+ */
+export function codeflyInjectedRuntime(
+	runtime: Pick<
+		PipelineRuntimeReader,
+		"currentModule" | "currentService"
+	> = runtimeSDK,
+): boolean {
+	return Boolean(runtime.currentModule() && runtime.currentService());
+}
 
 /**
  * Resolve the single endpoint the pipeline harness must address. Under `codefly

@@ -1,0 +1,7 @@
+syntax = "proto3";
+
+package codefly.reference.settings.v1;
+
+message ReferenceSettings {
+  optional bool dense_mode = 1;
+}
