@@ -102,9 +102,27 @@ type bundleIngressRoute struct {
 
 type managedServiceHandoff struct {
 	Service          string   `json:"service"`
-	AWSKind          string   `json:"awsKind"`
+	Kind             string   `json:"kind"`
 	ExternalName     string   `json:"externalName"`
 	SecretReferences []string `json:"secretReferences,omitempty"`
+}
+
+// UnmarshalJSON reads the handoff kind from "kind", falling back to the legacy
+// "awsKind" key so bundles written before the rename still parse. Drop the
+// fallback once every producer emits "kind".
+func (h *managedServiceHandoff) UnmarshalJSON(data []byte) error {
+	type alias managedServiceHandoff
+	aux := struct {
+		*alias
+		LegacyAWSKind string `json:"awsKind"`
+	}{alias: (*alias)(h)}
+	if err := json.Unmarshal(data, &aux); err != nil {
+		return err
+	}
+	if h.Kind == "" {
+		h.Kind = aux.LegacyAWSKind
+	}
+	return nil
 }
 
 type managedServiceConfig struct {
@@ -672,7 +690,7 @@ func validateManagedServices(
 		referenceNames := make(map[string]struct{}, len(config.SecretReferences))
 		handoff := managedServiceHandoff{
 			Service:      service,
-			AWSKind:      config.Kind,
+			Kind:         config.Kind,
 			ExternalName: config.ExternalName,
 		}
 		for _, reference := range config.SecretReferences {
