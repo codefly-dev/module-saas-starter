@@ -94,6 +94,7 @@ claims:
   - {kind: package, key: "@types/node", owner: base}
   - {kind: package, key: "@types/react", owner: base}
   - {kind: package, key: "@types/react-dom", owner: base}
+  - {kind: package, key: ajv, owner: base}
   - {kind: package, key: babel-plugin-react-compiler, owner: base}
   - {kind: package, key: class-variance-authority, owner: base}
   - {kind: package, key: clsx, owner: base}
