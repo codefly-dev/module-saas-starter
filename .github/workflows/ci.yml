@@ -106,6 +106,9 @@ jobs:
           node-version: 24
           cache: npm
           cache-dependency-path: module/services/frontend/code/package-lock.json
+      - uses: bufbuild/buf-setup-action@a47c93e0b1648d5651a065437926377d060baa99 # v1.50.0
+        with:
+          version: 1.72.0
       - name: Clean-install frontend dependencies
         run: npm ci --prefix module/services/frontend/code
       - name: Validate the package contract
@@ -115,6 +118,16 @@ jobs:
         run: |
           go test ./...
           go run ./cmd/module-package validate --module ..
+      - name: Reject breaking stable protobuf changes
+        shell: bash
+        run: |
+          baseline="$(mktemp -d)"
+          git fetch --no-tags origin \
+            refs/heads/main:refs/remotes/origin/main
+          git archive origin/main module/services/accounts/proto | tar -x -C "${baseline}"
+          buf breaking module/services/accounts/proto \
+            --against "${baseline}/module/services/accounts/proto" \
+            --exclude-imports
       - name: Execute declared generators and reject drift
         working-directory: module/tools
         env:
@@ -126,7 +139,9 @@ jobs:
         working-directory: module/tools
         env:
           GOWORK: "off"
-        run: go run ./cmd/module-package run-conformance --module ..
+        run: |
+          go run ./cmd/module-package run-conformance --module ..
+          npm --prefix ../services/frontend/code run test:published-plugin-contract
       - name: Prove canonical archive determinism
         working-directory: module/tools
         env:
@@ -338,6 +353,12 @@ jobs:
           git ls-remote --tags origin \
             "refs/tags/${GITHUB_REF_NAME}" \
             "refs/tags/${GITHUB_REF_NAME}^{}" > "${RUNNER_TEMP}/remote-refs"
+          git fetch --no-tags origin \
+            refs/heads/main:refs/remotes/origin/main
+          go run ./cmd/module-package verify-release-ancestry \
+            --repository-root ../.. \
+            --commit "${GITHUB_SHA}" \
+            --trusted-ref refs/remotes/origin/main
           go run ./cmd/module-package verify-release-ref \
             --module .. \
             --tag "${GITHUB_REF_NAME}" \
@@ -357,9 +378,10 @@ jobs:
         env:
           GOWORK: "off"
           RELEASE_PROVENANCE_PRIVATE_KEY: ${{ secrets.RELEASE_PROVENANCE_PRIVATE_KEY }}
+          RELEASE_PROVENANCE_PUBLIC_KEY: ${{ secrets.RELEASE_PROVENANCE_PUBLIC_KEY }}
         run: |
-          if [[ -z "${RELEASE_PROVENANCE_PRIVATE_KEY}" ]]; then
-            echo "RELEASE_PROVENANCE_PRIVATE_KEY is required" >&2
+          if [[ -z "${RELEASE_PROVENANCE_PRIVATE_KEY}" || -z "${RELEASE_PROVENANCE_PUBLIC_KEY}" ]]; then
+            echo "RELEASE_PROVENANCE_PRIVATE_KEY and RELEASE_PROVENANCE_PUBLIC_KEY are required" >&2
             exit 1
           fi
           printf '%s' "${RELEASE_PROVENANCE_PRIVATE_KEY}" | \
@@ -367,7 +389,8 @@ jobs:
               --module ../ \
               --release "${RUNNER_TEMP}/release" \
               --tag "${GITHUB_REF_NAME}" \
-              --commit "${GITHUB_SHA}"
+              --commit "${GITHUB_SHA}" \
+              --public-key "${RELEASE_PROVENANCE_PUBLIC_KEY}"
       - name: Generate the package SBOM
         uses: anchore/sbom-action@e22c389904149dbc22b58101806040fa8d37a610 # v0.24.0
         with:

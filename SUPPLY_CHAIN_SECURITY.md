@@ -37,7 +37,8 @@ bundle for GitHub's signed build-provenance attestation. Core verifies the
 artifact digest, repository, tag, commit, package identity, and configured
 signer before materializing the archive. Publication fails when the repository's
 immutable-release setting is disabled, the release already exists, the tag does
-not match the manifest version, or the remote tag peels to a different commit.
+not match the manifest version, the tagged commit is not reachable from
+`main`, or the remote tag peels to a different commit.
 Once published, GitHub prevents replacement or deletion of the tag and assets.
 
 The repository secret `RELEASE_ADMIN_TOKEN` must contain a fine-grained token
@@ -52,6 +53,11 @@ the Core trust policy for the signer identity
 The release job reads the secret through standard input, signs the exact
 persisted provenance bytes, and fails before creating a GitHub release when the
 secret is missing or invalid.
+
+`RELEASE_PROVENANCE_PUBLIC_KEY` contains the base64 32-byte public key from that
+same Core trust-policy entry. The publisher requires the private key to match it
+and verifies the newly created signature with it before any release asset is
+uploaded.
 
 Verify a downloaded package before materialization:
 

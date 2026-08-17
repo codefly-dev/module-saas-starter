@@ -45,16 +45,24 @@ const referencePackagePath = join(referenceRoot, "package.json");
 const referencePackage = JSON.parse(
 	await readFile(referencePackagePath, "utf8"),
 );
-referencePackage.dependencies["@codefly/saas-plugin-contract"] =
+const localBuildPackage = structuredClone(referencePackage);
+localBuildPackage.dependencies["@codefly/saas-plugin-contract"] =
 	`file:${contractArchive}`;
-referencePackage.dependencies["@codefly/saas-plugin-react"] =
+localBuildPackage.dependencies["@codefly/saas-plugin-react"] =
 	`file:${reactArchive}`;
+await writeFile(
+	referencePackagePath,
+	`${JSON.stringify(localBuildPackage, null, 2)}\n`,
+);
+npm(["install", "--ignore-scripts", "--no-audit", "--no-fund"], referenceRoot);
+npm(["run", "build"], referenceRoot);
+// The package under test must carry the exact public dependency contract. The
+// local tarballs above are only a build fixture; leaving file: paths in the
+// packed manifest would let an unpublishable package pass this proof.
 await writeFile(
 	referencePackagePath,
 	`${JSON.stringify(referencePackage, null, 2)}\n`,
 );
-npm(["install", "--ignore-scripts", "--no-audit", "--no-fund"], referenceRoot);
-npm(["run", "build"], referenceRoot);
 const referenceArchive = pack(referenceRoot);
 
 const consumerRoot = join(temporaryRoot, "consumer");
@@ -117,6 +125,28 @@ await writeFile(
 );
 
 npm(["install", "--ignore-scripts", "--no-audit", "--no-fund"], consumerRoot);
+const installedReferencePackage = JSON.parse(
+	await readFile(
+		join(
+			consumerRoot,
+			"node_modules/@codefly-reference/frontend/package.json",
+		),
+		"utf8",
+	),
+);
+for (const dependency of [
+	"@codefly/saas-plugin-contract",
+	"@codefly/saas-plugin-react",
+]) {
+	if (
+		installedReferencePackage.dependencies?.[dependency] !==
+		referencePackage.dependencies[dependency]
+	) {
+		throw new Error(
+			`packed reference dependency ${dependency} is not its exact public version`,
+		);
+	}
+}
 npm(["run", "build"], consumerRoot);
 runConsumer(consumerRoot);
 npm(

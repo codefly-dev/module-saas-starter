@@ -131,6 +131,7 @@ func TestSignedReleaseVerifiesAndMaterializesThroughCore(t *testing.T) {
 		Commit:            commit,
 		SignatureIdentity: "test-signer",
 		PrivateKey:        []byte(base64.StdEncoding.EncodeToString(privateKey)),
+		ExpectedPublicKey: []byte(base64.StdEncoding.EncodeToString(publicKey)),
 	}); err != nil {
 		t.Fatal(err)
 	}
@@ -178,17 +179,42 @@ func TestSignReleaseRejectsArtifactMetadataDrift(t *testing.T) {
 	if err := os.WriteFile(metadataPath, body, 0o644); err != nil {
 		t.Fatal(err)
 	}
-	_, privateKey, err := ed25519.GenerateKey(nil)
+	publicKey, privateKey, err := ed25519.GenerateKey(nil)
 	if err != nil {
 		t.Fatal(err)
 	}
 	_, err = SignRelease(SignOptions{
 		ModuleRoot: filepath.Join(repository, "module"), ReleaseDir: releaseDir,
 		Ref: "v1.2.3", Commit: commit,
-		PrivateKey: []byte(base64.StdEncoding.EncodeToString(privateKey)),
+		PrivateKey: []byte(base64.StdEncoding.EncodeToString(privateKey)), ExpectedPublicKey: []byte(base64.StdEncoding.EncodeToString(publicKey)),
 	})
 	if err == nil || !strings.Contains(err.Error(), "does not describe") {
 		t.Fatalf("SignRelease() error = %v, want metadata drift rejection", err)
+	}
+}
+
+func TestSignReleaseRejectsKeyOutsideCoreTrustPolicy(t *testing.T) {
+	repository := newPackageRepository(t)
+	commit := git(t, repository, "rev-parse", "HEAD")
+	releaseDir := filepath.Join(t.TempDir(), "release")
+	if _, err := Build(BuildOptions{RepositoryRoot: repository, OutputDir: releaseDir, Commit: commit}); err != nil {
+		t.Fatal(err)
+	}
+	_, privateKey, err := ed25519.GenerateKey(nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	otherPublicKey, _, err := ed25519.GenerateKey(nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = SignRelease(SignOptions{
+		ModuleRoot: filepath.Join(repository, "module"), ReleaseDir: releaseDir,
+		Ref: "v1.2.3", Commit: commit,
+		PrivateKey: []byte(base64.StdEncoding.EncodeToString(privateKey)), ExpectedPublicKey: []byte(base64.StdEncoding.EncodeToString(otherPublicKey)),
+	})
+	if err == nil || !strings.Contains(err.Error(), "does not match") {
+		t.Fatalf("SignRelease() error = %v, want Core trust-key mismatch rejection", err)
 	}
 }
 
@@ -248,6 +274,25 @@ func TestValidateReleaseRefRejectsMovedAndMismatchedTags(t *testing.T) {
 		if err := ValidateReleaseRef(manifest, "v0.1.0", commit, refs); err == nil {
 			t.Fatal("ValidateReleaseRef() accepted a missing or moved tag")
 		}
+	}
+}
+
+func TestValidateReleaseAncestryRejectsUnmergedCommit(t *testing.T) {
+	repository := newPackageRepository(t)
+	mainCommit := git(t, repository, "rev-parse", "HEAD")
+	git(t, repository, "branch", "-M", "main")
+	if err := ValidateReleaseAncestry(repository, mainCommit, "main"); err != nil {
+		t.Fatalf("main commit was rejected: %v", err)
+	}
+	git(t, repository, "checkout", "-qb", "side")
+	if err := os.WriteFile(filepath.Join(repository, "side.txt"), []byte("unreviewed\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	git(t, repository, "add", "side.txt")
+	git(t, repository, "commit", "-qm", "side")
+	sideCommit := git(t, repository, "rev-parse", "HEAD")
+	if err := ValidateReleaseAncestry(repository, sideCommit, "main"); err == nil || !strings.Contains(err.Error(), "not reachable") {
+		t.Fatalf("ValidateReleaseAncestry() error = %v, want unmerged-commit rejection", err)
 	}
 }
 

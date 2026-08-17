@@ -19,7 +19,7 @@ func main() {
 
 func run(arguments []string) error {
 	if len(arguments) == 0 {
-		return fmt.Errorf("usage: module-package <validate|build|sign-provenance|run-generators|run-conformance|verify-release-policy|verify-release-ref>")
+		return fmt.Errorf("usage: module-package <validate|build|sign-provenance|run-generators|run-conformance|verify-release-policy|verify-release-ref|verify-release-ancestry>")
 	}
 	switch arguments[0] {
 	case "validate":
@@ -60,6 +60,7 @@ func run(arguments []string) error {
 		tag := flags.String("tag", "", "release tag")
 		commit := flags.String("commit", "", "release commit")
 		identity := flags.String("identity", modulepackage.ReleaseSignatureIdentity, "trusted signing identity")
+		publicKey := flags.String("public-key", "", "base64 Ed25519 public key configured in Core's trust policy")
 		if err := flags.Parse(arguments[1:]); err != nil {
 			return err
 		}
@@ -75,6 +76,7 @@ func run(arguments []string) error {
 			Commit:            *commit,
 			SignatureIdentity: *identity,
 			PrivateKey:        privateKey,
+			ExpectedPublicKey: []byte(*publicKey),
 		})
 		if err != nil {
 			return err
@@ -124,6 +126,15 @@ func run(arguments []string) error {
 			return fmt.Errorf("read immutable release settings: %w", err)
 		}
 		return modulepackage.ValidateImmutableReleaseSettings(body)
+	case "verify-release-ancestry":
+		flags := flag.NewFlagSet("verify-release-ancestry", flag.ContinueOnError)
+		repositoryRoot := flags.String("repository-root", ".", "git repository root")
+		commit := flags.String("commit", "", "release commit")
+		trustedRef := flags.String("trusted-ref", "origin/main", "trusted release branch ref")
+		if err := flags.Parse(arguments[1:]); err != nil {
+			return err
+		}
+		return modulepackage.ValidateReleaseAncestry(*repositoryRoot, *commit, *trustedRef)
 	default:
 		return fmt.Errorf("unknown command %q", arguments[0])
 	}

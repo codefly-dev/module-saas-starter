@@ -213,6 +213,7 @@ type SignOptions struct {
 	Commit            string
 	SignatureIdentity string
 	PrivateKey        []byte
+	ExpectedPublicKey []byte
 }
 
 // SignRelease writes the exact provenance and detached signature consumed by
@@ -240,6 +241,14 @@ func SignRelease(options SignOptions) (*corecomposition.Provenance, error) {
 	privateKey, err := decodePrivateKey(options.PrivateKey)
 	if err != nil {
 		return nil, err
+	}
+	expectedPublicKey, err := decodePublicKey(options.ExpectedPublicKey)
+	if err != nil {
+		return nil, err
+	}
+	derivedPublicKey := privateKey.Public().(ed25519.PublicKey)
+	if !bytes.Equal(derivedPublicKey, expectedPublicKey) {
+		return nil, fmt.Errorf("provenance private key does not match the configured Core trust key")
 	}
 	archivePath := filepath.Join(options.ReleaseDir, ArchiveName)
 	archive, err := os.ReadFile(archivePath)
@@ -285,6 +294,9 @@ func SignRelease(options SignOptions) (*corecomposition.Provenance, error) {
 	}
 	body = append(body, '\n')
 	signature := ed25519.Sign(privateKey, body)
+	if !ed25519.Verify(expectedPublicKey, body, signature) {
+		return nil, fmt.Errorf("verify provenance signature against configured Core trust key")
+	}
 	if err := writeNewFile(filepath.Join(options.ReleaseDir, ProvenanceName), body); err != nil {
 		return nil, err
 	}
@@ -320,6 +332,17 @@ func decodePrivateKey(encoded []byte) (ed25519.PrivateKey, error) {
 	default:
 		return nil, fmt.Errorf("decode provenance private key: got %d bytes, want %d-byte seed or %d-byte key", len(decoded), ed25519.SeedSize, ed25519.PrivateKeySize)
 	}
+}
+
+func decodePublicKey(encoded []byte) (ed25519.PublicKey, error) {
+	decoded, err := base64.StdEncoding.DecodeString(strings.TrimSpace(string(encoded)))
+	if err != nil {
+		return nil, fmt.Errorf("decode provenance public key: %w", err)
+	}
+	if len(decoded) != ed25519.PublicKeySize {
+		return nil, fmt.Errorf("decode provenance public key: got %d bytes, want %d", len(decoded), ed25519.PublicKeySize)
+	}
+	return ed25519.PublicKey(decoded), nil
 }
 
 func writeNewFile(path string, body []byte) error {
@@ -454,6 +477,32 @@ func ValidateReleaseRef(manifest Manifest, tag, commit, remoteRefs string) error
 		return fmt.Errorf("release tag %q resolves to %s, not release commit %s", tag, resolved, commit)
 	}
 	return nil
+}
+
+// ValidateReleaseAncestry prevents a tag workflow from presenting an
+// unreviewed side-branch commit under the trusted main-branch signing identity.
+func ValidateReleaseAncestry(repositoryRoot, commit, trustedRef string) error {
+	if len(commit) != 40 || strings.Trim(commit, "0123456789abcdef") != "" {
+		return fmt.Errorf("release commit must be a lowercase full SHA")
+	}
+	if trustedRef == "" || strings.HasPrefix(trustedRef, "-") {
+		return fmt.Errorf("trusted release ref is invalid")
+	}
+	resolved, err := gitOutput(repositoryRoot, "rev-parse", "--verify", trustedRef+"^{commit}")
+	if err != nil {
+		return fmt.Errorf("resolve trusted release ref %q: %w", trustedRef, err)
+	}
+	command := exec.Command("git", "merge-base", "--is-ancestor", commit, resolved)
+	command.Dir = repositoryRoot
+	output, err := command.CombinedOutput()
+	if err == nil {
+		return nil
+	}
+	var exitError *exec.ExitError
+	if errors.As(err, &exitError) && exitError.ExitCode() == 1 {
+		return fmt.Errorf("release commit %s is not reachable from trusted ref %s", commit, trustedRef)
+	}
+	return fmt.Errorf("verify release ancestry: %w: %s", err, strings.TrimSpace(string(output)))
 }
 
 func ValidateImmutableReleaseSettings(body []byte) error {
