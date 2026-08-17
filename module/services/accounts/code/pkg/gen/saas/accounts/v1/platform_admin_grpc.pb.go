@@ -63,8 +63,11 @@ type PlatformAdminServiceClient interface {
 	GrantPlatformRole(ctx context.Context, in *GrantPlatformRoleRequest, opts ...grpc.CallOption) (*emptypb.Empty, error)
 	RevokePlatformRole(ctx context.Context, in *RevokePlatformRoleRequest, opts ...grpc.CallOption) (*emptypb.Empty, error)
 	ListPlatformAdmins(ctx context.Context, in *ListPlatformAdminsRequest, opts ...grpc.CallOption) (*ListPlatformAdminsResponse, error)
-	// Feature flags (platform-only)
+	// Legacy feature-flag migration inventory (platform-only, read-only)
 	ListFeatureFlags(ctx context.Context, in *ListFeatureFlagsRequest, opts ...grpc.CallOption) (*ListFeatureFlagsResponse, error)
+	// Deprecated: Do not use.
+	// Deprecated: retained for v1 wire compatibility. The legacy inventory is
+	// read-only; this method always returns FAILED_PRECONDITION.
 	UpsertFeatureFlag(ctx context.Context, in *UpsertFeatureFlagRequest, opts ...grpc.CallOption) (*UpsertFeatureFlagResponse, error)
 	// Product-neutral durable job operations. Payload bytes never leave the
 	// worker database boundary through these methods.
@@ -202,6 +205,7 @@ func (c *platformAdminServiceClient) ListFeatureFlags(ctx context.Context, in *L
 	return out, nil
 }
 
+// Deprecated: Do not use.
 func (c *platformAdminServiceClient) UpsertFeatureFlag(ctx context.Context, in *UpsertFeatureFlagRequest, opts ...grpc.CallOption) (*UpsertFeatureFlagResponse, error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(UpsertFeatureFlagResponse)
@@ -274,8 +278,11 @@ type PlatformAdminServiceServer interface {
 	GrantPlatformRole(context.Context, *GrantPlatformRoleRequest) (*emptypb.Empty, error)
 	RevokePlatformRole(context.Context, *RevokePlatformRoleRequest) (*emptypb.Empty, error)
 	ListPlatformAdmins(context.Context, *ListPlatformAdminsRequest) (*ListPlatformAdminsResponse, error)
-	// Feature flags (platform-only)
+	// Legacy feature-flag migration inventory (platform-only, read-only)
 	ListFeatureFlags(context.Context, *ListFeatureFlagsRequest) (*ListFeatureFlagsResponse, error)
+	// Deprecated: Do not use.
+	// Deprecated: retained for v1 wire compatibility. The legacy inventory is
+	// read-only; this method always returns FAILED_PRECONDITION.
 	UpsertFeatureFlag(context.Context, *UpsertFeatureFlagRequest) (*UpsertFeatureFlagResponse, error)
 	// Product-neutral durable job operations. Payload bytes never leave the
 	// worker database boundary through these methods.

@@ -1283,6 +1283,10 @@ func (x *ListFeatureFlagsResponse) GetFlags() []*FeatureFlagEntry {
 	return nil
 }
 
+// Deprecated: the database-backed flag inventory is read-only while consumers
+// migrate to the provider-neutral feature-flags@1 capability.
+//
+// Deprecated: Marked as deprecated in saas/accounts/v1/platform_admin.proto.
 type UpsertFeatureFlagRequest struct {
 	state          protoimpl.MessageState `protogen:"open.v1"`
 	Name           string                 `protobuf:"bytes,1,opt,name=name,proto3" json:"name,omitempty"`
@@ -1359,6 +1363,9 @@ func (x *UpsertFeatureFlagRequest) GetTargetOrgIds() []string {
 	return nil
 }
 
+// Deprecated: UpsertFeatureFlag always fails closed and returns no response.
+//
+// Deprecated: Marked as deprecated in saas/accounts/v1/platform_admin.proto.
 type UpsertFeatureFlagResponse struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Name          string                 `protobuf:"bytes,1,opt,name=name,proto3" json:"name,omitempty"`
@@ -1498,15 +1505,15 @@ const file_saas_accounts_v1_platform_admin_proto_rawDesc = "" +
 	"\x0frollout_percent\x18\x04 \x01(\x05R\x0erolloutPercent\x12$\n" +
 	"\x0etarget_org_ids\x18\x05 \x03(\tR\ftargetOrgIds\"T\n" +
 	"\x18ListFeatureFlagsResponse\x128\n" +
-	"\x05flags\x18\x01 \x03(\v2\".saas.accounts.v1.FeatureFlagEntryR\x05flags\"\xc2\x01\n" +
+	"\x05flags\x18\x01 \x03(\v2\".saas.accounts.v1.FeatureFlagEntryR\x05flags\"\xc6\x01\n" +
 	"\x18UpsertFeatureFlagRequest\x12\x1b\n" +
 	"\x04name\x18\x01 \x01(\tB\a\xbaH\x04r\x02\x10\x01R\x04name\x12 \n" +
 	"\vdescription\x18\x02 \x01(\tR\vdescription\x12\x18\n" +
 	"\aenabled\x18\x03 \x01(\bR\aenabled\x12'\n" +
 	"\x0frollout_percent\x18\x04 \x01(\x05R\x0erolloutPercent\x12$\n" +
-	"\x0etarget_org_ids\x18\x05 \x03(\tR\ftargetOrgIds\"/\n" +
+	"\x0etarget_org_ids\x18\x05 \x03(\tR\ftargetOrgIds:\x02\x18\x01\"3\n" +
 	"\x19UpsertFeatureFlagResponse\x12\x12\n" +
-	"\x04name\x18\x01 \x01(\tR\x04name2\x91\x17\n" +
+	"\x04name\x18\x01 \x01(\tR\x04name:\x02\x18\x012\x94\x17\n" +
 	"\x14PlatformAdminService\x12\x8e\x01\n" +
 	"\vSearchUsers\x12$.saas.accounts.v1.SearchUsersRequest\x1a%.saas.accounts.v1.SearchUsersResponse\"2\xc2\xf3\x18\x14\b\x02\x10\x010\x01:\x02\x10\x01@\x01H\x05P\x03X\x03`\x03\x82\xd3\xe4\x93\x02\x14\x12\x12/v1/platform/users\x12\xa4\x01\n" +
 	"\vSuspendUser\x12$.saas.accounts.v1.SuspendUserRequest\x1a\x16.google.protobuf.Empty\"W\xc2\xf3\x18$\b\x02\x10\x010\x01:\x12\n" +
@@ -1527,9 +1534,9 @@ const file_saas_accounts_v1_platform_admin_proto_rawDesc = "" +
 	"\x12RevokePlatformRole\x12+.saas.accounts.v1.RevokePlatformRoleRequest\x1a\x16.google.protobuf.Empty\"T\xc2\xf3\x18+\b\x02\x10\x010\x04:\x19\n" +
 	"\x15platform.role_revoked\x10\x02@\x01H\x05P\x03X\x03`\x05\x82\xd3\xe4\x93\x02\x1f*\x1d/v1/platform/admins/{user_id}\x12\xa4\x01\n" +
 	"\x12ListPlatformAdmins\x12+.saas.accounts.v1.ListPlatformAdminsRequest\x1a,.saas.accounts.v1.ListPlatformAdminsResponse\"3\xc2\xf3\x18\x14\b\x02\x10\x010\x01:\x02\x10\x01@\x01H\x05P\x03X\x03`\x05\x82\xd3\xe4\x93\x02\x15\x12\x13/v1/platform/admins\x12\xa5\x01\n" +
-	"\x10ListFeatureFlags\x12).saas.accounts.v1.ListFeatureFlagsRequest\x1a*.saas.accounts.v1.ListFeatureFlagsResponse\":\xc2\xf3\x18\x14\b\x02\x10\x010\x01:\x02\x10\x01@\x01H\x05P\x03X\x03`\x05\x82\xd3\xe4\x93\x02\x1c\x12\x1a/v1/platform/feature-flags\x12\xc8\x01\n" +
-	"\x11UpsertFeatureFlag\x12*.saas.accounts.v1.UpsertFeatureFlagRequest\x1a+.saas.accounts.v1.UpsertFeatureFlagResponse\"Z\xc2\xf3\x18*\b\x02\x10\x010\x01:\x18\n" +
-	"\x14feature_flag.updated\x10\x02@\x01H\x05P\x03X\x03`\x05\x82\xd3\xe4\x93\x02&:\x01*\x1a!/v1/platform/feature-flags/{name}\x12\x9f\x01\n" +
+	"\x10ListFeatureFlags\x12).saas.accounts.v1.ListFeatureFlagsRequest\x1a*.saas.accounts.v1.ListFeatureFlagsResponse\":\xc2\xf3\x18\x14\b\x02\x10\x010\x01:\x02\x10\x01@\x01H\x05P\x03X\x03`\x05\x82\xd3\xe4\x93\x02\x1c\x12\x1a/v1/platform/feature-flags\x12\xcb\x01\n" +
+	"\x11UpsertFeatureFlag\x12*.saas.accounts.v1.UpsertFeatureFlagRequest\x1a+.saas.accounts.v1.UpsertFeatureFlagResponse\"]\xc2\xf3\x18*\b\x02\x10\x010\x01:\x18\n" +
+	"\x14feature_flag.updated\x10\x02@\x01H\x05P\x03X\x03`\x05\x82\xd3\xe4\x93\x02&:\x01*\x1a!/v1/platform/feature-flags/{name}\x88\x02\x01\x12\x9f\x01\n" +
 	"\x10GetJobOperations\x12%.saas.jobs.v1.GetJobOperationsRequest\x1a&.saas.jobs.v1.GetJobOperationsResponse\"<\xc2\xf3\x18\x14\b\x02\x10\x010\x01:\x02\x10\x01@\x01H\x05P\x03X\x03`\x05\x82\xd3\xe4\x93\x02\x1e\x12\x1c/v1/platform/jobs/operations\x12|\n" +
 	"\bListJobs\x12\x1d.saas.jobs.v1.ListJobsRequest\x1a\x1e.saas.jobs.v1.ListJobsResponse\"1\xc2\xf3\x18\x14\b\x02\x10\x010\x01:\x02\x10\x01@\x01H\x05P\x03X\x03`\x05\x82\xd3\xe4\x93\x02\x13\x12\x11/v1/platform/jobs\x12\x7f\n" +
 	"\x06GetJob\x12\x1b.saas.jobs.v1.GetJobRequest\x1a\x1c.saas.jobs.v1.GetJobResponse\":\xc2\xf3\x18\x14\b\x02\x10\x010\x01:\x02\x10\x01@\x01H\x05P\x03X\x03`\x05\x82\xd3\xe4\x93\x02\x1c\x12\x1a/v1/platform/jobs/{job_id}\x12\xa7\x01\n" +

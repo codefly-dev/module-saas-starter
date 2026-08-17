@@ -24,6 +24,9 @@ func resetAuthTables(t *testing.T) {
 	t.Helper()
 	ctx := context.Background()
 	queries := []string{
+		// GDPR requests deliberately retain their subjects, so they must be
+		// cleared before resetting the package-owned integration database.
+		`DELETE FROM gdpr_requests`,
 		`DELETE FROM sessions`,
 		`DELETE FROM waitlist_entries`,
 		`DELETE FROM invitations`,
@@ -859,7 +862,7 @@ func TestResolver_Bootstrap_NoEnvNoGrant(t *testing.T) {
 	resetAuthTables(t)
 	ctx := context.Background()
 
-	os.Unsetenv(pgauth.BootstrapAdminEmailEnv)
+	_ = os.Unsetenv(pgauth.BootstrapAdminEmailEnv)
 	r := pgauth.NewResolver(testStore)
 
 	id, err := r.Resolve(ctx, claims("anyone@test.local", "dev-anyone"), auth.SignupIntent{})

@@ -67,7 +67,7 @@ test("excludes compiled service binaries without excluding their source", () => 
   assert.equal(isExcludedFile("services/store/migrations/1_create.up.sql"), false);
 });
 
-test("excludes per-service Nix runtime directories from the canonical package", () => {
+test("excludes per-service Nix runtime directories from the canonical base", () => {
   assert.equal(
     isExcludedFile("services/vault/.nix-cache/nix-devshell-profile-1-link"),
     true,
@@ -76,7 +76,7 @@ test("excludes per-service Nix runtime directories from the canonical package", 
   assert.equal(isExcludedFile("services/vault/code/service.go"), false);
 });
 
-test("excludes local object-storage runtime data from the canonical package", () => {
+test("excludes local object-storage runtime data from the canonical base", () => {
   assert.equal(
     isExcludedFile("services/object-storage/minio/.minio.sys/format.json"),
     true,
@@ -326,8 +326,13 @@ test("rejects unsupported promises in customer-visible source", (t) => {
       ];
     }\n`,
   );
+  writeFileSync(
+    join(root, "OBSERVABILITY.md"),
+    "Applications continue to\nsend OTLP through OTEL_EXPORTER_OTLP_ENDPOINT.\n",
+  );
 
   const errors = productionTruthErrors(root);
+  assert.ok(errors.includes("OBSERVABILITY.md: unsupported direct application OTLP endpoint"));
   for (const claim of [
     "unsupported fixed backup retention",
     "unsupported production readiness",

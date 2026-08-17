@@ -195,7 +195,4 @@ export const handlers = [
 	http.post(rpc("PlatformAdminService", "ListFeatureFlags"), () =>
 		HttpResponse.json({ flags: [mockFeatureFlag()] }),
 	),
-	http.post(rpc("PlatformAdminService", "UpsertFeatureFlag"), () =>
-		HttpResponse.json({ name: "test-flag" }),
-	),
 ];

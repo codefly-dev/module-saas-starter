@@ -10,7 +10,6 @@ export {
 	useImpersonateUser,
 	useOverrideEntitlement,
 	useRevokePlatformRole,
-	useUpsertFeatureFlag,
 } from "./service/mutations";
 export {
 	useActiveSessions,

@@ -6,8 +6,8 @@ import (
 )
 
 var (
-	ErrWorkContextAuthorizationStale = errors.New("Work Context authorization revision is stale")
-	ErrEvidenceReadDenied            = errors.New("Evidence read is not authorized")
+	ErrWorkContextAuthorizationStale = errors.New("work context authorization revision is stale")
+	ErrEvidenceReadDenied            = errors.New("evidence read is not authorized")
 )
 
 // WorkContextPermission is one exact RBAC decision that must be true before

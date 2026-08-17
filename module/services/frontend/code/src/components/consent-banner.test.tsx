@@ -10,7 +10,10 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 const authState = vi.hoisted(() => ({
 	isAuthenticated: false,
 	isLoading: false,
-	fixtureMode: false,
+}));
+
+const legalState = vi.hoisted(() => ({
+	configured: false,
 }));
 
 const clients = vi.hoisted(() => ({
@@ -29,11 +32,10 @@ vi.mock("@/lib/auth", () => ({
 		isAuthenticated: authState.isAuthenticated,
 		isLoading: authState.isLoading,
 	}),
-	isFixtureIdentityMode: () => authState.fixtureMode,
 }));
 
 vi.mock("@/lib/legal-config", () => ({
-	legalContentConfigured: () => false,
+	legalContentConfigured: () => legalState.configured,
 }));
 
 vi.mock("@connectrpc/connect", () => ({
@@ -52,7 +54,7 @@ afterEach(() => {
 	vi.clearAllMocks();
 	authState.isAuthenticated = false;
 	authState.isLoading = false;
-	authState.fixtureMode = false;
+	legalState.configured = false;
 });
 
 describe("ConsentBanner", () => {
@@ -73,9 +75,9 @@ describe("ConsentBanner", () => {
 		expect(acceptTerms.getAttribute("disabled")).not.toBeNull();
 	});
 
-	it("allows Terms acceptance in fixture/dev mode despite unconfigured legal content", async () => {
+	it("allows Terms acceptance once legal content is configured", async () => {
 		authState.isAuthenticated = true;
-		authState.fixtureMode = true;
+		legalState.configured = true;
 		clients.consent.getStatus.mockResolvedValue({
 			currentTermsVersion: "terms-v1",
 			termsAcceptedVersion: "",

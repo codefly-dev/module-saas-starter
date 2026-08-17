@@ -109,19 +109,9 @@ func (s *ConnectServer) Run(ctx context.Context) error {
 			"X-Grpc-Web",
 			"Grpc-Timeout",
 			"Idempotency-Key",
-			// W3C trace context — Sentry's browserTracingIntegration
-			// stamps these on outgoing fetches so the api can stitch
-			// the browser span to the server span (otelconnect picks
-			// them off the request headers). Cross-origin preflight
-			// silently strips anything not in this list.
 			"traceparent",
 			"tracestate",
 			"baggage",
-			// Sentry-specific propagation header (the SDK sends both
-			// W3C `baggage` and `sentry-trace` for max compatibility
-			// with non-OTel servers). Harmless on the api side; we
-			// just need it past CORS.
-			"sentry-trace",
 		},
 		ExposedHeaders: []string{
 			"Grpc-Status",

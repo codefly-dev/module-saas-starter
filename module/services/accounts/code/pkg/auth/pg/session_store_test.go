@@ -67,7 +67,7 @@ func runSessionStoreTests(m *testing.M) int {
 		fmt.Fprintf(os.Stderr, "WithDependencies failed: %v\n", err)
 		return 1
 	}
-	defer deps.Destroy(ctx)
+	defer func() { _ = deps.Destroy(ctx) }()
 
 	if _, err := codefly.Init(ctx); err != nil {
 		fmt.Fprintf(os.Stderr, "codefly.Init failed: %v\n", err)

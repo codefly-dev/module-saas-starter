@@ -50,7 +50,7 @@ func runBillingStoreTests(m *testing.M) int {
 		fmt.Fprintf(os.Stderr, "WithDependencies: %v\n", err)
 		return 1
 	}
-	defer deps.Destroy(ctx)
+	defer func() { _ = deps.Destroy(ctx) }()
 
 	if _, err := codefly.Init(ctx); err != nil {
 		fmt.Fprintf(os.Stderr, "codefly.Init: %v\n", err)
@@ -76,7 +76,9 @@ func runBillingStoreTests(m *testing.M) int {
 	return m.Run()
 }
 
-// resetBilling wipes the billing-related tables between tests.
+// resetBilling resets only shared billing state. Users and organizations may
+// belong to earlier package invocations in the named test database; deleting
+// them globally breaks unrelated foreign-key owners such as GDPR requests.
 func resetBilling(t *testing.T) {
 	t.Helper()
 	require.NoError(t, resetBillingOnce(context.Background()), "reset billing tables")
@@ -91,9 +93,6 @@ func resetBillingOnce(ctx context.Context) error {
 
 	for _, table := range []string{
 		"subscriptions",
-		"organization_members",
-		"organizations",
-		"users",
 	} {
 		if _, err := tx.Exec(ctx, "DELETE FROM "+table); err != nil {
 			return fmt.Errorf("delete billing table %s: %w", table, err)
@@ -114,11 +113,12 @@ func resetBillingOnce(ctx context.Context) error {
 
 // seedOrg creates a user + org returning their ids. Stripe customer
 // id is populated so billing lookups resolve.
-func seedOrg(t *testing.T, stripeCustomerID string) (userID, orgID uuid.UUID) {
+func seedOrg(t *testing.T, stripeCustomerID string) (userID, orgID uuid.UUID, actualStripeCustomerID string) {
 	t.Helper()
 	ctx := context.Background()
 	userID = business.NewID()
 	orgID = business.NewID()
+	actualStripeCustomerID = fmt.Sprintf("%s-%s", stripeCustomerID, orgID)
 	email := fmt.Sprintf("user-%s@test.local", userID.String())
 	_, err := testPool.Exec(ctx, `
 		INSERT INTO users (uuid, primary_email, status)
@@ -129,8 +129,17 @@ func seedOrg(t *testing.T, stripeCustomerID string) (userID, orgID uuid.UUID) {
 	_, err = testPool.Exec(ctx, `
 		INSERT INTO organizations (id, name, slug, owner_id, stripe_customer_id)
 		VALUES ($1, 'Test Org', $2, $3, $4)`,
-		orgID, slug, userID, stripeCustomerID)
+		orgID, slug, userID, actualStripeCustomerID)
 	require.NoError(t, err)
+	t.Cleanup(func() {
+		cleanupCtx := context.Background()
+		_, cleanupErr := testPool.Exec(cleanupCtx, `DELETE FROM subscriptions WHERE org_id = $1`, orgID)
+		require.NoError(t, cleanupErr)
+		_, cleanupErr = testPool.Exec(cleanupCtx, `DELETE FROM organizations WHERE id = $1`, orgID)
+		require.NoError(t, cleanupErr)
+		_, cleanupErr = testPool.Exec(cleanupCtx, `DELETE FROM users WHERE uuid = $1`, userID)
+		require.NoError(t, cleanupErr)
+	})
 	return
 }
 
@@ -191,8 +200,8 @@ func TestOrgByStripeCustomerID_Happy(t *testing.T) {
 	ctx := context.Background()
 	s := pgbilling.New(testPool)
 
-	_, orgID := seedOrg(t, "cus_test_01")
-	resolved, err := s.OrgByStripeCustomerID(ctx, "cus_test_01")
+	_, orgID, customerID := seedOrg(t, "cus_test_01")
+	resolved, err := s.OrgByStripeCustomerID(ctx, customerID)
 	require.NoError(t, err)
 	require.Equal(t, orgID.String(), resolved)
 }
@@ -212,8 +221,8 @@ func TestBillingRecipientByStripeCustomerID(t *testing.T) {
 	ctx := context.Background()
 	s := pgbilling.New(testPool)
 
-	userID, orgID := seedOrg(t, "cus_recipient")
-	recipient, err := s.BillingRecipientByStripeCustomerID(ctx, "cus_recipient")
+	userID, orgID, customerID := seedOrg(t, "cus_recipient")
+	recipient, err := s.BillingRecipientByStripeCustomerID(ctx, customerID)
 
 	require.NoError(t, err)
 	require.Equal(t, orgID.String(), recipient.OrganizationID)
@@ -239,7 +248,7 @@ func TestUpsertSubscription_Insert_New(t *testing.T) {
 	ctx := context.Background()
 	s := pgbilling.New(testPool)
 
-	_, orgID := seedOrg(t, "cus_01")
+	_, orgID, _ := seedOrg(t, "cus_01")
 	planID := seedPlanWithPrice(t, "pro", "price_pro")
 
 	periodStart := time.Now()
@@ -269,7 +278,7 @@ func TestUpsertSubscription_Update_SameStripeID(t *testing.T) {
 	ctx := context.Background()
 	s := pgbilling.New(testPool)
 
-	_, orgID := seedOrg(t, "cus_01")
+	_, orgID, _ := seedOrg(t, "cus_01")
 	planID := seedPlanWithPrice(t, "pro", "price_pro")
 	enterprisePlanID := seedPlanWithPrice(t, "enterprise", "price_enterprise")
 
@@ -307,7 +316,7 @@ func TestUpsertSubscription_Rotate_DifferentStripeID(t *testing.T) {
 	ctx := context.Background()
 	s := pgbilling.New(testPool)
 
-	_, orgID := seedOrg(t, "cus_01")
+	_, orgID, _ := seedOrg(t, "cus_01")
 	planID := seedPlanWithPrice(t, "pro", "price_pro")
 
 	// First subscription
@@ -349,7 +358,7 @@ func TestUpsertSubscription_MarkPastDue_NoPlanID(t *testing.T) {
 	ctx := context.Background()
 	s := pgbilling.New(testPool)
 
-	_, orgID := seedOrg(t, "cus_01")
+	_, orgID, _ := seedOrg(t, "cus_01")
 	planID := seedPlanWithPrice(t, "pro", "price_pro")
 
 	require.NoError(t, s.UpsertSubscription(ctx, billing.SubscriptionUpsert{
@@ -380,7 +389,7 @@ func TestUpsertSubscription_OlderObservationCannotOverwriteNewerState(t *testing
 	resetBilling(t)
 	ctx := context.Background()
 	s := pgbilling.New(testPool)
-	_, orgID := seedOrg(t, "cus_monotonic")
+	_, orgID, _ := seedOrg(t, "cus_monotonic")
 	proPlanID := seedPlanWithPrice(t, "pro", "price_pro")
 	enterprisePlanID := seedPlanWithPrice(t, "enterprise", "price_enterprise")
 	older := time.Date(2026, 7, 13, 12, 0, 0, 0, time.UTC)
@@ -417,7 +426,7 @@ func TestUpsertSubscription_LateOldSubscriptionCannotCancelNewCurrentSubscriptio
 	resetBilling(t)
 	ctx := context.Background()
 	s := pgbilling.New(testPool)
-	_, orgID := seedOrg(t, "cus_resubscribed")
+	_, orgID, _ := seedOrg(t, "cus_resubscribed")
 	planID := seedPlanWithPrice(t, "pro", "price_pro")
 	firstObserved := time.Date(2026, 7, 13, 12, 0, 0, 0, time.UTC)
 	newObserved := firstObserved.Add(2 * time.Minute)
@@ -453,7 +462,7 @@ func TestUpsertSubscription_ConcurrentReverseCompletionConvergesToNewerObservati
 	resetBilling(t)
 	ctx := context.Background()
 	s := pgbilling.New(testPool)
-	_, orgID := seedOrg(t, "cus_converges")
+	_, orgID, _ := seedOrg(t, "cus_converges")
 	proPlanID := seedPlanWithPrice(t, "pro", "price_pro")
 	enterprisePlanID := seedPlanWithPrice(t, "enterprise", "price_enterprise")
 	older := time.Date(2026, 7, 13, 12, 0, 0, 0, time.UTC)

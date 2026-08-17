@@ -133,14 +133,14 @@ func SelectedName() (string, error) {
 		return "", nil
 	}
 	if !fixtureNamePattern.MatchString(selected) {
-		return "", fmt.Errorf("Codefly selected invalid fixture name %q", selected)
+		return "", fmt.Errorf("invalid fixture name %q selected by Codefly", selected)
 	}
 	for _, name := range names {
 		if name == selected {
 			return selected, nil
 		}
 	}
-	return "", fmt.Errorf("Codefly selected fixture %q, but %s does not contain %s.yaml", selected, directory, selected)
+	return "", fmt.Errorf("fixture %q selected by Codefly, but %s does not contain %s.yaml", selected, directory, selected)
 }
 
 // FixturePath resolves a validated fixture name to its module-owned YAML file.
@@ -186,7 +186,10 @@ func Seed(ctx context.Context, service *business.Service, name string) error {
 	if err != nil {
 		return err
 	}
-	orgIDs := seedOrganizations(ctx, w, service, f.Organizations, userIDs)
+	orgIDs, err := seedOrganizations(ctx, w, service, f.Organizations, userIDs)
+	if err != nil {
+		return err
+	}
 	orgOwnerIDs := make(map[string]string, len(f.Organizations))
 	for _, organization := range f.Organizations {
 		if ownerID, ok := userIDs[organization.Owner]; ok {
@@ -208,14 +211,6 @@ func Seed(ctx context.Context, service *business.Service, name string) error {
 
 	w.Info("fixtures applied", wool.Field("fixture", name))
 	return nil
-}
-
-// fixturePath resolves the YAML fixture relative to the accounts service's working
-// directory. Codefly starts the binary in services/accounts/code/, so the module
-// fixtures live at ../../../fixtures/.
-func fixturePath(name string) string {
-	path, _ := FixturePath(name)
-	return path
 }
 
 func loadFixtureFile(path string) (*fixtureFile, error) {
@@ -420,13 +415,12 @@ func seedUsers(ctx context.Context, w *wool.Wool, service *business.Service, use
 
 // seedOrganizations creates orgs from the fixture, idempotently. On re-run,
 // looks up existing orgs by querying the owner's org list.
-func seedOrganizations(ctx context.Context, w *wool.Wool, service *business.Service, orgs []fixtureOrg, userIDs map[string]string) map[string]string {
+func seedOrganizations(ctx context.Context, w *wool.Wool, service *business.Service, orgs []fixtureOrg, userIDs map[string]string) (map[string]string, error) {
 	orgIDs := make(map[string]string, len(orgs))
 	for _, org := range orgs {
 		ownerID, ok := userIDs[org.Owner]
 		if !ok {
-			w.Warn("org owner not found, skipping", wool.Field("owner", org.Owner))
-			continue
+			return nil, fmt.Errorf("organization %q owner %q was not seeded", org.Name, org.Owner)
 		}
 
 		var existingOrgs []*gen.Organization
@@ -436,8 +430,7 @@ func seedOrganizations(ctx context.Context, w *wool.Wool, service *business.Serv
 			return err
 		})
 		if listErr != nil {
-			w.Warn("cannot list fixture organizations", wool.Field("name", org.Name), wool.Field("error", listErr.Error()))
-			continue
+			return nil, w.Wrapf(listErr, "cannot list fixture organization %s", org.Name)
 		}
 		for _, existing := range existingOrgs {
 			if existing.Name == org.Name {
@@ -450,8 +443,7 @@ func seedOrganizations(ctx context.Context, w *wool.Wool, service *business.Serv
 		if _, found := orgIDs[org.Name]; !found {
 			orgResp, err := service.CreateOrganization(ctx, ownerID, &gen.CreateOrganizationRequest{Name: org.Name})
 			if err != nil {
-				w.Warn("cannot create org, skipping", wool.Field("name", org.Name), wool.Field("error", err.Error()))
-				continue
+				return nil, w.Wrapf(err, "cannot create fixture organization %s", org.Name)
 			}
 			orgIDs[org.Name] = orgResp.GetOrganization().GetId()
 			w.Info("seeded org", wool.Field("name", org.Name))
@@ -461,20 +453,18 @@ func seedOrganizations(ctx context.Context, w *wool.Wool, service *business.Serv
 		for _, m := range org.Members {
 			memberID, ok := userIDs[m.Email]
 			if !ok {
-				w.Warn("org member not found", wool.Field("email", m.Email))
-				continue
+				return nil, fmt.Errorf("organization %q member %q was not seeded", org.Name, m.Email)
 			}
-			err := service.AddOrgMember(ctx, ownerID, &gen.AddOrgMemberRequest{
+			if err := service.ConvergeFixtureOrgMember(ctx, &gen.AddOrgMemberRequest{
 				OrgId:  orgID,
 				UserId: memberID,
 				Role:   orgRoleFromString(m.Role, w),
-			})
-			if err != nil {
-				w.Warn("cannot add org member", wool.Field("email", m.Email), wool.Field("error", err.Error()))
+			}); err != nil {
+				return nil, w.Wrapf(err, "cannot add fixture organization member %s", m.Email)
 			}
 		}
 	}
-	return orgIDs
+	return orgIDs, nil
 }
 
 // seedTeams creates teams from the fixture, idempotently.

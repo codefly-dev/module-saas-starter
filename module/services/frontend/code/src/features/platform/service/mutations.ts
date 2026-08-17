@@ -26,21 +26,6 @@ export function useRevokePlatformRole() {
 	});
 }
 
-export function useUpsertFeatureFlag() {
-	const svc = usePlatformAdminService();
-	const qc = useQueryClient();
-	return useMutation({
-		mutationFn: (flag: {
-			name: string;
-			description?: string;
-			enabled: boolean;
-			rolloutPercent?: number;
-			targetOrgIds?: string[];
-		}) => svc.upsertFeatureFlag(flag),
-		onSuccess: () => qc.invalidateQueries({ queryKey: ["feature-flags"] }),
-	});
-}
-
 export function useOverrideEntitlement() {
 	const svc = usePlatformAdminService();
 	const qc = useQueryClient();

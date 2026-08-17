@@ -52,6 +52,7 @@ func TestGatewayRouteCatalogCompilationAndParity(t *testing.T) {
 	require.Equal(t, "/saas.accounts.v1.PlatformAdminService/ReplayJob", byMatch["POST /v1/platform/jobs/{source_job_id}:replay"].GetProcedure())
 	require.Equal(t, "/saas.accounts.v1.WorkContextService/ExchangeAudience", byMatch["POST /v1/work-contexts:exchange-audience"].GetProcedure())
 	require.Equal(t, "/saas.accounts.v1.UsageService/GetUsageHistory", byMatch["GET /v1/organizations/{organization_id}/usage/{meter}/history"].GetProcedure())
+	require.Equal(t, "/saas.accounts.v1.PlatformAdminService/UpsertFeatureFlag", byMatch["PUT /v1/platform/feature-flags/{name}"].GetProcedure())
 	require.Equal(t, policyv1.Exposure_EXPOSURE_AUTHENTICATED, byMatch["POST /v1/invitations:inspect-id"].GetExposure())
 	legacy := byMatch["POST /customers.UserService/GetSelf"]
 	require.Equal(t, "/saas.accounts.v1.UserService/GetSelf", legacy.GetRewritePath())

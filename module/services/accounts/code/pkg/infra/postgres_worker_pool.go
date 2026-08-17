@@ -35,15 +35,15 @@ func newWorkerPoolFromURL(
 	config.MaxConns = 4
 	config.ConnConfig.RuntimeParams["application_name"] = worker.applicationName
 	roleSQL := pgx.Identifier{worker.role}.Sanitize()
-	config.BeforeAcquire = func(ctx context.Context, conn *pgx.Conn) bool {
+	config.PrepareConn = func(ctx context.Context, conn *pgx.Conn) (bool, error) {
 		if _, err := conn.Exec(ctx, "SET ROLE "+roleSQL); err != nil {
-			wool.Get(ctx).In(worker.logScope+".BeforeAcquire").Warn(
+			wool.Get(ctx).In(worker.logScope+".PrepareConn").Warn(
 				"SET ROLE failed",
 				wool.ErrField(err),
 			)
-			return false
+			return false, nil
 		}
-		return true
+		return true, nil
 	}
 	config.AfterRelease = func(conn *pgx.Conn) bool {
 		_, err := conn.Exec(context.Background(), "RESET ROLE")

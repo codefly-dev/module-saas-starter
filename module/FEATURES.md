@@ -45,7 +45,7 @@ the sidecar in front so this code path isn't reached.
 | Secrets      | Vault (signing key + integrations)                   |
 | Email        | Resend (prod), log-only fake (dev)                   |
 | Billing      | Stripe (checkout, portal, webhook)                   |
-| Observability| `wool` logs/traces, OTLP, job metrics, and optional Sentry |
+| Observability| OpenTelemetry logs/traces/metrics for SigNoz; Sentry errors only |
 | Test infra   | Playwright e2e against the real stack via `withDependencies` |
 
 Everything is orchestrated by Codefly: `codefly run service --fixture
@@ -399,7 +399,7 @@ see `JOBS.md` for the exact boundary and sequencing.
 | User search & CRUD     | ✅    | Platform-admin can suspend / unsuspend / delete                    |
 | Impersonation          | ✅    | Mints session with `acting` claim; banner shown to impersonator    |
 | Sessions list          | ✅    | Active device families with description, activity, and both expiries |
-| Feature flags          | ✅    | DB-backed; per-org gates; `useFeatureFlag()` hook on FE            |
+| Feature flags          | 🟡    | Unleash is the designated runtime owner; the DB/API/UI are a read-only migration inventory with no runtime evaluator and are removed after cutover |
 | Entitlements           | ✅    | Per-org plan → feature mapping with overrides                      |
 | Webhooks (system view) | ✅    | List + delete from admin                                           |
 | Time-bound impersonation | ✅  | Access tokens are capped at five minutes by default                 |
@@ -425,6 +425,15 @@ all be configured before Terms can be accepted, and adopters must legally review
 the supplied content for their product and jurisdictions. Anonymous browser
 preferences are used only to fail optional SDKs closed; they are not treated as
 authenticated legal evidence.
+
+The dev placeholders are opt-in and safe-by-default: they apply only when
+`NEXT_PUBLIC_LEGAL_DEV_PLACEHOLDER` is truthy at build time, which `next.config.mjs`
+derives from the Codefly fixture boundary — so the local fixture stack gets a
+usable Terms gate with zero config, while a real deploy (which never builds under
+a fixture) defaults to the enforced gate rather than silently shipping placeholder
+terms. Because `NEXT_PUBLIC_*` values are inlined at build time, a production build
+that omits the four operator vars ships an un-acceptable gate; the `build` script
+runs `scripts/check-public-legal-env.mjs` to warn when that happens.
 
 ### Frontend (Next.js)
 
@@ -480,9 +489,9 @@ extraction contracts.
 | Structured logs| ✅    | `wool` everywhere; user/org/action context auto-attached         |
 | Audit trail    | ✅    | Separate from app logs; queryable                                |
 | Metrics        | ✅    | Job-worker OTel instruments, durable queue projections, and an in-graph OTLP gateway |
-| Tracing        | ✅    | Accounts resolves the Codefly collector endpoint; browser-to-backend W3C propagation |
-| Error tracking | ✅    | Explicit fail-closed Sentry mode for server/browser capture |
-| Dashboards     | 🟡    | Versioned provider-neutral business dashboard pack; provider materialization is deployment-specific |
+| Tracing        | ✅    | Accounts resolves the Codefly collector endpoint and exports OTLP for the designated SigNoz backend |
+| Error tracking | ✅    | Explicit fail-closed Sentry mode for server/browser errors; trace sampling is fixed at zero |
+| Dashboards     | 🟡    | Versioned provider-neutral business dashboard pack; [SigNoz provisioning remains unsupported pending a pinned service qualification](SIGNOZ_PROVISIONING.md) |
 
 ---
 
@@ -686,13 +695,14 @@ Frontend browser configuration (`NEXT_PUBLIC_*` values are baked into the client
 | `NEXT_PUBLIC_LEGAL_CONTACT_EMAIL` | Legal/privacy contact; required before Terms acceptance |
 | `NEXT_PUBLIC_LEGAL_TERMS_CONTENT` | Operator-supplied Terms; required before Terms acceptance |
 | `NEXT_PUBLIC_LEGAL_PRIVACY_CONTENT` | Operator-supplied Privacy Policy; required before Terms acceptance |
+| `NEXT_PUBLIC_LEGAL_DEV_PLACEHOLDER` | Opt-in dev legal placeholders; defaults from the fixture boundary via `next.config.mjs`, off for real deploys |
 | `NEXT_PUBLIC_PRODUCT_ANALYTICS_MODE` | Explicit `disabled` or `posthog` browser analytics mode |
 | `NEXT_PUBLIC_POSTHOG_KEY`      | Public PostHog capture key in PostHog mode                    |
 | `NEXT_PUBLIC_POSTHOG_HOST`   | Browser capture origin                                      |
 | `NEXT_PUBLIC_ERROR_TRACKING_MODE` | Explicit `disabled` or `sentry` browser mode            |
 | `NEXT_PUBLIC_SENTRY_DSN`     | Required browser DSN in Sentry mode                         |
-| `NEXT_PUBLIC_SENTRY_ENVIRONMENT` | Environment tag for browser error and trace grouping     |
-| `NEXT_PUBLIC_SENTRY_RELEASE` | Correlates frontend errors and traces with a release         |
+| `NEXT_PUBLIC_SENTRY_ENVIRONMENT` | Environment tag for browser error grouping               |
+| `NEXT_PUBLIC_SENTRY_RELEASE` | Correlates frontend errors with a release                    |
 | `NEXT_PUBLIC_ABUSE_PROTECTION_MODE` | Explicit `disabled` or `turnstile` widget mode          |
 | `NEXT_PUBLIC_TURNSTILE_SITE_KEY` | Public Turnstile widget key                              |
 

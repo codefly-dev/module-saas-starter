@@ -5,7 +5,7 @@
     "service": "accounts"
   },
   "api_package": "saas.accounts.v1",
-  "api_version": "0.3.0",
+  "api_version": "0.4.0",
   "services": [
     {
       "name": "APIKeyService",
@@ -4431,7 +4431,7 @@
         "authentication_factor_attempt": false
       },
       "policy_tier": "platform_admin",
-      "description": "List platform feature flags.",
+      "description": "List the legacy feature-flag migration inventory.",
       "owner": {
         "module": "saas-starter",
         "service": "accounts"
@@ -4899,7 +4899,7 @@
       "output_type": "saas.accounts.v1.UpsertFeatureFlagResponse",
       "client_streaming": false,
       "server_streaming": false,
-      "deprecated": false,
+      "deprecated": true,
       "source_proto": "saas/accounts/v1/platform_admin.proto",
       "protocols": [
         "PROTOCOL_GRPC",
@@ -4935,7 +4935,7 @@
         "authentication_factor_attempt": false
       },
       "policy_tier": "platform_admin",
-      "description": "Create / update a feature flag.",
+      "description": "Deprecated compatibility method; always rejects writes to the legacy feature-flag inventory.",
       "owner": {
         "module": "saas-starter",
         "service": "accounts"

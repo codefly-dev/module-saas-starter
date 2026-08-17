@@ -49,6 +49,11 @@ func TestAuthorizationCatalogCompilationAndPolicyProjection(t *testing.T) {
 		policyv1.Exposure_EXPOSURE_AUTHENTICATED,
 		methodByProcedure(catalog, "/saas.accounts.v1.UsageService/GetUsageHistory").GetPolicy().GetExposure(),
 	)
+	require.Equal(
+		t,
+		policyv1.PlatformRoleRequirement_PLATFORM_ROLE_REQUIREMENT_SUPER_ADMIN,
+		methodByProcedure(catalog, "/saas.accounts.v1.PlatformAdminService/UpsertFeatureFlag").GetPolicy().GetPlatformRole(),
+	)
 }
 
 func TestAuthorizationArtifactsAreDeterministicAndCurrent(t *testing.T) {

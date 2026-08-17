@@ -264,7 +264,7 @@ func ValidateGatewayRouteCatalog(catalog *catalogv1.GatewayRouteCatalog) error {
 		switch route.GetProtocol() {
 		case catalogv1.GatewayProtocol_GATEWAY_PROTOCOL_CONNECT:
 			if route.GetMethod() != "POST" || route.GetMatch() != catalogv1.GatewayMatch_GATEWAY_MATCH_EXACT {
-				return fmt.Errorf("Connect route %q is not an exact POST match", route.GetPath())
+				return fmt.Errorf("route %q is not an exact POST Connect match", route.GetPath())
 			}
 		case catalogv1.GatewayProtocol_GATEWAY_PROTOCOL_REST:
 			if route.GetMatch() == catalogv1.GatewayMatch_GATEWAY_MATCH_PATH_TEMPLATE {

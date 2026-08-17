@@ -79,3 +79,22 @@ codefly ci run --all
 
 For a focused reproduction, use `--phase`, `--suite`, or a base revision. These
 are views of the same plugin-owned gate, not alternate test pipelines.
+
+## Release cadence and ownership
+
+`codefly sync module` pins an **immutable semver tag** in the consumer's
+`base-source.json` lock. Consumers advance only when they deliberately re-pin,
+so this repository's tag rhythm bounds every consumer's update rhythm.
+
+Tags are cut by the saas-starter maintainers **on demand** — whenever
+consumer-relevant base changes have landed on `main` and pass `codefly ci run`
+plus `base-integrity.mjs verify`. There is no fixed calendar; a release is a
+maintainer decision that the current base tree is a good pin, not a scheduled
+event. Consumers that need to move faster than tags are cut should open an issue
+rather than pin an untagged revision.
+
+To cut a release:
+
+1. Bump `version:` in the root `agent.codefly.yaml`.
+2. Commit it as `release: vX.Y.Z`.
+3. Tag that commit with an annotated `vX.Y.Z` tag and push the tag.
