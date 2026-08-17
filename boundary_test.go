@@ -104,3 +104,24 @@ func TestLegacyFeatureFlagsHaveNoRuntimeEvaluator(t *testing.T) {
 		}
 	}
 }
+
+// Vault 0.0.22 requires promotable cloud renders to carry one canonical token
+// SecretKeyRef. An empty secret configuration value declares that capability
+// without committing a credential; the CLI removes the value before rendering.
+func TestAWSVaultPromotableConfigurationDeclaresSecretCapability(t *testing.T) {
+	const path = "module/services/vault/configurations/aws/vault.secret.env"
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var declarations []string
+	for line := range strings.SplitSeq(string(data), "\n") {
+		line = strings.TrimSpace(line)
+		if line != "" && !strings.HasPrefix(line, "#") {
+			declarations = append(declarations, line)
+		}
+	}
+	if len(declarations) != 1 || declarations[0] != "VAULT_TOKEN=" {
+		t.Fatalf("%s must declare exactly an empty VAULT_TOKEN capability, got %q", path, declarations)
+	}
+}
