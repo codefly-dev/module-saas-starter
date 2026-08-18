@@ -1,9 +1,9 @@
 module github.com/codefly-dev/agents/modules/saas-starter
 
-go 1.25.12
+go 1.26
 
 require (
-	github.com/codefly-dev/core v0.3.0
+	github.com/codefly-dev/core v0.3.1
 	gopkg.in/yaml.v3 v3.0.1
 )
 
