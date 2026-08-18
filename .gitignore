@@ -19,9 +19,6 @@ module/services/*/code/local
 module/services/*/code/node_modules/
 module/services/*/code/.next/
 
-# Local object-storage (MinIO) runtime data written when integration tests
-# bring the object-storage dependency up
-module/services/object-storage/minio/
 module/services/*/code/*.tsbuildinfo
 module/services/store/code/store-migrator
 module/services/*/.cache/

@@ -237,36 +237,16 @@ jobs:
 
           validation_plan="$(codefly ci plan "${selection_args[@]}" --format json)"
           validation_selection_args=()
-          validate_temporal=false
           while IFS= read -r service; do
-            case "${service}" in
-              saas-starter/temporal|saas-starter/temporal-store)
-                validate_temporal=true
-                ;;
-              *)
-                validation_selection_args+=(
-                  --changed-file "module/services/${service#*/}/service.codefly.yaml"
-                )
-                ;;
-            esac
+            validation_selection_args+=(
+              --changed-file "module/services/${service#*/}/service.codefly.yaml"
+            )
           done < <(jq -r '.services[].service' <<<"${validation_plan}")
 
           if (( ${#validation_selection_args[@]} )); then
             codefly ci run "${validation_selection_args[@]}" \
               --phase lint,compile,test \
               --output .codefly/ci/validation
-          fi
-
-          if [[ "${validate_temporal}" == true ]]; then
-            # temporal@0.0.15 has no static validation actions, and its runtime
-            # requires the dedicated Postgres capability while it initializes.
-            codefly run service saas-starter/temporal \
-              --init-only \
-              --temporary-ports \
-              --headless \
-              --runtime-context container \
-              --start-docker=false \
-              --naming-scope ci-temporal-validation
           fi
 
           # Several published vendor-image agents predate Core's shared Trivy

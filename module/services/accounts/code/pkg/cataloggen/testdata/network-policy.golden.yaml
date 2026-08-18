@@ -175,26 +175,6 @@ spec:
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
-  name: allow-object-storage-from-dependents
-  namespace: saas-starter
-spec:
-  podSelector:
-    matchLabels:
-      app: object-storage
-  policyTypes:
-    - Ingress
-  ingress:
-    - from:
-        - podSelector:
-            matchLabels:
-              app: accounts
-      ports:
-        - protocol: TCP
-          port: 9000
----
-apiVersion: networking.k8s.io/v1
-kind: NetworkPolicy
-metadata:
   name: allow-store-from-dependents
   namespace: saas-starter
 spec:
@@ -242,26 +222,6 @@ spec:
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
-  name: allow-temporal-store-from-dependents
-  namespace: saas-starter
-spec:
-  podSelector:
-    matchLabels:
-      app: temporal-store
-  policyTypes:
-    - Ingress
-  ingress:
-    - from:
-        - podSelector:
-            matchLabels:
-              app: temporal-temporal
-      ports:
-        - protocol: TCP
-          port: 5432
----
-apiVersion: networking.k8s.io/v1
-kind: NetworkPolicy
-metadata:
   name: allow-vault-from-dependents
   namespace: saas-starter
 spec:
@@ -298,13 +258,6 @@ spec:
       ports:
         - protocol: TCP
           port: 6379
-    - to:
-        - podSelector:
-            matchLabels:
-              app: object-storage
-      ports:
-        - protocol: TCP
-          port: 9000
     - to:
         - podSelector:
             matchLabels:
@@ -386,26 +339,6 @@ spec:
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
-  name: allow-temporal-to-dependencies
-  namespace: saas-starter
-spec:
-  podSelector:
-    matchLabels:
-      app: temporal-temporal
-  policyTypes:
-    - Egress
-  egress:
-    - to:
-        - podSelector:
-            matchLabels:
-              app: temporal-store
-      ports:
-        - protocol: TCP
-          port: 5432
----
-apiVersion: networking.k8s.io/v1
-kind: NetworkPolicy
-metadata:
   name: allow-store-from-bootstrap
   namespace: saas-starter
 spec:
@@ -441,48 +374,6 @@ spec:
         - podSelector:
             matchLabels:
               app: store
-      ports:
-        - protocol: TCP
-          port: 5432
----
-apiVersion: networking.k8s.io/v1
-kind: NetworkPolicy
-metadata:
-  name: allow-temporal-store-from-bootstrap
-  namespace: saas-starter
-spec:
-  podSelector:
-    matchLabels:
-      app: temporal-store
-  policyTypes:
-    - Ingress
-  ingress:
-    - from:
-        - podSelector:
-            matchLabels:
-              codefly.dev/bootstrap-service: temporal-store
-              job-name: temporal-store
-      ports:
-        - protocol: TCP
-          port: 5432
----
-apiVersion: networking.k8s.io/v1
-kind: NetworkPolicy
-metadata:
-  name: allow-temporal-store-bootstrap-to-temporal-store
-  namespace: saas-starter
-spec:
-  podSelector:
-    matchLabels:
-      codefly.dev/bootstrap-service: temporal-store
-      job-name: temporal-store
-  policyTypes:
-    - Egress
-  egress:
-    - to:
-        - podSelector:
-            matchLabels:
-              app: temporal-store
       ports:
         - protocol: TCP
           port: 5432

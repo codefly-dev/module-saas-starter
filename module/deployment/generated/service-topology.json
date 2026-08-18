@@ -34,12 +34,6 @@
           ]
         },
         {
-          "service": "object-storage",
-          "endpoints": [
-            "accounts"
-          ]
-        },
-        {
           "service": "store",
           "endpoints": [
             "tcp"
@@ -146,17 +140,6 @@
       ]
     },
     {
-      "name": "object-storage",
-      "endpoints": [
-        {
-          "name": "accounts",
-          "api": "CODEFLY_API_TCP",
-          "visibility": "ENDPOINT_VISIBILITY_PRIVATE",
-          "port": 9000
-        }
-      ]
-    },
-    {
       "name": "store",
       "endpoints": [
         {
@@ -175,42 +158,6 @@
           "api": "CODEFLY_API_GRPC",
           "visibility": "ENDPOINT_VISIBILITY_PRIVATE",
           "port": 8080
-        }
-      ]
-    },
-    {
-      "name": "temporal",
-      "endpoints": [
-        {
-          "name": "grpc",
-          "api": "CODEFLY_API_TCP",
-          "visibility": "ENDPOINT_VISIBILITY_MODULE",
-          "port": 7233
-        },
-        {
-          "name": "http",
-          "api": "CODEFLY_API_TCP",
-          "visibility": "ENDPOINT_VISIBILITY_MODULE",
-          "port": 8233
-        }
-      ],
-      "dependencies": [
-        {
-          "service": "temporal-store",
-          "endpoints": [
-            "tcp"
-          ]
-        }
-      ]
-    },
-    {
-      "name": "temporal-store",
-      "endpoints": [
-        {
-          "name": "tcp",
-          "api": "CODEFLY_API_TCP",
-          "visibility": "ENDPOINT_VISIBILITY_EXTERNAL",
-          "port": 5432
         }
       ]
     },

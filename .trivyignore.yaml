@@ -2,7 +2,6 @@ misconfigurations:
   - id: KSV-0108
     paths:
       - "module/deployment/kustomize/overlays/aws/externalname-services/cache.yaml"
-      - "module/deployment/kustomize/overlays/aws/externalname-services/object-storage.yaml"
       - "module/deployment/kustomize/overlays/aws/externalname-services/store.yaml"
       - "module/deployment/kustomize/overlays/aws/externalname-services/vault.yaml"
     expired_at: 2027-07-13

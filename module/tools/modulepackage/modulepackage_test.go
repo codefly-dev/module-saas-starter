@@ -25,8 +25,8 @@ func TestStarterManifestIsTheCoreV2Contract(t *testing.T) {
 	if manifest.ID != "codefly/saas-starter" || manifest.Version != "0.1.0" {
 		t.Fatalf("unexpected package identity: %s@%s", manifest.ID, manifest.Version)
 	}
-	if len(manifest.Services) != 11 {
-		t.Fatalf("provided service count = %d, want 11", len(manifest.Services))
+	if len(manifest.Services) != 8 {
+		t.Fatalf("provided service count = %d, want 8", len(manifest.Services))
 	}
 	for _, contract := range []string{"composition", "frontendPlugin", "settings", "permissions", "fixtures"} {
 		if manifest.Contracts[contract] == "" {

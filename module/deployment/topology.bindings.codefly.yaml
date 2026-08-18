@@ -20,7 +20,7 @@ services:
     agent:
       kind: codefly:service
       name: go-grpc
-      version: 0.1.21
+      version: 0.1.28
       publisher: codefly.dev
     workspace_configuration_dependencies:
       - abuse-protection
@@ -50,9 +50,6 @@ services:
         endpoints:
           - read
           - write
-      - service: object-storage
-        endpoints:
-          - accounts
       - service: store
         endpoints:
           - tcp
@@ -68,7 +65,6 @@ services:
       hot-reload: true
       rest-endpoint: true
       connect-endpoint: true
-      with-workspace: true
       protocol-output-dirs:
         - code/pkg/gen
         - generated/openapi-raw
@@ -81,7 +77,7 @@ services:
     agent:
       kind: codefly:service
       name: go-grpc
-      version: 0.1.21
+      version: 0.1.28
       publisher: codefly.dev
     workspace_configuration_dependencies:
       - gateway
@@ -119,7 +115,7 @@ services:
     agent:
       kind: codefly:service
       name: redis
-      version: 0.0.74
+      version: 0.0.77
       publisher: codefly.dev
     endpoints:
       - name: read
@@ -138,7 +134,7 @@ services:
     agent:
       kind: codefly:service
       name: nextjs
-      version: 0.0.124
+      version: 0.0.142
       publisher: codefly.dev
     workspace_configuration_dependencies:
       - abuse-protection
@@ -175,7 +171,7 @@ services:
     agent:
       kind: codefly:service
       name: nextjs
-      version: 0.0.118
+      version: 0.0.142
       publisher: codefly.dev
     endpoints:
       - name: http
@@ -190,31 +186,12 @@ services:
         local: development
         production: production
       mode: ssr
-  - name: object-storage
-    version: 0.0.0
-    agent:
-      kind: codefly:service
-      name: s3
-      version: 0.0.16
-      publisher: codefly.dev
-    secret_service_configurations:
-      - name: s3
-        entries:
-          - key: minio_root_password
-          - key: minio_root_user
-    endpoints:
-      - name: accounts
-        api: tcp
-        visibility: private
-        port: 9000
-    spec:
-      watch: false
   - name: store
     version: 0.0.0
     agent:
       kind: codefly:service
       name: postgres
-      version: 0.0.108
+      version: 0.0.123
       publisher: codefly.dev
     endpoints:
       - name: tcp
@@ -245,7 +222,7 @@ services:
     agent:
       kind: codefly:service
       name: go-grpc
-      version: 0.1.21
+      version: 0.1.28
       publisher: codefly.dev
     workspace_configuration_dependencies:
       - observability
@@ -260,49 +237,6 @@ services:
       hot-reload: true
       protocol-output-dirs:
         - code/pkg/gen
-  - name: temporal
-    version: 0.0.0
-    agent:
-      kind: codefly:service
-      name: temporal
-      version: 0.0.15
-      publisher: codefly.dev
-    kubernetes:
-      service_name: temporal-temporal
-      app_label: temporal-temporal
-    endpoints:
-      - name: grpc
-        api: tcp
-        visibility: module
-        port: 7233
-      - name: http
-        api: tcp
-        visibility: module
-        port: 8233
-    dependencies:
-      - service: temporal-store
-        endpoints:
-          - tcp
-    spec:
-      watch: false
-  - name: temporal-store
-    version: 0.0.0
-    agent:
-      kind: codefly:service
-      name: postgres
-      version: 0.0.108
-      publisher: codefly.dev
-    endpoints:
-      - name: tcp
-        api: tcp
-        visibility: external
-        port: 5432
-    bootstrap_job_endpoints:
-      - tcp
-    spec:
-      database-name: postgres
-      no-migration: true
-      without-ssl: false
   - name: vault
     version: 0.0.0
     agent:

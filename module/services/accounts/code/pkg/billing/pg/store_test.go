@@ -41,7 +41,7 @@ func runBillingStoreTests(m *testing.M) int {
 
 	deps, err := sdk.WithDependencies(ctx,
 		sdk.WithDebug(),
-		sdk.WithExcludedDependencies("cache", "object-storage", "vault"),
+		sdk.WithExcludedDependencies("cache", "vault"),
 		sdk.WithNamingScope("pgbilling-test"),
 		sdk.WithTimeout(120*time.Second),
 		sdk.WithSilence("store"),
