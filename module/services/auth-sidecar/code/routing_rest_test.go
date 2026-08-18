@@ -13,7 +13,7 @@ import (
 func TestGeneratedRESTSurfaceAndExtensions(t *testing.T) {
 	generated, err := LoadRESTRoutesFromCatalog()
 	require.NoError(t, err)
-	require.Len(t, generated, 132)
+	require.Len(t, generated, 134)
 
 	paths := make(map[string]*RouteEntry, len(generated))
 	publicCount := 0
@@ -74,7 +74,7 @@ func TestGeneratedRESTSurfaceAndExtensions(t *testing.T) {
 
 	all, err := LoadAllRESTRoutes(context.Background(), DefaultRoutingDir())
 	require.NoError(t, err)
-	require.Len(t, all, 139)
+	require.Len(t, all, 141)
 	matcher := NewRouteMatcher(all, nil)
 	require.NotNil(t, matcher.MatchREST(http.MethodGet, "/v1/audit-export/org-1"))
 	require.NotNil(t, matcher.MatchREST(http.MethodPost, "/v1/platform/jobs/job-123:replay"))
