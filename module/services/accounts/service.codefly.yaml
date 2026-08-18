@@ -41,4 +41,3 @@ spec:
         - code/pkg/gen
         - generated/openapi-raw
     rest-endpoint: true
-    with-workspace: true

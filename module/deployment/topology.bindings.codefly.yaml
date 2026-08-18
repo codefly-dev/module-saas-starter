@@ -65,7 +65,6 @@ services:
       hot-reload: true
       rest-endpoint: true
       connect-endpoint: true
-      with-workspace: true
       protocol-output-dirs:
         - code/pkg/gen
         - generated/openapi-raw
