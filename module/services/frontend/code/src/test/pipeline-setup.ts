@@ -47,7 +47,7 @@ export default async function setup(): Promise<(() => Promise<void>) | void> {
 			readyService: "auth-sidecar",
 			scope,
 			fixture: "dev-admin",
-			silents: ["store", "cache", "object-storage", "telemetry"],
+			silents: ["store", "cache", "telemetry"],
 			echo: process.env.CODEFLY_TEST_ECHO === "1",
 		});
 	} catch (error) {

@@ -1358,112 +1358,6 @@ func TestCanonicalSourceDoesNotShipGeneratedBundleTree(t *testing.T) {
 	}
 }
 
-func TestCanonicalTemporalTopologyRendersLocalAndAWS(t *testing.T) {
-	t.Parallel()
-	source := "module"
-	moduleDir := filepath.Join(t.TempDir(), "module")
-	copySource := func(relative string) {
-		t.Helper()
-		data, err := os.ReadFile(filepath.Join(source, filepath.FromSlash(relative)))
-		if err != nil {
-			t.Fatal(err)
-		}
-		content := strings.ReplaceAll(string(data), "saas-starter", "temporal-test")
-		writeTestFile(t, filepath.Join(moduleDir, filepath.FromSlash(relative)), content)
-	}
-	copySource(moduleYamlPath)
-	copySource("deployment/topology.bindings.codefly.yaml")
-	manifest, err := loadModuleManifest(source)
-	if err != nil {
-		t.Fatal(err)
-	}
-	for _, service := range manifest.Services {
-		copySource(filepath.Join("services", service.Name, "service.codefly.yaml"))
-	}
-
-	workspace, err := loadWorkspaceManifest(".")
-	if err != nil {
-		t.Fatal(err)
-	}
-	workspace.Name = "temporal-control"
-	for _, environment := range workspace.Environments {
-		environment.Namespace = "temporal-test-" + environment.Name
-	}
-	if err := generateDeploymentBundle(moduleDir, workspace); err != nil {
-		t.Fatal(err)
-	}
-	data, err := os.ReadFile(filepath.Join(moduleDir, filepath.FromSlash(bundleRelativeDir), "bundle.json"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	var bundle moduleBundle
-	if err := json.Unmarshal(data, &bundle); err != nil {
-		t.Fatal(err)
-	}
-
-	for _, name := range []string{"local", "aws"} {
-		var environment *bundleEnvironment
-		for index := range bundle.Environments {
-			if bundle.Environments[index].Name == name {
-				environment = &bundle.Environments[index]
-				break
-			}
-		}
-		if environment == nil {
-			t.Fatalf("generated bundle omits %s", name)
-		}
-		for _, service := range []string{"temporal", "temporal-store"} {
-			if !slices.Contains(environment.Services, service) {
-				t.Errorf("%s bundle omits %s: %v", name, service, environment.Services)
-			}
-		}
-
-		objects := overlayObjects(t, moduleDir, name)
-		policies := make(map[string]bool)
-		var temporalEgressApp string
-		var temporalDestinationHost string
-		for _, object := range objects {
-			metadata, _ := object["metadata"].(map[string]any)
-			objectName, _ := metadata["name"].(string)
-			switch object["kind"] {
-			case "NetworkPolicy":
-				policies[objectName] = true
-				if objectName == "allow-temporal-to-temporal-store" {
-					spec, _ := object["spec"].(map[string]any)
-					podSelector, _ := spec["podSelector"].(map[string]any)
-					matchLabels, _ := podSelector["matchLabels"].(map[string]any)
-					temporalEgressApp, _ = matchLabels["app"].(string)
-				}
-			case "DestinationRule":
-				spec, _ := object["spec"].(map[string]any)
-				host, _ := spec["host"].(string)
-				if strings.HasPrefix(host, "temporal-temporal.") {
-					temporalDestinationHost = host
-				}
-			}
-		}
-		for _, policy := range []string{
-			"allow-temporal-to-temporal-store",
-			"allow-temporal-store-from-temporal",
-			"allow-temporal-store-from-bootstrap",
-			"allow-temporal-store-bootstrap-to-temporal-store",
-		} {
-			if !policies[policy] {
-				t.Errorf("%s overlay omits %s", name, policy)
-			}
-		}
-		if temporalEgressApp != "temporal-temporal" {
-			t.Errorf("%s temporal egress selects app %q, want temporal-temporal", name, temporalEgressApp)
-		}
-		if name == "local" {
-			wantHost := "temporal-temporal.temporal-test-local.svc.cluster.local"
-			if temporalDestinationHost != wantHost {
-				t.Errorf("%s temporal DestinationRule host = %q, want %q", name, temporalDestinationHost, wantHost)
-			}
-		}
-	}
-}
-
 // --- fixtures ------------------------------------------------------------
 
 func overlayObjects(t *testing.T, moduleDir, environment string) []map[string]any {
@@ -1773,5 +1667,51 @@ func writeTestFile(t *testing.T, file, content string) {
 	}
 	if err := os.WriteFile(file, []byte(content), 0o644); err != nil {
 		t.Fatal(err)
+	}
+}
+
+// service.codefly.yaml is generated from the topology binding but excluded from
+// the base-integrity manifest, so nothing hermetic catches a topology agent-pin
+// bump that forgets to regenerate a service manifest. Only the network- and
+// agent-dependent codefly sync-drift gate would — too late and not in unit CI.
+// This proves every committed service manifest still pins the same agent
+// name@version its topology entry declares.
+func TestCanonicalServiceManifestsPinTopologyAgentVersions(t *testing.T) {
+	t.Parallel()
+	source := "module"
+	data, err := os.ReadFile(filepath.Join(source, "deployment", "topology.bindings.codefly.yaml"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var topology deploymentTopology
+	if err := yaml.Unmarshal(data, &topology); err != nil {
+		t.Fatal(err)
+	}
+	if len(topology.Services) == 0 {
+		t.Fatal("topology declares no services")
+	}
+	for _, service := range topology.Services {
+		wantName := fmt.Sprintf("%v", service.Agent["name"])
+		wantVersion := fmt.Sprintf("%v", service.Agent["version"])
+		if service.Agent["name"] == nil || service.Agent["version"] == nil {
+			t.Errorf("%s: topology agent missing name/version: %v", service.Name, service.Agent)
+			continue
+		}
+		manifestData, err := os.ReadFile(filepath.Join(source, "services", service.Name, "service.codefly.yaml"))
+		if err != nil {
+			t.Errorf("%s: read service manifest: %v", service.Name, err)
+			continue
+		}
+		var generated generatedServiceManifest
+		if err := yaml.Unmarshal(manifestData, &generated); err != nil {
+			t.Errorf("%s: parse service manifest: %v", service.Name, err)
+			continue
+		}
+		gotName := fmt.Sprintf("%v", generated.Agent["name"])
+		gotVersion := fmt.Sprintf("%v", generated.Agent["version"])
+		if gotName != wantName || gotVersion != wantVersion {
+			t.Errorf("%s: service manifest pins agent %s@%s but topology declares %s@%s — regenerate service.codefly.yaml",
+				service.Name, gotName, gotVersion, wantName, wantVersion)
+		}
 	}
 }

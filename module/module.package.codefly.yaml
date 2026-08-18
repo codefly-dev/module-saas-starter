@@ -23,16 +23,10 @@ services:
     endpoints: [http]
   - name: marketing
     endpoints: [http]
-  - name: object-storage
-    endpoints: [accounts]
   - name: store
     endpoints: [tcp]
   - name: telemetry
     endpoints: [grpc]
-  - name: temporal
-    endpoints: [grpc, http]
-  - name: temporal-store
-    endpoints: [tcp]
   - name: vault
     endpoints: [http]
 

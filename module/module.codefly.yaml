@@ -20,9 +20,6 @@ services:
     - name: cache
     - name: frontend
     - name: marketing
-    - name: object-storage
     - name: store
     - name: telemetry
-    - name: temporal
-    - name: temporal-store
     - name: vault
