@@ -5861,6 +5861,10 @@
         "actorId": {
           "type": "string"
         },
+        "action": {
+          "type": "string",
+          "title": "use event_type"
+        },
         "eventType": {
           "type": "string"
         }

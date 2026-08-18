@@ -62,7 +62,8 @@ message ExportAuditLogRequest {
   string org_id = 1;
   string format = 2; // "csv" or "json"
   string actor_id = 3;
-  string event_type = 4;
+  string action = 4 [deprecated = true]; // use event_type
+  string event_type = 5;
 }
 
 message ExportAuditLogResponse {

@@ -379,11 +379,13 @@ func (x *QueryAuditLogResponse) GetTotalCount() int32 {
 }
 
 type ExportAuditLogRequest struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	OrgId         string                 `protobuf:"bytes,1,opt,name=org_id,json=orgId,proto3" json:"org_id,omitempty"`
-	Format        string                 `protobuf:"bytes,2,opt,name=format,proto3" json:"format,omitempty"` // "csv" or "json"
-	ActorId       string                 `protobuf:"bytes,3,opt,name=actor_id,json=actorId,proto3" json:"actor_id,omitempty"`
-	EventType     string                 `protobuf:"bytes,4,opt,name=event_type,json=eventType,proto3" json:"event_type,omitempty"`
+	state   protoimpl.MessageState `protogen:"open.v1"`
+	OrgId   string                 `protobuf:"bytes,1,opt,name=org_id,json=orgId,proto3" json:"org_id,omitempty"`
+	Format  string                 `protobuf:"bytes,2,opt,name=format,proto3" json:"format,omitempty"` // "csv" or "json"
+	ActorId string                 `protobuf:"bytes,3,opt,name=actor_id,json=actorId,proto3" json:"actor_id,omitempty"`
+	// Deprecated: Marked as deprecated in saas/accounts/v1/audit.proto.
+	Action        string `protobuf:"bytes,4,opt,name=action,proto3" json:"action,omitempty"` // use event_type
+	EventType     string `protobuf:"bytes,5,opt,name=event_type,json=eventType,proto3" json:"event_type,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -435,6 +437,14 @@ func (x *ExportAuditLogRequest) GetFormat() string {
 func (x *ExportAuditLogRequest) GetActorId() string {
 	if x != nil {
 		return x.ActorId
+	}
+	return ""
+}
+
+// Deprecated: Marked as deprecated in saas/accounts/v1/audit.proto.
+func (x *ExportAuditLogRequest) GetAction() string {
+	if x != nil {
+		return x.Action
 	}
 	return ""
 }
@@ -930,13 +940,14 @@ const file_saas_accounts_v1_audit_proto_rawDesc = "" +
 	"\x06events\x18\x01 \x03(\v2\x1c.saas.accounts.v1.AuditEventR\x06events\x12&\n" +
 	"\x0fnext_page_token\x18\x02 \x01(\tR\rnextPageToken\x12\x1f\n" +
 	"\vtotal_count\x18\x03 \x01(\x05R\n" +
-	"totalCount\"\x80\x01\n" +
+	"totalCount\"\x9c\x01\n" +
 	"\x15ExportAuditLogRequest\x12\x15\n" +
 	"\x06org_id\x18\x01 \x01(\tR\x05orgId\x12\x16\n" +
 	"\x06format\x18\x02 \x01(\tR\x06format\x12\x19\n" +
-	"\bactor_id\x18\x03 \x01(\tR\aactorId\x12\x1d\n" +
+	"\bactor_id\x18\x03 \x01(\tR\aactorId\x12\x1a\n" +
+	"\x06action\x18\x04 \x01(\tB\x02\x18\x01R\x06action\x12\x1d\n" +
 	"\n" +
-	"event_type\x18\x04 \x01(\tR\teventType\"k\n" +
+	"event_type\x18\x05 \x01(\tR\teventType\"k\n" +
 	"\x16ExportAuditLogResponse\x12\x12\n" +
 	"\x04data\x18\x01 \x01(\fR\x04data\x12!\n" +
 	"\fcontent_type\x18\x02 \x01(\tR\vcontentType\x12\x1a\n" +
