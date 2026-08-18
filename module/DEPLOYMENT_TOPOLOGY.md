@@ -30,14 +30,12 @@ generation fails.
 | Caller | Target endpoints | Kubernetes ports |
 | --- | --- | --- |
 | `accounts` | `cache/read`, `cache/write` | TCP 6379 |
-| `accounts` | `object-storage/accounts` | TCP 9000 |
 | `accounts` | `store/tcp` | TCP 5432 |
 | `accounts` | `telemetry/grpc` | Codefly-assigned OTLP gRPC port |
 | `accounts` | `vault/http` | TCP 8200 |
 | `auth-sidecar` | `accounts/connect`, `accounts/rest`, `accounts/grpc` | TCP 8080, 9090 |
 | `auth-sidecar` | `cache/write` | TCP 6379 |
 | `frontend` | `auth-sidecar/rest` | TCP 8080 |
-| `temporal` | `temporal-store/tcp` | TCP 5432 |
 
 The Codefly module interface exposes the public `frontend/http` and
 `marketing/http` endpoints; the auth-sidecar gRPC ext-authz endpoint has module

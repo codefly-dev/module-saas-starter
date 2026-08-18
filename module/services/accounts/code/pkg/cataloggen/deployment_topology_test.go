@@ -41,7 +41,7 @@ func TestDeploymentTopologyIsDeterministicAndCurrent(t *testing.T) {
 		require.Equal(t, string(checkedIn), string(document), "service %s: run go generate ./pkg/cataloggen", service)
 	}
 
-	require.Len(t, first.Catalog.GetServices(), 11)
+	require.Len(t, first.Catalog.GetServices(), 8)
 	require.Len(t, first.Catalog.GetInterfaceEndpoints(), 3)
 	require.Len(t, first.Catalog.GetPublicEgress(), 4)
 	endpointCount, dependencyCount := 0, 0
@@ -49,21 +49,8 @@ func TestDeploymentTopologyIsDeterministicAndCurrent(t *testing.T) {
 		endpointCount += len(service.GetEndpoints())
 		dependencyCount += len(service.GetDependencies())
 	}
-	require.Equal(t, 16, endpointCount)
-	require.Equal(t, 10, dependencyCount)
-	var temporalService *catalogv1.DeploymentService
-	for _, service := range first.Catalog.GetServices() {
-		if service.GetName() == "temporal" {
-			temporalService = service
-			break
-		}
-	}
-	require.NotNil(t, temporalService)
-	require.Len(t, temporalService.GetEndpoints(), 2)
-	require.Equal(t, "grpc", temporalService.GetEndpoints()[0].GetName())
-	require.Equal(t, uint32(7233), temporalService.GetEndpoints()[0].GetPort())
-	require.Equal(t, "http", temporalService.GetEndpoints()[1].GetName())
-	require.Equal(t, uint32(8233), temporalService.GetEndpoints()[1].GetPort())
+	require.Equal(t, 12, endpointCount)
+	require.Equal(t, 8, dependencyCount)
 	privateREST := map[string]bool{"accounts": false, "auth-sidecar": false}
 	authSidecarTelemetry := false
 	for _, service := range first.Catalog.GetServices() {
@@ -101,16 +88,7 @@ func TestDeploymentTopologyIsDeterministicAndCurrent(t *testing.T) {
 	require.Contains(t, frontendManifest, "execution-profiles:")
 	require.Contains(t, frontendManifest, "local: development")
 	require.Contains(t, frontendManifest, "production: production")
-	temporalManifest := string(first.ServiceManifests["temporal"])
-	require.Contains(t, temporalManifest, "name: temporal\n    version: 0.0.15")
-	require.Contains(t, temporalManifest, "name: temporal-store\n      endpoints:\n        - name: tcp")
-	require.Equal(t, 2, strings.Count(temporalManifest, "visibility: module"))
-	temporalStoreManifest := string(first.ServiceManifests["temporal-store"])
-	require.Contains(t, temporalStoreManifest, "name: postgres\n    version: 0.0.123")
-	require.Contains(t, temporalStoreManifest, "database-name: postgres")
-	require.Contains(t, temporalStoreManifest, "no-migration: true")
-	require.NotContains(t, temporalStoreManifest, "runtime-read-write-roles")
-	require.Equal(t, 25, strings.Count(string(first.NetworkPolicy), "\nkind: NetworkPolicy\n"))
+	require.Equal(t, 20, strings.Count(string(first.NetworkPolicy), "\nkind: NetworkPolicy\n"))
 	require.NotContains(t, string(first.NetworkPolicy), "allow-intra-namespace")
 	require.Contains(t, string(first.NetworkPolicy), "name: allow-accounts-from-dependents")
 	require.Contains(t, string(first.NetworkPolicy), "name: allow-auth-sidecar-from-dependents")
@@ -119,13 +97,6 @@ func TestDeploymentTopologyIsDeterministicAndCurrent(t *testing.T) {
 	require.Contains(t, string(first.NetworkPolicy), "name: allow-store-from-bootstrap")
 	require.Contains(t, string(first.NetworkPolicy), "name: allow-store-bootstrap-to-store")
 	require.Equal(t, 2, strings.Count(string(first.NetworkPolicy), "codefly.dev/bootstrap-service: store"))
-	require.Contains(t, string(first.NetworkPolicy), "name: allow-temporal-to-dependencies")
-	require.Contains(t, string(first.NetworkPolicy), "name: allow-temporal-store-from-dependents")
-	require.Contains(t, string(first.NetworkPolicy), "name: allow-temporal-store-from-bootstrap")
-	require.Contains(t, string(first.NetworkPolicy), "name: allow-temporal-store-bootstrap-to-temporal-store")
-	require.Contains(t, string(first.NetworkPolicy), "name: allow-temporal-to-dependencies\n  namespace: saas-starter\nspec:\n  podSelector:\n    matchLabels:\n      app: temporal-temporal")
-	require.Contains(t, string(first.NetworkPolicy), "name: allow-temporal-store-from-dependents\n  namespace: saas-starter\nspec:\n  podSelector:\n    matchLabels:\n      app: temporal-store\n  policyTypes:\n    - Ingress\n  ingress:\n    - from:\n        - podSelector:\n            matchLabels:\n              app: temporal-temporal")
-	require.Equal(t, 2, strings.Count(string(first.NetworkPolicy), "codefly.dev/bootstrap-service: temporal-store"))
 	require.Contains(t, string(first.NetworkPolicy), "name: allow-frontend-public-egress")
 	require.Contains(t, string(first.NetworkPolicy), "name: allow-marketing-public-egress")
 	require.Contains(t, string(first.NetworkPolicy), "name: allow-telemetry-from-dependents")
@@ -321,7 +292,7 @@ func TestGeneratedCodeflyAndNetworkManifestsParseStrictly(t *testing.T) {
 	require.NoError(t, loadedModule.ValidateInterface(ctx))
 	loadedServices, err := loadedModule.LoadServices(ctx)
 	require.NoError(t, err)
-	require.Len(t, loadedServices, 11)
+	require.Len(t, loadedServices, 8)
 
 	moduleDocument := readFixture(t, "../../../../../module.codefly.yaml")
 	var moduleEntry struct {
@@ -333,7 +304,7 @@ func TestGeneratedCodeflyAndNetworkManifestsParseStrictly(t *testing.T) {
 	require.NoError(t, yaml.Unmarshal(moduleDocument, &module))
 	_, err = module.Proto(ctx)
 	require.NoError(t, err)
-	require.Len(t, module.ServiceReferences, 11)
+	require.Len(t, module.ServiceReferences, 8)
 
 	for _, reference := range module.ServiceReferences {
 		document := readFixture(t, filepath.Join("../../../../../services", reference.Name, "service.codefly.yaml"))
@@ -375,16 +346,12 @@ func TestGeneratedCodeflyAndNetworkManifestsParseStrictly(t *testing.T) {
 		require.False(t, names[document.Metadata.Name], "duplicate NetworkPolicy %s", document.Metadata.Name)
 		names[document.Metadata.Name] = true
 	}
-	require.Len(t, names, 25)
+	require.Len(t, names, 20)
 	require.True(t, names["allow-istio-ingress-to-marketing"])
 	require.True(t, names["allow-istio-ingress-to-frontend"])
 	require.False(t, names["allow-istio-ingress-to-auth-sidecar"])
 	require.True(t, names["allow-store-from-bootstrap"])
 	require.True(t, names["allow-store-bootstrap-to-store"])
-	require.True(t, names["allow-temporal-to-dependencies"])
-	require.True(t, names["allow-temporal-store-from-dependents"])
-	require.True(t, names["allow-temporal-store-from-bootstrap"])
-	require.True(t, names["allow-temporal-store-bootstrap-to-temporal-store"])
 	require.True(t, names["allow-telemetry-from-dependents"])
 	require.True(t, names["allow-telemetry-public-egress"])
 }
@@ -413,14 +380,6 @@ func TestDeploymentTopologyRejectsUnsafeOrIncompleteBindings(t *testing.T) {
 	_, err = cataloggen.BuildDeploymentArtifacts(serviceCatalog, []byte(unknownServiceEntry))
 	require.ErrorContains(t, err, "service entry references unknown service")
 
-	incompleteKubernetesIdentity := strings.Replace(bindings, "      app_label: temporal-temporal\n", "", 1)
-	_, err = cataloggen.BuildDeploymentArtifacts(serviceCatalog, []byte(incompleteKubernetesIdentity))
-	require.ErrorContains(t, err, "Kubernetes identity is incomplete or invalid")
-
-	duplicateKubernetesIdentity := strings.Replace(bindings, "service_name: temporal-temporal", "service_name: temporal-store", 1)
-	_, err = cataloggen.BuildDeploymentArtifacts(serviceCatalog, []byte(duplicateKubernetesIdentity))
-	require.ErrorContains(t, err, "share Kubernetes service name")
-
 	cycle := strings.Replace(bindings, "    spec:\n      watch: false\n      with-read-replicas: true", `    dependencies:
       - service: accounts
         endpoints:
@@ -438,32 +397,10 @@ func TestDeploymentTopologyGeneratesValidatedSecretServiceConfigurations(t *test
 
 	artifacts, err := cataloggen.BuildDeploymentArtifacts(serviceCatalog, []byte(bindings))
 	require.NoError(t, err)
-	objectStorage := string(artifacts.ServiceManifests["object-storage"])
-	require.Contains(t, objectStorage, `secret-service-configurations:
-    - name: s3
-      entries:
-        - key: minio_root_password
-        - key: minio_root_user`)
 	require.Contains(t, string(artifacts.ServiceManifests["vault"]), `secret-service-configurations:
     - name: vault
       entries:
         - key: vault_token`)
-
-	unsortedEntries := strings.Replace(bindings,
-		"          - key: minio_root_password\n          - key: minio_root_user",
-		"          - key: minio_root_user\n          - key: minio_root_password",
-		1,
-	)
-	_, err = cataloggen.BuildDeploymentArtifacts(serviceCatalog, []byte(unsortedEntries))
-	require.ErrorContains(t, err, "entries are invalid or unsorted")
-
-	duplicateGroups := strings.Replace(bindings,
-		"      - name: s3\n        entries:\n          - key: minio_root_password\n          - key: minio_root_user",
-		"      - name: s3\n        entries:\n          - key: minio_root_password\n          - key: minio_root_user\n      - name: s3\n        entries:\n          - key: minio_root_user",
-		1,
-	)
-	_, err = cataloggen.BuildDeploymentArtifacts(serviceCatalog, []byte(duplicateGroups))
-	require.ErrorContains(t, err, "secret service configurations are invalid or unsorted")
 
 	emptyEntries := strings.Replace(bindings,
 		"      - name: vault\n        entries:\n          - key: vault_token",

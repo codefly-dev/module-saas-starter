@@ -11,9 +11,6 @@ service-dependencies:
       endpoints:
         - name: read
         - name: write
-    - name: object-storage
-      endpoints:
-        - name: accounts
     - name: store
       endpoints:
         - name: tcp

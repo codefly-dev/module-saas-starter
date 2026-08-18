@@ -44,7 +44,7 @@ async function globalSetup(): Promise<void> {
 	// binary, port conflict, migration failure) shows up in the test
 	// log instead of being swallowed by Playwright's reporter.
 	// withDependencies passes --exclude-root, so it brings up accounts +
-	// postgres/vault/redis/object-storage but NOT the frontend itself —
+	// postgres/vault/redis but NOT the frontend itself —
 	// Playwright's webServer config does that in step 2. Probe the API's
 	// REST endpoint (there's no FE running yet at this point). The port is
 	// NOT hardcoded: `readyService: "accounts"` makes the SDK resolve the accounts service's
