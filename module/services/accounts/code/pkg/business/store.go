@@ -148,8 +148,12 @@ type Store interface {
 
 	// Audit
 	InsertAuditEvent(ctx context.Context, entry AuditEntry) error
-	QueryAuditLog(ctx context.Context, orgID, actorID, action, resource, resourceID string,
-		from, to *time.Time, pageSize int32, pageToken string) ([]AuditEntry, string, int32, error)
+	QueryAuditLog(ctx context.Context, q AuditQuery) ([]AuditEntry, string, int32, error)
+	AggregateAuditLog(ctx context.Context, q AuditQuery, groupBy, bucket string) ([]AuditAggregateBucket, error)
+	SyncAuditEventTypes(ctx context.Context, defs []AuditEventDefinition) error
+	ListAuditEventTypes(ctx context.Context) ([]AuditEventTypeRow, error)
+	EnsureAuditPartitions(ctx context.Context, months int) error
+	DropAuditPartitionsBefore(ctx context.Context, before time.Time) (int64, error)
 
 	// Invitations
 	CreateInvitation(ctx context.Context, inv *Invitation) error
@@ -279,9 +283,10 @@ type Store interface {
 	GetUserConsentPreferences(ctx context.Context, userID string) ([]*ConsentPreference, error)
 	SetUserConsentPreferences(ctx context.Context, userID string, preferences []*ConsentPreference, region, consentContext string) error
 
-	// Data Retention
+	// Data Retention. audit_events retention is not a row DELETE — the
+	// append-only trigger blocks that — but a partition drop; see
+	// DropAuditPartitionsBefore above.
 	GetRetentionPolicies(ctx context.Context) ([]*RetentionPolicy, error)
-	DeleteOldAuditEvents(ctx context.Context, before time.Time) (int64, error)
 	DeleteOldSessions(ctx context.Context, before time.Time) (int64, error)
 	DeleteOldWebhookDeliveries(ctx context.Context, before time.Time) (int64, error)
 	DeleteOldNotifications(ctx context.Context, before time.Time) (int64, error)

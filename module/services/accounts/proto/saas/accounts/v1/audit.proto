@@ -4,6 +4,7 @@ package saas.accounts.v1;
 
 import "buf/validate/validate.proto";
 import "google/api/annotations.proto";
+import "google/protobuf/struct.proto";
 import "google/protobuf/timestamp.proto";
 import "saas/policy/v1/options.proto";
 
@@ -15,19 +16,26 @@ message AuditEvent {
   string id = 1;
   string actor_id = 2;
   string actor_type = 3;
-  string action = 4;
+  string action = 4 [deprecated = true]; // superseded by event_type
   string resource = 5;
   string resource_id = 6;
   string org_id = 7;
-  map<string, string> metadata = 8;
+  map<string, string> metadata = 8 [deprecated = true]; // superseded by payload
   string ip_address = 9;
   google.protobuf.Timestamp created_at = 10;
+  // event_type is the registered discriminator (see the typed audit-event
+  // registry). schema_version records which payload schema the row was written
+  // against; payload is the typed, per-type payload; category groups types.
+  string event_type = 11;
+  int32 schema_version = 12;
+  google.protobuf.Struct payload = 13;
+  string category = 14;
 }
 
 message QueryAuditLogRequest {
   string org_id = 1;
   string actor_id = 2;
-  string action = 3;
+  string action = 3 [deprecated = true]; // use event_type
   string resource = 4;
   string resource_id = 5;
   google.protobuf.Timestamp from = 6;
@@ -37,6 +45,11 @@ message QueryAuditLogRequest {
     lte: 100
   }];
   string page_token = 9;
+  string event_type = 10;
+  string category = 11;
+  // payload_contains is a JSONB containment filter: every key/value must match
+  // the event's payload.
+  map<string, string> payload_contains = 12;
 }
 
 message QueryAuditLogResponse {
@@ -49,13 +62,51 @@ message ExportAuditLogRequest {
   string org_id = 1;
   string format = 2; // "csv" or "json"
   string actor_id = 3;
-  string action = 4;
+  string event_type = 4;
 }
 
 message ExportAuditLogResponse {
   bytes data = 1;
   string content_type = 2;
   string filename = 3;
+}
+
+message AggregateAuditLogRequest {
+  string org_id = 1;
+  string actor_id = 2;
+  string event_type = 3;
+  string category = 4;
+  string resource = 5;
+  google.protobuf.Timestamp from = 6;
+  google.protobuf.Timestamp to = 7;
+  // group_by ∈ {event_type, category, actor, time}. Defaults to event_type.
+  string group_by = 8;
+  // bucket sizes the time grain when group_by == "time": day|week|month.
+  string bucket = 9;
+}
+
+message AuditAggregateBucket {
+  string key = 1;
+  int64 count = 2;
+}
+
+message AggregateAuditLogResponse {
+  repeated AuditAggregateBucket buckets = 1;
+}
+
+message ListAuditEventTypesRequest {}
+
+message AuditEventType {
+  string name = 1;
+  int32 version = 2;
+  string category = 3;
+  string owner = 4;
+  bool deprecated = 5;
+  string description = 6;
+}
+
+message ListAuditEventTypesResponse {
+  repeated AuditEventType types = 1;
 }
 
 // AuditService — append-only audit event log
@@ -80,6 +131,43 @@ service AuditService {
       platform_role: PLATFORM_ROLE_REQUIREMENT_NONE
     };
     option (google.api.http) = {get: "/v1/audit-log"};
+  }
+  rpc AggregateAuditLog(AggregateAuditLogRequest) returns (AggregateAuditLogResponse) {
+    option (saas.policy.v1.method_policy) = {
+      exposure: EXPOSURE_AUTHENTICATED
+      tenant: TENANT_REQUIREMENT_ORG_MEMBER
+      permissions: "audit:read"
+      scopes: "audit:read"
+      resource_bindings: {
+        request_field: "org_id"
+        target: RESOURCE_TARGET_ORGANIZATION
+        lookup: RESOURCE_LOOKUP_DIRECT_ID
+      }
+      mfa: MFA_REQUIREMENT_NONE
+      audit: {emission: AUDIT_EMISSION_NONE}
+      idempotency: IDEMPOTENCY_REQUIREMENT_FORBIDDEN
+      rate_limit: RATE_LIMIT_CLASS_STANDARD_READ
+      request_sensitivity: SENSITIVITY_CONFIDENTIAL
+      response_sensitivity: SENSITIVITY_CONFIDENTIAL
+      platform_role: PLATFORM_ROLE_REQUIREMENT_NONE
+    };
+    option (google.api.http) = {get: "/v1/audit-log:aggregate"};
+  }
+  rpc ListAuditEventTypes(ListAuditEventTypesRequest) returns (ListAuditEventTypesResponse) {
+    option (saas.policy.v1.method_policy) = {
+      exposure: EXPOSURE_AUTHENTICATED
+      tenant: TENANT_REQUIREMENT_NONE
+      permissions: "audit:read"
+      scopes: "audit:read"
+      mfa: MFA_REQUIREMENT_NONE
+      audit: {emission: AUDIT_EMISSION_NONE}
+      idempotency: IDEMPOTENCY_REQUIREMENT_FORBIDDEN
+      rate_limit: RATE_LIMIT_CLASS_STANDARD_READ
+      request_sensitivity: SENSITIVITY_INTERNAL
+      response_sensitivity: SENSITIVITY_INTERNAL
+      platform_role: PLATFORM_ROLE_REQUIREMENT_NONE
+    };
+    option (google.api.http) = {get: "/v1/audit-event-types"};
   }
   rpc ExportAuditLog(ExportAuditLogRequest) returns (ExportAuditLogResponse) {
     option (saas.policy.v1.method_policy) = {

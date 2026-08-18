@@ -30,6 +30,7 @@ const (
 
 var relationsByScope = map[relationScope][]string{
 	relationScopeGlobal: {
+		"audit_event_types",
 		"bootstrap_state",
 		"data_retention_policies",
 		"email_templates",
@@ -111,6 +112,7 @@ var appTenantRelationPrivileges = map[string]relationPrivileges{
 	"data_retention_policies": {selectRows: true},
 	"bootstrap_state":         {selectRows: true, updateRows: true},
 	"feature_flags":           {selectRows: true},
+	"audit_event_types":       {selectRows: true},
 	"platform_admins":         {selectRows: true, insertRows: true, updateRows: true, deleteRows: true},
 	"analytics_deliveries":    {},
 	"email_delivery_events":   {},
@@ -329,6 +331,13 @@ func TestControlPlaneRelationGrantsAreExact(t *testing.T) {
 			if relation == "feature_flags" {
 				want = relationPrivileges{selectRows: true}
 			}
+			// audit_events is append-only: the control plane reads and inserts
+			// (system NULL-org events) but never updates or deletes rows.
+			// Retention drops whole partitions via a SECURITY DEFINER function,
+			// not a row DELETE, so no DELETE grant is needed.
+			if relation == "audit_events" {
+				want = relationPrivileges{selectRows: true, insertRows: true}
+			}
 
 			var got relationPrivileges
 			var truncateRows bool
@@ -503,12 +512,18 @@ func TestAnalyticsDeliveryRoleHasProjectionOnlyAuthority(t *testing.T) {
 func TestDatabaseRelationAuthorityInventoryIsComplete(t *testing.T) {
 	require.NoError(t, testStore.WithControlPlane(testCtx, func(ctx context.Context) error {
 		tx := ctx.Value("tx").(pgx.Tx) //nolint:staticcheck // shared transaction context key
+		// relispartition excludes the audit_events monthly partition children:
+		// they are dynamically named and inherit access through the partitioned
+		// parent, so they carry no independent authority to classify.
 		rows, err := tx.Query(ctx, `
-			SELECT tablename
-			FROM pg_tables
-			WHERE schemaname = 'public'
-			  AND tablename <> 'schema_migrations'
-			ORDER BY tablename`)
+			SELECT c.relname
+			FROM pg_class c
+			JOIN pg_namespace n ON n.oid = c.relnamespace
+			WHERE n.nspname = 'public'
+			  AND c.relkind IN ('r', 'p')
+			  AND NOT c.relispartition
+			  AND c.relname <> 'schema_migrations'
+			ORDER BY c.relname`)
 		require.NoError(t, err)
 		defer rows.Close()
 

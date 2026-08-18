@@ -95,7 +95,7 @@ func countCatalogAudits(t *testing.T, action string) int {
 		tx := ctx.Value("tx").(pgx.Tx) //nolint:staticcheck // shared key with WithControlPlane
 		return tx.QueryRow(ctx, `
 			SELECT COUNT(*) FROM audit_events
-			WHERE actor_type = 'system' AND resource = 'role' AND action = $1`, action).Scan(&n)
+			WHERE actor_type = 'system' AND resource = 'role' AND event_type = $1`, action).Scan(&n)
 	}))
 	return n
 }
@@ -107,8 +107,8 @@ func readLatestAuditMetadata(t *testing.T, action, roleID string) map[string]str
 		tx := ctx.Value("tx").(pgx.Tx) //nolint:staticcheck // shared key with WithControlPlane
 		var raw []byte
 		err := tx.QueryRow(ctx, `
-			SELECT metadata FROM audit_events
-			WHERE resource = 'role' AND resource_id = $1 AND action = $2
+			SELECT payload FROM audit_events
+			WHERE resource = 'role' AND resource_id = $1 AND event_type = $2
 			ORDER BY created_at DESC, id DESC LIMIT 1`, roleID, action).Scan(&raw)
 		if err != nil {
 			return err

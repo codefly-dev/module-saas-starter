@@ -422,6 +422,12 @@ func (h *auditConnectHandler) QueryAuditLog(ctx context.Context, req *connect.Re
 func (h *auditConnectHandler) ExportAuditLog(ctx context.Context, req *connect.Request[gen.ExportAuditLogRequest]) (*connect.Response[gen.ExportAuditLogResponse], error) {
 	return unary(ctx, req, h.inner.ExportAuditLog)
 }
+func (h *auditConnectHandler) AggregateAuditLog(ctx context.Context, req *connect.Request[gen.AggregateAuditLogRequest]) (*connect.Response[gen.AggregateAuditLogResponse], error) {
+	return unary(ctx, req, h.inner.AggregateAuditLog)
+}
+func (h *auditConnectHandler) ListAuditEventTypes(ctx context.Context, req *connect.Request[gen.ListAuditEventTypesRequest]) (*connect.Response[gen.ListAuditEventTypesResponse], error) {
+	return unary(ctx, req, h.inner.ListAuditEventTypes)
+}
 
 // ============================================================================
 // InvitationService

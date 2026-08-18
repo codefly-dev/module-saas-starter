@@ -14,16 +14,16 @@ export function useExportAuditLog() {
 	return useMutation({
 		mutationFn: async ({
 			format,
-			action,
+			eventType,
 			orgId,
 		}: {
 			format: "csv" | "json";
-			action?: string;
+			eventType?: string;
 			orgId?: string;
 		}) => {
 			const resp = await svc.queryAuditLog({
 				orgId: orgId ?? "",
-				action: action ?? "",
+				eventType: eventType ?? "",
 				actorId: "",
 				pageSize: 10_000,
 			});
@@ -42,7 +42,8 @@ export function useExportAuditLog() {
 					"id",
 					"actorId",
 					"actorType",
-					"action",
+					"eventType",
+					"category",
 					"resource",
 					"resourceId",
 					"orgId",

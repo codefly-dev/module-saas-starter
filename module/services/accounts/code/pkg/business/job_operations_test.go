@@ -151,7 +151,7 @@ func TestReplayJobAuditsOnlyTheNewDurableReplay(t *testing.T) {
 	require.Equal(t, business.AuditEntry{
 		ActorID:    "admin-user",
 		ActorType:  "user",
-		Action:     "job.replayed",
+		EventType:  business.EventJobReplayed,
 		Resource:   "job",
 		ResourceID: "65f68586-d5a9-447b-a1d5-66610d05d989",
 	}, audit.entries[0])

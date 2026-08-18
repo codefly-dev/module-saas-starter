@@ -123,7 +123,7 @@ func (e *AuditExporter) Export(ctx context.Context, cfg *AuditExportConfig, obje
 	if err := e.store.WithOrgTx(ctx, cfg.OrgID, func(ctx context.Context) error {
 		for {
 			events, nextToken, _, err := e.store.QueryAuditLog(
-				ctx, cfg.OrgID, "", "", "", "", &from, &to, 5_000, pageToken)
+				ctx, AuditQuery{OrgID: cfg.OrgID, From: &from, To: &to, PageSize: 5_000, PageToken: pageToken})
 			if err != nil {
 				return err
 			}
@@ -191,7 +191,9 @@ func encodeJSONL(events []AuditEntry) ([]byte, error) {
 	for _, ev := range events {
 		// Encode each event individually. Encoder writes a newline
 		// after each record by default — matches JSONL conventions.
-		if err := enc.Encode(ev); err != nil {
+		// The export projection is PII-redacted (auditEntryToExport) so the
+		// customer's bucket never receives classified payload fields.
+		if err := enc.Encode(auditEntryToExport(ev)); err != nil {
 			return nil, err
 		}
 	}

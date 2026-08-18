@@ -1,5 +1,12 @@
-export type { AuditEvent, AuditLogFilters } from "./model/types";
-export { AUDIT_ACTION_TYPES } from "./model/types";
-export { useAuditLog } from "./service/queries";
+export type {
+	AuditEvent,
+	AuditEventTypeInfo,
+	AuditLogFilters,
+} from "./model/types";
+export {
+	useAuditAggregate,
+	useAuditEventTypes,
+	useAuditLog,
+} from "./service/queries";
 export { AuditPage } from "./ui/audit-page";
 export { AuditTable } from "./ui/audit-table";

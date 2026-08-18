@@ -330,6 +330,21 @@ func doWork(ctx context.Context) (Clean, error) {
 	}
 	service.SetAuditEmitter(auditEmitter)
 
+	// Reconcile the audit event-type registry projection from the code catalog
+	// and provision the current + upcoming monthly partitions so audit writes
+	// always have a target. Best-effort: a transient failure here must not
+	// block boot; the retention tick re-provisions partitions on its cycle.
+	if err := store.WithControlPlane(ctx, func(ctx context.Context) error {
+		return store.SyncAuditEventTypes(ctx, business.AuditEventCatalog())
+	}); err != nil {
+		wool.Get(ctx).Warn("audit event-type registry sync failed", wool.ErrField(err))
+	}
+	if err := store.WithControlPlane(ctx, func(ctx context.Context) error {
+		return store.EnsureAuditPartitions(ctx, 3)
+	}); err != nil {
+		wool.Get(ctx).Warn("audit partition provisioning failed", wool.ErrField(err))
+	}
+
 	// Audit S3 exporter — polls audit_export_configs every 1 min,
 	// uploads new events to each org's bucket as JSONL. No-op until
 	// an org configures one via the /admin/audit-export form.

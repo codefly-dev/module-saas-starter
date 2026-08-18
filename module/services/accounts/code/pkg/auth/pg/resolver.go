@@ -857,15 +857,15 @@ func (r *Resolver) joinOrg(ctx context.Context, tx pgx.Tx, orgID, userID uuid.UU
 // describes. The provider and org travel in the event for enterprise-tenant
 // forensics.
 func (r *Resolver) emitSsoJitAudit(ctx context.Context, tx pgx.Tx, c *auth.Claims, userID, orgID uuid.UUID) error {
-	metadata, err := json.Marshal(map[string]string{"provider": c.Provider})
+	payload, err := json.Marshal(map[string]string{"provider": c.Provider})
 	if err != nil {
-		return fmt.Errorf("pgauth: marshal sso jit audit metadata: %w", err)
+		return fmt.Errorf("pgauth: marshal sso jit audit payload: %w", err)
 	}
 	_, err = tx.Exec(ctx, `
 		INSERT INTO audit_events (
-			id, actor_id, actor_type, action, resource, resource_id, org_id, metadata
-		) VALUES ($1, $2, 'user', 'auth.sso_jit_provisioned', 'organization', $3, $4, $5::jsonb)`,
-		business.NewID(), userID, orgID.String(), orgID, string(metadata),
+			id, actor_id, actor_type, event_type, schema_version, resource, resource_id, org_id, payload
+		) VALUES ($1, $2, 'user', $3, 1, 'organization', $4, $5, $6::jsonb)`,
+		business.NewID(), userID, string(business.EventAuthSSOJitProvisioned), orgID.String(), orgID, string(payload),
 	)
 	if err != nil {
 		return fmt.Errorf("pgauth: insert sso jit audit event: %w", err)

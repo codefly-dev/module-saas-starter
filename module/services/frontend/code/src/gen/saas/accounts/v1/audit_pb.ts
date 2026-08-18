@@ -7,15 +7,15 @@ import { fileDesc, messageDesc, serviceDesc } from "@bufbuild/protobuf/codegenv2
 import { file_buf_validate_validate } from "../../../buf/validate/validate_pb";
 import { file_google_api_annotations } from "../../../google/api/annotations_pb";
 import type { Timestamp } from "@bufbuild/protobuf/wkt";
-import { file_google_protobuf_timestamp } from "@bufbuild/protobuf/wkt";
+import { file_google_protobuf_struct, file_google_protobuf_timestamp } from "@bufbuild/protobuf/wkt";
 import { file_saas_policy_v1_options } from "../../policy/v1/options_pb";
-import type { Message } from "@bufbuild/protobuf";
+import type { JsonObject, Message } from "@bufbuild/protobuf";
 
 /**
  * Describes the file saas/accounts/v1/audit.proto.
  */
 export const file_saas_accounts_v1_audit: GenFile = /*@__PURE__*/
-  fileDesc("ChxzYWFzL2FjY291bnRzL3YxL2F1ZGl0LnByb3RvEhBzYWFzLmFjY291bnRzLnYxIrgCCgpBdWRpdEV2ZW50EgoKAmlkGAEgASgJEhAKCGFjdG9yX2lkGAIgASgJEhIKCmFjdG9yX3R5cGUYAyABKAkSDgoGYWN0aW9uGAQgASgJEhAKCHJlc291cmNlGAUgASgJEhMKC3Jlc291cmNlX2lkGAYgASgJEg4KBm9yZ19pZBgHIAEoCRI8CghtZXRhZGF0YRgIIAMoCzIqLnNhYXMuYWNjb3VudHMudjEuQXVkaXRFdmVudC5NZXRhZGF0YUVudHJ5EhIKCmlwX2FkZHJlc3MYCSABKAkSLgoKY3JlYXRlZF9hdBgKIAEoCzIaLmdvb2dsZS5wcm90b2J1Zi5UaW1lc3RhbXAaLwoNTWV0YWRhdGFFbnRyeRILCgNrZXkYASABKAkSDQoFdmFsdWUYAiABKAk6AjgBIvMBChRRdWVyeUF1ZGl0TG9nUmVxdWVzdBIOCgZvcmdfaWQYASABKAkSEAoIYWN0b3JfaWQYAiABKAkSDgoGYWN0aW9uGAMgASgJEhAKCHJlc291cmNlGAQgASgJEhMKC3Jlc291cmNlX2lkGAUgASgJEigKBGZyb20YBiABKAsyGi5nb29nbGUucHJvdG9idWYuVGltZXN0YW1wEiYKAnRvGAcgASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcBIcCglwYWdlX3NpemUYCCABKAVCCbpIBhoEGGQgABISCgpwYWdlX3Rva2VuGAkgASgJInMKFVF1ZXJ5QXVkaXRMb2dSZXNwb25zZRIsCgZldmVudHMYASADKAsyHC5zYWFzLmFjY291bnRzLnYxLkF1ZGl0RXZlbnQSFwoPbmV4dF9wYWdlX3Rva2VuGAIgASgJEhMKC3RvdGFsX2NvdW50GAMgASgFIlkKFUV4cG9ydEF1ZGl0TG9nUmVxdWVzdBIOCgZvcmdfaWQYASABKAkSDgoGZm9ybWF0GAIgASgJEhAKCGFjdG9yX2lkGAMgASgJEg4KBmFjdGlvbhgEIAEoCSJOChZFeHBvcnRBdWRpdExvZ1Jlc3BvbnNlEgwKBGRhdGEYASABKAwSFAoMY29udGVudF90eXBlGAIgASgJEhAKCGZpbGVuYW1lGAMgASgJMosDCgxBdWRpdFNlcnZpY2UStQEKDVF1ZXJ5QXVkaXRMb2cSJi5zYWFzLmFjY291bnRzLnYxLlF1ZXJ5QXVkaXRMb2dSZXF1ZXN0Gicuc2Fhcy5hY2NvdW50cy52MS5RdWVyeUF1ZGl0TG9nUmVzcG9uc2UiU8LzGDoIAhADGgphdWRpdDpyZWFkIgphdWRpdDpyZWFkKgwKBm9yZ19pZBACGAEwAToCEAFAAUgDUANYA2ABgtPkkwIPEg0vdjEvYXVkaXQtbG9nEsIBCg5FeHBvcnRBdWRpdExvZxInLnNhYXMuYWNjb3VudHMudjEuRXhwb3J0QXVkaXRMb2dSZXF1ZXN0Giguc2Fhcy5hY2NvdW50cy52MS5FeHBvcnRBdWRpdExvZ1Jlc3BvbnNlIl3C8xg6CAIQBBoKYXVkaXQ6cmVhZCIKYXVkaXQ6cmVhZCoMCgZvcmdfaWQQAhgBMAE6AhABQAFIA1ADWANgAYLT5JMCGToBKiIUL3YxL2F1ZGl0LWxvZzpleHBvcnRCsgEKFGNvbS5zYWFzLmFjY291bnRzLnYxQgpBdWRpdFByb3RvUAFaLGFjY291bnRzL3BrZy9nZW4vc2Fhcy9hY2NvdW50cy92MTthY2NvdW50c3YxogIDU0FYqgIQU2Fhcy5BY2NvdW50cy5WMcoCEFNhYXNcQWNjb3VudHNcVjHiAhxTYWFzXEFjY291bnRzXFYxXEdQQk1ldGFkYXRh6gISU2Fhczo6QWNjb3VudHM6OlYxYgZwcm90bzM", [file_buf_validate_validate, file_google_api_annotations, file_google_protobuf_timestamp, file_saas_policy_v1_options]);
+  fileDesc("ChxzYWFzL2FjY291bnRzL3YxL2F1ZGl0LnByb3RvEhBzYWFzLmFjY291bnRzLnYxIqgDCgpBdWRpdEV2ZW50EgoKAmlkGAEgASgJEhAKCGFjdG9yX2lkGAIgASgJEhIKCmFjdG9yX3R5cGUYAyABKAkSEgoGYWN0aW9uGAQgASgJQgIYARIQCghyZXNvdXJjZRgFIAEoCRITCgtyZXNvdXJjZV9pZBgGIAEoCRIOCgZvcmdfaWQYByABKAkSQAoIbWV0YWRhdGEYCCADKAsyKi5zYWFzLmFjY291bnRzLnYxLkF1ZGl0RXZlbnQuTWV0YWRhdGFFbnRyeUICGAESEgoKaXBfYWRkcmVzcxgJIAEoCRIuCgpjcmVhdGVkX2F0GAogASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcBISCgpldmVudF90eXBlGAsgASgJEhYKDnNjaGVtYV92ZXJzaW9uGAwgASgFEigKB3BheWxvYWQYDSABKAsyFy5nb29nbGUucHJvdG9idWYuU3RydWN0EhAKCGNhdGVnb3J5GA4gASgJGi8KDU1ldGFkYXRhRW50cnkSCwoDa2V5GAEgASgJEg0KBXZhbHVlGAIgASgJOgI4ASKsAwoUUXVlcnlBdWRpdExvZ1JlcXVlc3QSDgoGb3JnX2lkGAEgASgJEhAKCGFjdG9yX2lkGAIgASgJEhIKBmFjdGlvbhgDIAEoCUICGAESEAoIcmVzb3VyY2UYBCABKAkSEwoLcmVzb3VyY2VfaWQYBSABKAkSKAoEZnJvbRgGIAEoCzIaLmdvb2dsZS5wcm90b2J1Zi5UaW1lc3RhbXASJgoCdG8YByABKAsyGi5nb29nbGUucHJvdG9idWYuVGltZXN0YW1wEhwKCXBhZ2Vfc2l6ZRgIIAEoBUIJukgGGgQYZCAAEhIKCnBhZ2VfdG9rZW4YCSABKAkSEgoKZXZlbnRfdHlwZRgKIAEoCRIQCghjYXRlZ29yeRgLIAEoCRJVChBwYXlsb2FkX2NvbnRhaW5zGAwgAygLMjsuc2Fhcy5hY2NvdW50cy52MS5RdWVyeUF1ZGl0TG9nUmVxdWVzdC5QYXlsb2FkQ29udGFpbnNFbnRyeRo2ChRQYXlsb2FkQ29udGFpbnNFbnRyeRILCgNrZXkYASABKAkSDQoFdmFsdWUYAiABKAk6AjgBInMKFVF1ZXJ5QXVkaXRMb2dSZXNwb25zZRIsCgZldmVudHMYASADKAsyHC5zYWFzLmFjY291bnRzLnYxLkF1ZGl0RXZlbnQSFwoPbmV4dF9wYWdlX3Rva2VuGAIgASgJEhMKC3RvdGFsX2NvdW50GAMgASgFIl0KFUV4cG9ydEF1ZGl0TG9nUmVxdWVzdBIOCgZvcmdfaWQYASABKAkSDgoGZm9ybWF0GAIgASgJEhAKCGFjdG9yX2lkGAMgASgJEhIKCmV2ZW50X3R5cGUYBCABKAkiTgoWRXhwb3J0QXVkaXRMb2dSZXNwb25zZRIMCgRkYXRhGAEgASgMEhQKDGNvbnRlbnRfdHlwZRgCIAEoCRIQCghmaWxlbmFtZRgDIAEoCSLoAQoYQWdncmVnYXRlQXVkaXRMb2dSZXF1ZXN0Eg4KBm9yZ19pZBgBIAEoCRIQCghhY3Rvcl9pZBgCIAEoCRISCgpldmVudF90eXBlGAMgASgJEhAKCGNhdGVnb3J5GAQgASgJEhAKCHJlc291cmNlGAUgASgJEigKBGZyb20YBiABKAsyGi5nb29nbGUucHJvdG9idWYuVGltZXN0YW1wEiYKAnRvGAcgASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcBIQCghncm91cF9ieRgIIAEoCRIOCgZidWNrZXQYCSABKAkiMgoUQXVkaXRBZ2dyZWdhdGVCdWNrZXQSCwoDa2V5GAEgASgJEg0KBWNvdW50GAIgASgDIlQKGUFnZ3JlZ2F0ZUF1ZGl0TG9nUmVzcG9uc2USNwoHYnVja2V0cxgBIAMoCzImLnNhYXMuYWNjb3VudHMudjEuQXVkaXRBZ2dyZWdhdGVCdWNrZXQiHAoaTGlzdEF1ZGl0RXZlbnRUeXBlc1JlcXVlc3QieQoOQXVkaXRFdmVudFR5cGUSDAoEbmFtZRgBIAEoCRIPCgd2ZXJzaW9uGAIgASgFEhAKCGNhdGVnb3J5GAMgASgJEg0KBW93bmVyGAQgASgJEhIKCmRlcHJlY2F0ZWQYBSABKAgSEwoLZGVzY3JpcHRpb24YBiABKAkiTgobTGlzdEF1ZGl0RXZlbnRUeXBlc1Jlc3BvbnNlEi8KBXR5cGVzGAEgAygLMiAuc2Fhcy5hY2NvdW50cy52MS5BdWRpdEV2ZW50VHlwZTKdBgoMQXVkaXRTZXJ2aWNlErUBCg1RdWVyeUF1ZGl0TG9nEiYuc2Fhcy5hY2NvdW50cy52MS5RdWVyeUF1ZGl0TG9nUmVxdWVzdBonLnNhYXMuYWNjb3VudHMudjEuUXVlcnlBdWRpdExvZ1Jlc3BvbnNlIlPC8xg6CAIQAxoKYXVkaXQ6cmVhZCIKYXVkaXQ6cmVhZCoMCgZvcmdfaWQQAhgBMAE6AhABQAFIA1ADWANgAYLT5JMCDxINL3YxL2F1ZGl0LWxvZxLLAQoRQWdncmVnYXRlQXVkaXRMb2cSKi5zYWFzLmFjY291bnRzLnYxLkFnZ3JlZ2F0ZUF1ZGl0TG9nUmVxdWVzdBorLnNhYXMuYWNjb3VudHMudjEuQWdncmVnYXRlQXVkaXRMb2dSZXNwb25zZSJdwvMYOggCEAMaCmF1ZGl0OnJlYWQiCmF1ZGl0OnJlYWQqDAoGb3JnX2lkEAIYATABOgIQAUABSANQA1gDYAGC0+STAhkSFy92MS9hdWRpdC1sb2c6YWdncmVnYXRlEsEBChNMaXN0QXVkaXRFdmVudFR5cGVzEiwuc2Fhcy5hY2NvdW50cy52MS5MaXN0QXVkaXRFdmVudFR5cGVzUmVxdWVzdBotLnNhYXMuYWNjb3VudHMudjEuTGlzdEF1ZGl0RXZlbnRUeXBlc1Jlc3BvbnNlIk3C8xgsCAIQARoKYXVkaXQ6cmVhZCIKYXVkaXQ6cmVhZDABOgIQAUABSANQAlgCYAGC0+STAhcSFS92MS9hdWRpdC1ldmVudC10eXBlcxLCAQoORXhwb3J0QXVkaXRMb2cSJy5zYWFzLmFjY291bnRzLnYxLkV4cG9ydEF1ZGl0TG9nUmVxdWVzdBooLnNhYXMuYWNjb3VudHMudjEuRXhwb3J0QXVkaXRMb2dSZXNwb25zZSJdwvMYOggCEAQaCmF1ZGl0OnJlYWQiCmF1ZGl0OnJlYWQqDAoGb3JnX2lkEAIYATABOgIQAUABSANQA1gDYAGC0+STAhk6ASoiFC92MS9hdWRpdC1sb2c6ZXhwb3J0QrIBChRjb20uc2Fhcy5hY2NvdW50cy52MUIKQXVkaXRQcm90b1ABWixhY2NvdW50cy9wa2cvZ2VuL3NhYXMvYWNjb3VudHMvdjE7YWNjb3VudHN2MaICA1NBWKoCEFNhYXMuQWNjb3VudHMuVjHKAhBTYWFzXEFjY291bnRzXFYx4gIcU2Fhc1xBY2NvdW50c1xWMVxHUEJNZXRhZGF0YeoCElNhYXM6OkFjY291bnRzOjpWMWIGcHJvdG8z", [file_buf_validate_validate, file_google_api_annotations, file_google_protobuf_struct, file_google_protobuf_timestamp, file_saas_policy_v1_options]);
 
 /**
  * @generated from message saas.accounts.v1.AuditEvent
@@ -37,7 +37,10 @@ export type AuditEvent = Message<"saas.accounts.v1.AuditEvent"> & {
   actorType: string;
 
   /**
-   * @generated from field: string action = 4;
+   * superseded by event_type
+   *
+   * @generated from field: string action = 4 [deprecated = true];
+   * @deprecated
    */
   action: string;
 
@@ -57,7 +60,10 @@ export type AuditEvent = Message<"saas.accounts.v1.AuditEvent"> & {
   orgId: string;
 
   /**
-   * @generated from field: map<string, string> metadata = 8;
+   * superseded by payload
+   *
+   * @generated from field: map<string, string> metadata = 8 [deprecated = true];
+   * @deprecated
    */
   metadata: { [key: string]: string };
 
@@ -70,6 +76,30 @@ export type AuditEvent = Message<"saas.accounts.v1.AuditEvent"> & {
    * @generated from field: google.protobuf.Timestamp created_at = 10;
    */
   createdAt?: Timestamp;
+
+  /**
+   * event_type is the registered discriminator (see the typed audit-event
+   * registry). schema_version records which payload schema the row was written
+   * against; payload is the typed, per-type payload; category groups types.
+   *
+   * @generated from field: string event_type = 11;
+   */
+  eventType: string;
+
+  /**
+   * @generated from field: int32 schema_version = 12;
+   */
+  schemaVersion: number;
+
+  /**
+   * @generated from field: google.protobuf.Struct payload = 13;
+   */
+  payload?: JsonObject;
+
+  /**
+   * @generated from field: string category = 14;
+   */
+  category: string;
 };
 
 /**
@@ -94,7 +124,10 @@ export type QueryAuditLogRequest = Message<"saas.accounts.v1.QueryAuditLogReques
   actorId: string;
 
   /**
-   * @generated from field: string action = 3;
+   * use event_type
+   *
+   * @generated from field: string action = 3 [deprecated = true];
+   * @deprecated
    */
   action: string;
 
@@ -127,6 +160,24 @@ export type QueryAuditLogRequest = Message<"saas.accounts.v1.QueryAuditLogReques
    * @generated from field: string page_token = 9;
    */
   pageToken: string;
+
+  /**
+   * @generated from field: string event_type = 10;
+   */
+  eventType: string;
+
+  /**
+   * @generated from field: string category = 11;
+   */
+  category: string;
+
+  /**
+   * payload_contains is a JSONB containment filter: every key/value must match
+   * the event's payload.
+   *
+   * @generated from field: map<string, string> payload_contains = 12;
+   */
+  payloadContains: { [key: string]: string };
 };
 
 /**
@@ -185,9 +236,9 @@ export type ExportAuditLogRequest = Message<"saas.accounts.v1.ExportAuditLogRequ
   actorId: string;
 
   /**
-   * @generated from field: string action = 4;
+   * @generated from field: string event_type = 4;
    */
-  action: string;
+  eventType: string;
 };
 
 /**
@@ -225,6 +276,178 @@ export const ExportAuditLogResponseSchema: GenMessage<ExportAuditLogResponse> = 
   messageDesc(file_saas_accounts_v1_audit, 4);
 
 /**
+ * @generated from message saas.accounts.v1.AggregateAuditLogRequest
+ */
+export type AggregateAuditLogRequest = Message<"saas.accounts.v1.AggregateAuditLogRequest"> & {
+  /**
+   * @generated from field: string org_id = 1;
+   */
+  orgId: string;
+
+  /**
+   * @generated from field: string actor_id = 2;
+   */
+  actorId: string;
+
+  /**
+   * @generated from field: string event_type = 3;
+   */
+  eventType: string;
+
+  /**
+   * @generated from field: string category = 4;
+   */
+  category: string;
+
+  /**
+   * @generated from field: string resource = 5;
+   */
+  resource: string;
+
+  /**
+   * @generated from field: google.protobuf.Timestamp from = 6;
+   */
+  from?: Timestamp;
+
+  /**
+   * @generated from field: google.protobuf.Timestamp to = 7;
+   */
+  to?: Timestamp;
+
+  /**
+   * group_by ∈ {event_type, category, actor, time}. Defaults to event_type.
+   *
+   * @generated from field: string group_by = 8;
+   */
+  groupBy: string;
+
+  /**
+   * bucket sizes the time grain when group_by == "time": day|week|month.
+   *
+   * @generated from field: string bucket = 9;
+   */
+  bucket: string;
+};
+
+/**
+ * Describes the message saas.accounts.v1.AggregateAuditLogRequest.
+ * Use `create(AggregateAuditLogRequestSchema)` to create a new message.
+ */
+export const AggregateAuditLogRequestSchema: GenMessage<AggregateAuditLogRequest> = /*@__PURE__*/
+  messageDesc(file_saas_accounts_v1_audit, 5);
+
+/**
+ * @generated from message saas.accounts.v1.AuditAggregateBucket
+ */
+export type AuditAggregateBucket = Message<"saas.accounts.v1.AuditAggregateBucket"> & {
+  /**
+   * @generated from field: string key = 1;
+   */
+  key: string;
+
+  /**
+   * @generated from field: int64 count = 2;
+   */
+  count: bigint;
+};
+
+/**
+ * Describes the message saas.accounts.v1.AuditAggregateBucket.
+ * Use `create(AuditAggregateBucketSchema)` to create a new message.
+ */
+export const AuditAggregateBucketSchema: GenMessage<AuditAggregateBucket> = /*@__PURE__*/
+  messageDesc(file_saas_accounts_v1_audit, 6);
+
+/**
+ * @generated from message saas.accounts.v1.AggregateAuditLogResponse
+ */
+export type AggregateAuditLogResponse = Message<"saas.accounts.v1.AggregateAuditLogResponse"> & {
+  /**
+   * @generated from field: repeated saas.accounts.v1.AuditAggregateBucket buckets = 1;
+   */
+  buckets: AuditAggregateBucket[];
+};
+
+/**
+ * Describes the message saas.accounts.v1.AggregateAuditLogResponse.
+ * Use `create(AggregateAuditLogResponseSchema)` to create a new message.
+ */
+export const AggregateAuditLogResponseSchema: GenMessage<AggregateAuditLogResponse> = /*@__PURE__*/
+  messageDesc(file_saas_accounts_v1_audit, 7);
+
+/**
+ * @generated from message saas.accounts.v1.ListAuditEventTypesRequest
+ */
+export type ListAuditEventTypesRequest = Message<"saas.accounts.v1.ListAuditEventTypesRequest"> & {
+};
+
+/**
+ * Describes the message saas.accounts.v1.ListAuditEventTypesRequest.
+ * Use `create(ListAuditEventTypesRequestSchema)` to create a new message.
+ */
+export const ListAuditEventTypesRequestSchema: GenMessage<ListAuditEventTypesRequest> = /*@__PURE__*/
+  messageDesc(file_saas_accounts_v1_audit, 8);
+
+/**
+ * @generated from message saas.accounts.v1.AuditEventType
+ */
+export type AuditEventType = Message<"saas.accounts.v1.AuditEventType"> & {
+  /**
+   * @generated from field: string name = 1;
+   */
+  name: string;
+
+  /**
+   * @generated from field: int32 version = 2;
+   */
+  version: number;
+
+  /**
+   * @generated from field: string category = 3;
+   */
+  category: string;
+
+  /**
+   * @generated from field: string owner = 4;
+   */
+  owner: string;
+
+  /**
+   * @generated from field: bool deprecated = 5;
+   */
+  deprecated: boolean;
+
+  /**
+   * @generated from field: string description = 6;
+   */
+  description: string;
+};
+
+/**
+ * Describes the message saas.accounts.v1.AuditEventType.
+ * Use `create(AuditEventTypeSchema)` to create a new message.
+ */
+export const AuditEventTypeSchema: GenMessage<AuditEventType> = /*@__PURE__*/
+  messageDesc(file_saas_accounts_v1_audit, 9);
+
+/**
+ * @generated from message saas.accounts.v1.ListAuditEventTypesResponse
+ */
+export type ListAuditEventTypesResponse = Message<"saas.accounts.v1.ListAuditEventTypesResponse"> & {
+  /**
+   * @generated from field: repeated saas.accounts.v1.AuditEventType types = 1;
+   */
+  types: AuditEventType[];
+};
+
+/**
+ * Describes the message saas.accounts.v1.ListAuditEventTypesResponse.
+ * Use `create(ListAuditEventTypesResponseSchema)` to create a new message.
+ */
+export const ListAuditEventTypesResponseSchema: GenMessage<ListAuditEventTypesResponse> = /*@__PURE__*/
+  messageDesc(file_saas_accounts_v1_audit, 10);
+
+/**
  * AuditService — append-only audit event log
  *
  * @generated from service saas.accounts.v1.AuditService
@@ -237,6 +460,22 @@ export const AuditService: GenService<{
     methodKind: "unary";
     input: typeof QueryAuditLogRequestSchema;
     output: typeof QueryAuditLogResponseSchema;
+  },
+  /**
+   * @generated from rpc saas.accounts.v1.AuditService.AggregateAuditLog
+   */
+  aggregateAuditLog: {
+    methodKind: "unary";
+    input: typeof AggregateAuditLogRequestSchema;
+    output: typeof AggregateAuditLogResponseSchema;
+  },
+  /**
+   * @generated from rpc saas.accounts.v1.AuditService.ListAuditEventTypes
+   */
+  listAuditEventTypes: {
+    methodKind: "unary";
+    input: typeof ListAuditEventTypesRequestSchema;
+    output: typeof ListAuditEventTypesResponseSchema;
   },
   /**
    * @generated from rpc saas.accounts.v1.AuditService.ExportAuditLog

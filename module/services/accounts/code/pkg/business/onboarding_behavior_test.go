@@ -117,7 +117,7 @@ func TestDetectedOnboardingCompletionEmitsExactlyOnce(t *testing.T) {
 	}
 
 	require.Len(t, audit.entries, 1)
-	require.Equal(t, "onboarding.step_completed", audit.entries[0].Action)
+	require.Equal(t, business.EventOnboardingStepDone, audit.entries[0].EventType)
 }
 
 func TestCompletedOptionalOnboardingStepCannotBeSkipped(t *testing.T) {
@@ -141,6 +141,6 @@ func TestCompletedOptionalOnboardingStepCannotBeSkipped(t *testing.T) {
 	require.ErrorContains(t, err, "completed onboarding steps cannot be skipped")
 	require.Equal(t, "completed", store.steps["invite_team"].Status)
 	for _, entry := range audit.entries {
-		require.NotEqual(t, "onboarding.step_skipped", entry.Action)
+		require.NotEqual(t, business.EventOnboardingStepSkip, entry.EventType)
 	}
 }

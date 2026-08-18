@@ -33,11 +33,23 @@ export function AuditTable({
 					</span>
 				),
 			}),
-			col.accessor("action", {
-				header: "Action",
-				cell: (info) => (
-					<Badge variant="outline">{formatAuditAction(info.getValue())}</Badge>
-				),
+			col.accessor("eventType", {
+				header: "Event Type",
+				cell: (info) => {
+					const event = info.row.original;
+					return (
+						<div className="flex flex-col gap-1">
+							<Badge variant="outline">
+								{formatAuditAction(info.getValue())}
+							</Badge>
+							{event.category ? (
+								<span className="text-[10px] uppercase tracking-wide text-muted-foreground">
+									{event.category}
+								</span>
+							) : null}
+						</div>
+					);
+				},
 			}),
 			col.accessor("actorId", {
 				header: "Actor",
@@ -65,6 +77,23 @@ export function AuditTable({
 						{info.getValue() || "-"}
 					</span>
 				),
+			}),
+			col.display({
+				id: "payload",
+				header: "Payload",
+				cell: (info) => {
+					const { payload } = info.row.original;
+					if (!payload || Object.keys(payload).length === 0) {
+						return <span className="text-muted-foreground">-</span>;
+					}
+					return (
+						<code className="block max-w-[280px] truncate font-mono text-xs text-muted-foreground">
+							{Object.entries(payload)
+								.map(([k, v]) => `${k}=${typeof v === "string" ? v : JSON.stringify(v)}`)
+								.join(" ")}
+						</code>
+					);
+				},
 			}),
 		],
 		[],

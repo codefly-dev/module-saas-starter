@@ -4,39 +4,33 @@ export interface AuditEvent {
 	id: string;
 	actorId: string;
 	actorType: string;
-	action: string;
+	eventType: string;
+	schemaVersion: number;
+	category: string;
 	resource: string;
 	resourceId: string;
 	orgId: string;
-	metadata: Record<string, string>;
+	payload?: Record<string, unknown>;
 	ipAddress: string;
 	createdAt?: string;
 }
 
 export interface AuditLogFilters {
 	orgId?: string;
-	action?: string;
+	eventType?: string;
+	category?: string;
 	actorId?: string;
 	pageSize?: number;
 }
 
-export const AUDIT_ACTION_TYPES = [
-	"user.registered",
-	"user.suspended",
-	"user.unsuspended",
-	"auth.login",
-	"auth.logout",
-	"api_key.created",
-	"api_key.revoked",
-	"role.assigned",
-	"role.revoked",
-	"invitation.created",
-	"invitation.accepted",
-	"org.created",
-	"org.member_added",
-	"org.member_removed",
-	"platform.role_granted",
-	"platform.role_revoked",
-	"platform.user_impersonated",
-	"feature_flag.updated",
-] as const;
+// A registered audit event type, from the AuditService/ListAuditEventTypes RPC.
+// The registry is server-owned; the UI facet is a projection of it rather than
+// a hand-maintained list.
+export interface AuditEventTypeInfo {
+	name: string;
+	version: number;
+	category: string;
+	owner: string;
+	deprecated: boolean;
+	description: string;
+}

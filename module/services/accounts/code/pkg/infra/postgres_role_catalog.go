@@ -305,12 +305,16 @@ func (s *PostgresStore) emitCatalogAudit(ctx context.Context, action, roleID str
 	for k, v := range provenance {
 		metadata[k] = v
 	}
+	payload := make(map[string]any, len(metadata))
+	for k, v := range metadata {
+		payload[k] = v
+	}
 	if err := s.InsertAuditEvent(ctx, business.AuditEntry{
 		ActorType:  "system",
-		Action:     action,
+		EventType:  business.EventType(action),
 		Resource:   "role",
 		ResourceID: roleID,
-		Metadata:   metadata,
+		Payload:    payload,
 	}); err != nil {
 		return w.Wrapf(err, "failed to emit audit event %q", action)
 	}

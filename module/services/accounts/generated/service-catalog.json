@@ -30,7 +30,9 @@
       "name": "AuditService",
       "full_name": "saas.accounts.v1.AuditService",
       "procedures": [
+        "/saas.accounts.v1.AuditService/AggregateAuditLog",
         "/saas.accounts.v1.AuditService/ExportAuditLog",
+        "/saas.accounts.v1.AuditService/ListAuditEventTypes",
         "/saas.accounts.v1.AuditService/QueryAuditLog"
       ]
     },
@@ -697,6 +699,65 @@
       }
     },
     {
+      "procedure": "/saas.accounts.v1.AuditService/AggregateAuditLog",
+      "service": "AuditService",
+      "full_service": "saas.accounts.v1.AuditService",
+      "method": "AggregateAuditLog",
+      "input_type": "saas.accounts.v1.AggregateAuditLogRequest",
+      "output_type": "saas.accounts.v1.AggregateAuditLogResponse",
+      "client_streaming": false,
+      "server_streaming": false,
+      "deprecated": false,
+      "source_proto": "saas/accounts/v1/audit.proto",
+      "protocols": [
+        "PROTOCOL_GRPC",
+        "PROTOCOL_CONNECT",
+        "PROTOCOL_REST"
+      ],
+      "http_bindings": [
+        {
+          "method": "GET",
+          "path": "/v1/audit-log:aggregate",
+          "body": "",
+          "response_body": ""
+        }
+      ],
+      "policy": {
+        "exposure": "EXPOSURE_AUTHENTICATED",
+        "tenant": "TENANT_REQUIREMENT_ORG_MEMBER",
+        "permissions": [
+          "audit:read"
+        ],
+        "scopes": [
+          "audit:read"
+        ],
+        "resource_bindings": [
+          {
+            "request_field": "org_id",
+            "target": "RESOURCE_TARGET_ORGANIZATION",
+            "lookup": "RESOURCE_LOOKUP_DIRECT_ID"
+          }
+        ],
+        "mfa": "MFA_REQUIREMENT_NONE",
+        "audit": {
+          "events": [],
+          "emission": "AUDIT_EMISSION_NONE"
+        },
+        "idempotency": "IDEMPOTENCY_REQUIREMENT_FORBIDDEN",
+        "rate_limit": "RATE_LIMIT_CLASS_STANDARD_READ",
+        "request_sensitivity": "SENSITIVITY_CONFIDENTIAL",
+        "response_sensitivity": "SENSITIVITY_CONFIDENTIAL",
+        "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
+        "authentication_factor_attempt": false
+      },
+      "policy_tier": "org_member",
+      "description": "Aggregate audit events (counts, time buckets, group-by) for analytics.",
+      "owner": {
+        "module": "saas-starter",
+        "service": "accounts"
+      }
+    },
+    {
       "procedure": "/saas.accounts.v1.AuditService/ExportAuditLog",
       "service": "AuditService",
       "full_service": "saas.accounts.v1.AuditService",
@@ -750,6 +811,59 @@
       },
       "policy_tier": "org_admin",
       "description": "Download audit log as CSV/JSON.",
+      "owner": {
+        "module": "saas-starter",
+        "service": "accounts"
+      }
+    },
+    {
+      "procedure": "/saas.accounts.v1.AuditService/ListAuditEventTypes",
+      "service": "AuditService",
+      "full_service": "saas.accounts.v1.AuditService",
+      "method": "ListAuditEventTypes",
+      "input_type": "saas.accounts.v1.ListAuditEventTypesRequest",
+      "output_type": "saas.accounts.v1.ListAuditEventTypesResponse",
+      "client_streaming": false,
+      "server_streaming": false,
+      "deprecated": false,
+      "source_proto": "saas/accounts/v1/audit.proto",
+      "protocols": [
+        "PROTOCOL_GRPC",
+        "PROTOCOL_CONNECT",
+        "PROTOCOL_REST"
+      ],
+      "http_bindings": [
+        {
+          "method": "GET",
+          "path": "/v1/audit-event-types",
+          "body": "",
+          "response_body": ""
+        }
+      ],
+      "policy": {
+        "exposure": "EXPOSURE_AUTHENTICATED",
+        "tenant": "TENANT_REQUIREMENT_NONE",
+        "permissions": [
+          "audit:read"
+        ],
+        "scopes": [
+          "audit:read"
+        ],
+        "resource_bindings": [],
+        "mfa": "MFA_REQUIREMENT_NONE",
+        "audit": {
+          "events": [],
+          "emission": "AUDIT_EMISSION_NONE"
+        },
+        "idempotency": "IDEMPOTENCY_REQUIREMENT_FORBIDDEN",
+        "rate_limit": "RATE_LIMIT_CLASS_STANDARD_READ",
+        "request_sensitivity": "SENSITIVITY_INTERNAL",
+        "response_sensitivity": "SENSITIVITY_INTERNAL",
+        "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
+        "authentication_factor_attempt": false
+      },
+      "policy_tier": "auth",
+      "description": "List the registered audit event-type catalog for search facets.",
       "owner": {
         "module": "saas-starter",
         "service": "accounts"
