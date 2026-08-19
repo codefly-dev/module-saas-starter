@@ -378,12 +378,31 @@ func requirePlatformAdmin(ctx context.Context, actorID string) error {
 // cannot" line without that overhaul. mTLS is the eventual fix.
 var (
 	internalToken string
-	gatewayToken  string
+	// rotationInternalTokens are additional secrets accepted alongside
+	// internalToken during an overlapping rotation window. A caller presenting
+	// either the current or a still-valid previous token is admitted, so the
+	// token can be rolled out and retired without a flag-day cutover.
+	rotationInternalTokens []string
+	gatewayToken           string
 )
 
-// SetInternalToken installs the shared secret. Called once from
+// SetInternalToken installs the primary shared secret. Called once from
 // work.go after reading CODEFLY_INTERNAL_TOKEN. Idempotent.
 func SetInternalToken(token string) { internalToken = token }
+
+// SetInternalTokenRotation installs additional internal service credentials
+// that stay valid alongside the primary for zero-downtime rotation. Empty
+// entries are dropped; calling with no non-empty token clears the set. Call
+// before the servers register their interceptors.
+func SetInternalTokenRotation(tokens ...string) {
+	filtered := make([]string, 0, len(tokens))
+	for _, t := range tokens {
+		if t != "" {
+			filtered = append(filtered, t)
+		}
+	}
+	rotationInternalTokens = filtered
+}
 
 // SetGatewayToken installs the credential used to authenticate identity
 // headers stamped by auth-sidecar. Unlike the internal token, this credential

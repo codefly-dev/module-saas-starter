@@ -42,6 +42,12 @@ type Identity struct {
 	// UserID.
 	ActingAsUserID uuid.UUID
 
+	// Actor records the delegation chain when a service mints or forwards this
+	// token on the end user's behalf (RFC 8693 `act`). UserID/`sub` stays the
+	// end user end-to-end; Actor names the immediate caller acting for them,
+	// nesting outward through each hop. Nil for a direct interactive session.
+	Actor *Actor
+
 	// MFASatisfied is the legacy compatibility bit used by older consumers.
 	// New policy code uses AssuranceLevel + MFAVerifiedAt instead. It is true
 	// when this session has cleared the MFA gate
@@ -87,6 +93,33 @@ type Identity struct {
 // set, so the truncation is signalled (via the `srt` claim) rather than either
 // silently dropping grants or locking the user out of authentication entirely.
 const MaxScopedRoleAssignments = 64
+
+// Actor is one link in an on-behalf-of delegation chain (RFC 8693 `act`). It
+// identifies a party acting for the token's subject; Act, when set, names the
+// party that in turn delegated to this one, so a multi-hop call records every
+// intermediary. The chain is audit metadata, not an authorization grant: the
+// callee still authorizes the subject, and a service's authority to act is
+// enforced separately (see the `may_act` story SVC-4), never implied by
+// appearing here.
+type Actor struct {
+	// Subject is the acting party's canonical identity — a service's workload
+	// identity (its signing `kid`) for a service hop, or a user id for an
+	// admin acting on another's behalf.
+	Subject string
+	// Act is the next actor outward: who delegated to Subject. Nil at the head
+	// of the chain (the party closest to the original subject).
+	Act *Actor
+}
+
+// WithActor returns a copy of i whose delegation chain has actor pushed on as
+// the immediate caller, nesting any existing Actor beneath it. It is how a
+// service records that it is forwarding an existing on-behalf-of token one more
+// hop: the subject is unchanged, and the new actor wraps the prior chain.
+func (i *Identity) WithActor(actor string) *Identity {
+	next := *i
+	next.Actor = &Actor{Subject: actor, Act: i.Actor}
+	return &next
+}
 
 // Orgless reports whether this identity resolved to no active organization. It
 // is a first-class session state, not an error: a user who belongs to no org —

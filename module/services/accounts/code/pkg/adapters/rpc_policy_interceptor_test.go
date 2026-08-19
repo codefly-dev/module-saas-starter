@@ -110,6 +110,39 @@ func TestInternalListenerOnlyAdmitsInternalRPCWithCredential(t *testing.T) {
 	require.Equal(t, codes.PermissionDenied, status.Code(err))
 }
 
+func TestInternalListenerAcceptsRotationTokenDuringOverlap(t *testing.T) {
+	previousToken := internalToken
+	previousRotation := rotationInternalTokens
+	SetInternalToken("new-internal-token")
+	SetInternalTokenRotation("previous-internal-token", "")
+	t.Cleanup(func() {
+		SetInternalToken(previousToken)
+		rotationInternalTokens = previousRotation
+	})
+
+	policy := &grpcPolicyAuthorizer{getMinter: nil, exposure: rpcExposureInternal}
+	const method = "/saas.accounts.v1.APIKeyService/ValidateAPIKey"
+
+	// Both the current and the still-valid previous credential are admitted.
+	for _, token := range []string{"new-internal-token", "previous-internal-token"} {
+		ctx := metadata.NewIncomingContext(context.Background(), metadata.Pairs("x-codefly-internal-token", token))
+		_, err := policy.authorize(ctx, method)
+		require.NoError(t, err, "token %q should be accepted during overlap", token)
+	}
+
+	// A retired credential is refused.
+	ctx := metadata.NewIncomingContext(context.Background(), metadata.Pairs("x-codefly-internal-token", "retired-internal-token"))
+	_, err := policy.authorize(ctx, method)
+	require.Equal(t, codes.PermissionDenied, status.Code(err))
+
+	// Once rotation completes and the previous token is cleared, only the
+	// current credential remains valid.
+	SetInternalTokenRotation()
+	ctx = metadata.NewIncomingContext(context.Background(), metadata.Pairs("x-codefly-internal-token", "previous-internal-token"))
+	_, err = policy.authorize(ctx, method)
+	require.Equal(t, codes.PermissionDenied, status.Code(err))
+}
+
 func TestForwardedIdentityRequiresGatewayCredential(t *testing.T) {
 	previousToken := gatewayToken
 	SetGatewayToken("test-gateway-token")

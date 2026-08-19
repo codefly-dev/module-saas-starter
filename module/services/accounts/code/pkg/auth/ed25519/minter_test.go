@@ -901,6 +901,74 @@ func TestKeyID_IsDeterministic(t *testing.T) {
 	require.NotEqual(t, m1.KeyID(), m3.KeyID(), "different keys must yield different kids")
 }
 
+func TestMint_CarriesActorChainOnBehalfOfEndUser(t *testing.T) {
+	ctx := context.Background()
+	m, _ := newMinter(t)
+	want := newIdentity()
+	// billing-worker acting for the end user, itself invoked by the gateway:
+	// sub stays the end user; act nests outward through each hop.
+	want.Actor = &auth.Actor{
+		Subject: "svc:billing-worker",
+		Act:     &auth.Actor{Subject: "svc:gateway"},
+	}
+
+	pair, err := m.Mint(ctx, want)
+	require.NoError(t, err)
+
+	// sub is the end user end-to-end; the actor chain rides in `act`.
+	payload := decodeJWTPayload(t, pair.AccessToken)
+	require.Contains(t, payload, `"sub":"`+want.UserID.String()+`"`)
+	require.Contains(t, payload, `"act":{"sub":"svc:billing-worker","act":{"sub":"svc:gateway"}}`)
+
+	got, err := m.VerifyAccess(pair.AccessToken)
+	require.NoError(t, err)
+	require.Equal(t, want.UserID, got.UserID, "subject remains the end user")
+	require.Equal(t, want.Actor, got.Actor, "actor chain round-trips")
+}
+
+func TestMint_OmitsActorClaimForDirectSession(t *testing.T) {
+	ctx := context.Background()
+	m, _ := newMinter(t)
+
+	pair, err := m.Mint(ctx, newIdentity())
+	require.NoError(t, err)
+	require.NotContains(t, decodeJWTPayload(t, pair.AccessToken), `"act"`)
+
+	got, err := m.VerifyAccess(pair.AccessToken)
+	require.NoError(t, err)
+	require.Nil(t, got.Actor)
+}
+
+func TestWithActor_PushesNewCallerOntoChain(t *testing.T) {
+	base := newIdentity()
+	base.Actor = &auth.Actor{Subject: "svc:gateway"}
+
+	next := base.WithActor("svc:billing-worker")
+	require.Equal(t, "svc:billing-worker", next.Actor.Subject)
+	require.Equal(t, "svc:gateway", next.Actor.Act.Subject)
+	require.Nil(t, base.Actor.Act, "original identity's chain is not mutated")
+}
+
+func TestVerifyAccess_AcceptsPreviousSigningKeyDuringRotation(t *testing.T) {
+	ctx := context.Background()
+	previous, _ := newMinter(t) // outgoing signing key
+	current, _ := newMinter(t)  // freshly rotated-in signing key
+
+	pair, err := previous.Mint(ctx, newIdentity())
+	require.NoError(t, err)
+
+	// Before registering the outgoing key, its token fails on the current minter.
+	_, err = current.VerifyAccess(pair.AccessToken)
+	require.ErrorIs(t, err, auth.ErrTokenSignature)
+
+	// Registering the outgoing public key by kid restores verification for
+	// in-flight tokens without minting under it.
+	current.AddVerificationKey(previous.PublicKey())
+	got, err := current.VerifyAccess(pair.AccessToken)
+	require.NoError(t, err)
+	require.NotEqual(t, uuid.Nil, got.UserID)
+}
+
 // Compile-time assertion that our test store satisfies SessionStore.
 var _ auth.SessionStore = (*memoryStore)(nil)
 

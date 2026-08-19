@@ -15,9 +15,15 @@
 //   - Clock skew tolerance is configurable, default 60s.
 //
 // This package does NOT own key management. Callers pass a keypair that
-// typically came from Vault. Rotation is handled by constructing a new
-// Minter instance from the new key; sidecars that need to verify both old
-// and new tokens can hold multiple Verifier instances (separate type).
+// typically came from Vault. Rotation swaps in a Minter built from the new
+// key; to verify tokens still signed by the outgoing key during the overlap
+// window, register that key's public half via AddVerificationKey — VerifyAccess
+// then selects the key by the token's kid. Downstream services that verify
+// without a Minter can instead hold multiple Verifier instances (separate type).
+//
+// The kid is derived from the signing public key, so each service that signs
+// with its own key gets a distinct, deterministic kid: the JWT is the service's
+// workload identity.
 package ed25519minter
 
 import (
@@ -86,22 +92,47 @@ func (c *Config) withDefaults() error {
 // API surface.
 type accessClaims struct {
 	jwt.RegisteredClaims
-	OrgID                 string              `json:"org,omitempty"`
-	OrgRole               string              `json:"or,omitempty"`
-	PlatformRole          string              `json:"pr,omitempty"`
-	ScopedRoles           map[string][]string `json:"sr,omitempty"`
-	ScopedRolesTruncated  bool                `json:"srt,omitempty"`
-	SessionID             string              `json:"sid"`
-	ActingAsUserID        string              `json:"acting,omitempty"`
-	AuthenticationMethods []string            `json:"amr,omitempty"`
-	AuthenticationTime    *jwt.NumericDate    `json:"auth_time,omitempty"`
-	AssuranceLevel        string              `json:"acr,omitempty"`
-	MFAVerifiedAt         *jwt.NumericDate    `json:"mfa_at,omitempty"`
+	OrgID                string              `json:"org,omitempty"`
+	OrgRole              string              `json:"or,omitempty"`
+	PlatformRole         string              `json:"pr,omitempty"`
+	ScopedRoles          map[string][]string `json:"sr,omitempty"`
+	ScopedRolesTruncated bool                `json:"srt,omitempty"`
+	SessionID            string              `json:"sid"`
+	ActingAsUserID       string              `json:"acting,omitempty"`
+	// Act carries the RFC 8693 on-behalf-of delegation chain. sub stays the end
+	// user; act names the service (or admin) acting for them, nesting outward.
+	Act                   *actorClaim      `json:"act,omitempty"`
+	AuthenticationMethods []string         `json:"amr,omitempty"`
+	AuthenticationTime    *jwt.NumericDate `json:"auth_time,omitempty"`
+	AssuranceLevel        string           `json:"acr,omitempty"`
+	MFAVerifiedAt         *jwt.NumericDate `json:"mfa_at,omitempty"`
 	// MFASatisfied marks tokens minted after a successful MFA challenge
 	// (or by users who haven't enrolled MFA — the gate is "no enrolled
 	// device" OR "satisfied this session", not "always satisfied"). When
 	// false, requireMFA(ctx) blocks sensitive operations.
 	MFASatisfied bool `json:"mfa,omitempty"`
+}
+
+// actorClaim is the wire shape of the RFC 8693 `act` claim: a `sub` naming the
+// acting party, and an optional nested `act` for the party that delegated to
+// it. The recursion is what makes a multi-hop on-behalf-of chain auditable.
+type actorClaim struct {
+	Subject string      `json:"sub"`
+	Act     *actorClaim `json:"act,omitempty"`
+}
+
+func actorClaimFromIdentity(actor *auth.Actor) *actorClaim {
+	if actor == nil {
+		return nil
+	}
+	return &actorClaim{Subject: actor.Subject, Act: actorClaimFromIdentity(actor.Act)}
+}
+
+func identityActorFromClaim(claim *actorClaim) *auth.Actor {
+	if claim == nil {
+		return nil
+	}
+	return &auth.Actor{Subject: claim.Subject, Act: identityActorFromClaim(claim.Act)}
 }
 
 // Minter is the concrete JWTMinter. Construct via New.
@@ -110,6 +141,11 @@ type Minter struct {
 	privateKey ed25519.PrivateKey
 	publicKey  ed25519.PublicKey
 	keyID      string
+	// verifyKeys maps kid → public key for VerifyAccess. It always holds the
+	// signing key's own kid; AddVerificationKey adds a rotated-out key's kid so
+	// tokens minted under the previous signing key still verify during the
+	// overlap window.
+	verifyKeys map[string]ed25519.PublicKey
 	store      auth.SessionStore
 	revoker    auth.TokenRevoker
 	now        func() time.Time // injectable clock for tests
@@ -126,18 +162,38 @@ type Minter struct {
 func New(cfg Config, priv ed25519.PrivateKey, store auth.SessionStore) *Minter {
 	configErr := cfg.withDefaults()
 	pub := priv.Public().(ed25519.PublicKey)
-	h := sha256.Sum256(pub)
-	keyID := base64.RawURLEncoding.EncodeToString(h[:8])
+	keyID := publicKeyID(pub)
 	return &Minter{
 		cfg:        cfg,
 		privateKey: priv,
 		publicKey:  pub,
 		keyID:      keyID,
+		verifyKeys: map[string]ed25519.PublicKey{keyID: pub},
 		store:      store,
 		revoker:    auth.NoopTokenRevoker{},
 		now:        time.Now,
 		configErr:  configErr,
 	}
+}
+
+// publicKeyID derives the deterministic kid for an Ed25519 public key. Two
+// minters holding the same key agree on its kid without coordination, which is
+// what lets a rotated-out key be re-registered for verification by its kid.
+func publicKeyID(pub ed25519.PublicKey) string {
+	h := sha256.Sum256(pub)
+	return base64.RawURLEncoding.EncodeToString(h[:8])
+}
+
+// AddVerificationKey registers a public key that VerifyAccess will accept for
+// tokens carrying that key's kid, without minting under it. During a
+// zero-downtime signing-key rotation the operator loads the outgoing key here
+// so access tokens already in flight keep verifying until they expire. Call
+// before serving; it is not safe to race with VerifyAccess.
+func (m *Minter) AddVerificationKey(pub ed25519.PublicKey) {
+	if len(pub) == 0 {
+		return
+	}
+	m.verifyKeys[publicKeyID(pub)] = pub
 }
 
 // SetRevoker wires an access-token revocation list. Required for real
@@ -467,6 +523,15 @@ func (m *Minter) VerifyAccess(tokenString string) (*auth.Identity, error) {
 		if t.Method.Alg() != "EdDSA" {
 			return nil, auth.ErrTokenAlgForbidden
 		}
+		// Select the verification key by the token's kid so a rotated-out key
+		// registered via AddVerificationKey still verifies its in-flight tokens.
+		// A token whose kid we don't recognise falls back to the current signing
+		// key, preserving the pre-rotation single-key behaviour.
+		if kid, ok := t.Header["kid"].(string); ok {
+			if key, known := m.verifyKeys[kid]; known {
+				return key, nil
+			}
+		}
 		return m.publicKey, nil
 	})
 	if err != nil {
@@ -529,6 +594,7 @@ func (m *Minter) VerifyAccess(tokenString string) (*auth.Identity, error) {
 		ScopedRolesTruncated:  claims.ScopedRolesTruncated,
 		SessionID:             sessionID,
 		ActingAsUserID:        actingAs,
+		Actor:                 identityActorFromClaim(claims.Act),
 		MFASatisfied:          claims.MFASatisfied,
 		AuthenticationMethods: claims.AuthenticationMethods,
 		AuthenticatedAt:       numericDateTime(claims.AuthenticationTime),
@@ -606,6 +672,7 @@ func (m *Minter) signAccess(identity *auth.Identity, sessionID uuid.UUID, now ti
 	if identity.ActingAsUserID != uuid.Nil {
 		claims.ActingAsUserID = identity.ActingAsUserID.String()
 	}
+	claims.Act = actorClaimFromIdentity(identity.Actor)
 	claims.MFASatisfied = identity.MFASatisfied
 	claims.AuthenticationMethods = identity.AuthenticationMethods
 	if !identity.AuthenticatedAt.IsZero() {

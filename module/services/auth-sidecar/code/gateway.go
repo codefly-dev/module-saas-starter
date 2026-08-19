@@ -13,7 +13,6 @@ package main
 
 import (
 	"context"
-	"crypto/subtle"
 	"fmt"
 	"io"
 	"log"
@@ -309,9 +308,7 @@ func (g *Gateway) withTrustedFrontendOrigin(r *http.Request) *http.Request {
 	r.Header.Del("X-Codefly-Public-Origin")
 	r.Header.Del("X-Codefly-Internal-Token")
 
-	if g.sidecar == nil || g.sidecar.internalToken == "" ||
-		len(presentedToken) != len(g.sidecar.internalToken) ||
-		subtle.ConstantTimeCompare([]byte(presentedToken), []byte(g.sidecar.internalToken)) != 1 {
+	if g.sidecar == nil || !g.sidecar.acceptsInternalToken(presentedToken) {
 		return r
 	}
 	origin, err := canonicalPublicOrigin(claimedOrigin)

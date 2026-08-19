@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"crypto/ed25519"
+	"crypto/subtle"
 	"encoding/json"
 	"fmt"
 	"log"
@@ -62,7 +63,29 @@ type Sidecar struct {
 	issuer        string
 	audience      string
 	internalToken string
-	gatewayToken  string
+	// previousInternalToken stays accepted alongside internalToken during an
+	// overlapping rotation window. Outbound calls always present the current
+	// internalToken; only inbound checks honour the previous one.
+	previousInternalToken string
+	gatewayToken          string
+}
+
+// acceptsInternalToken reports whether candidate is the current or a
+// still-valid previous internal credential, compared without a timing signal.
+// An unset (empty) credential never matches.
+func (s *Sidecar) acceptsInternalToken(candidate string) bool {
+	if candidate == "" {
+		return false
+	}
+	return constantTimeMatch(candidate, s.internalToken) ||
+		constantTimeMatch(candidate, s.previousInternalToken)
+}
+
+func constantTimeMatch(candidate, expected string) bool {
+	if expected == "" || len(candidate) != len(expected) {
+		return false
+	}
+	return subtle.ConstantTimeCompare([]byte(candidate), []byte(expected)) == 1
 }
 
 // NewSidecar constructs a Sidecar. publicKey is the Ed25519 key the backend
@@ -70,12 +93,13 @@ type Sidecar struct {
 // minter config.
 func NewSidecar(backendConn *grpc.ClientConn, publicKey ed25519.PublicKey) *Sidecar {
 	return &Sidecar{
-		apiKey:        apigen.NewAPIKeyServiceClient(backendConn),
-		publicKey:     publicKey,
-		issuer:        "saas-starter",
-		audience:      "saas-starter",
-		internalToken: workspaceEnv("internal-auth", "CODEFLY_INTERNAL_TOKEN"),
-		gatewayToken:  workspaceEnv("internal-auth", "CODEFLY_GATEWAY_TOKEN"),
+		apiKey:                apigen.NewAPIKeyServiceClient(backendConn),
+		publicKey:             publicKey,
+		issuer:                "saas-starter",
+		audience:              "saas-starter",
+		internalToken:         workspaceEnv("internal-auth", "CODEFLY_INTERNAL_TOKEN"),
+		previousInternalToken: workspaceEnv("internal-auth", "CODEFLY_INTERNAL_TOKEN_PREVIOUS"),
+		gatewayToken:          workspaceEnv("internal-auth", "CODEFLY_GATEWAY_TOKEN"),
 	}
 }
 

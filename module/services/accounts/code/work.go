@@ -23,6 +23,7 @@ import (
 	"accounts/pkg/permissionsplugin"
 	"context"
 	ed25519core "crypto/ed25519"
+	"encoding/base64"
 	"fmt"
 	"net/url"
 	"os"
@@ -234,6 +235,7 @@ func doWork(ctx context.Context) (Clean, error) {
 		Audience:      "saas-starter",
 		SessionPolicy: sessionPolicy,
 	}, priv, sessionStore)
+	registerPreviousSigningKeys(ctx, minter)
 
 	service.SetIdentityResolver(resolver)
 	service.SetJWTMinter(minter)
@@ -404,6 +406,9 @@ func doWork(ctx context.Context) (Clean, error) {
 	// gateway identity. Empty values fail closed; production deploys provide
 	// independent high-entropy values to both accounts and auth-sidecar.
 	adapters.SetInternalToken(workspaceEnv("internal-auth", "CODEFLY_INTERNAL_TOKEN"))
+	// A previous internal token stays valid alongside the current one during an
+	// overlapping rotation window, so callers can be migrated without a flag day.
+	adapters.SetInternalTokenRotation(workspaceEnv("internal-auth", "CODEFLY_INTERNAL_TOKEN_PREVIOUS"))
 	adapters.SetGatewayToken(workspaceEnv("internal-auth", "CODEFLY_GATEWAY_TOKEN"))
 
 	// /v1/status — public health probe surface. Probes run in parallel
@@ -1233,6 +1238,42 @@ func configuredEmailSender(ctx context.Context) (email.Sender, error) {
 	default:
 		return nil, fmt.Errorf("EMAIL_PROVIDER must be log or resend")
 	}
+}
+
+// registerPreviousSigningKeys adds any rotated-out signing keys to the minter's
+// verification set so access tokens still signed by them keep verifying during
+// an overlapping rotation window. JWT_PREVIOUS_PUBLIC_KEYS is a comma-separated
+// list of base64 Ed25519 public keys; empty (the steady state) is a no-op. A
+// malformed entry is logged and skipped rather than failing startup.
+func registerPreviousSigningKeys(ctx context.Context, minter *ed25519minter.Minter) {
+	for _, encoded := range strings.Split(workspaceEnv("internal-auth", "JWT_PREVIOUS_PUBLIC_KEYS"), ",") {
+		encoded = strings.TrimSpace(encoded)
+		if encoded == "" {
+			continue
+		}
+		pub, err := decodeEd25519PublicKey(encoded)
+		if err != nil {
+			wool.Get(ctx).In("registerPreviousSigningKeys").Warn("ignoring malformed previous signing key", wool.ErrField(err))
+			continue
+		}
+		minter.AddVerificationKey(pub)
+	}
+}
+
+// decodeEd25519PublicKey accepts a standard or raw-url base64 Ed25519 public
+// key. Operators paste keys in either form; both decode to the same 32 bytes.
+func decodeEd25519PublicKey(encoded string) (ed25519core.PublicKey, error) {
+	raw, err := base64.StdEncoding.DecodeString(encoded)
+	if err != nil {
+		raw, err = base64.RawURLEncoding.DecodeString(encoded)
+		if err != nil {
+			return nil, fmt.Errorf("decode public key: %w", err)
+		}
+	}
+	if len(raw) != ed25519core.PublicKeySize {
+		return nil, fmt.Errorf("wrong public key size: got %d want %d", len(raw), ed25519core.PublicKeySize)
+	}
+	return ed25519core.PublicKey(raw), nil
 }
 
 // loadSigningKey returns the Ed25519 private key used to sign access and

@@ -204,15 +204,29 @@ func hasForwardedIdentity(md metadata.MD) bool {
 }
 
 func validInternalToken(candidate string) bool {
-	if internalToken == "" || candidate == "" || len(candidate) != len(internalToken) {
+	if candidate == "" {
 		return false
 	}
-	return subtle.ConstantTimeCompare([]byte(candidate), []byte(internalToken)) == 1
+	if constantTimeTokenMatch(candidate, internalToken) {
+		return true
+	}
+	for _, token := range rotationInternalTokens {
+		if constantTimeTokenMatch(candidate, token) {
+			return true
+		}
+	}
+	return false
 }
 
 func validGatewayToken(candidate string) bool {
-	if gatewayToken == "" || candidate == "" || len(candidate) != len(gatewayToken) {
+	return candidate != "" && constantTimeTokenMatch(candidate, gatewayToken)
+}
+
+// constantTimeTokenMatch reports whether candidate equals expected without a
+// content-dependent timing signal. An unset (empty) expected never matches.
+func constantTimeTokenMatch(candidate, expected string) bool {
+	if expected == "" || len(candidate) != len(expected) {
 		return false
 	}
-	return subtle.ConstantTimeCompare([]byte(candidate), []byte(gatewayToken)) == 1
+	return subtle.ConstantTimeCompare([]byte(candidate), []byte(expected)) == 1
 }
