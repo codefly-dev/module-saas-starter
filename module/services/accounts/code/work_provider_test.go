@@ -88,7 +88,7 @@ func TestConfiguredEmailSenderFailsClosed(t *testing.T) {
 
 	t.Setenv("EMAIL_PROVIDER", "typo")
 	_, err = configuredEmailSender(t.Context())
-	require.ErrorContains(t, err, "must be one of: log, resend")
+	require.ErrorContains(t, err, "EMAIL_PROVIDER must be one of")
 }
 
 func TestConfiguredAbuseVerifierFailsClosed(t *testing.T) {

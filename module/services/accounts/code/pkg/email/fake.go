@@ -16,9 +16,6 @@ type FakeSender struct {
 	// FailWith, if non-nil, causes Send to return this error immediately
 	// (before recording the message). Used to exercise error paths.
 	FailWith error
-	// Caps is returned by Capabilities(). The zero value supports nothing; set
-	// it to drive wiring that branches on provider features.
-	Caps Capabilities
 }
 
 // NewFakeSender returns an empty FakeSender.
@@ -65,10 +62,6 @@ func (f *FakeSender) Reset() {
 	f.Sent = nil
 }
 
-func (f *FakeSender) Name() string { return "fake" }
-
-func (f *FakeSender) Capabilities() Capabilities { return f.Caps }
-
 // LogSender writes every outgoing message to a writer (typically
 // os.Stdout) instead of sending it. Used in dev when no Resend API
 // key is configured — you still see what WOULD be sent.
@@ -95,12 +88,6 @@ func (l *LogSender) Send(_ context.Context, m *Message) (string, error) {
 		m.From, m.To, m.Subject, firstNonEmpty(m.TextBody, m.HTMLBody))
 	return "log-dev", nil
 }
-
-func (l *LogSender) Name() string { return "log" }
-
-// Capabilities reports nothing: the dev log sink neither dedups, emits
-// webhooks, nor requires a verified sender.
-func (l *LogSender) Capabilities() Capabilities { return Capabilities{} }
 
 func firstNonEmpty(a, b string) string {
 	if a != "" {

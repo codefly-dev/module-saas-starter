@@ -453,7 +453,7 @@ func doWork(ctx context.Context) (Clean, error) {
 	if err != nil {
 		return nil, err
 	}
-	if emailSender.Capabilities().DeliveryWebhooks {
+	if _, ok := emailSender.(*email.ResendSender); ok {
 		resendWebhook, err := email.NewResendWebhookHandler(email.ResendWebhookConfig{
 			SigningSecret: os.Getenv("RESEND_WEBHOOK_SECRET"),
 			Recorder:      jobStore,
@@ -1212,7 +1212,7 @@ func identityEnvList(key string) []string {
 // silently downgrades to a log sink because one Resend value is missing. Each
 // factory validates its own secrets and fails closed; adding a provider is one
 // Register call rather than a new switch case.
-func configuredEmailSender(ctx context.Context) (email.Provider, error) {
+func configuredEmailSender(ctx context.Context) (email.Sender, error) {
 	registry := email.NewRegistry()
 	registry.Register("log", logEmailFactory)
 	registry.Register("resend", resendEmailFactory)
@@ -1224,7 +1224,7 @@ func configuredEmailSender(ctx context.Context) (email.Provider, error) {
 	return registry.Select(ctx, name)
 }
 
-func logEmailFactory(ctx context.Context) (email.Provider, error) {
+func logEmailFactory(ctx context.Context) (email.Sender, error) {
 	if os.Getenv("RESEND_API_KEY") != "" || os.Getenv("RESEND_WEBHOOK_SECRET") != "" {
 		return nil, fmt.Errorf("email: Resend credentials are present while EMAIL_PROVIDER is log")
 	}
@@ -1234,7 +1234,7 @@ func logEmailFactory(ctx context.Context) (email.Provider, error) {
 	}), nil
 }
 
-func resendEmailFactory(_ context.Context) (email.Provider, error) {
+func resendEmailFactory(_ context.Context) (email.Sender, error) {
 	key := strings.TrimSpace(os.Getenv("RESEND_API_KEY"))
 	webhookSecret := strings.TrimSpace(os.Getenv("RESEND_WEBHOOK_SECRET"))
 	if key == "" || webhookSecret == "" {
