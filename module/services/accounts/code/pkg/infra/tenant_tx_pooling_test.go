@@ -19,13 +19,16 @@ import (
 // under an external transaction-mode pooler (PgBouncer), a *different*
 // client — would inherit the previous tenant's org id and read its rows.
 //
-// The regression is made observable by pinning a dedicated pool to ONE
-// physical connection (pool_max_conns=1): every checkout below is the
-// same server connection WithOrgTx just used, and AfterRelease only runs
-// RESET ROLE (not RESET ALL), so nothing else scrubs the GUC. If someone
-// changed set_config's is_local arg to false, or used SET instead of
-// SET LOCAL, the post-commit read would return the org id and this test
-// would fail.
+// What makes the leak observable is that this test drives the pool
+// sequentially from one goroutine: once WithOrgTx commits and releases,
+// the pool holds exactly one idle connection, and pgxpool hands an idle
+// connection back before opening a new one — so every read below lands on
+// the same server connection WithOrgTx just used. AfterRelease runs only
+// RESET ROLE (not RESET ALL), so nothing else scrubs the GUC. The
+// single-connection cap (asserted in singleConnStore) is a backstop that
+// forecloses even a concurrent second connection. If someone changed
+// set_config's is_local arg to false, or used SET instead of SET LOCAL,
+// the post-commit read would return the org id and this test would fail.
 func TestWithOrgTx_OrgIDIsTransactionLocal_NoPoolLeak(t *testing.T) {
 	const (
 		orgA = "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa"
@@ -47,19 +50,27 @@ func TestWithOrgTx_OrgIDIsTransactionLocal_NoPoolLeak(t *testing.T) {
 	require.Empty(t, currentOrgID(t, single.Pool()),
 		"app.current_org_id leaked past its transaction onto the pooled connection")
 
-	// A second tenant's transaction on the same connection sees only its
-	// own org id, with no trace of the first — proving no cross-transaction
-	// (hence no cross-client) carryover.
+	// A second tenant reuses the same connection. The in-tx read only
+	// confirms the mechanism re-engages for orgB — a leaked session GUC
+	// would be masked here anyway, since the fresh SET LOCAL overrides it.
+	// The leak check is the post-commit require.Empty below: it proves
+	// orgB's value, like orgA's, does not survive onto the pooled
+	// connection, so there is no cross-transaction (hence no cross-client)
+	// carryover.
 	require.NoError(t, single.WithOrgTx(testCtx, orgB, func(ctx context.Context) error {
 		require.Equal(t, orgB, currentOrgID(t, txFromCtx(t, ctx)))
 		return nil
 	}))
-	require.Empty(t, currentOrgID(t, single.Pool()))
+	require.Empty(t, currentOrgID(t, single.Pool()),
+		"orgB's app.current_org_id leaked past its transaction onto the pooled connection")
 }
 
 // singleConnStore opens a dedicated store over the same database whose
-// pool holds exactly one physical connection, so "the next checkout" is
-// deterministically the connection the prior transaction just released.
+// pool is capped at one physical connection. The cap is a backstop to the
+// test's sequential access (see the test doc); asserting it applied keeps
+// the pool_max_conns URL parameter from silently becoming a no-op — e.g.
+// against a keyword-form DSN — which would let the pool open a second,
+// clean connection and make the test vacuous.
 func singleConnStore(t *testing.T) *infra.PostgresStore {
 	t.Helper()
 	url := testStore.Pool().Config().ConnString()
@@ -70,6 +81,8 @@ func singleConnStore(t *testing.T) *infra.PostgresStore {
 	store, err := infra.NewPostgresStoreFromURL(testCtx, url+sep+"pool_max_conns=1")
 	require.NoError(t, err)
 	t.Cleanup(store.Close)
+	require.Equal(t, int32(1), store.Pool().Config().MaxConns,
+		"pool_max_conns=1 did not apply — the single-connection backstop is a no-op")
 	return store
 }
 
