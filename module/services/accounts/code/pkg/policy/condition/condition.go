@@ -54,8 +54,8 @@ func EvaluateAll(conditions []*policyv1.Condition, in Input) (bool, error) {
 
 // evaluate runs one predicate. Every branch is fail-closed on unresolved or
 // malformed state, so it does not re-run the build-time Validate: an unknown
-// attribute hits the default, a nil time window loads UTC and matches the empty
-// range [0,0), an empty status set matches nothing, and a nil clearance denies.
+// attribute hits the default, a nil time window has equal bounds and denies, an
+// empty status set matches nothing, and a nil clearance denies.
 func evaluate(c *policyv1.Condition, in Input) (bool, error) {
 	switch c.GetAttribute() {
 	case policyv1.ConditionAttribute_CONDITION_ATTRIBUTE_OWNER_TEAM:
@@ -93,6 +93,12 @@ func withinWindow(w *policyv1.TimeWindow, now time.Time) (bool, error) {
 	local := now.In(loc)
 	minute := local.Hour()*60 + local.Minute()
 	start, end := int(w.GetStartMinute()), int(w.GetEndMinute())
+	// Equal bounds — including a nil/unset window, where both read 0 — describe
+	// neither a window nor its complement. Deny rather than let the wrap branch
+	// below collapse to always-true.
+	if start == end {
+		return false, nil
+	}
 	if start < end {
 		return minute >= start && minute < end, nil
 	}

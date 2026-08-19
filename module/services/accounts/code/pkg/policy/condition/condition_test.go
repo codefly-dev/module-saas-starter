@@ -171,6 +171,23 @@ func TestEvaluateAllRequiresEveryCondition(t *testing.T) {
 	require.True(t, allowed, "no conditions imposes no attribute constraint")
 }
 
+func TestTimeWindowFailsClosedOnDegenerateWindow(t *testing.T) {
+	at := time.Date(2026, 8, 19, 12, 0, 0, 0, time.UTC)
+
+	// A time-window condition with no window set (both bounds default to 0)
+	// must deny, not collapse to always-allow via the wrap-around branch.
+	noWindow := &policyv1.Condition{Attribute: policyv1.ConditionAttribute_CONDITION_ATTRIBUTE_TIME_WINDOW}
+	allowed, err := EvaluateAll([]*policyv1.Condition{noWindow}, Input{Now: at})
+	require.NoError(t, err)
+	require.False(t, allowed, "a nil window must deny")
+
+	// Equal non-zero bounds are equally degenerate and must deny.
+	equal := timeWindow(600, 600, "UTC")
+	allowed, err = EvaluateAll([]*policyv1.Condition{equal}, Input{Now: at})
+	require.NoError(t, err)
+	require.False(t, allowed, "equal bounds must deny")
+}
+
 func TestEvaluateFailsClosedOnUnknownAttribute(t *testing.T) {
 	unknown := &policyv1.Condition{Attribute: policyv1.ConditionAttribute(99)}
 	allowed, err := EvaluateAll([]*policyv1.Condition{unknown}, Input{})
