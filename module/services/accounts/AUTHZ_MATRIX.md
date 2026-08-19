@@ -2,7 +2,7 @@
 
 > Generated from protobuf service descriptors and `saas.policy.v1.method_policy`; only the prose description is joined from `pkg/business/introspection.go`. Do not edit by hand. Run `go generate ./pkg/business` from `module/services/accounts/code`.
 
-Inventory: **142 RPCs** across **26 services**. Missing, invalid, or unclassified procedures are denied by both Connect and gRPC interceptors.
+Inventory: **149 RPCs** across **26 services**. Missing, invalid, or unclassified procedures are denied by both Connect and gRPC interceptors.
 
 The compact tier is retained for compatibility. Guards, resource bindings, audit events, limiter class, and data sensitivity are descriptor-authoritative. Domain handlers may enforce stronger state-dependent rules but may not weaken this floor.
 
@@ -75,13 +75,20 @@ The compact tier is retained for compatibility. Guards, resource bindings, audit
 | `/saas.accounts.v1.OrganizationService/RemoveMember` | unary | `DELETE /v1/organizations/{org_id}/members/{user_id}` | `org_admin` | exposure=AUTHENTICATED; tenant=ORG_ADMIN | — | org_id → ORGANIZATION/DIRECT_ID | SUCCESS: org.member_removed | FORBIDDEN / STANDARD_WRITE | CONFIDENTIAL → CONFIDENTIAL | Remove a member; last-admin guard. |
 | `/saas.accounts.v1.OrganizationService/UpdateOrgSettings` | unary | `PUT /v1/organizations/{org_id}/settings` | `org_admin` | exposure=AUTHENTICATED; tenant=ORG_ADMIN | — | org_id → ORGANIZATION/DIRECT_ID | SUCCESS: org.settings_updated | FORBIDDEN / STANDARD_WRITE | CONFIDENTIAL → CONFIDENTIAL | Update branding (logo, color, custom domain). |
 | `/saas.accounts.v1.PermissionService/AssignRole` | unary | `POST /v1/role-assignments` | `auth` | exposure=AUTHENTICATED; tenant=USER | — | — | SUCCESS: role.assigned | FORBIDDEN / STANDARD_WRITE | CONFIDENTIAL → CONFIDENTIAL | Grant a role to a principal/team. |
+| `/saas.accounts.v1.PermissionService/CheckAccess` | unary | `—` | `internal` | exposure=INTERNAL; tenant=NONE | — | — | — | FORBIDDEN / INTERNAL | CONFIDENTIAL → CONFIDENTIAL | Internal hierarchical + per-record authz decision. |
 | `/saas.accounts.v1.PermissionService/CheckPermission` | unary | `—` | `internal` | exposure=INTERNAL; tenant=NONE | — | — | — | FORBIDDEN / INTERNAL | CONFIDENTIAL → CONFIDENTIAL | Internal authz decision (auth-sidecar caller). |
 | `/saas.accounts.v1.PermissionService/CreateRole` | unary | `POST /v1/roles` | `auth` | exposure=AUTHENTICATED; tenant=USER | — | — | SUCCESS: role.created | FORBIDDEN / STANDARD_WRITE | CONFIDENTIAL → CONFIDENTIAL | Create a role (org-scoped or platform). |
 | `/saas.accounts.v1.PermissionService/Decide` | unary | `—` | `internal` | exposure=INTERNAL; tenant=NONE | — | — | — | FORBIDDEN / INTERNAL | CONFIDENTIAL → CONFIDENTIAL | Internal principal-aware authz decision (successor to CheckPermission). |
 | `/saas.accounts.v1.PermissionService/DeleteRole` | unary | `DELETE /v1/roles/{id}` | `platform_admin` | exposure=AUTHENTICATED; tenant=NONE; platform=ANY | — | — | SUCCESS: role.deleted | FORBIDDEN / SENSITIVE | CONFIDENTIAL → CONFIDENTIAL | Delete a custom role. |
+| `/saas.accounts.v1.PermissionService/GrantScope` | unary | `POST /v1/scope-grants` | `org_admin` | exposure=AUTHENTICATED; tenant=ORG_ADMIN | — | org_id → ORGANIZATION/DIRECT_ID | SUCCESS: scope.granted | FORBIDDEN / STANDARD_WRITE | CONFIDENTIAL → CONFIDENTIAL | Grant a role at a scope node (inherits to subtree). |
 | `/saas.accounts.v1.PermissionService/ListRoleAssignments` | unary | `GET /v1/role-assignments` | `auth` | exposure=AUTHENTICATED; tenant=USER | — | — | — | FORBIDDEN / STANDARD_READ | CONFIDENTIAL → CONFIDENTIAL | List assignments in an org. |
 | `/saas.accounts.v1.PermissionService/ListRoles` | unary | `GET /v1/roles` | `auth` | exposure=AUTHENTICATED; tenant=USER | — | — | — | FORBIDDEN / STANDARD_READ | CONFIDENTIAL → CONFIDENTIAL | List built-in + org-scoped roles. |
+| `/saas.accounts.v1.PermissionService/ListShares` | unary | `GET /v1/record-shares` | `org_admin` | exposure=AUTHENTICATED; tenant=ORG_ADMIN | — | org_id → ORGANIZATION/DIRECT_ID | — | FORBIDDEN / STANDARD_READ | CONFIDENTIAL → CONFIDENTIAL | List the shares on a specific record. |
+| `/saas.accounts.v1.PermissionService/RegisterScopeNode` | unary | `POST /v1/scope-nodes` | `org_admin` | exposure=AUTHENTICATED; tenant=ORG_ADMIN | — | org_id → ORGANIZATION/DIRECT_ID | SUCCESS: scope.node_registered | FORBIDDEN / STANDARD_WRITE | CONFIDENTIAL → CONFIDENTIAL | Register a scope node or place a record at one. |
 | `/saas.accounts.v1.PermissionService/RevokeRole` | unary | `DELETE /v1/role-assignments` | `auth` | exposure=AUTHENTICATED; tenant=USER | — | — | SUCCESS: role.revoked | FORBIDDEN / STANDARD_WRITE | CONFIDENTIAL → CONFIDENTIAL | Revoke a role assignment. |
+| `/saas.accounts.v1.PermissionService/RevokeScope` | unary | `DELETE /v1/scope-grants` | `org_admin` | exposure=AUTHENTICATED; tenant=ORG_ADMIN | — | org_id → ORGANIZATION/DIRECT_ID | SUCCESS: scope.revoked | FORBIDDEN / STANDARD_WRITE | CONFIDENTIAL → CONFIDENTIAL | Revoke a hierarchical scope grant. |
+| `/saas.accounts.v1.PermissionService/RevokeShare` | unary | `DELETE /v1/record-shares` | `org_admin` | exposure=AUTHENTICATED; tenant=ORG_ADMIN | — | org_id → ORGANIZATION/DIRECT_ID | SUCCESS: record.share_revoked | FORBIDDEN / STANDARD_WRITE | CONFIDENTIAL → CONFIDENTIAL | Revoke a per-record share. |
+| `/saas.accounts.v1.PermissionService/ShareRecord` | unary | `POST /v1/record-shares` | `org_admin` | exposure=AUTHENTICATED; tenant=ORG_ADMIN | — | org_id → ORGANIZATION/DIRECT_ID | SUCCESS: record.shared | FORBIDDEN / STANDARD_WRITE | CONFIDENTIAL → CONFIDENTIAL | Share a record with a principal/team. |
 | `/saas.accounts.v1.PlatformAdminService/GetJob` | unary | `GET /v1/platform/jobs/{job_id}` | `platform_admin` | exposure=AUTHENTICATED; tenant=NONE; platform=SUPER_ADMIN | — | — | — | FORBIDDEN / SENSITIVE | CONFIDENTIAL → CONFIDENTIAL | Payload-free job metadata, attempts, and state history. |
 | `/saas.accounts.v1.PlatformAdminService/GetJobOperations` | unary | `GET /v1/platform/jobs/operations` | `platform_admin` | exposure=AUTHENTICATED; tenant=NONE; platform=SUPER_ADMIN | — | — | — | FORBIDDEN / SENSITIVE | CONFIDENTIAL → CONFIDENTIAL | Durable queue depth, readiness, and lease-health snapshots. |
 | `/saas.accounts.v1.PlatformAdminService/GetOrgEntitlements` | unary | `GET /v1/platform/organizations/{org_id}/entitlements` | `org_member` | exposure=AUTHENTICATED; tenant=ORG_MEMBER | — | org_id → ORGANIZATION/DIRECT_ID | — | FORBIDDEN / STANDARD_READ | CONFIDENTIAL → CONFIDENTIAL | Plan + overrides + usage. |
@@ -154,9 +161,9 @@ The compact tier is retained for compatibility. Guards, resource bindings, audit
 ## Tier totals
 
 - `auth`: 38
-- `internal`: 9
+- `internal`: 10
 - `mfa`: 3
-- `org_admin`: 28
+- `org_admin`: 34
 - `org_member`: 26
 - `platform_admin`: 22
 - `public`: 16
