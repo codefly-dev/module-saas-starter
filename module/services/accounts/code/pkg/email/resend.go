@@ -137,3 +137,18 @@ func (s *ResendSender) Send(ctx context.Context, m *Message) (string, error) {
 	}
 	return decoded.ID, nil
 }
+
+func (s *ResendSender) Name() string { return "resend" }
+
+// Capabilities reports Resend's feature set: idempotent retries via the
+// Idempotency-Key header, Svix delivery webhooks, batch send, verified sending
+// domains, and tag-based analytics.
+func (s *ResendSender) Capabilities() Capabilities {
+	return Capabilities{
+		IdempotencyKeys:        true,
+		DeliveryWebhooks:       true,
+		BatchSend:              true,
+		VerifiedSenderRequired: true,
+		Tagging:                true,
+	}
+}
