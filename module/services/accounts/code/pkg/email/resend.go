@@ -146,10 +146,11 @@ func (s *ResendSender) Send(ctx context.Context, m *Message) (string, error) {
 const ResendWebhookPath = "/v1/email/webhook/resend"
 
 // DeliveryWebhook builds the handler that verifies and records this provider's
-// delivery callbacks. Delivery tracking is a Resend-specific pipeline (Svix
-// signatures, the Resend event projection), so the provider owns its route
-// rather than the service wiring assuming its shape.
-func (s *ResendSender) DeliveryWebhook(recorder ResendEventRecorder) (string, http.Handler, error) {
+// delivery callbacks. The Svix signature scheme and Resend's native event
+// vocabulary are Resend-specific, so the provider owns its route and translates
+// its events into canonical DeliveryEvents; the recorder it writes to is
+// provider-agnostic.
+func (s *ResendSender) DeliveryWebhook(recorder DeliveryEventRecorder) (string, http.Handler, error) {
 	handler, err := NewResendWebhookHandler(ResendWebhookConfig{
 		SigningSecret: s.cfg.WebhookSecret,
 		Recorder:      recorder,

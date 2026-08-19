@@ -1,7 +1,6 @@
 package email
 
 import (
-	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -15,26 +14,14 @@ import (
 
 const defaultResendWebhookBodyLimit int64 = 256 << 10
 
-// ResendEvent is the privacy-minimized delivery projection retained from a
-// verified Resend webhook. Recipient addresses, subjects, click URLs, bounce
-// messages, and the raw payload are deliberately excluded.
-type ResendEvent struct {
-	SvixID          string
-	Type            string
-	ProviderEmailID string
-	InvitationID    string
-	CreatedAt       time.Time
-}
+const resendProviderName = "resend"
 
-// ResendEventRecorder durably deduplicates events by SvixID and projects
-// delivery state. The bool is true only for the first accepted delivery.
-type ResendEventRecorder interface {
-	RecordResendEvent(ctx context.Context, event ResendEvent) (bool, error)
-}
-
+// ResendWebhookConfig configures the Resend delivery-callback handler. Recorder
+// is the provider-agnostic sink: this handler decodes and translates Resend's
+// Svix events into canonical DeliveryEvents before recording them.
 type ResendWebhookConfig struct {
 	SigningSecret string
-	Recorder      ResendEventRecorder
+	Recorder      DeliveryEventRecorder
 	MaxBodyBytes  int64
 }
 
@@ -83,7 +70,7 @@ func NewResendWebhookHandler(cfg ResendWebhookConfig) (http.Handler, error) {
 			http.Error(w, "invalid webhook event", http.StatusBadRequest)
 			return
 		}
-		if _, err := cfg.Recorder.RecordResendEvent(r.Context(), event); err != nil {
+		if _, err := cfg.Recorder.RecordDeliveryEvent(r.Context(), event); err != nil {
 			http.Error(w, "webhook persistence unavailable", http.StatusServiceUnavailable)
 			return
 		}
@@ -91,7 +78,11 @@ func NewResendWebhookHandler(cfg ResendWebhookConfig) (http.Handler, error) {
 	}), nil
 }
 
-func decodeResendEvent(svixID string, body []byte) (ResendEvent, error) {
+// decodeResendEvent verifies the shape of a Resend event and translates it into
+// a canonical, provider-neutral DeliveryEvent. The Svix message id is the
+// replay-stable dedup key; the native event name is retained for audit while
+// Status carries the canonical projection.
+func decodeResendEvent(svixID string, body []byte) (DeliveryEvent, error) {
 	var payload struct {
 		Type      string    `json:"type"`
 		CreatedAt time.Time `json:"created_at"`
@@ -101,28 +92,49 @@ func decodeResendEvent(svixID string, body []byte) (ResendEvent, error) {
 		} `json:"data"`
 	}
 	if err := json.Unmarshal(body, &payload); err != nil {
-		return ResendEvent{}, err
+		return DeliveryEvent{}, err
 	}
-	event := ResendEvent{
-		SvixID:          strings.TrimSpace(svixID),
-		Type:            strings.TrimSpace(payload.Type),
-		ProviderEmailID: strings.TrimSpace(payload.Data.EmailID),
-		InvitationID:    strings.TrimSpace(payload.Data.Tags["invitation_id"]),
-		CreatedAt:       payload.CreatedAt.UTC(),
+	eventType := strings.TrimSpace(payload.Type)
+	if !supportedResendEmailEvent(eventType) {
+		return DeliveryEvent{}, errors.New("unsupported Resend event type")
 	}
-	if event.SvixID == "" || len(event.SvixID) > 255 {
-		return ResendEvent{}, errors.New("invalid Svix event id")
+	event := DeliveryEvent{
+		Provider:          resendProviderName,
+		EventID:           strings.TrimSpace(svixID),
+		ProviderMessageID: strings.TrimSpace(payload.Data.EmailID),
+		EventType:         eventType,
+		Status:            resendDeliveryStatus(eventType),
+		InvitationID:      strings.TrimSpace(payload.Data.Tags["invitation_id"]),
+		OccurredAt:        payload.CreatedAt.UTC(),
 	}
-	if !supportedResendEmailEvent(event.Type) {
-		return ResendEvent{}, errors.New("unsupported Resend event type")
+	if event.EventID == "" || len(event.EventID) > 255 {
+		return DeliveryEvent{}, errors.New("invalid Svix event id")
 	}
-	if event.ProviderEmailID == "" || len(event.ProviderEmailID) > 255 {
-		return ResendEvent{}, errors.New("invalid Resend email id")
+	if event.ProviderMessageID == "" || len(event.ProviderMessageID) > 255 {
+		return DeliveryEvent{}, errors.New("invalid Resend email id")
 	}
-	if event.CreatedAt.IsZero() {
-		return ResendEvent{}, errors.New("missing Resend event time")
+	if event.OccurredAt.IsZero() {
+		return DeliveryEvent{}, errors.New("missing Resend event time")
 	}
 	return event, nil
+}
+
+// resendDeliveryStatus maps Resend's native event names onto the canonical
+// delivery status. Events that do not advance delivery state (delays, opens,
+// clicks) map to the empty status: they are recorded but never projected.
+func resendDeliveryStatus(eventType string) DeliveryStatus {
+	switch eventType {
+	case "email.sent":
+		return DeliveryStatusSent
+	case "email.delivered":
+		return DeliveryStatusDelivered
+	case "email.failed", "email.bounced", "email.suppressed":
+		return DeliveryStatusBounced
+	case "email.complained":
+		return DeliveryStatusComplained
+	default:
+		return ""
+	}
 }
 
 func supportedResendEmailEvent(eventType string) bool {

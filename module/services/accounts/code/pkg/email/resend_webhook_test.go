@@ -16,15 +16,15 @@ import (
 	svix "github.com/svix/svix-webhooks/go"
 )
 
-type memoryResendRecorder struct {
+type memoryDeliveryRecorder struct {
 	mu     sync.Mutex
-	events map[string]ResendEvent
+	events map[string]DeliveryEvent
 	err    error
 }
 
-func (r *memoryResendRecorder) RecordResendEvent(
+func (r *memoryDeliveryRecorder) RecordDeliveryEvent(
 	_ context.Context,
-	event ResendEvent,
+	event DeliveryEvent,
 ) (bool, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
@@ -32,18 +32,19 @@ func (r *memoryResendRecorder) RecordResendEvent(
 		return false, r.err
 	}
 	if r.events == nil {
-		r.events = make(map[string]ResendEvent)
+		r.events = make(map[string]DeliveryEvent)
 	}
-	if _, exists := r.events[event.SvixID]; exists {
+	key := event.Provider + "\x00" + event.EventID
+	if _, exists := r.events[key]; exists {
 		return false, nil
 	}
-	r.events[event.SvixID] = event
+	r.events[key] = event
 	return true, nil
 }
 
 func TestResendWebhookVerifiesRawBodyAndDeduplicates(t *testing.T) {
 	secret := "whsec_" + base64.StdEncoding.EncodeToString([]byte("resend-test-secret"))
-	recorder := &memoryResendRecorder{}
+	recorder := &memoryDeliveryRecorder{}
 	handler, err := NewResendWebhookHandler(ResendWebhookConfig{
 		SigningSecret: secret,
 		Recorder:      recorder,
@@ -68,15 +69,17 @@ func TestResendWebhookVerifiesRawBodyAndDeduplicates(t *testing.T) {
 	}
 
 	require.Len(t, recorder.events, 1)
-	event := recorder.events["msg_delivery_123"]
-	require.Equal(t, "email.delivered", event.Type)
-	require.Equal(t, "email_123", event.ProviderEmailID)
+	event := recorder.events["resend\x00msg_delivery_123"]
+	require.Equal(t, "resend", event.Provider)
+	require.Equal(t, "email.delivered", event.EventType)
+	require.Equal(t, DeliveryStatusDelivered, event.Status)
+	require.Equal(t, "email_123", event.ProviderMessageID)
 	require.Equal(t, "01955e5e-9dc7-7c89-b211-754d572db2ab", event.InvitationID)
 }
 
 func TestResendWebhookRejectsTamperingBeforePersistence(t *testing.T) {
 	secret := "whsec_" + base64.StdEncoding.EncodeToString([]byte("resend-test-secret"))
-	recorder := &memoryResendRecorder{}
+	recorder := &memoryDeliveryRecorder{}
 	handler, err := NewResendWebhookHandler(ResendWebhookConfig{
 		SigningSecret: secret,
 		Recorder:      recorder,
@@ -100,7 +103,7 @@ func TestResendWebhookRejectsTamperingBeforePersistence(t *testing.T) {
 
 func TestResendWebhookRejectsStaleReplayAndBoundsBody(t *testing.T) {
 	secret := "whsec_" + base64.StdEncoding.EncodeToString([]byte("resend-test-secret"))
-	recorder := &memoryResendRecorder{}
+	recorder := &memoryDeliveryRecorder{}
 	handler, err := NewResendWebhookHandler(ResendWebhookConfig{
 		SigningSecret: secret,
 		Recorder:      recorder,
@@ -131,7 +134,7 @@ func TestResendWebhookRejectsStaleReplayAndBoundsBody(t *testing.T) {
 
 func TestResendWebhookReturnsRetryableFailureWhenPersistenceFails(t *testing.T) {
 	secret := "whsec_" + base64.StdEncoding.EncodeToString([]byte("resend-test-secret"))
-	recorder := &memoryResendRecorder{err: context.DeadlineExceeded}
+	recorder := &memoryDeliveryRecorder{err: context.DeadlineExceeded}
 	handler, err := NewResendWebhookHandler(ResendWebhookConfig{
 		SigningSecret: secret,
 		Recorder:      recorder,
@@ -169,7 +172,7 @@ func TestResendSenderDeliveryWebhook(t *testing.T) {
 	sender, err := NewResendSender(ResendConfig{APIKey: "re_test", WebhookSecret: "whsec_test"})
 	require.NoError(t, err)
 
-	path, handler, err := sender.DeliveryWebhook(&memoryResendRecorder{})
+	path, handler, err := sender.DeliveryWebhook(&memoryDeliveryRecorder{})
 	require.NoError(t, err)
 	require.Equal(t, ResendWebhookPath, path)
 	require.NotNil(t, handler)
@@ -178,6 +181,6 @@ func TestResendSenderDeliveryWebhook(t *testing.T) {
 	// so wiring fails closed rather than serving an unverified route.
 	senderNoSecret, err := NewResendSender(ResendConfig{APIKey: "re_test"})
 	require.NoError(t, err)
-	_, _, err = senderNoSecret.DeliveryWebhook(&memoryResendRecorder{})
+	_, _, err = senderNoSecret.DeliveryWebhook(&memoryDeliveryRecorder{})
 	require.Error(t, err)
 }
