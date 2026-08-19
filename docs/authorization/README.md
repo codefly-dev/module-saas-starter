@@ -65,12 +65,13 @@ Where each capability is in the pipeline. Update this row when a stage completes
 | Hierarchical / layered scope | 🟡 proposed (#177) | 🟡 firm | 🟡 RFC-0001 in review → ADR-0002 draft | ◻︎ spike (design proposed) | ltree ancestor-match; scope resolved from id |
 | Per-record sharing | 🟡 proposed (#177) | 🟡 firm | 🟡 RFC-0002 in review → ADR-0003 draft | ◻︎ spike | intra-org v1; `share` is a capability |
 | Acting on behalf of (agents) | 🟡 proposed (#177) | 🟡 firm | 🟡 RFC-0003 in review → ADR-0004 draft | ✅ chain exists; durability pending | chain home = Accounts; single owner |
-| Field-level visibility | 🟡 proposed (#177) — **cut v1?** | ◻︎ (pending cut decision) | ◻︎ (pending) | ◻︎ (pending) | split RPCs by tier; B15 latent |
+| Field-level visibility | ✅ decided (#179) | — | ✅ ADR-0005 | ⛔ out of scope | cut v1; split RPCs by tier; B15 latent |
 | Typed scope registry | 🟡 proposed (#177) | 🟡 firm | 🟡 folded into RFC-0001 | ◻︎ | closes the untyped-scope gap |
 | ABAC / conditional | ◻︎ | ◻︎ | ◻︎ | ◻︎ | bounded predicates in Go (COND questions still open) |
 
-Legend: ✅ done · 🟡 drafted / **proposed — to review** · ◻︎ not started.
-All #177 calls are **proposals awaiting sign-off**; none are accepted yet.
+Legend: ✅ done/decided · 🟡 drafted / **proposed — to review** · ◻︎ not started · ⛔ out of scope · — n/a.
+All #177 calls are **proposals awaiting sign-off**; none are accepted yet — except
+field-level visibility, decided (cut) in [ADR-0005](9-reference/decisions/0005-field-level-visibility-out-of-scope.md).
 
 ## Conventions
 
