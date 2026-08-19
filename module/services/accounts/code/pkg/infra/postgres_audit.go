@@ -31,12 +31,14 @@ func (s *PostgresStore) InsertAuditEvent(ctx context.Context, entry business.Aud
 	_, err = q.Exec(ctx, `
 		INSERT INTO audit_events (
 			id, event_type, schema_version, actor_id, actor_type,
-			resource, resource_id, org_id, payload, ip_address, created_at
-		) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)`,
+			resource, resource_id, org_id, payload, ip_address, created_at,
+			on_behalf_of_principal_id, actor_chain_hop_id
+		) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)`,
 		entry.ID, string(entry.EventType), entry.SchemaVersion,
 		nilIfNotUUID(entry.ActorID), entry.ActorType,
 		entry.Resource, nilIfNotUUID(entry.ResourceID), nilIfNotUUID(entry.OrgID),
-		payload, nilIfEmpty(entry.IPAddress), entry.CreatedAt)
+		payload, nilIfEmpty(entry.IPAddress), entry.CreatedAt,
+		nilIfNotUUID(entry.OnBehalfOfPrincipalID), nilIfNotUUID(entry.ActorChainHopID))
 	return err
 }
 

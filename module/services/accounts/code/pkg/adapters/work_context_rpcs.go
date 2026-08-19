@@ -40,6 +40,7 @@ type WorkContextAuthorityServer struct {
 	verifier     *codefly.WorkContextVerifier
 	authority    business.WorkContextAuthorityStore
 	consumer     business.WorkContextConsumerAuthorityStore
+	journal      business.ActorChainJournal
 	configureErr error
 }
 
@@ -49,6 +50,7 @@ func (s *WorkContextAuthorityServer) Configure(config WorkContextAuthorityConfig
 	s.verifier = nil
 	s.authority = nil
 	s.consumer = nil
+	s.journal = nil
 	s.configureErr = nil
 
 	if s.issuer == "" || strings.TrimSpace(config.KeyID) == "" {
@@ -89,6 +91,7 @@ func (s *WorkContextAuthorityServer) Configure(config WorkContextAuthorityConfig
 	s.verifier = verifier
 	s.authority = config.Authority
 	s.consumer, _ = config.Authority.(business.WorkContextConsumerAuthorityStore)
+	s.journal, _ = config.Authority.(business.ActorChainJournal)
 }
 
 func (s *WorkContextAuthorityServer) CheckAuthorizationRevision(
@@ -222,6 +225,8 @@ func (s *WorkContextAuthorityServer) StartTask(
 		actors = []*basev0.WorkActorV1{{
 			PrincipalId:   facts.Actor.ID,
 			PrincipalKind: facts.Actor.Kind,
+			// The per-hop delegation id IS the durable journal row id: the
+			// ephemeral token and the persisted record share one identifier.
 			DelegationId:  uuid.NewString(),
 			GrantedScopes: cloneWorkScopes(scopes),
 		}}
@@ -243,6 +248,9 @@ func (s *WorkContextAuthorityServer) StartTask(
 	})
 	if err != nil {
 		return nil, mapWorkContextError(err)
+	}
+	if err := s.journalActorHop(ctx, signed); err != nil {
+		return nil, err
 	}
 	return issuedWorkContext(token, signed), nil
 }
@@ -369,7 +377,88 @@ func (s *WorkContextAuthorityServer) StartChildSession(
 	if err != nil {
 		return nil, mapWorkContextError(err)
 	}
+	if err := s.journalActorHop(ctx, signed); err != nil {
+		return nil, err
+	}
 	return issuedWorkContext(token, signed), nil
+}
+
+// journalActorHop durably records the newest on-behalf-of hop of a freshly
+// signed Work Context, content-addressed and chained to the hop it narrows from.
+// The hop id equals the token's per-hop delegation_id, so the durable record and
+// the ephemeral token share one identifier. Durability is a guarantee, not
+// best-effort: a failed append fails issuance rather than minting an
+// unaccountable token.
+func (s *WorkContextAuthorityServer) journalActorHop(
+	ctx context.Context,
+	signed *basev0.WorkContextV1,
+) error {
+	if s.journal == nil {
+		return nil
+	}
+	chain := signed.GetActorChain()
+	if len(chain) == 0 {
+		return nil
+	}
+	index := len(chain) - 1
+	actor := chain[index]
+	parentDelegationID := ""
+	if index > 0 {
+		parentDelegationID = chain[index-1].GetDelegationId()
+	}
+	_, err := s.journal.AppendActorChainHop(ctx, business.ActorChainHopInput{
+		ID:                    actor.GetDelegationId(),
+		OrgID:                 signed.GetTenantId(),
+		TaskID:                signed.GetTaskId(),
+		SessionID:             signed.GetSessionId(),
+		OwnerPrincipalID:      signed.GetOwnerPrincipalId(),
+		ActorPrincipalID:      actor.GetPrincipalId(),
+		ActorKind:             actor.GetPrincipalKind(),
+		ParentDelegationID:    parentDelegationID,
+		GrantedScopes:         actorChainScopes(actor.GetGrantedScopes()),
+		AuthorizationRevision: signed.GetAuthorizationRevision(),
+		HopIndex:              index,
+	})
+	if err != nil {
+		return status.Error(codes.Internal, "cannot persist actor chain hop")
+	}
+	return nil
+}
+
+// requireHopNotRevoked fails closed if a parent-chain hop, or any ancestor it
+// chains through, has been revoked. This is the per-hop revocation layer: it kills
+// a single delegation branch between epoch bumps of authorization_revision, which
+// only ever moves the whole owner/org forward. A hop with no journal record
+// (issued before durability was wired) is treated as live — the epoch counter and
+// short token TTL remain the backstop.
+func (s *WorkContextAuthorityServer) requireHopNotRevoked(
+	ctx context.Context,
+	orgID string,
+	delegationID string,
+) error {
+	if s.journal == nil || delegationID == "" {
+		return nil
+	}
+	revoked, err := s.journal.IsActorChainHopRevoked(ctx, orgID, delegationID)
+	if err != nil {
+		return status.Error(codes.Internal, "cannot check actor chain revocation")
+	}
+	if revoked {
+		return status.Error(codes.PermissionDenied, "actor chain hop has been revoked")
+	}
+	return nil
+}
+
+func actorChainScopes(scopes []*basev0.WorkScopeV1) []business.ActorChainScope {
+	out := make([]business.ActorChainScope, 0, len(scopes))
+	for _, scope := range scopes {
+		out = append(out, business.ActorChainScope{
+			ResourceKind: scope.GetResourceKind(),
+			Actions:      append([]string(nil), scope.GetActions()...),
+			ResourceIDs:  append([]string(nil), scope.GetResourceIds()...),
+		})
+	}
+	return out
 }
 
 func (s *WorkContextAuthorityServer) authorizeOwner(ctx context.Context, orgID string) (string, error) {
@@ -421,6 +510,9 @@ func (s *WorkContextAuthorityServer) verifyParent(
 	}
 
 	for _, actor := range parent.GetActorChain() {
+		if err := s.requireHopNotRevoked(ctx, orgID, actor.GetDelegationId()); err != nil {
+			return codefly.WorkContextToken{}, nil, err
+		}
 		permissions := permissionsFromCoreScopes(actor.GetGrantedScopes())
 		facts, resolveErr := s.resolveAuthority(
 			ctx, orgID, ownerID, actor.GetPrincipalId(), permissions,
