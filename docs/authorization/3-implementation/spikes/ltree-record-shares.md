@@ -199,11 +199,16 @@ func (s *PostgresStore) CheckAccess(
 	// Ancestor branch: a grant whose scope_path is an ancestor-or-equal of the
 	// record's path (g.scope_path @> $4). Overlay branch: a direct share on the id.
 	// A NULL role_permissions wildcard ('*') matches, same as CheckPermission.
-	query := fmt.Sprintf(`
+	//
+	// SECURITY: $4 (recordPath) MUST be the record's TRUE stored scope, resolved
+	// from resourceID's own RLS-protected row — never a request field. Otherwise a
+	// caller entitled at one scope can authorize a resourceID that actually lives
+	// under a different scope. See open question 2 (bind recordPath to resourceID).
+	query := `
 		SELECT 'scope' AS via
 		FROM scope_grants g
 		JOIN role_permissions rp ON rp.role_id = g.role_id
-		WHERE `+fmt.Sprintf(subjectPredicate, "g")+`
+		WHERE ` + fmt.Sprintf(subjectPredicate, "g") + `
 		  AND g.scope_path @> $4::ltree
 		  AND (g.expires_at IS NULL OR g.expires_at > now())
 		  AND (rp.resource = '*' OR rp.resource = $2)
@@ -218,7 +223,7 @@ func (s *PostgresStore) CheckAccess(
 		  AND (s.expires_at IS NULL OR s.expires_at > now())
 		  AND (rp.resource = '*' OR rp.resource = $2)
 		  AND (rp.action   = '*' OR rp.action   = $3)
-		LIMIT 1`)
+		LIMIT 1`
 
 	var via string
 	err := executor.QueryRow(ctx, query, subjectID, resourceType, action, recordPath, resourceID).Scan(&via)
@@ -322,34 +327,44 @@ loads" pattern the Drive/GitHub/Notion references all use.
    a hyphen-stripped hex, or a short synthetic key per node. `scope_nodes.id`
    stays a real UUID; `scope_path` uses the encoded labels. This needs settling
    before any schema is real.
-2. **No `app.current_principal_id` GUC today.** Only `app.current_org_id` and
+2. **[SECURITY — load-bearing] Bind `recordPath` to `resourceID`.** The scope
+   branch authorizes purely on the caller-supplied `recordPath` (`g.scope_path @>
+   $4`); nothing in the primitive proves that path is the record's *true* stored
+   scope. If a handler ever fills `recordPath` from a request field, a caller
+   entitled at `foundation.solution_x` can authorize a `resourceID` that actually
+   lives under `foundation.solution_y`. This is the exact bypass `resource_bindings`
+   exist to prevent. **Decision needed:** either `CheckAccess` resolves the scope
+   *from* `resourceID` itself (one extra indexed lookup, removes the footgun), or
+   the contract makes "`recordPath` proven from the record's own RLS-protected row"
+   a hard, tested precondition — not prose. Prefer the former.
+3. **No `app.current_principal_id` GUC today.** Only `app.current_org_id` and
    `app.current_user_id` exist. Handler-side `CheckAccess` sidesteps this
    (subject is a query parameter). RLS-side composition would need a principal
    GUC — and note humans have `principal.id == user.uuid` while agents/services
    don't, so it can't just alias `current_user_id`. Add `app.current_principal_id`
    only if/when we go RLS-side.
-3. **Role model: reuse vs. a viewer/editor/owner ladder.** This sketch reuses
+4. **Role model: reuse vs. a viewer/editor/owner ladder.** This sketch reuses
    `roles`/`role_permissions` (consistent, one vocabulary). The Drive/Notion
    "highest-permission-wins" rule then means "any matching grant that permits the
    action" — which the `UNION … LIMIT 1` already gives for a boolean check. If we
    ever need to *return* the effective role (not just allow/deny), add the
    `nlevel() DESC` ordering to pick the most-specific, and define whether
    most-specific or highest-privilege wins on conflict.
-4. **Reduce-at-leaf semantics.** Drive's rule is "inherited access can be
+5. **Reduce-at-leaf semantics.** Drive's rule is "inherited access can be
    widened at a leaf but not silently narrowed." This overlay is widen-only
    (grants add). If we ever need per-record *denials*, that's a separate,
    conflict-resolution-heavy feature — recommend explicitly out of scope for v1.
-5. **Performance.** The GiST `@>` ancestor test is fast; the risk is the
+6. **Performance.** The GiST `@>` ancestor test is fast; the risk is the
    list-resolver's correlated cost on wide result sets. If profiling shows it,
    precompute the caller's entitled ancestor paths once per request and pass them
    as an array (`a.scope_path <@ ANY($paths)`). Start with the join for
    correctness; optimize only if measured.
-6. **Graduation trigger.** If group-of-groups nesting or folder-of-folders depth
+7. **Graduation trigger.** If group-of-groups nesting or folder-of-folders depth
    grows past what recursive SQL serves comfortably, this is the inflection point
    to move `scope_grants`/`record_shares` behind a ReBAC PDP (SpiceDB/OpenFGA/
    WorkOS FGA) — keeping RLS as the floor and adopting the consistency-token
    discipline. Until then, these tables are the right amount of machinery.
-7. **Chain-authorship linkage (separate spike).** `granted_by` records who
+8. **Chain-authorship linkage (separate spike).** `granted_by` records who
    created a grant/share; tying that to the Work Context `actor_chain` /
    `delegation_grants` (so a share made *on behalf of* someone is provable) is
    the durable-actor-chain spike, not this one.

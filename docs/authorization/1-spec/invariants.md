@@ -22,10 +22,16 @@ Every delegation hop can only reduce authority. Enforced at **both** issue and
 verify, so neither a malicious issuer nor a malicious holder can widen. Owner,
 tenant, and task are structurally immutable across a chain. *(Backs B11.)*
 
-## I4 — Authority reflects current state
-Decisions use current membership/roles/revisions, not a stale snapshot. Role and
-membership changes revoke affected sessions in the same transaction; capability
-issuance fails closed on a stale authorization revision. *(Backs B13.)*
+## I4 — Authority reflects current state (with a bounded token-staleness window)
+**DB-backed** decisions read live state: `CheckPermission` and refresh-time
+re-resolution use current membership/roles/revisions, and role/membership changes
+revoke affected sessions in the same transaction; capability issuance fails closed
+on a stale authorization revision. **Token-claim-backed** decisions are *not*
+instantaneous: L1 gates reading `X-Org-Role` and the `sr` scoped-roles claim
+reflect the token, so a just-revoked grant can persist until the access token is
+refreshed — bounded by the access-token TTL (~15 min), never longer. Gate anything
+that must be revoked instantly on the DB-backed path, not the claim. *(Backs B13;
+see [B13's freshness question](../0-product/behaviors.md).)*
 
 ## I5 — Identity headers are earned, not trusted
 Identity forwarded between services is trusted only when stamped by the gateway
