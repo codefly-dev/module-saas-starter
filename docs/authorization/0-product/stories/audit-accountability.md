@@ -10,7 +10,7 @@
 
 ### AUD-2 · Record the acting principal
 **As an** auditor, **I want** each action tagged with who did it, **so that** it's attributable.
-- Acceptance: actor id + type (user/api_key/service/agent) on every event (exists).
+- Acceptance: actor id + type (user/api_key/system/agent) on every event (exists).
 - ❓ Consistent actor model across all surfaces?
 
 ### AUD-3 · Record on-behalf-of (the second party)
