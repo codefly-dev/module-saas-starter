@@ -602,6 +602,69 @@ func (Sensitivity) EnumDescriptor() ([]byte, []int) {
 	return file_saas_policy_v1_options_proto_rawDescGZIP(), []int{9}
 }
 
+// ConditionAttribute names the closed set of record and caller facts a bounded
+// attribute predicate may read. This is a fixed vocabulary evaluated in Go, not
+// a general policy language: adding an attribute is a deliberate schema change,
+// and an unrecognized attribute fails closed.
+type ConditionAttribute int32
+
+const (
+	ConditionAttribute_CONDITION_ATTRIBUTE_UNSPECIFIED ConditionAttribute = 0
+	// The caller belongs to the team that owns the target record.
+	ConditionAttribute_CONDITION_ATTRIBUTE_OWNER_TEAM ConditionAttribute = 1
+	// The target record's status is one of allowed_statuses.
+	ConditionAttribute_CONDITION_ATTRIBUTE_STATUS ConditionAttribute = 2
+	// The caller's clearance level is at least the record's classification level.
+	ConditionAttribute_CONDITION_ATTRIBUTE_CLASSIFICATION ConditionAttribute = 3
+	// The request occurs within time_window.
+	ConditionAttribute_CONDITION_ATTRIBUTE_TIME_WINDOW ConditionAttribute = 4
+)
+
+// Enum value maps for ConditionAttribute.
+var (
+	ConditionAttribute_name = map[int32]string{
+		0: "CONDITION_ATTRIBUTE_UNSPECIFIED",
+		1: "CONDITION_ATTRIBUTE_OWNER_TEAM",
+		2: "CONDITION_ATTRIBUTE_STATUS",
+		3: "CONDITION_ATTRIBUTE_CLASSIFICATION",
+		4: "CONDITION_ATTRIBUTE_TIME_WINDOW",
+	}
+	ConditionAttribute_value = map[string]int32{
+		"CONDITION_ATTRIBUTE_UNSPECIFIED":    0,
+		"CONDITION_ATTRIBUTE_OWNER_TEAM":     1,
+		"CONDITION_ATTRIBUTE_STATUS":         2,
+		"CONDITION_ATTRIBUTE_CLASSIFICATION": 3,
+		"CONDITION_ATTRIBUTE_TIME_WINDOW":    4,
+	}
+)
+
+func (x ConditionAttribute) Enum() *ConditionAttribute {
+	p := new(ConditionAttribute)
+	*p = x
+	return p
+}
+
+func (x ConditionAttribute) String() string {
+	return protoimpl.X.EnumStringOf(x.Descriptor(), protoreflect.EnumNumber(x))
+}
+
+func (ConditionAttribute) Descriptor() protoreflect.EnumDescriptor {
+	return file_saas_policy_v1_options_proto_enumTypes[10].Descriptor()
+}
+
+func (ConditionAttribute) Type() protoreflect.EnumType {
+	return &file_saas_policy_v1_options_proto_enumTypes[10]
+}
+
+func (x ConditionAttribute) Number() protoreflect.EnumNumber {
+	return protoreflect.EnumNumber(x)
+}
+
+// Deprecated: Use ConditionAttribute.Descriptor instead.
+func (ConditionAttribute) EnumDescriptor() ([]byte, []int) {
+	return file_saas_policy_v1_options_proto_rawDescGZIP(), []int{10}
+}
+
 // ResourceBinding binds a protobuf request field to an authorization target.
 // request_field is a protobuf field path such as "org_id" or "webhook.id";
 // lookup controls the finite database lookup the policy adapter may perform.
@@ -720,6 +783,135 @@ func (x *AuditPolicy) GetEmission() AuditEmission {
 	return AuditEmission_AUDIT_EMISSION_UNSPECIFIED
 }
 
+// TimeWindow is a daily wall-clock window, half-open [start_minute, end_minute)
+// in minutes from local midnight, evaluated in the named IANA timezone. It does
+// not wrap past midnight, so start_minute is strictly less than end_minute.
+type TimeWindow struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	StartMinute   uint32                 `protobuf:"varint,1,opt,name=start_minute,json=startMinute,proto3" json:"start_minute,omitempty"`
+	EndMinute     uint32                 `protobuf:"varint,2,opt,name=end_minute,json=endMinute,proto3" json:"end_minute,omitempty"`
+	Timezone      string                 `protobuf:"bytes,3,opt,name=timezone,proto3" json:"timezone,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *TimeWindow) Reset() {
+	*x = TimeWindow{}
+	mi := &file_saas_policy_v1_options_proto_msgTypes[2]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *TimeWindow) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*TimeWindow) ProtoMessage() {}
+
+func (x *TimeWindow) ProtoReflect() protoreflect.Message {
+	mi := &file_saas_policy_v1_options_proto_msgTypes[2]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use TimeWindow.ProtoReflect.Descriptor instead.
+func (*TimeWindow) Descriptor() ([]byte, []int) {
+	return file_saas_policy_v1_options_proto_rawDescGZIP(), []int{2}
+}
+
+func (x *TimeWindow) GetStartMinute() uint32 {
+	if x != nil {
+		return x.StartMinute
+	}
+	return 0
+}
+
+func (x *TimeWindow) GetEndMinute() uint32 {
+	if x != nil {
+		return x.EndMinute
+	}
+	return 0
+}
+
+func (x *TimeWindow) GetTimezone() string {
+	if x != nil {
+		return x.Timezone
+	}
+	return ""
+}
+
+// Condition is one bounded attribute predicate declared beside an RPC. The
+// attribute selects a closed evaluator and only its matching parameter field is
+// read; the others must be empty. A method's conditions are combined with AND,
+// and evaluation fails closed on any unrecognized or malformed condition.
+type Condition struct {
+	state     protoimpl.MessageState `protogen:"open.v1"`
+	Attribute ConditionAttribute     `protobuf:"varint,1,opt,name=attribute,proto3,enum=saas.policy.v1.ConditionAttribute" json:"attribute,omitempty"`
+	// allowed_statuses applies only to CONDITION_ATTRIBUTE_STATUS.
+	AllowedStatuses []string `protobuf:"bytes,2,rep,name=allowed_statuses,json=allowedStatuses,proto3" json:"allowed_statuses,omitempty"`
+	// time_window applies only to CONDITION_ATTRIBUTE_TIME_WINDOW.
+	TimeWindow    *TimeWindow `protobuf:"bytes,3,opt,name=time_window,json=timeWindow,proto3" json:"time_window,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *Condition) Reset() {
+	*x = Condition{}
+	mi := &file_saas_policy_v1_options_proto_msgTypes[3]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *Condition) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*Condition) ProtoMessage() {}
+
+func (x *Condition) ProtoReflect() protoreflect.Message {
+	mi := &file_saas_policy_v1_options_proto_msgTypes[3]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use Condition.ProtoReflect.Descriptor instead.
+func (*Condition) Descriptor() ([]byte, []int) {
+	return file_saas_policy_v1_options_proto_rawDescGZIP(), []int{3}
+}
+
+func (x *Condition) GetAttribute() ConditionAttribute {
+	if x != nil {
+		return x.Attribute
+	}
+	return ConditionAttribute_CONDITION_ATTRIBUTE_UNSPECIFIED
+}
+
+func (x *Condition) GetAllowedStatuses() []string {
+	if x != nil {
+		return x.AllowedStatuses
+	}
+	return nil
+}
+
+func (x *Condition) GetTimeWindow() *TimeWindow {
+	if x != nil {
+		return x.TimeWindow
+	}
+	return nil
+}
+
 // MethodPolicy is the complete declarative input to Codefly's route and policy
 // compiler. Complex, state-dependent authorization remains in domain code.
 type MethodPolicy struct {
@@ -740,13 +932,17 @@ type MethodPolicy struct {
 	// attempt that must use the dedicated per-client-IP edge budget. It is not
 	// inferred from method names or HTTP paths.
 	AuthenticationFactorAttempt bool `protobuf:"varint,13,opt,name=authentication_factor_attempt,json=authenticationFactorAttempt,proto3" json:"authentication_factor_attempt,omitempty"`
-	unknownFields               protoimpl.UnknownFields
-	sizeCache                   protoimpl.SizeCache
+	// conditions is the closed set of bounded attribute predicates that must all
+	// hold, evaluated in domain code above the forced RLS floor — never replacing
+	// it. An empty list imposes no attribute condition.
+	Conditions    []*Condition `protobuf:"bytes,14,rep,name=conditions,proto3" json:"conditions,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
 }
 
 func (x *MethodPolicy) Reset() {
 	*x = MethodPolicy{}
-	mi := &file_saas_policy_v1_options_proto_msgTypes[2]
+	mi := &file_saas_policy_v1_options_proto_msgTypes[4]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -758,7 +954,7 @@ func (x *MethodPolicy) String() string {
 func (*MethodPolicy) ProtoMessage() {}
 
 func (x *MethodPolicy) ProtoReflect() protoreflect.Message {
-	mi := &file_saas_policy_v1_options_proto_msgTypes[2]
+	mi := &file_saas_policy_v1_options_proto_msgTypes[4]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -771,7 +967,7 @@ func (x *MethodPolicy) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use MethodPolicy.ProtoReflect.Descriptor instead.
 func (*MethodPolicy) Descriptor() ([]byte, []int) {
-	return file_saas_policy_v1_options_proto_rawDescGZIP(), []int{2}
+	return file_saas_policy_v1_options_proto_rawDescGZIP(), []int{4}
 }
 
 func (x *MethodPolicy) GetExposure() Exposure {
@@ -865,6 +1061,13 @@ func (x *MethodPolicy) GetAuthenticationFactorAttempt() bool {
 	return false
 }
 
+func (x *MethodPolicy) GetConditions() []*Condition {
+	if x != nil {
+		return x.Conditions
+	}
+	return nil
+}
+
 var file_saas_policy_v1_options_proto_extTypes = []protoimpl.ExtensionInfo{
 	{
 		ExtendedType:  (*descriptorpb.MethodOptions)(nil),
@@ -895,7 +1098,18 @@ const file_saas_policy_v1_options_proto_rawDesc = "" +
 	"\x06lookup\x18\x03 \x01(\x0e2\x1e.saas.policy.v1.ResourceLookupR\x06lookup\"`\n" +
 	"\vAuditPolicy\x12\x16\n" +
 	"\x06events\x18\x01 \x03(\tR\x06events\x129\n" +
-	"\bemission\x18\x02 \x01(\x0e2\x1d.saas.policy.v1.AuditEmissionR\bemission\"\xa5\x06\n" +
+	"\bemission\x18\x02 \x01(\x0e2\x1d.saas.policy.v1.AuditEmissionR\bemission\"j\n" +
+	"\n" +
+	"TimeWindow\x12!\n" +
+	"\fstart_minute\x18\x01 \x01(\rR\vstartMinute\x12\x1d\n" +
+	"\n" +
+	"end_minute\x18\x02 \x01(\rR\tendMinute\x12\x1a\n" +
+	"\btimezone\x18\x03 \x01(\tR\btimezone\"\xb5\x01\n" +
+	"\tCondition\x12@\n" +
+	"\tattribute\x18\x01 \x01(\x0e2\".saas.policy.v1.ConditionAttributeR\tattribute\x12)\n" +
+	"\x10allowed_statuses\x18\x02 \x03(\tR\x0fallowedStatuses\x12;\n" +
+	"\vtime_window\x18\x03 \x01(\v2\x1a.saas.policy.v1.TimeWindowR\n" +
+	"timeWindow\"\xe0\x06\n" +
 	"\fMethodPolicy\x124\n" +
 	"\bexposure\x18\x01 \x01(\x0e2\x18.saas.policy.v1.ExposureR\bexposure\x129\n" +
 	"\x06tenant\x18\x02 \x01(\x0e2!.saas.policy.v1.TenantRequirementR\x06tenant\x12 \n" +
@@ -911,7 +1125,10 @@ const file_saas_policy_v1_options_proto_rawDesc = "" +
 	" \x01(\x0e2\x1b.saas.policy.v1.SensitivityR\x12requestSensitivity\x12N\n" +
 	"\x14response_sensitivity\x18\v \x01(\x0e2\x1b.saas.policy.v1.SensitivityR\x13responseSensitivity\x12L\n" +
 	"\rplatform_role\x18\f \x01(\x0e2'.saas.policy.v1.PlatformRoleRequirementR\fplatformRole\x12B\n" +
-	"\x1dauthentication_factor_attempt\x18\r \x01(\bR\x1bauthenticationFactorAttempt*l\n" +
+	"\x1dauthentication_factor_attempt\x18\r \x01(\bR\x1bauthenticationFactorAttempt\x129\n" +
+	"\n" +
+	"conditions\x18\x0e \x03(\v2\x19.saas.policy.v1.ConditionR\n" +
+	"conditions*l\n" +
 	"\bExposure\x12\x18\n" +
 	"\x14EXPOSURE_UNSPECIFIED\x10\x00\x12\x13\n" +
 	"\x0fEXPOSURE_PUBLIC\x10\x01\x12\x1a\n" +
@@ -976,7 +1193,13 @@ const file_saas_policy_v1_options_proto_rawDesc = "" +
 	"\x12SENSITIVITY_PUBLIC\x10\x01\x12\x18\n" +
 	"\x14SENSITIVITY_INTERNAL\x10\x02\x12\x1c\n" +
 	"\x18SENSITIVITY_CONFIDENTIAL\x10\x03\x12\x16\n" +
-	"\x12SENSITIVITY_SECRET\x10\x04:c\n" +
+	"\x12SENSITIVITY_SECRET\x10\x04*\xca\x01\n" +
+	"\x12ConditionAttribute\x12#\n" +
+	"\x1fCONDITION_ATTRIBUTE_UNSPECIFIED\x10\x00\x12\"\n" +
+	"\x1eCONDITION_ATTRIBUTE_OWNER_TEAM\x10\x01\x12\x1e\n" +
+	"\x1aCONDITION_ATTRIBUTE_STATUS\x10\x02\x12&\n" +
+	"\"CONDITION_ATTRIBUTE_CLASSIFICATION\x10\x03\x12#\n" +
+	"\x1fCONDITION_ATTRIBUTE_TIME_WINDOW\x10\x04:c\n" +
 	"\rmethod_policy\x12\x1e.google.protobuf.MethodOptions\x18\xb8\x8e\x03 \x01(\v2\x1c.saas.policy.v1.MethodPolicyR\fmethodPolicyB\xa6\x01\n" +
 	"\x12com.saas.policy.v1B\fOptionsProtoP\x01Z(accounts/pkg/gen/saas/policy/v1;policyv1\xa2\x02\x03SPX\xaa\x02\x0eSaas.Policy.V1\xca\x02\x0eSaas\\Policy\\V1\xe2\x02\x1aSaas\\Policy\\V1\\GPBMetadata\xea\x02\x10Saas::Policy::V1b\x06proto3"
 
@@ -992,8 +1215,8 @@ func file_saas_policy_v1_options_proto_rawDescGZIP() []byte {
 	return file_saas_policy_v1_options_proto_rawDescData
 }
 
-var file_saas_policy_v1_options_proto_enumTypes = make([]protoimpl.EnumInfo, 10)
-var file_saas_policy_v1_options_proto_msgTypes = make([]protoimpl.MessageInfo, 3)
+var file_saas_policy_v1_options_proto_enumTypes = make([]protoimpl.EnumInfo, 11)
+var file_saas_policy_v1_options_proto_msgTypes = make([]protoimpl.MessageInfo, 5)
 var file_saas_policy_v1_options_proto_goTypes = []any{
 	(Exposure)(0),                      // 0: saas.policy.v1.Exposure
 	(TenantRequirement)(0),             // 1: saas.policy.v1.TenantRequirement
@@ -1005,32 +1228,38 @@ var file_saas_policy_v1_options_proto_goTypes = []any{
 	(IdempotencyRequirement)(0),        // 7: saas.policy.v1.IdempotencyRequirement
 	(RateLimitClass)(0),                // 8: saas.policy.v1.RateLimitClass
 	(Sensitivity)(0),                   // 9: saas.policy.v1.Sensitivity
-	(*ResourceBinding)(nil),            // 10: saas.policy.v1.ResourceBinding
-	(*AuditPolicy)(nil),                // 11: saas.policy.v1.AuditPolicy
-	(*MethodPolicy)(nil),               // 12: saas.policy.v1.MethodPolicy
-	(*descriptorpb.MethodOptions)(nil), // 13: google.protobuf.MethodOptions
+	(ConditionAttribute)(0),            // 10: saas.policy.v1.ConditionAttribute
+	(*ResourceBinding)(nil),            // 11: saas.policy.v1.ResourceBinding
+	(*AuditPolicy)(nil),                // 12: saas.policy.v1.AuditPolicy
+	(*TimeWindow)(nil),                 // 13: saas.policy.v1.TimeWindow
+	(*Condition)(nil),                  // 14: saas.policy.v1.Condition
+	(*MethodPolicy)(nil),               // 15: saas.policy.v1.MethodPolicy
+	(*descriptorpb.MethodOptions)(nil), // 16: google.protobuf.MethodOptions
 }
 var file_saas_policy_v1_options_proto_depIdxs = []int32{
 	2,  // 0: saas.policy.v1.ResourceBinding.target:type_name -> saas.policy.v1.ResourceTarget
 	3,  // 1: saas.policy.v1.ResourceBinding.lookup:type_name -> saas.policy.v1.ResourceLookup
 	6,  // 2: saas.policy.v1.AuditPolicy.emission:type_name -> saas.policy.v1.AuditEmission
-	0,  // 3: saas.policy.v1.MethodPolicy.exposure:type_name -> saas.policy.v1.Exposure
-	1,  // 4: saas.policy.v1.MethodPolicy.tenant:type_name -> saas.policy.v1.TenantRequirement
-	10, // 5: saas.policy.v1.MethodPolicy.resource_bindings:type_name -> saas.policy.v1.ResourceBinding
-	4,  // 6: saas.policy.v1.MethodPolicy.mfa:type_name -> saas.policy.v1.MFARequirement
-	11, // 7: saas.policy.v1.MethodPolicy.audit:type_name -> saas.policy.v1.AuditPolicy
-	7,  // 8: saas.policy.v1.MethodPolicy.idempotency:type_name -> saas.policy.v1.IdempotencyRequirement
-	8,  // 9: saas.policy.v1.MethodPolicy.rate_limit:type_name -> saas.policy.v1.RateLimitClass
-	9,  // 10: saas.policy.v1.MethodPolicy.request_sensitivity:type_name -> saas.policy.v1.Sensitivity
-	9,  // 11: saas.policy.v1.MethodPolicy.response_sensitivity:type_name -> saas.policy.v1.Sensitivity
-	5,  // 12: saas.policy.v1.MethodPolicy.platform_role:type_name -> saas.policy.v1.PlatformRoleRequirement
-	13, // 13: saas.policy.v1.method_policy:extendee -> google.protobuf.MethodOptions
-	12, // 14: saas.policy.v1.method_policy:type_name -> saas.policy.v1.MethodPolicy
-	15, // [15:15] is the sub-list for method output_type
-	15, // [15:15] is the sub-list for method input_type
-	14, // [14:15] is the sub-list for extension type_name
-	13, // [13:14] is the sub-list for extension extendee
-	0,  // [0:13] is the sub-list for field type_name
+	10, // 3: saas.policy.v1.Condition.attribute:type_name -> saas.policy.v1.ConditionAttribute
+	13, // 4: saas.policy.v1.Condition.time_window:type_name -> saas.policy.v1.TimeWindow
+	0,  // 5: saas.policy.v1.MethodPolicy.exposure:type_name -> saas.policy.v1.Exposure
+	1,  // 6: saas.policy.v1.MethodPolicy.tenant:type_name -> saas.policy.v1.TenantRequirement
+	11, // 7: saas.policy.v1.MethodPolicy.resource_bindings:type_name -> saas.policy.v1.ResourceBinding
+	4,  // 8: saas.policy.v1.MethodPolicy.mfa:type_name -> saas.policy.v1.MFARequirement
+	12, // 9: saas.policy.v1.MethodPolicy.audit:type_name -> saas.policy.v1.AuditPolicy
+	7,  // 10: saas.policy.v1.MethodPolicy.idempotency:type_name -> saas.policy.v1.IdempotencyRequirement
+	8,  // 11: saas.policy.v1.MethodPolicy.rate_limit:type_name -> saas.policy.v1.RateLimitClass
+	9,  // 12: saas.policy.v1.MethodPolicy.request_sensitivity:type_name -> saas.policy.v1.Sensitivity
+	9,  // 13: saas.policy.v1.MethodPolicy.response_sensitivity:type_name -> saas.policy.v1.Sensitivity
+	5,  // 14: saas.policy.v1.MethodPolicy.platform_role:type_name -> saas.policy.v1.PlatformRoleRequirement
+	14, // 15: saas.policy.v1.MethodPolicy.conditions:type_name -> saas.policy.v1.Condition
+	16, // 16: saas.policy.v1.method_policy:extendee -> google.protobuf.MethodOptions
+	15, // 17: saas.policy.v1.method_policy:type_name -> saas.policy.v1.MethodPolicy
+	18, // [18:18] is the sub-list for method output_type
+	18, // [18:18] is the sub-list for method input_type
+	17, // [17:18] is the sub-list for extension type_name
+	16, // [16:17] is the sub-list for extension extendee
+	0,  // [0:16] is the sub-list for field type_name
 }
 
 func init() { file_saas_policy_v1_options_proto_init() }
@@ -1043,8 +1272,8 @@ func file_saas_policy_v1_options_proto_init() {
 		File: protoimpl.DescBuilder{
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_saas_policy_v1_options_proto_rawDesc), len(file_saas_policy_v1_options_proto_rawDesc)),
-			NumEnums:      10,
-			NumMessages:   3,
+			NumEnums:      11,
+			NumMessages:   5,
 			NumExtensions: 1,
 			NumServices:   0,
 		},
