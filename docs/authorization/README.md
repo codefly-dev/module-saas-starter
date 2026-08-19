@@ -85,5 +85,9 @@ Legend: ✅ done · 🟡 drafted/strawman (needs review) · ◻︎ not started.
 ## Right now (first iteration)
 
 The reference and a spec sketch exist; the **product layer is new and is
-strawman** — start there. Read `0-product/` first, react to the personas and
-stories, and only then let `1-spec/` and the RFCs firm up.
+strawman** — start there. Begin with the **[user-story backlog](0-product/stories/README.md)**:
+~140 stories across every aspect of auth (authentication, orgs, roles, permission
+hierarchies, resources & read/write/delete, tools, teams, API keys,
+service-to-service, operators, audit, conditional/time-bound, lifecycle, guests),
+each ending with **❓ open product questions** for the team to resolve. Answer the
+questions; those decisions flow into `1-spec/` and the RFCs.
