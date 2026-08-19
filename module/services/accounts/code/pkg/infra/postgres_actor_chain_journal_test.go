@@ -49,12 +49,15 @@ func TestActorChainJournal_AppendContentAddressesAndIsLive(t *testing.T) {
 	require.NotEmpty(t, hop.RevocationID)
 	require.Equal(t, business.HopContentHash(in, ""), hop.HopHash)
 
-	revoked, err := testStore.IsActorChainHopRevoked(testCtx, orgID, hop.ID)
+	revoked, err := testStore.AnyActorChainHopRevoked(testCtx, orgID, []string{hop.ID})
 	require.NoError(t, err)
 	require.False(t, revoked)
 }
 
-func TestActorChainJournal_AppendIsIdempotentOnHopID(t *testing.T) {
+// A retried append of the SAME hop id is absorbed (crash-safety). This is
+// store-level id idempotency, not issuance-level dedup — production always mints
+// a fresh hop id per issuance, so this path only guards a retry of one append.
+func TestActorChainJournal_AppendSameHopIDIsAbsorbed(t *testing.T) {
 	owner := seedUser(t)
 	orgID := seedOrg(t, owner)
 	agent := seedAgentPrincipal(t, orgID, "ci.test/agent:0.1.0")
@@ -67,7 +70,7 @@ func TestActorChainJournal_AppendIsIdempotentOnHopID(t *testing.T) {
 
 	require.Equal(t, first.HopHash, second.HopHash)
 	require.Equal(t, first.RevocationID, second.RevocationID,
-		"re-issuing the same hop must not mint a second revocation handle")
+		"a retried append must not mint a second revocation handle")
 }
 
 func TestActorChainJournal_ChildChainsToParentHash(t *testing.T) {
@@ -105,11 +108,11 @@ func TestActorChainJournal_RevokingAncestorKillsDescendant(t *testing.T) {
 
 	require.NoError(t, testStore.RevokeActorChainHop(testCtx, orgID, parent.ID, owner, "ci revoke"))
 
-	parentRevoked, err := testStore.IsActorChainHopRevoked(testCtx, orgID, parent.ID)
+	parentRevoked, err := testStore.AnyActorChainHopRevoked(testCtx, orgID, []string{parent.ID})
 	require.NoError(t, err)
 	require.True(t, parentRevoked)
 
-	childRevoked, err := testStore.IsActorChainHopRevoked(testCtx, orgID, child.ID)
+	childRevoked, err := testStore.AnyActorChainHopRevoked(testCtx, orgID, []string{child.ID})
 	require.NoError(t, err)
 	require.True(t, childRevoked, "revoking an ancestor kills the descendant that chains through it")
 }
@@ -130,11 +133,11 @@ func TestActorChainJournal_RevokingLeafSparesAncestor(t *testing.T) {
 
 	require.NoError(t, testStore.RevokeActorChainHop(testCtx, orgID, child.ID, owner, "ci revoke leaf"))
 
-	childRevoked, err := testStore.IsActorChainHopRevoked(testCtx, orgID, child.ID)
+	childRevoked, err := testStore.AnyActorChainHopRevoked(testCtx, orgID, []string{child.ID})
 	require.NoError(t, err)
 	require.True(t, childRevoked)
 
-	parentRevoked, err := testStore.IsActorChainHopRevoked(testCtx, orgID, parent.ID)
+	parentRevoked, err := testStore.AnyActorChainHopRevoked(testCtx, orgID, []string{parent.ID})
 	require.NoError(t, err)
 	require.False(t, parentRevoked, "revoking a descendant must not revoke its ancestor")
 }
@@ -162,6 +165,45 @@ func TestActorChainJournal_LinksToDelegationGrant(t *testing.T) {
 	hop, err := testStore.AppendActorChainHop(testCtx, in)
 	require.NoError(t, err)
 	require.Equal(t, grantID, hop.DelegationGrantID)
+}
+
+// Revocation must bite on the action path, not only at chain extension. The
+// consumer re-validates a token's sealed authorization_revision against current
+// facts; a revocation that did not advance that revision would leave the revoked
+// hop's token authorizing actions until TTL. Assert the revoke bumps the owner's
+// effective revision so the existing epoch check rejects it.
+func TestActorChainJournal_RevocationBumpsAuthorizationRevision(t *testing.T) {
+	owner := seedUser(t)
+	orgID := seedOrg(t, owner)
+	seedOrgMember(t, orgID, owner)
+	agent := seedAgentPrincipal(t, orgID, "ci.test/agent:0.1.0")
+
+	hop, err := testStore.AppendActorChainHop(testCtx, newRootHopInput(orgID, owner, agent.ID))
+	require.NoError(t, err)
+
+	before := readOwnerEffectiveRevision(t, orgID, owner)
+	require.NoError(t, testStore.RevokeActorChainHop(testCtx, orgID, hop.ID, owner, "ci revoke"))
+	after := readOwnerEffectiveRevision(t, orgID, owner)
+
+	require.Greater(t, after, before,
+		"revoking a hop must advance the owner's authorization revision so live tokens go stale")
+}
+
+// readOwnerEffectiveRevision returns max(org revision, owner-principal revision)
+// — the value a Work Context seals and the consumer re-checks.
+func readOwnerEffectiveRevision(t *testing.T, orgID, ownerID string) int64 {
+	t.Helper()
+	var revision int64
+	require.NoError(t, testStore.As(business.Identity{OrgID: orgID}).Within(testCtx, func(ctx context.Context) error {
+		tx := ctx.Value("tx").(pgx.Tx) //nolint:staticcheck // shared "tx" key
+		return tx.QueryRow(ctx, `
+			SELECT GREATEST(
+				(SELECT revision FROM organization_authorization_revisions WHERE org_id = $1),
+				COALESCE((SELECT revision FROM principal_authorization_revisions
+				          WHERE org_id = $1 AND principal_id = $2), 0)
+			)`, orgID, ownerID).Scan(&revision)
+	}))
+	return revision
 }
 
 // seedActiveGrant inserts a minimal active delegation grant so a journal hop can

@@ -425,21 +425,33 @@ func (s *WorkContextAuthorityServer) journalActorHop(
 	return nil
 }
 
-// requireHopNotRevoked fails closed if a parent-chain hop, or any ancestor it
-// chains through, has been revoked. This is the per-hop revocation layer: it kills
-// a single delegation branch between epoch bumps of authorization_revision, which
-// only ever moves the whole owner/org forward. A hop with no journal record
-// (issued before durability was wired) is treated as live — the epoch counter and
-// short token TTL remain the backstop.
-func (s *WorkContextAuthorityServer) requireHopNotRevoked(
+// requireChainNotRevoked fails closed if any hop in the parent chain, or any
+// ancestor those hops chain through, has been revoked. This is the per-hop
+// revocation layer that stops a revoked branch from deriving new tokens; the
+// revocation also bumps the owner/org authorization revision (see migration 99)
+// so already-issued tokens on that branch are rejected on the action path too.
+// The whole chain is checked in one query. A hop with no journal record is
+// treated as live: journalActorHop fails issuance on a failed append, so no
+// token issued after durability shipped can lack its hop; the only unjournaled
+// hops predate the journal and cannot have been revoked (revocation needs a row).
+func (s *WorkContextAuthorityServer) requireChainNotRevoked(
 	ctx context.Context,
 	orgID string,
-	delegationID string,
+	actors []*basev0.WorkActorV1,
 ) error {
-	if s.journal == nil || delegationID == "" {
+	if s.journal == nil {
 		return nil
 	}
-	revoked, err := s.journal.IsActorChainHopRevoked(ctx, orgID, delegationID)
+	delegationIDs := make([]string, 0, len(actors))
+	for _, actor := range actors {
+		if id := actor.GetDelegationId(); id != "" {
+			delegationIDs = append(delegationIDs, id)
+		}
+	}
+	if len(delegationIDs) == 0 {
+		return nil
+	}
+	revoked, err := s.journal.AnyActorChainHopRevoked(ctx, orgID, delegationIDs)
 	if err != nil {
 		return status.Error(codes.Internal, "cannot check actor chain revocation")
 	}
@@ -509,10 +521,11 @@ func (s *WorkContextAuthorityServer) verifyParent(
 		return token, parent, nil
 	}
 
+	if err := s.requireChainNotRevoked(ctx, orgID, parent.GetActorChain()); err != nil {
+		return codefly.WorkContextToken{}, nil, err
+	}
+
 	for _, actor := range parent.GetActorChain() {
-		if err := s.requireHopNotRevoked(ctx, orgID, actor.GetDelegationId()); err != nil {
-			return codefly.WorkContextToken{}, nil, err
-		}
 		permissions := permissionsFromCoreScopes(actor.GetGrantedScopes())
 		facts, resolveErr := s.resolveAuthority(
 			ctx, orgID, ownerID, actor.GetPrincipalId(), permissions,

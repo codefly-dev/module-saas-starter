@@ -20,7 +20,7 @@ import (
 // Work Context issuer is appended here, content-addressed and hash-chained to its
 // parent hop, so the acting relationship survives the token's expiry. Revocation
 // is a separate append-only list keyed by each hop's revocation id; the ancestry
-// walk in IsActorChainHopRevoked is what makes revoking one hop kill everything
+// walk in AnyActorChainHopRevoked is what makes revoking one hop kill everything
 // downstream of it.
 
 func (s *PostgresStore) AppendActorChainHop(
@@ -95,24 +95,24 @@ func (s *PostgresStore) AppendActorChainHop(
 	return stored, nil
 }
 
-func (s *PostgresStore) IsActorChainHopRevoked(
+func (s *PostgresStore) AnyActorChainHopRevoked(
 	ctx context.Context,
 	orgID string,
-	hopID string,
+	hopIDs []string,
 ) (bool, error) {
-	if orgID == "" || hopID == "" {
+	if orgID == "" || len(hopIDs) == 0 {
 		return false, nil
 	}
 	var revoked bool
 	err := s.WithOrgTx(ctx, orgID, func(ctx context.Context) error {
-		// Walk the hop and its ancestors via parent_delegation_id; the hop is
-		// dead if any hop on that path has a revoked revocation id.
+		// Walk each hop and its ancestors via parent_delegation_id in one pass;
+		// any hop is dead if some hop on its path carries a revoked revocation id.
 		return s.getQueryExecutor(ctx).QueryRow(ctx, `
 			WITH RECURSIVE ancestry AS (
 				SELECT id, org_id, parent_delegation_id, revocation_id
 				FROM actor_chain_journal
-				WHERE id = $1 AND org_id = $2
-				UNION ALL
+				WHERE id = ANY($1) AND org_id = $2
+				UNION
 				SELECT parent.id, parent.org_id, parent.parent_delegation_id, parent.revocation_id
 				FROM actor_chain_journal AS parent
 				JOIN ancestry ON ancestry.parent_delegation_id = parent.id
@@ -125,7 +125,7 @@ func (s *PostgresStore) IsActorChainHopRevoked(
 				  ON revocation.revocation_id = ancestry.revocation_id
 				 AND revocation.org_id = ancestry.org_id
 			)`,
-			hopID, orgID,
+			hopIDs, orgID,
 		).Scan(&revoked)
 	})
 	if err != nil {

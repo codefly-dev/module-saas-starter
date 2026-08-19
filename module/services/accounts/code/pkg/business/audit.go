@@ -27,12 +27,7 @@ type AuditEntry struct {
 	IPAddress      string
 	ImpersonatedBy string // admin user ID if this action was performed during impersonation
 	IsImpersonated bool
-	// OnBehalfOfPrincipalID is the owner an agent/service acted for, and
-	// ActorChainHopID the durable actor_chain_journal hop that authorized it
-	// (RFC-0003). Both empty for direct, first-party actions.
-	OnBehalfOfPrincipalID string
-	ActorChainHopID       string
-	CreatedAt             time.Time
+	CreatedAt      time.Time
 }
 
 // AuditEmitter writes audit events. Production uses DurableAuditEmitter so the

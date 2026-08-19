@@ -116,12 +116,45 @@ GRANT SELECT, INSERT ON actor_chain_journal    TO app_control_plane;
 GRANT SELECT, INSERT ON actor_chain_revocations TO app_tenant;
 GRANT SELECT, INSERT ON actor_chain_revocations TO app_control_plane;
 
--- Unified-audit linkage: record the on-behalf-of principal and the actor-chain
--- hop that authorized an audited action, so the audit trail joins to the durable
--- chain instead of losing the acting relationship at the DB boundary. Nullable —
--- most events are not on-behalf-of. actor_chain_hop_id correlates to
--- actor_chain_journal.id (a soft reference; audit_events is partitioned and
--- append-only reference data, so no cross-table foreign key is imposed).
-ALTER TABLE audit_events
-    ADD COLUMN on_behalf_of_principal_id UUID,
-    ADD COLUMN actor_chain_hop_id        UUID;
+-- Make revocation effective the moment it is recorded, not only when a new hop
+-- is derived. A signed Work Context seals the owner's effective authorization
+-- revision (max of org and owner-principal revisions); the consumer re-validates
+-- that sealed revision against current facts on the action path. Bumping the
+-- revoked hop's owner + org revision here therefore invalidates every live token
+-- sealed at the prior revision — including the revoked hop's own token — through
+-- the existing epoch check, without waiting for TTL. This is the same
+-- conservative, trigger-driven bump every other authorization mutation uses
+-- (migration 78); the per-hop revocation list additionally stops descendants
+-- from being derived (see the ancestry walk in IsActorChainHopRevoked).
+--
+-- SECURITY DEFINER + control-plane owner so the tenant INSERT that fires it can
+-- reach the bump helpers, which are revoked from app_tenant.
+CREATE OR REPLACE FUNCTION public.actor_chain_revocation_bump_authorization()
+RETURNS trigger
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = pg_catalog, public
+AS $function$
+DECLARE
+    target_org   UUID;
+    target_owner UUID;
+BEGIN
+    SELECT org_id, owner_principal_id
+      INTO target_org, target_owner
+      FROM public.actor_chain_journal
+     WHERE revocation_id = NEW.revocation_id;
+    IF target_org IS NOT NULL THEN
+        PERFORM public.bump_principal_and_organization_authorization(target_org, target_owner);
+    END IF;
+    RETURN NEW;
+END
+$function$;
+
+CREATE TRIGGER actor_chain_revocations_bump_authorization
+AFTER INSERT ON actor_chain_revocations
+FOR EACH ROW EXECUTE FUNCTION public.actor_chain_revocation_bump_authorization();
+
+ALTER FUNCTION public.actor_chain_revocation_bump_authorization()
+    OWNER TO app_control_plane;
+REVOKE ALL ON FUNCTION public.actor_chain_revocation_bump_authorization()
+    FROM PUBLIC, app_tenant;

@@ -79,12 +79,15 @@ type ActorChainHop struct {
 // gains a generic mutation oracle.
 type ActorChainJournal interface {
 	// AppendActorChainHop content-addresses the hop against its parent's stored
-	// hash and appends it. It is idempotent on the hop id: re-issuing the same
-	// hop returns the already-stored row rather than forking a duplicate.
+	// hash and appends it. Appending the same hop id twice is a no-op that
+	// returns the already-stored row (crash-safety for a retried append); note
+	// this is store-level id idempotency, not issuance-level dedup — each Work
+	// Context issuance mints a fresh hop id.
 	AppendActorChainHop(ctx context.Context, hop ActorChainHopInput) (*ActorChainHop, error)
-	// IsActorChainHopRevoked reports whether the hop, or any ancestor it chains
-	// through, has been revoked.
-	IsActorChainHopRevoked(ctx context.Context, orgID, hopID string) (bool, error)
+	// AnyActorChainHopRevoked reports whether any of the given hops, or any
+	// ancestor they chain through, has been revoked. Passing the whole chain at
+	// once keeps the check to a single query on the issuance path.
+	AnyActorChainHopRevoked(ctx context.Context, orgID string, hopIDs []string) (bool, error)
 	// RevokeActorChainHop records a revocation for the hop's per-hop revocation
 	// id, killing the hop and every descendant that chains through it.
 	RevokeActorChainHop(ctx context.Context, orgID, hopID, revokedByPrincipalID, reason string) error
