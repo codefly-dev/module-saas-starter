@@ -29,6 +29,13 @@ const (
 	PermissionService_ListRoleAssignments_FullMethodName = "/saas.accounts.v1.PermissionService/ListRoleAssignments"
 	PermissionService_CheckPermission_FullMethodName     = "/saas.accounts.v1.PermissionService/CheckPermission"
 	PermissionService_Decide_FullMethodName              = "/saas.accounts.v1.PermissionService/Decide"
+	PermissionService_CheckAccess_FullMethodName         = "/saas.accounts.v1.PermissionService/CheckAccess"
+	PermissionService_RegisterScopeNode_FullMethodName   = "/saas.accounts.v1.PermissionService/RegisterScopeNode"
+	PermissionService_GrantScope_FullMethodName          = "/saas.accounts.v1.PermissionService/GrantScope"
+	PermissionService_RevokeScope_FullMethodName         = "/saas.accounts.v1.PermissionService/RevokeScope"
+	PermissionService_ShareRecord_FullMethodName         = "/saas.accounts.v1.PermissionService/ShareRecord"
+	PermissionService_RevokeShare_FullMethodName         = "/saas.accounts.v1.PermissionService/RevokeShare"
+	PermissionService_ListShares_FullMethodName          = "/saas.accounts.v1.PermissionService/ListShares"
 )
 
 // PermissionServiceClient is the client API for PermissionService service.
@@ -50,6 +57,24 @@ type PermissionServiceClient interface {
 	// through the same Postgres CheckPermission query in M2; they
 	// diverge starting at M4 (manifest ceiling) and M7 (approval flow).
 	Decide(ctx context.Context, in *DecideRequest, opts ...grpc.CallOption) (*DecideResponse, error)
+	// CheckAccess is the hierarchical + per-record authz decision (issue #178).
+	// Internal decision oracle, same trust boundary as CheckPermission.
+	CheckAccess(ctx context.Context, in *CheckAccessRequest, opts ...grpc.CallOption) (*CheckAccessResponse, error)
+	// RegisterScopeNode adds a node to the org's scope tree, or places a product
+	// record at a node when resource_type/resource_id are set.
+	RegisterScopeNode(ctx context.Context, in *RegisterScopeNodeRequest, opts ...grpc.CallOption) (*RegisterScopeNodeResponse, error)
+	// GrantScope grants a role to a principal/team at a registered scope node;
+	// the grant inherits to the node's whole subtree.
+	GrantScope(ctx context.Context, in *GrantScopeRequest, opts ...grpc.CallOption) (*GrantScopeResponse, error)
+	// RevokeScope removes a hierarchical scope grant.
+	RevokeScope(ctx context.Context, in *RevokeScopeRequest, opts ...grpc.CallOption) (*emptypb.Empty, error)
+	// ShareRecord grants a principal/team a role on a specific record, across
+	// the ownership boundary (durable per-record ACL).
+	ShareRecord(ctx context.Context, in *ShareRecordRequest, opts ...grpc.CallOption) (*ShareRecordResponse, error)
+	// RevokeShare removes a per-record share.
+	RevokeShare(ctx context.Context, in *RevokeShareRequest, opts ...grpc.CallOption) (*emptypb.Empty, error)
+	// ListShares returns the shares on a specific record.
+	ListShares(ctx context.Context, in *ListSharesRequest, opts ...grpc.CallOption) (*ListSharesResponse, error)
 }
 
 type permissionServiceClient struct {
@@ -140,6 +165,76 @@ func (c *permissionServiceClient) Decide(ctx context.Context, in *DecideRequest,
 	return out, nil
 }
 
+func (c *permissionServiceClient) CheckAccess(ctx context.Context, in *CheckAccessRequest, opts ...grpc.CallOption) (*CheckAccessResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(CheckAccessResponse)
+	err := c.cc.Invoke(ctx, PermissionService_CheckAccess_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *permissionServiceClient) RegisterScopeNode(ctx context.Context, in *RegisterScopeNodeRequest, opts ...grpc.CallOption) (*RegisterScopeNodeResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(RegisterScopeNodeResponse)
+	err := c.cc.Invoke(ctx, PermissionService_RegisterScopeNode_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *permissionServiceClient) GrantScope(ctx context.Context, in *GrantScopeRequest, opts ...grpc.CallOption) (*GrantScopeResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(GrantScopeResponse)
+	err := c.cc.Invoke(ctx, PermissionService_GrantScope_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *permissionServiceClient) RevokeScope(ctx context.Context, in *RevokeScopeRequest, opts ...grpc.CallOption) (*emptypb.Empty, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(emptypb.Empty)
+	err := c.cc.Invoke(ctx, PermissionService_RevokeScope_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *permissionServiceClient) ShareRecord(ctx context.Context, in *ShareRecordRequest, opts ...grpc.CallOption) (*ShareRecordResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ShareRecordResponse)
+	err := c.cc.Invoke(ctx, PermissionService_ShareRecord_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *permissionServiceClient) RevokeShare(ctx context.Context, in *RevokeShareRequest, opts ...grpc.CallOption) (*emptypb.Empty, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(emptypb.Empty)
+	err := c.cc.Invoke(ctx, PermissionService_RevokeShare_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *permissionServiceClient) ListShares(ctx context.Context, in *ListSharesRequest, opts ...grpc.CallOption) (*ListSharesResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ListSharesResponse)
+	err := c.cc.Invoke(ctx, PermissionService_ListShares_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // PermissionServiceServer is the server API for PermissionService service.
 // All implementations must embed UnimplementedPermissionServiceServer
 // for forward compatibility.
@@ -159,6 +254,24 @@ type PermissionServiceServer interface {
 	// through the same Postgres CheckPermission query in M2; they
 	// diverge starting at M4 (manifest ceiling) and M7 (approval flow).
 	Decide(context.Context, *DecideRequest) (*DecideResponse, error)
+	// CheckAccess is the hierarchical + per-record authz decision (issue #178).
+	// Internal decision oracle, same trust boundary as CheckPermission.
+	CheckAccess(context.Context, *CheckAccessRequest) (*CheckAccessResponse, error)
+	// RegisterScopeNode adds a node to the org's scope tree, or places a product
+	// record at a node when resource_type/resource_id are set.
+	RegisterScopeNode(context.Context, *RegisterScopeNodeRequest) (*RegisterScopeNodeResponse, error)
+	// GrantScope grants a role to a principal/team at a registered scope node;
+	// the grant inherits to the node's whole subtree.
+	GrantScope(context.Context, *GrantScopeRequest) (*GrantScopeResponse, error)
+	// RevokeScope removes a hierarchical scope grant.
+	RevokeScope(context.Context, *RevokeScopeRequest) (*emptypb.Empty, error)
+	// ShareRecord grants a principal/team a role on a specific record, across
+	// the ownership boundary (durable per-record ACL).
+	ShareRecord(context.Context, *ShareRecordRequest) (*ShareRecordResponse, error)
+	// RevokeShare removes a per-record share.
+	RevokeShare(context.Context, *RevokeShareRequest) (*emptypb.Empty, error)
+	// ListShares returns the shares on a specific record.
+	ListShares(context.Context, *ListSharesRequest) (*ListSharesResponse, error)
 	mustEmbedUnimplementedPermissionServiceServer()
 }
 
@@ -192,6 +305,27 @@ func (UnimplementedPermissionServiceServer) CheckPermission(context.Context, *Ch
 }
 func (UnimplementedPermissionServiceServer) Decide(context.Context, *DecideRequest) (*DecideResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method Decide not implemented")
+}
+func (UnimplementedPermissionServiceServer) CheckAccess(context.Context, *CheckAccessRequest) (*CheckAccessResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method CheckAccess not implemented")
+}
+func (UnimplementedPermissionServiceServer) RegisterScopeNode(context.Context, *RegisterScopeNodeRequest) (*RegisterScopeNodeResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method RegisterScopeNode not implemented")
+}
+func (UnimplementedPermissionServiceServer) GrantScope(context.Context, *GrantScopeRequest) (*GrantScopeResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method GrantScope not implemented")
+}
+func (UnimplementedPermissionServiceServer) RevokeScope(context.Context, *RevokeScopeRequest) (*emptypb.Empty, error) {
+	return nil, status.Error(codes.Unimplemented, "method RevokeScope not implemented")
+}
+func (UnimplementedPermissionServiceServer) ShareRecord(context.Context, *ShareRecordRequest) (*ShareRecordResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method ShareRecord not implemented")
+}
+func (UnimplementedPermissionServiceServer) RevokeShare(context.Context, *RevokeShareRequest) (*emptypb.Empty, error) {
+	return nil, status.Error(codes.Unimplemented, "method RevokeShare not implemented")
+}
+func (UnimplementedPermissionServiceServer) ListShares(context.Context, *ListSharesRequest) (*ListSharesResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method ListShares not implemented")
 }
 func (UnimplementedPermissionServiceServer) mustEmbedUnimplementedPermissionServiceServer() {}
 func (UnimplementedPermissionServiceServer) testEmbeddedByValue()                           {}
@@ -358,6 +492,132 @@ func _PermissionService_Decide_Handler(srv interface{}, ctx context.Context, dec
 	return interceptor(ctx, in, info, handler)
 }
 
+func _PermissionService_CheckAccess_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(CheckAccessRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(PermissionServiceServer).CheckAccess(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: PermissionService_CheckAccess_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(PermissionServiceServer).CheckAccess(ctx, req.(*CheckAccessRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _PermissionService_RegisterScopeNode_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(RegisterScopeNodeRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(PermissionServiceServer).RegisterScopeNode(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: PermissionService_RegisterScopeNode_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(PermissionServiceServer).RegisterScopeNode(ctx, req.(*RegisterScopeNodeRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _PermissionService_GrantScope_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(GrantScopeRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(PermissionServiceServer).GrantScope(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: PermissionService_GrantScope_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(PermissionServiceServer).GrantScope(ctx, req.(*GrantScopeRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _PermissionService_RevokeScope_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(RevokeScopeRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(PermissionServiceServer).RevokeScope(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: PermissionService_RevokeScope_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(PermissionServiceServer).RevokeScope(ctx, req.(*RevokeScopeRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _PermissionService_ShareRecord_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ShareRecordRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(PermissionServiceServer).ShareRecord(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: PermissionService_ShareRecord_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(PermissionServiceServer).ShareRecord(ctx, req.(*ShareRecordRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _PermissionService_RevokeShare_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(RevokeShareRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(PermissionServiceServer).RevokeShare(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: PermissionService_RevokeShare_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(PermissionServiceServer).RevokeShare(ctx, req.(*RevokeShareRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _PermissionService_ListShares_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ListSharesRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(PermissionServiceServer).ListShares(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: PermissionService_ListShares_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(PermissionServiceServer).ListShares(ctx, req.(*ListSharesRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // PermissionService_ServiceDesc is the grpc.ServiceDesc for PermissionService service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -396,6 +656,34 @@ var PermissionService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "Decide",
 			Handler:    _PermissionService_Decide_Handler,
+		},
+		{
+			MethodName: "CheckAccess",
+			Handler:    _PermissionService_CheckAccess_Handler,
+		},
+		{
+			MethodName: "RegisterScopeNode",
+			Handler:    _PermissionService_RegisterScopeNode_Handler,
+		},
+		{
+			MethodName: "GrantScope",
+			Handler:    _PermissionService_GrantScope_Handler,
+		},
+		{
+			MethodName: "RevokeScope",
+			Handler:    _PermissionService_RevokeScope_Handler,
+		},
+		{
+			MethodName: "ShareRecord",
+			Handler:    _PermissionService_ShareRecord_Handler,
+		},
+		{
+			MethodName: "RevokeShare",
+			Handler:    _PermissionService_RevokeShare_Handler,
+		},
+		{
+			MethodName: "ListShares",
+			Handler:    _PermissionService_ListShares_Handler,
 		},
 	},
 	Streams:  []grpc.StreamDesc{},

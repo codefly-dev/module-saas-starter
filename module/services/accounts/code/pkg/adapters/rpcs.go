@@ -631,6 +631,109 @@ func (s *PermServer) CheckPermission(ctx context.Context, req *gen.CheckPermissi
 	return service.CheckPermission(ctx, req)
 }
 
+// CheckAccess is the hierarchical + per-record decision oracle (#178). Same
+// trust boundary as CheckPermission — internal callers or a self-referential
+// JWT — since it discloses "may subject X act on record Y."
+func (s *PermServer) CheckAccess(ctx context.Context, req *gen.CheckAccessRequest) (*gen.CheckAccessResponse, error) {
+	if err := Validate(req); err != nil {
+		return nil, err
+	}
+	if err := requireInternalOrAuth(ctx); err != nil {
+		return nil, err
+	}
+	return service.CheckAccess(ctx, req)
+}
+
+func (s *PermServer) RegisterScopeNode(ctx context.Context, req *gen.RegisterScopeNodeRequest) (*gen.RegisterScopeNodeResponse, error) {
+	if err := Validate(req); err != nil {
+		return nil, err
+	}
+	actorID, err := requireAuth(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if err := requireRoleScope(ctx, actorID, req.OrgId); err != nil {
+		return nil, err
+	}
+	return service.RegisterScopeNode(ctx, actorID, req)
+}
+
+func (s *PermServer) GrantScope(ctx context.Context, req *gen.GrantScopeRequest) (*gen.GrantScopeResponse, error) {
+	if err := Validate(req); err != nil {
+		return nil, err
+	}
+	actorID, err := requireAuth(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if err := requireRoleScope(ctx, actorID, req.OrgId); err != nil {
+		return nil, err
+	}
+	return service.GrantScope(ctx, actorID, req)
+}
+
+func (s *PermServer) RevokeScope(ctx context.Context, req *gen.RevokeScopeRequest) (*emptypb.Empty, error) {
+	if err := Validate(req); err != nil {
+		return nil, err
+	}
+	actorID, err := requireAuth(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if err := requireRoleScope(ctx, actorID, req.OrgId); err != nil {
+		return nil, err
+	}
+	if err := service.RevokeScope(ctx, actorID, req); err != nil {
+		return nil, err
+	}
+	return &emptypb.Empty{}, nil
+}
+
+func (s *PermServer) ShareRecord(ctx context.Context, req *gen.ShareRecordRequest) (*gen.ShareRecordResponse, error) {
+	if err := Validate(req); err != nil {
+		return nil, err
+	}
+	actorID, err := requireAuth(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if err := requireRoleScope(ctx, actorID, req.OrgId); err != nil {
+		return nil, err
+	}
+	return service.ShareRecord(ctx, actorID, req)
+}
+
+func (s *PermServer) RevokeShare(ctx context.Context, req *gen.RevokeShareRequest) (*emptypb.Empty, error) {
+	if err := Validate(req); err != nil {
+		return nil, err
+	}
+	actorID, err := requireAuth(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if err := requireRoleScope(ctx, actorID, req.OrgId); err != nil {
+		return nil, err
+	}
+	if err := service.RevokeShare(ctx, actorID, req); err != nil {
+		return nil, err
+	}
+	return &emptypb.Empty{}, nil
+}
+
+func (s *PermServer) ListShares(ctx context.Context, req *gen.ListSharesRequest) (*gen.ListSharesResponse, error) {
+	if err := Validate(req); err != nil {
+		return nil, err
+	}
+	actorID, err := requireAuth(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if err := requireOrgMember(ctx, actorID, req.OrgId); err != nil {
+		return nil, err
+	}
+	return service.ListShares(ctx, req)
+}
+
 // ============================================================================
 // IdentityService RPCs (on IdentServer)
 // ============================================================================

@@ -6,8 +6,8 @@ import type { GenFile, GenMessage, GenService } from "@bufbuild/protobuf/codegen
 import { fileDesc, messageDesc, serviceDesc } from "@bufbuild/protobuf/codegenv2";
 import { file_buf_validate_validate } from "../../../buf/validate/validate_pb";
 import { file_google_api_annotations } from "../../../google/api/annotations_pb";
-import type { EmptySchema } from "@bufbuild/protobuf/wkt";
-import { file_google_protobuf_empty, file_google_protobuf_struct } from "@bufbuild/protobuf/wkt";
+import type { EmptySchema, Timestamp } from "@bufbuild/protobuf/wkt";
+import { file_google_protobuf_empty, file_google_protobuf_struct, file_google_protobuf_timestamp } from "@bufbuild/protobuf/wkt";
 import type { Decision, Permission, Principal, PrincipalKind, PrincipalSchema, Role, RoleAssignment, SubjectKind } from "./common_pb";
 import { file_saas_accounts_v1_common } from "./common_pb";
 import { file_saas_policy_v1_options } from "../../policy/v1/options_pb";
@@ -17,7 +17,7 @@ import type { JsonObject, Message } from "@bufbuild/protobuf";
  * Describes the file saas/accounts/v1/authorization.proto.
  */
 export const file_saas_accounts_v1_authorization: GenFile = /*@__PURE__*/
-  fileDesc("CiRzYWFzL2FjY291bnRzL3YxL2F1dGhvcml6YXRpb24ucHJvdG8SEHNhYXMuYWNjb3VudHMudjEiggEKEUNyZWF0ZVJvbGVSZXF1ZXN0EhUKBG5hbWUYASABKAlCB7pIBHICEAESEwoLZGVzY3JpcHRpb24YAiABKAkSMQoLcGVybWlzc2lvbnMYAyADKAsyHC5zYWFzLmFjY291bnRzLnYxLlBlcm1pc3Npb24SDgoGb3JnX2lkGAQgASgJIjoKEkNyZWF0ZVJvbGVSZXNwb25zZRIkCgRyb2xlGAEgASgLMhYuc2Fhcy5hY2NvdW50cy52MS5Sb2xlIiIKEExpc3RSb2xlc1JlcXVlc3QSDgoGb3JnX2lkGAEgASgJIjoKEUxpc3RSb2xlc1Jlc3BvbnNlEiUKBXJvbGVzGAEgAygLMhYuc2Fhcy5hY2NvdW50cy52MS5Sb2xlIikKEURlbGV0ZVJvbGVSZXF1ZXN0EhQKAmlkGAEgASgJQgi6SAVyA7ABASKgAQoRQXNzaWduUm9sZVJlcXVlc3QSHAoKc3ViamVjdF9pZBgBIAEoCUIIukgFcgOwAQESMwoMc3ViamVjdF9raW5kGAIgASgOMh0uc2Fhcy5hY2NvdW50cy52MS5TdWJqZWN0S2luZBIZCgdyb2xlX2lkGAMgASgJQgi6SAVyA7ABARIOCgZvcmdfaWQYBCABKAkSDQoFc2NvcGUYBSABKAkiSgoSQXNzaWduUm9sZVJlc3BvbnNlEjQKCmFzc2lnbm1lbnQYASABKAsyIC5zYWFzLmFjY291bnRzLnYxLlJvbGVBc3NpZ25tZW50ImsKEVJldm9rZVJvbGVSZXF1ZXN0EhwKCnN1YmplY3RfaWQYASABKAlCCLpIBXIDsAEBEhkKB3JvbGVfaWQYAiABKAlCCLpIBXIDsAEBEg4KBm9yZ19pZBgDIAEoCRINCgVzY29wZRgEIAEoCSJ/ChpMaXN0Um9sZUFzc2lnbm1lbnRzUmVxdWVzdBIYCgZvcmdfaWQYASABKAlCCLpIBXIDsAEBEhIKCnN1YmplY3RfaWQYAiABKAkSMwoMc3ViamVjdF9raW5kGAMgASgOMh0uc2Fhcy5hY2NvdW50cy52MS5TdWJqZWN0S2luZCJUChtMaXN0Um9sZUFzc2lnbm1lbnRzUmVzcG9uc2USNQoLYXNzaWdubWVudHMYASADKAsyIC5zYWFzLmFjY291bnRzLnYxLlJvbGVBc3NpZ25tZW50Ir4BChZDaGVja1Blcm1pc3Npb25SZXF1ZXN0EhwKCnN1YmplY3RfaWQYASABKAlCCLpIBXIDsAEBEjMKDHN1YmplY3Rfa2luZBgCIAEoDjIdLnNhYXMuYWNjb3VudHMudjEuU3ViamVjdEtpbmQSGQoIcmVzb3VyY2UYAyABKAlCB7pIBHICEAESFwoGYWN0aW9uGAQgASgJQge6SARyAhABEg4KBm9yZ19pZBgFIAEoCRINCgVzY29wZRgGIAEoCSI6ChdDaGVja1Blcm1pc3Npb25SZXNwb25zZRIPCgdhbGxvd2VkGAEgASgIEg4KBnJlYXNvbhgCIAEoCSKTAgoNRGVjaWRlUmVxdWVzdBIeCgxwcmluY2lwYWxfaWQYASABKAlCCLpIBXIDsAEBEhcKBmFjdGlvbhgCIAEoCUIHukgEcgIQARIQCghyZXNvdXJjZRgDIAEoCRITCgtyZXNvdXJjZV9pZBgEIAEoCRIOCgZvcmdfaWQYBSABKAkSKAoHY29udGV4dBgGIAEoCzIXLmdvb2dsZS5wcm90b2J1Zi5TdHJ1Y3QSEgoKcmlza19sZXZlbBgHIAEoCRIYChBkZWxlZ2F0aW9uX3Byb29mGAggASgMEjoKFGRlY2xhcmVkX3Blcm1pc3Npb25zGAkgAygLMhwuc2Fhcy5hY2NvdW50cy52MS5QZXJtaXNzaW9uIoIBCg5EZWNpZGVSZXNwb25zZRIsCghkZWNpc2lvbhgBIAEoDjIaLnNhYXMuYWNjb3VudHMudjEuRGVjaXNpb24SDgoGcmVhc29uGAIgASgJEhUKDWRlY2lzaW9uX3BhdGgYAyABKAkSGwoTYXBwcm92YWxfcmVxdWVzdF9pZBgEIAEoCSIrChNHZXRQcmluY2lwYWxSZXF1ZXN0EhQKAmlkGAEgASgJQgi6SAVyA7ABASJXChhHZXRBZ2VudFByaW5jaXBhbFJlcXVlc3QSGAoGb3JnX2lkGAEgASgJQgi6SAVyA7ABARIhChBhZ2VudF9pZGVudGlmaWVyGAIgASgJQge6SARyAhABInAKG0NyZWF0ZUFnZW50UHJpbmNpcGFsUmVxdWVzdBIYCgZvcmdfaWQYASABKAlCCLpIBXIDsAEBEiEKEGFnZW50X2lkZW50aWZpZXIYAiABKAlCB7pIBHICEAESFAoMZGlzcGxheV9uYW1lGAMgASgJIkcKFlJldm9rZVByaW5jaXBhbFJlcXVlc3QSFAoCaWQYASABKAlCCLpIBXIDsAEBEhcKBnJlYXNvbhgCIAEoCUIHukgEcgIQASKTAQoVTGlzdFByaW5jaXBhbHNSZXF1ZXN0EhgKBm9yZ19pZBgBIAEoCUIIukgFcgOwAQESLQoEa2luZBgCIAEoDjIfLnNhYXMuYWNjb3VudHMudjEuUHJpbmNpcGFsS2luZBIdCglwYWdlX3NpemUYAyABKAVCCrpIBxoFGMgBKAASEgoKcGFnZV90b2tlbhgEIAEoCSJiChZMaXN0UHJpbmNpcGFsc1Jlc3BvbnNlEi8KCnByaW5jaXBhbHMYASADKAsyGy5zYWFzLmFjY291bnRzLnYxLlByaW5jaXBhbBIXCg9uZXh0X3BhZ2VfdG9rZW4YAiABKAky+wgKEVBlcm1pc3Npb25TZXJ2aWNlEpMBCgpDcmVhdGVSb2xlEiMuc2Fhcy5hY2NvdW50cy52MS5DcmVhdGVSb2xlUmVxdWVzdBokLnNhYXMuYWNjb3VudHMudjEuQ3JlYXRlUm9sZVJlc3BvbnNlIjrC8xgiCAIQAjABOhAKDHJvbGUuY3JlYXRlZBACQAFIBFADWANgAYLT5JMCDjoBKiIJL3YxL3JvbGVzEn8KCUxpc3RSb2xlcxIiLnNhYXMuYWNjb3VudHMudjEuTGlzdFJvbGVzUmVxdWVzdBojLnNhYXMuYWNjb3VudHMudjEuTGlzdFJvbGVzUmVzcG9uc2UiKcLzGBQIAhACMAE6AhABQAFIA1ADWANgAYLT5JMCCxIJL3YxL3JvbGVzEocBCgpEZWxldGVSb2xlEiMuc2Fhcy5hY2NvdW50cy52MS5EZWxldGVSb2xlUmVxdWVzdBoWLmdvb2dsZS5wcm90b2J1Zi5FbXB0eSI8wvMYIggCEAEwAToQCgxyb2xlLmRlbGV0ZWQQAkABSAVQA1gDYAKC0+STAhAqDi92MS9yb2xlcy97aWR9Ep8BCgpBc3NpZ25Sb2xlEiMuc2Fhcy5hY2NvdW50cy52MS5Bc3NpZ25Sb2xlUmVxdWVzdBokLnNhYXMuYWNjb3VudHMudjEuQXNzaWduUm9sZVJlc3BvbnNlIkbC8xgjCAIQAjABOhEKDXJvbGUuYXNzaWduZWQQAkABSARQA1gDYAGC0+STAhk6ASoiFC92MS9yb2xlLWFzc2lnbm1lbnRzEo0BCgpSZXZva2VSb2xlEiMuc2Fhcy5hY2NvdW50cy52MS5SZXZva2VSb2xlUmVxdWVzdBoWLmdvb2dsZS5wcm90b2J1Zi5FbXB0eSJCwvMYIggCEAIwAToQCgxyb2xlLnJldm9rZWQQAkABSARQA1gDYAGC0+STAhYqFC92MS9yb2xlLWFzc2lnbm1lbnRzEqgBChNMaXN0Um9sZUFzc2lnbm1lbnRzEiwuc2Fhcy5hY2NvdW50cy52MS5MaXN0Um9sZUFzc2lnbm1lbnRzUmVxdWVzdBotLnNhYXMuYWNjb3VudHMudjEuTGlzdFJvbGVBc3NpZ25tZW50c1Jlc3BvbnNlIjTC8xgUCAIQAjABOgIQAUABSANQA1gDYAGC0+STAhYSFC92MS9yb2xlLWFzc2lnbm1lbnRzEoABCg9DaGVja1Blcm1pc3Npb24SKC5zYWFzLmFjY291bnRzLnYxLkNoZWNrUGVybWlzc2lvblJlcXVlc3QaKS5zYWFzLmFjY291bnRzLnYxLkNoZWNrUGVybWlzc2lvblJlc3BvbnNlIhjC8xgUCAMQATABOgIQAUABSAdQA1gDYAESZQoGRGVjaWRlEh8uc2Fhcy5hY2NvdW50cy52MS5EZWNpZGVSZXF1ZXN0GiAuc2Fhcy5hY2NvdW50cy52MS5EZWNpZGVSZXNwb25zZSIYwvMYFAgDEAEwAToCEAFAAUgHUANYA2ABMo0GChBQcmluY2lwYWxTZXJ2aWNlEmwKDEdldFByaW5jaXBhbBIlLnNhYXMuYWNjb3VudHMudjEuR2V0UHJpbmNpcGFsUmVxdWVzdBobLnNhYXMuYWNjb3VudHMudjEuUHJpbmNpcGFsIhjC8xgUCAMQATABOgIQAUABSAdQA1gDYAESdgoRR2V0QWdlbnRQcmluY2lwYWwSKi5zYWFzLmFjY291bnRzLnYxLkdldEFnZW50UHJpbmNpcGFsUmVxdWVzdBobLnNhYXMuYWNjb3VudHMudjEuUHJpbmNpcGFsIhjC8xgUCAMQATABOgIQAUABSAdQA1gDYAESvAEKFENyZWF0ZUFnZW50UHJpbmNpcGFsEi0uc2Fhcy5hY2NvdW50cy52MS5DcmVhdGVBZ2VudFByaW5jaXBhbFJlcXVlc3QaGy5zYWFzLmFjY291bnRzLnYxLlByaW5jaXBhbCJYwvMYNQgCEAQqDAoGb3JnX2lkEAIYATABOhUKEXByaW5jaXBhbC5jcmVhdGVkEAJAAUgEUANYA2ABgtPkkwIZOgEqIhQvdjEvcHJpbmNpcGFsczphZ2VudBKvAQoPUmV2b2tlUHJpbmNpcGFsEiguc2Fhcy5hY2NvdW50cy52MS5SZXZva2VQcmluY2lwYWxSZXF1ZXN0GhYuZ29vZ2xlLnByb3RvYnVmLkVtcHR5IlrC8xgxCAIQAioICgJpZBAEGAMwAToVChFwcmluY2lwYWwucmV2b2tlZBACQAFIBFADWANgAYLT5JMCHzoBKiIaL3YxL3ByaW5jaXBhbHMve2lkfTpyZXZva2USoQEKDkxpc3RQcmluY2lwYWxzEicuc2Fhcy5hY2NvdW50cy52MS5MaXN0UHJpbmNpcGFsc1JlcXVlc3QaKC5zYWFzLmFjY291bnRzLnYxLkxpc3RQcmluY2lwYWxzUmVzcG9uc2UiPMLzGCIIAhADKgwKBm9yZ19pZBACGAEwAToCEAFAAUgDUANYA2ABgtPkkwIQEg4vdjEvcHJpbmNpcGFsc0K6AQoUY29tLnNhYXMuYWNjb3VudHMudjFCEkF1dGhvcml6YXRpb25Qcm90b1ABWixhY2NvdW50cy9wa2cvZ2VuL3NhYXMvYWNjb3VudHMvdjE7YWNjb3VudHN2MaICA1NBWKoCEFNhYXMuQWNjb3VudHMuVjHKAhBTYWFzXEFjY291bnRzXFYx4gIcU2Fhc1xBY2NvdW50c1xWMVxHUEJNZXRhZGF0YeoCElNhYXM6OkFjY291bnRzOjpWMWIGcHJvdG8z", [file_buf_validate_validate, file_google_api_annotations, file_google_protobuf_empty, file_google_protobuf_struct, file_saas_accounts_v1_common, file_saas_policy_v1_options]);
+  fileDesc("CiRzYWFzL2FjY291bnRzL3YxL2F1dGhvcml6YXRpb24ucHJvdG8SEHNhYXMuYWNjb3VudHMudjEiggEKEUNyZWF0ZVJvbGVSZXF1ZXN0EhUKBG5hbWUYASABKAlCB7pIBHICEAESEwoLZGVzY3JpcHRpb24YAiABKAkSMQoLcGVybWlzc2lvbnMYAyADKAsyHC5zYWFzLmFjY291bnRzLnYxLlBlcm1pc3Npb24SDgoGb3JnX2lkGAQgASgJIjoKEkNyZWF0ZVJvbGVSZXNwb25zZRIkCgRyb2xlGAEgASgLMhYuc2Fhcy5hY2NvdW50cy52MS5Sb2xlIiIKEExpc3RSb2xlc1JlcXVlc3QSDgoGb3JnX2lkGAEgASgJIjoKEUxpc3RSb2xlc1Jlc3BvbnNlEiUKBXJvbGVzGAEgAygLMhYuc2Fhcy5hY2NvdW50cy52MS5Sb2xlIikKEURlbGV0ZVJvbGVSZXF1ZXN0EhQKAmlkGAEgASgJQgi6SAVyA7ABASKgAQoRQXNzaWduUm9sZVJlcXVlc3QSHAoKc3ViamVjdF9pZBgBIAEoCUIIukgFcgOwAQESMwoMc3ViamVjdF9raW5kGAIgASgOMh0uc2Fhcy5hY2NvdW50cy52MS5TdWJqZWN0S2luZBIZCgdyb2xlX2lkGAMgASgJQgi6SAVyA7ABARIOCgZvcmdfaWQYBCABKAkSDQoFc2NvcGUYBSABKAkiSgoSQXNzaWduUm9sZVJlc3BvbnNlEjQKCmFzc2lnbm1lbnQYASABKAsyIC5zYWFzLmFjY291bnRzLnYxLlJvbGVBc3NpZ25tZW50ImsKEVJldm9rZVJvbGVSZXF1ZXN0EhwKCnN1YmplY3RfaWQYASABKAlCCLpIBXIDsAEBEhkKB3JvbGVfaWQYAiABKAlCCLpIBXIDsAEBEg4KBm9yZ19pZBgDIAEoCRINCgVzY29wZRgEIAEoCSJ/ChpMaXN0Um9sZUFzc2lnbm1lbnRzUmVxdWVzdBIYCgZvcmdfaWQYASABKAlCCLpIBXIDsAEBEhIKCnN1YmplY3RfaWQYAiABKAkSMwoMc3ViamVjdF9raW5kGAMgASgOMh0uc2Fhcy5hY2NvdW50cy52MS5TdWJqZWN0S2luZCJUChtMaXN0Um9sZUFzc2lnbm1lbnRzUmVzcG9uc2USNQoLYXNzaWdubWVudHMYASADKAsyIC5zYWFzLmFjY291bnRzLnYxLlJvbGVBc3NpZ25tZW50Ir4BChZDaGVja1Blcm1pc3Npb25SZXF1ZXN0EhwKCnN1YmplY3RfaWQYASABKAlCCLpIBXIDsAEBEjMKDHN1YmplY3Rfa2luZBgCIAEoDjIdLnNhYXMuYWNjb3VudHMudjEuU3ViamVjdEtpbmQSGQoIcmVzb3VyY2UYAyABKAlCB7pIBHICEAESFwoGYWN0aW9uGAQgASgJQge6SARyAhABEg4KBm9yZ19pZBgFIAEoCRINCgVzY29wZRgGIAEoCSI6ChdDaGVja1Blcm1pc3Npb25SZXNwb25zZRIPCgdhbGxvd2VkGAEgASgIEg4KBnJlYXNvbhgCIAEoCSKTAgoNRGVjaWRlUmVxdWVzdBIeCgxwcmluY2lwYWxfaWQYASABKAlCCLpIBXIDsAEBEhcKBmFjdGlvbhgCIAEoCUIHukgEcgIQARIQCghyZXNvdXJjZRgDIAEoCRITCgtyZXNvdXJjZV9pZBgEIAEoCRIOCgZvcmdfaWQYBSABKAkSKAoHY29udGV4dBgGIAEoCzIXLmdvb2dsZS5wcm90b2J1Zi5TdHJ1Y3QSEgoKcmlza19sZXZlbBgHIAEoCRIYChBkZWxlZ2F0aW9uX3Byb29mGAggASgMEjoKFGRlY2xhcmVkX3Blcm1pc3Npb25zGAkgAygLMhwuc2Fhcy5hY2NvdW50cy52MS5QZXJtaXNzaW9uIoIBCg5EZWNpZGVSZXNwb25zZRIsCghkZWNpc2lvbhgBIAEoDjIaLnNhYXMuYWNjb3VudHMudjEuRGVjaXNpb24SDgoGcmVhc29uGAIgASgJEhUKDWRlY2lzaW9uX3BhdGgYAyABKAkSGwoTYXBwcm92YWxfcmVxdWVzdF9pZBgEIAEoCSK0AQoJU2NvcGVOb2RlEgoKAmlkGAEgASgJEg4KBm9yZ19pZBgCIAEoCRISCgpzY29wZV9wYXRoGAMgASgJEgwKBGtpbmQYBCABKAkSDQoFbGFiZWwYBSABKAkSFQoNcmVzb3VyY2VfdHlwZRgGIAEoCRITCgtyZXNvdXJjZV9pZBgHIAEoCRIuCgpjcmVhdGVkX2F0GAggASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcCKjAQoYUmVnaXN0ZXJTY29wZU5vZGVSZXF1ZXN0EhgKBm9yZ19pZBgBIAEoCUIIukgFcgOwAQESGwoKc2NvcGVfcGF0aBgCIAEoCUIHukgEcgIQARIVCgRraW5kGAMgASgJQge6SARyAhABEg0KBWxhYmVsGAQgASgJEhUKDXJlc291cmNlX3R5cGUYBSABKAkSEwoLcmVzb3VyY2VfaWQYBiABKAkiRgoZUmVnaXN0ZXJTY29wZU5vZGVSZXNwb25zZRIpCgRub2RlGAEgASgLMhsuc2Fhcy5hY2NvdW50cy52MS5TY29wZU5vZGUiigIKClNjb3BlR3JhbnQSCgoCaWQYASABKAkSDgoGb3JnX2lkGAIgASgJEhIKCnN1YmplY3RfaWQYAyABKAkSMwoMc3ViamVjdF9raW5kGAQgASgOMh0uc2Fhcy5hY2NvdW50cy52MS5TdWJqZWN0S2luZBISCgpzY29wZV9wYXRoGAUgASgJEg8KB3JvbGVfaWQYBiABKAkSEgoKZ3JhbnRlZF9ieRgHIAEoCRIuCgpleHBpcmVzX2F0GAggASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcBIuCgpjcmVhdGVkX2F0GAkgASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcCLoAQoRR3JhbnRTY29wZVJlcXVlc3QSGAoGb3JnX2lkGAEgASgJQgi6SAVyA7ABARIcCgpzdWJqZWN0X2lkGAIgASgJQgi6SAVyA7ABARIzCgxzdWJqZWN0X2tpbmQYAyABKA4yHS5zYWFzLmFjY291bnRzLnYxLlN1YmplY3RLaW5kEhsKCnNjb3BlX3BhdGgYBCABKAlCB7pIBHICEAESGQoHcm9sZV9pZBgFIAEoCUIIukgFcgOwAQESLgoKZXhwaXJlc19hdBgGIAEoCzIaLmdvb2dsZS5wcm90b2J1Zi5UaW1lc3RhbXAiQQoSR3JhbnRTY29wZVJlc3BvbnNlEisKBWdyYW50GAEgASgLMhwuc2Fhcy5hY2NvdW50cy52MS5TY29wZUdyYW50IrkBChJSZXZva2VTY29wZVJlcXVlc3QSGAoGb3JnX2lkGAEgASgJQgi6SAVyA7ABARIcCgpzdWJqZWN0X2lkGAIgASgJQgi6SAVyA7ABARIzCgxzdWJqZWN0X2tpbmQYAyABKA4yHS5zYWFzLmFjY291bnRzLnYxLlN1YmplY3RLaW5kEhsKCnNjb3BlX3BhdGgYBCABKAlCB7pIBHICEAESGQoHcm9sZV9pZBgFIAEoCUIIukgFcgOwAQEiowIKC1JlY29yZFNoYXJlEgoKAmlkGAEgASgJEg4KBm9yZ19pZBgCIAEoCRIVCg1yZXNvdXJjZV90eXBlGAMgASgJEhMKC3Jlc291cmNlX2lkGAQgASgJEhIKCnN1YmplY3RfaWQYBSABKAkSMwoMc3ViamVjdF9raW5kGAYgASgOMh0uc2Fhcy5hY2NvdW50cy52MS5TdWJqZWN0S2luZBIPCgdyb2xlX2lkGAcgASgJEhIKCmdyYW50ZWRfYnkYCCABKAkSLgoKZXhwaXJlc19hdBgJIAEoCzIaLmdvb2dsZS5wcm90b2J1Zi5UaW1lc3RhbXASLgoKY3JlYXRlZF9hdBgKIAEoCzIaLmdvb2dsZS5wcm90b2J1Zi5UaW1lc3RhbXAiigIKElNoYXJlUmVjb3JkUmVxdWVzdBIYCgZvcmdfaWQYASABKAlCCLpIBXIDsAEBEh4KDXJlc291cmNlX3R5cGUYAiABKAlCB7pIBHICEAESHAoLcmVzb3VyY2VfaWQYAyABKAlCB7pIBHICEAESHAoKc3ViamVjdF9pZBgEIAEoCUIIukgFcgOwAQESMwoMc3ViamVjdF9raW5kGAUgASgOMh0uc2Fhcy5hY2NvdW50cy52MS5TdWJqZWN0S2luZBIZCgdyb2xlX2lkGAYgASgJQgi6SAVyA7ABARIuCgpleHBpcmVzX2F0GAcgASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcCJDChNTaGFyZVJlY29yZFJlc3BvbnNlEiwKBXNoYXJlGAEgASgLMh0uc2Fhcy5hY2NvdW50cy52MS5SZWNvcmRTaGFyZSLaAQoSUmV2b2tlU2hhcmVSZXF1ZXN0EhgKBm9yZ19pZBgBIAEoCUIIukgFcgOwAQESHgoNcmVzb3VyY2VfdHlwZRgCIAEoCUIHukgEcgIQARIcCgtyZXNvdXJjZV9pZBgDIAEoCUIHukgEcgIQARIcCgpzdWJqZWN0X2lkGAQgASgJQgi6SAVyA7ABARIzCgxzdWJqZWN0X2tpbmQYBSABKA4yHS5zYWFzLmFjY291bnRzLnYxLlN1YmplY3RLaW5kEhkKB3JvbGVfaWQYBiABKAlCCLpIBXIDsAEBImsKEUxpc3RTaGFyZXNSZXF1ZXN0EhgKBm9yZ19pZBgBIAEoCUIIukgFcgOwAQESHgoNcmVzb3VyY2VfdHlwZRgCIAEoCUIHukgEcgIQARIcCgtyZXNvdXJjZV9pZBgDIAEoCUIHukgEcgIQASJDChJMaXN0U2hhcmVzUmVzcG9uc2USLQoGc2hhcmVzGAEgAygLMh0uc2Fhcy5hY2NvdW50cy52MS5SZWNvcmRTaGFyZSLYAQoSQ2hlY2tBY2Nlc3NSZXF1ZXN0EhwKCnN1YmplY3RfaWQYASABKAlCCLpIBXIDsAEBEjMKDHN1YmplY3Rfa2luZBgCIAEoDjIdLnNhYXMuYWNjb3VudHMudjEuU3ViamVjdEtpbmQSHgoNcmVzb3VyY2VfdHlwZRgDIAEoCUIHukgEcgIQARIcCgtyZXNvdXJjZV9pZBgEIAEoCUIHukgEcgIQARIXCgZhY3Rpb24YBSABKAlCB7pIBHICEAESGAoGb3JnX2lkGAYgASgJQgi6SAVyA7ABASI2ChNDaGVja0FjY2Vzc1Jlc3BvbnNlEg8KB2FsbG93ZWQYASABKAgSDgoGcmVhc29uGAIgASgJIisKE0dldFByaW5jaXBhbFJlcXVlc3QSFAoCaWQYASABKAlCCLpIBXIDsAEBIlcKGEdldEFnZW50UHJpbmNpcGFsUmVxdWVzdBIYCgZvcmdfaWQYASABKAlCCLpIBXIDsAEBEiEKEGFnZW50X2lkZW50aWZpZXIYAiABKAlCB7pIBHICEAEicAobQ3JlYXRlQWdlbnRQcmluY2lwYWxSZXF1ZXN0EhgKBm9yZ19pZBgBIAEoCUIIukgFcgOwAQESIQoQYWdlbnRfaWRlbnRpZmllchgCIAEoCUIHukgEcgIQARIUCgxkaXNwbGF5X25hbWUYAyABKAkiRwoWUmV2b2tlUHJpbmNpcGFsUmVxdWVzdBIUCgJpZBgBIAEoCUIIukgFcgOwAQESFwoGcmVhc29uGAIgASgJQge6SARyAhABIpMBChVMaXN0UHJpbmNpcGFsc1JlcXVlc3QSGAoGb3JnX2lkGAEgASgJQgi6SAVyA7ABARItCgRraW5kGAIgASgOMh8uc2Fhcy5hY2NvdW50cy52MS5QcmluY2lwYWxLaW5kEh0KCXBhZ2Vfc2l6ZRgDIAEoBUIKukgHGgUYyAEoABISCgpwYWdlX3Rva2VuGAQgASgJImIKFkxpc3RQcmluY2lwYWxzUmVzcG9uc2USLwoKcHJpbmNpcGFscxgBIAMoCzIbLnNhYXMuYWNjb3VudHMudjEuUHJpbmNpcGFsEhcKD25leHRfcGFnZV90b2tlbhgCIAEoCTLyEQoRUGVybWlzc2lvblNlcnZpY2USkwEKCkNyZWF0ZVJvbGUSIy5zYWFzLmFjY291bnRzLnYxLkNyZWF0ZVJvbGVSZXF1ZXN0GiQuc2Fhcy5hY2NvdW50cy52MS5DcmVhdGVSb2xlUmVzcG9uc2UiOsLzGCIIAhACMAE6EAoMcm9sZS5jcmVhdGVkEAJAAUgEUANYA2ABgtPkkwIOOgEqIgkvdjEvcm9sZXMSfwoJTGlzdFJvbGVzEiIuc2Fhcy5hY2NvdW50cy52MS5MaXN0Um9sZXNSZXF1ZXN0GiMuc2Fhcy5hY2NvdW50cy52MS5MaXN0Um9sZXNSZXNwb25zZSIpwvMYFAgCEAIwAToCEAFAAUgDUANYA2ABgtPkkwILEgkvdjEvcm9sZXMShwEKCkRlbGV0ZVJvbGUSIy5zYWFzLmFjY291bnRzLnYxLkRlbGV0ZVJvbGVSZXF1ZXN0GhYuZ29vZ2xlLnByb3RvYnVmLkVtcHR5IjzC8xgiCAIQATABOhAKDHJvbGUuZGVsZXRlZBACQAFIBVADWANgAoLT5JMCECoOL3YxL3JvbGVzL3tpZH0SnwEKCkFzc2lnblJvbGUSIy5zYWFzLmFjY291bnRzLnYxLkFzc2lnblJvbGVSZXF1ZXN0GiQuc2Fhcy5hY2NvdW50cy52MS5Bc3NpZ25Sb2xlUmVzcG9uc2UiRsLzGCMIAhACMAE6EQoNcm9sZS5hc3NpZ25lZBACQAFIBFADWANgAYLT5JMCGToBKiIUL3YxL3JvbGUtYXNzaWdubWVudHMSjQEKClJldm9rZVJvbGUSIy5zYWFzLmFjY291bnRzLnYxLlJldm9rZVJvbGVSZXF1ZXN0GhYuZ29vZ2xlLnByb3RvYnVmLkVtcHR5IkLC8xgiCAIQAjABOhAKDHJvbGUucmV2b2tlZBACQAFIBFADWANgAYLT5JMCFioUL3YxL3JvbGUtYXNzaWdubWVudHMSqAEKE0xpc3RSb2xlQXNzaWdubWVudHMSLC5zYWFzLmFjY291bnRzLnYxLkxpc3RSb2xlQXNzaWdubWVudHNSZXF1ZXN0Gi0uc2Fhcy5hY2NvdW50cy52MS5MaXN0Um9sZUFzc2lnbm1lbnRzUmVzcG9uc2UiNMLzGBQIAhACMAE6AhABQAFIA1ADWANgAYLT5JMCFhIUL3YxL3JvbGUtYXNzaWdubWVudHMSgAEKD0NoZWNrUGVybWlzc2lvbhIoLnNhYXMuYWNjb3VudHMudjEuQ2hlY2tQZXJtaXNzaW9uUmVxdWVzdBopLnNhYXMuYWNjb3VudHMudjEuQ2hlY2tQZXJtaXNzaW9uUmVzcG9uc2UiGMLzGBQIAxABMAE6AhABQAFIB1ADWANgARJlCgZEZWNpZGUSHy5zYWFzLmFjY291bnRzLnYxLkRlY2lkZVJlcXVlc3QaIC5zYWFzLmFjY291bnRzLnYxLkRlY2lkZVJlc3BvbnNlIhjC8xgUCAMQATABOgIQAUABSAdQA1gDYAESdAoLQ2hlY2tBY2Nlc3MSJC5zYWFzLmFjY291bnRzLnYxLkNoZWNrQWNjZXNzUmVxdWVzdBolLnNhYXMuYWNjb3VudHMudjEuQ2hlY2tBY2Nlc3NSZXNwb25zZSIYwvMYFAgDEAEwAToCEAFAAUgHUANYA2ABEsUBChFSZWdpc3RlclNjb3BlTm9kZRIqLnNhYXMuYWNjb3VudHMudjEuUmVnaXN0ZXJTY29wZU5vZGVSZXF1ZXN0Gisuc2Fhcy5hY2NvdW50cy52MS5SZWdpc3RlclNjb3BlTm9kZVJlc3BvbnNlIlfC8xg5CAIQBCoMCgZvcmdfaWQQAhgBMAE6GQoVc2NvcGUubm9kZV9yZWdpc3RlcmVkEAJAAUgEUANYA2ABgtPkkwIUOgEqIg8vdjEvc2NvcGUtbm9kZXMSqQEKCkdyYW50U2NvcGUSIy5zYWFzLmFjY291bnRzLnYxLkdyYW50U2NvcGVSZXF1ZXN0GiQuc2Fhcy5hY2NvdW50cy52MS5HcmFudFNjb3BlUmVzcG9uc2UiUMLzGDEIAhAEKgwKBm9yZ19pZBACGAEwAToRCg1zY29wZS5ncmFudGVkEAJAAUgEUANYA2ABgtPkkwIVOgEqIhAvdjEvc2NvcGUtZ3JhbnRzEpoBCgtSZXZva2VTY29wZRIkLnNhYXMuYWNjb3VudHMudjEuUmV2b2tlU2NvcGVSZXF1ZXN0GhYuZ29vZ2xlLnByb3RvYnVmLkVtcHR5Ik3C8xgxCAIQBCoMCgZvcmdfaWQQAhgBMAE6EQoNc2NvcGUucmV2b2tlZBACQAFIBFADWANgAYLT5JMCEioQL3YxL3Njb3BlLWdyYW50cxKtAQoLU2hhcmVSZWNvcmQSJC5zYWFzLmFjY291bnRzLnYxLlNoYXJlUmVjb3JkUmVxdWVzdBolLnNhYXMuYWNjb3VudHMudjEuU2hhcmVSZWNvcmRSZXNwb25zZSJRwvMYMQgCEAQqDAoGb3JnX2lkEAIYATABOhEKDXJlY29yZC5zaGFyZWQQAkABSARQA1gDYAGC0+STAhY6ASoiES92MS9yZWNvcmQtc2hhcmVzEqIBCgtSZXZva2VTaGFyZRIkLnNhYXMuYWNjb3VudHMudjEuUmV2b2tlU2hhcmVSZXF1ZXN0GhYuZ29vZ2xlLnByb3RvYnVmLkVtcHR5IlXC8xg4CAIQBCoMCgZvcmdfaWQQAhgBMAE6GAoUcmVjb3JkLnNoYXJlX3Jldm9rZWQQAkABSARQA1gDYAGC0+STAhMqES92MS9yZWNvcmQtc2hhcmVzEpgBCgpMaXN0U2hhcmVzEiMuc2Fhcy5hY2NvdW50cy52MS5MaXN0U2hhcmVzUmVxdWVzdBokLnNhYXMuYWNjb3VudHMudjEuTGlzdFNoYXJlc1Jlc3BvbnNlIj/C8xgiCAIQAyoMCgZvcmdfaWQQAhgBMAE6AhABQAFIA1ADWANgAYLT5JMCExIRL3YxL3JlY29yZC1zaGFyZXMyjQYKEFByaW5jaXBhbFNlcnZpY2USbAoMR2V0UHJpbmNpcGFsEiUuc2Fhcy5hY2NvdW50cy52MS5HZXRQcmluY2lwYWxSZXF1ZXN0Ghsuc2Fhcy5hY2NvdW50cy52MS5QcmluY2lwYWwiGMLzGBQIAxABMAE6AhABQAFIB1ADWANgARJ2ChFHZXRBZ2VudFByaW5jaXBhbBIqLnNhYXMuYWNjb3VudHMudjEuR2V0QWdlbnRQcmluY2lwYWxSZXF1ZXN0Ghsuc2Fhcy5hY2NvdW50cy52MS5QcmluY2lwYWwiGMLzGBQIAxABMAE6AhABQAFIB1ADWANgARK8AQoUQ3JlYXRlQWdlbnRQcmluY2lwYWwSLS5zYWFzLmFjY291bnRzLnYxLkNyZWF0ZUFnZW50UHJpbmNpcGFsUmVxdWVzdBobLnNhYXMuYWNjb3VudHMudjEuUHJpbmNpcGFsIljC8xg1CAIQBCoMCgZvcmdfaWQQAhgBMAE6FQoRcHJpbmNpcGFsLmNyZWF0ZWQQAkABSARQA1gDYAGC0+STAhk6ASoiFC92MS9wcmluY2lwYWxzOmFnZW50Eq8BCg9SZXZva2VQcmluY2lwYWwSKC5zYWFzLmFjY291bnRzLnYxLlJldm9rZVByaW5jaXBhbFJlcXVlc3QaFi5nb29nbGUucHJvdG9idWYuRW1wdHkiWsLzGDEIAhACKggKAmlkEAQYAzABOhUKEXByaW5jaXBhbC5yZXZva2VkEAJAAUgEUANYA2ABgtPkkwIfOgEqIhovdjEvcHJpbmNpcGFscy97aWR9OnJldm9rZRKhAQoOTGlzdFByaW5jaXBhbHMSJy5zYWFzLmFjY291bnRzLnYxLkxpc3RQcmluY2lwYWxzUmVxdWVzdBooLnNhYXMuYWNjb3VudHMudjEuTGlzdFByaW5jaXBhbHNSZXNwb25zZSI8wvMYIggCEAMqDAoGb3JnX2lkEAIYATABOgIQAUABSANQA1gDYAGC0+STAhASDi92MS9wcmluY2lwYWxzQroBChRjb20uc2Fhcy5hY2NvdW50cy52MUISQXV0aG9yaXphdGlvblByb3RvUAFaLGFjY291bnRzL3BrZy9nZW4vc2Fhcy9hY2NvdW50cy92MTthY2NvdW50c3YxogIDU0FYqgIQU2Fhcy5BY2NvdW50cy5WMcoCEFNhYXNcQWNjb3VudHNcVjHiAhxTYWFzXEFjY291bnRzXFYxXEdQQk1ldGFkYXRh6gISU2Fhczo6QWNjb3VudHM6OlYxYgZwcm90bzM", [file_buf_validate_validate, file_google_api_annotations, file_google_protobuf_empty, file_google_protobuf_struct, file_google_protobuf_timestamp, file_saas_accounts_v1_common, file_saas_policy_v1_options]);
 
 /**
  * @generated from message saas.accounts.v1.CreateRoleRequest
@@ -463,6 +463,565 @@ export const DecideResponseSchema: GenMessage<DecideResponse> = /*@__PURE__*/
   messageDesc(file_saas_accounts_v1_authorization, 13);
 
 /**
+ * @generated from message saas.accounts.v1.ScopeNode
+ */
+export type ScopeNode = Message<"saas.accounts.v1.ScopeNode"> & {
+  /**
+   * @generated from field: string id = 1;
+   */
+  id: string;
+
+  /**
+   * @generated from field: string org_id = 2;
+   */
+  orgId: string;
+
+  /**
+   * scope_path is a dotted ltree path of [a-z0-9_] labels, e.g.
+   * "foundation.solution_42.customer_7". UUIDs are encoded (lowercase,
+   * '-' -> '_') because raw UUIDs are not valid ltree labels.
+   *
+   * @generated from field: string scope_path = 3;
+   */
+  scopePath: string;
+
+  /**
+   * @generated from field: string kind = 4;
+   */
+  kind: string;
+
+  /**
+   * @generated from field: string label = 5;
+   */
+  label: string;
+
+  /**
+   * resource_type/resource_id are set when the node is a placed record (a
+   * leaf identifying a real product row); empty for structural nodes.
+   *
+   * @generated from field: string resource_type = 6;
+   */
+  resourceType: string;
+
+  /**
+   * @generated from field: string resource_id = 7;
+   */
+  resourceId: string;
+
+  /**
+   * @generated from field: google.protobuf.Timestamp created_at = 8;
+   */
+  createdAt?: Timestamp;
+};
+
+/**
+ * Describes the message saas.accounts.v1.ScopeNode.
+ * Use `create(ScopeNodeSchema)` to create a new message.
+ */
+export const ScopeNodeSchema: GenMessage<ScopeNode> = /*@__PURE__*/
+  messageDesc(file_saas_accounts_v1_authorization, 14);
+
+/**
+ * @generated from message saas.accounts.v1.RegisterScopeNodeRequest
+ */
+export type RegisterScopeNodeRequest = Message<"saas.accounts.v1.RegisterScopeNodeRequest"> & {
+  /**
+   * @generated from field: string org_id = 1;
+   */
+  orgId: string;
+
+  /**
+   * @generated from field: string scope_path = 2;
+   */
+  scopePath: string;
+
+  /**
+   * @generated from field: string kind = 3;
+   */
+  kind: string;
+
+  /**
+   * @generated from field: string label = 4;
+   */
+  label: string;
+
+  /**
+   * Set both to place a product record at this node; leave both empty for a
+   * structural node.
+   *
+   * @generated from field: string resource_type = 5;
+   */
+  resourceType: string;
+
+  /**
+   * @generated from field: string resource_id = 6;
+   */
+  resourceId: string;
+};
+
+/**
+ * Describes the message saas.accounts.v1.RegisterScopeNodeRequest.
+ * Use `create(RegisterScopeNodeRequestSchema)` to create a new message.
+ */
+export const RegisterScopeNodeRequestSchema: GenMessage<RegisterScopeNodeRequest> = /*@__PURE__*/
+  messageDesc(file_saas_accounts_v1_authorization, 15);
+
+/**
+ * @generated from message saas.accounts.v1.RegisterScopeNodeResponse
+ */
+export type RegisterScopeNodeResponse = Message<"saas.accounts.v1.RegisterScopeNodeResponse"> & {
+  /**
+   * @generated from field: saas.accounts.v1.ScopeNode node = 1;
+   */
+  node?: ScopeNode;
+};
+
+/**
+ * Describes the message saas.accounts.v1.RegisterScopeNodeResponse.
+ * Use `create(RegisterScopeNodeResponseSchema)` to create a new message.
+ */
+export const RegisterScopeNodeResponseSchema: GenMessage<RegisterScopeNodeResponse> = /*@__PURE__*/
+  messageDesc(file_saas_accounts_v1_authorization, 16);
+
+/**
+ * @generated from message saas.accounts.v1.ScopeGrant
+ */
+export type ScopeGrant = Message<"saas.accounts.v1.ScopeGrant"> & {
+  /**
+   * @generated from field: string id = 1;
+   */
+  id: string;
+
+  /**
+   * @generated from field: string org_id = 2;
+   */
+  orgId: string;
+
+  /**
+   * @generated from field: string subject_id = 3;
+   */
+  subjectId: string;
+
+  /**
+   * @generated from field: saas.accounts.v1.SubjectKind subject_kind = 4;
+   */
+  subjectKind: SubjectKind;
+
+  /**
+   * @generated from field: string scope_path = 5;
+   */
+  scopePath: string;
+
+  /**
+   * @generated from field: string role_id = 6;
+   */
+  roleId: string;
+
+  /**
+   * @generated from field: string granted_by = 7;
+   */
+  grantedBy: string;
+
+  /**
+   * @generated from field: google.protobuf.Timestamp expires_at = 8;
+   */
+  expiresAt?: Timestamp;
+
+  /**
+   * @generated from field: google.protobuf.Timestamp created_at = 9;
+   */
+  createdAt?: Timestamp;
+};
+
+/**
+ * Describes the message saas.accounts.v1.ScopeGrant.
+ * Use `create(ScopeGrantSchema)` to create a new message.
+ */
+export const ScopeGrantSchema: GenMessage<ScopeGrant> = /*@__PURE__*/
+  messageDesc(file_saas_accounts_v1_authorization, 17);
+
+/**
+ * @generated from message saas.accounts.v1.GrantScopeRequest
+ */
+export type GrantScopeRequest = Message<"saas.accounts.v1.GrantScopeRequest"> & {
+  /**
+   * @generated from field: string org_id = 1;
+   */
+  orgId: string;
+
+  /**
+   * @generated from field: string subject_id = 2;
+   */
+  subjectId: string;
+
+  /**
+   * @generated from field: saas.accounts.v1.SubjectKind subject_kind = 3;
+   */
+  subjectKind: SubjectKind;
+
+  /**
+   * @generated from field: string scope_path = 4;
+   */
+  scopePath: string;
+
+  /**
+   * @generated from field: string role_id = 5;
+   */
+  roleId: string;
+
+  /**
+   * Optional; unset = a standing grant.
+   *
+   * @generated from field: google.protobuf.Timestamp expires_at = 6;
+   */
+  expiresAt?: Timestamp;
+};
+
+/**
+ * Describes the message saas.accounts.v1.GrantScopeRequest.
+ * Use `create(GrantScopeRequestSchema)` to create a new message.
+ */
+export const GrantScopeRequestSchema: GenMessage<GrantScopeRequest> = /*@__PURE__*/
+  messageDesc(file_saas_accounts_v1_authorization, 18);
+
+/**
+ * @generated from message saas.accounts.v1.GrantScopeResponse
+ */
+export type GrantScopeResponse = Message<"saas.accounts.v1.GrantScopeResponse"> & {
+  /**
+   * @generated from field: saas.accounts.v1.ScopeGrant grant = 1;
+   */
+  grant?: ScopeGrant;
+};
+
+/**
+ * Describes the message saas.accounts.v1.GrantScopeResponse.
+ * Use `create(GrantScopeResponseSchema)` to create a new message.
+ */
+export const GrantScopeResponseSchema: GenMessage<GrantScopeResponse> = /*@__PURE__*/
+  messageDesc(file_saas_accounts_v1_authorization, 19);
+
+/**
+ * @generated from message saas.accounts.v1.RevokeScopeRequest
+ */
+export type RevokeScopeRequest = Message<"saas.accounts.v1.RevokeScopeRequest"> & {
+  /**
+   * @generated from field: string org_id = 1;
+   */
+  orgId: string;
+
+  /**
+   * @generated from field: string subject_id = 2;
+   */
+  subjectId: string;
+
+  /**
+   * @generated from field: saas.accounts.v1.SubjectKind subject_kind = 3;
+   */
+  subjectKind: SubjectKind;
+
+  /**
+   * @generated from field: string scope_path = 4;
+   */
+  scopePath: string;
+
+  /**
+   * @generated from field: string role_id = 5;
+   */
+  roleId: string;
+};
+
+/**
+ * Describes the message saas.accounts.v1.RevokeScopeRequest.
+ * Use `create(RevokeScopeRequestSchema)` to create a new message.
+ */
+export const RevokeScopeRequestSchema: GenMessage<RevokeScopeRequest> = /*@__PURE__*/
+  messageDesc(file_saas_accounts_v1_authorization, 20);
+
+/**
+ * @generated from message saas.accounts.v1.RecordShare
+ */
+export type RecordShare = Message<"saas.accounts.v1.RecordShare"> & {
+  /**
+   * @generated from field: string id = 1;
+   */
+  id: string;
+
+  /**
+   * @generated from field: string org_id = 2;
+   */
+  orgId: string;
+
+  /**
+   * @generated from field: string resource_type = 3;
+   */
+  resourceType: string;
+
+  /**
+   * @generated from field: string resource_id = 4;
+   */
+  resourceId: string;
+
+  /**
+   * @generated from field: string subject_id = 5;
+   */
+  subjectId: string;
+
+  /**
+   * @generated from field: saas.accounts.v1.SubjectKind subject_kind = 6;
+   */
+  subjectKind: SubjectKind;
+
+  /**
+   * @generated from field: string role_id = 7;
+   */
+  roleId: string;
+
+  /**
+   * @generated from field: string granted_by = 8;
+   */
+  grantedBy: string;
+
+  /**
+   * @generated from field: google.protobuf.Timestamp expires_at = 9;
+   */
+  expiresAt?: Timestamp;
+
+  /**
+   * @generated from field: google.protobuf.Timestamp created_at = 10;
+   */
+  createdAt?: Timestamp;
+};
+
+/**
+ * Describes the message saas.accounts.v1.RecordShare.
+ * Use `create(RecordShareSchema)` to create a new message.
+ */
+export const RecordShareSchema: GenMessage<RecordShare> = /*@__PURE__*/
+  messageDesc(file_saas_accounts_v1_authorization, 21);
+
+/**
+ * @generated from message saas.accounts.v1.ShareRecordRequest
+ */
+export type ShareRecordRequest = Message<"saas.accounts.v1.ShareRecordRequest"> & {
+  /**
+   * @generated from field: string org_id = 1;
+   */
+  orgId: string;
+
+  /**
+   * @generated from field: string resource_type = 2;
+   */
+  resourceType: string;
+
+  /**
+   * @generated from field: string resource_id = 3;
+   */
+  resourceId: string;
+
+  /**
+   * @generated from field: string subject_id = 4;
+   */
+  subjectId: string;
+
+  /**
+   * @generated from field: saas.accounts.v1.SubjectKind subject_kind = 5;
+   */
+  subjectKind: SubjectKind;
+
+  /**
+   * @generated from field: string role_id = 6;
+   */
+  roleId: string;
+
+  /**
+   * Optional; unset = a standing share.
+   *
+   * @generated from field: google.protobuf.Timestamp expires_at = 7;
+   */
+  expiresAt?: Timestamp;
+};
+
+/**
+ * Describes the message saas.accounts.v1.ShareRecordRequest.
+ * Use `create(ShareRecordRequestSchema)` to create a new message.
+ */
+export const ShareRecordRequestSchema: GenMessage<ShareRecordRequest> = /*@__PURE__*/
+  messageDesc(file_saas_accounts_v1_authorization, 22);
+
+/**
+ * @generated from message saas.accounts.v1.ShareRecordResponse
+ */
+export type ShareRecordResponse = Message<"saas.accounts.v1.ShareRecordResponse"> & {
+  /**
+   * @generated from field: saas.accounts.v1.RecordShare share = 1;
+   */
+  share?: RecordShare;
+};
+
+/**
+ * Describes the message saas.accounts.v1.ShareRecordResponse.
+ * Use `create(ShareRecordResponseSchema)` to create a new message.
+ */
+export const ShareRecordResponseSchema: GenMessage<ShareRecordResponse> = /*@__PURE__*/
+  messageDesc(file_saas_accounts_v1_authorization, 23);
+
+/**
+ * @generated from message saas.accounts.v1.RevokeShareRequest
+ */
+export type RevokeShareRequest = Message<"saas.accounts.v1.RevokeShareRequest"> & {
+  /**
+   * @generated from field: string org_id = 1;
+   */
+  orgId: string;
+
+  /**
+   * @generated from field: string resource_type = 2;
+   */
+  resourceType: string;
+
+  /**
+   * @generated from field: string resource_id = 3;
+   */
+  resourceId: string;
+
+  /**
+   * @generated from field: string subject_id = 4;
+   */
+  subjectId: string;
+
+  /**
+   * @generated from field: saas.accounts.v1.SubjectKind subject_kind = 5;
+   */
+  subjectKind: SubjectKind;
+
+  /**
+   * @generated from field: string role_id = 6;
+   */
+  roleId: string;
+};
+
+/**
+ * Describes the message saas.accounts.v1.RevokeShareRequest.
+ * Use `create(RevokeShareRequestSchema)` to create a new message.
+ */
+export const RevokeShareRequestSchema: GenMessage<RevokeShareRequest> = /*@__PURE__*/
+  messageDesc(file_saas_accounts_v1_authorization, 24);
+
+/**
+ * @generated from message saas.accounts.v1.ListSharesRequest
+ */
+export type ListSharesRequest = Message<"saas.accounts.v1.ListSharesRequest"> & {
+  /**
+   * @generated from field: string org_id = 1;
+   */
+  orgId: string;
+
+  /**
+   * @generated from field: string resource_type = 2;
+   */
+  resourceType: string;
+
+  /**
+   * @generated from field: string resource_id = 3;
+   */
+  resourceId: string;
+};
+
+/**
+ * Describes the message saas.accounts.v1.ListSharesRequest.
+ * Use `create(ListSharesRequestSchema)` to create a new message.
+ */
+export const ListSharesRequestSchema: GenMessage<ListSharesRequest> = /*@__PURE__*/
+  messageDesc(file_saas_accounts_v1_authorization, 25);
+
+/**
+ * @generated from message saas.accounts.v1.ListSharesResponse
+ */
+export type ListSharesResponse = Message<"saas.accounts.v1.ListSharesResponse"> & {
+  /**
+   * @generated from field: repeated saas.accounts.v1.RecordShare shares = 1;
+   */
+  shares: RecordShare[];
+};
+
+/**
+ * Describes the message saas.accounts.v1.ListSharesResponse.
+ * Use `create(ListSharesResponseSchema)` to create a new message.
+ */
+export const ListSharesResponseSchema: GenMessage<ListSharesResponse> = /*@__PURE__*/
+  messageDesc(file_saas_accounts_v1_authorization, 26);
+
+/**
+ * @generated from message saas.accounts.v1.CheckAccessRequest
+ */
+export type CheckAccessRequest = Message<"saas.accounts.v1.CheckAccessRequest"> & {
+  /**
+   * @generated from field: string subject_id = 1;
+   */
+  subjectId: string;
+
+  /**
+   * @generated from field: saas.accounts.v1.SubjectKind subject_kind = 2;
+   */
+  subjectKind: SubjectKind;
+
+  /**
+   * @generated from field: string resource_type = 3;
+   */
+  resourceType: string;
+
+  /**
+   * @generated from field: string resource_id = 4;
+   */
+  resourceId: string;
+
+  /**
+   * @generated from field: string action = 5;
+   */
+  action: string;
+
+  /**
+   * SECURITY: there is deliberately NO caller-supplied scope path. CheckAccess
+   * resolves the record's TRUE scope from resource_id's own registered node,
+   * so a caller entitled at one scope cannot authorize a resource that actually
+   * lives under a different scope (RFC-0001 open-question 2).
+   *
+   * @generated from field: string org_id = 6;
+   */
+  orgId: string;
+};
+
+/**
+ * Describes the message saas.accounts.v1.CheckAccessRequest.
+ * Use `create(CheckAccessRequestSchema)` to create a new message.
+ */
+export const CheckAccessRequestSchema: GenMessage<CheckAccessRequest> = /*@__PURE__*/
+  messageDesc(file_saas_accounts_v1_authorization, 27);
+
+/**
+ * @generated from message saas.accounts.v1.CheckAccessResponse
+ */
+export type CheckAccessResponse = Message<"saas.accounts.v1.CheckAccessResponse"> & {
+  /**
+   * @generated from field: bool allowed = 1;
+   */
+  allowed: boolean;
+
+  /**
+   * @generated from field: string reason = 2;
+   */
+  reason: string;
+};
+
+/**
+ * Describes the message saas.accounts.v1.CheckAccessResponse.
+ * Use `create(CheckAccessResponseSchema)` to create a new message.
+ */
+export const CheckAccessResponseSchema: GenMessage<CheckAccessResponse> = /*@__PURE__*/
+  messageDesc(file_saas_accounts_v1_authorization, 28);
+
+/**
  * @generated from message saas.accounts.v1.GetPrincipalRequest
  */
 export type GetPrincipalRequest = Message<"saas.accounts.v1.GetPrincipalRequest"> & {
@@ -477,7 +1036,7 @@ export type GetPrincipalRequest = Message<"saas.accounts.v1.GetPrincipalRequest"
  * Use `create(GetPrincipalRequestSchema)` to create a new message.
  */
 export const GetPrincipalRequestSchema: GenMessage<GetPrincipalRequest> = /*@__PURE__*/
-  messageDesc(file_saas_accounts_v1_authorization, 14);
+  messageDesc(file_saas_accounts_v1_authorization, 29);
 
 /**
  * @generated from message saas.accounts.v1.GetAgentPrincipalRequest
@@ -499,7 +1058,7 @@ export type GetAgentPrincipalRequest = Message<"saas.accounts.v1.GetAgentPrincip
  * Use `create(GetAgentPrincipalRequestSchema)` to create a new message.
  */
 export const GetAgentPrincipalRequestSchema: GenMessage<GetAgentPrincipalRequest> = /*@__PURE__*/
-  messageDesc(file_saas_accounts_v1_authorization, 15);
+  messageDesc(file_saas_accounts_v1_authorization, 30);
 
 /**
  * @generated from message saas.accounts.v1.CreateAgentPrincipalRequest
@@ -528,7 +1087,7 @@ export type CreateAgentPrincipalRequest = Message<"saas.accounts.v1.CreateAgentP
  * Use `create(CreateAgentPrincipalRequestSchema)` to create a new message.
  */
 export const CreateAgentPrincipalRequestSchema: GenMessage<CreateAgentPrincipalRequest> = /*@__PURE__*/
-  messageDesc(file_saas_accounts_v1_authorization, 16);
+  messageDesc(file_saas_accounts_v1_authorization, 31);
 
 /**
  * @generated from message saas.accounts.v1.RevokePrincipalRequest
@@ -550,7 +1109,7 @@ export type RevokePrincipalRequest = Message<"saas.accounts.v1.RevokePrincipalRe
  * Use `create(RevokePrincipalRequestSchema)` to create a new message.
  */
 export const RevokePrincipalRequestSchema: GenMessage<RevokePrincipalRequest> = /*@__PURE__*/
-  messageDesc(file_saas_accounts_v1_authorization, 17);
+  messageDesc(file_saas_accounts_v1_authorization, 32);
 
 /**
  * @generated from message saas.accounts.v1.ListPrincipalsRequest
@@ -585,7 +1144,7 @@ export type ListPrincipalsRequest = Message<"saas.accounts.v1.ListPrincipalsRequ
  * Use `create(ListPrincipalsRequestSchema)` to create a new message.
  */
 export const ListPrincipalsRequestSchema: GenMessage<ListPrincipalsRequest> = /*@__PURE__*/
-  messageDesc(file_saas_accounts_v1_authorization, 18);
+  messageDesc(file_saas_accounts_v1_authorization, 33);
 
 /**
  * @generated from message saas.accounts.v1.ListPrincipalsResponse
@@ -607,7 +1166,7 @@ export type ListPrincipalsResponse = Message<"saas.accounts.v1.ListPrincipalsRes
  * Use `create(ListPrincipalsResponseSchema)` to create a new message.
  */
 export const ListPrincipalsResponseSchema: GenMessage<ListPrincipalsResponse> = /*@__PURE__*/
-  messageDesc(file_saas_accounts_v1_authorization, 19);
+  messageDesc(file_saas_accounts_v1_authorization, 34);
 
 /**
  * PermissionService — RBAC management and enforcement
@@ -684,6 +1243,80 @@ export const PermissionService: GenService<{
     methodKind: "unary";
     input: typeof DecideRequestSchema;
     output: typeof DecideResponseSchema;
+  },
+  /**
+   * CheckAccess is the hierarchical + per-record authz decision (issue #178).
+   * Internal decision oracle, same trust boundary as CheckPermission.
+   *
+   * @generated from rpc saas.accounts.v1.PermissionService.CheckAccess
+   */
+  checkAccess: {
+    methodKind: "unary";
+    input: typeof CheckAccessRequestSchema;
+    output: typeof CheckAccessResponseSchema;
+  },
+  /**
+   * RegisterScopeNode adds a node to the org's scope tree, or places a product
+   * record at a node when resource_type/resource_id are set.
+   *
+   * @generated from rpc saas.accounts.v1.PermissionService.RegisterScopeNode
+   */
+  registerScopeNode: {
+    methodKind: "unary";
+    input: typeof RegisterScopeNodeRequestSchema;
+    output: typeof RegisterScopeNodeResponseSchema;
+  },
+  /**
+   * GrantScope grants a role to a principal/team at a registered scope node;
+   * the grant inherits to the node's whole subtree.
+   *
+   * @generated from rpc saas.accounts.v1.PermissionService.GrantScope
+   */
+  grantScope: {
+    methodKind: "unary";
+    input: typeof GrantScopeRequestSchema;
+    output: typeof GrantScopeResponseSchema;
+  },
+  /**
+   * RevokeScope removes a hierarchical scope grant.
+   *
+   * @generated from rpc saas.accounts.v1.PermissionService.RevokeScope
+   */
+  revokeScope: {
+    methodKind: "unary";
+    input: typeof RevokeScopeRequestSchema;
+    output: typeof EmptySchema;
+  },
+  /**
+   * ShareRecord grants a principal/team a role on a specific record, across
+   * the ownership boundary (durable per-record ACL).
+   *
+   * @generated from rpc saas.accounts.v1.PermissionService.ShareRecord
+   */
+  shareRecord: {
+    methodKind: "unary";
+    input: typeof ShareRecordRequestSchema;
+    output: typeof ShareRecordResponseSchema;
+  },
+  /**
+   * RevokeShare removes a per-record share.
+   *
+   * @generated from rpc saas.accounts.v1.PermissionService.RevokeShare
+   */
+  revokeShare: {
+    methodKind: "unary";
+    input: typeof RevokeShareRequestSchema;
+    output: typeof EmptySchema;
+  },
+  /**
+   * ListShares returns the shares on a specific record.
+   *
+   * @generated from rpc saas.accounts.v1.PermissionService.ListShares
+   */
+  listShares: {
+    methodKind: "unary";
+    input: typeof ListSharesRequestSchema;
+    output: typeof ListSharesResponseSchema;
   },
 }> = /*@__PURE__*/
   serviceDesc(file_saas_accounts_v1_authorization, 0);

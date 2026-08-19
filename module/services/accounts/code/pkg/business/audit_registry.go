@@ -119,6 +119,12 @@ const (
 	EventDelegationDenied       EventType = "delegation.denied"
 	EventDelegationAutoApproved EventType = "delegation.auto_approved"
 
+	EventScopeNodeRegistered EventType = "scope.node_registered"
+	EventScopeGranted        EventType = "scope.granted"
+	EventScopeRevoked        EventType = "scope.revoked"
+	EventRecordShared        EventType = "record.shared"
+	EventRecordShareRevoked  EventType = "record.share_revoked"
+
 	EventAuthLogin             EventType = "auth.login"
 	EventAuthMagicLinkLogin    EventType = "auth.magic_link_login"
 	EventAuthSSOJitProvisioned EventType = "auth.sso_jit_provisioned"
@@ -206,6 +212,11 @@ var auditEventCatalog = []AuditEventDefinition{
 	def(EventDelegationApproved, CategoryAccess, "A delegation grant was approved."),
 	def(EventDelegationDenied, CategoryAccess, "A delegation grant was denied."),
 	def(EventDelegationAutoApproved, CategoryAccess, "A delegation grant was auto-approved by policy."),
+	def(EventScopeNodeRegistered, CategoryAccess, "A scope node was registered.", str("scope_path"), str("kind")),
+	def(EventScopeGranted, CategoryAccess, "A role was granted at a scope node.", uid("role_id"), uid("subject_id"), str("scope_path")),
+	def(EventScopeRevoked, CategoryAccess, "A scope grant was revoked.", uid("role_id"), str("scope_path")),
+	def(EventRecordShared, CategoryAccess, "A record was shared with a principal or team.", uid("role_id"), uid("subject_id")),
+	def(EventRecordShareRevoked, CategoryAccess, "A record share was revoked.", uid("role_id"), uid("subject_id")),
 
 	def(EventAuthLogin, CategorySecurity, "A user authenticated.", str("method")),
 	def(EventAuthMagicLinkLogin, CategorySecurity, "A user authenticated via magic link."),

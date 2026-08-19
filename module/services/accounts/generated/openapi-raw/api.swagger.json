@@ -3423,6 +3423,148 @@
         ]
       }
     },
+    "/v1/record-shares": {
+      "get": {
+        "summary": "ListShares returns the shares on a specific record.",
+        "operationId": "PermissionService_ListShares",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1ListSharesResponse"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/rpcStatus"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "orgId",
+            "in": "query",
+            "required": false,
+            "type": "string"
+          },
+          {
+            "name": "resourceType",
+            "in": "query",
+            "required": false,
+            "type": "string"
+          },
+          {
+            "name": "resourceId",
+            "in": "query",
+            "required": false,
+            "type": "string"
+          }
+        ],
+        "tags": [
+          "PermissionService"
+        ]
+      },
+      "delete": {
+        "summary": "RevokeShare removes a per-record share.",
+        "operationId": "PermissionService_RevokeShare",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "type": "object",
+              "properties": {}
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/rpcStatus"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "orgId",
+            "in": "query",
+            "required": false,
+            "type": "string"
+          },
+          {
+            "name": "resourceType",
+            "in": "query",
+            "required": false,
+            "type": "string"
+          },
+          {
+            "name": "resourceId",
+            "in": "query",
+            "required": false,
+            "type": "string"
+          },
+          {
+            "name": "subjectId",
+            "in": "query",
+            "required": false,
+            "type": "string"
+          },
+          {
+            "name": "subjectKind",
+            "description": " - SUBJECT_KIND_PRINCIPAL: A direct role assignment always targets a Principal. Human users remain\nPrincipals of kind HUMAN; agents and services can receive the same\nexplicitly assigned authority without masquerading as users.\n - SUBJECT_KIND_USER: Backward-compatible wire/JSON input alias. New clients must use\nSUBJECT_KIND_PRINCIPAL.",
+            "in": "query",
+            "required": false,
+            "type": "string",
+            "enum": [
+              "SUBJECT_KIND_UNSPECIFIED",
+              "SUBJECT_KIND_PRINCIPAL",
+              "SUBJECT_KIND_USER",
+              "SUBJECT_KIND_TEAM"
+            ],
+            "default": "SUBJECT_KIND_UNSPECIFIED"
+          },
+          {
+            "name": "roleId",
+            "in": "query",
+            "required": false,
+            "type": "string"
+          }
+        ],
+        "tags": [
+          "PermissionService"
+        ]
+      },
+      "post": {
+        "summary": "ShareRecord grants a principal/team a role on a specific record, across\nthe ownership boundary (durable per-record ACL).",
+        "operationId": "PermissionService_ShareRecord",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1ShareRecordResponse"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/rpcStatus"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "body",
+            "in": "body",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/v1ShareRecordRequest"
+            }
+          }
+        ],
+        "tags": [
+          "PermissionService"
+        ]
+      }
+    },
     "/v1/role-assignments": {
       "get": {
         "operationId": "PermissionService_ListRoleAssignments",
@@ -3636,6 +3778,134 @@
             "in": "path",
             "required": true,
             "type": "string"
+          }
+        ],
+        "tags": [
+          "PermissionService"
+        ]
+      }
+    },
+    "/v1/scope-grants": {
+      "delete": {
+        "summary": "RevokeScope removes a hierarchical scope grant.",
+        "operationId": "PermissionService_RevokeScope",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "type": "object",
+              "properties": {}
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/rpcStatus"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "orgId",
+            "in": "query",
+            "required": false,
+            "type": "string"
+          },
+          {
+            "name": "subjectId",
+            "in": "query",
+            "required": false,
+            "type": "string"
+          },
+          {
+            "name": "subjectKind",
+            "description": " - SUBJECT_KIND_PRINCIPAL: A direct role assignment always targets a Principal. Human users remain\nPrincipals of kind HUMAN; agents and services can receive the same\nexplicitly assigned authority without masquerading as users.\n - SUBJECT_KIND_USER: Backward-compatible wire/JSON input alias. New clients must use\nSUBJECT_KIND_PRINCIPAL.",
+            "in": "query",
+            "required": false,
+            "type": "string",
+            "enum": [
+              "SUBJECT_KIND_UNSPECIFIED",
+              "SUBJECT_KIND_PRINCIPAL",
+              "SUBJECT_KIND_USER",
+              "SUBJECT_KIND_TEAM"
+            ],
+            "default": "SUBJECT_KIND_UNSPECIFIED"
+          },
+          {
+            "name": "scopePath",
+            "in": "query",
+            "required": false,
+            "type": "string"
+          },
+          {
+            "name": "roleId",
+            "in": "query",
+            "required": false,
+            "type": "string"
+          }
+        ],
+        "tags": [
+          "PermissionService"
+        ]
+      },
+      "post": {
+        "summary": "GrantScope grants a role to a principal/team at a registered scope node;\nthe grant inherits to the node's whole subtree.",
+        "operationId": "PermissionService_GrantScope",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1GrantScopeResponse"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/rpcStatus"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "body",
+            "in": "body",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/v1GrantScopeRequest"
+            }
+          }
+        ],
+        "tags": [
+          "PermissionService"
+        ]
+      }
+    },
+    "/v1/scope-nodes": {
+      "post": {
+        "summary": "RegisterScopeNode adds a node to the org's scope tree, or places a product\nrecord at a node when resource_type/resource_id are set.",
+        "operationId": "PermissionService_RegisterScopeNode",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1RegisterScopeNodeResponse"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/rpcStatus"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "body",
+            "in": "body",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/v1RegisterScopeNodeRequest"
+            }
           }
         ],
         "tags": [
@@ -6182,6 +6452,39 @@
         }
       }
     },
+    "v1GrantScopeRequest": {
+      "type": "object",
+      "properties": {
+        "orgId": {
+          "type": "string"
+        },
+        "subjectId": {
+          "type": "string"
+        },
+        "subjectKind": {
+          "$ref": "#/definitions/v1SubjectKind"
+        },
+        "scopePath": {
+          "type": "string"
+        },
+        "roleId": {
+          "type": "string"
+        },
+        "expiresAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Optional; unset = a standing grant."
+        }
+      }
+    },
+    "v1GrantScopeResponse": {
+      "type": "object",
+      "properties": {
+        "grant": {
+          "$ref": "#/definitions/v1ScopeGrant"
+        }
+      }
+    },
     "v1HeaderJWTAuthentication": {
       "type": "object",
       "properties": {
@@ -6992,6 +7295,18 @@
         }
       }
     },
+    "v1ListSharesResponse": {
+      "type": "object",
+      "properties": {
+        "shares": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "$ref": "#/definitions/v1RecordShare"
+          }
+        }
+      }
+    },
     "v1ListTeamMembersResponse": {
       "type": "object",
       "properties": {
@@ -7733,6 +8048,43 @@
       },
       "description": "RPCInfo — one entry per gRPC RPC this service exposes."
     },
+    "v1RecordShare": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "orgId": {
+          "type": "string"
+        },
+        "resourceType": {
+          "type": "string"
+        },
+        "resourceId": {
+          "type": "string"
+        },
+        "subjectId": {
+          "type": "string"
+        },
+        "subjectKind": {
+          "$ref": "#/definitions/v1SubjectKind"
+        },
+        "roleId": {
+          "type": "string"
+        },
+        "grantedBy": {
+          "type": "string"
+        },
+        "expiresAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time"
+        }
+      }
+    },
     "v1RefreshTokenRequest": {
       "type": "object",
       "properties": {
@@ -7753,6 +8105,38 @@
         "expiresIn": {
           "type": "string",
           "format": "int64"
+        }
+      }
+    },
+    "v1RegisterScopeNodeRequest": {
+      "type": "object",
+      "properties": {
+        "orgId": {
+          "type": "string"
+        },
+        "scopePath": {
+          "type": "string"
+        },
+        "kind": {
+          "type": "string"
+        },
+        "label": {
+          "type": "string"
+        },
+        "resourceType": {
+          "type": "string",
+          "description": "Set both to place a product record at this node; leave both empty for a\nstructural node."
+        },
+        "resourceId": {
+          "type": "string"
+        }
+      }
+    },
+    "v1RegisterScopeNodeResponse": {
+      "type": "object",
+      "properties": {
+        "node": {
+          "$ref": "#/definitions/v1ScopeNode"
         }
       }
     },
@@ -7941,6 +8325,40 @@
         }
       }
     },
+    "v1ScopeGrant": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "orgId": {
+          "type": "string"
+        },
+        "subjectId": {
+          "type": "string"
+        },
+        "subjectKind": {
+          "$ref": "#/definitions/v1SubjectKind"
+        },
+        "scopePath": {
+          "type": "string"
+        },
+        "roleId": {
+          "type": "string"
+        },
+        "grantedBy": {
+          "type": "string"
+        },
+        "expiresAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time"
+        }
+      }
+    },
     "v1ScopeInfo": {
       "type": "object",
       "properties": {
@@ -7953,6 +8371,38 @@
         }
       },
       "description": "ScopeInfo — API-key scope this service accepts."
+    },
+    "v1ScopeNode": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "orgId": {
+          "type": "string"
+        },
+        "scopePath": {
+          "type": "string",
+          "description": "scope_path is a dotted ltree path of [a-z0-9_] labels, e.g.\n\"foundation.solution_42.customer_7\". UUIDs are encoded (lowercase,\n'-' -\u003e '_') because raw UUIDs are not valid ltree labels."
+        },
+        "kind": {
+          "type": "string"
+        },
+        "label": {
+          "type": "string"
+        },
+        "resourceType": {
+          "type": "string",
+          "description": "resource_type/resource_id are set when the node is a placed record (a\nleaf identifying a real product row); empty for structural nodes."
+        },
+        "resourceId": {
+          "type": "string"
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time"
+        }
+      }
     },
     "v1SearchUsersResponse": {
       "type": "object",
@@ -8091,6 +8541,42 @@
           "items": {
             "type": "string"
           }
+        }
+      }
+    },
+    "v1ShareRecordRequest": {
+      "type": "object",
+      "properties": {
+        "orgId": {
+          "type": "string"
+        },
+        "resourceType": {
+          "type": "string"
+        },
+        "resourceId": {
+          "type": "string"
+        },
+        "subjectId": {
+          "type": "string"
+        },
+        "subjectKind": {
+          "$ref": "#/definitions/v1SubjectKind"
+        },
+        "roleId": {
+          "type": "string"
+        },
+        "expiresAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Optional; unset = a standing share."
+        }
+      }
+    },
+    "v1ShareRecordResponse": {
+      "type": "object",
+      "properties": {
+        "share": {
+          "$ref": "#/definitions/v1RecordShare"
         }
       }
     },

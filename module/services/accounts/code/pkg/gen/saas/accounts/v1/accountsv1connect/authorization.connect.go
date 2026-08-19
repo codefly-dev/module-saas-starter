@@ -61,6 +61,27 @@ const (
 	// PermissionServiceDecideProcedure is the fully-qualified name of the PermissionService's Decide
 	// RPC.
 	PermissionServiceDecideProcedure = "/saas.accounts.v1.PermissionService/Decide"
+	// PermissionServiceCheckAccessProcedure is the fully-qualified name of the PermissionService's
+	// CheckAccess RPC.
+	PermissionServiceCheckAccessProcedure = "/saas.accounts.v1.PermissionService/CheckAccess"
+	// PermissionServiceRegisterScopeNodeProcedure is the fully-qualified name of the
+	// PermissionService's RegisterScopeNode RPC.
+	PermissionServiceRegisterScopeNodeProcedure = "/saas.accounts.v1.PermissionService/RegisterScopeNode"
+	// PermissionServiceGrantScopeProcedure is the fully-qualified name of the PermissionService's
+	// GrantScope RPC.
+	PermissionServiceGrantScopeProcedure = "/saas.accounts.v1.PermissionService/GrantScope"
+	// PermissionServiceRevokeScopeProcedure is the fully-qualified name of the PermissionService's
+	// RevokeScope RPC.
+	PermissionServiceRevokeScopeProcedure = "/saas.accounts.v1.PermissionService/RevokeScope"
+	// PermissionServiceShareRecordProcedure is the fully-qualified name of the PermissionService's
+	// ShareRecord RPC.
+	PermissionServiceShareRecordProcedure = "/saas.accounts.v1.PermissionService/ShareRecord"
+	// PermissionServiceRevokeShareProcedure is the fully-qualified name of the PermissionService's
+	// RevokeShare RPC.
+	PermissionServiceRevokeShareProcedure = "/saas.accounts.v1.PermissionService/RevokeShare"
+	// PermissionServiceListSharesProcedure is the fully-qualified name of the PermissionService's
+	// ListShares RPC.
+	PermissionServiceListSharesProcedure = "/saas.accounts.v1.PermissionService/ListShares"
 	// PrincipalServiceGetPrincipalProcedure is the fully-qualified name of the PrincipalService's
 	// GetPrincipal RPC.
 	PrincipalServiceGetPrincipalProcedure = "/saas.accounts.v1.PrincipalService/GetPrincipal"
@@ -93,6 +114,24 @@ type PermissionServiceClient interface {
 	// through the same Postgres CheckPermission query in M2; they
 	// diverge starting at M4 (manifest ceiling) and M7 (approval flow).
 	Decide(context.Context, *connect.Request[v1.DecideRequest]) (*connect.Response[v1.DecideResponse], error)
+	// CheckAccess is the hierarchical + per-record authz decision (issue #178).
+	// Internal decision oracle, same trust boundary as CheckPermission.
+	CheckAccess(context.Context, *connect.Request[v1.CheckAccessRequest]) (*connect.Response[v1.CheckAccessResponse], error)
+	// RegisterScopeNode adds a node to the org's scope tree, or places a product
+	// record at a node when resource_type/resource_id are set.
+	RegisterScopeNode(context.Context, *connect.Request[v1.RegisterScopeNodeRequest]) (*connect.Response[v1.RegisterScopeNodeResponse], error)
+	// GrantScope grants a role to a principal/team at a registered scope node;
+	// the grant inherits to the node's whole subtree.
+	GrantScope(context.Context, *connect.Request[v1.GrantScopeRequest]) (*connect.Response[v1.GrantScopeResponse], error)
+	// RevokeScope removes a hierarchical scope grant.
+	RevokeScope(context.Context, *connect.Request[v1.RevokeScopeRequest]) (*connect.Response[emptypb.Empty], error)
+	// ShareRecord grants a principal/team a role on a specific record, across
+	// the ownership boundary (durable per-record ACL).
+	ShareRecord(context.Context, *connect.Request[v1.ShareRecordRequest]) (*connect.Response[v1.ShareRecordResponse], error)
+	// RevokeShare removes a per-record share.
+	RevokeShare(context.Context, *connect.Request[v1.RevokeShareRequest]) (*connect.Response[emptypb.Empty], error)
+	// ListShares returns the shares on a specific record.
+	ListShares(context.Context, *connect.Request[v1.ListSharesRequest]) (*connect.Response[v1.ListSharesResponse], error)
 }
 
 // NewPermissionServiceClient constructs a client for the saas.accounts.v1.PermissionService
@@ -154,6 +193,48 @@ func NewPermissionServiceClient(httpClient connect.HTTPClient, baseURL string, o
 			connect.WithSchema(permissionServiceMethods.ByName("Decide")),
 			connect.WithClientOptions(opts...),
 		),
+		checkAccess: connect.NewClient[v1.CheckAccessRequest, v1.CheckAccessResponse](
+			httpClient,
+			baseURL+PermissionServiceCheckAccessProcedure,
+			connect.WithSchema(permissionServiceMethods.ByName("CheckAccess")),
+			connect.WithClientOptions(opts...),
+		),
+		registerScopeNode: connect.NewClient[v1.RegisterScopeNodeRequest, v1.RegisterScopeNodeResponse](
+			httpClient,
+			baseURL+PermissionServiceRegisterScopeNodeProcedure,
+			connect.WithSchema(permissionServiceMethods.ByName("RegisterScopeNode")),
+			connect.WithClientOptions(opts...),
+		),
+		grantScope: connect.NewClient[v1.GrantScopeRequest, v1.GrantScopeResponse](
+			httpClient,
+			baseURL+PermissionServiceGrantScopeProcedure,
+			connect.WithSchema(permissionServiceMethods.ByName("GrantScope")),
+			connect.WithClientOptions(opts...),
+		),
+		revokeScope: connect.NewClient[v1.RevokeScopeRequest, emptypb.Empty](
+			httpClient,
+			baseURL+PermissionServiceRevokeScopeProcedure,
+			connect.WithSchema(permissionServiceMethods.ByName("RevokeScope")),
+			connect.WithClientOptions(opts...),
+		),
+		shareRecord: connect.NewClient[v1.ShareRecordRequest, v1.ShareRecordResponse](
+			httpClient,
+			baseURL+PermissionServiceShareRecordProcedure,
+			connect.WithSchema(permissionServiceMethods.ByName("ShareRecord")),
+			connect.WithClientOptions(opts...),
+		),
+		revokeShare: connect.NewClient[v1.RevokeShareRequest, emptypb.Empty](
+			httpClient,
+			baseURL+PermissionServiceRevokeShareProcedure,
+			connect.WithSchema(permissionServiceMethods.ByName("RevokeShare")),
+			connect.WithClientOptions(opts...),
+		),
+		listShares: connect.NewClient[v1.ListSharesRequest, v1.ListSharesResponse](
+			httpClient,
+			baseURL+PermissionServiceListSharesProcedure,
+			connect.WithSchema(permissionServiceMethods.ByName("ListShares")),
+			connect.WithClientOptions(opts...),
+		),
 	}
 }
 
@@ -167,6 +248,13 @@ type permissionServiceClient struct {
 	listRoleAssignments *connect.Client[v1.ListRoleAssignmentsRequest, v1.ListRoleAssignmentsResponse]
 	checkPermission     *connect.Client[v1.CheckPermissionRequest, v1.CheckPermissionResponse]
 	decide              *connect.Client[v1.DecideRequest, v1.DecideResponse]
+	checkAccess         *connect.Client[v1.CheckAccessRequest, v1.CheckAccessResponse]
+	registerScopeNode   *connect.Client[v1.RegisterScopeNodeRequest, v1.RegisterScopeNodeResponse]
+	grantScope          *connect.Client[v1.GrantScopeRequest, v1.GrantScopeResponse]
+	revokeScope         *connect.Client[v1.RevokeScopeRequest, emptypb.Empty]
+	shareRecord         *connect.Client[v1.ShareRecordRequest, v1.ShareRecordResponse]
+	revokeShare         *connect.Client[v1.RevokeShareRequest, emptypb.Empty]
+	listShares          *connect.Client[v1.ListSharesRequest, v1.ListSharesResponse]
 }
 
 // CreateRole calls saas.accounts.v1.PermissionService.CreateRole.
@@ -209,6 +297,41 @@ func (c *permissionServiceClient) Decide(ctx context.Context, req *connect.Reque
 	return c.decide.CallUnary(ctx, req)
 }
 
+// CheckAccess calls saas.accounts.v1.PermissionService.CheckAccess.
+func (c *permissionServiceClient) CheckAccess(ctx context.Context, req *connect.Request[v1.CheckAccessRequest]) (*connect.Response[v1.CheckAccessResponse], error) {
+	return c.checkAccess.CallUnary(ctx, req)
+}
+
+// RegisterScopeNode calls saas.accounts.v1.PermissionService.RegisterScopeNode.
+func (c *permissionServiceClient) RegisterScopeNode(ctx context.Context, req *connect.Request[v1.RegisterScopeNodeRequest]) (*connect.Response[v1.RegisterScopeNodeResponse], error) {
+	return c.registerScopeNode.CallUnary(ctx, req)
+}
+
+// GrantScope calls saas.accounts.v1.PermissionService.GrantScope.
+func (c *permissionServiceClient) GrantScope(ctx context.Context, req *connect.Request[v1.GrantScopeRequest]) (*connect.Response[v1.GrantScopeResponse], error) {
+	return c.grantScope.CallUnary(ctx, req)
+}
+
+// RevokeScope calls saas.accounts.v1.PermissionService.RevokeScope.
+func (c *permissionServiceClient) RevokeScope(ctx context.Context, req *connect.Request[v1.RevokeScopeRequest]) (*connect.Response[emptypb.Empty], error) {
+	return c.revokeScope.CallUnary(ctx, req)
+}
+
+// ShareRecord calls saas.accounts.v1.PermissionService.ShareRecord.
+func (c *permissionServiceClient) ShareRecord(ctx context.Context, req *connect.Request[v1.ShareRecordRequest]) (*connect.Response[v1.ShareRecordResponse], error) {
+	return c.shareRecord.CallUnary(ctx, req)
+}
+
+// RevokeShare calls saas.accounts.v1.PermissionService.RevokeShare.
+func (c *permissionServiceClient) RevokeShare(ctx context.Context, req *connect.Request[v1.RevokeShareRequest]) (*connect.Response[emptypb.Empty], error) {
+	return c.revokeShare.CallUnary(ctx, req)
+}
+
+// ListShares calls saas.accounts.v1.PermissionService.ListShares.
+func (c *permissionServiceClient) ListShares(ctx context.Context, req *connect.Request[v1.ListSharesRequest]) (*connect.Response[v1.ListSharesResponse], error) {
+	return c.listShares.CallUnary(ctx, req)
+}
+
 // PermissionServiceHandler is an implementation of the saas.accounts.v1.PermissionService service.
 type PermissionServiceHandler interface {
 	CreateRole(context.Context, *connect.Request[v1.CreateRoleRequest]) (*connect.Response[v1.CreateRoleResponse], error)
@@ -224,6 +347,24 @@ type PermissionServiceHandler interface {
 	// through the same Postgres CheckPermission query in M2; they
 	// diverge starting at M4 (manifest ceiling) and M7 (approval flow).
 	Decide(context.Context, *connect.Request[v1.DecideRequest]) (*connect.Response[v1.DecideResponse], error)
+	// CheckAccess is the hierarchical + per-record authz decision (issue #178).
+	// Internal decision oracle, same trust boundary as CheckPermission.
+	CheckAccess(context.Context, *connect.Request[v1.CheckAccessRequest]) (*connect.Response[v1.CheckAccessResponse], error)
+	// RegisterScopeNode adds a node to the org's scope tree, or places a product
+	// record at a node when resource_type/resource_id are set.
+	RegisterScopeNode(context.Context, *connect.Request[v1.RegisterScopeNodeRequest]) (*connect.Response[v1.RegisterScopeNodeResponse], error)
+	// GrantScope grants a role to a principal/team at a registered scope node;
+	// the grant inherits to the node's whole subtree.
+	GrantScope(context.Context, *connect.Request[v1.GrantScopeRequest]) (*connect.Response[v1.GrantScopeResponse], error)
+	// RevokeScope removes a hierarchical scope grant.
+	RevokeScope(context.Context, *connect.Request[v1.RevokeScopeRequest]) (*connect.Response[emptypb.Empty], error)
+	// ShareRecord grants a principal/team a role on a specific record, across
+	// the ownership boundary (durable per-record ACL).
+	ShareRecord(context.Context, *connect.Request[v1.ShareRecordRequest]) (*connect.Response[v1.ShareRecordResponse], error)
+	// RevokeShare removes a per-record share.
+	RevokeShare(context.Context, *connect.Request[v1.RevokeShareRequest]) (*connect.Response[emptypb.Empty], error)
+	// ListShares returns the shares on a specific record.
+	ListShares(context.Context, *connect.Request[v1.ListSharesRequest]) (*connect.Response[v1.ListSharesResponse], error)
 }
 
 // NewPermissionServiceHandler builds an HTTP handler from the service implementation. It returns
@@ -281,6 +422,48 @@ func NewPermissionServiceHandler(svc PermissionServiceHandler, opts ...connect.H
 		connect.WithSchema(permissionServiceMethods.ByName("Decide")),
 		connect.WithHandlerOptions(opts...),
 	)
+	permissionServiceCheckAccessHandler := connect.NewUnaryHandler(
+		PermissionServiceCheckAccessProcedure,
+		svc.CheckAccess,
+		connect.WithSchema(permissionServiceMethods.ByName("CheckAccess")),
+		connect.WithHandlerOptions(opts...),
+	)
+	permissionServiceRegisterScopeNodeHandler := connect.NewUnaryHandler(
+		PermissionServiceRegisterScopeNodeProcedure,
+		svc.RegisterScopeNode,
+		connect.WithSchema(permissionServiceMethods.ByName("RegisterScopeNode")),
+		connect.WithHandlerOptions(opts...),
+	)
+	permissionServiceGrantScopeHandler := connect.NewUnaryHandler(
+		PermissionServiceGrantScopeProcedure,
+		svc.GrantScope,
+		connect.WithSchema(permissionServiceMethods.ByName("GrantScope")),
+		connect.WithHandlerOptions(opts...),
+	)
+	permissionServiceRevokeScopeHandler := connect.NewUnaryHandler(
+		PermissionServiceRevokeScopeProcedure,
+		svc.RevokeScope,
+		connect.WithSchema(permissionServiceMethods.ByName("RevokeScope")),
+		connect.WithHandlerOptions(opts...),
+	)
+	permissionServiceShareRecordHandler := connect.NewUnaryHandler(
+		PermissionServiceShareRecordProcedure,
+		svc.ShareRecord,
+		connect.WithSchema(permissionServiceMethods.ByName("ShareRecord")),
+		connect.WithHandlerOptions(opts...),
+	)
+	permissionServiceRevokeShareHandler := connect.NewUnaryHandler(
+		PermissionServiceRevokeShareProcedure,
+		svc.RevokeShare,
+		connect.WithSchema(permissionServiceMethods.ByName("RevokeShare")),
+		connect.WithHandlerOptions(opts...),
+	)
+	permissionServiceListSharesHandler := connect.NewUnaryHandler(
+		PermissionServiceListSharesProcedure,
+		svc.ListShares,
+		connect.WithSchema(permissionServiceMethods.ByName("ListShares")),
+		connect.WithHandlerOptions(opts...),
+	)
 	return "/saas.accounts.v1.PermissionService/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case PermissionServiceCreateRoleProcedure:
@@ -299,6 +482,20 @@ func NewPermissionServiceHandler(svc PermissionServiceHandler, opts ...connect.H
 			permissionServiceCheckPermissionHandler.ServeHTTP(w, r)
 		case PermissionServiceDecideProcedure:
 			permissionServiceDecideHandler.ServeHTTP(w, r)
+		case PermissionServiceCheckAccessProcedure:
+			permissionServiceCheckAccessHandler.ServeHTTP(w, r)
+		case PermissionServiceRegisterScopeNodeProcedure:
+			permissionServiceRegisterScopeNodeHandler.ServeHTTP(w, r)
+		case PermissionServiceGrantScopeProcedure:
+			permissionServiceGrantScopeHandler.ServeHTTP(w, r)
+		case PermissionServiceRevokeScopeProcedure:
+			permissionServiceRevokeScopeHandler.ServeHTTP(w, r)
+		case PermissionServiceShareRecordProcedure:
+			permissionServiceShareRecordHandler.ServeHTTP(w, r)
+		case PermissionServiceRevokeShareProcedure:
+			permissionServiceRevokeShareHandler.ServeHTTP(w, r)
+		case PermissionServiceListSharesProcedure:
+			permissionServiceListSharesHandler.ServeHTTP(w, r)
 		default:
 			http.NotFound(w, r)
 		}
@@ -338,6 +535,34 @@ func (UnimplementedPermissionServiceHandler) CheckPermission(context.Context, *c
 
 func (UnimplementedPermissionServiceHandler) Decide(context.Context, *connect.Request[v1.DecideRequest]) (*connect.Response[v1.DecideResponse], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("saas.accounts.v1.PermissionService.Decide is not implemented"))
+}
+
+func (UnimplementedPermissionServiceHandler) CheckAccess(context.Context, *connect.Request[v1.CheckAccessRequest]) (*connect.Response[v1.CheckAccessResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("saas.accounts.v1.PermissionService.CheckAccess is not implemented"))
+}
+
+func (UnimplementedPermissionServiceHandler) RegisterScopeNode(context.Context, *connect.Request[v1.RegisterScopeNodeRequest]) (*connect.Response[v1.RegisterScopeNodeResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("saas.accounts.v1.PermissionService.RegisterScopeNode is not implemented"))
+}
+
+func (UnimplementedPermissionServiceHandler) GrantScope(context.Context, *connect.Request[v1.GrantScopeRequest]) (*connect.Response[v1.GrantScopeResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("saas.accounts.v1.PermissionService.GrantScope is not implemented"))
+}
+
+func (UnimplementedPermissionServiceHandler) RevokeScope(context.Context, *connect.Request[v1.RevokeScopeRequest]) (*connect.Response[emptypb.Empty], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("saas.accounts.v1.PermissionService.RevokeScope is not implemented"))
+}
+
+func (UnimplementedPermissionServiceHandler) ShareRecord(context.Context, *connect.Request[v1.ShareRecordRequest]) (*connect.Response[v1.ShareRecordResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("saas.accounts.v1.PermissionService.ShareRecord is not implemented"))
+}
+
+func (UnimplementedPermissionServiceHandler) RevokeShare(context.Context, *connect.Request[v1.RevokeShareRequest]) (*connect.Response[emptypb.Empty], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("saas.accounts.v1.PermissionService.RevokeShare is not implemented"))
+}
+
+func (UnimplementedPermissionServiceHandler) ListShares(context.Context, *connect.Request[v1.ListSharesRequest]) (*connect.Response[v1.ListSharesResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("saas.accounts.v1.PermissionService.ListShares is not implemented"))
 }
 
 // PrincipalServiceClient is a client for the saas.accounts.v1.PrincipalService service.

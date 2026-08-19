@@ -6,6 +6,7 @@ import "buf/validate/validate.proto";
 import "google/api/annotations.proto";
 import "google/protobuf/empty.proto";
 import "google/protobuf/struct.proto";
+import "google/protobuf/timestamp.proto";
 import "saas/accounts/v1/common.proto";
 import "saas/policy/v1/options.proto";
 
@@ -135,6 +136,144 @@ message DecideResponse {
   // identifies the saas-starter delegation_grants row created for
   // this pending approval. Empty otherwise.
   string approval_request_id = 4;
+}
+
+// --- Layered access: hierarchical scope + per-record sharing (issue #178) ---
+//
+// CheckAccess is the hierarchical + per-record companion to CheckPermission.
+// It allows an action when EITHER an ancestor scope grant OR a direct record
+// share grants a role that permits (resource_type, action) — resolved through
+// the same role_permissions rows as flat RBAC. CheckPermission is untouched;
+// this is strictly additive.
+
+message ScopeNode {
+  string id = 1;
+  string org_id = 2;
+  // scope_path is a dotted ltree path of [a-z0-9_] labels, e.g.
+  // "foundation.solution_42.customer_7". UUIDs are encoded (lowercase,
+  // '-' -> '_') because raw UUIDs are not valid ltree labels.
+  string scope_path = 3;
+  string kind = 4;
+  string label = 5;
+  // resource_type/resource_id are set when the node is a placed record (a
+  // leaf identifying a real product row); empty for structural nodes.
+  string resource_type = 6;
+  string resource_id = 7;
+  google.protobuf.Timestamp created_at = 8;
+}
+
+message RegisterScopeNodeRequest {
+  string org_id = 1 [(buf.validate.field).string.uuid = true];
+  string scope_path = 2 [(buf.validate.field).string.min_len = 1];
+  string kind = 3 [(buf.validate.field).string.min_len = 1];
+  string label = 4;
+  // Set both to place a product record at this node; leave both empty for a
+  // structural node.
+  string resource_type = 5;
+  string resource_id = 6;
+}
+
+message RegisterScopeNodeResponse {
+  ScopeNode node = 1;
+}
+
+message ScopeGrant {
+  string id = 1;
+  string org_id = 2;
+  string subject_id = 3;
+  SubjectKind subject_kind = 4;
+  string scope_path = 5;
+  string role_id = 6;
+  string granted_by = 7;
+  google.protobuf.Timestamp expires_at = 8;
+  google.protobuf.Timestamp created_at = 9;
+}
+
+message GrantScopeRequest {
+  string org_id = 1 [(buf.validate.field).string.uuid = true];
+  string subject_id = 2 [(buf.validate.field).string.uuid = true];
+  SubjectKind subject_kind = 3;
+  string scope_path = 4 [(buf.validate.field).string.min_len = 1];
+  string role_id = 5 [(buf.validate.field).string.uuid = true];
+  // Optional; unset = a standing grant.
+  google.protobuf.Timestamp expires_at = 6;
+}
+
+message GrantScopeResponse {
+  ScopeGrant grant = 1;
+}
+
+message RevokeScopeRequest {
+  string org_id = 1 [(buf.validate.field).string.uuid = true];
+  string subject_id = 2 [(buf.validate.field).string.uuid = true];
+  SubjectKind subject_kind = 3;
+  string scope_path = 4 [(buf.validate.field).string.min_len = 1];
+  string role_id = 5 [(buf.validate.field).string.uuid = true];
+}
+
+message RecordShare {
+  string id = 1;
+  string org_id = 2;
+  string resource_type = 3;
+  string resource_id = 4;
+  string subject_id = 5;
+  SubjectKind subject_kind = 6;
+  string role_id = 7;
+  string granted_by = 8;
+  google.protobuf.Timestamp expires_at = 9;
+  google.protobuf.Timestamp created_at = 10;
+}
+
+message ShareRecordRequest {
+  string org_id = 1 [(buf.validate.field).string.uuid = true];
+  string resource_type = 2 [(buf.validate.field).string.min_len = 1];
+  string resource_id = 3 [(buf.validate.field).string.min_len = 1];
+  string subject_id = 4 [(buf.validate.field).string.uuid = true];
+  SubjectKind subject_kind = 5;
+  string role_id = 6 [(buf.validate.field).string.uuid = true];
+  // Optional; unset = a standing share.
+  google.protobuf.Timestamp expires_at = 7;
+}
+
+message ShareRecordResponse {
+  RecordShare share = 1;
+}
+
+message RevokeShareRequest {
+  string org_id = 1 [(buf.validate.field).string.uuid = true];
+  string resource_type = 2 [(buf.validate.field).string.min_len = 1];
+  string resource_id = 3 [(buf.validate.field).string.min_len = 1];
+  string subject_id = 4 [(buf.validate.field).string.uuid = true];
+  SubjectKind subject_kind = 5;
+  string role_id = 6 [(buf.validate.field).string.uuid = true];
+}
+
+message ListSharesRequest {
+  string org_id = 1 [(buf.validate.field).string.uuid = true];
+  string resource_type = 2 [(buf.validate.field).string.min_len = 1];
+  string resource_id = 3 [(buf.validate.field).string.min_len = 1];
+}
+
+message ListSharesResponse {
+  repeated RecordShare shares = 1;
+}
+
+message CheckAccessRequest {
+  string subject_id = 1 [(buf.validate.field).string.uuid = true];
+  SubjectKind subject_kind = 2;
+  string resource_type = 3 [(buf.validate.field).string.min_len = 1];
+  string resource_id = 4 [(buf.validate.field).string.min_len = 1];
+  string action = 5 [(buf.validate.field).string.min_len = 1];
+  string org_id = 6 [(buf.validate.field).string.uuid = true];
+  // SECURITY: there is deliberately NO caller-supplied scope path. CheckAccess
+  // resolves the record's TRUE scope from resource_id's own registered node,
+  // so a caller entitled at one scope cannot authorize a resource that actually
+  // lives under a different scope (RFC-0001 open-question 2).
+}
+
+message CheckAccessResponse {
+  bool allowed = 1;
+  string reason = 2;
 }
 
 // --- Principal CRUD (M1 promoted to RPCs in M2) ---
@@ -318,6 +457,175 @@ service PermissionService {
       response_sensitivity: SENSITIVITY_CONFIDENTIAL
       platform_role: PLATFORM_ROLE_REQUIREMENT_NONE
     };
+  }
+
+  // CheckAccess is the hierarchical + per-record authz decision (issue #178).
+  // Internal decision oracle, same trust boundary as CheckPermission.
+  rpc CheckAccess(CheckAccessRequest) returns (CheckAccessResponse) {
+    option (saas.policy.v1.method_policy) = {
+      exposure: EXPOSURE_INTERNAL
+      tenant: TENANT_REQUIREMENT_NONE
+      mfa: MFA_REQUIREMENT_NONE
+      audit: {emission: AUDIT_EMISSION_NONE}
+      idempotency: IDEMPOTENCY_REQUIREMENT_FORBIDDEN
+      rate_limit: RATE_LIMIT_CLASS_INTERNAL
+      request_sensitivity: SENSITIVITY_CONFIDENTIAL
+      response_sensitivity: SENSITIVITY_CONFIDENTIAL
+      platform_role: PLATFORM_ROLE_REQUIREMENT_NONE
+    };
+  }
+
+  // RegisterScopeNode adds a node to the org's scope tree, or places a product
+  // record at a node when resource_type/resource_id are set.
+  rpc RegisterScopeNode(RegisterScopeNodeRequest) returns (RegisterScopeNodeResponse) {
+    option (saas.policy.v1.method_policy) = {
+      exposure: EXPOSURE_AUTHENTICATED
+      tenant: TENANT_REQUIREMENT_ORG_ADMIN
+      resource_bindings: {
+        request_field: "org_id"
+        target: RESOURCE_TARGET_ORGANIZATION
+        lookup: RESOURCE_LOOKUP_DIRECT_ID
+      }
+      mfa: MFA_REQUIREMENT_NONE
+      audit: {
+        events: "scope.node_registered"
+        emission: AUDIT_EMISSION_SUCCESS
+      }
+      idempotency: IDEMPOTENCY_REQUIREMENT_FORBIDDEN
+      rate_limit: RATE_LIMIT_CLASS_STANDARD_WRITE
+      request_sensitivity: SENSITIVITY_CONFIDENTIAL
+      response_sensitivity: SENSITIVITY_CONFIDENTIAL
+      platform_role: PLATFORM_ROLE_REQUIREMENT_NONE
+    };
+    option (google.api.http) = {
+      post: "/v1/scope-nodes"
+      body: "*"
+    };
+  }
+
+  // GrantScope grants a role to a principal/team at a registered scope node;
+  // the grant inherits to the node's whole subtree.
+  rpc GrantScope(GrantScopeRequest) returns (GrantScopeResponse) {
+    option (saas.policy.v1.method_policy) = {
+      exposure: EXPOSURE_AUTHENTICATED
+      tenant: TENANT_REQUIREMENT_ORG_ADMIN
+      resource_bindings: {
+        request_field: "org_id"
+        target: RESOURCE_TARGET_ORGANIZATION
+        lookup: RESOURCE_LOOKUP_DIRECT_ID
+      }
+      mfa: MFA_REQUIREMENT_NONE
+      audit: {
+        events: "scope.granted"
+        emission: AUDIT_EMISSION_SUCCESS
+      }
+      idempotency: IDEMPOTENCY_REQUIREMENT_FORBIDDEN
+      rate_limit: RATE_LIMIT_CLASS_STANDARD_WRITE
+      request_sensitivity: SENSITIVITY_CONFIDENTIAL
+      response_sensitivity: SENSITIVITY_CONFIDENTIAL
+      platform_role: PLATFORM_ROLE_REQUIREMENT_NONE
+    };
+    option (google.api.http) = {
+      post: "/v1/scope-grants"
+      body: "*"
+    };
+  }
+
+  // RevokeScope removes a hierarchical scope grant.
+  rpc RevokeScope(RevokeScopeRequest) returns (google.protobuf.Empty) {
+    option (saas.policy.v1.method_policy) = {
+      exposure: EXPOSURE_AUTHENTICATED
+      tenant: TENANT_REQUIREMENT_ORG_ADMIN
+      resource_bindings: {
+        request_field: "org_id"
+        target: RESOURCE_TARGET_ORGANIZATION
+        lookup: RESOURCE_LOOKUP_DIRECT_ID
+      }
+      mfa: MFA_REQUIREMENT_NONE
+      audit: {
+        events: "scope.revoked"
+        emission: AUDIT_EMISSION_SUCCESS
+      }
+      idempotency: IDEMPOTENCY_REQUIREMENT_FORBIDDEN
+      rate_limit: RATE_LIMIT_CLASS_STANDARD_WRITE
+      request_sensitivity: SENSITIVITY_CONFIDENTIAL
+      response_sensitivity: SENSITIVITY_CONFIDENTIAL
+      platform_role: PLATFORM_ROLE_REQUIREMENT_NONE
+    };
+    option (google.api.http) = {delete: "/v1/scope-grants"};
+  }
+
+  // ShareRecord grants a principal/team a role on a specific record, across
+  // the ownership boundary (durable per-record ACL).
+  rpc ShareRecord(ShareRecordRequest) returns (ShareRecordResponse) {
+    option (saas.policy.v1.method_policy) = {
+      exposure: EXPOSURE_AUTHENTICATED
+      tenant: TENANT_REQUIREMENT_ORG_ADMIN
+      resource_bindings: {
+        request_field: "org_id"
+        target: RESOURCE_TARGET_ORGANIZATION
+        lookup: RESOURCE_LOOKUP_DIRECT_ID
+      }
+      mfa: MFA_REQUIREMENT_NONE
+      audit: {
+        events: "record.shared"
+        emission: AUDIT_EMISSION_SUCCESS
+      }
+      idempotency: IDEMPOTENCY_REQUIREMENT_FORBIDDEN
+      rate_limit: RATE_LIMIT_CLASS_STANDARD_WRITE
+      request_sensitivity: SENSITIVITY_CONFIDENTIAL
+      response_sensitivity: SENSITIVITY_CONFIDENTIAL
+      platform_role: PLATFORM_ROLE_REQUIREMENT_NONE
+    };
+    option (google.api.http) = {
+      post: "/v1/record-shares"
+      body: "*"
+    };
+  }
+
+  // RevokeShare removes a per-record share.
+  rpc RevokeShare(RevokeShareRequest) returns (google.protobuf.Empty) {
+    option (saas.policy.v1.method_policy) = {
+      exposure: EXPOSURE_AUTHENTICATED
+      tenant: TENANT_REQUIREMENT_ORG_ADMIN
+      resource_bindings: {
+        request_field: "org_id"
+        target: RESOURCE_TARGET_ORGANIZATION
+        lookup: RESOURCE_LOOKUP_DIRECT_ID
+      }
+      mfa: MFA_REQUIREMENT_NONE
+      audit: {
+        events: "record.share_revoked"
+        emission: AUDIT_EMISSION_SUCCESS
+      }
+      idempotency: IDEMPOTENCY_REQUIREMENT_FORBIDDEN
+      rate_limit: RATE_LIMIT_CLASS_STANDARD_WRITE
+      request_sensitivity: SENSITIVITY_CONFIDENTIAL
+      response_sensitivity: SENSITIVITY_CONFIDENTIAL
+      platform_role: PLATFORM_ROLE_REQUIREMENT_NONE
+    };
+    option (google.api.http) = {delete: "/v1/record-shares"};
+  }
+
+  // ListShares returns the shares on a specific record.
+  rpc ListShares(ListSharesRequest) returns (ListSharesResponse) {
+    option (saas.policy.v1.method_policy) = {
+      exposure: EXPOSURE_AUTHENTICATED
+      tenant: TENANT_REQUIREMENT_ORG_MEMBER
+      resource_bindings: {
+        request_field: "org_id"
+        target: RESOURCE_TARGET_ORGANIZATION
+        lookup: RESOURCE_LOOKUP_DIRECT_ID
+      }
+      mfa: MFA_REQUIREMENT_NONE
+      audit: {emission: AUDIT_EMISSION_NONE}
+      idempotency: IDEMPOTENCY_REQUIREMENT_FORBIDDEN
+      rate_limit: RATE_LIMIT_CLASS_STANDARD_READ
+      request_sensitivity: SENSITIVITY_CONFIDENTIAL
+      response_sensitivity: SENSITIVITY_CONFIDENTIAL
+      platform_role: PLATFORM_ROLE_REQUIREMENT_NONE
+    };
+    option (google.api.http) = {get: "/v1/record-shares"};
   }
 }
 
