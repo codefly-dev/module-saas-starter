@@ -1,6 +1,6 @@
 {
   "note": "Base-file integrity manifest for the saas-starter module. Generated FROM canonical by `node tools/base-integrity.mjs gen`. Consumers MUST NOT hand-edit base files — only add files on the side. Regenerated on every codefly sync from canonical.",
-  "fileCount": 1627,
+  "fileCount": 1628,
   "files": {
     "AUTHORIZATION_CATALOG.md": "b2ea5d41f0098e80315e02e7c4bdbda03b65c8eef463426242552fd3c047ca0a",
     "CONTRACT_VERSIONING.md": "02031aa87922ab5ec573ea582cf584271873481de6ceabbda52b1bfda005ffbd",
@@ -603,6 +603,7 @@
     "services/accounts/code/pkg/infra/redis.go": "8e6f653a862afcc42656b6ac3255131fe38b395037ddbe4eac2f3c2e26bf448e",
     "services/accounts/code/pkg/infra/scoped.go": "327201bf4fe64c26a2d583db70038767d274bf7cf739b4a24d294ca762f3bc03",
     "services/accounts/code/pkg/infra/tenant_tx.go": "7853fb2bb59b50a183ce83be0411a19077f2e74ebe479e6d0e70b8a6ec520c3c",
+    "services/accounts/code/pkg/infra/tenant_tx_pooling_test.go": "82dfe385f7f79136968861615571d775590885bb66fcf94da02d2ccb72405e8d",
     "services/accounts/code/pkg/infra/tenant_tx_test.go": "ed4fb25aaa459d40fc793a1f4b1bc480715356d4f2fa3a622930d1d5e4d00352",
     "services/accounts/code/pkg/infra/vault.go": "bb7263b653d8fb4729257c5affc2d7b4e4421edae6fa8ab3e8aeafdb04cf1ee1",
     "services/accounts/code/pkg/infra/vault_secret_test.go": "9514bba693cba7e3f54bac98964eef717e1f7e2f54a807d0c29127c8d4c37653",
