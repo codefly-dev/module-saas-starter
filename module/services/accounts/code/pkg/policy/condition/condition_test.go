@@ -31,6 +31,8 @@ func timeWindow(start, end uint32, tz string) *policyv1.Condition {
 	}
 }
 
+func level(v int32) *int32 { return &v }
+
 func TestOwnerTeam(t *testing.T) {
 	c := ownerTeam()
 
@@ -69,17 +71,43 @@ func TestStatus(t *testing.T) {
 func TestClassification(t *testing.T) {
 	c := classification()
 
-	allowed, err := EvaluateAll([]*policyv1.Condition{c}, Input{RecordClassification: 2, CallerClearance: 3})
+	allowed, err := EvaluateAll([]*policyv1.Condition{c}, Input{RecordClassification: level(2), CallerClearance: level(3)})
 	require.NoError(t, err)
 	require.True(t, allowed)
 
-	allowed, err = EvaluateAll([]*policyv1.Condition{c}, Input{RecordClassification: 2, CallerClearance: 2})
+	allowed, err = EvaluateAll([]*policyv1.Condition{c}, Input{RecordClassification: level(2), CallerClearance: level(2)})
 	require.NoError(t, err)
 	require.True(t, allowed)
 
-	allowed, err = EvaluateAll([]*policyv1.Condition{c}, Input{RecordClassification: 3, CallerClearance: 1})
+	allowed, err = EvaluateAll([]*policyv1.Condition{c}, Input{RecordClassification: level(3), CallerClearance: level(1)})
 	require.NoError(t, err)
 	require.False(t, allowed)
+
+	// A resolved level 0 on both sides is a real value that compares normally.
+	allowed, err = EvaluateAll([]*policyv1.Condition{c}, Input{RecordClassification: level(0), CallerClearance: level(0)})
+	require.NoError(t, err)
+	require.True(t, allowed)
+}
+
+func TestClassificationFailsClosedWhenUnresolved(t *testing.T) {
+	c := classification()
+
+	// The zero-value Input leaves both levels nil. An unresolved classification
+	// must not collapse to level 0 and allow everyone.
+	allowed, err := EvaluateAll([]*policyv1.Condition{c}, Input{})
+	require.NoError(t, err)
+	require.False(t, allowed, "unresolved classification and clearance must deny")
+
+	// A resolved, cleared caller still denies while the record's classification
+	// is unknown — an unknown sensitivity is treated as maximally sensitive.
+	allowed, err = EvaluateAll([]*policyv1.Condition{c}, Input{CallerClearance: level(5)})
+	require.NoError(t, err)
+	require.False(t, allowed, "unresolved record classification must deny")
+
+	// A resolved record with an unresolved caller clearance denies too.
+	allowed, err = EvaluateAll([]*policyv1.Condition{c}, Input{RecordClassification: level(1)})
+	require.NoError(t, err)
+	require.False(t, allowed, "unresolved caller clearance must deny")
 }
 
 func TestTimeWindow(t *testing.T) {
@@ -101,6 +129,31 @@ func TestTimeWindow(t *testing.T) {
 	allowed, err = EvaluateAll([]*policyv1.Condition{ny}, Input{Now: within})
 	require.NoError(t, err)
 	require.False(t, allowed)
+}
+
+func TestTimeWindowWrapsPastMidnight(t *testing.T) {
+	// Overnight maintenance window 22:00–06:00 UTC.
+	c := timeWindow(22*60, 6*60, "UTC")
+	require.NoError(t, Validate([]*policyv1.Condition{c}))
+
+	for _, at := range []time.Time{
+		time.Date(2026, 8, 19, 23, 0, 0, 0, time.UTC), // after the evening start
+		time.Date(2026, 8, 20, 2, 0, 0, 0, time.UTC),  // after midnight, before the end
+		time.Date(2026, 8, 19, 22, 0, 0, 0, time.UTC), // inclusive start
+	} {
+		allowed, err := EvaluateAll([]*policyv1.Condition{c}, Input{Now: at})
+		require.NoError(t, err)
+		require.True(t, allowed, "%s should be inside the overnight window", at)
+	}
+
+	for _, at := range []time.Time{
+		time.Date(2026, 8, 19, 12, 0, 0, 0, time.UTC), // midday
+		time.Date(2026, 8, 20, 6, 0, 0, 0, time.UTC),  // exclusive end
+	} {
+		allowed, err := EvaluateAll([]*policyv1.Condition{c}, Input{Now: at})
+		require.NoError(t, err)
+		require.False(t, allowed, "%s should be outside the overnight window", at)
+	}
 }
 
 func TestEvaluateAllRequiresEveryCondition(t *testing.T) {
@@ -135,7 +188,8 @@ func TestValidate(t *testing.T) {
 		ownerTeam(),
 		status("published"),
 		classification(),
-		timeWindow(0, minutesPerDay, "UTC"),
+		timeWindow(0, minutesPerDay, "UTC"), // full day
+		timeWindow(22*60, 6*60, "UTC"),      // overnight, wraps past midnight
 	}
 	require.NoError(t, Validate(valid))
 
@@ -146,7 +200,9 @@ func TestValidate(t *testing.T) {
 		"status with empty value": status("open", ""),
 		"owner-team with params":  {Attribute: policyv1.ConditionAttribute_CONDITION_ATTRIBUTE_OWNER_TEAM, AllowedStatuses: []string{"x"}},
 		"window missing":          {Attribute: policyv1.ConditionAttribute_CONDITION_ATTRIBUTE_TIME_WINDOW},
-		"window start after end":  timeWindow(600, 600, "UTC"),
+		"window equal bounds":     timeWindow(600, 600, "UTC"),
+		"window start beyond day": timeWindow(minutesPerDay, 60, "UTC"),
+		"window end zero":         timeWindow(60, 0, "UTC"),
 		"window end beyond day":   timeWindow(0, minutesPerDay+1, "UTC"),
 		"window bad timezone":     timeWindow(0, 60, "Mars/Phobos"),
 		"window with statuses":    {Attribute: policyv1.ConditionAttribute_CONDITION_ATTRIBUTE_TIME_WINDOW, AllowedStatuses: []string{"x"}, TimeWindow: &policyv1.TimeWindow{StartMinute: 0, EndMinute: 60}},

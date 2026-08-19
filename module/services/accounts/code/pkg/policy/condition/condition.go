@@ -7,6 +7,7 @@ package condition
 
 import (
 	"fmt"
+	"sync"
 	"time"
 
 	policyv1 "accounts/pkg/gen/saas/policy/v1"
@@ -18,12 +19,19 @@ const minutesPerDay = 24 * 60
 // decision path populates it from resolved request state; predicates never
 // reach outside it.
 type Input struct {
-	CallerTeamIDs        []string
-	RecordOwnerTeamID    string
-	RecordStatus         string
-	RecordClassification int32
-	CallerClearance      int32
-	Now                  time.Time
+	CallerTeamIDs     []string
+	RecordOwnerTeamID string
+	RecordStatus      string
+	// RecordClassification and CallerClearance are the record's sensitivity
+	// level and the caller's clearance level. A nil pointer means the value was
+	// not resolved and denies — an unresolved sensitivity is treated as
+	// maximally sensitive, never as level zero. A resolved level 0 is a real,
+	// distinct value that compares normally.
+	RecordClassification *int32
+	CallerClearance      *int32
+	// Now must be the server's authoritative clock, not a client-supplied
+	// timestamp, or the time-window predicate is trivially bypassable.
+	Now time.Time
 }
 
 // EvaluateAll reports whether every condition holds for the input (logical
@@ -44,17 +52,18 @@ func EvaluateAll(conditions []*policyv1.Condition, in Input) (bool, error) {
 	return true, nil
 }
 
+// evaluate runs one predicate. Every branch is fail-closed on unresolved or
+// malformed state, so it does not re-run the build-time Validate: an unknown
+// attribute hits the default, a nil time window loads UTC and matches the empty
+// range [0,0), an empty status set matches nothing, and a nil clearance denies.
 func evaluate(c *policyv1.Condition, in Input) (bool, error) {
-	if err := validate(c); err != nil {
-		return false, err
-	}
 	switch c.GetAttribute() {
 	case policyv1.ConditionAttribute_CONDITION_ATTRIBUTE_OWNER_TEAM:
 		return callerOwnsTeam(in), nil
 	case policyv1.ConditionAttribute_CONDITION_ATTRIBUTE_STATUS:
 		return contains(c.GetAllowedStatuses(), in.RecordStatus), nil
 	case policyv1.ConditionAttribute_CONDITION_ATTRIBUTE_CLASSIFICATION:
-		return in.CallerClearance >= in.RecordClassification, nil
+		return callerCleared(in), nil
 	case policyv1.ConditionAttribute_CONDITION_ATTRIBUTE_TIME_WINDOW:
 		return withinWindow(c.GetTimeWindow(), in.Now)
 	default:
@@ -69,14 +78,47 @@ func callerOwnsTeam(in Input) bool {
 	return contains(in.CallerTeamIDs, in.RecordOwnerTeamID)
 }
 
+func callerCleared(in Input) bool {
+	if in.RecordClassification == nil || in.CallerClearance == nil {
+		return false
+	}
+	return *in.CallerClearance >= *in.RecordClassification
+}
+
 func withinWindow(w *policyv1.TimeWindow, now time.Time) (bool, error) {
-	loc, err := time.LoadLocation(w.GetTimezone())
+	loc, err := loadLocation(w.GetTimezone())
 	if err != nil {
 		return false, fmt.Errorf("invalid time-window timezone %q: %w", w.GetTimezone(), err)
 	}
 	local := now.In(loc)
 	minute := local.Hour()*60 + local.Minute()
-	return minute >= int(w.GetStartMinute()) && minute < int(w.GetEndMinute()), nil
+	start, end := int(w.GetStartMinute()), int(w.GetEndMinute())
+	if start < end {
+		return minute >= start && minute < end, nil
+	}
+	// A window whose start is after its end wraps past midnight, e.g. an
+	// overnight maintenance window 22:00–06:00.
+	return minute >= start || minute < end, nil
+}
+
+// locationCache memoizes time.LoadLocation, which reads and parses zoneinfo on
+// every call. Locations are immutable, so caching them (and any load error) is
+// safe and keeps the per-request decision path off the filesystem.
+var locationCache sync.Map
+
+type locationResult struct {
+	loc *time.Location
+	err error
+}
+
+func loadLocation(name string) (*time.Location, error) {
+	if v, ok := locationCache.Load(name); ok {
+		r := v.(locationResult)
+		return r.loc, r.err
+	}
+	loc, err := time.LoadLocation(name)
+	locationCache.Store(name, locationResult{loc: loc, err: err})
+	return loc, err
 }
 
 // Validate reports whether a set of declared conditions is well-formed, without
@@ -133,13 +175,18 @@ func validateWindow(w *policyv1.TimeWindow) error {
 	if w == nil {
 		return fmt.Errorf("time-window condition has no window")
 	}
-	if w.GetEndMinute() > minutesPerDay {
-		return fmt.Errorf("time-window end %d exceeds %d", w.GetEndMinute(), minutesPerDay)
+	if w.GetStartMinute() >= minutesPerDay {
+		return fmt.Errorf("time-window start %d is not a minute of the day", w.GetStartMinute())
 	}
-	if w.GetStartMinute() >= w.GetEndMinute() {
-		return fmt.Errorf("time-window start %d is not before end %d", w.GetStartMinute(), w.GetEndMinute())
+	if w.GetEndMinute() == 0 || w.GetEndMinute() > minutesPerDay {
+		return fmt.Errorf("time-window end %d is out of range", w.GetEndMinute())
 	}
-	if _, err := time.LoadLocation(w.GetTimezone()); err != nil {
+	// start < end is a same-day window; start > end wraps past midnight. Equal
+	// bounds describe neither a window nor its complement, so they are rejected.
+	if w.GetStartMinute() == w.GetEndMinute() {
+		return fmt.Errorf("time-window start and end are equal (%d)", w.GetStartMinute())
+	}
+	if _, err := loadLocation(w.GetTimezone()); err != nil {
 		return fmt.Errorf("invalid time-window timezone %q: %w", w.GetTimezone(), err)
 	}
 	return nil

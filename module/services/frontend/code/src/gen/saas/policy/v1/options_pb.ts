@@ -73,8 +73,9 @@ export const AuditPolicySchema: GenMessage<AuditPolicy> = /*@__PURE__*/
 
 /**
  * TimeWindow is a daily wall-clock window, half-open [start_minute, end_minute)
- * in minutes from local midnight, evaluated in the named IANA timezone. It does
- * not wrap past midnight, so start_minute is strictly less than end_minute.
+ * in minutes from local midnight, evaluated in the named IANA timezone. When
+ * start_minute is greater than end_minute the window wraps past midnight (e.g.
+ * an overnight maintenance window). start_minute and end_minute must differ.
  *
  * @generated from message saas.policy.v1.TimeWindow
  */
