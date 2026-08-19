@@ -114,4 +114,10 @@ func TestAuthorizationCatalogValidationRejectsUnsafeDrift(t *testing.T) {
 	invalidFactor := proto.Clone(catalog).(*catalogv1.AuthorizationCatalog)
 	invalidFactor.Methods[0].Policy.AuthenticationFactorAttempt = true
 	require.ErrorContains(t, cataloggen.ValidateAuthorizationCatalog(invalidFactor), "authentication-factor")
+
+	invalidCondition := proto.Clone(catalog).(*catalogv1.AuthorizationCatalog)
+	invalidCondition.Methods[0].Policy.Conditions = []*policyv1.Condition{
+		{Attribute: policyv1.ConditionAttribute_CONDITION_ATTRIBUTE_STATUS},
+	}
+	require.ErrorContains(t, cataloggen.ValidateAuthorizationCatalog(invalidCondition), "attribute condition")
 }

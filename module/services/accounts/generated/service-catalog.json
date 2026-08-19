@@ -366,7 +366,8 @@
         "request_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "response_sensitivity": "SENSITIVITY_SECRET",
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
-        "authentication_factor_attempt": false
+        "authentication_factor_attempt": false,
+        "conditions": []
       },
       "policy_tier": "org_admin",
       "description": "Mint an API key for an administered organization.",
@@ -425,7 +426,8 @@
         "request_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "response_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
-        "authentication_factor_attempt": false
+        "authentication_factor_attempt": false,
+        "conditions": []
       },
       "policy_tier": "org_member",
       "description": "List org's API keys.",
@@ -486,7 +488,8 @@
         "request_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "response_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
-        "authentication_factor_attempt": false
+        "authentication_factor_attempt": false,
+        "conditions": []
       },
       "policy_tier": "org_admin",
       "description": "Revoke an API key in an administered organization.",
@@ -527,7 +530,8 @@
         "request_sensitivity": "SENSITIVITY_SECRET",
         "response_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
-        "authentication_factor_attempt": false
+        "authentication_factor_attempt": false,
+        "conditions": []
       },
       "policy_tier": "internal",
       "description": "Internal: plaintext key → key + org id.",
@@ -584,7 +588,8 @@
         "request_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "response_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
-        "authentication_factor_attempt": false
+        "authentication_factor_attempt": false,
+        "conditions": []
       },
       "policy_tier": "org_admin",
       "description": "Stop exporting; clears cursor.",
@@ -639,7 +644,8 @@
         "request_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "response_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
-        "authentication_factor_attempt": false
+        "authentication_factor_attempt": false,
+        "conditions": []
       },
       "policy_tier": "org_admin",
       "description": "Read export config.",
@@ -696,7 +702,8 @@
         "request_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "response_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
-        "authentication_factor_attempt": false
+        "authentication_factor_attempt": false,
+        "conditions": []
       },
       "policy_tier": "org_admin",
       "description": "Configure per-org S3 export.",
@@ -755,7 +762,8 @@
         "request_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "response_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
-        "authentication_factor_attempt": false
+        "authentication_factor_attempt": false,
+        "conditions": []
       },
       "policy_tier": "org_member",
       "description": "Aggregate audit events (counts, time buckets, group-by) for analytics.",
@@ -814,7 +822,8 @@
         "request_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "response_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
-        "authentication_factor_attempt": false
+        "authentication_factor_attempt": false,
+        "conditions": []
       },
       "policy_tier": "org_admin",
       "description": "Download audit log as CSV/JSON.",
@@ -867,7 +876,8 @@
         "request_sensitivity": "SENSITIVITY_INTERNAL",
         "response_sensitivity": "SENSITIVITY_INTERNAL",
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
-        "authentication_factor_attempt": false
+        "authentication_factor_attempt": false,
+        "conditions": []
       },
       "policy_tier": "auth",
       "description": "List the registered audit event-type catalog for search facets.",
@@ -926,7 +936,8 @@
         "request_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "response_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
-        "authentication_factor_attempt": false
+        "authentication_factor_attempt": false,
+        "conditions": []
       },
       "policy_tier": "org_member",
       "description": "Read audit events (org member sees own org; platform admin sees all).",
@@ -978,7 +989,8 @@
         "request_sensitivity": "SENSITIVITY_SECRET",
         "response_sensitivity": "SENSITIVITY_SECRET",
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
-        "authentication_factor_attempt": false
+        "authentication_factor_attempt": false,
+        "conditions": []
       },
       "policy_tier": "public",
       "description": "Exchange typed OAuth-code or explicit fixture credentials for tokens.",
@@ -1027,7 +1039,8 @@
         "request_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "response_sensitivity": "SENSITIVITY_SECRET",
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
-        "authentication_factor_attempt": false
+        "authentication_factor_attempt": false,
+        "conditions": []
       },
       "policy_tier": "public",
       "description": "Mint signed OAuth state for an allowlisted redirect.",
@@ -1076,7 +1089,8 @@
         "request_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "response_sensitivity": "SENSITIVITY_SECRET",
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
-        "authentication_factor_attempt": false
+        "authentication_factor_attempt": false,
+        "conditions": []
       },
       "policy_tier": "public",
       "description": "Begin a WebAuthn assertion bound to an MFA login transaction.",
@@ -1129,7 +1143,8 @@
         "request_sensitivity": "SENSITIVITY_SECRET",
         "response_sensitivity": "SENSITIVITY_SECRET",
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
-        "authentication_factor_attempt": true
+        "authentication_factor_attempt": true,
+        "conditions": []
       },
       "policy_tier": "public",
       "description": "Consume a one-use MFA login transaction and issue the session.",
@@ -1182,7 +1197,8 @@
         "request_sensitivity": "SENSITIVITY_SECRET",
         "response_sensitivity": "SENSITIVITY_SECRET",
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
-        "authentication_factor_attempt": true
+        "authentication_factor_attempt": true,
+        "conditions": []
       },
       "policy_tier": "public",
       "description": "Verify WebAuthn and atomically consume the MFA login transaction.",
@@ -1231,7 +1247,8 @@
         "request_sensitivity": "SENSITIVITY_PUBLIC",
         "response_sensitivity": "SENSITIVITY_PUBLIC",
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
-        "authentication_factor_attempt": false
+        "authentication_factor_attempt": false,
+        "conditions": []
       },
       "policy_tier": "public",
       "description": "Public JWKS for JWT signature verification.",
@@ -1280,7 +1297,8 @@
         "request_sensitivity": "SENSITIVITY_SECRET",
         "response_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
-        "authentication_factor_attempt": false
+        "authentication_factor_attempt": false,
+        "conditions": []
       },
       "policy_tier": "public",
       "description": "Revoke session.",
@@ -1329,7 +1347,8 @@
         "request_sensitivity": "SENSITIVITY_SECRET",
         "response_sensitivity": "SENSITIVITY_SECRET",
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
-        "authentication_factor_attempt": false
+        "authentication_factor_attempt": false,
+        "conditions": []
       },
       "policy_tier": "public",
       "description": "Refresh access token.",
@@ -1380,7 +1399,8 @@
         "request_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "response_sensitivity": "SENSITIVITY_SECRET",
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
-        "authentication_factor_attempt": false
+        "authentication_factor_attempt": false,
+        "conditions": []
       },
       "policy_tier": "auth",
       "description": "Exchange the active device session for an access token scoped to another current membership.",
@@ -1439,7 +1459,8 @@
         "request_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "response_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
-        "authentication_factor_attempt": false
+        "authentication_factor_attempt": false,
+        "conditions": []
       },
       "policy_tier": "org_admin",
       "description": "Past Stripe invoices.",
@@ -1488,7 +1509,8 @@
         "request_sensitivity": "SENSITIVITY_PUBLIC",
         "response_sensitivity": "SENSITIVITY_PUBLIC",
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
-        "authentication_factor_attempt": false
+        "authentication_factor_attempt": false,
+        "conditions": []
       },
       "policy_tier": "public",
       "description": "Sanitized public pricing and entitlement catalog.",
@@ -1549,7 +1571,8 @@
         "request_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "response_sensitivity": "SENSITIVITY_SECRET",
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
-        "authentication_factor_attempt": false
+        "authentication_factor_attempt": false,
+        "conditions": []
       },
       "policy_tier": "mfa",
       "description": "Stripe billing-portal session; requires billing:write and recent MFA.",
@@ -1600,7 +1623,8 @@
         "request_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "response_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
-        "authentication_factor_attempt": false
+        "authentication_factor_attempt": false,
+        "conditions": []
       },
       "policy_tier": "auth",
       "description": "Record acceptance of the exact Terms version presented.",
@@ -1649,7 +1673,8 @@
         "request_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "response_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
-        "authentication_factor_attempt": false
+        "authentication_factor_attempt": false,
+        "conditions": []
       },
       "policy_tier": "auth",
       "description": "Read TOS acceptance state.",
@@ -1700,7 +1725,8 @@
         "request_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "response_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
-        "authentication_factor_attempt": false
+        "authentication_factor_attempt": false,
+        "conditions": []
       },
       "policy_tier": "auth",
       "description": "Persist purpose-based optional tracking choices and withdrawals.",
@@ -1758,7 +1784,8 @@
         "request_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "response_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
-        "authentication_factor_attempt": false
+        "authentication_factor_attempt": false,
+        "conditions": []
       },
       "policy_tier": "org_admin",
       "description": "Approve or deny a delegation request.",
@@ -1813,7 +1840,8 @@
         "request_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "response_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
-        "authentication_factor_attempt": false
+        "authentication_factor_attempt": false,
+        "conditions": []
       },
       "policy_tier": "org_member",
       "description": "List pending organization delegations.",
@@ -1871,7 +1899,8 @@
         "request_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "response_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
-        "authentication_factor_attempt": false
+        "authentication_factor_attempt": false,
+        "conditions": []
       },
       "policy_tier": "org_member",
       "description": "Request a scoped authority delegation.",
@@ -1926,7 +1955,8 @@
         "request_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "response_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
-        "authentication_factor_attempt": false
+        "authentication_factor_attempt": false,
+        "conditions": []
       },
       "policy_tier": "org_member",
       "description": "Stream the terminal delegation decision.",
@@ -1975,7 +2005,8 @@
         "request_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "response_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
-        "authentication_factor_attempt": false
+        "authentication_factor_attempt": false,
+        "conditions": []
       },
       "policy_tier": "auth",
       "description": "Status of a GDPR deletion request.",
@@ -2024,7 +2055,8 @@
         "request_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "response_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
-        "authentication_factor_attempt": false
+        "authentication_factor_attempt": false,
+        "conditions": []
       },
       "policy_tier": "auth",
       "description": "Status of a GDPR export request.",
@@ -2075,7 +2107,8 @@
         "request_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "response_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
-        "authentication_factor_attempt": false
+        "authentication_factor_attempt": false,
+        "conditions": []
       },
       "policy_tier": "mfa",
       "description": "Request account deletion when a complete privacy workflow is configured. Requires MFA.",
@@ -2126,7 +2159,8 @@
         "request_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "response_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
-        "authentication_factor_attempt": false
+        "authentication_factor_attempt": false,
+        "conditions": []
       },
       "policy_tier": "auth",
       "description": "Request data export when a complete privacy workflow is configured.",
@@ -2167,7 +2201,8 @@
         "request_sensitivity": "SENSITIVITY_SECRET",
         "response_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
-        "authentication_factor_attempt": false
+        "authentication_factor_attempt": false,
+        "conditions": []
       },
       "policy_tier": "internal",
       "description": "Internal: provider id → user/org/roles.",
@@ -2216,7 +2251,8 @@
         "request_sensitivity": "SENSITIVITY_PUBLIC",
         "response_sensitivity": "SENSITIVITY_PUBLIC",
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
-        "authentication_factor_attempt": false
+        "authentication_factor_attempt": false,
+        "conditions": []
       },
       "policy_tier": "public",
       "description": "Self-describing service catalog (this RPC).",
@@ -2267,7 +2303,8 @@
         "request_sensitivity": "SENSITIVITY_SECRET",
         "response_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
-        "authentication_factor_attempt": false
+        "authentication_factor_attempt": false,
+        "conditions": []
       },
       "policy_tier": "auth",
       "description": "Accept an invite by token.",
@@ -2328,7 +2365,8 @@
         "request_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "response_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
-        "authentication_factor_attempt": false
+        "authentication_factor_attempt": false,
+        "conditions": []
       },
       "policy_tier": "org_admin",
       "description": "Invite a user to an org.",
@@ -2377,7 +2415,8 @@
         "request_sensitivity": "SENSITIVITY_SECRET",
         "response_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
-        "authentication_factor_attempt": false
+        "authentication_factor_attempt": false,
+        "conditions": []
       },
       "policy_tier": "public",
       "description": "Resolve a privacy-limited invitation summary from a secret credential.",
@@ -2426,7 +2465,8 @@
         "request_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "response_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
-        "authentication_factor_attempt": false
+        "authentication_factor_attempt": false,
+        "conditions": []
       },
       "policy_tier": "auth",
       "description": "Resolve an authenticated invitee's invitation summary.",
@@ -2485,7 +2525,8 @@
         "request_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "response_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
-        "authentication_factor_attempt": false
+        "authentication_factor_attempt": false,
+        "conditions": []
       },
       "policy_tier": "org_admin",
       "description": "List pending invites for an org.",
@@ -2546,7 +2587,8 @@
         "request_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "response_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
-        "authentication_factor_attempt": false
+        "authentication_factor_attempt": false,
+        "conditions": []
       },
       "policy_tier": "org_admin",
       "description": "Rotate and requeue a pending invitation after its cooldown.",
@@ -2607,7 +2649,8 @@
         "request_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "response_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
-        "authentication_factor_attempt": false
+        "authentication_factor_attempt": false,
+        "conditions": []
       },
       "policy_tier": "org_admin",
       "description": "Revoke a pending invite.",
@@ -2658,7 +2701,8 @@
         "request_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "response_sensitivity": "SENSITIVITY_SECRET",
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
-        "authentication_factor_attempt": false
+        "authentication_factor_attempt": false,
+        "conditions": []
       },
       "policy_tier": "auth",
       "description": "Begin passkey registration with server-side ceremony state.",
@@ -2709,7 +2753,8 @@
         "request_sensitivity": "SENSITIVITY_SECRET",
         "response_sensitivity": "SENSITIVITY_SECRET",
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
-        "authentication_factor_attempt": false
+        "authentication_factor_attempt": false,
+        "conditions": []
       },
       "policy_tier": "auth",
       "description": "Verify and persist a passkey credential.",
@@ -2760,7 +2805,8 @@
         "request_sensitivity": "SENSITIVITY_SECRET",
         "response_sensitivity": "SENSITIVITY_SECRET",
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
-        "authentication_factor_attempt": false
+        "authentication_factor_attempt": false,
+        "conditions": []
       },
       "policy_tier": "auth",
       "description": "Mint backup codes (one-time view).",
@@ -2809,7 +2855,8 @@
         "request_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "response_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
-        "authentication_factor_attempt": false
+        "authentication_factor_attempt": false,
+        "conditions": []
       },
       "policy_tier": "auth",
       "description": "List user's MFA devices.",
@@ -2860,7 +2907,8 @@
         "request_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "response_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
-        "authentication_factor_attempt": false
+        "authentication_factor_attempt": false,
+        "conditions": []
       },
       "policy_tier": "auth",
       "description": "Remove an MFA device.",
@@ -2911,7 +2959,8 @@
         "request_sensitivity": "SENSITIVITY_SECRET",
         "response_sensitivity": "SENSITIVITY_SECRET",
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
-        "authentication_factor_attempt": false
+        "authentication_factor_attempt": false,
+        "conditions": []
       },
       "policy_tier": "auth",
       "description": "Begin TOTP enrollment.",
@@ -2962,7 +3011,8 @@
         "request_sensitivity": "SENSITIVITY_SECRET",
         "response_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
-        "authentication_factor_attempt": false
+        "authentication_factor_attempt": false,
+        "conditions": []
       },
       "policy_tier": "auth",
       "description": "Confirm TOTP code; activate device.",
@@ -3011,7 +3061,8 @@
         "request_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "response_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
-        "authentication_factor_attempt": false
+        "authentication_factor_attempt": false,
+        "conditions": []
       },
       "policy_tier": "auth",
       "description": "Delete one.",
@@ -3060,7 +3111,8 @@
         "request_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "response_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
-        "authentication_factor_attempt": false
+        "authentication_factor_attempt": false,
+        "conditions": []
       },
       "policy_tier": "auth",
       "description": "Count of unread.",
@@ -3109,7 +3161,8 @@
         "request_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "response_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
-        "authentication_factor_attempt": false
+        "authentication_factor_attempt": false,
+        "conditions": []
       },
       "policy_tier": "auth",
       "description": "List the caller's notifications.",
@@ -3158,7 +3211,8 @@
         "request_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "response_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
-        "authentication_factor_attempt": false
+        "authentication_factor_attempt": false,
+        "conditions": []
       },
       "policy_tier": "auth",
       "description": "Mark all read.",
@@ -3207,7 +3261,8 @@
         "request_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "response_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
-        "authentication_factor_attempt": false
+        "authentication_factor_attempt": false,
+        "conditions": []
       },
       "policy_tier": "auth",
       "description": "Mark one read.",
@@ -3264,7 +3319,8 @@
         "request_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "response_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
-        "authentication_factor_attempt": false
+        "authentication_factor_attempt": false,
+        "conditions": []
       },
       "policy_tier": "org_member",
       "description": "Confirm a step only after its represented product state exists.",
@@ -3319,7 +3375,8 @@
         "request_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "response_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
-        "authentication_factor_attempt": false
+        "authentication_factor_attempt": false,
+        "conditions": []
       },
       "policy_tier": "org_member",
       "description": "Versioned organization activation checklist for the caller.",
@@ -3376,7 +3433,8 @@
         "request_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "response_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
-        "authentication_factor_attempt": false
+        "authentication_factor_attempt": false,
+        "conditions": []
       },
       "policy_tier": "org_member",
       "description": "Record an explicit skip for an optional step.",
@@ -3433,7 +3491,8 @@
         "request_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "response_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
-        "authentication_factor_attempt": false
+        "authentication_factor_attempt": false,
+        "conditions": []
       },
       "policy_tier": "org_admin",
       "description": "Add a user to an org.",
@@ -3484,7 +3543,8 @@
         "request_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "response_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
-        "authentication_factor_attempt": false
+        "authentication_factor_attempt": false,
+        "conditions": []
       },
       "policy_tier": "auth",
       "description": "Create a new org; caller becomes owner.",
@@ -3539,7 +3599,8 @@
         "request_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "response_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
-        "authentication_factor_attempt": false
+        "authentication_factor_attempt": false,
+        "conditions": []
       },
       "policy_tier": "org_member",
       "description": "Read branding.",
@@ -3594,7 +3655,8 @@
         "request_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "response_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
-        "authentication_factor_attempt": false
+        "authentication_factor_attempt": false,
+        "conditions": []
       },
       "policy_tier": "org_member",
       "description": "Read an org.",
@@ -3649,7 +3711,8 @@
         "request_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "response_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
-        "authentication_factor_attempt": false
+        "authentication_factor_attempt": false,
+        "conditions": []
       },
       "policy_tier": "org_member",
       "description": "List members of an org.",
@@ -3698,7 +3761,8 @@
         "request_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "response_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
-        "authentication_factor_attempt": false
+        "authentication_factor_attempt": false,
+        "conditions": []
       },
       "policy_tier": "auth",
       "description": "Orgs the caller belongs to.",
@@ -3755,7 +3819,8 @@
         "request_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "response_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
-        "authentication_factor_attempt": false
+        "authentication_factor_attempt": false,
+        "conditions": []
       },
       "policy_tier": "org_admin",
       "description": "Remove a member; last-admin guard.",
@@ -3812,7 +3877,8 @@
         "request_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "response_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
-        "authentication_factor_attempt": false
+        "authentication_factor_attempt": false,
+        "conditions": []
       },
       "policy_tier": "org_admin",
       "description": "Update branding (logo, color, custom domain).",
@@ -3863,7 +3929,8 @@
         "request_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "response_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
-        "authentication_factor_attempt": false
+        "authentication_factor_attempt": false,
+        "conditions": []
       },
       "policy_tier": "auth",
       "description": "Grant a role to a principal/team.",
@@ -3904,7 +3971,8 @@
         "request_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "response_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
-        "authentication_factor_attempt": false
+        "authentication_factor_attempt": false,
+        "conditions": []
       },
       "policy_tier": "internal",
       "description": "Internal hierarchical + per-record authz decision.",
@@ -3945,7 +4013,8 @@
         "request_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "response_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
-        "authentication_factor_attempt": false
+        "authentication_factor_attempt": false,
+        "conditions": []
       },
       "policy_tier": "internal",
       "description": "Internal authz decision (auth-sidecar caller).",
@@ -3996,7 +4065,8 @@
         "request_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "response_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
-        "authentication_factor_attempt": false
+        "authentication_factor_attempt": false,
+        "conditions": []
       },
       "policy_tier": "auth",
       "description": "Create a role (org-scoped or platform).",
@@ -4037,7 +4107,8 @@
         "request_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "response_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
-        "authentication_factor_attempt": false
+        "authentication_factor_attempt": false,
+        "conditions": []
       },
       "policy_tier": "internal",
       "description": "Internal principal-aware authz decision (successor to CheckPermission).",
@@ -4088,7 +4159,8 @@
         "request_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "response_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_ANY",
-        "authentication_factor_attempt": false
+        "authentication_factor_attempt": false,
+        "conditions": []
       },
       "policy_tier": "platform_admin",
       "description": "Delete a custom role.",
@@ -4145,7 +4217,8 @@
         "request_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "response_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
-        "authentication_factor_attempt": false
+        "authentication_factor_attempt": false,
+        "conditions": []
       },
       "policy_tier": "org_admin",
       "description": "Grant a role at a scope node (inherits to subtree).",
@@ -4194,7 +4267,8 @@
         "request_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "response_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
-        "authentication_factor_attempt": false
+        "authentication_factor_attempt": false,
+        "conditions": []
       },
       "policy_tier": "auth",
       "description": "List assignments in an org.",
@@ -4243,7 +4317,8 @@
         "request_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "response_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
-        "authentication_factor_attempt": false
+        "authentication_factor_attempt": false,
+        "conditions": []
       },
       "policy_tier": "auth",
       "description": "List built-in + org-scoped roles.",
@@ -4298,7 +4373,8 @@
         "request_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "response_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
-        "authentication_factor_attempt": false
+        "authentication_factor_attempt": false,
+        "conditions": []
       },
       "policy_tier": "org_admin",
       "description": "List the shares on a specific record.",
@@ -4355,7 +4431,8 @@
         "request_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "response_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
-        "authentication_factor_attempt": false
+        "authentication_factor_attempt": false,
+        "conditions": []
       },
       "policy_tier": "org_admin",
       "description": "Register a scope node or place a record at one.",
@@ -4406,7 +4483,8 @@
         "request_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "response_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
-        "authentication_factor_attempt": false
+        "authentication_factor_attempt": false,
+        "conditions": []
       },
       "policy_tier": "auth",
       "description": "Revoke a role assignment.",
@@ -4463,7 +4541,8 @@
         "request_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "response_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
-        "authentication_factor_attempt": false
+        "authentication_factor_attempt": false,
+        "conditions": []
       },
       "policy_tier": "org_admin",
       "description": "Revoke a hierarchical scope grant.",
@@ -4520,7 +4599,8 @@
         "request_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "response_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
-        "authentication_factor_attempt": false
+        "authentication_factor_attempt": false,
+        "conditions": []
       },
       "policy_tier": "org_admin",
       "description": "Revoke a per-record share.",
@@ -4577,7 +4657,8 @@
         "request_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "response_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
-        "authentication_factor_attempt": false
+        "authentication_factor_attempt": false,
+        "conditions": []
       },
       "policy_tier": "org_admin",
       "description": "Share a record with a principal/team.",
@@ -4626,7 +4707,8 @@
         "request_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "response_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_SUPER_ADMIN",
-        "authentication_factor_attempt": false
+        "authentication_factor_attempt": false,
+        "conditions": []
       },
       "policy_tier": "platform_admin",
       "description": "Payload-free job metadata, attempts, and state history.",
@@ -4675,7 +4757,8 @@
         "request_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "response_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_SUPER_ADMIN",
-        "authentication_factor_attempt": false
+        "authentication_factor_attempt": false,
+        "conditions": []
       },
       "policy_tier": "platform_admin",
       "description": "Durable queue depth, readiness, and lease-health snapshots.",
@@ -4730,7 +4813,8 @@
         "request_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "response_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
-        "authentication_factor_attempt": false
+        "authentication_factor_attempt": false,
+        "conditions": []
       },
       "policy_tier": "org_member",
       "description": "Plan + overrides + usage.",
@@ -4781,7 +4865,8 @@
         "request_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "response_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_SUPER_ADMIN",
-        "authentication_factor_attempt": false
+        "authentication_factor_attempt": false,
+        "conditions": []
       },
       "policy_tier": "platform_admin",
       "description": "Grant a platform role.",
@@ -4832,7 +4917,8 @@
         "request_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "response_sensitivity": "SENSITIVITY_SECRET",
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_SUPPORT",
-        "authentication_factor_attempt": false
+        "authentication_factor_attempt": false,
+        "conditions": []
       },
       "policy_tier": "platform_admin",
       "description": "Mint an impersonation session.",
@@ -4881,7 +4967,8 @@
         "request_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "response_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_SUPPORT",
-        "authentication_factor_attempt": false
+        "authentication_factor_attempt": false,
+        "conditions": []
       },
       "policy_tier": "platform_admin",
       "description": "Active sessions for a user.",
@@ -4930,7 +5017,8 @@
         "request_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "response_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_SUPER_ADMIN",
-        "authentication_factor_attempt": false
+        "authentication_factor_attempt": false,
+        "conditions": []
       },
       "policy_tier": "platform_admin",
       "description": "List the legacy feature-flag migration inventory.",
@@ -4979,7 +5067,8 @@
         "request_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "response_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_SUPER_ADMIN",
-        "authentication_factor_attempt": false
+        "authentication_factor_attempt": false,
+        "conditions": []
       },
       "policy_tier": "platform_admin",
       "description": "Seek-paginated payload-free job operations view.",
@@ -5028,7 +5117,8 @@
         "request_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "response_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_SUPER_ADMIN",
-        "authentication_factor_attempt": false
+        "authentication_factor_attempt": false,
+        "conditions": []
       },
       "policy_tier": "platform_admin",
       "description": "List platform admins.",
@@ -5079,7 +5169,8 @@
         "request_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "response_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_ANY",
-        "authentication_factor_attempt": false
+        "authentication_factor_attempt": false,
+        "conditions": []
       },
       "policy_tier": "platform_admin",
       "description": "Per-org limit override.",
@@ -5130,7 +5221,8 @@
         "request_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "response_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_SUPER_ADMIN",
-        "authentication_factor_attempt": false
+        "authentication_factor_attempt": false,
+        "conditions": []
       },
       "policy_tier": "platform_admin",
       "description": "Idempotently copy dead-lettered work for another attempt.",
@@ -5181,7 +5273,8 @@
         "request_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "response_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_SUPER_ADMIN",
-        "authentication_factor_attempt": false
+        "authentication_factor_attempt": false,
+        "conditions": []
       },
       "policy_tier": "platform_admin",
       "description": "Revoke a platform role.",
@@ -5232,7 +5325,8 @@
         "request_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "response_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_SUPPORT",
-        "authentication_factor_attempt": false
+        "authentication_factor_attempt": false,
+        "conditions": []
       },
       "policy_tier": "platform_admin",
       "description": "Revoke a single session.",
@@ -5281,7 +5375,8 @@
         "request_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "response_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_SUPPORT",
-        "authentication_factor_attempt": false
+        "authentication_factor_attempt": false,
+        "conditions": []
       },
       "policy_tier": "platform_admin",
       "description": "Search across all users.",
@@ -5332,7 +5427,8 @@
         "request_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "response_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_SUPER_ADMIN",
-        "authentication_factor_attempt": false
+        "authentication_factor_attempt": false,
+        "conditions": []
       },
       "policy_tier": "platform_admin",
       "description": "Suspend a user account.",
@@ -5383,7 +5479,8 @@
         "request_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "response_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_SUPER_ADMIN",
-        "authentication_factor_attempt": false
+        "authentication_factor_attempt": false,
+        "conditions": []
       },
       "policy_tier": "platform_admin",
       "description": "Restore a suspended user.",
@@ -5434,7 +5531,8 @@
         "request_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "response_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_SUPER_ADMIN",
-        "authentication_factor_attempt": false
+        "authentication_factor_attempt": false,
+        "conditions": []
       },
       "policy_tier": "platform_admin",
       "description": "Deprecated compatibility method; always rejects writes to the legacy feature-flag inventory.",
@@ -5491,7 +5589,8 @@
         "request_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "response_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
-        "authentication_factor_attempt": false
+        "authentication_factor_attempt": false,
+        "conditions": []
       },
       "policy_tier": "org_admin",
       "description": "Create an agent principal in an organization.",
@@ -5532,7 +5631,8 @@
         "request_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "response_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
-        "authentication_factor_attempt": false
+        "authentication_factor_attempt": false,
+        "conditions": []
       },
       "policy_tier": "internal",
       "description": "Internal agent-principal lookup.",
@@ -5573,7 +5673,8 @@
         "request_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "response_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
-        "authentication_factor_attempt": false
+        "authentication_factor_attempt": false,
+        "conditions": []
       },
       "policy_tier": "internal",
       "description": "Internal principal lookup.",
@@ -5628,7 +5729,8 @@
         "request_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "response_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
-        "authentication_factor_attempt": false
+        "authentication_factor_attempt": false,
+        "conditions": []
       },
       "policy_tier": "org_member",
       "description": "List principals in an organization.",
@@ -5685,7 +5787,8 @@
         "request_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "response_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
-        "authentication_factor_attempt": false
+        "authentication_factor_attempt": false,
+        "conditions": []
       },
       "policy_tier": "auth",
       "description": "Revoke an organization or platform principal.",
@@ -5742,7 +5845,8 @@
         "request_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "response_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
-        "authentication_factor_attempt": false
+        "authentication_factor_attempt": false,
+        "conditions": []
       },
       "policy_tier": "org_admin",
       "description": "Pause SSO; preserves WorkOS state for re-enable.",
@@ -5797,7 +5901,8 @@
         "request_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "response_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
-        "authentication_factor_attempt": false
+        "authentication_factor_attempt": false,
+        "conditions": []
       },
       "policy_tier": "org_admin",
       "description": "Read org SSO state.",
@@ -5854,7 +5959,8 @@
         "request_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "response_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
-        "authentication_factor_attempt": false
+        "authentication_factor_attempt": false,
+        "conditions": []
       },
       "policy_tier": "org_admin",
       "description": "Mint WorkOS portal link.",
@@ -5911,7 +6017,8 @@
         "request_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "response_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
-        "authentication_factor_attempt": false
+        "authentication_factor_attempt": false,
+        "conditions": []
       },
       "policy_tier": "org_admin",
       "description": "Add a user to a team.",
@@ -5968,7 +6075,8 @@
         "request_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "response_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
-        "authentication_factor_attempt": false
+        "authentication_factor_attempt": false,
+        "conditions": []
       },
       "policy_tier": "org_admin",
       "description": "Create a team within an org.",
@@ -6025,7 +6133,8 @@
         "request_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "response_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
-        "authentication_factor_attempt": false
+        "authentication_factor_attempt": false,
+        "conditions": []
       },
       "policy_tier": "org_admin",
       "description": "Delete a team.",
@@ -6080,7 +6189,8 @@
         "request_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "response_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
-        "authentication_factor_attempt": false
+        "authentication_factor_attempt": false,
+        "conditions": []
       },
       "policy_tier": "org_member",
       "description": "List team members.",
@@ -6135,7 +6245,8 @@
         "request_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "response_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
-        "authentication_factor_attempt": false
+        "authentication_factor_attempt": false,
+        "conditions": []
       },
       "policy_tier": "org_member",
       "description": "List teams in an org.",
@@ -6192,7 +6303,8 @@
         "request_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "response_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
-        "authentication_factor_attempt": false
+        "authentication_factor_attempt": false,
+        "conditions": []
       },
       "policy_tier": "org_admin",
       "description": "Remove a user from a team.",
@@ -6249,7 +6361,8 @@
         "request_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "response_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
-        "authentication_factor_attempt": false
+        "authentication_factor_attempt": false,
+        "conditions": []
       },
       "policy_tier": "org_admin",
       "description": "Update a team's name or description.",
@@ -6290,7 +6403,8 @@
         "request_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "response_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
-        "authentication_factor_attempt": false
+        "authentication_factor_attempt": false,
+        "conditions": []
       },
       "policy_tier": "internal",
       "description": "Atomically consume a monthly meter with an idempotent receipt.",
@@ -6349,7 +6463,8 @@
         "request_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "response_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
-        "authentication_factor_attempt": false
+        "authentication_factor_attempt": false,
+        "conditions": []
       },
       "policy_tier": "org_member",
       "description": "Current monthly meter total and effective limit.",
@@ -6408,7 +6523,8 @@
         "request_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "response_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
-        "authentication_factor_attempt": false
+        "authentication_factor_attempt": false,
+        "conditions": []
       },
       "policy_tier": "org_member",
       "description": "UTC hourly, daily, or monthly usage buckets for a bounded range.",
@@ -6467,7 +6583,8 @@
         "request_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "response_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
-        "authentication_factor_attempt": false
+        "authentication_factor_attempt": false,
+        "conditions": []
       },
       "policy_tier": "org_member",
       "description": "Customer-visible meter catalog with current totals and limits.",
@@ -6518,7 +6635,8 @@
         "request_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "response_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
-        "authentication_factor_attempt": false
+        "authentication_factor_attempt": false,
+        "conditions": []
       },
       "policy_tier": "auth",
       "description": "Link an additional auth provider.",
@@ -6573,7 +6691,8 @@
         "request_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "response_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
-        "authentication_factor_attempt": false
+        "authentication_factor_attempt": false,
+        "conditions": []
       },
       "policy_tier": "auth",
       "description": "Soft-delete a user (self or platform admin).",
@@ -6622,7 +6741,8 @@
         "request_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "response_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_ANY",
-        "authentication_factor_attempt": false
+        "authentication_factor_attempt": false,
+        "conditions": []
       },
       "policy_tier": "platform_admin",
       "description": "Platform-admin identity lookup.",
@@ -6671,7 +6791,8 @@
         "request_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "response_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
-        "authentication_factor_attempt": false
+        "authentication_factor_attempt": false,
+        "conditions": []
       },
       "policy_tier": "auth",
       "description": "Authenticated user + their orgs.",
@@ -6726,7 +6847,8 @@
         "request_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "response_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
-        "authentication_factor_attempt": false
+        "authentication_factor_attempt": false,
+        "conditions": []
       },
       "policy_tier": "auth",
       "description": "Look up a user (self or platform admin).",
@@ -6775,7 +6897,8 @@
         "request_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "response_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
-        "authentication_factor_attempt": false
+        "authentication_factor_attempt": false,
+        "conditions": []
       },
       "policy_tier": "auth",
       "description": "List a user's auth methods.",
@@ -6828,7 +6951,8 @@
         "request_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "response_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_ANY",
-        "authentication_factor_attempt": false
+        "authentication_factor_attempt": false,
+        "conditions": []
       },
       "policy_tier": "platform_admin",
       "description": "Paginated user list (platform admin).",
@@ -6879,7 +7003,8 @@
         "request_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "response_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
-        "authentication_factor_attempt": false
+        "authentication_factor_attempt": false,
+        "conditions": []
       },
       "policy_tier": "public",
       "description": "Bootstrap a new user + personal org.",
@@ -6934,7 +7059,8 @@
         "request_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "response_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
-        "authentication_factor_attempt": false
+        "authentication_factor_attempt": false,
+        "conditions": []
       },
       "policy_tier": "auth",
       "description": "Update profile (self or platform admin).",
@@ -6983,7 +7109,8 @@
         "request_sensitivity": "SENSITIVITY_PUBLIC",
         "response_sensitivity": "SENSITIVITY_PUBLIC",
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
-        "authentication_factor_attempt": false
+        "authentication_factor_attempt": false,
+        "conditions": []
       },
       "policy_tier": "public",
       "description": "Service version (smoke test).",
@@ -7032,7 +7159,8 @@
         "request_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "response_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
-        "authentication_factor_attempt": false
+        "authentication_factor_attempt": false,
+        "conditions": []
       },
       "policy_tier": "auth",
       "description": "JSONB user prefs.",
@@ -7083,7 +7211,8 @@
         "request_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "response_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
-        "authentication_factor_attempt": false
+        "authentication_factor_attempt": false,
+        "conditions": []
       },
       "policy_tier": "auth",
       "description": "Patch user prefs.",
@@ -7132,7 +7261,8 @@
         "request_sensitivity": "SENSITIVITY_PUBLIC",
         "response_sensitivity": "SENSITIVITY_PUBLIC",
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
-        "authentication_factor_attempt": false
+        "authentication_factor_attempt": false,
+        "conditions": []
       },
       "policy_tier": "public",
       "description": "Read the configured signup and waitlist mode.",
@@ -7183,7 +7313,8 @@
         "request_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "response_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_ANY",
-        "authentication_factor_attempt": false
+        "authentication_factor_attempt": false,
+        "conditions": []
       },
       "policy_tier": "platform_admin",
       "description": "Queue the approved signup handoff for one waitlist entry.",
@@ -7232,7 +7363,8 @@
         "request_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "response_sensitivity": "SENSITIVITY_PUBLIC",
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
-        "authentication_factor_attempt": false
+        "authentication_factor_attempt": false,
+        "conditions": []
       },
       "policy_tier": "public",
       "description": "Submit an enumeration-safe public waitlist request.",
@@ -7281,7 +7413,8 @@
         "request_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "response_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_ANY",
-        "authentication_factor_attempt": false
+        "authentication_factor_attempt": false,
+        "conditions": []
       },
       "policy_tier": "platform_admin",
       "description": "Search and filter the waitlist as a platform administrator.",
@@ -7332,7 +7465,8 @@
         "request_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "response_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_ANY",
-        "authentication_factor_attempt": false
+        "authentication_factor_attempt": false,
+        "conditions": []
       },
       "policy_tier": "platform_admin",
       "description": "Approve or reject a waitlist entry with audit context.",
@@ -7381,7 +7515,8 @@
         "request_sensitivity": "SENSITIVITY_SECRET",
         "response_sensitivity": "SENSITIVITY_PUBLIC",
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
-        "authentication_factor_attempt": false
+        "authentication_factor_attempt": false,
+        "conditions": []
       },
       "policy_tier": "public",
       "description": "Verify a waitlist email using an expiring hashed credential.",
@@ -7442,7 +7577,8 @@
         "request_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "response_sensitivity": "SENSITIVITY_SECRET",
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
-        "authentication_factor_attempt": false
+        "authentication_factor_attempt": false,
+        "conditions": []
       },
       "policy_tier": "org_admin",
       "description": "Create a public-HTTPS endpoint and reveal its encrypted-at-rest signing secret once.",
@@ -7503,7 +7639,8 @@
         "request_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "response_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
-        "authentication_factor_attempt": false
+        "authentication_factor_attempt": false,
+        "conditions": []
       },
       "policy_tier": "org_admin",
       "description": "Delete a subscription.",
@@ -7562,7 +7699,8 @@
         "request_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "response_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
-        "authentication_factor_attempt": false
+        "authentication_factor_attempt": false,
+        "conditions": []
       },
       "policy_tier": "org_member",
       "description": "Read one delivery.",
@@ -7621,7 +7759,8 @@
         "request_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "response_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
-        "authentication_factor_attempt": false
+        "authentication_factor_attempt": false,
+        "conditions": []
       },
       "policy_tier": "org_member",
       "description": "Past delivery attempts.",
@@ -7680,7 +7819,8 @@
         "request_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "response_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
-        "authentication_factor_attempt": false
+        "authentication_factor_attempt": false,
+        "conditions": []
       },
       "policy_tier": "org_member",
       "description": "List webhook subscriptions.",
@@ -7741,7 +7881,8 @@
         "request_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "response_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
-        "authentication_factor_attempt": false
+        "authentication_factor_attempt": false,
+        "conditions": []
       },
       "policy_tier": "org_admin",
       "description": "Create and audit a new attempt for a past delivery using its stable event ID.",
@@ -7802,7 +7943,8 @@
         "request_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "response_sensitivity": "SENSITIVITY_SECRET",
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
-        "authentication_factor_attempt": false
+        "authentication_factor_attempt": false,
+        "conditions": []
       },
       "policy_tier": "mfa",
       "description": "Rotate the reveal-once signing secret with bounded dual-signature overlap. Requires recent MFA.",
@@ -7861,7 +8003,8 @@
         "request_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "response_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
-        "authentication_factor_attempt": false
+        "authentication_factor_attempt": false,
+        "conditions": []
       },
       "policy_tier": "org_admin",
       "description": "Send a test ping.",
@@ -7902,7 +8045,8 @@
         "request_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "response_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
-        "authentication_factor_attempt": false
+        "authentication_factor_attempt": false,
+        "conditions": []
       },
       "policy_tier": "internal",
       "description": "Authorize a filtered Evidence read from current tenant membership and RBAC facts.",
@@ -7943,7 +8087,8 @@
         "request_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "response_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
-        "authentication_factor_attempt": false
+        "authentication_factor_attempt": false,
+        "conditions": []
       },
       "policy_tier": "internal",
       "description": "Revalidate every subject and scope in a signed Work Context against current authority.",
@@ -8000,7 +8145,8 @@
         "request_sensitivity": "SENSITIVITY_SECRET",
         "response_sensitivity": "SENSITIVITY_SECRET",
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
-        "authentication_factor_attempt": false
+        "authentication_factor_attempt": false,
+        "conditions": []
       },
       "policy_tier": "org_member",
       "description": "Reissue one Task and Session lineage for another audience with attenuated authority.",
@@ -8057,7 +8203,8 @@
         "request_sensitivity": "SENSITIVITY_SECRET",
         "response_sensitivity": "SENSITIVITY_SECRET",
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
-        "authentication_factor_attempt": false
+        "authentication_factor_attempt": false,
+        "conditions": []
       },
       "policy_tier": "org_member",
       "description": "Exchange a current Work Context for an attenuated child-agent Session.",
@@ -8114,7 +8261,8 @@
         "request_sensitivity": "SENSITIVITY_SECRET",
         "response_sensitivity": "SENSITIVITY_SECRET",
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
-        "authentication_factor_attempt": false
+        "authentication_factor_attempt": false,
+        "conditions": []
       },
       "policy_tier": "org_member",
       "description": "Exchange a current Work Context for another root Session under the same Task.",
@@ -8171,7 +8319,8 @@
         "request_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "response_sensitivity": "SENSITIVITY_SECRET",
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
-        "authentication_factor_attempt": false
+        "authentication_factor_attempt": false,
+        "conditions": []
       },
       "policy_tier": "org_member",
       "description": "Issue a signed Work Context for a new Task and root Session.",

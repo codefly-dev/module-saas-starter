@@ -120,6 +120,44 @@ enum Sensitivity {
   SENSITIVITY_SECRET = 4;
 }
 
+// ConditionAttribute names the closed set of record and caller facts a bounded
+// attribute predicate may read. This is a fixed vocabulary evaluated in Go, not
+// a general policy language: adding an attribute is a deliberate schema change,
+// and an unrecognized attribute fails closed.
+enum ConditionAttribute {
+  CONDITION_ATTRIBUTE_UNSPECIFIED = 0;
+  // The caller belongs to the team that owns the target record.
+  CONDITION_ATTRIBUTE_OWNER_TEAM = 1;
+  // The target record's status is one of allowed_statuses.
+  CONDITION_ATTRIBUTE_STATUS = 2;
+  // The caller's clearance level is at least the record's classification level.
+  CONDITION_ATTRIBUTE_CLASSIFICATION = 3;
+  // The request occurs within time_window.
+  CONDITION_ATTRIBUTE_TIME_WINDOW = 4;
+}
+
+// TimeWindow is a daily wall-clock window, half-open [start_minute, end_minute)
+// in minutes from local midnight, evaluated in the named IANA timezone. When
+// start_minute is greater than end_minute the window wraps past midnight (e.g.
+// an overnight maintenance window). start_minute and end_minute must differ.
+message TimeWindow {
+  uint32 start_minute = 1;
+  uint32 end_minute = 2;
+  string timezone = 3;
+}
+
+// Condition is one bounded attribute predicate declared beside an RPC. The
+// attribute selects a closed evaluator and only its matching parameter field is
+// read; the others must be empty. A method's conditions are combined with AND,
+// and evaluation fails closed on any unrecognized or malformed condition.
+message Condition {
+  ConditionAttribute attribute = 1;
+  // allowed_statuses applies only to CONDITION_ATTRIBUTE_STATUS.
+  repeated string allowed_statuses = 2;
+  // time_window applies only to CONDITION_ATTRIBUTE_TIME_WINDOW.
+  TimeWindow time_window = 3;
+}
+
 // MethodPolicy is the complete declarative input to Codefly's route and policy
 // compiler. Complex, state-dependent authorization remains in domain code.
 message MethodPolicy {
@@ -140,6 +178,11 @@ message MethodPolicy {
   // attempt that must use the dedicated per-client-IP edge budget. It is not
   // inferred from method names or HTTP paths.
   bool authentication_factor_attempt = 13;
+
+  // conditions is the closed set of bounded attribute predicates that must all
+  // hold, evaluated in domain code above the forced RLS floor — never replacing
+  // it. An empty list imposes no attribute condition.
+  repeated Condition conditions = 14;
 }
 
 extend google.protobuf.MethodOptions {
