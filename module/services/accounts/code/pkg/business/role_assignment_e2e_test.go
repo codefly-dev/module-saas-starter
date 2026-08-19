@@ -150,16 +150,17 @@ func TestE2E_RoleAssignmentFlow(t *testing.T) {
 	// --- Step 8: audit trail.
 	time.Sleep(200 * time.Millisecond)
 
-	auditEvents, _, _, err := testService.QueryAuditLog(ctx,
-		ownerOrg, "", "", "", "",
-		ptrTime(time.Now().Add(-10*time.Minute)),
-		ptrTime(time.Now().Add(10*time.Minute)),
-		200, "")
+	auditEvents, _, _, err := testService.QueryAuditLog(ctx, business.AuditQuery{
+		OrgID:    ownerOrg,
+		From:     ptrTime(time.Now().Add(-10 * time.Minute)),
+		To:       ptrTime(time.Now().Add(10 * time.Minute)),
+		PageSize: 200,
+	})
 	require.NoError(t, err)
 
 	gotActions := map[string]int{}
 	for _, e := range auditEvents {
-		gotActions[e.Action]++
+		gotActions[string(e.EventType)]++
 	}
 
 	// Required actions on this orgs scope:

@@ -262,8 +262,8 @@ func TestWaitlistJourneyEventsEmitOnlyOnStateTransition(t *testing.T) {
 	require.NoError(t, err)
 
 	require.Len(t, audit.entries, 2)
-	require.Equal(t, "waitlist.joined", audit.entries[0].Action)
-	require.Equal(t, "waitlist.verified", audit.entries[1].Action)
+	require.Equal(t, business.EventWaitlistJoined, audit.entries[0].EventType)
+	require.Equal(t, business.EventWaitlistVerified, audit.entries[1].EventType)
 }
 
 func TestInviteWaitlistRequiresDeliveryAndApproval(t *testing.T) {

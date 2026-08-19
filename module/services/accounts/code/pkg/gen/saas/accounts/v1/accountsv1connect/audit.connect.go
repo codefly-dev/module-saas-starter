@@ -37,6 +37,12 @@ const (
 	// AuditServiceQueryAuditLogProcedure is the fully-qualified name of the AuditService's
 	// QueryAuditLog RPC.
 	AuditServiceQueryAuditLogProcedure = "/saas.accounts.v1.AuditService/QueryAuditLog"
+	// AuditServiceAggregateAuditLogProcedure is the fully-qualified name of the AuditService's
+	// AggregateAuditLog RPC.
+	AuditServiceAggregateAuditLogProcedure = "/saas.accounts.v1.AuditService/AggregateAuditLog"
+	// AuditServiceListAuditEventTypesProcedure is the fully-qualified name of the AuditService's
+	// ListAuditEventTypes RPC.
+	AuditServiceListAuditEventTypesProcedure = "/saas.accounts.v1.AuditService/ListAuditEventTypes"
 	// AuditServiceExportAuditLogProcedure is the fully-qualified name of the AuditService's
 	// ExportAuditLog RPC.
 	AuditServiceExportAuditLogProcedure = "/saas.accounts.v1.AuditService/ExportAuditLog"
@@ -45,6 +51,8 @@ const (
 // AuditServiceClient is a client for the saas.accounts.v1.AuditService service.
 type AuditServiceClient interface {
 	QueryAuditLog(context.Context, *connect.Request[v1.QueryAuditLogRequest]) (*connect.Response[v1.QueryAuditLogResponse], error)
+	AggregateAuditLog(context.Context, *connect.Request[v1.AggregateAuditLogRequest]) (*connect.Response[v1.AggregateAuditLogResponse], error)
+	ListAuditEventTypes(context.Context, *connect.Request[v1.ListAuditEventTypesRequest]) (*connect.Response[v1.ListAuditEventTypesResponse], error)
 	ExportAuditLog(context.Context, *connect.Request[v1.ExportAuditLogRequest]) (*connect.Response[v1.ExportAuditLogResponse], error)
 }
 
@@ -65,6 +73,18 @@ func NewAuditServiceClient(httpClient connect.HTTPClient, baseURL string, opts .
 			connect.WithSchema(auditServiceMethods.ByName("QueryAuditLog")),
 			connect.WithClientOptions(opts...),
 		),
+		aggregateAuditLog: connect.NewClient[v1.AggregateAuditLogRequest, v1.AggregateAuditLogResponse](
+			httpClient,
+			baseURL+AuditServiceAggregateAuditLogProcedure,
+			connect.WithSchema(auditServiceMethods.ByName("AggregateAuditLog")),
+			connect.WithClientOptions(opts...),
+		),
+		listAuditEventTypes: connect.NewClient[v1.ListAuditEventTypesRequest, v1.ListAuditEventTypesResponse](
+			httpClient,
+			baseURL+AuditServiceListAuditEventTypesProcedure,
+			connect.WithSchema(auditServiceMethods.ByName("ListAuditEventTypes")),
+			connect.WithClientOptions(opts...),
+		),
 		exportAuditLog: connect.NewClient[v1.ExportAuditLogRequest, v1.ExportAuditLogResponse](
 			httpClient,
 			baseURL+AuditServiceExportAuditLogProcedure,
@@ -76,13 +96,25 @@ func NewAuditServiceClient(httpClient connect.HTTPClient, baseURL string, opts .
 
 // auditServiceClient implements AuditServiceClient.
 type auditServiceClient struct {
-	queryAuditLog  *connect.Client[v1.QueryAuditLogRequest, v1.QueryAuditLogResponse]
-	exportAuditLog *connect.Client[v1.ExportAuditLogRequest, v1.ExportAuditLogResponse]
+	queryAuditLog       *connect.Client[v1.QueryAuditLogRequest, v1.QueryAuditLogResponse]
+	aggregateAuditLog   *connect.Client[v1.AggregateAuditLogRequest, v1.AggregateAuditLogResponse]
+	listAuditEventTypes *connect.Client[v1.ListAuditEventTypesRequest, v1.ListAuditEventTypesResponse]
+	exportAuditLog      *connect.Client[v1.ExportAuditLogRequest, v1.ExportAuditLogResponse]
 }
 
 // QueryAuditLog calls saas.accounts.v1.AuditService.QueryAuditLog.
 func (c *auditServiceClient) QueryAuditLog(ctx context.Context, req *connect.Request[v1.QueryAuditLogRequest]) (*connect.Response[v1.QueryAuditLogResponse], error) {
 	return c.queryAuditLog.CallUnary(ctx, req)
+}
+
+// AggregateAuditLog calls saas.accounts.v1.AuditService.AggregateAuditLog.
+func (c *auditServiceClient) AggregateAuditLog(ctx context.Context, req *connect.Request[v1.AggregateAuditLogRequest]) (*connect.Response[v1.AggregateAuditLogResponse], error) {
+	return c.aggregateAuditLog.CallUnary(ctx, req)
+}
+
+// ListAuditEventTypes calls saas.accounts.v1.AuditService.ListAuditEventTypes.
+func (c *auditServiceClient) ListAuditEventTypes(ctx context.Context, req *connect.Request[v1.ListAuditEventTypesRequest]) (*connect.Response[v1.ListAuditEventTypesResponse], error) {
+	return c.listAuditEventTypes.CallUnary(ctx, req)
 }
 
 // ExportAuditLog calls saas.accounts.v1.AuditService.ExportAuditLog.
@@ -93,6 +125,8 @@ func (c *auditServiceClient) ExportAuditLog(ctx context.Context, req *connect.Re
 // AuditServiceHandler is an implementation of the saas.accounts.v1.AuditService service.
 type AuditServiceHandler interface {
 	QueryAuditLog(context.Context, *connect.Request[v1.QueryAuditLogRequest]) (*connect.Response[v1.QueryAuditLogResponse], error)
+	AggregateAuditLog(context.Context, *connect.Request[v1.AggregateAuditLogRequest]) (*connect.Response[v1.AggregateAuditLogResponse], error)
+	ListAuditEventTypes(context.Context, *connect.Request[v1.ListAuditEventTypesRequest]) (*connect.Response[v1.ListAuditEventTypesResponse], error)
 	ExportAuditLog(context.Context, *connect.Request[v1.ExportAuditLogRequest]) (*connect.Response[v1.ExportAuditLogResponse], error)
 }
 
@@ -109,6 +143,18 @@ func NewAuditServiceHandler(svc AuditServiceHandler, opts ...connect.HandlerOpti
 		connect.WithSchema(auditServiceMethods.ByName("QueryAuditLog")),
 		connect.WithHandlerOptions(opts...),
 	)
+	auditServiceAggregateAuditLogHandler := connect.NewUnaryHandler(
+		AuditServiceAggregateAuditLogProcedure,
+		svc.AggregateAuditLog,
+		connect.WithSchema(auditServiceMethods.ByName("AggregateAuditLog")),
+		connect.WithHandlerOptions(opts...),
+	)
+	auditServiceListAuditEventTypesHandler := connect.NewUnaryHandler(
+		AuditServiceListAuditEventTypesProcedure,
+		svc.ListAuditEventTypes,
+		connect.WithSchema(auditServiceMethods.ByName("ListAuditEventTypes")),
+		connect.WithHandlerOptions(opts...),
+	)
 	auditServiceExportAuditLogHandler := connect.NewUnaryHandler(
 		AuditServiceExportAuditLogProcedure,
 		svc.ExportAuditLog,
@@ -119,6 +165,10 @@ func NewAuditServiceHandler(svc AuditServiceHandler, opts ...connect.HandlerOpti
 		switch r.URL.Path {
 		case AuditServiceQueryAuditLogProcedure:
 			auditServiceQueryAuditLogHandler.ServeHTTP(w, r)
+		case AuditServiceAggregateAuditLogProcedure:
+			auditServiceAggregateAuditLogHandler.ServeHTTP(w, r)
+		case AuditServiceListAuditEventTypesProcedure:
+			auditServiceListAuditEventTypesHandler.ServeHTTP(w, r)
 		case AuditServiceExportAuditLogProcedure:
 			auditServiceExportAuditLogHandler.ServeHTTP(w, r)
 		default:
@@ -132,6 +182,14 @@ type UnimplementedAuditServiceHandler struct{}
 
 func (UnimplementedAuditServiceHandler) QueryAuditLog(context.Context, *connect.Request[v1.QueryAuditLogRequest]) (*connect.Response[v1.QueryAuditLogResponse], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("saas.accounts.v1.AuditService.QueryAuditLog is not implemented"))
+}
+
+func (UnimplementedAuditServiceHandler) AggregateAuditLog(context.Context, *connect.Request[v1.AggregateAuditLogRequest]) (*connect.Response[v1.AggregateAuditLogResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("saas.accounts.v1.AuditService.AggregateAuditLog is not implemented"))
+}
+
+func (UnimplementedAuditServiceHandler) ListAuditEventTypes(context.Context, *connect.Request[v1.ListAuditEventTypesRequest]) (*connect.Response[v1.ListAuditEventTypesResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("saas.accounts.v1.AuditService.ListAuditEventTypes is not implemented"))
 }
 
 func (UnimplementedAuditServiceHandler) ExportAuditLog(context.Context, *connect.Request[v1.ExportAuditLogRequest]) (*connect.Response[v1.ExportAuditLogResponse], error) {

@@ -8,10 +8,7 @@ import (
 	"strings"
 	"time"
 
-	"google.golang.org/protobuf/types/known/timestamppb"
-
 	"accounts/pkg/business"
-	gen "accounts/pkg/gen/saas/accounts/v1"
 )
 
 func (s *PostgresStore) InsertAuditEvent(ctx context.Context, entry business.AuditEntry) error {
@@ -22,20 +19,24 @@ func (s *PostgresStore) InsertAuditEvent(ctx context.Context, entry business.Aud
 	if entry.CreatedAt.IsZero() {
 		entry.CreatedAt = time.Now().UTC()
 	}
+	if entry.SchemaVersion == 0 {
+		entry.SchemaVersion = 1
+	}
 
-	metadata, err := json.Marshal(entry.Metadata)
-	if err != nil {
-		metadata = []byte("{}")
+	payload, err := json.Marshal(entry.Payload)
+	if err != nil || entry.Payload == nil {
+		payload = []byte("{}")
 	}
 
 	_, err = q.Exec(ctx, `
 		INSERT INTO audit_events (
-			id, actor_id, actor_type, action, resource, resource_id,
-			org_id, metadata, ip_address, created_at
-		) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)`,
-		entry.ID, nilIfNotUUID(entry.ActorID), entry.ActorType, entry.Action,
+			id, event_type, schema_version, actor_id, actor_type,
+			resource, resource_id, org_id, payload, ip_address, created_at
+		) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)`,
+		entry.ID, string(entry.EventType), entry.SchemaVersion,
+		nilIfNotUUID(entry.ActorID), entry.ActorType,
 		entry.Resource, nilIfNotUUID(entry.ResourceID), nilIfNotUUID(entry.OrgID),
-		metadata, nilIfEmpty(entry.IPAddress), entry.CreatedAt)
+		payload, nilIfEmpty(entry.IPAddress), entry.CreatedAt)
 	return err
 }
 
@@ -62,80 +63,90 @@ func decodeAuditCursor(token string) (time.Time, string, error) {
 	return ct, parts[1], nil
 }
 
-func (s *PostgresStore) QueryAuditLog(ctx context.Context, orgID, actorID, action, resource, resourceID string,
-	from, to *time.Time, pageSize int32, pageToken string) ([]business.AuditEntry, string, int32, error) {
-	q := s.getQueryExecutor(ctx)
-
+// auditWhere builds the shared WHERE clause for the search and aggregate paths
+// from an AuditQuery, returning the SQL fragment and its ordered args.
+func auditWhere(q business.AuditQuery, startArg int) (string, []any) {
 	var conditions []string
 	var args []any
-	argN := 1
+	argN := startArg
 
-	if orgID != "" {
-		conditions = append(conditions, fmt.Sprintf("org_id = $%d", argN))
-		args = append(args, orgID)
+	add := func(cond string, val any) {
+		conditions = append(conditions, fmt.Sprintf(cond, argN))
+		args = append(args, val)
 		argN++
 	}
-	if actorID != "" {
-		conditions = append(conditions, fmt.Sprintf("actor_id = $%d", argN))
-		args = append(args, actorID)
-		argN++
+	if q.OrgID != "" {
+		add("org_id = $%d", q.OrgID)
 	}
-	if action != "" {
-		conditions = append(conditions, fmt.Sprintf("action = $%d", argN))
-		args = append(args, action)
-		argN++
+	if q.ActorID != "" {
+		add("actor_id = $%d", q.ActorID)
 	}
-	if resource != "" {
-		conditions = append(conditions, fmt.Sprintf("resource = $%d", argN))
-		args = append(args, resource)
-		argN++
+	if q.EventType != "" {
+		add("event_type = $%d", q.EventType)
 	}
-	if resourceID != "" {
-		conditions = append(conditions, fmt.Sprintf("resource_id = $%d", argN))
-		args = append(args, resourceID)
-		argN++
+	if q.Category != "" {
+		add("event_type IN (SELECT name FROM audit_event_types WHERE category = $%d)", q.Category)
 	}
-	if from != nil {
-		conditions = append(conditions, fmt.Sprintf("created_at >= $%d", argN))
-		args = append(args, *from)
-		argN++
+	if q.Resource != "" {
+		add("resource = $%d", q.Resource)
 	}
-	if to != nil {
-		conditions = append(conditions, fmt.Sprintf("created_at <= $%d", argN))
-		args = append(args, *to)
-		argN++
+	if q.ResourceID != "" {
+		add("resource_id = $%d", q.ResourceID)
 	}
-
-	if pageSize == 0 {
-		pageSize = 50
-	}
-
-	// Apply the keyset cursor. The previous implementation ignored pageToken
-	// entirely (and always returned an empty nextToken), so every audit export
-	// was silently truncated to the first page. The token encodes the last
-	// returned row's (created_at, id); the compound comparison is stable under
-	// the DESC ordering even when many rows share a created_at.
-	if pageToken != "" {
-		ct, id, err := decodeAuditCursor(pageToken)
-		if err != nil {
-			return nil, "", 0, fmt.Errorf("invalid page token: %w", err)
+	if len(q.PayloadContains) > 0 {
+		if raw, err := json.Marshal(q.PayloadContains); err == nil {
+			add("payload @> $%d::jsonb", string(raw))
 		}
-		conditions = append(conditions, fmt.Sprintf("(created_at, id) < ($%d, $%d)", argN, argN+1))
-		args = append(args, ct, id)
-		argN += 2
+	}
+	if q.From != nil {
+		add("created_at >= $%d", *q.From)
+	}
+	if q.To != nil {
+		add("created_at <= $%d", *q.To)
 	}
 
 	where := ""
 	if len(conditions) > 0 {
 		where = "WHERE " + strings.Join(conditions, " AND ")
 	}
+	return where, args
+}
+
+func (s *PostgresStore) QueryAuditLog(ctx context.Context, q business.AuditQuery) ([]business.AuditEntry, string, int32, error) {
+	exec := s.getQueryExecutor(ctx)
+
+	where, args := auditWhere(q, 1)
+	argN := len(args) + 1
+
+	pageSize := q.PageSize
+	if pageSize == 0 {
+		pageSize = 50
+	}
+
+	// Apply the keyset cursor. The token encodes the last returned row's
+	// (created_at, id); the compound comparison is stable under the DESC
+	// ordering even when many rows share a created_at.
+	if q.PageToken != "" {
+		ct, id, err := decodeAuditCursor(q.PageToken)
+		if err != nil {
+			return nil, "", 0, fmt.Errorf("invalid page token: %w", err)
+		}
+		clause := fmt.Sprintf("(created_at, id) < ($%d, $%d)", argN, argN+1)
+		if where == "" {
+			where = "WHERE " + clause
+		} else {
+			where += " AND " + clause
+		}
+		args = append(args, ct, id)
+		argN += 2
+	}
 
 	// Fetch one extra row to detect whether a further page exists.
-	query := fmt.Sprintf(`SELECT id, actor_id, actor_type, action, resource, resource_id, org_id, metadata, ip_address, created_at
+	query := fmt.Sprintf(`SELECT id, event_type, schema_version, actor_id, actor_type, resource, resource_id, org_id, payload, ip_address, created_at
 		FROM audit_events %s ORDER BY created_at DESC, id DESC LIMIT $%d`, where, argN)
 	args = append(args, pageSize+1)
 
-	rows, err := q.Query(ctx, query, args...)
+	rows, err := exec.Query(ctx, query, args...)
 	if err != nil {
 		return nil, "", 0, err
 	}
@@ -144,14 +155,16 @@ func (s *PostgresStore) QueryAuditLog(ctx context.Context, orgID, actorID, actio
 	var events []business.AuditEntry
 	for rows.Next() {
 		var e business.AuditEntry
-		var metadataJSON []byte
+		var eventType string
+		var payloadJSON []byte
 		var actorID, resourceID, orgID, ipAddress *string
 
-		err := rows.Scan(&e.ID, &actorID, &e.ActorType, &e.Action, &e.Resource,
-			&resourceID, &orgID, &metadataJSON, &ipAddress, &e.CreatedAt)
+		err := rows.Scan(&e.ID, &eventType, &e.SchemaVersion, &actorID, &e.ActorType, &e.Resource,
+			&resourceID, &orgID, &payloadJSON, &ipAddress, &e.CreatedAt)
 		if err != nil {
 			return nil, "", 0, err
 		}
+		e.EventType = business.EventType(eventType)
 		if actorID != nil {
 			e.ActorID = *actorID
 		}
@@ -164,10 +177,9 @@ func (s *PostgresStore) QueryAuditLog(ctx context.Context, orgID, actorID, actio
 		if ipAddress != nil {
 			e.IPAddress = *ipAddress
 		}
-
-		var metadata map[string]string
-		if json.Unmarshal(metadataJSON, &metadata) == nil {
-			e.Metadata = metadata
+		var payload map[string]any
+		if json.Unmarshal(payloadJSON, &payload) == nil {
+			e.Payload = payload
 		}
 		events = append(events, e)
 	}
@@ -187,23 +199,53 @@ func (s *PostgresStore) QueryAuditLog(ctx context.Context, orgID, actorID, actio
 	return events, nextToken, int32(len(events)), nil
 }
 
-// AuditEntryToProto converts a business AuditEntry to proto AuditEvent.
-func AuditEntryToProto(e business.AuditEntry) *gen.AuditEvent {
-	event := &gen.AuditEvent{
-		Id:         e.ID,
-		ActorId:    e.ActorID,
-		ActorType:  e.ActorType,
-		Action:     e.Action,
-		Resource:   e.Resource,
-		ResourceId: e.ResourceID,
-		OrgId:      e.OrgID,
-		IpAddress:  e.IPAddress,
-		CreatedAt:  timestamppb.New(e.CreatedAt),
+// AggregateAuditLog groups events for analytics. groupBy selects the key
+// dimension (event_type, category, actor, or time); bucket sizes the time
+// grain (day/week/month) when groupBy == "time". Ordering is deterministic:
+// time buckets ascending, everything else by descending count.
+func (s *PostgresStore) AggregateAuditLog(ctx context.Context, q business.AuditQuery, groupBy, bucket string) ([]business.AuditAggregateBucket, error) {
+	exec := s.getQueryExecutor(ctx)
+	where, args := auditWhere(q, 1)
+
+	var keyExpr, orderBy string
+	switch groupBy {
+	case "category":
+		keyExpr = "COALESCE((SELECT category FROM audit_event_types t WHERE t.name = audit_events.event_type), 'unknown')"
+		orderBy = "count DESC"
+	case "actor":
+		keyExpr = "COALESCE(actor_id::text, '')"
+		orderBy = "count DESC"
+	case "time":
+		grain := "day"
+		switch bucket {
+		case "week", "month", "day":
+			grain = bucket
+		}
+		keyExpr = fmt.Sprintf("to_char(date_trunc('%s', created_at), 'YYYY-MM-DD\"T\"HH24:MI:SSOF')", grain)
+		orderBy = "key ASC"
+	default: // "event_type"
+		keyExpr = "event_type"
+		orderBy = "count DESC"
 	}
-	if e.Metadata != nil {
-		event.Metadata = e.Metadata
+
+	query := fmt.Sprintf(`SELECT %s AS key, COUNT(*) AS count FROM audit_events %s GROUP BY key ORDER BY %s`,
+		keyExpr, where, orderBy)
+
+	rows, err := exec.Query(ctx, query, args...)
+	if err != nil {
+		return nil, err
 	}
-	return event
+	defer rows.Close()
+
+	var out []business.AuditAggregateBucket
+	for rows.Next() {
+		var b business.AuditAggregateBucket
+		if err := rows.Scan(&b.Key, &b.Count); err != nil {
+			return nil, err
+		}
+		out = append(out, b)
+	}
+	return out, rows.Err()
 }
 
 func nilIfEmpty(s string) *string {

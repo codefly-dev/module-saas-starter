@@ -80,7 +80,7 @@ func TestDurableAuditEmitterBurstHasNoQueueSaturationLoss(t *testing.T) {
 			defer wait.Done()
 			emitter.Emit(t.Context(), AuditEntry{
 				ID: NewIDString(), OrgID: "00000000-0000-0000-0000-000000000001",
-				ActorType: "system", Action: fmt.Sprintf("burst.event.%d", i),
+				ActorType: "system", EventType: EventType(fmt.Sprintf("burst.event.%d", i)),
 			})
 		}()
 	}

@@ -20,8 +20,10 @@ import (
 const _ = grpc.SupportPackageIsVersion9
 
 const (
-	AuditService_QueryAuditLog_FullMethodName  = "/saas.accounts.v1.AuditService/QueryAuditLog"
-	AuditService_ExportAuditLog_FullMethodName = "/saas.accounts.v1.AuditService/ExportAuditLog"
+	AuditService_QueryAuditLog_FullMethodName       = "/saas.accounts.v1.AuditService/QueryAuditLog"
+	AuditService_AggregateAuditLog_FullMethodName   = "/saas.accounts.v1.AuditService/AggregateAuditLog"
+	AuditService_ListAuditEventTypes_FullMethodName = "/saas.accounts.v1.AuditService/ListAuditEventTypes"
+	AuditService_ExportAuditLog_FullMethodName      = "/saas.accounts.v1.AuditService/ExportAuditLog"
 )
 
 // AuditServiceClient is the client API for AuditService service.
@@ -31,6 +33,8 @@ const (
 // AuditService — append-only audit event log
 type AuditServiceClient interface {
 	QueryAuditLog(ctx context.Context, in *QueryAuditLogRequest, opts ...grpc.CallOption) (*QueryAuditLogResponse, error)
+	AggregateAuditLog(ctx context.Context, in *AggregateAuditLogRequest, opts ...grpc.CallOption) (*AggregateAuditLogResponse, error)
+	ListAuditEventTypes(ctx context.Context, in *ListAuditEventTypesRequest, opts ...grpc.CallOption) (*ListAuditEventTypesResponse, error)
 	ExportAuditLog(ctx context.Context, in *ExportAuditLogRequest, opts ...grpc.CallOption) (*ExportAuditLogResponse, error)
 }
 
@@ -46,6 +50,26 @@ func (c *auditServiceClient) QueryAuditLog(ctx context.Context, in *QueryAuditLo
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(QueryAuditLogResponse)
 	err := c.cc.Invoke(ctx, AuditService_QueryAuditLog_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *auditServiceClient) AggregateAuditLog(ctx context.Context, in *AggregateAuditLogRequest, opts ...grpc.CallOption) (*AggregateAuditLogResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(AggregateAuditLogResponse)
+	err := c.cc.Invoke(ctx, AuditService_AggregateAuditLog_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *auditServiceClient) ListAuditEventTypes(ctx context.Context, in *ListAuditEventTypesRequest, opts ...grpc.CallOption) (*ListAuditEventTypesResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ListAuditEventTypesResponse)
+	err := c.cc.Invoke(ctx, AuditService_ListAuditEventTypes_FullMethodName, in, out, cOpts...)
 	if err != nil {
 		return nil, err
 	}
@@ -69,6 +93,8 @@ func (c *auditServiceClient) ExportAuditLog(ctx context.Context, in *ExportAudit
 // AuditService — append-only audit event log
 type AuditServiceServer interface {
 	QueryAuditLog(context.Context, *QueryAuditLogRequest) (*QueryAuditLogResponse, error)
+	AggregateAuditLog(context.Context, *AggregateAuditLogRequest) (*AggregateAuditLogResponse, error)
+	ListAuditEventTypes(context.Context, *ListAuditEventTypesRequest) (*ListAuditEventTypesResponse, error)
 	ExportAuditLog(context.Context, *ExportAuditLogRequest) (*ExportAuditLogResponse, error)
 	mustEmbedUnimplementedAuditServiceServer()
 }
@@ -82,6 +108,12 @@ type UnimplementedAuditServiceServer struct{}
 
 func (UnimplementedAuditServiceServer) QueryAuditLog(context.Context, *QueryAuditLogRequest) (*QueryAuditLogResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method QueryAuditLog not implemented")
+}
+func (UnimplementedAuditServiceServer) AggregateAuditLog(context.Context, *AggregateAuditLogRequest) (*AggregateAuditLogResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method AggregateAuditLog not implemented")
+}
+func (UnimplementedAuditServiceServer) ListAuditEventTypes(context.Context, *ListAuditEventTypesRequest) (*ListAuditEventTypesResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method ListAuditEventTypes not implemented")
 }
 func (UnimplementedAuditServiceServer) ExportAuditLog(context.Context, *ExportAuditLogRequest) (*ExportAuditLogResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method ExportAuditLog not implemented")
@@ -125,6 +157,42 @@ func _AuditService_QueryAuditLog_Handler(srv interface{}, ctx context.Context, d
 	return interceptor(ctx, in, info, handler)
 }
 
+func _AuditService_AggregateAuditLog_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(AggregateAuditLogRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(AuditServiceServer).AggregateAuditLog(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: AuditService_AggregateAuditLog_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(AuditServiceServer).AggregateAuditLog(ctx, req.(*AggregateAuditLogRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _AuditService_ListAuditEventTypes_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ListAuditEventTypesRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(AuditServiceServer).ListAuditEventTypes(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: AuditService_ListAuditEventTypes_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(AuditServiceServer).ListAuditEventTypes(ctx, req.(*ListAuditEventTypesRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 func _AuditService_ExportAuditLog_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
 	in := new(ExportAuditLogRequest)
 	if err := dec(in); err != nil {
@@ -153,6 +221,14 @@ var AuditService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "QueryAuditLog",
 			Handler:    _AuditService_QueryAuditLog_Handler,
+		},
+		{
+			MethodName: "AggregateAuditLog",
+			Handler:    _AuditService_AggregateAuditLog_Handler,
+		},
+		{
+			MethodName: "ListAuditEventTypes",
+			Handler:    _AuditService_ListAuditEventTypes_Handler,
 		},
 		{
 			MethodName: "ExportAuditLog",

@@ -485,11 +485,11 @@ func (s *Service) DecideDelegation(ctx context.Context, id, orgID, grantorID str
 	// Audit + notification fan-out. Audit is mandatory (the
 	// approval-trail is a compliance requirement); notification
 	// is best-effort (the inbox is a UX nicety).
-	auditAction := "delegation.approved"
+	auditEvent := EventDelegationApproved
 	if decision == GrantStatusDenied {
-		auditAction = "delegation.denied"
+		auditEvent = EventDelegationDenied
 	}
-	s.emit(ctx, grantorID, "user", auditAction, "delegation_grant", grant.ID, grant.OrgID)
+	s.emit(ctx, grantorID, "user", auditEvent, "delegation_grant", grant.ID, grant.OrgID)
 	s.notifyDelegationDecision(ctx, grant.ActorPrincipalID, grant.OrgID, grant.ID,
 		string(decision), reason, grant.Action)
 	return grant, nil

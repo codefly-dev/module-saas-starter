@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"strings"
-	"time"
 
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/metadata"
@@ -890,19 +889,32 @@ func (s *AuditServer) QueryAuditLog(ctx context.Context, req *gen.QueryAuditLogR
 		}
 	}
 
-	var from, to *time.Time
+	q := business.AuditQuery{
+		OrgID:      req.OrgId,
+		ActorID:    req.ActorId,
+		EventType:  req.EventType,
+		Category:   req.Category,
+		Resource:   req.Resource,
+		ResourceID: req.ResourceId,
+		PageSize:   req.PageSize,
+		PageToken:  req.PageToken,
+	}
+	if len(req.PayloadContains) > 0 {
+		q.PayloadContains = make(map[string]any, len(req.PayloadContains))
+		for k, v := range req.PayloadContains {
+			q.PayloadContains[k] = v
+		}
+	}
 	if req.From != nil {
 		t := req.From.AsTime()
-		from = &t
+		q.From = &t
 	}
 	if req.To != nil {
 		t := req.To.AsTime()
-		to = &t
+		q.To = &t
 	}
 
-	entries, nextToken, totalCount, err := service.QueryAuditLog(ctx,
-		req.OrgId, req.ActorId, req.Action, req.Resource, req.ResourceId,
-		from, to, req.PageSize, req.PageToken)
+	entries, nextToken, totalCount, err := service.QueryAuditLog(ctx, q)
 	if err != nil {
 		return nil, err
 	}
@@ -917,6 +929,75 @@ func (s *AuditServer) QueryAuditLog(ctx context.Context, req *gen.QueryAuditLogR
 		NextPageToken: nextToken,
 		TotalCount:    totalCount,
 	}, nil
+}
+
+func (s *AuditServer) AggregateAuditLog(ctx context.Context, req *gen.AggregateAuditLogRequest) (*gen.AggregateAuditLogResponse, error) {
+	if err := Validate(req); err != nil {
+		return nil, err
+	}
+	actorID, err := requireAuth(ctx)
+	if err != nil {
+		return nil, err
+	}
+	// Same read-through-membership authorization as QueryAuditLog.
+	if req.OrgId == "" {
+		if err := requirePlatformAdmin(ctx, actorID); err != nil {
+			return nil, err
+		}
+	} else {
+		if err := requireOrgMember(ctx, actorID, req.OrgId); err != nil {
+			if !IsPermissionDenied(err) {
+				return nil, err
+			}
+			if paErr := requirePlatformAdmin(ctx, actorID); paErr != nil {
+				return nil, err
+			}
+		}
+	}
+
+	q := business.AuditQuery{
+		OrgID:     req.OrgId,
+		ActorID:   req.ActorId,
+		EventType: req.EventType,
+		Category:  req.Category,
+		Resource:  req.Resource,
+	}
+	if req.From != nil {
+		t := req.From.AsTime()
+		q.From = &t
+	}
+	if req.To != nil {
+		t := req.To.AsTime()
+		q.To = &t
+	}
+
+	buckets, err := service.AggregateAuditLog(ctx, q, req.GroupBy, req.Bucket)
+	if err != nil {
+		return nil, err
+	}
+	out := make([]*gen.AuditAggregateBucket, 0, len(buckets))
+	for _, b := range buckets {
+		out = append(out, &gen.AuditAggregateBucket{Key: b.Key, Count: b.Count})
+	}
+	return &gen.AggregateAuditLogResponse{Buckets: out}, nil
+}
+
+func (s *AuditServer) ListAuditEventTypes(ctx context.Context, req *gen.ListAuditEventTypesRequest) (*gen.ListAuditEventTypesResponse, error) {
+	if _, err := requireAuth(ctx); err != nil {
+		return nil, err
+	}
+	defs := business.AuditEventCatalog()
+	out := make([]*gen.AuditEventType, 0, len(defs))
+	for _, d := range defs {
+		out = append(out, &gen.AuditEventType{
+			Name:        string(d.Type),
+			Version:     int32(d.Version),
+			Category:    string(d.Category),
+			Owner:       d.Owner,
+			Description: d.Description,
+		})
+	}
+	return &gen.ListAuditEventTypesResponse{Types: out}, nil
 }
 
 // ============================================================================

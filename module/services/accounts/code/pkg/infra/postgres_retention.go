@@ -29,15 +29,6 @@ func (s *PostgresStore) GetRetentionPolicies(ctx context.Context) ([]*business.R
 	return policies, rows.Err()
 }
 
-func (s *PostgresStore) DeleteOldAuditEvents(ctx context.Context, before time.Time) (int64, error) {
-	q := s.getQueryExecutor(ctx)
-	tag, err := q.Exec(ctx, `DELETE FROM audit_events WHERE created_at < $1`, before)
-	if err != nil {
-		return 0, err
-	}
-	return tag.RowsAffected(), nil
-}
-
 func (s *PostgresStore) DeleteOldSessions(ctx context.Context, before time.Time) (int64, error) {
 	q := s.getQueryExecutor(ctx)
 	tag, err := q.Exec(ctx, `DELETE FROM sessions WHERE created_at < $1`, before)

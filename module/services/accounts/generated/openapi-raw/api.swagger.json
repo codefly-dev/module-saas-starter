@@ -246,6 +246,28 @@
         ]
       }
     },
+    "/v1/audit-event-types": {
+      "get": {
+        "operationId": "AuditService_ListAuditEventTypes",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1ListAuditEventTypesResponse"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/rpcStatus"
+            }
+          }
+        },
+        "tags": [
+          "AuditService"
+        ]
+      }
+    },
     "/v1/audit-export": {
       "post": {
         "operationId": "AuditExportService_SaveConfig",
@@ -369,6 +391,7 @@
           },
           {
             "name": "action",
+            "description": "use event_type",
             "in": "query",
             "required": false,
             "type": "string"
@@ -408,6 +431,107 @@
           },
           {
             "name": "pageToken",
+            "in": "query",
+            "required": false,
+            "type": "string"
+          },
+          {
+            "name": "eventType",
+            "in": "query",
+            "required": false,
+            "type": "string"
+          },
+          {
+            "name": "category",
+            "in": "query",
+            "required": false,
+            "type": "string"
+          },
+          {
+            "name": "payloadContains",
+            "description": "payload_contains is a JSONB containment filter: every key/value must match\nthe event's payload.",
+            "in": "query",
+            "required": false,
+            "type": "string"
+          }
+        ],
+        "tags": [
+          "AuditService"
+        ]
+      }
+    },
+    "/v1/audit-log:aggregate": {
+      "get": {
+        "operationId": "AuditService_AggregateAuditLog",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1AggregateAuditLogResponse"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/rpcStatus"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "orgId",
+            "in": "query",
+            "required": false,
+            "type": "string"
+          },
+          {
+            "name": "actorId",
+            "in": "query",
+            "required": false,
+            "type": "string"
+          },
+          {
+            "name": "eventType",
+            "in": "query",
+            "required": false,
+            "type": "string"
+          },
+          {
+            "name": "category",
+            "in": "query",
+            "required": false,
+            "type": "string"
+          },
+          {
+            "name": "resource",
+            "in": "query",
+            "required": false,
+            "type": "string"
+          },
+          {
+            "name": "from",
+            "in": "query",
+            "required": false,
+            "type": "string",
+            "format": "date-time"
+          },
+          {
+            "name": "to",
+            "in": "query",
+            "required": false,
+            "type": "string",
+            "format": "date-time"
+          },
+          {
+            "name": "groupBy",
+            "description": "group_by ∈ {event_type, category, actor, time}. Defaults to event_type.",
+            "in": "query",
+            "required": false,
+            "type": "string"
+          },
+          {
+            "name": "bucket",
+            "description": "bucket sizes the time grain when group_by == \"time\": day|week|month.",
             "in": "query",
             "required": false,
             "type": "string"
@@ -5042,6 +5166,18 @@
         }
       }
     },
+    "v1AggregateAuditLogResponse": {
+      "type": "object",
+      "properties": {
+        "buckets": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "$ref": "#/definitions/v1AuditAggregateBucket"
+          }
+        }
+      }
+    },
     "v1AssignRoleRequest": {
       "type": "object",
       "properties": {
@@ -5070,6 +5206,18 @@
         }
       }
     },
+    "v1AuditAggregateBucket": {
+      "type": "object",
+      "properties": {
+        "key": {
+          "type": "string"
+        },
+        "count": {
+          "type": "string",
+          "format": "int64"
+        }
+      }
+    },
     "v1AuditEvent": {
       "type": "object",
       "properties": {
@@ -5083,7 +5231,8 @@
           "type": "string"
         },
         "action": {
-          "type": "string"
+          "type": "string",
+          "title": "superseded by event_type"
         },
         "resource": {
           "type": "string"
@@ -5098,7 +5247,8 @@
           "type": "object",
           "additionalProperties": {
             "type": "string"
-          }
+          },
+          "title": "superseded by payload"
         },
         "ipAddress": {
           "type": "string"
@@ -5106,6 +5256,44 @@
         "createdAt": {
           "type": "string",
           "format": "date-time"
+        },
+        "eventType": {
+          "type": "string",
+          "description": "event_type is the registered discriminator (see the typed audit-event\nregistry). schema_version records which payload schema the row was written\nagainst; payload is the typed, per-type payload; category groups types."
+        },
+        "schemaVersion": {
+          "type": "integer",
+          "format": "int32"
+        },
+        "payload": {
+          "type": "object"
+        },
+        "category": {
+          "type": "string"
+        }
+      }
+    },
+    "v1AuditEventType": {
+      "type": "object",
+      "properties": {
+        "name": {
+          "type": "string"
+        },
+        "version": {
+          "type": "integer",
+          "format": "int32"
+        },
+        "category": {
+          "type": "string"
+        },
+        "owner": {
+          "type": "string"
+        },
+        "deprecated": {
+          "type": "boolean"
+        },
+        "description": {
+          "type": "string"
         }
       }
     },
@@ -5674,6 +5862,10 @@
           "type": "string"
         },
         "action": {
+          "type": "string",
+          "title": "use event_type"
+        },
+        "eventType": {
           "type": "string"
         }
       }
@@ -6602,6 +6794,18 @@
         },
         "nextPageToken": {
           "type": "string"
+        }
+      }
+    },
+    "v1ListAuditEventTypesResponse": {
+      "type": "object",
+      "properties": {
+        "types": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "$ref": "#/definitions/v1AuditEventType"
+          }
         }
       }
     },
