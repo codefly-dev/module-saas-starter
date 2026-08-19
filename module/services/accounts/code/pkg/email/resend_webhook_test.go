@@ -164,3 +164,20 @@ func signedResendRequest(
 	request.Header.Set("svix-signature", signature)
 	return request
 }
+
+func TestResendSenderDeliveryWebhook(t *testing.T) {
+	sender, err := NewResendSender(ResendConfig{APIKey: "re_test", WebhookSecret: "whsec_test"})
+	require.NoError(t, err)
+
+	path, handler, err := sender.DeliveryWebhook(&memoryResendRecorder{})
+	require.NoError(t, err)
+	require.Equal(t, ResendWebhookPath, path)
+	require.NotNil(t, handler)
+
+	// Without a signing secret the provider cannot build a verifying handler,
+	// so wiring fails closed rather than serving an unverified route.
+	senderNoSecret, err := NewResendSender(ResendConfig{APIKey: "re_test"})
+	require.NoError(t, err)
+	_, _, err = senderNoSecret.DeliveryWebhook(&memoryResendRecorder{})
+	require.Error(t, err)
+}

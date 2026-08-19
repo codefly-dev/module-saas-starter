@@ -453,15 +453,12 @@ func doWork(ctx context.Context) (Clean, error) {
 	if err != nil {
 		return nil, err
 	}
-	if _, ok := emailSender.(*email.ResendSender); ok {
-		resendWebhook, err := email.NewResendWebhookHandler(email.ResendWebhookConfig{
-			SigningSecret: os.Getenv("RESEND_WEBHOOK_SECRET"),
-			Recorder:      jobStore,
-		})
+	if resend, ok := emailSender.(*email.ResendSender); ok {
+		path, resendWebhook, err := resend.DeliveryWebhook(jobStore)
 		if err != nil {
 			return nil, err
 		}
-		adapters.RegisterHTTPRoute("/v1/email/webhook/resend", resendWebhook)
+		adapters.RegisterHTTPRoute(path, resendWebhook)
 	}
 	emailJobHandler, err := email.NewJobHandler(emailSender)
 	if err != nil {
@@ -1241,8 +1238,9 @@ func resendEmailFactory(_ context.Context) (email.Sender, error) {
 		return nil, fmt.Errorf("email: RESEND_API_KEY and RESEND_WEBHOOK_SECRET are required when EMAIL_PROVIDER=resend")
 	}
 	return email.NewResendSender(email.ResendConfig{
-		APIKey:  key,
-		BaseURL: strings.TrimSpace(os.Getenv("RESEND_API_BASE")),
+		APIKey:        key,
+		BaseURL:       strings.TrimSpace(os.Getenv("RESEND_API_BASE")),
+		WebhookSecret: webhookSecret,
 	})
 }
 
