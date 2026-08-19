@@ -140,16 +140,16 @@ func TestValidate(t *testing.T) {
 	require.NoError(t, Validate(valid))
 
 	cases := map[string]*policyv1.Condition{
-		"unknown attribute":         {Attribute: policyv1.ConditionAttribute(42)},
-		"unspecified attribute":     {Attribute: policyv1.ConditionAttribute_CONDITION_ATTRIBUTE_UNSPECIFIED},
-		"status without values":     status(),
-		"status with empty value":   status("open", ""),
-		"owner-team with params":    {Attribute: policyv1.ConditionAttribute_CONDITION_ATTRIBUTE_OWNER_TEAM, AllowedStatuses: []string{"x"}},
-		"window missing":            {Attribute: policyv1.ConditionAttribute_CONDITION_ATTRIBUTE_TIME_WINDOW},
-		"window start after end":    timeWindow(600, 600, "UTC"),
-		"window end beyond day":     timeWindow(0, minutesPerDay+1, "UTC"),
-		"window bad timezone":       timeWindow(0, 60, "Mars/Phobos"),
-		"window with statuses":      {Attribute: policyv1.ConditionAttribute_CONDITION_ATTRIBUTE_TIME_WINDOW, AllowedStatuses: []string{"x"}, TimeWindow: &policyv1.TimeWindow{StartMinute: 0, EndMinute: 60}},
+		"unknown attribute":       {Attribute: policyv1.ConditionAttribute(42)},
+		"unspecified attribute":   {Attribute: policyv1.ConditionAttribute_CONDITION_ATTRIBUTE_UNSPECIFIED},
+		"status without values":   status(),
+		"status with empty value": status("open", ""),
+		"owner-team with params":  {Attribute: policyv1.ConditionAttribute_CONDITION_ATTRIBUTE_OWNER_TEAM, AllowedStatuses: []string{"x"}},
+		"window missing":          {Attribute: policyv1.ConditionAttribute_CONDITION_ATTRIBUTE_TIME_WINDOW},
+		"window start after end":  timeWindow(600, 600, "UTC"),
+		"window end beyond day":   timeWindow(0, minutesPerDay+1, "UTC"),
+		"window bad timezone":     timeWindow(0, 60, "Mars/Phobos"),
+		"window with statuses":    {Attribute: policyv1.ConditionAttribute_CONDITION_ATTRIBUTE_TIME_WINDOW, AllowedStatuses: []string{"x"}, TimeWindow: &policyv1.TimeWindow{StartMinute: 0, EndMinute: 60}},
 	}
 	for name, c := range cases {
 		t.Run(name, func(t *testing.T) {
