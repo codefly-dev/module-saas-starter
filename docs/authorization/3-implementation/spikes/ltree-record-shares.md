@@ -228,7 +228,7 @@ func (s *PostgresStore) CheckAccess(
 	// share on the id. A NULL role_permissions wildcard ('*') matches, same as
 	// CheckPermission.
 	//
-	// SECURITY [resolved #177 — was open question 2]: the scope is bound to the
+	// SECURITY [PROPOSED #177, to review — was open question 2]: the scope is bound to the
 	// resourceID in storage. record_scopes is written transactionally with the
 	// product row under the tenant floor, exactly as MethodPolicy resource_bindings
 	// bind id->org today, so the authorization input is proven from storage, never
@@ -360,7 +360,7 @@ product writes both in the same transaction as the row, so they never diverge.
 
 ## Open questions & decisions (investigation)
 
-1. **✅ DECIDED (#177) — ltree label encoding = hyphen-stripped node UUID hex.**
+1. **🟡 PROPOSED (#177 — to review) — ltree label encoding = hyphen-stripped node UUID hex.**
    `ltree` labels are restricted (historically `[A-Za-z0-9_]`; hyphens aren't
    universally safe across versions), so raw UUIDs can't be labels. `scope_nodes.id`
    stays a real UUID; its `scope_path` **label** is that UUID with hyphens removed —
@@ -368,7 +368,7 @@ product writes both in the same transaction as the row, so they never diverge.
    (the human name lives in `label`). Rejected: slugs (rename/collision breaks
    materialized paths); raw UUID (invalid). A compact per-node synthetic key is a
    valid later optimization only if shallow-depth paths ever grow too long.
-2. **✅ DECIDED (#177) — resolve scope FROM `resourceID`; bind it in `record_scopes`.**
+2. **🟡 PROPOSED (#177 — to review) — resolve scope FROM `resourceID`; bind it in `record_scopes`.**
    The former of the two options (and the one this doc preferred). `CheckAccess` no
    longer takes a caller `recordPath`; it resolves the record's `scope_path` from
    the `record_scopes(resource_type, resource_id → scope_path)` binding, written
@@ -435,6 +435,6 @@ real PR must additionally:
   RLS footgun; `AUTHZ.md` says per-tx `SET LOCAL` is already used — this just
   re-confirms the pool mode).
 - The ltree label encoding (open question 1) and the record-scope binding (open
-  question 2) are **decided** above; the `CheckAccessRequest` proto carries
+  question 2) are **proposed (to review)** above; the `CheckAccessRequest` proto carries
   `resource_id` (no `record_path` field) since the scope is resolved from
   `record_scopes`.

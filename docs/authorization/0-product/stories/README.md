@@ -13,10 +13,12 @@
   [`../behaviors.md`](../behaviors.md).
 - Mark a story's questions **resolved** inline as product decides; promote the
   decision into the relevant RFC.
-- **Resolution legend:** `❓` open · `✅ **Decided (#177)**` resolved, with the call +
-  rationale inline · `🔷 **Deferred**` intentionally not-now (product/UX or a later
-  phase), with the reason. The highest-leverage decisions (#177) also flow into
-  RFC-0001/0002/0003 and their ADRs ([`../../9-reference/decisions/`](../../9-reference/decisions/)).
+- **Resolution legend:** `❓` open · `🟡 **Proposed (#177 — to review)**` a call made
+  in #177 with its rationale inline, **awaiting sign-off** (not yet accepted) — some
+  are "propose to defer." The highest-leverage proposals also flow into
+  RFC-0001/0002/0003 (Status: **Review**) and their draft ADRs
+  ([`../../9-reference/decisions/`](../../9-reference/decisions/)). Nothing here is
+  final until reviewed.
 
 ## Aspects, by category
 

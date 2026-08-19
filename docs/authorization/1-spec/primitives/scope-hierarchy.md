@@ -17,7 +17,7 @@ the node's entire subtree.
 **Realized by:** RFC-0001 → implementation spike
 [`ltree-record-shares`](../../3-implementation/spikes/ltree-record-shares.md).
 
-**Decisions (RFC-0001, #177):** path labels = the node UUID with hyphens stripped
+**Proposed (RFC-0001, #177 — to review):** path labels = the node UUID with hyphens stripped
 (ltree-safe, stable); the registry validates each path's parent on write (typed,
 not a hard FK); the tree is edited by the Owner + branch-delegated Admins. A grant
 may target a principal **or a team**. Depth/shape is per-tenant (`kind`-typed), not

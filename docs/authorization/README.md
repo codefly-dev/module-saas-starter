@@ -62,14 +62,15 @@ Where each capability is in the pipeline. Update this row when a stage completes
 
 | Capability | Product | Spec | Proposal | Impl | Notes |
 |---|---|---|---|---|---|
-| Hierarchical / layered scope | ✅ decided (#177) | 🟡 firm | ✅ RFC-0001 accepted → ADR-0002 | ◻︎ spike (design decided) | ltree ancestor-match; scope resolved from id |
-| Per-record sharing | ✅ decided (#177) | 🟡 firm | ✅ RFC-0002 accepted → ADR-0003 | ◻︎ spike | intra-org v1; `share` is a capability |
-| Acting on behalf of (agents) | ✅ decided (#177) | 🟡 firm | ✅ RFC-0003 accepted → ADR-0004 | ✅ chain exists; durability pending | chain home = Accounts; single owner |
-| Field-level visibility | ✅ decided (#177) — **cut v1** | — | — | — | split RPCs by tier; B15 latent |
-| Typed scope registry | ✅ decided (#177) | 🟡 firm | ✅ folded into RFC-0001 | ◻︎ | closes the untyped-scope gap |
+| Hierarchical / layered scope | 🟡 proposed (#177) | 🟡 firm | 🟡 RFC-0001 in review → ADR-0002 draft | ◻︎ spike (design proposed) | ltree ancestor-match; scope resolved from id |
+| Per-record sharing | 🟡 proposed (#177) | 🟡 firm | 🟡 RFC-0002 in review → ADR-0003 draft | ◻︎ spike | intra-org v1; `share` is a capability |
+| Acting on behalf of (agents) | 🟡 proposed (#177) | 🟡 firm | 🟡 RFC-0003 in review → ADR-0004 draft | ✅ chain exists; durability pending | chain home = Accounts; single owner |
+| Field-level visibility | 🟡 proposed (#177) — **cut v1?** | — | — | — | split RPCs by tier; B15 latent |
+| Typed scope registry | 🟡 proposed (#177) | 🟡 firm | 🟡 folded into RFC-0001 | ◻︎ | closes the untyped-scope gap |
 | ABAC / conditional | ◻︎ | ◻︎ | ◻︎ | ◻︎ | bounded predicates in Go (COND questions still open) |
 
-Legend: ✅ done/decided · 🟡 drafted (needs review) · ◻︎ not started · — n/a (cut).
+Legend: ✅ done · 🟡 drafted / **proposed — to review** · ◻︎ not started · — n/a (cut).
+All #177 calls are **proposals awaiting sign-off**; none are accepted yet.
 
 ## Conventions
 
@@ -82,19 +83,21 @@ Legend: ✅ done/decided · 🟡 drafted (needs review) · ◻︎ not started ·
 - Everything traces back to a **persona** (`0-product/personas.md`) and respects
   the **invariants** (`1-spec/invariants.md`).
 
-## Right now (second iteration — post #177)
+## Right now (second iteration — #177 proposals, to review)
 
-The **highest-leverage product questions are resolved** (#177) and have flowed into
-the spec, the three RFCs (now **Accepted**, with ADR-0002/0003/0004), and this status
-board. Resolved: hierarchical scope shape + edit authority, per-record sharing reach
-(intra-org v1) and who-may-share (a `share` capability), field-level (**cut v1**),
-agent ownership (single human owner) + chain depth, the canonical action set (delete
-& list are their own actions), nested-team inheritance (literal, no cascade), and the
-load-bearing `CheckAccess` design (scope resolved from the record's id, never a caller
-field). See the **[user-story backlog](0-product/stories/README.md)** for the inline
-`✅ Decided` / `🔷 Deferred` markers.
+The **highest-leverage product questions have proposed answers** (#177), drafted into
+the spec, the three RFCs (now in **Review**, with draft ADR-0002/0003/0004), and this
+status board. **These are recommendations awaiting sign-off — nothing is accepted
+yet.** Proposed: hierarchical scope shape + edit authority, per-record sharing reach
+(intra-org v1) and who-may-share (a `share` capability), field-level (**propose to
+cut v1**), agent ownership (single human owner) + chain depth, the canonical action
+set (delete & list are their own actions), nested-team inheritance (literal, no
+cascade), and the load-bearing `CheckAccess` design (scope resolved from the record's
+id, never a caller field). See the **[user-story backlog](0-product/stories/README.md)**
+for the inline `🟡 Proposed (to review)` markers.
 
-**Still open:** the peripheral per-aspect questions (authentication, orgs, API keys,
-service-to-service, operators, audit, conditional/time-bound, lifecycle governance)
-remain `❓` for their own product review — they don't reshape the spec and aren't
-blocked. Resolve them the same way: answer inline, promote into the relevant RFC.
+**To do — review these proposals** and, per call, accept (promote the RFC to Accepted
+and finalize its ADR) or send back. **Still open:** the peripheral per-aspect questions
+(authentication, orgs, API keys, service-to-service, operators, audit,
+conditional/time-bound, lifecycle governance) remain `❓` for their own product review —
+they don't reshape the spec and aren't blocked.

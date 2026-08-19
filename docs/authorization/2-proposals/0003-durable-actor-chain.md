@@ -1,6 +1,6 @@
 # RFC-0003 — Durable, linked, revocable actor chain
 
-- **Status:** Accepted (2026-08-19, #177) — ADR [0004](../9-reference/decisions/0004-durable-actor-chain.md)
+- **Status:** Review (#177) — proposed decisions below, pending sign-off; draft ADR [0004](../9-reference/decisions/0004-durable-actor-chain.md)
 - **Created:** 2026-08-19
 - **Serves:** [acting-on-behalf](../0-product/stories/acting-on-behalf.md) A2–A5; behaviors B12–B14.
 - **Relates to:** the existing capability chain + `delegation_grants` (the mechanism already exists).
@@ -41,7 +41,7 @@ without replacing the working mechanism.
 - Full accountability for autonomous/agent actions (I7).
 - New durable store + revocation list to operate; TTL stays the backstop.
 
-## Resolved questions (#177)
+## Proposed resolutions (#177 — to review)
 - **Durable-chain home → Accounts.** Accountability is the authorization
   record-of-truth; attenuation, issuance, and `audit_events` are already
   Accounts-owned, and the chain must survive even where no product is installed. The
@@ -58,9 +58,10 @@ without replacing the working mechanism.
   principals stay deferred until cross-org portability is a real need.
 
 ## Decision
-**Accepted (2026-08-19).** Make the existing capability chain **durable** (append-only
-hash-chained journal in Accounts), **linked** (`delegation_grants.id` ↔ Work Context
-↔ `audit_events`), **revocable** (epoch + per-hop IDs), and **interoperable**
-(`actor_chain` → RFC 8693 `act`) — borrowing SOTA mechanisms without replacing the
-working owner/tenant/task guarantees. Recorded as ADR-[0004](../9-reference/decisions/0004-durable-actor-chain.md);
-phased at roadmap P1 (durability + interop) then P2 (revocation).
+**Proposed — pending review (#177).** The recommendation: make the existing capability
+chain **durable** (append-only hash-chained journal in Accounts), **linked**
+(`delegation_grants.id` ↔ Work Context ↔ `audit_events`), **revocable** (epoch + per-hop
+IDs), and **interoperable** (`actor_chain` → RFC 8693 `act`) — borrowing SOTA mechanisms
+without replacing the working owner/tenant/task guarantees. On sign-off, this becomes
+Accepted and draft ADR-[0004](../9-reference/decisions/0004-durable-actor-chain.md) is
+finalized; phased at roadmap P1 (durability + interop) then P2 (revocation).

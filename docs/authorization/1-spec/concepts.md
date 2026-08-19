@@ -57,7 +57,7 @@ identity ──► capability (actor chain, on-behalf-of, attenuated)
      capability (role → resource:action)  ⟶  CheckPermission (flat / org-wide)
      scope grant (role @ ancestor scope node)  ⟶  CheckAccess (hierarchy)
      record share (role @ this record)         ⟶  CheckAccess (overlay)
-     field permission (extra permission per field) ⟶ deferred (cut from v1, #177)
+     field permission (extra permission per field) ⟶ proposed cut (#177, to review)
 ```
 
 ## See also

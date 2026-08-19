@@ -73,7 +73,7 @@ impersonation is the modeled on-behalf-of hop today.
 | Service | internal credential + per-service key | **an end user** (RFC 8693 `act`) |
 | Platform Operator | SSO + platform role | sometimes **a user** (impersonation) |
 
-## Resolved (#177)
+## Proposed resolutions (#177 — to review)
 
 - **External Partner / Guest is deferred** to a post-v1 phase. v1 per-record
   sharing is **intra-org only** (RFC-0002); cross-org guest access is gated on a

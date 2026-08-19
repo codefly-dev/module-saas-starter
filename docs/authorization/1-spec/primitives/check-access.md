@@ -9,7 +9,7 @@ The companion to the existing `CheckPermission` (flat/org-wide RBAC). In one lin
 **Contract**
 - Answers `(subject, resource_type, resource_id, action) → allow/deny`. The record's
   scope is **resolved from `resource_id`** via the `record_scopes` binding, never
-  passed by the caller — this closes the load-bearing bypass (resolved #177).
+  passed by the caller — this closes the load-bearing bypass (proposed #177, to review).
 - Allow if **either** an ancestor **scope grant** or a direct **record share**
   grants a role that permits `(resource_type, action)` — resolved through the
   same `role_permissions` rows as RBAC (I6).

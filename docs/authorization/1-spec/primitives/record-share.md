@@ -17,7 +17,7 @@ deliberately is not.
 **Realized by:** RFC-0002 → implementation spike
 [`ltree-record-shares`](../../3-implementation/spikes/ltree-record-shares.md).
 
-**Decisions (RFC-0002, #177):** who may share = a **granted `share` capability**
+**Proposed (RFC-0002, #177 — to review):** who may share = a **granted `share` capability**
 (built-in editor has it; not admin-only, not ambient); **intra-org only in v1**
 (cross-org guest shares deferred); **no re-share**; additive-only, no per-record
 denial.

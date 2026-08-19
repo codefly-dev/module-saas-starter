@@ -9,7 +9,7 @@
 > **minimal** — a small redaction step, not a framework, out of scope for most
 > fields. These stories exist to decide *whether* we need even the minimal version.
 
-> ✅ **Aspect decision (#177): field-level visibility is CUT from v1.** The blunt
+> 🟡 **Proposed aspect call (#177 — to review): CUT field-level visibility from v1.** The blunt
 > scoping test below asks for one real field that needs "can read the record but
 > not this field." In the current accounts domain there is none: the sensitive
 > cases (billing/payment detail on `subscriptions`, MFA state, operator-only
@@ -23,19 +23,19 @@
 ### F1 · Hide a sensitive field from a role that can read the record
 **As an** Org Admin, **I want** a specific field (billing detail, personal identifier, internal note) hidden from members who can otherwise read the record, **so that** "can read the record" doesn't imply "can read everything on it."
 - Acceptance: a member with record read sees the protected field **blanked**, not an error — the response still succeeds (B15); a caller with the extra permission sees the real value; the client can distinguish "blanked because denied" from "genuinely empty."
-- ✅ **Decided (#177):** hypothetical for now — **no real F1 field** in the first domain (see aspect decision). Cut; if one appears, a fixed proto-annotated set, never per-tenant dynamic.
+- 🟡 **Proposed (#177 — to review):** hypothetical for now — **no real F1 field** in the first domain (see aspect decision). Cut; if one appears, a fixed proto-annotated set, never per-tenant dynamic.
 
 ### F2 · External partners never see internal fields
 **As an** Org Admin, **I want** internal-only fields never to appear for shared external partners, **so that** sharing a record doesn't leak internal annotations.
 - Acceptance: a partner reaching a record via a share sees only the non-internal fields (B1, B15).
-- ✅ **Decided (#177):** not required for guests either — guests are deferred (no cross-org sharing in v1), and when they land they get a **narrower projection message**, not field redaction ([`external-and-guest.md`](external-and-guest.md) GUEST-4).
+- 🟡 **Proposed (#177 — to review):** not required for guests either — guests are deferred (no cross-org sharing in v1), and when they land they get a **narrower projection message**, not field redaction ([`external-and-guest.md`](external-and-guest.md) GUEST-4).
 
 ### The blunt scoping decision this set must resolve
 Build the minimal redaction step **only if at least one real field genuinely needs F1**; otherwise declare field-level **out of scope** and split RPCs by visibility tier.
 > Name the concrete fields, on which records, that need F1. If the list is empty
 > or trivially avoidable by returning a narrower message, we do **not** build this.
 
-✅ **Resolved (#177): the list is empty / trivially avoidable — we do NOT build this.** Split RPCs by visibility tier instead.
+🟡 **Proposed (#177 — to review): the list is empty / trivially avoidable — do NOT build this.** Split RPCs by visibility tier instead.
 
 ### Explicitly not in scope
 - Field-level *encryption* / masking vs. DB-operator access — a compliance/threat-model concern (regulated PII), tracked separately, not role-based field visibility.

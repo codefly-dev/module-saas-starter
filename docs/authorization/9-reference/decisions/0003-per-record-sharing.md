@@ -1,6 +1,10 @@
 # ADR-0003 — Per-record sharing (record_shares overlay)
 
-- **Status:** Accepted
+> **Draft — proposed in #177, not yet accepted.** The decision below is a
+> recommendation pending review; RFC-0002 is in **Review**. This becomes the
+> immutable Accepted record only when the RFC is signed off.
+
+- **Status:** Draft (proposed #177)
 - **Date:** 2026-08-19
 - **From:** RFC-[0002](../../2-proposals/0002-per-record-sharing.md) (#177)
 - **Context:** RLS proves a row belongs to the caller's org, but nothing grants a

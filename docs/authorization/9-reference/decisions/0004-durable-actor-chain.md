@@ -1,6 +1,10 @@
 # ADR-0004 — Durable, linked, revocable actor chain
 
-- **Status:** Accepted
+> **Draft — proposed in #177, not yet accepted.** The decision below is a
+> recommendation pending review; RFC-0003 is in **Review**. This becomes the
+> immutable Accepted record only when the RFC is signed off.
+
+- **Status:** Draft (proposed #177)
 - **Date:** 2026-08-19
 - **From:** RFC-[0003](../../2-proposals/0003-durable-actor-chain.md) (#177)
 - **Context:** The capability chain already enforces attenuation correctly at sign

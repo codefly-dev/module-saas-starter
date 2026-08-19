@@ -1,6 +1,6 @@
 # RFC-0001 — Hierarchical scope via ltree + typed registry
 
-- **Status:** Accepted (2026-08-19, #177) — ADR [0002](../9-reference/decisions/0002-hierarchical-scope.md)
+- **Status:** Review (#177) — proposed decisions below, pending sign-off; draft ADR [0002](../9-reference/decisions/0002-hierarchical-scope.md)
 - **Created:** 2026-08-19
 - **Serves:** [hierarchical-access](../0-product/stories/hierarchical-access.md) H1–H4; behaviors B4–B6.
 - **Relates to:** RFC-0002 (shares reuse the same resolver), gap analysis gaps 1, 5, 6.
@@ -39,7 +39,7 @@ individual`-shaped tree. Must preserve the RLS floor (I1) and fail-closed (I2).
   can't be labels.
 - Optional RLS-side composition needs a new `app.current_principal_id` GUC.
 
-## Resolved questions (#177)
+## Proposed resolutions (#177 — to review)
 1. **Path label encoding → hyphen-stripped node UUID hex.** `scope_nodes.id` stays a
    real UUID; its `scope_path` **label** is that UUID with hyphens removed — 32 chars
    of `[0-9a-f]`, a universally valid `ltree` label on every supported Postgres. The
@@ -59,9 +59,11 @@ individual`-shaped tree. Must preserve the RLS floor (I1) and fail-closed (I2).
    [teams](../0-product/stories/teams.md) TEAM-3).
 
 ## Decision
-**Accepted (2026-08-19).** Build `scope_nodes` (typed ltree registry) + `scope_grants`
-+ `CheckAccess` ancestor-match, most-specific-wins, strictly additive above the RLS
-floor (I1). Encoding and edit-authority as resolved above. The record's scope is
-resolved *from* its id, never a caller field — see the spike's load-bearing decision
-([open question 2](../3-implementation/spikes/ltree-record-shares.md)). Recorded as
-ADR-[0002](../9-reference/decisions/0002-hierarchical-scope.md); phased at roadmap P1.
+**Proposed — pending review (#177).** The recommendation: build `scope_nodes` (typed
+ltree registry) + `scope_grants` + `CheckAccess` ancestor-match, most-specific-wins,
+strictly additive above the RLS floor (I1). Encoding and edit-authority as proposed
+above. The record's scope is resolved *from* its id, never a caller field — see the
+spike's load-bearing proposal
+([open question 2](../3-implementation/spikes/ltree-record-shares.md)). On sign-off,
+this becomes Accepted and draft ADR-[0002](../9-reference/decisions/0002-hierarchical-scope.md)
+is finalized; phased at roadmap P1.

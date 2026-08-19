@@ -67,7 +67,7 @@ Every story's acceptance criteria should be expressible as one or more of these
 rules firing. If a proposed behavior can't be traced to a rule here (or a new
 rule we add), it's a signal the behavior isn't agreed yet.
 
-## Resolved (#177)
+## Proposed resolutions (#177 — to review)
 
 - **B5 vs B10 — confirmed, cannot conflict.** They are different axes: B5
   (most-specific-*visible*-wins) picks *which node* a record resolves at; B10
