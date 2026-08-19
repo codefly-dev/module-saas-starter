@@ -29,6 +29,15 @@ Authorization answers three questions, in order:
   inheriting to the node's subtree.
 - **Record share** — "subject may act on **this specific record**," across the
   ownership boundary; the per-instance overlay on top of hierarchy.
+- **Record-scope binding** *(proposed #177, to review)* — the stored mapping
+  `resource_id → scope path`, the single home of a record's scope. `CheckAccess`
+  resolves a record's scope from this binding, never from a caller field, so a path
+  can't be forged (the same discipline that binds id→org for RLS).
+- **Action set** *(proposed #177, to review)* — the typed vocabulary `read · list ·
+  create · write · delete · share · export · admin`. The `admin ⊇ write ⊇ read`
+  implication would be realized at role-definition time (a senior role's permission
+  set lists the junior rows), not by a runtime resolver — `CheckPermission` stays
+  exact-match today. The rest are orthogonal (granted explicitly).
 - **Capability (Work Context)** — a short-lived signed token carrying an
   **actor chain**: who is acting on whose behalf, each hop **attenuating**.
 - **Attenuation** — the rule that a delegation hop can only *narrow* authority,
@@ -51,7 +60,7 @@ identity ──► capability (actor chain, on-behalf-of, attenuated)
      capability (role → resource:action)  ⟶  CheckPermission (flat / org-wide)
      scope grant (role @ ancestor scope node)  ⟶  CheckAccess (hierarchy)
      record share (role @ this record)         ⟶  CheckAccess (overlay)
-     field permission (extra permission per field) ⟶ redaction (optional)
+     field permission (extra permission per field) ⟶ proposed cut (#177, to review)
 ```
 
 ## See also

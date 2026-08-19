@@ -120,6 +120,30 @@ CREATE INDEX IF NOT EXISTS idx_record_shares_subject
 CREATE INDEX IF NOT EXISTS idx_record_shares_resource
     ON record_shares (org_id, resource_type, resource_id);
 
+-- ── 4. Record→scope binding (closes the load-bearing footgun) ────────────
+-- The SINGLE home of a product record's scope node (no duplicated scope_path
+-- column on the product table). The product writes/updates this row when it
+-- creates or moves a record. CheckAccess resolves the record's scope_path FROM
+-- here by (resource_type, resource_id) — never accepted from the caller — the same
+-- pattern as MethodPolicy resource_bindings binding an id -> org for RLS: the
+-- authorization input is proven from storage, not trusted from the request. Because
+-- the scope has one home, there is nothing to fall out of sync. A record with no
+-- binding row resolves to no scope and matches nothing (fail-closed).
+CREATE TABLE IF NOT EXISTS record_scopes (
+    org_id        UUID  NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
+    resource_type TEXT  NOT NULL,
+    resource_id   TEXT  NOT NULL,
+    scope_path    LTREE NOT NULL,
+    updated_at    TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    PRIMARY KEY (org_id, resource_type, resource_id)
+);
+-- Single-record CheckAccess looks a binding up by the PK (resource_type,
+-- resource_id). This GiST index serves the OTHER direction — the list resolver's
+-- descendant enumeration "which records fall under the caller's entitled paths"
+-- (rs.scope_path <@ ANY($entitled_paths), open question 6) — not the PK lookup.
+CREATE INDEX IF NOT EXISTS idx_record_scopes_path
+    ON record_scopes USING GIST (org_id, scope_path);
+
 -- ── RLS: tenant floor only (subject filtering is in CheckAccess) ─────────
 ALTER TABLE scope_nodes    ENABLE ROW LEVEL SECURITY;
 ALTER TABLE scope_nodes    FORCE  ROW LEVEL SECURITY;
@@ -127,6 +151,8 @@ ALTER TABLE scope_grants   ENABLE ROW LEVEL SECURITY;
 ALTER TABLE scope_grants   FORCE  ROW LEVEL SECURITY;
 ALTER TABLE record_shares  ENABLE ROW LEVEL SECURITY;
 ALTER TABLE record_shares  FORCE  ROW LEVEL SECURITY;
+ALTER TABLE record_scopes  ENABLE ROW LEVEL SECURITY;
+ALTER TABLE record_scopes  FORCE  ROW LEVEL SECURITY;
 
 CREATE POLICY scope_nodes_tenant ON scope_nodes
     USING      (org_id::text = current_setting('app.current_org_id', true))
@@ -137,18 +163,23 @@ CREATE POLICY scope_grants_tenant ON scope_grants
 CREATE POLICY record_shares_tenant ON record_shares
     USING      (org_id::text = current_setting('app.current_org_id', true))
     WITH CHECK (org_id::text = current_setting('app.current_org_id', true));
+CREATE POLICY record_scopes_tenant ON record_scopes
+    USING      (org_id::text = current_setting('app.current_org_id', true))
+    WITH CHECK (org_id::text = current_setting('app.current_org_id', true));
 
 -- ── Exact grants (migration 63/67 convention) ────────────────────────────
-REVOKE ALL PRIVILEGES ON scope_nodes, scope_grants, record_shares FROM app_tenant;
+REVOKE ALL PRIVILEGES ON scope_nodes, scope_grants, record_shares, record_scopes FROM app_tenant;
 GRANT SELECT, INSERT, UPDATE, DELETE ON scope_nodes   TO app_tenant;
 GRANT SELECT, INSERT, UPDATE, DELETE ON scope_grants  TO app_tenant;
 GRANT SELECT, INSERT, UPDATE, DELETE ON record_shares TO app_tenant;
+GRANT SELECT, INSERT, UPDATE, DELETE ON record_scopes TO app_tenant;
 GRANT SELECT, INSERT, UPDATE, DELETE ON scope_nodes   TO app_control_plane;
 GRANT SELECT, INSERT, UPDATE, DELETE ON scope_grants  TO app_control_plane;
 GRANT SELECT, INSERT, UPDATE, DELETE ON record_shares TO app_control_plane;
+GRANT SELECT, INSERT, UPDATE, DELETE ON record_scopes TO app_control_plane;
 ```
 
-Down migration is the mirror: `DROP TABLE … CASCADE` for the three tables (leave
+Down migration is the mirror: `DROP TABLE … CASCADE` for the four tables (leave
 the extensions — other things may use them).
 
 ---
@@ -168,13 +199,14 @@ of ancestor scope-grants and per-record shares, both joined through
 // specific record, via either a hierarchical scope grant at any ancestor of the
 // record's scope_path, or a direct per-record share. It is the hierarchical +
 // per-record companion to CheckPermission; org-wide/flat capability still comes
-// from CheckPermission. recordPath is the record's own scope node (the product
-// resolves it from its RLS-protected row before calling).
+// from CheckPermission. The record's scope_path is resolved internally from
+// record_scopes by (resource_type, resourceID) — it is NOT a caller parameter
+// (see the resolved SECURITY note below).
 func (s *PostgresStore) CheckAccess(
 	ctx context.Context,
 	subjectID string, subjectKind gen.SubjectKind,
 	resourceType, action string,
-	orgID, resourceID, recordPath string,
+	orgID, resourceID string,
 ) (bool, string, error) {
 	w := wool.Get(ctx).In("CheckAccess")
 	executor := s.getQueryExecutor(ctx)
@@ -195,21 +227,34 @@ func (s *PostgresStore) CheckAccess(
 		return false, "", fmt.Errorf("check access: unsupported subject kind %s", subjectKind)
 	}
 
-	// $1 subject, $2 resource(type), $3 action, $4 recordPath (ltree), $5 resourceID.
+	// $1 subject, $2 resource_type, $3 action, $4 resourceID.
 	// Ancestor branch: a grant whose scope_path is an ancestor-or-equal of the
-	// record's path (g.scope_path @> $4). Overlay branch: a direct share on the id.
-	// A NULL role_permissions wildcard ('*') matches, same as CheckPermission.
+	// record's path — and the record's path is resolved from record_scopes by
+	// (resource_type, resourceID), NOT from the caller. Overlay branch: a direct
+	// share on the id. A NULL role_permissions wildcard ('*') matches, same as
+	// CheckPermission.
 	//
-	// SECURITY: $4 (recordPath) MUST be the record's TRUE stored scope, resolved
-	// from resourceID's own RLS-protected row — never a request field. Otherwise a
-	// caller entitled at one scope can authorize a resourceID that actually lives
-	// under a different scope. See open question 2 (bind recordPath to resourceID).
+	// SECURITY [PROPOSED #177, to review — was open question 2]: a record's scope has
+	// exactly ONE home — the record_scopes binding — and CheckAccess reads it
+	// server-side from resourceID under the tenant floor (the same way MethodPolicy
+	// resource_bindings resolve id->org). Two properties follow, and both matter:
+	//   (a) no request field carries the path, so there is nothing to forge; and
+	//   (b) there is no second copy of the scope (the product does NOT keep its own
+	//       scope_path column — the list resolver below joins record_scopes too), so
+	//       "stale scope" is not expressible: the record's scope IS whatever
+	//       record_scopes says.
+	// A resourceID with no binding resolves to no scope and matches nothing
+	// (fail-closed, I2). The product's only obligation is to write the binding when
+	// it creates or moves a record; a missing/not-yet-written binding denies — it
+	// never wrongly allows.
 	query := `
 		SELECT 'scope' AS via
 		FROM scope_grants g
 		JOIN role_permissions rp ON rp.role_id = g.role_id
 		WHERE ` + fmt.Sprintf(subjectPredicate, "g") + `
-		  AND g.scope_path @> $4::ltree
+		  AND g.scope_path @> (
+		        SELECT rs.scope_path FROM record_scopes rs
+		        WHERE rs.resource_type = $2 AND rs.resource_id = $4)
 		  AND (g.expires_at IS NULL OR g.expires_at > now())
 		  AND (rp.resource = '*' OR rp.resource = $2)
 		  AND (rp.action   = '*' OR rp.action   = $3)
@@ -219,14 +264,14 @@ func (s *PostgresStore) CheckAccess(
 		JOIN role_permissions rp ON rp.role_id = s.role_id
 		WHERE `+fmt.Sprintf(subjectPredicate, "s")+`
 		  AND s.resource_type = $2
-		  AND s.resource_id   = $5
+		  AND s.resource_id   = $4
 		  AND (s.expires_at IS NULL OR s.expires_at > now())
 		  AND (rp.resource = '*' OR rp.resource = $2)
 		  AND (rp.action   = '*' OR rp.action   = $3)
 		LIMIT 1`
 
 	var via string
-	err := executor.QueryRow(ctx, query, subjectID, resourceType, action, recordPath, resourceID).Scan(&via)
+	err := executor.QueryRow(ctx, query, subjectID, resourceType, action, resourceID).Scan(&via)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return false, "no scope grant or record share", nil
@@ -248,7 +293,7 @@ func (s *Service) CheckAccess(ctx context.Context, req *gen.CheckAccessRequest) 
 		a, r, err := s.store.CheckAccess(ctx,
 			req.SubjectId, req.SubjectKind,
 			req.ResourceType, req.Action,
-			req.OrgId, req.ResourceId, req.RecordPath)
+			req.OrgId, req.ResourceId)
 		allowed, reason = a, r
 		return err
 	}
@@ -279,16 +324,21 @@ if !ok {
 `CheckAccess` answers "can I touch this one record." Listing needs the dual: the
 set of records a caller may see, with the **most-specific grant winning** when
 the same node is reachable at several depths. That's the `nlevel() DESC` +
-`DISTINCT ON` query — run it against the product's table (which carries a
-`scope_path ltree` column), still under the RLS tenant floor:
+`DISTINCT ON` query — join the product's rows to their scope via `record_scopes`
+(the single scope home; there is no duplicated `scope_path` column on the product
+table), still under the RLS tenant floor:
 
 ```sql
 SELECT DISTINCT ON (a.id) a.id, g.role_id, g.scope_path AS granted_at
 FROM   <product_table> a
+JOIN   record_scopes rs
+  ON   rs.org_id = a.org_id
+  AND  rs.resource_type = '<type>'
+  AND  rs.resource_id   = a.id::text
 JOIN   scope_grants g
   ON   g.org_id = a.org_id
   AND  <subjectPredicate on g>
-  AND  g.scope_path @> a.scope_path        -- ancestor-or-equal, GiST-indexed
+  AND  g.scope_path @> rs.scope_path       -- ancestor-or-equal, GiST-indexed
 WHERE  a.org_id = current_setting('app.current_org_id', true)::uuid
 ORDER  BY a.id, nlevel(g.scope_path) DESC;  -- deepest grant wins
 -- UNION the record_shares overlay for shared-but-not-in-hierarchy rows.
@@ -296,6 +346,13 @@ ORDER  BY a.id, nlevel(g.scope_path) DESC;  -- deepest grant wins
 
 This is the "default-deny visibility filter applied to metadata before content
 loads" pattern the Drive/GitHub/Notion references all use.
+
+`record_scopes` is the **single home** of a record's scope for *both* paths — the
+single-record `CheckAccess` (looked up by primary key) and this list resolver
+(joined in). There is deliberately **no** duplicated `scope_path` column on the
+product table, so there is no second copy to keep in sync and no way for the scope
+CheckAccess trusts to diverge from the one the product stored. The product writes
+the binding once, when it creates or moves the record.
 
 ---
 
@@ -307,10 +364,13 @@ loads" pattern the Drive/GitHub/Notion references all use.
   point at the same `roles` → `role_permissions` rows, so "what can this role do"
   has one definition across flat and hierarchical grants.
 - **`MethodPolicy` fit.** An RPC over hierarchical data would declare its
-  `resource:action` as today; the handler resolves the record's `scope_path`
-  from its own row (analogous to how `resource_bindings` resolve id→org) and
-  calls `CheckAccess`. No change to the descriptor compiler is required for the
-  handler-side path.
+  `resource:action` as today and call `CheckAccess` with just the `resourceID`;
+  `CheckAccess` resolves the record's `scope_path` from `record_scopes` internally
+  (analogous to how `resource_bindings` resolve id→org), so the handler never
+  supplies — and can't forge — a path. The product writes the record's scope to
+  `record_scopes` (its single home) when it creates or moves the record; there is no
+  second copy to keep in sync, and a missing binding denies (fail-closed). No change
+  to the descriptor compiler is required for the handler-side path.
 - **RLS-side composition is optional and later.** You *can* push the ancestor
   test into an RLS policy on the product table, but that needs the acting
   **principal** available as a GUC (see open questions). Handler-side
@@ -320,23 +380,28 @@ loads" pattern the Drive/GitHub/Notion references all use.
 
 ## Open questions & decisions (investigation)
 
-1. **ltree labels vs. UUIDs — real gotcha.** `ltree` path labels are restricted
-   (historically `[A-Za-z0-9_]`; newer Postgres widened the set but hyphens are
-   still not universally safe across versions). Raw UUIDs contain hyphens and
-   **cannot** be used as path labels as-is. Decide the label encoding: a slug,
-   a hyphen-stripped hex, or a short synthetic key per node. `scope_nodes.id`
-   stays a real UUID; `scope_path` uses the encoded labels. This needs settling
-   before any schema is real.
-2. **[SECURITY — load-bearing] Bind `recordPath` to `resourceID`.** The scope
-   branch authorizes purely on the caller-supplied `recordPath` (`g.scope_path @>
-   $4`); nothing in the primitive proves that path is the record's *true* stored
-   scope. If a handler ever fills `recordPath` from a request field, a caller
-   entitled at `foundation.solution_x` can authorize a `resourceID` that actually
-   lives under `foundation.solution_y`. This is the exact bypass `resource_bindings`
-   exist to prevent. **Decision needed:** either `CheckAccess` resolves the scope
-   *from* `resourceID` itself (one extra indexed lookup, removes the footgun), or
-   the contract makes "`recordPath` proven from the record's own RLS-protected row"
-   a hard, tested precondition — not prose. Prefer the former.
+1. **🟡 PROPOSED (#177 — to review) — ltree label encoding = hyphen-stripped node UUID hex.**
+   `ltree` labels are restricted (historically `[A-Za-z0-9_]`; hyphens aren't
+   universally safe across versions), so raw UUIDs can't be labels. `scope_nodes.id`
+   stays a real UUID; its `scope_path` **label** is that UUID with hyphens removed —
+   32 chars of `[0-9a-f]`, valid on every supported Postgres, stable across renames
+   (the human name lives in `label`). Rejected: slugs (rename/collision breaks
+   materialized paths); raw UUID (invalid). A compact per-node synthetic key is a
+   valid later optimization only if shallow-depth paths ever grow too long.
+2. **🟡 PROPOSED (#177 — to review) — resolve scope FROM `resourceID`; make `record_scopes` its single home.**
+   The former of the two options (and the one this doc preferred). `CheckAccess` no
+   longer takes a caller `recordPath`; it resolves the record's `scope_path` from
+   the `record_scopes(resource_type, resource_id → scope_path)` binding under the
+   tenant floor — exactly the pattern `resource_bindings` use to bind id→org.
+   Crucially, `record_scopes` is the **single** home of a record's scope: the product
+   keeps no duplicate `scope_path` column (the list resolver joins `record_scopes`
+   too), so there is no second copy to desync. This removes both failure modes: there
+   is no request-supplied path to forge, and no stale copy for CheckAccess to trust —
+   the record's scope *is* whatever `record_scopes` says. An unbound id matches
+   nothing (fail-closed); the product's sole obligation is to write the binding on
+   create/move, and a missing write denies rather than wrongly allows.
+   The one extra indexed lookup is the cost; the migration and Go sketch above
+   reflect this.
 3. **No `app.current_principal_id` GUC today.** Only `app.current_org_id` and
    `app.current_user_id` exist. Handler-side `CheckAccess` sidesteps this
    (subject is a query parameter). RLS-side composition would need a principal
@@ -357,8 +422,9 @@ loads" pattern the Drive/GitHub/Notion references all use.
 6. **Performance.** The GiST `@>` ancestor test is fast; the risk is the
    list-resolver's correlated cost on wide result sets. If profiling shows it,
    precompute the caller's entitled ancestor paths once per request and pass them
-   as an array (`a.scope_path <@ ANY($paths)`). Start with the join for
-   correctness; optimize only if measured.
+   as an array (`rs.scope_path <@ ANY($paths)` against `record_scopes`, served by
+   `idx_record_scopes_path`). Start with the join for correctness; optimize only if
+   measured.
 7. **Graduation trigger.** If group-of-groups nesting or folder-of-folders depth
    grows past what recursive SQL serves comfortably, this is the inflection point
    to move `scope_grants`/`record_shares` behind a ReBAC PDP (SpiceDB/OpenFGA/
@@ -378,17 +444,22 @@ real PR must additionally:
 
 - Give the migration its **real next number**, add the **down** migration, and
   regenerate **`module/tools/base-manifest.json`** from a clean worktree (base-integrity gate).
-- Classify the three tables as **tenant** relations in the executable
-  scope/RLS inventory and the **exact grant matrix**, or the accounts infra
-  suite's "every public table is classified + forced-RLS + granted" gate fails
-  (the "Enforce tenant RLS coverage" CI step).
+- Classify the **four** tables (`scope_nodes`, `scope_grants`, `record_shares`,
+  `record_scopes`) as **tenant** relations in the executable scope/RLS inventory and
+  the **exact grant matrix**, or the accounts infra suite's "every public table is
+  classified + forced-RLS + granted" gate fails (the "Enforce tenant RLS coverage"
+  CI step).
 - Add infra integration tests: cross-tenant blocking + fail-closed-on-unwrapped
   for each table (the `RLS_PLAN.md` test pattern), plus `CheckAccess` unit tests
-  for ancestor inheritance, per-record share, team inheritance, expiry, and
-  wildcard `role_permissions`.
+  for ancestor inheritance, per-record share, team inheritance, expiry, wildcard
+  `role_permissions`, and the **scope-bound-to-id** guard (a `resourceID` whose
+  `record_scopes` path is under a scope the caller is *not* entitled to must be
+  denied even if the caller is entitled elsewhere — the open-question-2 bypass).
 - Confirm the connection pool runs **transaction mode** so `SET LOCAL`/`set_config(..., true)`
   can't leak `app.current_org_id` across pooled requests (the top multi-tenant
   RLS footgun; `AUTHZ.md` says per-tx `SET LOCAL` is already used — this just
   re-confirms the pool mode).
-- Decide the ltree label encoding (open question 1) and the `CheckAccessRequest`
-  proto shape before generating anything.
+- The ltree label encoding (open question 1) and the record-scope binding (open
+  question 2) are **proposed (to review)** above; the `CheckAccessRequest` proto carries
+  `resource_id` (no `record_path` field) since the scope is resolved from
+  `record_scopes`.

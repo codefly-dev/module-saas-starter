@@ -37,7 +37,7 @@ human-approves-agent elevation.
 | No per-record cross-owner sharing | RFC-0002 |
 | Untyped scope taxonomy | RFC-0001 |
 | Chain not durable / linked / auditable | RFC-0003 |
-| No field-level authz | product decision pending ([story F](../0-product/stories/field-visibility.md)) |
+| No field-level authz | decided **out of scope** ([ADR-0005](decisions/0005-field-level-visibility-out-of-scope.md)); revisit with record sharing |
 | No ABAC / conditional | not yet scoped (bounded predicates in Go — see research) |
 | No nested-doc subtree authz | covered by RFC-0001 (decompose to rows) |
 

@@ -15,12 +15,15 @@ CheckAccess(
   subject:        { id, kind: principal | team },
   resource_type:  string,        // same vocabulary as role_permissions.resource
   resource_id:    string,        // the product's record id
-  record_scope:   scope_path,    // the record's node in the scope tree
   action:         string,
   org:            id,
 ) -> { allowed: bool, via: "scope" | "share" | "none" }
 ```
 Contract: internal/PDP exposure (like `CheckPermission`); org-scoped; fail-closed.
+The record's scope is **not a caller field** — `CheckAccess` resolves it from the
+`record_scopes` binding by `resource_id`, so a caller can't forge a path it isn't
+entitled to (proposed #177, to review — [spike](../3-implementation/spikes/ltree-record-shares.md)
+open question 2).
 
 ### List visibility
 "Which records may this subject see," with most-specific-wins — returns ids +

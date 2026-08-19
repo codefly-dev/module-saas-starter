@@ -1,6 +1,6 @@
 # RFC-0002 — Per-record sharing (record_shares overlay)
 
-- **Status:** Draft
+- **Status:** Review (#177) — proposed decisions below, pending sign-off; draft ADR [0003](../9-reference/decisions/0003-per-record-sharing.md)
 - **Created:** 2026-08-19
 - **Serves:** [record-sharing](../0-product/stories/record-sharing.md) S1–S4; behaviors B7–B10.
 - **Depends on:** RFC-0001 (shares the `CheckAccess` resolver + capability vocabulary).
@@ -33,10 +33,23 @@ additive, expirable, team-aware sharing (B7–B10), highest-grant-wins (B10).
 - Adds a second grant source to resolve; kept cheap via indexes.
 - Group/userset shares of shares are the graduation signal toward a PDP.
 
-## Open questions
-- Who may share — every editor, or admin-only (is "share" a capability)?
-- Cross-org (External Partner) shares in v1 or later?
-- Notification on share (product/UX).
+## Proposed resolutions (#177 — to review)
+- **Who may share → a granted capability.** `share` would be a new first-class action
+  in the role vocabulary (resolved through `role_permissions`, I6; no such action
+  exists today). The built-in **editor** role would then carry it by default, so it's
+  not admin-only, but it stays grantable/revocable like any permission — not an
+  ambient right of every editor. (record-sharing S1.)
+- **Cross-org shares → later.** v1 is **intra-org only**; External-Partner shares
+  defer to a phase gated on a guest-identity surface (external-and-guest, personas).
+  The primitive is built subject-kind-agnostic so guests slot in without a reshape.
+- **Notification → deferred (product/UX).** No in-app notification in v1; a
+  `record_share.created` audit event is emitted. Notification is a UI surface added
+  with the Share feature, not a blocker for the primitive.
 
 ## Decision
-_Pending review._
+**Proposed — pending review (#177).** The recommendation: build the `record_shares`
+overlay + a `CheckAccess` share branch, **additive only** (no per-record denial, B8),
+**no re-share** (default no), **intra-org v1**, gated by the `share` capability.
+Effective role = highest across scope grants + shares (B10). On sign-off, this becomes
+Accepted and draft ADR-[0003](../9-reference/decisions/0003-per-record-sharing.md) is
+finalized; phased at roadmap P2 (after RFC-0001's resolver lands in P1).
