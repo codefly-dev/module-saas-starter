@@ -38,6 +38,15 @@ type accessClaims struct {
 	AuthenticationTime    *jwt.NumericDate    `json:"auth_time,omitempty"`
 	AssuranceLevel        string              `json:"acr,omitempty"`
 	MFAVerifiedAt         *jwt.NumericDate    `json:"mfa_at,omitempty"`
+	Act                   *actorClaim         `json:"act,omitempty"`
+}
+
+// actorClaim is the RFC 8693 `act` on-behalf-of chain (see pkg/auth Actor). The
+// sidecar re-emits it verbatim as the x-act header so a downstream service that
+// authorizes from forwarded headers still sees who is acting for the user.
+type actorClaim struct {
+	Subject string      `json:"sub"`
+	Act     *actorClaim `json:"act,omitempty"`
 }
 
 // Sidecar implements Envoy ext_authz with two auth paths:
@@ -175,6 +184,11 @@ func (s *Sidecar) checkJWT(tokenString string) (*authv3.CheckResponse, error) {
 	if claims.ActingAsUserID != "" {
 		hdrs = append(hdrs, hdr("x-acting-as-user-id", claims.ActingAsUserID))
 	}
+	if claims.Act != nil {
+		if encoded, err := json.Marshal(claims.Act); err == nil {
+			hdrs = append(hdrs, hdr("x-act", string(encoded)))
+		}
+	}
 	if len(claims.ScopedRoles) > 0 {
 		// JSON payload, e.g. {"module-a":["analyst"]}, so downstream services can
 		// authorize per-scope roles without calling back into accounts.
@@ -243,7 +257,7 @@ func (s *Sidecar) allow(headers []*corev3.HeaderValueOption) *authv3.CheckRespon
 var canonicalUpstreamAuthHeaders = []string{
 	"x-user-id", "x-org-id", "x-org-role", "x-platform-role", "x-roles",
 	"x-scoped-roles", "x-scoped-roles-truncated", "x-auth-id", "x-user-email", "x-user-name", "x-session-id",
-	"x-acting-as-user-id", "x-scopes", "x-mfa-satisfied",
+	"x-acting-as-user-id", "x-act", "x-scopes", "x-mfa-satisfied",
 	"x-authentication-methods", "x-auth-time", "x-assurance-level", "x-mfa-verified-at",
 }
 

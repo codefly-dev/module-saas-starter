@@ -231,11 +231,11 @@ func doWork(ctx context.Context) (Clean, error) {
 		return nil, err
 	}
 	minter := ed25519minter.New(ed25519minter.Config{
-		Issuer:        "saas-starter",
-		Audience:      "saas-starter",
-		SessionPolicy: sessionPolicy,
+		Issuer:                     "saas-starter",
+		Audience:                   "saas-starter",
+		SessionPolicy:              sessionPolicy,
+		AdditionalVerificationKeys: previousSigningKeys(ctx),
 	}, priv, sessionStore)
-	registerPreviousSigningKeys(ctx, minter)
 
 	service.SetIdentityResolver(resolver)
 	service.SetJWTMinter(minter)
@@ -1240,12 +1240,14 @@ func configuredEmailSender(ctx context.Context) (email.Sender, error) {
 	}
 }
 
-// registerPreviousSigningKeys adds any rotated-out signing keys to the minter's
-// verification set so access tokens still signed by them keep verifying during
-// an overlapping rotation window. JWT_PREVIOUS_PUBLIC_KEYS is a comma-separated
-// list of base64 Ed25519 public keys; empty (the steady state) is a no-op. A
-// malformed entry is logged and skipped rather than failing startup.
-func registerPreviousSigningKeys(ctx context.Context, minter *ed25519minter.Minter) {
+// previousSigningKeys returns any rotated-out signing keys the minter should
+// still accept for verification, so access tokens signed by them keep verifying
+// during an overlapping rotation window. JWT_PREVIOUS_PUBLIC_KEYS is a
+// comma-separated list of base64 Ed25519 public keys; empty (the steady state)
+// yields none. A malformed entry is logged and skipped rather than failing
+// startup.
+func previousSigningKeys(ctx context.Context) []ed25519core.PublicKey {
+	var keys []ed25519core.PublicKey
 	for _, encoded := range strings.Split(workspaceEnv("internal-auth", "JWT_PREVIOUS_PUBLIC_KEYS"), ",") {
 		encoded = strings.TrimSpace(encoded)
 		if encoded == "" {
@@ -1253,11 +1255,12 @@ func registerPreviousSigningKeys(ctx context.Context, minter *ed25519minter.Mint
 		}
 		pub, err := decodeEd25519PublicKey(encoded)
 		if err != nil {
-			wool.Get(ctx).In("registerPreviousSigningKeys").Warn("ignoring malformed previous signing key", wool.ErrField(err))
+			wool.Get(ctx).In("previousSigningKeys").Warn("ignoring malformed previous signing key", wool.ErrField(err))
 			continue
 		}
-		minter.AddVerificationKey(pub)
+		keys = append(keys, pub)
 	}
+	return keys
 }
 
 // decodeEd25519PublicKey accepts a standard or raw-url base64 Ed25519 public

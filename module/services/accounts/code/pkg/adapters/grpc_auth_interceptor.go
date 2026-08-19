@@ -147,6 +147,7 @@ func (i *grpcPolicyAuthorizer) authorize(ctx context.Context, fullMethod string)
 	}
 	ctx = stampVerifiedIdentity(ctx, identity.UserID.String(), identity.OrgID.String(), identity.Assurance())
 	ctx = auth.WithVerifiedSessionID(ctx, identity.SessionID)
+	ctx = auth.WithVerifiedActor(ctx, identity.Actor)
 	ctx = withScopedRoles(ctx, identity.ScopedRoles)
 	ctx = withScopedRolesTruncated(ctx, identity.ScopedRolesTruncated)
 	if values := md.Get("x-scopes"); len(values) > 0 && values[0] != "" {
@@ -176,6 +177,7 @@ func stampForwardedGRPCIdentity(ctx context.Context, md metadata.MD) context.Con
 		ctx = withScopedRoles(ctx, parseScopedRoles(scopedRoles))
 	}
 	ctx = withScopedRolesTruncated(ctx, firstMetadataValue(md, "x-scoped-roles-truncated") == "true")
+	ctx = auth.WithVerifiedActor(ctx, auth.ParseActor(firstMetadataValue(md, "x-act")))
 	return auth.WithVerifiedSessionIDString(ctx, firstMetadataValue(md, "x-session-id"))
 }
 
@@ -219,7 +221,10 @@ func validInternalToken(candidate string) bool {
 }
 
 func validGatewayToken(candidate string) bool {
-	return candidate != "" && constantTimeTokenMatch(candidate, gatewayToken)
+	if gatewayToken == "" || candidate == "" || len(candidate) != len(gatewayToken) {
+		return false
+	}
+	return subtle.ConstantTimeCompare([]byte(candidate), []byte(gatewayToken)) == 1
 }
 
 // constantTimeTokenMatch reports whether candidate equals expected without a

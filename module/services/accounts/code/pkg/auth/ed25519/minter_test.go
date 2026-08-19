@@ -949,21 +949,50 @@ func TestWithActor_PushesNewCallerOntoChain(t *testing.T) {
 	require.Nil(t, base.Actor.Act, "original identity's chain is not mutated")
 }
 
+func TestMint_RejectsActorChainDeeperThanMax(t *testing.T) {
+	ctx := context.Background()
+	m, _ := newMinter(t)
+	want := newIdentity()
+	// One link past the bound: mint must fail closed rather than emit an
+	// unbounded token.
+	var chain *auth.Actor
+	for i := 0; i <= auth.MaxActorChainDepth; i++ {
+		chain = &auth.Actor{Subject: "svc:x", Act: chain}
+	}
+	want.Actor = chain
+
+	_, err := m.Mint(ctx, want)
+	require.ErrorIs(t, err, auth.ErrActorChainTooDeep)
+}
+
 func TestVerifyAccess_AcceptsPreviousSigningKeyDuringRotation(t *testing.T) {
 	ctx := context.Background()
-	previous, _ := newMinter(t) // outgoing signing key
-	current, _ := newMinter(t)  // freshly rotated-in signing key
+	prevPub, prevPriv, err := ed25519minter.GenerateKey()
+	require.NoError(t, err)
+	previous := ed25519minter.New(
+		ed25519minter.Config{Issuer: "test-issuer", Audience: "test-audience"},
+		prevPriv, &memoryStore{})
 
 	pair, err := previous.Mint(ctx, newIdentity())
 	require.NoError(t, err)
 
-	// Before registering the outgoing key, its token fails on the current minter.
-	_, err = current.VerifyAccess(pair.AccessToken)
+	// A rotated-in minter that does NOT know the outgoing key rejects its tokens.
+	_, newPriv, err := ed25519minter.GenerateKey()
+	require.NoError(t, err)
+	unaware := ed25519minter.New(
+		ed25519minter.Config{Issuer: "test-issuer", Audience: "test-audience"},
+		newPriv, &memoryStore{})
+	_, err = unaware.VerifyAccess(pair.AccessToken)
 	require.ErrorIs(t, err, auth.ErrTokenSignature)
 
-	// Registering the outgoing public key by kid restores verification for
-	// in-flight tokens without minting under it.
-	current.AddVerificationKey(previous.PublicKey())
+	// The same rotated-in minter constructed with the outgoing key in its
+	// verification set accepts in-flight tokens signed by it — selected by kid —
+	// without minting under it. The set is fixed at construction (no setter).
+	current := ed25519minter.New(ed25519minter.Config{
+		Issuer:                     "test-issuer",
+		Audience:                   "test-audience",
+		AdditionalVerificationKeys: []ed25519.PublicKey{prevPub},
+	}, newPriv, &memoryStore{})
 	got, err := current.VerifyAccess(pair.AccessToken)
 	require.NoError(t, err)
 	require.NotEqual(t, uuid.Nil, got.UserID)

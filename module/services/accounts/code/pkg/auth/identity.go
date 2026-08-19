@@ -2,6 +2,7 @@ package auth
 
 import (
 	"context"
+	"encoding/json"
 	"time"
 
 	"github.com/google/uuid"
@@ -97,18 +98,77 @@ const MaxScopedRoleAssignments = 64
 // Actor is one link in an on-behalf-of delegation chain (RFC 8693 `act`). It
 // identifies a party acting for the token's subject; Act, when set, names the
 // party that in turn delegated to this one, so a multi-hop call records every
-// intermediary. The chain is audit metadata, not an authorization grant: the
-// callee still authorizes the subject, and a service's authority to act is
-// enforced separately (see the `may_act` story SVC-4), never implied by
-// appearing here.
+// intermediary. The JSON tags are the on-the-wire `act` shape, shared by the
+// token claim and the sidecar-forwarded X-Act header. The chain is audit
+// metadata, not an authorization grant: the callee still authorizes the
+// subject, and a service's authority to act is enforced separately (see the
+// `may_act` story SVC-4), never implied by appearing here.
+//
+// Distinct from the `acting`/ActingAsUserID impersonation claim: that names a
+// single user an admin is *viewing as*; this names the service (or user) chain
+// *acting on behalf of* the subject, and can nest.
 type Actor struct {
 	// Subject is the acting party's canonical identity — a service's workload
 	// identity (its signing `kid`) for a service hop, or a user id for an
 	// admin acting on another's behalf.
-	Subject string
+	Subject string `json:"sub"`
 	// Act is the next actor outward: who delegated to Subject. Nil at the head
 	// of the chain (the party closest to the original subject).
-	Act *Actor
+	Act *Actor `json:"act,omitempty"`
+}
+
+// MaxActorChainDepth bounds how many links an on-behalf-of chain may carry so a
+// signed token stays a predictable size — mirroring MaxScopedRoleAssignments'
+// role in keeping the JWT bounded. It also fails closed against an accidental
+// cycle in an in-memory chain, which would otherwise be walked forever.
+const MaxActorChainDepth = 10
+
+// ValidateActorChain rejects a delegation chain that is deeper than
+// MaxActorChainDepth or has an empty subject at any link. A nil chain (the
+// common direct-session case) is valid. Callers mint and verify through this so
+// neither an oversized token is produced nor an oversized/blank one is trusted.
+func ValidateActorChain(actor *Actor) error {
+	for depth := 0; actor != nil; actor = actor.Act {
+		depth++
+		if depth > MaxActorChainDepth {
+			return ErrActorChainTooDeep
+		}
+		if actor.Subject == "" {
+			return ErrActorSubjectMissing
+		}
+	}
+	return nil
+}
+
+// MarshalActor encodes a chain as the JSON carried by the X-Act header. A nil
+// chain yields the empty string, which callers omit.
+func MarshalActor(actor *Actor) (string, error) {
+	if actor == nil {
+		return "", nil
+	}
+	encoded, err := json.Marshal(actor)
+	if err != nil {
+		return "", err
+	}
+	return string(encoded), nil
+}
+
+// ParseActor decodes an X-Act header value back into a chain, returning nil for
+// an empty, malformed, or policy-violating (too deep / blank subject) payload.
+// A miss is nil rather than an error because a chain absent from context reads
+// as "no recorded delegation", never as a denial.
+func ParseActor(raw string) *Actor {
+	if raw == "" {
+		return nil
+	}
+	var actor Actor
+	if err := json.Unmarshal([]byte(raw), &actor); err != nil {
+		return nil
+	}
+	if ValidateActorChain(&actor) != nil {
+		return nil
+	}
+	return &actor
 }
 
 // WithActor returns a copy of i whose delegation chain has actor pushed on as

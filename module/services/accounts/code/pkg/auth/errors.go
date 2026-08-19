@@ -29,6 +29,10 @@ var (
 	ErrDevelopmentAuthDisabled = errors.New("auth: development authentication disabled")
 	ErrInvalidOAuthRequest     = errors.New("auth: invalid oauth request")
 
+	// On-behalf-of (RFC 8693 `act`) hygiene
+	ErrActorChainTooDeep   = errors.New("auth: actor delegation chain exceeds maximum depth")
+	ErrActorSubjectMissing = errors.New("auth: actor delegation link has no subject")
+
 	// ErrJWKSUnavailable is the fail-closed outcome when a validator cannot
 	// reach or parse its configured key set. Verification is denied rather than
 	// downgraded to an unverified decode.
