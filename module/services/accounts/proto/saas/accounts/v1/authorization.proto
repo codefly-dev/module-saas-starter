@@ -164,6 +164,11 @@ message ScopeNode {
 
 message RegisterScopeNodeRequest {
   string org_id = 1 [(buf.validate.field).string.uuid = true];
+  // scope_path must be UNIQUE within the org and its immediate parent must
+  // already be registered (roots — a single label — have no parent). A placed
+  // record is a leaf: give each record its own distinct path, e.g.
+  // "foundation.customer_7.doc_<encoded_id>", not the shared container path —
+  // two records at the same path collide on the uniqueness constraint.
   string scope_path = 2 [(buf.validate.field).string.min_len = 1];
   string kind = 3 [(buf.validate.field).string.min_len = 1];
   string label = 4;
@@ -607,11 +612,14 @@ service PermissionService {
     option (google.api.http) = {delete: "/v1/record-shares"};
   }
 
-  // ListShares returns the shares on a specific record.
+  // ListShares returns the shares on a specific record. A record's share list
+  // is its access-control list, so it is admin-scoped like the other share
+  // management RPCs — a plain member must not be able to enumerate who a record
+  // they cannot see is shared with.
   rpc ListShares(ListSharesRequest) returns (ListSharesResponse) {
     option (saas.policy.v1.method_policy) = {
       exposure: EXPOSURE_AUTHENTICATED
-      tenant: TENANT_REQUIREMENT_ORG_MEMBER
+      tenant: TENANT_REQUIREMENT_ORG_ADMIN
       resource_bindings: {
         request_field: "org_id"
         target: RESOURCE_TARGET_ORGANIZATION

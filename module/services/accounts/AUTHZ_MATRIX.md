@@ -83,7 +83,7 @@ The compact tier is retained for compatibility. Guards, resource bindings, audit
 | `/saas.accounts.v1.PermissionService/GrantScope` | unary | `POST /v1/scope-grants` | `org_admin` | exposure=AUTHENTICATED; tenant=ORG_ADMIN | — | org_id → ORGANIZATION/DIRECT_ID | SUCCESS: scope.granted | FORBIDDEN / STANDARD_WRITE | CONFIDENTIAL → CONFIDENTIAL | Grant a role at a scope node (inherits to subtree). |
 | `/saas.accounts.v1.PermissionService/ListRoleAssignments` | unary | `GET /v1/role-assignments` | `auth` | exposure=AUTHENTICATED; tenant=USER | — | — | — | FORBIDDEN / STANDARD_READ | CONFIDENTIAL → CONFIDENTIAL | List assignments in an org. |
 | `/saas.accounts.v1.PermissionService/ListRoles` | unary | `GET /v1/roles` | `auth` | exposure=AUTHENTICATED; tenant=USER | — | — | — | FORBIDDEN / STANDARD_READ | CONFIDENTIAL → CONFIDENTIAL | List built-in + org-scoped roles. |
-| `/saas.accounts.v1.PermissionService/ListShares` | unary | `GET /v1/record-shares` | `org_member` | exposure=AUTHENTICATED; tenant=ORG_MEMBER | — | org_id → ORGANIZATION/DIRECT_ID | — | FORBIDDEN / STANDARD_READ | CONFIDENTIAL → CONFIDENTIAL | List the shares on a specific record. |
+| `/saas.accounts.v1.PermissionService/ListShares` | unary | `GET /v1/record-shares` | `org_admin` | exposure=AUTHENTICATED; tenant=ORG_ADMIN | — | org_id → ORGANIZATION/DIRECT_ID | — | FORBIDDEN / STANDARD_READ | CONFIDENTIAL → CONFIDENTIAL | List the shares on a specific record. |
 | `/saas.accounts.v1.PermissionService/RegisterScopeNode` | unary | `POST /v1/scope-nodes` | `org_admin` | exposure=AUTHENTICATED; tenant=ORG_ADMIN | — | org_id → ORGANIZATION/DIRECT_ID | SUCCESS: scope.node_registered | FORBIDDEN / STANDARD_WRITE | CONFIDENTIAL → CONFIDENTIAL | Register a scope node or place a record at one. |
 | `/saas.accounts.v1.PermissionService/RevokeRole` | unary | `DELETE /v1/role-assignments` | `auth` | exposure=AUTHENTICATED; tenant=USER | — | — | SUCCESS: role.revoked | FORBIDDEN / STANDARD_WRITE | CONFIDENTIAL → CONFIDENTIAL | Revoke a role assignment. |
 | `/saas.accounts.v1.PermissionService/RevokeScope` | unary | `DELETE /v1/scope-grants` | `org_admin` | exposure=AUTHENTICATED; tenant=ORG_ADMIN | — | org_id → ORGANIZATION/DIRECT_ID | SUCCESS: scope.revoked | FORBIDDEN / STANDARD_WRITE | CONFIDENTIAL → CONFIDENTIAL | Revoke a hierarchical scope grant. |
@@ -163,7 +163,7 @@ The compact tier is retained for compatibility. Guards, resource bindings, audit
 - `auth`: 38
 - `internal`: 10
 - `mfa`: 3
-- `org_admin`: 33
-- `org_member`: 27
+- `org_admin`: 34
+- `org_member`: 26
 - `platform_admin`: 22
 - `public`: 16

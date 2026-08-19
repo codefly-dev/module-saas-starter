@@ -80,8 +80,8 @@ func (s *Service) RevokeScope(ctx context.Context, actorID string, req *gen.Revo
 	}); err != nil {
 		return w.Wrapf(err, "cannot revoke scope")
 	}
-	s.emit(ctx, actorID, "user", EventScopeRevoked, "scope_grant", req.SubjectId, req.OrgId,
-		map[string]any{"role_id": req.RoleId, "scope_path": req.ScopePath})
+	s.emit(ctx, actorID, "user", EventScopeRevoked, "scope_grant", req.RoleId, req.OrgId,
+		map[string]any{"subject_id": req.SubjectId, "scope_path": req.ScopePath})
 	return nil
 }
 

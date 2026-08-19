@@ -1023,11 +1023,16 @@ func (x *ScopeNode) GetCreatedAt() *timestamppb.Timestamp {
 }
 
 type RegisterScopeNodeRequest struct {
-	state     protoimpl.MessageState `protogen:"open.v1"`
-	OrgId     string                 `protobuf:"bytes,1,opt,name=org_id,json=orgId,proto3" json:"org_id,omitempty"`
-	ScopePath string                 `protobuf:"bytes,2,opt,name=scope_path,json=scopePath,proto3" json:"scope_path,omitempty"`
-	Kind      string                 `protobuf:"bytes,3,opt,name=kind,proto3" json:"kind,omitempty"`
-	Label     string                 `protobuf:"bytes,4,opt,name=label,proto3" json:"label,omitempty"`
+	state protoimpl.MessageState `protogen:"open.v1"`
+	OrgId string                 `protobuf:"bytes,1,opt,name=org_id,json=orgId,proto3" json:"org_id,omitempty"`
+	// scope_path must be UNIQUE within the org and its immediate parent must
+	// already be registered (roots — a single label — have no parent). A placed
+	// record is a leaf: give each record its own distinct path, e.g.
+	// "foundation.customer_7.doc_<encoded_id>", not the shared container path —
+	// two records at the same path collide on the uniqueness constraint.
+	ScopePath string `protobuf:"bytes,2,opt,name=scope_path,json=scopePath,proto3" json:"scope_path,omitempty"`
+	Kind      string `protobuf:"bytes,3,opt,name=kind,proto3" json:"kind,omitempty"`
+	Label     string `protobuf:"bytes,4,opt,name=label,proto3" json:"label,omitempty"`
 	// Set both to place a product record at this node; leave both empty for a
 	// structural node.
 	ResourceType  string `protobuf:"bytes,5,opt,name=resource_type,json=resourceType,proto3" json:"resource_type,omitempty"`
@@ -2619,7 +2624,7 @@ const file_saas_accounts_v1_authorization_proto_rawDesc = "" +
 	"\x06org_id\x10\x02\x18\x010\x01:\x18\n" +
 	"\x14record.share_revoked\x10\x02@\x01H\x04P\x03X\x03`\x01\x82\xd3\xe4\x93\x02\x13*\x11/v1/record-shares\x12\x98\x01\n" +
 	"\n" +
-	"ListShares\x12#.saas.accounts.v1.ListSharesRequest\x1a$.saas.accounts.v1.ListSharesResponse\"?\xc2\xf3\x18\"\b\x02\x10\x03*\f\n" +
+	"ListShares\x12#.saas.accounts.v1.ListSharesRequest\x1a$.saas.accounts.v1.ListSharesResponse\"?\xc2\xf3\x18\"\b\x02\x10\x04*\f\n" +
 	"\x06org_id\x10\x02\x18\x010\x01:\x02\x10\x01@\x01H\x03P\x03X\x03`\x01\x82\xd3\xe4\x93\x02\x13\x12\x11/v1/record-shares2\x8d\x06\n" +
 	"\x10PrincipalService\x12l\n" +
 	"\fGetPrincipal\x12%.saas.accounts.v1.GetPrincipalRequest\x1a\x1b.saas.accounts.v1.Principal\"\x18\xc2\xf3\x18\x14\b\x03\x10\x010\x01:\x02\x10\x01@\x01H\aP\x03X\x03`\x01\x12v\n" +

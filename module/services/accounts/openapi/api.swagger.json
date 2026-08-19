@@ -3032,6 +3032,7 @@
           "type": "string"
         },
         "scopePath": {
+          "description": "scope_path must be UNIQUE within the org and its immediate parent must\nalready be registered (roots — a single label — have no parent). A placed\nrecord is a leaf: give each record its own distinct path, e.g.\n\"foundation.customer_7.doc_<encoded_id>\", not the shared container path —\ntwo records at the same path collide on the uniqueness constraint.",
           "type": "string"
         }
       },
@@ -7741,7 +7742,7 @@
             }
           }
         },
-        "summary": "ListShares returns the shares on a specific record.",
+        "summary": "ListShares returns the shares on a specific record. A record's share list\nis its access-control list, so it is admin-scoped like the other share\nmanagement RPCs — a plain member must not be able to enumerate who a record\nthey cannot see is shared with.",
         "tags": [
           "PermissionService"
         ]

@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"regexp"
+	"strings"
 	"time"
 
 	gen "accounts/pkg/gen/saas/accounts/v1"
@@ -134,6 +135,35 @@ func (s *PostgresStore) CheckAccess(ctx context.Context, subjectID string, subje
 	return true, "granted via " + via, nil
 }
 
+// scopeParentPath returns the immediate parent of a dotted ltree path, or "" if
+// the path is a root (a single label with no separator).
+func scopeParentPath(path string) string {
+	i := strings.LastIndex(path, ".")
+	if i < 0 {
+		return ""
+	}
+	return path[:i]
+}
+
+// requireVisibleRole rejects a role_id the caller's tenant cannot see. The
+// roles FK bypasses RLS, so without this a tenant could bind a grant/share to
+// another org's role_id; such a row is inert (that role's role_permissions are
+// hidden, so it never authorizes) but it is meaningless junk. Under WithOrgTx
+// the roles policy exposes only own-org and built-in/global (org_id IS NULL)
+// roles, so a plain existence probe is the visibility test.
+func requireVisibleRole(ctx context.Context, executor QueryExecutor, roleID string) error {
+	var visible bool
+	if err := executor.QueryRow(ctx,
+		`SELECT EXISTS(SELECT 1 FROM roles WHERE id = $1)`, roleID,
+	).Scan(&visible); err != nil {
+		return err
+	}
+	if !visible {
+		return status.Errorf(codes.FailedPrecondition, "role %q is not a role in this org", roleID)
+	}
+	return nil
+}
+
 // RegisterScopeNode inserts a node into the org's scope tree, or places a
 // product record at a node when ResourceType/ResourceId are set. node.Id and
 // node.OrgId are set by the caller.
@@ -143,6 +173,21 @@ func (s *PostgresStore) RegisterScopeNode(ctx context.Context, node *gen.ScopeNo
 
 	if err := validateScopePath(node.ScopePath); err != nil {
 		return err
+	}
+
+	// Enforce parent-exists so the registry stays a connected tree rather than a
+	// bag of orphan paths (the typed-registry intent of gap 6). A root node — a
+	// single label with no dot — has no parent to check.
+	if parent := scopeParentPath(node.ScopePath); parent != "" {
+		var parentExists bool
+		if err := executor.QueryRow(ctx,
+			`SELECT EXISTS(SELECT 1 FROM scope_nodes WHERE scope_path = $1::ltree)`, parent,
+		).Scan(&parentExists); err != nil {
+			return w.Wrapf(err, "failed to check parent scope node")
+		}
+		if !parentExists {
+			return status.Errorf(codes.FailedPrecondition, "parent scope %q is not registered", parent)
+		}
 	}
 
 	var resourceType, resourceID any
@@ -182,6 +227,9 @@ func (s *PostgresStore) GrantScope(ctx context.Context, grant *gen.ScopeGrant) e
 	if err != nil {
 		return err
 	}
+	if err := requireVisibleRole(ctx, executor, grant.RoleId); err != nil {
+		return w.Wrapf(err, "failed to validate role")
+	}
 
 	var exists bool
 	if err := executor.QueryRow(ctx,
@@ -202,13 +250,19 @@ func (s *PostgresStore) GrantScope(ctx context.Context, grant *gen.ScopeGrant) e
 		expiresAt = grant.ExpiresAt.AsTime()
 	}
 
+	// Idempotent on the natural key: re-granting the same (subject, scope, role)
+	// refreshes granted_by/expiry instead of raising a unique violation, matching
+	// AssignRole's ON CONFLICT behavior. RETURNING id echoes the existing row's
+	// id on conflict so the returned grant reflects what is actually stored.
 	var createdAt time.Time
 	err = executor.QueryRow(ctx, `
 		INSERT INTO scope_grants (id, org_id, subject_id, subject_kind, scope_path, role_id, granted_by, expires_at, created_at)
 		VALUES ($1, $2, $3, $4, $5::ltree, $6, $7, $8, NOW())
-		RETURNING created_at`,
+		ON CONFLICT (org_id, subject_id, subject_kind, scope_path, role_id)
+		DO UPDATE SET granted_by = EXCLUDED.granted_by, expires_at = EXCLUDED.expires_at
+		RETURNING id, created_at`,
 		grant.Id, grant.OrgId, grant.SubjectId, kind, grant.ScopePath, grant.RoleId, grantedBy, expiresAt,
-	).Scan(&createdAt)
+	).Scan(&grant.Id, &createdAt)
 	if err != nil {
 		return w.Wrapf(err, "failed to grant scope")
 	}
@@ -247,6 +301,9 @@ func (s *PostgresStore) ShareRecord(ctx context.Context, share *gen.RecordShare)
 	if err != nil {
 		return err
 	}
+	if err := requireVisibleRole(ctx, executor, share.RoleId); err != nil {
+		return w.Wrapf(err, "failed to validate role")
+	}
 	var grantedBy, expiresAt any
 	if share.GrantedBy != "" {
 		grantedBy = share.GrantedBy
@@ -255,14 +312,20 @@ func (s *PostgresStore) ShareRecord(ctx context.Context, share *gen.RecordShare)
 		expiresAt = share.ExpiresAt.AsTime()
 	}
 
+	// Idempotent on the natural key: re-sharing the same (record, subject, role)
+	// refreshes granted_by/expiry instead of raising a unique violation. RETURNING
+	// id echoes the existing row's id on conflict so the returned share reflects
+	// what is actually stored.
 	var createdAt time.Time
 	err = executor.QueryRow(ctx, `
 		INSERT INTO record_shares (id, org_id, resource_type, resource_id, subject_id, subject_kind, role_id, granted_by, expires_at, created_at)
 		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, NOW())
-		RETURNING created_at`,
+		ON CONFLICT (org_id, resource_type, resource_id, subject_id, subject_kind, role_id)
+		DO UPDATE SET granted_by = EXCLUDED.granted_by, expires_at = EXCLUDED.expires_at
+		RETURNING id, created_at`,
 		share.Id, share.OrgId, share.ResourceType, share.ResourceId,
 		share.SubjectId, kind, share.RoleId, grantedBy, expiresAt,
-	).Scan(&createdAt)
+	).Scan(&share.Id, &createdAt)
 	if err != nil {
 		return w.Wrapf(err, "failed to share record")
 	}

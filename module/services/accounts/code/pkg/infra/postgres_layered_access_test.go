@@ -260,3 +260,117 @@ func TestRegisterScopeNode_RejectsInvalidLabelEncoding(t *testing.T) {
 		require.Error(t, err, "path %q must be rejected", bad)
 	}
 }
+
+// Re-granting / re-sharing the same natural-key tuple is idempotent — it must
+// refresh the row, not raise a unique violation — matching AssignRole.
+func TestGrantScopeAndShareRecord_Idempotent(t *testing.T) {
+	orgID, principalID, roleID := layeredFixture(t, "doc", "read")
+	registerNode(t, orgID, "idem", "area", "", "")
+
+	grant := func() error {
+		return testStore.WithOrgTx(testCtx, orgID, func(ctx context.Context) error {
+			return testStore.GrantScope(ctx, &gen.ScopeGrant{
+				Id: business.NewIDString(), OrgId: orgID, SubjectId: principalID,
+				SubjectKind: gen.SubjectKind_SUBJECT_KIND_PRINCIPAL, ScopePath: "idem", RoleId: roleID,
+			})
+		})
+	}
+	require.NoError(t, grant())
+	require.NoError(t, grant(), "re-granting the same tuple must be idempotent")
+
+	share := func() error {
+		return testStore.WithOrgTx(testCtx, orgID, func(ctx context.Context) error {
+			return testStore.ShareRecord(ctx, &gen.RecordShare{
+				Id: business.NewIDString(), OrgId: orgID, ResourceType: "doc", ResourceId: "idem-doc",
+				SubjectId: principalID, SubjectKind: gen.SubjectKind_SUBJECT_KIND_PRINCIPAL, RoleId: roleID,
+			})
+		})
+	}
+	require.NoError(t, share())
+	require.NoError(t, share(), "re-sharing the same tuple must be idempotent")
+
+	var shares []*gen.RecordShare
+	require.NoError(t, testStore.WithOrgTx(testCtx, orgID, func(ctx context.Context) error {
+		var e error
+		shares, e = testStore.ListShares(ctx, orgID, "doc", "idem-doc")
+		return e
+	}))
+	require.Len(t, shares, 1, "an idempotent re-share must not create a duplicate row")
+}
+
+// The scope registry stays a connected tree: registering a node whose immediate
+// parent is not yet registered fails (roots are exempt).
+func TestRegisterScopeNode_RequiresParent(t *testing.T) {
+	orgID, _, _ := layeredFixture(t, "doc", "read")
+
+	orphan := testStore.WithOrgTx(testCtx, orgID, func(ctx context.Context) error {
+		return testStore.RegisterScopeNode(ctx, &gen.ScopeNode{
+			Id: business.NewIDString(), OrgId: orgID, ScopePath: "missing_parent.child", Kind: "x", Label: "child",
+		})
+	})
+	require.ErrorContains(t, orphan, "parent scope")
+
+	// Building top-down works.
+	registerNode(t, orgID, "present", "area", "", "")
+	require.NoError(t, testStore.WithOrgTx(testCtx, orgID, func(ctx context.Context) error {
+		return testStore.RegisterScopeNode(ctx, &gen.ScopeNode{
+			Id: business.NewIDString(), OrgId: orgID, ScopePath: "present.child", Kind: "x", Label: "child",
+		})
+	}))
+}
+
+// A grant/share must reference a role the tenant can actually see. A role
+// belonging to another org (reachable only because the FK bypasses RLS) is
+// rejected instead of stored as inert junk.
+func TestGrantScope_RejectsForeignOrgRole(t *testing.T) {
+	orgA, principalA, _ := layeredFixture(t, "doc", "read")
+	_, _, roleB := layeredFixture(t, "doc", "read") // role lives in a different org
+	registerNode(t, orgA, "foreign", "area", "", "")
+
+	err := testStore.WithOrgTx(testCtx, orgA, func(ctx context.Context) error {
+		return testStore.GrantScope(ctx, &gen.ScopeGrant{
+			Id: business.NewIDString(), OrgId: orgA, SubjectId: principalA,
+			SubjectKind: gen.SubjectKind_SUBJECT_KIND_PRINCIPAL, ScopePath: "foreign", RoleId: roleB,
+		})
+	})
+	require.ErrorContains(t, err, "not a role in this org")
+
+	err = testStore.WithOrgTx(testCtx, orgA, func(ctx context.Context) error {
+		return testStore.ShareRecord(ctx, &gen.RecordShare{
+			Id: business.NewIDString(), OrgId: orgA, ResourceType: "doc", ResourceId: "foreign-doc",
+			SubjectId: principalA, SubjectKind: gen.SubjectKind_SUBJECT_KIND_PRINCIPAL, RoleId: roleB,
+		})
+	})
+	require.ErrorContains(t, err, "not a role in this org")
+}
+
+// A grant via a built-in / global role (org_id IS NULL) authorizes: CheckAccess
+// resolves the wildcard permission through role_permissions, whose RLS exposes
+// global roles inside a tenant tx. This is the load-bearing visibility the whole
+// resolver relies on.
+func TestCheckAccess_GlobalRoleGrant(t *testing.T) {
+	principalID := seedUser(t)
+	orgID := seedOrg(t, principalID)
+	require.NoError(t, testStore.As(business.Identity{OrgID: orgID}).AddOrgMember(testCtx, principalID, "owner"))
+
+	// Global roles (org_id NULL) can only be minted by the control plane.
+	globalRoleID := business.NewIDString()
+	require.NoError(t, testStore.WithControlPlane(testCtx, func(ctx context.Context) error {
+		return testStore.CreateRole(ctx, &gen.Role{
+			Id: globalRoleID, Name: "global reader " + globalRoleID, Description: "global",
+			BuiltIn: true, Permissions: []*gen.Permission{{Resource: "doc", Action: "read"}},
+		})
+	}))
+
+	registerNode(t, orgID, "g", "area", "", "")
+	registerNode(t, orgID, "g.doc_1", "record", "doc", "global-doc")
+	require.NoError(t, testStore.WithOrgTx(testCtx, orgID, func(ctx context.Context) error {
+		return testStore.GrantScope(ctx, &gen.ScopeGrant{
+			Id: business.NewIDString(), OrgId: orgID, SubjectId: principalID,
+			SubjectKind: gen.SubjectKind_SUBJECT_KIND_PRINCIPAL, ScopePath: "g", RoleId: globalRoleID,
+		})
+	}))
+
+	require.True(t, checkAccess(t, orgID, principalID, gen.SubjectKind_SUBJECT_KIND_PRINCIPAL, "doc", "global-doc", "read"),
+		"a grant via a global/built-in role must authorize")
+}

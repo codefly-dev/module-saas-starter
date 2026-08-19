@@ -4278,7 +4278,7 @@
       ],
       "policy": {
         "exposure": "EXPOSURE_AUTHENTICATED",
-        "tenant": "TENANT_REQUIREMENT_ORG_MEMBER",
+        "tenant": "TENANT_REQUIREMENT_ORG_ADMIN",
         "permissions": [],
         "scopes": [],
         "resource_bindings": [
@@ -4300,7 +4300,7 @@
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
         "authentication_factor_attempt": false
       },
-      "policy_tier": "org_member",
+      "policy_tier": "org_admin",
       "description": "List the shares on a specific record.",
       "owner": {
         "module": "saas-starter",

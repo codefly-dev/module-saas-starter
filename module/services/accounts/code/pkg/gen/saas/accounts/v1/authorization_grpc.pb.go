@@ -73,7 +73,10 @@ type PermissionServiceClient interface {
 	ShareRecord(ctx context.Context, in *ShareRecordRequest, opts ...grpc.CallOption) (*ShareRecordResponse, error)
 	// RevokeShare removes a per-record share.
 	RevokeShare(ctx context.Context, in *RevokeShareRequest, opts ...grpc.CallOption) (*emptypb.Empty, error)
-	// ListShares returns the shares on a specific record.
+	// ListShares returns the shares on a specific record. A record's share list
+	// is its access-control list, so it is admin-scoped like the other share
+	// management RPCs — a plain member must not be able to enumerate who a record
+	// they cannot see is shared with.
 	ListShares(ctx context.Context, in *ListSharesRequest, opts ...grpc.CallOption) (*ListSharesResponse, error)
 }
 
@@ -270,7 +273,10 @@ type PermissionServiceServer interface {
 	ShareRecord(context.Context, *ShareRecordRequest) (*ShareRecordResponse, error)
 	// RevokeShare removes a per-record share.
 	RevokeShare(context.Context, *RevokeShareRequest) (*emptypb.Empty, error)
-	// ListShares returns the shares on a specific record.
+	// ListShares returns the shares on a specific record. A record's share list
+	// is its access-control list, so it is admin-scoped like the other share
+	// management RPCs — a plain member must not be able to enumerate who a record
+	// they cannot see is shared with.
 	ListShares(context.Context, *ListSharesRequest) (*ListSharesResponse, error)
 	mustEmbedUnimplementedPermissionServiceServer()
 }

@@ -644,6 +644,11 @@ func (s *PermServer) CheckAccess(ctx context.Context, req *gen.CheckAccessReques
 	return service.CheckAccess(ctx, req)
 }
 
+// The scope-tree and share management RPCs below are deliberately org-admin
+// scoped (requireRoleScope). The starter has no per-record ownership model, so
+// "the owner may share their own record" cannot be expressed yet; admin-only is
+// the fail-closed v1 policy (RFC-0002 open question). Widen this to record
+// owners once an ownership primitive exists.
 func (s *PermServer) RegisterScopeNode(ctx context.Context, req *gen.RegisterScopeNodeRequest) (*gen.RegisterScopeNodeResponse, error) {
 	if err := Validate(req); err != nil {
 		return nil, err
@@ -728,7 +733,9 @@ func (s *PermServer) ListShares(ctx context.Context, req *gen.ListSharesRequest)
 	if err != nil {
 		return nil, err
 	}
-	if err := requireOrgMember(ctx, actorID, req.OrgId); err != nil {
+	// A record's share list is its ACL; org-admin only, so a plain member can't
+	// enumerate who a record they cannot see is shared with.
+	if err := requireRoleScope(ctx, actorID, req.OrgId); err != nil {
 		return nil, err
 	}
 	return service.ListShares(ctx, req)

@@ -130,7 +130,10 @@ type PermissionServiceClient interface {
 	ShareRecord(context.Context, *connect.Request[v1.ShareRecordRequest]) (*connect.Response[v1.ShareRecordResponse], error)
 	// RevokeShare removes a per-record share.
 	RevokeShare(context.Context, *connect.Request[v1.RevokeShareRequest]) (*connect.Response[emptypb.Empty], error)
-	// ListShares returns the shares on a specific record.
+	// ListShares returns the shares on a specific record. A record's share list
+	// is its access-control list, so it is admin-scoped like the other share
+	// management RPCs — a plain member must not be able to enumerate who a record
+	// they cannot see is shared with.
 	ListShares(context.Context, *connect.Request[v1.ListSharesRequest]) (*connect.Response[v1.ListSharesResponse], error)
 }
 
@@ -363,7 +366,10 @@ type PermissionServiceHandler interface {
 	ShareRecord(context.Context, *connect.Request[v1.ShareRecordRequest]) (*connect.Response[v1.ShareRecordResponse], error)
 	// RevokeShare removes a per-record share.
 	RevokeShare(context.Context, *connect.Request[v1.RevokeShareRequest]) (*connect.Response[emptypb.Empty], error)
-	// ListShares returns the shares on a specific record.
+	// ListShares returns the shares on a specific record. A record's share list
+	// is its access-control list, so it is admin-scoped like the other share
+	// management RPCs — a plain member must not be able to enumerate who a record
+	// they cannot see is shared with.
 	ListShares(context.Context, *connect.Request[v1.ListSharesRequest]) (*connect.Response[v1.ListSharesResponse], error)
 }
 
