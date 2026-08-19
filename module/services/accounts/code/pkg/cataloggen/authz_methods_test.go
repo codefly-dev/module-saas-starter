@@ -20,7 +20,7 @@ func TestAuthorizationCatalogCompilationAndPolicyProjection(t *testing.T) {
 	require.NoError(t, cataloggen.ValidateAuthorizationCatalog(catalog))
 	require.Equal(t, "saas.authz.methods.v1", catalog.GetSchemaVersion())
 	require.Equal(t, "accounts", catalog.GetOwner().GetService())
-	require.Len(t, catalog.GetMethods(), 142)
+	require.Len(t, catalog.GetMethods(), 149)
 
 	var internalCount, failClosedCount, factorAttemptCount int
 	for _, method := range catalog.GetMethods() {
@@ -36,7 +36,7 @@ func TestAuthorizationCatalogCompilationAndPolicyProjection(t *testing.T) {
 			require.Contains(t, method.GetProcedure(), "Complete")
 		}
 	}
-	require.Equal(t, 9, internalCount)
+	require.Equal(t, 10, internalCount)
 	require.Equal(t, 15, failClosedCount)
 	require.Equal(t, 2, factorAttemptCount)
 	require.Equal(
@@ -77,10 +77,10 @@ func TestAuthorizationArtifactsAreDeterministicAndCurrent(t *testing.T) {
 	goDocument, err := cataloggen.RenderAuthSidecarAuthorizationMetadata(authz, service)
 	require.NoError(t, err)
 	require.Equal(t, string(readFixture(t, "../../../../auth-sidecar/code/authz_catalog_gen.go")), string(goDocument), "run: go generate ./pkg/cataloggen")
-	require.Equal(t, 142, strings.Count(string(goDocument), "{exposure:"))
+	require.Equal(t, 149, strings.Count(string(goDocument), "{exposure:"))
 	runtimeSections := strings.Split(string(goDocument), "var generatedRESTProcedureByRoute")
 	require.Len(t, runtimeSections, 2)
-	require.Equal(t, 134, strings.Count(runtimeSections[1], `"/saas.accounts.v1.`))
+	require.Equal(t, 140, strings.Count(runtimeSections[1], `"/saas.accounts.v1.`))
 }
 
 func methodByProcedure(

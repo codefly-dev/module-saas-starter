@@ -102,7 +102,9 @@ func registerCatalogRESTHandlers(ctx context.Context, mux *runtime.ServeMux, end
 }
 
 var catalogRESTExactRoutes = map[string]struct{}{
+	"DELETE /v1/record-shares":                 {},
 	"DELETE /v1/role-assignments":              {},
+	"DELETE /v1/scope-grants":                  {},
 	"GET /v1/.well-known/service-info":         {},
 	"GET /v1/acquisition":                      {},
 	"GET /v1/api-keys":                         {},
@@ -126,6 +128,7 @@ var catalogRESTExactRoutes = map[string]struct{}{
 	"GET /v1/platform/waitlist":                {},
 	"GET /v1/principals":                       {},
 	"GET /v1/public/plans":                     {},
+	"GET /v1/record-shares":                    {},
 	"GET /v1/role-assignments":                 {},
 	"GET /v1/roles":                            {},
 	"GET /v1/user/settings":                    {},
@@ -164,8 +167,11 @@ var catalogRESTExactRoutes = map[string]struct{}{
 	"POST /v1/organizations":                   {},
 	"POST /v1/platform/admins":                 {},
 	"POST /v1/principals:agent":                {},
+	"POST /v1/record-shares":                   {},
 	"POST /v1/role-assignments":                {},
 	"POST /v1/roles":                           {},
+	"POST /v1/scope-grants":                    {},
+	"POST /v1/scope-nodes":                     {},
 	"POST /v1/sso/disable":                     {},
 	"POST /v1/sso/setup":                       {},
 	"POST /v1/user/settings":                   {},

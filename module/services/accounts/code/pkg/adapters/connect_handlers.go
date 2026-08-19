@@ -305,6 +305,27 @@ func (h *permConnectHandler) CheckPermission(ctx context.Context, req *connect.R
 func (h *permConnectHandler) Decide(ctx context.Context, req *connect.Request[gen.DecideRequest]) (*connect.Response[gen.DecideResponse], error) {
 	return unary(ctx, req, h.inner.Decide)
 }
+func (h *permConnectHandler) CheckAccess(ctx context.Context, req *connect.Request[gen.CheckAccessRequest]) (*connect.Response[gen.CheckAccessResponse], error) {
+	return unary(ctx, req, h.inner.CheckAccess)
+}
+func (h *permConnectHandler) RegisterScopeNode(ctx context.Context, req *connect.Request[gen.RegisterScopeNodeRequest]) (*connect.Response[gen.RegisterScopeNodeResponse], error) {
+	return unary(ctx, req, h.inner.RegisterScopeNode)
+}
+func (h *permConnectHandler) GrantScope(ctx context.Context, req *connect.Request[gen.GrantScopeRequest]) (*connect.Response[gen.GrantScopeResponse], error) {
+	return unary(ctx, req, h.inner.GrantScope)
+}
+func (h *permConnectHandler) RevokeScope(ctx context.Context, req *connect.Request[gen.RevokeScopeRequest]) (*connect.Response[emptypb.Empty], error) {
+	return unary(ctx, req, h.inner.RevokeScope)
+}
+func (h *permConnectHandler) ShareRecord(ctx context.Context, req *connect.Request[gen.ShareRecordRequest]) (*connect.Response[gen.ShareRecordResponse], error) {
+	return unary(ctx, req, h.inner.ShareRecord)
+}
+func (h *permConnectHandler) RevokeShare(ctx context.Context, req *connect.Request[gen.RevokeShareRequest]) (*connect.Response[emptypb.Empty], error) {
+	return unary(ctx, req, h.inner.RevokeShare)
+}
+func (h *permConnectHandler) ListShares(ctx context.Context, req *connect.Request[gen.ListSharesRequest]) (*connect.Response[gen.ListSharesResponse], error) {
+	return unary(ctx, req, h.inner.ListShares)
+}
 
 // ============================================================================
 // IntrospectionService
