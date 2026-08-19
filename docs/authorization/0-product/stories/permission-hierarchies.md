@@ -12,7 +12,7 @@
 ### PERM-2 · Action implies weaker action
 **As a** product designer, **I want** "write" to imply "read," "admin" to imply "write," **so that** capabilities nest naturally.
 - Acceptance: an action ladder (read < write < admin) resolves implications.
-- 🟡 **Proposed (#177 — to review):** a **global** ladder `admin ⊇ write ⊇ read` (not per-resource). `delete`, `list`, `share`, `export`, `create` are **orthogonal** — *not* on the ladder, granted explicitly (see the canonical action set in [`resources-and-actions.md`](resources-and-actions.md)).
+- 🟡 **Proposed (#177 — to review):** a **global** ladder `admin ⊇ write ⊇ read` (not per-resource), **realized at role-definition time** — a senior role's permission set explicitly includes the junior rows, so there is no new runtime implication and `CheckPermission` stays exact-match (I6; no such logic exists today). `delete`, `list`, `share`, `export`, `create` are **orthogonal** — *not* on the ladder, granted explicitly (see the canonical action set in [`resources-and-actions.md`](resources-and-actions.md)).
 
 ### PERM-3 · Most-specific grant wins
 **As an** Org Admin, **I want** a specific grant to override a broad one, **so that** I can make exceptions (broad viewer, editor on one branch).

@@ -121,12 +121,14 @@ CREATE INDEX IF NOT EXISTS idx_record_shares_resource
     ON record_shares (org_id, resource_type, resource_id);
 
 -- ── 4. Record→scope binding (closes the load-bearing footgun) ────────────
--- Binds a product record id to its TRUE scope node, written transactionally with
--- the product row. CheckAccess resolves the record's scope_path FROM here by
--- (resource_type, resource_id) — it is never accepted from the caller. This is the
--- same pattern as MethodPolicy resource_bindings binding an id -> org for RLS: the
--- authorization input is proven from storage, not trusted from the request. A
--- record with no binding row resolves to no scope and matches nothing (fail-closed).
+-- The SINGLE home of a product record's scope node (no duplicated scope_path
+-- column on the product table). The product writes/updates this row when it
+-- creates or moves a record. CheckAccess resolves the record's scope_path FROM
+-- here by (resource_type, resource_id) — never accepted from the caller — the same
+-- pattern as MethodPolicy resource_bindings binding an id -> org for RLS: the
+-- authorization input is proven from storage, not trusted from the request. Because
+-- the scope has one home, there is nothing to fall out of sync. A record with no
+-- binding row resolves to no scope and matches nothing (fail-closed).
 CREATE TABLE IF NOT EXISTS record_scopes (
     org_id        UUID  NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
     resource_type TEXT  NOT NULL,
@@ -135,6 +137,10 @@ CREATE TABLE IF NOT EXISTS record_scopes (
     updated_at    TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     PRIMARY KEY (org_id, resource_type, resource_id)
 );
+-- Single-record CheckAccess looks a binding up by the PK (resource_type,
+-- resource_id). This GiST index serves the OTHER direction — the list resolver's
+-- descendant enumeration "which records fall under the caller's entitled paths"
+-- (rs.scope_path <@ ANY($entitled_paths), open question 6) — not the PK lookup.
 CREATE INDEX IF NOT EXISTS idx_record_scopes_path
     ON record_scopes USING GIST (org_id, scope_path);
 
@@ -228,13 +234,19 @@ func (s *PostgresStore) CheckAccess(
 	// share on the id. A NULL role_permissions wildcard ('*') matches, same as
 	// CheckPermission.
 	//
-	// SECURITY [PROPOSED #177, to review — was open question 2]: the scope is bound to the
-	// resourceID in storage. record_scopes is written transactionally with the
-	// product row under the tenant floor, exactly as MethodPolicy resource_bindings
-	// bind id->org today, so the authorization input is proven from storage, never
-	// trusted from the request. There is no caller-supplied recordPath to forge; a
-	// resourceID with no binding row resolves to no scope and matches nothing
-	// (fail-closed, I2).
+	// SECURITY [PROPOSED #177, to review — was open question 2]: a record's scope has
+	// exactly ONE home — the record_scopes binding — and CheckAccess reads it
+	// server-side from resourceID under the tenant floor (the same way MethodPolicy
+	// resource_bindings resolve id->org). Two properties follow, and both matter:
+	//   (a) no request field carries the path, so there is nothing to forge; and
+	//   (b) there is no second copy of the scope (the product does NOT keep its own
+	//       scope_path column — the list resolver below joins record_scopes too), so
+	//       "stale scope" is not expressible: the record's scope IS whatever
+	//       record_scopes says.
+	// A resourceID with no binding resolves to no scope and matches nothing
+	// (fail-closed, I2). The product's only obligation is to write the binding when
+	// it creates or moves a record; a missing/not-yet-written binding denies — it
+	// never wrongly allows.
 	query := `
 		SELECT 'scope' AS via
 		FROM scope_grants g
@@ -312,16 +324,21 @@ if !ok {
 `CheckAccess` answers "can I touch this one record." Listing needs the dual: the
 set of records a caller may see, with the **most-specific grant winning** when
 the same node is reachable at several depths. That's the `nlevel() DESC` +
-`DISTINCT ON` query — run it against the product's table (which carries a
-`scope_path ltree` column), still under the RLS tenant floor:
+`DISTINCT ON` query — join the product's rows to their scope via `record_scopes`
+(the single scope home; there is no duplicated `scope_path` column on the product
+table), still under the RLS tenant floor:
 
 ```sql
 SELECT DISTINCT ON (a.id) a.id, g.role_id, g.scope_path AS granted_at
 FROM   <product_table> a
+JOIN   record_scopes rs
+  ON   rs.org_id = a.org_id
+  AND  rs.resource_type = '<type>'
+  AND  rs.resource_id   = a.id::text
 JOIN   scope_grants g
   ON   g.org_id = a.org_id
   AND  <subjectPredicate on g>
-  AND  g.scope_path @> a.scope_path        -- ancestor-or-equal, GiST-indexed
+  AND  g.scope_path @> rs.scope_path       -- ancestor-or-equal, GiST-indexed
 WHERE  a.org_id = current_setting('app.current_org_id', true)::uuid
 ORDER  BY a.id, nlevel(g.scope_path) DESC;  -- deepest grant wins
 -- UNION the record_shares overlay for shared-but-not-in-hierarchy rows.
@@ -330,10 +347,12 @@ ORDER  BY a.id, nlevel(g.scope_path) DESC;  -- deepest grant wins
 This is the "default-deny visibility filter applied to metadata before content
 loads" pattern the Drive/GitHub/Notion references all use.
 
-The product table's `scope_path` column here is the **denormalized copy** the
-product keeps for its own bulk list queries; `record_scopes` (above) is the
-**authoritative** binding `CheckAccess` reads for a single-record decision. The
-product writes both in the same transaction as the row, so they never diverge.
+`record_scopes` is the **single home** of a record's scope for *both* paths — the
+single-record `CheckAccess` (looked up by primary key) and this list resolver
+(joined in). There is deliberately **no** duplicated `scope_path` column on the
+product table, so there is no second copy to keep in sync and no way for the scope
+CheckAccess trusts to diverge from the one the product stored. The product writes
+the binding once, when it creates or moves the record.
 
 ---
 
@@ -348,9 +367,10 @@ product writes both in the same transaction as the row, so they never diverge.
   `resource:action` as today and call `CheckAccess` with just the `resourceID`;
   `CheckAccess` resolves the record's `scope_path` from `record_scopes` internally
   (analogous to how `resource_bindings` resolve id→org), so the handler never
-  supplies — and can't forge — a path. Keeping `record_scopes` in sync is the
-  product's write-path obligation (write the binding in the same tx as the row). No
-  change to the descriptor compiler is required for the handler-side path.
+  supplies — and can't forge — a path. The product writes the record's scope to
+  `record_scopes` (its single home) when it creates or moves the record; there is no
+  second copy to keep in sync, and a missing binding denies (fail-closed). No change
+  to the descriptor compiler is required for the handler-side path.
 - **RLS-side composition is optional and later.** You *can* push the ancestor
   test into an RLS policy on the product table, but that needs the acting
   **principal** available as a GUC (see open questions). Handler-side
@@ -368,14 +388,18 @@ product writes both in the same transaction as the row, so they never diverge.
    (the human name lives in `label`). Rejected: slugs (rename/collision breaks
    materialized paths); raw UUID (invalid). A compact per-node synthetic key is a
    valid later optimization only if shallow-depth paths ever grow too long.
-2. **🟡 PROPOSED (#177 — to review) — resolve scope FROM `resourceID`; bind it in `record_scopes`.**
+2. **🟡 PROPOSED (#177 — to review) — resolve scope FROM `resourceID`; make `record_scopes` its single home.**
    The former of the two options (and the one this doc preferred). `CheckAccess` no
    longer takes a caller `recordPath`; it resolves the record's `scope_path` from
-   the `record_scopes(resource_type, resource_id → scope_path)` binding, written
-   transactionally with the product row under the tenant floor — exactly the pattern
-   `resource_bindings` use to bind id→org. This structurally removes the "entitled at
-   `solution_x`, authorize a `resourceID` under `solution_y`" bypass: there is no
-   request-supplied path to forge, and an unbound id matches nothing (fail-closed).
+   the `record_scopes(resource_type, resource_id → scope_path)` binding under the
+   tenant floor — exactly the pattern `resource_bindings` use to bind id→org.
+   Crucially, `record_scopes` is the **single** home of a record's scope: the product
+   keeps no duplicate `scope_path` column (the list resolver joins `record_scopes`
+   too), so there is no second copy to desync. This removes both failure modes: there
+   is no request-supplied path to forge, and no stale copy for CheckAccess to trust —
+   the record's scope *is* whatever `record_scopes` says. An unbound id matches
+   nothing (fail-closed); the product's sole obligation is to write the binding on
+   create/move, and a missing write denies rather than wrongly allows.
    The one extra indexed lookup is the cost; the migration and Go sketch above
    reflect this.
 3. **No `app.current_principal_id` GUC today.** Only `app.current_org_id` and
@@ -398,8 +422,9 @@ product writes both in the same transaction as the row, so they never diverge.
 6. **Performance.** The GiST `@>` ancestor test is fast; the risk is the
    list-resolver's correlated cost on wide result sets. If profiling shows it,
    precompute the caller's entitled ancestor paths once per request and pass them
-   as an array (`a.scope_path <@ ANY($paths)`). Start with the join for
-   correctness; optimize only if measured.
+   as an array (`rs.scope_path <@ ANY($paths)` against `record_scopes`, served by
+   `idx_record_scopes_path`). Start with the join for correctness; optimize only if
+   measured.
 7. **Graduation trigger.** If group-of-groups nesting or folder-of-folders depth
    grows past what recursive SQL serves comfortably, this is the inflection point
    to move `scope_grants`/`record_shares` behind a ReBAC PDP (SpiceDB/OpenFGA/

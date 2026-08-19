@@ -18,6 +18,6 @@ deliberately is not.
 [`ltree-record-shares`](../../3-implementation/spikes/ltree-record-shares.md).
 
 **Proposed (RFC-0002, #177 — to review):** who may share = a **granted `share` capability**
-(built-in editor has it; not admin-only, not ambient); **intra-org only in v1**
+(a new `share` action; built-in editor would carry it; not admin-only, not ambient); **intra-org only in v1**
 (cross-org guest shares deferred); **no re-share**; additive-only, no per-record
 denial.

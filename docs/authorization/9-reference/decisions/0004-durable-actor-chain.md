@@ -40,6 +40,12 @@ Sub-decisions:
 - A new durable store + revocation list to operate; TTL remains the backstop.
 - Enforcing the `created_by` edge can reject previously-accepted issuance paths —
   a deliberate tightening.
+- **Cross-owner reference.** The journal lives in Accounts but a hop may name a
+  product-owned task id. There is no cross-service FK; the journal is self-contained
+  (each hop is a content-addressed, immutable copy of the chain facts), so a product
+  task id is a **soft pointer**. Deleting/archiving a product task never orphans the
+  record — accountability survives independently, governed by the journal's own
+  retention policy, not the task lifecycle.
 
 ## Why (not) alternatives
 Adopting Biscuit or UCAN wholesale would lose the owner/tenant/task structural

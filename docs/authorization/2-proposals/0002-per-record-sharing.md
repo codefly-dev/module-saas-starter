@@ -34,10 +34,11 @@ additive, expirable, team-aware sharing (B7–B10), highest-grant-wins (B10).
 - Group/userset shares of shares are the graduation signal toward a PDP.
 
 ## Proposed resolutions (#177 — to review)
-- **Who may share → a granted capability.** `share` is a first-class action in the
-  role vocabulary (resolved through `role_permissions`, I6); the built-in **editor**
-  role carries it by default, so it's not admin-only, but it's grantable/revocable
-  like any permission — not an ambient right of every editor. (record-sharing S1.)
+- **Who may share → a granted capability.** `share` would be a new first-class action
+  in the role vocabulary (resolved through `role_permissions`, I6; no such action
+  exists today). The built-in **editor** role would then carry it by default, so it's
+  not admin-only, but it stays grantable/revocable like any permission — not an
+  ambient right of every editor. (record-sharing S1.)
 - **Cross-org shares → later.** v1 is **intra-org only**; External-Partner shares
   defer to a phase gated on a guest-identity surface (external-and-guest, personas).
   The primitive is built subject-kind-agnostic so guests slot in without a reshape.

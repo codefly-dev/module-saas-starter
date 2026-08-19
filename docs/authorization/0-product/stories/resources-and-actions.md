@@ -6,7 +6,12 @@
 > 🟡 **Proposed canonical action set (#177 — to review):** **`read · list · create · write · delete ·
 > share · export · admin`.** Two relations hold among them:
 > - **Implication ladder (read/write axis only):** `admin ⊇ write ⊇ read` — holding
->   a stronger action implies the weaker (PERM-2).
+>   a stronger action implies the weaker (PERM-2). **Realized at role-definition
+>   time** (a senior role's permission set explicitly lists the junior `(resource,
+>   action)` rows), *not* by a runtime resolver — so `CheckPermission` stays
+>   exact-match and capability remains single-sourced (I6). The system has no
+>   action-implication logic today; this is the proposed convention for how the
+>   built-in roles are authored.
 > - **Orthogonal actions:** `list`, `create`, `delete`, `share`, `export` are **not**
 >   implied by `write`; each is granted explicitly. This is what makes "editor who
 >   can't delete/export/share" expressible.

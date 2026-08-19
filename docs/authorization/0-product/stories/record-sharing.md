@@ -7,7 +7,7 @@
 ### S1 · Share one record with a colleague
 **As a** Member, **I want** to share a single record with another member, **so that** we collaborate on it without my granting access to everything in that scope.
 - Acceptance: sharing record `123` with user Y as "editor" lets Y edit `123` and grants no other access (B7); Y's effective role is strongest across scope grants + this share (B10); nobody else's access changes (B7).
-- 🟡 **Proposed (#177 — to review):** sharing is a **granted capability**, not ambient. `share` is a first-class action in the role vocabulary, resolved through `role_permissions` like any other (I6); the built-in **editor** role carries it by default, so a Member who can edit a record can share it — but it is grantable/revocable like any permission and can be withheld. Not admin-only (S1 is deliberately a Member story); not implicitly-any-editor (that can't be audited or tightened as a distinct grant). → RFC-0002.
+- 🟡 **Proposed (#177 — to review):** sharing is a **granted capability**, not ambient. `share` would be a first-class action in the role vocabulary, resolved through `role_permissions` like any other (I6). Note there is **no `share` action today** — this proposes adding it; the built-in **editor** role would then carry it by default, so a Member who can edit a record could share it — but it stays grantable/revocable like any permission and can be withheld. Not admin-only (S1 is deliberately a Member story); not implicitly-any-editor (that can't be audited or tightened as a distinct grant). → RFC-0002.
 
 ### S2 · Share with a team
 **As an** Org Admin, **I want** to share a record with a whole team, **so that** every current and future member can access it without re-sharing.
