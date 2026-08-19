@@ -129,6 +129,17 @@ type Store interface {
 	// Permission checking
 	CheckPermission(ctx context.Context, subjectID string, subjectKind gen.SubjectKind, resource string, action string, orgID string, scope string) (bool, string, error)
 
+	// Layered access — hierarchical scope grants + per-record shares (#178).
+	// CheckAccess resolves the record's scope from resource_id itself, never a
+	// caller-supplied path.
+	CheckAccess(ctx context.Context, subjectID string, subjectKind gen.SubjectKind, resourceType, resourceID, action string) (bool, string, error)
+	RegisterScopeNode(ctx context.Context, node *gen.ScopeNode) error
+	GrantScope(ctx context.Context, grant *gen.ScopeGrant) error
+	RevokeScope(ctx context.Context, orgID, subjectID string, subjectKind gen.SubjectKind, scopePath, roleID string) error
+	ShareRecord(ctx context.Context, share *gen.RecordShare) error
+	RevokeShare(ctx context.Context, orgID, resourceType, resourceID, subjectID string, subjectKind gen.SubjectKind, roleID string) error
+	ListShares(ctx context.Context, orgID, resourceType, resourceID string) ([]*gen.RecordShare, error)
+
 	// Identity resolution
 	ResolveIdentity(ctx context.Context, provider string, providerID string) (*ResolvedIdentity, error)
 
