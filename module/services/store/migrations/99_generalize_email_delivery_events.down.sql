@@ -1,14 +1,25 @@
 -- Reverse migration 99: restore the Resend-specific delivery-events shape from
--- migration 84. Rows recorded for any non-Resend provider violate the restored
--- CHECK (provider = 'resend'); this down migration assumes only Resend rows
--- exist, matching the state before 99 was applied.
-
+-- migration 84.
+--
+-- The target schema forbids any provider other than 'resend' (the restored
+-- CHECK), so reverting is necessarily destructive to non-Resend delivery
+-- history: those rows cannot exist under the Resend-only shape. Rather than
+-- assume none were written (an assumption this very migration's forward
+-- direction exists to falsify) and let the ADD CONSTRAINT fail on them, delete
+-- them explicitly here. Deletion touches only the delivery-event ledger; the
+-- invitation delivery_status it projected onto is left as-is.
 REVOKE EXECUTE ON FUNCTION public.record_delivery_event(
     TEXT, TEXT, TEXT, TEXT, TEXT, TIMESTAMPTZ, UUID
 ) FROM app_job_worker;
 DROP FUNCTION IF EXISTS public.record_delivery_event(
     TEXT, TEXT, TEXT, TEXT, TEXT, TIMESTAMPTZ, UUID
 );
+
+-- Discard non-Resend history so the restored Resend-only CHECKs validate. Rows
+-- with provider = 'resend' always carry a Resend event_type (only the Resend
+-- adapter writes them), so the restored event_type enum holds for the survivors.
+DELETE FROM public.email_delivery_events
+WHERE provider IS DISTINCT FROM 'resend';
 
 ALTER TABLE public.email_delivery_events
     DROP COLUMN delivery_status;

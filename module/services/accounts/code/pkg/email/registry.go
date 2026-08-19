@@ -12,8 +12,10 @@ import (
 type Factory func(ctx context.Context) (Sender, error)
 
 // Registry maps a provider name to its factory. It is an ordinary value built
-// and populated at startup; adding a provider is one Register call rather than
-// a new switch case.
+// and populated at startup. Adding a provider still edits the wiring that calls
+// Register (as a switch case would); what the registry buys over a switch is a
+// selection path that is unit-testable in isolation and uniformly
+// case-insensitive and fail-closed.
 type Registry struct {
 	factories map[string]Factory
 }
