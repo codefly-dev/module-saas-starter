@@ -10,8 +10,8 @@
 
 ### AUD-2 · Record the acting principal
 **As an** auditor, **I want** each action tagged with who did it, **so that** it's attributable.
-- Acceptance: actor id + type (user/api_key/service/agent) on every event (exists).
-- ❓ Consistent actor model across all surfaces?
+- Acceptance: actor id + type on every event (exists — `audit_events.actor_type` is `('user','api_key','system','agent')`, verified in migration 97).
+- ✅ **Decided (#177):** the four-value `actor_type` enum above is the actor model across all surfaces. *(Doc correction: earlier drafts said "service"; the actual enum value for a non-user backend actor is `system`.)*
 
 ### AUD-3 · Record on-behalf-of (the second party)
 **As an** auditor, **I want** to see when A acted for B (agent for human, operator impersonating), **so that** delegated actions are accountable.

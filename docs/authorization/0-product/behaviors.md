@@ -67,11 +67,18 @@ Every story's acceptance criteria should be expressible as one or more of these
 rules firing. If a proposed behavior can't be traced to a rule here (or a new
 rule we add), it's a signal the behavior isn't agreed yet.
 
-## Open questions
+## Resolved (#177)
 
-- **B5 vs B10:** most-specific-wins (visibility) and highest-grant-wins (role
-  strength) are different axes — confirm both, and confirm they never conflict.
-- **B8:** do we ever need per-record *revocation* (a deny that overrides an
-  inherited allow)? It's a large complexity jump; default is "no, v1."
-- **B13:** how fresh is "current"? One refresh cycle (token TTL) or immediate?
-  The system revokes sessions on role change today; confirm the SLA we promise.
+- **B5 vs B10 — confirmed, cannot conflict.** They are different axes: B5
+  (most-specific-*visible*-wins) picks *which node* a record resolves at; B10
+  (highest-grant-wins) picks *how strong a role* holds among all grants reaching
+  it. Resolution: most-specific node first (B5), then strongest role there (B10).
+  (See [`stories/hierarchical-access.md`](stories/hierarchical-access.md) H2.)
+- **B8 — no per-record revocation/deny in v1.** Shares and grants are additive
+  only; the complexity of a deny-that-overrides-an-inherited-allow isn't justified.
+  The "deny beats allow" rule stays latent (PERM-7) if we ever add denies.
+- **B13 — "current" is dual-path.** DB-backed decisions are immediate (sessions
+  revoked in the same transaction on role/membership change); token-claim-backed
+  reads are bounded by the access-token TTL (~15 min), never longer. Gate anything
+  that must revoke *instantly* on the DB path. This is invariant
+  [I4](../1-spec/invariants.md) — that is the SLA we promise.

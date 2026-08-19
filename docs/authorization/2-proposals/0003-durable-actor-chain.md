@@ -1,6 +1,6 @@
 # RFC-0003 — Durable, linked, revocable actor chain
 
-- **Status:** Draft
+- **Status:** Accepted (2026-08-19, #177) — ADR [0004](../9-reference/decisions/0004-durable-actor-chain.md)
 - **Created:** 2026-08-19
 - **Serves:** [acting-on-behalf](../0-product/stories/acting-on-behalf.md) A2–A5; behaviors B12–B14.
 - **Relates to:** the existing capability chain + `delegation_grants` (the mechanism already exists).
@@ -41,10 +41,26 @@ without replacing the working mechanism.
 - Full accountability for autonomous/agent actions (I7).
 - New durable store + revocation list to operate; TTL stays the backstop.
 
-## Open questions
-- Durable-chain home: Accounts or product?
-- Revision-epoch vs. per-hop revocation list boundaries (which handles what).
-- DID-based principals only if cross-org portability is needed (deferred).
+## Resolved questions (#177)
+- **Durable-chain home → Accounts.** Accountability is the authorization
+  record-of-truth; attenuation, issuance, and `audit_events` are already
+  Accounts-owned, and the chain must survive even where no product is installed. The
+  journal **references** product task ids but does not own their lifecycle —
+  task/session *lifecycle* stays product-owned (roadmap). (acting-on-behalf A4.)
+- **Revocation boundary → split by blast radius.** The `authorization_revision`
+  epoch handles **standing / bulk** invalidation (role or membership change revokes
+  every affected chain at once); **per-hop revocation IDs** handle **surgical**
+  single-chain revocation (kill one delegation without touching siblings). Short TTL
+  is the backstop under both. (lifecycle LIFE-4.)
+- **Owner edge → enforced at issuance.** Require the authorizing owner to be the
+  agent's registered `created_by` when a capability is minted (today only stored).
+- **Single human owner per agent** (immutable attenuation anchor, I3); DID-based
+  principals stay deferred until cross-org portability is a real need.
 
 ## Decision
-_Pending review._
+**Accepted (2026-08-19).** Make the existing capability chain **durable** (append-only
+hash-chained journal in Accounts), **linked** (`delegation_grants.id` ↔ Work Context
+↔ `audit_events`), **revocable** (epoch + per-hop IDs), and **interoperable**
+(`actor_chain` → RFC 8693 `act`) — borrowing SOTA mechanisms without replacing the
+working owner/tenant/task guarantees. Recorded as ADR-[0004](../9-reference/decisions/0004-durable-actor-chain.md);
+phased at roadmap P1 (durability + interop) then P2 (revocation).

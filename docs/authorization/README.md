@@ -62,14 +62,14 @@ Where each capability is in the pipeline. Update this row when a stage completes
 
 | Capability | Product | Spec | Proposal | Impl | Notes |
 |---|---|---|---|---|---|
-| Hierarchical / layered scope | 🟡 strawman | 🟡 seed | ◻︎ RFC-0001 draft | ◻︎ spike | ltree ancestor-match |
-| Per-record sharing | 🟡 strawman | 🟡 seed | ◻︎ RFC-0002 draft | ◻︎ spike | `record_shares` overlay |
-| Acting on behalf of (agents) | 🟡 strawman | 🟡 seed | ◻︎ RFC-0003 draft | ✅ chain exists | durability is the gap |
-| Field-level visibility | 🟡 strawman | ◻︎ | ◻︎ | ◻︎ | likely a redaction interceptor |
-| Typed scope registry | 🟡 strawman | 🟡 seed | folded into RFC-0001 | ◻︎ | closes the untyped-scope gap |
-| ABAC / conditional | ◻︎ | ◻︎ | ◻︎ | ◻︎ | bounded predicates in Go |
+| Hierarchical / layered scope | ✅ decided (#177) | 🟡 firm | ✅ RFC-0001 accepted → ADR-0002 | ◻︎ spike (design decided) | ltree ancestor-match; scope resolved from id |
+| Per-record sharing | ✅ decided (#177) | 🟡 firm | ✅ RFC-0002 accepted → ADR-0003 | ◻︎ spike | intra-org v1; `share` is a capability |
+| Acting on behalf of (agents) | ✅ decided (#177) | 🟡 firm | ✅ RFC-0003 accepted → ADR-0004 | ✅ chain exists; durability pending | chain home = Accounts; single owner |
+| Field-level visibility | ✅ decided (#177) — **cut v1** | — | — | — | split RPCs by tier; B15 latent |
+| Typed scope registry | ✅ decided (#177) | 🟡 firm | ✅ folded into RFC-0001 | ◻︎ | closes the untyped-scope gap |
+| ABAC / conditional | ◻︎ | ◻︎ | ◻︎ | ◻︎ | bounded predicates in Go (COND questions still open) |
 
-Legend: ✅ done · 🟡 drafted/strawman (needs review) · ◻︎ not started.
+Legend: ✅ done/decided · 🟡 drafted (needs review) · ◻︎ not started · — n/a (cut).
 
 ## Conventions
 
@@ -82,12 +82,19 @@ Legend: ✅ done · 🟡 drafted/strawman (needs review) · ◻︎ not started.
 - Everything traces back to a **persona** (`0-product/personas.md`) and respects
   the **invariants** (`1-spec/invariants.md`).
 
-## Right now (first iteration)
+## Right now (second iteration — post #177)
 
-The reference and a spec sketch exist; the **product layer is new and is
-strawman** — start there. Begin with the **[user-story backlog](0-product/stories/README.md)**:
-~140 stories across every aspect of auth (authentication, orgs, roles, permission
-hierarchies, resources & read/write/delete, tools, teams, API keys,
-service-to-service, operators, audit, conditional/time-bound, lifecycle, guests),
-each ending with **❓ open product questions** for the team to resolve. Answer the
-questions; those decisions flow into `1-spec/` and the RFCs.
+The **highest-leverage product questions are resolved** (#177) and have flowed into
+the spec, the three RFCs (now **Accepted**, with ADR-0002/0003/0004), and this status
+board. Resolved: hierarchical scope shape + edit authority, per-record sharing reach
+(intra-org v1) and who-may-share (a `share` capability), field-level (**cut v1**),
+agent ownership (single human owner) + chain depth, the canonical action set (delete
+& list are their own actions), nested-team inheritance (literal, no cascade), and the
+load-bearing `CheckAccess` design (scope resolved from the record's id, never a caller
+field). See the **[user-story backlog](0-product/stories/README.md)** for the inline
+`✅ Decided` / `🔷 Deferred` markers.
+
+**Still open:** the peripheral per-aspect questions (authentication, orgs, API keys,
+service-to-service, operators, audit, conditional/time-bound, lifecycle governance)
+remain `❓` for their own product review — they don't reshape the spec and aren't
+blocked. Resolve them the same way: answer inline, promote into the relevant RFC.

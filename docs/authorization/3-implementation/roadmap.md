@@ -14,8 +14,9 @@
   ensure the minted JWT carries the end-user identity end-to-end.
 
 ### P1 — Foundations (build in-repo)
-- **Hierarchical scope** (RFC-0001): `scope_nodes` + `scope_grants` + `CheckAccess`
-  ancestor-match, resolved most-specific-wins; RLS stays the floor.
+- **Hierarchical scope** (RFC-0001, accepted): `scope_nodes` + `scope_grants` +
+  `record_scopes` (id→scope binding) + `CheckAccess` ancestor-match, resolved
+  most-specific-wins; scope proven from the record's id; RLS stays the floor.
 - **Chain durability** (RFC-0003, part 1): content-address + hash-chain journal;
   link `delegation_grants` ↔ `actor_chain`.
 - **On-behalf-of interop** (RFC-0003): map `actor_chain` → RFC 8693 `act`.
@@ -27,7 +28,9 @@
 - **Typed scope registry** hardening (RFC-0001): validate paths on write.
 - **Chain revocation** (RFC-0003, part 2): per-hop revocation IDs on the epoch
   counter.
-- **Field-level** (if a real field needs it): redaction interceptor + annotations.
+- **Field-level** — **cut from v1** (#177): no real field needs record-read-but-
+  field-hidden today; split RPCs by visibility tier instead. Reopens as a redaction
+  interceptor + annotations only if a concrete field appears.
 - **ABAC** predicate→SQL compiler over RLS (if the Go enum proves useful).
 
 ### P3 — At scale / only at a real inflection (adopt / evaluate)

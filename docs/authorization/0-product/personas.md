@@ -73,11 +73,18 @@ impersonation is the modeled on-behalf-of hop today.
 | Service | internal credential + per-service key | **an end user** (RFC 8693 `act`) |
 | Platform Operator | SSO + platform role | sometimes **a user** (impersonation) |
 
-## Open questions
+## Resolved (#177)
 
-- Is **External Partner / Guest** a real near-term persona, or deferred? It
-  changes whether cross-org sharing is in the first cut.
-- Do we need a **read-only auditor** persona distinct from Guest (sees a wide
-  scope but can never write, ever)?
-- For **Agent**, is there always exactly one human owner, or can an agent be
-  owned by a team / another agent (chain depth > 1)?
+- **External Partner / Guest is deferred** to a post-v1 phase. v1 per-record
+  sharing is **intra-org only** (RFC-0002); cross-org guest access is gated on a
+  guest-identity surface that doesn't exist yet. The persona stays in the model so
+  the primitives are built subject-kind-agnostic, but no story in it is a v1
+  commitment. (See [`stories/external-and-guest.md`](stories/external-and-guest.md).)
+- **Read-only auditor is a distinct persona/role** — a strictly read-only role no
+  path can escalate, scoped either to one org or platform-wide (OPS-9). Kept
+  separate from Guest: an auditor reads a *wide* scope by policy; a guest reads a
+  *narrow* shared record. Distinct trust models, distinct roles.
+- **Agent has exactly one human owner** in v1 (immutable owner anchors attenuation,
+  I3). Chain *depth* > 1 is fine (deep chains allowed, limit 16); what's deferred
+  is an agent owned by a *team* or by *another agent*. (See
+  [`stories/acting-on-behalf.md`](stories/acting-on-behalf.md) A1–A2.)
