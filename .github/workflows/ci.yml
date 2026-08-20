@@ -174,6 +174,7 @@ jobs:
       has_work: ${{ steps.plan.outputs.has_work }}
       services: ${{ steps.plan.outputs.services }}
       base: ${{ steps.plan.outputs.base }}
+      all: ${{ steps.plan.outputs.all }}
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
@@ -196,11 +197,16 @@ jobs:
         run: |
           # Pushes to main and tags verify the full topology; PRs scope to the
           # delta against their base. A missing/zero base (first push) also
-          # falls back to the full topology.
+          # falls back to the full topology. This is the ONLY place the
+          # full-vs-delta decision (and the zero-sha normalization) is made;
+          # the fan-out jobs consume the `all`/`base` outputs verbatim so the
+          # contract cannot drift across the four jobs.
           base=""
+          all=true
           selection_args=(--head "${GITHUB_SHA}")
           if [[ -n "${CODEFLY_BASE}" && "${CODEFLY_BASE}" != "0000000000000000000000000000000000000000" ]]; then
             base="${CODEFLY_BASE}"
+            all=false
             selection_args+=(--base "${base}")
           else
             selection_args+=(--all)
@@ -213,12 +219,13 @@ jobs:
 
           # Never let an empty full-topology plan silence the gate on main/tags.
           has_work=false
-          if [[ -z "${base}" ]] || (( count > 0 )); then
+          if [[ "${all}" == "true" ]] || (( count > 0 )); then
             has_work=true
           fi
 
           {
             echo "base=${base}"
+            echo "all=${all}"
             echo "services=${services}"
             echo "has_work=${has_work}"
           } >> "${GITHUB_OUTPUT}"
@@ -226,7 +233,9 @@ jobs:
   codefly-quality:
     name: Codefly quality
     needs: codefly-plan
-    if: ${{ needs.codefly-plan.outputs.has_work == 'true' }}
+    # Always run on release tags: the publish job needs this gate, and a
+    # skipped dependency would skip publish silently rather than fail.
+    if: ${{ needs.codefly-plan.outputs.has_work == 'true' || startsWith(github.ref, 'refs/tags/v') }}
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
@@ -267,6 +276,7 @@ jobs:
       - name: Verify, sync-drift, lint, compile, test
         shell: bash
         env:
+          SELECTION_ALL: ${{ needs.codefly-plan.outputs.all }}
           CODEFLY_BASE: ${{ needs.codefly-plan.outputs.base }}
           # Affected services resolved once by codefly-plan; empty on full runs
           # only if the topology has no services.
@@ -277,10 +287,10 @@ jobs:
           CODEFLY__FIXTURE: dev-admin
         run: |
           selection_args=(--head "${GITHUB_SHA}")
-          if [[ -n "${CODEFLY_BASE}" ]]; then
-            selection_args+=(--base "${CODEFLY_BASE}")
-          else
+          if [[ "${SELECTION_ALL}" == "true" ]]; then
             selection_args+=(--all)
+          else
+            selection_args+=(--base "${CODEFLY_BASE}")
           fi
 
           codefly ci run "${selection_args[@]}" \
@@ -303,7 +313,9 @@ jobs:
   codefly-supply-chain:
     name: Codefly supply chain
     needs: codefly-plan
-    if: ${{ needs.codefly-plan.outputs.has_work == 'true' }}
+    # Always run on release tags: the publish job needs this gate, and a
+    # skipped dependency would skip publish silently rather than fail.
+    if: ${{ needs.codefly-plan.outputs.has_work == 'true' || startsWith(github.ref, 'refs/tags/v') }}
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
@@ -333,13 +345,14 @@ jobs:
       - name: Audit and SBOM
         shell: bash
         env:
+          SELECTION_ALL: ${{ needs.codefly-plan.outputs.all }}
           CODEFLY_BASE: ${{ needs.codefly-plan.outputs.base }}
         run: |
           selection_args=(--head "${GITHUB_SHA}")
-          if [[ -n "${CODEFLY_BASE}" ]]; then
-            selection_args+=(--base "${CODEFLY_BASE}")
-          else
+          if [[ "${SELECTION_ALL}" == "true" ]]; then
             selection_args+=(--all)
+          else
+            selection_args+=(--base "${CODEFLY_BASE}")
           fi
 
           # Keep the complete audit in the Codefly evidence report, including
@@ -371,7 +384,9 @@ jobs:
   codefly-build:
     name: Codefly build
     needs: codefly-plan
-    if: ${{ needs.codefly-plan.outputs.has_work == 'true' }}
+    # Always run on release tags: the publish job needs this gate, and a
+    # skipped dependency would skip publish silently rather than fail.
+    if: ${{ needs.codefly-plan.outputs.has_work == 'true' || startsWith(github.ref, 'refs/tags/v') }}
     runs-on: ubuntu-latest
     timeout-minutes: 60
     steps:
@@ -391,10 +406,10 @@ jobs:
           # The full topology produces several Docker images, including two
           # independent Next.js applications. Free the unused hosted-runner
           # toolchains so every affected image fits alongside the layers that
-          # `--jobs 4` shares between the concurrent service builds. No
-          # `docker system prune`: it would discard the pre-baked base layers
-          # this build reuses, and there is no cross-run cache to protect until
-          # `codefly build` grows `cache-from`/`cache-to` (see #194 item E).
+          # the parallel service builds share. No `docker system prune`: it
+          # would discard the pre-baked base layers this build reuses, and
+          # there is no cross-run cache to protect until `codefly build` grows
+          # `cache-from`/`cache-to` (see #194 item E).
           sudo rm -rf \
             /opt/ghc \
             /usr/local/lib/android \
@@ -402,28 +417,40 @@ jobs:
       - name: Build affected service images
         shell: bash
         env:
+          SELECTION_ALL: ${{ needs.codefly-plan.outputs.all }}
           CODEFLY_BASE: ${{ needs.codefly-plan.outputs.base }}
         run: |
           selection_args=(--head "${GITHUB_SHA}")
-          if [[ -n "${CODEFLY_BASE}" ]]; then
-            selection_args+=(--base "${CODEFLY_BASE}")
-          else
+          if [[ "${SELECTION_ALL}" == "true" ]]; then
             selection_args+=(--all)
+          else
+            selection_args+=(--base "${CODEFLY_BASE}")
           fi
 
+          # Build two services concurrently. The standard ubuntu-latest runner
+          # is 4 vCPU / 16 GB with ~14 GB free disk after the reclaim above;
+          # each Next.js `next build` is CPU- and memory-hungry, and there are
+          # two of them, so a higher fan-out risks an OOM kill or exhausting
+          # the disk on a full-topology build. Two at a time keeps the peak
+          # within the runner while still ~halving the serialized build time.
+          # Raise this in lockstep with a larger runner (see #194 item D).
+          jobs=2
+
           # Concurrent agent builds share the runner's Docker layer store, and
-          # the Store agent can still hit a transient export fault. Retry only
-          # that exact daemon error; genuine failures stop at once.
+          # the Store agent can still hit a transient export fault — it happened
+          # even serially, and running builds in parallel makes the race more
+          # likely, so allow a few retries. Retry only that exact daemon error;
+          # genuine failures stop at once.
           build_log="$(mktemp)"
           trap 'rm -f "${build_log}"' EXIT
-          for attempt in 1 2 3; do
+          for attempt in 1 2 3 4 5; do
             if codefly ci run "${selection_args[@]}" \
               --phase build \
               --output ".codefly/ci/build-${attempt}" \
-              --jobs 4 2>&1 | tee "${build_log}"; then
+              --jobs "${jobs}" 2>&1 | tee "${build_log}"; then
               break
             fi
-            if ! grep -Fq "layer does not exist" "${build_log}" || (( attempt == 3 )); then
+            if ! grep -Fq "layer does not exist" "${build_log}" || (( attempt == 5 )); then
               exit 1
             fi
             echo "::warning::Docker lost an image-export layer; syncing and retrying the build"
