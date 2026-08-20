@@ -41,6 +41,8 @@ var relationsByScope = map[relationScope][]string{
 		"platform_admins",
 	},
 	relationScopeTenant: {
+		"actor_chain_journal",
+		"actor_chain_revocations",
 		"api_keys",
 		"audit_events",
 		"audit_export_configs",
@@ -124,6 +126,8 @@ var appTenantRelationPrivileges = map[string]relationPrivileges{
 	"job_state_transitions":   {},
 
 	// Tenant-scoped relations.
+	"actor_chain_journal":                  {selectRows: true, insertRows: true},
+	"actor_chain_revocations":              {selectRows: true, insertRows: true},
 	"api_keys":                             {selectRows: true, insertRows: true, updateRows: true},
 	"audit_events":                         {selectRows: true, insertRows: true},
 	"audit_export_configs":                 {selectRows: true, insertRows: true, updateRows: true, deleteRows: true},
@@ -342,6 +346,12 @@ func TestControlPlaneRelationGrantsAreExact(t *testing.T) {
 			// Retention drops whole partitions via a SECURITY DEFINER function,
 			// not a row DELETE, so no DELETE grant is needed.
 			if relation == "audit_events" {
+				want = relationPrivileges{selectRows: true, insertRows: true}
+			}
+			// actor_chain_journal / actor_chain_revocations are append-only
+			// like audit_events: the control plane reads and inserts but never
+			// updates or deletes (an immutable trigger rejects those anyway).
+			if relation == "actor_chain_journal" || relation == "actor_chain_revocations" {
 				want = relationPrivileges{selectRows: true, insertRows: true}
 			}
 
