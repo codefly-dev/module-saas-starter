@@ -453,15 +453,12 @@ func doWork(ctx context.Context) (Clean, error) {
 	if err != nil {
 		return nil, err
 	}
-	if strings.EqualFold(strings.TrimSpace(os.Getenv("EMAIL_PROVIDER")), "resend") {
-		resendWebhook, err := email.NewResendWebhookHandler(email.ResendWebhookConfig{
-			SigningSecret: os.Getenv("RESEND_WEBHOOK_SECRET"),
-			Recorder:      jobStore,
-		})
+	if resend, ok := emailSender.(*email.ResendSender); ok {
+		path, resendWebhook, err := resend.DeliveryWebhook(jobStore)
 		if err != nil {
 			return nil, err
 		}
-		adapters.RegisterHTTPRoute("/v1/email/webhook/resend", resendWebhook)
+		adapters.RegisterHTTPRoute(path, resendWebhook)
 	}
 	emailJobHandler, err := email.NewJobHandler(emailSender)
 	if err != nil {
@@ -1209,35 +1206,42 @@ func identityEnvList(key string) []string {
 }
 
 // configuredEmailSender makes provider selection explicit. Production never
-// silently downgrades to a log sink because one Resend value is missing.
+// silently downgrades to a log sink because one Resend value is missing. Each
+// factory validates its own secrets and fails closed; adding a provider is one
+// Register call rather than a new switch case.
 func configuredEmailSender(ctx context.Context) (email.Sender, error) {
+	registry := email.NewRegistry()
+	registry.Register("log", logEmailFactory)
+	registry.Register("resend", resendEmailFactory)
+
+	name := strings.TrimSpace(os.Getenv("EMAIL_PROVIDER"))
+	if name == "" {
+		name = "log"
+	}
+	return registry.Select(ctx, name)
+}
+
+func logEmailFactory(ctx context.Context) (email.Sender, error) {
+	if os.Getenv("RESEND_API_KEY") != "" || os.Getenv("RESEND_WEBHOOK_SECRET") != "" {
+		return nil, fmt.Errorf("email: Resend credentials are present while EMAIL_PROVIDER is log")
+	}
 	w := wool.Get(ctx).In("pickEmailSender")
-	logFn := func(format string, args ...any) {
+	return email.NewLogSender(func(format string, args ...any) {
 		w.Info(fmt.Sprintf(format, args...))
+	}), nil
+}
+
+func resendEmailFactory(_ context.Context) (email.Sender, error) {
+	key := strings.TrimSpace(os.Getenv("RESEND_API_KEY"))
+	webhookSecret := strings.TrimSpace(os.Getenv("RESEND_WEBHOOK_SECRET"))
+	if key == "" || webhookSecret == "" {
+		return nil, fmt.Errorf("email: RESEND_API_KEY and RESEND_WEBHOOK_SECRET are required when EMAIL_PROVIDER=resend")
 	}
-	switch strings.ToLower(strings.TrimSpace(os.Getenv("EMAIL_PROVIDER"))) {
-	case "", "log":
-		if os.Getenv("RESEND_API_KEY") != "" || os.Getenv("RESEND_WEBHOOK_SECRET") != "" {
-			return nil, fmt.Errorf("email: Resend credentials are present while EMAIL_PROVIDER is log")
-		}
-		return email.NewLogSender(logFn), nil
-	case "resend":
-		key := strings.TrimSpace(os.Getenv("RESEND_API_KEY"))
-		webhookSecret := strings.TrimSpace(os.Getenv("RESEND_WEBHOOK_SECRET"))
-		if key == "" || webhookSecret == "" {
-			return nil, fmt.Errorf("email: RESEND_API_KEY and RESEND_WEBHOOK_SECRET are required when EMAIL_PROVIDER=resend")
-		}
-		s, err := email.NewResendSender(email.ResendConfig{
-			APIKey:  key,
-			BaseURL: strings.TrimSpace(os.Getenv("RESEND_API_BASE")),
-		})
-		if err != nil {
-			return nil, err
-		}
-		return s, nil
-	default:
-		return nil, fmt.Errorf("EMAIL_PROVIDER must be log or resend")
-	}
+	return email.NewResendSender(email.ResendConfig{
+		APIKey:        key,
+		BaseURL:       strings.TrimSpace(os.Getenv("RESEND_API_BASE")),
+		WebhookSecret: webhookSecret,
+	})
 }
 
 // previousSigningKeys returns any rotated-out signing keys the minter should
