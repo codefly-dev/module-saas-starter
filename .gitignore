@@ -45,3 +45,6 @@ module/services/*/nix/
 /configurations/local-dogfood/observability.secret.env
 /configurations/local-dogfood/abuse-protection.env
 /configurations/local-dogfood/abuse-protection.secret.env
+go.work*
+# Built agent binary (rebuilt by `codefly agent build`).
+module-saas-starter
