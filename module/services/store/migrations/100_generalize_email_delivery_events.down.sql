@@ -1,4 +1,4 @@
--- Reverse migration 99: restore the Resend-specific delivery-events shape from
+-- Reverse migration 100: restore the Resend-specific delivery-events shape from
 -- migration 84.
 --
 -- The target schema forbids any provider other than 'resend' (the restored

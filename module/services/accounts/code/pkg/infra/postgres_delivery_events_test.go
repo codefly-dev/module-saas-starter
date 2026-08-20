@@ -106,7 +106,7 @@ func TestDeliveryProjectionIsDurableReplaySafeAndMonotonic(t *testing.T) {
 
 // TestDeliveryProjectionAcceptsNonResendProvider is the migration's whole point:
 // the ledger and projection accept a provider other than Resend. Before
-// migration 99 the CHECK (provider = 'resend') rejected this insert.
+// migration 100 the CHECK (provider = 'resend') rejected this insert.
 func TestDeliveryProjectionAcceptsNonResendProvider(t *testing.T) {
 	orgID, invitationID := seedInvitation(t)
 

@@ -10,7 +10,7 @@ import (
 )
 
 // RecordDeliveryEvent invokes the narrow SECURITY DEFINER projection installed
-// by migration 99. The job-worker connection role has EXECUTE on that function
+// by migration 100. The job-worker connection role has EXECUTE on that function
 // but no direct authority over invitations or the event ledger. The event is
 // already provider-neutral and carries a canonical delivery status; this layer
 // only marshals it to the projection call.
