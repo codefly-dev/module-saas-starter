@@ -13,7 +13,6 @@ package main
 
 import (
 	"context"
-	"crypto/subtle"
 	"fmt"
 	"io"
 	"log"
@@ -309,9 +308,7 @@ func (g *Gateway) withTrustedFrontendOrigin(r *http.Request) *http.Request {
 	r.Header.Del("X-Codefly-Public-Origin")
 	r.Header.Del("X-Codefly-Internal-Token")
 
-	if g.sidecar == nil || g.sidecar.internalToken == "" ||
-		len(presentedToken) != len(g.sidecar.internalToken) ||
-		subtle.ConstantTimeCompare([]byte(presentedToken), []byte(g.sidecar.internalToken)) != 1 {
+	if g.sidecar == nil || !g.sidecar.acceptsInternalToken(presentedToken) {
 		return r
 	}
 	origin, err := canonicalPublicOrigin(claimedOrigin)
@@ -386,7 +383,7 @@ func stripAllIdentityHeaders(r *http.Request) {
 var untrustedAuthHeaders = []string{
 	"x-user-id", "x-org-id", "x-org-role", "x-platform-role", "x-roles",
 	"x-auth-id", "x-user-email", "x-user-name", "x-session-id",
-	"x-acting-as-user-id", "x-scopes", "x-mfa-satisfied",
+	"x-acting-as-user-id", "x-act", "x-scopes", "x-mfa-satisfied",
 	"x-authentication-methods", "x-auth-time", "x-assurance-level", "x-mfa-verified-at",
 	"x-codefly-gateway-token", "x-codefly-internal-token", "x-codefly-public-origin",
 }

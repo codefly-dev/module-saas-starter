@@ -8,6 +8,27 @@ import (
 
 type atomicSessionTransactionKey struct{}
 type verifiedSessionIDKey struct{}
+type verifiedActorKey struct{}
+
+// WithVerifiedActor records the on-behalf-of delegation chain (RFC 8693 `act`)
+// obtained from a locally verified access token or a trusted gateway-forwarded
+// X-Act header. A nil chain leaves the context untouched, so a direct
+// interactive session records no actor. Public handlers must never populate it
+// from caller-controlled headers — only the trusted-forwarded path may.
+func WithVerifiedActor(ctx context.Context, actor *Actor) context.Context {
+	if actor == nil {
+		return ctx
+	}
+	return context.WithValue(ctx, verifiedActorKey{}, actor)
+}
+
+// VerifiedActorFromContext returns the recorded delegation chain and whether one
+// was present. Absent (false) means a direct call with no service acting on the
+// subject's behalf — it is audit metadata, never itself an authorization grant.
+func VerifiedActorFromContext(ctx context.Context) (*Actor, bool) {
+	actor, ok := ctx.Value(verifiedActorKey{}).(*Actor)
+	return actor, ok && actor != nil
+}
 
 // WithAtomicSessionTransaction marks a context whose existing database
 // transaction intentionally owns session issuance as part of a wider atomic

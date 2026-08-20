@@ -144,6 +144,36 @@ func TestUnit_ValidJWT_ForwardsHeaders(t *testing.T) {
 	require.Empty(t, h["x-acting-as-user-id"], "acting header is empty unless impersonating")
 }
 
+func TestUnit_ValidJWT_ForwardsActorChainAndOverwritesSpoofedHeader(t *testing.T) {
+	s, priv := newTestSidecar(t)
+	c := validClaims(time.Now())
+	c.Act = &actorClaim{Subject: "svc:billing-worker", Act: &actorClaim{Subject: "svc:gateway"}}
+	token := signClaims(t, priv, c)
+
+	// The caller supplies a forged x-act; the sidecar must emit the verified
+	// chain, replacing it.
+	resp, err := s.Check(context.Background(), checkReq("/v1/users", map[string]string{
+		"authorization": "Bearer " + token,
+		"x-act":         `{"sub":"svc:attacker"}`,
+	}))
+	require.NoError(t, err)
+	require.Equal(t, `{"sub":"svc:billing-worker","act":{"sub":"svc:gateway"}}`, headerMap(resp)["x-act"])
+}
+
+func TestUnit_ValidJWT_EmitsEmptyActorHeaderForDirectSession(t *testing.T) {
+	s, priv := newTestSidecar(t)
+	token := signClaims(t, priv, validClaims(time.Now()))
+
+	resp, err := s.Check(context.Background(), checkReq("/v1/users", map[string]string{
+		"authorization": "Bearer " + token,
+		"x-act":         `{"sub":"svc:attacker"}`,
+	}))
+	require.NoError(t, err)
+	h := headerMap(resp)
+	require.Contains(t, h, "x-act", "canonical header is always emitted")
+	require.Empty(t, h["x-act"], "no chain → empty value overwrites any spoofed x-act")
+}
+
 func TestUnit_ValidJWT_ForwardsScopedRoles(t *testing.T) {
 	s, priv := newTestSidecar(t)
 	c := validClaims(time.Now())

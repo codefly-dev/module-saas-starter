@@ -238,6 +238,38 @@ func TestGateway_TrustsPublicOriginOnlyFromAuthenticatedFrontend(t *testing.T) {
 	require.Empty(t, apiFake.lastHeaders.Get("X-Codefly-Internal-Token"))
 }
 
+func TestSidecar_AcceptsInternalTokenDuringRotationOverlap(t *testing.T) {
+	s := &Sidecar{internalToken: "new-token", previousInternalToken: "previous-token"}
+	require.True(t, s.acceptsInternalToken("new-token"), "current token accepted")
+	require.True(t, s.acceptsInternalToken("previous-token"), "previous token accepted during overlap")
+	require.False(t, s.acceptsInternalToken("retired-token"))
+	require.False(t, s.acceptsInternalToken(""), "empty candidate never matches")
+
+	// With no previous token configured (steady state) only the current matches.
+	s.previousInternalToken = ""
+	require.True(t, s.acceptsInternalToken("new-token"))
+	require.False(t, s.acceptsInternalToken("previous-token"))
+
+	// An unconfigured credential must never admit a caller.
+	require.False(t, (&Sidecar{}).acceptsInternalToken(""))
+	require.False(t, (&Sidecar{}).acceptsInternalToken("anything"))
+}
+
+func TestGateway_TrustsPublicOriginFromPreviousInternalTokenDuringRotation(t *testing.T) {
+	gw, apiFake, _, _ := newGatewayHarness(t)
+	gw.sidecar.previousInternalToken = "previous-internal-token"
+
+	req := httptest.NewRequest(http.MethodPost, "/v1/auth/authenticate", strings.NewReader(`{}`))
+	req.Header.Set("X-Codefly-Internal-Token", "previous-internal-token")
+	req.Header.Set("X-Codefly-Public-Origin", "https://app.example")
+	w := httptest.NewRecorder()
+	gw.ServeHTTP(w, req)
+
+	require.Equal(t, http.StatusOK, w.Code)
+	require.Equal(t, "https://app.example", apiFake.lastHeaders.Get("X-Codefly-Public-Origin"))
+	require.Empty(t, apiFake.lastHeaders.Get("X-Codefly-Internal-Token"))
+}
+
 func TestGateway_RejectsMalformedOriginFromAuthenticatedFrontend(t *testing.T) {
 	gw, apiFake, _, _ := newGatewayHarness(t)
 

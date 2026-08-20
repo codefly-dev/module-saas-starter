@@ -901,6 +901,103 @@ func TestKeyID_IsDeterministic(t *testing.T) {
 	require.NotEqual(t, m1.KeyID(), m3.KeyID(), "different keys must yield different kids")
 }
 
+func TestMint_CarriesActorChainOnBehalfOfEndUser(t *testing.T) {
+	ctx := context.Background()
+	m, _ := newMinter(t)
+	want := newIdentity()
+	// billing-worker acting for the end user, itself invoked by the gateway:
+	// sub stays the end user; act nests outward through each hop.
+	want.Actor = &auth.Actor{
+		Subject: "svc:billing-worker",
+		Act:     &auth.Actor{Subject: "svc:gateway"},
+	}
+
+	pair, err := m.Mint(ctx, want)
+	require.NoError(t, err)
+
+	// sub is the end user end-to-end; the actor chain rides in `act`.
+	payload := decodeJWTPayload(t, pair.AccessToken)
+	require.Contains(t, payload, `"sub":"`+want.UserID.String()+`"`)
+	require.Contains(t, payload, `"act":{"sub":"svc:billing-worker","act":{"sub":"svc:gateway"}}`)
+
+	got, err := m.VerifyAccess(pair.AccessToken)
+	require.NoError(t, err)
+	require.Equal(t, want.UserID, got.UserID, "subject remains the end user")
+	require.Equal(t, want.Actor, got.Actor, "actor chain round-trips")
+}
+
+func TestMint_OmitsActorClaimForDirectSession(t *testing.T) {
+	ctx := context.Background()
+	m, _ := newMinter(t)
+
+	pair, err := m.Mint(ctx, newIdentity())
+	require.NoError(t, err)
+	require.NotContains(t, decodeJWTPayload(t, pair.AccessToken), `"act"`)
+
+	got, err := m.VerifyAccess(pair.AccessToken)
+	require.NoError(t, err)
+	require.Nil(t, got.Actor)
+}
+
+func TestWithActor_PushesNewCallerOntoChain(t *testing.T) {
+	base := newIdentity()
+	base.Actor = &auth.Actor{Subject: "svc:gateway"}
+
+	next := base.WithActor("svc:billing-worker")
+	require.Equal(t, "svc:billing-worker", next.Actor.Subject)
+	require.Equal(t, "svc:gateway", next.Actor.Act.Subject)
+	require.Nil(t, base.Actor.Act, "original identity's chain is not mutated")
+}
+
+func TestMint_RejectsActorChainDeeperThanMax(t *testing.T) {
+	ctx := context.Background()
+	m, _ := newMinter(t)
+	want := newIdentity()
+	// One link past the bound: mint must fail closed rather than emit an
+	// unbounded token.
+	var chain *auth.Actor
+	for i := 0; i <= auth.MaxActorChainDepth; i++ {
+		chain = &auth.Actor{Subject: "svc:x", Act: chain}
+	}
+	want.Actor = chain
+
+	_, err := m.Mint(ctx, want)
+	require.ErrorIs(t, err, auth.ErrActorChainTooDeep)
+}
+
+func TestVerifyAccess_AcceptsPreviousSigningKeyDuringRotation(t *testing.T) {
+	ctx := context.Background()
+	prevPub, prevPriv, err := ed25519minter.GenerateKey()
+	require.NoError(t, err)
+	previous := ed25519minter.New(
+		ed25519minter.Config{Issuer: "test-issuer", Audience: "test-audience"},
+		prevPriv, &memoryStore{})
+
+	pair, err := previous.Mint(ctx, newIdentity())
+	require.NoError(t, err)
+
+	// A rotated-in minter that does NOT know the outgoing key rejects its tokens.
+	_, newPriv, err := ed25519minter.GenerateKey()
+	require.NoError(t, err)
+	unaware := ed25519minter.New(
+		ed25519minter.Config{Issuer: "test-issuer", Audience: "test-audience"},
+		newPriv, &memoryStore{})
+	_, err = unaware.VerifyAccess(pair.AccessToken)
+	require.ErrorIs(t, err, auth.ErrTokenSignature)
+
+	// The same rotated-in minter constructed with the outgoing key in its
+	// verification set accepts in-flight tokens signed by it — selected by kid —
+	// without minting under it. The set is fixed at construction (no setter).
+	current := ed25519minter.New(ed25519minter.Config{
+		Issuer:                     "test-issuer",
+		Audience:                   "test-audience",
+		AdditionalVerificationKeys: []ed25519.PublicKey{prevPub},
+	}, newPriv, &memoryStore{})
+	got, err := current.VerifyAccess(pair.AccessToken)
+	require.NoError(t, err)
+	require.NotEqual(t, uuid.Nil, got.UserID)
+}
+
 // Compile-time assertion that our test store satisfies SessionStore.
 var _ auth.SessionStore = (*memoryStore)(nil)
 

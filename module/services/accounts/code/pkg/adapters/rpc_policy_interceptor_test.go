@@ -9,11 +9,72 @@ import (
 
 	"connectrpc.com/connect"
 	"github.com/codefly-dev/core/wool"
+	"github.com/google/uuid"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/status"
 )
+
+func TestDirectJWTStampsVerifiedActorOnContext(t *testing.T) {
+	chain := &auth.Actor{Subject: "svc:billing-worker", Act: &auth.Actor{Subject: "svc:gateway"}}
+	minter := &fixedAccessMinter{identity: &auth.Identity{
+		UserID:    uuid.Must(uuid.NewV7()),
+		SessionID: uuid.Must(uuid.NewV7()),
+		Actor:     chain,
+	}}
+	policy := &grpcPolicyAuthorizer{
+		getMinter: func() auth.JWTMinter { return minter },
+		exposure:  rpcExposureTenant,
+	}
+
+	ctx := metadata.NewIncomingContext(context.Background(), metadata.Pairs("authorization", "Bearer any"))
+	ctx, err := policy.authorize(ctx, "/saas.accounts.v1.UserService/GetSelf")
+	require.NoError(t, err)
+
+	// The actor chain survives to the handler context instead of being decoded
+	// and discarded.
+	got, ok := auth.VerifiedActorFromContext(ctx)
+	require.True(t, ok)
+	require.Equal(t, chain, got)
+}
+
+func TestForwardedIdentityStampsVerifiedActorOnlyWhenGatewayTrusted(t *testing.T) {
+	previousGateway := gatewayToken
+	SetGatewayToken("test-gateway-token")
+	t.Cleanup(func() { SetGatewayToken(previousGateway) })
+
+	actor := metadata.Pairs(
+		"x-codefly-gateway-token", "test-gateway-token",
+		"x-user-id", uuid.Must(uuid.NewV7()).String(),
+		"x-act", `{"sub":"svc:billing-worker","act":{"sub":"svc:gateway"}}`,
+	)
+	policy := &grpcPolicyAuthorizer{getMinter: nil, exposure: rpcExposureTenant}
+	ctx, err := policy.authorize(metadata.NewIncomingContext(context.Background(), actor), "/saas.accounts.v1.UserService/GetSelf")
+	require.NoError(t, err)
+	got, ok := auth.VerifiedActorFromContext(ctx)
+	require.True(t, ok)
+	require.Equal(t, "svc:billing-worker", got.Subject)
+	require.Equal(t, "svc:gateway", got.Act.Subject)
+
+	// Without the gateway credential, x-act is stripped as spoofable and never
+	// becomes a verified actor.
+	spoof := metadata.Pairs(
+		"x-user-id", uuid.Must(uuid.NewV7()).String(),
+		"x-act", `{"sub":"svc:attacker"}`,
+		"authorization", "Bearer any",
+	)
+	spoofPolicy := &grpcPolicyAuthorizer{
+		getMinter: func() auth.JWTMinter {
+			return &fixedAccessMinter{identity: &auth.Identity{UserID: uuid.Must(uuid.NewV7()), SessionID: uuid.Must(uuid.NewV7())}}
+		},
+		exposure: rpcExposureTenant,
+	}
+	ctx, err = spoofPolicy.authorize(metadata.NewIncomingContext(context.Background(), spoof), "/saas.accounts.v1.UserService/GetSelf")
+	require.NoError(t, err)
+	_, ok = auth.VerifiedActorFromContext(ctx)
+	require.False(t, ok, "a caller-injected x-act must not be trusted")
+}
 
 func TestPolicyAdmissionParity(t *testing.T) {
 	previousToken := internalToken
@@ -107,6 +168,39 @@ func TestInternalListenerOnlyAdmitsInternalRPCWithCredential(t *testing.T) {
 	require.Equal(t, codes.PermissionDenied, status.Code(err))
 
 	_, err = policy.authorize(ctx, "/saas.accounts.v1.UserService/GetSelf")
+	require.Equal(t, codes.PermissionDenied, status.Code(err))
+}
+
+func TestInternalListenerAcceptsRotationTokenDuringOverlap(t *testing.T) {
+	previousToken := internalToken
+	previousRotation := rotationInternalTokens
+	SetInternalToken("new-internal-token")
+	SetInternalTokenRotation("previous-internal-token", "")
+	t.Cleanup(func() {
+		SetInternalToken(previousToken)
+		rotationInternalTokens = previousRotation
+	})
+
+	policy := &grpcPolicyAuthorizer{getMinter: nil, exposure: rpcExposureInternal}
+	const method = "/saas.accounts.v1.APIKeyService/ValidateAPIKey"
+
+	// Both the current and the still-valid previous credential are admitted.
+	for _, token := range []string{"new-internal-token", "previous-internal-token"} {
+		ctx := metadata.NewIncomingContext(context.Background(), metadata.Pairs("x-codefly-internal-token", token))
+		_, err := policy.authorize(ctx, method)
+		require.NoError(t, err, "token %q should be accepted during overlap", token)
+	}
+
+	// A retired credential is refused.
+	ctx := metadata.NewIncomingContext(context.Background(), metadata.Pairs("x-codefly-internal-token", "retired-internal-token"))
+	_, err := policy.authorize(ctx, method)
+	require.Equal(t, codes.PermissionDenied, status.Code(err))
+
+	// Once rotation completes and the previous token is cleared, only the
+	// current credential remains valid.
+	SetInternalTokenRotation()
+	ctx = metadata.NewIncomingContext(context.Background(), metadata.Pairs("x-codefly-internal-token", "previous-internal-token"))
+	_, err = policy.authorize(ctx, method)
 	require.Equal(t, codes.PermissionDenied, status.Code(err))
 }
 
