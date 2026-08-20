@@ -115,6 +115,8 @@ services:
     agent:
       kind: codefly:service
       name: redis
+      # Held at 0.0.77; 0.0.81 fails runtime-load for this read-replica cache
+      # (two tcp endpoints on one port). Tracked in codefly-dev/service-redis#16.
       version: 0.0.77
       publisher: codefly.dev
     endpoints:
@@ -191,7 +193,7 @@ services:
     agent:
       kind: codefly:service
       name: postgres
-      version: 0.0.123
+      version: 0.0.124
       publisher: codefly.dev
     endpoints:
       - name: tcp
@@ -242,7 +244,7 @@ services:
     agent:
       kind: codefly:service
       name: vault
-      version: 0.0.22
+      version: 0.0.24
       publisher: codefly.dev
     secret_service_configurations:
       - name: vault
