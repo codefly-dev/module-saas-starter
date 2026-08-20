@@ -20,7 +20,7 @@ services:
     agent:
       kind: codefly:service
       name: go-grpc
-      version: 0.1.28
+      version: 0.1.32
       publisher: codefly.dev
     workspace_configuration_dependencies:
       - abuse-protection
@@ -77,7 +77,7 @@ services:
     agent:
       kind: codefly:service
       name: go-grpc
-      version: 0.1.28
+      version: 0.1.32
       publisher: codefly.dev
     workspace_configuration_dependencies:
       - gateway
@@ -134,7 +134,7 @@ services:
     agent:
       kind: codefly:service
       name: nextjs
-      version: 0.0.142
+      version: 0.0.144
       publisher: codefly.dev
     workspace_configuration_dependencies:
       - abuse-protection
@@ -171,7 +171,7 @@ services:
     agent:
       kind: codefly:service
       name: nextjs
-      version: 0.0.142
+      version: 0.0.144
       publisher: codefly.dev
     endpoints:
       - name: http
@@ -222,7 +222,7 @@ services:
     agent:
       kind: codefly:service
       name: go-grpc
-      version: 0.1.28
+      version: 0.1.32
       publisher: codefly.dev
     workspace_configuration_dependencies:
       - observability
