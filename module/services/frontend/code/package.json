@@ -40,6 +40,7 @@
 		"@codefly/saas-settings": "0.1.0",
 		"@connectrpc/connect": "^2.1.1",
 		"@connectrpc/connect-web": "^2.1.1",
+		"@module-federation/runtime": "^2.8.2",
 		"@hookform/resolvers": "^3.9.0",
 		"@sentry/nextjs": "^10.50.0",
 		"@simplewebauthn/browser": "^13.3.0",

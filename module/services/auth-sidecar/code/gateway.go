@@ -41,6 +41,7 @@ type Gateway struct {
 	selfHandler       http.Handler        // handler for "self" routes (health checks)
 	rateLimiter       *RateLimiter
 	requiredUpstreams []string
+	solutions         *solutionRegistry // runtime-registered solution upstreams
 }
 
 // NewGateway constructs a gateway with explicit route matching.
@@ -53,6 +54,7 @@ func NewGateway(sidecar *Sidecar, matcher *RouteMatcher, upstreams map[string]*u
 		upstreams:         upstreams,
 		rateLimiter:       rateLimiter,
 		requiredUpstreams: matcher.RequiredServices(),
+		solutions:         newSolutionRegistry(),
 	}
 	mux := http.NewServeMux()
 	mux.HandleFunc("/health", g.healthHandler)
@@ -124,6 +126,13 @@ func (g *Gateway) readyHandler(w http.ResponseWriter, _ *http.Request) {
 // entry in the route config.
 func (g *Gateway) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	r = g.withTrustedFrontendOrigin(r)
+
+	// Runtime solution passthrough (/solutions/*): auth-required, ext_authz
+	// authoritative, upstream resolved from the runtime registry.
+	if g.handleSolutionRequest(w, r) {
+		return
+	}
+
 	entry := g.matcher.Match(r.Method, r.URL.Path)
 	if entry == nil {
 		log.Printf("WARN: blocked request: method=%s path=%s reason=no_matching_route", r.Method, r.URL.Path)
