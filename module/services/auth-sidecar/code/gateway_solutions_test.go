@@ -120,6 +120,7 @@ func TestGateway_Solution_Register(t *testing.T) {
 
 	regBody := `{"id":"audit","upstream":"` + srv.URL + `"}`
 	regReq := httptest.NewRequest(http.MethodPost, "/solutions/_register", strings.NewReader(regBody))
+	regReq.Header.Set("X-Codefly-Internal-Token", "test-internal-token")
 	regW := httptest.NewRecorder()
 	gw.ServeHTTP(regW, regReq)
 	require.Equal(t, http.StatusOK, regW.Code)
@@ -136,21 +137,74 @@ func TestGateway_Solution_Register(t *testing.T) {
 func TestGateway_Solution_Register_Rejects(t *testing.T) {
 	gw, _, _, _ := newGatewayHarness(t)
 
-	// Non-POST is rejected.
+	// Non-POST is rejected before any auth work.
 	getReq := httptest.NewRequest(http.MethodGet, "/solutions/_register", nil)
 	getW := httptest.NewRecorder()
 	gw.ServeHTTP(getW, getReq)
 	require.Equal(t, http.StatusMethodNotAllowed, getW.Code)
 
-	// Missing id.
+	// Missing id (with a valid internal token, to isolate the id check).
 	noIDReq := httptest.NewRequest(http.MethodPost, "/solutions/_register", strings.NewReader(`{"upstream":"http://x:80"}`))
+	noIDReq.Header.Set("X-Codefly-Internal-Token", "test-internal-token")
 	noIDW := httptest.NewRecorder()
 	gw.ServeHTTP(noIDW, noIDReq)
 	require.Equal(t, http.StatusBadRequest, noIDW.Code)
 
 	// Non-http scheme is rejected (no file://, no scheme-less host).
 	badReq := httptest.NewRequest(http.MethodPost, "/solutions/_register", strings.NewReader(`{"id":"x","upstream":"file:///etc/passwd"}`))
+	badReq.Header.Set("X-Codefly-Internal-Token", "test-internal-token")
 	badW := httptest.NewRecorder()
 	gw.ServeHTTP(badW, badReq)
 	require.Equal(t, http.StatusBadRequest, badW.Code)
+}
+
+// Registration is privileged: without the cluster-internal token it is
+// rejected before the upstream is ever stored, so an edge caller cannot point
+// authenticated traffic at an attacker-controlled host.
+func TestGateway_Solution_Register_RequiresInternalToken(t *testing.T) {
+	gw, _, _, priv := newGatewayHarness(t)
+
+	body := `{"id":"evil","upstream":"http://attacker.example"}`
+
+	// No token.
+	noTok := httptest.NewRequest(http.MethodPost, "/solutions/_register", strings.NewReader(body))
+	noTokW := httptest.NewRecorder()
+	gw.ServeHTTP(noTokW, noTok)
+	require.Equal(t, http.StatusUnauthorized, noTokW.Code)
+
+	// Wrong token.
+	badTok := httptest.NewRequest(http.MethodPost, "/solutions/_register", strings.NewReader(body))
+	badTok.Header.Set("X-Codefly-Internal-Token", "not-the-token")
+	badTokW := httptest.NewRecorder()
+	gw.ServeHTTP(badTokW, badTok)
+	require.Equal(t, http.StatusUnauthorized, badTokW.Code)
+
+	// The upstream was never registered, so even a fully authenticated user
+	// gets 502, not a proxy to attacker.example.
+	req := httptest.NewRequest(http.MethodGet, "/solutions/evil/x", nil)
+	req.Header.Set("authorization", "Bearer "+signValidToken(t, priv))
+	w := httptest.NewRecorder()
+	gw.ServeHTTP(w, req)
+	require.Equal(t, http.StatusBadGateway, w.Code)
+}
+
+// A confused/compromised internal caller still cannot register a
+// credential-theft SSRF sink (cloud metadata / link-local / unspecified).
+// Loopback is intentionally allowed, so it is not asserted here.
+func TestGateway_Solution_Register_RejectsSSRFHosts(t *testing.T) {
+	gw, _, _, _ := newGatewayHarness(t)
+
+	for _, upstream := range []string{
+		"http://169.254.169.254/latest/meta-data/",
+		"http://metadata.google.internal/",
+		"http://[fe80::1]:9000",
+		"http://0.0.0.0:9000",
+	} {
+		req := httptest.NewRequest(http.MethodPost, "/solutions/_register",
+			strings.NewReader(`{"id":"x","upstream":"`+upstream+`"}`))
+		req.Header.Set("X-Codefly-Internal-Token", "test-internal-token")
+		w := httptest.NewRecorder()
+		gw.ServeHTTP(w, req)
+		require.Equal(t, http.StatusBadRequest, w.Code, "upstream %q must be rejected", upstream)
+	}
 }

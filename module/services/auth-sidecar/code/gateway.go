@@ -125,13 +125,17 @@ func (g *Gateway) readyHandler(w http.ResponseWriter, _ *http.Request) {
 // Unlisted paths are rejected with 404. Every request must match an explicit
 // entry in the route config.
 func (g *Gateway) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	r = g.withTrustedFrontendOrigin(r)
-
 	// Runtime solution passthrough (/solutions/*): auth-required, ext_authz
-	// authoritative, upstream resolved from the runtime registry.
+	// authoritative, upstream resolved from the runtime registry. Handled
+	// before withTrustedFrontendOrigin because the internal registration
+	// endpoint authenticates on the X-Codefly-Internal-Token header, which that
+	// pass consumes and strips. The proxy sub-path strips every caller identity
+	// header itself (stripAllIdentityHeaders + proxyTo), so nothing leaks.
 	if g.handleSolutionRequest(w, r) {
 		return
 	}
+
+	r = g.withTrustedFrontendOrigin(r)
 
 	entry := g.matcher.Match(r.Method, r.URL.Path)
 	if entry == nil {

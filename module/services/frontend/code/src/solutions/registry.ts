@@ -24,10 +24,56 @@ export interface SolutionManifest {
 		reactRange?: string;
 	};
 	backend: {
-		/** Logical Codefly service the gateway proxies solution traffic to. */
+		/**
+		 * Logical Codefly service the gateway proxies solution traffic to.
+		 * Optional in the wire manifest — defaults to the solution `id`, so the
+		 * common (alias === id) case cannot drift out of sync with the gateway
+		 * registration and the page route.
+		 */
 		serviceAlias: string;
 		capabilityPath?: string;
 	};
+}
+
+/**
+ * A nav path is rendered directly as an <a href> in the sidebar and home
+ * cards. It must be a same-origin, absolute in-app path so a manifest can never
+ * turn it into an open redirect or a `javascript:`/`data:` URI. Registration is
+ * authenticated (see the register route), but the host still refuses to store
+ * an unsafe value.
+ */
+function isSafeNavPath(path: string): boolean {
+	if (!path.startsWith("/") || path.startsWith("//")) {
+		return false;
+	}
+	// Reject control chars, space, DEL, and backslash — the levers used to
+	// smuggle a scheme or a protocol-relative target past a naive prefix check.
+	for (const char of path) {
+		const code = char.charCodeAt(0);
+		if (code <= 0x20 || code === 0x7f || char === "\\") {
+			return false;
+		}
+	}
+	return true;
+}
+
+/**
+ * A manifest URL is handed to the Module Federation runtime, which fetches and
+ * executes the script it points at inside the host origin. It must be an
+ * absolute http(s) URL with no embedded credentials — never a relative,
+ * `javascript:`, `data:`, or `file:` value.
+ */
+function isSafeManifestUrl(value: string): boolean {
+	try {
+		const parsed = new URL(value);
+		return (
+			(parsed.protocol === "http:" || parsed.protocol === "https:") &&
+			parsed.username === "" &&
+			parsed.password === ""
+		);
+	} catch {
+		return false;
+	}
 }
 
 // Next's dev server evaluates route handlers and pages in separate module
@@ -70,18 +116,29 @@ export function parseManifest(value: unknown): SolutionManifest | null {
 	const backend = candidate.backend as Record<string, unknown> | undefined;
 	if (
 		typeof candidate.id !== "string" ||
+		candidate.id === "" ||
 		!nav ||
 		typeof nav.title !== "string" ||
 		typeof nav.path !== "string" ||
+		!isSafeNavPath(nav.path) ||
 		!frontend ||
 		frontend.type !== "module-federation" ||
 		typeof frontend.manifestUrl !== "string" ||
+		!isSafeManifestUrl(frontend.manifestUrl) ||
 		typeof frontend.exposedModule !== "string" ||
-		!backend ||
-		typeof backend.serviceAlias !== "string"
+		frontend.exposedModule === ""
 	) {
 		return null;
 	}
+	// serviceAlias is optional and defaults to the solution id (see the type),
+	// collapsing the id/alias/gateway-registration keys into one in the common
+	// case so they cannot silently drift.
+	const serviceAlias =
+		backend &&
+		typeof backend.serviceAlias === "string" &&
+		backend.serviceAlias !== ""
+			? backend.serviceAlias
+			: candidate.id;
 	return {
 		id: candidate.id,
 		nav: {
@@ -99,9 +156,9 @@ export function parseManifest(value: unknown): SolutionManifest | null {
 					: undefined,
 		},
 		backend: {
-			serviceAlias: backend.serviceAlias,
+			serviceAlias,
 			capabilityPath:
-				typeof backend.capabilityPath === "string"
+				backend && typeof backend.capabilityPath === "string"
 					? backend.capabilityPath
 					: undefined,
 		},

@@ -2,6 +2,7 @@ package main
 
 import (
 	"encoding/json"
+	"net"
 	"net/http"
 	"net/url"
 	"strings"
@@ -21,6 +22,13 @@ import (
 // as for catalog routes. The gateway performs authentication and identity
 // projection; the solution's own downstream calls (e.g. accounts QueryAuditLog,
 // which still enforces audit:read) remain the authorization authority.
+//
+// The store is process-local, exactly like the frontend's solution registry.
+// For a single dev/runtime instance that is sufficient; with more than one
+// sidecar replica a registration lands on one replica only, so proxy requests
+// load-balanced to the others 502 until the solution re-registers there. A
+// shared store (Postgres/redis), coordinated with the frontend registry, is the
+// multi-replica fix and is tracked as the same follow-up.
 type solutionRegistry struct {
 	mu        sync.RWMutex
 	upstreams map[string]*url.URL
@@ -54,8 +62,9 @@ func (g *Gateway) handleSolutionRequest(w http.ResponseWriter, r *http.Request) 
 	}
 	rest := strings.TrimPrefix(r.URL.Path, solutionPrefix)
 
-	// Internal upstream registration. Cluster-internal only: this must be
-	// reachable solely from inside the mesh, never from the public edge.
+	// Internal upstream registration. This mutates the proxy's upstream table,
+	// so it is authenticated with the cluster-internal token (see
+	// handleSolutionRegister) rather than trusting network placement alone.
 	if rest == "_register" {
 		g.handleSolutionRegister(w, r)
 		return true
@@ -106,6 +115,17 @@ func (g *Gateway) handleSolutionRegister(w http.ResponseWriter, r *http.Request)
 		httpError(w, http.StatusMethodNotAllowed, "method not allowed")
 		return
 	}
+	// Registration is a privileged mutation, not a public endpoint: it decides
+	// where authenticated solution traffic (bearer + injected identity) gets
+	// forwarded. Require the cluster-internal token — the same credential the
+	// frontend presents to establish a trusted origin — so an unauthenticated
+	// edge caller cannot register an attacker-controlled upstream and harvest
+	// forwarded bearers. acceptsInternalToken fails closed on an empty/unset
+	// credential.
+	if g.sidecar == nil || !g.sidecar.acceptsInternalToken(r.Header.Get("X-Codefly-Internal-Token")) {
+		httpError(w, http.StatusUnauthorized, "unauthorized")
+		return
+	}
 	var payload struct {
 		ID       string `json:"id"`
 		Upstream string `json:"upstream"`
@@ -123,8 +143,35 @@ func (g *Gateway) handleSolutionRegister(w http.ResponseWriter, r *http.Request)
 		httpError(w, http.StatusBadRequest, "invalid upstream")
 		return
 	}
+	// Defence in depth against a confused or compromised internal caller: never
+	// let a solution upstream point at the cloud metadata endpoint or another
+	// link-local/unspecified address (the credential-theft SSRF sinks reachable
+	// from inside the mesh). Loopback is deliberately allowed — local
+	// `codefly run` solutions self-register loopback upstreams, and a deployed
+	// upstream is a cluster DNS name, never link-local.
+	if isForbiddenUpstreamHost(upstream.Hostname()) {
+		httpError(w, http.StatusBadRequest, "forbidden upstream host")
+		return
+	}
 	g.solutions.set(payload.ID, &url.URL{Scheme: upstream.Scheme, Host: upstream.Host})
 	w.Header().Set("content-type", "application/json")
 	w.WriteHeader(http.StatusOK)
 	_, _ = w.Write([]byte(`{"ok":true}`))
+}
+
+// isForbiddenUpstreamHost blocks upstream hosts that are credential-theft SSRF
+// sinks: the unspecified address, link-local addresses (which cover the
+// 169.254.169.254 cloud metadata IP), and the well-known metadata hostname.
+// Loopback is intentionally NOT blocked (see caller).
+func isForbiddenUpstreamHost(host string) bool {
+	h := strings.ToLower(strings.TrimSpace(host))
+	if h == "" || h == "metadata.google.internal" {
+		return true
+	}
+	if ip := net.ParseIP(h); ip != nil {
+		return ip.IsUnspecified() ||
+			ip.IsLinkLocalUnicast() ||
+			ip.IsLinkLocalMulticast()
+	}
+	return false
 }

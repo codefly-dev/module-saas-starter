@@ -7,7 +7,13 @@ import {
 import * as React from "react";
 import * as ReactDOM from "react-dom";
 import * as ReactJSXRuntime from "react/jsx-runtime";
-import { Suspense, lazy, type ComponentType } from "react";
+import {
+	Component,
+	Suspense,
+	lazy,
+	type ComponentType,
+	type ReactNode,
+} from "react";
 
 import { getToken } from "@/lib/connect/token-store";
 
@@ -50,7 +56,11 @@ function hostInstance(): ModuleFederation {
 	return host;
 }
 
-const registered = new Set<string>();
+// Tracks the entry URL each remote name is currently registered with, so a
+// solution that redeploys under a new manifestUrl (same id) re-registers with
+// the new entry instead of being pinned to the stale one for the life of the
+// process.
+const registeredEntries = new Map<string, string>();
 const remoteComponents = new Map<string, ComponentType<SolutionPageProps>>();
 
 /**
@@ -66,9 +76,14 @@ function remoteComponent(remote: SolutionRemote): ComponentType<SolutionPageProp
 		return cached;
 	}
 	const federation = hostInstance();
-	if (!registered.has(remote.id)) {
-		federation.registerRemotes([{ name: remote.id, entry: remote.manifestUrl }]);
-		registered.add(remote.id);
+	if (registeredEntries.get(remote.id) !== remote.manifestUrl) {
+		// force:true so a changed entry URL for an already-registered name
+		// replaces the stale entry rather than being ignored.
+		federation.registerRemotes(
+			[{ name: remote.id, entry: remote.manifestUrl }],
+			{ force: true },
+		);
+		registeredEntries.set(remote.id, remote.manifestUrl);
 	}
 	const moduleKey = `${remote.id}/${remote.exposedModule.replace(/^\.\//, "")}`;
 	const component = lazy(async () => {
@@ -101,6 +116,35 @@ export interface SolutionPageProps {
 	getAccessToken: () => string | null;
 }
 
+/**
+ * Contains a failed remote load to this outlet. A runtime remote is
+ * independently deployed and can 404, time out, expose no default, or throw on
+ * mount — none of which the host controls. Without this boundary that rejection
+ * escapes Suspense to the nearest ancestor boundary and takes down the whole
+ * dashboard route; here it degrades to a localized "failed to load" panel.
+ */
+class SolutionErrorBoundary extends Component<
+	{ children: ReactNode },
+	{ failed: boolean }
+> {
+	state = { failed: false };
+
+	static getDerivedStateFromError(): { failed: boolean } {
+		return { failed: true };
+	}
+
+	render() {
+		if (this.state.failed) {
+			return (
+				<div className="p-6 text-sm opacity-70">
+					This solution failed to load.
+				</div>
+			);
+		}
+		return this.props.children;
+	}
+}
+
 export function SolutionOutlet({
 	remote,
 	pageProps,
@@ -113,9 +157,11 @@ export function SolutionOutlet({
 	const Remote = remoteComponent(remote);
 
 	return (
-		<Suspense fallback={<div className="p-6 text-sm opacity-70">Loading solution…</div>}>
-			{/* eslint-disable-next-line react-hooks/static-components -- a solution's ./Page is a Module Federation remote loaded at runtime; it cannot be a static component. It is cached at module scope (remoteComponent) so it stays stable across renders. */}
-			<Remote {...pageProps} getAccessToken={getToken} />
-		</Suspense>
+		<SolutionErrorBoundary key={remote.id}>
+			<Suspense fallback={<div className="p-6 text-sm opacity-70">Loading solution…</div>}>
+				{/* eslint-disable-next-line react-hooks/static-components -- a solution's ./Page is a Module Federation remote loaded at runtime; it cannot be a static component. It is cached at module scope (remoteComponent) so it stays stable across renders. */}
+				<Remote {...pageProps} getAccessToken={getToken} />
+			</Suspense>
+		</SolutionErrorBoundary>
 	);
 }
