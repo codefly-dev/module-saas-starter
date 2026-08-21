@@ -1410,7 +1410,7 @@
     "services/marketing/code/tests/routes.test.ts": "949a0f4d2698a66cc24dd66aa1812cf2d662fceb76a21cf14644b0ab811a4fe4",
     "services/marketing/code/tsconfig.json": "a3b8af357e992b0798c116d58d9b85209509bd5850d210477db5bd90bbd3fe78",
     "services/store/GETTING_STARTED.md": "2161b63730b0bebc097c747fcb2b4018682d66ce6b34c43dd9db4585ddb5d1c5",
-    "services/store/README.md": "23f8b860200f7034ce0dc76ca4cdc5c7914638e4ef7308e3ea904229cff977da",
+    "services/store/README.md": "f6a4e256474bc156ab9b3f3122e8c495194ebe5161330fa1e68a8494ed51c2b7",
     "services/store/code/go.mod": "48641e3e8edb694e574ffb26d42be3c254d6df76fab3d3fe0ce4c2017d212925",
     "services/store/code/go.sum": "303e1102152c56515c88eb4a73143381e855564cc4fecd08df843f9ad81c9a33",
     "services/store/code/main.go": "efcae8683e1dc22437684cc2a1ebbe19525d4b7c526e46b3ebbe979d771d1872",
