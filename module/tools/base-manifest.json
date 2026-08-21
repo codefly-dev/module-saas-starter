@@ -1,6 +1,6 @@
 {
   "note": "Base-file integrity manifest for the saas-starter module. Generated FROM canonical by `node tools/base-integrity.mjs gen`. Consumers MUST NOT hand-edit base files — only add files on the side. Regenerated on every codefly sync from canonical.",
-  "fileCount": 1657,
+  "fileCount": 1658,
   "files": {
     "AUTHORIZATION_CATALOG.md": "b2ea5d41f0098e80315e02e7c4bdbda03b65c8eef463426242552fd3c047ca0a",
     "CONTRACT_VERSIONING.md": "02031aa87922ab5ec573ea582cf584271873481de6ceabbda52b1bfda005ffbd",
@@ -753,6 +753,7 @@
     "services/auth-sidecar/code/gateway.go": "e7853eec44e36a57cd18d559205ed3c1907d0e37200141c499c8bc9f14bec795",
     "services/auth-sidecar/code/gateway_integration_test.go": "deca7f88cbe7e77c72d9606610c016b5c4f36f2d7011d9a5ea8aadde0ece30b9",
     "services/auth-sidecar/code/gateway_solutions.go": "2329582473e5b751bfb816c7b3885d1bb2e2ceb3954ac3129dc3529939b01340",
+    "services/auth-sidecar/code/gateway_solutions_test.go": "9a3f1acc1764ffa1bbd949ba99502c4cd68eab9ce7c9b410a05c3e4750a4c0e4",
     "services/auth-sidecar/code/gateway_test.go": "39c63a662ff74d4318626fd0bc57e4c108a6b9db1c993c007ef937c6e8db230b",
     "services/auth-sidecar/code/go.mod": "c5e5ea2e6fd12644f645d5295a6e9936915d9d81648a764d8c611f02b4fe5fb4",
     "services/auth-sidecar/code/go.sum": "d40bf92d1351d602a3b7b5c102b76c84d124444362bfe5aa92ca711e8eb8e5d4",
