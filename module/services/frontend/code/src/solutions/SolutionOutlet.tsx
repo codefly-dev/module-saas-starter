@@ -114,6 +114,7 @@ export function SolutionOutlet({
 
 	return (
 		<Suspense fallback={<div className="p-6 text-sm opacity-70">Loading solution…</div>}>
+			{/* eslint-disable-next-line react-hooks/static-components -- a solution's ./Page is a Module Federation remote loaded at runtime; it cannot be a static component. It is cached at module scope (remoteComponent) so it stays stable across renders. */}
 			<Remote {...pageProps} getAccessToken={getToken} />
 		</Suspense>
 	);
