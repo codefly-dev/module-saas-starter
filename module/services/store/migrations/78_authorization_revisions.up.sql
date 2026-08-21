@@ -551,6 +551,11 @@ CREATE TRIGGER platform_admins_bump_authorization_revision
 BEFORE INSERT OR UPDATE OR DELETE ON public.platform_admins
 FOR EACH ROW EXECUTE FUNCTION public.authorization_revision_platform_admin_mutation();
 
+-- Ownership transfer requires the incoming owner to hold CREATE on the
+-- schema. app_control_plane is deliberately denied it (migration 67); a
+-- superuser migrator only masks the check. Grant it for the transaction span
+-- so a server-admin migrator (Azure Flexible Server) can transfer ownership.
+GRANT CREATE ON SCHEMA public TO app_control_plane;
 ALTER FUNCTION public.bump_organization_authorization_revision(UUID)
     OWNER TO app_control_plane;
 ALTER FUNCTION public.bump_principal_authorization_revision(UUID, UUID)
@@ -581,6 +586,7 @@ ALTER FUNCTION public.authorization_revision_user_mutation()
     OWNER TO app_control_plane;
 ALTER FUNCTION public.authorization_revision_platform_admin_mutation()
     OWNER TO app_control_plane;
+REVOKE CREATE ON SCHEMA public FROM app_control_plane;
 
 REVOKE ALL ON FUNCTION
     public.bump_organization_authorization_revision(UUID),

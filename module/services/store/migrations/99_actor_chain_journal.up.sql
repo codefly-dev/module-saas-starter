@@ -154,7 +154,13 @@ CREATE TRIGGER actor_chain_revocations_bump_authorization
 AFTER INSERT ON actor_chain_revocations
 FOR EACH ROW EXECUTE FUNCTION public.actor_chain_revocation_bump_authorization();
 
+-- Ownership transfer requires the incoming owner to hold CREATE on the
+-- schema. app_control_plane is deliberately denied it (migration 67); a
+-- superuser migrator only masks the check. Grant it for the transaction span
+-- so a server-admin migrator (Azure Flexible Server) can transfer ownership.
+GRANT CREATE ON SCHEMA public TO app_control_plane;
 ALTER FUNCTION public.actor_chain_revocation_bump_authorization()
     OWNER TO app_control_plane;
+REVOKE CREATE ON SCHEMA public FROM app_control_plane;
 REVOKE ALL ON FUNCTION public.actor_chain_revocation_bump_authorization()
     FROM PUBLIC, app_tenant;

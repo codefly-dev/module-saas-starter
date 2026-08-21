@@ -155,8 +155,14 @@ BEGIN
 END
 $function$;
 
+-- Ownership transfer requires the incoming owner to hold CREATE on the
+-- schema. app_control_plane is deliberately denied it (migration 67); a
+-- superuser migrator only masks the check. Grant it for the transaction span
+-- so a server-admin migrator (Azure Flexible Server) can transfer ownership.
+GRANT CREATE ON SCHEMA public TO app_control_plane;
 ALTER FUNCTION public.invalidate_authorization_sessions()
     OWNER TO app_control_plane;
+REVOKE CREATE ON SCHEMA public FROM app_control_plane;
 REVOKE ALL ON FUNCTION public.invalidate_authorization_sessions() FROM PUBLIC;
 
 CREATE TRIGGER users_invalidate_authorization_sessions
