@@ -7,7 +7,7 @@ import {
 import * as React from "react";
 import * as ReactDOM from "react-dom";
 import * as ReactJSXRuntime from "react/jsx-runtime";
-import { Suspense, lazy, useMemo, type ComponentType } from "react";
+import { Suspense, lazy, type ComponentType } from "react";
 
 import { getToken } from "@/lib/connect/token-store";
 
@@ -51,6 +51,38 @@ function hostInstance(): ModuleFederation {
 }
 
 const registered = new Set<string>();
+const remoteComponents = new Map<string, ComponentType<SolutionPageProps>>();
+
+/**
+ * Resolve the lazy component for a remote. Declared at module scope (not in
+ * render) so each remote's component is created once and stays stable across
+ * renders — required by react-hooks/static-components and needed for Suspense
+ * to keep its state.
+ */
+function remoteComponent(remote: SolutionRemote): ComponentType<SolutionPageProps> {
+	const key = `${remote.id}|${remote.manifestUrl}|${remote.exposedModule}`;
+	const cached = remoteComponents.get(key);
+	if (cached) {
+		return cached;
+	}
+	const federation = hostInstance();
+	if (!registered.has(remote.id)) {
+		federation.registerRemotes([{ name: remote.id, entry: remote.manifestUrl }]);
+		registered.add(remote.id);
+	}
+	const moduleKey = `${remote.id}/${remote.exposedModule.replace(/^\.\//, "")}`;
+	const component = lazy(async () => {
+		const mod = await federation.loadRemote<{
+			default: ComponentType<SolutionPageProps>;
+		}>(moduleKey);
+		if (!mod?.default) {
+			throw new Error(`solution remote "${remote.id}" exposed no default`);
+		}
+		return { default: mod.default };
+	});
+	remoteComponents.set(key, component);
+	return component;
+}
 
 export interface SolutionRemote {
 	id: string;
@@ -78,25 +110,7 @@ export function SolutionOutlet({
 	// which the host injects here so the remote never touches the token store.
 	pageProps: Omit<SolutionPageProps, "getAccessToken">;
 }) {
-	const Remote = useMemo(() => {
-		const federation = hostInstance();
-		if (!registered.has(remote.id)) {
-			federation.registerRemotes([
-				{ name: remote.id, entry: remote.manifestUrl },
-			]);
-			registered.add(remote.id);
-		}
-		const moduleKey = `${remote.id}/${remote.exposedModule.replace(/^\.\//, "")}`;
-		return lazy(async () => {
-			const mod = await federation.loadRemote<{
-				default: ComponentType<SolutionPageProps>;
-			}>(moduleKey);
-			if (!mod?.default) {
-				throw new Error(`solution remote "${remote.id}" exposed no default`);
-			}
-			return { default: mod.default };
-		});
-	}, [remote.id, remote.manifestUrl, remote.exposedModule]);
+	const Remote = remoteComponent(remote);
 
 	return (
 		<Suspense fallback={<div className="p-6 text-sm opacity-70">Loading solution…</div>}>
