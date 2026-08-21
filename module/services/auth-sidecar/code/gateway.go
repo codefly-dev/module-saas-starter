@@ -41,6 +41,7 @@ type Gateway struct {
 	selfHandler       http.Handler        // handler for "self" routes (health checks)
 	rateLimiter       *RateLimiter
 	requiredUpstreams []string
+	solutions         *solutionRegistry // runtime-registered solution upstreams
 }
 
 // NewGateway constructs a gateway with explicit route matching.
@@ -53,6 +54,7 @@ func NewGateway(sidecar *Sidecar, matcher *RouteMatcher, upstreams map[string]*u
 		upstreams:         upstreams,
 		rateLimiter:       rateLimiter,
 		requiredUpstreams: matcher.RequiredServices(),
+		solutions:         newSolutionRegistry(),
 	}
 	mux := http.NewServeMux()
 	mux.HandleFunc("/health", g.healthHandler)
@@ -123,7 +125,18 @@ func (g *Gateway) readyHandler(w http.ResponseWriter, _ *http.Request) {
 // Unlisted paths are rejected with 404. Every request must match an explicit
 // entry in the route config.
 func (g *Gateway) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	// Runtime solution passthrough (/solutions/*): auth-required, ext_authz
+	// authoritative, upstream resolved from the runtime registry. Handled
+	// before withTrustedFrontendOrigin because the internal registration
+	// endpoint authenticates on the X-Codefly-Internal-Token header, which that
+	// pass consumes and strips. The proxy sub-path strips every caller identity
+	// header itself (stripAllIdentityHeaders + proxyTo), so nothing leaks.
+	if g.handleSolutionRequest(w, r) {
+		return
+	}
+
 	r = g.withTrustedFrontendOrigin(r)
+
 	entry := g.matcher.Match(r.Method, r.URL.Path)
 	if entry == nil {
 		log.Printf("WARN: blocked request: method=%s path=%s reason=no_matching_route", r.Method, r.URL.Path)

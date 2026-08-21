@@ -71,7 +71,7 @@ describe("explicit frontend composition root", () => {
 	});
 
 	it("pins route, navigation, and permission catalog parity", () => {
-		expect(FRONTEND_ROUTES).toHaveLength(43);
+		expect(FRONTEND_ROUTES).toHaveLength(44);
 		expect(FRONTEND_NAVIGATION).toHaveLength(28);
 		for (const item of FRONTEND_NAVIGATION) {
 			if (item.requiredPermission)

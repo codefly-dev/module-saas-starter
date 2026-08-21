@@ -228,6 +228,12 @@
       "access": "FRONTEND_ROUTE_ACCESS_AUTHENTICATED"
     },
     {
+      "path": "/s/{solutionId}",
+      "source_path": "src/app/(dashboard)/s/[solutionId]/page.tsx",
+      "match": "FRONTEND_ROUTE_MATCH_PARAMETER",
+      "access": "FRONTEND_ROUTE_ACCESS_AUTHENTICATED"
+    },
+    {
       "path": "/settings",
       "source_path": "src/app/(dashboard)/settings/page.tsx",
       "match": "FRONTEND_ROUTE_MATCH_EXACT",

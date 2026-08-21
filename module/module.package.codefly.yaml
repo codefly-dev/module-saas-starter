@@ -76,6 +76,7 @@ claims:
   - {kind: package, key: "@connectrpc/connect", owner: base}
   - {kind: package, key: "@connectrpc/connect-web", owner: base}
   - {kind: package, key: "@hookform/resolvers", owner: base}
+  - {kind: package, key: "@module-federation/runtime", owner: base}
   - {kind: package, key: "@playwright/test", owner: base}
   - {kind: package, key: "@sentry/nextjs", owner: base}
   - {kind: package, key: "@simplewebauthn/browser", owner: base}

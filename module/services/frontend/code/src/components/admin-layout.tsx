@@ -1,7 +1,7 @@
 "use client";
 
 import type { NavItem, PluginNavSection } from "@codefly/saas-plugin-contract";
-import { ChevronRight, ChevronUp, LogOut, ShieldCheck } from "lucide-react";
+import { Boxes, ChevronRight, ChevronUp, LogOut, ShieldCheck } from "lucide-react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useState } from "react";
@@ -38,6 +38,7 @@ import { useAppearance } from "@/lib/appearance-provider";
 import { useAuth } from "@/lib/auth";
 import { getNavigationIcon } from "@/lib/navigation-icons";
 import { canPresent, selectNavigation } from "@/lib/plugins/presentation";
+import { useRegisteredSolutions } from "@/solutions/SolutionsMenu";
 import { useFrontendConfig } from "@/lib/providers";
 import { cn } from "@/lib/utils";
 
@@ -139,6 +140,7 @@ export function AdminLayout({ children }: { children: React.ReactNode }) {
 		pathname === "/admin" || (onAdminRoute && !onPrimaryRoute),
 	);
 	const userMenu = selectNavigation(config, "user_menu", principal);
+	const registeredSolutions = useRegisteredSolutions();
 
 	const userInitials = user?.email
 		? user.email.slice(0, 2).toUpperCase()
@@ -188,6 +190,27 @@ export function AdminLayout({ children }: { children: React.ReactNode }) {
 							</SidebarMenu>
 						</SidebarGroupContent>
 					</SidebarGroup>
+
+					{registeredSolutions.length > 0 && (
+						<SidebarGroup>
+							<SidebarGroupLabel>Solutions</SidebarGroupLabel>
+							<SidebarGroupContent>
+								<SidebarMenu>
+									{registeredSolutions.map((solution) => (
+										<SidebarMenuItem key={solution.id}>
+											<SidebarMenuButton
+												render={<Link href={solution.nav.path} />}
+												isActive={isNavActive(pathname, solution.nav.path)}
+											>
+												<Boxes className="h-4 w-4" />
+												<span>{solution.nav.title}</span>
+											</SidebarMenuButton>
+										</SidebarMenuItem>
+									))}
+								</SidebarMenu>
+							</SidebarGroupContent>
+						</SidebarGroup>
+					)}
 
 					{showAdmin &&
 						primarySections.map((section) => (
