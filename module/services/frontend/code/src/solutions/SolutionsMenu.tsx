@@ -83,7 +83,11 @@ export function useRegisteredSolutions(): SolutionNav[] {
 }
 
 /** Sidebar/inline navigation for registered solutions. */
-export function SolutionsMenu({ variant = "list" }: { variant?: "list" | "cards" }) {
+export function SolutionsMenu({
+	variant = "list",
+}: {
+	variant?: "list" | "cards";
+}) {
 	const solutions = useRegisteredSolutions();
 	if (solutions.length === 0) {
 		return null;

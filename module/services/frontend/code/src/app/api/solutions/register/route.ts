@@ -87,9 +87,15 @@ export async function DELETE(request: Request): Promise<Response> {
 	return Response.json({ ok: true });
 }
 
-// GET is a read of nav-only metadata (titles/paths) that the browser polls to
-// render the Solutions nav. It is intentionally not gated on the internal
-// token — it exposes no secrets and no upstreams.
+// GET is the nav feed the browser polls to render the Solutions menu. It is
+// intentionally not gated on the internal token — but it therefore returns ONLY
+// nav-safe fields (id + nav), never the full manifest. The remote's manifestUrl
+// and backend serviceAlias reach the client solely through the authenticated
+// /s/[solutionId] server component, so they are not broadcast on this open list.
 export async function GET(): Promise<Response> {
-	return Response.json({ solutions: loadSolutions() });
+	const solutions = loadSolutions().map((solution) => ({
+		id: solution.id,
+		nav: solution.nav,
+	}));
+	return Response.json({ solutions });
 }

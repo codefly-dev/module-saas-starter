@@ -5,7 +5,8 @@ vi.mock("server-only", () => ({}));
 // The route reads the cluster-internal secret via the Codefly SDK. vi.mock is
 // hoisted above module init, so the stub must be created with vi.hoisted.
 const { getWorkspaceSecret } = vi.hoisted(() => ({
-	getWorkspaceSecret: vi.fn<(name: string, key: string) => string | undefined>(),
+	getWorkspaceSecret:
+		vi.fn<(name: string, key: string) => string | undefined>(),
 }));
 vi.mock("codefly", () => ({ getWorkspaceSecret }));
 
@@ -26,7 +27,9 @@ function manifestBody(id = "audit") {
 }
 
 function postRequest(body: unknown, token?: string): Request {
-	const headers: Record<string, string> = { "content-type": "application/json" };
+	const headers: Record<string, string> = {
+		"content-type": "application/json",
+	};
 	if (token !== undefined) {
 		headers["x-codefly-internal-token"] = token;
 	}
@@ -85,10 +88,22 @@ describe("solutions register route auth", () => {
 		expect(res.status).toBe(422);
 	});
 
-	it("lets the browser GET the nav list without a token", async () => {
+	it("lets the browser GET the nav list without a token, nav-only", async () => {
 		getWorkspaceSecret.mockReturnValue(TOKEN);
+		// Register a solution so the list is non-empty.
+		await POST(postRequest(manifestBody(), TOKEN));
+
 		const res = await GET();
 		expect(res.status).toBe(200);
-		await expect(res.json()).resolves.toHaveProperty("solutions");
+		const body = (await res.json()) as {
+			solutions: Array<Record<string, unknown>>;
+		};
+		expect(body.solutions.length).toBeGreaterThan(0);
+		for (const solution of body.solutions) {
+			expect(Object.keys(solution).sort()).toEqual(["id", "nav"]);
+			// The MF manifest URL and backend alias must not be broadcast here.
+			expect(solution).not.toHaveProperty("frontend");
+			expect(solution).not.toHaveProperty("backend");
+		}
 	});
 });

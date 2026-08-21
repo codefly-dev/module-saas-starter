@@ -83,9 +83,11 @@ function isSafeManifestUrl(value: string): boolean {
 const globalForRegistry = globalThis as typeof globalThis & {
 	__solutionRegistry?: Map<string, SolutionManifest>;
 };
+if (!globalForRegistry.__solutionRegistry) {
+	globalForRegistry.__solutionRegistry = new Map<string, SolutionManifest>();
+}
 const registry: Map<string, SolutionManifest> =
-	globalForRegistry.__solutionRegistry ??
-	(globalForRegistry.__solutionRegistry = new Map<string, SolutionManifest>());
+	globalForRegistry.__solutionRegistry;
 
 export function registerSolution(manifest: SolutionManifest): void {
 	registry.set(manifest.id, manifest);

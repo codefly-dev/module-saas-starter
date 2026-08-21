@@ -5,15 +5,15 @@ import {
 	type ModuleFederation,
 } from "@module-federation/runtime";
 import * as React from "react";
-import * as ReactDOM from "react-dom";
-import * as ReactJSXRuntime from "react/jsx-runtime";
 import {
 	Component,
-	Suspense,
-	lazy,
 	type ComponentType,
+	lazy,
 	type ReactNode,
+	Suspense,
 } from "react";
+import * as ReactJSXRuntime from "react/jsx-runtime";
+import * as ReactDOM from "react-dom";
 
 import { getToken } from "@/lib/connect/token-store";
 
@@ -69,7 +69,9 @@ const remoteComponents = new Map<string, ComponentType<SolutionPageProps>>();
  * renders — required by react-hooks/static-components and needed for Suspense
  * to keep its state.
  */
-function remoteComponent(remote: SolutionRemote): ComponentType<SolutionPageProps> {
+function remoteComponent(
+	remote: SolutionRemote,
+): ComponentType<SolutionPageProps> {
 	const key = `${remote.id}|${remote.manifestUrl}|${remote.exposedModule}`;
 	const cached = remoteComponents.get(key);
 	if (cached) {
@@ -158,7 +160,11 @@ export function SolutionOutlet({
 
 	return (
 		<SolutionErrorBoundary key={remote.id}>
-			<Suspense fallback={<div className="p-6 text-sm opacity-70">Loading solution…</div>}>
+			<Suspense
+				fallback={
+					<div className="p-6 text-sm opacity-70">Loading solution…</div>
+				}
+			>
 				{/* eslint-disable-next-line react-hooks/static-components -- a solution's ./Page is a Module Federation remote loaded at runtime; it cannot be a static component. It is cached at module scope (remoteComponent) so it stays stable across renders. */}
 				<Remote {...pageProps} getAccessToken={getToken} />
 			</Suspense>
