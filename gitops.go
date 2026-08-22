@@ -186,6 +186,12 @@ type deploymentTopology struct {
 	Module    topologyModule      `yaml:"module"`
 	Interface []topologyInterface `yaml:"interface"`
 	Services  []topologyService   `yaml:"services"`
+
+	// internalMethodPaths holds, per service, the gRPC method paths marked
+	// EXPOSURE_INTERNAL in that service's generated authorization catalog. It is
+	// populated after decoding and drives the mesh reach gate for the internal
+	// authority surface.
+	internalMethodPaths map[string][]string
 }
 
 type topologyModule struct {
@@ -959,6 +965,7 @@ func topologyIstioResources(
 		},
 	}
 	istio = append(istio, topologyInternalAuthorizationPolicies(topology, plan, namespace, labels)...)
+	istio = append(istio, topologyInternalAuthorityDenyPolicies(topology, plan, namespace, labels)...)
 	if len(plan.ingress) == 0 {
 		// No public ingress: emit the mTLS baseline only, no Gateway.
 		return istio, nil, nil
@@ -1191,6 +1198,59 @@ func topologyInternalAuthorizationPolicies(
 	return policies
 }
 
+// topologyInternalAuthorityDenyPolicies gates each service's internal authority
+// method paths by caller workload identity. Istio matches by request path, so
+// the internal RPCs are denied to every principal outside the in-mesh caller
+// identity — the ingress gateway among them — even while they stay multiplexed
+// on the shared HTTP port. With STRICT PeerAuthentication, a request from a
+// non-allowlisted principal is rejected at the mesh before the handler; the
+// app-layer internal credential remains the identity gate.
+func topologyInternalAuthorityDenyPolicies(
+	topology deploymentTopology,
+	plan environmentPlan,
+	namespace string,
+	labels map[string]string,
+) []kubeObject {
+	inCluster := make(map[string]struct{}, len(plan.services))
+	for _, service := range plan.services {
+		inCluster[service] = struct{}{}
+	}
+	principal := "cluster.local/ns/" + namespace + "/sa/default"
+	targets := make([]string, 0, len(topology.internalMethodPaths))
+	for target := range topology.internalMethodPaths {
+		if _, ok := inCluster[target]; ok {
+			targets = append(targets, target)
+		}
+	}
+	slices.Sort(targets)
+	policies := make([]kubeObject, 0, len(targets))
+	for _, target := range targets {
+		service, _ := topologyServiceByName(topology, target)
+		policies = append(policies, kubeObject{
+			APIVersion: "security.istio.io/v1",
+			Kind:       "AuthorizationPolicy",
+			Metadata: objectMeta{
+				Name:      "deny-" + target + "-internal-authority",
+				Namespace: namespace,
+				Labels:    labels,
+			},
+			Spec: map[string]any{
+				"selector": map[string]any{"matchLabels": map[string]string{"app": topologyKubernetesAppLabel(service)}},
+				"action":   "DENY",
+				"rules": []any{map[string]any{
+					"from": []any{map[string]any{"source": map[string]any{
+						"notPrincipals": []string{principal},
+					}}},
+					"to": []any{map[string]any{"operation": map[string]any{
+						"paths": topology.internalMethodPaths[target],
+					}}},
+				}},
+			},
+		})
+	}
+	return policies
+}
+
 func loadDeploymentTopology(moduleDir, moduleName string, services []serviceDefinition) (deploymentTopology, error) {
 	file := filepath.Join(moduleDir, "deployment", "topology.bindings.codefly.yaml")
 	data, err := os.ReadFile(file)
@@ -1300,7 +1360,51 @@ func loadDeploymentTopology(moduleDir, moduleName string, services []serviceDefi
 			}
 		}
 	}
+	internalMethodPaths, err := loadInternalMethodPaths(moduleDir, services)
+	if err != nil {
+		return deploymentTopology{}, err
+	}
+	topology.internalMethodPaths = internalMethodPaths
 	return topology, nil
+}
+
+// loadInternalMethodPaths reads each service's generated authorization catalog
+// and returns the sorted gRPC method paths marked EXPOSURE_INTERNAL. Services
+// without a catalog (e.g. non-gRPC agents) contribute nothing.
+func loadInternalMethodPaths(moduleDir string, services []serviceDefinition) (map[string][]string, error) {
+	paths := make(map[string][]string)
+	for _, service := range services {
+		file := filepath.Join(moduleDir, "services", service.name, "generated", "authz-methods.json")
+		data, err := os.ReadFile(file)
+		if os.IsNotExist(err) {
+			continue
+		}
+		if err != nil {
+			return nil, fmt.Errorf("read authorization catalog for %q: %w", service.name, err)
+		}
+		var catalog struct {
+			Methods []struct {
+				Procedure string `json:"procedure"`
+				Policy    struct {
+					Exposure string `json:"exposure"`
+				} `json:"policy"`
+			} `json:"methods"`
+		}
+		if err := json.Unmarshal(data, &catalog); err != nil {
+			return nil, fmt.Errorf("parse authorization catalog for %q: %w", service.name, err)
+		}
+		var procedures []string
+		for _, method := range catalog.Methods {
+			if method.Policy.Exposure == "EXPOSURE_INTERNAL" {
+				procedures = append(procedures, method.Procedure)
+			}
+		}
+		if len(procedures) > 0 {
+			slices.Sort(procedures)
+			paths[service.name] = procedures
+		}
+	}
+	return paths, nil
 }
 
 func topologyServiceByName(topology deploymentTopology, name string) (topologyService, bool) {

@@ -13,6 +13,7 @@ import (
 
 	"accounts/pkg/business"
 	catalogv1 "accounts/pkg/gen/saas/catalog/v1"
+	policyv1 "accounts/pkg/gen/saas/policy/v1"
 )
 
 const deploymentTopologySchemaVersion = "saas.deployment.topology.v1"
@@ -96,6 +97,7 @@ type DeploymentArtifacts struct {
 	ModuleManifest   []byte
 	ServiceManifests map[string][]byte
 	NetworkPolicy    []byte
+	MeshPolicy       []byte
 }
 
 // BuildDeploymentArtifacts validates the descriptor-owned accounts API and a
@@ -144,7 +146,19 @@ func BuildDeploymentArtifacts(serviceDocument, bindingDocument []byte) (*Deploym
 		ModuleManifest:   moduleManifest,
 		ServiceManifests: serviceManifests,
 		NetworkPolicy:    renderNetworkPolicy(bindings),
+		MeshPolicy:       renderMeshPolicy(bindings, serviceCatalog),
 	}, nil
+}
+
+func internalMethodProcedures(serviceCatalog *catalogv1.ServiceCatalog) []string {
+	var procedures []string
+	for _, method := range serviceCatalog.GetMethods() {
+		if method.GetPolicy().GetExposure() == policyv1.Exposure_EXPOSURE_INTERNAL {
+			procedures = append(procedures, method.GetProcedure())
+		}
+	}
+	sort.Strings(procedures)
+	return procedures
 }
 
 func decodeDeploymentBindings(document []byte) (deploymentBindings, error) {
@@ -774,6 +788,77 @@ func deploymentNetworkEdges(bindings deploymentBindings) []networkEdge {
 		}
 	}
 	return edges
+}
+
+// meshTrustDomain is Istio's default SPIFFE trust domain. Peer identities are
+// spiffe://<trustDomain>/ns/<namespace>/sa/<serviceAccount>. The ingress
+// gateway runs as istio-system/sa/istio-ingressgateway-service-account, which is
+// therefore outside the internal allowlist and denied by the policy below.
+const meshTrustDomain = "cluster.local"
+
+// renderMeshPolicy projects the identity half of the reach-vs-identity split as
+// a topology golden mirroring the mesh policy the GitOps renderer installs
+// (see gitops.go). PeerAuthentication STRICT makes every source principal a
+// trustworthy mTLS identity; the AuthorizationPolicy then DENYs the internal
+// authority method paths from every principal except the allowlisted in-mesh
+// caller identity — the ingress gateway included. Istio matches by request
+// path, so this gates the internal surface by caller workload identity even
+// while it stays multiplexed on the shared HTTP port. The app-layer internal
+// credential remains the identity gate (which caller vs which tenant).
+func renderMeshPolicy(bindings deploymentBindings, serviceCatalog *catalogv1.ServiceCatalog) []byte {
+	namespace := bindings.Module.Namespace
+	var source strings.Builder
+	source.WriteString("# Code generated from deployment/topology.bindings.codefly.yaml. DO NOT EDIT.\n")
+	fmt.Fprintf(&source, `---
+apiVersion: security.istio.io/v1
+kind: PeerAuthentication
+metadata:
+  name: %s-mtls
+  namespace: %s
+spec:
+  mtls:
+    mode: STRICT
+`, bindings.Module.Name, namespace)
+
+	procedures := internalMethodProcedures(serviceCatalog)
+	if len(procedures) > 0 {
+		owner := serviceCatalog.GetOwner().GetService()
+		var ownerApp string
+		for _, service := range bindings.Services {
+			if service.Name == owner {
+				ownerApp = kubernetesAppLabel(service)
+			}
+		}
+		principal := fmt.Sprintf("%s/ns/%s/sa/default", meshTrustDomain, namespace)
+		writeInternalAuthorityAuthorizationPolicy(&source, namespace, owner, ownerApp, principal, procedures)
+	}
+	return []byte(source.String())
+}
+
+func writeInternalAuthorityAuthorizationPolicy(source *strings.Builder, namespace, service, serviceApp, allowedPrincipal string, procedures []string) {
+	fmt.Fprintf(source, `---
+apiVersion: security.istio.io/v1
+kind: AuthorizationPolicy
+metadata:
+  name: deny-%s-internal-authority
+  namespace: %s
+spec:
+  selector:
+    matchLabels:
+      app: %s
+  action: DENY
+  rules:
+    - from:
+        - source:
+            notPrincipals:
+              - %s
+      to:
+        - operation:
+            paths:
+`, service, namespace, serviceApp, allowedPrincipal)
+	for _, procedure := range procedures {
+		fmt.Fprintf(source, "              - %s\n", procedure)
+	}
 }
 
 func renderNetworkPolicy(bindings deploymentBindings) []byte {

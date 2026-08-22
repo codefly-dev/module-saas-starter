@@ -17,6 +17,7 @@ deployment ports, and public egress. The runtime `module.codefly.yaml` and every
 | `module.codefly.yaml` | Generated Codefly module interface and service list. |
 | `services/*/service.codefly.yaml` | Generated agents, endpoint-scoped dependencies, endpoints, workspace configuration dependencies, and specs. |
 | `services/accounts/code/pkg/cataloggen/testdata/network-policy.golden.yaml` | Test-only topology-policy golden; installed GitOps policies are rendered structurally per environment. |
+| `services/accounts/code/pkg/cataloggen/testdata/mesh-policy.golden.yaml` | Test-only mesh-policy golden (STRICT mTLS + internal-authority AuthorizationPolicy); mirrors the Istio policy the GitOps renderer installs per environment. |
 | `services/accounts/code/pkg/cataloggen/deployment_topology.go` | Strict compiler, semantic validator, and renderers. |
 
 The normalized inventory currently contains eleven services, 16 endpoints,
@@ -97,6 +98,22 @@ mTLS authenticates the **workload** (its SPIFFE service account), not the end
 user or tenant. It is the reach gate only and never replaces the app-layer
 identity/authz gates (`requireInternalCredential`, JWT/OBO user checks), which
 remain as defense-in-depth on top of the mesh.
+
+### Internal-authority reach gate
+
+For every service that owns `EXPOSURE_INTERNAL` methods (read from its
+`authz-methods.json`), the baseline adds a `deny-<service>-internal-authority`
+`AuthorizationPolicy` that DENYs those gRPC method paths from every source
+principal except the allowlisted in-mesh caller identity — the ingress-gateway
+service account included. Istio matches by request path, so the internal
+authority surface is gated by caller workload identity even while it stays
+multiplexed on the shared HTTP port; no dedicated port is required.
+
+Because that match is L7 and the ambient `ztunnel` enforces L4 only, a
+namespace `waypoint` Gateway (`gateway.networking.k8s.io/v1`,
+`gatewayClassName: istio-waypoint`) is provisioned and the namespace opts in via
+`istio.io/use-waypoint`, so the path match is actually evaluated. The test-only
+`mesh-policy.golden.yaml` mirrors these resources.
 
 ## Generation and validation
 
