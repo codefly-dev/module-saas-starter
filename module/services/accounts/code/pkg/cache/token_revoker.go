@@ -10,7 +10,7 @@ import (
 // the auth.TokenRevoker shape. It stores nothing more than a marker
 // byte per revoked jti; presence-with-non-zero-TTL = "revoked".
 //
-// Sized for the access-token TTL (15 min default), so memory usage is
+// Sized for the access-token TTL (3 min default), so memory usage is
 // bounded by burst-logout volume, not by total user count.
 type TokenRevoker struct {
 	cache Cache
