@@ -77,6 +77,13 @@ type Sidecar struct {
 	// internalToken; only inbound checks honour the previous one.
 	previousInternalToken string
 	gatewayToken          string
+	// revoker enforces access-token revocation on the gateway hot path — the
+	// path where accounts trusts the sidecar-stamped identity headers and so
+	// never runs its own VerifyAccess revocation check. Always non-nil.
+	revoker revoker
+	// revocationFailOpen selects the behaviour when the revocation store errors:
+	// false (default) denies (fail-closed), true admits (fail-open).
+	revocationFailOpen bool
 }
 
 // acceptsInternalToken reports whether candidate is the current or a
@@ -109,6 +116,17 @@ func NewSidecar(backendConn *grpc.ClientConn, publicKey ed25519.PublicKey) *Side
 		internalToken:         workspaceEnv("internal-auth", "CODEFLY_INTERNAL_TOKEN"),
 		previousInternalToken: workspaceEnv("internal-auth", "CODEFLY_INTERNAL_TOKEN_PREVIOUS"),
 		gatewayToken:          workspaceEnv("internal-auth", "CODEFLY_GATEWAY_TOKEN"),
+		revoker:               noopRevoker{},
+		revocationFailOpen:    revocationFailsOpen(),
+	}
+}
+
+// SetRevoker wires the access-token revocation list consulted by checkJWT.
+// main wires the Redis-backed revoker once the cache connection is resolved;
+// left unset the sidecar uses noopRevoker (revocation disabled, dev parity).
+func (s *Sidecar) SetRevoker(r revoker) {
+	if r != nil {
+		s.revoker = r
 	}
 }
 
@@ -125,7 +143,7 @@ func (s *Sidecar) Check(ctx context.Context, req *authv3.CheckRequest) (*authv3.
 			if strings.HasPrefix(token, "cfly_sk_") {
 				return s.checkAPIKey(ctx, token)
 			}
-			return s.checkJWT(token)
+			return s.checkJWT(ctx, token)
 		}
 	}
 
@@ -134,9 +152,9 @@ func (s *Sidecar) Check(ctx context.Context, req *authv3.CheckRequest) (*authv3.
 	return deny(401, "authentication required"), nil
 }
 
-// checkJWT runs full alg-locked Ed25519 validation plus iss/aud/exp, then
-// projects the claims onto forwarded headers.
-func (s *Sidecar) checkJWT(tokenString string) (*authv3.CheckResponse, error) {
+// checkJWT runs full alg-locked Ed25519 validation plus iss/aud/exp, consults
+// the revocation list, then projects the claims onto forwarded headers.
+func (s *Sidecar) checkJWT(ctx context.Context, tokenString string) (*authv3.CheckResponse, error) {
 	if s.publicKey == nil {
 		return deny(503, "JWT validation not configured"), nil
 	}
@@ -157,6 +175,27 @@ func (s *Sidecar) checkJWT(tokenString string) (*authv3.CheckResponse, error) {
 	})
 	if err != nil || !token.Valid {
 		return deny(401, "invalid or expired token"), nil
+	}
+
+	// Revocation is checked AFTER signature/claim validation so a forged or
+	// expired token never reaches the store. This closes the gateway-path gap:
+	// accounts only runs its own revocation check on the direct fallback path,
+	// trusting the sidecar-stamped identity headers here.
+	if claims.ID != "" {
+		revoked, err := s.revoker.Revoked(ctx, claims.ID)
+		switch {
+		case err != nil && !s.revocationFailOpen:
+			// Store unreachable in strict mode: deny rather than admit a
+			// possibly-revoked token. Recently-seen tokens are still served
+			// from the local cache, so this only bites on cache misses during
+			// a Redis outage.
+			log.Printf("revocation check failed, denying (fail-closed): %v", err)
+			return deny(503, "revocation check unavailable"), nil
+		case err != nil:
+			log.Printf("revocation check failed, admitting (fail-open): %v", err)
+		case revoked:
+			return deny(401, "token revoked"), nil
+		}
 	}
 
 	hdrs := []*corev3.HeaderValueOption{

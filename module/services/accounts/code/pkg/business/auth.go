@@ -17,7 +17,7 @@ import (
 // AccessTokenLifetime is the TTL baked into minted access tokens.
 // Kept in sync with ed25519minter.Config.AccessTokenTTL so the
 // ExpiresIn field on Authenticate responses matches reality.
-const AccessTokenLifetime = 15 * time.Minute
+const AccessTokenLifetime = 3 * time.Minute
 
 // Authenticate runs a login or signup through the identity resolver and
 // mints a fresh token pair.
