@@ -226,7 +226,8 @@ func doWork(ctx context.Context) (Clean, error) {
 		return nil, err
 	}
 	resolver.SetSignupMode(signupMode)
-	priv, err := loadSigningKey(ctx)
+	authProvider := configuredAuthProvider(selectedFixture)
+	priv, err := loadSigningKey(ctx, devFixtureAuthProvider(authProvider))
 	if err != nil {
 		return nil, err
 	}
@@ -271,7 +272,6 @@ func doWork(ctx context.Context) (Clean, error) {
 	// A selected fixture is an optional data seed and cannot replace the
 	// configured provider. Fixture authentication must itself be selected and
 	// additionally requires an explicit fixture.
-	authProvider := configuredAuthProvider(selectedFixture)
 	v, ex, err := buildProviderStack(authProvider, selectedFixture)
 	if err != nil {
 		return nil, fmt.Errorf("configure authentication: %w", err)
@@ -1283,15 +1283,27 @@ func decodeEd25519PublicKey(encoded string) (ed25519core.PublicKey, error) {
 	return ed25519core.PublicKey(raw), nil
 }
 
+// devFixtureAuthProvider reports whether authProvider is one of the local
+// fixture-backed modes. Only these may fall back to an ephemeral signing key;
+// with any real identity provider the key must load from Vault.
+func devFixtureAuthProvider(authProvider string) bool {
+	return authProvider == "fixture" || authProvider == "dev"
+}
+
 // loadSigningKey returns the Ed25519 private key used to sign access and
 // refresh tokens.
 //
-// Production: loads from Vault KV v2 (persistent across restarts).
-// Local dev: falls back to an ephemeral key if Vault isn't reachable,
+// The key must persist across restarts and be identical across replicas: it
+// signs JWTs, seeds the OAuth-state signer, and is the public key the sidecar
+// and permissions plugin pin. Production loads it from Vault KV v2 and refuses
+// to boot if that load fails — an ephemeral key would make each replica sign
+// differently, break existing sessions, and desynchronise the pinned key. This
+// fails closed rather than fail-open-to-broken.
 //
-//	so `codefly run service frontend --fixture dev-admin` still works on
-//	a fresh machine. The ephemeral fallback logs a warning.
-func loadSigningKey(ctx context.Context) (ed25519core.PrivateKey, error) {
+// allowEphemeral is set only in dev/fixture mode, where a freshly generated key
+// lets `codefly run service frontend --fixture dev-admin` work on a machine with
+// no Vault. The fallback logs a warning.
+func loadSigningKey(ctx context.Context, allowEphemeral bool) (ed25519core.PrivateKey, error) {
 	vaultAddr, addrErr := codefly.For(ctx).Service("vault").Configuration("vault", "address")
 	vaultToken, tokErr := codefly.For(ctx).Service("vault").Secret("vault", "token")
 	if addrErr == nil && tokErr == nil && vaultAddr != "" && vaultToken != "" {
@@ -1302,7 +1314,12 @@ func loadSigningKey(ctx context.Context) (ed25519core.PrivateKey, error) {
 		if err == nil {
 			return priv, nil
 		}
+		if !allowEphemeral {
+			return nil, fmt.Errorf("load signing key from Vault: %w", err)
+		}
 		wool.Get(ctx).In("loadSigningKey").Warn("could not load signing key from Vault — falling back to ephemeral", wool.ErrField(err))
+	} else if !allowEphemeral {
+		return nil, fmt.Errorf("load signing key: Vault address and token are required outside dev/fixture mode")
 	}
 	_, priv, err := ed25519minter.GenerateKey()
 	return priv, err
