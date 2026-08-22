@@ -58,6 +58,34 @@ file. This is the one repository-specific gate in provider YAML: it guards the
 canonical artifact that seeds every other consumer, so it must run here rather
 than in a consumer copy.
 
+## Authorization coverage
+
+The generated authorization catalog
+(`services/accounts/generated/authz-methods.json`) is a complete, typed policy
+for every RPC. The `Authorization coverage` job turns that catalog into
+default-deny CI gates, so an under-specified or widened route is un-mergeable
+rather than merely discouraged. `tools/authz-coverage-gate.mjs` runs, in order:
+
+- **RBAC coverage** (`rbac`) — every RPC must declare a coherent gate: a known
+  exposure (public / authenticated / internal), a known policy tier served on
+  the matching exposure, and a platform-role requirement iff it is a
+  platform-admin route. An unclassified route fails.
+- **Audit coverage** (`audit`) — every mutating, caller-attributable RPC must
+  emit audit. A mutation that records nothing fails.
+- **Permission no-broadening** (`no-broadening`) — the catalog is diffed against
+  `main`; any change that widens who may call a route (a relaxed exposure,
+  tenant, platform-role, or MFA requirement, or a dropped permission/scope) fails
+  unless the pull request carries the `authz-broadening-approved` label, which
+  sets `AUTHZ_ALLOW_BROADENING` for the run.
+
+Both coverage gates read ticketed exemptions from
+`tools/authz-coverage-allowlist.json`; every entry needs a reason and a ticket,
+and removing one re-arms the gate. The same job also runs the sidecar
+header-lockstep test (`TestUntrustedHeaders_SupersetOfStampedHeaders`), which
+keeps the gateway's stamped identity headers a subset of the headers it strips;
+the accounts-side companion (`TestUntrustedHeaders_SupersetOfTrustedHeaders`)
+runs with the accounts service test suite.
+
 ## Evidence
 
 Every run writes the schema-versioned report to `.codefly/ci/report.json` and

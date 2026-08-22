@@ -1,0 +1,47 @@
+{
+  "schema": "saas.authz.coverage.allowlist.v1",
+  "comment": "Ticketed exemptions for authz-coverage-gate.mjs. Every entry needs a procedure, a reason, and a ticket. Removing an entry re-arms the gate for that procedure; adding one is a reviewable event.",
+  "rbac": [],
+  "audit": [
+    {
+      "procedure": "/saas.accounts.v1.AuthService/BeginOAuth",
+      "reason": "Auth handshake initiator with no durable state change; the completing Authenticate call emits the login audit event.",
+      "ticket": "#204"
+    },
+    {
+      "procedure": "/saas.accounts.v1.AuthService/BeginWebAuthnMFAChallenge",
+      "reason": "MFA challenge initiator; the completing CompleteWebAuthnMFAChallenge call emits the audit event.",
+      "ticket": "#204"
+    },
+    {
+      "procedure": "/saas.accounts.v1.AuthService/RefreshToken",
+      "reason": "High-frequency access-token rotation; session issuance and revocation are the audited boundaries, not refresh.",
+      "ticket": "#204"
+    },
+    {
+      "procedure": "/saas.accounts.v1.NotificationService/DeleteNotification",
+      "reason": "Per-user notification-tray state; not a security-relevant mutation.",
+      "ticket": "#204"
+    },
+    {
+      "procedure": "/saas.accounts.v1.NotificationService/MarkRead",
+      "reason": "Per-user notification-tray state; not a security-relevant mutation.",
+      "ticket": "#204"
+    },
+    {
+      "procedure": "/saas.accounts.v1.NotificationService/MarkAllRead",
+      "reason": "Per-user notification-tray state; not a security-relevant mutation.",
+      "ticket": "#204"
+    },
+    {
+      "procedure": "/saas.accounts.v1.WaitlistService/Join",
+      "reason": "Public, unauthenticated waitlist signup; low-sensitivity and operator-facing Invite/Review actions carry the audit.",
+      "ticket": "#204"
+    },
+    {
+      "procedure": "/saas.accounts.v1.WaitlistService/Verify",
+      "reason": "Public waitlist email confirmation; low-sensitivity and operator-facing Invite/Review actions carry the audit.",
+      "ticket": "#204"
+    }
+  ]
+}

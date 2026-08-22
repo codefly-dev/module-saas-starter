@@ -34,6 +34,44 @@ jobs:
       - name: Enforce tenant RLS coverage in store migrations
         run: node module/tools/rls-migration-gate.mjs check
 
+  authz-coverage:
+    name: Authorization coverage
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          # no-broadening diffs the catalog against main.
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+      - name: Test the authz-coverage gate
+        run: node --test module/tools/authz-coverage-gate.test.mjs
+      - name: Enforce RBAC and audit coverage
+        run: node module/tools/authz-coverage-gate.mjs check
+      - name: Reject permission-broadening without approval
+        if: github.event_name == 'pull_request'
+        env:
+          # Renders to "false" when the label is absent; the gate requires an
+          # affirmative token, so only the label opens the escape hatch.
+          AUTHZ_ALLOW_BROADENING: ${{ contains(github.event.pull_request.labels.*.name, 'authz-broadening-approved') }}
+        run: |
+          git fetch --no-tags origin refs/heads/main:refs/remotes/origin/main
+          base="$(mktemp)"
+          if git show origin/main:module/services/accounts/generated/authz-methods.json > "${base}" 2>/dev/null; then
+            node module/tools/authz-coverage-gate.mjs no-broadening --base "${base}"
+          else
+            echo "no authorization catalog on main yet; nothing to diff"
+          fi
+      - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6.5.0
+        with:
+          go-version: "1.27.0"
+          cache: false
+      - name: Enforce the sidecar header-lockstep invariant
+        working-directory: module/services/auth-sidecar/code
+        run: go test -run TestUntrustedHeaders_SupersetOfStampedHeaders .
+
   provider-shim:
     name: Provider setup shims
     runs-on: ubuntu-latest
