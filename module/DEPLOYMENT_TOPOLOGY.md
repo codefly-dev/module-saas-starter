@@ -17,6 +17,7 @@ deployment ports, and public egress. The runtime `module.codefly.yaml` and every
 | `module.codefly.yaml` | Generated Codefly module interface and service list. |
 | `services/*/service.codefly.yaml` | Generated agents, endpoint-scoped dependencies, endpoints, workspace configuration dependencies, and specs. |
 | `services/accounts/code/pkg/cataloggen/testdata/network-policy.golden.yaml` | Test-only topology-policy golden; installed GitOps policies are rendered structurally per environment. |
+| `services/accounts/code/pkg/cataloggen/testdata/mesh-policy.golden.yaml` | Test-only mesh-policy golden (STRICT mTLS + internal-authority AuthorizationPolicy); mirrors the Istio policy the GitOps renderer installs per environment. |
 | `services/accounts/code/pkg/cataloggen/deployment_topology.go` | Strict compiler, semantic validator, and renderers. |
 
 The normalized inventory currently contains eleven services, 16 endpoints,
@@ -79,6 +80,24 @@ pod-selector rule cannot authorize an RDS, ElastiCache, external Vault, or S3
 address. Production overlays must add narrowly scoped VPC endpoint/security
 group or CIDR policy for those configured destinations; the base deliberately
 does not open private address space globally.
+
+## Mesh-policy model
+
+Reach and identity are split. NetworkPolicy is the L3/L4 reach gate; the Istio
+mesh policy is the L7 workload-identity gate. Both the mesh-policy golden and the
+per-environment GitOps bundle render, from the same inputs:
+
+- a namespace-wide `PeerAuthentication` in STRICT mTLS mode, so a peer without a
+  mesh-issued identity is rejected before any handler;
+- a `deny-<service>-internal-authority` `AuthorizationPolicy` for every service
+  that owns `EXPOSURE_INTERNAL` methods (from its `authz-methods.json`). It
+  DENYs those method paths from every source principal except the allowlisted
+  in-mesh caller identity — the ingress-gateway service account included.
+
+Istio matches by request path, so the internal authority surface is gated by
+caller workload identity even while it stays multiplexed on the shared HTTP
+port; no dedicated port is required. `requireInternalCredential` remains the
+app-layer identity gate (internal vs tenant) as defense-in-depth.
 
 ## Generation and validation
 
