@@ -121,6 +121,8 @@ frontend ([FRONTEND_ARCHITECTURE.md](./FRONTEND_ARCHITECTURE.md),
 ([module/REST_SURFACE.md](./module/REST_SURFACE.md),
 [module/GATEWAY_ROUTES.md](./module/GATEWAY_ROUTES.md)), email
 ([EMAIL_PROVIDER_ADAPTERS.md](./EMAIL_PROVIDER_ADAPTERS.md)), supply chain
-([SUPPLY_CHAIN_SECURITY.md](./SUPPLY_CHAIN_SECURITY.md)), and production
+([SUPPLY_CHAIN_SECURITY.md](./SUPPLY_CHAIN_SECURITY.md)), security review and
+hardening ([SECURITY_REVIEW.md](./SECURITY_REVIEW.md),
+[SECURITY_HARDENING_PLAN.md](./SECURITY_HARDENING_PLAN.md)), and production
 readiness ([PRODUCTION_READY.md](./PRODUCTION_READY.md)). Start from
 [MODULE.md](./MODULE.md), whose "Quick links" section indexes the full set.
