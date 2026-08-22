@@ -18,11 +18,27 @@ even when an internal token is present. On the private REST listener, HTTP/2
 `application/grpc` traffic is dispatched to a separate internal gRPC server
 which rejects every non-internal RPC. Unknown methods fail closed everywhere.
 
-The mixed private listener is a transitional in-module implementation detail,
-not a product integration endpoint. It is intentionally absent from the module
-interface. Cross-module installed product services must wait for the generated
-named internal gRPC endpoint in `P1-NET-007`; the public auth-sidecar never
-exposes internal methods such as `ConsumeUsage`.
+## Internal-authority reach gate (mesh)
+
+Reach and identity are split. Even though the internal RPCs stay multiplexed on
+the shared HTTP port, the mesh gates *reach* by caller workload identity: an
+Istio `AuthorizationPolicy` (`deny-accounts-internal-authority`, generated from
+the `EXPOSURE_INTERNAL` methods in `authz-methods.json`) **denies the internal
+method paths from every source principal except the allowlisted in-mesh caller
+identity** — the ingress-gateway service account included. Combined with
+namespace `PeerAuthentication: STRICT`, a request to an internal method path
+from a non-allowlisted principal is rejected at the mesh before the handler.
+Istio matches by request path, so this holds without a dedicated port.
+
+mTLS authenticates the *workload*, not the end user or tenant: it is the reach
+gate only. `requireInternalCredential` remains the app-layer *identity* gate
+(internal vs tenant), and per-RPC user/tenant checks stay necessary.
+
+The mixed private listener is an in-module implementation detail, not a product
+integration endpoint. It is intentionally absent from the module interface.
+Cross-module installed product services must wait for the generated named
+internal gRPC endpoint in `P1-NET-007`; the public auth-sidecar never exposes
+internal methods such as `ConsumeUsage`.
 
 ## Forwarded identity
 

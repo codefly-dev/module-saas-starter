@@ -122,11 +122,15 @@ request policy.
 ## Deployment boundary
 
 The current accounts runtime admits internal gRPC on its private REST h2c
-listener. That listener is not exported as a module interface. Product modules
-must depend on the generated named internal endpoint once `P1-NET-007` adds
-multiple same-API endpoint support to the Codefly Go runtime. Do not export the
-mixed REST listener or route `ConsumeUsage` through the public auth sidecar as
-a workaround.
+listener. `ConsumeUsage` is on the internal tier, so the mesh reach gate
+(`deny-accounts-internal-authority`) denies its method path from every
+principal except the allowlisted in-mesh caller — the ingress gateway included
+— and `requireInternalCredential` remains the app-layer identity gate. That
+listener is not exported as a module interface. Product modules must depend on
+the generated named internal endpoint once `P1-NET-007` adds multiple same-API
+endpoint support to the Codefly Go runtime. Do not export the mixed REST
+listener or route `ConsumeUsage` through the public auth sidecar as a
+workaround.
 
 This deployment limitation does not change the protobuf or database contract;
 it only blocks the final cross-module service edge.
