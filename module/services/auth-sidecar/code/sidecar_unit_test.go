@@ -32,6 +32,7 @@ func newTestSidecar(t *testing.T) (*Sidecar, ed25519.PrivateKey) {
 		issuer:       "saas-starter",
 		audience:     "saas-starter",
 		gatewayToken: "test-gateway-token",
+		revoker:      noopRevoker{},
 	}, priv
 }
 
