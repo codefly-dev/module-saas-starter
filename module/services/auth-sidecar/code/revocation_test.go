@@ -23,6 +23,8 @@ func (f *fakeRevoker) Revoked(_ context.Context, jti string) (bool, error) {
 	return f.revoked[jti], nil
 }
 
+func (f *fakeRevoker) Forget(string) {}
+
 // fakeStore stands in for the shared Redis revocation set. It counts lookups so
 // tests can assert the local cache actually collapses store round-trips.
 type fakeStore struct {
@@ -81,30 +83,59 @@ func TestUnit_NotRevokedJWT_Allowed(t *testing.T) {
 	require.NotNil(t, resp.GetOkResponse(), "an un-revoked jti must pass")
 }
 
-// E2E-shaped proof through Check: valid token → 200, then the jti is added to
-// the shared revocation set (logout / admin-kill), and immediate reuse → 401.
-// This is the gap the issue describes: on the sidecar path a logged-out access
-// token used to keep working until natural expiry.
+// E2E-shaped proof through Check, with the DEFAULT cache TTL: protected RPC →
+// 200, logout through the gateway (which itself carries the token), accounts
+// revokes the jti, immediate reuse → 401. The logout request must not shield
+// the replay behind the "not revoked" answer it just cached — checkJWT forgets
+// the jti's cache entry on logout routes.
 func TestUnit_Revocation_GatewayPath_LogoutThenReuseRejected(t *testing.T) {
+	for _, logoutPath := range []string{
+		"/v1/auth/logout",
+		"/saas.accounts.v1.AuthService/Logout",
+		"/customers.AuthService/Logout",
+	} {
+		t.Run(logoutPath, func(t *testing.T) {
+			s, priv := newTestSidecar(t)
+			c := validClaims(time.Now())
+			token := signClaims(t, priv, c)
+
+			store := newFakeStore()
+			s.revoker = newCachedRevoker(store.revoked, defaultRevocationCacheTTL)
+
+			resp, err := s.Check(context.Background(), checkReq("/v1/users", bearer(token)))
+			require.NoError(t, err)
+			require.NotNil(t, resp.GetOkResponse(), "protected RPC succeeds before logout")
+
+			resp, err = s.Check(context.Background(), checkReq(logoutPath, bearer(token)))
+			require.NoError(t, err)
+			require.NotNil(t, resp.GetOkResponse(), "logout request itself is authorized")
+
+			store.mark(c.ID) // accounts revokes the access-token jti on logout.
+
+			resp, err = s.Check(context.Background(), checkReq("/v1/users", bearer(token)))
+			require.NoError(t, err)
+			require.NotNil(t, resp.GetDeniedResponse(), "reused post-logout token must be rejected")
+			require.Equal(t, int32(401), int32(resp.GetDeniedResponse().Status.Code))
+		})
+	}
+}
+
+// A non-logout request leaves the cache intact — the replay is served from the
+// documented ≤TTL window, not a store round-trip per request.
+func TestUnit_Revocation_NonLogoutPathKeepsCache(t *testing.T) {
 	s, priv := newTestSidecar(t)
 	c := validClaims(time.Now())
 	token := signClaims(t, priv, c)
 
 	store := newFakeStore()
-	// ttl=0 disables the local cache so the second check observes the
-	// revocation immediately — matching the "immediately reuse → 401" criterion.
-	s.revoker = newCachedRevoker(store.revoked, 0)
+	s.revoker = newCachedRevoker(store.revoked, defaultRevocationCacheTTL)
 
-	resp, err := s.Check(context.Background(), checkReq("/v1/users", bearer(token)))
-	require.NoError(t, err)
-	require.NotNil(t, resp.GetOkResponse(), "protected RPC succeeds before logout")
-
-	store.mark(c.ID) // accounts revokes the access-token jti on logout.
-
-	resp, err = s.Check(context.Background(), checkReq("/v1/users", bearer(token)))
-	require.NoError(t, err)
-	require.NotNil(t, resp.GetDeniedResponse(), "reused post-logout token must be rejected")
-	require.Equal(t, int32(401), int32(resp.GetDeniedResponse().Status.Code))
+	for i := 0; i < 3; i++ {
+		resp, err := s.Check(context.Background(), checkReq("/v1/users", bearer(token)))
+		require.NoError(t, err)
+		require.NotNil(t, resp.GetOkResponse())
+	}
+	require.Equal(t, 1, store.calls, "repeat requests within the window hit the cache")
 }
 
 // ============================================================================

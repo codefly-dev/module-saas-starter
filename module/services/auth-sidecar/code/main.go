@@ -132,7 +132,15 @@ func main() {
 	// Redis revocation set accounts writes on logout / admin session-kill,
 	// fronted by a short-TTL local cache so the browser path avoids a
 	// per-request store round-trip.
-	sidecar.SetRevoker(newRevoker(redisURL, revocationCacheTTL()))
+	revocationTTL, err := revocationCacheTTL()
+	if err != nil {
+		panic(err)
+	}
+	rev, err := newRevoker(redisURL, revocationTTL)
+	if err != nil {
+		panic(fmt.Sprintf("configure access-token revocation: %v", err))
+	}
+	sidecar.SetRevoker(rev)
 
 	var grpcOptions []grpc.ServerOption
 	if otelMetricProvider != nil {

@@ -19,7 +19,7 @@ import (
 // Intentional divergence from infra.ListRoleNamesForUser (the API-key `x-roles`
 // claims path), which IS team-inclusive: that path is resolved fresh on every
 // API-key validation, so team-inheritance carries no staleness risk. This claim
-// instead rides a ~15-minute access token. Making it team-inclusive would leave
+// instead rides a short-lived access token. Making it team-inclusive would leave
 // a removed team member holding the team's scoped grants until their next
 // refresh — an over-authorization window — unless team_members/teams also
 // revoked sessions. Direct-only is deliberately chosen so migration 91 is the

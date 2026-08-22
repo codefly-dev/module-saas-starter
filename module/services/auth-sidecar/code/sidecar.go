@@ -134,7 +134,8 @@ func (s *Sidecar) SetRevoker(r revoker) {
 // The gateway calls this after route matching. The sidecar validates
 // credentials and returns identity headers on success.
 func (s *Sidecar) Check(ctx context.Context, req *authv3.CheckRequest) (*authv3.CheckResponse, error) {
-	headers := req.GetAttributes().GetRequest().GetHttp().GetHeaders()
+	httpReq := req.GetAttributes().GetRequest().GetHttp()
+	headers := httpReq.GetHeaders()
 
 	// Try Bearer token.
 	if auth := headers["authorization"]; auth != "" {
@@ -143,7 +144,7 @@ func (s *Sidecar) Check(ctx context.Context, req *authv3.CheckRequest) (*authv3.
 			if strings.HasPrefix(token, "cfly_sk_") {
 				return s.checkAPIKey(ctx, token)
 			}
-			return s.checkJWT(ctx, token)
+			return s.checkJWT(ctx, token, httpReq.GetPath())
 		}
 	}
 
@@ -152,9 +153,20 @@ func (s *Sidecar) Check(ctx context.Context, req *authv3.CheckRequest) (*authv3.
 	return deny(401, "authentication required"), nil
 }
 
+// logoutPaths are the gateway routes that trigger accounts-side token
+// revocation (REST and both Connect spellings, from the generated route
+// catalogs). checkJWT drops its cached revocation answer for the presented
+// jti on these paths — the logout request itself must not shield an
+// immediate replay of the token it revokes behind a fresh cache entry.
+var logoutPaths = map[string]bool{
+	"/v1/auth/logout":                      true,
+	"/saas.accounts.v1.AuthService/Logout": true,
+	"/customers.AuthService/Logout":        true,
+}
+
 // checkJWT runs full alg-locked Ed25519 validation plus iss/aud/exp, consults
 // the revocation list, then projects the claims onto forwarded headers.
-func (s *Sidecar) checkJWT(ctx context.Context, tokenString string) (*authv3.CheckResponse, error) {
+func (s *Sidecar) checkJWT(ctx context.Context, tokenString, path string) (*authv3.CheckResponse, error) {
 	if s.publicKey == nil {
 		return deny(503, "JWT validation not configured"), nil
 	}
@@ -195,6 +207,12 @@ func (s *Sidecar) checkJWT(ctx context.Context, tokenString string) (*authv3.Che
 			log.Printf("revocation check failed, admitting (fail-open): %v", err)
 		case revoked:
 			return deny(401, "token revoked"), nil
+		}
+		// Forget AFTER the check: the check above may have (re)cached
+		// "not revoked" for this jti, and on a logout route that entry
+		// would outlive the revocation accounts performs next.
+		if pathOnly, _, _ := strings.Cut(path, "?"); logoutPaths[pathOnly] {
+			s.revoker.Forget(claims.ID)
 		}
 	}
 

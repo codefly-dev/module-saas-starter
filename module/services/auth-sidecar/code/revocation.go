@@ -34,8 +34,15 @@ const revocationCacheMaxEntries = 50000
 // consulted (network / timeout); the caller turns that into the configured
 // fail-open or fail-closed decision. A nil error with revoked=false is an
 // authoritative "not revoked".
+//
+// Forget drops any locally cached answer for jti so the next Revoked call
+// consults the store. The sidecar calls it when it authorizes a logout
+// request: that request would otherwise cache "not revoked" for the very
+// token accounts is about to revoke, shielding an immediate replay for a
+// full cache window.
 type revoker interface {
 	Revoked(ctx context.Context, jti string) (bool, error)
+	Forget(jti string)
 }
 
 // noopRevoker is the dev / no-Redis fallback: nothing is ever revoked. Mirrors
@@ -44,6 +51,8 @@ type revoker interface {
 type noopRevoker struct{}
 
 func (noopRevoker) Revoked(context.Context, string) (bool, error) { return false, nil }
+
+func (noopRevoker) Forget(string) {}
 
 // redisRevocationStore reads the shared revocation set. It reuses the sidecar's
 // pooled/timeout-bounded Redis option builder so a hung Redis surfaces as a
@@ -75,8 +84,6 @@ func (s *redisRevocationStore) revoked(ctx context.Context, jti string) (bool, e
 		return false, fmt.Errorf("revocation store get: %w", err)
 	}
 }
-
-func (s *redisRevocationStore) Close() error { return s.client.Close() }
 
 // revocationLookup is the store-facing half of cachedRevoker, split out so
 // tests can drive the cache with an in-memory or failing lookup.
@@ -126,6 +133,12 @@ func (c *cachedRevoker) Revoked(ctx context.Context, jti string) (bool, error) {
 	return revoked, nil
 }
 
+func (c *cachedRevoker) Forget(jti string) {
+	c.mu.Lock()
+	delete(c.entries, jti)
+	c.mu.Unlock()
+}
+
 func (c *cachedRevoker) cached(jti string) (revoked bool, ok bool) {
 	if c.ttl <= 0 {
 		return false, false
@@ -156,36 +169,36 @@ func (c *cachedRevoker) store(jti string, revoked bool) {
 	c.entries[jti] = revocationCacheEntry{revoked: revoked, expiresAt: now.Add(c.ttl)}
 }
 
-// newRevoker builds the revoker wired into the sidecar. With no Redis it falls
-// back to noopRevoker (dev parity); with Redis it fronts the shared revocation
-// set with the short-TTL cache.
-func newRevoker(redisURL string, ttl time.Duration) revoker {
+// newRevoker builds the revoker wired into the sidecar. No Redis configured
+// falls back to noopRevoker (dev parity, loudly logged); a Redis URL that
+// doesn't parse is a config error, not a reason to silently run without
+// revocation — the caller must treat it as fatal.
+func newRevoker(redisURL string, ttl time.Duration) (revoker, error) {
 	if strings.TrimSpace(redisURL) == "" {
 		log.Printf("auth-sidecar: no Redis configured — access-token revocation disabled (dev parity with accounts NoopTokenRevoker)")
-		return noopRevoker{}
+		return noopRevoker{}, nil
 	}
 	store, err := newRedisRevocationStore(redisURL)
 	if err != nil {
-		log.Printf("auth-sidecar: WARNING invalid Redis URL for revocation: %v — revocation disabled", err)
-		return noopRevoker{}
+		return nil, fmt.Errorf("revocation Redis URL: %w", err)
 	}
 	log.Printf("auth-sidecar: access-token revocation enabled (Redis-backed, %s local cache)", ttl)
-	return newCachedRevoker(store.revoked, ttl)
+	return newCachedRevoker(store.revoked, ttl), nil
 }
 
 // revocationCacheTTL resolves the local-cache window from workspace config,
-// defaulting to defaultRevocationCacheTTL and rejecting nonsensical values.
-func revocationCacheTTL() time.Duration {
+// defaulting to defaultRevocationCacheTTL. Nonsensical values are config
+// errors the caller must treat as fatal.
+func revocationCacheTTL() (time.Duration, error) {
 	raw := strings.TrimSpace(workspaceEnv("security", "SIDECAR_REVOCATION_CACHE_TTL"))
 	if raw == "" {
-		return defaultRevocationCacheTTL
+		return defaultRevocationCacheTTL, nil
 	}
 	ttl, err := time.ParseDuration(raw)
 	if err != nil || ttl < 0 || ttl > 30*time.Second {
-		log.Printf("auth-sidecar: invalid SIDECAR_REVOCATION_CACHE_TTL %q — using %s", raw, defaultRevocationCacheTTL)
-		return defaultRevocationCacheTTL
+		return 0, fmt.Errorf("SIDECAR_REVOCATION_CACHE_TTL must be a duration between 0 and 30s, got %q", raw)
 	}
-	return ttl
+	return ttl, nil
 }
 
 // revocationFailsOpen reports the failure mode on a store error. Default is

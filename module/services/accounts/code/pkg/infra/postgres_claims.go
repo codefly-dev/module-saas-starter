@@ -161,7 +161,7 @@ func (s *PostgresStore) ListTeamPathsForUser(ctx context.Context, userID string,
 // validation, so team-inheritance carries no staleness risk. The access-token
 // `sr` scoped-roles claim (pkg/auth/pg.resolveScopedRoles) deliberately does
 // NOT mirror this — it is direct-principal-only because it caches into a
-// ~15-minute token, and team-inheritance there would need extra session
+// short-lived access token, and team-inheritance there would need extra session
 // invalidation to avoid an over-authorization window. Keep the two divergent.
 func (s *PostgresStore) ListRoleNamesForUser(ctx context.Context, userID string, orgID string) ([]string, error) {
 	w := wool.Get(ctx).In("ListRoleNamesForUser")
