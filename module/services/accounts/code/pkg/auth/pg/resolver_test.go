@@ -858,6 +858,35 @@ func TestResolver_Bootstrap_SelfDisarms(t *testing.T) {
 	require.Equal(t, id1.UserID, id1Again.UserID)
 }
 
+func TestResolver_Bootstrap_UnverifiedEmailDenied(t *testing.T) {
+	resetAuthTables(t)
+	ctx := context.Background()
+
+	t.Setenv(pgauth.BootstrapAdminEmailEnv, "boss@test.local")
+	r := pgauth.NewResolver(testStore)
+
+	// An unverified claim matching the bootstrap address must not be granted
+	// super_admin, and must leave the bootstrap slot unclaimed.
+	id, err := r.Resolve(ctx, claimsUnverified("boss@test.local", "dev-boss"), auth.SignupIntent{})
+	require.NoError(t, err)
+	require.Equal(t, "", id.PlatformRole)
+
+	var stamped *time.Time
+	require.NoError(t, testPool.QueryRow(ctx,
+		`SELECT bootstrapped_at FROM bootstrap_state WHERE id = 1`).Scan(&stamped))
+	require.Nil(t, stamped, "unverified bootstrap login must not claim the slot")
+
+	var count int
+	scanControlPlane(t, &count, `SELECT COUNT(*) FROM platform_admins WHERE user_id = $1`, id.UserID)
+	require.Equal(t, 0, count)
+
+	// The operator can still claim the grant on a later verified login, proving
+	// the unverified attempt did not disarm the bootstrap.
+	verified, err := r.Resolve(ctx, claims("boss@test.local", "dev-boss"), auth.LoginIntent{})
+	require.NoError(t, err)
+	require.Equal(t, "super_admin", verified.PlatformRole)
+}
+
 func TestResolver_Bootstrap_NoEnvNoGrant(t *testing.T) {
 	resetAuthTables(t)
 	ctx := context.Background()

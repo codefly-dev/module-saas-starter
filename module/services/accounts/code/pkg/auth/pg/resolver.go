@@ -187,7 +187,7 @@ func (r *Resolver) resolveInTx(
 
 	// 3. Bootstrap admin check — runs for every authentication but only grants
 	//    platform role once per deployment.
-	platformRole, err := r.bootstrapOrLoadPlatformRole(ctx, tx, userID, c.Email)
+	platformRole, err := r.bootstrapOrLoadPlatformRole(ctx, tx, userID, c.Email, c.EmailVerified)
 	if err != nil {
 		return nil, err
 	}
@@ -916,8 +916,8 @@ func emailDomainAllowed(email string, allowed []string) bool {
 }
 
 // bootstrapOrLoadPlatformRole checks BOOTSTRAP_ADMIN_EMAIL against the current
-// claims email. If it matches and bootstrap_state has not been claimed yet,
-// inserts a platform_admins row granting super_admin and stamps
+// claims email. If it matches a verified email and bootstrap_state has not been
+// claimed yet, inserts a platform_admins row granting super_admin and stamps
 // bootstrap_state. Idempotent: after the first successful call, subsequent
 // logins of the same email just load the existing platform role.
 func (r *Resolver) bootstrapOrLoadPlatformRole(
@@ -925,6 +925,7 @@ func (r *Resolver) bootstrapOrLoadPlatformRole(
 	tx pgx.Tx,
 	userID uuid.UUID,
 	email string,
+	emailVerified bool,
 ) (string, error) {
 	// Fast path: load any existing platform role for this user.
 	var role string
@@ -949,6 +950,14 @@ func (r *Resolver) bootstrapOrLoadPlatformRole(
 		target = strings.ToLower(strings.TrimSpace(os.Getenv(BootstrapAdminEmailEnv)))
 	}
 	if target == "" || target != strings.ToLower(strings.TrimSpace(email)) {
+		return "", nil
+	}
+
+	// The grant authorises platform super_admin on email equality, so the
+	// address must be one the provider verified — otherwise a generic OIDC IdP
+	// asserting an unproven bootstrap address could seize the platform before
+	// the operator claims it. Same gate as the invite/waitlist/SSO-JIT paths.
+	if !emailVerified {
 		return "", nil
 	}
 
