@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"testing"
 	"time"
 
@@ -334,4 +335,26 @@ func TestBuildProviderStackRejectsUnknownAndIncompleteProviders(t *testing.T) {
 	t.Setenv("CODEFLY__WORKSPACE_SECRET_CONFIGURATION__IDENTITY__IDENTITY_CLIENT_SECRET", "REPLACE_ME")
 	_, _, err = buildProviderStack("workos", "")
 	require.Error(t, err, "checked-in placeholder credentials must fail startup")
+}
+
+func TestDevFixtureAuthProvider(t *testing.T) {
+	require.True(t, devFixtureAuthProvider("fixture"))
+	require.True(t, devFixtureAuthProvider("dev"))
+	require.False(t, devFixtureAuthProvider("workos"))
+	require.False(t, devFixtureAuthProvider(""))
+}
+
+// With no Vault configured, a real identity provider must fail closed at boot
+// rather than sign with an ephemeral key that differs per replica and breaks
+// existing sessions. Dev/fixture mode may still generate a key offline.
+func TestLoadSigningKeyFailsClosedOutsideDevFixture(t *testing.T) {
+	clearAuthProviderEnvironment(t)
+
+	_, err := loadSigningKey(context.Background(), false)
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "Vault")
+
+	priv, err := loadSigningKey(context.Background(), true)
+	require.NoError(t, err)
+	require.NotEmpty(t, priv)
 }
