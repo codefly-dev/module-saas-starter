@@ -148,7 +148,12 @@ func main() {
 	}
 	grpcServer := grpc.NewServer(grpcOptions...)
 	authv3.RegisterAuthorizationServer(grpcServer, sidecar)
-	reflection.Register(grpcServer)
+	// Server reflection enumerates every registered service and message for any
+	// unauthenticated caller — a discovery aid in dev, needless attack surface
+	// in a deployed environment. Register it only when running locally.
+	if codefly.IsLocal() {
+		reflection.Register(grpcServer)
+	}
 
 	grpcLis, err := net.Listen("tcp", fmt.Sprintf(":%d", grpcPort))
 	if err != nil {
@@ -225,6 +230,16 @@ func main() {
 		httpServer = &http.Server{
 			Addr:    fmt.Sprintf(":%d", httpPort),
 			Handler: newGatewayHTTPHandler(gateway, otelMetricProvider),
+			// Bound the request and idle phases so a slow client cannot pin a
+			// connection indefinitely (slowloris). WriteTimeout is deliberately
+			// left unset: the gateway proxies server-streaming Connect RPCs
+			// (DelegationService/WaitForDelegation holds the response open for up
+			// to its request timeout, ~5 min by default), and a finite
+			// WriteTimeout bounds the whole response and would sever the stream.
+			ReadHeaderTimeout: 10 * time.Second,
+			ReadTimeout:       30 * time.Second,
+			IdleTimeout:       120 * time.Second,
+			MaxHeaderBytes:    1 << 20, // 1 MiB
 		}
 		go func() {
 			fmt.Printf("auth-sidecar API gateway (HTTP) listening on :%d (api: %s, routes: %d)\n",

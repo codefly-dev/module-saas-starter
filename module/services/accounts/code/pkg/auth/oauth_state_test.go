@@ -8,7 +8,7 @@ import (
 )
 
 func TestOAuthStateSigner_RoundTrip(t *testing.T) {
-	s := auth.NewOAuthStateSigner([]byte("test-seed-1"))
+	s := newSigner(t, "test-seed-1")
 
 	state, err := s.Mint("workos", "https://app.acme.com/auth/callback")
 	if err != nil {
@@ -24,7 +24,7 @@ func TestOAuthStateSigner_RoundTrip(t *testing.T) {
 }
 
 func TestOAuthStateSigner_TamperedSignature(t *testing.T) {
-	s := auth.NewOAuthStateSigner([]byte("test-seed-1"))
+	s := newSigner(t, "test-seed-1")
 	state, _ := s.Mint("workos", "https://x.example.com/cb")
 
 	// Flip the last character of the signature.
@@ -38,7 +38,7 @@ func TestOAuthStateSigner_TamperedSignature(t *testing.T) {
 }
 
 func TestOAuthStateSigner_ProviderMismatch(t *testing.T) {
-	s := auth.NewOAuthStateSigner([]byte("test-seed-1"))
+	s := newSigner(t, "test-seed-1")
 	state, _ := s.Mint("workos", "https://x.example.com/cb")
 
 	// Same redirect, different provider — must reject so a state minted
@@ -49,7 +49,7 @@ func TestOAuthStateSigner_ProviderMismatch(t *testing.T) {
 }
 
 func TestOAuthStateSigner_RedirectMismatch(t *testing.T) {
-	s := auth.NewOAuthStateSigner([]byte("test-seed-1"))
+	s := newSigner(t, "test-seed-1")
 	state, _ := s.Mint("workos", "https://x.example.com/cb")
 
 	// Same provider, different redirect — must reject so an attacker
@@ -60,8 +60,8 @@ func TestOAuthStateSigner_RedirectMismatch(t *testing.T) {
 }
 
 func TestOAuthStateSigner_DifferentKeys(t *testing.T) {
-	a := auth.NewOAuthStateSigner([]byte("seed-A"))
-	b := auth.NewOAuthStateSigner([]byte("seed-B"))
+	a := newSigner(t, "seed-A")
+	b := newSigner(t, "seed-B")
 
 	state, _ := a.Mint("workos", "https://x/cb")
 	if err := b.Verify(state, "workos", "https://x/cb"); err == nil {
@@ -70,7 +70,7 @@ func TestOAuthStateSigner_DifferentKeys(t *testing.T) {
 }
 
 func TestOAuthStateSigner_MalformedInput(t *testing.T) {
-	s := auth.NewOAuthStateSigner([]byte("seed"))
+	s := newSigner(t, "seed")
 
 	cases := []string{
 		"",
@@ -84,6 +84,24 @@ func TestOAuthStateSigner_MalformedInput(t *testing.T) {
 			t.Errorf("Verify should reject malformed input: %q", c)
 		}
 	}
+}
+
+func TestNewOAuthStateSigner_EmptySeedFailsClosed(t *testing.T) {
+	if _, err := auth.NewOAuthStateSigner(nil); err == nil {
+		t.Errorf("nil seed should be rejected, not silently given a random key")
+	}
+	if _, err := auth.NewOAuthStateSigner([]byte{}); err == nil {
+		t.Errorf("empty seed should be rejected, not silently given a random key")
+	}
+}
+
+func newSigner(t *testing.T, seed string) *auth.OAuthStateSigner {
+	t.Helper()
+	s, err := auth.NewOAuthStateSigner([]byte(seed))
+	if err != nil {
+		t.Fatalf("NewOAuthStateSigner: %v", err)
+	}
+	return s
 }
 
 func flipChar(c byte) string {

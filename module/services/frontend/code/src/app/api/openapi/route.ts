@@ -11,7 +11,6 @@ export function GET() {
 		return new NextResponse(spec, {
 			headers: {
 				"Content-Type": "application/json",
-				"Access-Control-Allow-Origin": "*",
 			},
 		});
 	} catch {

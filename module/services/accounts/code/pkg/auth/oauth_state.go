@@ -38,20 +38,20 @@ type OAuthStateSigner struct {
 // returns a signer with a 10-minute TTL. seed should be a private
 // secret (e.g. the Ed25519 private key bytes); SHA-256 with a context
 // label keeps the derivation domain-separated from token signing.
-func NewOAuthStateSigner(seed []byte) *OAuthStateSigner {
+//
+// An empty seed is a hard error rather than a silent random-key fallback:
+// a per-instance random key makes state minted by one replica fail to
+// verify on another (breaking every OAuth callback behind a load
+// balancer) and hides the underlying misconfiguration. Callers own the
+// dev-vs-prod distinction and must supply a real seed.
+func NewOAuthStateSigner(seed []byte) (*OAuthStateSigner, error) {
 	if len(seed) == 0 {
-		// Fallback: random key on cold start. Tokens minted by one
-		// instance won't verify on another — fine for single-instance
-		// dev, broken for multi-instance prod. Operators MUST pass a
-		// real seed in production.
-		k := make([]byte, 32)
-		_, _ = rand.Read(k)
-		return &OAuthStateSigner{key: k, ttl: 10 * time.Minute}
+		return nil, errors.New("oauth-state: signing seed is required")
 	}
 	h := sha256.New()
 	h.Write([]byte("saas-starter:oauth-state:v1"))
 	h.Write(seed)
-	return &OAuthStateSigner{key: h.Sum(nil), ttl: 10 * time.Minute}
+	return &OAuthStateSigner{key: h.Sum(nil), ttl: 10 * time.Minute}, nil
 }
 
 // stateClaims is the payload shape. Field names short for compactness

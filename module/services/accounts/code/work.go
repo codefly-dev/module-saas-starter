@@ -240,6 +240,9 @@ func doWork(ctx context.Context) (Clean, error) {
 	}
 	resolver.SetSignupMode(signupMode)
 	authProvider := configuredAuthProvider(selectedFixture)
+	if err := requireLocalForDevFixtureProvider(authProvider, codefly.IsLocal()); err != nil {
+		return nil, err
+	}
 	priv, err := loadSigningKey(ctx, devFixtureAuthProvider(authProvider))
 	if err != nil {
 		return nil, err
@@ -279,7 +282,11 @@ func doWork(ctx context.Context) (Clean, error) {
 	// instances. Without this, OAuth callbacks rely solely on the FE's
 	// sessionStorage check — fine for single-page-app threat models but
 	// not defense-in-depth.
-	service.SetOAuthStateSigner(auth.NewOAuthStateSigner(priv))
+	stateSigner, err := auth.NewOAuthStateSigner(priv)
+	if err != nil {
+		return nil, fmt.Errorf("configure oauth state signer: %w", err)
+	}
+	service.SetOAuthStateSigner(stateSigner)
 
 	// Authentication mode is explicit in the Codefly identity configuration.
 	// A selected fixture is an optional data seed and cannot replace the
@@ -1306,6 +1313,18 @@ func decodeEd25519PublicKey(encoded string) (ed25519core.PublicKey, error) {
 // with any real identity provider the key must load from Vault.
 func devFixtureAuthProvider(authProvider string) bool {
 	return authProvider == "fixture" || authProvider == "dev"
+}
+
+// requireLocalForDevFixtureProvider refuses to start with the dev or fixture
+// identity provider outside the local environment. Those providers accept
+// unauthenticated identities by design; selecting one in a deployed environment
+// (via IDENTITY_PROVIDER=dev/fixture) would turn the whole authentication
+// boundary off, so it fails closed at startup instead.
+func requireLocalForDevFixtureProvider(authProvider string, isLocal bool) error {
+	if devFixtureAuthProvider(authProvider) && !isLocal {
+		return fmt.Errorf("identity provider %q is only permitted in the local environment", authProvider)
+	}
+	return nil
 }
 
 // loadSigningKey returns the Ed25519 private key used to sign access and
