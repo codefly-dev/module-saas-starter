@@ -17,6 +17,8 @@ export function ApiDocsFrame() {
 			className="rounded-lg border bg-card overflow-hidden"
 			style={{ height: "calc(100vh - 12rem)" }}
 		>
+			{/* This origin must stay in the CSP frame-src allowlist —
+			    see API_DOCS_VIEWER_ORIGIN in server/security-headers.mjs. */}
 			<iframe
 				src={`https://petstore.swagger.io/?url=${encodeURIComponent(specUrl)}`}
 				className="w-full h-full border-0"

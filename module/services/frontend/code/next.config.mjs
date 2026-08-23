@@ -2,6 +2,7 @@ import { readdirSync, readFileSync } from "node:fs";
 import { withSentryConfig } from "@sentry/nextjs";
 import { getCurrentFixture } from "codefly";
 import { resolveAccountsBindings } from "./server/accounts-bindings.mjs";
+import { securityHeaders } from "./server/security-headers.mjs";
 
 const workspacePackageNames = readdirSync(
 	new URL("./packages", import.meta.url),
@@ -59,6 +60,13 @@ const nextConfig = {
 	// that expose TypeScript under the development condition then participate in
 	// Next HMR without a separate dist rebuild race.
 	transpilePackages: ["codefly", ...workspacePackageNames],
+	// Anti-clickjacking + CSP baseline for the authenticated product surface.
+	// The CSP allowlist for cross-origin subresources (Module Federation
+	// solutions, analytics, bot-protection) is derived from build-time config;
+	// see server/security-headers.mjs.
+	async headers() {
+		return [{ source: "/:path*", headers: securityHeaders() }];
+	},
 	// The frontend is the module's public product entry. The browser only talks
 	// to this origin; Next proxies API traffic to auth-sidecar/rest, which
 	// enforces the generated route/auth policy before Accounts. This keeps auth
