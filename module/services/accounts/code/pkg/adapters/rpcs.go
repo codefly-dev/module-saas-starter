@@ -1350,6 +1350,9 @@ func (s *PlatformAdminServer) SearchUsers(ctx context.Context, req *gen.SearchUs
 	if err != nil {
 		return nil, err
 	}
+	if err := requirePlatformRole(ctx, actorID, "support"); err != nil {
+		return nil, err
+	}
 	return service.SearchUsers(ctx, actorID, req)
 }
 
@@ -1359,6 +1362,9 @@ func (s *PlatformAdminServer) SuspendUser(ctx context.Context, req *gen.SuspendU
 	}
 	actorID, err := requireAuth(ctx)
 	if err != nil {
+		return nil, err
+	}
+	if err := requirePlatformRole(ctx, actorID, "super_admin"); err != nil {
 		return nil, err
 	}
 	if err := service.SuspendUser(ctx, actorID, req); err != nil {
@@ -1375,6 +1381,9 @@ func (s *PlatformAdminServer) UnsuspendUser(ctx context.Context, req *gen.Unsusp
 	if err != nil {
 		return nil, err
 	}
+	if err := requirePlatformRole(ctx, actorID, "super_admin"); err != nil {
+		return nil, err
+	}
 	if err := service.UnsuspendUser(ctx, actorID, req); err != nil {
 		return nil, err
 	}
@@ -1387,6 +1396,11 @@ func (s *PlatformAdminServer) ImpersonateUser(ctx context.Context, req *gen.Impe
 	}
 	actorID, err := requireAuth(ctx)
 	if err != nil {
+		return nil, err
+	}
+	// Role check precedes requireMFA so a non-admin is denied before we probe
+	// their MFA enrollment state.
+	if err := requirePlatformRole(ctx, actorID, "support"); err != nil {
 		return nil, err
 	}
 	if err := requireMFA(ctx, actorID); err != nil {
@@ -1403,6 +1417,9 @@ func (s *PlatformAdminServer) ListActiveSessions(ctx context.Context, req *gen.L
 	if err != nil {
 		return nil, err
 	}
+	if err := requirePlatformRole(ctx, actorID, "support"); err != nil {
+		return nil, err
+	}
 	return service.ListActiveSessions(ctx, actorID, req)
 }
 
@@ -1412,6 +1429,9 @@ func (s *PlatformAdminServer) RevokeSession(ctx context.Context, req *gen.Revoke
 	}
 	actorID, err := requireAuth(ctx)
 	if err != nil {
+		return nil, err
+	}
+	if err := requirePlatformRole(ctx, actorID, "support"); err != nil {
 		return nil, err
 	}
 	if err := service.RevokeSession(ctx, actorID, req); err != nil {
@@ -1483,6 +1503,9 @@ func (s *PlatformAdminServer) GrantPlatformRole(ctx context.Context, req *gen.Gr
 	if err != nil {
 		return nil, err
 	}
+	if err := requirePlatformRole(ctx, actorID, "super_admin"); err != nil {
+		return nil, err
+	}
 	if err := requireMFA(ctx, actorID); err != nil {
 		return nil, err
 	}
@@ -1500,6 +1523,9 @@ func (s *PlatformAdminServer) RevokePlatformRole(ctx context.Context, req *gen.R
 	if err != nil {
 		return nil, err
 	}
+	if err := requirePlatformRole(ctx, actorID, "super_admin"); err != nil {
+		return nil, err
+	}
 	if err := requireMFA(ctx, actorID); err != nil {
 		return nil, err
 	}
@@ -1514,12 +1540,18 @@ func (s *PlatformAdminServer) ListPlatformAdmins(ctx context.Context, _ *gen.Lis
 	if err != nil {
 		return nil, err
 	}
+	if err := requirePlatformRole(ctx, actorID, "super_admin"); err != nil {
+		return nil, err
+	}
 	return service.ListPlatformAdmins(ctx, actorID)
 }
 
 func (s *PlatformAdminServer) ListFeatureFlags(ctx context.Context, _ *gen.ListFeatureFlagsRequest) (*gen.ListFeatureFlagsResponse, error) {
 	actorID, err := requireAuth(ctx)
 	if err != nil {
+		return nil, err
+	}
+	if err := requirePlatformRole(ctx, actorID, "super_admin"); err != nil {
 		return nil, err
 	}
 	return service.ListFeatureFlags(ctx, actorID)
@@ -1555,6 +1587,9 @@ func (s *PlatformAdminServer) GetJobOperations(ctx context.Context, req *jobsv1.
 	if err != nil {
 		return nil, err
 	}
+	if err := requirePlatformRole(ctx, actorID, "super_admin"); err != nil {
+		return nil, err
+	}
 	response, err := service.GetJobOperations(ctx, actorID, req)
 	return response, jobOperationStatusError(err)
 }
@@ -1565,6 +1600,9 @@ func (s *PlatformAdminServer) ListJobs(ctx context.Context, req *jobsv1.ListJobs
 	}
 	actorID, err := requireAuth(ctx)
 	if err != nil {
+		return nil, err
+	}
+	if err := requirePlatformRole(ctx, actorID, "super_admin"); err != nil {
 		return nil, err
 	}
 	response, err := service.ListJobs(ctx, actorID, req)
@@ -1579,6 +1617,9 @@ func (s *PlatformAdminServer) GetJob(ctx context.Context, req *jobsv1.GetJobRequ
 	if err != nil {
 		return nil, err
 	}
+	if err := requirePlatformRole(ctx, actorID, "super_admin"); err != nil {
+		return nil, err
+	}
 	response, err := service.GetJob(ctx, actorID, req)
 	return response, jobOperationStatusError(err)
 }
@@ -1589,6 +1630,9 @@ func (s *PlatformAdminServer) ReplayJob(ctx context.Context, req *jobsv1.ReplayJ
 	}
 	actorID, err := requireAuth(ctx)
 	if err != nil {
+		return nil, err
+	}
+	if err := requirePlatformRole(ctx, actorID, "super_admin"); err != nil {
 		return nil, err
 	}
 	if err := requireRecentMFA(ctx); err != nil {
