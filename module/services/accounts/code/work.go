@@ -1105,8 +1105,8 @@ func buildProviderStack(provider, selectedFixture string) (auth.TokenValidator, 
 		audience := identityEnv("IDENTITY_AUDIENCE")
 		clientID := identityEnv("IDENTITY_CLIENT_ID")
 		clientSecret := identityEnv("IDENTITY_CLIENT_SECRET")
-		if !hasConfiguredValue(domain) || !hasConfiguredValue(clientID) || !hasConfiguredValue(clientSecret) {
-			return nil, nil, fmt.Errorf("identity provider auth0 requires IDENTITY_DOMAIN, IDENTITY_CLIENT_ID, and IDENTITY_CLIENT_SECRET")
+		if !hasConfiguredValue(domain) || !hasConfiguredValue(clientID) || !hasConfiguredValue(clientSecret) || !hasConfiguredValue(audience) {
+			return nil, nil, fmt.Errorf("identity provider auth0 requires IDENTITY_DOMAIN, IDENTITY_AUDIENCE, IDENTITY_CLIENT_ID, and IDENTITY_CLIENT_SECRET")
 		}
 		v, err := oidc.New(oidc.Auth0Config(domain, audience))
 		if err != nil {

@@ -18,8 +18,25 @@ func oidcInput(orgID, issuer string, domains ...string) business.OrgIdentityProv
 		Issuer:              issuer,
 		ClientID:            "client-" + orgID,
 		ClientSecret:        "s3cret-" + orgID,
+		Audience:            "api://" + orgID,
 		AllowedEmailDomains: domains,
 	}
+}
+
+// TestConfigureOrgIdentityProvider_RequiresAudience checks that an OIDC provider
+// without an audience is rejected at configuration time, not deferred to a
+// login-time build failure: the runtime stack has no other way to bind the
+// issuer's tokens to the org.
+func TestConfigureOrgIdentityProvider_RequiresAudience(t *testing.T) {
+	clearData(t)
+	ctx := testCtx
+
+	_, orgA := mustUserAndOrg(t, ctx, "aud-required@rls-test.com", "aud-required-rls", "Acme Aud")
+
+	in := oidcInput(orgA, "https://a.example/issuer", "a.example")
+	in.Audience = ""
+	_, err := testService.ConfigureOrgIdentityProvider(ctx, in)
+	require.ErrorContains(t, err, "audience")
 }
 
 // TestRLS_OrgIdentityProviders_CrossTenantBlocked mirrors the Phase 2B direct
@@ -160,6 +177,7 @@ func TestOrgProviderReconfigurePreservesActiveOnMetadataEdit(t *testing.T) {
 		DisplayName:         "Renamed IdP",
 		Issuer:              "https://a.example/issuer",
 		ClientID:            "client-" + orgA,
+		Audience:            "api://" + orgA,
 		AllowedEmailDomains: []string{"a.example", "extra.example"},
 	})
 	require.NoError(t, err)
@@ -179,6 +197,7 @@ func TestOrgProviderReconfigurePreservesActiveOnMetadataEdit(t *testing.T) {
 		DisplayName:         "Renamed IdP",
 		Issuer:              "https://a.example/rotated-issuer",
 		ClientID:            "client-" + orgA,
+		Audience:            "api://" + orgA,
 		AllowedEmailDomains: []string{"a.example"},
 	})
 	require.NoError(t, err)
