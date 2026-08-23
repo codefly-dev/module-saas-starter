@@ -235,29 +235,33 @@ export function broadeningViolations(baseMethods, headMethods) {
 
 // --- CLI --------------------------------------------------------------------
 
+// Print a gate's outcome and return whether it passed. It never exits, so a
+// combined run (check) can report every gate's violations in one pass instead
+// of stopping at the first failure.
 function report(name, errors, okMessage, failMessage) {
   if (errors.length) {
     console.error(`authz-coverage-gate ${name}: ${failMessage}`);
     errors.forEach((error) => console.error(`    ${error}`));
     console.error(`\nFAIL: ${errors.length} ${name} violation(s).`);
-    process.exit(1);
+    return false;
   }
   console.log(okMessage);
+  return true;
 }
 
-function runRbac() {
-  report(
+function runRbac(catalog, allowlist) {
+  return report(
     "rbac",
-    rbacCoverageErrors(loadCatalog(), loadAllowlist().rbac),
+    rbacCoverageErrors(catalog, allowlist.rbac),
     "✓ every RPC declares a coherent authorization gate.",
     "RPCs without a declared, coherent gate (add a policy or a ticketed allowlist entry):",
   );
 }
 
-function runAudit() {
-  report(
+function runAudit(catalog, allowlist) {
+  return report(
     "audit",
-    auditCoverageErrors(loadCatalog(), loadAllowlist().audit),
+    auditCoverageErrors(catalog, allowlist.audit),
     "✓ every mutating RPC emits audit or carries a ticketed exemption.",
     "mutating RPCs with no audit emission (emit audit or add a ticketed allowlist entry):",
   );
@@ -301,11 +305,12 @@ function runNoBroadening(argv) {
 
 if (resolve(process.argv[1] ?? "") === resolve(SCRIPT_PATH)) {
   const cmd = process.argv[2];
-  if (cmd === "rbac") runRbac();
-  else if (cmd === "audit") runAudit();
-  else if (cmd === "check") {
-    runRbac();
-    runAudit();
+  if (cmd === "rbac" || cmd === "audit" || cmd === "check") {
+    const catalog = loadCatalog();
+    const allowlist = loadAllowlist();
+    const rbacOK = cmd !== "audit" ? runRbac(catalog, allowlist) : true;
+    const auditOK = cmd !== "rbac" ? runAudit(catalog, allowlist) : true;
+    process.exit(rbacOK && auditOK ? 0 : 1);
   } else if (cmd === "no-broadening") runNoBroadening(process.argv.slice(3));
   else {
     console.error("usage: authz-coverage-gate.mjs <rbac|audit|check|no-broadening>");

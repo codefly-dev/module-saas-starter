@@ -6,6 +6,7 @@ import (
 	"go/token"
 	"path/filepath"
 	"runtime"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -64,7 +65,10 @@ func TestUntrustedHeaders_SupersetOfTrustedHeaders(t *testing.T) {
 		if !ok || lit.Kind != token.STRING {
 			return true
 		}
-		header := strings.Trim(lit.Value, `"`)
+		header, err := strconv.Unquote(lit.Value)
+		if err != nil {
+			return true
+		}
 		if !strings.HasPrefix(header, "X-") && header != "Authorization" {
 			return true
 		}
