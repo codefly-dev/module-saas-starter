@@ -54,7 +54,10 @@ func NewDurableAuditEmitter(store Store, producer jobs.Producer) (*DurableAuditE
 	return &DurableAuditEmitter{store: store, producer: producer}, nil
 }
 
-func (e *DurableAuditEmitter) Emit(ctx context.Context, entry AuditEntry) {
+// normalize backfills id / timestamp / schema version and logs an advisory
+// validation warning. A security event is never dropped because its payload
+// drifted from the registered schema.
+func (e *DurableAuditEmitter) normalize(ctx context.Context, entry *AuditEntry) {
 	if entry.ID == "" {
 		entry.ID = NewIDString()
 	}
@@ -64,8 +67,6 @@ func (e *DurableAuditEmitter) Emit(ctx context.Context, entry AuditEntry) {
 	if def, ok := LookupAuditEvent(entry.EventType); ok && entry.SchemaVersion == 0 {
 		entry.SchemaVersion = def.Version
 	}
-	// Validation is advisory: a security event is never dropped because its
-	// payload drifted from the registered schema. Log so drift surfaces.
 	if err := ValidatePayload(entry.EventType, entry.Payload); err != nil {
 		wool.Get(ctx).In("DurableAuditEmitter.Emit").Warn(
 			"audit payload failed registry validation",
@@ -73,35 +74,42 @@ func (e *DurableAuditEmitter) Emit(ctx context.Context, entry AuditEntry) {
 			wool.ErrField(err),
 		)
 	}
-	write := func(ctx context.Context) error {
-		if err := e.store.InsertAuditEvent(ctx, entry); err != nil {
-			return err
-		}
-		if entry.OrgID == "" {
-			return nil
-		}
-		subscriptions, err := e.store.GetActiveWebhookSubscriptions(ctx, string(entry.EventType))
+}
+
+// write inserts the audit row and fans out the webhook outbox using whatever
+// transaction is already on ctx (getQueryExecutor / EnqueueJob both pick it up).
+func (e *DurableAuditEmitter) write(ctx context.Context, entry AuditEntry) error {
+	if err := e.store.InsertAuditEvent(ctx, entry); err != nil {
+		return err
+	}
+	if entry.OrgID == "" {
+		return nil
+	}
+	subscriptions, err := e.store.GetActiveWebhookSubscriptions(ctx, string(entry.EventType))
+	if err != nil {
+		return err
+	}
+	for _, subscription := range subscriptions {
+		delivery, payload, err := newWebhookDelivery(entry, subscription.ID)
 		if err != nil {
 			return err
 		}
-		for _, subscription := range subscriptions {
-			delivery, payload, err := newWebhookDelivery(entry, subscription.ID)
-			if err != nil {
-				return err
-			}
-			if err := createOutboundWebhookDelivery(
-				ctx, e.store, e.producer, entry.OrgID, delivery, payload,
-			); err != nil {
-				return err
-			}
+		if err := createOutboundWebhookDelivery(
+			ctx, e.store, e.producer, entry.OrgID, delivery, payload,
+		); err != nil {
+			return err
 		}
-		return nil
 	}
+	return nil
+}
+
+func (e *DurableAuditEmitter) Emit(ctx context.Context, entry AuditEntry) {
+	e.normalize(ctx, &entry)
 	var err error
 	if entry.OrgID == "" {
-		err = e.store.WithControlPlane(ctx, write)
+		err = e.store.WithControlPlane(ctx, func(ctx context.Context) error { return e.write(ctx, entry) })
 	} else {
-		err = e.store.WithOrgTx(ctx, entry.OrgID, write)
+		err = e.store.WithOrgTx(ctx, entry.OrgID, func(ctx context.Context) error { return e.write(ctx, entry) })
 	}
 	if err != nil {
 		wool.Get(ctx).In("DurableAuditEmitter.Emit").Error(
@@ -112,6 +120,17 @@ func (e *DurableAuditEmitter) Emit(ctx context.Context, entry AuditEntry) {
 			wool.ErrField(err),
 		)
 	}
+}
+
+// EmitTx writes the audit event and its webhook outbox using the caller's
+// ambient transaction, so the audit trail commits atomically with the business
+// mutation that triggered it. Unlike Emit (fire-and-forget, own tx), it returns
+// the error so a failed audit write aborts the caller's tx — the compliance
+// record and the action it records are all-or-nothing. It MUST be called inside
+// an active tx (a Within/WithOrgTx block); there is no tx of its own.
+func (e *DurableAuditEmitter) EmitTx(ctx context.Context, entry AuditEntry) error {
+	e.normalize(ctx, &entry)
+	return e.write(ctx, entry)
 }
 
 func (e *DurableAuditEmitter) Close() {}
@@ -184,14 +203,10 @@ func (s *Service) AggregateAuditLog(ctx context.Context, q AuditQuery, groupBy, 
 	return out, err
 }
 
-// emit is a convenience method on Service for audit emission.
-// Automatically detects impersonation context from gRPC metadata headers
-// injected by the auth sidecar (x-is-impersonated, x-impersonated-by).
-func (s *Service) emit(ctx context.Context, actorID, actorType string, eventType EventType, resource, resourceID, orgID string, payload ...map[string]any) {
-	if s.audit == nil {
-		return
-	}
-
+// buildAuditEntry assembles an AuditEntry, detecting impersonation context from
+// gRPC metadata headers injected by the auth sidecar (x-is-impersonated,
+// x-impersonated-by).
+func (s *Service) buildAuditEntry(ctx context.Context, actorID, actorType string, eventType EventType, resource, resourceID, orgID string, payload ...map[string]any) AuditEntry {
 	entry := AuditEntry{
 		ActorID:    actorID,
 		ActorType:  actorType,
@@ -203,8 +218,6 @@ func (s *Service) emit(ctx context.Context, actorID, actorType string, eventType
 	if len(payload) > 0 {
 		entry.Payload = payload[0]
 	}
-
-	// Extract impersonation context from gRPC metadata (set by auth sidecar)
 	if md, ok := metadata.FromIncomingContext(ctx); ok {
 		if vals := md.Get("x-is-impersonated"); len(vals) > 0 && vals[0] == "true" {
 			entry.IsImpersonated = true
@@ -213,6 +226,34 @@ func (s *Service) emit(ctx context.Context, actorID, actorType string, eventType
 			}
 		}
 	}
+	return entry
+}
 
+// emit is the fire-and-forget audit path: the emitter owns its own transaction,
+// so the event is written after (and independently of) the caller's mutation.
+func (s *Service) emit(ctx context.Context, actorID, actorType string, eventType EventType, resource, resourceID, orgID string, payload ...map[string]any) {
+	if s.audit == nil {
+		return
+	}
+	s.audit.Emit(ctx, s.buildAuditEntry(ctx, actorID, actorType, eventType, resource, resourceID, orgID, payload...))
+}
+
+// emitTx records an audit event using the caller's ambient transaction, so the
+// audit trail commits atomically with the business mutation. It MUST be called
+// inside a Within/WithOrgTx block, and its error MUST be propagated: a failed
+// audit write then aborts the mutation (fail-closed — no state change without
+// its compliance record). Emitters that don't support transactional writes
+// (test fakes) fall back to a best-effort non-transactional emit.
+func (s *Service) emitTx(ctx context.Context, actorID, actorType string, eventType EventType, resource, resourceID, orgID string, payload ...map[string]any) error {
+	if s.audit == nil {
+		return nil
+	}
+	entry := s.buildAuditEntry(ctx, actorID, actorType, eventType, resource, resourceID, orgID, payload...)
+	if txEmitter, ok := s.audit.(interface {
+		EmitTx(context.Context, AuditEntry) error
+	}); ok {
+		return txEmitter.EmitTx(ctx, entry)
+	}
 	s.audit.Emit(ctx, entry)
+	return nil
 }
