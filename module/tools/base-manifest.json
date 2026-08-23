@@ -762,7 +762,7 @@
     "services/auth-sidecar/code/go.mod": "c5e5ea2e6fd12644f645d5295a6e9936915d9d81648a764d8c611f02b4fe5fb4",
     "services/auth-sidecar/code/go.sum": "d40bf92d1351d602a3b7b5c102b76c84d124444362bfe5aa92ca711e8eb8e5d4",
     "services/auth-sidecar/code/header_lockstep_test.go": "fffdbf34da2d68c0fc8fbf76ec234e3e70b2350128a8ea05d279b957034982f7",
-    "services/auth-sidecar/code/main.go": "5672af6dfddd2881c626df6aaa640df663008519a17c0273c0acdb89cb67ecc3",
+    "services/auth-sidecar/code/main.go": "5cbf8111a08f42d4463ea78a7cff32066592e23ddab7d307b12dbf72ac9f956e",
     "services/auth-sidecar/code/pkg/gen/saas/gateway/auth/v1/sidecar.pb.go": "e87b4e360f4543353bcdae73414f06fe37542cb9d429af662b136fe879b471a8",
     "services/auth-sidecar/code/pkg/gen/saas/gateway/auth/v1/sidecar.pb.gw.go": "cbc79a7d2758862a81b48d0674f914ec75e22e0629e400baeea054c7d600f8be",
     "services/auth-sidecar/code/pkg/gen/saas/gateway/auth/v1/sidecar_grpc.pb.go": "78f1c89435b56d27e658c5ae84b4efbd3c9afc8d1cd96573a7fa4ce2330b1bab",

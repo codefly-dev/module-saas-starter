@@ -230,13 +230,14 @@ func main() {
 		httpServer = &http.Server{
 			Addr:    fmt.Sprintf(":%d", httpPort),
 			Handler: newGatewayHTTPHandler(gateway, otelMetricProvider),
-			// Bound every phase of a connection so a slow or idle client cannot
-			// pin a goroutine indefinitely (slowloris). The gateway proxies
-			// unary request/response traffic only — no streaming — so a finite
-			// WriteTimeout is safe.
+			// Bound the request and idle phases so a slow client cannot pin a
+			// connection indefinitely (slowloris). WriteTimeout is deliberately
+			// left unset: the gateway proxies server-streaming Connect RPCs
+			// (DelegationService/WaitForDelegation holds the response open for up
+			// to its request timeout, ~5 min by default), and a finite
+			// WriteTimeout bounds the whole response and would sever the stream.
 			ReadHeaderTimeout: 10 * time.Second,
 			ReadTimeout:       30 * time.Second,
-			WriteTimeout:      60 * time.Second,
 			IdleTimeout:       120 * time.Second,
 			MaxHeaderBytes:    1 << 20, // 1 MiB
 		}
