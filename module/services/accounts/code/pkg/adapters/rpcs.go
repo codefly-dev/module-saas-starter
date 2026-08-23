@@ -887,23 +887,55 @@ var authenticateOracleErrors = []error{
 	business.ErrInvitationExpired,
 }
 
+// exposeAuthErrorDetail lets Authenticate return the underlying failure reason
+// in the client-facing message instead of the generic one. It is enabled only
+// for a local development environment (see SetExposeAuthErrorDetail) so a
+// developer can see why a login failed; it defaults to false and every deployed
+// environment leaves it false, keeping the enumeration oracle closed (#208).
+var exposeAuthErrorDetail bool
+
+// SetExposeAuthErrorDetail toggles verbose Authenticate error messages. Wire it
+// from codefly.IsLocal() only: it must never be true in a deployed environment.
+func SetExposeAuthErrorDetail(v bool) { exposeAuthErrorDetail = v }
+
 // authenticateStatusError maps an Authenticate failure to the error the caller
 // is allowed to see. Credential- and identity-resolution failures collapse to a
 // single Unauthenticated "invalid credentials"; the detailed sentinel is logged
-// for audit but never returned. ErrGroupNotAllowed keeps its distinct
-// PermissionDenied so the frontend can render "access not granted". Anything else
-// is a genuine server-side failure and passes through unchanged.
+// for audit but never returned. Two deliberate exceptions keep a distinct code:
+// ErrGroupNotAllowed (PermissionDenied, so the frontend can render "access not
+// granted") and ErrJWKSUnavailable (Unavailable, a retryable operator-side
+// outage rather than a credential failure — but still generic, never the
+// verbatim sentinel). Anything else is a genuine server-side failure and passes
+// through unchanged.
+//
+// The status code is identical in every environment so clients behave the same;
+// only the human-readable message carries the underlying reason, and only in
+// local development (exposeAuthErrorDetail).
 func authenticateStatusError(ctx context.Context, err error) error {
 	if errors.Is(err, auth.ErrGroupNotAllowed) {
 		return status.Error(codes.PermissionDenied, "access not granted")
 	}
+	if errors.Is(err, auth.ErrJWKSUnavailable) {
+		wool.Get(ctx).In("Authenticate").Warn("authentication key set unavailable", wool.ErrField(err))
+		return status.Error(codes.Unavailable, clientAuthMessage(err, "authentication temporarily unavailable"))
+	}
 	for _, sentinel := range authenticateOracleErrors {
 		if errors.Is(err, sentinel) {
 			wool.Get(ctx).In("Authenticate").Warn("authentication rejected", wool.ErrField(err))
-			return status.Error(codes.Unauthenticated, "invalid credentials")
+			return status.Error(codes.Unauthenticated, clientAuthMessage(err, "invalid credentials"))
 		}
 	}
 	return err
+}
+
+// clientAuthMessage returns the verbatim failure reason in local development and
+// the generic message everywhere else. It fails closed: an unset flag (the
+// zero value, i.e. every deployed environment) yields the generic string.
+func clientAuthMessage(err error, generic string) string {
+	if exposeAuthErrorDetail {
+		return err.Error()
+	}
+	return generic
 }
 
 func (s *AuthServer) CompleteMFAChallenge(ctx context.Context, req *gen.CompleteMFAChallengeRequest) (*gen.CompleteMFAChallengeResponse, error) {

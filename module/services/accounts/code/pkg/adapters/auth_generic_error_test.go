@@ -13,10 +13,21 @@ import (
 	"accounts/pkg/business"
 )
 
+// setExposeAuthErrorDetail flips the package-level verbose-error toggle for the
+// duration of a test and restores it afterwards, so dev- and prod-mode cases
+// don't leak state into each other.
+func setExposeAuthErrorDetail(t *testing.T, v bool) {
+	t.Helper()
+	prev := exposeAuthErrorDetail
+	t.Cleanup(func() { exposeAuthErrorDetail = prev })
+	SetExposeAuthErrorDetail(v)
+}
+
 // TestAuthenticateStatusError_IndistinguishableIdentityFailures locks the M4
 // contract: no-account, inactive, and not-invited must be identical to the
 // client so an unauthenticated caller gets no enumeration/account-state oracle.
 func TestAuthenticateStatusError_IndistinguishableIdentityFailures(t *testing.T) {
+	setExposeAuthErrorDetail(t, false) // deployed-environment behaviour
 	ctx := context.Background()
 
 	// The three acceptance-criteria cases plus the invitation-mismatch variants
@@ -55,6 +66,39 @@ func TestAuthenticateStatusError_GroupNotAllowedStaysDistinct(t *testing.T) {
 	require.True(t, ok)
 	require.Equal(t, codes.PermissionDenied, st.Code())
 	require.Equal(t, "access not granted", st.Message())
+}
+
+// TestAuthenticateStatusError_JWKSUnavailableIsRetryableNotCredential proves an
+// operator-side key-set outage maps to a retryable Unavailable with a generic
+// message — never the verbatim sentinel and never miscast as invalid credentials.
+func TestAuthenticateStatusError_JWKSUnavailableIsRetryableNotCredential(t *testing.T) {
+	setExposeAuthErrorDetail(t, false)
+	st, ok := status.FromError(authenticateStatusError(context.Background(),
+		fmt.Errorf("header-jwt authentication: %w", auth.ErrJWKSUnavailable)))
+	require.True(t, ok)
+	require.Equal(t, codes.Unavailable, st.Code())
+	require.Equal(t, "authentication temporarily unavailable", st.Message())
+	require.NotContains(t, st.Message(), "jwks")
+}
+
+// TestAuthenticateStatusError_LocalDevelopmentRevealsDetail proves that, in a
+// local development environment, the status code is unchanged (so clients behave
+// identically) but the message carries the underlying reason for debugging.
+func TestAuthenticateStatusError_LocalDevelopmentRevealsDetail(t *testing.T) {
+	setExposeAuthErrorDetail(t, true)
+
+	noAccount := fmt.Errorf("identity resolution: %w", auth.ErrNoAccount)
+	inactive := fmt.Errorf("identity resolution: %w", auth.ErrAccountInactive)
+
+	stNoAccount, ok := status.FromError(authenticateStatusError(context.Background(), noAccount))
+	require.True(t, ok)
+	stInactive, _ := status.FromError(authenticateStatusError(context.Background(), inactive))
+
+	// Code is stable across environments; only the message differs.
+	require.Equal(t, codes.Unauthenticated, stNoAccount.Code())
+	require.Equal(t, codes.Unauthenticated, stInactive.Code())
+	require.Equal(t, noAccount.Error(), stNoAccount.Message())
+	require.NotEqual(t, stNoAccount.Message(), stInactive.Message(), "detail is exposed in dev")
 }
 
 func TestAuthenticateStatusError_NilPassesThrough(t *testing.T) {
