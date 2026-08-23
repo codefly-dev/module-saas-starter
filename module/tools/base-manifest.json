@@ -941,7 +941,7 @@
     "services/frontend/code/src/app/admin/webhooks/page.tsx": "db74d164d99f6d5cffaed299ed740c0254919c6a8ae2211ab2ec16c4108aacc2",
     "services/frontend/code/src/app/api/fixtures/route.ts": "4992cb212e364f52f721de61b8a4bc5ede8fe2633036566995e2615d1c6c31a4",
     "services/frontend/code/src/app/api/notifications/stream/route.ts": "2ca8ed4fb015d6a0ddb26d5387549e18c4d2b7ff00c0e311857a326a6fe1b975",
-    "services/frontend/code/src/app/api/openapi/route.test.ts": "d69af3bf00638fef1713430c7e3f2d31bdfbe06c0a614d2654fa2ab812602940",
+    "services/frontend/code/src/app/api/openapi/route.test.ts": "da1911e86761301dc4874bdc1beb8be89960ff11ef46d607f4c3b09ccb6cbf07",
     "services/frontend/code/src/app/api/openapi/route.ts": "a0028fd79be7a1c2ad40d81987157c96d3d41eee4a91e188020c2cde68fbd623",
     "services/frontend/code/src/app/api/plugins/[plugin]/[alias]/[...path]/route.ts": "b6b706eca2241738d0e04097f12491acbbe092220ceb5157b81bb44be5faaccd",
     "services/frontend/code/src/app/api/solutions/[id]/proxy/[...path]/route.ts": "2d4c124041e3ee97342268f40d0e01ded56cb2febb7a6ec7fa05c19156ec8592",

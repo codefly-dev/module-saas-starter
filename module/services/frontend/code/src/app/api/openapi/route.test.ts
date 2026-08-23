@@ -1,12 +1,14 @@
+import { readFileSync } from "fs";
 import { describe, expect, it, vi } from "vitest";
 
-const fsMock = vi.hoisted(() => ({
+vi.mock("fs", async (importOriginal) => ({
+	...(await importOriginal<typeof import("fs")>()),
 	readFileSync: vi.fn(() => '{"openapi":"3.0.0"}'),
 }));
 
-vi.mock("fs", () => fsMock);
-
 import { GET } from "./route";
+
+const mockedReadFileSync = vi.mocked(readFileSync);
 
 describe("openapi spec route", () => {
 	it("serves the spec without a wildcard CORS header", async () => {
@@ -21,7 +23,7 @@ describe("openapi spec route", () => {
 	});
 
 	it("returns 404 when the spec is missing", () => {
-		fsMock.readFileSync.mockImplementationOnce(() => {
+		mockedReadFileSync.mockImplementationOnce(() => {
 			throw new Error("ENOENT");
 		});
 
