@@ -344,6 +344,22 @@ func TestGrantScope_RejectsForeignOrgRole(t *testing.T) {
 	require.ErrorContains(t, err, "not a role in this org")
 }
 
+// A role assignment must reference a role the tenant can actually see, matching
+// the grant/share paths. Assigning another org's role_id (reachable only because
+// the FK bypasses RLS) is rejected rather than stored as inert junk.
+func TestAssignRole_RejectsForeignOrgRole(t *testing.T) {
+	orgA, principalA, _ := layeredFixture(t, "doc", "read")
+	_, _, roleB := layeredFixture(t, "doc", "read") // role lives in a different org
+
+	err := testStore.WithOrgTx(testCtx, orgA, func(ctx context.Context) error {
+		return testStore.AssignRole(ctx, &gen.RoleAssignment{
+			Id: business.NewIDString(), OrgId: orgA, SubjectId: principalA,
+			SubjectKind: gen.SubjectKind_SUBJECT_KIND_PRINCIPAL, RoleId: roleB,
+		})
+	})
+	require.ErrorContains(t, err, "not a role in this org")
+}
+
 // A grant via a built-in / global role (org_id IS NULL) authorizes: CheckAccess
 // resolves the wildcard permission through role_permissions, whose RLS exposes
 // global roles inside a tenant tx. This is the load-bearing visibility the whole

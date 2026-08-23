@@ -167,6 +167,15 @@ func (s *PostgresStore) AssignRole(ctx context.Context, assignment *gen.RoleAssi
 		return fmt.Errorf("assign role: unsupported subject kind %s", assignment.SubjectKind)
 	}
 
+	// Bind the assignment to a role the caller's tenant can actually see. The
+	// roles FK bypasses RLS, so without this an org admin (authorized for their
+	// own org by the handler) could assign another org's role_id; under WithOrgTx
+	// the roles policy exposes only own-org and global roles, matching GrantScope
+	// and ShareRecord.
+	if err := requireVisibleRole(ctx, executor, assignment.RoleId); err != nil {
+		return w.Wrapf(err, "failed to validate role")
+	}
+
 	// Handle nullable org_id and scope
 	var orgID, scope interface{}
 	if assignment.OrgId != "" {
