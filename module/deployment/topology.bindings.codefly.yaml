@@ -193,9 +193,12 @@ services:
     agent:
       kind: codefly:service
       name: postgres
-      # Held at 0.0.124; 0.0.125 drops the builder/ dir from the staged build
-      # context so `COPY builder/runtime-access.sql` fails the container build.
-      # Tracked in codefly-dev/service-postgres#68.
+      # Held at 0.0.124; 0.0.125/0.0.126 break the store container build. The
+      # generated Dockerfile COPYs runtime-access.sql from the build-context
+      # root, but the agent stages it under builder/ in the service-dir context
+      # codefly builds against. Root cause in codefly-dev/service-postgres#70
+      # (0.0.126 verified still broken with cli@latest v0.1.139). Lift only when
+      # `codefly build service` passes on the new version.
       version: 0.0.124
       publisher: codefly.dev
     endpoints:
