@@ -35,7 +35,7 @@ func (s *PrincipalServer) GetPrincipal(ctx context.Context, req *gen.GetPrincipa
 	if err := Validate(req); err != nil {
 		return nil, err
 	}
-	if err := requireInternalOrAuth(ctx); err != nil {
+	if err := requireInternalCredential(ctx); err != nil {
 		return nil, err
 	}
 	p, err := service.GetPrincipal(ctx, req.GetId())
@@ -49,7 +49,7 @@ func (s *PrincipalServer) GetAgentPrincipal(ctx context.Context, req *gen.GetAge
 	if err := Validate(req); err != nil {
 		return nil, err
 	}
-	if err := requireInternalOrAuth(ctx); err != nil {
+	if err := requireInternalCredential(ctx); err != nil {
 		return nil, err
 	}
 	p, err := service.GetAgentPrincipal(ctx, req.GetOrgId(), req.GetAgentIdentifier())
@@ -161,9 +161,10 @@ func (s *PermServer) Decide(ctx context.Context, req *gen.DecideRequest) (*gen.D
 	if err := Validate(req); err != nil {
 		return nil, err
 	}
-	// Same auth gate as CheckPermission — Decide is an oracle that
-	// could leak permission state if open. Internal token OR JWT.
-	if err := requireInternalOrAuth(ctx); err != nil {
+	// Decide is an EXPOSURE_INTERNAL authority oracle: only a valid internal
+	// service token may ask it. A bare tenant JWT must never turn it into a
+	// permission oracle.
+	if err := requireInternalCredential(ctx); err != nil {
 		return nil, err
 	}
 	w := wool.Get(ctx).In("Decide",

@@ -124,6 +124,20 @@ func TestInjectHeaderJWTCredential(t *testing.T) {
 		require.Nil(t, req.Authentication)
 	})
 
+	t.Run("absent header drops a smuggled client credential", func(t *testing.T) {
+		// In header-jwt mode the trusted header is the only credential source.
+		// When it is absent, a client-supplied credential must not survive —
+		// otherwise a caller could authenticate with a body-smuggled token.
+		SetHeaderJWTLoginHeader("X-Auth-Jwt")
+		req := &gen.AuthenticateRequest{
+			Authentication: &gen.AuthenticateRequest_Fixture{
+				Fixture: &gen.FixtureAuthentication{Token: "smuggled"},
+			},
+		}
+		injectHeaderJWTCredential(req, http.Header{})
+		require.Nil(t, req.Authentication)
+	})
+
 	t.Run("gateway header overrides a client-supplied credential", func(t *testing.T) {
 		SetHeaderJWTLoginHeader("X-Auth-Jwt")
 		req := &gen.AuthenticateRequest{

@@ -145,6 +145,48 @@ func TestUnit_ValidJWT_ForwardsHeaders(t *testing.T) {
 	require.Empty(t, h["x-acting-as-user-id"], "acting header is empty unless impersonating")
 }
 
+// TestUnit_Allow_RemovesUnstampedTrustHeaders locks the H4 fix: on an allow
+// decision the sidecar must instruct Envoy to strip every untrusted trust
+// header it does not restamp, so a client-spoofed header cannot survive to the
+// upstream. This is the sidecar half of the header-lockstep invariant paired
+// with M6 (the strip set is a superset of the stamped set).
+func TestUnit_Allow_RemovesUnstampedTrustHeaders(t *testing.T) {
+	s, priv := newTestSidecar(t)
+
+	resp, err := s.Check(context.Background(), checkReq("/v1/users", map[string]string{
+		"authorization": "Bearer " + signClaims(t, priv, validClaims(time.Now())),
+	}))
+	require.NoError(t, err)
+	ok := resp.GetOkResponse()
+	require.NotNil(t, ok)
+
+	stamped := map[string]struct{}{}
+	for _, h := range ok.GetHeaders() {
+		stamped[strings.ToLower(h.GetHeader().GetKey())] = struct{}{}
+	}
+	removed := map[string]struct{}{}
+	for _, k := range ok.GetHeadersToRemove() {
+		removed[strings.ToLower(k)] = struct{}{}
+	}
+
+	// Lockstep: every untrusted trust header is either restamped or removed,
+	// and never both.
+	for _, k := range untrustedAuthHeaders {
+		_, isStamped := stamped[k]
+		_, isRemoved := removed[k]
+		require.Truef(t, isStamped || isRemoved, "untrusted header %q is neither restamped nor removed", k)
+		require.Falsef(t, isStamped && isRemoved, "untrusted header %q is both restamped and removed", k)
+	}
+
+	// Trust headers the sidecar never stamps on an allow must be removed.
+	require.Contains(t, removed, "x-codefly-internal-token")
+	require.Contains(t, removed, "x-codefly-public-origin")
+
+	// A restamped header is overwritten, not removed.
+	require.NotContains(t, removed, "x-user-id")
+	require.NotContains(t, removed, "x-codefly-gateway-token")
+}
+
 func TestUnit_ValidJWT_ForwardsActorChainAndOverwritesSpoofedHeader(t *testing.T) {
 	s, priv := newTestSidecar(t)
 	c := validClaims(time.Now())

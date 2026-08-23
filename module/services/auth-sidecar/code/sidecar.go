@@ -303,10 +303,27 @@ func (s *Sidecar) allow(headers []*corev3.HeaderValueOption) *authv3.CheckRespon
 	if s.gatewayToken != "" {
 		headers = append(headers, hdr("x-codefly-gateway-token", s.gatewayToken))
 	}
+	// Every untrusted trust header we did NOT just restamp must be stripped
+	// from the upstream request, so a client-spoofed value cannot survive an
+	// allow decision. This is the sidecar half of the header-lockstep
+	// invariant: the strip set is a superset of the stamped set.
+	stamped := make(map[string]struct{}, len(headers))
+	for _, header := range headers {
+		stamped[strings.ToLower(header.GetHeader().GetKey())] = struct{}{}
+	}
+	var remove []string
+	for _, key := range untrustedAuthHeaders {
+		if _, ok := stamped[key]; !ok {
+			remove = append(remove, key)
+		}
+	}
 	return &authv3.CheckResponse{
 		Status: &status.Status{Code: int32(codes.OK)},
 		HttpResponse: &authv3.CheckResponse_OkResponse{
-			OkResponse: &authv3.OkHttpResponse{Headers: headers},
+			OkResponse: &authv3.OkHttpResponse{
+				Headers:         headers,
+				HeadersToRemove: remove,
+			},
 		},
 	}
 }

@@ -410,27 +410,12 @@ func SetInternalTokenRotation(tokens ...string) {
 // X-User-Id/X-Org-Id/etc. on tenant-facing transports.
 func SetGatewayToken(token string) { gatewayToken = token }
 
-// requireInternalOrAuth gates a privileged-internal RPC. Caller
-// must present EITHER a valid JWT (standard auth path) OR a
-// matching X-Codefly-Internal-Token header.
-func requireInternalOrAuth(ctx context.Context) error {
-	if id, ok := wool.Get(ctx).UserAuthID(); ok && id != "" {
-		return nil
-	}
-	md, ok := metadata.FromIncomingContext(ctx)
-	if ok {
-		for _, v := range md.Get("x-codefly-internal-token") {
-			if validInternalToken(v) {
-				return nil
-			}
-		}
-	}
-	return status.Error(codes.Unauthenticated, "internal endpoint requires an authenticated caller or X-Codefly-Internal-Token")
-}
-
-// requireInternalCredential is stricter than requireInternalOrAuth for RPCs
-// that accept authority questions about arbitrary principals. A tenant JWT
-// must never turn those methods into an authorization oracle.
+// requireInternalCredential gates the EXPOSURE_INTERNAL authority oracles
+// (CheckPermission, CheckAccess, Decide, ResolveIdentity, ValidateAPIKey,
+// GetPrincipal, GetAgentPrincipal) and ConsumeUsage. Only a valid internal
+// service token passes: these methods accept authority questions about
+// arbitrary principals, so a bare tenant JWT must never turn them into an
+// authorization oracle.
 func requireInternalCredential(ctx context.Context) error {
 	md, ok := metadata.FromIncomingContext(ctx)
 	if ok {
