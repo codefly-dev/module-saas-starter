@@ -2,9 +2,7 @@ package infra
 
 import (
 	"context"
-	"crypto/sha256"
 	"encoding/base64"
-	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -71,8 +69,13 @@ func (v *VaultClient) Health(ctx context.Context) error {
 	}
 }
 
-// HashKey hashes an API key using vault transit HMAC.
-// Falls back to local SHA-256 if vault is unavailable.
+// HashKey hashes an API key using Vault transit HMAC.
+//
+// There is intentionally no local fallback: silently downgrading to
+// SHA-256 on a Vault error would produce a hash that never matches the
+// HMAC written for the same key once Vault recovers, so verification
+// would break for any key created during the outage. Failing closed keeps
+// creation and verification on a single, keyed algorithm.
 func (v *VaultClient) HashKey(ctx context.Context, plaintext string) (string, error) {
 	input := base64.StdEncoding.EncodeToString([]byte(plaintext))
 	body := fmt.Sprintf(`{"input":"%s"}`, input)
@@ -80,15 +83,12 @@ func (v *VaultClient) HashKey(ctx context.Context, plaintext string) (string, er
 	result, err := v.request(ctx, http.MethodPost,
 		fmt.Sprintf("/v1/transit/hmac/%s", v.transitKey), body)
 	if err != nil {
-		// Fallback to local SHA-256
-		h := sha256.Sum256([]byte(plaintext))
-		return hex.EncodeToString(h[:]), nil
+		return "", fmt.Errorf("vault hmac request: %w", err)
 	}
 
 	hmac, ok := result["hmac"].(string)
-	if !ok {
-		h := sha256.Sum256([]byte(plaintext))
-		return hex.EncodeToString(h[:]), nil
+	if !ok || hmac == "" {
+		return "", fmt.Errorf("vault transit response missing hmac")
 	}
 	return hmac, nil
 }

@@ -139,7 +139,7 @@ func wireOAuthOnTestService(t *testing.T, fp *fakeProvider) *auth.OAuthStateSign
 	require.NoError(t, err)
 	testService.SetCodeExchanger(oidc.AsBusinessExchanger(exchanger))
 
-	signer := auth.NewOAuthStateSigner([]byte("test OAuth state signing seed with sufficient entropy"))
+	signer := mustOAuthStateSigner(t)
 	policy, err := auth.NewOAuthRequestPolicy("workos", []string{"https://app.acme.com/auth/callback"})
 	require.NoError(t, err)
 	testService.SetOAuthStateSigner(signer)
@@ -390,7 +390,7 @@ func TestAuthenticate_OAuthCodeFlow_RequiresSignedState(t *testing.T) {
 func TestBeginOAuth_RequiresPolicyAndSigner(t *testing.T) {
 	policy, err := auth.NewOAuthRequestPolicy("workos", []string{"https://app.acme.com/auth/callback"})
 	require.NoError(t, err)
-	signer := auth.NewOAuthStateSigner([]byte("test OAuth state signing seed with sufficient entropy"))
+	signer := mustOAuthStateSigner(t)
 	testService.SetOAuthRequestPolicy(policy)
 	testService.SetOAuthStateSigner(signer)
 	t.Cleanup(func() {
@@ -413,7 +413,7 @@ func TestBeginOAuth_RequiresPolicyAndSigner(t *testing.T) {
 func TestBeginOAuth_UsesVerifiedCodeflyPublicOriginWithoutStaticPort(t *testing.T) {
 	policy, err := auth.NewOAuthRequestPolicy("workos", nil)
 	require.NoError(t, err)
-	signer := auth.NewOAuthStateSigner([]byte("test OAuth state signing seed with sufficient entropy"))
+	signer := mustOAuthStateSigner(t)
 	testService.SetOAuthRequestPolicy(policy)
 	testService.SetOAuthStateSigner(signer)
 	t.Cleanup(func() {
@@ -472,7 +472,7 @@ func TestAuthenticate_OAuthCodeFlow_GenericProviderNameKeysIdentity(t *testing.T
 	require.NoError(t, err)
 	testService.SetCodeExchanger(oidc.AsBusinessExchanger(exchanger))
 
-	signer := auth.NewOAuthStateSigner([]byte("test OAuth state signing seed with sufficient entropy"))
+	signer := mustOAuthStateSigner(t)
 	policy, err := auth.NewOAuthRequestPolicy(provider, []string{"https://app.acme.com/auth/callback"})
 	require.NoError(t, err)
 	testService.SetOAuthStateSigner(signer)
@@ -497,4 +497,13 @@ func TestAuthenticate_OAuthCodeFlow_GenericProviderNameKeysIdentity(t *testing.T
 	require.NoError(t, err)
 	require.True(t, resolved.Found)
 	require.Equal(t, resp.User.Uuid, resolved.UserId)
+}
+
+func mustOAuthStateSigner(t *testing.T) *auth.OAuthStateSigner {
+	t.Helper()
+	signer, err := auth.NewOAuthStateSigner([]byte("test OAuth state signing seed with sufficient entropy"))
+	if err != nil {
+		t.Fatalf("NewOAuthStateSigner: %v", err)
+	}
+	return signer
 }

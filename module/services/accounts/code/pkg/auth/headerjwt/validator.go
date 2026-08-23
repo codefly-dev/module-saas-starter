@@ -153,7 +153,12 @@ func (v *Validator) Validate(ctx context.Context, token string) (*auth.Claims, e
 	claims := jwt.MapClaims{}
 
 	if v.cfg.PerimeterTrustDecode {
-		parser := jwt.NewParser(jwt.WithValidMethods(v.cfg.AllowedAlgs))
+		// AllowedAlgs is intentionally not passed here: WithValidMethods is
+		// only enforced while verifying a signature, so it is a no-op for
+		// ParseUnverified and listing it would falsely imply an alg check on
+		// this path. The alg is unconstrained because the gateway, not this
+		// decode, is the trust anchor.
+		parser := jwt.NewParser()
 		if _, _, err := parser.ParseUnverified(token, claims); err != nil {
 			return nil, mapParseError(err)
 		}

@@ -261,7 +261,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 			// auth check is still the backend sidecar — this cookie's
 			// contents are not trusted anywhere server-side.
 			if (typeof document !== "undefined") {
-				document.cookie = "codefly_session=1; path=/; SameSite=Lax";
+				// Secure omitted over plaintext http so local dev (http://localhost)
+				// can still set the cookie; a Secure cookie is dropped on http.
+				const secure =
+					typeof window !== "undefined" &&
+					window.location.protocol === "https:"
+						? "; Secure"
+						: "";
+				document.cookie = `codefly_session=1; path=/; SameSite=Lax${secure}`;
 			}
 			const payload = decodeJWTPayload(accessToken);
 			// Resolve email: explicit arg (login flow) > JWT email claim

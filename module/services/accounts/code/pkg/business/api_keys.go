@@ -27,9 +27,9 @@ func (s *Service) CreateAPIKey(ctx context.Context, userID string, req *gen.Crea
 		return nil, w.NewError("API key expiration must be in the future")
 	}
 
-	// Generate random key material (32 bytes = 256 bits)
-	raw := make([]byte, 32)
-	if _, err := rand.Read(raw); err != nil {
+	// 32 base62 characters ≈ 190 bits of entropy.
+	encoded, err := randomBase62(32)
+	if err != nil {
 		return nil, w.Wrapf(err, "cannot generate random key")
 	}
 
@@ -38,7 +38,6 @@ func (s *Service) CreateAPIKey(ctx context.Context, userID string, req *gen.Crea
 	if req.Environment == gen.APIKeyEnvironment_API_KEY_ENVIRONMENT_TEST {
 		envPrefix = "test"
 	}
-	encoded := base62Encode(raw)
 	plaintext := fmt.Sprintf("cfly_sk_%s_%s", envPrefix, encoded)
 	prefix := plaintext[:12]
 
@@ -205,12 +204,30 @@ func (s *Service) RevokeAPIKey(ctx context.Context, actorID string, req *gen.Rev
 	return nil
 }
 
-// base62Encode encodes bytes to a base62 string (alphanumeric).
-func base62Encode(data []byte) string {
+// randomBase62 returns n characters drawn uniformly from the base62
+// alphabet. Random bytes at or above the largest multiple of 62 that fits
+// in a byte are rejected rather than folded with a plain modulo, so the
+// last four alphabet characters are not over-represented — a naive
+// `b % 62` biases the keyspace and shrinks its effective entropy.
+func randomBase62(n int) (string, error) {
 	const charset = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz"
-	encoded := make([]byte, len(data))
-	for i, b := range data {
-		encoded[i] = charset[int(b)%len(charset)]
+	const maxUnbiased = 256 - (256 % len(charset)) // 248
+	out := make([]byte, n)
+	buf := make([]byte, n)
+	for filled := 0; filled < n; {
+		if _, err := rand.Read(buf); err != nil {
+			return "", err
+		}
+		for _, b := range buf {
+			if int(b) >= maxUnbiased {
+				continue
+			}
+			out[filled] = charset[int(b)%len(charset)]
+			filled++
+			if filled == n {
+				break
+			}
+		}
 	}
-	return string(encoded)
+	return string(out), nil
 }

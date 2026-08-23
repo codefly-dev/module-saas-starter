@@ -358,3 +358,18 @@ func TestLoadSigningKeyFailsClosedOutsideDevFixture(t *testing.T) {
 	require.NoError(t, err)
 	require.NotEmpty(t, priv)
 }
+
+// The dev and fixture identity providers accept unauthenticated identities, so
+// selecting one outside the local environment must fail closed at startup.
+func TestRequireLocalForDevFixtureProvider(t *testing.T) {
+	for _, provider := range []string{"dev", "fixture"} {
+		require.Error(t, requireLocalForDevFixtureProvider(provider, false),
+			"%s must be refused when not local", provider)
+		require.NoError(t, requireLocalForDevFixtureProvider(provider, true),
+			"%s must be allowed when local", provider)
+	}
+	for _, provider := range []string{"workos", "oidc", "header-jwt", ""} {
+		require.NoError(t, requireLocalForDevFixtureProvider(provider, false),
+			"%q must be allowed regardless of environment", provider)
+	}
+}
