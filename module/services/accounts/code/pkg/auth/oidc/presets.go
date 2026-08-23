@@ -39,12 +39,15 @@ func Auth0Config(domain, audience string) Config {
 //
 //	frontendAPI: the instance's frontend API domain, e.g.
 //	             "clean-mastiff-42.clerk.accounts.dev" or "clerk.acme.com"
-func ClerkConfig(frontendAPI string) Config {
+//	audience: the session token's `aud`, configured via Clerk's session-token
+//	          template. Required: oidc.New refuses an unbound validator.
+func ClerkConfig(frontendAPI, audience string) Config {
 	frontendAPI = strings.TrimSpace(frontendAPI)
 	return Config{
 		ProviderName: "clerk",
 		Issuer:       fmt.Sprintf("https://%s", frontendAPI),
 		JWKSURL:      fmt.Sprintf("https://%s/.well-known/jwks.json", frontendAPI),
+		Audience:     audience,
 		// Clerk doesn't expose an org id on the default session claim,
 		// but exposes "org_id" when the "Organization" session template
 		// is enabled.

@@ -21,6 +21,7 @@ func TestBuildDiscoveredOIDCStackSkipsDiscoveryWhenEndpointsPinned(t *testing.T)
 	setIdentityConfiguration(t, "IDENTITY_ISSUER", "https://identity.invalid/tenant")
 	setIdentityConfiguration(t, "IDENTITY_JWKS_URL", "https://identity.invalid/tenant/jwks")
 	setIdentityConfiguration(t, "IDENTITY_TOKEN_URL", "https://identity.invalid/tenant/token")
+	setIdentityConfiguration(t, "IDENTITY_CLIENT_ID_CLAIM", "client_id")
 
 	validator, exchanger, err := buildProviderStack("workos", "")
 	require.NoError(t, err)
@@ -50,6 +51,7 @@ func TestBuildDiscoveredOIDCStackDiscoversMissingEndpoints(t *testing.T) {
 	setIdentityConfiguration(t, "IDENTITY_CLIENT_ID", "client_01TEST")
 	t.Setenv("CODEFLY__WORKSPACE_SECRET_CONFIGURATION__IDENTITY__IDENTITY_CLIENT_SECRET", "sk_test")
 	setIdentityConfiguration(t, "IDENTITY_ISSUER", issuer)
+	setIdentityConfiguration(t, "IDENTITY_CLIENT_ID_CLAIM", "client_id")
 	// No IDENTITY_JWKS_URL / IDENTITY_TOKEN_URL: both must be filled from the
 	// provider's published metadata.
 

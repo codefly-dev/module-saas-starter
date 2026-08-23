@@ -110,6 +110,12 @@ func (s *Service) ConfigureOrgIdentityProvider(ctx context.Context, input OrgIde
 	if kind == IdentityProviderKindOIDC && strings.TrimSpace(input.Issuer) == "" {
 		return nil, w.NewError("oidc provider requires an issuer")
 	}
+	// The runtime stack binds an org's OIDC tokens to the org through the `aud`
+	// claim, so a provider without an audience would accept any token the issuer
+	// signs. Reject it here rather than at first login (see oidcProviderStackBuilder).
+	if kind == IdentityProviderKindOIDC && strings.TrimSpace(input.Audience) == "" {
+		return nil, w.NewError("oidc provider requires an audience")
+	}
 
 	secretSupplied := strings.TrimSpace(input.ClientSecret) != ""
 	newSecretRef := ""
