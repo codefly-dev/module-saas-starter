@@ -265,7 +265,105 @@ scheduling infrastructure.
 
 ---
 
-## 7. Proto — `saas/approvals/v1`
+## 7. Enforcement model — approval resolves into RBAC + auth
+
+The primitive **produces a grant; RBAC + auth stay the sole enforcer.** Nothing
+on the request path ever runs an ad-hoc "is there an approval?" query. An
+approval that reaches quorum resolves into the *same* scoped credential the
+authorization layer already checks — the scoped-auth token / actor-chain grant
+that `delegation_grants` + `mintApprovedToken` (`delegation_rpcs.go:261,341`)
+already mint. The `approval_requests` / `approval_decisions` tables are only the
+pending→quorum machinery; their **output** plugs into RBAC.
+
+### Marking an action as approval-gated
+
+Declaratively, on the RPC, next to where MFA and permissions already live — a
+new dimension on the `saas.policy.v1.method_policy` annotation, sibling to the
+existing `mfa:` tier:
+
+```proto
+approval: {
+  required: true
+  decide_permission: "approvals:decide"   // who may decide
+  quorum: 2                               // N-of-M
+  resume: RESUME_BORROW_CAPABILITY        // vs RESUME_SYSTEM_OUTBOX (§6)
+  subject_field: "override_id"            // what the scoped grant is pinned to
+}
+```
+
+This compiles into the authz catalog (`pkg/cataloggen/authz_methods.go`) and is
+enforced at the **same chokepoint** — auth-sidecar edge + handler — that already
+enforces `permissions:` and `mfa:`. "How do we gate an action" then has exactly
+one answer: an annotation, not bespoke code per flow. This is what retires the
+`requireOrgAdmin` placeholder (§9) — the gate moves into the catalog.
+
+### The pending response
+
+A gated call from a principal who lacks a live grant is **not** a plain 403 /
+`PermissionDenied` (which reads as "never allowed") and never a 401 (the caller
+*is* authenticated). It returns a distinct, actionable signal with a pointer to
+the request — `codes.FailedPrecondition, "approval_required"` + the
+`approval_request` id — mirroring the existing MFA step-up precedent
+`codes.FailedPrecondition, "mfa_required"` (`auth.go:719`). The client UX is
+"pending approval," not "denied."
+
+### The grant, and the one new satisfier
+
+On quorum the primitive mints a **scoped, time-boxed** grant. It is not "the
+approver's permission set" — it encodes exactly `(resource, action, subject-id,
+request-id)`, so the requester borrows authority for *this action on this
+subject, once*, never a role. The authorization check then gains **one extra
+satisfier**, sitting beside "the principal holds the permission directly":
+
+> permission satisfied **via approval grant G**, scoped to this subject, inside
+> its window, not revoked, and — if `one_shot` — not yet consumed.
+
+That single branch is the entire integration seam. Everything else about
+enforcement (edge, handler gates, token verification) is unchanged.
+
+### Two windows — keep them distinct
+
+"A period for approval" is really two independent windows; conflating them is a
+bug:
+
+1. **Decision window** — how long the *request* stays open for approvers
+   (`expires_at` / `escalate_at`, *before* quorum). Lapses → `expired` /
+   `escalated`.
+2. **Grant window** — once approved, how long the *borrowed capability* is
+   usable (token TTL / grant expiry, *after* quorum).
+
+E.g. "approvers have 24h to sign off; once signed, you have 15 min to run it."
+
+### One-shot vs pattern, and revocation — both free
+
+Because the grant is just an authorization grant, two properties come from
+existing machinery:
+
+- **`one_shot` vs `pattern`** is already modeled by `delegation_grants.kind`
+  (`38_...:56`): `one_shot` = consumed on first use; `pattern` = reusable within
+  the grant window. The approval grant inherits the field.
+- **Revocation is free** — the grant lives against `authorization_revision`;
+  revoking it bumps the revision and invalidates the live token
+  (`99_actor_chain_journal`). An approved-but-unused grant can be pulled, and a
+  `pattern` grant killed mid-window.
+
+### Resume mode picks who wields the grant (ties to §6)
+
+- **`RESUME_BORROW_CAPABILITY`** — mint the scoped grant, the **requester/agent
+  replays** the call under it. Right for interactive step-up and agent HITL.
+- **`RESUME_SYSTEM_OUTBOX`** — the grant is consumed internally by the **system
+  actor** via the outbox; no token leaves the boundary. Required for genuine
+  four-eyes: the maker must never hold the combined capability.
+
+With **N-of-M**, "borrow *whose* permission?" is resolved by holding the
+capability against the **approved request** — jointly authorized by the N
+distinct deciders, all recorded in the actor chain — not against any single
+approver. Strong dual-control therefore prefers `RESUME_SYSTEM_OUTBOX` so the
+maker never receives a token at all.
+
+---
+
+## 8. Proto — `saas/approvals/v1`
 
 New bounded context alongside the existing ones under
 `module/services/accounts/proto/saas/` (`accounts/v1`, `billing/v1`,
@@ -299,7 +397,7 @@ option (saas.policy.v1.method_policy) = {
 
 ---
 
-## 8. RBAC — `approvals:decide` as a first-class permission
+## 9. RBAC — `approvals:decide` as a first-class permission
 
 Two steps, per `module/AUTHORIZATION_CATALOG.md`:
 1. Add a `PermissionDefinition` (`catalog.proto:40-54`:
@@ -312,7 +410,7 @@ Two steps, per `module/AUTHORIZATION_CATALOG.md`:
    (`auth-sidecar/code/authz_catalog_gen.go`) via the catalog codegen.
 
 This **retires the `requireOrgAdmin` placeholder** at
-`delegation_rpcs.go:242-245`: once delegation is an approval kind (§10),
+`delegation_rpcs.go:242-245`: once delegation is an approval kind (§11),
 `DecideDelegation` routes through `approvals:decide` instead of the coarse
 org-admin gate. Optionally, `approvals:decide` becomes per-resource later
 (`approvals:decide:entitlement_override`) — the permission grammar already
@@ -320,7 +418,7 @@ supports `resource:action` scoping.
 
 ---
 
-## 9. Audit vocabulary + actor-chain link
+## 10. Audit vocabulary + actor-chain link
 
 Add to the typed registry (`pkg/business/audit_registry.go` — one `EventType`
 const near `:93`, one `def(...)` row near `:186` each):
@@ -353,7 +451,7 @@ PR (they need no approval infrastructure), not bundled into the primitive.
 
 ---
 
-## 10. Phased adoption (each phase = one PR)
+## 11. Phased adoption (each phase = one PR)
 
 1. **Schema + proto + RLS + permission.** `approval_requests` /
    `approval_decisions` migrations (with RLS + append-only triggers), the
@@ -372,7 +470,7 @@ PR (they need no approval infrastructure), not bundled into the primitive.
    orchestrations — only after solving its out-of-RLS tenant state. Off the
    critical path until then.
 
-**Independent, unblock-anything side PR:** the two principal audit fixes (§9).
+**Independent, unblock-anything side PR:** the two principal audit fixes (§10).
 
 ---
 
