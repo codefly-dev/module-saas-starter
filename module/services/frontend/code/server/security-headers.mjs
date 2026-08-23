@@ -67,6 +67,7 @@ function turnstileEnabled(env) {
 	return mode !== "" && mode !== "disabled";
 }
 
+/** @param {Record<string, string | undefined>} [env] */
 export function contentSecurityPolicy(env = process.env) {
 	const solutionOrigins = parseSolutionOrigins(env.FRONTEND_SOLUTION_ORIGINS);
 	const analyticsOrigin = posthogOrigin(env);
@@ -111,6 +112,7 @@ export function contentSecurityPolicy(env = process.env) {
 	].join("; ");
 }
 
+/** @param {Record<string, string | undefined>} [env] */
 export function securityHeaders(env = process.env) {
 	return [
 		{ key: "Content-Security-Policy", value: contentSecurityPolicy(env) },
