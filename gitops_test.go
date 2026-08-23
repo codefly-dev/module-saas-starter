@@ -562,6 +562,11 @@ func TestGeneratedPoliciesAndGatewayMatchTopology(t *testing.T) {
 	if _, sidecarInjection := namespaceLabels["istio-injection"]; sidecarInjection {
 		t.Fatal("local namespace enables sidecar injection alongside the ambient mesh")
 	}
+	// This fixture ships no authorization catalog, so there is no L7 policy and
+	// the namespace waypoint must not be provisioned.
+	if _, waypointed := namespaceLabels["istio.io/use-waypoint"]; waypointed {
+		t.Error("namespace opts into a waypoint without any L7 policy to enforce")
+	}
 	localNetwork, err := os.ReadFile(filepath.Join(generated, "local", "base", "network-policy.yaml"))
 	if err != nil {
 		t.Fatal(err)
@@ -748,6 +753,122 @@ func TestGeneratedMeshBaselineIsStrictMTLSDefaultDeny(t *testing.T) {
 	if namespaceLabels["istio.io/dataplane-mode"] != "ambient" {
 		t.Errorf("namespace dataplane mode = %v, want ambient so every pod is meshed", namespaceLabels["istio.io/dataplane-mode"])
 	}
+}
+
+func TestGeneratedMeshPolicyDeniesInternalAuthorityFromNonAllowlistedPrincipals(t *testing.T) {
+	t.Parallel()
+	root, moduleDir := writeModuleFixture(t, "authority", "identity", []string{"accounts", "auth-sidecar"})
+	writeTestFile(t, filepath.Join(moduleDir, "services", "accounts", "generated", "authz-methods.json"), `{
+  "schema_version": "saas.authz.methods.v1",
+  "methods": [
+    {"procedure": "/saas.accounts.v1.APIKeyService/ValidateAPIKey", "policy": {"exposure": "EXPOSURE_INTERNAL"}},
+    {"procedure": "/saas.accounts.v1.AuthService/Authenticate", "policy": {"exposure": "EXPOSURE_PUBLIC"}}
+  ]
+}`)
+	workspace, err := loadWorkspaceManifest(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := generateDeploymentBundle(moduleDir, workspace); err != nil {
+		t.Fatal(err)
+	}
+	istioPath := filepath.Join(moduleDir, filepath.FromSlash(bundleRelativeDir), "overlays", "local", "base", "istio-mtls.yaml")
+	objects, err := decodeYAMLDocuments(istioPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	strictMTLS := false
+	var deny map[string]any
+	var waypoint map[string]any
+	for _, object := range objects {
+		metadata := object["metadata"].(map[string]any)
+		switch object["kind"] {
+		case "PeerAuthentication":
+			mtls := object["spec"].(map[string]any)["mtls"].(map[string]any)
+			if mtls["mode"] == "STRICT" {
+				strictMTLS = true
+			}
+		case "AuthorizationPolicy":
+			if metadata["name"] == "deny-accounts-internal-authority" {
+				deny = object
+			}
+		case "Gateway":
+			if object["apiVersion"] == "gateway.networking.k8s.io/v1" {
+				waypoint = object
+			}
+		}
+	}
+	if !strictMTLS {
+		t.Fatal("mesh baseline is missing STRICT PeerAuthentication")
+	}
+	if deny == nil {
+		t.Fatalf("istio bundle is missing the internal-authority deny policy:\n%s", mustReadFile(t, istioPath))
+	}
+
+	// The internal-authority deny is an L7 (method-path) policy; ztunnel is L4
+	// only, so it is enforced only if a waypoint fronts the namespace. Without
+	// this the policy would be silently inert in the ambient mesh.
+	if waypoint == nil {
+		t.Fatalf("L7 internal-authority policy has no waypoint to enforce it:\n%s", mustReadFile(t, istioPath))
+	}
+	if class := waypoint["spec"].(map[string]any)["gatewayClassName"]; class != "istio-waypoint" {
+		t.Errorf("waypoint gatewayClassName = %v, want istio-waypoint", class)
+	}
+	if wpFor := waypoint["metadata"].(map[string]any)["labels"].(map[string]any)["istio.io/waypoint-for"]; wpFor != "service" {
+		t.Errorf("waypoint istio.io/waypoint-for = %v, want service", wpFor)
+	}
+	namespaceObjects, err := decodeYAMLDocuments(filepath.Join(moduleDir, filepath.FromSlash(bundleRelativeDir), "overlays", "local", "namespace.yaml"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	nsLabels := namespaceObjects[0]["metadata"].(map[string]any)["labels"].(map[string]any)
+	if nsLabels["istio.io/use-waypoint"] != waypoint["metadata"].(map[string]any)["name"] {
+		t.Errorf("namespace use-waypoint = %v, want %v", nsLabels["istio.io/use-waypoint"], waypoint["metadata"].(map[string]any)["name"])
+	}
+
+	spec := deny["spec"].(map[string]any)
+	if spec["action"] != "DENY" {
+		t.Errorf("internal-authority policy action = %v, want DENY", spec["action"])
+	}
+	if app := spec["selector"].(map[string]any)["matchLabels"].(map[string]any)["app"]; app != "accounts" {
+		t.Errorf("internal-authority policy selects app %v, want accounts", app)
+	}
+	rule := spec["rules"].([]any)[0].(map[string]any)
+	notPrincipals := rule["from"].([]any)[0].(map[string]any)["source"].(map[string]any)["notPrincipals"].([]any)
+	// Seam: the only principal exempt from the deny is the in-mesh caller
+	// identity, so the ingress gateway SA — and every other principal — is
+	// rejected on the internal method paths before the handler.
+	if len(notPrincipals) != 1 || notPrincipals[0] != "cluster.local/ns/identity-local/sa/default" {
+		t.Errorf("internal-authority allowlist = %v, want only the in-mesh caller identity", notPrincipals)
+	}
+	if slices.Contains(anyToStrings(notPrincipals), "cluster.local/ns/istio-system/sa/istio-ingressgateway-service-account") {
+		t.Error("ingress gateway SA must not be exempt from the internal-authority deny")
+	}
+	paths := anyToStrings(rule["to"].([]any)[0].(map[string]any)["operation"].(map[string]any)["paths"].([]any))
+	if !slices.Contains(paths, "/saas.accounts.v1.APIKeyService/ValidateAPIKey") {
+		t.Errorf("internal-authority paths %v missing the internal ValidateAPIKey method", paths)
+	}
+	if slices.Contains(paths, "/saas.accounts.v1.AuthService/Authenticate") {
+		t.Error("internal-authority deny must not cover the public Authenticate method")
+	}
+}
+
+func anyToStrings(values []any) []string {
+	out := make([]string, 0, len(values))
+	for _, value := range values {
+		out = append(out, fmt.Sprint(value))
+	}
+	return out
+}
+
+func mustReadFile(t *testing.T, path string) string {
+	t.Helper()
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return string(data)
 }
 
 func TestGenerateBundleRejectsDependencyWithoutEndpointAuthority(t *testing.T) {

@@ -1,0 +1,53 @@
+# Code generated from deployment/topology.bindings.codefly.yaml. DO NOT EDIT.
+---
+apiVersion: security.istio.io/v1
+kind: PeerAuthentication
+metadata:
+  name: saas-starter-mtls
+  namespace: saas-starter
+spec:
+  mtls:
+    mode: STRICT
+---
+apiVersion: security.istio.io/v1
+kind: AuthorizationPolicy
+metadata:
+  name: deny-accounts-internal-authority
+  namespace: saas-starter
+spec:
+  selector:
+    matchLabels:
+      app: accounts
+  action: DENY
+  rules:
+    - from:
+        - source:
+            notPrincipals:
+              - cluster.local/ns/saas-starter/sa/default
+      to:
+        - operation:
+            paths:
+              - /saas.accounts.v1.APIKeyService/ValidateAPIKey
+              - /saas.accounts.v1.IdentityService/ResolveIdentity
+              - /saas.accounts.v1.PermissionService/CheckAccess
+              - /saas.accounts.v1.PermissionService/CheckPermission
+              - /saas.accounts.v1.PermissionService/Decide
+              - /saas.accounts.v1.PrincipalService/GetAgentPrincipal
+              - /saas.accounts.v1.PrincipalService/GetPrincipal
+              - /saas.accounts.v1.UsageService/ConsumeUsage
+              - /saas.accounts.v1.WorkContextService/AuthorizeEvidenceRead
+              - /saas.accounts.v1.WorkContextService/CheckAuthorizationRevision
+---
+apiVersion: gateway.networking.k8s.io/v1
+kind: Gateway
+metadata:
+  name: waypoint
+  namespace: saas-starter
+  labels:
+    istio.io/waypoint-for: service
+spec:
+  gatewayClassName: istio-waypoint
+  listeners:
+    - name: mesh
+      port: 15008
+      protocol: HBONE
