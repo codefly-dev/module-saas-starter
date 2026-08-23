@@ -5,6 +5,7 @@ import (
 	"errors"
 	"strings"
 
+	"github.com/codefly-dev/core/wool"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/status"
@@ -836,13 +837,68 @@ func (s *AuthServer) Authenticate(ctx context.Context, req *gen.AuthenticateRequ
 		return nil, err
 	}
 	resp, err := service.Authenticate(ctx, req)
-	if errors.Is(err, auth.ErrGroupNotAllowed) {
-		// The token verified but the identity is outside the configured group
-		// allow-list. Distinct from an invalid credential so the frontend can
-		// render "access not granted" rather than a generic sign-in failure.
-		return nil, status.Error(codes.PermissionDenied, "access not granted")
+	if err != nil {
+		return nil, authenticateStatusError(ctx, err)
 	}
-	return resp, err
+	return resp, nil
+}
+
+// authenticateOracleErrors are the credential- and identity-resolution sentinels
+// Authenticate can surface. Every one collapses to an identical generic response
+// so an unauthenticated caller cannot tell "no account" from "inactive" from
+// "not invited" — the enumeration oracle that accounts/pkg/auth/errors.go warns
+// against ("Never leak these strings ... produce a generic 'invalid
+// credentials'"). ErrGroupNotAllowed is deliberately excluded: it is a
+// post-verification authorization outcome the frontend renders distinctly.
+var authenticateOracleErrors = []error{
+	auth.ErrMissingClaims,
+	auth.ErrMissingSubject,
+	auth.ErrMissingEmail,
+	auth.ErrTokenExpired,
+	auth.ErrTokenSignature,
+	auth.ErrTokenMalformed,
+	auth.ErrTokenWrongIssuer,
+	auth.ErrTokenWrongAudience,
+	auth.ErrTokenAlgForbidden,
+	auth.ErrTokenReplay,
+	auth.ErrTokenRevoked,
+	auth.ErrDevelopmentAuthDisabled,
+	auth.ErrInvalidOAuthRequest,
+	auth.ErrInvalidOAuthState,
+	auth.ErrActorChainTooDeep,
+	auth.ErrActorSubjectMissing,
+	auth.ErrUnknownIdentity,
+	auth.ErrNoAccount,
+	auth.ErrAccountInactive,
+	auth.ErrSignupNotAllowed,
+	auth.ErrOrgRequired,
+	auth.ErrBootstrapClaimed,
+	auth.ErrSsoEmailDomainNotAllowed,
+	auth.ErrSsoProvisioningDisabled,
+	auth.ErrSsoProvisioningMisconfigured,
+	business.ErrInvitationUnavailable,
+	business.ErrInvitationEmailMismatch,
+	business.ErrInvitationEmailUnverified,
+	business.ErrInvitationExpired,
+}
+
+// authenticateStatusError maps an Authenticate failure to the error the caller
+// is allowed to see. Credential- and identity-resolution failures collapse to a
+// single Unauthenticated "invalid credentials"; the detailed sentinel is logged
+// for audit but never returned. ErrGroupNotAllowed keeps its distinct
+// PermissionDenied so the frontend can render "access not granted". Anything else
+// is a genuine server-side failure and passes through unchanged.
+func authenticateStatusError(ctx context.Context, err error) error {
+	if errors.Is(err, auth.ErrGroupNotAllowed) {
+		return status.Error(codes.PermissionDenied, "access not granted")
+	}
+	for _, sentinel := range authenticateOracleErrors {
+		if errors.Is(err, sentinel) {
+			wool.Get(ctx).In("Authenticate").Warn("authentication rejected", wool.ErrField(err))
+			return status.Error(codes.Unauthenticated, "invalid credentials")
+		}
+	}
+	return err
 }
 
 func (s *AuthServer) CompleteMFAChallenge(ctx context.Context, req *gen.CompleteMFAChallengeRequest) (*gen.CompleteMFAChallengeResponse, error) {
