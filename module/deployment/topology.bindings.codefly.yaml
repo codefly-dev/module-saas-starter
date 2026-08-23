@@ -20,7 +20,7 @@ services:
     agent:
       kind: codefly:service
       name: go-grpc
-      version: 0.1.32
+      version: 0.1.33
       publisher: codefly.dev
     workspace_configuration_dependencies:
       - abuse-protection
@@ -77,7 +77,7 @@ services:
     agent:
       kind: codefly:service
       name: go-grpc
-      version: 0.1.32
+      version: 0.1.33
       publisher: codefly.dev
     workspace_configuration_dependencies:
       - gateway
@@ -115,9 +115,9 @@ services:
     agent:
       kind: codefly:service
       name: redis
-      # Held at 0.0.77; 0.0.81 fails runtime-load for this read-replica cache
-      # (two tcp endpoints on one port). Tracked in codefly-dev/service-redis#16.
-      version: 0.0.77
+      # 0.0.82: read-replica runtime-load fix (two tcp endpoints on one port),
+      # codefly-dev/service-redis#16 — resolved, hold lifted.
+      version: 0.0.82
       publisher: codefly.dev
     endpoints:
       - name: read
@@ -136,7 +136,7 @@ services:
     agent:
       kind: codefly:service
       name: nextjs
-      version: 0.0.144
+      version: 0.0.145
       publisher: codefly.dev
     workspace_configuration_dependencies:
       - abuse-protection
@@ -173,7 +173,7 @@ services:
     agent:
       kind: codefly:service
       name: nextjs
-      version: 0.0.144
+      version: 0.0.145
       publisher: codefly.dev
     endpoints:
       - name: http
@@ -193,7 +193,7 @@ services:
     agent:
       kind: codefly:service
       name: postgres
-      version: 0.0.124
+      version: 0.0.125
       publisher: codefly.dev
     endpoints:
       - name: tcp
@@ -224,7 +224,7 @@ services:
     agent:
       kind: codefly:service
       name: go-grpc
-      version: 0.1.32
+      version: 0.1.33
       publisher: codefly.dev
     workspace_configuration_dependencies:
       - observability
@@ -244,7 +244,7 @@ services:
     agent:
       kind: codefly:service
       name: vault
-      version: 0.0.24
+      version: 0.0.25
       publisher: codefly.dev
     secret_service_configurations:
       - name: vault

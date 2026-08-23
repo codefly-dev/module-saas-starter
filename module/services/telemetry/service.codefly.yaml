@@ -8,7 +8,7 @@ description: |
 agent:
     kind: codefly:service
     name: go-grpc
-    version: 0.1.32
+    version: 0.1.33
     publisher: codefly.dev
 workspace-configuration-dependencies:
     - observability
