@@ -193,7 +193,10 @@ services:
     agent:
       kind: codefly:service
       name: postgres
-      version: 0.0.125
+      # Held at 0.0.124; 0.0.125 drops the builder/ dir from the staged build
+      # context so `COPY builder/runtime-access.sql` fails the container build.
+      # Tracked in codefly-dev/service-postgres#68.
+      version: 0.0.124
       publisher: codefly.dev
     endpoints:
       - name: tcp
