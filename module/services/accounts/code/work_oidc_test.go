@@ -74,6 +74,7 @@ func (f *fakeOIDCProvider) sign(t *testing.T) string {
 	now := time.Now()
 	token := jwt.NewWithClaims(jwt.SigningMethodRS256, jwt.MapClaims{
 		"iss":            f.issuer,
+		"aud":            "api://generic",
 		"sub":            "user_enterprise_01",
 		"email":          "user@enterprise.example",
 		"email_verified": true,
@@ -91,6 +92,7 @@ func configureGenericOIDC(t *testing.T, issuer string) {
 	setIdentityConfiguration(t, "IDENTITY_CLIENT_ID", "client_generic")
 	t.Setenv("CODEFLY__WORKSPACE_SECRET_CONFIGURATION__IDENTITY__IDENTITY_CLIENT_SECRET", "sk_generic")
 	setIdentityConfiguration(t, "IDENTITY_ISSUER", issuer)
+	setIdentityConfiguration(t, "IDENTITY_AUDIENCE", "api://generic")
 }
 
 func TestGenericOIDCStackDrivesAWorkingLogin(t *testing.T) {

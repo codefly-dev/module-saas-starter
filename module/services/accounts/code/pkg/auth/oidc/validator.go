@@ -41,7 +41,8 @@ import (
 )
 
 // Config controls the validator. ProviderName, Issuer and JWKSURL are
-// required; everything else has sensible defaults.
+// required, as is an audience binding (either Audience, or ClientIDClaim
+// together with ClientID); everything else has sensible defaults.
 type Config struct {
 	// ProviderName is written to Claims.Provider and used as the
 	// provider_identities.provider key. Required. Examples: "workos",
@@ -51,7 +52,9 @@ type Config struct {
 	Issuer string
 	// JWKSURL is where to GET the JSON Web Key Set. Required.
 	JWKSURL string
-	// Audience is optionally enforced via the `aud` claim. Empty = don't check.
+	// Audience is enforced via the `aud` claim. It is one of the two ways to
+	// bind tokens to this relying party; the other is ClientIDClaim+ClientID.
+	// At least one binding is required (see New).
 	Audience string
 	// EmailClaim is the claim name carrying the user's email.
 	// Defaults to "email".
@@ -128,6 +131,12 @@ func New(cfg Config) (*Validator, error) {
 	}
 	if cfg.JWKSURL == "" {
 		return nil, errors.New("oidc: JWKSURL is required")
+	}
+	// Fail closed if no audience binding is configured: without one, the
+	// validator accepts any correctly-signed, unexpired token from the issuer
+	// regardless of relying party (audience confusion on a shared IdP tenant).
+	if cfg.Audience == "" && (cfg.ClientIDClaim == "" || cfg.ClientID == "") {
+		return nil, errors.New("oidc: an audience binding is required: set Audience, or ClientIDClaim and ClientID")
 	}
 	return &Validator{cfg: cfg, keys: map[string]*rsa.PublicKey{}}, nil
 }

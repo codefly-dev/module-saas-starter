@@ -94,6 +94,7 @@ func (f *fakeProvider) serveToken(w http.ResponseWriter, r *http.Request) {
 	now := time.Now()
 	claims := jwt.MapClaims{
 		"iss":             f.issuer,
+		"aud":             f.clientID,
 		"sub":             "workos-user-42",
 		"email":           "new-user@acme.com",
 		"email_verified":  true,
@@ -125,6 +126,7 @@ func wireOAuthOnTestService(t *testing.T, fp *fakeProvider) *auth.OAuthStateSign
 		ProviderName: "workos",
 		Issuer:       fp.issuer,
 		JWKSURL:      fp.server.URL + "/jwks",
+		Audience:     fp.clientID,
 	})
 	require.NoError(t, err)
 	testService.SetTokenValidator(validator)
@@ -457,6 +459,7 @@ func TestAuthenticate_OAuthCodeFlow_GenericProviderNameKeysIdentity(t *testing.T
 		ProviderName: provider,
 		Issuer:       fp.issuer,
 		JWKSURL:      fp.server.URL + "/jwks",
+		Audience:     fp.clientID,
 	})
 	require.NoError(t, err)
 	testService.SetTokenValidator(validator)
