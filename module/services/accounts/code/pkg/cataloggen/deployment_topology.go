@@ -831,6 +831,25 @@ spec:
 		}
 		principal := fmt.Sprintf("%s/ns/%s/sa/default", meshTrustDomain, namespace)
 		writeInternalAuthorityAuthorizationPolicy(&source, namespace, owner, ownerApp, principal, procedures)
+		// The deny above is an L7 (method-path) policy. In the ambient data plane
+		// ztunnel enforces L4 only, so a waypoint must front the namespace for the
+		// path match to be evaluated; the namespace opts in via
+		// istio.io/use-waypoint (set on the Namespace by the GitOps renderer).
+		fmt.Fprintf(&source, `---
+apiVersion: gateway.networking.k8s.io/v1
+kind: Gateway
+metadata:
+  name: waypoint
+  namespace: %s
+  labels:
+    istio.io/waypoint-for: service
+spec:
+  gatewayClassName: istio-waypoint
+  listeners:
+    - name: mesh
+      port: 15008
+      protocol: HBONE
+`, namespace)
 	}
 	return []byte(source.String())
 }

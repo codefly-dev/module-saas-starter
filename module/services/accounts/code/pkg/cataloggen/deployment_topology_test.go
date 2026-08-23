@@ -118,6 +118,7 @@ func TestDeploymentTopologyIsDeterministicAndCurrent(t *testing.T) {
 	require.Contains(t, mesh, "mode: STRICT")
 	require.Contains(t, mesh, "name: deny-accounts-internal-authority")
 	require.Contains(t, mesh, "action: DENY")
+	require.Contains(t, mesh, "gatewayClassName: istio-waypoint")
 	require.Contains(t, mesh, "cluster.local/ns/saas-starter/sa/default")
 	require.NotContains(t, mesh, "istio-ingressgateway-service-account")
 	for _, procedure := range []string{
@@ -388,13 +389,15 @@ func TestGeneratedMeshPolicyGatesInternalAuthorityByCallerIdentity(t *testing.T)
 	decoder := yaml.NewDecoder(strings.NewReader(string(readFixture(t, "testdata/mesh-policy.golden.yaml"))))
 	strictMTLS := false
 	denyFound := false
+	waypointFound := false
 	for {
 		var document struct {
 			APIVersion string `yaml:"apiVersion"`
 			Kind       string `yaml:"kind"`
 			Metadata   struct {
-				Name      string `yaml:"name"`
-				Namespace string `yaml:"namespace"`
+				Name      string            `yaml:"name"`
+				Namespace string            `yaml:"namespace"`
+				Labels    map[string]string `yaml:"labels"`
 			} `yaml:"metadata"`
 			Spec map[string]any `yaml:"spec"`
 		}
@@ -403,16 +406,17 @@ func TestGeneratedMeshPolicyGatesInternalAuthorityByCallerIdentity(t *testing.T)
 			break
 		}
 		require.NoError(t, err)
-		require.Equal(t, "security.istio.io/v1", document.APIVersion)
 		require.Equal(t, "saas-starter", document.Metadata.Namespace)
 
 		switch document.Kind {
 		case "PeerAuthentication":
+			require.Equal(t, "security.istio.io/v1", document.APIVersion)
 			mtls, ok := document.Spec["mtls"].(map[string]any)
 			require.True(t, ok, "PeerAuthentication must configure mtls")
 			require.Equal(t, "STRICT", mtls["mode"])
 			strictMTLS = true
 		case "AuthorizationPolicy":
+			require.Equal(t, "security.istio.io/v1", document.APIVersion)
 			require.Equal(t, "deny-accounts-internal-authority", document.Metadata.Name)
 			require.Equal(t, "DENY", document.Spec["action"])
 			denyFound = true
@@ -429,12 +433,19 @@ func TestGeneratedMeshPolicyGatesInternalAuthorityByCallerIdentity(t *testing.T)
 			paths := rule["to"].([]any)[0].(map[string]any)["operation"].(map[string]any)["paths"].([]any)
 			require.Contains(t, paths, "/saas.accounts.v1.APIKeyService/ValidateAPIKey")
 			require.Contains(t, paths, "/saas.accounts.v1.UsageService/ConsumeUsage")
+		case "Gateway":
+			// The waypoint that makes the L7 deny enforceable in the ambient mesh.
+			require.Equal(t, "gateway.networking.k8s.io/v1", document.APIVersion)
+			require.Equal(t, "istio-waypoint", document.Spec["gatewayClassName"])
+			require.Equal(t, "service", document.Metadata.Labels["istio.io/waypoint-for"])
+			waypointFound = true
 		default:
 			t.Fatalf("unexpected mesh policy kind %q", document.Kind)
 		}
 	}
 	require.True(t, strictMTLS, "namespace mTLS must be STRICT")
 	require.True(t, denyFound, "internal-authority AuthorizationPolicy must be present")
+	require.True(t, waypointFound, "L7 deny requires a waypoint to be enforced in the ambient mesh")
 }
 
 func TestDeploymentTopologyRejectsUnsafeOrIncompleteBindings(t *testing.T) {

@@ -794,21 +794,27 @@ func renderEnvironment(
 	// base. The base stays identity-neutral (no Namespace object, no host); the
 	// overlay names the namespace both on this object and, through its namespace
 	// transformer, on every resource the base contributes.
+	namespaceLabels := map[string]string{
+		"istio.io/dataplane-mode":                    "ambient",
+		"pod-security.kubernetes.io/enforce":         "baseline",
+		"pod-security.kubernetes.io/enforce-version": "latest",
+		"pod-security.kubernetes.io/audit":           "restricted",
+		"pod-security.kubernetes.io/audit-version":   "latest",
+		"pod-security.kubernetes.io/warn":            "restricted",
+		"pod-security.kubernetes.io/warn-version":    "latest",
+		"kubernetes.io/metadata.name":                plan.environment.Namespace,
+	}
+	if topologyRequiresWaypoint(topology, plan) {
+		// Route service traffic through the namespace waypoint so the L7
+		// internal-authority AuthorizationPolicy is enforced in the ambient mesh.
+		namespaceLabels["istio.io/use-waypoint"] = meshWaypointName
+	}
 	namespace := kubeObject{
 		APIVersion: "v1",
 		Kind:       "Namespace",
 		Metadata: objectMeta{
-			Name: plan.environment.Namespace,
-			Labels: mergeLabels(identityLabels, map[string]string{
-				"istio.io/dataplane-mode":                    "ambient",
-				"pod-security.kubernetes.io/enforce":         "baseline",
-				"pod-security.kubernetes.io/enforce-version": "latest",
-				"pod-security.kubernetes.io/audit":           "restricted",
-				"pod-security.kubernetes.io/audit-version":   "latest",
-				"pod-security.kubernetes.io/warn":            "restricted",
-				"pod-security.kubernetes.io/warn-version":    "latest",
-				"kubernetes.io/metadata.name":                plan.environment.Namespace,
-			}),
+			Name:   plan.environment.Namespace,
+			Labels: mergeLabels(identityLabels, namespaceLabels),
 		},
 	}
 	if err := writeYAML(filepath.Join(environmentRoot, "namespace.yaml"), namespace); err != nil {
@@ -966,6 +972,29 @@ func topologyIstioResources(
 	}
 	istio = append(istio, topologyInternalAuthorizationPolicies(topology, plan, namespace, labels)...)
 	istio = append(istio, topologyInternalAuthorityDenyPolicies(topology, plan, namespace, labels)...)
+	if topologyRequiresWaypoint(topology, plan) {
+		// The internal-authority deny is an L7 (method-path) policy. In the
+		// ambient data plane ztunnel enforces L4 only, so a waypoint proxy must
+		// front the namespace for the path match to be evaluated. The namespace
+		// opts in via istio.io/use-waypoint (see renderEnvironment).
+		istio = append(istio, kubeObject{
+			APIVersion: "gateway.networking.k8s.io/v1",
+			Kind:       "Gateway",
+			Metadata: objectMeta{
+				Name:      meshWaypointName,
+				Namespace: namespace,
+				Labels:    mergeLabels(labels, map[string]string{"istio.io/waypoint-for": "service"}),
+			},
+			Spec: map[string]any{
+				"gatewayClassName": "istio-waypoint",
+				"listeners": []any{map[string]any{
+					"name":     "mesh",
+					"port":     15008,
+					"protocol": "HBONE",
+				}},
+			},
+		})
+	}
 	if len(plan.ingress) == 0 {
 		// No public ingress: emit the mTLS baseline only, no Gateway.
 		return istio, nil, nil
@@ -1198,13 +1227,34 @@ func topologyInternalAuthorizationPolicies(
 	return policies
 }
 
+// meshWaypointName is the namespace waypoint that fronts the ambient data plane
+// so L7 (method-path) AuthorizationPolicies are enforced; ztunnel alone is L4.
+const meshWaypointName = "waypoint"
+
+// topologyRequiresWaypoint reports whether any in-cluster service exposes
+// internal-authority method paths, which are gated by an L7 AuthorizationPolicy
+// that only a waypoint can evaluate.
+func topologyRequiresWaypoint(topology deploymentTopology, plan environmentPlan) bool {
+	inCluster := make(map[string]struct{}, len(plan.services))
+	for _, service := range plan.services {
+		inCluster[service] = struct{}{}
+	}
+	for target := range topology.internalMethodPaths {
+		if _, ok := inCluster[target]; ok {
+			return true
+		}
+	}
+	return false
+}
+
 // topologyInternalAuthorityDenyPolicies gates each service's internal authority
 // method paths by caller workload identity. Istio matches by request path, so
 // the internal RPCs are denied to every principal outside the in-mesh caller
 // identity — the ingress gateway among them — even while they stay multiplexed
 // on the shared HTTP port. With STRICT PeerAuthentication, a request from a
 // non-allowlisted principal is rejected at the mesh before the handler; the
-// app-layer internal credential remains the identity gate.
+// app-layer internal credential remains the identity gate. Enforcing the path
+// match requires the namespace waypoint (see topologyRequiresWaypoint).
 func topologyInternalAuthorityDenyPolicies(
 	topology deploymentTopology,
 	plan environmentPlan,
@@ -1914,11 +1964,12 @@ func applyNamespaceTransform(objects []map[string]any, namespace string) {
 // boundary as a positive allowlist keeps repository-transport identifiers out
 // of runtime code entirely (see TestRuntimePluginOwnsNoGitOrArgoTransport).
 var moduleOwnedAPIVersions = map[string]struct{}{
-	"v1":                     {},
-	"networking.k8s.io/v1":   {},
-	"security.istio.io/v1":   {},
-	"networking.istio.io/v1": {},
-	"external-secrets.io/v1": {},
+	"v1":                           {},
+	"networking.k8s.io/v1":         {},
+	"security.istio.io/v1":         {},
+	"networking.istio.io/v1":       {},
+	"gateway.networking.k8s.io/v1": {},
+	"external-secrets.io/v1":       {},
 }
 
 // validateRenderedObjects proves the generated overlay is module-owned only: no

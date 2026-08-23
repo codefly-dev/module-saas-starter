@@ -562,6 +562,11 @@ func TestGeneratedPoliciesAndGatewayMatchTopology(t *testing.T) {
 	if _, sidecarInjection := namespaceLabels["istio-injection"]; sidecarInjection {
 		t.Fatal("local namespace enables sidecar injection alongside the ambient mesh")
 	}
+	// This fixture ships no authorization catalog, so there is no L7 policy and
+	// the namespace waypoint must not be provisioned.
+	if _, waypointed := namespaceLabels["istio.io/use-waypoint"]; waypointed {
+		t.Error("namespace opts into a waypoint without any L7 policy to enforce")
+	}
 	localNetwork, err := os.ReadFile(filepath.Join(generated, "local", "base", "network-policy.yaml"))
 	if err != nil {
 		t.Fatal(err)
@@ -775,6 +780,7 @@ func TestGeneratedMeshPolicyDeniesInternalAuthorityFromNonAllowlistedPrincipals(
 
 	strictMTLS := false
 	var deny map[string]any
+	var waypoint map[string]any
 	for _, object := range objects {
 		metadata := object["metadata"].(map[string]any)
 		switch object["kind"] {
@@ -787,6 +793,10 @@ func TestGeneratedMeshPolicyDeniesInternalAuthorityFromNonAllowlistedPrincipals(
 			if metadata["name"] == "deny-accounts-internal-authority" {
 				deny = object
 			}
+		case "Gateway":
+			if object["apiVersion"] == "gateway.networking.k8s.io/v1" {
+				waypoint = object
+			}
 		}
 	}
 	if !strictMTLS {
@@ -794,6 +804,27 @@ func TestGeneratedMeshPolicyDeniesInternalAuthorityFromNonAllowlistedPrincipals(
 	}
 	if deny == nil {
 		t.Fatalf("istio bundle is missing the internal-authority deny policy:\n%s", mustReadFile(t, istioPath))
+	}
+
+	// The internal-authority deny is an L7 (method-path) policy; ztunnel is L4
+	// only, so it is enforced only if a waypoint fronts the namespace. Without
+	// this the policy would be silently inert in the ambient mesh.
+	if waypoint == nil {
+		t.Fatalf("L7 internal-authority policy has no waypoint to enforce it:\n%s", mustReadFile(t, istioPath))
+	}
+	if class := waypoint["spec"].(map[string]any)["gatewayClassName"]; class != "istio-waypoint" {
+		t.Errorf("waypoint gatewayClassName = %v, want istio-waypoint", class)
+	}
+	if wpFor := waypoint["metadata"].(map[string]any)["labels"].(map[string]any)["istio.io/waypoint-for"]; wpFor != "service" {
+		t.Errorf("waypoint istio.io/waypoint-for = %v, want service", wpFor)
+	}
+	namespaceObjects, err := decodeYAMLDocuments(filepath.Join(moduleDir, filepath.FromSlash(bundleRelativeDir), "overlays", "local", "namespace.yaml"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	nsLabels := namespaceObjects[0]["metadata"].(map[string]any)["labels"].(map[string]any)
+	if nsLabels["istio.io/use-waypoint"] != waypoint["metadata"].(map[string]any)["name"] {
+		t.Errorf("namespace use-waypoint = %v, want %v", nsLabels["istio.io/use-waypoint"], waypoint["metadata"].(map[string]any)["name"])
 	}
 
 	spec := deny["spec"].(map[string]any)
