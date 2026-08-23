@@ -401,6 +401,11 @@ func injectHeaderJWTCredential(req *gen.AuthenticateRequest, h http.Header) {
 	if headerJWTLoginHeader == "" || req == nil {
 		return
 	}
+	// In header-jwt mode the gateway-injected header is the ONLY trusted
+	// credential source. Drop any client-supplied credential before setting
+	// from the header, so a caller cannot smuggle a second credential in the
+	// request body — including when the trusted header is absent.
+	req.Authentication = nil
 	token := h.Get(headerJWTLoginHeader)
 	if token == "" {
 		return

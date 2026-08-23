@@ -626,7 +626,7 @@ func (s *PermServer) CheckPermission(ctx context.Context, req *gen.CheckPermissi
 	// or a shared secret (X-Codefly-Internal-Token) that the auth-
 	// sidecar carries. Production deploys set CODEFLY_INTERNAL_TOKEN
 	// in both the api and sidecar configs.
-	if err := requireInternalOrAuth(ctx); err != nil {
+	if err := requireInternalCredential(ctx); err != nil {
 		return nil, err
 	}
 	return service.CheckPermission(ctx, req)
@@ -639,7 +639,7 @@ func (s *PermServer) CheckAccess(ctx context.Context, req *gen.CheckAccessReques
 	if err := Validate(req); err != nil {
 		return nil, err
 	}
-	if err := requireInternalOrAuth(ctx); err != nil {
+	if err := requireInternalCredential(ctx); err != nil {
 		return nil, err
 	}
 	return service.CheckAccess(ctx, req)
@@ -750,7 +750,7 @@ func (s *IdentServer) ResolveIdentity(ctx context.Context, req *gen.ResolveIdent
 	if err := Validate(req); err != nil {
 		return nil, err
 	}
-	if err := requireInternalOrAuth(ctx); err != nil {
+	if err := requireInternalCredential(ctx); err != nil {
 		return nil, err
 	}
 	return service.ResolveIdentity(ctx, req)
@@ -822,7 +822,7 @@ func (s *APIKeyServer) ValidateAPIKey(ctx context.Context, req *gen.ValidateAPIK
 	if err := Validate(req); err != nil {
 		return nil, err
 	}
-	if err := requireInternalOrAuth(ctx); err != nil {
+	if err := requireInternalCredential(ctx); err != nil {
 		return nil, err
 	}
 	return service.ValidateAPIKey(ctx, req.Key)
