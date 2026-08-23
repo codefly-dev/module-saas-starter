@@ -118,6 +118,13 @@ const (
 	EventDelegationApproved     EventType = "delegation.approved"
 	EventDelegationDenied       EventType = "delegation.denied"
 	EventDelegationAutoApproved EventType = "delegation.auto_approved"
+	EventApprovalAsked          EventType = "approval.asked"
+	EventApprovalApproved       EventType = "approval.approved"
+	EventApprovalDenied         EventType = "approval.denied"
+	EventApprovalTimeout        EventType = "approval.timeout"
+	EventApprovalEscalated      EventType = "approval.escalated"
+	EventPrincipalCreated       EventType = "principal.created"
+	EventPrincipalRevoked       EventType = "principal.revoked"
 
 	EventScopeNodeRegistered EventType = "scope.node_registered"
 	EventScopeGranted        EventType = "scope.granted"
@@ -212,6 +219,13 @@ var auditEventCatalog = []AuditEventDefinition{
 	def(EventDelegationApproved, CategoryAccess, "A delegation grant was approved."),
 	def(EventDelegationDenied, CategoryAccess, "A delegation grant was denied."),
 	def(EventDelegationAutoApproved, CategoryAccess, "A delegation grant was auto-approved by policy."),
+	def(EventApprovalAsked, CategoryAccess, "An approval request was opened for a gated action.", str("resource"), str("action")),
+	def(EventApprovalApproved, CategoryAccess, "An approval request reached quorum and was approved.", str("resource"), str("action")),
+	def(EventApprovalDenied, CategoryAccess, "An approval request was denied."),
+	def(EventApprovalTimeout, CategoryAccess, "An approval request expired before reaching quorum."),
+	def(EventApprovalEscalated, CategoryAccess, "An approval request was escalated to a wider approver set."),
+	def(EventPrincipalCreated, CategoryAccess, "An agent principal was created.", str("agent_identifier")),
+	def(EventPrincipalRevoked, CategoryAccess, "A principal was revoked.", str("reason")),
 	def(EventScopeNodeRegistered, CategoryAccess, "A scope node was registered.", str("scope_path"), str("kind")),
 	def(EventScopeGranted, CategoryAccess, "A role was granted at a scope node.", uid("role_id"), uid("subject_id"), str("scope_path")),
 	def(EventScopeRevoked, CategoryAccess, "A scope grant was revoked.", uid("role_id"), str("scope_path")),
