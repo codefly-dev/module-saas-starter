@@ -37,6 +37,7 @@ import (
 	"github.com/codefly-dev/core/wool"
 
 	"accounts/pkg/auth"
+	"accounts/pkg/business"
 	"accounts/pkg/cache"
 	gen "accounts/pkg/gen/saas/accounts/v1"
 )
@@ -362,6 +363,25 @@ func requirePlatformAdmin(ctx context.Context, actorID string) error {
 	}
 	if role == "" {
 		return status.Error(codes.PermissionDenied, "requires platform admin role")
+	}
+	return nil
+}
+
+// requirePlatformRole is the handler-layer counterpart to the business
+// requirePlatformRole check: it verifies actorID holds at least minRole in the
+// platform hierarchy (support < billing < super_admin). Handlers gate with the
+// same minimum their business method enforces, so dropping the business check
+// alone cannot re-expose an endpoint.
+func requirePlatformRole(ctx context.Context, actorID, minRole string) error {
+	role, err := service.Store().GetPlatformRole(ctx, actorID)
+	if err != nil {
+		return status.Errorf(codes.Internal, "cannot resolve platform role: %v", err)
+	}
+	if role == "" {
+		return status.Error(codes.PermissionDenied, "requires platform admin role")
+	}
+	if business.PlatformRoleRank(role) < business.PlatformRoleRank(minRole) {
+		return status.Errorf(codes.PermissionDenied, "requires platform %s role", minRole)
 	}
 	return nil
 }

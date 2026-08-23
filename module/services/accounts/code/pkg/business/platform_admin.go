@@ -20,6 +20,13 @@ var platformRoleLevel = map[string]int{
 	"support":     1,
 }
 
+// PlatformRoleRank returns the privilege level of a platform role, higher being
+// more privileged; an unknown or empty role ranks 0. Handler-layer gates share
+// this ordering so the two authorization layers cannot drift.
+func PlatformRoleRank(role string) int {
+	return platformRoleLevel[role]
+}
+
 // requirePlatformRole checks that the actor has at least the given platform role.
 func (s *Service) requirePlatformRole(ctx context.Context, actorID, minRole string) error {
 	role, err := s.store.GetPlatformRole(ctx, actorID)
@@ -29,7 +36,7 @@ func (s *Service) requirePlatformRole(ctx context.Context, actorID, minRole stri
 	if role == "" {
 		return fmt.Errorf("not a platform admin")
 	}
-	if platformRoleLevel[role] < platformRoleLevel[minRole] {
+	if PlatformRoleRank(role) < PlatformRoleRank(minRole) {
 		return fmt.Errorf("insufficient platform role: have %s, need %s", role, minRole)
 	}
 	return nil
