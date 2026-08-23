@@ -651,6 +651,105 @@ func TestGeneratedPoliciesAndGatewayMatchTopology(t *testing.T) {
 	}
 }
 
+func TestGeneratedMeshBaselineIsStrictMTLSDefaultDeny(t *testing.T) {
+	t.Parallel()
+	root, moduleDir := writeModuleFixture(
+		t,
+		"mesh-control",
+		"identity",
+		[]string{"accounts", "auth-sidecar", "store"},
+	)
+	workspace, err := loadWorkspaceManifest(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := generateDeploymentBundle(moduleDir, workspace); err != nil {
+		t.Fatal(err)
+	}
+	overlays := filepath.Join(moduleDir, filepath.FromSlash(bundleRelativeDir), "overlays")
+
+	// The mesh baseline is the reach gate every mesh-delivered control builds on,
+	// so it must hold in the in-cluster overlay and the managed-service overlay
+	// alike. Assert it structurally in both so no environment silently regresses.
+	for _, environment := range []string{"local", "aws"} {
+		path := filepath.Join(overlays, environment, "base", "istio-mtls.yaml")
+		objects, err := decodeYAMLDocuments(path)
+		if err != nil {
+			t.Fatalf("%s mesh baseline: %v", environment, err)
+		}
+
+		var peerAuthentications, denies, allows int
+		for _, object := range objects {
+			metadata := object["metadata"].(map[string]any)
+			name, _ := metadata["name"].(string)
+			switch object["kind"] {
+			case "PeerAuthentication":
+				peerAuthentications++
+				spec := object["spec"].(map[string]any)
+				if _, scoped := spec["selector"]; scoped {
+					t.Errorf("%s PeerAuthentication %q is workload-scoped, want mesh-wide", environment, name)
+				}
+				mode := spec["mtls"].(map[string]any)["mode"]
+				if mode != "STRICT" {
+					t.Errorf("%s PeerAuthentication %q mtls mode = %v, want STRICT", environment, name, mode)
+				}
+			case "AuthorizationPolicy":
+				spec, _ := object["spec"].(map[string]any)
+				if name == "default-deny" {
+					denies++
+					// A namespace-wide ALLOW policy with no rules matches nothing,
+					// so every workload denies by default until an explicit allow
+					// grants it. A selector, any rules, or a DENY action would break
+					// that invariant.
+					if _, scoped := spec["selector"]; scoped {
+						t.Errorf("%s default-deny is workload-scoped, want namespace-wide", environment)
+					}
+					if _, ruled := spec["rules"]; ruled {
+						t.Errorf("%s default-deny declares rules, want an empty deny-all policy", environment)
+					}
+					if action, ok := spec["action"]; ok && action != "ALLOW" {
+						t.Errorf("%s default-deny action = %v, want the empty-ALLOW deny-all form", environment, action)
+					}
+				} else {
+					allows++
+				}
+			}
+		}
+
+		if peerAuthentications != 1 {
+			t.Errorf("%s mesh baseline has %d PeerAuthentication objects, want exactly one mesh-wide policy", environment, peerAuthentications)
+		}
+		if denies != 1 {
+			t.Errorf("%s mesh baseline has %d namespace default-deny AuthorizationPolicies, want exactly one", environment, denies)
+		}
+		// Default-deny is inert without the explicit per-dependency allows layered
+		// on top of it; assert at least one so the deny-all never ships alone.
+		if allows == 0 {
+			t.Errorf("%s mesh baseline has a default-deny but no explicit allow policies", environment)
+		}
+
+		raw, err := os.ReadFile(path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if strings.Contains(string(raw), "PERMISSIVE") {
+			t.Errorf("%s mesh baseline contains a PERMISSIVE mTLS fallback:\n%s", environment, raw)
+		}
+	}
+
+	// Injection is enforced through the ambient dataplane label, not sidecar
+	// injection: every pod in the namespace is captured by the mesh, so an
+	// un-injected pod cannot receive traffic outside mTLS.
+	namespaceObjects, err := decodeYAMLDocuments(filepath.Join(overlays, "local", "namespace.yaml"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	namespaceLabels := namespaceObjects[0]["metadata"].(map[string]any)["labels"].(map[string]any)
+	if namespaceLabels["istio.io/dataplane-mode"] != "ambient" {
+		t.Errorf("namespace dataplane mode = %v, want ambient so every pod is meshed", namespaceLabels["istio.io/dataplane-mode"])
+	}
+}
+
 func TestGenerateBundleRejectsDependencyWithoutEndpointAuthority(t *testing.T) {
 	t.Parallel()
 	root, moduleDir := writeModuleFixture(

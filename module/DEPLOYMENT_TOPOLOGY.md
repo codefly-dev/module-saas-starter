@@ -80,6 +80,24 @@ address. Production overlays must add narrowly scoped VPC endpoint/security
 group or CIDR policy for those configured destinations; the base deliberately
 does not open private address space globally.
 
+## Mesh security baseline
+
+Alongside the NetworkPolicy layer, every environment renders an Istio mesh
+baseline into `istio-mtls.yaml`:
+
+- one mesh-wide `PeerAuthentication` in `STRICT` mode (no `PERMISSIVE`
+  fallback), so all in-namespace traffic is authenticated mTLS;
+- one namespace-wide `default-deny` `AuthorizationPolicy` (an empty ALLOW that
+  matches nothing), then explicit per-dependency and per-ingress allows layered
+  on top of it;
+- the namespace carries `istio.io/dataplane-mode: ambient`, so every pod is
+  captured by the mesh and an un-injected pod cannot receive traffic.
+
+mTLS authenticates the **workload** (its SPIFFE service account), not the end
+user or tenant. It is the reach gate only and never replaces the app-layer
+identity/authz gates (`requireInternalCredential`, JWT/OBO user checks), which
+remain as defense-in-depth on top of the mesh.
+
 ## Generation and validation
 
 After protobuf generation, run from `services/accounts/code`:
