@@ -415,6 +415,11 @@ func doWork(ctx context.Context) (Clean, error) {
 
 	adapters.WithService(service)
 
+	// Local development surfaces the underlying Authenticate failure reason for
+	// debugging; every deployed environment returns generic auth errors so the
+	// identity/enumeration oracle stays closed (#208).
+	adapters.SetExposeAuthErrorDetail(codefly.IsLocal())
+
 	// Separate shared-secret guards for internal RPC admission and forwarded
 	// gateway identity. Empty values fail closed; production deploys provide
 	// independent high-entropy values to both accounts and auth-sidecar.
