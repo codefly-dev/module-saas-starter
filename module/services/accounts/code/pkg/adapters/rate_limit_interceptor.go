@@ -3,11 +3,14 @@ package adapters
 import (
 	"context"
 	"strconv"
+	"strings"
 	"time"
 
 	"connectrpc.com/connect"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/metadata"
+	"google.golang.org/grpc/peer"
 	"google.golang.org/grpc/status"
 
 	"accounts/pkg/cache"
@@ -58,9 +61,9 @@ func rateLimitInterceptor(limiter *cache.RateLimiter) connect.UnaryInterceptorFu
 			}
 			key := rateLimitKey(ctx, req)
 			if key == "" {
-				// No identifier we trust → skip rather than IP-block;
-				// IP-block lives at the gateway/CDN layer where it
-				// belongs in production.
+				// Only when even the peer address is unparseable — the
+				// budget needs a key to bucket on. Anonymous callers
+				// otherwise fall through to a per-IP key below.
 				return next(ctx, req)
 			}
 			allowed, remaining, resetAt, err := limiter.Allow(
@@ -112,7 +115,7 @@ func grpcRateLimitInterceptor() grpc.UnaryServerInterceptor {
 		if rateLimiter == nil {
 			return handler(ctx, req)
 		}
-		key := rateLimitKeyFromCtx(ctx)
+		key := grpcRateLimitKey(ctx)
 		if key == "" {
 			return handler(ctx, req)
 		}
@@ -132,16 +135,53 @@ func grpcRateLimitInterceptor() grpc.UnaryServerInterceptor {
 }
 
 // rateLimitKey picks the most specific identifier available on the
-// context. Returns "" when none is present so the caller skips the
-// check (anonymous traffic is rare on this api — Authenticate /
-// BeginOAuth are the only paths and they have their own provider-
-// side rate limits).
-func rateLimitKey(ctx context.Context, _ connect.AnyRequest) string {
-	return rateLimitKeyFromCtx(ctx)
+// context and, for anonymous callers (Authenticate / BeginOAuth /
+// RegisterUser / JoinWaitlist / magic-link), falls back to a per-IP key
+// so pre-auth traffic still gets an app-layer budget rather than being
+// skipped. Returns "" only when the peer address can't be parsed either.
+func rateLimitKey(ctx context.Context, req connect.AnyRequest) string {
+	if key := rateLimitKeyFromCtx(ctx); key != "" {
+		return key
+	}
+	return ipRateLimitKey(clientIP(req.Peer().Addr, req.Header().Get("X-Forwarded-For")))
 }
 
-// rateLimitKeyFromCtx is the protocol-agnostic key derivation used by
-// both the Connect and gRPC interceptors.
+// grpcRateLimitKey is the gRPC twin of rateLimitKey: identity first, then
+// a per-IP fallback derived from the transport peer and forwarded-for
+// metadata.
+func grpcRateLimitKey(ctx context.Context) string {
+	if key := rateLimitKeyFromCtx(ctx); key != "" {
+		return key
+	}
+	return ipRateLimitKey(clientIP(grpcPeerAddr(ctx), grpcForwardedFor(ctx)))
+}
+
+func ipRateLimitKey(ip string) string {
+	if ip == "" {
+		return ""
+	}
+	return "ip:" + ip
+}
+
+func grpcPeerAddr(ctx context.Context) string {
+	if p, ok := peer.FromContext(ctx); ok && p.Addr != nil {
+		return p.Addr.String()
+	}
+	return ""
+}
+
+func grpcForwardedFor(ctx context.Context) string {
+	if md, ok := metadata.FromIncomingContext(ctx); ok {
+		if vals := md.Get("x-forwarded-for"); len(vals) > 0 {
+			return strings.Join(vals, ",")
+		}
+	}
+	return ""
+}
+
+// rateLimitKeyFromCtx is the protocol-agnostic identity key derivation used
+// by both the Connect and gRPC interceptors. Returns "" for callers with no
+// verified identity.
 func rateLimitKeyFromCtx(ctx context.Context) string {
 	w := wool.Get(ctx)
 	if id, ok := w.UserAuthID(); ok && id != "" {

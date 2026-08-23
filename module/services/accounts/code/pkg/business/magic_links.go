@@ -11,6 +11,7 @@ import (
 
 	"github.com/codefly-dev/core/wool"
 
+	"accounts/pkg/abuse"
 	"accounts/pkg/auth"
 	"accounts/pkg/email"
 	gen "accounts/pkg/gen/saas/accounts/v1"
@@ -32,8 +33,18 @@ type MagicLink struct {
 
 // SendMagicLink generates a random token, hashes it, stores the hash in the
 // DB, and sends an email with a link containing the plaintext token.
-func (s *Service) SendMagicLink(ctx context.Context, emailAddr string) error {
+//
+// turnstileToken carries the abuse-protection challenge from the client; it
+// is verified before any email is enqueued so an unauthenticated caller can't
+// drive Resend cost or email-bomb an address by hammering this endpoint.
+func (s *Service) SendMagicLink(ctx context.Context, emailAddr, turnstileToken string) error {
 	w := wool.Get(ctx).In("SendMagicLink")
+
+	if err := s.abuseVerifier.Verify(ctx, abuse.Challenge{
+		Token: turnstileToken, Action: "send_magic_link",
+	}); err != nil {
+		return err
+	}
 
 	// Generate random 32-byte token.
 	raw := make([]byte, 32)

@@ -2,6 +2,8 @@ package cache_test
 
 import (
 	"context"
+	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -46,6 +48,43 @@ func TestRateLimiter_PerKeyIsolation(t *testing.T) {
 	}
 	if allowed, _, _, _ := rl.Allow(ctx, "org:B", 5, time.Minute); !allowed {
 		t.Errorf("org B first call should pass — separate budget")
+	}
+}
+
+func TestRateLimiter_AtomicUnderConcurrentBurst(t *testing.T) {
+	// A concurrent burst against one key must admit exactly `limit`
+	// requests — the atomic INCR forbids the Get/Set race that would let
+	// two goroutines read the same count and both write count+1, letting
+	// the budget be overspent.
+	rl := cache.NewRateLimiter(cache.NewMemory())
+	ctx := context.Background()
+
+	const limit = 100
+	const callers = 500
+
+	// An hour-long window guarantees every goroutine lands in the same
+	// fixed-window bucket, so a boundary roll-over can't split the burst
+	// across two counters and make the exact-count assertion flaky.
+	const window = time.Hour
+
+	var allowed atomic.Int64
+	var wg sync.WaitGroup
+	start := make(chan struct{})
+	for i := 0; i < callers; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			<-start
+			if ok, _, _, _ := rl.Allow(ctx, "burst", limit, window); ok {
+				allowed.Add(1)
+			}
+		}()
+	}
+	close(start)
+	wg.Wait()
+
+	if got := allowed.Load(); got != limit {
+		t.Errorf("allowed %d requests, want exactly %d", got, limit)
 	}
 }
 
