@@ -292,10 +292,14 @@ approval: {
 ```
 
 This compiles into the authz catalog (`pkg/cataloggen/authz_methods.go`) and is
-enforced at the **same chokepoint** — auth-sidecar edge + handler — that already
-enforces `permissions:` and `mfa:`. "How do we gate an action" then has exactly
-one answer: an annotation, not bespoke code per flow. This is what retires the
-`requireOrgAdmin` placeholder (§9) — the gate moves into the catalog.
+enforced in the **accounts handler layer** — the same place `requireMFA` /
+`requireRecentMFA` / `requireScope` already run (`auth.go`), as a new
+`requireApproval` gate. (The auth-sidecar does *not* decide per-method
+permissions/MFA; it validates the token and stamps identity headers. Marking is
+declarative in the catalog; enforcement is the handler.) "How do we gate an
+action" then has exactly one answer: an annotation plus the shared gate, not
+bespoke code per flow. This is what retires the `requireOrgAdmin` placeholder
+(§9) — the gate moves into the catalog.
 
 ### The pending response
 
