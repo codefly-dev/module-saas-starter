@@ -280,6 +280,14 @@ func (s *Service) CreateApprovalRequest(ctx context.Context, in *CreateApprovalR
 // runs under one org tx that locks the request FOR UPDATE, so quorum is exact
 // under concurrency. A deny transitions straight to denied. Emits
 // approval.approved / approval.denied on a terminal transition.
+//
+// SECURITY INVARIANT: in.Decider is trusted verbatim — distinct-approver quorum,
+// the approver-set check, and BlockSelf are only as sound as it is. The caller
+// MUST set Decider from the authenticated actor identity, never from client
+// input. A caller that forwards a client-supplied decider lets one party forge N
+// distinct approvers to reach quorum, or claim someone else's id to bypass
+// BlockSelf. This is the RPC/handler layer's responsibility (the engine cannot
+// authenticate).
 func (s *Service) Decide(ctx context.Context, orgID, id string, in DecideInput) (DecideOutcome, error) {
 	w := wool.Get(ctx).In("DecideApproval",
 		wool.Field("approval_id", id),
@@ -373,7 +381,7 @@ func (s *Service) Decide(ctx context.Context, orgID, id string, in DecideInput) 
 // (ErrTypeConflict) if already terminal.
 func (s *Service) CancelApprovalRequest(ctx context.Context, orgID, id, reason string) error {
 	w := wool.Get(ctx).In("CancelApprovalRequest", wool.Field("approval_id", id))
-	return s.store.As(Identity{OrgID: orgID}).Within(ctx, func(ctx context.Context) error {
+	if err := s.store.As(Identity{OrgID: orgID}).Within(ctx, func(ctx context.Context) error {
 		req, err := s.approvalStore().LockApprovalRequest(ctx, id, orgID)
 		if err != nil {
 			return err
@@ -384,11 +392,18 @@ func (s *Service) CancelApprovalRequest(ctx context.Context, orgID, id, reason s
 				ErrTypeConflict,
 			)
 		}
-		if err := s.approvalStore().UpdateApprovalState(ctx, id, orgID, ApprovalCancelled, reason, true); err != nil {
+		// setDecided is false: a cancellation is a withdrawal, not a decision, so
+		// decided_at stays null (updated_at records when it went terminal).
+		if err := s.approvalStore().UpdateApprovalState(ctx, id, orgID, ApprovalCancelled, reason, false); err != nil {
 			return w.Wrapf(err, "cancel approval")
 		}
 		return nil
-	})
+	}); err != nil {
+		return err
+	}
+	s.emit(ctx, "system", "system", EventApprovalCancelled, "approval_request", id, orgID,
+		map[string]any{"reason": reason})
+	return nil
 }
 
 // GetApprovalRequest returns one request by id (org-scoped).
@@ -425,6 +440,13 @@ func (s *Service) ListApprovalRequests(ctx context.Context, orgID, state string,
 // delayed sweeper job is the jobs-integration phase (APPROVALS_DESIGN.md §6).
 func (s *Service) SweepApprovalRequest(ctx context.Context, orgID, id string, now time.Time) (ApprovalState, error) {
 	var newState ApprovalState
+	// transitioned records whether THIS call changed the state. The audit event
+	// is keyed on the transition, not on the observed state: the sweeper is an
+	// at-least-once delayed job (escalation re-enqueues a second sweep, and job
+	// retries re-run the handler), so a re-run that observes an already-expired
+	// or already-escalated request must NOT re-emit approval.timeout /
+	// approval.escalated.
+	var transitioned bool
 	err := s.store.As(Identity{OrgID: orgID}).Within(ctx, func(ctx context.Context) error {
 		req, err := s.approvalStore().LockApprovalRequest(ctx, id, orgID)
 		if err != nil {
@@ -435,10 +457,11 @@ func (s *Service) SweepApprovalRequest(ctx context.Context, orgID, id string, no
 			return nil // terminal; nothing to sweep
 		}
 		if req.ExpiresAt != nil && !now.Before(*req.ExpiresAt) {
-			if err := s.approvalStore().UpdateApprovalState(ctx, id, orgID, ApprovalExpired, "expired: no quorum before deadline", true); err != nil {
+			if err := s.approvalStore().UpdateApprovalState(ctx, id, orgID, ApprovalExpired, "expired: no quorum before deadline", false); err != nil {
 				return err
 			}
 			newState = ApprovalExpired
+			transitioned = true
 			return nil
 		}
 		if req.State == ApprovalPending && req.EscalateAt != nil && !now.Before(*req.EscalateAt) {
@@ -446,6 +469,7 @@ func (s *Service) SweepApprovalRequest(ctx context.Context, orgID, id string, no
 				return err
 			}
 			newState = ApprovalEscalated
+			transitioned = true
 			return nil
 		}
 		return nil
@@ -453,11 +477,13 @@ func (s *Service) SweepApprovalRequest(ctx context.Context, orgID, id string, no
 	if err != nil {
 		return "", err
 	}
-	switch newState {
-	case ApprovalExpired:
-		s.emit(ctx, "system", "system", EventApprovalTimeout, "approval_request", id, orgID, nil)
-	case ApprovalEscalated:
-		s.emit(ctx, "system", "system", EventApprovalEscalated, "approval_request", id, orgID, nil)
+	if transitioned {
+		switch newState {
+		case ApprovalExpired:
+			s.emit(ctx, "system", "system", EventApprovalTimeout, "approval_request", id, orgID, nil)
+		case ApprovalEscalated:
+			s.emit(ctx, "system", "system", EventApprovalEscalated, "approval_request", id, orgID, nil)
+		}
 	}
 	return newState, nil
 }

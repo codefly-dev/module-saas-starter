@@ -293,6 +293,78 @@ func TestApprovalEngine_Sweep_Expires(t *testing.T) {
 	require.Equal(t, business.ApprovalExpired, state)
 }
 
+func countEvents(entries []business.AuditEntry, typ business.EventType) int {
+	n := 0
+	for _, e := range entries {
+		if e.EventType == typ {
+			n++
+		}
+	}
+	return n
+}
+
+func TestApprovalEngine_Sweep_NoDuplicateTimeoutOnRerun(t *testing.T) {
+	svc, _ := newApprovalService(t)
+	spy := &recordingAuditEmitter{}
+	svc.SetAuditEmitter(spy)
+	past := time.Now().Add(-time.Minute)
+	id := mustCreate(t, svc, &business.CreateApprovalRequestInput{
+		OrgID: "org-a", Resource: "role", Action: "grant", RequestedBy: "user-1",
+		ExpiresAt: &past,
+	})
+
+	// First sweep transitions pending → expired and emits exactly one timeout.
+	state, err := svc.SweepApprovalRequest(context.Background(), "org-a", id, time.Now())
+	require.NoError(t, err)
+	require.Equal(t, business.ApprovalExpired, state)
+
+	// A re-run (the sweeper is an at-least-once delayed job) observes the already-
+	// expired request and must NOT re-emit approval.timeout.
+	state, err = svc.SweepApprovalRequest(context.Background(), "org-a", id, time.Now())
+	require.NoError(t, err)
+	require.Equal(t, business.ApprovalExpired, state)
+
+	require.Equal(t, 1, countEvents(spy.entries, business.EventApprovalTimeout),
+		"approval.timeout must be emitted once, not on every re-sweep of an expired request")
+}
+
+func TestApprovalEngine_Sweep_NoDuplicateEscalatedOnRerun(t *testing.T) {
+	svc, _ := newApprovalService(t)
+	spy := &recordingAuditEmitter{}
+	svc.SetAuditEmitter(spy)
+	past := time.Now().Add(-time.Minute)
+	future := time.Now().Add(time.Hour)
+	id := mustCreate(t, svc, &business.CreateApprovalRequestInput{
+		OrgID: "org-a", Resource: "role", Action: "grant", RequestedBy: "user-1",
+		EscalateAt: &past, ExpiresAt: &future,
+	})
+
+	state, err := svc.SweepApprovalRequest(context.Background(), "org-a", id, time.Now())
+	require.NoError(t, err)
+	require.Equal(t, business.ApprovalEscalated, state)
+
+	// Re-sweep while still escalated (not yet past expires_at): no re-emit.
+	state, err = svc.SweepApprovalRequest(context.Background(), "org-a", id, time.Now())
+	require.NoError(t, err)
+	require.Equal(t, business.ApprovalEscalated, state)
+
+	require.Equal(t, 1, countEvents(spy.entries, business.EventApprovalEscalated),
+		"approval.escalated must be emitted once, not on every re-sweep of an escalated request")
+}
+
+func TestApprovalEngine_Cancel_EmitsCancelled(t *testing.T) {
+	svc, _ := newApprovalService(t)
+	spy := &recordingAuditEmitter{}
+	svc.SetAuditEmitter(spy)
+	id := mustCreate(t, svc, &business.CreateApprovalRequestInput{
+		OrgID: "org-a", Resource: "role", Action: "grant", RequestedBy: "user-1",
+	})
+
+	require.NoError(t, svc.CancelApprovalRequest(context.Background(), "org-a", id, "withdrawn"))
+	require.Equal(t, 1, countEvents(spy.entries, business.EventApprovalCancelled),
+		"cancellation must be audited")
+}
+
 func TestApprovalEngine_Sweep_Escalates_StaysDecidable(t *testing.T) {
 	svc, _ := newApprovalService(t)
 	past := time.Now().Add(-time.Minute)

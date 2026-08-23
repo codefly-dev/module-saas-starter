@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"strings"
+	"sync"
 	"testing"
 
 	"accounts/pkg/business"
@@ -171,6 +172,60 @@ func TestApprovals_Quorum_DistinctApproversReachApproved(t *testing.T) {
 	}))
 	require.Equal(t, business.ApprovalApproved, got.State)
 	require.NotNil(t, got.DecidedAt)
+}
+
+// TestApprovals_ConcurrentDecide_QuorumExactlyOnce proves the FOR UPDATE lock in
+// the engine's Decide serializes concurrent approvers on the same request: two
+// distinct approvers deciding at once on a quorum-2 request must both succeed,
+// exactly one of them reaching quorum and flipping the row to approved. Without
+// the head-row lock, both could read count=1 and neither would transition (or
+// both would), so this is the test that would catch a regression there.
+func TestApprovals_ConcurrentDecide_QuorumExactlyOnce(t *testing.T) {
+	owner := seedUser(t)
+	orgID := seedOrg(t, owner)
+	reqID := seedApprovalRequest(t, orgID, 2)
+
+	svc, err := business.NewService(testStore)
+	require.NoError(t, err)
+
+	deciders := []string{"approver-1", "approver-2"}
+	outcomes := make([]business.DecideOutcome, len(deciders))
+	errs := make([]error, len(deciders))
+	var wg sync.WaitGroup
+	for i, d := range deciders {
+		wg.Add(1)
+		go func(i int, decider string) {
+			defer wg.Done()
+			outcomes[i], errs[i] = svc.Decide(testCtx, orgID, reqID, business.DecideInput{
+				Decider: decider, Decision: business.DecisionApprove,
+			})
+		}(i, d)
+	}
+	wg.Wait()
+
+	for i := range deciders {
+		require.NoError(t, errs[i])
+	}
+	approved := 0
+	for _, o := range outcomes {
+		if o.Approved {
+			approved++
+		}
+	}
+	require.Equal(t, 1, approved, "exactly one concurrent decision must reach quorum and flip to approved")
+
+	var got *business.ApprovalRequest
+	var count int
+	require.NoError(t, testStore.As(business.Identity{OrgID: orgID}).Within(testCtx, func(ctx context.Context) error {
+		var e error
+		if got, e = testStore.GetApprovalRequest(ctx, reqID, orgID); e != nil {
+			return e
+		}
+		count, e = testStore.CountApprovals(ctx, reqID, orgID)
+		return e
+	}))
+	require.Equal(t, business.ApprovalApproved, got.State)
+	require.Equal(t, 2, count)
 }
 
 // storeErrTypeInfra extracts the StoreErrorType from a *business.StoreError.

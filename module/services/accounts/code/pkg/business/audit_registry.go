@@ -123,6 +123,7 @@ const (
 	EventApprovalDenied         EventType = "approval.denied"
 	EventApprovalTimeout        EventType = "approval.timeout"
 	EventApprovalEscalated      EventType = "approval.escalated"
+	EventApprovalCancelled      EventType = "approval.cancelled"
 	EventPrincipalCreated       EventType = "principal.created"
 	EventPrincipalRevoked       EventType = "principal.revoked"
 
@@ -224,6 +225,7 @@ var auditEventCatalog = []AuditEventDefinition{
 	def(EventApprovalDenied, CategoryAccess, "An approval request was denied."),
 	def(EventApprovalTimeout, CategoryAccess, "An approval request expired before reaching quorum."),
 	def(EventApprovalEscalated, CategoryAccess, "An approval request was escalated to a wider approver set."),
+	def(EventApprovalCancelled, CategoryAccess, "An approval request was cancelled before a decision.", str("reason")),
 	def(EventPrincipalCreated, CategoryAccess, "An agent principal was created.", str("agent_identifier")),
 	def(EventPrincipalRevoked, CategoryAccess, "A principal was revoked.", str("reason")),
 	def(EventScopeNodeRegistered, CategoryAccess, "A scope node was registered.", str("scope_path"), str("kind")),

@@ -61,11 +61,6 @@ CREATE INDEX approval_requests_pending_idx
     ON approval_requests (org_id, created_at DESC)
     WHERE state = 'pending';
 
--- Sweeper re-read: still-open requests with a decision-window deadline.
-CREATE INDEX approval_requests_deadline_idx
-    ON approval_requests (expires_at)
-    WHERE state IN ('pending', 'escalated');
-
 CREATE TABLE approval_decisions (
     id           UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     request_id   UUID NOT NULL REFERENCES approval_requests(id) ON DELETE CASCADE,
@@ -128,6 +123,14 @@ GRANT SELECT, INSERT, UPDATE ON approval_requests  TO app_tenant;
 GRANT SELECT, INSERT, UPDATE ON approval_requests  TO app_control_plane;
 GRANT SELECT, INSERT         ON approval_decisions TO app_tenant;
 GRANT SELECT, INSERT         ON approval_decisions TO app_control_plane;
+
+-- The timeout/escalation sweeper runs as a delayed Job handler under the job
+-- worker role (app_job_worker, migration 72), per-org via WithOrgTx (so RLS
+-- applies — app_job_worker has no BYPASSRLS). It reads and transitions the head
+-- row (SELECT ... FOR UPDATE + UPDATE), so it needs those verbs on
+-- approval_requests. Same pattern as analytics_deliveries (migration 81).
+-- Without this grant the wired sweeper fails closed.
+GRANT SELECT, UPDATE ON approval_requests TO app_job_worker;
 
 COMMENT ON TABLE approval_requests IS
     'saas/approvals/v1 head row. Gates an action until quorum distinct approve decisions arrive, or a timeout/escalation sweeper flips it. Resumes the gated action via the outbox (resume_ref).';
