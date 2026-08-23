@@ -2,7 +2,6 @@ package cache
 
 import (
 	"context"
-	"errors"
 	"strconv"
 	"time"
 )
@@ -56,28 +55,21 @@ func (r *RateLimiter) Allow(
 	resetAt = bucket.Add(window)
 	bucketKey := rateLimitPrefix + key + ":" + strconv.FormatInt(bucket.Unix(), 10)
 
-	// Read-modify-write via Get + Set. Connect-Web traffic doesn't
-	// race hard enough to need INCR/Lua atomicity at the typical
-	// throughputs of a SaaS admin API; if you do, swap this for a
-	// Redis-Lua atomic counter and a typed Cache extension.
-	var count int
-	if v, getErr := r.cache.Get(ctx, bucketKey); getErr == nil {
-		// Stored as ASCII int — Redis-friendly + readable in redis-cli.
-		count, _ = strconv.Atoi(string(v))
-	} else if !errors.Is(getErr, ErrNotFound) {
+	// Atomic INCR + first-hit EXPIRE. A concurrent burst that hits several
+	// api instances at once still lands one increment per request against
+	// the shared counter, so the budget can't be overspent by a Get/Set
+	// read-modify-write race. TTL runs slightly past the window end so
+	// clock skew between instances doesn't evict a live bucket early.
+	count, err := r.cache.Incr(ctx, bucketKey, window+5*time.Second)
+	if err != nil {
 		// Soft-fail: treat backing-store errors as allow. Rate limiting
-		// is best-effort overload protection; we don't want a Redis
-		// blip to mass-reject traffic.
+		// is best-effort overload protection; we don't want a Redis blip
+		// to mass-reject traffic.
 		return true, limit, resetAt, nil
 	}
 
-	count++
-	// Set with a TTL slightly past the window end so a clock skew
-	// between instances doesn't cause cleanup races.
-	_ = r.cache.Set(ctx, bucketKey, []byte(strconv.Itoa(count)), window+5*time.Second)
-
-	if count > limit {
+	if count > int64(limit) {
 		return false, 0, resetAt, nil
 	}
-	return true, limit - count, resetAt, nil
+	return true, limit - int(count), resetAt, nil
 }

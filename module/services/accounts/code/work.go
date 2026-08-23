@@ -117,6 +117,19 @@ func doWork(ctx context.Context) (Clean, error) {
 		return nil, err
 	}
 	service.SetAbuseVerifier(abuseVerifier)
+	if _, disabled := abuseVerifier.(abuse.DisabledVerifier); disabled {
+		w.Warn("ABUSE PROTECTION DISABLED — anonymous endpoints (Authenticate, RegisterUser, JoinWaitlist, SendMagicLink) are guarded by rate limiting alone; set ABUSE_PROTECTION_MODE=turnstile before serving production traffic")
+	}
+
+	// Per-IP rate limiting attributes anonymous traffic to a source address.
+	// TRUSTED_PROXY_CIDRS lists the proxies whose X-Forwarded-For we honor;
+	// an invalid entry fails boot rather than silently trusting a spoofable
+	// header.
+	trustedProxies, err := adapters.ParseTrustedProxyCIDRs(workspaceEnv("security", "TRUSTED_PROXY_CIDRS"))
+	if err != nil {
+		return nil, err
+	}
+	adapters.WithTrustedProxies(trustedProxies)
 	if err := service.SetAcquisitionMode(os.Getenv("ACQUISITION_MODE")); err != nil {
 		return nil, err
 	}
