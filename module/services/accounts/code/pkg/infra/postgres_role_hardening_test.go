@@ -44,6 +44,8 @@ var relationsByScope = map[relationScope][]string{
 		"actor_chain_journal",
 		"actor_chain_revocations",
 		"api_keys",
+		"approval_decisions",
+		"approval_requests",
 		"audit_events",
 		"audit_export_configs",
 		"delegation_grants",
@@ -129,6 +131,8 @@ var appTenantRelationPrivileges = map[string]relationPrivileges{
 	"actor_chain_journal":                  {selectRows: true, insertRows: true},
 	"actor_chain_revocations":              {selectRows: true, insertRows: true},
 	"api_keys":                             {selectRows: true, insertRows: true, updateRows: true},
+	"approval_decisions":                   {selectRows: true, insertRows: true}, // append-only, like actor_chain_journal
+	"approval_requests":                    {selectRows: true, insertRows: true, updateRows: true},
 	"audit_events":                         {selectRows: true, insertRows: true},
 	"audit_export_configs":                 {selectRows: true, insertRows: true, updateRows: true, deleteRows: true},
 	"delegation_grants":                    {selectRows: true, insertRows: true, updateRows: true},
@@ -352,6 +356,17 @@ func TestControlPlaneRelationGrantsAreExact(t *testing.T) {
 			// like audit_events: the control plane reads and inserts but never
 			// updates or deletes (an immutable trigger rejects those anyway).
 			if relation == "actor_chain_journal" || relation == "actor_chain_revocations" {
+				want = relationPrivileges{selectRows: true, insertRows: true}
+			}
+			// approval_requests is the mutable head: the control plane reads,
+			// inserts, and transitions it, but never deletes — org deletion cascades
+			// via the org_id FK, so no row-DELETE grant is needed.
+			if relation == "approval_requests" {
+				want = relationPrivileges{selectRows: true, insertRows: true, updateRows: true}
+			}
+			// approval_decisions is append-only like actor_chain_journal: read and
+			// insert, never update or delete (an immutable trigger rejects those).
+			if relation == "approval_decisions" {
 				want = relationPrivileges{selectRows: true, insertRows: true}
 			}
 
