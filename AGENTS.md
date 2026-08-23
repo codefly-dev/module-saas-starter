@@ -114,7 +114,8 @@ signing). Consumers then `codefly sync module` onto the new tag.
 Deep references live under `module/` — authorization
 ([module/AUTHORIZATION_CATALOG.md](./module/AUTHORIZATION_CATALOG.md),
 [AUTHZ.md](./AUTHZ.md)), database/RLS
-([module/DATABASE_AUTHORITY.md](./module/DATABASE_AUTHORITY.md)), deployment
+([module/DATABASE_AUTHORITY.md](./module/DATABASE_AUTHORITY.md)), the approval
+primitive design ([APPROVALS_DESIGN.md](./APPROVALS_DESIGN.md)), deployment
 topology ([module/DEPLOYMENT_TOPOLOGY.md](./module/DEPLOYMENT_TOPOLOGY.md)),
 frontend ([FRONTEND_ARCHITECTURE.md](./FRONTEND_ARCHITECTURE.md),
 [module/FRONTEND_PLUGINS.md](./module/FRONTEND_PLUGINS.md)), REST/gateway
