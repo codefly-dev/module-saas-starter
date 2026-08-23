@@ -1,7 +1,7 @@
-import type { Interceptor } from "@connectrpc/connect";
+import { Code, ConnectError, type Interceptor } from "@connectrpc/connect";
 import { createConnectTransport } from "@connectrpc/connect-web";
 import { rateLimitInterceptor } from "./rate-limit-tracker";
-import { getToken } from "./token-store";
+import { getToken, refreshToken } from "./token-store";
 
 /**
  * Connect transport for the API backend, going through the auth-sidecar
@@ -9,13 +9,28 @@ import { getToken } from "./token-store";
  *
  * The auth interceptor automatically injects the Bearer token from the
  * token store on every request. The AuthProvider keeps the store in sync.
+ *
+ * Access tokens are short-lived (minutes), so an in-page session outlives
+ * them by design: on Unauthenticated the interceptor exchanges the httpOnly
+ * refresh cookie for a fresh token (single-flight across concurrent RPCs)
+ * and retries the call once. Exported for tests.
  */
-const authInterceptor: Interceptor = (next) => async (req) => {
+export const authInterceptor: Interceptor = (next) => async (req) => {
 	const token = getToken();
 	if (token) {
 		req.header.set("Authorization", `Bearer ${token}`);
 	}
-	return next(req);
+	try {
+		return await next(req);
+	} catch (error) {
+		if (!token || ConnectError.from(error).code !== Code.Unauthenticated) {
+			throw error;
+		}
+		const fresh = await refreshToken();
+		if (!fresh) throw error;
+		req.header.set("Authorization", `Bearer ${fresh}`);
+		return next(req);
+	}
 };
 
 export const apiTransport = createConnectTransport({

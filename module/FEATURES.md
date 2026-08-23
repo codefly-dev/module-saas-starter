@@ -147,7 +147,7 @@ rather than at first login.
 
 | Stage         | Mechanism                                                       |
 |---------------|-----------------------------------------------------------------|
-| Access token  | Ed25519 JWT, 15-min TTL, with identity, tenant, role, session, and assurance claims |
+| Access token  | Ed25519 JWT, 3-min TTL, with identity, tenant, role, session, and assurance claims |
 | Refresh token | Opaque 256-bit random token, SHA-256 hashed in `sessions`, fixed 7-day absolute family lifetime by default |
 | Session idle  | Explicit 24-hour idle expiry by default; successful rotation advances idle expiry but never absolute expiry |
 | Device policy | Bounded device metadata, stable family id, whole-device revocation, and configurable active-device cap (default 10) |

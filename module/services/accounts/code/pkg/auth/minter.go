@@ -8,7 +8,7 @@ import (
 
 // TokenPair is the output of a successful login/signup/refresh.
 //
-// AccessToken is a short-lived (15 min) signed JWT carrying the Identity as
+// AccessToken is a short-lived (3 min) signed JWT carrying the Identity as
 // claims. Clients send it on every request and the sidecar validates it.
 //
 // RefreshToken is a long-lived (7 days) opaque token whose hash is stored in
@@ -68,7 +68,7 @@ type JWTMinter interface {
 	// RevokeAccess adds the given access token's jti to the revocation
 	// list with TTL = remaining lifetime. Pairs with Revoke() on logout
 	// to invalidate BOTH halves of the pair — without this, the old
-	// access token stays valid until natural expiry (15 min default).
+	// access token stays valid until natural expiry (3 min default).
 	// No-op when the token cannot be parsed (already invalid).
 	RevokeAccess(ctx context.Context, accessToken string) error
 

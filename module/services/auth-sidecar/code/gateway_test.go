@@ -81,6 +81,7 @@ func newGatewayHarness(t *testing.T) (*Gateway, *fakeUpstream, *fakeUpstream, ed
 		audience:      "saas-starter",
 		internalToken: "test-internal-token",
 		gatewayToken:  "test-gateway-token",
+		revoker:       noopRevoker{},
 	}
 
 	apiFake := &fakeUpstream{body: "api-response"}
@@ -565,6 +566,7 @@ func TestGateway_NoRoute_404(t *testing.T) {
 		publicKey: pub,
 		issuer:    "saas-starter",
 		audience:  "saas-starter",
+		revoker:   noopRevoker{},
 	}
 
 	// Empty route config — nothing is whitelisted.
@@ -624,6 +626,7 @@ func TestGateway_ConnectProtocol_AuthenticatedEndToEnd(t *testing.T) {
 		issuer:       "saas-starter",
 		audience:     "saas-starter",
 		gatewayToken: "test-gateway-token",
+		revoker:      noopRevoker{},
 	}
 
 	upstream := &fakeUpstream{body: `{"user":{"id":"user-1"}}`}
@@ -661,6 +664,7 @@ func TestGateway_LegacyConnectProcedureRewritesToV1(t *testing.T) {
 		issuer:       "saas-starter",
 		audience:     "saas-starter",
 		gatewayToken: "test-gateway-token",
+		revoker:      noopRevoker{},
 	}
 
 	upstream := &fakeUpstream{body: `{}`}

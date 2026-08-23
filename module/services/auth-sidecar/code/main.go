@@ -124,6 +124,24 @@ func main() {
 
 	sidecar := NewSidecar(internalAPIConn, publicKey)
 
+	redisURL, redisErr := codefly.For(ctx).Service("cache").Secret("redis", "connection")
+	if redisErr != nil || redisURL == "" {
+		redisURL = os.Getenv("REDIS_URL")
+	}
+	// Enforce access-token revocation on the gateway hot path: consult the same
+	// Redis revocation set accounts writes on logout / admin session-kill,
+	// fronted by a short-TTL local cache so the browser path avoids a
+	// per-request store round-trip.
+	revocationTTL, err := revocationCacheTTL()
+	if err != nil {
+		panic(err)
+	}
+	rev, err := newRevoker(redisURL, revocationTTL)
+	if err != nil {
+		panic(fmt.Sprintf("configure access-token revocation: %v", err))
+	}
+	sidecar.SetRevoker(rev)
+
 	var grpcOptions []grpc.ServerOption
 	if otelMetricProvider != nil {
 		grpcOptions = append(grpcOptions, wooltel.GRPCServerOptions()...)
@@ -195,11 +213,6 @@ func main() {
 		}); err != nil {
 			panic(fmt.Sprintf("resolve runtime route upstreams: %v", err))
 		}
-		redisURL, redisErr := codefly.For(ctx).Service("cache").Secret("redis", "connection")
-		if redisErr != nil || redisURL == "" {
-			redisURL = os.Getenv("REDIS_URL")
-		}
-
 		authenticationAttemptLimit, err := configuredAuthenticationAttemptLimit()
 		if err != nil {
 			panic(err)

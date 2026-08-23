@@ -25,13 +25,35 @@ import {
 	storeRefreshToken,
 	storeUserEmail,
 } from "./auth-session";
-import { setToken as setConnectToken } from "./connect/token-store";
+import {
+	setToken as setConnectToken,
+	setRefreshHandler,
+} from "./connect/token-store";
 import { apiTransport } from "./connect/transport";
 
 const authClient = createClient(AuthService, apiTransport);
 
 // Browser REST is always same-origin. Next/gateway resolves the accounts
 // service server-side from Codefly bindings (CONV-004).
+
+// Exchanges the httpOnly refresh cookie for a fresh token pair. The body
+// carries no token — the backend reads it from the cookie. Resolves null when
+// the session is gone (cookie absent/expired/revoked).
+async function exchangeRefreshCookie(): Promise<{
+	accessToken: string;
+	refreshToken: string;
+} | null> {
+	const res = await fetch("/v1/auth/refresh", {
+		method: "POST",
+		credentials: "include",
+		headers: { "Content-Type": "application/json" },
+		body: JSON.stringify({}),
+	});
+	if (!res.ok) return null;
+	const data = await res.json();
+	if (!data.accessToken) return null;
+	return { accessToken: data.accessToken, refreshToken: data.refreshToken };
+}
 
 // Identity-provider configuration is supplied by the Codefly `identity`
 // workspace configuration. The Next.js agent exposes only its non-secret
@@ -651,22 +673,45 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 		// Always attempt a refresh on load: the refresh token lives in an httpOnly
 		// cookie the browser sends automatically (credentials: "include"). If the
 		// cookie is absent/expired the request fails and we land unauthenticated.
-		// The body no longer carries the token — the backend reads it from the cookie.
-		fetch("/v1/auth/refresh", {
-			method: "POST",
-			credentials: "include",
-			headers: { "Content-Type": "application/json" },
-			body: JSON.stringify({}),
-		})
-			.then((res) => {
-				if (!res.ok) throw new Error();
-				return res.json();
-			})
-			.then((data) => setTokens(data.accessToken, data.refreshToken))
-			.catch(() => {
+		exchangeRefreshCookie()
+			.catch(() => null)
+			.then((pair) => {
+				if (pair) {
+					setTokens(pair.accessToken, pair.refreshToken);
+					return;
+				}
 				clearRefreshToken();
 				setState((s) => ({ ...s, isLoading: false }));
 			});
+	}, [setTokens]);
+
+	useEffect(() => {
+		// Mid-session recovery: the Connect transport calls this when an RPC hits
+		// 401 — the short-lived access token expired (or was revoked) while the
+		// page stayed open. A failed exchange means the session itself is gone;
+		// drop to the unauthenticated state rather than leave dead credentials
+		// installed.
+		setRefreshHandler(async () => {
+			const pair = await exchangeRefreshCookie().catch(() => null);
+			if (pair) {
+				setTokens(pair.accessToken, pair.refreshToken);
+				return pair.accessToken;
+			}
+			clearRefreshToken();
+			setConnectToken(null);
+			if (typeof document !== "undefined") {
+				document.cookie = "codefly_session=; path=/; SameSite=Lax; Max-Age=0";
+			}
+			setState({
+				user: null,
+				accessToken: null,
+				impersonation: { isImpersonating: false },
+				isLoading: false,
+				isAuthenticated: false,
+			});
+			return null;
+		});
+		return () => setRefreshHandler(null);
 	}, [setTokens]);
 
 	const setTokensFromMagicLink = useCallback(

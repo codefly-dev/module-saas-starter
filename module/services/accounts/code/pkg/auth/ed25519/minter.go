@@ -55,7 +55,10 @@ type Config struct {
 	Issuer string
 	// Audience is set as `aud` on every access token.
 	Audience string
-	// AccessTokenTTL is the lifetime of an access token. Default 15 min.
+	// AccessTokenTTL is the lifetime of an access token. Default 3 min — kept
+	// short so a revoked token's un-checked window (the sidecar's local
+	// revocation-cache TTL) is bounded even if the revocation list is briefly
+	// unavailable. Refresh rotation still bounds the session independently.
 	AccessTokenTTL time.Duration
 	// ImpersonationTokenTTL caps the lifetime of access tokens minted
 	// for impersonation sessions (acting claim non-empty). Default 5 min.
@@ -83,7 +86,7 @@ func (c *Config) withDefaults() error {
 		c.Audience = "saas-starter"
 	}
 	if c.AccessTokenTTL == 0 {
-		c.AccessTokenTTL = 15 * time.Minute
+		c.AccessTokenTTL = 3 * time.Minute
 	}
 	if c.ImpersonationTokenTTL == 0 {
 		c.ImpersonationTokenTTL = 5 * time.Minute
@@ -626,10 +629,11 @@ func (m *Minter) signAccess(identity *auth.Identity, sessionID uuid.UUID, now ti
 	if err != nil {
 		return "", err
 	}
-	// Impersonation sessions get a shorter TTL — the worst-case window
-	// for an admin walking away from a "viewing as customer" session is
-	// capped at 5 min, vs 15 min for normal sessions. The impersonation
-	// banner makes the state visible; this is belt-and-suspenders.
+	// Impersonation sessions are capped at min(ImpersonationTokenTTL,
+	// AccessTokenTTL) so an admin walking away from a "viewing as customer"
+	// session can't leave a long-lived token behind even if normal-session
+	// TTL is raised. The impersonation banner makes the state visible; this
+	// is belt-and-suspenders.
 	ttl := m.cfg.AccessTokenTTL
 	if identity.ActingAsUserID != uuid.Nil {
 		if impTTL := m.cfg.ImpersonationTokenTTL; impTTL > 0 && impTTL < ttl {
