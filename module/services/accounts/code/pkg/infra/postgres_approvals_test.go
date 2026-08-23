@@ -228,6 +228,55 @@ func TestApprovals_ConcurrentDecide_QuorumExactlyOnce(t *testing.T) {
 	require.Equal(t, 2, count)
 }
 
+// failingTxEmitter implements the transactional-emit interface and always fails,
+// to prove the caller's mutation rolls back when its audit write can't commit.
+type failingTxEmitter struct{}
+
+func (failingTxEmitter) Emit(context.Context, business.AuditEntry) {}
+func (failingTxEmitter) EmitTx(context.Context, business.AuditEntry) error {
+	return errors.New("audit backend unavailable")
+}
+
+// recordingEmitter captures emitted entries (infra_test has no access to the
+// business-package spy).
+type recordingEmitter struct {
+	mu      sync.Mutex
+	entries []business.AuditEntry
+}
+
+func (r *recordingEmitter) Emit(_ context.Context, e business.AuditEntry) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.entries = append(r.entries, e)
+}
+
+// TestApprovals_AuditFailureRollsBackCreate proves the approval.asked audit event
+// is written in the SAME transaction as the request insert: when the audit write
+// fails, the whole operation rolls back and no request row is persisted. Before
+// the emit moved inside the tx it was a separate post-commit write, so a request
+// could exist with no audit trail — this test would have caught that.
+func TestApprovals_AuditFailureRollsBackCreate(t *testing.T) {
+	owner := seedUser(t)
+	orgID := seedOrg(t, owner)
+
+	svc, err := business.NewService(testStore)
+	require.NoError(t, err)
+	svc.SetAuditEmitter(failingTxEmitter{})
+
+	_, err = svc.CreateApprovalRequest(testCtx, &business.CreateApprovalRequestInput{
+		OrgID: orgID, Resource: "role", Action: "grant", RequestedBy: "user-1",
+	})
+	require.Error(t, err, "a failed audit write must fail the create (fail-closed)")
+
+	var got []*business.ApprovalRequest
+	require.NoError(t, testStore.As(business.Identity{OrgID: orgID}).Within(testCtx, func(ctx context.Context) error {
+		var e error
+		got, _, e = testStore.ListApprovalRequests(ctx, orgID, "", 50, "")
+		return e
+	}))
+	require.Empty(t, got, "the approval request must roll back when its audit event fails to commit")
+}
+
 // storeErrTypeInfra extracts the StoreErrorType from a *business.StoreError.
 func storeErrTypeInfra(t *testing.T, err error) business.StoreErrorType {
 	t.Helper()

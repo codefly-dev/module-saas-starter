@@ -166,6 +166,29 @@ func (s *Service) principalStore() PrincipalStore {
 	panic("Service.store does not implement PrincipalStore; see postgres_principals.go")
 }
 
+// actorTypeForCreator resolves the audit actor_type facet from the kind of the
+// principal that performed an action. Falls back to "user" when the creator
+// can't be resolved (empty, bootstrap, or already-revoked id) — the dominant
+// CLI-install case is a human. Without this, agent- or service-initiated creates
+// would be mislabeled "user" in the audit trail.
+func (s *Service) actorTypeForCreator(ctx context.Context, principalID string) string {
+	if principalID == "" {
+		return "user"
+	}
+	creator, err := s.GetPrincipal(ctx, principalID)
+	if err != nil {
+		return "user"
+	}
+	switch creator.Kind {
+	case PrincipalKindAgent:
+		return "agent"
+	case PrincipalKindService:
+		return "service"
+	default:
+		return "user"
+	}
+}
+
 // GetPrincipal returns a principal by ID. Returns ErrTypeNotFound
 // (wrapped) when the ID doesn't exist or has been revoked.
 //
@@ -298,7 +321,7 @@ func (s *Service) CreateAgentPrincipal(ctx context.Context, req CreateAgentReque
 	}); err != nil {
 		return nil, w.Wrapf(err, "cannot create agent principal")
 	}
-	s.emit(ctx, req.CreatedBy, "user", EventPrincipalCreated, "principal", p.ID, p.OrgID,
+	s.emit(ctx, req.CreatedBy, s.actorTypeForCreator(ctx, req.CreatedBy), EventPrincipalCreated, "principal", p.ID, p.OrgID,
 		map[string]any{"agent_identifier": p.AgentIdentifier})
 	w.Info("agent principal created",
 		wool.Field("principal_id", p.ID),

@@ -264,14 +264,18 @@ func (s *Service) CreateApprovalRequest(ctx context.Context, in *CreateApprovalR
 		ExpiresAt:   in.ExpiresAt,
 		EscalateAt:  in.EscalateAt,
 	}
+	// The audit event is written in the same tx as the insert (emitTx), so the
+	// request and its approval.asked record commit atomically — a crash can't
+	// leave a gated request with no audit trail.
 	if err := s.store.As(Identity{OrgID: in.OrgID}).Within(ctx, func(ctx context.Context) error {
-		return s.approvalStore().InsertApprovalRequest(ctx, r)
+		if err := s.approvalStore().InsertApprovalRequest(ctx, r); err != nil {
+			return err
+		}
+		return s.emitTx(ctx, in.RequestedBy, "user", EventApprovalAsked, "approval_request", r.ID, in.OrgID,
+			map[string]any{"resource": in.Resource, "action": in.Action})
 	}); err != nil {
 		return "", w.Wrapf(err, "insert approval request")
 	}
-
-	s.emit(ctx, in.RequestedBy, "user", EventApprovalAsked, "approval_request", r.ID, in.OrgID,
-		map[string]any{"resource": in.Resource, "action": in.Action})
 	return r.ID, nil
 }
 
@@ -300,13 +304,11 @@ func (s *Service) Decide(ctx context.Context, orgID, id string, in DecideInput) 
 	}
 
 	var outcome DecideOutcome
-	var resource, action string
 	err := s.store.As(Identity{OrgID: orgID}).Within(ctx, func(ctx context.Context) error {
 		req, err := s.approvalStore().LockApprovalRequest(ctx, id, orgID)
 		if err != nil {
 			return err
 		}
-		resource, action = req.Resource, req.Action
 		if !req.IsDecidable() {
 			return NewStoreError(
 				fmt.Errorf("approval %s is not decidable (state=%s)", id, req.State),
@@ -339,12 +341,15 @@ func (s *Service) Decide(ctx context.Context, orgID, id string, in DecideInput) 
 		}
 
 		outcome.Quorum = req.Quorum
+		// Audit is emitted in this same tx (emitTx) on a terminal transition, so
+		// the state change and its approval.approved / approval.denied record are
+		// atomic.
 		if in.Decision == DecisionDeny {
 			if err := s.approvalStore().UpdateApprovalState(ctx, id, orgID, ApprovalDenied, in.Reason, true); err != nil {
 				return err
 			}
 			outcome.State = ApprovalDenied
-			return nil
+			return s.emitTx(ctx, in.Decider, "user", EventApprovalDenied, "approval_request", id, orgID, nil)
 		}
 
 		count, err := s.approvalStore().CountApprovals(ctx, id, orgID)
@@ -358,21 +363,14 @@ func (s *Service) Decide(ctx context.Context, orgID, id string, in DecideInput) 
 			}
 			outcome.State = ApprovalApproved
 			outcome.Approved = true
-			return nil
+			return s.emitTx(ctx, in.Decider, "user", EventApprovalApproved, "approval_request", id, orgID,
+				map[string]any{"resource": req.Resource, "action": req.Action})
 		}
 		outcome.State = req.State
 		return nil
 	})
 	if err != nil {
 		return DecideOutcome{}, err
-	}
-
-	switch outcome.State {
-	case ApprovalApproved:
-		s.emit(ctx, in.Decider, "user", EventApprovalApproved, "approval_request", id, orgID,
-			map[string]any{"resource": resource, "action": action})
-	case ApprovalDenied:
-		s.emit(ctx, in.Decider, "user", EventApprovalDenied, "approval_request", id, orgID, nil)
 	}
 	return outcome, nil
 }
@@ -381,7 +379,7 @@ func (s *Service) Decide(ctx context.Context, orgID, id string, in DecideInput) 
 // (ErrTypeConflict) if already terminal.
 func (s *Service) CancelApprovalRequest(ctx context.Context, orgID, id, reason string) error {
 	w := wool.Get(ctx).In("CancelApprovalRequest", wool.Field("approval_id", id))
-	if err := s.store.As(Identity{OrgID: orgID}).Within(ctx, func(ctx context.Context) error {
+	return s.store.As(Identity{OrgID: orgID}).Within(ctx, func(ctx context.Context) error {
 		req, err := s.approvalStore().LockApprovalRequest(ctx, id, orgID)
 		if err != nil {
 			return err
@@ -397,13 +395,10 @@ func (s *Service) CancelApprovalRequest(ctx context.Context, orgID, id, reason s
 		if err := s.approvalStore().UpdateApprovalState(ctx, id, orgID, ApprovalCancelled, reason, false); err != nil {
 			return w.Wrapf(err, "cancel approval")
 		}
-		return nil
-	}); err != nil {
-		return err
-	}
-	s.emit(ctx, "system", "system", EventApprovalCancelled, "approval_request", id, orgID,
-		map[string]any{"reason": reason})
-	return nil
+		// Audit in the same tx so the cancellation and its record are atomic.
+		return s.emitTx(ctx, "system", "system", EventApprovalCancelled, "approval_request", id, orgID,
+			map[string]any{"reason": reason})
+	})
 }
 
 // GetApprovalRequest returns one request by id (org-scoped).
@@ -440,13 +435,12 @@ func (s *Service) ListApprovalRequests(ctx context.Context, orgID, state string,
 // delayed sweeper job is the jobs-integration phase (APPROVALS_DESIGN.md §6).
 func (s *Service) SweepApprovalRequest(ctx context.Context, orgID, id string, now time.Time) (ApprovalState, error) {
 	var newState ApprovalState
-	// transitioned records whether THIS call changed the state. The audit event
-	// is keyed on the transition, not on the observed state: the sweeper is an
-	// at-least-once delayed job (escalation re-enqueues a second sweep, and job
-	// retries re-run the handler), so a re-run that observes an already-expired
-	// or already-escalated request must NOT re-emit approval.timeout /
-	// approval.escalated.
-	var transitioned bool
+	// The audit event is emitted in the SAME tx as the transition, inside the
+	// branch that performs it — never after. So a re-run of this at-least-once
+	// delayed job (escalation re-enqueues a second sweep, and job retries re-run
+	// the handler) that observes an already-expired or already-escalated request
+	// falls through both branches and emits nothing: no duplicate
+	// approval.timeout / approval.escalated, and the record commits atomically.
 	err := s.store.As(Identity{OrgID: orgID}).Within(ctx, func(ctx context.Context) error {
 		req, err := s.approvalStore().LockApprovalRequest(ctx, id, orgID)
 		if err != nil {
@@ -461,29 +455,19 @@ func (s *Service) SweepApprovalRequest(ctx context.Context, orgID, id string, no
 				return err
 			}
 			newState = ApprovalExpired
-			transitioned = true
-			return nil
+			return s.emitTx(ctx, "system", "system", EventApprovalTimeout, "approval_request", id, orgID, nil)
 		}
 		if req.State == ApprovalPending && req.EscalateAt != nil && !now.Before(*req.EscalateAt) {
 			if err := s.approvalStore().UpdateApprovalState(ctx, id, orgID, ApprovalEscalated, "escalated: no quorum before escalate_at", false); err != nil {
 				return err
 			}
 			newState = ApprovalEscalated
-			transitioned = true
-			return nil
+			return s.emitTx(ctx, "system", "system", EventApprovalEscalated, "approval_request", id, orgID, nil)
 		}
 		return nil
 	})
 	if err != nil {
 		return "", err
-	}
-	if transitioned {
-		switch newState {
-		case ApprovalExpired:
-			s.emit(ctx, "system", "system", EventApprovalTimeout, "approval_request", id, orgID, nil)
-		case ApprovalEscalated:
-			s.emit(ctx, "system", "system", EventApprovalEscalated, "approval_request", id, orgID, nil)
-		}
 	}
 	return newState, nil
 }
