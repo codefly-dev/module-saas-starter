@@ -13,8 +13,9 @@ is stale — #202, #203, #205–#212 all landed via PRs #216–#231). One HIGH i
 **partial**: H2c's mesh reach gate is real and test-asserted but
 namespace-granular, not workload-granular (no per-service ServiceAccounts).
 All seven "verified strong" control groups **hold** — no regressions found
-anywhere. Of the 18 LOW items, 10 are fixed; 8 remain open (two of those
-deliberately: one deferred behind a proto change, one documented won't-fix).
+anywhere. Of the 18 LOW items, 10 are fixed, 2 are partial (items 4 and 14),
+and 6 remain open (two of those deliberately: one deferred behind a proto
+change, one documented won't-fix).
 
 ## Command results
 
@@ -31,6 +32,11 @@ run — no Docker in the validation sandbox):
 | `TestGateway_StripsCallerIdentityAndTrustCredentials` | PASS |
 | `TestInjectHeaderJWTCredential` (5 subtests, incl. smuggled-credential drop) | PASS |
 | `TestRequireInternalCredential_RejectsTenantCallers` (3 subtests) | PASS |
+
+The module-root package `go:embed`s gitignored build artifacts
+(`module/services/*/.cache/`); on a fresh clone the root row fails to
+**compile** until a codefly build regenerates them — a build error there is
+environmental, not a regression.
 
 ## HIGH findings
 
@@ -64,7 +70,7 @@ run — no Docker in the validation sandbox):
 | 1 | Revocation fail-open on cache error (accounts) | **STILL-OPEN** | `pkg/auth/revocation.go:20-34` still bool-only fail-open; `token_revoker.go:50` computes and discards the error classification. Sidecar path (#202) is fail-closed; accounts in-process verify never got parity. |
 | 2 | Gateway HTTP timeouts | **FIXED** | `main.go:239-242` (ReadHeader/Read/Idle/MaxHeaderBytes); `WriteTimeout` deliberately omitted for the 5-min `WaitForDelegation` stream, documented in-code. |
 | 3 | Non-atomic rate limiter | **FIXED** | `rate_limiter.go:63` atomic Lua INCR+PEXPIRE; concurrency regression test. |
-| 4 | XFF/trusted-proxy attribution | **FIXED / config gap open** | Spoofing defense correct on both services (XFF ignored from untrusted peers). Gap: sidecar `newProxyTrust` silently drops malformed CIDRs (accounts fails boot); nothing requires the setting behind a proxy, and shipped configs leave it empty (per-IP budgets collapse to one bucket behind an LB). |
+| 4 | XFF/trusted-proxy attribution | **PARTIAL** | Spoofing defense correct on both services (XFF ignored from untrusted peers). Gap: sidecar `newProxyTrust` silently drops malformed CIDRs (accounts fails boot); nothing requires the setting behind a proxy, and shipped configs leave it empty (per-IP budgets collapse to one bucket behind an LB). |
 | 5 | Vault `HashKey` SHA-256 downgrade | **FIXED** | `vault.go:85-92` fails closed; 3 tests. |
 | 6 | SlackNotifier SSRF | **FIXED** | Uses `NewWebhookEndpointPolicy().HTTPClient()` (pinned-IP dial, 443-only, no redirects); SSRF-block test. |
 | 7 | OAuth state replayable in TTL | **STILL-OPEN** | State remains stateless HMAC; nonce minted but never stored/consumed (`oauth_state.go:99-128`), acknowledged in-code. Bounded by 10-min TTL + provider one-time code. |
@@ -74,7 +80,7 @@ run — no Docker in the validation sandbox):
 | 11 | `DeleteRole` org scope | **STILL-OPEN (deferred)** | Gate is `requirePlatformAdmin` only; in-code TODO defers org scoping behind adding `org_id` to the proto. Blast radius limited to platform admins. |
 | 12 | Role/scope object-id binding | **FIXED** | `requireVisibleRole` under `WithOrgTx` on AssignRole/GrantScope/ShareRecord; GrantScope also validates the scope node. |
 | 13 | API-key modulo bias | **FIXED** | Rejection sampling in `randomBase62` (`api_keys.go:207-233`) + distribution test. |
-| 14 | Unauth `/metrics` + gRPC reflection | **MIXED** | Sidecar reflection now local-only (`main.go:151-156`). Accounts reflection still unconditional on the public server (`grpc_gen.go:209` — generated file, needs a generator change). `/metrics` still unauthenticated on both services; reach is mesh-limited (in-mesh exposure only), no path-level policy. |
+| 14 | Unauth `/metrics` + gRPC reflection | **PARTIAL** | Sidecar reflection now local-only (`main.go:151-156`). Accounts reflection still unconditional on the public server (`grpc_gen.go:209` — generated file, needs a generator change). `/metrics` still unauthenticated on both services; reach is mesh-limited (in-mesh exposure only), no path-level policy. |
 | 15 | OpenAPI wildcard CORS | **FIXED** | Header removed from `api/openapi/route.ts` (no regression test). |
 | 16 | `codefly_session` cookie flags | **FIXED** | `SameSite=Lax` always, `Secure` when served over https (`auth.tsx:263-272`); JS presence-hint only, never trusted server-side. |
 | 17 | Dev/fixture provider via env | **FIXED** | `requireLocalForDevFixtureProvider` hard-fails startup outside `codefly.IsLocal()` (`work.go:243,1318-1328`). |
@@ -104,8 +110,11 @@ All seven groups **HOLD**; no weakenings found.
   `requireInternalCredential` only (`principal_rpcs.go:167`), and
   `requireInternalOrOrgMember` does not exist. Stricter is fine — but the plan
   doc should be reconciled so a later "restore the org-member path" cleanup
-  doesn't reopen the hole. The verify-before-merge concern is moot: no in-repo
-  caller invokes `Decide`.
+  doesn't reopen the hole. The verify-before-merge check passes for this repo —
+  no in-repo caller invokes the `Decide` RPC — but external solution runtimes
+  attached through the host seam were not audited; one calling `Decide` with a
+  bare tenant JWT now fails closed (`Unauthenticated`) rather than being
+  authorized, so any breakage would be functional, not a security exposure.
 - **`SECURITY_REVIEW.md` LOW table stale**: still lists all 18 items as a
   pending #213 rollup; actual state is the table above.
 - **Dead legacy minter**: `pkg/infra/jwt.go` still carries a 15-minute,

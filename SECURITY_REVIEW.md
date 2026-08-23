@@ -12,6 +12,12 @@ mesh), and layered test strategy live in
 > when a line has drifted. Every finding below was confirmed against the code in
 > this repository, not inferred from the issue text.
 
+> **Status note (2026-08-23).** The Status columns below are frozen at the
+> review pass and now stale — every HIGH/MEDIUM fix has since merged.
+> [`SECURITY_REVIEW_VALIDATION.md`](./SECURITY_REVIEW_VALIDATION.md) records
+> the validated per-finding state as of `3922317`; where the two disagree, the
+> validation doc is current.
+
 ## How to read a severity
 
 - **HIGH** — reachable on a primary request path and yields identity/authz
