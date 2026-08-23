@@ -28,6 +28,9 @@ func TestAuthenticateStatusError_IndistinguishableIdentityFailures(t *testing.T)
 		"invite email mismatch": fmt.Errorf("identity resolution: %w", business.ErrInvitationEmailMismatch),
 		"invite expired":        fmt.Errorf("identity resolution: %w", business.ErrInvitationExpired),
 		"unknown identity":      fmt.Errorf("header-jwt authentication: %w", auth.ErrUnknownIdentity),
+		// SSO org-bound login where the asserted org exists but the identity is
+		// not a member: an org-state oracle unless it collapses with the rest.
+		"org membership denied": fmt.Errorf("identity resolution: %w", auth.ErrOrganizationAccessDenied),
 	}
 
 	var canonical *status.Status

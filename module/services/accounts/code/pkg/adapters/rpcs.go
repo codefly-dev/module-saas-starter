@@ -876,6 +876,11 @@ var authenticateOracleErrors = []error{
 	auth.ErrSsoEmailDomainNotAllowed,
 	auth.ErrSsoProvisioningDisabled,
 	auth.ErrSsoProvisioningMisconfigured,
+	// Surfaced by the resolver on an SSO org-bound login when the asserted org
+	// exists but the identity holds no membership. Distinct at SwitchOrganization
+	// (an authenticated caller), but at the login boundary it is an org-state
+	// oracle and must collapse like every other resolution failure.
+	auth.ErrOrganizationAccessDenied,
 	business.ErrInvitationUnavailable,
 	business.ErrInvitationEmailMismatch,
 	business.ErrInvitationEmailUnverified,
