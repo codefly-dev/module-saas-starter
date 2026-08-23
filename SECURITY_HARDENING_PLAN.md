@@ -7,6 +7,14 @@ reconciliation between this module and obin-platform. It defines the
 app code vs. mesh policy), the **layered test strategy**, and the **pass-1
 remediation status**. It is the plan-of-record for epic #215.
 
+> **Status note (2026-08-23).** The statuses in this plan predate the merged
+> remediation PRs (#216–#231); see
+> [`SECURITY_REVIEW_VALIDATION.md`](./SECURITY_REVIEW_VALIDATION.md) for the
+> validated state. One deliberate divergence from the text below: `Decide`
+> shipped gated by `requireInternalCredential` only — stricter than the
+> "org-bound" description in B.3 and the pass-1 table. Do not "restore" an
+> org-member path to match this document.
+
 ## The reconciliation idea
 
 The two systems have complementary strengths. The bar for this module is to
