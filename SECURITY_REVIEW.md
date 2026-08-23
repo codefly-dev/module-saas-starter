@@ -294,7 +294,7 @@ the mesh (#217).
 | 11 | `DeleteRole` no org scope | `rpcs.go:538` → `business/permissions.go:45` | Add `org_id` scoping (TODO already at `rpcs.go:549`). |
 | 12 | Role/scope assignment object-id binding | `rpcs.go:560` / `:666` | Apply `requireVisibleRole` on the assignment path. |
 | 13 | API-key modulo bias | `business/api_keys.go:209` | Full-int base62 or rejection sampling. |
-| 14 | Unauthenticated `/metrics` + gRPC reflection | `telemetry_metrics.go:111`, `auth-sidecar/main.go:133`, accounts `grpc_gen.go:209` | Restrict `/metrics`; gate reflection to non-prod. → mesh mitigation via #217. |
+| 14 | Unauthenticated `/metrics` + gRPC reflection | `telemetry_metrics.go:105` (`Handler()`), `auth-sidecar/main.go:133`, accounts `grpc_gen.go:209` | Restrict `/metrics`; gate reflection to non-prod. → mesh mitigation via #217. |
 | 15 | OpenAPI route `Access-Control-Allow-Origin: *` | `frontend/.../api/openapi/route.ts:14` | Drop or scope to same-origin. |
 | 16 | `codefly_session` cookie not `Secure` / `SameSite=Lax` | `frontend/.../lib/auth.tsx:242` | Append `; Secure` on HTTPS. |
 | 17 | Dev/fixture provider selectable by env | `work.go:914,1081` | Hard-refuse when a production profile selects `IDENTITY_PROVIDER=dev`/`fixture`. |
