@@ -182,11 +182,11 @@ const (
 	EventGDPRDeletionReq   EventType = "gdpr.deletion_requested"
 	EventGDPRDeletionDone  EventType = "gdpr.deletion_completed"
 
-	EventWebhookCreated        EventType = "webhook.created"
-	EventWebhookDeleted        EventType = "webhook.deleted"
-	EventWebhookReplayed       EventType = "webhook.replayed"
-	EventWebhookSecretRotated  EventType = "webhook.secret_rotated"
-	EventJobReplayed           EventType = "job.replayed"
+	EventWebhookCreated       EventType = "webhook.created"
+	EventWebhookDeleted       EventType = "webhook.deleted"
+	EventWebhookReplayed      EventType = "webhook.replayed"
+	EventWebhookSecretRotated EventType = "webhook.secret_rotated"
+	EventJobReplayed          EventType = "job.replayed"
 )
 
 var auditEventCatalog = []AuditEventDefinition{
