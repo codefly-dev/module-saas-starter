@@ -1,13 +1,3 @@
-ALTER POLICY audit_export_configs_tenant ON audit_export_configs
-    USING (
-        org_id::text = current_setting('app.current_org_id', true)
-        OR current_setting('app.bypass', true) = '1'
-    )
-    WITH CHECK (
-        org_id::text = current_setting('app.current_org_id', true)
-        OR current_setting('app.bypass', true) = '1'
-    );
-
 ALTER POLICY webhook_subscriptions_tenant ON webhook_subscriptions
     USING (
         org_id::text = current_setting('app.current_org_id', true)

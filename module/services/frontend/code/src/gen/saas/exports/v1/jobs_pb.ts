@@ -11,33 +11,7 @@ import type { Message } from "@bufbuild/protobuf";
  * Describes the file saas/exports/v1/jobs.proto.
  */
 export const file_saas_exports_v1_jobs: GenFile = /*@__PURE__*/
-  fileDesc("ChpzYWFzL2V4cG9ydHMvdjEvam9icy5wcm90bxIPc2Fhcy5leHBvcnRzLnYxIlAKDkF1ZGl0RXhwb3J0Sm9iEiEKDWV4ZWN1dGlvbl9rZXkYASABKAlCCrpIB3IFEAEY/wESGwoJY29uZmlnX2lkGAIgASgJQgi6SAVyA7ABASJOChBQcml2YWN5RXhwb3J0Sm9iEhwKCnJlcXVlc3RfaWQYASABKAlCCLpIBXIDsAEBEhwKCnN1YmplY3RfaWQYAiABKAlCCLpIBXIDsAEBQqoBChNjb20uc2Fhcy5leHBvcnRzLnYxQglKb2JzUHJvdG9QAVoqYWNjb3VudHMvcGtnL2dlbi9zYWFzL2V4cG9ydHMvdjE7ZXhwb3J0c3YxogIDU0VYqgIPU2Fhcy5FeHBvcnRzLlYxygIPU2Fhc1xFeHBvcnRzXFYx4gIbU2Fhc1xFeHBvcnRzXFYxXEdQQk1ldGFkYXRh6gIRU2Fhczo6RXhwb3J0czo6VjFiBnByb3RvMw", [file_buf_validate_validate]);
-
-/**
- * AuditExportJob identifies one configured tenant export cycle. Credentials,
- * endpoint details, and event bytes remain in product-owned storage and are
- * never copied into generic job payloads or operations metadata.
- *
- * @generated from message saas.exports.v1.AuditExportJob
- */
-export type AuditExportJob = Message<"saas.exports.v1.AuditExportJob"> & {
-  /**
-   * @generated from field: string execution_key = 1;
-   */
-  executionKey: string;
-
-  /**
-   * @generated from field: string config_id = 2;
-   */
-  configId: string;
-};
-
-/**
- * Describes the message saas.exports.v1.AuditExportJob.
- * Use `create(AuditExportJobSchema)` to create a new message.
- */
-export const AuditExportJobSchema: GenMessage<AuditExportJob> = /*@__PURE__*/
-  messageDesc(file_saas_exports_v1_jobs, 0);
+  fileDesc("ChpzYWFzL2V4cG9ydHMvdjEvam9icy5wcm90bxIPc2Fhcy5leHBvcnRzLnYxIk4KEFByaXZhY3lFeHBvcnRKb2ISHAoKcmVxdWVzdF9pZBgBIAEoCUIIukgFcgOwAQESHAoKc3ViamVjdF9pZBgCIAEoCUIIukgFcgOwAQFCqgEKE2NvbS5zYWFzLmV4cG9ydHMudjFCCUpvYnNQcm90b1ABWiphY2NvdW50cy9wa2cvZ2VuL3NhYXMvZXhwb3J0cy92MTtleHBvcnRzdjGiAgNTRViqAg9TYWFzLkV4cG9ydHMuVjHKAg9TYWFzXEV4cG9ydHNcVjHiAhtTYWFzXEV4cG9ydHNcVjFcR1BCTWV0YWRhdGHqAhFTYWFzOjpFeHBvcnRzOjpWMWIGcHJvdG8z", [file_buf_validate_validate]);
 
 /**
  * PrivacyExportJob identifies one subject-owned portability request. The
@@ -63,5 +37,5 @@ export type PrivacyExportJob = Message<"saas.exports.v1.PrivacyExportJob"> & {
  * Use `create(PrivacyExportJobSchema)` to create a new message.
  */
 export const PrivacyExportJobSchema: GenMessage<PrivacyExportJob> = /*@__PURE__*/
-  messageDesc(file_saas_exports_v1_jobs, 1);
+  messageDesc(file_saas_exports_v1_jobs, 0);
 

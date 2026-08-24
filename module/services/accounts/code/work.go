@@ -381,12 +381,6 @@ func doWork(ctx context.Context) (Clean, error) {
 		wool.Get(ctx).Warn("audit partition provisioning failed", wool.ErrField(err))
 	}
 
-	// Audit S3 exporter — polls audit_export_configs every 1 min,
-	// uploads new events to each org's bucket as JSONL. No-op until
-	// an org configures one via the /admin/audit-export form.
-	auditExporter := business.NewAuditExporter(store)
-	auditExporter.Start()
-
 	// Every outbound path shares the generated generic job runtime. This
 	// separate pool can only read endpoint configuration and project outcomes.
 	webhookSender := business.NewWebhookSender(vaultClient, webhookPolicy)
@@ -713,8 +707,6 @@ func doWork(ctx context.Context) (Clean, error) {
 		sw.Info("closing audit emitter")
 		auditEmitter.Close()
 		sw.Info("audit emitter closed")
-		sw.Info("stopping audit exporter")
-		auditExporter.Close()
 		if closeCache != nil {
 			sw.Info("closing redis cache")
 			if err := closeCache(); err != nil {

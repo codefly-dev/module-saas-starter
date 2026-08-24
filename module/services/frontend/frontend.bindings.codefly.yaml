@@ -229,17 +229,6 @@ navigation:
       - plugin_registry
       - sidebar
     order: 400
-  - id: admin-audit-export
-    plugin: audit
-    label: Audit Export
-    path: /admin/audit-export
-    icon: HardDriveDownload
-    group: Integrations
-    access: admin
-    permission: audit:read
-    surfaces:
-      - sidebar
-    order: 410
   - id: admin-sso
     plugin: core-users
     label: Single Sign-On

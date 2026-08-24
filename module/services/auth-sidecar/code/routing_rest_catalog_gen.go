@@ -5,7 +5,6 @@ package main
 func generatedCatalogRESTRoutes() []*RouteEntry {
 	return []*RouteEntry{
 		{Service: "accounts", Method: "DELETE", Path: "/v1/api-keys/{id}", Procedure: "/saas.accounts.v1.APIKeyService/RevokeAPIKey"},
-		{Service: "accounts", Method: "DELETE", Path: "/v1/audit-export/{org_id}", Procedure: "/saas.accounts.v1.AuditExportService/DeleteConfig"},
 		{Service: "accounts", Method: "DELETE", Path: "/v1/invitations/{id}", Procedure: "/saas.accounts.v1.InvitationService/RevokeInvitation"},
 		{Service: "accounts", Method: "DELETE", Path: "/v1/mfa/devices/{id}", Procedure: "/saas.accounts.v1.MFAService/RevokeDevice"},
 		{Service: "accounts", Method: "DELETE", Path: "/v1/notifications/{id}", Procedure: "/saas.accounts.v1.NotificationService/DeleteNotification"},
@@ -24,7 +23,6 @@ func generatedCatalogRESTRoutes() []*RouteEntry {
 		{Service: "accounts", Method: "GET", Path: "/v1/acquisition", Procedure: "/saas.accounts.v1.WaitlistService/GetAcquisitionStatus"},
 		{Service: "accounts", Method: "GET", Path: "/v1/api-keys", Procedure: "/saas.accounts.v1.APIKeyService/ListAPIKeys"},
 		{Service: "accounts", Method: "GET", Path: "/v1/audit-event-types", Procedure: "/saas.accounts.v1.AuditService/ListAuditEventTypes"},
-		{Service: "accounts", Method: "GET", Path: "/v1/audit-export/{org_id}", Procedure: "/saas.accounts.v1.AuditExportService/GetConfig"},
 		{Service: "accounts", Method: "GET", Path: "/v1/audit-log", Procedure: "/saas.accounts.v1.AuditService/QueryAuditLog"},
 		{Service: "accounts", Method: "GET", Path: "/v1/audit-log:aggregate", Procedure: "/saas.accounts.v1.AuditService/AggregateAuditLog"},
 		{Service: "accounts", Method: "GET", Path: "/v1/auth/.well-known/jwks.json", Procedure: "/saas.accounts.v1.AuthService/GetJWKS"},
@@ -77,7 +75,6 @@ func generatedCatalogRESTRoutes() []*RouteEntry {
 		{Service: "accounts", Method: "PATCH", Path: "/v1/teams/{team_id}", Procedure: "/saas.accounts.v1.TeamService/UpdateTeam"},
 		{Service: "accounts", Method: "PATCH", Path: "/v1/users/{uuid}", Procedure: "/saas.accounts.v1.UserService/UpdateUser"},
 		{Service: "accounts", Method: "POST", Path: "/v1/api-keys", Procedure: "/saas.accounts.v1.APIKeyService/CreateAPIKey"},
-		{Service: "accounts", Method: "POST", Path: "/v1/audit-export", Procedure: "/saas.accounts.v1.AuditExportService/SaveConfig"},
 		{Service: "accounts", Method: "POST", Path: "/v1/audit-log:export", Procedure: "/saas.accounts.v1.AuditService/ExportAuditLog"},
 		{Service: "accounts", Method: "POST", Path: "/v1/auth/authenticate", Procedure: "/saas.accounts.v1.AuthService/Authenticate"},
 		{Service: "accounts", Method: "POST", Path: "/v1/auth/logout", Procedure: "/saas.accounts.v1.AuthService/Logout"},

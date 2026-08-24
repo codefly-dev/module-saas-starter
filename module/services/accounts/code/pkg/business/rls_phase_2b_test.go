@@ -11,7 +11,7 @@ package business_test
 //   3. An un-wrapped Store call returns ZERO rows (fail-closed via
 //      BeforeAcquire SET ROLE app_tenant).
 //
-// Same shape as rls_audit_export_test.go / rls_webhooks_test.go —
+// Same shape as rls_webhooks_test.go / rls_api_keys_test.go —
 // changes here probably need to land alongside changes there.
 
 import (

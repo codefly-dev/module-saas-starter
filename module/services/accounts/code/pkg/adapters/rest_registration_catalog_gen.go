@@ -19,9 +19,6 @@ func registerCatalogRESTHandlers(ctx context.Context, mux *runtime.ServeMux, end
 	if err := gen.RegisterAPIKeyServiceHandlerFromEndpoint(ctx, mux, endpoint, options); err != nil {
 		return fmt.Errorf("register generated REST service APIKeyService: %w", err)
 	}
-	if err := gen.RegisterAuditExportServiceHandlerFromEndpoint(ctx, mux, endpoint, options); err != nil {
-		return fmt.Errorf("register generated REST service AuditExportService: %w", err)
-	}
 	if err := gen.RegisterAuditServiceHandlerFromEndpoint(ctx, mux, endpoint, options); err != nil {
 		return fmt.Errorf("register generated REST service AuditService: %w", err)
 	}
@@ -139,7 +136,6 @@ var catalogRESTExactRoutes = map[string]struct{}{
 	"GET /v1/version":                          {},
 	"GET /v1/webhooks":                         {},
 	"POST /v1/api-keys":                        {},
-	"POST /v1/audit-export":                    {},
 	"POST /v1/audit-log:export":                {},
 	"POST /v1/auth/authenticate":               {},
 	"POST /v1/auth/logout":                     {},
@@ -193,7 +189,6 @@ type catalogRESTTemplateRoute struct {
 
 var catalogRESTTemplateRoutes = []catalogRESTTemplateRoute{
 	{method: "DELETE", path: regexp.MustCompile("^/v1/api-keys/[^/]+$")},
-	{method: "DELETE", path: regexp.MustCompile("^/v1/audit-export/[^/]+$")},
 	{method: "DELETE", path: regexp.MustCompile("^/v1/invitations/[^/]+$")},
 	{method: "DELETE", path: regexp.MustCompile("^/v1/mfa/devices/[^/]+$")},
 	{method: "DELETE", path: regexp.MustCompile("^/v1/notifications/[^/]+$")},
@@ -205,7 +200,6 @@ var catalogRESTTemplateRoutes = []catalogRESTTemplateRoute{
 	{method: "DELETE", path: regexp.MustCompile("^/v1/teams/[^/]+/members/[^/]+$")},
 	{method: "DELETE", path: regexp.MustCompile("^/v1/users/[^/]+$")},
 	{method: "DELETE", path: regexp.MustCompile("^/v1/webhooks/[^/]+$")},
-	{method: "GET", path: regexp.MustCompile("^/v1/audit-export/[^/]+$")},
 	{method: "GET", path: regexp.MustCompile("^/v1/billing/invoices/[^/]+$")},
 	{method: "GET", path: regexp.MustCompile("^/v1/delegations/[^/]+:wait$")},
 	{method: "GET", path: regexp.MustCompile("^/v1/gdpr/delete/[^/]+$")},

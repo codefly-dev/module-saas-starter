@@ -29,27 +29,18 @@ func TestFrontendPluginCatalogIsDeterministicAndCurrent(t *testing.T) {
 	require.Equal(t, string(readFixture(t, "../../../../frontend/generated/plugin-catalog.json")), string(first.CatalogJSON), "run: go generate ./pkg/cataloggen")
 	require.Equal(t, string(readFixture(t, "../../../../frontend/code/src/gen/saas/frontend/v1/plugin_catalog.ts")), string(first.TypeScript), "run: go generate ./pkg/cataloggen")
 
+	// Plugin count is a meaningful, endpoint-stable invariant (adding an RPC or
+	// page doesn't change it). Route/navigation/surface totals churn on every
+	// page and are already pinned byte-for-byte by the plugin-catalog.json and
+	// plugin_catalog.ts fixture-equalities above, so they're not re-asserted here.
 	require.Len(t, first.Catalog.GetPlugins(), 3)
-	require.Len(t, first.Catalog.GetRoutes(), 44)
-	require.Len(t, first.Catalog.GetNavigation(), 28)
 	require.Contains(t, string(first.TypeScript), `path: "/admin/{*slug}"`)
-
-	surfaceCounts := map[catalogv1.FrontendNavigationSurface]int{}
-	for _, item := range first.Catalog.GetNavigation() {
-		for _, surface := range item.GetSurfaces() {
-			surfaceCounts[surface]++
-		}
-	}
-	require.Equal(t, 19, surfaceCounts[catalogv1.FrontendNavigationSurface_FRONTEND_NAVIGATION_SURFACE_COMMAND_PALETTE])
-	require.Equal(t, 24, surfaceCounts[catalogv1.FrontendNavigationSurface_FRONTEND_NAVIGATION_SURFACE_PLUGIN_REGISTRY])
-	require.Equal(t, 21, surfaceCounts[catalogv1.FrontendNavigationSurface_FRONTEND_NAVIGATION_SURFACE_SIDEBAR])
-	require.Equal(t, 5, surfaceCounts[catalogv1.FrontendNavigationSurface_FRONTEND_NAVIGATION_SURFACE_USER_MENU])
 }
 
 func TestFrontendPageDiscoveryPinsAccessAndMatch(t *testing.T) {
 	routes, err := cataloggen.DiscoverNextPageRoutes(filepath.Clean("../../../../frontend/code"))
 	require.NoError(t, err)
-	require.Len(t, routes, 44)
+	require.Len(t, routes, 43)
 	byPath := make(map[string]*catalogv1.FrontendRoute, len(routes))
 	for _, route := range routes {
 		byPath[route.GetPath()] = route

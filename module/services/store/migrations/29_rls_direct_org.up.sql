@@ -1,8 +1,8 @@
 -- Phase 2B — RLS on the remaining direct-org_id tables.
 --
 -- All six tables here use a non-nullable org_id and have Service
--- methods that take orgID directly — same simple recipe as
--- audit_export_configs.
+-- methods that take orgID directly — the simplest per-tenant recipe:
+-- a direct org_id equality policy, same shape as org_settings below.
 --
 -- Tables: org_settings, invitations, organization_members,
 -- subscriptions, entitlement_overrides, usage_records.

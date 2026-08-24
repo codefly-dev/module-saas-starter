@@ -97,7 +97,7 @@ func runBusinessTests(m *testing.M) int {
 		// each short-lived flow temporary host ports; the scope also isolates
 		// its named containers and other runtime resources.
 		sdk.WithNamingScope("business-test"),
-		// A clean machine may need to pull Postgres, Vault, Redis, and MinIO
+		// A clean machine may need to pull Postgres, Vault, and Redis
 		// before the first integration test. Keep the dependency-start budget
 		// separate from individual test timeouts so cold CI is deterministic.
 		sdk.WithTimeout(5*time.Minute),

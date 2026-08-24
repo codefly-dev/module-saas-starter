@@ -153,8 +153,7 @@ func (s *Service) DisableSSO(ctx context.Context, actorID, orgID string) error {
 
 // workosClient — minimal HTTP wrapper for the two REST endpoints we
 // need (createOrganization, generatePortalLink). We avoid the full
-// workos-go SDK to keep transitive deps tiny — same reasoning as the
-// minio-go choice for audit-export.
+// workos-go SDK to keep transitive deps tiny.
 type workosClient struct {
 	apiKey string
 	http   *http.Client

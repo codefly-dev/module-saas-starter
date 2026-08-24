@@ -182,8 +182,6 @@ const (
 	EventGDPRDeletionReq   EventType = "gdpr.deletion_requested"
 	EventGDPRDeletionDone  EventType = "gdpr.deletion_completed"
 
-	EventAuditExportConfigured EventType = "audit_export.configured"
-	EventAuditExportDeleted    EventType = "audit_export.deleted"
 	EventWebhookCreated        EventType = "webhook.created"
 	EventWebhookDeleted        EventType = "webhook.deleted"
 	EventWebhookReplayed       EventType = "webhook.replayed"
@@ -283,8 +281,6 @@ var auditEventCatalog = []AuditEventDefinition{
 	def(EventGDPRDeletionReq, CategoryLifecycle, "A GDPR deletion was requested."),
 	def(EventGDPRDeletionDone, CategoryLifecycle, "A GDPR deletion completed."),
 
-	def(EventAuditExportConfigured, CategorySystem, "An audit S3 export was configured.", str("bucket")),
-	def(EventAuditExportDeleted, CategorySystem, "An audit S3 export config was deleted."),
 	def(EventWebhookCreated, CategorySystem, "A webhook subscription was created."),
 	def(EventWebhookDeleted, CategorySystem, "A webhook subscription was deleted."),
 	def(EventWebhookReplayed, CategorySystem, "A webhook delivery was replayed."),
