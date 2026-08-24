@@ -47,7 +47,6 @@ var relationsByScope = map[relationScope][]string{
 		"approval_decisions",
 		"approval_requests",
 		"audit_events",
-		"audit_export_configs",
 		"delegation_grants",
 		"entitlement_overrides",
 		"invitations",
@@ -134,7 +133,6 @@ var appTenantRelationPrivileges = map[string]relationPrivileges{
 	"approval_decisions":                   {selectRows: true, insertRows: true}, // append-only, like actor_chain_journal
 	"approval_requests":                    {selectRows: true, insertRows: true, updateRows: true},
 	"audit_events":                         {selectRows: true, insertRows: true},
-	"audit_export_configs":                 {selectRows: true, insertRows: true, updateRows: true, deleteRows: true},
 	"delegation_grants":                    {selectRows: true, insertRows: true, updateRows: true},
 	"entitlement_overrides":                {selectRows: true, insertRows: true, updateRows: true},
 	"invitations":                          {selectRows: true, insertRows: true, updateRows: true},

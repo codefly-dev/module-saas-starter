@@ -7,6 +7,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"accounts/pkg/business"
+	gen "accounts/pkg/gen/saas/accounts/v1"
 )
 
 // TestRLS_WebhookSubscriptions_CrossTenantBlocked — proves Phase 2A
@@ -123,4 +124,23 @@ func TestRLS_WebhookDeliveries_PolicyJoinsToParent(t *testing.T) {
 		require.Nil(t, stolen, "RLS JOIN policy must hide B's delivery from A's tx")
 		return nil
 	}))
+}
+
+// mustOrgWithOwner registers a user and creates an organization they own,
+// returning the org id. Shared by the RLS cross-tenant tests to seed two
+// isolated tenants. (Previously lived in rls_audit_export_test.go.)
+func mustOrgWithOwner(t *testing.T, ctx context.Context, email, providerID, orgName string) string {
+	t.Helper()
+	resp, err := testService.RegisterUser(ctx, &gen.RegisterUserRequest{
+		PrimaryEmail: email,
+		Identity: &gen.UserIdentity{
+			Provider: "email", ProviderId: providerID, ProviderEmail: email,
+		},
+	})
+	require.NoError(t, err)
+	org, err := testService.CreateOrganization(ctx, resp.User.Uuid, &gen.CreateOrganizationRequest{
+		Name: orgName, Slug: providerID + "-org",
+	})
+	require.NoError(t, err)
+	return org.Organization.Id
 }

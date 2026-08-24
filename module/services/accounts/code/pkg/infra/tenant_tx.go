@@ -63,8 +63,8 @@ func recordControlPlane(ctx context.Context) {
 	v, _ := controlPlaneCounters.LoadOrStore(site, new(int64))
 	atomic.AddInt64(v.(*int64), 1)
 	// Debug-level: visible in dev, not noisy in prod (Info would be
-	// too loud given audit-exporter / dispatcher loops fire many
-	// times/min). Aggregate counts via ControlPlaneCounters() are the
+	// too loud given webhook-dispatcher / reconciliation loops fire
+	// many times/min). Aggregate counts via ControlPlaneCounters() are the
 	// production-grade signal.
 	wool.Get(ctx).In("WithControlPlane").Debug("control-plane role assumed", wool.Field("site", site))
 }
@@ -155,7 +155,7 @@ func itoa(n int) string {
 // to rely on that.
 //
 // Status: helper is wired and tested. Defense-in-depth coverage:
-// migrations 23, 27, 28, 29, 30, 31, 32, 33 — see AUTHZ.md.
+// migrations 27, 28, 29, 30, 31, 32, 33 — see AUTHZ.md.
 func (s *PostgresStore) WithOrgTx(ctx context.Context, orgID string, fn func(ctx context.Context) error) error {
 	if orgID == "" {
 		// A WithOrgTx call with empty orgID is almost certainly a bug
@@ -244,8 +244,7 @@ const errEmptyUserID errString = "WithUserTx: userID is required"
 // audited app_control_plane database role for the tx duration. Used ONLY for:
 //
 //   - Background workers that legitimately scan across tenants
-//     (audit-exporter polling, billing reconciliation, scheduled cleanup
-//     jobs).
+//     (billing reconciliation, scheduled cleanup jobs).
 //   - Platform-admin endpoints that present a cross-org view.
 //
 // Mechanism: the pool's BeforeAcquire hook stamps every checked-out

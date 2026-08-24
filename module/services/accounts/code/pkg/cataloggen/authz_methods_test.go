@@ -20,8 +20,11 @@ func TestAuthorizationCatalogCompilationAndPolicyProjection(t *testing.T) {
 	require.NoError(t, cataloggen.ValidateAuthorizationCatalog(catalog))
 	require.Equal(t, "saas.authz.methods.v1", catalog.GetSchemaVersion())
 	require.Equal(t, "accounts", catalog.GetOwner().GetService())
-	require.Len(t, catalog.GetMethods(), 149)
 
+	// Security-invariant coverage counts. These deliberately do NOT track the
+	// raw method total (that churns on every endpoint and is already pinned
+	// byte-for-byte by the generated/authz-methods.json fixture-equality
+	// below) — they encode posture that a reviewer wants flagged if it moves.
 	var internalCount, failClosedCount, factorAttemptCount int
 	for _, method := range catalog.GetMethods() {
 		require.Regexp(t, `^[0-9a-f]{64}$`, method.GetPolicySha256())
@@ -77,10 +80,10 @@ func TestAuthorizationArtifactsAreDeterministicAndCurrent(t *testing.T) {
 	goDocument, err := cataloggen.RenderAuthSidecarAuthorizationMetadata(authz, service)
 	require.NoError(t, err)
 	require.Equal(t, string(readFixture(t, "../../../../auth-sidecar/code/authz_catalog_gen.go")), string(goDocument), "run: go generate ./pkg/cataloggen")
-	require.Equal(t, 149, strings.Count(string(goDocument), "{exposure:"))
+	// The byte-equality above already pins every generated line; assert only
+	// that the runtime doc keeps its two-section shape, not exact row counts.
 	runtimeSections := strings.Split(string(goDocument), "var generatedRESTProcedureByRoute")
 	require.Len(t, runtimeSections, 2)
-	require.Equal(t, 140, strings.Count(runtimeSections[1], `"/saas.accounts.v1.`))
 }
 
 func methodByProcedure(

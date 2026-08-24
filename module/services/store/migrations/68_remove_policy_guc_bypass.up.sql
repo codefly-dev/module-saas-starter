@@ -2,10 +2,6 @@
 -- assumes app_control_plane, whose BYPASSRLS attribute is an explicit database
 -- capability. A caller can no longer manufacture authority with set_config().
 
-ALTER POLICY audit_export_configs_tenant ON audit_export_configs
-    USING (org_id::text = current_setting('app.current_org_id', true))
-    WITH CHECK (org_id::text = current_setting('app.current_org_id', true));
-
 ALTER POLICY webhook_subscriptions_tenant ON webhook_subscriptions
     USING (org_id::text = current_setting('app.current_org_id', true))
     WITH CHECK (org_id::text = current_setting('app.current_org_id', true));

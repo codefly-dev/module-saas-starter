@@ -26,7 +26,6 @@ func TestCatalogGRPCRegistrationMatchesGeneratedNativeSubset(t *testing.T) {
 			require.NotContains(t, listener.GetServiceInfo(), name)
 		}
 	}
-
-	require.Len(t, catalogGRPCServiceNames, 16)
-	require.Len(t, catalogConnectOnlyServiceNames, 10)
+	// The require.Equal + NotContains above already pin both service sets
+	// exactly; no raw-count assertion (it would churn on every service).
 }

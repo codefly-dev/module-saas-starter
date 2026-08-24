@@ -70,9 +70,6 @@ var rpcDescriptions = withWorkContextConsumerDescriptions(map[string]string{
 	"APIKeyService/ListAPIKeys":                "List org's API keys.",
 	"APIKeyService/RevokeAPIKey":               "Revoke an API key in an administered organization.",
 	"APIKeyService/ValidateAPIKey":             "Internal: plaintext key → key + org id.",
-	"AuditExportService/DeleteConfig":          "Stop exporting; clears cursor.",
-	"AuditExportService/GetConfig":             "Read export config.",
-	"AuditExportService/SaveConfig":            "Configure per-org S3 export.",
 	"AuditService/AggregateAuditLog":           "Aggregate audit events (counts, time buckets, group-by) for analytics.",
 	"AuditService/ExportAuditLog":              "Download audit log as CSV/JSON.",
 	"AuditService/ListAuditEventTypes":         "List the registered audit event-type catalog for search facets.",
@@ -280,7 +277,6 @@ func redactPrivilegedRPCs(in []*gen.RPCInfo) []*gen.RPCInfo {
 //
 // Source: store migrations through 60.
 var serviceRLSTables = []*gen.RLSPolicyInfo{
-	{Table: "audit_export_configs", PolicyShape: "direct", FailClosed: true, ScopeColumn: "org_id"},
 	{Table: "webhook_subscriptions", PolicyShape: "direct", FailClosed: true, ScopeColumn: "org_id"},
 	{Table: "webhook_deliveries", PolicyShape: "join", FailClosed: true, ScopeColumn: "subscription_id", Notes: "JOIN walks subscription_id → webhook_subscriptions.org_id"},
 	{Table: "api_keys", PolicyShape: "direct", FailClosed: true, ScopeColumn: "organization_id"},

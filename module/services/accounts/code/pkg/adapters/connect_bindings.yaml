@@ -5,10 +5,6 @@ services:
     source:
       kind: grpc
       name: APIKey
-  AuditExportService:
-    handler: auditExportConnectHandler
-    source:
-      kind: business
   AuditService:
     handler: auditConnectHandler
     source:

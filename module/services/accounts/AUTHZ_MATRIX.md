@@ -2,7 +2,7 @@
 
 > Generated from protobuf service descriptors and `saas.policy.v1.method_policy`; only the prose description is joined from `pkg/business/introspection.go`. Do not edit by hand. Run `go generate ./pkg/business` from `module/services/accounts/code`.
 
-Inventory: **149 RPCs** across **26 services**. Missing, invalid, or unclassified procedures are denied by both Connect and gRPC interceptors.
+Inventory: **146 RPCs** across **25 services**. Missing, invalid, or unclassified procedures are denied by both Connect and gRPC interceptors.
 
 The compact tier is retained for compatibility. Guards, resource bindings, audit events, limiter class, and data sensitivity are descriptor-authoritative. Domain handlers may enforce stronger state-dependent rules but may not weaken this floor.
 
@@ -12,9 +12,6 @@ The compact tier is retained for compatibility. Guards, resource bindings, audit
 | `/saas.accounts.v1.APIKeyService/ListAPIKeys` | unary | `GET /v1/api-keys` | `org_member` | exposure=AUTHENTICATED; tenant=ORG_MEMBER | perm=api_keys:read; scope=api_keys:read | organization_id → ORGANIZATION/DIRECT_ID | — | FORBIDDEN / STANDARD_READ | CONFIDENTIAL → CONFIDENTIAL | List org's API keys. |
 | `/saas.accounts.v1.APIKeyService/RevokeAPIKey` | unary | `DELETE /v1/api-keys/{id}` | `org_admin` | exposure=AUTHENTICATED; tenant=ORG_ADMIN | perm=api_keys:write; scope=api_keys:write | organization_id → ORGANIZATION/DIRECT_ID | SUCCESS: api_key.revoked | FORBIDDEN / STANDARD_WRITE | CONFIDENTIAL → CONFIDENTIAL | Revoke an API key in an administered organization. |
 | `/saas.accounts.v1.APIKeyService/ValidateAPIKey` | unary | `—` | `internal` | exposure=INTERNAL; tenant=NONE | — | — | — | FORBIDDEN / INTERNAL | SECRET → CONFIDENTIAL | Internal: plaintext key → key + org id. |
-| `/saas.accounts.v1.AuditExportService/DeleteConfig` | unary | `DELETE /v1/audit-export/{org_id}` | `org_admin` | exposure=AUTHENTICATED; tenant=ORG_ADMIN | — | org_id → ORGANIZATION/DIRECT_ID | SUCCESS: audit_export.deleted | FORBIDDEN / STANDARD_WRITE | CONFIDENTIAL → CONFIDENTIAL | Stop exporting; clears cursor. |
-| `/saas.accounts.v1.AuditExportService/GetConfig` | unary | `GET /v1/audit-export/{org_id}` | `org_admin` | exposure=AUTHENTICATED; tenant=ORG_ADMIN | — | org_id → ORGANIZATION/DIRECT_ID | — | FORBIDDEN / STANDARD_READ | CONFIDENTIAL → CONFIDENTIAL | Read export config. |
-| `/saas.accounts.v1.AuditExportService/SaveConfig` | unary | `POST /v1/audit-export` | `org_admin` | exposure=AUTHENTICATED; tenant=ORG_ADMIN | — | config.org_id → ORGANIZATION/DIRECT_ID | SUCCESS: audit_export.configured | FORBIDDEN / STANDARD_WRITE | CONFIDENTIAL → CONFIDENTIAL | Configure per-org S3 export. |
 | `/saas.accounts.v1.AuditService/AggregateAuditLog` | unary | `GET /v1/audit-log:aggregate` | `org_member` | exposure=AUTHENTICATED; tenant=ORG_MEMBER | perm=audit:read; scope=audit:read | org_id → ORGANIZATION/DIRECT_ID | — | FORBIDDEN / STANDARD_READ | CONFIDENTIAL → CONFIDENTIAL | Aggregate audit events (counts, time buckets, group-by) for analytics. |
 | `/saas.accounts.v1.AuditService/ExportAuditLog` | unary | `POST /v1/audit-log:export` | `org_admin` | exposure=AUTHENTICATED; tenant=ORG_ADMIN | perm=audit:read; scope=audit:read | org_id → ORGANIZATION/DIRECT_ID | — | FORBIDDEN / STANDARD_READ | CONFIDENTIAL → CONFIDENTIAL | Download audit log as CSV/JSON. |
 | `/saas.accounts.v1.AuditService/ListAuditEventTypes` | unary | `GET /v1/audit-event-types` | `auth` | exposure=AUTHENTICATED; tenant=NONE | perm=audit:read; scope=audit:read | — | — | FORBIDDEN / STANDARD_READ | INTERNAL → INTERNAL | List the registered audit event-type catalog for search facets. |
@@ -163,7 +160,7 @@ The compact tier is retained for compatibility. Guards, resource bindings, audit
 - `auth`: 38
 - `internal`: 10
 - `mfa`: 3
-- `org_admin`: 34
+- `org_admin`: 31
 - `org_member`: 26
 - `platform_admin`: 22
 - `public`: 16

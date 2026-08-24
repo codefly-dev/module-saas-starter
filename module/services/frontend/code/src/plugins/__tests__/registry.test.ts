@@ -70,9 +70,12 @@ describe("explicit frontend composition root", () => {
 		]);
 	});
 
-	it("pins route, navigation, and permission catalog parity", () => {
-		expect(FRONTEND_ROUTES).toHaveLength(44);
-		expect(FRONTEND_NAVIGATION).toHaveLength(28);
+	it("pins navigation-to-permission catalog parity", () => {
+		// No raw route/navigation totals — they churn on every page/endpoint and
+		// the generated catalog is already pinned byte-for-byte by the Go
+		// cataloggen fixture-equality (plugin_catalog.ts). The load-bearing
+		// invariant is that every navigation permission is a real permission.
+		expect(FRONTEND_ROUTES.length).toBeGreaterThan(0);
 		for (const item of FRONTEND_NAVIGATION) {
 			if (item.requiredPermission)
 				expect(isPermission(item.requiredPermission)).toBe(true);

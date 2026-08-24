@@ -36,12 +36,6 @@
       "access": "FRONTEND_ROUTE_ACCESS_ADMIN"
     },
     {
-      "path": "/admin/audit-export",
-      "source_path": "src/app/admin/audit-export/page.tsx",
-      "match": "FRONTEND_ROUTE_MATCH_EXACT",
-      "access": "FRONTEND_ROUTE_ACCESS_ADMIN"
-    },
-    {
       "path": "/admin/audit-log",
       "source_path": "src/app/admin/audit-log/page.tsx",
       "match": "FRONTEND_ROUTE_MATCH_EXACT",
@@ -555,20 +549,6 @@
         "FRONTEND_NAVIGATION_SURFACE_SIDEBAR"
       ],
       "order": 400
-    },
-    {
-      "id": "admin-audit-export",
-      "plugin": "audit",
-      "label": "Audit Export",
-      "path": "/admin/audit-export",
-      "icon": "HardDriveDownload",
-      "group": "Integrations",
-      "access": "FRONTEND_ROUTE_ACCESS_ADMIN",
-      "permission": "audit:read",
-      "surfaces": [
-        "FRONTEND_NAVIGATION_SURFACE_SIDEBAR"
-      ],
-      "order": 410
     },
     {
       "id": "admin-sso",

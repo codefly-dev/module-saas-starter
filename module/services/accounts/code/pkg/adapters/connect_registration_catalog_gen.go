@@ -14,7 +14,6 @@ import (
 // descriptor-generated Connect handler interface.
 var (
 	_ genconnect.APIKeyServiceHandler        = (*apiKeyConnectHandler)(nil)
-	_ genconnect.AuditExportServiceHandler   = (*auditExportConnectHandler)(nil)
 	_ genconnect.AuditServiceHandler         = (*auditConnectHandler)(nil)
 	_ genconnect.AuthServiceHandler          = (*authConnectHandler)(nil)
 	_ genconnect.BillingServiceHandler       = (*billingConnectHandler)(nil)
@@ -45,7 +44,6 @@ var (
 // Exact procedure paths remain owned by protoc-gen-connect-go.
 func registerCatalogConnectServices(mux *http.ServeMux, server *ConnectServer, options ...connect.HandlerOption) {
 	mux.Handle(genconnect.NewAPIKeyServiceHandler(&apiKeyConnectHandler{inner: server.grpc.APIKey}, options...))
-	mux.Handle(genconnect.NewAuditExportServiceHandler(&auditExportConnectHandler{svc: server.service}, options...))
 	mux.Handle(genconnect.NewAuditServiceHandler(&auditConnectHandler{inner: server.grpc.Audit}, options...))
 	mux.Handle(genconnect.NewAuthServiceHandler(&authConnectHandler{inner: server.grpc.Auth}, options...))
 	mux.Handle(genconnect.NewBillingServiceHandler(&billingConnectHandler{svc: server.service}, options...))

@@ -472,55 +472,6 @@
       },
       "type": "object"
     },
-    "v1AuditExportConfig": {
-      "properties": {
-        "accessKeyId": {
-          "type": "string"
-        },
-        "bucket": {
-          "type": "string"
-        },
-        "cadenceMinutes": {
-          "format": "int32",
-          "type": "integer"
-        },
-        "enabled": {
-          "type": "boolean"
-        },
-        "endpoint": {
-          "description": "endpoint empty = real AWS S3; non-empty points at MinIO / R2 / etc.",
-          "type": "string"
-        },
-        "id": {
-          "type": "string"
-        },
-        "lastError": {
-          "type": "string"
-        },
-        "lastErrorAt": {
-          "format": "date-time",
-          "type": "string"
-        },
-        "lastExportedAt": {
-          "format": "date-time",
-          "type": "string"
-        },
-        "orgId": {
-          "type": "string"
-        },
-        "prefix": {
-          "type": "string"
-        },
-        "region": {
-          "type": "string"
-        },
-        "secretAccessKey": {
-          "description": "Get returns \"\" for secret_access_key so the FE can't echo a\nstored secret. Save with \"\" preserves the existing one.",
-          "type": "string"
-        }
-      },
-      "type": "object"
-    },
     "v1AuthenticateRequest": {
       "properties": {
         "deviceInfo": {
@@ -3223,14 +3174,6 @@
       },
       "type": "object"
     },
-    "v1SaveAuditExportConfigRequest": {
-      "properties": {
-        "config": {
-          "$ref": "#/definitions/v1AuditExportConfig"
-        }
-      },
-      "type": "object"
-    },
     "v1ScopeGrant": {
       "properties": {
         "createdAt": {
@@ -4479,97 +4422,6 @@
         },
         "tags": [
           "AuditService"
-        ]
-      }
-    },
-    "/v1/audit-export": {
-      "post": {
-        "operationId": "AuditExportService_SaveConfig",
-        "parameters": [
-          {
-            "in": "body",
-            "name": "body",
-            "required": true,
-            "schema": {
-              "$ref": "#/definitions/v1SaveAuditExportConfigRequest"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "A successful response.",
-            "schema": {
-              "$ref": "#/definitions/v1AuditExportConfig"
-            }
-          },
-          "default": {
-            "description": "An unexpected error response.",
-            "schema": {
-              "$ref": "#/definitions/rpcStatus"
-            }
-          }
-        },
-        "tags": [
-          "AuditExportService"
-        ]
-      }
-    },
-    "/v1/audit-export/{orgId}": {
-      "delete": {
-        "operationId": "AuditExportService_DeleteConfig",
-        "parameters": [
-          {
-            "in": "path",
-            "name": "orgId",
-            "required": true,
-            "type": "string"
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "A successful response.",
-            "schema": {
-              "properties": {},
-              "type": "object"
-            }
-          },
-          "default": {
-            "description": "An unexpected error response.",
-            "schema": {
-              "$ref": "#/definitions/rpcStatus"
-            }
-          }
-        },
-        "tags": [
-          "AuditExportService"
-        ]
-      },
-      "get": {
-        "operationId": "AuditExportService_GetConfig",
-        "parameters": [
-          {
-            "in": "path",
-            "name": "orgId",
-            "required": true,
-            "type": "string"
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "A successful response.",
-            "schema": {
-              "$ref": "#/definitions/v1AuditExportConfig"
-            }
-          },
-          "default": {
-            "description": "An unexpected error response.",
-            "schema": {
-              "$ref": "#/definitions/rpcStatus"
-            }
-          }
-        },
-        "tags": [
-          "AuditExportService"
         ]
       }
     },
@@ -9313,9 +9165,6 @@
     },
     {
       "name": "AuditService"
-    },
-    {
-      "name": "AuditExportService"
     },
     {
       "name": "AuthService"
