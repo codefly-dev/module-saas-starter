@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"log"
+	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -33,8 +34,15 @@ const defaultRevocationCacheTTL = 3 * time.Second
 
 // revocationCacheMaxEntries caps the local cache so a burst of distinct jtis
 // during a Redis outage can't grow it without bound; on reaching the cap the
-// next write sweeps expired entries first.
+// next write sweeps expired entries first, then hard-evicts the oldest batch if
+// the sweep frees nothing.
 const revocationCacheMaxEntries = 50000
+
+// revocationCacheEvictBatch is how many soonest-to-expire entries are dropped
+// when the cache is at capacity and every entry is still live (a sweep frees
+// nothing). Evicting a batch rather than one keeps the amortised cost of the
+// oldest-N scan low under a sustained burst of distinct keys.
+const revocationCacheEvictBatch = revocationCacheMaxEntries / 10
 
 // revoker answers "is this access-token jti revoked?" on the gateway hot path.
 // Revoked returns a non-nil error only when the backing store could not be
@@ -197,13 +205,46 @@ func (c *cachedRevoker) store(jti string, revoked bool) {
 	defer c.mu.Unlock()
 	now := c.now()
 	if len(c.entries) >= revocationCacheMaxEntries {
+		freed := 0
 		for key, entry := range c.entries {
 			if !now.Before(entry.expiresAt) {
 				delete(c.entries, key)
+				freed++
 			}
+		}
+		// A burst of distinct still-live keys frees nothing; hard-evict the
+		// soonest-to-expire batch so the cache stays bounded. Dropping a
+		// not-revoked entry only costs a store round-trip on its next lookup;
+		// dropping a revoked one is recovered the same way (Redis still holds
+		// the marker), so eviction never turns a revoked token not-revoked.
+		if freed == 0 {
+			c.evictOldest(revocationCacheEvictBatch)
 		}
 	}
 	c.entries[jti] = revocationCacheEntry{revoked: revoked, expiresAt: now.Add(c.ttl)}
+}
+
+// evictOldest removes the n entries with the earliest expiry. All live entries
+// share one TTL, so earliest-expiry is oldest-inserted.
+func (c *cachedRevoker) evictOldest(n int) {
+	if n <= 0 {
+		return
+	}
+	type keyExpiry struct {
+		key     string
+		expires time.Time
+	}
+	ordered := make([]keyExpiry, 0, len(c.entries))
+	for key, entry := range c.entries {
+		ordered = append(ordered, keyExpiry{key, entry.expiresAt})
+	}
+	sort.Slice(ordered, func(i, j int) bool { return ordered[i].expires.Before(ordered[j].expires) })
+	if n > len(ordered) {
+		n = len(ordered)
+	}
+	for _, item := range ordered[:n] {
+		delete(c.entries, item.key)
+	}
 }
 
 // newRevoker builds the revoker wired into the sidecar. No Redis configured

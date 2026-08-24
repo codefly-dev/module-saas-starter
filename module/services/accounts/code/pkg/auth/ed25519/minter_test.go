@@ -224,12 +224,18 @@ type fakeRevoker struct {
 	revoked        bool
 	sessionRevoked bool
 	err            error
-	// revokedSessions captures RevokeSession writes when non-nil (pre-init to
+	// revokedSessions / revokedJTIs capture writes when non-nil (pre-init to
 	// observe them; value-receiver writes still reach the shared map).
 	revokedSessions map[string]time.Duration
+	revokedJTIs     map[string]time.Duration
 }
 
-func (fakeRevoker) Revoke(context.Context, string, time.Duration) error { return nil }
+func (f fakeRevoker) Revoke(_ context.Context, jti string, ttl time.Duration) error {
+	if f.revokedJTIs != nil {
+		f.revokedJTIs[jti] = ttl
+	}
+	return nil
+}
 func (f fakeRevoker) IsRevoked(context.Context, string) (bool, error)   { return f.revoked, f.err }
 func (f fakeRevoker) RevokeSession(_ context.Context, sessionID string, ttl time.Duration) error {
 	if f.revokedSessions != nil {
@@ -314,7 +320,30 @@ func TestRevokeSessionAccess_WritesSessionMarkerWithAccessTTL(t *testing.T) {
 
 	ttl, ok := captured.revokedSessions["session-123"]
 	require.True(t, ok, "RevokeSessionAccess must write a session marker")
-	require.Equal(t, 3*time.Minute, ttl, "marker TTL must equal AccessTokenTTL")
+	// AccessTokenTTL (3m) + ClockSkew (60s): the marker has to outlive the
+	// post-exp acceptance window the verifier leeway opens.
+	require.Equal(t, 3*time.Minute+time.Minute, ttl, "marker TTL must be AccessTokenTTL + ClockSkew")
+}
+
+func TestRevokeAccess_MarkerTTLCoversClockSkewLeeway(t *testing.T) {
+	ctx := context.Background()
+	m, _ := newMinter(t)
+	pair, err := m.Mint(ctx, newIdentity())
+	require.NoError(t, err)
+
+	captured := fakeRevoker{revokedJTIs: map[string]time.Duration{}}
+	m.SetRevoker(captured)
+
+	require.NoError(t, m.RevokeAccess(ctx, pair.AccessToken))
+
+	require.Len(t, captured.revokedJTIs, 1, "RevokeAccess must write exactly one jti marker")
+	for _, ttl := range captured.revokedJTIs {
+		// A freshly minted token expires at ~now+AccessTokenTTL (3m); the marker
+		// must live past exp by the clock-skew leeway so a revoked token cannot
+		// slip through the post-exp acceptance window.
+		require.Greater(t, ttl, 3*time.Minute, "marker TTL must extend past exp by the leeway")
+		require.LessOrEqual(t, ttl, 3*time.Minute+time.Minute, "marker TTL must not exceed AccessTokenTTL + ClockSkew")
+	}
 }
 
 func TestMint_And_VerifyAccess_Roundtrip(t *testing.T) {
