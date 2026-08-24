@@ -21,7 +21,6 @@ import {
 	SelectValue,
 } from "@/shared/ui";
 import { formatAuditAction } from "../model/transforms";
-import type { AuditEvent } from "../model/types";
 import { useExportAuditLog } from "../service/mutations";
 import {
 	useAuditAggregate,
@@ -199,7 +198,7 @@ export function AuditPage() {
 			</div>
 
 			<AuditTable
-				events={(data?.events ?? []) as AuditEvent[]}
+				events={data?.events ?? []}
 				isLoading={isLoading}
 			/>
 		</div>
