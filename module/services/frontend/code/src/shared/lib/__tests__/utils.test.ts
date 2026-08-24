@@ -27,6 +27,21 @@ describe("formatDate", () => {
 		// The function checks !dateString which is true for ""
 		expect(result).toBe("-");
 	});
+
+	it("never returns a non-string, even for object input", () => {
+		// Regression guard: a protobuf Timestamp object leaking past the model
+		// boundary must not be handed back to JSX (that throws "Objects are not
+		// valid as a React child"). The catch must coerce to a string.
+		const timestampLike = {
+			$typeName: "google.protobuf.Timestamp",
+			seconds: BigInt(1),
+			nanos: 0,
+		};
+		// @ts-expect-error — deliberately passing the wrong shape a cast could leak.
+		const result = formatDate(timestampLike);
+		expect(typeof result).toBe("string");
+		expect(result).toBe("-");
+	});
 });
 
 describe("truncateUUID", () => {

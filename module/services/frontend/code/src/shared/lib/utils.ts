@@ -16,7 +16,10 @@ export function formatDate(dateString: string | undefined): string {
 			minute: "2-digit",
 		}).format(new Date(dateString));
 	} catch {
-		return dateString;
+		// Never return the raw input: callers render this straight into JSX, and
+		// a non-string (e.g. a protobuf Timestamp object leaked past the model
+		// boundary) would throw "Objects are not valid as a React child".
+		return typeof dateString === "string" ? dateString : "-";
 	}
 }
 

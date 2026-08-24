@@ -1,5 +1,6 @@
 import { useQuery } from "@tanstack/react-query";
 import { useAuditService } from "@/lib/hooks/use-api-client";
+import { toAuditEvent } from "../model/transforms";
 import type { AuditEventTypeInfo, AuditLogFilters } from "../model/types";
 
 export function useAuditLog(
@@ -19,7 +20,7 @@ export function useAuditLog(
 			}),
 		enabled: options.enabled,
 		select: (data) => ({
-			events: data.events,
+			events: data.events.map(toAuditEvent),
 			totalCount: data.totalCount,
 		}),
 	});
