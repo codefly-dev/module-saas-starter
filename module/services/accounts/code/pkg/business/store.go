@@ -231,7 +231,11 @@ type Store interface {
 	// Sessions
 	CreateSession(ctx context.Context, session *Session) error
 	GetSessionByRefreshTokenHash(ctx context.Context, hash string) (*Session, error)
-	RevokeSession(ctx context.Context, deviceSessionID string, reason string) error
+	// RevokeSession revokes every live row in the device family and returns the
+	// ids of the rows it revoked. Those ids are the `sid` claim carried by the
+	// family's outstanding access tokens, so the caller can write a
+	// session-revocation marker per id and kill the access half immediately.
+	RevokeSession(ctx context.Context, deviceSessionID string, reason string) ([]string, error)
 	RevokeSessionFamily(ctx context.Context, familyID string, reason string) error
 	RevokeAllUserSessions(ctx context.Context, userID string, reason string) error
 	UpdateSessionActivity(ctx context.Context, sessionID string) error

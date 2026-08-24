@@ -221,12 +221,25 @@ func newIdentity() *auth.Identity {
 }
 
 type fakeRevoker struct {
-	revoked bool
-	err     error
+	revoked        bool
+	sessionRevoked bool
+	err            error
+	// revokedSessions captures RevokeSession writes when non-nil (pre-init to
+	// observe them; value-receiver writes still reach the shared map).
+	revokedSessions map[string]time.Duration
 }
 
 func (fakeRevoker) Revoke(context.Context, string, time.Duration) error { return nil }
 func (f fakeRevoker) IsRevoked(context.Context, string) (bool, error)   { return f.revoked, f.err }
+func (f fakeRevoker) RevokeSession(_ context.Context, sessionID string, ttl time.Duration) error {
+	if f.revokedSessions != nil {
+		f.revokedSessions[sessionID] = ttl
+	}
+	return nil
+}
+func (f fakeRevoker) IsSessionRevoked(context.Context, string) (bool, error) {
+	return f.sessionRevoked, f.err
+}
 
 func TestVerifyAccess_FailsClosedWhenRevocationUnavailable(t *testing.T) {
 	ctx := context.Background()
@@ -273,6 +286,35 @@ func TestVerifyAccess_RejectsRevokedToken(t *testing.T) {
 
 	_, err = m.VerifyAccess(pair.AccessToken)
 	require.ErrorIs(t, err, auth.ErrTokenRevoked)
+}
+
+func TestVerifyAccess_RejectsSessionRevokedToken(t *testing.T) {
+	ctx := context.Background()
+	m, _ := newMinter(t)
+	pair, err := m.Mint(ctx, newIdentity())
+	require.NoError(t, err)
+
+	// The jti is NOT listed — only the session is. Admin session-kill revokes
+	// by sid, so a token must be denied on its session even when its own jti
+	// was never marked.
+	m.SetRevoker(fakeRevoker{sessionRevoked: true})
+
+	_, err = m.VerifyAccess(pair.AccessToken)
+	require.ErrorIs(t, err, auth.ErrTokenRevoked)
+}
+
+func TestRevokeSessionAccess_WritesSessionMarkerWithAccessTTL(t *testing.T) {
+	ctx := context.Background()
+	m, _ := newMinter(t)
+
+	captured := fakeRevoker{revokedSessions: map[string]time.Duration{}}
+	m.SetRevoker(captured)
+
+	require.NoError(t, m.RevokeSessionAccess(ctx, "session-123"))
+
+	ttl, ok := captured.revokedSessions["session-123"]
+	require.True(t, ok, "RevokeSessionAccess must write a session marker")
+	require.Equal(t, 3*time.Minute, ttl, "marker TTL must equal AccessTokenTTL")
 }
 
 func TestMint_And_VerifyAccess_Roundtrip(t *testing.T) {

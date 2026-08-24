@@ -249,10 +249,26 @@ func (s *Service) RevokeSession(ctx context.Context, actorID string, req *gen.Re
 	if reason == "" {
 		reason = "revoked_by_admin"
 	}
+	var revokedSessionIDs []string
 	if err := s.store.WithControlPlane(ctx, func(ctx context.Context) error {
-		return s.store.RevokeSession(ctx, req.SessionId, reason)
+		var err error
+		revokedSessionIDs, err = s.store.RevokeSession(ctx, req.SessionId, reason)
+		return err
 	}); err != nil {
 		return w.Wrapf(err, "cannot revoke session")
+	}
+
+	// Killing the refresh family leaves the victim's outstanding access token
+	// valid until its natural TTL on every path. Write a session-revocation
+	// marker per revoked row so the access half dies now. Best-effort: the DB
+	// revocation above is the durable authority, and a store outage bounds the
+	// residual exposure to AccessTokenTTL rather than failing the kill.
+	if s.minter != nil {
+		for _, sessionID := range revokedSessionIDs {
+			if err := s.minter.RevokeSessionAccess(ctx, sessionID); err != nil {
+				w.Warn("RevokeSessionAccess failed (best-effort)", wool.ErrField(err))
+			}
+		}
 	}
 
 	s.emit(ctx, actorID, "user", "session.revoked", "session", req.SessionId, "")

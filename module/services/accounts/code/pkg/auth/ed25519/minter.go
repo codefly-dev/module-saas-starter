@@ -593,6 +593,21 @@ func (m *Minter) VerifyAccess(tokenString string) (*auth.Identity, error) {
 		}
 	}
 
+	// Session-scoped revocation (admin session-kill). A single marker keyed by
+	// the `sid` claim invalidates every access token in the session at once,
+	// covering the path where the killer never held the victim's token.
+	if claims.SessionID != "" {
+		revoked, err := m.revoker.IsSessionRevoked(context.Background(), claims.SessionID)
+		switch {
+		case err != nil && !m.cfg.RevocationFailOpen:
+			return nil, fmt.Errorf("%w: %v", auth.ErrRevocationUnavailable, err)
+		case err != nil:
+			// fail-open: admit the token despite an unreadable revocation list.
+		case revoked:
+			return nil, auth.ErrTokenRevoked
+		}
+	}
+
 	return &auth.Identity{
 		UserID:                userID,
 		OrgID:                 orgID,
@@ -645,6 +660,19 @@ func (m *Minter) RevokeAccess(ctx context.Context, accessToken string) error {
 		return nil
 	}
 	return m.revoker.Revoke(ctx, claims.ID, ttl)
+}
+
+// RevokeSessionAccess writes a session-scoped revocation marker for sessionID
+// with TTL = AccessTokenTTL. Any access token carrying that `sid` claim is
+// denied on the next VerifyAccess / sidecar check. Best-effort like
+// RevokeAccess: the durable authority is the DB refresh-family revocation, so a
+// store outage bounds exposure to the natural AccessTokenTTL rather than
+// failing the kill.
+func (m *Minter) RevokeSessionAccess(ctx context.Context, sessionID string) error {
+	if sessionID == "" {
+		return nil
+	}
+	return m.revoker.RevokeSession(ctx, sessionID, m.cfg.AccessTokenTTL)
 }
 
 func (m *Minter) signAccess(identity *auth.Identity, sessionID uuid.UUID, now time.Time) (string, error) {

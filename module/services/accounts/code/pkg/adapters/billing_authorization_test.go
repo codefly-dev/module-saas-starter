@@ -125,9 +125,10 @@ func (*fixedAccessMinter) SwitchOrganization(context.Context, uuid.UUID, uuid.UU
 	return "", nil
 }
 
-func (*fixedAccessMinter) Revoke(context.Context, string) error       { return nil }
-func (*fixedAccessMinter) RevokeAccess(context.Context, string) error { return nil }
-func (*fixedAccessMinter) JWKS() (string, error)                      { return `{}`, nil }
+func (*fixedAccessMinter) Revoke(context.Context, string) error              { return nil }
+func (*fixedAccessMinter) RevokeAccess(context.Context, string) error        { return nil }
+func (*fixedAccessMinter) RevokeSessionAccess(context.Context, string) error { return nil }
+func (*fixedAccessMinter) JWKS() (string, error)                             { return `{}`, nil }
 
 func recentBillingIdentity() *auth.Identity {
 	return &auth.Identity{

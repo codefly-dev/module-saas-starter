@@ -34,6 +34,18 @@ type TokenRevoker interface {
 	// error means the backing store could not be consulted; the caller MUST
 	// treat that as fail-closed (deny), never as "not revoked".
 	IsRevoked(ctx context.Context, jti string) (bool, error)
+
+	// RevokeSession marks every access token carrying this session id (the
+	// `sid` claim) as revoked for ttl. Admin session-kill uses it to invalidate
+	// a victim's outstanding access token without possessing the token itself:
+	// revoke-by-jti needs the client to forward its bearer, revoke-by-session
+	// does not. ttl SHOULD equal the access-token TTL. Same swallow-on-error
+	// contract as Revoke.
+	RevokeSession(ctx context.Context, sessionID string, ttl time.Duration) error
+
+	// IsSessionRevoked reports whether sessionID is in the session-revocation
+	// list. Same fail-closed contract as IsRevoked.
+	IsSessionRevoked(ctx context.Context, sessionID string) (bool, error)
 }
 
 // NoopTokenRevoker is the fallback when no Redis is configured — accepts
@@ -47,5 +59,13 @@ func (NoopTokenRevoker) Revoke(_ context.Context, _ string, _ time.Duration) err
 }
 
 func (NoopTokenRevoker) IsRevoked(_ context.Context, _ string) (bool, error) {
+	return false, nil
+}
+
+func (NoopTokenRevoker) RevokeSession(_ context.Context, _ string, _ time.Duration) error {
+	return nil
+}
+
+func (NoopTokenRevoker) IsSessionRevoked(_ context.Context, _ string) (bool, error) {
 	return false, nil
 }

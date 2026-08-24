@@ -12,8 +12,9 @@ import (
 
 // fakeRevoker is a controllable revoker for Check-level tests.
 type fakeRevoker struct {
-	revoked map[string]bool
-	err     error
+	revoked        map[string]bool
+	sessionRevoked map[string]bool
+	err            error
 }
 
 func (f *fakeRevoker) Revoked(_ context.Context, jti string) (bool, error) {
@@ -23,18 +24,28 @@ func (f *fakeRevoker) Revoked(_ context.Context, jti string) (bool, error) {
 	return f.revoked[jti], nil
 }
 
+func (f *fakeRevoker) RevokedSession(_ context.Context, sessionID string) (bool, error) {
+	if f.err != nil {
+		return false, f.err
+	}
+	return f.sessionRevoked[sessionID], nil
+}
+
 func (f *fakeRevoker) Forget(string) {}
 
 // fakeStore stands in for the shared Redis revocation set. It counts lookups so
 // tests can assert the local cache actually collapses store round-trips.
 type fakeStore struct {
-	mu      sync.Mutex
-	entries map[string]bool
-	err     error
-	calls   int
+	mu       sync.Mutex
+	entries  map[string]bool
+	sessions map[string]bool
+	err      error
+	calls    int
 }
 
-func newFakeStore() *fakeStore { return &fakeStore{entries: map[string]bool{}} }
+func newFakeStore() *fakeStore {
+	return &fakeStore{entries: map[string]bool{}, sessions: map[string]bool{}}
+}
 
 func (f *fakeStore) revoked(_ context.Context, jti string) (bool, error) {
 	f.mu.Lock()
@@ -46,9 +57,25 @@ func (f *fakeStore) revoked(_ context.Context, jti string) (bool, error) {
 	return f.entries[jti], nil
 }
 
+func (f *fakeStore) revokedSession(_ context.Context, sessionID string) (bool, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.calls++
+	if f.err != nil {
+		return false, f.err
+	}
+	return f.sessions[sessionID], nil
+}
+
 func (f *fakeStore) mark(jti string) {
 	f.mu.Lock()
 	f.entries[jti] = true
+	f.mu.Unlock()
+}
+
+func (f *fakeStore) markSession(sessionID string) {
+	f.mu.Lock()
+	f.sessions[sessionID] = true
 	f.mu.Unlock()
 }
 
@@ -100,7 +127,7 @@ func TestUnit_Revocation_GatewayPath_LogoutThenReuseRejected(t *testing.T) {
 			token := signClaims(t, priv, c)
 
 			store := newFakeStore()
-			s.revoker = newCachedRevoker(store.revoked, defaultRevocationCacheTTL)
+			s.revoker = newCachedRevoker(store.revoked, store.revokedSession, defaultRevocationCacheTTL)
 
 			resp, err := s.Check(context.Background(), checkReq("/v1/users", bearer(token)))
 			require.NoError(t, err)
@@ -128,14 +155,16 @@ func TestUnit_Revocation_NonLogoutPathKeepsCache(t *testing.T) {
 	token := signClaims(t, priv, c)
 
 	store := newFakeStore()
-	s.revoker = newCachedRevoker(store.revoked, defaultRevocationCacheTTL)
+	s.revoker = newCachedRevoker(store.revoked, store.revokedSession, defaultRevocationCacheTTL)
 
 	for i := 0; i < 3; i++ {
 		resp, err := s.Check(context.Background(), checkReq("/v1/users", bearer(token)))
 		require.NoError(t, err)
 		require.NotNil(t, resp.GetOkResponse())
 	}
-	require.Equal(t, 1, store.calls, "repeat requests within the window hit the cache")
+	// The first request round-trips both revocation keys (jti + sid) once each;
+	// every repeat within the window is served entirely from the local cache.
+	require.Equal(t, 2, store.calls, "repeat requests within the window hit the cache")
 }
 
 // ============================================================================
@@ -166,18 +195,56 @@ func TestUnit_Revocation_StoreError_FailOpenWhenConfigured(t *testing.T) {
 	require.NotNil(t, resp.GetOkResponse(), "fail-open admits when explicitly configured")
 }
 
-// A token with no jti can't be revoked (nothing to key on) and must still pass
-// once signature/claims are valid — the revoker is never consulted.
+// A token carrying neither a jti nor a sid can't be revoked (nothing to key on)
+// and must still pass once signature/claims are valid — the revoker is never
+// consulted on either path.
 func TestUnit_Revocation_NoJTI_Allowed(t *testing.T) {
 	s, priv := newTestSidecar(t)
 	s.revoker = &fakeRevoker{err: errors.New("must not be called")}
 	c := validClaims(time.Now())
 	c.ID = ""
+	c.SessionID = ""
 	token := signClaims(t, priv, c)
 
 	resp, err := s.Check(context.Background(), checkReq("/v1/users", bearer(token)))
 	require.NoError(t, err)
 	require.NotNil(t, resp.GetOkResponse())
+}
+
+// Admin session-kill: the victim's outstanding access token has an un-revoked
+// jti, but its `sid` is marked. checkJWT must deny on the session marker alone,
+// covering the gateway path where the admin never held the token.
+func TestUnit_SessionRevokedJWT_Denied(t *testing.T) {
+	s, priv := newTestSidecar(t)
+	c := validClaims(time.Now())
+	s.revoker = &fakeRevoker{sessionRevoked: map[string]bool{c.SessionID: true}}
+	token := signClaims(t, priv, c)
+
+	resp, err := s.Check(context.Background(), checkReq("/v1/users", bearer(token)))
+	require.NoError(t, err)
+	require.NotNil(t, resp.GetDeniedResponse(), "a killed session must be denied on the sid marker")
+	require.Equal(t, int32(401), int32(resp.GetDeniedResponse().Status.Code))
+}
+
+// The session-kill failure mode matches the jti path: a store error denies in
+// strict mode rather than admitting a possibly-killed session.
+func TestUnit_SessionRevocation_StoreError_FailClosedByDefault(t *testing.T) {
+	s, priv := newTestSidecar(t)
+	s.revocationFailOpen = false
+	// jti path clean, session path errors — isolates the session check's stance.
+	store := newFakeStore()
+	store.err = errors.New("redis unreachable")
+	s.revoker = newCachedRevoker(
+		func(context.Context, string) (bool, error) { return false, nil },
+		store.revokedSession,
+		defaultRevocationCacheTTL,
+	)
+	token := signClaims(t, priv, validClaims(time.Now()))
+
+	resp, err := s.Check(context.Background(), checkReq("/v1/users", bearer(token)))
+	require.NoError(t, err)
+	require.NotNil(t, resp.GetDeniedResponse(), "session store error must deny in strict mode")
+	require.Equal(t, int32(503), int32(resp.GetDeniedResponse().Status.Code))
 }
 
 // ============================================================================
@@ -187,7 +254,7 @@ func TestUnit_Revocation_NoJTI_Allowed(t *testing.T) {
 func TestUnit_CachedRevoker_HotPathAndBoundedWindow(t *testing.T) {
 	store := newFakeStore()
 	now := time.Now()
-	rev := newCachedRevoker(store.revoked, 3*time.Second)
+	rev := newCachedRevoker(store.revoked, store.revokedSession, 3*time.Second)
 	rev.now = func() time.Time { return now }
 
 	// First lookup hits the store and caches "not revoked".
@@ -217,7 +284,7 @@ func TestUnit_CachedRevoker_HotPathAndBoundedWindow(t *testing.T) {
 func TestUnit_CachedRevoker_CachesRevokedAnswer(t *testing.T) {
 	store := newFakeStore()
 	store.mark("jti-2")
-	rev := newCachedRevoker(store.revoked, 5*time.Second)
+	rev := newCachedRevoker(store.revoked, store.revokedSession, 5*time.Second)
 
 	for i := 0; i < 3; i++ {
 		got, err := rev.Revoked(context.Background(), "jti-2")
@@ -230,7 +297,7 @@ func TestUnit_CachedRevoker_CachesRevokedAnswer(t *testing.T) {
 func TestUnit_CachedRevoker_DoesNotCacheErrors(t *testing.T) {
 	store := newFakeStore()
 	store.err = errors.New("redis down")
-	rev := newCachedRevoker(store.revoked, 5*time.Second)
+	rev := newCachedRevoker(store.revoked, store.revokedSession, 5*time.Second)
 
 	_, err := rev.Revoked(context.Background(), "jti-3")
 	require.Error(t, err)

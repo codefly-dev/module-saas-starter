@@ -72,6 +72,13 @@ type JWTMinter interface {
 	// No-op when the token cannot be parsed (already invalid).
 	RevokeAccess(ctx context.Context, accessToken string) error
 
+	// RevokeSessionAccess adds a session-scoped revocation marker keyed by the
+	// `sid` claim with TTL = AccessTokenTTL, invalidating any outstanding access
+	// token for that session on every path. Unlike RevokeAccess it needs no
+	// token in hand — admin session-kill has the session id, not the victim's
+	// bearer. Pairs with the DB refresh-family revocation to close both halves.
+	RevokeSessionAccess(ctx context.Context, sessionID string) error
+
 	// JWKS returns the public portion of the signing key as a JSON Web Key
 	// Set for external tooling. The sidecar loads its key from Vault
 	// directly; this endpoint is non-authoritative.

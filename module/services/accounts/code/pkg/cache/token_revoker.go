@@ -24,6 +24,12 @@ func NewTokenRevoker(c Cache) *TokenRevoker {
 
 const tokenRevokerPrefix = "revoked-jti:"
 
+// sessionRevokerPrefix keys the session-revocation markers written by admin
+// session-kill. One marker under this prefix invalidates every access token
+// carrying the matching `sid` claim, so a kill needs no access token in hand.
+// The sidecar mirrors this exact layout (auth-sidecar/code/revocation.go).
+const sessionRevokerPrefix = "revoked-session:"
+
 // Revoke marks jti as revoked for ttl. The marker value is a single
 // byte (0x01) — the cache key's existence is the revocation signal,
 // the value is just there because Cache.Set requires one.
@@ -43,6 +49,31 @@ func (r *TokenRevoker) IsRevoked(ctx context.Context, jti string) (bool, error) 
 		return false, nil
 	}
 	_, err := r.cache.Get(ctx, tokenRevokerPrefix+jti)
+	if err != nil {
+		if errors.Is(err, ErrNotFound) {
+			return false, nil
+		}
+		return false, err
+	}
+	return true, nil
+}
+
+// RevokeSession marks sessionID as revoked for ttl, invalidating every access
+// token that carries it as the `sid` claim. Mirrors Revoke's marker layout.
+func (r *TokenRevoker) RevokeSession(ctx context.Context, sessionID string, ttl time.Duration) error {
+	if sessionID == "" || ttl <= 0 {
+		return nil
+	}
+	return r.cache.Set(ctx, sessionRevokerPrefix+sessionID, []byte{1}, ttl)
+}
+
+// IsSessionRevoked reports whether sessionID has an unexpired revocation
+// marker. Same fail-closed contract as IsRevoked.
+func (r *TokenRevoker) IsSessionRevoked(ctx context.Context, sessionID string) (bool, error) {
+	if sessionID == "" {
+		return false, nil
+	}
+	_, err := r.cache.Get(ctx, sessionRevokerPrefix+sessionID)
 	if err != nil {
 		if errors.Is(err, ErrNotFound) {
 			return false, nil
