@@ -26,10 +26,6 @@
 
 const TURNSTILE_ORIGIN = "https://challenges.cloudflare.com";
 
-// The /docs page embeds this API-doc viewer in an iframe; keep in lockstep with
-// the hardcoded src in src/app/(dashboard)/docs/api-docs-frame.tsx.
-const API_DOCS_VIEWER_ORIGIN = "https://petstore.swagger.io";
-
 /** Absolute http(s) origin, no credentials/path/query/fragment, or throw. */
 function toOrigin(value, source) {
 	let parsed;
@@ -106,10 +102,17 @@ export function resolveCspInputs(env = process.env) {
  * @param {string[]} [runtimeSolutionOrigins] Origins derived at request time
  *   from the runtime solution registry (see src/proxy.ts). Merged with the
  *   build-time FRONTEND_SOLUTION_ORIGINS allowlist.
+ * @param {string} [nonce] per-request nonce from the proxy (src/proxy.ts). When
+ *   present, script-src drops 'unsafe-inline' — the framework inline scripts
+ *   carry the nonce and 'strict-dynamic' extends trust to the chunks they load
+ *   — so an injected inline <script> without the nonce is refused. Without a
+ *   nonce (no proxy in front, e.g. a raw static export), 'unsafe-inline' is the
+ *   fallback so first-party inline scripts still run.
  */
 export function contentSecurityPolicyFromInputs(
 	inputs,
 	runtimeSolutionOrigins = [],
+	nonce,
 ) {
 	const solutionOrigins = [
 		...new Set([...inputs.solutionOrigins, ...runtimeSolutionOrigins]),
@@ -119,10 +122,12 @@ export function contentSecurityPolicyFromInputs(
 	const isDev = inputs.isDev;
 
 	// Remote solution scripts execute in this origin; the MF runtime fetches
-	// their manifest/chunks. Turnstile injects its challenge script.
+	// their manifest/chunks. Turnstile injects its challenge script. 'unsafe-eval'
+	// is dev-only (React 19 owner-stack reconstruction) and is orthogonal to the
+	// nonce — it permits eval(), not inline <script> injection.
 	const scriptSrc = [
 		"'self'",
-		"'unsafe-inline'",
+		...(nonce ? [`'nonce-${nonce}'`, "'strict-dynamic'"] : ["'unsafe-inline'"]),
 		...(isDev ? ["'unsafe-eval'"] : []),
 		...solutionOrigins,
 	];
@@ -137,9 +142,9 @@ export function contentSecurityPolicyFromInputs(
 		connectSrc.push(TURNSTILE_ORIGIN);
 	}
 
-	// The /docs viewer is always embedded; Turnstile renders its challenge in a
-	// Cloudflare-hosted iframe when enabled.
-	const frameSrc = ["'self'", API_DOCS_VIEWER_ORIGIN];
+	// The /docs viewer is now self-hosted (same-origin), so 'self' covers it;
+	// Turnstile renders its challenge in a Cloudflare-hosted iframe when enabled.
+	const frameSrc = ["'self'"];
 	if (turnstile) {
 		frameSrc.push(TURNSTILE_ORIGIN);
 	}
@@ -165,14 +170,17 @@ export function contentSecurityPolicyFromInputs(
 /**
  * @param {Record<string, string | undefined>} [env]
  * @param {string[]} [runtimeSolutionOrigins]
+ * @param {string} [nonce]
  */
 export function contentSecurityPolicy(
 	env = process.env,
 	runtimeSolutionOrigins = [],
+	nonce,
 ) {
 	return contentSecurityPolicyFromInputs(
 		resolveCspInputs(env),
 		runtimeSolutionOrigins,
+		nonce,
 	);
 }
 

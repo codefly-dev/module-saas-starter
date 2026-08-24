@@ -1,29 +1,19 @@
 "use client";
 
-import { useSyncExternalStore } from "react";
+import SwaggerUI from "swagger-ui-react";
+import "swagger-ui-react/swagger-ui.css";
 
-const subscribeToOrigin = () => () => {};
-
+// Self-hosted API viewer. Renders the OpenAPI spec served same-origin at
+// /api/openapi with a bundled Swagger UI — no external iframe, so the CSP needs
+// no third-party frame-src and the spec URL never leaves this origin (the old
+// petstore.swagger.io embed leaked it via its ?url= query param).
 export function ApiDocsFrame() {
-	const specUrl = useSyncExternalStore(
-		subscribeToOrigin,
-		() => `${window.location.origin}/api/openapi`,
-		() => "",
-	);
-
-	if (!specUrl) return null;
 	return (
 		<div
 			className="rounded-lg border bg-card overflow-hidden"
 			style={{ height: "calc(100vh - 12rem)" }}
 		>
-			{/* This origin must stay in the CSP frame-src allowlist —
-			    see API_DOCS_VIEWER_ORIGIN in server/security-headers.mjs. */}
-			<iframe
-				src={`https://petstore.swagger.io/?url=${encodeURIComponent(specUrl)}`}
-				className="w-full h-full border-0"
-				title="API Documentation"
-			/>
+			<SwaggerUI url="/api/openapi" />
 		</div>
 	);
 }

@@ -55,11 +55,9 @@ describe("contentSecurityPolicy", () => {
 			"script-src 'self' 'unsafe-inline'",
 		);
 		expect(directive(csp, "connect-src")).toBe("connect-src 'self'");
-		// The /docs API viewer iframe is always embedded, so frame-src always
-		// allows it; Turnstile is not added unless bot protection is on.
-		expect(directive(csp, "frame-src")).toBe(
-			"frame-src 'self' https://petstore.swagger.io",
-		);
+		// The /docs API viewer is self-hosted (same-origin), so frame-src is just
+		// 'self'; Turnstile is not added unless bot protection is on.
+		expect(directive(csp, "frame-src")).toBe("frame-src 'self'");
 		// Avatars are user-supplied external image URLs.
 		expect(directive(csp, "img-src")).toBe("img-src 'self' data: https:");
 	});
@@ -71,6 +69,26 @@ describe("contentSecurityPolicy", () => {
 		);
 		const prod = contentSecurityPolicy({ NODE_ENV: "production" });
 		expect(directive(prod, "script-src")).not.toContain("'unsafe-eval'");
+	});
+
+	it("drops 'unsafe-inline' and carries the nonce + strict-dynamic when a nonce is given", () => {
+		const script = directive(
+			contentSecurityPolicy({}, [], "n0nceABC"),
+			"script-src",
+		);
+		expect(script).not.toContain("'unsafe-inline'");
+		expect(script).toContain("'nonce-n0nceABC'");
+		expect(script).toContain("'strict-dynamic'");
+	});
+
+	it("keeps dev 'unsafe-eval' alongside a nonce (eval is orthogonal to inline injection)", () => {
+		const script = directive(
+			contentSecurityPolicy({ NODE_ENV: "development" }, [], "n0nceABC"),
+			"script-src",
+		);
+		expect(script).toContain("'nonce-n0nceABC'");
+		expect(script).toContain("'unsafe-eval'");
+		expect(script).not.toContain("'unsafe-inline'");
 	});
 
 	it("allowlists registered Module Federation solution origins", () => {
@@ -131,7 +149,7 @@ describe("contentSecurityPolicy", () => {
 			"https://challenges.cloudflare.com",
 		);
 		expect(directive(csp, "frame-src")).toBe(
-			"frame-src 'self' https://petstore.swagger.io https://challenges.cloudflare.com",
+			"frame-src 'self' https://challenges.cloudflare.com",
 		);
 	});
 });

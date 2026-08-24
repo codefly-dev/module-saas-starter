@@ -5,7 +5,6 @@ import { resolveAccountsBindings } from "./server/accounts-bindings.mjs";
 import {
 	baselineSecurityHeaders,
 	resolveCspInputs,
-	securityHeaders,
 } from "./server/security-headers.mjs";
 
 const workspacePackageNames = readdirSync(
@@ -72,21 +71,14 @@ const nextConfig = {
 	// that expose TypeScript under the development condition then participate in
 	// Next HMR without a separate dist rebuild race.
 	transpilePackages: ["codefly", ...workspacePackageNames],
-	// Anti-clickjacking + CSP baseline for the authenticated product surface.
-	// The CSP allowlist for cross-origin subresources (analytics, bot-protection)
-	// is derived from build-time config; see server/security-headers.mjs.
-	//
-	// Solution pages (/s/:id) are the exception: their Module Federation remote
-	// registers at runtime, so its origin cannot be baked in here. Those routes
-	// get the constant hardening headers at build time and their CSP from the
-	// Node proxy (src/proxy.ts) per request. Emitting a build-time CSP for them
-	// too would produce a second, narrower CSP the browser intersects with the
-	// runtime one — re-blocking the remote.
+	// Anti-clickjacking + the constant hardening headers at build time. The CSP
+	// itself is NOT emitted here: it carries a per-request nonce (dropping
+	// script-src 'unsafe-inline') and is set by the Node proxy (src/proxy.ts) on
+	// every route — a build-time manifest can't mint a nonce, and a static CSP
+	// here would ship a second, nonce-less policy the browser intersects with the
+	// proxy's, defeating the nonce. See server/security-headers.mjs / src/proxy.ts.
 	async headers() {
-		return [
-			{ source: "/((?!s/).*)", headers: securityHeaders() },
-			{ source: "/s/:path*", headers: baselineSecurityHeaders() },
-		];
+		return [{ source: "/:path*", headers: baselineSecurityHeaders() }];
 	},
 	// The frontend is the module's public product entry. The browser only talks
 	// to this origin; Next proxies API traffic to auth-sidecar/rest, which

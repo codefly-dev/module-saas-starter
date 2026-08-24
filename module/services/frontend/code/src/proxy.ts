@@ -105,7 +105,10 @@ function safeDecode(segment: string): string | null {
 // FRONTEND_SOLUTION_ORIGINS entry. Non-solution pages keep their build-time CSP.
 // The registry type is imported for typing only (erased at compile), so this
 // does not pull the server-only registry module into the proxy bundle.
-function solutionContentSecurityPolicy(pathname: string): string | null {
+function solutionContentSecurityPolicy(
+	pathname: string,
+	nonce: string,
+): string | null {
 	const match = SOLUTION_PAGE.exec(pathname);
 	if (!match) {
 		return null;
@@ -121,7 +124,39 @@ function solutionContentSecurityPolicy(pathname: string): string | null {
 	const origins = solution
 		? [new URL(solution.frontend.manifestUrl).origin]
 		: [];
-	return contentSecurityPolicyFromInputs(baselineCspInputs(), origins);
+	return contentSecurityPolicyFromInputs(baselineCspInputs(), origins, nonce);
+}
+
+// Per-request CSP nonce. Built from Web Crypto so it works on either runtime.
+// Every HTML response threads this into the request headers (so Next stamps it
+// onto the framework inline scripts) and echoes it on the response CSP, letting
+// script-src drop 'unsafe-inline' — an injected inline <script> without the
+// nonce is refused by the browser.
+function mintNonce(): string {
+	const bytes = new Uint8Array(16);
+	crypto.getRandomValues(bytes);
+	let binary = "";
+	for (const byte of bytes) {
+		binary += String.fromCharCode(byte);
+	}
+	return btoa(binary);
+}
+
+// Attach the nonce'd CSP to a pass-through response: the nonce goes on the
+// forwarded request headers (Next reads it to nonce its inline scripts) and the
+// policy is set on the response the browser receives.
+function withNoncedCSP(
+	req: NextRequest,
+	baseRequestHeaders: Headers | undefined,
+	nonce: string,
+	csp: string,
+): NextResponse {
+	const requestHeaders = baseRequestHeaders ?? new Headers(req.headers);
+	requestHeaders.set("x-nonce", nonce);
+	requestHeaders.set("content-security-policy", csp);
+	const response = NextResponse.next({ request: { headers: requestHeaders } });
+	response.headers.set("Content-Security-Policy", csp);
+	return response;
 }
 
 function isPublic(pathname: string): boolean {
@@ -147,6 +182,7 @@ export function proxy(req: NextRequest) {
 		req,
 		resolveCodeflyGatewayContext(req.nextUrl.origin),
 	);
+	const nonce = mintNonce();
 
 	const secretReturn =
 		pathname === "/invitations/accept"
@@ -173,9 +209,8 @@ export function proxy(req: NextRequest) {
 	}
 
 	if (isPublic(pathname)) {
-		const response = gatewayHeaders
-			? NextResponse.next({ request: { headers: gatewayHeaders } })
-			: NextResponse.next();
+		const csp = contentSecurityPolicyFromInputs(baselineCspInputs(), [], nonce);
+		const response = withNoncedCSP(req, gatewayHeaders, nonce, csp);
 		if (pathname === "/invitations/accept" || pathname === "/waitlist/verify") {
 			response.headers.set("Referrer-Policy", "no-referrer");
 		}
@@ -194,14 +229,10 @@ export function proxy(req: NextRequest) {
 		return NextResponse.redirect(loginURL);
 	}
 
-	const response = gatewayHeaders
-		? NextResponse.next({ request: { headers: gatewayHeaders } })
-		: NextResponse.next();
-	const solutionCSP = solutionContentSecurityPolicy(pathname);
-	if (solutionCSP) {
-		response.headers.set("Content-Security-Policy", solutionCSP);
-	}
-	return response;
+	const csp =
+		solutionContentSecurityPolicy(pathname, nonce) ??
+		contentSecurityPolicyFromInputs(baselineCspInputs(), [], nonce);
+	return withNoncedCSP(req, gatewayHeaders, nonce, csp);
 }
 
 export const config = {
