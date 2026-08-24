@@ -241,6 +241,28 @@ func TestVerifyAccess_FailsClosedWhenRevocationUnavailable(t *testing.T) {
 		"a revocation-store outage must deny the token, not admit it")
 }
 
+func TestVerifyAccess_FailOpenAdmitsWhenRevocationUnavailable(t *testing.T) {
+	ctx := context.Background()
+	_, priv, err := ed25519minter.GenerateKey()
+	require.NoError(t, err)
+	m := ed25519minter.New(ed25519minter.Config{
+		Issuer:             "test-issuer",
+		Audience:           "test-audience",
+		RevocationFailOpen: true,
+	}, priv, &memoryStore{})
+
+	pair, err := m.Mint(ctx, newIdentity())
+	require.NoError(t, err)
+
+	// Same store outage as the fail-closed test, but the operator opted into
+	// fail-open: the token is admitted rather than denied.
+	m.SetRevoker(fakeRevoker{err: errors.New("redis unreachable")})
+
+	got, err := m.VerifyAccess(pair.AccessToken)
+	require.NoError(t, err)
+	require.NotNil(t, got)
+}
+
 func TestVerifyAccess_RejectsRevokedToken(t *testing.T) {
 	ctx := context.Background()
 	m, _ := newMinter(t)

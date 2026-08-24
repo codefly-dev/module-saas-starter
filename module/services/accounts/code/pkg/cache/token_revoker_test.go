@@ -38,7 +38,7 @@ func (b boomCache) Get(context.Context, string) ([]byte, error) { return nil, b.
 func (boomCache) Set(context.Context, string, []byte, time.Duration) error {
 	return nil
 }
-func (boomCache) Delete(context.Context, ...string) error            { return nil }
+func (boomCache) Delete(context.Context, ...string) error                    { return nil }
 func (boomCache) Incr(context.Context, string, time.Duration) (int64, error) { return 0, nil }
 
 func TestTokenRevoker_FailsClosedOnStoreError(t *testing.T) {

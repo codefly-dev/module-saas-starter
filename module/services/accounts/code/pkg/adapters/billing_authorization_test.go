@@ -236,6 +236,21 @@ func TestListPublicPlansNeedsNoProductIdentity(t *testing.T) {
 	require.Equal(t, int64(50), response.Msg.Plans[0].Entitlements[0].Limit)
 }
 
+func TestBillingHTTPFailsClosedWhenRevocationUnavailable(t *testing.T) {
+	svc := installBillingAuthorizationService(t, &billingAuthorizationStore{}, &billingAuthorizationClient{})
+	svc.SetJWTMinter(&fixedAccessMinter{verifyErr: auth.ErrRevocationUnavailable})
+	handler := NewBillingHTTPHandler(svc)
+
+	req := httptest.NewRequest(http.MethodPost, "/v1/billing/checkout", strings.NewReader(`{"plan_name":"pro"}`))
+	req.Header.Set("Authorization", "Bearer any")
+	w := httptest.NewRecorder()
+	handler.ServeHTTP(w, req)
+
+	// A revocation-store outage is retryable, not bad credentials: 503, not 401,
+	// and never a silent success.
+	require.Equal(t, http.StatusServiceUnavailable, w.Code)
+}
+
 func TestBillingHTTPCheckoutRequiresPermissionRecentMFAAndIdempotency(t *testing.T) {
 	store := &billingAuthorizationStore{
 		members:    []*gen.OrgMembership{{UserId: billingUserID, Role: gen.OrgRole_ORG_ROLE_ADMIN}},

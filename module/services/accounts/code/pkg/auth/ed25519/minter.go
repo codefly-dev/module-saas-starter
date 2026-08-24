@@ -76,6 +76,13 @@ type Config struct {
 	// The verification set is fixed at construction — there is no mutate-after-
 	// serve setter to race with VerifyAccess.
 	AdditionalVerificationKeys []ed25519.PublicKey
+	// RevocationFailOpen selects what VerifyAccess does when the revocation list
+	// cannot be consulted (backing store unreachable). The zero value is
+	// fail-CLOSED: a possibly-revoked token is denied (ErrRevocationUnavailable).
+	// Set true to admit it instead — the operator accepting a revoked token's
+	// remaining-TTL exposure to keep the direct verify path serving through a
+	// store outage. Mirrors the sidecar's SIDECAR_REVOCATION_FAIL_OPEN knob.
+	RevocationFailOpen bool
 }
 
 func (c *Config) withDefaults() error {
@@ -571,14 +578,17 @@ func (m *Minter) VerifyAccess(tokenString string) (*auth.Identity, error) {
 	// Access-token revocation (logout / explicit kill). Checked AFTER
 	// signature + claim validation so an unsigned/expired token still
 	// fails fast without a backing-store call. NoopTokenRevoker returns
-	// (false, nil) so the dev path is unchanged. A store error fails closed:
-	// a possibly-revoked token is denied, not admitted.
+	// (false, nil) so the dev path is unchanged. A store error fails closed by
+	// default (deny a possibly-revoked token); Config.RevocationFailOpen flips
+	// that to admit-and-continue, matching the sidecar's configurable stance.
 	if claims.ID != "" {
 		revoked, err := m.revoker.IsRevoked(context.Background(), claims.ID)
-		if err != nil {
+		switch {
+		case err != nil && !m.cfg.RevocationFailOpen:
 			return nil, fmt.Errorf("%w: %v", auth.ErrRevocationUnavailable, err)
-		}
-		if revoked {
+		case err != nil:
+			// fail-open: admit the token despite an unreadable revocation list.
+		case revoked:
 			return nil, auth.ErrTokenRevoked
 		}
 	}
@@ -609,6 +619,12 @@ func (m *Minter) VerifyAccess(tokenString string) (*auth.Identity, error) {
 func (m *Minter) RevokeAccess(ctx context.Context, accessToken string) error {
 	identity, err := m.VerifyAccess(accessToken)
 	if err != nil {
+		// Swallowing is load-bearing, not just best-effort: VerifyAccess now
+		// consults the revocation store, so during a store outage it returns
+		// ErrRevocationUnavailable here. Propagating that would make logout fail
+		// exactly when the store is down — the same outage that already prevents
+		// writing the marker below — so a revoke could never make progress. The
+		// refresh family is revoked separately in the DB regardless.
 		return nil //nolint:nilerr // best-effort revocation
 	}
 	_ = identity // identity is built but not needed here
