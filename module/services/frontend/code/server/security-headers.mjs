@@ -92,6 +92,12 @@ export function resolveCspInputs(env = process.env) {
 		solutionOrigins: parseSolutionOrigins(env.FRONTEND_SOLUTION_ORIGINS),
 		analyticsOrigin: posthogOrigin(env),
 		turnstile: turnstileEnabled(env),
+		// React 19 dev mode uses eval() for debugging features (owner-stack /
+		// callstack reconstruction), so the dev server needs 'unsafe-eval'. Next
+		// sets NODE_ENV at build time — "development" under `next dev`,
+		// "production" under `next build` — so this never widens production, and
+		// snapshotting it here keeps the proxy path in lockstep with next.config.
+		isDev: env.NODE_ENV === "development",
 	};
 }
 
@@ -110,12 +116,7 @@ export function contentSecurityPolicyFromInputs(
 	];
 	const analyticsOrigin = inputs.analyticsOrigin;
 	const turnstile = inputs.turnstile;
-
-	// React 19 dev mode uses eval() for debugging features (owner-stack /
-	// callstack reconstruction), so the dev server needs 'unsafe-eval'. Next
-	// sets NODE_ENV at build time — "development" under `next dev`, "production"
-	// under `next build` — so this never widens the production CSP.
-	const isDev = env.NODE_ENV === "development";
+	const isDev = inputs.isDev;
 
 	// Remote solution scripts execute in this origin; the MF runtime fetches
 	// their manifest/chunks. Turnstile injects its challenge script.
