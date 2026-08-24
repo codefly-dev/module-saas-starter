@@ -22,7 +22,7 @@ import (
 // same ext_authz Check runs, and identity headers are stripped and re-stamped
 // exactly as for catalog routes. Only the solution's public static surface
 // (/assets and /.well-known, served open by the origin) is exempt from auth for
-// reads — see isPublicSolutionPath. The gateway performs authentication and
+// reads — see solutionPublicUpstreamPath. The gateway performs authentication and
 // identity projection; the solution's own downstream calls (e.g. accounts
 // QueryAuditLog, which still enforces audit:read) remain the authorization
 // authority.
@@ -92,10 +92,11 @@ func (g *Gateway) handleSolutionRequest(w http.ResponseWriter, r *http.Request) 
 	// script/manifest fetches 401s them and makes the remote impossible to load
 	// same-origin through the host. Serve the public GET surface unauthenticated,
 	// with caller identity still stripped; every other path (the solution's data
-	// endpoints, e.g. /lastlogin) stays auth-required below.
-	if isPublicSolutionPath(r.Method, path) {
+	// endpoints, e.g. /lastlogin) stays auth-required below. The upstream is sent
+	// the same cleaned path the exemption was decided on, so the two can't diverge.
+	if publicPath, ok := solutionPublicUpstreamPath(r.Method, path); ok {
 		stripAllIdentityHeaders(r)
-		entry := &RouteEntry{Service: "solution:" + id, UpstreamPath: "/" + path}
+		entry := &RouteEntry{Service: "solution:" + id, UpstreamPath: publicPath}
 		g.proxyTo(w, r, upstream, entry)
 		return true
 	}
@@ -136,22 +137,26 @@ func (g *Gateway) handleSolutionRequest(w http.ResponseWriter, r *http.Request) 
 // serves them without a bearer.
 var solutionPublicPrefixes = []string{"assets", ".well-known"}
 
-// isPublicSolutionPath reports whether a solution sub-path (the suffix after
-// /solutions/{id}/, with no leading slash) is part of the solution's public,
-// unauthenticated read surface. The decision is made on the cleaned path so a
-// traversal suffix like `assets/../lastlogin` cannot borrow the /assets
-// exemption to reach an authenticated endpoint.
-func isPublicSolutionPath(method, subPath string) bool {
+// solutionPublicUpstreamPath reports whether a solution sub-path (the suffix
+// after /solutions/{id}/, with no leading slash) is part of the solution's
+// public, unauthenticated read surface, and returns the canonical upstream path
+// to forward. Both the decision and the returned path are derived from the
+// cleaned path: deciding on the clean prevents a traversal suffix like
+// `assets/../lastlogin` from borrowing the /assets exemption to reach an
+// authenticated endpoint, and forwarding that same clean prevents an upstream
+// that resolves the raw path differently from being handed a path the gateway
+// never classified as public.
+func solutionPublicUpstreamPath(method, subPath string) (string, bool) {
 	if method != http.MethodGet && method != http.MethodHead {
-		return false
+		return "", false
 	}
 	clean := stdpath.Clean("/" + subPath)
 	for _, prefix := range solutionPublicPrefixes {
 		if clean == "/"+prefix || strings.HasPrefix(clean, "/"+prefix+"/") {
-			return true
+			return clean, true
 		}
 	}
-	return false
+	return "", false
 }
 
 func (g *Gateway) handleSolutionRegister(w http.ResponseWriter, r *http.Request) {

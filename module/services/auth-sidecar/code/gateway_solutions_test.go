@@ -75,6 +75,21 @@ func TestGateway_Solution_PublicSurface_NoToken_OK(t *testing.T) {
 	}
 }
 
+// A non-canonical public path is forwarded to the upstream in cleaned form, so
+// the path the gateway decided was public and the path the upstream resolves
+// can't diverge (e.g. an upstream that reads the raw dot segments differently).
+func TestGateway_Solution_PublicSurface_ForwardsCleanedPath(t *testing.T) {
+	gw, _, _, _ := newGatewayHarness(t)
+	fake := registerSolutionUpstream(t, gw, "lastlogin-go")
+
+	req := httptest.NewRequest(http.MethodGet, "/solutions/lastlogin-go/assets/./chunks/../app.1a2b3c.js", nil)
+	w := httptest.NewRecorder()
+	gw.ServeHTTP(w, req)
+
+	require.Equal(t, http.StatusOK, w.Code)
+	require.Equal(t, "/assets/app.1a2b3c.js", fake.lastPath)
+}
+
 // The public read exemption never forwards caller-supplied identity: a request
 // spoofing identity headers reaches the upstream with them stripped.
 func TestGateway_Solution_PublicSurface_StripsSpoofedIdentity(t *testing.T) {
