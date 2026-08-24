@@ -165,17 +165,23 @@ func (in *CreateApprovalRequestInput) validate() error {
 	if in.Quorum < 0 {
 		return errors.New("approval: quorum must be >= 0")
 	}
-	// A pinned approver set smaller than the required quorum can never reach
-	// quorum, so the request would sit pending until it expires — reject it at
-	// creation rather than minting a permanently-stuck gate. Quorum 0 defaults
-	// to 1 (see CreateApprovalRequest).
-	if n := len(in.Policy.ApproverSet); n > 0 {
-		quorum := in.Quorum
-		if quorum == 0 {
-			quorum = 1
+	// A pinned approver set must hold enough DISTINCT, eligible deciders to reach
+	// quorum, or the request can never be approved and would sit pending until it
+	// expires — reject that at creation rather than minting a permanently-stuck
+	// gate. Counting len() is not enough: duplicate entries do not add a decider
+	// (UNIQUE(request_id, decider) caps each at one approve), and the requester is
+	// not an eligible decider unless AllowSelf is set. Both are excluded here so a
+	// requester-only set or a padded-with-duplicates set is rejected up front.
+	if len(in.Policy.ApproverSet) > 0 {
+		eligible := make(map[string]struct{}, len(in.Policy.ApproverSet))
+		for _, a := range in.Policy.ApproverSet {
+			if !in.Policy.AllowSelf && a == in.RequestedBy {
+				continue
+			}
+			eligible[a] = struct{}{}
 		}
-		if quorum > n {
-			return fmt.Errorf("approval: quorum %d exceeds approver set size %d", quorum, n)
+		if q := resolvedQuorum(in.Quorum); q > len(eligible) {
+			return fmt.Errorf("approval: quorum %d exceeds %d eligible distinct approver(s) in the approver set", q, len(eligible))
 		}
 	}
 	return nil
@@ -260,10 +266,7 @@ func (s *Service) CreateApprovalRequest(ctx context.Context, in *CreateApprovalR
 	if err := in.validate(); err != nil {
 		return "", w.Wrapf(err, "validate")
 	}
-	quorum := in.Quorum
-	if quorum == 0 {
-		quorum = 1
-	}
+	quorum := resolvedQuorum(in.Quorum)
 
 	r := &ApprovalRequest{
 		ID:          NewIDString(),
@@ -503,6 +506,16 @@ func (s *Service) SweepApprovalRequest(ctx context.Context, orgID, id string, no
 		return "", err
 	}
 	return newState, nil
+}
+
+// resolvedQuorum applies the "0 means the single-approver default" rule in one
+// place, so validate() and CreateApprovalRequest can never disagree on the
+// effective quorum.
+func resolvedQuorum(q int) int {
+	if q == 0 {
+		return 1
+	}
+	return q
 }
 
 func containsString(xs []string, v string) bool {

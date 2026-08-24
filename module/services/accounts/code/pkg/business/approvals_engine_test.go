@@ -428,6 +428,65 @@ func TestApprovalEngine_Create_RejectsQuorumAboveApproverSet(t *testing.T) {
 	require.Error(t, err)
 }
 
+func TestApprovalEngine_Create_RejectsRequesterOnlyApproverSet(t *testing.T) {
+	svc, _ := newApprovalService(t)
+	// Quorum 1, but the only pinned approver is the requester and AllowSelf is
+	// off, so no eligible decider exists — len()==1 would have passed, distinct-
+	// eligible count is 0. Must be rejected as a permanently-stuck gate.
+	_, err := svc.CreateApprovalRequest(context.Background(), &business.CreateApprovalRequestInput{
+		OrgID: "org-a", Resource: "role", Action: "grant", RequestedBy: "user-1",
+		Policy: business.ApprovalPolicy{ApproverSet: []string{"user-1"}},
+	})
+	require.Error(t, err)
+}
+
+func TestApprovalEngine_Create_RejectsDuplicateApproverSet(t *testing.T) {
+	svc, _ := newApprovalService(t)
+	// len(["a","a"])==2 satisfies a naive size check, but only one DISTINCT
+	// decider exists and can vote once, so quorum 2 is unreachable.
+	_, err := svc.CreateApprovalRequest(context.Background(), &business.CreateApprovalRequestInput{
+		OrgID: "org-a", Resource: "role", Action: "grant", RequestedBy: "user-1",
+		Quorum: 2,
+		Policy: business.ApprovalPolicy{ApproverSet: []string{"approver-1", "approver-1"}},
+	})
+	require.Error(t, err)
+}
+
+func TestApprovalEngine_Create_AllowsRequesterInSetWhenAllowSelf(t *testing.T) {
+	svc, _ := newApprovalService(t)
+	// With AllowSelf the requester IS an eligible decider, so a requester-only
+	// set of size 1 satisfies quorum 1 and the request is both creatable and
+	// approvable by the requester.
+	id := mustCreate(t, svc, &business.CreateApprovalRequestInput{
+		OrgID: "org-a", Resource: "role", Action: "grant", RequestedBy: "user-1",
+		Policy: business.ApprovalPolicy{ApproverSet: []string{"user-1"}, AllowSelf: true},
+	})
+	out, err := svc.Decide(context.Background(), "org-a", id, business.DecideInput{
+		Decider: "user-1", Decision: business.DecisionApprove,
+	})
+	require.NoError(t, err)
+	require.True(t, out.Approved)
+}
+
+func TestApprovalEngine_Decide_AllowsBeforeExpiry(t *testing.T) {
+	svc, _ := newApprovalService(t)
+	future := time.Now().Add(time.Hour)
+	// ExpiresAt is set but in the future: the decision window is open, so Decide
+	// must proceed. Covers the near side of the boundary that RejectsExpired does
+	// not — a flipped predicate that rejected not-yet-expired requests would fail
+	// here. The one-hour margin keeps it non-flaky against the wall clock.
+	id := mustCreate(t, svc, &business.CreateApprovalRequestInput{
+		OrgID: "org-a", Resource: "role", Action: "grant", RequestedBy: "user-1",
+		ExpiresAt: &future,
+	})
+
+	out, err := svc.Decide(context.Background(), "org-a", id, business.DecideInput{
+		Decider: "approver-1", Decision: business.DecisionApprove,
+	})
+	require.NoError(t, err)
+	require.True(t, out.Approved)
+}
+
 func TestApprovalEngine_Decide_RejectsEmptyOrg(t *testing.T) {
 	svc, _ := newApprovalService(t)
 	id := mustCreate(t, svc, &business.CreateApprovalRequestInput{
