@@ -351,7 +351,7 @@
     "services/accounts/code/pkg/business/rpc_policy_matrix.go": "22fa98916318fc1f04bc9b51ae9bfbc00dccd970ab61dd552c190c3d45ed8851",
     "services/accounts/code/pkg/business/service.go": "caad0057d42c4c1ddf36cf12d54089594311abad9bb9f1a2e8901470bfabbf36",
     "services/accounts/code/pkg/business/service_catalog.go": "40d80216aa9d956dafb962c10c00897e4da2afedd0a445756f63345a91399222",
-    "services/accounts/code/pkg/business/service_catalog_test.go": "f90e736706f9ab9669582cc479e7af1b71533981acb0e1bae8ec240194586505",
+    "services/accounts/code/pkg/business/service_catalog_test.go": "fb4e827e820fd9d16808c8f490b2b28bd1807f06a3f16a3024b669f41a3045f5",
     "services/accounts/code/pkg/business/service_test.go": "e917e57f8d9c00e9b6b24fe7759d770c35fde8d7206331033e0fadbddb673e60",
     "services/accounts/code/pkg/business/service_vocabulary.go": "f25eb84e158eb871c56a63a00d84fce09507a1e4f7dae74168189e7d4bfdc352",
     "services/accounts/code/pkg/business/service_vocabulary_composition_test.go": "73749425e7a5be30c82d92ce7dc412e55cdd83c4538c0ac74528073277d3093a",
