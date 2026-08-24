@@ -58,9 +58,12 @@ describe("proxy solution-page CSP", () => {
 
 		const response = proxy(authedRequest("/s/audit"));
 		const csp = response.headers.get("content-security-policy") ?? "";
-		expect(directive(csp, "script-src")).toBe(
-			"script-src 'self' 'unsafe-inline' http://localhost:8091",
-		);
+		const scriptSrc = directive(csp, "script-src");
+		// Nonce-based, no unsafe-inline; strict-dynamic + the remote origin.
+		expect(scriptSrc).not.toContain("'unsafe-inline'");
+		expect(scriptSrc).toMatch(/'nonce-[^']+'/);
+		expect(scriptSrc).toContain("'strict-dynamic'");
+		expect(scriptSrc).toContain("http://localhost:8091");
 		expect(directive(csp, "connect-src")).toBe(
 			"connect-src 'self' http://localhost:8091",
 		);
@@ -69,18 +72,22 @@ describe("proxy solution-page CSP", () => {
 	it("locks the CSP to self for an unregistered solution id", () => {
 		const response = proxy(authedRequest("/s/unknown"));
 		const csp = response.headers.get("content-security-policy") ?? "";
-		expect(directive(csp, "script-src")).toBe(
-			"script-src 'self' 'unsafe-inline'",
-		);
+		const scriptSrc = directive(csp, "script-src");
+		expect(scriptSrc).not.toContain("'unsafe-inline'");
+		expect(scriptSrc).toMatch(/'nonce-[^']+'/);
+		expect(scriptSrc).toContain("'strict-dynamic'");
+		expect(scriptSrc).not.toContain("localhost");
 		expect(directive(csp, "connect-src")).toBe("connect-src 'self'");
 	});
 
 	it("does not throw and stays self-only on a malformed id segment", () => {
 		const response = proxy(authedRequest("/s/%ZZ"));
 		const csp = response.headers.get("content-security-policy") ?? "";
-		expect(directive(csp, "script-src")).toBe(
-			"script-src 'self' 'unsafe-inline'",
-		);
+		const scriptSrc = directive(csp, "script-src");
+		expect(scriptSrc).not.toContain("'unsafe-inline'");
+		expect(scriptSrc).toMatch(/'nonce-[^']+'/);
+		expect(scriptSrc).toContain("'strict-dynamic'");
+		expect(scriptSrc).not.toContain("localhost");
 		expect(directive(csp, "connect-src")).toBe("connect-src 'self'");
 	});
 
@@ -113,9 +120,16 @@ describe("proxy solution-page CSP", () => {
 		);
 	});
 
-	it("leaves the build-time CSP untouched on non-solution pages", () => {
+	it("sets a per-request nonce'd self CSP on non-solution pages", () => {
+		// The proxy now owns the CSP on every route (next.config emits only the
+		// constant hardening headers), so a non-solution page gets a nonce'd
+		// self policy — not the old null (which relied on next.config's static CSP).
 		const response = proxy(authedRequest("/settings"));
-		expect(response.headers.get("content-security-policy")).toBeNull();
+		const csp = response.headers.get("content-security-policy") ?? "";
+		const scriptSrc = directive(csp, "script-src");
+		expect(scriptSrc).not.toContain("'unsafe-inline'");
+		expect(scriptSrc).toMatch(/'nonce-[^']+'/);
+		expect(scriptSrc).toContain("'strict-dynamic'");
 	});
 
 	it("does not emit a CSP when redirecting an unauthenticated visitor", () => {
