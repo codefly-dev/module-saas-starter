@@ -403,7 +403,7 @@ func TestBeginOAuth_RequiresPolicyAndSigner(t *testing.T) {
 
 	state, err := testService.BeginOAuth(testCtx, "workos", "https://app.acme.com/auth/callback")
 	require.NoError(t, err)
-	require.NoError(t, signer.Verify(state, "workos", "https://app.acme.com/auth/callback"))
+	require.NoError(t, signer.Verify(context.Background(), state, "workos", "https://app.acme.com/auth/callback"))
 
 	testService.SetOAuthStateSigner(nil)
 	_, err = testService.BeginOAuth(testCtx, "workos", "https://app.acme.com/auth/callback")
@@ -426,7 +426,7 @@ func TestBeginOAuth_UsesVerifiedCodeflyPublicOriginWithoutStaticPort(t *testing.
 	redirectURI := "http://localhost:54321/auth/callback"
 	state, err := testService.BeginOAuth(ctx, "workos", redirectURI)
 	require.NoError(t, err)
-	require.NoError(t, signer.Verify(state, "workos", redirectURI))
+	require.NoError(t, signer.Verify(context.Background(), state, "workos", redirectURI))
 
 	_, err = testService.BeginOAuth(ctx, "workos", "http://localhost:54322/auth/callback")
 	require.ErrorIs(t, err, auth.ErrInvalidOAuthRequest)

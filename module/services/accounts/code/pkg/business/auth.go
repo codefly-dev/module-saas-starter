@@ -74,7 +74,7 @@ func (s *Service) Authenticate(ctx context.Context, req *gen.AuthenticateRequest
 		if s.oauthState == nil {
 			return nil, w.Wrapf(auth.ErrInvalidOAuthState, "oauth state signer not configured")
 		}
-		if err := s.oauthState.Verify(oauthCode.State, req.Provider, oauthCode.RedirectUri); err != nil {
+		if err := s.oauthState.Verify(ctx, oauthCode.State, req.Provider, oauthCode.RedirectUri); err != nil {
 			// Surface the canonical sentinel without leaking whether the
 			// signature, expiry, or binding check failed.
 			return nil, w.Wrapf(auth.ErrInvalidOAuthState, "oauth state")
