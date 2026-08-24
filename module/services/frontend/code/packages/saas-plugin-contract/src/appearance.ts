@@ -83,12 +83,21 @@ export const DEFAULT_FRONTEND_APPEARANCE: FrontendAppearance = deepFreeze({
 		'system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif',
 	fontHeading:
 		'system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif',
+	// Structural defaults reproduce today's exact layout; omitting any of them
+	// leaves the rendered product byte-for-byte unchanged.
+	spacing: "0.25rem",
+	fontSizeBase: "1rem",
+	sidebarWidth: "16rem",
+	sidebarWidthIcon: "3rem",
+	borderWidth: "1px",
+	shadowStrength: "1",
 	light,
 	dark,
 });
 
 const SAFE_CSS_VALUE = /^[^{};\r\n]+$/;
-const SAFE_RADIUS = /^(?:0|(?:\d+(?:\.\d+)?)(?:px|rem|em))$/;
+const SAFE_LENGTH = /^(?:0|(?:\d+(?:\.\d+)?)(?:px|rem|em))$/;
+const SAFE_RADIUS = SAFE_LENGTH;
 
 function assertAppearance(
 	condition: unknown,
@@ -148,7 +157,20 @@ export function resolveFrontendAppearance(
 	);
 	exactKeys(
 		definition,
-		["defaultTheme", "radius", "fontSans", "fontHeading", "light", "dark"],
+		[
+			"defaultTheme",
+			"radius",
+			"fontSans",
+			"fontHeading",
+			"spacing",
+			"fontSizeBase",
+			"sidebarWidth",
+			"sidebarWidthIcon",
+			"borderWidth",
+			"shadowStrength",
+			"light",
+			"dark",
+		],
 		"appearance",
 	);
 	const defaultTheme =
@@ -168,14 +190,55 @@ export function resolveFrontendAppearance(
 	const fontHeading = definition.fontHeading ?? fontSans;
 	validateValue(fontSans, "appearance fontSans");
 	validateValue(fontHeading, "appearance fontHeading");
+	const spacing = resolveLength("spacing", definition.spacing);
+	const fontSizeBase = resolveLength("fontSizeBase", definition.fontSizeBase);
+	const sidebarWidth = resolveLength("sidebarWidth", definition.sidebarWidth);
+	const sidebarWidthIcon = resolveLength(
+		"sidebarWidthIcon",
+		definition.sidebarWidthIcon,
+	);
+	const borderWidth = resolveLength("borderWidth", definition.borderWidth);
+	const shadowStrength = resolveShadowStrength(definition.shadowStrength);
 	return deepFreeze({
 		defaultTheme,
 		radius,
 		fontSans,
 		fontHeading,
+		spacing,
+		fontSizeBase,
+		sidebarWidth,
+		sidebarWidthIcon,
+		borderWidth,
+		shadowStrength,
 		light: resolveTokens("light", definition.light),
 		dark: resolveTokens("dark", definition.dark),
 	});
+}
+
+function resolveLength(
+	field: keyof FrontendAppearance,
+	value: string | undefined,
+): string {
+	const resolved = value ?? (DEFAULT_FRONTEND_APPEARANCE[field] as string);
+	assertAppearance(
+		typeof resolved === "string" && SAFE_LENGTH.test(resolved),
+		`appearance ${field} must be 0 or a px/rem/em length`,
+	);
+	return resolved;
+}
+
+function resolveShadowStrength(value: string | undefined): string {
+	const resolved = value ?? DEFAULT_FRONTEND_APPEARANCE.shadowStrength;
+	const parsed = Number(resolved);
+	assertAppearance(
+		typeof resolved === "string" &&
+			/^\d+(?:\.\d+)?$/.test(resolved) &&
+			Number.isFinite(parsed) &&
+			parsed >= 0 &&
+			parsed <= 2,
+		"appearance shadowStrength must be a unitless number between 0 and 2",
+	);
+	return resolved;
 }
 
 function deepFreeze<T extends FrontendAppearance>(appearance: T): T {

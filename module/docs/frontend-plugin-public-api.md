@@ -46,10 +46,14 @@ metadata set, including cross-plugin and filesystem-route collisions.
 
 `defineFrontend` also resolves application-owned branding and a complete,
 immutable semantic light/dark appearance preset. Consumers may configure the
-default `light`, `dark`, or `system` preference, typography, radius, and typed
-semantic token overrides. The host projects this resolved preset during server
-rendering. Plugins do not contribute branding, raw CSS, or appearance state.
-Tenant branding is a validated runtime overlay owned by the host.
+default `light`, `dark`, or `system` preference, per-mode semantic color token
+overrides, and the shared structural/typographic tokens — `radius`,
+`fontSans`/`fontHeading`, `fontSizeBase`, `spacing` (density), `sidebarWidth`,
+`sidebarWidthIcon`, `borderWidth`, and `shadowStrength`. Color is per-mode;
+structure and typography are shared across modes. The host projects this
+resolved preset during server rendering. Plugins do not contribute branding,
+raw CSS, or appearance state. Tenant branding is a validated runtime overlay
+owned by the host.
 
 `@codefly/saas-plugin-react` owns the separate React registration and service
 runtime. Every declared route/widget ID must receive exactly one component;
