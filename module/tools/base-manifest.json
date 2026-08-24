@@ -208,7 +208,7 @@
     "services/accounts/code/pkg/auth/dev/validator.go": "51c975cd1793c36d0b8e8288f29a0985766c76fd04f1a69c3593b150eacb6e97",
     "services/accounts/code/pkg/auth/dev/validator_test.go": "72f7102575763774ea16ee1ea024d197bcf3a2b272d2dc02584b54967e415a85",
     "services/accounts/code/pkg/auth/ed25519/minter.go": "06b34774fccb7097427152e1feaf91ccd9b8976e5dcef93eead6813872841dd0",
-    "services/accounts/code/pkg/auth/ed25519/minter_test.go": "0d1a096cac0068b52a760e895ae4eeb383db82c188ae5a5a1a9cd27d50841e61",
+    "services/accounts/code/pkg/auth/ed25519/minter_test.go": "f9bd2eaf3eba26682a407fe0d6f6c7f6ee108cd13ed91d4356d402e1c616e577",
     "services/accounts/code/pkg/auth/ed25519/vault_key.go": "bbb40338b9a8ac47f3bfc0af9e0d4e9ff71c126f99ec83d7e5c2c397c597deb2",
     "services/accounts/code/pkg/auth/ed25519/vault_key_test.go": "6a698aed6bd8ba5e2bc69fb62e6ecd8dd803fd31e004f16d0560508d280bceda",
     "services/accounts/code/pkg/auth/errors.go": "e49f65c3673031226c3443d0c84cc78b82b9367e2a2eede3364af635f87f6526",
