@@ -38,6 +38,12 @@ var (
 	// downgraded to an unverified decode.
 	ErrJWKSUnavailable = errors.New("auth: jwks unavailable")
 
+	// ErrRevocationUnavailable is the fail-closed outcome when the access-token
+	// revocation list cannot be consulted (backing store unreachable). The token
+	// is denied rather than admitted, since it may have been revoked — the same
+	// stance the sidecar takes on its revocation check.
+	ErrRevocationUnavailable = errors.New("auth: revocation list unavailable")
+
 	// ErrGroupNotAllowed is a distinct authorization outcome (not a credential
 	// failure): the token verified, but its group claim did not overlap the
 	// configured allow-list. Surfaced separately so a frontend can render

@@ -110,6 +110,10 @@ func (i *connectPolicyInterceptor) authorize(ctx context.Context, procedure stri
 	}
 	identity, err := minter.VerifyAccess(token)
 	if err != nil {
+		if errors.Is(err, auth.ErrRevocationUnavailable) {
+			wool.Get(ctx).In("connectPolicyInterceptor").Warn("revocation list unavailable, denying (fail-closed)", wool.ErrField(err))
+			return ctx, connect.NewError(connect.CodeUnavailable, errors.New("authorization temporarily unavailable"))
+		}
 		wool.Get(ctx).In("connectPolicyInterceptor").Debug("VerifyAccess failed", wool.ErrField(err))
 		return ctx, connect.NewError(connect.CodeUnauthenticated, errors.New("invalid or expired access token"))
 	}

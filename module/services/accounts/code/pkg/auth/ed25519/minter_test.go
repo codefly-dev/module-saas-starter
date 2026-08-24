@@ -220,6 +220,39 @@ func newIdentity() *auth.Identity {
 	}
 }
 
+type fakeRevoker struct {
+	revoked bool
+	err     error
+}
+
+func (fakeRevoker) Revoke(context.Context, string, time.Duration) error { return nil }
+func (f fakeRevoker) IsRevoked(context.Context, string) (bool, error)   { return f.revoked, f.err }
+
+func TestVerifyAccess_FailsClosedWhenRevocationUnavailable(t *testing.T) {
+	ctx := context.Background()
+	m, _ := newMinter(t)
+	pair, err := m.Mint(ctx, newIdentity())
+	require.NoError(t, err)
+
+	m.SetRevoker(fakeRevoker{err: errors.New("redis unreachable")})
+
+	_, err = m.VerifyAccess(pair.AccessToken)
+	require.ErrorIs(t, err, auth.ErrRevocationUnavailable,
+		"a revocation-store outage must deny the token, not admit it")
+}
+
+func TestVerifyAccess_RejectsRevokedToken(t *testing.T) {
+	ctx := context.Background()
+	m, _ := newMinter(t)
+	pair, err := m.Mint(ctx, newIdentity())
+	require.NoError(t, err)
+
+	m.SetRevoker(fakeRevoker{revoked: true})
+
+	_, err = m.VerifyAccess(pair.AccessToken)
+	require.ErrorIs(t, err, auth.ErrTokenRevoked)
+}
+
 func TestMint_And_VerifyAccess_Roundtrip(t *testing.T) {
 	ctx := context.Background()
 	m, _ := newMinter(t)

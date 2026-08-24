@@ -3,6 +3,7 @@ package adapters
 import (
 	"context"
 	"crypto/subtle"
+	"errors"
 	"strings"
 
 	"google.golang.org/grpc"
@@ -142,6 +143,10 @@ func (i *grpcPolicyAuthorizer) authorize(ctx context.Context, fullMethod string)
 	}
 	identity, err := minter.VerifyAccess(token)
 	if err != nil {
+		if errors.Is(err, auth.ErrRevocationUnavailable) {
+			wool.Get(ctx).In("grpcPolicyInterceptor").Warn("revocation list unavailable, denying (fail-closed)", wool.ErrField(err))
+			return ctx, status.Error(codes.Unavailable, "authorization temporarily unavailable")
+		}
 		wool.Get(ctx).In("grpcPolicyInterceptor").Debug("VerifyAccess failed", wool.ErrField(err))
 		return ctx, status.Error(codes.Unauthenticated, "invalid or expired access token")
 	}

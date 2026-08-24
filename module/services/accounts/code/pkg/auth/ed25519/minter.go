@@ -571,9 +571,16 @@ func (m *Minter) VerifyAccess(tokenString string) (*auth.Identity, error) {
 	// Access-token revocation (logout / explicit kill). Checked AFTER
 	// signature + claim validation so an unsigned/expired token still
 	// fails fast without a backing-store call. NoopTokenRevoker returns
-	// false here so the dev path is unchanged.
-	if claims.ID != "" && m.revoker.IsRevoked(context.Background(), claims.ID) {
-		return nil, auth.ErrTokenRevoked
+	// (false, nil) so the dev path is unchanged. A store error fails closed:
+	// a possibly-revoked token is denied, not admitted.
+	if claims.ID != "" {
+		revoked, err := m.revoker.IsRevoked(context.Background(), claims.ID)
+		if err != nil {
+			return nil, fmt.Errorf("%w: %v", auth.ErrRevocationUnavailable, err)
+		}
+		if revoked {
+			return nil, auth.ErrTokenRevoked
+		}
 	}
 
 	return &auth.Identity{

@@ -76,6 +76,25 @@ func TestForwardedIdentityStampsVerifiedActorOnlyWhenGatewayTrusted(t *testing.T
 	require.False(t, ok, "a caller-injected x-act must not be trusted")
 }
 
+func TestPolicyAdmissionFailsClosedWhenRevocationUnavailable(t *testing.T) {
+	const method = "/saas.accounts.v1.UserService/GetSelf"
+	minter := func() auth.JWTMinter {
+		return &fixedAccessMinter{verifyErr: auth.ErrRevocationUnavailable}
+	}
+
+	// A revocation-store outage is a retryable operator-side failure, not bad
+	// credentials: the caller must be denied (fail-closed) with Unavailable so a
+	// possibly-revoked token is never admitted.
+	connectPolicy := &connectPolicyInterceptor{getMinter: minter}
+	_, connectErr := connectPolicy.authorize(context.Background(), method, http.Header{"Authorization": []string{"Bearer any"}})
+	require.Equal(t, connect.CodeUnavailable, connect.CodeOf(connectErr))
+
+	grpcPolicy := &grpcPolicyAuthorizer{getMinter: minter, exposure: rpcExposureTenant}
+	ctx := metadata.NewIncomingContext(context.Background(), metadata.Pairs("authorization", "Bearer any"))
+	_, grpcErr := grpcPolicy.authorize(ctx, method)
+	require.Equal(t, codes.Unavailable, status.Code(grpcErr))
+}
+
 func TestPolicyAdmissionParity(t *testing.T) {
 	previousToken := internalToken
 	SetInternalToken("test-internal-token")

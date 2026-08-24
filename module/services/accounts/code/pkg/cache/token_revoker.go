@@ -34,21 +34,20 @@ func (r *TokenRevoker) Revoke(ctx context.Context, jti string, ttl time.Duration
 	return r.cache.Set(ctx, tokenRevokerPrefix+jti, []byte{1}, ttl)
 }
 
-// IsRevoked returns true iff jti has an unexpired revocation marker.
-// Errors (Redis down, etc.) are treated as misses — we'd rather honor
-// a token that should have been revoked than reject every request
-// during a Redis blip. Logout's blast radius is bounded by access TTL
-// regardless.
-func (r *TokenRevoker) IsRevoked(ctx context.Context, jti string) bool {
+// IsRevoked reports whether jti has an unexpired revocation marker. A cache
+// miss (ErrNotFound) is an authoritative "not revoked" (false, nil); any other
+// error (Redis unreachable etc.) is returned so the caller fails closed — a
+// revocation must not be silently bypassed during a backing-store outage.
+func (r *TokenRevoker) IsRevoked(ctx context.Context, jti string) (bool, error) {
 	if jti == "" {
-		return false
+		return false, nil
 	}
 	_, err := r.cache.Get(ctx, tokenRevokerPrefix+jti)
 	if err != nil {
-		// ErrNotFound is the expected miss path; anything else (Redis
-		// unreachable etc.) we silently treat as not-revoked.
-		_ = errors.Is(err, ErrNotFound)
-		return false
+		if errors.Is(err, ErrNotFound) {
+			return false, nil
+		}
+		return false, err
 	}
-	return true
+	return true, nil
 }
