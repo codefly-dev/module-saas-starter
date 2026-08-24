@@ -4,9 +4,10 @@
 // cross-origin subresources this app actually loads.
 //
 // Next bakes `headers()` into the routes manifest at BUILD time, so this reads
-// build-time env only. Every widening below is keyed off the same NEXT_PUBLIC_*
-// build flag that decides whether the feature ships in the bundle at all, so
-// the CSP can never drift out of sync with the code that needs it.
+// build-time env only. Every widening below is keyed off the same build-time
+// signal that gates the code needing it — a NEXT_PUBLIC_* flag for a bundled
+// feature, or NODE_ENV for React's development-only eval() — so the CSP can
+// never drift out of sync with the code that needs it.
 //
 // Module Federation is the exception: solutions self-register at RUNTIME (see
 // src/solutions/registry.ts), so their origins are not knowable when the
