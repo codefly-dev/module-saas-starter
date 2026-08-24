@@ -125,5 +125,8 @@ frontend ([FRONTEND_ARCHITECTURE.md](./FRONTEND_ARCHITECTURE.md),
 ([SUPPLY_CHAIN_SECURITY.md](./SUPPLY_CHAIN_SECURITY.md)), security review and
 hardening ([SECURITY_REVIEW.md](./SECURITY_REVIEW.md),
 [SECURITY_HARDENING_PLAN.md](./SECURITY_HARDENING_PLAN.md)), and production
-readiness ([PRODUCTION_READY.md](./PRODUCTION_READY.md)). Start from
+readiness ([PRODUCTION_READY.md](./PRODUCTION_READY.md)), and a cross-domain
+platform-functionality reference mapping an external multi-tenant-platform audit
+to what this starter ships, partially ships, or lacks
+([PLATFORM_REFERENCE.md](./PLATFORM_REFERENCE.md)). Start from
 [MODULE.md](./MODULE.md), whose "Quick links" section indexes the full set.
