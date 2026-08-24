@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 
+	"accounts/pkg/business"
 	gen "accounts/pkg/gen/saas/accounts/v1"
 
 	"time"
@@ -37,6 +38,9 @@ func (s *PostgresStore) CreateOrganization(ctx context.Context, org *gen.Organiz
 			org.Id, org.OwnerId,
 		); err != nil {
 			return w.Wrapf(err, "failed to add owner as org member")
+		}
+		if _, err := executor.Exec(ctx, business.AttachFreePlanSubscriptionSQL, org.Id); err != nil {
+			return w.Wrapf(err, "failed to attach free plan")
 		}
 		return nil
 	}

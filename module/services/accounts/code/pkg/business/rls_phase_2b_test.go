@@ -150,9 +150,11 @@ func TestRLS_Subscriptions_CrossTenantBlocked(t *testing.T) {
 	_, orgA := mustUserAndOrg(t, ctx, "alice-sub@rls-test.com", "alice-sub-rls", "Acme SUB A")
 	_, orgB := mustUserAndOrg(t, ctx, "bob-sub@rls-test.com", "bob-sub-rls", "Acme SUB B")
 
-	// Resolve the seeded "free" plan's UUID — subscriptions.plan_id
-	// is a UUID FK to plans(id), not the plan name.
-	var freePlanID, proPlanID string
+	// Both orgs receive the seeded free plan at creation, so each already
+	// holds exactly one active subscription — no manual insert needed. Resolve
+	// the free plan's UUID to assert org A's subscription points at it;
+	// subscriptions.plan_id is a UUID FK to plans(id), not the plan name.
+	var freePlanID string
 	require.NoError(t, testStore.WithControlPlane(ctx, func(ctx context.Context) error {
 		free, err := testStore.GetPlanByName(ctx, "free")
 		if err != nil {
@@ -163,31 +165,7 @@ func TestRLS_Subscriptions_CrossTenantBlocked(t *testing.T) {
 		require.Zero(t, free.TrialDays)
 		require.Equal(t, "unspecified", free.TaxBehavior)
 		freePlanID = free.ID
-		pro, err := testStore.GetPlanByName(ctx, "pro")
-		if err != nil {
-			return err
-		}
-		require.NotNil(t, pro, "expected seeded 'pro' plan from migration 9")
-		require.True(t, pro.CheckoutEnabled)
-		require.Equal(t, 14, pro.TrialDays)
-		require.Equal(t, "unspecified", pro.TaxBehavior)
-		proPlanID = pro.ID
 		return nil
-	}))
-
-	now := time.Now()
-	end := now.Add(30 * 24 * time.Hour)
-	require.NoError(t, testStore.WithControlPlane(ctx, func(ctx context.Context) error {
-		if err := testStore.CreateSubscription(ctx, &business.Subscription{
-			ID: business.NewIDString(), OrgID: orgA, PlanID: freePlanID, Status: "active",
-			CurrentPeriodStart: &now, CurrentPeriodEnd: &end,
-		}); err != nil {
-			return err
-		}
-		return testStore.CreateSubscription(ctx, &business.Subscription{
-			ID: business.NewIDString(), OrgID: orgB, PlanID: proPlanID, Status: "active",
-			StripeSubscriptionID: "sub_b", CurrentPeriodStart: &now, CurrentPeriodEnd: &end,
-		})
 	}))
 
 	// As A's tx: GetSubscription(orgA) succeeds, GetSubscription(orgB) returns nil.
@@ -195,6 +173,8 @@ func TestRLS_Subscriptions_CrossTenantBlocked(t *testing.T) {
 		mine, err := testStore.GetSubscription(ctx, orgA)
 		require.NoError(t, err)
 		require.NotNil(t, mine, "org A should see its own subscription")
+		require.Equal(t, freePlanID, mine.PlanID,
+			"org A is on the free plan attached at creation")
 		require.Empty(t, mine.StripeSubscriptionID,
 			"a first-party free plan has no Stripe subscription id")
 

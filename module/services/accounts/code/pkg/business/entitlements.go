@@ -86,6 +86,17 @@ type PublicPlan struct {
 	Entitlements    []PlanFeatureLimit
 }
 
+// AttachFreePlanSubscriptionSQL activates the seeded default free plan for a
+// newly created organization inside the caller's transaction, so an org is
+// never plan-less. Binding to the plan by name ties the subscription to the
+// row whose plan_entitlements the migration seeded, so entitlement checks and
+// the CHOOSE_PLAN onboarding step are satisfied at creation without a
+// follow-up POST /v1/billing/free-plan. Both organization-creation paths run
+// it from the same statement so neither can drift.
+const AttachFreePlanSubscriptionSQL = `
+	INSERT INTO subscriptions (org_id, plan_id, status)
+	SELECT $1, id, 'active' FROM plans WHERE name = 'free'`
+
 // Subscription links an org to a plan.
 type Subscription struct {
 	ID                   string
