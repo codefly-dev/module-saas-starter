@@ -76,6 +76,7 @@ function baselineCspInputs(): {
 	solutionOrigins: string[];
 	analyticsOrigin: string | null;
 	turnstile: boolean;
+	isDev: boolean;
 } {
 	const snapshot = process.env.SOLUTION_CSP_INPUTS;
 	if (!snapshot) {

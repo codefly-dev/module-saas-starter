@@ -143,12 +143,29 @@ describe("resolveCspInputs / contentSecurityPolicyFromInputs", () => {
 			NEXT_PUBLIC_PRODUCT_ANALYTICS_MODE: "posthog",
 			NEXT_PUBLIC_POSTHOG_HOST: "https://eu.i.posthog.com",
 			NEXT_PUBLIC_ABUSE_PROTECTION_MODE: "turnstile",
+			NODE_ENV: "development",
 		});
 		expect(inputs).toEqual({
 			solutionOrigins: ["https://a.example.com"],
 			analyticsOrigin: "https://eu.i.posthog.com",
 			turnstile: true,
+			isDev: true,
 		});
+	});
+
+	it("snapshots 'unsafe-eval' through the proxy path only in development", () => {
+		const dev = contentSecurityPolicyFromInputs(
+			resolveCspInputs({ NODE_ENV: "development" }),
+			["https://remote.example"],
+		);
+		expect(directive(dev, "script-src")).toBe(
+			"script-src 'self' 'unsafe-inline' 'unsafe-eval' https://remote.example",
+		);
+		const prod = contentSecurityPolicyFromInputs(
+			resolveCspInputs({ NODE_ENV: "production" }),
+			["https://remote.example"],
+		);
+		expect(directive(prod, "script-src")).not.toContain("'unsafe-eval'");
 	});
 
 	it("builds the policy from a snapshot without re-reading env", () => {
@@ -159,6 +176,7 @@ describe("resolveCspInputs / contentSecurityPolicyFromInputs", () => {
 			solutionOrigins: [],
 			analyticsOrigin: "https://eu.i.posthog.com",
 			turnstile: false,
+			isDev: false,
 		};
 		const csp = contentSecurityPolicyFromInputs(inputs, [
 			"http://localhost:8091",
