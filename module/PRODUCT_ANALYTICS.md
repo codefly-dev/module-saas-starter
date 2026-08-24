@@ -13,6 +13,10 @@ Product events must not be inferred from audit rows or usage receipts. A domain
 outcome may legitimately produce one record in more than one plane, with a
 different contract and retention policy in each.
 
+Which tool owns each observability, feature-flag, and analytics capability —
+and why PostHog owns analytics but not flags, errors, or APM traces — is fixed
+in `docs/adr/0002-observability-flags-analytics-capability-ownership.md`.
+
 ## Canonical event contract
 
 `services/accounts/proto/saas/analytics/v1/events.proto` owns the generated,

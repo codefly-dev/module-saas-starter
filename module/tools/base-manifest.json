@@ -1,6 +1,6 @@
 {
   "note": "Base-file integrity manifest for the saas-starter module. Generated FROM canonical by `node tools/base-integrity.mjs gen`. Consumers MUST NOT hand-edit base files — only add files on the side. Regenerated on every codefly sync from canonical.",
-  "fileCount": 1480,
+  "fileCount": 1481,
   "files": {
     "AUTHORIZATION_CATALOG.md": "b2ea5d41f0098e80315e02e7c4bdbda03b65c8eef463426242552fd3c047ca0a",
     "CONTRACT_VERSIONING.md": "02031aa87922ab5ec573ea582cf584271873481de6ceabbda52b1bfda005ffbd",
@@ -14,7 +14,7 @@
     "JOBS.md": "a9545a85b86f9a59354f58602722d6d5e8fac0b0d5d1a9986ea607f7bc2d6882",
     "MEASUREMENT_RUNBOOKS.md": "a65268da69ee9eba299a8a67ead0ad5647bc89af19e6affcede9c7aa503121ce",
     "METHOD_POLICY.md": "2096ae13eaffe5f6986881ef564dd1114b688179771b3e92fe9a78dd70093299",
-    "PRODUCT_ANALYTICS.md": "166f7da7e269c68502deb4e997510fc7df6c7ef829167d1fda18e69c624dcb8f",
+    "PRODUCT_ANALYTICS.md": "2dd5170cc012e3bfa71105144155f80520a07b69333ce08922b107cab5bc8611",
     "REST_SURFACE.md": "b3c3e3d248c2b65ad32f8e45783682076206f7db6320d8de78a74f2e06f8fa6f",
     "SERVICE_CATALOG.md": "3ff359e528bc7432c71f8327b5a06128963916798378524794bfc1c9d42d4bd8",
     "SETTINGS.md": "e8bd5bbfb4d45ac2bd9a86ac9212f1ec28879088ce14e9c3ff4f9534ca76f529",
@@ -25,6 +25,7 @@
     "deployment/topology.bindings.codefly.yaml": "ae72e857fc6d5fadacfe0d156d3c1594b321e906cffe20bb7c9592a4cf6a26d1",
     "docs/IDENTITY_ACCESS_PLAN.md": "ad620230ff0a2fafcd57a5b0adc55bc8619c775d367e4605dcdffe96d8185aa7",
     "docs/adr/0001-frontend-plugin-packaging.md": "6fe5b3fc0e345d0e002ddf4165d86243567411377520fd22f922e4127babd02b",
+    "docs/adr/0002-observability-flags-analytics-capability-ownership.md": "c00ae54640af68d8abcb900d11bfbfa59be47a9e592ef21dd92bfee37ab74d28",
     "docs/frontend-plugin-architecture.md": "92b3aedb71d819d9ebfcf65bc472b5638830164c55ded5734033880068b3f5c7",
     "docs/frontend-plugin-auth-tenant-matrix.md": "60c70b8abad4f3d420eb7de0e8ca7fecc9b8901ba94fa43bfb9d2ead846a90e9",
     "docs/frontend-plugin-bff-contract.md": "17a6751d670e110a59bc7e8a0d39714904742784177ce9745803096bcd73c52e",
