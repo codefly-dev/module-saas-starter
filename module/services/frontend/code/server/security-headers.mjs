@@ -110,9 +110,20 @@ export function contentSecurityPolicyFromInputs(
 	const analyticsOrigin = inputs.analyticsOrigin;
 	const turnstile = inputs.turnstile;
 
+	// React 19 dev mode uses eval() for debugging features (owner-stack /
+	// callstack reconstruction), so the dev server needs 'unsafe-eval'. Next
+	// sets NODE_ENV at build time — "development" under `next dev`, "production"
+	// under `next build` — so this never widens the production CSP.
+	const isDev = env.NODE_ENV === "development";
+
 	// Remote solution scripts execute in this origin; the MF runtime fetches
 	// their manifest/chunks. Turnstile injects its challenge script.
-	const scriptSrc = ["'self'", "'unsafe-inline'", ...solutionOrigins];
+	const scriptSrc = [
+		"'self'",
+		"'unsafe-inline'",
+		...(isDev ? ["'unsafe-eval'"] : []),
+		...solutionOrigins,
+	];
 	// Same-origin API (proxied via rewrites) + the Sentry tunnel; MF manifest
 	// fetches; PostHog ingestion; Turnstile.
 	const connectSrc = ["'self'", ...solutionOrigins];
