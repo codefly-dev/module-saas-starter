@@ -117,33 +117,35 @@ decisions.
 
 ### Resend
 
-Configure a verified sender plus an existing signing secret:
+`resend.sh` is now a non-writing compatibility shim. Domain and account
+observation, delivery-webhook create/observe with lost-response reconciliation,
+signing-secret capture, setup/runtime credential separation, and email
+configuration projection moved to the
+[`codefly-dev/provider-resend`](https://github.com/codefly-dev/provider-resend)
+plugin. The shim contacts nothing, writes nothing, and manages no remote
+resource. It only shape-checks a supplied API key locally so a malformed
+credential is caught before it reaches the plugin:
 
 ```bash
-scripts/setup/resend.sh \
-  --api-key-file /secure/path/resend-api-key.env \
-  --webhook-secret-file /secure/path/resend-webhook-secret.env \
-  --from 'Example <onboarding@example.com>'
+scripts/setup/resend.sh --api-key-file /secure/path/resend-api-key.env
 ```
 
-Resend cannot forward webhooks to localhost. Expose the Codefly ingress through
-a public HTTPS tunnel, then provision that external origin explicitly:
+The key is never stored; hand it, and any webhook signing secret, to the plugin.
+A Resend key's effective scope (`full_access` versus a domain-restricted sending
+key) cannot be told from the key itself — the plugin proves it with a behavioral
+probe and rejects a full-access key for production runtime. Removed flags fail
+closed with exact guidance: `--provision-webhook`, `--skip-remote-validation`,
+`--webhook-origin`, `--webhook-secret-file`, `--from`, `--force`, `--workspace`,
+and `--skip-doctor` no longer have shim-side semantics.
 
-```bash
-scripts/setup/resend.sh \
-  --api-key-file /secure/path/resend-api-key.env \
-  --from 'Example <onboarding@example.com>' \
-  --webhook-origin https://YOUR-TUNNEL.example \
-  --provision-webhook
-```
+If an earlier run of the old script created a Resend delivery webhook, import it
+into the plugin by its exact remote webhook id after confirmation, not by URL —
+the plugin never adopts a webhook from its URL alone.
 
-`--provision-webhook` rejects a loopback origin and explicitly creates the
-delivery endpoint when absent. If the webhook already exists, Resend cannot
-reveal its signing secret; pass the previously saved secret file instead.
-The receiver verifies the exact raw request with Resend/Svix, rejects stale or
-tampered events before persistence, deduplicates by `svix-id`, stores no raw
-message or recipient PII, and projects invitation `sent`, `delivered`,
-`bounced`, and `complained` states monotonically.
+The accounts webhook receiver still verifies the exact raw request with
+Resend/Svix, rejects stale or tampered events before persistence, deduplicates
+by `svix-id`, stores no raw message or recipient PII, and projects invitation
+`sent`, `delivered`, `bounced`, and `complained` states monotonically.
 
 ### PostHog
 
@@ -241,9 +243,9 @@ codefly run service --env local-dogfood
 Use `codefly endpoint frontend --type http --require-up` for the product
 URL. Provider scripts resolve this endpoint themselves; generated ports and
 URLs must never be copied into application configuration. WorkOS redirects
-and Stripe CLI forwarding can use that loopback endpoint. A remote webhook
-provider requires a separate public HTTPS tunnel/deployed ingress supplied
-with `--webhook-origin`; the scripts refuse to pretend localhost is remotely
+and Stripe CLI forwarding can use that loopback endpoint. Remote webhook
+provisioning now lives in the Stripe and Resend provider plugins, which resolve
+a public HTTPS ingress themselves rather than pretending localhost is remotely
 reachable.
 
 Do not add scripts that inject raw shell environment variables directly into a

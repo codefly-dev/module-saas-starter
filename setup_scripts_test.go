@@ -10,9 +10,10 @@ import (
 )
 
 func TestProviderSetupScriptsExposeHelp(t *testing.T) {
-	// stripe is a non-writing shim; its contract is TestStripeSetupIsNonWritingShim.
+	// stripe and resend are non-writing shims; their contracts are
+	// TestStripeSetupIsNonWritingShim and TestResendSetupIsNonWritingShim.
 	for _, provider := range []string{
-		"workos", "resend", "posthog", "sentry", "otel", "turnstile",
+		"workos", "posthog", "sentry", "otel", "turnstile",
 	} {
 		t.Run(provider, func(t *testing.T) {
 			command := exec.Command("bash", setupScript(t, provider), "--help")
@@ -43,17 +44,6 @@ func TestProviderSetupScriptsInstallSecretSafeIndependentConfigurations(t *testi
 		public  string
 		secret  string
 	}{
-		{
-			name: "resend",
-			args: []string{
-				"--api-key-file", secretFile(t, "RESEND_API_KEY=re_codeflyfixture"),
-				"--webhook-secret-file", secretFile(t, "RESEND_WEBHOOK_SECRET=whsec_codeflyfixture"),
-				"--from", "Codefly <dogfood@example.com>",
-				"--skip-remote-validation",
-			},
-			secrets: []string{"re_codeflyfixture", "whsec_codeflyfixture"},
-			public:  "email.env", secret: "email.secret.env",
-		},
 		{
 			name: "posthog",
 			args: []string{
@@ -173,45 +163,6 @@ func TestWorkOSSetupUsesFrontendEntrypointWithoutPrintingSecret(t *testing.T) {
 	}
 }
 
-func TestRemoteWebhookProvisioningRejectsCodeflyLoopbackOrigin(t *testing.T) {
-	workspace := newSetupWorkspace(t)
-	bin := filepath.Join(t.TempDir(), "bin")
-	mustMkdir(t, bin)
-	codefly := filepath.Join(bin, "codefly")
-	mustWrite(t, codefly, "#!/usr/bin/env bash\nif [[ \"$1\" == endpoint ]]; then [[ \"$2 $3 $4\" == \"frontend --type http\" ]] || exit 64; printf 'http://localhost:42152\\n'; exit 0; fi\nexit 0\n", 0o755)
-	path := bin + string(os.PathListSeparator) + os.Getenv("PATH")
-
-	cases := []struct {
-		name string
-		args []string
-	}{
-		{
-			name: "resend",
-			args: []string{
-				"--api-key-file", secretFile(t, "RESEND_API_KEY=re_codeflyfixture"),
-				"--from", "Codefly <dogfood@example.com>",
-				"--provision-webhook",
-			},
-		},
-	}
-
-	for _, test := range cases {
-		t.Run(test.name, func(t *testing.T) {
-			args := append(test.args, "--workspace", workspace, "--skip-doctor")
-			commandArgs := append([]string{setupScript(t, test.name)}, args...)
-			command := exec.Command("bash", commandArgs...)
-			command.Env = append(os.Environ(), "PATH="+path)
-			output, err := command.CombinedOutput()
-			if err == nil {
-				t.Fatalf("%s unexpectedly provisioned a remote localhost webhook", test.name)
-			}
-			if !strings.Contains(string(output), "--webhook-origin") {
-				t.Fatalf("%s did not explain the public ingress requirement:\n%s", test.name, output)
-			}
-		})
-	}
-}
-
 func TestStripeSetupIsNonWritingShim(t *testing.T) {
 	script := setupScript(t, "stripe")
 
@@ -276,6 +227,73 @@ func TestStripeSetupIsNonWritingShim(t *testing.T) {
 		}
 		if !strings.Contains(string(output), "codefly-dev/provider-stripe") {
 			t.Fatalf("stripe --help did not point at the plugin:\n%s", output)
+		}
+	})
+}
+
+func TestResendSetupIsNonWritingShim(t *testing.T) {
+	script := setupScript(t, "resend")
+
+	// Every flag whose writing or remote semantics moved to the provider plugin
+	// fails closed with migration guidance rather than acting.
+	for _, flag := range []string{
+		"--provision-webhook", "--skip-remote-validation", "--webhook-origin",
+		"--webhook-secret-file", "--from", "--force", "--workspace", "--skip-doctor",
+	} {
+		t.Run("removed"+flag, func(t *testing.T) {
+			output, err := exec.Command("bash", script, flag, "unused").CombinedOutput()
+			if err == nil {
+				t.Fatalf("%s was accepted; the shim must reject it:\n%s", flag, output)
+			}
+			if !strings.Contains(string(output), "is removed") ||
+				!strings.Contains(string(output), "codefly-dev/provider-resend") {
+				t.Fatalf("%s did not explain the migration:\n%s", flag, output)
+			}
+		})
+	}
+
+	// A well-formed key is classified without being printed, and the shim writes
+	// no configuration into its working directory.
+	t.Run("accept well-formed key", func(t *testing.T) {
+		key := "re_codeflyfixture_ABC123xyz"
+		dir := t.TempDir()
+		command := exec.Command("bash", script,
+			"--api-key-file", secretFile(t, "RESEND_API_KEY="+key))
+		command.Dir = dir
+		output, err := command.CombinedOutput()
+		if err != nil {
+			t.Fatalf("%s was refused: %v\n%s", key, err, output)
+		}
+		if strings.Contains(string(output), key) {
+			t.Fatalf("shim printed the %s key", key)
+		}
+		entries, err := os.ReadDir(dir)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(entries) != 0 {
+			t.Fatalf("shim wrote %d file(s) into its working directory", len(entries))
+		}
+	})
+
+	t.Run("refuses a malformed key", func(t *testing.T) {
+		output, err := exec.Command("bash", script,
+			"--api-key-file", secretFile(t, "RESEND_API_KEY=sk_live_notresend")).CombinedOutput()
+		if err == nil {
+			t.Fatalf("shim accepted a malformed key:\n%s", output)
+		}
+		if !strings.Contains(string(output), "well-formed Resend API key") {
+			t.Fatalf("shim did not explain the malformed-key refusal:\n%s", output)
+		}
+	})
+
+	t.Run("help points at the plugin", func(t *testing.T) {
+		output, err := exec.Command("bash", script, "--help").CombinedOutput()
+		if err != nil {
+			t.Fatalf("resend --help: %v\n%s", err, output)
+		}
+		if !strings.Contains(string(output), "codefly-dev/provider-resend") {
+			t.Fatalf("resend --help did not point at the plugin:\n%s", output)
 		}
 	})
 }
