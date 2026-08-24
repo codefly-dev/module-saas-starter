@@ -64,6 +64,15 @@ describe("contentSecurityPolicy", () => {
 		expect(directive(csp, "img-src")).toBe("img-src 'self' data: https:");
 	});
 
+	it("allows 'unsafe-eval' only in development", () => {
+		const dev = contentSecurityPolicy({ NODE_ENV: "development" });
+		expect(directive(dev, "script-src")).toBe(
+			"script-src 'self' 'unsafe-inline' 'unsafe-eval'",
+		);
+		const prod = contentSecurityPolicy({ NODE_ENV: "production" });
+		expect(directive(prod, "script-src")).not.toContain("'unsafe-eval'");
+	});
+
 	it("allowlists registered Module Federation solution origins", () => {
 		const csp = contentSecurityPolicy({
 			FRONTEND_SOLUTION_ORIGINS:
