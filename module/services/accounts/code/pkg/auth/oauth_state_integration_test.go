@@ -1,6 +1,7 @@
 package auth_test
 
 import (
+	"context"
 	"strings"
 	"testing"
 )
@@ -31,7 +32,7 @@ func TestOAuthState_TamperedPayloadRejected(t *testing.T) {
 	// Replace payload with a clearly-different but valid base64url string.
 	tampered := "ZXZpbA" + "." + parts[1]
 
-	if err := signer.Verify(tampered, "workos", "https://app.example.com/cb"); err == nil {
+	if err := signer.Verify(context.Background(), tampered, "workos", "https://app.example.com/cb"); err == nil {
 		t.Errorf("Verify must reject tampered payload; accepted it")
 	}
 }
@@ -44,7 +45,7 @@ func TestOAuthState_ProviderConfusionRejected(t *testing.T) {
 	signer := newSigner(t, "integration-seed")
 	workosState, _ := signer.Mint("workos", "https://app/cb")
 
-	if err := signer.Verify(workosState, "google", "https://app/cb"); err == nil {
+	if err := signer.Verify(context.Background(), workosState, "google", "https://app/cb"); err == nil {
 		t.Errorf("Verify must reject cross-provider replay")
 	}
 }
@@ -62,7 +63,7 @@ func TestOAuthState_RedirectHijackRejected(t *testing.T) {
 		"http://app.example.com/cb",
 		"",
 	} {
-		if err := signer.Verify(state, "workos", evil); err == nil {
+		if err := signer.Verify(context.Background(), state, "workos", evil); err == nil {
 			t.Errorf("Verify must reject redirect=%q", evil)
 		}
 	}

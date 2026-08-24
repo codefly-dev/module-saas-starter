@@ -1,8 +1,11 @@
 package auth_test
 
 import (
+	"context"
+	"errors"
 	"strings"
 	"testing"
+	"time"
 
 	"accounts/pkg/auth"
 )
@@ -18,7 +21,7 @@ func TestOAuthStateSigner_RoundTrip(t *testing.T) {
 		t.Fatalf("state should be payload.sig, got %q", state)
 	}
 
-	if err := s.Verify(state, "workos", "https://app.acme.com/auth/callback"); err != nil {
+	if err := s.Verify(context.Background(), state, "workos", "https://app.acme.com/auth/callback"); err != nil {
 		t.Errorf("Verify: %v", err)
 	}
 }
@@ -32,7 +35,7 @@ func TestOAuthStateSigner_TamperedSignature(t *testing.T) {
 	parts[1] = parts[1][:len(parts[1])-1] + flipChar(parts[1][len(parts[1])-1])
 	tampered := parts[0] + "." + parts[1]
 
-	if err := s.Verify(tampered, "workos", "https://x.example.com/cb"); err == nil {
+	if err := s.Verify(context.Background(), tampered, "workos", "https://x.example.com/cb"); err == nil {
 		t.Errorf("Verify should reject tampered signature")
 	}
 }
@@ -43,7 +46,7 @@ func TestOAuthStateSigner_ProviderMismatch(t *testing.T) {
 
 	// Same redirect, different provider — must reject so a state minted
 	// for one IdP can't be replayed on another.
-	if err := s.Verify(state, "google", "https://x.example.com/cb"); err == nil {
+	if err := s.Verify(context.Background(), state, "google", "https://x.example.com/cb"); err == nil {
 		t.Errorf("Verify should reject provider mismatch")
 	}
 }
@@ -54,7 +57,7 @@ func TestOAuthStateSigner_RedirectMismatch(t *testing.T) {
 
 	// Same provider, different redirect — must reject so an attacker
 	// can't redirect the callback to their own URL with a stolen state.
-	if err := s.Verify(state, "workos", "https://attacker.com/cb"); err == nil {
+	if err := s.Verify(context.Background(), state, "workos", "https://attacker.com/cb"); err == nil {
 		t.Errorf("Verify should reject redirect mismatch")
 	}
 }
@@ -64,7 +67,7 @@ func TestOAuthStateSigner_DifferentKeys(t *testing.T) {
 	b := newSigner(t, "seed-B")
 
 	state, _ := a.Mint("workos", "https://x/cb")
-	if err := b.Verify(state, "workos", "https://x/cb"); err == nil {
+	if err := b.Verify(context.Background(), state, "workos", "https://x/cb"); err == nil {
 		t.Errorf("state minted by A should not verify under B")
 	}
 }
@@ -80,7 +83,7 @@ func TestOAuthStateSigner_MalformedInput(t *testing.T) {
 		strings.Repeat("a", 4096) + "." + strings.Repeat("b", 4096),
 	}
 	for _, c := range cases {
-		if err := s.Verify(c, "workos", "https://x/cb"); err == nil {
+		if err := s.Verify(context.Background(), c, "workos", "https://x/cb"); err == nil {
 			t.Errorf("Verify should reject malformed input: %q", c)
 		}
 	}
@@ -92,6 +95,38 @@ func TestNewOAuthStateSigner_EmptySeedFailsClosed(t *testing.T) {
 	}
 	if _, err := auth.NewOAuthStateSigner([]byte{}); err == nil {
 		t.Errorf("empty seed should be rejected, not silently given a random key")
+	}
+}
+
+func TestOAuthStateSigner_RejectsReplay(t *testing.T) {
+	s := newSigner(t, "seed")
+	state, err := s.Mint("workos", "https://x.example.com/cb")
+	if err != nil {
+		t.Fatalf("Mint: %v", err)
+	}
+	if err := s.Verify(context.Background(), state, "workos", "https://x.example.com/cb"); err != nil {
+		t.Fatalf("first Verify: %v", err)
+	}
+	// The same valid state replayed inside its TTL must be rejected: one-shot.
+	if err := s.Verify(context.Background(), state, "workos", "https://x.example.com/cb"); err == nil {
+		t.Errorf("Verify should reject a replayed state")
+	}
+}
+
+type boomConsumer struct{}
+
+func (boomConsumer) Consume(context.Context, string, time.Duration) (bool, error) {
+	return false, errors.New("redis down")
+}
+
+func TestOAuthStateSigner_FailsOpenWhenConsumerErrors(t *testing.T) {
+	s := newSigner(t, "seed")
+	s.SetNonceConsumer(boomConsumer{})
+	state, _ := s.Mint("workos", "https://x.example.com/cb")
+	// The IdP's own single-use code is the authoritative anti-replay, so a
+	// consumer-store outage must admit rather than break every OAuth login.
+	if err := s.Verify(context.Background(), state, "workos", "https://x.example.com/cb"); err != nil {
+		t.Errorf("Verify should fail open on consumer error, got %v", err)
 	}
 }
 

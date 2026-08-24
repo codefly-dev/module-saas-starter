@@ -429,6 +429,10 @@ func doWork(ctx context.Context) (Clean, error) {
 		// Logout only kills the refresh chain — old access tokens
 		// remain valid until natural expiry (15 min default).
 		minter.SetRevoker(cache.NewTokenRevoker(redisCache))
+		// Redis-backed OAuth-state one-shot list so a captured state can't be
+		// replayed within its TTL across replicas (the in-memory default only
+		// covers a single process).
+		stateSigner.SetNonceConsumer(cache.NewOAuthNonceConsumer(redisCache))
 		// Per-org / per-API-key rate limiting. Falls back to
 		// allow-all if redisCache is nil (no Redis available).
 		adapters.WithRateLimiter(cache.NewRateLimiter(redisCache))
