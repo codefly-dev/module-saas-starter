@@ -755,9 +755,51 @@ func TestGeneratedMeshBaselineIsStrictMTLSDefaultDeny(t *testing.T) {
 	}
 }
 
-func TestGeneratedMeshPolicyDeniesInternalAuthorityFromNonAllowlistedPrincipals(t *testing.T) {
+func TestGeneratedMeshPolicyGatesInternalAuthorityByCallerServiceAccount(t *testing.T) {
 	t.Parallel()
 	root, moduleDir := writeModuleFixture(t, "authority", "identity", []string{"accounts", "auth-sidecar"})
+	// Realistic identity graph: accounts exposes an internal method and runs
+	// under a distinct SA; auth-sidecar is its only declared caller and also
+	// runs under a distinct SA. This is what lets the policy gate by workload
+	// identity instead of the shared sa/default.
+	writeTestFile(t, filepath.Join(moduleDir, "deployment", "topology.bindings.codefly.yaml"), `version: v1
+module:
+  name: identity
+  namespace: identity
+  service_entry: auth-sidecar
+  description: test
+interface:
+  - service: auth-sidecar
+    endpoint: http
+    visibility: public
+services:
+  - name: accounts
+    version: 0.0.0
+    endpoints:
+      - name: http
+        api: http
+        visibility: private
+        port: 8080
+    spec:
+      service-account:
+        name: accounts
+  - name: auth-sidecar
+    version: 0.0.0
+    endpoints:
+      - name: http
+        api: http
+        visibility: private
+        port: 8080
+    public_egress_ports:
+      - 443
+    spec:
+      service-account:
+        name: auth-sidecar
+    dependencies:
+      - service: accounts
+        endpoints:
+          - http
+`)
 	writeTestFile(t, filepath.Join(moduleDir, "services", "accounts", "generated", "authz-methods.json"), `{
   "schema_version": "saas.authz.methods.v1",
   "methods": [
@@ -779,7 +821,8 @@ func TestGeneratedMeshPolicyDeniesInternalAuthorityFromNonAllowlistedPrincipals(
 	}
 
 	strictMTLS := false
-	var deny map[string]any
+	var authority map[string]any
+	var portAllow map[string]any
 	var waypoint map[string]any
 	for _, object := range objects {
 		metadata := object["metadata"].(map[string]any)
@@ -790,8 +833,11 @@ func TestGeneratedMeshPolicyDeniesInternalAuthorityFromNonAllowlistedPrincipals(
 				strictMTLS = true
 			}
 		case "AuthorizationPolicy":
-			if metadata["name"] == "deny-accounts-internal-authority" {
-				deny = object
+			switch metadata["name"] {
+			case "allow-accounts-internal-authority":
+				authority = object
+			case "allow-accounts-from-internal-topology":
+				portAllow = object
 			}
 		case "Gateway":
 			if object["apiVersion"] == "gateway.networking.k8s.io/v1" {
@@ -802,11 +848,11 @@ func TestGeneratedMeshPolicyDeniesInternalAuthorityFromNonAllowlistedPrincipals(
 	if !strictMTLS {
 		t.Fatal("mesh baseline is missing STRICT PeerAuthentication")
 	}
-	if deny == nil {
-		t.Fatalf("istio bundle is missing the internal-authority deny policy:\n%s", mustReadFile(t, istioPath))
+	if authority == nil {
+		t.Fatalf("istio bundle is missing the internal-authority allow policy:\n%s", mustReadFile(t, istioPath))
 	}
 
-	// The internal-authority deny is an L7 (method-path) policy; ztunnel is L4
+	// The internal-authority allow is an L7 (method-path) policy; ztunnel is L4
 	// only, so it is enforced only if a waypoint fronts the namespace. Without
 	// this the policy would be silently inert in the ambient mesh.
 	if waypoint == nil {
@@ -827,30 +873,50 @@ func TestGeneratedMeshPolicyDeniesInternalAuthorityFromNonAllowlistedPrincipals(
 		t.Errorf("namespace use-waypoint = %v, want %v", nsLabels["istio.io/use-waypoint"], waypoint["metadata"].(map[string]any)["name"])
 	}
 
-	spec := deny["spec"].(map[string]any)
-	if spec["action"] != "DENY" {
-		t.Errorf("internal-authority policy action = %v, want DENY", spec["action"])
+	const (
+		callerSA  = "cluster.local/ns/identity-local/sa/auth-sidecar"
+		defaultSA = "cluster.local/ns/identity-local/sa/default"
+		ingressSA = "cluster.local/ns/istio-system/sa/istio-ingressgateway-service-account"
+	)
+
+	spec := authority["spec"].(map[string]any)
+	// Positive ALLOW, not the old fail-open notPrincipals DENY: an unlisted SA
+	// is default-denied once an ALLOW selects the workload.
+	if spec["action"] != "ALLOW" {
+		t.Errorf("internal-authority policy action = %v, want ALLOW", spec["action"])
 	}
 	if app := spec["selector"].(map[string]any)["matchLabels"].(map[string]any)["app"]; app != "accounts" {
 		t.Errorf("internal-authority policy selects app %v, want accounts", app)
 	}
 	rule := spec["rules"].([]any)[0].(map[string]any)
-	notPrincipals := rule["from"].([]any)[0].(map[string]any)["source"].(map[string]any)["notPrincipals"].([]any)
-	// Seam: the only principal exempt from the deny is the in-mesh caller
-	// identity, so the ingress gateway SA — and every other principal — is
-	// rejected on the internal method paths before the handler.
-	if len(notPrincipals) != 1 || notPrincipals[0] != "cluster.local/ns/identity-local/sa/default" {
-		t.Errorf("internal-authority allowlist = %v, want only the in-mesh caller identity", notPrincipals)
+	principals := anyToStrings(rule["from"].([]any)[0].(map[string]any)["source"].(map[string]any)["principals"].([]any))
+	// Only accounts' declared caller (auth-sidecar), named by its per-service
+	// SA — not the shared sa/default, and not the ingress gateway.
+	if !slices.Equal(principals, []string{callerSA}) {
+		t.Errorf("internal-authority principals = %v, want only the caller SA [%s]", principals, callerSA)
 	}
-	if slices.Contains(anyToStrings(notPrincipals), "cluster.local/ns/istio-system/sa/istio-ingressgateway-service-account") {
-		t.Error("ingress gateway SA must not be exempt from the internal-authority deny")
+	if slices.Contains(principals, defaultSA) {
+		t.Error("internal-authority allowlist must not admit the shared sa/default (any namespace pod)")
+	}
+	if slices.Contains(principals, ingressSA) {
+		t.Error("ingress gateway SA must not reach the internal method paths")
 	}
 	paths := anyToStrings(rule["to"].([]any)[0].(map[string]any)["operation"].(map[string]any)["paths"].([]any))
 	if !slices.Contains(paths, "/saas.accounts.v1.APIKeyService/ValidateAPIKey") {
 		t.Errorf("internal-authority paths %v missing the internal ValidateAPIKey method", paths)
 	}
 	if slices.Contains(paths, "/saas.accounts.v1.AuthService/Authenticate") {
-		t.Error("internal-authority deny must not cover the public Authenticate method")
+		t.Error("internal-authority allow must not cover the public Authenticate method")
+	}
+
+	// The L4 port allow is caller-scoped too, so even without the waypoint the
+	// target is reachable only by its declared caller — not any sa/default pod.
+	if portAllow == nil {
+		t.Fatalf("istio bundle is missing the accounts port allow:\n%s", mustReadFile(t, istioPath))
+	}
+	portPrincipals := anyToStrings(portAllow["spec"].(map[string]any)["rules"].([]any)[0].(map[string]any)["from"].([]any)[0].(map[string]any)["source"].(map[string]any)["principals"].([]any))
+	if !slices.Equal(portPrincipals, []string{callerSA}) {
+		t.Errorf("accounts port-allow principals = %v, want only the caller SA [%s]", portPrincipals, callerSA)
 	}
 }
 

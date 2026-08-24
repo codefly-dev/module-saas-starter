@@ -12,18 +12,18 @@ spec:
 apiVersion: security.istio.io/v1
 kind: AuthorizationPolicy
 metadata:
-  name: deny-accounts-internal-authority
+  name: allow-accounts-internal-authority
   namespace: saas-starter
 spec:
   selector:
     matchLabels:
       app: accounts
-  action: DENY
+  action: ALLOW
   rules:
     - from:
         - source:
-            notPrincipals:
-              - cluster.local/ns/saas-starter/sa/default
+            principals:
+              - cluster.local/ns/saas-starter/sa/auth-sidecar
       to:
         - operation:
             paths:

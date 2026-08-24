@@ -799,12 +799,13 @@ const meshTrustDomain = "cluster.local"
 // renderMeshPolicy projects the identity half of the reach-vs-identity split as
 // a topology golden mirroring the mesh policy the GitOps renderer installs
 // (see gitops.go). PeerAuthentication STRICT makes every source principal a
-// trustworthy mTLS identity; the AuthorizationPolicy then DENYs the internal
-// authority method paths from every principal except the allowlisted in-mesh
-// caller identity — the ingress gateway included. Istio matches by request
-// path, so this gates the internal surface by caller workload identity even
-// while it stays multiplexed on the shared HTTP port. The app-layer internal
-// credential remains the identity gate (which caller vs which tenant).
+// trustworthy mTLS identity; the AuthorizationPolicy then ALLOWs the internal
+// authority method paths only from the target's declared callers, named by
+// their per-service ServiceAccount — deny-by-default for every other principal,
+// the ingress gateway included. Istio matches by request path, so this gates
+// the internal surface by caller workload identity even while it stays
+// multiplexed on the shared HTTP port. The app-layer internal credential
+// remains the identity gate (which caller vs which tenant).
 func renderMeshPolicy(bindings deploymentBindings, serviceCatalog *catalogv1.ServiceCatalog) []byte {
 	namespace := bindings.Module.Namespace
 	var source strings.Builder
@@ -829,9 +830,9 @@ spec:
 				ownerApp = kubernetesAppLabel(service)
 			}
 		}
-		principal := fmt.Sprintf("%s/ns/%s/sa/default", meshTrustDomain, namespace)
-		writeInternalAuthorityAuthorizationPolicy(&source, namespace, owner, ownerApp, principal, procedures)
-		// The deny above is an L7 (method-path) policy. In the ambient data plane
+		principals := ownerCallerPrincipals(bindings, namespace, owner)
+		writeInternalAuthorityAuthorizationPolicy(&source, namespace, owner, ownerApp, principals, procedures)
+		// The allow above is an L7 (method-path) policy. In the ambient data plane
 		// ztunnel enforces L4 only, so a waypoint must front the namespace for the
 		// path match to be evaluated; the namespace opts in via
 		// istio.io/use-waypoint (set on the Namespace by the GitOps renderer).
@@ -854,27 +855,70 @@ spec:
 	return []byte(source.String())
 }
 
-func writeInternalAuthorityAuthorizationPolicy(source *strings.Builder, namespace, service, serviceApp, allowedPrincipal string, procedures []string) {
+// serviceAccountBindingName returns the Kubernetes ServiceAccount a service's
+// pods run under: spec.service-account.name when declared, otherwise the
+// namespace default. Mirrors topologyServiceAccount in the GitOps renderer.
+func serviceAccountBindingName(service deploymentServiceBinding) string {
+	spec, ok := service.Spec["service-account"].(map[string]any)
+	if !ok {
+		return "default"
+	}
+	if name, ok := spec["name"].(string); ok && name != "" {
+		return name
+	}
+	return "default"
+}
+
+// ownerCallerPrincipals returns the sorted, de-duplicated SPIFFE principals of
+// the owner's declared callers — each caller's per-service SA (or sa/default) —
+// plus the owner itself when it runs bootstrap jobs. This is the positive
+// allowlist the internal-authority AuthorizationPolicy gates on.
+func ownerCallerPrincipals(bindings deploymentBindings, namespace, owner string) []string {
+	seen := make(map[string]struct{})
+	var principals []string
+	add := func(service deploymentServiceBinding) {
+		principal := fmt.Sprintf("%s/ns/%s/sa/%s", meshTrustDomain, namespace, serviceAccountBindingName(service))
+		if _, ok := seen[principal]; ok {
+			return
+		}
+		seen[principal] = struct{}{}
+		principals = append(principals, principal)
+	}
+	for _, service := range bindings.Services {
+		for _, dependency := range service.Dependencies {
+			if dependency.Service == owner {
+				add(service)
+			}
+		}
+		if service.Name == owner && len(service.BootstrapJobEndpoints) > 0 {
+			add(service)
+		}
+	}
+	sort.Strings(principals)
+	return principals
+}
+
+func writeInternalAuthorityAuthorizationPolicy(source *strings.Builder, namespace, service, serviceApp string, principals, procedures []string) {
 	fmt.Fprintf(source, `---
 apiVersion: security.istio.io/v1
 kind: AuthorizationPolicy
 metadata:
-  name: deny-%s-internal-authority
+  name: allow-%s-internal-authority
   namespace: %s
 spec:
   selector:
     matchLabels:
       app: %s
-  action: DENY
+  action: ALLOW
   rules:
     - from:
         - source:
-            notPrincipals:
-              - %s
-      to:
-        - operation:
-            paths:
-`, service, namespace, serviceApp, allowedPrincipal)
+            principals:
+`, service, namespace, serviceApp)
+	for _, principal := range principals {
+		fmt.Fprintf(source, "              - %s\n", principal)
+	}
+	source.WriteString("      to:\n        - operation:\n            paths:\n")
 	for _, procedure := range procedures {
 		fmt.Fprintf(source, "              - %s\n", procedure)
 	}

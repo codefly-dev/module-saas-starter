@@ -36,3 +36,5 @@ spec:
     protocol-output-dirs:
         - code/pkg/gen
     rest-endpoint: true
+    service-account:
+        name: auth-sidecar

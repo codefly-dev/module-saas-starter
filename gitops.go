@@ -971,7 +971,7 @@ func topologyIstioResources(
 		},
 	}
 	istio = append(istio, topologyInternalAuthorizationPolicies(topology, plan, namespace, labels)...)
-	istio = append(istio, topologyInternalAuthorityDenyPolicies(topology, plan, namespace, labels)...)
+	istio = append(istio, topologyInternalAuthorityAllowPolicies(topology, plan, namespace, labels)...)
 	if topologyRequiresWaypoint(topology, plan) {
 		// The internal-authority deny is an L7 (method-path) policy. In the
 		// ambient data plane ztunnel enforces L4 only, so a waypoint proxy must
@@ -1143,6 +1143,79 @@ func topologyIstioResources(
 	return istio, gateway, nil
 }
 
+// topologyServiceAccount returns the Kubernetes ServiceAccount a service's pods
+// run under: spec.service-account.name when the service declares one (the
+// go-grpc agent renders the SA object and binds serviceAccountName off it),
+// otherwise the namespace default. A caller without a distinct SA (e.g. the
+// nextjs frontend, whose agent does not render one yet) stays on "default".
+func topologyServiceAccount(service topologyService) string {
+	spec, ok := service.Spec["service-account"].(map[string]any)
+	if !ok {
+		return "default"
+	}
+	if name, ok := spec["name"].(string); ok && name != "" {
+		return name
+	}
+	return "default"
+}
+
+func meshPrincipal(namespace, serviceAccount string) string {
+	return "cluster.local/ns/" + namespace + "/sa/" + serviceAccount
+}
+
+// topologyTargetCallerPrincipals maps each in-cluster dependency target to the
+// sorted, de-duplicated SPIFFE principals of its declared callers — each
+// caller's workload SA (or sa/default when it has none). This is the positive
+// allowlist the internal-authority AuthorizationPolicies gate on: only a
+// target's declared callers may reach it, deny-by-default for everyone else
+// (the ingress gateway included), instead of the fail-open notPrincipals
+// exemption of the shared sa/default.
+func topologyTargetCallerPrincipals(topology deploymentTopology, plan environmentPlan, namespace string) map[string][]string {
+	inCluster := make(map[string]struct{}, len(plan.services))
+	for _, service := range plan.services {
+		inCluster[service] = struct{}{}
+	}
+	callers := make(map[string]map[string]struct{})
+	addCaller := func(target, principal string) {
+		if callers[target] == nil {
+			callers[target] = make(map[string]struct{})
+		}
+		callers[target][principal] = struct{}{}
+	}
+	for _, caller := range topology.Services {
+		if _, ok := inCluster[caller.Name]; !ok {
+			continue
+		}
+		principal := meshPrincipal(namespace, topologyServiceAccount(caller))
+		for _, dependency := range caller.Dependencies {
+			if _, ok := inCluster[dependency.Service]; !ok {
+				continue
+			}
+			addCaller(dependency.Service, principal)
+		}
+	}
+	// A service's bootstrap job runs under the service's own SA and reaches its
+	// own endpoints, so it is a declared caller of itself.
+	for _, service := range topology.Services {
+		if _, ok := inCluster[service.Name]; !ok {
+			continue
+		}
+		if len(service.BootstrapJobEndpoints) > 0 {
+			addCaller(service.Name, meshPrincipal(namespace, topologyServiceAccount(service)))
+		}
+	}
+	result := make(map[string][]string, len(callers))
+	for target, set := range callers {
+		principals := make([]string, 0, len(set))
+		for principal := range set {
+			principals = append(principals, principal)
+		}
+		slices.Sort(principals)
+		result[target] = principals
+	}
+	return result
+}
+
 func topologyInternalAuthorizationPolicies(
 	topology deploymentTopology,
 	plan environmentPlan,
@@ -1191,7 +1264,7 @@ func topologyInternalAuthorizationPolicies(
 	}
 	slices.Sort(targets)
 	policies := make([]kubeObject, 0, len(targets))
-	principal := "cluster.local/ns/" + namespace + "/sa/default"
+	callerPrincipals := topologyTargetCallerPrincipals(topology, plan, namespace)
 	for _, target := range targets {
 		service, _ := topologyServiceByName(topology, target)
 		ports := make([]uint32, 0, len(targetPorts[target]))
@@ -1215,7 +1288,7 @@ func topologyInternalAuthorizationPolicies(
 				"selector": map[string]any{"matchLabels": map[string]string{"app": topologyKubernetesAppLabel(service)}},
 				"rules": []any{map[string]any{
 					"from": []any{map[string]any{"source": map[string]any{
-						"principals": []string{principal},
+						"principals": callerPrincipals[target],
 					}}},
 					"to": []any{map[string]any{"operation": map[string]any{
 						"ports": renderedPorts,
@@ -1247,15 +1320,20 @@ func topologyRequiresWaypoint(topology deploymentTopology, plan environmentPlan)
 	return false
 }
 
-// topologyInternalAuthorityDenyPolicies gates each service's internal authority
-// method paths by caller workload identity. Istio matches by request path, so
-// the internal RPCs are denied to every principal outside the in-mesh caller
-// identity — the ingress gateway among them — even while they stay multiplexed
-// on the shared HTTP port. With STRICT PeerAuthentication, a request from a
-// non-allowlisted principal is rejected at the mesh before the handler; the
-// app-layer internal credential remains the identity gate. Enforcing the path
-// match requires the namespace waypoint (see topologyRequiresWaypoint).
-func topologyInternalAuthorityDenyPolicies(
+// topologyInternalAuthorityAllowPolicies gates each service's internal authority
+// method paths by caller workload identity with a positive ALLOW: only a
+// target's declared callers (named by their per-service ServiceAccount) may
+// reach the internal RPC paths, deny-by-default for every other principal — the
+// ingress gateway and any unlisted namespace workload included. This replaces
+// the earlier notPrincipals:[sa/default] DENY, which fail-open: with every pod
+// sharing sa/default, that exemption admitted the whole namespace. Istio makes a
+// selected workload default-deny once any ALLOW rule targets it, so an unlisted
+// SA is rejected at the mesh before the handler; the app-layer internal
+// credential remains the identity gate. The L7 path match needs the namespace
+// waypoint (see topologyRequiresWaypoint); the L4 port ALLOW
+// (topologyInternalAuthorizationPolicies) is now caller-scoped too, so even
+// without the waypoint the target is reachable only by its declared callers.
+func topologyInternalAuthorityAllowPolicies(
 	topology deploymentTopology,
 	plan environmentPlan,
 	namespace string,
@@ -1265,7 +1343,7 @@ func topologyInternalAuthorityDenyPolicies(
 	for _, service := range plan.services {
 		inCluster[service] = struct{}{}
 	}
-	principal := "cluster.local/ns/" + namespace + "/sa/default"
+	callerPrincipals := topologyTargetCallerPrincipals(topology, plan, namespace)
 	targets := make([]string, 0, len(topology.internalMethodPaths))
 	for target := range topology.internalMethodPaths {
 		if _, ok := inCluster[target]; ok {
@@ -1280,16 +1358,16 @@ func topologyInternalAuthorityDenyPolicies(
 			APIVersion: "security.istio.io/v1",
 			Kind:       "AuthorizationPolicy",
 			Metadata: objectMeta{
-				Name:      "deny-" + target + "-internal-authority",
+				Name:      "allow-" + target + "-internal-authority",
 				Namespace: namespace,
 				Labels:    labels,
 			},
 			Spec: map[string]any{
 				"selector": map[string]any{"matchLabels": map[string]string{"app": topologyKubernetesAppLabel(service)}},
-				"action":   "DENY",
+				"action":   "ALLOW",
 				"rules": []any{map[string]any{
 					"from": []any{map[string]any{"source": map[string]any{
-						"notPrincipals": []string{principal},
+						"principals": callerPrincipals[target],
 					}}},
 					"to": []any{map[string]any{"operation": map[string]any{
 						"paths": topology.internalMethodPaths[target],
