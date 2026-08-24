@@ -45,7 +45,7 @@ and are not evidence of current implementation.
 | Capability | Status | Starter mechanism & reference |
 |---|---|---|
 | Hosted-IdP login (sign-in/up/callback, throttling, login audit) | ✅ | WorkOS / Auth0 / Google / generic OIDC validated once at `Authenticate`; provider token never enters the runtime path. `pkg/auth/{workos,oidc}`, [PRODUCTION_READY.md](./PRODUCTION_READY.md), [module/FEATURES.md](./module/FEATURES.md) |
-| Self-minted session JWT + own JWKS | ✅ | Backend mints an Ed25519 session JWT (`sub/org/or/pr/sid`); the sidecar verifies signature only. `GET /v1/auth/.well-known/jwks.json` (`pkg/adapters/jwks_http.go`), Vault-held current+previous keypair for rotation. This is the "own session JWT is the primary path" escape hatch the audit recommends. |
+| Self-minted session JWT + own JWKS | ✅ | Backend mints an Ed25519 session JWT (`sub/org/or/pr/sid`); the sidecar verifies it (signature, claims, revocation) but never mints. `GET /v1/auth/.well-known/jwks.json` (`pkg/adapters/jwks_http.go`), Vault-held current+previous keypair for rotation. This is the "own session JWT is the primary path" escape hatch the audit recommends. |
 | JIT provisioning | ✅ | `pkg/auth/pg/resolver.go` upserts `(provider, sub)` → `user_identities`/`users` in one tx, plus `BOOTSTRAP_ADMIN_EMAIL` super-admin bootstrap. |
 | Session revocation | ✅ ↔ | The audit's platform left this permanently stubbed (501). This starter **closed that gap**: refresh-rotation with reuse detection, plus migration-70 DB triggers that atomically revoke affected sessions on user-status / membership / role / MFA change, and migration-71 device-cap eviction (`sr` claim, [AUTHZ.md](./AUTHZ.md), [module/DATABASE_AUTHORITY.md](./module/DATABASE_AUTHORITY.md)). |
 | Enterprise SSO / per-tenant `authMode` | 🟡 | Per-org IdP directory (`org_identity_providers`, RLS migration 92), pre-auth domain/host→provider discovery (`pkg/business/identity_discovery.go`), and WorkOS SSO setup/disable (`pkg/business/sso_admin.go`, `/admin/sso`). No shipped `authMode`/"require-SSO" enforcement flag; the login/invite/signup split that would make it explicit is proposal-only (`module/docs/IDENTITY_ACCESS_PLAN.md`). |
@@ -77,8 +77,8 @@ from the audited platform, so read the mapping carefully.
   to add.
 - **Canonical policy vocabulary, ✅ ↔:** rather than one JSON file symlinked
   across two runtimes, the starter's vocabulary is `saas.policy.v1.MethodPolicy`
-  (proto extension 51000) projected to `generated/authz-methods.json` for all
-  ~121 methods, with a fail-closed compiler. Missing/`UNSPECIFIED` policy fails
+  (proto extension 51000) projected to `generated/authz-methods.json` for every
+  method, with a fail-closed compiler. Missing/`UNSPECIFIED` policy fails
   generation and denies at runtime. Same "one source of truth, no drift" goal;
   proto+codegen instead of JSON+symlink. [module/AUTHORIZATION_CATALOG.md](./module/AUTHORIZATION_CATALOG.md),
   [module/METHOD_POLICY.md](./module/METHOD_POLICY.md).
@@ -131,7 +131,7 @@ Gated by tenant-admin or platform role (`src/components/auth/role-gate.tsx`).
 | Connector management | 🟡 | SSO connector setup only (`/admin/sso`); no general third-party-connector/manifest framework. |
 | Per-tenant config | ✅ | `/admin/organizations/settings` (`org_settings`), `/admin/entitlements`. |
 | Background-agent ops / kill switch | 🟡 | `/admin/platform/jobs` gives payload-free queue/lifecycle + MFA-gated dead-letter replay; `RevokePrincipal` revokes an agent. No dedicated per-tenant agent kill switch — but note the audit's lesson: make any kill switch **per-tenant**, not deployment-global. |
-| Partner API keys | 🟡 | Org API keys `cfly_sk_…` (argon2id, scoped, `/admin/api-keys`, `pkg/business/api_keys.go`); no separate partner tier and no 404-not-403 concealment of a staff-only surface yet. |
+| Partner API keys | 🟡 | Org API keys `cfly_sk_…` (hashed via Vault transit HMAC, scoped, `/admin/api-keys`, `pkg/business/api_keys.go` + `pkg/infra/vault.go`); no separate partner tier and no 404-not-403 concealment of a staff-only surface yet. |
 | Audit viewer + compliance export | ✅ | `/admin/audit-log` (`QueryAuditLog`) + `/admin/audit-export` (`AuditExportService`, per-org S3 JSONL, PII-redacted; `pkg/business/audit_export*.go`). |
 
 ### 1.6 Support access / impersonation — ✅ (with a role-model divergence)
