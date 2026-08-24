@@ -2,7 +2,10 @@ import { readdirSync, readFileSync } from "node:fs";
 import { withSentryConfig } from "@sentry/nextjs";
 import { getCurrentFixture } from "codefly";
 import { resolveAccountsBindings } from "./server/accounts-bindings.mjs";
-import { securityHeaders } from "./server/security-headers.mjs";
+import {
+	baselineSecurityHeaders,
+	securityHeaders,
+} from "./server/security-headers.mjs";
 
 const workspacePackageNames = readdirSync(
 	new URL("./packages", import.meta.url),
@@ -61,11 +64,20 @@ const nextConfig = {
 	// Next HMR without a separate dist rebuild race.
 	transpilePackages: ["codefly", ...workspacePackageNames],
 	// Anti-clickjacking + CSP baseline for the authenticated product surface.
-	// The CSP allowlist for cross-origin subresources (Module Federation
-	// solutions, analytics, bot-protection) is derived from build-time config;
-	// see server/security-headers.mjs.
+	// The CSP allowlist for cross-origin subresources (analytics, bot-protection)
+	// is derived from build-time config; see server/security-headers.mjs.
+	//
+	// Solution pages (/s/:id) are the exception: their Module Federation remote
+	// registers at runtime, so its origin cannot be baked in here. Those routes
+	// get the constant hardening headers at build time and their CSP from the
+	// Node proxy (src/proxy.ts) per request. Emitting a build-time CSP for them
+	// too would produce a second, narrower CSP the browser intersects with the
+	// runtime one — re-blocking the remote.
 	async headers() {
-		return [{ source: "/:path*", headers: securityHeaders() }];
+		return [
+			{ source: "/((?!s/).*)", headers: securityHeaders() },
+			{ source: "/s/:path*", headers: baselineSecurityHeaders() },
+		];
 	},
 	// The frontend is the module's public product entry. The browser only talks
 	// to this origin; Next proxies API traffic to auth-sidecar/rest, which

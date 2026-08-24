@@ -18,6 +18,8 @@ import {
 	type CodeflyGatewayContext,
 	resolveCodeflyGatewayContext,
 } from "@/lib/codefly-gateway-context";
+import type { SolutionManifest } from "@/solutions/registry";
+import { contentSecurityPolicy } from "../server/security-headers.mjs";
 
 const PRODUCT_API_PREFIXES = ["/v1/", "/saas.accounts.v1."] as const;
 const INTERNAL_TOKEN_HEADER = "X-Codefly-Internal-Token";
@@ -61,6 +63,36 @@ const PUBLIC_PATHS = [
 	"/health",
 	"/favicon.ico",
 ];
+
+const SOLUTION_PAGE = /^\/s\/([^/]+)/;
+
+// A solution's Module Federation remote registers at RUNTIME (see
+// src/solutions/registry.ts), so the build-time CSP in next.config — which
+// excludes /s/:id precisely for this reason — cannot know its origin. This
+// proxy runs on the Node.js runtime, so it shares the process global the
+// registry anchors on; for a solution page it derives the remote's origin from
+// the registration and returns a CSP that allows it, letting a freshly
+// registered cross-origin remote load with no rebuild and no
+// FRONTEND_SOLUTION_ORIGINS entry. Non-solution pages keep their build-time CSP.
+// The registry type is imported for typing only (erased at compile), so this
+// does not pull the server-only registry module into the proxy bundle.
+function solutionContentSecurityPolicy(pathname: string): string | null {
+	const match = SOLUTION_PAGE.exec(pathname);
+	if (!match) {
+		return null;
+	}
+	const registry = (
+		globalThis as typeof globalThis & {
+			__solutionRegistry?: Map<string, SolutionManifest>;
+		}
+	).__solutionRegistry;
+	const solution = registry?.get(decodeURIComponent(match[1]));
+	// manifestUrl is validated as an absolute http(s) URL at registration.
+	const origins = solution
+		? [new URL(solution.frontend.manifestUrl).origin]
+		: [];
+	return contentSecurityPolicy(process.env, origins);
+}
 
 function isPublic(pathname: string): boolean {
 	if (PUBLIC_PATHS.includes(pathname)) return true;
@@ -132,9 +164,14 @@ export function proxy(req: NextRequest) {
 		return NextResponse.redirect(loginURL);
 	}
 
-	return gatewayHeaders
+	const response = gatewayHeaders
 		? NextResponse.next({ request: { headers: gatewayHeaders } })
 		: NextResponse.next();
+	const solutionCSP = solutionContentSecurityPolicy(pathname);
+	if (solutionCSP) {
+		response.headers.set("Content-Security-Policy", solutionCSP);
+	}
+	return response;
 }
 
 export const config = {

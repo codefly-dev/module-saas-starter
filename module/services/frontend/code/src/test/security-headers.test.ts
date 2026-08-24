@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+	baselineSecurityHeaders,
 	contentSecurityPolicy,
 	parseSolutionOrigins,
 	securityHeaders,
@@ -27,6 +28,18 @@ describe("securityHeaders", () => {
 		expect(byKey["Content-Security-Policy"]).toContain(
 			"frame-ancestors 'none'",
 		);
+	});
+});
+
+describe("baselineSecurityHeaders", () => {
+	it("carries the hardening headers but no CSP (the proxy owns it)", () => {
+		const byKey = Object.fromEntries(
+			baselineSecurityHeaders().map((h) => [h.key, h.value]),
+		);
+		expect(byKey["X-Frame-Options"]).toBe("DENY");
+		expect(byKey["X-Content-Type-Options"]).toBe("nosniff");
+		expect(byKey["Cross-Origin-Opener-Policy"]).toBe("same-origin");
+		expect(byKey["Content-Security-Policy"]).toBeUndefined();
 	});
 });
 
@@ -58,6 +71,28 @@ describe("contentSecurityPolicy", () => {
 		expect(directive(csp, "script-src")).toContain("https://b.example.com");
 		expect(directive(csp, "connect-src")).toContain("https://a.example.com");
 		expect(directive(csp, "connect-src")).toContain("https://b.example.com");
+	});
+
+	it("allowlists runtime-derived solution origins without a build-time env", () => {
+		const csp = contentSecurityPolicy({}, ["http://localhost:8091"]);
+		expect(directive(csp, "script-src")).toBe(
+			"script-src 'self' 'unsafe-inline' http://localhost:8091",
+		);
+		expect(directive(csp, "connect-src")).toBe(
+			"connect-src 'self' http://localhost:8091",
+		);
+	});
+
+	it("merges and dedupes runtime origins with the build-time allowlist", () => {
+		const csp = contentSecurityPolicy(
+			{ FRONTEND_SOLUTION_ORIGINS: "https://a.example.com" },
+			["https://a.example.com", "http://localhost:8091"],
+		);
+		const scriptSrc = directive(csp, "script-src");
+		expect(scriptSrc).toBe(
+			"script-src 'self' 'unsafe-inline' https://a.example.com http://localhost:8091",
+		);
+		expect(scriptSrc.match(/https:\/\/a\.example\.com/g)).toHaveLength(1);
 	});
 
 	it("allowlists the PostHog ingestion host only when analytics is enabled", () => {

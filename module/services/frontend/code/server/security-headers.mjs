@@ -10,9 +10,15 @@
 //
 // Module Federation is the exception: solutions self-register at RUNTIME (see
 // src/solutions/registry.ts), so their origins are not knowable when the
-// manifest is built. A cross-origin remote therefore only loads under this CSP
-// if its origin is listed at build time via FRONTEND_SOLUTION_ORIGINS. A remote
-// served from the host origin needs no configuration.
+// manifest is built. Solution pages therefore get their CSP from the Node
+// proxy (src/proxy.ts), which computes it per request from the registered
+// manifest origins and passes them here as `runtimeSolutionOrigins` — so a
+// freshly-registered cross-origin remote loads without a rebuild. In prod a
+// solution's assets are served same-origin through the host proxy by default,
+// which `'self'` already covers; a solution exposed on its own ingress is
+// covered because the proxy derives its origin from the runtime registry, not
+// from a static build env. FRONTEND_SOLUTION_ORIGINS remains as a build-time
+// escape hatch for origins the host must trust before any registration.
 
 const TURNSTILE_ORIGIN = "https://challenges.cloudflare.com";
 
@@ -67,9 +73,22 @@ function turnstileEnabled(env) {
 	return mode !== "" && mode !== "disabled";
 }
 
-/** @param {Record<string, string | undefined>} [env] */
-export function contentSecurityPolicy(env = process.env) {
-	const solutionOrigins = parseSolutionOrigins(env.FRONTEND_SOLUTION_ORIGINS);
+/**
+ * @param {Record<string, string | undefined>} [env]
+ * @param {string[]} [runtimeSolutionOrigins] Origins derived at request time
+ *   from the runtime solution registry (see src/proxy.ts). Merged with the
+ *   build-time FRONTEND_SOLUTION_ORIGINS allowlist.
+ */
+export function contentSecurityPolicy(
+	env = process.env,
+	runtimeSolutionOrigins = [],
+) {
+	const solutionOrigins = [
+		...new Set([
+			...parseSolutionOrigins(env.FRONTEND_SOLUTION_ORIGINS),
+			...runtimeSolutionOrigins,
+		]),
+	];
 	const analyticsOrigin = posthogOrigin(env);
 	const turnstile = turnstileEnabled(env);
 
@@ -112,10 +131,12 @@ export function contentSecurityPolicy(env = process.env) {
 	].join("; ");
 }
 
-/** @param {Record<string, string | undefined>} [env] */
-export function securityHeaders(env = process.env) {
+// The constant hardening headers, minus the CSP. Solution pages (/s/:id) omit
+// the CSP here and receive it from the Node proxy instead, so the build-time
+// manifest never emits a second, narrower CSP that would intersect with (and
+// defeat) the runtime-derived one.
+export function baselineSecurityHeaders() {
 	return [
-		{ key: "Content-Security-Policy", value: contentSecurityPolicy(env) },
 		{ key: "Cross-Origin-Opener-Policy", value: "same-origin" },
 		{
 			key: "Permissions-Policy",
@@ -124,5 +145,13 @@ export function securityHeaders(env = process.env) {
 		{ key: "Referrer-Policy", value: "strict-origin-when-cross-origin" },
 		{ key: "X-Content-Type-Options", value: "nosniff" },
 		{ key: "X-Frame-Options", value: "DENY" },
+	];
+}
+
+/** @param {Record<string, string | undefined>} [env] */
+export function securityHeaders(env = process.env) {
+	return [
+		{ key: "Content-Security-Policy", value: contentSecurityPolicy(env) },
+		...baselineSecurityHeaders(),
 	];
 }
