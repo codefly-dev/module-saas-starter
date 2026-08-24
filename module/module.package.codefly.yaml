@@ -89,6 +89,7 @@ claims:
   - {kind: package, key: "@types/node", owner: base}
   - {kind: package, key: "@types/react", owner: base}
   - {kind: package, key: "@types/react-dom", owner: base}
+  - {kind: package, key: "@types/swagger-ui-react", owner: base}
   - {kind: package, key: ajv, owner: base}
   - {kind: package, key: babel-plugin-react-compiler, owner: base}
   - {kind: package, key: class-variance-authority, owner: base}
@@ -108,6 +109,7 @@ claims:
   - {kind: package, key: react-hook-form, owner: base}
   - {kind: package, key: server-only, owner: base}
   - {kind: package, key: sonner, owner: base}
+  - {kind: package, key: swagger-ui-react, owner: base}
   - {kind: package, key: tailwindcss, owner: base}
   - {kind: package, key: tailwind-merge, owner: base}
   - {kind: package, key: tw-animate-css, owner: base}
