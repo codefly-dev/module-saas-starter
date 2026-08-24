@@ -65,6 +65,8 @@ services:
       hot-reload: true
       rest-endpoint: true
       connect-endpoint: true
+      service-account:
+        name: accounts
       protocol-output-dirs:
         - code/pkg/gen
         - generated/openapi-raw
@@ -108,6 +110,8 @@ services:
     spec:
       hot-reload: true
       rest-endpoint: true
+      service-account:
+        name: auth-sidecar
       protocol-output-dirs:
         - code/pkg/gen
   - name: cache

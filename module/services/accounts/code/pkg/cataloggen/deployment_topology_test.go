@@ -109,17 +109,19 @@ func TestDeploymentTopologyIsDeterministicAndCurrent(t *testing.T) {
 	require.Contains(t, string(first.NetworkPolicy), "192.175.48.0/24")
 	require.Contains(t, string(first.NetworkPolicy), "64:ff9b::/96")
 
-	// Mesh policy: STRICT mTLS baseline plus a DENY AuthorizationPolicy that
-	// gates the internal authority method paths by caller workload identity even
-	// while they stay multiplexed on the shared HTTP port. The ingress gateway
-	// SA is outside the allowlist, so it is denied those paths at the mesh.
+	// Mesh policy: STRICT mTLS baseline plus a positive ALLOW AuthorizationPolicy
+	// that gates the internal authority method paths to the target's declared
+	// callers by their per-service ServiceAccount — deny-by-default for everyone
+	// else. accounts' only caller is auth-sidecar, so only sa/auth-sidecar is
+	// allowed; the shared sa/default and the ingress gateway SA are not.
 	mesh := string(first.MeshPolicy)
 	require.Contains(t, mesh, "kind: PeerAuthentication")
 	require.Contains(t, mesh, "mode: STRICT")
-	require.Contains(t, mesh, "name: deny-accounts-internal-authority")
-	require.Contains(t, mesh, "action: DENY")
+	require.Contains(t, mesh, "name: allow-accounts-internal-authority")
+	require.Contains(t, mesh, "action: ALLOW")
 	require.Contains(t, mesh, "gatewayClassName: istio-waypoint")
-	require.Contains(t, mesh, "cluster.local/ns/saas-starter/sa/default")
+	require.Contains(t, mesh, "cluster.local/ns/saas-starter/sa/auth-sidecar")
+	require.NotContains(t, mesh, "cluster.local/ns/saas-starter/sa/default")
 	require.NotContains(t, mesh, "istio-ingressgateway-service-account")
 	for _, procedure := range []string{
 		"/saas.accounts.v1.PermissionService/CheckPermission",
@@ -388,7 +390,7 @@ func TestGeneratedMeshPolicyGatesInternalAuthorityByCallerIdentity(t *testing.T)
 
 	decoder := yaml.NewDecoder(strings.NewReader(string(readFixture(t, "testdata/mesh-policy.golden.yaml"))))
 	strictMTLS := false
-	denyFound := false
+	allowFound := false
 	waypointFound := false
 	for {
 		var document struct {
@@ -417,24 +419,25 @@ func TestGeneratedMeshPolicyGatesInternalAuthorityByCallerIdentity(t *testing.T)
 			strictMTLS = true
 		case "AuthorizationPolicy":
 			require.Equal(t, "security.istio.io/v1", document.APIVersion)
-			require.Equal(t, "deny-accounts-internal-authority", document.Metadata.Name)
-			require.Equal(t, "DENY", document.Spec["action"])
-			denyFound = true
+			require.Equal(t, "allow-accounts-internal-authority", document.Metadata.Name)
+			require.Equal(t, "ALLOW", document.Spec["action"])
+			allowFound = true
 
 			rule := document.Spec["rules"].([]any)[0].(map[string]any)
 			source := rule["from"].([]any)[0].(map[string]any)["source"].(map[string]any)
-			notPrincipals := source["notPrincipals"].([]any)
-			// Seam: only the in-mesh caller identity is exempt from the deny, so
-			// the ingress gateway SA — and any other principal — is rejected on
-			// the internal method paths before the handler.
-			require.Equal(t, []any{"cluster.local/ns/saas-starter/sa/default"}, notPrincipals)
-			require.NotContains(t, notPrincipals, ingressGatewaySA)
+			principals := source["principals"].([]any)
+			// Positive allowlist: only accounts' declared caller (auth-sidecar),
+			// named by its per-service SA. The shared sa/default (any namespace
+			// pod) and the ingress gateway SA are NOT admitted — deny-by-default.
+			require.Equal(t, []any{"cluster.local/ns/saas-starter/sa/auth-sidecar"}, principals)
+			require.NotContains(t, principals, "cluster.local/ns/saas-starter/sa/default")
+			require.NotContains(t, principals, ingressGatewaySA)
 
 			paths := rule["to"].([]any)[0].(map[string]any)["operation"].(map[string]any)["paths"].([]any)
 			require.Contains(t, paths, "/saas.accounts.v1.APIKeyService/ValidateAPIKey")
 			require.Contains(t, paths, "/saas.accounts.v1.UsageService/ConsumeUsage")
 		case "Gateway":
-			// The waypoint that makes the L7 deny enforceable in the ambient mesh.
+			// The waypoint that makes the L7 allow enforceable in the ambient mesh.
 			require.Equal(t, "gateway.networking.k8s.io/v1", document.APIVersion)
 			require.Equal(t, "istio-waypoint", document.Spec["gatewayClassName"])
 			require.Equal(t, "service", document.Metadata.Labels["istio.io/waypoint-for"])
@@ -444,8 +447,8 @@ func TestGeneratedMeshPolicyGatesInternalAuthorityByCallerIdentity(t *testing.T)
 		}
 	}
 	require.True(t, strictMTLS, "namespace mTLS must be STRICT")
-	require.True(t, denyFound, "internal-authority AuthorizationPolicy must be present")
-	require.True(t, waypointFound, "L7 deny requires a waypoint to be enforced in the ambient mesh")
+	require.True(t, allowFound, "internal-authority AuthorizationPolicy must be present")
+	require.True(t, waypointFound, "L7 allow requires a waypoint to be enforced in the ambient mesh")
 }
 
 func TestDeploymentTopologyRejectsUnsafeOrIncompleteBindings(t *testing.T) {
