@@ -82,6 +82,9 @@ describe("public frontend plugin composition", () => {
 			appearance: {
 				defaultTheme: "dark",
 				radius: "0.75rem",
+				spacing: "0.2rem",
+				sidebarWidth: "18rem",
+				shadowStrength: "1.5",
 				light: { primary: "#3344ff" },
 				dark: { primary: "#99aaff" },
 			},
@@ -97,6 +100,12 @@ describe("public frontend plugin composition", () => {
 		expect(config.appearance.defaultTheme).toBe("dark");
 		expect(config.appearance.light.primary).toBe("#3344ff");
 		expect(config.appearance.light.background).toBe("oklch(1 0 0)");
+		expect(config.appearance.spacing).toBe("0.2rem");
+		expect(config.appearance.sidebarWidth).toBe("18rem");
+		expect(config.appearance.shadowStrength).toBe("1.5");
+		// Omitted structural tokens inherit the neutral defaults.
+		expect(config.appearance.fontSizeBase).toBe("1rem");
+		expect(config.appearance.borderWidth).toBe("1px");
 		expect(Object.isFrozen(config.appearance)).toBe(true);
 		expect(Object.isFrozen(config.appearance.light)).toBe(true);
 	});
@@ -123,6 +132,18 @@ describe("public frontend plugin composition", () => {
 				appearance: { palette: "unsafe" } as never,
 			}),
 		).toThrow(/unknown field 'palette'/);
+		expect(() =>
+			defineFrontend({
+				...base,
+				appearance: { spacing: "0.25foo" },
+			}),
+		).toThrow(/spacing must be 0 or a px\/rem\/em length/);
+		expect(() =>
+			defineFrontend({
+				...base,
+				appearance: { shadowStrength: "3" },
+			}),
+		).toThrow(/shadowStrength must be a unitless number between 0 and 2/);
 	});
 
 	it("rejects an incompatible contract major with an actionable diagnostic", () => {

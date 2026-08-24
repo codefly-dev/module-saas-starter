@@ -109,6 +109,9 @@ silently falls back to sample data.
 - Only implemented host protocols and extension outlets enter the public API.
 - Branding and the semantic light/dark appearance preset belong to the
   application, not a product side effect. Plugins render semantic tokens only.
+  The preset covers per-mode color plus shared structural/typographic tokens
+  (radius, fonts, `fontSizeBase`, `spacing` density, sidebar widths,
+  `borderWidth`, `shadowStrength`) — enough for a full compose-time reskin.
 - An organization may overlay its validated HTTPS logo/favicon and six-digit
   primary color at runtime; it cannot contribute arbitrary CSS or change plugin
   composition.

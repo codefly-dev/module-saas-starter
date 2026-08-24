@@ -26,9 +26,11 @@ import { cn } from "@/lib/utils";
 
 const SIDEBAR_COOKIE_NAME = "sidebar_state";
 const SIDEBAR_COOKIE_MAX_AGE = 60 * 60 * 24 * 7;
-const SIDEBAR_WIDTH = "16rem";
+// Widths defer to the application appearance tokens (set on <html> at SSR),
+// falling back to the original constants when a token is absent.
+const SIDEBAR_WIDTH = "var(--appearance-sidebar-width, 16rem)";
 const SIDEBAR_WIDTH_MOBILE = "18rem";
-const SIDEBAR_WIDTH_ICON = "3rem";
+const SIDEBAR_WIDTH_ICON = "var(--appearance-sidebar-width-icon, 3rem)";
 const SIDEBAR_KEYBOARD_SHORTCUT = "b";
 
 type SidebarContextProps = {
