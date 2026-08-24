@@ -47,14 +47,24 @@ func scanApprovalRequest(row pgx.Row) (*business.ApprovalRequest, error) {
 		return nil, err
 	}
 	r.State = business.ApprovalState(state)
+	// Fail closed on a malformed policy: a policy that silently unmarshals to the
+	// zero value would drop the approver-set restriction and the self-approval
+	// block, so a corrupt row must surface as an error, never as a permissive
+	// default. subject and resume_ref get the same treatment for integrity.
 	if len(subjectJSON) > 0 {
-		_ = json.Unmarshal(subjectJSON, &r.Subject)
+		if err := json.Unmarshal(subjectJSON, &r.Subject); err != nil {
+			return nil, fmt.Errorf("unmarshal approval subject: %w", err)
+		}
 	}
 	if len(policyJSON) > 0 {
-		_ = json.Unmarshal(policyJSON, &r.Policy)
+		if err := json.Unmarshal(policyJSON, &r.Policy); err != nil {
+			return nil, fmt.Errorf("unmarshal approval policy: %w", err)
+		}
 	}
 	if len(resumeJSON) > 0 {
-		_ = json.Unmarshal(resumeJSON, &r.ResumeRef)
+		if err := json.Unmarshal(resumeJSON, &r.ResumeRef); err != nil {
+			return nil, fmt.Errorf("unmarshal approval resume_ref: %w", err)
+		}
 	}
 	return &r, nil
 }

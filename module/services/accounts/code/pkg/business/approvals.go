@@ -62,9 +62,11 @@ type ApprovalPolicy struct {
 	// list of actor ids. Empty = anyone the handler admitted (i.e. anyone
 	// holding approvals:decide, enforced at the RPC boundary).
 	ApproverSet []string `json:"approver_set,omitempty"`
-	// BlockSelf forbids the requester from deciding their own request
-	// (separation of duties).
-	BlockSelf bool `json:"block_self,omitempty"`
+	// AllowSelf permits the requester to decide their own request. It defaults
+	// off (zero value), so separation of duties is the default: the requester
+	// cannot self-approve unless a flow explicitly opts in. A malformed policy
+	// JSONB that fails to unmarshal therefore fails closed on self-approval.
+	AllowSelf bool `json:"allow_self,omitempty"`
 	// DecidePermission records the RBAC permission the handler gate required, for
 	// audit/traceability. Not enforced here (the handler is the enforcer).
 	DecidePermission string `json:"decide_permission,omitempty"`
@@ -162,6 +164,19 @@ func (in *CreateApprovalRequestInput) validate() error {
 	}
 	if in.Quorum < 0 {
 		return errors.New("approval: quorum must be >= 0")
+	}
+	// A pinned approver set smaller than the required quorum can never reach
+	// quorum, so the request would sit pending until it expires — reject it at
+	// creation rather than minting a permanently-stuck gate. Quorum 0 defaults
+	// to 1 (see CreateApprovalRequest).
+	if n := len(in.Policy.ApproverSet); n > 0 {
+		quorum := in.Quorum
+		if quorum == 0 {
+			quorum = 1
+		}
+		if quorum > n {
+			return fmt.Errorf("approval: quorum %d exceeds approver set size %d", quorum, n)
+		}
 	}
 	return nil
 }
@@ -286,16 +301,19 @@ func (s *Service) CreateApprovalRequest(ctx context.Context, in *CreateApprovalR
 // approval.approved / approval.denied on a terminal transition.
 //
 // SECURITY INVARIANT: in.Decider is trusted verbatim — distinct-approver quorum,
-// the approver-set check, and BlockSelf are only as sound as it is. The caller
-// MUST set Decider from the authenticated actor identity, never from client
-// input. A caller that forwards a client-supplied decider lets one party forge N
-// distinct approvers to reach quorum, or claim someone else's id to bypass
-// BlockSelf. This is the RPC/handler layer's responsibility (the engine cannot
-// authenticate).
+// the approver-set check, and the self-approval block are only as sound as it is.
+// The caller MUST set Decider from the authenticated actor identity, never from
+// client input. A caller that forwards a client-supplied decider lets one party
+// forge N distinct approvers to reach quorum, or claim someone else's id to
+// approve their own request. This is the RPC/handler layer's responsibility (the
+// engine cannot authenticate).
 func (s *Service) Decide(ctx context.Context, orgID, id string, in DecideInput) (DecideOutcome, error) {
 	w := wool.Get(ctx).In("DecideApproval",
 		wool.Field("approval_id", id),
 		wool.Field("decision", string(in.Decision)))
+	if orgID == "" {
+		return DecideOutcome{}, w.NewError("org_id required")
+	}
 	if in.Decider == "" {
 		return DecideOutcome{}, w.NewError("decider required")
 	}
@@ -315,7 +333,16 @@ func (s *Service) Decide(ctx context.Context, orgID, id string, in DecideInput) 
 				ErrTypeConflict,
 			)
 		}
-		if req.Policy.BlockSelf && in.Decider == req.RequestedBy {
+		// Enforce the decision window here, not only in the sweeper: the sweeper
+		// job is not yet wired, so without this an approver could reach quorum on
+		// a request long past its expires_at. Same predicate the sweeper uses.
+		if req.ExpiresAt != nil && !time.Now().Before(*req.ExpiresAt) {
+			return NewStoreError(
+				fmt.Errorf("approval %s decision window has expired", id),
+				ErrTypeConflict,
+			)
+		}
+		if !req.Policy.AllowSelf && in.Decider == req.RequestedBy {
 			return NewStoreError(
 				fmt.Errorf("requester %s cannot decide their own approval", in.Decider),
 				ErrTypePermission,
@@ -379,6 +406,9 @@ func (s *Service) Decide(ctx context.Context, orgID, id string, in DecideInput) 
 // (ErrTypeConflict) if already terminal.
 func (s *Service) CancelApprovalRequest(ctx context.Context, orgID, id, reason string) error {
 	w := wool.Get(ctx).In("CancelApprovalRequest", wool.Field("approval_id", id))
+	if orgID == "" {
+		return w.NewError("org_id required")
+	}
 	return s.store.As(Identity{OrgID: orgID}).Within(ctx, func(ctx context.Context) error {
 		req, err := s.approvalStore().LockApprovalRequest(ctx, id, orgID)
 		if err != nil {
@@ -434,6 +464,9 @@ func (s *Service) ListApprovalRequests(ctx context.Context, orgID, state string,
 // terminal request is a no-op. This is the pure state logic; wiring it to a
 // delayed sweeper job is the jobs-integration phase (APPROVALS_DESIGN.md §6).
 func (s *Service) SweepApprovalRequest(ctx context.Context, orgID, id string, now time.Time) (ApprovalState, error) {
+	if orgID == "" {
+		return "", wool.Get(ctx).In("SweepApprovalRequest").NewError("org_id required")
+	}
 	var newState ApprovalState
 	// The audit event is emitted in the SAME tx as the transition, inside the
 	// branch that performs it — never after. So a re-run of this at-least-once
