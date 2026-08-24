@@ -3,10 +3,12 @@ package main
 import (
 	"context"
 	"errors"
+	"strconv"
 	"sync"
 	"testing"
 	"time"
 
+	"github.com/golang-jwt/jwt/v5"
 	"github.com/stretchr/testify/require"
 )
 
@@ -226,6 +228,36 @@ func TestUnit_SessionRevokedJWT_Denied(t *testing.T) {
 	require.Equal(t, int32(401), int32(resp.GetDeniedResponse().Status.Code))
 }
 
+// A token that expired 30s ago is inside the 60s clock-skew leeway and must
+// still be accepted — the bare literal WithLeeway(60) was 60 NANOSECONDS and
+// would reject it, spuriously 401-ing clock-skewed tokens near expiry.
+func TestUnit_ClockSkewLeeway_AcceptsRecentlyExpiredWithinWindow(t *testing.T) {
+	s, priv := newTestSidecar(t)
+	c := validClaims(time.Now())
+	c.ExpiresAt = jwt.NewNumericDate(time.Now().Add(-30 * time.Second))
+	s.revoker = &fakeRevoker{}
+	token := signClaims(t, priv, c)
+
+	resp, err := s.Check(context.Background(), checkReq("/v1/users", bearer(token)))
+	require.NoError(t, err)
+	require.NotNil(t, resp.GetOkResponse(), "a token expired within the leeway window must still be accepted")
+}
+
+// The revocation marker outlives the leeway window (accounts writes exp+leeway),
+// so a token revoked while still inside [exp, exp+60s] is denied, not admitted.
+func TestUnit_ClockSkewLeeway_RevokedWithinWindowStillDenied(t *testing.T) {
+	s, priv := newTestSidecar(t)
+	c := validClaims(time.Now())
+	c.ExpiresAt = jwt.NewNumericDate(time.Now().Add(-30 * time.Second))
+	s.revoker = &fakeRevoker{revoked: map[string]bool{c.ID: true}}
+	token := signClaims(t, priv, c)
+
+	resp, err := s.Check(context.Background(), checkReq("/v1/users", bearer(token)))
+	require.NoError(t, err)
+	require.NotNil(t, resp.GetDeniedResponse(), "a revoked token in the leeway window must be denied")
+	require.Equal(t, int32(401), int32(resp.GetDeniedResponse().Status.Code))
+}
+
 // The session-kill failure mode matches the jti path: a store error denies in
 // strict mode rather than admitting a possibly-killed session.
 func TestUnit_SessionRevocation_StoreError_FailClosedByDefault(t *testing.T) {
@@ -245,6 +277,23 @@ func TestUnit_SessionRevocation_StoreError_FailClosedByDefault(t *testing.T) {
 	require.NoError(t, err)
 	require.NotNil(t, resp.GetDeniedResponse(), "session store error must deny in strict mode")
 	require.Equal(t, int32(503), int32(resp.GetDeniedResponse().Status.Code))
+}
+
+// A burst of distinct still-live keys (frozen clock, so nothing expires) must
+// not grow the cache without bound: when the expired-sweep frees nothing, the
+// oldest batch is hard-evicted so the map stays at or below the cap.
+func TestUnit_CachedRevoker_HardEvictsWhenSweepFreesNothing(t *testing.T) {
+	now := time.Now()
+	noStore := func(context.Context, string) (bool, error) { return false, nil }
+	rev := newCachedRevoker(noStore, noStore, time.Minute)
+	rev.now = func() time.Time { return now } // frozen: no entry ever expires
+
+	for i := 0; i < revocationCacheMaxEntries+revocationCacheEvictBatch; i++ {
+		rev.store("k"+strconv.Itoa(i), false)
+	}
+
+	require.LessOrEqual(t, len(rev.entries), revocationCacheMaxEntries,
+		"cache must stay bounded even when no entry has expired")
 }
 
 // ============================================================================

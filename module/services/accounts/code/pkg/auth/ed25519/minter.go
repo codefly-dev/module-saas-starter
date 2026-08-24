@@ -655,7 +655,10 @@ func (m *Minter) RevokeAccess(ctx context.Context, accessToken string) error {
 	if claims.ID == "" || claims.ExpiresAt == nil {
 		return nil
 	}
-	ttl := time.Until(claims.ExpiresAt.Time)
+	// Extend the marker past exp by the verifier clock-skew leeway: a token is
+	// accepted until exp+ClockSkew (here and at the sidecar), so a marker that
+	// expired at exp would leave a revoked token usable for the leeway window.
+	ttl := time.Until(claims.ExpiresAt.Time) + m.cfg.ClockSkew
 	if ttl <= 0 {
 		return nil
 	}
@@ -672,7 +675,10 @@ func (m *Minter) RevokeSessionAccess(ctx context.Context, sessionID string) erro
 	if sessionID == "" {
 		return nil
 	}
-	return m.revoker.RevokeSession(ctx, sessionID, m.cfg.AccessTokenTTL)
+	// AccessTokenTTL + ClockSkew: the last token issued for this session is
+	// accepted until issue+AccessTokenTTL+leeway, so the marker must outlive
+	// that window (see RevokeAccess).
+	return m.revoker.RevokeSession(ctx, sessionID, m.cfg.AccessTokenTTL+m.cfg.ClockSkew)
 }
 
 func (m *Minter) signAccess(identity *auth.Identity, sessionID uuid.UUID, now time.Time) (string, error) {

@@ -9,6 +9,7 @@ import (
 	"log"
 	"strconv"
 	"strings"
+	"time"
 
 	corev3 "github.com/envoyproxy/go-control-plane/envoy/config/core/v3"
 	authv3 "github.com/envoyproxy/go-control-plane/envoy/service/auth/v3"
@@ -164,6 +165,17 @@ var logoutPaths = map[string]bool{
 	"/customers.AuthService/Logout":        true,
 }
 
+// tokenClockSkewLeeway is the exp/nbf tolerance for access-token validation.
+// It MUST match accounts' Config.ClockSkew (60s) so a token accepted on the
+// direct accounts path is accepted on this gateway path and vice versa — a
+// smaller value here would spuriously 401 clock-skewed tokens near expiry.
+// accounts writes revocation markers with TTL = remaining-lifetime + this
+// leeway (ed25519/minter.go), so a revoked token cannot slip through the
+// post-exp acceptance window this leeway opens.
+//
+// NB: this is a time.Duration; the bare literal 60 would be 60 nanoseconds.
+const tokenClockSkewLeeway = 60 * time.Second
+
 // checkJWT runs full alg-locked Ed25519 validation plus iss/aud/exp, consults
 // the revocation list, then projects the claims onto forwarded headers.
 func (s *Sidecar) checkJWT(ctx context.Context, tokenString, path string) (*authv3.CheckResponse, error) {
@@ -177,7 +189,7 @@ func (s *Sidecar) checkJWT(ctx context.Context, tokenString, path string) (*auth
 		jwt.WithIssuer(s.issuer),
 		jwt.WithAudience(s.audience),
 		jwt.WithExpirationRequired(),
-		jwt.WithLeeway(60),
+		jwt.WithLeeway(tokenClockSkewLeeway),
 	)
 	token, err := parser.ParseWithClaims(tokenString, claims, func(t *jwt.Token) (any, error) {
 		if t.Method.Alg() != "EdDSA" {
