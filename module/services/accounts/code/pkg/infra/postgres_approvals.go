@@ -50,7 +50,11 @@ func scanApprovalRequest(row pgx.Row) (*business.ApprovalRequest, error) {
 	// Fail closed on a malformed policy: a policy that silently unmarshals to the
 	// zero value would drop the approver-set restriction and the self-approval
 	// block, so a corrupt row must surface as an error, never as a permissive
-	// default. subject and resume_ref get the same treatment for integrity.
+	// default. subject and resume_ref are hard-failed too, but not for that
+	// security reason — they carry no access control. The write path only ever
+	// marshals them from a Go map/struct, so on-disk they are always JSON
+	// objects; a value that will not unmarshal means the row was corrupted
+	// out-of-band, and reading it as if intact would be worse than erroring.
 	if len(subjectJSON) > 0 {
 		if err := json.Unmarshal(subjectJSON, &r.Subject); err != nil {
 			return nil, fmt.Errorf("unmarshal approval subject: %w", err)
