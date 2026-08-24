@@ -7,6 +7,28 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+func TestParseProxyTrust_FailsOnMalformedCIDR(t *testing.T) {
+	for _, raw := range []string{
+		"10.0.0.0/8,not-an-ip",
+		"10.0.0.0/33",
+		"garbage",
+	} {
+		_, err := parseProxyTrust(raw)
+		require.Error(t, err, raw)
+	}
+}
+
+func TestParseProxyTrust_AcceptsValidEntriesAndEmpty(t *testing.T) {
+	for _, raw := range []string{
+		"",
+		"10.0.0.0/8",
+		"10.0.0.0/8, 192.0.2.10, 2001:db8::/32",
+	} {
+		_, err := parseProxyTrust(raw)
+		require.NoError(t, err, raw)
+	}
+}
+
 func TestClientIPIgnoresForwardingHeadersFromUntrustedPeer(t *testing.T) {
 	trust := newProxyTrust("10.0.0.0/8")
 	req := httptest.NewRequest("GET", "/", nil)

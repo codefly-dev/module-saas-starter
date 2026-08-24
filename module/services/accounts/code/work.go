@@ -117,7 +117,8 @@ func doWork(ctx context.Context) (Clean, error) {
 		return nil, err
 	}
 	service.SetAbuseVerifier(abuseVerifier)
-	if _, disabled := abuseVerifier.(abuse.DisabledVerifier); disabled {
+	_, abuseDisabled := abuseVerifier.(abuse.DisabledVerifier)
+	if abuseDisabled {
 		w.Warn("ABUSE PROTECTION DISABLED — anonymous endpoints (Authenticate, RegisterUser, JoinWaitlist, SendMagicLink) are guarded by rate limiting alone; set ABUSE_PROTECTION_MODE=turnstile before serving production traffic")
 	}
 
@@ -130,6 +131,9 @@ func doWork(ctx context.Context) (Clean, error) {
 		return nil, err
 	}
 	adapters.WithTrustedProxies(trustedProxies)
+	if len(trustedProxies) == 0 {
+		w.Warn("TRUSTED_PROXY_CIDRS unset — behind an ingress, per-IP rate limiting attributes all X-Forwarded-For traffic to the proxy's own IP (one shared bucket); set it to the ingress CIDRs to bucket by real client IP")
+	}
 	if err := service.SetAcquisitionMode(os.Getenv("ACQUISITION_MODE")); err != nil {
 		return nil, err
 	}
@@ -416,6 +420,7 @@ func doWork(ctx context.Context) (Clean, error) {
 	// unreachable, NewRedisCache returns nil and the app runs without
 	// caching — zero behavior change, just slower auth checks.
 	var closeCache func() error
+	rateLimiterWired := false
 	if redisCache, c, rerr := infra.NewRedisCache(ctx); rerr == nil && redisCache != nil {
 		orgCache := cache.NewOrgMembershipCache(redisCache)
 		adapters.WithOrgMembershipCache(orgCache)
@@ -427,7 +432,11 @@ func doWork(ctx context.Context) (Clean, error) {
 		// Per-org / per-API-key rate limiting. Falls back to
 		// allow-all if redisCache is nil (no Redis available).
 		adapters.WithRateLimiter(cache.NewRateLimiter(redisCache))
+		rateLimiterWired = true
 		closeCache = c
+	}
+	if anonymousEndpointsUnprotected(abuseDisabled, rateLimiterWired) {
+		w.Warn("ANONYMOUS ENDPOINTS UNPROTECTED — abuse protection is disabled AND no Redis rate limiter is wired, so Authenticate/RegisterUser/JoinWaitlist/SendMagicLink have NO app-layer throttle; enable ABUSE_PROTECTION_MODE=turnstile or wire the cache dependency before serving production traffic")
 	}
 
 	adapters.WithService(service)
@@ -755,6 +764,14 @@ func configuredAnalyticsSink() (analytics.Destination, bool, error) {
 	default:
 		return nil, false, fmt.Errorf("PRODUCT_ANALYTICS_MODE must be disabled, noop, or posthog")
 	}
+}
+
+// anonymousEndpointsUnprotected reports whether the four anonymous endpoints
+// have NO app-layer throttle: abuse protection disabled AND no rate limiter
+// wired (no Redis). Either guard alone is a backstop; only the combination
+// leaves them open.
+func anonymousEndpointsUnprotected(abuseDisabled, rateLimiterWired bool) bool {
+	return abuseDisabled && !rateLimiterWired
 }
 
 func configuredAbuseVerifier() (abuse.Verifier, error) {
