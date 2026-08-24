@@ -101,13 +101,21 @@ func (*billingAuthorizationClient) ListInvoices(context.Context, string, int) ([
 	return nil, nil
 }
 
-type fixedAccessMinter struct{ identity *auth.Identity }
+type fixedAccessMinter struct {
+	identity  *auth.Identity
+	verifyErr error
+}
 
 func (*fixedAccessMinter) Mint(context.Context, *auth.Identity) (*auth.TokenPair, error) {
 	return nil, nil
 }
 
-func (m *fixedAccessMinter) VerifyAccess(string) (*auth.Identity, error) { return m.identity, nil }
+func (m *fixedAccessMinter) VerifyAccess(string) (*auth.Identity, error) {
+	if m.verifyErr != nil {
+		return nil, m.verifyErr
+	}
+	return m.identity, nil
+}
 
 func (*fixedAccessMinter) VerifyRefresh(context.Context, string) (*auth.TokenPair, error) {
 	return nil, nil
