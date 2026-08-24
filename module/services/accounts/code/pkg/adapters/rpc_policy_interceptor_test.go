@@ -16,6 +16,24 @@ import (
 	"google.golang.org/grpc/status"
 )
 
+func TestReflectionRPCsAreDeniedAsUnclassified(t *testing.T) {
+	// gRPC server reflection is registered on the tenant server (grpc_gen.go),
+	// but its methods are not in the RPC policy catalog, so the default-deny
+	// authorizer rejects them before any handler runs — reflection leaks no
+	// schema even though it is registered. A regression that classified or
+	// exempted reflection would hand unauthenticated callers the full API
+	// surface; this pins the deny.
+	policy := &grpcPolicyAuthorizer{getMinter: nil, exposure: rpcExposureTenant}
+	for _, method := range []string{
+		"/grpc.reflection.v1.ServerReflection/ServerReflectionInfo",
+		"/grpc.reflection.v1alpha.ServerReflection/ServerReflectionInfo",
+	} {
+		_, err := policy.authorize(context.Background(), method)
+		require.Error(t, err, method)
+		require.Equal(t, codes.PermissionDenied, status.Code(err), method)
+	}
+}
+
 func TestDirectJWTStampsVerifiedActorOnContext(t *testing.T) {
 	chain := &auth.Actor{Subject: "svc:billing-worker", Act: &auth.Actor{Subject: "svc:gateway"}}
 	minter := &fixedAccessMinter{identity: &auth.Identity{
