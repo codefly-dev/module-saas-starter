@@ -32,7 +32,7 @@ CREATE TABLE approval_requests (
     requested_by  TEXT  NOT NULL,
 
     -- Quorum: the number of DISTINCT approve decisions required. The rest of the
-    -- policy (explicit approver_set, block_self, decide_permission) lives in the
+    -- policy (explicit approver_set, allow_self, decide_permission) lives in the
     -- policy JSONB so it can grow without a migration.
     quorum        INT   NOT NULL DEFAULT 1 CHECK (quorum >= 1),
     policy        JSONB NOT NULL DEFAULT '{}'::jsonb,

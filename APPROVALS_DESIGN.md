@@ -110,9 +110,10 @@ isolated by the same mechanism as every other tenant table.
 - **Approver model: explicit approver set vs. anyone with `approvals:decide`?**
   → **Both, expressed in `policy`.** Default is "any principal holding
   `approvals:decide` in the org." A request may additionally pin an explicit
-  approver set and/or forbid the requester from being a decider (self-approval
-  block). Start with the permission-only model; the explicit-set field is in
-  the schema from day one but unenforced until a flow needs it.
+  approver set. Separation of duties is the default: the requester cannot
+  decide their own request unless the policy opts in with `allow_self`. Start
+  with the permission-only model; the explicit-set field is in the schema from
+  day one but unenforced until a flow needs it.
 - **Quorum policy source: per-request vs. a policy catalog?**
   → **Per-request `policy` (JSONB) now; a named policy catalog later.** N-of-M
   is a small, self-contained value; a catalog is premature until a second flow
@@ -138,7 +139,7 @@ CREATE TABLE approval_requests (
     action        TEXT NOT NULL,          -- e.g. "grant"
     subject       JSONB NOT NULL,         -- what is being approved (typed per resource)
     requested_by  TEXT NOT NULL,          -- actor id (matches actor-chain actor shape)
-    policy        JSONB NOT NULL,         -- {quorum:N, approver_set?:[...], block_self?:bool}
+    policy        JSONB NOT NULL,         -- {quorum:N, approver_set?:[...], allow_self?:bool}
     state         TEXT NOT NULL DEFAULT 'pending'
                   CHECK (state IN ('pending','approved','denied',
                                    'expired','escalated','cancelled')),

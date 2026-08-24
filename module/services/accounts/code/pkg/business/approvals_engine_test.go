@@ -210,11 +210,12 @@ func TestApprovalEngine_Deny_ShortCircuits(t *testing.T) {
 	require.Equal(t, business.ApprovalDenied, out.State)
 }
 
-func TestApprovalEngine_BlockSelf(t *testing.T) {
+func TestApprovalEngine_SelfApproval_BlockedByDefault(t *testing.T) {
 	svc, _ := newApprovalService(t)
+	// No AllowSelf in the policy: separation of duties is the default, so the
+	// requester cannot approve their own request.
 	id := mustCreate(t, svc, &business.CreateApprovalRequestInput{
 		OrgID: "org-a", Resource: "spend_override", Action: "grant", RequestedBy: "user-1",
-		Policy: business.ApprovalPolicy{BlockSelf: true},
 	})
 
 	_, err := svc.Decide(context.Background(), "org-a", id, business.DecideInput{
@@ -222,6 +223,20 @@ func TestApprovalEngine_BlockSelf(t *testing.T) {
 	})
 	require.Error(t, err)
 	require.Equal(t, business.ErrTypePermission, storeErrType(t, err))
+}
+
+func TestApprovalEngine_SelfApproval_AllowedWhenOptedIn(t *testing.T) {
+	svc, _ := newApprovalService(t)
+	id := mustCreate(t, svc, &business.CreateApprovalRequestInput{
+		OrgID: "org-a", Resource: "spend_override", Action: "grant", RequestedBy: "user-1",
+		Policy: business.ApprovalPolicy{AllowSelf: true},
+	})
+
+	out, err := svc.Decide(context.Background(), "org-a", id, business.DecideInput{
+		Decider: "user-1", Decision: business.DecisionApprove,
+	})
+	require.NoError(t, err)
+	require.True(t, out.Approved)
 }
 
 func TestApprovalEngine_ApproverSet(t *testing.T) {
@@ -384,4 +399,43 @@ func TestApprovalEngine_Sweep_Escalates_StaysDecidable(t *testing.T) {
 	})
 	require.NoError(t, err)
 	require.True(t, out.Approved)
+}
+
+func TestApprovalEngine_Decide_RejectsExpired(t *testing.T) {
+	svc, _ := newApprovalService(t)
+	past := time.Now().Add(-time.Minute)
+	// The request is still pending in the store (the sweeper is unwired), yet its
+	// decision window has closed: Decide must reject rather than reach quorum.
+	id := mustCreate(t, svc, &business.CreateApprovalRequestInput{
+		OrgID: "org-a", Resource: "role", Action: "grant", RequestedBy: "user-1",
+		ExpiresAt: &past,
+	})
+
+	_, err := svc.Decide(context.Background(), "org-a", id, business.DecideInput{
+		Decider: "approver-1", Decision: business.DecisionApprove,
+	})
+	require.Error(t, err)
+	require.Equal(t, business.ErrTypeConflict, storeErrType(t, err))
+}
+
+func TestApprovalEngine_Create_RejectsQuorumAboveApproverSet(t *testing.T) {
+	svc, _ := newApprovalService(t)
+	_, err := svc.CreateApprovalRequest(context.Background(), &business.CreateApprovalRequestInput{
+		OrgID: "org-a", Resource: "role", Action: "grant", RequestedBy: "user-1",
+		Quorum: 3,
+		Policy: business.ApprovalPolicy{ApproverSet: []string{"approver-1", "approver-2"}},
+	})
+	require.Error(t, err)
+}
+
+func TestApprovalEngine_Decide_RejectsEmptyOrg(t *testing.T) {
+	svc, _ := newApprovalService(t)
+	id := mustCreate(t, svc, &business.CreateApprovalRequestInput{
+		OrgID: "org-a", Resource: "role", Action: "grant", RequestedBy: "user-1",
+	})
+
+	_, err := svc.Decide(context.Background(), "", id, business.DecideInput{
+		Decider: "approver-1", Decision: business.DecisionApprove,
+	})
+	require.Error(t, err)
 }
