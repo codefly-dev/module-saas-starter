@@ -50,6 +50,99 @@ func TestGateway_Solution_Unregistered_BadGateway(t *testing.T) {
 	require.Contains(t, w.Body.String(), "not registered")
 }
 
+// A solution's static Module-Federation surface (/assets/*) and public
+// discovery documents (/.well-known/*) are served unauthenticated for reads: a
+// browser's module loader fetches the MF manifest, remote entry, and chunks
+// with no bearer, so gating them would break same-origin loading.
+func TestGateway_Solution_PublicSurface_NoToken_OK(t *testing.T) {
+	gw, _, _, _ := newGatewayHarness(t)
+	fake := registerSolutionUpstream(t, gw, "lastlogin-go")
+
+	for _, path := range []string{
+		"/assets/mf-manifest.json",
+		"/assets/remoteEntry.js",
+		"/assets/chunks/app.1a2b3c.js",
+		"/assets",
+		"/.well-known/capabilities",
+	} {
+		req := httptest.NewRequest(http.MethodGet, "/solutions/lastlogin-go"+path, nil)
+		w := httptest.NewRecorder()
+		gw.ServeHTTP(w, req)
+
+		require.Equal(t, http.StatusOK, w.Code, "path %q must be served without a bearer", path)
+		require.Equal(t, "solution-response", w.Body.String())
+		require.Equal(t, path, fake.lastPath, "path is rewritten to the solution suffix")
+	}
+}
+
+// The public read exemption never forwards caller-supplied identity: a request
+// spoofing identity headers reaches the upstream with them stripped.
+func TestGateway_Solution_PublicSurface_StripsSpoofedIdentity(t *testing.T) {
+	gw, _, _, _ := newGatewayHarness(t)
+	fake := registerSolutionUpstream(t, gw, "lastlogin-go")
+
+	req := httptest.NewRequest(http.MethodGet, "/solutions/lastlogin-go/assets/mf-manifest.json", nil)
+	req.Header.Set("x-user-id", "attacker")
+	req.Header.Set("x-org-role", "super_admin")
+	w := httptest.NewRecorder()
+	gw.ServeHTTP(w, req)
+
+	require.Equal(t, http.StatusOK, w.Code)
+	require.Empty(t, fake.lastHeaders.Get("x-user-id"))
+	require.Empty(t, fake.lastHeaders.Get("x-org-role"))
+}
+
+// The exemption is read-only: a non-GET/HEAD request to the public surface is
+// still auth-required, so it cannot be used as an unauthenticated write path.
+func TestGateway_Solution_PublicSurface_NonReadStillAuthRequired(t *testing.T) {
+	gw, _, _, _ := newGatewayHarness(t)
+	fake := registerSolutionUpstream(t, gw, "lastlogin-go")
+
+	req := httptest.NewRequest(http.MethodPost, "/solutions/lastlogin-go/assets/mf-manifest.json", nil)
+	w := httptest.NewRecorder()
+	gw.ServeHTTP(w, req)
+
+	require.Equal(t, http.StatusUnauthorized, w.Code)
+	require.Nil(t, fake.lastHeaders, "upstream must not be reached without auth")
+}
+
+// A traversal suffix cannot borrow the /assets exemption to reach an
+// authenticated endpoint: the decision is made on the cleaned path.
+func TestGateway_Solution_PublicSurface_TraversalStillAuthRequired(t *testing.T) {
+	gw, _, _, _ := newGatewayHarness(t)
+	fake := registerSolutionUpstream(t, gw, "lastlogin-go")
+
+	req := httptest.NewRequest(http.MethodGet, "/solutions/lastlogin-go/assets/../lastlogin", nil)
+	w := httptest.NewRecorder()
+	gw.ServeHTTP(w, req)
+
+	require.Equal(t, http.StatusUnauthorized, w.Code)
+	require.Nil(t, fake.lastHeaders, "upstream must not be reached without auth")
+}
+
+// A solution's data endpoints stay auth-required: /lastlogin needs a valid
+// bearer for both GET and POST, and reaches the upstream once presented.
+func TestGateway_Solution_DataEndpoint_RequiresBearer(t *testing.T) {
+	gw, _, _, priv := newGatewayHarness(t)
+	fake := registerSolutionUpstream(t, gw, "lastlogin-go")
+
+	for _, method := range []string{http.MethodGet, http.MethodPost} {
+		fake.lastHeaders = nil
+		noTok := httptest.NewRequest(method, "/solutions/lastlogin-go/lastlogin", nil)
+		w := httptest.NewRecorder()
+		gw.ServeHTTP(w, noTok)
+		require.Equal(t, http.StatusUnauthorized, w.Code, "%s /lastlogin without a bearer must be denied", method)
+		require.Nil(t, fake.lastHeaders, "upstream must not be reached without auth")
+
+		withTok := httptest.NewRequest(method, "/solutions/lastlogin-go/lastlogin", nil)
+		withTok.Header.Set("authorization", "Bearer "+signValidToken(t, priv))
+		w = httptest.NewRecorder()
+		gw.ServeHTTP(w, withTok)
+		require.Equal(t, http.StatusOK, w.Code, "%s /lastlogin with a valid bearer is forwarded", method)
+		require.Equal(t, "/lastlogin", fake.lastPath)
+	}
+}
+
 // A valid JWT is projected into identity headers exactly as for a catalog
 // route, the path is rewritten to the solution suffix, and the caller's bearer
 // is preserved so the solution can call downstream services on the user's

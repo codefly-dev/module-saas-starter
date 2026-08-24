@@ -5,6 +5,7 @@ import (
 	"net"
 	"net/http"
 	"net/url"
+	stdpath "path"
 	"strings"
 	"sync"
 
@@ -17,11 +18,14 @@ import (
 // knowledge of. Solutions self-register their upstream on startup; the gateway
 // then proxies `/solutions/{id}/{path}` to them. This is a deliberate, contained
 // relaxation of the otherwise static-catalog-only rule (every request must match
-// an explicit catalog entry): solution routes are ALWAYS auth-required, the same
-// ext_authz Check runs, and identity headers are stripped and re-stamped exactly
-// as for catalog routes. The gateway performs authentication and identity
-// projection; the solution's own downstream calls (e.g. accounts QueryAuditLog,
-// which still enforces audit:read) remain the authorization authority.
+// an explicit catalog entry): a solution's data endpoints are auth-required, the
+// same ext_authz Check runs, and identity headers are stripped and re-stamped
+// exactly as for catalog routes. Only the solution's public static surface
+// (/assets and /.well-known, served open by the origin) is exempt from auth for
+// reads — see isPublicSolutionPath. The gateway performs authentication and
+// identity projection; the solution's own downstream calls (e.g. accounts
+// QueryAuditLog, which still enforces audit:read) remain the authorization
+// authority.
 //
 // The store is process-local, exactly like the frontend's solution registry.
 // For a single dev/runtime instance that is sufficient; with more than one
@@ -81,6 +85,21 @@ func (g *Gateway) handleSolutionRequest(w http.ResponseWriter, r *http.Request) 
 		return true
 	}
 
+	// A solution's static Module-Federation surface — the MF manifest, remote
+	// entry, and JS chunks under /assets, plus the public /.well-known documents —
+	// is fetched by the browser's module loader with no bearer, exactly as the
+	// solution origin itself serves it (open, permissive CORS). Auth-gating those
+	// script/manifest fetches 401s them and makes the remote impossible to load
+	// same-origin through the host. Serve the public GET surface unauthenticated,
+	// with caller identity still stripped; every other path (the solution's data
+	// endpoints, e.g. /lastlogin) stays auth-required below.
+	if isPublicSolutionPath(r.Method, path) {
+		stripAllIdentityHeaders(r)
+		entry := &RouteEntry{Service: "solution:" + id, UpstreamPath: "/" + path}
+		g.proxyTo(w, r, upstream, entry)
+		return true
+	}
+
 	// Same identity discipline as every protected route: drop caller-supplied
 	// identity, run ext_authz, and require a valid credential.
 	stripAllIdentityHeaders(r)
@@ -108,6 +127,31 @@ func (g *Gateway) handleSolutionRequest(w http.ResponseWriter, r *http.Request) 
 	entry := &RouteEntry{Service: "solution:" + id, UpstreamPath: "/" + path, Protected: true}
 	g.proxyTo(w, r, upstream, entry)
 	return true
+}
+
+// solutionPublicPrefixes are the path segments a solution serves openly: its
+// static Module-Federation assets (/assets/*) and public capability/discovery
+// documents (/.well-known/*). These carry no user data, so the gateway exempts
+// unauthenticated reads of them — matching the solution origin, which already
+// serves them without a bearer.
+var solutionPublicPrefixes = []string{"assets", ".well-known"}
+
+// isPublicSolutionPath reports whether a solution sub-path (the suffix after
+// /solutions/{id}/, with no leading slash) is part of the solution's public,
+// unauthenticated read surface. The decision is made on the cleaned path so a
+// traversal suffix like `assets/../lastlogin` cannot borrow the /assets
+// exemption to reach an authenticated endpoint.
+func isPublicSolutionPath(method, subPath string) bool {
+	if method != http.MethodGet && method != http.MethodHead {
+		return false
+	}
+	clean := stdpath.Clean("/" + subPath)
+	for _, prefix := range solutionPublicPrefixes {
+		if clean == "/"+prefix || strings.HasPrefix(clean, "/"+prefix+"/") {
+			return true
+		}
+	}
+	return false
 }
 
 func (g *Gateway) handleSolutionRegister(w http.ResponseWriter, r *http.Request) {
