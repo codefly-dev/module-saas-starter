@@ -222,6 +222,11 @@ func main() {
 		if err != nil {
 			panic(err)
 		}
+		// Malformed TRUSTED_PROXY_CIDRS fails boot rather than silently trusting
+		// a narrower/empty set — parity with accounts' ParseTrustedProxyCIDRs.
+		if _, err := parseProxyTrust(workspaceEnv("gateway", "TRUSTED_PROXY_CIDRS")); err != nil {
+			panic(err)
+		}
 		rateLimiter = NewRateLimiter(1000,
 			WithRedisURL(redisURL),
 			WithAuthenticationAttemptLimit(authenticationAttemptLimit),
