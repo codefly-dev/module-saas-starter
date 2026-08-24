@@ -216,6 +216,23 @@ func (s *Sidecar) checkJWT(ctx context.Context, tokenString, path string) (*auth
 		}
 	}
 
+	// Session-scoped revocation (admin session-kill). A single marker keyed by
+	// the `sid` claim invalidates every access token in the session, covering
+	// the path where the admin never held the victim's token. Same fail-closed
+	// stance as the jti check.
+	if claims.SessionID != "" {
+		revoked, err := s.revoker.RevokedSession(ctx, claims.SessionID)
+		switch {
+		case err != nil && !s.revocationFailOpen:
+			log.Printf("session revocation check failed, denying (fail-closed): %v", err)
+			return deny(503, "revocation check unavailable"), nil
+		case err != nil:
+			log.Printf("session revocation check failed, admitting (fail-open): %v", err)
+		case revoked:
+			return deny(401, "session revoked"), nil
+		}
+	}
+
 	hdrs := []*corev3.HeaderValueOption{
 		hdr("x-user-id", claims.Subject),
 		hdr("x-org-id", claims.OrgID),

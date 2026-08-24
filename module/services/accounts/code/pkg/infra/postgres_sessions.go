@@ -77,12 +77,25 @@ func (s *PostgresStore) GetSessionByRefreshTokenHash(ctx context.Context, hash s
 	return &session, nil
 }
 
-func (s *PostgresStore) RevokeSession(ctx context.Context, deviceSessionID string, reason string) error {
+func (s *PostgresStore) RevokeSession(ctx context.Context, deviceSessionID string, reason string) ([]string, error) {
 	q := s.getQueryExecutor(ctx)
-	_, err := q.Exec(ctx,
-		`UPDATE sessions SET revoked_at = NOW(), revoked_reason = $2 WHERE family_id = $1 AND revoked_at IS NULL`,
+	rows, err := q.Query(ctx,
+		`UPDATE sessions SET revoked_at = NOW(), revoked_reason = $2 WHERE family_id = $1 AND revoked_at IS NULL RETURNING id`,
 		deviceSessionID, reason)
-	return err
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var ids []string
+	for rows.Next() {
+		var id string
+		if err := rows.Scan(&id); err != nil {
+			return nil, err
+		}
+		ids = append(ids, id)
+	}
+	return ids, rows.Err()
 }
 
 func (s *PostgresStore) RevokeSessionFamily(ctx context.Context, familyID string, reason string) error {

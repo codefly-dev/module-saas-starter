@@ -15,8 +15,15 @@ import (
 // revocationKeyPrefix mirrors accounts' cache.TokenRevoker key layout
 // ("revoked-jti:<jti>"). The sidecar and accounts share one Redis keyspace,
 // so this MUST stay byte-for-byte identical to the writer's prefix — accounts
-// writes the marker on logout / admin session-kill, the sidecar reads it here.
+// writes a jti marker on logout, the sidecar reads it here.
 const revocationKeyPrefix = "revoked-jti:"
+
+// sessionRevocationKeyPrefix mirrors accounts' cache.TokenRevoker
+// ("revoked-session:<sid>"). Admin session-kill writes one marker per revoked
+// session row; it invalidates every access token carrying that `sid` claim
+// without the killer ever holding the victim's bearer. MUST stay byte-for-byte
+// identical to the accounts writer.
+const sessionRevocationKeyPrefix = "revoked-session:"
 
 // defaultRevocationCacheTTL bounds how long a revocation answer is served from
 // the local cache before the sidecar re-consults Redis. It is the documented
@@ -42,6 +49,7 @@ const revocationCacheMaxEntries = 50000
 // full cache window.
 type revoker interface {
 	Revoked(ctx context.Context, jti string) (bool, error)
+	RevokedSession(ctx context.Context, sessionID string) (bool, error)
 	Forget(jti string)
 }
 
@@ -50,7 +58,8 @@ type revoker interface {
 // identically on both the sidecar and direct-to-accounts paths.
 type noopRevoker struct{}
 
-func (noopRevoker) Revoked(context.Context, string) (bool, error) { return false, nil }
+func (noopRevoker) Revoked(context.Context, string) (bool, error)        { return false, nil }
+func (noopRevoker) RevokedSession(context.Context, string) (bool, error) { return false, nil }
 
 func (noopRevoker) Forget(string) {}
 
@@ -75,7 +84,17 @@ func newRedisRevocationStore(rawURL string) (*redisRevocationStore, error) {
 // (key absent) is an authoritative not-revoked; any other error is a store
 // failure the caller must decide on — never silently swallowed here.
 func (s *redisRevocationStore) revoked(ctx context.Context, jti string) (bool, error) {
-	switch err := s.client.Get(ctx, revocationKeyPrefix+jti).Err(); {
+	return s.markerPresent(ctx, revocationKeyPrefix+jti)
+}
+
+// revokedSession reports whether the session id has an unexpired
+// revoked-session marker. Same store-failure contract as revoked.
+func (s *redisRevocationStore) revokedSession(ctx context.Context, sessionID string) (bool, error) {
+	return s.markerPresent(ctx, sessionRevocationKeyPrefix+sessionID)
+}
+
+func (s *redisRevocationStore) markerPresent(ctx context.Context, key string) (bool, error) {
+	switch err := s.client.Get(ctx, key).Err(); {
 	case err == nil:
 		return true, nil
 	case errors.Is(err, redis.Nil):
@@ -101,20 +120,24 @@ type revocationCacheEntry struct {
 // not-revoked cache is the source of the documented ≤TTL revocation window.
 // Store errors are NOT cached — they propagate so the caller fails closed.
 type cachedRevoker struct {
-	lookup revocationLookup
-	ttl    time.Duration
-	now    func() time.Time
+	lookup        revocationLookup
+	sessionLookup revocationLookup
+	ttl           time.Duration
+	now           func() time.Time
 
+	// entries is keyed by the FULL redis key (prefix included) so the jti and
+	// session keyspaces share one bounded cache without colliding.
 	mu      sync.Mutex
 	entries map[string]revocationCacheEntry
 }
 
-func newCachedRevoker(lookup revocationLookup, ttl time.Duration) *cachedRevoker {
+func newCachedRevoker(lookup, sessionLookup revocationLookup, ttl time.Duration) *cachedRevoker {
 	return &cachedRevoker{
-		lookup:  lookup,
-		ttl:     ttl,
-		now:     time.Now,
-		entries: make(map[string]revocationCacheEntry),
+		lookup:        lookup,
+		sessionLookup: sessionLookup,
+		ttl:           ttl,
+		now:           time.Now,
+		entries:       make(map[string]revocationCacheEntry),
 	}
 }
 
@@ -122,20 +145,34 @@ func (c *cachedRevoker) Revoked(ctx context.Context, jti string) (bool, error) {
 	if jti == "" {
 		return false, nil
 	}
-	if revoked, ok := c.cached(jti); ok {
+	return c.answer(ctx, revocationKeyPrefix+jti, jti, c.lookup)
+}
+
+func (c *cachedRevoker) RevokedSession(ctx context.Context, sessionID string) (bool, error) {
+	if sessionID == "" {
+		return false, nil
+	}
+	return c.answer(ctx, sessionRevocationKeyPrefix+sessionID, sessionID, c.sessionLookup)
+}
+
+// answer serves cacheKey from the short-TTL cache, falling back to lookup(arg)
+// and caching the result. Store errors are never cached — they propagate so
+// the caller fails closed.
+func (c *cachedRevoker) answer(ctx context.Context, cacheKey, arg string, lookup revocationLookup) (bool, error) {
+	if revoked, ok := c.cached(cacheKey); ok {
 		return revoked, nil
 	}
-	revoked, err := c.lookup(ctx, jti)
+	revoked, err := lookup(ctx, arg)
 	if err != nil {
 		return false, err
 	}
-	c.store(jti, revoked)
+	c.store(cacheKey, revoked)
 	return revoked, nil
 }
 
 func (c *cachedRevoker) Forget(jti string) {
 	c.mu.Lock()
-	delete(c.entries, jti)
+	delete(c.entries, revocationKeyPrefix+jti)
 	c.mu.Unlock()
 }
 
@@ -183,7 +220,7 @@ func newRevoker(redisURL string, ttl time.Duration) (revoker, error) {
 		return nil, fmt.Errorf("revocation Redis URL: %w", err)
 	}
 	log.Printf("auth-sidecar: access-token revocation enabled (Redis-backed, %s local cache)", ttl)
-	return newCachedRevoker(store.revoked, ttl), nil
+	return newCachedRevoker(store.revoked, store.revokedSession, ttl), nil
 }
 
 // revocationCacheTTL resolves the local-cache window from workspace config,

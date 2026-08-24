@@ -188,7 +188,8 @@ func TestMFALoginIssuesNoSessionBeforeChallengeAndConsumesOnce(t *testing.T) {
 	// The management identifier represents the complete device family, not the
 	// latest rotated database row. Revoking it must invalidate the live token.
 	require.NoError(t, testStore.WithControlPlane(testCtx, func(ctx context.Context) error {
-		return testStore.RevokeSession(ctx, sessions[0].FamilyID, "integration_test")
+		_, err := testStore.RevokeSession(ctx, sessions[0].FamilyID, "integration_test")
+		return err
 	}))
 	_, err = testService.RefreshToken(testCtx, &gen.RefreshTokenRequest{RefreshToken: rotated.RefreshToken})
 	require.Error(t, err)
