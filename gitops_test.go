@@ -1017,6 +1017,7 @@ func TestGeneratedMarketingIngressUsesExactEnvironmentRoutes(t *testing.T) {
 		t.Fatal(err)
 	}
 	authorizedPorts := make(map[string][]any)
+	authorizedPrincipals := make(map[string][]any)
 	for _, object := range authorizationObjects {
 		if object["kind"] != "AuthorizationPolicy" {
 			continue
@@ -1028,6 +1029,8 @@ func TestGeneratedMarketingIngressUsesExactEnvironmentRoutes(t *testing.T) {
 		}
 		policySpec := object["spec"].(map[string]any)
 		rules := policySpec["rules"].([]any)
+		from := rules[0].(map[string]any)["from"].([]any)
+		authorizedPrincipals[name] = from[0].(map[string]any)["source"].(map[string]any)["principals"].([]any)
 		to := rules[0].(map[string]any)["to"].([]any)
 		operation := to[0].(map[string]any)["operation"].(map[string]any)
 		authorizedPorts[name] = operation["ports"].([]any)
@@ -1037,6 +1040,17 @@ func TestGeneratedMarketingIngressUsesExactEnvironmentRoutes(t *testing.T) {
 	}
 	if got := authorizedPorts["allow-istio-ingress-to-auth-sidecar"]; !slices.Equal(got, []any{"8080"}) {
 		t.Errorf("product ingress ports = %v, want [8080]", got)
+	}
+	// The ingress-allow policies must admit ONLY the ingress-gateway SA — the
+	// single seam through which north-south traffic enters the mesh. Asserting
+	// the principal value (not just the port) is what stops a widened allowlist
+	// from shipping green: a rule that also admitted, say, sa/default would let
+	// any in-namespace workload impersonate the gateway on public ports.
+	ingressSA := []any{"cluster.local/ns/istio-system/sa/istio-ingressgateway-service-account"}
+	for _, name := range []string{"allow-istio-ingress-to-marketing", "allow-istio-ingress-to-auth-sidecar"} {
+		if got := authorizedPrincipals[name]; !slices.Equal(got, ingressSA) {
+			t.Errorf("%s principals = %v, want only the ingress-gateway SA %v", name, got, ingressSA)
+		}
 	}
 }
 
