@@ -27,7 +27,9 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
+	"net/url"
 	"time"
 )
 
@@ -51,6 +53,9 @@ func LoadKeyFromVault(ctx context.Context, cfg VaultKeyLoaderConfig) (ed25519.Pr
 	}
 	if cfg.Token == "" {
 		return nil, fmt.Errorf("ed25519minter: vault token is required")
+	}
+	if err := validateVaultAddress(cfg.Address); err != nil {
+		return nil, err
 	}
 	if cfg.SecretPath == "" {
 		cfg.SecretPath = "secret/data/jwt-signing-key"
@@ -104,4 +109,36 @@ func LoadKeyFromVault(ctx context.Context, cfg VaultKeyLoaderConfig) (ed25519.Pr
 		return nil, fmt.Errorf("ed25519minter: wrong seed size: got %d want %d", len(seed), ed25519.SeedSize)
 	}
 	return ed25519.NewKeyFromSeed(seed), nil
+}
+
+// validateVaultAddress rejects fetching the signing key over cleartext http
+// from anywhere but loopback. Over http:// both the X-Vault-Token and the
+// returned Ed25519 private key travel in the clear; loopback stays allowed so
+// the dev fixture (http://localhost:8200) keeps working.
+func validateVaultAddress(address string) error {
+	u, err := url.Parse(address)
+	if err != nil {
+		return fmt.Errorf("ed25519minter: parse vault address: %w", err)
+	}
+	switch u.Scheme {
+	case "https":
+		return nil
+	case "http":
+		if isLoopbackHost(u.Hostname()) {
+			return nil
+		}
+		return fmt.Errorf("ed25519minter: refusing to fetch the signing key over cleartext http from non-loopback host %q; use https", u.Host)
+	default:
+		return fmt.Errorf("ed25519minter: vault address must use http or https, got scheme %q", u.Scheme)
+	}
+}
+
+func isLoopbackHost(host string) bool {
+	if host == "localhost" {
+		return true
+	}
+	if ip := net.ParseIP(host); ip != nil {
+		return ip.IsLoopback()
+	}
+	return false
 }
