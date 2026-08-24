@@ -4,6 +4,7 @@ import { getCurrentFixture } from "codefly";
 import { resolveAccountsBindings } from "./server/accounts-bindings.mjs";
 import {
 	baselineSecurityHeaders,
+	resolveCspInputs,
 	securityHeaders,
 } from "./server/security-headers.mjs";
 
@@ -57,6 +58,14 @@ const nextConfig = {
 	// fixture boundary above, so real deploys stay safe-by-default.
 	env: {
 		NEXT_PUBLIC_LEGAL_DEV_PLACEHOLDER: legalDevPlaceholder,
+		// Build-time snapshot of the env-derived CSP inputs. The runtime proxy
+		// (src/proxy.ts) reads this to compose the solution-page CSP from the SAME
+		// values baked into every other route's CSP and into the client bundle,
+		// adding only the runtime-registered solution origin. Resolving these from
+		// the server's runtime env instead would silently drop analytics/allowlist
+		// hosts on solution pages when build and runtime env differ. All values are
+		// non-secret origins already published in the CSP header. See resolveCspInputs.
+		SOLUTION_CSP_INPUTS: JSON.stringify(resolveCspInputs()),
 	},
 	// Product plugins are additive packages/* workspaces. Discover them instead
 	// of requiring each consumer to mutate this protected host config; packages

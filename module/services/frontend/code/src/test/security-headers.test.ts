@@ -2,7 +2,9 @@ import { describe, expect, it } from "vitest";
 import {
 	baselineSecurityHeaders,
 	contentSecurityPolicy,
+	contentSecurityPolicyFromInputs,
 	parseSolutionOrigins,
+	resolveCspInputs,
 	securityHeaders,
 } from "../../server/security-headers.mjs";
 
@@ -121,6 +123,52 @@ describe("contentSecurityPolicy", () => {
 		);
 		expect(directive(csp, "frame-src")).toBe(
 			"frame-src 'self' https://petstore.swagger.io https://challenges.cloudflare.com",
+		);
+	});
+});
+
+describe("resolveCspInputs / contentSecurityPolicyFromInputs", () => {
+	it("resolves env into the CSP inputs", () => {
+		const inputs = resolveCspInputs({
+			FRONTEND_SOLUTION_ORIGINS: "https://a.example.com",
+			NEXT_PUBLIC_PRODUCT_ANALYTICS_MODE: "posthog",
+			NEXT_PUBLIC_POSTHOG_HOST: "https://eu.i.posthog.com",
+			NEXT_PUBLIC_ABUSE_PROTECTION_MODE: "turnstile",
+		});
+		expect(inputs).toEqual({
+			solutionOrigins: ["https://a.example.com"],
+			analyticsOrigin: "https://eu.i.posthog.com",
+			turnstile: true,
+		});
+	});
+
+	it("builds the policy from a snapshot without re-reading env", () => {
+		// The proxy passes a build-time snapshot; the analytics host must survive
+		// even though no NEXT_PUBLIC_* env is present at call time. This is the
+		// case that regresses if the CSP is recomputed from runtime env.
+		const inputs = {
+			solutionOrigins: [],
+			analyticsOrigin: "https://eu.i.posthog.com",
+			turnstile: false,
+		};
+		const csp = contentSecurityPolicyFromInputs(inputs, [
+			"http://localhost:8091",
+		]);
+		expect(directive(csp, "connect-src")).toBe(
+			"connect-src 'self' http://localhost:8091 https://eu.i.posthog.com",
+		);
+		expect(directive(csp, "script-src")).toBe(
+			"script-src 'self' 'unsafe-inline' http://localhost:8091",
+		);
+	});
+
+	it("survives a snapshot that round-tripped through JSON (proxy path)", () => {
+		const inputs = JSON.parse(JSON.stringify(resolveCspInputs({})));
+		const csp = contentSecurityPolicyFromInputs(inputs, [
+			"https://remote.example",
+		]);
+		expect(directive(csp, "connect-src")).toBe(
+			"connect-src 'self' https://remote.example",
 		);
 	});
 });
