@@ -32,3 +32,17 @@ lint:
     - RPC_REQUEST_STANDARD_NAME
     - RPC_RESPONSE_STANDARD_NAME
   disallow_comment_ignores: true
+breaking:
+  use:
+    - FILE
+  # The S3/minio audit-export feature was removed wholesale (no client shipped
+  # a stable dependency on it). These two deletions are the intentional break;
+  # every other stable v1 file/message stays guarded by FILE_NO_DELETE etc.
+  ignore:
+    # AuditExportService and its messages are gone with the feature.
+    - saas/accounts/v1/audit_export.proto
+  ignore_only:
+    # Only AuditExportJob was dropped from this file; PrivacyExportJob and the
+    # rest of saas/exports/v1 remain protected against deletion.
+    MESSAGE_NO_DELETE:
+      - saas/exports/v1/jobs.proto
