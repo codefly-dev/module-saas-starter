@@ -19,7 +19,7 @@ import {
 	resolveCodeflyGatewayContext,
 } from "@/lib/codefly-gateway-context";
 import type { SolutionManifest } from "@/solutions/registry";
-import { contentSecurityPolicy } from "../server/security-headers.mjs";
+import { contentSecurityPolicyFromInputs } from "../server/security-headers.mjs";
 
 const PRODUCT_API_PREFIXES = ["/v1/", "/saas.accounts.v1."] as const;
 const INTERNAL_TOKEN_HEADER = "X-Codefly-Internal-Token";
@@ -66,6 +66,34 @@ const PUBLIC_PATHS = [
 
 const SOLUTION_PAGE = /^\/s\/([^/]+)/;
 
+// Build-time snapshot of the env-derived CSP inputs, inlined by next.config's
+// `env` block. Reading this constant — not re-resolving process.env per request
+// — keeps a solution page's CSP in lockstep with the build-time policy on every
+// other route and with the analytics/allowlist hosts the client bundle was
+// built to call. Absent only if the build failed to inline it, which must fail
+// loudly (never silently ship a narrowed CSP that drops those hosts).
+function baselineCspInputs(): {
+	solutionOrigins: string[];
+	analyticsOrigin: string | null;
+	turnstile: boolean;
+} {
+	const snapshot = process.env.SOLUTION_CSP_INPUTS;
+	if (!snapshot) {
+		throw new Error(
+			"SOLUTION_CSP_INPUTS is unset; next.config must snapshot the CSP inputs at build time",
+		);
+	}
+	return JSON.parse(snapshot);
+}
+
+function safeDecode(segment: string): string | null {
+	try {
+		return decodeURIComponent(segment);
+	} catch {
+		return null;
+	}
+}
+
 // A solution's Module Federation remote registers at RUNTIME (see
 // src/solutions/registry.ts), so the build-time CSP in next.config — which
 // excludes /s/:id precisely for this reason — cannot know its origin. This
@@ -81,17 +109,18 @@ function solutionContentSecurityPolicy(pathname: string): string | null {
 	if (!match) {
 		return null;
 	}
+	const id = safeDecode(match[1]);
 	const registry = (
 		globalThis as typeof globalThis & {
 			__solutionRegistry?: Map<string, SolutionManifest>;
 		}
 	).__solutionRegistry;
-	const solution = registry?.get(decodeURIComponent(match[1]));
+	const solution = id === null ? undefined : registry?.get(id);
 	// manifestUrl is validated as an absolute http(s) URL at registration.
 	const origins = solution
 		? [new URL(solution.frontend.manifestUrl).origin]
 		: [];
-	return contentSecurityPolicy(process.env, origins);
+	return contentSecurityPolicyFromInputs(baselineCspInputs(), origins);
 }
 
 function isPublic(pathname: string): boolean {
