@@ -247,11 +247,21 @@ func doWork(ctx context.Context) (Clean, error) {
 	if err != nil {
 		return nil, err
 	}
+	// Default fail-closed: a token whose revocation status can't be read is
+	// denied. Operators fronting accounts directly (no sidecar) can opt into
+	// fail-open to keep the direct verify path serving through a revocation-store
+	// outage, trading a revoked token's remaining-TTL exposure for availability —
+	// the same choice the sidecar exposes via SIDECAR_REVOCATION_FAIL_OPEN.
+	revocationFailOpen := strings.EqualFold(strings.TrimSpace(workspaceEnv("security", "ACCOUNTS_REVOCATION_FAIL_OPEN")), "true")
+	if revocationFailOpen {
+		wool.Get(ctx).Warn("ACCOUNTS_REVOCATION_FAIL_OPEN enabled: a revocation-store outage will admit possibly-revoked access tokens on the direct verify path until they expire")
+	}
 	minter := ed25519minter.New(ed25519minter.Config{
 		Issuer:                     "saas-starter",
 		Audience:                   "saas-starter",
 		SessionPolicy:              sessionPolicy,
 		AdditionalVerificationKeys: previousSigningKeys(ctx),
+		RevocationFailOpen:         revocationFailOpen,
 	}, priv, sessionStore)
 
 	service.SetIdentityResolver(resolver)
