@@ -236,7 +236,7 @@ func (f fakeRevoker) Revoke(_ context.Context, jti string, ttl time.Duration) er
 	}
 	return nil
 }
-func (f fakeRevoker) IsRevoked(context.Context, string) (bool, error)   { return f.revoked, f.err }
+func (f fakeRevoker) IsRevoked(context.Context, string) (bool, error) { return f.revoked, f.err }
 func (f fakeRevoker) RevokeSession(_ context.Context, sessionID string, ttl time.Duration) error {
 	if f.revokedSessions != nil {
 		f.revokedSessions[sessionID] = ttl
