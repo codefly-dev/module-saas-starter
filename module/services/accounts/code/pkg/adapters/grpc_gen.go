@@ -206,7 +206,14 @@ func NewGrpServer(c *Configuration, opts ...grpc.ServerOption) (*GrpcServer, err
 	configurePermissionServerKeys()
 	registerCatalogGRPCServices(grpcServer, s)
 	registerCatalogGRPCServices(internalServer, s)
-	reflection.Register(grpcServer)
+	// Server reflection enumerates every registered service and message to any
+	// caller that can reach the port — a discovery convenience locally, needless
+	// recon surface in a deployed environment. Register it only when running
+	// locally. This gate is re-applied by hand over the generated scaffold; a
+	// regeneration that drops it is caught by TestReflectionRegisteredOnlyLocally.
+	if codefly.IsLocal() {
+		reflection.Register(grpcServer)
+	}
 
 	return s, nil
 }
