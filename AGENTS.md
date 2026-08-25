@@ -49,6 +49,41 @@ codefly run service --fixture dev-admin
 - Docker must be running; `codefly doctor` checks prerequisites and
   `codefly clear` reaps stray processes/containers between runs.
 
+### Passing an environment variable to a service
+
+Three paths, by how permanent the value should be:
+
+- **Ad-hoc, this run only** — `--set <service>:KEY=VAL` (repeatable) injects the
+  var into that service's process env for the current run, nothing committed:
+
+  ```bash
+  codefly run service --fixture dev-admin \
+    --set frontend:FRONTEND_SKIN_DIR=/abs/path/to/skin-dir
+  ```
+
+  `--set` splits on the **first** `:` (service) then the **first** `=` (the
+  value may itself contain `:` or `=`). **Caveat:** the flag is a comma-split
+  list, so a value containing commas is torn into malformed entries — e.g. a
+  JSON blob like `FRONTEND_SKIN_JSON={"brand":"x","mode":"dark"}` will not
+  survive. Pass a comma-free value (a directory via `FRONTEND_SKIN_DIR`) or use
+  one of the paths below. (`--set` is a `codefly run` CLI flag; its authoritative
+  reference lives in the CLI, not this repo.)
+- **Committed, portable** — a **configuration group** under `configurations/`,
+  wired to the service in the deployment bindings. Use this for any value that
+  should travel with the repo. See
+  [module/deployment/README.md](./module/deployment/README.md#configuration--environment-variables)
+  for the layout, the `workspace_configuration_dependencies` wiring, and the
+  full add-a-var loop.
+- **Machine-local, uncommitted (frontend only)** — a `.env*.local` file in
+  `module/services/frontend/code/` is auto-loaded by `next dev` (the frontend's
+  `local` execution profile) and is gitignored. Handy for a value you want off
+  the command line but out of git, with no bindings/manifest churn.
+
+Rule of thumb: `--set` for a one-off, a configuration group for anything
+committed, and (in a deployed environment) a mounted ConfigMap for production —
+the same tiering the skin resolver follows (`FRONTEND_SKIN_JSON` for a quick
+inline descriptor, `FRONTEND_SKIN_DIR` for a mounted directory).
+
 For a real external identity provider (WorkOS) and the production-grade
 provider stack (Stripe, Resend, PostHog, Sentry, OTEL, Turnstile), use the
 `local-dogfood` environment and the setup scripts:
