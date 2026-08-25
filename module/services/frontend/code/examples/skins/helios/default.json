@@ -1,0 +1,64 @@
+{
+  "appearance": {
+    "defaultTheme": "light",
+    "radius": "1rem",
+    "fontSans": "'Trebuchet MS', 'Segoe UI', system-ui, sans-serif",
+    "fontHeading": "Georgia, 'Times New Roman', serif",
+    "spacing": "0.28rem",
+    "fontSizeBase": "1rem",
+    "sidebarWidth": "17rem",
+    "sidebarWidthIcon": "3.25rem",
+    "borderWidth": "1px",
+    "shadowStrength": "1.4",
+    "light": {
+      "background": "oklch(0.99 0.012 85)",
+      "foreground": "oklch(0.24 0.02 60)",
+      "card": "oklch(1 0.008 85)",
+      "cardForeground": "oklch(0.24 0.02 60)",
+      "primary": "oklch(0.68 0.19 45)",
+      "primaryForeground": "oklch(0.99 0.02 90)",
+      "secondary": "oklch(0.95 0.04 90)",
+      "secondaryForeground": "oklch(0.3 0.05 55)",
+      "accent": "oklch(0.9 0.16 122)",
+      "accentForeground": "oklch(0.28 0.07 130)",
+      "muted": "oklch(0.96 0.02 85)",
+      "mutedForeground": "oklch(0.52 0.03 60)",
+      "border": "oklch(0.9 0.03 80)",
+      "input": "oklch(0.9 0.03 80)",
+      "ring": "oklch(0.68 0.19 45)",
+      "sidebar": "oklch(0.97 0.03 85)",
+      "sidebarForeground": "oklch(0.28 0.02 60)",
+      "sidebarPrimary": "oklch(0.68 0.19 45)",
+      "sidebarPrimaryForeground": "oklch(0.99 0.02 90)",
+      "sidebarAccent": "oklch(0.9 0.16 122)",
+      "sidebarAccentForeground": "oklch(0.28 0.07 130)",
+      "sidebarBorder": "oklch(0.89 0.03 80)"
+    },
+    "dark": {
+      "background": "oklch(0.22 0.03 55)",
+      "foreground": "oklch(0.96 0.02 85)",
+      "card": "oklch(0.26 0.03 55)",
+      "cardForeground": "oklch(0.96 0.02 85)",
+      "primary": "oklch(0.75 0.17 55)",
+      "primaryForeground": "oklch(0.2 0.04 50)",
+      "accent": "oklch(0.85 0.16 122)",
+      "accentForeground": "oklch(0.22 0.05 130)",
+      "border": "oklch(1 0 0 / 12%)",
+      "ring": "oklch(0.75 0.17 55)",
+      "sidebar": "oklch(0.26 0.03 55)",
+      "sidebarPrimary": "oklch(0.75 0.17 55)"
+    }
+  },
+  "branding": {
+    "name": "Helios",
+    "mark": "H",
+    "title": "Helios Console",
+    "description": "The operations console for Helios — bright, warm, and built for daytime teams.",
+    "favicon": "/brand/helios-logo.svg",
+    "logo": {
+      "lightSrc": "/brand/helios-logo.svg",
+      "darkSrc": "/brand/helios-logo-dark.svg",
+      "alt": "Helios"
+    }
+  }
+}
