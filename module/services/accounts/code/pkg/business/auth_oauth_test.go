@@ -217,6 +217,31 @@ func TestAuthenticate_OAuthCodeFlow_ReusedCode(t *testing.T) {
 	require.Error(t, err)
 }
 
+// The id_token nonce must match the value bound to the signed state end to end,
+// not just in the validator unit test: a wiring change that dropped the nonce
+// argument would still pass every other check, so this pins the rejection at the
+// Authenticate boundary. oauthCodeRequest sets fp.nonce to the correct value;
+// overriding it afterwards is the injected/replayed-token case.
+func TestAuthenticate_OAuthCodeFlow_RejectsBadNonce(t *testing.T) {
+	clearData(t)
+	fp := newFakeProvider(t)
+	signer := wireOAuthOnTestService(t, fp)
+
+	// Mismatched nonce: id_token carries a nonce not bound to this state.
+	fp.issueCode("mismatch-nonce")
+	req := oauthCodeRequest(t, signer, fp, "workos", "mismatch-nonce", "https://app.acme.com/auth/callback")
+	fp.nonce = "attacker-controlled-nonce"
+	_, err := testService.Authenticate(testCtx, req)
+	require.ErrorIs(t, err, auth.ErrTokenWrongNonce)
+
+	// Absent nonce: id_token omits the nonce the relying party required.
+	fp.issueCode("absent-nonce")
+	req = oauthCodeRequest(t, signer, fp, "workos", "absent-nonce", "https://app.acme.com/auth/callback")
+	fp.nonce = ""
+	_, err = testService.Authenticate(testCtx, req)
+	require.ErrorIs(t, err, auth.ErrTokenWrongNonce)
+}
+
 func TestAuthenticate_OAuthCodeFlow_MissingRedirectURI(t *testing.T) {
 	clearData(t)
 	fp := newFakeProvider(t)

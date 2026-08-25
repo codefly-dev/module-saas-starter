@@ -479,6 +479,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 			}
 			const state = data.state;
 
+			// Sent for every provider. `nonce` is a standard OIDC authorize
+			// parameter, so a provider that doesn't validate it (e.g. WorkOS,
+			// whose id_token the backend never nonce-checks) simply ignores it.
 			const nonce = await deriveOAuthNonce(state);
 
 			sessionStorage.setItem(`oauth_state_${providerID}`, state);
