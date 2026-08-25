@@ -3,20 +3,28 @@ import { headers } from "next/headers";
 import { ConsentBanner } from "@/components/consent-banner";
 import { appearanceStyleProperties } from "@/lib/appearance";
 import { Providers } from "@/lib/providers";
-import { resolveSkin, skinResolutionEnabled } from "@/lib/skin";
+import { resolveSkin } from "@/lib/skin";
 import "./globals.css";
 import frontendConfig from "../../frontend.config";
 
 /**
- * Resolve the skin for this request. When no runtime source is configured the
- * compiled default renders and we avoid reading headers, so static rendering is
- * preserved; when a source (CMS/file/env) is configured the skin is resolved
- * per host at SSR — validated and flash-free, since the tokens land on <html>.
+ * Runtime skins require dynamic rendering. The image is built without the skin
+ * (it arrives as a mounted ConfigMap / env at container start), so a
+ * prerendered layout would bake the compiled default instead of resolving the
+ * mounted skin per request. Reading request headers is what opts a route into
+ * dynamic rendering, so we gate that read on a BUILD-time flag,
+ * FRONTEND_SKIN_RUNTIME=1 — set it when building a skinnable image and the
+ * layout renders dynamically; omit it and a plain starter build stays static.
+ * Which skin is resolved is a separate, runtime concern (FRONTEND_SKIN_DIR / …).
  */
+const SKIN_RUNTIME = process.env.FRONTEND_SKIN_RUNTIME === "1";
+
 async function currentSkin() {
-	const host = skinResolutionEnabled()
-		? (await headers()).get("host")
-		: null;
+	// Gate the header read on the build-time flag ONLY: at build there is no
+	// mounted skin yet, so it must be the flag (not the presence of a source)
+	// that opts the route into dynamic rendering. resolveSkin still returns the
+	// compiled default when no runtime source is configured.
+	const host = SKIN_RUNTIME ? (await headers()).get("host") : null;
 	return resolveSkin({ fallback: frontendConfig, host });
 }
 
