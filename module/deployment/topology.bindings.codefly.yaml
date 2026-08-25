@@ -168,6 +168,25 @@ services:
         local-dogfood: development
         production: production
       mode: ssr
+      # White-label skin delivery (obin-ai/lodestar#70). The module ships only
+      # the MECHANISM: the SSR resolver in src/lib/skin reads a skin descriptor
+      # per request from the mounted ConfigMap and applies it on <html>. No skin
+      # DATA ships here — obin-fleet supplies the frontend-skin ConfigMap per
+      # environment; the compiled default stays brand-neutral. config-mounts is
+      # consumed once codefly-dev/service-nextjs#100 renders it and the pin is
+      # bumped; the mount is optional so an env with no ConfigMap keeps the
+      # default. FRONTEND_SKIN_RUNTIME is a build-time flag: it forces the
+      # layout to render dynamically so an image built without a skin still
+      # resolves one mounted at runtime.
+      config-mounts:
+        - name: skin
+          config-map: frontend-skin
+          mount-path: /etc/codefly/skin
+          optional: true
+      environment:
+        FRONTEND_SKIN_DIR: /etc/codefly/skin
+      build-args:
+        FRONTEND_SKIN_RUNTIME: "1"
   - name: marketing
     version: 0.0.0
     description: |

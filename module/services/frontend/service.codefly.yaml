@@ -20,6 +20,15 @@ endpoints:
     - name: http
       visibility: public
 spec:
+    build-args:
+        FRONTEND_SKIN_RUNTIME: "1"
+    config-mounts:
+        - config-map: frontend-skin
+          mount-path: /etc/codefly/skin
+          name: skin
+          optional: true
+    environment:
+        FRONTEND_SKIN_DIR: /etc/codefly/skin
     execution-profiles:
         local: development
         local-dogfood: development
