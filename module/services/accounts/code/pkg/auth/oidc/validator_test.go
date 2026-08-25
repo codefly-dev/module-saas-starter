@@ -407,3 +407,35 @@ func TestWorkOSStyleClaimMappingWithFakeJWKS(t *testing.T) {
 	require.Equal(t, "org_01DEFGHI", claims.ProviderOrgID,
 		"WorkOS mapping must use the 'org_id' claim name")
 }
+
+func TestValidateWithNonce(t *testing.T) {
+	ctx := context.Background()
+	fi := newFakeIdP(t)
+	v := newValidator(t, fi)
+
+	t.Run("matching nonce accepted", func(t *testing.T) {
+		claims := fi.validClaims()
+		claims["nonce"] = "nonce-abc123"
+		got, err := v.ValidateWithNonce(ctx, fi.sign(t, claims), "nonce-abc123")
+		require.NoError(t, err)
+		require.Equal(t, "user_01ABCXYZ", got.Subject)
+	})
+
+	t.Run("mismatched nonce rejected", func(t *testing.T) {
+		claims := fi.validClaims()
+		claims["nonce"] = "nonce-abc123"
+		_, err := v.ValidateWithNonce(ctx, fi.sign(t, claims), "nonce-different")
+		require.ErrorIs(t, err, auth.ErrTokenWrongNonce)
+	})
+
+	t.Run("absent nonce rejected when one is expected", func(t *testing.T) {
+		_, err := v.ValidateWithNonce(ctx, fi.sign(t, fi.validClaims()), "nonce-abc123")
+		require.ErrorIs(t, err, auth.ErrTokenWrongNonce)
+	})
+
+	t.Run("empty expected nonce skips the check", func(t *testing.T) {
+		got, err := v.ValidateWithNonce(ctx, fi.sign(t, fi.validClaims()), "")
+		require.NoError(t, err)
+		require.Equal(t, "user_01ABCXYZ", got.Subject)
+	})
+}

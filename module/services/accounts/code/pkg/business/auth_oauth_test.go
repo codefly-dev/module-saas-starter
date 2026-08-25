@@ -38,6 +38,7 @@ type fakeProvider struct {
 	secret   string
 	server   *httptest.Server
 	codes    map[string]bool // minted codes still valid
+	nonce    string          // OIDC nonce to echo into the next id_token
 }
 
 func newFakeProvider(t *testing.T) *fakeProvider {
@@ -103,6 +104,11 @@ func (f *fakeProvider) serveToken(w http.ResponseWriter, r *http.Request) {
 		"nbf":             now.Add(-time.Second).Unix(),
 		"exp":             now.Add(15 * time.Minute).Unix(),
 	}
+	// Echo the nonce the relying party bound to this authorize request, as a
+	// real OIDC provider does.
+	if f.nonce != "" {
+		claims["nonce"] = f.nonce
+	}
 	token := jwt.NewWithClaims(jwt.SigningMethodRS256, claims)
 	token.Header["kid"] = f.kid
 	idToken, err := token.SignedString(f.priv)
@@ -154,10 +160,13 @@ func wireOAuthOnTestService(t *testing.T, fp *fakeProvider) *auth.OAuthStateSign
 	return signer
 }
 
-func oauthCodeRequest(t *testing.T, signer *auth.OAuthStateSigner, provider, code, redirectURI string) *gen.AuthenticateRequest {
+func oauthCodeRequest(t *testing.T, signer *auth.OAuthStateSigner, fp *fakeProvider, provider, code, redirectURI string) *gen.AuthenticateRequest {
 	t.Helper()
 	state, err := signer.Mint(provider, redirectURI)
 	require.NoError(t, err)
+	// The browser would derive this from the signed state and send it as the
+	// authorize `nonce`; the provider then echoes it into the id_token.
+	fp.nonce = auth.OIDCNonceForState(state)
 	return &gen.AuthenticateRequest{
 		Provider: provider,
 		Authentication: &gen.AuthenticateRequest_OauthCode{OauthCode: &gen.OAuthCodeAuthentication{
@@ -176,7 +185,7 @@ func TestAuthenticate_OAuthCodeFlow_NewUser(t *testing.T) {
 
 	fp.issueCode("authz-code-1")
 
-	resp, err := testService.Authenticate(testCtx, oauthCodeRequest(t, signer, "workos", "authz-code-1", "https://app.acme.com/auth/callback"))
+	resp, err := testService.Authenticate(testCtx, oauthCodeRequest(t, signer, fp, "workos", "authz-code-1", "https://app.acme.com/auth/callback"))
 	require.NoError(t, err)
 	require.NotEmpty(t, resp.AccessToken)
 	require.NotEmpty(t, resp.RefreshToken)
@@ -200,11 +209,11 @@ func TestAuthenticate_OAuthCodeFlow_ReusedCode(t *testing.T) {
 
 	fp.issueCode("single-use-code")
 
-	_, err := testService.Authenticate(testCtx, oauthCodeRequest(t, signer, "workos", "single-use-code", "https://app.acme.com/auth/callback"))
+	_, err := testService.Authenticate(testCtx, oauthCodeRequest(t, signer, fp, "workos", "single-use-code", "https://app.acme.com/auth/callback"))
 	require.NoError(t, err)
 
 	// Second attempt with the same code must fail at the token endpoint.
-	_, err = testService.Authenticate(testCtx, oauthCodeRequest(t, signer, "workos", "single-use-code", "https://app.acme.com/auth/callback"))
+	_, err = testService.Authenticate(testCtx, oauthCodeRequest(t, signer, fp, "workos", "single-use-code", "https://app.acme.com/auth/callback"))
 	require.Error(t, err)
 }
 
@@ -233,7 +242,7 @@ func TestAuthenticate_OAuthCodeFlow_UnconfiguredProviderRejected(t *testing.T) {
 
 	fp.issueCode("mismatch-code")
 
-	_, err := testService.Authenticate(testCtx, oauthCodeRequest(t, signer, "auth0", "mismatch-code", "https://app.acme.com/auth/callback"))
+	_, err := testService.Authenticate(testCtx, oauthCodeRequest(t, signer, fp, "auth0", "mismatch-code", "https://app.acme.com/auth/callback"))
 	require.Error(t, err)
 	require.ErrorIs(t, err, auth.ErrInvalidOAuthRequest)
 }
@@ -376,12 +385,12 @@ func TestAuthenticate_OAuthCodeFlow_RequiresSignedState(t *testing.T) {
 	signer := wireOAuthOnTestService(t, fp)
 	fp.issueCode("missing-state")
 
-	req := oauthCodeRequest(t, signer, "workos", "missing-state", "https://app.acme.com/auth/callback")
+	req := oauthCodeRequest(t, signer, fp, "workos", "missing-state", "https://app.acme.com/auth/callback")
 	req.GetOauthCode().State = ""
 	_, err := testService.Authenticate(testCtx, req)
 	require.ErrorIs(t, err, auth.ErrInvalidOAuthRequest)
 
-	req = oauthCodeRequest(t, signer, "workos", "missing-state", "https://app.acme.com/auth/callback")
+	req = oauthCodeRequest(t, signer, fp, "workos", "missing-state", "https://app.acme.com/auth/callback")
 	req.GetOauthCode().State = "not-a-signed-state"
 	_, err = testService.Authenticate(testCtx, req)
 	require.ErrorIs(t, err, auth.ErrInvalidOAuthState)
@@ -439,7 +448,7 @@ func TestAuthenticate_OAuthCodeFlow_RealError(t *testing.T) {
 	signer := wireOAuthOnTestService(t, fp)
 
 	// No code issued → server returns invalid_grant
-	_, err := testService.Authenticate(testCtx, oauthCodeRequest(t, signer, "workos", "never-issued", "https://app.acme.com/auth/callback"))
+	_, err := testService.Authenticate(testCtx, oauthCodeRequest(t, signer, fp, "workos", "never-issued", "https://app.acme.com/auth/callback"))
 	require.Error(t, err)
 	require.False(t, errors.Is(err, context.Canceled))
 }
@@ -485,7 +494,7 @@ func TestAuthenticate_OAuthCodeFlow_GenericProviderNameKeysIdentity(t *testing.T
 	})
 
 	fp.issueCode("okta-code-1")
-	resp, err := testService.Authenticate(testCtx, oauthCodeRequest(t, signer, provider, "okta-code-1", "https://app.acme.com/auth/callback"))
+	resp, err := testService.Authenticate(testCtx, oauthCodeRequest(t, signer, fp, provider, "okta-code-1", "https://app.acme.com/auth/callback"))
 	require.NoError(t, err)
 	require.NotEmpty(t, resp.AccessToken)
 

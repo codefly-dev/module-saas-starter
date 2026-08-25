@@ -79,7 +79,7 @@ func (s *Service) Authenticate(ctx context.Context, req *gen.AuthenticateRequest
 			// signature, expiry, or binding check failed.
 			return nil, w.Wrapf(auth.ErrInvalidOAuthState, "oauth state")
 		}
-		claims, err = s.authenticateWithCode(ctx, req.Provider, oauthCode.Code, oauthCode.RedirectUri, oauthCode.CodeVerifier)
+		claims, err = s.authenticateWithCode(ctx, req.Provider, oauthCode.Code, oauthCode.RedirectUri, oauthCode.CodeVerifier, oauthCode.State)
 		if err != nil {
 			return nil, w.Wrapf(err, "oauth code exchange")
 		}
@@ -282,13 +282,23 @@ func selectSsoJitIntent(ctx context.Context, intent auth.Intent, claims *auth.Cl
 	return auth.SsoJitIntent{OrgID: orgID}
 }
 
+// nonceValidator is optionally implemented by a TokenValidator that can bind an
+// id_token to an expected OIDC nonce. The generic OIDC validator implements it;
+// providers that return pre-built claims or no id_token (e.g. WorkOS) do not and
+// are validated without a nonce check.
+type nonceValidator interface {
+	ValidateWithNonce(ctx context.Context, token, expectedNonce string) (*auth.Claims, error)
+}
+
 // authenticateWithCode runs the full OAuth authorization-code flow:
 // exchange code → validate access token → extract claims. Requires both
 // CodeExchanger and TokenValidator to be wired.
 //
 // codeVerifier is the FE-generated PKCE secret. Forwarded to the provider's token endpoint so PKCE binds
-// the code redemption to the original authorize request.
-func (s *Service) authenticateWithCode(ctx context.Context, provider, code, redirectURI, codeVerifier string) (*auth.Claims, error) {
+// the code redemption to the original authorize request. state is the verified
+// signed state; its derived OIDC nonce binds the id_token to this authorize
+// request.
+func (s *Service) authenticateWithCode(ctx context.Context, provider, code, redirectURI, codeVerifier, state string) (*auth.Claims, error) {
 	if s.exchanger == nil {
 		return nil, errors.New("oauth code flow: exchanger not wired")
 	}
@@ -307,12 +317,21 @@ func (s *Service) authenticateWithCode(ctx context.Context, provider, code, redi
 			return nil, errors.New("oauth code flow: validator not wired")
 		}
 		// Prefer id_token when present (standard OIDC); fall back to access_token.
+		// The OIDC nonce lives in the id_token only, so the access-token fallback
+		// carries no expected nonce.
 		tokenToValidate := tokens.IDToken
-		if tokenToValidate == "" {
+		var expectedNonce string
+		if tokenToValidate != "" {
+			expectedNonce = auth.OIDCNonceForState(state)
+		} else {
 			tokenToValidate = tokens.AccessToken
 		}
 
-		claims, err = s.validator.Validate(ctx, tokenToValidate)
+		if nv, ok := s.validator.(nonceValidator); ok && expectedNonce != "" {
+			claims, err = nv.ValidateWithNonce(ctx, tokenToValidate, expectedNonce)
+		} else {
+			claims, err = s.validator.Validate(ctx, tokenToValidate)
+		}
 		if err != nil {
 			return nil, err
 		}

@@ -207,3 +207,15 @@ func (s *OAuthStateSigner) Verify(ctx context.Context, state, provider, redirect
 // mismatch, malformed). Callers MUST NOT branch on the cause — that
 // would give forgers an oracle.
 var ErrInvalidOAuthState = errors.New("auth: invalid oauth state")
+
+// OIDCNonceForState derives the OpenID Connect `nonce` bound to a given signed
+// state. The frontend sends this value as the authorize `nonce` parameter and
+// the provider echoes it into the id_token; the callback recomputes it from the
+// same (verified, single-use) state and asserts equality, binding the id_token
+// to this exact authorize request as replay/injection defense. Deriving it from
+// the state means no extra value has to be stored or returned to the browser.
+// The frontend mirrors this derivation (base64url(sha256(state))).
+func OIDCNonceForState(state string) string {
+	sum := sha256.Sum256([]byte(state))
+	return base64.RawURLEncoding.EncodeToString(sum[:])
+}

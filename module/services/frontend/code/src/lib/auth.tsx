@@ -121,11 +121,13 @@ export function isHeaderInjectedProvider(): boolean {
 // Build the provider's authorize URL for the authorization-code flow.
 // State is the server-signed nonce from BeginOAuth. codeChallenge is the SHA-256 of the
 // PKCE verifier — empty disables PKCE for callers that don't need it.
+// nonce is the OIDC id_token nonce (see deriveOAuthNonce) — empty omits it.
 export function buildAuthorizeURL(
 	preset: ProviderPreset,
 	redirectURI: string,
 	state: string,
 	codeChallenge?: string,
+	nonce?: string,
 ): string {
 	const params = new URLSearchParams({
 		response_type: "code",
@@ -141,8 +143,22 @@ export function buildAuthorizeURL(
 		params.set("code_challenge", codeChallenge);
 		params.set("code_challenge_method", "S256");
 	}
+	if (nonce) params.set("nonce", nonce);
 	const joiner = preset.authorizeURL.includes("?") ? "&" : "?";
 	return `${preset.authorizeURL}${joiner}${params.toString()}`;
+}
+
+// deriveOAuthNonce computes the OIDC id_token nonce bound to a signed OAuth
+// state. The provider echoes this value into the id_token; the accounts backend
+// recomputes it from the same state on callback and asserts equality, binding
+// the id_token to this authorize request (replay/injection defense). The
+// derivation — base64url(sha256(state)) — must match accounts OIDCNonceForState.
+export async function deriveOAuthNonce(state: string): Promise<string> {
+	const digest = await window.crypto.subtle.digest(
+		"SHA-256",
+		new TextEncoder().encode(state),
+	);
+	return base64urlEncode(new Uint8Array(digest));
 }
 
 // PKCE: cryptographically random verifier + SHA-256 challenge.
@@ -463,6 +479,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 			}
 			const state = data.state;
 
+			const nonce = await deriveOAuthNonce(state);
+
 			sessionStorage.setItem(`oauth_state_${providerID}`, state);
 			sessionStorage.setItem(`oauth_pkce_${providerID}`, pkce.verifier);
 			sessionStorage.setItem("oauth_provider", providerID);
@@ -476,6 +494,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 				redirectURI,
 				state,
 				pkce.challenge,
+				nonce,
 			);
 		},
 		[],

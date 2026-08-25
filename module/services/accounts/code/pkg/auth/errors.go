@@ -23,6 +23,7 @@ var (
 	ErrTokenMalformed          = errors.New("auth: token malformed")
 	ErrTokenWrongIssuer        = errors.New("auth: token issuer mismatch")
 	ErrTokenWrongAudience      = errors.New("auth: token audience mismatch")
+	ErrTokenWrongNonce         = errors.New("auth: token nonce mismatch")
 	ErrTokenAlgForbidden       = errors.New("auth: token alg not allowed")
 	ErrTokenReplay             = errors.New("auth: token jti already used")
 	ErrTokenRevoked            = errors.New("auth: token revoked")

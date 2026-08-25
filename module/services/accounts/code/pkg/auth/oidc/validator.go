@@ -141,8 +141,19 @@ func New(cfg Config) (*Validator, error) {
 	return &Validator{cfg: cfg, keys: map[string]*rsa.PublicKey{}}, nil
 }
 
-// Validate implements auth.TokenValidator.
+// Validate implements auth.TokenValidator. It performs no nonce check; the
+// OAuth code flow uses ValidateWithNonce to bind the id_token to its authorize
+// request.
 func (v *Validator) Validate(ctx context.Context, token string) (*auth.Claims, error) {
+	return v.ValidateWithNonce(ctx, token, "")
+}
+
+// ValidateWithNonce verifies the token as Validate does and additionally asserts
+// the OpenID Connect `nonce` claim equals expectedNonce. An empty expectedNonce
+// skips the check (no nonce was requested). When one is expected, a token whose
+// nonce claim is absent or unequal is rejected with auth.ErrTokenWrongNonce —
+// this is the id_token replay/injection defense for the authorization-code flow.
+func (v *Validator) ValidateWithNonce(ctx context.Context, token, expectedNonce string) (*auth.Claims, error) {
 	opts := []jwt.ParserOption{
 		jwt.WithValidMethods(v.cfg.AllowedAlgs),
 		jwt.WithIssuer(v.cfg.Issuer),
@@ -167,6 +178,13 @@ func (v *Validator) Validate(ctx context.Context, token string) (*auth.Claims, e
 	}
 	if !parsed.Valid {
 		return nil, auth.ErrTokenMalformed
+	}
+
+	if expectedNonce != "" {
+		nonce, _ := claims["nonce"].(string)
+		if nonce != expectedNonce {
+			return nil, auth.ErrTokenWrongNonce
+		}
 	}
 
 	subject, _ := claims["sub"].(string)

@@ -145,3 +145,17 @@ func flipChar(c byte) string {
 	}
 	return "A"
 }
+
+func TestOIDCNonceForState(t *testing.T) {
+	// base64url(sha256("state-value")), no padding. Pinned so any change to the
+	// derivation is caught here and mirrored in the frontend, which recomputes
+	// the same value to send as the authorize `nonce`.
+	const want = "prAw7QcteKLKykLonqMhVtJWjsKYigSNm2hM4ecezTs"
+	if got := auth.OIDCNonceForState("state-value"); got != want {
+		t.Fatalf("OIDCNonceForState = %q, want %q", got, want)
+	}
+
+	if a, b := auth.OIDCNonceForState("s1"), auth.OIDCNonceForState("s2"); a == b {
+		t.Fatal("distinct states must derive distinct nonces")
+	}
+}
