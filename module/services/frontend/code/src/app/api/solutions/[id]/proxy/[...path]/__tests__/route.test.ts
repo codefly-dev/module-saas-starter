@@ -93,7 +93,7 @@ describe("solution proxy passthrough", () => {
 				headers: {
 					authorization: "Bearer caller-token",
 					"x-codefly-internal-token": "cluster-secret",
-					cookie: "session=abc",
+					"x-secret-smuggle": "leak",
 					"x-forwarded-host": "evil.example",
 				},
 			}),
@@ -102,7 +102,7 @@ describe("solution proxy passthrough", () => {
 
 		const forwarded = fetchMock.mock.calls[0][1].headers as Headers;
 		expect(forwarded.has("x-codefly-internal-token")).toBe(false);
-		expect(forwarded.has("cookie")).toBe(false);
+		expect(forwarded.has("x-secret-smuggle")).toBe(false);
 		expect(forwarded.has("x-forwarded-host")).toBe(false);
 	});
 

@@ -1,7 +1,7 @@
-import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { cleanup, render, screen } from "@testing-library/react";
+import { cleanup, screen } from "@testing-library/react";
 import { HttpResponse, http } from "msw";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { renderInApp, rpc } from "@/test/container";
 import { server } from "@/test/setup";
 
 // TeamsPage reads the active tenant from the signed access token via useAuth,
@@ -16,17 +16,6 @@ vi.mock("@/lib/auth", () => ({
 
 import { TeamsPage } from "./teams-page";
 
-function rpc(service: string, method: string) {
-	return `http://localhost:3000/saas.accounts.v1.${service}/${method}`;
-}
-function renderInApp(ui: React.ReactElement) {
-	const client = new QueryClient({
-		defaultOptions: { queries: { retry: false } },
-	});
-	return render(
-		<QueryClientProvider client={client}>{ui}</QueryClientProvider>,
-	);
-}
 afterEach(cleanup);
 
 describe("TeamsPage admin container", () => {
