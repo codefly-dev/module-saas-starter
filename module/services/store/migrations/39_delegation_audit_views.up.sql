@@ -22,8 +22,8 @@
 --
 -- Joins principals so the actor / grantor names are visible
 -- without a follow-up query. Used by the admin dashboard's
--- "recent activity" panel and the audit-log query path as the
--- canonical "what happened" feed.
+-- "recent activity" panel and by the audit-export pipeline as
+-- the canonical "what happened" feed.
 -- ---------------------------------------------------------------
 CREATE OR REPLACE VIEW delegation_grants_recent AS
 SELECT

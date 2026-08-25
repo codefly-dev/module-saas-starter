@@ -36,13 +36,17 @@ breaking:
   use:
     - FILE
   # The S3/minio audit-export feature was removed wholesale (no client shipped
-  # a stable dependency on it). These two deletions are the intentional break;
-  # every other stable v1 file/message stays guarded by FILE_NO_DELETE etc.
-  ignore:
-    # AuditExportService and its messages are gone with the feature.
-    - saas/accounts/v1/audit_export.proto
+  # a stable dependency on it). These two deletions are the intentional break.
+  # Each waiver is scoped to the single rule that the deletion trips, so every
+  # other breaking rule still guards these paths (a later field renumber, type
+  # change, etc. is NOT waived) and every other file stays fully protected.
   ignore_only:
-    # Only AuditExportJob was dropped from this file; PrivacyExportJob and the
-    # rest of saas/exports/v1 remain protected against deletion.
+    # audit_export.proto is deleted; waive only the file-deletion rule for it.
+    FILE_NO_DELETE:
+      - saas/accounts/v1/audit_export.proto
+    # Only AuditExportJob was dropped from jobs.proto; waive only message
+    # deletion for that file. PrivacyExportJob's fields, and every other rule,
+    # stay guarded. buf ignores are path-scoped, so this cannot be narrowed to
+    # the single message — the comment records the intended scope.
     MESSAGE_NO_DELETE:
       - saas/exports/v1/jobs.proto

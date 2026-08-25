@@ -5,6 +5,7 @@
 REVOKE ALL PRIVILEGES ON
     api_keys,
     audit_events,
+    audit_export_configs,
     entitlement_overrides,
     gdpr_requests,
     invitations,
@@ -61,6 +62,7 @@ GRANT SELECT, INSERT, DELETE ON
 TO app_tenant;
 
 GRANT SELECT, INSERT, UPDATE, DELETE ON
+    audit_export_configs,
     organization_members,
     teams,
     webhook_subscriptions
