@@ -201,6 +201,10 @@ func TestConcurrentFinalOnboardingStepsExportCompletionExactlyOnce(t *testing.T)
 		"Analytics Race Org",
 	)
 	service, _ := analyticsService(t)
+	// GetProgress auto-detects CONFIGURE_ORGANIZATION and CHOOSE_PLAN as
+	// completed: the org has a non-default name and the free plan attached at
+	// creation. CHOOSE_PLAN is therefore already satisfied here and is skipped
+	// by nobody — only the two remaining optional steps are user-skipped below.
 	_, err := service.GetProgress(testCtx, userID, orgID)
 	require.NoError(t, err)
 	require.NoError(t, service.SkipStep(
@@ -208,13 +212,6 @@ func TestConcurrentFinalOnboardingStepsExportCompletionExactlyOnce(t *testing.T)
 		userID,
 		orgID,
 		gen.OnboardingStepId_ONBOARDING_STEP_ID_INVITE_TEAM,
-		"later",
-	))
-	require.NoError(t, service.SkipStep(
-		testCtx,
-		userID,
-		orgID,
-		gen.OnboardingStepId_ONBOARDING_STEP_ID_CHOOSE_PLAN,
 		"later",
 	))
 

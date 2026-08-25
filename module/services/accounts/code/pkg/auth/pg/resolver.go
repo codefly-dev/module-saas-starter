@@ -433,6 +433,10 @@ func (r *Resolver) ensureOrg(
 		return uuid.Nil, "", fmt.Errorf("pgauth: create org membership: %w", err)
 	}
 
+	if _, err = tx.Exec(ctx, business.AttachFreePlanSubscriptionSQL, orgID); err != nil {
+		return uuid.Nil, "", fmt.Errorf("pgauth: attach free plan on signup: %w", err)
+	}
+
 	return orgID, "owner", nil
 }
 
