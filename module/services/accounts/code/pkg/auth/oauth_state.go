@@ -211,10 +211,16 @@ var ErrInvalidOAuthState = errors.New("auth: invalid oauth state")
 // OIDCNonceForState derives the OpenID Connect `nonce` bound to a given signed
 // state. The frontend sends this value as the authorize `nonce` parameter and
 // the provider echoes it into the id_token; the callback recomputes it from the
-// same (verified, single-use) state and asserts equality, binding the id_token
-// to this exact authorize request as replay/injection defense. Deriving it from
+// same (verified, single-use) state and asserts equality, so a compliant
+// provider's id_token is bound to this exact authorize request. Deriving it from
 // the state means no extra value has to be stored or returned to the browser.
 // The frontend mirrors this derivation (base64url(sha256(state))).
+//
+// The nonce is a deterministic function of the state, not an independent secret:
+// it inherits the state's single-use replay guarantee rather than adding a
+// separate one, and — like every OIDC nonce — it is public (sent to the provider
+// in the clear). The provider's own single-use authorization code remains the
+// authoritative anti-replay; this is defense-in-depth on top of it.
 func OIDCNonceForState(state string) string {
 	sum := sha256.Sum256([]byte(state))
 	return base64.RawURLEncoding.EncodeToString(sum[:])
