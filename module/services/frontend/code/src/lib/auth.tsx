@@ -25,7 +25,10 @@ import {
 	storeRefreshToken,
 	storeUserEmail,
 } from "./auth-session";
-import { setToken as setConnectToken } from "./connect/token-store";
+import {
+	setToken as setConnectToken,
+	setRefreshHandler,
+} from "./connect/token-store";
 import { apiTransport } from "./connect/transport";
 
 const authClient = createClient(AuthService, apiTransport);
@@ -33,12 +36,31 @@ const authClient = createClient(AuthService, apiTransport);
 // Browser REST is always same-origin. Next/gateway resolves the accounts
 // service server-side from Codefly bindings (CONV-004).
 
+// Exchanges the httpOnly refresh cookie for a fresh token pair. The body
+// carries no token — the backend reads it from the cookie. Resolves null when
+// the session is gone (cookie absent/expired/revoked).
+async function exchangeRefreshCookie(): Promise<{
+	accessToken: string;
+	refreshToken: string;
+} | null> {
+	const res = await fetch("/v1/auth/refresh", {
+		method: "POST",
+		credentials: "include",
+		headers: { "Content-Type": "application/json" },
+		body: JSON.stringify({}),
+	});
+	if (!res.ok) return null;
+	const data = await res.json();
+	if (!data.accessToken) return null;
+	return { accessToken: data.accessToken, refreshToken: data.refreshToken };
+}
+
 // Identity-provider configuration is supplied by the Codefly `identity`
 // workspace configuration. The Next.js agent exposes only its non-secret
 // IDENTITY_* values to the browser as NEXT_PUBLIC_IDENTITY_*.
 //
 // Required:
-//   NEXT_PUBLIC_IDENTITY_PROVIDER       — workos | auth0 | google
+//   NEXT_PUBLIC_IDENTITY_PROVIDER       — workos | auth0 | google | oidc
 //   NEXT_PUBLIC_IDENTITY_AUTHORIZE_URL  — hosted authorize endpoint
 //   NEXT_PUBLIC_IDENTITY_CLIENT_ID      — OAuth client id
 // Optional:
@@ -82,6 +104,18 @@ function readIdentityProvider(): ProviderPreset | null {
 export function availableProviders(): ProviderPreset[] {
 	const provider = readIdentityProvider();
 	return provider ? [provider] : [];
+}
+
+// Header-injected identity: a customer-operated access gateway authenticates the
+// user upstream and stamps a signed JWT header on every request. There is no
+// OAuth ceremony and no button to click — the app POSTs to /v1/auth/authenticate
+// on load and the accounts login route resolves the header into a session. The
+// header is read server-side; the browser only triggers the exchange.
+export function isHeaderInjectedProvider(): boolean {
+	return (
+		process.env.NEXT_PUBLIC_IDENTITY_PROVIDER?.trim().toLowerCase() ===
+		"header-jwt"
+	);
 }
 
 // Build the provider's authorize URL for the authorization-code flow.
@@ -170,6 +204,11 @@ interface AuthContextType extends AuthState {
 		providerId: string,
 		email: string,
 	) => Promise<boolean>;
+	// Header-injected identity path. POSTs to /v1/auth/authenticate with no
+	// credential in the body — the accounts login route reads the gateway-injected
+	// JWT header server-side. Resolves true when a session was issued, false when
+	// the browser was moved into the MFA challenge continuation.
+	loginWithHeaderInjected: () => Promise<boolean>;
 	// Kicks off the OAuth authorization-code flow by redirecting the
 	// browser to the provider's hosted login. The callback page completes
 	// the handshake. Async because we mint a server-signed state via
@@ -222,7 +261,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 			// auth check is still the backend sidecar — this cookie's
 			// contents are not trusted anywhere server-side.
 			if (typeof document !== "undefined") {
-				document.cookie = "codefly_session=1; path=/; SameSite=Lax";
+				// Secure omitted over plaintext http so local dev (http://localhost)
+				// can still set the cookie; a Secure cookie is dropped on http.
+				const secure =
+					typeof window !== "undefined" &&
+					window.location.protocol === "https:"
+						? "; Secure"
+						: "";
+				document.cookie = `codefly_session=1; path=/; SameSite=Lax${secure}`;
 			}
 			const payload = decodeJWTPayload(accessToken);
 			// Resolve email: explicit arg (login flow) > JWT email claim
@@ -346,6 +392,41 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 		},
 		[beginMFA, setTokens],
 	);
+
+	const loginWithHeaderInjected = useCallback(async () => {
+		const res = await fetch("/v1/auth/authenticate", {
+			method: "POST",
+			credentials: "include", // receive the httpOnly refresh-token cookie
+			headers: { "Content-Type": "application/json" },
+			// No credential in the body: the accounts login route reads the
+			// gateway-injected JWT header server-side. It is the only trusted
+			// source, so a body-supplied credential is stripped there anyway.
+			body: JSON.stringify({
+				provider: "header-jwt",
+				device_info: navigator.userAgent.slice(0, 512),
+			}),
+		});
+		if (!res.ok) {
+			// The validator surfaces a failed group gate as 403 so the UI can say
+			// "access not granted" rather than a generic sign-in failure.
+			if (res.status === 403) {
+				throw new Error("Access not granted for your account.");
+			}
+			throw new Error("Authentication failed");
+		}
+		const data = await res.json();
+		if (data.mfaRequired) {
+			beginMFA(data, data.user?.primaryEmail);
+			return false;
+		}
+		setTokens(
+			data.accessToken,
+			data.refreshToken,
+			data.user?.uuid,
+			data.user?.primaryEmail,
+		);
+		return true;
+	}, [beginMFA, setTokens]);
 
 	// OAuth redirect kickoff. Asks the backend for a server-signed state,
 	// generates a PKCE verifier+challenge, and sends the browser to the
@@ -599,22 +680,45 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 		// Always attempt a refresh on load: the refresh token lives in an httpOnly
 		// cookie the browser sends automatically (credentials: "include"). If the
 		// cookie is absent/expired the request fails and we land unauthenticated.
-		// The body no longer carries the token — the backend reads it from the cookie.
-		fetch("/v1/auth/refresh", {
-			method: "POST",
-			credentials: "include",
-			headers: { "Content-Type": "application/json" },
-			body: JSON.stringify({}),
-		})
-			.then((res) => {
-				if (!res.ok) throw new Error();
-				return res.json();
-			})
-			.then((data) => setTokens(data.accessToken, data.refreshToken))
-			.catch(() => {
+		exchangeRefreshCookie()
+			.catch(() => null)
+			.then((pair) => {
+				if (pair) {
+					setTokens(pair.accessToken, pair.refreshToken);
+					return;
+				}
 				clearRefreshToken();
 				setState((s) => ({ ...s, isLoading: false }));
 			});
+	}, [setTokens]);
+
+	useEffect(() => {
+		// Mid-session recovery: the Connect transport calls this when an RPC hits
+		// 401 — the short-lived access token expired (or was revoked) while the
+		// page stayed open. A failed exchange means the session itself is gone;
+		// drop to the unauthenticated state rather than leave dead credentials
+		// installed.
+		setRefreshHandler(async () => {
+			const pair = await exchangeRefreshCookie().catch(() => null);
+			if (pair) {
+				setTokens(pair.accessToken, pair.refreshToken);
+				return pair.accessToken;
+			}
+			clearRefreshToken();
+			setConnectToken(null);
+			if (typeof document !== "undefined") {
+				document.cookie = "codefly_session=; path=/; SameSite=Lax; Max-Age=0";
+			}
+			setState({
+				user: null,
+				accessToken: null,
+				impersonation: { isImpersonating: false },
+				isLoading: false,
+				isAuthenticated: false,
+			});
+			return null;
+		});
+		return () => setRefreshHandler(null);
 	}, [setTokens]);
 
 	const setTokensFromMagicLink = useCallback(
@@ -638,6 +742,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 		() => ({
 			...state,
 			login,
+			loginWithHeaderInjected,
 			signInWith,
 			completeOAuth,
 			completeMFA,
@@ -651,6 +756,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 		[
 			state,
 			login,
+			loginWithHeaderInjected,
 			signInWith,
 			completeOAuth,
 			completeMFA,

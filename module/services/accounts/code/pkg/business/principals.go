@@ -166,6 +166,29 @@ func (s *Service) principalStore() PrincipalStore {
 	panic("Service.store does not implement PrincipalStore; see postgres_principals.go")
 }
 
+// actorTypeForCreator resolves the audit actor_type facet from the kind of the
+// principal that performed an action. Falls back to "user" when the creator
+// can't be resolved (empty, bootstrap, or already-revoked id) — the dominant
+// CLI-install case is a human. Without this, agent- or service-initiated creates
+// would be mislabeled "user" in the audit trail.
+func (s *Service) actorTypeForCreator(ctx context.Context, principalID string) string {
+	if principalID == "" {
+		return "user"
+	}
+	creator, err := s.GetPrincipal(ctx, principalID)
+	if err != nil {
+		return "user"
+	}
+	switch creator.Kind {
+	case PrincipalKindAgent:
+		return "agent"
+	case PrincipalKindService:
+		return "service"
+	default:
+		return "user"
+	}
+}
+
 // GetPrincipal returns a principal by ID. Returns ErrTypeNotFound
 // (wrapped) when the ID doesn't exist or has been revoked.
 //
@@ -298,6 +321,8 @@ func (s *Service) CreateAgentPrincipal(ctx context.Context, req CreateAgentReque
 	}); err != nil {
 		return nil, w.Wrapf(err, "cannot create agent principal")
 	}
+	s.emit(ctx, req.CreatedBy, s.actorTypeForCreator(ctx, req.CreatedBy), EventPrincipalCreated, "principal", p.ID, p.OrgID,
+		map[string]any{"agent_identifier": p.AgentIdentifier})
 	w.Info("agent principal created",
 		wool.Field("principal_id", p.ID),
 		wool.Field("agent_id", p.AgentIdentifier))
@@ -327,11 +352,26 @@ func (s *Service) RevokePrincipal(ctx context.Context, id, reason string) error 
 		return w.NewError("reason required (no silent revocations)")
 	}
 	// Privileged admin op by id (cascades to users for humans); RPC authz gates
-	// it, and the cascade needs cross-table reach → System.
+	// it, and the cascade needs cross-table reach → System. Load the principal in
+	// the same System tx to recover its org (this method takes only id+reason) and
+	// to detect whether the call actually changed state, so idempotent repeats
+	// don't emit a duplicate audit event.
+	var orgID string
+	var alreadyRevoked bool
 	if err := s.store.As(System()).Within(ctx, func(ctx context.Context) error {
+		p, e := s.principalStore().GetPrincipal(ctx, id)
+		if e != nil {
+			return e
+		}
+		orgID = p.OrgID
+		alreadyRevoked = p.IsRevoked()
 		return s.principalStore().RevokePrincipal(ctx, id, reason)
 	}); err != nil {
 		return w.Wrapf(err, "cannot revoke principal")
+	}
+	if !alreadyRevoked {
+		s.emit(ctx, "system", "system", EventPrincipalRevoked, "principal", id, orgID,
+			map[string]any{"reason": reason})
 	}
 	w.Info("principal revoked", wool.Field("reason", reason))
 	return nil

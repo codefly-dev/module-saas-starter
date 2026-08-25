@@ -18,6 +18,8 @@ import {
 	type CodeflyGatewayContext,
 	resolveCodeflyGatewayContext,
 } from "@/lib/codefly-gateway-context";
+import type { SolutionManifest } from "@/solutions/registry";
+import { contentSecurityPolicyFromInputs } from "../server/security-headers.mjs";
 
 const PRODUCT_API_PREFIXES = ["/v1/", "/saas.accounts.v1."] as const;
 const INTERNAL_TOKEN_HEADER = "X-Codefly-Internal-Token";
@@ -62,6 +64,101 @@ const PUBLIC_PATHS = [
 	"/favicon.ico",
 ];
 
+const SOLUTION_PAGE = /^\/s\/([^/]+)/;
+
+// Build-time snapshot of the env-derived CSP inputs, inlined by next.config's
+// `env` block. Reading this constant — not re-resolving process.env per request
+// — keeps a solution page's CSP in lockstep with the build-time policy on every
+// other route and with the analytics/allowlist hosts the client bundle was
+// built to call. Absent only if the build failed to inline it, which must fail
+// loudly (never silently ship a narrowed CSP that drops those hosts).
+function baselineCspInputs(): {
+	solutionOrigins: string[];
+	analyticsOrigin: string | null;
+	turnstile: boolean;
+	isDev: boolean;
+} {
+	const snapshot = process.env.SOLUTION_CSP_INPUTS;
+	if (!snapshot) {
+		throw new Error(
+			"SOLUTION_CSP_INPUTS is unset; next.config must snapshot the CSP inputs at build time",
+		);
+	}
+	return JSON.parse(snapshot);
+}
+
+function safeDecode(segment: string): string | null {
+	try {
+		return decodeURIComponent(segment);
+	} catch {
+		return null;
+	}
+}
+
+// A solution's Module Federation remote registers at RUNTIME (see
+// src/solutions/registry.ts), so the build-time CSP in next.config — which
+// excludes /s/:id precisely for this reason — cannot know its origin. This
+// proxy runs on the Node.js runtime, so it shares the process global the
+// registry anchors on; for a solution page it derives the remote's origin from
+// the registration and returns a CSP that allows it, letting a freshly
+// registered cross-origin remote load with no rebuild and no
+// FRONTEND_SOLUTION_ORIGINS entry. Non-solution pages keep their build-time CSP.
+// The registry type is imported for typing only (erased at compile), so this
+// does not pull the server-only registry module into the proxy bundle.
+function solutionContentSecurityPolicy(
+	pathname: string,
+	nonce: string,
+): string | null {
+	const match = SOLUTION_PAGE.exec(pathname);
+	if (!match) {
+		return null;
+	}
+	const id = safeDecode(match[1]);
+	const registry = (
+		globalThis as typeof globalThis & {
+			__solutionRegistry?: Map<string, SolutionManifest>;
+		}
+	).__solutionRegistry;
+	const solution = id === null ? undefined : registry?.get(id);
+	// manifestUrl is validated as an absolute http(s) URL at registration.
+	const origins = solution
+		? [new URL(solution.frontend.manifestUrl).origin]
+		: [];
+	return contentSecurityPolicyFromInputs(baselineCspInputs(), origins, nonce);
+}
+
+// Per-request CSP nonce. Built from Web Crypto so it works on either runtime.
+// Every HTML response threads this into the request headers (so Next stamps it
+// onto the framework inline scripts) and echoes it on the response CSP, letting
+// script-src drop 'unsafe-inline' — an injected inline <script> without the
+// nonce is refused by the browser.
+function mintNonce(): string {
+	const bytes = new Uint8Array(16);
+	crypto.getRandomValues(bytes);
+	let binary = "";
+	for (const byte of bytes) {
+		binary += String.fromCharCode(byte);
+	}
+	return btoa(binary);
+}
+
+// Attach the nonce'd CSP to a pass-through response: the nonce goes on the
+// forwarded request headers (Next reads it to nonce its inline scripts) and the
+// policy is set on the response the browser receives.
+function withNoncedCSP(
+	req: NextRequest,
+	baseRequestHeaders: Headers | undefined,
+	nonce: string,
+	csp: string,
+): NextResponse {
+	const requestHeaders = baseRequestHeaders ?? new Headers(req.headers);
+	requestHeaders.set("x-nonce", nonce);
+	requestHeaders.set("content-security-policy", csp);
+	const response = NextResponse.next({ request: { headers: requestHeaders } });
+	response.headers.set("Content-Security-Policy", csp);
+	return response;
+}
+
 function isPublic(pathname: string): boolean {
 	if (PUBLIC_PATHS.includes(pathname)) return true;
 	// Next internals must always pass through.
@@ -85,6 +182,7 @@ export function proxy(req: NextRequest) {
 		req,
 		resolveCodeflyGatewayContext(req.nextUrl.origin),
 	);
+	const nonce = mintNonce();
 
 	const secretReturn =
 		pathname === "/invitations/accept"
@@ -111,9 +209,8 @@ export function proxy(req: NextRequest) {
 	}
 
 	if (isPublic(pathname)) {
-		const response = gatewayHeaders
-			? NextResponse.next({ request: { headers: gatewayHeaders } })
-			: NextResponse.next();
+		const csp = contentSecurityPolicyFromInputs(baselineCspInputs(), [], nonce);
+		const response = withNoncedCSP(req, gatewayHeaders, nonce, csp);
 		if (pathname === "/invitations/accept" || pathname === "/waitlist/verify") {
 			response.headers.set("Referrer-Policy", "no-referrer");
 		}
@@ -132,9 +229,10 @@ export function proxy(req: NextRequest) {
 		return NextResponse.redirect(loginURL);
 	}
 
-	return gatewayHeaders
-		? NextResponse.next({ request: { headers: gatewayHeaders } })
-		: NextResponse.next();
+	const csp =
+		solutionContentSecurityPolicy(pathname, nonce) ??
+		contentSecurityPolicyFromInputs(baselineCspInputs(), [], nonce);
+	return withNoncedCSP(req, gatewayHeaders, nonce, csp);
 }
 
 export const config = {

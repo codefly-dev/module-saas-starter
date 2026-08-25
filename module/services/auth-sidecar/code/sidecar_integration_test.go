@@ -16,6 +16,7 @@ import (
 	authv3 "github.com/envoyproxy/go-control-plane/envoy/service/auth/v3"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
+	"google.golang.org/grpc/metadata"
 	"google.golang.org/protobuf/types/known/emptypb"
 
 	codefly "github.com/codefly-dev/sdk-go"
@@ -92,6 +93,25 @@ func runSidecarIntegrationTests(m *testing.M) int {
 	}
 	defer internalConn.Close()
 	testSidecar = NewSidecar(internalConn, publicKey)
+
+	// Same wiring as main: the revoker reads the Redis revocation set accounts
+	// writes on logout. The cache service is a declared dependency, so a
+	// missing connection here is a broken graph, not an optional feature.
+	redisURL, redisErr := codefly.For(ctx).Service("cache").Secret("redis", "connection")
+	if redisErr != nil || redisURL == "" {
+		redisURL = os.Getenv("REDIS_URL")
+	}
+	if redisURL == "" {
+		fmt.Fprintf(os.Stderr, "cache Redis connection not available\n")
+		return 1
+	}
+	revoker, err := newRevoker(redisURL, defaultRevocationCacheTTL)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "cannot build revoker: %v\n", err)
+		return 1
+	}
+	testSidecar.SetRevoker(revoker)
+
 	testAuthClient = apigen.NewAuthServiceClient(apiConn)
 	testCtx = ctx
 
@@ -201,7 +221,7 @@ func TestCheck_JWTAuth(t *testing.T) {
 	require.NoError(t, err)
 	require.NotEmpty(t, authResp.AccessToken)
 	require.NotEmpty(t, authResp.RefreshToken)
-	require.Equal(t, int64(900), authResp.ExpiresIn)
+	require.Equal(t, int64(180), authResp.ExpiresIn)
 	require.NotEmpty(t, authResp.User.Uuid)
 
 	// Use the JWT against the sidecar on a protected path.
@@ -289,6 +309,50 @@ func TestAuth_Logout(t *testing.T) {
 		RefreshToken: authResp.RefreshToken,
 	})
 	require.Error(t, err, "refresh should fail after logout")
+}
+
+// End-to-end revocation across the real accounts + Redis stack, in the exact
+// gateway sequence: protected RPC authorized → logout request authorized (the
+// sidecar drops its cached answer for the jti here) → accounts revokes the
+// jti in the shared Redis set → immediate reuse of the old access token is
+// rejected. Pins the cross-service "revoked-jti:" key contract between
+// accounts' cache.TokenRevoker and the sidecar's revoker.
+func TestCheck_RevokedAccessToken_RejectedOnGatewayPath(t *testing.T) {
+	// The integration graph runs IDENTITY_PROVIDER=fixture with the dev-admin
+	// fixture seeded; "dev-bob" is one of its allowlisted login tokens.
+	authResp, err := testAuthClient.Authenticate(testCtx, &apigen.AuthenticateRequest{
+		Provider: "email",
+		Authentication: &apigen.AuthenticateRequest_Fixture{
+			Fixture: &apigen.FixtureAuthentication{Token: "dev-bob"},
+		},
+	})
+	require.NoError(t, err)
+
+	bearer := map[string]string{"authorization": "Bearer " + authResp.AccessToken}
+
+	resp, err := testSidecar.Check(testCtx, makeCheckRequestWithPath("/v1/users", bearer))
+	require.NoError(t, err)
+	require.NotNil(t, resp.GetOkResponse(), "protected RPC succeeds before logout")
+
+	// The gateway authorizes the logout request before proxying it upstream.
+	resp, err = testSidecar.Check(testCtx, makeCheckRequestWithPath("/v1/auth/logout", bearer))
+	require.NoError(t, err)
+	require.NotNil(t, resp.GetOkResponse(), "logout request is authorized")
+
+	// Accounts revokes the refresh family AND the access token's jti (read
+	// from the Authorization metadata, as the gateway forwards it).
+	logoutCtx := metadata.AppendToOutgoingContext(testCtx,
+		"authorization", "Bearer "+authResp.AccessToken)
+	_, err = testAuthClient.Logout(logoutCtx, &apigen.LogoutRequest{
+		RefreshToken: authResp.RefreshToken,
+	})
+	require.NoError(t, err)
+
+	resp, err = testSidecar.Check(testCtx, makeCheckRequestWithPath("/v1/users", bearer))
+	require.NoError(t, err)
+	require.NotNil(t, resp.GetDeniedResponse(), "revoked access token must be rejected immediately")
+	require.Equal(t, int32(401), int32(resp.GetDeniedResponse().Status.Code))
+	require.Equal(t, "token revoked", resp.GetDeniedResponse().Body)
 }
 
 func TestAuth_GetJWKS(t *testing.T) {

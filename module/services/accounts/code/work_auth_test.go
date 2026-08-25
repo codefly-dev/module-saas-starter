@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"testing"
 	"time"
 
@@ -15,6 +16,8 @@ func clearAuthProviderEnvironment(t *testing.T) {
 		"CODEFLY__ENVIRONMENT",
 		"IDENTITY_CLIENT_ID",
 		"IDENTITY_CLIENT_SECRET",
+		"IDENTITY_GENERIC_OIDC",
+		"CODEFLY__WORKSPACE_CONFIGURATION__IDENTITY__IDENTITY_GENERIC_OIDC",
 		"IDENTITY_ALLOWED_REDIRECT_URIS",
 		"CODEFLY__WORKSPACE_CONFIGURATION__IDENTITY__IDENTITY_PROVIDER",
 		"CODEFLY__WORKSPACE_SECRET_CONFIGURATION__IDENTITY__IDENTITY_PROVIDER",
@@ -43,6 +46,25 @@ func TestWorkspaceEnvPreservesExactCodeflyConfigurationName(t *testing.T) {
 
 	t.Setenv("CODEFLY__WORKSPACE_SECRET_CONFIGURATION__INTERNAL-AUTH__"+key, "")
 	require.Equal(t, "legacy-normalized", workspaceEnv("internal-auth", key))
+}
+
+func TestObservabilityEnabledRequiresExternalOTLPEndpoint(t *testing.T) {
+	const key = "OTEL_EXPORTER_OTLP_ENDPOINT"
+	configurationKey := "CODEFLY__WORKSPACE_CONFIGURATION__OBSERVABILITY__" + key
+	secretKey := "CODEFLY__WORKSPACE_SECRET_CONFIGURATION__OBSERVABILITY__" + key
+	t.Setenv(key, "")
+	t.Setenv(configurationKey, "")
+	t.Setenv(secretKey, "")
+	require.False(t, observabilityEnabled())
+
+	t.Setenv(key, "  ")
+	require.False(t, observabilityEnabled())
+	t.Setenv(key, "https://otel.example")
+	require.True(t, observabilityEnabled())
+
+	t.Setenv(key, "")
+	t.Setenv(configurationKey, "https://workspace-otel.example")
+	require.True(t, observabilityEnabled())
 }
 
 func TestConfiguredMFAStepUpMaxAge(t *testing.T) {
@@ -299,6 +321,8 @@ func TestFixtureVariableCannotOverrideProductionProvider(t *testing.T) {
 func TestBuildProviderStackRejectsUnknownAndIncompleteProviders(t *testing.T) {
 	clearAuthProviderEnvironment(t)
 
+	// An undeclared non-preset value (e.g. a typo of a preset) fails startup
+	// closed rather than silently becoming a generic OIDC provider.
 	_, _, err := buildProviderStack("unknown", "")
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "unsupported identity provider")
@@ -311,4 +335,41 @@ func TestBuildProviderStackRejectsUnknownAndIncompleteProviders(t *testing.T) {
 	t.Setenv("CODEFLY__WORKSPACE_SECRET_CONFIGURATION__IDENTITY__IDENTITY_CLIENT_SECRET", "REPLACE_ME")
 	_, _, err = buildProviderStack("workos", "")
 	require.Error(t, err, "checked-in placeholder credentials must fail startup")
+}
+
+func TestDevFixtureAuthProvider(t *testing.T) {
+	require.True(t, devFixtureAuthProvider("fixture"))
+	require.True(t, devFixtureAuthProvider("dev"))
+	require.False(t, devFixtureAuthProvider("workos"))
+	require.False(t, devFixtureAuthProvider(""))
+}
+
+// With no Vault configured, a real identity provider must fail closed at boot
+// rather than sign with an ephemeral key that differs per replica and breaks
+// existing sessions. Dev/fixture mode may still generate a key offline.
+func TestLoadSigningKeyFailsClosedOutsideDevFixture(t *testing.T) {
+	clearAuthProviderEnvironment(t)
+
+	_, err := loadSigningKey(context.Background(), false)
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "Vault")
+
+	priv, err := loadSigningKey(context.Background(), true)
+	require.NoError(t, err)
+	require.NotEmpty(t, priv)
+}
+
+// The dev and fixture identity providers accept unauthenticated identities, so
+// selecting one outside the local environment must fail closed at startup.
+func TestRequireLocalForDevFixtureProvider(t *testing.T) {
+	for _, provider := range []string{"dev", "fixture"} {
+		require.Error(t, requireLocalForDevFixtureProvider(provider, false),
+			"%s must be refused when not local", provider)
+		require.NoError(t, requireLocalForDevFixtureProvider(provider, true),
+			"%s must be allowed when local", provider)
+	}
+	for _, provider := range []string{"workos", "oidc", "header-jwt", ""} {
+		require.NoError(t, requireLocalForDevFixtureProvider(provider, false),
+			"%q must be allowed regardless of environment", provider)
+	}
 }

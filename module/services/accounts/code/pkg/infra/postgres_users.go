@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"strings"
 	"time"
 
 	"accounts/pkg/business"
@@ -12,12 +13,17 @@ import (
 
 	"github.com/codefly-dev/core/wool"
 	"github.com/jackc/pgx/v5"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/types/known/timestamppb"
 )
 
 // GetUser returns a user by UUID.
 func (s *PostgresStore) GetUser(ctx context.Context, id string) (*gen.User, error) {
 	w := wool.Get(ctx).In("GetUser")
+	if strings.TrimSpace(id) == "" {
+		return nil, status.Error(codes.InvalidArgument, "user id required")
+	}
 	executor := s.getQueryExecutor(ctx)
 
 	var u gen.User
@@ -26,9 +32,9 @@ func (s *PostgresStore) GetUser(ctx context.Context, id string) (*gen.User, erro
 	var createdAt, updatedAt time.Time
 
 	err := executor.QueryRow(ctx, `
-		SELECT uuid, primary_email, status, profile, created_at, updated_at
+		SELECT uuid, primary_email, status, profile, created_at, updated_at, email_verified
 		FROM users WHERE uuid = $1 AND status != 'deleted'`, id,
-	).Scan(&u.Uuid, &u.PrimaryEmail, &statusStr, &profile, &createdAt, &updatedAt)
+	).Scan(&u.Uuid, &u.PrimaryEmail, &statusStr, &profile, &createdAt, &updatedAt, &u.EmailVerified)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return nil, business.NewStoreError(errors.New("user not found"), business.ErrTypeNotFound)

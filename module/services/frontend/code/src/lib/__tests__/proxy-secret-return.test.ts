@@ -1,8 +1,24 @@
 import { NextRequest } from "next/server";
-import { describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { proxy, trustedGatewayRequestHeaders } from "@/proxy";
 
 describe("secret return handling", () => {
+	// The proxy now sets a per-request nonce'd CSP on every response, built from
+	// next.config's build-time snapshot; provide it as the real build does.
+	beforeEach(() => {
+		vi.stubEnv(
+			"SOLUTION_CSP_INPUTS",
+			JSON.stringify({
+				solutionOrigins: [],
+				analyticsOrigin: null,
+				turnstile: false,
+			}),
+		);
+	});
+	afterEach(() => {
+		vi.unstubAllEnvs();
+	});
+
 	it("captures an invitation token in an HttpOnly cookie and redacts the URL", () => {
 		const token = "a".repeat(43);
 		const response = proxy(

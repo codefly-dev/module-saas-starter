@@ -4,10 +4,13 @@ package usersettings
 
 import (
 	"fmt"
+	"strings"
 
 	saassettings "accounts/pkg/settings"
+	"accounts/pkg/settingscatalog"
 
 	"google.golang.org/protobuf/proto"
+	"google.golang.org/protobuf/reflect/protoreflect"
 
 	gen "accounts/pkg/gen/saas/accounts/v1"
 )
@@ -159,6 +162,78 @@ var resetFields = map[string]resetField{
 	Fields.Notifications.Sound.Path(): resettable(Fields.Notifications.Sound),
 }
 
+func resetFieldForPath(path string) (resetField, bool, error) {
+	if field, ok := resetFields[path]; ok {
+		return field, true, nil
+	}
+	name, found := strings.CutPrefix(path, "composed.")
+	if !found || name == "" || strings.Contains(name, ".") {
+		return resetField{}, false, nil
+	}
+	for _, field := range settingscatalog.Fields() {
+		if field.Name != name {
+			continue
+		}
+		if err := validateComposedField(name); err != nil {
+			return resetField{}, false, err
+		}
+		return resetField{
+			clear: func(settings *gen.UserSettings) error {
+				_, err := accessComposedField(settings, name, true)
+				return err
+			},
+			has: func(settings *gen.UserSettings) (bool, error) {
+				return accessComposedField(settings, name, false)
+			},
+		}, true, nil
+	}
+	return resetField{}, false, nil
+}
+
+func validateComposedField(name string) error {
+	root := (&gen.UserSettings{}).ProtoReflect().Descriptor()
+	container := root.Fields().ByName("composed")
+	if container == nil || container.Message() == nil {
+		return fmt.Errorf("generated UserSettings is missing the composed settings container")
+	}
+	if container.Message().Fields().ByName(protoreflect.Name(name)) == nil {
+		return fmt.Errorf("generated composed settings is missing catalog field %q", name)
+	}
+	return nil
+}
+
+func accessComposedField(settings *gen.UserSettings, name string, clear bool) (bool, error) {
+	if settings == nil {
+		return false, nil
+	}
+	root := settings.ProtoReflect()
+	container := root.Descriptor().Fields().ByName("composed")
+	if container == nil || container.Message() == nil {
+		return false, fmt.Errorf("generated UserSettings is missing the composed settings container")
+	}
+	field := container.Message().Fields().ByName(protoreflect.Name(name))
+	if field == nil {
+		return false, fmt.Errorf("generated composed settings is missing catalog field %q", name)
+	}
+	if !root.Has(container) {
+		return false, nil
+	}
+	composed := root.Get(container).Message()
+	present := composed.Has(field)
+	if clear && present {
+		composed.Clear(field)
+		hasSibling := false
+		composed.Range(func(protoreflect.FieldDescriptor, protoreflect.Value) bool {
+			hasSibling = true
+			return false
+		})
+		if !hasSibling {
+			root.Clear(container)
+		}
+	}
+	return present, nil
+}
+
 // ValidateResetPaths rejects unknown paths, duplicates, and ambiguous requests
 // that both patch and reset the same field.
 func ValidateResetPaths(patch *gen.UserSettings, paths []string) error {
@@ -167,7 +242,10 @@ func ValidateResetPaths(patch *gen.UserSettings, paths []string) error {
 	}
 	seen := make(map[string]struct{}, len(paths))
 	for _, path := range paths {
-		field, ok := resetFields[path]
+		field, ok, err := resetFieldForPath(path)
+		if err != nil {
+			return err
+		}
 		if !ok {
 			return fmt.Errorf("settings reset path %q is not supported", path)
 		}
@@ -190,7 +268,10 @@ func ValidateResetPaths(patch *gen.UserSettings, paths []string) error {
 // adapters apply the same validated paths directly to sparse ProtoJSON.
 func ApplyResets(settings *gen.UserSettings, paths []string) error {
 	for _, path := range paths {
-		field, ok := resetFields[path]
+		field, ok, err := resetFieldForPath(path)
+		if err != nil {
+			return err
+		}
 		if !ok {
 			return fmt.Errorf("settings reset path %q is not supported", path)
 		}

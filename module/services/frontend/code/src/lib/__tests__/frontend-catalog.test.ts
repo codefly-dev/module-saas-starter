@@ -12,12 +12,11 @@ import {
 
 describe("generated frontend catalog", () => {
 	it("covers every accounts service and procedure", () => {
-		expect(Object.keys(ACCOUNT_SERVICE_DESCRIPTORS)).toHaveLength(26);
-		const procedureCount = Object.values(ACCOUNT_SERVICE_DESCRIPTORS).reduce(
-			(count, service) => count + Object.keys(service.method).length,
-			0,
-		);
-		expect(procedureCount).toBe(138);
+		// No raw service/procedure totals here — they churn on every endpoint
+		// and the generated catalog is already pinned byte-for-byte by the Go
+		// cataloggen fixture-equality (frontend_catalog.ts). Assert structure:
+		// representative procedures resolve, and every service gets a client
+		// (the keys-match invariant in the next test).
 		expect(
 			ACCOUNT_SERVICE_DESCRIPTORS.WorkContextService.method.exchangeAudience,
 		).toBeDefined();

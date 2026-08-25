@@ -6,7 +6,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
-	"time"
 )
 
 // SlackNotifier sends messages to a Slack channel via an incoming webhook URL.
@@ -16,12 +15,15 @@ type SlackNotifier struct {
 }
 
 // NewSlackNotifier creates a Slack notifier for the given webhook URL.
+//
+// Outbound delivery goes through the same hardened client used for tenant
+// webhooks: it pins each connection to a validated public HTTPS address, so a
+// webhook URL that resolves (or is rebound) to a private/link-local address
+// cannot be turned into an SSRF against internal services.
 func NewSlackNotifier(webhookURL string) *SlackNotifier {
 	return &SlackNotifier{
 		webhookURL: webhookURL,
-		client: &http.Client{
-			Timeout: 5 * time.Second,
-		},
+		client:     NewWebhookEndpointPolicy().HTTPClient(),
 	}
 }
 
@@ -57,7 +59,7 @@ func (s *SlackNotifier) Send(ctx context.Context, channel, text string) error {
 	if err != nil {
 		return fmt.Errorf("slack: send: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != http.StatusOK {
 		return fmt.Errorf("slack: unexpected status %d", resp.StatusCode)

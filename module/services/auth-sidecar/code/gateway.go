@@ -13,7 +13,6 @@ package main
 
 import (
 	"context"
-	"crypto/subtle"
 	"fmt"
 	"io"
 	"log"
@@ -26,6 +25,8 @@ import (
 
 	corev3 "github.com/envoyproxy/go-control-plane/envoy/config/core/v3"
 	authv3 "github.com/envoyproxy/go-control-plane/envoy/service/auth/v3"
+	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
+	semconv "go.opentelemetry.io/otel/semconv/v1.40.0"
 	"google.golang.org/grpc/codes"
 )
 
@@ -40,6 +41,7 @@ type Gateway struct {
 	selfHandler       http.Handler        // handler for "self" routes (health checks)
 	rateLimiter       *RateLimiter
 	requiredUpstreams []string
+	solutions         *solutionRegistry // runtime-registered solution upstreams
 }
 
 // NewGateway constructs a gateway with explicit route matching.
@@ -52,6 +54,7 @@ func NewGateway(sidecar *Sidecar, matcher *RouteMatcher, upstreams map[string]*u
 		upstreams:         upstreams,
 		rateLimiter:       rateLimiter,
 		requiredUpstreams: matcher.RequiredServices(),
+		solutions:         newSolutionRegistry(),
 	}
 	mux := http.NewServeMux()
 	mux.HandleFunc("/health", g.healthHandler)
@@ -122,12 +125,26 @@ func (g *Gateway) readyHandler(w http.ResponseWriter, _ *http.Request) {
 // Unlisted paths are rejected with 404. Every request must match an explicit
 // entry in the route config.
 func (g *Gateway) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	// Runtime solution passthrough (/solutions/*): auth-required, ext_authz
+	// authoritative, upstream resolved from the runtime registry. Handled
+	// before withTrustedFrontendOrigin because the internal registration
+	// endpoint authenticates on the X-Codefly-Internal-Token header, which that
+	// pass consumes and strips. The proxy sub-path strips every caller identity
+	// header itself (stripAllIdentityHeaders + proxyTo), so nothing leaks.
+	if g.handleSolutionRequest(w, r) {
+		return
+	}
+
 	r = g.withTrustedFrontendOrigin(r)
+
 	entry := g.matcher.Match(r.Method, r.URL.Path)
 	if entry == nil {
 		log.Printf("WARN: blocked request: method=%s path=%s reason=no_matching_route", r.Method, r.URL.Path)
 		httpError(w, http.StatusNotFound, "endpoint not exposed")
 		return
+	}
+	if labeler, ok := otelhttp.LabelerFromContext(r.Context()); ok {
+		labeler.Add(semconv.HTTPRoute(entry.Path))
 	}
 
 	// Self-service routes (health checks) — no auth, no proxy.
@@ -304,9 +321,7 @@ func (g *Gateway) withTrustedFrontendOrigin(r *http.Request) *http.Request {
 	r.Header.Del("X-Codefly-Public-Origin")
 	r.Header.Del("X-Codefly-Internal-Token")
 
-	if g.sidecar == nil || g.sidecar.internalToken == "" ||
-		len(presentedToken) != len(g.sidecar.internalToken) ||
-		subtle.ConstantTimeCompare([]byte(presentedToken), []byte(g.sidecar.internalToken)) != 1 {
+	if g.sidecar == nil || !g.sidecar.acceptsInternalToken(presentedToken) {
 		return r
 	}
 	origin, err := canonicalPublicOrigin(claimedOrigin)
@@ -380,8 +395,9 @@ func stripAllIdentityHeaders(r *http.Request) {
 
 var untrustedAuthHeaders = []string{
 	"x-user-id", "x-org-id", "x-org-role", "x-platform-role", "x-roles",
+	"x-scoped-roles", "x-scoped-roles-truncated",
 	"x-auth-id", "x-user-email", "x-user-name", "x-session-id",
-	"x-acting-as-user-id", "x-scopes", "x-mfa-satisfied",
+	"x-acting-as-user-id", "x-act", "x-scopes", "x-mfa-satisfied",
 	"x-authentication-methods", "x-auth-time", "x-assurance-level", "x-mfa-verified-at",
 	"x-codefly-gateway-token", "x-codefly-internal-token", "x-codefly-public-origin",
 }

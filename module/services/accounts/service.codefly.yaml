@@ -4,16 +4,13 @@ version: 0.0.0
 agent:
     kind: codefly:service
     name: go-grpc
-    version: 0.1.21
+    version: 0.1.33
     publisher: codefly.dev
 service-dependencies:
     - name: cache
       endpoints:
         - name: read
         - name: write
-    - name: object-storage
-      endpoints:
-        - name: accounts
     - name: store
       endpoints:
         - name: tcp
@@ -30,6 +27,7 @@ workspace-configuration-dependencies:
     - email
     - identity
     - internal-auth
+    - observability
     - product-analytics
     - security
 endpoints:
@@ -43,4 +41,5 @@ spec:
         - code/pkg/gen
         - generated/openapi-raw
     rest-endpoint: true
-    with-workspace: true
+    service-account:
+        name: accounts

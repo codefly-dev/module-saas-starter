@@ -12,6 +12,7 @@ import (
 	grpc "google.golang.org/grpc"
 	codes "google.golang.org/grpc/codes"
 	status "google.golang.org/grpc/status"
+	emptypb "google.golang.org/protobuf/types/known/emptypb"
 )
 
 // This is a compile-time assertion to ensure that this generated file
@@ -20,10 +21,12 @@ import (
 const _ = grpc.SupportPackageIsVersion9
 
 const (
-	WorkContextService_StartTask_FullMethodName         = "/saas.accounts.v1.WorkContextService/StartTask"
-	WorkContextService_StartRootSession_FullMethodName  = "/saas.accounts.v1.WorkContextService/StartRootSession"
-	WorkContextService_ExchangeAudience_FullMethodName  = "/saas.accounts.v1.WorkContextService/ExchangeAudience"
-	WorkContextService_StartChildSession_FullMethodName = "/saas.accounts.v1.WorkContextService/StartChildSession"
+	WorkContextService_CheckAuthorizationRevision_FullMethodName = "/saas.accounts.v1.WorkContextService/CheckAuthorizationRevision"
+	WorkContextService_AuthorizeEvidenceRead_FullMethodName      = "/saas.accounts.v1.WorkContextService/AuthorizeEvidenceRead"
+	WorkContextService_StartTask_FullMethodName                  = "/saas.accounts.v1.WorkContextService/StartTask"
+	WorkContextService_StartRootSession_FullMethodName           = "/saas.accounts.v1.WorkContextService/StartRootSession"
+	WorkContextService_ExchangeAudience_FullMethodName           = "/saas.accounts.v1.WorkContextService/ExchangeAudience"
+	WorkContextService_StartChildSession_FullMethodName          = "/saas.accounts.v1.WorkContextService/StartChildSession"
 )
 
 // WorkContextServiceClient is the client API for WorkContextService service.
@@ -34,6 +37,13 @@ const (
 // identity/RBAC facts into a short-lived Codefly Work Context; it does not own
 // product Task or Session lifecycle storage.
 type WorkContextServiceClient interface {
+	// CheckAuthorizationRevision is the consumer-side revocation seam for a
+	// previously issued Work Context. It succeeds only while every subject's
+	// requested authority still resolves to the exact sealed revision.
+	CheckAuthorizationRevision(ctx context.Context, in *CheckAuthorizationRevisionRequest, opts ...grpc.CallOption) (*emptypb.Empty, error)
+	// AuthorizeEvidenceRead is deliberately Evidence-specific. It prevents a
+	// consumer from acquiring a generic Accounts permission oracle.
+	AuthorizeEvidenceRead(ctx context.Context, in *AuthorizeEvidenceReadRequest, opts ...grpc.CallOption) (*emptypb.Empty, error)
 	StartTask(ctx context.Context, in *StartTaskWorkContextRequest, opts ...grpc.CallOption) (*IssuedWorkContext, error)
 	StartRootSession(ctx context.Context, in *StartRootSessionWorkContextRequest, opts ...grpc.CallOption) (*IssuedWorkContext, error)
 	// ExchangeAudience derives a least-privilege, audience-bound capability
@@ -48,6 +58,26 @@ type workContextServiceClient struct {
 
 func NewWorkContextServiceClient(cc grpc.ClientConnInterface) WorkContextServiceClient {
 	return &workContextServiceClient{cc}
+}
+
+func (c *workContextServiceClient) CheckAuthorizationRevision(ctx context.Context, in *CheckAuthorizationRevisionRequest, opts ...grpc.CallOption) (*emptypb.Empty, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(emptypb.Empty)
+	err := c.cc.Invoke(ctx, WorkContextService_CheckAuthorizationRevision_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *workContextServiceClient) AuthorizeEvidenceRead(ctx context.Context, in *AuthorizeEvidenceReadRequest, opts ...grpc.CallOption) (*emptypb.Empty, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(emptypb.Empty)
+	err := c.cc.Invoke(ctx, WorkContextService_AuthorizeEvidenceRead_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
 }
 
 func (c *workContextServiceClient) StartTask(ctx context.Context, in *StartTaskWorkContextRequest, opts ...grpc.CallOption) (*IssuedWorkContext, error) {
@@ -98,6 +128,13 @@ func (c *workContextServiceClient) StartChildSession(ctx context.Context, in *St
 // identity/RBAC facts into a short-lived Codefly Work Context; it does not own
 // product Task or Session lifecycle storage.
 type WorkContextServiceServer interface {
+	// CheckAuthorizationRevision is the consumer-side revocation seam for a
+	// previously issued Work Context. It succeeds only while every subject's
+	// requested authority still resolves to the exact sealed revision.
+	CheckAuthorizationRevision(context.Context, *CheckAuthorizationRevisionRequest) (*emptypb.Empty, error)
+	// AuthorizeEvidenceRead is deliberately Evidence-specific. It prevents a
+	// consumer from acquiring a generic Accounts permission oracle.
+	AuthorizeEvidenceRead(context.Context, *AuthorizeEvidenceReadRequest) (*emptypb.Empty, error)
 	StartTask(context.Context, *StartTaskWorkContextRequest) (*IssuedWorkContext, error)
 	StartRootSession(context.Context, *StartRootSessionWorkContextRequest) (*IssuedWorkContext, error)
 	// ExchangeAudience derives a least-privilege, audience-bound capability
@@ -114,6 +151,12 @@ type WorkContextServiceServer interface {
 // pointer dereference when methods are called.
 type UnimplementedWorkContextServiceServer struct{}
 
+func (UnimplementedWorkContextServiceServer) CheckAuthorizationRevision(context.Context, *CheckAuthorizationRevisionRequest) (*emptypb.Empty, error) {
+	return nil, status.Error(codes.Unimplemented, "method CheckAuthorizationRevision not implemented")
+}
+func (UnimplementedWorkContextServiceServer) AuthorizeEvidenceRead(context.Context, *AuthorizeEvidenceReadRequest) (*emptypb.Empty, error) {
+	return nil, status.Error(codes.Unimplemented, "method AuthorizeEvidenceRead not implemented")
+}
 func (UnimplementedWorkContextServiceServer) StartTask(context.Context, *StartTaskWorkContextRequest) (*IssuedWorkContext, error) {
 	return nil, status.Error(codes.Unimplemented, "method StartTask not implemented")
 }
@@ -145,6 +188,42 @@ func RegisterWorkContextServiceServer(s grpc.ServiceRegistrar, srv WorkContextSe
 		t.testEmbeddedByValue()
 	}
 	s.RegisterService(&WorkContextService_ServiceDesc, srv)
+}
+
+func _WorkContextService_CheckAuthorizationRevision_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(CheckAuthorizationRevisionRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(WorkContextServiceServer).CheckAuthorizationRevision(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: WorkContextService_CheckAuthorizationRevision_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(WorkContextServiceServer).CheckAuthorizationRevision(ctx, req.(*CheckAuthorizationRevisionRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _WorkContextService_AuthorizeEvidenceRead_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(AuthorizeEvidenceReadRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(WorkContextServiceServer).AuthorizeEvidenceRead(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: WorkContextService_AuthorizeEvidenceRead_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(WorkContextServiceServer).AuthorizeEvidenceRead(ctx, req.(*AuthorizeEvidenceReadRequest))
+	}
+	return interceptor(ctx, in, info, handler)
 }
 
 func _WorkContextService_StartTask_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
@@ -226,6 +305,14 @@ var WorkContextService_ServiceDesc = grpc.ServiceDesc{
 	ServiceName: "saas.accounts.v1.WorkContextService",
 	HandlerType: (*WorkContextServiceServer)(nil),
 	Methods: []grpc.MethodDesc{
+		{
+			MethodName: "CheckAuthorizationRevision",
+			Handler:    _WorkContextService_CheckAuthorizationRevision_Handler,
+		},
+		{
+			MethodName: "AuthorizeEvidenceRead",
+			Handler:    _WorkContextService_AuthorizeEvidenceRead_Handler,
+		},
 		{
 			MethodName: "StartTask",
 			Handler:    _WorkContextService_StartTask_Handler,

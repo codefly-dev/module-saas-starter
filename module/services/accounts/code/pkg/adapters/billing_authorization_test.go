@@ -101,13 +101,21 @@ func (*billingAuthorizationClient) ListInvoices(context.Context, string, int) ([
 	return nil, nil
 }
 
-type fixedAccessMinter struct{ identity *auth.Identity }
+type fixedAccessMinter struct {
+	identity  *auth.Identity
+	verifyErr error
+}
 
 func (*fixedAccessMinter) Mint(context.Context, *auth.Identity) (*auth.TokenPair, error) {
 	return nil, nil
 }
 
-func (m *fixedAccessMinter) VerifyAccess(string) (*auth.Identity, error) { return m.identity, nil }
+func (m *fixedAccessMinter) VerifyAccess(string) (*auth.Identity, error) {
+	if m.verifyErr != nil {
+		return nil, m.verifyErr
+	}
+	return m.identity, nil
+}
 
 func (*fixedAccessMinter) VerifyRefresh(context.Context, string) (*auth.TokenPair, error) {
 	return nil, nil
@@ -117,9 +125,10 @@ func (*fixedAccessMinter) SwitchOrganization(context.Context, uuid.UUID, uuid.UU
 	return "", nil
 }
 
-func (*fixedAccessMinter) Revoke(context.Context, string) error       { return nil }
-func (*fixedAccessMinter) RevokeAccess(context.Context, string) error { return nil }
-func (*fixedAccessMinter) JWKS() (string, error)                      { return `{}`, nil }
+func (*fixedAccessMinter) Revoke(context.Context, string) error              { return nil }
+func (*fixedAccessMinter) RevokeAccess(context.Context, string) error        { return nil }
+func (*fixedAccessMinter) RevokeSessionAccess(context.Context, string) error { return nil }
+func (*fixedAccessMinter) JWKS() (string, error)                             { return `{}`, nil }
 
 func recentBillingIdentity() *auth.Identity {
 	return &auth.Identity{
@@ -226,6 +235,21 @@ func TestListPublicPlansNeedsNoProductIdentity(t *testing.T) {
 	require.Len(t, response.Msg.Plans, 1)
 	require.Equal(t, int64(4900), response.Msg.Plans[0].AmountMinor)
 	require.Equal(t, int64(50), response.Msg.Plans[0].Entitlements[0].Limit)
+}
+
+func TestBillingHTTPFailsClosedWhenRevocationUnavailable(t *testing.T) {
+	svc := installBillingAuthorizationService(t, &billingAuthorizationStore{}, &billingAuthorizationClient{})
+	svc.SetJWTMinter(&fixedAccessMinter{verifyErr: auth.ErrRevocationUnavailable})
+	handler := NewBillingHTTPHandler(svc)
+
+	req := httptest.NewRequest(http.MethodPost, "/v1/billing/checkout", strings.NewReader(`{"plan_name":"pro"}`))
+	req.Header.Set("Authorization", "Bearer any")
+	w := httptest.NewRecorder()
+	handler.ServeHTTP(w, req)
+
+	// A revocation-store outage is retryable, not bad credentials: 503, not 401,
+	// and never a silent success.
+	require.Equal(t, http.StatusServiceUnavailable, w.Code)
 }
 
 func TestBillingHTTPCheckoutRequiresPermissionRecentMFAAndIdempotency(t *testing.T) {

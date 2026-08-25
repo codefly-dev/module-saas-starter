@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
 	"time"
 
 	"accounts/pkg/business"
@@ -11,6 +12,8 @@ import (
 
 	"github.com/codefly-dev/core/wool"
 	"github.com/jackc/pgx/v5"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/types/known/timestamppb"
 )
 
@@ -164,6 +167,15 @@ func (s *PostgresStore) AssignRole(ctx context.Context, assignment *gen.RoleAssi
 		return fmt.Errorf("assign role: unsupported subject kind %s", assignment.SubjectKind)
 	}
 
+	// Bind the assignment to a role the caller's tenant can actually see. The
+	// roles FK bypasses RLS, so without this an org admin (authorized for their
+	// own org by the handler) could assign another org's role_id; under WithOrgTx
+	// the roles policy exposes only own-org and global roles, matching GrantScope
+	// and ShareRecord.
+	if err := requireVisibleRole(ctx, executor, assignment.RoleId); err != nil {
+		return w.Wrapf(err, "failed to validate role")
+	}
+
 	// Handle nullable org_id and scope
 	var orgID, scope interface{}
 	if assignment.OrgId != "" {
@@ -216,11 +228,9 @@ func (s *PostgresStore) ListRoleAssignments(ctx context.Context, orgID string, s
 	case gen.SubjectKind_SUBJECT_KIND_PRINCIPAL:
 		query += fmt.Sprintf(" AND subject_kind = $%d", argN)
 		args = append(args, "principal")
-		argN++
 	case gen.SubjectKind_SUBJECT_KIND_TEAM:
 		query += fmt.Sprintf(" AND subject_kind = $%d", argN)
 		args = append(args, "team")
-		argN++
 	default:
 		return nil, fmt.Errorf("list role assignments: unsupported subject kind %s", subjectKind)
 	}
@@ -309,7 +319,11 @@ func (s *PostgresStore) RevokeRole(ctx context.Context, subjectID string, roleID
 // given permission.
 // It supports:
 //   - Wildcard permissions: resource="*" or action="*" match everything
-//   - Scope matching: assignment scope must match or be empty (global)
+//   - Scope matching (strict): an unscoped check (scope=="") is satisfied only
+//     by NULL-scope assignments; a scoped check is satisfied by an assignment
+//     with the same scope OR a NULL-scope assignment. NULL-scope assignments
+//     are deliberately org-wide and subsume all scopes — a scoped grant never
+//     widens to satisfy an unscoped check.
 //   - Team inheritance: human principals also inherit permissions assigned to
 //     teams they belong to
 func (s *PostgresStore) CheckPermission(ctx context.Context, subjectID string, subjectKind gen.SubjectKind, resource string, action string, orgID string, scope string) (bool, string, error) {
@@ -323,7 +337,8 @@ func (s *PostgresStore) CheckPermission(ctx context.Context, subjectID string, s
 	// 1. Direct principal role assignments
 	// 2. Team role assignments (for human principals who are team members)
 	// 3. Wildcard permission matching (* on resource or action)
-	// 4. Scope matching (NULL scope = global, specific scope = scoped)
+	// 4. Scope matching (strict): unscoped checks match only NULL-scope
+	//    assignments; scoped checks match the same scope or a NULL (org-wide) scope
 	// 5. Org scoping (NULL org = global role, specific org = org role)
 	// Build query dynamically to avoid passing empty strings as UUID parameters
 	var subjectPredicate string
@@ -363,6 +378,8 @@ func (s *PostgresStore) CheckPermission(ctx context.Context, subjectID string, s
 	if scope != "" {
 		query += fmt.Sprintf(` AND (ra.scope IS NULL OR ra.scope = $%d)`, len(args)+1)
 		args = append(args, scope)
+	} else {
+		query += ` AND ra.scope IS NULL`
 	}
 
 	query += ` LIMIT 1`
@@ -503,6 +520,9 @@ func (s *PostgresStore) ResolveIdentity(ctx context.Context, provider string, pr
 // GetPlatformRole returns the platform role for a user, or "" if not a platform admin.
 func (s *PostgresStore) GetPlatformRole(ctx context.Context, userID string) (string, error) {
 	w := wool.Get(ctx).In("GetPlatformRole")
+	if strings.TrimSpace(userID) == "" {
+		return "", status.Error(codes.InvalidArgument, "user id required")
+	}
 	executor := s.getQueryExecutor(ctx)
 
 	var role string

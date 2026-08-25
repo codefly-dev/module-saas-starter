@@ -39,16 +39,41 @@ func Auth0Config(domain, audience string) Config {
 //
 //	frontendAPI: the instance's frontend API domain, e.g.
 //	             "clean-mastiff-42.clerk.accounts.dev" or "clerk.acme.com"
-func ClerkConfig(frontendAPI string) Config {
+//	audience: the session token's `aud`, configured via Clerk's session-token
+//	          template. Required: oidc.New refuses an unbound validator.
+func ClerkConfig(frontendAPI, audience string) Config {
 	frontendAPI = strings.TrimSpace(frontendAPI)
 	return Config{
 		ProviderName: "clerk",
 		Issuer:       fmt.Sprintf("https://%s", frontendAPI),
 		JWKSURL:      fmt.Sprintf("https://%s/.well-known/jwks.json", frontendAPI),
+		Audience:     audience,
 		// Clerk doesn't expose an org id on the default session claim,
 		// but exposes "org_id" when the "Organization" session template
 		// is enabled.
 		OrgClaim: "org_id",
+	}
+}
+
+// OktaConfig returns a Config preconfigured for an Okta org or custom
+// authorization server — one concrete instance of the generic
+// IDENTITY_PROVIDER=oidc path, which discovers these same values from the
+// provider's well-known document rather than compiling them in.
+//
+//	issuer: the full issuer URL, e.g. "https://acme.okta.com" (org
+//	        authorization server) or "https://acme.okta.com/oauth2/aus1a2b3c"
+//	        (a custom authorization server).
+//	audience: the access token's `aud`; for ID-token logins this is the
+//	          OAuth client id.
+func OktaConfig(issuer, audience string) Config {
+	issuer = strings.TrimRight(strings.TrimSpace(issuer), "/")
+	return Config{
+		ProviderName: "okta",
+		Issuer:       issuer,
+		JWKSURL:      issuer + "/v1/keys",
+		Audience:     audience,
+		// Okta exposes no organization id on the default token.
+		OrgClaim: "",
 	}
 }
 

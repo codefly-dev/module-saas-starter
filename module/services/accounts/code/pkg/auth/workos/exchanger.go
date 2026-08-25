@@ -108,7 +108,7 @@ func (e *Exchanger) Exchange(
 	if err != nil {
 		return business.ExchangedTokens{}, fmt.Errorf("workos: authentication endpoint: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	responseBody, err := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
 	if err != nil {
@@ -155,6 +155,7 @@ func (e *Exchanger) Exchange(
 		return business.ExchangedTokens{}, fmt.Errorf("workos: access-token organization does not match authentication response")
 	}
 	claims.Email = strings.ToLower(strings.TrimSpace(result.User.Email))
+	claims.EmailVerified = result.User.EmailVerified
 	if claims.ProviderOrgID == "" {
 		claims.ProviderOrgID = result.OrganizationID
 	}

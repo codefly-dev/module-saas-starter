@@ -19,9 +19,6 @@ func registerCatalogRESTHandlers(ctx context.Context, mux *runtime.ServeMux, end
 	if err := gen.RegisterAPIKeyServiceHandlerFromEndpoint(ctx, mux, endpoint, options); err != nil {
 		return fmt.Errorf("register generated REST service APIKeyService: %w", err)
 	}
-	if err := gen.RegisterAuditExportServiceHandlerFromEndpoint(ctx, mux, endpoint, options); err != nil {
-		return fmt.Errorf("register generated REST service AuditExportService: %w", err)
-	}
 	if err := gen.RegisterAuditServiceHandlerFromEndpoint(ctx, mux, endpoint, options); err != nil {
 		return fmt.Errorf("register generated REST service AuditService: %w", err)
 	}
@@ -102,11 +99,15 @@ func registerCatalogRESTHandlers(ctx context.Context, mux *runtime.ServeMux, end
 }
 
 var catalogRESTExactRoutes = map[string]struct{}{
+	"DELETE /v1/record-shares":                 {},
 	"DELETE /v1/role-assignments":              {},
+	"DELETE /v1/scope-grants":                  {},
 	"GET /v1/.well-known/service-info":         {},
 	"GET /v1/acquisition":                      {},
 	"GET /v1/api-keys":                         {},
+	"GET /v1/audit-event-types":                {},
 	"GET /v1/audit-log":                        {},
+	"GET /v1/audit-log:aggregate":              {},
 	"GET /v1/auth/.well-known/jwks.json":       {},
 	"GET /v1/consent/status":                   {},
 	"GET /v1/delegations:pending":              {},
@@ -124,6 +125,7 @@ var catalogRESTExactRoutes = map[string]struct{}{
 	"GET /v1/platform/waitlist":                {},
 	"GET /v1/principals":                       {},
 	"GET /v1/public/plans":                     {},
+	"GET /v1/record-shares":                    {},
 	"GET /v1/role-assignments":                 {},
 	"GET /v1/roles":                            {},
 	"GET /v1/user/settings":                    {},
@@ -134,7 +136,6 @@ var catalogRESTExactRoutes = map[string]struct{}{
 	"GET /v1/version":                          {},
 	"GET /v1/webhooks":                         {},
 	"POST /v1/api-keys":                        {},
-	"POST /v1/audit-export":                    {},
 	"POST /v1/audit-log:export":                {},
 	"POST /v1/auth/authenticate":               {},
 	"POST /v1/auth/logout":                     {},
@@ -162,8 +163,11 @@ var catalogRESTExactRoutes = map[string]struct{}{
 	"POST /v1/organizations":                   {},
 	"POST /v1/platform/admins":                 {},
 	"POST /v1/principals:agent":                {},
+	"POST /v1/record-shares":                   {},
 	"POST /v1/role-assignments":                {},
 	"POST /v1/roles":                           {},
+	"POST /v1/scope-grants":                    {},
+	"POST /v1/scope-nodes":                     {},
 	"POST /v1/sso/disable":                     {},
 	"POST /v1/sso/setup":                       {},
 	"POST /v1/user/settings":                   {},
@@ -185,7 +189,6 @@ type catalogRESTTemplateRoute struct {
 
 var catalogRESTTemplateRoutes = []catalogRESTTemplateRoute{
 	{method: "DELETE", path: regexp.MustCompile("^/v1/api-keys/[^/]+$")},
-	{method: "DELETE", path: regexp.MustCompile("^/v1/audit-export/[^/]+$")},
 	{method: "DELETE", path: regexp.MustCompile("^/v1/invitations/[^/]+$")},
 	{method: "DELETE", path: regexp.MustCompile("^/v1/mfa/devices/[^/]+$")},
 	{method: "DELETE", path: regexp.MustCompile("^/v1/notifications/[^/]+$")},
@@ -197,7 +200,6 @@ var catalogRESTTemplateRoutes = []catalogRESTTemplateRoute{
 	{method: "DELETE", path: regexp.MustCompile("^/v1/teams/[^/]+/members/[^/]+$")},
 	{method: "DELETE", path: regexp.MustCompile("^/v1/users/[^/]+$")},
 	{method: "DELETE", path: regexp.MustCompile("^/v1/webhooks/[^/]+$")},
-	{method: "GET", path: regexp.MustCompile("^/v1/audit-export/[^/]+$")},
 	{method: "GET", path: regexp.MustCompile("^/v1/billing/invoices/[^/]+$")},
 	{method: "GET", path: regexp.MustCompile("^/v1/delegations/[^/]+:wait$")},
 	{method: "GET", path: regexp.MustCompile("^/v1/gdpr/delete/[^/]+$")},

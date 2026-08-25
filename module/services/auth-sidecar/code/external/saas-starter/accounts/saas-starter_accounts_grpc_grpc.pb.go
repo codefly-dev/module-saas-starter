@@ -579,3 +579,143 @@ var APIKeyService_ServiceDesc = grpc.ServiceDesc{
 	Streams:  []grpc.StreamDesc{},
 	Metadata: "saas-starter_accounts_grpc.proto",
 }
+
+const (
+	WorkContextService_CheckAuthorizationRevision_FullMethodName = "/saas.accounts.v1.WorkContextService/CheckAuthorizationRevision"
+	WorkContextService_AuthorizeEvidenceRead_FullMethodName      = "/saas.accounts.v1.WorkContextService/AuthorizeEvidenceRead"
+)
+
+// WorkContextServiceClient is the client API for WorkContextService service.
+//
+// For semantics around ctx use and closing/ending streaming RPCs, please refer to https://pkg.go.dev/google.golang.org/grpc/?tab=doc#ClientConn.NewStream.
+type WorkContextServiceClient interface {
+	CheckAuthorizationRevision(ctx context.Context, in *CheckAuthorizationRevisionRequest, opts ...grpc.CallOption) (*emptypb.Empty, error)
+	AuthorizeEvidenceRead(ctx context.Context, in *AuthorizeEvidenceReadRequest, opts ...grpc.CallOption) (*emptypb.Empty, error)
+}
+
+type workContextServiceClient struct {
+	cc grpc.ClientConnInterface
+}
+
+func NewWorkContextServiceClient(cc grpc.ClientConnInterface) WorkContextServiceClient {
+	return &workContextServiceClient{cc}
+}
+
+func (c *workContextServiceClient) CheckAuthorizationRevision(ctx context.Context, in *CheckAuthorizationRevisionRequest, opts ...grpc.CallOption) (*emptypb.Empty, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(emptypb.Empty)
+	err := c.cc.Invoke(ctx, WorkContextService_CheckAuthorizationRevision_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *workContextServiceClient) AuthorizeEvidenceRead(ctx context.Context, in *AuthorizeEvidenceReadRequest, opts ...grpc.CallOption) (*emptypb.Empty, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(emptypb.Empty)
+	err := c.cc.Invoke(ctx, WorkContextService_AuthorizeEvidenceRead_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+// WorkContextServiceServer is the server API for WorkContextService service.
+// All implementations must embed UnimplementedWorkContextServiceServer
+// for forward compatibility.
+type WorkContextServiceServer interface {
+	CheckAuthorizationRevision(context.Context, *CheckAuthorizationRevisionRequest) (*emptypb.Empty, error)
+	AuthorizeEvidenceRead(context.Context, *AuthorizeEvidenceReadRequest) (*emptypb.Empty, error)
+	mustEmbedUnimplementedWorkContextServiceServer()
+}
+
+// UnimplementedWorkContextServiceServer must be embedded to have
+// forward compatible implementations.
+//
+// NOTE: this should be embedded by value instead of pointer to avoid a nil
+// pointer dereference when methods are called.
+type UnimplementedWorkContextServiceServer struct{}
+
+func (UnimplementedWorkContextServiceServer) CheckAuthorizationRevision(context.Context, *CheckAuthorizationRevisionRequest) (*emptypb.Empty, error) {
+	return nil, status.Error(codes.Unimplemented, "method CheckAuthorizationRevision not implemented")
+}
+func (UnimplementedWorkContextServiceServer) AuthorizeEvidenceRead(context.Context, *AuthorizeEvidenceReadRequest) (*emptypb.Empty, error) {
+	return nil, status.Error(codes.Unimplemented, "method AuthorizeEvidenceRead not implemented")
+}
+func (UnimplementedWorkContextServiceServer) mustEmbedUnimplementedWorkContextServiceServer() {}
+func (UnimplementedWorkContextServiceServer) testEmbeddedByValue()                            {}
+
+// UnsafeWorkContextServiceServer may be embedded to opt out of forward compatibility for this service.
+// Use of this interface is not recommended, as added methods to WorkContextServiceServer will
+// result in compilation errors.
+type UnsafeWorkContextServiceServer interface {
+	mustEmbedUnimplementedWorkContextServiceServer()
+}
+
+func RegisterWorkContextServiceServer(s grpc.ServiceRegistrar, srv WorkContextServiceServer) {
+	// If the following call panics, it indicates UnimplementedWorkContextServiceServer was
+	// embedded by pointer and is nil.  This will cause panics if an
+	// unimplemented method is ever invoked, so we test this at initialization
+	// time to prevent it from happening at runtime later due to I/O.
+	if t, ok := srv.(interface{ testEmbeddedByValue() }); ok {
+		t.testEmbeddedByValue()
+	}
+	s.RegisterService(&WorkContextService_ServiceDesc, srv)
+}
+
+func _WorkContextService_CheckAuthorizationRevision_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(CheckAuthorizationRevisionRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(WorkContextServiceServer).CheckAuthorizationRevision(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: WorkContextService_CheckAuthorizationRevision_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(WorkContextServiceServer).CheckAuthorizationRevision(ctx, req.(*CheckAuthorizationRevisionRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _WorkContextService_AuthorizeEvidenceRead_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(AuthorizeEvidenceReadRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(WorkContextServiceServer).AuthorizeEvidenceRead(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: WorkContextService_AuthorizeEvidenceRead_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(WorkContextServiceServer).AuthorizeEvidenceRead(ctx, req.(*AuthorizeEvidenceReadRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+// WorkContextService_ServiceDesc is the grpc.ServiceDesc for WorkContextService service.
+// It's only intended for direct use with grpc.RegisterService,
+// and not to be introspected or modified (even as a copy)
+var WorkContextService_ServiceDesc = grpc.ServiceDesc{
+	ServiceName: "saas.accounts.v1.WorkContextService",
+	HandlerType: (*WorkContextServiceServer)(nil),
+	Methods: []grpc.MethodDesc{
+		{
+			MethodName: "CheckAuthorizationRevision",
+			Handler:    _WorkContextService_CheckAuthorizationRevision_Handler,
+		},
+		{
+			MethodName: "AuthorizeEvidenceRead",
+			Handler:    _WorkContextService_AuthorizeEvidenceRead_Handler,
+		},
+	},
+	Streams:  []grpc.StreamDesc{},
+	Metadata: "saas-starter_accounts_grpc.proto",
+}

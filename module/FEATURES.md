@@ -39,13 +39,13 @@ the sidecar in front so this code path isn't reached.
 | Frontend     | Next.js 16 (App Router) + Connect-ES + TanStack Query|
 | Public site  | Separate Next.js 16 service + repository Markdown     |
 | Auth tokens  | Ed25519 JWT, OWASP refresh-token rotation            |
-| Identity     | WorkOS / Auth0 / Google OIDC (prod), fixture (dev)   |
+| Identity     | WorkOS / Auth0 / Google / generic OIDC (prod), fixture (dev) |
 | Database     | Postgres                                             |
 | Cache        | Redis (org-membership, 30s TTL, invalidation hooks)  |
 | Secrets      | Vault (signing key + integrations)                   |
 | Email        | Resend (prod), log-only fake (dev)                   |
 | Billing      | Stripe (checkout, portal, webhook)                   |
-| Observability| `wool` logs/traces, OTLP, job metrics, and optional Sentry |
+| Observability| OpenTelemetry logs/traces/metrics for SigNoz; Sentry errors only |
 | Test infra   | Playwright e2e against the real stack via `withDependencies` |
 
 Everything is orchestrated by Codefly: `codefly run service --fixture
@@ -97,11 +97,57 @@ Standard OAuth 2.0 authorization-code flow:
 Switching providers means selecting another Codefly `identity` configuration
 profile. Product services keep the same generic configuration contract.
 
+### Generic OIDC (any spec-compliant IdP)
+
+`IDENTITY_PROVIDER=oidc` drives the same discovery-based flow as above for any
+OpenID Connect provider — Okta, PingFederate, Azure AD / Entra, Keycloak, or a
+plain enterprise IdP — with the standard OAuth 2.0 code-grant exchanger rather
+than the WorkOS-specific one. The issuer, JWKS, and token endpoint are read
+from the provider's `/.well-known/openid-configuration`; nothing about the IdP
+is compiled in (`oidc.OktaConfig` in `pkg/auth/oidc/presets.go` is executable
+documentation of one concrete instance).
+
+`IDENTITY_PROVIDER` is the identity's `user_identities.provider` namespace. Use
+`oidc` for a single generic IdP; give two distinct enterprise IdPs distinct
+values (e.g. `IDENTITY_PROVIDER=okta` and `IDENTITY_PROVIDER=ping`) so they do
+not share one `(provider, provider_id)` namespace. A non-preset name is a
+generic provider only when you also set `IDENTITY_GENERIC_OIDC=true`; without
+that opt-in an unrecognized value (such as a typo of `workos`) fails startup
+closed rather than silently building a mismatched stack. The value must match
+`NEXT_PUBLIC_IDENTITY_PROVIDER` so the browser, the OAuth request policy, and the
+validated token all agree on the provider — a disagreement is rejected at login.
+
+`user_identities.provider` is a foreign key into the `identity_providers`
+reference catalog, so the provider name must be seeded there or login fails.
+Migration 90 registers `oidc`, `auth0`, `okta`, and `ping`; a deployment using a
+different generic name adds it via its own migration. Startup verifies the
+configured provider is registered and fails closed with a precise error if not,
+rather than deferring the foreign-key failure to the first login.
+
+Required Codefly `identity` configuration keys:
+
+| Key                     | Required | Purpose                                                            |
+|-------------------------|----------|--------------------------------------------------------------------|
+| `IDENTITY_PROVIDER`     | yes      | `oidc`, or a distinct name per IdP (`okta`, `ping`, …)            |
+| `IDENTITY_GENERIC_OIDC` | for non-`oidc` names | `true` to enable a generic provider named other than `oidc` |
+| `IDENTITY_ISSUER`       | yes      | Issuer URL; discovers JWKS + token endpoint                        |
+| `IDENTITY_CLIENT_ID`    | yes      | OAuth client id                                                    |
+| `IDENTITY_CLIENT_SECRET`| yes      | OAuth client secret (backend only)                                |
+| `IDENTITY_JWKS_URL`     | no       | Pin the key set for IdPs whose discovery document is incomplete or unreachable |
+| `IDENTITY_TOKEN_URL`    | no       | Pin the token endpoint for the same reason                        |
+| `IDENTITY_AUDIENCE`     | no       | Enforced `aud`                                                     |
+| `IDENTITY_EMAIL_CLAIM`  | no       | Email claim name (default `email`)                                 |
+| `IDENTITY_ORG_CLAIM`    | no       | Organization-id claim name (default `organization_id`)            |
+| `NEXT_PUBLIC_IDENTITY_DISPLAY_NAME` | no | Sign-in button label (frontend)                             |
+
+Missing issuer, client id, or client secret fails startup with a precise error
+rather than at first login.
+
 ### Token lifecycle
 
 | Stage         | Mechanism                                                       |
 |---------------|-----------------------------------------------------------------|
-| Access token  | Ed25519 JWT, 15-min TTL, with identity, tenant, role, session, and assurance claims |
+| Access token  | Ed25519 JWT, 3-min TTL, with identity, tenant, role, session, and assurance claims |
 | Refresh token | Opaque 256-bit random token, SHA-256 hashed in `sessions`, fixed 7-day absolute family lifetime by default |
 | Session idle  | Explicit 24-hour idle expiry by default; successful rotation advances idle expiry but never absolute expiry |
 | Device policy | Bounded device metadata, stable family id, whole-device revocation, and configurable active-device cap (default 10) |
@@ -353,7 +399,7 @@ see `JOBS.md` for the exact boundary and sequencing.
 | User search & CRUD     | ✅    | Platform-admin can suspend / unsuspend / delete                    |
 | Impersonation          | ✅    | Mints session with `acting` claim; banner shown to impersonator    |
 | Sessions list          | ✅    | Active device families with description, activity, and both expiries |
-| Feature flags          | ✅    | DB-backed; per-org gates; `useFeatureFlag()` hook on FE            |
+| Feature flags          | 🟡    | Unleash is the designated runtime owner; the DB/API/UI are a read-only migration inventory with no runtime evaluator and are removed after cutover |
 | Entitlements           | ✅    | Per-org plan → feature mapping with overrides                      |
 | Webhooks (system view) | ✅    | List + delete from admin                                           |
 | Time-bound impersonation | ✅  | Access tokens are capped at five minutes by default                 |
@@ -379,6 +425,15 @@ all be configured before Terms can be accepted, and adopters must legally review
 the supplied content for their product and jurisdictions. Anonymous browser
 preferences are used only to fail optional SDKs closed; they are not treated as
 authenticated legal evidence.
+
+The dev placeholders are opt-in and safe-by-default: they apply only when
+`NEXT_PUBLIC_LEGAL_DEV_PLACEHOLDER` is truthy at build time, which `next.config.mjs`
+derives from the Codefly fixture boundary — so the local fixture stack gets a
+usable Terms gate with zero config, while a real deploy (which never builds under
+a fixture) defaults to the enforced gate rather than silently shipping placeholder
+terms. Because `NEXT_PUBLIC_*` values are inlined at build time, a production build
+that omits the four operator vars ships an un-acceptable gate; the `build` script
+runs `scripts/check-public-legal-env.mjs` to warn when that happens.
 
 ### Frontend (Next.js)
 
@@ -434,9 +489,9 @@ extraction contracts.
 | Structured logs| ✅    | `wool` everywhere; user/org/action context auto-attached         |
 | Audit trail    | ✅    | Separate from app logs; queryable                                |
 | Metrics        | ✅    | Job-worker OTel instruments, durable queue projections, and an in-graph OTLP gateway |
-| Tracing        | ✅    | Accounts resolves the Codefly collector endpoint; browser-to-backend W3C propagation |
-| Error tracking | ✅    | Explicit fail-closed Sentry mode for server/browser capture |
-| Dashboards     | 🟡    | Versioned provider-neutral business dashboard pack; provider materialization is deployment-specific |
+| Tracing        | ✅    | Accounts resolves the Codefly collector endpoint and exports OTLP for the designated SigNoz backend |
+| Error tracking | ✅    | Explicit fail-closed Sentry mode for server/browser errors; trace sampling is fixed at zero |
+| Dashboards     | 🟡    | Versioned provider-neutral business dashboard pack; [SigNoz provisioning remains unsupported pending a pinned service qualification](SIGNOZ_PROVISIONING.md) |
 
 ---
 
@@ -624,6 +679,13 @@ Environment variables consumed by the api:
 | `TURNSTILE_ALLOWED_HOSTNAMES`  | Exact accepted Turnstile response hostnames                  |
 | `CODEFLY__FIXTURE`             | Loads fixture YAML (e.g. `dev-admin`); FE login picker too |
 
+When `OTEL_EXPORTER_OTLP_ENDPOINT` is configured, the accounts service and auth
+sidecar export unsampled request and Go runtime metrics through the in-graph
+OpenTelemetry collector. The auth sidecar covers both its HTTP gateway and gRPC
+authorization service. Prometheus can alternatively scrape `/metrics` on each
+service's private REST endpoint; neither route is a module or public interface
+endpoint.
+
 Frontend browser configuration (`NEXT_PUBLIC_*` values are baked into the client bundle):
 
 | Var                          | Used for                                                    |
@@ -633,13 +695,14 @@ Frontend browser configuration (`NEXT_PUBLIC_*` values are baked into the client
 | `NEXT_PUBLIC_LEGAL_CONTACT_EMAIL` | Legal/privacy contact; required before Terms acceptance |
 | `NEXT_PUBLIC_LEGAL_TERMS_CONTENT` | Operator-supplied Terms; required before Terms acceptance |
 | `NEXT_PUBLIC_LEGAL_PRIVACY_CONTENT` | Operator-supplied Privacy Policy; required before Terms acceptance |
+| `NEXT_PUBLIC_LEGAL_DEV_PLACEHOLDER` | Opt-in dev legal placeholders; defaults from the fixture boundary via `next.config.mjs`, off for real deploys |
 | `NEXT_PUBLIC_PRODUCT_ANALYTICS_MODE` | Explicit `disabled` or `posthog` browser analytics mode |
 | `NEXT_PUBLIC_POSTHOG_KEY`      | Public PostHog capture key in PostHog mode                    |
 | `NEXT_PUBLIC_POSTHOG_HOST`   | Browser capture origin                                      |
 | `NEXT_PUBLIC_ERROR_TRACKING_MODE` | Explicit `disabled` or `sentry` browser mode            |
 | `NEXT_PUBLIC_SENTRY_DSN`     | Required browser DSN in Sentry mode                         |
-| `NEXT_PUBLIC_SENTRY_ENVIRONMENT` | Environment tag for browser error and trace grouping     |
-| `NEXT_PUBLIC_SENTRY_RELEASE` | Correlates frontend errors and traces with a release         |
+| `NEXT_PUBLIC_SENTRY_ENVIRONMENT` | Environment tag for browser error grouping               |
+| `NEXT_PUBLIC_SENTRY_RELEASE` | Correlates frontend errors with a release                    |
 | `NEXT_PUBLIC_ABUSE_PROTECTION_MODE` | Explicit `disabled` or `turnstile` widget mode          |
 | `NEXT_PUBLIC_TURNSTILE_SITE_KEY` | Public Turnstile widget key                              |
 

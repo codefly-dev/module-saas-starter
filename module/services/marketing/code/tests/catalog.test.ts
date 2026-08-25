@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import {
   catalogDisplayState,
-  formatPlanAmount,
+  formatPlanPrice,
   parsePublicCatalog,
 } from "@/lib/catalog";
 
@@ -24,24 +24,45 @@ const plan = {
 test("accepts the sanitized public catalog and formats minor units", () => {
   const catalog = parsePublicCatalog({ revision: "catalog-v1", plans: [plan] });
   assert.equal(catalog.plans[0].key, "pro");
-  assert.match(formatPlanAmount(plan, "en"), /49/);
+  assert.match(formatPlanPrice(plan, "en").label, /49/);
 });
 
 test("formats amounts with the currency's ISO minor-unit precision", () => {
   assert.equal(
-    formatPlanAmount({ ...plan, currency: "JPY", amountMinor: 4900 }, "en"),
+    formatPlanPrice({ ...plan, currency: "JPY", amountMinor: 4900 }, "en").label,
     new Intl.NumberFormat("en", {
       style: "currency",
       currency: "JPY",
     }).format(4900),
   );
   assert.equal(
-    formatPlanAmount({ ...plan, currency: "KWD", amountMinor: 4900 }, "en"),
+    formatPlanPrice({ ...plan, currency: "KWD", amountMinor: 4900 }, "en").label,
     new Intl.NumberFormat("en", {
       style: "currency",
       currency: "KWD",
     }).format(4.9),
   );
+});
+
+test("keeps billing intervals only on checkout-enabled paid prices", () => {
+  assert.deepEqual(formatPlanPrice({ ...plan, checkoutEnabled: false }, "en"), {
+    label: "Contact sales",
+    interval: null,
+  });
+  assert.deepEqual(
+    formatPlanPrice(
+      { ...plan, amountMinor: 0, checkoutEnabled: false },
+      "en",
+    ),
+    { label: "Free", interval: null },
+  );
+  assert.deepEqual(formatPlanPrice(plan, "en"), {
+    label: new Intl.NumberFormat("en", {
+      style: "currency",
+      currency: "EUR",
+    }).format(49),
+    interval: "month",
+  });
 });
 
 test("rejects checkout secrets and unsupported intervals", () => {

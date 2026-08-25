@@ -4,6 +4,7 @@ package saas.accounts.v1;
 
 import "buf/validate/validate.proto";
 import "google/api/annotations.proto";
+import "google/protobuf/empty.proto";
 import "google/protobuf/timestamp.proto";
 import "saas/policy/v1/options.proto";
 
@@ -153,10 +154,82 @@ message IssuedWorkContext {
   optional string project_id = 11;
 }
 
+// WorkContextRevisionSubject is one owner or delegated actor whose current
+// authority must still match the revision sealed into a signed Work Context.
+message WorkContextRevisionSubject {
+  string principal_id = 1 [(buf.validate.field).string.uuid = true];
+  repeated WorkContextScope scopes = 2 [
+    (buf.validate.field).repeated.max_items = 64
+  ];
+}
+
+// CheckAuthorizationRevisionRequest contains only the immutable authority
+// facts needed by a Work Context consumer. The signed capability itself never
+// crosses this internal boundary.
+message CheckAuthorizationRevisionRequest {
+  string org_id = 1 [(buf.validate.field).string.uuid = true];
+  string owner_principal_id = 2 [(buf.validate.field).string.uuid = true];
+  uint64 authorization_revision = 3 [(buf.validate.field).uint64.gt = 0];
+  repeated WorkContextRevisionSubject subjects = 4 [
+    (buf.validate.field).repeated.min_items = 1,
+    (buf.validate.field).repeated.max_items = 17
+  ];
+}
+
+// AuthorizeEvidenceReadRequest asks Accounts to authorize one filtered
+// Evidence read using current membership and RBAC state. Empty optional
+// filters describe a tenant-directory read and require unscoped evidence:read.
+message AuthorizeEvidenceReadRequest {
+  string org_id = 1 [(buf.validate.field).string.uuid = true];
+  string caller_principal_id = 2 [(buf.validate.field).string.uuid = true];
+  optional string owner_principal_id = 3 [(buf.validate.field).string.uuid = true];
+  optional string task_id = 4 [
+    (buf.validate.field).string.min_len = 1,
+    (buf.validate.field).string.max_len = 512
+  ];
+  optional string session_id = 5 [
+    (buf.validate.field).string.min_len = 1,
+    (buf.validate.field).string.max_len = 512
+  ];
+}
+
 // WorkContextService is owned by the permissions plugin. It turns current SaaS
 // identity/RBAC facts into a short-lived Codefly Work Context; it does not own
 // product Task or Session lifecycle storage.
 service WorkContextService {
+  // CheckAuthorizationRevision is the consumer-side revocation seam for a
+  // previously issued Work Context. It succeeds only while every subject's
+  // requested authority still resolves to the exact sealed revision.
+  rpc CheckAuthorizationRevision(CheckAuthorizationRevisionRequest) returns (google.protobuf.Empty) {
+    option (saas.policy.v1.method_policy) = {
+      exposure: EXPOSURE_INTERNAL
+      tenant: TENANT_REQUIREMENT_NONE
+      mfa: MFA_REQUIREMENT_NONE
+      audit: {emission: AUDIT_EMISSION_NONE}
+      idempotency: IDEMPOTENCY_REQUIREMENT_FORBIDDEN
+      rate_limit: RATE_LIMIT_CLASS_INTERNAL
+      request_sensitivity: SENSITIVITY_CONFIDENTIAL
+      response_sensitivity: SENSITIVITY_CONFIDENTIAL
+      platform_role: PLATFORM_ROLE_REQUIREMENT_NONE
+    };
+  }
+
+  // AuthorizeEvidenceRead is deliberately Evidence-specific. It prevents a
+  // consumer from acquiring a generic Accounts permission oracle.
+  rpc AuthorizeEvidenceRead(AuthorizeEvidenceReadRequest) returns (google.protobuf.Empty) {
+    option (saas.policy.v1.method_policy) = {
+      exposure: EXPOSURE_INTERNAL
+      tenant: TENANT_REQUIREMENT_NONE
+      mfa: MFA_REQUIREMENT_NONE
+      audit: {emission: AUDIT_EMISSION_NONE}
+      idempotency: IDEMPOTENCY_REQUIREMENT_FORBIDDEN
+      rate_limit: RATE_LIMIT_CLASS_INTERNAL
+      request_sensitivity: SENSITIVITY_CONFIDENTIAL
+      response_sensitivity: SENSITIVITY_CONFIDENTIAL
+      platform_role: PLATFORM_ROLE_REQUIREMENT_NONE
+    };
+  }
+
   rpc StartTask(StartTaskWorkContextRequest) returns (IssuedWorkContext) {
     option (saas.policy.v1.method_policy) = {
       exposure: EXPOSURE_AUTHENTICATED

@@ -106,8 +106,12 @@ type PlatformAdminServiceClient interface {
 	GrantPlatformRole(context.Context, *connect.Request[v1.GrantPlatformRoleRequest]) (*connect.Response[emptypb.Empty], error)
 	RevokePlatformRole(context.Context, *connect.Request[v1.RevokePlatformRoleRequest]) (*connect.Response[emptypb.Empty], error)
 	ListPlatformAdmins(context.Context, *connect.Request[v1.ListPlatformAdminsRequest]) (*connect.Response[v1.ListPlatformAdminsResponse], error)
-	// Feature flags (platform-only)
+	// Legacy feature-flag migration inventory (platform-only, read-only)
 	ListFeatureFlags(context.Context, *connect.Request[v1.ListFeatureFlagsRequest]) (*connect.Response[v1.ListFeatureFlagsResponse], error)
+	// Deprecated: retained for v1 wire compatibility. The legacy inventory is
+	// read-only; this method always returns FAILED_PRECONDITION.
+	//
+	// Deprecated: do not use.
 	UpsertFeatureFlag(context.Context, *connect.Request[v1.UpsertFeatureFlagRequest]) (*connect.Response[v1.UpsertFeatureFlagResponse], error)
 	// Product-neutral durable job operations. Payload bytes never leave the
 	// worker database boundary through these methods.
@@ -315,6 +319,8 @@ func (c *platformAdminServiceClient) ListFeatureFlags(ctx context.Context, req *
 }
 
 // UpsertFeatureFlag calls saas.accounts.v1.PlatformAdminService.UpsertFeatureFlag.
+//
+// Deprecated: do not use.
 func (c *platformAdminServiceClient) UpsertFeatureFlag(ctx context.Context, req *connect.Request[v1.UpsertFeatureFlagRequest]) (*connect.Response[v1.UpsertFeatureFlagResponse], error) {
 	return c.upsertFeatureFlag.CallUnary(ctx, req)
 }
@@ -357,8 +363,12 @@ type PlatformAdminServiceHandler interface {
 	GrantPlatformRole(context.Context, *connect.Request[v1.GrantPlatformRoleRequest]) (*connect.Response[emptypb.Empty], error)
 	RevokePlatformRole(context.Context, *connect.Request[v1.RevokePlatformRoleRequest]) (*connect.Response[emptypb.Empty], error)
 	ListPlatformAdmins(context.Context, *connect.Request[v1.ListPlatformAdminsRequest]) (*connect.Response[v1.ListPlatformAdminsResponse], error)
-	// Feature flags (platform-only)
+	// Legacy feature-flag migration inventory (platform-only, read-only)
 	ListFeatureFlags(context.Context, *connect.Request[v1.ListFeatureFlagsRequest]) (*connect.Response[v1.ListFeatureFlagsResponse], error)
+	// Deprecated: retained for v1 wire compatibility. The legacy inventory is
+	// read-only; this method always returns FAILED_PRECONDITION.
+	//
+	// Deprecated: do not use.
 	UpsertFeatureFlag(context.Context, *connect.Request[v1.UpsertFeatureFlagRequest]) (*connect.Response[v1.UpsertFeatureFlagResponse], error)
 	// Product-neutral durable job operations. Payload bytes never leave the
 	// worker database boundary through these methods.

@@ -200,12 +200,149 @@ func newMinter(t *testing.T) (*ed25519minter.Minter, *memoryStore) {
 	return m, store
 }
 
+// decodeJWTPayload returns the decoded JSON claims segment of a JWT so tests
+// can assert on the raw wire shape (e.g. that an omitempty claim is absent).
+func decodeJWTPayload(t *testing.T, token string) string {
+	t.Helper()
+	parts := strings.Split(token, ".")
+	require.Len(t, parts, 3)
+	raw, err := base64.RawURLEncoding.DecodeString(parts[1])
+	require.NoError(t, err)
+	return string(raw)
+}
+
 func newIdentity() *auth.Identity {
 	return &auth.Identity{
 		UserID:       uuid.Must(uuid.NewV7()),
 		OrgID:        uuid.Must(uuid.NewV7()),
 		OrgRole:      "admin",
 		PlatformRole: "super_admin",
+	}
+}
+
+type fakeRevoker struct {
+	revoked        bool
+	sessionRevoked bool
+	err            error
+	// revokedSessions / revokedJTIs capture writes when non-nil (pre-init to
+	// observe them; value-receiver writes still reach the shared map).
+	revokedSessions map[string]time.Duration
+	revokedJTIs     map[string]time.Duration
+}
+
+func (f fakeRevoker) Revoke(_ context.Context, jti string, ttl time.Duration) error {
+	if f.revokedJTIs != nil {
+		f.revokedJTIs[jti] = ttl
+	}
+	return nil
+}
+func (f fakeRevoker) IsRevoked(context.Context, string) (bool, error) { return f.revoked, f.err }
+func (f fakeRevoker) RevokeSession(_ context.Context, sessionID string, ttl time.Duration) error {
+	if f.revokedSessions != nil {
+		f.revokedSessions[sessionID] = ttl
+	}
+	return nil
+}
+func (f fakeRevoker) IsSessionRevoked(context.Context, string) (bool, error) {
+	return f.sessionRevoked, f.err
+}
+
+func TestVerifyAccess_FailsClosedWhenRevocationUnavailable(t *testing.T) {
+	ctx := context.Background()
+	m, _ := newMinter(t)
+	pair, err := m.Mint(ctx, newIdentity())
+	require.NoError(t, err)
+
+	m.SetRevoker(fakeRevoker{err: errors.New("redis unreachable")})
+
+	_, err = m.VerifyAccess(pair.AccessToken)
+	require.ErrorIs(t, err, auth.ErrRevocationUnavailable,
+		"a revocation-store outage must deny the token, not admit it")
+}
+
+func TestVerifyAccess_FailOpenAdmitsWhenRevocationUnavailable(t *testing.T) {
+	ctx := context.Background()
+	_, priv, err := ed25519minter.GenerateKey()
+	require.NoError(t, err)
+	m := ed25519minter.New(ed25519minter.Config{
+		Issuer:             "test-issuer",
+		Audience:           "test-audience",
+		RevocationFailOpen: true,
+	}, priv, &memoryStore{})
+
+	pair, err := m.Mint(ctx, newIdentity())
+	require.NoError(t, err)
+
+	// Same store outage as the fail-closed test, but the operator opted into
+	// fail-open: the token is admitted rather than denied.
+	m.SetRevoker(fakeRevoker{err: errors.New("redis unreachable")})
+
+	got, err := m.VerifyAccess(pair.AccessToken)
+	require.NoError(t, err)
+	require.NotNil(t, got)
+}
+
+func TestVerifyAccess_RejectsRevokedToken(t *testing.T) {
+	ctx := context.Background()
+	m, _ := newMinter(t)
+	pair, err := m.Mint(ctx, newIdentity())
+	require.NoError(t, err)
+
+	m.SetRevoker(fakeRevoker{revoked: true})
+
+	_, err = m.VerifyAccess(pair.AccessToken)
+	require.ErrorIs(t, err, auth.ErrTokenRevoked)
+}
+
+func TestVerifyAccess_RejectsSessionRevokedToken(t *testing.T) {
+	ctx := context.Background()
+	m, _ := newMinter(t)
+	pair, err := m.Mint(ctx, newIdentity())
+	require.NoError(t, err)
+
+	// The jti is NOT listed — only the session is. Admin session-kill revokes
+	// by sid, so a token must be denied on its session even when its own jti
+	// was never marked.
+	m.SetRevoker(fakeRevoker{sessionRevoked: true})
+
+	_, err = m.VerifyAccess(pair.AccessToken)
+	require.ErrorIs(t, err, auth.ErrTokenRevoked)
+}
+
+func TestRevokeSessionAccess_WritesSessionMarkerWithAccessTTL(t *testing.T) {
+	ctx := context.Background()
+	m, _ := newMinter(t)
+
+	captured := fakeRevoker{revokedSessions: map[string]time.Duration{}}
+	m.SetRevoker(captured)
+
+	require.NoError(t, m.RevokeSessionAccess(ctx, "session-123"))
+
+	ttl, ok := captured.revokedSessions["session-123"]
+	require.True(t, ok, "RevokeSessionAccess must write a session marker")
+	// AccessTokenTTL (3m) + ClockSkew (60s): the marker has to outlive the
+	// post-exp acceptance window the verifier leeway opens.
+	require.Equal(t, 3*time.Minute+time.Minute, ttl, "marker TTL must be AccessTokenTTL + ClockSkew")
+}
+
+func TestRevokeAccess_MarkerTTLCoversClockSkewLeeway(t *testing.T) {
+	ctx := context.Background()
+	m, _ := newMinter(t)
+	pair, err := m.Mint(ctx, newIdentity())
+	require.NoError(t, err)
+
+	captured := fakeRevoker{revokedJTIs: map[string]time.Duration{}}
+	m.SetRevoker(captured)
+
+	require.NoError(t, m.RevokeAccess(ctx, pair.AccessToken))
+
+	require.Len(t, captured.revokedJTIs, 1, "RevokeAccess must write exactly one jti marker")
+	for _, ttl := range captured.revokedJTIs {
+		// A freshly minted token expires at ~now+AccessTokenTTL (3m); the marker
+		// must live past exp by the clock-skew leeway so a revoked token cannot
+		// slip through the post-exp acceptance window.
+		require.Greater(t, ttl, 3*time.Minute, "marker TTL must extend past exp by the leeway")
+		require.LessOrEqual(t, ttl, 3*time.Minute+time.Minute, "marker TTL must not exceed AccessTokenTTL + ClockSkew")
 	}
 }
 
@@ -287,6 +424,87 @@ func TestRefreshProjectsCurrentOrganizationAndPlatformRoles(t *testing.T) {
 	require.Equal(t, currentOrgID, got.OrgID)
 	require.Equal(t, "member", got.OrgRole)
 	require.Equal(t, "support", got.PlatformRole)
+}
+
+func TestMintCarriesScopedRoles(t *testing.T) {
+	ctx := context.Background()
+	m, _ := newMinter(t)
+	want := newIdentity()
+	want.ScopedRoles = map[string][]string{
+		"module-a": {"analyst"},
+		"module-b": {"admin", "editor"},
+	}
+
+	pair, err := m.Mint(ctx, want)
+	require.NoError(t, err)
+
+	got, err := m.VerifyAccess(pair.AccessToken)
+	require.NoError(t, err)
+	require.Equal(t, want.ScopedRoles, got.ScopedRoles)
+}
+
+func TestScopedRolesTruncatedFlagRoundtrips(t *testing.T) {
+	ctx := context.Background()
+	m, _ := newMinter(t)
+
+	// Absent by default.
+	pair, err := m.Mint(ctx, newIdentity())
+	require.NoError(t, err)
+	require.NotContains(t, decodeJWTPayload(t, pair.AccessToken), `"srt"`)
+	got, err := m.VerifyAccess(pair.AccessToken)
+	require.NoError(t, err)
+	require.False(t, got.ScopedRolesTruncated)
+
+	// Set when the grant set was truncated.
+	want := newIdentity()
+	want.ScopedRoles = map[string][]string{"module-a": {"analyst"}}
+	want.ScopedRolesTruncated = true
+	pair, err = m.Mint(ctx, want)
+	require.NoError(t, err)
+	got, err = m.VerifyAccess(pair.AccessToken)
+	require.NoError(t, err)
+	require.True(t, got.ScopedRolesTruncated)
+}
+
+func TestScopedRolesOmittedForOrglessIdentity(t *testing.T) {
+	ctx := context.Background()
+	m, _ := newMinter(t)
+	want := newIdentity()
+	want.OrgID = uuid.Nil
+	want.OrgRole = ""
+	// A scoped grant with no active org has no org to scope to and must not
+	// leak into the token.
+	want.ScopedRoles = map[string][]string{"module-a": {"analyst"}}
+
+	pair, err := m.Mint(ctx, want)
+	require.NoError(t, err)
+
+	got, err := m.VerifyAccess(pair.AccessToken)
+	require.NoError(t, err)
+	require.Empty(t, got.ScopedRoles)
+
+	// The `sr` key must be absent from the raw payload, not merely empty.
+	require.NotContains(t, decodeJWTPayload(t, pair.AccessToken), `"sr"`)
+}
+
+func TestRefreshReresolvesScopedRoles(t *testing.T) {
+	ctx := context.Background()
+	m, store := newMinter(t)
+	original, err := m.Mint(ctx, newIdentity())
+	require.NoError(t, err)
+
+	currentOrgID := uuid.Must(uuid.NewV7())
+	store.refreshAuthorization = &auth.RefreshAuthorization{
+		OrgID:       currentOrgID,
+		OrgRole:     "member",
+		ScopedRoles: map[string][]string{"module-a": {"admin"}},
+	}
+	rotated, err := m.VerifyRefresh(ctx, original.RefreshToken)
+	require.NoError(t, err)
+
+	got, err := m.VerifyAccess(rotated.AccessToken)
+	require.NoError(t, err)
+	require.Equal(t, map[string][]string{"module-a": {"admin"}}, got.ScopedRoles)
 }
 
 func TestSwitchOrganizationPreservesDeviceSessionAndRefreshCredential(t *testing.T) {
@@ -807,6 +1025,103 @@ func TestKeyID_IsDeterministic(t *testing.T) {
 	_, priv2, _ := ed25519minter.GenerateKey()
 	m3 := ed25519minter.New(ed25519minter.Config{}, priv2, &memoryStore{})
 	require.NotEqual(t, m1.KeyID(), m3.KeyID(), "different keys must yield different kids")
+}
+
+func TestMint_CarriesActorChainOnBehalfOfEndUser(t *testing.T) {
+	ctx := context.Background()
+	m, _ := newMinter(t)
+	want := newIdentity()
+	// billing-worker acting for the end user, itself invoked by the gateway:
+	// sub stays the end user; act nests outward through each hop.
+	want.Actor = &auth.Actor{
+		Subject: "svc:billing-worker",
+		Act:     &auth.Actor{Subject: "svc:gateway"},
+	}
+
+	pair, err := m.Mint(ctx, want)
+	require.NoError(t, err)
+
+	// sub is the end user end-to-end; the actor chain rides in `act`.
+	payload := decodeJWTPayload(t, pair.AccessToken)
+	require.Contains(t, payload, `"sub":"`+want.UserID.String()+`"`)
+	require.Contains(t, payload, `"act":{"sub":"svc:billing-worker","act":{"sub":"svc:gateway"}}`)
+
+	got, err := m.VerifyAccess(pair.AccessToken)
+	require.NoError(t, err)
+	require.Equal(t, want.UserID, got.UserID, "subject remains the end user")
+	require.Equal(t, want.Actor, got.Actor, "actor chain round-trips")
+}
+
+func TestMint_OmitsActorClaimForDirectSession(t *testing.T) {
+	ctx := context.Background()
+	m, _ := newMinter(t)
+
+	pair, err := m.Mint(ctx, newIdentity())
+	require.NoError(t, err)
+	require.NotContains(t, decodeJWTPayload(t, pair.AccessToken), `"act"`)
+
+	got, err := m.VerifyAccess(pair.AccessToken)
+	require.NoError(t, err)
+	require.Nil(t, got.Actor)
+}
+
+func TestWithActor_PushesNewCallerOntoChain(t *testing.T) {
+	base := newIdentity()
+	base.Actor = &auth.Actor{Subject: "svc:gateway"}
+
+	next := base.WithActor("svc:billing-worker")
+	require.Equal(t, "svc:billing-worker", next.Actor.Subject)
+	require.Equal(t, "svc:gateway", next.Actor.Act.Subject)
+	require.Nil(t, base.Actor.Act, "original identity's chain is not mutated")
+}
+
+func TestMint_RejectsActorChainDeeperThanMax(t *testing.T) {
+	ctx := context.Background()
+	m, _ := newMinter(t)
+	want := newIdentity()
+	// One link past the bound: mint must fail closed rather than emit an
+	// unbounded token.
+	var chain *auth.Actor
+	for i := 0; i <= auth.MaxActorChainDepth; i++ {
+		chain = &auth.Actor{Subject: "svc:x", Act: chain}
+	}
+	want.Actor = chain
+
+	_, err := m.Mint(ctx, want)
+	require.ErrorIs(t, err, auth.ErrActorChainTooDeep)
+}
+
+func TestVerifyAccess_AcceptsPreviousSigningKeyDuringRotation(t *testing.T) {
+	ctx := context.Background()
+	prevPub, prevPriv, err := ed25519minter.GenerateKey()
+	require.NoError(t, err)
+	previous := ed25519minter.New(
+		ed25519minter.Config{Issuer: "test-issuer", Audience: "test-audience"},
+		prevPriv, &memoryStore{})
+
+	pair, err := previous.Mint(ctx, newIdentity())
+	require.NoError(t, err)
+
+	// A rotated-in minter that does NOT know the outgoing key rejects its tokens.
+	_, newPriv, err := ed25519minter.GenerateKey()
+	require.NoError(t, err)
+	unaware := ed25519minter.New(
+		ed25519minter.Config{Issuer: "test-issuer", Audience: "test-audience"},
+		newPriv, &memoryStore{})
+	_, err = unaware.VerifyAccess(pair.AccessToken)
+	require.ErrorIs(t, err, auth.ErrTokenSignature)
+
+	// The same rotated-in minter constructed with the outgoing key in its
+	// verification set accepts in-flight tokens signed by it — selected by kid —
+	// without minting under it. The set is fixed at construction (no setter).
+	current := ed25519minter.New(ed25519minter.Config{
+		Issuer:                     "test-issuer",
+		Audience:                   "test-audience",
+		AdditionalVerificationKeys: []ed25519.PublicKey{prevPub},
+	}, newPriv, &memoryStore{})
+	got, err := current.VerifyAccess(pair.AccessToken)
+	require.NoError(t, err)
+	require.NotEqual(t, uuid.Nil, got.UserID)
 }
 
 // Compile-time assertion that our test store satisfies SessionStore.

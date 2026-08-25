@@ -15,9 +15,16 @@
 //   - Clock skew tolerance is configurable, default 60s.
 //
 // This package does NOT own key management. Callers pass a keypair that
-// typically came from Vault. Rotation is handled by constructing a new
-// Minter instance from the new key; sidecars that need to verify both old
-// and new tokens can hold multiple Verifier instances (separate type).
+// typically came from Vault. Rotation swaps in a Minter built from the new
+// key; to verify tokens still signed by the outgoing key during the overlap
+// window, pass that key's public half in Config.AdditionalVerificationKeys —
+// VerifyAccess then selects the key by the token's kid. Downstream services that
+// verify without a Minter can instead hold multiple Verifier instances (separate
+// type).
+//
+// The kid is derived from the signing public key, so each service that signs
+// with its own key gets a distinct, deterministic kid: the JWT is the service's
+// workload identity.
 package ed25519minter
 
 import (
@@ -48,7 +55,10 @@ type Config struct {
 	Issuer string
 	// Audience is set as `aud` on every access token.
 	Audience string
-	// AccessTokenTTL is the lifetime of an access token. Default 15 min.
+	// AccessTokenTTL is the lifetime of an access token. Default 3 min — kept
+	// short so a revoked token's un-checked window (the sidecar's local
+	// revocation-cache TTL) is bounded even if the revocation list is briefly
+	// unavailable. Refresh rotation still bounds the session independently.
 	AccessTokenTTL time.Duration
 	// ImpersonationTokenTTL caps the lifetime of access tokens minted
 	// for impersonation sessions (acting claim non-empty). Default 5 min.
@@ -59,6 +69,20 @@ type Config struct {
 	SessionPolicy auth.SessionPolicy
 	// ClockSkew is the tolerance allowed when validating exp/nbf. Default 60s.
 	ClockSkew time.Duration
+	// AdditionalVerificationKeys are public keys VerifyAccess will accept in
+	// addition to the signing key, selected by the token's kid. During a
+	// zero-downtime signing-key rotation the operator supplies the outgoing key
+	// here so access tokens already in flight keep verifying until they expire.
+	// The verification set is fixed at construction — there is no mutate-after-
+	// serve setter to race with VerifyAccess.
+	AdditionalVerificationKeys []ed25519.PublicKey
+	// RevocationFailOpen selects what VerifyAccess does when the revocation list
+	// cannot be consulted (backing store unreachable). The zero value is
+	// fail-CLOSED: a possibly-revoked token is denied (ErrRevocationUnavailable).
+	// Set true to admit it instead — the operator accepting a revoked token's
+	// remaining-TTL exposure to keep the direct verify path serving through a
+	// store outage. Mirrors the sidecar's SIDECAR_REVOCATION_FAIL_OPEN knob.
+	RevocationFailOpen bool
 }
 
 func (c *Config) withDefaults() error {
@@ -69,7 +93,7 @@ func (c *Config) withDefaults() error {
 		c.Audience = "saas-starter"
 	}
 	if c.AccessTokenTTL == 0 {
-		c.AccessTokenTTL = 15 * time.Minute
+		c.AccessTokenTTL = 3 * time.Minute
 	}
 	if c.ImpersonationTokenTTL == 0 {
 		c.ImpersonationTokenTTL = 5 * time.Minute
@@ -86,11 +110,17 @@ func (c *Config) withDefaults() error {
 // API surface.
 type accessClaims struct {
 	jwt.RegisteredClaims
-	OrgID                 string           `json:"org,omitempty"`
-	OrgRole               string           `json:"or,omitempty"`
-	PlatformRole          string           `json:"pr,omitempty"`
-	SessionID             string           `json:"sid"`
-	ActingAsUserID        string           `json:"acting,omitempty"`
+	OrgID                string              `json:"org,omitempty"`
+	OrgRole              string              `json:"or,omitempty"`
+	PlatformRole         string              `json:"pr,omitempty"`
+	ScopedRoles          map[string][]string `json:"sr,omitempty"`
+	ScopedRolesTruncated bool                `json:"srt,omitempty"`
+	SessionID            string              `json:"sid"`
+	ActingAsUserID       string              `json:"acting,omitempty"`
+	// Act carries the RFC 8693 on-behalf-of delegation chain. sub stays the end
+	// user; act names the service (or admin) acting for them, nesting outward.
+	// Bounded by auth.MaxActorChainDepth at both mint and verify.
+	Act                   *auth.Actor      `json:"act,omitempty"`
 	AuthenticationMethods []string         `json:"amr,omitempty"`
 	AuthenticationTime    *jwt.NumericDate `json:"auth_time,omitempty"`
 	AssuranceLevel        string           `json:"acr,omitempty"`
@@ -108,6 +138,11 @@ type Minter struct {
 	privateKey ed25519.PrivateKey
 	publicKey  ed25519.PublicKey
 	keyID      string
+	// verifyKeys maps kid → public key for VerifyAccess. It holds the signing
+	// key's own kid plus any Config.AdditionalVerificationKeys, so tokens minted
+	// under a rotated-out signing key still verify during the overlap window. It
+	// is built once in New and never mutated, so VerifyAccess reads it lock-free.
+	verifyKeys map[string]ed25519.PublicKey
 	store      auth.SessionStore
 	revoker    auth.TokenRevoker
 	now        func() time.Time // injectable clock for tests
@@ -124,18 +159,33 @@ type Minter struct {
 func New(cfg Config, priv ed25519.PrivateKey, store auth.SessionStore) *Minter {
 	configErr := cfg.withDefaults()
 	pub := priv.Public().(ed25519.PublicKey)
-	h := sha256.Sum256(pub)
-	keyID := base64.RawURLEncoding.EncodeToString(h[:8])
+	keyID := publicKeyID(pub)
+	verifyKeys := map[string]ed25519.PublicKey{keyID: pub}
+	for _, extra := range cfg.AdditionalVerificationKeys {
+		if len(extra) == 0 {
+			continue
+		}
+		verifyKeys[publicKeyID(extra)] = extra
+	}
 	return &Minter{
 		cfg:        cfg,
 		privateKey: priv,
 		publicKey:  pub,
 		keyID:      keyID,
+		verifyKeys: verifyKeys,
 		store:      store,
 		revoker:    auth.NoopTokenRevoker{},
 		now:        time.Now,
 		configErr:  configErr,
 	}
+}
+
+// publicKeyID derives the deterministic kid for an Ed25519 public key. Two
+// minters holding the same key agree on its kid without coordination, which is
+// what lets a rotated-out key be accepted for verification by its kid.
+func publicKeyID(pub ed25519.PublicKey) string {
+	h := sha256.Sum256(pub)
+	return base64.RawURLEncoding.EncodeToString(h[:8])
 }
 
 // SetRevoker wires an access-token revocation list. Required for real
@@ -414,6 +464,8 @@ func identityFromCurrentAuthorization(
 		OrgID:                 authorization.OrgID,
 		OrgRole:               authorization.OrgRole,
 		PlatformRole:          authorization.PlatformRole,
+		ScopedRoles:           authorization.ScopedRoles,
+		ScopedRolesTruncated:  authorization.ScopedRolesTruncated,
 		SessionID:             sessionID,
 		MFASatisfied:          mfaSatisfied,
 		AuthenticationMethods: authenticationMethods,
@@ -463,6 +515,15 @@ func (m *Minter) VerifyAccess(tokenString string) (*auth.Identity, error) {
 		if t.Method.Alg() != "EdDSA" {
 			return nil, auth.ErrTokenAlgForbidden
 		}
+		// Select the verification key by the token's kid so a rotated-out key
+		// registered via AddVerificationKey still verifies its in-flight tokens.
+		// A token whose kid we don't recognise falls back to the current signing
+		// key, preserving the pre-rotation single-key behaviour.
+		if kid, ok := t.Header["kid"].(string); ok {
+			if key, known := m.verifyKeys[kid]; known {
+				return key, nil
+			}
+		}
 		return m.publicKey, nil
 	})
 	if err != nil {
@@ -507,13 +568,44 @@ func (m *Minter) VerifyAccess(tokenString string) (*auth.Identity, error) {
 			return nil, fmt.Errorf("%w: acting: %v", auth.ErrTokenMalformed, err)
 		}
 	}
+	// A signer we trust never mints an over-deep or blank-subject chain, but a
+	// rotated-out or foreign key could; reject rather than surface it as a
+	// verified actor.
+	if err := auth.ValidateActorChain(claims.Act); err != nil {
+		return nil, fmt.Errorf("%w: act: %v", auth.ErrTokenMalformed, err)
+	}
 
 	// Access-token revocation (logout / explicit kill). Checked AFTER
 	// signature + claim validation so an unsigned/expired token still
 	// fails fast without a backing-store call. NoopTokenRevoker returns
-	// false here so the dev path is unchanged.
-	if claims.ID != "" && m.revoker.IsRevoked(context.Background(), claims.ID) {
-		return nil, auth.ErrTokenRevoked
+	// (false, nil) so the dev path is unchanged. A store error fails closed by
+	// default (deny a possibly-revoked token); Config.RevocationFailOpen flips
+	// that to admit-and-continue, matching the sidecar's configurable stance.
+	if claims.ID != "" {
+		revoked, err := m.revoker.IsRevoked(context.Background(), claims.ID)
+		switch {
+		case err != nil && !m.cfg.RevocationFailOpen:
+			return nil, fmt.Errorf("%w: %v", auth.ErrRevocationUnavailable, err)
+		case err != nil:
+			// fail-open: admit the token despite an unreadable revocation list.
+		case revoked:
+			return nil, auth.ErrTokenRevoked
+		}
+	}
+
+	// Session-scoped revocation (admin session-kill). A single marker keyed by
+	// the `sid` claim invalidates every access token in the session at once,
+	// covering the path where the killer never held the victim's token.
+	if claims.SessionID != "" {
+		revoked, err := m.revoker.IsSessionRevoked(context.Background(), claims.SessionID)
+		switch {
+		case err != nil && !m.cfg.RevocationFailOpen:
+			return nil, fmt.Errorf("%w: %v", auth.ErrRevocationUnavailable, err)
+		case err != nil:
+			// fail-open: admit the token despite an unreadable revocation list.
+		case revoked:
+			return nil, auth.ErrTokenRevoked
+		}
 	}
 
 	return &auth.Identity{
@@ -521,8 +613,11 @@ func (m *Minter) VerifyAccess(tokenString string) (*auth.Identity, error) {
 		OrgID:                 orgID,
 		OrgRole:               claims.OrgRole,
 		PlatformRole:          claims.PlatformRole,
+		ScopedRoles:           claims.ScopedRoles,
+		ScopedRolesTruncated:  claims.ScopedRolesTruncated,
 		SessionID:             sessionID,
 		ActingAsUserID:        actingAs,
+		Actor:                 claims.Act,
 		MFASatisfied:          claims.MFASatisfied,
 		AuthenticationMethods: claims.AuthenticationMethods,
 		AuthenticatedAt:       numericDateTime(claims.AuthenticationTime),
@@ -539,6 +634,12 @@ func (m *Minter) VerifyAccess(tokenString string) (*auth.Identity, error) {
 func (m *Minter) RevokeAccess(ctx context.Context, accessToken string) error {
 	identity, err := m.VerifyAccess(accessToken)
 	if err != nil {
+		// Swallowing is load-bearing, not just best-effort: VerifyAccess now
+		// consults the revocation store, so during a store outage it returns
+		// ErrRevocationUnavailable here. Propagating that would make logout fail
+		// exactly when the store is down — the same outage that already prevents
+		// writing the marker below — so a revoke could never make progress. The
+		// refresh family is revoked separately in the DB regardless.
 		return nil //nolint:nilerr // best-effort revocation
 	}
 	_ = identity // identity is built but not needed here
@@ -554,11 +655,30 @@ func (m *Minter) RevokeAccess(ctx context.Context, accessToken string) error {
 	if claims.ID == "" || claims.ExpiresAt == nil {
 		return nil
 	}
-	ttl := time.Until(claims.ExpiresAt.Time)
+	// Extend the marker past exp by the verifier clock-skew leeway: a token is
+	// accepted until exp+ClockSkew (here and at the sidecar), so a marker that
+	// expired at exp would leave a revoked token usable for the leeway window.
+	ttl := time.Until(claims.ExpiresAt.Time) + m.cfg.ClockSkew
 	if ttl <= 0 {
 		return nil
 	}
 	return m.revoker.Revoke(ctx, claims.ID, ttl)
+}
+
+// RevokeSessionAccess writes a session-scoped revocation marker for sessionID
+// with TTL = AccessTokenTTL. Any access token carrying that `sid` claim is
+// denied on the next VerifyAccess / sidecar check. Best-effort like
+// RevokeAccess: the durable authority is the DB refresh-family revocation, so a
+// store outage bounds exposure to the natural AccessTokenTTL rather than
+// failing the kill.
+func (m *Minter) RevokeSessionAccess(ctx context.Context, sessionID string) error {
+	if sessionID == "" {
+		return nil
+	}
+	// AccessTokenTTL + ClockSkew: the last token issued for this session is
+	// accepted until issue+AccessTokenTTL+leeway, so the marker must outlive
+	// that window (see RevokeAccess).
+	return m.revoker.RevokeSession(ctx, sessionID, m.cfg.AccessTokenTTL+m.cfg.ClockSkew)
 }
 
 func (m *Minter) signAccess(identity *auth.Identity, sessionID uuid.UUID, now time.Time) (string, error) {
@@ -566,10 +686,11 @@ func (m *Minter) signAccess(identity *auth.Identity, sessionID uuid.UUID, now ti
 	if err != nil {
 		return "", err
 	}
-	// Impersonation sessions get a shorter TTL — the worst-case window
-	// for an admin walking away from a "viewing as customer" session is
-	// capped at 5 min, vs 15 min for normal sessions. The impersonation
-	// banner makes the state visible; this is belt-and-suspenders.
+	// Impersonation sessions are capped at min(ImpersonationTokenTTL,
+	// AccessTokenTTL) so an admin walking away from a "viewing as customer"
+	// session can't leave a long-lived token behind even if normal-session
+	// TTL is raised. The impersonation banner makes the state visible; this
+	// is belt-and-suspenders.
 	ttl := m.cfg.AccessTokenTTL
 	if identity.ActingAsUserID != uuid.Nil {
 		if impTTL := m.cfg.ImpersonationTokenTTL; impTTL > 0 && impTTL < ttl {
@@ -591,11 +712,19 @@ func (m *Minter) signAccess(identity *auth.Identity, sessionID uuid.UUID, now ti
 	if identity.OrgID != uuid.Nil {
 		claims.OrgID = identity.OrgID.String()
 		claims.OrgRole = identity.OrgRole
+		if len(identity.ScopedRoles) > 0 {
+			claims.ScopedRoles = identity.ScopedRoles
+		}
+		claims.ScopedRolesTruncated = identity.ScopedRolesTruncated
 	}
 	claims.PlatformRole = identity.PlatformRole
 	if identity.ActingAsUserID != uuid.Nil {
 		claims.ActingAsUserID = identity.ActingAsUserID.String()
 	}
+	if err := auth.ValidateActorChain(identity.Actor); err != nil {
+		return "", err
+	}
+	claims.Act = identity.Actor
 	claims.MFASatisfied = identity.MFASatisfied
 	claims.AuthenticationMethods = identity.AuthenticationMethods
 	if !identity.AuthenticatedAt.IsZero() {

@@ -54,7 +54,7 @@ func TestRLS_WithOrgTx_SwitchesToNonSuperuser(t *testing.T) {
 }
 
 // TestRLS_PolicyInstalled is a sanity-check that the migration ran
-// and RLS is forced on audit_export_configs. If this fails, every
+// and RLS is forced on webhook_subscriptions. If this fails, every
 // other RLS test is meaningless — the policy isn't there to begin
 // with.
 func TestRLS_PolicyInstalled(t *testing.T) {
@@ -63,17 +63,17 @@ func TestRLS_PolicyInstalled(t *testing.T) {
 		err := testStore.Pool().QueryRow(ctx, `
 			SELECT relrowsecurity, relforcerowsecurity
 			FROM pg_class
-			WHERE relname = 'audit_export_configs'`).Scan(&enabled, &forced)
+			WHERE relname = 'webhook_subscriptions'`).Scan(&enabled, &forced)
 		require.NoError(t, err)
-		require.True(t, enabled, "RLS not enabled on audit_export_configs — migration 23 likely didn't run")
-		require.True(t, forced, "RLS not FORCED on audit_export_configs — table owner bypasses without FORCE")
+		require.True(t, enabled, "RLS not enabled on webhook_subscriptions — migration 27 likely didn't run")
+		require.True(t, forced, "RLS not FORCED on webhook_subscriptions — table owner bypasses without FORCE")
 
 		var policyCount int
 		err = testStore.Pool().QueryRow(ctx, `
 			SELECT COUNT(*) FROM pg_policy
-			WHERE polrelid = 'audit_export_configs'::regclass`).Scan(&policyCount)
+			WHERE polrelid = 'webhook_subscriptions'::regclass`).Scan(&policyCount)
 		require.NoError(t, err)
-		require.Equal(t, 1, policyCount, "expected exactly 1 policy on audit_export_configs")
+		require.Equal(t, 1, policyCount, "expected exactly 1 policy on webhook_subscriptions")
 		return nil
 	}))
 }

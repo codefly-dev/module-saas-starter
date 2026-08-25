@@ -3,6 +3,7 @@ package adapters
 import (
 	"context"
 	"crypto/subtle"
+	"errors"
 	"strings"
 
 	"google.golang.org/grpc"
@@ -142,11 +143,18 @@ func (i *grpcPolicyAuthorizer) authorize(ctx context.Context, fullMethod string)
 	}
 	identity, err := minter.VerifyAccess(token)
 	if err != nil {
+		if errors.Is(err, auth.ErrRevocationUnavailable) {
+			wool.Get(ctx).In("grpcPolicyInterceptor").Warn("revocation list unavailable, denying (fail-closed)", wool.ErrField(err))
+			return ctx, status.Error(codes.Unavailable, "authorization temporarily unavailable")
+		}
 		wool.Get(ctx).In("grpcPolicyInterceptor").Debug("VerifyAccess failed", wool.ErrField(err))
 		return ctx, status.Error(codes.Unauthenticated, "invalid or expired access token")
 	}
 	ctx = stampVerifiedIdentity(ctx, identity.UserID.String(), identity.OrgID.String(), identity.Assurance())
 	ctx = auth.WithVerifiedSessionID(ctx, identity.SessionID)
+	ctx = auth.WithVerifiedActor(ctx, identity.Actor)
+	ctx = withScopedRoles(ctx, identity.ScopedRoles)
+	ctx = withScopedRolesTruncated(ctx, identity.ScopedRolesTruncated)
 	if values := md.Get("x-scopes"); len(values) > 0 && values[0] != "" {
 		ctx = withScopes(ctx, parseScopes(values[0]))
 	}
@@ -170,6 +178,11 @@ func stampForwardedGRPCIdentity(ctx context.Context, md metadata.MD) context.Con
 	if scopes := firstMetadataValue(md, "x-scopes"); scopes != "" {
 		ctx = withScopes(ctx, parseScopes(scopes))
 	}
+	if scopedRoles := firstMetadataValue(md, "x-scoped-roles"); scopedRoles != "" {
+		ctx = withScopedRoles(ctx, parseScopedRoles(scopedRoles))
+	}
+	ctx = withScopedRolesTruncated(ctx, firstMetadataValue(md, "x-scoped-roles-truncated") == "true")
+	ctx = auth.WithVerifiedActor(ctx, auth.ParseActor(firstMetadataValue(md, "x-act")))
 	return auth.WithVerifiedSessionIDString(ctx, firstMetadataValue(md, "x-session-id"))
 }
 
@@ -198,10 +211,18 @@ func hasForwardedIdentity(md metadata.MD) bool {
 }
 
 func validInternalToken(candidate string) bool {
-	if internalToken == "" || candidate == "" || len(candidate) != len(internalToken) {
+	if candidate == "" {
 		return false
 	}
-	return subtle.ConstantTimeCompare([]byte(candidate), []byte(internalToken)) == 1
+	if constantTimeTokenMatch(candidate, internalToken) {
+		return true
+	}
+	for _, token := range rotationInternalTokens {
+		if constantTimeTokenMatch(candidate, token) {
+			return true
+		}
+	}
+	return false
 }
 
 func validGatewayToken(candidate string) bool {
@@ -209,4 +230,13 @@ func validGatewayToken(candidate string) bool {
 		return false
 	}
 	return subtle.ConstantTimeCompare([]byte(candidate), []byte(gatewayToken)) == 1
+}
+
+// constantTimeTokenMatch reports whether candidate equals expected without a
+// content-dependent timing signal. An unset (empty) expected never matches.
+func constantTimeTokenMatch(candidate, expected string) bool {
+	if expected == "" || len(candidate) != len(expected) {
+		return false
+	}
+	return subtle.ConstantTimeCompare([]byte(candidate), []byte(expected)) == 1
 }

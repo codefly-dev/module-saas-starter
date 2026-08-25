@@ -20,30 +20,28 @@ func TestRESTSurfaceCompilationAndExposure(t *testing.T) {
 	require.NoError(t, cataloggen.ValidateRESTSurfaceCatalog(surface))
 	require.Equal(t, "saas.rest.surface.v1", surface.GetSchemaVersion())
 	require.Equal(t, "accounts", surface.GetOwner().GetService())
-	require.Len(t, surface.GetRoutes(), 132)
 
+	// Route/service totals churn on every endpoint and are pinned byte-for-byte
+	// by the generated/rest-surface.json fixture-equality below; keep only
+	// publicCount as a review tripwire for public attack-surface growth.
 	publicCount := 0
-	services := make(map[string]struct{})
 	routes := make(map[string]*catalogv1.GatewayRoute, len(surface.GetRoutes()))
 	for _, route := range surface.GetRoutes() {
 		routes[route.GetMethod()+" "+route.GetPath()] = route
-		serviceName := strings.Split(strings.TrimPrefix(route.GetProcedure(), "/saas.accounts.v1."), "/")[0]
-		services[serviceName] = struct{}{}
 		if route.GetExposure() == policyv1.Exposure_EXPOSURE_PUBLIC {
 			publicCount++
 		}
 	}
 	require.Equal(t, 16, publicCount)
-	require.Len(t, services, 25)
 	require.Nil(t, routes["POST /v1/permissions:check"])
 	require.Nil(t, routes["POST /v1/api-keys:validate"])
 	require.Equal(t, "/saas.accounts.v1.UserService/RegisterUser", routes["POST /v1/users"].GetProcedure())
-	require.Equal(t, "/saas.accounts.v1.AuditExportService/SaveConfig", routes["POST /v1/audit-export"].GetProcedure())
 	require.Equal(t, "/saas.accounts.v1.PlatformAdminService/GetJobOperations", routes["GET /v1/platform/jobs/operations"].GetProcedure())
 	require.Equal(t, "/saas.accounts.v1.PlatformAdminService/ReplayJob", routes["POST /v1/platform/jobs/{source_job_id}:replay"].GetProcedure())
 	require.Equal(t, "/saas.accounts.v1.WorkContextService/ExchangeAudience", routes["POST /v1/work-contexts:exchange-audience"].GetProcedure())
 	require.Equal(t, "/saas.accounts.v1.UsageService/ListUsageMeters", routes["GET /v1/organizations/{organization_id}/usage"].GetProcedure())
 	require.Equal(t, "/saas.accounts.v1.UsageService/GetUsageHistory", routes["GET /v1/organizations/{organization_id}/usage/{meter}/history"].GetProcedure())
+	require.Equal(t, "/saas.accounts.v1.PlatformAdminService/UpsertFeatureFlag", routes["PUT /v1/platform/feature-flags/{name}"].GetProcedure())
 	require.Equal(t, policyv1.Exposure_EXPOSURE_AUTHENTICATED, routes["POST /v1/invitations:inspect-id"].GetExposure())
 }
 
@@ -71,13 +69,11 @@ func TestRESTSurfaceArtifactsAreDeterministicAndCurrent(t *testing.T) {
 	accountsRuntime, err := cataloggen.RenderAccountsRESTRuntime(surface, service, bindingDocument)
 	require.NoError(t, err)
 	require.Equal(t, string(readFixture(t, "../adapters/rest_registration_catalog_gen.go")), string(accountsRuntime), "run: go generate ./pkg/cataloggen")
-	require.Equal(t, 22, strings.Count(string(accountsRuntime), "gen.Register"))
 	require.Contains(t, string(accountsRuntime), `case "permissions":`)
 
 	sidecarRuntime, err := cataloggen.RenderAuthSidecarRESTRoutes(surface)
 	require.NoError(t, err)
 	require.Equal(t, string(readFixture(t, "../../../../auth-sidecar/code/routing_rest_catalog_gen.go")), string(sidecarRuntime), "run: go generate ./pkg/cataloggen")
-	require.Equal(t, 132, strings.Count(string(sidecarRuntime), `{Service: "accounts"`))
 
 	publicOpenAPI, err := cataloggen.RenderPublicOpenAPI(rawOpenAPI, surface, service)
 	require.NoError(t, err)
@@ -86,11 +82,8 @@ func TestRESTSurfaceArtifactsAreDeterministicAndCurrent(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, publicOpenAPI, secondOpenAPI)
 
-	var raw, public map[string]any
-	require.NoError(t, json.Unmarshal(rawOpenAPI, &raw))
+	var public map[string]any
 	require.NoError(t, json.Unmarshal(publicOpenAPI, &public))
-	require.Equal(t, 132, openAPIOperationCount(t, raw))
-	require.Equal(t, 132, openAPIOperationCount(t, public))
 	require.Equal(t, "saas.rest.surface.v1", public["x-codefly-rest-schema"])
 	publicPaths := public["paths"].(map[string]any)
 	require.NotContains(t, publicPaths, "/v1/permissions:check")
@@ -128,22 +121,4 @@ func TestRESTSurfaceRejectsUnsafeDriftAndBindings(t *testing.T) {
 	reduced.Routes = reduced.Routes[1:]
 	_, err = cataloggen.RenderPublicOpenAPI(readFixture(t, "../../../generated/openapi-raw/api.swagger.json"), reduced, service)
 	require.ErrorContains(t, err, "absent from the public REST surface")
-}
-
-func openAPIOperationCount(t *testing.T, document map[string]any) int {
-	t.Helper()
-	paths, ok := document["paths"].(map[string]any)
-	require.True(t, ok)
-	count := 0
-	for _, value := range paths {
-		pathItem, ok := value.(map[string]any)
-		require.True(t, ok)
-		for method := range pathItem {
-			switch strings.ToUpper(method) {
-			case "GET", "PUT", "POST", "DELETE", "PATCH", "HEAD", "OPTIONS":
-				count++
-			}
-		}
-	}
-	return count
 }

@@ -153,7 +153,11 @@ message ListFeatureFlagsResponse {
   repeated FeatureFlagEntry flags = 1;
 }
 
+// Deprecated: the database-backed flag inventory is read-only while consumers
+// migrate to the provider-neutral feature-flags@1 capability.
 message UpsertFeatureFlagRequest {
+  option deprecated = true;
+
   string name = 1 [(buf.validate.field).string.min_len = 1];
   string description = 2;
   bool enabled = 3;
@@ -161,7 +165,10 @@ message UpsertFeatureFlagRequest {
   repeated string target_org_ids = 5;
 }
 
+// Deprecated: UpsertFeatureFlag always fails closed and returns no response.
 message UpsertFeatureFlagResponse {
+  option deprecated = true;
+
   string name = 1;
 }
 
@@ -372,7 +379,7 @@ service PlatformAdminService {
     option (google.api.http) = {get: "/v1/platform/admins"};
   }
 
-  // Feature flags (platform-only)
+  // Legacy feature-flag migration inventory (platform-only, read-only)
   rpc ListFeatureFlags(ListFeatureFlagsRequest) returns (ListFeatureFlagsResponse) {
     option (saas.policy.v1.method_policy) = {
       exposure: EXPOSURE_AUTHENTICATED
@@ -387,7 +394,10 @@ service PlatformAdminService {
     };
     option (google.api.http) = {get: "/v1/platform/feature-flags"};
   }
+  // Deprecated: retained for v1 wire compatibility. The legacy inventory is
+  // read-only; this method always returns FAILED_PRECONDITION.
   rpc UpsertFeatureFlag(UpsertFeatureFlagRequest) returns (UpsertFeatureFlagResponse) {
+    option deprecated = true;
     option (saas.policy.v1.method_policy) = {
       exposure: EXPOSURE_AUTHENTICATED
       tenant: TENANT_REQUIREMENT_NONE
@@ -407,7 +417,6 @@ service PlatformAdminService {
       body: "*"
     };
   }
-
   // Product-neutral durable job operations. Payload bytes never leave the
   // worker database boundary through these methods.
   rpc GetJobOperations(saas.jobs.v1.GetJobOperationsRequest) returns (saas.jobs.v1.GetJobOperationsResponse) {

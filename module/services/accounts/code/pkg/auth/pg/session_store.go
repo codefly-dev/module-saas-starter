@@ -546,6 +546,16 @@ func (s *SessionStore) ExchangeOrganization(
 		if tag.RowsAffected() != 1 {
 			return auth.ErrSessionUnavailable
 		}
+
+		// Persist the choice as the user's default so the next login lands on it
+		// deterministically instead of re-deriving a tenant. Same locked
+		// transaction as the session update: the two never diverge.
+		if _, err := tx.Exec(ctx, `
+			UPDATE users SET default_org_id = $2 WHERE uuid = $1`,
+			userID, authorization.OrgID,
+		); err != nil {
+			return err
+		}
 		return nil
 	})
 	if err != nil {
@@ -646,6 +656,11 @@ func resolveGlobalAuthorization(
 		ORDER BY created_at DESC
 		LIMIT 1`, userID).Scan(&authorization.MFAEnrolled)
 	if err != nil && !errors.Is(err, pgx.ErrNoRows) {
+		return auth.RefreshAuthorization{}, err
+	}
+
+	authorization.ScopedRoles, authorization.ScopedRolesTruncated, err = resolveScopedRoles(ctx, tx, userID, authorization.OrgID)
+	if err != nil {
 		return auth.RefreshAuthorization{}, err
 	}
 

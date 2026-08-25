@@ -1,10 +1,9 @@
 package auth_test
 
 import (
+	"context"
 	"strings"
 	"testing"
-
-	"accounts/pkg/auth"
 )
 
 // TestOAuthState_TamperedPayloadRejected exercises the signer at the
@@ -16,7 +15,7 @@ import (
 // (callers can only mint + verify) so it covers the same code path
 // the business.Authenticate handler hits.
 func TestOAuthState_TamperedPayloadRejected(t *testing.T) {
-	signer := auth.NewOAuthStateSigner([]byte("integration-seed"))
+	signer := newSigner(t, "integration-seed")
 	state, err := signer.Mint("workos", "https://app.example.com/cb")
 	if err != nil {
 		t.Fatalf("Mint: %v", err)
@@ -33,7 +32,7 @@ func TestOAuthState_TamperedPayloadRejected(t *testing.T) {
 	// Replace payload with a clearly-different but valid base64url string.
 	tampered := "ZXZpbA" + "." + parts[1]
 
-	if err := signer.Verify(tampered, "workos", "https://app.example.com/cb"); err == nil {
+	if err := signer.Verify(context.Background(), tampered, "workos", "https://app.example.com/cb"); err == nil {
 		t.Errorf("Verify must reject tampered payload; accepted it")
 	}
 }
@@ -43,10 +42,10 @@ func TestOAuthState_TamperedPayloadRejected(t *testing.T) {
 // one (google with bare email) — would-be defense against an
 // attacker who steals state via XSS in another tab.
 func TestOAuthState_ProviderConfusionRejected(t *testing.T) {
-	signer := auth.NewOAuthStateSigner([]byte("integration-seed"))
+	signer := newSigner(t, "integration-seed")
 	workosState, _ := signer.Mint("workos", "https://app/cb")
 
-	if err := signer.Verify(workosState, "google", "https://app/cb"); err == nil {
+	if err := signer.Verify(context.Background(), workosState, "google", "https://app/cb"); err == nil {
 		t.Errorf("Verify must reject cross-provider replay")
 	}
 }
@@ -55,7 +54,7 @@ func TestOAuthState_ProviderConfusionRejected(t *testing.T) {
 // reused with a different redirect_uri — the classic open-redirect
 // attack where attacker swaps the callback to their domain.
 func TestOAuthState_RedirectHijackRejected(t *testing.T) {
-	signer := auth.NewOAuthStateSigner([]byte("integration-seed"))
+	signer := newSigner(t, "integration-seed")
 	state, _ := signer.Mint("workos", "https://app.example.com/cb")
 
 	for _, evil := range []string{
@@ -64,7 +63,7 @@ func TestOAuthState_RedirectHijackRejected(t *testing.T) {
 		"http://app.example.com/cb",
 		"",
 	} {
-		if err := signer.Verify(state, "workos", evil); err == nil {
+		if err := signer.Verify(context.Background(), state, "workos", evil); err == nil {
 			t.Errorf("Verify must reject redirect=%q", evil)
 		}
 	}

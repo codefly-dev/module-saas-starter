@@ -1,6 +1,11 @@
 import { readdirSync, readFileSync } from "node:fs";
 import { withSentryConfig } from "@sentry/nextjs";
+import { getCurrentFixture } from "codefly";
 import { resolveAccountsBindings } from "./server/accounts-bindings.mjs";
+import {
+	baselineSecurityHeaders,
+	resolveCspInputs,
+} from "./server/security-headers.mjs";
 
 const workspacePackageNames = readdirSync(
 	new URL("./packages", import.meta.url),
@@ -23,15 +28,58 @@ const workspacePackageNames = readdirSync(
 		}
 	});
 
+// Legal placeholders (see src/lib/legal-config.ts) are a DEV-ONLY affordance:
+// they keep the required terms gate usable in the local fixture stack, which
+// ships no operator legal content. The trigger must be SAFE-BY-DEFAULT — a real
+// deploy that forgets to configure content must fall to the closed gate, never
+// silently ship placeholder terms.
+//
+// Codefly's fixture selection is that boundary: `--fixture <name>` (and the E2E
+// runner) set the current fixture; a real deploy never runs under one. We surface
+// it to the browser bundle as NEXT_PUBLIC_LEGAL_DEV_PLACEHOLDER, because
+// NEXT_PUBLIC_* vars are inlined at BUILD time and the fixture is not itself a
+// NEXT_PUBLIC_ var. An explicit NEXT_PUBLIC_LEGAL_DEV_PLACEHOLDER in the
+// environment still wins, so operators can force either state.
+function fixtureActive() {
+	return getCurrentFixture().trim() !== "";
+}
+
+const legalDevPlaceholder =
+	process.env.NEXT_PUBLIC_LEGAL_DEV_PLACEHOLDER ??
+	(fixtureActive() ? "true" : "");
+
 /** @type {import('next').NextConfig} */
 const nextConfig = {
 	output: "standalone",
 	reactCompiler: true,
+	// Inlined into client + server bundles at build time; read by legal-config.ts
+	// to decide whether dev legal placeholders apply. Default derives from the
+	// fixture boundary above, so real deploys stay safe-by-default.
+	env: {
+		NEXT_PUBLIC_LEGAL_DEV_PLACEHOLDER: legalDevPlaceholder,
+		// Build-time snapshot of the env-derived CSP inputs. The runtime proxy
+		// (src/proxy.ts) reads this to compose the solution-page CSP from the SAME
+		// values baked into every other route's CSP and into the client bundle,
+		// adding only the runtime-registered solution origin. Resolving these from
+		// the server's runtime env instead would silently drop analytics/allowlist
+		// hosts on solution pages when build and runtime env differ. All values are
+		// non-secret origins already published in the CSP header. See resolveCspInputs.
+		SOLUTION_CSP_INPUTS: JSON.stringify(resolveCspInputs()),
+	},
 	// Product plugins are additive packages/* workspaces. Discover them instead
 	// of requiring each consumer to mutate this protected host config; packages
 	// that expose TypeScript under the development condition then participate in
 	// Next HMR without a separate dist rebuild race.
 	transpilePackages: ["codefly", ...workspacePackageNames],
+	// Anti-clickjacking + the constant hardening headers at build time. The CSP
+	// itself is NOT emitted here: it carries a per-request nonce (dropping
+	// script-src 'unsafe-inline') and is set by the Node proxy (src/proxy.ts) on
+	// every route — a build-time manifest can't mint a nonce, and a static CSP
+	// here would ship a second, nonce-less policy the browser intersects with the
+	// proxy's, defeating the nonce. See server/security-headers.mjs / src/proxy.ts.
+	async headers() {
+		return [{ source: "/:path*", headers: baselineSecurityHeaders() }];
+	},
 	// The frontend is the module's public product entry. The browser only talks
 	// to this origin; Next proxies API traffic to auth-sidecar/rest, which
 	// enforces the generated route/auth policy before Accounts. This keeps auth
@@ -84,7 +132,7 @@ const nextConfig = {
 //
 // See instrumentation.ts and instrumentation-client.ts for the
 // runtime init.
-export default withSentryConfig(nextConfig, {
+const sentryErrorTrackingConfig = withSentryConfig(nextConfig, {
 	org: process.env.SENTRY_ORG,
 	project: process.env.SENTRY_PROJECT,
 	authToken: process.env.SENTRY_AUTH_TOKEN,
@@ -100,11 +148,22 @@ export default withSentryConfig(nextConfig, {
 	webpack: {
 		treeshake: {
 			removeDebugLogging: true,
+			removeTracing: true,
 		},
 	},
+	routeManifestInjection: false,
+	suppressOnRouterTransitionStartWarning: true,
 
 	// Tunnel Sentry events through the same origin to dodge browser
 	// ad-blockers that block sentry.io. /monitoring is a Next route
 	// we accept will be exposed publicly.
 	tunnelRoute: "/monitoring",
 });
+
+// The Sentry wrapper injects navigation trace metadata independently of the
+// runtime sample rate. Error-only mode must not propagate that trace context.
+if (sentryErrorTrackingConfig.experimental) {
+	delete sentryErrorTrackingConfig.experimental.clientTraceMetadata;
+}
+
+export default sentryErrorTrackingConfig;

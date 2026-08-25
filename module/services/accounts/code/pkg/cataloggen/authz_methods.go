@@ -16,6 +16,7 @@ import (
 	"accounts/pkg/business"
 	catalogv1 "accounts/pkg/gen/saas/catalog/v1"
 	policyv1 "accounts/pkg/gen/saas/policy/v1"
+	"accounts/pkg/policy/condition"
 )
 
 const authorizationCatalogSchemaVersion = "saas.authz.methods.v1"
@@ -159,6 +160,9 @@ func validateAuthorizationMethodPolicy(policy *policyv1.MethodPolicy) error {
 			binding.GetLookup() == policyv1.ResourceLookup_RESOURCE_LOOKUP_UNSPECIFIED {
 			return fmt.Errorf("resource binding is incomplete")
 		}
+	}
+	if err := condition.Validate(policy.GetConditions()); err != nil {
+		return fmt.Errorf("invalid attribute condition: %w", err)
 	}
 	audit := policy.GetAudit()
 	if audit == nil || audit.GetEmission() == policyv1.AuditEmission_AUDIT_EMISSION_UNSPECIFIED {

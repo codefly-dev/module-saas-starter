@@ -31,6 +31,7 @@ import (
 	"io"
 	"math/big"
 	"net/http"
+	"strings"
 	"sync"
 	"time"
 
@@ -40,7 +41,8 @@ import (
 )
 
 // Config controls the validator. ProviderName, Issuer and JWKSURL are
-// required; everything else has sensible defaults.
+// required, as is an audience binding (either Audience, or ClientIDClaim
+// together with ClientID); everything else has sensible defaults.
 type Config struct {
 	// ProviderName is written to Claims.Provider and used as the
 	// provider_identities.provider key. Required. Examples: "workos",
@@ -50,11 +52,17 @@ type Config struct {
 	Issuer string
 	// JWKSURL is where to GET the JSON Web Key Set. Required.
 	JWKSURL string
-	// Audience is optionally enforced via the `aud` claim. Empty = don't check.
+	// Audience is enforced via the `aud` claim. It is one of the two ways to
+	// bind tokens to this relying party; the other is ClientIDClaim+ClientID.
+	// At least one binding is required (see New).
 	Audience string
 	// EmailClaim is the claim name carrying the user's email.
 	// Defaults to "email".
 	EmailClaim string
+	// EmailVerifiedClaim is the claim name carrying the provider's assertion
+	// that the user controls the email. Defaults to "email_verified". An
+	// absent or non-affirmative claim is treated as unverified.
+	EmailVerifiedClaim string
 	// AllowMissingEmail permits a provider adapter to validate the signed
 	// token first and then supply a verified email from the authenticated token
 	// exchange response. Generic OIDC flows should leave this false.
@@ -81,6 +89,9 @@ type Config struct {
 func (c *Config) withDefaults() {
 	if c.EmailClaim == "" {
 		c.EmailClaim = "email"
+	}
+	if c.EmailVerifiedClaim == "" {
+		c.EmailVerifiedClaim = "email_verified"
 	}
 	if c.OrgClaim == "" {
 		c.OrgClaim = "organization_id"
@@ -120,6 +131,12 @@ func New(cfg Config) (*Validator, error) {
 	}
 	if cfg.JWKSURL == "" {
 		return nil, errors.New("oidc: JWKSURL is required")
+	}
+	// Fail closed if no audience binding is configured: without one, the
+	// validator accepts any correctly-signed, unexpired token from the issuer
+	// regardless of relying party (audience confusion on a shared IdP tenant).
+	if cfg.Audience == "" && (cfg.ClientIDClaim == "" || cfg.ClientID == "") {
+		return nil, errors.New("oidc: an audience binding is required: set Audience, or ClientIDClaim and ClientID")
 	}
 	return &Validator{cfg: cfg, keys: map[string]*rsa.PublicKey{}}, nil
 }
@@ -180,9 +197,24 @@ func (v *Validator) Validate(ctx context.Context, token string) (*auth.Claims, e
 		Provider:      v.cfg.ProviderName,
 		Subject:       subject,
 		Email:         email,
+		EmailVerified: claimBool(claims[v.cfg.EmailVerifiedClaim]),
 		ProviderOrgID: providerOrg,
 		ExpiresAt:     exp,
 	}, nil
+}
+
+// claimBool interprets an OIDC claim as a boolean. Providers publish
+// email_verified as either a JSON boolean or a "true"/"false" string; any
+// other shape — including an absent claim — is treated as false.
+func claimBool(v any) bool {
+	switch t := v.(type) {
+	case bool:
+		return t
+	case string:
+		return strings.EqualFold(t, "true")
+	default:
+		return false
+	}
 }
 
 func algAllowed(allowed []string, have string) bool {
@@ -232,7 +264,7 @@ func (v *Validator) refresh(ctx context.Context) error {
 	if err != nil {
 		return fmt.Errorf("oidc: fetch jwks: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode != http.StatusOK {
 		return fmt.Errorf("oidc: jwks http %d", resp.StatusCode)
 	}

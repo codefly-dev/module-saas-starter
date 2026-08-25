@@ -76,3 +76,52 @@ func TestRuntimePluginOwnsNoGitOrArgoTransport(t *testing.T) {
 		t.Fatal("boundary test scanned no runtime plugin files")
 	}
 }
+
+func TestLegacyFeatureFlagsHaveNoRuntimeEvaluator(t *testing.T) {
+	files := []string{
+		"module/services/accounts/code/work.go",
+		"module/services/accounts/code/pkg/business/features.go",
+		"module/services/accounts/code/pkg/business/service.go",
+		"module/services/accounts/code/pkg/business/store.go",
+		"module/services/accounts/code/pkg/infra/postgres_feature_flags.go",
+	}
+	forbidden := []string{
+		"GetFeatureFlag(",
+		"UpsertFeatureFlag(",
+		"FeatureChecker interface",
+		"NewDefaultFeatureChecker",
+		"SetFeatureChecker",
+	}
+	for _, file := range files {
+		data, err := os.ReadFile(file)
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, token := range forbidden {
+			if strings.Contains(string(data), token) {
+				t.Errorf("%s contains legacy runtime flag evaluator %q", file, token)
+			}
+		}
+	}
+}
+
+// Vault 0.0.22 requires promotable cloud renders to carry one canonical token
+// SecretKeyRef. An empty secret configuration value declares that capability
+// without committing a credential; the CLI removes the value before rendering.
+func TestAWSVaultPromotableConfigurationDeclaresSecretCapability(t *testing.T) {
+	const path = "module/services/vault/configurations/aws/vault.secret.env"
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var declarations []string
+	for line := range strings.SplitSeq(string(data), "\n") {
+		line = strings.TrimSpace(line)
+		if line != "" && !strings.HasPrefix(line, "#") {
+			declarations = append(declarations, line)
+		}
+	}
+	if len(declarations) != 1 || declarations[0] != "VAULT_TOKEN=" {
+		t.Fatalf("%s must declare exactly an empty VAULT_TOKEN capability, got %q", path, declarations)
+	}
+}

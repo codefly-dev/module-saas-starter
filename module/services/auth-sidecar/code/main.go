@@ -18,6 +18,7 @@ import (
 	"time"
 
 	"github.com/codefly-dev/core/standards"
+	wooltel "github.com/codefly-dev/core/wool/otel"
 	codefly "github.com/codefly-dev/sdk-go"
 
 	authv3 "github.com/envoyproxy/go-control-plane/envoy/service/auth/v3"
@@ -45,6 +46,47 @@ func main() {
 		panic(fmt.Sprintf("Codefly REST endpoint is unavailable: %v", httpNetErr))
 	}
 	httpPort = httpNet.Port
+	var otelProvider *wooltel.Provider
+	var otelMetricProvider *otelMetrics
+	if observabilityEnabled() {
+		collectorNetwork, err := codefly.For(ctx).
+			Service("telemetry").
+			Endpoint("grpc").
+			API("grpc").
+			ResolveNetworkInstance()
+		if err != nil {
+			panic(fmt.Sprintf("resolve telemetry collector through Codefly: %v", err))
+		}
+		otelProvider, err = wooltel.Enable(
+			wooltel.WithServiceName("saas-starter-auth-sidecar"),
+			wooltel.WithEndpoint(collectorNetwork.Host),
+			wooltel.WithInsecure(),
+		)
+		if err != nil {
+			panic(fmt.Sprintf("configure OTEL tracing: %v", err))
+		}
+		otelMetricProvider, err = enableOTELMetrics(ctx, "saas-starter-auth-sidecar", collectorNetwork.Host)
+		if err != nil {
+			shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+			_ = otelProvider.Shutdown(shutdownCtx)
+			cancel()
+			panic(fmt.Sprintf("configure OTEL metrics: %v", err))
+		}
+	}
+	defer func() {
+		shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		if otelMetricProvider != nil {
+			if err := otelMetricProvider.Shutdown(shutdownCtx); err != nil {
+				log.Printf("shutdown: OTEL metrics: %v", err)
+			}
+		}
+		if otelProvider != nil {
+			if err := otelProvider.Shutdown(shutdownCtx); err != nil {
+				log.Printf("shutdown: OTEL tracing: %v", err)
+			}
+		}
+	}()
 
 	apiNet := codefly.For(ctx).Service("accounts").Endpoint("grpc").API("grpc").NetworkInstance()
 	if apiNet == nil {
@@ -82,9 +124,36 @@ func main() {
 
 	sidecar := NewSidecar(internalAPIConn, publicKey)
 
-	grpcServer := grpc.NewServer()
+	redisURL, redisErr := codefly.For(ctx).Service("cache").Secret("redis", "connection")
+	if redisErr != nil || redisURL == "" {
+		redisURL = os.Getenv("REDIS_URL")
+	}
+	// Enforce access-token revocation on the gateway hot path: consult the same
+	// Redis revocation set accounts writes on logout / admin session-kill,
+	// fronted by a short-TTL local cache so the browser path avoids a
+	// per-request store round-trip.
+	revocationTTL, err := revocationCacheTTL()
+	if err != nil {
+		panic(err)
+	}
+	rev, err := newRevoker(redisURL, revocationTTL)
+	if err != nil {
+		panic(fmt.Sprintf("configure access-token revocation: %v", err))
+	}
+	sidecar.SetRevoker(rev)
+
+	var grpcOptions []grpc.ServerOption
+	if otelMetricProvider != nil {
+		grpcOptions = append(grpcOptions, wooltel.GRPCServerOptions()...)
+	}
+	grpcServer := grpc.NewServer(grpcOptions...)
 	authv3.RegisterAuthorizationServer(grpcServer, sidecar)
-	reflection.Register(grpcServer)
+	// Server reflection enumerates every registered service and message for any
+	// unauthenticated caller — a discovery aid in dev, needless attack surface
+	// in a deployed environment. Register it only when running locally.
+	if codefly.IsLocal() {
+		reflection.Register(grpcServer)
+	}
 
 	grpcLis, err := net.Listen("tcp", fmt.Sprintf(":%d", grpcPort))
 	if err != nil {
@@ -128,13 +197,34 @@ func main() {
 		if apiConnectURL != "" {
 			upstreams["accounts_connect"] = MustURL(apiConnectURL)
 		}
-		redisURL, redisErr := codefly.For(ctx).Service("cache").Secret("redis", "connection")
-		if redisErr != nil || redisURL == "" {
-			redisURL = os.Getenv("REDIS_URL")
+		if err := addArtifactUpstreams(ctx, matcher, upstreams, func(ctx context.Context, requirement routeArtifactUpstream) (*url.URL, error) {
+			network, err := codefly.For(ctx).
+				Module(requirement.Module).
+				Service(requirement.Service).
+				Endpoint(requirement.Endpoint).
+				API(requirement.API).
+				ResolveNetworkInstance()
+			if err != nil {
+				return nil, err
+			}
+			host := network.Host
+			if host == "" {
+				host = net.JoinHostPort(network.Hostname, strconv.Itoa(int(network.Port)))
+			}
+			if host == "" {
+				return nil, fmt.Errorf("resolved endpoint has no host")
+			}
+			return &url.URL{Scheme: "http", Host: host}, nil
+		}); err != nil {
+			panic(fmt.Sprintf("resolve runtime route upstreams: %v", err))
 		}
-
 		authenticationAttemptLimit, err := configuredAuthenticationAttemptLimit()
 		if err != nil {
+			panic(err)
+		}
+		// Malformed TRUSTED_PROXY_CIDRS fails boot rather than silently trusting
+		// a narrower/empty set — parity with accounts' ParseTrustedProxyCIDRs.
+		if _, err := parseProxyTrust(workspaceEnv("gateway", "TRUSTED_PROXY_CIDRS")); err != nil {
 			panic(err)
 		}
 		rateLimiter = NewRateLimiter(1000,
@@ -144,7 +234,17 @@ func main() {
 		gateway := NewGateway(sidecar, matcher, upstreams, rateLimiter)
 		httpServer = &http.Server{
 			Addr:    fmt.Sprintf(":%d", httpPort),
-			Handler: gateway,
+			Handler: newGatewayHTTPHandler(gateway, otelMetricProvider),
+			// Bound the request and idle phases so a slow client cannot pin a
+			// connection indefinitely (slowloris). WriteTimeout is deliberately
+			// left unset: the gateway proxies server-streaming Connect RPCs
+			// (DelegationService/WaitForDelegation holds the response open for up
+			// to its request timeout, ~5 min by default), and a finite
+			// WriteTimeout bounds the whole response and would sever the stream.
+			ReadHeaderTimeout: 10 * time.Second,
+			ReadTimeout:       30 * time.Second,
+			IdleTimeout:       120 * time.Second,
+			MaxHeaderBytes:    1 << 20, // 1 MiB
 		}
 		go func() {
 			fmt.Printf("auth-sidecar API gateway (HTTP) listening on :%d (api: %s, routes: %d)\n",
@@ -189,6 +289,38 @@ func main() {
 	if err := grpcServer.Serve(grpcLis); err != nil {
 		fmt.Fprintf(os.Stderr, "grpc server error: %v\n", err)
 	}
+}
+
+type routeArtifactResolver func(context.Context, routeArtifactUpstream) (*url.URL, error)
+
+func addArtifactUpstreams(
+	ctx context.Context,
+	matcher *RouteMatcher,
+	upstreams map[string]*url.URL,
+	resolve routeArtifactResolver,
+) error {
+	for _, requirement := range matcher.RequiredArtifactUpstreams() {
+		if _, exists := upstreams[requirement.Key]; exists {
+			continue
+		}
+		upstream, err := resolve(ctx, requirement)
+		if err != nil {
+			return fmt.Errorf(
+				"resolve %s for %s/%s endpoint %s api %s: %w",
+				requirement.Key,
+				requirement.Module,
+				requirement.Service,
+				requirement.Endpoint,
+				requirement.API,
+				err,
+			)
+		}
+		if upstream == nil || upstream.Scheme == "" || upstream.Host == "" {
+			return fmt.Errorf("resolve %s returned an incomplete URL", requirement.Key)
+		}
+		upstreams[requirement.Key] = upstream
+	}
+	return nil
 }
 
 func canonicalPublicOrigin(candidate string) (string, error) {

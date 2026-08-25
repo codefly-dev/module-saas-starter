@@ -81,6 +81,7 @@ func newGatewayHarness(t *testing.T) (*Gateway, *fakeUpstream, *fakeUpstream, ed
 		audience:      "saas-starter",
 		internalToken: "test-internal-token",
 		gatewayToken:  "test-gateway-token",
+		revoker:       noopRevoker{},
 	}
 
 	apiFake := &fakeUpstream{body: "api-response"}
@@ -231,6 +232,38 @@ func TestGateway_TrustsPublicOriginOnlyFromAuthenticatedFrontend(t *testing.T) {
 	req = httptest.NewRequest(http.MethodPost, "/v1/auth/authenticate", strings.NewReader(`{}`))
 	authenticateFrontendOrigin(req, "https://app.example")
 	w = httptest.NewRecorder()
+	gw.ServeHTTP(w, req)
+
+	require.Equal(t, http.StatusOK, w.Code)
+	require.Equal(t, "https://app.example", apiFake.lastHeaders.Get("X-Codefly-Public-Origin"))
+	require.Empty(t, apiFake.lastHeaders.Get("X-Codefly-Internal-Token"))
+}
+
+func TestSidecar_AcceptsInternalTokenDuringRotationOverlap(t *testing.T) {
+	s := &Sidecar{internalToken: "new-token", previousInternalToken: "previous-token"}
+	require.True(t, s.acceptsInternalToken("new-token"), "current token accepted")
+	require.True(t, s.acceptsInternalToken("previous-token"), "previous token accepted during overlap")
+	require.False(t, s.acceptsInternalToken("retired-token"))
+	require.False(t, s.acceptsInternalToken(""), "empty candidate never matches")
+
+	// With no previous token configured (steady state) only the current matches.
+	s.previousInternalToken = ""
+	require.True(t, s.acceptsInternalToken("new-token"))
+	require.False(t, s.acceptsInternalToken("previous-token"))
+
+	// An unconfigured credential must never admit a caller.
+	require.False(t, (&Sidecar{}).acceptsInternalToken(""))
+	require.False(t, (&Sidecar{}).acceptsInternalToken("anything"))
+}
+
+func TestGateway_TrustsPublicOriginFromPreviousInternalTokenDuringRotation(t *testing.T) {
+	gw, apiFake, _, _ := newGatewayHarness(t)
+	gw.sidecar.previousInternalToken = "previous-internal-token"
+
+	req := httptest.NewRequest(http.MethodPost, "/v1/auth/authenticate", strings.NewReader(`{}`))
+	req.Header.Set("X-Codefly-Internal-Token", "previous-internal-token")
+	req.Header.Set("X-Codefly-Public-Origin", "https://app.example")
+	w := httptest.NewRecorder()
 	gw.ServeHTTP(w, req)
 
 	require.Equal(t, http.StatusOK, w.Code)
@@ -533,6 +566,7 @@ func TestGateway_NoRoute_404(t *testing.T) {
 		publicKey: pub,
 		issuer:    "saas-starter",
 		audience:  "saas-starter",
+		revoker:   noopRevoker{},
 	}
 
 	// Empty route config — nothing is whitelisted.
@@ -592,6 +626,7 @@ func TestGateway_ConnectProtocol_AuthenticatedEndToEnd(t *testing.T) {
 		issuer:       "saas-starter",
 		audience:     "saas-starter",
 		gatewayToken: "test-gateway-token",
+		revoker:      noopRevoker{},
 	}
 
 	upstream := &fakeUpstream{body: `{"user":{"id":"user-1"}}`}
@@ -629,6 +664,7 @@ func TestGateway_LegacyConnectProcedureRewritesToV1(t *testing.T) {
 		issuer:       "saas-starter",
 		audience:     "saas-starter",
 		gatewayToken: "test-gateway-token",
+		revoker:      noopRevoker{},
 	}
 
 	upstream := &fakeUpstream{body: `{}`}

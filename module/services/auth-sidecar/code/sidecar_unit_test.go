@@ -5,6 +5,7 @@ import (
 	"crypto/ed25519"
 	"crypto/rand"
 	"encoding/base64"
+	"encoding/json"
 	"strconv"
 	"strings"
 	"testing"
@@ -31,6 +32,7 @@ func newTestSidecar(t *testing.T) (*Sidecar, ed25519.PrivateKey) {
 		issuer:       "saas-starter",
 		audience:     "saas-starter",
 		gatewayToken: "test-gateway-token",
+		revoker:      noopRevoker{},
 	}, priv
 }
 
@@ -141,6 +143,134 @@ func TestUnit_ValidJWT_ForwardsHeaders(t *testing.T) {
 	require.Equal(t, c.SessionID, h["x-session-id"])
 	require.Equal(t, "test-gateway-token", h["x-codefly-gateway-token"])
 	require.Empty(t, h["x-acting-as-user-id"], "acting header is empty unless impersonating")
+}
+
+// TestUnit_Allow_RemovesUnstampedTrustHeaders locks the H4 fix: on an allow
+// decision the sidecar must instruct Envoy to strip every untrusted trust
+// header it does not restamp, so a client-spoofed header cannot survive to the
+// upstream. This is the sidecar half of the header-lockstep invariant paired
+// with M6 (the strip set is a superset of the stamped set).
+func TestUnit_Allow_RemovesUnstampedTrustHeaders(t *testing.T) {
+	s, priv := newTestSidecar(t)
+
+	resp, err := s.Check(context.Background(), checkReq("/v1/users", map[string]string{
+		"authorization": "Bearer " + signClaims(t, priv, validClaims(time.Now())),
+	}))
+	require.NoError(t, err)
+	ok := resp.GetOkResponse()
+	require.NotNil(t, ok)
+
+	stamped := map[string]struct{}{}
+	for _, h := range ok.GetHeaders() {
+		stamped[strings.ToLower(h.GetHeader().GetKey())] = struct{}{}
+	}
+	removed := map[string]struct{}{}
+	for _, k := range ok.GetHeadersToRemove() {
+		removed[strings.ToLower(k)] = struct{}{}
+	}
+
+	// Lockstep: every untrusted trust header is either restamped or removed,
+	// and never both.
+	for _, k := range untrustedAuthHeaders {
+		_, isStamped := stamped[k]
+		_, isRemoved := removed[k]
+		require.Truef(t, isStamped || isRemoved, "untrusted header %q is neither restamped nor removed", k)
+		require.Falsef(t, isStamped && isRemoved, "untrusted header %q is both restamped and removed", k)
+	}
+
+	// Trust headers the sidecar never stamps on an allow must be removed.
+	require.Contains(t, removed, "x-codefly-internal-token")
+	require.Contains(t, removed, "x-codefly-public-origin")
+
+	// A restamped header is overwritten, not removed.
+	require.NotContains(t, removed, "x-user-id")
+	require.NotContains(t, removed, "x-codefly-gateway-token")
+}
+
+func TestUnit_ValidJWT_ForwardsActorChainAndOverwritesSpoofedHeader(t *testing.T) {
+	s, priv := newTestSidecar(t)
+	c := validClaims(time.Now())
+	c.Act = &actorClaim{Subject: "svc:billing-worker", Act: &actorClaim{Subject: "svc:gateway"}}
+	token := signClaims(t, priv, c)
+
+	// The caller supplies a forged x-act; the sidecar must emit the verified
+	// chain, replacing it.
+	resp, err := s.Check(context.Background(), checkReq("/v1/users", map[string]string{
+		"authorization": "Bearer " + token,
+		"x-act":         `{"sub":"svc:attacker"}`,
+	}))
+	require.NoError(t, err)
+	require.Equal(t, `{"sub":"svc:billing-worker","act":{"sub":"svc:gateway"}}`, headerMap(resp)["x-act"])
+}
+
+func TestUnit_ValidJWT_EmitsEmptyActorHeaderForDirectSession(t *testing.T) {
+	s, priv := newTestSidecar(t)
+	token := signClaims(t, priv, validClaims(time.Now()))
+
+	resp, err := s.Check(context.Background(), checkReq("/v1/users", map[string]string{
+		"authorization": "Bearer " + token,
+		"x-act":         `{"sub":"svc:attacker"}`,
+	}))
+	require.NoError(t, err)
+	h := headerMap(resp)
+	require.Contains(t, h, "x-act", "canonical header is always emitted")
+	require.Empty(t, h["x-act"], "no chain → empty value overwrites any spoofed x-act")
+}
+
+func TestUnit_ValidJWT_ForwardsScopedRoles(t *testing.T) {
+	s, priv := newTestSidecar(t)
+	c := validClaims(time.Now())
+	c.ScopedRoles = map[string][]string{"module-a": {"analyst"}, "module-b": {"admin"}}
+	token := signClaims(t, priv, c)
+
+	resp, err := s.Check(context.Background(), checkReq("/v1/users", map[string]string{
+		"authorization": "Bearer " + token,
+	}))
+	require.NoError(t, err)
+	require.NotNil(t, resp.GetOkResponse())
+
+	h := headerMap(resp)
+	var got map[string][]string
+	require.NoError(t, json.Unmarshal([]byte(h["x-scoped-roles"]), &got))
+	require.Equal(t, c.ScopedRoles, got)
+}
+
+func TestUnit_ValidJWT_ForwardsScopedRolesTruncated(t *testing.T) {
+	s, priv := newTestSidecar(t)
+	c := validClaims(time.Now())
+	c.ScopedRoles = map[string][]string{"module-a": {"analyst"}}
+	c.ScopedRolesTruncated = true
+	token := signClaims(t, priv, c)
+
+	resp, err := s.Check(context.Background(), checkReq("/v1/users", map[string]string{
+		"authorization": "Bearer " + token,
+	}))
+	require.NoError(t, err)
+
+	h := headerMap(resp)
+	require.Equal(t, "true", h["x-scoped-roles-truncated"])
+
+	// Absent (empty) when the grant set fit within the bound.
+	c.ScopedRolesTruncated = false
+	resp, err = s.Check(context.Background(), checkReq("/v1/users", map[string]string{
+		"authorization": "Bearer " + signClaims(t, priv, c),
+	}))
+	require.NoError(t, err)
+	require.Empty(t, headerMap(resp)["x-scoped-roles-truncated"])
+}
+
+func TestUnit_ValidJWT_NoScopedRolesOmitsHeader(t *testing.T) {
+	s, priv := newTestSidecar(t)
+	token := signClaims(t, priv, validClaims(time.Now()))
+
+	resp, err := s.Check(context.Background(), checkReq("/v1/users", map[string]string{
+		"authorization": "Bearer " + token,
+	}))
+	require.NoError(t, err)
+
+	// The canonical-header sweep still emits the key so a spoofed value is
+	// overwritten, but with an empty value when the caller has no scoped roles.
+	require.Empty(t, headerMap(resp)["x-scoped-roles"])
 }
 
 func TestUnit_ValidJWT_ForwardsMFAState(t *testing.T) {

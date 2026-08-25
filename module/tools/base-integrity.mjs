@@ -71,6 +71,10 @@ const UNSUPPORTED_PUBLIC_CLAIMS = [
   ["unverified customer endorsement", /\btrusted by teams shipping\b/i],
   ["unsupported assurance path", /\bSOC ?2\s*\/\s*enterprise-compliant path\b/i],
   ["unverified audit immutability", /\btamper-evident copy outside the platform\b/i],
+  [
+    "direct application OTLP endpoint",
+    /\bapplications?\s+(?:continue\s+to\s+)?send\s+OTLP\s+(?:through|via)\b[\s\S]{0,80}\bOTEL_EXPORTER_OTLP_ENDPOINT\b/i,
+  ],
 ];
 
 // Directory names pruned wholesale (build output, deps, VCS) and per-file patterns that are
@@ -81,7 +85,7 @@ const UNSUPPORTED_PUBLIC_CLAIMS = [
 // service manifest is generated from protected topology plus the application plugin allowlist.
 const PRUNE_DIRS = new Set([
   "node_modules", ".next", ".turbo", "dist", "build", "coverage",
-  ".git", "vendor", "__pycache__", ".codefly", ".cache", "test-results", "playwright-report",
+  ".git", "vendor", "__pycache__", ".codefly", ".cache", ".nix-cache", "test-results", "playwright-report",
 ]);
 export const isExcludedFile = (rel) =>
   rel === "tools/base-manifest.json" ||      // the manifest can't hash itself
@@ -90,6 +94,8 @@ export const isExcludedFile = (rel) =>
   rel === "deployment/generated/service-topology.json" || // generated from the consumer topology
   rel.startsWith("deployment/kustomize/") || // generated from workspace/environment GitOps inputs
   rel === "services/store/code/store-migrator" || // `go build ./...` output; source and migrations remain protected
+  rel.includes("/.nix-cache/") ||              // per-service Nix evaluation cache; never release source
+  /^services\/[^/]+\/nix\//.test(rel) ||       // service-agent runtime materialization; ignored by git
   rel === "services/frontend/code/frontend.config.ts" || // FP-001: application-owned composition root
   rel === "services/frontend/code/package-lock.json" || // FP-010A: generated workspace install graph
   /^services\/[^/]+\/configurations\/.*\.secret\.[^/]+$/.test(rel) || // local secret material is SDK/runtime-owned, never canonical base

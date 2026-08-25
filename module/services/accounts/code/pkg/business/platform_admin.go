@@ -20,6 +20,13 @@ var platformRoleLevel = map[string]int{
 	"support":     1,
 }
 
+// PlatformRoleRank returns the privilege level of a platform role, higher being
+// more privileged; an unknown or empty role ranks 0. Handler-layer gates share
+// this ordering so the two authorization layers cannot drift.
+func PlatformRoleRank(role string) int {
+	return platformRoleLevel[role]
+}
+
 // requirePlatformRole checks that the actor has at least the given platform role.
 func (s *Service) requirePlatformRole(ctx context.Context, actorID, minRole string) error {
 	role, err := s.store.GetPlatformRole(ctx, actorID)
@@ -29,7 +36,7 @@ func (s *Service) requirePlatformRole(ctx context.Context, actorID, minRole stri
 	if role == "" {
 		return fmt.Errorf("not a platform admin")
 	}
-	if platformRoleLevel[role] < platformRoleLevel[minRole] {
+	if PlatformRoleRank(role) < PlatformRoleRank(minRole) {
 		return fmt.Errorf("insufficient platform role: have %s, need %s", role, minRole)
 	}
 	return nil
@@ -242,10 +249,26 @@ func (s *Service) RevokeSession(ctx context.Context, actorID string, req *gen.Re
 	if reason == "" {
 		reason = "revoked_by_admin"
 	}
+	var revokedSessionIDs []string
 	if err := s.store.WithControlPlane(ctx, func(ctx context.Context) error {
-		return s.store.RevokeSession(ctx, req.SessionId, reason)
+		var err error
+		revokedSessionIDs, err = s.store.RevokeSession(ctx, req.SessionId, reason)
+		return err
 	}); err != nil {
 		return w.Wrapf(err, "cannot revoke session")
+	}
+
+	// Killing the refresh family leaves the victim's outstanding access token
+	// valid until its natural TTL on every path. Write a session-revocation
+	// marker per revoked row so the access half dies now. Best-effort: the DB
+	// revocation above is the durable authority, and a store outage bounds the
+	// residual exposure to AccessTokenTTL rather than failing the kill.
+	if s.minter != nil {
+		for _, sessionID := range revokedSessionIDs {
+			if err := s.minter.RevokeSessionAccess(ctx, sessionID); err != nil {
+				w.Warn("RevokeSessionAccess failed (best-effort)", wool.ErrField(err))
+			}
+		}
 	}
 
 	s.emit(ctx, actorID, "user", "session.revoked", "session", req.SessionId, "")
@@ -320,7 +343,7 @@ func (s *Service) ListPlatformAdmins(ctx context.Context, actorID string) (*gen.
 	return &gen.ListPlatformAdminsResponse{Admins: entries}, nil
 }
 
-// ListFeatureFlags returns all feature flags (super_admin only).
+// ListFeatureFlags returns the legacy migration inventory (super_admin only).
 func (s *Service) ListFeatureFlags(ctx context.Context, actorID string) (*gen.ListFeatureFlagsResponse, error) {
 	w := wool.Get(ctx).In("ListFeatureFlags")
 
@@ -345,28 +368,4 @@ func (s *Service) ListFeatureFlags(ctx context.Context, actorID string) (*gen.Li
 	}
 
 	return &gen.ListFeatureFlagsResponse{Flags: entries}, nil
-}
-
-// UpsertFeatureFlag creates or updates a feature flag (super_admin only).
-func (s *Service) UpsertFeatureFlag(ctx context.Context, actorID string, req *gen.UpsertFeatureFlagRequest) (*gen.UpsertFeatureFlagResponse, error) {
-	w := wool.Get(ctx).In("UpsertFeatureFlag")
-
-	if err := s.requirePlatformRole(ctx, actorID, "super_admin"); err != nil {
-		return nil, w.Wrapf(err, "permission denied")
-	}
-
-	flag := &FeatureFlag{
-		Name:           req.Name,
-		Description:    req.Description,
-		Enabled:        req.Enabled,
-		RolloutPercent: int(req.RolloutPercent),
-		TargetOrgIDs:   req.TargetOrgIds,
-	}
-	if err := s.store.UpsertFeatureFlag(ctx, flag); err != nil {
-		return nil, w.Wrapf(err, "cannot upsert feature flag")
-	}
-
-	s.emit(ctx, actorID, "user", "feature_flag.updated", "feature_flag", req.Name, "")
-
-	return &gen.UpsertFeatureFlagResponse{Name: req.Name}, nil
 }

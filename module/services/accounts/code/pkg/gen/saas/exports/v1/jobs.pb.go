@@ -23,61 +23,6 @@ const (
 	_ = protoimpl.EnforceVersion(protoimpl.MaxVersion - 20)
 )
 
-// AuditExportJob identifies one configured tenant export cycle. Credentials,
-// endpoint details, and event bytes remain in product-owned storage and are
-// never copied into generic job payloads or operations metadata.
-type AuditExportJob struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	ExecutionKey  string                 `protobuf:"bytes,1,opt,name=execution_key,json=executionKey,proto3" json:"execution_key,omitempty"`
-	ConfigId      string                 `protobuf:"bytes,2,opt,name=config_id,json=configId,proto3" json:"config_id,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
-}
-
-func (x *AuditExportJob) Reset() {
-	*x = AuditExportJob{}
-	mi := &file_saas_exports_v1_jobs_proto_msgTypes[0]
-	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-	ms.StoreMessageInfo(mi)
-}
-
-func (x *AuditExportJob) String() string {
-	return protoimpl.X.MessageStringOf(x)
-}
-
-func (*AuditExportJob) ProtoMessage() {}
-
-func (x *AuditExportJob) ProtoReflect() protoreflect.Message {
-	mi := &file_saas_exports_v1_jobs_proto_msgTypes[0]
-	if x != nil {
-		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-		if ms.LoadMessageInfo() == nil {
-			ms.StoreMessageInfo(mi)
-		}
-		return ms
-	}
-	return mi.MessageOf(x)
-}
-
-// Deprecated: Use AuditExportJob.ProtoReflect.Descriptor instead.
-func (*AuditExportJob) Descriptor() ([]byte, []int) {
-	return file_saas_exports_v1_jobs_proto_rawDescGZIP(), []int{0}
-}
-
-func (x *AuditExportJob) GetExecutionKey() string {
-	if x != nil {
-		return x.ExecutionKey
-	}
-	return ""
-}
-
-func (x *AuditExportJob) GetConfigId() string {
-	if x != nil {
-		return x.ConfigId
-	}
-	return ""
-}
-
 // PrivacyExportJob identifies one subject-owned portability request. The
 // worker re-reads current product data under the subject/control-plane
 // boundary; personal data never enters the generic job envelope.
@@ -91,7 +36,7 @@ type PrivacyExportJob struct {
 
 func (x *PrivacyExportJob) Reset() {
 	*x = PrivacyExportJob{}
-	mi := &file_saas_exports_v1_jobs_proto_msgTypes[1]
+	mi := &file_saas_exports_v1_jobs_proto_msgTypes[0]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -103,7 +48,7 @@ func (x *PrivacyExportJob) String() string {
 func (*PrivacyExportJob) ProtoMessage() {}
 
 func (x *PrivacyExportJob) ProtoReflect() protoreflect.Message {
-	mi := &file_saas_exports_v1_jobs_proto_msgTypes[1]
+	mi := &file_saas_exports_v1_jobs_proto_msgTypes[0]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -116,7 +61,7 @@ func (x *PrivacyExportJob) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use PrivacyExportJob.ProtoReflect.Descriptor instead.
 func (*PrivacyExportJob) Descriptor() ([]byte, []int) {
-	return file_saas_exports_v1_jobs_proto_rawDescGZIP(), []int{1}
+	return file_saas_exports_v1_jobs_proto_rawDescGZIP(), []int{0}
 }
 
 func (x *PrivacyExportJob) GetRequestId() string {
@@ -137,11 +82,7 @@ var File_saas_exports_v1_jobs_proto protoreflect.FileDescriptor
 
 const file_saas_exports_v1_jobs_proto_rawDesc = "" +
 	"\n" +
-	"\x1asaas/exports/v1/jobs.proto\x12\x0fsaas.exports.v1\x1a\x1bbuf/validate/validate.proto\"h\n" +
-	"\x0eAuditExportJob\x12/\n" +
-	"\rexecution_key\x18\x01 \x01(\tB\n" +
-	"\xbaH\ar\x05\x10\x01\x18\xff\x01R\fexecutionKey\x12%\n" +
-	"\tconfig_id\x18\x02 \x01(\tB\b\xbaH\x05r\x03\xb0\x01\x01R\bconfigId\"d\n" +
+	"\x1asaas/exports/v1/jobs.proto\x12\x0fsaas.exports.v1\x1a\x1bbuf/validate/validate.proto\"d\n" +
 	"\x10PrivacyExportJob\x12'\n" +
 	"\n" +
 	"request_id\x18\x01 \x01(\tB\b\xbaH\x05r\x03\xb0\x01\x01R\trequestId\x12'\n" +
@@ -161,10 +102,9 @@ func file_saas_exports_v1_jobs_proto_rawDescGZIP() []byte {
 	return file_saas_exports_v1_jobs_proto_rawDescData
 }
 
-var file_saas_exports_v1_jobs_proto_msgTypes = make([]protoimpl.MessageInfo, 2)
+var file_saas_exports_v1_jobs_proto_msgTypes = make([]protoimpl.MessageInfo, 1)
 var file_saas_exports_v1_jobs_proto_goTypes = []any{
-	(*AuditExportJob)(nil),   // 0: saas.exports.v1.AuditExportJob
-	(*PrivacyExportJob)(nil), // 1: saas.exports.v1.PrivacyExportJob
+	(*PrivacyExportJob)(nil), // 0: saas.exports.v1.PrivacyExportJob
 }
 var file_saas_exports_v1_jobs_proto_depIdxs = []int32{
 	0, // [0:0] is the sub-list for method output_type
@@ -185,7 +125,7 @@ func file_saas_exports_v1_jobs_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_saas_exports_v1_jobs_proto_rawDesc), len(file_saas_exports_v1_jobs_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   2,
+			NumMessages:   1,
 			NumExtensions: 0,
 			NumServices:   0,
 		},

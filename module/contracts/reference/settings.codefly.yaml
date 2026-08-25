@@ -1,0 +1,6 @@
+schema: codefly/saas/settings-contribution/v1
+namespace: reference
+proto-import: codefly/reference/settings/v1/reference_settings.proto
+message: codefly.reference.settings.v1.ReferenceSettings
+field: {name: reference_settings, number: 344093794}
+field-range: {start: 344093794, end: 344093794}

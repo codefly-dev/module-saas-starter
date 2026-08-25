@@ -19,9 +19,10 @@ func main() {
 	moduleOutput := flag.String("module-output", "", "path for generated module.codefly.yaml")
 	servicesRoot := flag.String("services-root", "", "root containing generated service manifests")
 	networkOutput := flag.String("network-output", "", "path for generated Kubernetes NetworkPolicy YAML")
+	meshOutput := flag.String("mesh-output", "", "path for generated Istio mesh policy YAML")
 	flag.Parse()
 
-	if *catalogPath == "" || *configPath == "" || *topologyOutput == "" || *moduleOutput == "" || *servicesRoot == "" || *networkOutput == "" {
+	if *catalogPath == "" || *configPath == "" || *topologyOutput == "" || *moduleOutput == "" || *servicesRoot == "" || *networkOutput == "" || *meshOutput == "" {
 		_, _ = fmt.Fprintln(os.Stderr, "compile deployment topology: all input and output flags are required")
 		os.Exit(2)
 	}
@@ -51,6 +52,7 @@ func main() {
 	mustWrite(*topologyOutput, artifacts.CatalogJSON)
 	mustWrite(*moduleOutput, artifacts.ModuleManifest)
 	mustWrite(*networkOutput, artifacts.NetworkPolicy)
+	mustWrite(*meshOutput, artifacts.MeshPolicy)
 	serviceNames := make([]string, 0, len(artifacts.ServiceManifests))
 	for service := range artifacts.ServiceManifests {
 		serviceNames = append(serviceNames, service)

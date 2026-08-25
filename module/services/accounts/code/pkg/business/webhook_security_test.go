@@ -163,7 +163,7 @@ func TestWebhookHTTPClientDoesNotFollowRedirects(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Get: %v", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	if calls != 1 || resp.StatusCode != http.StatusFound {
 		t.Fatalf("calls/status = %d/%d, want 1/302", calls, resp.StatusCode)
 	}

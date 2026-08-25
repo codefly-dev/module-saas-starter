@@ -1,0 +1,6 @@
+users:
+  - email: reference@example.com
+    name: Reference User
+    role: super_admin
+    provider: email
+    provider_id: reference-user

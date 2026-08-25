@@ -33,6 +33,9 @@ type ResendConfig struct {
 	BaseURL string
 	// HTTPClient optional, defaults to a 10s-timeout client.
 	HTTPClient *http.Client
+	// WebhookSecret is the Svix signing secret for delivery callbacks. Send
+	// does not use it; DeliveryWebhook needs it to verify inbound events.
+	WebhookSecret string
 }
 
 // ResendSender implements Sender using Resend's HTTP API.
@@ -113,7 +116,7 @@ func (s *ResendSender) Send(ctx context.Context, m *Message) (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("email: send: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	respBody, err := io.ReadAll(resp.Body)
 	if err != nil {
@@ -136,4 +139,24 @@ func (s *ResendSender) Send(ctx context.Context, m *Message) (string, error) {
 		return "", fmt.Errorf("email: decode response: %w", err)
 	}
 	return decoded.ID, nil
+}
+
+// ResendWebhookPath is where Resend delivers signed delivery/bounce/complaint
+// callbacks.
+const ResendWebhookPath = "/v1/email/webhook/resend"
+
+// DeliveryWebhook builds the handler that verifies and records this provider's
+// delivery callbacks. The Svix signature scheme and Resend's native event
+// vocabulary are Resend-specific, so the provider owns its route and translates
+// its events into canonical DeliveryEvents; the recorder it writes to is
+// provider-agnostic.
+func (s *ResendSender) DeliveryWebhook(recorder DeliveryEventRecorder) (string, http.Handler, error) {
+	handler, err := NewResendWebhookHandler(ResendWebhookConfig{
+		SigningSecret: s.cfg.WebhookSecret,
+		Recorder:      recorder,
+	})
+	if err != nil {
+		return "", nil, err
+	}
+	return ResendWebhookPath, handler, nil
 }

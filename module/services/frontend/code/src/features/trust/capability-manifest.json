@@ -68,7 +68,7 @@
 			"designState": "absent",
 			"responsibility": "provider",
 			"configuration": {
-				"providers": ["database", "object-storage"],
+				"providers": ["database"],
 				"settings": ["storage.production"]
 			},
 			"public": {
@@ -83,7 +83,7 @@
 			"designState": "absent",
 			"responsibility": "starter",
 			"configuration": {
-				"providers": ["object-storage"],
+				"providers": [],
 				"settings": ["privacy.export"]
 			},
 			"public": {

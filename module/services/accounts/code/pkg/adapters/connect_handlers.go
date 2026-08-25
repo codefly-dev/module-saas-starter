@@ -158,11 +158,14 @@ func connectCodeFromGRPC(c codes.Code) connect.Code {
 func callerID(ctx context.Context) (string, error) {
 	w := wool.Get(ctx).In("callerID")
 	w.GRPC().Inject()
+	// GRPC().Inject() copies forwarded metadata over the stamped identity, and a
+	// present-but-empty user.id would otherwise be returned as a non-empty-looking
+	// but blank actor. Guard empties the same way requireAuth does.
 	id, ok := w.UserID()
-	if !ok {
+	if !ok || id == "" {
 		id, ok = w.UserAuthID()
 	}
-	if !ok {
+	if !ok || id == "" {
 		return "", status.Error(codes.Unauthenticated, "caller identity not found")
 	}
 	return id, nil
@@ -302,6 +305,27 @@ func (h *permConnectHandler) CheckPermission(ctx context.Context, req *connect.R
 func (h *permConnectHandler) Decide(ctx context.Context, req *connect.Request[gen.DecideRequest]) (*connect.Response[gen.DecideResponse], error) {
 	return unary(ctx, req, h.inner.Decide)
 }
+func (h *permConnectHandler) CheckAccess(ctx context.Context, req *connect.Request[gen.CheckAccessRequest]) (*connect.Response[gen.CheckAccessResponse], error) {
+	return unary(ctx, req, h.inner.CheckAccess)
+}
+func (h *permConnectHandler) RegisterScopeNode(ctx context.Context, req *connect.Request[gen.RegisterScopeNodeRequest]) (*connect.Response[gen.RegisterScopeNodeResponse], error) {
+	return unary(ctx, req, h.inner.RegisterScopeNode)
+}
+func (h *permConnectHandler) GrantScope(ctx context.Context, req *connect.Request[gen.GrantScopeRequest]) (*connect.Response[gen.GrantScopeResponse], error) {
+	return unary(ctx, req, h.inner.GrantScope)
+}
+func (h *permConnectHandler) RevokeScope(ctx context.Context, req *connect.Request[gen.RevokeScopeRequest]) (*connect.Response[emptypb.Empty], error) {
+	return unary(ctx, req, h.inner.RevokeScope)
+}
+func (h *permConnectHandler) ShareRecord(ctx context.Context, req *connect.Request[gen.ShareRecordRequest]) (*connect.Response[gen.ShareRecordResponse], error) {
+	return unary(ctx, req, h.inner.ShareRecord)
+}
+func (h *permConnectHandler) RevokeShare(ctx context.Context, req *connect.Request[gen.RevokeShareRequest]) (*connect.Response[emptypb.Empty], error) {
+	return unary(ctx, req, h.inner.RevokeShare)
+}
+func (h *permConnectHandler) ListShares(ctx context.Context, req *connect.Request[gen.ListSharesRequest]) (*connect.Response[gen.ListSharesResponse], error) {
+	return unary(ctx, req, h.inner.ListShares)
+}
 
 // ============================================================================
 // IntrospectionService
@@ -348,12 +372,47 @@ func (h *apiKeyConnectHandler) ValidateAPIKey(ctx context.Context, req *connect.
 
 type authConnectHandler struct{ inner *AuthServer }
 
+// headerJWTLoginHeader names the gateway-injected identity header consumed by
+// the login route under IDENTITY_PROVIDER=header-jwt. Empty for every other
+// provider. Set once at startup from work.go. The header is read here and
+// nowhere else — it is never copied into gRPC metadata (see connectCtx), so it
+// cannot be forwarded downstream.
+var headerJWTLoginHeader string
+
+// SetHeaderJWTLoginHeader installs the configured identity header name. Empty
+// disables header consumption. Idempotent; call before serving.
+func SetHeaderJWTLoginHeader(name string) { headerJWTLoginHeader = name }
+
 func (h *authConnectHandler) BeginOAuth(ctx context.Context, req *connect.Request[gen.BeginOAuthRequest]) (*connect.Response[gen.BeginOAuthResponse], error) {
 	return unary(ctx, req, h.inner.BeginOAuth)
 }
 
 func (h *authConnectHandler) Authenticate(ctx context.Context, req *connect.Request[gen.AuthenticateRequest]) (*connect.Response[gen.AuthenticateResponse], error) {
+	injectHeaderJWTCredential(req.Msg, req.Header())
 	return unary(ctx, req, h.inner.Authenticate)
+}
+
+// injectHeaderJWTCredential turns a gateway-injected identity header into the
+// header-jwt login credential. When the header is configured and present, it is
+// authoritative: the token is verified against the configured JWKS downstream,
+// so this simply forwards the header's value into the request the login flow
+// already understands. A no-op when no header is configured or none is present.
+func injectHeaderJWTCredential(req *gen.AuthenticateRequest, h http.Header) {
+	if headerJWTLoginHeader == "" || req == nil {
+		return
+	}
+	// In header-jwt mode the gateway-injected header is the ONLY trusted
+	// credential source. Drop any client-supplied credential before setting
+	// from the header, so a caller cannot smuggle a second credential in the
+	// request body — including when the trusted header is absent.
+	req.Authentication = nil
+	token := h.Get(headerJWTLoginHeader)
+	if token == "" {
+		return
+	}
+	req.Authentication = &gen.AuthenticateRequest_HeaderJwt{
+		HeaderJwt: &gen.HeaderJWTAuthentication{Token: token},
+	}
 }
 func (h *authConnectHandler) CompleteMFAChallenge(ctx context.Context, req *connect.Request[gen.CompleteMFAChallengeRequest]) (*connect.Response[gen.CompleteMFAChallengeResponse], error) {
 	return unary(ctx, req, h.inner.CompleteMFAChallenge)
@@ -388,6 +447,12 @@ func (h *auditConnectHandler) QueryAuditLog(ctx context.Context, req *connect.Re
 }
 func (h *auditConnectHandler) ExportAuditLog(ctx context.Context, req *connect.Request[gen.ExportAuditLogRequest]) (*connect.Response[gen.ExportAuditLogResponse], error) {
 	return unary(ctx, req, h.inner.ExportAuditLog)
+}
+func (h *auditConnectHandler) AggregateAuditLog(ctx context.Context, req *connect.Request[gen.AggregateAuditLogRequest]) (*connect.Response[gen.AggregateAuditLogResponse], error) {
+	return unary(ctx, req, h.inner.AggregateAuditLog)
+}
+func (h *auditConnectHandler) ListAuditEventTypes(ctx context.Context, req *connect.Request[gen.ListAuditEventTypesRequest]) (*connect.Response[gen.ListAuditEventTypesResponse], error) {
+	return unary(ctx, req, h.inner.ListAuditEventTypes)
 }
 
 // ============================================================================

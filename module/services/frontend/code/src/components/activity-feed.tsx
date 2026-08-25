@@ -30,12 +30,12 @@ import { useAuth } from "@/lib/auth";
 
 interface RawEvent {
 	id: string;
-	action: string;
+	eventType: string;
 	actorId: string;
 	resource: string;
 	resourceId: string;
 	createdAt?: { seconds: bigint };
-	metadata?: Record<string, string>;
+	payload?: Record<string, unknown>;
 }
 
 const ACTION_ICONS: Record<string, LucideIcon> = {
@@ -103,7 +103,7 @@ export function ActivityFeed({
 				) : (
 					<ul className="space-y-2.5">
 						{events.map((e) => {
-							const Icon = ACTION_ICONS[e.action] ?? Activity;
+							const Icon = ACTION_ICONS[e.eventType] ?? Activity;
 							const isYou = !!user?.id && e.actorId === user.id;
 							return (
 								<li key={e.id} className="flex items-start gap-3 text-sm">
@@ -116,7 +116,7 @@ export function ActivityFeed({
 												{isYou ? "You" : "Someone"}
 											</span>{" "}
 											<span className="text-muted-foreground">
-												{humanize(e.action)}
+												{humanize(e.eventType)}
 											</span>
 											{e.resource && (
 												<span className="text-muted-foreground">

@@ -1,13 +1,15 @@
 # Product analytics and business metrics
 
-This module keeps four telemetry planes separate:
+This module keeps five telemetry planes separate. The single-owner boundaries
+are defined in [the module reference](../MODULE.md#runtime-capability-ownership).
 
 | Plane | Purpose | Source of truth |
 | --- | --- | --- |
 | Security audit | Protected mutations and actor/resource history | `audit_events` |
 | Billing usage | Quota, invoice, and reconciliation correctness | `usage_events` and `usage_totals` |
-| Operational telemetry | Availability, latency, errors, queues, and integrations | OpenTelemetry, Sentry, and job projections |
-| Product analytics | Behavior, activation, retention, and growth | Canonical product events and the configured analytics sink |
+| Error tracking | Actionable browser/server exception issues | Sentry error events |
+| Operational telemetry | Availability, latency, traces, metrics, logs, queues, and integrations | OpenTelemetry, job projections, and the SigNoz OTLP backend |
+| Product analytics and replay | Behavior, activation, retention, growth, and consented session playback | Canonical product events and PostHog |
 
 Product events must not be inferred from audit rows or usage receipts. A domain
 outcome may legitimately produce one record in more than one plane, with a
@@ -91,7 +93,8 @@ absolute management `POSTHOG_API_HOST`. The personal key needs the
 person-deletion permission and is used only by durable suppression commands.
 Non-local hosts must use HTTPS. The adapter has a five-second default request
 timeout and a maximum batch of 100. Application and domain packages do not
-import a PostHog SDK.
+import a PostHog SDK. The adapters do not read or manage PostHog flags, capture
+exceptions, or emit traces, metrics, or logs.
 
 The in-memory sink is deterministic and rejects conflicting reuse of an event
 UUID. It is the reference sink for contract and journey tests.
@@ -113,10 +116,15 @@ UTM source/campaign values and stores only the referrer hostname, never a full
 referrer URL. Route, release, environment, locale, session, feature-flag
 variants, and attribution remain bounded context fields.
 
+Feature-flag variants on events are values already evaluated by Unleash. They
+are analysis dimensions only; neither the analytics contract nor the PostHog
+adapter may define, fetch, or evaluate a flag.
+
 `posthog-browser.ts` is the optional browser reference adapter. It enforces
 HTTPS outside local development and a bounded five-second default timeout.
 Construct it only after product or marketing consent is granted. Replay has its
-own purpose and remains off until the product supplies a consent and redaction policy.
+own purpose, is owned by PostHog, and remains off until the product supplies a
+consent and redaction policy. Analytics consent alone never starts recording.
 The companion consent feature owns the UI and durable preference API; this
 module consumes its resolved policy.
 
@@ -190,6 +198,11 @@ presents a hard-coded audit series, and the activity feed always binds to the
 active organization.
 
 ## Operational metrics, alerts, and recovery
+
+SigNoz is the single backend for application traces, metrics, and logs. The
+application surface remains standard OpenTelemetry/OTLP through the in-graph
+collector; an optional SigNoz provider may provision dashboards and alerts but
+does not project an application SDK, endpoint, or credential.
 
 Job workers emit OpenTelemetry `saas.jobs.polls`, `claimed`, `active`,
 `completed`, and `duration` instruments. Labels are limited to queue plus

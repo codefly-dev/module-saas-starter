@@ -41,7 +41,8 @@
         "request_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "response_sensitivity": "SENSITIVITY_SECRET",
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
-        "authentication_factor_attempt": false
+        "authentication_factor_attempt": false,
+        "conditions": []
       },
       "policy_tier": "org_admin",
       "owner": {
@@ -86,7 +87,8 @@
         "request_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "response_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
-        "authentication_factor_attempt": false
+        "authentication_factor_attempt": false,
+        "conditions": []
       },
       "policy_tier": "org_member",
       "owner": {
@@ -133,7 +135,8 @@
         "request_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "response_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
-        "authentication_factor_attempt": false
+        "authentication_factor_attempt": false,
+        "conditions": []
       },
       "policy_tier": "org_admin",
       "owner": {
@@ -168,7 +171,8 @@
         "request_sensitivity": "SENSITIVITY_SECRET",
         "response_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
-        "authentication_factor_attempt": false
+        "authentication_factor_attempt": false,
+        "conditions": []
       },
       "policy_tier": "internal",
       "owner": {
@@ -180,61 +184,22 @@
       "rate_limit_backend_failure_mode": "RATE_LIMIT_BACKEND_FAILURE_MODE_FAIL_OPEN"
     },
     {
-      "procedure": "/saas.accounts.v1.AuditExportService/DeleteConfig",
-      "full_service": "saas.accounts.v1.AuditExportService",
-      "method": "DeleteConfig",
-      "input_type": "saas.accounts.v1.DeleteAuditExportConfigRequest",
-      "output_type": "google.protobuf.Empty",
+      "procedure": "/saas.accounts.v1.AuditService/AggregateAuditLog",
+      "full_service": "saas.accounts.v1.AuditService",
+      "method": "AggregateAuditLog",
+      "input_type": "saas.accounts.v1.AggregateAuditLogRequest",
+      "output_type": "saas.accounts.v1.AggregateAuditLogResponse",
       "client_streaming": false,
       "server_streaming": false,
       "policy": {
         "exposure": "EXPOSURE_AUTHENTICATED",
-        "tenant": "TENANT_REQUIREMENT_ORG_ADMIN",
-        "permissions": [],
-        "scopes": [],
-        "resource_bindings": [
-          {
-            "request_field": "org_id",
-            "target": "RESOURCE_TARGET_ORGANIZATION",
-            "lookup": "RESOURCE_LOOKUP_DIRECT_ID"
-          }
+        "tenant": "TENANT_REQUIREMENT_ORG_MEMBER",
+        "permissions": [
+          "audit:read"
         ],
-        "mfa": "MFA_REQUIREMENT_NONE",
-        "audit": {
-          "events": [
-            "audit_export.deleted"
-          ],
-          "emission": "AUDIT_EMISSION_SUCCESS"
-        },
-        "idempotency": "IDEMPOTENCY_REQUIREMENT_FORBIDDEN",
-        "rate_limit": "RATE_LIMIT_CLASS_STANDARD_WRITE",
-        "request_sensitivity": "SENSITIVITY_CONFIDENTIAL",
-        "response_sensitivity": "SENSITIVITY_CONFIDENTIAL",
-        "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
-        "authentication_factor_attempt": false
-      },
-      "policy_tier": "org_admin",
-      "owner": {
-        "module": "saas-starter",
-        "service": "accounts"
-      },
-      "source_proto": "saas/accounts/v1/audit_export.proto",
-      "policy_sha256": "1207333e2cc2a42ac9c6b5c18651993e81a44ab448930195bdbe594f26e8b07c",
-      "rate_limit_backend_failure_mode": "RATE_LIMIT_BACKEND_FAILURE_MODE_FAIL_OPEN"
-    },
-    {
-      "procedure": "/saas.accounts.v1.AuditExportService/GetConfig",
-      "full_service": "saas.accounts.v1.AuditExportService",
-      "method": "GetConfig",
-      "input_type": "saas.accounts.v1.GetAuditExportConfigRequest",
-      "output_type": "saas.accounts.v1.AuditExportConfig",
-      "client_streaming": false,
-      "server_streaming": false,
-      "policy": {
-        "exposure": "EXPOSURE_AUTHENTICATED",
-        "tenant": "TENANT_REQUIREMENT_ORG_ADMIN",
-        "permissions": [],
-        "scopes": [],
+        "scopes": [
+          "audit:read"
+        ],
         "resource_bindings": [
           {
             "request_field": "org_id",
@@ -252,58 +217,16 @@
         "request_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "response_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
-        "authentication_factor_attempt": false
+        "authentication_factor_attempt": false,
+        "conditions": []
       },
-      "policy_tier": "org_admin",
+      "policy_tier": "org_member",
       "owner": {
         "module": "saas-starter",
         "service": "accounts"
       },
-      "source_proto": "saas/accounts/v1/audit_export.proto",
-      "policy_sha256": "ef6a5e6e68c7115ca8783422cdc54febdd089c9b2660ac3774c7a4a4847e7270",
-      "rate_limit_backend_failure_mode": "RATE_LIMIT_BACKEND_FAILURE_MODE_FAIL_OPEN"
-    },
-    {
-      "procedure": "/saas.accounts.v1.AuditExportService/SaveConfig",
-      "full_service": "saas.accounts.v1.AuditExportService",
-      "method": "SaveConfig",
-      "input_type": "saas.accounts.v1.SaveAuditExportConfigRequest",
-      "output_type": "saas.accounts.v1.AuditExportConfig",
-      "client_streaming": false,
-      "server_streaming": false,
-      "policy": {
-        "exposure": "EXPOSURE_AUTHENTICATED",
-        "tenant": "TENANT_REQUIREMENT_ORG_ADMIN",
-        "permissions": [],
-        "scopes": [],
-        "resource_bindings": [
-          {
-            "request_field": "config.org_id",
-            "target": "RESOURCE_TARGET_ORGANIZATION",
-            "lookup": "RESOURCE_LOOKUP_DIRECT_ID"
-          }
-        ],
-        "mfa": "MFA_REQUIREMENT_NONE",
-        "audit": {
-          "events": [
-            "audit_export.configured"
-          ],
-          "emission": "AUDIT_EMISSION_SUCCESS"
-        },
-        "idempotency": "IDEMPOTENCY_REQUIREMENT_FORBIDDEN",
-        "rate_limit": "RATE_LIMIT_CLASS_STANDARD_WRITE",
-        "request_sensitivity": "SENSITIVITY_CONFIDENTIAL",
-        "response_sensitivity": "SENSITIVITY_CONFIDENTIAL",
-        "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
-        "authentication_factor_attempt": false
-      },
-      "policy_tier": "org_admin",
-      "owner": {
-        "module": "saas-starter",
-        "service": "accounts"
-      },
-      "source_proto": "saas/accounts/v1/audit_export.proto",
-      "policy_sha256": "9a6c1d0ba6e86c2496b2f9362000fc012c35f0bc34a64a2dd7d8a7f3f1696646",
+      "source_proto": "saas/accounts/v1/audit.proto",
+      "policy_sha256": "60a4fdc7035f800d001df484b53294b13256a4e27b7159360c3eac2be30117ce",
       "rate_limit_backend_failure_mode": "RATE_LIMIT_BACKEND_FAILURE_MODE_FAIL_OPEN"
     },
     {
@@ -340,7 +263,8 @@
         "request_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "response_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
-        "authentication_factor_attempt": false
+        "authentication_factor_attempt": false,
+        "conditions": []
       },
       "policy_tier": "org_admin",
       "owner": {
@@ -349,6 +273,46 @@
       },
       "source_proto": "saas/accounts/v1/audit.proto",
       "policy_sha256": "468012453cddebdd9969ce4dd7c962e055b36743f5506c8e75f4749a4440800b",
+      "rate_limit_backend_failure_mode": "RATE_LIMIT_BACKEND_FAILURE_MODE_FAIL_OPEN"
+    },
+    {
+      "procedure": "/saas.accounts.v1.AuditService/ListAuditEventTypes",
+      "full_service": "saas.accounts.v1.AuditService",
+      "method": "ListAuditEventTypes",
+      "input_type": "saas.accounts.v1.ListAuditEventTypesRequest",
+      "output_type": "saas.accounts.v1.ListAuditEventTypesResponse",
+      "client_streaming": false,
+      "server_streaming": false,
+      "policy": {
+        "exposure": "EXPOSURE_AUTHENTICATED",
+        "tenant": "TENANT_REQUIREMENT_NONE",
+        "permissions": [
+          "audit:read"
+        ],
+        "scopes": [
+          "audit:read"
+        ],
+        "resource_bindings": [],
+        "mfa": "MFA_REQUIREMENT_NONE",
+        "audit": {
+          "events": [],
+          "emission": "AUDIT_EMISSION_NONE"
+        },
+        "idempotency": "IDEMPOTENCY_REQUIREMENT_FORBIDDEN",
+        "rate_limit": "RATE_LIMIT_CLASS_STANDARD_READ",
+        "request_sensitivity": "SENSITIVITY_INTERNAL",
+        "response_sensitivity": "SENSITIVITY_INTERNAL",
+        "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
+        "authentication_factor_attempt": false,
+        "conditions": []
+      },
+      "policy_tier": "auth",
+      "owner": {
+        "module": "saas-starter",
+        "service": "accounts"
+      },
+      "source_proto": "saas/accounts/v1/audit.proto",
+      "policy_sha256": "9af740c1a0dd2124a43732af02a589927b5a3997f0d5cd474905341301684c3d",
       "rate_limit_backend_failure_mode": "RATE_LIMIT_BACKEND_FAILURE_MODE_FAIL_OPEN"
     },
     {
@@ -385,7 +349,8 @@
         "request_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "response_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
-        "authentication_factor_attempt": false
+        "authentication_factor_attempt": false,
+        "conditions": []
       },
       "policy_tier": "org_member",
       "owner": {
@@ -423,7 +388,8 @@
         "request_sensitivity": "SENSITIVITY_SECRET",
         "response_sensitivity": "SENSITIVITY_SECRET",
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
-        "authentication_factor_attempt": false
+        "authentication_factor_attempt": false,
+        "conditions": []
       },
       "policy_tier": "public",
       "owner": {
@@ -458,7 +424,8 @@
         "request_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "response_sensitivity": "SENSITIVITY_SECRET",
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
-        "authentication_factor_attempt": false
+        "authentication_factor_attempt": false,
+        "conditions": []
       },
       "policy_tier": "public",
       "owner": {
@@ -493,7 +460,8 @@
         "request_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "response_sensitivity": "SENSITIVITY_SECRET",
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
-        "authentication_factor_attempt": false
+        "authentication_factor_attempt": false,
+        "conditions": []
       },
       "policy_tier": "public",
       "owner": {
@@ -532,7 +500,8 @@
         "request_sensitivity": "SENSITIVITY_SECRET",
         "response_sensitivity": "SENSITIVITY_SECRET",
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
-        "authentication_factor_attempt": true
+        "authentication_factor_attempt": true,
+        "conditions": []
       },
       "policy_tier": "public",
       "owner": {
@@ -571,7 +540,8 @@
         "request_sensitivity": "SENSITIVITY_SECRET",
         "response_sensitivity": "SENSITIVITY_SECRET",
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
-        "authentication_factor_attempt": true
+        "authentication_factor_attempt": true,
+        "conditions": []
       },
       "policy_tier": "public",
       "owner": {
@@ -606,7 +576,8 @@
         "request_sensitivity": "SENSITIVITY_PUBLIC",
         "response_sensitivity": "SENSITIVITY_PUBLIC",
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
-        "authentication_factor_attempt": false
+        "authentication_factor_attempt": false,
+        "conditions": []
       },
       "policy_tier": "public",
       "owner": {
@@ -641,7 +612,8 @@
         "request_sensitivity": "SENSITIVITY_SECRET",
         "response_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
-        "authentication_factor_attempt": false
+        "authentication_factor_attempt": false,
+        "conditions": []
       },
       "policy_tier": "public",
       "owner": {
@@ -676,7 +648,8 @@
         "request_sensitivity": "SENSITIVITY_SECRET",
         "response_sensitivity": "SENSITIVITY_SECRET",
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
-        "authentication_factor_attempt": false
+        "authentication_factor_attempt": false,
+        "conditions": []
       },
       "policy_tier": "public",
       "owner": {
@@ -713,7 +686,8 @@
         "request_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "response_sensitivity": "SENSITIVITY_SECRET",
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
-        "authentication_factor_attempt": false
+        "authentication_factor_attempt": false,
+        "conditions": []
       },
       "policy_tier": "auth",
       "owner": {
@@ -758,7 +732,8 @@
         "request_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "response_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
-        "authentication_factor_attempt": false
+        "authentication_factor_attempt": false,
+        "conditions": []
       },
       "policy_tier": "org_admin",
       "owner": {
@@ -793,7 +768,8 @@
         "request_sensitivity": "SENSITIVITY_PUBLIC",
         "response_sensitivity": "SENSITIVITY_PUBLIC",
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
-        "authentication_factor_attempt": false
+        "authentication_factor_attempt": false,
+        "conditions": []
       },
       "policy_tier": "public",
       "owner": {
@@ -840,7 +816,8 @@
         "request_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "response_sensitivity": "SENSITIVITY_SECRET",
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
-        "authentication_factor_attempt": false
+        "authentication_factor_attempt": false,
+        "conditions": []
       },
       "policy_tier": "mfa",
       "owner": {
@@ -877,7 +854,8 @@
         "request_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "response_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
-        "authentication_factor_attempt": false
+        "authentication_factor_attempt": false,
+        "conditions": []
       },
       "policy_tier": "auth",
       "owner": {
@@ -912,7 +890,8 @@
         "request_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "response_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
-        "authentication_factor_attempt": false
+        "authentication_factor_attempt": false,
+        "conditions": []
       },
       "policy_tier": "auth",
       "owner": {
@@ -949,7 +928,8 @@
         "request_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "response_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
-        "authentication_factor_attempt": false
+        "authentication_factor_attempt": false,
+        "conditions": []
       },
       "policy_tier": "auth",
       "owner": {
@@ -993,7 +973,8 @@
         "request_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "response_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
-        "authentication_factor_attempt": false
+        "authentication_factor_attempt": false,
+        "conditions": []
       },
       "policy_tier": "org_admin",
       "owner": {
@@ -1034,7 +1015,8 @@
         "request_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "response_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
-        "authentication_factor_attempt": false
+        "authentication_factor_attempt": false,
+        "conditions": []
       },
       "policy_tier": "org_member",
       "owner": {
@@ -1078,7 +1060,8 @@
         "request_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "response_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
-        "authentication_factor_attempt": false
+        "authentication_factor_attempt": false,
+        "conditions": []
       },
       "policy_tier": "org_member",
       "owner": {
@@ -1119,7 +1102,8 @@
         "request_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "response_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
-        "authentication_factor_attempt": false
+        "authentication_factor_attempt": false,
+        "conditions": []
       },
       "policy_tier": "org_member",
       "owner": {
@@ -1154,7 +1138,8 @@
         "request_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "response_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
-        "authentication_factor_attempt": false
+        "authentication_factor_attempt": false,
+        "conditions": []
       },
       "policy_tier": "auth",
       "owner": {
@@ -1189,7 +1174,8 @@
         "request_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "response_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
-        "authentication_factor_attempt": false
+        "authentication_factor_attempt": false,
+        "conditions": []
       },
       "policy_tier": "auth",
       "owner": {
@@ -1226,7 +1212,8 @@
         "request_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "response_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
-        "authentication_factor_attempt": false
+        "authentication_factor_attempt": false,
+        "conditions": []
       },
       "policy_tier": "mfa",
       "owner": {
@@ -1263,7 +1250,8 @@
         "request_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "response_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
-        "authentication_factor_attempt": false
+        "authentication_factor_attempt": false,
+        "conditions": []
       },
       "policy_tier": "auth",
       "owner": {
@@ -1298,7 +1286,8 @@
         "request_sensitivity": "SENSITIVITY_SECRET",
         "response_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
-        "authentication_factor_attempt": false
+        "authentication_factor_attempt": false,
+        "conditions": []
       },
       "policy_tier": "internal",
       "owner": {
@@ -1333,7 +1322,8 @@
         "request_sensitivity": "SENSITIVITY_PUBLIC",
         "response_sensitivity": "SENSITIVITY_PUBLIC",
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
-        "authentication_factor_attempt": false
+        "authentication_factor_attempt": false,
+        "conditions": []
       },
       "policy_tier": "public",
       "owner": {
@@ -1370,7 +1360,8 @@
         "request_sensitivity": "SENSITIVITY_SECRET",
         "response_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
-        "authentication_factor_attempt": false
+        "authentication_factor_attempt": false,
+        "conditions": []
       },
       "policy_tier": "auth",
       "owner": {
@@ -1417,7 +1408,8 @@
         "request_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "response_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
-        "authentication_factor_attempt": false
+        "authentication_factor_attempt": false,
+        "conditions": []
       },
       "policy_tier": "org_admin",
       "owner": {
@@ -1452,7 +1444,8 @@
         "request_sensitivity": "SENSITIVITY_SECRET",
         "response_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
-        "authentication_factor_attempt": false
+        "authentication_factor_attempt": false,
+        "conditions": []
       },
       "policy_tier": "public",
       "owner": {
@@ -1487,7 +1480,8 @@
         "request_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "response_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
-        "authentication_factor_attempt": false
+        "authentication_factor_attempt": false,
+        "conditions": []
       },
       "policy_tier": "auth",
       "owner": {
@@ -1532,7 +1526,8 @@
         "request_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "response_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
-        "authentication_factor_attempt": false
+        "authentication_factor_attempt": false,
+        "conditions": []
       },
       "policy_tier": "org_admin",
       "owner": {
@@ -1579,7 +1574,8 @@
         "request_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "response_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
-        "authentication_factor_attempt": false
+        "authentication_factor_attempt": false,
+        "conditions": []
       },
       "policy_tier": "org_admin",
       "owner": {
@@ -1626,7 +1622,8 @@
         "request_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "response_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
-        "authentication_factor_attempt": false
+        "authentication_factor_attempt": false,
+        "conditions": []
       },
       "policy_tier": "org_admin",
       "owner": {
@@ -1663,7 +1660,8 @@
         "request_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "response_sensitivity": "SENSITIVITY_SECRET",
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
-        "authentication_factor_attempt": false
+        "authentication_factor_attempt": false,
+        "conditions": []
       },
       "policy_tier": "auth",
       "owner": {
@@ -1700,7 +1698,8 @@
         "request_sensitivity": "SENSITIVITY_SECRET",
         "response_sensitivity": "SENSITIVITY_SECRET",
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
-        "authentication_factor_attempt": false
+        "authentication_factor_attempt": false,
+        "conditions": []
       },
       "policy_tier": "auth",
       "owner": {
@@ -1737,7 +1736,8 @@
         "request_sensitivity": "SENSITIVITY_SECRET",
         "response_sensitivity": "SENSITIVITY_SECRET",
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
-        "authentication_factor_attempt": false
+        "authentication_factor_attempt": false,
+        "conditions": []
       },
       "policy_tier": "auth",
       "owner": {
@@ -1772,7 +1772,8 @@
         "request_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "response_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
-        "authentication_factor_attempt": false
+        "authentication_factor_attempt": false,
+        "conditions": []
       },
       "policy_tier": "auth",
       "owner": {
@@ -1809,7 +1810,8 @@
         "request_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "response_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
-        "authentication_factor_attempt": false
+        "authentication_factor_attempt": false,
+        "conditions": []
       },
       "policy_tier": "auth",
       "owner": {
@@ -1846,7 +1848,8 @@
         "request_sensitivity": "SENSITIVITY_SECRET",
         "response_sensitivity": "SENSITIVITY_SECRET",
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
-        "authentication_factor_attempt": false
+        "authentication_factor_attempt": false,
+        "conditions": []
       },
       "policy_tier": "auth",
       "owner": {
@@ -1883,7 +1886,8 @@
         "request_sensitivity": "SENSITIVITY_SECRET",
         "response_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
-        "authentication_factor_attempt": false
+        "authentication_factor_attempt": false,
+        "conditions": []
       },
       "policy_tier": "auth",
       "owner": {
@@ -1918,7 +1922,8 @@
         "request_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "response_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
-        "authentication_factor_attempt": false
+        "authentication_factor_attempt": false,
+        "conditions": []
       },
       "policy_tier": "auth",
       "owner": {
@@ -1953,7 +1958,8 @@
         "request_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "response_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
-        "authentication_factor_attempt": false
+        "authentication_factor_attempt": false,
+        "conditions": []
       },
       "policy_tier": "auth",
       "owner": {
@@ -1988,7 +1994,8 @@
         "request_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "response_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
-        "authentication_factor_attempt": false
+        "authentication_factor_attempt": false,
+        "conditions": []
       },
       "policy_tier": "auth",
       "owner": {
@@ -2023,7 +2030,8 @@
         "request_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "response_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
-        "authentication_factor_attempt": false
+        "authentication_factor_attempt": false,
+        "conditions": []
       },
       "policy_tier": "auth",
       "owner": {
@@ -2058,7 +2066,8 @@
         "request_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "response_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
-        "authentication_factor_attempt": false
+        "authentication_factor_attempt": false,
+        "conditions": []
       },
       "policy_tier": "auth",
       "owner": {
@@ -2101,7 +2110,8 @@
         "request_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "response_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
-        "authentication_factor_attempt": false
+        "authentication_factor_attempt": false,
+        "conditions": []
       },
       "policy_tier": "org_member",
       "owner": {
@@ -2142,7 +2152,8 @@
         "request_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "response_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
-        "authentication_factor_attempt": false
+        "authentication_factor_attempt": false,
+        "conditions": []
       },
       "policy_tier": "org_member",
       "owner": {
@@ -2185,7 +2196,8 @@
         "request_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "response_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
-        "authentication_factor_attempt": false
+        "authentication_factor_attempt": false,
+        "conditions": []
       },
       "policy_tier": "org_member",
       "owner": {
@@ -2228,7 +2240,8 @@
         "request_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "response_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
-        "authentication_factor_attempt": false
+        "authentication_factor_attempt": false,
+        "conditions": []
       },
       "policy_tier": "org_admin",
       "owner": {
@@ -2265,7 +2278,8 @@
         "request_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "response_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
-        "authentication_factor_attempt": false
+        "authentication_factor_attempt": false,
+        "conditions": []
       },
       "policy_tier": "auth",
       "owner": {
@@ -2306,7 +2320,8 @@
         "request_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "response_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
-        "authentication_factor_attempt": false
+        "authentication_factor_attempt": false,
+        "conditions": []
       },
       "policy_tier": "org_member",
       "owner": {
@@ -2347,7 +2362,8 @@
         "request_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "response_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
-        "authentication_factor_attempt": false
+        "authentication_factor_attempt": false,
+        "conditions": []
       },
       "policy_tier": "org_member",
       "owner": {
@@ -2388,7 +2404,8 @@
         "request_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "response_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
-        "authentication_factor_attempt": false
+        "authentication_factor_attempt": false,
+        "conditions": []
       },
       "policy_tier": "org_member",
       "owner": {
@@ -2423,7 +2440,8 @@
         "request_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "response_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
-        "authentication_factor_attempt": false
+        "authentication_factor_attempt": false,
+        "conditions": []
       },
       "policy_tier": "auth",
       "owner": {
@@ -2466,7 +2484,8 @@
         "request_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "response_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
-        "authentication_factor_attempt": false
+        "authentication_factor_attempt": false,
+        "conditions": []
       },
       "policy_tier": "org_admin",
       "owner": {
@@ -2509,7 +2528,8 @@
         "request_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "response_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
-        "authentication_factor_attempt": false
+        "authentication_factor_attempt": false,
+        "conditions": []
       },
       "policy_tier": "org_admin",
       "owner": {
@@ -2546,7 +2566,8 @@
         "request_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "response_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
-        "authentication_factor_attempt": false
+        "authentication_factor_attempt": false,
+        "conditions": []
       },
       "policy_tier": "auth",
       "owner": {
@@ -2555,6 +2576,42 @@
       },
       "source_proto": "saas/accounts/v1/authorization.proto",
       "policy_sha256": "ee4738e971692df46c723c02eb8fd90c906782f774a0bb3a484587b4b62f7f21",
+      "rate_limit_backend_failure_mode": "RATE_LIMIT_BACKEND_FAILURE_MODE_FAIL_OPEN"
+    },
+    {
+      "procedure": "/saas.accounts.v1.PermissionService/CheckAccess",
+      "full_service": "saas.accounts.v1.PermissionService",
+      "method": "CheckAccess",
+      "input_type": "saas.accounts.v1.CheckAccessRequest",
+      "output_type": "saas.accounts.v1.CheckAccessResponse",
+      "client_streaming": false,
+      "server_streaming": false,
+      "policy": {
+        "exposure": "EXPOSURE_INTERNAL",
+        "tenant": "TENANT_REQUIREMENT_NONE",
+        "permissions": [],
+        "scopes": [],
+        "resource_bindings": [],
+        "mfa": "MFA_REQUIREMENT_NONE",
+        "audit": {
+          "events": [],
+          "emission": "AUDIT_EMISSION_NONE"
+        },
+        "idempotency": "IDEMPOTENCY_REQUIREMENT_FORBIDDEN",
+        "rate_limit": "RATE_LIMIT_CLASS_INTERNAL",
+        "request_sensitivity": "SENSITIVITY_CONFIDENTIAL",
+        "response_sensitivity": "SENSITIVITY_CONFIDENTIAL",
+        "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
+        "authentication_factor_attempt": false,
+        "conditions": []
+      },
+      "policy_tier": "internal",
+      "owner": {
+        "module": "saas-starter",
+        "service": "accounts"
+      },
+      "source_proto": "saas/accounts/v1/authorization.proto",
+      "policy_sha256": "45df71bfa7f313b565b0e8c314557847bab913990d43ba59b97d755412b4a4fd",
       "rate_limit_backend_failure_mode": "RATE_LIMIT_BACKEND_FAILURE_MODE_FAIL_OPEN"
     },
     {
@@ -2581,7 +2638,8 @@
         "request_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "response_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
-        "authentication_factor_attempt": false
+        "authentication_factor_attempt": false,
+        "conditions": []
       },
       "policy_tier": "internal",
       "owner": {
@@ -2618,7 +2676,8 @@
         "request_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "response_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
-        "authentication_factor_attempt": false
+        "authentication_factor_attempt": false,
+        "conditions": []
       },
       "policy_tier": "auth",
       "owner": {
@@ -2653,7 +2712,8 @@
         "request_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "response_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
-        "authentication_factor_attempt": false
+        "authentication_factor_attempt": false,
+        "conditions": []
       },
       "policy_tier": "internal",
       "owner": {
@@ -2690,7 +2750,8 @@
         "request_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "response_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_ANY",
-        "authentication_factor_attempt": false
+        "authentication_factor_attempt": false,
+        "conditions": []
       },
       "policy_tier": "platform_admin",
       "owner": {
@@ -2699,6 +2760,50 @@
       },
       "source_proto": "saas/accounts/v1/authorization.proto",
       "policy_sha256": "bcccb107fcd8ac60bc8687019d40f1e1dd7d820ad1ed1e72e75708ea49f73fbe",
+      "rate_limit_backend_failure_mode": "RATE_LIMIT_BACKEND_FAILURE_MODE_FAIL_OPEN"
+    },
+    {
+      "procedure": "/saas.accounts.v1.PermissionService/GrantScope",
+      "full_service": "saas.accounts.v1.PermissionService",
+      "method": "GrantScope",
+      "input_type": "saas.accounts.v1.GrantScopeRequest",
+      "output_type": "saas.accounts.v1.GrantScopeResponse",
+      "client_streaming": false,
+      "server_streaming": false,
+      "policy": {
+        "exposure": "EXPOSURE_AUTHENTICATED",
+        "tenant": "TENANT_REQUIREMENT_ORG_ADMIN",
+        "permissions": [],
+        "scopes": [],
+        "resource_bindings": [
+          {
+            "request_field": "org_id",
+            "target": "RESOURCE_TARGET_ORGANIZATION",
+            "lookup": "RESOURCE_LOOKUP_DIRECT_ID"
+          }
+        ],
+        "mfa": "MFA_REQUIREMENT_NONE",
+        "audit": {
+          "events": [
+            "scope.granted"
+          ],
+          "emission": "AUDIT_EMISSION_SUCCESS"
+        },
+        "idempotency": "IDEMPOTENCY_REQUIREMENT_FORBIDDEN",
+        "rate_limit": "RATE_LIMIT_CLASS_STANDARD_WRITE",
+        "request_sensitivity": "SENSITIVITY_CONFIDENTIAL",
+        "response_sensitivity": "SENSITIVITY_CONFIDENTIAL",
+        "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
+        "authentication_factor_attempt": false,
+        "conditions": []
+      },
+      "policy_tier": "org_admin",
+      "owner": {
+        "module": "saas-starter",
+        "service": "accounts"
+      },
+      "source_proto": "saas/accounts/v1/authorization.proto",
+      "policy_sha256": "a026f7cac87a44b70b4627e5fa4a7cb343ef846490bc71eff4befa12a556f59e",
       "rate_limit_backend_failure_mode": "RATE_LIMIT_BACKEND_FAILURE_MODE_FAIL_OPEN"
     },
     {
@@ -2725,7 +2830,8 @@
         "request_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "response_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
-        "authentication_factor_attempt": false
+        "authentication_factor_attempt": false,
+        "conditions": []
       },
       "policy_tier": "auth",
       "owner": {
@@ -2760,7 +2866,8 @@
         "request_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "response_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
-        "authentication_factor_attempt": false
+        "authentication_factor_attempt": false,
+        "conditions": []
       },
       "policy_tier": "auth",
       "owner": {
@@ -2769,6 +2876,92 @@
       },
       "source_proto": "saas/accounts/v1/authorization.proto",
       "policy_sha256": "3bdbf3230fa8c384ff8b4f4582c6da0954a1fb657604c6fd24e4f74f210b693f",
+      "rate_limit_backend_failure_mode": "RATE_LIMIT_BACKEND_FAILURE_MODE_FAIL_OPEN"
+    },
+    {
+      "procedure": "/saas.accounts.v1.PermissionService/ListShares",
+      "full_service": "saas.accounts.v1.PermissionService",
+      "method": "ListShares",
+      "input_type": "saas.accounts.v1.ListSharesRequest",
+      "output_type": "saas.accounts.v1.ListSharesResponse",
+      "client_streaming": false,
+      "server_streaming": false,
+      "policy": {
+        "exposure": "EXPOSURE_AUTHENTICATED",
+        "tenant": "TENANT_REQUIREMENT_ORG_ADMIN",
+        "permissions": [],
+        "scopes": [],
+        "resource_bindings": [
+          {
+            "request_field": "org_id",
+            "target": "RESOURCE_TARGET_ORGANIZATION",
+            "lookup": "RESOURCE_LOOKUP_DIRECT_ID"
+          }
+        ],
+        "mfa": "MFA_REQUIREMENT_NONE",
+        "audit": {
+          "events": [],
+          "emission": "AUDIT_EMISSION_NONE"
+        },
+        "idempotency": "IDEMPOTENCY_REQUIREMENT_FORBIDDEN",
+        "rate_limit": "RATE_LIMIT_CLASS_STANDARD_READ",
+        "request_sensitivity": "SENSITIVITY_CONFIDENTIAL",
+        "response_sensitivity": "SENSITIVITY_CONFIDENTIAL",
+        "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
+        "authentication_factor_attempt": false,
+        "conditions": []
+      },
+      "policy_tier": "org_admin",
+      "owner": {
+        "module": "saas-starter",
+        "service": "accounts"
+      },
+      "source_proto": "saas/accounts/v1/authorization.proto",
+      "policy_sha256": "ef6a5e6e68c7115ca8783422cdc54febdd089c9b2660ac3774c7a4a4847e7270",
+      "rate_limit_backend_failure_mode": "RATE_LIMIT_BACKEND_FAILURE_MODE_FAIL_OPEN"
+    },
+    {
+      "procedure": "/saas.accounts.v1.PermissionService/RegisterScopeNode",
+      "full_service": "saas.accounts.v1.PermissionService",
+      "method": "RegisterScopeNode",
+      "input_type": "saas.accounts.v1.RegisterScopeNodeRequest",
+      "output_type": "saas.accounts.v1.RegisterScopeNodeResponse",
+      "client_streaming": false,
+      "server_streaming": false,
+      "policy": {
+        "exposure": "EXPOSURE_AUTHENTICATED",
+        "tenant": "TENANT_REQUIREMENT_ORG_ADMIN",
+        "permissions": [],
+        "scopes": [],
+        "resource_bindings": [
+          {
+            "request_field": "org_id",
+            "target": "RESOURCE_TARGET_ORGANIZATION",
+            "lookup": "RESOURCE_LOOKUP_DIRECT_ID"
+          }
+        ],
+        "mfa": "MFA_REQUIREMENT_NONE",
+        "audit": {
+          "events": [
+            "scope.node_registered"
+          ],
+          "emission": "AUDIT_EMISSION_SUCCESS"
+        },
+        "idempotency": "IDEMPOTENCY_REQUIREMENT_FORBIDDEN",
+        "rate_limit": "RATE_LIMIT_CLASS_STANDARD_WRITE",
+        "request_sensitivity": "SENSITIVITY_CONFIDENTIAL",
+        "response_sensitivity": "SENSITIVITY_CONFIDENTIAL",
+        "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
+        "authentication_factor_attempt": false,
+        "conditions": []
+      },
+      "policy_tier": "org_admin",
+      "owner": {
+        "module": "saas-starter",
+        "service": "accounts"
+      },
+      "source_proto": "saas/accounts/v1/authorization.proto",
+      "policy_sha256": "2c2c3b916702e9ff933b6d603e935569cb72b886337582cb7610d233ce1a1846",
       "rate_limit_backend_failure_mode": "RATE_LIMIT_BACKEND_FAILURE_MODE_FAIL_OPEN"
     },
     {
@@ -2797,7 +2990,8 @@
         "request_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "response_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
-        "authentication_factor_attempt": false
+        "authentication_factor_attempt": false,
+        "conditions": []
       },
       "policy_tier": "auth",
       "owner": {
@@ -2806,6 +3000,138 @@
       },
       "source_proto": "saas/accounts/v1/authorization.proto",
       "policy_sha256": "b7dce08eb946497cc748050fc0d5b13fd43395a10435cc04b5b0f446bfa442db",
+      "rate_limit_backend_failure_mode": "RATE_LIMIT_BACKEND_FAILURE_MODE_FAIL_OPEN"
+    },
+    {
+      "procedure": "/saas.accounts.v1.PermissionService/RevokeScope",
+      "full_service": "saas.accounts.v1.PermissionService",
+      "method": "RevokeScope",
+      "input_type": "saas.accounts.v1.RevokeScopeRequest",
+      "output_type": "google.protobuf.Empty",
+      "client_streaming": false,
+      "server_streaming": false,
+      "policy": {
+        "exposure": "EXPOSURE_AUTHENTICATED",
+        "tenant": "TENANT_REQUIREMENT_ORG_ADMIN",
+        "permissions": [],
+        "scopes": [],
+        "resource_bindings": [
+          {
+            "request_field": "org_id",
+            "target": "RESOURCE_TARGET_ORGANIZATION",
+            "lookup": "RESOURCE_LOOKUP_DIRECT_ID"
+          }
+        ],
+        "mfa": "MFA_REQUIREMENT_NONE",
+        "audit": {
+          "events": [
+            "scope.revoked"
+          ],
+          "emission": "AUDIT_EMISSION_SUCCESS"
+        },
+        "idempotency": "IDEMPOTENCY_REQUIREMENT_FORBIDDEN",
+        "rate_limit": "RATE_LIMIT_CLASS_STANDARD_WRITE",
+        "request_sensitivity": "SENSITIVITY_CONFIDENTIAL",
+        "response_sensitivity": "SENSITIVITY_CONFIDENTIAL",
+        "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
+        "authentication_factor_attempt": false,
+        "conditions": []
+      },
+      "policy_tier": "org_admin",
+      "owner": {
+        "module": "saas-starter",
+        "service": "accounts"
+      },
+      "source_proto": "saas/accounts/v1/authorization.proto",
+      "policy_sha256": "baf25c6ba9f34fe33ea60d2bff0f7c75da5fec39b41d103b2ddce5fd205bc37d",
+      "rate_limit_backend_failure_mode": "RATE_LIMIT_BACKEND_FAILURE_MODE_FAIL_OPEN"
+    },
+    {
+      "procedure": "/saas.accounts.v1.PermissionService/RevokeShare",
+      "full_service": "saas.accounts.v1.PermissionService",
+      "method": "RevokeShare",
+      "input_type": "saas.accounts.v1.RevokeShareRequest",
+      "output_type": "google.protobuf.Empty",
+      "client_streaming": false,
+      "server_streaming": false,
+      "policy": {
+        "exposure": "EXPOSURE_AUTHENTICATED",
+        "tenant": "TENANT_REQUIREMENT_ORG_ADMIN",
+        "permissions": [],
+        "scopes": [],
+        "resource_bindings": [
+          {
+            "request_field": "org_id",
+            "target": "RESOURCE_TARGET_ORGANIZATION",
+            "lookup": "RESOURCE_LOOKUP_DIRECT_ID"
+          }
+        ],
+        "mfa": "MFA_REQUIREMENT_NONE",
+        "audit": {
+          "events": [
+            "record.share_revoked"
+          ],
+          "emission": "AUDIT_EMISSION_SUCCESS"
+        },
+        "idempotency": "IDEMPOTENCY_REQUIREMENT_FORBIDDEN",
+        "rate_limit": "RATE_LIMIT_CLASS_STANDARD_WRITE",
+        "request_sensitivity": "SENSITIVITY_CONFIDENTIAL",
+        "response_sensitivity": "SENSITIVITY_CONFIDENTIAL",
+        "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
+        "authentication_factor_attempt": false,
+        "conditions": []
+      },
+      "policy_tier": "org_admin",
+      "owner": {
+        "module": "saas-starter",
+        "service": "accounts"
+      },
+      "source_proto": "saas/accounts/v1/authorization.proto",
+      "policy_sha256": "63f5e3cb011eeb6aa78663d126d9e63a14f19ce5a7aa7f8ae925ca028932133e",
+      "rate_limit_backend_failure_mode": "RATE_LIMIT_BACKEND_FAILURE_MODE_FAIL_OPEN"
+    },
+    {
+      "procedure": "/saas.accounts.v1.PermissionService/ShareRecord",
+      "full_service": "saas.accounts.v1.PermissionService",
+      "method": "ShareRecord",
+      "input_type": "saas.accounts.v1.ShareRecordRequest",
+      "output_type": "saas.accounts.v1.ShareRecordResponse",
+      "client_streaming": false,
+      "server_streaming": false,
+      "policy": {
+        "exposure": "EXPOSURE_AUTHENTICATED",
+        "tenant": "TENANT_REQUIREMENT_ORG_ADMIN",
+        "permissions": [],
+        "scopes": [],
+        "resource_bindings": [
+          {
+            "request_field": "org_id",
+            "target": "RESOURCE_TARGET_ORGANIZATION",
+            "lookup": "RESOURCE_LOOKUP_DIRECT_ID"
+          }
+        ],
+        "mfa": "MFA_REQUIREMENT_NONE",
+        "audit": {
+          "events": [
+            "record.shared"
+          ],
+          "emission": "AUDIT_EMISSION_SUCCESS"
+        },
+        "idempotency": "IDEMPOTENCY_REQUIREMENT_FORBIDDEN",
+        "rate_limit": "RATE_LIMIT_CLASS_STANDARD_WRITE",
+        "request_sensitivity": "SENSITIVITY_CONFIDENTIAL",
+        "response_sensitivity": "SENSITIVITY_CONFIDENTIAL",
+        "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
+        "authentication_factor_attempt": false,
+        "conditions": []
+      },
+      "policy_tier": "org_admin",
+      "owner": {
+        "module": "saas-starter",
+        "service": "accounts"
+      },
+      "source_proto": "saas/accounts/v1/authorization.proto",
+      "policy_sha256": "1d0f1077f514347f089bc900006fe6b22ac01ea37de95b1342d11555d5f14350",
       "rate_limit_backend_failure_mode": "RATE_LIMIT_BACKEND_FAILURE_MODE_FAIL_OPEN"
     },
     {
@@ -2832,7 +3158,8 @@
         "request_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "response_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_SUPER_ADMIN",
-        "authentication_factor_attempt": false
+        "authentication_factor_attempt": false,
+        "conditions": []
       },
       "policy_tier": "platform_admin",
       "owner": {
@@ -2867,7 +3194,8 @@
         "request_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "response_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_SUPER_ADMIN",
-        "authentication_factor_attempt": false
+        "authentication_factor_attempt": false,
+        "conditions": []
       },
       "policy_tier": "platform_admin",
       "owner": {
@@ -2908,7 +3236,8 @@
         "request_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "response_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
-        "authentication_factor_attempt": false
+        "authentication_factor_attempt": false,
+        "conditions": []
       },
       "policy_tier": "org_member",
       "owner": {
@@ -2945,7 +3274,8 @@
         "request_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "response_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_SUPER_ADMIN",
-        "authentication_factor_attempt": false
+        "authentication_factor_attempt": false,
+        "conditions": []
       },
       "policy_tier": "platform_admin",
       "owner": {
@@ -2982,7 +3312,8 @@
         "request_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "response_sensitivity": "SENSITIVITY_SECRET",
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_SUPPORT",
-        "authentication_factor_attempt": false
+        "authentication_factor_attempt": false,
+        "conditions": []
       },
       "policy_tier": "platform_admin",
       "owner": {
@@ -3017,7 +3348,8 @@
         "request_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "response_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_SUPPORT",
-        "authentication_factor_attempt": false
+        "authentication_factor_attempt": false,
+        "conditions": []
       },
       "policy_tier": "platform_admin",
       "owner": {
@@ -3052,7 +3384,8 @@
         "request_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "response_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_SUPER_ADMIN",
-        "authentication_factor_attempt": false
+        "authentication_factor_attempt": false,
+        "conditions": []
       },
       "policy_tier": "platform_admin",
       "owner": {
@@ -3087,7 +3420,8 @@
         "request_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "response_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_SUPER_ADMIN",
-        "authentication_factor_attempt": false
+        "authentication_factor_attempt": false,
+        "conditions": []
       },
       "policy_tier": "platform_admin",
       "owner": {
@@ -3122,7 +3456,8 @@
         "request_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "response_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_SUPER_ADMIN",
-        "authentication_factor_attempt": false
+        "authentication_factor_attempt": false,
+        "conditions": []
       },
       "policy_tier": "platform_admin",
       "owner": {
@@ -3159,7 +3494,8 @@
         "request_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "response_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_ANY",
-        "authentication_factor_attempt": false
+        "authentication_factor_attempt": false,
+        "conditions": []
       },
       "policy_tier": "platform_admin",
       "owner": {
@@ -3196,7 +3532,8 @@
         "request_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "response_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_SUPER_ADMIN",
-        "authentication_factor_attempt": false
+        "authentication_factor_attempt": false,
+        "conditions": []
       },
       "policy_tier": "platform_admin",
       "owner": {
@@ -3233,7 +3570,8 @@
         "request_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "response_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_SUPER_ADMIN",
-        "authentication_factor_attempt": false
+        "authentication_factor_attempt": false,
+        "conditions": []
       },
       "policy_tier": "platform_admin",
       "owner": {
@@ -3270,7 +3608,8 @@
         "request_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "response_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_SUPPORT",
-        "authentication_factor_attempt": false
+        "authentication_factor_attempt": false,
+        "conditions": []
       },
       "policy_tier": "platform_admin",
       "owner": {
@@ -3305,7 +3644,8 @@
         "request_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "response_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_SUPPORT",
-        "authentication_factor_attempt": false
+        "authentication_factor_attempt": false,
+        "conditions": []
       },
       "policy_tier": "platform_admin",
       "owner": {
@@ -3342,7 +3682,8 @@
         "request_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "response_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_SUPER_ADMIN",
-        "authentication_factor_attempt": false
+        "authentication_factor_attempt": false,
+        "conditions": []
       },
       "policy_tier": "platform_admin",
       "owner": {
@@ -3379,7 +3720,8 @@
         "request_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "response_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_SUPER_ADMIN",
-        "authentication_factor_attempt": false
+        "authentication_factor_attempt": false,
+        "conditions": []
       },
       "policy_tier": "platform_admin",
       "owner": {
@@ -3416,7 +3758,8 @@
         "request_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "response_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_SUPER_ADMIN",
-        "authentication_factor_attempt": false
+        "authentication_factor_attempt": false,
+        "conditions": []
       },
       "policy_tier": "platform_admin",
       "owner": {
@@ -3459,7 +3802,8 @@
         "request_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "response_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
-        "authentication_factor_attempt": false
+        "authentication_factor_attempt": false,
+        "conditions": []
       },
       "policy_tier": "org_admin",
       "owner": {
@@ -3494,7 +3838,8 @@
         "request_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "response_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
-        "authentication_factor_attempt": false
+        "authentication_factor_attempt": false,
+        "conditions": []
       },
       "policy_tier": "internal",
       "owner": {
@@ -3529,7 +3874,8 @@
         "request_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "response_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
-        "authentication_factor_attempt": false
+        "authentication_factor_attempt": false,
+        "conditions": []
       },
       "policy_tier": "internal",
       "owner": {
@@ -3570,7 +3916,8 @@
         "request_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "response_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
-        "authentication_factor_attempt": false
+        "authentication_factor_attempt": false,
+        "conditions": []
       },
       "policy_tier": "org_member",
       "owner": {
@@ -3613,7 +3960,8 @@
         "request_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "response_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
-        "authentication_factor_attempt": false
+        "authentication_factor_attempt": false,
+        "conditions": []
       },
       "policy_tier": "auth",
       "owner": {
@@ -3656,7 +4004,8 @@
         "request_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "response_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
-        "authentication_factor_attempt": false
+        "authentication_factor_attempt": false,
+        "conditions": []
       },
       "policy_tier": "org_admin",
       "owner": {
@@ -3697,7 +4046,8 @@
         "request_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "response_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
-        "authentication_factor_attempt": false
+        "authentication_factor_attempt": false,
+        "conditions": []
       },
       "policy_tier": "org_admin",
       "owner": {
@@ -3740,7 +4090,8 @@
         "request_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "response_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
-        "authentication_factor_attempt": false
+        "authentication_factor_attempt": false,
+        "conditions": []
       },
       "policy_tier": "org_admin",
       "owner": {
@@ -3783,7 +4134,8 @@
         "request_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "response_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
-        "authentication_factor_attempt": false
+        "authentication_factor_attempt": false,
+        "conditions": []
       },
       "policy_tier": "org_admin",
       "owner": {
@@ -3826,7 +4178,8 @@
         "request_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "response_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
-        "authentication_factor_attempt": false
+        "authentication_factor_attempt": false,
+        "conditions": []
       },
       "policy_tier": "org_admin",
       "owner": {
@@ -3869,7 +4222,8 @@
         "request_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "response_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
-        "authentication_factor_attempt": false
+        "authentication_factor_attempt": false,
+        "conditions": []
       },
       "policy_tier": "org_admin",
       "owner": {
@@ -3910,7 +4264,8 @@
         "request_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "response_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
-        "authentication_factor_attempt": false
+        "authentication_factor_attempt": false,
+        "conditions": []
       },
       "policy_tier": "org_member",
       "owner": {
@@ -3951,7 +4306,8 @@
         "request_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "response_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
-        "authentication_factor_attempt": false
+        "authentication_factor_attempt": false,
+        "conditions": []
       },
       "policy_tier": "org_member",
       "owner": {
@@ -3994,7 +4350,8 @@
         "request_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "response_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
-        "authentication_factor_attempt": false
+        "authentication_factor_attempt": false,
+        "conditions": []
       },
       "policy_tier": "org_admin",
       "owner": {
@@ -4037,7 +4394,8 @@
         "request_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "response_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
-        "authentication_factor_attempt": false
+        "authentication_factor_attempt": false,
+        "conditions": []
       },
       "policy_tier": "org_admin",
       "owner": {
@@ -4072,7 +4430,8 @@
         "request_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "response_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
-        "authentication_factor_attempt": false
+        "authentication_factor_attempt": false,
+        "conditions": []
       },
       "policy_tier": "internal",
       "owner": {
@@ -4117,7 +4476,8 @@
         "request_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "response_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
-        "authentication_factor_attempt": false
+        "authentication_factor_attempt": false,
+        "conditions": []
       },
       "policy_tier": "org_member",
       "owner": {
@@ -4162,7 +4522,8 @@
         "request_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "response_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
-        "authentication_factor_attempt": false
+        "authentication_factor_attempt": false,
+        "conditions": []
       },
       "policy_tier": "org_member",
       "owner": {
@@ -4207,7 +4568,8 @@
         "request_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "response_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
-        "authentication_factor_attempt": false
+        "authentication_factor_attempt": false,
+        "conditions": []
       },
       "policy_tier": "org_member",
       "owner": {
@@ -4244,7 +4606,8 @@
         "request_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "response_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
-        "authentication_factor_attempt": false
+        "authentication_factor_attempt": false,
+        "conditions": []
       },
       "policy_tier": "auth",
       "owner": {
@@ -4285,7 +4648,8 @@
         "request_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "response_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
-        "authentication_factor_attempt": false
+        "authentication_factor_attempt": false,
+        "conditions": []
       },
       "policy_tier": "auth",
       "owner": {
@@ -4320,7 +4684,8 @@
         "request_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "response_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_ANY",
-        "authentication_factor_attempt": false
+        "authentication_factor_attempt": false,
+        "conditions": []
       },
       "policy_tier": "platform_admin",
       "owner": {
@@ -4355,7 +4720,8 @@
         "request_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "response_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
-        "authentication_factor_attempt": false
+        "authentication_factor_attempt": false,
+        "conditions": []
       },
       "policy_tier": "auth",
       "owner": {
@@ -4390,7 +4756,8 @@
         "request_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "response_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
-        "authentication_factor_attempt": false
+        "authentication_factor_attempt": false,
+        "conditions": []
       },
       "policy_tier": "auth",
       "owner": {
@@ -4425,7 +4792,8 @@
         "request_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "response_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
-        "authentication_factor_attempt": false
+        "authentication_factor_attempt": false,
+        "conditions": []
       },
       "policy_tier": "auth",
       "owner": {
@@ -4464,7 +4832,8 @@
         "request_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "response_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_ANY",
-        "authentication_factor_attempt": false
+        "authentication_factor_attempt": false,
+        "conditions": []
       },
       "policy_tier": "platform_admin",
       "owner": {
@@ -4501,7 +4870,8 @@
         "request_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "response_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
-        "authentication_factor_attempt": false
+        "authentication_factor_attempt": false,
+        "conditions": []
       },
       "policy_tier": "public",
       "owner": {
@@ -4542,7 +4912,8 @@
         "request_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "response_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
-        "authentication_factor_attempt": false
+        "authentication_factor_attempt": false,
+        "conditions": []
       },
       "policy_tier": "auth",
       "owner": {
@@ -4577,7 +4948,8 @@
         "request_sensitivity": "SENSITIVITY_PUBLIC",
         "response_sensitivity": "SENSITIVITY_PUBLIC",
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
-        "authentication_factor_attempt": false
+        "authentication_factor_attempt": false,
+        "conditions": []
       },
       "policy_tier": "public",
       "owner": {
@@ -4612,7 +4984,8 @@
         "request_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "response_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
-        "authentication_factor_attempt": false
+        "authentication_factor_attempt": false,
+        "conditions": []
       },
       "policy_tier": "auth",
       "owner": {
@@ -4649,7 +5022,8 @@
         "request_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "response_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
-        "authentication_factor_attempt": false
+        "authentication_factor_attempt": false,
+        "conditions": []
       },
       "policy_tier": "auth",
       "owner": {
@@ -4684,7 +5058,8 @@
         "request_sensitivity": "SENSITIVITY_PUBLIC",
         "response_sensitivity": "SENSITIVITY_PUBLIC",
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
-        "authentication_factor_attempt": false
+        "authentication_factor_attempt": false,
+        "conditions": []
       },
       "policy_tier": "public",
       "owner": {
@@ -4721,7 +5096,8 @@
         "request_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "response_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_ANY",
-        "authentication_factor_attempt": false
+        "authentication_factor_attempt": false,
+        "conditions": []
       },
       "policy_tier": "platform_admin",
       "owner": {
@@ -4756,7 +5132,8 @@
         "request_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "response_sensitivity": "SENSITIVITY_PUBLIC",
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
-        "authentication_factor_attempt": false
+        "authentication_factor_attempt": false,
+        "conditions": []
       },
       "policy_tier": "public",
       "owner": {
@@ -4791,7 +5168,8 @@
         "request_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "response_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_ANY",
-        "authentication_factor_attempt": false
+        "authentication_factor_attempt": false,
+        "conditions": []
       },
       "policy_tier": "platform_admin",
       "owner": {
@@ -4828,7 +5206,8 @@
         "request_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "response_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_ANY",
-        "authentication_factor_attempt": false
+        "authentication_factor_attempt": false,
+        "conditions": []
       },
       "policy_tier": "platform_admin",
       "owner": {
@@ -4863,7 +5242,8 @@
         "request_sensitivity": "SENSITIVITY_SECRET",
         "response_sensitivity": "SENSITIVITY_PUBLIC",
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
-        "authentication_factor_attempt": false
+        "authentication_factor_attempt": false,
+        "conditions": []
       },
       "policy_tier": "public",
       "owner": {
@@ -4910,7 +5290,8 @@
         "request_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "response_sensitivity": "SENSITIVITY_SECRET",
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
-        "authentication_factor_attempt": false
+        "authentication_factor_attempt": false,
+        "conditions": []
       },
       "policy_tier": "org_admin",
       "owner": {
@@ -4957,7 +5338,8 @@
         "request_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "response_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
-        "authentication_factor_attempt": false
+        "authentication_factor_attempt": false,
+        "conditions": []
       },
       "policy_tier": "org_admin",
       "owner": {
@@ -5002,7 +5384,8 @@
         "request_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "response_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
-        "authentication_factor_attempt": false
+        "authentication_factor_attempt": false,
+        "conditions": []
       },
       "policy_tier": "org_member",
       "owner": {
@@ -5047,7 +5430,8 @@
         "request_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "response_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
-        "authentication_factor_attempt": false
+        "authentication_factor_attempt": false,
+        "conditions": []
       },
       "policy_tier": "org_member",
       "owner": {
@@ -5092,7 +5476,8 @@
         "request_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "response_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
-        "authentication_factor_attempt": false
+        "authentication_factor_attempt": false,
+        "conditions": []
       },
       "policy_tier": "org_member",
       "owner": {
@@ -5139,7 +5524,8 @@
         "request_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "response_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
-        "authentication_factor_attempt": false
+        "authentication_factor_attempt": false,
+        "conditions": []
       },
       "policy_tier": "org_admin",
       "owner": {
@@ -5186,7 +5572,8 @@
         "request_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "response_sensitivity": "SENSITIVITY_SECRET",
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
-        "authentication_factor_attempt": false
+        "authentication_factor_attempt": false,
+        "conditions": []
       },
       "policy_tier": "mfa",
       "owner": {
@@ -5231,7 +5618,8 @@
         "request_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "response_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
-        "authentication_factor_attempt": false
+        "authentication_factor_attempt": false,
+        "conditions": []
       },
       "policy_tier": "org_admin",
       "owner": {
@@ -5240,6 +5628,78 @@
       },
       "source_proto": "saas/accounts/v1/webhooks.proto",
       "policy_sha256": "19d51fded6d0d21c195a1527d70784808afabf8a04b4f234431586184d94b8cd",
+      "rate_limit_backend_failure_mode": "RATE_LIMIT_BACKEND_FAILURE_MODE_FAIL_OPEN"
+    },
+    {
+      "procedure": "/saas.accounts.v1.WorkContextService/AuthorizeEvidenceRead",
+      "full_service": "saas.accounts.v1.WorkContextService",
+      "method": "AuthorizeEvidenceRead",
+      "input_type": "saas.accounts.v1.AuthorizeEvidenceReadRequest",
+      "output_type": "google.protobuf.Empty",
+      "client_streaming": false,
+      "server_streaming": false,
+      "policy": {
+        "exposure": "EXPOSURE_INTERNAL",
+        "tenant": "TENANT_REQUIREMENT_NONE",
+        "permissions": [],
+        "scopes": [],
+        "resource_bindings": [],
+        "mfa": "MFA_REQUIREMENT_NONE",
+        "audit": {
+          "events": [],
+          "emission": "AUDIT_EMISSION_NONE"
+        },
+        "idempotency": "IDEMPOTENCY_REQUIREMENT_FORBIDDEN",
+        "rate_limit": "RATE_LIMIT_CLASS_INTERNAL",
+        "request_sensitivity": "SENSITIVITY_CONFIDENTIAL",
+        "response_sensitivity": "SENSITIVITY_CONFIDENTIAL",
+        "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
+        "authentication_factor_attempt": false,
+        "conditions": []
+      },
+      "policy_tier": "internal",
+      "owner": {
+        "module": "saas-starter",
+        "service": "accounts"
+      },
+      "source_proto": "saas/accounts/v1/work_contexts.proto",
+      "policy_sha256": "45df71bfa7f313b565b0e8c314557847bab913990d43ba59b97d755412b4a4fd",
+      "rate_limit_backend_failure_mode": "RATE_LIMIT_BACKEND_FAILURE_MODE_FAIL_OPEN"
+    },
+    {
+      "procedure": "/saas.accounts.v1.WorkContextService/CheckAuthorizationRevision",
+      "full_service": "saas.accounts.v1.WorkContextService",
+      "method": "CheckAuthorizationRevision",
+      "input_type": "saas.accounts.v1.CheckAuthorizationRevisionRequest",
+      "output_type": "google.protobuf.Empty",
+      "client_streaming": false,
+      "server_streaming": false,
+      "policy": {
+        "exposure": "EXPOSURE_INTERNAL",
+        "tenant": "TENANT_REQUIREMENT_NONE",
+        "permissions": [],
+        "scopes": [],
+        "resource_bindings": [],
+        "mfa": "MFA_REQUIREMENT_NONE",
+        "audit": {
+          "events": [],
+          "emission": "AUDIT_EMISSION_NONE"
+        },
+        "idempotency": "IDEMPOTENCY_REQUIREMENT_FORBIDDEN",
+        "rate_limit": "RATE_LIMIT_CLASS_INTERNAL",
+        "request_sensitivity": "SENSITIVITY_CONFIDENTIAL",
+        "response_sensitivity": "SENSITIVITY_CONFIDENTIAL",
+        "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
+        "authentication_factor_attempt": false,
+        "conditions": []
+      },
+      "policy_tier": "internal",
+      "owner": {
+        "module": "saas-starter",
+        "service": "accounts"
+      },
+      "source_proto": "saas/accounts/v1/work_contexts.proto",
+      "policy_sha256": "45df71bfa7f313b565b0e8c314557847bab913990d43ba59b97d755412b4a4fd",
       "rate_limit_backend_failure_mode": "RATE_LIMIT_BACKEND_FAILURE_MODE_FAIL_OPEN"
     },
     {
@@ -5274,7 +5734,8 @@
         "request_sensitivity": "SENSITIVITY_SECRET",
         "response_sensitivity": "SENSITIVITY_SECRET",
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
-        "authentication_factor_attempt": false
+        "authentication_factor_attempt": false,
+        "conditions": []
       },
       "policy_tier": "org_member",
       "owner": {
@@ -5317,7 +5778,8 @@
         "request_sensitivity": "SENSITIVITY_SECRET",
         "response_sensitivity": "SENSITIVITY_SECRET",
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
-        "authentication_factor_attempt": false
+        "authentication_factor_attempt": false,
+        "conditions": []
       },
       "policy_tier": "org_member",
       "owner": {
@@ -5360,7 +5822,8 @@
         "request_sensitivity": "SENSITIVITY_SECRET",
         "response_sensitivity": "SENSITIVITY_SECRET",
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
-        "authentication_factor_attempt": false
+        "authentication_factor_attempt": false,
+        "conditions": []
       },
       "policy_tier": "org_member",
       "owner": {
@@ -5403,7 +5866,8 @@
         "request_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "response_sensitivity": "SENSITIVITY_SECRET",
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
-        "authentication_factor_attempt": false
+        "authentication_factor_attempt": false,
+        "conditions": []
       },
       "policy_tier": "org_member",
       "owner": {

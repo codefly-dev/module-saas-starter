@@ -90,15 +90,28 @@ export async function loadPublicPlans(): Promise<CatalogState> {
   }
 }
 
-export function formatPlanAmount(plan: PublicPlan, locale: string): string {
-  if (plan.contactSales || plan.interval === "contact" || plan.amountMinor === null) {
-    return "Contact sales";
+export function formatPlanPrice(
+  plan: PublicPlan,
+  locale: string,
+): {
+  label: string;
+  interval: Exclude<PublicPlan["interval"], "contact"> | null;
+} {
+  if (
+    plan.contactSales ||
+    plan.interval === "contact" ||
+    (!plan.checkoutEnabled && plan.amountMinor > 0)
+  ) {
+    return { label: "Contact sales", interval: null };
   }
-  if (plan.amountMinor === 0) return "Free";
+  if (plan.amountMinor === 0) return { label: "Free", interval: null };
   const formatter = new Intl.NumberFormat(locale, {
     style: "currency",
     currency: plan.currency,
   });
   const minorUnitDigits = formatter.resolvedOptions().maximumFractionDigits!;
-  return formatter.format(plan.amountMinor / 10 ** minorUnitDigits);
+  return {
+    label: formatter.format(plan.amountMinor / 10 ** minorUnitDigits),
+    interval: plan.interval,
+  };
 }

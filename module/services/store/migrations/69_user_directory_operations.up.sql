@@ -29,8 +29,16 @@ $function$;
 -- app_control_plane is a NOLOGIN, BYPASSRLS role with SELECT on both source
 -- relations. Owning this SECURITY DEFINER function gives app_tenant exactly
 -- EXECUTE on the checked operation without widening either table policy.
+--
+-- Transferring ownership requires the incoming owner to hold CREATE on the
+-- schema. A superuser migrator (local dev) skips that check; a server-admin
+-- migrator (Azure Flexible Server) does not. app_control_plane is
+-- deliberately denied schema CREATE (migration 67), so grant it only for the
+-- span of the transfer — the whole migration runs in one transaction.
+GRANT CREATE ON SCHEMA public TO app_control_plane;
 ALTER FUNCTION public.organization_member_primary_email(UUID)
     OWNER TO app_control_plane;
+REVOKE CREATE ON SCHEMA public FROM app_control_plane;
 REVOKE ALL ON FUNCTION public.organization_member_primary_email(UUID) FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION public.organization_member_primary_email(UUID) TO app_tenant;
 

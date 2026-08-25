@@ -32,16 +32,18 @@ func TestDeploymentTopologyIsDeterministicAndCurrent(t *testing.T) {
 	require.Equal(t, first.ModuleManifest, second.ModuleManifest)
 	require.Equal(t, first.ServiceManifests, second.ServiceManifests)
 	require.Equal(t, first.NetworkPolicy, second.NetworkPolicy)
+	require.Equal(t, first.MeshPolicy, second.MeshPolicy)
 
 	require.Equal(t, string(readFixture(t, "../../../../../deployment/generated/service-topology.json")), string(first.CatalogJSON), "run: go generate ./pkg/cataloggen")
 	require.Equal(t, string(readFixture(t, "../../../../../module.codefly.yaml")), string(first.ModuleManifest), "run: go generate ./pkg/cataloggen")
 	require.Equal(t, string(readFixture(t, "testdata/network-policy.golden.yaml")), string(first.NetworkPolicy), "run: go generate ./pkg/cataloggen")
+	require.Equal(t, string(readFixture(t, "testdata/mesh-policy.golden.yaml")), string(first.MeshPolicy), "run: go generate ./pkg/cataloggen")
 	for service, document := range first.ServiceManifests {
 		checkedIn := readFixture(t, filepath.Join("../../../../../services", service, "service.codefly.yaml"))
 		require.Equal(t, string(checkedIn), string(document), "service %s: run go generate ./pkg/cataloggen", service)
 	}
 
-	require.Len(t, first.Catalog.GetServices(), 9)
+	require.Len(t, first.Catalog.GetServices(), 8)
 	require.Len(t, first.Catalog.GetInterfaceEndpoints(), 3)
 	require.Len(t, first.Catalog.GetPublicEgress(), 4)
 	endpointCount, dependencyCount := 0, 0
@@ -49,13 +51,46 @@ func TestDeploymentTopologyIsDeterministicAndCurrent(t *testing.T) {
 		endpointCount += len(service.GetEndpoints())
 		dependencyCount += len(service.GetDependencies())
 	}
-	require.Equal(t, 13, endpointCount)
+	require.Equal(t, 12, endpointCount)
 	require.Equal(t, 8, dependencyCount)
+	privateREST := map[string]bool{"accounts": false, "auth-sidecar": false}
+	authSidecarTelemetry := false
+	for _, service := range first.Catalog.GetServices() {
+		if _, ok := privateREST[service.GetName()]; !ok {
+			continue
+		}
+		for _, endpoint := range service.GetEndpoints() {
+			if endpoint.GetName() == "rest" {
+				require.Equal(t, catalogv1.EndpointVisibility_ENDPOINT_VISIBILITY_PRIVATE, endpoint.GetVisibility())
+				privateREST[service.GetName()] = true
+			}
+		}
+		if service.GetName() == "auth-sidecar" {
+			for _, dependency := range service.GetDependencies() {
+				if dependency.GetService() == "telemetry" {
+					require.Equal(t, []string{"grpc"}, dependency.GetEndpoints())
+					authSidecarTelemetry = true
+				}
+			}
+		}
+	}
+	require.Equal(t, map[string]bool{"accounts": true, "auth-sidecar": true}, privateREST)
+	require.True(t, authSidecarTelemetry)
+	for _, endpoint := range first.Catalog.GetInterfaceEndpoints() {
+		require.False(t,
+			endpoint.GetService() == "accounts" ||
+				(endpoint.GetService() == "auth-sidecar" && endpoint.GetEndpoint() == "rest"),
+		)
+	}
+	require.Contains(t, string(first.ServiceManifests["accounts"]), "- observability")
+	authSidecarManifest := string(first.ServiceManifests["auth-sidecar"])
+	require.Contains(t, authSidecarManifest, "- observability")
+	require.Contains(t, authSidecarManifest, "- name: telemetry")
 	frontendManifest := string(first.ServiceManifests["frontend"])
 	require.Contains(t, frontendManifest, "execution-profiles:")
 	require.Contains(t, frontendManifest, "local: development")
 	require.Contains(t, frontendManifest, "production: production")
-	require.Equal(t, 21, strings.Count(string(first.NetworkPolicy), "\nkind: NetworkPolicy\n"))
+	require.Equal(t, 20, strings.Count(string(first.NetworkPolicy), "\nkind: NetworkPolicy\n"))
 	require.NotContains(t, string(first.NetworkPolicy), "allow-intra-namespace")
 	require.Contains(t, string(first.NetworkPolicy), "name: allow-accounts-from-dependents")
 	require.Contains(t, string(first.NetworkPolicy), "name: allow-auth-sidecar-from-dependents")
@@ -73,6 +108,33 @@ func TestDeploymentTopologyIsDeterministicAndCurrent(t *testing.T) {
 	require.NotContains(t, string(first.NetworkPolicy), "name: allow-istio-ingress-to-auth-sidecar")
 	require.Contains(t, string(first.NetworkPolicy), "192.175.48.0/24")
 	require.Contains(t, string(first.NetworkPolicy), "64:ff9b::/96")
+
+	// Mesh policy: STRICT mTLS baseline plus a positive ALLOW AuthorizationPolicy
+	// that gates the internal authority method paths to the target's declared
+	// callers by their per-service ServiceAccount — deny-by-default for everyone
+	// else. accounts' only caller is auth-sidecar, so only sa/auth-sidecar is
+	// allowed; the shared sa/default and the ingress gateway SA are not.
+	mesh := string(first.MeshPolicy)
+	require.Contains(t, mesh, "kind: PeerAuthentication")
+	require.Contains(t, mesh, "mode: STRICT")
+	require.Contains(t, mesh, "name: allow-accounts-internal-authority")
+	require.Contains(t, mesh, "action: ALLOW")
+	require.Contains(t, mesh, "gatewayClassName: istio-waypoint")
+	require.Contains(t, mesh, "cluster.local/ns/saas-starter/sa/auth-sidecar")
+	require.NotContains(t, mesh, "cluster.local/ns/saas-starter/sa/default")
+	require.NotContains(t, mesh, "istio-ingressgateway-service-account")
+	for _, procedure := range []string{
+		"/saas.accounts.v1.PermissionService/CheckPermission",
+		"/saas.accounts.v1.PermissionService/CheckAccess",
+		"/saas.accounts.v1.PermissionService/Decide",
+		"/saas.accounts.v1.IdentityService/ResolveIdentity",
+		"/saas.accounts.v1.APIKeyService/ValidateAPIKey",
+		"/saas.accounts.v1.PrincipalService/GetPrincipal",
+		"/saas.accounts.v1.PrincipalService/GetAgentPrincipal",
+		"/saas.accounts.v1.UsageService/ConsumeUsage",
+	} {
+		require.Contains(t, mesh, procedure)
+	}
 }
 
 func TestApplicationBindingsAddOnlyNamedPostgresMigrationSources(t *testing.T) {
@@ -259,7 +321,7 @@ func TestGeneratedCodeflyAndNetworkManifestsParseStrictly(t *testing.T) {
 	require.NoError(t, loadedModule.ValidateInterface(ctx))
 	loadedServices, err := loadedModule.LoadServices(ctx)
 	require.NoError(t, err)
-	require.Len(t, loadedServices, 9)
+	require.Len(t, loadedServices, 8)
 
 	moduleDocument := readFixture(t, "../../../../../module.codefly.yaml")
 	var moduleEntry struct {
@@ -271,7 +333,7 @@ func TestGeneratedCodeflyAndNetworkManifestsParseStrictly(t *testing.T) {
 	require.NoError(t, yaml.Unmarshal(moduleDocument, &module))
 	_, err = module.Proto(ctx)
 	require.NoError(t, err)
-	require.Len(t, module.ServiceReferences, 9)
+	require.Len(t, module.ServiceReferences, 8)
 
 	for _, reference := range module.ServiceReferences {
 		document := readFixture(t, filepath.Join("../../../../../services", reference.Name, "service.codefly.yaml"))
@@ -313,7 +375,7 @@ func TestGeneratedCodeflyAndNetworkManifestsParseStrictly(t *testing.T) {
 		require.False(t, names[document.Metadata.Name], "duplicate NetworkPolicy %s", document.Metadata.Name)
 		names[document.Metadata.Name] = true
 	}
-	require.Len(t, names, 21)
+	require.Len(t, names, 20)
 	require.True(t, names["allow-istio-ingress-to-marketing"])
 	require.True(t, names["allow-istio-ingress-to-frontend"])
 	require.False(t, names["allow-istio-ingress-to-auth-sidecar"])
@@ -321,6 +383,72 @@ func TestGeneratedCodeflyAndNetworkManifestsParseStrictly(t *testing.T) {
 	require.True(t, names["allow-store-bootstrap-to-store"])
 	require.True(t, names["allow-telemetry-from-dependents"])
 	require.True(t, names["allow-telemetry-public-egress"])
+}
+
+func TestGeneratedMeshPolicyGatesInternalAuthorityByCallerIdentity(t *testing.T) {
+	const ingressGatewaySA = "cluster.local/ns/istio-system/sa/istio-ingressgateway-service-account"
+
+	decoder := yaml.NewDecoder(strings.NewReader(string(readFixture(t, "testdata/mesh-policy.golden.yaml"))))
+	strictMTLS := false
+	allowFound := false
+	waypointFound := false
+	for {
+		var document struct {
+			APIVersion string `yaml:"apiVersion"`
+			Kind       string `yaml:"kind"`
+			Metadata   struct {
+				Name      string            `yaml:"name"`
+				Namespace string            `yaml:"namespace"`
+				Labels    map[string]string `yaml:"labels"`
+			} `yaml:"metadata"`
+			Spec map[string]any `yaml:"spec"`
+		}
+		err := decoder.Decode(&document)
+		if err == io.EOF {
+			break
+		}
+		require.NoError(t, err)
+		require.Equal(t, "saas-starter", document.Metadata.Namespace)
+
+		switch document.Kind {
+		case "PeerAuthentication":
+			require.Equal(t, "security.istio.io/v1", document.APIVersion)
+			mtls, ok := document.Spec["mtls"].(map[string]any)
+			require.True(t, ok, "PeerAuthentication must configure mtls")
+			require.Equal(t, "STRICT", mtls["mode"])
+			strictMTLS = true
+		case "AuthorizationPolicy":
+			require.Equal(t, "security.istio.io/v1", document.APIVersion)
+			require.Equal(t, "allow-accounts-internal-authority", document.Metadata.Name)
+			require.Equal(t, "ALLOW", document.Spec["action"])
+			allowFound = true
+
+			rule := document.Spec["rules"].([]any)[0].(map[string]any)
+			source := rule["from"].([]any)[0].(map[string]any)["source"].(map[string]any)
+			principals := source["principals"].([]any)
+			// Positive allowlist: only accounts' declared caller (auth-sidecar),
+			// named by its per-service SA. The shared sa/default (any namespace
+			// pod) and the ingress gateway SA are NOT admitted — deny-by-default.
+			require.Equal(t, []any{"cluster.local/ns/saas-starter/sa/auth-sidecar"}, principals)
+			require.NotContains(t, principals, "cluster.local/ns/saas-starter/sa/default")
+			require.NotContains(t, principals, ingressGatewaySA)
+
+			paths := rule["to"].([]any)[0].(map[string]any)["operation"].(map[string]any)["paths"].([]any)
+			require.Contains(t, paths, "/saas.accounts.v1.APIKeyService/ValidateAPIKey")
+			require.Contains(t, paths, "/saas.accounts.v1.UsageService/ConsumeUsage")
+		case "Gateway":
+			// The waypoint that makes the L7 allow enforceable in the ambient mesh.
+			require.Equal(t, "gateway.networking.k8s.io/v1", document.APIVersion)
+			require.Equal(t, "istio-waypoint", document.Spec["gatewayClassName"])
+			require.Equal(t, "service", document.Metadata.Labels["istio.io/waypoint-for"])
+			waypointFound = true
+		default:
+			t.Fatalf("unexpected mesh policy kind %q", document.Kind)
+		}
+	}
+	require.True(t, strictMTLS, "namespace mTLS must be STRICT")
+	require.True(t, allowFound, "internal-authority AuthorizationPolicy must be present")
+	require.True(t, waypointFound, "L7 allow requires a waypoint to be enforced in the ambient mesh")
 }
 
 func TestDeploymentTopologyRejectsUnsafeOrIncompleteBindings(t *testing.T) {
@@ -364,32 +492,10 @@ func TestDeploymentTopologyGeneratesValidatedSecretServiceConfigurations(t *test
 
 	artifacts, err := cataloggen.BuildDeploymentArtifacts(serviceCatalog, []byte(bindings))
 	require.NoError(t, err)
-	objectStorage := string(artifacts.ServiceManifests["object-storage"])
-	require.Contains(t, objectStorage, `secret-service-configurations:
-    - name: s3
-      entries:
-        - key: minio_root_password
-        - key: minio_root_user`)
 	require.Contains(t, string(artifacts.ServiceManifests["vault"]), `secret-service-configurations:
     - name: vault
       entries:
         - key: vault_token`)
-
-	unsortedEntries := strings.Replace(bindings,
-		"          - key: minio_root_password\n          - key: minio_root_user",
-		"          - key: minio_root_user\n          - key: minio_root_password",
-		1,
-	)
-	_, err = cataloggen.BuildDeploymentArtifacts(serviceCatalog, []byte(unsortedEntries))
-	require.ErrorContains(t, err, "entries are invalid or unsorted")
-
-	duplicateGroups := strings.Replace(bindings,
-		"      - name: s3\n        entries:\n          - key: minio_root_password\n          - key: minio_root_user",
-		"      - name: s3\n        entries:\n          - key: minio_root_password\n          - key: minio_root_user\n      - name: s3\n        entries:\n          - key: minio_root_user",
-		1,
-	)
-	_, err = cataloggen.BuildDeploymentArtifacts(serviceCatalog, []byte(duplicateGroups))
-	require.ErrorContains(t, err, "secret service configurations are invalid or unsorted")
 
 	emptyEntries := strings.Replace(bindings,
 		"      - name: vault\n        entries:\n          - key: vault_token",

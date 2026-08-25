@@ -10,12 +10,14 @@ import (
 
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
+	"google.golang.org/protobuf/types/known/emptypb"
 	"google.golang.org/protobuf/types/known/timestamppb"
 
 	basev0 "github.com/codefly-dev/core/generated/go/codefly/base/v0"
 	codefly "github.com/codefly-dev/sdk-go"
 	"github.com/google/uuid"
 
+	accountsauth "accounts/pkg/auth"
 	"accounts/pkg/business"
 	gen "accounts/pkg/gen/saas/accounts/v1"
 )
@@ -28,7 +30,7 @@ type WorkContextAuthorityConfiguration struct {
 }
 
 // WorkContextAuthorityServer is the permissions-plugin-owned issuer. It never
-// owns Warden Task/Session rows: it binds current Accounts identity and RBAC
+// owns consumer Task/Session rows: it binds current Accounts identity and RBAC
 // facts into a short-lived Codefly capability.
 type WorkContextAuthorityServer struct {
 	gen.UnimplementedWorkContextServiceServer
@@ -37,6 +39,8 @@ type WorkContextAuthorityServer struct {
 	signer       *codefly.WorkContextSigner
 	verifier     *codefly.WorkContextVerifier
 	authority    business.WorkContextAuthorityStore
+	consumer     business.WorkContextConsumerAuthorityStore
+	journal      business.ActorChainJournal
 	configureErr error
 }
 
@@ -45,6 +49,8 @@ func (s *WorkContextAuthorityServer) Configure(config WorkContextAuthorityConfig
 	s.signer = nil
 	s.verifier = nil
 	s.authority = nil
+	s.consumer = nil
+	s.journal = nil
 	s.configureErr = nil
 
 	if s.issuer == "" || strings.TrimSpace(config.KeyID) == "" {
@@ -56,7 +62,7 @@ func (s *WorkContextAuthorityServer) Configure(config WorkContextAuthorityConfig
 		return
 	}
 	if config.Authority == nil {
-		s.configureErr = errors.New("Accounts store does not implement WorkContextAuthorityStore")
+		s.configureErr = errors.New("accounts store does not implement WorkContextAuthorityStore")
 		return
 	}
 	privateKey := append(ed25519.PrivateKey(nil), config.PrivateKey...)
@@ -84,6 +90,112 @@ func (s *WorkContextAuthorityServer) Configure(config WorkContextAuthorityConfig
 	s.signer = signer
 	s.verifier = verifier
 	s.authority = config.Authority
+	s.consumer, _ = config.Authority.(business.WorkContextConsumerAuthorityStore)
+	s.journal, _ = config.Authority.(business.ActorChainJournal)
+}
+
+func (s *WorkContextAuthorityServer) CheckAuthorizationRevision(
+	ctx context.Context,
+	req *gen.CheckAuthorizationRevisionRequest,
+) (*emptypb.Empty, error) {
+	if err := Validate(req); err != nil {
+		return nil, err
+	}
+	if err := requireInternalCredential(ctx); err != nil {
+		return nil, err
+	}
+	if s == nil || s.consumer == nil {
+		return nil, status.Error(codes.Unavailable, "Work Context consumer authority is unavailable")
+	}
+	if len(req.GetSubjects()) == 0 ||
+		req.GetSubjects()[0].GetPrincipalId() != req.GetOwnerPrincipalId() {
+		return nil, status.Error(codes.InvalidArgument, "owner must be the first revision subject")
+	}
+	seen := make(map[string]struct{}, len(req.GetSubjects()))
+	subjects := make([]business.WorkContextRevisionSubject, 0, len(req.GetSubjects()))
+	for _, subject := range req.GetSubjects() {
+		if subject == nil {
+			return nil, status.Error(codes.InvalidArgument, "revision subject must not be null")
+		}
+		principalID := subject.GetPrincipalId()
+		if _, duplicate := seen[principalID]; duplicate {
+			return nil, status.Error(codes.InvalidArgument, "revision subjects must be unique")
+		}
+		seen[principalID] = struct{}{}
+		permissions, _, err := workContextScopes(subject.GetScopes())
+		if err != nil {
+			return nil, status.Error(codes.InvalidArgument, err.Error())
+		}
+		subjects = append(subjects, business.WorkContextRevisionSubject{
+			PrincipalID: principalID,
+			Permissions: permissions,
+		})
+	}
+	ctx = accountsauth.WithVerifiedDatabaseIdentity(
+		ctx,
+		req.GetOwnerPrincipalId(),
+		req.GetOrgId(),
+	)
+	err := s.consumer.CheckWorkContextAuthorizationRevision(
+		ctx,
+		req.GetOrgId(),
+		req.GetOwnerPrincipalId(),
+		req.GetAuthorizationRevision(),
+		subjects,
+	)
+	if err != nil {
+		return nil, mapConsumerAuthorityError(err)
+	}
+	return &emptypb.Empty{}, nil
+}
+
+func (s *WorkContextAuthorityServer) AuthorizeEvidenceRead(
+	ctx context.Context,
+	req *gen.AuthorizeEvidenceReadRequest,
+) (*emptypb.Empty, error) {
+	if err := Validate(req); err != nil {
+		return nil, err
+	}
+	if err := requireInternalCredential(ctx); err != nil {
+		return nil, err
+	}
+	if s == nil || s.consumer == nil {
+		return nil, status.Error(codes.Unavailable, "Evidence read authority is unavailable")
+	}
+	ctx = accountsauth.WithVerifiedDatabaseIdentity(
+		ctx,
+		req.GetCallerPrincipalId(),
+		req.GetOrgId(),
+	)
+	err := s.consumer.AuthorizeEvidenceRead(
+		ctx,
+		req.GetOrgId(),
+		req.GetCallerPrincipalId(),
+		req.GetOwnerPrincipalId(),
+		req.GetTaskId(),
+		req.GetSessionId(),
+	)
+	if err != nil {
+		return nil, mapConsumerAuthorityError(err)
+	}
+	return &emptypb.Empty{}, nil
+}
+
+func mapConsumerAuthorityError(err error) error {
+	switch {
+	case err == nil:
+		return nil
+	case errors.Is(err, context.Canceled):
+		return status.Error(codes.Canceled, "consumer authority check canceled")
+	case errors.Is(err, context.DeadlineExceeded):
+		return status.Error(codes.DeadlineExceeded, "consumer authority check timed out")
+	case errors.Is(err, business.ErrWorkContextAuthorizationStale):
+		return status.Error(codes.FailedPrecondition, business.ErrWorkContextAuthorizationStale.Error())
+	case errors.Is(err, business.ErrEvidenceReadDenied):
+		return status.Error(codes.PermissionDenied, business.ErrEvidenceReadDenied.Error())
+	default:
+		return status.Error(codes.Internal, "cannot resolve current consumer authority")
+	}
 }
 
 func (s *WorkContextAuthorityServer) StartTask(
@@ -113,6 +225,8 @@ func (s *WorkContextAuthorityServer) StartTask(
 		actors = []*basev0.WorkActorV1{{
 			PrincipalId:   facts.Actor.ID,
 			PrincipalKind: facts.Actor.Kind,
+			// The per-hop delegation id IS the durable journal row id: the
+			// ephemeral token and the persisted record share one identifier.
 			DelegationId:  uuid.NewString(),
 			GrantedScopes: cloneWorkScopes(scopes),
 		}}
@@ -134,6 +248,9 @@ func (s *WorkContextAuthorityServer) StartTask(
 	})
 	if err != nil {
 		return nil, mapWorkContextError(err)
+	}
+	if err := s.journalActorHop(ctx, signed); err != nil {
+		return nil, err
 	}
 	return issuedWorkContext(token, signed), nil
 }
@@ -260,7 +377,100 @@ func (s *WorkContextAuthorityServer) StartChildSession(
 	if err != nil {
 		return nil, mapWorkContextError(err)
 	}
+	if err := s.journalActorHop(ctx, signed); err != nil {
+		return nil, err
+	}
 	return issuedWorkContext(token, signed), nil
+}
+
+// journalActorHop durably records the newest on-behalf-of hop of a freshly
+// signed Work Context, content-addressed and chained to the hop it narrows from.
+// The hop id equals the token's per-hop delegation_id, so the durable record and
+// the ephemeral token share one identifier. Durability is a guarantee, not
+// best-effort: a failed append fails issuance rather than minting an
+// unaccountable token.
+func (s *WorkContextAuthorityServer) journalActorHop(
+	ctx context.Context,
+	signed *basev0.WorkContextV1,
+) error {
+	if s.journal == nil {
+		return nil
+	}
+	chain := signed.GetActorChain()
+	if len(chain) == 0 {
+		return nil
+	}
+	index := len(chain) - 1
+	actor := chain[index]
+	parentDelegationID := ""
+	if index > 0 {
+		parentDelegationID = chain[index-1].GetDelegationId()
+	}
+	_, err := s.journal.AppendActorChainHop(ctx, business.ActorChainHopInput{
+		ID:                    actor.GetDelegationId(),
+		OrgID:                 signed.GetTenantId(),
+		TaskID:                signed.GetTaskId(),
+		SessionID:             signed.GetSessionId(),
+		OwnerPrincipalID:      signed.GetOwnerPrincipalId(),
+		ActorPrincipalID:      actor.GetPrincipalId(),
+		ActorKind:             actor.GetPrincipalKind(),
+		ParentDelegationID:    parentDelegationID,
+		GrantedScopes:         actorChainScopes(actor.GetGrantedScopes()),
+		AuthorizationRevision: signed.GetAuthorizationRevision(),
+		HopIndex:              index,
+	})
+	if err != nil {
+		return status.Error(codes.Internal, "cannot persist actor chain hop")
+	}
+	return nil
+}
+
+// requireChainNotRevoked fails closed if any hop in the parent chain, or any
+// ancestor those hops chain through, has been revoked. This is the per-hop
+// revocation layer that stops a revoked branch from deriving new tokens; the
+// revocation also bumps the owner/org authorization revision (see migration 99)
+// so already-issued tokens on that branch are rejected on the action path too.
+// The whole chain is checked in one query. A hop with no journal record is
+// treated as live: journalActorHop fails issuance on a failed append, so no
+// token issued after durability shipped can lack its hop; the only unjournaled
+// hops predate the journal and cannot have been revoked (revocation needs a row).
+func (s *WorkContextAuthorityServer) requireChainNotRevoked(
+	ctx context.Context,
+	orgID string,
+	actors []*basev0.WorkActorV1,
+) error {
+	if s.journal == nil {
+		return nil
+	}
+	delegationIDs := make([]string, 0, len(actors))
+	for _, actor := range actors {
+		if id := actor.GetDelegationId(); id != "" {
+			delegationIDs = append(delegationIDs, id)
+		}
+	}
+	if len(delegationIDs) == 0 {
+		return nil
+	}
+	revoked, err := s.journal.AnyActorChainHopRevoked(ctx, orgID, delegationIDs)
+	if err != nil {
+		return status.Error(codes.Internal, "cannot check actor chain revocation")
+	}
+	if revoked {
+		return status.Error(codes.PermissionDenied, "actor chain hop has been revoked")
+	}
+	return nil
+}
+
+func actorChainScopes(scopes []*basev0.WorkScopeV1) []business.ActorChainScope {
+	out := make([]business.ActorChainScope, 0, len(scopes))
+	for _, scope := range scopes {
+		out = append(out, business.ActorChainScope{
+			ResourceKind: scope.GetResourceKind(),
+			Actions:      append([]string(nil), scope.GetActions()...),
+			ResourceIDs:  append([]string(nil), scope.GetResourceIds()...),
+		})
+	}
+	return out
 }
 
 func (s *WorkContextAuthorityServer) authorizeOwner(ctx context.Context, orgID string) (string, error) {
@@ -309,6 +519,10 @@ func (s *WorkContextAuthorityServer) verifyParent(
 			)
 		}
 		return token, parent, nil
+	}
+
+	if err := s.requireChainNotRevoked(ctx, orgID, parent.GetActorChain()); err != nil {
+		return codefly.WorkContextToken{}, nil, err
 	}
 
 	for _, actor := range parent.GetActorChain() {

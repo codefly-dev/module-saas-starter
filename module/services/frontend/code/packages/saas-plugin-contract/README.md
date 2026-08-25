@@ -76,6 +76,14 @@ export const frontendConfig = defineFrontend({
 	appearance: {
 		defaultTheme: "system",
 		radius: "0.75rem",
+		// Typography and structural tokens are shared across both modes.
+		fontSans: '"Inter", system-ui, sans-serif',
+		fontSizeBase: "1rem",
+		spacing: "0.25rem", // density: base unit for every spacing utility
+		sidebarWidth: "18rem",
+		sidebarWidthIcon: "3rem",
+		borderWidth: "1px",
+		shadowStrength: "1", // 0 (flat) … 2 (deep); unitless multiplier
 		light: { primary: "oklch(0.52 0.22 270)" },
 		dark: { primary: "oklch(0.72 0.17 270)" },
 	},
@@ -84,10 +92,20 @@ export const frontendConfig = defineFrontend({
 });
 ```
 
-Missing semantic tokens resolve from the neutral default preset. Unknown
-fields, unsafe asset paths, and unsafe CSS values fail composition. The result
-is deeply immutable and can be projected during server rendering without a
-wrong-theme flash.
+The appearance preset has two kinds of input. **Color** is per-mode: the full
+semantic token set for `light` and `dark`. **Structure and typography** are
+shared across modes: `radius`, `fontSans`/`fontHeading`, `fontSizeBase`,
+`spacing` (density), `sidebarWidth`/`sidebarWidthIcon`, `borderWidth`, and
+`shadowStrength`. Light and dark are not layered on top of a skin; the skin
+contains both palettes and the active mode simply selects which one the shared
+semantic variables read.
+
+Missing tokens resolve from the neutral default preset, so omitting any field
+leaves the rendered product unchanged. Lengths must be `0` or a `px`/`rem`/`em`
+value and `shadowStrength` a unitless number in `0…2`; unknown fields, unsafe
+asset paths, and unsafe CSS values fail composition. The result is deeply
+immutable and can be projected during server rendering without a wrong-theme
+flash.
 
 This package has no React dependency or peer dependency. Product packages bind
 lazy components to the declared IDs through `defineReactPlugin` from the

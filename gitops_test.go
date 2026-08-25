@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"context"
 	"crypto/sha256"
 	"encoding/json"
@@ -11,6 +12,8 @@ import (
 	"slices"
 	"strings"
 	"testing"
+
+	"gopkg.in/yaml.v3"
 )
 
 var fixtureAWSManagedServices = map[string]string{
@@ -83,6 +86,119 @@ func TestGenerateBundleGoldenShapes(t *testing.T) {
 	}
 }
 
+func TestIdentityNeutralBaseDefersNamespaceAndIstioHost(t *testing.T) {
+	t.Parallel()
+	root, moduleDir := writeModuleFixture(t, "warden-control", "identity", []string{"accounts", "frontend"})
+	workspace, err := loadWorkspaceManifest(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := generateDeploymentBundle(moduleDir, workspace); err != nil {
+		t.Fatal(err)
+	}
+	overlayRoot := filepath.Join(moduleDir, filepath.FromSlash(bundleRelativeDir), "overlays", "local")
+	baseRoot := filepath.Join(overlayRoot, "base")
+
+	// The base must carry neither identity-bearing object: no Namespace object
+	// (its name is the tenant identity) and no host-bearing Gateway/VirtualService
+	// live anywhere beneath it.
+	if err := filepath.WalkDir(baseRoot, func(file string, entry os.DirEntry, err error) error {
+		if err != nil || entry.IsDir() || entry.Name() == "kustomization.yaml" {
+			return err
+		}
+		objects, err := decodeYAMLDocuments(file)
+		if err != nil {
+			return err
+		}
+		for _, object := range objects {
+			switch object["kind"] {
+			case "Namespace", "Gateway", "VirtualService":
+				t.Errorf("base file %s bakes identity-bearing object %v", file, object["kind"])
+			}
+		}
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	// The overlay owns the Namespace object, named for the environment rather than
+	// a placeholder. This raw name matters: the CLI validates every raw Namespace
+	// against the AppProject destinations before rendering, so a placeholder name
+	// here fails promotion.
+	namespaceObjects, err := decodeYAMLDocuments(filepath.Join(overlayRoot, "namespace.yaml"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	metadata := namespaceObjects[0]["metadata"].(map[string]any)
+	if metadata["name"] != "identity-local" {
+		t.Errorf("overlay Namespace name = %v, want identity-local", metadata["name"])
+	}
+	labels := metadata["labels"].(map[string]any)
+	if labels["kubernetes.io/metadata.name"] != "identity-local" {
+		t.Errorf("overlay Namespace kubernetes.io/metadata.name = %v, want identity-local", labels["kubernetes.io/metadata.name"])
+	}
+
+	// The overlay also owns the host-bearing Gateway/VirtualService and names the
+	// namespace for every resource the base contributes.
+	data, err := os.ReadFile(filepath.Join(overlayRoot, "kustomization.yaml"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var overlay kustomization
+	if err := yaml.Unmarshal(data, &overlay); err != nil {
+		t.Fatal(err)
+	}
+	if overlay.Namespace != "identity-local" {
+		t.Errorf("overlay namespace transformer = %q, want identity-local", overlay.Namespace)
+	}
+	for _, want := range []string{"base", "namespace.yaml", "ingress.yaml"} {
+		if !slices.Contains(overlay.Resources, want) {
+			t.Errorf("overlay resources = %v, missing %q", overlay.Resources, want)
+		}
+	}
+	ingressObjects, err := decodeYAMLDocuments(filepath.Join(overlayRoot, "ingress.yaml"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var sawGateway bool
+	var virtualServiceHosts []any
+	for _, object := range ingressObjects {
+		switch object["kind"] {
+		case "Gateway":
+			sawGateway = true
+		case "VirtualService":
+			virtualServiceHosts = object["spec"].(map[string]any)["hosts"].([]any)
+		}
+	}
+	if !sawGateway {
+		t.Error("overlay ingress is missing its Gateway")
+	}
+	if !slices.Equal(virtualServiceHosts, []any{"identity.localhost"}) {
+		t.Errorf("overlay VirtualService hosts = %v, want [identity.localhost]", virtualServiceHosts)
+	}
+
+	// The effective render still resolves to the environment identity: exactly
+	// one Namespace named for the environment, and the environment host on the
+	// VirtualService.
+	namespaces := 0
+	for _, object := range overlayObjects(t, moduleDir, "local") {
+		switch object["kind"] {
+		case "Namespace":
+			namespaces++
+			if name := object["metadata"].(map[string]any)["name"]; name != "identity-local" {
+				t.Errorf("rendered Namespace name = %v, want identity-local", name)
+			}
+		case "VirtualService":
+			if hosts := object["spec"].(map[string]any)["hosts"].([]any); !slices.Equal(hosts, []any{"identity.localhost"}) {
+				t.Errorf("rendered VirtualService hosts = %v, want [identity.localhost]", hosts)
+			}
+		}
+	}
+	if namespaces != 1 {
+		t.Errorf("rendered Namespace count = %d, want 1", namespaces)
+	}
+}
+
 func TestGeneratedBundleCarriesNoGitOrArgoTransport(t *testing.T) {
 	t.Parallel()
 	root, moduleDir := writeModuleFixture(t, "neutral-control", "identity", []string{"accounts", "store"})
@@ -138,6 +254,32 @@ func TestGeneratedBundleCarriesNoGitOrArgoTransport(t *testing.T) {
 	if slices.Contains(aws.Services, "store") {
 		t.Fatalf("managed store must not appear as an in-cluster workload: %v", aws.Services)
 	}
+	if bytes.Contains(data, []byte(`"awsKind"`)) {
+		t.Fatalf("bundle.json still emits legacy \"awsKind\" key: %s", data)
+	}
+	if !bytes.Contains(data, []byte(`"kind"`)) {
+		t.Fatalf("bundle.json missing \"kind\" handoff key: %s", data)
+	}
+}
+
+func TestManagedServiceHandoffReadsLegacyAWSKind(t *testing.T) {
+	t.Parallel()
+
+	var current managedServiceHandoff
+	if err := json.Unmarshal([]byte(`{"service":"store","kind":"rds-postgresql"}`), &current); err != nil {
+		t.Fatal(err)
+	}
+	if current.Kind != "rds-postgresql" {
+		t.Fatalf("kind = %q, want rds-postgresql", current.Kind)
+	}
+
+	var legacy managedServiceHandoff
+	if err := json.Unmarshal([]byte(`{"service":"store","awsKind":"azure-postgres-flexible"}`), &legacy); err != nil {
+		t.Fatal(err)
+	}
+	if legacy.Kind != "azure-postgres-flexible" {
+		t.Fatalf("legacy awsKind not read into kind: %q", legacy.Kind)
+	}
 }
 
 func TestGenerateBundleIgnoresLegacyGitopsPublicationBlock(t *testing.T) {
@@ -179,15 +321,18 @@ func TestGenerateBundleRendersEnvironmentWithoutPublicIngress(t *testing.T) {
 	}
 
 	overlays := filepath.Join(moduleDir, filepath.FromSlash(bundleRelativeDir), "overlays")
-	if _, err := os.Stat(filepath.Join(overlays, "local", "resources", "istio-gateway.yaml")); err != nil {
+	if _, err := os.Stat(filepath.Join(overlays, "local", "ingress.yaml")); err != nil {
 		t.Fatalf("fully configured local overlay is missing its gateway: %v", err)
 	}
-	awsResources := filepath.Join(overlays, "aws", "resources")
-	if _, err := os.Stat(filepath.Join(awsResources, "istio-gateway.yaml")); !errors.Is(err, os.ErrNotExist) {
+	if _, err := os.Stat(filepath.Join(overlays, "aws", "ingress.yaml")); !errors.Is(err, os.ErrNotExist) {
 		t.Fatalf("ingress-less aws overlay emitted a public gateway: %v", err)
 	}
-	for _, base := range []string{"namespace.yaml", "network-policy.yaml", "istio-mtls.yaml"} {
-		if _, err := os.Stat(filepath.Join(awsResources, base)); err != nil {
+	if _, err := os.Stat(filepath.Join(overlays, "aws", "namespace.yaml")); err != nil {
+		t.Errorf("ingress-less aws overlay is missing its Namespace object: %v", err)
+	}
+	awsBase := filepath.Join(overlays, "aws", "base")
+	for _, base := range []string{"network-policy.yaml", "istio-mtls.yaml"} {
+		if _, err := os.Stat(filepath.Join(awsBase, base)); err != nil {
 			t.Errorf("ingress-less aws overlay is missing module-owned %s: %v", base, err)
 		}
 	}
@@ -342,6 +487,21 @@ func TestGenerateBundleRejectsHostileContracts(t *testing.T) {
 			want: "has no module service declaration",
 		},
 		{
+			name: "duplicate Kubernetes workload identity",
+			mutate: func(t *testing.T, moduleDir string, _ *workspaceManifest) {
+				t.Helper()
+				file := filepath.Join(moduleDir, "deployment", "topology.bindings.codefly.yaml")
+				data, err := os.ReadFile(file)
+				if err != nil {
+					t.Fatal(err)
+				}
+				topology := strings.Replace(string(data), "  - name: accounts\n    version:", "  - name: accounts\n    kubernetes:\n      service_name: shared\n      app_label: accounts\n    version:", 1)
+				topology = strings.Replace(topology, "  - name: frontend\n    version:", "  - name: frontend\n    kubernetes:\n      service_name: shared\n      app_label: frontend\n    version:", 1)
+				writeTestFile(t, file, topology)
+			},
+			want: "share Kubernetes service name",
+		},
+		{
 			name: "symlinked service path",
 			mutate: func(t *testing.T, moduleDir string, _ *workspaceManifest) {
 				t.Helper()
@@ -390,7 +550,7 @@ func TestGeneratedPoliciesAndGatewayMatchTopology(t *testing.T) {
 		t.Fatal(err)
 	}
 	generated := filepath.Join(moduleDir, filepath.FromSlash(bundleRelativeDir), "overlays")
-	namespaceObjects, err := decodeYAMLDocuments(filepath.Join(generated, "local", "resources", "namespace.yaml"))
+	namespaceObjects, err := decodeYAMLDocuments(filepath.Join(generated, "local", "namespace.yaml"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -402,7 +562,12 @@ func TestGeneratedPoliciesAndGatewayMatchTopology(t *testing.T) {
 	if _, sidecarInjection := namespaceLabels["istio-injection"]; sidecarInjection {
 		t.Fatal("local namespace enables sidecar injection alongside the ambient mesh")
 	}
-	localNetwork, err := os.ReadFile(filepath.Join(generated, "local", "resources", "network-policy.yaml"))
+	// This fixture ships no authorization catalog, so there is no L7 policy and
+	// the namespace waypoint must not be provisioned.
+	if _, waypointed := namespaceLabels["istio.io/use-waypoint"]; waypointed {
+		t.Error("namespace opts into a waypoint without any L7 policy to enforce")
+	}
+	localNetwork, err := os.ReadFile(filepath.Join(generated, "local", "base", "network-policy.yaml"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -426,7 +591,7 @@ func TestGeneratedPoliciesAndGatewayMatchTopology(t *testing.T) {
 		t.Errorf("local network policy has %d bootstrap service selectors, want 2", count)
 	}
 
-	localIstio, err := os.ReadFile(filepath.Join(generated, "local", "resources", "istio-mtls.yaml"))
+	localIstio, err := os.ReadFile(filepath.Join(generated, "local", "base", "istio-mtls.yaml"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -439,7 +604,7 @@ func TestGeneratedPoliciesAndGatewayMatchTopology(t *testing.T) {
 			t.Errorf("local Istio policy is missing %q", expected)
 		}
 	}
-	awsIstio, err := os.ReadFile(filepath.Join(generated, "aws", "resources", "istio-mtls.yaml"))
+	awsIstio, err := os.ReadFile(filepath.Join(generated, "aws", "base", "istio-mtls.yaml"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -447,7 +612,7 @@ func TestGeneratedPoliciesAndGatewayMatchTopology(t *testing.T) {
 		t.Error("AWS Istio policy grants internal authority to managed Postgres")
 	}
 
-	gatewayObjects, err := decodeYAMLDocuments(filepath.Join(generated, "local", "resources", "istio-gateway.yaml"))
+	gatewayObjects, err := decodeYAMLDocuments(filepath.Join(generated, "local", "ingress.yaml"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -477,7 +642,7 @@ func TestGeneratedPoliciesAndGatewayMatchTopology(t *testing.T) {
 		}
 	}
 
-	awsNetwork, err := os.ReadFile(filepath.Join(generated, "aws", "resources", "network-policy.yaml"))
+	awsNetwork, err := os.ReadFile(filepath.Join(generated, "aws", "base", "network-policy.yaml"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -489,6 +654,287 @@ func TestGeneratedPoliciesAndGatewayMatchTopology(t *testing.T) {
 		strings.Contains(string(awsNetwork), "allow-store-bootstrap-to-store") {
 		t.Errorf("AWS network policy retains bootstrap authority for managed Postgres:\n%s", awsNetwork)
 	}
+}
+
+func TestGeneratedMeshBaselineIsStrictMTLSDefaultDeny(t *testing.T) {
+	t.Parallel()
+	root, moduleDir := writeModuleFixture(
+		t,
+		"mesh-control",
+		"identity",
+		[]string{"accounts", "auth-sidecar", "store"},
+	)
+	workspace, err := loadWorkspaceManifest(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := generateDeploymentBundle(moduleDir, workspace); err != nil {
+		t.Fatal(err)
+	}
+	overlays := filepath.Join(moduleDir, filepath.FromSlash(bundleRelativeDir), "overlays")
+
+	// The mesh baseline is the reach gate every mesh-delivered control builds on,
+	// so it must hold in the in-cluster overlay and the managed-service overlay
+	// alike. Assert it structurally in both so no environment silently regresses.
+	for _, environment := range []string{"local", "aws"} {
+		path := filepath.Join(overlays, environment, "base", "istio-mtls.yaml")
+		objects, err := decodeYAMLDocuments(path)
+		if err != nil {
+			t.Fatalf("%s mesh baseline: %v", environment, err)
+		}
+
+		var peerAuthentications, denies, allows int
+		for _, object := range objects {
+			metadata := object["metadata"].(map[string]any)
+			name, _ := metadata["name"].(string)
+			switch object["kind"] {
+			case "PeerAuthentication":
+				peerAuthentications++
+				spec := object["spec"].(map[string]any)
+				if _, scoped := spec["selector"]; scoped {
+					t.Errorf("%s PeerAuthentication %q is workload-scoped, want mesh-wide", environment, name)
+				}
+				mode := spec["mtls"].(map[string]any)["mode"]
+				if mode != "STRICT" {
+					t.Errorf("%s PeerAuthentication %q mtls mode = %v, want STRICT", environment, name, mode)
+				}
+			case "AuthorizationPolicy":
+				spec, _ := object["spec"].(map[string]any)
+				if name == "default-deny" {
+					denies++
+					// A namespace-wide ALLOW policy with no rules matches nothing,
+					// so every workload denies by default until an explicit allow
+					// grants it. A selector, any rules, or a DENY action would break
+					// that invariant.
+					if _, scoped := spec["selector"]; scoped {
+						t.Errorf("%s default-deny is workload-scoped, want namespace-wide", environment)
+					}
+					if _, ruled := spec["rules"]; ruled {
+						t.Errorf("%s default-deny declares rules, want an empty deny-all policy", environment)
+					}
+					if action, ok := spec["action"]; ok && action != "ALLOW" {
+						t.Errorf("%s default-deny action = %v, want the empty-ALLOW deny-all form", environment, action)
+					}
+				} else {
+					allows++
+				}
+			}
+		}
+
+		if peerAuthentications != 1 {
+			t.Errorf("%s mesh baseline has %d PeerAuthentication objects, want exactly one mesh-wide policy", environment, peerAuthentications)
+		}
+		if denies != 1 {
+			t.Errorf("%s mesh baseline has %d namespace default-deny AuthorizationPolicies, want exactly one", environment, denies)
+		}
+		// Default-deny is inert without the explicit per-dependency allows layered
+		// on top of it; assert at least one so the deny-all never ships alone.
+		if allows == 0 {
+			t.Errorf("%s mesh baseline has a default-deny but no explicit allow policies", environment)
+		}
+
+		raw, err := os.ReadFile(path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if strings.Contains(string(raw), "PERMISSIVE") {
+			t.Errorf("%s mesh baseline contains a PERMISSIVE mTLS fallback:\n%s", environment, raw)
+		}
+	}
+
+	// Injection is enforced through the ambient dataplane label, not sidecar
+	// injection: every pod in the namespace is captured by the mesh, so an
+	// un-injected pod cannot receive traffic outside mTLS.
+	namespaceObjects, err := decodeYAMLDocuments(filepath.Join(overlays, "local", "namespace.yaml"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	namespaceLabels := namespaceObjects[0]["metadata"].(map[string]any)["labels"].(map[string]any)
+	if namespaceLabels["istio.io/dataplane-mode"] != "ambient" {
+		t.Errorf("namespace dataplane mode = %v, want ambient so every pod is meshed", namespaceLabels["istio.io/dataplane-mode"])
+	}
+}
+
+func TestGeneratedMeshPolicyGatesInternalAuthorityByCallerServiceAccount(t *testing.T) {
+	t.Parallel()
+	root, moduleDir := writeModuleFixture(t, "authority", "identity", []string{"accounts", "auth-sidecar"})
+	// Realistic identity graph: accounts exposes an internal method and runs
+	// under a distinct SA; auth-sidecar is its only declared caller and also
+	// runs under a distinct SA. This is what lets the policy gate by workload
+	// identity instead of the shared sa/default.
+	writeTestFile(t, filepath.Join(moduleDir, "deployment", "topology.bindings.codefly.yaml"), `version: v1
+module:
+  name: identity
+  namespace: identity
+  service_entry: auth-sidecar
+  description: test
+interface:
+  - service: auth-sidecar
+    endpoint: http
+    visibility: public
+services:
+  - name: accounts
+    version: 0.0.0
+    endpoints:
+      - name: http
+        api: http
+        visibility: private
+        port: 8080
+    spec:
+      service-account:
+        name: accounts
+  - name: auth-sidecar
+    version: 0.0.0
+    endpoints:
+      - name: http
+        api: http
+        visibility: private
+        port: 8080
+    public_egress_ports:
+      - 443
+    spec:
+      service-account:
+        name: auth-sidecar
+    dependencies:
+      - service: accounts
+        endpoints:
+          - http
+`)
+	writeTestFile(t, filepath.Join(moduleDir, "services", "accounts", "generated", "authz-methods.json"), `{
+  "schema_version": "saas.authz.methods.v1",
+  "methods": [
+    {"procedure": "/saas.accounts.v1.APIKeyService/ValidateAPIKey", "policy": {"exposure": "EXPOSURE_INTERNAL"}},
+    {"procedure": "/saas.accounts.v1.AuthService/Authenticate", "policy": {"exposure": "EXPOSURE_PUBLIC"}}
+  ]
+}`)
+	workspace, err := loadWorkspaceManifest(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := generateDeploymentBundle(moduleDir, workspace); err != nil {
+		t.Fatal(err)
+	}
+	istioPath := filepath.Join(moduleDir, filepath.FromSlash(bundleRelativeDir), "overlays", "local", "base", "istio-mtls.yaml")
+	objects, err := decodeYAMLDocuments(istioPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	strictMTLS := false
+	var authority map[string]any
+	var portAllow map[string]any
+	var waypoint map[string]any
+	for _, object := range objects {
+		metadata := object["metadata"].(map[string]any)
+		switch object["kind"] {
+		case "PeerAuthentication":
+			mtls := object["spec"].(map[string]any)["mtls"].(map[string]any)
+			if mtls["mode"] == "STRICT" {
+				strictMTLS = true
+			}
+		case "AuthorizationPolicy":
+			switch metadata["name"] {
+			case "allow-accounts-internal-authority":
+				authority = object
+			case "allow-accounts-from-internal-topology":
+				portAllow = object
+			}
+		case "Gateway":
+			if object["apiVersion"] == "gateway.networking.k8s.io/v1" {
+				waypoint = object
+			}
+		}
+	}
+	if !strictMTLS {
+		t.Fatal("mesh baseline is missing STRICT PeerAuthentication")
+	}
+	if authority == nil {
+		t.Fatalf("istio bundle is missing the internal-authority allow policy:\n%s", mustReadFile(t, istioPath))
+	}
+
+	// The internal-authority allow is an L7 (method-path) policy; ztunnel is L4
+	// only, so it is enforced only if a waypoint fronts the namespace. Without
+	// this the policy would be silently inert in the ambient mesh.
+	if waypoint == nil {
+		t.Fatalf("L7 internal-authority policy has no waypoint to enforce it:\n%s", mustReadFile(t, istioPath))
+	}
+	if class := waypoint["spec"].(map[string]any)["gatewayClassName"]; class != "istio-waypoint" {
+		t.Errorf("waypoint gatewayClassName = %v, want istio-waypoint", class)
+	}
+	if wpFor := waypoint["metadata"].(map[string]any)["labels"].(map[string]any)["istio.io/waypoint-for"]; wpFor != "service" {
+		t.Errorf("waypoint istio.io/waypoint-for = %v, want service", wpFor)
+	}
+	namespaceObjects, err := decodeYAMLDocuments(filepath.Join(moduleDir, filepath.FromSlash(bundleRelativeDir), "overlays", "local", "namespace.yaml"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	nsLabels := namespaceObjects[0]["metadata"].(map[string]any)["labels"].(map[string]any)
+	if nsLabels["istio.io/use-waypoint"] != waypoint["metadata"].(map[string]any)["name"] {
+		t.Errorf("namespace use-waypoint = %v, want %v", nsLabels["istio.io/use-waypoint"], waypoint["metadata"].(map[string]any)["name"])
+	}
+
+	const (
+		callerSA  = "cluster.local/ns/identity-local/sa/auth-sidecar"
+		defaultSA = "cluster.local/ns/identity-local/sa/default"
+		ingressSA = "cluster.local/ns/istio-system/sa/istio-ingressgateway-service-account"
+	)
+
+	spec := authority["spec"].(map[string]any)
+	// Positive ALLOW, not the old fail-open notPrincipals DENY: an unlisted SA
+	// is default-denied once an ALLOW selects the workload.
+	if spec["action"] != "ALLOW" {
+		t.Errorf("internal-authority policy action = %v, want ALLOW", spec["action"])
+	}
+	if app := spec["selector"].(map[string]any)["matchLabels"].(map[string]any)["app"]; app != "accounts" {
+		t.Errorf("internal-authority policy selects app %v, want accounts", app)
+	}
+	rule := spec["rules"].([]any)[0].(map[string]any)
+	principals := anyToStrings(rule["from"].([]any)[0].(map[string]any)["source"].(map[string]any)["principals"].([]any))
+	// Only accounts' declared caller (auth-sidecar), named by its per-service
+	// SA — not the shared sa/default, and not the ingress gateway.
+	if !slices.Equal(principals, []string{callerSA}) {
+		t.Errorf("internal-authority principals = %v, want only the caller SA [%s]", principals, callerSA)
+	}
+	if slices.Contains(principals, defaultSA) {
+		t.Error("internal-authority allowlist must not admit the shared sa/default (any namespace pod)")
+	}
+	if slices.Contains(principals, ingressSA) {
+		t.Error("ingress gateway SA must not reach the internal method paths")
+	}
+	paths := anyToStrings(rule["to"].([]any)[0].(map[string]any)["operation"].(map[string]any)["paths"].([]any))
+	if !slices.Contains(paths, "/saas.accounts.v1.APIKeyService/ValidateAPIKey") {
+		t.Errorf("internal-authority paths %v missing the internal ValidateAPIKey method", paths)
+	}
+	if slices.Contains(paths, "/saas.accounts.v1.AuthService/Authenticate") {
+		t.Error("internal-authority allow must not cover the public Authenticate method")
+	}
+
+	// The L4 port allow is caller-scoped too, so even without the waypoint the
+	// target is reachable only by its declared caller — not any sa/default pod.
+	if portAllow == nil {
+		t.Fatalf("istio bundle is missing the accounts port allow:\n%s", mustReadFile(t, istioPath))
+	}
+	portPrincipals := anyToStrings(portAllow["spec"].(map[string]any)["rules"].([]any)[0].(map[string]any)["from"].([]any)[0].(map[string]any)["source"].(map[string]any)["principals"].([]any))
+	if !slices.Equal(portPrincipals, []string{callerSA}) {
+		t.Errorf("accounts port-allow principals = %v, want only the caller SA [%s]", portPrincipals, callerSA)
+	}
+}
+
+func anyToStrings(values []any) []string {
+	out := make([]string, 0, len(values))
+	for _, value := range values {
+		out = append(out, fmt.Sprint(value))
+	}
+	return out
+}
+
+func mustReadFile(t *testing.T, path string) string {
+	t.Helper()
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return string(data)
 }
 
 func TestGenerateBundleRejectsDependencyWithoutEndpointAuthority(t *testing.T) {
@@ -554,8 +1000,8 @@ func TestGeneratedMarketingIngressUsesExactEnvironmentRoutes(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	generated := filepath.Join(moduleDir, filepath.FromSlash(bundleRelativeDir), "overlays", "local", "resources")
-	gatewayObjects, err := decodeYAMLDocuments(filepath.Join(generated, "istio-gateway.yaml"))
+	generated := filepath.Join(moduleDir, filepath.FromSlash(bundleRelativeDir), "overlays", "local")
+	gatewayObjects, err := decodeYAMLDocuments(filepath.Join(generated, "ingress.yaml"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -632,11 +1078,12 @@ func TestGeneratedMarketingIngressUsesExactEnvironmentRoutes(t *testing.T) {
 		8080,
 	)
 
-	authorizationObjects, err := decodeYAMLDocuments(filepath.Join(generated, "istio-mtls.yaml"))
+	authorizationObjects, err := decodeYAMLDocuments(filepath.Join(generated, "base", "istio-mtls.yaml"))
 	if err != nil {
 		t.Fatal(err)
 	}
 	authorizedPorts := make(map[string][]any)
+	authorizedPrincipals := make(map[string][]any)
 	for _, object := range authorizationObjects {
 		if object["kind"] != "AuthorizationPolicy" {
 			continue
@@ -648,6 +1095,8 @@ func TestGeneratedMarketingIngressUsesExactEnvironmentRoutes(t *testing.T) {
 		}
 		policySpec := object["spec"].(map[string]any)
 		rules := policySpec["rules"].([]any)
+		from := rules[0].(map[string]any)["from"].([]any)
+		authorizedPrincipals[name] = from[0].(map[string]any)["source"].(map[string]any)["principals"].([]any)
 		to := rules[0].(map[string]any)["to"].([]any)
 		operation := to[0].(map[string]any)["operation"].(map[string]any)
 		authorizedPorts[name] = operation["ports"].([]any)
@@ -657,6 +1106,17 @@ func TestGeneratedMarketingIngressUsesExactEnvironmentRoutes(t *testing.T) {
 	}
 	if got := authorizedPorts["allow-istio-ingress-to-auth-sidecar"]; !slices.Equal(got, []any{"8080"}) {
 		t.Errorf("product ingress ports = %v, want [8080]", got)
+	}
+	// The ingress-allow policies must admit ONLY the ingress-gateway SA — the
+	// single seam through which north-south traffic enters the mesh. Asserting
+	// the principal value (not just the port) is what stops a widened allowlist
+	// from shipping green: a rule that also admitted, say, sa/default would let
+	// any in-namespace workload impersonate the gateway on public ports.
+	ingressSA := []any{"cluster.local/ns/istio-system/sa/istio-ingressgateway-service-account"}
+	for _, name := range []string{"allow-istio-ingress-to-marketing", "allow-istio-ingress-to-auth-sidecar"} {
+		if got := authorizedPrincipals[name]; !slices.Equal(got, ingressSA) {
+			t.Errorf("%s principals = %v, want only the ingress-gateway SA %v", name, got, ingressSA)
+		}
 	}
 }
 
@@ -711,7 +1171,7 @@ func TestManagedHandoffUsesExternalReferencesWithoutSecretValues(t *testing.T) {
 	file := filepath.Join(
 		moduleDir,
 		filepath.FromSlash(bundleRelativeDir),
-		"overlays/aws/resources/handoffs/store.yaml",
+		"overlays/aws/base/handoffs/store.yaml",
 	)
 	data, err := os.ReadFile(file)
 	if err != nil {
@@ -731,6 +1191,58 @@ func TestManagedHandoffUsesExternalReferencesWithoutSecretValues(t *testing.T) {
 	}
 	if strings.Contains(rendered, "kind: Secret\n") || strings.Contains(rendered, "stringData:") {
 		t.Errorf("managed handoff emitted secret values:\n%s", rendered)
+	}
+}
+
+func TestAKSEnvironmentRendersAzureManagedHandoff(t *testing.T) {
+	t.Parallel()
+	root, moduleDir := writeModuleFixture(t, "handoff-control", "identity", []string{"accounts", "store"})
+	workspace, err := loadWorkspaceManifest(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	workspace.Environments[1].Name = "aks"
+	workspace.Environments[1].Cluster.Kind = "aks"
+	workspace.Environments[1].ManagedServices["store"] = managedServiceConfig{
+		Kind:         "azure-postgres-flexible",
+		ExternalName: "store.postgres.database.azure.com",
+		EgressCIDRs:  []string{"10.42.0.0/24"},
+	}
+	if err := generateDeploymentBundle(moduleDir, workspace); err != nil {
+		t.Fatal(err)
+	}
+
+	var bundle moduleBundle
+	data, err := os.ReadFile(filepath.Join(moduleDir, filepath.FromSlash(bundleRelativeDir), "bundle.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := json.Unmarshal(data, &bundle); err != nil {
+		t.Fatal(err)
+	}
+	aks := bundle.Environments[1]
+	if aks.Name != "aks" || aks.Cluster != "aks" {
+		t.Fatalf("aks bundle environment = %q/%q, want aks/aks", aks.Name, aks.Cluster)
+	}
+	if len(aks.ManagedServiceHandoffs) != 1 ||
+		aks.ManagedServiceHandoffs[0].Service != "store" ||
+		aks.ManagedServiceHandoffs[0].Kind != "azure-postgres-flexible" {
+		t.Fatalf("aks managed handoffs = %#v", aks.ManagedServiceHandoffs)
+	}
+	if slices.Contains(aks.Services, "store") {
+		t.Fatalf("managed store must not appear as an in-cluster workload: %v", aks.Services)
+	}
+
+	handoff, err := os.ReadFile(filepath.Join(
+		moduleDir,
+		filepath.FromSlash(bundleRelativeDir),
+		"overlays/aks/base/handoffs/store.yaml",
+	))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(handoff), "externalName: store.postgres.database.azure.com") {
+		t.Fatalf("azure handoff is missing its ExternalName Service:\n%s", handoff)
 	}
 }
 
@@ -1341,31 +1853,38 @@ func assertMindRouteAndPolicies(
 	aws bool,
 ) {
 	t.Helper()
-	resources := filepath.Join(
+	environmentRoot := filepath.Join(
 		moduleDir,
 		filepath.FromSlash(bundleRelativeDir),
 		"overlays",
 		environment,
-		"resources",
 	)
-	objects, err := decodeYAMLDocuments(filepath.Join(resources, "istio-gateway.yaml"))
+	baseRoot := filepath.Join(environmentRoot, "base")
+	ingressObjects, err := decodeYAMLDocuments(filepath.Join(environmentRoot, "ingress.yaml"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	destinationObjects, err := decodeYAMLDocuments(filepath.Join(baseRoot, "destination-rules.yaml"))
 	if err != nil {
 		t.Fatal(err)
 	}
 	var route map[string]any
-	var destinationRuleHosts []string
-	for _, object := range objects {
-		switch object["kind"] {
-		case "VirtualService":
+	for _, object := range ingressObjects {
+		if object["kind"] == "VirtualService" {
 			route = object
-		case "DestinationRule":
-			spec := object["spec"].(map[string]any)
-			ruleHost := spec["host"].(string)
-			if strings.Contains(ruleHost, "*") {
-				t.Errorf("%s DestinationRule retains wildcard authority %q", environment, ruleHost)
-			}
-			destinationRuleHosts = append(destinationRuleHosts, ruleHost)
 		}
+	}
+	var destinationRuleHosts []string
+	for _, object := range destinationObjects {
+		if object["kind"] != "DestinationRule" {
+			continue
+		}
+		spec := object["spec"].(map[string]any)
+		ruleHost := spec["host"].(string)
+		if strings.Contains(ruleHost, "*") {
+			t.Errorf("%s DestinationRule retains wildcard authority %q", environment, ruleHost)
+		}
+		destinationRuleHosts = append(destinationRuleHosts, ruleHost)
 	}
 	if route == nil {
 		t.Fatal("Mind bootstrap has no VirtualService")
@@ -1392,7 +1911,7 @@ func assertMindRouteAndPolicies(
 		t.Fatalf("%s route destination = %#v", environment, destination)
 	}
 
-	data, err := os.ReadFile(filepath.Join(resources, "network-policy.yaml"))
+	data, err := os.ReadFile(filepath.Join(baseRoot, "network-policy.yaml"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1448,5 +1967,51 @@ func writeTestFile(t *testing.T, file, content string) {
 	}
 	if err := os.WriteFile(file, []byte(content), 0o644); err != nil {
 		t.Fatal(err)
+	}
+}
+
+// service.codefly.yaml is generated from the topology binding but excluded from
+// the base-integrity manifest, so nothing hermetic catches a topology agent-pin
+// bump that forgets to regenerate a service manifest. Only the network- and
+// agent-dependent codefly sync-drift gate would — too late and not in unit CI.
+// This proves every committed service manifest still pins the same agent
+// name@version its topology entry declares.
+func TestCanonicalServiceManifestsPinTopologyAgentVersions(t *testing.T) {
+	t.Parallel()
+	source := "module"
+	data, err := os.ReadFile(filepath.Join(source, "deployment", "topology.bindings.codefly.yaml"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var topology deploymentTopology
+	if err := yaml.Unmarshal(data, &topology); err != nil {
+		t.Fatal(err)
+	}
+	if len(topology.Services) == 0 {
+		t.Fatal("topology declares no services")
+	}
+	for _, service := range topology.Services {
+		wantName := fmt.Sprintf("%v", service.Agent["name"])
+		wantVersion := fmt.Sprintf("%v", service.Agent["version"])
+		if service.Agent["name"] == nil || service.Agent["version"] == nil {
+			t.Errorf("%s: topology agent missing name/version: %v", service.Name, service.Agent)
+			continue
+		}
+		manifestData, err := os.ReadFile(filepath.Join(source, "services", service.Name, "service.codefly.yaml"))
+		if err != nil {
+			t.Errorf("%s: read service manifest: %v", service.Name, err)
+			continue
+		}
+		var generated generatedServiceManifest
+		if err := yaml.Unmarshal(manifestData, &generated); err != nil {
+			t.Errorf("%s: parse service manifest: %v", service.Name, err)
+			continue
+		}
+		gotName := fmt.Sprintf("%v", generated.Agent["name"])
+		gotVersion := fmt.Sprintf("%v", generated.Agent["version"])
+		if gotName != wantName || gotVersion != wantVersion {
+			t.Errorf("%s: service manifest pins agent %s@%s but topology declares %s@%s — regenerate service.codefly.yaml",
+				service.Name, gotName, gotVersion, wantName, wantVersion)
+		}
 	}
 }

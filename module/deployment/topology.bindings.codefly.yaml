@@ -20,7 +20,7 @@ services:
     agent:
       kind: codefly:service
       name: go-grpc
-      version: 0.1.21
+      version: 0.1.33
       publisher: codefly.dev
     workspace_configuration_dependencies:
       - abuse-protection
@@ -29,6 +29,7 @@ services:
       - email
       - identity
       - internal-auth
+      - observability
       - product-analytics
       - security
     endpoints:
@@ -49,9 +50,6 @@ services:
         endpoints:
           - read
           - write
-      - service: object-storage
-        endpoints:
-          - accounts
       - service: store
         endpoints:
           - tcp
@@ -67,7 +65,8 @@ services:
       hot-reload: true
       rest-endpoint: true
       connect-endpoint: true
-      with-workspace: true
+      service-account:
+        name: accounts
       protocol-output-dirs:
         - code/pkg/gen
         - generated/openapi-raw
@@ -80,11 +79,12 @@ services:
     agent:
       kind: codefly:service
       name: go-grpc
-      version: 0.1.21
+      version: 0.1.33
       publisher: codefly.dev
     workspace_configuration_dependencies:
       - gateway
       - internal-auth
+      - observability
       - security
     endpoints:
       - name: grpc
@@ -104,9 +104,14 @@ services:
       - service: cache
         endpoints:
           - write
+      - service: telemetry
+        endpoints:
+          - grpc
     spec:
       hot-reload: true
       rest-endpoint: true
+      service-account:
+        name: auth-sidecar
       protocol-output-dirs:
         - code/pkg/gen
   - name: cache
@@ -114,7 +119,9 @@ services:
     agent:
       kind: codefly:service
       name: redis
-      version: 0.0.74
+      # 0.0.82: read-replica runtime-load fix (two tcp endpoints on one port),
+      # codefly-dev/service-redis#16 — resolved, hold lifted.
+      version: 0.0.82
       publisher: codefly.dev
     endpoints:
       - name: read
@@ -133,7 +140,7 @@ services:
     agent:
       kind: codefly:service
       name: nextjs
-      version: 0.0.124
+      version: 0.0.145
       publisher: codefly.dev
     workspace_configuration_dependencies:
       - abuse-protection
@@ -170,7 +177,7 @@ services:
     agent:
       kind: codefly:service
       name: nextjs
-      version: 0.0.118
+      version: 0.0.145
       publisher: codefly.dev
     endpoints:
       - name: http
@@ -185,31 +192,12 @@ services:
         local: development
         production: production
       mode: ssr
-  - name: object-storage
-    version: 0.0.0
-    agent:
-      kind: codefly:service
-      name: s3
-      version: 0.0.16
-      publisher: codefly.dev
-    secret_service_configurations:
-      - name: s3
-        entries:
-          - key: minio_root_password
-          - key: minio_root_user
-    endpoints:
-      - name: accounts
-        api: tcp
-        visibility: private
-        port: 9000
-    spec:
-      watch: false
   - name: store
     version: 0.0.0
     agent:
       kind: codefly:service
       name: postgres
-      version: 0.0.108
+      version: 0.0.127
       publisher: codefly.dev
     endpoints:
       - name: tcp
@@ -240,7 +228,7 @@ services:
     agent:
       kind: codefly:service
       name: go-grpc
-      version: 0.1.21
+      version: 0.1.33
       publisher: codefly.dev
     workspace_configuration_dependencies:
       - observability
@@ -260,7 +248,7 @@ services:
     agent:
       kind: codefly:service
       name: vault
-      version: 0.0.15
+      version: 0.0.25
       publisher: codefly.dev
     secret_service_configurations:
       - name: vault

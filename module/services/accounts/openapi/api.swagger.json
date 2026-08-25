@@ -96,6 +96,7 @@
       "type": "object"
     },
     "PlatformAdminServiceUpsertFeatureFlagBody": {
+      "description": "Deprecated: the database-backed flag inventory is read-only while consumers\nmigrate to the provider-neutral feature-flags@1 capability.",
       "properties": {
         "description": {
           "type": "string"
@@ -340,6 +341,18 @@
       },
       "type": "object"
     },
+    "v1AggregateAuditLogResponse": {
+      "properties": {
+        "buckets": {
+          "items": {
+            "$ref": "#/definitions/v1AuditAggregateBucket",
+            "type": "object"
+          },
+          "type": "array"
+        }
+      },
+      "type": "object"
+    },
     "v1AssignRoleRequest": {
       "properties": {
         "orgId": {
@@ -368,9 +381,22 @@
       },
       "type": "object"
     },
+    "v1AuditAggregateBucket": {
+      "properties": {
+        "count": {
+          "format": "int64",
+          "type": "string"
+        },
+        "key": {
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
     "v1AuditEvent": {
       "properties": {
         "action": {
+          "title": "superseded by event_type",
           "type": "string"
         },
         "actorId": {
@@ -379,8 +405,15 @@
         "actorType": {
           "type": "string"
         },
+        "category": {
+          "type": "string"
+        },
         "createdAt": {
           "format": "date-time",
+          "type": "string"
+        },
+        "eventType": {
+          "description": "event_type is the registered discriminator (see the typed audit-event\nregistry). schema_version records which payload schema the row was written\nagainst; payload is the typed, per-type payload; category groups types.",
           "type": "string"
         },
         "id": {
@@ -393,65 +426,48 @@
           "additionalProperties": {
             "type": "string"
           },
+          "title": "superseded by payload",
           "type": "object"
         },
         "orgId": {
           "type": "string"
+        },
+        "payload": {
+          "type": "object"
         },
         "resource": {
           "type": "string"
         },
         "resourceId": {
           "type": "string"
+        },
+        "schemaVersion": {
+          "format": "int32",
+          "type": "integer"
         }
       },
       "type": "object"
     },
-    "v1AuditExportConfig": {
+    "v1AuditEventType": {
       "properties": {
-        "accessKeyId": {
+        "category": {
           "type": "string"
         },
-        "bucket": {
-          "type": "string"
-        },
-        "cadenceMinutes": {
-          "format": "int32",
-          "type": "integer"
-        },
-        "enabled": {
+        "deprecated": {
           "type": "boolean"
         },
-        "endpoint": {
-          "description": "endpoint empty = real AWS S3; non-empty points at MinIO / R2 / etc.",
+        "description": {
           "type": "string"
         },
-        "id": {
+        "name": {
           "type": "string"
         },
-        "lastError": {
+        "owner": {
           "type": "string"
         },
-        "lastErrorAt": {
-          "format": "date-time",
-          "type": "string"
-        },
-        "lastExportedAt": {
-          "format": "date-time",
-          "type": "string"
-        },
-        "orgId": {
-          "type": "string"
-        },
-        "prefix": {
-          "type": "string"
-        },
-        "region": {
-          "type": "string"
-        },
-        "secretAccessKey": {
-          "description": "Get returns \"\" for secret_access_key so the FE can't echo a\nstored secret. Save with \"\" preserves the existing one.",
-          "type": "string"
+        "version": {
+          "format": "int32",
+          "type": "integer"
         }
       },
       "type": "object"
@@ -467,6 +483,9 @@
         },
         "fixture": {
           "$ref": "#/definitions/v1FixtureAuthentication"
+        },
+        "headerJwt": {
+          "$ref": "#/definitions/v1HeaderJWTAuthentication"
         },
         "oauthCode": {
           "$ref": "#/definitions/v1OAuthCodeAuthentication"
@@ -958,9 +977,13 @@
     "v1ExportAuditLogRequest": {
       "properties": {
         "action": {
+          "title": "use event_type",
           "type": "string"
         },
         "actorId": {
+          "type": "string"
+        },
+        "eventType": {
           "type": "string"
         },
         "format": {
@@ -1280,6 +1303,48 @@
           "type": "string"
         },
         "userId": {
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
+    "v1GrantScopeRequest": {
+      "properties": {
+        "expiresAt": {
+          "description": "Optional; unset = a standing grant.",
+          "format": "date-time",
+          "type": "string"
+        },
+        "orgId": {
+          "type": "string"
+        },
+        "roleId": {
+          "type": "string"
+        },
+        "scopePath": {
+          "type": "string"
+        },
+        "subjectId": {
+          "type": "string"
+        },
+        "subjectKind": {
+          "$ref": "#/definitions/v1SubjectKind"
+        }
+      },
+      "type": "object"
+    },
+    "v1GrantScopeResponse": {
+      "properties": {
+        "grant": {
+          "$ref": "#/definitions/v1ScopeGrant"
+        }
+      },
+      "type": "object"
+    },
+    "v1HeaderJWTAuthentication": {
+      "properties": {
+        "token": {
+          "description": "Signed JWT copied verbatim by the login route from the gateway-injected\nidentity header. It is verified against the configured JWKS (or, under an\nexplicit perimeter-trust decode mode, decoded with exp/aud still enforced)\nbefore any claim is trusted.",
           "type": "string"
         }
       },
@@ -1891,6 +1956,18 @@
       },
       "type": "object"
     },
+    "v1ListAuditEventTypesResponse": {
+      "properties": {
+        "types": {
+          "items": {
+            "$ref": "#/definitions/v1AuditEventType",
+            "type": "object"
+          },
+          "type": "array"
+        }
+      },
+      "type": "object"
+    },
     "v1ListFeatureFlagsResponse": {
       "properties": {
         "flags": {
@@ -2067,6 +2144,18 @@
         "roles": {
           "items": {
             "$ref": "#/definitions/v1Role",
+            "type": "object"
+          },
+          "type": "array"
+        }
+      },
+      "type": "object"
+    },
+    "v1ListSharesResponse": {
+      "properties": {
+        "shares": {
+          "items": {
+            "$ref": "#/definitions/v1RecordShare",
             "type": "object"
           },
           "type": "array"
@@ -2815,6 +2904,43 @@
       },
       "type": "object"
     },
+    "v1RecordShare": {
+      "properties": {
+        "createdAt": {
+          "format": "date-time",
+          "type": "string"
+        },
+        "expiresAt": {
+          "format": "date-time",
+          "type": "string"
+        },
+        "grantedBy": {
+          "type": "string"
+        },
+        "id": {
+          "type": "string"
+        },
+        "orgId": {
+          "type": "string"
+        },
+        "resourceId": {
+          "type": "string"
+        },
+        "resourceType": {
+          "type": "string"
+        },
+        "roleId": {
+          "type": "string"
+        },
+        "subjectId": {
+          "type": "string"
+        },
+        "subjectKind": {
+          "$ref": "#/definitions/v1SubjectKind"
+        }
+      },
+      "type": "object"
+    },
     "v1RefreshTokenRequest": {
       "properties": {
         "refreshToken": {
@@ -2834,6 +2960,39 @@
         },
         "refreshToken": {
           "type": "string"
+        }
+      },
+      "type": "object"
+    },
+    "v1RegisterScopeNodeRequest": {
+      "properties": {
+        "kind": {
+          "type": "string"
+        },
+        "label": {
+          "type": "string"
+        },
+        "orgId": {
+          "type": "string"
+        },
+        "resourceId": {
+          "type": "string"
+        },
+        "resourceType": {
+          "description": "Set both to place a product record at this node; leave both empty for a\nstructural node.",
+          "type": "string"
+        },
+        "scopePath": {
+          "description": "scope_path must be UNIQUE within the org and its immediate parent must\nalready be registered (roots — a single label — have no parent). A placed\nrecord is a leaf: give each record its own distinct path, e.g.\n\"foundation.customer_7.doc_<encoded_id>\", not the shared container path —\ntwo records at the same path collide on the uniqueness constraint.",
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
+    "v1RegisterScopeNodeResponse": {
+      "properties": {
+        "node": {
+          "$ref": "#/definitions/v1ScopeNode"
         }
       },
       "type": "object"
@@ -3015,10 +3174,36 @@
       },
       "type": "object"
     },
-    "v1SaveAuditExportConfigRequest": {
+    "v1ScopeGrant": {
       "properties": {
-        "config": {
-          "$ref": "#/definitions/v1AuditExportConfig"
+        "createdAt": {
+          "format": "date-time",
+          "type": "string"
+        },
+        "expiresAt": {
+          "format": "date-time",
+          "type": "string"
+        },
+        "grantedBy": {
+          "type": "string"
+        },
+        "id": {
+          "type": "string"
+        },
+        "orgId": {
+          "type": "string"
+        },
+        "roleId": {
+          "type": "string"
+        },
+        "scopePath": {
+          "type": "string"
+        },
+        "subjectId": {
+          "type": "string"
+        },
+        "subjectKind": {
+          "$ref": "#/definitions/v1SubjectKind"
         }
       },
       "type": "object"
@@ -3031,6 +3216,38 @@
         },
         "scope": {
           "title": "e.g. \"api_keys:write\"",
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
+    "v1ScopeNode": {
+      "properties": {
+        "createdAt": {
+          "format": "date-time",
+          "type": "string"
+        },
+        "id": {
+          "type": "string"
+        },
+        "kind": {
+          "type": "string"
+        },
+        "label": {
+          "type": "string"
+        },
+        "orgId": {
+          "type": "string"
+        },
+        "resourceId": {
+          "type": "string"
+        },
+        "resourceType": {
+          "description": "resource_type/resource_id are set when the node is a placed record (a\nleaf identifying a real product row); empty for structural nodes.",
+          "type": "string"
+        },
+        "scopePath": {
+          "description": "scope_path is a dotted ltree path of [a-z0-9_] labels, e.g.\n\"foundation.solution_42.customer_7\". UUIDs are encoded (lowercase,\n'-' -> '_') because raw UUIDs are not valid ltree labels.",
           "type": "string"
         }
       },
@@ -3153,6 +3370,9 @@
       },
       "type": "object"
     },
+    "v1Settings": {
+      "type": "object"
+    },
     "v1SetupTOTPRequest": {
       "type": "object"
     },
@@ -3169,6 +3389,42 @@
         },
         "secret": {
           "type": "string"
+        }
+      },
+      "type": "object"
+    },
+    "v1ShareRecordRequest": {
+      "properties": {
+        "expiresAt": {
+          "description": "Optional; unset = a standing share.",
+          "format": "date-time",
+          "type": "string"
+        },
+        "orgId": {
+          "type": "string"
+        },
+        "resourceId": {
+          "type": "string"
+        },
+        "resourceType": {
+          "type": "string"
+        },
+        "roleId": {
+          "type": "string"
+        },
+        "subjectId": {
+          "type": "string"
+        },
+        "subjectKind": {
+          "$ref": "#/definitions/v1SubjectKind"
+        }
+      },
+      "type": "object"
+    },
+    "v1ShareRecordResponse": {
+      "properties": {
+        "share": {
+          "$ref": "#/definitions/v1RecordShare"
         }
       },
       "type": "object"
@@ -3454,6 +3710,7 @@
       "type": "object"
     },
     "v1UpsertFeatureFlagResponse": {
+      "description": "Deprecated: UpsertFeatureFlag always fails closed and returns no response.",
       "properties": {
         "name": {
           "type": "string"
@@ -3703,6 +3960,10 @@
       "properties": {
         "appearance": {
           "$ref": "#/definitions/v1UserAppearanceSettings"
+        },
+        "composed": {
+          "$ref": "#/definitions/v1Settings",
+          "description": "Product-contributed settings are generated into this typed container.\nProtoJSON storage and API patching preserve the same schema end to end."
         },
         "email": {
           "$ref": "#/definitions/v1UserEmailSettings"
@@ -4142,83 +4403,14 @@
         ]
       }
     },
-    "/v1/audit-export": {
-      "post": {
-        "operationId": "AuditExportService_SaveConfig",
-        "parameters": [
-          {
-            "in": "body",
-            "name": "body",
-            "required": true,
-            "schema": {
-              "$ref": "#/definitions/v1SaveAuditExportConfigRequest"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "A successful response.",
-            "schema": {
-              "$ref": "#/definitions/v1AuditExportConfig"
-            }
-          },
-          "default": {
-            "description": "An unexpected error response.",
-            "schema": {
-              "$ref": "#/definitions/rpcStatus"
-            }
-          }
-        },
-        "tags": [
-          "AuditExportService"
-        ]
-      }
-    },
-    "/v1/audit-export/{orgId}": {
-      "delete": {
-        "operationId": "AuditExportService_DeleteConfig",
-        "parameters": [
-          {
-            "in": "path",
-            "name": "orgId",
-            "required": true,
-            "type": "string"
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "A successful response.",
-            "schema": {
-              "properties": {},
-              "type": "object"
-            }
-          },
-          "default": {
-            "description": "An unexpected error response.",
-            "schema": {
-              "$ref": "#/definitions/rpcStatus"
-            }
-          }
-        },
-        "tags": [
-          "AuditExportService"
-        ]
-      },
+    "/v1/audit-event-types": {
       "get": {
-        "operationId": "AuditExportService_GetConfig",
-        "parameters": [
-          {
-            "in": "path",
-            "name": "orgId",
-            "required": true,
-            "type": "string"
-          }
-        ],
+        "operationId": "AuditService_ListAuditEventTypes",
         "responses": {
           "200": {
             "description": "A successful response.",
             "schema": {
-              "$ref": "#/definitions/v1AuditExportConfig"
+              "$ref": "#/definitions/v1ListAuditEventTypesResponse"
             }
           },
           "default": {
@@ -4229,7 +4421,7 @@
           }
         },
         "tags": [
-          "AuditExportService"
+          "AuditService"
         ]
       }
     },
@@ -4250,6 +4442,7 @@
             "type": "string"
           },
           {
+            "description": "use event_type",
             "in": "query",
             "name": "action",
             "required": false,
@@ -4293,6 +4486,25 @@
             "name": "pageToken",
             "required": false,
             "type": "string"
+          },
+          {
+            "in": "query",
+            "name": "eventType",
+            "required": false,
+            "type": "string"
+          },
+          {
+            "in": "query",
+            "name": "category",
+            "required": false,
+            "type": "string"
+          },
+          {
+            "description": "payload_contains is a JSONB containment filter: every key/value must match\nthe event's payload.",
+            "in": "query",
+            "name": "payloadContains",
+            "required": false,
+            "type": "string"
           }
         ],
         "responses": {
@@ -4300,6 +4512,88 @@
             "description": "A successful response.",
             "schema": {
               "$ref": "#/definitions/v1QueryAuditLogResponse"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/rpcStatus"
+            }
+          }
+        },
+        "tags": [
+          "AuditService"
+        ]
+      }
+    },
+    "/v1/audit-log:aggregate": {
+      "get": {
+        "operationId": "AuditService_AggregateAuditLog",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "orgId",
+            "required": false,
+            "type": "string"
+          },
+          {
+            "in": "query",
+            "name": "actorId",
+            "required": false,
+            "type": "string"
+          },
+          {
+            "in": "query",
+            "name": "eventType",
+            "required": false,
+            "type": "string"
+          },
+          {
+            "in": "query",
+            "name": "category",
+            "required": false,
+            "type": "string"
+          },
+          {
+            "in": "query",
+            "name": "resource",
+            "required": false,
+            "type": "string"
+          },
+          {
+            "format": "date-time",
+            "in": "query",
+            "name": "from",
+            "required": false,
+            "type": "string"
+          },
+          {
+            "format": "date-time",
+            "in": "query",
+            "name": "to",
+            "required": false,
+            "type": "string"
+          },
+          {
+            "description": "group_by ∈ {event_type, category, actor, time}. Defaults to event_type.",
+            "in": "query",
+            "name": "groupBy",
+            "required": false,
+            "type": "string"
+          },
+          {
+            "description": "bucket sizes the time grain when group_by == \"time\": day|week|month.",
+            "in": "query",
+            "name": "bucket",
+            "required": false,
+            "type": "string"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1AggregateAuditLogResponse"
             }
           },
           "default": {
@@ -6370,7 +6664,7 @@
             }
           }
         },
-        "summary": "Feature flags (platform-only)",
+        "summary": "Legacy feature-flag migration inventory (platform-only, read-only)",
         "tags": [
           "PlatformAdminService"
         ]
@@ -6409,6 +6703,7 @@
             }
           }
         },
+        "summary": "Deprecated: retained for v1 wire compatibility. The legacy inventory is\nread-only; this method always returns FAILED_PRECONDITION.",
         "tags": [
           "PlatformAdminService"
         ]
@@ -7194,6 +7489,148 @@
         ]
       }
     },
+    "/v1/record-shares": {
+      "delete": {
+        "operationId": "PermissionService_RevokeShare",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "orgId",
+            "required": false,
+            "type": "string"
+          },
+          {
+            "in": "query",
+            "name": "resourceType",
+            "required": false,
+            "type": "string"
+          },
+          {
+            "in": "query",
+            "name": "resourceId",
+            "required": false,
+            "type": "string"
+          },
+          {
+            "in": "query",
+            "name": "subjectId",
+            "required": false,
+            "type": "string"
+          },
+          {
+            "default": "SUBJECT_KIND_UNSPECIFIED",
+            "description": " - SUBJECT_KIND_PRINCIPAL: A direct role assignment always targets a Principal. Human users remain\nPrincipals of kind HUMAN; agents and services can receive the same\nexplicitly assigned authority without masquerading as users.\n - SUBJECT_KIND_USER: Backward-compatible wire/JSON input alias. New clients must use\nSUBJECT_KIND_PRINCIPAL.",
+            "enum": [
+              "SUBJECT_KIND_UNSPECIFIED",
+              "SUBJECT_KIND_PRINCIPAL",
+              "SUBJECT_KIND_USER",
+              "SUBJECT_KIND_TEAM"
+            ],
+            "in": "query",
+            "name": "subjectKind",
+            "required": false,
+            "type": "string"
+          },
+          {
+            "in": "query",
+            "name": "roleId",
+            "required": false,
+            "type": "string"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "properties": {},
+              "type": "object"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/rpcStatus"
+            }
+          }
+        },
+        "summary": "RevokeShare removes a per-record share.",
+        "tags": [
+          "PermissionService"
+        ]
+      },
+      "get": {
+        "operationId": "PermissionService_ListShares",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "orgId",
+            "required": false,
+            "type": "string"
+          },
+          {
+            "in": "query",
+            "name": "resourceType",
+            "required": false,
+            "type": "string"
+          },
+          {
+            "in": "query",
+            "name": "resourceId",
+            "required": false,
+            "type": "string"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1ListSharesResponse"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/rpcStatus"
+            }
+          }
+        },
+        "summary": "ListShares returns the shares on a specific record. A record's share list\nis its access-control list, so it is admin-scoped like the other share\nmanagement RPCs — a plain member must not be able to enumerate who a record\nthey cannot see is shared with.",
+        "tags": [
+          "PermissionService"
+        ]
+      },
+      "post": {
+        "operationId": "PermissionService_ShareRecord",
+        "parameters": [
+          {
+            "in": "body",
+            "name": "body",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/v1ShareRecordRequest"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1ShareRecordResponse"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/rpcStatus"
+            }
+          }
+        },
+        "summary": "ShareRecord grants a principal/team a role on a specific record, across\nthe ownership boundary (durable per-record ACL).",
+        "tags": [
+          "PermissionService"
+        ]
+      }
+    },
     "/v1/role-assignments": {
       "delete": {
         "operationId": "PermissionService_RevokeRole",
@@ -7409,6 +7846,134 @@
             }
           }
         },
+        "tags": [
+          "PermissionService"
+        ]
+      }
+    },
+    "/v1/scope-grants": {
+      "delete": {
+        "operationId": "PermissionService_RevokeScope",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "orgId",
+            "required": false,
+            "type": "string"
+          },
+          {
+            "in": "query",
+            "name": "subjectId",
+            "required": false,
+            "type": "string"
+          },
+          {
+            "default": "SUBJECT_KIND_UNSPECIFIED",
+            "description": " - SUBJECT_KIND_PRINCIPAL: A direct role assignment always targets a Principal. Human users remain\nPrincipals of kind HUMAN; agents and services can receive the same\nexplicitly assigned authority without masquerading as users.\n - SUBJECT_KIND_USER: Backward-compatible wire/JSON input alias. New clients must use\nSUBJECT_KIND_PRINCIPAL.",
+            "enum": [
+              "SUBJECT_KIND_UNSPECIFIED",
+              "SUBJECT_KIND_PRINCIPAL",
+              "SUBJECT_KIND_USER",
+              "SUBJECT_KIND_TEAM"
+            ],
+            "in": "query",
+            "name": "subjectKind",
+            "required": false,
+            "type": "string"
+          },
+          {
+            "in": "query",
+            "name": "scopePath",
+            "required": false,
+            "type": "string"
+          },
+          {
+            "in": "query",
+            "name": "roleId",
+            "required": false,
+            "type": "string"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "properties": {},
+              "type": "object"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/rpcStatus"
+            }
+          }
+        },
+        "summary": "RevokeScope removes a hierarchical scope grant.",
+        "tags": [
+          "PermissionService"
+        ]
+      },
+      "post": {
+        "operationId": "PermissionService_GrantScope",
+        "parameters": [
+          {
+            "in": "body",
+            "name": "body",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/v1GrantScopeRequest"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1GrantScopeResponse"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/rpcStatus"
+            }
+          }
+        },
+        "summary": "GrantScope grants a role to a principal/team at a registered scope node;\nthe grant inherits to the node's whole subtree.",
+        "tags": [
+          "PermissionService"
+        ]
+      }
+    },
+    "/v1/scope-nodes": {
+      "post": {
+        "operationId": "PermissionService_RegisterScopeNode",
+        "parameters": [
+          {
+            "in": "body",
+            "name": "body",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/v1RegisterScopeNodeRequest"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1RegisterScopeNodeResponse"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/rpcStatus"
+            }
+          }
+        },
+        "summary": "RegisterScopeNode adds a node to the org's scope tree, or places a product\nrecord at a node when resource_type/resource_id are set.",
         "tags": [
           "PermissionService"
         ]
@@ -8600,9 +9165,6 @@
     },
     {
       "name": "AuditService"
-    },
-    {
-      "name": "AuditExportService"
     },
     {
       "name": "AuthService"

@@ -2,8 +2,6 @@ version: v1
 services:
   APIKeyService:
     kind: generated
-  AuditExportService:
-    kind: generated
   AuditService:
     kind: generated
   AuthService:

@@ -7,6 +7,7 @@
 package accountsv1
 
 import (
+	v1 "accounts/pkg/gen/saas/composed/settings/v1"
 	_ "accounts/pkg/gen/saas/policy/v1"
 	reflect "reflect"
 	sync "sync"
@@ -340,6 +341,9 @@ type UserSettings struct {
 	Regional      *UserRegionalSettings     `protobuf:"bytes,2,opt,name=regional,proto3,oneof" json:"regional,omitempty"`
 	Email         *UserEmailSettings        `protobuf:"bytes,3,opt,name=email,proto3,oneof" json:"email,omitempty"`
 	Notifications *UserNotificationSettings `protobuf:"bytes,4,opt,name=notifications,proto3,oneof" json:"notifications,omitempty"`
+	// Product-contributed settings are generated into this typed container.
+	// ProtoJSON storage and API patching preserve the same schema end to end.
+	Composed      *v1.Settings `protobuf:"bytes,1000,opt,name=composed,proto3" json:"composed,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -398,6 +402,13 @@ func (x *UserSettings) GetEmail() *UserEmailSettings {
 func (x *UserSettings) GetNotifications() *UserNotificationSettings {
 	if x != nil {
 		return x.Notifications
+	}
+	return nil
+}
+
+func (x *UserSettings) GetComposed() *v1.Settings {
+	if x != nil {
+		return x.Composed
 	}
 	return nil
 }
@@ -498,7 +509,7 @@ var File_saas_accounts_v1_user_settings_proto protoreflect.FileDescriptor
 
 const file_saas_accounts_v1_user_settings_proto_rawDesc = "" +
 	"\n" +
-	"$saas/accounts/v1/user_settings.proto\x12\x10saas.accounts.v1\x1a\x1bbuf/validate/validate.proto\x1a\x1cgoogle/api/annotations.proto\x1a google/protobuf/field_mask.proto\x1a\x1csaas/policy/v1/options.proto\"l\n" +
+	"$saas/accounts/v1/user_settings.proto\x12\x10saas.accounts.v1\x1a\x1bbuf/validate/validate.proto\x1a\x1cgoogle/api/annotations.proto\x1a google/protobuf/field_mask.proto\x1a(saas/composed/settings/v1/settings.proto\x1a\x1csaas/policy/v1/options.proto\"l\n" +
 	"\x16UserAppearanceSettings\x12H\n" +
 	"\x05theme\x18\x01 \x01(\x0e2!.saas.accounts.v1.ThemePreferenceB\n" +
 	"\xbaH\a\x82\x01\x04\x10\x01 \x00H\x00R\x05theme\x88\x01\x01B\b\n" +
@@ -531,14 +542,15 @@ const file_saas_accounts_v1_user_settings_proto_rawDesc = "" +
 	"\x05sound\x18\x03 \x01(\bH\x02R\x05sound\x88\x01\x01B\t\n" +
 	"\a_in_appB\a\n" +
 	"\x05_pushB\b\n" +
-	"\x06_sound\"\xf5\x02\n" +
+	"\x06_sound\"\xb7\x03\n" +
 	"\fUserSettings\x12M\n" +
 	"\n" +
 	"appearance\x18\x01 \x01(\v2(.saas.accounts.v1.UserAppearanceSettingsH\x00R\n" +
 	"appearance\x88\x01\x01\x12G\n" +
 	"\bregional\x18\x02 \x01(\v2&.saas.accounts.v1.UserRegionalSettingsH\x01R\bregional\x88\x01\x01\x12>\n" +
 	"\x05email\x18\x03 \x01(\v2#.saas.accounts.v1.UserEmailSettingsH\x02R\x05email\x88\x01\x01\x12U\n" +
-	"\rnotifications\x18\x04 \x01(\v2*.saas.accounts.v1.UserNotificationSettingsH\x03R\rnotifications\x88\x01\x01B\r\n" +
+	"\rnotifications\x18\x04 \x01(\v2*.saas.accounts.v1.UserNotificationSettingsH\x03R\rnotifications\x88\x01\x01\x12@\n" +
+	"\bcomposed\x18\xe8\a \x01(\v2#.saas.composed.settings.v1.SettingsR\bcomposedB\r\n" +
 	"\v_appearanceB\v\n" +
 	"\t_regionalB\b\n" +
 	"\x06_emailB\x10\n" +
@@ -582,25 +594,27 @@ var file_saas_accounts_v1_user_settings_proto_goTypes = []any{
 	(*UserSettings)(nil),              // 5: saas.accounts.v1.UserSettings
 	(*GetUserSettingsRequest)(nil),    // 6: saas.accounts.v1.GetUserSettingsRequest
 	(*UpdateUserSettingsRequest)(nil), // 7: saas.accounts.v1.UpdateUserSettingsRequest
-	(*fieldmaskpb.FieldMask)(nil),     // 8: google.protobuf.FieldMask
+	(*v1.Settings)(nil),               // 8: saas.composed.settings.v1.Settings
+	(*fieldmaskpb.FieldMask)(nil),     // 9: google.protobuf.FieldMask
 }
 var file_saas_accounts_v1_user_settings_proto_depIdxs = []int32{
-	0, // 0: saas.accounts.v1.UserAppearanceSettings.theme:type_name -> saas.accounts.v1.ThemePreference
-	1, // 1: saas.accounts.v1.UserSettings.appearance:type_name -> saas.accounts.v1.UserAppearanceSettings
-	2, // 2: saas.accounts.v1.UserSettings.regional:type_name -> saas.accounts.v1.UserRegionalSettings
-	3, // 3: saas.accounts.v1.UserSettings.email:type_name -> saas.accounts.v1.UserEmailSettings
-	4, // 4: saas.accounts.v1.UserSettings.notifications:type_name -> saas.accounts.v1.UserNotificationSettings
-	5, // 5: saas.accounts.v1.UpdateUserSettingsRequest.patch:type_name -> saas.accounts.v1.UserSettings
-	8, // 6: saas.accounts.v1.UpdateUserSettingsRequest.clear_mask:type_name -> google.protobuf.FieldMask
-	6, // 7: saas.accounts.v1.UserSettingsService.Get:input_type -> saas.accounts.v1.GetUserSettingsRequest
-	7, // 8: saas.accounts.v1.UserSettingsService.Update:input_type -> saas.accounts.v1.UpdateUserSettingsRequest
-	5, // 9: saas.accounts.v1.UserSettingsService.Get:output_type -> saas.accounts.v1.UserSettings
-	5, // 10: saas.accounts.v1.UserSettingsService.Update:output_type -> saas.accounts.v1.UserSettings
-	9, // [9:11] is the sub-list for method output_type
-	7, // [7:9] is the sub-list for method input_type
-	7, // [7:7] is the sub-list for extension type_name
-	7, // [7:7] is the sub-list for extension extendee
-	0, // [0:7] is the sub-list for field type_name
+	0,  // 0: saas.accounts.v1.UserAppearanceSettings.theme:type_name -> saas.accounts.v1.ThemePreference
+	1,  // 1: saas.accounts.v1.UserSettings.appearance:type_name -> saas.accounts.v1.UserAppearanceSettings
+	2,  // 2: saas.accounts.v1.UserSettings.regional:type_name -> saas.accounts.v1.UserRegionalSettings
+	3,  // 3: saas.accounts.v1.UserSettings.email:type_name -> saas.accounts.v1.UserEmailSettings
+	4,  // 4: saas.accounts.v1.UserSettings.notifications:type_name -> saas.accounts.v1.UserNotificationSettings
+	8,  // 5: saas.accounts.v1.UserSettings.composed:type_name -> saas.composed.settings.v1.Settings
+	5,  // 6: saas.accounts.v1.UpdateUserSettingsRequest.patch:type_name -> saas.accounts.v1.UserSettings
+	9,  // 7: saas.accounts.v1.UpdateUserSettingsRequest.clear_mask:type_name -> google.protobuf.FieldMask
+	6,  // 8: saas.accounts.v1.UserSettingsService.Get:input_type -> saas.accounts.v1.GetUserSettingsRequest
+	7,  // 9: saas.accounts.v1.UserSettingsService.Update:input_type -> saas.accounts.v1.UpdateUserSettingsRequest
+	5,  // 10: saas.accounts.v1.UserSettingsService.Get:output_type -> saas.accounts.v1.UserSettings
+	5,  // 11: saas.accounts.v1.UserSettingsService.Update:output_type -> saas.accounts.v1.UserSettings
+	10, // [10:12] is the sub-list for method output_type
+	8,  // [8:10] is the sub-list for method input_type
+	8,  // [8:8] is the sub-list for extension type_name
+	8,  // [8:8] is the sub-list for extension extendee
+	0,  // [0:8] is the sub-list for field type_name
 }
 
 func init() { file_saas_accounts_v1_user_settings_proto_init() }

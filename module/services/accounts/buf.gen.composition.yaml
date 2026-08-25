@@ -1,0 +1,20 @@
+version: v2
+managed:
+  enabled: true
+  disable:
+    - file_option: go_package
+      module: buf.build/googleapis/googleapis
+    - file_option: go_package
+      module: buf.build/bufbuild/protovalidate
+  override:
+    - file_option: go_package_prefix
+      value: accounts/pkg/gen
+plugins:
+  - local: [go, run, google.golang.org/protobuf/cmd/protoc-gen-go@v1.36.11]
+    out: code/pkg/gen
+    opt: paths=source_relative
+  - local: [npx, --prefix, ../frontend/code, --no-install, protoc-gen-es]
+    out: ../frontend/code/src/gen
+    opt:
+      - target=ts
+      - import_extension=none

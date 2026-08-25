@@ -18,7 +18,14 @@ import { Button, Switch } from "@/shared/ui";
 const STORAGE_KEY = "saas-starter:consent-preferences";
 const client = createClient(ConsentService, apiTransport);
 const acquisitionClient = createClient(WaitlistService, apiTransport);
-const LEGAL_CONTENT_CONFIGURED = legalContentConfigured();
+
+// The terms gate requires configured legal content. legalContentConfig already
+// supplies dev placeholders when the build opts in (NEXT_PUBLIC_LEGAL_DEV_PLACEHOLDER,
+// set from the fixture boundary), so this stays usable in the local stack without
+// a separate fixture-mode escape hatch here.
+function termsAcceptanceEnabled(): boolean {
+	return legalContentConfigured();
+}
 
 type Choices = { analytics: boolean; marketing: boolean };
 type Banner =
@@ -51,6 +58,7 @@ function notifyConsent(choices: Choices, policyVersion: string) {
 export function ConsentBanner() {
 	const { isAuthenticated, isLoading } = useAuth();
 	const [banner, setBanner] = useState<Banner>({ kind: "hidden" });
+	const termsEnabled = termsAcceptanceEnabled();
 
 	useEffect(() => {
 		if (isLoading) return;
@@ -81,9 +89,7 @@ export function ConsentBanner() {
 						});
 					}
 				})
-				.catch(() =>
-					notifyConsent({ analytics: false, marketing: false }, ""),
-				);
+				.catch(() => notifyConsent({ analytics: false, marketing: false }, ""));
 			return () => {
 				cancelled = true;
 			};
@@ -114,9 +120,7 @@ export function ConsentBanner() {
 					});
 				}
 			})
-			.catch(() =>
-				notifyConsent({ analytics: false, marketing: false }, ""),
-			);
+			.catch(() => notifyConsent({ analytics: false, marketing: false }, ""));
 		return () => {
 			cancelled = true;
 		};
@@ -176,7 +180,7 @@ export function ConsentBanner() {
 								</Link>
 								.
 							</p>
-							{!LEGAL_CONTENT_CONFIGURED && (
+							{!termsEnabled && (
 								<p className="mt-2 text-sm text-destructive">
 									Terms acceptance is unavailable until the operator configures
 									its legal content.
@@ -252,7 +256,7 @@ export function ConsentBanner() {
 			<div className="mt-4 flex flex-wrap justify-end gap-2">
 				{banner.kind === "terms" ? (
 					<Button
-						disabled={!LEGAL_CONTENT_CONFIGURED}
+						disabled={!termsEnabled}
 						onClick={async () => {
 							const status = await client.acceptTerms({
 								version: banner.status.currentTermsVersion,

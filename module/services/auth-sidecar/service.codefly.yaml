@@ -8,7 +8,7 @@ description: |
 agent:
     kind: codefly:service
     name: go-grpc
-    version: 0.1.21
+    version: 0.1.33
     publisher: codefly.dev
 service-dependencies:
     - name: accounts
@@ -19,9 +19,13 @@ service-dependencies:
     - name: cache
       endpoints:
         - name: write
+    - name: telemetry
+      endpoints:
+        - name: grpc
 workspace-configuration-dependencies:
     - gateway
     - internal-auth
+    - observability
     - security
 endpoints:
     - name: grpc
@@ -32,3 +36,5 @@ spec:
     protocol-output-dirs:
         - code/pkg/gen
     rest-endpoint: true
+    service-account:
+        name: auth-sidecar

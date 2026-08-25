@@ -63,20 +63,20 @@ type webhookPayload struct {
 func newWebhookDelivery(entry AuditEntry, subscriptionID string) (*WebhookDelivery, []byte, error) {
 	deliveryID := NewIDString()
 	data, err := json.Marshal(map[string]any{
-		"action":          entry.Action,
+		"event_type":      string(entry.EventType),
 		"resource":        entry.Resource,
 		"resource_id":     entry.ResourceID,
 		"actor_id":        entry.ActorID,
 		"actor_type":      entry.ActorType,
 		"organization_id": entry.OrgID,
-		"metadata":        entry.Metadata,
+		"payload":         RedactPayload(entry.EventType, entry.Payload),
 	})
 	if err != nil {
 		return nil, nil, err
 	}
 	payload, err := json.Marshal(webhookPayload{
 		EventID:    entry.ID,
-		EventType:  entry.Action,
+		EventType:  string(entry.EventType),
 		Data:       data,
 		Timestamp:  entry.CreatedAt.UTC().Format(time.RFC3339Nano),
 		DeliveryID: deliveryID,
@@ -89,7 +89,7 @@ func newWebhookDelivery(entry AuditEntry, subscriptionID string) (*WebhookDelive
 		SubscriptionID: subscriptionID,
 		EventID:        entry.ID,
 		OutboxEventID:  entry.ID,
-		EventType:      entry.Action,
+		EventType:      string(entry.EventType),
 		Payload:        string(payload),
 		Status:         "pending",
 	}, payload, nil

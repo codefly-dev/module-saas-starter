@@ -25,6 +25,7 @@ package cache
 import (
 	"context"
 	"errors"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -44,6 +45,12 @@ type Cache interface {
 	Get(ctx context.Context, key string) ([]byte, error)
 	Set(ctx context.Context, key string, value []byte, ttl time.Duration) error
 	Delete(ctx context.Context, keys ...string) error
+	// Incr atomically increments the integer counter at key by one and,
+	// on the first increment that creates the key, arms ttl as its expiry.
+	// The increment and the expiry are applied as one atomic step so a
+	// concurrent burst can't race a live counter into a missing TTL (which
+	// would leak the key forever). Returns the counter's new value.
+	Incr(ctx context.Context, key string, ttl time.Duration) (int64, error)
 }
 
 // ==================== Redis implementation ====================
@@ -81,6 +88,22 @@ func (r *redisCache) Delete(ctx context.Context, keys ...string) error {
 		return nil
 	}
 	return r.client.Del(ctx, keys...).Err()
+}
+
+// incrExpireScript increments a counter and arms its TTL only on the first
+// increment, all inside one Redis round-trip. Doing INCR then a separate
+// EXPIRE would let a second caller observe the counter between the two ops
+// and skip the expiry, leaking the key; the Lua body runs atomically.
+var incrExpireScript = redis.NewScript(`
+local v = redis.call("INCR", KEYS[1])
+if v == 1 then
+	redis.call("PEXPIRE", KEYS[1], ARGV[1])
+end
+return v
+`)
+
+func (r *redisCache) Incr(ctx context.Context, key string, ttl time.Duration) (int64, error) {
+	return incrExpireScript.Run(ctx, r.client, []string{key}, ttl.Milliseconds()).Int64()
 }
 
 // ==================== In-memory fallback ====================
@@ -131,6 +154,26 @@ func (m *memoryCache) Set(_ context.Context, key string, value []byte, ttl time.
 	}
 	m.data[key] = memoryEntry{value: value, expiresAt: exp}
 	return nil
+}
+
+func (m *memoryCache) Incr(_ context.Context, key string, ttl time.Duration) (int64, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	e, ok := m.data[key]
+	if ok && !e.expiresAt.IsZero() && time.Now().After(e.expiresAt) {
+		ok = false
+	}
+	var count int64
+	exp := time.Time{}
+	if ok {
+		count, _ = strconv.ParseInt(string(e.value), 10, 64)
+		exp = e.expiresAt
+	} else if ttl > 0 {
+		exp = time.Now().Add(ttl)
+	}
+	count++
+	m.data[key] = memoryEntry{value: []byte(strconv.FormatInt(count, 10)), expiresAt: exp}
+	return count, nil
 }
 
 func (m *memoryCache) Delete(_ context.Context, keys ...string) error {
@@ -190,6 +233,10 @@ func (s *scopedCache) Get(ctx context.Context, key string) ([]byte, error) {
 
 func (s *scopedCache) Set(ctx context.Context, key string, value []byte, ttl time.Duration) error {
 	return s.inner.Set(ctx, s.prefix+key, value, ttl)
+}
+
+func (s *scopedCache) Incr(ctx context.Context, key string, ttl time.Duration) (int64, error) {
+	return s.inner.Incr(ctx, s.prefix+key, ttl)
 }
 
 func (s *scopedCache) Delete(ctx context.Context, keys ...string) error {

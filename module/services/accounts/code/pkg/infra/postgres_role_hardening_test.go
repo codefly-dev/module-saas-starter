@@ -30,6 +30,7 @@ const (
 
 var relationsByScope = map[relationScope][]string{
 	relationScopeGlobal: {
+		"audit_event_types",
 		"bootstrap_state",
 		"data_retention_policies",
 		"email_templates",
@@ -40,12 +41,16 @@ var relationsByScope = map[relationScope][]string{
 		"platform_admins",
 	},
 	relationScopeTenant: {
+		"actor_chain_journal",
+		"actor_chain_revocations",
 		"api_keys",
+		"approval_decisions",
+		"approval_requests",
 		"audit_events",
-		"audit_export_configs",
 		"delegation_grants",
 		"entitlement_overrides",
 		"invitations",
+		"org_identity_providers",
 		"org_settings",
 		"organization_activations",
 		"organization_authorization_revisions",
@@ -53,9 +58,12 @@ var relationsByScope = map[relationScope][]string{
 		"organizations",
 		"principal_authorization_revisions",
 		"principals",
+		"record_shares",
 		"role_assignments",
 		"role_permissions",
 		"roles",
+		"scope_grants",
+		"scope_nodes",
 		"subscriptions",
 		"team_members",
 		"teams",
@@ -101,24 +109,6 @@ type externalRelationAuthority struct {
 
 var externalRelationAuthorities = map[string]externalRelationAuthority{}
 
-func registerExternalRelationAuthority(owner string, privileges relationPrivileges, relations ...string) {
-	if owner == "" {
-		panic("external relation authority owner is required")
-	}
-	for _, relation := range relations {
-		if relation == "" {
-			panic("external relation authority name is required")
-		}
-		if existing, found := externalRelationAuthorities[relation]; found {
-			panic("external relation " + relation + " is already owned by " + existing.owner)
-		}
-		externalRelationAuthorities[relation] = externalRelationAuthority{
-			owner:               owner,
-			appTenantPrivileges: privileges,
-		}
-	}
-}
-
 var appTenantRelationPrivileges = map[string]relationPrivileges{
 	// Global catalogs and worker-owned job relations.
 	"identity_providers":      {selectRows: true},
@@ -127,7 +117,8 @@ var appTenantRelationPrivileges = map[string]relationPrivileges{
 	"email_templates":         {selectRows: true},
 	"data_retention_policies": {selectRows: true},
 	"bootstrap_state":         {selectRows: true, updateRows: true},
-	"feature_flags":           {selectRows: true, insertRows: true, updateRows: true},
+	"feature_flags":           {selectRows: true},
+	"audit_event_types":       {selectRows: true},
 	"platform_admins":         {selectRows: true, insertRows: true, updateRows: true, deleteRows: true},
 	"analytics_deliveries":    {},
 	"email_delivery_events":   {},
@@ -136,12 +127,16 @@ var appTenantRelationPrivileges = map[string]relationPrivileges{
 	"job_state_transitions":   {},
 
 	// Tenant-scoped relations.
+	"actor_chain_journal":                  {selectRows: true, insertRows: true},
+	"actor_chain_revocations":              {selectRows: true, insertRows: true},
 	"api_keys":                             {selectRows: true, insertRows: true, updateRows: true},
+	"approval_decisions":                   {selectRows: true, insertRows: true}, // append-only, like actor_chain_journal
+	"approval_requests":                    {selectRows: true, insertRows: true, updateRows: true},
 	"audit_events":                         {selectRows: true, insertRows: true},
-	"audit_export_configs":                 {selectRows: true, insertRows: true, updateRows: true, deleteRows: true},
 	"delegation_grants":                    {selectRows: true, insertRows: true, updateRows: true},
 	"entitlement_overrides":                {selectRows: true, insertRows: true, updateRows: true},
 	"invitations":                          {selectRows: true, insertRows: true, updateRows: true},
+	"org_identity_providers":               {selectRows: true, insertRows: true, updateRows: true},
 	"org_settings":                         {selectRows: true, insertRows: true, updateRows: true},
 	"organization_activations":             {selectRows: true, insertRows: true, updateRows: true},
 	"organization_authorization_revisions": {selectRows: true},
@@ -149,9 +144,12 @@ var appTenantRelationPrivileges = map[string]relationPrivileges{
 	"organizations":                        {selectRows: true, insertRows: true, updateRows: true},
 	"principal_authorization_revisions":    {selectRows: true},
 	"principals":                           {selectRows: true, insertRows: true, updateRows: true},
+	"record_shares":                        {selectRows: true, insertRows: true, updateRows: true, deleteRows: true},
 	"role_assignments":                     {selectRows: true, insertRows: true, deleteRows: true},
 	"role_permissions":                     {selectRows: true, insertRows: true},
 	"roles":                                {selectRows: true, insertRows: true, deleteRows: true},
+	"scope_grants":                         {selectRows: true, insertRows: true, updateRows: true, deleteRows: true},
+	"scope_nodes":                          {selectRows: true, insertRows: true, updateRows: true, deleteRows: true},
 	"subscriptions":                        {selectRows: true, insertRows: true, updateRows: true},
 	"team_members":                         {selectRows: true, insertRows: true, updateRows: true, deleteRows: true},
 	"teams":                                {selectRows: true, insertRows: true, updateRows: true, deleteRows: true},
@@ -342,6 +340,33 @@ func TestControlPlaneRelationGrantsAreExact(t *testing.T) {
 			if scope == relationScopeWorker || scope == relationScopeJob {
 				want = relationPrivileges{}
 			}
+			if relation == "feature_flags" {
+				want = relationPrivileges{selectRows: true}
+			}
+			// audit_events is append-only: the control plane reads and inserts
+			// (system NULL-org events) but never updates or deletes rows.
+			// Retention drops whole partitions via a SECURITY DEFINER function,
+			// not a row DELETE, so no DELETE grant is needed.
+			if relation == "audit_events" {
+				want = relationPrivileges{selectRows: true, insertRows: true}
+			}
+			// actor_chain_journal / actor_chain_revocations are append-only
+			// like audit_events: the control plane reads and inserts but never
+			// updates or deletes (an immutable trigger rejects those anyway).
+			if relation == "actor_chain_journal" || relation == "actor_chain_revocations" {
+				want = relationPrivileges{selectRows: true, insertRows: true}
+			}
+			// approval_requests is the mutable head: the control plane reads,
+			// inserts, and transitions it, but never deletes — org deletion cascades
+			// via the org_id FK, so no row-DELETE grant is needed.
+			if relation == "approval_requests" {
+				want = relationPrivileges{selectRows: true, insertRows: true, updateRows: true}
+			}
+			// approval_decisions is append-only like actor_chain_journal: read and
+			// insert, never update or delete (an immutable trigger rejects those).
+			if relation == "approval_decisions" {
+				want = relationPrivileges{selectRows: true, insertRows: true}
+			}
 
 			var got relationPrivileges
 			var truncateRows bool
@@ -516,12 +541,18 @@ func TestAnalyticsDeliveryRoleHasProjectionOnlyAuthority(t *testing.T) {
 func TestDatabaseRelationAuthorityInventoryIsComplete(t *testing.T) {
 	require.NoError(t, testStore.WithControlPlane(testCtx, func(ctx context.Context) error {
 		tx := ctx.Value("tx").(pgx.Tx) //nolint:staticcheck // shared transaction context key
+		// relispartition excludes the audit_events monthly partition children:
+		// they are dynamically named and inherit access through the partitioned
+		// parent, so they carry no independent authority to classify.
 		rows, err := tx.Query(ctx, `
-			SELECT tablename
-			FROM pg_tables
-			WHERE schemaname = 'public'
-			  AND tablename <> 'schema_migrations'
-			ORDER BY tablename`)
+			SELECT c.relname
+			FROM pg_class c
+			JOIN pg_namespace n ON n.oid = c.relnamespace
+			WHERE n.nspname = 'public'
+			  AND c.relkind IN ('r', 'p')
+			  AND NOT c.relispartition
+			  AND c.relname <> 'schema_migrations'
+			ORDER BY c.relname`)
 		require.NoError(t, err)
 		defer rows.Close()
 

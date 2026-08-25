@@ -34,12 +34,6 @@
           ]
         },
         {
-          "service": "object-storage",
-          "endpoints": [
-            "accounts"
-          ]
-        },
-        {
           "service": "store",
           "endpoints": [
             "tcp"
@@ -89,6 +83,12 @@
           "endpoints": [
             "write"
           ]
+        },
+        {
+          "service": "telemetry",
+          "endpoints": [
+            "grpc"
+          ]
         }
       ]
     },
@@ -136,17 +136,6 @@
           "api": "CODEFLY_API_HTTP",
           "visibility": "ENDPOINT_VISIBILITY_PUBLIC",
           "port": 3000
-        }
-      ]
-    },
-    {
-      "name": "object-storage",
-      "endpoints": [
-        {
-          "name": "accounts",
-          "api": "CODEFLY_API_TCP",
-          "visibility": "ENDPOINT_VISIBILITY_PRIVATE",
-          "port": 9000
         }
       ]
     },

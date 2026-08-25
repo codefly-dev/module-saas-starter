@@ -27,6 +27,12 @@ export function appearanceStyleProperties(
 		"--appearance-radius": appearance.radius,
 		"--appearance-font-sans": appearance.fontSans,
 		"--appearance-font-heading": appearance.fontHeading,
+		"--appearance-spacing": appearance.spacing,
+		"--appearance-font-size-base": appearance.fontSizeBase,
+		"--appearance-sidebar-width": appearance.sidebarWidth,
+		"--appearance-sidebar-width-icon": appearance.sidebarWidthIcon,
+		"--appearance-border-width": appearance.borderWidth,
+		"--appearance-shadow-strength": appearance.shadowStrength,
 	};
 	for (const mode of ["light", "dark"] as const) {
 		for (const token of FRONTEND_APPEARANCE_TOKEN_NAMES)

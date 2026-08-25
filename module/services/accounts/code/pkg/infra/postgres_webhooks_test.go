@@ -84,7 +84,7 @@ func runPostgresInfraTests(m *testing.M) int {
 		fmt.Fprintf(os.Stderr, "WithDependencies: %v\n", err)
 		return 1
 	}
-	defer deps.Destroy(ctx)
+	defer func() { _ = deps.Destroy(ctx) }()
 
 	if _, err := codefly.Init(ctx); err != nil {
 		fmt.Fprintf(os.Stderr, "codefly.Init: %v\n", err)
@@ -377,9 +377,9 @@ func TestDurableAuditEmitterCreatesWebhookOutboxAtomically(t *testing.T) {
 	require.NoError(t, err)
 	emitter.Emit(testCtx, business.AuditEntry{
 		ID: eventID, ActorID: userID, ActorType: "user",
-		Action: eventType, Resource: "user", ResourceID: userID, OrgID: orgID,
-		Metadata:  map[string]string{"source": "integration-test"},
-		CreatedAt: time.Date(2026, 7, 13, 12, 0, 0, 123, time.UTC),
+		EventType: business.EventType(eventType), Resource: "user", ResourceID: userID, OrgID: orgID,
+		Payload:   map[string]any{"source": "integration-test"},
+		CreatedAt: time.Now().UTC(),
 	})
 
 	var deliveries []*business.WebhookDelivery
@@ -465,7 +465,7 @@ func TestDurableAuditEmitterCreatesWebhookOutboxAtomically(t *testing.T) {
 	// A duplicate event insert rolls the entire transaction back; the partial
 	// unique outbox key also prevents a second endpoint row for the same event.
 	emitter.Emit(testCtx, business.AuditEntry{
-		ID: eventID, ActorType: "system", Action: eventType, OrgID: orgID,
+		ID: eventID, ActorType: "system", EventType: business.EventType(eventType), OrgID: orgID,
 	})
 	require.NoError(t, testStore.WithOrgTx(testCtx, orgID, func(ctx context.Context) error {
 		again, err := testStore.ListWebhookDeliveries(ctx, sub.ID, 10)

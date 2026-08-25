@@ -55,10 +55,13 @@ func authenticateFixture(ctx context.Context, req *gen.AuthenticateRequest) (*ge
 	testService.SetDevelopmentTokenValidator(&requestFixtureValidator{
 		token: token,
 		claims: &authcore.Claims{
-			Provider:  req.Provider,
-			Subject:   token,
-			Email:     email,
-			ExpiresAt: time.Now().Add(time.Hour),
+			Provider: req.Provider,
+			Subject:  token,
+			Email:    email,
+			// Mirror the real dev validator: fixture identities are seeded and
+			// trusted, so the token double asserts them as verified.
+			EmailVerified: true,
+			ExpiresAt:     time.Now().Add(time.Hour),
 		},
 	})
 	defer testService.SetDevelopmentTokenValidator(nil)
@@ -94,7 +97,7 @@ func runBusinessTests(m *testing.M) int {
 		// each short-lived flow temporary host ports; the scope also isolates
 		// its named containers and other runtime resources.
 		sdk.WithNamingScope("business-test"),
-		// A clean machine may need to pull Postgres, Vault, Redis, and MinIO
+		// A clean machine may need to pull Postgres, Vault, and Redis
 		// before the first integration test. Keep the dependency-start budget
 		// separate from individual test timeouts so cold CI is deterministic.
 		sdk.WithTimeout(5*time.Minute),
@@ -104,7 +107,7 @@ func runBusinessTests(m *testing.M) int {
 		fmt.Fprintf(os.Stderr, "WithDependencies failed: %v\n", err)
 		return 1
 	}
-	defer deps.Destroy(ctx)
+	defer func() { _ = deps.Destroy(ctx) }()
 
 	_, err = codefly.Init(ctx)
 	if err != nil {
@@ -131,6 +134,7 @@ func runBusinessTests(m *testing.M) int {
 	if err == nil {
 		service.SetHasher(vaultClient)
 		service.SetMFASecretCipher(vaultClient)
+		service.SetOrgIdentityProviderCipher(vaultClient)
 	}
 
 	// New auth pipeline: IdentityResolver + JWTMinter both backed by Postgres.
@@ -441,7 +445,7 @@ func TestAuthenticate(t *testing.T) {
 	require.NoError(t, err)
 	require.NotEmpty(t, resp.AccessToken)
 	require.NotEmpty(t, resp.RefreshToken)
-	require.Equal(t, int64(900), resp.ExpiresIn)
+	require.Equal(t, int64(business.AccessTokenLifetime.Seconds()), resp.ExpiresIn)
 	require.NotEmpty(t, resp.User.Uuid)
 }
 

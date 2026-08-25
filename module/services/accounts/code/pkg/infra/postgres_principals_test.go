@@ -435,3 +435,35 @@ func TestPrincipal_CreateAgent_ConcurrentDuplicate_OneWins(t *testing.T) {
 	require.Equal(t, 1, successCount, "exactly one create must succeed")
 	require.Equal(t, 1, conflictCount, "the other must report conflict")
 }
+
+// TestPrincipals_CreateAgent_AuditActorTypeFromCreatorKind proves the
+// principal.created audit event is attributed to the creator's actual kind, not
+// a hardcoded "user": an agent creating a sub-agent must be recorded as an
+// "agent" actor.
+func TestPrincipals_CreateAgent_AuditActorTypeFromCreatorKind(t *testing.T) {
+	owner := seedUser(t)
+	orgID := seedOrg(t, owner)
+	creator := seedAgentPrincipal(t, orgID, "publisher/creator:1.0.0")
+
+	svc, err := business.NewService(testStore)
+	require.NoError(t, err)
+	rec := &recordingEmitter{}
+	svc.SetAuditEmitter(rec)
+
+	_, err = svc.CreateAgentPrincipal(testCtx, business.CreateAgentRequest{
+		OrgID:           orgID,
+		AgentIdentifier: "publisher/child:1.0.0",
+		CreatedBy:       creator.ID,
+	})
+	require.NoError(t, err)
+
+	found := false
+	for _, e := range rec.entries {
+		if e.EventType == business.EventPrincipalCreated {
+			require.Equal(t, "agent", e.ActorType,
+				"principal.created by an agent creator must be attributed to an agent actor")
+			found = true
+		}
+	}
+	require.True(t, found, "principal.created must be emitted")
+}

@@ -70,6 +70,7 @@ func (f *fakeIdP) validClaims() jwt.MapClaims {
 	now := time.Now()
 	return jwt.MapClaims{
 		"iss":             f.issuer,
+		"aud":             "test-audience",
 		"sub":             "user_01ABCXYZ",
 		"email":           "user@acme.com",
 		"email_verified":  true,
@@ -86,6 +87,7 @@ func newValidator(t *testing.T, fi *fakeIdP) *oidc.Validator {
 		ProviderName: "test-provider",
 		Issuer:       fi.issuer,
 		JWKSURL:      fi.jwksURL(),
+		Audience:     "test-audience",
 	})
 	require.NoError(t, err)
 	return v
@@ -104,6 +106,51 @@ func TestNew_ValidatesRequiredFields(t *testing.T) {
 	require.Error(t, err)
 }
 
+func TestNew_RequiresAudienceBinding(t *testing.T) {
+	base := oidc.Config{ProviderName: "x", Issuer: "y", JWKSURL: "z"}
+
+	// No binding at all: construction must fail closed.
+	_, err := oidc.New(base)
+	require.ErrorContains(t, err, "audience binding")
+
+	// A ClientIDClaim without a ClientID is not a binding: an empty ClientID
+	// would accept any token carrying an empty claim.
+	half := base
+	half.ClientIDClaim = "client_id"
+	_, err = oidc.New(half)
+	require.ErrorContains(t, err, "audience binding")
+
+	// Either full binding satisfies the requirement.
+	withAud := base
+	withAud.Audience = "api://acme"
+	_, err = oidc.New(withAud)
+	require.NoError(t, err)
+
+	withClientID := base
+	withClientID.ClientIDClaim = "client_id"
+	withClientID.ClientID = "client_123"
+	_, err = oidc.New(withClientID)
+	require.NoError(t, err)
+}
+
+func TestValidate_WrongOrAbsentAudienceRejected(t *testing.T) {
+	ctx := context.Background()
+	fi := newFakeIdP(t)
+	v := newValidator(t, fi) // configured with Audience "test-audience"
+
+	wrong := fi.validClaims()
+	wrong["aud"] = "someone-elses-audience"
+	_, err := v.Validate(ctx, fi.sign(t, wrong))
+	require.ErrorIs(t, err, auth.ErrTokenWrongAudience)
+
+	// An absent aud is likewise rejected: with an audience configured, jwt/v5
+	// treats the claim as required and rejects the token outright.
+	absent := fi.validClaims()
+	delete(absent, "aud")
+	_, err = v.Validate(ctx, fi.sign(t, absent))
+	require.Error(t, err)
+}
+
 func TestValidate_Happy(t *testing.T) {
 	ctx := context.Background()
 	fi := newFakeIdP(t)
@@ -114,8 +161,41 @@ func TestValidate_Happy(t *testing.T) {
 	require.Equal(t, "test-provider", claims.Provider)
 	require.Equal(t, "user_01ABCXYZ", claims.Subject)
 	require.Equal(t, "user@acme.com", claims.Email)
+	require.True(t, claims.EmailVerified)
 	require.Equal(t, "org_01DEFGHI", claims.ProviderOrgID)
 	require.False(t, claims.ExpiresAt.IsZero())
+}
+
+func TestValidate_EmailVerifiedClaimMapping(t *testing.T) {
+	ctx := context.Background()
+	fi := newFakeIdP(t)
+	v := newValidator(t, fi)
+
+	cases := []struct {
+		name  string
+		value any
+		want  bool
+	}{
+		{"boolean true", true, true},
+		{"boolean false", false, false},
+		{"string true", "true", true},
+		{"string false", "false", false},
+		{"absent claim", nil, false},
+		{"unexpected shape", 1, false},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			c := fi.validClaims()
+			if tc.name == "absent claim" {
+				delete(c, "email_verified")
+			} else {
+				c["email_verified"] = tc.value
+			}
+			claims, err := v.Validate(ctx, fi.sign(t, c))
+			require.NoError(t, err)
+			require.Equal(t, tc.want, claims.EmailVerified)
+		})
+	}
 }
 
 func TestValidate_Expired(t *testing.T) {
@@ -247,6 +327,7 @@ func TestValidate_JWKSCaching(t *testing.T) {
 		ProviderName: "test",
 		Issuer:       fi.issuer,
 		JWKSURL:      cachingServer.URL + "/jwks",
+		Audience:     "test-audience",
 		CacheTTL:     5 * time.Minute,
 	})
 	require.NoError(t, err)
@@ -272,9 +353,14 @@ func TestAuth0Config(t *testing.T) {
 }
 
 func TestClerkConfig(t *testing.T) {
-	c := oidc.ClerkConfig("clerk.acme.com")
+	c := oidc.ClerkConfig("clerk.acme.com", "clerk-app-audience")
 	require.Equal(t, "clerk", c.ProviderName)
 	require.Equal(t, "https://clerk.acme.com", c.Issuer)
+	require.Equal(t, "clerk-app-audience", c.Audience)
+
+	// The preset must build a validator without further configuration.
+	_, err := oidc.New(c)
+	require.NoError(t, err)
 }
 
 func TestGoogleConfig(t *testing.T) {

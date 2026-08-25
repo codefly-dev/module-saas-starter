@@ -67,7 +67,7 @@ func runSessionStoreTests(m *testing.M) int {
 		fmt.Fprintf(os.Stderr, "WithDependencies failed: %v\n", err)
 		return 1
 	}
-	defer deps.Destroy(ctx)
+	defer func() { _ = deps.Destroy(ctx) }()
 
 	if _, err := codefly.Init(ctx); err != nil {
 		fmt.Fprintf(os.Stderr, "codefly.Init failed: %v\n", err)
@@ -564,6 +564,51 @@ func TestSessionStore_ExchangeOrganizationPreservesSessionState(t *testing.T) {
 	require.Equal(t, original.DeviceInfo, after.DeviceInfo)
 	require.Equal(t, original.IPAddress, after.IPAddress)
 	require.Nil(t, after.RevokedAt)
+}
+
+func TestSessionStore_ExchangeOrganizationPersistsDefaultOrg(t *testing.T) {
+	ctx := context.Background()
+	store := pgauth.NewSessionStore(testStore)
+	userID := seedUser(t)
+	targetOrgID := seedOrganizationMembership(t, userID, "member", time.Now())
+	original := newRecord(userID) // orgless session
+	require.NoError(t, store.Insert(ctx, original))
+
+	require.NoError(t, store.ExchangeOrganization(ctx, userID, original.ID, targetOrgID, func(
+		_ *auth.SessionRecord,
+		_ auth.RefreshAuthorization,
+	) error {
+		return nil
+	}))
+
+	var defaultOrg uuid.UUID
+	scanControlPlane(t, &defaultOrg, `SELECT default_org_id FROM users WHERE uuid = $1`, userID)
+	require.Equal(t, targetOrgID, defaultOrg,
+		"switching organizations persists the choice as default_org_id so the next login lands on it")
+}
+
+func TestSessionStore_ExchangeOrganizationRejectionLeavesDefaultOrgUntouched(t *testing.T) {
+	ctx := context.Background()
+	store := pgauth.NewSessionStore(testStore)
+	userID := seedUser(t)
+	currentOrgID := seedOrganizationMembership(t, userID, "admin", time.Now())
+	setDefaultOrg(t, userID, currentOrgID)
+	original := newRecord(userID)
+	original.OrgID = currentOrgID
+	require.NoError(t, store.Insert(ctx, original))
+
+	err := store.ExchangeOrganization(ctx, userID, original.ID, business.NewID(), func(
+		_ *auth.SessionRecord,
+		_ auth.RefreshAuthorization,
+	) error {
+		return nil
+	})
+	require.ErrorIs(t, err, auth.ErrOrganizationAccessDenied)
+
+	var defaultOrg uuid.UUID
+	scanControlPlane(t, &defaultOrg, `SELECT default_org_id FROM users WHERE uuid = $1`, userID)
+	require.Equal(t, currentOrgID, defaultOrg,
+		"a rejected switch must not overwrite the persisted default organization")
 }
 
 func TestSessionStore_ExchangeOrganizationRejectsNonMemberWithoutMutation(t *testing.T) {

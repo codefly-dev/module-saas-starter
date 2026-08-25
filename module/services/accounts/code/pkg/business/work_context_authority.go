@@ -1,6 +1,14 @@
 package business
 
-import "context"
+import (
+	"context"
+	"errors"
+)
+
+var (
+	ErrWorkContextAuthorizationStale = errors.New("work context authorization revision is stale")
+	ErrEvidenceReadDenied            = errors.New("evidence read is not authorized")
+)
 
 // WorkContextPermission is one exact RBAC decision that must be true before
 // Accounts may sign it into a Work Context. Empty ResourceID means only an
@@ -41,4 +49,35 @@ type WorkContextAuthorityStore interface {
 		actorPrincipalID string,
 		permissions []WorkContextPermission,
 	) (*WorkContextAuthorityFacts, error)
+}
+
+// WorkContextRevisionSubject is one current principal authority slice a
+// consumer must revalidate before accepting a signed Work Context effect.
+type WorkContextRevisionSubject struct {
+	PrincipalID string
+	Permissions []WorkContextPermission
+}
+
+// WorkContextConsumerAuthorityStore is the internal consumer-side authority
+// seam. It remains separate from issuance so an Accounts deployment can issue
+// Work Contexts without accidentally claiming support for current consumer
+// checks, and consumers cannot obtain a generic permission oracle. Empty
+// Evidence owner/Task filters are meaningful: they describe a broader read
+// that the implementation must never authorize from an exact-resource grant.
+type WorkContextConsumerAuthorityStore interface {
+	CheckWorkContextAuthorizationRevision(
+		ctx context.Context,
+		orgID string,
+		ownerPrincipalID string,
+		expectedRevision uint64,
+		subjects []WorkContextRevisionSubject,
+	) error
+	AuthorizeEvidenceRead(
+		ctx context.Context,
+		orgID string,
+		callerPrincipalID string,
+		ownerPrincipalID string,
+		taskID string,
+		sessionID string,
+	) error
 }

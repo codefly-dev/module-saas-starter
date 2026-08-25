@@ -13,6 +13,7 @@ import (
 
 	"accounts/pkg/business"
 	catalogv1 "accounts/pkg/gen/saas/catalog/v1"
+	policyv1 "accounts/pkg/gen/saas/policy/v1"
 )
 
 const deploymentTopologySchemaVersion = "saas.deployment.topology.v1"
@@ -45,6 +46,7 @@ type deploymentServiceBinding struct {
 	Version                            string                        `yaml:"version"`
 	Description                        string                        `yaml:"description,omitempty"`
 	Agent                              deploymentAgentBinding        `yaml:"agent"`
+	Kubernetes                         *kubernetesIdentityBinding    `yaml:"kubernetes,omitempty"`
 	WorkspaceConfigurationDependencies []string                      `yaml:"workspace_configuration_dependencies,omitempty"`
 	SecretServiceConfigurations        []secretServiceConfiguration  `yaml:"secret_service_configurations,omitempty"`
 	Endpoints                          []deploymentEndpointBinding   `yaml:"endpoints"`
@@ -52,6 +54,11 @@ type deploymentServiceBinding struct {
 	Dependencies                       []deploymentDependencyBinding `yaml:"dependencies,omitempty"`
 	PublicEgressPorts                  []uint32                      `yaml:"public_egress_ports,omitempty"`
 	Spec                               map[string]any                `yaml:"spec,omitempty"`
+}
+
+type kubernetesIdentityBinding struct {
+	ServiceName string `yaml:"service_name"`
+	AppLabel    string `yaml:"app_label"`
 }
 
 type deploymentAgentBinding struct {
@@ -90,6 +97,7 @@ type DeploymentArtifacts struct {
 	ModuleManifest   []byte
 	ServiceManifests map[string][]byte
 	NetworkPolicy    []byte
+	MeshPolicy       []byte
 }
 
 // BuildDeploymentArtifacts validates the descriptor-owned accounts API and a
@@ -138,7 +146,19 @@ func BuildDeploymentArtifacts(serviceDocument, bindingDocument []byte) (*Deploym
 		ModuleManifest:   moduleManifest,
 		ServiceManifests: serviceManifests,
 		NetworkPolicy:    renderNetworkPolicy(bindings),
+		MeshPolicy:       renderMeshPolicy(bindings, serviceCatalog),
 	}, nil
+}
+
+func internalMethodProcedures(serviceCatalog *catalogv1.ServiceCatalog) []string {
+	var procedures []string
+	for _, method := range serviceCatalog.GetMethods() {
+		if method.GetPolicy().GetExposure() == policyv1.Exposure_EXPOSURE_INTERNAL {
+			procedures = append(procedures, method.GetProcedure())
+		}
+	}
+	sort.Strings(procedures)
+	return procedures
 }
 
 func decodeDeploymentBindings(document []byte) (deploymentBindings, error) {
@@ -183,6 +203,8 @@ func validateDeploymentBindings(serviceCatalog *catalogv1.ServiceCatalog, bindin
 	}
 
 	services := make(map[string]deploymentServiceBinding, len(bindings.Services))
+	kubernetesServices := make(map[string]string, len(bindings.Services))
+	kubernetesApps := make(map[string]string, len(bindings.Services))
 	previousService := ""
 	for _, service := range bindings.Services {
 		if !endpointNamePattern.MatchString(service.Name) || service.Version == "" || service.Agent.Kind == "" ||
@@ -194,6 +216,20 @@ func validateDeploymentBindings(serviceCatalog *catalogv1.ServiceCatalog, bindin
 		}
 		previousService = service.Name
 		services[service.Name] = service
+		kubernetesService := kubernetesServiceName(service)
+		kubernetesApp := kubernetesAppLabel(service)
+		if len(kubernetesService) > 63 || !endpointNamePattern.MatchString(kubernetesService) ||
+			len(kubernetesApp) > 63 || !endpointNamePattern.MatchString(kubernetesApp) {
+			return fmt.Errorf("service %q Kubernetes identity is incomplete or invalid", service.Name)
+		}
+		if owner, exists := kubernetesServices[kubernetesService]; exists {
+			return fmt.Errorf("services %q and %q share Kubernetes service name %q", owner, service.Name, kubernetesService)
+		}
+		kubernetesServices[kubernetesService] = service.Name
+		if owner, exists := kubernetesApps[kubernetesApp]; exists {
+			return fmt.Errorf("services %q and %q share Kubernetes app label %q", owner, service.Name, kubernetesApp)
+		}
+		kubernetesApps[kubernetesApp] = service.Name
 
 		previousConfiguration := ""
 		for _, configuration := range service.WorkspaceConfigurationDependencies {
@@ -701,10 +737,26 @@ func marshalGeneratedYAML(source string, value any) ([]byte, error) {
 	return append([]byte(header), document...), nil
 }
 
+func kubernetesServiceName(service deploymentServiceBinding) string {
+	if service.Kubernetes == nil {
+		return service.Name
+	}
+	return service.Kubernetes.ServiceName
+}
+
+func kubernetesAppLabel(service deploymentServiceBinding) string {
+	if service.Kubernetes == nil {
+		return service.Name
+	}
+	return service.Kubernetes.AppLabel
+}
+
 type networkEdge struct {
-	Caller string
-	Target string
-	Ports  []uint32
+	Caller    string
+	CallerApp string
+	Target    string
+	TargetApp string
+	Ports     []uint32
 }
 
 func deploymentNetworkEdges(bindings deploymentBindings) []networkEdge {
@@ -725,10 +777,151 @@ func deploymentNetworkEdges(bindings deploymentBindings) []networkEdge {
 				ports = append(ports, port)
 			}
 			sort.Slice(ports, func(i, j int) bool { return ports[i] < ports[j] })
-			edges = append(edges, networkEdge{Caller: service.Name, Target: dependency.Service, Ports: ports})
+			target := services[dependency.Service]
+			edges = append(edges, networkEdge{
+				Caller:    service.Name,
+				CallerApp: kubernetesAppLabel(service),
+				Target:    dependency.Service,
+				TargetApp: kubernetesAppLabel(target),
+				Ports:     ports,
+			})
 		}
 	}
 	return edges
+}
+
+// meshTrustDomain is Istio's default SPIFFE trust domain. Peer identities are
+// spiffe://<trustDomain>/ns/<namespace>/sa/<serviceAccount>. The ingress
+// gateway runs as istio-system/sa/istio-ingressgateway-service-account, which is
+// therefore outside the internal allowlist and denied by the policy below.
+const meshTrustDomain = "cluster.local"
+
+// renderMeshPolicy projects the identity half of the reach-vs-identity split as
+// a topology golden mirroring the mesh policy the GitOps renderer installs
+// (see gitops.go). PeerAuthentication STRICT makes every source principal a
+// trustworthy mTLS identity; the AuthorizationPolicy then ALLOWs the internal
+// authority method paths only from the target's declared callers, named by
+// their per-service ServiceAccount — deny-by-default for every other principal,
+// the ingress gateway included. Istio matches by request path, so this gates
+// the internal surface by caller workload identity even while it stays
+// multiplexed on the shared HTTP port. The app-layer internal credential
+// remains the identity gate (which caller vs which tenant).
+func renderMeshPolicy(bindings deploymentBindings, serviceCatalog *catalogv1.ServiceCatalog) []byte {
+	namespace := bindings.Module.Namespace
+	var source strings.Builder
+	source.WriteString("# Code generated from deployment/topology.bindings.codefly.yaml. DO NOT EDIT.\n")
+	fmt.Fprintf(&source, `---
+apiVersion: security.istio.io/v1
+kind: PeerAuthentication
+metadata:
+  name: %s-mtls
+  namespace: %s
+spec:
+  mtls:
+    mode: STRICT
+`, bindings.Module.Name, namespace)
+
+	procedures := internalMethodProcedures(serviceCatalog)
+	if len(procedures) > 0 {
+		owner := serviceCatalog.GetOwner().GetService()
+		var ownerApp string
+		for _, service := range bindings.Services {
+			if service.Name == owner {
+				ownerApp = kubernetesAppLabel(service)
+			}
+		}
+		principals := ownerCallerPrincipals(bindings, namespace, owner)
+		writeInternalAuthorityAuthorizationPolicy(&source, namespace, owner, ownerApp, principals, procedures)
+		// The allow above is an L7 (method-path) policy. In the ambient data plane
+		// ztunnel enforces L4 only, so a waypoint must front the namespace for the
+		// path match to be evaluated; the namespace opts in via
+		// istio.io/use-waypoint (set on the Namespace by the GitOps renderer).
+		fmt.Fprintf(&source, `---
+apiVersion: gateway.networking.k8s.io/v1
+kind: Gateway
+metadata:
+  name: waypoint
+  namespace: %s
+  labels:
+    istio.io/waypoint-for: service
+spec:
+  gatewayClassName: istio-waypoint
+  listeners:
+    - name: mesh
+      port: 15008
+      protocol: HBONE
+`, namespace)
+	}
+	return []byte(source.String())
+}
+
+// serviceAccountBindingName returns the Kubernetes ServiceAccount a service's
+// pods run under: spec.service-account.name when declared, otherwise the
+// namespace default. Mirrors topologyServiceAccount in the GitOps renderer.
+func serviceAccountBindingName(service deploymentServiceBinding) string {
+	spec, ok := service.Spec["service-account"].(map[string]any)
+	if !ok {
+		return "default"
+	}
+	if name, ok := spec["name"].(string); ok && name != "" {
+		return name
+	}
+	return "default"
+}
+
+// ownerCallerPrincipals returns the sorted, de-duplicated SPIFFE principals of
+// the owner's declared callers — each caller's per-service SA (or sa/default) —
+// plus the owner itself when it runs bootstrap jobs. This is the positive
+// allowlist the internal-authority AuthorizationPolicy gates on.
+func ownerCallerPrincipals(bindings deploymentBindings, namespace, owner string) []string {
+	seen := make(map[string]struct{})
+	var principals []string
+	add := func(service deploymentServiceBinding) {
+		principal := fmt.Sprintf("%s/ns/%s/sa/%s", meshTrustDomain, namespace, serviceAccountBindingName(service))
+		if _, ok := seen[principal]; ok {
+			return
+		}
+		seen[principal] = struct{}{}
+		principals = append(principals, principal)
+	}
+	for _, service := range bindings.Services {
+		for _, dependency := range service.Dependencies {
+			if dependency.Service == owner {
+				add(service)
+			}
+		}
+		if service.Name == owner && len(service.BootstrapJobEndpoints) > 0 {
+			add(service)
+		}
+	}
+	sort.Strings(principals)
+	return principals
+}
+
+func writeInternalAuthorityAuthorizationPolicy(source *strings.Builder, namespace, service, serviceApp string, principals, procedures []string) {
+	fmt.Fprintf(source, `---
+apiVersion: security.istio.io/v1
+kind: AuthorizationPolicy
+metadata:
+  name: allow-%s-internal-authority
+  namespace: %s
+spec:
+  selector:
+    matchLabels:
+      app: %s
+  action: ALLOW
+  rules:
+    - from:
+        - source:
+            principals:
+`, service, namespace, serviceApp)
+	for _, principal := range principals {
+		fmt.Fprintf(source, "              - %s\n", principal)
+	}
+	source.WriteString("      to:\n        - operation:\n            paths:\n")
+	for _, procedure := range procedures {
+		fmt.Fprintf(source, "              - %s\n", procedure)
+	}
 }
 
 func renderNetworkPolicy(bindings deploymentBindings) []byte {
@@ -744,10 +937,10 @@ func renderNetworkPolicy(bindings deploymentBindings) []byte {
 	source.WriteString("# Code generated from deployment/topology.bindings.codefly.yaml. DO NOT EDIT.\n")
 	writeStaticNetworkPolicies(&source, bindings)
 	for _, target := range sortedMapKeys(byTarget) {
-		writeDependencyIngressPolicy(&source, bindings.Module.Namespace, target, byTarget[target])
+		writeDependencyIngressPolicy(&source, bindings.Module.Namespace, target, byTarget[target][0].TargetApp, byTarget[target])
 	}
 	for _, caller := range sortedMapKeys(byCaller) {
-		writeDependencyEgressPolicy(&source, bindings.Module.Namespace, caller, byCaller[caller])
+		writeDependencyEgressPolicy(&source, bindings.Module.Namespace, caller, byCaller[caller][0].CallerApp, byCaller[caller])
 	}
 	for _, service := range bindings.Services {
 		if len(service.BootstrapJobEndpoints) == 0 {
@@ -758,11 +951,11 @@ func renderNetworkPolicy(bindings deploymentBindings) []byte {
 		for _, endpoint := range service.BootstrapJobEndpoints {
 			ports = append(ports, endpoints[endpoint].Port)
 		}
-		writeBootstrapJobPolicies(&source, bindings.Module.Namespace, service.Name, ports)
+		writeBootstrapJobPolicies(&source, bindings.Module.Namespace, service.Name, kubernetesAppLabel(service), ports)
 	}
 	for _, service := range bindings.Services {
 		if len(service.PublicEgressPorts) > 0 {
-			writePublicEgressPolicy(&source, bindings.Module.Namespace, service.Name, service.PublicEgressPorts)
+			writePublicEgressPolicy(&source, bindings.Module.Namespace, service.Name, kubernetesAppLabel(service), service.PublicEgressPorts)
 		}
 	}
 	return []byte(source.String())
@@ -843,9 +1036,11 @@ spec:
 			continue
 		}
 		var port uint32
+		var appLabel string
 		for _, service := range bindings.Services {
 			if service.Name == exposed.Service {
 				port = endpointBindingsByName(service.Endpoints)[exposed.Endpoint].Port
+				appLabel = kubernetesAppLabel(service)
 			}
 		}
 		fmt.Fprintf(source, `---
@@ -871,11 +1066,11 @@ spec:
       ports:
         - protocol: TCP
           port: %d
-`, exposed.Service, namespace, exposed.Service, port)
+`, exposed.Service, namespace, appLabel, port)
 	}
 }
 
-func writeDependencyIngressPolicy(source *strings.Builder, namespace, target string, edges []networkEdge) {
+func writeDependencyIngressPolicy(source *strings.Builder, namespace, target, targetApp string, edges []networkEdge) {
 	fmt.Fprintf(source, `---
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
@@ -889,14 +1084,14 @@ spec:
   policyTypes:
     - Ingress
   ingress:
-`, target, namespace, target)
+`, target, namespace, targetApp)
 	for _, edge := range edges {
-		fmt.Fprintf(source, "    - from:\n        - podSelector:\n            matchLabels:\n              app: %s\n      ports:\n", edge.Caller)
+		fmt.Fprintf(source, "    - from:\n        - podSelector:\n            matchLabels:\n              app: %s\n      ports:\n", edge.CallerApp)
 		writeNetworkPorts(source, edge.Ports, 8)
 	}
 }
 
-func writeDependencyEgressPolicy(source *strings.Builder, namespace, caller string, edges []networkEdge) {
+func writeDependencyEgressPolicy(source *strings.Builder, namespace, caller, callerApp string, edges []networkEdge) {
 	fmt.Fprintf(source, `---
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
@@ -910,14 +1105,14 @@ spec:
   policyTypes:
     - Egress
   egress:
-`, caller, namespace, caller)
+`, caller, namespace, callerApp)
 	for _, edge := range edges {
-		fmt.Fprintf(source, "    - to:\n        - podSelector:\n            matchLabels:\n              app: %s\n      ports:\n", edge.Target)
+		fmt.Fprintf(source, "    - to:\n        - podSelector:\n            matchLabels:\n              app: %s\n      ports:\n", edge.TargetApp)
 		writeNetworkPorts(source, edge.Ports, 8)
 	}
 }
 
-func writeBootstrapJobPolicies(source *strings.Builder, namespace, service string, ports []uint32) {
+func writeBootstrapJobPolicies(source *strings.Builder, namespace, service, serviceApp string, ports []uint32) {
 	fmt.Fprintf(source, `---
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
@@ -937,7 +1132,7 @@ spec:
               codefly.dev/bootstrap-service: %s
               job-name: %s
       ports:
-`, service, namespace, service, service, service)
+`, service, namespace, serviceApp, service, service)
 	writeNetworkPorts(source, ports, 8)
 	fmt.Fprintf(source, `---
 apiVersion: networking.k8s.io/v1
@@ -958,7 +1153,7 @@ spec:
             matchLabels:
               app: %s
       ports:
-`, service, service, namespace, service, service, service)
+`, service, service, namespace, service, service, serviceApp)
 	writeNetworkPorts(source, ports, 8)
 }
 
@@ -980,7 +1175,7 @@ var publicIPv6Exceptions = []string{
 	"2002::/16", "fc00::/7", "fe80::/10", "ff00::/8",
 }
 
-func writePublicEgressPolicy(source *strings.Builder, namespace, service string, ports []uint32) {
+func writePublicEgressPolicy(source *strings.Builder, namespace, service, serviceApp string, ports []uint32) {
 	fmt.Fprintf(source, `---
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
@@ -998,7 +1193,7 @@ spec:
         - ipBlock:
             cidr: 0.0.0.0/0
             except:
-`, service, namespace, service)
+`, service, namespace, serviceApp)
 	for _, cidr := range publicIPv4Exceptions {
 		fmt.Fprintf(source, "              - %s\n", cidr)
 	}

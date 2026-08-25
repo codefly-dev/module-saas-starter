@@ -8,6 +8,7 @@ import (
 	"accounts/pkg/auth"
 	devvalidator "accounts/pkg/auth/dev"
 	ed25519minter "accounts/pkg/auth/ed25519"
+	"accounts/pkg/auth/headerjwt"
 	"accounts/pkg/auth/oidc"
 	pgauth "accounts/pkg/auth/pg"
 	workosauth "accounts/pkg/auth/workos"
@@ -22,6 +23,7 @@ import (
 	"accounts/pkg/permissionsplugin"
 	"context"
 	ed25519core "crypto/ed25519"
+	"encoding/base64"
 	"fmt"
 	"net/url"
 	"os"
@@ -64,47 +66,42 @@ func doWork(ctx context.Context) (Clean, error) {
 		return nil, err
 	}
 
-	// OpenTelemetry always targets the in-graph collector. Codefly owns its
-	// host and port; the accounts process never reads or hardcodes a collector
-	// address. The collector configuration independently selects debug output
-	// or an external OTLP/HTTP destination.
-	//
-	// FE→BE trace continuation: the browser stamps W3C `traceparent`
-	// on every Connect-ES fetch (Sentry's browserTracingIntegration),
-	// the api extracts it on the Connect path via otelconnect (see
-	// connect_gen.go) and on the raw-gRPC path via otelgrpc (see
-	// grpc_gen.go), and starts a child span. End-to-end traces from
-	// browser click to SQL query require both this provider AND the
-	// CORS allowlist for `traceparent` / `baggage` (connect_gen.go).
+	// When external observability is configured, OpenTelemetry always targets
+	// the in-graph collector. Codefly owns its host and port; the accounts
+	// process never reads or hardcodes a collector address.
 	var otelProvider *wooltel.Provider
-	var otelMetricProvider interface {
-		Shutdown(context.Context) error
+	var otelMetricProvider *otelMetrics
+	if observabilityEnabled() {
+		collectorNetwork, err := codefly.For(ctx).
+			Service("telemetry").
+			Endpoint("grpc").
+			API("grpc").
+			ResolveNetworkInstance()
+		if err != nil {
+			return nil, fmt.Errorf("resolve telemetry collector through Codefly: %w", err)
+		}
+		p, oerr := wooltel.Enable(
+			wooltel.WithServiceName("saas-starter-api"),
+			wooltel.WithEndpoint(collectorNetwork.Host),
+			wooltel.WithInsecure(),
+		)
+		if oerr != nil {
+			return nil, fmt.Errorf("configure OTEL tracing: %w", oerr)
+		}
+		otelProvider = p
+		w.Info("OTEL enabled",
+			wool.Field("endpoint", collectorNetwork.Host),
+			wool.Field("service.name", "saas-starter-api"))
+		metricProvider, oerr := enableOTELMetrics(ctx, "saas-starter-api", collectorNetwork.Host)
+		if oerr != nil {
+			shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+			_ = otelProvider.Shutdown(shutdownCtx)
+			cancel()
+			return nil, fmt.Errorf("configure OTEL metrics: %w", oerr)
+		}
+		otelMetricProvider = metricProvider
+		adapters.RegisterHTTPRoute("/metrics", otelMetricProvider.Handler())
 	}
-	collectorNetwork, err := codefly.For(ctx).
-		Service("telemetry").
-		Endpoint("grpc").
-		API("grpc").
-		ResolveNetworkInstance()
-	if err != nil {
-		return nil, fmt.Errorf("resolve telemetry collector through Codefly: %w", err)
-	}
-	p, oerr := wooltel.Enable(
-		wooltel.WithServiceName("saas-starter-api"),
-		wooltel.WithEndpoint(collectorNetwork.Host),
-		wooltel.WithInsecure(),
-	)
-	if oerr != nil {
-		return nil, fmt.Errorf("configure OTEL tracing: %w", oerr)
-	}
-	otelProvider = p
-	w.Info("OTEL enabled",
-		wool.Field("endpoint", collectorNetwork.Host),
-		wool.Field("service.name", "saas-starter-api"))
-	metricProvider, oerr := enableOTLPMetrics(ctx, "saas-starter-api", collectorNetwork.Host)
-	if oerr != nil {
-		return nil, fmt.Errorf("configure OTEL metrics: %w", oerr)
-	}
-	otelMetricProvider = metricProvider
 
 	store, err := infra.NewPostgresStore(ctx)
 	if err != nil {
@@ -120,6 +117,23 @@ func doWork(ctx context.Context) (Clean, error) {
 		return nil, err
 	}
 	service.SetAbuseVerifier(abuseVerifier)
+	_, abuseDisabled := abuseVerifier.(abuse.DisabledVerifier)
+	if abuseDisabled {
+		w.Warn("ABUSE PROTECTION DISABLED — anonymous endpoints (Authenticate, RegisterUser, JoinWaitlist, SendMagicLink) are guarded by rate limiting alone; set ABUSE_PROTECTION_MODE=turnstile before serving production traffic")
+	}
+
+	// Per-IP rate limiting attributes anonymous traffic to a source address.
+	// TRUSTED_PROXY_CIDRS lists the proxies whose X-Forwarded-For we honor;
+	// an invalid entry fails boot rather than silently trusting a spoofable
+	// header.
+	trustedProxies, err := adapters.ParseTrustedProxyCIDRs(workspaceEnv("security", "TRUSTED_PROXY_CIDRS"))
+	if err != nil {
+		return nil, err
+	}
+	adapters.WithTrustedProxies(trustedProxies)
+	if len(trustedProxies) == 0 {
+		w.Warn("TRUSTED_PROXY_CIDRS unset — behind an ingress, per-IP rate limiting attributes all X-Forwarded-For traffic to the proxy's own IP (one shared bucket); set it to the ingress CIDRs to bucket by real client IP")
+	}
 	if err := service.SetAcquisitionMode(os.Getenv("ACQUISITION_MODE")); err != nil {
 		return nil, err
 	}
@@ -138,16 +152,14 @@ func doWork(ctx context.Context) (Clean, error) {
 		return nil, fmt.Errorf("configure job operations database pool: %w", err)
 	}
 	jobStore := infra.NewPostgresJobStore(jobWorkerPool)
-	var jobOperationsMonitor *jobs.OperationsMonitor
-	if otelMetricProvider != nil {
-		jobOperationsMonitor, err = jobs.NewOperationsMonitor(
-			jobStore,
-			otel.Meter("github.com/codefly-dev/module-saas-starter/job-operations"),
-			30*time.Second,
-		)
-		if err != nil {
-			return nil, fmt.Errorf("configure durable job metrics: %w", err)
-		}
+	// Durable job-operations metrics are enabled only when OTEL metrics are, i.e.
+	// otelMetricProvider != nil (observabilityEnabled()). With observability off
+	// the global meter is a no-op, so building the monitor would poll the job
+	// store every interval to feed instruments nothing can read; keep it nil and
+	// let the Start/Shutdown nil-checks below skip it entirely.
+	jobOperationsMonitor, err := newDurableJobMetricsMonitor(otelMetricProvider != nil, jobStore)
+	if err != nil {
+		return nil, fmt.Errorf("configure durable job metrics: %w", err)
 	}
 	service.SetJobOperations(jobStore)
 	service.SetWebhookJobProducer(store)
@@ -193,6 +205,7 @@ func doWork(ctx context.Context) (Clean, error) {
 	}
 	service.SetHasher(vaultClient)
 	service.SetMFASecretCipher(vaultClient)
+	service.SetOrgIdentityProviderCipher(vaultClient)
 	webhookPolicy := business.NewWebhookEndpointPolicy()
 	service.SetWebhookSecurity(vaultClient, webhookPolicy)
 	webAuthnRPID, webAuthnDisplayName, webAuthnOrigins, err := configuredWebAuthn()
@@ -225,14 +238,34 @@ func doWork(ctx context.Context) (Clean, error) {
 	sessionStore := pgauth.NewSessionStore(store, sessionPolicy)
 	resolver := pgauth.NewResolver(store)
 	resolver.SetBootstrapAdminEmail(applicationEnv("BOOTSTRAP_ADMIN_EMAIL"))
-	priv, err := loadSigningKey(ctx)
+	signupMode, err := auth.ParseSignupMode(identityEnv("IDENTITY_SIGNUP_MODE"))
 	if err != nil {
 		return nil, err
 	}
+	resolver.SetSignupMode(signupMode)
+	authProvider := configuredAuthProvider(selectedFixture)
+	if err := requireLocalForDevFixtureProvider(authProvider, codefly.IsLocal()); err != nil {
+		return nil, err
+	}
+	priv, err := loadSigningKey(ctx, devFixtureAuthProvider(authProvider))
+	if err != nil {
+		return nil, err
+	}
+	// Default fail-closed: a token whose revocation status can't be read is
+	// denied. Operators fronting accounts directly (no sidecar) can opt into
+	// fail-open to keep the direct verify path serving through a revocation-store
+	// outage, trading a revoked token's remaining-TTL exposure for availability —
+	// the same choice the sidecar exposes via SIDECAR_REVOCATION_FAIL_OPEN.
+	revocationFailOpen := strings.EqualFold(strings.TrimSpace(workspaceEnv("security", "ACCOUNTS_REVOCATION_FAIL_OPEN")), "true")
+	if revocationFailOpen {
+		wool.Get(ctx).Warn("ACCOUNTS_REVOCATION_FAIL_OPEN enabled: a revocation-store outage will admit possibly-revoked access tokens on the direct verify path until they expire")
+	}
 	minter := ed25519minter.New(ed25519minter.Config{
-		Issuer:        "saas-starter",
-		Audience:      "saas-starter",
-		SessionPolicy: sessionPolicy,
+		Issuer:                     "saas-starter",
+		Audience:                   "saas-starter",
+		SessionPolicy:              sessionPolicy,
+		AdditionalVerificationKeys: previousSigningKeys(ctx),
+		RevocationFailOpen:         revocationFailOpen,
 	}, priv, sessionStore)
 
 	service.SetIdentityResolver(resolver)
@@ -263,20 +296,46 @@ func doWork(ctx context.Context) (Clean, error) {
 	// instances. Without this, OAuth callbacks rely solely on the FE's
 	// sessionStorage check — fine for single-page-app threat models but
 	// not defense-in-depth.
-	service.SetOAuthStateSigner(auth.NewOAuthStateSigner(priv))
+	stateSigner, err := auth.NewOAuthStateSigner(priv)
+	if err != nil {
+		return nil, fmt.Errorf("configure oauth state signer: %w", err)
+	}
+	service.SetOAuthStateSigner(stateSigner)
 
 	// Authentication mode is explicit in the Codefly identity configuration.
 	// A selected fixture is an optional data seed and cannot replace the
 	// configured provider. Fixture authentication must itself be selected and
 	// additionally requires an explicit fixture.
-	authProvider := configuredAuthProvider(selectedFixture)
 	v, ex, err := buildProviderStack(authProvider, selectedFixture)
 	if err != nil {
 		return nil, fmt.Errorf("configure authentication: %w", err)
 	}
-	if authProvider == "dev" {
+	switch authProvider {
+	case "dev":
 		service.SetDevelopmentTokenValidator(v)
-	} else {
+	case "header-jwt":
+		// Gateway-pre-authenticated: no OAuth ceremony, no code exchange. The
+		// login route consumes the configured identity header and hands its
+		// value to the validator; sessions/refresh/MFA are unchanged afterwards.
+		headerName := identityEnv("IDENTITY_HEADER_NAME")
+		if !hasConfiguredValue(headerName) {
+			return nil, fmt.Errorf("identity provider header-jwt requires IDENTITY_HEADER_NAME")
+		}
+		service.SetTokenValidator(v)
+		adapters.SetHeaderJWTLoginHeader(headerName)
+	default:
+		// user_identities.provider is a foreign key into the identity_providers
+		// catalog. Verify the configured provider is registered now so an
+		// unseeded name fails at startup with a precise error instead of a raw
+		// FK violation at the user's first login.
+		registered, err := store.ProviderRegistered(ctx, authProvider)
+		if err != nil {
+			return nil, fmt.Errorf("verify identity provider registration: %w", err)
+		}
+		if !registered {
+			return nil, fmt.Errorf(
+				"identity provider %q is not registered in identity_providers; add a database migration seeding it", authProvider)
+		}
 		if authProvider == "workos" {
 			// SSO administration is a WorkOS-specific optional adapter. Other
 			// identity providers cannot accidentally activate it by exposing a
@@ -290,6 +349,13 @@ func doWork(ctx context.Context) (Clean, error) {
 		service.SetOAuthRequestPolicy(oauthPolicy)
 		service.SetTokenValidator(v)
 		service.SetCodeExchanger(ex)
+
+		// Per-org identity provider registry (issue #107). Orgs with an active
+		// row in org_identity_providers resolve to their own stack; every other
+		// org falls back to this global default (v, ex). Stacks build lazily on
+		// first use and are cache-invalidated when their configuration changes.
+		service.SetIdentityProviderRegistry(
+			newIdentityProviderRegistry(store, vaultClient, authProvider, v, ex))
 	}
 
 	// Audit persistence and matching webhook fan-out share one database
@@ -300,11 +366,20 @@ func doWork(ctx context.Context) (Clean, error) {
 	}
 	service.SetAuditEmitter(auditEmitter)
 
-	// Audit S3 exporter — polls audit_export_configs every 1 min,
-	// uploads new events to each org's bucket as JSONL. No-op until
-	// an org configures one via the /admin/audit-export form.
-	auditExporter := business.NewAuditExporter(store)
-	auditExporter.Start()
+	// Reconcile the audit event-type registry projection from the code catalog
+	// and provision the current + upcoming monthly partitions so audit writes
+	// always have a target. Best-effort: a transient failure here must not
+	// block boot; the retention tick re-provisions partitions on its cycle.
+	if err := store.WithControlPlane(ctx, func(ctx context.Context) error {
+		return store.SyncAuditEventTypes(ctx, business.AuditEventCatalog())
+	}); err != nil {
+		wool.Get(ctx).Warn("audit event-type registry sync failed", wool.ErrField(err))
+	}
+	if err := store.WithControlPlane(ctx, func(ctx context.Context) error {
+		return store.EnsureAuditPartitions(ctx, 3)
+	}); err != nil {
+		wool.Get(ctx).Warn("audit partition provisioning failed", wool.ErrField(err))
+	}
 
 	// Every outbound path shares the generated generic job runtime. This
 	// separate pool can only read endpoint configuration and project outcomes.
@@ -332,9 +407,6 @@ func doWork(ctx context.Context) (Clean, error) {
 	entitlementChecker := business.NewDefaultEntitlementChecker(store)
 	service.SetEntitlementChecker(entitlementChecker)
 
-	featureChecker := business.NewDefaultFeatureChecker(store, entitlementChecker)
-	service.SetFeatureChecker(featureChecker)
-
 	// Cache wiring — optional. When the `cache` dependency is declared in
 	// service.codefly.yaml and Redis is reachable, org-membership lookups
 	// get a 30s TTL cache backed by Redis (per-tenant keyed as
@@ -342,6 +414,7 @@ func doWork(ctx context.Context) (Clean, error) {
 	// unreachable, NewRedisCache returns nil and the app runs without
 	// caching — zero behavior change, just slower auth checks.
 	var closeCache func() error
+	rateLimiterWired := false
 	if redisCache, c, rerr := infra.NewRedisCache(ctx); rerr == nil && redisCache != nil {
 		orgCache := cache.NewOrgMembershipCache(redisCache)
 		adapters.WithOrgMembershipCache(orgCache)
@@ -350,18 +423,34 @@ func doWork(ctx context.Context) (Clean, error) {
 		// Logout only kills the refresh chain — old access tokens
 		// remain valid until natural expiry (15 min default).
 		minter.SetRevoker(cache.NewTokenRevoker(redisCache))
+		// Redis-backed OAuth-state one-shot list so a captured state can't be
+		// replayed within its TTL across replicas (the in-memory default only
+		// covers a single process).
+		stateSigner.SetNonceConsumer(cache.NewOAuthNonceConsumer(redisCache))
 		// Per-org / per-API-key rate limiting. Falls back to
 		// allow-all if redisCache is nil (no Redis available).
 		adapters.WithRateLimiter(cache.NewRateLimiter(redisCache))
+		rateLimiterWired = true
 		closeCache = c
+	}
+	if anonymousEndpointsUnprotected(abuseDisabled, rateLimiterWired) {
+		w.Warn("ANONYMOUS ENDPOINTS UNPROTECTED — abuse protection is disabled AND no Redis rate limiter is wired, so Authenticate/RegisterUser/JoinWaitlist/SendMagicLink have NO app-layer throttle; enable ABUSE_PROTECTION_MODE=turnstile or wire the cache dependency before serving production traffic")
 	}
 
 	adapters.WithService(service)
+
+	// Local development surfaces the underlying Authenticate failure reason for
+	// debugging; every deployed environment returns generic auth errors so the
+	// identity/enumeration oracle stays closed (#208).
+	adapters.SetExposeAuthErrorDetail(codefly.IsLocal())
 
 	// Separate shared-secret guards for internal RPC admission and forwarded
 	// gateway identity. Empty values fail closed; production deploys provide
 	// independent high-entropy values to both accounts and auth-sidecar.
 	adapters.SetInternalToken(workspaceEnv("internal-auth", "CODEFLY_INTERNAL_TOKEN"))
+	// A previous internal token stays valid alongside the current one during an
+	// overlapping rotation window, so callers can be migrated without a flag day.
+	adapters.SetInternalTokenRotation(workspaceEnv("internal-auth", "CODEFLY_INTERNAL_TOKEN_PREVIOUS"))
 	adapters.SetGatewayToken(workspaceEnv("internal-auth", "CODEFLY_GATEWAY_TOKEN"))
 
 	// /v1/status — public health probe surface. Probes run in parallel
@@ -406,15 +495,12 @@ func doWork(ctx context.Context) (Clean, error) {
 	if err != nil {
 		return nil, err
 	}
-	if strings.EqualFold(strings.TrimSpace(os.Getenv("EMAIL_PROVIDER")), "resend") {
-		resendWebhook, err := email.NewResendWebhookHandler(email.ResendWebhookConfig{
-			SigningSecret: os.Getenv("RESEND_WEBHOOK_SECRET"),
-			Recorder:      jobStore,
-		})
+	if resend, ok := emailSender.(*email.ResendSender); ok {
+		path, resendWebhook, err := resend.DeliveryWebhook(jobStore)
 		if err != nil {
 			return nil, err
 		}
-		adapters.RegisterHTTPRoute("/v1/email/webhook/resend", resendWebhook)
+		adapters.RegisterHTTPRoute(path, resendWebhook)
 	}
 	emailJobHandler, err := email.NewJobHandler(emailSender)
 	if err != nil {
@@ -621,8 +707,6 @@ func doWork(ctx context.Context) (Clean, error) {
 		sw.Info("closing audit emitter")
 		auditEmitter.Close()
 		sw.Info("audit emitter closed")
-		sw.Info("stopping audit exporter")
-		auditExporter.Close()
 		if closeCache != nil {
 			sw.Info("closing redis cache")
 			if err := closeCache(); err != nil {
@@ -676,6 +760,14 @@ func configuredAnalyticsSink() (analytics.Destination, bool, error) {
 	default:
 		return nil, false, fmt.Errorf("PRODUCT_ANALYTICS_MODE must be disabled, noop, or posthog")
 	}
+}
+
+// anonymousEndpointsUnprotected reports whether the four anonymous endpoints
+// have NO app-layer throttle: abuse protection disabled AND no rate limiter
+// wired (no Redis). Either guard alone is a backstop; only the combination
+// leaves them open.
+func anonymousEndpointsUnprotected(abuseDisabled, rateLimiterWired bool) bool {
+	return abuseDisabled && !rateLimiterWired
 }
 
 func configuredAbuseVerifier() (abuse.Verifier, error) {
@@ -807,11 +899,18 @@ func configuredWebAuthn() (rpID, displayName string, origins []string, err error
 //	             No exchanger (no OAuth code flow). Used for local iteration.
 //	workos     — oidc.Validator + oidc.Exchanger preconfigured for
 //	             WorkOS through the same generic identity contract.
+//	oidc       — any spec-compliant OpenID Connect provider (Okta,
+//	             PingFederate, Entra, Keycloak, …), configured entirely
+//	             from discovery plus the IDENTITY_* contract.
 //	auth0      — generic OIDC flow with Auth0 defaults.
 //	google     — generic OIDC flow with Google defaults.
 //
-// Empty, unknown, and incomplete provider configurations return an error so
-// the service cannot start with an ambiguous authentication boundary.
+// Any other non-empty value is a generic OpenID Connect provider named by
+// IDENTITY_PROVIDER (so two enterprise IdPs occupy distinct user_identities
+// (provider, provider_id) namespaces) but only when the operator opts in with
+// IDENTITY_GENERIC_OIDC=true. Empty, incomplete, and undeclared-unknown
+// configurations return an error so the service cannot start with an ambiguous
+// authentication boundary.
 // workspaceEnv reads a key from a named Codefly workspace configuration,
 // including its secret namespace, and falls back to a plain process variable
 // for deployments that do not use Codefly's configuration provider.
@@ -820,6 +919,27 @@ func workspaceEnv(configuration, key string) string {
 		return value
 	}
 	return os.Getenv(key)
+}
+
+func observabilityEnabled() bool {
+	return strings.TrimSpace(workspaceEnv("observability", "OTEL_EXPORTER_OTLP_ENDPOINT")) != ""
+}
+
+// newDurableJobMetricsMonitor builds the durable job-operations metrics monitor
+// only when OTEL metrics are enabled (metricsEnabled mirrors a non-nil
+// otelMetricProvider, i.e. observabilityEnabled()). When metrics are disabled the
+// global meter is a no-op, so a monitor would poll the job store every interval
+// only to record into instruments nothing can read; returning a nil monitor lets
+// the caller's Start/Shutdown nil-checks skip that background work entirely.
+func newDurableJobMetricsMonitor(metricsEnabled bool, source jobs.Operations) (*jobs.OperationsMonitor, error) {
+	if !metricsEnabled {
+		return nil, nil
+	}
+	return jobs.NewOperationsMonitor(
+		source,
+		otel.Meter("github.com/codefly-dev/module-saas-starter/job-operations"),
+		30*time.Second,
+	)
 }
 
 // identityEnv is intentionally Codefly-only. Local dogfood, tests, and
@@ -887,28 +1007,80 @@ func buildOAuthRequestPolicy(provider string) (*auth.OAuthRequestPolicy, error) 
 // cannot reach the well-known endpoint — otherwise a partial pin still discovers
 // the rest, and any discovery outage fails startup closed rather than guessing.
 func buildDiscoveredOIDCStack(provider string) (auth.TokenValidator, business.CodeExchanger, error) {
-	clientID := identityEnv("IDENTITY_CLIENT_ID")
-	clientSecret := identityEnv("IDENTITY_CLIENT_SECRET")
+	validator, tokenURL, clientID, clientSecret, err := discoverOIDCValidator(provider)
+	if err != nil {
+		return nil, nil, err
+	}
+	exchanger, err := workosauth.NewExchanger(workosauth.Config{
+		TokenURL:     tokenURL,
+		ClientID:     clientID,
+		ClientSecret: clientSecret,
+		Validator:    validator,
+	})
+	if err != nil {
+		return nil, nil, fmt.Errorf("initialize %s exchanger: %w", provider, err)
+	}
+	return validator, exchanger, nil
+}
+
+// buildGenericOIDCStack configures any spec-compliant OpenID Connect provider
+// (Okta, PingFederate, Azure AD/Entra, Keycloak, …) from discovery plus the
+// Codefly `identity` workspace configuration. It shares WorkOS's discovery and
+// JWKS validation but pairs them with the standard OAuth 2.0 code-grant
+// exchanger rather than the WorkOS authenticate adapter, which reads the
+// verified email from a WorkOS-specific response shape no other IdP returns.
+//
+// provider is the configured IDENTITY_PROVIDER value; it is recorded on each
+// identity as user_identities.provider. Two distinct enterprise IdPs avoid
+// colliding in that namespace by selecting distinct IDENTITY_PROVIDER values
+// (e.g. "okta", "ping"), each routed here. Using the same string the browser
+// sends and the OAuth request policy enforces is required: authenticateWithCode
+// rejects a login whose token provider disagrees with the request provider.
+func buildGenericOIDCStack(provider string) (auth.TokenValidator, business.CodeExchanger, error) {
+	validator, tokenURL, clientID, clientSecret, err := discoverOIDCValidator(provider)
+	if err != nil {
+		return nil, nil, err
+	}
+	exchanger, err := oidc.NewExchanger(oidc.ExchangerConfig{
+		TokenURL:     tokenURL,
+		ClientID:     clientID,
+		ClientSecret: clientSecret,
+	})
+	if err != nil {
+		return nil, nil, fmt.Errorf("initialize %s exchanger: %w", provider, err)
+	}
+	return validator, oidc.AsBusinessExchanger(exchanger), nil
+}
+
+// discoverOIDCValidator builds the JWKS validator and resolves the token
+// endpoint shared by every discovery-driven provider. provider is the
+// configured IDENTITY_PROVIDER value: it is written to Claims.Provider (and thus
+// user_identities.provider) and named in error messages. It is deliberately the
+// same string the browser sends and the OAuth request policy enforces, so the
+// two can never disagree at login.
+func discoverOIDCValidator(provider string) (validator auth.TokenValidator, tokenURL, clientID, clientSecret string, err error) {
+	clientID = identityEnv("IDENTITY_CLIENT_ID")
+	clientSecret = identityEnv("IDENTITY_CLIENT_SECRET")
 	issuer := identityEnv("IDENTITY_ISSUER")
 	if !hasConfiguredValue(clientID) || !hasConfiguredValue(clientSecret) {
-		return nil, nil, fmt.Errorf(
+		return nil, "", "", "", fmt.Errorf(
 			"identity provider %s requires IDENTITY_CLIENT_ID and IDENTITY_CLIENT_SECRET", provider)
 	}
 	if !hasConfiguredValue(issuer) {
-		return nil, nil, fmt.Errorf(
+		return nil, "", "", "", fmt.Errorf(
 			"identity provider %s requires IDENTITY_ISSUER to discover provider metadata", provider)
 	}
 
 	// Start from any explicitly pinned endpoints; discovery fills only the gaps.
 	expectedIssuer := issuer
 	jwksURL := identityEnv("IDENTITY_JWKS_URL")
-	tokenURL := identityEnv("IDENTITY_TOKEN_URL")
+	tokenURL = identityEnv("IDENTITY_TOKEN_URL")
 	if !hasConfiguredValue(jwksURL) || !hasConfiguredValue(tokenURL) {
 		ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 		defer cancel()
 		discovered, err := oidc.Discover(ctx, issuer, nil)
 		if err != nil {
-			return nil, nil, fmt.Errorf("discover %s provider metadata: %w", provider, err)
+			return nil, "", "", "", fmt.Errorf("discover %s provider metadata: %w", provider, err)
 		}
 		expectedIssuer = discovered.Issuer
 		if !hasConfiguredValue(jwksURL) {
@@ -935,26 +1107,16 @@ func buildDiscoveredOIDCStack(provider string) (auth.TokenValidator, business.Co
 		cfg.EmailClaim = claim
 	}
 
-	validator, err := oidc.New(cfg)
+	v, err := oidc.New(cfg)
 	if err != nil {
-		return nil, nil, fmt.Errorf("initialize %s validator: %w", provider, err)
+		return nil, "", "", "", fmt.Errorf("initialize %s validator: %w", provider, err)
 	}
 
 	if strings.TrimSpace(tokenURL) == "" {
-		return nil, nil, fmt.Errorf(
+		return nil, "", "", "", fmt.Errorf(
 			"identity provider %s published no token endpoint; set IDENTITY_TOKEN_URL", provider)
 	}
-
-	exchanger, err := workosauth.NewExchanger(workosauth.Config{
-		TokenURL:     tokenURL,
-		ClientID:     clientID,
-		ClientSecret: clientSecret,
-		Validator:    validator,
-	})
-	if err != nil {
-		return nil, nil, fmt.Errorf("initialize %s exchanger: %w", provider, err)
-	}
-	return validator, exchanger, nil
+	return v, tokenURL, clientID, clientSecret, nil
 }
 
 func identityEnvOrDefault(key, fallback string) string {
@@ -983,13 +1145,16 @@ func buildProviderStack(provider, selectedFixture string) (auth.TokenValidator, 
 	case "workos":
 		return buildDiscoveredOIDCStack(provider)
 
+	case "oidc":
+		return buildGenericOIDCStack(provider)
+
 	case "auth0":
 		domain := identityEnv("IDENTITY_DOMAIN")
 		audience := identityEnv("IDENTITY_AUDIENCE")
 		clientID := identityEnv("IDENTITY_CLIENT_ID")
 		clientSecret := identityEnv("IDENTITY_CLIENT_SECRET")
-		if !hasConfiguredValue(domain) || !hasConfiguredValue(clientID) || !hasConfiguredValue(clientSecret) {
-			return nil, nil, fmt.Errorf("identity provider auth0 requires IDENTITY_DOMAIN, IDENTITY_CLIENT_ID, and IDENTITY_CLIENT_SECRET")
+		if !hasConfiguredValue(domain) || !hasConfiguredValue(clientID) || !hasConfiguredValue(clientSecret) || !hasConfiguredValue(audience) {
+			return nil, nil, fmt.Errorf("identity provider auth0 requires IDENTITY_DOMAIN, IDENTITY_AUDIENCE, IDENTITY_CLIENT_ID, and IDENTITY_CLIENT_SECRET")
 		}
 		v, err := oidc.New(oidc.Auth0Config(domain, audience))
 		if err != nil {
@@ -1025,56 +1190,180 @@ func buildProviderStack(provider, selectedFixture string) (auth.TokenValidator, 
 		}
 		return v, oidc.AsBusinessExchanger(ex), nil
 
+	case "header-jwt":
+		v, err := buildHeaderJWTValidator()
+		if err != nil {
+			return nil, nil, err
+		}
+		return v, nil, nil
+
 	case "fixture":
 		return nil, nil, fmt.Errorf("identity provider fixture requires an explicit Codefly fixture")
 	case "":
 		return nil, nil, fmt.Errorf("IDENTITY_PROVIDER is required in the Codefly identity workspace configuration")
 	default:
-		return nil, nil, fmt.Errorf("unsupported identity provider %q", provider)
+		// A non-preset name is a generic OpenID Connect provider only when the
+		// operator explicitly declares it one. Without that opt-in an unrecognized
+		// value fails startup closed — so a typo of a preset (e.g. "wrokos") is
+		// rejected here instead of silently building a generic stack that would
+		// mismatch the intended provider's token shape and fail at first login.
+		if identityEnv("IDENTITY_GENERIC_OIDC") != "true" {
+			return nil, nil, fmt.Errorf(
+				"unsupported identity provider %q; set IDENTITY_GENERIC_OIDC=true to configure it as a generic OpenID Connect provider", provider)
+		}
+		return buildGenericOIDCStack(provider)
 	}
 }
 
+// buildHeaderJWTValidator configures the gateway-pre-authenticated validator
+// from the Codefly identity configuration. Audience is mandatory; JWKS is
+// mandatory unless the operator has deliberately opted into perimeter-trust
+// decode via IDENTITY_PERIMETER_TRUST_DECODE.
+func buildHeaderJWTValidator() (auth.TokenValidator, error) {
+	v, err := headerjwt.New(headerjwt.Config{
+		ProviderName:         identityEnvOrDefault("IDENTITY_PROVIDER_NAME", "header-jwt"),
+		JWKSURL:              identityEnv("IDENTITY_JWKS_URL"),
+		Audience:             identityEnv("IDENTITY_AUDIENCE"),
+		Issuer:               identityEnv("IDENTITY_ISSUER"),
+		SubjectClaim:         identityEnv("IDENTITY_SUBJECT_CLAIM"),
+		EmailClaim:           identityEnv("IDENTITY_EMAIL_CLAIM"),
+		EmailVerifiedClaim:   identityEnv("IDENTITY_EMAIL_VERIFIED_CLAIM"),
+		NameClaims:           identityEnvList("IDENTITY_NAME_CLAIMS"),
+		GroupClaim:           identityEnv("IDENTITY_GROUP_CLAIM"),
+		AllowedGroups:        identityEnvList("IDENTITY_ALLOWED_GROUPS"),
+		PerimeterTrustDecode: identityEnv("IDENTITY_PERIMETER_TRUST_DECODE") == "true",
+	})
+	if err != nil {
+		return nil, fmt.Errorf("initialize header-jwt validator: %w", err)
+	}
+	return v, nil
+}
+
+// identityEnvList reads a comma-separated identity configuration value into a
+// trimmed, non-empty slice.
+func identityEnvList(key string) []string {
+	raw := identityEnv(key)
+	parts := strings.Split(raw, ",")
+	out := make([]string, 0, len(parts))
+	for _, part := range parts {
+		if trimmed := strings.TrimSpace(part); trimmed != "" {
+			out = append(out, trimmed)
+		}
+	}
+	return out
+}
+
 // configuredEmailSender makes provider selection explicit. Production never
-// silently downgrades to a log sink because one Resend value is missing.
+// silently downgrades to a log sink because one Resend value is missing. Each
+// factory validates its own secrets and fails closed; adding a provider is one
+// Register call rather than a new switch case.
 func configuredEmailSender(ctx context.Context) (email.Sender, error) {
+	registry := email.NewRegistry()
+	registry.Register("log", logEmailFactory)
+	registry.Register("resend", resendEmailFactory)
+
+	name := strings.TrimSpace(os.Getenv("EMAIL_PROVIDER"))
+	if name == "" {
+		name = "log"
+	}
+	return registry.Select(ctx, name)
+}
+
+func logEmailFactory(ctx context.Context) (email.Sender, error) {
+	if os.Getenv("RESEND_API_KEY") != "" || os.Getenv("RESEND_WEBHOOK_SECRET") != "" {
+		return nil, fmt.Errorf("email: Resend credentials are present while EMAIL_PROVIDER is log")
+	}
 	w := wool.Get(ctx).In("pickEmailSender")
-	logFn := func(format string, args ...any) {
+	return email.NewLogSender(func(format string, args ...any) {
 		w.Info(fmt.Sprintf(format, args...))
+	}), nil
+}
+
+func resendEmailFactory(_ context.Context) (email.Sender, error) {
+	key := strings.TrimSpace(os.Getenv("RESEND_API_KEY"))
+	webhookSecret := strings.TrimSpace(os.Getenv("RESEND_WEBHOOK_SECRET"))
+	if key == "" || webhookSecret == "" {
+		return nil, fmt.Errorf("email: RESEND_API_KEY and RESEND_WEBHOOK_SECRET are required when EMAIL_PROVIDER=resend")
 	}
-	switch strings.ToLower(strings.TrimSpace(os.Getenv("EMAIL_PROVIDER"))) {
-	case "", "log":
-		if os.Getenv("RESEND_API_KEY") != "" || os.Getenv("RESEND_WEBHOOK_SECRET") != "" {
-			return nil, fmt.Errorf("email: Resend credentials are present while EMAIL_PROVIDER is log")
+	return email.NewResendSender(email.ResendConfig{
+		APIKey:        key,
+		BaseURL:       strings.TrimSpace(os.Getenv("RESEND_API_BASE")),
+		WebhookSecret: webhookSecret,
+	})
+}
+
+// previousSigningKeys returns any rotated-out signing keys the minter should
+// still accept for verification, so access tokens signed by them keep verifying
+// during an overlapping rotation window. JWT_PREVIOUS_PUBLIC_KEYS is a
+// comma-separated list of base64 Ed25519 public keys; empty (the steady state)
+// yields none. A malformed entry is logged and skipped rather than failing
+// startup.
+func previousSigningKeys(ctx context.Context) []ed25519core.PublicKey {
+	var keys []ed25519core.PublicKey
+	for _, encoded := range strings.Split(workspaceEnv("internal-auth", "JWT_PREVIOUS_PUBLIC_KEYS"), ",") {
+		encoded = strings.TrimSpace(encoded)
+		if encoded == "" {
+			continue
 		}
-		return email.NewLogSender(logFn), nil
-	case "resend":
-		key := strings.TrimSpace(os.Getenv("RESEND_API_KEY"))
-		webhookSecret := strings.TrimSpace(os.Getenv("RESEND_WEBHOOK_SECRET"))
-		if key == "" || webhookSecret == "" {
-			return nil, fmt.Errorf("email: RESEND_API_KEY and RESEND_WEBHOOK_SECRET are required when EMAIL_PROVIDER=resend")
-		}
-		s, err := email.NewResendSender(email.ResendConfig{
-			APIKey:  key,
-			BaseURL: strings.TrimSpace(os.Getenv("RESEND_API_BASE")),
-		})
+		pub, err := decodeEd25519PublicKey(encoded)
 		if err != nil {
-			return nil, err
+			wool.Get(ctx).In("previousSigningKeys").Warn("ignoring malformed previous signing key", wool.ErrField(err))
+			continue
 		}
-		return s, nil
-	default:
-		return nil, fmt.Errorf("EMAIL_PROVIDER must be log or resend")
+		keys = append(keys, pub)
 	}
+	return keys
+}
+
+// decodeEd25519PublicKey accepts a standard or raw-url base64 Ed25519 public
+// key. Operators paste keys in either form; both decode to the same 32 bytes.
+func decodeEd25519PublicKey(encoded string) (ed25519core.PublicKey, error) {
+	raw, err := base64.StdEncoding.DecodeString(encoded)
+	if err != nil {
+		raw, err = base64.RawURLEncoding.DecodeString(encoded)
+		if err != nil {
+			return nil, fmt.Errorf("decode public key: %w", err)
+		}
+	}
+	if len(raw) != ed25519core.PublicKeySize {
+		return nil, fmt.Errorf("wrong public key size: got %d want %d", len(raw), ed25519core.PublicKeySize)
+	}
+	return ed25519core.PublicKey(raw), nil
+}
+
+// devFixtureAuthProvider reports whether authProvider is one of the local
+// fixture-backed modes. Only these may fall back to an ephemeral signing key;
+// with any real identity provider the key must load from Vault.
+func devFixtureAuthProvider(authProvider string) bool {
+	return authProvider == "fixture" || authProvider == "dev"
+}
+
+// requireLocalForDevFixtureProvider refuses to start with the dev or fixture
+// identity provider outside the local environment. Those providers accept
+// unauthenticated identities by design; selecting one in a deployed environment
+// (via IDENTITY_PROVIDER=dev/fixture) would turn the whole authentication
+// boundary off, so it fails closed at startup instead.
+func requireLocalForDevFixtureProvider(authProvider string, isLocal bool) error {
+	if devFixtureAuthProvider(authProvider) && !isLocal {
+		return fmt.Errorf("identity provider %q is only permitted in the local environment", authProvider)
+	}
+	return nil
 }
 
 // loadSigningKey returns the Ed25519 private key used to sign access and
 // refresh tokens.
 //
-// Production: loads from Vault KV v2 (persistent across restarts).
-// Local dev: falls back to an ephemeral key if Vault isn't reachable,
+// The key must persist across restarts and be identical across replicas: it
+// signs JWTs, seeds the OAuth-state signer, and is the public key the sidecar
+// and permissions plugin pin. Production loads it from Vault KV v2 and refuses
+// to boot if that load fails — an ephemeral key would make each replica sign
+// differently, break existing sessions, and desynchronise the pinned key. This
+// fails closed rather than fail-open-to-broken.
 //
-//	so `codefly run service frontend --fixture dev-admin` still works on
-//	a fresh machine. The ephemeral fallback logs a warning.
-func loadSigningKey(ctx context.Context) (ed25519core.PrivateKey, error) {
+// allowEphemeral is set only in dev/fixture mode, where a freshly generated key
+// lets `codefly run service frontend --fixture dev-admin` work on a machine with
+// no Vault. The fallback logs a warning.
+func loadSigningKey(ctx context.Context, allowEphemeral bool) (ed25519core.PrivateKey, error) {
 	vaultAddr, addrErr := codefly.For(ctx).Service("vault").Configuration("vault", "address")
 	vaultToken, tokErr := codefly.For(ctx).Service("vault").Secret("vault", "token")
 	if addrErr == nil && tokErr == nil && vaultAddr != "" && vaultToken != "" {
@@ -1085,7 +1374,12 @@ func loadSigningKey(ctx context.Context) (ed25519core.PrivateKey, error) {
 		if err == nil {
 			return priv, nil
 		}
+		if !allowEphemeral {
+			return nil, fmt.Errorf("load signing key from Vault: %w", err)
+		}
 		wool.Get(ctx).In("loadSigningKey").Warn("could not load signing key from Vault — falling back to ephemeral", wool.ErrField(err))
+	} else if !allowEphemeral {
+		return nil, fmt.Errorf("load signing key: Vault address and token are required outside dev/fixture mode")
 	}
 	_, priv, err := ed25519minter.GenerateKey()
 	return priv, err

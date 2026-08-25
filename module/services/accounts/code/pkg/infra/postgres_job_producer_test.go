@@ -306,7 +306,7 @@ func TestMagicLinkRunsThroughTransactionalGenericEmailWorker(t *testing.T) {
 	service, err := business.NewService(testStore)
 	require.NoError(t, err)
 	service.SetEmailOutbox(outbox, "https://app.example.com")
-	require.NoError(t, service.SendMagicLink(testCtx, "magic@example.com"))
+	require.NoError(t, service.SendMagicLink(testCtx, "magic@example.com", ""))
 
 	var jobID, state, orderingKey string
 	var encoded []byte

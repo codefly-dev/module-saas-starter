@@ -17,7 +17,7 @@ Generation consumes:
 
 - the installed module's declared service inventory and deployment topology;
 - each declared environment's cluster kind, namespace, and exact ingress routes;
-- explicit AWS managed-service endpoints, network CIDRs, and external secret
+- explicit managed-service endpoints, network CIDRs, and external secret
   references.
 
 Any `gitops:` publication block still present in a migrated workspace is
@@ -48,14 +48,14 @@ repository, revision, or Argo resource.
         {"name": "product", "service": "forge-edge", "endpoint": "rest", "port": 8080, "hosts": ["app.example.com"]}
       ],
       "managedServiceHandoffs": [
-        {"service": "store", "awsKind": "rds-postgresql", "externalName": "store.internal.example.com"}
+        {"service": "store", "kind": "rds-postgresql", "externalName": "store.internal.example.com"}
       ]
     }
   ]
 }
 ```
 
-Managed AWS services drop out of the in-cluster `services` list and appear as
+Managed services drop out of the in-cluster `services` list and appear as
 handoffs instead. Generation rejects unsupported cluster kinds, undeclared or
 duplicate environments, managed services that are not declared module services,
 and any object outside the module-owned apiVersion allowlist (a boundary test
@@ -69,22 +69,29 @@ deployment/kustomize/
   bundle.json
   overlays/
     <environment>/
-      kustomization.yaml
-      resources/
-        namespace.yaml
+      kustomization.yaml      # sets `namespace:` and references base + namespace + ingress
+      namespace.yaml          # Namespace object, named for the environment
+      ingress.yaml            # Gateway + VirtualService (host-bearing; omitted without ingress)
+      base/
+        kustomization.yaml
         resource-quota.yaml
         limit-range.yaml
         network-policy.yaml
         istio-mtls.yaml
-        istio-gateway.yaml
+        destination-rules.yaml
         handoffs/
           <managed-service>.yaml
 ```
 
-An overlay contains module-owned Kubernetes objects only — namespace,
-resource-quota, limit-range, NetworkPolicies, Istio mTLS/gateway, and managed
-`ExternalName`/`ExternalSecret` handoffs. It never contains a Secret, an
-`AppProject`, or an `Application`. Render an environment locally with:
+The base is identity-neutral: it carries neither the Namespace object nor a host.
+Each environment overlay supplies the identity — its `namespace.yaml` names the
+namespace, its `ingress.yaml` owns the host-bearing Gateway and VirtualService,
+and its `namespace:` transformer places every base resource in that namespace —
+so one base can back many namespaces. An overlay contains module-owned Kubernetes
+objects only — namespace, resource-quota, limit-range, NetworkPolicies, Istio
+mTLS/gateway, and managed `ExternalName`/`ExternalSecret` handoffs. It never
+contains a Secret, an `AppProject`, or an `Application`. Render an environment
+locally with:
 
 ```sh
 kubectl kustomize modules/<module>/deployment/kustomize/overlays/<environment>
@@ -116,13 +123,16 @@ renders module-owned baseline resources (namespace, quotas, NetworkPolicies,
 mTLS, handoffs) without a Gateway/VirtualService, and its bundle entry records
 an empty ingress list.
 
-## AWS handoffs
+## Managed-service handoffs
 
-EKS environments declare each module-owned managed service under
-`managed-services`. The module generates an `ExternalName` Service and
-topology-derived egress policy. Optional `secret-references` generate
-ExternalSecret objects containing only provider keys and SecretStore
-references:
+Managed-capable environments — `eks` on AWS and `aks` on Azure — declare each
+module-owned managed service under `managed-services`. The module generates an
+`ExternalName` Service and topology-derived egress policy. Optional
+`secret-references` generate ExternalSecret objects containing only provider
+keys and SecretStore references. Supported `kind` values are `elasticache`,
+`rds-postgresql`, `s3`, `secrets-manager`, and `azure-postgres-flexible`. The
+Azure `ExternalSecret` handoff shape is still in flux under infra's passwordless
+direction, so the worked example below stays on the stable AWS shape:
 
 ```yaml
 managed-services:
@@ -139,8 +149,8 @@ managed-services:
           kind: ClusterSecretStore
 ```
 
-No AWS behavior is added to the generic Postgres, Redis, S3, or Vault service
-plugins.
+No cloud-provider behavior is added to the generic Postgres, Redis, S3, or
+Vault service plugins.
 
 The installed Starter topology includes an independently deployable marketing
 service. Local hosts and production domains belong to the consumer's

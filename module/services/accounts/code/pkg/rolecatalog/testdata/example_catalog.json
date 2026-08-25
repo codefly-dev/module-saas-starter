@@ -1,0 +1,14 @@
+{
+  "version": 1,
+  "roles": [
+    {
+      "name": "module-a:analyst",
+      "description": "Read access to module A",
+      "scope": "module-a",
+      "permissions": [
+        {"resource": "reports", "action": "read"},
+        {"resource": "queries", "action": "execute"}
+      ]
+    }
+  ]
+}

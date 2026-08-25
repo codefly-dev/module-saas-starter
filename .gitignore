@@ -18,6 +18,7 @@ module/services/*/code/backend
 module/services/*/code/local
 module/services/*/code/node_modules/
 module/services/*/code/.next/
+
 module/services/*/code/*.tsbuildinfo
 module/services/store/code/store-migrator
 module/services/*/.cache/
@@ -44,3 +45,6 @@ module/services/*/nix/
 /configurations/local-dogfood/observability.secret.env
 /configurations/local-dogfood/abuse-protection.env
 /configurations/local-dogfood/abuse-protection.secret.env
+go.work*
+# Built agent binary (rebuilt by `codefly agent build`).
+module-saas-starter

@@ -1,0 +1,5 @@
+schema: codefly/saas/fixtures-contribution/v1
+namespace: reference
+fixtures:
+  - name: reference-local
+    path: fixtures/reference-local.yaml

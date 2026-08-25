@@ -38,7 +38,16 @@ func (s *Service) RunRetention(ctx context.Context) (map[string]int64, error) {
 			var bErr error
 			switch p.ResourceType {
 			case "audit_events":
-				count, bErr = s.store.DeleteOldAuditEvents(ctx, before)
+				// audit_events is append-only and range-partitioned by
+				// created_at: retention drops whole partitions older than the
+				// window (DDL that sidesteps the immutability trigger) rather
+				// than issuing a row DELETE the trigger would reject. Provision
+				// upcoming partitions on the same cycle so writes never hit a
+				// missing range.
+				if ensureErr := s.store.EnsureAuditPartitions(ctx, 3); ensureErr != nil {
+					w.Warn(fmt.Sprintf("audit partition provisioning failed: %v", ensureErr))
+				}
+				count, bErr = s.store.DropAuditPartitionsBefore(ctx, before)
 			case "sessions":
 				count, bErr = s.store.DeleteOldSessions(ctx, before)
 			case "webhook_deliveries":

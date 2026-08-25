@@ -20,18 +20,32 @@ import (
 // Failure mode: Revoke errors are logged and SWALLOWED. Better to leak
 // a token for the remainder of its TTL than to break logout when Redis
 // is briefly unavailable — the access token still expires naturally.
-// IsRevoked errors return false (fail-open, matching Cache get-miss
-// semantics throughout the codebase).
+// IsRevoked, by contrast, fails CLOSED: it reports the backing-store error
+// so the caller can deny rather than admit a possibly-revoked token, matching
+// the sidecar's revocation check (a HIGH-severity revocation must not be
+// bypassed by a Redis blip). A get-miss is (false, nil), not an error.
 type TokenRevoker interface {
 	// Revoke marks jti as revoked for ttl seconds. ttl SHOULD equal the
 	// token's remaining lifetime; longer wastes memory, shorter creates
 	// a window where the revoked token still works.
 	Revoke(ctx context.Context, jti string, ttl time.Duration) error
 
-	// IsRevoked returns true when jti is in the revocation list.
-	// Implementations MAY return false on backing-store errors —
-	// callers must treat the answer as advisory.
-	IsRevoked(ctx context.Context, jti string) bool
+	// IsRevoked reports whether jti is in the revocation list. A non-nil
+	// error means the backing store could not be consulted; the caller MUST
+	// treat that as fail-closed (deny), never as "not revoked".
+	IsRevoked(ctx context.Context, jti string) (bool, error)
+
+	// RevokeSession marks every access token carrying this session id (the
+	// `sid` claim) as revoked for ttl. Admin session-kill uses it to invalidate
+	// a victim's outstanding access token without possessing the token itself:
+	// revoke-by-jti needs the client to forward its bearer, revoke-by-session
+	// does not. ttl SHOULD equal the access-token TTL. Same swallow-on-error
+	// contract as Revoke.
+	RevokeSession(ctx context.Context, sessionID string, ttl time.Duration) error
+
+	// IsSessionRevoked reports whether sessionID is in the session-revocation
+	// list. Same fail-closed contract as IsRevoked.
+	IsSessionRevoked(ctx context.Context, sessionID string) (bool, error)
 }
 
 // NoopTokenRevoker is the fallback when no Redis is configured — accepts
@@ -44,6 +58,14 @@ func (NoopTokenRevoker) Revoke(_ context.Context, _ string, _ time.Duration) err
 	return nil
 }
 
-func (NoopTokenRevoker) IsRevoked(_ context.Context, _ string) bool {
-	return false
+func (NoopTokenRevoker) IsRevoked(_ context.Context, _ string) (bool, error) {
+	return false, nil
+}
+
+func (NoopTokenRevoker) RevokeSession(_ context.Context, _ string, _ time.Duration) error {
+	return nil
+}
+
+func (NoopTokenRevoker) IsSessionRevoked(_ context.Context, _ string) (bool, error) {
+	return false, nil
 }

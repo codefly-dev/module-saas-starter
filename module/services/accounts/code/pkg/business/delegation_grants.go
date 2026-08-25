@@ -28,7 +28,6 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
-	"sort"
 	"strings"
 	"time"
 
@@ -486,11 +485,11 @@ func (s *Service) DecideDelegation(ctx context.Context, id, orgID, grantorID str
 	// Audit + notification fan-out. Audit is mandatory (the
 	// approval-trail is a compliance requirement); notification
 	// is best-effort (the inbox is a UX nicety).
-	auditAction := "delegation.approved"
+	auditEvent := EventDelegationApproved
 	if decision == GrantStatusDenied {
-		auditAction = "delegation.denied"
+		auditEvent = EventDelegationDenied
 	}
-	s.emit(ctx, grantorID, "user", auditAction, "delegation_grant", grant.ID, grant.OrgID)
+	s.emit(ctx, grantorID, "user", auditEvent, "delegation_grant", grant.ID, grant.OrgID)
 	s.notifyDelegationDecision(ctx, grant.ActorPrincipalID, grant.OrgID, grant.ID,
 		string(decision), reason, grant.Action)
 	return grant, nil
@@ -563,20 +562,6 @@ func (s *Service) delegationStore() DelegationStore {
 	panic("Service.store does not implement DelegationStore; see postgres_delegation_grants.go")
 }
 
-// canonicalContextKeys returns the request-context keys in
-// deterministic order. Used when computing hashes / serializing
-// the context for storage. Sorted slice keeps two
-// json.Marshal-with-different-iteration-orders from producing
-// different hashes.
-func canonicalContextKeys(m map[string]any) []string {
-	keys := make([]string, 0, len(m))
-	for k := range m {
-		keys = append(keys, k)
-	}
-	sort.Strings(keys)
-	return keys
-}
-
 // notifyDelegationDecision posts an in-app inbox item to the
 // principal's owning user when the principal is human (agents
 // have no inbox; their requestors observe the streaming RPC
@@ -614,9 +599,10 @@ func (s *Service) notifyDelegationDecision(ctx context.Context, actorPrincipalID
 		body = fmt.Sprintf("Your %s request was %s.", action, status)
 	}
 	notifType := "info"
-	if status == "denied" {
+	switch status {
+	case "denied":
 		notifType = "warning"
-	} else if status == "approved" {
+	case "approved":
 		notifType = "success"
 	}
 

@@ -12,6 +12,10 @@ const authState = vi.hoisted(() => ({
 	isLoading: false,
 }));
 
+const legalState = vi.hoisted(() => ({
+	configured: false,
+}));
+
 const clients = vi.hoisted(() => ({
 	consent: {
 		getStatus: vi.fn(),
@@ -24,11 +28,14 @@ const clients = vi.hoisted(() => ({
 }));
 
 vi.mock("@/lib/auth", () => ({
-	useAuth: () => authState,
+	useAuth: () => ({
+		isAuthenticated: authState.isAuthenticated,
+		isLoading: authState.isLoading,
+	}),
 }));
 
 vi.mock("@/lib/legal-config", () => ({
-	legalContentConfigured: () => false,
+	legalContentConfigured: () => legalState.configured,
 }));
 
 vi.mock("@connectrpc/connect", () => ({
@@ -47,6 +54,7 @@ afterEach(() => {
 	vi.clearAllMocks();
 	authState.isAuthenticated = false;
 	authState.isLoading = false;
+	legalState.configured = false;
 });
 
 describe("ConsentBanner", () => {
@@ -65,6 +73,37 @@ describe("ConsentBanner", () => {
 			name: "Accept Terms",
 		});
 		expect(acceptTerms.getAttribute("disabled")).not.toBeNull();
+	});
+
+	it("allows Terms acceptance once legal content is configured", async () => {
+		authState.isAuthenticated = true;
+		legalState.configured = true;
+		clients.consent.getStatus.mockResolvedValue({
+			currentTermsVersion: "terms-v1",
+			termsAcceptedVersion: "",
+			policyVersion: "policy-v2",
+			purposes: [],
+		});
+		clients.consent.acceptTerms.mockResolvedValue({
+			policyVersion: "policy-v2",
+			purposes: [],
+		});
+
+		render(<ConsentBanner />);
+
+		const acceptTerms = await screen.findByRole("button", {
+			name: "Accept Terms",
+		});
+		expect(acceptTerms.getAttribute("disabled")).toBeNull();
+
+		fireEvent.click(acceptTerms);
+
+		await waitFor(() =>
+			expect(clients.consent.acceptTerms).toHaveBeenCalledWith({
+				version: "terms-v1",
+				context: "consent_banner",
+			}),
+		);
 	});
 
 	it("persists the current server policy version for anonymous preferences", async () => {

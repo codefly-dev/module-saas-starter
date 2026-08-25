@@ -24,6 +24,7 @@ package adapters
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"strconv"
 	"strings"
@@ -36,6 +37,7 @@ import (
 	"github.com/codefly-dev/core/wool"
 
 	"accounts/pkg/auth"
+	"accounts/pkg/business"
 	"accounts/pkg/cache"
 	gen "accounts/pkg/gen/saas/accounts/v1"
 )
@@ -365,6 +367,25 @@ func requirePlatformAdmin(ctx context.Context, actorID string) error {
 	return nil
 }
 
+// requirePlatformRole is the handler-layer counterpart to the business
+// requirePlatformRole check: it verifies actorID holds at least minRole in the
+// platform hierarchy (support < billing < super_admin). Handlers gate with the
+// same minimum their business method enforces, so dropping the business check
+// alone cannot re-expose an endpoint.
+func requirePlatformRole(ctx context.Context, actorID, minRole string) error {
+	role, err := service.Store().GetPlatformRole(ctx, actorID)
+	if err != nil {
+		return status.Errorf(codes.Internal, "cannot resolve platform role: %v", err)
+	}
+	if role == "" {
+		return status.Error(codes.PermissionDenied, "requires platform admin role")
+	}
+	if business.PlatformRoleRank(role) < business.PlatformRoleRank(minRole) {
+		return status.Errorf(codes.PermissionDenied, "requires platform %s role", minRole)
+	}
+	return nil
+}
+
 // internalToken is the shared secret the auth-sidecar (and other
 // trusted internal callers) carry to hit privileged-internal RPCs
 // like CheckPermission. Set at startup from CODEFLY_INTERNAL_TOKEN.
@@ -377,12 +398,31 @@ func requirePlatformAdmin(ctx context.Context, actorID string) error {
 // cannot" line without that overhaul. mTLS is the eventual fix.
 var (
 	internalToken string
-	gatewayToken  string
+	// rotationInternalTokens are additional secrets accepted alongside
+	// internalToken during an overlapping rotation window. A caller presenting
+	// either the current or a still-valid previous token is admitted, so the
+	// token can be rolled out and retired without a flag-day cutover.
+	rotationInternalTokens []string
+	gatewayToken           string
 )
 
-// SetInternalToken installs the shared secret. Called once from
+// SetInternalToken installs the primary shared secret. Called once from
 // work.go after reading CODEFLY_INTERNAL_TOKEN. Idempotent.
 func SetInternalToken(token string) { internalToken = token }
+
+// SetInternalTokenRotation installs additional internal service credentials
+// that stay valid alongside the primary for zero-downtime rotation. Empty
+// entries are dropped; calling with no non-empty token clears the set. Call
+// before the servers register their interceptors.
+func SetInternalTokenRotation(tokens ...string) {
+	filtered := make([]string, 0, len(tokens))
+	for _, t := range tokens {
+		if t != "" {
+			filtered = append(filtered, t)
+		}
+	}
+	rotationInternalTokens = filtered
+}
 
 // SetGatewayToken installs the credential used to authenticate identity
 // headers stamped by auth-sidecar. Unlike the internal token, this credential
@@ -390,22 +430,22 @@ func SetInternalToken(token string) { internalToken = token }
 // X-User-Id/X-Org-Id/etc. on tenant-facing transports.
 func SetGatewayToken(token string) { gatewayToken = token }
 
-// requireInternalOrAuth gates a privileged-internal RPC. Caller
-// must present EITHER a valid JWT (standard auth path) OR a
-// matching X-Codefly-Internal-Token header.
-func requireInternalOrAuth(ctx context.Context) error {
-	if id, ok := wool.Get(ctx).UserAuthID(); ok && id != "" {
-		return nil
-	}
+// requireInternalCredential gates the EXPOSURE_INTERNAL authority oracles
+// (CheckPermission, CheckAccess, Decide, ResolveIdentity, ValidateAPIKey,
+// GetPrincipal, GetAgentPrincipal) and ConsumeUsage. Only a valid internal
+// service token passes: these methods accept authority questions about
+// arbitrary principals, so a bare tenant JWT must never turn them into an
+// authorization oracle.
+func requireInternalCredential(ctx context.Context) error {
 	md, ok := metadata.FromIncomingContext(ctx)
 	if ok {
-		for _, v := range md.Get("x-codefly-internal-token") {
-			if validInternalToken(v) {
+		for _, value := range md.Get("x-codefly-internal-token") {
+			if validInternalToken(value) {
 				return nil
 			}
 		}
 	}
-	return status.Error(codes.Unauthenticated, "internal endpoint requires an authenticated caller or X-Codefly-Internal-Token")
+	return status.Error(codes.Unauthenticated, "internal service credential required")
 }
 
 // scopesCtxKey holds the comma-separated scope list forwarded by the
@@ -430,6 +470,88 @@ func withScopes(ctx context.Context, scopes []string) context.Context {
 func scopesFromContext(ctx context.Context) []string {
 	v, _ := ctx.Value(scopesCtxKey).([]string)
 	return v
+}
+
+// scopedRolesCtxKey holds the caller's per-scope role grants, forwarded by the
+// auth-sidecar as the JSON `X-Scoped-Roles` header (or read from the `sr` claim
+// on the direct-JWT path). It lets a handler authorize a scoped operation from
+// the request context alone, without a callback to the authorization service.
+type scopedRolesCtxKeyType struct{}
+
+var scopedRolesCtxKey = scopedRolesCtxKeyType{}
+
+// withScopedRoles stamps the caller's scope->roles map on the context.
+func withScopedRoles(ctx context.Context, scoped map[string][]string) context.Context {
+	if len(scoped) == 0 {
+		return ctx
+	}
+	return context.WithValue(ctx, scopedRolesCtxKey, scoped)
+}
+
+// ScopedRolesFromContext returns the caller's scope->roles grants, or nil when
+// the caller holds none. The map is authoritative as of the token's mint time;
+// role edits revoke the session (see migration 91), so a live token's scoped
+// roles are never staler than one refresh cycle.
+func ScopedRolesFromContext(ctx context.Context) map[string][]string {
+	v, _ := ctx.Value(scopedRolesCtxKey).(map[string][]string)
+	return v
+}
+
+// scopedRolesTruncatedCtxKey records that the caller's scope->roles map was
+// bounded by MaxScopedRoleAssignments and is therefore incomplete.
+type scopedRolesTruncatedCtxKeyType struct{}
+
+var scopedRolesTruncatedCtxKey = scopedRolesTruncatedCtxKeyType{}
+
+// withScopedRolesTruncated marks the context's scoped-role grants as incomplete.
+func withScopedRolesTruncated(ctx context.Context, truncated bool) context.Context {
+	if !truncated {
+		return ctx
+	}
+	return context.WithValue(ctx, scopedRolesTruncatedCtxKey, true)
+}
+
+// ScopedRolesTruncatedFromContext reports whether the scope->roles grants on ctx
+// were truncated to fit the claim bound. When true, an absent grant is NOT a
+// denial — the caller holds more scoped roles than the header carries, so a
+// service must consult CheckPermission for an authoritative answer.
+func ScopedRolesTruncatedFromContext(ctx context.Context) bool {
+	v, _ := ctx.Value(scopedRolesTruncatedCtxKey).(bool)
+	return v
+}
+
+// HasScopedRole reports whether the caller holds role within scope per the
+// header grants on ctx, and whether that answer is conclusive. It is the
+// header-only authorization primitive: no database call, no callback to
+// accounts.
+//
+// The two-value return exists so a miss cannot be silently read as a denial.
+// conclusive is false only when the grant was not found AND the grants were
+// truncated to fit the claim bound (ScopedRolesTruncatedFromContext) — the
+// caller genuinely holds more scoped roles than the header carries. On
+// (false, false) the caller MUST consult CheckPermission rather than deny; on
+// (false, true) the caller may deny (the header is complete and lacks it).
+func HasScopedRole(ctx context.Context, scope, role string) (granted, conclusive bool) {
+	for _, r := range ScopedRolesFromContext(ctx)[scope] {
+		if r == role {
+			return true, true
+		}
+	}
+	return false, !ScopedRolesTruncatedFromContext(ctx)
+}
+
+// parseScopedRoles decodes the JSON `X-Scoped-Roles` header payload. A malformed
+// payload yields nil rather than an error: the header is advisory transport
+// metadata, and a caller that needs an authoritative answer uses CheckPermission.
+func parseScopedRoles(raw string) map[string][]string {
+	if raw == "" {
+		return nil
+	}
+	var scoped map[string][]string
+	if err := json.Unmarshal([]byte(raw), &scoped); err != nil {
+		return nil
+	}
+	return scoped
 }
 
 // requireScope enforces that an API-key caller has the required scope.

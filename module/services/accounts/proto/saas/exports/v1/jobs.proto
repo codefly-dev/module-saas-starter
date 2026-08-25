@@ -4,17 +4,6 @@ package saas.exports.v1;
 
 import "buf/validate/validate.proto";
 
-// AuditExportJob identifies one configured tenant export cycle. Credentials,
-// endpoint details, and event bytes remain in product-owned storage and are
-// never copied into generic job payloads or operations metadata.
-message AuditExportJob {
-  string execution_key = 1 [(buf.validate.field).string = {
-    min_len: 1
-    max_len: 255
-  }];
-  string config_id = 2 [(buf.validate.field).string.uuid = true];
-}
-
 // PrivacyExportJob identifies one subject-owned portability request. The
 // worker re-reads current product data under the subject/control-plane
 // boundary; personal data never enters the generic job envelope.

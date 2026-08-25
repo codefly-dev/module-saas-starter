@@ -90,7 +90,7 @@ func (s *AuditServer) ExportAuditLog(ctx context.Context, req *gen.ExportAuditLo
 			}
 		}
 	}
-	data, contentType, filename, err := service.ExportAuditLog(ctx, req.OrgId, req.Format, req.ActorId, req.Action)
+	data, contentType, filename, err := service.ExportAuditLog(ctx, req.OrgId, req.Format, req.ActorId, req.EventType)
 	if err != nil {
 		return nil, err
 	}

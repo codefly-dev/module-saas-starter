@@ -141,6 +141,54 @@ func (x *FixtureAuthentication) GetToken() string {
 	return ""
 }
 
+type HeaderJWTAuthentication struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// Signed JWT copied verbatim by the login route from the gateway-injected
+	// identity header. It is verified against the configured JWKS (or, under an
+	// explicit perimeter-trust decode mode, decoded with exp/aud still enforced)
+	// before any claim is trusted.
+	Token         string `protobuf:"bytes,1,opt,name=token,proto3" json:"token,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *HeaderJWTAuthentication) Reset() {
+	*x = HeaderJWTAuthentication{}
+	mi := &file_saas_accounts_v1_authentication_proto_msgTypes[2]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *HeaderJWTAuthentication) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*HeaderJWTAuthentication) ProtoMessage() {}
+
+func (x *HeaderJWTAuthentication) ProtoReflect() protoreflect.Message {
+	mi := &file_saas_accounts_v1_authentication_proto_msgTypes[2]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use HeaderJWTAuthentication.ProtoReflect.Descriptor instead.
+func (*HeaderJWTAuthentication) Descriptor() ([]byte, []int) {
+	return file_saas_accounts_v1_authentication_proto_rawDescGZIP(), []int{2}
+}
+
+func (x *HeaderJWTAuthentication) GetToken() string {
+	if x != nil {
+		return x.Token
+	}
+	return ""
+}
+
 type AuthenticateRequest struct {
 	state    protoimpl.MessageState `protogen:"open.v1"`
 	Provider string                 `protobuf:"bytes,1,opt,name=provider,proto3" json:"provider,omitempty"`
@@ -163,6 +211,7 @@ type AuthenticateRequest struct {
 	//
 	//	*AuthenticateRequest_OauthCode
 	//	*AuthenticateRequest_Fixture
+	//	*AuthenticateRequest_HeaderJwt
 	Authentication isAuthenticateRequest_Authentication `protobuf_oneof:"authentication"`
 	unknownFields  protoimpl.UnknownFields
 	sizeCache      protoimpl.SizeCache
@@ -170,7 +219,7 @@ type AuthenticateRequest struct {
 
 func (x *AuthenticateRequest) Reset() {
 	*x = AuthenticateRequest{}
-	mi := &file_saas_accounts_v1_authentication_proto_msgTypes[2]
+	mi := &file_saas_accounts_v1_authentication_proto_msgTypes[3]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -182,7 +231,7 @@ func (x *AuthenticateRequest) String() string {
 func (*AuthenticateRequest) ProtoMessage() {}
 
 func (x *AuthenticateRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_saas_accounts_v1_authentication_proto_msgTypes[2]
+	mi := &file_saas_accounts_v1_authentication_proto_msgTypes[3]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -195,7 +244,7 @@ func (x *AuthenticateRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use AuthenticateRequest.ProtoReflect.Descriptor instead.
 func (*AuthenticateRequest) Descriptor() ([]byte, []int) {
-	return file_saas_accounts_v1_authentication_proto_rawDescGZIP(), []int{2}
+	return file_saas_accounts_v1_authentication_proto_rawDescGZIP(), []int{3}
 }
 
 func (x *AuthenticateRequest) GetProvider() string {
@@ -268,6 +317,15 @@ func (x *AuthenticateRequest) GetFixture() *FixtureAuthentication {
 	return nil
 }
 
+func (x *AuthenticateRequest) GetHeaderJwt() *HeaderJWTAuthentication {
+	if x != nil {
+		if x, ok := x.Authentication.(*AuthenticateRequest_HeaderJwt); ok {
+			return x.HeaderJwt
+		}
+	}
+	return nil
+}
+
 type isAuthenticateRequest_Authentication interface {
 	isAuthenticateRequest_Authentication()
 }
@@ -280,9 +338,15 @@ type AuthenticateRequest_Fixture struct {
 	Fixture *FixtureAuthentication `protobuf:"bytes,8,opt,name=fixture,proto3,oneof"`
 }
 
+type AuthenticateRequest_HeaderJwt struct {
+	HeaderJwt *HeaderJWTAuthentication `protobuf:"bytes,9,opt,name=header_jwt,json=headerJwt,proto3,oneof"`
+}
+
 func (*AuthenticateRequest_OauthCode) isAuthenticateRequest_Authentication() {}
 
 func (*AuthenticateRequest_Fixture) isAuthenticateRequest_Authentication() {}
+
+func (*AuthenticateRequest_HeaderJwt) isAuthenticateRequest_Authentication() {}
 
 type AuthenticateResponse struct {
 	state        protoimpl.MessageState `protogen:"open.v1"`
@@ -300,7 +364,7 @@ type AuthenticateResponse struct {
 
 func (x *AuthenticateResponse) Reset() {
 	*x = AuthenticateResponse{}
-	mi := &file_saas_accounts_v1_authentication_proto_msgTypes[3]
+	mi := &file_saas_accounts_v1_authentication_proto_msgTypes[4]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -312,7 +376,7 @@ func (x *AuthenticateResponse) String() string {
 func (*AuthenticateResponse) ProtoMessage() {}
 
 func (x *AuthenticateResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_saas_accounts_v1_authentication_proto_msgTypes[3]
+	mi := &file_saas_accounts_v1_authentication_proto_msgTypes[4]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -325,7 +389,7 @@ func (x *AuthenticateResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use AuthenticateResponse.ProtoReflect.Descriptor instead.
 func (*AuthenticateResponse) Descriptor() ([]byte, []int) {
-	return file_saas_accounts_v1_authentication_proto_rawDescGZIP(), []int{3}
+	return file_saas_accounts_v1_authentication_proto_rawDescGZIP(), []int{4}
 }
 
 func (x *AuthenticateResponse) GetAccessToken() string {
@@ -384,7 +448,7 @@ type CompleteMFAChallengeRequest struct {
 
 func (x *CompleteMFAChallengeRequest) Reset() {
 	*x = CompleteMFAChallengeRequest{}
-	mi := &file_saas_accounts_v1_authentication_proto_msgTypes[4]
+	mi := &file_saas_accounts_v1_authentication_proto_msgTypes[5]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -396,7 +460,7 @@ func (x *CompleteMFAChallengeRequest) String() string {
 func (*CompleteMFAChallengeRequest) ProtoMessage() {}
 
 func (x *CompleteMFAChallengeRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_saas_accounts_v1_authentication_proto_msgTypes[4]
+	mi := &file_saas_accounts_v1_authentication_proto_msgTypes[5]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -409,7 +473,7 @@ func (x *CompleteMFAChallengeRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CompleteMFAChallengeRequest.ProtoReflect.Descriptor instead.
 func (*CompleteMFAChallengeRequest) Descriptor() ([]byte, []int) {
-	return file_saas_accounts_v1_authentication_proto_rawDescGZIP(), []int{4}
+	return file_saas_accounts_v1_authentication_proto_rawDescGZIP(), []int{5}
 }
 
 func (x *CompleteMFAChallengeRequest) GetMfaToken() string {
@@ -438,7 +502,7 @@ type CompleteMFAChallengeResponse struct {
 
 func (x *CompleteMFAChallengeResponse) Reset() {
 	*x = CompleteMFAChallengeResponse{}
-	mi := &file_saas_accounts_v1_authentication_proto_msgTypes[5]
+	mi := &file_saas_accounts_v1_authentication_proto_msgTypes[6]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -450,7 +514,7 @@ func (x *CompleteMFAChallengeResponse) String() string {
 func (*CompleteMFAChallengeResponse) ProtoMessage() {}
 
 func (x *CompleteMFAChallengeResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_saas_accounts_v1_authentication_proto_msgTypes[5]
+	mi := &file_saas_accounts_v1_authentication_proto_msgTypes[6]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -463,7 +527,7 @@ func (x *CompleteMFAChallengeResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CompleteMFAChallengeResponse.ProtoReflect.Descriptor instead.
 func (*CompleteMFAChallengeResponse) Descriptor() ([]byte, []int) {
-	return file_saas_accounts_v1_authentication_proto_rawDescGZIP(), []int{5}
+	return file_saas_accounts_v1_authentication_proto_rawDescGZIP(), []int{6}
 }
 
 func (x *CompleteMFAChallengeResponse) GetAccessToken() string {
@@ -506,7 +570,7 @@ type BeginWebAuthnMFAChallengeRequest struct {
 
 func (x *BeginWebAuthnMFAChallengeRequest) Reset() {
 	*x = BeginWebAuthnMFAChallengeRequest{}
-	mi := &file_saas_accounts_v1_authentication_proto_msgTypes[6]
+	mi := &file_saas_accounts_v1_authentication_proto_msgTypes[7]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -518,7 +582,7 @@ func (x *BeginWebAuthnMFAChallengeRequest) String() string {
 func (*BeginWebAuthnMFAChallengeRequest) ProtoMessage() {}
 
 func (x *BeginWebAuthnMFAChallengeRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_saas_accounts_v1_authentication_proto_msgTypes[6]
+	mi := &file_saas_accounts_v1_authentication_proto_msgTypes[7]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -531,7 +595,7 @@ func (x *BeginWebAuthnMFAChallengeRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use BeginWebAuthnMFAChallengeRequest.ProtoReflect.Descriptor instead.
 func (*BeginWebAuthnMFAChallengeRequest) Descriptor() ([]byte, []int) {
-	return file_saas_accounts_v1_authentication_proto_rawDescGZIP(), []int{6}
+	return file_saas_accounts_v1_authentication_proto_rawDescGZIP(), []int{7}
 }
 
 func (x *BeginWebAuthnMFAChallengeRequest) GetMfaToken() string {
@@ -553,7 +617,7 @@ type BeginWebAuthnMFAChallengeResponse struct {
 
 func (x *BeginWebAuthnMFAChallengeResponse) Reset() {
 	*x = BeginWebAuthnMFAChallengeResponse{}
-	mi := &file_saas_accounts_v1_authentication_proto_msgTypes[7]
+	mi := &file_saas_accounts_v1_authentication_proto_msgTypes[8]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -565,7 +629,7 @@ func (x *BeginWebAuthnMFAChallengeResponse) String() string {
 func (*BeginWebAuthnMFAChallengeResponse) ProtoMessage() {}
 
 func (x *BeginWebAuthnMFAChallengeResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_saas_accounts_v1_authentication_proto_msgTypes[7]
+	mi := &file_saas_accounts_v1_authentication_proto_msgTypes[8]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -578,7 +642,7 @@ func (x *BeginWebAuthnMFAChallengeResponse) ProtoReflect() protoreflect.Message 
 
 // Deprecated: Use BeginWebAuthnMFAChallengeResponse.ProtoReflect.Descriptor instead.
 func (*BeginWebAuthnMFAChallengeResponse) Descriptor() ([]byte, []int) {
-	return file_saas_accounts_v1_authentication_proto_rawDescGZIP(), []int{7}
+	return file_saas_accounts_v1_authentication_proto_rawDescGZIP(), []int{8}
 }
 
 func (x *BeginWebAuthnMFAChallengeResponse) GetCeremonyToken() string {
@@ -607,7 +671,7 @@ type CompleteWebAuthnMFAChallengeRequest struct {
 
 func (x *CompleteWebAuthnMFAChallengeRequest) Reset() {
 	*x = CompleteWebAuthnMFAChallengeRequest{}
-	mi := &file_saas_accounts_v1_authentication_proto_msgTypes[8]
+	mi := &file_saas_accounts_v1_authentication_proto_msgTypes[9]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -619,7 +683,7 @@ func (x *CompleteWebAuthnMFAChallengeRequest) String() string {
 func (*CompleteWebAuthnMFAChallengeRequest) ProtoMessage() {}
 
 func (x *CompleteWebAuthnMFAChallengeRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_saas_accounts_v1_authentication_proto_msgTypes[8]
+	mi := &file_saas_accounts_v1_authentication_proto_msgTypes[9]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -632,7 +696,7 @@ func (x *CompleteWebAuthnMFAChallengeRequest) ProtoReflect() protoreflect.Messag
 
 // Deprecated: Use CompleteWebAuthnMFAChallengeRequest.ProtoReflect.Descriptor instead.
 func (*CompleteWebAuthnMFAChallengeRequest) Descriptor() ([]byte, []int) {
-	return file_saas_accounts_v1_authentication_proto_rawDescGZIP(), []int{8}
+	return file_saas_accounts_v1_authentication_proto_rawDescGZIP(), []int{9}
 }
 
 func (x *CompleteWebAuthnMFAChallengeRequest) GetMfaToken() string {
@@ -665,7 +729,7 @@ type RefreshTokenRequest struct {
 
 func (x *RefreshTokenRequest) Reset() {
 	*x = RefreshTokenRequest{}
-	mi := &file_saas_accounts_v1_authentication_proto_msgTypes[9]
+	mi := &file_saas_accounts_v1_authentication_proto_msgTypes[10]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -677,7 +741,7 @@ func (x *RefreshTokenRequest) String() string {
 func (*RefreshTokenRequest) ProtoMessage() {}
 
 func (x *RefreshTokenRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_saas_accounts_v1_authentication_proto_msgTypes[9]
+	mi := &file_saas_accounts_v1_authentication_proto_msgTypes[10]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -690,7 +754,7 @@ func (x *RefreshTokenRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RefreshTokenRequest.ProtoReflect.Descriptor instead.
 func (*RefreshTokenRequest) Descriptor() ([]byte, []int) {
-	return file_saas_accounts_v1_authentication_proto_rawDescGZIP(), []int{9}
+	return file_saas_accounts_v1_authentication_proto_rawDescGZIP(), []int{10}
 }
 
 func (x *RefreshTokenRequest) GetRefreshToken() string {
@@ -711,7 +775,7 @@ type RefreshTokenResponse struct {
 
 func (x *RefreshTokenResponse) Reset() {
 	*x = RefreshTokenResponse{}
-	mi := &file_saas_accounts_v1_authentication_proto_msgTypes[10]
+	mi := &file_saas_accounts_v1_authentication_proto_msgTypes[11]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -723,7 +787,7 @@ func (x *RefreshTokenResponse) String() string {
 func (*RefreshTokenResponse) ProtoMessage() {}
 
 func (x *RefreshTokenResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_saas_accounts_v1_authentication_proto_msgTypes[10]
+	mi := &file_saas_accounts_v1_authentication_proto_msgTypes[11]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -736,7 +800,7 @@ func (x *RefreshTokenResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RefreshTokenResponse.ProtoReflect.Descriptor instead.
 func (*RefreshTokenResponse) Descriptor() ([]byte, []int) {
-	return file_saas_accounts_v1_authentication_proto_rawDescGZIP(), []int{10}
+	return file_saas_accounts_v1_authentication_proto_rawDescGZIP(), []int{11}
 }
 
 func (x *RefreshTokenResponse) GetAccessToken() string {
@@ -771,7 +835,7 @@ type SwitchOrganizationRequest struct {
 
 func (x *SwitchOrganizationRequest) Reset() {
 	*x = SwitchOrganizationRequest{}
-	mi := &file_saas_accounts_v1_authentication_proto_msgTypes[11]
+	mi := &file_saas_accounts_v1_authentication_proto_msgTypes[12]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -783,7 +847,7 @@ func (x *SwitchOrganizationRequest) String() string {
 func (*SwitchOrganizationRequest) ProtoMessage() {}
 
 func (x *SwitchOrganizationRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_saas_accounts_v1_authentication_proto_msgTypes[11]
+	mi := &file_saas_accounts_v1_authentication_proto_msgTypes[12]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -796,7 +860,7 @@ func (x *SwitchOrganizationRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SwitchOrganizationRequest.ProtoReflect.Descriptor instead.
 func (*SwitchOrganizationRequest) Descriptor() ([]byte, []int) {
-	return file_saas_accounts_v1_authentication_proto_rawDescGZIP(), []int{11}
+	return file_saas_accounts_v1_authentication_proto_rawDescGZIP(), []int{12}
 }
 
 func (x *SwitchOrganizationRequest) GetOrganizationId() string {
@@ -819,7 +883,7 @@ type SwitchOrganizationResponse struct {
 
 func (x *SwitchOrganizationResponse) Reset() {
 	*x = SwitchOrganizationResponse{}
-	mi := &file_saas_accounts_v1_authentication_proto_msgTypes[12]
+	mi := &file_saas_accounts_v1_authentication_proto_msgTypes[13]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -831,7 +895,7 @@ func (x *SwitchOrganizationResponse) String() string {
 func (*SwitchOrganizationResponse) ProtoMessage() {}
 
 func (x *SwitchOrganizationResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_saas_accounts_v1_authentication_proto_msgTypes[12]
+	mi := &file_saas_accounts_v1_authentication_proto_msgTypes[13]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -844,7 +908,7 @@ func (x *SwitchOrganizationResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SwitchOrganizationResponse.ProtoReflect.Descriptor instead.
 func (*SwitchOrganizationResponse) Descriptor() ([]byte, []int) {
-	return file_saas_accounts_v1_authentication_proto_rawDescGZIP(), []int{12}
+	return file_saas_accounts_v1_authentication_proto_rawDescGZIP(), []int{13}
 }
 
 func (x *SwitchOrganizationResponse) GetAccessToken() string {
@@ -870,7 +934,7 @@ type LogoutRequest struct {
 
 func (x *LogoutRequest) Reset() {
 	*x = LogoutRequest{}
-	mi := &file_saas_accounts_v1_authentication_proto_msgTypes[13]
+	mi := &file_saas_accounts_v1_authentication_proto_msgTypes[14]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -882,7 +946,7 @@ func (x *LogoutRequest) String() string {
 func (*LogoutRequest) ProtoMessage() {}
 
 func (x *LogoutRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_saas_accounts_v1_authentication_proto_msgTypes[13]
+	mi := &file_saas_accounts_v1_authentication_proto_msgTypes[14]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -895,7 +959,7 @@ func (x *LogoutRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use LogoutRequest.ProtoReflect.Descriptor instead.
 func (*LogoutRequest) Descriptor() ([]byte, []int) {
-	return file_saas_accounts_v1_authentication_proto_rawDescGZIP(), []int{13}
+	return file_saas_accounts_v1_authentication_proto_rawDescGZIP(), []int{14}
 }
 
 func (x *LogoutRequest) GetRefreshToken() string {
@@ -914,7 +978,7 @@ type JWKSResponse struct {
 
 func (x *JWKSResponse) Reset() {
 	*x = JWKSResponse{}
-	mi := &file_saas_accounts_v1_authentication_proto_msgTypes[14]
+	mi := &file_saas_accounts_v1_authentication_proto_msgTypes[15]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -926,7 +990,7 @@ func (x *JWKSResponse) String() string {
 func (*JWKSResponse) ProtoMessage() {}
 
 func (x *JWKSResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_saas_accounts_v1_authentication_proto_msgTypes[14]
+	mi := &file_saas_accounts_v1_authentication_proto_msgTypes[15]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -939,7 +1003,7 @@ func (x *JWKSResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use JWKSResponse.ProtoReflect.Descriptor instead.
 func (*JWKSResponse) Descriptor() ([]byte, []int) {
-	return file_saas_accounts_v1_authentication_proto_rawDescGZIP(), []int{14}
+	return file_saas_accounts_v1_authentication_proto_rawDescGZIP(), []int{15}
 }
 
 func (x *JWKSResponse) GetKeysJson() string {
@@ -964,7 +1028,7 @@ type BeginOAuthRequest struct {
 
 func (x *BeginOAuthRequest) Reset() {
 	*x = BeginOAuthRequest{}
-	mi := &file_saas_accounts_v1_authentication_proto_msgTypes[15]
+	mi := &file_saas_accounts_v1_authentication_proto_msgTypes[16]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -976,7 +1040,7 @@ func (x *BeginOAuthRequest) String() string {
 func (*BeginOAuthRequest) ProtoMessage() {}
 
 func (x *BeginOAuthRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_saas_accounts_v1_authentication_proto_msgTypes[15]
+	mi := &file_saas_accounts_v1_authentication_proto_msgTypes[16]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -989,7 +1053,7 @@ func (x *BeginOAuthRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use BeginOAuthRequest.ProtoReflect.Descriptor instead.
 func (*BeginOAuthRequest) Descriptor() ([]byte, []int) {
-	return file_saas_accounts_v1_authentication_proto_rawDescGZIP(), []int{15}
+	return file_saas_accounts_v1_authentication_proto_rawDescGZIP(), []int{16}
 }
 
 func (x *BeginOAuthRequest) GetProvider() string {
@@ -1017,7 +1081,7 @@ type BeginOAuthResponse struct {
 
 func (x *BeginOAuthResponse) Reset() {
 	*x = BeginOAuthResponse{}
-	mi := &file_saas_accounts_v1_authentication_proto_msgTypes[16]
+	mi := &file_saas_accounts_v1_authentication_proto_msgTypes[17]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1029,7 +1093,7 @@ func (x *BeginOAuthResponse) String() string {
 func (*BeginOAuthResponse) ProtoMessage() {}
 
 func (x *BeginOAuthResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_saas_accounts_v1_authentication_proto_msgTypes[16]
+	mi := &file_saas_accounts_v1_authentication_proto_msgTypes[17]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1042,7 +1106,7 @@ func (x *BeginOAuthResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use BeginOAuthResponse.ProtoReflect.Descriptor instead.
 func (*BeginOAuthResponse) Descriptor() ([]byte, []int) {
-	return file_saas_accounts_v1_authentication_proto_rawDescGZIP(), []int{16}
+	return file_saas_accounts_v1_authentication_proto_rawDescGZIP(), []int{17}
 }
 
 func (x *BeginOAuthResponse) GetState() string {
@@ -1067,7 +1131,10 @@ const file_saas_accounts_v1_authentication_proto_rawDesc = "" +
 	"\rcode_verifier\x18\x04 \x01(\tB\x1e\xbaH\x1br\x19\x10+\x18\x80\x012\x12^[A-Za-z0-9._~-]+$R\fcodeVerifier\"9\n" +
 	"\x15FixtureAuthentication\x12 \n" +
 	"\x05token\x18\x01 \x01(\tB\n" +
-	"\xbaH\ar\x05\x10\x01\x18\xff\x01R\x05token\"\xa8\x04\n" +
+	"\xbaH\ar\x05\x10\x01\x18\xff\x01R\x05token\";\n" +
+	"\x17HeaderJWTAuthentication\x12 \n" +
+	"\x05token\x18\x01 \x01(\tB\n" +
+	"\xbaH\ar\x05\x10\x01\x18\x80@R\x05token\"\xf4\x04\n" +
 	"\x13AuthenticateRequest\x127\n" +
 	"\bprovider\x18\x01 \x01(\tB\x1b\xbaH\x18r\x16\x10\x01\x1822\x10^[a-zA-Z0-9_-]+$R\bprovider\x12#\n" +
 	"\vprovider_id\x18\x02 \x01(\tB\x02\x18\x01R\n" +
@@ -1079,7 +1146,9 @@ const file_saas_accounts_v1_authentication_proto_rawDesc = "" +
 	"deviceInfo\x12J\n" +
 	"\n" +
 	"oauth_code\x18\a \x01(\v2).saas.accounts.v1.OAuthCodeAuthenticationH\x00R\toauthCode\x12C\n" +
-	"\afixture\x18\b \x01(\v2'.saas.accounts.v1.FixtureAuthenticationH\x00R\afixture\x1a:\n" +
+	"\afixture\x18\b \x01(\v2'.saas.accounts.v1.FixtureAuthenticationH\x00R\afixture\x12J\n" +
+	"\n" +
+	"header_jwt\x18\t \x01(\v2).saas.accounts.v1.HeaderJWTAuthenticationH\x00R\theaderJwt\x1a:\n" +
 	"\fProfileEntry\x12\x10\n" +
 	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
 	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01B\x17\n" +
@@ -1173,58 +1242,60 @@ func file_saas_accounts_v1_authentication_proto_rawDescGZIP() []byte {
 	return file_saas_accounts_v1_authentication_proto_rawDescData
 }
 
-var file_saas_accounts_v1_authentication_proto_msgTypes = make([]protoimpl.MessageInfo, 18)
+var file_saas_accounts_v1_authentication_proto_msgTypes = make([]protoimpl.MessageInfo, 19)
 var file_saas_accounts_v1_authentication_proto_goTypes = []any{
 	(*OAuthCodeAuthentication)(nil),             // 0: saas.accounts.v1.OAuthCodeAuthentication
 	(*FixtureAuthentication)(nil),               // 1: saas.accounts.v1.FixtureAuthentication
-	(*AuthenticateRequest)(nil),                 // 2: saas.accounts.v1.AuthenticateRequest
-	(*AuthenticateResponse)(nil),                // 3: saas.accounts.v1.AuthenticateResponse
-	(*CompleteMFAChallengeRequest)(nil),         // 4: saas.accounts.v1.CompleteMFAChallengeRequest
-	(*CompleteMFAChallengeResponse)(nil),        // 5: saas.accounts.v1.CompleteMFAChallengeResponse
-	(*BeginWebAuthnMFAChallengeRequest)(nil),    // 6: saas.accounts.v1.BeginWebAuthnMFAChallengeRequest
-	(*BeginWebAuthnMFAChallengeResponse)(nil),   // 7: saas.accounts.v1.BeginWebAuthnMFAChallengeResponse
-	(*CompleteWebAuthnMFAChallengeRequest)(nil), // 8: saas.accounts.v1.CompleteWebAuthnMFAChallengeRequest
-	(*RefreshTokenRequest)(nil),                 // 9: saas.accounts.v1.RefreshTokenRequest
-	(*RefreshTokenResponse)(nil),                // 10: saas.accounts.v1.RefreshTokenResponse
-	(*SwitchOrganizationRequest)(nil),           // 11: saas.accounts.v1.SwitchOrganizationRequest
-	(*SwitchOrganizationResponse)(nil),          // 12: saas.accounts.v1.SwitchOrganizationResponse
-	(*LogoutRequest)(nil),                       // 13: saas.accounts.v1.LogoutRequest
-	(*JWKSResponse)(nil),                        // 14: saas.accounts.v1.JWKSResponse
-	(*BeginOAuthRequest)(nil),                   // 15: saas.accounts.v1.BeginOAuthRequest
-	(*BeginOAuthResponse)(nil),                  // 16: saas.accounts.v1.BeginOAuthResponse
-	nil,                                         // 17: saas.accounts.v1.AuthenticateRequest.ProfileEntry
-	(*User)(nil),                                // 18: saas.accounts.v1.User
-	(*emptypb.Empty)(nil),                       // 19: google.protobuf.Empty
+	(*HeaderJWTAuthentication)(nil),             // 2: saas.accounts.v1.HeaderJWTAuthentication
+	(*AuthenticateRequest)(nil),                 // 3: saas.accounts.v1.AuthenticateRequest
+	(*AuthenticateResponse)(nil),                // 4: saas.accounts.v1.AuthenticateResponse
+	(*CompleteMFAChallengeRequest)(nil),         // 5: saas.accounts.v1.CompleteMFAChallengeRequest
+	(*CompleteMFAChallengeResponse)(nil),        // 6: saas.accounts.v1.CompleteMFAChallengeResponse
+	(*BeginWebAuthnMFAChallengeRequest)(nil),    // 7: saas.accounts.v1.BeginWebAuthnMFAChallengeRequest
+	(*BeginWebAuthnMFAChallengeResponse)(nil),   // 8: saas.accounts.v1.BeginWebAuthnMFAChallengeResponse
+	(*CompleteWebAuthnMFAChallengeRequest)(nil), // 9: saas.accounts.v1.CompleteWebAuthnMFAChallengeRequest
+	(*RefreshTokenRequest)(nil),                 // 10: saas.accounts.v1.RefreshTokenRequest
+	(*RefreshTokenResponse)(nil),                // 11: saas.accounts.v1.RefreshTokenResponse
+	(*SwitchOrganizationRequest)(nil),           // 12: saas.accounts.v1.SwitchOrganizationRequest
+	(*SwitchOrganizationResponse)(nil),          // 13: saas.accounts.v1.SwitchOrganizationResponse
+	(*LogoutRequest)(nil),                       // 14: saas.accounts.v1.LogoutRequest
+	(*JWKSResponse)(nil),                        // 15: saas.accounts.v1.JWKSResponse
+	(*BeginOAuthRequest)(nil),                   // 16: saas.accounts.v1.BeginOAuthRequest
+	(*BeginOAuthResponse)(nil),                  // 17: saas.accounts.v1.BeginOAuthResponse
+	nil,                                         // 18: saas.accounts.v1.AuthenticateRequest.ProfileEntry
+	(*User)(nil),                                // 19: saas.accounts.v1.User
+	(*emptypb.Empty)(nil),                       // 20: google.protobuf.Empty
 }
 var file_saas_accounts_v1_authentication_proto_depIdxs = []int32{
-	17, // 0: saas.accounts.v1.AuthenticateRequest.profile:type_name -> saas.accounts.v1.AuthenticateRequest.ProfileEntry
+	18, // 0: saas.accounts.v1.AuthenticateRequest.profile:type_name -> saas.accounts.v1.AuthenticateRequest.ProfileEntry
 	0,  // 1: saas.accounts.v1.AuthenticateRequest.oauth_code:type_name -> saas.accounts.v1.OAuthCodeAuthentication
 	1,  // 2: saas.accounts.v1.AuthenticateRequest.fixture:type_name -> saas.accounts.v1.FixtureAuthentication
-	18, // 3: saas.accounts.v1.AuthenticateResponse.user:type_name -> saas.accounts.v1.User
-	18, // 4: saas.accounts.v1.CompleteMFAChallengeResponse.user:type_name -> saas.accounts.v1.User
-	15, // 5: saas.accounts.v1.AuthService.BeginOAuth:input_type -> saas.accounts.v1.BeginOAuthRequest
-	2,  // 6: saas.accounts.v1.AuthService.Authenticate:input_type -> saas.accounts.v1.AuthenticateRequest
-	4,  // 7: saas.accounts.v1.AuthService.CompleteMFAChallenge:input_type -> saas.accounts.v1.CompleteMFAChallengeRequest
-	6,  // 8: saas.accounts.v1.AuthService.BeginWebAuthnMFAChallenge:input_type -> saas.accounts.v1.BeginWebAuthnMFAChallengeRequest
-	8,  // 9: saas.accounts.v1.AuthService.CompleteWebAuthnMFAChallenge:input_type -> saas.accounts.v1.CompleteWebAuthnMFAChallengeRequest
-	9,  // 10: saas.accounts.v1.AuthService.RefreshToken:input_type -> saas.accounts.v1.RefreshTokenRequest
-	11, // 11: saas.accounts.v1.AuthService.SwitchOrganization:input_type -> saas.accounts.v1.SwitchOrganizationRequest
-	13, // 12: saas.accounts.v1.AuthService.Logout:input_type -> saas.accounts.v1.LogoutRequest
-	19, // 13: saas.accounts.v1.AuthService.GetJWKS:input_type -> google.protobuf.Empty
-	16, // 14: saas.accounts.v1.AuthService.BeginOAuth:output_type -> saas.accounts.v1.BeginOAuthResponse
-	3,  // 15: saas.accounts.v1.AuthService.Authenticate:output_type -> saas.accounts.v1.AuthenticateResponse
-	5,  // 16: saas.accounts.v1.AuthService.CompleteMFAChallenge:output_type -> saas.accounts.v1.CompleteMFAChallengeResponse
-	7,  // 17: saas.accounts.v1.AuthService.BeginWebAuthnMFAChallenge:output_type -> saas.accounts.v1.BeginWebAuthnMFAChallengeResponse
-	5,  // 18: saas.accounts.v1.AuthService.CompleteWebAuthnMFAChallenge:output_type -> saas.accounts.v1.CompleteMFAChallengeResponse
-	10, // 19: saas.accounts.v1.AuthService.RefreshToken:output_type -> saas.accounts.v1.RefreshTokenResponse
-	12, // 20: saas.accounts.v1.AuthService.SwitchOrganization:output_type -> saas.accounts.v1.SwitchOrganizationResponse
-	19, // 21: saas.accounts.v1.AuthService.Logout:output_type -> google.protobuf.Empty
-	14, // 22: saas.accounts.v1.AuthService.GetJWKS:output_type -> saas.accounts.v1.JWKSResponse
-	14, // [14:23] is the sub-list for method output_type
-	5,  // [5:14] is the sub-list for method input_type
-	5,  // [5:5] is the sub-list for extension type_name
-	5,  // [5:5] is the sub-list for extension extendee
-	0,  // [0:5] is the sub-list for field type_name
+	2,  // 3: saas.accounts.v1.AuthenticateRequest.header_jwt:type_name -> saas.accounts.v1.HeaderJWTAuthentication
+	19, // 4: saas.accounts.v1.AuthenticateResponse.user:type_name -> saas.accounts.v1.User
+	19, // 5: saas.accounts.v1.CompleteMFAChallengeResponse.user:type_name -> saas.accounts.v1.User
+	16, // 6: saas.accounts.v1.AuthService.BeginOAuth:input_type -> saas.accounts.v1.BeginOAuthRequest
+	3,  // 7: saas.accounts.v1.AuthService.Authenticate:input_type -> saas.accounts.v1.AuthenticateRequest
+	5,  // 8: saas.accounts.v1.AuthService.CompleteMFAChallenge:input_type -> saas.accounts.v1.CompleteMFAChallengeRequest
+	7,  // 9: saas.accounts.v1.AuthService.BeginWebAuthnMFAChallenge:input_type -> saas.accounts.v1.BeginWebAuthnMFAChallengeRequest
+	9,  // 10: saas.accounts.v1.AuthService.CompleteWebAuthnMFAChallenge:input_type -> saas.accounts.v1.CompleteWebAuthnMFAChallengeRequest
+	10, // 11: saas.accounts.v1.AuthService.RefreshToken:input_type -> saas.accounts.v1.RefreshTokenRequest
+	12, // 12: saas.accounts.v1.AuthService.SwitchOrganization:input_type -> saas.accounts.v1.SwitchOrganizationRequest
+	14, // 13: saas.accounts.v1.AuthService.Logout:input_type -> saas.accounts.v1.LogoutRequest
+	20, // 14: saas.accounts.v1.AuthService.GetJWKS:input_type -> google.protobuf.Empty
+	17, // 15: saas.accounts.v1.AuthService.BeginOAuth:output_type -> saas.accounts.v1.BeginOAuthResponse
+	4,  // 16: saas.accounts.v1.AuthService.Authenticate:output_type -> saas.accounts.v1.AuthenticateResponse
+	6,  // 17: saas.accounts.v1.AuthService.CompleteMFAChallenge:output_type -> saas.accounts.v1.CompleteMFAChallengeResponse
+	8,  // 18: saas.accounts.v1.AuthService.BeginWebAuthnMFAChallenge:output_type -> saas.accounts.v1.BeginWebAuthnMFAChallengeResponse
+	6,  // 19: saas.accounts.v1.AuthService.CompleteWebAuthnMFAChallenge:output_type -> saas.accounts.v1.CompleteMFAChallengeResponse
+	11, // 20: saas.accounts.v1.AuthService.RefreshToken:output_type -> saas.accounts.v1.RefreshTokenResponse
+	13, // 21: saas.accounts.v1.AuthService.SwitchOrganization:output_type -> saas.accounts.v1.SwitchOrganizationResponse
+	20, // 22: saas.accounts.v1.AuthService.Logout:output_type -> google.protobuf.Empty
+	15, // 23: saas.accounts.v1.AuthService.GetJWKS:output_type -> saas.accounts.v1.JWKSResponse
+	15, // [15:24] is the sub-list for method output_type
+	6,  // [6:15] is the sub-list for method input_type
+	6,  // [6:6] is the sub-list for extension type_name
+	6,  // [6:6] is the sub-list for extension extendee
+	0,  // [0:6] is the sub-list for field type_name
 }
 
 func init() { file_saas_accounts_v1_authentication_proto_init() }
@@ -1233,9 +1304,10 @@ func file_saas_accounts_v1_authentication_proto_init() {
 		return
 	}
 	file_saas_accounts_v1_common_proto_init()
-	file_saas_accounts_v1_authentication_proto_msgTypes[2].OneofWrappers = []any{
+	file_saas_accounts_v1_authentication_proto_msgTypes[3].OneofWrappers = []any{
 		(*AuthenticateRequest_OauthCode)(nil),
 		(*AuthenticateRequest_Fixture)(nil),
+		(*AuthenticateRequest_HeaderJwt)(nil),
 	}
 	type x struct{}
 	out := protoimpl.TypeBuilder{
@@ -1243,7 +1315,7 @@ func file_saas_accounts_v1_authentication_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_saas_accounts_v1_authentication_proto_rawDesc), len(file_saas_accounts_v1_authentication_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   18,
+			NumMessages:   19,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

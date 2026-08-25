@@ -2,6 +2,9 @@
 
 - Status: Accepted
 - Date: 2026-07-15
+- Scoped by: [ADR 0002](0002-remote-ui-tier-boundary.md) — the trust model below
+  governs the starter SDK's Tier 1 (trusted compile-time plugins); a vetted
+  first-party Module Federation tier is placed at the consumer boundary there.
 - Tasks: FP-001 through FP-004, FP-007A, FP-010A, FP-012, FP-012A,
   FP-043, FP-047, FP-048, CONV-001 through CONV-007
 
@@ -64,7 +67,9 @@ routes and widgets declare stable IDs and presentation metadata; they cannot
 carry functions, components, or host objects. `defineReactPlugin` binds each ID
 to exactly one lazy component. There is no `AdminPlugin` alias. Plugins are
 trusted, compile-time dependencies installed with the application. Loading
-remote JavaScript at runtime is out of scope.
+remote JavaScript at runtime is out of scope for this tier; ADR-0002 scopes this
+rule to the starter SDK's trusted compile-time tier and places a vetted
+first-party Module Federation tier at the consumer boundary.
 
 Every retained contribution has a host consumer: navigation, routes, and named
 widgets. The unused generic `Resource` contribution is removed. Presentation

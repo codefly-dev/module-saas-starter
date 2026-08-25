@@ -17,7 +17,7 @@ import (
 // AccessTokenLifetime is the TTL baked into minted access tokens.
 // Kept in sync with ed25519minter.Config.AccessTokenTTL so the
 // ExpiresIn field on Authenticate responses matches reality.
-const AccessTokenLifetime = 15 * time.Minute
+const AccessTokenLifetime = 3 * time.Minute
 
 // Authenticate runs a login or signup through the identity resolver and
 // mints a fresh token pair.
@@ -74,7 +74,7 @@ func (s *Service) Authenticate(ctx context.Context, req *gen.AuthenticateRequest
 		if s.oauthState == nil {
 			return nil, w.Wrapf(auth.ErrInvalidOAuthState, "oauth state signer not configured")
 		}
-		if err := s.oauthState.Verify(oauthCode.State, req.Provider, oauthCode.RedirectUri); err != nil {
+		if err := s.oauthState.Verify(ctx, oauthCode.State, req.Provider, oauthCode.RedirectUri); err != nil {
 			// Surface the canonical sentinel without leaking whether the
 			// signature, expiry, or binding check failed.
 			return nil, w.Wrapf(auth.ErrInvalidOAuthState, "oauth state")
@@ -82,6 +82,18 @@ func (s *Service) Authenticate(ctx context.Context, req *gen.AuthenticateRequest
 		claims, err = s.authenticateWithCode(ctx, req.Provider, oauthCode.Code, oauthCode.RedirectUri, oauthCode.CodeVerifier)
 		if err != nil {
 			return nil, w.Wrapf(err, "oauth code exchange")
+		}
+	case *gen.AuthenticateRequest_HeaderJwt:
+		authenticationMethod = auth.AuthenticationMethodHeaderJWT
+		if s.validator == nil {
+			return nil, w.Wrapf(auth.ErrInvalidOAuthRequest, "header-jwt authentication is not enabled")
+		}
+		if credentials.HeaderJwt == nil || credentials.HeaderJwt.Token == "" {
+			return nil, w.Wrapf(auth.ErrMissingClaims, "header-jwt token missing")
+		}
+		claims, err = s.validator.Validate(ctx, credentials.HeaderJwt.Token)
+		if err != nil {
+			return nil, w.Wrapf(err, "header-jwt authentication")
 		}
 	case *gen.AuthenticateRequest_Fixture:
 		authenticationMethod = auth.AuthenticationMethodFixture
@@ -116,13 +128,23 @@ func (s *Service) Authenticate(ctx context.Context, req *gen.AuthenticateRequest
 		return nil, err
 	}
 
+	// An org-bound provider whose org carries a JIT provisioning policy resolves
+	// through the sealed SsoJitIntent instead of the profile-derived default.
+	// Global-provider logins keep the selection above untouched.
+	intent = selectSsoJitIntent(ctx, intent, claims, s.ssoProvisioningRouter())
+
 	// An invite authentication accepts the invitation transactionally inside the
 	// resolver. Capture its pre-state here so the business layer — which owns the
 	// event pipeline the resolver cannot reach — can emit the accepted side
 	// effects on success, and lazily expire it when the resolver fails it closed.
+	// An invite-only SSO login consumes an invitation too, but carries no token,
+	// so its pre-state is found by (org, email) instead.
 	var priorInvitation *Invitation
-	if invite, ok := intent.(auth.InviteIntent); ok {
-		priorInvitation, _ = s.invitationByToken(ctx, invite.Token)
+	switch typed := intent.(type) {
+	case auth.InviteIntent:
+		priorInvitation, _ = s.invitationByToken(ctx, typed.Token)
+	case auth.SsoJitIntent:
+		priorInvitation = s.pendingInvitationForSsoJit(ctx, typed.OrgID, claims.Email)
 	}
 
 	identity, err := s.resolver.Resolve(ctx, claims, intent)
@@ -219,6 +241,45 @@ func intentFromProfile(profile map[string]string) auth.Intent {
 		return auth.InviteIntent{Token: token}
 	}
 	return auth.SignupIntent{OrganizationName: profile["org_name"]}
+}
+
+// ssoProvisioningRouter maps a provider-asserted organization id to our org id
+// and reports whether that org has a JIT provisioning policy. The production
+// resolver (pkg/auth/pg) satisfies it; a resolver that does not is simply never
+// routed to SsoJitIntent.
+type ssoProvisioningRouter interface {
+	ResolveOrgProvisioning(ctx context.Context, providerOrgID string) (uuid.UUID, bool, error)
+}
+
+// ssoProvisioningRouter returns the identity resolver as an SSO router when it
+// supports the capability, or nil.
+func (s *Service) ssoProvisioningRouter() ssoProvisioningRouter {
+	router, _ := s.resolver.(ssoProvisioningRouter)
+	return router
+}
+
+// selectSsoJitIntent upgrades an org-bound login to SsoJitIntent when the
+// asserted org carries a JIT provisioning policy. A global-provider login (no
+// asserted org), a token-carried invitation, an absent router, or an org
+// without a policy all keep the incoming intent, so global paths are unchanged.
+// A router error is non-fatal: the login falls back to the incoming intent
+// (the profile-derived Signup/Invite). That fallback does not reproduce the
+// org's policy — a first-seen org-bound identity is still rejected, but by the
+// resolver's own org-membership check rather than the mode-specific error — so a
+// transient lookup failure degrades to a retryable rejection, never to a login
+// that bypasses the policy.
+func selectSsoJitIntent(ctx context.Context, intent auth.Intent, claims *auth.Claims, router ssoProvisioningRouter) auth.Intent {
+	if router == nil || claims.ProviderOrgID == "" {
+		return intent
+	}
+	if _, isInvite := intent.(auth.InviteIntent); isInvite {
+		return intent
+	}
+	orgID, hasPolicy, err := router.ResolveOrgProvisioning(ctx, claims.ProviderOrgID)
+	if err != nil || !hasPolicy {
+		return intent
+	}
+	return auth.SsoJitIntent{OrgID: orgID}
 }
 
 // authenticateWithCode runs the full OAuth authorization-code flow:

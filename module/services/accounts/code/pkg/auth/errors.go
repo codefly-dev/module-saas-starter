@@ -29,12 +29,39 @@ var (
 	ErrDevelopmentAuthDisabled = errors.New("auth: development authentication disabled")
 	ErrInvalidOAuthRequest     = errors.New("auth: invalid oauth request")
 
+	// On-behalf-of (RFC 8693 `act`) hygiene
+	ErrActorChainTooDeep   = errors.New("auth: actor delegation chain exceeds maximum depth")
+	ErrActorSubjectMissing = errors.New("auth: actor delegation link has no subject")
+
+	// ErrJWKSUnavailable is the fail-closed outcome when a validator cannot
+	// reach or parse its configured key set. Verification is denied rather than
+	// downgraded to an unverified decode.
+	ErrJWKSUnavailable = errors.New("auth: jwks unavailable")
+
+	// ErrRevocationUnavailable is the fail-closed outcome when the access-token
+	// revocation list cannot be consulted (backing store unreachable). The token
+	// is denied rather than admitted, since it may have been revoked — the same
+	// stance the sidecar takes on its revocation check.
+	ErrRevocationUnavailable = errors.New("auth: revocation list unavailable")
+
+	// ErrGroupNotAllowed is a distinct authorization outcome (not a credential
+	// failure): the token verified, but its group claim did not overlap the
+	// configured allow-list. Surfaced separately so a frontend can render
+	// "access not granted" rather than a generic invalid-credentials message.
+	ErrGroupNotAllowed = errors.New("auth: identity group not permitted")
+
 	// Identity resolution
 	ErrUnknownIdentity  = errors.New("auth: identity not found")
 	ErrNoAccount        = errors.New("auth: no account for this identity")
 	ErrAccountInactive  = errors.New("auth: account is not active")
+	ErrSignupNotAllowed = errors.New("auth: signup is not permitted for this identity")
 	ErrOrgRequired      = errors.New("auth: org required for this operation")
 	ErrBootstrapClaimed = errors.New("auth: bootstrap already claimed")
+
+	// SSO JIT provisioning
+	ErrSsoEmailDomainNotAllowed     = errors.New("auth: email domain not permitted for organization sso provisioning")
+	ErrSsoProvisioningDisabled      = errors.New("auth: organization sso provisioning is disabled")
+	ErrSsoProvisioningMisconfigured = errors.New("auth: organization sso jit provisioning has no allowed email domains configured")
 
 	// Refresh rotation
 	ErrRefreshRevoked           = errors.New("auth: refresh token revoked")

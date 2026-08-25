@@ -94,6 +94,7 @@ func (f *fakeProvider) serveToken(w http.ResponseWriter, r *http.Request) {
 	now := time.Now()
 	claims := jwt.MapClaims{
 		"iss":             f.issuer,
+		"aud":             f.clientID,
 		"sub":             "workos-user-42",
 		"email":           "new-user@acme.com",
 		"email_verified":  true,
@@ -125,6 +126,7 @@ func wireOAuthOnTestService(t *testing.T, fp *fakeProvider) *auth.OAuthStateSign
 		ProviderName: "workos",
 		Issuer:       fp.issuer,
 		JWKSURL:      fp.server.URL + "/jwks",
+		Audience:     fp.clientID,
 	})
 	require.NoError(t, err)
 	testService.SetTokenValidator(validator)
@@ -137,7 +139,7 @@ func wireOAuthOnTestService(t *testing.T, fp *fakeProvider) *auth.OAuthStateSign
 	require.NoError(t, err)
 	testService.SetCodeExchanger(oidc.AsBusinessExchanger(exchanger))
 
-	signer := auth.NewOAuthStateSigner([]byte("test OAuth state signing seed with sufficient entropy"))
+	signer := mustOAuthStateSigner(t)
 	policy, err := auth.NewOAuthRequestPolicy("workos", []string{"https://app.acme.com/auth/callback"})
 	require.NoError(t, err)
 	testService.SetOAuthStateSigner(signer)
@@ -388,7 +390,7 @@ func TestAuthenticate_OAuthCodeFlow_RequiresSignedState(t *testing.T) {
 func TestBeginOAuth_RequiresPolicyAndSigner(t *testing.T) {
 	policy, err := auth.NewOAuthRequestPolicy("workos", []string{"https://app.acme.com/auth/callback"})
 	require.NoError(t, err)
-	signer := auth.NewOAuthStateSigner([]byte("test OAuth state signing seed with sufficient entropy"))
+	signer := mustOAuthStateSigner(t)
 	testService.SetOAuthRequestPolicy(policy)
 	testService.SetOAuthStateSigner(signer)
 	t.Cleanup(func() {
@@ -401,7 +403,7 @@ func TestBeginOAuth_RequiresPolicyAndSigner(t *testing.T) {
 
 	state, err := testService.BeginOAuth(testCtx, "workos", "https://app.acme.com/auth/callback")
 	require.NoError(t, err)
-	require.NoError(t, signer.Verify(state, "workos", "https://app.acme.com/auth/callback"))
+	require.NoError(t, signer.Verify(context.Background(), state, "workos", "https://app.acme.com/auth/callback"))
 
 	testService.SetOAuthStateSigner(nil)
 	_, err = testService.BeginOAuth(testCtx, "workos", "https://app.acme.com/auth/callback")
@@ -411,7 +413,7 @@ func TestBeginOAuth_RequiresPolicyAndSigner(t *testing.T) {
 func TestBeginOAuth_UsesVerifiedCodeflyPublicOriginWithoutStaticPort(t *testing.T) {
 	policy, err := auth.NewOAuthRequestPolicy("workos", nil)
 	require.NoError(t, err)
-	signer := auth.NewOAuthStateSigner([]byte("test OAuth state signing seed with sufficient entropy"))
+	signer := mustOAuthStateSigner(t)
 	testService.SetOAuthRequestPolicy(policy)
 	testService.SetOAuthStateSigner(signer)
 	t.Cleanup(func() {
@@ -424,7 +426,7 @@ func TestBeginOAuth_UsesVerifiedCodeflyPublicOriginWithoutStaticPort(t *testing.
 	redirectURI := "http://localhost:54321/auth/callback"
 	state, err := testService.BeginOAuth(ctx, "workos", redirectURI)
 	require.NoError(t, err)
-	require.NoError(t, signer.Verify(state, "workos", redirectURI))
+	require.NoError(t, signer.Verify(context.Background(), state, "workos", redirectURI))
 
 	_, err = testService.BeginOAuth(ctx, "workos", "http://localhost:54322/auth/callback")
 	require.ErrorIs(t, err, auth.ErrInvalidOAuthRequest)
@@ -440,4 +442,68 @@ func TestAuthenticate_OAuthCodeFlow_RealError(t *testing.T) {
 	_, err := testService.Authenticate(testCtx, oauthCodeRequest(t, signer, "workos", "never-issued", "https://app.acme.com/auth/callback"))
 	require.Error(t, err)
 	require.False(t, errors.Is(err, context.Canceled))
+}
+
+// A generic OIDC provider selected by a non-preset IDENTITY_PROVIDER value must
+// log in through the whole path: the request provider, the OAuth request
+// policy, and the validated token all carry that same name. Regression guard —
+// an earlier design recorded a separately configured provider name on the token
+// while the request still said "oidc", so authenticateWithCode's mismatch check
+// rejected every login for exactly the multi-IdP config the feature exists for.
+func TestAuthenticate_OAuthCodeFlow_GenericProviderNameKeysIdentity(t *testing.T) {
+	clearData(t)
+	fp := newFakeProvider(t)
+
+	const provider = "okta"
+	validator, err := oidc.New(oidc.Config{
+		ProviderName: provider,
+		Issuer:       fp.issuer,
+		JWKSURL:      fp.server.URL + "/jwks",
+		Audience:     fp.clientID,
+	})
+	require.NoError(t, err)
+	testService.SetTokenValidator(validator)
+
+	exchanger, err := oidc.NewExchanger(oidc.ExchangerConfig{
+		TokenURL:     fp.server.URL + "/token",
+		ClientID:     fp.clientID,
+		ClientSecret: fp.secret,
+	})
+	require.NoError(t, err)
+	testService.SetCodeExchanger(oidc.AsBusinessExchanger(exchanger))
+
+	signer := mustOAuthStateSigner(t)
+	policy, err := auth.NewOAuthRequestPolicy(provider, []string{"https://app.acme.com/auth/callback"})
+	require.NoError(t, err)
+	testService.SetOAuthStateSigner(signer)
+	testService.SetOAuthRequestPolicy(policy)
+	t.Cleanup(func() {
+		testService.SetTokenValidator(nil)
+		testService.SetCodeExchanger(nil)
+		testService.SetOAuthStateSigner(nil)
+		testService.SetOAuthRequestPolicy(nil)
+	})
+
+	fp.issueCode("okta-code-1")
+	resp, err := testService.Authenticate(testCtx, oauthCodeRequest(t, signer, provider, "okta-code-1", "https://app.acme.com/auth/callback"))
+	require.NoError(t, err)
+	require.NotEmpty(t, resp.AccessToken)
+
+	// The identity is keyed under the generic provider name.
+	resolved, err := testService.ResolveIdentity(testCtx, &gen.ResolveIdentityRequest{
+		Provider:   provider,
+		ProviderId: "workos-user-42",
+	})
+	require.NoError(t, err)
+	require.True(t, resolved.Found)
+	require.Equal(t, resp.User.Uuid, resolved.UserId)
+}
+
+func mustOAuthStateSigner(t *testing.T) *auth.OAuthStateSigner {
+	t.Helper()
+	signer, err := auth.NewOAuthStateSigner([]byte("test OAuth state signing seed with sufficient entropy"))
+	if err != nil {
+		t.Fatalf("NewOAuthStateSigner: %v", err)
+	}
+	return signer
 }

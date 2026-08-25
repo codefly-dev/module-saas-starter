@@ -34,6 +34,56 @@ jobs:
       - name: Enforce tenant RLS coverage in store migrations
         run: node module/tools/rls-migration-gate.mjs check
 
+  authz-coverage:
+    name: Authorization coverage
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          # no-broadening diffs the catalog against main.
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+      - name: Test the authz-coverage gate
+        run: node --test module/tools/authz-coverage-gate.test.mjs
+      - name: Enforce RBAC and audit coverage
+        run: node module/tools/authz-coverage-gate.mjs check
+      - name: Reject permission-broadening without approval
+        if: github.event_name == 'pull_request'
+        env:
+          # Renders to "false" when the label is absent; the gate requires an
+          # affirmative token, so only the label opens the escape hatch.
+          AUTHZ_ALLOW_BROADENING: ${{ contains(github.event.pull_request.labels.*.name, 'authz-broadening-approved') }}
+        run: |
+          git fetch --no-tags origin refs/heads/main:refs/remotes/origin/main
+          base="$(mktemp)"
+          if git show origin/main:module/services/accounts/generated/authz-methods.json > "${base}" 2>/dev/null; then
+            node module/tools/authz-coverage-gate.mjs no-broadening --base "${base}"
+          else
+            echo "no authorization catalog on main yet; nothing to diff"
+          fi
+      - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6.5.0
+        with:
+          go-version: "1.27.0"
+          cache: false
+      - name: Enforce the sidecar header-lockstep invariant
+        working-directory: module/services/auth-sidecar/code
+        run: go test -run TestUntrustedHeaders_SupersetOfStampedHeaders .
+
+  provider-shim:
+    name: Provider setup shims
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+      - name: Statically test the Stripe non-writing shim
+        run: node --test scripts/setup/stripe-shim.test.mjs
+
   marketing:
     name: Marketing isolation
     runs-on: ubuntu-latest
@@ -60,7 +110,7 @@ jobs:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
       - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6.5.0
         with:
-          go-version: stable
+          go-version: "1.27.0"
           cache: false
       - name: Validate module agent
         env:
@@ -77,8 +127,304 @@ jobs:
           GOWORK: "off"
         run: go test -run TestMergedProtocolGeneratorsUseOneInvocation .
 
-  codefly:
-    name: Codefly CI
+  module-package:
+    name: Immutable module package
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6.5.0
+        with:
+          go-version: "1.27.0"
+          cache-dependency-path: module/tools/go.sum
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: module/services/frontend/code/package-lock.json
+      - uses: bufbuild/buf-setup-action@a47c93e0b1648d5651a065437926377d060baa99 # v1.50.0
+        with:
+          version: 1.72.0
+      - name: Clean-install frontend dependencies
+        run: npm ci --prefix module/services/frontend/code
+      - name: Validate the package contract
+        working-directory: module/tools
+        env:
+          GOWORK: "off"
+        run: |
+          go test ./...
+          go run ./cmd/module-package validate --module ..
+      - name: Reject breaking stable protobuf changes
+        shell: bash
+        run: |
+          baseline="$(mktemp -d)"
+          git fetch --no-tags origin \
+            refs/heads/main:refs/remotes/origin/main
+          git archive origin/main module/services/accounts/proto | tar -x -C "${baseline}"
+          buf breaking module/services/accounts/proto \
+            --against "${baseline}/module/services/accounts/proto" \
+            --exclude-imports
+      - name: Execute declared generators and reject drift
+        working-directory: module/tools
+        env:
+          GOWORK: "off"
+        run: |
+          go run ./cmd/module-package run-generators --module ..
+          git -C ../.. diff --exit-code -- module
+      - name: Execute published contract conformance suites
+        working-directory: module/tools
+        env:
+          GOWORK: "off"
+        run: |
+          go run ./cmd/module-package run-conformance --module ..
+          npm --prefix ../services/frontend/code run test:published-plugin-contract
+      - name: Prove canonical archive determinism
+        working-directory: module/tools
+        env:
+          GOWORK: "off"
+        run: |
+          first="${RUNNER_TEMP}/module-package-first"
+          second="${RUNNER_TEMP}/module-package-second"
+          go run ./cmd/module-package build \
+            --repository-root ../.. \
+            --output "${first}" \
+            --commit "${GITHUB_SHA}"
+          go run ./cmd/module-package build \
+            --repository-root ../.. \
+            --output "${second}" \
+            --commit "${GITHUB_SHA}"
+          cmp "${first}/module.tar" "${second}/module.tar"
+          cmp "${first}/module.tar.sha256" "${second}/module.tar.sha256"
+          cmp "${first}/artifact.json" "${second}/artifact.json"
+
+  # Resolve Codefly's affected-scoping once and fan the gate out into three
+  # parallel jobs below. A change with zero affected services (docs, most root
+  # config) leaves has_work=false, so every Codefly job is skipped and CI is a
+  # near-instant no-op — the same property a downstream consumer sees when it
+  # syncs the starter with no local deltas.
+  codefly-plan:
+    name: Codefly CI plan
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    outputs:
+      has_work: ${{ steps.plan.outputs.has_work }}
+      services: ${{ steps.plan.outputs.services }}
+      base: ${{ steps.plan.outputs.base }}
+      all: ${{ steps.plan.outputs.all }}
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.27.0"
+      - name: Install Codefly
+        env:
+          # First-party modules never verify against the public checksum DB —
+          # sum.golang.org 500s/404s on fresh or private codefly-dev tags.
+          # Same setting Mind's CI uses (scripts/ci-fetch-codefly.sh).
+          GOPRIVATE: github.com/codefly-dev/*
+        run: go install github.com/codefly-dev/cli/cmd/codefly@latest
+      - name: Resolve affected services
+        id: plan
+        shell: bash
+        env:
+          CODEFLY_BASE: ${{ github.event.pull_request.base.sha || github.event.before }}
+        run: |
+          # Pushes to main and tags verify the full topology; PRs scope to the
+          # delta against their base. A missing/zero base (first push) also
+          # falls back to the full topology. This is the ONLY place the
+          # full-vs-delta decision (and the zero-sha normalization) is made;
+          # the fan-out jobs consume the `all`/`base` outputs verbatim so the
+          # contract cannot drift across the four jobs.
+          base=""
+          all=true
+          selection_args=(--head "${GITHUB_SHA}")
+          if [[ -n "${CODEFLY_BASE}" && "${CODEFLY_BASE}" != "0000000000000000000000000000000000000000" ]]; then
+            base="${CODEFLY_BASE}"
+            all=false
+            selection_args+=(--base "${base}")
+          else
+            selection_args+=(--all)
+          fi
+
+          plan_json="$(codefly ci plan "${selection_args[@]}" --format json)"
+          services="$(jq -r '.services[].service' <<<"${plan_json}" \
+            | sed 's#^[^/]*/##' | paste -sd' ' -)"
+          count="$(jq -r '.services | length' <<<"${plan_json}")"
+
+          # Never let an empty full-topology plan silence the gate on main/tags.
+          has_work=false
+          if [[ "${all}" == "true" ]] || (( count > 0 )); then
+            has_work=true
+          fi
+
+          {
+            echo "base=${base}"
+            echo "all=${all}"
+            echo "services=${services}"
+            echo "has_work=${has_work}"
+          } >> "${GITHUB_OUTPUT}"
+
+  codefly-quality:
+    name: Codefly quality
+    needs: codefly-plan
+    # Always run on release tags: the publish job needs this gate, and a
+    # skipped dependency would skip publish silently rather than fail.
+    if: ${{ needs.codefly-plan.outputs.has_work == 'true' || startsWith(github.ref, 'refs/tags/v') }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.27.0"
+      - name: Install Codefly
+        env:
+          GOPRIVATE: github.com/codefly-dev/*
+        run: go install github.com/codefly-dev/cli/cmd/codefly@latest
+      - name: Reclaim runner disk space
+        shell: bash
+        run: |
+          # Free the unused hosted-runner toolchains for the test-phase images.
+          # No `docker system prune` here: the daemon starts empty on ephemeral
+          # runners and pruning only discards the pre-baked layers we can reuse.
+          sudo rm -rf \
+            /opt/ghc \
+            /usr/local/lib/android \
+            /usr/share/dotnet
+      - name: Make host.docker.internal resolvable on the Linux runner
+        shell: bash
+        run: |
+          # Codefly's runtime health-checks its test dependencies (minio for
+          # object-storage, redis for cache, …) at host.docker.internal, the
+          # name Docker Desktop provides on macOS/Windows. Linux runners do
+          # not resolve it on the host, and a runner-image change dropped it,
+          # breaking the frontend test phase with
+          #   minio is not ready: … lookup host.docker.internal … no such host
+          # Published dependency ports bind to the host loopback, so map the
+          # name there. Idempotent: skip if already present.
+          if ! grep -q 'host.docker.internal' /etc/hosts; then
+            echo "127.0.0.1 host.docker.internal" | sudo tee -a /etc/hosts
+          fi
+      - name: Verify, sync-drift, lint, compile, test
+        shell: bash
+        env:
+          SELECTION_ALL: ${{ needs.codefly-plan.outputs.all }}
+          CODEFLY_BASE: ${{ needs.codefly-plan.outputs.base }}
+          # Affected services resolved once by codefly-plan; empty on full runs
+          # only if the topology has no services.
+          AFFECTED_SERVICES: ${{ needs.codefly-plan.outputs.services }}
+          # Select the Codefly fixture used by dependency-backed frontend tests.
+          # Accounts reads this through the Codefly SDK; application code never
+          # reaches into Codefly's runtime carrier directly.
+          CODEFLY__FIXTURE: dev-admin
+        run: |
+          selection_args=(--head "${GITHUB_SHA}")
+          if [[ "${SELECTION_ALL}" == "true" ]]; then
+            selection_args+=(--all)
+          else
+            selection_args+=(--base "${CODEFLY_BASE}")
+          fi
+
+          codefly ci run "${selection_args[@]}" \
+            --phase verify,sync-drift \
+            --output .codefly/ci/pre-audit
+
+          validation_selection_args=()
+          for service in ${AFFECTED_SERVICES}; do
+            validation_selection_args+=(
+              --changed-file "module/services/${service}/service.codefly.yaml"
+            )
+          done
+
+          if (( ${#validation_selection_args[@]} )); then
+            codefly ci run "${validation_selection_args[@]}" \
+              --phase lint,compile,test \
+              --output .codefly/ci/validation
+          fi
+
+  codefly-supply-chain:
+    name: Codefly supply chain
+    needs: codefly-plan
+    # Always run on release tags: the publish job needs this gate, and a
+    # skipped dependency would skip publish silently rather than fail.
+    if: ${{ needs.codefly-plan.outputs.has_work == 'true' || startsWith(github.ref, 'refs/tags/v') }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.27.0"
+      - name: Install Codefly
+        env:
+          GOPRIVATE: github.com/codefly-dev/*
+        run: go install github.com/codefly-dev/cli/cmd/codefly@latest
+      # Temporal's amd64 image expands beyond Core's managed 512 MiB Syft
+      # scratch volume. A host binary lets Codefly use the runner's disk.
+      - name: Install Syft
+        uses: anchore/sbom-action/download-syft@e22c389904149dbc22b58101806040fa8d37a610 # v0.24.0
+        with:
+          syft-version: v1.50.0
+      - name: Reclaim runner disk space
+        shell: bash
+        run: |
+          sudo rm -rf \
+            /opt/ghc \
+            /usr/local/lib/android \
+            /usr/share/dotnet
+      - name: Audit and SBOM
+        shell: bash
+        env:
+          SELECTION_ALL: ${{ needs.codefly-plan.outputs.all }}
+          CODEFLY_BASE: ${{ needs.codefly-plan.outputs.base }}
+        run: |
+          selection_args=(--head "${GITHUB_SHA}")
+          if [[ "${SELECTION_ALL}" == "true" ]]; then
+            selection_args+=(--all)
+          else
+            selection_args+=(--base "${CODEFLY_BASE}")
+          fi
+
+          # Keep the complete audit in the Codefly evidence report, including
+          # vendor runtime images. Those images have their own release cadence
+          # and may carry upstream findings that this repository cannot patch.
+          # The vulnerability gate below separately fails closed on every
+          # first-party service and production frontend dependency.
+          #
+          # Several published vendor-image agents predate Core's shared Trivy
+          # cache lock. Serialize the audit so those independent agent processes
+          # cannot corrupt or time out on the same cache.
+          codefly ci run "${selection_args[@]}" \
+            --phase audit \
+            --output .codefly/ci/audit \
+            --fail-on-vuln=false \
+            --jobs=1
+
+          codefly ci run "${selection_args[@]}" \
+            --phase sbom \
+            --output .codefly/ci/sbom
+      - name: Enforce first-party vulnerability gate
+        shell: bash
+        run: |
+          codefly audit service accounts --outdated=false --fail-on-vuln
+          codefly audit service auth-sidecar --outdated=false --fail-on-vuln
+          npm --prefix module/services/frontend/code audit --omit=dev --audit-level=high
+          npm --prefix module/services/marketing/code audit --omit=dev --audit-level=high
+
+  codefly-build:
+    name: Codefly build
+    needs: codefly-plan
+    # Always run on release tags: the publish job needs this gate, and a
+    # skipped dependency would skip publish silently rather than fail.
+    if: ${{ needs.codefly-plan.outputs.has_work == 'true' || startsWith(github.ref, 'refs/tags/v') }}
     runs-on: ubuntu-latest
     timeout-minutes: 60
     steps:
@@ -87,87 +433,201 @@ jobs:
           fetch-depth: 0
       - uses: actions/setup-go@v5
         with:
-          go-version: stable
+          go-version: "1.27.0"
       - name: Install Codefly
         env:
-          # First-party modules never verify against the public checksum DB —
-          # sum.golang.org 500s/404s on fresh or private codefly-dev tags.
-          # Same setting Mind's CI uses (scripts/ci-fetch-codefly.sh).
           GOPRIVATE: github.com/codefly-dev/*
         run: go install github.com/codefly-dev/cli/cmd/codefly@latest
       - name: Reclaim runner disk space
         shell: bash
         run: |
           # The full topology produces several Docker images, including two
-          # independent Next.js applications. Remove unused hosted-runner
-          # toolchains so Docker can retain every service image in one gate.
+          # independent Next.js applications. Free the unused hosted-runner
+          # toolchains so every affected image fits alongside the layers that
+          # the parallel service builds share. No `docker system prune`: it
+          # would discard the pre-baked base layers this build reuses, and
+          # there is no cross-run cache to protect until `codefly build` grows
+          # `cache-from`/`cache-to` (see #194 item E).
           sudo rm -rf \
             /opt/ghc \
             /usr/local/lib/android \
             /usr/share/dotnet
-          docker system prune --all --force --volumes
-      - name: Run Codefly-owned gate
+      - name: Build affected service images
         shell: bash
         env:
-          CODEFLY_BASE: ${{ github.event.pull_request.base.sha || github.event.before }}
-          # Select the Codefly fixture used by dependency-backed frontend tests.
-          # Accounts reads this through the Codefly SDK; application code never
-          # reaches into Codefly's runtime carrier directly.
-          CODEFLY__FIXTURE: dev-admin
+          SELECTION_ALL: ${{ needs.codefly-plan.outputs.all }}
+          CODEFLY_BASE: ${{ needs.codefly-plan.outputs.base }}
         run: |
-          # Keep the complete audit in the Codefly evidence report, including
-          # vendor runtime images. Those images have their own release cadence
-          # and may carry upstream findings that this repository cannot patch.
-          # The next step separately fails closed on every first-party service
-          # and production frontend dependency.
-          args=(ci run --head "${GITHUB_SHA}")
-          if [[ -n "${CODEFLY_BASE}" && "${CODEFLY_BASE}" != "0000000000000000000000000000000000000000" ]]; then
-            args+=(--base "${CODEFLY_BASE}")
+          selection_args=(--head "${GITHUB_SHA}")
+          if [[ "${SELECTION_ALL}" == "true" ]]; then
+            selection_args+=(--all)
           else
-            args+=(--all)
+            selection_args+=(--base "${CODEFLY_BASE}")
           fi
 
-          codefly "${args[@]}" \
-            --phase verify,sync-drift,lint,compile,test \
-            --output .codefly/ci/pre-audit
+          # Build two services concurrently. The standard ubuntu-latest runner
+          # is 4 vCPU / 16 GB with ~14 GB free disk after the reclaim above;
+          # each Next.js `next build` is CPU- and memory-hungry, and there are
+          # two of them, so a higher fan-out risks an OOM kill or exhausting
+          # the disk on a full-topology build. Two at a time keeps the peak
+          # within the runner while still ~halving the serialized build time.
+          # Raise this in lockstep with a larger runner (see #194 item D).
+          jobs=2
 
-          # Several published vendor-image agents predate Core's shared Trivy
-          # cache lock. Serialize the audit so those independent agent processes
-          # cannot corrupt or time out on the same cache. Keep vendor findings
-          # in the evidence report without letting unpatchable upstream images
-          # override the first-party vulnerability gate below.
-          codefly "${args[@]}" \
-            --phase audit \
-            --output .codefly/ci/audit \
-            --fail-on-vuln=false \
-            --jobs=1
-
-          codefly "${args[@]}" \
-            --phase sbom \
-            --output .codefly/ci/sbom
-
-          # Agent builds share the runner's Docker layer store, and the Store
-          # agent can still hit a transient export fault on a serialized build.
-          # Retry only that exact daemon error; genuine failures stop at once.
+          # Concurrent agent builds share the runner's Docker layer store, and
+          # the Store agent can still hit a transient export fault — it happened
+          # even serially, and running builds in parallel makes the race more
+          # likely, so allow a few retries. Retry only that exact daemon error;
+          # genuine failures stop at once.
           build_log="$(mktemp)"
           trap 'rm -f "${build_log}"' EXIT
-          for attempt in 1 2 3; do
-            if codefly "${args[@]}" \
+          for attempt in 1 2 3 4 5; do
+            if codefly ci run "${selection_args[@]}" \
               --phase build \
               --output ".codefly/ci/build-${attempt}" \
-              --jobs=1 2>&1 | tee "${build_log}"; then
+              --jobs "${jobs}" 2>&1 | tee "${build_log}"; then
               break
             fi
-            if ! grep -Fq "layer does not exist" "${build_log}" || (( attempt == 3 )); then
+            if ! grep -Fq "layer does not exist" "${build_log}" || (( attempt == 5 )); then
               exit 1
             fi
-            echo "::warning::Docker lost an image-export layer; syncing and retrying the serialized build"
+            echo "::warning::Docker lost an image-export layer; syncing and retrying the build"
             sync
           done
-      - name: Enforce first-party vulnerability gate
+
+  publish-module-package:
+    name: Publish immutable module package
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs:
+      - base-integrity
+      - provider-shim
+      - marketing
+      - sdk-boundary
+      - module-package
+      - codefly-plan
+      - codefly-quality
+      - codefly-supply-chain
+      - codefly-build
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: write
+      id-token: write
+      attestations: write
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6.5.0
+        with:
+          go-version: "1.27.0"
+          cache-dependency-path: module/tools/go.sum
+      - name: Reject a mutable or repeated release
         shell: bash
+        working-directory: module/tools
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_ADMIN_TOKEN: ${{ secrets.RELEASE_ADMIN_TOKEN }}
+          GOWORK: "off"
         run: |
-          codefly audit service accounts --outdated=false --fail-on-vuln
-          codefly audit service auth-sidecar --outdated=false --fail-on-vuln
-          npm --prefix module/services/frontend/code audit --omit=dev --audit-level=high
-          npm --prefix module/services/marketing/code audit --omit=dev --audit-level=high
+          GH_TOKEN="${RELEASE_ADMIN_TOKEN}" gh api \
+            "repos/${GITHUB_REPOSITORY}/immutable-releases" > "${RUNNER_TEMP}/immutable-release-settings.json"
+          go run ./cmd/module-package verify-release-policy \
+            --settings "${RUNNER_TEMP}/immutable-release-settings.json"
+          if gh release view "${GITHUB_REF_NAME}" >/dev/null 2>&1; then
+            echo "release ${GITHUB_REF_NAME} already exists" >&2
+            exit 1
+          fi
+          git ls-remote --tags origin \
+            "refs/tags/${GITHUB_REF_NAME}" \
+            "refs/tags/${GITHUB_REF_NAME}^{}" > "${RUNNER_TEMP}/remote-refs"
+          git fetch --no-tags origin \
+            refs/heads/main:refs/remotes/origin/main
+          go run ./cmd/module-package verify-release-ancestry \
+            --repository-root ../.. \
+            --commit "${GITHUB_SHA}" \
+            --trusted-ref refs/remotes/origin/main
+          go run ./cmd/module-package verify-release-ref \
+            --module .. \
+            --tag "${GITHUB_REF_NAME}" \
+            --commit "${GITHUB_SHA}" \
+            --remote-refs "${RUNNER_TEMP}/remote-refs"
+      - name: Build the canonical package
+        working-directory: module/tools
+        env:
+          GOWORK: "off"
+        run: |
+          go run ./cmd/module-package build \
+            --repository-root ../.. \
+            --output "${RUNNER_TEMP}/release" \
+            --commit "${GITHUB_SHA}"
+      - name: Sign Core module provenance
+        shell: bash
+        env:
+          GOWORK: "off"
+          RELEASE_PROVENANCE_PRIVATE_KEY: ${{ secrets.RELEASE_PROVENANCE_PRIVATE_KEY }}
+          RELEASE_PROVENANCE_PUBLIC_KEY: ${{ secrets.RELEASE_PROVENANCE_PUBLIC_KEY }}
+        run: |
+          if [[ -z "${RELEASE_PROVENANCE_PRIVATE_KEY}" || -z "${RELEASE_PROVENANCE_PUBLIC_KEY}" ]]; then
+            echo "RELEASE_PROVENANCE_PRIVATE_KEY and RELEASE_PROVENANCE_PUBLIC_KEY are required" >&2
+            exit 1
+          fi
+          printf '%s' "${RELEASE_PROVENANCE_PRIVATE_KEY}" | \
+            go -C module/tools run ./cmd/module-package sign-provenance \
+              --module ../ \
+              --release "${RUNNER_TEMP}/release" \
+              --tag "${GITHUB_REF_NAME}" \
+              --commit "${GITHUB_SHA}" \
+              --public-key "${RELEASE_PROVENANCE_PUBLIC_KEY}"
+      - name: Generate the package SBOM
+        uses: anchore/sbom-action@e22c389904149dbc22b58101806040fa8d37a610 # v0.24.0
+        with:
+          path: module
+          format: cyclonedx-json
+          artifact-name: module.cdx.json
+          output-file: ${{ runner.temp }}/release/module.cdx.json
+          upload-artifact: false
+          upload-release-assets: false
+      - name: Add GitHub's supplemental Sigstore attestation
+        id: provenance
+        uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
+        with:
+          subject-path: ${{ runner.temp }}/release/module.tar
+      - name: Add the signed provenance bundle to the release assets
+        shell: bash
+        env:
+          PROVENANCE_BUNDLE: ${{ steps.provenance.outputs.bundle-path }}
+        run: cp "${PROVENANCE_BUNDLE}" "${RUNNER_TEMP}/release/provenance.sigstore.json"
+      - name: Publish the immutable GitHub release
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GOWORK: "off"
+        run: |
+          gh attestation verify \
+            "${RUNNER_TEMP}/release/module.tar" \
+            --repo "${GITHUB_REPOSITORY}"
+          draft_created=false
+          cleanup_draft() {
+            if [[ "${draft_created}" == "true" ]]; then
+              gh release delete "${GITHUB_REF_NAME}" --yes
+            fi
+          }
+          trap cleanup_draft EXIT
+          gh release create "${GITHUB_REF_NAME}" \
+            --draft \
+            --verify-tag \
+            --generate-notes
+          draft_created=true
+          gh release upload "${GITHUB_REF_NAME}" "${RUNNER_TEMP}"/release/*
+          git ls-remote --tags origin \
+            "refs/tags/${GITHUB_REF_NAME}" \
+            "refs/tags/${GITHUB_REF_NAME}^{}" > "${RUNNER_TEMP}/remote-refs-before-publish"
+          go -C module/tools run ./cmd/module-package verify-release-ref \
+            --module ../ \
+            --tag "${GITHUB_REF_NAME}" \
+            --commit "${GITHUB_SHA}" \
+            --remote-refs "${RUNNER_TEMP}/remote-refs-before-publish"
+          gh release edit "${GITHUB_REF_NAME}" --draft=false
+          draft_created=false
+          gh release verify "${GITHUB_REF_NAME}"

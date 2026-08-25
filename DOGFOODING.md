@@ -249,7 +249,7 @@ codefly run service --env local-dogfood
 - [ ] Tamper with a forwarded Resend payload or use an old timestamp. The receiver returns `400` and writes nothing.
 - [ ] Grant analytics consent, navigate through onboarding, and verify bounded browser plus durable backend events in PostHog.
 - [ ] Withdraw analytics consent or log out. Browser capture stops immediately and identity resets.
-- [ ] Trigger controlled browser and backend errors. Sentry correlates release, environment, and W3C trace context.
+- [ ] Trigger controlled browser and backend errors. Sentry correlates release and environment without creating performance transactions.
 - [ ] With `otel.sh --debug`, exercise login/onboarding and observe trace/metric/log summaries from the in-graph telemetry service.
 - [ ] Switch Turnstile to `--fixture fail --force`. Registration and waitlist submission fail without database writes.
 - [ ] Switch Turnstile to `--fixture replay --force`. The first deterministic verification follows Cloudflare's fixture behavior; replay rejection leaves state unchanged.

@@ -102,9 +102,27 @@ type bundleIngressRoute struct {
 
 type managedServiceHandoff struct {
 	Service          string   `json:"service"`
-	AWSKind          string   `json:"awsKind"`
+	Kind             string   `json:"kind"`
 	ExternalName     string   `json:"externalName"`
 	SecretReferences []string `json:"secretReferences,omitempty"`
+}
+
+// UnmarshalJSON reads the handoff kind from "kind", falling back to the legacy
+// "awsKind" key so bundles written before the rename still parse. Drop the
+// fallback once every producer emits "kind".
+func (h *managedServiceHandoff) UnmarshalJSON(data []byte) error {
+	type alias managedServiceHandoff
+	aux := struct {
+		*alias
+		LegacyAWSKind string `json:"awsKind"`
+	}{alias: (*alias)(h)}
+	if err := json.Unmarshal(data, &aux); err != nil {
+		return err
+	}
+	if h.Kind == "" {
+		h.Kind = aux.LegacyAWSKind
+	}
+	return nil
 }
 
 type managedServiceConfig struct {
@@ -142,6 +160,7 @@ type kubeObject struct {
 type kustomization struct {
 	APIVersion string   `yaml:"apiVersion"`
 	Kind       string   `yaml:"kind"`
+	Namespace  string   `yaml:"namespace,omitempty"`
 	Resources  []string `yaml:"resources"`
 }
 
@@ -167,6 +186,12 @@ type deploymentTopology struct {
 	Module    topologyModule      `yaml:"module"`
 	Interface []topologyInterface `yaml:"interface"`
 	Services  []topologyService   `yaml:"services"`
+
+	// internalMethodPaths holds, per service, the gRPC method paths marked
+	// EXPOSURE_INTERNAL in that service's generated authorization catalog. It is
+	// populated after decoding and drives the mesh reach gate for the internal
+	// authority surface.
+	internalMethodPaths map[string][]string
 }
 
 type topologyModule struct {
@@ -188,6 +213,7 @@ type topologyService struct {
 	Version                            string                               `yaml:"version,omitempty"`
 	Description                        string                               `yaml:"description,omitempty"`
 	Agent                              map[string]any                       `yaml:"agent,omitempty"`
+	Kubernetes                         *topologyKubernetesIdentity          `yaml:"kubernetes,omitempty"`
 	WorkspaceConfigurationDependencies []string                             `yaml:"workspace_configuration_dependencies,omitempty"`
 	SecretServiceConfigurations        []topologySecretServiceConfiguration `yaml:"secret_service_configurations,omitempty"`
 	Endpoints                          []topologyEndpoint                   `yaml:"endpoints"`
@@ -195,6 +221,11 @@ type topologyService struct {
 	Dependencies                       []topologyDependency                 `yaml:"dependencies,omitempty"`
 	PublicEgressPorts                  []uint32                             `yaml:"public_egress_ports,omitempty"`
 	Spec                               map[string]any                       `yaml:"spec,omitempty"`
+}
+
+type topologyKubernetesIdentity struct {
+	ServiceName string `yaml:"service_name"`
+	AppLabel    string `yaml:"app_label"`
 }
 
 type topologySecretServiceConfiguration struct {
@@ -269,11 +300,11 @@ func generateDeploymentBundle(moduleDir string, workspace *workspaceManifest) er
 		ServiceEntry:  topology.Module.ServiceEntry,
 	}
 	for _, environment := range environments {
-		_, aws, kind, err := classifyEnvironment(environment)
+		_, managed, kind, err := classifyEnvironment(environment)
 		if err != nil {
 			return err
 		}
-		plan, err := planEnvironment(environment, serviceNames(services), topology, kind, aws)
+		plan, err := planEnvironment(environment, serviceNames(services), topology, kind, managed)
 		if err != nil {
 			return err
 		}
@@ -515,14 +546,14 @@ func planEnvironment(
 	services []string,
 	topology deploymentTopology,
 	cluster string,
-	aws bool,
+	managedCapable bool,
 ) (environmentPlan, error) {
 	plan := environmentPlan{
 		environment: environment,
 		cluster:     cluster,
 		managed:     make(map[string]managedServiceConfig),
 	}
-	if err := validateManagedServices(environment, services, topology, aws, &plan); err != nil {
+	if err := validateManagedServices(environment, services, topology, managedCapable, &plan); err != nil {
 		return environmentPlan{}, err
 	}
 	for _, service := range services {
@@ -634,10 +665,10 @@ func validateManagedServices(
 	environment *environmentConfig,
 	services []string,
 	topology deploymentTopology,
-	aws bool,
+	managedCapable bool,
 	plan *environmentPlan,
 ) error {
-	if !aws && len(environment.ManagedServices) > 0 {
+	if !managedCapable && len(environment.ManagedServices) > 0 {
 		return fmt.Errorf("environment %q declares managed services for an in-cluster environment", environment.Name)
 	}
 	declared := make(map[string]struct{}, len(services))
@@ -650,7 +681,7 @@ func validateManagedServices(
 			return fmt.Errorf("environment %q declares unexpected managed service %q", environment.Name, service)
 		}
 		switch config.Kind {
-		case "elasticache", "rds-postgresql", "s3", "secrets-manager":
+		case "elasticache", "rds-postgresql", "s3", "secrets-manager", "azure-postgres-flexible":
 		default:
 			return fmt.Errorf("environment %q managed service %q kind %q is not supported", environment.Name, service, config.Kind)
 		}
@@ -665,7 +696,7 @@ func validateManagedServices(
 		referenceNames := make(map[string]struct{}, len(config.SecretReferences))
 		handoff := managedServiceHandoff{
 			Service:      service,
-			AWSKind:      config.Kind,
+			Kind:         config.Kind,
 			ExternalName: config.ExternalName,
 		}
 		for _, reference := range config.SecretReferences {
@@ -723,12 +754,12 @@ func validExternalName(value string) bool {
 	return true
 }
 
-func classifyEnvironment(environment *environmentConfig) (local bool, aws bool, cluster string, err error) {
+func classifyEnvironment(environment *environmentConfig) (local bool, managedCapable bool, cluster string, err error) {
 	kind := strings.TrimSpace(environment.Cluster.Kind)
 	switch kind {
 	case "k3d":
 		return true, false, kind, nil
-	case "eks":
+	case "eks", "aks":
 		return false, true, kind, nil
 	case "":
 		if strings.HasPrefix(environment.Name, "local") {
@@ -746,8 +777,8 @@ func renderEnvironment(
 	plan environmentPlan,
 ) error {
 	environmentRoot := filepath.Join(root, "overlays", plan.environment.Name)
-	resourceRoot := filepath.Join(environmentRoot, "resources")
-	if err := os.MkdirAll(resourceRoot, 0o755); err != nil {
+	baseRoot := filepath.Join(environmentRoot, "base")
+	if err := os.MkdirAll(baseRoot, 0o755); err != nil {
 		return err
 	}
 
@@ -758,41 +789,67 @@ func renderEnvironment(
 		"codefly.dev/module":           moduleName,
 		"codefly.dev/environment":      plan.environment.Name,
 	}
+	// The Namespace object carries the environment identity, so — like the
+	// host-bearing Gateway and VirtualService — it lives in the overlay, not the
+	// base. The base stays identity-neutral (no Namespace object, no host); the
+	// overlay names the namespace both on this object and, through its namespace
+	// transformer, on every resource the base contributes.
+	namespaceLabels := map[string]string{
+		"istio.io/dataplane-mode":                    "ambient",
+		"pod-security.kubernetes.io/enforce":         "baseline",
+		"pod-security.kubernetes.io/enforce-version": "latest",
+		"pod-security.kubernetes.io/audit":           "restricted",
+		"pod-security.kubernetes.io/audit-version":   "latest",
+		"pod-security.kubernetes.io/warn":            "restricted",
+		"pod-security.kubernetes.io/warn-version":    "latest",
+		"kubernetes.io/metadata.name":                plan.environment.Namespace,
+	}
+	if topologyRequiresWaypoint(topology, plan) {
+		// Route service traffic through the namespace waypoint so the L7
+		// internal-authority AuthorizationPolicy is enforced in the ambient mesh.
+		namespaceLabels["istio.io/use-waypoint"] = meshWaypointName
+	}
 	namespace := kubeObject{
 		APIVersion: "v1",
 		Kind:       "Namespace",
 		Metadata: objectMeta{
-			Name: plan.environment.Namespace,
-			Labels: mergeLabels(identityLabels, map[string]string{
-				"istio.io/dataplane-mode":                    "ambient",
-				"pod-security.kubernetes.io/enforce":         "baseline",
-				"pod-security.kubernetes.io/enforce-version": "latest",
-				"pod-security.kubernetes.io/audit":           "restricted",
-				"pod-security.kubernetes.io/audit-version":   "latest",
-				"pod-security.kubernetes.io/warn":            "restricted",
-				"pod-security.kubernetes.io/warn-version":    "latest",
-				"kubernetes.io/metadata.name":                plan.environment.Namespace,
-			}),
+			Name:   plan.environment.Namespace,
+			Labels: mergeLabels(identityLabels, namespaceLabels),
 		},
 	}
-	if err := writeYAML(filepath.Join(resourceRoot, "namespace.yaml"), namespace); err != nil {
+	if err := writeYAML(filepath.Join(environmentRoot, "namespace.yaml"), namespace); err != nil {
 		return err
 	}
-	sharedPaths, err := renderSharedResources(resourceRoot, plan.environment.Namespace, identityLabels, topology, plan)
+	basePaths, ingress, err := renderSharedResources(baseRoot, plan.environment.Namespace, identityLabels, topology, plan)
 	if err != nil {
 		return err
 	}
 
-	resourcePaths := []string{
-		"resources/namespace.yaml",
-		"resources/resource-quota.yaml",
-		"resources/limit-range.yaml",
+	baseResources := []string{
+		"resource-quota.yaml",
+		"limit-range.yaml",
 	}
-	resourcePaths = append(resourcePaths, sharedPaths...)
+	baseResources = append(baseResources, basePaths...)
+	if err := writeYAML(filepath.Join(baseRoot, "kustomization.yaml"), kustomization{
+		APIVersion: "kustomize.config.k8s.io/v1beta1",
+		Kind:       "Kustomization",
+		Resources:  baseResources,
+	}); err != nil {
+		return err
+	}
+
+	overlayResources := []string{"base", "namespace.yaml"}
+	if len(ingress) > 0 {
+		if err := writeYAMLDocuments(filepath.Join(environmentRoot, "ingress.yaml"), ingress); err != nil {
+			return err
+		}
+		overlayResources = append(overlayResources, "ingress.yaml")
+	}
 	if err := writeYAML(filepath.Join(environmentRoot, "kustomization.yaml"), kustomization{
 		APIVersion: "kustomize.config.k8s.io/v1beta1",
 		Kind:       "Kustomization",
-		Resources:  resourcePaths,
+		Namespace:  plan.environment.Namespace,
+		Resources:  overlayResources,
 	}); err != nil {
 		return err
 	}
@@ -805,7 +862,7 @@ func renderSharedResources(
 	labels map[string]string,
 	topology deploymentTopology,
 	plan environmentPlan,
-) ([]string, error) {
+) ([]string, []kubeObject, error) {
 	name := labels["app.kubernetes.io/part-of"]
 	quota := kubeObject{
 		APIVersion: "v1",
@@ -825,7 +882,7 @@ func renderSharedResources(
 		}},
 	}
 	if err := writeYAML(filepath.Join(root, "resource-quota.yaml"), quota); err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	limit := kubeObject{
 		APIVersion: "v1",
@@ -847,35 +904,49 @@ func renderSharedResources(
 		}},
 	}
 	if err := writeYAML(filepath.Join(root, "limit-range.yaml"), limit); err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	networkPolicies, err := topologyNetworkPolicies(topology, plan, namespace, labels)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	if err := writeYAMLDocuments(filepath.Join(root, "network-policy.yaml"), networkPolicies); err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	istio, gateway, err := topologyIstioResources(topology, plan, namespace, labels)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	if err := writeYAMLDocuments(filepath.Join(root, "istio-mtls.yaml"), istio); err != nil {
-		return nil, err
+		return nil, nil, err
 	}
-	paths := []string{"resources/network-policy.yaml", "resources/istio-mtls.yaml"}
-	if len(gateway) > 0 {
-		if err := writeYAMLDocuments(filepath.Join(root, "istio-gateway.yaml"), gateway); err != nil {
-			return nil, err
+	paths := []string{"network-policy.yaml", "istio-mtls.yaml"}
+	// The Gateway and VirtualService carry the environment's public host, so they
+	// belong in the overlay rather than the base and are handed back to the
+	// caller. Their DestinationRules carry no public host and stay in the base
+	// with the rest of the mesh baseline.
+	var ingress []kubeObject
+	var destinationRules []kubeObject
+	for _, object := range gateway {
+		switch object.Kind {
+		case "Gateway", "VirtualService":
+			ingress = append(ingress, object)
+		default:
+			destinationRules = append(destinationRules, object)
 		}
-		paths = append(paths, "resources/istio-gateway.yaml")
+	}
+	if len(destinationRules) > 0 {
+		if err := writeYAMLDocuments(filepath.Join(root, "destination-rules.yaml"), destinationRules); err != nil {
+			return nil, nil, err
+		}
+		paths = append(paths, "destination-rules.yaml")
 	}
 	handoffPaths, err := renderManagedServiceHandoffs(root, namespace, labels, topology, plan)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	paths = append(paths, handoffPaths...)
-	return paths, nil
+	return paths, ingress, nil
 }
 
 func topologyIstioResources(
@@ -900,6 +971,30 @@ func topologyIstioResources(
 		},
 	}
 	istio = append(istio, topologyInternalAuthorizationPolicies(topology, plan, namespace, labels)...)
+	istio = append(istio, topologyInternalAuthorityAllowPolicies(topology, plan, namespace, labels)...)
+	if topologyRequiresWaypoint(topology, plan) {
+		// The internal-authority deny is an L7 (method-path) policy. In the
+		// ambient data plane ztunnel enforces L4 only, so a waypoint proxy must
+		// front the namespace for the path match to be evaluated. The namespace
+		// opts in via istio.io/use-waypoint (see renderEnvironment).
+		istio = append(istio, kubeObject{
+			APIVersion: "gateway.networking.k8s.io/v1",
+			Kind:       "Gateway",
+			Metadata: objectMeta{
+				Name:      meshWaypointName,
+				Namespace: namespace,
+				Labels:    mergeLabels(labels, map[string]string{"istio.io/waypoint-for": "service"}),
+			},
+			Spec: map[string]any{
+				"gatewayClassName": "istio-waypoint",
+				"listeners": []any{map[string]any{
+					"name":     "mesh",
+					"port":     15008,
+					"protocol": "HBONE",
+				}},
+			},
+		})
+	}
 	if len(plan.ingress) == 0 {
 		// No public ingress: emit the mTLS baseline only, no Gateway.
 		return istio, nil, nil
@@ -917,6 +1012,7 @@ func topologyIstioResources(
 	}
 	slices.Sort(ingressServices)
 	for _, service := range ingressServices {
+		topologyService, _ := topologyServiceByName(topology, service)
 		ports := make([]uint32, 0, len(ingressPorts[service]))
 		for port := range ingressPorts[service] {
 			ports = append(ports, port)
@@ -935,7 +1031,7 @@ func topologyIstioResources(
 				Labels:    labels,
 			},
 			Spec: map[string]any{
-				"selector": map[string]any{"matchLabels": map[string]string{"app": service}},
+				"selector": map[string]any{"matchLabels": map[string]string{"app": topologyKubernetesAppLabel(topologyService)}},
 				"rules": []any{map[string]any{
 					"from": []any{map[string]any{"source": map[string]any{
 						"principals": []string{"cluster.local/ns/istio-system/sa/istio-ingressgateway-service-account"},
@@ -952,11 +1048,12 @@ func topologyIstioResources(
 	var httpRoutes []any
 	if len(plan.ingress[0].hosts) == 0 {
 		route := plan.ingress[0]
+		service, _ := topologyServiceByName(topology, route.service)
 		httpRoutes = []any{map[string]any{
 			"name":  route.name,
 			"match": []any{map[string]any{"uri": map[string]string{"prefix": "/"}}},
 			"route": []any{map[string]any{"destination": map[string]any{
-				"host": route.service + "." + namespace + ".svc.cluster.local",
+				"host": topologyKubernetesServiceName(service) + "." + namespace + ".svc.cluster.local",
 				"port": map[string]any{"number": route.port},
 			}}},
 			"timeout": "30s",
@@ -965,6 +1062,7 @@ func topologyIstioResources(
 		gatewayHosts = nil
 		hostSet := make(map[string]struct{})
 		for _, route := range plan.ingress {
+			service, _ := topologyServiceByName(topology, route.service)
 			matches := make([]any, 0, len(route.hosts))
 			for _, host := range route.hosts {
 				if _, exists := hostSet[host]; !exists {
@@ -981,7 +1079,7 @@ func topologyIstioResources(
 				"name":  route.name,
 				"match": matches,
 				"route": []any{map[string]any{"destination": map[string]any{
-					"host": route.service + "." + namespace + ".svc.cluster.local",
+					"host": topologyKubernetesServiceName(service) + "." + namespace + ".svc.cluster.local",
 					"port": map[string]any{"number": route.port},
 				}}},
 				"timeout": "30s",
@@ -1015,6 +1113,7 @@ func topologyIstioResources(
 		},
 	}
 	for _, service := range plan.services {
+		topologyService, _ := topologyServiceByName(topology, service)
 		gateway = append(gateway, kubeObject{
 			APIVersion: "networking.istio.io/v1",
 			Kind:       "DestinationRule",
@@ -1024,7 +1123,7 @@ func topologyIstioResources(
 				Labels:    labels,
 			},
 			Spec: map[string]any{
-				"host":     service + "." + namespace + ".svc.cluster.local",
+				"host":     topologyKubernetesServiceName(topologyService) + "." + namespace + ".svc.cluster.local",
 				"exportTo": []string{"."},
 				"trafficPolicy": map[string]any{
 					"connectionPool": map[string]any{
@@ -1042,6 +1141,79 @@ func topologyIstioResources(
 		})
 	}
 	return istio, gateway, nil
+}
+
+// topologyServiceAccount returns the Kubernetes ServiceAccount a service's pods
+// run under: spec.service-account.name when the service declares one (the
+// go-grpc agent renders the SA object and binds serviceAccountName off it),
+// otherwise the namespace default. A caller without a distinct SA (e.g. the
+// nextjs frontend, whose agent does not render one yet) stays on "default".
+func topologyServiceAccount(service topologyService) string {
+	spec, ok := service.Spec["service-account"].(map[string]any)
+	if !ok {
+		return "default"
+	}
+	if name, ok := spec["name"].(string); ok && name != "" {
+		return name
+	}
+	return "default"
+}
+
+func meshPrincipal(namespace, serviceAccount string) string {
+	return "cluster.local/ns/" + namespace + "/sa/" + serviceAccount
+}
+
+// topologyTargetCallerPrincipals maps each in-cluster dependency target to the
+// sorted, de-duplicated SPIFFE principals of its declared callers — each
+// caller's workload SA (or sa/default when it has none). This is the positive
+// allowlist the internal-authority AuthorizationPolicies gate on: only a
+// target's declared callers may reach it, deny-by-default for everyone else
+// (the ingress gateway included), instead of the fail-open notPrincipals
+// exemption of the shared sa/default.
+func topologyTargetCallerPrincipals(topology deploymentTopology, plan environmentPlan, namespace string) map[string][]string {
+	inCluster := make(map[string]struct{}, len(plan.services))
+	for _, service := range plan.services {
+		inCluster[service] = struct{}{}
+	}
+	callers := make(map[string]map[string]struct{})
+	addCaller := func(target, principal string) {
+		if callers[target] == nil {
+			callers[target] = make(map[string]struct{})
+		}
+		callers[target][principal] = struct{}{}
+	}
+	for _, caller := range topology.Services {
+		if _, ok := inCluster[caller.Name]; !ok {
+			continue
+		}
+		principal := meshPrincipal(namespace, topologyServiceAccount(caller))
+		for _, dependency := range caller.Dependencies {
+			if _, ok := inCluster[dependency.Service]; !ok {
+				continue
+			}
+			addCaller(dependency.Service, principal)
+		}
+	}
+	// A service's bootstrap job runs under the service's own SA and reaches its
+	// own endpoints, so it is a declared caller of itself.
+	for _, service := range topology.Services {
+		if _, ok := inCluster[service.Name]; !ok {
+			continue
+		}
+		if len(service.BootstrapJobEndpoints) > 0 {
+			addCaller(service.Name, meshPrincipal(namespace, topologyServiceAccount(service)))
+		}
+	}
+	result := make(map[string][]string, len(callers))
+	for target, set := range callers {
+		principals := make([]string, 0, len(set))
+		for principal := range set {
+			principals = append(principals, principal)
+		}
+		slices.Sort(principals)
+		result[target] = principals
+	}
+	return result
 }
 
 func topologyInternalAuthorizationPolicies(
@@ -1092,8 +1264,9 @@ func topologyInternalAuthorizationPolicies(
 	}
 	slices.Sort(targets)
 	policies := make([]kubeObject, 0, len(targets))
-	principal := "cluster.local/ns/" + namespace + "/sa/default"
+	callerPrincipals := topologyTargetCallerPrincipals(topology, plan, namespace)
 	for _, target := range targets {
+		service, _ := topologyServiceByName(topology, target)
 		ports := make([]uint32, 0, len(targetPorts[target]))
 		for port := range targetPorts[target] {
 			ports = append(ports, port)
@@ -1112,13 +1285,92 @@ func topologyInternalAuthorizationPolicies(
 				Labels:    labels,
 			},
 			Spec: map[string]any{
-				"selector": map[string]any{"matchLabels": map[string]string{"app": target}},
+				"selector": map[string]any{"matchLabels": map[string]string{"app": topologyKubernetesAppLabel(service)}},
 				"rules": []any{map[string]any{
 					"from": []any{map[string]any{"source": map[string]any{
-						"principals": []string{principal},
+						"principals": callerPrincipals[target],
 					}}},
 					"to": []any{map[string]any{"operation": map[string]any{
 						"ports": renderedPorts,
+					}}},
+				}},
+			},
+		})
+	}
+	return policies
+}
+
+// meshWaypointName is the namespace waypoint that fronts the ambient data plane
+// so L7 (method-path) AuthorizationPolicies are enforced; ztunnel alone is L4.
+const meshWaypointName = "waypoint"
+
+// topologyRequiresWaypoint reports whether any in-cluster service exposes
+// internal-authority method paths, which are gated by an L7 AuthorizationPolicy
+// that only a waypoint can evaluate.
+func topologyRequiresWaypoint(topology deploymentTopology, plan environmentPlan) bool {
+	inCluster := make(map[string]struct{}, len(plan.services))
+	for _, service := range plan.services {
+		inCluster[service] = struct{}{}
+	}
+	for target := range topology.internalMethodPaths {
+		if _, ok := inCluster[target]; ok {
+			return true
+		}
+	}
+	return false
+}
+
+// topologyInternalAuthorityAllowPolicies gates each service's internal authority
+// method paths by caller workload identity with a positive ALLOW: only a
+// target's declared callers (named by their per-service ServiceAccount) may
+// reach the internal RPC paths, deny-by-default for every other principal — the
+// ingress gateway and any unlisted namespace workload included. This replaces
+// the earlier notPrincipals:[sa/default] DENY, which fail-open: with every pod
+// sharing sa/default, that exemption admitted the whole namespace. Istio makes a
+// selected workload default-deny once any ALLOW rule targets it, so an unlisted
+// SA is rejected at the mesh before the handler; the app-layer internal
+// credential remains the identity gate. The L7 path match needs the namespace
+// waypoint (see topologyRequiresWaypoint); the L4 port ALLOW
+// (topologyInternalAuthorizationPolicies) is now caller-scoped too, so even
+// without the waypoint the target is reachable only by its declared callers.
+func topologyInternalAuthorityAllowPolicies(
+	topology deploymentTopology,
+	plan environmentPlan,
+	namespace string,
+	labels map[string]string,
+) []kubeObject {
+	inCluster := make(map[string]struct{}, len(plan.services))
+	for _, service := range plan.services {
+		inCluster[service] = struct{}{}
+	}
+	callerPrincipals := topologyTargetCallerPrincipals(topology, plan, namespace)
+	targets := make([]string, 0, len(topology.internalMethodPaths))
+	for target := range topology.internalMethodPaths {
+		if _, ok := inCluster[target]; ok {
+			targets = append(targets, target)
+		}
+	}
+	slices.Sort(targets)
+	policies := make([]kubeObject, 0, len(targets))
+	for _, target := range targets {
+		service, _ := topologyServiceByName(topology, target)
+		policies = append(policies, kubeObject{
+			APIVersion: "security.istio.io/v1",
+			Kind:       "AuthorizationPolicy",
+			Metadata: objectMeta{
+				Name:      "allow-" + target + "-internal-authority",
+				Namespace: namespace,
+				Labels:    labels,
+			},
+			Spec: map[string]any{
+				"selector": map[string]any{"matchLabels": map[string]string{"app": topologyKubernetesAppLabel(service)}},
+				"action":   "ALLOW",
+				"rules": []any{map[string]any{
+					"from": []any{map[string]any{"source": map[string]any{
+						"principals": callerPrincipals[target],
+					}}},
+					"to": []any{map[string]any{"operation": map[string]any{
+						"paths": topology.internalMethodPaths[target],
 					}}},
 				}},
 			},
@@ -1153,6 +1405,8 @@ func loadDeploymentTopology(moduleDir, moduleName string, services []serviceDefi
 		declared[service.name] = struct{}{}
 	}
 	topologyServices := make(map[string]topologyService, len(topology.Services))
+	kubernetesServices := make(map[string]string, len(topology.Services))
+	kubernetesApps := make(map[string]string, len(topology.Services))
 	for _, service := range topology.Services {
 		if _, exists := topologyServices[service.Name]; exists {
 			return deploymentTopology{}, fmt.Errorf("deployment topology repeats service %q", service.Name)
@@ -1163,6 +1417,32 @@ func loadDeploymentTopology(moduleDir, moduleName string, services []serviceDefi
 		if len(service.Endpoints) == 0 {
 			return deploymentTopology{}, fmt.Errorf("deployment topology service %q declares no endpoints", service.Name)
 		}
+		kubernetesService := topologyKubernetesServiceName(service)
+		if err := validateDNSLabel("deployment topology Kubernetes service name", kubernetesService); err != nil {
+			return deploymentTopology{}, fmt.Errorf("service %q: %w", service.Name, err)
+		}
+		if owner, exists := kubernetesServices[kubernetesService]; exists {
+			return deploymentTopology{}, fmt.Errorf(
+				"deployment topology services %q and %q share Kubernetes service name %q",
+				owner,
+				service.Name,
+				kubernetesService,
+			)
+		}
+		kubernetesServices[kubernetesService] = service.Name
+		kubernetesApp := topologyKubernetesAppLabel(service)
+		if err := validateDNSLabel("deployment topology Kubernetes app label", kubernetesApp); err != nil {
+			return deploymentTopology{}, fmt.Errorf("service %q: %w", service.Name, err)
+		}
+		if owner, exists := kubernetesApps[kubernetesApp]; exists {
+			return deploymentTopology{}, fmt.Errorf(
+				"deployment topology services %q and %q share Kubernetes app label %q",
+				owner,
+				service.Name,
+				kubernetesApp,
+			)
+		}
+		kubernetesApps[kubernetesApp] = service.Name
 		endpoints := make(map[string]struct{}, len(service.Endpoints))
 		for _, endpoint := range service.Endpoints {
 			if endpoint.Port == 0 || endpoint.Port > 65535 {
@@ -1208,7 +1488,51 @@ func loadDeploymentTopology(moduleDir, moduleName string, services []serviceDefi
 			}
 		}
 	}
+	internalMethodPaths, err := loadInternalMethodPaths(moduleDir, services)
+	if err != nil {
+		return deploymentTopology{}, err
+	}
+	topology.internalMethodPaths = internalMethodPaths
 	return topology, nil
+}
+
+// loadInternalMethodPaths reads each service's generated authorization catalog
+// and returns the sorted gRPC method paths marked EXPOSURE_INTERNAL. Services
+// without a catalog (e.g. non-gRPC agents) contribute nothing.
+func loadInternalMethodPaths(moduleDir string, services []serviceDefinition) (map[string][]string, error) {
+	paths := make(map[string][]string)
+	for _, service := range services {
+		file := filepath.Join(moduleDir, "services", service.name, "generated", "authz-methods.json")
+		data, err := os.ReadFile(file)
+		if os.IsNotExist(err) {
+			continue
+		}
+		if err != nil {
+			return nil, fmt.Errorf("read authorization catalog for %q: %w", service.name, err)
+		}
+		var catalog struct {
+			Methods []struct {
+				Procedure string `json:"procedure"`
+				Policy    struct {
+					Exposure string `json:"exposure"`
+				} `json:"policy"`
+			} `json:"methods"`
+		}
+		if err := json.Unmarshal(data, &catalog); err != nil {
+			return nil, fmt.Errorf("parse authorization catalog for %q: %w", service.name, err)
+		}
+		var procedures []string
+		for _, method := range catalog.Methods {
+			if method.Policy.Exposure == "EXPOSURE_INTERNAL" {
+				procedures = append(procedures, method.Procedure)
+			}
+		}
+		if len(procedures) > 0 {
+			slices.Sort(procedures)
+			paths[service.name] = procedures
+		}
+	}
+	return paths, nil
 }
 
 func topologyServiceByName(topology deploymentTopology, name string) (topologyService, bool) {
@@ -1218,6 +1542,20 @@ func topologyServiceByName(topology deploymentTopology, name string) (topologySe
 		}
 	}
 	return topologyService{}, false
+}
+
+func topologyKubernetesServiceName(service topologyService) string {
+	if service.Kubernetes == nil {
+		return service.Name
+	}
+	return service.Kubernetes.ServiceName
+}
+
+func topologyKubernetesAppLabel(service topologyService) string {
+	if service.Kubernetes == nil {
+		return service.Name
+	}
+	return service.Kubernetes.AppLabel
 }
 
 func topologyEndpointByName(service topologyService, name string) (topologyEndpoint, bool) {
@@ -1308,9 +1646,11 @@ func topologyNetworkPolicies(
 		inCluster[service] = struct{}{}
 	}
 	type edge struct {
-		caller string
-		target string
-		ports  []uint32
+		caller    string
+		callerApp string
+		target    string
+		targetApp string
+		ports     []uint32
 	}
 	var edges []edge
 	for _, caller := range topology.Services {
@@ -1329,14 +1669,20 @@ func topologyNetworkPolicies(
 				ports = append(ports, port)
 			}
 			slices.Sort(ports)
-			edges = append(edges, edge{caller: caller.Name, target: target.Name, ports: ports})
+			edges = append(edges, edge{
+				caller:    caller.Name,
+				callerApp: topologyKubernetesAppLabel(caller),
+				target:    target.Name,
+				targetApp: topologyKubernetesAppLabel(target),
+				ports:     ports,
+			})
 		}
 	}
 	for _, current := range edges {
 		if _, exists := inCluster[current.target]; exists {
 			policies = append(policies,
-				dependencyIngressPolicy(namespace, labels, current.target, current.caller, current.ports),
-				dependencyEgressPolicy(namespace, labels, current.caller, current.target, current.ports),
+				dependencyIngressPolicy(namespace, labels, current.target, current.targetApp, current.caller, current.callerApp, current.ports),
+				dependencyEgressPolicy(namespace, labels, current.caller, current.callerApp, current.target, current.targetApp, current.ports),
 			)
 			continue
 		}
@@ -1344,7 +1690,7 @@ func topologyNetworkPolicies(
 		if !managed {
 			return nil, fmt.Errorf("dependency %s -> %s has no in-cluster service or managed handoff", current.caller, current.target)
 		}
-		policies = append(policies, managedEgressPolicy(namespace, labels, current.caller, current.target, current.ports, config.EgressCIDRs))
+		policies = append(policies, managedEgressPolicy(namespace, labels, current.caller, current.callerApp, current.target, current.ports, config.EgressCIDRs))
 	}
 	for _, service := range topology.Services {
 		if len(service.BootstrapJobEndpoints) == 0 {
@@ -1364,8 +1710,8 @@ func topologyNetworkPolicies(
 		}
 		slices.Sort(ports)
 		policies = append(policies,
-			bootstrapJobIngressPolicy(namespace, labels, service.Name, ports),
-			bootstrapJobEgressPolicy(namespace, labels, service.Name, ports),
+			bootstrapJobIngressPolicy(namespace, labels, service.Name, topologyKubernetesAppLabel(service), ports),
+			bootstrapJobEgressPolicy(namespace, labels, service.Name, topologyKubernetesAppLabel(service), ports),
 		)
 	}
 	ingressPorts := make(map[string]map[uint32]struct{})
@@ -1381,6 +1727,7 @@ func topologyNetworkPolicies(
 	}
 	slices.Sort(ingressServices)
 	for _, service := range ingressServices {
+		topologyService, _ := topologyServiceByName(topology, service)
 		ports := make([]uint32, 0, len(ingressPorts[service]))
 		for port := range ingressPorts[service] {
 			ports = append(ports, port)
@@ -1391,7 +1738,7 @@ func topologyNetworkPolicies(
 			Kind:       "NetworkPolicy",
 			Metadata:   objectMeta{Name: "allow-istio-ingress-to-" + service, Namespace: namespace, Labels: labels},
 			Spec: map[string]any{
-				"podSelector": map[string]any{"matchLabels": map[string]string{"app": service}},
+				"podSelector": map[string]any{"matchLabels": map[string]string{"app": topologyKubernetesAppLabel(topologyService)}},
 				"policyTypes": []string{"Ingress"},
 				"ingress": []any{map[string]any{
 					"from": []any{map[string]any{
@@ -1407,50 +1754,50 @@ func topologyNetworkPolicies(
 		if len(service.PublicEgressPorts) == 0 || !slices.Contains(plan.services, service.Name) {
 			continue
 		}
-		policies = append(policies, publicEgressPolicy(namespace, labels, service.Name, service.PublicEgressPorts))
+		policies = append(policies, publicEgressPolicy(namespace, labels, service.Name, topologyKubernetesAppLabel(service), service.PublicEgressPorts))
 	}
 	return policies, nil
 }
 
-func dependencyIngressPolicy(namespace string, labels map[string]string, target, caller string, ports []uint32) kubeObject {
+func dependencyIngressPolicy(namespace string, labels map[string]string, target, targetApp, caller, callerApp string, ports []uint32) kubeObject {
 	return kubeObject{
 		APIVersion: "networking.k8s.io/v1",
 		Kind:       "NetworkPolicy",
 		Metadata:   objectMeta{Name: kubernetesName("allow", target, "from", caller), Namespace: namespace, Labels: labels},
 		Spec: map[string]any{
-			"podSelector": map[string]any{"matchLabels": map[string]string{"app": target}},
+			"podSelector": map[string]any{"matchLabels": map[string]string{"app": targetApp}},
 			"policyTypes": []string{"Ingress"},
 			"ingress": []any{map[string]any{
-				"from":  []any{map[string]any{"podSelector": map[string]any{"matchLabels": map[string]string{"app": caller}}}},
+				"from":  []any{map[string]any{"podSelector": map[string]any{"matchLabels": map[string]string{"app": callerApp}}}},
 				"ports": networkPorts(ports),
 			}},
 		},
 	}
 }
 
-func dependencyEgressPolicy(namespace string, labels map[string]string, caller, target string, ports []uint32) kubeObject {
+func dependencyEgressPolicy(namespace string, labels map[string]string, caller, callerApp, target, targetApp string, ports []uint32) kubeObject {
 	return kubeObject{
 		APIVersion: "networking.k8s.io/v1",
 		Kind:       "NetworkPolicy",
 		Metadata:   objectMeta{Name: kubernetesName("allow", caller, "to", target), Namespace: namespace, Labels: labels},
 		Spec: map[string]any{
-			"podSelector": map[string]any{"matchLabels": map[string]string{"app": caller}},
+			"podSelector": map[string]any{"matchLabels": map[string]string{"app": callerApp}},
 			"policyTypes": []string{"Egress"},
 			"egress": []any{map[string]any{
-				"to":    []any{map[string]any{"podSelector": map[string]any{"matchLabels": map[string]string{"app": target}}}},
+				"to":    []any{map[string]any{"podSelector": map[string]any{"matchLabels": map[string]string{"app": targetApp}}}},
 				"ports": networkPorts(ports),
 			}},
 		},
 	}
 }
 
-func bootstrapJobIngressPolicy(namespace string, labels map[string]string, service string, ports []uint32) kubeObject {
+func bootstrapJobIngressPolicy(namespace string, labels map[string]string, service, serviceApp string, ports []uint32) kubeObject {
 	return kubeObject{
 		APIVersion: "networking.k8s.io/v1",
 		Kind:       "NetworkPolicy",
 		Metadata:   objectMeta{Name: kubernetesName("allow", service, "from", "bootstrap"), Namespace: namespace, Labels: labels},
 		Spec: map[string]any{
-			"podSelector": map[string]any{"matchLabels": map[string]string{"app": service}},
+			"podSelector": map[string]any{"matchLabels": map[string]string{"app": serviceApp}},
 			"policyTypes": []string{"Ingress"},
 			"ingress": []any{map[string]any{
 				"from": []any{map[string]any{"podSelector": map[string]any{"matchLabels": map[string]string{
@@ -1463,7 +1810,7 @@ func bootstrapJobIngressPolicy(namespace string, labels map[string]string, servi
 	}
 }
 
-func bootstrapJobEgressPolicy(namespace string, labels map[string]string, service string, ports []uint32) kubeObject {
+func bootstrapJobEgressPolicy(namespace string, labels map[string]string, service, serviceApp string, ports []uint32) kubeObject {
 	return kubeObject{
 		APIVersion: "networking.k8s.io/v1",
 		Kind:       "NetworkPolicy",
@@ -1475,7 +1822,7 @@ func bootstrapJobEgressPolicy(namespace string, labels map[string]string, servic
 			}},
 			"policyTypes": []string{"Egress"},
 			"egress": []any{map[string]any{
-				"to":    []any{map[string]any{"podSelector": map[string]any{"matchLabels": map[string]string{"app": service}}}},
+				"to":    []any{map[string]any{"podSelector": map[string]any{"matchLabels": map[string]string{"app": serviceApp}}}},
 				"ports": networkPorts(ports),
 			}},
 		},
@@ -1486,6 +1833,7 @@ func managedEgressPolicy(
 	namespace string,
 	labels map[string]string,
 	caller,
+	callerApp,
 	target string,
 	ports []uint32,
 	cidrs []string,
@@ -1499,7 +1847,7 @@ func managedEgressPolicy(
 		Kind:       "NetworkPolicy",
 		Metadata:   objectMeta{Name: kubernetesName("allow", caller, "to", target), Namespace: namespace, Labels: labels},
 		Spec: map[string]any{
-			"podSelector": map[string]any{"matchLabels": map[string]string{"app": caller}},
+			"podSelector": map[string]any{"matchLabels": map[string]string{"app": callerApp}},
 			"policyTypes": []string{"Egress"},
 			"egress":      []any{map[string]any{"to": destinations, "ports": networkPorts(ports)}},
 		},
@@ -1525,13 +1873,13 @@ var publicIPv6Exceptions = []string{
 	"2002::/16", "fc00::/7", "fe80::/10", "ff00::/8",
 }
 
-func publicEgressPolicy(namespace string, labels map[string]string, service string, ports []uint32) kubeObject {
+func publicEgressPolicy(namespace string, labels map[string]string, service, serviceApp string, ports []uint32) kubeObject {
 	return kubeObject{
 		APIVersion: "networking.k8s.io/v1",
 		Kind:       "NetworkPolicy",
 		Metadata:   objectMeta{Name: "allow-" + service + "-public-egress", Namespace: namespace, Labels: labels},
 		Spec: map[string]any{
-			"podSelector": map[string]any{"matchLabels": map[string]string{"app": service}},
+			"podSelector": map[string]any{"matchLabels": map[string]string{"app": serviceApp}},
 			"policyTypes": []string{"Egress"},
 			"egress": []any{map[string]any{
 				"to": []any{
@@ -1589,8 +1937,8 @@ func renderManagedServiceHandoffs(
 				},
 			})
 		}
-		relative := path.Join("resources", "handoffs", handoff.Service+".yaml")
-		if err := writeYAMLDocuments(filepath.Join(filepath.Dir(root), filepath.FromSlash(relative)), objects); err != nil {
+		relative := path.Join("handoffs", handoff.Service+".yaml")
+		if err := writeYAMLDocuments(filepath.Join(root, filepath.FromSlash(relative)), objects); err != nil {
 			return nil, err
 		}
 		paths = append(paths, relative)
@@ -1644,14 +1992,48 @@ func renderKustomization(root string) ([]map[string]any, error) {
 		if err != nil {
 			return nil, err
 		}
-		file := filepath.Join(root, filepath.FromSlash(clean))
-		documents, err := decodeYAMLDocuments(file)
+		target := filepath.Join(root, filepath.FromSlash(clean))
+		info, err := os.Stat(target)
+		if err != nil {
+			return nil, err
+		}
+		if info.IsDir() {
+			nested, err := renderKustomization(target)
+			if err != nil {
+				return nil, err
+			}
+			objects = append(objects, nested...)
+			continue
+		}
+		documents, err := decodeYAMLDocuments(target)
 		if err != nil {
 			return nil, err
 		}
 		objects = append(objects, documents...)
 	}
+	applyNamespaceTransform(objects, configuration.Namespace)
 	return objects, nil
+}
+
+// applyNamespaceTransform mirrors the kustomize namespace transformer over the
+// object set a base emits: a Namespace object is renamed, and every other
+// (namespaced) object is placed in that namespace. It lets the generator
+// validate the effective render without taking on a dependency on kustomize.
+func applyNamespaceTransform(objects []map[string]any, namespace string) {
+	if namespace == "" {
+		return
+	}
+	for _, object := range objects {
+		metadata, ok := object["metadata"].(map[string]any)
+		if !ok {
+			continue
+		}
+		if object["kind"] == "Namespace" {
+			metadata["name"] = namespace
+			continue
+		}
+		metadata["namespace"] = namespace
+	}
 }
 
 // moduleOwnedAPIVersions is the closed set of apiVersions the module plugin is
@@ -1660,11 +2042,12 @@ func renderKustomization(root string) ([]map[string]any, error) {
 // boundary as a positive allowlist keeps repository-transport identifiers out
 // of runtime code entirely (see TestRuntimePluginOwnsNoGitOrArgoTransport).
 var moduleOwnedAPIVersions = map[string]struct{}{
-	"v1":                     {},
-	"networking.k8s.io/v1":   {},
-	"security.istio.io/v1":   {},
-	"networking.istio.io/v1": {},
-	"external-secrets.io/v1": {},
+	"v1":                           {},
+	"networking.k8s.io/v1":         {},
+	"security.istio.io/v1":         {},
+	"networking.istio.io/v1":       {},
+	"gateway.networking.k8s.io/v1": {},
+	"external-secrets.io/v1":       {},
 }
 
 // validateRenderedObjects proves the generated overlay is module-owned only: no

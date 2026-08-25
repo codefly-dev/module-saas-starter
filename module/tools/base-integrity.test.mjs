@@ -67,6 +67,15 @@ test("excludes compiled service binaries without excluding their source", () => 
   assert.equal(isExcludedFile("services/store/migrations/1_create.up.sql"), false);
 });
 
+test("excludes per-service Nix runtime directories from the canonical base", () => {
+  assert.equal(
+    isExcludedFile("services/vault/.nix-cache/nix-devshell-profile-1-link"),
+    true,
+  );
+  assert.equal(isExcludedFile("services/vault/nix/service.nix"), true);
+  assert.equal(isExcludedFile("services/vault/code/service.go"), false);
+});
+
 test("rejects multiple logical migrations with the same version", (t) => {
   const root = mkdtempSync(join(tmpdir(), "saas-migration-integrity-"));
   t.after(() => rmSync(root, { recursive: true, force: true }));
@@ -309,8 +318,13 @@ test("rejects unsupported promises in customer-visible source", (t) => {
       ];
     }\n`,
   );
+  writeFileSync(
+    join(root, "OBSERVABILITY.md"),
+    "Applications continue to\nsend OTLP through OTEL_EXPORTER_OTLP_ENDPOINT.\n",
+  );
 
   const errors = productionTruthErrors(root);
+  assert.ok(errors.includes("OBSERVABILITY.md: unsupported direct application OTLP endpoint"));
   for (const claim of [
     "unsupported fixed backup retention",
     "unsupported production readiness",

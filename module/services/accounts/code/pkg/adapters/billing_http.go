@@ -23,6 +23,7 @@ import (
 	"accounts/pkg/auth"
 	"accounts/pkg/business"
 
+	"github.com/codefly-dev/core/wool"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 )
@@ -56,7 +57,7 @@ func handleCheckout(svc *business.Service, w http.ResponseWriter, r *http.Reques
 	}
 	ctx, userID, orgID, err := authenticateBillingHTTPRequest(svc, r)
 	if err != nil {
-		writeJSONError(w, http.StatusUnauthorized, "authentication required")
+		writeBillingAuthnError(w, r, err)
 		return
 	}
 	r = r.WithContext(ctx)
@@ -109,7 +110,7 @@ func handleFreePlan(svc *business.Service, w http.ResponseWriter, r *http.Reques
 	}
 	ctx, userID, orgID, err := authenticateBillingHTTPRequest(svc, r)
 	if err != nil {
-		writeJSONError(w, http.StatusUnauthorized, "authentication required")
+		writeBillingAuthnError(w, r, err)
 		return
 	}
 	r = r.WithContext(ctx)
@@ -139,7 +140,7 @@ func handlePortal(svc *business.Service, w http.ResponseWriter, r *http.Request)
 	}
 	ctx, userID, orgID, err := authenticateBillingHTTPRequest(svc, r)
 	if err != nil {
-		writeJSONError(w, http.StatusUnauthorized, "authentication required")
+		writeBillingAuthnError(w, r, err)
 		return
 	}
 	r = r.WithContext(ctx)
@@ -190,7 +191,16 @@ func authenticateBillingHTTPRequest(svc *business.Service, r *http.Request) (con
 			return ctx, "", "", errors.New("bearer token is required")
 		}
 		identity, err := minter.VerifyAccess(token)
-		if err != nil || identity == nil {
+		if err != nil {
+			// Preserve the revocation-store-outage sentinel so the caller can
+			// answer 503 (retryable) instead of collapsing it into a 401; every
+			// other verify failure stays a generic invalid-credentials answer.
+			if errors.Is(err, auth.ErrRevocationUnavailable) {
+				return ctx, "", "", err
+			}
+			return ctx, "", "", errors.New("access token is invalid")
+		}
+		if identity == nil {
 			return ctx, "", "", errors.New("access token is invalid")
 		}
 		ctx = stampVerifiedIdentity(ctx, identity.UserID.String(), identity.OrgID.String(), identity.Assurance())
@@ -200,6 +210,19 @@ func authenticateBillingHTTPRequest(svc *business.Service, r *http.Request) (con
 		return ctx, "", "", auth.ErrVerifiedDatabaseIdentityRequired
 	}
 	return ctx, userID, tenantID, nil
+}
+
+// writeBillingAuthnError answers a billing authentication failure. A revocation
+// list outage is a retryable operator-side condition, so it surfaces as 503 and
+// is logged (parity with the RPC interceptors); every other failure collapses to
+// the generic 401 so it can't be used as a credential oracle.
+func writeBillingAuthnError(w http.ResponseWriter, r *http.Request, err error) {
+	if errors.Is(err, auth.ErrRevocationUnavailable) {
+		wool.Get(r.Context()).In("billingHTTP").Warn("revocation list unavailable, denying (fail-closed)", wool.ErrField(err))
+		writeJSONError(w, http.StatusServiceUnavailable, "authorization temporarily unavailable")
+		return
+	}
+	writeJSONError(w, http.StatusUnauthorized, "authentication required")
 }
 
 func writeHTTPBillingAuthzError(w http.ResponseWriter, err error) {

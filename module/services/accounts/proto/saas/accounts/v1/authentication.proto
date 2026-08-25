@@ -42,6 +42,17 @@ message FixtureAuthentication {
   }];
 }
 
+message HeaderJWTAuthentication {
+  // Signed JWT copied verbatim by the login route from the gateway-injected
+  // identity header. It is verified against the configured JWKS (or, under an
+  // explicit perimeter-trust decode mode, decoded with exp/aud still enforced)
+  // before any claim is trusted.
+  string token = 1 [(buf.validate.field).string = {
+    min_len: 1
+    max_len: 8192
+  }];
+}
+
 message AuthenticateRequest {
   string provider = 1 [(buf.validate.field).string = {
     min_len: 1
@@ -63,6 +74,7 @@ message AuthenticateRequest {
     option (buf.validate.oneof).required = true;
     OAuthCodeAuthentication oauth_code = 7;
     FixtureAuthentication fixture = 8;
+    HeaderJWTAuthentication header_jwt = 9;
   }
 }
 

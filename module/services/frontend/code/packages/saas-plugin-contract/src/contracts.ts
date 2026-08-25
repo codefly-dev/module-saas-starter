@@ -181,6 +181,18 @@ export interface FrontendAppearanceDefinition {
 	radius?: string;
 	fontSans?: string;
 	fontHeading?: string;
+	/** Base spacing unit driving every Tailwind spacing utility (density). */
+	spacing?: string;
+	/** Root font size; rescales all rem-based typography. */
+	fontSizeBase?: string;
+	/** Expanded navigation sidebar width. */
+	sidebarWidth?: string;
+	/** Collapsed (icon-rail) navigation sidebar width. */
+	sidebarWidthIcon?: string;
+	/** Width of the default `border` utility applied app-wide. */
+	borderWidth?: string;
+	/** Unitless multiplier (0–2) on the elevation/shadow scale. */
+	shadowStrength?: string;
 	light?: FrontendThemeTokenOverrides;
 	dark?: FrontendThemeTokenOverrides;
 }
@@ -191,6 +203,12 @@ export interface FrontendAppearance {
 	radius: string;
 	fontSans: string;
 	fontHeading: string;
+	spacing: string;
+	fontSizeBase: string;
+	sidebarWidth: string;
+	sidebarWidthIcon: string;
+	borderWidth: string;
+	shadowStrength: string;
 	light: FrontendThemeTokens;
 	dark: FrontendThemeTokens;
 }

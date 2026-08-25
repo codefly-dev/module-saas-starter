@@ -24,6 +24,11 @@ func (s *UsageServer) ConsumeUsage(ctx context.Context, req *gen.ConsumeUsageReq
 	if err := Validate(req); err != nil {
 		return nil, err
 	}
+	// Metering writes are internal-only: a tenant JWT must not be able to
+	// consume usage against an arbitrary organization.
+	if err := requireInternalCredential(ctx); err != nil {
+		return nil, err
+	}
 
 	var occurredAt *time.Time
 	if req.GetOccurredAt() != nil {

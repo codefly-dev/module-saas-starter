@@ -15,7 +15,7 @@ import (
 //
 // Module-level version is a separate concern owned by the module
 // declaration (module.codefly.yaml), not by this service.
-const ServiceVersion = "0.3.0"
+const ServiceVersion = "0.4.0"
 
 // GetServiceInfo returns the machine-readable catalog of THIS
 // service: its RPC surface, RBAC vocabulary, RLS-protected tables,
@@ -65,15 +65,14 @@ var serviceInfo = &gen.ServiceInfo{
 // Routing and enforcement metadata comes exclusively from protobuf method
 // options; descriptions remain editorial prose until source comments are
 // compiled into the service catalog.
-var rpcDescriptions = map[string]string{
+var rpcDescriptions = withWorkContextConsumerDescriptions(map[string]string{
 	"APIKeyService/CreateAPIKey":               "Mint an API key for an administered organization.",
 	"APIKeyService/ListAPIKeys":                "List org's API keys.",
 	"APIKeyService/RevokeAPIKey":               "Revoke an API key in an administered organization.",
 	"APIKeyService/ValidateAPIKey":             "Internal: plaintext key → key + org id.",
-	"AuditExportService/DeleteConfig":          "Stop exporting; clears cursor.",
-	"AuditExportService/GetConfig":             "Read export config.",
-	"AuditExportService/SaveConfig":            "Configure per-org S3 export.",
+	"AuditService/AggregateAuditLog":           "Aggregate audit events (counts, time buckets, group-by) for analytics.",
 	"AuditService/ExportAuditLog":              "Download audit log as CSV/JSON.",
+	"AuditService/ListAuditEventTypes":         "List the registered audit event-type catalog for search facets.",
 	"AuditService/QueryAuditLog":               "Read audit events (org member sees own org; platform admin sees all).",
 	"AuthService/Authenticate":                 "Exchange typed OAuth-code or explicit fixture credentials for tokens.",
 	"AuthService/BeginOAuth":                   "Mint signed OAuth state for an allowlisted redirect.",
@@ -131,20 +130,28 @@ var rpcDescriptions = map[string]string{
 	"OrganizationService/RemoveMember":         "Remove a member; last-admin guard.",
 	"OrganizationService/UpdateOrgSettings":    "Update branding (logo, color, custom domain).",
 	"PermissionService/AssignRole":             "Grant a role to a principal/team.",
+	"PermissionService/CheckAccess":            "Internal hierarchical + per-record authz decision.",
 	"PermissionService/CheckPermission":        "Internal authz decision (auth-sidecar caller).",
 	"PermissionService/CreateRole":             "Create a role (org-scoped or platform).",
 	"PermissionService/Decide":                 "Internal principal-aware authz decision (successor to CheckPermission).",
 	"PermissionService/DeleteRole":             "Delete a custom role.",
+	"PermissionService/GrantScope":             "Grant a role at a scope node (inherits to subtree).",
 	"PermissionService/ListRoleAssignments":    "List assignments in an org.",
 	"PermissionService/ListRoles":              "List built-in + org-scoped roles.",
+	"PermissionService/ListShares":             "List the shares on a specific record.",
+	"PermissionService/RegisterScopeNode":      "Register a scope node or place a record at one.",
 	"PermissionService/RevokeRole":             "Revoke a role assignment.",
+	"PermissionService/RevokeScope":            "Revoke a hierarchical scope grant.",
+	"PermissionService/RevokeShare":            "Revoke a per-record share.",
+	"PermissionService/ShareRecord":            "Share a record with a principal/team.",
 	"PlatformAdminService/GetOrgEntitlements":  "Plan + overrides + usage.",
 	"PlatformAdminService/GetJob":              "Payload-free job metadata, attempts, and state history.",
 	"PlatformAdminService/GetJobOperations":    "Durable queue depth, readiness, and lease-health snapshots.",
 	"PlatformAdminService/GrantPlatformRole":   "Grant a platform role.",
 	"PlatformAdminService/ImpersonateUser":     "Mint an impersonation session.",
 	"PlatformAdminService/ListActiveSessions":  "Active sessions for a user.",
-	"PlatformAdminService/ListFeatureFlags":    "List platform feature flags.",
+	"PlatformAdminService/ListFeatureFlags":    "List the legacy feature-flag migration inventory.",
+	"PlatformAdminService/UpsertFeatureFlag":   "Deprecated compatibility method; always rejects writes to the legacy feature-flag inventory.",
 	"PlatformAdminService/ListJobs":            "Seek-paginated payload-free job operations view.",
 	"PlatformAdminService/ListPlatformAdmins":  "List platform admins.",
 	"PlatformAdminService/OverrideEntitlement": "Per-org limit override.",
@@ -154,7 +161,6 @@ var rpcDescriptions = map[string]string{
 	"PlatformAdminService/SearchUsers":         "Search across all users.",
 	"PlatformAdminService/SuspendUser":         "Suspend a user account.",
 	"PlatformAdminService/UnsuspendUser":       "Restore a suspended user.",
-	"PlatformAdminService/UpsertFeatureFlag":   "Create / update a feature flag.",
 	"PrincipalService/CreateAgentPrincipal":    "Create an agent principal in an organization.",
 	"PrincipalService/GetAgentPrincipal":       "Internal agent-principal lookup.",
 	"PrincipalService/GetPrincipal":            "Internal principal lookup.",
@@ -204,6 +210,14 @@ var rpcDescriptions = map[string]string{
 	"WebhookService/ReplayDelivery":            "Create and audit a new attempt for a past delivery using its stable event ID.",
 	"WebhookService/RotateSecret":              "Rotate the reveal-once signing secret with bounded dual-signature overlap. Requires recent MFA.",
 	"WebhookService/TestWebhook":               "Send a test ping.",
+})
+
+func withWorkContextConsumerDescriptions(descriptions map[string]string) map[string]string {
+	descriptions["WorkContextService/AuthorizeEvidenceRead"] =
+		"Authorize a filtered Evidence read from current tenant membership and RBAC facts."
+	descriptions["WorkContextService/CheckAuthorizationRevision"] =
+		"Revalidate every subject and scope in a signed Work Context against current authority."
+	return descriptions
 }
 
 // buildRPCList enumerates every (Service, Method) and its policy from protobuf
@@ -230,15 +244,6 @@ func buildRPCList() []*gen.RPCInfo {
 		return out[i].Method < out[j].Method
 	})
 	return out
-}
-
-func lastDot(s string) int {
-	for i := len(s) - 1; i >= 0; i-- {
-		if s[i] == '.' {
-			return i
-		}
-	}
-	return -1
 }
 
 // callerIsAuthenticated reads the wool ctx for a stamped UserAuthID.
@@ -272,7 +277,6 @@ func redactPrivilegedRPCs(in []*gen.RPCInfo) []*gen.RPCInfo {
 //
 // Source: store migrations through 60.
 var serviceRLSTables = []*gen.RLSPolicyInfo{
-	{Table: "audit_export_configs", PolicyShape: "direct", FailClosed: true, ScopeColumn: "org_id"},
 	{Table: "webhook_subscriptions", PolicyShape: "direct", FailClosed: true, ScopeColumn: "org_id"},
 	{Table: "webhook_deliveries", PolicyShape: "join", FailClosed: true, ScopeColumn: "subscription_id", Notes: "JOIN walks subscription_id → webhook_subscriptions.org_id"},
 	{Table: "api_keys", PolicyShape: "direct", FailClosed: true, ScopeColumn: "organization_id"},

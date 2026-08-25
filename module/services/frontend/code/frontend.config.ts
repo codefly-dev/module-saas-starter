@@ -1,6 +1,9 @@
-import { type FrontendServiceBinding } from "@codefly/saas-plugin-contract";
 import { defineReactFrontend } from "@codefly/saas-plugin-react";
 import { FRONTEND_ROUTES } from "@/gen/saas/frontend/v1/plugin_catalog";
+import {
+	contributedPlugins,
+	contributedServiceBindings,
+} from "@/generated/frontend-contributions";
 import { publicSiteConfig } from "@/generated/public-site-config";
 import { auditPlugin } from "@/plugins/audit";
 import { coreUsersPlugin } from "@/plugins/core-users";
@@ -16,6 +19,7 @@ export const installedPlugins = [
 	auditPlugin,
 	coreUsersPlugin,
 	platformAdminPlugin,
+	...contributedPlugins,
 ] as const;
 
 /**
@@ -24,8 +28,7 @@ export const installedPlugins = [
  * service. Protocol comes from the plugin requirement; URLs and credentials are
  * deliberately inexpressible here.
  */
-export const serviceBindings =
-	[] as const satisfies readonly FrontendServiceBinding[];
+export const serviceBindings = contributedServiceBindings;
 
 const frontendConfig = defineReactFrontend({
 	branding: {

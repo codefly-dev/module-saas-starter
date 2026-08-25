@@ -52,6 +52,25 @@ type Store interface {
 	ListUserIdentities(ctx context.Context, userID string) ([]*gen.UserIdentity, error)
 	DeleteUserIdentities(ctx context.Context, userID string) error
 
+	// Org identity providers (per-org IdP registry — issue #107).
+	//
+	// These methods have two different transaction ownerships, so read the
+	// contract before calling:
+	//
+	//   - Upsert/Get/SetStatus are org-scoped and MUST run inside the caller's
+	//     WithOrgTx(orgID, …); called bare they hit RLS and see zero rows.
+	//   - ResolveOrgProviderByEmailDomain/ByHost are UNAUTHENTICATED, cross-org
+	//     pre-auth lookups that open their OWN control-plane transaction. Call
+	//     them at the top level only — invoking them inside an existing
+	//     WithOrgTx/WithControlPlane nests a second pooled connection, which the
+	//     no-nesting rule on those helpers forbids. They return only an active,
+	//     unambiguously-matched provider (nil on miss or ambiguity).
+	UpsertOrgIdentityProvider(ctx context.Context, provider *OrgIdentityProvider) error
+	GetOrgIdentityProvider(ctx context.Context, orgID string) (*OrgIdentityProvider, error)
+	SetOrgIdentityProviderStatus(ctx context.Context, orgID, status string) error
+	ResolveOrgProviderByEmailDomain(ctx context.Context, domain string) (*OrgIdentityProvider, error)
+	ResolveOrgProviderByHost(ctx context.Context, host string) (*OrgIdentityProvider, error)
+
 	// Organizations
 	CreateOrganization(ctx context.Context, org *gen.Organization) error
 	GetOrganization(ctx context.Context, id string) (*gen.Organization, error)
@@ -110,6 +129,17 @@ type Store interface {
 	// Permission checking
 	CheckPermission(ctx context.Context, subjectID string, subjectKind gen.SubjectKind, resource string, action string, orgID string, scope string) (bool, string, error)
 
+	// Layered access — hierarchical scope grants + per-record shares (#178).
+	// CheckAccess resolves the record's scope from resource_id itself, never a
+	// caller-supplied path.
+	CheckAccess(ctx context.Context, subjectID string, subjectKind gen.SubjectKind, resourceType, resourceID, action string) (bool, string, error)
+	RegisterScopeNode(ctx context.Context, node *gen.ScopeNode) error
+	GrantScope(ctx context.Context, grant *gen.ScopeGrant) error
+	RevokeScope(ctx context.Context, orgID, subjectID string, subjectKind gen.SubjectKind, scopePath, roleID string) error
+	ShareRecord(ctx context.Context, share *gen.RecordShare) error
+	RevokeShare(ctx context.Context, orgID, resourceType, resourceID, subjectID string, subjectKind gen.SubjectKind, roleID string) error
+	ListShares(ctx context.Context, orgID, resourceType, resourceID string) ([]*gen.RecordShare, error)
+
 	// Identity resolution
 	ResolveIdentity(ctx context.Context, provider string, providerID string) (*ResolvedIdentity, error)
 
@@ -129,8 +159,12 @@ type Store interface {
 
 	// Audit
 	InsertAuditEvent(ctx context.Context, entry AuditEntry) error
-	QueryAuditLog(ctx context.Context, orgID, actorID, action, resource, resourceID string,
-		from, to *time.Time, pageSize int32, pageToken string) ([]AuditEntry, string, int32, error)
+	QueryAuditLog(ctx context.Context, q AuditQuery) ([]AuditEntry, string, int32, error)
+	AggregateAuditLog(ctx context.Context, q AuditQuery, groupBy, bucket string) ([]AuditAggregateBucket, error)
+	SyncAuditEventTypes(ctx context.Context, defs []AuditEventDefinition) error
+	ListAuditEventTypes(ctx context.Context) ([]AuditEventTypeRow, error)
+	EnsureAuditPartitions(ctx context.Context, months int) error
+	DropAuditPartitionsBefore(ctx context.Context, before time.Time) (int64, error)
 
 	// Invitations
 	CreateInvitation(ctx context.Context, inv *Invitation) error
@@ -186,10 +220,8 @@ type Store interface {
 	GetPlanByName(ctx context.Context, name string) (*PlanFull, error)
 	ListPublicPlans(ctx context.Context) ([]PublicPlan, error)
 
-	// Feature Flags
-	GetFeatureFlag(ctx context.Context, name string) (*FeatureFlag, error)
+	// Legacy feature-flag migration inventory
 	ListFeatureFlags(ctx context.Context) ([]*FeatureFlag, error)
-	UpsertFeatureFlag(ctx context.Context, flag *FeatureFlag) error
 
 	// Platform admin - user operations
 	SearchUsers(ctx context.Context, query string, pageSize int32, pageToken string) ([]*gen.User, string, error)
@@ -199,7 +231,11 @@ type Store interface {
 	// Sessions
 	CreateSession(ctx context.Context, session *Session) error
 	GetSessionByRefreshTokenHash(ctx context.Context, hash string) (*Session, error)
-	RevokeSession(ctx context.Context, deviceSessionID string, reason string) error
+	// RevokeSession revokes every live row in the device family and returns the
+	// ids of the rows it revoked. Those ids are the `sid` claim carried by the
+	// family's outstanding access tokens, so the caller can write a
+	// session-revocation marker per id and kill the access half immediately.
+	RevokeSession(ctx context.Context, deviceSessionID string, reason string) ([]string, error)
 	RevokeSessionFamily(ctx context.Context, familyID string, reason string) error
 	RevokeAllUserSessions(ctx context.Context, userID string, reason string) error
 	UpdateSessionActivity(ctx context.Context, sessionID string) error
@@ -248,23 +284,16 @@ type Store interface {
 	GetMagicLinkByTokenHash(ctx context.Context, tokenHash string) (*MagicLink, error)
 	MarkMagicLinkUsed(ctx context.Context, id string) error
 
-	// Audit log → S3 export — per-org config + cursor + error tracking.
-	GetAuditExportConfig(ctx context.Context, orgID string) (*AuditExportConfig, error)
-	UpsertAuditExportConfig(ctx context.Context, cfg *AuditExportConfig) error
-	DeleteAuditExportConfig(ctx context.Context, orgID string) error
-	ListDueAuditExportConfigs(ctx context.Context, now time.Time) ([]*AuditExportConfig, error)
-	MarkAuditExportSucceeded(ctx context.Context, orgID string, exportedAt time.Time) error
-	RecordAuditExportError(ctx context.Context, orgID, message string) error
-
 	// User consent — server-side TOS/privacy acceptance trail.
 	GetUserConsent(ctx context.Context, userID string) (version string, acceptedAt *time.Time, err error)
 	SetUserConsent(ctx context.Context, userID, version, consentContext string, acceptedAt time.Time) error
 	GetUserConsentPreferences(ctx context.Context, userID string) ([]*ConsentPreference, error)
 	SetUserConsentPreferences(ctx context.Context, userID string, preferences []*ConsentPreference, region, consentContext string) error
 
-	// Data Retention
+	// Data Retention. audit_events retention is not a row DELETE — the
+	// append-only trigger blocks that — but a partition drop; see
+	// DropAuditPartitionsBefore above.
 	GetRetentionPolicies(ctx context.Context) ([]*RetentionPolicy, error)
-	DeleteOldAuditEvents(ctx context.Context, before time.Time) (int64, error)
 	DeleteOldSessions(ctx context.Context, before time.Time) (int64, error)
 	DeleteOldWebhookDeliveries(ctx context.Context, before time.Time) (int64, error)
 	DeleteOldNotifications(ctx context.Context, before time.Time) (int64, error)

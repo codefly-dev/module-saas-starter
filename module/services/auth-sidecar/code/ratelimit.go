@@ -333,6 +333,16 @@ type proxyTrust struct {
 }
 
 func newProxyTrust(raw string) proxyTrust {
+	trust, _ := parseProxyTrust(raw)
+	return trust
+}
+
+// parseProxyTrust parses a comma-separated list of bare IPs and CIDRs into a
+// trust set, returning an error on any malformed entry. Boot validates through
+// this (parity with accounts' ParseTrustedProxyCIDRs) so a typo'd
+// TRUSTED_PROXY_CIDRS fails startup rather than silently narrowing the trust
+// set and collapsing every forwarded caller into one spoofable IP bucket.
+func parseProxyTrust(raw string) (proxyTrust, error) {
 	var trust proxyTrust
 	for _, candidate := range strings.Split(raw, ",") {
 		candidate = strings.TrimSpace(candidate)
@@ -350,9 +360,11 @@ func newProxyTrust(raw string) proxyTrust {
 		}
 		if prefix, err := netip.ParsePrefix(candidate); err == nil {
 			trust.prefixes = append(trust.prefixes, prefix.Masked())
+			continue
 		}
+		return proxyTrust{}, fmt.Errorf("TRUSTED_PROXY_CIDRS: invalid IP or CIDR %q", candidate)
 	}
-	return trust
+	return trust, nil
 }
 
 func (t proxyTrust) contains(addr netip.Addr) bool {

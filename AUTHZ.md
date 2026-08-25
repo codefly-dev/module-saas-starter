@@ -80,6 +80,26 @@ even though L1 said "you're a member, come on in".
 where `$1` came from the URL not the JWT (cross-tenant leak via
 mass-assignment). Or a missing WHERE clause altogether. That's L3.
 
+### Scope semantics
+
+`role_assignments.scope` is a fine-grained authorization dimension *within*
+an org (a module, product area, project — e.g. "analyst on module-a but not
+module-b"). `CheckPermission` treats it strictly in both directions: a grant
+scoped to `module-a` never widens to satisfy a check that asked for the
+permission unscoped. A NULL-scope assignment is deliberately org-wide and
+subsumes all scopes.
+
+| Grant scope ↓ / Check scope → | `""` (unscoped) | `module-a` | `module-b` |
+|---|---|---|---|
+| `NULL` (org-wide) | ✅ | ✅ | ✅ |
+| `module-a` | ❌ | ✅ | ❌ |
+
+The two edges to note: a scoped grant does **not** satisfy an unscoped check
+(a narrow grant stays narrow), and a NULL-scope grant satisfies every check
+(org-wide subsumes scoped). If per-role subsumption is ever unwanted, that's
+a follow-up design, not the default. Team-inherited assignments follow the
+same matrix.
+
 ## Layer 3 — RLS (DB row-level)
 
 **Where:** Postgres `ROW LEVEL SECURITY` + policies on every per-tenant
@@ -153,6 +173,92 @@ inside the api process — they're trusted by L1 implicitly. The L3
 bypass is itself audit-able: every WithBypass call logs a wool event,
 making it grep-able.
 
+## Scoped roles downstream: two paths, and when to use which
+
+A product is many backend services, each with per-module roles. A downstream
+service authorizing on a **scoped** role assignment
+(`role_assignments.scope IS NOT NULL`, e.g. `analyst` on `module-a`) has two
+ways to learn the caller's grants. Both are first-class; pick by freshness need.
+
+### Path A — the `X-Scoped-Roles` header (fast, token-fresh)
+
+At mint / refresh / org-switch, accounts resolves the caller's **direct,
+principal-subject** scoped assignments in the active org and stamps them onto
+the access token as the compact `sr` claim:
+
+```json
+"sr": { "module-a": ["analyst"], "module-b": ["admin", "editor"] }
+```
+
+The auth-sidecar forwards this to downstream services as the JSON
+`X-Scoped-Roles` header (like `X-Org-Role` / `X-Platform-Role`). A service reads
+it from the request context alone — no callback to accounts:
+
+```go
+// The two-value return prevents reading a miss as a denial: on a truncated
+// header (conclusive == false) the caller falls back to the authoritative path.
+granted, conclusive := adapters.HasScopedRole(ctx, "module-a", "analyst")
+switch {
+case granted:
+    // allow
+case !conclusive:
+    // header incomplete — consult CheckPermission (Path B)
+default:
+    // deny
+}
+```
+
+Properties and limits:
+
+- **Freshness:** as fresh as the token. A scoped-assignment change revokes the
+  caller's sessions (migration 91, mirroring how `organization_members` changes
+  revoke sessions in migration 70), so a live token's `sr` claim is never
+  staler than one refresh cycle — but a long-lived, un-refreshed token can lag.
+- **Direct principal grants only.** Team-inherited grants and org-global
+  (NULL-scope) roles are **not** in the claim — those stay on Path B, which
+  honors team inheritance and wildcards.
+- **Bounded, and truncation is signalled.** The claim carries at most
+  `auth.MaxScopedRoleAssignments` (64) scoped pairs so token size stays
+  predictable. A caller with more keeps a bounded slice and the token sets the
+  `srt` claim (`X-Scoped-Roles-Truncated: true`); the mint does **not** fail, so
+  the user is never locked out. When that flag is set, an absent grant in the
+  header is *unknown*, not a denial — the service must consult Path B. Use
+  `adapters.ScopedRolesTruncatedFromContext(ctx)` to detect it.
+
+### Path B — `PermissionService.CheckPermission` (authoritative, current)
+
+For callers that must have the current answer — long-lived jobs whose token
+predates a role change, or high-sensitivity operations — call the oracle:
+
+```go
+client := authzclient.New(conn, os.Getenv("CODEFLY_INTERNAL_TOKEN"))
+resp, err := client.CheckPermission(ctx, &accountsv1.CheckPermissionRequest{
+    SubjectId: userID, SubjectKind: accountsv1.SubjectKind_SUBJECT_KIND_PRINCIPAL,
+    Resource:  "deployments", Action: "write",
+    OrgId:     orgID, Scope: "module-a", // empty scope = any scope
+})
+```
+
+`CheckPermission` is `EXPOSURE_INTERNAL` (`generated/authz-methods.json`): it is
+served only on the internal transport and requires the service credential
+(`X-Codefly-Internal-Token`). A caller without it is refused before the handler
+runs; a tenant transport refuses the method outright. It honors the full RBAC
+model — team inheritance, wildcard `resource`/`action`, and `scope` (a NULL
+assignment scope matches any requested scope). Polyglot (Python/TS) services
+call the same RPC over gRPC/Connect with the credential in metadata.
+
+### Which to use
+
+| | Path A — header | Path B — CheckPermission |
+|---|---|---|
+| Cost | zero round-trips | one internal RPC |
+| Freshness | token-fresh (≤ 1 refresh) | live, authoritative |
+| Covers | direct scoped grants | + team inheritance, wildcards, NULL-scope |
+| Reach for it when | per-request checks on the hot path | long-lived jobs, high-sensitivity ops, non-scoped RBAC |
+
+Default to Path A on the request hot path; escalate to Path B when a stale
+answer is unacceptable.
+
 ## Implementation status
 
 | Layer | Status |
@@ -175,6 +281,7 @@ making it grep-able.
 | `audit_events` | polymorphic (nullable org_id; NULL only via bypass) | 31 |
 | `roles`, `role_assignments` | polymorphic (built-ins NULL globally readable) | 32 |
 | `organizations` | self-referential (id matches setting) | 33 |
+| `org_identity_providers` | direct org_id (pre-auth discovery via control-plane) | 92 |
 
 ### Skip-list (intentionally NOT RLS-protected)
 
@@ -226,6 +333,84 @@ wrapper runs as `app_tenant` with no `app.current_org_id` set.
 RLS policies see neither match, return zero rows. A bug that forgot
 to wrap surfaces in tests as "expected 1 row, got 0" — loud, not
 silent.
+
+## Built-in role catalog import
+
+Migration 4 seeds `admin` / `editor` / `viewer` as hand-written SQL. Products
+that already maintain a permission catalog outside this repo — a machine-readable
+list of roles and `resource:action` grants reviewed in their own CI — can sync it
+into the L2 tables without forking migrations, using the catalog importer.
+
+> This is **not** the generated authorization catalog in
+> `module/AUTHORIZATION_CATALOG.md`. That projects per-RPC *method policy*; this
+> one seeds *RBAC roles*.
+
+### Catalog format (versioned JSON)
+
+```json
+{
+  "version": 1,
+  "roles": [
+    {
+      "name": "module-a:analyst",
+      "description": "Read access to module A",
+      "scope": "module-a",
+      "permissions": [
+        {"resource": "reports", "action": "read"},
+        {"resource": "queries", "action": "execute"}
+      ]
+    }
+  ]
+}
+```
+
+- `version` must be `1`. `resource`/`action` accept `*` for wildcard grants.
+- `scope` is stored on the role (`roles.scope`) as the default
+  `role_assignments.scope` for later assignments. Deriving it at assignment time
+  lands with strict scope semantics; until then the column is recorded but not
+  yet consulted by the assignment path.
+
+### Semantics
+
+- **Upsert built-in roles keyed by name** (`built_in = true`, `org_id IS NULL`).
+  A role the catalog names but that a hand-seeded built-in already occupies
+  (e.g. `admin`) is *adopted* into catalog management.
+- **Diff-apply permissions** — only the `(resource, action)` rows that differ
+  are inserted or deleted, so changing one permission is exactly one row change.
+- **Provenance bounds deletion.** Only `roles.catalog_managed = true` rows are
+  removal candidates; a catalog that doesn't mention `admin`/`editor`/`viewer`
+  leaves them alone. Org-defined custom roles (`org_id` set) are never touched.
+- **One `system`-actor audit event per applied change** (`role.created` /
+  `role.updated` / `role.deleted`, `org_id` NULL), stamped with the catalog's
+  SHA-256 (`catalog_sha256`) and source label (`catalog_source`) so a change is
+  traceable to the exact catalog version that produced it.
+
+### Safety
+
+- `-dry-run` prints the byte-stable plan and writes nothing.
+- A removal that would cascade away existing `role_assignments` is **refused**
+  unless `-force` (which then deletes those assignments along with the role).
+- A catalog that declares **no roles at all** would remove every catalog-managed
+  role — almost always a truncated or empty file rather than an intentional
+  "delete everything", and one the assignment guard above can't catch for roles
+  without assignments. It is refused unless `-force`.
+- Same catalog in → same DB state out; a second run is a no-op.
+
+### Workflow
+
+Built-in roles can only be written with RLS bypassed (migrations 32, 65), so the
+importer runs under the audited `app_control_plane` role. The connection
+principal must be a member of that role (the same authority migrations run
+under).
+
+```sh
+# from module/services/accounts/code
+go run ./cmd/role-catalog-import -catalog roles.json -database-url "$DATABASE_URL" -dry-run
+go run ./cmd/role-catalog-import -catalog roles.json -database-url "$DATABASE_URL"
+```
+
+Domain core is `pkg/rolecatalog` (parse + diff + deterministic plan, no DB);
+`pkg/infra` snapshots current state and applies the plan in one transaction.
 
 ## Anti-patterns to avoid
 

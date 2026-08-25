@@ -1,5 +1,8 @@
+import { create } from "@bufbuild/protobuf";
+import { timestampFromDate } from "@bufbuild/protobuf/wkt";
 import { describe, expect, it } from "vitest";
-import { formatAuditAction, groupByDate } from "../transforms";
+import { AuditEventSchema } from "@/gen/saas/accounts/v1/audit_pb";
+import { formatAuditAction, groupByDate, toAuditEvent } from "../transforms";
 import type { AuditEvent } from "../types";
 
 describe("formatAuditAction", () => {
@@ -29,11 +32,13 @@ function makeEvent(overrides: Partial<AuditEvent> = {}): AuditEvent {
 		id: "evt-1",
 		actorId: "user-1",
 		actorType: "user",
-		action: "user.registered",
+		eventType: "user.registered",
+		schemaVersion: 1,
+		category: "auth",
 		resource: "user",
 		resourceId: "user-1",
 		orgId: "org-1",
-		metadata: {},
+		payload: {},
 		ipAddress: "127.0.0.1",
 		...overrides,
 	};
@@ -73,5 +78,41 @@ describe("groupByDate", () => {
 		];
 		const groups = groupByDate(events);
 		expect(groups[0].events.map((e) => e.id)).toEqual(["a", "b", "c"]);
+	});
+});
+
+describe("toAuditEvent", () => {
+	// Regression guard for the "Objects are not valid as a React child
+	// ({$typeName, seconds, nanos})" crash: over protobuf-es, created_at arrives
+	// as a google.protobuf.Timestamp OBJECT, not a string. This test builds an
+	// event the exact way the wire does (create + timestampFromDate) so the real
+	// proto shape is exercised — the previous string-only fixtures never were.
+	it("normalizes the protobuf Timestamp created_at to an ISO string", () => {
+		const proto = create(AuditEventSchema, {
+			id: "evt-1",
+			actorId: "user-1",
+			actorType: "user",
+			eventType: "auth.login",
+			schemaVersion: 1,
+			category: "security",
+			resource: "session",
+			resourceId: "sess-1",
+			orgId: "org-1",
+			ipAddress: "127.0.0.1",
+			createdAt: timestampFromDate(new Date("2026-08-24T20:58:52.000Z")),
+		});
+
+		const model = toAuditEvent(proto);
+
+		expect(typeof model.createdAt).toBe("string");
+		expect(model.createdAt).toBe("2026-08-24T20:58:52.000Z");
+		// The rest of the fields pass through unchanged.
+		expect(model.id).toBe("evt-1");
+		expect(model.eventType).toBe("auth.login");
+	});
+
+	it("leaves created_at undefined when the Timestamp is absent", () => {
+		const proto = create(AuditEventSchema, { id: "evt-2" });
+		expect(toAuditEvent(proto).createdAt).toBeUndefined();
 	});
 });
