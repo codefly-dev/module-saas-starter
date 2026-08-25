@@ -35,6 +35,7 @@ ALTER DEFAULT PRIVILEGES IN SCHEMA public
 GRANT SELECT, INSERT, UPDATE, DELETE ON
     api_keys,
     audit_events,
+    audit_export_configs,
     bootstrap_state,
     data_retention_policies,
     delegation_grants,
