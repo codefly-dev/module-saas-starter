@@ -1,32 +1,55 @@
 import type { Metadata } from "next";
+import { headers } from "next/headers";
 import { ConsentBanner } from "@/components/consent-banner";
-import { Providers } from "@/lib/providers";
-import "./globals.css";
 import { appearanceStyleProperties } from "@/lib/appearance";
+import { Providers } from "@/lib/providers";
+import { resolveSkin, skinResolutionEnabled } from "@/lib/skin";
+import "./globals.css";
 import frontendConfig from "../../frontend.config";
 
-export const metadata: Metadata = {
-	title: frontendConfig.branding.title,
-	description: frontendConfig.branding.description,
-	...(frontendConfig.branding.favicon
-		? { icons: { icon: frontendConfig.branding.favicon } }
-		: {}),
-};
+/**
+ * Resolve the skin for this request. When no runtime source is configured the
+ * compiled default renders and we avoid reading headers, so static rendering is
+ * preserved; when a source (CMS/file/env) is configured the skin is resolved
+ * per host at SSR — validated and flash-free, since the tokens land on <html>.
+ */
+async function currentSkin() {
+	const host = skinResolutionEnabled()
+		? (await headers()).get("host")
+		: null;
+	return resolveSkin({ fallback: frontendConfig, host });
+}
 
-export default function RootLayout({
+export async function generateMetadata(): Promise<Metadata> {
+	const { branding } = await currentSkin();
+	return {
+		title: branding.title,
+		description: branding.description,
+		...(branding.favicon ? { icons: { icon: branding.favicon } } : {}),
+	};
+}
+
+export default async function RootLayout({
 	children,
 }: {
 	children: React.ReactNode;
 }) {
+	const skin = await currentSkin();
 	return (
 		<html
 			lang="en"
 			suppressHydrationWarning
 			className="font-sans"
-			style={appearanceStyleProperties(frontendConfig.appearance)}
+			style={appearanceStyleProperties(skin.appearance)}
 		>
 			<body className="antialiased">
-				<Providers frontendConfig={frontendConfig}>
+				<Providers
+					frontendConfig={{
+						...frontendConfig,
+						branding: skin.branding,
+						appearance: skin.appearance,
+					}}
+				>
 					{children}
 					<ConsentBanner />
 				</Providers>
