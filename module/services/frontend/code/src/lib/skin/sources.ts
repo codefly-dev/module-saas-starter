@@ -1,46 +1,33 @@
 import type { RawSkinDescriptor, SkinSource } from "./types";
 
 /**
- * The three delivery mechanisms under evaluation, each behind the one
- * `SkinSource` seam. They are wired from environment configuration only, so an
- * unconfigured deployment keeps using the compiled default skin with zero
- * runtime cost. `sourcesFromEnv` orders them by liveness:
+ * The delivery mechanisms, each behind the one `SkinSource` seam. They are
+ * wired from environment configuration only, so an unconfigured deployment
+ * keeps using the compiled default skin with zero runtime cost.
+ * `sourcesFromEnv` orders them by specificity:
  *
- *   1. HTTP  — a CMS / config service resolving skins per host (live, no redeploy).
- *   2. file  — a mounted ConfigMap directory (per-deployment, hot-reloadable).
- *   3. env   — a JSON blob or host→descriptor map in an env var (simplest).
+ *   1. file — a mounted ConfigMap directory (per-host `<host>.json`, else `default.json`).
+ *   2. env  — a single skin descriptor as a JSON blob in an env var (simplest).
  *
  * The first source that returns a descriptor wins.
  */
 export function sourcesFromEnv(env: NodeJS.ProcessEnv = process.env): SkinSource[] {
-	return [httpSkinSource(env), fileSkinSource(env), envSkinSource(env)].filter(
+	return [fileSkinSource(env), envSkinSource(env)].filter(
 		(source): source is SkinSource => source !== null,
 	);
 }
 
-/** A single skin in `FRONTEND_SKIN_JSON`, or a `{ "host": {...} }` map in `FRONTEND_SKINS_JSON`. */
+/** A single skin descriptor as a JSON blob in `FRONTEND_SKIN_JSON`. */
 export function envSkinSource(
 	env: NodeJS.ProcessEnv = process.env,
 ): SkinSource | null {
 	const single = env.FRONTEND_SKIN_JSON;
-	const byHostRaw = env.FRONTEND_SKINS_JSON;
-	if (!single && !byHostRaw) return null;
+	if (!single) return null;
 	return {
 		name: "env",
-		async load(key) {
-			if (byHostRaw) {
-				const map = safeParse(byHostRaw);
-				if (isRecord(map)) {
-					const hit =
-						(key.host ? map[key.host] : undefined) ?? map["*"] ?? undefined;
-					if (isRecord(hit)) return hit as RawSkinDescriptor;
-				}
-			}
-			if (single) {
-				const parsed = safeParse(single);
-				if (isRecord(parsed)) return parsed as RawSkinDescriptor;
-			}
-			return null;
+		async load() {
+			const parsed = safeParse(single);
+			return isRecord(parsed) ? (parsed as RawSkinDescriptor) : null;
 		},
 	};
 }
@@ -70,38 +57,6 @@ export function fileSkinSource(
 				}
 			}
 			return null;
-		},
-	};
-}
-
-/** A CMS / config service (`FRONTEND_SKIN_ENDPOINT`) resolving a skin by `?host=`. */
-export function httpSkinSource(
-	env: NodeJS.ProcessEnv = process.env,
-): SkinSource | null {
-	const endpoint = env.FRONTEND_SKIN_ENDPOINT;
-	if (!endpoint) return null;
-	return {
-		name: "http",
-		async load(key) {
-			let url: URL;
-			try {
-				url = new URL(endpoint);
-			} catch {
-				return null;
-			}
-			if (key.host) url.searchParams.set("host", key.host);
-			try {
-				const response = await fetch(url, {
-					headers: { accept: "application/json" },
-					signal: AbortSignal.timeout(2000),
-				});
-				if (!response.ok) return null;
-				const body = await response.json();
-				return isRecord(body) ? (body as RawSkinDescriptor) : null;
-			} catch {
-				// Timeout / network / bad JSON — fall through to the next source.
-				return null;
-			}
 		},
 	};
 }

@@ -3,7 +3,7 @@ import { headers } from "next/headers";
 import { ConsentBanner } from "@/components/consent-banner";
 import { appearanceStyleProperties } from "@/lib/appearance";
 import { Providers } from "@/lib/providers";
-import { resolveSkin } from "@/lib/skin";
+import { resolveSkin, shouldResolveHost } from "@/lib/skin";
 import "./globals.css";
 import frontendConfig from "../../frontend.config";
 
@@ -12,19 +12,15 @@ import frontendConfig from "../../frontend.config";
  * (it arrives as a mounted ConfigMap / env at container start), so a
  * prerendered layout would bake the compiled default instead of resolving the
  * mounted skin per request. Reading request headers is what opts a route into
- * dynamic rendering, so we gate that read on a BUILD-time flag,
- * FRONTEND_SKIN_RUNTIME=1 — set it when building a skinnable image and the
- * layout renders dynamically; omit it and a plain starter build stays static.
- * Which skin is resolved is a separate, runtime concern (FRONTEND_SKIN_DIR / …).
+ * dynamic rendering. `shouldResolveHost` decides when to read them: the
+ * build-time flag FRONTEND_SKIN_RUNTIME=1 forces the read (hence dynamic
+ * rendering) while building a skinnable image, and at runtime the presence of a
+ * mounted source keeps per-host resolution running — the flag is not inlined
+ * into the server bundle, so gating on it alone would resolve the host at build
+ * but never at request time. A plain starter build sets neither and stays static.
  */
-const SKIN_RUNTIME = process.env.FRONTEND_SKIN_RUNTIME === "1";
-
 async function currentSkin() {
-	// Gate the header read on the build-time flag ONLY: at build there is no
-	// mounted skin yet, so it must be the flag (not the presence of a source)
-	// that opts the route into dynamic rendering. resolveSkin still returns the
-	// compiled default when no runtime source is configured.
-	const host = SKIN_RUNTIME ? (await headers()).get("host") : null;
+	const host = shouldResolveHost() ? (await headers()).get("host") : null;
 	return resolveSkin({ fallback: frontendConfig, host });
 }
 
