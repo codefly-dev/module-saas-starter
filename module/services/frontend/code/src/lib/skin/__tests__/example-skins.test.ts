@@ -32,7 +32,9 @@ function exampleDir(name: string): string {
 // A mounted-file source pointed at one example skin's directory. Throws rather
 // than returning null so callers get a real SkinSource without a non-null cast.
 function exampleSource(name: string): SkinSource {
-	const source = fileSkinSource({ FRONTEND_SKIN_DIR: exampleDir(name) });
+	const source = fileSkinSource({
+		FRONTEND_SKIN_DIR: exampleDir(name),
+	} as unknown as NodeJS.ProcessEnv);
 	if (!source) throw new Error(`no file source for example skin '${name}'`);
 	return source;
 }
