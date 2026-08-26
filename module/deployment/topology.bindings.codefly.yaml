@@ -149,6 +149,7 @@ services:
       - error-tracking
       - identity
       - internal-auth
+      - legal
       - product-analytics
     endpoints:
       - name: http

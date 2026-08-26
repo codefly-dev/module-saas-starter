@@ -29,11 +29,14 @@ export function LegalDocument({ kind }: { kind: "terms" | "privacy" }) {
 				<section className="mt-8 rounded-xl border border-destructive/40 bg-destructive/5 p-5">
 					<h2 className="font-semibold">Legal content is not configured</h2>
 					<p className="mt-2 text-sm leading-6">
-						This starter cannot supply production legal terms. Configure
-						<code className="mx-1">NEXT_PUBLIC_LEGAL_ENTITY_NAME</code> and
+						This starter cannot supply production legal terms. Set the
+						<code className="mx-1">legal</code> Codefly configuration group
+						for this environment (
+						<code className="mx-1">configurations/&lt;env&gt;/legal.env</code>,
+						or the per-environment config in your fleet repo) with{" "}
+						<code className="mx-1">NEXT_PUBLIC_LEGAL_ENTITY_NAME</code>,
 						<code className="mx-1">NEXT_PUBLIC_LEGAL_CONTACT_EMAIL</code>,
-						provide
-						<code className="mx-1">NEXT_PUBLIC_LEGAL_TERMS_CONTENT</code> and
+						<code className="mx-1">NEXT_PUBLIC_LEGAL_TERMS_CONTENT</code>, and
 						<code className="mx-1">NEXT_PUBLIC_LEGAL_PRIVACY_CONTENT</code>,
 						and obtain jurisdiction-specific legal review before launch.
 					</p>
