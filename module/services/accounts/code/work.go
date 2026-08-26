@@ -1368,8 +1368,9 @@ func loadSigningKey(ctx context.Context, allowEphemeral bool) (ed25519core.Priva
 	vaultToken, tokErr := codefly.For(ctx).Service("vault").Secret("vault", "token")
 	if addrErr == nil && tokErr == nil && vaultAddr != "" && vaultToken != "" {
 		priv, err := ed25519minter.LoadKeyFromVault(ctx, ed25519minter.VaultKeyLoaderConfig{
-			Address: vaultAddr,
-			Token:   vaultToken,
+			Address:           vaultAddr,
+			Token:             vaultToken,
+			AllowInsecureHTTP: workspaceEnv("vault", "VAULT_ALLOW_INSECURE_HTTP") == "true",
 		})
 		if err == nil {
 			return priv, nil
