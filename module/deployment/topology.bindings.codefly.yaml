@@ -269,7 +269,7 @@ services:
     agent:
       kind: codefly:service
       name: vault
-      version: 0.0.26
+      version: 0.0.25
       publisher: codefly.dev
     secret_service_configurations:
       - name: vault
