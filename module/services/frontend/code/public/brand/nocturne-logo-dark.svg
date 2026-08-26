@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 48" role="img" aria-label="Nocturne">
+  <g>
+    <path d="M34 24a13 13 0 1 1-14.3-12.9A10.4 10.4 0 0 0 34 24Z" fill="#9F92F7"/>
+    <circle cx="30" cy="13" r="1.6" fill="#5FE0F0"/>
+    <circle cx="37" cy="20" r="1.2" fill="#5FE0F0"/>
+  </g>
+  <text x="54" y="32" font-family="'Courier New', monospace" font-size="24" font-weight="700" letter-spacing="1" fill="#EDEBFA">Nocturne</text>
+</svg>

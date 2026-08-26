@@ -156,3 +156,103 @@ The installed Starter topology includes an independently deployable marketing
 service. Local hosts and production domains belong to the consumer's
 environment contract; the module generator derives their exact gateway policy
 without shipping a placeholder domain patch.
+
+## Configuration & environment variables
+
+Runtime environment variables reach a service through a **configuration group**:
+a named `.env` file that one or more services opt into. This is the committed,
+portable path — use it for any value that should travel with the repo. For a
+one-off, uncommitted override on a single `codefly run`, use the `--set` flag
+instead (see [AGENTS.md](../../AGENTS.md#passing-an-environment-variable-to-a-service)).
+
+### Layout
+
+```text
+configurations/
+  local/                        # default profile (`codefly run service`)
+    error-tracking.env           # non-secret group vars (committed)
+    internal-auth.secret.env     # secret group vars (committed, dev-only values)
+  local-dogfood/                # profile selected by `--env local-dogfood`
+    error-tracking.env.example        # template; the real .env is generated + gitignored
+    error-tracking.secret.env.example
+```
+
+- A **group** is just a name — `error-tracking`, `identity`, `billing`, … It
+  "exists" by having a matching `<group>.env` file and being referenced by a
+  service; there is no top-level registry of group names.
+- **`<group>.env`** holds non-secret values; **`<group>.secret.env`** holds
+  secrets. On the `local` profile both are committed with dev-only values. On
+  `local-dogfood` only the `.example` templates are committed — the real
+  `.env` / `.secret.env` are produced by the setup scripts and are gitignored,
+  so real provider secrets never land in git (see
+  [../../LOCAL_DOGFOODING.md](../../LOCAL_DOGFOODING.md)).
+- Both plain server vars and Next.js `NEXT_PUBLIC_*` (client/build-inlined) vars
+  live in these files and flow through the same path — e.g. the frontend's
+  `NEXT_PUBLIC_SENTRY_DSN` comes from `error-tracking.env`.
+
+### Wiring a group to a service
+
+A service receives a group's vars only if it lists that group under
+`workspace_configuration_dependencies` in
+[`topology.bindings.codefly.yaml`](./topology.bindings.codefly.yaml) — the source
+of truth for the service graph. That list is rendered into the generated
+`services/<svc>/service.codefly.yaml`. The frontend, for example:
+
+```yaml
+  - name: frontend
+    workspace_configuration_dependencies:
+      - abuse-protection
+      - error-tracking
+      - identity
+      - internal-auth
+      - product-analytics
+```
+
+which is why `NEXT_PUBLIC_SENTRY_DSN` (from `error-tracking.env`) reaches it.
+
+### Which profile applies
+
+| Command | Profile | Files |
+| --- | --- | --- |
+| `codefly run service` | `local` | `configurations/local/*` |
+| `codefly run service --env local-dogfood` | `local-dogfood` | `configurations/local-dogfood/*` |
+
+Production configuration is not a repo file — it is supplied by the deploy
+target, so there is no `configurations/production/`.
+
+### Worked example: add a new env var to a service
+
+To give the frontend `FRONTEND_SKIN_DIR` (the SSR skin resolver reads it to load
+a mounted skin descriptor) as a committed value for local runs:
+
+1. **Pick or create a group.** Add the var to a group the frontend already
+   depends on, or create a new group file — e.g.
+   `configurations/local/skin.env`:
+
+   ```dotenv
+   FRONTEND_SKIN_DIR=/etc/codefly/skin
+   ```
+
+2. **Wire the group** — only needed for a *new* group — by adding its name under
+   the frontend's `workspace_configuration_dependencies` in
+   `topology.bindings.codefly.yaml`. Do **not** hand-edit
+   `services/frontend/service.codefly.yaml`; it is generated.
+
+3. **Regenerate** the per-service manifests from the bindings so
+   `service.codefly.yaml` picks up the new dependency (the same module render
+   described in [AGENTS.md](../../AGENTS.md#agent-version-pins)).
+
+4. **Refresh the base-integrity manifest.** `topology.bindings.codefly.yaml`,
+   this README, and the generated `service.codefly.yaml` are base-tracked;
+   editing them without regenerating `module/tools/base-manifest.json` fails CI.
+   See [AGENTS.md](../../AGENTS.md#base-file-integrity-manifest--the-easy-gate-to-trip).
+
+Steps 2–4 are only for the committed path. For a throwaway local value, skip them
+and use `--set` (AGENTS.md) or — frontend only — a gitignored `.env*.local` under
+`module/services/frontend/code/`.
+
+The skin resolver spans all three tiers: `FRONTEND_SKIN_JSON` (an inline JSON
+descriptor) for a quick `--set`-free experiment via `.env*.local`,
+`FRONTEND_SKIN_DIR` (a directory of `<host>.json` / `default.json`) for a
+configuration group, and a mounted `frontend-skin` ConfigMap in a deployed
+environment.
