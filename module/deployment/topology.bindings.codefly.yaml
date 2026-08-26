@@ -110,6 +110,8 @@ services:
     spec:
       hot-reload: true
       rest-endpoint: true
+      runtime-assets:
+        - routing
       service-account:
         name: auth-sidecar
       protocol-output-dirs:

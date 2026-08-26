@@ -2,8 +2,10 @@ package fixtures
 
 import (
 	gen "accounts/pkg/gen/saas/accounts/v1"
+	"bytes"
 	"context"
 	"os"
+	"path"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -158,5 +160,76 @@ func TestSameFixturePermissionsIsOrderIndependent(t *testing.T) {
 	right[0].Action = "delete"
 	if sameFixturePermissions(left, right) {
 		t.Fatal("sameFixturePermissions() accepted different authority")
+	}
+}
+
+func TestEmbeddedFixturesMatchModuleFixtures(t *testing.T) {
+	entries, err := embeddedFixtures.ReadDir("embedded")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(entries) == 0 {
+		t.Fatal("no fixtures embedded in the binary")
+	}
+	for _, entry := range entries {
+		got, err := embeddedFixtures.ReadFile(path.Join("embedded", entry.Name()))
+		if err != nil {
+			t.Fatal(err)
+		}
+		want, err := os.ReadFile(filepath.Join("..", "..", "..", "..", "fixtures", entry.Name()))
+		if err != nil {
+			t.Fatalf("read module fixture %q: %v", entry.Name(), err)
+		}
+		if !bytes.Equal(got, want) {
+			t.Fatalf("embedded fixture %q drifted from module/fixtures/%s; re-copy the module fixture", entry.Name(), entry.Name())
+		}
+	}
+}
+
+func TestSelectedNameFallsBackToEmbeddedFixtures(t *testing.T) {
+	orig, err := os.Getwd()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chdir(t.TempDir()); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { os.Chdir(orig) })
+
+	t.Setenv("CODEFLY__FIXTURE", "dev-admin")
+	name, err := SelectedName()
+	if err != nil {
+		t.Fatalf("SelectedName() with no on-disk fixtures dir: %v", err)
+	}
+	if name != "dev-admin" {
+		t.Fatalf("SelectedName() = %q, want dev-admin", name)
+	}
+
+	fixturePath, err := FixturePath("dev-admin")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(fixturePath); err != nil {
+		t.Fatalf("embedded fixture was not materialized on disk: %v", err)
+	}
+}
+
+func TestSelectedNameEmptyWithoutSelectionSkipsDirectory(t *testing.T) {
+	orig, err := os.Getwd()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chdir(t.TempDir()); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { os.Chdir(orig) })
+
+	t.Setenv("CODEFLY__FIXTURE", "")
+	name, err := SelectedName()
+	if err != nil {
+		t.Fatalf("SelectedName() with no fixture selected: %v", err)
+	}
+	if name != "" {
+		t.Fatalf("SelectedName() = %q, want empty", name)
 	}
 }
