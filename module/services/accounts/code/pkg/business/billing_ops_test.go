@@ -139,6 +139,39 @@ func TestStartCheckoutUsesVerifiedCodeflyOrigin(t *testing.T) {
 	require.Equal(t, "http://localhost:54321/admin/billing", client.checkoutCalls[0].CancelURL)
 }
 
+// A configured APP_BASE_URL is operator-trusted; the verified public origin is a
+// per-request value the frontend derives from the (caller-influenced) browser
+// request when its own endpoint is a placeholder. Interactive links — this
+// checkout redirect, and the magic-link/invitation/waitlist emails that share
+// publicBaseURL — must bind to the trusted origin so a spoofed forwarded Host
+// cannot plant an attacker's host in a secret-bearing link. Without this
+// precedence the verified origin wins and the link points at the attacker.
+func TestInteractiveLinksPreferOperatorConfiguredOrigin(t *testing.T) {
+	store := &billingStoreFake{
+		customerID: "cus_existing",
+		plan: &business.PlanFull{
+			Plan:            business.Plan{ID: "plan-id", Name: "pro", DisplayName: "Pro"},
+			StripePriceID:   "price_server_owned",
+			Currency:        "eur",
+			CheckoutEnabled: true,
+			TaxBehavior:     "automatic",
+		},
+	}
+	client := &billingClientFake{}
+	svc := newBillingService(t, store, client)
+	svc.SetEmailOutbox(nil, "https://app.trusted.example")
+
+	ctx, err := auth.WithVerifiedPublicOrigin(context.Background(), "https://attacker.example")
+	require.NoError(t, err)
+
+	_, err = svc.StartCheckout(ctx, business.StartCheckoutInput{
+		UserID: "user-1", OrgID: "org-1", PlanName: "pro", IdempotencyKey: "trusted-origin",
+	})
+	require.NoError(t, err)
+	require.Equal(t, "https://app.trusted.example/admin/billing/success?session_id={CHECKOUT_SESSION_ID}", client.checkoutCalls[0].SuccessURL)
+	require.Equal(t, "https://app.trusted.example/admin/billing", client.checkoutCalls[0].CancelURL)
+}
+
 func TestStartCheckoutRejectsDisabledCatalogEntryBeforeStripe(t *testing.T) {
 	store := &billingStoreFake{
 		customerID: "cus_existing",
