@@ -5,15 +5,17 @@
 // *gateway and Accounts* do with headers, not what the client sends. A stubbed
 // transport would happily accept every request below.
 //
-// The regression that motivated them: removing the hardcoded APP_BASE_URL made
-// Accounts derive interactive links from the verified public origin only. When
-// the origin is absent the invitation flow must refuse rather than invent one.
+// The regression that motivated them: with no APP_BASE_URL configured (as in
+// this tier), Accounts derives interactive links from the verified public origin.
+// When that origin is absent the invitation flow must refuse rather than invent
+// one. (A configured APP_BASE_URL, when present, takes precedence as the trusted
+// origin; this tier does not set one.)
 
 import { describe, expect, test } from "vitest";
 import {
 	INTERNAL_TOKEN_HEADER,
-	productGatewayURL,
 	PUBLIC_ORIGIN_HEADER,
+	productGatewayURL,
 	stampedGatewayHeaders,
 	uniqueSuffix,
 } from "@/test/pipeline-gateway";
@@ -104,7 +106,9 @@ describe("product gateway trust boundary", () => {
 		// header: the user is still authentic, but the origin is gone.
 		const gateway = productGatewayURL();
 		const trusted = stampedGatewayHeaders();
-		const withoutOrigin = { [INTERNAL_TOKEN_HEADER]: trusted[INTERNAL_TOKEN_HEADER] };
+		const withoutOrigin = {
+			[INTERNAL_TOKEN_HEADER]: trusted[INTERNAL_TOKEN_HEADER],
+		};
 
 		const backend = await authenticatedBackend();
 		const suffix = uniqueSuffix();

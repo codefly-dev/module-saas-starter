@@ -29,6 +29,26 @@ function isProductAPI(pathname: string): boolean {
 	return PRODUCT_API_PREFIXES.some((prefix) => pathname.startsWith(prefix));
 }
 
+// Next derives `nextUrl`'s protocol and host from the internal request URL and
+// ignores `x-forwarded-*`, so behind a TLS-terminating ingress `nextUrl.protocol`
+// is the pod's plaintext `http:` rather than the browser's `https:` — and
+// Accounts rejects a non-loopback `http` public origin, which would leave OAuth
+// broken. The ingress sets the forwarded pair from the real client connection;
+// prefer each, falling back to `nextUrl` (local dev, direct-to-pod requests).
+export function publicRequestOrigin(req: NextRequest): string {
+	const forwardedProto = req.headers
+		.get("x-forwarded-proto")
+		?.split(",")[0]
+		?.trim();
+	const forwardedHost = req.headers
+		.get("x-forwarded-host")
+		?.split(",")[0]
+		?.trim();
+	const protocol = forwardedProto ? `${forwardedProto}:` : req.nextUrl.protocol;
+	const host = forwardedHost || req.nextUrl.host;
+	return `${protocol}//${host}`;
+}
+
 export function trustedGatewayRequestHeaders(
 	req: NextRequest,
 	context: CodeflyGatewayContext | undefined,
@@ -180,7 +200,7 @@ export function proxy(req: NextRequest) {
 	const { pathname, search } = req.nextUrl;
 	const gatewayHeaders = trustedGatewayRequestHeaders(
 		req,
-		resolveCodeflyGatewayContext(req.nextUrl.origin),
+		resolveCodeflyGatewayContext(publicRequestOrigin(req)),
 	);
 	const nonce = mintNonce();
 

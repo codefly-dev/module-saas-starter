@@ -224,11 +224,23 @@ func (s *Service) SetEmailOutbox(outbox *email.Outbox, appBaseURL string) {
 	s.appBaseURL = appBaseURL
 }
 
+// publicBaseURL is the origin baked into interactive links — magic-link,
+// invitation, and waitlist emails, and Stripe redirect targets. Those links are
+// delivered out of band and never re-validated downstream, so the origin must be
+// operator-trusted. A configured APP_BASE_URL wins; the frontend-supplied
+// verified public origin is a per-request, caller-influenced value (the frontend
+// derives it from the browser request when its own endpoint is a placeholder),
+// so it is only a fallback for deployments that have not pinned a canonical
+// origin. Without either, callers fail closed rather than mint a link on an
+// unverified host.
 func (s *Service) publicBaseURL(ctx context.Context) string {
+	if base := strings.TrimSuffix(strings.TrimSpace(s.appBaseURL), "/"); base != "" {
+		return base
+	}
 	if origin, ok := auth.VerifiedPublicOrigin(ctx); ok {
 		return origin
 	}
-	return strings.TrimSuffix(strings.TrimSpace(s.appBaseURL), "/")
+	return ""
 }
 
 func (s *Service) SetAuditEmitter(a AuditEmitter) {
