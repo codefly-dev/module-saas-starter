@@ -8,6 +8,7 @@ import (
 	"embed"
 	"fmt"
 	"io"
+	"log"
 	"os"
 	"path"
 	"path/filepath"
@@ -142,6 +143,7 @@ func writeEmbeddedFixtures() (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("stage embedded fixtures: %w", err)
 	}
+	names := make([]string, 0, len(entries))
 	for _, entry := range entries {
 		data, err := embeddedFixtures.ReadFile(path.Join("embedded", entry.Name()))
 		if err != nil {
@@ -150,7 +152,14 @@ func writeEmbeddedFixtures() (string, error) {
 		if err := os.WriteFile(filepath.Join(dir, entry.Name()), data, 0o600); err != nil {
 			return "", fmt.Errorf("stage embedded fixture %q: %w", entry.Name(), err)
 		}
+		names = append(names, strings.TrimSuffix(entry.Name(), ".yaml"))
 	}
+	// No fixtures directory was found on disk, so any product-customized
+	// fixtures are not present in this image and the binary's own copy is
+	// serving instead. Announce it: silently substituting the embedded copy
+	// for a customized-but-unmounted fixture would seed the wrong data.
+	sort.Strings(names)
+	log.Printf("fixtures: no fixtures directory found on disk; using fixtures embedded in the binary (%s). Product-customized fixtures must be present on disk (mounted or composed) to take effect.", strings.Join(names, ", "))
 	return dir, nil
 }
 

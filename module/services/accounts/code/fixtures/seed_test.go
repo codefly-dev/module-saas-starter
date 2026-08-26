@@ -4,6 +4,7 @@ import (
 	gen "accounts/pkg/gen/saas/accounts/v1"
 	"bytes"
 	"context"
+	"log"
 	"os"
 	"path"
 	"path/filepath"
@@ -211,6 +212,23 @@ func TestSelectedNameFallsBackToEmbeddedFixtures(t *testing.T) {
 	}
 	if _, err := os.Stat(fixturePath); err != nil {
 		t.Fatalf("embedded fixture was not materialized on disk: %v", err)
+	}
+}
+
+func TestEmbeddedFixtureFallbackIsAnnounced(t *testing.T) {
+	var buf bytes.Buffer
+	prev := log.Writer()
+	log.SetOutput(&buf)
+	t.Cleanup(func() { log.SetOutput(prev) })
+
+	dir, err := writeEmbeddedFixtures()
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { os.RemoveAll(dir) })
+
+	if got := buf.String(); !strings.Contains(got, "using fixtures embedded in the binary") {
+		t.Fatalf("embedded fixture fallback was served silently; expected a warning, log was: %q", got)
 	}
 }
 
