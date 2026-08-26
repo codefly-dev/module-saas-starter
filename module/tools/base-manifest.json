@@ -1351,7 +1351,7 @@
     "services/frontend/code/src/lib/plugins/runtime.ts": "9bf1470bf5b3bfedae5783168c9207b300074581128f02f305868d0a9579a7eb",
     "services/frontend/code/src/lib/providers.tsx": "95b4eea1114b2a2950e377e417ca1344d7c3768bdf830c3323229994970761f9",
     "services/frontend/code/src/lib/public-handoff.ts": "39e90478d3a9e8c2741adfb328806ec438c54498d84b57c43c9ac2b769983e1a",
-    "services/frontend/code/src/lib/skin/__tests__/example-skins.test.ts": "39ef033e214a43b595e21e40eeaf548ffcb924861586f341999575fad97ad6d1",
+    "services/frontend/code/src/lib/skin/__tests__/example-skins.test.ts": "504cf82618b0fd42098074a85fe75ec73303dd28c14a3bc9b78dbb9c9168a595",
     "services/frontend/code/src/lib/skin/__tests__/resolver.test.ts": "d2d6d04ed2df67094396f2cde862c736643c0145f1daa865b66fbc67bbc17817",
     "services/frontend/code/src/lib/skin/index.ts": "3909435bc2a1ee1b3b7480e3bc5f4051b1c453f588a615d3ccebb35136aabbfc",
     "services/frontend/code/src/lib/skin/resolver.ts": "c9cac7b752694031b595631805e6ff0b8ac062cfcb56153c269d33618107ad2d",
