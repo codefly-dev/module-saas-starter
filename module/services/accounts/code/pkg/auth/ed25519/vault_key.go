@@ -30,6 +30,7 @@ import (
 	"net"
 	"net/http"
 	"net/url"
+	"strings"
 	"time"
 )
 
@@ -112,9 +113,19 @@ func LoadKeyFromVault(ctx context.Context, cfg VaultKeyLoaderConfig) (ed25519.Pr
 }
 
 // validateVaultAddress rejects fetching the signing key over cleartext http
-// from anywhere but loopback. Over http:// both the X-Vault-Token and the
-// returned Ed25519 private key travel in the clear; loopback stays allowed so
-// the dev fixture (http://localhost:8200) keeps working.
+// where the X-Vault-Token and the returned Ed25519 private key would travel the
+// wire in the clear. Over http:// two destinations stay allowed:
+//
+//   - loopback, so the dev fixture (http://localhost:8200) keeps working; and
+//   - in-cluster Kubernetes service names, so accounts boots against the
+//     in-cluster dev-vault (e.g. http://vault.lodestar.svc:8200).
+//
+// The in-cluster exemption is safe because the module deploys under an Istio
+// PeerAuthentication STRICT mesh (see cataloggen.renderMeshPolicy): traffic to a
+// *.svc / *.svc.cluster.local peer is wrapped in the mesh's mTLS on the wire, so
+// nothing travels in cleartext despite the app-layer http scheme. Those suffixes
+// also resolve only inside the cluster — neither `.svc` nor `.cluster.local` is a
+// public TLD — so the exemption cannot leak the key onto a routable network.
 func validateVaultAddress(address string) error {
 	u, err := url.Parse(address)
 	if err != nil {
@@ -124,10 +135,11 @@ func validateVaultAddress(address string) error {
 	case "https":
 		return nil
 	case "http":
-		if isLoopbackHost(u.Hostname()) {
+		host := u.Hostname()
+		if isLoopbackHost(host) || isClusterLocalHost(host) {
 			return nil
 		}
-		return fmt.Errorf("ed25519minter: refusing to fetch the signing key over cleartext http from non-loopback host %q; use https", u.Host)
+		return fmt.Errorf("ed25519minter: refusing to fetch the signing key over cleartext http from non-loopback, non-mesh host %q; use https or an in-cluster *.svc address", u.Host)
 	default:
 		return fmt.Errorf("ed25519minter: vault address must use http or https, got scheme %q", u.Scheme)
 	}
@@ -141,4 +153,14 @@ func isLoopbackHost(host string) bool {
 		return ip.IsLoopback()
 	}
 	return false
+}
+
+// isClusterLocalHost reports whether host is an in-cluster Kubernetes service
+// DNS name, in either the search-domain-relative form (<svc>.<ns>.svc) or the
+// fully-qualified form (<svc>.<ns>.svc.cluster.local). Matching on the trailing
+// suffix — rather than a `.svc.` substring — keeps an externally-registered name
+// like vault.svc.example.com out of the exemption.
+func isClusterLocalHost(host string) bool {
+	host = strings.TrimSuffix(host, ".")
+	return strings.HasSuffix(host, ".svc") || strings.HasSuffix(host, ".svc.cluster.local")
 }
