@@ -44,6 +44,13 @@ function canonicalOrigin(candidate: string): string | undefined {
 	}
 }
 
+function isLoopbackOrigin(origin: string): boolean {
+	const host = new URL(origin).hostname.toLowerCase().replace(/^\[|\]$/g, "");
+	if (host === "localhost" || host === "::1") return true;
+	const octets = host.split(".");
+	return octets.length === 4 && octets[0] === "127";
+}
+
 /**
  * Resolve the server-side credentials used between the public frontend and the
  * private auth gateway. Codefly's injected representation remains entirely
@@ -60,6 +67,15 @@ export function resolveCodeflyGatewayContext(
 
 	const currentModule = runtime.currentModule().trim();
 	const currentService = runtime.currentService().trim();
+
+	// Outside a Codefly runtime (isolated component tests) there is no own
+	// endpoint to discover, so the request origin is the only public origin.
+	if (!currentModule && !currentService) {
+		const publicOrigin = canonicalOrigin(requestOrigin);
+		if (!publicOrigin) return undefined;
+		return { internalToken, publicOrigin };
+	}
+
 	const matches = runtime
 		.endpoints()
 		.filter(
@@ -69,17 +85,22 @@ export function resolveCodeflyGatewayContext(
 				endpoint.name === "http" &&
 				endpoint.protocol === "HTTP",
 		);
-	if (matches.length > 1) return undefined;
-
 	// A Codefly runtime identity must have exactly one SDK-discovered own HTTP
-	// endpoint. Outside Codefly (isolated component tests), the request origin
-	// is the only available public origin.
-	const publicOrigin =
-		currentModule || currentService
-			? matches.length === 1
-				? canonicalOrigin(matches[0].address)
-				: undefined
-			: canonicalOrigin(requestOrigin);
+	// endpoint.
+	if (matches.length !== 1) return undefined;
+	const endpointOrigin = canonicalOrigin(matches[0].address);
+	if (!endpointOrigin) return undefined;
+
+	// The render bakes the own HTTP endpoint as a loopback placeholder
+	// (localhost:8080) that carries no real ingress host: the true public origin
+	// is a per-cell/per-ingress fact the SDK cannot know. Fall back to the actual
+	// browser request in that case. A genuine local-dev endpoint is loopback too,
+	// and its request origin is the same host, so this stays correct in dev. Once
+	// the render carries a real non-loopback ingress host, that host keeps
+	// priority over the caller-influenced request origin.
+	const publicOrigin = isLoopbackOrigin(endpointOrigin)
+		? canonicalOrigin(requestOrigin)
+		: endpointOrigin;
 	if (!publicOrigin) return undefined;
 
 	return { internalToken, publicOrigin };

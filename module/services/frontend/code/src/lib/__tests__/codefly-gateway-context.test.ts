@@ -26,15 +26,37 @@ function runtime(
 }
 
 describe("Codefly frontend gateway context", () => {
-	it("uses only typed SDK values for the secret and public origin", () => {
+	it("takes the secret from the SDK and, for a loopback placeholder endpoint, the public origin from the request", () => {
+		// The render bakes the own HTTP endpoint as a loopback placeholder, so the
+		// real public origin must come from the browser request.
+		expect(
+			resolveCodeflyGatewayContext("https://app.example", runtime()),
+		).toEqual({
+			internalToken: "internal-test-token",
+			publicOrigin: "https://app.example",
+		});
+	});
+
+	it("prefers a real (non-loopback) SDK endpoint over the request origin", () => {
 		expect(
 			resolveCodeflyGatewayContext(
 				"https://caller-controlled.example",
-				runtime(),
+				runtime({
+					endpoints: () => [
+						{
+							module: "saas-starter",
+							service: "frontend",
+							name: "http",
+							protocol: "HTTP",
+							address: "https://app.cell.example",
+							routes: [],
+						},
+					],
+				}),
 			),
 		).toEqual({
 			internalToken: "internal-test-token",
-			publicOrigin: "http://localhost:42152",
+			publicOrigin: "https://app.cell.example",
 		});
 	});
 
