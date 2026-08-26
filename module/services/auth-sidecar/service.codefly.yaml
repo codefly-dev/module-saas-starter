@@ -36,5 +36,7 @@ spec:
     protocol-output-dirs:
         - code/pkg/gen
     rest-endpoint: true
+    runtime-assets:
+        - routing
     service-account:
         name: auth-sidecar

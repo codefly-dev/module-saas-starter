@@ -5,18 +5,30 @@ import (
 	gen "accounts/pkg/gen/saas/accounts/v1"
 	"bytes"
 	"context"
+	"embed"
 	"fmt"
 	"io"
+	"log"
 	"os"
+	"path"
 	"path/filepath"
 	"regexp"
 	"sort"
 	"strings"
+	"sync"
 
 	"github.com/codefly-dev/core/wool"
 	codefly "github.com/codefly-dev/sdk-go"
 	"gopkg.in/yaml.v3"
 )
+
+// embeddedFixtures carries the module's own fixtures inside the binary so a
+// deployed image — which ships only the compiled binary, not the module
+// fixtures directory — can still resolve fixture identity. Consumer-added
+// fixtures continue to resolve from disk when present.
+//
+//go:embed embedded/*.yaml
+var embeddedFixtures embed.FS
 
 // fixtureFile mirrors module/fixtures/*.yaml.
 type fixtureFile struct {
@@ -83,6 +95,12 @@ type fixtureRoleAssignment struct {
 
 var fixtureNamePattern = regexp.MustCompile(`^[a-zA-Z0-9][a-zA-Z0-9_-]*$`)
 
+var (
+	embeddedFixtureOnce sync.Once
+	embeddedFixtureDir  string
+	embeddedFixtureErr  error
+)
+
 func fixtureDirectory() (string, error) {
 	dir, err := os.Getwd()
 	if err != nil {
@@ -98,16 +116,64 @@ func fixtureDirectory() (string, error) {
 		}
 		parent := filepath.Dir(dir)
 		if parent == dir {
-			return "", fmt.Errorf("cannot find module fixtures directory from %q", dir)
+			break
 		}
 		dir = parent
 	}
+	return embeddedFixtureDirectory()
+}
+
+// embeddedFixtureDirectory materializes embeddedFixtures to a temporary
+// directory once per process and returns its path, so the path-based fixture
+// loaders resolve identically whether the fixtures live on disk or only in the
+// binary.
+func embeddedFixtureDirectory() (string, error) {
+	embeddedFixtureOnce.Do(func() {
+		embeddedFixtureDir, embeddedFixtureErr = writeEmbeddedFixtures()
+	})
+	return embeddedFixtureDir, embeddedFixtureErr
+}
+
+func writeEmbeddedFixtures() (string, error) {
+	entries, err := embeddedFixtures.ReadDir("embedded")
+	if err != nil {
+		return "", fmt.Errorf("read embedded fixtures: %w", err)
+	}
+	dir, err := os.MkdirTemp("", "accounts-fixtures-")
+	if err != nil {
+		return "", fmt.Errorf("stage embedded fixtures: %w", err)
+	}
+	names := make([]string, 0, len(entries))
+	for _, entry := range entries {
+		data, err := embeddedFixtures.ReadFile(path.Join("embedded", entry.Name()))
+		if err != nil {
+			return "", fmt.Errorf("read embedded fixture %q: %w", entry.Name(), err)
+		}
+		if err := os.WriteFile(filepath.Join(dir, entry.Name()), data, 0o600); err != nil {
+			return "", fmt.Errorf("stage embedded fixture %q: %w", entry.Name(), err)
+		}
+		names = append(names, strings.TrimSuffix(entry.Name(), ".yaml"))
+	}
+	// No fixtures directory was found on disk, so any product-customized
+	// fixtures are not present in this image and the binary's own copy is
+	// serving instead. Announce it: silently substituting the embedded copy
+	// for a customized-but-unmounted fixture would seed the wrong data.
+	sort.Strings(names)
+	log.Printf("fixtures: no fixtures directory found on disk; using fixtures embedded in the binary (%s). Product-customized fixtures must be present on disk (mounted or composed) to take effect.", strings.Join(names, ", "))
+	return dir, nil
 }
 
 // SelectedName discovers product-added fixture files and asks the Codefly SDK
 // which one the runtime selected. Consumers add YAML only; Starter never reads
 // Codefly runtime environment variables or hard-codes product fixture names.
 func SelectedName() (string, error) {
+	selected := strings.TrimSpace(codefly.Fixture())
+	if selected == "" {
+		return "", nil
+	}
+	if !fixtureNamePattern.MatchString(selected) {
+		return "", fmt.Errorf("invalid fixture name %q selected by Codefly", selected)
+	}
 	directory, err := fixtureDirectory()
 	if err != nil {
 		return "", err
@@ -116,27 +182,11 @@ func SelectedName() (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("cannot read fixture directory %q: %w", directory, err)
 	}
-
-	names := make([]string, 0, len(entries))
 	for _, entry := range entries {
 		if entry.IsDir() || filepath.Ext(entry.Name()) != ".yaml" {
 			continue
 		}
-		name := strings.TrimSuffix(entry.Name(), ".yaml")
-		if fixtureNamePattern.MatchString(name) {
-			names = append(names, name)
-		}
-	}
-	sort.Strings(names)
-	selected := strings.TrimSpace(codefly.Fixture())
-	if selected == "" {
-		return "", nil
-	}
-	if !fixtureNamePattern.MatchString(selected) {
-		return "", fmt.Errorf("invalid fixture name %q selected by Codefly", selected)
-	}
-	for _, name := range names {
-		if name == selected {
+		if strings.TrimSuffix(entry.Name(), ".yaml") == selected {
 			return selected, nil
 		}
 	}

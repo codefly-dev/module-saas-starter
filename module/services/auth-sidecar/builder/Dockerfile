@@ -29,8 +29,10 @@ FROM alpine:3.23.5@sha256:fd791d74b68913cbb027c6546007b3f0d3bc45125f797758156952
 # Runtime only needs the public CA bundle. Keep build tooling out of the image.
 RUN apk add --no-cache ca-certificates
 
-# Set working directory
-WORKDIR /app
+# Run from the Go source directory, mirroring the dev runner, so a source-dir
+# relative runtime path (e.g. "../routing/rest") resolves to the same file it
+# does in dev.
+WORKDIR /app/code
 
 # Set environment variables
 
@@ -40,6 +42,10 @@ RUN adduser -D appuser
 
 # Copy the binary from the builder stage
 COPY --chown=appuser --from=builder /app/app .
+
+# Ship the declared runtime asset, reproducing its source-tree location under
+# /app so the source-dir relative path resolves the same as in dev.
+COPY --chown=appuser routing /app/routing
 
 # Use the non-root user
 USER appuser
