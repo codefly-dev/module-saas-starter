@@ -475,7 +475,9 @@ export type AuditAggregateBucket = Message<"saas.accounts.v1.AuditAggregateBucke
   keys: string[];
 
   /**
-   * metrics maps each requested metric and derived alias to its value.
+   * metrics maps each requested metric and derived alias to its value. An alias
+   * is omitted for a group where the metric is undefined (min/avg/max/percentile
+   * over zero numeric values) — absence means "no data", not zero.
    *
    * @generated from field: map<string, double> metrics = 4;
    */

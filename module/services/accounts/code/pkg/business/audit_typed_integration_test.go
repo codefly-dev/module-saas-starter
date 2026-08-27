@@ -192,6 +192,21 @@ func TestAuditAggregationMetrics(t *testing.T) {
 	require.InDelta(t, 2, m["actors"], 0.001)
 	require.InDelta(t, 25, m["p50"], 0.001)
 
+	// A numeric metric over a group with no numeric values is absent, not 0:
+	// filtering to a non-numeric payload field yields an empty min/avg/max.
+	blank, err := testService.AggregateAuditLog(ctx, q, business.AuditAggregationSpec{
+		GroupBy: []string{"event_type"},
+		Metrics: []business.AuditMetric{
+			{Op: "min", Field: "payload:outcome", Alias: "min_outcome"},
+			{Op: "sum", Field: "payload:outcome", Alias: "sum_outcome"},
+		},
+	})
+	require.NoError(t, err)
+	require.Len(t, blank, 1)
+	_, hasMin := blank[0].Metrics["min_outcome"]
+	require.False(t, hasMin, "min over non-numeric values must be absent, not coerced to 0")
+	require.InDelta(t, 0, blank[0].Metrics["sum_outcome"], 0.001, "empty sum is the additive identity 0")
+
 	// Multi-dimensional grouping by actor + payload outcome.
 	byActorOutcome, err := testService.AggregateAuditLog(ctx, q, business.AuditAggregationSpec{
 		GroupBy: []string{"actor", "payload:outcome"},

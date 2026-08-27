@@ -131,7 +131,9 @@ message AuditAggregateBucket {
   int64 count = 2;
   // keys are the group dimension values, aligned with the effective group_bys.
   repeated string keys = 3;
-  // metrics maps each requested metric and derived alias to its value.
+  // metrics maps each requested metric and derived alias to its value. An alias
+  // is omitted for a group where the metric is undefined (min/avg/max/percentile
+  // over zero numeric values) — absence means "no data", not zero.
   map<string, double> metrics = 4;
 }
 

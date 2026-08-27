@@ -239,7 +239,11 @@ func (s *PostgresStore) AggregateAuditLog(ctx context.Context, q business.AuditQ
 			b.Count = c
 		}
 		for i, alias := range aliases {
-			b.Metrics[alias] = toFloat(vals[len(dims)+1+i])
+			// A NULL aggregate (min/avg/max/percentile over zero numeric rows)
+			// means "no data" — leave the alias absent rather than reporting 0.
+			if v := vals[len(dims)+1+i]; v != nil {
+				b.Metrics[alias] = toFloat(v)
+			}
 		}
 		for _, d := range spec.Derived {
 			num, den := b.Metrics[d.Numerator], b.Metrics[d.Denominator]
@@ -349,16 +353,19 @@ func auditMetricExpr(m business.AuditMetric, addArg func(any) int) (string, erro
 		}
 		return "COUNT(DISTINCT " + expr + ")", nil
 	case "sum":
+		// An empty sum is 0 (additive identity); the others are undefined over
+		// zero numeric rows and stay NULL so scanning omits them — coercing them
+		// to 0 would be indistinguishable from a real 0 datum.
 		return "COALESCE(SUM(" + auditNumericExpr(m.Field, addArg) + "), 0)", nil
 	case "avg":
-		return "COALESCE(AVG(" + auditNumericExpr(m.Field, addArg) + "), 0)", nil
+		return "AVG(" + auditNumericExpr(m.Field, addArg) + ")", nil
 	case "min":
-		return "COALESCE(MIN(" + auditNumericExpr(m.Field, addArg) + "), 0)", nil
+		return "MIN(" + auditNumericExpr(m.Field, addArg) + ")", nil
 	case "max":
-		return "COALESCE(MAX(" + auditNumericExpr(m.Field, addArg) + "), 0)", nil
+		return "MAX(" + auditNumericExpr(m.Field, addArg) + ")", nil
 	case "percentile":
 		pArg := addArg(m.Percentile)
-		return fmt.Sprintf("COALESCE(percentile_cont($%d) WITHIN GROUP (ORDER BY %s), 0)", pArg, auditNumericExpr(m.Field, addArg)), nil
+		return fmt.Sprintf("percentile_cont($%d) WITHIN GROUP (ORDER BY %s)", pArg, auditNumericExpr(m.Field, addArg)), nil
 	default:
 		return "", fmt.Errorf("audit: unhandled metric op %q", m.Op)
 	}

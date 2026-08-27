@@ -404,7 +404,7 @@
             "format": "double",
             "type": "number"
           },
-          "description": "metrics maps each requested metric and derived alias to its value.",
+          "description": "metrics maps each requested metric and derived alias to its value. An alias\nis omitted for a group where the metric is undefined (min/avg/max/percentile\nover zero numeric values) — absence means \"no data\", not zero.",
           "type": "object"
         }
       },

@@ -808,7 +808,9 @@ type AuditAggregateBucket struct {
 	Count int64 `protobuf:"varint,2,opt,name=count,proto3" json:"count,omitempty"`
 	// keys are the group dimension values, aligned with the effective group_bys.
 	Keys []string `protobuf:"bytes,3,rep,name=keys,proto3" json:"keys,omitempty"`
-	// metrics maps each requested metric and derived alias to its value.
+	// metrics maps each requested metric and derived alias to its value. An alias
+	// is omitted for a group where the metric is undefined (min/avg/max/percentile
+	// over zero numeric values) — absence means "no data", not zero.
 	Metrics       map[string]float64 `protobuf:"bytes,4,rep,name=metrics,proto3" json:"metrics,omitempty" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"fixed64,2,opt,name=value"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
