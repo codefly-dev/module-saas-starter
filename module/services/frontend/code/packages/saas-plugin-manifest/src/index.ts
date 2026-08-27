@@ -62,3 +62,22 @@ export {
 	SOLUTION_SPEC_API_VERSION,
 	toSolutionSpec,
 } from "./solution-spec.js";
+export type {
+	FacetKind,
+	FacetKindHint,
+	FacetOverride,
+	FacetRender,
+	FacetRule,
+	ResolvedFacet,
+	ResolvedViewDescriptor,
+	SortDirection,
+	ViewDescriptor,
+	ViewOverride,
+	ViewType,
+} from "./view-descriptor.js";
+export {
+	assertViewDescriptor,
+	assertViewOverride,
+	FACET_KIND_HINTS,
+	resolveViewDescriptor,
+} from "./view-descriptor.js";
