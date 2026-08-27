@@ -1,7 +1,11 @@
 import { describe, expect, it } from "vitest";
 import { runDataGraph, runMetric } from "../src/datagraph/run.js";
-import type { DataGraph, SourceMetric } from "../src/schema.js";
-import { fakeAuditClient } from "./support.js";
+import type {
+	DataGraph,
+	MetricOperation,
+	SourceMetric,
+} from "../src/schema.js";
+import { fakeAuditClient, gatedAuditClient } from "./support.js";
 
 const context = { orgId: "org_1" };
 
@@ -33,8 +37,27 @@ describe("runMetric", () => {
 				{ key: "user.signed_out.v1", value: 2 },
 			],
 			total: 5,
+			groupBy: "event_type",
+			bucket: undefined,
 		});
 		expect(calls[0]?.eventType).toBe("user.signed_in.v1");
+	});
+
+	it("carries the metric's dimension onto the series", async () => {
+		const { client } = fakeAuditClient(() => [{ key: "2026-01-01", count: 1 }]);
+		const metric: SourceMetric = {
+			id: "over_time",
+			kind: "source",
+			filter: { event: "signed_in" },
+			groupBy: "time",
+			bucket: "week",
+			aggregation: "count",
+		};
+
+		const series = await runMetric(client, metric, (n) => n, context);
+
+		expect(series.groupBy).toBe("time");
+		expect(series.bucket).toBe("week");
 	});
 });
 
@@ -196,5 +219,150 @@ describe("runDataGraph", () => {
 		);
 
 		await expect(runDataGraph(client, graph, context)).rejects.toThrow(/cycle/);
+	});
+
+	it("rejects duplicate metric ids", async () => {
+		const { client } = fakeAuditClient(() => []);
+		const graph = graphWith(
+			{
+				id: "dup",
+				kind: "source",
+				filter: { event: "signed_in" },
+				groupBy: "event_type",
+				aggregation: "count",
+			},
+			{
+				id: "dup",
+				kind: "source",
+				filter: { event: "signed_in" },
+				groupBy: "time",
+				bucket: "day",
+				aggregation: "count",
+			},
+		);
+
+		await expect(runDataGraph(client, graph, context)).rejects.toThrow(
+			/duplicate metric id: dup/,
+		);
+	});
+
+	it("rejects a sum with fewer than two inputs", async () => {
+		const { client } = fakeAuditClient(() => [{ key: "all", count: 1 }]);
+		const graph = graphWith(
+			{
+				id: "base",
+				kind: "source",
+				filter: { event: "signed_in" },
+				groupBy: "event_type",
+				aggregation: "count",
+			},
+			{ id: "solo", kind: "derived", operation: "sum", inputs: ["base"] },
+		);
+
+		await expect(runDataGraph(client, graph, context)).rejects.toThrow(
+			/'sum' needs at least two inputs/,
+		);
+	});
+
+	it("rejects a derived metric combining different group-by dimensions", async () => {
+		const { client } = fakeAuditClient((request) =>
+			request.groupBy === "time"
+				? [{ key: "2026-01-01", count: 1 }]
+				: [{ key: "user.signed_in.v1", count: 2 }],
+		);
+		const graph = graphWith(
+			{
+				id: "by_time",
+				kind: "source",
+				filter: { event: "signed_in" },
+				groupBy: "time",
+				bucket: "day",
+				aggregation: "count",
+			},
+			{
+				id: "by_type",
+				kind: "source",
+				filter: { event: "signed_in" },
+				groupBy: "event_type",
+				aggregation: "count",
+			},
+			{
+				id: "mix",
+				kind: "derived",
+				operation: "difference",
+				inputs: ["by_time", "by_type"],
+			},
+		);
+
+		await expect(runDataGraph(client, graph, context)).rejects.toThrow(
+			/different group-by dimensions/,
+		);
+	});
+
+	it("rejects an unsupported derived operation", async () => {
+		const { client } = fakeAuditClient(() => [{ key: "all", count: 1 }]);
+		const graph = graphWith(
+			{
+				id: "a",
+				kind: "source",
+				filter: { event: "signed_in", actor: "a" },
+				groupBy: "event_type",
+				aggregation: "count",
+			},
+			{
+				id: "b",
+				kind: "source",
+				filter: { event: "signed_in", actor: "b" },
+				groupBy: "event_type",
+				aggregation: "count",
+			},
+			// An operation outside the typed union — e.g. a graph parsed from
+			// untrusted YAML — must fail loudly, not return a broken series.
+			{
+				id: "bad",
+				kind: "derived",
+				operation: "avg" as MetricOperation,
+				inputs: ["a", "b"],
+			},
+		);
+
+		await expect(runDataGraph(client, graph, context)).rejects.toThrow(
+			/unsupported operation 'avg'/,
+		);
+	});
+
+	it("fetches independent source metrics concurrently", async () => {
+		const gate = gatedAuditClient(() => [{ key: "all", count: 1 }]);
+		const graph = graphWith(
+			{
+				id: "m1",
+				kind: "source",
+				filter: { event: "signed_in", actor: "1" },
+				groupBy: "event_type",
+				aggregation: "count",
+			},
+			{
+				id: "m2",
+				kind: "source",
+				filter: { event: "signed_in", actor: "2" },
+				groupBy: "event_type",
+				aggregation: "count",
+			},
+			{
+				id: "m3",
+				kind: "source",
+				filter: { event: "signed_in", actor: "3" },
+				groupBy: "event_type",
+				aggregation: "count",
+			},
+		);
+
+		// Resolution enters every independent source RPC in one synchronous turn;
+		// serialized resolution would leave only the first in flight.
+		const done = runDataGraph(gate.client, graph, context);
+		expect(gate.inFlight()).toBe(3);
+
+		gate.releaseAll();
+		await done;
 	});
 });

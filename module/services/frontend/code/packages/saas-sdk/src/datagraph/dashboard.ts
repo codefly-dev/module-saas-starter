@@ -3,7 +3,7 @@ import type {
 	DataGraph,
 	WidgetVisualization,
 } from "../schema.js";
-import { runDataGraph } from "./run.js";
+import { resolveMetrics } from "./run.js";
 import type {
 	AuditAggregateClient,
 	MetricContext,
@@ -34,7 +34,9 @@ export interface ResolvedWidget {
 
 /**
  * The `data={…}` a `<Dashboard>` renders: the dashboard's widgets bound to their
- * metric series, plus `byMetric` keyed by the graph's declared metric ids.
+ * metric series, plus `byMetric` keyed by the metric ids this dashboard uses
+ * (a subset of the graph's declared metric ids — only the dashboard's metrics
+ * and their derived inputs are resolved).
  */
 export interface DashboardData<T extends DataGraph = DataGraph> {
 	id: string;
@@ -45,9 +47,11 @@ export interface DashboardData<T extends DataGraph = DataGraph> {
 }
 
 /**
- * Resolve one dashboard's data graph into render-ready `data={…}`: every metric
- * is computed once, then each of the dashboard's widgets is bound to its
- * metric's series.
+ * Resolve one dashboard's data graph into render-ready `data={…}`: only the
+ * metrics this dashboard's widgets bind to (and their derived inputs) are
+ * computed — each once — then each widget is bound to its metric's series. A
+ * metric declared on the graph but used only by other dashboards is never
+ * fetched, so an unrelated metric's failure never breaks this dashboard.
  */
 export async function runDashboard<const T extends DataGraph>(
 	client: AuditAggregateClient,
@@ -60,10 +64,12 @@ export async function runDashboard<const T extends DataGraph>(
 		throw new Error(`unknown dashboard: ${dashboardId}`);
 	}
 
-	const byMetric = (await runDataGraph(client, graph, context)) as Record<
-		MetricId<T>,
-		MetricSeries
-	>;
+	const byMetric = (await resolveMetrics(
+		client,
+		graph,
+		context,
+		dashboard.widgets.map((widget) => widget.metric),
+	)) as Record<MetricId<T>, MetricSeries>;
 
 	const widgets = dashboard.widgets.map((widget): ResolvedWidget => {
 		const series = byMetric[widget.metric as MetricId<T>];

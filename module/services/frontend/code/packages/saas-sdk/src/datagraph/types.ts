@@ -4,6 +4,7 @@ import type {
 	AggregateAuditLogRequestSchema,
 	AggregateAuditLogResponse,
 } from "../gen/saas/accounts/v1/audit_pb.js";
+import type { MetricBucket, MetricGroupBy } from "../schema.js";
 
 /** One grouped value in a resolved metric. */
 export interface MetricPoint {
@@ -11,11 +12,17 @@ export interface MetricPoint {
 	value: number;
 }
 
-/** A resolved metric — the shape a widget renders. */
+/**
+ * A resolved metric — the shape a widget renders. `groupBy`/`bucket` record the
+ * dimension the points are keyed on, so a consumer can render the right axis and
+ * a derived metric can refuse to combine dimensionally-incompatible inputs.
+ */
 export interface MetricSeries {
 	metricId: string;
 	points: MetricPoint[];
 	total: number;
+	groupBy: MetricGroupBy;
+	bucket?: MetricBucket;
 }
 
 /** Org and time window a data graph resolves against. */

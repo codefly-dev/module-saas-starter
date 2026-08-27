@@ -66,6 +66,8 @@ describe("runDashboard", () => {
 					metricId: "events_by_type",
 					points: [{ key: "user.signed_in.v1", value: 7 }],
 					total: 7,
+					groupBy: "event_type",
+					bucket: undefined,
 				},
 			},
 			{
@@ -80,6 +82,8 @@ describe("runDashboard", () => {
 						{ key: "2026-01-02", value: 5 },
 					],
 					total: 7,
+					groupBy: "time",
+					bucket: "day",
 				},
 			},
 		]);
@@ -130,5 +134,50 @@ describe("runDashboard", () => {
 		await expect(runDashboard(client, broken, "d", context)).rejects.toThrow(
 			/unknown metric: unknown/,
 		);
+	});
+
+	it("does not resolve metrics belonging only to other dashboards", async () => {
+		const { client, calls } = fakeAuditClient(() => [
+			{ key: "user.signed_in.v1", count: 3 },
+		]);
+		const multi = defineDataGraph({
+			events: [{ name: "signed_in", type: "user.signed_in.v1" }],
+			metrics: [
+				{
+					id: "shown",
+					kind: "source",
+					filter: { event: "signed_in" },
+					groupBy: "event_type",
+					aggregation: "count",
+				},
+				// Used only by dashboard "b"; its unsupported aggregation would throw
+				// at compile time if dashboard "a" resolved the whole graph.
+				{
+					id: "unshown",
+					kind: "source",
+					filter: { event: "signed_in" },
+					groupBy: "event_type",
+					aggregation: "count_distinct",
+				},
+			],
+			dashboards: [
+				{
+					id: "a",
+					layout: "grid",
+					widgets: [{ id: "w", metric: "shown", visualization: "number" }],
+				},
+				{
+					id: "b",
+					layout: "grid",
+					widgets: [{ id: "w", metric: "unshown", visualization: "number" }],
+				},
+			],
+		});
+
+		const data = await runDashboard(client, multi, "a", context);
+
+		expect(data.byMetric.shown.total).toBe(3);
+		expect(data.byMetric).not.toHaveProperty("unshown");
+		expect(calls).toHaveLength(1);
 	});
 });
