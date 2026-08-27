@@ -209,12 +209,12 @@ func (s *PostgresStore) QueryAuditLog(ctx context.Context, q business.AuditQuery
 func (s *PostgresStore) AggregateAuditLog(ctx context.Context, q business.AuditQuery, spec business.AuditAggregationSpec) ([]business.AuditAggregateBucket, error) {
 	exec := s.getQueryExecutor(ctx)
 
-	query, args, dims, aliases, err := buildAggregateQuery(q, spec)
+	aq, err := buildAggregateQuery(q, spec)
 	if err != nil {
 		return nil, err
 	}
 
-	rows, err := exec.Query(ctx, query, args...)
+	rows, err := exec.Query(ctx, aq.sql, aq.args...)
 	if err != nil {
 		return nil, err
 	}
@@ -228,29 +228,32 @@ func (s *PostgresStore) AggregateAuditLog(ctx context.Context, q business.AuditQ
 		}
 		// Column layout is [dim0..dimN, cnt, metric0..metricM].
 		b := business.AuditAggregateBucket{
-			Keys:    make([]string, len(dims)),
-			Metrics: make(map[string]float64, len(aliases)+len(spec.Derived)),
+			Keys:    make([]string, len(aq.dims)),
+			Metrics: make(map[string]float64, len(aq.aliases)+len(spec.Derived)),
 		}
-		for i := range dims {
+		for i := range aq.dims {
 			b.Keys[i], _ = vals[i].(string)
 		}
 		b.Key = b.Keys[0]
-		if c, ok := vals[len(dims)].(int64); ok {
+		if c, ok := vals[len(aq.dims)].(int64); ok {
 			b.Count = c
 		}
-		for i, alias := range aliases {
+		for i, alias := range aq.aliases {
 			// A NULL aggregate (min/avg/max/percentile over zero numeric rows)
 			// means "no data" — leave the alias absent rather than reporting 0.
-			if v := vals[len(dims)+1+i]; v != nil {
+			if v := vals[len(aq.dims)+1+i]; v != nil {
 				b.Metrics[alias] = toFloat(v)
 			}
 		}
 		for _, d := range spec.Derived {
-			num, den := b.Metrics[d.Numerator], b.Metrics[d.Denominator]
-			if den != 0 {
+			// A ratio is undefined when either operand is absent (its metric had
+			// no data for this group) or the denominator is 0 — omit the alias in
+			// those cases. Emitting 0 would be indistinguishable from a real 0
+			// ratio, the same trap the NULL-aggregate handling above avoids.
+			num, numOK := b.Metrics[d.Numerator]
+			den, denOK := b.Metrics[d.Denominator]
+			if numOK && denOK && den != 0 {
 				b.Metrics[d.Alias] = num / den
-			} else {
-				b.Metrics[d.Alias] = 0
 			}
 		}
 		out = append(out, b)
@@ -258,12 +261,20 @@ func (s *PostgresStore) AggregateAuditLog(ctx context.Context, q business.AuditQ
 	return out, rows.Err()
 }
 
-// buildAggregateQuery renders the aggregation SQL and its ordered args. It
-// returns the effective group dimensions and the metric aliases in column order
-// so the caller can map each result row back to keys and named metrics. Every
-// caller-supplied value (payload keys, percentiles) is bound as a parameter,
-// never interpolated, so the query is injection-safe.
-func buildAggregateQuery(q business.AuditQuery, spec business.AuditAggregationSpec) (string, []any, []string, []string, error) {
+// aggregateQuery is a rendered aggregation: the SQL, its ordered bind args, the
+// effective group dimensions, and the metric aliases in column order — the last
+// two let the caller map each result row back to keys and named metrics.
+type aggregateQuery struct {
+	sql     string
+	args    []any
+	dims    []string
+	aliases []string
+}
+
+// buildAggregateQuery renders the aggregation SQL. Every caller-supplied value
+// (payload keys, percentiles) is bound as a parameter, never interpolated, so
+// the query is injection-safe.
+func buildAggregateQuery(q business.AuditQuery, spec business.AuditAggregationSpec) (aggregateQuery, error) {
 	where, args := auditWhere(q, 1)
 	argN := len(args) + 1
 	addArg := func(v any) int {
@@ -285,7 +296,7 @@ func buildAggregateQuery(q business.AuditQuery, spec business.AuditAggregationSp
 	for i, d := range dims {
 		expr, err := auditDimensionExpr(d, spec.Bucket, addArg)
 		if err != nil {
-			return "", nil, nil, nil, err
+			return aggregateQuery{}, err
 		}
 		col := fmt.Sprintf("d%d", i)
 		selectParts = append(selectParts, expr+" AS "+col)
@@ -300,7 +311,7 @@ func buildAggregateQuery(q business.AuditQuery, spec business.AuditAggregationSp
 	for i, m := range spec.Metrics {
 		expr, err := auditMetricExpr(m, addArg)
 		if err != nil {
-			return "", nil, nil, nil, err
+			return aggregateQuery{}, err
 		}
 		selectParts = append(selectParts, fmt.Sprintf("%s AS m%d", expr, i))
 		aliases[i] = m.ResolvedAlias()
@@ -311,9 +322,9 @@ func buildAggregateQuery(q business.AuditQuery, spec business.AuditAggregationSp
 		orderBy = "d0 ASC"
 	}
 
-	query := fmt.Sprintf("SELECT %s FROM audit_events %s GROUP BY %s ORDER BY %s",
+	sql := fmt.Sprintf("SELECT %s FROM audit_events %s GROUP BY %s ORDER BY %s",
 		strings.Join(selectParts, ", "), where, strings.Join(groupCols, ", "), orderBy)
-	return query, args, dims, aliases, nil
+	return aggregateQuery{sql: sql, args: args, dims: dims, aliases: aliases}, nil
 }
 
 // auditDimensionExpr renders the group-key expression for one dimension. All
@@ -390,12 +401,18 @@ func auditValueExpr(field string, addArg func(any) int) (string, error) {
 }
 
 // auditNumericExpr renders a payload key as a double, yielding NULL for missing
-// or non-numeric values so aggregates skip them. The key is bound, never
-// interpolated. The caller has validated that field is a payload:<key>.
+// or non-numeric values so aggregates skip them. It keys off the JSON type: a
+// JSON number is taken directly (covering every numeric magnitude and format,
+// not just the decimals a text regex happens to match), and a JSON string is
+// taken only when it parses as a plain number. The key is bound, never
+// interpolated; the caller has validated that field is a payload:<key>.
 func auditNumericExpr(field string, addArg func(any) int) string {
 	key := strings.TrimPrefix(field, "payload:")
 	n := addArg(key)
-	return fmt.Sprintf(`CASE WHEN payload ->> $%d ~ '^-?[0-9]+(\.[0-9]+)?$' THEN (payload ->> $%d)::double precision END`, n, n)
+	return fmt.Sprintf(`CASE
+		WHEN jsonb_typeof(payload -> $%d) = 'number' THEN (payload ->> $%d)::double precision
+		WHEN jsonb_typeof(payload -> $%d) = 'string' AND payload ->> $%d ~ '^-?[0-9]+(\.[0-9]+)?$' THEN (payload ->> $%d)::double precision
+	END`, n, n, n, n, n)
 }
 
 // toFloat coerces a pgx-scanned aggregate value to float64. Counts arrive as

@@ -597,8 +597,9 @@ func (x *AuditMetric) GetAlias() string {
 }
 
 // AuditDerivedMetric is a ratio of two other metrics computed per group (e.g. an
-// error rate). numerator/denominator reference metric aliases; a zero or missing
-// denominator yields 0.
+// error rate). numerator/denominator reference metric aliases. The ratio is
+// omitted for a group where either operand is absent or the denominator is 0 —
+// an undefined ratio is "no data", not zero.
 type AuditDerivedMetric struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Alias         string                 `protobuf:"bytes,1,opt,name=alias,proto3" json:"alias,omitempty"`

@@ -244,11 +244,20 @@ func (s AuditAggregationSpec) Validate() error {
 		if m.Op == "percentile" && (m.Percentile <= 0 || m.Percentile > 1) {
 			return fmt.Errorf("audit: percentile must be in (0,1], got %v", m.Percentile)
 		}
-		aliases[m.ResolvedAlias()] = true
+		// Aliases key the response map, so a collision would silently drop one
+		// metric's value; reject it instead of returning a lossy result.
+		alias := m.ResolvedAlias()
+		if aliases[alias] {
+			return fmt.Errorf("audit: duplicate metric alias %q (set a distinct alias)", alias)
+		}
+		aliases[alias] = true
 	}
 	for _, d := range s.Derived {
 		if d.Alias == "" || d.Numerator == "" || d.Denominator == "" {
 			return fmt.Errorf("audit: derived metric needs alias, numerator, and denominator")
+		}
+		if aliases[d.Alias] {
+			return fmt.Errorf("audit: duplicate metric alias %q (set a distinct alias)", d.Alias)
 		}
 		if !aliases[d.Numerator] {
 			return fmt.Errorf("audit: derived metric %q references unknown numerator %q", d.Alias, d.Numerator)
@@ -256,6 +265,7 @@ func (s AuditAggregationSpec) Validate() error {
 		if !aliases[d.Denominator] {
 			return fmt.Errorf("audit: derived metric %q references unknown denominator %q", d.Alias, d.Denominator)
 		}
+		aliases[d.Alias] = true
 	}
 	return nil
 }

@@ -334,8 +334,9 @@ export const AuditMetricSchema: GenMessage<AuditMetric> = /*@__PURE__*/
 
 /**
  * AuditDerivedMetric is a ratio of two other metrics computed per group (e.g. an
- * error rate). numerator/denominator reference metric aliases; a zero or missing
- * denominator yields 0.
+ * error rate). numerator/denominator reference metric aliases. The ratio is
+ * omitted for a group where either operand is absent or the denominator is 0 —
+ * an undefined ratio is "no data", not zero.
  *
  * @generated from message saas.accounts.v1.AuditDerivedMetric
  */

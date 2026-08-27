@@ -5435,7 +5435,7 @@
           "type": "string"
         }
       },
-      "description": "AuditDerivedMetric is a ratio of two other metrics computed per group (e.g. an\nerror rate). numerator/denominator reference metric aliases; a zero or missing\ndenominator yields 0."
+      "description": "AuditDerivedMetric is a ratio of two other metrics computed per group (e.g. an\nerror rate). numerator/denominator reference metric aliases. The ratio is\nomitted for a group where either operand is absent or the denominator is 0 —\nan undefined ratio is \"no data\", not zero."
     },
     "v1AuditEvent": {
       "type": "object",

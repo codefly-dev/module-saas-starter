@@ -245,6 +245,85 @@ func TestAuditAggregationMetrics(t *testing.T) {
 	require.Error(t, business.AuditAggregationSpec{
 		Metrics: []business.AuditMetric{{Op: "percentile", Field: "payload:amount", Percentile: 2}},
 	}.Validate())
+	// Colliding aliases would silently drop a metric from the response map.
+	require.Error(t, business.AuditAggregationSpec{
+		Metrics: []business.AuditMetric{
+			{Op: "count", Alias: "x"},
+			{Op: "count_distinct", Field: "actor_id", Alias: "x"},
+		},
+	}.Validate(), "duplicate metric alias must be rejected")
+	require.Error(t, business.AuditAggregationSpec{
+		Metrics: []business.AuditMetric{{Op: "count", Alias: "total"}},
+		Derived: []business.AuditDerivedMetric{{Alias: "total", Numerator: "total", Denominator: "total"}},
+	}.Validate(), "derived alias colliding with a metric alias must be rejected")
+}
+
+// TestAuditAggregationNumericAndDerivedEdges covers two "no data ≠ zero" edges:
+// numeric aggregation keys off the JSON type (every JSON number plus numeric
+// strings, skipping non-numeric and missing values), and a derived ratio is
+// omitted — not reported as 0 — when an operand is absent or the denominator is 0.
+func TestAuditAggregationNumericAndDerivedEdges(t *testing.T) {
+	clearData(t)
+	ctx := testCtx
+	_, org := mustUserAndOrg(t, ctx, "edges@audit-test.com", "edges-audit", "Edges Co")
+
+	seed := func(payload map[string]any) {
+		require.NoError(t, testStore.WithOrgTx(ctx, org, func(ctx context.Context) error {
+			return testStore.InsertAuditEvent(ctx, business.AuditEntry{
+				ActorType: "user", ActorID: business.NewIDString(), EventType: business.EventUserUpdated,
+				Resource: "user", OrgID: org, Payload: payload,
+			})
+		}))
+	}
+	// price spans a JSON int, a JSON float, a numeric string, a non-numeric
+	// string, and a missing key. label is always non-numeric.
+	seed(map[string]any{"price": 10, "label": "x"})
+	seed(map[string]any{"price": 2.5, "label": "x"})
+	seed(map[string]any{"price": "7", "label": "x"})
+	seed(map[string]any{"price": "free", "label": "x"})
+	seed(map[string]any{"label": "x"})
+
+	q := business.AuditQuery{OrgID: org, EventType: string(business.EventUserUpdated)}
+
+	// Numeric aggregation includes 10 + 2.5 + 7 and skips "free" and the missing
+	// key — proving the type-aware cast, not a text regex over ->>.
+	agg, err := testService.AggregateAuditLog(ctx, q, business.AuditAggregationSpec{
+		GroupBy: []string{"event_type"},
+		Metrics: []business.AuditMetric{
+			{Op: "sum", Field: "payload:price", Alias: "sum_price"},
+			{Op: "min", Field: "payload:price", Alias: "min_price"},
+		},
+	})
+	require.NoError(t, err)
+	require.Len(t, agg, 1)
+	require.Equal(t, int64(5), agg[0].Count)
+	require.InDelta(t, 19.5, agg[0].Metrics["sum_price"], 0.001)
+	require.InDelta(t, 2.5, agg[0].Metrics["min_price"], 0.001)
+
+	// Derived ratios: present when both operands are defined and the denominator
+	// is non-zero; omitted otherwise.
+	derived, err := testService.AggregateAuditLog(ctx, q, business.AuditAggregationSpec{
+		GroupBy: []string{"event_type"},
+		Metrics: []business.AuditMetric{
+			{Op: "count", Alias: "n"},
+			{Op: "min", Field: "payload:price", Alias: "min_price"},
+			{Op: "min", Field: "payload:missing", Alias: "min_missing"}, // no numeric rows → absent
+			{Op: "sum", Field: "payload:label", Alias: "sum_label"},     // non-numeric → 0
+		},
+		Derived: []business.AuditDerivedMetric{
+			{Alias: "ok_ratio", Numerator: "min_price", Denominator: "n"},     // 2.5 / 5
+			{Alias: "absent_num", Numerator: "min_missing", Denominator: "n"}, // numerator absent
+			{Alias: "zero_den", Numerator: "n", Denominator: "sum_label"},     // denominator 0
+		},
+	})
+	require.NoError(t, err)
+	require.Len(t, derived, 1)
+	dm := derived[0].Metrics
+	require.InDelta(t, 0.5, dm["ok_ratio"], 0.001)
+	_, hasAbsent := dm["absent_num"]
+	require.False(t, hasAbsent, "ratio with an absent operand must be omitted, not 0")
+	_, hasZeroDen := dm["zero_den"]
+	require.False(t, hasZeroDen, "ratio over a zero denominator must be omitted, not 0")
 }
 
 // TestAuditPayloadSearch verifies JSONB containment filtering over typed payloads.
