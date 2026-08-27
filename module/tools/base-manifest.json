@@ -1,6 +1,6 @@
 {
   "note": "Base-file integrity manifest for the saas-starter module. Generated FROM canonical by `node tools/base-integrity.mjs gen`. Consumers MUST NOT hand-edit base files — only add files on the side. Regenerated on every codefly sync from canonical.",
-  "fileCount": 1735,
+  "fileCount": 1743,
   "files": {
     "AUTHORIZATION_CATALOG.md": "b2ea5d41f0098e80315e02e7c4bdbda03b65c8eef463426242552fd3c047ca0a",
     "CONTRACT_VERSIONING.md": "02031aa87922ab5ec573ea582cf584271873481de6ceabbda52b1bfda005ffbd",
@@ -1077,6 +1077,14 @@
     "services/frontend/code/src/features/billing/service/usage-queries.ts": "5133591b350d60b0971f91149448b25c6481406f1f70763cba4475580f774470",
     "services/frontend/code/src/features/billing/ui/billing-admin-page.test.tsx": "924403414542523d52a914b1e66acfe935bf315bd905324f096f032a8dac2fe5",
     "services/frontend/code/src/features/billing/ui/billing-admin-page.tsx": "205ce125e71d424fdb02792dd8c3f254aa96be18a10b189280b632b4e2f8dc8c",
+    "services/frontend/code/src/features/chat/index.ts": "77441396d0d1652da94e1fc3ba4c9f78edd58e15c1f503420aceede476f24217",
+    "services/frontend/code/src/features/chat/model/__tests__/connector.test.ts": "c47d4f6b6cbdf639b895aa1bd506945ead2ceabf02694b7c6c1d1f3241767ec3",
+    "services/frontend/code/src/features/chat/model/__tests__/stub.test.ts": "843a3c22f3f3cc57373d55fa6e761f04bc6007096ab5a9aeba442485fa084248",
+    "services/frontend/code/src/features/chat/model/connector.ts": "81812b48c7d24fb39988339521afaa84ce8f63cc661657dd7333d33b1356d568",
+    "services/frontend/code/src/features/chat/model/stub.ts": "351bd732585b56b6bfcc3ab4f4391ee9880ec9191d247a2434e036f8c4ae405e",
+    "services/frontend/code/src/features/chat/model/types.ts": "300c13cf147cca00d24aaa2feac9d238c3a6a4ef24439b688b10b5ed0cbb8495",
+    "services/frontend/code/src/features/chat/ui/chat.test.tsx": "1d87bc7578b0c6554a78a42ae904f7dcf746512e604f63e8a8e137697858c450",
+    "services/frontend/code/src/features/chat/ui/chat.tsx": "d824f3120b1716b59bdc588838445043a71c6ae97f5472670ef60adf81c6ce93",
     "services/frontend/code/src/features/consent/ui/consent-settings-page.test.tsx": "a8adbad1dd888cc8b6207c364d2dfab8e83a29f19e567332313d91ab784ffd78",
     "services/frontend/code/src/features/consent/ui/consent-settings-page.tsx": "806f446e9af6e828b1449f2909a4e6a2b1b0e6171c8f71ee911ca51779d0b7c3",
     "services/frontend/code/src/features/gdpr/index.ts": "426ca608995033085662a54fbe72afe29d2c41bea100a8d11d62a085fd196fa7",
