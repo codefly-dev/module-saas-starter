@@ -59,6 +59,24 @@ const OWNED_FIELD_VIOLATIONS: Record<
 	"unversioned publish type": (m) => {
 		arr(rec(m.events).publishes)[0].type = "guardrail.triggered";
 	},
+	"unversioned dashboard event type": (m) => {
+		arr(rec(m.dashboard).events)[0].type = "guardrail.triggered";
+	},
+	"unsupported metric group_by": (m) => {
+		arr(rec(m.dashboard).metrics)[0].groupBy = "region";
+	},
+	"unsupported metric aggregation": (m) => {
+		arr(rec(m.dashboard).metrics)[0].aggregation = "sum";
+	},
+	"unsupported derived metric operation": (m) => {
+		arr(rec(m.dashboard).metrics)[3].operation = "product";
+	},
+	"unsupported dashboard layout": (m) => {
+		arr(rec(m.dashboard).dashboards)[0].layout = "freeform";
+	},
+	"unsupported widget visualization": (m) => {
+		arr(arr(rec(m.dashboard).dashboards)[0].widgets)[0].visualization = "pie";
+	},
 	"bad subscribe handler": (m) => {
 		arr(rec(m.events).subscribes)[0].handler = "Bad Handler";
 	},

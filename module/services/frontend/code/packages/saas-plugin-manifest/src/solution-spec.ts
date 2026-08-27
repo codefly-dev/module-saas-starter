@@ -45,6 +45,7 @@ export interface SolutionLifecycle {
  * accident. See `plugin-manifest-schema.md`.
  */
 export interface SolutionCodeflyExtensions {
+	dashboard?: PluginManifest["dashboard"];
 	entitlements?: PluginManifest["entitlements"];
 	config?: PluginManifest["config"];
 	migrations?: PluginManifest["migrations"];
@@ -81,6 +82,8 @@ function nonEmpty<T>(value: readonly T[] | undefined): value is readonly T[] {
  */
 export function toSolutionSpec(manifest: PluginManifest): SolutionSpec {
 	const extensions: SolutionCodeflyExtensions = {};
+	if (manifest.dashboard !== undefined)
+		extensions.dashboard = manifest.dashboard;
 	if (nonEmpty(manifest.entitlements))
 		extensions.entitlements = manifest.entitlements;
 	if (nonEmpty(manifest.config)) extensions.config = manifest.config;

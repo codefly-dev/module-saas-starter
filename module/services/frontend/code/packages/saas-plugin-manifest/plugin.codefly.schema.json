@@ -17,6 +17,7 @@
 		"api": { "$ref": "#/$defs/api" },
 		"events": { "$ref": "#/$defs/events" },
 		"ui": { "$ref": "#/$defs/ui" },
+		"dashboard": { "$ref": "#/$defs/dashboard" },
 		"needs": {
 			"type": "array",
 			"items": { "$ref": "#/$defs/need" }
@@ -167,6 +168,107 @@
 				"routes": { "type": "array" },
 				"widgets": { "type": "array" },
 				"services": { "type": "array" }
+			}
+		},
+		"dashboard": {
+			"type": "object",
+			"additionalProperties": false,
+			"required": ["events", "metrics", "dashboards"],
+			"description": "Data-graph declaration: named audit events, metrics computed over them, and dashboards binding widgets to metrics. Cross-references (a metric's event, a derived metric's inputs, a widget's metric) and the acyclicity of derived metrics are enforced by the host validator, not this schema.",
+			"properties": {
+				"events": {
+					"type": "array",
+					"items": {
+						"type": "object",
+						"additionalProperties": false,
+						"required": ["name", "type"],
+						"properties": {
+							"name": { "$ref": "#/$defs/logicalId" },
+							"type": { "$ref": "#/$defs/eventType" },
+							"description": { "$ref": "#/$defs/description" }
+						}
+					}
+				},
+				"metrics": {
+					"type": "array",
+					"items": {
+						"oneOf": [
+							{
+								"type": "object",
+								"additionalProperties": false,
+								"required": ["id", "kind", "filter", "groupBy", "aggregation"],
+								"properties": {
+									"id": { "$ref": "#/$defs/logicalId" },
+									"kind": { "const": "source" },
+									"title": { "$ref": "#/$defs/description" },
+									"description": { "$ref": "#/$defs/description" },
+									"filter": {
+										"type": "object",
+										"additionalProperties": false,
+										"required": ["event"],
+										"properties": {
+											"event": { "$ref": "#/$defs/logicalId" },
+											"actor": { "type": "string", "minLength": 1 },
+											"resource": { "type": "string", "minLength": 1 }
+										}
+									},
+									"groupBy": {
+										"enum": ["event_type", "category", "actor", "time"]
+									},
+									"bucket": { "enum": ["day", "week", "month"] },
+									"aggregation": { "enum": ["count", "count_distinct"] }
+								}
+							},
+							{
+								"type": "object",
+								"additionalProperties": false,
+								"required": ["id", "kind", "operation", "inputs"],
+								"properties": {
+									"id": { "$ref": "#/$defs/logicalId" },
+									"kind": { "const": "derived" },
+									"title": { "$ref": "#/$defs/description" },
+									"description": { "$ref": "#/$defs/description" },
+									"operation": { "enum": ["sum", "ratio", "difference"] },
+									"inputs": {
+										"type": "array",
+										"minItems": 2,
+										"items": { "$ref": "#/$defs/logicalId" }
+									}
+								}
+							}
+						]
+					}
+				},
+				"dashboards": {
+					"type": "array",
+					"items": {
+						"type": "object",
+						"additionalProperties": false,
+						"required": ["id", "layout", "widgets"],
+						"properties": {
+							"id": { "$ref": "#/$defs/logicalId" },
+							"title": { "$ref": "#/$defs/description" },
+							"layout": { "enum": ["grid", "stack"] },
+							"widgets": {
+								"type": "array",
+								"minItems": 1,
+								"items": {
+									"type": "object",
+									"additionalProperties": false,
+									"required": ["id", "metric", "visualization"],
+									"properties": {
+										"id": { "$ref": "#/$defs/logicalId" },
+										"metric": { "$ref": "#/$defs/logicalId" },
+										"visualization": {
+											"enum": ["line", "bar", "area", "number", "table"]
+										},
+										"title": { "$ref": "#/$defs/description" }
+									}
+								}
+							}
+						}
+					}
+				}
 			}
 		},
 		"need": {
