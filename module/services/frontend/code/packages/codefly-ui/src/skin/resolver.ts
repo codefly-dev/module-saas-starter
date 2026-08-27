@@ -4,14 +4,13 @@ import {
 	type FrontendBranding,
 	resolveFrontendAppearance,
 } from "@codefly/saas-plugin-contract";
-import { sourcesFromEnv } from "./sources";
 import type {
 	RawBrandingOverride,
 	ResolvedSkin,
 	ResolvedSkinBase,
 	SkinKey,
 	SkinSource,
-} from "./types";
+} from "./types.js";
 
 const CACHE_TTL_MS = 30_000;
 // Cache keys are request Host headers — attacker-controllable and unbounded in
@@ -20,47 +19,18 @@ const CACHE_TTL_MS = 30_000;
 export const CACHE_MAX_ENTRIES = 512;
 const cache = new Map<string, { skin: ResolvedSkin; expires: number }>();
 
-/**
- * True when at least one runtime skin source is configured. The render path
- * reads the request Host header only when this (or the build-time flag) is
- * true — see `shouldResolveHost` — so an unconfigured deployment stays on the
- * compiled default skin and never pays for header access.
- */
-export function skinResolutionEnabled(
-	env: NodeJS.ProcessEnv = process.env,
-): boolean {
-	return sourcesFromEnv(env).length > 0;
-}
-
-/**
- * Whether the render path should read the request Host header. Reading headers
- * is what opts a route into dynamic rendering, and that decision has to hold at
- * two different times:
- *
- *   - BUILD: a skinnable image is built before any skin is mounted, so no source
- *     is configured yet. The build-time flag FRONTEND_SKIN_RUNTIME=1 forces the
- *     header read (hence dynamic rendering) so the image doesn't prerender the
- *     compiled default.
- *   - RUNTIME: the flag is build-only and is NOT inlined into the server bundle,
- *     so at request time it is absent. Source presence (`skinResolutionEnabled`,
- *     driven by the runtime-mounted FRONTEND_SKIN_DIR) is what keeps per-host
- *     resolution actually running.
- *
- * Gating on the flag alone would read the host at build but never at runtime,
- * silently collapsing every per-host skin to the default.
- */
-export function shouldResolveHost(
-	env: NodeJS.ProcessEnv = process.env,
-): boolean {
-	return env.FRONTEND_SKIN_RUNTIME === "1" || skinResolutionEnabled(env);
-}
-
 export interface ResolveSkinOptions {
 	/** Compiled default skin; used verbatim when no source overrides it. */
 	fallback: ResolvedSkinBase;
 	host?: string | null;
-	/** Injectable for tests; defaults to the env-configured sources. */
-	sources?: SkinSource[];
+	/**
+	 * The delivery sources to consult, in priority order. The host wires these
+	 * from its environment; the resolver itself stays free of env and Node APIs
+	 * so it runs identically in the host, a remote, or a test. Required — pass an
+	 * empty array to mean "no sources, use the compiled default" explicitly, so
+	 * forgetting to wire sources is a compile error, not a silent default skin.
+	 */
+	sources: SkinSource[];
 	now?: () => number;
 }
 
@@ -73,7 +43,7 @@ export interface ResolveSkinOptions {
 export async function resolveSkin(
 	opts: ResolveSkinOptions,
 ): Promise<ResolvedSkin> {
-	const sources = opts.sources ?? sourcesFromEnv();
+	const sources = opts.sources;
 	const host = opts.host ?? null;
 	const now = opts.now ?? (() => Date.now());
 
@@ -105,7 +75,10 @@ export async function resolveSkin(
 				opts.fallback.appearance,
 				descriptor.appearance,
 			);
-			const branding = mergeBranding(opts.fallback.branding, descriptor.branding);
+			const branding = mergeBranding(
+				opts.fallback.branding,
+				descriptor.branding,
+			);
 			resolved = { appearance, branding, source: source.name };
 			break;
 		} catch (error) {

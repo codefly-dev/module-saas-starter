@@ -1,10 +1,3 @@
-export {
-	clearSkinCache,
-	resolveSkin,
-	shouldResolveHost,
-	skinResolutionEnabled,
-} from "./resolver";
-export { envSkinSource, fileSkinSource, sourcesFromEnv } from "./sources";
 export type {
 	RawBrandingOverride,
 	RawSkinDescriptor,
@@ -12,4 +5,17 @@ export type {
 	ResolvedSkinBase,
 	SkinKey,
 	SkinSource,
-} from "./types";
+} from "@codefly/ui/skin";
+export {
+	CACHE_MAX_ENTRIES,
+	clearSkinCache,
+	type ResolveSkinOptions,
+	resolveSkin,
+} from "@codefly/ui/skin";
+export {
+	envSkinSource,
+	fileSkinSource,
+	shouldResolveHost,
+	skinResolutionEnabled,
+	sourcesFromEnv,
+} from "./sources";

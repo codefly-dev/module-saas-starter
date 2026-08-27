@@ -1,11 +1,11 @@
-import { act, cleanup, render, screen } from "@testing-library/react";
-import { lazy } from "react";
-import { afterEach, describe, expect, it, vi } from "vitest";
 import {
 	createPluginRuntime,
 	PluginAvailabilityError,
 	PluginRuntimeProvider,
-} from "@codefly/saas-plugin-react/runtime";
+} from "@codefly/ui/plugin-host/runtime";
+import { act, cleanup, render, screen } from "@testing-library/react";
+import { lazy } from "react";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { PluginContributionBoundary } from "@/components/plugin-contribution-boundary";
 
 afterEach(() => {

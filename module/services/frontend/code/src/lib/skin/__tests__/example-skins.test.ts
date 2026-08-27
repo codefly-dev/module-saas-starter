@@ -3,10 +3,10 @@ import {
 	type FrontendBranding,
 	resolveFrontendAppearance,
 } from "@codefly/saas-plugin-contract";
+import type { ResolvedSkinBase, SkinSource } from "@codefly/ui/skin";
 import { beforeEach, describe, expect, it } from "vitest";
-import { clearSkinCache, resolveSkin } from "../resolver";
+import { clearSkinCache, resolveSkin } from "..";
 import { fileSkinSource } from "../sources";
-import type { ResolvedSkinBase, SkinSource } from "../types";
 
 // A neutral fallback that shares NONE of the example skins' distinctive values,
 // so any assertion below can only pass if the example file actually resolved.
