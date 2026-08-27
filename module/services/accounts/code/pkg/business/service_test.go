@@ -135,6 +135,7 @@ func runBusinessTests(m *testing.M) int {
 		service.SetHasher(vaultClient)
 		service.SetMFASecretCipher(vaultClient)
 		service.SetOrgIdentityProviderCipher(vaultClient)
+		service.SetConnectorCipher(vaultClient)
 	}
 
 	// New auth pipeline: IdentityResolver + JWTMinter both backed by Postgres.
