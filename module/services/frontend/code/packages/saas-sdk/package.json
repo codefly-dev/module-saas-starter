@@ -1,0 +1,35 @@
+{
+	"name": "@codefly/saas-sdk",
+	"version": "0.1.0",
+	"description": "Typed Connect client and audit data-graph tooling for building saas-starter dashboards.",
+	"type": "module",
+	"sideEffects": false,
+	"files": [
+		"dist",
+		"README.md"
+	],
+	"exports": {
+		".": {
+			"types": "./dist/index.d.ts",
+			"import": "./dist/index.js",
+			"default": "./dist/index.js"
+		}
+	},
+	"scripts": {
+		"build": "tsc -p tsconfig.json",
+		"generate": "cd ../../../../accounts/proto && buf generate --template ../../frontend/code/packages/saas-sdk/buf.gen.yaml --path saas/accounts/v1/audit.proto -o ../../frontend/code/packages/saas-sdk",
+		"test": "vitest run --config vitest.config.ts"
+	},
+	"dependencies": {
+		"@bufbuild/protobuf": "^2.11.0",
+		"@connectrpc/connect": "^2.1.1"
+	},
+	"devDependencies": {
+		"typescript": "5.9.3",
+		"vitest": "^3.0.0"
+	},
+	"publishConfig": {
+		"access": "public"
+	},
+	"license": "Apache-2.0"
+}
