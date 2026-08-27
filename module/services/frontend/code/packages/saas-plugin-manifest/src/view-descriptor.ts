@@ -303,24 +303,36 @@ function assertSort(value: unknown, context: string): void {
 }
 
 /**
- * The affordance fields a facet may request, each gated on the kind supporting
- * it. Shared by rule and override validation so a base rule and a later tweak
- * are held to the same typing.
+ * Type and format of every presentation and affordance field a facet may carry.
+ * Shared by rule and override validation so a base rule and a later tweak are
+ * held to the same typing before either reaches resolution.
  */
-function assertAffordances(
+function assertFacetFields(
 	value: Record<string, unknown>,
-	hint: FacetKindHint,
 	context: string,
 ): void {
+	assertText(value.label, `${context} label`);
 	assertBoolean(value.column, `${context} column`);
 	assertOrder(value.order, `${context} order`);
 	assertToken(value.icon, `${context} icon`);
 	assertBoolean(value.badge, `${context} badge`);
 	assertToken(value.color, `${context} color`);
-	assertText(value.label, `${context} label`);
 	assertBoolean(value.groupBy, `${context} groupBy`);
 	assertSort(value.sort, `${context} sort`);
 	assertBoolean(value.filter, `${context} filter`);
+}
+
+/**
+ * Gates the affordances a facet requests on its kind supporting them. Kept apart
+ * from field validation because it needs the resolved kind — a base rule states
+ * its own kind, while an override borrows the base facet's, so the override path
+ * runs this at resolution instead.
+ */
+function assertAffordanceGates(
+	value: Record<string, unknown>,
+	hint: FacetKindHint,
+	context: string,
+): void {
 	assertView(
 		!value.groupBy || hint.groupable,
 		`${context} groups by a facet whose kind is not groupable`,
@@ -346,7 +358,12 @@ function validateRule(
 		FACET_KINDS.includes(value.kind as FacetKind),
 		`${context} kind '${String(value.kind)}' is unsupported`,
 	);
-	assertAffordances(value, FACET_KIND_HINTS[value.kind as FacetKind], context);
+	assertFacetFields(value, context);
+	assertAffordanceGates(
+		value,
+		FACET_KIND_HINTS[value.kind as FacetKind],
+		context,
+	);
 }
 
 /**
@@ -385,13 +402,14 @@ function validateOverrideFacet(value: unknown, context: string): void {
 	assertView(isObject(value), `${context} must be an object`);
 	assertExactKeys(value, OVERRIDE_FIELDS, context);
 	assertLogicalId(value.facet, `${context} facet`);
+	assertFacetFields(value, context);
 }
 
 /**
  * Validates a parsed value and narrows it to `ViewOverride`: an optional view
- * type and per-facet tweaks that name a facet and set presentation or affordance
- * fields. Per-facet affordance gating is deferred to `resolveViewDescriptor`,
- * where the facet's kind is known from the base descriptor.
+ * type and per-facet tweaks that name a facet and set well-typed presentation or
+ * affordance fields. Only the kind-affordance gating is deferred to
+ * `resolveViewDescriptor`, where the facet's kind is known from the base.
  */
 export function assertViewOverride(
 	value: unknown,

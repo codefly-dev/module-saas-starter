@@ -159,6 +159,32 @@ describe("assertViewOverride", () => {
 			}),
 		).toThrow(/facet in view override 'title' is declared more than once/);
 	});
+
+	it("rejects an invalid sort direction in a tweak", () => {
+		expect(() =>
+			assertViewOverride({ facets: [{ facet: "created", sort: "sideways" }] }),
+		).toThrow(/sort must be 'asc' or 'desc'/);
+	});
+
+	it("rejects a negative order in a tweak", () => {
+		expect(() =>
+			assertViewOverride({ facets: [{ facet: "created", order: -3 }] }),
+		).toThrow(/order must be a non-negative integer/);
+	});
+
+	it("rejects an unsafe color token in a tweak", () => {
+		expect(() =>
+			assertViewOverride({
+				facets: [{ facet: "status", color: "red; background:url(x)" }],
+			}),
+		).toThrow(/color must be a token/);
+	});
+
+	it("rejects a non-boolean badge in a tweak", () => {
+		expect(() =>
+			assertViewOverride({ facets: [{ facet: "status", badge: "yes" }] }),
+		).toThrow(/badge must be a boolean/);
+	});
 });
 
 describe("FACET_KIND_HINTS", () => {
