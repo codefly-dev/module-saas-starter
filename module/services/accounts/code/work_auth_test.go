@@ -67,6 +67,32 @@ func TestObservabilityEnabledRequiresExternalOTLPEndpoint(t *testing.T) {
 	require.True(t, observabilityEnabled())
 }
 
+func TestVaultAllowInsecureHTTP(t *testing.T) {
+	const key = "VAULT_ALLOW_INSECURE_HTTP"
+	securityKey := "CODEFLY__WORKSPACE_CONFIGURATION__SECURITY__" + key
+	secretKey := "CODEFLY__WORKSPACE_SECRET_CONFIGURATION__SECURITY__" + key
+	t.Setenv(key, "")
+	t.Setenv(securityKey, "")
+	t.Setenv(secretKey, "")
+	require.False(t, vaultAllowInsecureHTTP())
+
+	// The opt-in must be read from the "security" workspace group — the home of
+	// the other accounts security flags. Reading it from any other group (e.g.
+	// the "vault" service name) would leave this false and fail closed.
+	t.Setenv(securityKey, "true")
+	require.True(t, vaultAllowInsecureHTTP())
+	t.Setenv(securityKey, "")
+
+	// Parsing is case-insensitive and whitespace-tolerant, matching the sibling
+	// ACCOUNTS_REVOCATION_FAIL_OPEN toggle; a bare == "true" would reject these.
+	t.Setenv(key, "  True ")
+	require.True(t, vaultAllowInsecureHTTP())
+
+	// Anything that is not "true" leaves the gate closed.
+	t.Setenv(key, "1")
+	require.False(t, vaultAllowInsecureHTTP())
+}
+
 func TestConfiguredMFAStepUpMaxAge(t *testing.T) {
 	t.Setenv("CODEFLY__WORKSPACE_CONFIGURATION__SECURITY__MFA_STEP_UP_MAX_AGE", "")
 	t.Setenv("CODEFLY__WORKSPACE_SECRET_CONFIGURATION__SECURITY__MFA_STEP_UP_MAX_AGE", "")

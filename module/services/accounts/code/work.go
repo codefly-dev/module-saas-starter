@@ -925,6 +925,14 @@ func observabilityEnabled() bool {
 	return strings.TrimSpace(workspaceEnv("observability", "OTEL_EXPORTER_OTLP_ENDPOINT")) != ""
 }
 
+// vaultAllowInsecureHTTP reports the operator's opt-in to fetch the signing key
+// over cleartext http from a non-loopback Vault (see LoadKeyFromVault). It is a
+// security-posture toggle, so it reads from the "security" workspace
+// configuration group alongside the other accounts security flags.
+func vaultAllowInsecureHTTP() bool {
+	return strings.EqualFold(strings.TrimSpace(workspaceEnv("security", "VAULT_ALLOW_INSECURE_HTTP")), "true")
+}
+
 // newDurableJobMetricsMonitor builds the durable job-operations metrics monitor
 // only when OTEL metrics are enabled (metricsEnabled mirrors a non-nil
 // otelMetricProvider, i.e. observabilityEnabled()). When metrics are disabled the
@@ -1370,7 +1378,7 @@ func loadSigningKey(ctx context.Context, allowEphemeral bool) (ed25519core.Priva
 		priv, err := ed25519minter.LoadKeyFromVault(ctx, ed25519minter.VaultKeyLoaderConfig{
 			Address:           vaultAddr,
 			Token:             vaultToken,
-			AllowInsecureHTTP: strings.EqualFold(strings.TrimSpace(workspaceEnv("security", "VAULT_ALLOW_INSECURE_HTTP")), "true"),
+			AllowInsecureHTTP: vaultAllowInsecureHTTP(),
 		})
 		if err == nil {
 			return priv, nil
