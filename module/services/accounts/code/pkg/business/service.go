@@ -6,6 +6,7 @@ import (
 	"accounts/pkg/auth"
 	"accounts/pkg/email"
 	gen "accounts/pkg/gen/saas/accounts/v1"
+	"accounts/pkg/githubconnector"
 	"accounts/pkg/jobs"
 	"context"
 	"strings"
@@ -45,8 +46,10 @@ type Service struct {
 	privacy                   PrivacyWorkflow
 	ssoManagementAPIKey       string
 	abuseVerifier             abuse.Verifier
-	identityCipher            SecretCipher              // encrypts per-org IdP client secrets
-	identityRegistry          *IdentityProviderRegistry // resolves org → provider stack, cache-invalidated on config change
+	identityCipher            SecretCipher               // encrypts per-org IdP client secrets
+	identityRegistry          *IdentityProviderRegistry  // resolves org → provider stack, cache-invalidated on config change
+	connectorCipher           SecretCipher               // encrypts per-source datasource connector credentials
+	githubConnector           *githubconnector.Connector // mints installation tokens and pulls repo contents
 }
 
 // CodeExchanger abstracts the OAuth 2.0 code-for-token exchange so the
@@ -143,6 +146,20 @@ func (s *Service) SetPrivacyWorkflow(workflow PrivacyWorkflow) {
 // in-memory implementation.
 func (s *Service) SetOrgIdentityProviderCipher(cipher SecretCipher) {
 	s.identityCipher = cipher
+}
+
+// SetConnectorCipher wires fail-closed encryption for per-source datasource
+// connector credentials (GitHub App keys and webhook signing secrets).
+// Production uses Vault Transit; tests may provide an explicit in-memory
+// implementation.
+func (s *Service) SetConnectorCipher(cipher SecretCipher) {
+	s.connectorCipher = cipher
+}
+
+// SetGitHubConnector wires the client that mints installation tokens and pulls
+// repository contents for datasource sync and webhook re-fetch.
+func (s *Service) SetGitHubConnector(connector *githubconnector.Connector) {
+	s.githubConnector = connector
 }
 
 // SetIdentityProviderRegistry wires the per-org provider registry so

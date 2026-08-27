@@ -18,6 +18,7 @@ import (
 	"accounts/pkg/cache"
 	"accounts/pkg/datasource"
 	"accounts/pkg/email"
+	"accounts/pkg/githubconnector"
 	"accounts/pkg/infra"
 	"accounts/pkg/jobs"
 	"accounts/pkg/metrics"
@@ -207,6 +208,8 @@ func doWork(ctx context.Context) (Clean, error) {
 	service.SetHasher(vaultClient)
 	service.SetMFASecretCipher(vaultClient)
 	service.SetOrgIdentityProviderCipher(vaultClient)
+	service.SetConnectorCipher(vaultClient)
+	service.SetGitHubConnector(githubconnector.NewConnector())
 	webhookPolicy := business.NewWebhookEndpointPolicy()
 	service.SetWebhookSecurity(vaultClient, webhookPolicy)
 	webAuthnRPID, webAuthnDisplayName, webAuthnOrigins, err := configuredWebAuthn()

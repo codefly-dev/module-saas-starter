@@ -71,6 +71,20 @@ type Store interface {
 	ResolveOrgProviderByEmailDomain(ctx context.Context, domain string) (*OrgIdentityProvider, error)
 	ResolveOrgProviderByHost(ctx context.Context, host string) (*OrgIdentityProvider, error)
 
+	// Datasource connector credentials (per-source encrypted secret store —
+	// issue #274). All three run inside a transaction the caller opens; they do
+	// not open their own. Source ids are globally unique, so the row is keyed by
+	// source id alone and the surrounding transaction chooses the visibility:
+	//
+	//   - Under WithOrgTx(orgID, …) RLS restricts them to the org's own sources
+	//     (request-scoped store/read/delete).
+	//   - Under WithControlPlane RLS is bypassed, so GetConnectorCredential
+	//     serves the unauthenticated, cross-tenant webhook-signing-secret lookup
+	//     keyed by source id.
+	UpsertConnectorCredential(ctx context.Context, credential *ConnectorCredential) error
+	GetConnectorCredential(ctx context.Context, sourceID string) (*ConnectorCredential, error)
+	DeleteConnectorCredential(ctx context.Context, sourceID string) error
+
 	// Organizations
 	CreateOrganization(ctx context.Context, org *gen.Organization) error
 	GetOrganization(ctx context.Context, id string) (*gen.Organization, error)
