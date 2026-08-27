@@ -123,4 +123,11 @@ func TestAuthorizationCatalogValidationRejectsUnsafeDrift(t *testing.T) {
 		{Attribute: policyv1.ConditionAttribute_CONDITION_ATTRIBUTE_STATUS},
 	}
 	require.ErrorContains(t, cataloggen.ValidateAuthorizationCatalog(invalidCondition), "attribute condition")
+
+	unregisteredEvent := proto.Clone(catalog).(*catalogv1.AuthorizationCatalog)
+	unregisteredEvent.Methods[0].Policy.Audit = &policyv1.AuditPolicy{
+		Emission: policyv1.AuditEmission_AUDIT_EMISSION_SUCCESS,
+		Events:   []string{"nope.not_real"},
+	}
+	require.ErrorContains(t, cataloggen.ValidateAuthorizationCatalog(unregisteredEvent), "not registered")
 }

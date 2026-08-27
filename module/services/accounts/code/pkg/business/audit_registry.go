@@ -133,6 +133,11 @@ const (
 	EventRecordShared        EventType = "record.shared"
 	EventRecordShareRevoked  EventType = "record.share_revoked"
 
+	EventWorkContextTaskStarted  EventType = "work_context.task_started"
+	EventWorkContextRootSession  EventType = "work_context.root_session_started"
+	EventWorkContextChildSession EventType = "work_context.child_session_started"
+	EventWorkContextAudienceExch EventType = "work_context.audience_exchanged"
+
 	EventAuthLogin             EventType = "auth.login"
 	EventAuthMagicLinkLogin    EventType = "auth.magic_link_login"
 	EventAuthSSOJitProvisioned EventType = "auth.sso_jit_provisioned"
@@ -174,6 +179,7 @@ const (
 	EventWaitlistJoined    EventType = "waitlist.joined"
 	EventWaitlistPending   EventType = "waitlist.pending"
 	EventWaitlistVerified  EventType = "waitlist.verified"
+	EventWaitlistReviewed  EventType = "waitlist.reviewed"
 	EventWaitlistApproved  EventType = "waitlist.approved"
 	EventWaitlistInvited   EventType = "waitlist.invited"
 	EventWaitlistConverted EventType = "waitlist.converted"
@@ -191,6 +197,7 @@ const (
 	EventDatasourceSourceAdded   EventType = "datasource.source.added"
 	EventDatasourceSourceSynced  EventType = "datasource.source.synced"
 	EventDatasourceSourceRemoved EventType = "datasource.source.removed"
+	EventFeatureFlagUpdated      EventType = "feature_flag.updated"
 )
 
 var auditEventCatalog = []AuditEventDefinition{
@@ -235,6 +242,10 @@ var auditEventCatalog = []AuditEventDefinition{
 	def(EventScopeRevoked, CategoryAccess, "A scope grant was revoked.", uid("role_id"), str("scope_path")),
 	def(EventRecordShared, CategoryAccess, "A record was shared with a principal or team.", uid("role_id"), uid("subject_id")),
 	def(EventRecordShareRevoked, CategoryAccess, "A record share was revoked.", uid("role_id"), uid("subject_id")),
+	def(EventWorkContextTaskStarted, CategoryAccess, "A signed Work Context was issued for a new agent task and root session."),
+	def(EventWorkContextRootSession, CategoryAccess, "A new root agent session was started under an existing task."),
+	def(EventWorkContextChildSession, CategoryAccess, "An attenuated child agent session was started."),
+	def(EventWorkContextAudienceExch, CategoryAccess, "A Work Context task and session lineage was reissued for another audience."),
 
 	def(EventAuthLogin, CategorySecurity, "A user authenticated.", str("method")),
 	def(EventAuthMagicLinkLogin, CategorySecurity, "A user authenticated via magic link."),
@@ -277,6 +288,7 @@ var auditEventCatalog = []AuditEventDefinition{
 	def(EventWaitlistJoined, CategoryLifecycle, "A prospect joined the waitlist.", pii(str("email"))),
 	def(EventWaitlistPending, CategoryLifecycle, "A waitlist entry moved to pending."),
 	def(EventWaitlistVerified, CategoryLifecycle, "A waitlist entry was verified."),
+	def(EventWaitlistReviewed, CategoryLifecycle, "A waitlist entry was reviewed by an administrator."),
 	def(EventWaitlistApproved, CategoryLifecycle, "A waitlist entry was approved."),
 	def(EventWaitlistInvited, CategoryLifecycle, "A waitlist entry was invited."),
 	def(EventWaitlistConverted, CategoryLifecycle, "A waitlist entry converted to a user."),
@@ -293,6 +305,7 @@ var auditEventCatalog = []AuditEventDefinition{
 	def(EventDatasourceSourceRemoved, CategorySystem, "A datasource was removed."),
 	def(EventWebhookSecretRotated, CategorySystem, "A webhook signing secret was rotated."),
 	def(EventJobReplayed, CategorySystem, "A background job was replayed."),
+	def(EventFeatureFlagUpdated, CategorySystem, "A legacy feature flag was updated."),
 }
 
 // auditEventIndex resolves an event type to its definition. Built once.

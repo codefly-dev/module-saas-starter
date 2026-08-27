@@ -178,6 +178,9 @@ func validateAuthorizationMethodPolicy(policy *policyv1.MethodPolicy) error {
 		if !auditEventPattern.MatchString(event) {
 			return fmt.Errorf("invalid audit event %q", event)
 		}
+		if _, ok := business.LookupAuditEvent(business.EventType(event)); !ok {
+			return fmt.Errorf("audit event %q is not registered in the typed audit-event registry", event)
+		}
 	}
 	if policy.GetExposure() == policyv1.Exposure_EXPOSURE_PUBLIC &&
 		(policy.GetTenant() != policyv1.TenantRequirement_TENANT_REQUIREMENT_NONE ||
