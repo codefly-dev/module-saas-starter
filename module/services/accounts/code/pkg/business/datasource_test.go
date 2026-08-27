@@ -1,6 +1,7 @@
 package business
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -11,7 +12,15 @@ func TestValidGitHubRepo(t *testing.T) {
 	for _, r := range valid {
 		require.True(t, validGitHubRepo(r), "%q should be valid", r)
 	}
-	invalid := []string{"", "octocat", "/hello", "octocat/", "a/b/c", "octo cat/repo", "octocat/re po"}
+	invalid := []string{
+		"", "octocat", "/hello", "octocat/", "a/b/c", "octo cat/repo", "octocat/re po",
+		// Out-of-charset / URL metacharacters that must not reach a GitHub API URL.
+		"octocat/hello?ref=x", "octocat/hello#frag", "octocat/hel lo", "octo/cat/repo",
+		// Path-traversal segment names GitHub itself forbids.
+		"../etc", "octocat/..", "./x", "x/.",
+		// Over-length segments (owner > 39, repo > 100).
+		strings.Repeat("a", 40) + "/repo", "owner/" + strings.Repeat("b", 101),
+	}
 	for _, r := range invalid {
 		require.False(t, validGitHubRepo(r), "%q should be invalid", r)
 	}

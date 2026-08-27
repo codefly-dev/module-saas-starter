@@ -5,6 +5,8 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/require"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 
 	"accounts/pkg/business"
 )
@@ -32,6 +34,11 @@ func TestCreateAndListDatasources(t *testing.T) {
 	ds := newTestDatasource(orgID)
 	require.NoError(t, testStore.WithOrgTx(testCtx, orgID, func(ctx context.Context) error {
 		require.NoError(t, testStore.CreateDatasource(ctx, ds))
+		// CreateDatasource stamps the server-assigned timestamps back onto ds,
+		// so the create response carries them (not just later reads).
+		require.False(t, ds.CreatedAt.IsZero(), "CreateDatasource must populate CreatedAt")
+		require.False(t, ds.UpdatedAt.IsZero(), "CreateDatasource must populate UpdatedAt")
+
 		list, err := testStore.ListDatasources(ctx, orgID)
 		require.NoError(t, err)
 		require.Len(t, list, 1)
@@ -45,6 +52,26 @@ func TestCreateAndListDatasources(t *testing.T) {
 		require.False(t, got.CreatedAt.IsZero())
 		return nil
 	}))
+}
+
+func TestCreateDatasource_DuplicateRepoConflicts(t *testing.T) {
+	userID := seedUser(t)
+	orgID := seedOrg(t, userID)
+
+	require.NoError(t, testStore.WithOrgTx(testCtx, orgID, func(ctx context.Context) error {
+		return testStore.CreateDatasource(ctx, newTestDatasource(orgID))
+	}))
+
+	// A second source for the same org+repo trips UNIQUE(org_id, repo) and must
+	// surface as AlreadyExists, not a generic internal error. Run it in its own
+	// transaction and propagate the error so the aborted tx rolls back cleanly.
+	var dupErr error
+	_ = testStore.WithOrgTx(testCtx, orgID, func(ctx context.Context) error {
+		dupErr = testStore.CreateDatasource(ctx, newTestDatasource(orgID))
+		return dupErr
+	})
+	require.Error(t, dupErr)
+	require.Equal(t, codes.AlreadyExists, status.Code(dupErr))
 }
 
 func TestMarkDatasourceSyncRequested(t *testing.T) {

@@ -2,6 +2,7 @@ package business
 
 import (
 	"context"
+	"regexp"
 	"strings"
 	"time"
 
@@ -55,8 +56,9 @@ type AddGitHubSourceInput struct {
 }
 
 // AddGitHubSource records a GitHub source for the org, encrypting the supplied
-// access credential and persisting only its envelope reference.
-func (s *Service) AddGitHubSource(ctx context.Context, input AddGitHubSourceInput) (*Datasource, error) {
+// access credential and persisting only its envelope reference. actorID is the
+// authenticated principal, recorded on the audit event.
+func (s *Service) AddGitHubSource(ctx context.Context, actorID string, input AddGitHubSourceInput) (*Datasource, error) {
 	w := wool.Get(ctx).In("AddGitHubSource")
 
 	orgID := strings.TrimSpace(input.OrgID)
@@ -95,7 +97,13 @@ func (s *Service) AddGitHubSource(ctx context.Context, input AddGitHubSourceInpu
 		SyncStatus:          DatasourceSyncStatusIdle,
 	}
 	if err := s.store.WithOrgTx(ctx, orgID, func(ctx context.Context) error {
-		return s.store.CreateDatasource(ctx, ds)
+		if err := s.store.CreateDatasource(ctx, ds); err != nil {
+			return err
+		}
+		// Transactional audit: the source is not created without its
+		// compliance record. A failed audit write aborts the insert.
+		return s.emitTx(ctx, actorID, "user", EventDatasourceSourceAdded, "datasource", ds.ID, orgID,
+			map[string]any{"repo": ds.Repo, "collection": ds.Collection})
 	}); err != nil {
 		return nil, w.Wrapf(err, "persist datasource")
 	}
@@ -126,7 +134,8 @@ func (s *Service) ListDatasources(ctx context.Context, orgID string) ([]*Datasou
 
 // SyncDatasource marks a source for ingestion. RLS confines the update to the
 // caller's org, so a source id belonging to another org resolves to not-found.
-func (s *Service) SyncDatasource(ctx context.Context, orgID, id string) (*Datasource, error) {
+// actorID is the authenticated principal, recorded on the audit event.
+func (s *Service) SyncDatasource(ctx context.Context, actorID, orgID, id string) (*Datasource, error) {
 	w := wool.Get(ctx).In("SyncDatasource")
 
 	orgID = strings.TrimSpace(orgID)
@@ -143,8 +152,15 @@ func (s *Service) SyncDatasource(ctx context.Context, orgID, id string) (*Dataso
 		if err != nil {
 			return err
 		}
+		if ds == nil {
+			// No own-org row matched; leave out nil and skip the audit
+			// event — nothing changed to record.
+			return nil
+		}
 		out = ds
-		return nil
+		// Transactional audit: the sync-request flag and its compliance
+		// record commit together.
+		return s.emitTx(ctx, actorID, "user", EventDatasourceSyncRequested, "datasource", id, orgID, nil)
 	}); err != nil {
 		return nil, w.Wrapf(err, "request datasource sync")
 	}
@@ -154,14 +170,28 @@ func (s *Service) SyncDatasource(ctx context.Context, orgID, id string) (*Dataso
 	return out, nil
 }
 
-// validGitHubRepo accepts a single "owner/name" slug: exactly one slash and no
-// whitespace or empty segment.
+// githubRepoSegment is GitHub's allowed character set for an owner or repository
+// name. Constraining both segments here keeps a stored repo from smuggling URL
+// metacharacters (spaces, '?', '#', additional path separators) into the GitHub
+// API URLs the connector builds downstream.
+var githubRepoSegment = regexp.MustCompile(`^[A-Za-z0-9._-]+$`)
+
+// validGitHubRepo accepts a single "owner/name" slug where each segment is a
+// valid GitHub identifier. It rejects empty segments, out-of-charset input, the
+// "."/".." traversal names GitHub itself forbids, and over-length segments
+// (GitHub caps owners at 39 and repositories at 100 characters).
 func validGitHubRepo(repo string) bool {
 	owner, name, ok := strings.Cut(repo, "/")
-	if !ok || owner == "" || name == "" {
+	if !ok {
 		return false
 	}
-	if strings.ContainsAny(repo, " \t\n") || strings.Contains(name, "/") {
+	if !githubRepoSegment.MatchString(owner) || !githubRepoSegment.MatchString(name) {
+		return false
+	}
+	if owner == "." || owner == ".." || name == "." || name == ".." {
+		return false
+	}
+	if len(owner) > 39 || len(name) > 100 {
 		return false
 	}
 	return true

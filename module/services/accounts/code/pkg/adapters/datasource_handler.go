@@ -33,7 +33,7 @@ func (h *datasourceConnectHandler) AddGitHubSource(
 	if err := requireOrgAdmin(ctx, actorID, req.Msg.OrgId); err != nil {
 		return nil, translateGRPCError(err)
 	}
-	ds, err := h.svc.AddGitHubSource(ctx, business.AddGitHubSourceInput{
+	ds, err := h.svc.AddGitHubSource(ctx, actorID, business.AddGitHubSourceInput{
 		OrgID:      req.Msg.OrgId,
 		Repo:       req.Msg.Repo,
 		Paths:      req.Msg.Paths,
@@ -41,7 +41,7 @@ func (h *datasourceConnectHandler) AddGitHubSource(
 		Credential: req.Msg.Credential,
 	})
 	if err != nil {
-		return nil, err
+		return nil, translateGRPCError(err)
 	}
 	return connect.NewResponse(datasourceToProto(ds)), nil
 }
@@ -94,7 +94,7 @@ func (h *datasourceConnectHandler) Sync(
 	if err := requireOrgAdmin(ctx, actorID, orgID); err != nil {
 		return nil, translateGRPCError(err)
 	}
-	ds, err := h.svc.SyncDatasource(ctx, orgID, req.Msg.Id)
+	ds, err := h.svc.SyncDatasource(ctx, actorID, orgID, req.Msg.Id)
 	if err != nil {
 		return nil, err
 	}

@@ -2,9 +2,13 @@ package infra
 
 import (
 	"context"
+	"errors"
 	"time"
 
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgconn"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 
 	"accounts/pkg/business"
 )
@@ -30,21 +34,28 @@ func scanDatasource(row pgx.Row) (*business.Datasource, error) {
 	return &ds, nil
 }
 
-// CreateDatasource inserts a new source. One row per org+repo; a repeat repo
-// conflicts. Runs under the caller's WithOrgTx.
+// CreateDatasource inserts a new source and stamps the server-assigned
+// timestamps back onto ds. One row per org+repo; a repeat repo trips the unique
+// constraint and returns codes.AlreadyExists so the caller can tell a duplicate
+// from an internal error. Runs under the caller's WithOrgTx.
 func (s *PostgresStore) CreateDatasource(ctx context.Context, ds *business.Datasource) error {
 	paths := ds.Paths
 	if paths == nil {
 		paths = []string{}
 	}
-	_, err := s.getQueryExecutor(ctx).Exec(ctx, `
+	err := s.getQueryExecutor(ctx).QueryRow(ctx, `
 		INSERT INTO datasources (
 			id, org_id, kind, repo, paths, collection,
 			credential_secret_ref, sync_status)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+		RETURNING created_at, updated_at`,
 		ds.ID, ds.OrgID, ds.Kind, ds.Repo, paths, ds.Collection,
 		ds.CredentialSecretRef, ds.SyncStatus,
-	)
+	).Scan(&ds.CreatedAt, &ds.UpdatedAt)
+	var pgErr *pgconn.PgError
+	if errors.As(err, &pgErr) && pgErr.Code == "23505" {
+		return status.Errorf(codes.AlreadyExists, "datasource for repo %q already exists", ds.Repo)
+	}
 	return err
 }
 
