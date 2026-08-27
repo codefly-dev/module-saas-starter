@@ -1,5 +1,5 @@
 import { render, screen } from "@testing-library/react";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import {
 	formatMetricValue,
 	KPIRow,
@@ -13,7 +13,9 @@ describe("formatMetricValue", () => {
 		[1284, "number", "1,284"],
 		[12900, "compact", "12.9K"],
 		[4_200_000, "currency", "$4.2M"],
-		[0.128, "percent", "12.8%"],
+		// percent takes an already-scaled value — 45 is 45%, not 4,500%.
+		[45, "percent", "45%"],
+		[12.8, "percent", "12.8%"],
 	] satisfies [number, Parameters<typeof formatMetricValue>[1], string][])(
 		"formats %d as %s → %s",
 		(value, format, expected) => {
@@ -73,6 +75,16 @@ describe("StatTile", () => {
 	it("colors a falling delta red when higher is better", () => {
 		render(<StatTile metric={{ label: "Revenue", value: 3, delta: -0.1 }} />);
 		expect(screen.getByText(/10%/).className).toContain("text-destructive");
+	});
+
+	it("renders a delta that rounds to zero as neutral, not a colored arrow", () => {
+		render(
+			<StatTile metric={{ label: "Signups", value: 100, delta: 0.0004 }} />,
+		);
+		const delta = screen.getByText("0%");
+		expect(delta.className).toContain("text-muted-foreground");
+		expect(delta.className).not.toContain("text-emerald");
+		expect(delta.className).not.toContain("text-destructive");
 	});
 
 	it("renders a dash for states without a value and shows the state badge", () => {
@@ -140,5 +152,23 @@ describe("KPIRow", () => {
 		expect(screen.getByText("Users")).toBeTruthy();
 		expect(screen.getByText("Orgs")).toBeTruthy();
 		expect(screen.getByText("$4.2M")).toBeTruthy();
+	});
+
+	it("does not collide React keys when two metrics share a label", () => {
+		const spy = vi.spyOn(console, "error").mockImplementation(() => {});
+		render(
+			<KPIRow
+				metrics={[
+					{ label: "Requests", value: 1 },
+					{ label: "Requests", value: 2 },
+				]}
+			/>,
+		);
+		const collisions = spy.mock.calls.filter(
+			([msg]) => typeof msg === "string" && msg.includes("same key"),
+		);
+		spy.mockRestore();
+		expect(collisions).toEqual([]);
+		expect(screen.getAllByText("Requests")).toHaveLength(2);
 	});
 });

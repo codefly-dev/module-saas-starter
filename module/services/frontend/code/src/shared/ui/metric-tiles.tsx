@@ -25,8 +25,16 @@ export type MetricFormat = "number" | "compact" | "currency" | "percent";
  * what a tile needs to render.
  */
 export interface Metric {
+	/** Stable identity for list keying; falls back to position when omitted. */
+	id?: string;
 	label: string;
+	/** The computed value as a plain number — `Number(bigint)` a bigint source. */
 	value: number;
+	/**
+	 * How {@link value} is rendered. `"percent"` treats the value as an
+	 * already-scaled percentage (45 → "45%"), not a fraction — unlike
+	 * {@link delta}, which is a fraction.
+	 */
 	format?: MetricFormat;
 	/** Suffix rendered after the value, e.g. "req/s". */
 	unit?: string;
@@ -71,10 +79,11 @@ export function formatMetricValue(
 				maximumFractionDigits: 1,
 			}).format(value);
 		case "percent":
-			return new Intl.NumberFormat("en-US", {
-				style: "percent",
+			// Value is an already-scaled percentage (45 → "45%"); style:"percent"
+			// would multiply by 100 and render "4,500%".
+			return `${new Intl.NumberFormat("en-US", {
 				maximumFractionDigits: 1,
-			}).format(value);
+			}).format(value)}%`;
 		default:
 			return value.toLocaleString("en-US");
 	}
@@ -117,7 +126,10 @@ function MetricDelta({
 		maximumFractionDigits: 1,
 	}).format(Math.abs(delta));
 
-	if (delta === 0) {
+	// Neutral when the change rounds to 0.0% at display precision — keying off
+	// `delta === 0` alone would paint a colored direction arrow next to "+0%"
+	// for a delta like 0.0004.
+	if (Math.round(Math.abs(delta) * 1000) === 0) {
 		return (
 			<span className="inline-flex items-center gap-0.5 text-xs font-medium text-muted-foreground">
 				<Minus className="size-3" aria-hidden />
@@ -254,8 +266,8 @@ export function KPIRow({
 }) {
 	return (
 		<div className={cn("grid gap-4 sm:grid-cols-2 lg:grid-cols-4", className)}>
-			{metrics.map((metric) => (
-				<StatTile key={metric.label} metric={metric} />
+			{metrics.map((metric, i) => (
+				<StatTile key={metric.id ?? i} metric={metric} />
 			))}
 		</div>
 	);
