@@ -23,7 +23,11 @@ describe("layout primitives", () => {
 				</Page>
 			</Layout>,
 		);
-		expect(screen.getByTestId("layout").className).toContain("max-w-7xl");
+		const layout = screen.getByTestId("layout");
+		expect(layout.className).toContain("max-w-7xl");
+		// Layout must not add its own gutters — the route shell owns padding, and
+		// re-applying it here double-pads the documented composition.
+		expect(layout.className).not.toContain("px-4");
 		expect(screen.getByTestId("page").className).toContain("space-y-6");
 		expect(screen.getByRole("heading", { name: "Users" })).toBeTruthy();
 		expect(screen.getByText("Manage your team")).toBeTruthy();
@@ -34,6 +38,19 @@ describe("layout primitives", () => {
 		render(<PageHeader title="Only title" />);
 		expect(screen.getByRole("heading", { name: "Only title" })).toBeTruthy();
 		expect(screen.queryByRole("button")).toBeNull();
+	});
+
+	it("accepts a ReactNode title in PageHeader and Section", () => {
+		render(
+			<>
+				<PageHeader title={<span data-testid="ph-title">Users</span>} />
+				<Section title={<span data-testid="sec-title">Details</span>}>
+					<div>body</div>
+				</Section>
+			</>,
+		);
+		expect(screen.getByTestId("ph-title").textContent).toBe("Users");
+		expect(screen.getByTestId("sec-title").textContent).toBe("Details");
 	});
 
 	it("maps Grid cols and gap to responsive classes", () => {

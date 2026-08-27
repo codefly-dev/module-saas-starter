@@ -12,18 +12,25 @@ import { cn } from "@/lib/utils";
 //     </Page>
 //   </Layout>
 
-// Layout centers page content and applies responsive horizontal gutters.
+// Layout constrains page content to a readable max width and centers it. It does
+// not add its own padding: the route shell that renders these pages owns the
+// page gutters (AdminLayout's <main> is `p-6`), so applying padding here too
+// would double it. Pass `className` for gutters when using Layout outside a
+// padded shell.
 function Layout({ className, ...props }: React.ComponentProps<"div">) {
 	return (
 		<div
 			data-slot="layout"
-			className={cn("mx-auto w-full max-w-7xl px-4 sm:px-6 lg:px-8", className)}
+			className={cn("mx-auto w-full max-w-7xl", className)}
 			{...props}
 		/>
 	);
 }
 
-// Page stacks a screen's sections with consistent vertical rhythm.
+// Page stacks a screen's sections with consistent vertical rhythm. Compose it
+// inside a feature component (e.g. UsersPage), not a route `page.tsx` — the
+// route file's `export default function Page()` would shadow this import. Alias
+// it (`import { Page as PageBody }`) if you must use both in one file.
 function Page({ className, ...props }: React.ComponentProps<"div">) {
 	return (
 		<div data-slot="page" className={cn("space-y-6", className)} {...props} />
@@ -39,7 +46,7 @@ function PageHeader({
 	className,
 	children,
 	...props
-}: React.ComponentProps<"div"> & {
+}: Omit<React.ComponentProps<"div">, "title"> & {
 	title?: React.ReactNode;
 	description?: React.ReactNode;
 	actions?: React.ReactNode;
@@ -153,7 +160,7 @@ function Section({
 	className,
 	children,
 	...props
-}: React.ComponentProps<"section"> & {
+}: Omit<React.ComponentProps<"section">, "title"> & {
 	title?: React.ReactNode;
 	description?: React.ReactNode;
 	actions?: React.ReactNode;
