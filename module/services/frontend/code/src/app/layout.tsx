@@ -3,7 +3,7 @@ import { headers } from "next/headers";
 import { ConsentBanner } from "@/components/consent-banner";
 import { appearanceStyleProperties } from "@/lib/appearance";
 import { Providers } from "@/lib/providers";
-import { resolveSkin, shouldResolveHost } from "@/lib/skin";
+import { resolveSkin, shouldResolveHost, sourcesFromEnv } from "@/lib/skin";
 import "./globals.css";
 import frontendConfig from "../../frontend.config";
 
@@ -21,7 +21,11 @@ import frontendConfig from "../../frontend.config";
  */
 async function currentSkin() {
 	const host = shouldResolveHost() ? (await headers()).get("host") : null;
-	return resolveSkin({ fallback: frontendConfig, host });
+	return resolveSkin({
+		fallback: frontendConfig,
+		host,
+		sources: sourcesFromEnv(),
+	});
 }
 
 export async function generateMetadata(): Promise<Metadata> {

@@ -1,4 +1,4 @@
-import { createPluginRuntime } from "@codefly/saas-plugin-react/runtime";
+import { createPluginRuntime } from "@codefly/ui/plugin-host/runtime";
 
 import { getToken } from "@/lib/connect/token-store";
 

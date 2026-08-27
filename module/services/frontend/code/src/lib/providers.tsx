@@ -1,12 +1,12 @@
 "use client";
 
-import type { FrontendReactConfig } from "@codefly/saas-plugin-react";
-import { PluginRuntimeProvider } from "@codefly/saas-plugin-react/runtime";
+import type { FrontendReactConfig } from "@codefly/ui/plugin-host";
+import { PluginRuntimeProvider } from "@codefly/ui/plugin-host/runtime";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { createContext, type ReactNode, useContext, useState } from "react";
 import { ThemePreferenceProvider } from "@/features/user-settings/ui/theme-preference-provider";
-import { AppearanceProvider } from "@/lib/appearance-provider";
 import { AnalyticsProvider } from "@/lib/analytics/provider";
+import { AppearanceProvider } from "@/lib/appearance-provider";
 import { ThemeProvider } from "@/lib/theme-provider";
 import applicationFrontendConfig from "../../frontend.config";
 import { AuthProvider } from "./auth";

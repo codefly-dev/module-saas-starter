@@ -1,0 +1,60 @@
+{
+	"name": "@codefly/ui",
+	"version": "0.1.0",
+	"description": "The shared, versioned Codefly SaaS frontend kit: the plugin host and the tokens-as-data skin mechanism, standalone so the host and Module-Federation remotes import and dedupe one copy.",
+	"type": "module",
+	"sideEffects": false,
+	"files": [
+		"dist",
+		"README.md"
+	],
+	"exports": {
+		".": {
+			"types": "./dist/index.d.ts",
+			"import": "./dist/index.js",
+			"default": "./dist/index.js"
+		},
+		"./plugin-host": {
+			"types": "./dist/plugin-host/index.d.ts",
+			"import": "./dist/plugin-host/index.js",
+			"default": "./dist/plugin-host/index.js"
+		},
+		"./plugin-host/runtime": {
+			"types": "./dist/plugin-host/runtime.d.ts",
+			"import": "./dist/plugin-host/runtime.js",
+			"default": "./dist/plugin-host/runtime.js"
+		},
+		"./plugin-host/ui": {
+			"types": "./dist/plugin-host/ui.d.ts",
+			"import": "./dist/plugin-host/ui.js",
+			"default": "./dist/plugin-host/ui.js"
+		},
+		"./skin": {
+			"types": "./dist/skin/index.d.ts",
+			"import": "./dist/skin/index.js",
+			"default": "./dist/skin/index.js"
+		}
+	},
+	"scripts": {
+		"build": "tsc -p tsconfig.json",
+		"test": "vitest run --config vitest.config.ts"
+	},
+	"dependencies": {
+		"@codefly/saas-plugin-contract": "2.1.0",
+		"@codefly/saas-plugin-react": "0.4.1"
+	},
+	"peerDependencies": {
+		"react": ">=19.2 <20",
+		"react-dom": ">=19.2 <20"
+	},
+	"devDependencies": {
+		"@types/react": "19.2.17",
+		"react": "^19.2.8",
+		"typescript": "5.9.3",
+		"vitest": "^3.0.0"
+	},
+	"publishConfig": {
+		"access": "public"
+	},
+	"license": "Apache-2.0"
+}

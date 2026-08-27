@@ -1,4 +1,4 @@
-import type { RawSkinDescriptor, SkinSource } from "./types";
+import type { RawSkinDescriptor, SkinSource } from "@codefly/ui/skin";
 
 /**
  * The delivery mechanisms, each behind the one `SkinSource` seam. They are
@@ -11,10 +11,47 @@ import type { RawSkinDescriptor, SkinSource } from "./types";
  *
  * The first source that returns a descriptor wins.
  */
-export function sourcesFromEnv(env: NodeJS.ProcessEnv = process.env): SkinSource[] {
+export function sourcesFromEnv(
+	env: NodeJS.ProcessEnv = process.env,
+): SkinSource[] {
 	return [fileSkinSource(env), envSkinSource(env)].filter(
 		(source): source is SkinSource => source !== null,
 	);
+}
+
+/**
+ * True when at least one runtime skin source is configured. The render path
+ * reads the request Host header only when this (or the build-time flag) is
+ * true — see `shouldResolveHost` — so an unconfigured deployment stays on the
+ * compiled default skin and never pays for header access.
+ */
+export function skinResolutionEnabled(
+	env: NodeJS.ProcessEnv = process.env,
+): boolean {
+	return sourcesFromEnv(env).length > 0;
+}
+
+/**
+ * Whether the render path should read the request Host header. Reading headers
+ * is what opts a route into dynamic rendering, and that decision has to hold at
+ * two different times:
+ *
+ *   - BUILD: a skinnable image is built before any skin is mounted, so no source
+ *     is configured yet. The build-time flag FRONTEND_SKIN_RUNTIME=1 forces the
+ *     header read (hence dynamic rendering) so the image doesn't prerender the
+ *     compiled default.
+ *   - RUNTIME: the flag is build-only and is NOT inlined into the server bundle,
+ *     so at request time it is absent. Source presence (`skinResolutionEnabled`,
+ *     driven by the runtime-mounted FRONTEND_SKIN_DIR) is what keeps per-host
+ *     resolution actually running.
+ *
+ * Gating on the flag alone would read the host at build but never at runtime,
+ * silently collapsing every per-host skin to the default.
+ */
+export function shouldResolveHost(
+	env: NodeJS.ProcessEnv = process.env,
+): boolean {
+	return env.FRONTEND_SKIN_RUNTIME === "1" || skinResolutionEnabled(env);
 }
 
 /** A single skin descriptor as a JSON blob in `FRONTEND_SKIN_JSON`. */

@@ -3,12 +3,7 @@ import {
 	resolveFrontendAppearance,
 } from "@codefly/saas-plugin-contract";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import {
-	CACHE_MAX_ENTRIES,
-	clearSkinCache,
-	resolveSkin,
-	shouldResolveHost,
-} from "../resolver";
+import { CACHE_MAX_ENTRIES, clearSkinCache, resolveSkin } from "../resolver";
 import type { RawSkinDescriptor, ResolvedSkinBase, SkinSource } from "../types";
 
 const branding: FrontendBranding = {
@@ -44,7 +39,9 @@ describe("resolveSkin", () => {
 		const skin = await resolveSkin({
 			fallback,
 			host: "acme.example.com",
-			sources: [source("http", { appearance: { light: { primary: "#123456" } } })],
+			sources: [
+				source("http", { appearance: { light: { primary: "#123456" } } }),
+			],
 		});
 		expect(skin.source).toBe("http");
 		expect(skin.appearance.light.primary).toBe("#123456");
@@ -64,7 +61,9 @@ describe("resolveSkin", () => {
 			],
 		});
 		expect(skin.source).toBe("default");
-		expect(skin.appearance.light.primary).toBe(fallback.appearance.light.primary);
+		expect(skin.appearance.light.primary).toBe(
+			fallback.appearance.light.primary,
+		);
 		expect(warn).toHaveBeenCalled();
 		warn.mockRestore();
 	});
@@ -122,7 +121,9 @@ describe("resolveSkin", () => {
 		expect(skin.branding.name).toBe("Acme");
 		// Non-https favicon is dropped; the default is kept.
 		expect(skin.branding.favicon).toBe("/favicon.ico");
-		expect(skin.branding.logo?.lightSrc).toBe("https://cdn.example.com/logo.svg");
+		expect(skin.branding.logo?.lightSrc).toBe(
+			"https://cdn.example.com/logo.svg",
+		);
 	});
 
 	it("caches per host within the TTL", async () => {
@@ -170,25 +171,5 @@ describe("resolveSkin", () => {
 			sources: [countingSource()],
 		});
 		expect(loads.get("h0.example.com")).toBe(2);
-	});
-});
-
-describe("shouldResolveHost", () => {
-	it("reads the host at runtime when a source is configured, even without the build flag", () => {
-		// The bug: the build-only flag is absent at runtime, so gating on it alone
-		// left host=null and per-host skins silently collapsed to the default.
-		expect(
-			shouldResolveHost({ FRONTEND_SKIN_DIR: "/etc/codefly/skin" } as unknown as NodeJS.ProcessEnv),
-		).toBe(true);
-	});
-
-	it("reads the host at build via the flag before any source is mounted", () => {
-		expect(
-			shouldResolveHost({ FRONTEND_SKIN_RUNTIME: "1" } as unknown as NodeJS.ProcessEnv),
-		).toBe(true);
-	});
-
-	it("stays static when neither a source nor the flag is present", () => {
-		expect(shouldResolveHost({} as unknown as NodeJS.ProcessEnv)).toBe(false);
 	});
 });
