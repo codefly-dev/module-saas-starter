@@ -33,22 +33,77 @@ export interface Point {
 	y: number;
 }
 
+export interface ResolvedSeries {
+	name: string;
+	/**
+	 * Values aligned index-for-index to the shared label axis from
+	 * {@link unionLabels}. `null` marks a label this series has no point for (a
+	 * gap) or a non-finite value that was dropped at ingestion.
+	 */
+	values: (number | null)[];
+}
+
 /**
- * Value domain across every series, always anchored at zero. A bar or area
- * whose baseline is not zero misreports magnitude (the classic truncated-axis
- * lie), so zero is included even when all values are positive; negative values
- * extend the domain downward symmetrically to whatever the data needs.
+ * The ordered label axis shared by every series, as the union of all series'
+ * labels in first-seen order. Series are aligned to *this* axis by label rather
+ * than by raw array index, so a chart of separately-aggregated metrics — whose
+ * bucket sets routinely differ (a time bucket with no events is simply absent)
+ * — plots each value under its own label instead of crashing or silently
+ * shifting values onto the wrong bucket.
  */
-export function valueExtent(series: ChartSeries[]): [number, number] {
+export function unionLabels(series: ChartSeries[]): string[] {
+	const seen = new Set<string>();
+	const labels: string[] = [];
+	for (const s of series) {
+		for (const d of s.data) {
+			if (!seen.has(d.label)) {
+				seen.add(d.label);
+				labels.push(d.label);
+			}
+		}
+	}
+	return labels;
+}
+
+/**
+ * Projects each series onto the shared label axis. A label the series lacks
+ * becomes `null`; a non-finite value (NaN/±Infinity from e.g. a rate over an
+ * empty denominator) is dropped to `null` here, at the boundary, so it never
+ * reaches the scales and produces `NaN` geometry.
+ */
+export function resolveSeries(
+	series: ChartSeries[],
+	labels: string[],
+): ResolvedSeries[] {
+	return series.map((s) => {
+		const byLabel = new Map<string, number>();
+		for (const d of s.data) {
+			if (Number.isFinite(d.value)) byLabel.set(d.label, d.value);
+		}
+		return {
+			name: s.name,
+			values: labels.map((label) => byLabel.get(label) ?? null),
+		};
+	});
+}
+
+/**
+ * Value domain across every resolved series, always anchored at zero. A bar or
+ * area whose baseline is not zero misreports magnitude (the classic
+ * truncated-axis lie), so zero is included even when all values are positive;
+ * negative values extend the domain downward to whatever the data needs.
+ */
+export function valuesExtent(series: ResolvedSeries[]): [number, number] {
 	let min = 0;
 	let max = 0;
 	for (const s of series) {
-		for (const d of s.data) {
-			if (d.value < min) min = d.value;
-			if (d.value > max) max = d.value;
+		for (const v of s.values) {
+			if (v === null) continue;
+			if (v < min) min = v;
+			if (v > max) max = v;
 		}
 	}
-	// A flat all-zero series still needs a non-degenerate range to scale into.
+	// A flat all-zero (or empty) series still needs a non-degenerate range.
 	if (min === 0 && max === 0) return [0, 1];
 	return [min, max];
 }

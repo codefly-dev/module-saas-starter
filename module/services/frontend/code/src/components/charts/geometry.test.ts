@@ -6,55 +6,117 @@ import {
 	linearScale,
 	linePath,
 	niceTicks,
-	valueExtent,
+	resolveSeries,
+	unionLabels,
+	valuesExtent,
 } from "./geometry";
 
-describe("valueExtent", () => {
-	it("always anchors the domain at zero for positive data", () => {
+describe("unionLabels", () => {
+	it("returns a single series' labels in order", () => {
 		const series: ChartSeries[] = [
 			{
 				name: "a",
 				data: [
-					{ label: "x", value: 4 },
-					{ label: "y", value: 9 },
+					{ label: "Mon", value: 1 },
+					{ label: "Tue", value: 2 },
 				],
 			},
 		];
-		expect(valueExtent(series)).toEqual([0, 9]);
+		expect(unionLabels(series)).toEqual(["Mon", "Tue"]);
+	});
+
+	it("unions differing bucket sets in first-seen order", () => {
+		const series: ChartSeries[] = [
+			{
+				name: "a",
+				data: [
+					{ label: "Mon", value: 1 },
+					{ label: "Tue", value: 2 },
+				],
+			},
+			{
+				name: "b",
+				data: [
+					{ label: "Mon", value: 3 },
+					{ label: "Wed", value: 4 },
+				],
+			},
+		];
+		expect(unionLabels(series)).toEqual(["Mon", "Tue", "Wed"]);
+	});
+});
+
+describe("resolveSeries", () => {
+	it("aligns each series to the shared axis by label, gapping missing ones", () => {
+		const series: ChartSeries[] = [
+			{
+				name: "a",
+				data: [
+					{ label: "Mon", value: 1 },
+					{ label: "Tue", value: 2 },
+				],
+			},
+			{
+				name: "b",
+				data: [
+					{ label: "Mon", value: 3 },
+					{ label: "Wed", value: 4 },
+				],
+			},
+		];
+		const labels = unionLabels(series);
+		expect(resolveSeries(series, labels)).toEqual([
+			{ name: "a", values: [1, 2, null] },
+			{ name: "b", values: [3, null, 4] },
+		]);
+	});
+
+	it("does not confuse a real zero with a missing bucket", () => {
+		const series: ChartSeries[] = [
+			{ name: "a", data: [{ label: "Mon", value: 0 }] },
+		];
+		expect(resolveSeries(series, ["Mon", "Tue"])).toEqual([
+			{ name: "a", values: [0, null] },
+		]);
+	});
+
+	it("drops non-finite values to null at the boundary", () => {
+		const series: ChartSeries[] = [
+			{
+				name: "a",
+				data: [
+					{ label: "Mon", value: Number.NaN },
+					{ label: "Tue", value: Number.POSITIVE_INFINITY },
+					{ label: "Wed", value: 5 },
+				],
+			},
+		];
+		expect(resolveSeries(series, ["Mon", "Tue", "Wed"])).toEqual([
+			{ name: "a", values: [null, null, 5] },
+		]);
+	});
+});
+
+describe("valuesExtent", () => {
+	it("always anchors the domain at zero for positive data", () => {
+		expect(valuesExtent([{ name: "a", values: [4, 9] }])).toEqual([0, 9]);
 	});
 
 	it("extends below zero for negative values", () => {
-		const series: ChartSeries[] = [
-			{
-				name: "a",
-				data: [
-					{ label: "x", value: -3 },
-					{ label: "y", value: 5 },
-				],
-			},
-		];
-		expect(valueExtent(series)).toEqual([-3, 5]);
+		expect(valuesExtent([{ name: "a", values: [-3, 5] }])).toEqual([-3, 5]);
 	});
 
-	it("spans every series", () => {
-		const series: ChartSeries[] = [
-			{ name: "a", data: [{ label: "x", value: 2 }] },
-			{ name: "b", data: [{ label: "x", value: 11 }] },
-		];
-		expect(valueExtent(series)).toEqual([0, 11]);
+	it("spans every series and ignores gaps", () => {
+		expect(
+			valuesExtent([
+				{ name: "a", values: [2, null] },
+				{ name: "b", values: [null, 11] },
+			]),
+		).toEqual([0, 11]);
 	});
 
-	it("gives an all-zero series a non-degenerate range", () => {
-		const series: ChartSeries[] = [
-			{
-				name: "a",
-				data: [
-					{ label: "x", value: 0 },
-					{ label: "y", value: 0 },
-				],
-			},
-		];
-		expect(valueExtent(series)).toEqual([0, 1]);
+	it("gives an all-zero or all-gap series a non-degenerate range", () => {
+		expect(valuesExtent([{ name: "a", values: [0, null] }])).toEqual([0, 1]);
 	});
 });
 

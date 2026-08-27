@@ -8,6 +8,12 @@
  * palette (`--chart-1…5`, light/dark aware), and add a pointer/crosshair
  * readout on top.
  *
+ * Series are aligned to a shared label axis (the union of every series' labels)
+ * by label, not by array index, so charts of separately-aggregated metrics with
+ * differing bucket sets stay correct. A single `xs` array — band-based for bars,
+ * point-based otherwise — drives the axis, the marks, and the hover overlay, so
+ * labels always sit under the geometry they name.
+ *
  * Accessibility: the SVG is decorative (`aria-hidden`); identity never rests on
  * colour alone (a legend keys every series for two-or-more, tabular-nums), and
  * the exact numbers live in a visually-hidden data table that is the chart's
@@ -25,7 +31,10 @@ import {
 	linearScale,
 	linePath,
 	niceTicks,
-	valueExtent,
+	type ResolvedSeries,
+	resolveSeries,
+	unionLabels,
+	valuesExtent,
 } from "./geometry";
 
 const VIEW_W = 640;
@@ -33,11 +42,8 @@ const DEFAULT_VIEW_H = 260;
 const MARGIN = { top: 12, right: 16, bottom: 28, left: 48 };
 const MAX_X_LABELS = 8;
 const PALETTE_SIZE = 5;
+const MISSING = "—";
 
-const compactFormat = new Intl.NumberFormat("en-US", {
-	notation: "compact",
-	maximumFractionDigits: 1,
-});
 const fullFormat = new Intl.NumberFormat("en-US");
 
 /**
@@ -56,7 +62,7 @@ export interface MetricChartProps {
 	className?: string;
 	/** viewBox height; width is fluid. Defaults to 260. */
 	height?: number;
-	/** Formats values in the tooltip and table. Defaults to a grouped integer. */
+	/** Formats values on the axis, in the tooltip, and in the table. */
 	formatValue?: (value: number) => string;
 }
 
@@ -67,32 +73,42 @@ interface FrameGeometry {
 	plotTop: number;
 	plotBottom: number;
 	labels: string[];
+	resolved: ResolvedSeries[];
+	/** X centre of each label — band centres for bars, point scale otherwise. */
+	xs: number[];
 	ticks: number[];
 	scaleY: (value: number) => number;
 }
 
-function useFrameGeometry(
+function computeGeometry(
 	series: ChartSeries[],
 	height: number,
+	band: boolean,
 ): FrameGeometry {
-	const viewH = height;
 	const plotLeft = MARGIN.left;
 	const plotRight = VIEW_W - MARGIN.right;
 	const plotTop = MARGIN.top;
-	const plotBottom = viewH - MARGIN.bottom;
-	const labels = series[0]?.data.map((d) => d.label) ?? [];
-	const [min, max] = valueExtent(series);
+	const plotBottom = height - MARGIN.bottom;
+	const labels = unionLabels(series);
+	const resolved = resolveSeries(series, labels);
+	const [min, max] = valuesExtent(resolved);
 	const ticks = niceTicks(min, max);
-	const domainMin = ticks[0];
-	const domainMax = ticks[ticks.length - 1];
-	const scaleY = linearScale(domainMin, domainMax, plotBottom, plotTop);
+	const scaleY = linearScale(
+		ticks[0],
+		ticks[ticks.length - 1],
+		plotBottom,
+		plotTop,
+	);
+	const xs = axisPositions(labels.length, plotLeft, plotRight, band);
 	return {
-		viewH,
+		viewH: height,
 		plotLeft,
 		plotRight,
 		plotTop,
 		plotBottom,
 		labels,
+		resolved,
+		xs,
 		ticks,
 		scaleY,
 	};
@@ -113,7 +129,7 @@ function Legend({
 	series,
 	marker,
 }: {
-	series: ChartSeries[];
+	series: ResolvedSeries[];
 	marker: "line" | "rect";
 }) {
 	if (series.length < 2) return null;
@@ -141,13 +157,11 @@ function Legend({
 
 /** The chart's accessible representation: exact values in a real table. */
 function DataTable({
-	series,
-	labels,
+	geo,
 	title,
 	formatValue,
 }: {
-	series: ChartSeries[];
-	labels: string[];
+	geo: FrameGeometry;
 	title: string;
 	formatValue: (value: number) => string;
 }) {
@@ -157,7 +171,7 @@ function DataTable({
 			<thead>
 				<tr>
 					<th scope="col">Bucket</th>
-					{series.map((s) => (
+					{geo.resolved.map((s) => (
 						<th key={s.name} scope="col">
 							{s.name}
 						</th>
@@ -165,11 +179,15 @@ function DataTable({
 				</tr>
 			</thead>
 			<tbody>
-				{labels.map((label, row) => (
+				{geo.labels.map((label, row) => (
 					<tr key={label}>
 						<th scope="row">{label}</th>
-						{series.map((s) => (
-							<td key={s.name}>{formatValue(s.data[row]?.value ?? 0)}</td>
+						{geo.resolved.map((s) => (
+							<td key={s.name}>
+								{s.values[row] === null
+									? MISSING
+									: formatValue(s.values[row] as number)}
+							</td>
 						))}
 					</tr>
 				))}
@@ -178,9 +196,14 @@ function DataTable({
 	);
 }
 
-function Axes({ geo }: { geo: FrameGeometry }) {
+function Axes({
+	geo,
+	formatValue,
+}: {
+	geo: FrameGeometry;
+	formatValue: (value: number) => string;
+}) {
 	const shown = xTickIndices(geo.labels.length);
-	const xs = axisPositions(geo.labels.length, geo.plotLeft, geo.plotRight);
 	return (
 		<>
 			{geo.ticks.map((tick) => {
@@ -203,7 +226,7 @@ function Axes({ geo }: { geo: FrameGeometry }) {
 							dominantBaseline="middle"
 							className="fill-muted-foreground text-[10px] tabular-nums"
 						>
-							{compactFormat.format(tick)}
+							{formatValue(tick)}
 						</text>
 					</g>
 				);
@@ -212,7 +235,7 @@ function Axes({ geo }: { geo: FrameGeometry }) {
 				shown.has(i) ? (
 					<text
 						key={label}
-						x={xs[i]}
+						x={geo.xs[i]}
 						y={geo.plotBottom + 16}
 						textAnchor="middle"
 						className="fill-muted-foreground text-[10px]"
@@ -225,20 +248,13 @@ function Axes({ geo }: { geo: FrameGeometry }) {
 	);
 }
 
-interface HoverState {
-	index: number | null;
-	set: (index: number | null) => void;
-}
-
 /** Snaps the pointer to the nearest column and reports its index. */
 function HoverOverlay({
 	geo,
-	xs,
-	hover,
+	onSelect,
 }: {
 	geo: FrameGeometry;
-	xs: number[];
-	hover: HoverState;
+	onSelect: (index: number | null) => void;
 }) {
 	return (
 		<rect
@@ -256,34 +272,30 @@ function HoverOverlay({
 						(geo.plotRight - geo.plotLeft);
 				let best = 0;
 				let bestDistance = Number.POSITIVE_INFINITY;
-				for (let i = 0; i < xs.length; i++) {
-					const distance = Math.abs(xs[i] - viewX);
+				for (let i = 0; i < geo.xs.length; i++) {
+					const distance = Math.abs(geo.xs[i] - viewX);
 					if (distance < bestDistance) {
 						bestDistance = distance;
 						best = i;
 					}
 				}
-				hover.set(best);
+				onSelect(best);
 			}}
-			onPointerLeave={() => hover.set(null)}
+			onPointerLeave={() => onSelect(null)}
 		/>
 	);
 }
 
 function Tooltip({
-	xs,
+	geo,
 	index,
-	series,
-	labels,
 	formatValue,
 }: {
-	xs: number[];
+	geo: FrameGeometry;
 	index: number;
-	series: ChartSeries[];
-	labels: string[];
 	formatValue: (value: number) => string;
 }) {
-	const leftPercent = (xs[index] / VIEW_W) * 100;
+	const leftPercent = (geo.xs[index] / VIEW_W) * 100;
 	return (
 		<div
 			className="pointer-events-none absolute top-0 z-10 -translate-x-1/2 rounded-md border bg-popover px-2.5 py-1.5 text-popover-foreground shadow-md"
@@ -291,10 +303,10 @@ function Tooltip({
 			aria-hidden
 		>
 			<div className="mb-1 text-[11px] text-muted-foreground">
-				{labels[index]}
+				{geo.labels[index]}
 			</div>
 			<ul className="space-y-0.5">
-				{series.map((s, i) => (
+				{geo.resolved.map((s, i) => (
 					<li key={s.name} className="flex items-center gap-2 text-xs">
 						<span
 							className="inline-block h-0.5 w-3 rounded-full"
@@ -303,7 +315,9 @@ function Tooltip({
 						/>
 						<span className="text-muted-foreground">{s.name}</span>
 						<span className="ml-auto font-medium tabular-nums">
-							{formatValue(s.data[index]?.value ?? 0)}
+							{s.values[index] === null
+								? MISSING
+								: formatValue(s.values[index] as number)}
 						</span>
 					</li>
 				))}
@@ -337,7 +351,7 @@ function EmptyChart({
 /**
  * Shared frame for the cartesian charts. `marks` draws the series geometry;
  * `overlay` draws the hover response (crosshair, markers, band highlight) for
- * the active column.
+ * the active column. Both read positions from `geo.xs`, the single x-axis.
  */
 function ChartFrame({
 	series,
@@ -346,77 +360,56 @@ function ChartFrame({
 	height = DEFAULT_VIEW_H,
 	formatValue = (value) => fullFormat.format(value),
 	legendMarker,
+	band = false,
 	marks,
 	overlay,
-	bandHover,
 }: MetricChartProps & {
 	legendMarker: "line" | "rect";
-	marks: (geo: FrameGeometry, xs: number[]) => ReactNode;
-	overlay: (geo: FrameGeometry, xs: number[], index: number) => ReactNode;
-	bandHover?: boolean;
+	band?: boolean;
+	marks: (geo: FrameGeometry) => ReactNode;
+	overlay: (geo: FrameGeometry, index: number) => ReactNode;
 }) {
 	const [active, setActive] = useState<number | null>(null);
-	const geo = useFrameGeometry(series, height);
+	const geo = computeGeometry(series, height, band);
 
-	if (series.length === 0 || geo.labels.length === 0) {
+	if (geo.labels.length === 0) {
 		return <EmptyChart title={title} height={height} className={className} />;
 	}
 
-	const xs = axisPositions(
-		geo.labels.length,
-		geo.plotLeft,
-		geo.plotRight,
-		bandHover,
-	);
-
 	return (
 		<figure className={cn("relative w-full", className)}>
-			{series.length >= 2 && (
+			{geo.resolved.length >= 2 && (
 				<figcaption className="mb-2">
-					<Legend series={series} marker={legendMarker} />
+					<Legend series={geo.resolved} marker={legendMarker} />
 				</figcaption>
 			)}
 			<svg
 				viewBox={`0 0 ${VIEW_W} ${height}`}
 				className="w-full"
 				style={{ aspectRatio: `${VIEW_W} / ${height}` }}
-				preserveAspectRatio="none"
+				preserveAspectRatio="xMidYMid meet"
 				aria-hidden
 			>
-				<Axes geo={geo} />
-				{marks(geo, xs)}
-				{active !== null && overlay(geo, xs, active)}
-				<HoverOverlay
-					geo={geo}
-					xs={xs}
-					hover={{ index: active, set: setActive }}
-				/>
+				<Axes geo={geo} formatValue={formatValue} />
+				{marks(geo)}
+				{active !== null && overlay(geo, active)}
+				<HoverOverlay geo={geo} onSelect={setActive} />
 			</svg>
 			{active !== null && (
-				<Tooltip
-					xs={xs}
-					index={active}
-					series={series}
-					labels={geo.labels}
-					formatValue={formatValue}
-				/>
+				<Tooltip geo={geo} index={active} formatValue={formatValue} />
 			)}
-			<DataTable
-				series={series}
-				labels={geo.labels}
-				title={title}
-				formatValue={formatValue}
-			/>
+			<DataTable geo={geo} title={title} formatValue={formatValue} />
 		</figure>
 	);
 }
 
-function seriesPoints(
-	series: ChartSeries,
-	xs: number[],
-	scaleY: (value: number) => number,
-) {
-	return series.data.map((d, i) => ({ x: xs[i], y: scaleY(d.value) }));
+/** Present points of a resolved series, aligned to the shared x-axis. */
+function seriesPoints(values: (number | null)[], geo: FrameGeometry) {
+	const points: { x: number; y: number }[] = [];
+	values.forEach((v, i) => {
+		if (v !== null) points.push({ x: geo.xs[i], y: geo.scaleY(v) });
+	});
+	return points;
 }
 
 function Crosshair({ geo, x }: { geo: FrameGeometry; x: number }) {
@@ -433,14 +426,47 @@ function Crosshair({ geo, x }: { geo: FrameGeometry; x: number }) {
 	);
 }
 
+function EndMarker({ x, y, color }: { x: number; y: number; color: string }) {
+	return (
+		<circle
+			cx={x}
+			cy={y}
+			r={3.5}
+			fill={color}
+			className="stroke-card"
+			strokeWidth={2}
+			vectorEffect="non-scaling-stroke"
+		/>
+	);
+}
+
+function LineOverlay(geo: FrameGeometry, index: number) {
+	return (
+		<g>
+			<Crosshair geo={geo} x={geo.xs[index]} />
+			{geo.resolved.map((s, i) =>
+				s.values[index] === null ? null : (
+					<EndMarker
+						key={s.name}
+						x={geo.xs[index]}
+						y={geo.scaleY(s.values[index] as number)}
+						color={chartSeriesColor(i)}
+					/>
+				),
+			)}
+		</g>
+	);
+}
+
 export function LineChart(props: MetricChartProps) {
 	return (
 		<ChartFrame
 			{...props}
 			legendMarker="line"
-			marks={(geo, xs) =>
-				props.series.map((s, i) => {
-					const points = seriesPoints(s, xs, geo.scaleY);
+			marks={(geo) =>
+				geo.resolved.map((s, i) => {
+					const points = seriesPoints(s.values, geo);
+					if (points.length === 0) return <g key={s.name} />;
 					const color = chartSeriesColor(i);
 					const last = points[points.length - 1];
 					return (
@@ -454,38 +480,12 @@ export function LineChart(props: MetricChartProps) {
 								strokeLinejoin="round"
 								vectorEffect="non-scaling-stroke"
 							/>
-							{last && (
-								<circle
-									cx={last.x}
-									cy={last.y}
-									r={3.5}
-									fill={color}
-									className="stroke-card"
-									strokeWidth={2}
-									vectorEffect="non-scaling-stroke"
-								/>
-							)}
+							<EndMarker x={last.x} y={last.y} color={color} />
 						</g>
 					);
 				})
 			}
-			overlay={(geo, xs, index) => (
-				<g>
-					<Crosshair geo={geo} x={xs[index]} />
-					{props.series.map((s, i) => (
-						<circle
-							key={s.name}
-							cx={xs[index]}
-							cy={geo.scaleY(s.data[index]?.value ?? 0)}
-							r={3.5}
-							fill={chartSeriesColor(i)}
-							className="stroke-card"
-							strokeWidth={2}
-							vectorEffect="non-scaling-stroke"
-						/>
-					))}
-				</g>
-			)}
+			overlay={LineOverlay}
 		/>
 	);
 }
@@ -495,9 +495,10 @@ export function AreaChart(props: MetricChartProps) {
 		<ChartFrame
 			{...props}
 			legendMarker="line"
-			marks={(geo, xs) =>
-				props.series.map((s, i) => {
-					const points = seriesPoints(s, xs, geo.scaleY);
+			marks={(geo) =>
+				geo.resolved.map((s, i) => {
+					const points = seriesPoints(s.values, geo);
+					if (points.length === 0) return <g key={s.name} />;
 					const color = chartSeriesColor(i);
 					const last = points[points.length - 1];
 					return (
@@ -516,38 +517,12 @@ export function AreaChart(props: MetricChartProps) {
 								strokeLinejoin="round"
 								vectorEffect="non-scaling-stroke"
 							/>
-							{last && (
-								<circle
-									cx={last.x}
-									cy={last.y}
-									r={3.5}
-									fill={color}
-									className="stroke-card"
-									strokeWidth={2}
-									vectorEffect="non-scaling-stroke"
-								/>
-							)}
+							<EndMarker x={last.x} y={last.y} color={color} />
 						</g>
 					);
 				})
 			}
-			overlay={(geo, xs, index) => (
-				<g>
-					<Crosshair geo={geo} x={xs[index]} />
-					{props.series.map((s, i) => (
-						<circle
-							key={s.name}
-							cx={xs[index]}
-							cy={geo.scaleY(s.data[index]?.value ?? 0)}
-							r={3.5}
-							fill={chartSeriesColor(i)}
-							className="stroke-card"
-							strokeWidth={2}
-							vectorEffect="non-scaling-stroke"
-						/>
-					))}
-				</g>
-			)}
+			overlay={LineOverlay}
 		/>
 	);
 }
@@ -570,15 +545,15 @@ function barPath(
 }
 
 export function BarChart(props: MetricChartProps) {
-	const seriesCount = props.series.length;
 	return (
 		<ChartFrame
 			{...props}
 			legendMarker="rect"
-			bandHover
-			marks={(geo, xs) => {
-				const bandCount = geo.labels.length;
-				const slot = (geo.plotRight - geo.plotLeft) / Math.max(1, bandCount);
+			band
+			marks={(geo) => {
+				const seriesCount = geo.resolved.length;
+				const slot =
+					(geo.plotRight - geo.plotLeft) / Math.max(1, geo.labels.length);
 				const group = Math.min(
 					slot * 0.7,
 					24 * seriesCount + 2 * (seriesCount - 1),
@@ -589,18 +564,19 @@ export function BarChart(props: MetricChartProps) {
 					(group - gap * (seriesCount - 1)) / seriesCount,
 				);
 				const baseY = geo.scaleY(0);
-				return props.series.map((s, si) => {
+				return geo.resolved.map((s, si) => {
 					const color = chartSeriesColor(si);
 					return (
 						<g key={s.name}>
-							{s.data.map((d, i) => {
-								const groupStart = xs[i] - group / 2;
+							{geo.labels.map((label, i) => {
+								const value = s.values[i];
+								if (value === null) return null;
+								const groupStart = geo.xs[i] - group / 2;
 								const x = groupStart + si * (barWidth + gap);
-								const valueY = geo.scaleY(d.value);
 								return (
 									<path
-										key={d.label}
-										d={barPath(x, barWidth, baseY, valueY, 4)}
+										key={label}
+										d={barPath(x, barWidth, baseY, geo.scaleY(value), 4)}
 										fill={color}
 									/>
 								);
@@ -609,12 +585,12 @@ export function BarChart(props: MetricChartProps) {
 					);
 				});
 			}}
-			overlay={(geo, xs, index) => {
-				const bandCount = geo.labels.length;
-				const slot = (geo.plotRight - geo.plotLeft) / Math.max(1, bandCount);
+			overlay={(geo, index) => {
+				const slot =
+					(geo.plotRight - geo.plotLeft) / Math.max(1, geo.labels.length);
 				return (
 					<rect
-						x={xs[index] - slot / 2}
+						x={geo.xs[index] - slot / 2}
 						y={geo.plotTop}
 						width={slot}
 						height={geo.plotBottom - geo.plotTop}
