@@ -72,6 +72,15 @@ export {
 	TooltipProvider,
 	TooltipTrigger,
 } from "@/components/ui/tooltip";
+export {
+	Grid,
+	Layout,
+	Page,
+	PageHeader,
+	Panel,
+	Section,
+	Stack,
+} from "./layout";
 
 // Dashboard value-display widgets — bound to a metric's presentational data.
 export {
