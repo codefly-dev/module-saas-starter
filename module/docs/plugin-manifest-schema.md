@@ -95,14 +95,29 @@ has three node kinds:
   are exactly that RPC's dimensions); a `derived` metric combines other metrics
   (`sum`, `ratio`, `difference`).
 - **`dashboards`** — a `layout` of `widgets`, each binding a `visualization` to
-  one metric.
+  one metric. These metric-bound widgets are distinct from `ui.widgets`, which
+  are presentation slots contributed to host surfaces; the two never mix.
 
-The schema owns the per-node field formats; the host validator additionally
-enforces the graph's referential integrity — every metric filter names a
-declared event, every derived-metric input and every widget names a declared
-metric, and the derived-metric reference graph is acyclic. This section gates
-the SDK that compiles metrics to audit queries and the `<Dashboard>` component
-that renders them.
+The schema owns the per-node field formats — including the two shape rules that
+cross fields: a metric carries a `bucket` exactly when it groups by `time`, and
+a `ratio`/`difference` takes exactly two inputs (`sum` takes two or more). The
+host validator adds only what a JSON Schema cannot express: referential
+integrity — every metric filter names a declared event, every derived-metric
+input and every widget names a declared metric — and that the derived-metric
+reference graph is acyclic.
+
+What neither layer checks is **dimensional coherence** — whether a metric's
+`groupBy` is meaningful for its data, or whether a derived metric's inputs have
+compatible shapes. That is deliberately the compiler's job, not the schema's,
+and the schema stays permissive on purpose: legitimate combinations must not be
+rejected here. A `ratio` of a per-day series and a scalar total (`groupBy:
+event_type`, which yields a single bucket) is a valid rate; a rule that forced
+matching `groupBy`/`bucket` across inputs would wrongly reject it. The compiler
+that lowers a metric to an `AggregateAuditLog` query is the single place that
+knows each metric's resolved shape, so it owns coherence.
+
+This section gates the SDK that compiles metrics to audit queries and the
+`<Dashboard>` component that renders them.
 
 ## Scope
 

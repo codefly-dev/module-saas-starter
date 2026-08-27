@@ -217,7 +217,13 @@
 									},
 									"bucket": { "enum": ["day", "week", "month"] },
 									"aggregation": { "enum": ["count", "count_distinct"] }
-								}
+								},
+								"if": {
+									"required": ["groupBy"],
+									"properties": { "groupBy": { "const": "time" } }
+								},
+								"then": { "required": ["bucket"] },
+								"else": { "not": { "required": ["bucket"] } }
 							},
 							{
 								"type": "object",
@@ -234,7 +240,14 @@
 										"minItems": 2,
 										"items": { "$ref": "#/$defs/logicalId" }
 									}
-								}
+								},
+								"if": {
+									"required": ["operation"],
+									"properties": {
+										"operation": { "enum": ["ratio", "difference"] }
+									}
+								},
+								"then": { "properties": { "inputs": { "maxItems": 2 } } }
 							}
 						]
 					}

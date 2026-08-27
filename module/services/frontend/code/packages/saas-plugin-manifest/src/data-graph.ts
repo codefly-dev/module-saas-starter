@@ -16,6 +16,16 @@
 /**
  * Audit dimension a source metric groups its counts by. Mirrors the
  * `group_by` domain of `AuditService.AggregateAuditLog`.
+ *
+ * A source metric filters exactly one event, so `event_type` and `category`
+ * yield a single bucket — that is the intended way to declare a scalar total
+ * for a `number` widget, not a mistake. Whether a chosen `groupBy` is
+ * meaningful for a metric, and whether a derived metric's inputs have
+ * compatible shapes, is dimensional coherence: the compiler that lowers a
+ * metric to a query owns it, because only it knows each metric's resolved
+ * shape. This declaration stays permissive so valid combinations (e.g. a
+ * per-day series over a scalar total) are not rejected before the compiler sees
+ * them.
  */
 export type MetricGroupBy = "event_type" | "category" | "actor" | "time";
 
@@ -89,7 +99,12 @@ export interface DerivedMetric {
 
 export type Metric = SourceMetric | DerivedMetric;
 
-/** One dashboard widget bound to a declared metric. */
+/**
+ * One dashboard widget bound to a declared metric. Distinct from the manifest's
+ * `ui.widgets` (`DashboardWidget` in `@codefly/saas-plugin-contract`), which are
+ * presentation slots contributed to host surfaces; a `MetricWidget` renders a
+ * data-graph metric inside a `<Dashboard>`.
+ */
 export interface MetricWidget {
 	id: string;
 	metric: string;

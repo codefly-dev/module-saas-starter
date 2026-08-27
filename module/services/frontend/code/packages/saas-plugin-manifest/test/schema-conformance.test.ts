@@ -68,8 +68,18 @@ const OWNED_FIELD_VIOLATIONS: Record<
 	"unsupported metric aggregation": (m) => {
 		arr(rec(m.dashboard).metrics)[0].aggregation = "sum";
 	},
+	"metric bucket without a time group_by": (m) => {
+		arr(rec(m.dashboard).metrics)[0].groupBy = "actor";
+	},
 	"unsupported derived metric operation": (m) => {
 		arr(rec(m.dashboard).metrics)[3].operation = "product";
+	},
+	"ratio metric with three inputs": (m) => {
+		arr(rec(m.dashboard).metrics)[3].inputs = [
+			"triggers_over_time",
+			"signups_over_time",
+			"triggers_by_actor",
+		];
 	},
 	"unsupported dashboard layout": (m) => {
 		arr(rec(m.dashboard).dashboards)[0].layout = "freeform";
