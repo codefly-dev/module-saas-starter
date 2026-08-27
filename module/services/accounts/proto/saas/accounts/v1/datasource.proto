@@ -1,0 +1,251 @@
+syntax = "proto3";
+
+package saas.accounts.v1;
+
+import "buf/validate/validate.proto";
+import "google/protobuf/timestamp.proto";
+import "saas/policy/v1/options.proto";
+
+// ============================================================================
+// Datasource — a tenant-declared external source (a GitHub repo + paths) whose
+// contents are pulled and kept fresh, then ingested into the documents store as
+// versioned Entries. saas-starter owns "connection": the datasource record, the
+// per-source credential + webhook-signing secret (SecretCipher envelopes), the
+// pull trigger, and inbound webhook receipt. The ingest engine that projects the
+// enqueued deliveries into Entry/Version lives in the documents module and
+// consumes the durable jobs inbox this contract feeds.
+// ============================================================================
+
+// DatasourceProvider identifies the external system a datasource connects to.
+// Only GitHub is implemented today; the enum is the extension point for further
+// connectors.
+enum DatasourceProvider {
+  DATASOURCE_PROVIDER_UNSPECIFIED = 0;
+  DATASOURCE_PROVIDER_GITHUB = 1;
+}
+
+// DatasourceStatus is the datasource lifecycle. A datasource is active from
+// creation; pausing stops scheduled pulls and webhook ingestion without dropping
+// the stored credential, so re-enabling is cheap.
+enum DatasourceStatus {
+  DATASOURCE_STATUS_UNSPECIFIED = 0;
+  DATASOURCE_STATUS_ACTIVE = 1;
+  DATASOURCE_STATUS_PAUSED = 2;
+}
+
+// GitHubDatasourceConfig is the public, non-secret configuration of a GitHub
+// datasource. The access token and webhook signing secret are never carried
+// here; they live only as SecretCipher envelopes in the credential store.
+message GitHubDatasourceConfig {
+  // "owner/name", e.g. "codefly-dev/module-saas-starter".
+  string repo = 1;
+  // Repository-relative path prefixes to ingest. Empty means the whole repo.
+  repeated string paths = 2;
+  // Git ref (branch) to pull. Empty resolves to the repository default branch.
+  string branch = 3;
+}
+
+// Datasource is one connected external datasource. It is org-scoped and carries
+// only non-secret projection fields; credential material is deliberately absent.
+message Datasource {
+  string id = 1;
+  string org_id = 2;
+  DatasourceProvider provider = 3;
+  // Documents-store collection the pulled Entries land in.
+  string target_collection = 4;
+  GitHubDatasourceConfig github = 5;
+  DatasourceStatus status = 6;
+  // True once a webhook signing secret has been stored for the datasource, so
+  // clients can reflect whether live updates are wired without exposing it.
+  bool webhook_configured = 7;
+  google.protobuf.Timestamp created_at = 8;
+  google.protobuf.Timestamp updated_at = 9;
+  google.protobuf.Timestamp last_synced_at = 10;
+}
+
+message AddGitHubSourceRequest {
+  string org_id = 1 [(buf.validate.field).string.uuid = true];
+  // "owner/name".
+  string repo = 2 [(buf.validate.field).string = {
+    min_len: 3
+    max_len: 255
+    pattern: "^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$"
+  }];
+  repeated string paths = 3 [(buf.validate.field).repeated = {
+    max_items: 64
+    items: {
+      string: {
+        min_len: 1
+        max_len: 512
+      }
+    }
+  }];
+  string branch = 4 [(buf.validate.field).string.max_len = 255];
+  // Documents-store collection the pulled Entries land in.
+  string target_collection = 5 [(buf.validate.field).string = {
+    min_len: 1
+    max_len: 255
+  }];
+  // Plaintext GitHub token (a PAT or a GitHub App installation token) used to
+  // read the repository. Encrypted through the SecretCipher at receipt; only its
+  // envelope reference is persisted.
+  string access_token = 6 [(buf.validate.field).string = {
+    min_len: 1
+    max_len: 1024
+  }];
+  // Plaintext shared secret GitHub signs push deliveries with
+  // (X-Hub-Signature-256). Optional at creation; when omitted, live webhook
+  // ingestion stays off until a later call supplies one. Encrypted at receipt.
+  string webhook_secret = 7 [(buf.validate.field).string.max_len = 1024];
+}
+
+message AddGitHubSourceResponse {
+  Datasource datasource = 1;
+}
+
+message ListSourcesRequest {
+  string org_id = 1 [(buf.validate.field).string.uuid = true];
+}
+
+message ListSourcesResponse {
+  repeated Datasource datasources = 1;
+}
+
+message GetSourceRequest {
+  string org_id = 1 [(buf.validate.field).string.uuid = true];
+  string id = 2 [(buf.validate.field).string.uuid = true];
+}
+
+message GetSourceResponse {
+  Datasource datasource = 1;
+}
+
+message SyncSourceRequest {
+  string org_id = 1 [(buf.validate.field).string.uuid = true];
+  string id = 2 [(buf.validate.field).string.uuid = true];
+}
+
+message SyncSourceResponse {
+  // Durable jobs-inbox id of the enqueued sync request. The pull runs
+  // asynchronously in a leased worker; this id lets callers trace it.
+  string job_id = 1;
+}
+
+message DeleteSourceRequest {
+  string org_id = 1 [(buf.validate.field).string.uuid = true];
+  string id = 2 [(buf.validate.field).string.uuid = true];
+}
+
+message DeleteSourceResponse {}
+
+// DatasourceService is the tenant-facing surface a solution drives (directly or
+// through the generated SDK) to declare and operate connected datasources.
+service DatasourceService {
+  // AddGitHubSource registers a GitHub repository as a datasource, encrypts and
+  // stores its access token (and optional webhook signing secret), and returns
+  // the non-secret projection.
+  rpc AddGitHubSource(AddGitHubSourceRequest) returns (AddGitHubSourceResponse) {
+    option (saas.policy.v1.method_policy) = {
+      exposure: EXPOSURE_AUTHENTICATED
+      tenant: TENANT_REQUIREMENT_ORG_ADMIN
+      resource_bindings: {
+        request_field: "org_id"
+        target: RESOURCE_TARGET_ORGANIZATION
+        lookup: RESOURCE_LOOKUP_DIRECT_ID
+      }
+      mfa: MFA_REQUIREMENT_NONE
+      audit: {
+        events: "datasource.source.added"
+        emission: AUDIT_EMISSION_SUCCESS
+      }
+      idempotency: IDEMPOTENCY_REQUIREMENT_FORBIDDEN
+      rate_limit: RATE_LIMIT_CLASS_STANDARD_WRITE
+      request_sensitivity: SENSITIVITY_SECRET
+      response_sensitivity: SENSITIVITY_CONFIDENTIAL
+      platform_role: PLATFORM_ROLE_REQUIREMENT_NONE
+    };
+  }
+  // ListSources returns the calling org's connected datasources.
+  rpc ListSources(ListSourcesRequest) returns (ListSourcesResponse) {
+    option (saas.policy.v1.method_policy) = {
+      exposure: EXPOSURE_AUTHENTICATED
+      tenant: TENANT_REQUIREMENT_ORG_MEMBER
+      resource_bindings: {
+        request_field: "org_id"
+        target: RESOURCE_TARGET_ORGANIZATION
+        lookup: RESOURCE_LOOKUP_DIRECT_ID
+      }
+      mfa: MFA_REQUIREMENT_NONE
+      audit: {emission: AUDIT_EMISSION_NONE}
+      idempotency: IDEMPOTENCY_REQUIREMENT_FORBIDDEN
+      rate_limit: RATE_LIMIT_CLASS_STANDARD_READ
+      request_sensitivity: SENSITIVITY_INTERNAL
+      response_sensitivity: SENSITIVITY_CONFIDENTIAL
+      platform_role: PLATFORM_ROLE_REQUIREMENT_NONE
+    };
+  }
+  // GetSource returns one connected datasource in the calling org.
+  rpc GetSource(GetSourceRequest) returns (GetSourceResponse) {
+    option (saas.policy.v1.method_policy) = {
+      exposure: EXPOSURE_AUTHENTICATED
+      tenant: TENANT_REQUIREMENT_ORG_MEMBER
+      resource_bindings: {
+        request_field: "org_id"
+        target: RESOURCE_TARGET_ORGANIZATION
+        lookup: RESOURCE_LOOKUP_DIRECT_ID
+      }
+      mfa: MFA_REQUIREMENT_NONE
+      audit: {emission: AUDIT_EMISSION_NONE}
+      idempotency: IDEMPOTENCY_REQUIREMENT_FORBIDDEN
+      rate_limit: RATE_LIMIT_CLASS_STANDARD_READ
+      request_sensitivity: SENSITIVITY_INTERNAL
+      response_sensitivity: SENSITIVITY_CONFIDENTIAL
+      platform_role: PLATFORM_ROLE_REQUIREMENT_NONE
+    };
+  }
+  // SyncSource pulls the repository's current contents and enqueues an ingestion
+  // delivery per file onto the durable jobs inbox the documents module consumes.
+  rpc SyncSource(SyncSourceRequest) returns (SyncSourceResponse) {
+    option (saas.policy.v1.method_policy) = {
+      exposure: EXPOSURE_AUTHENTICATED
+      tenant: TENANT_REQUIREMENT_ORG_ADMIN
+      resource_bindings: {
+        request_field: "org_id"
+        target: RESOURCE_TARGET_ORGANIZATION
+        lookup: RESOURCE_LOOKUP_DIRECT_ID
+      }
+      mfa: MFA_REQUIREMENT_NONE
+      audit: {
+        events: "datasource.source.synced"
+        emission: AUDIT_EMISSION_SUCCESS
+      }
+      idempotency: IDEMPOTENCY_REQUIREMENT_FORBIDDEN
+      rate_limit: RATE_LIMIT_CLASS_STANDARD_WRITE
+      request_sensitivity: SENSITIVITY_INTERNAL
+      response_sensitivity: SENSITIVITY_INTERNAL
+      platform_role: PLATFORM_ROLE_REQUIREMENT_NONE
+    };
+  }
+  // DeleteSource removes a connected datasource and its stored credentials.
+  rpc DeleteSource(DeleteSourceRequest) returns (DeleteSourceResponse) {
+    option (saas.policy.v1.method_policy) = {
+      exposure: EXPOSURE_AUTHENTICATED
+      tenant: TENANT_REQUIREMENT_ORG_ADMIN
+      resource_bindings: {
+        request_field: "org_id"
+        target: RESOURCE_TARGET_ORGANIZATION
+        lookup: RESOURCE_LOOKUP_DIRECT_ID
+      }
+      mfa: MFA_REQUIREMENT_NONE
+      audit: {
+        events: "datasource.source.removed"
+        emission: AUDIT_EMISSION_SUCCESS
+      }
+      idempotency: IDEMPOTENCY_REQUIREMENT_FORBIDDEN
+      rate_limit: RATE_LIMIT_CLASS_STANDARD_WRITE
+      request_sensitivity: SENSITIVITY_INTERNAL
+      response_sensitivity: SENSITIVITY_INTERNAL
+      platform_role: PLATFORM_ROLE_REQUIREMENT_NONE
+    };
+  }
+}

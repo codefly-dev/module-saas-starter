@@ -23,6 +23,10 @@ services:
     handler: consentConnectHandler
     source:
       kind: business
+  DatasourceService:
+    handler: datasourceConnectHandler
+    source:
+      kind: business
   DelegationService:
     handler: delegationConnectHandler
     source:
