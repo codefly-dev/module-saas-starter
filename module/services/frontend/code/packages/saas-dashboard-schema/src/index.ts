@@ -7,7 +7,6 @@ export type { DataGraph } from "./graph.js";
 export { DataGraphError, defineDataGraph } from "./graph.js";
 export type {
 	AggregateQuery,
-	Aggregation,
 	Bucket,
 	Dashboard,
 	DataGraphInput,

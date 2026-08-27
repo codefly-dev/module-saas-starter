@@ -132,6 +132,11 @@ export function defineDataGraph(input: DataGraphInput): DataGraph {
 			validateSource(metric, events, categories);
 			continue;
 		}
+		if (typeof metric.compute !== "function") {
+			throw new DataGraphError(
+				`derived metric '${metric.id}' has no compute function`,
+			);
+		}
 		if (metric.from.length === 0) {
 			throw new DataGraphError(
 				`derived metric '${metric.id}' has no upstream metrics`,

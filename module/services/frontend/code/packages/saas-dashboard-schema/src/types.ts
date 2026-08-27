@@ -1,7 +1,9 @@
 // Contract-first types for the Template Dashboard data graph: a declarative
 // description of events -> metrics -> dashboards that compiles to audit-RPC
-// queries. React-free and serializable so both the TS SDK and the dashboard
-// component consume the same graph.
+// queries. React-free so both the TS SDK and the dashboard component consume the
+// same graph. Events, source metrics, and dashboards are plain data (JSON-
+// serializable); a derived metric additionally carries a `compute` reducer,
+// which is code and so does not serialize.
 
 export const DATA_GRAPH_SCHEMA_VERSION = "1.0.0";
 
@@ -10,13 +12,6 @@ export type GroupBy = "event_type" | "category" | "actor" | "time";
 
 /** Time granularity; only meaningful when a source metric groups by "time". */
 export type Bucket = "day" | "week" | "month";
-
-/**
- * Reduction applied within each group. COUNT is the only aggregation the audit
- * RPC supports today (#280 lifts this ceiling); the type is kept as a union so a
- * graph can be authored ahead of the RPC without a breaking change later.
- */
-export type Aggregation = "count";
 
 /** A declared audit event the data graph may draw from. */
 export interface EventDeclaration {
@@ -48,14 +43,17 @@ export interface AggregateQuery {
 	bucket: string;
 }
 
-/** A metric computed directly from the audit RPC. */
+/**
+ * A metric computed directly from the audit RPC. The aggregation is COUNT — the
+ * only reduction the RPC supports today. #280 lifts that ceiling and will add an
+ * aggregation field here, wired through {@link AggregateQuery} at the same time.
+ */
 export interface SourceMetric {
 	id: string;
 	kind: "source";
 	filter?: EventFilter;
 	groupBy: GroupBy;
 	bucket?: Bucket;
-	aggregation?: Aggregation;
 }
 
 /**

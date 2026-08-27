@@ -1,7 +1,7 @@
 {
 	"name": "@codefly/saas-dashboard-schema",
 	"version": "0.1.0",
-	"description": "React-free, serializable data-graph schema (Event · Metric · Dashboard) that compiles declarative metrics to the audit AggregateAuditLog RPC.",
+	"description": "React-free data-graph schema (Event · Metric · Dashboard) that compiles declarative metrics to the audit AggregateAuditLog RPC.",
 	"type": "module",
 	"sideEffects": false,
 	"files": [

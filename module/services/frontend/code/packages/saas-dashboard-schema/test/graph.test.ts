@@ -137,6 +137,25 @@ describe("defineDataGraph", () => {
 		).toThrow(/undeclared category 'billing'/);
 	});
 
+	it("rejects a derived metric with no compute function", () => {
+		expect(() =>
+			defineDataGraph({
+				events: [],
+				metrics: [
+					{ id: "s", kind: "source", groupBy: "event_type" },
+					{
+						id: "d",
+						kind: "derived",
+						from: ["s"],
+						compute: undefined as unknown as (
+							i: MetricPoint[][],
+						) => MetricPoint[],
+					},
+				],
+			}),
+		).toThrow(/has no compute function/);
+	});
+
 	it("rejects a derived metric with an unknown upstream", () => {
 		expect(() =>
 			defineDataGraph({
