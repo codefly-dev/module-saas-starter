@@ -85,6 +85,14 @@ type Store interface {
 	GetConnectorCredential(ctx context.Context, sourceID string) (*ConnectorCredential, error)
 	DeleteConnectorCredential(ctx context.Context, sourceID string) error
 
+	// Datasources (per-org external source connections — epic #277). All three
+	// run under the caller's WithOrgTx; RLS confines them to that org.
+	CreateDatasource(ctx context.Context, ds *Datasource) error
+	ListDatasources(ctx context.Context, orgID string) ([]*Datasource, error)
+	// MarkDatasourceSyncRequested flips the source to 'pending' and stamps
+	// last_sync_requested_at. Returns (nil, nil) when no own-org row matches.
+	MarkDatasourceSyncRequested(ctx context.Context, id string) (*Datasource, error)
+
 	// Organizations
 	CreateOrganization(ctx context.Context, org *gen.Organization) error
 	GetOrganization(ctx context.Context, id string) (*gen.Organization, error)

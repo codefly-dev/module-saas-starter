@@ -2,7 +2,7 @@
 
 > Generated from protobuf service descriptors and `saas.policy.v1.method_policy`; only the prose description is joined from `pkg/business/introspection.go`. Do not edit by hand. Run `go generate ./pkg/business` from `module/services/accounts/code`.
 
-Inventory: **146 RPCs** across **25 services**. Missing, invalid, or unclassified procedures are denied by both Connect and gRPC interceptors.
+Inventory: **149 RPCs** across **26 services**. Missing, invalid, or unclassified procedures are denied by both Connect and gRPC interceptors.
 
 The compact tier is retained for compatibility. Guards, resource bindings, audit events, limiter class, and data sensitivity are descriptor-authoritative. Domain handlers may enforce stronger state-dependent rules but may not weaken this floor.
 
@@ -31,6 +31,9 @@ The compact tier is retained for compatibility. Guards, resource bindings, audit
 | `/saas.accounts.v1.ConsentService/AcceptTerms` | unary | `POST /v1/consent/terms` | `auth` | exposure=AUTHENTICATED; tenant=USER | — | — | SUCCESS: consent.terms_accepted | FORBIDDEN / STANDARD_WRITE | CONFIDENTIAL → CONFIDENTIAL | Record acceptance of the exact Terms version presented. |
 | `/saas.accounts.v1.ConsentService/GetStatus` | unary | `GET /v1/consent/status` | `auth` | exposure=AUTHENTICATED; tenant=USER | — | — | — | FORBIDDEN / STANDARD_READ | CONFIDENTIAL → CONFIDENTIAL | Read TOS acceptance state. |
 | `/saas.accounts.v1.ConsentService/UpdatePreferences` | unary | `PUT /v1/consent/preferences` | `auth` | exposure=AUTHENTICATED; tenant=USER | — | — | SUCCESS: consent.preferences_updated | FORBIDDEN / STANDARD_WRITE | CONFIDENTIAL → CONFIDENTIAL | Persist purpose-based optional tracking choices and withdrawals. |
+| `/saas.accounts.v1.DatasourceService/AddGitHubSource` | unary | `POST /v1/datasources/github` | `org_admin` | exposure=AUTHENTICATED; tenant=ORG_ADMIN | perm=datasources:write; scope=datasources:write | org_id → ORGANIZATION/DIRECT_ID | SUCCESS: datasource.source_added | FORBIDDEN / STANDARD_WRITE | SECRET → CONFIDENTIAL | Add a GitHub source and store its access credential as an encrypted secret reference. |
+| `/saas.accounts.v1.DatasourceService/ListSources` | unary | `GET /v1/datasources` | `org_member` | exposure=AUTHENTICATED; tenant=ORG_MEMBER | perm=datasources:read; scope=datasources:read | org_id → ORGANIZATION/DIRECT_ID | — | FORBIDDEN / STANDARD_READ | CONFIDENTIAL → CONFIDENTIAL | List the org's datasource source connections. |
+| `/saas.accounts.v1.DatasourceService/Sync` | unary | `POST /v1/datasources/{id}:sync` | `org_admin` | exposure=AUTHENTICATED; tenant=ORG_ADMIN | perm=datasources:write; scope=datasources:write | id → OWNED_RESOURCE/RESOURCE_TO_ORGANIZATION | SUCCESS: datasource.sync_requested | FORBIDDEN / STANDARD_WRITE | CONFIDENTIAL → CONFIDENTIAL | Mark a datasource source for ingestion. |
 | `/saas.accounts.v1.DelegationService/DecideDelegation` | unary | `POST /v1/delegations/{id}:decide` | `org_admin` | exposure=AUTHENTICATED; tenant=ORG_ADMIN | — | org_id → ORGANIZATION/DIRECT_ID | SUCCESS: delegation.approved, delegation.denied | FORBIDDEN / STANDARD_READ | CONFIDENTIAL → CONFIDENTIAL | Approve or deny a delegation request. |
 | `/saas.accounts.v1.DelegationService/ListPendingDelegations` | unary | `GET /v1/delegations:pending` | `org_member` | exposure=AUTHENTICATED; tenant=ORG_MEMBER | — | org_id → ORGANIZATION/DIRECT_ID | — | FORBIDDEN / STANDARD_READ | CONFIDENTIAL → CONFIDENTIAL | List pending organization delegations. |
 | `/saas.accounts.v1.DelegationService/RequestDelegation` | unary | `POST /v1/delegations` | `org_member` | exposure=AUTHENTICATED; tenant=ORG_MEMBER | — | org_id → ORGANIZATION/DIRECT_ID | SUCCESS: delegation.requested, delegation.auto_approved | FORBIDDEN / STANDARD_WRITE | CONFIDENTIAL → CONFIDENTIAL | Request a scoped authority delegation. |
@@ -160,7 +163,7 @@ The compact tier is retained for compatibility. Guards, resource bindings, audit
 - `auth`: 38
 - `internal`: 10
 - `mfa`: 3
-- `org_admin`: 31
-- `org_member`: 26
+- `org_admin`: 33
+- `org_member`: 27
 - `platform_admin`: 22
 - `public`: 16

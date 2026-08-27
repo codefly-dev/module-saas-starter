@@ -1,0 +1,152 @@
+syntax = "proto3";
+
+package saas.accounts.v1;
+
+import "buf/validate/validate.proto";
+import "google/api/annotations.proto";
+import "google/protobuf/timestamp.proto";
+import "saas/policy/v1/options.proto";
+
+// ============================================================================
+// Datasources — the "connection" half of datasource ingestion (epic #277).
+// saas-starter owns the connection: it records which external source an org
+// wants ingested, stores the access credential as an encrypted secret
+// reference, and marks a source for sync. The pull + ingest into the documents
+// store lives behind the durable jobs seam (documents owns ingest).
+// ============================================================================
+
+// DatasourceSyncStatus is the connection-side view of a source's sync state.
+// It reflects whether a sync has been requested, not the progress of the ingest
+// worker that consumes the request.
+enum DatasourceSyncStatus {
+  DATASOURCE_SYNC_STATUS_UNSPECIFIED = 0;
+  DATASOURCE_SYNC_STATUS_IDLE = 1;
+  DATASOURCE_SYNC_STATUS_PENDING = 2;
+}
+
+// GitHubDatasource is one org-owned GitHub source connection. The access
+// credential is never carried on this message: it is encrypted through the
+// secret cipher on write and only its envelope reference is persisted.
+message GitHubDatasource {
+  string id = 1 [(buf.validate.field).string.uuid = true];
+  string org_id = 2 [(buf.validate.field).string.uuid = true];
+  // repo is the "owner/name" GitHub repository slug.
+  string repo = 3;
+  // paths restricts ingestion to these subtrees; empty means the whole repo.
+  repeated string paths = 4;
+  // collection is the target documents collection the source feeds.
+  string collection = 5;
+  DatasourceSyncStatus sync_status = 6;
+  google.protobuf.Timestamp created_at = 7;
+  google.protobuf.Timestamp updated_at = 8;
+  google.protobuf.Timestamp last_sync_requested_at = 9;
+}
+
+message AddGitHubSourceRequest {
+  string org_id = 1 [(buf.validate.field).string.uuid = true];
+  string repo = 2 [(buf.validate.field).string.min_len = 1];
+  repeated string paths = 3;
+  string collection = 4 [(buf.validate.field).string.min_len = 1];
+  // credential is a plaintext GitHub access token supplied once by the caller.
+  // It is encrypted server-side and stored only as a secret reference; it is
+  // never returned by any read.
+  string credential = 5 [(buf.validate.field).string.min_len = 1];
+}
+
+message ListSourcesRequest {
+  string org_id = 1 [(buf.validate.field).string.uuid = true];
+}
+
+message ListSourcesResponse {
+  repeated GitHubDatasource sources = 1;
+}
+
+message SyncSourceRequest {
+  string id = 1 [(buf.validate.field).string.uuid = true];
+}
+
+// DatasourceService is the connection surface a solution drives to add and sync
+// external sources. It is the contract the datasource SDK facade generates from.
+service DatasourceService {
+  // AddGitHubSource records a GitHub source for the org and stores its access
+  // credential as an encrypted secret reference.
+  rpc AddGitHubSource(AddGitHubSourceRequest) returns (GitHubDatasource) {
+    option (saas.policy.v1.method_policy) = {
+      exposure: EXPOSURE_AUTHENTICATED
+      tenant: TENANT_REQUIREMENT_ORG_ADMIN
+      permissions: "datasources:write"
+      scopes: "datasources:write"
+      resource_bindings: {
+        request_field: "org_id"
+        target: RESOURCE_TARGET_ORGANIZATION
+        lookup: RESOURCE_LOOKUP_DIRECT_ID
+      }
+      mfa: MFA_REQUIREMENT_NONE
+      audit: {
+        events: "datasource.source_added"
+        emission: AUDIT_EMISSION_SUCCESS
+      }
+      idempotency: IDEMPOTENCY_REQUIREMENT_FORBIDDEN
+      rate_limit: RATE_LIMIT_CLASS_STANDARD_WRITE
+      request_sensitivity: SENSITIVITY_SECRET
+      response_sensitivity: SENSITIVITY_CONFIDENTIAL
+      platform_role: PLATFORM_ROLE_REQUIREMENT_NONE
+    };
+    option (google.api.http) = {
+      post: "/v1/datasources/github"
+      body: "*"
+    };
+  }
+  // ListSources returns the org's configured sources. Credentials are never
+  // included.
+  rpc ListSources(ListSourcesRequest) returns (ListSourcesResponse) {
+    option (saas.policy.v1.method_policy) = {
+      exposure: EXPOSURE_AUTHENTICATED
+      tenant: TENANT_REQUIREMENT_ORG_MEMBER
+      permissions: "datasources:read"
+      scopes: "datasources:read"
+      resource_bindings: {
+        request_field: "org_id"
+        target: RESOURCE_TARGET_ORGANIZATION
+        lookup: RESOURCE_LOOKUP_DIRECT_ID
+      }
+      mfa: MFA_REQUIREMENT_NONE
+      audit: {emission: AUDIT_EMISSION_NONE}
+      idempotency: IDEMPOTENCY_REQUIREMENT_FORBIDDEN
+      rate_limit: RATE_LIMIT_CLASS_STANDARD_READ
+      request_sensitivity: SENSITIVITY_CONFIDENTIAL
+      response_sensitivity: SENSITIVITY_CONFIDENTIAL
+      platform_role: PLATFORM_ROLE_REQUIREMENT_NONE
+    };
+    option (google.api.http) = {get: "/v1/datasources"};
+  }
+  // Sync marks a source for ingestion. The connection side records the request;
+  // the documents ingest worker consumes it through the jobs seam.
+  rpc Sync(SyncSourceRequest) returns (GitHubDatasource) {
+    option (saas.policy.v1.method_policy) = {
+      exposure: EXPOSURE_AUTHENTICATED
+      tenant: TENANT_REQUIREMENT_ORG_ADMIN
+      permissions: "datasources:write"
+      scopes: "datasources:write"
+      resource_bindings: {
+        request_field: "id"
+        target: RESOURCE_TARGET_OWNED_RESOURCE
+        lookup: RESOURCE_LOOKUP_RESOURCE_TO_ORGANIZATION
+      }
+      mfa: MFA_REQUIREMENT_NONE
+      audit: {
+        events: "datasource.sync_requested"
+        emission: AUDIT_EMISSION_SUCCESS
+      }
+      idempotency: IDEMPOTENCY_REQUIREMENT_FORBIDDEN
+      rate_limit: RATE_LIMIT_CLASS_STANDARD_WRITE
+      request_sensitivity: SENSITIVITY_CONFIDENTIAL
+      response_sensitivity: SENSITIVITY_CONFIDENTIAL
+      platform_role: PLATFORM_ROLE_REQUIREMENT_NONE
+    };
+    option (google.api.http) = {
+      post: "/v1/datasources/{id}:sync"
+      body: "*"
+    };
+  }
+}

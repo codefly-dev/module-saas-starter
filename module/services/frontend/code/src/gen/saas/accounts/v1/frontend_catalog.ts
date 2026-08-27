@@ -7,6 +7,7 @@ import { AuthService } from "./authentication_pb";
 import { PermissionService, PrincipalService } from "./authorization_pb";
 import { BillingService } from "./billing_pb";
 import { ConsentService } from "./consent_pb";
+import { DatasourceService } from "./datasource_pb";
 import { DelegationService } from "./delegations_pb";
 import { IdentityService, UserService } from "./identity_pb";
 import { IntrospectionService } from "./introspection_pb";
@@ -32,6 +33,8 @@ export const PERMISSIONS = {
   AUDIT_READ: "audit:read",
   BILLING_READ: "billing:read",
   BILLING_WRITE: "billing:write",
+  DATASOURCES_READ: "datasources:read",
+  DATASOURCES_WRITE: "datasources:write",
   ENTITLEMENTS_READ: "entitlements:read",
   INVITATIONS_READ: "invitations:read",
   INVITATIONS_WRITE: "invitations:write",
@@ -50,7 +53,7 @@ export const PERMISSIONS = {
 } as const;
 
 export type Permission = (typeof PERMISSIONS)[keyof typeof PERMISSIONS];
-export type PermissionResource = "api_keys" | "audit" | "billing" | "entitlements" | "invitations" | "knowledge" | "orgs" | "roles" | "teams" | "users" | "webhooks";
+export type PermissionResource = "api_keys" | "audit" | "billing" | "datasources" | "entitlements" | "invitations" | "knowledge" | "orgs" | "roles" | "teams" | "users" | "webhooks";
 export type PermissionAction = "read" | "write";
 export type PermissionGrant = Permission | `${PermissionResource}:*` | `*:${PermissionAction}`;
 
@@ -69,6 +72,8 @@ export const PERMISSION_DEFINITIONS: Readonly<Record<Permission, PermissionDefin
   [PERMISSIONS.AUDIT_READ]: { resource: "audit", action: "read", description: "Read and export audit events.", builtInRoles: ["admin (via *:*)"], apiKeyScope: true },
   [PERMISSIONS.BILLING_READ]: { resource: "billing", action: "read", description: "View billing state and invoices.", builtInRoles: ["admin (via *:*)", "editor"], apiKeyScope: true },
   [PERMISSIONS.BILLING_WRITE]: { resource: "billing", action: "write", description: "Open checkout and billing portal sessions.", builtInRoles: ["admin (via *:*)"], apiKeyScope: true },
+  [PERMISSIONS.DATASOURCES_READ]: { resource: "datasources", action: "read", description: "List datasource source connections.", builtInRoles: ["admin (via *:*)", "editor", "viewer"], apiKeyScope: true },
+  [PERMISSIONS.DATASOURCES_WRITE]: { resource: "datasources", action: "write", description: "Add and sync datasource source connections.", builtInRoles: ["admin (via *:*)"], apiKeyScope: true },
   [PERMISSIONS.ENTITLEMENTS_READ]: { resource: "entitlements", action: "read", description: "View entitlement limits, overrides, and usage.", builtInRoles: ["admin (via *:*)"], apiKeyScope: true },
   [PERMISSIONS.INVITATIONS_READ]: { resource: "invitations", action: "read", description: "List organization invitations.", builtInRoles: ["admin (via *:*)"], apiKeyScope: true },
   [PERMISSIONS.INVITATIONS_WRITE]: { resource: "invitations", action: "write", description: "Create and revoke organization invitations.", builtInRoles: ["admin (via *:*)"], apiKeyScope: true },
@@ -100,6 +105,8 @@ export const API_KEY_SCOPES = [
   PERMISSIONS.AUDIT_READ,
   PERMISSIONS.BILLING_READ,
   PERMISSIONS.BILLING_WRITE,
+  PERMISSIONS.DATASOURCES_READ,
+  PERMISSIONS.DATASOURCES_WRITE,
   PERMISSIONS.ENTITLEMENTS_READ,
   PERMISSIONS.INVITATIONS_READ,
   PERMISSIONS.INVITATIONS_WRITE,
@@ -116,7 +123,7 @@ export const API_KEY_SCOPES = [
 ] as const;
 
 export type APIKeyScope = (typeof API_KEY_SCOPES)[number];
-export type APIKeyScopeResource = "api_keys" | "audit" | "billing" | "entitlements" | "invitations" | "orgs" | "roles" | "teams" | "users" | "webhooks";
+export type APIKeyScopeResource = "api_keys" | "audit" | "billing" | "datasources" | "entitlements" | "invitations" | "orgs" | "roles" | "teams" | "users" | "webhooks";
 export type APIKeyScopeAction = "read" | "write";
 export type APIKeyScopeGrant = APIKeyScope | `${APIKeyScopeResource}:*` | `*:${APIKeyScopeAction}`;
 
@@ -158,6 +165,7 @@ export const ACCOUNT_SERVICE_DESCRIPTORS = {
   AuthService,
   BillingService,
   ConsentService,
+  DatasourceService,
   DelegationService,
   GDPRService,
   IdentityService,
@@ -188,6 +196,7 @@ export interface AccountsClients {
   readonly AuthService: Client<typeof AuthService>;
   readonly BillingService: Client<typeof BillingService>;
   readonly ConsentService: Client<typeof ConsentService>;
+  readonly DatasourceService: Client<typeof DatasourceService>;
   readonly DelegationService: Client<typeof DelegationService>;
   readonly GDPRService: Client<typeof GDPRService>;
   readonly IdentityService: Client<typeof IdentityService>;
@@ -217,6 +226,7 @@ export function createAccountsClients(transport: Transport): AccountsClients {
     AuthService: createClient(AuthService, transport),
     BillingService: createClient(BillingService, transport),
     ConsentService: createClient(ConsentService, transport),
+    DatasourceService: createClient(DatasourceService, transport),
     DelegationService: createClient(DelegationService, transport),
     GDPRService: createClient(GDPRService, transport),
     IdentityService: createClient(IdentityService, transport),

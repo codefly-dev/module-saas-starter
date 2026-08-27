@@ -27,6 +27,9 @@
       "name": "ConsentService"
     },
     {
+      "name": "DatasourceService"
+    },
+    {
       "name": "DelegationService"
     },
     {
@@ -930,6 +933,109 @@
         ],
         "tags": [
           "ConsentService"
+        ]
+      }
+    },
+    "/v1/datasources": {
+      "get": {
+        "summary": "ListSources returns the org's configured sources. Credentials are never\nincluded.",
+        "operationId": "DatasourceService_ListSources",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1ListSourcesResponse"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/rpcStatus"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "orgId",
+            "in": "query",
+            "required": false,
+            "type": "string"
+          }
+        ],
+        "tags": [
+          "DatasourceService"
+        ]
+      }
+    },
+    "/v1/datasources/github": {
+      "post": {
+        "summary": "AddGitHubSource records a GitHub source for the org and stores its access\ncredential as an encrypted secret reference.",
+        "operationId": "DatasourceService_AddGitHubSource",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1GitHubDatasource"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/rpcStatus"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "body",
+            "in": "body",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/v1AddGitHubSourceRequest"
+            }
+          }
+        ],
+        "tags": [
+          "DatasourceService"
+        ]
+      }
+    },
+    "/v1/datasources/{id}:sync": {
+      "post": {
+        "summary": "Sync marks a source for ingestion. The connection side records the request;\nthe documents ingest worker consumes it through the jobs seam.",
+        "operationId": "DatasourceService_Sync",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1GitHubDatasource"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/rpcStatus"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "type": "string"
+          },
+          {
+            "name": "body",
+            "in": "body",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/DatasourceServiceSyncBody"
+            }
+          }
+        ],
+        "tags": [
+          "DatasourceService"
         ]
       }
     },
@@ -5007,6 +5113,9 @@
     }
   },
   "definitions": {
+    "DatasourceServiceSyncBody": {
+      "type": "object"
+    },
     "DelegationServiceDecideDelegationBody": {
       "type": "object",
       "properties": {
@@ -5350,6 +5459,30 @@
         },
         "consentPolicyVersion": {
           "type": "string"
+        }
+      }
+    },
+    "v1AddGitHubSourceRequest": {
+      "type": "object",
+      "properties": {
+        "orgId": {
+          "type": "string"
+        },
+        "repo": {
+          "type": "string"
+        },
+        "paths": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "collection": {
+          "type": "string"
+        },
+        "credential": {
+          "type": "string",
+          "description": "credential is a plaintext GitHub access token supplied once by the caller.\nIt is encrypted server-side and stored only as a secret reference; it is\nnever returned by any read."
         }
       }
     },
@@ -5896,6 +6029,16 @@
         }
       }
     },
+    "v1DatasourceSyncStatus": {
+      "type": "string",
+      "enum": [
+        "DATASOURCE_SYNC_STATUS_UNSPECIFIED",
+        "DATASOURCE_SYNC_STATUS_IDLE",
+        "DATASOURCE_SYNC_STATUS_PENDING"
+      ],
+      "default": "DATASOURCE_SYNC_STATUS_UNSPECIFIED",
+      "description": "DatasourceSyncStatus is the connection-side view of a source's sync state.\nIt reflects whether a sync has been requested, not the progress of the ingest\nworker that consumes the request."
+    },
     "v1DelegationEvent": {
       "type": "object",
       "properties": {
@@ -6363,6 +6506,48 @@
           "description": "period_end is exclusive."
         }
       }
+    },
+    "v1GitHubDatasource": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "orgId": {
+          "type": "string"
+        },
+        "repo": {
+          "type": "string",
+          "description": "repo is the \"owner/name\" GitHub repository slug."
+        },
+        "paths": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "description": "paths restricts ingestion to these subtrees; empty means the whole repo."
+        },
+        "collection": {
+          "type": "string",
+          "description": "collection is the target documents collection the source feeds."
+        },
+        "syncStatus": {
+          "$ref": "#/definitions/v1DatasourceSyncStatus"
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "lastSyncRequestedAt": {
+          "type": "string",
+          "format": "date-time"
+        }
+      },
+      "description": "GitHubDatasource is one org-owned GitHub source connection. The access\ncredential is never carried on this message: it is encrypted through the\nsecret cipher on write and only its envelope reference is persisted."
     },
     "v1GrantPlatformRoleRequest": {
       "type": "object",
@@ -7226,6 +7411,18 @@
           "items": {
             "type": "object",
             "$ref": "#/definitions/v1RecordShare"
+          }
+        }
+      }
+    },
+    "v1ListSourcesResponse": {
+      "type": "object",
+      "properties": {
+        "sources": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "$ref": "#/definitions/v1GitHubDatasource"
           }
         }
       }

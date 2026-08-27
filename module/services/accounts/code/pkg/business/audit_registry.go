@@ -187,6 +187,9 @@ const (
 	EventWebhookReplayed      EventType = "webhook.replayed"
 	EventWebhookSecretRotated EventType = "webhook.secret_rotated"
 	EventJobReplayed          EventType = "job.replayed"
+
+	EventDatasourceSourceAdded   EventType = "datasource.source_added"
+	EventDatasourceSyncRequested EventType = "datasource.sync_requested"
 )
 
 var auditEventCatalog = []AuditEventDefinition{
@@ -286,6 +289,10 @@ var auditEventCatalog = []AuditEventDefinition{
 	def(EventWebhookReplayed, CategorySystem, "A webhook delivery was replayed."),
 	def(EventWebhookSecretRotated, CategorySystem, "A webhook signing secret was rotated."),
 	def(EventJobReplayed, CategorySystem, "A background job was replayed."),
+
+	def(EventDatasourceSourceAdded, CategorySystem, "A datasource source was added.",
+		str("repo"), str("collection")),
+	def(EventDatasourceSyncRequested, CategorySystem, "A datasource sync was requested."),
 }
 
 // auditEventIndex resolves an event type to its definition. Built once.

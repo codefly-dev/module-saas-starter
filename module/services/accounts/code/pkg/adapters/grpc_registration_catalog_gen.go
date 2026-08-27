@@ -52,6 +52,7 @@ var catalogGRPCServiceNames = []string{
 var catalogConnectOnlyServiceNames = []string{
 	"saas.accounts.v1.BillingService",
 	"saas.accounts.v1.ConsentService",
+	"saas.accounts.v1.DatasourceService",
 	"saas.accounts.v1.GDPRService",
 	"saas.accounts.v1.NotificationService",
 	"saas.accounts.v1.OnboardingService",

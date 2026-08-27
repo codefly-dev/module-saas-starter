@@ -50,6 +50,7 @@ type Service struct {
 	identityRegistry          *IdentityProviderRegistry  // resolves org → provider stack, cache-invalidated on config change
 	connectorCipher           SecretCipher               // encrypts per-source datasource connector credentials
 	githubConnector           *githubconnector.Connector // mints installation tokens and pulls repo contents
+	datasourceCipher          SecretCipher               // encrypts per-source datasource access credentials
 }
 
 // CodeExchanger abstracts the OAuth 2.0 code-for-token exchange so the
@@ -160,6 +161,13 @@ func (s *Service) SetConnectorCipher(cipher SecretCipher) {
 // repository contents for datasource sync and webhook re-fetch.
 func (s *Service) SetGitHubConnector(connector *githubconnector.Connector) {
 	s.githubConnector = connector
+}
+
+// SetDatasourceCipher wires fail-closed encryption for per-source datasource
+// access credentials. Production uses Vault Transit; tests may provide an
+// explicit in-memory implementation.
+func (s *Service) SetDatasourceCipher(cipher SecretCipher) {
+	s.datasourceCipher = cipher
 }
 
 // SetIdentityProviderRegistry wires the per-org provider registry so

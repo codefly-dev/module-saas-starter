@@ -10,6 +10,8 @@ services:
     kind: generated
   ConsentService:
     kind: generated
+  DatasourceService:
+    kind: generated
   DelegationService:
     kind: plugin
     plugin: permissions

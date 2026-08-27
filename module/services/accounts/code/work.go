@@ -210,6 +210,7 @@ func doWork(ctx context.Context) (Clean, error) {
 	service.SetOrgIdentityProviderCipher(vaultClient)
 	service.SetConnectorCipher(vaultClient)
 	service.SetGitHubConnector(githubconnector.NewConnector())
+	service.SetDatasourceCipher(vaultClient)
 	webhookPolicy := business.NewWebhookEndpointPolicy()
 	service.SetWebhookSecurity(vaultClient, webhookPolicy)
 	webAuthnRPID, webAuthnDisplayName, webAuthnOrigins, err := configuredWebAuthn()

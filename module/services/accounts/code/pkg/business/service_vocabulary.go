@@ -37,6 +37,8 @@ var servicePermissionVocabulary = []servicePermissionDefinition{
 	{Permission: "audit:read", Description: "Read and export audit events.", BuiltInRoles: []string{"admin (via *:*)"}, APIKeyScope: true},
 	{Permission: "billing:read", Description: "View billing state and invoices.", BuiltInRoles: []string{"admin (via *:*)", "editor"}, APIKeyScope: true},
 	{Permission: "billing:write", Description: "Open checkout and billing portal sessions.", BuiltInRoles: []string{"admin (via *:*)"}, APIKeyScope: true},
+	{Permission: "datasources:read", Description: "List datasource source connections.", BuiltInRoles: []string{"admin (via *:*)", "editor", "viewer"}, APIKeyScope: true},
+	{Permission: "datasources:write", Description: "Add and sync datasource source connections.", BuiltInRoles: []string{"admin (via *:*)"}, APIKeyScope: true},
 	{Permission: "entitlements:read", Description: "View entitlement limits, overrides, and usage.", BuiltInRoles: []string{"admin (via *:*)"}, APIKeyScope: true},
 	{Permission: "invitations:read", Description: "List organization invitations.", BuiltInRoles: []string{"admin (via *:*)"}, APIKeyScope: true},
 	{Permission: "invitations:write", Description: "Create and revoke organization invitations.", BuiltInRoles: []string{"admin (via *:*)"}, APIKeyScope: true},
