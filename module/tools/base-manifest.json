@@ -1,6 +1,6 @@
 {
   "note": "Base-file integrity manifest for the saas-starter module. Generated FROM canonical by `node tools/base-integrity.mjs gen`. Consumers MUST NOT hand-edit base files — only add files on the side. Regenerated on every codefly sync from canonical.",
-  "fileCount": 1746,
+  "fileCount": 1748,
   "files": {
     "AUTHORIZATION_CATALOG.md": "b2ea5d41f0098e80315e02e7c4bdbda03b65c8eef463426242552fd3c047ca0a",
     "CONTRACT_VERSIONING.md": "02031aa87922ab5ec573ea582cf584271873481de6ceabbda52b1bfda005ffbd",
@@ -1404,7 +1404,9 @@
     "services/frontend/code/src/shared/lib/__tests__/utils.test.ts": "b7fe1b391677eec04f640192d679f6b708474584dff0d5039d761790a154395c",
     "services/frontend/code/src/shared/lib/utils.ts": "8b71969ecd274f75f1edd8a775530f7fcfb4c52305cbdf1afc7e7ea495feaed8",
     "services/frontend/code/src/shared/ui/data-table.tsx": "0d3dd0bf47eb57aba7af764dc5c839f7137535a60aff4443cff8a423a1e531d8",
-    "services/frontend/code/src/shared/ui/index.ts": "3ddb7c78a36e557d28841221df6bdddd1e11d5374459e952eacbdd07f4059fd7",
+    "services/frontend/code/src/shared/ui/index.ts": "4dfb0ba5033cd5d66ba36df2ce32a8a8fb1487fccbc09b6c4f3d3ce48c58645f",
+    "services/frontend/code/src/shared/ui/layout.test.tsx": "79cd47d63037d9b0ae00371ad23173c1e69c4cd67acee94fb4f79fe700e33628",
+    "services/frontend/code/src/shared/ui/layout.tsx": "f1c37ca1b44079ac9508c99f1050d86f47b378fdf33e9b95a32aa238f84070af",
     "services/frontend/code/src/shared/ui/metric-tiles.test.tsx": "ecc8e063df1eb88282a9149d543cc0b1ce506143afb6411e3792391a4bb586e4",
     "services/frontend/code/src/shared/ui/metric-tiles.tsx": "3066663dc11d4075c607edda17e79874424093391620c8712f656970c92606c7",
     "services/frontend/code/src/solutions/SolutionOutlet.tsx": "f2c2e99359ebd8c2f0c3a817f43b557f9d82b030f39771031a96c713ee5d4e7e",
