@@ -10,8 +10,6 @@ import {
 // the first one doesn't — grouping by category and scoping a metric to one
 // category — to show the data graph generalizes past a single page. Everything
 // below the imports is the entire consumer surface.
-const mfaVerified = event("mfa.totp_verified");
-
 const security = dashboard({
 	title: "Security",
 	description: "Live from your organization's security-relevant audit trail.",
@@ -29,8 +27,8 @@ const security = dashboard({
 			chart: "line",
 		}),
 		metric({
-			title: "MFA verifications",
-			event: mfaVerified,
+			title: "TOTP verifications",
+			event: event("mfa.totp_verified"),
 			groupBy: "time",
 			bucket: "day",
 			chart: "stat",

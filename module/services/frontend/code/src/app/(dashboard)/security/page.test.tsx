@@ -35,7 +35,10 @@ describe("SecurityPage", () => {
 		// dimension /insights never exercises.
 		expect(await screen.findByText("Billing")).toBeTruthy();
 		expect(screen.getByText("12")).toBeTruthy();
-		// Stat metric over time buckets: the summed total (3 + 5).
+		// Stat metric over time buckets: the summed total (3 + 5). Its title
+		// names the exact event it counts (mfa.totp_verified), not the broader
+		// "MFA" it would overstate.
+		expect(screen.getByText("TOTP verifications")).toBeTruthy();
 		expect(screen.getByText("8")).toBeTruthy();
 		expect(screen.queryByText("No events yet.")).toBeNull();
 	});
