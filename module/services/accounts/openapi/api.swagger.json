@@ -3,6 +3,9 @@
     "application/json"
   ],
   "definitions": {
+    "DatasourceServiceSyncSourceBody": {
+      "type": "object"
+    },
     "DelegationServiceDecideDelegationBody": {
       "properties": {
         "decision": {
@@ -747,6 +750,26 @@
       },
       "type": "object"
     },
+    "v1CreateDatasourceSourceRequest": {
+      "properties": {
+        "connector": {
+          "$ref": "#/definitions/v1DatasourceConnector"
+        },
+        "displayName": {
+          "type": "string"
+        },
+        "github": {
+          "$ref": "#/definitions/v1GitHubSourceConfig"
+        },
+        "orgId": {
+          "type": "string"
+        },
+        "targetCollection": {
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
     "v1CreateInvitationRequest": {
       "properties": {
         "email": {
@@ -845,6 +868,75 @@
         }
       },
       "type": "object"
+    },
+    "v1DatasourceConnector": {
+      "default": "DATASOURCE_CONNECTOR_UNSPECIFIED",
+      "description": "DatasourceConnector identifies the external system a source connects to.",
+      "enum": [
+        "DATASOURCE_CONNECTOR_UNSPECIFIED",
+        "DATASOURCE_CONNECTOR_GITHUB"
+      ],
+      "type": "string"
+    },
+    "v1DatasourceSource": {
+      "description": "DatasourceSource is one org-owned connection to an external system.",
+      "properties": {
+        "connector": {
+          "$ref": "#/definitions/v1DatasourceConnector"
+        },
+        "createdAt": {
+          "format": "date-time",
+          "type": "string"
+        },
+        "displayName": {
+          "type": "string"
+        },
+        "github": {
+          "$ref": "#/definitions/v1GitHubSourceConfig"
+        },
+        "id": {
+          "type": "string"
+        },
+        "lastSyncError": {
+          "type": "string"
+        },
+        "lastSyncRequestedAt": {
+          "description": "last_sync_requested_at records the most recent SyncSource call. The\nconnector worker that performs the pull compares it against last_synced_at.",
+          "format": "date-time",
+          "type": "string"
+        },
+        "lastSyncedAt": {
+          "format": "date-time",
+          "type": "string"
+        },
+        "orgId": {
+          "type": "string"
+        },
+        "status": {
+          "$ref": "#/definitions/v1DatasourceSourceStatus"
+        },
+        "targetCollection": {
+          "description": "target_collection names the documents collection ingested entries land in.",
+          "type": "string"
+        },
+        "updatedAt": {
+          "format": "date-time",
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
+    "v1DatasourceSourceStatus": {
+      "default": "DATASOURCE_SOURCE_STATUS_UNSPECIFIED",
+      "description": "DatasourceSourceStatus is the connection lifecycle. PENDING is created but\nnot yet authorized; ACTIVE has usable credentials; DISABLED is paused by an\noperator; ERROR captures the last connection or sync failure.",
+      "enum": [
+        "DATASOURCE_SOURCE_STATUS_UNSPECIFIED",
+        "DATASOURCE_SOURCE_STATUS_PENDING",
+        "DATASOURCE_SOURCE_STATUS_ACTIVE",
+        "DATASOURCE_SOURCE_STATUS_DISABLED",
+        "DATASOURCE_SOURCE_STATUS_ERROR"
+      ],
+      "type": "string"
     },
     "v1DelegationEvent": {
       "description": "DelegationEvent is one streaming event delivered to a\nsubscriber. The agent SDK reads exactly one event (the\nterminal decision) and disconnects.",
@@ -1309,6 +1401,27 @@
         },
         "used": {
           "format": "int64",
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
+    "v1GitHubSourceConfig": {
+      "description": "GitHubSourceConfig selects the repository content a source ingests.",
+      "properties": {
+        "branch": {
+          "description": "branch to track. Empty defaults to the repository's default branch.",
+          "type": "string"
+        },
+        "paths": {
+          "description": "paths restricts ingestion to these repository subtrees. Empty ingests the\nwhole repository.",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "repository": {
+          "description": "repository in \"owner/name\" form.",
           "type": "string"
         }
       },
@@ -1978,6 +2091,21 @@
         "types": {
           "items": {
             "$ref": "#/definitions/v1AuditEventType",
+            "type": "object"
+          },
+          "type": "array"
+        }
+      },
+      "type": "object"
+    },
+    "v1ListDatasourceSourcesResponse": {
+      "properties": {
+        "nextPageToken": {
+          "type": "string"
+        },
+        "sources": {
+          "items": {
+            "$ref": "#/definitions/v1DatasourceSource",
             "type": "object"
           },
           "type": "array"
@@ -5107,6 +5235,176 @@
         },
         "tags": [
           "ConsentService"
+        ]
+      }
+    },
+    "/v1/datasource/sources": {
+      "get": {
+        "operationId": "DatasourceService_ListSources",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "orgId",
+            "required": false,
+            "type": "string"
+          },
+          {
+            "format": "int32",
+            "in": "query",
+            "name": "pageSize",
+            "required": false,
+            "type": "integer"
+          },
+          {
+            "in": "query",
+            "name": "pageToken",
+            "required": false,
+            "type": "string"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1ListDatasourceSourcesResponse"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/rpcStatus"
+            }
+          }
+        },
+        "tags": [
+          "DatasourceService"
+        ]
+      },
+      "post": {
+        "operationId": "DatasourceService_CreateSource",
+        "parameters": [
+          {
+            "in": "body",
+            "name": "body",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/v1CreateDatasourceSourceRequest"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1DatasourceSource"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/rpcStatus"
+            }
+          }
+        },
+        "tags": [
+          "DatasourceService"
+        ]
+      }
+    },
+    "/v1/datasource/sources/{id}": {
+      "delete": {
+        "operationId": "DatasourceService_DeleteSource",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "type": "string"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "properties": {},
+              "type": "object"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/rpcStatus"
+            }
+          }
+        },
+        "tags": [
+          "DatasourceService"
+        ]
+      },
+      "get": {
+        "operationId": "DatasourceService_GetSource",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "type": "string"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1DatasourceSource"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/rpcStatus"
+            }
+          }
+        },
+        "tags": [
+          "DatasourceService"
+        ]
+      }
+    },
+    "/v1/datasource/sources/{id}:sync": {
+      "post": {
+        "operationId": "DatasourceService_SyncSource",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "type": "string"
+          },
+          {
+            "in": "body",
+            "name": "body",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/DatasourceServiceSyncSourceBody"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1DatasourceSource"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/rpcStatus"
+            }
+          }
+        },
+        "tags": [
+          "DatasourceService"
         ]
       }
     },
@@ -9208,6 +9506,9 @@
     },
     {
       "name": "ConsentService"
+    },
+    {
+      "name": "DatasourceService"
     },
     {
       "name": "DelegationService"

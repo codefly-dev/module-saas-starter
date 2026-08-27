@@ -31,6 +31,9 @@ func registerCatalogRESTHandlers(ctx context.Context, mux *runtime.ServeMux, end
 	if err := gen.RegisterConsentServiceHandlerFromEndpoint(ctx, mux, endpoint, options); err != nil {
 		return fmt.Errorf("register generated REST service ConsentService: %w", err)
 	}
+	if err := gen.RegisterDatasourceServiceHandlerFromEndpoint(ctx, mux, endpoint, options); err != nil {
+		return fmt.Errorf("register generated REST service DatasourceService: %w", err)
+	}
 	if err := gen.RegisterGDPRServiceHandlerFromEndpoint(ctx, mux, endpoint, options); err != nil {
 		return fmt.Errorf("register generated REST service GDPRService: %w", err)
 	}
@@ -110,6 +113,7 @@ var catalogRESTExactRoutes = map[string]struct{}{
 	"GET /v1/audit-log:aggregate":              {},
 	"GET /v1/auth/.well-known/jwks.json":       {},
 	"GET /v1/consent/status":                   {},
+	"GET /v1/datasource/sources":               {},
 	"GET /v1/delegations:pending":              {},
 	"GET /v1/invitations":                      {},
 	"GET /v1/mfa/devices":                      {},
@@ -147,6 +151,7 @@ var catalogRESTExactRoutes = map[string]struct{}{
 	"POST /v1/auth/switch-organization":        {},
 	"POST /v1/billing/connect/portal":          {},
 	"POST /v1/consent/terms":                   {},
+	"POST /v1/datasource/sources":              {},
 	"POST /v1/delegations":                     {},
 	"POST /v1/gdpr/delete":                     {},
 	"POST /v1/gdpr/export":                     {},
@@ -189,6 +194,7 @@ type catalogRESTTemplateRoute struct {
 
 var catalogRESTTemplateRoutes = []catalogRESTTemplateRoute{
 	{method: "DELETE", path: regexp.MustCompile("^/v1/api-keys/[^/]+$")},
+	{method: "DELETE", path: regexp.MustCompile("^/v1/datasource/sources/[^/]+$")},
 	{method: "DELETE", path: regexp.MustCompile("^/v1/invitations/[^/]+$")},
 	{method: "DELETE", path: regexp.MustCompile("^/v1/mfa/devices/[^/]+$")},
 	{method: "DELETE", path: regexp.MustCompile("^/v1/notifications/[^/]+$")},
@@ -201,6 +207,7 @@ var catalogRESTTemplateRoutes = []catalogRESTTemplateRoute{
 	{method: "DELETE", path: regexp.MustCompile("^/v1/users/[^/]+$")},
 	{method: "DELETE", path: regexp.MustCompile("^/v1/webhooks/[^/]+$")},
 	{method: "GET", path: regexp.MustCompile("^/v1/billing/invoices/[^/]+$")},
+	{method: "GET", path: regexp.MustCompile("^/v1/datasource/sources/[^/]+$")},
 	{method: "GET", path: regexp.MustCompile("^/v1/delegations/[^/]+:wait$")},
 	{method: "GET", path: regexp.MustCompile("^/v1/gdpr/delete/[^/]+$")},
 	{method: "GET", path: regexp.MustCompile("^/v1/gdpr/export/[^/]+$")},
@@ -222,6 +229,7 @@ var catalogRESTTemplateRoutes = []catalogRESTTemplateRoute{
 	{method: "GET", path: regexp.MustCompile("^/v1/webhooks/[^/]+/deliveries$")},
 	{method: "PATCH", path: regexp.MustCompile("^/v1/teams/[^/]+$")},
 	{method: "PATCH", path: regexp.MustCompile("^/v1/users/[^/]+$")},
+	{method: "POST", path: regexp.MustCompile("^/v1/datasource/sources/[^/]+:sync$")},
 	{method: "POST", path: regexp.MustCompile("^/v1/delegations/[^/]+:decide$")},
 	{method: "POST", path: regexp.MustCompile("^/v1/invitations/[^/]+:resend$")},
 	{method: "POST", path: regexp.MustCompile("^/v1/notifications/[^/]+:read$")},

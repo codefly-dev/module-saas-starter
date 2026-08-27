@@ -187,6 +187,10 @@ const (
 	EventWebhookReplayed      EventType = "webhook.replayed"
 	EventWebhookSecretRotated EventType = "webhook.secret_rotated"
 	EventJobReplayed          EventType = "job.replayed"
+
+	EventDatasourceSourceCreated       EventType = "datasource.source.created"
+	EventDatasourceSourceDeleted       EventType = "datasource.source.deleted"
+	EventDatasourceSourceSyncRequested EventType = "datasource.source.sync_requested"
 )
 
 var auditEventCatalog = []AuditEventDefinition{
@@ -285,6 +289,9 @@ var auditEventCatalog = []AuditEventDefinition{
 	def(EventWebhookDeleted, CategorySystem, "A webhook subscription was deleted."),
 	def(EventWebhookReplayed, CategorySystem, "A webhook delivery was replayed."),
 	def(EventWebhookSecretRotated, CategorySystem, "A webhook signing secret was rotated."),
+	def(EventDatasourceSourceCreated, CategorySystem, "A datasource source was created.", str("connector")),
+	def(EventDatasourceSourceDeleted, CategorySystem, "A datasource source was deleted."),
+	def(EventDatasourceSourceSyncRequested, CategorySystem, "A datasource source sync was requested."),
 	def(EventJobReplayed, CategorySystem, "A background job was replayed."),
 }
 

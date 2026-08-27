@@ -941,6 +941,242 @@
       "rate_limit_backend_failure_mode": "RATE_LIMIT_BACKEND_FAILURE_MODE_FAIL_OPEN"
     },
     {
+      "procedure": "/saas.accounts.v1.DatasourceService/CreateSource",
+      "full_service": "saas.accounts.v1.DatasourceService",
+      "method": "CreateSource",
+      "input_type": "saas.accounts.v1.CreateDatasourceSourceRequest",
+      "output_type": "saas.accounts.v1.DatasourceSource",
+      "client_streaming": false,
+      "server_streaming": false,
+      "policy": {
+        "exposure": "EXPOSURE_AUTHENTICATED",
+        "tenant": "TENANT_REQUIREMENT_ORG_ADMIN",
+        "permissions": [
+          "datasources:write"
+        ],
+        "scopes": [
+          "datasources:write"
+        ],
+        "resource_bindings": [
+          {
+            "request_field": "org_id",
+            "target": "RESOURCE_TARGET_ORGANIZATION",
+            "lookup": "RESOURCE_LOOKUP_DIRECT_ID"
+          }
+        ],
+        "mfa": "MFA_REQUIREMENT_NONE",
+        "audit": {
+          "events": [
+            "datasource.source.created"
+          ],
+          "emission": "AUDIT_EMISSION_SUCCESS"
+        },
+        "idempotency": "IDEMPOTENCY_REQUIREMENT_FORBIDDEN",
+        "rate_limit": "RATE_LIMIT_CLASS_STANDARD_WRITE",
+        "request_sensitivity": "SENSITIVITY_CONFIDENTIAL",
+        "response_sensitivity": "SENSITIVITY_CONFIDENTIAL",
+        "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
+        "authentication_factor_attempt": false,
+        "conditions": []
+      },
+      "policy_tier": "org_admin",
+      "owner": {
+        "module": "saas-starter",
+        "service": "accounts"
+      },
+      "source_proto": "saas/accounts/v1/datasource.proto",
+      "policy_sha256": "9c21fa15292f3c9acf3a7725dc9548b756a1a615c842b3c8cd8962730d4d752f",
+      "rate_limit_backend_failure_mode": "RATE_LIMIT_BACKEND_FAILURE_MODE_FAIL_OPEN"
+    },
+    {
+      "procedure": "/saas.accounts.v1.DatasourceService/DeleteSource",
+      "full_service": "saas.accounts.v1.DatasourceService",
+      "method": "DeleteSource",
+      "input_type": "saas.accounts.v1.DeleteDatasourceSourceRequest",
+      "output_type": "google.protobuf.Empty",
+      "client_streaming": false,
+      "server_streaming": false,
+      "policy": {
+        "exposure": "EXPOSURE_AUTHENTICATED",
+        "tenant": "TENANT_REQUIREMENT_ORG_ADMIN",
+        "permissions": [
+          "datasources:write"
+        ],
+        "scopes": [
+          "datasources:write"
+        ],
+        "resource_bindings": [
+          {
+            "request_field": "id",
+            "target": "RESOURCE_TARGET_OWNED_RESOURCE",
+            "lookup": "RESOURCE_LOOKUP_RESOURCE_TO_ORGANIZATION"
+          }
+        ],
+        "mfa": "MFA_REQUIREMENT_NONE",
+        "audit": {
+          "events": [
+            "datasource.source.deleted"
+          ],
+          "emission": "AUDIT_EMISSION_SUCCESS"
+        },
+        "idempotency": "IDEMPOTENCY_REQUIREMENT_FORBIDDEN",
+        "rate_limit": "RATE_LIMIT_CLASS_STANDARD_WRITE",
+        "request_sensitivity": "SENSITIVITY_CONFIDENTIAL",
+        "response_sensitivity": "SENSITIVITY_CONFIDENTIAL",
+        "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
+        "authentication_factor_attempt": false,
+        "conditions": []
+      },
+      "policy_tier": "org_admin",
+      "owner": {
+        "module": "saas-starter",
+        "service": "accounts"
+      },
+      "source_proto": "saas/accounts/v1/datasource.proto",
+      "policy_sha256": "8f20e2d0197ac766b19cab92eabebdaad8492368ae9e62d71397559cbe1fe791",
+      "rate_limit_backend_failure_mode": "RATE_LIMIT_BACKEND_FAILURE_MODE_FAIL_OPEN"
+    },
+    {
+      "procedure": "/saas.accounts.v1.DatasourceService/GetSource",
+      "full_service": "saas.accounts.v1.DatasourceService",
+      "method": "GetSource",
+      "input_type": "saas.accounts.v1.GetDatasourceSourceRequest",
+      "output_type": "saas.accounts.v1.DatasourceSource",
+      "client_streaming": false,
+      "server_streaming": false,
+      "policy": {
+        "exposure": "EXPOSURE_AUTHENTICATED",
+        "tenant": "TENANT_REQUIREMENT_ORG_MEMBER",
+        "permissions": [
+          "datasources:read"
+        ],
+        "scopes": [
+          "datasources:read"
+        ],
+        "resource_bindings": [
+          {
+            "request_field": "id",
+            "target": "RESOURCE_TARGET_OWNED_RESOURCE",
+            "lookup": "RESOURCE_LOOKUP_RESOURCE_TO_ORGANIZATION"
+          }
+        ],
+        "mfa": "MFA_REQUIREMENT_NONE",
+        "audit": {
+          "events": [],
+          "emission": "AUDIT_EMISSION_NONE"
+        },
+        "idempotency": "IDEMPOTENCY_REQUIREMENT_FORBIDDEN",
+        "rate_limit": "RATE_LIMIT_CLASS_STANDARD_READ",
+        "request_sensitivity": "SENSITIVITY_CONFIDENTIAL",
+        "response_sensitivity": "SENSITIVITY_CONFIDENTIAL",
+        "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
+        "authentication_factor_attempt": false,
+        "conditions": []
+      },
+      "policy_tier": "org_member",
+      "owner": {
+        "module": "saas-starter",
+        "service": "accounts"
+      },
+      "source_proto": "saas/accounts/v1/datasource.proto",
+      "policy_sha256": "cab1719f4cf246d415e9d5a5e40b6fa065b83e2f4fce5494f267b49ae4dc71b4",
+      "rate_limit_backend_failure_mode": "RATE_LIMIT_BACKEND_FAILURE_MODE_FAIL_OPEN"
+    },
+    {
+      "procedure": "/saas.accounts.v1.DatasourceService/ListSources",
+      "full_service": "saas.accounts.v1.DatasourceService",
+      "method": "ListSources",
+      "input_type": "saas.accounts.v1.ListDatasourceSourcesRequest",
+      "output_type": "saas.accounts.v1.ListDatasourceSourcesResponse",
+      "client_streaming": false,
+      "server_streaming": false,
+      "policy": {
+        "exposure": "EXPOSURE_AUTHENTICATED",
+        "tenant": "TENANT_REQUIREMENT_ORG_MEMBER",
+        "permissions": [
+          "datasources:read"
+        ],
+        "scopes": [
+          "datasources:read"
+        ],
+        "resource_bindings": [
+          {
+            "request_field": "org_id",
+            "target": "RESOURCE_TARGET_ORGANIZATION",
+            "lookup": "RESOURCE_LOOKUP_DIRECT_ID"
+          }
+        ],
+        "mfa": "MFA_REQUIREMENT_NONE",
+        "audit": {
+          "events": [],
+          "emission": "AUDIT_EMISSION_NONE"
+        },
+        "idempotency": "IDEMPOTENCY_REQUIREMENT_FORBIDDEN",
+        "rate_limit": "RATE_LIMIT_CLASS_STANDARD_READ",
+        "request_sensitivity": "SENSITIVITY_CONFIDENTIAL",
+        "response_sensitivity": "SENSITIVITY_CONFIDENTIAL",
+        "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
+        "authentication_factor_attempt": false,
+        "conditions": []
+      },
+      "policy_tier": "org_member",
+      "owner": {
+        "module": "saas-starter",
+        "service": "accounts"
+      },
+      "source_proto": "saas/accounts/v1/datasource.proto",
+      "policy_sha256": "1a574c56b9d38639f368d150ee8c7cc933cbc2b1086601deac8394062f863475",
+      "rate_limit_backend_failure_mode": "RATE_LIMIT_BACKEND_FAILURE_MODE_FAIL_OPEN"
+    },
+    {
+      "procedure": "/saas.accounts.v1.DatasourceService/SyncSource",
+      "full_service": "saas.accounts.v1.DatasourceService",
+      "method": "SyncSource",
+      "input_type": "saas.accounts.v1.SyncDatasourceSourceRequest",
+      "output_type": "saas.accounts.v1.DatasourceSource",
+      "client_streaming": false,
+      "server_streaming": false,
+      "policy": {
+        "exposure": "EXPOSURE_AUTHENTICATED",
+        "tenant": "TENANT_REQUIREMENT_ORG_ADMIN",
+        "permissions": [
+          "datasources:write"
+        ],
+        "scopes": [
+          "datasources:write"
+        ],
+        "resource_bindings": [
+          {
+            "request_field": "id",
+            "target": "RESOURCE_TARGET_OWNED_RESOURCE",
+            "lookup": "RESOURCE_LOOKUP_RESOURCE_TO_ORGANIZATION"
+          }
+        ],
+        "mfa": "MFA_REQUIREMENT_NONE",
+        "audit": {
+          "events": [
+            "datasource.source.sync_requested"
+          ],
+          "emission": "AUDIT_EMISSION_SUCCESS"
+        },
+        "idempotency": "IDEMPOTENCY_REQUIREMENT_FORBIDDEN",
+        "rate_limit": "RATE_LIMIT_CLASS_STANDARD_WRITE",
+        "request_sensitivity": "SENSITIVITY_CONFIDENTIAL",
+        "response_sensitivity": "SENSITIVITY_CONFIDENTIAL",
+        "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
+        "authentication_factor_attempt": false,
+        "conditions": []
+      },
+      "policy_tier": "org_admin",
+      "owner": {
+        "module": "saas-starter",
+        "service": "accounts"
+      },
+      "source_proto": "saas/accounts/v1/datasource.proto",
+      "policy_sha256": "d7803cfb3dde8309470bbcbcc91b69a65a4e1473a2c06a7d69f602ca8eed74a5",
+      "rate_limit_backend_failure_mode": "RATE_LIMIT_BACKEND_FAILURE_MODE_FAIL_OPEN"
+    },
+    {
       "procedure": "/saas.accounts.v1.DelegationService/DecideDelegation",
       "full_service": "saas.accounts.v1.DelegationService",
       "method": "DecideDelegation",

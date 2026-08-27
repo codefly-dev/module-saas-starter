@@ -1,0 +1,250 @@
+syntax = "proto3";
+
+package saas.accounts.v1;
+
+import "buf/validate/validate.proto";
+import "google/api/annotations.proto";
+import "google/protobuf/empty.proto";
+import "google/protobuf/timestamp.proto";
+import "saas/policy/v1/options.proto";
+
+// ============================================================================
+// Datasources
+//
+// A Datasource source is one durable connection from an organization to an
+// external system (currently a GitHub repository). saas-starter owns the
+// connection surface — creation, credentials, and the sync trigger — while the
+// documents module owns ingestion. The two meet at the durable jobs inbox.
+// ============================================================================
+
+// DatasourceConnector identifies the external system a source connects to.
+enum DatasourceConnector {
+  DATASOURCE_CONNECTOR_UNSPECIFIED = 0;
+  DATASOURCE_CONNECTOR_GITHUB = 1;
+}
+
+// DatasourceSourceStatus is the connection lifecycle. PENDING is created but
+// not yet authorized; ACTIVE has usable credentials; DISABLED is paused by an
+// operator; ERROR captures the last connection or sync failure.
+enum DatasourceSourceStatus {
+  DATASOURCE_SOURCE_STATUS_UNSPECIFIED = 0;
+  DATASOURCE_SOURCE_STATUS_PENDING = 1;
+  DATASOURCE_SOURCE_STATUS_ACTIVE = 2;
+  DATASOURCE_SOURCE_STATUS_DISABLED = 3;
+  DATASOURCE_SOURCE_STATUS_ERROR = 4;
+}
+
+// GitHubSourceConfig selects the repository content a source ingests.
+message GitHubSourceConfig {
+  // repository in "owner/name" form.
+  string repository = 1 [(buf.validate.field).string = {
+    min_len: 3
+    max_len: 255
+    pattern: "^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$"
+  }];
+  // branch to track. Empty defaults to the repository's default branch.
+  string branch = 2 [
+    (buf.validate.field).ignore = IGNORE_IF_ZERO_VALUE,
+    (buf.validate.field).string.max_len = 255
+  ];
+  // paths restricts ingestion to these repository subtrees. Empty ingests the
+  // whole repository.
+  repeated string paths = 3 [(buf.validate.field).repeated = {
+    max_items: 64
+    items: {string: {max_len: 1024}}
+  }];
+}
+
+// DatasourceSource is one org-owned connection to an external system.
+message DatasourceSource {
+  string id = 1 [(buf.validate.field).string.uuid = true];
+  string org_id = 2 [(buf.validate.field).string.uuid = true];
+  DatasourceConnector connector = 3;
+  string display_name = 4;
+  // target_collection names the documents collection ingested entries land in.
+  string target_collection = 5;
+  oneof config {
+    GitHubSourceConfig github = 6;
+  }
+  DatasourceSourceStatus status = 7;
+  // last_sync_requested_at records the most recent SyncSource call. The
+  // connector worker that performs the pull compares it against last_synced_at.
+  google.protobuf.Timestamp last_sync_requested_at = 8;
+  google.protobuf.Timestamp last_synced_at = 9;
+  string last_sync_error = 10;
+  google.protobuf.Timestamp created_at = 11;
+  google.protobuf.Timestamp updated_at = 12;
+}
+
+message CreateDatasourceSourceRequest {
+  string org_id = 1 [(buf.validate.field).string.uuid = true];
+  DatasourceConnector connector = 2 [(buf.validate.field).enum = {
+    defined_only: true
+    not_in: 0
+  }];
+  string display_name = 3 [(buf.validate.field).string = {
+    min_len: 1
+    max_len: 255
+  }];
+  string target_collection = 4 [(buf.validate.field).string = {
+    min_len: 1
+    max_len: 255
+    pattern: "^[a-z][a-z0-9_-]*$"
+  }];
+  oneof config {
+    option (buf.validate.oneof).required = true;
+
+    GitHubSourceConfig github = 5;
+  }
+}
+
+message GetDatasourceSourceRequest {
+  string id = 1 [(buf.validate.field).string.uuid = true];
+}
+
+message ListDatasourceSourcesRequest {
+  string org_id = 1 [(buf.validate.field).string.uuid = true];
+  int32 page_size = 2 [(buf.validate.field).int32 = {
+    gt: 0
+    lte: 100
+  }];
+  string page_token = 3;
+}
+
+message ListDatasourceSourcesResponse {
+  repeated DatasourceSource sources = 1;
+  string next_page_token = 2;
+}
+
+message DeleteDatasourceSourceRequest {
+  string id = 1 [(buf.validate.field).string.uuid = true];
+}
+
+message SyncDatasourceSourceRequest {
+  string id = 1 [(buf.validate.field).string.uuid = true];
+}
+
+// DatasourceService manages org-owned connections to external systems and the
+// sync trigger the connector worker consumes.
+service DatasourceService {
+  rpc CreateSource(CreateDatasourceSourceRequest) returns (DatasourceSource) {
+    option (saas.policy.v1.method_policy) = {
+      exposure: EXPOSURE_AUTHENTICATED
+      tenant: TENANT_REQUIREMENT_ORG_ADMIN
+      permissions: "datasources:write"
+      scopes: "datasources:write"
+      resource_bindings: {
+        request_field: "org_id"
+        target: RESOURCE_TARGET_ORGANIZATION
+        lookup: RESOURCE_LOOKUP_DIRECT_ID
+      }
+      mfa: MFA_REQUIREMENT_NONE
+      audit: {
+        events: "datasource.source.created"
+        emission: AUDIT_EMISSION_SUCCESS
+      }
+      idempotency: IDEMPOTENCY_REQUIREMENT_FORBIDDEN
+      rate_limit: RATE_LIMIT_CLASS_STANDARD_WRITE
+      request_sensitivity: SENSITIVITY_CONFIDENTIAL
+      response_sensitivity: SENSITIVITY_CONFIDENTIAL
+      platform_role: PLATFORM_ROLE_REQUIREMENT_NONE
+    };
+    option (google.api.http) = {
+      post: "/v1/datasource/sources"
+      body: "*"
+    };
+  }
+  rpc GetSource(GetDatasourceSourceRequest) returns (DatasourceSource) {
+    option (saas.policy.v1.method_policy) = {
+      exposure: EXPOSURE_AUTHENTICATED
+      tenant: TENANT_REQUIREMENT_ORG_MEMBER
+      permissions: "datasources:read"
+      scopes: "datasources:read"
+      resource_bindings: {
+        request_field: "id"
+        target: RESOURCE_TARGET_OWNED_RESOURCE
+        lookup: RESOURCE_LOOKUP_RESOURCE_TO_ORGANIZATION
+      }
+      mfa: MFA_REQUIREMENT_NONE
+      audit: {emission: AUDIT_EMISSION_NONE}
+      idempotency: IDEMPOTENCY_REQUIREMENT_FORBIDDEN
+      rate_limit: RATE_LIMIT_CLASS_STANDARD_READ
+      request_sensitivity: SENSITIVITY_CONFIDENTIAL
+      response_sensitivity: SENSITIVITY_CONFIDENTIAL
+      platform_role: PLATFORM_ROLE_REQUIREMENT_NONE
+    };
+    option (google.api.http) = {get: "/v1/datasource/sources/{id}"};
+  }
+  rpc ListSources(ListDatasourceSourcesRequest) returns (ListDatasourceSourcesResponse) {
+    option (saas.policy.v1.method_policy) = {
+      exposure: EXPOSURE_AUTHENTICATED
+      tenant: TENANT_REQUIREMENT_ORG_MEMBER
+      permissions: "datasources:read"
+      scopes: "datasources:read"
+      resource_bindings: {
+        request_field: "org_id"
+        target: RESOURCE_TARGET_ORGANIZATION
+        lookup: RESOURCE_LOOKUP_DIRECT_ID
+      }
+      mfa: MFA_REQUIREMENT_NONE
+      audit: {emission: AUDIT_EMISSION_NONE}
+      idempotency: IDEMPOTENCY_REQUIREMENT_FORBIDDEN
+      rate_limit: RATE_LIMIT_CLASS_STANDARD_READ
+      request_sensitivity: SENSITIVITY_CONFIDENTIAL
+      response_sensitivity: SENSITIVITY_CONFIDENTIAL
+      platform_role: PLATFORM_ROLE_REQUIREMENT_NONE
+    };
+    option (google.api.http) = {get: "/v1/datasource/sources"};
+  }
+  rpc DeleteSource(DeleteDatasourceSourceRequest) returns (google.protobuf.Empty) {
+    option (saas.policy.v1.method_policy) = {
+      exposure: EXPOSURE_AUTHENTICATED
+      tenant: TENANT_REQUIREMENT_ORG_ADMIN
+      permissions: "datasources:write"
+      scopes: "datasources:write"
+      resource_bindings: {
+        request_field: "id"
+        target: RESOURCE_TARGET_OWNED_RESOURCE
+        lookup: RESOURCE_LOOKUP_RESOURCE_TO_ORGANIZATION
+      }
+      mfa: MFA_REQUIREMENT_NONE
+      audit: {
+        events: "datasource.source.deleted"
+        emission: AUDIT_EMISSION_SUCCESS
+      }
+      idempotency: IDEMPOTENCY_REQUIREMENT_FORBIDDEN
+      rate_limit: RATE_LIMIT_CLASS_STANDARD_WRITE
+      request_sensitivity: SENSITIVITY_CONFIDENTIAL
+      response_sensitivity: SENSITIVITY_CONFIDENTIAL
+      platform_role: PLATFORM_ROLE_REQUIREMENT_NONE
+    };
+    option (google.api.http) = {delete: "/v1/datasource/sources/{id}"};
+  }
+  rpc SyncSource(SyncDatasourceSourceRequest) returns (DatasourceSource) {
+    option (saas.policy.v1.method_policy) = {
+      exposure: EXPOSURE_AUTHENTICATED
+      tenant: TENANT_REQUIREMENT_ORG_ADMIN
+      permissions: "datasources:write"
+      scopes: "datasources:write"
+      resource_bindings: {
+        request_field: "id"
+        target: RESOURCE_TARGET_OWNED_RESOURCE
+        lookup: RESOURCE_LOOKUP_RESOURCE_TO_ORGANIZATION
+      }
+      mfa: MFA_REQUIREMENT_NONE
+      audit: {
+        events: "datasource.source.sync_requested"
+        emission: AUDIT_EMISSION_SUCCESS
+      }
+      idempotency: IDEMPOTENCY_REQUIREMENT_FORBIDDEN
+      rate_limit: RATE_LIMIT_CLASS_STANDARD_WRITE
+      request_sensitivity: SENSITIVITY_CONFIDENTIAL
+      response_sensitivity: SENSITIVITY_CONFIDENTIAL
+      platform_role: PLATFORM_ROLE_REQUIREMENT_NONE
+    };
+    option (google.api.http) = {
+      post: "/v1/datasource/sources/{id}:sync"
+      body: "*"
+    };
+  }
+}

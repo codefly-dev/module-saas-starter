@@ -27,6 +27,9 @@
       "name": "ConsentService"
     },
     {
+      "name": "DatasourceService"
+    },
+    {
       "name": "DelegationService"
     },
     {
@@ -930,6 +933,176 @@
         ],
         "tags": [
           "ConsentService"
+        ]
+      }
+    },
+    "/v1/datasource/sources": {
+      "get": {
+        "operationId": "DatasourceService_ListSources",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1ListDatasourceSourcesResponse"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/rpcStatus"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "orgId",
+            "in": "query",
+            "required": false,
+            "type": "string"
+          },
+          {
+            "name": "pageSize",
+            "in": "query",
+            "required": false,
+            "type": "integer",
+            "format": "int32"
+          },
+          {
+            "name": "pageToken",
+            "in": "query",
+            "required": false,
+            "type": "string"
+          }
+        ],
+        "tags": [
+          "DatasourceService"
+        ]
+      },
+      "post": {
+        "operationId": "DatasourceService_CreateSource",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1DatasourceSource"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/rpcStatus"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "body",
+            "in": "body",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/v1CreateDatasourceSourceRequest"
+            }
+          }
+        ],
+        "tags": [
+          "DatasourceService"
+        ]
+      }
+    },
+    "/v1/datasource/sources/{id}": {
+      "get": {
+        "operationId": "DatasourceService_GetSource",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1DatasourceSource"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/rpcStatus"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "type": "string"
+          }
+        ],
+        "tags": [
+          "DatasourceService"
+        ]
+      },
+      "delete": {
+        "operationId": "DatasourceService_DeleteSource",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "type": "object",
+              "properties": {}
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/rpcStatus"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "type": "string"
+          }
+        ],
+        "tags": [
+          "DatasourceService"
+        ]
+      }
+    },
+    "/v1/datasource/sources/{id}:sync": {
+      "post": {
+        "operationId": "DatasourceService_SyncSource",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1DatasourceSource"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/rpcStatus"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "type": "string"
+          },
+          {
+            "name": "body",
+            "in": "body",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/DatasourceServiceSyncSourceBody"
+            }
+          }
+        ],
+        "tags": [
+          "DatasourceService"
         ]
       }
     },
@@ -5007,6 +5180,9 @@
     }
   },
   "definitions": {
+    "DatasourceServiceSyncSourceBody": {
+      "type": "object"
+    },
     "DelegationServiceDecideDelegationBody": {
       "type": "object",
       "properties": {
@@ -5797,6 +5973,26 @@
         }
       }
     },
+    "v1CreateDatasourceSourceRequest": {
+      "type": "object",
+      "properties": {
+        "orgId": {
+          "type": "string"
+        },
+        "connector": {
+          "$ref": "#/definitions/v1DatasourceConnector"
+        },
+        "displayName": {
+          "type": "string"
+        },
+        "targetCollection": {
+          "type": "string"
+        },
+        "github": {
+          "$ref": "#/definitions/v1GitHubSourceConfig"
+        }
+      }
+    },
     "v1CreateInvitationRequest": {
       "type": "object",
       "properties": {
@@ -5895,6 +6091,75 @@
           "type": "string"
         }
       }
+    },
+    "v1DatasourceConnector": {
+      "type": "string",
+      "enum": [
+        "DATASOURCE_CONNECTOR_UNSPECIFIED",
+        "DATASOURCE_CONNECTOR_GITHUB"
+      ],
+      "default": "DATASOURCE_CONNECTOR_UNSPECIFIED",
+      "description": "DatasourceConnector identifies the external system a source connects to."
+    },
+    "v1DatasourceSource": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "orgId": {
+          "type": "string"
+        },
+        "connector": {
+          "$ref": "#/definitions/v1DatasourceConnector"
+        },
+        "displayName": {
+          "type": "string"
+        },
+        "targetCollection": {
+          "type": "string",
+          "description": "target_collection names the documents collection ingested entries land in."
+        },
+        "github": {
+          "$ref": "#/definitions/v1GitHubSourceConfig"
+        },
+        "status": {
+          "$ref": "#/definitions/v1DatasourceSourceStatus"
+        },
+        "lastSyncRequestedAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "last_sync_requested_at records the most recent SyncSource call. The\nconnector worker that performs the pull compares it against last_synced_at."
+        },
+        "lastSyncedAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "lastSyncError": {
+          "type": "string"
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time"
+        }
+      },
+      "description": "DatasourceSource is one org-owned connection to an external system."
+    },
+    "v1DatasourceSourceStatus": {
+      "type": "string",
+      "enum": [
+        "DATASOURCE_SOURCE_STATUS_UNSPECIFIED",
+        "DATASOURCE_SOURCE_STATUS_PENDING",
+        "DATASOURCE_SOURCE_STATUS_ACTIVE",
+        "DATASOURCE_SOURCE_STATUS_DISABLED",
+        "DATASOURCE_SOURCE_STATUS_ERROR"
+      ],
+      "default": "DATASOURCE_SOURCE_STATUS_UNSPECIFIED",
+      "description": "DatasourceSourceStatus is the connection lifecycle. PENDING is created but\nnot yet authorized; ACTIVE has usable credentials; DISABLED is paused by an\noperator; ERROR captures the last connection or sync failure."
     },
     "v1DelegationEvent": {
       "type": "object",
@@ -6363,6 +6628,27 @@
           "description": "period_end is exclusive."
         }
       }
+    },
+    "v1GitHubSourceConfig": {
+      "type": "object",
+      "properties": {
+        "repository": {
+          "type": "string",
+          "description": "repository in \"owner/name\" form."
+        },
+        "branch": {
+          "type": "string",
+          "description": "branch to track. Empty defaults to the repository's default branch."
+        },
+        "paths": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "description": "paths restricts ingestion to these repository subtrees. Empty ingests the\nwhole repository."
+        }
+      },
+      "description": "GitHubSourceConfig selects the repository content a source ingests."
     },
     "v1GrantPlatformRoleRequest": {
       "type": "object",
@@ -7032,6 +7318,21 @@
             "type": "object",
             "$ref": "#/definitions/v1AuditEventType"
           }
+        }
+      }
+    },
+    "v1ListDatasourceSourcesResponse": {
+      "type": "object",
+      "properties": {
+        "sources": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "$ref": "#/definitions/v1DatasourceSource"
+          }
+        },
+        "nextPageToken": {
+          "type": "string"
         }
       }
     },

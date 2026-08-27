@@ -5,6 +5,7 @@ package main
 func generatedCatalogRESTRoutes() []*RouteEntry {
 	return []*RouteEntry{
 		{Service: "accounts", Method: "DELETE", Path: "/v1/api-keys/{id}", Procedure: "/saas.accounts.v1.APIKeyService/RevokeAPIKey"},
+		{Service: "accounts", Method: "DELETE", Path: "/v1/datasource/sources/{id}", Procedure: "/saas.accounts.v1.DatasourceService/DeleteSource"},
 		{Service: "accounts", Method: "DELETE", Path: "/v1/invitations/{id}", Procedure: "/saas.accounts.v1.InvitationService/RevokeInvitation"},
 		{Service: "accounts", Method: "DELETE", Path: "/v1/mfa/devices/{id}", Procedure: "/saas.accounts.v1.MFAService/RevokeDevice"},
 		{Service: "accounts", Method: "DELETE", Path: "/v1/notifications/{id}", Procedure: "/saas.accounts.v1.NotificationService/DeleteNotification"},
@@ -28,6 +29,8 @@ func generatedCatalogRESTRoutes() []*RouteEntry {
 		{Service: "accounts", Method: "GET", Path: "/v1/auth/.well-known/jwks.json", Procedure: "/saas.accounts.v1.AuthService/GetJWKS"},
 		{Service: "accounts", Method: "GET", Path: "/v1/billing/invoices/{org_id}", Procedure: "/saas.accounts.v1.BillingService/ListInvoices"},
 		{Service: "accounts", Method: "GET", Path: "/v1/consent/status", Procedure: "/saas.accounts.v1.ConsentService/GetStatus"},
+		{Service: "accounts", Method: "GET", Path: "/v1/datasource/sources", Procedure: "/saas.accounts.v1.DatasourceService/ListSources"},
+		{Service: "accounts", Method: "GET", Path: "/v1/datasource/sources/{id}", Procedure: "/saas.accounts.v1.DatasourceService/GetSource"},
 		{Service: "accounts", Method: "GET", Path: "/v1/delegations/{id}:wait", Procedure: "/saas.accounts.v1.DelegationService/WaitForDelegation"},
 		{Service: "accounts", Method: "GET", Path: "/v1/delegations:pending", Procedure: "/saas.accounts.v1.DelegationService/ListPendingDelegations"},
 		{Service: "accounts", Method: "GET", Path: "/v1/gdpr/delete/{id}", Procedure: "/saas.accounts.v1.GDPRService/GetDeletionStatus"},
@@ -86,6 +89,8 @@ func generatedCatalogRESTRoutes() []*RouteEntry {
 		{Service: "accounts", Method: "POST", Path: "/v1/auth/switch-organization", Procedure: "/saas.accounts.v1.AuthService/SwitchOrganization"},
 		{Service: "accounts", Method: "POST", Path: "/v1/billing/connect/portal", Procedure: "/saas.accounts.v1.BillingService/OpenPortal"},
 		{Service: "accounts", Method: "POST", Path: "/v1/consent/terms", Procedure: "/saas.accounts.v1.ConsentService/AcceptTerms"},
+		{Service: "accounts", Method: "POST", Path: "/v1/datasource/sources", Procedure: "/saas.accounts.v1.DatasourceService/CreateSource"},
+		{Service: "accounts", Method: "POST", Path: "/v1/datasource/sources/{id}:sync", Procedure: "/saas.accounts.v1.DatasourceService/SyncSource"},
 		{Service: "accounts", Method: "POST", Path: "/v1/delegations", Procedure: "/saas.accounts.v1.DelegationService/RequestDelegation"},
 		{Service: "accounts", Method: "POST", Path: "/v1/delegations/{id}:decide", Procedure: "/saas.accounts.v1.DelegationService/DecideDelegation"},
 		{Service: "accounts", Method: "POST", Path: "/v1/gdpr/delete", Procedure: "/saas.accounts.v1.GDPRService/RequestDeletion"},

@@ -265,6 +265,14 @@ type Store interface {
 	GetWebhookDelivery(ctx context.Context, id string) (*WebhookDelivery, error)
 	ListWebhookDeliveries(ctx context.Context, subscriptionID string, pageSize int) ([]*WebhookDelivery, error)
 
+	// Datasources. All run under the caller's WithOrgTx; RLS scopes every
+	// lookup and mutation to the current org.
+	CreateDatasourceSource(ctx context.Context, source *DatasourceSource) error
+	GetDatasourceSource(ctx context.Context, id string) (*DatasourceSource, error)
+	ListDatasourceSources(ctx context.Context, orgID string) ([]*DatasourceSource, error)
+	DeleteDatasourceSource(ctx context.Context, id string) error
+	MarkDatasourceSourceSyncRequested(ctx context.Context, id string) (*DatasourceSource, error)
+
 	// Organization Settings (branding)
 	GetOrgSettings(ctx context.Context, orgID string) (*OrgSettings, error)
 	UpsertOrgSettings(ctx context.Context, settings *OrgSettings) error
