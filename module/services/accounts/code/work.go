@@ -16,6 +16,7 @@ import (
 	pgbilling "accounts/pkg/billing/pg"
 	"accounts/pkg/business"
 	"accounts/pkg/cache"
+	"accounts/pkg/datasource"
 	"accounts/pkg/email"
 	"accounts/pkg/infra"
 	"accounts/pkg/jobs"
@@ -598,6 +599,31 @@ func doWork(ctx context.Context) (Clean, error) {
 		adapters.RegisterHTTPRoute("/v1/billing/portal", billingHTTPHandler)
 	default:
 		return nil, fmt.Errorf("BILLING_PROVIDER must be disabled or stripe")
+	}
+
+	// Datasource ingestion (issue #275): when a GitHub source is configured,
+	// expose its inbound push webhook. Receipt verifies X-Hub-Signature-256
+	// against the per-source signing secret and persists the raw, verified
+	// delivery to the jobs inbox under the GitHub delivery id; the documents
+	// ingest service leases and normalizes it off that seam. No worker is
+	// registered here — saas owns connection, documents owns ingest. The
+	// per-source secret is env-configured until the credential store (#274)
+	// replaces the resolver with its Vault-transit implementation.
+	githubSourceID := strings.TrimSpace(os.Getenv("GITHUB_WEBHOOK_SOURCE_ID"))
+	githubSecret := strings.TrimSpace(os.Getenv("GITHUB_WEBHOOK_SECRET"))
+	if githubSourceID != "" || githubSecret != "" {
+		if githubSourceID == "" || githubSecret == "" {
+			return nil, fmt.Errorf("datasource: GITHUB_WEBHOOK_SOURCE_ID and GITHUB_WEBHOOK_SECRET must both be set")
+		}
+		githubSecrets, err := datasource.NewStaticSecretResolver(map[string]string{githubSourceID: githubSecret})
+		if err != nil {
+			return nil, fmt.Errorf("datasource: %w", err)
+		}
+		adapters.RegisterHTTPRoute(datasource.GitHubWebhookPath, datasource.NewHandler(
+			datasource.GitHubWebhookPath,
+			datasource.HandlerDeps{Producer: jobStore, Secrets: githubSecrets},
+		))
+		w.Warn("GitHub datasource webhook enabled — verified deliveries are persisted to the 'datasource' jobs inbox and accumulate as PENDING until the documents ingest service consumes that queue; do not enable this ahead of a running consumer or the jobs table grows unbounded")
 	}
 
 	// Start background data retention goroutine. Runs once on startup and
