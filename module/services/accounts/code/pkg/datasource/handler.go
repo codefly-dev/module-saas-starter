@@ -58,7 +58,6 @@ const (
 	signatureHeader = "X-Hub-Signature-256"
 
 	attrEvent    = "github.event"
-	attrDelivery = "github.delivery"
 	attrSourceID = "datasource.source_id"
 )
 
@@ -95,22 +94,29 @@ func (h *handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusMethodNotAllowed, "POST required")
 		return
 	}
-	sourceID, ok := strings.CutPrefix(r.URL.Path, h.prefix)
-	if !ok || sourceID == "" || strings.Contains(sourceID, "/") {
-		writeError(w, http.StatusNotFound, "unknown source")
-		return
-	}
 	log := wool.Get(r.Context()).In("datasource.github.webhook")
 
-	// Resolve the secret before reading the body: an unknown source is rejected
-	// without consuming a potentially large request. A missing secret and an
-	// unknown source answer identically so the endpoint is not a source oracle.
+	sourceID, ok := strings.CutPrefix(r.URL.Path, h.prefix)
+	if !ok || sourceID == "" || strings.Contains(sourceID, "/") {
+		// An unroutable path is answered exactly like a signature failure so the
+		// endpoint reveals nothing about which source ids exist (see below).
+		writeError(w, http.StatusUnauthorized, "invalid signature")
+		return
+	}
+
+	// Resolve the secret before reading the body so an unknown source is rejected
+	// without draining a potentially large request. An unknown source, a resolver
+	// error, and a genuine signature mismatch all return an identical 401
+	// response — same status, same body — so the endpoint cannot be probed to
+	// enumerate configured sources. Only a small timing difference remains
+	// (unknown sources skip the body read), which is the accepted cost of not
+	// draining unauthenticated bodies.
 	secret, err := h.deps.Secrets.SigningSecret(r.Context(), sourceID)
 	if err != nil {
 		if !errors.Is(err, ErrSourceNotFound) {
 			log.Warn("resolve signing secret failed", wool.ErrField(err))
 		}
-		writeError(w, http.StatusNotFound, "unknown source")
+		writeError(w, http.StatusUnauthorized, "invalid signature")
 		return
 	}
 
@@ -152,18 +158,27 @@ func (h *handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			MaxAttempts:    GitHubWebhookMaxAttempts,
 			Attributes: map[string]string{
 				attrEvent:    event,
-				attrDelivery: deliveryID,
 				attrSourceID: sourceID,
 			},
 		},
 	})
 	if err != nil {
-		// No durable receipt means GitHub must redeliver.
-		log.Warn("persist webhook failed", wool.ErrField(err))
 		if errors.Is(err, jobs.ErrIdempotencyConflict) {
 			writeError(w, http.StatusConflict, "delivery conflict")
 			return
 		}
+		if errors.Is(err, jobs.ErrInvalidCommand) {
+			// Caller-fault input (e.g. a delivery id past the durable key bound):
+			// redelivering the same request will always fail, so answer 4xx.
+			log.Warn("reject invalid webhook command", wool.ErrField(err))
+			writeError(w, http.StatusBadRequest, "invalid delivery")
+			return
+		}
+		// The delivery was not durably recorded. GitHub does not automatically
+		// retry a non-2xx, so recovery is an operator/API redelivery or the
+		// connector's periodic re-sync; a 5xx at least records it as failed
+		// rather than falsely acknowledging an unpersisted delivery.
+		log.Warn("persist webhook failed", wool.ErrField(err))
 		writeError(w, http.StatusInternalServerError, "internal")
 		return
 	}

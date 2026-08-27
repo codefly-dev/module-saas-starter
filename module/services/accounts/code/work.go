@@ -623,6 +623,7 @@ func doWork(ctx context.Context) (Clean, error) {
 			datasource.GitHubWebhookPath,
 			datasource.HandlerDeps{Producer: jobStore, Secrets: githubSecrets},
 		))
+		w.Warn("GitHub datasource webhook enabled — verified deliveries are persisted to the 'datasource' jobs inbox and accumulate as PENDING until the documents ingest service consumes that queue; do not enable this ahead of a running consumer or the jobs table grows unbounded")
 	}
 
 	// Start background data retention goroutine. Runs once on startup and

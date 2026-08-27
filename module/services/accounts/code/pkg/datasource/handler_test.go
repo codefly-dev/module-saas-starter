@@ -11,6 +11,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -191,7 +192,6 @@ func TestHandlerVerifiesAndDurablyQueuesRawDelivery(t *testing.T) {
 	// The exact verified bytes are retained, not a re-serialized projection.
 	require.Equal(t, body, job.GetPayload())
 	require.Equal(t, "push", job.GetAttributes()["github.event"])
-	require.Equal(t, "d-queued", job.GetAttributes()["github.delivery"])
 	require.Equal(t, testSourceID, job.GetAttributes()["datasource.source_id"])
 }
 
@@ -286,17 +286,27 @@ func TestHandlerRejectsMissingSignatureHeader(t *testing.T) {
 	require.EqualValues(t, 0, producer.inserts.Load())
 }
 
-func TestHandlerRejectsUnknownSourceWithoutReadingSecret(t *testing.T) {
+func TestHandlerAnswersUnknownSourceIdenticallyToBadSignature(t *testing.T) {
+	// The endpoint must not be a source-enumeration oracle: an unknown source and
+	// a known source with a bad signature must be indistinguishable by status and
+	// body. Otherwise probing `/webhook/<guess>` reveals which sources exist.
 	producer := newFakeJobProducer()
 	server := newTestServer(t, producer)
+	body := pushBody("refs/heads/main")
 
-	response := postPush(t, server, pushBody("refs/heads/main"), pushOptions{
-		sourceID: "unregistered-source",
-		delivery: "d-unknown",
-	})
-	defer func() { _ = response.Body.Close() }()
+	unknown := postPush(t, server, body, pushOptions{sourceID: "unregistered-source", delivery: "d-unknown"})
+	defer func() { _ = unknown.Body.Close() }()
+	unknownBody, err := io.ReadAll(unknown.Body)
+	require.NoError(t, err)
 
-	require.Equal(t, http.StatusNotFound, response.StatusCode)
+	badSig := postPush(t, server, body, pushOptions{delivery: "d-badsig", signature: "sha256=deadbeef"})
+	defer func() { _ = badSig.Body.Close() }()
+	badSigBody, err := io.ReadAll(badSig.Body)
+	require.NoError(t, err)
+
+	require.Equal(t, http.StatusUnauthorized, unknown.StatusCode)
+	require.Equal(t, badSig.StatusCode, unknown.StatusCode)
+	require.Equal(t, badSigBody, unknownBody)
 	require.EqualValues(t, 0, producer.inserts.Load())
 }
 
@@ -369,6 +379,50 @@ func TestHandlerRelaysNonPushEventsVerbatim(t *testing.T) {
 	request, ok := producer.request("d-ping")
 	require.True(t, ok)
 	require.Equal(t, "ping", request.GetJob().GetAttributes()["github.event"])
+}
+
+func TestHandlerRejectsInvalidCommandAsBadRequest(t *testing.T) {
+	// A delivery id past the durable idempotency-key bound (255) fails command
+	// validation in the producer. That is caller-fault input: it must be answered
+	// 400, not a 500 that (falsely) signals "retry me".
+	producer := newFakeJobProducer()
+	server := newTestServer(t, producer)
+
+	response := postPush(t, server, pushBody("refs/heads/main"), pushOptions{
+		delivery: strings.Repeat("d", 256),
+	})
+	defer func() { _ = response.Body.Close() }()
+
+	require.Equal(t, http.StatusBadRequest, response.StatusCode)
+	require.EqualValues(t, 0, producer.inserts.Load())
+}
+
+func TestHandlerExtractsSourceIDUnderProductionDispatch(t *testing.T) {
+	// Production routing (adapters.combineHandlers) calls ServeHTTP with the
+	// original request and its full URL.Path — not through a ServeMux. Exercise
+	// that exact invocation so the prefix-stripping is covered against the real
+	// dispatcher, not only httptest's mux.
+	producer := newFakeJobProducer()
+	resolver, err := datasource.NewStaticSecretResolver(map[string]string{testSourceID: testSecret})
+	require.NoError(t, err)
+	handler := datasource.NewHandler(datasource.GitHubWebhookPath, datasource.HandlerDeps{
+		Producer: producer,
+		Secrets:  resolver,
+	})
+
+	body := pushBody("refs/heads/main")
+	req := httptest.NewRequest(http.MethodPost, datasource.GitHubWebhookPath+testSourceID, bytes.NewReader(body))
+	req.Header.Set("X-GitHub-Delivery", "d-direct")
+	req.Header.Set("X-GitHub-Event", "push")
+	req.Header.Set("X-Hub-Signature-256", signBody(testSecret, body))
+
+	recorder := httptest.NewRecorder()
+	handler.ServeHTTP(recorder, req)
+
+	require.Equal(t, http.StatusOK, recorder.Code)
+	request, ok := producer.request("d-direct")
+	require.True(t, ok)
+	require.Equal(t, testSourceID, request.GetJob().GetAttributes()["datasource.source_id"])
 }
 
 func TestStaticSecretResolverRejectsEmptyEntries(t *testing.T) {
