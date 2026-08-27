@@ -40,7 +40,7 @@ func TestFrontendPluginCatalogIsDeterministicAndCurrent(t *testing.T) {
 func TestFrontendPageDiscoveryPinsAccessAndMatch(t *testing.T) {
 	routes, err := cataloggen.DiscoverNextPageRoutes(filepath.Clean("../../../../frontend/code"))
 	require.NoError(t, err)
-	require.Len(t, routes, 44)
+	require.Len(t, routes, 45)
 	byPath := make(map[string]*catalogv1.FrontendRoute, len(routes))
 	for _, route := range routes {
 		byPath[route.GetPath()] = route
