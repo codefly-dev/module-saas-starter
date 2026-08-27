@@ -17,7 +17,7 @@
 	},
 	"scripts": {
 		"build": "tsc -p tsconfig.json",
-		"generate": "buf generate ../../../../accounts/proto --template buf.gen.yaml --path saas/accounts/v1/audit.proto -o .",
+		"generate": "cd ../../../../accounts/proto && buf generate --template ../../frontend/code/packages/saas-sdk/buf.gen.yaml --path saas/accounts/v1/audit.proto -o ../../frontend/code/packages/saas-sdk",
 		"test": "vitest run --config vitest.config.ts"
 	},
 	"dependencies": {

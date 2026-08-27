@@ -17,10 +17,11 @@ export function compileMetric(
 	context: MetricContext,
 ): AuditAggregateQuery {
 	if (metric.aggregation === "count_distinct") {
-		// The audit RPC counts rows only; distinct-count is part of the RPC
-		// extension (#280) and has no bound query to compile to yet.
+		// The RPC gained distinct-count and the richer AuditMetric shape in #280;
+		// this SDK still compiles only the plain COUNT query, so it declines
+		// count_distinct rather than silently returning a row count.
 		throw new Error(
-			`metric '${metric.id}' uses count_distinct, which the audit RPC does not support yet`,
+			`metric '${metric.id}' uses count_distinct, which this SDK does not compile yet`,
 		);
 	}
 	return {

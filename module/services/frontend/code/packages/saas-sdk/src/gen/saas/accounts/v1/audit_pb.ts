@@ -15,7 +15,7 @@ import type { JsonObject, Message } from "@bufbuild/protobuf";
  * Describes the file saas/accounts/v1/audit.proto.
  */
 export const file_saas_accounts_v1_audit: GenFile = /*@__PURE__*/
-  fileDesc("ChxzYWFzL2FjY291bnRzL3YxL2F1ZGl0LnByb3RvEhBzYWFzLmFjY291bnRzLnYxIqgDCgpBdWRpdEV2ZW50EgoKAmlkGAEgASgJEhAKCGFjdG9yX2lkGAIgASgJEhIKCmFjdG9yX3R5cGUYAyABKAkSEgoGYWN0aW9uGAQgASgJQgIYARIQCghyZXNvdXJjZRgFIAEoCRITCgtyZXNvdXJjZV9pZBgGIAEoCRIOCgZvcmdfaWQYByABKAkSQAoIbWV0YWRhdGEYCCADKAsyKi5zYWFzLmFjY291bnRzLnYxLkF1ZGl0RXZlbnQuTWV0YWRhdGFFbnRyeUICGAESEgoKaXBfYWRkcmVzcxgJIAEoCRIuCgpjcmVhdGVkX2F0GAogASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcBISCgpldmVudF90eXBlGAsgASgJEhYKDnNjaGVtYV92ZXJzaW9uGAwgASgFEigKB3BheWxvYWQYDSABKAsyFy5nb29nbGUucHJvdG9idWYuU3RydWN0EhAKCGNhdGVnb3J5GA4gASgJGi8KDU1ldGFkYXRhRW50cnkSCwoDa2V5GAEgASgJEg0KBXZhbHVlGAIgASgJOgI4ASKsAwoUUXVlcnlBdWRpdExvZ1JlcXVlc3QSDgoGb3JnX2lkGAEgASgJEhAKCGFjdG9yX2lkGAIgASgJEhIKBmFjdGlvbhgDIAEoCUICGAESEAoIcmVzb3VyY2UYBCABKAkSEwoLcmVzb3VyY2VfaWQYBSABKAkSKAoEZnJvbRgGIAEoCzIaLmdvb2dsZS5wcm90b2J1Zi5UaW1lc3RhbXASJgoCdG8YByABKAsyGi5nb29nbGUucHJvdG9idWYuVGltZXN0YW1wEhwKCXBhZ2Vfc2l6ZRgIIAEoBUIJukgGGgQYZCAAEhIKCnBhZ2VfdG9rZW4YCSABKAkSEgoKZXZlbnRfdHlwZRgKIAEoCRIQCghjYXRlZ29yeRgLIAEoCRJVChBwYXlsb2FkX2NvbnRhaW5zGAwgAygLMjsuc2Fhcy5hY2NvdW50cy52MS5RdWVyeUF1ZGl0TG9nUmVxdWVzdC5QYXlsb2FkQ29udGFpbnNFbnRyeRo2ChRQYXlsb2FkQ29udGFpbnNFbnRyeRILCgNrZXkYASABKAkSDQoFdmFsdWUYAiABKAk6AjgBInMKFVF1ZXJ5QXVkaXRMb2dSZXNwb25zZRIsCgZldmVudHMYASADKAsyHC5zYWFzLmFjY291bnRzLnYxLkF1ZGl0RXZlbnQSFwoPbmV4dF9wYWdlX3Rva2VuGAIgASgJEhMKC3RvdGFsX2NvdW50GAMgASgFInEKFUV4cG9ydEF1ZGl0TG9nUmVxdWVzdBIOCgZvcmdfaWQYASABKAkSDgoGZm9ybWF0GAIgASgJEhAKCGFjdG9yX2lkGAMgASgJEhIKBmFjdGlvbhgEIAEoCUICGAESEgoKZXZlbnRfdHlwZRgFIAEoCSJOChZFeHBvcnRBdWRpdExvZ1Jlc3BvbnNlEgwKBGRhdGEYASABKAwSFAoMY29udGVudF90eXBlGAIgASgJEhAKCGZpbGVuYW1lGAMgASgJIugBChhBZ2dyZWdhdGVBdWRpdExvZ1JlcXVlc3QSDgoGb3JnX2lkGAEgASgJEhAKCGFjdG9yX2lkGAIgASgJEhIKCmV2ZW50X3R5cGUYAyABKAkSEAoIY2F0ZWdvcnkYBCABKAkSEAoIcmVzb3VyY2UYBSABKAkSKAoEZnJvbRgGIAEoCzIaLmdvb2dsZS5wcm90b2J1Zi5UaW1lc3RhbXASJgoCdG8YByABKAsyGi5nb29nbGUucHJvdG9idWYuVGltZXN0YW1wEhAKCGdyb3VwX2J5GAggASgJEg4KBmJ1Y2tldBgJIAEoCSIyChRBdWRpdEFnZ3JlZ2F0ZUJ1Y2tldBILCgNrZXkYASABKAkSDQoFY291bnQYAiABKAMiVAoZQWdncmVnYXRlQXVkaXRMb2dSZXNwb25zZRI3CgdidWNrZXRzGAEgAygLMiYuc2Fhcy5hY2NvdW50cy52MS5BdWRpdEFnZ3JlZ2F0ZUJ1Y2tldCIcChpMaXN0QXVkaXRFdmVudFR5cGVzUmVxdWVzdCJ5Cg5BdWRpdEV2ZW50VHlwZRIMCgRuYW1lGAEgASgJEg8KB3ZlcnNpb24YAiABKAUSEAoIY2F0ZWdvcnkYAyABKAkSDQoFb3duZXIYBCABKAkSEgoKZGVwcmVjYXRlZBgFIAEoCBITCgtkZXNjcmlwdGlvbhgGIAEoCSJOChtMaXN0QXVkaXRFdmVudFR5cGVzUmVzcG9uc2USLwoFdHlwZXMYASADKAsyIC5zYWFzLmFjY291bnRzLnYxLkF1ZGl0RXZlbnRUeXBlMp0GCgxBdWRpdFNlcnZpY2UStQEKDVF1ZXJ5QXVkaXRMb2cSJi5zYWFzLmFjY291bnRzLnYxLlF1ZXJ5QXVkaXRMb2dSZXF1ZXN0Gicuc2Fhcy5hY2NvdW50cy52MS5RdWVyeUF1ZGl0TG9nUmVzcG9uc2UiU8LzGDoIAhADGgphdWRpdDpyZWFkIgphdWRpdDpyZWFkKgwKBm9yZ19pZBACGAEwAToCEAFAAUgDUANYA2ABgtPkkwIPEg0vdjEvYXVkaXQtbG9nEssBChFBZ2dyZWdhdGVBdWRpdExvZxIqLnNhYXMuYWNjb3VudHMudjEuQWdncmVnYXRlQXVkaXRMb2dSZXF1ZXN0Gisuc2Fhcy5hY2NvdW50cy52MS5BZ2dyZWdhdGVBdWRpdExvZ1Jlc3BvbnNlIl3C8xg6CAIQAxoKYXVkaXQ6cmVhZCIKYXVkaXQ6cmVhZCoMCgZvcmdfaWQQAhgBMAE6AhABQAFIA1ADWANgAYLT5JMCGRIXL3YxL2F1ZGl0LWxvZzphZ2dyZWdhdGUSwQEKE0xpc3RBdWRpdEV2ZW50VHlwZXMSLC5zYWFzLmFjY291bnRzLnYxLkxpc3RBdWRpdEV2ZW50VHlwZXNSZXF1ZXN0Gi0uc2Fhcy5hY2NvdW50cy52MS5MaXN0QXVkaXRFdmVudFR5cGVzUmVzcG9uc2UiTcLzGCwIAhABGgphdWRpdDpyZWFkIgphdWRpdDpyZWFkMAE6AhABQAFIA1ACWAJgAYLT5JMCFxIVL3YxL2F1ZGl0LWV2ZW50LXR5cGVzEsIBCg5FeHBvcnRBdWRpdExvZxInLnNhYXMuYWNjb3VudHMudjEuRXhwb3J0QXVkaXRMb2dSZXF1ZXN0Giguc2Fhcy5hY2NvdW50cy52MS5FeHBvcnRBdWRpdExvZ1Jlc3BvbnNlIl3C8xg6CAIQBBoKYXVkaXQ6cmVhZCIKYXVkaXQ6cmVhZCoMCgZvcmdfaWQQAhgBMAE6AhABQAFIA1ADWANgAYLT5JMCGToBKiIUL3YxL2F1ZGl0LWxvZzpleHBvcnRiBnByb3RvMw", [file_buf_validate_validate, file_google_api_annotations, file_google_protobuf_struct, file_google_protobuf_timestamp, file_saas_policy_v1_options]);
+  fileDesc("ChxzYWFzL2FjY291bnRzL3YxL2F1ZGl0LnByb3RvEhBzYWFzLmFjY291bnRzLnYxIqgDCgpBdWRpdEV2ZW50EgoKAmlkGAEgASgJEhAKCGFjdG9yX2lkGAIgASgJEhIKCmFjdG9yX3R5cGUYAyABKAkSEgoGYWN0aW9uGAQgASgJQgIYARIQCghyZXNvdXJjZRgFIAEoCRITCgtyZXNvdXJjZV9pZBgGIAEoCRIOCgZvcmdfaWQYByABKAkSQAoIbWV0YWRhdGEYCCADKAsyKi5zYWFzLmFjY291bnRzLnYxLkF1ZGl0RXZlbnQuTWV0YWRhdGFFbnRyeUICGAESEgoKaXBfYWRkcmVzcxgJIAEoCRIuCgpjcmVhdGVkX2F0GAogASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcBISCgpldmVudF90eXBlGAsgASgJEhYKDnNjaGVtYV92ZXJzaW9uGAwgASgFEigKB3BheWxvYWQYDSABKAsyFy5nb29nbGUucHJvdG9idWYuU3RydWN0EhAKCGNhdGVnb3J5GA4gASgJGi8KDU1ldGFkYXRhRW50cnkSCwoDa2V5GAEgASgJEg0KBXZhbHVlGAIgASgJOgI4ASKsAwoUUXVlcnlBdWRpdExvZ1JlcXVlc3QSDgoGb3JnX2lkGAEgASgJEhAKCGFjdG9yX2lkGAIgASgJEhIKBmFjdGlvbhgDIAEoCUICGAESEAoIcmVzb3VyY2UYBCABKAkSEwoLcmVzb3VyY2VfaWQYBSABKAkSKAoEZnJvbRgGIAEoCzIaLmdvb2dsZS5wcm90b2J1Zi5UaW1lc3RhbXASJgoCdG8YByABKAsyGi5nb29nbGUucHJvdG9idWYuVGltZXN0YW1wEhwKCXBhZ2Vfc2l6ZRgIIAEoBUIJukgGGgQYZCAAEhIKCnBhZ2VfdG9rZW4YCSABKAkSEgoKZXZlbnRfdHlwZRgKIAEoCRIQCghjYXRlZ29yeRgLIAEoCRJVChBwYXlsb2FkX2NvbnRhaW5zGAwgAygLMjsuc2Fhcy5hY2NvdW50cy52MS5RdWVyeUF1ZGl0TG9nUmVxdWVzdC5QYXlsb2FkQ29udGFpbnNFbnRyeRo2ChRQYXlsb2FkQ29udGFpbnNFbnRyeRILCgNrZXkYASABKAkSDQoFdmFsdWUYAiABKAk6AjgBInMKFVF1ZXJ5QXVkaXRMb2dSZXNwb25zZRIsCgZldmVudHMYASADKAsyHC5zYWFzLmFjY291bnRzLnYxLkF1ZGl0RXZlbnQSFwoPbmV4dF9wYWdlX3Rva2VuGAIgASgJEhMKC3RvdGFsX2NvdW50GAMgASgFInEKFUV4cG9ydEF1ZGl0TG9nUmVxdWVzdBIOCgZvcmdfaWQYASABKAkSDgoGZm9ybWF0GAIgASgJEhAKCGFjdG9yX2lkGAMgASgJEhIKBmFjdGlvbhgEIAEoCUICGAESEgoKZXZlbnRfdHlwZRgFIAEoCSJOChZFeHBvcnRBdWRpdExvZ1Jlc3BvbnNlEgwKBGRhdGEYASABKAwSFAoMY29udGVudF90eXBlGAIgASgJEhAKCGZpbGVuYW1lGAMgASgJIksKC0F1ZGl0TWV0cmljEgoKAm9wGAEgASgJEg0KBWZpZWxkGAIgASgJEhIKCnBlcmNlbnRpbGUYAyABKAESDQoFYWxpYXMYBCABKAkiSwoSQXVkaXREZXJpdmVkTWV0cmljEg0KBWFsaWFzGAEgASgJEhEKCW51bWVyYXRvchgCIAEoCRITCgtkZW5vbWluYXRvchgDIAEoCSLiAgoYQWdncmVnYXRlQXVkaXRMb2dSZXF1ZXN0Eg4KBm9yZ19pZBgBIAEoCRIQCghhY3Rvcl9pZBgCIAEoCRISCgpldmVudF90eXBlGAMgASgJEhAKCGNhdGVnb3J5GAQgASgJEhAKCHJlc291cmNlGAUgASgJEigKBGZyb20YBiABKAsyGi5nb29nbGUucHJvdG9idWYuVGltZXN0YW1wEiYKAnRvGAcgASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcBIQCghncm91cF9ieRgIIAEoCRIOCgZidWNrZXQYCSABKAkSEQoJZ3JvdXBfYnlzGAogAygJEi4KB21ldHJpY3MYCyADKAsyHS5zYWFzLmFjY291bnRzLnYxLkF1ZGl0TWV0cmljEjUKB2Rlcml2ZWQYDCADKAsyJC5zYWFzLmFjY291bnRzLnYxLkF1ZGl0RGVyaXZlZE1ldHJpYyK2AQoUQXVkaXRBZ2dyZWdhdGVCdWNrZXQSCwoDa2V5GAEgASgJEg0KBWNvdW50GAIgASgDEgwKBGtleXMYAyADKAkSRAoHbWV0cmljcxgEIAMoCzIzLnNhYXMuYWNjb3VudHMudjEuQXVkaXRBZ2dyZWdhdGVCdWNrZXQuTWV0cmljc0VudHJ5Gi4KDE1ldHJpY3NFbnRyeRILCgNrZXkYASABKAkSDQoFdmFsdWUYAiABKAE6AjgBIlQKGUFnZ3JlZ2F0ZUF1ZGl0TG9nUmVzcG9uc2USNwoHYnVja2V0cxgBIAMoCzImLnNhYXMuYWNjb3VudHMudjEuQXVkaXRBZ2dyZWdhdGVCdWNrZXQiHAoaTGlzdEF1ZGl0RXZlbnRUeXBlc1JlcXVlc3QieQoOQXVkaXRFdmVudFR5cGUSDAoEbmFtZRgBIAEoCRIPCgd2ZXJzaW9uGAIgASgFEhAKCGNhdGVnb3J5GAMgASgJEg0KBW93bmVyGAQgASgJEhIKCmRlcHJlY2F0ZWQYBSABKAgSEwoLZGVzY3JpcHRpb24YBiABKAkiTgobTGlzdEF1ZGl0RXZlbnRUeXBlc1Jlc3BvbnNlEi8KBXR5cGVzGAEgAygLMiAuc2Fhcy5hY2NvdW50cy52MS5BdWRpdEV2ZW50VHlwZTKdBgoMQXVkaXRTZXJ2aWNlErUBCg1RdWVyeUF1ZGl0TG9nEiYuc2Fhcy5hY2NvdW50cy52MS5RdWVyeUF1ZGl0TG9nUmVxdWVzdBonLnNhYXMuYWNjb3VudHMudjEuUXVlcnlBdWRpdExvZ1Jlc3BvbnNlIlPC8xg6CAIQAxoKYXVkaXQ6cmVhZCIKYXVkaXQ6cmVhZCoMCgZvcmdfaWQQAhgBMAE6AhABQAFIA1ADWANgAYLT5JMCDxINL3YxL2F1ZGl0LWxvZxLLAQoRQWdncmVnYXRlQXVkaXRMb2cSKi5zYWFzLmFjY291bnRzLnYxLkFnZ3JlZ2F0ZUF1ZGl0TG9nUmVxdWVzdBorLnNhYXMuYWNjb3VudHMudjEuQWdncmVnYXRlQXVkaXRMb2dSZXNwb25zZSJdwvMYOggCEAMaCmF1ZGl0OnJlYWQiCmF1ZGl0OnJlYWQqDAoGb3JnX2lkEAIYATABOgIQAUABSANQA1gDYAGC0+STAhkSFy92MS9hdWRpdC1sb2c6YWdncmVnYXRlEsEBChNMaXN0QXVkaXRFdmVudFR5cGVzEiwuc2Fhcy5hY2NvdW50cy52MS5MaXN0QXVkaXRFdmVudFR5cGVzUmVxdWVzdBotLnNhYXMuYWNjb3VudHMudjEuTGlzdEF1ZGl0RXZlbnRUeXBlc1Jlc3BvbnNlIk3C8xgsCAIQARoKYXVkaXQ6cmVhZCIKYXVkaXQ6cmVhZDABOgIQAUABSANQAlgCYAGC0+STAhcSFS92MS9hdWRpdC1ldmVudC10eXBlcxLCAQoORXhwb3J0QXVkaXRMb2cSJy5zYWFzLmFjY291bnRzLnYxLkV4cG9ydEF1ZGl0TG9nUmVxdWVzdBooLnNhYXMuYWNjb3VudHMudjEuRXhwb3J0QXVkaXRMb2dSZXNwb25zZSJdwvMYOggCEAQaCmF1ZGl0OnJlYWQiCmF1ZGl0OnJlYWQqDAoGb3JnX2lkEAIYATABOgIQAUABSANQA1gDYAGC0+STAhk6ASoiFC92MS9hdWRpdC1sb2c6ZXhwb3J0YgZwcm90bzM", [file_buf_validate_validate, file_google_api_annotations, file_google_protobuf_struct, file_google_protobuf_timestamp, file_saas_policy_v1_options]);
 
 /**
  * @generated from message saas.accounts.v1.AuditEvent
@@ -284,6 +284,87 @@ export const ExportAuditLogResponseSchema: GenMessage<ExportAuditLogResponse> = 
   messageDesc(file_saas_accounts_v1_audit, 4);
 
 /**
+ * AuditMetric is one aggregation computed per group. op selects the function;
+ * field names the payload key it reads. A payload field is written
+ * "payload:<key>" (e.g. "payload:amount"); the bare column names actor_id,
+ * event_type, category, resource, resource_id are also accepted by
+ * count_distinct.
+ *
+ * @generated from message saas.accounts.v1.AuditMetric
+ */
+export type AuditMetric = Message<"saas.accounts.v1.AuditMetric"> & {
+  /**
+   * op ∈ {count, count_distinct, sum, avg, min, max, percentile}.
+   *
+   * @generated from field: string op = 1;
+   */
+  op: string;
+
+  /**
+   * field is required for every op except count. Numeric ops (sum/avg/min/max/
+   * percentile) require a "payload:<key>" field; non-numeric payload values are
+   * ignored.
+   *
+   * @generated from field: string field = 2;
+   */
+  field: string;
+
+  /**
+   * percentile ∈ (0,1], used only when op == percentile (0.95 → p95).
+   *
+   * @generated from field: double percentile = 3;
+   */
+  percentile: number;
+
+  /**
+   * alias names this metric in the response map. Defaults to "count" for count,
+   * else "<op>_<key>".
+   *
+   * @generated from field: string alias = 4;
+   */
+  alias: string;
+};
+
+/**
+ * Describes the message saas.accounts.v1.AuditMetric.
+ * Use `create(AuditMetricSchema)` to create a new message.
+ */
+export const AuditMetricSchema: GenMessage<AuditMetric> = /*@__PURE__*/
+  messageDesc(file_saas_accounts_v1_audit, 5);
+
+/**
+ * AuditDerivedMetric is a ratio of two other metrics computed per group (e.g. an
+ * error rate). numerator/denominator reference metric aliases. The ratio is
+ * omitted for a group where either operand is absent or the denominator is 0 —
+ * an undefined ratio is "no data", not zero.
+ *
+ * @generated from message saas.accounts.v1.AuditDerivedMetric
+ */
+export type AuditDerivedMetric = Message<"saas.accounts.v1.AuditDerivedMetric"> & {
+  /**
+   * @generated from field: string alias = 1;
+   */
+  alias: string;
+
+  /**
+   * @generated from field: string numerator = 2;
+   */
+  numerator: string;
+
+  /**
+   * @generated from field: string denominator = 3;
+   */
+  denominator: string;
+};
+
+/**
+ * Describes the message saas.accounts.v1.AuditDerivedMetric.
+ * Use `create(AuditDerivedMetricSchema)` to create a new message.
+ */
+export const AuditDerivedMetricSchema: GenMessage<AuditDerivedMetric> = /*@__PURE__*/
+  messageDesc(file_saas_accounts_v1_audit, 6);
+
+/**
  * @generated from message saas.accounts.v1.AggregateAuditLogRequest
  */
 export type AggregateAuditLogRequest = Message<"saas.accounts.v1.AggregateAuditLogRequest"> & {
@@ -323,18 +404,42 @@ export type AggregateAuditLogRequest = Message<"saas.accounts.v1.AggregateAuditL
   to?: Timestamp;
 
   /**
-   * group_by ∈ {event_type, category, actor, time}. Defaults to event_type.
+   * group_by ∈ {event_type, category, actor, time, payload:<key>}. Defaults to
+   * event_type. Superseded by group_bys when that is set.
    *
    * @generated from field: string group_by = 8;
    */
   groupBy: string;
 
   /**
-   * bucket sizes the time grain when group_by == "time": day|week|month.
+   * bucket sizes the time grain for a "time" dimension: day|week|month.
    *
    * @generated from field: string bucket = 9;
    */
   bucket: string;
+
+  /**
+   * group_bys lists group dimensions for multi-dimensional grouping. When set it
+   * supersedes group_by; each entry is one of the group_by values above.
+   *
+   * @generated from field: repeated string group_bys = 10;
+   */
+  groupBys: string[];
+
+  /**
+   * metrics selects the aggregations computed per group. When empty a single
+   * COUNT(*) is returned.
+   *
+   * @generated from field: repeated saas.accounts.v1.AuditMetric metrics = 11;
+   */
+  metrics: AuditMetric[];
+
+  /**
+   * derived computes ratios of the metrics above, per group.
+   *
+   * @generated from field: repeated saas.accounts.v1.AuditDerivedMetric derived = 12;
+   */
+  derived: AuditDerivedMetric[];
 };
 
 /**
@@ -342,21 +447,42 @@ export type AggregateAuditLogRequest = Message<"saas.accounts.v1.AggregateAuditL
  * Use `create(AggregateAuditLogRequestSchema)` to create a new message.
  */
 export const AggregateAuditLogRequestSchema: GenMessage<AggregateAuditLogRequest> = /*@__PURE__*/
-  messageDesc(file_saas_accounts_v1_audit, 5);
+  messageDesc(file_saas_accounts_v1_audit, 7);
 
 /**
  * @generated from message saas.accounts.v1.AuditAggregateBucket
  */
 export type AuditAggregateBucket = Message<"saas.accounts.v1.AuditAggregateBucket"> & {
   /**
+   * key is the first group dimension's value; keys holds every dimension.
+   *
    * @generated from field: string key = 1;
    */
   key: string;
 
   /**
+   * count is the group's COUNT(*), always populated for back-compat and also
+   * available in metrics under any requested count alias.
+   *
    * @generated from field: int64 count = 2;
    */
   count: bigint;
+
+  /**
+   * keys are the group dimension values, aligned with the effective group_bys.
+   *
+   * @generated from field: repeated string keys = 3;
+   */
+  keys: string[];
+
+  /**
+   * metrics maps each requested metric and derived alias to its value. An alias
+   * is omitted for a group where the metric is undefined (min/avg/max/percentile
+   * over zero numeric values) — absence means "no data", not zero.
+   *
+   * @generated from field: map<string, double> metrics = 4;
+   */
+  metrics: { [key: string]: number };
 };
 
 /**
@@ -364,7 +490,7 @@ export type AuditAggregateBucket = Message<"saas.accounts.v1.AuditAggregateBucke
  * Use `create(AuditAggregateBucketSchema)` to create a new message.
  */
 export const AuditAggregateBucketSchema: GenMessage<AuditAggregateBucket> = /*@__PURE__*/
-  messageDesc(file_saas_accounts_v1_audit, 6);
+  messageDesc(file_saas_accounts_v1_audit, 8);
 
 /**
  * @generated from message saas.accounts.v1.AggregateAuditLogResponse
@@ -381,7 +507,7 @@ export type AggregateAuditLogResponse = Message<"saas.accounts.v1.AggregateAudit
  * Use `create(AggregateAuditLogResponseSchema)` to create a new message.
  */
 export const AggregateAuditLogResponseSchema: GenMessage<AggregateAuditLogResponse> = /*@__PURE__*/
-  messageDesc(file_saas_accounts_v1_audit, 7);
+  messageDesc(file_saas_accounts_v1_audit, 9);
 
 /**
  * @generated from message saas.accounts.v1.ListAuditEventTypesRequest
@@ -394,7 +520,7 @@ export type ListAuditEventTypesRequest = Message<"saas.accounts.v1.ListAuditEven
  * Use `create(ListAuditEventTypesRequestSchema)` to create a new message.
  */
 export const ListAuditEventTypesRequestSchema: GenMessage<ListAuditEventTypesRequest> = /*@__PURE__*/
-  messageDesc(file_saas_accounts_v1_audit, 8);
+  messageDesc(file_saas_accounts_v1_audit, 10);
 
 /**
  * @generated from message saas.accounts.v1.AuditEventType
@@ -436,7 +562,7 @@ export type AuditEventType = Message<"saas.accounts.v1.AuditEventType"> & {
  * Use `create(AuditEventTypeSchema)` to create a new message.
  */
 export const AuditEventTypeSchema: GenMessage<AuditEventType> = /*@__PURE__*/
-  messageDesc(file_saas_accounts_v1_audit, 9);
+  messageDesc(file_saas_accounts_v1_audit, 11);
 
 /**
  * @generated from message saas.accounts.v1.ListAuditEventTypesResponse
@@ -453,7 +579,7 @@ export type ListAuditEventTypesResponse = Message<"saas.accounts.v1.ListAuditEve
  * Use `create(ListAuditEventTypesResponseSchema)` to create a new message.
  */
 export const ListAuditEventTypesResponseSchema: GenMessage<ListAuditEventTypesResponse> = /*@__PURE__*/
-  messageDesc(file_saas_accounts_v1_audit, 10);
+  messageDesc(file_saas_accounts_v1_audit, 12);
 
 /**
  * AuditService — append-only audit event log
