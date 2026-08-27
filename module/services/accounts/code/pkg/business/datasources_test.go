@@ -45,10 +45,11 @@ func TestDatasourceSource_CRUDLifecycle(t *testing.T) {
 	require.Equal(t, created.ID, got.ID)
 	require.Equal(t, "codefly-dev/module-saas-starter", got.Config.GitHub.Repository)
 
-	list, err := testService.ListDatasourceSources(ctx, orgID)
+	list, next, err := testService.ListDatasourceSources(ctx, orgID, 100, "")
 	require.NoError(t, err)
 	require.Len(t, list, 1)
 	require.Equal(t, created.ID, list[0].ID)
+	require.Empty(t, next)
 
 	synced, err := testService.RequestDatasourceSync(ctx, actorID, orgID, created.ID)
 	require.NoError(t, err)
@@ -62,6 +63,36 @@ func TestDatasourceSource_CRUDLifecycle(t *testing.T) {
 	// nil dereference.
 	_, err = testService.RequestDatasourceSync(ctx, actorID, orgID, created.ID)
 	require.Error(t, err)
+}
+
+func TestDatasourceSource_ListPagination(t *testing.T) {
+	clearData(t)
+	ctx := testCtx
+
+	actorID, orgID := mustUserAndOrg(t, ctx, "ds-page@test.com", "ds-page", "Page Co")
+
+	want := map[string]bool{}
+	for i := 0; i < 3; i++ {
+		created, err := testService.CreateDatasourceSource(ctx, actorID, githubSource(orgID))
+		require.NoError(t, err)
+		want[created.ID] = true
+	}
+
+	page1, next, err := testService.ListDatasourceSources(ctx, orgID, 2, "")
+	require.NoError(t, err)
+	require.Len(t, page1, 2)
+	require.NotEmpty(t, next, "a full page must yield a continuation token")
+
+	page2, next2, err := testService.ListDatasourceSources(ctx, orgID, 2, next)
+	require.NoError(t, err)
+	require.Len(t, page2, 1)
+	require.Empty(t, next2, "the final short page must not yield a token")
+
+	got := map[string]bool{}
+	for _, s := range append(page1, page2...) {
+		got[s.ID] = true
+	}
+	require.Equal(t, want, got, "paging must cover every source exactly once")
 }
 
 func TestDatasourceSource_RejectsUnsupportedConnector(t *testing.T) {
@@ -92,7 +123,7 @@ func TestDatasourceSource_TenantIsolation(t *testing.T) {
 	_, err = testService.GetDatasourceSource(ctx, orgB, created.ID)
 	require.Error(t, err)
 
-	listB, err := testService.ListDatasourceSources(ctx, orgB)
+	listB, _, err := testService.ListDatasourceSources(ctx, orgB, 100, "")
 	require.NoError(t, err)
 	require.Empty(t, listB)
 

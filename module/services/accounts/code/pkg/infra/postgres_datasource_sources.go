@@ -3,6 +3,7 @@ package infra
 import (
 	"context"
 	"encoding/json"
+	"time"
 
 	"github.com/jackc/pgx/v5"
 
@@ -13,8 +14,7 @@ import (
 // text columns non-null so they scan into plain strings.
 const datasourceSourceColumns = `
 	id::text, org_id::text, connector, display_name, target_collection, config,
-	COALESCE(credential_secret_ref, ''), status,
-	last_sync_requested_at, last_synced_at, COALESCE(last_sync_error, ''),
+	status, last_sync_requested_at, last_synced_at, COALESCE(last_sync_error, ''),
 	created_at, updated_at`
 
 func scanDatasourceSource(row pgx.Row) (*business.DatasourceSource, error) {
@@ -22,8 +22,7 @@ func scanDatasourceSource(row pgx.Row) (*business.DatasourceSource, error) {
 	var config []byte
 	if err := row.Scan(
 		&src.ID, &src.OrgID, &src.Connector, &src.DisplayName, &src.TargetCollection, &config,
-		&src.CredentialSecretRef, &src.Status,
-		&src.LastSyncRequestedAt, &src.LastSyncedAt, &src.LastSyncError,
+		&src.Status, &src.LastSyncRequestedAt, &src.LastSyncedAt, &src.LastSyncError,
 		&src.CreatedAt, &src.UpdatedAt,
 	); err != nil {
 		return nil, err
@@ -45,11 +44,10 @@ func (s *PostgresStore) CreateDatasourceSource(ctx context.Context, source *busi
 	}
 	_, err = s.getQueryExecutor(ctx).Exec(ctx, `
 		INSERT INTO datasource_sources (
-			id, org_id, connector, display_name, target_collection, config,
-			credential_secret_ref, status)
-		VALUES ($1, $2, $3, $4, $5, $6, NULLIF($7, ''), $8)`,
+			id, org_id, connector, display_name, target_collection, config, status)
+		VALUES ($1, $2, $3, $4, $5, $6, $7)`,
 		source.ID, source.OrgID, source.Connector, source.DisplayName,
-		source.TargetCollection, config, source.CredentialSecretRef, source.Status)
+		source.TargetCollection, config, source.Status)
 	return err
 }
 
@@ -68,16 +66,23 @@ func (s *PostgresStore) GetDatasourceSource(ctx context.Context, id string) (*bu
 	return source, nil
 }
 
-// ListDatasourceSources returns an org's sources, newest first. Runs under the
-// caller's WithOrgTx.
-func (s *PostgresStore) ListDatasourceSources(ctx context.Context, orgID string) ([]*business.DatasourceSource, error) {
-	rows, err := s.getQueryExecutor(ctx).Query(ctx,
-		`SELECT `+datasourceSourceColumns+`
-		   FROM datasource_sources
-		  WHERE org_id = $1
-		  ORDER BY created_at DESC`, orgID)
+// ListDatasourceSources returns one page of an org's sources, newest first.
+// pageToken is the created_at cursor of the previous page's last row; the
+// returned token is empty on the final page. Runs under the caller's WithOrgTx.
+func (s *PostgresStore) ListDatasourceSources(ctx context.Context, orgID string, pageSize int, pageToken string) ([]*business.DatasourceSource, string, error) {
+	query := `SELECT ` + datasourceSourceColumns + ` FROM datasource_sources WHERE org_id = $1`
+	args := []any{orgID}
+	if pageToken != "" {
+		query += ` AND created_at < $2 ORDER BY created_at DESC LIMIT $3`
+		args = append(args, pageToken, pageSize)
+	} else {
+		query += ` ORDER BY created_at DESC LIMIT $2`
+		args = append(args, pageSize)
+	}
+
+	rows, err := s.getQueryExecutor(ctx).Query(ctx, query, args...)
 	if err != nil {
-		return nil, err
+		return nil, "", err
 	}
 	defer rows.Close()
 
@@ -85,11 +90,19 @@ func (s *PostgresStore) ListDatasourceSources(ctx context.Context, orgID string)
 	for rows.Next() {
 		source, err := scanDatasourceSource(rows)
 		if err != nil {
-			return nil, err
+			return nil, "", err
 		}
 		sources = append(sources, source)
 	}
-	return sources, rows.Err()
+	if err := rows.Err(); err != nil {
+		return nil, "", err
+	}
+
+	var nextToken string
+	if len(sources) == pageSize {
+		nextToken = sources[len(sources)-1].CreatedAt.Format(time.RFC3339Nano)
+	}
+	return sources, nextToken, nil
 }
 
 // DeleteDatasourceSource removes a source by id. Runs under the caller's

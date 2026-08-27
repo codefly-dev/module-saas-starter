@@ -5986,7 +5986,8 @@
           "type": "string"
         },
         "targetCollection": {
-          "type": "string"
+          "type": "string",
+          "description": "target_collection names the documents collection ingested entries land in.\nThe documents module owns collection-name semantics; this boundary only\nrejects the empty and unbounded cases."
         },
         "github": {
           "$ref": "#/definitions/v1GitHubSourceConfig"

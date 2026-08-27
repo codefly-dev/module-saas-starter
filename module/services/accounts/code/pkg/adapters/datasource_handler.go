@@ -83,7 +83,7 @@ func (h *datasourceConnectHandler) ListSources(ctx context.Context, req *connect
 	if err := requireOrgMember(ctx, actorID, req.Msg.OrgId); err != nil {
 		return nil, translateGRPCError(err)
 	}
-	sources, err := h.svc.ListDatasourceSources(ctx, req.Msg.OrgId)
+	sources, nextPageToken, err := h.svc.ListDatasourceSources(ctx, req.Msg.OrgId, int(req.Msg.PageSize), req.Msg.PageToken)
 	if err != nil {
 		return nil, err
 	}
@@ -91,7 +91,7 @@ func (h *datasourceConnectHandler) ListSources(ctx context.Context, req *connect
 	for _, source := range sources {
 		out = append(out, datasourceSourceToProto(source))
 	}
-	return connect.NewResponse(&gen.ListDatasourceSourcesResponse{Sources: out}), nil
+	return connect.NewResponse(&gen.ListDatasourceSourcesResponse{Sources: out, NextPageToken: nextPageToken}), nil
 }
 
 func (h *datasourceConnectHandler) DeleteSource(ctx context.Context, req *connect.Request[gen.DeleteDatasourceSourceRequest]) (*connect.Response[emptypb.Empty], error) {

@@ -765,6 +765,7 @@
           "type": "string"
         },
         "targetCollection": {
+          "description": "target_collection names the documents collection ingested entries land in.\nThe documents module owns collection-name semantics; this boundary only\nrejects the empty and unbounded cases.",
           "type": "string"
         }
       },

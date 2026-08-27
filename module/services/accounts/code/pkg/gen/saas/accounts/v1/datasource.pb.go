@@ -356,11 +356,14 @@ type DatasourceSource_Github struct {
 func (*DatasourceSource_Github) isDatasourceSource_Config() {}
 
 type CreateDatasourceSourceRequest struct {
-	state            protoimpl.MessageState `protogen:"open.v1"`
-	OrgId            string                 `protobuf:"bytes,1,opt,name=org_id,json=orgId,proto3" json:"org_id,omitempty"`
-	Connector        DatasourceConnector    `protobuf:"varint,2,opt,name=connector,proto3,enum=saas.accounts.v1.DatasourceConnector" json:"connector,omitempty"`
-	DisplayName      string                 `protobuf:"bytes,3,opt,name=display_name,json=displayName,proto3" json:"display_name,omitempty"`
-	TargetCollection string                 `protobuf:"bytes,4,opt,name=target_collection,json=targetCollection,proto3" json:"target_collection,omitempty"`
+	state       protoimpl.MessageState `protogen:"open.v1"`
+	OrgId       string                 `protobuf:"bytes,1,opt,name=org_id,json=orgId,proto3" json:"org_id,omitempty"`
+	Connector   DatasourceConnector    `protobuf:"varint,2,opt,name=connector,proto3,enum=saas.accounts.v1.DatasourceConnector" json:"connector,omitempty"`
+	DisplayName string                 `protobuf:"bytes,3,opt,name=display_name,json=displayName,proto3" json:"display_name,omitempty"`
+	// target_collection names the documents collection ingested entries land in.
+	// The documents module owns collection-name semantics; this boundary only
+	// rejects the empty and unbounded cases.
+	TargetCollection string `protobuf:"bytes,4,opt,name=target_collection,json=targetCollection,proto3" json:"target_collection,omitempty"`
 	// Types that are valid to be assigned to Config:
 	//
 	//	*CreateDatasourceSourceRequest_Github
@@ -724,14 +727,15 @@ const file_saas_accounts_v1_datasource_proto_rawDesc = "" +
 	"created_at\x18\v \x01(\v2\x1a.google.protobuf.TimestampR\tcreatedAt\x129\n" +
 	"\n" +
 	"updated_at\x18\f \x01(\v2\x1a.google.protobuf.TimestampR\tupdatedAtB\b\n" +
-	"\x06config\"\xde\x02\n" +
+	"\x06config\"\xca\x02\n" +
 	"\x1dCreateDatasourceSourceRequest\x12\x1f\n" +
 	"\x06org_id\x18\x01 \x01(\tB\b\xbaH\x05r\x03\xb0\x01\x01R\x05orgId\x12O\n" +
 	"\tconnector\x18\x02 \x01(\x0e2%.saas.accounts.v1.DatasourceConnectorB\n" +
 	"\xbaH\a\x82\x01\x04\x10\x01 \x00R\tconnector\x12-\n" +
 	"\fdisplay_name\x18\x03 \x01(\tB\n" +
-	"\xbaH\ar\x05\x10\x01\x18\xff\x01R\vdisplayName\x12K\n" +
-	"\x11target_collection\x18\x04 \x01(\tB\x1e\xbaH\x1br\x19\x10\x01\x18\xff\x012\x12^[a-z][a-z0-9_-]*$R\x10targetCollection\x12>\n" +
+	"\xbaH\ar\x05\x10\x01\x18\xff\x01R\vdisplayName\x127\n" +
+	"\x11target_collection\x18\x04 \x01(\tB\n" +
+	"\xbaH\ar\x05\x10\x01\x18\xff\x01R\x10targetCollection\x12>\n" +
 	"\x06github\x18\x05 \x01(\v2$.saas.accounts.v1.GitHubSourceConfigH\x00R\x06githubB\x0f\n" +
 	"\x06config\x12\x05\xbaH\x02\b\x01\"6\n" +
 	"\x1aGetDatasourceSourceRequest\x12\x18\n" +

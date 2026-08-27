@@ -269,7 +269,7 @@ type Store interface {
 	// lookup and mutation to the current org.
 	CreateDatasourceSource(ctx context.Context, source *DatasourceSource) error
 	GetDatasourceSource(ctx context.Context, id string) (*DatasourceSource, error)
-	ListDatasourceSources(ctx context.Context, orgID string) ([]*DatasourceSource, error)
+	ListDatasourceSources(ctx context.Context, orgID string, pageSize int, pageToken string) ([]*DatasourceSource, string, error)
 	DeleteDatasourceSource(ctx context.Context, id string) error
 	MarkDatasourceSourceSyncRequested(ctx context.Context, id string) (*DatasourceSource, error)
 

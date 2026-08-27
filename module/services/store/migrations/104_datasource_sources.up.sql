@@ -7,10 +7,6 @@
 --
 -- config holds connector-specific settings (for GitHub: repository, branch,
 -- paths) so the table stays connector-agnostic as new connectors are added.
---
--- credential_secret_ref holds a SecretCipher envelope (cfs1:vault-transit:...),
--- a reference into the secret provider — never a plaintext credential. It is
--- populated by the GitHub connector in #274; sources start without one.
 
 CREATE TABLE IF NOT EXISTS datasource_sources (
     id                     UUID DEFAULT gen_random_uuid() PRIMARY KEY,
@@ -19,7 +15,6 @@ CREATE TABLE IF NOT EXISTS datasource_sources (
     display_name           TEXT NOT NULL,
     target_collection      TEXT NOT NULL,
     config                 JSONB NOT NULL DEFAULT '{}'::jsonb,
-    credential_secret_ref  TEXT,
     status                 TEXT NOT NULL DEFAULT 'pending'
                                CHECK (status IN ('pending', 'active', 'disabled', 'error')),
     last_sync_requested_at TIMESTAMPTZ,

@@ -35,8 +35,6 @@ type DatasourceConfig struct {
 }
 
 // DatasourceSource is one org-owned connection to an external system.
-// CredentialSecretRef holds a SecretCipher envelope (a reference into the
-// secret provider) populated by the connector, never a plaintext credential.
 type DatasourceSource struct {
 	ID                  string
 	OrgID               string
@@ -44,7 +42,6 @@ type DatasourceSource struct {
 	DisplayName         string
 	TargetCollection    string
 	Config              DatasourceConfig
-	CredentialSecretRef string
 	Status              string
 	LastSyncRequestedAt *time.Time
 	LastSyncedAt        *time.Time
@@ -108,15 +105,18 @@ func (s *Service) GetDatasourceSource(ctx context.Context, orgID, id string) (*D
 	return source, nil
 }
 
-// ListDatasourceSources returns an org's sources, newest first.
-func (s *Service) ListDatasourceSources(ctx context.Context, orgID string) ([]*DatasourceSource, error) {
+// ListDatasourceSources returns one page of an org's sources, newest first,
+// along with the token for the next page (empty on the final page).
+func (s *Service) ListDatasourceSources(ctx context.Context, orgID string, pageSize int, pageToken string) ([]*DatasourceSource, string, error) {
 	var out []*DatasourceSource
+	var next string
 	err := s.store.WithOrgTx(ctx, orgID, func(ctx context.Context) error {
-		sources, err := s.store.ListDatasourceSources(ctx, orgID)
+		sources, token, err := s.store.ListDatasourceSources(ctx, orgID, pageSize, pageToken)
 		out = sources
+		next = token
 		return err
 	})
-	return out, err
+	return out, next, err
 }
 
 // DeleteDatasourceSource removes a source owned by the caller's org. RLS makes

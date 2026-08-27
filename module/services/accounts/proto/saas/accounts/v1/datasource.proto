@@ -86,10 +86,12 @@ message CreateDatasourceSourceRequest {
     min_len: 1
     max_len: 255
   }];
+  // target_collection names the documents collection ingested entries land in.
+  // The documents module owns collection-name semantics; this boundary only
+  // rejects the empty and unbounded cases.
   string target_collection = 4 [(buf.validate.field).string = {
     min_len: 1
     max_len: 255
-    pattern: "^[a-z][a-z0-9_-]*$"
   }];
   oneof config {
     option (buf.validate.oneof).required = true;
