@@ -26,9 +26,11 @@ export interface ResolveSkinOptions {
 	/**
 	 * The delivery sources to consult, in priority order. The host wires these
 	 * from its environment; the resolver itself stays free of env and Node APIs
-	 * so it runs identically in the host, a remote, or a test.
+	 * so it runs identically in the host, a remote, or a test. Required — pass an
+	 * empty array to mean "no sources, use the compiled default" explicitly, so
+	 * forgetting to wire sources is a compile error, not a silent default skin.
 	 */
-	sources?: SkinSource[];
+	sources: SkinSource[];
 	now?: () => number;
 }
 
@@ -41,7 +43,7 @@ export interface ResolveSkinOptions {
 export async function resolveSkin(
 	opts: ResolveSkinOptions,
 ): Promise<ResolvedSkin> {
-	const sources = opts.sources ?? [];
+	const sources = opts.sources;
 	const host = opts.host ?? null;
 	const now = opts.now ?? (() => Date.now());
 

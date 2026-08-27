@@ -31,8 +31,11 @@ charts — lands in this package through its own follow-up issues.
 | `@codefly/ui/plugin-host/ui`  | Client UI adapters (`PluginErrorBoundary`)          |
 | `@codefly/ui/skin`            | `resolveSkin`, skin types                           |
 
-`react` and `react-dom` are peer dependencies so a host and its remotes share
-one React instance.
+`react`, `@codefly/saas-plugin-react`, and `@codefly/saas-plugin-contract` are
+**peer** dependencies — the host provides them so it and its Module-Federation
+remotes resolve one shared instance each. This matters most for
+`@codefly/saas-plugin-react`, which carries the plugin-runtime React context: a
+second copy would split that context and break `usePluginRuntime` in a remote.
 
 ## Skin resolution
 

@@ -39,15 +39,14 @@
 		"build": "tsc -p tsconfig.json",
 		"test": "vitest run --config vitest.config.ts"
 	},
-	"dependencies": {
-		"@codefly/saas-plugin-contract": "2.1.0",
-		"@codefly/saas-plugin-react": "0.4.1"
-	},
 	"peerDependencies": {
-		"react": ">=19.2 <20",
-		"react-dom": ">=19.2 <20"
+		"@codefly/saas-plugin-contract": "2.1.0",
+		"@codefly/saas-plugin-react": "0.4.1",
+		"react": ">=19.2 <20"
 	},
 	"devDependencies": {
+		"@codefly/saas-plugin-contract": "2.1.0",
+		"@codefly/saas-plugin-react": "0.4.1",
 		"@types/react": "19.2.17",
 		"react": "^19.2.8",
 		"typescript": "5.9.3",
