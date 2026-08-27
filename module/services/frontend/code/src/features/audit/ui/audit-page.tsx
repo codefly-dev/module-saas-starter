@@ -2,14 +2,9 @@
 
 import { Download } from "lucide-react";
 import { useMemo, useState } from "react";
-import { Sparkline } from "@/components/sparkline";
+import { Dashboard, type DashboardData } from "@/components/dashboard";
 import {
 	Button,
-	Card,
-	CardContent,
-	CardDescription,
-	CardHeader,
-	CardTitle,
 	DropdownMenu,
 	DropdownMenuContent,
 	DropdownMenuItem,
@@ -40,8 +35,16 @@ export function AuditPage() {
 	const { data, isLoading } = useAuditLog({ eventType, category, pageSize: 100 });
 	const exportMutation = useExportAuditLog();
 
-	const { data: byType } = useAuditAggregate({ eventType, category, groupBy: "event_type" });
-	const { data: byDay } = useAuditAggregate({
+	const {
+		data: byType,
+		isLoading: byTypeLoading,
+		error: byTypeError,
+	} = useAuditAggregate({ eventType, category, groupBy: "event_type" });
+	const {
+		data: byDay,
+		isLoading: byDayLoading,
+		error: byDayError,
+	} = useAuditAggregate({
 		eventType,
 		category,
 		groupBy: "time",
@@ -65,7 +68,6 @@ export function AuditPage() {
 		() => (byType ?? []).slice(0, 6),
 		[byType],
 	);
-	const maxTypeCount = topTypes.reduce((m, b) => Math.max(m, b.count), 0) || 1;
 	const dayPoints = useMemo(
 		() =>
 			(byDay ?? [])
@@ -79,128 +81,108 @@ export function AuditPage() {
 		exportMutation.mutate({ format, eventType });
 	};
 
-	return (
-		<div className="space-y-6">
-			<div className="flex items-center justify-between">
-				<div>
-					<h1 className="text-2xl font-bold tracking-tight">Audit Log</h1>
-					<p className="text-muted-foreground">
-						View all system events and user activity.
-					</p>
-				</div>
-				<div className="flex items-center gap-2">
-					<DropdownMenu>
-						<DropdownMenuTrigger
-							render={
-								<Button
-									variant="outline"
-									size="sm"
-									disabled={exportMutation.isPending}
-								>
-									<Download className="mr-2 h-4 w-4" />
-									{exportMutation.isPending ? "Exporting..." : "Export"}
-								</Button>
-							}
-						/>
-						<DropdownMenuContent align="end">
-							<DropdownMenuItem onClick={() => handleExport("csv")}>
-								Export as CSV
-							</DropdownMenuItem>
-							<DropdownMenuItem onClick={() => handleExport("json")}>
-								Export as JSON
-							</DropdownMenuItem>
-						</DropdownMenuContent>
-					</DropdownMenu>
-					<Select
-						value={categoryFilter}
-						onValueChange={(v) => {
-							if (v) {
-								setCategoryFilter(v);
-								setEventTypeFilter("all");
-							}
-						}}
-					>
-						<SelectTrigger className="w-[160px]">
-							<SelectValue placeholder="Category" />
-						</SelectTrigger>
-						<SelectContent>
-							<SelectItem value="all">All categories</SelectItem>
-							{categories.map((c) => (
-								<SelectItem key={c} value={c}>
-									{c}
-								</SelectItem>
-							))}
-						</SelectContent>
-					</Select>
-					<Select
-						value={eventTypeFilter}
-						onValueChange={(v) => {
-							if (v) setEventTypeFilter(v);
-						}}
-					>
-						<SelectTrigger className="w-[220px]">
-							<SelectValue placeholder="Filter by event type" />
-						</SelectTrigger>
-						<SelectContent>
-							<SelectItem value="all">All event types</SelectItem>
-							{visibleEventTypes.map((t) => (
-								<SelectItem key={t.name} value={t.name}>
-									{t.name}
-								</SelectItem>
-							))}
-						</SelectContent>
-					</Select>
-				</div>
-			</div>
-
-			<div className="grid gap-4 md:grid-cols-2">
-				<Card>
-					<CardHeader>
-						<CardTitle className="text-base">Events over time</CardTitle>
-						<CardDescription>Daily event volume for the current filter.</CardDescription>
-					</CardHeader>
-					<CardContent>
-						{dayPoints.length > 0 ? (
-							<Sparkline points={dayPoints} className="text-primary/70" />
-						) : (
-							<p className="text-sm text-muted-foreground">No events in range.</p>
-						)}
-					</CardContent>
-				</Card>
-				<Card>
-					<CardHeader>
-						<CardTitle className="text-base">Top event types</CardTitle>
-						<CardDescription>Most frequent events for the current filter.</CardDescription>
-					</CardHeader>
-					<CardContent className="space-y-2">
-						{topTypes.length > 0 ? (
-							topTypes.map((b) => (
-								<div key={b.key} className="space-y-1">
-									<div className="flex items-center justify-between text-xs">
-										<span className="text-muted-foreground">
-											{formatAuditAction(b.key)}
-										</span>
-										<span className="font-mono">{b.count}</span>
-									</div>
-									<div className="h-2 rounded-full bg-muted">
-										<div
-											className="h-2 rounded-full bg-primary/70"
-											style={{ width: `${(b.count / maxTypeCount) * 100}%` }}
-										/>
-									</div>
-								</div>
-							))
-						) : (
-							<p className="text-sm text-muted-foreground">No events in range.</p>
-						)}
-					</CardContent>
-				</Card>
-			</div>
-
-			<AuditTable
-				events={data?.events ?? []}
-				isLoading={isLoading}
-			/>
-		</div>
+	const actions = (
+		<>
+			<DropdownMenu>
+				<DropdownMenuTrigger
+					render={
+						<Button
+							variant="outline"
+							size="sm"
+							disabled={exportMutation.isPending}
+						>
+							<Download className="mr-2 h-4 w-4" />
+							{exportMutation.isPending ? "Exporting..." : "Export"}
+						</Button>
+					}
+				/>
+				<DropdownMenuContent align="end">
+					<DropdownMenuItem onClick={() => handleExport("csv")}>
+						Export as CSV
+					</DropdownMenuItem>
+					<DropdownMenuItem onClick={() => handleExport("json")}>
+						Export as JSON
+					</DropdownMenuItem>
+				</DropdownMenuContent>
+			</DropdownMenu>
+			<Select
+				value={categoryFilter}
+				onValueChange={(v) => {
+					if (v) {
+						setCategoryFilter(v);
+						setEventTypeFilter("all");
+					}
+				}}
+			>
+				<SelectTrigger className="w-[160px]">
+					<SelectValue placeholder="Category" />
+				</SelectTrigger>
+				<SelectContent>
+					<SelectItem value="all">All categories</SelectItem>
+					{categories.map((c) => (
+						<SelectItem key={c} value={c}>
+							{c}
+						</SelectItem>
+					))}
+				</SelectContent>
+			</Select>
+			<Select
+				value={eventTypeFilter}
+				onValueChange={(v) => {
+					if (v) setEventTypeFilter(v);
+				}}
+			>
+				<SelectTrigger className="w-[220px]">
+					<SelectValue placeholder="Filter by event type" />
+				</SelectTrigger>
+				<SelectContent>
+					<SelectItem value="all">All event types</SelectItem>
+					{visibleEventTypes.map((t) => (
+						<SelectItem key={t.name} value={t.name}>
+							{t.name}
+						</SelectItem>
+					))}
+				</SelectContent>
+			</Select>
+		</>
 	);
+
+	const dashboard: DashboardData = {
+		title: "Audit Log",
+		description: "View all system events and user activity.",
+		actions,
+		widgets: [
+			{
+				id: "events-over-time",
+				kind: "sparkline",
+				title: "Events over time",
+				description: "Daily event volume for the current filter.",
+				points: dayPoints,
+				isLoading: byDayLoading,
+				error: byDayError,
+				emptyMessage: "No events in range.",
+			},
+			{
+				id: "top-event-types",
+				kind: "bars",
+				title: "Top event types",
+				description: "Most frequent events for the current filter.",
+				items: topTypes.map((b) => ({
+					label: formatAuditAction(b.key),
+					value: b.count,
+				})),
+				isLoading: byTypeLoading,
+				error: byTypeError,
+				emptyMessage: "No events in range.",
+			},
+			{
+				id: "audit-table",
+				kind: "node",
+				span: "full",
+				node: <AuditTable events={data?.events ?? []} isLoading={isLoading} />,
+			},
+		],
+	};
+
+	return <Dashboard data={dashboard} />;
 }
