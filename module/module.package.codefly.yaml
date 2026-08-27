@@ -73,6 +73,7 @@ claims:
   - {kind: package, key: "@codefly/saas-plugin-contract", owner: base}
   - {kind: package, key: "@codefly/saas-plugin-react", owner: base}
   - {kind: package, key: "@codefly/saas-settings", owner: base}
+  - {kind: package, key: "@codefly/ui", owner: base}
   - {kind: package, key: "@connectrpc/connect", owner: base}
   - {kind: package, key: "@connectrpc/connect-web", owner: base}
   - {kind: package, key: "@hookform/resolvers", owner: base}
