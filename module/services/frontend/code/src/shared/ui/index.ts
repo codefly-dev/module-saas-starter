@@ -1,6 +1,16 @@
 // Re-export shadcn/ui components from their canonical location.
 // Feature slices import from "@/shared/ui" rather than "@/components/ui".
 
+// Metric charts for the template dashboard — take metric `data`, not raw RPC.
+export {
+	AreaChart,
+	BarChart,
+	type ChartDatum,
+	type ChartSeries,
+	chartSeriesColor,
+	LineChart,
+	type MetricChartProps,
+} from "@/components/charts";
 export {
 	AlertDialog,
 	AlertDialogAction,
