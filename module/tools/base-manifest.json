@@ -1,6 +1,6 @@
 {
   "note": "Base-file integrity manifest for the saas-starter module. Generated FROM canonical by `node tools/base-integrity.mjs gen`. Consumers MUST NOT hand-edit base files — only add files on the side. Regenerated on every codefly sync from canonical.",
-  "fileCount": 1784,
+  "fileCount": 1789,
   "files": {
     "AUTHORIZATION_CATALOG.md": "b2ea5d41f0098e80315e02e7c4bdbda03b65c8eef463426242552fd3c047ca0a",
     "CONTRACT_VERSIONING.md": "02031aa87922ab5ec573ea582cf584271873481de6ceabbda52b1bfda005ffbd",
@@ -1041,6 +1041,11 @@
     "services/frontend/code/src/components/admin-route-shell.tsx": "1330a46de6472561ffcbb0a332f2192e6dce6c524299c76ea9717bb755671cbf",
     "services/frontend/code/src/components/auth/role-gate.tsx": "81aa9ca42ddd21fb92bf06a7e005483603abc266239a00b2e855ac35b254dc7d",
     "services/frontend/code/src/components/brand-mark.tsx": "7838400156bf16828d9ad4fe88bf5585c0908ec9ef84408a08ddd76d2569993d",
+    "services/frontend/code/src/components/charts/chart.test.tsx": "f23adaaec5529f7e18fd1df1ed871a00033d8ada51c929712505c777fc1f26fa",
+    "services/frontend/code/src/components/charts/chart.tsx": "028513f259161d79d2b6097ce0e4f65c0c58ceb1a351e72f9c11f7402e38ab15",
+    "services/frontend/code/src/components/charts/geometry.test.ts": "5dbd59f883f577b52e695db17601b7e30d182e3d52d872012894e758f9192c9f",
+    "services/frontend/code/src/components/charts/geometry.ts": "cbb05fefbde8177d2f877d9dbc8cab22ec0e7319010019efe07d6414423ad29e",
+    "services/frontend/code/src/components/charts/index.ts": "113f474668afe61e1dcc7e11937814323208bf224c7f531ec27ac700f3b4b578",
     "services/frontend/code/src/components/command-palette.tsx": "45b0bed803b5f88717619e3914057dde8b39b309ad7c680f9be6414de3e5a67a",
     "services/frontend/code/src/components/consent-banner.test.tsx": "b5044e33b347d500ea9bf20b756629535040cc3660b028e704e5d33e035a00d5",
     "services/frontend/code/src/components/consent-banner.tsx": "37ce08838297011c962e026b9b71fc79a930d8903085b9895488efca31751312",
@@ -1438,7 +1443,7 @@
     "services/frontend/code/src/shared/lib/__tests__/utils.test.ts": "b7fe1b391677eec04f640192d679f6b708474584dff0d5039d761790a154395c",
     "services/frontend/code/src/shared/lib/utils.ts": "8b71969ecd274f75f1edd8a775530f7fcfb4c52305cbdf1afc7e7ea495feaed8",
     "services/frontend/code/src/shared/ui/data-table.tsx": "0d3dd0bf47eb57aba7af764dc5c839f7137535a60aff4443cff8a423a1e531d8",
-    "services/frontend/code/src/shared/ui/index.ts": "4dfb0ba5033cd5d66ba36df2ce32a8a8fb1487fccbc09b6c4f3d3ce48c58645f",
+    "services/frontend/code/src/shared/ui/index.ts": "29841059684d35f03cccd86adbb0e5e3b15b416198382bf72252f40288459d57",
     "services/frontend/code/src/shared/ui/layout.test.tsx": "79cd47d63037d9b0ae00371ad23173c1e69c4cd67acee94fb4f79fe700e33628",
     "services/frontend/code/src/shared/ui/layout.tsx": "f1c37ca1b44079ac9508c99f1050d86f47b378fdf33e9b95a32aa238f84070af",
     "services/frontend/code/src/shared/ui/metric-tiles.test.tsx": "ecc8e063df1eb88282a9149d543cc0b1ce506143afb6411e3792391a4bb586e4",
