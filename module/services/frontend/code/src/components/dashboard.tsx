@@ -22,12 +22,16 @@ import {
 } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 
-interface WidgetBase {
+interface WidgetIdentity {
 	id: string;
-	title?: string;
-	description?: string;
 	/** `"full"` spans every grid column; omit for a single column. */
 	span?: "full";
+}
+
+/** Data widgets the renderer wraps in a card and drives states for. */
+interface CardWidgetBase extends WidgetIdentity {
+	title?: string;
+	description?: string;
 	isLoading?: boolean;
 	error?: unknown;
 	/** Shown in place of content when the widget resolves to no data. */
@@ -35,22 +39,23 @@ interface WidgetBase {
 }
 
 /** A time series drawn as a sparkline. Empty when there is nothing to plot. */
-export interface SparklineWidget extends WidgetBase {
+export interface SparklineWidget extends CardWidgetBase {
 	kind: "sparkline";
 	points: number[];
 }
 
 /** A ranked list of labelled values drawn as proportional bars. */
-export interface BarsWidget extends WidgetBase {
+export interface BarsWidget extends CardWidgetBase {
 	kind: "bars";
 	items: { label: string; value: number }[];
 }
 
 /**
  * An escape hatch for rich content (e.g. a table) that owns its own
- * chrome and states. Rendered bare — no card, no state framework.
+ * chrome and states. Rendered bare — no card, no state framework — so
+ * it carries only identity and layout, never the card state fields.
  */
-export interface NodeWidget extends WidgetBase {
+export interface NodeWidget extends WidgetIdentity {
 	kind: "node";
 	node: ReactNode;
 }
@@ -69,26 +74,31 @@ function spanClass(span?: "full") {
 	return span === "full" ? "md:col-span-2" : undefined;
 }
 
-/** Precedence: error → loading → empty → content. */
+/**
+ * Retained content wins over transient states: as long as the widget has
+ * data to render, a background refetch or a refetch *error* never blanks
+ * it — the last good content stays on screen. Only when there is nothing
+ * to show do we surface error → loading → empty, in that order.
+ */
 function withState(
-	widget: WidgetBase,
+	widget: CardWidgetBase,
 	isEmpty: boolean,
 	content: ReactNode,
 ): ReactNode {
+	if (!isEmpty) {
+		return content;
+	}
 	if (widget.error) {
 		return <p className="text-sm text-destructive">Failed to load.</p>;
 	}
 	if (widget.isLoading) {
 		return <Skeleton className="h-16 w-full" />;
 	}
-	if (isEmpty) {
-		return (
-			<p className="text-sm text-muted-foreground">
-				{widget.emptyMessage ?? "No data."}
-			</p>
-		);
-	}
-	return content;
+	return (
+		<p className="text-sm text-muted-foreground">
+			{widget.emptyMessage ?? "No data."}
+		</p>
+	);
 }
 
 function CardWidget({
@@ -96,7 +106,7 @@ function CardWidget({
 	isEmpty,
 	children,
 }: {
-	widget: WidgetBase;
+	widget: CardWidgetBase;
 	isEmpty: boolean;
 	children: ReactNode;
 }) {
@@ -155,6 +165,12 @@ function Widget({ widget }: { widget: DashboardWidget }) {
 			);
 		case "node":
 			return <div className={spanClass(widget.span)}>{widget.node}</div>;
+		default: {
+			// Compile-time exhaustiveness: a new widget kind must be handled
+			// here or this assignment fails to type-check.
+			const _exhaustive: never = widget;
+			return _exhaustive;
+		}
 	}
 }
 

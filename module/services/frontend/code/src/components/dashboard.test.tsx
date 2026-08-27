@@ -88,7 +88,7 @@ describe("Dashboard renderer", () => {
 		expect(screen.getByText("No events in range.")).toBeTruthy();
 	});
 
-	it("prefers error over loading and empty", () => {
+	it("surfaces error before loading and empty when there is no data", () => {
 		renderDashboard({
 			widgets: [
 				{
@@ -103,5 +103,25 @@ describe("Dashboard renderer", () => {
 		});
 		expect(screen.getByText("Failed to load.")).toBeTruthy();
 		expect(screen.queryByText("Nothing here.")).toBeNull();
+	});
+
+	it("keeps rendering retained data when a background refetch errors", () => {
+		// A widget that still holds data must not blank to an error state on a
+		// transient refetch failure — the last good content stays on screen.
+		renderDashboard({
+			widgets: [
+				{
+					id: "s",
+					kind: "bars",
+					title: "Top event types",
+					items: [{ label: "user.login", value: 7 }],
+					error: new Error("refetch blip"),
+					emptyMessage: "No events in range.",
+				},
+			],
+		});
+		expect(screen.getByText("user.login")).toBeTruthy();
+		expect(screen.getByText("7")).toBeTruthy();
+		expect(screen.queryByText("Failed to load.")).toBeNull();
 	});
 });
