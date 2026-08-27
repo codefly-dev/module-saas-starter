@@ -115,6 +115,12 @@ func TestConnectorCredential_SigningSecretIsPreAuthCrossTenant(t *testing.T) {
 	_, err = testService.SourceSigningSecret(context.Background(), uuid.NewString())
 	require.ErrorIs(t, err, business.ErrSourceCredentialNotFound)
 
+	// A malformed (non-UUID) source id — the shape an attacker probes the
+	// unauthenticated webhook path with — is a clean miss, not a distinct error,
+	// so the caller does not log every probe as a resolver failure.
+	_, err = testService.SourceSigningSecret(context.Background(), "not-a-uuid")
+	require.ErrorIs(t, err, business.ErrSourceCredentialNotFound)
+
 	appOnlySource := uuid.NewString()
 	require.NoError(t, testService.PutGitHubSourceCredential(ctx, orgID, appOnlySource,
 		business.SourceCredential{GitHubApp: testAppCredential(t)}))

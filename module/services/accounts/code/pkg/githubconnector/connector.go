@@ -6,6 +6,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"golang.org/x/sync/singleflight"
 )
 
 // DefaultBaseURL is the public GitHub REST API host. GitHub Enterprise Server
@@ -26,8 +28,9 @@ type Connector struct {
 	httpClient *http.Client
 	now        func() time.Time
 
-	mu     sync.Mutex
-	tokens map[string]InstallationToken
+	mu      sync.Mutex
+	tokens  map[string]InstallationToken
+	minting singleflight.Group
 }
 
 // Option configures a Connector.
@@ -89,24 +92,44 @@ func (c *Connector) FetchRepoContents(ctx context.Context, cred AppCredential, o
 
 // installationToken returns a cached token for the credential's installation,
 // minting and caching a fresh one when none is cached or the cached one is
-// within the refresh window of expiry.
+// within the refresh window of expiry. Minting is de-duplicated per
+// installation: concurrent callers that all miss the cache share a single mint
+// rather than each creating a token (GitHub rate-limits token creation).
 func (c *Connector) installationToken(ctx context.Context, cred AppCredential) (string, error) {
 	key := cred.cacheKey()
 
+	if token, ok := c.cachedToken(key); ok {
+		return token, nil
+	}
+
+	minted, err, _ := c.minting.Do(key, func() (any, error) {
+		// A concurrent leader may have filled the cache while this call waited to
+		// become the singleflight leader; re-check before minting.
+		if token, ok := c.cachedToken(key); ok {
+			return token, nil
+		}
+		token, err := c.MintInstallationToken(ctx, cred)
+		if err != nil {
+			return "", err
+		}
+		c.mu.Lock()
+		c.tokens[key] = token
+		c.mu.Unlock()
+		return token.Token, nil
+	})
+	if err != nil {
+		return "", err
+	}
+	return minted.(string), nil
+}
+
+// cachedToken returns a still-valid cached token for key, if any.
+func (c *Connector) cachedToken(key string) (string, bool) {
 	c.mu.Lock()
 	cached, ok := c.tokens[key]
 	c.mu.Unlock()
 	if ok && c.now().Before(cached.ExpiresAt.Add(-tokenRefreshWindow)) {
-		return cached.Token, nil
+		return cached.Token, true
 	}
-
-	minted, err := c.MintInstallationToken(ctx, cred)
-	if err != nil {
-		return "", err
-	}
-
-	c.mu.Lock()
-	c.tokens[key] = minted
-	c.mu.Unlock()
-	return minted.Token, nil
+	return "", false
 }

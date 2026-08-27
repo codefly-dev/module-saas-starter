@@ -31,21 +31,24 @@ type fakeGitHub struct {
 	appID        string
 	tokenExpiry  time.Time
 	files        map[string]githubFile
+	mintDelay    time.Duration
 
-	mu        sync.Mutex
-	mintCount int
+	mu              sync.Mutex
+	mintCount       int
+	lastContentPath string
 }
 
 type githubFile struct {
-	content []byte
-	dir     []map[string]any
+	content  []byte
+	dir      []map[string]any
+	tooLarge bool
 }
 
 func (f *fakeGitHub) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	switch {
 	case strings.HasSuffix(r.URL.Path, "/access_tokens"):
 		f.handleMint(w, r)
-	case strings.Contains(r.URL.Path, "/contents/"):
+	case strings.Contains(r.URL.Path, "/contents"):
 		f.handleContents(w, r)
 	default:
 		http.Error(w, `{"message":"not found"}`, http.StatusNotFound)
@@ -66,6 +69,10 @@ func (f *fakeGitHub) handleMint(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if f.mintDelay > 0 {
+		time.Sleep(f.mintDelay)
+	}
+
 	f.mu.Lock()
 	f.mintCount++
 	f.mu.Unlock()
@@ -81,7 +88,11 @@ func (f *fakeGitHub) handleContents(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, `{"message":"bad token"}`, http.StatusUnauthorized)
 		return
 	}
-	_, path, _ := strings.Cut(r.URL.Path, "/contents/")
+	f.mu.Lock()
+	f.lastContentPath = r.URL.Path
+	f.mu.Unlock()
+	_, path, _ := strings.Cut(r.URL.Path, "/contents")
+	path = strings.TrimPrefix(path, "/")
 	file, ok := f.files[path]
 	if !ok {
 		http.Error(w, `{"message":"Not Found"}`, http.StatusNotFound)
@@ -89,6 +100,14 @@ func (f *fakeGitHub) handleContents(w http.ResponseWriter, r *http.Request) {
 	}
 	if file.dir != nil {
 		writeJSON(w, http.StatusOK, file.dir)
+		return
+	}
+	if file.tooLarge {
+		// GitHub's contents API response for a file over its size cap.
+		writeJSON(w, http.StatusOK, map[string]any{
+			"type": "file", "name": path, "path": path, "sha": "deadbeef",
+			"size": 2_000_000, "encoding": "none", "content": "",
+		})
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]any{
@@ -106,6 +125,12 @@ func (f *fakeGitHub) mints() int {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	return f.mintCount
+}
+
+func (f *fakeGitHub) contentPath() string {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return f.lastContentPath
 }
 
 func writeJSON(w http.ResponseWriter, status int, body any) {
@@ -212,6 +237,45 @@ func TestFetchRepoContentsListsDirectory(t *testing.T) {
 	require.Nil(t, got.Entries[0].Content)
 }
 
+func TestFetchRepoContentsRootUsesBareEndpoint(t *testing.T) {
+	cred, key := credentialWithKey(t)
+	fake := &fakeGitHub{
+		appPublicKey: &key.PublicKey,
+		appID:        cred.AppID,
+		tokenExpiry:  time.Now().Add(time.Hour),
+		files: map[string]githubFile{"": {dir: []map[string]any{
+			{"type": "file", "name": "README.md", "path": "README.md", "sha": "aaa", "size": 4},
+		}}},
+	}
+	server := httptest.NewServer(fake)
+	defer server.Close()
+
+	conn := githubconnector.NewConnector(githubconnector.WithBaseURL(server.URL))
+	got, err := conn.FetchRepoContents(context.Background(), cred, "acme", "wiki", "", "")
+	require.NoError(t, err)
+	require.Equal(t, githubconnector.ContentTypeDir, got.Type)
+	require.Len(t, got.Entries, 1)
+	// The repo root must hit the canonical bare endpoint, not a trailing-slash form.
+	require.Equal(t, "/repos/acme/wiki/contents", fake.contentPath())
+}
+
+func TestFetchRepoContentsTooLargeFileIsDistinguishable(t *testing.T) {
+	cred, key := credentialWithKey(t)
+	fake := &fakeGitHub{
+		appPublicKey: &key.PublicKey,
+		appID:        cred.AppID,
+		tokenExpiry:  time.Now().Add(time.Hour),
+		files:        map[string]githubFile{"big.bin": {tooLarge: true}},
+	}
+	server := httptest.NewServer(fake)
+	defer server.Close()
+
+	conn := githubconnector.NewConnector(githubconnector.WithBaseURL(server.URL))
+	_, err := conn.FetchRepoContents(context.Background(), cred, "acme", "wiki", "big.bin", "")
+	require.ErrorIs(t, err, githubconnector.ErrFileTooLarge,
+		"an oversized file must be a distinguishable sentinel so callers can skip it")
+}
+
 func TestFetchRepoContentsNotFound(t *testing.T) {
 	cred, key := credentialWithKey(t)
 	fake := &fakeGitHub{appPublicKey: &key.PublicKey, appID: cred.AppID, tokenExpiry: time.Now().Add(time.Hour), files: map[string]githubFile{}}
@@ -253,4 +317,35 @@ func TestFetchRepoContentsCachesInstallationToken(t *testing.T) {
 	_, err := conn.FetchRepoContents(context.Background(), cred, "acme", "wiki", "a.md", "")
 	require.NoError(t, err)
 	require.Equal(t, 2, fake.mints(), "an expiring token must be re-minted")
+}
+
+func TestFetchRepoContentsSingleFlightsTokenMint(t *testing.T) {
+	cred, key := credentialWithKey(t)
+	fake := &fakeGitHub{
+		appPublicKey: &key.PublicKey,
+		appID:        cred.AppID,
+		tokenExpiry:  time.Now().Add(time.Hour),
+		files:        map[string]githubFile{"a.md": {content: []byte("a")}},
+		// Widen the window so all goroutines miss the cache and pile up behind the
+		// single in-flight mint.
+		mintDelay: 30 * time.Millisecond,
+	}
+	server := httptest.NewServer(fake)
+	defer server.Close()
+
+	conn := githubconnector.NewConnector(githubconnector.WithBaseURL(server.URL))
+
+	const goroutines = 20
+	var wg sync.WaitGroup
+	wg.Add(goroutines)
+	for i := 0; i < goroutines; i++ {
+		go func() {
+			defer wg.Done()
+			_, err := conn.FetchRepoContents(context.Background(), cred, "acme", "wiki", "a.md", "")
+			require.NoError(t, err)
+		}()
+	}
+	wg.Wait()
+
+	require.Equal(t, 1, fake.mints(), "concurrent first fetches must share a single installation-token mint")
 }

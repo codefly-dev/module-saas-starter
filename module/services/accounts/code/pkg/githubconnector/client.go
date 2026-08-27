@@ -5,11 +5,19 @@ import (
 	"context"
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/url"
 	"strings"
 )
+
+// ErrFileTooLarge is returned by GetRepoContents for a file GitHub will not
+// inline through the contents API (it caps files at ~1MB and responds with
+// encoding "none" and an empty body). A caller walking a tree can errors.Is on
+// this to skip the file — or re-fetch it via the Git blob API by its SHA —
+// instead of failing the entire pull.
+var ErrFileTooLarge = errors.New("github file too large for the contents API")
 
 // Content kinds returned by the GitHub contents API.
 const (
@@ -53,8 +61,14 @@ func (c *Connector) GetRepoContents(ctx context.Context, token, owner, repo, pat
 		return nil, fmt.Errorf("repo contents require an owner and repo")
 	}
 
-	endpoint := fmt.Sprintf("%s/repos/%s/%s/contents/%s",
-		c.baseURL, url.PathEscape(owner), url.PathEscape(repo), escapePath(path))
+	endpoint := fmt.Sprintf("%s/repos/%s/%s/contents",
+		c.baseURL, url.PathEscape(owner), url.PathEscape(repo))
+	// The repo root is the bare /contents endpoint; a trailing slash (empty path)
+	// is not the canonical form and GitHub can 404 it. Only append a path segment
+	// when there is one.
+	if escaped := escapePath(path); escaped != "" {
+		endpoint += "/" + escaped
+	}
 	if ref = strings.TrimSpace(ref); ref != "" {
 		endpoint += "?" + url.Values{"ref": {ref}}.Encode()
 	}
@@ -105,20 +119,25 @@ func parseContents(raw json.RawMessage) (*RepoContent, error) {
 	return content, nil
 }
 
-// decodeContent decodes the base64 payload GitHub returns for a file. Files
-// over ~1MB come back with an empty base64 body ("this file is too large");
-// callers needing those must use the Git blob API, which is out of scope here.
+// decodeContent decodes the base64 payload GitHub returns for a file. A file
+// over the contents-API size cap comes back with encoding "none" and an empty
+// body; that is reported as ErrFileTooLarge (a distinguishable sentinel) so a
+// tree walk can skip it rather than aborting.
 func decodeContent(encoding, content string) ([]byte, error) {
-	if encoding != "base64" {
-		return nil, fmt.Errorf("unsupported content encoding %q (file too large for the contents API?)", encoding)
+	switch encoding {
+	case "base64":
+		// GitHub wraps the base64 payload at column 60 with newlines.
+		cleaned := strings.NewReplacer("\n", "", "\r", "").Replace(content)
+		decoded, err := base64.StdEncoding.DecodeString(cleaned)
+		if err != nil {
+			return nil, fmt.Errorf("decode file content: %w", err)
+		}
+		return decoded, nil
+	case "none":
+		return nil, ErrFileTooLarge
+	default:
+		return nil, fmt.Errorf("unsupported github content encoding %q", encoding)
 	}
-	// GitHub wraps the base64 payload at column 60 with newlines.
-	cleaned := strings.NewReplacer("\n", "", "\r", "").Replace(content)
-	decoded, err := base64.StdEncoding.DecodeString(cleaned)
-	if err != nil {
-		return nil, fmt.Errorf("decode file content: %w", err)
-	}
-	return decoded, nil
 }
 
 func escapePath(path string) string {

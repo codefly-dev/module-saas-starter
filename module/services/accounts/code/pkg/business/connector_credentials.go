@@ -166,12 +166,17 @@ func (s *Service) DeleteSourceCredential(ctx context.Context, orgID, sourceID st
 // tenant session, makes the call), so the lookup is a cross-tenant control-plane
 // read keyed by the globally unique source id — the same pre-auth path the
 // identity-provider discovery uses. It returns ErrSourceCredentialNotFound when
-// no source, or no signing secret for that source, is configured.
+// no source, or no signing secret for that source, is configured. This is the
+// resolver an unauthenticated webhook receiver calls with a client-controlled
+// path segment, so a source id that isn't even a UUID cannot name a stored row
+// and is reported as a clean miss (ErrSourceCredentialNotFound) rather than a
+// distinct error — otherwise every probe of an invalid path would be logged by
+// the caller as a resolver failure.
 func (s *Service) SourceSigningSecret(ctx context.Context, sourceID string) (string, error) {
 	w := wool.Get(ctx).In("SourceSigningSecret")
 	sourceID, err := normalizeSourceID(sourceID)
 	if err != nil {
-		return "", w.Wrap(err)
+		return "", ErrSourceCredentialNotFound
 	}
 	if s.connectorCipher == nil {
 		return "", w.NewError("connector secret cipher is not configured")
