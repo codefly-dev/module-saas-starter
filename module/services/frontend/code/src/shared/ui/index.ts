@@ -72,3 +72,13 @@ export {
 	TooltipProvider,
 	TooltipTrigger,
 } from "@/components/ui/tooltip";
+
+// Dashboard value-display widgets — bound to a metric's presentational data.
+export {
+	formatMetricValue,
+	KPIRow,
+	type Metric,
+	MetricCard,
+	type MetricFormat,
+	StatTile,
+} from "./metric-tiles";
