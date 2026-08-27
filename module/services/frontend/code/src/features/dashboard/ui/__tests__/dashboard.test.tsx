@@ -1,0 +1,136 @@
+import { cleanup, screen } from "@testing-library/react";
+import { HttpResponse, http } from "msw";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { renderInApp, rpc } from "@/test/container";
+import { server } from "@/test/setup";
+import { dashboard, event, metric } from "../../model/schema";
+import { Dashboard } from "../dashboard";
+
+// Auth state is mutable so a test can drop the org context and assert the
+// no-org window renders as loading, not as empty.
+const { authState } = vi.hoisted(() => ({
+	authState: { organizationId: "org-1" as string | undefined },
+}));
+vi.mock("@/lib/auth", () => ({ useAuth: () => authState }));
+
+beforeEach(() => {
+	authState.organizationId = "org-1";
+});
+afterEach(cleanup);
+
+const login = event("auth.login");
+const insights = dashboard({
+	metrics: [
+		metric({
+			title: "Logins over time",
+			event: login,
+			groupBy: "time",
+			bucket: "day",
+			chart: "line",
+		}),
+		metric({
+			title: "Top event types",
+			groupBy: "event_type",
+			chart: "bar",
+			limit: 6,
+		}),
+		metric({
+			title: "Total logins",
+			event: login,
+			groupBy: "time",
+			bucket: "day",
+			chart: "stat",
+		}),
+	],
+});
+
+function aggregateHandler(
+	timeBuckets: Array<{ key: string; count: string }>,
+	typeBuckets: Array<{ key: string; count: string }>,
+) {
+	return http.post(
+		rpc("AuditService", "AggregateAuditLog"),
+		async ({ request }) => {
+			const body = (await request.json()) as { groupBy?: string };
+			return HttpResponse.json({
+				buckets: body.groupBy === "event_type" ? typeBuckets : timeBuckets,
+			});
+		},
+	);
+}
+
+describe("Dashboard", () => {
+	it("renders real audit aggregates for each declared metric", async () => {
+		server.use(
+			aggregateHandler(
+				[
+					{ key: "2026-08-01", count: "3" },
+					{ key: "2026-08-02", count: "5" },
+				],
+				[
+					{ key: "auth.login", count: "42" },
+					{ key: "org.created", count: "10" },
+				],
+			),
+		);
+
+		renderInApp(<Dashboard data={insights} />);
+
+		// Categorical metric: humanized event label + its count.
+		expect(await screen.findByText("Auth Login")).toBeTruthy();
+		expect(screen.getByText("42")).toBeTruthy();
+		// Stat metric: the summed total (3 + 5).
+		expect(screen.getByText("8")).toBeTruthy();
+	});
+
+	it("draws a line metric with a single time bucket instead of a blank card", async () => {
+		server.use(
+			aggregateHandler(
+				[{ key: "2026-08-01", count: "4" }],
+				[{ key: "auth.login", count: "4" }],
+			),
+		);
+
+		renderInApp(<Dashboard data={insights} />);
+
+		// The line metric renders its chart (not an empty body), and the stat
+		// metric shows the single bucket's value.
+		expect(await screen.findByLabelText("Line chart")).toBeTruthy();
+		expect(screen.getAllByText("4").length).toBeGreaterThan(0);
+		expect(screen.queryByText("No events yet.")).toBeNull();
+	});
+
+	it("surfaces a failed aggregate as an error, not as empty", async () => {
+		server.use(
+			http.post(rpc("AuditService", "AggregateAuditLog"), () =>
+				HttpResponse.json({ message: "boom" }, { status: 500 }),
+			),
+		);
+
+		renderInApp(<Dashboard data={insights} />);
+
+		expect(
+			await screen.findAllByText("Unable to load this metric."),
+		).not.toHaveLength(0);
+		expect(screen.queryByText("No events yet.")).toBeNull();
+	});
+
+	it("shows loading, not empty, before an org is resolved", () => {
+		authState.organizationId = undefined;
+		let called = false;
+		server.use(
+			http.post(rpc("AuditService", "AggregateAuditLog"), () => {
+				called = true;
+				return HttpResponse.json({ buckets: [] });
+			}),
+		);
+
+		const { container } = renderInApp(<Dashboard data={insights} />);
+
+		// The query is disabled without an org, so no RPC fires and the card
+		// stays in a loading skeleton rather than asserting "no events".
+		expect(called).toBe(false);
+		expect(screen.queryByText("No events yet.")).toBeNull();
+		expect(container.querySelector('[data-slot="skeleton"]')).toBeTruthy();
+	});
+});
