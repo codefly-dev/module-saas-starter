@@ -37,6 +37,7 @@ const solution = toSolutionSpec(manifest);
 | `api.exposes` / `api.consumes` | Stable API contracts provided and required, with exact majors. |
 | `events.publishes` / `events.subscribes` | Namespaced, versioned domain events and their handlers. |
 | `ui` | Frontend navigation, routes, widgets, and BFF service requirements. |
+| `dashboard` | Data graph: named audit events, metrics over them, and dashboards binding widgets to metrics. |
 | `needs` | Platform capabilities the backend requires (`store:postgres`, …). |
 | `permissions` | `resource:action` permissions the plugin defines and enforces. |
 | `entitlements` | Plan/grant gates on plugin features. |
@@ -54,6 +55,6 @@ host-owned and resolved after installation.
 
 The identity, services, api, events, ui, needs, permissions, and lifecycle
 sections project directly onto lodestar's `SolutionSpec`. The starter-only
-sections (entitlements, config, migrations, egress, integrity) carry through
-`extensions['x-codefly']` so the projection is lossless. See
+sections (dashboard, entitlements, config, migrations, egress, integrity) carry
+through `extensions['x-codefly']` so the projection is lossless. See
 [`plugin-manifest-schema.md`](../../../../../docs/plugin-manifest-schema.md).

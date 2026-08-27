@@ -29,6 +29,23 @@ export {
 	PLUGIN_MANIFEST_API_VERSION,
 	PLUGIN_MANIFEST_KIND,
 } from "./contracts.js";
+export type {
+	Dashboard,
+	DashboardLayout,
+	DataGraph,
+	DerivedMetric,
+	EventDeclaration,
+	Metric,
+	MetricAggregation,
+	MetricBucket,
+	MetricFilter,
+	MetricGroupBy,
+	MetricOperation,
+	MetricWidget,
+	SourceMetric,
+	WidgetVisualization,
+} from "./data-graph.js";
+export { assertDataGraph } from "./data-graph.js";
 export {
 	assertPluginManifest,
 	definePluginManifest,

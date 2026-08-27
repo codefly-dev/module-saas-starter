@@ -6,6 +6,8 @@ import type {
 	PluginRoute,
 } from "@codefly/saas-plugin-contract";
 
+import type { DataGraph } from "./data-graph.js";
+
 /**
  * Schema identity for `plugin.codefly.yaml`. The api group and version pin the
  * manifest shape independently of any plugin's own version. This mirrors the
@@ -203,6 +205,12 @@ export interface PluginManifest {
 	api?: PluginApi;
 	events?: PluginEvents;
 	ui?: PluginUi;
+	/**
+	 * Data-graph declaration: named audit events, metrics computed over them, and
+	 * dashboards binding widgets to metrics. Starter-only; projects onto
+	 * `SolutionSpec` through `extensions['x-codefly']`.
+	 */
+	dashboard?: DataGraph;
 	needs?: readonly CapabilityRequirement[];
 	permissions?: readonly PluginPermission[];
 	entitlements?: readonly PluginEntitlement[];

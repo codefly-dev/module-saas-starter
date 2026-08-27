@@ -41,6 +41,7 @@ never deployment addresses, credentials, or resolved bindings.
 | `events.publishes` | Domain events emitted. | `name.space.vN` |
 | `events.subscribes` | Domain events consumed, with handler. | `name.space.vN` |
 | `ui` | Frontend navigation, routes, widgets, BFF services. | frontend contract |
+| `dashboard` | Data graph: audit events, metrics, dashboards. | logical id |
 | `needs` | Platform capabilities required to run. | namespaced id |
 | `permissions` | Permissions defined and enforced. | `resource:action` |
 | `entitlements` | Plan/grant gates on features. | namespaced id |
@@ -69,16 +70,54 @@ separate concern (`P3-PLUGIN-005`) and is not performed here.
 | `needs` | `needs` |
 | `permissions` | `permissions` |
 | `lifecycle` | `lifecycle` |
+| `dashboard` | `extensions['x-codefly'].dashboard` |
 | `entitlements` | `extensions['x-codefly'].entitlements` |
 | `config` | `extensions['x-codefly'].config` |
 | `migrations` | `extensions['x-codefly'].migrations` |
 | `egress` | `extensions['x-codefly'].egress` |
 | `integrity` | `extensions['x-codefly'].integrity` |
 
-The five starter-only sections are the deliberate convergence points: obin can
+The six starter-only sections are the deliberate convergence points: obin can
 adopt any of them into `SolutionSpec` proper, at which point the projection
 moves that section from `extensions` to a first-class field with no change to
 `plugin.codefly.yaml` authors.
+
+## The `dashboard` data graph
+
+`dashboard` declares a data graph over the audit RPC, so a consumer adds a
+dashboard in a few lines and drops `<Layout><Dashboard data={…}/></Layout>`. It
+has three node kinds:
+
+- **`events`** — a named audit event bound to an audit `event_type` (e.g.
+  `guardrail.triggered.v1`). Metrics reference it by `name`.
+- **`metrics`** — a `source` metric filters one event and compiles to an
+  `AuditService.AggregateAuditLog` query (its `groupBy`/`bucket`/`aggregation`
+  are exactly that RPC's dimensions); a `derived` metric combines other metrics
+  (`sum`, `ratio`, `difference`).
+- **`dashboards`** — a `layout` of `widgets`, each binding a `visualization` to
+  one metric. These metric-bound widgets are distinct from `ui.widgets`, which
+  are presentation slots contributed to host surfaces; the two never mix.
+
+The schema owns the per-node field formats — including the two shape rules that
+cross fields: a metric carries a `bucket` exactly when it groups by `time`, and
+a `ratio`/`difference` takes exactly two inputs (`sum` takes two or more). The
+host validator adds only what a JSON Schema cannot express: referential
+integrity — every metric filter names a declared event, every derived-metric
+input and every widget names a declared metric — and that the derived-metric
+reference graph is acyclic.
+
+What neither layer checks is **dimensional coherence** — whether a metric's
+`groupBy` is meaningful for its data, or whether a derived metric's inputs have
+compatible shapes. That is deliberately the compiler's job, not the schema's,
+and the schema stays permissive on purpose: legitimate combinations must not be
+rejected here. A `ratio` of a per-day series and a scalar total (`groupBy:
+event_type`, which yields a single bucket) is a valid rate; a rule that forced
+matching `groupBy`/`bucket` across inputs would wrongly reject it. The compiler
+that lowers a metric to an `AggregateAuditLog` query is the single place that
+knows each metric's resolved shape, so it owns coherence.
+
+This section gates the SDK that compiles metrics to audit queries and the
+`<Dashboard>` component that renders them.
 
 ## Scope
 

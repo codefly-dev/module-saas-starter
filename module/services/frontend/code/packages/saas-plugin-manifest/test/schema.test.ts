@@ -21,6 +21,7 @@ const MANIFEST_SECTIONS = [
 	"api",
 	"events",
 	"ui",
+	"dashboard",
 	"needs",
 	"permissions",
 	"entitlements",

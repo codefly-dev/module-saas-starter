@@ -44,6 +44,7 @@ describe("reference plugin.codefly.yaml", () => {
 		const manifest = loadPluginManifest(example);
 		const extensions = toSolutionSpec(manifest).extensions?.["x-codefly"];
 
+		expect(extensions?.dashboard).toBe(manifest.dashboard);
 		expect(extensions?.entitlements).toBe(manifest.entitlements);
 		expect(extensions?.config).toBe(manifest.config);
 		expect(extensions?.migrations).toBe(manifest.migrations);

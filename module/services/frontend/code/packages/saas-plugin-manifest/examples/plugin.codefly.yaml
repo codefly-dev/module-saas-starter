@@ -67,6 +67,58 @@ ui:
         major: 1
         probePath: /api/v1/guardrails/capabilities
 
+dashboard:
+  events:
+    - name: guardrail_triggered
+      type: guardrail.triggered.v1
+      description: A guardrail policy blocked or flagged an action.
+    - name: user_created
+      type: identity.user.created.v1
+  metrics:
+    - id: triggers_over_time
+      kind: source
+      title: Triggers per day
+      filter:
+        event: guardrail_triggered
+      groupBy: time
+      bucket: day
+      aggregation: count
+    - id: signups_over_time
+      kind: source
+      filter:
+        event: user_created
+      groupBy: time
+      bucket: day
+      aggregation: count
+    - id: triggers_by_actor
+      kind: source
+      title: Distinct actors triggered
+      filter:
+        event: guardrail_triggered
+      groupBy: actor
+      aggregation: count_distinct
+    - id: trigger_rate
+      kind: derived
+      title: Triggers per signup
+      operation: ratio
+      inputs: [triggers_over_time, signups_over_time]
+  dashboards:
+    - id: guardrails_overview
+      title: Guardrails overview
+      layout: grid
+      widgets:
+        - id: triggers_trend
+          metric: triggers_over_time
+          visualization: line
+          title: Triggers per day
+        - id: trigger_rate_number
+          metric: trigger_rate
+          visualization: number
+          title: Triggers per signup
+        - id: active_actors
+          metric: triggers_by_actor
+          visualization: bar
+
 needs:
   - capability: store:postgres
   - capability: secrets:vault

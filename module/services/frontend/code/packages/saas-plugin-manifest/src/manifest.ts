@@ -22,6 +22,7 @@ import {
 	type PluginPermission,
 	type PluginService,
 } from "./contracts.js";
+import { assertDataGraph } from "./data-graph.js";
 
 function assertManifest(
 	condition: unknown,
@@ -497,6 +498,7 @@ export function assertPluginManifest(
 			"api",
 			"events",
 			"ui",
+			"dashboard",
 			"needs",
 			"permissions",
 			"entitlements",
@@ -576,6 +578,8 @@ export function assertPluginManifest(
 	}
 
 	if (value.ui !== undefined) validateUi(value, name);
+
+	if (value.dashboard !== undefined) assertDataGraph(value.dashboard);
 
 	if (value.needs !== undefined) {
 		validateArraySection<CapabilityRequirement>(
