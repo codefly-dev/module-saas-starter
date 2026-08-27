@@ -36,11 +36,27 @@ func serviceConfigPath(t *testing.T) string {
 	return filepath.Join(filepath.Dir(filepath.Dir(currentFile)), "service.codefly.yaml")
 }
 
+// allowedPerimeterConfigDeps is the frozen set of workspace configuration
+// groups the perimeter may depend on: internal-auth carries the Ed25519 trust
+// anchor + internal tokens, and gateway/observability/security carry no
+// external-IdP material. `identity` — the group accounts reads WorkOS/authkit
+// values from — is deliberately absent, as is any future provider group under
+// any name. Asserting deps are a SUBSET of this set (not merely != "identity")
+// means a WorkOS config group added under a different name still trips the test;
+// a legitimate new dependency forces a human to add it here and eyeball it.
+var allowedPerimeterConfigDeps = map[string]bool{
+	"gateway":       true,
+	"internal-auth": true,
+	"observability": true,
+	"security":      true,
+}
+
 // TestPerimeter_WorkspaceConfigExcludesIdentity asserts the sidecar's
-// workspace-configuration-dependencies never pull in `identity` — the config
-// group that carries WorkOS/authkit credentials. internal-auth (the Ed25519
-// trust anchor + internal tokens) is what the perimeter is allowed to depend
-// on; identity would route an external IdP's configuration into the perimeter.
+// workspace-configuration-dependencies stay within the allowlist of
+// external-IdP-free config groups, and in particular never pull in `identity` —
+// the group that carries WorkOS/authkit credentials. internal-auth (the Ed25519
+// trust anchor + internal tokens) is what the perimeter depends on for its trust
+// material; identity would route an external IdP's configuration into the mesh.
 func TestPerimeter_WorkspaceConfigExcludesIdentity(t *testing.T) {
 	t.Parallel()
 
@@ -56,6 +72,10 @@ func TestPerimeter_WorkspaceConfigExcludesIdentity(t *testing.T) {
 		"perimeter must depend on internal-auth for the Ed25519 trust anchor")
 	require.NotContains(t, cfg.WorkspaceConfigurationDependencies, "identity",
 		"perimeter must NOT depend on identity: that would route WorkOS/authkit config into the mesh perimeter")
+	for _, dep := range cfg.WorkspaceConfigurationDependencies {
+		require.Truef(t, allowedPerimeterConfigDeps[dep],
+			"perimeter depends on unlisted config group %q: any group outside allowedPerimeterConfigDeps risks routing external-IdP config into the mesh; add it to the allowlist only after confirming it carries no external-IdP material", dep)
+	}
 }
 
 // TestPerimeter_VerifierIsLocalOwnTokenOnly asserts the request-path token
@@ -107,21 +127,41 @@ func fileImports(t *testing.T, path string) []string {
 	return paths
 }
 
+// httpAllowedPerimeterFiles is the allowlist of package-main source files
+// permitted to import net/http. The sidecar hosts an HTTP gateway plus its
+// rate-limit and telemetry surfaces, which legitimately speak HTTP. The request
+// verifier — sidecar.go and any NEW same-package helper checkJWT reaches — is
+// deliberately absent: it verifies own tokens with local Ed25519 crypto and its
+// only permitted network call is the api-key backend gRPC. Adding a file here
+// forces a human to justify a new HTTP surface in the perimeter and confirm it
+// carries no external-IdP call in the request path.
+var httpAllowedPerimeterFiles = map[string]bool{
+	"gateway.go":           true,
+	"gateway_solutions.go": true,
+	"main.go":              true,
+	"ratelimit.go":         true,
+	"telemetry_metrics.go": true,
+}
+
 // TestPerimeter_NoExternalIdPImports guards ask #2 of issue #313 structurally.
 //
-// The verifier file (sidecar.go — Check/checkJWT/checkAPIKey) must not import
-// net/http: it verifies own tokens with local Ed25519 crypto and the only
-// permitted network call is the api-key backend RPC (a generated gRPC client).
-// A blanket net/http scan across the package would false-positive because the
-// sidecar also hosts an HTTP gateway (gateway.go, main.go, ratelimit.go,
-// telemetry_metrics.go legitimately import net/http), so this is scoped to the
-// verifier source.
+// net/http scan: every package-main production file EXCEPT the allowlisted HTTP
+// surfaces must not import net/http. Scoping to sidecar.go alone would miss the
+// real regression this closes: a JWKS/HTTP key-fetch added in a NEW file (e.g. a
+// jwks.go that pulls the verification key from an external IdP endpoint) reached
+// from checkJWT — such a file leaves issuer and emitted headers unchanged, so no
+// behavioral test catches it, and a generic HTTP-client import path carries no
+// "workos"/"authkit" substring for the scan below to catch either. Pinning the
+// permitted-importer set to a frozen allowlist means any other file pulling in
+// net/http fails here. The scan is the top-level main package only: the verifier
+// and its same-package helpers live there, while the generated grpc-gateway code
+// under pkg/gen legitimately imports net/http and is not hand-edited.
 //
-// Separately, NO file anywhere in the perimeter service may import a
+// workos/authkit scan: NO file anywhere in the perimeter service may import a
 // WorkOS/authkit package. Those substrings never legitimately appear in an
-// import path here, so this scan is package-wide — closing the gap where a
-// provider JWKS/HTTP client is added via a helper in a new file reachable from
-// checkJWT.
+// import path here, so this scan stays package-wide (the whole tree), closing
+// the gap where a provider client is added via a helper in a new file or
+// subpackage.
 func TestPerimeter_NoExternalIdPImports(t *testing.T) {
 	t.Parallel()
 
@@ -129,12 +169,20 @@ func TestPerimeter_NoExternalIdPImports(t *testing.T) {
 	require.True(t, ok)
 	codeDir := filepath.Dir(currentFile)
 
-	for _, imp := range fileImports(t, filepath.Join(codeDir, "sidecar.go")) {
-		require.NotContains(t, strings.ToLower(imp), "net/http",
-			"verifier source sidecar.go must not import %q: the perimeter verifies own tokens with local crypto only", imp)
+	entries, err := os.ReadDir(codeDir)
+	require.NoError(t, err)
+	for _, entry := range entries {
+		name := entry.Name()
+		if entry.IsDir() || filepath.Ext(name) != ".go" || strings.HasSuffix(name, "_test.go") || httpAllowedPerimeterFiles[name] {
+			continue
+		}
+		for _, imp := range fileImports(t, filepath.Join(codeDir, name)) {
+			require.NotContains(t, strings.ToLower(imp), "net/http",
+				"%s imports %q but is not on httpAllowedPerimeterFiles: the perimeter verifies own tokens with local crypto and must not reach an external IdP over HTTP; if this file legitimately needs net/http, add it to the allowlist only after confirming it carries no external-IdP call in the request path", name, imp)
+		}
 	}
 
-	err := filepath.WalkDir(codeDir, func(path string, entry fs.DirEntry, walkErr error) error {
+	err = filepath.WalkDir(codeDir, func(path string, entry fs.DirEntry, walkErr error) error {
 		require.NoError(t, walkErr)
 		if entry.IsDir() || filepath.Ext(path) != ".go" {
 			return nil
