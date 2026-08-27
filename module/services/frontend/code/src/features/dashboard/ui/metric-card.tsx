@@ -1,4 +1,4 @@
-import { BarChart3 } from "lucide-react";
+import { AlertTriangle, BarChart3 } from "lucide-react";
 import { Sparkline } from "@/components/sparkline";
 import { formatAuditAction } from "@/features/audit/model/transforms";
 import {
@@ -24,7 +24,7 @@ export function MetricCard({
 	metric: MetricDef;
 	orgId: string;
 }) {
-	const { points, total, isLoading } = useMetric(metric, orgId);
+	const { points, total, status } = useMetric(metric, orgId);
 
 	return (
 		<Card>
@@ -35,8 +35,13 @@ export function MetricCard({
 				)}
 			</CardHeader>
 			<CardContent>
-				{isLoading ? (
+				{status === "loading" ? (
 					<Skeleton className="h-[120px] w-full" />
+				) : status === "error" ? (
+					<div className="flex items-center gap-2 py-6 text-sm text-destructive">
+						<AlertTriangle className="h-4 w-4" />
+						Unable to load this metric.
+					</div>
 				) : points.length === 0 ? (
 					<div className="flex items-center gap-2 py-6 text-sm text-muted-foreground">
 						<BarChart3 className="h-4 w-4" />

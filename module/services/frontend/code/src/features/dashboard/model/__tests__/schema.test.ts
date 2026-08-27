@@ -2,11 +2,8 @@ import { describe, expect, it } from "vitest";
 import { dashboard, event, metric } from "../schema";
 
 describe("dashboard data-graph declaration", () => {
-	it("names an event type with an optional label", () => {
-		expect(event("auth.login", "Logins")).toEqual({
-			type: "auth.login",
-			label: "Logins",
-		});
+	it("names an event type", () => {
+		expect(event("auth.login")).toEqual({ type: "auth.login" });
 	});
 
 	it("carries a metric's aggregation and chart intent through", () => {

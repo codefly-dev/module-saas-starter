@@ -7,17 +7,22 @@ export interface MetricPoint {
 	count: number;
 }
 
+// A metric is either still resolving (query pending — includes the pre-org
+// window where it's disabled), failed, or ready with data. Kept distinct so the
+// card never renders a failed or not-yet-loaded query as "no events".
+export type MetricStatus = "loading" | "error" | "ready";
+
 export interface MetricSeries {
 	points: MetricPoint[];
 	total: number;
-	isLoading: boolean;
+	status: MetricStatus;
 }
 
 // useMetric resolves a MetricDef against the audit AggregateAuditLog RPC and
 // shapes the buckets for its chart: time series stay in chronological order,
 // categorical series rank by count and honor the metric's top-N limit.
 export function useMetric(metric: MetricDef, orgId: string): MetricSeries {
-	const { data, isLoading } = useAuditAggregate(
+	const { data, isPending, isError } = useAuditAggregate(
 		{
 			orgId,
 			eventType: metric.event?.type,
@@ -42,5 +47,13 @@ export function useMetric(metric: MetricDef, orgId: string): MetricSeries {
 		[points],
 	);
 
-	return { points, total, isLoading };
+	// isPending stays true while the query is disabled (orgId not resolved yet),
+	// so a metric awaiting its org context reads as loading, never as empty.
+	const status: MetricStatus = isError
+		? "error"
+		: isPending
+			? "loading"
+			: "ready";
+
+	return { points, total, status };
 }

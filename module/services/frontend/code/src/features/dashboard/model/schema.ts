@@ -18,11 +18,10 @@ export type ChartKind = "line" | "bar" | "stat";
 // An event names an audit event type the dashboard reads (e.g. "auth.login").
 export interface EventDef {
 	type: string;
-	label?: string;
 }
 
-export function event(type: string, label?: string): EventDef {
-	return { type, label };
+export function event(type: string): EventDef {
+	return { type };
 }
 
 // A metric is one node in the data graph: an aggregation over the audit trail.
