@@ -1,6 +1,6 @@
 {
   "note": "Base-file integrity manifest for the saas-starter module. Generated FROM canonical by `node tools/base-integrity.mjs gen`. Consumers MUST NOT hand-edit base files — only add files on the side. Regenerated on every codefly sync from canonical.",
-  "fileCount": 1735,
+  "fileCount": 1737,
   "files": {
     "AUTHORIZATION_CATALOG.md": "b2ea5d41f0098e80315e02e7c4bdbda03b65c8eef463426242552fd3c047ca0a",
     "CONTRACT_VERSIONING.md": "02031aa87922ab5ec573ea582cf584271873481de6ceabbda52b1bfda005ffbd",
@@ -995,6 +995,8 @@
     "services/frontend/code/src/components/admin-route-shell.tsx": "1330a46de6472561ffcbb0a332f2192e6dce6c524299c76ea9717bb755671cbf",
     "services/frontend/code/src/components/auth/role-gate.tsx": "81aa9ca42ddd21fb92bf06a7e005483603abc266239a00b2e855ac35b254dc7d",
     "services/frontend/code/src/components/brand-mark.tsx": "7838400156bf16828d9ad4fe88bf5585c0908ec9ef84408a08ddd76d2569993d",
+    "services/frontend/code/src/components/collection.test.tsx": "45d61dd42d524d54209ff0a5b6e3490a477a91135585e31f11091a5e9b5f3484",
+    "services/frontend/code/src/components/collection.tsx": "546c11fda9b900c1b817bf0a786836c85ebf2fd4cd8c2974e7f693e6bc899ccf",
     "services/frontend/code/src/components/command-palette.tsx": "45b0bed803b5f88717619e3914057dde8b39b309ad7c680f9be6414de3e5a67a",
     "services/frontend/code/src/components/consent-banner.test.tsx": "b5044e33b347d500ea9bf20b756629535040cc3660b028e704e5d33e035a00d5",
     "services/frontend/code/src/components/consent-banner.tsx": "37ce08838297011c962e026b9b71fc79a930d8903085b9895488efca31751312",
