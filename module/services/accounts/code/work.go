@@ -210,6 +210,11 @@ func doWork(ctx context.Context) (Clean, error) {
 	service.SetOrgIdentityProviderCipher(vaultClient)
 	service.SetConnectorCipher(vaultClient)
 	service.SetGitHubConnector(githubconnector.NewConnector())
+	// Datasource connector (issue #274): per-source credentials are Vault-transit
+	// encrypted, and pulled files are enqueued onto the durable inbox seam the
+	// documents module consumes. GITHUB_API_BASE_URL overrides api.github.com for
+	// GitHub Enterprise or tests.
+	service.SetDatasourceConnector(vaultClient, jobStore, os.Getenv("GITHUB_API_BASE_URL"))
 	webhookPolicy := business.NewWebhookEndpointPolicy()
 	service.SetWebhookSecurity(vaultClient, webhookPolicy)
 	webAuthnRPID, webAuthnDisplayName, webAuthnOrigins, err := configuredWebAuthn()
@@ -604,29 +609,35 @@ func doWork(ctx context.Context) (Clean, error) {
 		return nil, fmt.Errorf("BILLING_PROVIDER must be disabled or stripe")
 	}
 
-	// Datasource ingestion (issue #275): when a GitHub source is configured,
-	// expose its inbound push webhook. Receipt verifies X-Hub-Signature-256
-	// against the per-source signing secret and persists the raw, verified
-	// delivery to the jobs inbox under the GitHub delivery id; the documents
-	// ingest service leases and normalizes it off that seam. No worker is
-	// registered here — saas owns connection, documents owns ingest. The
-	// per-source secret is env-configured until the credential store (#274)
-	// replaces the resolver with its Vault-transit implementation.
-	githubSourceID := strings.TrimSpace(os.Getenv("GITHUB_WEBHOOK_SOURCE_ID"))
-	githubSecret := strings.TrimSpace(os.Getenv("GITHUB_WEBHOOK_SECRET"))
-	if githubSourceID != "" || githubSecret != "" {
-		if githubSourceID == "" || githubSecret == "" {
-			return nil, fmt.Errorf("datasource: GITHUB_WEBHOOK_SOURCE_ID and GITHUB_WEBHOOK_SECRET must both be set")
-		}
-		githubSecrets, err := datasource.NewStaticSecretResolver(map[string]string{githubSourceID: githubSecret})
-		if err != nil {
-			return nil, fmt.Errorf("datasource: %w", err)
-		}
+	// Datasource ingestion (issues #274/#275): the leased worker that performs
+	// off-request repo pulls runs whenever datasources are usable. It leases sync
+	// requests enqueued by DatasourceService.SyncSource and walks the repo without
+	// a request deadline, so a large repo can't time out the RPC and gets retry
+	// backoff long enough to outlast a GitHub rate-limit window.
+	datasourceSyncWorker, err := jobs.NewWorker(jobs.WorkerConfig{
+		Store:      jobStore,
+		Queue:      business.DatasourceSyncRequestQueue,
+		Handler:    service.NewDatasourceSyncJobHandler(),
+		RetryDelay: business.DatasourceSyncRetryDelay,
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	// The inbound GitHub push webhook is an unauthenticated, un-rate-limited edge
+	// that resolves a per-source signing secret from the credential store (a
+	// control-plane DB read) on every request. It is opt-in per deployment so a
+	// deployment not using datasources exposes no such surface; once enabled, a
+	// source added through the SDK is live with no redeploy. Receipt verifies
+	// X-Hub-Signature-256 and persists the raw delivery to the jobs inbox under
+	// the GitHub delivery id; the documents ingest service consumes it — saas owns
+	// connection, documents owns ingest.
+	if strings.EqualFold(strings.TrimSpace(os.Getenv("DATASOURCE_GITHUB_WEBHOOK_ENABLED")), "true") {
 		adapters.RegisterHTTPRoute(datasource.GitHubWebhookPath, datasource.NewHandler(
 			datasource.GitHubWebhookPath,
-			datasource.HandlerDeps{Producer: jobStore, Secrets: githubSecrets},
+			datasource.HandlerDeps{Producer: jobStore, Secrets: datasourceSigningSecretResolver{svc: service}},
 		))
-		w.Warn("GitHub datasource webhook enabled — verified deliveries are persisted to the 'datasource' jobs inbox and accumulate as PENDING until the documents ingest service consumes that queue; do not enable this ahead of a running consumer or the jobs table grows unbounded")
+		w.Info("GitHub datasource webhook enabled")
 	}
 
 	// Start background data retention goroutine. Runs once on startup and
@@ -684,6 +695,7 @@ func doWork(ctx context.Context) (Clean, error) {
 	}
 	emailWorker.Start(ctx)
 	webhookWorker.Start(ctx)
+	datasourceSyncWorker.Start(ctx)
 
 	return func() {
 		sw := wool.Get(ctx).In("shutdown")
@@ -721,6 +733,12 @@ func doWork(ctx context.Context) (Clean, error) {
 		shutdownCtx, cancel = context.WithTimeout(context.Background(), 30*time.Second)
 		if err := webhookWorker.Shutdown(shutdownCtx); err != nil {
 			sw.Warn("outbound webhook worker shutdown timed out", wool.ErrField(err))
+		}
+		cancel()
+		sw.Info("stopping datasource sync worker")
+		shutdownCtx, cancel = context.WithTimeout(context.Background(), 30*time.Second)
+		if err := datasourceSyncWorker.Shutdown(shutdownCtx); err != nil {
+			sw.Warn("datasource sync worker shutdown timed out", wool.ErrField(err))
 		}
 		cancel()
 		sw.Info("closing outbound webhook projection database pool")

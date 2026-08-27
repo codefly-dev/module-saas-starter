@@ -61,6 +61,17 @@
       ]
     },
     {
+      "name": "DatasourceService",
+      "full_name": "saas.accounts.v1.DatasourceService",
+      "procedures": [
+        "/saas.accounts.v1.DatasourceService/AddGitHubSource",
+        "/saas.accounts.v1.DatasourceService/DeleteSource",
+        "/saas.accounts.v1.DatasourceService/GetSource",
+        "/saas.accounts.v1.DatasourceService/ListSources",
+        "/saas.accounts.v1.DatasourceService/SyncSource"
+      ]
+    },
+    {
       "name": "DelegationService",
       "full_name": "saas.accounts.v1.DelegationService",
       "procedures": [
@@ -1549,6 +1560,252 @@
       },
       "policy_tier": "auth",
       "description": "Persist purpose-based optional tracking choices and withdrawals.",
+      "owner": {
+        "module": "saas-starter",
+        "service": "accounts"
+      }
+    },
+    {
+      "procedure": "/saas.accounts.v1.DatasourceService/AddGitHubSource",
+      "service": "DatasourceService",
+      "full_service": "saas.accounts.v1.DatasourceService",
+      "method": "AddGitHubSource",
+      "input_type": "saas.accounts.v1.AddGitHubSourceRequest",
+      "output_type": "saas.accounts.v1.AddGitHubSourceResponse",
+      "client_streaming": false,
+      "server_streaming": false,
+      "deprecated": false,
+      "source_proto": "saas/accounts/v1/datasource.proto",
+      "protocols": [
+        "PROTOCOL_GRPC",
+        "PROTOCOL_CONNECT"
+      ],
+      "http_bindings": [],
+      "policy": {
+        "exposure": "EXPOSURE_AUTHENTICATED",
+        "tenant": "TENANT_REQUIREMENT_ORG_ADMIN",
+        "permissions": [],
+        "scopes": [],
+        "resource_bindings": [
+          {
+            "request_field": "org_id",
+            "target": "RESOURCE_TARGET_ORGANIZATION",
+            "lookup": "RESOURCE_LOOKUP_DIRECT_ID"
+          }
+        ],
+        "mfa": "MFA_REQUIREMENT_NONE",
+        "audit": {
+          "events": [
+            "datasource.source.added"
+          ],
+          "emission": "AUDIT_EMISSION_SUCCESS"
+        },
+        "idempotency": "IDEMPOTENCY_REQUIREMENT_FORBIDDEN",
+        "rate_limit": "RATE_LIMIT_CLASS_STANDARD_WRITE",
+        "request_sensitivity": "SENSITIVITY_SECRET",
+        "response_sensitivity": "SENSITIVITY_CONFIDENTIAL",
+        "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
+        "authentication_factor_attempt": false,
+        "conditions": []
+      },
+      "policy_tier": "org_admin",
+      "description": "Connect a GitHub repository as a datasource, storing its access token and optional webhook secret encrypted.",
+      "owner": {
+        "module": "saas-starter",
+        "service": "accounts"
+      }
+    },
+    {
+      "procedure": "/saas.accounts.v1.DatasourceService/DeleteSource",
+      "service": "DatasourceService",
+      "full_service": "saas.accounts.v1.DatasourceService",
+      "method": "DeleteSource",
+      "input_type": "saas.accounts.v1.DeleteSourceRequest",
+      "output_type": "saas.accounts.v1.DeleteSourceResponse",
+      "client_streaming": false,
+      "server_streaming": false,
+      "deprecated": false,
+      "source_proto": "saas/accounts/v1/datasource.proto",
+      "protocols": [
+        "PROTOCOL_GRPC",
+        "PROTOCOL_CONNECT"
+      ],
+      "http_bindings": [],
+      "policy": {
+        "exposure": "EXPOSURE_AUTHENTICATED",
+        "tenant": "TENANT_REQUIREMENT_ORG_ADMIN",
+        "permissions": [],
+        "scopes": [],
+        "resource_bindings": [
+          {
+            "request_field": "org_id",
+            "target": "RESOURCE_TARGET_ORGANIZATION",
+            "lookup": "RESOURCE_LOOKUP_DIRECT_ID"
+          }
+        ],
+        "mfa": "MFA_REQUIREMENT_NONE",
+        "audit": {
+          "events": [
+            "datasource.source.removed"
+          ],
+          "emission": "AUDIT_EMISSION_SUCCESS"
+        },
+        "idempotency": "IDEMPOTENCY_REQUIREMENT_FORBIDDEN",
+        "rate_limit": "RATE_LIMIT_CLASS_STANDARD_WRITE",
+        "request_sensitivity": "SENSITIVITY_INTERNAL",
+        "response_sensitivity": "SENSITIVITY_INTERNAL",
+        "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
+        "authentication_factor_attempt": false,
+        "conditions": []
+      },
+      "policy_tier": "org_admin",
+      "description": "Remove a connected datasource and its stored credentials.",
+      "owner": {
+        "module": "saas-starter",
+        "service": "accounts"
+      }
+    },
+    {
+      "procedure": "/saas.accounts.v1.DatasourceService/GetSource",
+      "service": "DatasourceService",
+      "full_service": "saas.accounts.v1.DatasourceService",
+      "method": "GetSource",
+      "input_type": "saas.accounts.v1.GetSourceRequest",
+      "output_type": "saas.accounts.v1.GetSourceResponse",
+      "client_streaming": false,
+      "server_streaming": false,
+      "deprecated": false,
+      "source_proto": "saas/accounts/v1/datasource.proto",
+      "protocols": [
+        "PROTOCOL_GRPC",
+        "PROTOCOL_CONNECT"
+      ],
+      "http_bindings": [],
+      "policy": {
+        "exposure": "EXPOSURE_AUTHENTICATED",
+        "tenant": "TENANT_REQUIREMENT_ORG_MEMBER",
+        "permissions": [],
+        "scopes": [],
+        "resource_bindings": [
+          {
+            "request_field": "org_id",
+            "target": "RESOURCE_TARGET_ORGANIZATION",
+            "lookup": "RESOURCE_LOOKUP_DIRECT_ID"
+          }
+        ],
+        "mfa": "MFA_REQUIREMENT_NONE",
+        "audit": {
+          "events": [],
+          "emission": "AUDIT_EMISSION_NONE"
+        },
+        "idempotency": "IDEMPOTENCY_REQUIREMENT_FORBIDDEN",
+        "rate_limit": "RATE_LIMIT_CLASS_STANDARD_READ",
+        "request_sensitivity": "SENSITIVITY_INTERNAL",
+        "response_sensitivity": "SENSITIVITY_CONFIDENTIAL",
+        "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
+        "authentication_factor_attempt": false,
+        "conditions": []
+      },
+      "policy_tier": "org_member",
+      "description": "Read one connected datasource in the org.",
+      "owner": {
+        "module": "saas-starter",
+        "service": "accounts"
+      }
+    },
+    {
+      "procedure": "/saas.accounts.v1.DatasourceService/ListSources",
+      "service": "DatasourceService",
+      "full_service": "saas.accounts.v1.DatasourceService",
+      "method": "ListSources",
+      "input_type": "saas.accounts.v1.ListSourcesRequest",
+      "output_type": "saas.accounts.v1.ListSourcesResponse",
+      "client_streaming": false,
+      "server_streaming": false,
+      "deprecated": false,
+      "source_proto": "saas/accounts/v1/datasource.proto",
+      "protocols": [
+        "PROTOCOL_GRPC",
+        "PROTOCOL_CONNECT"
+      ],
+      "http_bindings": [],
+      "policy": {
+        "exposure": "EXPOSURE_AUTHENTICATED",
+        "tenant": "TENANT_REQUIREMENT_ORG_MEMBER",
+        "permissions": [],
+        "scopes": [],
+        "resource_bindings": [
+          {
+            "request_field": "org_id",
+            "target": "RESOURCE_TARGET_ORGANIZATION",
+            "lookup": "RESOURCE_LOOKUP_DIRECT_ID"
+          }
+        ],
+        "mfa": "MFA_REQUIREMENT_NONE",
+        "audit": {
+          "events": [],
+          "emission": "AUDIT_EMISSION_NONE"
+        },
+        "idempotency": "IDEMPOTENCY_REQUIREMENT_FORBIDDEN",
+        "rate_limit": "RATE_LIMIT_CLASS_STANDARD_READ",
+        "request_sensitivity": "SENSITIVITY_INTERNAL",
+        "response_sensitivity": "SENSITIVITY_CONFIDENTIAL",
+        "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
+        "authentication_factor_attempt": false,
+        "conditions": []
+      },
+      "policy_tier": "org_member",
+      "description": "List the org's connected datasources.",
+      "owner": {
+        "module": "saas-starter",
+        "service": "accounts"
+      }
+    },
+    {
+      "procedure": "/saas.accounts.v1.DatasourceService/SyncSource",
+      "service": "DatasourceService",
+      "full_service": "saas.accounts.v1.DatasourceService",
+      "method": "SyncSource",
+      "input_type": "saas.accounts.v1.SyncSourceRequest",
+      "output_type": "saas.accounts.v1.SyncSourceResponse",
+      "client_streaming": false,
+      "server_streaming": false,
+      "deprecated": false,
+      "source_proto": "saas/accounts/v1/datasource.proto",
+      "protocols": [
+        "PROTOCOL_GRPC",
+        "PROTOCOL_CONNECT"
+      ],
+      "http_bindings": [],
+      "policy": {
+        "exposure": "EXPOSURE_AUTHENTICATED",
+        "tenant": "TENANT_REQUIREMENT_ORG_ADMIN",
+        "permissions": [],
+        "scopes": [],
+        "resource_bindings": [
+          {
+            "request_field": "org_id",
+            "target": "RESOURCE_TARGET_ORGANIZATION",
+            "lookup": "RESOURCE_LOOKUP_DIRECT_ID"
+          }
+        ],
+        "mfa": "MFA_REQUIREMENT_NONE",
+        "audit": {
+          "events": [
+            "datasource.source.synced"
+          ],
+          "emission": "AUDIT_EMISSION_SUCCESS"
+        },
+        "idempotency": "IDEMPOTENCY_REQUIREMENT_FORBIDDEN",
+        "rate_limit": "RATE_LIMIT_CLASS_STANDARD_WRITE",
+        "request_sensitivity": "SENSITIVITY_INTERNAL",
+        "response_sensitivity": "SENSITIVITY_INTERNAL",
+        "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
+        "authentication_factor_attempt": false,
+        "conditions": []
+      },
+      "policy_tier": "org_admin",
+      "description": "Pull the repository's current contents and enqueue ingestion deliveries.",
       "owner": {
         "module": "saas-starter",
         "service": "accounts"

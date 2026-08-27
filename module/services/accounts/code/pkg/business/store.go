@@ -85,6 +85,23 @@ type Store interface {
 	GetConnectorCredential(ctx context.Context, sourceID string) (*ConnectorCredential, error)
 	DeleteConnectorCredential(ctx context.Context, sourceID string) error
 
+	// Datasource sources (connected external datasources — issue #273/#274).
+	//
+	// Two transaction ownerships, same split as the identity-provider registry:
+	//
+	//   - Insert/List/Get/Delete are org-scoped and MUST run inside the caller's
+	//     WithOrgTx(orgID, …); called bare they hit RLS and see zero rows.
+	//   - GetDatasourceSourceByID is the UNAUTHENTICATED webhook-receipt lookup
+	//     (no tenant context yet), so it opens its OWN control-plane transaction.
+	//     Call it at the top level only — nesting it inside an existing
+	//     WithOrgTx/WithControlPlane violates the no-nesting rule.
+	InsertDatasourceSource(ctx context.Context, source *DatasourceSource) error
+	ListDatasourceSources(ctx context.Context, orgID string) ([]*DatasourceSource, error)
+	GetDatasourceSource(ctx context.Context, orgID, id string) (*DatasourceSource, error)
+	DeleteDatasourceSource(ctx context.Context, orgID, id string) error
+	SetDatasourceSourceSynced(ctx context.Context, orgID, id string, syncedAt time.Time) error
+	GetDatasourceSourceByID(ctx context.Context, id string) (*DatasourceSource, error)
+
 	// Organizations
 	CreateOrganization(ctx context.Context, org *gen.Organization) error
 	GetOrganization(ctx context.Context, id string) (*gen.Organization, error)

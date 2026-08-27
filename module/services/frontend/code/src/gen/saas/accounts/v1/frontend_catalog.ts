@@ -7,6 +7,7 @@ import { AuthService } from "./authentication_pb";
 import { PermissionService, PrincipalService } from "./authorization_pb";
 import { BillingService } from "./billing_pb";
 import { ConsentService } from "./consent_pb";
+import { DatasourceService } from "./datasource_pb";
 import { DelegationService } from "./delegations_pb";
 import { IdentityService, UserService } from "./identity_pb";
 import { IntrospectionService } from "./introspection_pb";
@@ -158,6 +159,7 @@ export const ACCOUNT_SERVICE_DESCRIPTORS = {
   AuthService,
   BillingService,
   ConsentService,
+  DatasourceService,
   DelegationService,
   GDPRService,
   IdentityService,
@@ -188,6 +190,7 @@ export interface AccountsClients {
   readonly AuthService: Client<typeof AuthService>;
   readonly BillingService: Client<typeof BillingService>;
   readonly ConsentService: Client<typeof ConsentService>;
+  readonly DatasourceService: Client<typeof DatasourceService>;
   readonly DelegationService: Client<typeof DelegationService>;
   readonly GDPRService: Client<typeof GDPRService>;
   readonly IdentityService: Client<typeof IdentityService>;
@@ -217,6 +220,7 @@ export function createAccountsClients(transport: Transport): AccountsClients {
     AuthService: createClient(AuthService, transport),
     BillingService: createClient(BillingService, transport),
     ConsentService: createClient(ConsentService, transport),
+    DatasourceService: createClient(DatasourceService, transport),
     DelegationService: createClient(DelegationService, transport),
     GDPRService: createClient(GDPRService, transport),
     IdentityService: createClient(IdentityService, transport),

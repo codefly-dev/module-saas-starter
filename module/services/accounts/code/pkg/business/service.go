@@ -48,8 +48,12 @@ type Service struct {
 	abuseVerifier             abuse.Verifier
 	identityCipher            SecretCipher               // encrypts per-org IdP client secrets
 	identityRegistry          *IdentityProviderRegistry  // resolves org → provider stack, cache-invalidated on config change
-	connectorCipher           SecretCipher               // encrypts per-source datasource connector credentials
-	githubConnector           *githubconnector.Connector // mints installation tokens and pulls repo contents
+	connectorCipher           SecretCipher               // encrypts per-source datasource connector credentials (#274 connector store)
+	githubConnector           *githubconnector.Connector // mints installation tokens and pulls repo contents (#274 connector store)
+	datasourceCipher          SecretCipher               // encrypts per-source DatasourceService credentials + webhook secrets
+	datasourceJobs            jobs.Producer              // privileged inbox producer for datasource ingest deliveries
+	githubBaseURL             string                     // api.github.com override for the datasource connector
+	newGitHubClient           func(token string) GitHubContentClient
 }
 
 // CodeExchanger abstracts the OAuth 2.0 code-for-token exchange so the
