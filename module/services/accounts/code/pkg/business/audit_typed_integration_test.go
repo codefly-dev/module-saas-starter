@@ -110,7 +110,8 @@ func TestAuditAggregation(t *testing.T) {
 	seed(business.EventUserUpdated, 3)
 	seed(business.EventSettingsUpdated, 2)
 
-	byType, err := testService.AggregateAuditLog(ctx, business.AuditQuery{OrgID: org}, "event_type", "")
+	byType, err := testService.AggregateAuditLog(ctx, business.AuditQuery{OrgID: org},
+		business.AuditAggregationSpec{GroupBy: []string{"event_type"}})
 	require.NoError(t, err)
 	counts := map[string]int64{}
 	var typeTotal int64
@@ -125,18 +126,110 @@ func TestAuditAggregation(t *testing.T) {
 
 	// A filtered event_type aggregation isolates one type.
 	filtered, err := testService.AggregateAuditLog(ctx,
-		business.AuditQuery{OrgID: org, EventType: string(business.EventUserUpdated)}, "event_type", "")
+		business.AuditQuery{OrgID: org, EventType: string(business.EventUserUpdated)},
+		business.AuditAggregationSpec{GroupBy: []string{"event_type"}})
 	require.NoError(t, err)
 	require.Len(t, filtered, 1)
 	require.Equal(t, int64(3), filtered[0].Count)
 
-	byDay, err := testService.AggregateAuditLog(ctx, business.AuditQuery{OrgID: org}, "time", "day")
+	byDay, err := testService.AggregateAuditLog(ctx, business.AuditQuery{OrgID: org},
+		business.AuditAggregationSpec{GroupBy: []string{"time"}, Bucket: "day"})
 	require.NoError(t, err)
 	var dayTotal int64
 	for _, b := range byDay {
 		dayTotal += b.Count
 	}
 	require.Equal(t, typeTotal, dayTotal, "time buckets must cover the same events as type buckets")
+}
+
+// TestAuditAggregationMetrics exercises the non-count aggregations: numeric
+// sum/avg/min/max/percentile over a payload field, distinct-count, multi-
+// dimensional grouping, and derived ratios — all under org-scoped RLS.
+func TestAuditAggregationMetrics(t *testing.T) {
+	clearData(t)
+	ctx := testCtx
+	_, org := mustUserAndOrg(t, ctx, "metrics@audit-test.com", "metrics-audit", "Metrics Co")
+
+	// Seed events carrying a numeric payload field "amount" plus a
+	// non-numeric outcome, across two distinct actors.
+	seed := func(actor string, outcome string, amount int) {
+		require.NoError(t, testStore.WithOrgTx(ctx, org, func(ctx context.Context) error {
+			return testStore.InsertAuditEvent(ctx, business.AuditEntry{
+				ActorType: "user", ActorID: actor, EventType: business.EventUserUpdated, Resource: "user",
+				OrgID: org, Payload: map[string]any{"amount": amount, "outcome": outcome},
+			})
+		}))
+	}
+	actorA := business.NewIDString()
+	actorB := business.NewIDString()
+	seed(actorA, "ok", 10)
+	seed(actorA, "ok", 20)
+	seed(actorB, "error", 30)
+	seed(actorB, "ok", 40)
+
+	q := business.AuditQuery{OrgID: org, EventType: string(business.EventUserUpdated)}
+
+	// Numeric aggregations over payload:amount, grouped as a single bucket.
+	agg, err := testService.AggregateAuditLog(ctx, q, business.AuditAggregationSpec{
+		GroupBy: []string{"event_type"},
+		Metrics: []business.AuditMetric{
+			{Op: "sum", Field: "payload:amount"},
+			{Op: "avg", Field: "payload:amount"},
+			{Op: "min", Field: "payload:amount"},
+			{Op: "max", Field: "payload:amount"},
+			{Op: "count_distinct", Field: "actor_id", Alias: "actors"},
+			{Op: "percentile", Field: "payload:amount", Percentile: 0.5, Alias: "p50"},
+		},
+	})
+	require.NoError(t, err)
+	require.Len(t, agg, 1)
+	m := agg[0].Metrics
+	require.Equal(t, int64(4), agg[0].Count)
+	require.InDelta(t, 100, m["sum_amount"], 0.001)
+	require.InDelta(t, 25, m["avg_amount"], 0.001)
+	require.InDelta(t, 10, m["min_amount"], 0.001)
+	require.InDelta(t, 40, m["max_amount"], 0.001)
+	require.InDelta(t, 2, m["actors"], 0.001)
+	require.InDelta(t, 25, m["p50"], 0.001)
+
+	// Multi-dimensional grouping by actor + payload outcome.
+	byActorOutcome, err := testService.AggregateAuditLog(ctx, q, business.AuditAggregationSpec{
+		GroupBy: []string{"actor", "payload:outcome"},
+	})
+	require.NoError(t, err)
+	seen := map[string]int64{}
+	for _, b := range byActorOutcome {
+		require.Len(t, b.Keys, 2)
+		seen[b.Keys[0]+"/"+b.Keys[1]] = b.Count
+	}
+	require.Equal(t, int64(2), seen[actorA+"/ok"])
+	require.Equal(t, int64(1), seen[actorB+"/error"])
+	require.Equal(t, int64(1), seen[actorB+"/ok"])
+
+	// Derived ratio: error rate = count(errors) / count(all).
+	byOutcome, err := testService.AggregateAuditLog(ctx, q, business.AuditAggregationSpec{
+		GroupBy: []string{"event_type"},
+		Metrics: []business.AuditMetric{
+			{Op: "count", Alias: "total"},
+			{Op: "count_distinct", Field: "payload:outcome", Alias: "outcomes"},
+		},
+		Derived: []business.AuditDerivedMetric{
+			{Alias: "distinct_ratio", Numerator: "outcomes", Denominator: "total"},
+		},
+	})
+	require.NoError(t, err)
+	require.Len(t, byOutcome, 1)
+	// 2 distinct outcomes over 4 events = 0.5.
+	require.InDelta(t, 0.5, byOutcome[0].Metrics["distinct_ratio"], 0.001)
+
+	// Invalid specs are rejected before hitting the database.
+	require.Error(t, business.AuditAggregationSpec{GroupBy: []string{"bogus"}}.Validate())
+	require.Error(t, business.AuditAggregationSpec{
+		Metrics: []business.AuditMetric{{Op: "sum", Field: "actor_id"}},
+	}.Validate())
+	require.Error(t, business.AuditAggregationSpec{
+		Metrics: []business.AuditMetric{{Op: "percentile", Field: "payload:amount", Percentile: 2}},
+	}.Validate())
 }
 
 // TestAuditPayloadSearch verifies JSONB containment filtering over typed payloads.

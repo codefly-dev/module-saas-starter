@@ -430,17 +430,28 @@
           },
           {
             "name": "groupBy",
-            "description": "group_by ∈ {event_type, category, actor, time}. Defaults to event_type.",
+            "description": "group_by ∈ {event_type, category, actor, time, payload:\u003ckey\u003e}. Defaults to\nevent_type. Superseded by group_bys when that is set.",
             "in": "query",
             "required": false,
             "type": "string"
           },
           {
             "name": "bucket",
-            "description": "bucket sizes the time grain when group_by == \"time\": day|week|month.",
+            "description": "bucket sizes the time grain for a \"time\" dimension: day|week|month.",
             "in": "query",
             "required": false,
             "type": "string"
+          },
+          {
+            "name": "groupBys",
+            "description": "group_bys lists group dimensions for multi-dimensional grouping. When set it\nsupersedes group_by; each entry is one of the group_by values above.",
+            "in": "query",
+            "required": false,
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "collectionFormat": "multi"
           }
         ],
         "tags": [
@@ -5386,13 +5397,45 @@
       "type": "object",
       "properties": {
         "key": {
-          "type": "string"
+          "type": "string",
+          "description": "key is the first group dimension's value; keys holds every dimension."
         },
         "count": {
           "type": "string",
-          "format": "int64"
+          "format": "int64",
+          "description": "count is the group's COUNT(*), always populated for back-compat and also\navailable in metrics under any requested count alias."
+        },
+        "keys": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "description": "keys are the group dimension values, aligned with the effective group_bys."
+        },
+        "metrics": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "number",
+            "format": "double"
+          },
+          "description": "metrics maps each requested metric and derived alias to its value."
         }
       }
+    },
+    "v1AuditDerivedMetric": {
+      "type": "object",
+      "properties": {
+        "alias": {
+          "type": "string"
+        },
+        "numerator": {
+          "type": "string"
+        },
+        "denominator": {
+          "type": "string"
+        }
+      },
+      "description": "AuditDerivedMetric is a ratio of two other metrics computed per group (e.g. an\nerror rate). numerator/denominator reference metric aliases; a zero or missing\ndenominator yields 0."
     },
     "v1AuditEvent": {
       "type": "object",
@@ -5472,6 +5515,29 @@
           "type": "string"
         }
       }
+    },
+    "v1AuditMetric": {
+      "type": "object",
+      "properties": {
+        "op": {
+          "type": "string",
+          "description": "op ∈ {count, count_distinct, sum, avg, min, max, percentile}."
+        },
+        "field": {
+          "type": "string",
+          "description": "field is required for every op except count. Numeric ops (sum/avg/min/max/\npercentile) require a \"payload:\u003ckey\u003e\" field; non-numeric payload values are\nignored."
+        },
+        "percentile": {
+          "type": "number",
+          "format": "double",
+          "description": "percentile ∈ (0,1], used only when op == percentile (0.95 → p95)."
+        },
+        "alias": {
+          "type": "string",
+          "description": "alias names this metric in the response map. Defaults to \"count\" for count,\nelse \"\u003cop\u003e_\u003ckey\u003e\"."
+        }
+      },
+      "description": "AuditMetric is one aggregation computed per group. op selects the function;\nfield names the payload key it reads. A payload field is written\n\"payload:\u003ckey\u003e\" (e.g. \"payload:amount\"); the bare column names actor_id,\nevent_type, category, resource, resource_id are also accepted by\ncount_distinct."
     },
     "v1AuthenticateRequest": {
       "type": "object",

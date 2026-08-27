@@ -72,6 +72,34 @@ message ExportAuditLogResponse {
   string filename = 3;
 }
 
+// AuditMetric is one aggregation computed per group. op selects the function;
+// field names the payload key it reads. A payload field is written
+// "payload:<key>" (e.g. "payload:amount"); the bare column names actor_id,
+// event_type, category, resource, resource_id are also accepted by
+// count_distinct.
+message AuditMetric {
+  // op ∈ {count, count_distinct, sum, avg, min, max, percentile}.
+  string op = 1;
+  // field is required for every op except count. Numeric ops (sum/avg/min/max/
+  // percentile) require a "payload:<key>" field; non-numeric payload values are
+  // ignored.
+  string field = 2;
+  // percentile ∈ (0,1], used only when op == percentile (0.95 → p95).
+  double percentile = 3;
+  // alias names this metric in the response map. Defaults to "count" for count,
+  // else "<op>_<key>".
+  string alias = 4;
+}
+
+// AuditDerivedMetric is a ratio of two other metrics computed per group (e.g. an
+// error rate). numerator/denominator reference metric aliases; a zero or missing
+// denominator yields 0.
+message AuditDerivedMetric {
+  string alias = 1;
+  string numerator = 2;
+  string denominator = 3;
+}
+
 message AggregateAuditLogRequest {
   string org_id = 1;
   string actor_id = 2;
@@ -80,15 +108,31 @@ message AggregateAuditLogRequest {
   string resource = 5;
   google.protobuf.Timestamp from = 6;
   google.protobuf.Timestamp to = 7;
-  // group_by ∈ {event_type, category, actor, time}. Defaults to event_type.
+  // group_by ∈ {event_type, category, actor, time, payload:<key>}. Defaults to
+  // event_type. Superseded by group_bys when that is set.
   string group_by = 8;
-  // bucket sizes the time grain when group_by == "time": day|week|month.
+  // bucket sizes the time grain for a "time" dimension: day|week|month.
   string bucket = 9;
+  // group_bys lists group dimensions for multi-dimensional grouping. When set it
+  // supersedes group_by; each entry is one of the group_by values above.
+  repeated string group_bys = 10;
+  // metrics selects the aggregations computed per group. When empty a single
+  // COUNT(*) is returned.
+  repeated AuditMetric metrics = 11;
+  // derived computes ratios of the metrics above, per group.
+  repeated AuditDerivedMetric derived = 12;
 }
 
 message AuditAggregateBucket {
+  // key is the first group dimension's value; keys holds every dimension.
   string key = 1;
+  // count is the group's COUNT(*), always populated for back-compat and also
+  // available in metrics under any requested count alias.
   int64 count = 2;
+  // keys are the group dimension values, aligned with the effective group_bys.
+  repeated string keys = 3;
+  // metrics maps each requested metric and derived alias to its value.
+  map<string, double> metrics = 4;
 }
 
 message AggregateAuditLogResponse {

@@ -47,12 +47,61 @@ export function useAuditEventTypes(options: { enabled?: boolean } = {}) {
 	});
 }
 
+// A group dimension is one of the fixed keys or a payload field addressed as
+// `payload:<key>`.
+export type AuditGroupDimension =
+	| "event_type"
+	| "category"
+	| "actor"
+	| "time"
+	| `payload:${string}`;
+
+export type AuditMetricOp =
+	| "count"
+	| "count_distinct"
+	| "sum"
+	| "avg"
+	| "min"
+	| "max"
+	| "percentile";
+
+export interface AuditMetricSpec {
+	op: AuditMetricOp;
+	// Required for every op except count. Numeric ops need a `payload:<key>`.
+	field?: string;
+	// Used only when op === "percentile" (0.95 → p95).
+	percentile?: number;
+	// Names the metric in each bucket's `metrics` map; defaults server-side.
+	alias?: string;
+}
+
+export interface AuditDerivedSpec {
+	alias: string;
+	numerator: string;
+	denominator: string;
+}
+
 export interface AuditAggregateParams {
 	orgId?: string;
 	eventType?: string;
 	category?: string;
-	groupBy: "event_type" | "category" | "actor" | "time";
+	// groupBy is the sole dimension; groupBys supersedes it for multi-dim
+	// grouping. One of the two should be set.
+	groupBy?: AuditGroupDimension;
+	groupBys?: AuditGroupDimension[];
 	bucket?: "day" | "week" | "month";
+	metrics?: AuditMetricSpec[];
+	derived?: AuditDerivedSpec[];
+}
+
+// AuditAggregateBucket is the client-side shape of one aggregation row: the
+// group keys plus every metric/derived value keyed by alias. `key`/`count`
+// mirror `keys[0]` and the group's COUNT(*) for count-only callers.
+export interface AuditAggregateBucket {
+	key: string;
+	count: number;
+	keys: string[];
+	metrics: Record<string, number>;
 }
 
 export function useAuditAggregate(
@@ -67,10 +116,30 @@ export function useAuditAggregate(
 				orgId: params.orgId ?? "",
 				eventType: params.eventType ?? "",
 				category: params.category ?? "",
-				groupBy: params.groupBy,
+				groupBy: params.groupBy ?? "",
+				groupBys: params.groupBys ?? [],
 				bucket: params.bucket ?? "",
+				metrics: (params.metrics ?? []).map((m) => ({
+					op: m.op,
+					field: m.field ?? "",
+					percentile: m.percentile ?? 0,
+					alias: m.alias ?? "",
+				})),
+				derived: (params.derived ?? []).map((d) => ({
+					alias: d.alias,
+					numerator: d.numerator,
+					denominator: d.denominator,
+				})),
 			}),
 		enabled: options.enabled,
-		select: (data) => data.buckets.map((b) => ({ key: b.key, count: Number(b.count) })),
+		select: (data): AuditAggregateBucket[] =>
+			data.buckets.map((b) => ({
+				key: b.key,
+				count: Number(b.count),
+				keys: b.keys,
+				metrics: Object.fromEntries(
+					Object.entries(b.metrics).map(([k, v]) => [k, Number(v)]),
+				),
+			})),
 	});
 }

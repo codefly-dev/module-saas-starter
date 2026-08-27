@@ -516,6 +516,149 @@ func (x *ExportAuditLogResponse) GetFilename() string {
 	return ""
 }
 
+// AuditMetric is one aggregation computed per group. op selects the function;
+// field names the payload key it reads. A payload field is written
+// "payload:<key>" (e.g. "payload:amount"); the bare column names actor_id,
+// event_type, category, resource, resource_id are also accepted by
+// count_distinct.
+type AuditMetric struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// op ∈ {count, count_distinct, sum, avg, min, max, percentile}.
+	Op string `protobuf:"bytes,1,opt,name=op,proto3" json:"op,omitempty"`
+	// field is required for every op except count. Numeric ops (sum/avg/min/max/
+	// percentile) require a "payload:<key>" field; non-numeric payload values are
+	// ignored.
+	Field string `protobuf:"bytes,2,opt,name=field,proto3" json:"field,omitempty"`
+	// percentile ∈ (0,1], used only when op == percentile (0.95 → p95).
+	Percentile float64 `protobuf:"fixed64,3,opt,name=percentile,proto3" json:"percentile,omitempty"`
+	// alias names this metric in the response map. Defaults to "count" for count,
+	// else "<op>_<key>".
+	Alias         string `protobuf:"bytes,4,opt,name=alias,proto3" json:"alias,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *AuditMetric) Reset() {
+	*x = AuditMetric{}
+	mi := &file_saas_accounts_v1_audit_proto_msgTypes[5]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *AuditMetric) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*AuditMetric) ProtoMessage() {}
+
+func (x *AuditMetric) ProtoReflect() protoreflect.Message {
+	mi := &file_saas_accounts_v1_audit_proto_msgTypes[5]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use AuditMetric.ProtoReflect.Descriptor instead.
+func (*AuditMetric) Descriptor() ([]byte, []int) {
+	return file_saas_accounts_v1_audit_proto_rawDescGZIP(), []int{5}
+}
+
+func (x *AuditMetric) GetOp() string {
+	if x != nil {
+		return x.Op
+	}
+	return ""
+}
+
+func (x *AuditMetric) GetField() string {
+	if x != nil {
+		return x.Field
+	}
+	return ""
+}
+
+func (x *AuditMetric) GetPercentile() float64 {
+	if x != nil {
+		return x.Percentile
+	}
+	return 0
+}
+
+func (x *AuditMetric) GetAlias() string {
+	if x != nil {
+		return x.Alias
+	}
+	return ""
+}
+
+// AuditDerivedMetric is a ratio of two other metrics computed per group (e.g. an
+// error rate). numerator/denominator reference metric aliases; a zero or missing
+// denominator yields 0.
+type AuditDerivedMetric struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Alias         string                 `protobuf:"bytes,1,opt,name=alias,proto3" json:"alias,omitempty"`
+	Numerator     string                 `protobuf:"bytes,2,opt,name=numerator,proto3" json:"numerator,omitempty"`
+	Denominator   string                 `protobuf:"bytes,3,opt,name=denominator,proto3" json:"denominator,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *AuditDerivedMetric) Reset() {
+	*x = AuditDerivedMetric{}
+	mi := &file_saas_accounts_v1_audit_proto_msgTypes[6]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *AuditDerivedMetric) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*AuditDerivedMetric) ProtoMessage() {}
+
+func (x *AuditDerivedMetric) ProtoReflect() protoreflect.Message {
+	mi := &file_saas_accounts_v1_audit_proto_msgTypes[6]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use AuditDerivedMetric.ProtoReflect.Descriptor instead.
+func (*AuditDerivedMetric) Descriptor() ([]byte, []int) {
+	return file_saas_accounts_v1_audit_proto_rawDescGZIP(), []int{6}
+}
+
+func (x *AuditDerivedMetric) GetAlias() string {
+	if x != nil {
+		return x.Alias
+	}
+	return ""
+}
+
+func (x *AuditDerivedMetric) GetNumerator() string {
+	if x != nil {
+		return x.Numerator
+	}
+	return ""
+}
+
+func (x *AuditDerivedMetric) GetDenominator() string {
+	if x != nil {
+		return x.Denominator
+	}
+	return ""
+}
+
 type AggregateAuditLogRequest struct {
 	state     protoimpl.MessageState `protogen:"open.v1"`
 	OrgId     string                 `protobuf:"bytes,1,opt,name=org_id,json=orgId,proto3" json:"org_id,omitempty"`
@@ -525,17 +668,26 @@ type AggregateAuditLogRequest struct {
 	Resource  string                 `protobuf:"bytes,5,opt,name=resource,proto3" json:"resource,omitempty"`
 	From      *timestamppb.Timestamp `protobuf:"bytes,6,opt,name=from,proto3" json:"from,omitempty"`
 	To        *timestamppb.Timestamp `protobuf:"bytes,7,opt,name=to,proto3" json:"to,omitempty"`
-	// group_by ∈ {event_type, category, actor, time}. Defaults to event_type.
+	// group_by ∈ {event_type, category, actor, time, payload:<key>}. Defaults to
+	// event_type. Superseded by group_bys when that is set.
 	GroupBy string `protobuf:"bytes,8,opt,name=group_by,json=groupBy,proto3" json:"group_by,omitempty"`
-	// bucket sizes the time grain when group_by == "time": day|week|month.
-	Bucket        string `protobuf:"bytes,9,opt,name=bucket,proto3" json:"bucket,omitempty"`
+	// bucket sizes the time grain for a "time" dimension: day|week|month.
+	Bucket string `protobuf:"bytes,9,opt,name=bucket,proto3" json:"bucket,omitempty"`
+	// group_bys lists group dimensions for multi-dimensional grouping. When set it
+	// supersedes group_by; each entry is one of the group_by values above.
+	GroupBys []string `protobuf:"bytes,10,rep,name=group_bys,json=groupBys,proto3" json:"group_bys,omitempty"`
+	// metrics selects the aggregations computed per group. When empty a single
+	// COUNT(*) is returned.
+	Metrics []*AuditMetric `protobuf:"bytes,11,rep,name=metrics,proto3" json:"metrics,omitempty"`
+	// derived computes ratios of the metrics above, per group.
+	Derived       []*AuditDerivedMetric `protobuf:"bytes,12,rep,name=derived,proto3" json:"derived,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
 
 func (x *AggregateAuditLogRequest) Reset() {
 	*x = AggregateAuditLogRequest{}
-	mi := &file_saas_accounts_v1_audit_proto_msgTypes[5]
+	mi := &file_saas_accounts_v1_audit_proto_msgTypes[7]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -547,7 +699,7 @@ func (x *AggregateAuditLogRequest) String() string {
 func (*AggregateAuditLogRequest) ProtoMessage() {}
 
 func (x *AggregateAuditLogRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_saas_accounts_v1_audit_proto_msgTypes[5]
+	mi := &file_saas_accounts_v1_audit_proto_msgTypes[7]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -560,7 +712,7 @@ func (x *AggregateAuditLogRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use AggregateAuditLogRequest.ProtoReflect.Descriptor instead.
 func (*AggregateAuditLogRequest) Descriptor() ([]byte, []int) {
-	return file_saas_accounts_v1_audit_proto_rawDescGZIP(), []int{5}
+	return file_saas_accounts_v1_audit_proto_rawDescGZIP(), []int{7}
 }
 
 func (x *AggregateAuditLogRequest) GetOrgId() string {
@@ -626,17 +778,45 @@ func (x *AggregateAuditLogRequest) GetBucket() string {
 	return ""
 }
 
+func (x *AggregateAuditLogRequest) GetGroupBys() []string {
+	if x != nil {
+		return x.GroupBys
+	}
+	return nil
+}
+
+func (x *AggregateAuditLogRequest) GetMetrics() []*AuditMetric {
+	if x != nil {
+		return x.Metrics
+	}
+	return nil
+}
+
+func (x *AggregateAuditLogRequest) GetDerived() []*AuditDerivedMetric {
+	if x != nil {
+		return x.Derived
+	}
+	return nil
+}
+
 type AuditAggregateBucket struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Key           string                 `protobuf:"bytes,1,opt,name=key,proto3" json:"key,omitempty"`
-	Count         int64                  `protobuf:"varint,2,opt,name=count,proto3" json:"count,omitempty"`
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// key is the first group dimension's value; keys holds every dimension.
+	Key string `protobuf:"bytes,1,opt,name=key,proto3" json:"key,omitempty"`
+	// count is the group's COUNT(*), always populated for back-compat and also
+	// available in metrics under any requested count alias.
+	Count int64 `protobuf:"varint,2,opt,name=count,proto3" json:"count,omitempty"`
+	// keys are the group dimension values, aligned with the effective group_bys.
+	Keys []string `protobuf:"bytes,3,rep,name=keys,proto3" json:"keys,omitempty"`
+	// metrics maps each requested metric and derived alias to its value.
+	Metrics       map[string]float64 `protobuf:"bytes,4,rep,name=metrics,proto3" json:"metrics,omitempty" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"fixed64,2,opt,name=value"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
 
 func (x *AuditAggregateBucket) Reset() {
 	*x = AuditAggregateBucket{}
-	mi := &file_saas_accounts_v1_audit_proto_msgTypes[6]
+	mi := &file_saas_accounts_v1_audit_proto_msgTypes[8]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -648,7 +828,7 @@ func (x *AuditAggregateBucket) String() string {
 func (*AuditAggregateBucket) ProtoMessage() {}
 
 func (x *AuditAggregateBucket) ProtoReflect() protoreflect.Message {
-	mi := &file_saas_accounts_v1_audit_proto_msgTypes[6]
+	mi := &file_saas_accounts_v1_audit_proto_msgTypes[8]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -661,7 +841,7 @@ func (x *AuditAggregateBucket) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use AuditAggregateBucket.ProtoReflect.Descriptor instead.
 func (*AuditAggregateBucket) Descriptor() ([]byte, []int) {
-	return file_saas_accounts_v1_audit_proto_rawDescGZIP(), []int{6}
+	return file_saas_accounts_v1_audit_proto_rawDescGZIP(), []int{8}
 }
 
 func (x *AuditAggregateBucket) GetKey() string {
@@ -678,6 +858,20 @@ func (x *AuditAggregateBucket) GetCount() int64 {
 	return 0
 }
 
+func (x *AuditAggregateBucket) GetKeys() []string {
+	if x != nil {
+		return x.Keys
+	}
+	return nil
+}
+
+func (x *AuditAggregateBucket) GetMetrics() map[string]float64 {
+	if x != nil {
+		return x.Metrics
+	}
+	return nil
+}
+
 type AggregateAuditLogResponse struct {
 	state         protoimpl.MessageState  `protogen:"open.v1"`
 	Buckets       []*AuditAggregateBucket `protobuf:"bytes,1,rep,name=buckets,proto3" json:"buckets,omitempty"`
@@ -687,7 +881,7 @@ type AggregateAuditLogResponse struct {
 
 func (x *AggregateAuditLogResponse) Reset() {
 	*x = AggregateAuditLogResponse{}
-	mi := &file_saas_accounts_v1_audit_proto_msgTypes[7]
+	mi := &file_saas_accounts_v1_audit_proto_msgTypes[9]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -699,7 +893,7 @@ func (x *AggregateAuditLogResponse) String() string {
 func (*AggregateAuditLogResponse) ProtoMessage() {}
 
 func (x *AggregateAuditLogResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_saas_accounts_v1_audit_proto_msgTypes[7]
+	mi := &file_saas_accounts_v1_audit_proto_msgTypes[9]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -712,7 +906,7 @@ func (x *AggregateAuditLogResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use AggregateAuditLogResponse.ProtoReflect.Descriptor instead.
 func (*AggregateAuditLogResponse) Descriptor() ([]byte, []int) {
-	return file_saas_accounts_v1_audit_proto_rawDescGZIP(), []int{7}
+	return file_saas_accounts_v1_audit_proto_rawDescGZIP(), []int{9}
 }
 
 func (x *AggregateAuditLogResponse) GetBuckets() []*AuditAggregateBucket {
@@ -730,7 +924,7 @@ type ListAuditEventTypesRequest struct {
 
 func (x *ListAuditEventTypesRequest) Reset() {
 	*x = ListAuditEventTypesRequest{}
-	mi := &file_saas_accounts_v1_audit_proto_msgTypes[8]
+	mi := &file_saas_accounts_v1_audit_proto_msgTypes[10]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -742,7 +936,7 @@ func (x *ListAuditEventTypesRequest) String() string {
 func (*ListAuditEventTypesRequest) ProtoMessage() {}
 
 func (x *ListAuditEventTypesRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_saas_accounts_v1_audit_proto_msgTypes[8]
+	mi := &file_saas_accounts_v1_audit_proto_msgTypes[10]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -755,7 +949,7 @@ func (x *ListAuditEventTypesRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListAuditEventTypesRequest.ProtoReflect.Descriptor instead.
 func (*ListAuditEventTypesRequest) Descriptor() ([]byte, []int) {
-	return file_saas_accounts_v1_audit_proto_rawDescGZIP(), []int{8}
+	return file_saas_accounts_v1_audit_proto_rawDescGZIP(), []int{10}
 }
 
 type AuditEventType struct {
@@ -772,7 +966,7 @@ type AuditEventType struct {
 
 func (x *AuditEventType) Reset() {
 	*x = AuditEventType{}
-	mi := &file_saas_accounts_v1_audit_proto_msgTypes[9]
+	mi := &file_saas_accounts_v1_audit_proto_msgTypes[11]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -784,7 +978,7 @@ func (x *AuditEventType) String() string {
 func (*AuditEventType) ProtoMessage() {}
 
 func (x *AuditEventType) ProtoReflect() protoreflect.Message {
-	mi := &file_saas_accounts_v1_audit_proto_msgTypes[9]
+	mi := &file_saas_accounts_v1_audit_proto_msgTypes[11]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -797,7 +991,7 @@ func (x *AuditEventType) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use AuditEventType.ProtoReflect.Descriptor instead.
 func (*AuditEventType) Descriptor() ([]byte, []int) {
-	return file_saas_accounts_v1_audit_proto_rawDescGZIP(), []int{9}
+	return file_saas_accounts_v1_audit_proto_rawDescGZIP(), []int{11}
 }
 
 func (x *AuditEventType) GetName() string {
@@ -851,7 +1045,7 @@ type ListAuditEventTypesResponse struct {
 
 func (x *ListAuditEventTypesResponse) Reset() {
 	*x = ListAuditEventTypesResponse{}
-	mi := &file_saas_accounts_v1_audit_proto_msgTypes[10]
+	mi := &file_saas_accounts_v1_audit_proto_msgTypes[12]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -863,7 +1057,7 @@ func (x *ListAuditEventTypesResponse) String() string {
 func (*ListAuditEventTypesResponse) ProtoMessage() {}
 
 func (x *ListAuditEventTypesResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_saas_accounts_v1_audit_proto_msgTypes[10]
+	mi := &file_saas_accounts_v1_audit_proto_msgTypes[12]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -876,7 +1070,7 @@ func (x *ListAuditEventTypesResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListAuditEventTypesResponse.ProtoReflect.Descriptor instead.
 func (*ListAuditEventTypesResponse) Descriptor() ([]byte, []int) {
-	return file_saas_accounts_v1_audit_proto_rawDescGZIP(), []int{10}
+	return file_saas_accounts_v1_audit_proto_rawDescGZIP(), []int{12}
 }
 
 func (x *ListAuditEventTypesResponse) GetTypes() []*AuditEventType {
@@ -951,7 +1145,18 @@ const file_saas_accounts_v1_audit_proto_rawDesc = "" +
 	"\x16ExportAuditLogResponse\x12\x12\n" +
 	"\x04data\x18\x01 \x01(\fR\x04data\x12!\n" +
 	"\fcontent_type\x18\x02 \x01(\tR\vcontentType\x12\x1a\n" +
-	"\bfilename\x18\x03 \x01(\tR\bfilename\"\xb2\x02\n" +
+	"\bfilename\x18\x03 \x01(\tR\bfilename\"i\n" +
+	"\vAuditMetric\x12\x0e\n" +
+	"\x02op\x18\x01 \x01(\tR\x02op\x12\x14\n" +
+	"\x05field\x18\x02 \x01(\tR\x05field\x12\x1e\n" +
+	"\n" +
+	"percentile\x18\x03 \x01(\x01R\n" +
+	"percentile\x12\x14\n" +
+	"\x05alias\x18\x04 \x01(\tR\x05alias\"j\n" +
+	"\x12AuditDerivedMetric\x12\x14\n" +
+	"\x05alias\x18\x01 \x01(\tR\x05alias\x12\x1c\n" +
+	"\tnumerator\x18\x02 \x01(\tR\tnumerator\x12 \n" +
+	"\vdenominator\x18\x03 \x01(\tR\vdenominator\"\xc8\x03\n" +
 	"\x18AggregateAuditLogRequest\x12\x15\n" +
 	"\x06org_id\x18\x01 \x01(\tR\x05orgId\x12\x19\n" +
 	"\bactor_id\x18\x02 \x01(\tR\aactorId\x12\x1d\n" +
@@ -962,10 +1167,19 @@ const file_saas_accounts_v1_audit_proto_rawDesc = "" +
 	"\x04from\x18\x06 \x01(\v2\x1a.google.protobuf.TimestampR\x04from\x12*\n" +
 	"\x02to\x18\a \x01(\v2\x1a.google.protobuf.TimestampR\x02to\x12\x19\n" +
 	"\bgroup_by\x18\b \x01(\tR\agroupBy\x12\x16\n" +
-	"\x06bucket\x18\t \x01(\tR\x06bucket\">\n" +
+	"\x06bucket\x18\t \x01(\tR\x06bucket\x12\x1b\n" +
+	"\tgroup_bys\x18\n" +
+	" \x03(\tR\bgroupBys\x127\n" +
+	"\ametrics\x18\v \x03(\v2\x1d.saas.accounts.v1.AuditMetricR\ametrics\x12>\n" +
+	"\aderived\x18\f \x03(\v2$.saas.accounts.v1.AuditDerivedMetricR\aderived\"\xdd\x01\n" +
 	"\x14AuditAggregateBucket\x12\x10\n" +
 	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
-	"\x05count\x18\x02 \x01(\x03R\x05count\"]\n" +
+	"\x05count\x18\x02 \x01(\x03R\x05count\x12\x12\n" +
+	"\x04keys\x18\x03 \x03(\tR\x04keys\x12M\n" +
+	"\ametrics\x18\x04 \x03(\v23.saas.accounts.v1.AuditAggregateBucket.MetricsEntryR\ametrics\x1a:\n" +
+	"\fMetricsEntry\x12\x10\n" +
+	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
+	"\x05value\x18\x02 \x01(\x01R\x05value:\x028\x01\"]\n" +
 	"\x19AggregateAuditLogResponse\x12@\n" +
 	"\abuckets\x18\x01 \x03(\v2&.saas.accounts.v1.AuditAggregateBucketR\abuckets\"\x1c\n" +
 	"\x1aListAuditEventTypesRequest\"\xb2\x01\n" +
@@ -1011,49 +1225,55 @@ func file_saas_accounts_v1_audit_proto_rawDescGZIP() []byte {
 	return file_saas_accounts_v1_audit_proto_rawDescData
 }
 
-var file_saas_accounts_v1_audit_proto_msgTypes = make([]protoimpl.MessageInfo, 13)
+var file_saas_accounts_v1_audit_proto_msgTypes = make([]protoimpl.MessageInfo, 16)
 var file_saas_accounts_v1_audit_proto_goTypes = []any{
 	(*AuditEvent)(nil),                  // 0: saas.accounts.v1.AuditEvent
 	(*QueryAuditLogRequest)(nil),        // 1: saas.accounts.v1.QueryAuditLogRequest
 	(*QueryAuditLogResponse)(nil),       // 2: saas.accounts.v1.QueryAuditLogResponse
 	(*ExportAuditLogRequest)(nil),       // 3: saas.accounts.v1.ExportAuditLogRequest
 	(*ExportAuditLogResponse)(nil),      // 4: saas.accounts.v1.ExportAuditLogResponse
-	(*AggregateAuditLogRequest)(nil),    // 5: saas.accounts.v1.AggregateAuditLogRequest
-	(*AuditAggregateBucket)(nil),        // 6: saas.accounts.v1.AuditAggregateBucket
-	(*AggregateAuditLogResponse)(nil),   // 7: saas.accounts.v1.AggregateAuditLogResponse
-	(*ListAuditEventTypesRequest)(nil),  // 8: saas.accounts.v1.ListAuditEventTypesRequest
-	(*AuditEventType)(nil),              // 9: saas.accounts.v1.AuditEventType
-	(*ListAuditEventTypesResponse)(nil), // 10: saas.accounts.v1.ListAuditEventTypesResponse
-	nil,                                 // 11: saas.accounts.v1.AuditEvent.MetadataEntry
-	nil,                                 // 12: saas.accounts.v1.QueryAuditLogRequest.PayloadContainsEntry
-	(*timestamppb.Timestamp)(nil),       // 13: google.protobuf.Timestamp
-	(*structpb.Struct)(nil),             // 14: google.protobuf.Struct
+	(*AuditMetric)(nil),                 // 5: saas.accounts.v1.AuditMetric
+	(*AuditDerivedMetric)(nil),          // 6: saas.accounts.v1.AuditDerivedMetric
+	(*AggregateAuditLogRequest)(nil),    // 7: saas.accounts.v1.AggregateAuditLogRequest
+	(*AuditAggregateBucket)(nil),        // 8: saas.accounts.v1.AuditAggregateBucket
+	(*AggregateAuditLogResponse)(nil),   // 9: saas.accounts.v1.AggregateAuditLogResponse
+	(*ListAuditEventTypesRequest)(nil),  // 10: saas.accounts.v1.ListAuditEventTypesRequest
+	(*AuditEventType)(nil),              // 11: saas.accounts.v1.AuditEventType
+	(*ListAuditEventTypesResponse)(nil), // 12: saas.accounts.v1.ListAuditEventTypesResponse
+	nil,                                 // 13: saas.accounts.v1.AuditEvent.MetadataEntry
+	nil,                                 // 14: saas.accounts.v1.QueryAuditLogRequest.PayloadContainsEntry
+	nil,                                 // 15: saas.accounts.v1.AuditAggregateBucket.MetricsEntry
+	(*timestamppb.Timestamp)(nil),       // 16: google.protobuf.Timestamp
+	(*structpb.Struct)(nil),             // 17: google.protobuf.Struct
 }
 var file_saas_accounts_v1_audit_proto_depIdxs = []int32{
-	11, // 0: saas.accounts.v1.AuditEvent.metadata:type_name -> saas.accounts.v1.AuditEvent.MetadataEntry
-	13, // 1: saas.accounts.v1.AuditEvent.created_at:type_name -> google.protobuf.Timestamp
-	14, // 2: saas.accounts.v1.AuditEvent.payload:type_name -> google.protobuf.Struct
-	13, // 3: saas.accounts.v1.QueryAuditLogRequest.from:type_name -> google.protobuf.Timestamp
-	13, // 4: saas.accounts.v1.QueryAuditLogRequest.to:type_name -> google.protobuf.Timestamp
-	12, // 5: saas.accounts.v1.QueryAuditLogRequest.payload_contains:type_name -> saas.accounts.v1.QueryAuditLogRequest.PayloadContainsEntry
+	13, // 0: saas.accounts.v1.AuditEvent.metadata:type_name -> saas.accounts.v1.AuditEvent.MetadataEntry
+	16, // 1: saas.accounts.v1.AuditEvent.created_at:type_name -> google.protobuf.Timestamp
+	17, // 2: saas.accounts.v1.AuditEvent.payload:type_name -> google.protobuf.Struct
+	16, // 3: saas.accounts.v1.QueryAuditLogRequest.from:type_name -> google.protobuf.Timestamp
+	16, // 4: saas.accounts.v1.QueryAuditLogRequest.to:type_name -> google.protobuf.Timestamp
+	14, // 5: saas.accounts.v1.QueryAuditLogRequest.payload_contains:type_name -> saas.accounts.v1.QueryAuditLogRequest.PayloadContainsEntry
 	0,  // 6: saas.accounts.v1.QueryAuditLogResponse.events:type_name -> saas.accounts.v1.AuditEvent
-	13, // 7: saas.accounts.v1.AggregateAuditLogRequest.from:type_name -> google.protobuf.Timestamp
-	13, // 8: saas.accounts.v1.AggregateAuditLogRequest.to:type_name -> google.protobuf.Timestamp
-	6,  // 9: saas.accounts.v1.AggregateAuditLogResponse.buckets:type_name -> saas.accounts.v1.AuditAggregateBucket
-	9,  // 10: saas.accounts.v1.ListAuditEventTypesResponse.types:type_name -> saas.accounts.v1.AuditEventType
-	1,  // 11: saas.accounts.v1.AuditService.QueryAuditLog:input_type -> saas.accounts.v1.QueryAuditLogRequest
-	5,  // 12: saas.accounts.v1.AuditService.AggregateAuditLog:input_type -> saas.accounts.v1.AggregateAuditLogRequest
-	8,  // 13: saas.accounts.v1.AuditService.ListAuditEventTypes:input_type -> saas.accounts.v1.ListAuditEventTypesRequest
-	3,  // 14: saas.accounts.v1.AuditService.ExportAuditLog:input_type -> saas.accounts.v1.ExportAuditLogRequest
-	2,  // 15: saas.accounts.v1.AuditService.QueryAuditLog:output_type -> saas.accounts.v1.QueryAuditLogResponse
-	7,  // 16: saas.accounts.v1.AuditService.AggregateAuditLog:output_type -> saas.accounts.v1.AggregateAuditLogResponse
-	10, // 17: saas.accounts.v1.AuditService.ListAuditEventTypes:output_type -> saas.accounts.v1.ListAuditEventTypesResponse
-	4,  // 18: saas.accounts.v1.AuditService.ExportAuditLog:output_type -> saas.accounts.v1.ExportAuditLogResponse
-	15, // [15:19] is the sub-list for method output_type
-	11, // [11:15] is the sub-list for method input_type
-	11, // [11:11] is the sub-list for extension type_name
-	11, // [11:11] is the sub-list for extension extendee
-	0,  // [0:11] is the sub-list for field type_name
+	16, // 7: saas.accounts.v1.AggregateAuditLogRequest.from:type_name -> google.protobuf.Timestamp
+	16, // 8: saas.accounts.v1.AggregateAuditLogRequest.to:type_name -> google.protobuf.Timestamp
+	5,  // 9: saas.accounts.v1.AggregateAuditLogRequest.metrics:type_name -> saas.accounts.v1.AuditMetric
+	6,  // 10: saas.accounts.v1.AggregateAuditLogRequest.derived:type_name -> saas.accounts.v1.AuditDerivedMetric
+	15, // 11: saas.accounts.v1.AuditAggregateBucket.metrics:type_name -> saas.accounts.v1.AuditAggregateBucket.MetricsEntry
+	8,  // 12: saas.accounts.v1.AggregateAuditLogResponse.buckets:type_name -> saas.accounts.v1.AuditAggregateBucket
+	11, // 13: saas.accounts.v1.ListAuditEventTypesResponse.types:type_name -> saas.accounts.v1.AuditEventType
+	1,  // 14: saas.accounts.v1.AuditService.QueryAuditLog:input_type -> saas.accounts.v1.QueryAuditLogRequest
+	7,  // 15: saas.accounts.v1.AuditService.AggregateAuditLog:input_type -> saas.accounts.v1.AggregateAuditLogRequest
+	10, // 16: saas.accounts.v1.AuditService.ListAuditEventTypes:input_type -> saas.accounts.v1.ListAuditEventTypesRequest
+	3,  // 17: saas.accounts.v1.AuditService.ExportAuditLog:input_type -> saas.accounts.v1.ExportAuditLogRequest
+	2,  // 18: saas.accounts.v1.AuditService.QueryAuditLog:output_type -> saas.accounts.v1.QueryAuditLogResponse
+	9,  // 19: saas.accounts.v1.AuditService.AggregateAuditLog:output_type -> saas.accounts.v1.AggregateAuditLogResponse
+	12, // 20: saas.accounts.v1.AuditService.ListAuditEventTypes:output_type -> saas.accounts.v1.ListAuditEventTypesResponse
+	4,  // 21: saas.accounts.v1.AuditService.ExportAuditLog:output_type -> saas.accounts.v1.ExportAuditLogResponse
+	18, // [18:22] is the sub-list for method output_type
+	14, // [14:18] is the sub-list for method input_type
+	14, // [14:14] is the sub-list for extension type_name
+	14, // [14:14] is the sub-list for extension extendee
+	0,  // [0:14] is the sub-list for field type_name
 }
 
 func init() { file_saas_accounts_v1_audit_proto_init() }
@@ -1067,7 +1287,7 @@ func file_saas_accounts_v1_audit_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_saas_accounts_v1_audit_proto_rawDesc), len(file_saas_accounts_v1_audit_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   13,
+			NumMessages:   16,
 			NumExtensions: 0,
 			NumServices:   1,
 		},
