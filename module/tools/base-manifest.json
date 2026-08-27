@@ -1,6 +1,6 @@
 {
   "note": "Base-file integrity manifest for the saas-starter module. Generated FROM canonical by `node tools/base-integrity.mjs gen`. Consumers MUST NOT hand-edit base files — only add files on the side. Regenerated on every codefly sync from canonical.",
-  "fileCount": 1729,
+  "fileCount": 1731,
   "files": {
     "AUTHORIZATION_CATALOG.md": "b2ea5d41f0098e80315e02e7c4bdbda03b65c8eef463426242552fd3c047ca0a",
     "CONTRACT_VERSIONING.md": "02031aa87922ab5ec573ea582cf584271873481de6ceabbda52b1bfda005ffbd",
@@ -997,6 +997,8 @@
     "services/frontend/code/src/components/consent-banner.test.tsx": "b5044e33b347d500ea9bf20b756629535040cc3660b028e704e5d33e035a00d5",
     "services/frontend/code/src/components/consent-banner.tsx": "37ce08838297011c962e026b9b71fc79a930d8903085b9895488efca31751312",
     "services/frontend/code/src/components/dashboard-route-shell.tsx": "429ede28bf3b5eb0d737b1e17c6b8f441a484f9bfd5d54a050cf471a1b59d23c",
+    "services/frontend/code/src/components/dashboard.test.tsx": "1cb5d1691b1562b0d0a931164cd53e27e7046807e18f364d318accc41d97b1f5",
+    "services/frontend/code/src/components/dashboard.tsx": "60c46085793c8a5c1c462345cfa1ff818e65566f31a0d662fdea7f9c3ecabeac",
     "services/frontend/code/src/components/data-table.tsx": "72b975a3a9e3c7e6188a52ba405c1343fac3f49133fc8707beb9c4c8f6f88bcb",
     "services/frontend/code/src/components/empty-state.tsx": "3d4fa300544ca4d5c154095d38da3db288d7287de62950fdc0e99b5ba68bc9c2",
     "services/frontend/code/src/components/impersonation-banner.tsx": "0d0c8176893241a4a6b4f0120d93ab29c5797c3a3357f9d7c09be11305bdd07f",
@@ -1058,7 +1060,7 @@
     "services/frontend/code/src/features/audit/service/queries.test.tsx": "a9b3aaedd75a6baa3ab017cc8ac2eca9d2ce757b20a2478df4dc2e9c1ddfde29",
     "services/frontend/code/src/features/audit/service/queries.ts": "127f77d0eba97dface32d2763a479f874bae70ae00cf6a73e1653849c091a259",
     "services/frontend/code/src/features/audit/ui/audit-page.test.tsx": "4273687f49274cef6ea53e38efa5f68d4c9b99d44e088d94c57f0fdd53a8c58b",
-    "services/frontend/code/src/features/audit/ui/audit-page.tsx": "87fd7d114c675390f085d0f774c124822786910ecd51b09ef0376ce2c5fe0721",
+    "services/frontend/code/src/features/audit/ui/audit-page.tsx": "daf0bcb7b04befb421418ef7fefb25c6166a6f08c61e11c10051dcb5ac965ca6",
     "services/frontend/code/src/features/audit/ui/audit-table.tsx": "c0ebafe8e4e8d5a17bed4bf10f3cf634dd917acc09a7085d1111e5e8a53cd5d5",
     "services/frontend/code/src/features/auth/index.ts": "8169887eaa26d86eb90d4e9decf93f4594aaf25e5ad238e6d2dfe56a054927b7",
     "services/frontend/code/src/features/auth/model/types.ts": "066e568ddd9a09ee3cac69407f446d5fd38e5804e7578b779a720e1bc2f9c50a",
