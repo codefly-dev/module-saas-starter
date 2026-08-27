@@ -384,11 +384,28 @@
     "v1AuditAggregateBucket": {
       "properties": {
         "count": {
+          "description": "count is the group's COUNT(*), always populated for back-compat and also\navailable in metrics under any requested count alias.",
           "format": "int64",
           "type": "string"
         },
         "key": {
+          "description": "key is the first group dimension's value; keys holds every dimension.",
           "type": "string"
+        },
+        "keys": {
+          "description": "keys are the group dimension values, aligned with the effective group_bys.",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "metrics": {
+          "additionalProperties": {
+            "format": "double",
+            "type": "number"
+          },
+          "description": "metrics maps each requested metric and derived alias to its value. An alias\nis omitted for a group where the metric is undefined (min/avg/max/percentile\nover zero numeric values) — absence means \"no data\", not zero.",
+          "type": "object"
         }
       },
       "type": "object"
@@ -4575,18 +4592,29 @@
             "type": "string"
           },
           {
-            "description": "group_by ∈ {event_type, category, actor, time}. Defaults to event_type.",
+            "description": "group_by ∈ {event_type, category, actor, time, payload:<key>}. Defaults to\nevent_type. Superseded by group_bys when that is set.",
             "in": "query",
             "name": "groupBy",
             "required": false,
             "type": "string"
           },
           {
-            "description": "bucket sizes the time grain when group_by == \"time\": day|week|month.",
+            "description": "bucket sizes the time grain for a \"time\" dimension: day|week|month.",
             "in": "query",
             "name": "bucket",
             "required": false,
             "type": "string"
+          },
+          {
+            "collectionFormat": "multi",
+            "description": "group_bys lists group dimensions for multi-dimensional grouping. When set it\nsupersedes group_by; each entry is one of the group_by values above.",
+            "in": "query",
+            "items": {
+              "type": "string"
+            },
+            "name": "groupBys",
+            "required": false,
+            "type": "array"
           }
         ],
         "responses": {

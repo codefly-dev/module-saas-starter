@@ -3,6 +3,8 @@ package business
 import (
 	"context"
 	"errors"
+	"fmt"
+	"strings"
 	"time"
 
 	"accounts/pkg/jobs"
@@ -153,12 +155,129 @@ type AuditQuery struct {
 	PageToken       string
 }
 
-// AuditAggregateBucket is one row of an aggregation result: a group key (an
-// event type, category, actor id, or a time-bucket boundary in RFC3339) and
-// the number of events in that group.
+// AuditMetric is one aggregation computed per group. Op ∈ {count,
+// count_distinct, sum, avg, min, max, percentile}. Field names a payload key as
+// "payload:<key>" (or, for count_distinct, a bare column: actor_id, event_type,
+// category, resource, resource_id). Percentile is used only for op percentile.
+type AuditMetric struct {
+	Op         string
+	Field      string
+	Percentile float64
+	Alias      string
+}
+
+// AuditDerivedMetric is a per-group ratio of two metrics referenced by alias.
+type AuditDerivedMetric struct {
+	Alias       string
+	Numerator   string
+	Denominator string
+}
+
+// AuditAggregationSpec describes an aggregation: the group dimensions, the time
+// grain for a "time" dimension, the metrics to compute, and any derived ratios.
+// GroupBy entries ∈ {event_type, category, actor, time, payload:<key>}. When
+// GroupBy is empty the aggregation groups by event_type; when Metrics is empty a
+// single COUNT(*) is returned.
+type AuditAggregationSpec struct {
+	GroupBy []string
+	Bucket  string
+	Metrics []AuditMetric
+	Derived []AuditDerivedMetric
+}
+
+// ResolvedAlias returns the response-map key for a metric: its explicit alias,
+// else "count" for a count, else "<op>_<key>".
+func (m AuditMetric) ResolvedAlias() string {
+	if m.Alias != "" {
+		return m.Alias
+	}
+	if m.Op == "" || m.Op == "count" {
+		return "count"
+	}
+	return m.Op + "_" + strings.TrimPrefix(m.Field, "payload:")
+}
+
+var (
+	auditGroupDimensions = map[string]bool{"event_type": true, "category": true, "actor": true, "time": true}
+	auditMetricOps       = map[string]bool{"count": true, "count_distinct": true, "sum": true, "avg": true, "min": true, "max": true, "percentile": true}
+	auditDistinctColumns = map[string]bool{"actor_id": true, "event_type": true, "category": true, "resource": true, "resource_id": true}
+	auditTimeBuckets     = map[string]bool{"day": true, "week": true, "month": true}
+	auditNumericOps      = map[string]bool{"sum": true, "avg": true, "min": true, "max": true, "percentile": true}
+)
+
+// payloadKey reports whether field addresses a payload key ("payload:<key>")
+// and returns the key.
+func payloadKey(field string) (string, bool) {
+	key, ok := strings.CutPrefix(field, "payload:")
+	return key, ok && key != ""
+}
+
+// Validate checks the spec against the allowed dimensions, ops, and columns so
+// the SQL builder can trust its input. It reports the first problem found.
+func (s AuditAggregationSpec) Validate() error {
+	if s.Bucket != "" && !auditTimeBuckets[s.Bucket] {
+		return fmt.Errorf("audit: invalid time bucket %q (want day|week|month)", s.Bucket)
+	}
+	for _, d := range s.GroupBy {
+		if _, ok := payloadKey(d); ok {
+			continue
+		}
+		if !auditGroupDimensions[d] {
+			return fmt.Errorf("audit: invalid group dimension %q", d)
+		}
+	}
+	aliases := map[string]bool{}
+	for _, m := range s.Metrics {
+		if !auditMetricOps[m.Op] {
+			return fmt.Errorf("audit: invalid metric op %q", m.Op)
+		}
+		if auditNumericOps[m.Op] {
+			if _, ok := payloadKey(m.Field); !ok {
+				return fmt.Errorf("audit: metric op %q requires a payload:<key> field, got %q", m.Op, m.Field)
+			}
+		}
+		if m.Op == "count_distinct" {
+			if _, ok := payloadKey(m.Field); !ok && !auditDistinctColumns[m.Field] {
+				return fmt.Errorf("audit: count_distinct field %q is neither a payload:<key> nor a known column", m.Field)
+			}
+		}
+		if m.Op == "percentile" && (m.Percentile <= 0 || m.Percentile > 1) {
+			return fmt.Errorf("audit: percentile must be in (0,1], got %v", m.Percentile)
+		}
+		// Aliases key the response map, so a collision would silently drop one
+		// metric's value; reject it instead of returning a lossy result.
+		alias := m.ResolvedAlias()
+		if aliases[alias] {
+			return fmt.Errorf("audit: duplicate metric alias %q (set a distinct alias)", alias)
+		}
+		aliases[alias] = true
+	}
+	for _, d := range s.Derived {
+		if d.Alias == "" || d.Numerator == "" || d.Denominator == "" {
+			return fmt.Errorf("audit: derived metric needs alias, numerator, and denominator")
+		}
+		if aliases[d.Alias] {
+			return fmt.Errorf("audit: duplicate metric alias %q (set a distinct alias)", d.Alias)
+		}
+		if !aliases[d.Numerator] {
+			return fmt.Errorf("audit: derived metric %q references unknown numerator %q", d.Alias, d.Numerator)
+		}
+		if !aliases[d.Denominator] {
+			return fmt.Errorf("audit: derived metric %q references unknown denominator %q", d.Alias, d.Denominator)
+		}
+		aliases[d.Alias] = true
+	}
+	return nil
+}
+
+// AuditAggregateBucket is one row of an aggregation result: the group key(s) and
+// the computed metrics. Key/Count mirror Keys[0] and the group's COUNT(*) for
+// back-compat with the count-only aggregation.
 type AuditAggregateBucket struct {
-	Key   string
-	Count int64
+	Key     string
+	Count   int64
+	Keys    []string
+	Metrics map[string]float64
 }
 
 // QueryAuditLog delegates to the store, scoping the read to the
@@ -184,14 +303,16 @@ func (s *Service) QueryAuditLog(ctx context.Context, q AuditQuery) ([]AuditEntry
 	return entries, nextToken, total, err
 }
 
-// AggregateAuditLog computes grouped counts over audit events for analytics:
-// group by event type, category, actor, or a time bucket (day/week/month),
-// optionally filtered by the same predicates as QueryAuditLog.
-func (s *Service) AggregateAuditLog(ctx context.Context, q AuditQuery, groupBy, bucket string) ([]AuditAggregateBucket, error) {
+// AggregateAuditLog computes grouped metrics over audit events for analytics.
+// The spec selects the group dimensions (event type, category, actor, time
+// bucket, or a payload field), the aggregations (count, distinct-count, sum,
+// avg, min, max, percentile over payload fields), and any derived ratios,
+// filtered by the same predicates as QueryAuditLog.
+func (s *Service) AggregateAuditLog(ctx context.Context, q AuditQuery, spec AuditAggregationSpec) ([]AuditAggregateBucket, error) {
 	var out []AuditAggregateBucket
 	wrap := func(ctx context.Context) error {
 		var err error
-		out, err = s.store.AggregateAuditLog(ctx, q, groupBy, bucket)
+		out, err = s.store.AggregateAuditLog(ctx, q, spec)
 		return err
 	}
 	var err error

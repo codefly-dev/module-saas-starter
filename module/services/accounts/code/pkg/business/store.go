@@ -174,7 +174,7 @@ type Store interface {
 	// Audit
 	InsertAuditEvent(ctx context.Context, entry AuditEntry) error
 	QueryAuditLog(ctx context.Context, q AuditQuery) ([]AuditEntry, string, int32, error)
-	AggregateAuditLog(ctx context.Context, q AuditQuery, groupBy, bucket string) ([]AuditAggregateBucket, error)
+	AggregateAuditLog(ctx context.Context, q AuditQuery, spec AuditAggregationSpec) ([]AuditAggregateBucket, error)
 	SyncAuditEventTypes(ctx context.Context, defs []AuditEventDefinition) error
 	ListAuditEventTypes(ctx context.Context) ([]AuditEventTypeRow, error)
 	EnsureAuditPartitions(ctx context.Context, months int) error

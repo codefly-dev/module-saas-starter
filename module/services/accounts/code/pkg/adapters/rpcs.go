@@ -1174,13 +1174,46 @@ func (s *AuditServer) AggregateAuditLog(ctx context.Context, req *gen.AggregateA
 		q.To = &t
 	}
 
-	buckets, err := service.AggregateAuditLog(ctx, q, req.GroupBy, req.Bucket)
+	// group_bys supersedes the single group_by; both default to event_type.
+	groupBy := req.GroupBys
+	if len(groupBy) == 0 && req.GroupBy != "" {
+		groupBy = []string{req.GroupBy}
+	}
+	spec := business.AuditAggregationSpec{
+		GroupBy: groupBy,
+		Bucket:  req.Bucket,
+	}
+	for _, m := range req.Metrics {
+		spec.Metrics = append(spec.Metrics, business.AuditMetric{
+			Op:         m.Op,
+			Field:      m.Field,
+			Percentile: m.Percentile,
+			Alias:      m.Alias,
+		})
+	}
+	for _, d := range req.Derived {
+		spec.Derived = append(spec.Derived, business.AuditDerivedMetric{
+			Alias:       d.Alias,
+			Numerator:   d.Numerator,
+			Denominator: d.Denominator,
+		})
+	}
+	if err := spec.Validate(); err != nil {
+		return nil, status.Error(codes.InvalidArgument, err.Error())
+	}
+
+	buckets, err := service.AggregateAuditLog(ctx, q, spec)
 	if err != nil {
 		return nil, err
 	}
 	out := make([]*gen.AuditAggregateBucket, 0, len(buckets))
 	for _, b := range buckets {
-		out = append(out, &gen.AuditAggregateBucket{Key: b.Key, Count: b.Count})
+		out = append(out, &gen.AuditAggregateBucket{
+			Key:     b.Key,
+			Count:   b.Count,
+			Keys:    b.Keys,
+			Metrics: b.Metrics,
+		})
 	}
 	return &gen.AggregateAuditLogResponse{Buckets: out}, nil
 }
