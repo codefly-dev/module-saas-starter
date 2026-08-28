@@ -115,6 +115,51 @@ describe("Dashboard", () => {
 		expect(screen.queryByText("No events yet.")).toBeNull();
 	});
 
+	it("lays out as a grid with the spec's column count and spans a widget", () => {
+		server.use(aggregateHandler([], []));
+
+		const spec = dashboard({
+			layout: { kind: "grid", columns: 3 },
+			metrics: [
+				metric({ title: "Wide", groupBy: "event_type", chart: "bar", span: 2 }),
+				metric({ title: "Narrow", groupBy: "event_type", chart: "bar" }),
+			],
+		});
+		const { container } = renderInApp(<Dashboard data={spec} />);
+
+		const grid = container.querySelector('[data-slot="grid"]');
+		expect(grid?.className).toContain("lg:grid-cols-3");
+		expect(
+			container.querySelector('[data-slot="card"].sm\\:col-span-2'),
+		).toBeTruthy();
+	});
+
+	it("lays out as a stack when the spec asks for one", () => {
+		server.use(aggregateHandler([], []));
+
+		const spec = dashboard({
+			layout: { kind: "stack" },
+			metrics: [metric({ title: "Only", groupBy: "event_type", chart: "bar" })],
+		});
+		const { container } = renderInApp(<Dashboard data={spec} />);
+
+		expect(container.querySelector('[data-slot="stack"]')).toBeTruthy();
+		expect(container.querySelector('[data-slot="grid"]')).toBeNull();
+	});
+
+	it("applies the spec's accent as a local primary override", () => {
+		server.use(aggregateHandler([], []));
+
+		const spec = dashboard({
+			theme: { accent: "oklch(0.6 0.2 20)" },
+			metrics: [metric({ title: "Only", groupBy: "event_type", chart: "bar" })],
+		});
+		const { container } = renderInApp(<Dashboard data={spec} />);
+
+		const root = container.firstChild as HTMLElement;
+		expect(root.style.getPropertyValue("--primary")).toBe("oklch(0.6 0.2 20)");
+	});
+
 	it("shows loading, not empty, before an org is resolved", () => {
 		authState.organizationId = undefined;
 		let called = false;

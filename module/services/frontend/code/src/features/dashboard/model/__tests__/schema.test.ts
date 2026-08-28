@@ -58,4 +58,17 @@ describe("dashboard data-graph declaration", () => {
 			}),
 		).toThrow(/needs a bucket/);
 	});
+
+	it("carries layout, theme, and per-widget span through", () => {
+		const d = dashboard({
+			layout: { kind: "grid", columns: 3 },
+			theme: { accent: "oklch(0.6 0.2 20)" },
+			metrics: [
+				metric({ title: "Wide", groupBy: "event_type", chart: "bar", span: 2 }),
+			],
+		});
+		expect(d.layout).toEqual({ kind: "grid", columns: 3 });
+		expect(d.theme).toEqual({ accent: "oklch(0.6 0.2 20)" });
+		expect(d.metrics[0].span).toBe(2);
+	});
 });

@@ -39,6 +39,10 @@ export interface MetricDef {
 	chart: ChartKind;
 	// limit caps the ranked bars for a categorical `chart: "bar"` metric.
 	limit?: number;
+	// span sets how many grid columns this metric's card occupies in a grid
+	// layout; ignored by a stack. It clamps to the grid's column count on
+	// narrower breakpoints so a wide card never overflows its row.
+	span?: 1 | 2 | 3 | 4;
 }
 
 export function metric(def: MetricDef): MetricDef {
@@ -50,6 +54,22 @@ export function metric(def: MetricDef): MetricDef {
 // not understand and is rejected on load rather than coerced.
 export const DASHBOARD_SPEC_VERSION = 1;
 
+// Layout arranges a dashboard's metric cards: a responsive column `grid` or a
+// single-column `stack`. `columns` sizes the grid (default 2) and is ignored by
+// a stack.
+export interface LayoutDef {
+	kind: "grid" | "stack";
+	columns?: 1 | 2 | 3 | 4;
+}
+
+// Theme applies a local accent to a dashboard's charts and cards: `accent` (any
+// CSS color) overrides the primary token for this dashboard's subtree only, so
+// every series line, sparkline, and bar fill picks it up. In-browser theming
+// only for now — full skin-token integration is deferred.
+export interface ThemeDef {
+	accent?: string;
+}
+
 // A dashboard spec is serializable data, not code: it round-trips through
 // JSON.stringify/parse so it can live in app state and localStorage, be edited
 // at runtime, and survive a reload. `version` pins the schema it was authored
@@ -58,6 +78,8 @@ export interface DashboardDef {
 	version: typeof DASHBOARD_SPEC_VERSION;
 	title?: string;
 	description?: string;
+	layout?: LayoutDef;
+	theme?: ThemeDef;
 	metrics: MetricDef[];
 }
 

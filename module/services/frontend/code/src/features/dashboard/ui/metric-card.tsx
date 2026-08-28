@@ -20,14 +20,16 @@ import { LineChart } from "./charts/line-chart";
 export function MetricCard({
 	metric,
 	orgId,
+	className,
 }: {
 	metric: MetricDef;
 	orgId: string;
+	className?: string;
 }) {
 	const { points, total, status } = useMetric(metric, orgId);
 
 	return (
-		<Card>
+		<Card className={className}>
 			<CardHeader className="pb-2">
 				<CardTitle className="text-base">{metric.title}</CardTitle>
 				{metric.description && (

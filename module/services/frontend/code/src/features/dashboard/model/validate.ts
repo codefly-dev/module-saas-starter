@@ -86,6 +86,7 @@ function validateMetric(
 			"bucket",
 			"chart",
 			"limit",
+			"span",
 		],
 		context,
 	);
@@ -139,6 +140,46 @@ function validateMetric(
 			`${context} limit ranks a categorical metric and cannot apply to a time series`,
 		);
 	}
+
+	// span is how many grid columns the card occupies; the renderer clamps it to
+	// the layout's column count, so any 1..4 is a coherent request.
+	if (value.span !== undefined) {
+		assertSpec(
+			typeof value.span === "number" &&
+				Number.isInteger(value.span) &&
+				value.span >= 1 &&
+				value.span <= 4,
+			`${context} span must be an integer from 1 to 4`,
+		);
+	}
+}
+
+// A layout is optional; when present its kind is required and columns, if given,
+// sizes the grid. Mirrors LayoutDef in schema.ts.
+function validateLayout(value: unknown): void {
+	assertSpec(isObject(value), "spec layout must be an object");
+	assertExactKeys(value, ["kind", "columns"], "spec layout");
+	assertSpec(
+		value.kind === "grid" || value.kind === "stack",
+		`spec layout kind '${String(value.kind)}' must be 'grid' or 'stack'`,
+	);
+	if (value.columns !== undefined) {
+		assertSpec(
+			typeof value.columns === "number" &&
+				Number.isInteger(value.columns) &&
+				value.columns >= 1 &&
+				value.columns <= 4,
+			"spec layout columns must be an integer from 1 to 4",
+		);
+	}
+}
+
+// A theme is optional; its only field, accent, is any non-empty CSS color
+// string. Mirrors ThemeDef in schema.ts.
+function validateTheme(value: unknown): void {
+	assertSpec(isObject(value), "spec theme must be an object");
+	assertExactKeys(value, ["accent"], "spec theme");
+	assertOptionalText(value.accent, "spec theme accent");
 }
 
 /**
@@ -154,7 +195,7 @@ export function assertDashboardSpec(
 	assertSpec(isObject(value), "spec must be an object");
 	assertExactKeys(
 		value,
-		["version", "title", "description", "metrics"],
+		["version", "title", "description", "layout", "theme", "metrics"],
 		"spec",
 	);
 	assertSpec(
@@ -163,6 +204,8 @@ export function assertDashboardSpec(
 	);
 	assertOptionalText(value.title, "spec title");
 	assertOptionalText(value.description, "spec description");
+	if (value.layout !== undefined) validateLayout(value.layout);
+	if (value.theme !== undefined) validateTheme(value.theme);
 	// An empty metric list is a coherent, renderable dashboard (title only) and
 	// the natural intermediate state when the last widget is removed, so it is
 	// allowed — only a non-array is rejected.
