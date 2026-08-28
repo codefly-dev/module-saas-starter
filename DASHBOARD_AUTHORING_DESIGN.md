@@ -11,10 +11,12 @@
 > rationale.** It is a design document, not shipped code: it takes a position on
 > the ownership/layout question (#330), the result-contract shape (#331), and
 > the caching strategy (#332), and marks which decisions imply a follow-up
-> change versus ratify what already exists. Two of the three change code that
-> still lives in open PRs (#325, #323) and #331 changes an external driver
-> contract, so these are proposed decisions that bind the reconciliation — not a
-> settled record that overrides those PRs' authors.
+> change versus ratify what already exists. #331 (the external driver contract)
+> has since shipped — §2 records the shape that landed, not a proposal. #330 and
+> #332 still change code (#323 is an open PR, and #320/#325 has since merged into
+> the baseline they reconcile against), so those two remain proposed decisions
+> that bind the reconciliation — not a settled record that overrides those PRs'
+> authors.
 
 This is the "reflect on the seam we just built" companion to #321's "build the
 seam" children. Nothing here is blocking — the authoring API works today and
