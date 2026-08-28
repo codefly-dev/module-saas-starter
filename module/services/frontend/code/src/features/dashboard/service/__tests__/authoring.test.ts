@@ -105,9 +105,64 @@ describe("dashboard authoring API", () => {
 		});
 		expect(result.ok).toBe(true);
 		if (!result.ok) return;
-		// Ranked by count, capped at the top-N limit.
-		expect(result.preview.points).toEqual([{ key: "auth.login", count: 9 }]);
+		// Ranked by value, capped at the top-N limit.
+		expect(result.preview.points).toEqual([{ key: "auth.login", value: 9 }]);
 		expect(result.preview.total).toBe(9);
+	});
+
+	it("previews a widened metric through the same compiled query a card uses", async () => {
+		const audit = fakeAudit();
+		let request: { metrics?: Array<{ op: string; alias: string }> } | undefined;
+		(audit.aggregateAuditLog as ReturnType<typeof vi.fn>).mockImplementation(
+			async (req: typeof request) => {
+				request = req;
+				return {
+					$typeName: "saas.accounts.v1.AggregateAuditLogResponse",
+					buckets: [
+						{
+							$typeName: "saas.accounts.v1.AuditAggregateBucket",
+							key: "2026-08-01",
+							count: BigInt(120),
+							keys: ["2026-08-01"],
+							metrics: { value: 4200 },
+						},
+						// A day with events but an undefined percentile — omitted alias.
+						{
+							$typeName: "saas.accounts.v1.AuditAggregateBucket",
+							key: "2026-08-02",
+							count: BigInt(7),
+							keys: ["2026-08-02"],
+							metrics: {},
+						},
+					],
+				};
+			},
+		);
+		const { api } = authoring({ audit });
+
+		const result = await api.previewMetric({
+			title: "p95 latency",
+			event: { type: "auth.login" },
+			groupBy: "time",
+			bucket: "day",
+			chart: "line",
+			value: {
+				op: "percentile",
+				field: "payload:duration_ms",
+				percentile: 0.95,
+			},
+		});
+
+		expect(result.ok).toBe(true);
+		if (!result.ok) return;
+		// The request carried the percentile aggregation (not a bare count), and
+		// the preview reads the aliased value while dropping the no-data day.
+		expect(request?.metrics?.[0]).toMatchObject({
+			op: "percentile",
+			alias: "value",
+		});
+		expect(result.preview.points).toEqual([{ key: "2026-08-01", value: 4200 }]);
+		expect(result.preview.total).toBe(4200);
 	});
 
 	it("rejects a preview that references an unknown event before querying", async () => {

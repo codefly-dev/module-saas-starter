@@ -1,4 +1,10 @@
+import type { MessageInitShape } from "@bufbuild/protobuf";
+import { timestampFromDate } from "@bufbuild/protobuf/wkt";
 import { useQuery } from "@tanstack/react-query";
+import type {
+	AggregateAuditLogRequestSchema,
+	AggregateAuditLogResponse,
+} from "@/gen/saas/accounts/v1/audit_pb";
 import { useAuditService } from "@/lib/hooks/use-api-client";
 import { toAuditEvent } from "../model/transforms";
 import type { AuditEventTypeInfo, AuditLogFilters } from "../model/types";
@@ -90,6 +96,9 @@ export interface AuditAggregateParams {
 	groupBy?: AuditGroupDimension;
 	groupBys?: AuditGroupDimension[];
 	bucket?: "day" | "week" | "month";
+	// from/to bound the audit window; omit for all-time.
+	from?: Date;
+	to?: Date;
 	metrics?: AuditMetricSpec[];
 	derived?: AuditDerivedSpec[];
 }
@@ -104,6 +113,51 @@ export interface AuditAggregateBucket {
 	metrics: Record<string, number>;
 }
 
+// Bind the client-side aggregate params to the wire request: fill defaults,
+// convert the Date window to timestamps, and normalize the metric/derived
+// specs. Shared so an imperative caller (e.g. the authoring preview) issues the
+// exact same query the hook does.
+export function toAggregateRequest(
+	params: AuditAggregateParams,
+): MessageInitShape<typeof AggregateAuditLogRequestSchema> {
+	return {
+		orgId: params.orgId ?? "",
+		eventType: params.eventType ?? "",
+		category: params.category ?? "",
+		groupBy: params.groupBy ?? "",
+		groupBys: params.groupBys ?? [],
+		bucket: params.bucket ?? "",
+		from: params.from ? timestampFromDate(params.from) : undefined,
+		to: params.to ? timestampFromDate(params.to) : undefined,
+		metrics: (params.metrics ?? []).map((m) => ({
+			op: m.op,
+			field: m.field ?? "",
+			percentile: m.percentile ?? 0,
+			alias: m.alias ?? "",
+		})),
+		derived: (params.derived ?? []).map((d) => ({
+			alias: d.alias,
+			numerator: d.numerator,
+			denominator: d.denominator,
+		})),
+	};
+}
+
+// Shape a raw aggregate response into the client-side buckets: int64 counts and
+// double metric values become numbers. Shared with the hook's `select`.
+export function toAggregateBuckets(
+	response: AggregateAuditLogResponse,
+): AuditAggregateBucket[] {
+	return response.buckets.map((b) => ({
+		key: b.key,
+		count: Number(b.count),
+		keys: b.keys,
+		metrics: Object.fromEntries(
+			Object.entries(b.metrics).map(([k, v]) => [k, Number(v)]),
+		),
+	}));
+}
+
 export function useAuditAggregate(
 	params: AuditAggregateParams,
 	options: { enabled?: boolean } = {},
@@ -111,35 +165,8 @@ export function useAuditAggregate(
 	const svc = useAuditService();
 	return useQuery({
 		queryKey: ["audit-aggregate", params],
-		queryFn: () =>
-			svc.aggregateAuditLog({
-				orgId: params.orgId ?? "",
-				eventType: params.eventType ?? "",
-				category: params.category ?? "",
-				groupBy: params.groupBy ?? "",
-				groupBys: params.groupBys ?? [],
-				bucket: params.bucket ?? "",
-				metrics: (params.metrics ?? []).map((m) => ({
-					op: m.op,
-					field: m.field ?? "",
-					percentile: m.percentile ?? 0,
-					alias: m.alias ?? "",
-				})),
-				derived: (params.derived ?? []).map((d) => ({
-					alias: d.alias,
-					numerator: d.numerator,
-					denominator: d.denominator,
-				})),
-			}),
+		queryFn: () => svc.aggregateAuditLog(toAggregateRequest(params)),
 		enabled: options.enabled,
-		select: (data): AuditAggregateBucket[] =>
-			data.buckets.map((b) => ({
-				key: b.key,
-				count: Number(b.count),
-				keys: b.keys,
-				metrics: Object.fromEntries(
-					Object.entries(b.metrics).map(([k, v]) => [k, Number(v)]),
-				),
-			})),
+		select: toAggregateBuckets,
 	});
 }

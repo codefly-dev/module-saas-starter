@@ -105,6 +105,85 @@ describe("assertDataGraph", () => {
 		).toThrow(/filters unknown event 'missing'/);
 	});
 
+	it("accepts a percentile over a payload field", () => {
+		expect(() =>
+			assertDataGraph(
+				mutated((g) => {
+					const m = metric(g, 0);
+					m.aggregation = "percentile";
+					m.field = "payload:duration_ms";
+					m.percentile = 0.95;
+				}),
+			),
+		).not.toThrow();
+	});
+
+	it("accepts count_distinct over a column and a payload group dimension", () => {
+		expect(() =>
+			assertDataGraph(
+				mutated((g) => {
+					const m = metric(g, 0);
+					m.groupBy = "payload:plan";
+					delete m.bucket;
+					m.aggregation = "count_distinct";
+					m.field = "actor_id";
+				}),
+			),
+		).not.toThrow();
+	});
+
+	it("rejects a non-count aggregation with no field", () => {
+		expect(() =>
+			assertDataGraph(
+				mutated((g) => (metric(g, 0).aggregation = "count_distinct")),
+			),
+		).toThrow(/aggregation 'count_distinct' needs a field/);
+	});
+
+	it("rejects a numeric aggregation whose field is not a payload key", () => {
+		expect(() =>
+			assertDataGraph(
+				mutated((g) => {
+					const m = metric(g, 0);
+					m.aggregation = "sum";
+					m.field = "actor_id";
+				}),
+			),
+		).toThrow(/needs a payload:<key> field/);
+	});
+
+	it("rejects a count metric that declares a field", () => {
+		expect(() =>
+			assertDataGraph(mutated((g) => (metric(g, 0).field = "payload:x"))),
+		).toThrow(/count aggregation takes no field/);
+	});
+
+	it("rejects a percentile out of range", () => {
+		expect(() =>
+			assertDataGraph(
+				mutated((g) => {
+					const m = metric(g, 0);
+					m.aggregation = "percentile";
+					m.field = "payload:duration_ms";
+					m.percentile = 1.5;
+				}),
+			),
+		).toThrow(/percentile must be a quantile in \(0, 1\]/);
+	});
+
+	it("rejects a percentile on a non-percentile aggregation", () => {
+		expect(() =>
+			assertDataGraph(
+				mutated((g) => {
+					const m = metric(g, 0);
+					m.aggregation = "count_distinct";
+					m.field = "actor_id";
+					m.percentile = 0.95;
+				}),
+			),
+		).toThrow(/percentile is only valid for the percentile aggregation/);
+	});
+
 	it("rejects a time metric with no bucket", () => {
 		expect(() =>
 			assertDataGraph(mutated((g) => delete metric(g, 0).bucket)),

@@ -7,15 +7,53 @@
 
 import { assertDashboardSpec } from "./validate";
 
-// GroupBy mirrors the audit AggregateAuditLog RPC's group_by dimension.
-export type GroupBy = "event_type" | "category" | "actor" | "time";
+// A group dimension mirrors the audit AggregateAuditLog RPC's group_by: one of
+// the fixed audit columns, or a payload field addressed as `payload:<key>`.
+export type Dimension =
+	| "event_type"
+	| "category"
+	| "actor"
+	| "time"
+	| `payload:${string}`;
 
-// Bucket sizes the time grain; only meaningful when groupBy === "time".
+// GroupBy is a single dimension, or a list for multi-dimensional grouping (each
+// bucket keyed on the tuple of dimension values).
+export type GroupBy = Dimension | Dimension[];
+
+// Bucket sizes the time grain; only meaningful when a metric groups by time.
 export type Bucket = "day" | "week" | "month";
 
 // ChartKind selects how a metric renders: a time-series line, a ranked bar
 // list (top-N), or a single KPI tile.
 export type ChartKind = "line" | "bar" | "stat";
+
+// MetricOp mirrors the audit RPC's per-group aggregation functions.
+export type MetricOp =
+	| "count"
+	| "count_distinct"
+	| "sum"
+	| "avg"
+	| "min"
+	| "max"
+	| "percentile";
+
+// A single aggregation computed per group. The op determines what else is
+// required, so the illegal states are unrepresentable: `count` takes no field;
+// count_distinct and the numeric ops (sum/avg/min/max) read a `field` — a
+// `payload:<key>` for the numeric ops, or a column such as "actor_id" for
+// count_distinct; `percentile` additionally names its quantile in (0,1]
+// (0.95 → p95).
+export type MetricValue =
+	| { op: "count" }
+	| { op: "count_distinct" | "sum" | "avg" | "min" | "max"; field: string }
+	| { op: "percentile"; field: string; percentile: number };
+
+// A per-group ratio of two aggregations, computed by the RPC (e.g. an error
+// rate). The ratio is omitted for a group where the denominator is 0.
+export interface MetricRatio {
+	numerator: MetricValue;
+	denominator: MetricValue;
+}
 
 // An event names an audit event type the dashboard reads (e.g. "auth.login").
 export interface EventDef {
@@ -26,10 +64,8 @@ export function event(type: string): EventDef {
 	return { type };
 }
 
-// A metric is one node in the data graph: an aggregation over the audit trail.
-// `event` restricts to a single event type, `category` to a whole category;
-// omit both to aggregate everything.
-export interface MetricDef {
+// The shared shape of every metric node, before its plotted value is chosen.
+interface MetricBase {
 	title: string;
 	description?: string;
 	event?: EventDef;
@@ -43,7 +79,32 @@ export interface MetricDef {
 	// layout; ignored by a stack. A span wider than the layout's column count is
 	// clamped down to it, so a card never spans more columns than the grid has.
 	span?: 1 | 2 | 3 | 4;
+	// from/to bound the audit window this metric reads, as ISO-8601 timestamps
+	// so the spec stays JSON-serializable; omit for all-time.
+	from?: string;
+	to?: string;
 }
+
+// A metric is one node in the data graph: an aggregation over the audit trail.
+// `event` restricts to a single event type, `category` to a whole category;
+// omit both to aggregate everything. A card renders one series, so `value` and
+// `ratio` are mutually exclusive: a bare metric counts events; `value` plots a
+// single aggregation; `ratio` plots a per-group ratio of two.
+export type MetricDef = MetricBase &
+	(
+		| {
+				// value selects the aggregation plotted per group; defaults to a
+				// plain count.
+				value?: MetricValue;
+				ratio?: never;
+		  }
+		| {
+				// ratio plots a per-group ratio of two aggregations instead of a
+				// single value.
+				ratio: MetricRatio;
+				value?: never;
+		  }
+	);
 
 export function metric(def: MetricDef): MetricDef {
 	return def;

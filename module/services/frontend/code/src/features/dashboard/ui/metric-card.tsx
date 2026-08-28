@@ -55,7 +55,7 @@ export function MetricCard({
 							{total.toLocaleString()}
 						</span>
 						<Sparkline
-							points={points.map((p) => p.count)}
+							points={points.map((p) => p.value)}
 							width={120}
 							height={40}
 							className="text-primary/70"
@@ -63,14 +63,14 @@ export function MetricCard({
 					</div>
 				) : metric.chart === "line" ? (
 					<LineChart
-						points={points.map((p) => p.count)}
+						points={points.map((p) => p.value)}
 						className="text-primary/70"
 					/>
 				) : (
 					<BarList
 						items={points.map((p) => ({
 							label: formatAuditAction(p.key),
-							value: p.count,
+							value: p.value,
 						}))}
 					/>
 				)}

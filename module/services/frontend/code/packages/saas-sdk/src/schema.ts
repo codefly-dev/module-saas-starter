@@ -10,14 +10,29 @@
  * queries — which is deliberately separate from declaring and validating it.
  */
 
-/** Audit dimension a source metric groups its counts by. */
-export type MetricGroupBy = "event_type" | "category" | "actor" | "time";
+/**
+ * Audit dimension a source metric groups its counts by: a fixed audit column,
+ * or a payload field addressed as `payload:<key>`.
+ */
+export type MetricGroupBy =
+	| "event_type"
+	| "category"
+	| "actor"
+	| "time"
+	| `payload:${string}`;
 
 /** Time grain applied when a metric groups by time. */
 export type MetricBucket = "day" | "week" | "month";
 
 /** How a source metric reduces the audit events its filter matches. */
-export type MetricAggregation = "count" | "count_distinct";
+export type MetricAggregation =
+	| "count"
+	| "count_distinct"
+	| "sum"
+	| "avg"
+	| "min"
+	| "max"
+	| "percentile";
 
 /** How a derived metric combines the metrics it references. */
 export type MetricOperation = "sum" | "ratio" | "difference";
@@ -56,6 +71,14 @@ export interface SourceMetric {
 	/** Required when `groupBy` is `time`, forbidden otherwise. */
 	bucket?: MetricBucket;
 	aggregation: MetricAggregation;
+	/**
+	 * Column or `payload:<key>` the aggregation reads. Required for every op
+	 * except `count`; the numeric ops (sum/avg/min/max/percentile) need a
+	 * `payload:<key>`.
+	 */
+	field?: string;
+	/** Quantile in (0,1] for `aggregation: "percentile"` (0.95 → p95). */
+	percentile?: number;
 }
 
 /** A metric derived by combining metrics already declared in the same graph. */

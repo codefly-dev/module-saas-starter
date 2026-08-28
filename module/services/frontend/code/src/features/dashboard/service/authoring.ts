@@ -1,5 +1,9 @@
 import type { Client } from "@connectrpc/connect";
 import type { AuditEventTypeInfo } from "@/features/audit";
+import {
+	toAggregateBuckets,
+	toAggregateRequest,
+} from "@/features/audit/service/queries";
 import type { AuditService } from "@/gen/saas/accounts/v1/audit_pb";
 import {
 	DASHBOARD_SPEC_VERSION,
@@ -7,8 +11,11 @@ import {
 	type MetricDef,
 } from "../model/schema";
 import { assertDashboardSpec, DashboardSpecError } from "../model/validate";
-import type { MetricPoint } from "./use-metric";
-import { shapeMetricSeries } from "./use-metric";
+import {
+	compileMetricQuery,
+	type MetricPoint,
+	shapeMetricSeries,
+} from "./use-metric";
 
 // EventTypeVocabulary is the driver-facing catalog: the registered event types
 // (with their metadata, so a form can label them) plus the distinct categories
@@ -191,18 +198,12 @@ export function createDashboardAuthoring(
 				};
 			}
 
-			const res = await audit.aggregateAuditLog({
-				orgId,
-				eventType: metric.event?.type ?? "",
-				category: metric.category ?? "",
-				groupBy: metric.groupBy,
-				bucket: metric.bucket ?? "",
-			});
-			const buckets: MetricPoint[] = res.buckets.map((b) => ({
-				key: b.key,
-				count: Number(b.count),
-			}));
-			return { ok: true, preview: shapeMetricSeries(buckets, metric) };
+			const { params, valueAlias } = compileMetricQuery(metric, orgId);
+			const res = await audit.aggregateAuditLog(toAggregateRequest(params));
+			return {
+				ok: true,
+				preview: shapeMetricSeries(toAggregateBuckets(res), metric, valueAlias),
+			};
 		},
 
 		async setDashboard(spec) {

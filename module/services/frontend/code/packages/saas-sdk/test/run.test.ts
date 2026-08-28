@@ -43,6 +43,59 @@ describe("runMetric", () => {
 		expect(calls[0]?.eventType).toBe("user.signed_in.v1");
 	});
 
+	it("reads a non-count metric's value from the bucket metrics map", async () => {
+		const { client, calls } = fakeAuditClient(() => [
+			{ key: "2026-01-01", count: 128, metrics: { value: 4.2 } },
+		]);
+		const metric: SourceMetric = {
+			id: "p95_latency",
+			kind: "source",
+			filter: { event: "request_served" },
+			groupBy: "time",
+			bucket: "day",
+			aggregation: "percentile",
+			field: "payload:duration_ms",
+			percentile: 0.95,
+		};
+
+		const series = await runMetric(client, metric, (n) => n, context);
+
+		// The plotted value is the aliased percentile, not the group's row count.
+		expect(series.points).toEqual([{ key: "2026-01-01", value: 4.2 }]);
+		expect(calls[0]?.metrics).toEqual([
+			{
+				op: "percentile",
+				field: "payload:duration_ms",
+				percentile: 0.95,
+				alias: "value",
+			},
+		]);
+	});
+
+	it("drops a bucket whose aggregate the RPC left undefined, not plots it as zero", async () => {
+		const { client } = fakeAuditClient(() => [
+			{ key: "2026-01-01", count: 5, metrics: { value: 4.2 } },
+			// Group has events (count>0) but the percentile is undefined — the RPC
+			// omits the alias. "No data", not zero.
+			{ key: "2026-01-02", count: 3 },
+		]);
+		const metric: SourceMetric = {
+			id: "p95_latency",
+			kind: "source",
+			filter: { event: "request_served" },
+			groupBy: "time",
+			bucket: "day",
+			aggregation: "percentile",
+			field: "payload:duration_ms",
+			percentile: 0.95,
+		};
+
+		const series = await runMetric(client, metric, (n) => n, context);
+
+		expect(series.points).toEqual([{ key: "2026-01-01", value: 4.2 }]);
+		expect(series.total).toBe(4.2);
+	});
+
 	it("carries the metric's dimension onto the series", async () => {
 		const { client } = fakeAuditClient(() => [{ key: "2026-01-01", count: 1 }]);
 		const metric: SourceMetric = {

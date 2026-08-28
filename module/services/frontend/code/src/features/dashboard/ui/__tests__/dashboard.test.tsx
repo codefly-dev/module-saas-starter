@@ -185,6 +185,151 @@ describe("Dashboard", () => {
 		expect(root.querySelector(".bg-primary\\/70")).toBeTruthy();
 	});
 
+	it("plots a percentile metric's value from the bucket metrics map", async () => {
+		let sentOp: string | undefined;
+		server.use(
+			http.post(
+				rpc("AuditService", "AggregateAuditLog"),
+				async ({ request }) => {
+					const body = (await request.json()) as {
+						metrics?: Array<{ op: string }>;
+					};
+					sentOp = body.metrics?.[0]?.op;
+					return HttpResponse.json({
+						buckets: [
+							{
+								key: "2026-08-01",
+								keys: ["2026-08-01"],
+								count: "128",
+								metrics: { value: 4200 },
+							},
+						],
+					});
+				},
+			),
+		);
+
+		const latency = dashboard({
+			metrics: [
+				metric({
+					title: "p95 request latency",
+					event: event("http.request_served"),
+					groupBy: "time",
+					bucket: "day",
+					chart: "stat",
+					value: {
+						op: "percentile",
+						field: "payload:duration_ms",
+						percentile: 0.95,
+					},
+				}),
+			],
+		});
+
+		renderInApp(<Dashboard data={latency} />);
+
+		// The card shows the aliased percentile (4,200), not the group's row
+		// count (128), and the widened query reached the RPC as a percentile op.
+		expect(await screen.findByText("4,200")).toBeTruthy();
+		expect(screen.queryByText("128")).toBeNull();
+		expect(sentOp).toBe("percentile");
+	});
+
+	it("averages a non-additive stat across buckets instead of summing them", async () => {
+		server.use(
+			http.post(rpc("AuditService", "AggregateAuditLog"), () =>
+				HttpResponse.json({
+					buckets: [
+						{
+							key: "2026-08-01",
+							keys: ["2026-08-01"],
+							count: "10",
+							metrics: { value: 4000 },
+						},
+						{
+							key: "2026-08-02",
+							keys: ["2026-08-02"],
+							count: "10",
+							metrics: { value: 5000 },
+						},
+					],
+				}),
+			),
+		);
+
+		const latency = dashboard({
+			metrics: [
+				metric({
+					title: "p95 request latency",
+					event: event("http.request_served"),
+					groupBy: "time",
+					bucket: "day",
+					chart: "stat",
+					value: {
+						op: "percentile",
+						field: "payload:duration_ms",
+						percentile: 0.95,
+					},
+				}),
+			],
+		});
+
+		renderInApp(<Dashboard data={latency} />);
+
+		// Mean of the two daily p95s (4,500) — not their sum (9,000), which is a
+		// meaningless magnitude for a percentile.
+		expect(await screen.findByText("4,500")).toBeTruthy();
+		expect(screen.queryByText("9,000")).toBeNull();
+	});
+
+	it("drops a bucket whose aggregate the RPC omitted rather than plotting zero", async () => {
+		server.use(
+			http.post(rpc("AuditService", "AggregateAuditLog"), () =>
+				HttpResponse.json({
+					buckets: [
+						{
+							key: "2026-08-01",
+							keys: ["2026-08-01"],
+							count: "10",
+							metrics: { value: 4200 },
+						},
+						// Group has events but no numeric payload → alias omitted.
+						{
+							key: "2026-08-02",
+							keys: ["2026-08-02"],
+							count: "7",
+							metrics: {},
+						},
+					],
+				}),
+			),
+		);
+
+		const latency = dashboard({
+			metrics: [
+				metric({
+					title: "p95 request latency",
+					event: event("http.request_served"),
+					groupBy: "time",
+					bucket: "day",
+					chart: "stat",
+					value: {
+						op: "percentile",
+						field: "payload:duration_ms",
+						percentile: 0.95,
+					},
+				}),
+			],
+		});
+
+		renderInApp(<Dashboard data={latency} />);
+
+		// Only the day with data contributes; the omitted day is not a phantom 0,
+		// so the mean stays 4,200 rather than collapsing to 2,100.
+		expect(await screen.findByText("4,200")).toBeTruthy();
+		expect(screen.queryByText("2,100")).toBeNull();
+	});
+
 	it("shows loading, not empty, before an org is resolved", () => {
 		authState.organizationId = undefined;
 		let called = false;

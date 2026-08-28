@@ -70,17 +70,74 @@ describe("compileMetric", () => {
 		expect(query.to).toEqual(timestampFromDate(to));
 	});
 
-	it("rejects count_distinct until the audit RPC supports it", () => {
+	it("leaves a plain count as a metrics-free COUNT(*) query", () => {
+		const metric: SourceMetric = {
+			id: "logins",
+			kind: "source",
+			filter: { event: "signed_in" },
+			groupBy: "event_type",
+			aggregation: "count",
+		};
+
+		expect(compileMetric(metric, resolve, { orgId: "o" }).metrics).toEqual([]);
+	});
+
+	it("compiles count_distinct over a column into an aliased metric", () => {
 		const metric: SourceMetric = {
 			id: "distinct_actors",
 			kind: "source",
 			filter: { event: "signed_in" },
 			groupBy: "event_type",
 			aggregation: "count_distinct",
+			field: "actor_id",
 		};
 
-		expect(() => compileMetric(metric, resolve, { orgId: "o" })).toThrow(
-			/count_distinct/,
+		expect(compileMetric(metric, resolve, { orgId: "o" }).metrics).toEqual([
+			{
+				op: "count_distinct",
+				field: "actor_id",
+				percentile: 0,
+				alias: "value",
+			},
+		]);
+	});
+
+	it("compiles a percentile over a payload field", () => {
+		const metric: SourceMetric = {
+			id: "p95_latency",
+			kind: "source",
+			filter: { event: "request_served" },
+			groupBy: "time",
+			bucket: "day",
+			aggregation: "percentile",
+			field: "payload:duration_ms",
+			percentile: 0.95,
+		};
+
+		const query = compileMetric(metric, resolve, { orgId: "o" });
+
+		expect(query.groupBy).toBe("time");
+		expect(query.metrics).toEqual([
+			{
+				op: "percentile",
+				field: "payload:duration_ms",
+				percentile: 0.95,
+				alias: "value",
+			},
+		]);
+	});
+
+	it("passes a payload group dimension straight through", () => {
+		const metric: SourceMetric = {
+			id: "by_plan",
+			kind: "source",
+			filter: { event: "signed_in" },
+			groupBy: "payload:plan",
+			aggregation: "count",
+		};
+
+		expect(compileMetric(metric, resolve, { orgId: "o" }).groupBy).toBe(
+			"payload:plan",
 		);
 	});
 });
