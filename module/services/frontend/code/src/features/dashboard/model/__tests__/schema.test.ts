@@ -40,4 +40,22 @@ describe("dashboard data-graph declaration", () => {
 		expect(d.version).toBe(DASHBOARD_SPEC_VERSION);
 		expect(JSON.parse(JSON.stringify(d))).toEqual(d);
 	});
+
+	it("validates the authored spec, rejecting an incoherent literal", () => {
+		// A time metric with no bucket type-checks (bucket is optional) but is
+		// incoherent; dashboard() must reject it at author time, not defer the
+		// failure to render.
+		expect(() =>
+			dashboard({
+				metrics: [
+					metric({
+						title: "Logins over time",
+						event: event("auth.login"),
+						groupBy: "time",
+						chart: "line",
+					}),
+				],
+			}),
+		).toThrow(/needs a bucket/);
+	});
 });

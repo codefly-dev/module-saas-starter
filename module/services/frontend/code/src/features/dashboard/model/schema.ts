@@ -5,6 +5,8 @@
 // exist so a declaration reads as data and gets full inference without a class
 // or builder ceremony.
 
+import { assertDashboardSpec } from "./validate";
+
 // GroupBy mirrors the audit AggregateAuditLog RPC's group_by dimension.
 export type GroupBy = "event_type" | "category" | "actor" | "time";
 
@@ -59,8 +61,14 @@ export interface DashboardDef {
 	metrics: MetricDef[];
 }
 
-// dashboard() stamps the current spec version so an authored literal need not
-// repeat it; the result is a complete, serializable DashboardDef.
+// dashboard() stamps the current spec version and validates the result, so an
+// authored literal need not repeat the version and is held to exactly the same
+// coherence rules as a spec restored from storage or set at runtime. There is
+// one notion of a valid spec, not one for authored dashboards and a stricter
+// one for drafts; an incoherent literal (e.g. a time metric without a bucket,
+// which the types permit) fails here at author time rather than at render.
 export function dashboard(def: Omit<DashboardDef, "version">): DashboardDef {
-	return { version: DASHBOARD_SPEC_VERSION, ...def };
+	const spec = { version: DASHBOARD_SPEC_VERSION, ...def };
+	assertDashboardSpec(spec);
+	return spec;
 }

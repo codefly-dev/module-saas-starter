@@ -46,9 +46,15 @@ describe("assertDashboardSpec", () => {
 		);
 	});
 
-	it("rejects a dashboard with no metrics", () => {
-		expect(() => assertDashboardSpec({ ...validSpec, metrics: [] })).toThrow(
-			/at least one metric/,
+	it("accepts a dashboard with no metrics (the empty intermediate state)", () => {
+		expect(() =>
+			assertDashboardSpec({ ...validSpec, metrics: [] }),
+		).not.toThrow();
+	});
+
+	it("rejects a metrics field that is not an array", () => {
+		expect(() => assertDashboardSpec({ ...validSpec, metrics: {} })).toThrow(
+			/metrics must be an array/,
 		);
 	});
 

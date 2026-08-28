@@ -1,5 +1,5 @@
 import { act, renderHook } from "@testing-library/react";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { dashboard, event, metric } from "../../model/schema";
 import { DashboardSpecError } from "../../model/validate";
 import { useDashboardDraft } from "../use-dashboard-draft";
@@ -27,7 +27,10 @@ const edited = dashboard({
 });
 
 beforeEach(() => window.localStorage.clear());
-afterEach(() => window.localStorage.clear());
+afterEach(() => {
+	vi.restoreAllMocks();
+	window.localStorage.clear();
+});
 
 describe("useDashboardDraft", () => {
 	it("starts from the initial spec when no draft is stored", () => {
@@ -88,5 +91,101 @@ describe("useDashboardDraft", () => {
 		expect(result.current.spec).toEqual(initial);
 		expect(result.current.error).toBeNull();
 		expect(window.localStorage.getItem(KEY)).toBeNull();
+	});
+
+	it("keeps a valid edit when persisting it throws (quota/blocked storage)", () => {
+		const { result } = renderHook(() => useDashboardDraft(KEY, initial));
+		vi.spyOn(window.localStorage, "setItem").mockImplementation(() => {
+			throw new DOMException("quota", "QuotaExceededError");
+		});
+		act(() => result.current.setSpec(edited));
+		// The edit is applied in memory (never lost)...
+		expect(result.current.spec).toEqual(edited);
+		// ...and the persistence failure surfaces as a non-validation error.
+		expect(result.current.error).toBeInstanceOf(Error);
+		expect(result.current.error).not.toBeInstanceOf(DashboardSpecError);
+	});
+
+	it("surfaces a storage read failure without throwing out of the effect", () => {
+		vi.spyOn(window.localStorage, "getItem").mockImplementation(() => {
+			throw new DOMException("blocked", "SecurityError");
+		});
+		const { result } = renderHook(() => useDashboardDraft(KEY, initial));
+		expect(result.current.spec).toEqual(initial);
+		expect(result.current.error).toBeInstanceOf(Error);
+		expect(result.current.error).not.toBeInstanceOf(DashboardSpecError);
+	});
+
+	it("surfaces an invalid initial spec instead of crashing the render", () => {
+		const badInitial = {
+			...initial,
+			metrics: [{ title: "x", groupBy: "time", chart: "line" }],
+		} as unknown as typeof initial;
+		const { result } = renderHook(() => useDashboardDraft(KEY, badInitial));
+		expect(result.current.spec).toBe(badInitial);
+		expect(result.current.error).toBeInstanceOf(DashboardSpecError);
+	});
+
+	it("picks up a valid draft written by another tab via the storage event", () => {
+		const { result } = renderHook(() => useDashboardDraft(KEY, initial));
+		act(() => {
+			window.dispatchEvent(
+				new StorageEvent("storage", {
+					key: KEY,
+					newValue: JSON.stringify(edited),
+				}),
+			);
+		});
+		expect(result.current.spec).toEqual(edited);
+		expect(result.current.error).toBeNull();
+	});
+
+	it("returns to the initial spec when another tab clears the key", () => {
+		window.localStorage.setItem(KEY, JSON.stringify(edited));
+		const { result } = renderHook(() => useDashboardDraft(KEY, initial));
+		expect(result.current.spec).toEqual(edited);
+		act(() => {
+			window.dispatchEvent(
+				new StorageEvent("storage", { key: KEY, newValue: null }),
+			);
+		});
+		expect(result.current.spec).toEqual(initial);
+	});
+
+	it("ignores storage events for a different key", () => {
+		const { result } = renderHook(() => useDashboardDraft(KEY, initial));
+		act(() => {
+			window.dispatchEvent(
+				new StorageEvent("storage", {
+					key: "some:other:key",
+					newValue: JSON.stringify(edited),
+				}),
+			);
+		});
+		expect(result.current.spec).toEqual(initial);
+	});
+
+	it("accepts a runtime set that removes the last widget", () => {
+		const { result } = renderHook(() => useDashboardDraft(KEY, initial));
+		const emptied = dashboard({ title: "Emptied", metrics: [] });
+		act(() => result.current.setSpec(emptied));
+		expect(result.current.spec).toEqual(emptied);
+		expect(result.current.error).toBeNull();
+	});
+
+	it("reset returns to the latest initial, not the one frozen at first mount", () => {
+		const second = dashboard({
+			title: "Second",
+			metrics: [
+				metric({ title: "By category", groupBy: "category", chart: "bar" }),
+			],
+		});
+		const { result, rerender } = renderHook(
+			({ init }) => useDashboardDraft(KEY, init),
+			{ initialProps: { init: initial } },
+		);
+		rerender({ init: second });
+		act(() => result.current.reset());
+		expect(result.current.spec).toEqual(second);
 	});
 });

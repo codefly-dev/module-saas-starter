@@ -163,8 +163,10 @@ export function assertDashboardSpec(
 	);
 	assertOptionalText(value.title, "spec title");
 	assertOptionalText(value.description, "spec description");
+	// An empty metric list is a coherent, renderable dashboard (title only) and
+	// the natural intermediate state when the last widget is removed, so it is
+	// allowed — only a non-array is rejected.
 	assertSpec(Array.isArray(value.metrics), "spec metrics must be an array");
-	assertSpec(value.metrics.length > 0, "spec must declare at least one metric");
 	value.metrics.forEach((entry, index) => {
 		validateMetric(entry, index);
 	});
