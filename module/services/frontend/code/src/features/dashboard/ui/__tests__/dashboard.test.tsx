@@ -134,6 +134,25 @@ describe("Dashboard", () => {
 		).toBeTruthy();
 	});
 
+	it("clamps a span wider than the grid to the column count", () => {
+		server.use(aggregateHandler([], []));
+
+		// A span of 4 in a 2-column grid must not emit col-span-4: CSS grid would
+		// spawn implicit columns and break the row. It clamps to 2 instead.
+		const spec = dashboard({
+			layout: { kind: "grid", columns: 2 },
+			metrics: [
+				metric({ title: "Wide", groupBy: "event_type", chart: "bar", span: 4 }),
+			],
+		});
+		const { container } = renderInApp(<Dashboard data={spec} />);
+
+		const card = container.querySelector('[data-slot="card"]');
+		expect(card?.className).toContain("sm:col-span-2");
+		expect(card?.className).not.toContain("col-span-3");
+		expect(card?.className).not.toContain("col-span-4");
+	});
+
 	it("lays out as a stack when the spec asks for one", () => {
 		server.use(aggregateHandler([], []));
 
@@ -147,8 +166,8 @@ describe("Dashboard", () => {
 		expect(container.querySelector('[data-slot="grid"]')).toBeNull();
 	});
 
-	it("applies the spec's accent as a local primary override", () => {
-		server.use(aggregateHandler([], []));
+	it("applies the spec's accent as a primary override the charts inherit", async () => {
+		server.use(aggregateHandler([], [{ key: "auth.login", count: "5" }]));
 
 		const spec = dashboard({
 			theme: { accent: "oklch(0.6 0.2 20)" },
@@ -158,6 +177,12 @@ describe("Dashboard", () => {
 
 		const root = container.firstChild as HTMLElement;
 		expect(root.style.getPropertyValue("--primary")).toBe("oklch(0.6 0.2 20)");
+
+		// The override only means anything if the chart actually colors from the
+		// primary token: assert a primary-keyed chart element renders inside the
+		// accented subtree, so hardcoding a color in a chart would fail here.
+		await screen.findByText("Auth Login");
+		expect(root.querySelector(".bg-primary\\/70")).toBeTruthy();
 	});
 
 	it("shows loading, not empty, before an org is resolved", () => {

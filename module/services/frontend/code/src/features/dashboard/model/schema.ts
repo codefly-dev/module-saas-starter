@@ -40,8 +40,8 @@ export interface MetricDef {
 	// limit caps the ranked bars for a categorical `chart: "bar"` metric.
 	limit?: number;
 	// span sets how many grid columns this metric's card occupies in a grid
-	// layout; ignored by a stack. It clamps to the grid's column count on
-	// narrower breakpoints so a wide card never overflows its row.
+	// layout; ignored by a stack. A span wider than the layout's column count is
+	// clamped down to it, so a card never spans more columns than the grid has.
 	span?: 1 | 2 | 3 | 4;
 }
 

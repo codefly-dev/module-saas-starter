@@ -7,7 +7,9 @@ import type { DashboardDef, LayoutDef, MetricDef } from "../model/schema";
 import { MetricCard } from "./metric-card";
 
 // Column-span classes mirror Grid's responsive breakpoints so a spanning card
-// widens in step with the grid instead of overflowing a narrower row.
+// widens in step with the grid. Callers clamp the span to the grid's column
+// count before lookup: a span wider than the grid has tracks would make CSS
+// grid spawn implicit columns and break the row, so it is never emitted.
 const colSpan: Record<1 | 2 | 3 | 4, string> = {
 	1: "",
 	2: "sm:col-span-2",
@@ -41,6 +43,7 @@ export function Dashboard({
 	const resolvedOrgId = orgId ?? organizationId ?? "";
 
 	const layout: LayoutDef = data.layout ?? { kind: "grid" };
+	const columns = layout.columns ?? 2;
 	// Accent themes the dashboard's charts by overriding the primary token for
 	// this subtree; the charts already color from `primary`, so nothing below
 	// needs to know about the accent.
@@ -54,7 +57,9 @@ export function Dashboard({
 			metric={metric}
 			orgId={resolvedOrgId}
 			className={
-				layout.kind === "grid" && metric.span ? colSpan[metric.span] : undefined
+				layout.kind === "grid" && metric.span
+					? colSpan[Math.min(metric.span, columns) as 1 | 2 | 3 | 4]
+					: undefined
 			}
 		/>
 	));
@@ -76,7 +81,7 @@ export function Dashboard({
 			{layout.kind === "stack" ? (
 				<Stack gap={4}>{cards}</Stack>
 			) : (
-				<Grid cols={layout.columns ?? 2} gap={4}>
+				<Grid cols={columns} gap={4}>
 					{cards}
 				</Grid>
 			)}
