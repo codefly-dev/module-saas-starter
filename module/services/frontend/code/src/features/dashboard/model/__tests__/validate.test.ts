@@ -145,6 +145,24 @@ describe("assertDashboardSpec", () => {
 		).toThrow(/event type must be a non-empty string/);
 	});
 
+	it("rejects a metric that sets both event and category", () => {
+		expect(() =>
+			assertDashboardSpec({
+				version: DASHBOARD_SPEC_VERSION,
+				metrics: [
+					{
+						title: "x",
+						event: { type: "auth.login" },
+						category: "security",
+						groupBy: "time",
+						bucket: "day",
+						chart: "line",
+					},
+				],
+			}),
+		).toThrow(/mutually exclusive/);
+	});
+
 	it("rejects a missing metric title", () => {
 		expect(() =>
 			assertDashboardSpec({
