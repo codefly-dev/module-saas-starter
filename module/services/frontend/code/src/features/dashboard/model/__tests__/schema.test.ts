@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { dashboard, event, metric } from "../schema";
+import { DASHBOARD_SPEC_VERSION, dashboard, event, metric } from "../schema";
 
 describe("dashboard data-graph declaration", () => {
 	it("names an event type", () => {
@@ -29,5 +29,15 @@ describe("dashboard data-graph declaration", () => {
 		});
 		expect(d.title).toBe("Activity");
 		expect(d.metrics).toHaveLength(1);
+	});
+
+	it("stamps the spec version and stays JSON round-trippable", () => {
+		const d = dashboard({
+			metrics: [
+				metric({ title: "Top events", groupBy: "event_type", chart: "bar" }),
+			],
+		});
+		expect(d.version).toBe(DASHBOARD_SPEC_VERSION);
+		expect(JSON.parse(JSON.stringify(d))).toEqual(d);
 	});
 });

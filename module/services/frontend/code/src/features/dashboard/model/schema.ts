@@ -43,12 +43,24 @@ export function metric(def: MetricDef): MetricDef {
 	return def;
 }
 
+// The current dashboard-spec schema version. It is a discriminant, not a
+// range: a spec stamped with any other value is from a schema this build does
+// not understand and is rejected on load rather than coerced.
+export const DASHBOARD_SPEC_VERSION = 1;
+
+// A dashboard spec is serializable data, not code: it round-trips through
+// JSON.stringify/parse so it can live in app state and localStorage, be edited
+// at runtime, and survive a reload. `version` pins the schema it was authored
+// against.
 export interface DashboardDef {
+	version: typeof DASHBOARD_SPEC_VERSION;
 	title?: string;
 	description?: string;
 	metrics: MetricDef[];
 }
 
-export function dashboard(def: DashboardDef): DashboardDef {
-	return def;
+// dashboard() stamps the current spec version so an authored literal need not
+// repeat it; the result is a complete, serializable DashboardDef.
+export function dashboard(def: Omit<DashboardDef, "version">): DashboardDef {
+	return { version: DASHBOARD_SPEC_VERSION, ...def };
 }
