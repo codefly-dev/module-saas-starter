@@ -5,6 +5,8 @@
 // exist so a declaration reads as data and gets full inference without a class
 // or builder ceremony.
 
+import { assertDashboardSpec } from "./validate";
+
 // GroupBy mirrors the audit AggregateAuditLog RPC's group_by dimension.
 export type GroupBy = "event_type" | "category" | "actor" | "time";
 
@@ -43,12 +45,30 @@ export function metric(def: MetricDef): MetricDef {
 	return def;
 }
 
+// The current dashboard-spec schema version. It is a discriminant, not a
+// range: a spec stamped with any other value is from a schema this build does
+// not understand and is rejected on load rather than coerced.
+export const DASHBOARD_SPEC_VERSION = 1;
+
+// A dashboard spec is serializable data, not code: it round-trips through
+// JSON.stringify/parse so it can live in app state and localStorage, be edited
+// at runtime, and survive a reload. `version` pins the schema it was authored
+// against.
 export interface DashboardDef {
+	version: typeof DASHBOARD_SPEC_VERSION;
 	title?: string;
 	description?: string;
 	metrics: MetricDef[];
 }
 
-export function dashboard(def: DashboardDef): DashboardDef {
-	return def;
+// dashboard() stamps the current spec version and validates the result, so an
+// authored literal need not repeat the version and is held to exactly the same
+// coherence rules as a spec restored from storage or set at runtime. There is
+// one notion of a valid spec, not one for authored dashboards and a stricter
+// one for drafts; an incoherent literal (e.g. a time metric without a bucket,
+// which the types permit) fails here at author time rather than at render.
+export function dashboard(def: Omit<DashboardDef, "version">): DashboardDef {
+	const spec = { version: DASHBOARD_SPEC_VERSION, ...def };
+	assertDashboardSpec(spec);
+	return spec;
 }
