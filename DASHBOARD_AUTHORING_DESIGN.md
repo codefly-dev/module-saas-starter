@@ -8,10 +8,13 @@
 > under the Dynamic Dashboards epic #321).
 >
 > **This document makes those three decisions deliberately and records the
-> rationale.** It is a design document, not shipped code: it resolves the
-> ownership/layout question (#330), the result-contract shape (#331), and the
-> caching strategy (#332), and marks which decisions imply a follow-up change
-> versus ratify what already exists.
+> rationale.** It is a design document, not shipped code: it takes a position on
+> the ownership/layout question (#330), the result-contract shape (#331), and
+> the caching strategy (#332), and marks which decisions imply a follow-up
+> change versus ratify what already exists. Two of the three change code that
+> still lives in open PRs (#325, #323) and #331 changes an external driver
+> contract, so these are proposed decisions that bind the reconciliation — not a
+> settled record that overrides those PRs' authors.
 
 This is the "reflect on the seam we just built" companion to #321's "build the
 seam" children. Nothing here is blocking — the authoring API works today and
@@ -84,10 +87,15 @@ not, hook-vs-external-store), which is strictly worse.
   its non-throwing `FieldError` contract and its registry checks
   (`unknown_event_type` / `unknown_category`, which are its alone), but stops
   re-encoding the coherence rules — it derives them from the model layer so a
-  rule changes in exactly one place. Concretely, the shared constants
-  (`GROUP_BY`, `BUCKET`, `CHART`) and the bucket/`limit` predicates should be
-  exported from `model/` and consumed by `service/validation.ts`, leaving that
-  file to own only vocabulary resolution and the `FieldError` projection.
+  rule changes in exactly one place. Concretely, the shareable unit is the
+  enum sets (`model/`'s `GROUP_BY`/`BUCKET`/`CHART`, which
+  `service/validation.ts` currently re-declares as `GROUP_BYS`/`BUCKETS`/
+  `CHARTS`) and the bucket/`limit` coherence rules extracted as pure predicates.
+  It is only those data and predicates that move to `model/`, not the control
+  flow: `model/validate.ts` keeps throwing on the first violation while
+  `service/validation.ts` keeps accumulating every `FieldError`, each consuming
+  the shared predicates in its own way. That leaves `service/validation.ts`
+  owning only vocabulary resolution and the `FieldError` projection.
 - **Canonical draft store: the framework-agnostic `DashboardDraftStore`
   (`service/draft-store.ts`).** It is the more general object — the imperative
   API and any number of subscribers can share one store; a hook cannot back
@@ -95,8 +103,14 @@ not, hook-vs-external-store), which is strictly worse.
   wrapper over the canonical store (this is exactly what
   `use-dashboard-authoring.ts` already does with its `useDashboardDraft`
   export), rather than a second, independently-validating localStorage
-  implementation. The `model/`-owned validator runs inside the store's `save`
-  path so persistence and authoring share one notion of "valid."
+  implementation. This collapses a live name collision, not just a duplicated
+  concept: `main`'s `index.ts` re-exports a `useDashboardDraft` (returning the
+  `DashboardDraft` control object) from `service/use-dashboard-draft.ts`, while
+  #325's `use-dashboard-authoring.ts` exports a *different* `useDashboardDraft`
+  (returning `DashboardDef | null`). Two symbols, one name — `index.ts` can only
+  re-export one, so the reconciliation must pick the single wrapper deliberately
+  rather than let a merge decide. The `model/`-owned validator runs inside the
+  store's `save` path so persistence and authoring share one notion of "valid."
 - **Paths.** Keep `model/` for spec + validation and `service/` for the store,
   matching #317's merged layout. When #320 lands, its `service/validation.ts`
   stays (registry-aware layer) and its `service/draft-store.ts` becomes the one
@@ -253,10 +267,19 @@ handled by the store interface.
 
 | # | Decision | Status |
 |---|----------|--------|
-| #330 | Two validators / two draft stores, each with **one canonical owner of shared rules**: coherence rules live in `model/`, the framework-agnostic `DashboardDraftStore` is the canonical store, hooks and the registry-aware validator layer on top. No third fork from #323. | Ratify + small reconciliation when #320 lands |
+| #330 | Two validators / two draft stores, each with **one canonical owner of shared rules**: coherence rules live in `model/`, the framework-agnostic `DashboardDraftStore` is the canonical store, hooks and the registry-aware validator layer on top. No third fork from #323. | Ratify + reconcile whichever of #323/#325 lands first |
 | #331 | Split `org_unresolved` into a distinct `kind: "pending"` variant on `PreviewResult`; add a `kind: "validation"` discriminant to both results; `CommitResult` stays two-variant because commit has no org-scoped precondition. | Contract change when #320 lands |
 | #332 | Keep the per-instance vocabulary memo (no react-query coupling); **bound it with a TTL/`refresh()`**; never cache aggregate results; settings-service migration is a store-implementation swap. | Ratify + bound the memo when #320 lands |
 
-Every follow-up is gated on #320 (PR #325) merging — none of that code is on
-`main` yet — and on #323 being pointed at the canonical `model/` rather than a
-fork. This document is the decision of record for those changes.
+Sequencing matters and is not a single gate. The #331 and #332 follow-ups are
+gated on #320 (PR #325) merging — that code is not on `main` yet. The #330
+follow-up is **not**: #323 (the dev harness) is an independent open PR that
+touches the on-`main` `model/validate.ts` and `service/use-dashboard-draft.ts`
+directly, so it can land **before** #325 and move the "canonical `model/`" this
+whole decision rests on. Whichever of #323/#325 lands first must be held to the
+ownership decided here — #323 pointed at the canonical `model/` rather than a
+fork, #325 reconciled onto it — or the baseline shifts under the other.
+
+These are proposed decisions, recorded to keep the review's reasoning from
+being lost; they bind the #323/#325 reconciliation but are not a substitute for
+sign-off from those PRs' authors, whose code #330–#332 change.
