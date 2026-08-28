@@ -95,8 +95,9 @@ dashboard:
       title: Distinct actors triggered
       filter:
         event: guardrail_triggered
-      groupBy: actor
+      groupBy: category
       aggregation: count_distinct
+      field: actor_id
     - id: trigger_rate
       kind: derived
       title: Triggers per signup

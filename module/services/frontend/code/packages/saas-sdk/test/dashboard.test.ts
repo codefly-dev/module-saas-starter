@@ -150,14 +150,15 @@ describe("runDashboard", () => {
 					groupBy: "event_type",
 					aggregation: "count",
 				},
-				// Used only by dashboard "b"; its unsupported aggregation would throw
-				// at compile time if dashboard "a" resolved the whole graph.
+				// Used only by dashboard "b"; if dashboard "a" resolved the whole
+				// graph this metric would issue a second, unrelated RPC.
 				{
 					id: "unshown",
 					kind: "source",
 					filter: { event: "signed_in" },
 					groupBy: "event_type",
 					aggregation: "count_distinct",
+					field: "actor_id",
 				},
 			],
 			dashboards: [

@@ -6,7 +6,11 @@ import type {
 	MetricGroupBy,
 	SourceMetric,
 } from "../schema.js";
-import { compileMetric, type EventTypeResolver } from "./compile.js";
+import {
+	compileMetric,
+	type EventTypeResolver,
+	METRIC_VALUE_ALIAS,
+} from "./compile.js";
 import type {
 	AuditAggregateClient,
 	MetricContext,
@@ -39,15 +43,23 @@ export async function runMetric(
 	const response = await client.aggregateAuditLog(
 		compileMetric(metric, resolveEventType, context),
 	);
-	return toSeries(
-		metric.id,
-		response.buckets.map((bucket) => ({
-			key: bucket.key,
-			value: Number(bucket.count),
-		})),
-		metric.groupBy,
-		metric.bucket,
-	);
+	// A plain count reads the bucket's own COUNT(*); every other op is computed
+	// under METRIC_VALUE_ALIAS in the bucket's metrics map. The RPC omits that
+	// alias for a group whose aggregate is undefined (min/avg/max/percentile over
+	// no numeric values) — absence means "no data", not zero — so such a bucket
+	// is dropped rather than plotted as a phantom zero.
+	const readValue =
+		metric.aggregation === "count"
+			? (bucket: (typeof response.buckets)[number]) => Number(bucket.count)
+			: (bucket: (typeof response.buckets)[number]) =>
+					bucket.metrics[METRIC_VALUE_ALIAS];
+	const points: MetricPoint[] = [];
+	for (const bucket of response.buckets) {
+		const value = readValue(bucket);
+		if (value === undefined) continue;
+		points.push({ key: bucket.key, value });
+	}
+	return toSeries(metric.id, points, metric.groupBy, metric.bucket);
 }
 
 // Combine the resolved series of a derived metric's inputs. Inputs are aligned

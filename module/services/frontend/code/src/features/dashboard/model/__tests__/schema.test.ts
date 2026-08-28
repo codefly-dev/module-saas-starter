@@ -20,6 +20,28 @@ describe("dashboard data-graph declaration", () => {
 		expect(m.chart).toBe("line");
 	});
 
+	it("carries a widened metric's value spec and time window through", () => {
+		const from = "2026-01-01T00:00:00.000Z";
+		const m = metric({
+			title: "p95 latency",
+			groupBy: ["category", "actor"],
+			chart: "line",
+			value: {
+				op: "percentile",
+				field: "payload:duration_ms",
+				percentile: 0.95,
+			},
+			from,
+		});
+		expect(m.value).toEqual({
+			op: "percentile",
+			field: "payload:duration_ms",
+			percentile: 0.95,
+		});
+		expect(m.groupBy).toEqual(["category", "actor"]);
+		expect(m.from).toBe(from);
+	});
+
 	it("assembles metrics into a dashboard", () => {
 		const d = dashboard({
 			title: "Activity",

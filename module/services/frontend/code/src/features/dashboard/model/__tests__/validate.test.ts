@@ -196,6 +196,135 @@ describe("assertDashboardSpec", () => {
 			}),
 		).toThrow(/span must be an integer from 1 to 4/);
 	});
+
+	it("accepts widened metrics: percentile-over-payload, multi-dim, window", () => {
+		expect(() =>
+			dashboard({
+				metrics: [
+					metric({
+						title: "p95 latency",
+						event: event("http.request_served"),
+						groupBy: ["time", "payload:route"],
+						bucket: "day",
+						chart: "line",
+						value: {
+							op: "percentile",
+							field: "payload:duration_ms",
+							percentile: 0.95,
+						},
+						from: "2026-01-01T00:00:00.000Z",
+						to: "2026-02-01T00:00:00.000Z",
+					}),
+					metric({
+						title: "Verified login rate",
+						groupBy: "event_type",
+						chart: "bar",
+						ratio: {
+							numerator: { op: "count_distinct", field: "actor_id" },
+							denominator: { op: "count" },
+						},
+					}),
+				],
+			}),
+		).not.toThrow();
+	});
+
+	it("rejects a payload group dimension with an empty key", () => {
+		expect(() =>
+			assertDashboardSpec({
+				version: DASHBOARD_SPEC_VERSION,
+				metrics: [{ title: "x", groupBy: "payload:", chart: "bar" }],
+			}),
+		).toThrow(/groupBy 'payload:' is unsupported/);
+	});
+
+	it("rejects a non-count value with no field", () => {
+		expect(() =>
+			assertDashboardSpec({
+				version: DASHBOARD_SPEC_VERSION,
+				metrics: [
+					{
+						title: "x",
+						groupBy: "event_type",
+						chart: "bar",
+						value: { op: "count_distinct" },
+					},
+				],
+			}),
+		).toThrow(/value has unknown field|value field must be a non-empty string/);
+	});
+
+	it("rejects a numeric value whose field is not a payload key", () => {
+		expect(() =>
+			assertDashboardSpec({
+				version: DASHBOARD_SPEC_VERSION,
+				metrics: [
+					{
+						title: "x",
+						groupBy: "event_type",
+						chart: "bar",
+						value: { op: "sum", field: "actor_id" },
+					},
+				],
+			}),
+		).toThrow(/needs a payload:<key> field/);
+	});
+
+	it("rejects a percentile value out of range", () => {
+		expect(() =>
+			assertDashboardSpec({
+				version: DASHBOARD_SPEC_VERSION,
+				metrics: [
+					{
+						title: "x",
+						groupBy: "event_type",
+						chart: "bar",
+						value: {
+							op: "percentile",
+							field: "payload:duration_ms",
+							percentile: 1.5,
+						},
+					},
+				],
+			}),
+		).toThrow(/percentile must be a quantile in \(0, 1\]/);
+	});
+
+	it("rejects a metric declaring both value and ratio", () => {
+		expect(() =>
+			assertDashboardSpec({
+				version: DASHBOARD_SPEC_VERSION,
+				metrics: [
+					{
+						title: "x",
+						groupBy: "event_type",
+						chart: "bar",
+						value: { op: "count" },
+						ratio: {
+							numerator: { op: "count" },
+							denominator: { op: "count" },
+						},
+					},
+				],
+			}),
+		).toThrow(/declares both value and ratio/);
+	});
+
+	it("rejects a non-ISO time window", () => {
+		expect(() =>
+			assertDashboardSpec({
+				version: DASHBOARD_SPEC_VERSION,
+				metrics: [
+					{
+						title: "x",
+						groupBy: "event_type",
+						chart: "bar",
+						from: "last tuesday",
+					},
+				],
+			}),
+		).toThrow(/from must be an ISO-8601 timestamp/);
+	});
 });
 
 describe("parseDashboardSpec", () => {

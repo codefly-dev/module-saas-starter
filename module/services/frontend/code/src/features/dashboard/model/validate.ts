@@ -11,18 +11,48 @@ import {
 	type ChartKind,
 	DASHBOARD_SPEC_VERSION,
 	type DashboardDef,
-	type GroupBy,
+	type Dimension,
 	type MetricDef,
+	type MetricOp,
 } from "./schema";
 
-const GROUP_BY: readonly GroupBy[] = [
+const FIXED_DIMENSION: readonly Dimension[] = [
 	"event_type",
 	"category",
 	"actor",
 	"time",
 ];
+// A payload field is addressed as `payload:<key>` with a non-empty key — both
+// as a group dimension and as an aggregation's `field`.
+const PAYLOAD_FIELD = /^payload:.+$/;
 const CHART: readonly ChartKind[] = ["line", "bar", "stat"];
 const BUCKET: readonly Bucket[] = ["day", "week", "month"];
+const OP: readonly MetricOp[] = [
+	"count",
+	"count_distinct",
+	"sum",
+	"avg",
+	"min",
+	"max",
+	"percentile",
+];
+// The numeric ops read a numeric payload value, so they require a
+// `payload:<key>` field; count_distinct may instead read a bare column.
+const NUMERIC_OP: readonly MetricOp[] = [
+	"sum",
+	"avg",
+	"min",
+	"max",
+	"percentile",
+];
+
+function isDimension(value: unknown): value is Dimension {
+	return (
+		typeof value === "string" &&
+		((FIXED_DIMENSION as readonly string[]).includes(value) ||
+			PAYLOAD_FIELD.test(value))
+	);
+}
 
 // DashboardSpecError is the structured rejection a caller catches when a spec
 // is malformed or incoherent, so a bad spec surfaces as data to handle rather
@@ -69,6 +99,50 @@ function assertOptionalText(value: unknown, context: string): void {
 	);
 }
 
+// A metric value is one aggregation. Its op determines the rest: count takes
+// only `op`; count_distinct and the numeric ops carry a `field` (a
+// `payload:<key>` for the numeric ops); percentile also carries a quantile. The
+// per-op exact-key checks make the illegal shapes the types forbid also
+// unrepresentable in a spec parsed from JSON.
+function validateMetricValue(value: unknown, context: string): void {
+	assertSpec(isObject(value), `${context} must be an object`);
+	assertSpec(
+		typeof value.op === "string" &&
+			(OP as readonly string[]).includes(value.op),
+		`${context} op '${String(value.op)}' is unsupported`,
+	);
+	if (value.op === "count") {
+		assertExactKeys(value, ["op"], context);
+		return;
+	}
+	if (value.op === "percentile") {
+		assertExactKeys(value, ["op", "field", "percentile"], context);
+		assertSpec(
+			typeof value.percentile === "number" &&
+				value.percentile > 0 &&
+				value.percentile <= 1,
+			`${context} percentile must be a quantile in (0, 1]`,
+		);
+	} else {
+		assertExactKeys(value, ["op", "field"], context);
+	}
+	assertNonEmptyString(value.field, `${context} field`);
+	if ((NUMERIC_OP as readonly string[]).includes(value.op)) {
+		assertSpec(
+			PAYLOAD_FIELD.test(value.field as string),
+			`${context} op '${value.op}' needs a payload:<key> field`,
+		);
+	}
+}
+
+function assertOptionalTimestamp(value: unknown, context: string): void {
+	if (value === undefined) return;
+	assertSpec(
+		typeof value === "string" && !Number.isNaN(Date.parse(value)),
+		`${context} must be an ISO-8601 timestamp`,
+	);
+}
+
 function validateMetric(
 	value: unknown,
 	index: number,
@@ -87,15 +161,33 @@ function validateMetric(
 			"chart",
 			"limit",
 			"span",
+			"value",
+			"ratio",
+			"from",
+			"to",
 		],
 		context,
 	);
 	assertNonEmptyString(value.title, `${context} title`);
 	assertOptionalText(value.description, `${context} description`);
+
+	// groupBy is one dimension or, for multi-dimensional grouping, a non-empty
+	// list of them; each dimension is a fixed audit column or a payload field.
+	const dimensions = Array.isArray(value.groupBy)
+		? value.groupBy
+		: [value.groupBy];
 	assertSpec(
-		GROUP_BY.includes(value.groupBy as GroupBy),
-		`${context} groupBy '${String(value.groupBy)}' is unsupported`,
+		!Array.isArray(value.groupBy) || dimensions.length > 0,
+		`${context} groupBy must not be an empty list`,
 	);
+	for (const dimension of dimensions) {
+		assertSpec(
+			isDimension(dimension),
+			`${context} groupBy '${String(dimension)}' is unsupported`,
+		);
+	}
+	const groupsByTime = dimensions.includes("time");
+
 	assertSpec(
 		CHART.includes(value.chart as ChartKind),
 		`${context} chart '${String(value.chart)}' is unsupported`,
@@ -112,9 +204,34 @@ function validateMetric(
 		`${context} category must be a non-empty string`,
 	);
 
+	// A card renders one series, so value and ratio are mutually exclusive.
+	assertSpec(
+		value.value === undefined || value.ratio === undefined,
+		`${context} declares both value and ratio`,
+	);
+	if (value.value !== undefined) {
+		validateMetricValue(value.value, `${context} value`);
+	}
+	if (value.ratio !== undefined) {
+		assertSpec(isObject(value.ratio), `${context} ratio must be an object`);
+		assertExactKeys(
+			value.ratio,
+			["numerator", "denominator"],
+			`${context} ratio`,
+		);
+		validateMetricValue(value.ratio.numerator, `${context} ratio numerator`);
+		validateMetricValue(
+			value.ratio.denominator,
+			`${context} ratio denominator`,
+		);
+	}
+
+	assertOptionalTimestamp(value.from, `${context} from`);
+	assertOptionalTimestamp(value.to, `${context} to`);
+
 	// A bucket is the time grain: required when the metric groups by time,
 	// meaningless — and so forbidden — otherwise.
-	if (value.groupBy === "time") {
+	if (groupsByTime) {
 		assertSpec(
 			BUCKET.includes(value.bucket as Bucket),
 			`${context} groups by time and needs a bucket of ${BUCKET.join(", ")}`,
@@ -126,8 +243,8 @@ function validateMetric(
 		);
 	}
 
-	// limit ranks a categorical series to its top N; a time series is ordered
-	// chronologically and ignores it, so a limit there is incoherent.
+	// limit ranks a categorical series to its top N; a single time series is
+	// ordered chronologically and ignores it, so a limit there is incoherent.
 	if (value.limit !== undefined) {
 		assertSpec(
 			typeof value.limit === "number" &&

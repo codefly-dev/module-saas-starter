@@ -66,7 +66,10 @@ const OWNED_FIELD_VIOLATIONS: Record<
 		arr(rec(m.dashboard).metrics)[0].groupBy = "region";
 	},
 	"unsupported metric aggregation": (m) => {
-		arr(rec(m.dashboard).metrics)[0].aggregation = "sum";
+		arr(rec(m.dashboard).metrics)[0].aggregation = "median";
+	},
+	"count metric with a field": (m) => {
+		arr(rec(m.dashboard).metrics)[0].field = "payload:amount";
 	},
 	"metric bucket without a time group_by": (m) => {
 		arr(rec(m.dashboard).metrics)[0].groupBy = "actor";

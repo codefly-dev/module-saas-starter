@@ -213,17 +213,69 @@
 										}
 									},
 									"groupBy": {
-										"enum": ["event_type", "category", "actor", "time"]
+										"anyOf": [
+											{ "enum": ["event_type", "category", "actor", "time"] },
+											{ "type": "string", "pattern": "^payload:.+$" }
+										]
 									},
 									"bucket": { "enum": ["day", "week", "month"] },
-									"aggregation": { "enum": ["count", "count_distinct"] }
+									"aggregation": {
+										"enum": [
+											"count",
+											"count_distinct",
+											"sum",
+											"avg",
+											"min",
+											"max",
+											"percentile"
+										]
+									},
+									"field": { "type": "string", "minLength": 1 },
+									"percentile": {
+										"type": "number",
+										"exclusiveMinimum": 0,
+										"maximum": 1
+									}
 								},
-								"if": {
-									"required": ["groupBy"],
-									"properties": { "groupBy": { "const": "time" } }
-								},
-								"then": { "required": ["bucket"] },
-								"else": { "not": { "required": ["bucket"] } }
+								"allOf": [
+									{
+										"if": {
+											"required": ["groupBy"],
+											"properties": { "groupBy": { "const": "time" } }
+										},
+										"then": { "required": ["bucket"] },
+										"else": { "not": { "required": ["bucket"] } }
+									},
+									{
+										"if": {
+											"required": ["aggregation"],
+											"properties": { "aggregation": { "const": "count" } }
+										},
+										"then": { "not": { "required": ["field"] } },
+										"else": { "required": ["field"] }
+									},
+									{
+										"if": {
+											"required": ["aggregation"],
+											"properties": {
+												"aggregation": {
+													"enum": ["sum", "avg", "min", "max", "percentile"]
+												}
+											}
+										},
+										"then": {
+											"properties": { "field": { "pattern": "^payload:.+$" } }
+										}
+									},
+									{
+										"if": {
+											"required": ["aggregation"],
+											"properties": { "aggregation": { "const": "percentile" } }
+										},
+										"then": { "required": ["percentile"] },
+										"else": { "not": { "required": ["percentile"] } }
+									}
+								]
 							},
 							{
 								"type": "object",

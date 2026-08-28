@@ -8,6 +8,7 @@ import { AggregateAuditLogResponseSchema } from "../src/gen/saas/accounts/v1/aud
 export interface FakeBucket {
 	key: string;
 	count: number;
+	metrics?: Record<string, number>;
 }
 
 function response(buckets: FakeBucket[]) {
@@ -15,6 +16,7 @@ function response(buckets: FakeBucket[]) {
 		buckets: buckets.map((bucket) => ({
 			key: bucket.key,
 			count: BigInt(bucket.count),
+			metrics: bucket.metrics,
 		})),
 	});
 }

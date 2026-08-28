@@ -27,7 +27,12 @@
  * per-day series over a scalar total) are not rejected before the compiler sees
  * them.
  */
-export type MetricGroupBy = "event_type" | "category" | "actor" | "time";
+export type MetricGroupBy =
+	| "event_type"
+	| "category"
+	| "actor"
+	| "time"
+	| `payload:${string}`;
 
 /**
  * Time grain applied when a metric groups by time. Mirrors the audit RPC's
@@ -36,7 +41,14 @@ export type MetricGroupBy = "event_type" | "category" | "actor" | "time";
 export type MetricBucket = "day" | "week" | "month";
 
 /** How a source metric reduces the audit events its filter matches. */
-export type MetricAggregation = "count" | "count_distinct";
+export type MetricAggregation =
+	| "count"
+	| "count_distinct"
+	| "sum"
+	| "avg"
+	| "min"
+	| "max"
+	| "percentile";
 
 /** How a derived metric combines the metrics it references. */
 export type MetricOperation = "sum" | "ratio" | "difference";
@@ -79,6 +91,14 @@ export interface SourceMetric {
 	/** Required when `groupBy` is `time`, forbidden otherwise. */
 	bucket?: MetricBucket;
 	aggregation: MetricAggregation;
+	/**
+	 * Column or `payload:<key>` the aggregation reads. Required for every op
+	 * except `count`; the numeric ops (sum/avg/min/max/percentile) require a
+	 * `payload:<key>`.
+	 */
+	field?: string;
+	/** Quantile in (0,1] for `aggregation: "percentile"`; forbidden otherwise. */
+	percentile?: number;
 }
 
 /** A metric derived by combining metrics already declared in the same graph. */
@@ -129,14 +149,37 @@ export interface DataGraph {
 
 const LOGICAL_ID = /^[a-z][a-z0-9]*(?:[._-][a-z0-9]+)*$/;
 const EVENT_TYPE = /^[a-z][a-z0-9]*(?:\.[a-z0-9]+)*\.v[1-9][0-9]*$/;
-const GROUP_BY: readonly MetricGroupBy[] = [
-	"event_type",
-	"category",
-	"actor",
-	"time",
-];
+// A group dimension is one of the fixed audit columns or a payload field
+// addressed as `payload:<key>` with a non-empty key.
+const FIXED_GROUP_BY = ["event_type", "category", "actor", "time"] as const;
+const PAYLOAD_FIELD = /^payload:.+$/;
 const BUCKET: readonly MetricBucket[] = ["day", "week", "month"];
-const AGGREGATION: readonly MetricAggregation[] = ["count", "count_distinct"];
+const AGGREGATION: readonly MetricAggregation[] = [
+	"count",
+	"count_distinct",
+	"sum",
+	"avg",
+	"min",
+	"max",
+	"percentile",
+];
+// The numeric ops read a numeric payload value, so they require a `payload:<key>`
+// field; count_distinct may instead read a bare column (e.g. actor_id).
+const NUMERIC_AGGREGATION: readonly MetricAggregation[] = [
+	"sum",
+	"avg",
+	"min",
+	"max",
+	"percentile",
+];
+
+function isGroupDimension(value: unknown): value is MetricGroupBy {
+	return (
+		typeof value === "string" &&
+		((FIXED_GROUP_BY as readonly string[]).includes(value) ||
+			PAYLOAD_FIELD.test(value))
+	);
+}
 const OPERATION: readonly MetricOperation[] = ["sum", "ratio", "difference"];
 const VISUALIZATION: readonly WidgetVisualization[] = [
 	"line",
@@ -222,6 +265,8 @@ function validateSourceMetric(value: Record<string, unknown>): void {
 			"groupBy",
 			"bucket",
 			"aggregation",
+			"field",
+			"percentile",
 		],
 		`metric '${String(value.id)}'`,
 	);
@@ -242,13 +287,43 @@ function validateSourceMetric(value: Record<string, unknown>): void {
 		`${context} filter resource must be a non-empty string`,
 	);
 	assertGraph(
-		GROUP_BY.includes(value.groupBy as MetricGroupBy),
+		isGroupDimension(value.groupBy),
 		`${context} groupBy '${String(value.groupBy)}' is unsupported`,
 	);
 	assertGraph(
 		AGGREGATION.includes(value.aggregation as MetricAggregation),
 		`${context} aggregation '${String(value.aggregation)}' is unsupported`,
 	);
+	if (value.aggregation === "count") {
+		assertGraph(
+			value.field === undefined,
+			`${context} count aggregation takes no field`,
+		);
+	} else {
+		assertGraph(
+			typeof value.field === "string" && value.field.trim().length > 0,
+			`${context} aggregation '${String(value.aggregation)}' needs a field`,
+		);
+		if (NUMERIC_AGGREGATION.includes(value.aggregation as MetricAggregation)) {
+			assertGraph(
+				PAYLOAD_FIELD.test(value.field as string),
+				`${context} aggregation '${String(value.aggregation)}' needs a payload:<key> field`,
+			);
+		}
+	}
+	if (value.aggregation === "percentile") {
+		assertGraph(
+			typeof value.percentile === "number" &&
+				value.percentile > 0 &&
+				value.percentile <= 1,
+			`${context} percentile must be a quantile in (0, 1]`,
+		);
+	} else {
+		assertGraph(
+			value.percentile === undefined,
+			`${context} percentile is only valid for the percentile aggregation`,
+		);
+	}
 	if (value.groupBy === "time") {
 		assertGraph(
 			BUCKET.includes(value.bucket as MetricBucket),

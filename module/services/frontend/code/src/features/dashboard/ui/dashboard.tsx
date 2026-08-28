@@ -23,10 +23,14 @@ function metricKey(metric: MetricDef): string {
 	return [
 		metric.title,
 		metric.chart,
-		metric.groupBy,
+		Array.isArray(metric.groupBy) ? metric.groupBy.join(",") : metric.groupBy,
 		metric.bucket ?? "",
 		metric.event?.type ?? "",
 		metric.category ?? "",
+		metric.from ?? "",
+		metric.to ?? "",
+		metric.span ?? "",
+		JSON.stringify(metric.value ?? metric.ratio ?? 0),
 	].join("|");
 }
 
