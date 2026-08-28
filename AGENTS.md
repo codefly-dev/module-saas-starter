@@ -160,7 +160,9 @@ authoring API design decisions
 ([DASHBOARD_AUTHORING_DESIGN.md](./DASHBOARD_AUTHORING_DESIGN.md)), deployment
 topology ([module/DEPLOYMENT_TOPOLOGY.md](./module/DEPLOYMENT_TOPOLOGY.md)),
 frontend ([FRONTEND_ARCHITECTURE.md](./FRONTEND_ARCHITECTURE.md),
-[module/FRONTEND_PLUGINS.md](./module/FRONTEND_PLUGINS.md)), REST/gateway
+[module/FRONTEND_PLUGINS.md](./module/FRONTEND_PLUGINS.md)), dynamic dashboards
+([DYNAMIC_DASHBOARDS.md](./DYNAMIC_DASHBOARDS.md),
+[DASHBOARD_AUTHORING_DESIGN.md](./DASHBOARD_AUTHORING_DESIGN.md)), REST/gateway
 ([module/REST_SURFACE.md](./module/REST_SURFACE.md),
 [module/GATEWAY_ROUTES.md](./module/GATEWAY_ROUTES.md)), email
 ([EMAIL_PROVIDER_ADAPTERS.md](./EMAIL_PROVIDER_ADAPTERS.md)), supply chain
