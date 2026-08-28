@@ -41,8 +41,8 @@ describe("assertDashboardSpec", () => {
 	});
 
 	it("rejects an unknown top-level field", () => {
-		expect(() => assertDashboardSpec({ ...validSpec, layout: "grid" })).toThrow(
-			/unknown field 'layout'/,
+		expect(() => assertDashboardSpec({ ...validSpec, bogus: true })).toThrow(
+			/unknown field 'bogus'/,
 		);
 	});
 
@@ -148,6 +148,53 @@ describe("assertDashboardSpec", () => {
 				metrics: [{ groupBy: "event_type", chart: "bar" }],
 			}),
 		).toThrow(/title must be a non-empty string/);
+	});
+
+	it("accepts a layout, theme, and per-widget span", () => {
+		expect(() =>
+			assertDashboardSpec({
+				version: DASHBOARD_SPEC_VERSION,
+				layout: { kind: "grid", columns: 3 },
+				theme: { accent: "oklch(0.6 0.2 20)" },
+				metrics: [{ title: "x", groupBy: "event_type", chart: "bar", span: 2 }],
+			}),
+		).not.toThrow();
+	});
+
+	it("rejects an unsupported layout kind", () => {
+		expect(() =>
+			assertDashboardSpec({
+				...validSpec,
+				layout: { kind: "masonry" },
+			}),
+		).toThrow(/layout kind 'masonry' must be 'grid' or 'stack'/);
+	});
+
+	it("rejects a layout column count outside 1..4", () => {
+		expect(() =>
+			assertDashboardSpec({
+				...validSpec,
+				layout: { kind: "grid", columns: 5 },
+			}),
+		).toThrow(/columns must be an integer from 1 to 4/);
+	});
+
+	it("rejects an unknown theme field", () => {
+		expect(() =>
+			assertDashboardSpec({
+				...validSpec,
+				theme: { accent: "red", palette: "warm" },
+			}),
+		).toThrow(/unknown field 'palette'/);
+	});
+
+	it("rejects a span outside 1..4", () => {
+		expect(() =>
+			assertDashboardSpec({
+				version: DASHBOARD_SPEC_VERSION,
+				metrics: [{ title: "x", groupBy: "event_type", chart: "bar", span: 5 }],
+			}),
+		).toThrow(/span must be an integer from 1 to 4/);
 	});
 });
 

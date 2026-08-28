@@ -8,8 +8,10 @@ export {
 	type EventDef,
 	event,
 	type GroupBy,
+	type LayoutDef,
 	type MetricDef,
 	metric,
+	type ThemeDef,
 } from "./model/schema";
 export {
 	assertDashboardSpec,
