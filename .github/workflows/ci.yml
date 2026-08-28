@@ -83,6 +83,8 @@ jobs:
           node-version: 24
       - name: Statically test the Stripe non-writing shim
         run: node --test scripts/setup/stripe-shim.test.mjs
+      - name: Statically test the Resend non-writing shim
+        run: node --test scripts/setup/resend-shim.test.mjs
 
   marketing:
     name: Marketing isolation
