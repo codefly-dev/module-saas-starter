@@ -121,7 +121,9 @@ describe("dashboard authoring API", () => {
 			chart: "line",
 		});
 		expect(result.ok).toBe(false);
-		if (result.ok || result.kind !== "validation") return;
+		if (result.ok) return;
+		expect(result.kind).toBe("validation");
+		if (result.kind !== "validation") return;
 		expect(result.errors).toEqual([
 			{
 				path: "metric.event.type",
@@ -137,7 +139,9 @@ describe("dashboard authoring API", () => {
 		const { api } = authoring({ audit });
 		const result = await api.previewMetric(null as unknown as MetricDef);
 		expect(result.ok).toBe(false);
-		if (result.ok || result.kind !== "validation") return;
+		if (result.ok) return;
+		expect(result.kind).toBe("validation");
+		if (result.kind !== "validation") return;
 		expect(result.errors[0].code).toBe("invalid_spec");
 		expect(audit.aggregateAuditLog).not.toHaveBeenCalled();
 	});
@@ -151,8 +155,11 @@ describe("dashboard authoring API", () => {
 			chart: "bar",
 		});
 		expect(result.ok).toBe(false);
-		if (result.ok || result.kind !== "pending") return;
-		expect(result.reason).toBe(
+		if (result.ok) return;
+		expect(result.kind).toBe("pending");
+		if (result.kind !== "pending") return;
+		expect(result.code).toBe("org_unresolved");
+		expect(result.message).toBe(
 			"No organization is in scope yet; previews are unavailable until one resolves.",
 		);
 		expect(audit.aggregateAuditLog).not.toHaveBeenCalled();

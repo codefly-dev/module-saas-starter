@@ -43,18 +43,22 @@ export interface MetricPreview {
 // failure is the driver's to fix: the spec is malformed or references something
 // unregistered, and `errors` points at each offending field. A "pending"
 // failure is not fixable by editing the spec — a precondition (an organization
-// in scope) isn't met yet, so the driver waits and retries; `reason` explains
-// it in prose to surface to a human. The `kind` discriminant lets a driver
-// branch "fix your spec" vs "wait for context" once, instead of pattern-
-// matching the string codes that ride the validation channel.
+// in scope) isn't met yet, so the driver waits and retries. It carries the same
+// `code`/`message` a FieldError does (minus `path`, since the block is not a
+// spec field): `code` is the stable token a driver branches on to tell one
+// precondition from another, `message` explains it in prose for a human. The
+// `kind` discriminant lets a driver branch "fix your spec" vs "wait for
+// context" once; matching a precondition's `code` never crosses into the
+// validation channel.
 export type PreviewResult =
 	| { ok: true; preview: MetricPreview }
 	| { ok: false; kind: "validation"; errors: FieldError[] }
-	| { ok: false; kind: "pending"; reason: string };
+	| { ok: false; kind: "pending"; code: string; message: string };
 
 // CommitResult writes only the local draft, so it has no precondition to wait
-// on — its sole failure kind is "validation". It still carries `kind` so a
-// driver branches on failures the same way across the authoring surface.
+// on — its sole failure kind is "validation". It still carries `kind` so the
+// same code that renders a preview's validation errors also renders a commit's:
+// both failures share the `{ kind: "validation"; errors: FieldError[] }` shape.
 export type CommitResult =
 	| { ok: true; spec: DashboardDef }
 	| { ok: false; kind: "validation"; errors: FieldError[] };
@@ -193,7 +197,8 @@ export function createDashboardAuthoring(
 				return {
 					ok: false,
 					kind: "pending",
-					reason:
+					code: "org_unresolved",
+					message:
 						"No organization is in scope yet; previews are unavailable until one resolves.",
 				};
 			}
