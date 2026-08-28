@@ -1,5 +1,7 @@
 import { describe, expect, it } from "vitest";
-import { validateDashboardDef } from "../../model/validate";
+import { metricIdentity } from "../../model/identity";
+import { DASHBOARD_SPEC_VERSION } from "../../model/schema";
+import { assertDashboardSpec } from "../../model/validate";
 import { applyCommand, metricFromCommand } from "../dashboard-driver";
 
 // The stub driver is the local stand-in for the eventual conversational agent.
@@ -36,6 +38,15 @@ describe("dashboard driver — natural language to spec", () => {
 		expect(m.groupBy).toBe("category");
 	});
 
+	it("prefers a matched event over the security category, never both", () => {
+		const m = metricFromCommand("security logins");
+		expect(m.event).toEqual({ type: "auth.login" });
+		expect(m.category).toBeUndefined();
+		expect(() =>
+			assertDashboardSpec({ version: DASHBOARD_SPEC_VERSION, metrics: [m] }),
+		).not.toThrow();
+	});
+
 	it("every produced metric is a valid dashboard spec", () => {
 		const commands = [
 			"logins over time",
@@ -46,7 +57,7 @@ describe("dashboard driver — natural language to spec", () => {
 		];
 		for (const command of commands) {
 			const result = applyCommand(undefined, command);
-			expect(validateDashboardDef(result.dashboard).ok).toBe(true);
+			expect(() => assertDashboardSpec(result.dashboard)).not.toThrow();
 		}
 	});
 });
@@ -83,5 +94,15 @@ describe("dashboard driver — structural commands", () => {
 		const built = applyCommand(undefined, "logins over time");
 		const noop = applyCommand(built.dashboard, "   ");
 		expect(noop.dashboard).toBe(built.dashboard);
+	});
+
+	it("does not append a second metric identical to one already shown", () => {
+		const first = applyCommand(undefined, "logins over time daily");
+		const dup = applyCommand(first.dashboard, "logins over time daily");
+		expect(dup.dashboard.metrics).toHaveLength(1);
+		expect(dup.note).toContain("Already showing");
+		// No two metrics collide on the identity <Dashboard> uses for its keys.
+		const identities = dup.dashboard.metrics.map(metricIdentity);
+		expect(new Set(identities).size).toBe(identities.length);
 	});
 });

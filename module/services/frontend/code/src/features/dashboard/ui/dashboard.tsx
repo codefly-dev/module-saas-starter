@@ -3,7 +3,8 @@
 import type * as React from "react";
 import { useAuth } from "@/lib/auth";
 import { Grid, Stack } from "@/shared/ui";
-import type { DashboardDef, LayoutDef, MetricDef } from "../model/schema";
+import { metricIdentity } from "../model/identity";
+import type { DashboardDef, LayoutDef } from "../model/schema";
 import { MetricCard } from "./metric-card";
 
 // Column-span classes mirror Grid's responsive breakpoints so a spanning card
@@ -16,23 +17,6 @@ const colSpan: Record<1 | 2 | 3 | 4, string> = {
 	3: "sm:col-span-2 lg:col-span-3",
 	4: "sm:col-span-2 lg:col-span-4",
 };
-
-// A metric's React key is derived from what makes it distinct — not its array
-// index (reorder-fragile) nor its title alone (two panels can share a title).
-function metricKey(metric: MetricDef): string {
-	return [
-		metric.title,
-		metric.chart,
-		Array.isArray(metric.groupBy) ? metric.groupBy.join(",") : metric.groupBy,
-		metric.bucket ?? "",
-		metric.event?.type ?? "",
-		metric.category ?? "",
-		metric.from ?? "",
-		metric.to ?? "",
-		metric.span ?? "",
-		JSON.stringify(metric.value ?? metric.ratio ?? 0),
-	].join("|");
-}
 
 // Dashboard renders a declared data graph. Every metric reads the audit trail
 // scoped to the viewer's organization by default; pass `orgId` to pin it.
@@ -57,7 +41,7 @@ export function Dashboard({
 
 	const cards = data.metrics.map((metric) => (
 		<MetricCard
-			key={metricKey(metric)}
+			key={metricIdentity(metric)}
 			metric={metric}
 			orgId={resolvedOrgId}
 			className={

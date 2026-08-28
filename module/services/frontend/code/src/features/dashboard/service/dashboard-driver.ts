@@ -8,8 +8,15 @@
 // signature (current spec + text → next spec + note). The canvas, the draft
 // store, and <Dashboard> never learn which driver produced the spec.
 
-import type { ChartKind, DashboardDef, GroupBy, MetricDef } from "../model/schema";
-import { validateDashboardDef } from "../model/validate";
+import { metricIdentity } from "../model/identity";
+import {
+	type ChartKind,
+	DASHBOARD_SPEC_VERSION,
+	type DashboardDef,
+	type Dimension,
+	type MetricDef,
+} from "../model/schema";
+import { assertDashboardSpec, DashboardSpecError } from "../model/validate";
 
 export interface DriverResult {
 	dashboard: DashboardDef;
@@ -31,7 +38,7 @@ function detectChart(text: string): ChartKind {
 	return "line"; // "over time" / "trend" and the sensible default
 }
 
-function detectGroupBy(text: string, chart: ChartKind): GroupBy {
+function detectGroupBy(text: string, chart: ChartKind): Dimension {
 	if (/\bby category\b/i.test(text)) return "category";
 	if (/\bby (event|type|action)\b/i.test(text)) return "event_type";
 	if (/\bby (actor|user|person)\b/i.test(text)) return "actor";
@@ -56,7 +63,10 @@ export function metricFromCommand(text: string): MetricDef {
 	const chart = detectChart(text);
 	const groupBy = detectGroupBy(text, chart);
 	const event = EVENT_LEXICON.find((e) => e.match.test(text));
-	const category = /\bsecurity\b/i.test(text) ? "security" : undefined;
+	// event and category are alternative scopings (see validateMetric); a matched
+	// event is the more specific one, so it wins when a command mentions both a
+	// known event and "security" (e.g. "security logins").
+	const category = !event && /\bsecurity\b/i.test(text) ? "security" : undefined;
 
 	const metric: MetricDef = {
 		title: describeMetric({ event: event?.label, category, chart, groupBy }),
@@ -65,7 +75,10 @@ export function metricFromCommand(text: string): MetricDef {
 		...(event ? { event: { type: event.type } } : {}),
 		...(category ? { category } : {}),
 		...(groupBy === "time" ? { bucket: detectBucket(text) ?? "day" } : {}),
-		...(chart === "bar" ? { limit: 6 } : {}),
+		// limit ranks a categorical bar series to its top N; a time series is
+		// ordered chronologically and the spec forbids a limit there, so only a
+		// non-time bar carries one.
+		...(chart === "bar" && groupBy !== "time" ? { limit: 6 } : {}),
 	};
 	return metric;
 }
@@ -74,7 +87,7 @@ function describeMetric(parts: {
 	event?: string;
 	category?: string;
 	chart: ChartKind;
-	groupBy: GroupBy;
+	groupBy: Dimension;
 }): string {
 	const subject = parts.event ?? (parts.category ? `${parts.category} events` : "Events");
 	if (parts.chart === "stat") return `Total ${subject.toLowerCase()}`;
@@ -82,7 +95,11 @@ function describeMetric(parts: {
 	return `${subject} by ${parts.groupBy.replace("_", " ")}`;
 }
 
-const EMPTY: DashboardDef = { title: "Untitled dashboard", metrics: [] };
+const EMPTY: DashboardDef = {
+	version: DASHBOARD_SPEC_VERSION,
+	title: "Untitled dashboard",
+	metrics: [],
+};
 
 // Apply one natural-language command to the current dashboard and return the
 // next one. Recognizes a few structural verbs (clear / remove) and otherwise
@@ -112,12 +129,21 @@ export function applyCommand(
 	}
 
 	const metric = metricFromCommand(trimmed);
+	// Two metrics with the same rendered identity collide on <Dashboard>'s React
+	// key, so a repeat command is a no-op rather than a second identical widget.
+	const identity = metricIdentity(metric);
+	if (base.metrics.some((m) => metricIdentity(m) === identity)) {
+		return { dashboard: base, note: `Already showing "${metric.title}".` };
+	}
 	const next: DashboardDef = { ...base, metrics: [...base.metrics, metric] };
-	const result = validateDashboardDef(next);
-	if (!result.ok) {
+	try {
+		assertDashboardSpec(next);
+	} catch (cause) {
 		// Mirrors how a real agent turn surfaces a rejected spec: keep the current
 		// dashboard, hand back the reason for a correction pass.
-		return { dashboard: base, note: `Could not add widget (${result.path}: ${result.message}).` };
+		const reason =
+			cause instanceof DashboardSpecError ? cause.message : String(cause);
+		return { dashboard: base, note: `Could not add widget (${reason}).` };
 	}
 	return { dashboard: next, note: `Added "${metric.title}".` };
 }
