@@ -143,7 +143,7 @@ function assertOptionalTimestamp(value: unknown, context: string): void {
 	);
 }
 
-function validateMetric(
+function assertMetric(
 	value: unknown,
 	index: number,
 ): asserts value is MetricDef {
@@ -328,7 +328,7 @@ export function assertDashboardSpec(
 	// allowed — only a non-array is rejected.
 	assertSpec(Array.isArray(value.metrics), "spec metrics must be an array");
 	value.metrics.forEach((entry, index) => {
-		validateMetric(entry, index);
+		assertMetric(entry, index);
 	});
 }
 
@@ -346,4 +346,103 @@ export function parseDashboardSpec(raw: string): DashboardDef {
 	}
 	assertDashboardSpec(value);
 	return value;
+}
+
+// FieldError is one guard-rail failure reported to a driver composing a spec:
+// `code` is a stable token to branch on, `message` explains the failure, and
+// `path` points at the offending location when the failure is field-specific (a
+// vocabulary miss); a whole-spec shape violation carries its reason in
+// `message` alone.
+export interface FieldError {
+	path?: string;
+	code: string;
+	message: string;
+}
+
+// AuditVocabulary is the valid event/category namespace a metric may reference.
+// The model layer owns the rule that a reference must resolve; the audit-aware
+// caller owns reading the server registry and supplying what exists.
+export interface AuditVocabulary {
+	eventTypes: readonly string[];
+	categories: readonly string[];
+}
+
+// assertDashboardSpec throws on the first shape or coherence violation, which
+// suits a render/persistence boundary that must fail closed. A driver composing
+// a spec instead needs failures as data it can correct, so validateMetric /
+// validateDashboard report them as FieldErrors. A shape violation collapses to
+// a single `invalid_spec` error — the throwing validator stops at the first —
+// while the vocabulary checks, which assertDashboardSpec cannot make without the
+// live registry, are additive and field-addressed.
+function shapeErrors(assert: () => void): FieldError[] {
+	try {
+		assert();
+		return [];
+	} catch (err) {
+		if (err instanceof DashboardSpecError) {
+			return [{ code: "invalid_spec", message: err.message }];
+		}
+		throw err;
+	}
+}
+
+function metricVocabularyErrors(
+	metric: MetricDef,
+	vocab: AuditVocabulary,
+	path: string,
+): FieldError[] {
+	const errors: FieldError[] = [];
+	if (metric.event && !vocab.eventTypes.includes(metric.event.type)) {
+		errors.push({
+			path: `${path}.event.type`,
+			code: "unknown_event_type",
+			message: `"${metric.event.type}" is not a registered audit event type.`,
+		});
+	}
+	if (
+		metric.category !== undefined &&
+		!vocab.categories.includes(metric.category)
+	) {
+		errors.push({
+			path: `${path}.category`,
+			code: "unknown_category",
+			message: `"${metric.category}" is not a registered audit category.`,
+		});
+	}
+	return errors;
+}
+
+/**
+ * Validates a single metric a driver has composed — its shape and dimensional
+ * coherence plus whether the event/category it names exist in `vocab` — and
+ * returns every failure as a FieldError. An empty array means the metric is
+ * safe to preview. Vocabulary is checked only once the shape is sound, so a
+ * malformed metric reports its shape error rather than a spurious lookup miss.
+ */
+export function validateMetric(
+	metric: MetricDef,
+	vocab: AuditVocabulary,
+	path = "metric",
+): FieldError[] {
+	const errors = shapeErrors(() =>
+		assertDashboardSpec({ version: DASHBOARD_SPEC_VERSION, metrics: [metric] }),
+	);
+	if (errors.length > 0) return errors;
+	return metricVocabularyErrors(metric, vocab, path);
+}
+
+/**
+ * Validates a whole spec a driver is about to commit — its shape and coherence
+ * plus every metric's event/category against `vocab` — and returns all failures
+ * as FieldErrors. An empty array means the spec is safe to persist.
+ */
+export function validateDashboard(
+	spec: DashboardDef,
+	vocab: AuditVocabulary,
+): FieldError[] {
+	const errors = shapeErrors(() => assertDashboardSpec(spec));
+	if (errors.length > 0) return errors;
+	return spec.metrics.flatMap((metric, i) =>
+		metricVocabularyErrors(metric, vocab, `metrics[${i}]`),
+	);
 }

@@ -1,9 +1,13 @@
 import { describe, expect, it } from "vitest";
+import type { MetricDef } from "../schema";
 import { DASHBOARD_SPEC_VERSION, dashboard, event, metric } from "../schema";
 import {
+	type AuditVocabulary,
 	assertDashboardSpec,
 	DashboardSpecError,
 	parseDashboardSpec,
+	validateDashboard,
+	validateMetric,
 } from "../validate";
 
 const login = event("auth.login");
@@ -340,5 +344,118 @@ describe("parseDashboardSpec", () => {
 
 	it("rejects a structurally valid JSON that is not a spec", () => {
 		expect(() => parseDashboardSpec("{}")).toThrow(DashboardSpecError);
+	});
+});
+
+const vocab: AuditVocabulary = {
+	eventTypes: ["auth.login", "org.created"],
+	categories: ["authentication", "organization"],
+};
+
+const loginMetric: MetricDef = {
+	title: "Logins over time",
+	event: event("auth.login"),
+	groupBy: "time",
+	bucket: "day",
+	chart: "line",
+};
+
+describe("validateMetric", () => {
+	it("accepts a shape-valid metric that references the vocabulary", () => {
+		expect(validateMetric(loginMetric, vocab)).toEqual([]);
+	});
+
+	it("reports an event type outside the vocabulary against its path", () => {
+		expect(
+			validateMetric({ ...loginMetric, event: event("auth.nope") }, vocab),
+		).toEqual([
+			{
+				path: "metric.event.type",
+				code: "unknown_event_type",
+				message: '"auth.nope" is not a registered audit event type.',
+			},
+		]);
+	});
+
+	it("reports a category outside the vocabulary", () => {
+		expect(
+			validateMetric(
+				{
+					title: "By category",
+					category: "billing",
+					groupBy: "category",
+					chart: "bar",
+				},
+				vocab,
+			),
+		).toEqual([
+			{
+				path: "metric.category",
+				code: "unknown_category",
+				message: '"billing" is not a registered audit category.',
+			},
+		]);
+	});
+
+	it("collapses a shape violation to a single invalid_spec error", () => {
+		const errors = validateMetric(
+			{ title: "x", groupBy: "region" as never, chart: "bar" },
+			vocab,
+		);
+		expect(errors).toHaveLength(1);
+		expect(errors[0].code).toBe("invalid_spec");
+	});
+
+	it("reports the shape error, not a vocabulary miss, when both are present", () => {
+		// A bucket-less time metric is shape-invalid; the unknown event must not
+		// mask it, since a driver cannot judge the reference until the shape holds.
+		const errors = validateMetric(
+			{ title: "x", event: event("auth.nope"), groupBy: "time", chart: "line" },
+			vocab,
+		);
+		expect(errors).toEqual([
+			{
+				code: "invalid_spec",
+				message: expect.stringMatching(/needs a bucket/),
+			},
+		]);
+	});
+
+	it("prefixes errors with a caller-supplied path", () => {
+		const errors = validateMetric(
+			{ ...loginMetric, event: event("auth.nope") },
+			vocab,
+			"metrics[2]",
+		);
+		expect(errors[0].path).toBe("metrics[2].event.type");
+	});
+});
+
+describe("validateDashboard", () => {
+	it("accepts a spec whose metrics all reference the vocabulary", () => {
+		const spec = dashboard({ title: "Activity", metrics: [loginMetric] });
+		expect(validateDashboard(spec, vocab)).toEqual([]);
+	});
+
+	it("addresses a per-metric vocabulary miss by its index", () => {
+		const spec = dashboard({
+			metrics: [loginMetric, { ...loginMetric, event: event("auth.nope") }],
+		});
+		expect(validateDashboard(spec, vocab)).toEqual([
+			{
+				path: "metrics[1].event.type",
+				code: "unknown_event_type",
+				message: '"auth.nope" is not a registered audit event type.',
+			},
+		]);
+	});
+
+	it("collapses a shape violation to a single invalid_spec error", () => {
+		const errors = validateDashboard(
+			{ version: DASHBOARD_SPEC_VERSION, metrics: [{} as MetricDef] },
+			vocab,
+		);
+		expect(errors).toHaveLength(1);
+		expect(errors[0].code).toBe("invalid_spec");
 	});
 });

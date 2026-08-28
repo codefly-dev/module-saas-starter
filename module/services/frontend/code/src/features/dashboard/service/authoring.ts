@@ -5,12 +5,13 @@ import {
 	toAggregateRequest,
 } from "@/features/audit/service/queries";
 import type { AuditService } from "@/gen/saas/accounts/v1/audit_pb";
+import type { DashboardDef, MetricDef } from "../model/schema";
 import {
-	DASHBOARD_SPEC_VERSION,
-	type DashboardDef,
-	type MetricDef,
-} from "../model/schema";
-import { assertDashboardSpec, DashboardSpecError } from "../model/validate";
+	type AuditVocabulary,
+	type FieldError,
+	validateDashboard,
+	validateMetric,
+} from "../model/validate";
 import {
 	compileMetricQuery,
 	type MetricPoint,
@@ -25,16 +26,6 @@ import {
 export interface EventTypeVocabulary {
 	events: AuditEventTypeInfo[];
 	categories: string[];
-}
-
-// FieldError is one guard-rail failure returned to a driver: `code` is a stable
-// token to branch on, `message` explains the failure, and `path` points at the
-// offending spec location when the failure is field-specific (a vocabulary
-// miss); a whole-spec shape violation carries the reason in `message` alone.
-export interface FieldError {
-	path?: string;
-	code: string;
-	message: string;
 }
 
 // MetricPreview is the resolved shape of a single metric: the same ordered
@@ -79,49 +70,14 @@ export interface DashboardAuthoringDeps {
 	commit: (spec: DashboardDef) => void;
 }
 
-// The shape/coherence validator (assertDashboardSpec) throws on the first
-// violation; the authoring surface reports failures as data, so a shape error
-// is caught and rendered as a single structured FieldError.
-function shapeErrors(run: () => void): FieldError[] {
-	try {
-		run();
-		return [];
-	} catch (err) {
-		if (err instanceof DashboardSpecError) {
-			return [{ code: "invalid_spec", message: err.message }];
-		}
-		throw err;
-	}
-}
-
-// assertDashboardSpec covers shape and dimensional coherence but not whether a
-// referenced event/category actually exists — that needs the live registry,
-// which only this audit-aware layer has. checkMetricVocabulary closes that gap.
-function checkMetricVocabulary(
-	metric: MetricDef,
-	vocab: EventTypeVocabulary,
-	path: string,
-): FieldError[] {
-	const eventTypes = vocab.events.map((e) => e.name);
-	const errors: FieldError[] = [];
-	if (metric.event && !eventTypes.includes(metric.event.type)) {
-		errors.push({
-			path: `${path}.event.type`,
-			code: "unknown_event_type",
-			message: `"${metric.event.type}" is not a registered audit event type.`,
-		});
-	}
-	if (
-		metric.category !== undefined &&
-		!vocab.categories.includes(metric.category)
-	) {
-		errors.push({
-			path: `${path}.category`,
-			code: "unknown_category",
-			message: `"${metric.category}" is not a registered audit category.`,
-		});
-	}
-	return errors;
+// The canonical validator checks a metric against the event/category namespace,
+// not the richer registry projection; project the catalog down to the names it
+// needs.
+function toAuditVocabulary(vocab: EventTypeVocabulary): AuditVocabulary {
+	return {
+		eventTypes: vocab.events.map((e) => e.name),
+		categories: vocab.categories,
+	};
 }
 
 export function createDashboardAuthoring(
@@ -167,17 +123,7 @@ export function createDashboardAuthoring(
 
 		async previewMetric(metric) {
 			const vocab = await readVocabulary();
-			// Validate the metric's shape via the canonical spec validator by
-			// wrapping it in a minimal spec, then check it against the vocabulary.
-			const errors = shapeErrors(() =>
-				assertDashboardSpec({
-					version: DASHBOARD_SPEC_VERSION,
-					metrics: [metric],
-				}),
-			);
-			if (errors.length === 0) {
-				errors.push(...checkMetricVocabulary(metric, vocab, "metric"));
-			}
+			const errors = validateMetric(metric, toAuditVocabulary(vocab));
 			if (errors.length > 0) return { ok: false, errors };
 
 			// The aggregate RPC is org-scoped: an empty orgId is not "this org" but
@@ -208,14 +154,7 @@ export function createDashboardAuthoring(
 
 		async setDashboard(spec) {
 			const vocab = await readVocabulary();
-			const errors = shapeErrors(() => assertDashboardSpec(spec));
-			if (errors.length === 0) {
-				errors.push(
-					...spec.metrics.flatMap((metric, i) =>
-						checkMetricVocabulary(metric, vocab, `metrics[${i}]`),
-					),
-				);
-			}
+			const errors = validateDashboard(spec, toAuditVocabulary(vocab));
 			if (errors.length > 0) return { ok: false, errors };
 			commit(spec);
 			return { ok: true, spec };
