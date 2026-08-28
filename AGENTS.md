@@ -49,41 +49,6 @@ codefly run service --fixture dev-admin
 - Docker must be running; `codefly doctor` checks prerequisites and
   `codefly clear` reaps stray processes/containers between runs.
 
-### Passing an environment variable to a service
-
-Three paths, by how permanent the value should be:
-
-- **Ad-hoc, this run only** — `--set <service>:KEY=VAL` (repeatable) injects the
-  var into that service's process env for the current run, nothing committed:
-
-  ```bash
-  codefly run service --fixture dev-admin \
-    --set frontend:FRONTEND_SKIN_DIR=/abs/path/to/skin-dir
-  ```
-
-  `--set` splits on the **first** `:` (service) then the **first** `=` (the
-  value may itself contain `:` or `=`). **Caveat:** the flag is a comma-split
-  list, so a value containing commas is torn into malformed entries — e.g. a
-  JSON blob like `FRONTEND_SKIN_JSON={"brand":"x","mode":"dark"}` will not
-  survive. Pass a comma-free value (a directory via `FRONTEND_SKIN_DIR`) or use
-  one of the paths below. (`--set` is a `codefly run` CLI flag; its authoritative
-  reference lives in the CLI, not this repo.)
-- **Committed, portable** — a **configuration group** under `configurations/`,
-  wired to the service in the deployment bindings. Use this for any value that
-  should travel with the repo. See
-  [module/deployment/README.md](./module/deployment/README.md#configuration--environment-variables)
-  for the layout, the `workspace_configuration_dependencies` wiring, and the
-  full add-a-var loop.
-- **Machine-local, uncommitted (frontend only)** — a `.env*.local` file in
-  `module/services/frontend/code/` is auto-loaded by `next dev` (the frontend's
-  `local` execution profile) and is gitignored. Handy for a value you want off
-  the command line but out of git, with no bindings/manifest churn.
-
-Rule of thumb: `--set` for a one-off, a configuration group for anything
-committed, and (in a deployed environment) a mounted ConfigMap for production —
-the same tiering the skin resolver follows (`FRONTEND_SKIN_JSON` for a quick
-inline descriptor, `FRONTEND_SKIN_DIR` for a mounted directory).
-
 For a real external identity provider (WorkOS) and the production-grade
 provider stack (Stripe, Resend, PostHog, Sentry, OTEL, Turnstile), use the
 `local-dogfood` environment and the setup scripts:
@@ -91,6 +56,46 @@ provider stack (Stripe, Resend, PostHog, Sentry, OTEL, Turnstile), use the
 - Runnable local product: [LOCAL_DOGFOODING.md](./LOCAL_DOGFOODING.md)
 - Feature-by-feature dogfood checklist: [DOGFOODING.md](./DOGFOODING.md)
 - Provider bootstrap scripts: [scripts/setup/README.md](./scripts/setup/README.md)
+
+## Solutions composed on top (runtime registry)
+
+A **solution** is an independently deployed module the host has no build-time
+knowledge of. Solutions self-register with this host at runtime — as a
+Module-Federation remote in the frontend and as an upstream in the gateway — so
+the host learns to render and proxy them with no rebuild. Nothing in the module
+names a specific solution; the seam is generic.
+
+- **Frontend registration** — `POST /api/solutions/register` (and `DELETE
+  ?id=…`) at
+  `module/services/frontend/code/src/app/api/solutions/register/route.ts`,
+  gated by the cluster-internal token in the `x-codefly-internal-token` header
+  (read via the codefly SDK `getWorkspaceSecret("internal-auth",
+  "CODEFLY_INTERNAL_TOKEN")`; fails closed when unset). The POST body is the
+  solution manifest (`id`, `nav`, `frontend.manifestUrl` + `exposedModule`,
+  optional `backend.serviceAlias`), validated in `src/solutions/registry.ts`.
+  `GET` is unauthenticated and returns nav-only metadata the sidebar polls.
+- **Gateway upstream registration** — `POST /solutions/_register` on the
+  auth-sidecar (`module/services/auth-sidecar/code/gateway_solutions.go`),
+  gated by the same credential in the `X-Codefly-Internal-Token` header, with a
+  `{id, upstream}` JSON payload. The gateway then proxies `/solutions/{id}/…`
+  to the registered upstream, running the same ext_authz Check and
+  identity-header discipline as catalog routes; only the public `/assets` and
+  `/.well-known` sub-paths are served unauthenticated (GET/HEAD).
+- **Host page** — `/s/[solutionId]`
+  (`src/app/(dashboard)/s/[solutionId]/page.tsx`) loads the remote via
+  `SolutionOutlet` from the registered `manifestUrl` + `exposedModule`. The
+  middleware `src/proxy.ts` derives the manifestUrl origin from the live
+  registration and adds it to that page's CSP, so a freshly registered
+  cross-origin remote loads with no rebuild.
+
+To run a solution against this host locally, drive it from the **solution's own**
+codefly workspace, which composes this repo as a module by path (`codefly add
+module --source <this-repo>/module`), copies this host's `configurations/local/*`
+groups in, and matches the `internal-auth` `CODEFLY_INTERNAL_TOKEN`. Then
+`codefly run service --fixture dev-admin` from the solution root boots this whole
+host underneath; a well-behaved solution runtime self-registers with both the
+host and the gateway autonomously via the codefly SDK. See the solution repo for
+its own instructions.
 
 ## Building, testing, and CI
 
