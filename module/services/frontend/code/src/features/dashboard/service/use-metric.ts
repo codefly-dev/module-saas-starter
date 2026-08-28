@@ -18,9 +18,27 @@ export interface MetricSeries {
 	status: MetricStatus;
 }
 
+// shapeMetricSeries orders a metric's raw buckets for its chart: time series
+// stay in chronological order, categorical series rank by count and honor the
+// metric's top-N limit. It is the single source of truth for series shape, so
+// an imperative preview renders identically to a mounted card.
+export function shapeMetricSeries(
+	buckets: readonly MetricPoint[],
+	metric: Pick<MetricDef, "groupBy" | "limit">,
+): { points: MetricPoint[]; total: number } {
+	let points: MetricPoint[];
+	if (metric.groupBy === "time") {
+		points = buckets.slice().sort((a, b) => a.key.localeCompare(b.key));
+	} else {
+		const ranked = buckets.slice().sort((a, b) => b.count - a.count);
+		points = metric.limit ? ranked.slice(0, metric.limit) : ranked;
+	}
+	const total = points.reduce((sum, p) => sum + p.count, 0);
+	return { points, total };
+}
+
 // useMetric resolves a MetricDef against the audit AggregateAuditLog RPC and
-// shapes the buckets for its chart: time series stay in chronological order,
-// categorical series rank by count and honor the metric's top-N limit.
+// shapes the buckets for its chart.
 export function useMetric(metric: MetricDef, orgId: string): MetricSeries {
 	const { data, isPending, isError } = useAuditAggregate(
 		{
@@ -33,18 +51,9 @@ export function useMetric(metric: MetricDef, orgId: string): MetricSeries {
 		{ enabled: orgId !== "" },
 	);
 
-	const points = useMemo<MetricPoint[]>(() => {
-		const buckets = data ?? [];
-		if (metric.groupBy === "time") {
-			return buckets.slice().sort((a, b) => a.key.localeCompare(b.key));
-		}
-		const ranked = buckets.slice().sort((a, b) => b.count - a.count);
-		return metric.limit ? ranked.slice(0, metric.limit) : ranked;
-	}, [data, metric.groupBy, metric.limit]);
-
-	const total = useMemo(
-		() => points.reduce((sum, p) => sum + p.count, 0),
-		[points],
+	const { points, total } = useMemo(
+		() => shapeMetricSeries(data ?? [], metric),
+		[data, metric],
 	);
 
 	// isPending stays true while the query is disabled (orgId not resolved yet),
