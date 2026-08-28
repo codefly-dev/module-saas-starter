@@ -54,7 +54,8 @@ const message =
 	`legal content incomplete for a production build — the Terms gate will be ` +
 	`unacceptable until these NEXT_PUBLIC_* values are set at build time:\n` +
 	missing.map((key) => `  - ${key}`).join("\n") +
-	`\nSet them before building for a real deployment, or set ` +
+	`\nSupply them via the 'legal' Codefly configuration group for this ` +
+	`environment before building for a real deployment, or set ` +
 	`NEXT_PUBLIC_LEGAL_DEV_PLACEHOLDER=true for a local/dev build.`;
 
 if (ENFORCE) {

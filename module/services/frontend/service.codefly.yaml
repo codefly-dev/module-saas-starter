@@ -15,6 +15,7 @@ workspace-configuration-dependencies:
     - error-tracking
     - identity
     - internal-auth
+    - legal
     - product-analytics
 endpoints:
     - name: http

@@ -30,9 +30,9 @@ const devLegalContent: LegalContentConfig = {
 	entityName: "Local Dev (placeholder)",
 	contactEmail: "dev@localhost",
 	termsContent:
-		"Placeholder Terms of Service for local development only — not legally binding. Set NEXT_PUBLIC_LEGAL_* before production.",
+		"Placeholder Terms of Service for local development only — not legally binding. Set the `legal` Codefly configuration group before production.",
 	privacyContent:
-		"Placeholder Privacy Policy for local development only — not legally binding. Set NEXT_PUBLIC_LEGAL_* before production.",
+		"Placeholder Privacy Policy for local development only — not legally binding. Set the `legal` Codefly configuration group before production.",
 };
 
 // Keep an operator-supplied value verbatim when present; otherwise fall back to
