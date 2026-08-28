@@ -133,9 +133,22 @@ export const auditEventTypesQuery = (
 });
 ```
 
-`useAuditEventTypes` then becomes `useQuery(auditEventTypesQuery(svc))` with **no
-`select`** — its data is already projected — and `readEventTypes` above resolves
-to `Promise<AuditEventTypeInfo[]>` correctly. Moving the projection into
+`useAuditEventTypes` then spreads the descriptor and keeps forwarding its
+`enabled` option, dropping only `select` (its data is already projected):
+
+```ts
+export function useAuditEventTypes(options: { enabled?: boolean } = {}) {
+  const svc = useAuditService();
+  return useQuery({ ...auditEventTypesQuery(svc), enabled: options.enabled });
+}
+```
+
+Spread-and-override, not `useQuery(auditEventTypesQuery(svc))` bare: the bare
+form would silently drop the `enabled` passthrough the hook exposes today
+(inert against the current sole caller, which passes nothing, but a latent
+signature regression the moment a caller gates the query). `readEventTypes`
+above resolves to `Promise<AuditEventTypeInfo[]>` correctly. Moving the
+projection into
 `queryFn` changes the *cached* shape under `["audit-event-types"]` from the raw
 response to `AuditEventTypeInfo[]`, so the two edits (queryFn projection +
 dropping the hook's `select`) must land together, never half. The only current
