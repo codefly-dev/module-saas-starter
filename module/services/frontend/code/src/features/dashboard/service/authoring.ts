@@ -38,15 +38,26 @@ export interface MetricPreview {
 	total: number;
 }
 
-// A driver-facing operation returns either a value or the precise guard-rail
-// failures that blocked it — never a bare throw for a spec it can fix.
+// A driver-facing operation returns either a value or, on failure, one of two
+// distinct kinds — never a bare throw for a spec it can fix. A "validation"
+// failure is the driver's to fix: the spec is malformed or references something
+// unregistered, and `errors` points at each offending field. A "pending"
+// failure is not fixable by editing the spec — a precondition (an organization
+// in scope) isn't met yet, so the driver waits and retries; `reason` explains
+// it in prose to surface to a human. The `kind` discriminant lets a driver
+// branch "fix your spec" vs "wait for context" once, instead of pattern-
+// matching the string codes that ride the validation channel.
 export type PreviewResult =
 	| { ok: true; preview: MetricPreview }
-	| { ok: false; errors: FieldError[] };
+	| { ok: false; kind: "validation"; errors: FieldError[] }
+	| { ok: false; kind: "pending"; reason: string };
 
+// CommitResult writes only the local draft, so it has no precondition to wait
+// on — its sole failure kind is "validation". It still carries `kind` so a
+// driver branches on failures the same way across the authoring surface.
 export type CommitResult =
 	| { ok: true; spec: DashboardDef }
-	| { ok: false; errors: FieldError[] };
+	| { ok: false; kind: "validation"; errors: FieldError[] };
 
 // DashboardAuthoring is the contract an external driver binds to: read the
 // vocabulary, preview a metric against live audit data, and commit a spec
@@ -171,23 +182,19 @@ export function createDashboardAuthoring(
 			if (errors.length === 0) {
 				errors.push(...checkMetricVocabulary(metric, vocab, "metric"));
 			}
-			if (errors.length > 0) return { ok: false, errors };
+			if (errors.length > 0) return { ok: false, kind: "validation", errors };
 
 			// The aggregate RPC is org-scoped: an empty orgId is not "this org" but
 			// the platform-admin control-plane path (spans all tenants), which a
 			// normal caller is denied. Mirror useMetric's "don't query until org is
-			// resolved" guard and surface it as a precise, non-throwing result.
+			// resolved" guard and surface it as a precise, non-throwing result. This
+			// is a precondition, not a spec defect, so it rides the "pending" channel.
 			if (orgId === "") {
 				return {
 					ok: false,
-					errors: [
-						{
-							path: "orgId",
-							code: "org_unresolved",
-							message:
-								"No organization is in scope yet; previews are unavailable until one resolves.",
-						},
-					],
+					kind: "pending",
+					reason:
+						"No organization is in scope yet; previews are unavailable until one resolves.",
 				};
 			}
 
@@ -215,7 +222,7 @@ export function createDashboardAuthoring(
 					),
 				);
 			}
-			if (errors.length > 0) return { ok: false, errors };
+			if (errors.length > 0) return { ok: false, kind: "validation", errors };
 			commit(spec);
 			return { ok: true, spec };
 		},
