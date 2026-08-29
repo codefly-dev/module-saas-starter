@@ -18,9 +18,13 @@ export {
 	type ThemeDef,
 } from "./model/schema";
 export {
+	type AuditVocabulary,
 	assertDashboardSpec,
 	DashboardSpecError,
+	type FieldError,
 	parseDashboardSpec,
+	validateDashboard,
+	validateMetric,
 } from "./model/validate";
 export {
 	type CommitResult,
@@ -28,8 +32,8 @@ export {
 	type DashboardAuthoring,
 	type DashboardAuthoringDeps,
 	type EventTypeVocabulary,
-	type FieldError,
 	type MetricPreview,
+	type PreconditionCode,
 	type PreviewResult,
 } from "./service/authoring";
 export { useDashboardAuthoring } from "./service/use-dashboard-authoring";

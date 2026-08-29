@@ -5,12 +5,13 @@ import {
 	toAggregateRequest,
 } from "@/features/audit/service/queries";
 import type { AuditService } from "@/gen/saas/accounts/v1/audit_pb";
+import type { DashboardDef, MetricDef } from "../model/schema";
 import {
-	DASHBOARD_SPEC_VERSION,
-	type DashboardDef,
-	type MetricDef,
-} from "../model/schema";
-import { assertDashboardSpec, DashboardSpecError } from "../model/validate";
+	type AuditVocabulary,
+	type FieldError,
+	validateDashboard,
+	validateMetric,
+} from "../model/validate";
 import {
 	compileMetricQuery,
 	type MetricPoint,
@@ -27,16 +28,6 @@ export interface EventTypeVocabulary {
 	categories: string[];
 }
 
-// FieldError is one guard-rail failure returned to a driver: `code` is a stable
-// token to branch on, `message` explains the failure, and `path` points at the
-// offending spec location when the failure is field-specific (a vocabulary
-// miss); a whole-spec shape violation carries the reason in `message` alone.
-export interface FieldError {
-	path?: string;
-	code: string;
-	message: string;
-}
-
 // MetricPreview is the resolved shape of a single metric: the same ordered
 // points and total a mounted card would render, so a driver sees real data
 // before committing.
@@ -45,15 +36,40 @@ export interface MetricPreview {
 	total: number;
 }
 
-// A driver-facing operation returns either a value or the precise guard-rail
-// failures that blocked it — never a bare throw for a spec it can fix.
+// PreconditionCode enumerates the pending-channel tokens a driver branches on
+// to tell one unmet precondition from another. Unlike a FieldError's open
+// `code` — validation codes are many and a driver reads `path`/`message` rather
+// than switching on them — a precondition is a control-flow signal a driver
+// must dispatch on, so the closed union makes a `switch` exhaustive: adding a
+// precondition here surfaces every unhandled branch at compile time.
+export type PreconditionCode = "org_unresolved";
+
+// A driver-facing operation returns either a value or, on failure, one of two
+// distinct kinds — never a bare throw for a spec it can fix. A "validation"
+// failure is the driver's to fix: the spec is malformed or references something
+// unregistered, and `errors` points at each offending field. A "pending"
+// failure is not fixable by editing the spec — a precondition (an organization
+// in scope) isn't met yet, so the driver waits and retries. It carries a
+// `code`/`message` (like a FieldError, minus `path`, since the block is not a
+// spec field): `code` is the closed `PreconditionCode` a driver branches on to
+// tell one precondition from another, `message` explains it in prose for a
+// human. The `kind` discriminant lets a driver branch "fix your spec" vs "wait
+// for context" once; matching a precondition's `code` never crosses into the
+// validation channel.
 export type PreviewResult =
 	| { ok: true; preview: MetricPreview }
-	| { ok: false; errors: FieldError[] };
+	| { ok: false; kind: "validation"; errors: FieldError[] }
+	| { ok: false; kind: "pending"; code: PreconditionCode; message: string };
 
+// CommitResult writes only the local draft, so it has no precondition to wait
+// on — its sole failure kind is "validation". It still carries `kind` so the
+// same code that renders a preview's validation errors also renders a commit's:
+// both failures share the `{ kind: "validation"; errors: FieldError[] }` shape.
+// (A `pending` check against a CommitResult is a compile error, not a runtime
+// branch — the shared benefit is the rendering shape, not a uniform switch.)
 export type CommitResult =
 	| { ok: true; spec: DashboardDef }
-	| { ok: false; errors: FieldError[] };
+	| { ok: false; kind: "validation"; errors: FieldError[] };
 
 // DashboardAuthoring is the contract an external driver binds to: read the
 // vocabulary, preview a metric against live audit data, and commit a spec
@@ -79,49 +95,14 @@ export interface DashboardAuthoringDeps {
 	commit: (spec: DashboardDef) => void;
 }
 
-// The shape/coherence validator (assertDashboardSpec) throws on the first
-// violation; the authoring surface reports failures as data, so a shape error
-// is caught and rendered as a single structured FieldError.
-function shapeErrors(run: () => void): FieldError[] {
-	try {
-		run();
-		return [];
-	} catch (err) {
-		if (err instanceof DashboardSpecError) {
-			return [{ code: "invalid_spec", message: err.message }];
-		}
-		throw err;
-	}
-}
-
-// assertDashboardSpec covers shape and dimensional coherence but not whether a
-// referenced event/category actually exists — that needs the live registry,
-// which only this audit-aware layer has. checkMetricVocabulary closes that gap.
-function checkMetricVocabulary(
-	metric: MetricDef,
-	vocab: EventTypeVocabulary,
-	path: string,
-): FieldError[] {
-	const eventTypes = vocab.events.map((e) => e.name);
-	const errors: FieldError[] = [];
-	if (metric.event && !eventTypes.includes(metric.event.type)) {
-		errors.push({
-			path: `${path}.event.type`,
-			code: "unknown_event_type",
-			message: `"${metric.event.type}" is not a registered audit event type.`,
-		});
-	}
-	if (
-		metric.category !== undefined &&
-		!vocab.categories.includes(metric.category)
-	) {
-		errors.push({
-			path: `${path}.category`,
-			code: "unknown_category",
-			message: `"${metric.category}" is not a registered audit category.`,
-		});
-	}
-	return errors;
+// The canonical validator checks a metric against the event/category namespace,
+// not the richer registry projection; project the catalog down to the names it
+// needs.
+function toAuditVocabulary(vocab: EventTypeVocabulary): AuditVocabulary {
+	return {
+		eventTypes: vocab.events.map((e) => e.name),
+		categories: vocab.categories,
+	};
 }
 
 export function createDashboardAuthoring(
@@ -167,34 +148,21 @@ export function createDashboardAuthoring(
 
 		async previewMetric(metric) {
 			const vocab = await readVocabulary();
-			// Validate the metric's shape via the canonical spec validator by
-			// wrapping it in a minimal spec, then check it against the vocabulary.
-			const errors = shapeErrors(() =>
-				assertDashboardSpec({
-					version: DASHBOARD_SPEC_VERSION,
-					metrics: [metric],
-				}),
-			);
-			if (errors.length === 0) {
-				errors.push(...checkMetricVocabulary(metric, vocab, "metric"));
-			}
-			if (errors.length > 0) return { ok: false, errors };
+			const errors = validateMetric(metric, toAuditVocabulary(vocab));
+			if (errors.length > 0) return { ok: false, kind: "validation", errors };
 
 			// The aggregate RPC is org-scoped: an empty orgId is not "this org" but
 			// the platform-admin control-plane path (spans all tenants), which a
 			// normal caller is denied. Mirror useMetric's "don't query until org is
-			// resolved" guard and surface it as a precise, non-throwing result.
+			// resolved" guard and surface it as a precise, non-throwing result. This
+			// is a precondition, not a spec defect, so it rides the "pending" channel.
 			if (orgId === "") {
 				return {
 					ok: false,
-					errors: [
-						{
-							path: "orgId",
-							code: "org_unresolved",
-							message:
-								"No organization is in scope yet; previews are unavailable until one resolves.",
-						},
-					],
+					kind: "pending",
+					code: "org_unresolved",
+					message:
+						"No organization is in scope yet; previews are unavailable until one resolves.",
 				};
 			}
 
@@ -208,15 +176,8 @@ export function createDashboardAuthoring(
 
 		async setDashboard(spec) {
 			const vocab = await readVocabulary();
-			const errors = shapeErrors(() => assertDashboardSpec(spec));
-			if (errors.length === 0) {
-				errors.push(
-					...spec.metrics.flatMap((metric, i) =>
-						checkMetricVocabulary(metric, vocab, `metrics[${i}]`),
-					),
-				);
-			}
-			if (errors.length > 0) return { ok: false, errors };
+			const errors = validateDashboard(spec, toAuditVocabulary(vocab));
+			if (errors.length > 0) return { ok: false, kind: "validation", errors };
 			commit(spec);
 			return { ok: true, spec };
 		},

@@ -11,10 +11,12 @@
 > rationale.** It is a design document, not shipped code: it takes a position on
 > the ownership/layout question (#330), the result-contract shape (#331), and
 > the caching strategy (#332), and marks which decisions imply a follow-up
-> change versus ratify what already exists. Two of the three change code that
-> still lives in open PRs (#325, #323) and #331 changes an external driver
-> contract, so these are proposed decisions that bind the reconciliation — not a
-> settled record that overrides those PRs' authors.
+> change versus ratify what already exists. #331 (the external driver contract)
+> has since shipped — §2 records the shape that landed, not a proposal. #330 and
+> #332 still change code (#323 is an open PR, and #320/#325 has since merged into
+> the baseline they reconcile against), so those two remain proposed decisions
+> that bind the reconciliation — not a settled record that overrides those PRs'
+> authors.
 
 This is the "reflect on the seam we just built" companion to #321's "build the
 seam" children. Nothing here is blocking — the authoring API works today and
@@ -159,10 +161,12 @@ special-case that token to tell "fix your spec" from "wait for context."
 variant on `previewMetric`:
 
 ```ts
+type PreconditionCode = "org_unresolved";
+
 type PreviewResult =
   | { ok: true;  preview: MetricPreview }
   | { ok: false; kind: "validation"; errors: FieldError[] }
-  | { ok: false; kind: "pending" }; // org/context not ready; retry, don't edit
+  | { ok: false; kind: "pending"; code: PreconditionCode; message: string };
 ```
 
 The two failures are not the same kind of thing, and the type should say so.
@@ -173,6 +177,19 @@ signal, not a field error — the exact "special-case string codes" tax the
 review flagged. A discriminated `kind` makes "fix your spec" versus "wait for
 context" a type distinction the compiler enforces, and removes the fake
 `path: "orgId"` `FieldError`.
+
+The `pending` arm keeps a `code`/`message` — like a `FieldError`, minus `path`
+(the block is not a spec field). `kind` answers "fix your spec vs. wait for
+context"; `code` answers "wait for *what*." `org_unresolved` is the only
+precondition today, but a second one would otherwise force a driver back to
+substring-matching the prose `message` — reintroducing the string-code tax one
+level down. So `code` is a **closed `PreconditionCode` union**, not an open
+`string` (which is what `FieldError.code` is, deliberately: validation codes are
+many and a driver reads `path`/`message` rather than switching on them). A
+precondition is a control-flow signal a driver dispatches on, so the closed
+union makes that `switch` exhaustive — a new precondition surfaces every
+unhandled branch at compile time — while `message` stays human-facing for
+display, never load-bearing.
 
 **`CommitResult` stays two-variant** — deliberately asymmetric:
 
@@ -193,12 +210,12 @@ operations actually have a precondition.
 
 ### Follow-up
 
-A contract change to `service/authoring.ts` **when #320 (PR #325) lands**: add
-the `kind` discriminant to both result types, return `{ ok: false, kind:
-"pending" }` from the `orgId === ""` guard instead of the synthetic
-`org_unresolved` `FieldError`, and document the three-way `previewMetric`
-contract for the external driver. Callers switch from sniffing
-`errors[0].code === "org_unresolved"` to `result.kind === "pending"`.
+**Implemented (#331), now that #320 has landed on `main`.** `service/authoring.ts`
+carries the `kind` discriminant on both result types; the `orgId === ""` guard
+returns `{ ok: false, kind: "pending", code: "org_unresolved", message }` instead
+of the synthetic `path: "orgId"` `FieldError`. Callers switch from sniffing
+`errors[0].code === "org_unresolved"` to `result.kind === "pending"`, and read
+`result.code` when they need to tell one precondition from another.
 
 ---
 
@@ -268,12 +285,14 @@ handled by the store interface.
 | # | Decision | Status |
 |---|----------|--------|
 | #330 | Two validators / two draft stores, each with **one canonical owner of shared rules**: coherence rules live in `model/`, the framework-agnostic `DashboardDraftStore` is the canonical store, hooks and the registry-aware validator layer on top. No third fork from #323. | Ratify + reconcile whichever of #323/#325 lands first |
-| #331 | Split `org_unresolved` into a distinct `kind: "pending"` variant on `PreviewResult`; add a `kind: "validation"` discriminant to both results; `CommitResult` stays two-variant because commit has no org-scoped precondition. | Contract change when #320 lands |
+| #331 | Split `org_unresolved` into a distinct `kind: "pending"` variant on `PreviewResult` (carrying a machine-branchable `code`/`message`); add a `kind: "validation"` discriminant to both results; `CommitResult` stays two-variant because commit has no org-scoped precondition. | Implemented (#331) |
 | #332 | Keep the per-instance vocabulary memo (no react-query coupling); **bound it with a TTL/`refresh()`**; never cache aggregate results; settings-service migration is a store-implementation swap. | Ratify + bound the memo when #320 lands |
 
-Sequencing matters and is not a single gate. The #331 and #332 follow-ups are
-gated on #320 (PR #325) merging — that code is not on `main` yet. The #330
-follow-up is **not**: #323 (the dev harness) is an independent open PR that
+Sequencing matters and is not a single gate. The #331 and #332 follow-ups were
+gated on #320 (PR #325) merging; it has since landed on `main`, and #331 is now
+implemented, leaving #332 (bound the vocabulary memo) as the open follow-up. The
+#330 follow-up is **not** gated the same way: #323 (the dev harness) is an
+independent open PR that
 touches the on-`main` `model/validate.ts` and `service/use-dashboard-draft.ts`
 directly, so it can land **before** #325 and move the "canonical `model/`" this
 whole decision rests on. Whichever of #323/#325 lands first must be held to the
