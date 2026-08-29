@@ -85,6 +85,55 @@ describe("parseManifest", () => {
 	});
 });
 
+describe("parseManifest dashboard slot", () => {
+	const validGraph = {
+		events: [{ name: "login", type: "auth.login.v1" }],
+		metrics: [
+			{
+				id: "logins",
+				kind: "source",
+				filter: { event: "login" },
+				groupBy: "time",
+				bucket: "day",
+				aggregation: "count",
+			},
+		],
+		dashboards: [
+			{
+				id: "activity",
+				layout: "grid",
+				widgets: [{ id: "logins", metric: "logins", visualization: "line" }],
+			},
+		],
+	};
+
+	it("omits the dashboard when the manifest declares none", () => {
+		expect(parseManifest(baseManifest())?.dashboard).toBeUndefined();
+	});
+
+	it("carries a well-formed dashboard data graph through", () => {
+		const parsed = parseManifest(baseManifest({ dashboard: validGraph }));
+		expect(parsed?.dashboard?.dashboards[0]?.id).toBe("activity");
+	});
+
+	it("rejects the whole registration when the dashboard graph is malformed", () => {
+		// A widget bound to a metric the graph never declares fails referential
+		// integrity; the registration is refused rather than stored without it.
+		const brokenGraph = {
+			events: [],
+			metrics: [],
+			dashboards: [
+				{
+					id: "activity",
+					layout: "grid",
+					widgets: [{ id: "w", metric: "missing", visualization: "line" }],
+				},
+			],
+		};
+		expect(parseManifest(baseManifest({ dashboard: brokenGraph }))).toBeNull();
+	});
+});
+
 describe("registry store", () => {
 	beforeEach(() => {
 		for (const solution of loadSolutions()) {

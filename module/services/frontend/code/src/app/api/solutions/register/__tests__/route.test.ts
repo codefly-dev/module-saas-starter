@@ -91,4 +91,40 @@ describe("solutions register route auth", () => {
 		expect(res.status).toBe(200);
 		await expect(res.json()).resolves.toHaveProperty("solutions");
 	});
+
+	it("omits the dashboard data graph from the GET nav list", async () => {
+		getWorkspaceSecret.mockReturnValue(TOKEN);
+		const body = manifestBody() as Record<string, unknown>;
+		body.dashboard = {
+			events: [{ name: "login", type: "auth.login.v1" }],
+			metrics: [
+				{
+					id: "logins",
+					kind: "source",
+					filter: { event: "login" },
+					groupBy: "time",
+					bucket: "day",
+					aggregation: "count",
+				},
+			],
+			dashboards: [
+				{
+					id: "activity",
+					layout: "grid",
+					widgets: [{ id: "logins", metric: "logins", visualization: "line" }],
+				},
+			],
+		};
+		expect((await POST(postRequest(body, TOKEN))).status).toBe(200);
+
+		const listed = (await GET().then((r) => r.json())) as {
+			solutions: Array<Record<string, unknown>>;
+		};
+		const audit = listed.solutions.find((s) => s.id === "audit");
+		// The graph is stored (the page renders it server-side) but never rides the
+		// public nav poll, which only reads id/nav.
+		expect(audit).toBeDefined();
+		expect(audit).not.toHaveProperty("dashboard");
+		expect(audit?.nav).toMatchObject({ title: "Audit", path: "/s/audit" });
+	});
 });
