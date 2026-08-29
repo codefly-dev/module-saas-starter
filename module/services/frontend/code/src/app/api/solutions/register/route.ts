@@ -89,7 +89,14 @@ export async function DELETE(request: Request): Promise<Response> {
 
 // GET is a read of nav-only metadata (titles/paths) that the browser polls to
 // render the Solutions nav. It is intentionally not gated on the internal
-// token — it exposes no secrets and no upstreams.
+// token — it exposes no secrets and no upstreams. The dashboard data graph is
+// dropped here: only the solution page reads it (server-side, via findSolution),
+// so broadcasting it on every 10s nav poll would ship bytes no consumer reads.
 export async function GET(): Promise<Response> {
-	return Response.json({ solutions: loadSolutions() });
+	const solutions = loadSolutions().map((solution) => {
+		const nav = { ...solution };
+		delete nav.dashboard;
+		return nav;
+	});
+	return Response.json({ solutions });
 }

@@ -1,9 +1,8 @@
 "use client";
 
-import type { DataGraph } from "@codefly/saas-plugin-manifest";
+import type { DataGraph, MetricWidget } from "@codefly/saas-plugin-manifest";
 import {
 	createSaasClient,
-	type DashboardData,
 	type ResolvedWidget,
 	runDashboard,
 } from "@codefly/saas-sdk";
@@ -28,6 +27,25 @@ import {
 // the client, the bearer token, and the org scope; the solution supplies only
 // the DataGraph — it can never widen a query past the viewer's own org.
 const sdk = createSaasClient(apiTransport);
+
+// Dashboard id of the throwaway single-widget graph each card resolves. The card
+// resolves its own widget in isolation, so this id is never surfaced.
+const SINGLE_WIDGET_DASHBOARD = "widget";
+
+// A graph carrying every event and metric but exactly one widget, so runDashboard
+// resolves only that widget's metric (and its derived inputs). Resolving each
+// widget through its own call is what isolates failures: a widget whose metric's
+// audit query errors fails alone, instead of blanking every sibling that shares
+// the dashboard's single batched resolution.
+function singleWidgetGraph(graph: DataGraph, widget: MetricWidget): DataGraph {
+	return {
+		events: graph.events,
+		metrics: graph.metrics,
+		dashboards: [
+			{ id: SINGLE_WIDGET_DASHBOARD, layout: "grid", widgets: [widget] },
+		],
+	};
+}
 
 // Render a resolved widget's series in the shape its visualization asks for. A
 // series with no points is "no data yet" for every kind — the audit RPC omits a
@@ -86,25 +104,59 @@ function WidgetBody({ widget }: { widget: ResolvedWidget }) {
 	}
 }
 
-function DashboardView({ data }: { data: DashboardData }) {
-	const cards = data.widgets.map((widget) => (
-		<Card key={widget.id}>
+function WidgetCard({
+	graph,
+	widget,
+	solutionId,
+	dashboardId,
+	orgId,
+}: {
+	graph: DataGraph;
+	widget: MetricWidget;
+	solutionId: string;
+	dashboardId: string;
+	orgId: string;
+}) {
+	// The graph is part of the key so a solution that redeploys with a changed
+	// declaration refetches instead of serving another graph's cached series that
+	// happens to share the same solution/dashboard/widget/org ids. Disabled until
+	// the org resolves so the pre-org window reads as loading, never as empty.
+	const { data, isPending, isError } = useQuery({
+		queryKey: [
+			"solution-widget",
+			solutionId,
+			dashboardId,
+			widget.id,
+			orgId,
+			graph,
+		],
+		queryFn: () =>
+			runDashboard(
+				sdk.audit,
+				singleWidgetGraph(graph, widget),
+				SINGLE_WIDGET_DASHBOARD,
+				{ orgId },
+			).then((resolved) => resolved.widgets[0]),
+		enabled: orgId !== "",
+	});
+
+	return (
+		<Card>
 			<CardHeader className="pb-2">
 				<CardTitle className="text-base">
-					{widget.title ?? widget.metricId}
+					{widget.title ?? widget.metric}
 				</CardTitle>
 			</CardHeader>
 			<CardContent>
-				<WidgetBody widget={widget} />
+				{isError ? (
+					<p className="text-sm text-destructive">Unable to load.</p>
+				) : isPending || !data ? (
+					<Skeleton className="h-24 w-full" />
+				) : (
+					<WidgetBody widget={data} />
+				)}
 			</CardContent>
 		</Card>
-	));
-	return data.layout === "stack" ? (
-		<Stack gap={4}>{cards}</Stack>
-	) : (
-		<Grid cols={2} gap={4}>
-			{cards}
-		</Grid>
 	);
 }
 
@@ -112,50 +164,51 @@ function SolutionDashboard({
 	graph,
 	dashboardId,
 	solutionId,
+	layout,
 	title,
+	widgets,
 }: {
 	graph: DataGraph;
 	dashboardId: string;
 	solutionId: string;
+	layout: "grid" | "stack";
 	title?: string;
+	widgets: readonly MetricWidget[];
 }) {
 	const { organizationId } = useAuth();
 	const orgId = organizationId ?? "";
 
-	// The graph is fixed per registration, so the org is the only dimension that
-	// varies; keying on it (plus the solution + dashboard) scopes the cache to the
-	// viewer and refetches when they switch orgs. Disabled until the org resolves
-	// so the pre-org window reads as loading, never as an empty dashboard.
-	const { data, isPending, isError } = useQuery({
-		queryKey: ["solution-dashboard", solutionId, dashboardId, orgId],
-		queryFn: () => runDashboard(sdk.audit, graph, dashboardId, { orgId }),
-		enabled: orgId !== "",
-	});
+	const cards = widgets.map((widget) => (
+		<WidgetCard
+			key={widget.id}
+			graph={graph}
+			widget={widget}
+			solutionId={solutionId}
+			dashboardId={dashboardId}
+			orgId={orgId}
+		/>
+	));
 
 	return (
 		<section className="space-y-4">
 			{title && (
 				<h2 className="text-lg font-semibold tracking-tight">{title}</h2>
 			)}
-			{isError ? (
-				<p className="text-sm text-destructive">
-					Unable to load this dashboard.
-				</p>
-			) : isPending || !data ? (
-				<Grid cols={2} gap={4}>
-					<Skeleton className="h-40 w-full" />
-					<Skeleton className="h-40 w-full" />
-				</Grid>
+			{layout === "stack" ? (
+				<Stack gap={4}>{cards}</Stack>
 			) : (
-				<DashboardView data={data} />
+				<Grid cols={2} gap={4}>
+					{cards}
+				</Grid>
 			)}
 		</section>
 	);
 }
 
 /**
- * Renders every dashboard a registered solution declares in its data-graph slot,
- * each resolved independently against the audit trail. A solution ships only the
+ * Renders every dashboard a registered solution declares in its data-graph slot.
+ * Each widget resolves against the audit trail through its own query, so one
+ * widget's failure never blanks its siblings. A solution ships only the
  * declaration; all charting lives here in the host.
  */
 export function SolutionDashboards({
@@ -173,7 +226,9 @@ export function SolutionDashboards({
 					graph={graph}
 					dashboardId={dashboard.id}
 					solutionId={solutionId}
+					layout={dashboard.layout}
 					title={dashboard.title}
+					widgets={dashboard.widgets}
 				/>
 			))}
 		</div>

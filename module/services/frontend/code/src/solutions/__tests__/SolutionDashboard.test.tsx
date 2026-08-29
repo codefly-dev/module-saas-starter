@@ -119,14 +119,49 @@ describe("SolutionDashboards", () => {
 		expect(screen.getByText("Total logins")).toBeTruthy();
 	});
 
-	it("reads as loading until the org context resolves, never as empty", () => {
-		authState.organizationId = undefined;
+	it("isolates a widget whose metric fails without blanking its siblings", async () => {
+		// The bar widget's metric query errors; the time-series widgets still
+		// resolve. Under one batched dashboard query this 500 would reject the
+		// whole resolution and blank every widget, so the stat below could never
+		// appear.
+		server.use(
+			http.post(
+				rpc("AuditService", "AggregateAuditLog"),
+				async ({ request }) => {
+					const body = (await request.json()) as { groupBy?: string };
+					if (body.groupBy === "event_type") {
+						return new HttpResponse(null, { status: 500 });
+					}
+					return HttpResponse.json({
+						buckets: [
+							{ key: "2026-08-01", count: "3" },
+							{ key: "2026-08-02", count: "5" },
+						],
+					});
+				},
+			),
+		);
 
 		renderInApp(<SolutionDashboards graph={graph} solutionId="lastlogin" />);
 
-		// The dashboard title renders immediately, but the widgets stay gated
-		// behind the disabled query — so no widget resolves to a bare "no data".
+		// The healthy total-logins stat resolves (3 + 5)...
+		expect(await screen.findByText("8")).toBeTruthy();
+		// ...even though the bar widget's own query failed.
+		expect(await screen.findByText("Unable to load.")).toBeTruthy();
+	});
+
+	it("reads as loading until the org context resolves, never as empty", () => {
+		authState.organizationId = undefined;
+
+		const { container } = renderInApp(
+			<SolutionDashboards graph={graph} solutionId="lastlogin" />,
+		);
+
+		// Card shells render immediately, but each body stays gated behind its
+		// disabled query — a skeleton, never a resolved value or a bare "no data".
 		expect(screen.getByText("Activity")).toBeTruthy();
-		expect(screen.queryByText("Total logins")).toBeNull();
+		expect(screen.getByText("Total logins")).toBeTruthy();
+		expect(container.querySelector('[data-slot="skeleton"]')).not.toBeNull();
+		expect(screen.queryByText("8")).toBeNull();
 	});
 });
