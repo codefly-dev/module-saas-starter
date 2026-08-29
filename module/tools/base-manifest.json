@@ -688,7 +688,7 @@
     "services/accounts/code/pkg/moduleinfo/aggregator.go": "84cf6fb802183ad7146d4bc3444f4c3610da950ab4aaa2fae91de79eb57476c3",
     "services/accounts/code/pkg/moduleinfo/aggregator_test.go": "e259707187961fed8976f13e315a61d17fce6dc3254c92874cde4b66bdc65c11",
     "services/accounts/code/pkg/permissioncatalog/catalog_gen.go": "2183214dde8b39f4f169f3414875133fa31f5edf40f32c68d4683db5689637ce",
-    "services/accounts/code/pkg/permissionsplugin/plugin.go": "f87275a10d5173054399a0ddbcead40d671eb13294ad71a65928f3c6f5baafec",
+    "services/accounts/code/pkg/permissionsplugin/plugin.go": "b8b1cb34f587be8ac19169b833450dd5c2bc601d2e9e4f8cde84d89d04421c3e",
     "services/accounts/code/pkg/policy/condition/condition.go": "d4dcab5baf31c761d503a58936d9f55c064da09cd53ca19ce06e56e329509dfc",
     "services/accounts/code/pkg/policy/condition/condition_test.go": "7c99a4ba7d8d19cf20528594434b953f3336238a29982f4cd055c77781d07e5f",
     "services/accounts/code/pkg/policy/schema_test.go": "9c26809553d9363015201aeaf9a9d59c03aa118595a55be5b74900eeb1903c7c",

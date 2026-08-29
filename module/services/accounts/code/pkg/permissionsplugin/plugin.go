@@ -39,7 +39,7 @@ import (
 )
 
 // Plugin is the framework.Plugin implementation for the agent
-// permission system. Use New / NewWithKeys to construct.
+// permission system. Use New / Default to construct.
 type Plugin struct {
 	signingSecret     []byte
 	signingEd25519Key []byte
