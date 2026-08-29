@@ -433,6 +433,7 @@ describe("validateMetric", () => {
 		);
 		expect(errors).toEqual([
 			{
+				path: "metric",
 				code: "invalid_spec",
 				message: expect.stringMatching(/needs a bucket/),
 			},
@@ -446,6 +447,18 @@ describe("validateMetric", () => {
 			"metrics[2]",
 		);
 		expect(errors[0].path).toBe("metrics[2].event.type");
+	});
+
+	it("addresses a shape error at the caller's path, not a fabricated index", () => {
+		const errors = validateMetric(
+			{ title: "x", groupBy: "time", chart: "line" },
+			vocab,
+			"metrics[2]",
+		);
+		expect(errors).toHaveLength(1);
+		expect(errors[0].path).toBe("metrics[2]");
+		expect(errors[0].message).toContain("metrics[2]");
+		expect(errors[0].message).not.toContain("index");
 	});
 });
 
