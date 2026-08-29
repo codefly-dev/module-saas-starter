@@ -300,12 +300,12 @@ jobs:
       - name: Make host.docker.internal resolvable on the Linux runner
         shell: bash
         run: |
-          # Codefly's runtime health-checks its test dependencies (minio for
-          # object-storage, redis for cache, …) at host.docker.internal, the
+          # Codefly's runtime health-checks its test dependencies (redis for
+          # cache, postgres for store, …) at host.docker.internal, the
           # name Docker Desktop provides on macOS/Windows. Linux runners do
           # not resolve it on the host, and a runner-image change dropped it,
           # breaking the frontend test phase with
-          #   minio is not ready: … lookup host.docker.internal … no such host
+          #   <dep> is not ready: … lookup host.docker.internal … no such host
           # Published dependency ports bind to the host loopback, so map the
           # name there. Idempotent: skip if already present.
           if ! grep -q 'host.docker.internal' /etc/hosts; then

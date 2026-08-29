@@ -338,12 +338,10 @@ func GenerateEnvoyConfig(
 	}
 
 	// Connect upstream clusters (if separate).
-	if connectUpstreams != nil {
-		for name, upstream := range connectUpstreams {
-			cName := name + "_connect"
-			if neededClusters[cName] {
-				clusters = append(clusters, buildHTTPCluster(cName, upstream))
-			}
+	for name, upstream := range connectUpstreams {
+		cName := name + "_connect"
+		if neededClusters[cName] {
+			clusters = append(clusters, buildHTTPCluster(cName, upstream))
 		}
 	}
 

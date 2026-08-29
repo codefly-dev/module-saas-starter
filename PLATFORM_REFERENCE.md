@@ -132,7 +132,7 @@ Gated by tenant-admin or platform role (`src/components/auth/role-gate.tsx`).
 | Per-tenant config | ✅ | `/admin/organizations/settings` (`org_settings`), `/admin/entitlements`. |
 | Background-agent ops / kill switch | 🟡 | `/admin/platform/jobs` gives payload-free queue/lifecycle + MFA-gated dead-letter replay; `RevokePrincipal` revokes an agent. No dedicated per-tenant agent kill switch — but note the audit's lesson: make any kill switch **per-tenant**, not deployment-global. |
 | Partner API keys | 🟡 | Org API keys `cfly_sk_…` (hashed via Vault transit HMAC, scoped, `/admin/api-keys`, `pkg/business/api_keys.go` + `pkg/infra/vault.go`); no separate partner tier and no 404-not-403 concealment of a staff-only surface yet. |
-| Audit viewer + compliance export | ✅ | `/admin/audit-log` (`QueryAuditLog`) + `/admin/audit-export` (`AuditExportService`, per-org S3 JSONL, PII-redacted; `pkg/business/audit_export*.go`). |
+| Audit viewer + compliance export | ✅ | `/admin/audit-log` (`QueryAuditLog`) + on-demand CSV/JSON download (`AuditService/ExportAuditLog`, `pkg/business/audit_export.go`). The former per-org S3 JSONL sink (`AuditExportService`) was removed with the object-storage service. |
 
 ### 1.6 Support access / impersonation — ✅ (with a role-model divergence)
 
@@ -173,7 +173,8 @@ Gated by tenant-admin or platform role (`src/components/auth/role-gate.tsx`).
   JSON as the portable seam. The starter instead uses an append-only Postgres
   `audit_events` table (RLS, polymorphic org scope) with a **typed event
   registry** (`pkg/business/audit_registry.go`,
-  `module/docs/adr/0003-typed-audit-event-registry.md`) and S3 JSONL export. The
+  `module/docs/adr/0003-typed-audit-event-registry.md`) and on-demand CSV/JSON
+  export (`ExportAuditLog`). The
   typed registry buys compile-time discipline the stdout seam does not; the
   trade-off (a DB write on the hot path vs. a log line) is deliberate. Weigh the
   audit's synchronous-stdout argument if audit-write latency ever bites.
@@ -224,7 +225,7 @@ there.
   provider-factory abstraction in code. Portability comes from **Codefly SDK
   endpoint resolution + generated deployment topology + a kustomize `overlays/aws`
   patch** that swaps stateful services for managed RDS / ElastiCache / external
-  Vault / S3 ([module/DEPLOYMENT_TOPOLOGY.md](./module/DEPLOYMENT_TOPOLOGY.md)).
+  Vault ([module/DEPLOYMENT_TOPOLOGY.md](./module/DEPLOYMENT_TOPOLOGY.md)).
 - **The seam-integrity analog exists (↔).** The **base-integrity manifest guard**
   (`module/tools/base-integrity.mjs`, CI `verify`) plus the SDK-boundary CI job
   ("reject direct Codefly runtime-carrier access") play the seam-guard role at
@@ -233,8 +234,8 @@ there.
   keys, invitations, `audit_events`, entitlements/subscriptions, usage meters,
   webhooks, jobs, delegation + actor chain, and approvals scaffolding are all
   Postgres under RLS — precisely the Postgres-first choice the audit says it
-  regrets not making. Redis (cache/rate-limit), Vault (keys/secrets), and S3
-  (audit export) are the other backing stores.
+  regrets not making. Redis (cache/rate-limit) and Vault (keys/secrets) are the
+  other backing stores; there is no object-storage dependency.
 
 ### Portability scorecard (starter-relative)
 
@@ -243,7 +244,7 @@ there.
 | Workload / service identity | Port + adapters | ✅ Codefly internal + gateway tokens; Istio reach policy generated from `authz-methods.json` |
 | Token signing | Port + KMS/local | ✅ Ed25519 via Vault-held keypair, rotation with previous-key overlap |
 | Member/tenant directory | Firestore/Dynamo port | ✅ ↔ Postgres + RLS (no port abstraction; single first-class store) |
-| Object storage | GCS/S3 port | 🟡 S3 for audit export; no general presigned-URL storage port |
+| Object storage | GCS/S3 port | ❌ none — the audit-export S3 sink was removed; no object-storage surface remains |
 | Audit **emission** | stdout JSON | ↔ Postgres `audit_events` + typed registry (see §1.8) |
 | Audit/analytics **query** | Hand-written BigQuery SQL (❌ lock-in) | ✅ SQL over the same Postgres — no warehouse dialect to lock into |
 | Document/DB store | Firestore-first (❌) | ✅ Postgres-first |

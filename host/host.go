@@ -103,12 +103,6 @@ func (b *Backend) WithHTTPClient(c *http.Client) *Backend {
 	return b
 }
 
-// WithTimeout caps the per-call timeout. Zero leaves it to ctx.
-func (b *Backend) WithTimeout(d time.Duration) *Backend {
-	b.Timeout = d
-	return b
-}
-
 // =====================================================================
 // PermissionsBackend
 // =====================================================================
@@ -211,15 +205,6 @@ func NewGrantor(b *Backend) *Grantor {
 		panic("saas-host: NewGrantor: backend must be non-nil")
 	}
 	return &Grantor{backend: b}
-}
-
-// WithVerifier installs the TokenVerifier used to validate
-// approval-minted tokens. Recommended for production so the
-// host catches mint failures early; safe to leave nil in
-// dev/tests.
-func (g *Grantor) WithVerifier(v *policy.TokenVerifier) *Grantor {
-	g.Verifier = v
-	return g
 }
 
 type requestDelegationBody struct {

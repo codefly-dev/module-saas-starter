@@ -232,7 +232,7 @@ func readRuntimeCatalog(path, kind string) ([]byte, error) {
 	if err != nil {
 		return nil, fmt.Errorf("routing: cannot read %s artifact %s: %w", kind, path, err)
 	}
-	defer file.Close()
+	defer func() { _ = file.Close() }()
 	raw, err := io.ReadAll(io.LimitReader(file, maxRuntimeCatalogBytes+1))
 	if err != nil {
 		return nil, fmt.Errorf("routing: cannot read %s artifact %s: %w", kind, path, err)
@@ -261,10 +261,10 @@ func validateCatalogRouteShape(route *routeCatalogItem) error {
 	switch route.Protocol {
 	case gatewayProtocolConnect:
 		if route.Method != "POST" || route.Match != matchExact {
-			return fmt.Errorf("Connect routes must use POST with exact matching")
+			return fmt.Errorf("routing: Connect routes must use POST with exact matching")
 		}
 		if !procedurePattern.MatchString(route.Path) {
-			return fmt.Errorf("Connect path is not canonical")
+			return fmt.Errorf("routing: Connect path is not canonical")
 		}
 	case gatewayProtocolREST:
 		hasTemplate := false

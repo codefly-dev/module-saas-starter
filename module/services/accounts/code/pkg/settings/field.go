@@ -213,34 +213,6 @@ func MustBool[M proto.Message](prototype M, path string, defaultValue bool) Fiel
 	)
 }
 
-// MustInt32 defines an optional int32 settings field.
-func MustInt32[M proto.Message](prototype M, path string, defaultValue int32) Field[M, int32] {
-	return mustScalarField(
-		prototype,
-		path,
-		defaultValue,
-		protoreflect.Int32Kind,
-		func(value protoreflect.Value) (int32, error) { return int32(value.Int()), nil },
-		func(value int32) (protoreflect.Value, error) {
-			return protoreflect.ValueOfInt32(value), nil
-		},
-	)
-}
-
-// MustInt64 defines an optional int64 settings field.
-func MustInt64[M proto.Message](prototype M, path string, defaultValue int64) Field[M, int64] {
-	return mustScalarField(
-		prototype,
-		path,
-		defaultValue,
-		protoreflect.Int64Kind,
-		func(value protoreflect.Value) (int64, error) { return value.Int(), nil },
-		func(value int64) (protoreflect.Value, error) {
-			return protoreflect.ValueOfInt64(value), nil
-		},
-	)
-}
-
 // MustEnum defines an optional enum settings field. E is the generated enum
 // type (whose underlying type is int32). Set rejects values unknown to the
 // field's enum descriptor.

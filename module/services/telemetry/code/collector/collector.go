@@ -159,7 +159,7 @@ func (c *Collector) deliver(ctx context.Context, signal string, message proto.Me
 	if err != nil {
 		return fmt.Errorf("telemetry: export %s: %w", signal, err)
 	}
-	defer response.Body.Close()
+	defer func() { _ = response.Body.Close() }()
 	_, _ = io.Copy(io.Discard, io.LimitReader(response.Body, 64*1024))
 	if response.StatusCode < http.StatusOK || response.StatusCode >= http.StatusMultipleChoices {
 		return fmt.Errorf("telemetry: export %s returned HTTP %d", signal, response.StatusCode)

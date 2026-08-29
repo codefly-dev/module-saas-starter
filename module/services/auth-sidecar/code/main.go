@@ -113,12 +113,12 @@ func main() {
 	if err != nil {
 		panic(fmt.Sprintf("cannot connect to api at %s: %v", apiAddr, err))
 	}
-	defer apiConn.Close()
+	defer func() { _ = apiConn.Close() }()
 	internalAPIConn, err := grpc.NewClient(internalAPIAddr, grpc.WithTransportCredentials(insecure.NewCredentials()))
 	if err != nil {
 		panic(fmt.Sprintf("cannot connect to internal api at %s: %v", internalAPIAddr, err))
 	}
-	defer internalAPIConn.Close()
+	defer func() { _ = internalAPIConn.Close() }()
 
 	publicKey := fetchPublicKey(ctx, apiConn)
 

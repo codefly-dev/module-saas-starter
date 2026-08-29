@@ -46,15 +46,6 @@ func WithBaseURL(baseURL string) Option {
 	}
 }
 
-// WithHTTPClient overrides the HTTP client used for GitHub requests.
-func WithHTTPClient(client *http.Client) Option {
-	return func(c *Connector) {
-		if client != nil {
-			c.httpClient = client
-		}
-	}
-}
-
 // WithClock overrides the time source, for deterministic token-expiry tests.
 func WithClock(now func() time.Time) Option {
 	return func(c *Connector) {

@@ -32,13 +32,6 @@ import (
 	codefly "github.com/codefly-dev/sdk-go"
 )
 
-func Must[T any](t T, err error) T {
-	if err != nil {
-		panic(err)
-	}
-	return t
-}
-
 type Clean func()
 type Work func(ctx context.Context) (Clean, error)
 
