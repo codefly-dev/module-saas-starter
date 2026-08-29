@@ -20,7 +20,7 @@ services:
     agent:
       kind: codefly:service
       name: go-grpc
-      version: 0.1.35
+      version: 0.1.36
       publisher: codefly.dev
     workspace_configuration_dependencies:
       - abuse-protection
@@ -79,7 +79,7 @@ services:
     agent:
       kind: codefly:service
       name: go-grpc
-      version: 0.1.35
+      version: 0.1.36
       publisher: codefly.dev
     workspace_configuration_dependencies:
       - gateway
@@ -123,7 +123,7 @@ services:
       name: redis
       # 0.0.82: read-replica runtime-load fix (two tcp endpoints on one port),
       # codefly-dev/service-redis#16 — resolved, hold lifted.
-      version: 0.0.83
+      version: 0.0.84
       publisher: codefly.dev
     endpoints:
       - name: read
@@ -142,7 +142,7 @@ services:
     agent:
       kind: codefly:service
       name: nextjs
-      version: 0.0.149
+      version: 0.0.150
       publisher: codefly.dev
     workspace_configuration_dependencies:
       - abuse-protection
@@ -199,7 +199,7 @@ services:
     agent:
       kind: codefly:service
       name: nextjs
-      version: 0.0.149
+      version: 0.0.150
       publisher: codefly.dev
     endpoints:
       - name: http
@@ -219,7 +219,7 @@ services:
     agent:
       kind: codefly:service
       name: postgres
-      version: 0.0.128
+      version: 0.0.129
       publisher: codefly.dev
     endpoints:
       - name: tcp
@@ -250,7 +250,7 @@ services:
     agent:
       kind: codefly:service
       name: go-grpc
-      version: 0.1.35
+      version: 0.1.36
       publisher: codefly.dev
     workspace_configuration_dependencies:
       - observability
@@ -270,7 +270,7 @@ services:
     agent:
       kind: codefly:service
       name: vault
-      version: 0.0.25
+      version: 0.0.27
       publisher: codefly.dev
     secret_service_configurations:
       - name: vault

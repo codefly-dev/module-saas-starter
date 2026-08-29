@@ -4,7 +4,7 @@ version: 0.0.0
 agent:
     kind: codefly:service
     name: nextjs
-    version: 0.0.149
+    version: 0.0.150
     publisher: codefly.dev
 service-dependencies:
     - name: auth-sidecar

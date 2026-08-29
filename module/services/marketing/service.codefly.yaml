@@ -8,7 +8,7 @@ description: |
 agent:
     kind: codefly:service
     name: nextjs
-    version: 0.0.149
+    version: 0.0.150
     publisher: codefly.dev
 endpoints:
     - name: http
