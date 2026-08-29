@@ -71,7 +71,9 @@ claims:
   - {kind: package, key: "@bufbuild/protobuf", owner: base}
   - {kind: package, key: "@bufbuild/protoc-gen-es", owner: base}
   - {kind: package, key: "@codefly/saas-plugin-contract", owner: base}
+  - {kind: package, key: "@codefly/saas-plugin-manifest", owner: base}
   - {kind: package, key: "@codefly/saas-plugin-react", owner: base}
+  - {kind: package, key: "@codefly/saas-sdk", owner: base}
   - {kind: package, key: "@codefly/saas-settings", owner: base}
   - {kind: package, key: "@codefly/ui", owner: base}
   - {kind: package, key: "@connectrpc/connect", owner: base}
