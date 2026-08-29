@@ -33,6 +33,7 @@ export {
 	type DashboardAuthoringDeps,
 	type EventTypeVocabulary,
 	type MetricPreview,
+	type PreconditionCode,
 	type PreviewResult,
 } from "./service/authoring";
 export { useDashboardAuthoring } from "./service/use-dashboard-authoring";

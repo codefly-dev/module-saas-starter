@@ -177,6 +177,8 @@ describe("dashboard authoring API", () => {
 		});
 		expect(result.ok).toBe(false);
 		if (result.ok) return;
+		expect(result.kind).toBe("validation");
+		if (result.kind !== "validation") return;
 		expect(result.errors).toEqual([
 			{
 				path: "metric.event.type",
@@ -193,11 +195,13 @@ describe("dashboard authoring API", () => {
 		const result = await api.previewMetric(null as unknown as MetricDef);
 		expect(result.ok).toBe(false);
 		if (result.ok) return;
+		expect(result.kind).toBe("validation");
+		if (result.kind !== "validation") return;
 		expect(result.errors[0].code).toBe("invalid_spec");
 		expect(audit.aggregateAuditLog).not.toHaveBeenCalled();
 	});
 
-	it("refuses to preview against an unresolved org instead of querying cross-tenant", async () => {
+	it("reports an unresolved org as pending, not as a spec-validation error", async () => {
 		const audit = fakeAudit();
 		const { api } = authoring({ audit, orgId: "" });
 		const result = await api.previewMetric({
@@ -207,14 +211,33 @@ describe("dashboard authoring API", () => {
 		});
 		expect(result.ok).toBe(false);
 		if (result.ok) return;
-		expect(result.errors).toEqual([
-			{
-				path: "orgId",
-				code: "org_unresolved",
-				message:
-					"No organization is in scope yet; previews are unavailable until one resolves.",
-			},
-		]);
+		expect(result.kind).toBe("pending");
+		if (result.kind !== "pending") return;
+		expect(result.code).toBe("org_unresolved");
+		expect(result.message).toBe(
+			"No organization is in scope yet; previews are unavailable until one resolves.",
+		);
+		expect(audit.aggregateAuditLog).not.toHaveBeenCalled();
+	});
+
+	it("surfaces spec-validation errors before the pending precondition when both hold", async () => {
+		// orgId is unresolved AND the metric references an unknown event. The
+		// driver should get the fixable spec error first, not have it masked
+		// behind "wait for context" — validation runs before the org guard.
+		const audit = fakeAudit();
+		const { api } = authoring({ audit, orgId: "" });
+		const result = await api.previewMetric({
+			title: "Bad",
+			event: { type: "auth.nope" },
+			groupBy: "time",
+			bucket: "day",
+			chart: "line",
+		});
+		expect(result.ok).toBe(false);
+		if (result.ok) return;
+		expect(result.kind).toBe("validation");
+		if (result.kind !== "validation") return;
+		expect(result.errors[0].code).toBe("unknown_event_type");
 		expect(audit.aggregateAuditLog).not.toHaveBeenCalled();
 	});
 
@@ -258,6 +281,7 @@ describe("dashboard authoring API", () => {
 		);
 		expect(result.ok).toBe(false);
 		if (result.ok) return;
+		expect(result.kind).toBe("validation");
 		expect(result.errors[0].code).toBe("invalid_spec");
 		expect(result.errors[0].message).toMatch(/title/);
 		expect(commits).toEqual([]);
@@ -268,6 +292,7 @@ describe("dashboard authoring API", () => {
 		const result = await api.setDashboard(spec([null as unknown as MetricDef]));
 		expect(result.ok).toBe(false);
 		if (result.ok) return;
+		expect(result.kind).toBe("validation");
 		expect(result.errors[0].code).toBe("invalid_spec");
 		expect(commits).toEqual([]);
 	});
@@ -287,6 +312,7 @@ describe("dashboard authoring API", () => {
 		);
 		expect(result.ok).toBe(false);
 		if (result.ok) return;
+		expect(result.kind).toBe("validation");
 		expect(result.errors).toEqual([
 			{
 				path: "metrics[0].event.type",
