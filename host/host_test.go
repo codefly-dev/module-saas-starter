@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/codefly-dev/core/policy"
 )
@@ -102,4 +103,65 @@ func TestRequestReturnsWaitResponseCloseError(t *testing.T) {
 	if !errors.Is(err, closeErr) {
 		t.Fatalf("Request() error = %v, want wait response close error", err)
 	}
+}
+
+// TestEventToResultVerifierPath guards the approve/verify branch of
+// eventToResult. That branch reads Grantor.Verifier, and the only way to
+// install a verifier is to assign the exported field directly (there is no
+// fluent setter) — so this test also proves the verifier stays wire-able and
+// the approve path still consults it after the WithVerifier setter was removed.
+func TestEventToResultVerifierPath(t *testing.T) {
+	secret := []byte("test-hmac-secret-at-least-32-bytes-long")
+	token, minted, err := policy.Mint(policy.MintInput{
+		Principal: &policy.Principal{ID: "user-1", Kind: "human", OrgID: "org-1"},
+		Action:    "read",
+		TTL:       time.Minute,
+	}, secret)
+	if err != nil {
+		t.Fatalf("Mint() error = %v", err)
+	}
+
+	ev := &delegationEvent{
+		Status:             "approved",
+		ScopedAuthToken:    token,
+		GrantorPrincipalID: "admin-1",
+		Reason:             "ok",
+	}
+
+	t.Run("verifier set populates Authorization", func(t *testing.T) {
+		g := NewGrantor(NewBackend("http://saas.test", Auth{}))
+		// The sole wiring path after WithVerifier's removal: assign the
+		// exported field. If this stops compiling or the branch stops
+		// reading it, production loses ready-to-attach authorizations.
+		g.Verifier = policy.NewTokenVerifier().WithHMACSecret(secret)
+
+		r := g.eventToResult(ev, "grant-1")
+		if r.Decision != policy.EscalationApproved {
+			t.Fatalf("Decision = %v, want approved", r.Decision)
+		}
+		if r.Token != token {
+			t.Fatalf("Token = %q, want minted token", r.Token)
+		}
+		if r.Authorization == nil {
+			t.Fatal("Authorization is nil; verifier branch did not populate it")
+		}
+		if r.Authorization.PrincipalID != minted.PrincipalID {
+			t.Fatalf("Authorization.PrincipalID = %q, want %q", r.Authorization.PrincipalID, minted.PrincipalID)
+		}
+	})
+
+	t.Run("nil verifier leaves Authorization unset", func(t *testing.T) {
+		g := NewGrantor(NewBackend("http://saas.test", Auth{}))
+
+		r := g.eventToResult(ev, "grant-1")
+		if r.Decision != policy.EscalationApproved {
+			t.Fatalf("Decision = %v, want approved", r.Decision)
+		}
+		if r.Token != token {
+			t.Fatalf("Token = %q, want minted token", r.Token)
+		}
+		if r.Authorization != nil {
+			t.Fatal("Authorization populated with nil Verifier; want nil per documented behavior")
+		}
+	})
 }

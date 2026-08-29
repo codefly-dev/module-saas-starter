@@ -56,7 +56,7 @@ func TestCollectorReceivesGRPCAndForwardsOTLPHTTP(t *testing.T) {
 		}),
 	)
 	require.NoError(t, err)
-	defer connection.Close()
+	defer func() { _ = connection.Close() }()
 	client := collectortracev1.NewTraceServiceClient(connection)
 	_, err = client.Export(t.Context(), &collectortracev1.ExportTraceServiceRequest{
 		ResourceSpans: []*tracev1.ResourceSpans{{}},

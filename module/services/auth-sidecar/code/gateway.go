@@ -114,7 +114,7 @@ func (g *Gateway) readyHandler(w http.ResponseWriter, _ *http.Request) {
 			_, _ = io.WriteString(w, fmt.Sprintf(`{"status":"not ready","reason":"upstream unreachable","service":%q}`, name))
 			return
 		}
-		conn.Close()
+		_ = conn.Close()
 	}
 
 	w.WriteHeader(http.StatusOK)

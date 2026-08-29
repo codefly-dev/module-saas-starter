@@ -25,7 +25,7 @@ func LoadConnectRoutesFromCatalog() ([]*RouteEntry, error) {
 	for _, entry := range source {
 		copy := *entry
 		if err := applyGeneratedAuthorizationMetadata(&copy, authz); err != nil {
-			return nil, fmt.Errorf("Connect route %q: %w", copy.Path, err)
+			return nil, fmt.Errorf("routing: Connect route %q: %w", copy.Path, err)
 		}
 		entries = append(entries, &copy)
 	}

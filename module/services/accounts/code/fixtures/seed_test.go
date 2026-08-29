@@ -195,7 +195,7 @@ func TestSelectedNameFallsBackToEmbeddedFixtures(t *testing.T) {
 	if err := os.Chdir(t.TempDir()); err != nil {
 		t.Fatal(err)
 	}
-	t.Cleanup(func() { os.Chdir(orig) })
+	t.Cleanup(func() { _ = os.Chdir(orig) })
 
 	t.Setenv("CODEFLY__FIXTURE", "dev-admin")
 	name, err := SelectedName()
@@ -225,7 +225,7 @@ func TestEmbeddedFixtureFallbackIsAnnounced(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	t.Cleanup(func() { os.RemoveAll(dir) })
+	t.Cleanup(func() { _ = os.RemoveAll(dir) })
 
 	if got := buf.String(); !strings.Contains(got, "using fixtures embedded in the binary") {
 		t.Fatalf("embedded fixture fallback was served silently; expected a warning, log was: %q", got)
@@ -240,7 +240,7 @@ func TestSelectedNameEmptyWithoutSelectionSkipsDirectory(t *testing.T) {
 	if err := os.Chdir(t.TempDir()); err != nil {
 		t.Fatal(err)
 	}
-	t.Cleanup(func() { os.Chdir(orig) })
+	t.Cleanup(func() { _ = os.Chdir(orig) })
 
 	t.Setenv("CODEFLY__FIXTURE", "")
 	name, err := SelectedName()

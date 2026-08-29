@@ -39,7 +39,7 @@ import (
 )
 
 // Plugin is the framework.Plugin implementation for the agent
-// permission system. Use New / NewWithKeys to construct.
+// permission system. Use New / Default to construct.
 type Plugin struct {
 	signingSecret     []byte
 	signingEd25519Key []byte
@@ -75,22 +75,6 @@ func New() *Plugin {
 // to configure signing keys in a typed, panic-free path.
 func Default() *Plugin {
 	return defaultPlugin
-}
-
-// NewWithKeys constructs a Plugin with both v1 (HMAC) and v2
-// (ed25519) signing keys configured. v2 takes precedence when
-// both are set; passing one or the other selects the format
-// minted on approve.
-//
-// signingSecret should be the SAME bytes the codefly host
-// distributes to plugins via manager.WithScopedAuthSecret.
-// signingEd25519Key is the 64-byte ed25519 private key paired
-// with the public key plugins hold via TokenVerifier.
-func NewWithKeys(signingSecret []byte, signingEd25519Key []byte) *Plugin {
-	return &Plugin{
-		signingSecret:     signingSecret,
-		signingEd25519Key: signingEd25519Key,
-	}
 }
 
 // WithHMACSecret sets the HMAC secret and returns p for fluent configuration.

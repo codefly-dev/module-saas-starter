@@ -17,18 +17,15 @@ Run **once** to make sure the agents and module are aligned with the
 current source.
 
 ```bash
-# 1. Build agents (s3 plugin v0.0.2 must be installed locally)
-cd ~/Development/deus/codefly.dev/agents/services/s3 && codefly agent build
-
-# 2. Enter the standalone starter repository
+# 1. Enter the standalone starter repository
 cd ~/Development/deus/codefly/module-saas-starter
 
-# 3. Boot the product ingress and its complete dependency graph
+# 2. Boot the product ingress and its complete dependency graph
 codefly run service --fixture dev-admin
 ```
 
-Expected graph: `vault + store + cache + object-storage (s3 plugin
-→ MinIO at port 9xxx) → accounts → frontend → auth-sidecar`. Independent
+Expected graph: `vault + store + cache + telemetry → accounts →
+auth-sidecar → frontend` (plus marketing). Independent
 services may start concurrently. If any service
 hangs at "waiting for ready", check that step's `--debug` output.
 
@@ -100,15 +97,12 @@ SMTP. Every box should pass cleanly with just the dev-admin fixture.
 - [ ] Dialog shows the new `whsec_…`. **"I've saved it" button is disabled until you Copy.** Click Copy → enable → I've saved it → dialog closes.
 - [ ] Delete the webhook. Toast.
 
-### Audit-export (new admin form)
+### Audit-log export (CSV/JSON download)
 
-- [ ] `/admin/audit-export` — pick Acme Corp. EmptyState gone, form visible.
-- [ ] Fill bucket=`dogfood`, accessKeyId=`minioadmin`, secret=`minioadmin`, endpoint=`http://localhost:<minio-port>` (read the port from the codefly run TUI; it's the object-storage TCP endpoint).
-- [ ] **Save** with the right port. Toast "Audit export saved". Form flips to Update mode. Hint "(preserved)" appears next to secret input.
-- [ ] **Save with wrong port** (e.g. `http://localhost:1`). Toast "Save failed: connection probe failed: ...". Row NOT persisted. Page stays in first-config mode.
-- [ ] Save with the right port again. After ~60s an export tick should fire. Audit-log surface shows `audit_export.configured`. ExporterStatus banner flips to green "Last exported …".
-- [ ] **Verify in MinIO**: `mc alias set local http://localhost:<port> minioadmin minioadmin && mc ls --recursive local/dogfood` — see `<yyyy-mm-dd>/<unix-ms>.jsonl` objects with audit events.
-- [ ] Click **Remove configuration**. Confirm. Form returns to first-config state.
+- [ ] `/admin/audit-log` — pick Acme Corp, use the export control to download
+      CSV and JSON; both files contain the events currently listed.
+      (The former `/admin/audit-export` per-org S3/MinIO sink was removed with
+      the object-storage service.)
 
 ### SSO admin — stub mode (new)
 
@@ -258,12 +252,13 @@ codefly run service --env local-dogfood
 
 ## Test status
 
-| Surface | Test layer | Count |
+| Surface | Test layer | Where |
 |---|---|---|
-| Backend (Go) | unit + integration | 30 files · 206 funcs across 12 packages |
-| Backend (key new code) | unit | s3 plugin (6) · audit-exporter resolveEndpoint (5 cases) · sso_admin stub-mode (3) · user_settings (3) · scope (5) |
-| FE (Vitest) | unit | 26 files · 210 tests |
-| FE (Playwright) | e2e | 9 specs · 39 tests (login, navigation, admin-flow, auth-boundary, command-palette, revocation, webhooks, audit-export, sso-admin) |
+| Backend (Go) | unit + integration | `module/services/accounts/code/**/*_test.go` (200+ files) |
+| FE (Vitest) | unit | `module/services/frontend/code/src/**/*.test.ts(x)` (100+ files) |
+| FE (Playwright) | e2e | `module/services/frontend/code/tests/e2e/*.spec.ts` (login, navigation, admin-flow, auth-boundary, command-palette, revocation, webhooks, sso-admin, security-headers, admin-routes-smoke, acquisition-journey, consent) |
+
+Counts drift fast; trust the trees above over any snapshot table.
 
 Run them:
 

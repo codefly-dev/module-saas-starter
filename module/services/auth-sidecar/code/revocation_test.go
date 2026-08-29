@@ -75,12 +75,6 @@ func (f *fakeStore) mark(jti string) {
 	f.mu.Unlock()
 }
 
-func (f *fakeStore) markSession(sessionID string) {
-	f.mu.Lock()
-	f.sessions[sessionID] = true
-	f.mu.Unlock()
-}
-
 func bearer(token string) map[string]string {
 	return map[string]string{"authorization": "Bearer " + token}
 }
