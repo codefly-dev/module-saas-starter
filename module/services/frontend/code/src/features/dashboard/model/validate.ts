@@ -145,9 +145,8 @@ function assertOptionalTimestamp(value: unknown, context: string): void {
 
 function assertMetric(
 	value: unknown,
-	index: number,
+	context: string,
 ): asserts value is MetricDef {
-	const context = `metric at index ${index}`;
 	assertSpec(isObject(value), `${context} must be an object`);
 	assertExactKeys(
 		value,
@@ -336,7 +335,7 @@ export function assertDashboardSpec(
 	// allowed — only a non-array is rejected.
 	assertSpec(Array.isArray(value.metrics), "spec metrics must be an array");
 	value.metrics.forEach((entry, index) => {
-		assertMetric(entry, index);
+		assertMetric(entry, `metric at index ${index}`);
 	});
 }
 
@@ -358,8 +357,9 @@ export function parseDashboardSpec(raw: string): DashboardDef {
 
 // FieldError is one guard-rail failure reported to a driver composing a spec:
 // `code` is a stable token to branch on, `message` explains the failure, and
-// `path` points at the offending location when the failure is field-specific (a
-// vocabulary miss); a whole-spec shape violation carries its reason in
+// `path` points at the offending location — a field-specific vocabulary miss,
+// or the metric that a single-metric shape violation was reported against. A
+// whole-dashboard shape violation stops at the first bad metric and names it in
 // `message` alone.
 export interface FieldError {
 	path?: string;
@@ -382,13 +382,15 @@ export interface AuditVocabulary {
 // a single `invalid_spec` error — the throwing validator stops at the first —
 // while the vocabulary checks, which assertDashboardSpec cannot make without the
 // live registry, are additive and field-addressed.
-function shapeErrors(assert: () => void): FieldError[] {
+function shapeErrors(assert: () => void, path?: string): FieldError[] {
 	try {
 		assert();
 		return [];
 	} catch (err) {
 		if (err instanceof DashboardSpecError) {
-			return [{ code: "invalid_spec", message: err.message }];
+			const error: FieldError = { code: "invalid_spec", message: err.message };
+			if (path !== undefined) error.path = path;
+			return [error];
 		}
 		throw err;
 	}
@@ -432,9 +434,7 @@ export function validateMetric(
 	vocab: AuditVocabulary,
 	path = "metric",
 ): FieldError[] {
-	const errors = shapeErrors(() =>
-		assertDashboardSpec({ version: DASHBOARD_SPEC_VERSION, metrics: [metric] }),
-	);
+	const errors = shapeErrors(() => assertMetric(metric, path), path);
 	if (errors.length > 0) return errors;
 	return metricVocabularyErrors(metric, vocab, path);
 }
