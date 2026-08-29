@@ -1,6 +1,8 @@
 "use client";
 
-import { useMemo } from "react";
+import { useQueryClient } from "@tanstack/react-query";
+import { useCallback, useMemo } from "react";
+import { auditEventTypesQuery } from "@/features/audit/service/queries";
 import { useAuth } from "@/lib/auth";
 import { useAuditService } from "@/lib/hooks/use-api-client";
 import type { DashboardDef } from "../model/schema";
@@ -17,13 +19,20 @@ export function useDashboardAuthoring(
 	initial: DashboardDef,
 ): { authoring: DashboardAuthoring; draft: DashboardDraft } {
 	const audit = useAuditService();
+	const queryClient = useQueryClient();
 	const { organizationId } = useAuth();
 	const orgId = organizationId ?? "";
 	const draft = useDashboardDraft(storageKey, initial);
 	const commit = draft.setSpec;
+	// Back the injected vocabulary read with react-query's shared cache, so the
+	// authoring surface and useAuditEventTypes read one cached registry entry.
+	const readEventTypes = useCallback(
+		() => queryClient.fetchQuery(auditEventTypesQuery(audit)),
+		[queryClient, audit],
+	);
 	const authoring = useMemo(
-		() => createDashboardAuthoring({ audit, orgId, commit }),
-		[audit, orgId, commit],
+		() => createDashboardAuthoring({ audit, readEventTypes, orgId, commit }),
+		[audit, readEventTypes, orgId, commit],
 	);
 	return { authoring, draft };
 }

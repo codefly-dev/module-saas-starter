@@ -1,9 +1,11 @@
 import type { MessageInitShape } from "@bufbuild/protobuf";
 import { timestampFromDate } from "@bufbuild/protobuf/wkt";
+import type { Client } from "@connectrpc/connect";
 import { useQuery } from "@tanstack/react-query";
 import type {
 	AggregateAuditLogRequestSchema,
 	AggregateAuditLogResponse,
+	AuditService,
 } from "@/gen/saas/accounts/v1/audit_pb";
 import { useAuditService } from "@/lib/hooks/use-api-client";
 import { toAuditEvent } from "../model/transforms";
@@ -32,25 +34,36 @@ export function useAuditLog(
 	});
 }
 
+// auditEventTypesQuery is the single react-query descriptor for the server-owned
+// registry, shared by the hook and by imperative readers (the authoring surface)
+// so both resolve the same key, staleTime, and projection — one cache, one
+// invalidation surface. The projection lives in `queryFn`, not `select`:
+// `queryClient.fetchQuery` does not apply `select` (react-query v5), so an
+// imperative reader must get the already-projected `AuditEventTypeInfo[]` from
+// the cached value itself.
+export const auditEventTypesQuery = (
+	svc: Pick<Client<typeof AuditService>, "listAuditEventTypes">,
+) => ({
+	queryKey: ["audit-event-types"] as const,
+	queryFn: async (): Promise<AuditEventTypeInfo[]> => {
+		const data = await svc.listAuditEventTypes({});
+		return data.types.map((t) => ({
+			name: t.name,
+			version: t.version,
+			category: t.category,
+			owner: t.owner,
+			deprecated: t.deprecated,
+			description: t.description,
+		}));
+	},
+	staleTime: 5 * 60 * 1000,
+});
+
 // useAuditEventTypes fetches the server-owned registry so the filter facet is a
 // projection of the catalog rather than a hand-maintained list.
 export function useAuditEventTypes(options: { enabled?: boolean } = {}) {
 	const svc = useAuditService();
-	return useQuery({
-		queryKey: ["audit-event-types"],
-		queryFn: () => svc.listAuditEventTypes({}),
-		enabled: options.enabled,
-		staleTime: 5 * 60 * 1000,
-		select: (data): AuditEventTypeInfo[] =>
-			data.types.map((t) => ({
-				name: t.name,
-				version: t.version,
-				category: t.category,
-				owner: t.owner,
-				deprecated: t.deprecated,
-				description: t.description,
-			})),
-	});
+	return useQuery({ ...auditEventTypesQuery(svc), enabled: options.enabled });
 }
 
 // A group dimension is one of the fixed keys or a payload field addressed as

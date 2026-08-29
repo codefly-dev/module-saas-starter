@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
+import type { AuditEventTypeInfo } from "@/features/audit";
 import {
 	DASHBOARD_SPEC_VERSION,
 	type DashboardDef,
@@ -9,34 +10,33 @@ import {
 	type DashboardAuthoringDeps,
 } from "../authoring";
 
-// A driver stand-in reads through the audit client; these fakes mimic the two
-// RPCs the authoring surface touches. The registry names auth.login under
-// "authentication"; the aggregate returns two ranked buckets.
+// The registry projection an injected reader resolves to: auth.login under
+// "authentication", org.created under "organization".
+function fakeEventTypes(): AuditEventTypeInfo[] {
+	return [
+		{
+			name: "auth.login",
+			version: 1,
+			category: "authentication",
+			owner: "accounts",
+			deprecated: false,
+			description: "A user logged in.",
+		},
+		{
+			name: "org.created",
+			version: 1,
+			category: "organization",
+			owner: "accounts",
+			deprecated: false,
+			description: "An organization was created.",
+		},
+	];
+}
+
+// The core issues aggregate reads directly; this fake mimics the one RPC it
+// still touches, returning two ranked buckets.
 function fakeAudit(): DashboardAuthoringDeps["audit"] {
 	return {
-		listAuditEventTypes: vi.fn(async () => ({
-			$typeName: "saas.accounts.v1.ListAuditEventTypesResponse",
-			types: [
-				{
-					$typeName: "saas.accounts.v1.AuditEventType",
-					name: "auth.login",
-					version: 1,
-					category: "authentication",
-					owner: "accounts",
-					deprecated: false,
-					description: "A user logged in.",
-				},
-				{
-					$typeName: "saas.accounts.v1.AuditEventType",
-					name: "org.created",
-					version: 1,
-					category: "organization",
-					owner: "accounts",
-					deprecated: false,
-					description: "An organization was created.",
-				},
-			],
-		})),
 		aggregateAuditLog: vi.fn(async () => ({
 			$typeName: "saas.accounts.v1.AggregateAuditLogResponse",
 			buckets: [
@@ -61,12 +61,15 @@ function fakeAudit(): DashboardAuthoringDeps["audit"] {
 
 function authoring(overrides: Partial<DashboardAuthoringDeps> = {}) {
 	const commits: DashboardDef[] = [];
+	const readEventTypes =
+		overrides.readEventTypes ?? vi.fn(async () => fakeEventTypes());
 	const deps: DashboardAuthoringDeps = {
 		audit: overrides.audit ?? fakeAudit(),
+		readEventTypes,
 		orgId: overrides.orgId ?? "org-1",
 		commit: overrides.commit ?? ((spec) => commits.push(spec)),
 	};
-	return { api: createDashboardAuthoring(deps), commits };
+	return { api: createDashboardAuthoring(deps), commits, readEventTypes };
 }
 
 function spec(
@@ -241,9 +244,12 @@ describe("dashboard authoring API", () => {
 		expect(audit.aggregateAuditLog).not.toHaveBeenCalled();
 	});
 
-	it("fetches the audit vocabulary once per instance across calls", async () => {
-		const audit = fakeAudit();
-		const { api } = authoring({ audit });
+	it("reads the vocabulary through the injected reader, holding no cache of its own", async () => {
+		// The core owns no registry cache (ADR 0004): every operation defers the
+		// vocabulary read to the injected reader, which is where caching now lives
+		// (react-query in the app). So each call hits the reader.
+		const readEventTypes = vi.fn(async () => fakeEventTypes());
+		const { api } = authoring({ readEventTypes });
 		await api.listEventTypes();
 		await api.previewMetric({
 			title: "Top events",
@@ -253,7 +259,7 @@ describe("dashboard authoring API", () => {
 		await api.setDashboard(
 			spec([{ title: "Top events", groupBy: "event_type", chart: "bar" }]),
 		);
-		expect(audit.listAuditEventTypes).toHaveBeenCalledTimes(1);
+		expect(readEventTypes).toHaveBeenCalledTimes(3);
 	});
 
 	it("commits a valid spec through the injected commit", async () => {

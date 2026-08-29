@@ -81,13 +81,14 @@ export interface DashboardAuthoring {
 	setDashboard(spec: DashboardDef): Promise<CommitResult>;
 }
 
-type AuditReader = Pick<
-	Client<typeof AuditService>,
-	"listAuditEventTypes" | "aggregateAuditLog"
->;
-
 export interface DashboardAuthoringDeps {
-	audit: AuditReader;
+	// readEventTypes is the injected vocabulary read: it returns the server-owned
+	// registry projection and owns whatever caching the host wants. The core no
+	// longer fetches or caches the registry (ADR 0004); the app backs this with
+	// react-query's shared `["audit-event-types"]` cache.
+	readEventTypes: () => Promise<AuditEventTypeInfo[]>;
+	// audit issues the uncached aggregate reads a preview runs against live data.
+	audit: Pick<Client<typeof AuditService>, "aggregateAuditLog">;
 	// orgId scopes every audit read; the driver iterates within one org.
 	orgId: string;
 	// commit persists a validated spec and re-renders the canvas. In the app it
@@ -95,60 +96,34 @@ export interface DashboardAuthoringDeps {
 	commit: (spec: DashboardDef) => void;
 }
 
+function categoriesOf(events: AuditEventTypeInfo[]): string[] {
+	return [...new Set(events.map((e) => e.category))];
+}
+
 // The canonical validator checks a metric against the event/category namespace,
 // not the richer registry projection; project the catalog down to the names it
 // needs.
-function toAuditVocabulary(vocab: EventTypeVocabulary): AuditVocabulary {
+function toAuditVocabulary(events: AuditEventTypeInfo[]): AuditVocabulary {
 	return {
-		eventTypes: vocab.events.map((e) => e.name),
-		categories: vocab.categories,
+		eventTypes: events.map((e) => e.name),
+		categories: categoriesOf(events),
 	};
 }
 
 export function createDashboardAuthoring(
 	deps: DashboardAuthoringDeps,
 ): DashboardAuthoring {
-	const { audit, orgId, commit } = deps;
-
-	// The audit event registry is server-owned and effectively static, so a
-	// driver iterating on a spec should not re-fetch it on every preview/commit.
-	// Cache the vocabulary for this authoring instance; a failed fetch clears the
-	// cache so a transient error can be retried rather than pinned.
-	let vocabPromise: Promise<EventTypeVocabulary> | undefined;
-	function readVocabulary(): Promise<EventTypeVocabulary> {
-		if (!vocabPromise) {
-			vocabPromise = audit
-				.listAuditEventTypes({})
-				.then((res): EventTypeVocabulary => {
-					const events: AuditEventTypeInfo[] = res.types.map((t) => ({
-						name: t.name,
-						version: t.version,
-						category: t.category,
-						owner: t.owner,
-						deprecated: t.deprecated,
-						description: t.description,
-					}));
-					return {
-						events,
-						categories: [...new Set(events.map((e) => e.category))],
-					};
-				})
-				.catch((err) => {
-					vocabPromise = undefined;
-					throw err;
-				});
-		}
-		return vocabPromise;
-	}
+	const { audit, readEventTypes, orgId, commit } = deps;
 
 	return {
-		listEventTypes() {
-			return readVocabulary();
+		async listEventTypes() {
+			const events = await readEventTypes();
+			return { events, categories: categoriesOf(events) };
 		},
 
 		async previewMetric(metric) {
-			const vocab = await readVocabulary();
-			const errors = validateMetric(metric, toAuditVocabulary(vocab));
+			const events = await readEventTypes();
+			const errors = validateMetric(metric, toAuditVocabulary(events));
 			if (errors.length > 0) return { ok: false, kind: "validation", errors };
 
 			// The aggregate RPC is org-scoped: an empty orgId is not "this org" but
@@ -175,8 +150,8 @@ export function createDashboardAuthoring(
 		},
 
 		async setDashboard(spec) {
-			const vocab = await readVocabulary();
-			const errors = validateDashboard(spec, toAuditVocabulary(vocab));
+			const events = await readEventTypes();
+			const errors = validateDashboard(spec, toAuditVocabulary(events));
 			if (errors.length > 0) return { ok: false, kind: "validation", errors };
 			commit(spec);
 			return { ok: true, spec };
