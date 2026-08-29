@@ -203,6 +203,14 @@ function assertMetric(
 			(typeof value.category === "string" && value.category.trim().length > 0),
 		`${context} category must be a non-empty string`,
 	);
+	// event and category are alternative scopings: an event type belongs to one
+	// category, so ANDing them is either redundant or empty, never more useful
+	// than either alone. Reject the pairing rather than emit a widget that
+	// silently aggregates nothing.
+	assertSpec(
+		value.event === undefined || value.category === undefined,
+		`${context} sets both event and category, which are mutually exclusive`,
+	);
 
 	// A card renders one series, so value and ratio are mutually exclusive.
 	assertSpec(
