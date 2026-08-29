@@ -1,5 +1,7 @@
 import "server-only";
 
+import { assertDataGraph, type DataGraph } from "@codefly/saas-plugin-manifest";
+
 /**
  * Runtime solution registry (generic host seam).
  *
@@ -33,6 +35,14 @@ export interface SolutionManifest {
 		serviceAlias: string;
 		capabilityPath?: string;
 	};
+	/**
+	 * A data-only dashboard declaration the host renders next to the solution's
+	 * Module-Federation surface. It compiles to org-scoped audit queries at
+	 * render time (see SolutionDashboard) — the solution ships the declaration,
+	 * never charting code or a data source. Absent for a solution that declares
+	 * no dashboard.
+	 */
+	dashboard?: DataGraph;
 }
 
 /**
@@ -139,6 +149,18 @@ export function parseManifest(value: unknown): SolutionManifest | null {
 		backend.serviceAlias !== ""
 			? backend.serviceAlias
 			: candidate.id;
+	// The dashboard slot is optional, but a present-and-malformed graph fails the
+	// whole registration closed rather than being dropped: a solution that meant
+	// to ship a dashboard should learn its graph is invalid, not silently lose it.
+	let dashboard: DataGraph | undefined;
+	if (candidate.dashboard !== undefined) {
+		try {
+			assertDataGraph(candidate.dashboard);
+			dashboard = candidate.dashboard;
+		} catch {
+			return null;
+		}
+	}
 	return {
 		id: candidate.id,
 		nav: {
@@ -162,5 +184,6 @@ export function parseManifest(value: unknown): SolutionManifest | null {
 					? backend.capabilityPath
 					: undefined,
 		},
+		dashboard,
 	};
 }

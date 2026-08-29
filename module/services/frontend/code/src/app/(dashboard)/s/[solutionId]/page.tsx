@@ -1,5 +1,6 @@
 import { notFound } from "next/navigation";
 
+import { SolutionDashboards } from "@/solutions/SolutionDashboard";
 import { SolutionOutlet } from "@/solutions/SolutionOutlet";
 import { findSolution } from "@/solutions/registry";
 
@@ -19,6 +20,12 @@ export default async function SolutionPage({
 	return (
 		<div className="flex flex-col gap-4 p-6">
 			<h1 className="text-xl font-semibold">{solution.nav.title}</h1>
+			{solution.dashboard && (
+				<SolutionDashboards
+					graph={solution.dashboard}
+					solutionId={solution.id}
+				/>
+			)}
 			<SolutionOutlet
 				remote={{
 					id: solution.id,
