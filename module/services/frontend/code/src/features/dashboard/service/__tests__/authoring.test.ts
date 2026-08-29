@@ -220,6 +220,27 @@ describe("dashboard authoring API", () => {
 		expect(audit.aggregateAuditLog).not.toHaveBeenCalled();
 	});
 
+	it("surfaces spec-validation errors before the pending precondition when both hold", async () => {
+		// orgId is unresolved AND the metric references an unknown event. The
+		// driver should get the fixable spec error first, not have it masked
+		// behind "wait for context" — validation runs before the org guard.
+		const audit = fakeAudit();
+		const { api } = authoring({ audit, orgId: "" });
+		const result = await api.previewMetric({
+			title: "Bad",
+			event: { type: "auth.nope" },
+			groupBy: "time",
+			bucket: "day",
+			chart: "line",
+		});
+		expect(result.ok).toBe(false);
+		if (result.ok) return;
+		expect(result.kind).toBe("validation");
+		if (result.kind !== "validation") return;
+		expect(result.errors[0].code).toBe("unknown_event_type");
+		expect(audit.aggregateAuditLog).not.toHaveBeenCalled();
+	});
+
 	it("fetches the audit vocabulary once per instance across calls", async () => {
 		const audit = fakeAudit();
 		const { api } = authoring({ audit });

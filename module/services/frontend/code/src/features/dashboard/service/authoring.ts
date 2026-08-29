@@ -36,22 +36,30 @@ export interface MetricPreview {
 	total: number;
 }
 
+// PreconditionCode enumerates the pending-channel tokens a driver branches on
+// to tell one unmet precondition from another. Unlike a FieldError's open
+// `code` — validation codes are many and a driver reads `path`/`message` rather
+// than switching on them — a precondition is a control-flow signal a driver
+// must dispatch on, so the closed union makes a `switch` exhaustive: adding a
+// precondition here surfaces every unhandled branch at compile time.
+export type PreconditionCode = "org_unresolved";
+
 // A driver-facing operation returns either a value or, on failure, one of two
 // distinct kinds — never a bare throw for a spec it can fix. A "validation"
 // failure is the driver's to fix: the spec is malformed or references something
 // unregistered, and `errors` points at each offending field. A "pending"
 // failure is not fixable by editing the spec — a precondition (an organization
-// in scope) isn't met yet, so the driver waits and retries. It carries the same
-// `code`/`message` a FieldError does (minus `path`, since the block is not a
-// spec field): `code` is the stable token a driver branches on to tell one
-// precondition from another, `message` explains it in prose for a human. The
-// `kind` discriminant lets a driver branch "fix your spec" vs "wait for
-// context" once; matching a precondition's `code` never crosses into the
+// in scope) isn't met yet, so the driver waits and retries. It carries a
+// `code`/`message` (like a FieldError, minus `path`, since the block is not a
+// spec field): `code` is the closed `PreconditionCode` a driver branches on to
+// tell one precondition from another, `message` explains it in prose for a
+// human. The `kind` discriminant lets a driver branch "fix your spec" vs "wait
+// for context" once; matching a precondition's `code` never crosses into the
 // validation channel.
 export type PreviewResult =
 	| { ok: true; preview: MetricPreview }
 	| { ok: false; kind: "validation"; errors: FieldError[] }
-	| { ok: false; kind: "pending"; code: string; message: string };
+	| { ok: false; kind: "pending"; code: PreconditionCode; message: string };
 
 // CommitResult writes only the local draft, so it has no precondition to wait
 // on — its sole failure kind is "validation". It still carries `kind` so the

@@ -161,10 +161,12 @@ special-case that token to tell "fix your spec" from "wait for context."
 variant on `previewMetric`:
 
 ```ts
+type PreconditionCode = "org_unresolved";
+
 type PreviewResult =
   | { ok: true;  preview: MetricPreview }
   | { ok: false; kind: "validation"; errors: FieldError[] }
-  | { ok: false; kind: "pending"; code: string; message: string };
+  | { ok: false; kind: "pending"; code: PreconditionCode; message: string };
 ```
 
 The two failures are not the same kind of thing, and the type should say so.
@@ -176,13 +178,18 @@ review flagged. A discriminated `kind` makes "fix your spec" versus "wait for
 context" a type distinction the compiler enforces, and removes the fake
 `path: "orgId"` `FieldError`.
 
-The `pending` arm keeps a `code`/`message` — the same pair a `FieldError`
-carries, minus `path` (the block is not a spec field). `kind` answers "fix
-your spec vs. wait for context"; `code` answers "wait for *what*." `org_unresolved`
-is the only precondition today, but a second one would otherwise force a driver
-back to substring-matching the prose `message` — reintroducing the string-code
-tax one level down. A stable machine-branchable `code` keeps the human sentence
-(`message`) for display without making it load-bearing.
+The `pending` arm keeps a `code`/`message` — like a `FieldError`, minus `path`
+(the block is not a spec field). `kind` answers "fix your spec vs. wait for
+context"; `code` answers "wait for *what*." `org_unresolved` is the only
+precondition today, but a second one would otherwise force a driver back to
+substring-matching the prose `message` — reintroducing the string-code tax one
+level down. So `code` is a **closed `PreconditionCode` union**, not an open
+`string` (which is what `FieldError.code` is, deliberately: validation codes are
+many and a driver reads `path`/`message` rather than switching on them). A
+precondition is a control-flow signal a driver dispatches on, so the closed
+union makes that `switch` exhaustive — a new precondition surfaces every
+unhandled branch at compile time — while `message` stays human-facing for
+display, never load-bearing.
 
 **`CommitResult` stays two-variant** — deliberately asymmetric:
 
