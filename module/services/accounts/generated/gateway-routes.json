@@ -996,6 +996,22 @@
     {
       "protocol": "GATEWAY_PROTOCOL_CONNECT",
       "method": "POST",
+      "path": "/customers.OrganizationService/GetOrganizationSettings",
+      "match": "GATEWAY_MATCH_EXACT",
+      "procedure": "/saas.accounts.v1.OrganizationService/GetOrganizationSettings",
+      "owner": {
+        "module": "saas-starter",
+        "service": "accounts"
+      },
+      "upstream_endpoint": "connect",
+      "exposure": "EXPOSURE_AUTHENTICATED",
+      "source": "GATEWAY_ROUTE_SOURCE_COMPATIBILITY_ALIAS",
+      "rewrite_path": "/saas.accounts.v1.OrganizationService/GetOrganizationSettings",
+      "remove_after": "2026-10-11"
+    },
+    {
+      "protocol": "GATEWAY_PROTOCOL_CONNECT",
+      "method": "POST",
       "path": "/customers.OrganizationService/ListMembers",
       "match": "GATEWAY_MATCH_EXACT",
       "procedure": "/saas.accounts.v1.OrganizationService/ListMembers",
@@ -1055,6 +1071,22 @@
       "exposure": "EXPOSURE_AUTHENTICATED",
       "source": "GATEWAY_ROUTE_SOURCE_COMPATIBILITY_ALIAS",
       "rewrite_path": "/saas.accounts.v1.OrganizationService/UpdateOrgSettings",
+      "remove_after": "2026-10-11"
+    },
+    {
+      "protocol": "GATEWAY_PROTOCOL_CONNECT",
+      "method": "POST",
+      "path": "/customers.OrganizationService/UpdateOrganizationSettings",
+      "match": "GATEWAY_MATCH_EXACT",
+      "procedure": "/saas.accounts.v1.OrganizationService/UpdateOrganizationSettings",
+      "owner": {
+        "module": "saas-starter",
+        "service": "accounts"
+      },
+      "upstream_endpoint": "connect",
+      "exposure": "EXPOSURE_AUTHENTICATED",
+      "source": "GATEWAY_ROUTE_SOURCE_COMPATIBILITY_ALIAS",
+      "rewrite_path": "/saas.accounts.v1.OrganizationService/UpdateOrganizationSettings",
       "remove_after": "2026-10-11"
     },
     {
@@ -3252,6 +3284,22 @@
     {
       "protocol": "GATEWAY_PROTOCOL_CONNECT",
       "method": "POST",
+      "path": "/saas.accounts.v1.OrganizationService/GetOrganizationSettings",
+      "match": "GATEWAY_MATCH_EXACT",
+      "procedure": "/saas.accounts.v1.OrganizationService/GetOrganizationSettings",
+      "owner": {
+        "module": "saas-starter",
+        "service": "accounts"
+      },
+      "upstream_endpoint": "connect",
+      "exposure": "EXPOSURE_AUTHENTICATED",
+      "source": "GATEWAY_ROUTE_SOURCE_DESCRIPTOR",
+      "rewrite_path": "",
+      "remove_after": ""
+    },
+    {
+      "protocol": "GATEWAY_PROTOCOL_CONNECT",
+      "method": "POST",
       "path": "/saas.accounts.v1.OrganizationService/ListMembers",
       "match": "GATEWAY_MATCH_EXACT",
       "procedure": "/saas.accounts.v1.OrganizationService/ListMembers",
@@ -3303,6 +3351,22 @@
       "path": "/saas.accounts.v1.OrganizationService/UpdateOrgSettings",
       "match": "GATEWAY_MATCH_EXACT",
       "procedure": "/saas.accounts.v1.OrganizationService/UpdateOrgSettings",
+      "owner": {
+        "module": "saas-starter",
+        "service": "accounts"
+      },
+      "upstream_endpoint": "connect",
+      "exposure": "EXPOSURE_AUTHENTICATED",
+      "source": "GATEWAY_ROUTE_SOURCE_DESCRIPTOR",
+      "rewrite_path": "",
+      "remove_after": ""
+    },
+    {
+      "protocol": "GATEWAY_PROTOCOL_CONNECT",
+      "method": "POST",
+      "path": "/saas.accounts.v1.OrganizationService/UpdateOrganizationSettings",
+      "match": "GATEWAY_MATCH_EXACT",
+      "procedure": "/saas.accounts.v1.OrganizationService/UpdateOrganizationSettings",
       "owner": {
         "module": "saas-starter",
         "service": "accounts"
@@ -5060,6 +5124,22 @@
     {
       "protocol": "GATEWAY_PROTOCOL_REST",
       "method": "GET",
+      "path": "/v1/organizations/{org_id}/generic-settings",
+      "match": "GATEWAY_MATCH_PATH_TEMPLATE",
+      "procedure": "/saas.accounts.v1.OrganizationService/GetOrganizationSettings",
+      "owner": {
+        "module": "saas-starter",
+        "service": "accounts"
+      },
+      "upstream_endpoint": "rest",
+      "exposure": "EXPOSURE_AUTHENTICATED",
+      "source": "GATEWAY_ROUTE_SOURCE_DESCRIPTOR",
+      "rewrite_path": "",
+      "remove_after": ""
+    },
+    {
+      "protocol": "GATEWAY_PROTOCOL_REST",
+      "method": "GET",
       "path": "/v1/organizations/{org_id}/members",
       "match": "GATEWAY_MATCH_PATH_TEMPLATE",
       "procedure": "/saas.accounts.v1.OrganizationService/ListMembers",
@@ -6087,6 +6167,22 @@
       "path": "/v1/organizations",
       "match": "GATEWAY_MATCH_EXACT",
       "procedure": "/saas.accounts.v1.OrganizationService/CreateOrganization",
+      "owner": {
+        "module": "saas-starter",
+        "service": "accounts"
+      },
+      "upstream_endpoint": "rest",
+      "exposure": "EXPOSURE_AUTHENTICATED",
+      "source": "GATEWAY_ROUTE_SOURCE_DESCRIPTOR",
+      "rewrite_path": "",
+      "remove_after": ""
+    },
+    {
+      "protocol": "GATEWAY_PROTOCOL_REST",
+      "method": "POST",
+      "path": "/v1/organizations/{org_id}/generic-settings",
+      "match": "GATEWAY_MATCH_PATH_TEMPLATE",
+      "procedure": "/saas.accounts.v1.OrganizationService/UpdateOrganizationSettings",
       "owner": {
         "module": "saas-starter",
         "service": "accounts"

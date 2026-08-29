@@ -22,16 +22,18 @@ import (
 )
 
 const (
-	FrontendOutput         = "services/frontend/code/src/generated/frontend-contributions.ts"
-	FrontendInstallOutput  = "services/frontend/code/frontend.install.generated.json"
-	SettingsProtoOutput    = "services/accounts/proto/saas/composed/settings/v1/settings.proto"
-	SettingsGoOutput       = "services/accounts/code/pkg/settingscatalog/catalog_gen.go"
-	SettingsTypeScriptOut  = "services/frontend/code/src/gen/saas/settings/v1/field_catalog.ts"
-	PermissionsOutput      = "deployment/generated/contributed-permissions.json"
-	FixturesOutput         = "deployment/generated/contributed-fixtures.json"
-	TopologyBindingsOutput = "deployment/generated/contributed-topology.json"
-	PermissionGoOutput     = "services/accounts/code/pkg/permissioncatalog/catalog_gen.go"
-	CompositionCatalogOut  = corecomposition.CompositionCatalogName
+	FrontendOutput           = "services/frontend/code/src/generated/frontend-contributions.ts"
+	FrontendInstallOutput    = "services/frontend/code/frontend.install.generated.json"
+	SettingsProtoOutput      = "services/accounts/proto/saas/composed/settings/v1/settings.proto"
+	OrgSettingsProtoOutput   = "services/accounts/proto/saas/composed/org_settings/v1/settings.proto"
+	SettingsGoOutput         = "services/accounts/code/pkg/settingscatalog/catalog_gen.go"
+	SettingsTypeScriptOut    = "services/frontend/code/src/gen/saas/settings/v1/field_catalog.ts"
+	OrgSettingsTypeScriptOut = "services/frontend/code/src/gen/saas/org_settings/v1/field_catalog.ts"
+	PermissionsOutput        = "deployment/generated/contributed-permissions.json"
+	FixturesOutput           = "deployment/generated/contributed-fixtures.json"
+	TopologyBindingsOutput   = "deployment/generated/contributed-topology.json"
+	PermissionGoOutput       = "services/accounts/code/pkg/permissioncatalog/catalog_gen.go"
+	CompositionCatalogOut    = corecomposition.CompositionCatalogName
 )
 
 var (
@@ -72,8 +74,28 @@ type SettingsContribution struct {
 	Message     string        `yaml:"message"`
 	Field       SettingsField `yaml:"field"`
 	FieldRange  NumericRange  `yaml:"field-range"`
-	Source      string        `yaml:"-"`
-	Owner       string        `yaml:"-"`
+	// Scope selects the composed container the field lands in: "user"
+	// (the default) targets saas.composed.settings.v1.Settings; "org"
+	// targets saas.composed.org_settings.v1.Settings. Both share one field
+	// name/number namespace so a contribution cannot collide across scopes.
+	Scope  string `yaml:"scope"`
+	Source string `yaml:"-"`
+	Owner  string `yaml:"-"`
+}
+
+const (
+	scopeUser = "user"
+	scopeOrg  = "org"
+)
+
+// scope returns the normalized target scope, defaulting an unset value to
+// "user" so existing contributions and the Core descriptor path (which carries
+// no scope) keep landing in the user container.
+func (c SettingsContribution) scope() string {
+	if c.Scope == "" {
+		return scopeUser
+	}
+	return c.Scope
 }
 
 type SettingsField struct {
@@ -797,6 +819,9 @@ func validate(frontends []FrontendContribution, settings []SettingsContribution,
 		if contribution.Schema != "codefly/saas/settings-contribution/v1" {
 			return fmt.Errorf("settings contribution schema must be codefly/saas/settings-contribution/v1")
 		}
+		if contribution.Scope != "" && contribution.Scope != scopeUser && contribution.Scope != scopeOrg {
+			return fmt.Errorf("settings contribution %q has an invalid scope %q", contribution.Namespace, contribution.Scope)
+		}
 		if !logicalIDPattern.MatchString(contribution.Namespace) || isReserved(manifest.ReservedNamespaces, contribution.Namespace) || !protoNamePattern.MatchString(contribution.Message) || isReserved(manifest.ReservedNamespaces, contribution.Message) || !safeRelativePath(contribution.ProtoImport) || filepath.Ext(contribution.ProtoImport) != ".proto" {
 			return fmt.Errorf("settings contribution %q has an invalid namespace or protobuf descriptor", contribution.Namespace)
 		}
@@ -972,7 +997,15 @@ func render(frontends []FrontendContribution, settings []SettingsContribution, p
 	if err != nil {
 		return nil, err
 	}
-	settingsGo, err := format.Source([]byte(renderSettingsGo(settings)))
+	var userSettings, orgSettings []SettingsContribution
+	for _, contribution := range settings {
+		if contribution.scope() == scopeOrg {
+			orgSettings = append(orgSettings, contribution)
+		} else {
+			userSettings = append(userSettings, contribution)
+		}
+	}
+	settingsGo, err := format.Source([]byte(renderSettingsGo(userSettings, orgSettings)))
 	if err != nil {
 		return nil, fmt.Errorf("format Go settings catalog: %w", err)
 	}
@@ -981,15 +1014,17 @@ func render(frontends []FrontendContribution, settings []SettingsContribution, p
 		return nil, fmt.Errorf("format Go permission catalog: %w", err)
 	}
 	return map[string][]byte{
-		FrontendOutput:         []byte(frontendSource),
-		FrontendInstallOutput:  installBody,
-		SettingsProtoOutput:    []byte(renderSettingsProto(settings)),
-		SettingsGoOutput:       settingsGo,
-		SettingsTypeScriptOut:  []byte(renderSettingsTypeScript(settings)),
-		PermissionsOutput:      permissionBody,
-		PermissionGoOutput:     permissionGo,
-		FixturesOutput:         fixtureBody,
-		TopologyBindingsOutput: topologyBody,
+		FrontendOutput:           []byte(frontendSource),
+		FrontendInstallOutput:    installBody,
+		SettingsProtoOutput:      []byte(renderSettingsProto("saas.composed.settings.v1", userSettings)),
+		OrgSettingsProtoOutput:   []byte(renderSettingsProto("saas.composed.org_settings.v1", orgSettings)),
+		SettingsGoOutput:         settingsGo,
+		SettingsTypeScriptOut:    []byte(renderSettingsTypeScript("SETTINGS_FIELDS", userSettings)),
+		OrgSettingsTypeScriptOut: []byte(renderSettingsTypeScript("ORG_SETTINGS_FIELDS", orgSettings)),
+		PermissionsOutput:        permissionBody,
+		PermissionGoOutput:       permissionGo,
+		FixturesOutput:           fixtureBody,
+		TopologyBindingsOutput:   topologyBody,
 	}, nil
 }
 
@@ -1022,9 +1057,9 @@ func renderFrontend(frontends []FrontendContribution, bindings []FrontendService
 	return body.String()
 }
 
-func renderSettingsProto(settings []SettingsContribution) string {
+func renderSettingsProto(protoPackage string, settings []SettingsContribution) string {
 	var body strings.Builder
-	body.WriteString("// Code generated by module-compose. DO NOT EDIT.\nsyntax = \"proto3\";\n\npackage saas.composed.settings.v1;\n\n")
+	fmt.Fprintf(&body, "// Code generated by module-compose. DO NOT EDIT.\nsyntax = \"proto3\";\n\npackage %s;\n\n", protoPackage)
 	for _, contribution := range settings {
 		fmt.Fprintf(&body, "import %q;\n", contribution.ProtoImport)
 	}
@@ -1036,19 +1071,27 @@ func renderSettingsProto(settings []SettingsContribution) string {
 	return body.String()
 }
 
-func renderSettingsGo(settings []SettingsContribution) string {
+func renderSettingsGo(userSettings, orgSettings []SettingsContribution) string {
 	var body strings.Builder
-	body.WriteString("// Code generated by module-compose. DO NOT EDIT.\npackage settingscatalog\n\ntype Field struct {\n\tNamespace string\n\tName string\n\tNumber int\n\tMessage string\n}\n\nvar fields = [...]Field{\n")
-	for _, contribution := range settings {
-		fmt.Fprintf(&body, "\t{Namespace: %q, Name: %q, Number: %d, Message: %q},\n", contribution.Namespace, contribution.Field.Name, contribution.Field.Number, contribution.Message)
-	}
-	body.WriteString("}\n\nfunc Fields() []Field {\n\treturn append([]Field(nil), fields[:]...)\n}\n")
+	body.WriteString("// Code generated by module-compose. DO NOT EDIT.\npackage settingscatalog\n\ntype Field struct {\n\tNamespace string\n\tName string\n\tNumber int\n\tMessage string\n}\n\n")
+	renderSettingsGoSlice(&body, "fields", userSettings)
+	body.WriteString("\nfunc Fields() []Field {\n\treturn append([]Field(nil), fields[:]...)\n}\n\n")
+	renderSettingsGoSlice(&body, "orgFields", orgSettings)
+	body.WriteString("\nfunc OrgFields() []Field {\n\treturn append([]Field(nil), orgFields[:]...)\n}\n")
 	return body.String()
 }
 
-func renderSettingsTypeScript(settings []SettingsContribution) string {
+func renderSettingsGoSlice(body *strings.Builder, name string, settings []SettingsContribution) {
+	fmt.Fprintf(body, "var %s = [...]Field{\n", name)
+	for _, contribution := range settings {
+		fmt.Fprintf(body, "\t{Namespace: %q, Name: %q, Number: %d, Message: %q},\n", contribution.Namespace, contribution.Field.Name, contribution.Field.Number, contribution.Message)
+	}
+	body.WriteString("}\n")
+}
+
+func renderSettingsTypeScript(exportName string, settings []SettingsContribution) string {
 	var body strings.Builder
-	body.WriteString("// Code generated by module-compose. DO NOT EDIT.\nexport const SETTINGS_FIELDS = Object.freeze([\n")
+	fmt.Fprintf(&body, "// Code generated by module-compose. DO NOT EDIT.\nexport const %s = Object.freeze([\n", exportName)
 	for _, contribution := range settings {
 		fmt.Fprintf(&body, "\t{ namespace: %q, name: %q, number: %d, message: %q },\n", contribution.Namespace, contribution.Field.Name, contribution.Field.Number, contribution.Message)
 	}

@@ -246,6 +246,12 @@ func (h *orgConnectHandler) GetOrgSettings(ctx context.Context, req *connect.Req
 func (h *orgConnectHandler) UpdateOrgSettings(ctx context.Context, req *connect.Request[gen.UpdateOrgSettingsRequest]) (*connect.Response[gen.OrgSettings], error) {
 	return unary(ctx, req, h.inner.UpdateOrgSettings)
 }
+func (h *orgConnectHandler) GetOrganizationSettings(ctx context.Context, req *connect.Request[gen.GetOrganizationSettingsRequest]) (*connect.Response[gen.OrganizationSettings], error) {
+	return unary(ctx, req, h.inner.GetOrganizationSettings)
+}
+func (h *orgConnectHandler) UpdateOrganizationSettings(ctx context.Context, req *connect.Request[gen.UpdateOrganizationSettingsRequest]) (*connect.Response[gen.OrganizationSettings], error) {
+	return unary(ctx, req, h.inner.UpdateOrganizationSettings)
+}
 
 // ============================================================================
 // TeamService

@@ -7,6 +7,7 @@
 package accountsv1
 
 import (
+	v1 "accounts/pkg/gen/saas/composed/org_settings/v1"
 	_ "accounts/pkg/gen/saas/policy/v1"
 	reflect "reflect"
 	sync "sync"
@@ -17,6 +18,7 @@ import (
 	protoreflect "google.golang.org/protobuf/reflect/protoreflect"
 	protoimpl "google.golang.org/protobuf/runtime/protoimpl"
 	emptypb "google.golang.org/protobuf/types/known/emptypb"
+	fieldmaskpb "google.golang.org/protobuf/types/known/fieldmaskpb"
 )
 
 const (
@@ -102,6 +104,166 @@ func (x *OrgSettings) GetFaviconUrl() string {
 	return ""
 }
 
+// OrganizationSettings is the org analogue of UserSettings
+// (user_settings.proto): a generic, typed, JSONB-backed preferences blob whose
+// product-contributed fields are generated into the composed container. Storage
+// keeps sparse ProtoJSON; the API recursively merges typed protobuf patches and
+// resolves catalog defaults on read. It is distinct from OrgSettings above,
+// which remains the fixed-column branding surface.
+type OrganizationSettings struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// Product-contributed org settings are generated into this typed container.
+	// ProtoJSON storage and API patching preserve the same schema end to end.
+	Composed      *v1.Settings `protobuf:"bytes,1000,opt,name=composed,proto3" json:"composed,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *OrganizationSettings) Reset() {
+	*x = OrganizationSettings{}
+	mi := &file_saas_accounts_v1_organizations_proto_msgTypes[1]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *OrganizationSettings) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*OrganizationSettings) ProtoMessage() {}
+
+func (x *OrganizationSettings) ProtoReflect() protoreflect.Message {
+	mi := &file_saas_accounts_v1_organizations_proto_msgTypes[1]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use OrganizationSettings.ProtoReflect.Descriptor instead.
+func (*OrganizationSettings) Descriptor() ([]byte, []int) {
+	return file_saas_accounts_v1_organizations_proto_rawDescGZIP(), []int{1}
+}
+
+func (x *OrganizationSettings) GetComposed() *v1.Settings {
+	if x != nil {
+		return x.Composed
+	}
+	return nil
+}
+
+type GetOrganizationSettingsRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	OrgId         string                 `protobuf:"bytes,1,opt,name=org_id,json=orgId,proto3" json:"org_id,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *GetOrganizationSettingsRequest) Reset() {
+	*x = GetOrganizationSettingsRequest{}
+	mi := &file_saas_accounts_v1_organizations_proto_msgTypes[2]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *GetOrganizationSettingsRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*GetOrganizationSettingsRequest) ProtoMessage() {}
+
+func (x *GetOrganizationSettingsRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_saas_accounts_v1_organizations_proto_msgTypes[2]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use GetOrganizationSettingsRequest.ProtoReflect.Descriptor instead.
+func (*GetOrganizationSettingsRequest) Descriptor() ([]byte, []int) {
+	return file_saas_accounts_v1_organizations_proto_rawDescGZIP(), []int{2}
+}
+
+func (x *GetOrganizationSettingsRequest) GetOrgId() string {
+	if x != nil {
+		return x.OrgId
+	}
+	return ""
+}
+
+type UpdateOrganizationSettingsRequest struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	OrgId string                 `protobuf:"bytes,1,opt,name=org_id,json=orgId,proto3" json:"org_id,omitempty"`
+	// Partial — only explicitly present fields change. Missing parent messages
+	// are materialized by the typed settings SDK, and nested siblings survive.
+	Patch *OrganizationSettings `protobuf:"bytes,2,opt,name=patch,proto3" json:"patch,omitempty"`
+	// Paths whose explicit overrides should be removed before applying patch.
+	// A cleared field resolves to its catalog default on the returned document.
+	ClearMask     *fieldmaskpb.FieldMask `protobuf:"bytes,3,opt,name=clear_mask,json=clearMask,proto3" json:"clear_mask,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *UpdateOrganizationSettingsRequest) Reset() {
+	*x = UpdateOrganizationSettingsRequest{}
+	mi := &file_saas_accounts_v1_organizations_proto_msgTypes[3]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *UpdateOrganizationSettingsRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*UpdateOrganizationSettingsRequest) ProtoMessage() {}
+
+func (x *UpdateOrganizationSettingsRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_saas_accounts_v1_organizations_proto_msgTypes[3]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use UpdateOrganizationSettingsRequest.ProtoReflect.Descriptor instead.
+func (*UpdateOrganizationSettingsRequest) Descriptor() ([]byte, []int) {
+	return file_saas_accounts_v1_organizations_proto_rawDescGZIP(), []int{3}
+}
+
+func (x *UpdateOrganizationSettingsRequest) GetOrgId() string {
+	if x != nil {
+		return x.OrgId
+	}
+	return ""
+}
+
+func (x *UpdateOrganizationSettingsRequest) GetPatch() *OrganizationSettings {
+	if x != nil {
+		return x.Patch
+	}
+	return nil
+}
+
+func (x *UpdateOrganizationSettingsRequest) GetClearMask() *fieldmaskpb.FieldMask {
+	if x != nil {
+		return x.ClearMask
+	}
+	return nil
+}
+
 type GetOrgSettingsRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	OrgId         string                 `protobuf:"bytes,1,opt,name=org_id,json=orgId,proto3" json:"org_id,omitempty"`
@@ -111,7 +273,7 @@ type GetOrgSettingsRequest struct {
 
 func (x *GetOrgSettingsRequest) Reset() {
 	*x = GetOrgSettingsRequest{}
-	mi := &file_saas_accounts_v1_organizations_proto_msgTypes[1]
+	mi := &file_saas_accounts_v1_organizations_proto_msgTypes[4]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -123,7 +285,7 @@ func (x *GetOrgSettingsRequest) String() string {
 func (*GetOrgSettingsRequest) ProtoMessage() {}
 
 func (x *GetOrgSettingsRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_saas_accounts_v1_organizations_proto_msgTypes[1]
+	mi := &file_saas_accounts_v1_organizations_proto_msgTypes[4]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -136,7 +298,7 @@ func (x *GetOrgSettingsRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetOrgSettingsRequest.ProtoReflect.Descriptor instead.
 func (*GetOrgSettingsRequest) Descriptor() ([]byte, []int) {
-	return file_saas_accounts_v1_organizations_proto_rawDescGZIP(), []int{1}
+	return file_saas_accounts_v1_organizations_proto_rawDescGZIP(), []int{4}
 }
 
 func (x *GetOrgSettingsRequest) GetOrgId() string {
@@ -159,7 +321,7 @@ type UpdateOrgSettingsRequest struct {
 
 func (x *UpdateOrgSettingsRequest) Reset() {
 	*x = UpdateOrgSettingsRequest{}
-	mi := &file_saas_accounts_v1_organizations_proto_msgTypes[2]
+	mi := &file_saas_accounts_v1_organizations_proto_msgTypes[5]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -171,7 +333,7 @@ func (x *UpdateOrgSettingsRequest) String() string {
 func (*UpdateOrgSettingsRequest) ProtoMessage() {}
 
 func (x *UpdateOrgSettingsRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_saas_accounts_v1_organizations_proto_msgTypes[2]
+	mi := &file_saas_accounts_v1_organizations_proto_msgTypes[5]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -184,7 +346,7 @@ func (x *UpdateOrgSettingsRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use UpdateOrgSettingsRequest.ProtoReflect.Descriptor instead.
 func (*UpdateOrgSettingsRequest) Descriptor() ([]byte, []int) {
-	return file_saas_accounts_v1_organizations_proto_rawDescGZIP(), []int{2}
+	return file_saas_accounts_v1_organizations_proto_rawDescGZIP(), []int{5}
 }
 
 func (x *UpdateOrgSettingsRequest) GetOrgId() string {
@@ -232,7 +394,7 @@ type CreateOrganizationRequest struct {
 
 func (x *CreateOrganizationRequest) Reset() {
 	*x = CreateOrganizationRequest{}
-	mi := &file_saas_accounts_v1_organizations_proto_msgTypes[3]
+	mi := &file_saas_accounts_v1_organizations_proto_msgTypes[6]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -244,7 +406,7 @@ func (x *CreateOrganizationRequest) String() string {
 func (*CreateOrganizationRequest) ProtoMessage() {}
 
 func (x *CreateOrganizationRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_saas_accounts_v1_organizations_proto_msgTypes[3]
+	mi := &file_saas_accounts_v1_organizations_proto_msgTypes[6]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -257,7 +419,7 @@ func (x *CreateOrganizationRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CreateOrganizationRequest.ProtoReflect.Descriptor instead.
 func (*CreateOrganizationRequest) Descriptor() ([]byte, []int) {
-	return file_saas_accounts_v1_organizations_proto_rawDescGZIP(), []int{3}
+	return file_saas_accounts_v1_organizations_proto_rawDescGZIP(), []int{6}
 }
 
 func (x *CreateOrganizationRequest) GetName() string {
@@ -283,7 +445,7 @@ type CreateOrganizationResponse struct {
 
 func (x *CreateOrganizationResponse) Reset() {
 	*x = CreateOrganizationResponse{}
-	mi := &file_saas_accounts_v1_organizations_proto_msgTypes[4]
+	mi := &file_saas_accounts_v1_organizations_proto_msgTypes[7]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -295,7 +457,7 @@ func (x *CreateOrganizationResponse) String() string {
 func (*CreateOrganizationResponse) ProtoMessage() {}
 
 func (x *CreateOrganizationResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_saas_accounts_v1_organizations_proto_msgTypes[4]
+	mi := &file_saas_accounts_v1_organizations_proto_msgTypes[7]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -308,7 +470,7 @@ func (x *CreateOrganizationResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CreateOrganizationResponse.ProtoReflect.Descriptor instead.
 func (*CreateOrganizationResponse) Descriptor() ([]byte, []int) {
-	return file_saas_accounts_v1_organizations_proto_rawDescGZIP(), []int{4}
+	return file_saas_accounts_v1_organizations_proto_rawDescGZIP(), []int{7}
 }
 
 func (x *CreateOrganizationResponse) GetOrganization() *Organization {
@@ -327,7 +489,7 @@ type GetOrganizationRequest struct {
 
 func (x *GetOrganizationRequest) Reset() {
 	*x = GetOrganizationRequest{}
-	mi := &file_saas_accounts_v1_organizations_proto_msgTypes[5]
+	mi := &file_saas_accounts_v1_organizations_proto_msgTypes[8]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -339,7 +501,7 @@ func (x *GetOrganizationRequest) String() string {
 func (*GetOrganizationRequest) ProtoMessage() {}
 
 func (x *GetOrganizationRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_saas_accounts_v1_organizations_proto_msgTypes[5]
+	mi := &file_saas_accounts_v1_organizations_proto_msgTypes[8]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -352,7 +514,7 @@ func (x *GetOrganizationRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetOrganizationRequest.ProtoReflect.Descriptor instead.
 func (*GetOrganizationRequest) Descriptor() ([]byte, []int) {
-	return file_saas_accounts_v1_organizations_proto_rawDescGZIP(), []int{5}
+	return file_saas_accounts_v1_organizations_proto_rawDescGZIP(), []int{8}
 }
 
 func (x *GetOrganizationRequest) GetId() string {
@@ -370,7 +532,7 @@ type ListOrganizationsRequest struct {
 
 func (x *ListOrganizationsRequest) Reset() {
 	*x = ListOrganizationsRequest{}
-	mi := &file_saas_accounts_v1_organizations_proto_msgTypes[6]
+	mi := &file_saas_accounts_v1_organizations_proto_msgTypes[9]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -382,7 +544,7 @@ func (x *ListOrganizationsRequest) String() string {
 func (*ListOrganizationsRequest) ProtoMessage() {}
 
 func (x *ListOrganizationsRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_saas_accounts_v1_organizations_proto_msgTypes[6]
+	mi := &file_saas_accounts_v1_organizations_proto_msgTypes[9]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -395,7 +557,7 @@ func (x *ListOrganizationsRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListOrganizationsRequest.ProtoReflect.Descriptor instead.
 func (*ListOrganizationsRequest) Descriptor() ([]byte, []int) {
-	return file_saas_accounts_v1_organizations_proto_rawDescGZIP(), []int{6}
+	return file_saas_accounts_v1_organizations_proto_rawDescGZIP(), []int{9}
 }
 
 type ListOrganizationsResponse struct {
@@ -407,7 +569,7 @@ type ListOrganizationsResponse struct {
 
 func (x *ListOrganizationsResponse) Reset() {
 	*x = ListOrganizationsResponse{}
-	mi := &file_saas_accounts_v1_organizations_proto_msgTypes[7]
+	mi := &file_saas_accounts_v1_organizations_proto_msgTypes[10]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -419,7 +581,7 @@ func (x *ListOrganizationsResponse) String() string {
 func (*ListOrganizationsResponse) ProtoMessage() {}
 
 func (x *ListOrganizationsResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_saas_accounts_v1_organizations_proto_msgTypes[7]
+	mi := &file_saas_accounts_v1_organizations_proto_msgTypes[10]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -432,7 +594,7 @@ func (x *ListOrganizationsResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListOrganizationsResponse.ProtoReflect.Descriptor instead.
 func (*ListOrganizationsResponse) Descriptor() ([]byte, []int) {
-	return file_saas_accounts_v1_organizations_proto_rawDescGZIP(), []int{7}
+	return file_saas_accounts_v1_organizations_proto_rawDescGZIP(), []int{10}
 }
 
 func (x *ListOrganizationsResponse) GetOrganizations() []*Organization {
@@ -453,7 +615,7 @@ type AddOrgMemberRequest struct {
 
 func (x *AddOrgMemberRequest) Reset() {
 	*x = AddOrgMemberRequest{}
-	mi := &file_saas_accounts_v1_organizations_proto_msgTypes[8]
+	mi := &file_saas_accounts_v1_organizations_proto_msgTypes[11]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -465,7 +627,7 @@ func (x *AddOrgMemberRequest) String() string {
 func (*AddOrgMemberRequest) ProtoMessage() {}
 
 func (x *AddOrgMemberRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_saas_accounts_v1_organizations_proto_msgTypes[8]
+	mi := &file_saas_accounts_v1_organizations_proto_msgTypes[11]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -478,7 +640,7 @@ func (x *AddOrgMemberRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use AddOrgMemberRequest.ProtoReflect.Descriptor instead.
 func (*AddOrgMemberRequest) Descriptor() ([]byte, []int) {
-	return file_saas_accounts_v1_organizations_proto_rawDescGZIP(), []int{8}
+	return file_saas_accounts_v1_organizations_proto_rawDescGZIP(), []int{11}
 }
 
 func (x *AddOrgMemberRequest) GetOrgId() string {
@@ -512,7 +674,7 @@ type RemoveOrgMemberRequest struct {
 
 func (x *RemoveOrgMemberRequest) Reset() {
 	*x = RemoveOrgMemberRequest{}
-	mi := &file_saas_accounts_v1_organizations_proto_msgTypes[9]
+	mi := &file_saas_accounts_v1_organizations_proto_msgTypes[12]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -524,7 +686,7 @@ func (x *RemoveOrgMemberRequest) String() string {
 func (*RemoveOrgMemberRequest) ProtoMessage() {}
 
 func (x *RemoveOrgMemberRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_saas_accounts_v1_organizations_proto_msgTypes[9]
+	mi := &file_saas_accounts_v1_organizations_proto_msgTypes[12]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -537,7 +699,7 @@ func (x *RemoveOrgMemberRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RemoveOrgMemberRequest.ProtoReflect.Descriptor instead.
 func (*RemoveOrgMemberRequest) Descriptor() ([]byte, []int) {
-	return file_saas_accounts_v1_organizations_proto_rawDescGZIP(), []int{9}
+	return file_saas_accounts_v1_organizations_proto_rawDescGZIP(), []int{12}
 }
 
 func (x *RemoveOrgMemberRequest) GetOrgId() string {
@@ -563,7 +725,7 @@ type ListOrgMembersRequest struct {
 
 func (x *ListOrgMembersRequest) Reset() {
 	*x = ListOrgMembersRequest{}
-	mi := &file_saas_accounts_v1_organizations_proto_msgTypes[10]
+	mi := &file_saas_accounts_v1_organizations_proto_msgTypes[13]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -575,7 +737,7 @@ func (x *ListOrgMembersRequest) String() string {
 func (*ListOrgMembersRequest) ProtoMessage() {}
 
 func (x *ListOrgMembersRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_saas_accounts_v1_organizations_proto_msgTypes[10]
+	mi := &file_saas_accounts_v1_organizations_proto_msgTypes[13]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -588,7 +750,7 @@ func (x *ListOrgMembersRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListOrgMembersRequest.ProtoReflect.Descriptor instead.
 func (*ListOrgMembersRequest) Descriptor() ([]byte, []int) {
-	return file_saas_accounts_v1_organizations_proto_rawDescGZIP(), []int{10}
+	return file_saas_accounts_v1_organizations_proto_rawDescGZIP(), []int{13}
 }
 
 func (x *ListOrgMembersRequest) GetOrgId() string {
@@ -607,7 +769,7 @@ type ListOrgMembersResponse struct {
 
 func (x *ListOrgMembersResponse) Reset() {
 	*x = ListOrgMembersResponse{}
-	mi := &file_saas_accounts_v1_organizations_proto_msgTypes[11]
+	mi := &file_saas_accounts_v1_organizations_proto_msgTypes[14]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -619,7 +781,7 @@ func (x *ListOrgMembersResponse) String() string {
 func (*ListOrgMembersResponse) ProtoMessage() {}
 
 func (x *ListOrgMembersResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_saas_accounts_v1_organizations_proto_msgTypes[11]
+	mi := &file_saas_accounts_v1_organizations_proto_msgTypes[14]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -632,7 +794,7 @@ func (x *ListOrgMembersResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListOrgMembersResponse.ProtoReflect.Descriptor instead.
 func (*ListOrgMembersResponse) Descriptor() ([]byte, []int) {
-	return file_saas_accounts_v1_organizations_proto_rawDescGZIP(), []int{11}
+	return file_saas_accounts_v1_organizations_proto_rawDescGZIP(), []int{14}
 }
 
 func (x *ListOrgMembersResponse) GetMembers() []*OrgMembership {
@@ -646,14 +808,23 @@ var File_saas_accounts_v1_organizations_proto protoreflect.FileDescriptor
 
 const file_saas_accounts_v1_organizations_proto_rawDesc = "" +
 	"\n" +
-	"$saas/accounts/v1/organizations.proto\x12\x10saas.accounts.v1\x1a\x1bbuf/validate/validate.proto\x1a\x1cgoogle/api/annotations.proto\x1a\x1bgoogle/protobuf/empty.proto\x1a\x1dsaas/accounts/v1/common.proto\x1a\x1csaas/policy/v1/options.proto\"\xaa\x01\n" +
+	"$saas/accounts/v1/organizations.proto\x12\x10saas.accounts.v1\x1a\x1bbuf/validate/validate.proto\x1a\x1cgoogle/api/annotations.proto\x1a\x1bgoogle/protobuf/empty.proto\x1a google/protobuf/field_mask.proto\x1a\x1dsaas/accounts/v1/common.proto\x1a,saas/composed/org_settings/v1/settings.proto\x1a\x1csaas/policy/v1/options.proto\"\xaa\x01\n" +
 	"\vOrgSettings\x12\x15\n" +
 	"\x06org_id\x18\x01 \x01(\tR\x05orgId\x12\x19\n" +
 	"\blogo_url\x18\x02 \x01(\tR\alogoUrl\x12#\n" +
 	"\rprimary_color\x18\x03 \x01(\tR\fprimaryColor\x12#\n" +
 	"\rcustom_domain\x18\x04 \x01(\tR\fcustomDomain\x12\x1f\n" +
 	"\vfavicon_url\x18\x05 \x01(\tR\n" +
-	"faviconUrl\"8\n" +
+	"faviconUrl\"\\\n" +
+	"\x14OrganizationSettings\x12D\n" +
+	"\bcomposed\x18\xe8\a \x01(\v2'.saas.composed.org_settings.v1.SettingsR\bcomposed\"A\n" +
+	"\x1eGetOrganizationSettingsRequest\x12\x1f\n" +
+	"\x06org_id\x18\x01 \x01(\tB\b\xbaH\x05r\x03\xb0\x01\x01R\x05orgId\"\xbd\x01\n" +
+	"!UpdateOrganizationSettingsRequest\x12\x1f\n" +
+	"\x06org_id\x18\x01 \x01(\tB\b\xbaH\x05r\x03\xb0\x01\x01R\x05orgId\x12<\n" +
+	"\x05patch\x18\x02 \x01(\v2&.saas.accounts.v1.OrganizationSettingsR\x05patch\x129\n" +
+	"\n" +
+	"clear_mask\x18\x03 \x01(\v2\x1a.google.protobuf.FieldMaskR\tclearMask\"8\n" +
 	"\x15GetOrgSettingsRequest\x12\x1f\n" +
 	"\x06org_id\x18\x01 \x01(\tB\b\xbaH\x05r\x03\xb0\x01\x01R\x05orgId\"\xdf\x02\n" +
 	"\x18UpdateOrgSettingsRequest\x12\x1f\n" +
@@ -683,7 +854,7 @@ const file_saas_accounts_v1_organizations_proto_rawDesc = "" +
 	"\x15ListOrgMembersRequest\x12\x1f\n" +
 	"\x06org_id\x18\x01 \x01(\tB\b\xbaH\x05r\x03\xb0\x01\x01R\x05orgId\"S\n" +
 	"\x16ListOrgMembersResponse\x129\n" +
-	"\amembers\x18\x01 \x03(\v2\x1f.saas.accounts.v1.OrgMembershipR\amembers2\xb3\v\n" +
+	"\amembers\x18\x01 \x03(\v2\x1f.saas.accounts.v1.OrgMembershipR\amembers2\xf4\x0e\n" +
 	"\x13OrganizationService\x12\xb2\x01\n" +
 	"\x12CreateOrganization\x12+.saas.accounts.v1.CreateOrganizationRequest\x1a,.saas.accounts.v1.CreateOrganizationResponse\"A\xc2\xf3\x18!\b\x02\x10\x020\x01:\x0f\n" +
 	"\vorg.created\x10\x02@\x01H\x04P\x03X\x03`\x01\x82\xd3\xe4\x93\x02\x16:\x01*\"\x11/v1/organizations\x12\x9d\x01\n" +
@@ -702,7 +873,12 @@ const file_saas_accounts_v1_organizations_proto_rawDesc = "" +
 	"\x06org_id\x10\x02\x18\x010\x01:\x02\x10\x01@\x01H\x03P\x03X\x03`\x01\x82\xd3\xe4\x93\x02%\x12#/v1/organizations/{org_id}/settings\x12\xca\x01\n" +
 	"\x11UpdateOrgSettings\x12*.saas.accounts.v1.UpdateOrgSettingsRequest\x1a\x1d.saas.accounts.v1.OrgSettings\"j\xc2\xf3\x188\b\x02\x10\x04*\f\n" +
 	"\x06org_id\x10\x02\x18\x010\x01:\x18\n" +
-	"\x14org.settings_updated\x10\x02@\x01H\x04P\x03X\x03`\x01\x82\xd3\xe4\x93\x02(:\x01*\x1a#/v1/organizations/{org_id}/settingsB\xba\x01\n" +
+	"\x14org.settings_updated\x10\x02@\x01H\x04P\x03X\x03`\x01\x82\xd3\xe4\x93\x02(:\x01*\x1a#/v1/organizations/{org_id}/settings\x12\xce\x01\n" +
+	"\x17GetOrganizationSettings\x120.saas.accounts.v1.GetOrganizationSettingsRequest\x1a&.saas.accounts.v1.OrganizationSettings\"Y\xc2\xf3\x18\"\b\x02\x10\x03*\f\n" +
+	"\x06org_id\x10\x02\x18\x010\x01:\x02\x10\x01@\x01H\x03P\x03X\x03`\x01\x82\xd3\xe4\x93\x02-\x12+/v1/organizations/{org_id}/generic-settings\x12\xed\x01\n" +
+	"\x1aUpdateOrganizationSettings\x123.saas.accounts.v1.UpdateOrganizationSettingsRequest\x1a&.saas.accounts.v1.OrganizationSettings\"r\xc2\xf3\x188\b\x02\x10\x04*\f\n" +
+	"\x06org_id\x10\x02\x18\x010\x01:\x18\n" +
+	"\x14org.settings_updated\x10\x02@\x01H\x04P\x03X\x03`\x01\x82\xd3\xe4\x93\x020:\x01*\"+/v1/organizations/{org_id}/generic-settingsB\xba\x01\n" +
 	"\x14com.saas.accounts.v1B\x12OrganizationsProtoP\x01Z,accounts/pkg/gen/saas/accounts/v1;accountsv1\xa2\x02\x03SAX\xaa\x02\x10Saas.Accounts.V1\xca\x02\x10Saas\\Accounts\\V1\xe2\x02\x1cSaas\\Accounts\\V1\\GPBMetadata\xea\x02\x12Saas::Accounts::V1b\x06proto3"
 
 var (
@@ -717,51 +893,63 @@ func file_saas_accounts_v1_organizations_proto_rawDescGZIP() []byte {
 	return file_saas_accounts_v1_organizations_proto_rawDescData
 }
 
-var file_saas_accounts_v1_organizations_proto_msgTypes = make([]protoimpl.MessageInfo, 12)
+var file_saas_accounts_v1_organizations_proto_msgTypes = make([]protoimpl.MessageInfo, 15)
 var file_saas_accounts_v1_organizations_proto_goTypes = []any{
-	(*OrgSettings)(nil),                // 0: saas.accounts.v1.OrgSettings
-	(*GetOrgSettingsRequest)(nil),      // 1: saas.accounts.v1.GetOrgSettingsRequest
-	(*UpdateOrgSettingsRequest)(nil),   // 2: saas.accounts.v1.UpdateOrgSettingsRequest
-	(*CreateOrganizationRequest)(nil),  // 3: saas.accounts.v1.CreateOrganizationRequest
-	(*CreateOrganizationResponse)(nil), // 4: saas.accounts.v1.CreateOrganizationResponse
-	(*GetOrganizationRequest)(nil),     // 5: saas.accounts.v1.GetOrganizationRequest
-	(*ListOrganizationsRequest)(nil),   // 6: saas.accounts.v1.ListOrganizationsRequest
-	(*ListOrganizationsResponse)(nil),  // 7: saas.accounts.v1.ListOrganizationsResponse
-	(*AddOrgMemberRequest)(nil),        // 8: saas.accounts.v1.AddOrgMemberRequest
-	(*RemoveOrgMemberRequest)(nil),     // 9: saas.accounts.v1.RemoveOrgMemberRequest
-	(*ListOrgMembersRequest)(nil),      // 10: saas.accounts.v1.ListOrgMembersRequest
-	(*ListOrgMembersResponse)(nil),     // 11: saas.accounts.v1.ListOrgMembersResponse
-	(*Organization)(nil),               // 12: saas.accounts.v1.Organization
-	(OrgRole)(0),                       // 13: saas.accounts.v1.OrgRole
-	(*OrgMembership)(nil),              // 14: saas.accounts.v1.OrgMembership
-	(*emptypb.Empty)(nil),              // 15: google.protobuf.Empty
+	(*OrgSettings)(nil),                       // 0: saas.accounts.v1.OrgSettings
+	(*OrganizationSettings)(nil),              // 1: saas.accounts.v1.OrganizationSettings
+	(*GetOrganizationSettingsRequest)(nil),    // 2: saas.accounts.v1.GetOrganizationSettingsRequest
+	(*UpdateOrganizationSettingsRequest)(nil), // 3: saas.accounts.v1.UpdateOrganizationSettingsRequest
+	(*GetOrgSettingsRequest)(nil),             // 4: saas.accounts.v1.GetOrgSettingsRequest
+	(*UpdateOrgSettingsRequest)(nil),          // 5: saas.accounts.v1.UpdateOrgSettingsRequest
+	(*CreateOrganizationRequest)(nil),         // 6: saas.accounts.v1.CreateOrganizationRequest
+	(*CreateOrganizationResponse)(nil),        // 7: saas.accounts.v1.CreateOrganizationResponse
+	(*GetOrganizationRequest)(nil),            // 8: saas.accounts.v1.GetOrganizationRequest
+	(*ListOrganizationsRequest)(nil),          // 9: saas.accounts.v1.ListOrganizationsRequest
+	(*ListOrganizationsResponse)(nil),         // 10: saas.accounts.v1.ListOrganizationsResponse
+	(*AddOrgMemberRequest)(nil),               // 11: saas.accounts.v1.AddOrgMemberRequest
+	(*RemoveOrgMemberRequest)(nil),            // 12: saas.accounts.v1.RemoveOrgMemberRequest
+	(*ListOrgMembersRequest)(nil),             // 13: saas.accounts.v1.ListOrgMembersRequest
+	(*ListOrgMembersResponse)(nil),            // 14: saas.accounts.v1.ListOrgMembersResponse
+	(*v1.Settings)(nil),                       // 15: saas.composed.org_settings.v1.Settings
+	(*fieldmaskpb.FieldMask)(nil),             // 16: google.protobuf.FieldMask
+	(*Organization)(nil),                      // 17: saas.accounts.v1.Organization
+	(OrgRole)(0),                              // 18: saas.accounts.v1.OrgRole
+	(*OrgMembership)(nil),                     // 19: saas.accounts.v1.OrgMembership
+	(*emptypb.Empty)(nil),                     // 20: google.protobuf.Empty
 }
 var file_saas_accounts_v1_organizations_proto_depIdxs = []int32{
-	12, // 0: saas.accounts.v1.CreateOrganizationResponse.organization:type_name -> saas.accounts.v1.Organization
-	12, // 1: saas.accounts.v1.ListOrganizationsResponse.organizations:type_name -> saas.accounts.v1.Organization
-	13, // 2: saas.accounts.v1.AddOrgMemberRequest.role:type_name -> saas.accounts.v1.OrgRole
-	14, // 3: saas.accounts.v1.ListOrgMembersResponse.members:type_name -> saas.accounts.v1.OrgMembership
-	3,  // 4: saas.accounts.v1.OrganizationService.CreateOrganization:input_type -> saas.accounts.v1.CreateOrganizationRequest
-	5,  // 5: saas.accounts.v1.OrganizationService.GetOrganization:input_type -> saas.accounts.v1.GetOrganizationRequest
-	6,  // 6: saas.accounts.v1.OrganizationService.ListOrganizations:input_type -> saas.accounts.v1.ListOrganizationsRequest
-	8,  // 7: saas.accounts.v1.OrganizationService.AddMember:input_type -> saas.accounts.v1.AddOrgMemberRequest
-	9,  // 8: saas.accounts.v1.OrganizationService.RemoveMember:input_type -> saas.accounts.v1.RemoveOrgMemberRequest
-	10, // 9: saas.accounts.v1.OrganizationService.ListMembers:input_type -> saas.accounts.v1.ListOrgMembersRequest
-	1,  // 10: saas.accounts.v1.OrganizationService.GetOrgSettings:input_type -> saas.accounts.v1.GetOrgSettingsRequest
-	2,  // 11: saas.accounts.v1.OrganizationService.UpdateOrgSettings:input_type -> saas.accounts.v1.UpdateOrgSettingsRequest
-	4,  // 12: saas.accounts.v1.OrganizationService.CreateOrganization:output_type -> saas.accounts.v1.CreateOrganizationResponse
-	12, // 13: saas.accounts.v1.OrganizationService.GetOrganization:output_type -> saas.accounts.v1.Organization
-	7,  // 14: saas.accounts.v1.OrganizationService.ListOrganizations:output_type -> saas.accounts.v1.ListOrganizationsResponse
-	15, // 15: saas.accounts.v1.OrganizationService.AddMember:output_type -> google.protobuf.Empty
-	15, // 16: saas.accounts.v1.OrganizationService.RemoveMember:output_type -> google.protobuf.Empty
-	11, // 17: saas.accounts.v1.OrganizationService.ListMembers:output_type -> saas.accounts.v1.ListOrgMembersResponse
-	0,  // 18: saas.accounts.v1.OrganizationService.GetOrgSettings:output_type -> saas.accounts.v1.OrgSettings
-	0,  // 19: saas.accounts.v1.OrganizationService.UpdateOrgSettings:output_type -> saas.accounts.v1.OrgSettings
-	12, // [12:20] is the sub-list for method output_type
-	4,  // [4:12] is the sub-list for method input_type
-	4,  // [4:4] is the sub-list for extension type_name
-	4,  // [4:4] is the sub-list for extension extendee
-	0,  // [0:4] is the sub-list for field type_name
+	15, // 0: saas.accounts.v1.OrganizationSettings.composed:type_name -> saas.composed.org_settings.v1.Settings
+	1,  // 1: saas.accounts.v1.UpdateOrganizationSettingsRequest.patch:type_name -> saas.accounts.v1.OrganizationSettings
+	16, // 2: saas.accounts.v1.UpdateOrganizationSettingsRequest.clear_mask:type_name -> google.protobuf.FieldMask
+	17, // 3: saas.accounts.v1.CreateOrganizationResponse.organization:type_name -> saas.accounts.v1.Organization
+	17, // 4: saas.accounts.v1.ListOrganizationsResponse.organizations:type_name -> saas.accounts.v1.Organization
+	18, // 5: saas.accounts.v1.AddOrgMemberRequest.role:type_name -> saas.accounts.v1.OrgRole
+	19, // 6: saas.accounts.v1.ListOrgMembersResponse.members:type_name -> saas.accounts.v1.OrgMembership
+	6,  // 7: saas.accounts.v1.OrganizationService.CreateOrganization:input_type -> saas.accounts.v1.CreateOrganizationRequest
+	8,  // 8: saas.accounts.v1.OrganizationService.GetOrganization:input_type -> saas.accounts.v1.GetOrganizationRequest
+	9,  // 9: saas.accounts.v1.OrganizationService.ListOrganizations:input_type -> saas.accounts.v1.ListOrganizationsRequest
+	11, // 10: saas.accounts.v1.OrganizationService.AddMember:input_type -> saas.accounts.v1.AddOrgMemberRequest
+	12, // 11: saas.accounts.v1.OrganizationService.RemoveMember:input_type -> saas.accounts.v1.RemoveOrgMemberRequest
+	13, // 12: saas.accounts.v1.OrganizationService.ListMembers:input_type -> saas.accounts.v1.ListOrgMembersRequest
+	4,  // 13: saas.accounts.v1.OrganizationService.GetOrgSettings:input_type -> saas.accounts.v1.GetOrgSettingsRequest
+	5,  // 14: saas.accounts.v1.OrganizationService.UpdateOrgSettings:input_type -> saas.accounts.v1.UpdateOrgSettingsRequest
+	2,  // 15: saas.accounts.v1.OrganizationService.GetOrganizationSettings:input_type -> saas.accounts.v1.GetOrganizationSettingsRequest
+	3,  // 16: saas.accounts.v1.OrganizationService.UpdateOrganizationSettings:input_type -> saas.accounts.v1.UpdateOrganizationSettingsRequest
+	7,  // 17: saas.accounts.v1.OrganizationService.CreateOrganization:output_type -> saas.accounts.v1.CreateOrganizationResponse
+	17, // 18: saas.accounts.v1.OrganizationService.GetOrganization:output_type -> saas.accounts.v1.Organization
+	10, // 19: saas.accounts.v1.OrganizationService.ListOrganizations:output_type -> saas.accounts.v1.ListOrganizationsResponse
+	20, // 20: saas.accounts.v1.OrganizationService.AddMember:output_type -> google.protobuf.Empty
+	20, // 21: saas.accounts.v1.OrganizationService.RemoveMember:output_type -> google.protobuf.Empty
+	14, // 22: saas.accounts.v1.OrganizationService.ListMembers:output_type -> saas.accounts.v1.ListOrgMembersResponse
+	0,  // 23: saas.accounts.v1.OrganizationService.GetOrgSettings:output_type -> saas.accounts.v1.OrgSettings
+	0,  // 24: saas.accounts.v1.OrganizationService.UpdateOrgSettings:output_type -> saas.accounts.v1.OrgSettings
+	1,  // 25: saas.accounts.v1.OrganizationService.GetOrganizationSettings:output_type -> saas.accounts.v1.OrganizationSettings
+	1,  // 26: saas.accounts.v1.OrganizationService.UpdateOrganizationSettings:output_type -> saas.accounts.v1.OrganizationSettings
+	17, // [17:27] is the sub-list for method output_type
+	7,  // [7:17] is the sub-list for method input_type
+	7,  // [7:7] is the sub-list for extension type_name
+	7,  // [7:7] is the sub-list for extension extendee
+	0,  // [0:7] is the sub-list for field type_name
 }
 
 func init() { file_saas_accounts_v1_organizations_proto_init() }
@@ -776,7 +964,7 @@ func file_saas_accounts_v1_organizations_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_saas_accounts_v1_organizations_proto_rawDesc), len(file_saas_accounts_v1_organizations_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   12,
+			NumMessages:   15,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

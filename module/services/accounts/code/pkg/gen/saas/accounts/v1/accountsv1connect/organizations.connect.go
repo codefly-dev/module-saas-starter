@@ -59,6 +59,12 @@ const (
 	// OrganizationServiceUpdateOrgSettingsProcedure is the fully-qualified name of the
 	// OrganizationService's UpdateOrgSettings RPC.
 	OrganizationServiceUpdateOrgSettingsProcedure = "/saas.accounts.v1.OrganizationService/UpdateOrgSettings"
+	// OrganizationServiceGetOrganizationSettingsProcedure is the fully-qualified name of the
+	// OrganizationService's GetOrganizationSettings RPC.
+	OrganizationServiceGetOrganizationSettingsProcedure = "/saas.accounts.v1.OrganizationService/GetOrganizationSettings"
+	// OrganizationServiceUpdateOrganizationSettingsProcedure is the fully-qualified name of the
+	// OrganizationService's UpdateOrganizationSettings RPC.
+	OrganizationServiceUpdateOrganizationSettingsProcedure = "/saas.accounts.v1.OrganizationService/UpdateOrganizationSettings"
 )
 
 // OrganizationServiceClient is a client for the saas.accounts.v1.OrganizationService service.
@@ -71,6 +77,12 @@ type OrganizationServiceClient interface {
 	ListMembers(context.Context, *connect.Request[v1.ListOrgMembersRequest]) (*connect.Response[v1.ListOrgMembersResponse], error)
 	GetOrgSettings(context.Context, *connect.Request[v1.GetOrgSettingsRequest]) (*connect.Response[v1.OrgSettings], error)
 	UpdateOrgSettings(context.Context, *connect.Request[v1.UpdateOrgSettingsRequest]) (*connect.Response[v1.OrgSettings], error)
+	// Generic org settings — the org analogue of UserSettingsService. Whole typed
+	// message in, whole resolved message out; adding an org setting is proto +
+	// regen only, with no endpoint change. Reads require org membership; writes
+	// require org admin, mirroring the branding surface above.
+	GetOrganizationSettings(context.Context, *connect.Request[v1.GetOrganizationSettingsRequest]) (*connect.Response[v1.OrganizationSettings], error)
+	UpdateOrganizationSettings(context.Context, *connect.Request[v1.UpdateOrganizationSettingsRequest]) (*connect.Response[v1.OrganizationSettings], error)
 }
 
 // NewOrganizationServiceClient constructs a client for the saas.accounts.v1.OrganizationService
@@ -132,19 +144,33 @@ func NewOrganizationServiceClient(httpClient connect.HTTPClient, baseURL string,
 			connect.WithSchema(organizationServiceMethods.ByName("UpdateOrgSettings")),
 			connect.WithClientOptions(opts...),
 		),
+		getOrganizationSettings: connect.NewClient[v1.GetOrganizationSettingsRequest, v1.OrganizationSettings](
+			httpClient,
+			baseURL+OrganizationServiceGetOrganizationSettingsProcedure,
+			connect.WithSchema(organizationServiceMethods.ByName("GetOrganizationSettings")),
+			connect.WithClientOptions(opts...),
+		),
+		updateOrganizationSettings: connect.NewClient[v1.UpdateOrganizationSettingsRequest, v1.OrganizationSettings](
+			httpClient,
+			baseURL+OrganizationServiceUpdateOrganizationSettingsProcedure,
+			connect.WithSchema(organizationServiceMethods.ByName("UpdateOrganizationSettings")),
+			connect.WithClientOptions(opts...),
+		),
 	}
 }
 
 // organizationServiceClient implements OrganizationServiceClient.
 type organizationServiceClient struct {
-	createOrganization *connect.Client[v1.CreateOrganizationRequest, v1.CreateOrganizationResponse]
-	getOrganization    *connect.Client[v1.GetOrganizationRequest, v1.Organization]
-	listOrganizations  *connect.Client[v1.ListOrganizationsRequest, v1.ListOrganizationsResponse]
-	addMember          *connect.Client[v1.AddOrgMemberRequest, emptypb.Empty]
-	removeMember       *connect.Client[v1.RemoveOrgMemberRequest, emptypb.Empty]
-	listMembers        *connect.Client[v1.ListOrgMembersRequest, v1.ListOrgMembersResponse]
-	getOrgSettings     *connect.Client[v1.GetOrgSettingsRequest, v1.OrgSettings]
-	updateOrgSettings  *connect.Client[v1.UpdateOrgSettingsRequest, v1.OrgSettings]
+	createOrganization         *connect.Client[v1.CreateOrganizationRequest, v1.CreateOrganizationResponse]
+	getOrganization            *connect.Client[v1.GetOrganizationRequest, v1.Organization]
+	listOrganizations          *connect.Client[v1.ListOrganizationsRequest, v1.ListOrganizationsResponse]
+	addMember                  *connect.Client[v1.AddOrgMemberRequest, emptypb.Empty]
+	removeMember               *connect.Client[v1.RemoveOrgMemberRequest, emptypb.Empty]
+	listMembers                *connect.Client[v1.ListOrgMembersRequest, v1.ListOrgMembersResponse]
+	getOrgSettings             *connect.Client[v1.GetOrgSettingsRequest, v1.OrgSettings]
+	updateOrgSettings          *connect.Client[v1.UpdateOrgSettingsRequest, v1.OrgSettings]
+	getOrganizationSettings    *connect.Client[v1.GetOrganizationSettingsRequest, v1.OrganizationSettings]
+	updateOrganizationSettings *connect.Client[v1.UpdateOrganizationSettingsRequest, v1.OrganizationSettings]
 }
 
 // CreateOrganization calls saas.accounts.v1.OrganizationService.CreateOrganization.
@@ -187,6 +213,16 @@ func (c *organizationServiceClient) UpdateOrgSettings(ctx context.Context, req *
 	return c.updateOrgSettings.CallUnary(ctx, req)
 }
 
+// GetOrganizationSettings calls saas.accounts.v1.OrganizationService.GetOrganizationSettings.
+func (c *organizationServiceClient) GetOrganizationSettings(ctx context.Context, req *connect.Request[v1.GetOrganizationSettingsRequest]) (*connect.Response[v1.OrganizationSettings], error) {
+	return c.getOrganizationSettings.CallUnary(ctx, req)
+}
+
+// UpdateOrganizationSettings calls saas.accounts.v1.OrganizationService.UpdateOrganizationSettings.
+func (c *organizationServiceClient) UpdateOrganizationSettings(ctx context.Context, req *connect.Request[v1.UpdateOrganizationSettingsRequest]) (*connect.Response[v1.OrganizationSettings], error) {
+	return c.updateOrganizationSettings.CallUnary(ctx, req)
+}
+
 // OrganizationServiceHandler is an implementation of the saas.accounts.v1.OrganizationService
 // service.
 type OrganizationServiceHandler interface {
@@ -198,6 +234,12 @@ type OrganizationServiceHandler interface {
 	ListMembers(context.Context, *connect.Request[v1.ListOrgMembersRequest]) (*connect.Response[v1.ListOrgMembersResponse], error)
 	GetOrgSettings(context.Context, *connect.Request[v1.GetOrgSettingsRequest]) (*connect.Response[v1.OrgSettings], error)
 	UpdateOrgSettings(context.Context, *connect.Request[v1.UpdateOrgSettingsRequest]) (*connect.Response[v1.OrgSettings], error)
+	// Generic org settings — the org analogue of UserSettingsService. Whole typed
+	// message in, whole resolved message out; adding an org setting is proto +
+	// regen only, with no endpoint change. Reads require org membership; writes
+	// require org admin, mirroring the branding surface above.
+	GetOrganizationSettings(context.Context, *connect.Request[v1.GetOrganizationSettingsRequest]) (*connect.Response[v1.OrganizationSettings], error)
+	UpdateOrganizationSettings(context.Context, *connect.Request[v1.UpdateOrganizationSettingsRequest]) (*connect.Response[v1.OrganizationSettings], error)
 }
 
 // NewOrganizationServiceHandler builds an HTTP handler from the service implementation. It returns
@@ -255,6 +297,18 @@ func NewOrganizationServiceHandler(svc OrganizationServiceHandler, opts ...conne
 		connect.WithSchema(organizationServiceMethods.ByName("UpdateOrgSettings")),
 		connect.WithHandlerOptions(opts...),
 	)
+	organizationServiceGetOrganizationSettingsHandler := connect.NewUnaryHandler(
+		OrganizationServiceGetOrganizationSettingsProcedure,
+		svc.GetOrganizationSettings,
+		connect.WithSchema(organizationServiceMethods.ByName("GetOrganizationSettings")),
+		connect.WithHandlerOptions(opts...),
+	)
+	organizationServiceUpdateOrganizationSettingsHandler := connect.NewUnaryHandler(
+		OrganizationServiceUpdateOrganizationSettingsProcedure,
+		svc.UpdateOrganizationSettings,
+		connect.WithSchema(organizationServiceMethods.ByName("UpdateOrganizationSettings")),
+		connect.WithHandlerOptions(opts...),
+	)
 	return "/saas.accounts.v1.OrganizationService/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case OrganizationServiceCreateOrganizationProcedure:
@@ -273,6 +327,10 @@ func NewOrganizationServiceHandler(svc OrganizationServiceHandler, opts ...conne
 			organizationServiceGetOrgSettingsHandler.ServeHTTP(w, r)
 		case OrganizationServiceUpdateOrgSettingsProcedure:
 			organizationServiceUpdateOrgSettingsHandler.ServeHTTP(w, r)
+		case OrganizationServiceGetOrganizationSettingsProcedure:
+			organizationServiceGetOrganizationSettingsHandler.ServeHTTP(w, r)
+		case OrganizationServiceUpdateOrganizationSettingsProcedure:
+			organizationServiceUpdateOrganizationSettingsHandler.ServeHTTP(w, r)
 		default:
 			http.NotFound(w, r)
 		}
@@ -312,4 +370,12 @@ func (UnimplementedOrganizationServiceHandler) GetOrgSettings(context.Context, *
 
 func (UnimplementedOrganizationServiceHandler) UpdateOrgSettings(context.Context, *connect.Request[v1.UpdateOrgSettingsRequest]) (*connect.Response[v1.OrgSettings], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("saas.accounts.v1.OrganizationService.UpdateOrgSettings is not implemented"))
+}
+
+func (UnimplementedOrganizationServiceHandler) GetOrganizationSettings(context.Context, *connect.Request[v1.GetOrganizationSettingsRequest]) (*connect.Response[v1.OrganizationSettings], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("saas.accounts.v1.OrganizationService.GetOrganizationSettings is not implemented"))
+}
+
+func (UnimplementedOrganizationServiceHandler) UpdateOrganizationSettings(context.Context, *connect.Request[v1.UpdateOrganizationSettingsRequest]) (*connect.Response[v1.OrganizationSettings], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("saas.accounts.v1.OrganizationService.UpdateOrganizationSettings is not implemented"))
 }

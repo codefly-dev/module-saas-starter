@@ -2,7 +2,7 @@
 
 > Generated from protobuf service descriptors and `saas.policy.v1.method_policy`; only the prose description is joined from `pkg/business/introspection.go`. Do not edit by hand. Run `go generate ./pkg/business` from `module/services/accounts/code`.
 
-Inventory: **151 RPCs** across **26 services**. Missing, invalid, or unclassified procedures are denied by both Connect and gRPC interceptors.
+Inventory: **153 RPCs** across **26 services**. Missing, invalid, or unclassified procedures are denied by both Connect and gRPC interceptors.
 
 The compact tier is retained for compatibility. Guards, resource bindings, audit events, limiter class, and data sensitivity are descriptor-authoritative. Domain handlers may enforce stronger state-dependent rules but may not weaken this floor.
 
@@ -72,10 +72,12 @@ The compact tier is retained for compatibility. Guards, resource bindings, audit
 | `/saas.accounts.v1.OrganizationService/CreateOrganization` | unary | `POST /v1/organizations` | `auth` | exposure=AUTHENTICATED; tenant=USER | — | — | SUCCESS: org.created | FORBIDDEN / STANDARD_WRITE | CONFIDENTIAL → CONFIDENTIAL | Create a new org; caller becomes owner. |
 | `/saas.accounts.v1.OrganizationService/GetOrgSettings` | unary | `GET /v1/organizations/{org_id}/settings` | `org_member` | exposure=AUTHENTICATED; tenant=ORG_MEMBER | — | org_id → ORGANIZATION/DIRECT_ID | — | FORBIDDEN / STANDARD_READ | CONFIDENTIAL → CONFIDENTIAL | Read branding. |
 | `/saas.accounts.v1.OrganizationService/GetOrganization` | unary | `GET /v1/organizations/{id}` | `org_member` | exposure=AUTHENTICATED; tenant=ORG_MEMBER | — | id → ORGANIZATION/DIRECT_ID | — | FORBIDDEN / STANDARD_READ | CONFIDENTIAL → CONFIDENTIAL | Read an org. |
+| `/saas.accounts.v1.OrganizationService/GetOrganizationSettings` | unary | `GET /v1/organizations/{org_id}/generic-settings` | `org_member` | exposure=AUTHENTICATED; tenant=ORG_MEMBER | — | org_id → ORGANIZATION/DIRECT_ID | — | FORBIDDEN / STANDARD_READ | CONFIDENTIAL → CONFIDENTIAL | Read generic typed org settings (composed JSONB blob). |
 | `/saas.accounts.v1.OrganizationService/ListMembers` | unary | `GET /v1/organizations/{org_id}/members` | `org_member` | exposure=AUTHENTICATED; tenant=ORG_MEMBER | — | org_id → ORGANIZATION/DIRECT_ID | — | FORBIDDEN / STANDARD_READ | CONFIDENTIAL → CONFIDENTIAL | List members of an org. |
 | `/saas.accounts.v1.OrganizationService/ListOrganizations` | unary | `GET /v1/organizations` | `auth` | exposure=AUTHENTICATED; tenant=USER | — | — | — | FORBIDDEN / STANDARD_READ | CONFIDENTIAL → CONFIDENTIAL | Orgs the caller belongs to. |
 | `/saas.accounts.v1.OrganizationService/RemoveMember` | unary | `DELETE /v1/organizations/{org_id}/members/{user_id}` | `org_admin` | exposure=AUTHENTICATED; tenant=ORG_ADMIN | — | org_id → ORGANIZATION/DIRECT_ID | SUCCESS: org.member_removed | FORBIDDEN / STANDARD_WRITE | CONFIDENTIAL → CONFIDENTIAL | Remove a member; last-admin guard. |
 | `/saas.accounts.v1.OrganizationService/UpdateOrgSettings` | unary | `PUT /v1/organizations/{org_id}/settings` | `org_admin` | exposure=AUTHENTICATED; tenant=ORG_ADMIN | — | org_id → ORGANIZATION/DIRECT_ID | SUCCESS: org.settings_updated | FORBIDDEN / STANDARD_WRITE | CONFIDENTIAL → CONFIDENTIAL | Update branding (logo, color, custom domain). |
+| `/saas.accounts.v1.OrganizationService/UpdateOrganizationSettings` | unary | `POST /v1/organizations/{org_id}/generic-settings` | `org_admin` | exposure=AUTHENTICATED; tenant=ORG_ADMIN | — | org_id → ORGANIZATION/DIRECT_ID | SUCCESS: org.settings_updated | FORBIDDEN / STANDARD_WRITE | CONFIDENTIAL → CONFIDENTIAL | Patch generic typed org settings; clear_mask resets fields. |
 | `/saas.accounts.v1.PermissionService/AssignRole` | unary | `POST /v1/role-assignments` | `auth` | exposure=AUTHENTICATED; tenant=USER | — | — | SUCCESS: role.assigned | FORBIDDEN / STANDARD_WRITE | CONFIDENTIAL → CONFIDENTIAL | Grant a role to a principal/team. |
 | `/saas.accounts.v1.PermissionService/CheckAccess` | unary | `—` | `internal` | exposure=INTERNAL; tenant=NONE | — | — | — | FORBIDDEN / INTERNAL | CONFIDENTIAL → CONFIDENTIAL | Internal hierarchical + per-record authz decision. |
 | `/saas.accounts.v1.PermissionService/CheckPermission` | unary | `—` | `internal` | exposure=INTERNAL; tenant=NONE | — | — | — | FORBIDDEN / INTERNAL | CONFIDENTIAL → CONFIDENTIAL | Internal authz decision (auth-sidecar caller). |
@@ -165,7 +167,7 @@ The compact tier is retained for compatibility. Guards, resource bindings, audit
 - `auth`: 38
 - `internal`: 10
 - `mfa`: 3
-- `org_admin`: 34
-- `org_member`: 28
+- `org_admin`: 35
+- `org_member`: 29
 - `platform_admin`: 22
 - `public`: 16

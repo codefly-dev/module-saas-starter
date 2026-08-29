@@ -5,7 +5,9 @@ package saas.accounts.v1;
 import "buf/validate/validate.proto";
 import "google/api/annotations.proto";
 import "google/protobuf/empty.proto";
+import "google/protobuf/field_mask.proto";
 import "saas/accounts/v1/common.proto";
+import "saas/composed/org_settings/v1/settings.proto";
 import "saas/policy/v1/options.proto";
 
 // --- Organization Settings (branding) ---
@@ -16,6 +18,34 @@ message OrgSettings {
   string primary_color = 3;
   string custom_domain = 4;
   string favicon_url = 5;
+}
+
+// --- Organization Settings (generic, typed, composable) ---
+
+// OrganizationSettings is the org analogue of UserSettings
+// (user_settings.proto): a generic, typed, JSONB-backed preferences blob whose
+// product-contributed fields are generated into the composed container. Storage
+// keeps sparse ProtoJSON; the API recursively merges typed protobuf patches and
+// resolves catalog defaults on read. It is distinct from OrgSettings above,
+// which remains the fixed-column branding surface.
+message OrganizationSettings {
+  // Product-contributed org settings are generated into this typed container.
+  // ProtoJSON storage and API patching preserve the same schema end to end.
+  saas.composed.org_settings.v1.Settings composed = 1000;
+}
+
+message GetOrganizationSettingsRequest {
+  string org_id = 1 [(buf.validate.field).string.uuid = true];
+}
+
+message UpdateOrganizationSettingsRequest {
+  string org_id = 1 [(buf.validate.field).string.uuid = true];
+  // Partial — only explicitly present fields change. Missing parent messages
+  // are materialized by the typed settings SDK, and nested siblings survive.
+  OrganizationSettings patch = 2;
+  // Paths whose explicit overrides should be removed before applying patch.
+  // A cleared field resolves to its catalog default on the returned document.
+  google.protobuf.FieldMask clear_mask = 3;
 }
 
 message GetOrgSettingsRequest {
@@ -252,6 +282,56 @@ service OrganizationService {
     };
     option (google.api.http) = {
       put: "/v1/organizations/{org_id}/settings"
+      body: "*"
+    };
+  }
+
+  // Generic org settings — the org analogue of UserSettingsService. Whole typed
+  // message in, whole resolved message out; adding an org setting is proto +
+  // regen only, with no endpoint change. Reads require org membership; writes
+  // require org admin, mirroring the branding surface above.
+  rpc GetOrganizationSettings(GetOrganizationSettingsRequest) returns (OrganizationSettings) {
+    option (saas.policy.v1.method_policy) = {
+      exposure: EXPOSURE_AUTHENTICATED
+      tenant: TENANT_REQUIREMENT_ORG_MEMBER
+      resource_bindings: {
+        request_field: "org_id"
+        target: RESOURCE_TARGET_ORGANIZATION
+        lookup: RESOURCE_LOOKUP_DIRECT_ID
+      }
+      mfa: MFA_REQUIREMENT_NONE
+      audit: {emission: AUDIT_EMISSION_NONE}
+      idempotency: IDEMPOTENCY_REQUIREMENT_FORBIDDEN
+      rate_limit: RATE_LIMIT_CLASS_STANDARD_READ
+      request_sensitivity: SENSITIVITY_CONFIDENTIAL
+      response_sensitivity: SENSITIVITY_CONFIDENTIAL
+      platform_role: PLATFORM_ROLE_REQUIREMENT_NONE
+    };
+    option (google.api.http) = {get: "/v1/organizations/{org_id}/generic-settings"};
+  }
+
+  rpc UpdateOrganizationSettings(UpdateOrganizationSettingsRequest) returns (OrganizationSettings) {
+    option (saas.policy.v1.method_policy) = {
+      exposure: EXPOSURE_AUTHENTICATED
+      tenant: TENANT_REQUIREMENT_ORG_ADMIN
+      resource_bindings: {
+        request_field: "org_id"
+        target: RESOURCE_TARGET_ORGANIZATION
+        lookup: RESOURCE_LOOKUP_DIRECT_ID
+      }
+      mfa: MFA_REQUIREMENT_NONE
+      audit: {
+        events: "org.settings_updated"
+        emission: AUDIT_EMISSION_SUCCESS
+      }
+      idempotency: IDEMPOTENCY_REQUIREMENT_FORBIDDEN
+      rate_limit: RATE_LIMIT_CLASS_STANDARD_WRITE
+      request_sensitivity: SENSITIVITY_CONFIDENTIAL
+      response_sensitivity: SENSITIVITY_CONFIDENTIAL
+      platform_role: PLATFORM_ROLE_REQUIREMENT_NONE
+    };
+    option (google.api.http) = {
+      post: "/v1/organizations/{org_id}/generic-settings"
       body: "*"
     };
   }
