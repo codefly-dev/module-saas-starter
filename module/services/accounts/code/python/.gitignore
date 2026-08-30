@@ -1,0 +1,8 @@
+# Python bytecode and test/build artifacts. The CI package job runs
+# `pip install .[test]` and pytest in-tree; these must stay out of the worktree
+# so the canonical-archive determinism check sees a clean commit.
+__pycache__/
+*.py[cod]
+.pytest_cache/
+build/
+*.egg-info/

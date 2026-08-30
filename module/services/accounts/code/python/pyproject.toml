@@ -1,0 +1,22 @@
+[project]
+name = "saas-settings"
+version = "0.1.0"
+description = "Schema-agnostic typed-settings runtime owned by the SaaS Starter."
+requires-python = ">=3.10"
+# Floor matches the protoc-gen-python:v29.3 pin in buf.gen.composition.python.yaml:
+# generated *_pb2.py carry a runtime-version guard that rejects an older runtime.
+dependencies = ["protobuf>=5.29.3"]
+
+[project.optional-dependencies]
+test = ["pytest>=8"]
+
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools]
+packages = ["saas_settings"]
+
+[tool.pytest.ini_options]
+pythonpath = ["."]
+testpaths = ["tests"]

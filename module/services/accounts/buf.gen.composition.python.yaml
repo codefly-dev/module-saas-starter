@@ -1,0 +1,9 @@
+# Python composed-settings bindings, isolated from the Go/TypeScript template so
+# a Buf Schema Registry outage or a plugin-version miss fails only the Python
+# codegen instead of aborting the shared Go/TypeScript generation.
+version: v2
+plugins:
+  - remote: buf.build/protocolbuffers/python:v29.3
+    out: code/python/gen
+  - remote: buf.build/protocolbuffers/pyi:v29.3
+    out: code/python/gen

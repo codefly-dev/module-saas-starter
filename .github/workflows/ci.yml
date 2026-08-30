@@ -147,6 +147,12 @@ jobs:
       - uses: bufbuild/buf-setup-action@a47c93e0b1648d5651a065437926377d060baa99 # v1.50.0
         with:
           version: 1.72.0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install the Python settings runtime
+        working-directory: module/services/accounts/code/python
+        run: python3 -m pip install --quiet ".[test]"
       - name: Clean-install frontend dependencies
         run: npm ci --prefix module/services/frontend/code
       - name: Validate the package contract

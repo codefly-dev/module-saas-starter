@@ -7,10 +7,12 @@ Settings are a SaaS Starter capability, not a Codefly SDK capability.
 - `services/accounts/code/pkg/settings` is the schema-agnostic Go runtime.
 - `services/frontend/code/packages/saas-settings` is the schema-agnostic
   TypeScript runtime and public frontend/plugin package.
+- `services/accounts/code/python/saas_settings` is the schema-agnostic Python
+  runtime.
 - `services/accounts/proto/saas/accounts/v1/user_settings.proto` is the
   concrete product schema.
-- Generated Go and TypeScript protobuf files are the concrete application
-  model.
+- Generated Go, TypeScript, and Python protobuf files are the concrete
+  application model.
 
 A product such as Warden owns the concrete proto at that same module overlay
 path and generates its Go and TypeScript bindings from the product's actual
@@ -118,12 +120,34 @@ const clearPaths = [Settings.appearance.theme.path];
 The frontend sends generated protobuf messages. It does not construct or parse
 the stored JSON representation.
 
+## Python
+
+Use the matching product catalog built from the generated Python bindings with
+`must_string` / `must_bool` / `must_enum`; never traverse protobuf parents or
+address JSON keys directly:
+
+```python
+import saas_settings as settings
+
+theme = settings.must_enum(UserSettings(), "appearance.theme", THEME_SYSTEM)
+value = theme.get(document)
+theme.set(document, THEME_DARK)
+path = theme.path
+```
+
+`get` returns the default without mutating `document`. `set` creates missing
+parents. `clear` removes the field and prunes empty parents. `lookup` preserves
+the distinction between absent and explicitly present zero values.
+`JSONCodec.marshal` / `unmarshal` is the only conversion boundary to the stored
+sparse ProtoJSON. The runtime is copied unchanged into products, exactly like
+the Go and TypeScript runtimes.
+
 ## Extending settings
 
 Add the field to the product protobuf first, keep scalar presence explicit,
-regenerate Go and TypeScript, then expose it in the product's two typed
-catalogs with one default. The schema-agnostic Go and TypeScript runtimes must
-remain byte-for-byte reusable. Add tests for missing parents,
+regenerate Go, TypeScript, and Python, then expose it in the product's typed
+catalogs with one default. The schema-agnostic Go, TypeScript, and Python
+runtimes must remain byte-for-byte reusable. Add tests for missing parents,
 present-but-empty parents, every explicit zero value, repeated default
 application, clear/reset pruning with siblings, ProtoJSON null/round trips,
 concurrent sparse updates, and real Postgres recursive merge behavior. A

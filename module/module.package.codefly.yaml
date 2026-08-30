@@ -47,11 +47,17 @@ generators:
   - name: composed-go-format
     working-directory: tools
     command: [go, run, ./cmd/module-format-generated, ../services/accounts/code/pkg/gen/saas/composed/settings/v1, ../services/accounts/code/pkg/gen/saas/composed/org_settings/v1, ../services/accounts/code/pkg/gen/contributed]
+  - name: composed-python-protobuf
+    working-directory: services/accounts
+    command: [buf, generate, proto, --path, proto/saas/composed/settings/v1/settings.proto, --path, proto/contributed, --template, buf.gen.composition.python.yaml]
 
 conformance:
   - name: composition-contracts
     working-directory: tools
     command: [go, test, ./composition]
+  - name: settings-python-runtime
+    working-directory: services/accounts/code/python
+    command: [python3, -m, pytest, -q]
 
 migrations:
   - id: composition-v2

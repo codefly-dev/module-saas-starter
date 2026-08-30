@@ -61,6 +61,10 @@ func TestGenerateConsumesCoreInputAndPublishesCompleteCatalog(t *testing.T) {
 	if _, err := os.Stat(filepath.Join(fixture.projection, "services/accounts/proto/contributed/contributions/settings/reference.proto")); err != nil {
 		t.Fatalf("settings source was not staged for protobuf compilation: %v", err)
 	}
+	settingsPython := string(readOutput(t, fixture.projection, SettingsPythonOutput))
+	if !strings.Contains(settingsPython, "SETTINGS_FIELDS = (") || !strings.Contains(settingsPython, `"name": "reference_settings", "number": `) || !strings.Contains(settingsPython, `"message": "example.settings.v1.ReferenceSettings"`) {
+		t.Fatalf("settings contribution was not wired into the Python field catalog:\n%s", settingsPython)
+	}
 	command := exec.Command("buf", "build")
 	command.Dir = filepath.Join(fixture.projection, "services/accounts/proto")
 	if output, err := command.CombinedOutput(); err != nil {
@@ -306,6 +310,7 @@ func assertSameOutputs(t *testing.T, left, right string) {
 		SettingsProtoOutput,
 		SettingsGoOutput,
 		SettingsTypeScriptOut,
+		SettingsPythonOutput,
 		PermissionsOutput,
 		PermissionGoOutput,
 		FixturesOutput,
