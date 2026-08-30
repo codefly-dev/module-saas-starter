@@ -854,7 +854,7 @@ const file_saas_accounts_v1_organizations_proto_rawDesc = "" +
 	"\x15ListOrgMembersRequest\x12\x1f\n" +
 	"\x06org_id\x18\x01 \x01(\tB\b\xbaH\x05r\x03\xb0\x01\x01R\x05orgId\"S\n" +
 	"\x16ListOrgMembersResponse\x129\n" +
-	"\amembers\x18\x01 \x03(\v2\x1f.saas.accounts.v1.OrgMembershipR\amembers2\xf4\x0e\n" +
+	"\amembers\x18\x01 \x03(\v2\x1f.saas.accounts.v1.OrgMembershipR\amembers2\xfc\x0e\n" +
 	"\x13OrganizationService\x12\xb2\x01\n" +
 	"\x12CreateOrganization\x12+.saas.accounts.v1.CreateOrganizationRequest\x1a,.saas.accounts.v1.CreateOrganizationResponse\"A\xc2\xf3\x18!\b\x02\x10\x020\x01:\x0f\n" +
 	"\vorg.created\x10\x02@\x01H\x04P\x03X\x03`\x01\x82\xd3\xe4\x93\x02\x16:\x01*\"\x11/v1/organizations\x12\x9d\x01\n" +
@@ -875,10 +875,10 @@ const file_saas_accounts_v1_organizations_proto_rawDesc = "" +
 	"\x06org_id\x10\x02\x18\x010\x01:\x18\n" +
 	"\x14org.settings_updated\x10\x02@\x01H\x04P\x03X\x03`\x01\x82\xd3\xe4\x93\x02(:\x01*\x1a#/v1/organizations/{org_id}/settings\x12\xce\x01\n" +
 	"\x17GetOrganizationSettings\x120.saas.accounts.v1.GetOrganizationSettingsRequest\x1a&.saas.accounts.v1.OrganizationSettings\"Y\xc2\xf3\x18\"\b\x02\x10\x03*\f\n" +
-	"\x06org_id\x10\x02\x18\x010\x01:\x02\x10\x01@\x01H\x03P\x03X\x03`\x01\x82\xd3\xe4\x93\x02-\x12+/v1/organizations/{org_id}/generic-settings\x12\xed\x01\n" +
-	"\x1aUpdateOrganizationSettings\x123.saas.accounts.v1.UpdateOrganizationSettingsRequest\x1a&.saas.accounts.v1.OrganizationSettings\"r\xc2\xf3\x188\b\x02\x10\x04*\f\n" +
-	"\x06org_id\x10\x02\x18\x010\x01:\x18\n" +
-	"\x14org.settings_updated\x10\x02@\x01H\x04P\x03X\x03`\x01\x82\xd3\xe4\x93\x020:\x01*\"+/v1/organizations/{org_id}/generic-settingsB\xba\x01\n" +
+	"\x06org_id\x10\x02\x18\x010\x01:\x02\x10\x01@\x01H\x03P\x03X\x03`\x01\x82\xd3\xe4\x93\x02-\x12+/v1/organizations/{org_id}/generic-settings\x12\xf5\x01\n" +
+	"\x1aUpdateOrganizationSettings\x123.saas.accounts.v1.UpdateOrganizationSettingsRequest\x1a&.saas.accounts.v1.OrganizationSettings\"z\xc2\xf3\x18@\b\x02\x10\x04*\f\n" +
+	"\x06org_id\x10\x02\x18\x010\x01: \n" +
+	"\x1corg.generic_settings_updated\x10\x02@\x01H\x04P\x03X\x03`\x01\x82\xd3\xe4\x93\x020:\x01*\"+/v1/organizations/{org_id}/generic-settingsB\xba\x01\n" +
 	"\x14com.saas.accounts.v1B\x12OrganizationsProtoP\x01Z,accounts/pkg/gen/saas/accounts/v1;accountsv1\xa2\x02\x03SAX\xaa\x02\x10Saas.Accounts.V1\xca\x02\x10Saas\\Accounts\\V1\xe2\x02\x1cSaas\\Accounts\\V1\\GPBMetadata\xea\x02\x12Saas::Accounts::V1b\x06proto3"
 
 var (

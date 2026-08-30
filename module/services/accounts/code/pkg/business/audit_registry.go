@@ -161,20 +161,21 @@ const (
 	EventBillingFreePlan        EventType = "billing.free_plan_selected"
 	EventEntitlementOverride    EventType = "entitlement.override"
 
-	EventOrgCreated         EventType = "org.created"
-	EventOrgMemberAdded     EventType = "org.member_added"
-	EventOrgMemberRemoved   EventType = "org.member_removed"
-	EventOrgSettingsUpdated EventType = "org.settings_updated"
-	EventTeamCreated        EventType = "team.created"
-	EventTeamUpdated        EventType = "team.updated"
-	EventTeamDeleted        EventType = "team.deleted"
-	EventTeamMemberAdded    EventType = "team.member_added"
-	EventTeamMemberRemoved  EventType = "team.member_removed"
-	EventSSOSetupStarted    EventType = "sso.setup.started"
-	EventSSODisabled        EventType = "sso.disabled"
-	EventOnboardingStepDone EventType = "onboarding.step_completed"
-	EventOnboardingStepSkip EventType = "onboarding.step_skipped"
-	EventActivationAchieved EventType = "activation.achieved"
+	EventOrgCreated                EventType = "org.created"
+	EventOrgMemberAdded            EventType = "org.member_added"
+	EventOrgMemberRemoved          EventType = "org.member_removed"
+	EventOrgSettingsUpdated        EventType = "org.settings_updated"
+	EventOrgGenericSettingsUpdated EventType = "org.generic_settings_updated"
+	EventTeamCreated               EventType = "team.created"
+	EventTeamUpdated               EventType = "team.updated"
+	EventTeamDeleted               EventType = "team.deleted"
+	EventTeamMemberAdded           EventType = "team.member_added"
+	EventTeamMemberRemoved         EventType = "team.member_removed"
+	EventSSOSetupStarted           EventType = "sso.setup.started"
+	EventSSODisabled               EventType = "sso.disabled"
+	EventOnboardingStepDone        EventType = "onboarding.step_completed"
+	EventOnboardingStepSkip        EventType = "onboarding.step_skipped"
+	EventActivationAchieved        EventType = "activation.achieved"
 
 	EventWaitlistJoined    EventType = "waitlist.joined"
 	EventWaitlistPending   EventType = "waitlist.pending"
@@ -273,7 +274,8 @@ var auditEventCatalog = []AuditEventDefinition{
 	def(EventOrgCreated, CategoryOrganization, "An organization was created.", str("name")),
 	def(EventOrgMemberAdded, CategoryOrganization, "A member was added to an organization."),
 	def(EventOrgMemberRemoved, CategoryOrganization, "A member was removed from an organization."),
-	def(EventOrgSettingsUpdated, CategoryOrganization, "Organization settings were updated."),
+	def(EventOrgSettingsUpdated, CategoryOrganization, "Organization branding settings were updated."),
+	def(EventOrgGenericSettingsUpdated, CategoryOrganization, "Organization generic (typed) settings were updated."),
 	def(EventTeamCreated, CategoryOrganization, "A team was created.", str("name")),
 	def(EventTeamUpdated, CategoryOrganization, "A team was updated."),
 	def(EventTeamDeleted, CategoryOrganization, "A team was deleted."),

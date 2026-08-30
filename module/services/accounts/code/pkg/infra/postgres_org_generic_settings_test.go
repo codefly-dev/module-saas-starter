@@ -2,6 +2,7 @@ package infra_test
 
 import (
 	"context"
+	"sync"
 	"testing"
 
 	gen "accounts/pkg/gen/saas/accounts/v1"
@@ -176,4 +177,49 @@ func TestOrgGenericSettingsColumnRejectsNonObjectAndOversize(t *testing.T) {
 		return err
 	})
 	require.Error(t, oversize, "settings larger than 128 KiB must fail the CHECK")
+}
+
+// TestOrgGenericSettingsConcurrentResetsSerializeWithoutLostUpdates drives the
+// store's INSERT … ON CONFLICT DO UPDATE path from parallel transactions, each
+// pruning a distinct key. The row lock must serialize them so no writer's delete
+// clobbers another's, and untouched siblings must survive — the org analogue of
+// the concurrent-sparse-patch guarantee the user surface has.
+func TestOrgGenericSettingsConcurrentResetsSerializeWithoutLostUpdates(t *testing.T) {
+	owner := seedUser(t)
+	orgID := seedOrg(t, owner)
+
+	require.NoError(t, testStore.WithOrgTx(testCtx, orgID, func(ctx context.Context) error {
+		tx := ctx.Value("tx").(pgx.Tx) //nolint:staticcheck // shared "tx" key with WithOrgTx
+		_, err := tx.Exec(ctx,
+			`INSERT INTO org_generic_settings (org_id, settings) VALUES ($1, $2::jsonb)`,
+			orgID, `{"keya":1,"keyb":1,"keyc":1,"keyd":1}`)
+		return err
+	}))
+
+	resetKeys := []string{"keya", "keyb"}
+	start := make(chan struct{})
+	errs := make(chan error, len(resetKeys))
+	var wait sync.WaitGroup
+	for _, key := range resetKeys {
+		wait.Add(1)
+		go func(key string) {
+			defer wait.Done()
+			<-start
+			errs <- testStore.WithOrgTx(testCtx, orgID, func(ctx context.Context) error {
+				return testStore.UpdateOrgGenericSettings(ctx, orgID, &gen.OrganizationSettings{}, []string{key})
+			})
+		}(key)
+	}
+	close(start)
+	wait.Wait()
+	close(errs)
+	for err := range errs {
+		require.NoError(t, err)
+	}
+
+	require.NoError(t, testStore.WithOrgTx(testCtx, orgID, func(ctx context.Context) error {
+		require.JSONEq(t, `{"keyc":1,"keyd":1}`, orgTxSettings(ctx, t, orgID),
+			"concurrent resets must each land without clobbering untouched siblings")
+		return nil
+	}))
 }

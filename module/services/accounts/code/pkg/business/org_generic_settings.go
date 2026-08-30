@@ -67,7 +67,7 @@ func (s *Service) UpdateOrgGenericSettings(
 	}); err != nil {
 		return nil, w.Wrapf(err, "cannot update org generic settings")
 	}
-	s.emit(ctx, actorID, "user", "org.settings_updated", "organization", orgID, orgID)
+	s.emit(ctx, actorID, "user", EventOrgGenericSettingsUpdated, "organization", orgID, orgID)
 	resolved, err := orgsettings.Resolve(settings)
 	if err != nil {
 		return nil, status.Error(codes.Internal, "resolve org settings")

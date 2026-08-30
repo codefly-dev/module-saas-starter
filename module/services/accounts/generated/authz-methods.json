@@ -2821,7 +2821,7 @@
         "mfa": "MFA_REQUIREMENT_NONE",
         "audit": {
           "events": [
-            "org.settings_updated"
+            "org.generic_settings_updated"
           ],
           "emission": "AUDIT_EMISSION_SUCCESS"
         },
@@ -2839,7 +2839,7 @@
         "service": "accounts"
       },
       "source_proto": "saas/accounts/v1/organizations.proto",
-      "policy_sha256": "9aefc84ce3f85228aa98b10f9dfa4bc480ca1498ea0183ff5087b90cd9815a79",
+      "policy_sha256": "8de4a57dd33af5bfe064b18fd33868d9f89a14b5ed591f3eb2855ef7b971be0c",
       "rate_limit_backend_failure_mode": "RATE_LIMIT_BACKEND_FAILURE_MODE_FAIL_OPEN"
     },
     {

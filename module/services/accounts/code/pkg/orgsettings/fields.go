@@ -14,7 +14,6 @@ import (
 	"accounts/pkg/settingscatalog"
 
 	"google.golang.org/protobuf/proto"
-	"google.golang.org/protobuf/reflect/protoreflect"
 
 	gen "accounts/pkg/gen/saas/accounts/v1"
 )
@@ -53,64 +52,20 @@ func resetFieldForPath(path string) (resetField, bool, error) {
 		if field.Name != name {
 			continue
 		}
-		if err := validateComposedField(name); err != nil {
+		if err := saassettings.ValidateComposedField(&gen.OrganizationSettings{}, "composed", name); err != nil {
 			return resetField{}, false, err
 		}
 		return resetField{
 			clear: func(settings *gen.OrganizationSettings) error {
-				_, err := accessComposedField(settings, name, true)
+				_, err := saassettings.AccessComposedField(settings, "composed", name, true)
 				return err
 			},
 			has: func(settings *gen.OrganizationSettings) (bool, error) {
-				return accessComposedField(settings, name, false)
+				return saassettings.AccessComposedField(settings, "composed", name, false)
 			},
 		}, true, nil
 	}
 	return resetField{}, false, nil
-}
-
-func validateComposedField(name string) error {
-	root := (&gen.OrganizationSettings{}).ProtoReflect().Descriptor()
-	container := root.Fields().ByName("composed")
-	if container == nil || container.Message() == nil {
-		return fmt.Errorf("generated OrganizationSettings is missing the composed settings container")
-	}
-	if container.Message().Fields().ByName(protoreflect.Name(name)) == nil {
-		return fmt.Errorf("generated composed org settings is missing catalog field %q", name)
-	}
-	return nil
-}
-
-func accessComposedField(settings *gen.OrganizationSettings, name string, clear bool) (bool, error) {
-	if settings == nil {
-		return false, nil
-	}
-	root := settings.ProtoReflect()
-	container := root.Descriptor().Fields().ByName("composed")
-	if container == nil || container.Message() == nil {
-		return false, fmt.Errorf("generated OrganizationSettings is missing the composed settings container")
-	}
-	field := container.Message().Fields().ByName(protoreflect.Name(name))
-	if field == nil {
-		return false, fmt.Errorf("generated composed org settings is missing catalog field %q", name)
-	}
-	if !root.Has(container) {
-		return false, nil
-	}
-	composed := root.Get(container).Message()
-	present := composed.Has(field)
-	if clear && present {
-		composed.Clear(field)
-		hasSibling := false
-		composed.Range(func(protoreflect.FieldDescriptor, protoreflect.Value) bool {
-			hasSibling = true
-			return false
-		})
-		if !hasSibling {
-			root.Clear(container)
-		}
-	}
-	return present, nil
 }
 
 // ValidateResetPaths rejects unknown paths, duplicates, and ambiguous requests

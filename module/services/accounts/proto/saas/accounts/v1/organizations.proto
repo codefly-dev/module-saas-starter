@@ -321,7 +321,7 @@ service OrganizationService {
       }
       mfa: MFA_REQUIREMENT_NONE
       audit: {
-        events: "org.settings_updated"
+        events: "org.generic_settings_updated"
         emission: AUDIT_EMISSION_SUCCESS
       }
       idempotency: IDEMPOTENCY_REQUIREMENT_FORBIDDEN
