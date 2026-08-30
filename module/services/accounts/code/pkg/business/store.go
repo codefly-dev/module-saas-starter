@@ -286,6 +286,12 @@ type Store interface {
 	GetOrgSettings(ctx context.Context, orgID string) (*OrgSettings, error)
 	UpsertOrgSettings(ctx context.Context, settings *OrgSettings) error
 
+	// Organization Settings (generic, typed). Mirrors the per-user surface:
+	// the Store boundary is protobuf-typed and only the Postgres implementation
+	// sees the sparse ProtoJSON stored in JSONB.
+	GetOrgGenericSettings(ctx context.Context, orgID string) (*gen.OrganizationSettings, error)
+	UpdateOrgGenericSettings(ctx context.Context, orgID string, patch *gen.OrganizationSettings, resetPaths []string) error
+
 	// Notifications
 	CreateNotification(ctx context.Context, n *Notification) error
 	ListNotifications(ctx context.Context, userID string, pageSize int, pageToken string) ([]*Notification, string, error)

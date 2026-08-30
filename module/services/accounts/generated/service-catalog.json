@@ -159,10 +159,12 @@
         "/saas.accounts.v1.OrganizationService/CreateOrganization",
         "/saas.accounts.v1.OrganizationService/GetOrgSettings",
         "/saas.accounts.v1.OrganizationService/GetOrganization",
+        "/saas.accounts.v1.OrganizationService/GetOrganizationSettings",
         "/saas.accounts.v1.OrganizationService/ListMembers",
         "/saas.accounts.v1.OrganizationService/ListOrganizations",
         "/saas.accounts.v1.OrganizationService/RemoveMember",
-        "/saas.accounts.v1.OrganizationService/UpdateOrgSettings"
+        "/saas.accounts.v1.OrganizationService/UpdateOrgSettings",
+        "/saas.accounts.v1.OrganizationService/UpdateOrganizationSettings"
       ]
     },
     {
@@ -3742,6 +3744,62 @@
       }
     },
     {
+      "procedure": "/saas.accounts.v1.OrganizationService/GetOrganizationSettings",
+      "service": "OrganizationService",
+      "full_service": "saas.accounts.v1.OrganizationService",
+      "method": "GetOrganizationSettings",
+      "input_type": "saas.accounts.v1.GetOrganizationSettingsRequest",
+      "output_type": "saas.accounts.v1.OrganizationSettings",
+      "client_streaming": false,
+      "server_streaming": false,
+      "deprecated": false,
+      "source_proto": "saas/accounts/v1/organizations.proto",
+      "protocols": [
+        "PROTOCOL_GRPC",
+        "PROTOCOL_CONNECT",
+        "PROTOCOL_REST"
+      ],
+      "http_bindings": [
+        {
+          "method": "GET",
+          "path": "/v1/organizations/{org_id}/generic-settings",
+          "body": "",
+          "response_body": ""
+        }
+      ],
+      "policy": {
+        "exposure": "EXPOSURE_AUTHENTICATED",
+        "tenant": "TENANT_REQUIREMENT_ORG_MEMBER",
+        "permissions": [],
+        "scopes": [],
+        "resource_bindings": [
+          {
+            "request_field": "org_id",
+            "target": "RESOURCE_TARGET_ORGANIZATION",
+            "lookup": "RESOURCE_LOOKUP_DIRECT_ID"
+          }
+        ],
+        "mfa": "MFA_REQUIREMENT_NONE",
+        "audit": {
+          "events": [],
+          "emission": "AUDIT_EMISSION_NONE"
+        },
+        "idempotency": "IDEMPOTENCY_REQUIREMENT_FORBIDDEN",
+        "rate_limit": "RATE_LIMIT_CLASS_STANDARD_READ",
+        "request_sensitivity": "SENSITIVITY_CONFIDENTIAL",
+        "response_sensitivity": "SENSITIVITY_CONFIDENTIAL",
+        "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
+        "authentication_factor_attempt": false,
+        "conditions": []
+      },
+      "policy_tier": "org_member",
+      "description": "Read generic typed org settings (composed JSONB blob).",
+      "owner": {
+        "module": "saas-starter",
+        "service": "accounts"
+      }
+    },
+    {
       "procedure": "/saas.accounts.v1.OrganizationService/ListMembers",
       "service": "OrganizationService",
       "full_service": "saas.accounts.v1.OrganizationService",
@@ -3958,6 +4016,64 @@
       },
       "policy_tier": "org_admin",
       "description": "Update branding (logo, color, custom domain).",
+      "owner": {
+        "module": "saas-starter",
+        "service": "accounts"
+      }
+    },
+    {
+      "procedure": "/saas.accounts.v1.OrganizationService/UpdateOrganizationSettings",
+      "service": "OrganizationService",
+      "full_service": "saas.accounts.v1.OrganizationService",
+      "method": "UpdateOrganizationSettings",
+      "input_type": "saas.accounts.v1.UpdateOrganizationSettingsRequest",
+      "output_type": "saas.accounts.v1.OrganizationSettings",
+      "client_streaming": false,
+      "server_streaming": false,
+      "deprecated": false,
+      "source_proto": "saas/accounts/v1/organizations.proto",
+      "protocols": [
+        "PROTOCOL_GRPC",
+        "PROTOCOL_CONNECT",
+        "PROTOCOL_REST"
+      ],
+      "http_bindings": [
+        {
+          "method": "POST",
+          "path": "/v1/organizations/{org_id}/generic-settings",
+          "body": "*",
+          "response_body": ""
+        }
+      ],
+      "policy": {
+        "exposure": "EXPOSURE_AUTHENTICATED",
+        "tenant": "TENANT_REQUIREMENT_ORG_ADMIN",
+        "permissions": [],
+        "scopes": [],
+        "resource_bindings": [
+          {
+            "request_field": "org_id",
+            "target": "RESOURCE_TARGET_ORGANIZATION",
+            "lookup": "RESOURCE_LOOKUP_DIRECT_ID"
+          }
+        ],
+        "mfa": "MFA_REQUIREMENT_NONE",
+        "audit": {
+          "events": [
+            "org.generic_settings_updated"
+          ],
+          "emission": "AUDIT_EMISSION_SUCCESS"
+        },
+        "idempotency": "IDEMPOTENCY_REQUIREMENT_FORBIDDEN",
+        "rate_limit": "RATE_LIMIT_CLASS_STANDARD_WRITE",
+        "request_sensitivity": "SENSITIVITY_CONFIDENTIAL",
+        "response_sensitivity": "SENSITIVITY_CONFIDENTIAL",
+        "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
+        "authentication_factor_attempt": false,
+        "conditions": []
+      },
+      "policy_tier": "org_admin",
+      "description": "Patch generic typed org settings; clear_mask resets fields.",
       "owner": {
         "module": "saas-starter",
         "service": "accounts"

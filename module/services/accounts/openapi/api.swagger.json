@@ -53,6 +53,19 @@
       },
       "type": "object"
     },
+    "OrganizationServiceUpdateOrganizationSettingsBody": {
+      "properties": {
+        "clearMask": {
+          "description": "Paths whose explicit overrides should be removed before applying patch.\nA cleared field resolves to its catalog default on the returned document.",
+          "type": "string"
+        },
+        "patch": {
+          "$ref": "#/definitions/v1OrganizationSettings",
+          "description": "Partial — only explicitly present fields change. Missing parent messages\nare materialized by the typed settings SDK, and nested siblings survive."
+        }
+      },
+      "type": "object"
+    },
     "PlatformAdminServiceImpersonateUserBody": {
       "type": "object"
     },
@@ -195,6 +208,12 @@
           "type": "string"
         }
       },
+      "type": "object"
+    },
+    "composedOrg_settingsV1Settings": {
+      "type": "object"
+    },
+    "composedSettingsV1Settings": {
       "type": "object"
     },
     "protobufAny": {
@@ -2654,6 +2673,16 @@
       },
       "type": "object"
     },
+    "v1OrganizationSettings": {
+      "description": "OrganizationSettings is the org analogue of UserSettings\n(user_settings.proto): a generic, typed, JSONB-backed preferences blob whose\nproduct-contributed fields are generated into the composed container. Storage\nkeeps sparse ProtoJSON; the API recursively merges typed protobuf patches and\nresolves catalog defaults on read. It is distinct from OrgSettings above,\nwhich remains the fixed-column branding surface.",
+      "properties": {
+        "composed": {
+          "$ref": "#/definitions/composedOrg_settingsV1Settings",
+          "description": "Product-contributed org settings are generated into this typed container.\nProtoJSON storage and API patching preserve the same schema end to end."
+        }
+      },
+      "type": "object"
+    },
     "v1OverrideEntitlementResponse": {
       "properties": {
         "id": {
@@ -3387,9 +3416,6 @@
       },
       "type": "object"
     },
-    "v1Settings": {
-      "type": "object"
-    },
     "v1SetupTOTPRequest": {
       "type": "object"
     },
@@ -3979,7 +4005,7 @@
           "$ref": "#/definitions/v1UserAppearanceSettings"
         },
         "composed": {
-          "$ref": "#/definitions/v1Settings",
+          "$ref": "#/definitions/composedSettingsV1Settings",
           "description": "Product-contributed settings are generated into this typed container.\nProtoJSON storage and API patching preserve the same schema end to end."
         },
         "email": {
@@ -6078,6 +6104,73 @@
             "description": "A successful response.",
             "schema": {
               "$ref": "#/definitions/v1Organization"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/rpcStatus"
+            }
+          }
+        },
+        "tags": [
+          "OrganizationService"
+        ]
+      }
+    },
+    "/v1/organizations/{orgId}/generic-settings": {
+      "get": {
+        "operationId": "OrganizationService_GetOrganizationSettings",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "orgId",
+            "required": true,
+            "type": "string"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1OrganizationSettings"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/rpcStatus"
+            }
+          }
+        },
+        "summary": "Generic org settings — the org analogue of UserSettingsService. Whole typed\nmessage in, whole resolved message out; adding an org setting is proto +\nregen only, with no endpoint change. Reads require org membership; writes\nrequire org admin, mirroring the branding surface above.",
+        "tags": [
+          "OrganizationService"
+        ]
+      },
+      "post": {
+        "operationId": "OrganizationService_UpdateOrganizationSettings",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "orgId",
+            "required": true,
+            "type": "string"
+          },
+          {
+            "in": "body",
+            "name": "body",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/OrganizationServiceUpdateOrganizationSettingsBody"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1OrganizationSettings"
             }
           },
           "default": {

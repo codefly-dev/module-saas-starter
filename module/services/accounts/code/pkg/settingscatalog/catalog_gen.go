@@ -13,3 +13,9 @@ var fields = [...]Field{}
 func Fields() []Field {
 	return append([]Field(nil), fields[:]...)
 }
+
+var orgFields = [...]Field{}
+
+func OrgFields() []Field {
+	return append([]Field(nil), orgFields[:]...)
+}

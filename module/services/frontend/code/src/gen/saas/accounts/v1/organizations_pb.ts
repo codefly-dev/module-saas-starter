@@ -6,10 +6,12 @@ import type { GenFile, GenMessage, GenService } from "@bufbuild/protobuf/codegen
 import { fileDesc, messageDesc, serviceDesc } from "@bufbuild/protobuf/codegenv2";
 import { file_buf_validate_validate } from "../../../buf/validate/validate_pb";
 import { file_google_api_annotations } from "../../../google/api/annotations_pb";
-import type { EmptySchema } from "@bufbuild/protobuf/wkt";
-import { file_google_protobuf_empty } from "@bufbuild/protobuf/wkt";
+import type { EmptySchema, FieldMask } from "@bufbuild/protobuf/wkt";
+import { file_google_protobuf_empty, file_google_protobuf_field_mask } from "@bufbuild/protobuf/wkt";
 import type { Organization, OrganizationSchema, OrgMembership, OrgRole } from "./common_pb";
 import { file_saas_accounts_v1_common } from "./common_pb";
+import type { Settings } from "../../composed/org_settings/v1/settings_pb";
+import { file_saas_composed_org_settings_v1_settings } from "../../composed/org_settings/v1/settings_pb";
 import { file_saas_policy_v1_options } from "../../policy/v1/options_pb";
 import type { Message } from "@bufbuild/protobuf";
 
@@ -17,7 +19,7 @@ import type { Message } from "@bufbuild/protobuf";
  * Describes the file saas/accounts/v1/organizations.proto.
  */
 export const file_saas_accounts_v1_organizations: GenFile = /*@__PURE__*/
-  fileDesc("CiRzYWFzL2FjY291bnRzL3YxL29yZ2FuaXphdGlvbnMucHJvdG8SEHNhYXMuYWNjb3VudHMudjEicgoLT3JnU2V0dGluZ3MSDgoGb3JnX2lkGAEgASgJEhAKCGxvZ29fdXJsGAIgASgJEhUKDXByaW1hcnlfY29sb3IYAyABKAkSFQoNY3VzdG9tX2RvbWFpbhgEIAEoCRITCgtmYXZpY29uX3VybBgFIAEoCSIxChVHZXRPcmdTZXR0aW5nc1JlcXVlc3QSGAoGb3JnX2lkGAEgASgJQgi6SAVyA7ABASKnAgoYVXBkYXRlT3JnU2V0dGluZ3NSZXF1ZXN0EhgKBm9yZ19pZBgBIAEoCUIIukgFcgOwAQESLwoIbG9nb191cmwYAiABKAlCHbpIGnIYGIAQMhNeKHxodHRwczovL1teXHNdKykkEjIKDXByaW1hcnlfY29sb3IYAyABKAlCG7pIGHIWMhReKHwjWzAtOUEtRmEtZl17Nn0pJBJYCg1jdXN0b21fZG9tYWluGAQgASgJQkG6SD5yPBj9ATI3Xih8KFthLXowLTldKFthLXowLTktXXswLDYxfVthLXowLTldKT9cLikrW2Etel17Miw2M30pJBIyCgtmYXZpY29uX3VybBgFIAEoCUIdukgachgYgBAyE14ofGh0dHBzOi8vW15cc10rKSQiaQoZQ3JlYXRlT3JnYW5pemF0aW9uUmVxdWVzdBIVCgRuYW1lGAEgASgJQge6SARyAhABEjUKBHNsdWcYAiABKAlCJ7pIJHIiEAEYPzIcXlthLXowLTldW2EtejAtOS1dKlthLXowLTldJCJSChpDcmVhdGVPcmdhbml6YXRpb25SZXNwb25zZRI0Cgxvcmdhbml6YXRpb24YASABKAsyHi5zYWFzLmFjY291bnRzLnYxLk9yZ2FuaXphdGlvbiIuChZHZXRPcmdhbml6YXRpb25SZXF1ZXN0EhQKAmlkGAEgASgJQgi6SAVyA7ABASIaChhMaXN0T3JnYW5pemF0aW9uc1JlcXVlc3QiUgoZTGlzdE9yZ2FuaXphdGlvbnNSZXNwb25zZRI1Cg1vcmdhbml6YXRpb25zGAEgAygLMh4uc2Fhcy5hY2NvdW50cy52MS5Pcmdhbml6YXRpb24icwoTQWRkT3JnTWVtYmVyUmVxdWVzdBIYCgZvcmdfaWQYASABKAlCCLpIBXIDsAEBEhkKB3VzZXJfaWQYAiABKAlCCLpIBXIDsAEBEicKBHJvbGUYAyABKA4yGS5zYWFzLmFjY291bnRzLnYxLk9yZ1JvbGUiTQoWUmVtb3ZlT3JnTWVtYmVyUmVxdWVzdBIYCgZvcmdfaWQYASABKAlCCLpIBXIDsAEBEhkKB3VzZXJfaWQYAiABKAlCCLpIBXIDsAEBIjEKFUxpc3RPcmdNZW1iZXJzUmVxdWVzdBIYCgZvcmdfaWQYASABKAlCCLpIBXIDsAEBIkoKFkxpc3RPcmdNZW1iZXJzUmVzcG9uc2USMAoHbWVtYmVycxgBIAMoCzIfLnNhYXMuYWNjb3VudHMudjEuT3JnTWVtYmVyc2hpcDKzCwoTT3JnYW5pemF0aW9uU2VydmljZRKyAQoSQ3JlYXRlT3JnYW5pemF0aW9uEisuc2Fhcy5hY2NvdW50cy52MS5DcmVhdGVPcmdhbml6YXRpb25SZXF1ZXN0Giwuc2Fhcy5hY2NvdW50cy52MS5DcmVhdGVPcmdhbml6YXRpb25SZXNwb25zZSJBwvMYIQgCEAIwAToPCgtvcmcuY3JlYXRlZBACQAFIBFADWANgAYLT5JMCFjoBKiIRL3YxL29yZ2FuaXphdGlvbnMSnQEKD0dldE9yZ2FuaXphdGlvbhIoLnNhYXMuYWNjb3VudHMudjEuR2V0T3JnYW5pemF0aW9uUmVxdWVzdBoeLnNhYXMuYWNjb3VudHMudjEuT3JnYW5pemF0aW9uIkDC8xgeCAIQAyoICgJpZBACGAEwAToCEAFAAUgDUANYA2ABgtPkkwIYEhYvdjEvb3JnYW5pemF0aW9ucy97aWR9Ep8BChFMaXN0T3JnYW5pemF0aW9ucxIqLnNhYXMuYWNjb3VudHMudjEuTGlzdE9yZ2FuaXphdGlvbnNSZXF1ZXN0Gisuc2Fhcy5hY2NvdW50cy52MS5MaXN0T3JnYW5pemF0aW9uc1Jlc3BvbnNlIjHC8xgUCAIQAjABOgIQAUABSANQA1gDYAGC0+STAhMSES92MS9vcmdhbml6YXRpb25zErEBCglBZGRNZW1iZXISJS5zYWFzLmFjY291bnRzLnYxLkFkZE9yZ01lbWJlclJlcXVlc3QaFi5nb29nbGUucHJvdG9idWYuRW1wdHkiZcLzGDQIAhAEKgwKBm9yZ19pZBACGAEwAToUChBvcmcubWVtYmVyX2FkZGVkEAJAAUgEUANYA2ABgtPkkwInOgEqIiIvdjEvb3JnYW5pemF0aW9ucy97b3JnX2lkfS9tZW1iZXJzEsABCgxSZW1vdmVNZW1iZXISKC5zYWFzLmFjY291bnRzLnYxLlJlbW92ZU9yZ01lbWJlclJlcXVlc3QaFi5nb29nbGUucHJvdG9idWYuRW1wdHkibsLzGDYIAhAEKgwKBm9yZ19pZBACGAEwAToWChJvcmcubWVtYmVyX3JlbW92ZWQQAkABSARQA1gDYAGC0+STAi4qLC92MS9vcmdhbml6YXRpb25zL3tvcmdfaWR9L21lbWJlcnMve3VzZXJfaWR9ErIBCgtMaXN0TWVtYmVycxInLnNhYXMuYWNjb3VudHMudjEuTGlzdE9yZ01lbWJlcnNSZXF1ZXN0Giguc2Fhcy5hY2NvdW50cy52MS5MaXN0T3JnTWVtYmVyc1Jlc3BvbnNlIlDC8xgiCAIQAyoMCgZvcmdfaWQQAhgBMAE6AhABQAFIA1ADWANgAYLT5JMCJBIiL3YxL29yZ2FuaXphdGlvbnMve29yZ19pZH0vbWVtYmVycxKrAQoOR2V0T3JnU2V0dGluZ3MSJy5zYWFzLmFjY291bnRzLnYxLkdldE9yZ1NldHRpbmdzUmVxdWVzdBodLnNhYXMuYWNjb3VudHMudjEuT3JnU2V0dGluZ3MiUcLzGCIIAhADKgwKBm9yZ19pZBACGAEwAToCEAFAAUgDUANYA2ABgtPkkwIlEiMvdjEvb3JnYW5pemF0aW9ucy97b3JnX2lkfS9zZXR0aW5ncxLKAQoRVXBkYXRlT3JnU2V0dGluZ3MSKi5zYWFzLmFjY291bnRzLnYxLlVwZGF0ZU9yZ1NldHRpbmdzUmVxdWVzdBodLnNhYXMuYWNjb3VudHMudjEuT3JnU2V0dGluZ3MiasLzGDgIAhAEKgwKBm9yZ19pZBACGAEwAToYChRvcmcuc2V0dGluZ3NfdXBkYXRlZBACQAFIBFADWANgAYLT5JMCKDoBKhojL3YxL29yZ2FuaXphdGlvbnMve29yZ19pZH0vc2V0dGluZ3NCugEKFGNvbS5zYWFzLmFjY291bnRzLnYxQhJPcmdhbml6YXRpb25zUHJvdG9QAVosYWNjb3VudHMvcGtnL2dlbi9zYWFzL2FjY291bnRzL3YxO2FjY291bnRzdjGiAgNTQViqAhBTYWFzLkFjY291bnRzLlYxygIQU2Fhc1xBY2NvdW50c1xWMeICHFNhYXNcQWNjb3VudHNcVjFcR1BCTWV0YWRhdGHqAhJTYWFzOjpBY2NvdW50czo6VjFiBnByb3RvMw", [file_buf_validate_validate, file_google_api_annotations, file_google_protobuf_empty, file_saas_accounts_v1_common, file_saas_policy_v1_options]);
+  fileDesc("CiRzYWFzL2FjY291bnRzL3YxL29yZ2FuaXphdGlvbnMucHJvdG8SEHNhYXMuYWNjb3VudHMudjEicgoLT3JnU2V0dGluZ3MSDgoGb3JnX2lkGAEgASgJEhAKCGxvZ29fdXJsGAIgASgJEhUKDXByaW1hcnlfY29sb3IYAyABKAkSFQoNY3VzdG9tX2RvbWFpbhgEIAEoCRITCgtmYXZpY29uX3VybBgFIAEoCSJSChRPcmdhbml6YXRpb25TZXR0aW5ncxI6Cghjb21wb3NlZBjoByABKAsyJy5zYWFzLmNvbXBvc2VkLm9yZ19zZXR0aW5ncy52MS5TZXR0aW5ncyI6Ch5HZXRPcmdhbml6YXRpb25TZXR0aW5nc1JlcXVlc3QSGAoGb3JnX2lkGAEgASgJQgi6SAVyA7ABASKkAQohVXBkYXRlT3JnYW5pemF0aW9uU2V0dGluZ3NSZXF1ZXN0EhgKBm9yZ19pZBgBIAEoCUIIukgFcgOwAQESNQoFcGF0Y2gYAiABKAsyJi5zYWFzLmFjY291bnRzLnYxLk9yZ2FuaXphdGlvblNldHRpbmdzEi4KCmNsZWFyX21hc2sYAyABKAsyGi5nb29nbGUucHJvdG9idWYuRmllbGRNYXNrIjEKFUdldE9yZ1NldHRpbmdzUmVxdWVzdBIYCgZvcmdfaWQYASABKAlCCLpIBXIDsAEBIqcCChhVcGRhdGVPcmdTZXR0aW5nc1JlcXVlc3QSGAoGb3JnX2lkGAEgASgJQgi6SAVyA7ABARIvCghsb2dvX3VybBgCIAEoCUIdukgachgYgBAyE14ofGh0dHBzOi8vW15cc10rKSQSMgoNcHJpbWFyeV9jb2xvchgDIAEoCUIbukgYchYyFF4ofCNbMC05QS1GYS1mXXs2fSkkElgKDWN1c3RvbV9kb21haW4YBCABKAlCQbpIPnI8GP0BMjdeKHwoW2EtejAtOV0oW2EtejAtOS1dezAsNjF9W2EtejAtOV0pP1wuKStbYS16XXsyLDYzfSkkEjIKC2Zhdmljb25fdXJsGAUgASgJQh26SBpyGBiAEDITXih8aHR0cHM6Ly9bXlxzXSspJCJpChlDcmVhdGVPcmdhbml6YXRpb25SZXF1ZXN0EhUKBG5hbWUYASABKAlCB7pIBHICEAESNQoEc2x1ZxgCIAEoCUInukgkciIQARg/MhxeW2EtejAtOV1bYS16MC05LV0qW2EtejAtOV0kIlIKGkNyZWF0ZU9yZ2FuaXphdGlvblJlc3BvbnNlEjQKDG9yZ2FuaXphdGlvbhgBIAEoCzIeLnNhYXMuYWNjb3VudHMudjEuT3JnYW5pemF0aW9uIi4KFkdldE9yZ2FuaXphdGlvblJlcXVlc3QSFAoCaWQYASABKAlCCLpIBXIDsAEBIhoKGExpc3RPcmdhbml6YXRpb25zUmVxdWVzdCJSChlMaXN0T3JnYW5pemF0aW9uc1Jlc3BvbnNlEjUKDW9yZ2FuaXphdGlvbnMYASADKAsyHi5zYWFzLmFjY291bnRzLnYxLk9yZ2FuaXphdGlvbiJzChNBZGRPcmdNZW1iZXJSZXF1ZXN0EhgKBm9yZ19pZBgBIAEoCUIIukgFcgOwAQESGQoHdXNlcl9pZBgCIAEoCUIIukgFcgOwAQESJwoEcm9sZRgDIAEoDjIZLnNhYXMuYWNjb3VudHMudjEuT3JnUm9sZSJNChZSZW1vdmVPcmdNZW1iZXJSZXF1ZXN0EhgKBm9yZ19pZBgBIAEoCUIIukgFcgOwAQESGQoHdXNlcl9pZBgCIAEoCUIIukgFcgOwAQEiMQoVTGlzdE9yZ01lbWJlcnNSZXF1ZXN0EhgKBm9yZ19pZBgBIAEoCUIIukgFcgOwAQEiSgoWTGlzdE9yZ01lbWJlcnNSZXNwb25zZRIwCgdtZW1iZXJzGAEgAygLMh8uc2Fhcy5hY2NvdW50cy52MS5PcmdNZW1iZXJzaGlwMvwOChNPcmdhbml6YXRpb25TZXJ2aWNlErIBChJDcmVhdGVPcmdhbml6YXRpb24SKy5zYWFzLmFjY291bnRzLnYxLkNyZWF0ZU9yZ2FuaXphdGlvblJlcXVlc3QaLC5zYWFzLmFjY291bnRzLnYxLkNyZWF0ZU9yZ2FuaXphdGlvblJlc3BvbnNlIkHC8xghCAIQAjABOg8KC29yZy5jcmVhdGVkEAJAAUgEUANYA2ABgtPkkwIWOgEqIhEvdjEvb3JnYW5pemF0aW9ucxKdAQoPR2V0T3JnYW5pemF0aW9uEiguc2Fhcy5hY2NvdW50cy52MS5HZXRPcmdhbml6YXRpb25SZXF1ZXN0Gh4uc2Fhcy5hY2NvdW50cy52MS5Pcmdhbml6YXRpb24iQMLzGB4IAhADKggKAmlkEAIYATABOgIQAUABSANQA1gDYAGC0+STAhgSFi92MS9vcmdhbml6YXRpb25zL3tpZH0SnwEKEUxpc3RPcmdhbml6YXRpb25zEiouc2Fhcy5hY2NvdW50cy52MS5MaXN0T3JnYW5pemF0aW9uc1JlcXVlc3QaKy5zYWFzLmFjY291bnRzLnYxLkxpc3RPcmdhbml6YXRpb25zUmVzcG9uc2UiMcLzGBQIAhACMAE6AhABQAFIA1ADWANgAYLT5JMCExIRL3YxL29yZ2FuaXphdGlvbnMSsQEKCUFkZE1lbWJlchIlLnNhYXMuYWNjb3VudHMudjEuQWRkT3JnTWVtYmVyUmVxdWVzdBoWLmdvb2dsZS5wcm90b2J1Zi5FbXB0eSJlwvMYNAgCEAQqDAoGb3JnX2lkEAIYATABOhQKEG9yZy5tZW1iZXJfYWRkZWQQAkABSARQA1gDYAGC0+STAic6ASoiIi92MS9vcmdhbml6YXRpb25zL3tvcmdfaWR9L21lbWJlcnMSwAEKDFJlbW92ZU1lbWJlchIoLnNhYXMuYWNjb3VudHMudjEuUmVtb3ZlT3JnTWVtYmVyUmVxdWVzdBoWLmdvb2dsZS5wcm90b2J1Zi5FbXB0eSJuwvMYNggCEAQqDAoGb3JnX2lkEAIYATABOhYKEm9yZy5tZW1iZXJfcmVtb3ZlZBACQAFIBFADWANgAYLT5JMCLiosL3YxL29yZ2FuaXphdGlvbnMve29yZ19pZH0vbWVtYmVycy97dXNlcl9pZH0SsgEKC0xpc3RNZW1iZXJzEicuc2Fhcy5hY2NvdW50cy52MS5MaXN0T3JnTWVtYmVyc1JlcXVlc3QaKC5zYWFzLmFjY291bnRzLnYxLkxpc3RPcmdNZW1iZXJzUmVzcG9uc2UiUMLzGCIIAhADKgwKBm9yZ19pZBACGAEwAToCEAFAAUgDUANYA2ABgtPkkwIkEiIvdjEvb3JnYW5pemF0aW9ucy97b3JnX2lkfS9tZW1iZXJzEqsBCg5HZXRPcmdTZXR0aW5ncxInLnNhYXMuYWNjb3VudHMudjEuR2V0T3JnU2V0dGluZ3NSZXF1ZXN0Gh0uc2Fhcy5hY2NvdW50cy52MS5PcmdTZXR0aW5ncyJRwvMYIggCEAMqDAoGb3JnX2lkEAIYATABOgIQAUABSANQA1gDYAGC0+STAiUSIy92MS9vcmdhbml6YXRpb25zL3tvcmdfaWR9L3NldHRpbmdzEsoBChFVcGRhdGVPcmdTZXR0aW5ncxIqLnNhYXMuYWNjb3VudHMudjEuVXBkYXRlT3JnU2V0dGluZ3NSZXF1ZXN0Gh0uc2Fhcy5hY2NvdW50cy52MS5PcmdTZXR0aW5ncyJqwvMYOAgCEAQqDAoGb3JnX2lkEAIYATABOhgKFG9yZy5zZXR0aW5nc191cGRhdGVkEAJAAUgEUANYA2ABgtPkkwIoOgEqGiMvdjEvb3JnYW5pemF0aW9ucy97b3JnX2lkfS9zZXR0aW5ncxLOAQoXR2V0T3JnYW5pemF0aW9uU2V0dGluZ3MSMC5zYWFzLmFjY291bnRzLnYxLkdldE9yZ2FuaXphdGlvblNldHRpbmdzUmVxdWVzdBomLnNhYXMuYWNjb3VudHMudjEuT3JnYW5pemF0aW9uU2V0dGluZ3MiWcLzGCIIAhADKgwKBm9yZ19pZBACGAEwAToCEAFAAUgDUANYA2ABgtPkkwItEisvdjEvb3JnYW5pemF0aW9ucy97b3JnX2lkfS9nZW5lcmljLXNldHRpbmdzEvUBChpVcGRhdGVPcmdhbml6YXRpb25TZXR0aW5ncxIzLnNhYXMuYWNjb3VudHMudjEuVXBkYXRlT3JnYW5pemF0aW9uU2V0dGluZ3NSZXF1ZXN0GiYuc2Fhcy5hY2NvdW50cy52MS5Pcmdhbml6YXRpb25TZXR0aW5ncyJ6wvMYQAgCEAQqDAoGb3JnX2lkEAIYATABOiAKHG9yZy5nZW5lcmljX3NldHRpbmdzX3VwZGF0ZWQQAkABSARQA1gDYAGC0+STAjA6ASoiKy92MS9vcmdhbml6YXRpb25zL3tvcmdfaWR9L2dlbmVyaWMtc2V0dGluZ3NCugEKFGNvbS5zYWFzLmFjY291bnRzLnYxQhJPcmdhbml6YXRpb25zUHJvdG9QAVosYWNjb3VudHMvcGtnL2dlbi9zYWFzL2FjY291bnRzL3YxO2FjY291bnRzdjGiAgNTQViqAhBTYWFzLkFjY291bnRzLlYxygIQU2Fhc1xBY2NvdW50c1xWMeICHFNhYXNcQWNjb3VudHNcVjFcR1BCTWV0YWRhdGHqAhJTYWFzOjpBY2NvdW50czo6VjFiBnByb3RvMw", [file_buf_validate_validate, file_google_api_annotations, file_google_protobuf_empty, file_google_protobuf_field_mask, file_saas_accounts_v1_common, file_saas_composed_org_settings_v1_settings, file_saas_policy_v1_options]);
 
 /**
  * @generated from message saas.accounts.v1.OrgSettings
@@ -57,6 +59,83 @@ export const OrgSettingsSchema: GenMessage<OrgSettings> = /*@__PURE__*/
   messageDesc(file_saas_accounts_v1_organizations, 0);
 
 /**
+ * OrganizationSettings is the org analogue of UserSettings
+ * (user_settings.proto): a generic, typed, JSONB-backed preferences blob whose
+ * product-contributed fields are generated into the composed container. Storage
+ * keeps sparse ProtoJSON; the API recursively merges typed protobuf patches and
+ * resolves catalog defaults on read. It is distinct from OrgSettings above,
+ * which remains the fixed-column branding surface.
+ *
+ * @generated from message saas.accounts.v1.OrganizationSettings
+ */
+export type OrganizationSettings = Message<"saas.accounts.v1.OrganizationSettings"> & {
+  /**
+   * Product-contributed org settings are generated into this typed container.
+   * ProtoJSON storage and API patching preserve the same schema end to end.
+   *
+   * @generated from field: saas.composed.org_settings.v1.Settings composed = 1000;
+   */
+  composed?: Settings;
+};
+
+/**
+ * Describes the message saas.accounts.v1.OrganizationSettings.
+ * Use `create(OrganizationSettingsSchema)` to create a new message.
+ */
+export const OrganizationSettingsSchema: GenMessage<OrganizationSettings> = /*@__PURE__*/
+  messageDesc(file_saas_accounts_v1_organizations, 1);
+
+/**
+ * @generated from message saas.accounts.v1.GetOrganizationSettingsRequest
+ */
+export type GetOrganizationSettingsRequest = Message<"saas.accounts.v1.GetOrganizationSettingsRequest"> & {
+  /**
+   * @generated from field: string org_id = 1;
+   */
+  orgId: string;
+};
+
+/**
+ * Describes the message saas.accounts.v1.GetOrganizationSettingsRequest.
+ * Use `create(GetOrganizationSettingsRequestSchema)` to create a new message.
+ */
+export const GetOrganizationSettingsRequestSchema: GenMessage<GetOrganizationSettingsRequest> = /*@__PURE__*/
+  messageDesc(file_saas_accounts_v1_organizations, 2);
+
+/**
+ * @generated from message saas.accounts.v1.UpdateOrganizationSettingsRequest
+ */
+export type UpdateOrganizationSettingsRequest = Message<"saas.accounts.v1.UpdateOrganizationSettingsRequest"> & {
+  /**
+   * @generated from field: string org_id = 1;
+   */
+  orgId: string;
+
+  /**
+   * Partial — only explicitly present fields change. Missing parent messages
+   * are materialized by the typed settings SDK, and nested siblings survive.
+   *
+   * @generated from field: saas.accounts.v1.OrganizationSettings patch = 2;
+   */
+  patch?: OrganizationSettings;
+
+  /**
+   * Paths whose explicit overrides should be removed before applying patch.
+   * A cleared field resolves to its catalog default on the returned document.
+   *
+   * @generated from field: google.protobuf.FieldMask clear_mask = 3;
+   */
+  clearMask?: FieldMask;
+};
+
+/**
+ * Describes the message saas.accounts.v1.UpdateOrganizationSettingsRequest.
+ * Use `create(UpdateOrganizationSettingsRequestSchema)` to create a new message.
+ */
+export const UpdateOrganizationSettingsRequestSchema: GenMessage<UpdateOrganizationSettingsRequest> = /*@__PURE__*/
+  messageDesc(file_saas_accounts_v1_organizations, 3);
+
+/**
  * @generated from message saas.accounts.v1.GetOrgSettingsRequest
  */
 export type GetOrgSettingsRequest = Message<"saas.accounts.v1.GetOrgSettingsRequest"> & {
@@ -71,7 +150,7 @@ export type GetOrgSettingsRequest = Message<"saas.accounts.v1.GetOrgSettingsRequ
  * Use `create(GetOrgSettingsRequestSchema)` to create a new message.
  */
 export const GetOrgSettingsRequestSchema: GenMessage<GetOrgSettingsRequest> = /*@__PURE__*/
-  messageDesc(file_saas_accounts_v1_organizations, 1);
+  messageDesc(file_saas_accounts_v1_organizations, 4);
 
 /**
  * @generated from message saas.accounts.v1.UpdateOrgSettingsRequest
@@ -108,7 +187,7 @@ export type UpdateOrgSettingsRequest = Message<"saas.accounts.v1.UpdateOrgSettin
  * Use `create(UpdateOrgSettingsRequestSchema)` to create a new message.
  */
 export const UpdateOrgSettingsRequestSchema: GenMessage<UpdateOrgSettingsRequest> = /*@__PURE__*/
-  messageDesc(file_saas_accounts_v1_organizations, 2);
+  messageDesc(file_saas_accounts_v1_organizations, 5);
 
 /**
  * @generated from message saas.accounts.v1.CreateOrganizationRequest
@@ -130,7 +209,7 @@ export type CreateOrganizationRequest = Message<"saas.accounts.v1.CreateOrganiza
  * Use `create(CreateOrganizationRequestSchema)` to create a new message.
  */
 export const CreateOrganizationRequestSchema: GenMessage<CreateOrganizationRequest> = /*@__PURE__*/
-  messageDesc(file_saas_accounts_v1_organizations, 3);
+  messageDesc(file_saas_accounts_v1_organizations, 6);
 
 /**
  * @generated from message saas.accounts.v1.CreateOrganizationResponse
@@ -147,7 +226,7 @@ export type CreateOrganizationResponse = Message<"saas.accounts.v1.CreateOrganiz
  * Use `create(CreateOrganizationResponseSchema)` to create a new message.
  */
 export const CreateOrganizationResponseSchema: GenMessage<CreateOrganizationResponse> = /*@__PURE__*/
-  messageDesc(file_saas_accounts_v1_organizations, 4);
+  messageDesc(file_saas_accounts_v1_organizations, 7);
 
 /**
  * @generated from message saas.accounts.v1.GetOrganizationRequest
@@ -164,7 +243,7 @@ export type GetOrganizationRequest = Message<"saas.accounts.v1.GetOrganizationRe
  * Use `create(GetOrganizationRequestSchema)` to create a new message.
  */
 export const GetOrganizationRequestSchema: GenMessage<GetOrganizationRequest> = /*@__PURE__*/
-  messageDesc(file_saas_accounts_v1_organizations, 5);
+  messageDesc(file_saas_accounts_v1_organizations, 8);
 
 /**
  * @generated from message saas.accounts.v1.ListOrganizationsRequest
@@ -177,7 +256,7 @@ export type ListOrganizationsRequest = Message<"saas.accounts.v1.ListOrganizatio
  * Use `create(ListOrganizationsRequestSchema)` to create a new message.
  */
 export const ListOrganizationsRequestSchema: GenMessage<ListOrganizationsRequest> = /*@__PURE__*/
-  messageDesc(file_saas_accounts_v1_organizations, 6);
+  messageDesc(file_saas_accounts_v1_organizations, 9);
 
 /**
  * @generated from message saas.accounts.v1.ListOrganizationsResponse
@@ -194,7 +273,7 @@ export type ListOrganizationsResponse = Message<"saas.accounts.v1.ListOrganizati
  * Use `create(ListOrganizationsResponseSchema)` to create a new message.
  */
 export const ListOrganizationsResponseSchema: GenMessage<ListOrganizationsResponse> = /*@__PURE__*/
-  messageDesc(file_saas_accounts_v1_organizations, 7);
+  messageDesc(file_saas_accounts_v1_organizations, 10);
 
 /**
  * @generated from message saas.accounts.v1.AddOrgMemberRequest
@@ -221,7 +300,7 @@ export type AddOrgMemberRequest = Message<"saas.accounts.v1.AddOrgMemberRequest"
  * Use `create(AddOrgMemberRequestSchema)` to create a new message.
  */
 export const AddOrgMemberRequestSchema: GenMessage<AddOrgMemberRequest> = /*@__PURE__*/
-  messageDesc(file_saas_accounts_v1_organizations, 8);
+  messageDesc(file_saas_accounts_v1_organizations, 11);
 
 /**
  * @generated from message saas.accounts.v1.RemoveOrgMemberRequest
@@ -243,7 +322,7 @@ export type RemoveOrgMemberRequest = Message<"saas.accounts.v1.RemoveOrgMemberRe
  * Use `create(RemoveOrgMemberRequestSchema)` to create a new message.
  */
 export const RemoveOrgMemberRequestSchema: GenMessage<RemoveOrgMemberRequest> = /*@__PURE__*/
-  messageDesc(file_saas_accounts_v1_organizations, 9);
+  messageDesc(file_saas_accounts_v1_organizations, 12);
 
 /**
  * @generated from message saas.accounts.v1.ListOrgMembersRequest
@@ -260,7 +339,7 @@ export type ListOrgMembersRequest = Message<"saas.accounts.v1.ListOrgMembersRequ
  * Use `create(ListOrgMembersRequestSchema)` to create a new message.
  */
 export const ListOrgMembersRequestSchema: GenMessage<ListOrgMembersRequest> = /*@__PURE__*/
-  messageDesc(file_saas_accounts_v1_organizations, 10);
+  messageDesc(file_saas_accounts_v1_organizations, 13);
 
 /**
  * @generated from message saas.accounts.v1.ListOrgMembersResponse
@@ -277,7 +356,7 @@ export type ListOrgMembersResponse = Message<"saas.accounts.v1.ListOrgMembersRes
  * Use `create(ListOrgMembersResponseSchema)` to create a new message.
  */
 export const ListOrgMembersResponseSchema: GenMessage<ListOrgMembersResponse> = /*@__PURE__*/
-  messageDesc(file_saas_accounts_v1_organizations, 11);
+  messageDesc(file_saas_accounts_v1_organizations, 14);
 
 /**
  * OrganizationService — org and membership management
@@ -348,6 +427,27 @@ export const OrganizationService: GenService<{
     methodKind: "unary";
     input: typeof UpdateOrgSettingsRequestSchema;
     output: typeof OrgSettingsSchema;
+  },
+  /**
+   * Generic org settings — the org analogue of UserSettingsService. Whole typed
+   * message in, whole resolved message out; adding an org setting is proto +
+   * regen only, with no endpoint change. Reads require org membership; writes
+   * require org admin, mirroring the branding surface above.
+   *
+   * @generated from rpc saas.accounts.v1.OrganizationService.GetOrganizationSettings
+   */
+  getOrganizationSettings: {
+    methodKind: "unary";
+    input: typeof GetOrganizationSettingsRequestSchema;
+    output: typeof OrganizationSettingsSchema;
+  },
+  /**
+   * @generated from rpc saas.accounts.v1.OrganizationService.UpdateOrganizationSettings
+   */
+  updateOrganizationSettings: {
+    methodKind: "unary";
+    input: typeof UpdateOrganizationSettingsRequestSchema;
+    output: typeof OrganizationSettingsSchema;
   },
 }> = /*@__PURE__*/
   serviceDesc(file_saas_accounts_v1_organizations, 0);

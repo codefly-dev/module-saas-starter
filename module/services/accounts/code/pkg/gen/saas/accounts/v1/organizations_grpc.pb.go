@@ -21,14 +21,16 @@ import (
 const _ = grpc.SupportPackageIsVersion9
 
 const (
-	OrganizationService_CreateOrganization_FullMethodName = "/saas.accounts.v1.OrganizationService/CreateOrganization"
-	OrganizationService_GetOrganization_FullMethodName    = "/saas.accounts.v1.OrganizationService/GetOrganization"
-	OrganizationService_ListOrganizations_FullMethodName  = "/saas.accounts.v1.OrganizationService/ListOrganizations"
-	OrganizationService_AddMember_FullMethodName          = "/saas.accounts.v1.OrganizationService/AddMember"
-	OrganizationService_RemoveMember_FullMethodName       = "/saas.accounts.v1.OrganizationService/RemoveMember"
-	OrganizationService_ListMembers_FullMethodName        = "/saas.accounts.v1.OrganizationService/ListMembers"
-	OrganizationService_GetOrgSettings_FullMethodName     = "/saas.accounts.v1.OrganizationService/GetOrgSettings"
-	OrganizationService_UpdateOrgSettings_FullMethodName  = "/saas.accounts.v1.OrganizationService/UpdateOrgSettings"
+	OrganizationService_CreateOrganization_FullMethodName         = "/saas.accounts.v1.OrganizationService/CreateOrganization"
+	OrganizationService_GetOrganization_FullMethodName            = "/saas.accounts.v1.OrganizationService/GetOrganization"
+	OrganizationService_ListOrganizations_FullMethodName          = "/saas.accounts.v1.OrganizationService/ListOrganizations"
+	OrganizationService_AddMember_FullMethodName                  = "/saas.accounts.v1.OrganizationService/AddMember"
+	OrganizationService_RemoveMember_FullMethodName               = "/saas.accounts.v1.OrganizationService/RemoveMember"
+	OrganizationService_ListMembers_FullMethodName                = "/saas.accounts.v1.OrganizationService/ListMembers"
+	OrganizationService_GetOrgSettings_FullMethodName             = "/saas.accounts.v1.OrganizationService/GetOrgSettings"
+	OrganizationService_UpdateOrgSettings_FullMethodName          = "/saas.accounts.v1.OrganizationService/UpdateOrgSettings"
+	OrganizationService_GetOrganizationSettings_FullMethodName    = "/saas.accounts.v1.OrganizationService/GetOrganizationSettings"
+	OrganizationService_UpdateOrganizationSettings_FullMethodName = "/saas.accounts.v1.OrganizationService/UpdateOrganizationSettings"
 )
 
 // OrganizationServiceClient is the client API for OrganizationService service.
@@ -45,6 +47,12 @@ type OrganizationServiceClient interface {
 	ListMembers(ctx context.Context, in *ListOrgMembersRequest, opts ...grpc.CallOption) (*ListOrgMembersResponse, error)
 	GetOrgSettings(ctx context.Context, in *GetOrgSettingsRequest, opts ...grpc.CallOption) (*OrgSettings, error)
 	UpdateOrgSettings(ctx context.Context, in *UpdateOrgSettingsRequest, opts ...grpc.CallOption) (*OrgSettings, error)
+	// Generic org settings — the org analogue of UserSettingsService. Whole typed
+	// message in, whole resolved message out; adding an org setting is proto +
+	// regen only, with no endpoint change. Reads require org membership; writes
+	// require org admin, mirroring the branding surface above.
+	GetOrganizationSettings(ctx context.Context, in *GetOrganizationSettingsRequest, opts ...grpc.CallOption) (*OrganizationSettings, error)
+	UpdateOrganizationSettings(ctx context.Context, in *UpdateOrganizationSettingsRequest, opts ...grpc.CallOption) (*OrganizationSettings, error)
 }
 
 type organizationServiceClient struct {
@@ -135,6 +143,26 @@ func (c *organizationServiceClient) UpdateOrgSettings(ctx context.Context, in *U
 	return out, nil
 }
 
+func (c *organizationServiceClient) GetOrganizationSettings(ctx context.Context, in *GetOrganizationSettingsRequest, opts ...grpc.CallOption) (*OrganizationSettings, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(OrganizationSettings)
+	err := c.cc.Invoke(ctx, OrganizationService_GetOrganizationSettings_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *organizationServiceClient) UpdateOrganizationSettings(ctx context.Context, in *UpdateOrganizationSettingsRequest, opts ...grpc.CallOption) (*OrganizationSettings, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(OrganizationSettings)
+	err := c.cc.Invoke(ctx, OrganizationService_UpdateOrganizationSettings_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // OrganizationServiceServer is the server API for OrganizationService service.
 // All implementations must embed UnimplementedOrganizationServiceServer
 // for forward compatibility.
@@ -149,6 +177,12 @@ type OrganizationServiceServer interface {
 	ListMembers(context.Context, *ListOrgMembersRequest) (*ListOrgMembersResponse, error)
 	GetOrgSettings(context.Context, *GetOrgSettingsRequest) (*OrgSettings, error)
 	UpdateOrgSettings(context.Context, *UpdateOrgSettingsRequest) (*OrgSettings, error)
+	// Generic org settings — the org analogue of UserSettingsService. Whole typed
+	// message in, whole resolved message out; adding an org setting is proto +
+	// regen only, with no endpoint change. Reads require org membership; writes
+	// require org admin, mirroring the branding surface above.
+	GetOrganizationSettings(context.Context, *GetOrganizationSettingsRequest) (*OrganizationSettings, error)
+	UpdateOrganizationSettings(context.Context, *UpdateOrganizationSettingsRequest) (*OrganizationSettings, error)
 	mustEmbedUnimplementedOrganizationServiceServer()
 }
 
@@ -182,6 +216,12 @@ func (UnimplementedOrganizationServiceServer) GetOrgSettings(context.Context, *G
 }
 func (UnimplementedOrganizationServiceServer) UpdateOrgSettings(context.Context, *UpdateOrgSettingsRequest) (*OrgSettings, error) {
 	return nil, status.Error(codes.Unimplemented, "method UpdateOrgSettings not implemented")
+}
+func (UnimplementedOrganizationServiceServer) GetOrganizationSettings(context.Context, *GetOrganizationSettingsRequest) (*OrganizationSettings, error) {
+	return nil, status.Error(codes.Unimplemented, "method GetOrganizationSettings not implemented")
+}
+func (UnimplementedOrganizationServiceServer) UpdateOrganizationSettings(context.Context, *UpdateOrganizationSettingsRequest) (*OrganizationSettings, error) {
+	return nil, status.Error(codes.Unimplemented, "method UpdateOrganizationSettings not implemented")
 }
 func (UnimplementedOrganizationServiceServer) mustEmbedUnimplementedOrganizationServiceServer() {}
 func (UnimplementedOrganizationServiceServer) testEmbeddedByValue()                             {}
@@ -348,6 +388,42 @@ func _OrganizationService_UpdateOrgSettings_Handler(srv interface{}, ctx context
 	return interceptor(ctx, in, info, handler)
 }
 
+func _OrganizationService_GetOrganizationSettings_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(GetOrganizationSettingsRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(OrganizationServiceServer).GetOrganizationSettings(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: OrganizationService_GetOrganizationSettings_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(OrganizationServiceServer).GetOrganizationSettings(ctx, req.(*GetOrganizationSettingsRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _OrganizationService_UpdateOrganizationSettings_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(UpdateOrganizationSettingsRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(OrganizationServiceServer).UpdateOrganizationSettings(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: OrganizationService_UpdateOrganizationSettings_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(OrganizationServiceServer).UpdateOrganizationSettings(ctx, req.(*UpdateOrganizationSettingsRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // OrganizationService_ServiceDesc is the grpc.ServiceDesc for OrganizationService service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -386,6 +462,14 @@ var OrganizationService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "UpdateOrgSettings",
 			Handler:    _OrganizationService_UpdateOrgSettings_Handler,
+		},
+		{
+			MethodName: "GetOrganizationSettings",
+			Handler:    _OrganizationService_GetOrganizationSettings_Handler,
+		},
+		{
+			MethodName: "UpdateOrganizationSettings",
+			Handler:    _OrganizationService_UpdateOrganizationSettings_Handler,
 		},
 	},
 	Streams:  []grpc.StreamDesc{},

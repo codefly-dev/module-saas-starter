@@ -353,3 +353,108 @@ func findModuleRoot(t *testing.T) string {
 		directory = parent
 	}
 }
+
+// --- Settings scope (user | org) ---
+
+func scopedSettingsContribution(namespace, message, field string, number int, scope string) SettingsContribution {
+	return SettingsContribution{
+		Schema:      "codefly/saas/settings-contribution/v1",
+		Namespace:   namespace,
+		ProtoImport: "contributed/" + namespace + "/v1/settings.proto",
+		Message:     message,
+		Field:       SettingsField{Name: field, Number: number},
+		FieldRange:  NumericRange{Start: number, End: number},
+		Scope:       scope,
+		Owner:       namespace,
+	}
+}
+
+func TestRenderPartitionsSettingsByScope(t *testing.T) {
+	settings := []SettingsContribution{
+		scopedSettingsContribution("acme", "acme.v1.Widget", "acme_widget", 20000, "user"),
+		scopedSettingsContribution("acmeorg", "acmeorg.v1.Retention", "acmeorg_retention", 30000, "org"),
+		// An unset scope falls back to the user container.
+		scopedSettingsContribution("acme2", "acme2.v1.Toggle", "acme2_toggle", 21000, ""),
+	}
+
+	files, err := render(nil, settings, nil, nil, nil)
+	if err != nil {
+		t.Fatalf("render: %v", err)
+	}
+
+	userProto := string(files[SettingsProtoOutput])
+	orgProto := string(files[OrgSettingsProtoOutput])
+	if !strings.Contains(userProto, "package saas.composed.settings.v1;") {
+		t.Fatalf("user proto has wrong package:\n%s", userProto)
+	}
+	if !strings.Contains(orgProto, "package saas.composed.org_settings.v1;") {
+		t.Fatalf("org proto has wrong package:\n%s", orgProto)
+	}
+	assertScopeContains(t, "user proto", userProto, "acme.v1.Widget acme_widget = 20000;")
+	assertScopeContains(t, "user proto", userProto, "acme2.v1.Toggle acme2_toggle = 21000;")
+	assertScopeAbsent(t, "user proto", userProto, "acmeorg_retention")
+	assertScopeContains(t, "org proto", orgProto, "acmeorg.v1.Retention acmeorg_retention = 30000;")
+	assertScopeAbsent(t, "org proto", orgProto, "acme_widget")
+
+	goCatalog := string(files[SettingsGoOutput])
+	assertScopeContains(t, "go catalog", goCatalog, "var fields = [...]Field{")
+	assertScopeContains(t, "go catalog", goCatalog, "var orgFields = [...]Field{")
+	assertScopeContains(t, "go catalog", goCatalog, "func Fields() []Field")
+	assertScopeContains(t, "go catalog", goCatalog, "func OrgFields() []Field")
+	userSlice, orgSlice, _ := strings.Cut(goCatalog, "var orgFields")
+	assertScopeAbsent(t, "go user slice", userSlice, "acmeorg_retention")
+	assertScopeContains(t, "go org slice", orgSlice, "acmeorg_retention")
+
+	userTS := string(files[SettingsTypeScriptOut])
+	orgTS := string(files[OrgSettingsTypeScriptOut])
+	assertScopeContains(t, "user TS", userTS, "export const SETTINGS_FIELDS")
+	assertScopeContains(t, "user TS", userTS, "acme_widget")
+	assertScopeAbsent(t, "user TS", userTS, "acmeorg_retention")
+	assertScopeContains(t, "org TS", orgTS, "export const ORG_SETTINGS_FIELDS")
+	assertScopeContains(t, "org TS", orgTS, "acmeorg_retention")
+}
+
+func TestValidateRejectsUnknownSettingsScope(t *testing.T) {
+	settings := []SettingsContribution{
+		scopedSettingsContribution("acme", "acme.v1.Widget", "acme_widget", 20000, "team"),
+	}
+	err := validate(nil, settings, nil, nil, nil, modulepackage.Manifest{})
+	if err == nil || !strings.Contains(err.Error(), "invalid scope") {
+		t.Fatalf("expected invalid-scope error, got %v", err)
+	}
+}
+
+func TestValidateAcceptsOrgScope(t *testing.T) {
+	settings := []SettingsContribution{
+		scopedSettingsContribution("acme", "acme.v1.Widget", "acme_widget", 20000, "user"),
+		scopedSettingsContribution("acmeorg", "acmeorg.v1.Retention", "acmeorg_retention", 30000, "org"),
+	}
+	if err := validate(nil, settings, nil, nil, nil, modulepackage.Manifest{}); err != nil {
+		t.Fatalf("validate: %v", err)
+	}
+}
+
+func TestValidateDetectsCrossScopeFieldNameCollision(t *testing.T) {
+	settings := []SettingsContribution{
+		scopedSettingsContribution("acme", "acme.v1.Widget", "shared_name", 20000, "user"),
+		scopedSettingsContribution("acmeorg", "acmeorg.v1.Retention", "shared_name", 30000, "org"),
+	}
+	err := validate(nil, settings, nil, nil, nil, modulepackage.Manifest{})
+	if err == nil || !strings.Contains(err.Error(), "duplicated") {
+		t.Fatalf("expected cross-scope field-name collision, got %v", err)
+	}
+}
+
+func assertScopeContains(t *testing.T, label, haystack, needle string) {
+	t.Helper()
+	if !strings.Contains(haystack, needle) {
+		t.Fatalf("%s missing %q in:\n%s", label, needle, haystack)
+	}
+}
+
+func assertScopeAbsent(t *testing.T, label, haystack, needle string) {
+	t.Helper()
+	if strings.Contains(haystack, needle) {
+		t.Fatalf("%s unexpectedly contains %q in:\n%s", label, needle, haystack)
+	}
+}
