@@ -1,9 +1,7 @@
 """Field behavior, mirroring the Go pkg/settings field_test.go matrix.
 
-The schema-agnostic runtime is exercised through a bundled generated proto,
-``FileDescriptorProto``, whose nested ``options.features.field_presence`` path
-gives real missing/present-but-empty parents and explicit-zero leaves without
-generating a throwaway schema.
+Catalog Fields come from fixtures in conftest.py; enum values are the bundled
+proto's own generated constants.
 """
 
 import pytest
@@ -12,58 +10,36 @@ from google.protobuf import type_pb2
 
 import saas_settings as settings
 
-# descriptor.proto enum numbers used as typed defaults.
-OPTIMIZE_SPEED = 1
-OPTIMIZE_CODE_SIZE = 2
-FIELD_PRESENCE_UNKNOWN = 0
-FIELD_PRESENCE_EXPLICIT = 1
-FIELD_PRESENCE_IMPLICIT = 2
 
-GO_PACKAGE = settings.must_string(
-    pb.FileDescriptorProto(), "options.go_package", "example/default"
-)
-JAVA_MULTIPLE_FILES = settings.must_bool(
-    pb.FileDescriptorProto(), "options.java_multiple_files", False
-)
-OPTIMIZE_FOR = settings.must_enum(
-    pb.FileDescriptorProto(), "options.optimize_for", OPTIMIZE_SPEED
-)
-FIELD_PRESENCE = settings.must_enum(
-    pb.FileDescriptorProto(),
-    "options.features.field_presence",
-    FIELD_PRESENCE_EXPLICIT,
-)
-
-
-def test_nested_set_materializes_missing_parents():
+def test_nested_set_materializes_missing_parents(go_package):
     message = pb.FileDescriptorProto()
     assert not message.HasField("options")
 
-    GO_PACKAGE.set(message, "example/service")
+    go_package.set(message, "example/service")
 
     assert message.HasField("options")
     assert message.options.HasField("go_package")
     assert message.options.go_package == "example/service"
-    value, present = GO_PACKAGE.lookup(message)
+    value, present = go_package.lookup(message)
     assert present
     assert value == "example/service"
 
 
-def test_missing_parent_returns_default_without_materializing():
+def test_missing_parent_returns_default_without_materializing(go_package):
     message = pb.FileDescriptorProto()
 
-    assert GO_PACKAGE.get(message) == "example/default"
-    assert GO_PACKAGE.default == "example/default"
+    assert go_package.get(message) == "example/default"
+    assert go_package.default == "example/default"
     assert not message.HasField("options"), "a read must never materialize a parent"
 
-    _, present = GO_PACKAGE.lookup(message)
+    _, present = go_package.lookup(message)
     assert not present
 
 
-def test_apply_default_materializes_missing_parents():
+def test_apply_default_materializes_missing_parents(go_package):
     message = pb.FileDescriptorProto()
 
-    changed = GO_PACKAGE.apply_default(message)
+    changed = go_package.apply_default(message)
 
     assert changed
     assert message.HasField("options")
@@ -71,158 +47,166 @@ def test_apply_default_materializes_missing_parents():
 
 
 @pytest.mark.parametrize(
-    "message",
+    "make_message",
     [
-        pb.FileDescriptorProto(),
-        pb.FileDescriptorProto(options=pb.FileOptions()),
-        pb.FileDescriptorProto(options=pb.FileOptions(features=pb.FeatureSet())),
+        lambda: pb.FileDescriptorProto(),
+        lambda: pb.FileDescriptorProto(options=pb.FileOptions()),
+        lambda: pb.FileDescriptorProto(options=pb.FileOptions(features=pb.FeatureSet())),
     ],
     ids=["all parents absent", "outer parent present", "all parents present"],
 )
-def test_apply_default_across_nested_parent_states_is_idempotent(message):
-    changed = FIELD_PRESENCE.apply_default(message)
-    assert changed
-    assert message.options.features.field_presence == FIELD_PRESENCE_EXPLICIT
+def test_apply_default_across_nested_parent_states_is_idempotent(
+    make_message, field_presence
+):
+    message = make_message()
 
-    changed = FIELD_PRESENCE.apply_default(message)
+    changed = field_presence.apply_default(message)
+    assert changed
+    assert message.options.features.field_presence == pb.FeatureSet.EXPLICIT
+
+    changed = field_presence.apply_default(message)
     assert not changed, "applying a default twice must be a no-op"
 
 
-def test_apply_default_never_overwrites_explicit_zero_value():
+def test_apply_default_never_overwrites_explicit_zero_value(java_multiple_files):
     message = pb.FileDescriptorProto()
-    JAVA_MULTIPLE_FILES.set(message, False)
+    java_multiple_files.set(message, False)
 
-    changed = JAVA_MULTIPLE_FILES.apply_default(message)
+    changed = java_multiple_files.apply_default(message)
 
     assert not changed
-    value, present = JAVA_MULTIPLE_FILES.lookup(message)
+    value, present = java_multiple_files.lookup(message)
     assert present
     assert value is False
 
 
-def test_get_never_coalesces_explicit_scalar_zero_values():
+def test_get_never_coalesces_explicit_scalar_zero_values(
+    go_package, java_multiple_files, field_presence
+):
     message = pb.FileDescriptorProto()
-    GO_PACKAGE.set(message, "")
-    JAVA_MULTIPLE_FILES.set(message, False)
-    FIELD_PRESENCE.set(message, FIELD_PRESENCE_UNKNOWN)
+    go_package.set(message, "")
+    java_multiple_files.set(message, False)
+    field_presence.set(message, pb.FeatureSet.FIELD_PRESENCE_UNKNOWN)
 
-    text, present = GO_PACKAGE.lookup(message)
+    text, present = go_package.lookup(message)
     assert present
     assert text == ""
-    assert GO_PACKAGE.get(message) == "", (
+    assert go_package.get(message) == "", (
         "explicit empty string must not resolve to its non-empty default"
     )
 
-    flag, present = JAVA_MULTIPLE_FILES.lookup(message)
+    flag, present = java_multiple_files.lookup(message)
     assert present
     assert flag is False
 
-    enum, present = FIELD_PRESENCE.lookup(message)
+    enum, present = field_presence.lookup(message)
     assert present
-    assert enum == FIELD_PRESENCE_UNKNOWN
-    assert FIELD_PRESENCE.get(message) == FIELD_PRESENCE_UNKNOWN, (
+    assert enum == pb.FeatureSet.FIELD_PRESENCE_UNKNOWN
+    assert field_presence.get(message) == pb.FeatureSet.FIELD_PRESENCE_UNKNOWN, (
         "explicit zero enum must not resolve to its non-zero default"
     )
 
 
-def test_set_and_clear_materialize_and_prune_multiple_missing_parents():
+def test_set_and_clear_materialize_and_prune_multiple_missing_parents(field_presence):
     message = pb.FileDescriptorProto()
 
-    FIELD_PRESENCE.set(message, FIELD_PRESENCE_IMPLICIT)
-    assert message.options.features.field_presence == FIELD_PRESENCE_IMPLICIT
+    field_presence.set(message, pb.FeatureSet.IMPLICIT)
+    assert message.options.features.field_presence == pb.FeatureSet.IMPLICIT
 
-    FIELD_PRESENCE.clear(message)
+    field_presence.clear(message)
     assert not message.HasField("options"), "all empty parents in the path must be pruned"
 
 
-def test_explicit_scalar_default_preserves_presence():
+def test_explicit_scalar_default_preserves_presence(java_multiple_files):
     message = pb.FileDescriptorProto()
 
-    JAVA_MULTIPLE_FILES.set(message, False)
+    java_multiple_files.set(message, False)
 
-    value, present = JAVA_MULTIPLE_FILES.lookup(message)
+    value, present = java_multiple_files.lookup(message)
     assert present, "explicit false must not collapse into unset"
     assert value is False
 
 
-def test_sibling_set_survives_clear_and_final_clear_prunes_parent():
+def test_sibling_set_survives_clear_and_final_clear_prunes_parent(
+    go_package, java_multiple_files
+):
     message = pb.FileDescriptorProto()
-    GO_PACKAGE.set(message, "example/service")
-    JAVA_MULTIPLE_FILES.set(message, True)
+    go_package.set(message, "example/service")
+    java_multiple_files.set(message, True)
 
-    GO_PACKAGE.clear(message)
+    go_package.clear(message)
     assert message.HasField("options"), "parent still contains a sibling setting"
     assert message.options.java_multiple_files is True
 
-    JAVA_MULTIPLE_FILES.clear(message)
+    java_multiple_files.clear(message)
     assert not message.HasField("options"), "empty parent must be pruned"
 
 
-def test_clear_missing_nested_path_is_a_no_op():
+def test_clear_missing_nested_path_is_a_no_op(go_package):
     message = pb.FileDescriptorProto()
-    GO_PACKAGE.clear(message)
+    go_package.clear(message)
     assert not message.HasField("options")
 
 
-def test_clear_is_idempotent_across_partially_materialized_parents():
+def test_clear_is_idempotent_across_partially_materialized_parents(field_presence):
     message = pb.FileDescriptorProto(
         options=pb.FileOptions(features=pb.FeatureSet())
     )
 
-    FIELD_PRESENCE.clear(message)
+    field_presence.clear(message)
     assert not message.HasField("options")
-    FIELD_PRESENCE.clear(message)
+    field_presence.clear(message)
     assert not message.HasField("options")
 
 
-def test_clear_does_not_prune_a_parent_containing_unknown_wire_fields():
+def test_clear_does_not_prune_a_parent_containing_unknown_wire_fields(go_package):
     message = pb.FileDescriptorProto(options=pb.FileOptions())
     # field 100, varint 1 — unknown to FileOptions and preserved on the wire.
     message.options.MergeFromString(bytes([0xA0, 0x06, 0x01]))
-    GO_PACKAGE.set(message, "example/service")
+    go_package.set(message, "example/service")
 
-    GO_PACKAGE.clear(message)
+    go_package.clear(message)
 
     assert message.HasField("options")
     assert message.options.SerializeToString() == bytes([0xA0, 0x06, 0x01])
 
 
-def test_enum_set_rejects_undefined_values():
+def test_enum_set_rejects_undefined_values(optimize_for):
     message = pb.FileDescriptorProto()
     with pytest.raises(settings.SettingsError, match="not defined"):
-        OPTIMIZE_FOR.set(message, 999)
+        optimize_for.set(message, 999)
     assert not message.HasField("options")
 
 
-def test_enum_set_and_default():
+def test_enum_set_and_default(optimize_for):
     message = pb.FileDescriptorProto()
-    assert OPTIMIZE_FOR.get(message) == OPTIMIZE_SPEED
+    assert optimize_for.get(message) == pb.FileOptions.SPEED
 
-    OPTIMIZE_FOR.set(message, OPTIMIZE_CODE_SIZE)
-    value, present = OPTIMIZE_FOR.lookup(message)
+    optimize_for.set(message, pb.FileOptions.CODE_SIZE)
+    value, present = optimize_for.lookup(message)
     assert present
-    assert value == OPTIMIZE_CODE_SIZE
+    assert value == pb.FileOptions.CODE_SIZE
 
 
-def test_failed_nested_enum_set_rolls_back_only_new_parents():
+def test_failed_nested_enum_set_rolls_back_only_new_parents(field_presence):
     message = pb.FileDescriptorProto(options=pb.FileOptions(java_package="com.example"))
 
     with pytest.raises(settings.SettingsError, match="not defined"):
-        FIELD_PRESENCE.set(message, 999)
+        field_presence.set(message, 999)
 
     assert message.HasField("options"), "pre-existing outer parent must survive"
     assert message.options.java_package == "com.example"
     assert not message.options.HasField("features"), "new inner parent must not materialize"
 
 
-def test_nil_messages_fail_without_raising_attribute_errors():
+def test_nil_messages_fail_without_raising_attribute_errors(go_package):
     for operation in (
-        lambda: GO_PACKAGE.get(None),
-        lambda: GO_PACKAGE.lookup(None),
-        lambda: GO_PACKAGE.has(None),
-        lambda: GO_PACKAGE.apply_default(None),
-        lambda: GO_PACKAGE.set(None, "value"),
-        lambda: GO_PACKAGE.clear(None),
+        lambda: go_package.get(None),
+        lambda: go_package.lookup(None),
+        lambda: go_package.has(None),
+        lambda: go_package.apply_default(None),
+        lambda: go_package.set(None, "value"),
+        lambda: go_package.clear(None),
     ):
         with pytest.raises(settings.NilMessageError):
             operation()
@@ -240,6 +224,6 @@ def test_invalid_catalog_paths_fail_at_construction():
         settings.must_enum(pb.FileDescriptorProto(), "options.optimize_for", 999)
 
 
-def test_field_belonging_to_another_message_is_rejected():
+def test_field_belonging_to_another_message_is_rejected(go_package):
     with pytest.raises(settings.SettingsError, match="belongs to"):
-        GO_PACKAGE.get(pb.FileOptions())
+        go_package.get(pb.FileOptions())

@@ -16,7 +16,7 @@ from .field import (
     must_enum,
     must_string,
 )
-from .json import DEFAULT_MAXIMUM_JSON_BYTES, JSONCodec
+from .codec import DEFAULT_MAXIMUM_JSON_BYTES, JSONCodec
 
 __all__ = [
     "DEFAULT_MAXIMUM_JSON_BYTES",

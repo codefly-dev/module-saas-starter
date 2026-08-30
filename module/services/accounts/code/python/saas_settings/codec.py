@@ -59,10 +59,10 @@ class JSONCodec(Generic[M]):
                 f"protobuf settings JSON is {len(raw)} bytes; maximum is {self._maximum}"
             )
         message = self._new_message()
-        text = raw.decode("utf-8") if raw else "{}"
         try:
+            text = raw.decode("utf-8") if raw else "{}"
             json_format.Parse(text, message, ignore_unknown_fields=True)
-        except json_format.ParseError as error:
+        except (json_format.ParseError, UnicodeDecodeError) as error:
             raise SettingsError(
                 f"unmarshal protobuf settings JSON: {error}"
             ) from error
