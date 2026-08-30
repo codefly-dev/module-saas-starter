@@ -6,9 +6,12 @@ import {
 	type ResolvedWidget,
 	runDashboard,
 } from "@codefly/saas-sdk";
+// Charts come from the shared kit, not host-internal components: the same
+// primitives a solution's own remote would render with, so host-rendered and
+// solution-rendered dashboards look identical and there is one charting
+// implementation to maintain.
+import { AreaChart, BarList, LineChart, StatChart } from "@codefly/ui/dashboard";
 import { useQuery } from "@tanstack/react-query";
-import { BarList } from "@/features/dashboard/ui/charts/bar-list";
-import { LineChart } from "@/features/dashboard/ui/charts/line-chart";
 import { useAuth } from "@/lib/auth";
 import { apiTransport } from "@/lib/connect/transport";
 import {
@@ -58,28 +61,13 @@ function WidgetBody({ widget }: { widget: ResolvedWidget }) {
 	}
 	switch (visualization) {
 		case "line":
+			return <LineChart points={series.points} className="text-primary/70" />;
 		case "area":
-			return (
-				<LineChart
-					points={series.points.map((point) => point.value)}
-					className="text-primary/70"
-				/>
-			);
+			return <AreaChart points={series.points} className="text-primary/70" />;
 		case "bar":
-			return (
-				<BarList
-					items={series.points.map((point) => ({
-						label: point.key,
-						value: point.value,
-					}))}
-				/>
-			);
+			return <BarList points={series.points} />;
 		case "number":
-			return (
-				<span className="text-4xl font-bold tabular-nums tracking-tight">
-					{series.total.toLocaleString()}
-				</span>
-			);
+			return <StatChart total={series.total} points={series.points} />;
 		case "table":
 			return (
 				<table className="w-full text-sm">
