@@ -33,6 +33,11 @@
 			"types": "./dist/skin/index.d.ts",
 			"import": "./dist/skin/index.js",
 			"default": "./dist/skin/index.js"
+		},
+		"./dashboard": {
+			"types": "./dist/dashboard/index.d.ts",
+			"import": "./dist/dashboard/index.js",
+			"default": "./dist/dashboard/index.js"
 		}
 	},
 	"scripts": {
