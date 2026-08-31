@@ -1,7 +1,8 @@
 import assert from "node:assert/strict";
 import { mkdirSync, mkdtempSync, rmSync, unlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
 import test from "node:test";
 
 import {
@@ -59,6 +60,20 @@ test("accepts an exact additive packages/* install graph", (t) => {
   const { root } = fixture();
   t.after(() => rmSync(root, { recursive: true, force: true }));
   assert.deepEqual(workspaceInstallGraphErrors(root), []);
+});
+
+// The committed lock is the one the release archive ships and every downstream
+// `npm ci` installs from. `verify` runs this same check, so a stale lock here
+// fails the base-integrity gate before it can reach a consumer.
+test("committed frontend package-lock.json is in sync with its workspaces", () => {
+  const frontendCodeRoot = join(
+    dirname(fileURLToPath(import.meta.url)),
+    "..",
+    "services",
+    "frontend",
+    "code",
+  );
+  assert.deepEqual(workspaceInstallGraphErrors(frontendCodeRoot), []);
 });
 
 test("excludes compiled service binaries without excluding their source", () => {

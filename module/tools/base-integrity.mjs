@@ -647,18 +647,39 @@ function gen() {
   console.log(`base-integrity: wrote ${manifest.fileCount} base-file hashes to tools/base-manifest.json`);
 }
 
+// The frontend package-lock.json is the one base file excluded from the hash
+// manifest (it is regenerated per consumer, so its bytes are not canonical).
+// `gen` and `check` therefore validate it semantically through
+// workspaceInstallGraphErrors instead. `verify` guards the same committed tree
+// on every push, PR, and release tag, so it must run that check too — otherwise
+// a lock out of sync with the protected package.json and packages/* workspaces
+// (the exact failure a downstream `npm ci` hits) sails through the gate.
 function verify() {
-  const errors = baseManifestFreshnessErrors();
-  if (errors.length) {
-    console.error(
-      "base-integrity: base-manifest.json does not match the canonical tree — "
-      + "regenerate it with `node tools/base-integrity.mjs gen` and commit the result:",
-    );
-    errors.forEach((error) => console.error(`    ${error}`));
+  const manifestErrors = baseManifestFreshnessErrors();
+  const installGraphErrors = workspaceInstallGraphErrors();
+  if (manifestErrors.length || installGraphErrors.length) {
+    if (manifestErrors.length) {
+      console.error(
+        "base-integrity: base-manifest.json does not match the canonical tree — "
+        + "regenerate it with `node tools/base-integrity.mjs gen` and commit the result:",
+      );
+      manifestErrors.forEach((error) => console.error(`    ${error}`));
+    }
+    if (installGraphErrors.length) {
+      console.error(
+        "base-integrity: frontend package-lock.json is out of sync with the "
+        + "protected package.json and packages/* workspaces — regenerate it with "
+        + "`npm install --prefix services/frontend/code` and commit the result:",
+      );
+      installGraphErrors.forEach((error) => console.error(`    ${error}`));
+    }
     process.exit(1);
   }
   const { fileCount } = JSON.parse(readFileSync(MANIFEST_PATH, "utf8"));
-  console.log(`✓ base-manifest.json matches the canonical tree (${fileCount} base files).`);
+  console.log(
+    `✓ base-manifest.json matches the canonical tree (${fileCount} base files); `
+    + "frontend workspace install graph is in sync.",
+  );
 }
 
 function check() {
