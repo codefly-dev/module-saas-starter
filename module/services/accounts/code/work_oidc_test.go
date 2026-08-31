@@ -236,3 +236,20 @@ func TestGenericOIDCStackDefaultsAudienceToClientID(t *testing.T) {
 	_, err = validator.Validate(t.Context(), f.sign(t))
 	require.ErrorContains(t, err, "audience mismatch")
 }
+
+func TestWorkOSStackDoesNotDefaultAudienceToClientID(t *testing.T) {
+	clearAuthProviderEnvironment(t)
+	f := newFakeOIDCProvider(t)
+
+	// Same minimal configuration as the generic default test, but for the workos
+	// provider. WorkOS validates its own access token, bound to the application
+	// via a non-standard client_id claim rather than aud == client id, so the
+	// audience default must NOT apply: startup must still fail closed (preserving
+	// the required-binding hardening) rather than boot and reject every login.
+	setIdentityConfiguration(t, "IDENTITY_CLIENT_ID", "client_workos")
+	t.Setenv("CODEFLY__WORKSPACE_SECRET_CONFIGURATION__IDENTITY__IDENTITY_CLIENT_SECRET", "sk_workos")
+	setIdentityConfiguration(t, "IDENTITY_ISSUER", f.issuer)
+
+	_, _, err := buildProviderStack("workos", "")
+	require.ErrorContains(t, err, "audience binding is required")
+}
