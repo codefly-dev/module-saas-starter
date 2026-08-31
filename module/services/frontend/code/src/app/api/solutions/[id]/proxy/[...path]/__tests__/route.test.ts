@@ -2,22 +2,52 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("server-only", () => ({}));
 
-// getEndpoints resolves the auth-sidecar gateway base. vi.mock is hoisted
-// above module init, so the stub is created with vi.hoisted.
-const { getEndpoints } = vi.hoisted(() => ({
+// The route resolves the gateway base (getEndpoints) and the first-party trust
+// context (getCurrentModule/getCurrentService/getWorkspaceSecret, via
+// resolveCodeflyGatewayContext). vi.mock is hoisted above module init, so the
+// stubs are created with vi.hoisted.
+const {
+	getEndpoints,
+	getCurrentModule,
+	getCurrentService,
+	getWorkspaceSecret,
+} = vi.hoisted(() => ({
 	getEndpoints: vi.fn<() => Array<Record<string, unknown>>>(),
+	getCurrentModule: vi.fn<() => string>(() => ""),
+	getCurrentService: vi.fn<() => string>(() => ""),
+	getWorkspaceSecret:
+		vi.fn<(name: string, key: string) => string | undefined>(),
 }));
-vi.mock("codefly", () => ({ getEndpoints }));
+vi.mock("codefly", () => ({
+	getEndpoints,
+	getCurrentModule,
+	getCurrentService,
+	getWorkspaceSecret,
+}));
 
 import { GET, POST } from "@/app/api/solutions/[id]/proxy/[...path]/route";
 import { registerSolution, unregisterSolution } from "@/solutions/registry";
 
 const GATEWAY = "http://gateway.internal:8080";
+const INTERNAL_TOKEN = "trusted-internal-token";
 
 function withGateway() {
 	getEndpoints.mockReturnValue([
 		{ service: "auth-sidecar", name: "rest", address: `${GATEWAY}/rest` },
 	]);
+}
+
+// Resolve the first-party trust context the way a real runtime does: no
+// discoverable own endpoint, so resolveCodeflyGatewayContext falls back to the
+// request origin for the public origin and reads the internal token from config.
+function withTrustContext() {
+	getCurrentModule.mockReturnValue("");
+	getCurrentService.mockReturnValue("");
+	getWorkspaceSecret.mockImplementation((name, key) =>
+		name === "internal-auth" && key === "CODEFLY_INTERNAL_TOKEN"
+			? INTERNAL_TOKEN
+			: undefined,
+	);
 }
 
 function registerAudit(serviceAlias = "audit-backend") {
@@ -47,6 +77,11 @@ function proxyRequest(
 let fetchMock: ReturnType<typeof vi.fn>;
 
 beforeEach(() => {
+	// resolveCodeflyGatewayContext calls .trim() on the module/service names, so
+	// they must always return a string; the trust token defaults to absent.
+	getCurrentModule.mockReturnValue("");
+	getCurrentService.mockReturnValue("");
+	getWorkspaceSecret.mockReturnValue(undefined);
 	fetchMock = vi.fn(
 		async () =>
 			new Response("upstream-body", {
@@ -60,6 +95,9 @@ beforeEach(() => {
 afterEach(() => {
 	unregisterSolution("audit");
 	getEndpoints.mockReset();
+	getCurrentModule.mockReset();
+	getCurrentService.mockReset();
+	getWorkspaceSecret.mockReset();
 	vi.unstubAllGlobals();
 });
 
@@ -84,8 +122,28 @@ describe("solution proxy passthrough", () => {
 		);
 	});
 
-	it("never leaks internal or hop-by-hop headers to the upstream", async () => {
+	it("never leaks arbitrary caller headers to the upstream", async () => {
 		withGateway();
+		withTrustContext();
+		registerAudit();
+
+		await GET(
+			proxyRequest("http://frontend/api/solutions/audit/proxy/records", {
+				headers: {
+					authorization: "Bearer caller-token",
+					"x-secret-smuggle": "leak",
+				},
+			}),
+			context("audit", ["records"]),
+		);
+
+		const forwarded = fetchMock.mock.calls[0][1].headers as Headers;
+		expect(forwarded.has("x-secret-smuggle")).toBe(false);
+	});
+
+	it("replaces a caller-supplied internal token with the trusted one", async () => {
+		withGateway();
+		withTrustContext();
 		registerAudit();
 
 		await GET(
@@ -93,17 +151,77 @@ describe("solution proxy passthrough", () => {
 				headers: {
 					authorization: "Bearer caller-token",
 					"x-codefly-internal-token": "cluster-secret",
-					"x-secret-smuggle": "leak",
-					"x-forwarded-host": "evil.example",
 				},
 			}),
 			context("audit", ["records"]),
 		);
 
 		const forwarded = fetchMock.mock.calls[0][1].headers as Headers;
+		expect(forwarded.get("x-codefly-internal-token")).toBe(INTERNAL_TOKEN);
+	});
+
+	it("attaches the first-party trust headers resolved from config", async () => {
+		withGateway();
+		withTrustContext();
+		registerAudit();
+
+		await GET(
+			proxyRequest("http://frontend/api/solutions/audit/proxy/records", {
+				headers: {
+					authorization: "Bearer caller-token",
+					"x-forwarded-proto": "https",
+					"x-forwarded-host": "app.example",
+				},
+			}),
+			context("audit", ["records"]),
+		);
+
+		const forwarded = fetchMock.mock.calls[0][1].headers as Headers;
+		expect(forwarded.get("x-codefly-internal-token")).toBe(INTERNAL_TOKEN);
+		expect(forwarded.get("x-codefly-public-origin")).toBe(
+			"https://app.example",
+		);
+	});
+
+	it("forwards the session cookie so a cookie-authenticated remote is identified", async () => {
+		withGateway();
+		withTrustContext();
+		registerAudit();
+
+		// `Cookie` is a forbidden header on a fetch Request (happy-dom strips it),
+		// so model the real Next server request with a Headers-backed object that
+		// preserves it.
+		const request = {
+			method: "GET",
+			url: "http://frontend/api/solutions/audit/proxy/records",
+			headers: new Headers({
+				cookie: "codefly_session=1; codefly_refresh=abc",
+			}),
+		} as unknown as Request;
+
+		await GET(request, context("audit", ["records"]));
+
+		const forwarded = fetchMock.mock.calls[0][1].headers as Headers;
+		expect(forwarded.get("cookie")).toBe(
+			"codefly_session=1; codefly_refresh=abc",
+		);
+	});
+
+	it("omits trust headers when no internal token is configured", async () => {
+		withGateway();
+		// No withTrustContext(): getWorkspaceSecret returns undefined.
+		registerAudit();
+
+		await GET(
+			proxyRequest("http://frontend/api/solutions/audit/proxy/records", {
+				headers: { authorization: "Bearer caller-token" },
+			}),
+			context("audit", ["records"]),
+		);
+
+		const forwarded = fetchMock.mock.calls[0][1].headers as Headers;
 		expect(forwarded.has("x-codefly-internal-token")).toBe(false);
-		expect(forwarded.has("x-secret-smuggle")).toBe(false);
-		expect(forwarded.has("x-forwarded-host")).toBe(false);
+		expect(forwarded.has("x-codefly-public-origin")).toBe(false);
 	});
 
 	it("percent-encodes each path segment so it cannot smuggle a query or slash", async () => {

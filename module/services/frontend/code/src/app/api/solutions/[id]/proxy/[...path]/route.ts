@@ -1,12 +1,34 @@
 import { getEndpoints } from "codefly";
 
+import { resolveCodeflyGatewayContext } from "@/lib/codefly-gateway-context";
 import { findSolution } from "@/solutions/registry";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
 
+const INTERNAL_TOKEN_HEADER = "X-Codefly-Internal-Token";
+const PUBLIC_ORIGIN_HEADER = "X-Codefly-Public-Origin";
+
 interface RouteContext {
 	params: Promise<{ id: string; path?: string[] }>;
+}
+
+// The public browser origin, preferring the ingress-set forwarded pair over the
+// pod-local request URL — the same resolution src/proxy.ts uses, because behind
+// a TLS-terminating ingress the pod sees plaintext `http` and its own host.
+function callerOrigin(request: Request): string {
+	const url = new URL(request.url);
+	const forwardedProto = request.headers
+		.get("x-forwarded-proto")
+		?.split(",")[0]
+		?.trim();
+	const forwardedHost = request.headers
+		.get("x-forwarded-host")
+		?.split(",")[0]
+		?.trim();
+	const protocol = forwardedProto ? `${forwardedProto}:` : url.protocol;
+	const host = forwardedHost || url.host;
+	return `${protocol}//${host}`;
 }
 
 /** Resolve the auth-sidecar API gateway base from the Codefly SDK. */
@@ -27,11 +49,15 @@ function gatewayBase(): string | null {
 
 /**
  * Generic solution proxy. Forwards a browser request to the API gateway's
- * runtime solution passthrough (/solutions/{alias}/…), carrying the caller's
- * bearer. The browser never reaches a solution service directly, and this route
+ * runtime solution passthrough (/solutions/{alias}/…), attaching the first-party
+ * trust headers and carrying the caller's identity (bearer and/or session
+ * cookie). The browser never reaches a solution service directly, and this route
  * names no specific solution — it only resolves whatever registered at runtime.
  */
-async function handler(request: Request, context: RouteContext): Promise<Response> {
+async function handler(
+	request: Request,
+	context: RouteContext,
+): Promise<Response> {
 	const { id, path } = await context.params;
 
 	const solution = findSolution(id);
@@ -48,9 +74,24 @@ async function handler(request: Request, context: RouteContext): Promise<Respons
 	const target = `${base}/solutions/${encodeURIComponent(solution.backend.serviceAlias)}/${suffix}${search}`;
 
 	const headers = new Headers();
+	// First-party trust headers, resolved server-side from Codefly config — the
+	// gateway rejects solution traffic that lacks them even with a valid user
+	// identity. Set from a fresh Headers so a caller can never spoof them.
+	const gatewayContext = resolveCodeflyGatewayContext(callerOrigin(request));
+	if (gatewayContext) {
+		headers.set(INTERNAL_TOKEN_HEADER, gatewayContext.internalToken);
+		headers.set(PUBLIC_ORIGIN_HEADER, gatewayContext.publicOrigin);
+	}
+	// Carry the caller's identity to the gateway. A solution remote may attach
+	// the host access token (Authorization) or authenticate with the session
+	// cookie; forward both so the gateway can resolve the user either way.
 	const authorization = request.headers.get("authorization");
 	if (authorization) {
 		headers.set("authorization", authorization);
+	}
+	const cookie = request.headers.get("cookie");
+	if (cookie) {
+		headers.set("cookie", cookie);
 	}
 	const contentType = request.headers.get("content-type");
 	if (contentType) {
