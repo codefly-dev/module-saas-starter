@@ -1075,11 +1075,18 @@ func (s *AuditServer) QueryAuditLog(ctx context.Context, req *gen.QueryAuditLogR
 		return nil, err
 	}
 	// Audit log is read-through-membership: org members see their own org's
-	// audit trail; platform admins see anything. No org_id means platform
-	// admin scope is required.
+	// audit trail; platform admins see anything. No org_id means a platform-wide
+	// read, which requires platform admin — UNLESS the caller carries a verified
+	// active org: default the read to that org rather than denying, so an org
+	// member (including a solution acting on the user's behalf, e.g. lastlogin)
+	// sees their own org's audit trail without a platform grant.
 	if req.OrgId == "" {
 		if err := requirePlatformAdmin(ctx, actorID); err != nil {
-			return nil, err
+			callerOrg, ok := wool.Get(ctx).OrgID()
+			if !ok || callerOrg == "" {
+				return nil, err
+			}
+			req.OrgId = callerOrg
 		}
 	} else {
 		if err := requireOrgMember(ctx, actorID, req.OrgId); err != nil {

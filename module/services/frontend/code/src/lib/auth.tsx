@@ -86,10 +86,14 @@ function readIdentityProvider(): ProviderPreset | null {
 	const clientID = process.env.NEXT_PUBLIC_IDENTITY_CLIENT_ID;
 	if (!authorizeURL || !clientID) return null;
 	const selector = process.env.NEXT_PUBLIC_IDENTITY_AUTHORIZE_SELECTOR?.trim();
-	const authorizeParams =
-		id === "workos"
-			? { provider: selector || "authkit" }
-			: undefined;
+	// Force upstream account selection so a user with several accounts (e.g.
+	// multiple Google identities) chooses which one to sign in with, instead of
+	// the IdP silently reusing whichever is already active. WorkOS AuthKit
+	// forwards `prompt` to the upstream connection.
+	const authorizeParams: Record<string, string> = { prompt: "select_account" };
+	if (id === "workos") {
+		authorizeParams.provider = selector || "authkit";
+	}
 	return {
 		id,
 		displayName:
