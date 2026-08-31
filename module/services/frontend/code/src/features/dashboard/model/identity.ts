@@ -10,6 +10,9 @@ import type { MetricDef } from "./schema";
 export function metricIdentity(metric: MetricDef): string {
 	return [
 		metric.title,
+		// description is the card's rendered subtitle, so two cards that differ
+		// only in it are distinct panels and must not share a key.
+		metric.description ?? "",
 		metric.chart,
 		Array.isArray(metric.groupBy) ? metric.groupBy.join(",") : metric.groupBy,
 		metric.bucket ?? "",
@@ -18,6 +21,9 @@ export function metricIdentity(metric: MetricDef): string {
 		metric.from ?? "",
 		metric.to ?? "",
 		metric.span ?? "",
+		// limit ranks a categorical series to its top N, so a top-5 and a top-10
+		// of the same metric render as different cards and need different keys.
+		metric.limit ?? "",
 		JSON.stringify(metric.value ?? metric.ratio ?? 0),
 	].join("|");
 }

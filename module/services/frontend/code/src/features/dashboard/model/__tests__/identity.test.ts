@@ -34,6 +34,27 @@ describe("metricIdentity", () => {
 		expect(metricIdentity(allTime)).not.toBe(metricIdentity(windowed));
 	});
 
+	it("distinguishes metrics that differ only in description", () => {
+		// description is the card's rendered subtitle, so two otherwise-identical
+		// cards with different subtitles are distinct panels.
+		const plain = base;
+		const described: MetricDef = { ...base, description: "Successful sign-ins" };
+		expect(metricIdentity(plain)).not.toBe(metricIdentity(described));
+	});
+
+	it("distinguishes metrics that differ only in limit", () => {
+		// A top-5 and a top-10 of the same categorical metric render as different
+		// cards, so their limit must disambiguate them.
+		const ranked: MetricDef = {
+			title: "Top actions",
+			groupBy: "event_type",
+			chart: "bar",
+		};
+		const topFive: MetricDef = { ...ranked, limit: 5 };
+		const topTen: MetricDef = { ...ranked, limit: 10 };
+		expect(metricIdentity(topFive)).not.toBe(metricIdentity(topTen));
+	});
+
 	it("distinguishes single- from multi-dimensional grouping", () => {
 		const single: MetricDef = { ...base, groupBy: "actor", bucket: undefined };
 		const multi: MetricDef = {

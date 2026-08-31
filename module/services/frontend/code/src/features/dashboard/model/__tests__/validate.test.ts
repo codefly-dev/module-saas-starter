@@ -93,6 +93,50 @@ describe("assertDashboardSpec", () => {
 		).not.toThrow();
 	});
 
+	it("accepts metrics that differ only in limit", () => {
+		// identity spans display options too: a top-5 and a top-10 of the same
+		// categorical metric are distinct cards, so the uniqueness guard must not
+		// collapse them into a duplicate and reject the spec.
+		expect(() =>
+			assertDashboardSpec({
+				version: DASHBOARD_SPEC_VERSION,
+				metrics: [
+					{ title: "Top actions", groupBy: "event_type", chart: "bar", limit: 5 },
+					{
+						title: "Top actions",
+						groupBy: "event_type",
+						chart: "bar",
+						limit: 10,
+					},
+				],
+			}),
+		).not.toThrow();
+	});
+
+	it("accepts metrics that differ only in description", () => {
+		// A description is the card's rendered subtitle, so two otherwise-identical
+		// cards with different subtitles stay distinct and are allowed.
+		expect(() =>
+			assertDashboardSpec({
+				version: DASHBOARD_SPEC_VERSION,
+				metrics: [
+					{
+						title: "Logins",
+						description: "All sign-ins",
+						groupBy: "event_type",
+						chart: "bar",
+					},
+					{
+						title: "Logins",
+						description: "Failed sign-ins",
+						groupBy: "event_type",
+						chart: "bar",
+					},
+				],
+			}),
+		).not.toThrow();
+	});
+
 	it("rejects an unsupported groupBy", () => {
 		expect(() =>
 			assertDashboardSpec({

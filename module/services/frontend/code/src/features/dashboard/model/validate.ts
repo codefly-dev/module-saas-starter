@@ -351,7 +351,7 @@ export function assertDashboardSpec(
 		const identity = metricIdentity(entry as MetricDef);
 		assertSpec(
 			!seenIdentities.has(identity),
-			`metric at index ${index} duplicates the identity of an earlier metric — two metrics with the same title, chart, grouping, scope, and value cannot render as distinct cards`,
+			`metric at index ${index} duplicates the identity of an earlier metric — two metrics identical in every field that distinguishes a rendered card (title, description, chart, grouping, time window, scope, value, and display options such as limit and span) resolve to a single React key, so one card would be silently dropped`,
 		);
 		seenIdentities.add(identity);
 	});
