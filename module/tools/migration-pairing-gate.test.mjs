@@ -60,6 +60,27 @@ test("two names sharing one version is a duplicate", () => {
   );
 });
 
+test("a leading-zero version collides with its bare form", () => {
+  // golang-migrate parses both to version 1 and rejects the duplicate; keying by
+  // the raw string would miss it.
+  withMigrations(
+    { store: ["1_a.up.sql", "1_a.down.sql", "01_a.up.sql", "01_a.down.sql"] },
+    (root) => {
+      const errors = migrationPairingErrors(root);
+      assert.equal(errors.length, 1);
+      assert.match(errors[0], /store: migration version 1 is duplicated/);
+    },
+  );
+});
+
+test("a version whose up and down titles disagree is flagged, not mislabeled as a duplicate", () => {
+  withMigrations({ store: ["1_create.up.sql", "1_craete.down.sql"] }, (root) => {
+    const errors = migrationPairingErrors(root);
+    assert.equal(errors.length, 1);
+    assert.match(errors[0], /store: migration version 1 up \(create\) and down \(craete\) titles differ/);
+  });
+});
+
 test("each service is checked independently", () => {
   withMigrations(
     {

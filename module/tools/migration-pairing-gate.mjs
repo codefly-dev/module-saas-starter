@@ -12,15 +12,18 @@
 //
 // This walks each `services/<svc>/migrations` directory and, per version number,
 // asserts exactly one up file and exactly one down file — failing on an orphaned
-// half or a duplicated version. Zero-tolerance: a set that golang-migrate would
-// refuse to load must never leave CI.
+// half or a duplicated version, the sets golang-migrate refuses to load. It also
+// requires the up and down of a version to share a title: golang-migrate keys
+// only on the number and would load a mismatch, but a half-applied rename is a
+// human error worth catching, so the gate is deliberately one notch stricter
+// there. Zero-tolerance.
 //
 //   node tools/migration-pairing-gate.mjs check   # fail on any orphan or duplicate
 //
 // The module root is the parent of tools/, so this works identically in
 // canonical's `module/` and a consumer's `modules/<name>/`.
 
-import { readdirSync, existsSync } from "node:fs";
+import { readdirSync, existsSync, statSync } from "node:fs";
 import { join, dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -30,33 +33,35 @@ const MODULE_ROOT = join(dirname(SCRIPT_PATH), "..");
 const MIGRATION_RE = /^(\d+)_(.+)\.(up|down)\.sql$/;
 
 // Every version in a single service's migrations directory must carry exactly one
-// up file and one down file. A version with only one half is an orphan
-// golang-migrate refuses to load; a version claimed by more than one name (or a
-// duplicated half) is an ambiguous "duplicate migration version".
+// up file and one down file, both sharing a title. A version with only one half is
+// an orphan golang-migrate refuses to load; a version that appears twice in one
+// direction is an ambiguous "duplicate migration version".
 function directionPairingErrors(service, files) {
-  const versions = new Map(); // version -> { up: [names], down: [names] }
+  const versions = new Map(); // numeric version -> { up: [titles], down: [titles] }
   for (const name of files) {
     const match = MIGRATION_RE.exec(name);
     if (!match) continue;
     const [, version, title, direction] = match;
-    const entry = versions.get(version) ?? { up: [], down: [] };
+    // golang-migrate parses the version with ParseUint, so `007` and `7` are the
+    // same version and collide. Key by the number, not the zero-padded text, or a
+    // real duplicate slips through as two well-formed versions.
+    const key = Number(version);
+    const entry = versions.get(key) ?? { up: [], down: [] };
     entry[direction].push(title);
-    versions.set(version, entry);
+    versions.set(key, entry);
   }
 
   const errors = [];
   for (const [version, { up, down }] of versions) {
-    // Distinct filenames are unique, so more than one title on a version can only
-    // mean two migrations collided on it — golang-migrate's duplicate version.
-    const names = [...new Set([...up, ...down])].sort();
-    if (names.length > 1) {
-      errors.push(
-        `${service}: migration version ${version} is duplicated across ${names.join(", ")}`,
-      );
+    if (up.length > 1 || down.length > 1) {
+      const names = [...new Set([...up, ...down])].sort();
+      errors.push(`${service}: migration version ${version} is duplicated across ${names.join(", ")}`);
     } else if (up.length === 0) {
       errors.push(`${service}: migration version ${version} (${down[0]}) has a .down.sql but no .up.sql`);
     } else if (down.length === 0) {
       errors.push(`${service}: migration version ${version} (${up[0]}) has an .up.sql but no .down.sql`);
+    } else if (up[0] !== down[0]) {
+      errors.push(`${service}: migration version ${version} up (${up[0]}) and down (${down[0]}) titles differ`);
     }
   }
   return errors;
@@ -69,7 +74,7 @@ export function migrationPairingErrors(moduleRoot = MODULE_ROOT) {
   const errors = [];
   for (const service of readdirSync(servicesRoot).sort()) {
     const migrations = join(servicesRoot, service, "migrations");
-    if (!existsSync(migrations)) continue;
+    if (!existsSync(migrations) || !statSync(migrations).isDirectory()) continue;
     errors.push(...directionPairingErrors(service, readdirSync(migrations).sort()));
   }
   return errors.sort();
