@@ -28,12 +28,17 @@ var ErrMFAChallengeRejected = errors.New("MFA challenge rejected")
 // authentication. It is not a session: no access or refresh credential exists
 // until the transaction is successfully consumed.
 type MFALoginTransaction struct {
-	ID                    string
-	TokenHash             string
-	UserID                string
-	OrgID                 string
-	OrgRole               string
-	PlatformRole          string
+	ID           string
+	TokenHash    string
+	UserID       string
+	OrgID        string
+	OrgRole      string
+	PlatformRole string
+	// Email and DisplayName snapshot the resolved user's presentational
+	// identity so the session minted after the second factor carries the same
+	// email/name claims a direct login would. Never an authorization input.
+	Email                 string
+	DisplayName           string
 	SessionID             string
 	DeviceInfo            map[string]string
 	IPAddress             string
@@ -99,6 +104,8 @@ func (s *Service) BeginMFALogin(ctx context.Context, identity *auth.Identity) (s
 		UserID:                identity.UserID.String(),
 		OrgRole:               identity.OrgRole,
 		PlatformRole:          identity.PlatformRole,
+		Email:                 identity.Email,
+		DisplayName:           identity.DisplayName,
 		SessionID:             identity.SessionID.String(),
 		DeviceInfo:            maps.Clone(identity.DeviceInfo),
 		IPAddress:             identity.IPAddress,
@@ -208,6 +215,8 @@ func (s *Service) mintMFASessionInTx(ctx context.Context, tx *MFALoginTransactio
 		UserID:                userID,
 		OrgRole:               tx.OrgRole,
 		PlatformRole:          tx.PlatformRole,
+		Email:                 tx.Email,
+		DisplayName:           tx.DisplayName,
 		MFASatisfied:          true,
 		AuthenticationMethods: append(append([]string(nil), tx.AuthenticationMethods...), authenticationMethod),
 		AuthenticatedAt:       tx.AuthenticatedAt,

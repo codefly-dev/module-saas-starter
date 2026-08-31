@@ -10,11 +10,16 @@ import (
 // SessionRecord is the internal shape of a refresh-token session.
 // Mirrors the columns of the `sessions` table.
 type SessionRecord struct {
-	ID                    uuid.UUID
-	UserID                uuid.UUID
-	OrgID                 uuid.UUID
-	OrgRole               string
-	PlatformRole          string
+	ID           uuid.UUID
+	UserID       uuid.UUID
+	OrgID        uuid.UUID
+	OrgRole      string
+	PlatformRole string
+	// Email and DisplayName are the session user's presentational identity,
+	// persisted so a rotated (refresh / org-switch) token reissues the same
+	// `email`/`name` claims a client renders. Never an authorization input.
+	Email                 string
+	DisplayName           string
 	MFASatisfied          bool
 	AuthenticationMethods []string
 	AuthenticatedAt       time.Time

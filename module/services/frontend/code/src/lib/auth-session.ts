@@ -71,6 +71,7 @@ export function detectImpersonation(accessToken: string): ImpersonationInfo {
 const REFRESH_TOKEN_KEY = "codefly_refresh_token";
 const USER_EMAIL_KEY = "codefly_user_email";
 const USER_NAME_KEY = "codefly_user_name";
+const USER_ID_KEY = "codefly_user_id";
 
 export interface SessionUser {
 	id: string;
@@ -92,6 +93,7 @@ export function clearRefreshToken(): void {
 	localStorage.removeItem(REFRESH_TOKEN_KEY);
 	localStorage.removeItem(USER_EMAIL_KEY);
 	localStorage.removeItem(USER_NAME_KEY);
+	localStorage.removeItem(USER_ID_KEY);
 }
 
 export function getStoredUserEmail(): string | null {
@@ -114,6 +116,16 @@ export function storeUserName(name: string): void {
 	localStorage.setItem(USER_NAME_KEY, name);
 }
 
+export function getStoredUserId(): string | null {
+	if (typeof window === "undefined") return null;
+	return localStorage.getItem(USER_ID_KEY);
+}
+
+export function storeUserId(id: string): void {
+	if (typeof window === "undefined") return;
+	localStorage.setItem(USER_ID_KEY, id);
+}
+
 // resolveSessionUser derives the presentational identity for a session. Email
 // and name each resolve by the same precedence: an explicit value from the
 // login response > the JWT claim minted by accounts > a value persisted on a
@@ -124,21 +136,25 @@ export function resolveSessionUser(
 	overrides: { userId?: string; email?: string; name?: string } = {},
 ): SessionUser {
 	const payload = decodeJWTPayload(accessToken);
+	const id = overrides.userId || String(payload.sub ?? "");
+	// Persisted email/name belong to whoever last populated storage. Only reuse
+	// them for the SAME subject, so a second user signing in on a shared browser
+	// without an intervening logout — whose rotated token may carry no claim —
+	// never inherits the first user's name or email.
+	const stored = getStoredUserId() === id;
+	const storedEmail = stored ? getStoredUserEmail() : null;
+	const storedName = stored ? getStoredUserName() : null;
 	const email =
 		overrides.email ||
 		(typeof payload.email === "string" ? payload.email : undefined) ||
-		getStoredUserEmail() ||
+		storedEmail ||
 		undefined;
 	const name =
 		overrides.name ||
 		(typeof payload.name === "string" ? payload.name : undefined) ||
-		getStoredUserName() ||
+		storedName ||
 		undefined;
-	return {
-		id: overrides.userId || String(payload.sub ?? ""),
-		email,
-		name,
-	};
+	return { id, email, name };
 }
 
 // sessionDisplayLabel is the human-facing label for a signed-in user: the name

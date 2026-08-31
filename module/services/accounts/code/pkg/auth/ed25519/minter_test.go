@@ -411,6 +411,37 @@ func TestMint_OmitsNameClaimWhenProviderAssertsNoName(t *testing.T) {
 	require.NotContains(t, payload, `"name"`, "an empty name must not be minted")
 }
 
+func TestRefreshAndOrgSwitchPreservePresentationalIdentity(t *testing.T) {
+	ctx := context.Background()
+	m, _ := newMinter(t)
+	want := newIdentity()
+	want.Email = "alice@acme.com"
+	want.DisplayName = "Alice Example"
+
+	pair, err := m.Mint(ctx, want)
+	require.NoError(t, err)
+	minted, err := m.VerifyAccess(pair.AccessToken)
+	require.NoError(t, err)
+
+	// Org-switch re-signs in place from the persisted session and must carry the
+	// email/name claims forward.
+	switched, err := m.SwitchOrganization(ctx, want.UserID, minted.SessionID, uuid.Must(uuid.NewV7()))
+	require.NoError(t, err)
+	payload := decodeJWTPayload(t, switched)
+	require.Contains(t, payload, `"email":"alice@acme.com"`)
+	require.Contains(t, payload, `"name":"Alice Example"`)
+
+	// A rotated (refreshed) token must likewise reissue the claims even though
+	// the refresh path reconstructs identity from the persisted session, never
+	// from a fresh provider login. Without this, a returning user whose browser
+	// storage was cleared falls back to the raw uuid.
+	rotated, err := m.VerifyRefresh(ctx, pair.RefreshToken)
+	require.NoError(t, err)
+	payload = decodeJWTPayload(t, rotated.AccessToken)
+	require.Contains(t, payload, `"email":"alice@acme.com"`)
+	require.Contains(t, payload, `"name":"Alice Example"`)
+}
+
 func TestRefreshPreservesAuthenticationEvidenceWithoutRenewingStepUp(t *testing.T) {
 	ctx := context.Background()
 	m, _ := newMinter(t)

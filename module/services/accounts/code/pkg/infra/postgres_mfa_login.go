@@ -40,11 +40,13 @@ func (s *PostgresStore) CreateMFALoginTransaction(ctx context.Context, tx *busin
 		INSERT INTO mfa_login_transactions (
 			id, token_hash, user_id, org_id, org_role, platform_role,
 			session_id, device_info, ip_address,
-			authentication_methods, auth_time, expires_at, created_at
-		) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)`,
+			authentication_methods, auth_time, expires_at, created_at,
+			email, display_name
+		) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)`,
 		tx.ID, tx.TokenHash, tx.UserID, orgID, tx.OrgRole, tx.PlatformRole,
 		tx.SessionID, deviceInfo, nilIfEmpty(tx.IPAddress),
 		authenticationMethods, authenticatedAt, tx.ExpiresAt, tx.CreatedAt,
+		nilIfEmpty(tx.Email), nilIfEmpty(tx.DisplayName),
 	)
 	return err
 }
@@ -61,17 +63,19 @@ func (s *PostgresStore) GetActiveMFALoginTransaction(ctx context.Context, tokenH
 		var authenticatedAt *time.Time
 		var deviceInfo []byte
 		var ipAddress *string
+		var email *string
+		var displayName *string
 		err := q.QueryRow(txCtx, `
 			SELECT id, token_hash, user_id, org_id, org_role, platform_role,
 			       session_id, device_info, ip_address, authentication_methods, auth_time,
 			       expires_at, consumed_at, failed_attempts, max_attempts,
-			       locked_until, created_at
+			       locked_until, created_at, email, display_name
 			FROM mfa_login_transactions
 			WHERE token_hash = $1`, tokenHash).Scan(
 			&tx.ID, &tx.TokenHash, &tx.UserID, &orgID, &tx.OrgRole, &tx.PlatformRole,
 			&tx.SessionID, &deviceInfo, &ipAddress, &tx.AuthenticationMethods, &authenticatedAt,
 			&tx.ExpiresAt, &tx.ConsumedAt, &tx.FailedAttempts, &tx.MaxAttempts,
-			&tx.LockedUntil, &tx.CreatedAt,
+			&tx.LockedUntil, &tx.CreatedAt, &email, &displayName,
 		)
 		if err != nil {
 			if errors.Is(err, pgx.ErrNoRows) {
@@ -95,6 +99,12 @@ func (s *PostgresStore) GetActiveMFALoginTransaction(ctx context.Context, tokenH
 		}
 		if ipAddress != nil {
 			tx.IPAddress = *ipAddress
+		}
+		if email != nil {
+			tx.Email = *email
+		}
+		if displayName != nil {
+			tx.DisplayName = *displayName
 		}
 		found = &tx
 		return nil
@@ -123,18 +133,20 @@ func (s *PostgresStore) ConsumeMFALoginTransaction(
 		var authenticatedAt *time.Time
 		var deviceInfo []byte
 		var ipAddress *string
+		var email *string
+		var displayName *string
 		err := q.QueryRow(txCtx, `
 			SELECT id, token_hash, user_id, org_id, org_role, platform_role,
 			       session_id, device_info, ip_address, authentication_methods, auth_time,
 			       expires_at, consumed_at, failed_attempts, max_attempts,
-			       locked_until, created_at
+			       locked_until, created_at, email, display_name
 			FROM mfa_login_transactions
 			WHERE token_hash = $1
 			FOR UPDATE`, tokenHash).Scan(
 			&tx.ID, &tx.TokenHash, &tx.UserID, &orgID, &tx.OrgRole, &tx.PlatformRole,
 			&tx.SessionID, &deviceInfo, &ipAddress, &tx.AuthenticationMethods, &authenticatedAt,
 			&tx.ExpiresAt, &tx.ConsumedAt, &tx.FailedAttempts, &tx.MaxAttempts,
-			&tx.LockedUntil, &tx.CreatedAt,
+			&tx.LockedUntil, &tx.CreatedAt, &email, &displayName,
 		)
 		if err != nil {
 			if errors.Is(err, pgx.ErrNoRows) {
@@ -153,6 +165,12 @@ func (s *PostgresStore) ConsumeMFALoginTransaction(
 		}
 		if ipAddress != nil {
 			tx.IPAddress = *ipAddress
+		}
+		if email != nil {
+			tx.Email = *email
+		}
+		if displayName != nil {
+			tx.DisplayName = *displayName
 		}
 		if tx.ConsumedAt != nil || !now.Before(tx.ExpiresAt) ||
 			tx.FailedAttempts >= tx.MaxAttempts ||

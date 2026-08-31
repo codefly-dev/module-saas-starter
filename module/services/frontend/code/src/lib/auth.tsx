@@ -24,6 +24,7 @@ import {
 	resolveSessionUser,
 	storeRefreshToken,
 	storeUserEmail,
+	storeUserId,
 	storeUserName,
 } from "./auth-session";
 import {
@@ -301,6 +302,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 			// resolved value so the next reload finds it after a refresh-token
 			// round-trip that mints a claim-less access token.
 			const sessionUser = resolveSessionUser(accessToken, { userId, email });
+			if (sessionUser.id) storeUserId(sessionUser.id);
 			if (sessionUser.email) storeUserEmail(sessionUser.email);
 			if (sessionUser.name) storeUserName(sessionUser.name);
 			setState({

@@ -5,6 +5,7 @@ import {
 	resolveSessionUser,
 	sessionDisplayLabel,
 	storeUserEmail,
+	storeUserId,
 	storeUserName,
 } from "../auth-session";
 import { getToken, setToken } from "../connect/token-store";
@@ -163,6 +164,7 @@ describe("Session user identity", () => {
 	});
 
 	it("recovers name and email from storage after a claim-less refresh token", () => {
+		storeUserId(RAW_UUID);
 		storeUserEmail("alice@acme.com");
 		storeUserName("Alice Example");
 
@@ -171,6 +173,22 @@ describe("Session user identity", () => {
 		expect(user.email).toBe("alice@acme.com");
 		expect(user.name).toBe("Alice Example");
 		expect(sessionDisplayLabel(user)).toBe("Alice Example");
+	});
+
+	it("never inherits a previous user's stored name or email", () => {
+		// User A's presentational identity is still in storage (no logout).
+		storeUserId(RAW_UUID);
+		storeUserEmail("alice@acme.com");
+		storeUserName("Alice Example");
+
+		// User B signs in on the same browser; B's rotated token carries no
+		// email/name claim. B must not be shown as Alice.
+		const OTHER_UUID = "02b1662b-513d-8751-c9b4-bef367616ffc";
+		const user = resolveSessionUser(tokenWith({ sub: OTHER_UUID }));
+		expect(user.id).toBe(OTHER_UUID);
+		expect(user.email).toBeUndefined();
+		expect(user.name).toBeUndefined();
+		expect(sessionDisplayLabel(user)).toBe(OTHER_UUID);
 	});
 
 	it("prefers an explicit login-response value over the token claim", () => {
