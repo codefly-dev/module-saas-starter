@@ -19,13 +19,17 @@ import {
 } from "react";
 
 import type { DashboardAuthoring } from "@/features/dashboard";
-import { getToken } from "@/lib/connect/token-store";
+import { getToken, refreshToken } from "@/lib/connect/token-store";
 
-// One shared version for the co-versioned @codefly/* kit. requiredVersion is
-// left off the share config so a remote built against any release still resolves
-// to the host's single instance — the host is always the sole provider, and the
-// point of sharing them is dedup, not version negotiation.
-const CODEFLY_KIT_VERSION = "0.1.0";
+// The co-versioned @codefly/* kit ships lockstep with this host, so one version
+// covers all three. It MUST track the packages' real version — a shared module
+// that under-reports its version can lose singleton resolution to a remote that
+// bundles a higher one, splitting the instance the dedup exists to keep single.
+// The `kit-shared-version` test pins this to the packages' actual versions so a
+// bump can't drift it silently. requiredVersion is left off the share config:
+// the host publishes this exact instance, and a remote resolves to it without
+// version negotiation.
+export const CODEFLY_KIT_VERSION = "0.1.0";
 
 /**
  * Generic Module Federation host runtime.
@@ -145,6 +149,14 @@ export interface SolutionPageProps {
 	/** Host-owned access-token getter — the remote never touches the token store. */
 	getAccessToken: () => string | null;
 	/**
+	 * Host-owned refresh: exchanges the httpOnly session for a fresh access token
+	 * (single-flight) and resolves to it, or null if the session is gone. The
+	 * remote hands this to `<DatasourcesPanel gateway>` so a data call that hits
+	 * the token's expiry mid-session recovers instead of failing — the same
+	 * mid-session recovery the portal's own transport does.
+	 */
+	refreshAccessToken: () => Promise<string | null>;
+	/**
 	 * The host's dashboard-authoring capability, injected into the mounted
 	 * runtime so a composing module can change the live dashboard: list the
 	 * event vocabulary, preview a metric against the viewer's audit data, and
@@ -193,9 +205,12 @@ export function SolutionOutlet({
 }: {
 	remote: SolutionRemote;
 	// The server route supplies everything except the client-only capabilities:
-	// the token getter and the dashboard-authoring handle, both injected here so
+	// the token getters and the dashboard-authoring handle, all injected here so
 	// the remote never touches the token store or constructs its own handle.
-	pageProps: Omit<SolutionPageProps, "getAccessToken" | "dashboardAuthoring">;
+	pageProps: Omit<
+		SolutionPageProps,
+		"getAccessToken" | "refreshAccessToken" | "dashboardAuthoring"
+	>;
 	authoring: DashboardAuthoring;
 }) {
 	const Remote = remoteComponent(remote);
@@ -207,6 +222,7 @@ export function SolutionOutlet({
 				<Remote
 					{...pageProps}
 					getAccessToken={getToken}
+					refreshAccessToken={refreshToken}
 					dashboardAuthoring={authoring}
 				/>
 			</Suspense>

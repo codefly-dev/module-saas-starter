@@ -8,21 +8,53 @@ afterEach(() => {
 	vi.unstubAllGlobals();
 });
 
-function stubFetch(
-	responseBody: unknown,
-): { calls: Array<{ url: string; init: RequestInit }> } {
-	const calls: Array<{ url: string; init: RequestInit }> = [];
+interface FetchReply {
+	status: number;
+	body: unknown;
+}
+
+function reply(body: unknown, status = 200): FetchReply {
+	return { status, body };
+}
+
+// A Connect unary 401 — the shape the gateway returns when the bearer token has
+// expired or is missing. connect-web reads `code` and raises Code.Unauthenticated.
+function unauthorized(): FetchReply {
+	return {
+		status: 401,
+		body: { code: "unauthenticated", message: "token expired" },
+	};
+}
+
+interface FetchCall {
+	url: string;
+	/** Snapshotted at call time — the interceptor mutates req.header in place on retry. */
+	authorization: string | null;
+}
+
+function stubFetchSequence(replies: FetchReply[]): { calls: FetchCall[] } {
+	const calls: FetchCall[] = [];
+	let i = 0;
 	vi.stubGlobal(
 		"fetch",
 		vi.fn(async (input: RequestInfo | URL, init: RequestInit = {}) => {
-			calls.push({ url: String(input), init });
-			return new Response(JSON.stringify(responseBody), {
-				status: 200,
+			calls.push({
+				url: String(input),
+				authorization: new Headers(init.headers).get("authorization"),
+			});
+			const r = replies[Math.min(i, replies.length - 1)];
+			i += 1;
+			return new Response(JSON.stringify(r.body), {
+				status: r.status,
 				headers: { "content-type": "application/json" },
 			});
 		}),
 	);
 	return { calls };
+}
+
+function stubFetch(responseBody: unknown): { calls: FetchCall[] } {
+	return stubFetchSequence([reply(responseBody)]);
 }
 
 const oneSource = {
@@ -68,9 +100,7 @@ describe("createDatasourceClient", () => {
 		expect(calls[0].url).toContain(
 			"/api/solutions/wiki/proxy/saas.accounts.v1.DatasourceService/ListSources",
 		);
-		expect(new Headers(calls[0].init.headers).get("authorization")).toBe(
-			"Bearer test-token",
-		);
+		expect(calls[0].authorization).toBe("Bearer test-token");
 	});
 
 	it("reads the current token on each request", async () => {
@@ -85,12 +115,61 @@ describe("createDatasourceClient", () => {
 		token = "second";
 		await client.listSources("org-1");
 
-		expect(new Headers(calls[0].init.headers).get("authorization")).toBe(
-			"Bearer first",
-		);
-		expect(new Headers(calls[1].init.headers).get("authorization")).toBe(
-			"Bearer second",
-		);
+		expect(calls[0].authorization).toBe("Bearer first");
+		expect(calls[1].authorization).toBe("Bearer second");
+	});
+
+	it("refreshes and retries once when a request comes back Unauthenticated", async () => {
+		const { calls } = stubFetchSequence([unauthorized(), reply(oneSource)]);
+		const refreshAccessToken = vi.fn(async () => "fresh-token");
+		const client = createDatasourceClient({
+			apiBase: "/api/solutions/wiki/proxy",
+			getAccessToken: () => "stale-token",
+			refreshAccessToken,
+		});
+
+		const sources = await client.listSources("org-1");
+
+		expect(sources).toHaveLength(1);
+		expect(refreshAccessToken).toHaveBeenCalledTimes(1);
+		expect(calls).toHaveLength(2);
+		// First attempt carried the stale token; the retry carried the fresh one.
+		expect(calls[0].authorization).toBe("Bearer stale-token");
+		expect(calls[1].authorization).toBe("Bearer fresh-token");
+	});
+
+	it("recovers an initial 401 when no token was installed yet", async () => {
+		const { calls } = stubFetchSequence([unauthorized(), reply(oneSource)]);
+		const client = createDatasourceClient({
+			apiBase: "/api/solutions/wiki/proxy",
+			getAccessToken: () => null,
+			refreshAccessToken: async () => "fresh-token",
+		});
+
+		await expect(client.listSources("org-1")).resolves.toHaveLength(1);
+		expect(calls[0].authorization).toBeNull();
+		expect(calls[1].authorization).toBe("Bearer fresh-token");
+	});
+
+	it("does not retry a 401 without a refresh capability", async () => {
+		stubFetchSequence([unauthorized()]);
+		const client = createDatasourceClient({
+			apiBase: "/api/solutions/wiki/proxy",
+			getAccessToken: () => "stale-token",
+		});
+
+		await expect(client.listSources("org-1")).rejects.toThrow();
+	});
+
+	it("surfaces the original error when refresh yields no token", async () => {
+		const client = createDatasourceClient({
+			apiBase: "/api/solutions/wiki/proxy",
+			getAccessToken: () => "stale-token",
+			refreshAccessToken: async () => null,
+		});
+		stubFetchSequence([unauthorized(), reply(oneSource)]);
+
+		await expect(client.listSources("org-1")).rejects.toThrow();
 	});
 });
 

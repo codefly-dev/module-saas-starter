@@ -49,13 +49,14 @@ function GatewayBoundPanel({
 }: DatasourcesPanelBaseProps & { gateway: GatewayBinding }) {
 	// The interceptor reads the token at request time, so the client only needs
 	// rebuilding when the binding itself changes — not on every render.
-	const { apiBase, getAccessToken } = gateway;
+	const { apiBase, getAccessToken, refreshAccessToken } = gateway;
 	const client = useMemo(
-		() => createDatasourceClient({ apiBase, getAccessToken }),
-		[apiBase, getAccessToken],
+		() =>
+			createDatasourceClient({ apiBase, getAccessToken, refreshAccessToken }),
+		[apiBase, getAccessToken, refreshAccessToken],
 	);
 	const [queryClient] = useState(
-		() => new QueryClient({ defaultOptions: { queries: { retry: false } } }),
+		() => new QueryClient({ defaultOptions: { queries: { retry: 1 } } }),
 	);
 	return (
 		<QueryClientProvider client={queryClient}>

@@ -5,6 +5,7 @@ export {
 } from "./datasources/datasources-panel.js";
 export {
 	createDatasourceClient,
+	datasourceClientOverTransport,
 	type GatewayBinding,
 } from "./datasources/gateway.js";
 export {

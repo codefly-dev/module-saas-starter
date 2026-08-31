@@ -7,14 +7,19 @@ identically in the host app and in a Module-Federation remote.
 
 The components drive a `DatasourceClient` contract. There are two ways to bind it:
 
-- **Gateway binding** (solution remotes) — pass `gateway={{ apiBase, getAccessToken }}`
-  and the panel self-wires: it builds a `@codefly/saas-sdk` client over a scoped
-  transport that stamps the host's bearer token on every request, and mounts its own
-  `@tanstack/react-query` provider. A Module-Federation remote gets the full UI from
-  `SolutionPageProps` alone — no ambient query/auth context, no re-implemented fetch.
-- **Injected client** (the portal) — pass `client={…}`, an adapter over the app's own
-  transport, and provide the surrounding `QueryClientProvider`. Use this when the app
-  already owns auth/transport (e.g. token-refresh interceptors).
+- **Gateway binding** (solution remotes) — pass
+  `gateway={{ apiBase, getAccessToken, refreshAccessToken }}` and the panel self-wires:
+  it builds a `@codefly/saas-sdk` client over a scoped transport that stamps the host's
+  bearer token on every request and, on an `Unauthenticated` response, calls
+  `refreshAccessToken` and retries once — so a data call survives the short-lived token
+  expiring mid-session. It also mounts its own `@tanstack/react-query` provider. A
+  Module-Federation remote gets the full UI from `SolutionPageProps` alone — no ambient
+  query/auth context, no re-implemented fetch.
+- **Injected client** (the portal) — pass `client={…}` built with
+  `datasourceClientOverTransport(transport)` over the app's own transport, and provide
+  the surrounding `QueryClientProvider`. Use this when the app already owns
+  auth/transport (e.g. its own token-refresh interceptors) — one adapter, shared with
+  the gateway path.
 
 ## Datasources
 
@@ -24,8 +29,10 @@ The components drive a `DatasourceClient` contract. There are two ways to bind i
   a **Connect GitHub** action. Loading/error/empty are first-class.
 - `<ConnectGitHubForm onSubmit={…} … />` — the connect form (repo, paths, branch,
   target collection, access token, webhook secret).
-- `createDatasourceClient({ apiBase, getAccessToken })` — builds the gateway-bound
-  `DatasourceClient` directly, for driving the hooks outside the panel.
+- `createDatasourceClient({ apiBase, getAccessToken, refreshAccessToken })` — builds the
+  gateway-bound `DatasourceClient` (with 401 refresh-and-retry) directly, for driving the
+  hooks outside the panel. `datasourceClientOverTransport(transport)` does the same over a
+  transport you already own.
 - Hooks over a `DatasourceClient`: `useListSources`, `useAddGitHubSource`,
   `useSyncSource`, `useDeleteSource`.
 
