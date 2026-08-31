@@ -70,6 +70,14 @@ export function detectImpersonation(accessToken: string): ImpersonationInfo {
 
 const REFRESH_TOKEN_KEY = "codefly_refresh_token";
 const USER_EMAIL_KEY = "codefly_user_email";
+const USER_NAME_KEY = "codefly_user_name";
+const USER_ID_KEY = "codefly_user_id";
+
+export interface SessionUser {
+	id: string;
+	email?: string;
+	name?: string;
+}
 
 export function getStoredRefreshToken(): string | null {
 	return null;
@@ -84,6 +92,8 @@ export function clearRefreshToken(): void {
 	if (typeof window === "undefined") return;
 	localStorage.removeItem(REFRESH_TOKEN_KEY);
 	localStorage.removeItem(USER_EMAIL_KEY);
+	localStorage.removeItem(USER_NAME_KEY);
+	localStorage.removeItem(USER_ID_KEY);
 }
 
 export function getStoredUserEmail(): string | null {
@@ -94,4 +104,62 @@ export function getStoredUserEmail(): string | null {
 export function storeUserEmail(email: string): void {
 	if (typeof window === "undefined") return;
 	localStorage.setItem(USER_EMAIL_KEY, email);
+}
+
+export function getStoredUserName(): string | null {
+	if (typeof window === "undefined") return null;
+	return localStorage.getItem(USER_NAME_KEY);
+}
+
+export function storeUserName(name: string): void {
+	if (typeof window === "undefined") return;
+	localStorage.setItem(USER_NAME_KEY, name);
+}
+
+export function getStoredUserId(): string | null {
+	if (typeof window === "undefined") return null;
+	return localStorage.getItem(USER_ID_KEY);
+}
+
+export function storeUserId(id: string): void {
+	if (typeof window === "undefined") return;
+	localStorage.setItem(USER_ID_KEY, id);
+}
+
+// resolveSessionUser derives the presentational identity for a session. Email
+// and name each resolve by the same precedence: an explicit value from the
+// login response > the JWT claim minted by accounts > a value persisted on a
+// previous login (surviving a refresh-token round-trip after page reload). The
+// id is only ever the raw subject and is the last-resort label.
+export function resolveSessionUser(
+	accessToken: string,
+	overrides: { userId?: string; email?: string; name?: string } = {},
+): SessionUser {
+	const payload = decodeJWTPayload(accessToken);
+	const id = overrides.userId || String(payload.sub ?? "");
+	// Persisted email/name belong to whoever last populated storage. Only reuse
+	// them for the SAME subject, so a second user signing in on a shared browser
+	// without an intervening logout — whose rotated token may carry no claim —
+	// never inherits the first user's name or email.
+	const stored = getStoredUserId() === id;
+	const storedEmail = stored ? getStoredUserEmail() : null;
+	const storedName = stored ? getStoredUserName() : null;
+	const email =
+		overrides.email ||
+		(typeof payload.email === "string" ? payload.email : undefined) ||
+		storedEmail ||
+		undefined;
+	const name =
+		overrides.name ||
+		(typeof payload.name === "string" ? payload.name : undefined) ||
+		storedName ||
+		undefined;
+	return { id, email, name };
+}
+
+// sessionDisplayLabel is the human-facing label for a signed-in user: the name
+// when known, otherwise the email, and only the raw id when neither exists.
+export function sessionDisplayLabel(user: SessionUser | null): string {
+	if (!user) return "";
+	return user.name || user.email || user.id;
 }

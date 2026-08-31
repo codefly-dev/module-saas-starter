@@ -52,6 +52,30 @@ users:
 	require.NoError(t, claims.Valid())
 }
 
+func TestValidate_CarriesFixtureDisplayName(t *testing.T) {
+	path := writeFixture(t, `
+users:
+  - email: admin@acme.com
+    name: Ada Admin
+    provider: email
+    provider_id: dev-admin
+  - email: nameless@acme.com
+    provider: email
+    provider_id: dev-nameless
+`)
+	v, err := devvalidator.New(path)
+	require.NoError(t, err)
+
+	named, err := v.Validate(context.Background(), "dev-admin")
+	require.NoError(t, err)
+	require.Equal(t, "Ada Admin", named.DisplayName,
+		"the fixture name must reach the claims so a fixture login renders a person")
+
+	nameless, err := v.Validate(context.Background(), "dev-nameless")
+	require.NoError(t, err)
+	require.Empty(t, nameless.DisplayName)
+}
+
 func TestValidate_FixtureTokenIsDistinctFromProviderSubject(t *testing.T) {
 	path := writeFixture(t, `
 users:

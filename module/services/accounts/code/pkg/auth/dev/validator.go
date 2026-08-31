@@ -88,9 +88,10 @@ func New(path string) (*Validator, error) {
 			token = u.ProviderID // backwards-compatible fixtures
 		}
 		v.seeds[token] = &auth.Claims{
-			Provider: provider,
-			Subject:  u.ProviderID,
-			Email:    u.Email,
+			Provider:    provider,
+			Subject:     u.ProviderID,
+			Email:       u.Email,
+			DisplayName: u.Name,
 			// Fixture identities are operator-seeded and therefore trusted as
 			// verified; this keeps development invitation flows working.
 			EmailVerified: true,

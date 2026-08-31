@@ -1,6 +1,21 @@
 import { beforeEach, describe, expect, it } from "vitest";
-import { decodeJWTPayload, extractSessionContext } from "../auth-session";
+import {
+	decodeJWTPayload,
+	extractSessionContext,
+	resolveSessionUser,
+	sessionDisplayLabel,
+	storeUserEmail,
+	storeUserId,
+	storeUserName,
+} from "../auth-session";
 import { getToken, setToken } from "../connect/token-store";
+
+const RAW_UUID = "01a0551a-402c-7640-b8a3-ade256505eeb";
+
+function tokenWith(claims: Record<string, unknown>): string {
+	const payload = btoa(JSON.stringify(claims));
+	return `header.${payload}.sig`;
+}
 
 describe("Connect token store", () => {
 	beforeEach(() => {
@@ -100,5 +115,87 @@ describe("JWT payload decoding", () => {
 			orgRole: undefined,
 			platformRole: undefined,
 		});
+	});
+});
+
+describe("Session user identity", () => {
+	beforeEach(() => {
+		localStorage.clear();
+	});
+
+	it("surfaces email and name from the access-token claims", () => {
+		const user = resolveSessionUser(
+			tokenWith({
+				sub: RAW_UUID,
+				email: "alice@acme.com",
+				name: "Alice Example",
+			}),
+		);
+
+		expect(user).toEqual({
+			id: RAW_UUID,
+			email: "alice@acme.com",
+			name: "Alice Example",
+		});
+	});
+
+	it("never renders the raw uuid as the label when a name or email exists", () => {
+		const withName = resolveSessionUser(
+			tokenWith({
+				sub: RAW_UUID,
+				email: "alice@acme.com",
+				name: "Alice Example",
+			}),
+		);
+		expect(sessionDisplayLabel(withName)).toBe("Alice Example");
+		expect(sessionDisplayLabel(withName)).not.toBe(RAW_UUID);
+
+		const emailOnly = resolveSessionUser(
+			tokenWith({ sub: RAW_UUID, email: "alice@acme.com" }),
+		);
+		expect(sessionDisplayLabel(emailOnly)).toBe("alice@acme.com");
+		expect(sessionDisplayLabel(emailOnly)).not.toBe(RAW_UUID);
+	});
+
+	it("falls back to the uuid only when neither name nor email is known", () => {
+		const user = resolveSessionUser(tokenWith({ sub: RAW_UUID }));
+		expect(user).toEqual({ id: RAW_UUID, email: undefined, name: undefined });
+		expect(sessionDisplayLabel(user)).toBe(RAW_UUID);
+	});
+
+	it("recovers name and email from storage after a claim-less refresh token", () => {
+		storeUserId(RAW_UUID);
+		storeUserEmail("alice@acme.com");
+		storeUserName("Alice Example");
+
+		// A rotated access token carries only the subject.
+		const user = resolveSessionUser(tokenWith({ sub: RAW_UUID }));
+		expect(user.email).toBe("alice@acme.com");
+		expect(user.name).toBe("Alice Example");
+		expect(sessionDisplayLabel(user)).toBe("Alice Example");
+	});
+
+	it("never inherits a previous user's stored name or email", () => {
+		// User A's presentational identity is still in storage (no logout).
+		storeUserId(RAW_UUID);
+		storeUserEmail("alice@acme.com");
+		storeUserName("Alice Example");
+
+		// User B signs in on the same browser; B's rotated token carries no
+		// email/name claim. B must not be shown as Alice.
+		const OTHER_UUID = "02b1662b-513d-8751-c9b4-bef367616ffc";
+		const user = resolveSessionUser(tokenWith({ sub: OTHER_UUID }));
+		expect(user.id).toBe(OTHER_UUID);
+		expect(user.email).toBeUndefined();
+		expect(user.name).toBeUndefined();
+		expect(sessionDisplayLabel(user)).toBe(OTHER_UUID);
+	});
+
+	it("prefers an explicit login-response value over the token claim", () => {
+		const user = resolveSessionUser(
+			tokenWith({ sub: RAW_UUID, email: "stale@acme.com" }),
+			{ userId: RAW_UUID, email: "fresh@acme.com" },
+		);
+		expect(user.email).toBe("fresh@acme.com");
 	});
 });

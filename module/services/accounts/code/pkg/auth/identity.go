@@ -86,6 +86,14 @@ type Identity struct {
 	// trusted transport metadata when the adapter can provide it.
 	DeviceInfo map[string]string
 	IPAddress  string
+
+	// Email and DisplayName are purely presentational identity, carried into
+	// the access token's `email`/`name` claims so a client can render the
+	// signed-in person by name or address instead of the raw user id. Neither
+	// is ever an authentication or authorization signal. DisplayName is empty
+	// when the provider asserted no name.
+	Email       string
+	DisplayName string
 }
 
 // MaxScopedRoleAssignments bounds how many (scope, role) pairs may ride in the

@@ -18,13 +18,14 @@ import { safePostLoginDestination } from "@/lib/public-handoff";
 import type { OrgRole, PlatformRole } from "./auth-session";
 import {
 	clearRefreshToken,
-	decodeJWTPayload,
 	detectImpersonation,
 	extractSessionContext,
-	getStoredUserEmail,
 	type ImpersonationInfo,
+	resolveSessionUser,
 	storeRefreshToken,
 	storeUserEmail,
+	storeUserId,
+	storeUserName,
 } from "./auth-session";
 import {
 	setToken as setConnectToken,
@@ -209,7 +210,7 @@ function base64urlEncode(bytes: Uint8Array): string {
 }
 
 interface AuthState {
-	user: { id: string; email?: string } | null;
+	user: { id: string; email?: string; name?: string } | null;
 	accessToken: string | null;
 	organizationId?: string;
 	platformRole?: PlatformRole;
@@ -297,22 +298,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 						: "";
 				document.cookie = `codefly_session=1; path=/; SameSite=Lax${secure}`;
 			}
-			const payload = decodeJWTPayload(accessToken);
-			// Resolve email: explicit arg (login flow) > JWT email claim
-			// (future-proofing) > previously-stored value (refresh-token
-			// round-trip after page reload). Persist the resolved email so
-			// the next reload finds it.
-			const resolvedEmail =
-				email ||
-				(typeof payload.email === "string" ? payload.email : undefined) ||
-				getStoredUserEmail() ||
-				undefined;
-			if (resolvedEmail) storeUserEmail(resolvedEmail);
+			// Resolve the presentational identity (email + name), persisting each
+			// resolved value so the next reload finds it after a refresh-token
+			// round-trip that mints a claim-less access token.
+			const sessionUser = resolveSessionUser(accessToken, { userId, email });
+			if (sessionUser.id) storeUserId(sessionUser.id);
+			if (sessionUser.email) storeUserEmail(sessionUser.email);
+			if (sessionUser.name) storeUserName(sessionUser.name);
 			setState({
-				user: {
-					id: userId || String(payload.sub ?? ""),
-					email: resolvedEmail,
-				},
+				user: sessionUser,
 				accessToken,
 				organizationId,
 				platformRole,
@@ -563,7 +557,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 				beginMFA(data, data.user?.primaryEmail);
 				return;
 			}
-			setTokens(data.accessToken, data.refreshToken, data.user?.uuid);
+			setTokens(
+				data.accessToken,
+				data.refreshToken,
+				data.user?.uuid,
+				data.user?.primaryEmail,
+			);
 
 			const dest = safePostLoginDestination(
 				sessionStorage.getItem("post_login_destination") ?? "/",

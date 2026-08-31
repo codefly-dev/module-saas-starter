@@ -6,6 +6,7 @@ import (
 	"crypto/sha1"
 	"crypto/sha256"
 	"encoding/base32"
+	"encoding/base64"
 	"encoding/binary"
 	"encoding/hex"
 	"errors"
@@ -36,6 +37,15 @@ func testTOTP(t *testing.T, secret string, at time.Time) string {
 	offset := sum[len(sum)-1] & 0x0f
 	value := binary.BigEndian.Uint32(sum[offset:offset+4]) & 0x7fffffff
 	return fmt.Sprintf("%06d", value%1_000_000)
+}
+
+func decodeAccessPayload(t *testing.T, token string) string {
+	t.Helper()
+	parts := strings.Split(token, ".")
+	require.Len(t, parts, 3)
+	raw, err := base64.RawURLEncoding.DecodeString(parts[1])
+	require.NoError(t, err)
+	return string(raw)
 }
 
 func registerMFAUser(t *testing.T, subject, email string) (userID, secret string) {
@@ -243,6 +253,31 @@ func TestMFALoginLocksTransactionAfterFiveRejectedFactors(t *testing.T) {
 		return listErr
 	}))
 	require.Empty(t, sessions)
+}
+
+func TestMFACompletedSessionCarriesPresentationalIdentity(t *testing.T) {
+	if testService == nil {
+		t.Skip("test infrastructure not available")
+	}
+	clearData(t)
+	_, secret := registerMFAUser(t, "mfa-identity", "mfa-identity@example.com")
+
+	primary, err := authenticateFixture(testCtx, &gen.AuthenticateRequest{
+		Provider: "email", ProviderId: "mfa-identity", ProviderEmail: "mfa-identity@example.com",
+	})
+	require.NoError(t, err)
+	require.True(t, primary.MfaRequired)
+
+	completed, err := testService.CompleteMFAChallenge(testCtx, primary.MfaToken, testTOTP(t, secret, time.Now()))
+	require.NoError(t, err)
+	require.NotEmpty(t, completed.AccessToken)
+
+	// The session minted after the second factor is reconstructed from the
+	// persisted login transaction, not a fresh provider login. It must still
+	// carry the presentational identity (email here; display name rides the
+	// same tx.Email/tx.DisplayName path) so the post-MFA session never renders
+	// the raw uuid.
+	require.Contains(t, decodeAccessPayload(t, completed.AccessToken), `"email":"mfa-identity@example.com"`)
 }
 
 func TestMFALoginTransactionExpiryRejectsBeforeIssuance(t *testing.T) {

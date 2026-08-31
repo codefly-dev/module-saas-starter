@@ -116,7 +116,12 @@ type accessClaims struct {
 	ScopedRoles          map[string][]string `json:"sr,omitempty"`
 	ScopedRolesTruncated bool                `json:"srt,omitempty"`
 	SessionID            string              `json:"sid"`
-	ActingAsUserID       string              `json:"acting,omitempty"`
+	// Email and Name are presentational identity for the client to render the
+	// signed-in person. They are never consulted for authorization; the sidecar
+	// authorizes on sub/org/roles alone.
+	Email          string `json:"email,omitempty"`
+	Name           string `json:"name,omitempty"`
+	ActingAsUserID string `json:"acting,omitempty"`
 	// Act carries the RFC 8693 on-behalf-of delegation chain. sub stays the end
 	// user; act names the service (or admin) acting for them, nesting outward.
 	// Bounded by auth.MaxActorChainDepth at both mint and verify.
@@ -299,6 +304,8 @@ func (m *Minter) prepareMint(identity *auth.Identity, familyID uuid.UUID) (*auth
 		OrgID:                 identity.OrgID,
 		OrgRole:               identity.OrgRole,
 		PlatformRole:          identity.PlatformRole,
+		Email:                 identity.Email,
+		DisplayName:           identity.DisplayName,
 		MFASatisfied:          identity.MFASatisfied,
 		AuthenticationMethods: identity.AuthenticationMethods,
 		AuthenticatedAt:       identity.AuthenticatedAt,
@@ -467,6 +474,8 @@ func identityFromCurrentAuthorization(
 		ScopedRoles:           authorization.ScopedRoles,
 		ScopedRolesTruncated:  authorization.ScopedRolesTruncated,
 		SessionID:             sessionID,
+		Email:                 rec.Email,
+		DisplayName:           rec.DisplayName,
 		MFASatisfied:          mfaSatisfied,
 		AuthenticationMethods: authenticationMethods,
 		AuthenticatedAt:       rec.AuthenticatedAt,
@@ -616,6 +625,8 @@ func (m *Minter) VerifyAccess(tokenString string) (*auth.Identity, error) {
 		ScopedRoles:           claims.ScopedRoles,
 		ScopedRolesTruncated:  claims.ScopedRolesTruncated,
 		SessionID:             sessionID,
+		Email:                 claims.Email,
+		DisplayName:           claims.Name,
 		ActingAsUserID:        actingAs,
 		Actor:                 claims.Act,
 		MFASatisfied:          claims.MFASatisfied,
@@ -708,6 +719,8 @@ func (m *Minter) signAccess(identity *auth.Identity, sessionID uuid.UUID, now ti
 			ID:        jti,
 		},
 		SessionID: sessionID.String(),
+		Email:     identity.Email,
+		Name:      identity.DisplayName,
 	}
 	if identity.OrgID != uuid.Nil {
 		claims.OrgID = identity.OrgID.String()

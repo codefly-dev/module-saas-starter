@@ -63,6 +63,11 @@ type Config struct {
 	// that the user controls the email. Defaults to "email_verified". An
 	// absent or non-affirmative claim is treated as unverified.
 	EmailVerifiedClaim string
+	// NameClaim is the claim name carrying the user's human-readable display
+	// name. Defaults to the standard OIDC "name"; when that claim is absent the
+	// standard "given_name" is used as a fallback. Purely presentational — an
+	// absent name is not an error.
+	NameClaim string
 	// AllowMissingEmail permits a provider adapter to validate the signed
 	// token first and then supply a verified email from the authenticated token
 	// exchange response. Generic OIDC flows should leave this false.
@@ -92,6 +97,9 @@ func (c *Config) withDefaults() {
 	}
 	if c.EmailVerifiedClaim == "" {
 		c.EmailVerifiedClaim = "email_verified"
+	}
+	if c.NameClaim == "" {
+		c.NameClaim = "name"
 	}
 	if c.OrgClaim == "" {
 		c.OrgClaim = "organization_id"
@@ -205,6 +213,10 @@ func (v *Validator) ValidateWithNonce(ctx context.Context, token, expectedNonce 
 	if v.cfg.OrgClaim != "" {
 		providerOrg, _ = claims[v.cfg.OrgClaim].(string)
 	}
+	displayName, _ := claims[v.cfg.NameClaim].(string)
+	if displayName == "" {
+		displayName, _ = claims["given_name"].(string)
+	}
 
 	var exp time.Time
 	if expFloat, ok := claims["exp"].(float64); ok {
@@ -216,6 +228,7 @@ func (v *Validator) ValidateWithNonce(ctx context.Context, token, expectedNonce 
 		Subject:       subject,
 		Email:         email,
 		EmailVerified: claimBool(claims[v.cfg.EmailVerifiedClaim]),
+		DisplayName:   displayName,
 		ProviderOrgID: providerOrg,
 		ExpiresAt:     exp,
 	}, nil
