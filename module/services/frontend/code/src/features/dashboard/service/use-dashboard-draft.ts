@@ -62,6 +62,10 @@ function isPromiseLike(value: unknown): value is Promise<unknown> {
  * user-scoped, per the ownership model), and the hook API is unchanged. Changes
  * from another tab — or another device once server-backed — arrive through the
  * store's subscription.
+ *
+ * An injected `store` must be a stable reference across renders (memoize it):
+ * the hook re-subscribes and reloads whenever the store identity changes, so a
+ * fresh instance every render would re-fetch on every render.
  */
 export function useDashboardDraft(
 	storageKey: string,
@@ -79,11 +83,11 @@ export function useDashboardDraft(
 	// load); flipped by every other state update.
 	const supersededRef = useRef(false);
 
-	const browserStore = useMemo(
-		() => createBrowserDashboardDraftStore(storageKey),
-		[storageKey],
+	// Default to localStorage; only build it when no store is injected.
+	const activeStore = useMemo(
+		() => store ?? createBrowserDashboardDraftStore(storageKey),
+		[store, storageKey],
 	);
-	const activeStore = store ?? browserStore;
 
 	const [state, setState] = useState<DraftState>(() => {
 		try {
