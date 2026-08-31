@@ -36,7 +36,27 @@ describe("authErrorFromResponse", () => {
 			status: 401,
 			code: "unauthenticated",
 			requestId: "req-abc123",
+			// The backend reason is preserved (generic here, the real cause in dev)
+			// so it can be surfaced on the reference line rather than discarded.
+			backendMessage: "invalid credentials",
 		});
+	});
+
+	it("preserves the backend's real reason exposed in local development", async () => {
+		// In local dev the accounts service returns the underlying reason in the
+		// message field instead of the collapsed string; it must survive to the UI.
+		const error = await authErrorFromResponse(
+			errorResponse(
+				401,
+				{ code: 16, message: "auth: token audience mismatch" },
+				{ "x-request-id": "req-dev" },
+			),
+		);
+
+		expect(error.detail.backendMessage).toBe("auth: token audience mismatch");
+		expect(operatorReference(error.detail)).toContain(
+			"auth: token audience mismatch",
+		);
 	});
 
 	it("distinguishes a denied group gate from a credential failure", async () => {

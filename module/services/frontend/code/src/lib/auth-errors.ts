@@ -16,6 +16,14 @@ export interface AuthErrorDetail {
 	requestId?: string;
 	/** Distributed-trace id parsed from `traceparent`/`x-trace-id`, when present. */
 	traceId?: string;
+	/**
+	 * The backend's own failure message. In every deployed environment this is
+	 * the generic collapsed string (e.g. "invalid credentials"), but the accounts
+	 * service deliberately returns the real reason here in local development —
+	 * carrying it through keeps that diagnostic on the surface instead of forcing
+	 * a log grep by request id.
+	 */
+	backendMessage?: string;
 }
 
 /**
@@ -146,6 +154,7 @@ export async function authErrorFromResponse(
 		code: parsed.code,
 		requestId: response.headers.get("x-request-id")?.trim() || undefined,
 		traceId: readTraceId(response),
+		backendMessage: parsed.message,
 	});
 }
 
@@ -159,5 +168,8 @@ export function operatorReference(detail: AuthErrorDetail): string {
 	const parts: string[] = [detail.code ?? `HTTP ${detail.status}`];
 	if (detail.requestId) parts.push(`request ${detail.requestId}`);
 	if (detail.traceId) parts.push(`trace ${detail.traceId}`);
+	// The backend reason (generic in prod, the real cause in local dev) belongs on
+	// the reference line, not folded into the user-facing copy.
+	if (detail.backendMessage) parts.push(detail.backendMessage);
 	return parts.join(" · ");
 }

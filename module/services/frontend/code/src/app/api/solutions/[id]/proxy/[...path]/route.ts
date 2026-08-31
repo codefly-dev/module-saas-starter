@@ -31,10 +31,7 @@ function gatewayBase(): string | null {
  * bearer. The browser never reaches a solution service directly, and this route
  * names no specific solution — it only resolves whatever registered at runtime.
  */
-async function handler(
-	request: Request,
-	context: RouteContext,
-): Promise<Response> {
+async function handler(request: Request, context: RouteContext): Promise<Response> {
 	const { id, path } = await context.params;
 
 	const solution = findSolution(id);
@@ -97,7 +94,11 @@ async function handler(
 	if (!upstream.ok) {
 		const category = errorCategory(upstream.status);
 		responseHeaders.set("x-codefly-solution-error", category);
-		console.error(
+		// A 5xx is the solution's own fault and warrants error-level attention; a
+		// 4xx is a client/auth condition (e.g. an expired token on a poll) and
+		// would only spam the log at error level.
+		const log = upstream.status >= 500 ? console.error : console.warn;
+		log(
 			`solution proxy: upstream error solution=${id} status=${upstream.status} category=${category} request_id=${upstreamRequestID ?? ""}`,
 		);
 	}
@@ -108,10 +109,17 @@ async function handler(
 	});
 }
 
-/** Classify a forwarded gateway status into an operator-facing failure cause. */
+/**
+ * Classify a forwarded gateway status into an operator-facing failure cause.
+ *
+ * A registration miss is caught by the host's own 404 before any upstream call
+ * (see `findSolution` above), so a *forwarded* 404 is the solution's own API
+ * reporting a missing resource — labeled `not_found`, never `not_registered`,
+ * so an operator isn't sent chasing a registration bug that isn't there.
+ */
 function errorCategory(status: number): string {
 	if (status === 401 || status === 403) return "auth";
-	if (status === 404) return "not_registered";
+	if (status === 404) return "not_found";
 	if (status >= 500) return "upstream";
 	return "request";
 }

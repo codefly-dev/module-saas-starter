@@ -239,6 +239,8 @@ describe("solution proxy passthrough", () => {
 	it("categorizes a forwarded auth failure and correlates it via request id", async () => {
 		withGateway();
 		registerAudit();
+		const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+		const error = vi.spyOn(console, "error").mockImplementation(() => {});
 		fetchMock.mockResolvedValueOnce(
 			new Response("unauthorized", {
 				status: 401,
@@ -261,11 +263,42 @@ describe("solution proxy passthrough", () => {
 		expect(res.status).toBe(401);
 		expect(res.headers.get("x-codefly-solution-error")).toBe("auth");
 		expect(res.headers.get("x-request-id")).toBe("req-42");
+		// A client/auth 4xx is a warning, never an error-level log line.
+		expect(warn).toHaveBeenCalledTimes(1);
+		expect(error).not.toHaveBeenCalled();
+		warn.mockRestore();
+		error.mockRestore();
+	});
+
+	it("labels a forwarded 404 as not_found, not a registration miss", async () => {
+		// The solution IS registered (it reached upstream); a 404 here is the
+		// solution's own API reporting a missing resource, so it must not read as
+		// "not_registered" and send an operator chasing a registration bug.
+		withGateway();
+		registerAudit();
+		fetchMock.mockResolvedValueOnce(
+			new Response("no such record", {
+				status: 404,
+				headers: { "content-type": "application/json" },
+			}),
+		);
+
+		const res = await GET(
+			proxyRequest("http://frontend/api/solutions/audit/proxy/records/999", {
+				headers: { authorization: "Bearer caller-token" },
+			}),
+			context("audit", ["records", "999"]),
+		);
+
+		expect(res.status).toBe(404);
+		expect(res.headers.get("x-codefly-solution-error")).toBe("not_found");
 	});
 
 	it("categorizes a forwarded solution-upstream failure", async () => {
 		withGateway();
 		registerAudit();
+		const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+		const error = vi.spyOn(console, "error").mockImplementation(() => {});
 		fetchMock.mockResolvedValueOnce(
 			new Response("boom", {
 				status: 503,
@@ -282,5 +315,10 @@ describe("solution proxy passthrough", () => {
 
 		expect(res.status).toBe(503);
 		expect(res.headers.get("x-codefly-solution-error")).toBe("upstream");
+		// A solution 5xx is a real server fault and warrants error-level attention.
+		expect(error).toHaveBeenCalledTimes(1);
+		expect(warn).not.toHaveBeenCalled();
+		warn.mockRestore();
+		error.mockRestore();
 	});
 });
