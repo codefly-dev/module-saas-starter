@@ -73,6 +73,12 @@ export function useDashboardDraft(
 	const initialRef = useRef(initial);
 	initialRef.current = initial;
 
+	// A store's load() may resolve on a later tick. If an edit, a reset, or an
+	// external change lands before it does, that newer state wins — the resolved
+	// initial load must not clobber it. Reset per store (a new store gets a fresh
+	// load); flipped by every other state update.
+	const supersededRef = useRef(false);
+
 	const browserStore = useMemo(
 		() => createBrowserDashboardDraftStore(storageKey),
 		[storageKey],
@@ -95,6 +101,7 @@ export function useDashboardDraft(
 	// draft or a store error is surfaced, never rendered or thrown.
 	useEffect(() => {
 		let cancelled = false;
+		supersededRef.current = false;
 		const fail = (operation: string, cause: unknown) =>
 			setState((prev) => ({
 				spec: prev.spec,
@@ -113,10 +120,12 @@ export function useDashboardDraft(
 			if (isPromiseLike(loaded)) {
 				loaded.then(
 					(spec) => {
-						if (!cancelled) applyLoaded(spec as DashboardDef | null);
+						if (!cancelled && !supersededRef.current) {
+							applyLoaded(spec as DashboardDef | null);
+						}
 					},
 					(cause) => {
-						if (!cancelled) fail("load", cause);
+						if (!cancelled && !supersededRef.current) fail("load", cause);
 					},
 				);
 			} else {
@@ -128,6 +137,8 @@ export function useDashboardDraft(
 
 		const unsubscribe = activeStore.subscribe((change) => {
 			if (cancelled) return;
+			// An external change is newer than a still-pending initial load.
+			supersededRef.current = true;
 			switch (change.kind) {
 				case "spec":
 					setState({ spec: change.spec, error: null });
@@ -158,6 +169,7 @@ export function useDashboardDraft(
 			// Apply the valid edit unconditionally: a runtime mutation must take
 			// effect even if it cannot be persisted, so a full or blocked store
 			// costs the save, never the edit.
+			supersededRef.current = true;
 			setState({ spec: next, error: null });
 			const onFail = (cause: unknown) =>
 				setState((prev) => ({
@@ -175,6 +187,7 @@ export function useDashboardDraft(
 	);
 
 	const reset = useCallback(() => {
+		supersededRef.current = true;
 		setState({ spec: initialRef.current, error: null });
 		const onFail = (cause: unknown) =>
 			setState((prev) => ({
