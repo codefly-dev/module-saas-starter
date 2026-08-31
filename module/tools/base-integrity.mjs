@@ -647,18 +647,53 @@ function gen() {
   console.log(`base-integrity: wrote ${manifest.fileCount} base-file hashes to tools/base-manifest.json`);
 }
 
+// verify is the canonical release gate (Base manifest integrity CI job, on
+// pull requests, pushes to main, and release tags). baseManifestFreshnessErrors
+// catches drift in every HASHED base file; the migration, RLS, and
+// production-truth gates read only hashed inputs, so a violation there changes a
+// file hash, trips freshness, and is already blocked — they need not be repeated
+// here. The frontend package-lock.json is the SOLE base file excluded from the
+// hash manifest (it is regenerated per consumer), so its drift changes no hash
+// and is invisible to freshness. verify must therefore validate it semantically,
+// exactly as gen and check do, or a lock out of sync with the protected
+// package.json and packages/* workspaces (the failure a downstream `npm ci`
+// hits) ships silently. Any future base file added to isExcludedFile that a gate
+// validates must be added below for the same reason. verifyErrors is the single
+// enumerated list of what verify enforces, kept pure so tests can exercise it.
+export function verifyErrors(moduleRoot = MODULE_ROOT) {
+  return [
+    {
+      message:
+        "base-manifest.json does not match the canonical tree — regenerate it "
+        + "with `node tools/base-integrity.mjs gen` and commit the result:",
+      errors: baseManifestFreshnessErrors(moduleRoot),
+    },
+    {
+      message:
+        "frontend package-lock.json is out of sync with the protected "
+        + "package.json and packages/* workspaces — regenerate it with "
+        + "`npm install --prefix services/frontend/code` and commit the result:",
+      errors: workspaceInstallGraphErrors(
+        join(moduleRoot, "services", "frontend", "code"),
+      ),
+    },
+  ];
+}
+
 function verify() {
-  const errors = baseManifestFreshnessErrors();
-  if (errors.length) {
-    console.error(
-      "base-integrity: base-manifest.json does not match the canonical tree — "
-      + "regenerate it with `node tools/base-integrity.mjs gen` and commit the result:",
-    );
-    errors.forEach((error) => console.error(`    ${error}`));
+  const failed = verifyErrors().filter((group) => group.errors.length);
+  if (failed.length) {
+    for (const group of failed) {
+      console.error(`base-integrity: ${group.message}`);
+      group.errors.forEach((error) => console.error(`    ${error}`));
+    }
     process.exit(1);
   }
   const { fileCount } = JSON.parse(readFileSync(MANIFEST_PATH, "utf8"));
-  console.log(`✓ base-manifest.json matches the canonical tree (${fileCount} base files).`);
+  console.log(
+    `✓ base-manifest.json matches the canonical tree (${fileCount} base files); `
+    + "frontend workspace install graph is in sync.",
+  );
 }
 
 function check() {

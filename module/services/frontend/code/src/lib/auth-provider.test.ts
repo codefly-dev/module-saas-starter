@@ -54,7 +54,7 @@ describe("Codefly identity provider configuration", () => {
 				authorizeURL: "https://api.workos.com/user_management/authorize",
 				clientID: "client_123",
 				scope: "openid profile email",
-				authorizeParams: { provider: "authkit" },
+				authorizeParams: { prompt: "select_account", provider: "authkit" },
 			},
 		]);
 	});
