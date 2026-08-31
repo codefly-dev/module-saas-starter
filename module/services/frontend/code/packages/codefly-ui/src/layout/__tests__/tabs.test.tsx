@@ -1,3 +1,6 @@
+// @vitest-environment happy-dom
+// Only this file drives real DOM interaction (focus, key events); the rest of the
+// kit's tests are pure and run under the package's default `node` environment.
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { Tabs } from "../tabs.js";
@@ -29,6 +32,23 @@ describe("Tabs", () => {
 	it("honors `initial` for the uncontrolled starting tab", () => {
 		render(<Tabs tabs={tabs} initial="two" />);
 		expect(screen.getByRole("tabpanel").textContent).toBe("Second panel");
+	});
+
+	it("falls back to the first tab when `initial` matches no tab", () => {
+		render(<Tabs tabs={tabs} initial="does-not-exist" />);
+		// A bad id must not leave the widget dead: the panel renders and the first
+		// tab is selected and in the tab order (tabindex 0), so it stays reachable.
+		expect(screen.getByRole("tabpanel").textContent).toBe("First panel");
+		const [first] = screen.getAllByRole("tab");
+		expect(first.getAttribute("aria-selected")).toBe("true");
+		expect(first.getAttribute("tabindex")).toBe("0");
+	});
+
+	it("falls back to the first tab when controlled `active` matches no tab", () => {
+		render(<Tabs tabs={tabs} active="does-not-exist" />);
+		expect(screen.getByRole("tabpanel").textContent).toBe("First panel");
+		const [first] = screen.getAllByRole("tab");
+		expect(first.getAttribute("aria-selected")).toBe("true");
 	});
 
 	it("switches panels on click and reports the change", () => {
@@ -70,6 +90,19 @@ describe("Tabs", () => {
 		fireEvent.keyDown(document.activeElement ?? tablist, { key: "ArrowLeft" });
 		// Wraps to the last tab.
 		expect(screen.getByRole("tabpanel").textContent).toBe("Third panel");
+	});
+
+	it("ignores ArrowUp/ArrowDown on the horizontal tablist", () => {
+		render(<Tabs tabs={tabs} />);
+		const [first] = screen.getAllByRole("tab");
+		first.focus();
+
+		// Vertical arrows must not move selection (and must not preventDefault the
+		// page scroll) on a horizontal tablist — only Left/Right navigate.
+		fireEvent.keyDown(first, { key: "ArrowDown" });
+		expect(screen.getByRole("tabpanel").textContent).toBe("First panel");
+		fireEvent.keyDown(first, { key: "ArrowUp" });
+		expect(screen.getByRole("tabpanel").textContent).toBe("First panel");
 	});
 
 	it("keeps only the selected tab in the tab order (roving tabindex)", () => {

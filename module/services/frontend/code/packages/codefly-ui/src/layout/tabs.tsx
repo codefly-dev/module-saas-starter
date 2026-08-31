@@ -48,7 +48,15 @@ export function Tabs({
 	const [internal, setInternal] = useState(() => initial ?? tabs[0]?.id);
 	const tabRefs = useRef<Record<string, HTMLButtonElement | null>>({});
 
-	const selected = active ?? internal;
+	// Reconcile the requested selection against the current tabs: an `initial` or
+	// `active` id that matches no tab (a typo, or an id whose tab has since gone)
+	// would otherwise select nothing — leaving every tab out of the tab order and
+	// rendering no panel, a silently dead and keyboard-unreachable widget. Fall
+	// back to the first tab so the component is always usable.
+	const requested = active ?? internal;
+	const selected = tabs.some((tab) => tab.id === requested)
+		? requested
+		: tabs[0]?.id;
 
 	const select = useCallback(
 		(id: string) => {
@@ -64,11 +72,9 @@ export function Tabs({
 			let next: number | undefined;
 			switch (event.key) {
 				case "ArrowRight":
-				case "ArrowDown":
 					next = (index + 1) % tabs.length;
 					break;
 				case "ArrowLeft":
-				case "ArrowUp":
 					next = (index - 1 + tabs.length) % tabs.length;
 					break;
 				case "Home":
