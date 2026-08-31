@@ -229,6 +229,18 @@ navigation:
       - plugin_registry
       - sidebar
     order: 400
+  - id: admin-datasources
+    plugin: core-users
+    label: Data sources
+    path: /admin/datasources
+    icon: HardDriveDownload
+    group: Integrations
+    access: admin
+    surfaces:
+      - command_palette
+      - plugin_registry
+      - sidebar
+    order: 410
   - id: admin-sso
     plugin: core-users
     label: Single Sign-On
