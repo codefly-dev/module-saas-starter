@@ -373,7 +373,7 @@ func (s *Service) OverrideEntitlement(ctx context.Context, actorID string, req i
 	}); err != nil {
 		return "", fmt.Errorf("create override: %w", err)
 	}
-	s.emit(ctx, actorID, "user", "entitlement.override",
+	s.emit(ctx, actorID, "user", EventEntitlementOverride,
 		"entitlement_override", override.ID, req.GetOrgId())
 	return override.ID, nil
 }

@@ -385,7 +385,7 @@ func (s *Service) RequestDelegation(ctx context.Context, in *RequestDelegationIn
 				wool.Field("grant_id", id),
 				wool.Field("pattern_id", pattern.ID))
 			s.emit(ctx, in.ActorPrincipalID, "agent",
-				"delegation.auto_approved", "delegation_grant", id, in.OrgID)
+				EventDelegationAutoApproved, "delegation_grant", id, in.OrgID)
 			// Notify the actor's owning user (when the actor is a
 			// human; agent actors silently skip — no inbox to
 			// post to). Best-effort: failure here doesn't roll
@@ -413,7 +413,7 @@ func (s *Service) RequestDelegation(ctx context.Context, in *RequestDelegationIn
 		wool.Field("grant_id", id),
 		wool.Field("expires_at", expiresAt.Format(time.RFC3339)))
 	s.emit(ctx, in.ActorPrincipalID, "agent",
-		"delegation.requested", "delegation_grant", id, in.OrgID)
+		EventDelegationRequested, "delegation_grant", id, in.OrgID)
 	return id, nil
 }
 

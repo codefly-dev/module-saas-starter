@@ -119,7 +119,7 @@ func (s *Service) BeginMFALogin(ctx context.Context, identity *auth.Identity) (s
 	}); err != nil {
 		return "", w.Wrapf(err, "cannot persist MFA login transaction")
 	}
-	s.emit(ctx, tx.UserID, "user", "auth.mfa_challenge_started", "mfa_login_transaction", tx.ID, tx.OrgID)
+	s.emit(ctx, tx.UserID, "user", EventAuthMFAChallengeStart, "mfa_login_transaction", tx.ID, tx.OrgID)
 	return token, nil
 }
 
@@ -189,10 +189,10 @@ func (s *Service) CompleteMFAChallenge(ctx context.Context, mfaToken, code strin
 	if err != nil || user == nil {
 		user = &gen.User{Uuid: consumed.UserID}
 	}
-	s.emit(ctx, consumed.UserID, "user", "auth.login", "session", consumed.SessionID, consumed.OrgID)
-	s.emit(ctx, consumed.UserID, "user", "auth.mfa_challenge_completed", "mfa_login_transaction", consumed.ID, consumed.OrgID)
+	s.emit(ctx, consumed.UserID, "user", EventAuthLogin, "session", consumed.SessionID, consumed.OrgID)
+	s.emit(ctx, consumed.UserID, "user", EventAuthMFAChallengeDone, "mfa_login_transaction", consumed.ID, consumed.OrgID)
 	if factorMethod == "backup_code" {
-		s.emit(ctx, consumed.UserID, "user", "mfa.backup_code_used", "user", consumed.UserID, consumed.OrgID)
+		s.emit(ctx, consumed.UserID, "user", EventMFABackupUsed, "user", consumed.UserID, consumed.OrgID)
 	}
 
 	return completeMFAResponse(pair, user), nil

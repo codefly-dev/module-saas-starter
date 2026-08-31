@@ -99,7 +99,7 @@ func (s *Service) AddOrgMember(ctx context.Context, actorID string, req *gen.Add
 	// the cache with the wrong negative answer. No-op when caching is off.
 	s.invalidateMembership(ctx, req.OrgId, req.UserId)
 
-	s.emit(ctx, actorID, "user", "org.member_added", "organization", req.OrgId, req.OrgId)
+	s.emit(ctx, actorID, "user", EventOrgMemberAdded, "organization", req.OrgId, req.OrgId)
 
 	if orgName == "" {
 		orgName = req.OrgId
@@ -187,7 +187,7 @@ func (s *Service) RemoveOrgMember(ctx context.Context, actorID string, req *gen.
 		return nil
 	})
 
-	s.emit(ctx, actorID, "user", "org.member_removed", "organization", req.OrgId, req.OrgId)
+	s.emit(ctx, actorID, "user", EventOrgMemberRemoved, "organization", req.OrgId, req.OrgId)
 	return nil
 }
 

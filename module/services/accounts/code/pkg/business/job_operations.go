@@ -70,7 +70,7 @@ func (s *Service) ReplayJob(
 	// Exact retries resolve to the original replay and must not duplicate the
 	// success audit record.
 	if response.GetDisposition() == jobsv1.JobEnqueueDisposition_JOB_ENQUEUE_DISPOSITION_INSERTED {
-		s.emit(ctx, actorID, "user", "job.replayed", "job", response.GetJobId(), "")
+		s.emit(ctx, actorID, "user", EventJobReplayed, "job", response.GetJobId(), "")
 	}
 	return response, nil
 }

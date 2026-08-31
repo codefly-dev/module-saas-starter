@@ -134,7 +134,7 @@ func (s *Service) BeginWebAuthnRegistration(ctx context.Context, userID string) 
 		return "", "", err
 	}
 
-	s.emit(ctx, userID, "user", "mfa.webauthn_registration_started", "user", userID, "")
+	s.emit(ctx, userID, "user", EventMFAWebAuthnRegStarted, "user", userID, "")
 	return token, string(options), nil
 }
 
@@ -203,7 +203,7 @@ func (s *Service) FinishWebAuthnRegistration(ctx context.Context, userID, ceremo
 		return nil, err
 	}
 
-	s.emit(ctx, userID, "user", "mfa.webauthn_registered", "mfa_device", device.ID, "")
+	s.emit(ctx, userID, "user", EventMFAWebAuthnRegistered, "mfa_device", device.ID, "")
 	return device, nil
 }
 
@@ -337,9 +337,9 @@ func (s *Service) CompleteWebAuthnMFAChallenge(ctx context.Context, mfaToken, ce
 	if err != nil || user == nil {
 		user = &gen.User{Uuid: consumed.UserID}
 	}
-	s.emit(ctx, consumed.UserID, "user", "auth.login", "session", consumed.SessionID, consumed.OrgID)
-	s.emit(ctx, consumed.UserID, "user", "auth.mfa_challenge_completed", "mfa_login_transaction", consumed.ID, consumed.OrgID)
-	s.emit(ctx, consumed.UserID, "user", "mfa.webauthn_used", "user", consumed.UserID, consumed.OrgID)
+	s.emit(ctx, consumed.UserID, "user", EventAuthLogin, "session", consumed.SessionID, consumed.OrgID)
+	s.emit(ctx, consumed.UserID, "user", EventAuthMFAChallengeDone, "mfa_login_transaction", consumed.ID, consumed.OrgID)
+	s.emit(ctx, consumed.UserID, "user", EventMFAWebAuthnUsed, "user", consumed.UserID, consumed.OrgID)
 	return completeMFAResponse(pair, user), nil
 }
 

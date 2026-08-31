@@ -51,7 +51,7 @@ func (s *Service) DeleteRole(ctx context.Context, actorID string, req *gen.Delet
 		return w.Wrapf(err, "cannot delete role")
 	}
 
-	s.emit(ctx, actorID, "user", "role.deleted", "role", req.Id, "")
+	s.emit(ctx, actorID, "user", EventRoleDeleted, "role", req.Id, "")
 	return nil
 }
 
@@ -91,6 +91,6 @@ func (s *Service) RevokeRole(ctx context.Context, actorID string, req *gen.Revok
 		return w.Wrapf(err, "cannot revoke role")
 	}
 
-	s.emit(ctx, actorID, "user", "role.revoked", "role", req.RoleId, req.OrgId)
+	s.emit(ctx, actorID, "user", EventRoleRevoked, "role", req.RoleId, req.OrgId)
 	return nil
 }

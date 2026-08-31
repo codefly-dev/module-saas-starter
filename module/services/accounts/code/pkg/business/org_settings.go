@@ -54,6 +54,6 @@ func (s *Service) UpdateOrgSettings(ctx context.Context, actorID string, setting
 		return nil, w.Wrapf(err, "cannot update org settings")
 	}
 
-	s.emit(ctx, actorID, "user", "org.settings_updated", "organization", settings.OrgID, settings.OrgID)
+	s.emit(ctx, actorID, "user", EventOrgSettingsUpdated, "organization", settings.OrgID, settings.OrgID)
 	return fresh, nil
 }

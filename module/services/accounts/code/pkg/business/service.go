@@ -400,7 +400,7 @@ func (s *Service) RegisterUser(ctx context.Context, input *gen.RegisterUserReque
 		}
 	}
 
-	s.emit(ctx, userID, "user", "user.registered", "user", userID, orgID)
+	s.emit(ctx, userID, "user", EventUserRegistered, "user", userID, orgID)
 
 	return &gen.RegisterUserResponse{User: user, Identity: identity}, nil
 }
@@ -490,7 +490,7 @@ func (s *Service) CreateOrganization(ctx context.Context, ownerID string, req *g
 	}); err != nil {
 		return nil, err
 	}
-	s.emit(ctx, ownerID, "user", "org.created", "organization", org.Id, org.Id)
+	s.emit(ctx, ownerID, "user", EventOrgCreated, "organization", org.Id, org.Id)
 	return &gen.CreateOrganizationResponse{Organization: org}, nil
 }
 
@@ -540,7 +540,7 @@ func (s *Service) CreateTeam(ctx context.Context, actorID string, req *gen.Creat
 	}); err != nil {
 		return nil, err
 	}
-	s.emit(ctx, actorID, "user", "team.created", "team", team.Id, req.OrgId)
+	s.emit(ctx, actorID, "user", EventTeamCreated, "team", team.Id, req.OrgId)
 	return &gen.CreateTeamResponse{Team: team}, nil
 }
 
@@ -589,7 +589,7 @@ func (s *Service) CreateRole(ctx context.Context, actorID string, req *gen.Creat
 	if err != nil {
 		return nil, err
 	}
-	s.emit(ctx, actorID, "user", "role.created", "role", role.Id, req.OrgId)
+	s.emit(ctx, actorID, "user", EventRoleCreated, "role", role.Id, req.OrgId)
 	return &gen.CreateRoleResponse{Role: role}, nil
 }
 
@@ -616,6 +616,6 @@ func (s *Service) AssignRole(ctx context.Context, req *gen.AssignRoleRequest) (*
 	if err != nil {
 		return nil, err
 	}
-	s.emit(ctx, req.SubjectId, "user", "role.assigned", "role", req.RoleId, req.OrgId)
+	s.emit(ctx, req.SubjectId, "user", EventRoleAssigned, "role", req.RoleId, req.OrgId)
 	return &gen.AssignRoleResponse{Assignment: assignment}, nil
 }

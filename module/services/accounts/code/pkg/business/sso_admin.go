@@ -74,7 +74,7 @@ func (s *Service) StartSSOSetup(ctx context.Context, actorID, orgID, returnURL s
 		}); err != nil {
 			return "", fmt.Errorf("persist stub SSO setup: %w", err)
 		}
-		s.emit(ctx, actorID, "user", "sso.setup.started", "organization", orgID, orgID)
+		s.emit(ctx, actorID, "user", EventSSOSetupStarted, "organization", orgID, orgID)
 		return returnURL + "?demo=1", nil
 	}
 
@@ -123,7 +123,7 @@ func (s *Service) StartSSOSetup(ctx context.Context, actorID, orgID, returnURL s
 			ConfiguredAt:   &now,
 		})
 	})
-	s.emit(ctx, actorID, "user", "sso.setup.started", "organization", orgID, orgID)
+	s.emit(ctx, actorID, "user", EventSSOSetupStarted, "organization", orgID, orgID)
 	return link, nil
 }
 
@@ -147,7 +147,7 @@ func (s *Service) DisableSSO(ctx context.Context, actorID, orgID string) error {
 	}); err != nil {
 		return err
 	}
-	s.emit(ctx, actorID, "user", "sso.disabled", "organization", orgID, orgID)
+	s.emit(ctx, actorID, "user", EventSSODisabled, "organization", orgID, orgID)
 	return nil
 }
 

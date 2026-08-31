@@ -88,7 +88,7 @@ func (s *Service) RequestExport(ctx context.Context, userID string) (*GDPRReques
 		return nil, w.Wrapf(err, "cannot create GDPR export request")
 	}
 
-	s.emit(ctx, userID, "user", "gdpr.export_requested", "gdpr_request", req.ID, "")
+	s.emit(ctx, userID, "user", EventGDPRExportReq, "gdpr_request", req.ID, "")
 
 	processingRequest := *req
 	go s.processExport(context.Background(), gdprStore, &processingRequest, workflow)
@@ -161,7 +161,7 @@ func (s *Service) RequestDeletion(ctx context.Context, userID string) (*GDPRRequ
 		return nil, w.Wrapf(err, "cannot create GDPR deletion request")
 	}
 
-	s.emit(ctx, userID, "user", "gdpr.deletion_requested", "gdpr_request", req.ID, "")
+	s.emit(ctx, userID, "user", EventGDPRDeletionReq, "gdpr_request", req.ID, "")
 
 	processingRequest := *req
 	go s.processDeletion(context.Background(), gdprStore, &processingRequest, workflow)
@@ -235,7 +235,7 @@ func (s *Service) processDeletion(
 		s.failGDPRRequest(ctx, gdprStore, req, fmt.Sprintf("complete deletion request: %v", err))
 		return
 	}
-	s.emit(ctx, req.UserID, "system", "gdpr.deletion_completed", "gdpr_request", req.ID, "")
+	s.emit(ctx, req.UserID, "system", EventGDPRDeletionDone, "gdpr_request", req.ID, "")
 }
 
 func (s *Service) failGDPRRequest(ctx context.Context, gdprStore GDPRStore, req *GDPRRequest, errMsg string) {

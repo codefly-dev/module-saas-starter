@@ -215,7 +215,7 @@ func (s *Service) GetProgress(ctx context.Context, userID, orgID string) (*Onboa
 		return nil, w.Wrapf(err, "cannot reconcile onboarding progress")
 	}
 	for range completedTransitions {
-		s.emit(ctx, userID, "user", "onboarding.step_completed", "organization", orgID, orgID)
+		s.emit(ctx, userID, "user", EventOnboardingStepDone, "organization", orgID, orgID)
 	}
 
 	progress := &OnboardingProgress{
@@ -386,7 +386,7 @@ func (s *Service) SkipStep(
 		return wool.Get(ctx).Wrapf(err, "cannot skip onboarding step")
 	}
 	if transitioned {
-		s.emit(ctx, userID, "user", "onboarding.step_skipped", "organization", orgID, orgID)
+		s.emit(ctx, userID, "user", EventOnboardingStepSkip, "organization", orgID, orgID)
 	}
 	return nil
 }
@@ -424,7 +424,7 @@ func (s *Service) RecordProductActivation(
 		)
 	})
 	if err == nil {
-		s.emit(ctx, actorID, "user", "activation.achieved", "organization", orgID, orgID)
+		s.emit(ctx, actorID, "user", EventActivationAchieved, "organization", orgID, orgID)
 	}
 	return err
 }

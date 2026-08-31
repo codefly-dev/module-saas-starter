@@ -221,7 +221,7 @@ func (s *Service) Authenticate(ctx context.Context, req *gen.AuthenticateRequest
 		return nil, w.Wrapf(err, "mint tokens")
 	}
 
-	s.emit(ctx, identity.UserID.String(), "user", "auth.login",
+	s.emit(ctx, identity.UserID.String(), "user", EventAuthLogin,
 		"session", identity.SessionID.String(), identity.OrgID.String())
 
 	return &gen.AuthenticateResponse{
@@ -409,7 +409,7 @@ func (s *Service) SwitchOrganization(
 		return nil, w.Wrapf(err, "organization token exchange")
 	}
 
-	s.emit(ctx, userID, "user", "auth.organization_switched", "organization", req.OrganizationId, req.OrganizationId)
+	s.emit(ctx, userID, "user", EventAuthOrgSwitched, "organization", req.OrganizationId, req.OrganizationId)
 	return &gen.SwitchOrganizationResponse{
 		AccessToken: accessToken,
 		ExpiresIn:   int64(AccessTokenLifetime.Seconds()),

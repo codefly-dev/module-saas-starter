@@ -132,7 +132,7 @@ func (s *Service) StartCheckout(ctx context.Context, in StartCheckoutInput) (str
 		return "", w.Wrapf(err, "create checkout session")
 	}
 
-	s.emit(ctx, in.UserID, "user", "billing.checkout_started", "subscription", session.ID, in.OrgID)
+	s.emit(ctx, in.UserID, "user", EventBillingCheckoutStarted, "subscription", session.ID, in.OrgID)
 	return session.URL, nil
 }
 
@@ -179,7 +179,7 @@ func (s *Service) SelectFreePlan(ctx context.Context, userID, orgID string) erro
 		return err
 	}
 	if created {
-		s.emit(ctx, userID, "user", "billing.free_plan_selected", "organization", orgID, orgID)
+		s.emit(ctx, userID, "user", EventBillingFreePlan, "organization", orgID, orgID)
 	}
 	return nil
 }
@@ -234,7 +234,7 @@ func (s *Service) OpenBillingPortal(ctx context.Context, in OpenBillingPortalInp
 		return "", w.Wrapf(err, "create billing portal session")
 	}
 
-	s.emit(ctx, in.UserID, "user", "billing.portal_opened", "customer", customerID, in.OrgID)
+	s.emit(ctx, in.UserID, "user", EventBillingPortalOpened, "customer", customerID, in.OrgID)
 	return session.URL, nil
 }
 
