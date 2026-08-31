@@ -21,3 +21,17 @@ protobuf and lets any app wire its own auth/transport.
   `useSyncSource`, `useDeleteSource`.
 
 The consumer provides a `@tanstack/react-query` `QueryClientProvider`.
+
+## Styling
+
+Components are styled with Tailwind utility classes against the shared shadcn
+design tokens (`bg-primary`, `text-muted-foreground`, `border-input`, …), same as
+`@codefly/ui`. They ship no compiled CSS, so **the consuming app's Tailwind must
+scan this package's source** or the utilities used only here (e.g. the modal's
+`bg-black/50` overlay) won't be generated and the components render unstyled.
+
+- In this monorepo the portal gets this for free: Tailwind v4 automatic content
+  detection already scans `packages/**`.
+- An external consumer that installs the built package from `node_modules` (which
+  Tailwind v4 excludes by default) must opt it in, e.g.
+  `@source "../node_modules/@codefly/saas-ui/dist";` in its CSS.

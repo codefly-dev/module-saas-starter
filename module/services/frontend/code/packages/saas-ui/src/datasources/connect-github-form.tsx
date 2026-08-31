@@ -1,6 +1,7 @@
 "use client";
 
 import { zodResolver } from "@hookform/resolvers/zod";
+import { useId } from "react";
 import { useForm } from "react-hook-form";
 import { type ConnectGitHubValues, connectGitHubSchema } from "./schema.js";
 import { cn } from "./util.js";
@@ -9,6 +10,7 @@ interface ConnectGitHubFormProps {
 	onSubmit: (values: ConnectGitHubValues) => void;
 	onCancel: () => void;
 	isPending: boolean;
+	errorMessage?: string;
 }
 
 const fieldClass =
@@ -22,7 +24,13 @@ export function ConnectGitHubForm({
 	onSubmit,
 	onCancel,
 	isPending,
+	errorMessage,
 }: ConnectGitHubFormProps) {
+	// Unique per instance so two mounted forms don't collide on id/htmlFor
+	// (breaks label association + a11y when the panel is reused in more than one
+	// place).
+	const fieldId = useId();
+	const idFor = (name: string) => `${fieldId}-${name}`;
 	const form = useForm<ConnectGitHubValues>({
 		resolver: zodResolver(connectGitHubSchema),
 		defaultValues: {
@@ -60,11 +68,11 @@ export function ConnectGitHubForm({
 					noValidate
 				>
 					<div className="space-y-2">
-						<label className={labelClass} htmlFor="ds-repo">
+						<label className={labelClass} htmlFor={idFor("repo")}>
 							Repository
 						</label>
 						<input
-							id="ds-repo"
+							id={idFor("repo")}
 							className={fieldClass}
 							placeholder="owner/name"
 							{...form.register("repo")}
@@ -73,11 +81,11 @@ export function ConnectGitHubForm({
 					</div>
 
 					<div className="space-y-2">
-						<label className={labelClass} htmlFor="ds-paths">
+						<label className={labelClass} htmlFor={idFor("paths")}>
 							Paths (optional)
 						</label>
 						<textarea
-							id="ds-paths"
+							id={idFor("paths")}
 							className={cn(fieldClass, "resize-none font-mono")}
 							rows={2}
 							placeholder={"docs/\nsrc/api/"}
@@ -89,11 +97,11 @@ export function ConnectGitHubForm({
 					</div>
 
 					<div className="space-y-2">
-						<label className={labelClass} htmlFor="ds-branch">
+						<label className={labelClass} htmlFor={idFor("branch")}>
 							Branch (optional)
 						</label>
 						<input
-							id="ds-branch"
+							id={idFor("branch")}
 							className={fieldClass}
 							placeholder="Defaults to the repository default branch"
 							{...form.register("branch")}
@@ -104,11 +112,11 @@ export function ConnectGitHubForm({
 					</div>
 
 					<div className="space-y-2">
-						<label className={labelClass} htmlFor="ds-collection">
+						<label className={labelClass} htmlFor={idFor("collection")}>
 							Target collection
 						</label>
 						<input
-							id="ds-collection"
+							id={idFor("collection")}
 							className={fieldClass}
 							placeholder="Documents-store collection to land entries in"
 							{...form.register("targetCollection")}
@@ -119,11 +127,11 @@ export function ConnectGitHubForm({
 					</div>
 
 					<div className="space-y-2">
-						<label className={labelClass} htmlFor="ds-token">
+						<label className={labelClass} htmlFor={idFor("token")}>
 							Access token
 						</label>
 						<input
-							id="ds-token"
+							id={idFor("token")}
 							type="password"
 							className={fieldClass}
 							placeholder="PAT or GitHub App installation token"
@@ -135,24 +143,30 @@ export function ConnectGitHubForm({
 					</div>
 
 					<div className="space-y-2">
-						<label className={labelClass} htmlFor="ds-secret">
+						<label className={labelClass} htmlFor={idFor("secret")}>
 							Webhook secret (optional)
 						</label>
 						<input
-							id="ds-secret"
+							id={idFor("secret")}
 							type="password"
 							className={fieldClass}
 							placeholder="Shared secret GitHub signs push deliveries with"
 							{...form.register("webhookSecret")}
 						/>
 						<p className="text-xs text-muted-foreground">
-							Enables live webhook ingestion. Add it later if you don&apos;t have
-							it yet.
+							Enables live webhook ingestion. Add it later if you don&apos;t
+							have it yet.
 						</p>
 						{errors.webhookSecret && (
 							<p className={errorClass}>{errors.webhookSecret.message}</p>
 						)}
 					</div>
+
+					{errorMessage && (
+						<p role="alert" className={errorClass}>
+							{errorMessage}
+						</p>
+					)}
 
 					<div className="flex justify-end gap-2 pt-2">
 						<button

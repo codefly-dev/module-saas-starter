@@ -33,6 +33,18 @@ export function DatasourcesPanel({
 	className,
 }: DatasourcesPanelProps) {
 	const [showConnect, setShowConnect] = useState(false);
+	// Per-row pending sets, not the shared mutation's single `isPending`, so two
+	// rows can sync/delete at once without one clearing the other's spinner and
+	// re-enabling a button whose request is still in flight (double-enqueue).
+	const [syncingIds, setSyncingIds] = useState<ReadonlySet<string>>(
+		() => new Set(),
+	);
+	const [deletingIds, setDeletingIds] = useState<ReadonlySet<string>>(
+		() => new Set(),
+	);
+	// Row action errors have no other surface (no toast dependency, no global
+	// mutation handler), so they would vanish silently without this.
+	const [actionError, setActionError] = useState<string | null>(null);
 
 	const list = useListSources(client, orgId);
 	const addMutation = useAddGitHubSource(client);
@@ -55,9 +67,16 @@ export function DatasourcesPanel({
 	};
 
 	const handleSync = (source: DatasourceView) => {
+		setActionError(null);
+		setSyncingIds((prev) => new Set(prev).add(source.id));
 		syncMutation.mutate(
 			{ orgId, id: source.id },
-			{ onSuccess: (jobId) => onSyncEnqueued?.(jobId) },
+			{
+				onSuccess: (jobId) => onSyncEnqueued?.(jobId),
+				onError: (error) =>
+					setActionError(`Couldn't sync ${source.repo}: ${messageOf(error)}`),
+				onSettled: () => setSyncingIds((prev) => without(prev, source.id)),
+			},
 		);
 	};
 
@@ -66,7 +85,17 @@ export function DatasourcesPanel({
 			`Delete the data source for ${source.repo}?\n\n` +
 				"Its stored credentials are removed. This cannot be undone.",
 		);
-		if (ok) deleteMutation.mutate({ orgId, id: source.id });
+		if (!ok) return;
+		setActionError(null);
+		setDeletingIds((prev) => new Set(prev).add(source.id));
+		deleteMutation.mutate(
+			{ orgId, id: source.id },
+			{
+				onError: (error) =>
+					setActionError(`Couldn't delete ${source.repo}: ${messageOf(error)}`),
+				onSettled: () => setDeletingIds((prev) => without(prev, source.id)),
+			},
+		);
 	};
 
 	const sources = list.data ?? [];
@@ -83,6 +112,22 @@ export function DatasourcesPanel({
 				</button>
 			</div>
 
+			{actionError && (
+				<div
+					role="alert"
+					className="flex items-center justify-between gap-3 rounded-md border border-destructive/40 bg-destructive/10 px-4 py-2 text-sm text-destructive"
+				>
+					<span>{actionError}</span>
+					<button
+						type="button"
+						className="text-xs underline"
+						onClick={() => setActionError(null)}
+					>
+						Dismiss
+					</button>
+				</div>
+			)}
+
 			{list.isLoading ? (
 				<PanelMessage>Loading data sources…</PanelMessage>
 			) : list.isError ? (
@@ -98,14 +143,8 @@ export function DatasourcesPanel({
 			) : (
 				<SourcesTable
 					sources={sources}
-					syncingId={
-						syncMutation.isPending ? (syncMutation.variables?.id ?? null) : null
-					}
-					deletingId={
-						deleteMutation.isPending
-							? (deleteMutation.variables?.id ?? null)
-							: null
-					}
+					syncingIds={syncingIds}
+					deletingIds={deletingIds}
 					onSync={handleSync}
 					onDelete={handleDelete}
 				/>
@@ -116,6 +155,9 @@ export function DatasourcesPanel({
 					onSubmit={handleConnect}
 					onCancel={() => setShowConnect(false)}
 					isPending={addMutation.isPending}
+					errorMessage={
+						addMutation.isError ? messageOf(addMutation.error) : undefined
+					}
 				/>
 			)}
 		</div>
@@ -141,19 +183,31 @@ function PanelMessage({
 	);
 }
 
+function without(set: ReadonlySet<string>, id: string): ReadonlySet<string> {
+	const next = new Set(set);
+	next.delete(id);
+	return next;
+}
+
+function messageOf(error: unknown): string {
+	return error instanceof Error && error.message
+		? error.message
+		: "unexpected error";
+}
+
 const headerClass = "px-3 py-2 text-left font-medium text-muted-foreground";
 const cellClass = "px-3 py-2 align-middle";
 
 function SourcesTable({
 	sources,
-	syncingId,
-	deletingId,
+	syncingIds,
+	deletingIds,
 	onSync,
 	onDelete,
 }: {
 	sources: DatasourceView[];
-	syncingId: string | null;
-	deletingId: string | null;
+	syncingIds: ReadonlySet<string>;
+	deletingIds: ReadonlySet<string>;
 	onSync: (source: DatasourceView) => void;
 	onDelete: (source: DatasourceView) => void;
 }) {
@@ -193,18 +247,18 @@ function SourcesTable({
 									<button
 										type="button"
 										className={rowActionClass}
-										disabled={syncingId === source.id}
+										disabled={syncingIds.has(source.id)}
 										onClick={() => onSync(source)}
 									>
-										{syncingId === source.id ? "Syncing…" : "Sync"}
+										{syncingIds.has(source.id) ? "Syncing…" : "Sync"}
 									</button>
 									<button
 										type="button"
 										className={cn(rowActionClass, "text-destructive")}
-										disabled={deletingId === source.id}
+										disabled={deletingIds.has(source.id)}
 										onClick={() => onDelete(source)}
 									>
-										Delete
+										{deletingIds.has(source.id) ? "Deleting…" : "Delete"}
 									</button>
 								</div>
 							</td>
