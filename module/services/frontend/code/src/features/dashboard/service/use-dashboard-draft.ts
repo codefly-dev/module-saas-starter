@@ -1,12 +1,12 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { DashboardDef } from "../model/schema";
+import { assertDashboardSpec, DashboardSpecError } from "../model/validate";
 import {
-	assertDashboardSpec,
-	DashboardSpecError,
-	parseDashboardSpec,
-} from "../model/validate";
+	createBrowserDashboardDraftStore,
+	type DashboardDraftStore,
+} from "./draft-store";
 
 export interface DashboardDraft {
 	// The active spec. Valid whenever `error` is null; if an invalid `initial`
@@ -21,8 +21,8 @@ export interface DashboardDraft {
 	// Discards the persisted draft and returns to the current initial spec.
 	reset: () => void;
 	// The last failure, or null after a success. A DashboardSpecError when a
-	// spec was rejected; a plain Error when local storage itself could not be
-	// read, written, or cleared.
+	// spec was rejected; a plain Error when the store itself could not be read,
+	// written, or cleared.
 	error: Error | null;
 }
 
@@ -41,28 +41,53 @@ function storageError(operation: string, cause: unknown): Error {
 	return new Error(`Dashboard draft ${operation} failed`, { cause });
 }
 
+function isPromiseLike(value: unknown): value is Promise<unknown> {
+	return (
+		typeof (value as { then?: unknown } | null | undefined)?.then === "function"
+	);
+}
+
 /**
- * Holds a dashboard spec in React state backed by localStorage, so a runtime
- * edit — swap a metric, add or remove a widget — is just a new spec object and
- * survives a reload. Every spec that enters is validated: an invalid persisted
- * draft, an invalid `setSpec`, or an invalid `initial` is rejected without the
- * bad spec becoming the trusted active spec, and the reason surfaces through
- * `error` rather than a thrown render. localStorage access is likewise guarded:
- * a valid edit is applied in memory even when the store rejects the write, and
- * a storage failure surfaces through `error` instead of escaping. Edits made in
- * another tab are picked up through the `storage` event.
+ * Holds a dashboard spec in React state backed by a {@link DashboardDraftStore},
+ * so a runtime edit — swap a metric, add or remove a widget — is just a new spec
+ * object and survives a reload. Every spec that enters is validated here: an
+ * invalid persisted draft, an invalid `setSpec`, or an invalid `initial` is
+ * rejected without the bad spec becoming the trusted active spec, and the reason
+ * surfaces through `error` rather than a thrown render. Persistence is likewise
+ * guarded: a valid edit is applied in memory even when the store rejects the
+ * write, and a store failure surfaces through `error` instead of escaping.
  *
- * This is the placeholder home for the draft; the eventual owner is the
- * settings service (`@codefly/saas-settings`).
+ * The store is the only persistence seam. It defaults to localStorage; an
+ * authenticated caller injects a server-backed store instead (org- or
+ * user-scoped, per the ownership model), and the hook API is unchanged. Changes
+ * from another tab — or another device once server-backed — arrive through the
+ * store's subscription.
+ *
+ * An injected `store` must be a stable reference across renders (memoize it):
+ * the hook re-subscribes and reloads whenever the store identity changes, so a
+ * fresh instance every render would re-fetch on every render.
  */
 export function useDashboardDraft(
 	storageKey: string,
 	initial: DashboardDef,
+	store?: DashboardDraftStore,
 ): DashboardDraft {
 	// Track the latest `initial` so `reset` and a cross-tab clear return to the
 	// caller's current default rather than a value frozen at first mount.
 	const initialRef = useRef(initial);
 	initialRef.current = initial;
+
+	// A store's load() may resolve on a later tick. If an edit, a reset, or an
+	// external change lands before it does, that newer state wins — the resolved
+	// initial load must not clobber it. Reset per store (a new store gets a fresh
+	// load); flipped by every other state update.
+	const supersededRef = useRef(false);
+
+	// Default to localStorage; only build it when no store is injected.
+	const activeStore = useMemo(
+		() => store ?? createBrowserDashboardDraftStore(storageKey),
+		[store, storageKey],
+	);
 
 	const [state, setState] = useState<DraftState>(() => {
 		try {
@@ -73,41 +98,69 @@ export function useDashboardDraft(
 		}
 	});
 
-	// Restore a persisted draft on the client only, after the initial render, so
-	// server and first client render agree on `initial` and hydration stays
-	// stable; then track edits from other tabs. A corrupt draft or a storage
-	// error is surfaced, never rendered or thrown.
+	// Restore the persisted draft after the initial render, so server and first
+	// client render agree on `initial` and hydration stays stable; then track
+	// changes from other tabs (or devices). A missing draft leaves the initial
+	// state — including a surfaced invalid-initial error — untouched; a corrupt
+	// draft or a store error is surfaced, never rendered or thrown.
 	useEffect(() => {
-		const apply = (raw: string) => {
-			try {
-				setState({ spec: parseDashboardSpec(raw), error: null });
-			} catch (cause) {
-				setState((prev) => ({ spec: prev.spec, error: asSpecError(cause) }));
-			}
+		let cancelled = false;
+		supersededRef.current = false;
+		const fail = (operation: string, cause: unknown) =>
+			setState((prev) => ({
+				spec: prev.spec,
+				error:
+					cause instanceof DashboardSpecError
+						? cause
+						: storageError(operation, cause),
+			}));
+		const applyLoaded = (spec: DashboardDef | null) => {
+			if (spec === null) return;
+			setState({ spec, error: null });
 		};
 
 		try {
-			const raw = window.localStorage.getItem(storageKey);
-			if (raw !== null) apply(raw);
+			const loaded = activeStore.load();
+			if (isPromiseLike(loaded)) {
+				loaded.then(
+					(spec) => {
+						if (!cancelled && !supersededRef.current) {
+							applyLoaded(spec as DashboardDef | null);
+						}
+					},
+					(cause) => {
+						if (!cancelled && !supersededRef.current) fail("load", cause);
+					},
+				);
+			} else {
+				applyLoaded(loaded);
+			}
 		} catch (cause) {
-			setState((prev) => ({
-				spec: prev.spec,
-				error: storageError("load", cause),
-			}));
+			fail("load", cause);
 		}
 
-		const onStorage = (event: StorageEvent) => {
-			if (event.key !== storageKey) return;
-			// A removed/cleared key elsewhere returns this tab to the default.
-			if (event.newValue === null) {
-				setState({ spec: initialRef.current, error: null });
-				return;
+		const unsubscribe = activeStore.subscribe((change) => {
+			if (cancelled) return;
+			// An external change is newer than a still-pending initial load.
+			supersededRef.current = true;
+			switch (change.kind) {
+				case "spec":
+					setState({ spec: change.spec, error: null });
+					return;
+				case "cleared":
+					setState({ spec: initialRef.current, error: null });
+					return;
+				case "error":
+					setState((prev) => ({ spec: prev.spec, error: change.error }));
+					return;
 			}
-			apply(event.newValue);
+		});
+
+		return () => {
+			cancelled = true;
+			unsubscribe();
 		};
-		window.addEventListener("storage", onStorage);
-		return () => window.removeEventListener("storage", onStorage);
-	}, [storageKey]);
+	}, [activeStore]);
 
 	const setSpec = useCallback(
 		(next: DashboardDef) => {
@@ -120,26 +173,38 @@ export function useDashboardDraft(
 			// Apply the valid edit unconditionally: a runtime mutation must take
 			// effect even if it cannot be persisted, so a full or blocked store
 			// costs the save, never the edit.
-			let error: Error | null = null;
+			supersededRef.current = true;
+			setState({ spec: next, error: null });
+			const onFail = (cause: unknown) =>
+				setState((prev) => ({
+					spec: prev.spec,
+					error: storageError("save", cause),
+				}));
 			try {
-				window.localStorage.setItem(storageKey, JSON.stringify(next));
+				const result = activeStore.save(next);
+				if (isPromiseLike(result)) result.then(undefined, onFail);
 			} catch (cause) {
-				error = storageError("save", cause);
+				onFail(cause);
 			}
-			setState({ spec: next, error });
 		},
-		[storageKey],
+		[activeStore],
 	);
 
 	const reset = useCallback(() => {
-		let error: Error | null = null;
+		supersededRef.current = true;
+		setState({ spec: initialRef.current, error: null });
+		const onFail = (cause: unknown) =>
+			setState((prev) => ({
+				spec: prev.spec,
+				error: storageError("reset", cause),
+			}));
 		try {
-			window.localStorage.removeItem(storageKey);
+			const result = activeStore.clear();
+			if (isPromiseLike(result)) result.then(undefined, onFail);
 		} catch (cause) {
-			error = storageError("reset", cause);
+			onFail(cause);
 		}
-		setState({ spec: initialRef.current, error });
-	}, [storageKey]);
+	}, [activeStore]);
 
 	return { spec: state.spec, setSpec, reset, error: state.error };
 }
