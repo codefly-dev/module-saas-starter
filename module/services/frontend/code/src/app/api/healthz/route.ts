@@ -1,13 +1,10 @@
 import { NextResponse } from "next/server";
 
-// Liveness/readiness endpoint. Committed (not generated) so every build serves it
-// regardless of scaffolding — the k8s deployment probes /api/healthz. Mirrors the
-// marketing service's /api/health route.
-export const dynamic = "force-dynamic";
+// force-static keeps the probe dependency-free and lets it prerender under
+// both `output: standalone` and `output: export` (static export rejects a
+// route handler that is neither force-static nor revalidating).
+export const dynamic = "force-static";
 
 export function GET() {
-  return NextResponse.json(
-    { status: "ok", service: "frontend" },
-    { headers: { "Cache-Control": "no-store" } },
-  );
+  return NextResponse.json({ status: "ok" });
 }

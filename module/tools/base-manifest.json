@@ -1,6 +1,6 @@
 {
   "note": "Base-file integrity manifest for the saas-starter module. Generated FROM canonical by `node tools/base-integrity.mjs gen`. Consumers MUST NOT hand-edit base files — only add files on the side. Regenerated on every codefly sync from canonical.",
-  "fileCount": 1842,
+  "fileCount": 1843,
   "files": {
     "AUTHORIZATION_CATALOG.md": "b2ea5d41f0098e80315e02e7c4bdbda03b65c8eef463426242552fd3c047ca0a",
     "CONTRACT_VERSIONING.md": "02031aa87922ab5ec573ea582cf584271873481de6ceabbda52b1bfda005ffbd",
@@ -1056,7 +1056,8 @@
     "services/frontend/code/src/app/admin/webhooks/page.tsx": "db74d164d99f6d5cffaed299ed740c0254919c6a8ae2211ab2ec16c4108aacc2",
     "services/frontend/code/src/app/api/fixtures/__tests__/route.test.ts": "d14f6417ffb942fdabe39d1ad0d67f7e01f883b962c2df811fdec7336ddc4be8",
     "services/frontend/code/src/app/api/fixtures/route.ts": "4992cb212e364f52f721de61b8a4bc5ede8fe2633036566995e2615d1c6c31a4",
-    "services/frontend/code/src/app/api/healthz/route.ts": "700fffdc6730aa2496085543a1bb19d3b781385b98ab0d84e5e3948dd0f65ec7",
+    "services/frontend/code/src/app/api/healthz/route.test.ts": "1a730680a423496f055ec7c68d59edc1200b3bea385848fc53b412a7fd74fba4",
+    "services/frontend/code/src/app/api/healthz/route.ts": "3870572f4ab49714e0f78c29bf915743cbe360ef9c15061520ccc4e9ea3a8efc",
     "services/frontend/code/src/app/api/notifications/stream/__tests__/route.test.ts": "00abf05282ebb5642a011d32e8c0fd9064e5a1b0127ea6e3fbf81ebdbda0f0b7",
     "services/frontend/code/src/app/api/notifications/stream/route.ts": "2ca8ed4fb015d6a0ddb26d5387549e18c4d2b7ff00c0e311857a326a6fe1b975",
     "services/frontend/code/src/app/api/openapi/__tests__/route.test.ts": "63f184b7d76f8300250e6dc25773a611dd0718b9ef987c177cf47659dcc9927b",
