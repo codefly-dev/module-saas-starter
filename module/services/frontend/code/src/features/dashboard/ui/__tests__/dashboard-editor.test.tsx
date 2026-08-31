@@ -82,6 +82,28 @@ describe("DashboardEditor", () => {
 		expect(screen.queryByText(/No widgets yet/)).toBeNull();
 	});
 
+	it("rejects a second widget with the same identity instead of duplicating it", async () => {
+		mount();
+		renderInApp(
+			<DashboardEditor
+				storageKey="dashboard:test"
+				initial={dashboard({ title: "T", metrics: [] })}
+			/>,
+		);
+
+		const add = screen.getByRole("button", { name: "Add widget" });
+		fireEvent.click(add);
+		expect(await screen.findByText("Events over time")).toBeTruthy();
+
+		// The default form is unchanged after the first add, so a second click would
+		// emit an identical metric that collides on <Dashboard>'s React key.
+		fireEvent.click(add);
+		expect(await screen.findByText(/already shows/)).toBeTruthy();
+		// The widget-list title (exact match) appears exactly once; the rejection
+		// message embeds it in a longer sentence, so it isn't a second match.
+		expect(screen.getAllByText("Events over time")).toHaveLength(1);
+	});
+
 	it("reorders and removes existing widgets through the authoring commit path", async () => {
 		mount();
 		renderInApp(

@@ -3,6 +3,7 @@
 import { ArrowDown, ArrowUp, Trash2 } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
 import type { AuditEventTypeInfo } from "@/features/audit";
+import { useAuth } from "@/lib/auth";
 import {
 	Button,
 	Card,
@@ -112,7 +113,12 @@ export function DashboardEditor({
 	storageKey: string;
 	initial: DashboardDef;
 }) {
-	const { authoring, draft } = useDashboardAuthoring(storageKey, initial);
+	const { user, organizationId } = useAuth();
+	// Scope the persisted draft to the viewer and their org: the draft lives in
+	// per-browser localStorage, so an unscoped key would restore one user's (or
+	// one org's) widgets under another's session on a shared browser.
+	const scopedKey = `${storageKey}:${organizationId ?? "none"}:${user?.id ?? "anon"}`;
+	const { authoring, draft } = useDashboardAuthoring(scopedKey, initial);
 	const spec = draft.spec;
 
 	const [events, setEvents] = useState<AuditEventTypeInfo[]>([]);
@@ -178,11 +184,24 @@ export function DashboardEditor({
 	const onAdd = useCallback(async () => {
 		setPending(null);
 		setPreview(null);
-		const next: DashboardDef = {
-			...spec,
-			metrics: [...spec.metrics, metricFromForm(form)],
-		};
-		if (await commit(next)) setForm(DEFAULT_FORM);
+		const metric = metricFromForm(form);
+		// metricIdentity is the React key <Dashboard> and the widget list both use,
+		// so two metrics that share it collide on that key. Reject the duplicate
+		// here — the same guard the stub driver's applyCommand upholds — rather than
+		// commit a spec that renders two cards under one key.
+		const identity = metricIdentity(metric);
+		if (spec.metrics.some((m) => metricIdentity(m) === identity)) {
+			setErrors([
+				{
+					code: "duplicate_metric",
+					message: `This dashboard already shows "${metric.title}".`,
+				},
+			]);
+			return;
+		}
+		if (await commit({ ...spec, metrics: [...spec.metrics, metric] })) {
+			setForm(DEFAULT_FORM);
+		}
 	}, [commit, form, spec]);
 
 	const onRemove = useCallback(
@@ -242,7 +261,9 @@ export function DashboardEditor({
 						<Label htmlFor="widget-group">Group by</Label>
 						<Select
 							value={form.groupBy}
-							onValueChange={(value) => update("groupBy", value as Dimension)}
+							onValueChange={(value) => {
+								if (value) update("groupBy", value as Dimension);
+							}}
 						>
 							<SelectTrigger id="widget-group" aria-label="Group by">
 								<SelectValue />
@@ -262,7 +283,9 @@ export function DashboardEditor({
 							<Label htmlFor="widget-bucket">Interval</Label>
 							<Select
 								value={form.bucket}
-								onValueChange={(value) => update("bucket", value as Bucket)}
+								onValueChange={(value) => {
+									if (value) update("bucket", value as Bucket);
+								}}
 							>
 								<SelectTrigger id="widget-bucket" aria-label="Interval">
 									<SelectValue />
@@ -282,7 +305,9 @@ export function DashboardEditor({
 						<Label htmlFor="widget-chart">Chart</Label>
 						<Select
 							value={form.chart}
-							onValueChange={(value) => update("chart", value as ChartKind)}
+							onValueChange={(value) => {
+								if (value) update("chart", value as ChartKind);
+							}}
 						>
 							<SelectTrigger id="widget-chart" aria-label="Chart">
 								<SelectValue />
