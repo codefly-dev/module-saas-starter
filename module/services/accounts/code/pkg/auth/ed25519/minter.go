@@ -119,9 +119,9 @@ type accessClaims struct {
 	// Email and Name are presentational identity for the client to render the
 	// signed-in person. They are never consulted for authorization; the sidecar
 	// authorizes on sub/org/roles alone.
-	Email                string              `json:"email,omitempty"`
-	Name                 string              `json:"name,omitempty"`
-	ActingAsUserID       string              `json:"acting,omitempty"`
+	Email          string `json:"email,omitempty"`
+	Name           string `json:"name,omitempty"`
+	ActingAsUserID string `json:"acting,omitempty"`
 	// Act carries the RFC 8693 on-behalf-of delegation chain. sub stays the end
 	// user; act names the service (or admin) acting for them, nesting outward.
 	// Bounded by auth.MaxActorChainDepth at both mint and verify.
