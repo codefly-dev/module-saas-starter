@@ -62,6 +62,37 @@ describe("assertDashboardSpec", () => {
 		);
 	});
 
+	it("rejects two metrics that collide on rendered identity", () => {
+		// <Dashboard> keys each card on metricIdentity, so two metrics with the
+		// same title/chart/grouping/scope/value resolve to one key and React drops
+		// the duplicate. The spec cannot render as authored, so it is rejected here
+		// rather than silently losing a card.
+		expect(() =>
+			assertDashboardSpec({
+				version: DASHBOARD_SPEC_VERSION,
+				metrics: [
+					{ title: "Logins", groupBy: "event_type", chart: "bar" },
+					{ title: "Logins", groupBy: "event_type", chart: "bar" },
+				],
+			}),
+		).toThrow(/duplicates the identity/);
+	});
+
+	it("accepts metrics that share a title but differ in identity", () => {
+		// A shared title alone is not a collision — identity also spans chart,
+		// grouping, scope, and value — so two 'Logins' cards on different charts
+		// stay distinct and are allowed.
+		expect(() =>
+			assertDashboardSpec({
+				version: DASHBOARD_SPEC_VERSION,
+				metrics: [
+					{ title: "Logins", groupBy: "event_type", chart: "bar" },
+					{ title: "Logins", groupBy: "event_type", chart: "stat" },
+				],
+			}),
+		).not.toThrow();
+	});
+
 	it("rejects an unsupported groupBy", () => {
 		expect(() =>
 			assertDashboardSpec({
