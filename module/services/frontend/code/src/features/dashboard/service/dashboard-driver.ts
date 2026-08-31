@@ -1,7 +1,7 @@
 // A deterministic, framework-agnostic stand-in for the external conversational
 // driver that will eventually author dashboards. It maps a plain-English command
-// to a new DashboardDef — the same effect a chat agent's `setDashboard` turn
-// would have — with zero model calls, so the whole "describe → mutate the live
+// to a new DashboardDef — the same effect an external driver's `setDashboard`
+// turn would have — with zero model calls, so the whole "describe → mutate the live
 // dashboard" loop is testable here without any agent service.
 //
 // Interface-first: a real agent replaces `applyCommand` behind the same

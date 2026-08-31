@@ -28,7 +28,10 @@ import type {
 	MetricDef,
 } from "../model/schema";
 import type { FieldError } from "../model/validate";
-import { useDashboardAuthoring } from "../service/use-dashboard-authoring";
+import {
+	scopedDashboardDraftKey,
+	useDashboardAuthoring,
+} from "../service/use-dashboard-authoring";
 import { Dashboard } from "./dashboard";
 
 // The subset of group dimensions the structural editor offers. The spec permits
@@ -114,10 +117,14 @@ export function DashboardEditor({
 	initial: DashboardDef;
 }) {
 	const { user, organizationId } = useAuth();
-	// Scope the persisted draft to the viewer and their org: the draft lives in
-	// per-browser localStorage, so an unscoped key would restore one user's (or
-	// one org's) widgets under another's session on a shared browser.
-	const scopedKey = `${storageKey}:${organizationId ?? "none"}:${user?.id ?? "anon"}`;
+	// Scope the persisted draft to the viewer and their org through the shared
+	// helper, so this canvas and the external-driver channel resolve to the same
+	// localStorage entry (an unscoped key would also restore one user's widgets
+	// under another's session on a shared browser).
+	const scopedKey = scopedDashboardDraftKey(storageKey, {
+		organizationId,
+		userId: user?.id,
+	});
 	const { authoring, draft } = useDashboardAuthoring(scopedKey, initial);
 	const spec = draft.spec;
 

@@ -9,6 +9,25 @@ import type { DashboardDef } from "../model/schema";
 import { createDashboardAuthoring, type DashboardAuthoring } from "./authoring";
 import { type DashboardDraft, useDashboardDraft } from "./use-dashboard-draft";
 
+// The base localStorage key the viewer's own dashboard draft persists under. It
+// is the single symbol every host surface that renders or drives the user's
+// dashboard binds, so those surfaces share one draft instead of each hardcoding
+// a string. The Dashboards editor and the external-driver channel both scope it
+// through scopedDashboardDraftKey below.
+export const USER_DASHBOARD_DRAFT_KEY = "dashboard:draft";
+
+// Scope a base draft key to the viewer and their org. The draft lives in
+// per-browser localStorage, so an unscoped key would restore one user's (or one
+// org's) widgets under another's session on a shared browser. Every surface that
+// binds the same draft MUST derive its key here, so an external driver's commit
+// and the canvas that renders it resolve to the identical localStorage entry.
+export function scopedDashboardDraftKey(
+	base: string,
+	viewer: { organizationId?: string | null; userId?: string | null },
+): string {
+	return `${base}:${viewer.organizationId ?? "none"}:${viewer.userId ?? "anon"}`;
+}
+
 // useDashboardAuthoring binds the driver-facing contract to the live audit
 // client, the viewer's organization, and the canonical draft (useDashboardDraft
 // from #317). setDashboard commits through the draft's setSpec, so a validated

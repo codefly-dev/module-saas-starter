@@ -1,4 +1,9 @@
-import { DashboardEditor, dashboard, Layout } from "@/features/dashboard";
+import {
+	DashboardEditor,
+	dashboard,
+	Layout,
+	USER_DASHBOARD_DRAFT_KEY,
+} from "@/features/dashboard";
 
 // The starting draft for a fresh browser: a titled, empty dashboard the user
 // fills in from the editor. Persistence is per-browser (localStorage) until the
@@ -16,7 +21,7 @@ export default function DashboardsPage() {
 			title="Dashboards"
 			description="Add, remove, and reorder widgets against your live audit trail."
 		>
-			<DashboardEditor storageKey="dashboard:draft" initial={initial} />
+			<DashboardEditor storageKey={USER_DASHBOARD_DRAFT_KEY} initial={initial} />
 		</Layout>
 	);
 }
