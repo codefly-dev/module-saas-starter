@@ -13,22 +13,31 @@ export type EventTypeResolver = (eventName: string) => string;
 export const METRIC_VALUE_ALIAS = "value";
 
 /**
- * The org a compiled query is scoped to. A source metric declares only *what* to
- * measure — it carries no org of its own — so the org is bound here from the
- * render context, and every query a spec compiles to reads only the viewer's own
- * org. A blank context org would compile to an org-unscoped (org-wide) audit
- * read, so it fails closed: a user- or chat-authored spec can never widen a query
- * past the viewer's org, even if a caller forgets to withhold resolution until
- * the org is known. Together with the audit client exposing only the read-only
- * aggregate RPC, this is the data-plane invariant — a hostile spec is inert.
+ * The org a compiled query is bound to. A source metric carries no org of its
+ * own — the org comes only from the trusted render context — so this guard owns
+ * the context side of that contract: refuse to compile when no viewer org is
+ * present, rather than emit an org-unscoped (org-wide) audit read. A caller that
+ * forgets to withhold resolution until the org is known therefore fails closed
+ * instead of widening the read.
+ *
+ * A spec cannot inject an org to begin with: the metric shape has no org field
+ * and the graph validator rejects unknown ones — that structural check, not this
+ * function, is what makes a hostile spec inert. This guard is the complementary
+ * context-side check.
+ *
+ * The org is coerced before trimming so a missing/blank context org fails closed
+ * with this message rather than a raw `TypeError`, and the trimmed value is what
+ * gets emitted — a padded org must not be judged present here yet miss the
+ * server's exact-id org lookup.
  */
 function scopedOrgId(context: MetricContext): string {
-	if (context.orgId.trim() === "") {
+	const orgId = context.orgId?.trim() ?? "";
+	if (orgId === "") {
 		throw new Error(
 			"cannot compile an org-scoped audit query without a viewer org",
 		);
 	}
-	return context.orgId;
+	return orgId;
 }
 
 /**
