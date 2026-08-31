@@ -30,6 +30,19 @@ verified against the tree: `model/` and `service/use-dashboard-draft.ts` are on
 `service/validation.ts`, `service/draft-store.ts`, and
 `service/use-dashboard-authoring.ts` are in the open PR #325 (#320).
 
+> **Status update (what actually landed).** The #330 reconciliation (PR #338)
+> did **not** create `service/draft-store.ts` / a `DashboardDraftStore`. It kept
+> the **`service/use-dashboard-draft.ts`** localStorage hook as the store and
+> **folded the validator into `model/validate.ts`** (`validateDashboard(spec,
+> vocab) → FieldError[]` + vocab checks). So §1 below records the *decision*, but
+> the canonical-`DashboardDraftStore` half was superseded — persistence is still
+> the localStorage hook, and the `DashboardDraftStore` interface remains
+> **design-only**. Server persistence, ownership, and execution authority are now
+> their own decisions — see the new **§4** and the productization epic **#369**
+> (which supersedes the "settings-service migration" hand-wave throughout this
+> doc). This doc's §1–§3 are the *authoring-API* decisions; §4 is the
+> productization frontier.
+
 ---
 
 ## 1. Draft store + validator ownership (#330)
@@ -302,3 +315,56 @@ fork, #325 reconciled onto it — or the baseline shifts under the other.
 These are proposed decisions, recorded to keep the review's reasoning from
 being lost; they bind the #323/#325 reconciliation but are not a substitute for
 sign-off from those PRs' authors, whose code #330–#332 change.
+
+---
+
+## 4. The productization frontier (epic #369) — persistence, ownership, execution authority
+
+§1–§3 hardened the **authoring seam**. Turning it into a product — a user who
+*defines, saves, and shares* dashboards — surfaces three decisions that are
+**deliberately deferred to their own issues**, because they are architecture, not
+authoring-API polish. All live under epic
+[#369](https://github.com/codefly-dev/module-saas-starter/issues/369).
+
+### 4.1 Storage & ownership — where dashboards + preferences live (#375)
+
+A dashboard is **two things** with different lifecycles: **configuration** (the
+definition — shareable, potentially org-wide) and **preferences** (per-*user*
+view state — default, layout/theme overrides — never shared). Conflating them
+kills sharing and org governance. Ownership scopes to resolve: **solution/template**
+(shipped, read-only) · **org** (shared) · **user** (private) · **user-prefs
+layered on any**. Storage options: (A) a dedicated dashboards store, (B)
+settings-composed (`user_settings` JSONB; but `org_settings` is fixed-column and
+settings model *singular config*, not collections), (C) **hybrid — definitions in
+a dedicated store, preferences in `user_settings`** (the lean recommendation, it
+matches the config/prefs split). This **gates #365 (persistence) and #366 (user
+model)** and supersedes this doc's earlier "settings-service migration" note.
+
+### 4.2 Execution authority — invoker vs definer (#382)
+
+Whose permissions does a dashboard's **data** run under? Today `AggregateAuditLog`
+is **invoker-based and org-wide** — any org member already sees all org audit
+aggregates (gated on membership; `audit:read` is an API-key scope ceiling, not an
+RBAC gate; no per-actor/row-level restriction). So the "show all team logins"
+case works now. **Definer's rights** — a dashboard running under its *author's*
+authority so a *restricted* viewer sees owner-computed aggregates — is **new**:
+saas-starter's authority primitives only *attenuate* (`≤ delegator`), impersonation
+is admin-only/not-artifact-bound, and record-share governs the *definition* not the
+*data*. Build on a **service principal + API-key `audit:read` scope** bound to the
+dashboard, minted via the **delegation-grant** machinery (time-boxed, revocable,
+audited). **Non-negotiable guardrail:** a definer's-rights dashboard may call
+**only `AggregateAuditLog`** (never `QueryAuditLog`) and must bound group-by
+cardinality (no `actor_id`-keyed 1-row buckets) — else the owner's read leaks one
+aggregate at a time. Default = invoker's rights; definer's = explicit opt-in. This
+is the **execution half** of the object-authz in #367.
+
+### 4.3 The chat is not here — convergence, not construction
+
+The "author by conversation" goal is a **composition** concern, not a host one.
+The NL→spec chat already exists as a **self-contained prototype** in
+`obin-ai/module-robin` (epic #16, complete — its own spec + an in-memory
+`memdashboard` store). The host does **not** host chat/AG-UI/NL; it exposes an
+**external-driver channel** (#368) that a composing module drives. The end-to-end
+roadmap — converging robin's chat onto *this* host capability and retiring its
+private store — lives in **lodestar** (obin-ai), not this repo. This module names
+nothing about chat or robin; dependency direction stays obin→codefly.
