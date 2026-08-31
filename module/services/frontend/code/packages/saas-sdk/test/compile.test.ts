@@ -127,6 +127,25 @@ describe("compileMetric", () => {
 		]);
 	});
 
+	it("refuses to compile an org-unscoped query, failing closed", () => {
+		const metric: SourceMetric = {
+			id: "logins",
+			kind: "source",
+			filter: { event: "signed_in" },
+			groupBy: "event_type",
+			aggregation: "count",
+		};
+
+		// A blank org would compile to an org-wide audit read: fail closed so a
+		// user- or chat-authored spec can never widen past the viewer's own org.
+		expect(() => compileMetric(metric, resolve, { orgId: "" })).toThrow(
+			/without a viewer org/,
+		);
+		expect(() => compileMetric(metric, resolve, { orgId: "   " })).toThrow(
+			/without a viewer org/,
+		);
+	});
+
 	it("passes a payload group dimension straight through", () => {
 		const metric: SourceMetric = {
 			id: "by_plan",

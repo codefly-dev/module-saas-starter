@@ -13,6 +13,25 @@ export type EventTypeResolver = (eventName: string) => string;
 export const METRIC_VALUE_ALIAS = "value";
 
 /**
+ * The org a compiled query is scoped to. A source metric declares only *what* to
+ * measure — it carries no org of its own — so the org is bound here from the
+ * render context, and every query a spec compiles to reads only the viewer's own
+ * org. A blank context org would compile to an org-unscoped (org-wide) audit
+ * read, so it fails closed: a user- or chat-authored spec can never widen a query
+ * past the viewer's org, even if a caller forgets to withhold resolution until
+ * the org is known. Together with the audit client exposing only the read-only
+ * aggregate RPC, this is the data-plane invariant — a hostile spec is inert.
+ */
+function scopedOrgId(context: MetricContext): string {
+	if (context.orgId.trim() === "") {
+		throw new Error(
+			"cannot compile an org-scoped audit query without a viewer org",
+		);
+	}
+	return context.orgId;
+}
+
+/**
  * Turn a source metric plus its render context into the bound audit query. The
  * metric declares *what* to measure — its filter names an event, which the
  * resolver maps to the registered audit event type, and its aggregation selects
@@ -26,7 +45,7 @@ export function compileMetric(
 	context: MetricContext,
 ): AuditAggregateQuery {
 	return {
-		orgId: context.orgId,
+		orgId: scopedOrgId(context),
 		eventType: resolveEventType(metric.filter.event),
 		category: "",
 		actorId: metric.filter.actor ?? "",
