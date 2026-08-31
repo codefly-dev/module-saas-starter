@@ -20,6 +20,7 @@ import { join, relative, dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { rlsGateErrors } from "./rls-migration-gate.mjs";
+import { migrationPairingErrors } from "./migration-pairing-gate.mjs";
 
 const SCRIPT_PATH = fileURLToPath(import.meta.url);
 const MODULE_ROOT = join(dirname(SCRIPT_PATH), "..");
@@ -105,26 +106,6 @@ export const isExcludedFile = (rel) =>
   rel.endsWith(".tsbuildinfo") ||             // TypeScript incremental build cache
   rel.endsWith("next-env.d.ts") ||            // Next.js-generated env types (regenerated on dev/build)
   rel.endsWith(".DS_Store");
-
-export function migrationVersionErrors(moduleRoot = MODULE_ROOT) {
-  const migrationRoot = join(moduleRoot, "services", "store", "migrations");
-  if (!existsSync(migrationRoot)) return [];
-
-  const migrations = new Map();
-  for (const name of readdirSync(migrationRoot).sort()) {
-    const match = name.match(/^(\d+)_([^.]+)\.(up|down)\.sql$/);
-    if (!match) continue;
-    const [, version, migration] = match;
-    if (!migrations.has(version)) migrations.set(version, new Set());
-    migrations.get(version).add(migration);
-  }
-
-  return [...migrations.entries()]
-    .filter(([, names]) => names.size > 1)
-    .map(([version, names]) =>
-      `store migration version ${version} is used by multiple migrations: ${[...names].sort().join(", ")}`,
-    );
-}
 
 function walk(dir, out = [], base = MODULE_ROOT) {
   for (const name of readdirSync(dir)) {
@@ -632,9 +613,9 @@ function gen() {
     installGraphErrors.forEach((error) => console.error(`base-integrity: ${error}`));
     process.exit(1);
   }
-  const migrationErrors = migrationVersionErrors();
+  const migrationErrors = migrationPairingErrors();
   if (migrationErrors.length) {
-    migrationErrors.forEach((error) => console.error(`base-integrity: ${error}`));
+    migrationErrors.forEach((error) => console.error(`migration-pairing-gate: ${error}`));
     process.exit(1);
   }
   const rlsErrors = rlsGateErrors();
@@ -730,7 +711,7 @@ function check() {
   const badModified = allowed(modified);
   const badMissing = allowed(missing);
   const installGraphErrors = workspaceInstallGraphErrors();
-  const migrationErrors = migrationVersionErrors();
+  const migrationErrors = migrationPairingErrors();
   const rlsErrors = rlsGateErrors();
   const additionErrors = requiredAdditionsErrors(MODULE_ROOT, allow);
   const truthErrors = productionTruthErrors();
@@ -739,13 +720,13 @@ function check() {
   if (badMissing.length) { console.error(`\n✗ MISSING base files (do not delete base files):`); badMissing.forEach((r) => console.error(`    ${r}`)); }
   if (badModified.length) { console.error(`\n✗ MODIFIED base files (add on the side, never edit the base):`); badModified.forEach((r) => console.error(`    ${r}`)); }
   if (installGraphErrors.length) { console.error(`\n✗ INVALID frontend workspace install graph:`); installGraphErrors.forEach((error) => console.error(`    ${error}`)); }
-  if (migrationErrors.length) { console.error(`\n✗ COLLIDING store migration versions:`); migrationErrors.forEach((error) => console.error(`    ${error}`)); }
+  if (migrationErrors.length) { console.error(`\n✗ ORPHANED OR DUPLICATED migration versions (see tools/migration-pairing-gate.mjs):`); migrationErrors.forEach((error) => console.error(`    ${error}`)); }
   if (rlsErrors.length) { console.error(`\n✗ UNPROTECTED tenant-scoped tables (see tools/rls-migration-gate.mjs):`); rlsErrors.forEach((error) => console.error(`    ${error}`)); }
   if (additionErrors.length) { console.error(`\n✗ MISSING OR INVALID required consumer additions:`); additionErrors.forEach((error) => console.error(`    ${error}`)); }
   if (truthErrors.length) { console.error(`\n✗ INVALID production capability claims:`); truthErrors.forEach((error) => console.error(`    ${error}`)); }
 
   if (badModified.length || badMissing.length || installGraphErrors.length || migrationErrors.length || rlsErrors.length || additionErrors.length || truthErrors.length) {
-    console.error(`\nFAIL: ${badModified.length} modified, ${badMissing.length} missing, ${installGraphErrors.length} invalid install-graph checks, ${migrationErrors.length} colliding migration-version checks, ${rlsErrors.length} unprotected tenant-table checks, ${additionErrors.length} invalid required-addition checks, ${truthErrors.length} invalid production-truth checks. `
+    console.error(`\nFAIL: ${badModified.length} modified, ${badMissing.length} missing, ${installGraphErrors.length} invalid install-graph checks, ${migrationErrors.length} orphaned/duplicated migration-version checks, ${rlsErrors.length} unprotected tenant-table checks, ${additionErrors.length} invalid required-addition checks, ${truthErrors.length} invalid production-truth checks. `
       + `Move your change upstream into canonical (making the original stronger), or express it as a side-addition.`);
     process.exit(1);
   }
