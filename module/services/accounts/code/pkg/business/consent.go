@@ -112,7 +112,7 @@ func (s *Service) AcceptTerms(
 	}); err != nil {
 		return err
 	}
-	s.emit(ctx, userID, "user", "consent.terms_accepted", "user", userID, "")
+	s.emit(ctx, userID, "user", EventConsentTerms, "user", userID, "")
 	return nil
 }
 
@@ -138,6 +138,6 @@ func (s *Service) UpdateConsentPreferences(
 	}); err != nil {
 		return err
 	}
-	s.emit(ctx, userID, "user", "consent.preferences_updated", "user", userID, "")
+	s.emit(ctx, userID, "user", EventConsentPrefs, "user", userID, "")
 	return nil
 }

@@ -681,16 +681,16 @@ const file_saas_accounts_v1_onboarding_proto_rawDesc = "" +
 	"%ONBOARDING_COMPLETION_METHOD_DETECTED\x10\x01\x12.\n" +
 	"*ONBOARDING_COMPLETION_METHOD_DOMAIN_ACTION\x10\x02\x12*\n" +
 	"&ONBOARDING_COMPLETION_METHOD_USER_SKIP\x10\x03\x12)\n" +
-	"%ONBOARDING_COMPLETION_METHOD_MIGRATED\x10\x042\xd4\x05\n" +
+	"%ONBOARDING_COMPLETION_METHOD_MIGRATED\x10\x042\xda\x05\n" +
 	"\x11OnboardingService\x12\xca\x01\n" +
 	"\vGetProgress\x12..saas.accounts.v1.GetOnboardingProgressRequest\x1a$.saas.accounts.v1.OnboardingProgress\"e\xc2\xf3\x18+\b\x02\x10\x03*\x15\n" +
-	"\x0forganization_id\x10\x02\x18\x010\x01:\x02\x10\x01@\x01H\x03P\x03X\x03`\x01\x82\xd3\xe4\x93\x020\x12./v1/organizations/{organization_id}/onboarding\x12\xfe\x01\n" +
-	"\fCompleteStep\x12/.saas.accounts.v1.CompleteOnboardingStepRequest\x1a$.saas.accounts.v1.OnboardingProgress\"\x96\x01\xc2\xf3\x18F\b\x02\x10\x03*\x15\n" +
-	"\x0forganization_id\x10\x02\x18\x010\x01:\x1d\n" +
-	"\x19onboarding.step_completed\x10\x02@\x01H\x04P\x03X\x03`\x01\x82\xd3\xe4\x93\x02F:\x01*\"A/v1/organizations/{organization_id}/onboarding/{step_id}:complete\x12\xf0\x01\n" +
-	"\bSkipStep\x12+.saas.accounts.v1.SkipOnboardingStepRequest\x1a$.saas.accounts.v1.OnboardingProgress\"\x90\x01\xc2\xf3\x18D\b\x02\x10\x03*\x15\n" +
-	"\x0forganization_id\x10\x02\x18\x010\x01:\x1b\n" +
-	"\x17onboarding.step_skipped\x10\x02@\x01H\x04P\x03X\x03`\x01\x82\xd3\xe4\x93\x02B:\x01*\"=/v1/organizations/{organization_id}/onboarding/{step_id}:skipB\xb7\x01\n" +
+	"\x0forganization_id\x10\x02\x18\x010\x01:\x02\x10\x01@\x01H\x03P\x03X\x03`\x01\x82\xd3\xe4\x93\x020\x12./v1/organizations/{organization_id}/onboarding\x12\x81\x02\n" +
+	"\fCompleteStep\x12/.saas.accounts.v1.CompleteOnboardingStepRequest\x1a$.saas.accounts.v1.OnboardingProgress\"\x99\x01\xc2\xf3\x18I\b\x02\x10\x03*\x15\n" +
+	"\x0forganization_id\x10\x02\x18\x010\x01: \n" +
+	"\x1conboarding.step_completed.v1\x10\x02@\x01H\x04P\x03X\x03`\x01\x82\xd3\xe4\x93\x02F:\x01*\"A/v1/organizations/{organization_id}/onboarding/{step_id}:complete\x12\xf3\x01\n" +
+	"\bSkipStep\x12+.saas.accounts.v1.SkipOnboardingStepRequest\x1a$.saas.accounts.v1.OnboardingProgress\"\x93\x01\xc2\xf3\x18G\b\x02\x10\x03*\x15\n" +
+	"\x0forganization_id\x10\x02\x18\x010\x01:\x1e\n" +
+	"\x1aonboarding.step_skipped.v1\x10\x02@\x01H\x04P\x03X\x03`\x01\x82\xd3\xe4\x93\x02B:\x01*\"=/v1/organizations/{organization_id}/onboarding/{step_id}:skipB\xb7\x01\n" +
 	"\x14com.saas.accounts.v1B\x0fOnboardingProtoP\x01Z,accounts/pkg/gen/saas/accounts/v1;accountsv1\xa2\x02\x03SAX\xaa\x02\x10Saas.Accounts.V1\xca\x02\x10Saas\\Accounts\\V1\xe2\x02\x1cSaas\\Accounts\\V1\\GPBMetadata\xea\x02\x12Saas::Accounts::V1b\x06proto3"
 
 var (

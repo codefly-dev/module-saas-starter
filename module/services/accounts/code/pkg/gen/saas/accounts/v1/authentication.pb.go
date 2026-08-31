@@ -1204,28 +1204,25 @@ const file_saas_accounts_v1_authentication_proto_rawDesc = "" +
 	"\bprovider\x18\x01 \x01(\tB\a\xbaH\x04r\x02\x10\x01R\bprovider\x12*\n" +
 	"\fredirect_uri\x18\x02 \x01(\tB\a\xbaH\x04r\x02\x10\x01R\vredirectUri\"*\n" +
 	"\x12BeginOAuthResponse\x12\x14\n" +
-	"\x05state\x18\x01 \x01(\tR\x05state2\x87\r\n" +
+	"\x05state\x18\x01 \x01(\tR\x05state2\xa3\r\n" +
 	"\vAuthService\x12\x90\x01\n" +
 	"\n" +
-	"BeginOAuth\x12#.saas.accounts.v1.BeginOAuthRequest\x1a$.saas.accounts.v1.BeginOAuthResponse\"7\xc2\xf3\x18\x14\b\x01\x10\x010\x01:\x02\x10\x01@\x01H\x02P\x03X\x04`\x01\x82\xd3\xe4\x93\x02\x19:\x01*\"\x14/v1/auth/oauth/begin\x12\xbf\x01\n" +
-	"\fAuthenticate\x12%.saas.accounts.v1.AuthenticateRequest\x1a&.saas.accounts.v1.AuthenticateResponse\"`\xc2\xf3\x18<\b\x01\x10\x010\x01:*\n" +
-	"\n" +
-	"auth.login\n" +
-	"\x1aauth.mfa_challenge_started\x10\x02@\x01H\x02P\x04X\x04`\x01\x82\xd3\xe4\x93\x02\x1a:\x01*\"\x15/v1/auth/authenticate\x12\xf1\x01\n" +
-	"\x14CompleteMFAChallenge\x12-.saas.accounts.v1.CompleteMFAChallengeRequest\x1a..saas.accounts.v1.CompleteMFAChallengeResponse\"z\xc2\xf3\x18V\b\x01\x10\x010\x01:B\n" +
-	"\n" +
-	"auth.login\n" +
-	"\x1cauth.mfa_challenge_completed\n" +
-	"\x14mfa.backup_code_used\x10\x02@\x01H\x02P\x04X\x04`\x01h\x01\x82\xd3\xe4\x93\x02\x1a:\x01*\"\x15/v1/auth/mfa/complete\x12\xc4\x01\n" +
-	"\x19BeginWebAuthnMFAChallenge\x122.saas.accounts.v1.BeginWebAuthnMFAChallengeRequest\x1a3.saas.accounts.v1.BeginWebAuthnMFAChallengeResponse\">\xc2\xf3\x18\x14\b\x01\x10\x010\x01:\x02\x10\x01@\x01H\x02P\x03X\x04`\x01\x82\xd3\xe4\x93\x02 :\x01*\"\x1b/v1/auth/mfa/webauthn/begin\x12\x88\x02\n" +
-	"\x1cCompleteWebAuthnMFAChallenge\x125.saas.accounts.v1.CompleteWebAuthnMFAChallengeRequest\x1a..saas.accounts.v1.CompleteMFAChallengeResponse\"\x80\x01\xc2\xf3\x18S\b\x01\x10\x010\x01:?\n" +
-	"\n" +
-	"auth.login\n" +
-	"\x1cauth.mfa_challenge_completed\n" +
-	"\x11mfa.webauthn_used\x10\x02@\x01H\x02P\x04X\x04`\x01h\x01\x82\xd3\xe4\x93\x02#:\x01*\"\x1e/v1/auth/mfa/webauthn/complete\x12\x92\x01\n" +
-	"\fRefreshToken\x12%.saas.accounts.v1.RefreshTokenRequest\x1a&.saas.accounts.v1.RefreshTokenResponse\"3\xc2\xf3\x18\x14\b\x01\x10\x010\x01:\x02\x10\x01@\x01H\x02P\x04X\x04`\x01\x82\xd3\xe4\x93\x02\x15:\x01*\"\x10/v1/auth/refresh\x12\xcc\x01\n" +
-	"\x12SwitchOrganization\x12+.saas.accounts.v1.SwitchOrganizationRequest\x1a,.saas.accounts.v1.SwitchOrganizationResponse\"[\xc2\xf3\x180\b\x02\x10\x010\x01:\x1e\n" +
-	"\x1aauth.organization_switched\x10\x02@\x01H\x05P\x03X\x04`\x01\x82\xd3\xe4\x93\x02!:\x01*\"\x1c/v1/auth/switch-organization\x12u\n" +
+	"BeginOAuth\x12#.saas.accounts.v1.BeginOAuthRequest\x1a$.saas.accounts.v1.BeginOAuthResponse\"7\xc2\xf3\x18\x14\b\x01\x10\x010\x01:\x02\x10\x01@\x01H\x02P\x03X\x04`\x01\x82\xd3\xe4\x93\x02\x19:\x01*\"\x14/v1/auth/oauth/begin\x12\xc5\x01\n" +
+	"\fAuthenticate\x12%.saas.accounts.v1.AuthenticateRequest\x1a&.saas.accounts.v1.AuthenticateResponse\"f\xc2\xf3\x18B\b\x01\x10\x010\x01:0\n" +
+	"\rauth.login.v1\n" +
+	"\x1dauth.mfa_challenge_started.v1\x10\x02@\x01H\x02P\x04X\x04`\x01\x82\xd3\xe4\x93\x02\x1a:\x01*\"\x15/v1/auth/authenticate\x12\xfb\x01\n" +
+	"\x14CompleteMFAChallenge\x12-.saas.accounts.v1.CompleteMFAChallengeRequest\x1a..saas.accounts.v1.CompleteMFAChallengeResponse\"\x83\x01\xc2\xf3\x18_\b\x01\x10\x010\x01:K\n" +
+	"\rauth.login.v1\n" +
+	"\x1fauth.mfa_challenge_completed.v1\n" +
+	"\x17mfa.backup_code_used.v1\x10\x02@\x01H\x02P\x04X\x04`\x01h\x01\x82\xd3\xe4\x93\x02\x1a:\x01*\"\x15/v1/auth/mfa/complete\x12\xc4\x01\n" +
+	"\x19BeginWebAuthnMFAChallenge\x122.saas.accounts.v1.BeginWebAuthnMFAChallengeRequest\x1a3.saas.accounts.v1.BeginWebAuthnMFAChallengeResponse\">\xc2\xf3\x18\x14\b\x01\x10\x010\x01:\x02\x10\x01@\x01H\x02P\x03X\x04`\x01\x82\xd3\xe4\x93\x02 :\x01*\"\x1b/v1/auth/mfa/webauthn/begin\x12\x91\x02\n" +
+	"\x1cCompleteWebAuthnMFAChallenge\x125.saas.accounts.v1.CompleteWebAuthnMFAChallengeRequest\x1a..saas.accounts.v1.CompleteMFAChallengeResponse\"\x89\x01\xc2\xf3\x18\\\b\x01\x10\x010\x01:H\n" +
+	"\rauth.login.v1\n" +
+	"\x1fauth.mfa_challenge_completed.v1\n" +
+	"\x14mfa.webauthn_used.v1\x10\x02@\x01H\x02P\x04X\x04`\x01h\x01\x82\xd3\xe4\x93\x02#:\x01*\"\x1e/v1/auth/mfa/webauthn/complete\x12\x92\x01\n" +
+	"\fRefreshToken\x12%.saas.accounts.v1.RefreshTokenRequest\x1a&.saas.accounts.v1.RefreshTokenResponse\"3\xc2\xf3\x18\x14\b\x01\x10\x010\x01:\x02\x10\x01@\x01H\x02P\x04X\x04`\x01\x82\xd3\xe4\x93\x02\x15:\x01*\"\x10/v1/auth/refresh\x12\xcf\x01\n" +
+	"\x12SwitchOrganization\x12+.saas.accounts.v1.SwitchOrganizationRequest\x1a,.saas.accounts.v1.SwitchOrganizationResponse\"^\xc2\xf3\x183\b\x02\x10\x010\x01:!\n" +
+	"\x1dauth.organization_switched.v1\x10\x02@\x01H\x05P\x03X\x04`\x01\x82\xd3\xe4\x93\x02!:\x01*\"\x1c/v1/auth/switch-organization\x12u\n" +
 	"\x06Logout\x12\x1f.saas.accounts.v1.LogoutRequest\x1a\x16.google.protobuf.Empty\"2\xc2\xf3\x18\x14\b\x01\x10\x010\x01:\x02\x10\x01@\x01H\x02P\x04X\x03`\x01\x82\xd3\xe4\x93\x02\x14:\x01*\"\x0f/v1/auth/logout\x12\x81\x01\n" +
 	"\aGetJWKS\x12\x16.google.protobuf.Empty\x1a\x1e.saas.accounts.v1.JWKSResponse\">\xc2\xf3\x18\x14\b\x01\x10\x010\x01:\x02\x10\x01@\x01H\x01P\x01X\x01`\x01\x82\xd3\xe4\x93\x02 \x12\x1e/v1/auth/.well-known/jwks.jsonB\xbb\x01\n" +
 	"\x14com.saas.accounts.v1B\x13AuthenticationProtoP\x01Z,accounts/pkg/gen/saas/accounts/v1;accountsv1\xa2\x02\x03SAX\xaa\x02\x10Saas.Accounts.V1\xca\x02\x10Saas\\Accounts\\V1\xe2\x02\x1cSaas\\Accounts\\V1\\GPBMetadata\xea\x02\x12Saas::Accounts::V1b\x06proto3"

@@ -8,7 +8,7 @@ import {
 
 // Reference dashboard: declare events → metrics → a dashboard, then render it.
 // Everything below the imports is the entire consumer surface.
-const login = event("auth.login");
+const login = event("auth.login.v1");
 
 const insights = dashboard({
 	title: "Activity",

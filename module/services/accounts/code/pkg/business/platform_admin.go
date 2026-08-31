@@ -82,7 +82,7 @@ func (s *Service) SuspendUser(ctx context.Context, actorID string, req *gen.Susp
 		return w.Wrapf(err, "cannot suspend user")
 	}
 
-	s.emit(ctx, actorID, "user", "user.suspended", "user", req.UserId, "")
+	s.emit(ctx, actorID, "user", EventUserSuspended, "user", req.UserId, "")
 	s.notifySlack(ctx, fmt.Sprintf("Security: user %s suspended by %s (reason: %s)", req.UserId, actorID, req.Reason))
 	return nil
 }
@@ -101,7 +101,7 @@ func (s *Service) UnsuspendUser(ctx context.Context, actorID string, req *gen.Un
 		return w.Wrapf(err, "cannot unsuspend user")
 	}
 
-	s.emit(ctx, actorID, "user", "user.unsuspended", "user", req.UserId, "")
+	s.emit(ctx, actorID, "user", EventUserUnsuspended, "user", req.UserId, "")
 	return nil
 }
 
@@ -191,7 +191,7 @@ func (s *Service) ImpersonateUser(ctx context.Context, actorID string, req *gen.
 		return nil, w.Wrapf(err, "mint impersonation token")
 	}
 
-	s.emit(ctx, actorID, "user", "platform.user_impersonated", "user", req.UserId, "")
+	s.emit(ctx, actorID, "user", EventPlatformImpersonated, "user", req.UserId, "")
 
 	return &gen.ImpersonateUserResponse{
 		AccessToken: pair.AccessToken,
@@ -271,7 +271,7 @@ func (s *Service) RevokeSession(ctx context.Context, actorID string, req *gen.Re
 		}
 	}
 
-	s.emit(ctx, actorID, "user", "session.revoked", "session", req.SessionId, "")
+	s.emit(ctx, actorID, "user", EventSessionRevoked, "session", req.SessionId, "")
 	return nil
 }
 
@@ -287,7 +287,7 @@ func (s *Service) GrantPlatformRole(ctx context.Context, actorID string, req *ge
 		return w.Wrapf(err, "cannot grant platform role")
 	}
 
-	s.emit(ctx, actorID, "user", "platform.role_granted", "user", req.UserId, "")
+	s.emit(ctx, actorID, "user", EventPlatformRoleGranted, "user", req.UserId, "")
 
 	// Notify the user about their new platform role
 	_ = s.NotifyUser(
@@ -314,7 +314,7 @@ func (s *Service) RevokePlatformRole(ctx context.Context, actorID string, req *g
 		return w.Wrapf(err, "cannot revoke platform role")
 	}
 
-	s.emit(ctx, actorID, "user", "platform.role_revoked", "user", req.UserId, "")
+	s.emit(ctx, actorID, "user", EventPlatformRoleRevoked, "user", req.UserId, "")
 	return nil
 }
 

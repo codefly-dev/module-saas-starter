@@ -89,7 +89,7 @@ service SSOAdminService {
       }
       mfa: MFA_REQUIREMENT_NONE
       audit: {
-        events: "sso.setup.started"
+        events: "sso.setup.started.v1"
         emission: AUDIT_EMISSION_SUCCESS
       }
       idempotency: IDEMPOTENCY_REQUIREMENT_FORBIDDEN
@@ -114,7 +114,7 @@ service SSOAdminService {
       }
       mfa: MFA_REQUIREMENT_NONE
       audit: {
-        events: "sso.disabled"
+        events: "sso.disabled.v1"
         emission: AUDIT_EMISSION_SUCCESS
       }
       idempotency: IDEMPOTENCY_REQUIREMENT_FORBIDDEN

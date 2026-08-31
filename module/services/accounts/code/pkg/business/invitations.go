@@ -187,7 +187,7 @@ func (s *Service) CreateInvitation(
 		return nil, w.Wrapf(err, "cannot create invitation")
 	}
 
-	s.emit(ctx, inviterID, "user", "invitation.created", "invitation", inv.ID, req.OrgId)
+	s.emit(ctx, inviterID, "user", EventInvitationCreated, "invitation", inv.ID, req.OrgId)
 
 	return &gen.CreateInvitationResponse{Invitation: invitationToProto(inv)}, nil
 }
@@ -380,7 +380,7 @@ func (s *Service) AcceptInvitation(
 
 	s.invalidateMembership(ctx, inv.OrgID, userID)
 	if !alreadyAccepted {
-		s.emit(ctx, userID, "user", "invitation.accepted", "invitation", inv.ID, inv.OrgID)
+		s.emit(ctx, userID, "user", EventInvitationAccepted, "invitation", inv.ID, inv.OrgID)
 		_, _ = s.CreateNotification(ctx, CreateNotificationInput{
 			UserID:    inv.InviterID,
 			OrgID:     inv.OrgID,
@@ -494,7 +494,7 @@ func (s *Service) ResendInvitation(
 		return nil, err
 	}
 	if !replayed {
-		s.emit(ctx, actorID, "user", "invitation.resent", "invitation", inv.ID, inv.OrgID)
+		s.emit(ctx, actorID, "user", EventInvitationResent, "invitation", inv.ID, inv.OrgID)
 	}
 	return invitationToProto(inv), nil
 }
@@ -548,7 +548,7 @@ func (s *Service) RevokeInvitation(
 		return wool.Get(ctx).Wrapf(err, "cannot revoke invitation")
 	}
 	if revoked {
-		s.emit(ctx, inviterID, "user", "invitation.revoked", "invitation", req.Id, inv.OrgID)
+		s.emit(ctx, inviterID, "user", EventInvitationRevoked, "invitation", req.Id, inv.OrgID)
 	}
 	return nil
 }
@@ -621,7 +621,7 @@ func (s *Service) announceInvitationAccepted(ctx context.Context, inv *Invitatio
 		)
 	})
 	s.invalidateMembership(ctx, inv.OrgID, userID)
-	s.emit(ctx, userID, "user", "invitation.accepted", "invitation", inv.ID, inv.OrgID)
+	s.emit(ctx, userID, "user", EventInvitationAccepted, "invitation", inv.ID, inv.OrgID)
 
 	orgName := "the organization"
 	if org, err := s.organizationForInvitation(ctx, inv); err == nil && org != nil && org.Name != "" {

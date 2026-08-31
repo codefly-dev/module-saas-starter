@@ -56,7 +56,7 @@ service GDPRService {
       tenant: TENANT_REQUIREMENT_USER
       mfa: MFA_REQUIREMENT_NONE
       audit: {
-        events: "gdpr.export_requested"
+        events: "gdpr.export_requested.v1"
         emission: AUDIT_EMISSION_SUCCESS
       }
       idempotency: IDEMPOTENCY_REQUIREMENT_FORBIDDEN
@@ -90,7 +90,7 @@ service GDPRService {
       tenant: TENANT_REQUIREMENT_USER
       mfa: MFA_REQUIREMENT_IF_ENROLLED_RECENT_STEP_UP
       audit: {
-        events: "gdpr.deletion_requested"
+        events: "gdpr.deletion_requested.v1"
         emission: AUDIT_EMISSION_SUCCESS
       }
       idempotency: IDEMPOTENCY_REQUIREMENT_FORBIDDEN

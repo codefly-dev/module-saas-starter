@@ -72,7 +72,7 @@ func (s *Service) CreateAPIKey(ctx context.Context, userID string, req *gen.Crea
 		return nil, w.Wrapf(err, "cannot store API key")
 	}
 
-	s.emit(ctx, userID, "user", "api_key.created", "api_key", keyID, req.OrganizationId)
+	s.emit(ctx, userID, "user", EventAPIKeyCreated, "api_key", keyID, req.OrganizationId)
 
 	return &gen.CreateAPIKeyResponse{
 		Key:          key,
@@ -200,7 +200,7 @@ func (s *Service) RevokeAPIKey(ctx context.Context, actorID string, req *gen.Rev
 	}); err != nil {
 		return err
 	}
-	s.emit(ctx, actorID, "user", "api_key.revoked", "api_key", req.Id, req.OrganizationId)
+	s.emit(ctx, actorID, "user", EventAPIKeyRevoked, "api_key", req.Id, req.OrganizationId)
 	return nil
 }
 

@@ -201,7 +201,7 @@ func (s *Service) JoinWaitlist(
 	}
 
 	if result != nil && result.Created {
-		s.emit(ctx, entry.ID, "waitlist", "waitlist.joined", "waitlist_entry", entry.ID, "")
+		s.emit(ctx, entry.ID, "waitlist", EventWaitlistJoined, "waitlist_entry", entry.ID, "")
 	}
 	return generic, nil
 }
@@ -234,7 +234,7 @@ func (s *Service) VerifyWaitlist(
 	}
 	entry := result.Entry
 	if result.Transitioned {
-		s.emit(ctx, entry.ID, "waitlist", "waitlist.verified", "waitlist_entry", entry.ID, "")
+		s.emit(ctx, entry.ID, "waitlist", EventWaitlistVerified, "waitlist_entry", entry.ID, "")
 	}
 	return &gen.VerifyWaitlistResponse{
 		State:   waitlistStateFromString(entry.State),
@@ -340,7 +340,7 @@ func (s *Service) InviteWaitlist(
 	if entry == nil {
 		return nil, wool.Get(ctx).NewError("waitlist entry not found")
 	}
-	s.emit(ctx, actorID, "user", "waitlist.invited", "waitlist_entry", entry.ID, "")
+	s.emit(ctx, actorID, "user", EventWaitlistInvited, "waitlist_entry", entry.ID, "")
 	return waitlistEntryToProto(entry), nil
 }
 
@@ -409,7 +409,7 @@ func (s *Service) convertWaitlistLead(
 		return err
 	})
 	if converted != nil {
-		s.emit(ctx, userID, "user", "waitlist.converted", "waitlist_entry", converted.ID, orgID)
+		s.emit(ctx, userID, "user", EventWaitlistConverted, "waitlist_entry", converted.ID, orgID)
 	}
 }
 

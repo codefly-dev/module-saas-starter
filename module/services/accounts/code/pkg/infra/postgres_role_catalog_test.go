@@ -337,7 +337,7 @@ func TestImportRoleCatalogStampsProvenanceOnAudit(t *testing.T) {
 	role, found := readBuiltinRole(t, "catalog-test:provenance")
 	require.True(t, found)
 
-	metadata := readLatestAuditMetadata(t, "role.created", role.id)
+	metadata := readLatestAuditMetadata(t, "role.created.v1", role.id)
 	require.Equal(t, catalog.Fingerprint(), metadata["catalog_sha256"])
 	require.Equal(t, "roles.json", metadata["catalog_source"])
 	require.Equal(t, "catalog-test:provenance", metadata["name"])

@@ -29,8 +29,17 @@ export function toAuditEvent(e: ProtoAuditEvent): AuditEvent {
 	};
 }
 
+// Audit event types are versioned (e.g. "auth.login.v1"); strip the trailing
+// ".vN" so the label reads "Auth Login", not "Auth Login V1", and so a future
+// v2 formats identically without a code change.
+export function baseAuditEventType(action: string): string {
+	return action.replace(/\.v\d+$/, "");
+}
+
 export function formatAuditAction(action: string): string {
-	return action.replace(/[._]/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
+	return baseAuditEventType(action)
+		.replace(/[._]/g, " ")
+		.replace(/\b\w/g, (c) => c.toUpperCase());
 }
 
 export interface AuditGroup {

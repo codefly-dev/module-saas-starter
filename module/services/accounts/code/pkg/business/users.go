@@ -145,7 +145,7 @@ func (s *Service) UpdateUser(ctx context.Context, actorID string, access Identit
 		return nil, w.Wrapf(err, "cannot update user")
 	}
 
-	s.emit(ctx, actorID, "user", "user.updated", "user", userID, "")
+	s.emit(ctx, actorID, "user", EventUserUpdated, "user", userID, "")
 	return user, nil
 }
 
@@ -166,12 +166,12 @@ func (s *Service) DeleteUser(ctx context.Context, actorID string, access Identit
 		return w.Wrapf(err, "cannot delete user")
 	}
 
-	s.emit(ctx, actorID, "user", "user.deleted", "user", targetID, "")
+	s.emit(ctx, actorID, "user", EventUserDeleted, "user", targetID, "")
 	return nil
 }
 
 // AddIdentity adds a new identity to a user.
-// Audited with action "user.identity_added" — adding identities is a
+// Audited with action EventUserIdentityAdd — adding identities is a
 // security-relevant event (the user can now log in via a new provider).
 func (s *Service) AddIdentity(ctx context.Context, actorID string, access Identity, req *gen.AddIdentityRequest) (*gen.UserIdentity, error) {
 	w := wool.Get(ctx).In("AddIdentity")
@@ -191,7 +191,7 @@ func (s *Service) AddIdentity(ctx context.Context, actorID string, access Identi
 		return nil, w.Wrapf(err, "cannot add identity")
 	}
 
-	s.emit(ctx, actorID, "user", "user.identity_added", "identity", identity.Uuid, "")
+	s.emit(ctx, actorID, "user", EventUserIdentityAdd, "identity", identity.Uuid, "")
 	return identity, nil
 }
 

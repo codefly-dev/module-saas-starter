@@ -126,8 +126,8 @@ service DelegationService {
       }
       mfa: MFA_REQUIREMENT_NONE
       audit: {
-        events: "delegation.requested"
-        events: "delegation.auto_approved"
+        events: "delegation.requested.v1"
+        events: "delegation.auto_approved.v1"
         emission: AUDIT_EMISSION_SUCCESS
       }
       idempotency: IDEMPOTENCY_REQUIREMENT_FORBIDDEN
@@ -179,8 +179,8 @@ service DelegationService {
       }
       mfa: MFA_REQUIREMENT_NONE
       audit: {
-        events: "delegation.approved"
-        events: "delegation.denied"
+        events: "delegation.approved.v1"
+        events: "delegation.denied.v1"
         emission: AUDIT_EMISSION_SUCCESS
       }
       idempotency: IDEMPOTENCY_REQUIREMENT_FORBIDDEN

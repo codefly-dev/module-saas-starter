@@ -165,8 +165,8 @@ func TestE2E_RoleAssignmentFlow(t *testing.T) {
 
 	// Required actions on this orgs scope:
 	for _, want := range []string{
-		"role.created",
-		"role.assigned",
+		"role.created.v1",
+		"role.assigned.v1",
 		"role.revoked",
 		"org.member_added",
 	} {

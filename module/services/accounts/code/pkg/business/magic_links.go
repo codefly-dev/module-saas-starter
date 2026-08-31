@@ -186,7 +186,7 @@ func (s *Service) VerifyMagicLink(ctx context.Context, token string) (*gen.Authe
 		return nil, w.Wrapf(err, "mint tokens")
 	}
 
-	s.emit(ctx, identity.UserID.String(), "user", "auth.magic_link_login",
+	s.emit(ctx, identity.UserID.String(), "user", EventAuthMagicLinkLogin,
 		"session", identity.SessionID.String(), identity.OrgID.String())
 
 	return &gen.AuthenticateResponse{

@@ -806,24 +806,24 @@ const file_saas_accounts_v1_mfa_proto_rawDesc = "" +
 	"\rMFADeviceType\x12\x1f\n" +
 	"\x1bMFA_DEVICE_TYPE_UNSPECIFIED\x10\x00\x12\x18\n" +
 	"\x14MFA_DEVICE_TYPE_TOTP\x10\x01\x12\x1c\n" +
-	"\x18MFA_DEVICE_TYPE_WEBAUTHN\x10\x022\xa8\n" +
+	"\x18MFA_DEVICE_TYPE_WEBAUTHN\x10\x022\xba\n" +
 	"\n" +
 	"\n" +
-	"MFAService\x12\xeb\x01\n" +
-	"\x19BeginWebAuthnRegistration\x122.saas.accounts.v1.BeginWebAuthnRegistrationRequest\x1a3.saas.accounts.v1.BeginWebAuthnRegistrationResponse\"e\xc2\xf3\x187\b\x02\x10\x020\x01:%\n" +
-	"!mfa.webauthn_registration_started\x10\x02@\x01H\bP\x03X\x04`\x01\x82\xd3\xe4\x93\x02$:\x01*\"\x1f/v1/mfa/webauthn/register/begin\x12\xe5\x01\n" +
-	"\x1aFinishWebAuthnRegistration\x123.saas.accounts.v1.FinishWebAuthnRegistrationRequest\x1a4.saas.accounts.v1.FinishWebAuthnRegistrationResponse\"\\\xc2\xf3\x18-\b\x02\x10\x020\x01:\x1b\n" +
-	"\x17mfa.webauthn_registered\x10\x02@\x01H\bP\x04X\x04`\x01\x82\xd3\xe4\x93\x02%:\x01*\" /v1/mfa/webauthn/register/finish\x12\xa3\x01\n" +
-	"\tSetupTOTP\x12\".saas.accounts.v1.SetupTOTPRequest\x1a#.saas.accounts.v1.SetupTOTPResponse\"M\xc2\xf3\x18,\b\x02\x10\x020\x01:\x1a\n" +
-	"\x16mfa.totp_setup_started\x10\x02@\x01H\bP\x04X\x04`\x01\x82\xd3\xe4\x93\x02\x17:\x01*\"\x12/v1/mfa/totp/setup\x12\xa2\x01\n" +
+	"MFAService\x12\xee\x01\n" +
+	"\x19BeginWebAuthnRegistration\x122.saas.accounts.v1.BeginWebAuthnRegistrationRequest\x1a3.saas.accounts.v1.BeginWebAuthnRegistrationResponse\"h\xc2\xf3\x18:\b\x02\x10\x020\x01:(\n" +
+	"$mfa.webauthn_registration_started.v1\x10\x02@\x01H\bP\x03X\x04`\x01\x82\xd3\xe4\x93\x02$:\x01*\"\x1f/v1/mfa/webauthn/register/begin\x12\xe8\x01\n" +
+	"\x1aFinishWebAuthnRegistration\x123.saas.accounts.v1.FinishWebAuthnRegistrationRequest\x1a4.saas.accounts.v1.FinishWebAuthnRegistrationResponse\"_\xc2\xf3\x180\b\x02\x10\x020\x01:\x1e\n" +
+	"\x1amfa.webauthn_registered.v1\x10\x02@\x01H\bP\x04X\x04`\x01\x82\xd3\xe4\x93\x02%:\x01*\" /v1/mfa/webauthn/register/finish\x12\xa6\x01\n" +
+	"\tSetupTOTP\x12\".saas.accounts.v1.SetupTOTPRequest\x1a#.saas.accounts.v1.SetupTOTPResponse\"P\xc2\xf3\x18/\b\x02\x10\x020\x01:\x1d\n" +
+	"\x19mfa.totp_setup_started.v1\x10\x02@\x01H\bP\x04X\x04`\x01\x82\xd3\xe4\x93\x02\x17:\x01*\"\x12/v1/mfa/totp/setup\x12\xa5\x01\n" +
 	"\n" +
-	"VerifyTOTP\x12#.saas.accounts.v1.VerifyTOTPRequest\x1a$.saas.accounts.v1.VerifyTOTPResponse\"I\xc2\xf3\x18'\b\x02\x10\x020\x01:\x15\n" +
-	"\x11mfa.totp_verified\x10\x02@\x01H\bP\x04X\x03`\x01\x82\xd3\xe4\x93\x02\x18:\x01*\"\x13/v1/mfa/totp/verify\x12\x91\x01\n" +
-	"\vListDevices\x12'.saas.accounts.v1.ListMFADevicesRequest\x1a(.saas.accounts.v1.ListMFADevicesResponse\"/\xc2\xf3\x18\x14\b\x02\x10\x020\x01:\x02\x10\x01@\x01H\bP\x03X\x03`\x01\x82\xd3\xe4\x93\x02\x11\x12\x0f/v1/mfa/devices\x12\x9a\x01\n" +
-	"\fRevokeDevice\x12(.saas.accounts.v1.RevokeMFADeviceRequest\x1a\x16.google.protobuf.Empty\"H\xc2\xf3\x18(\b\x02\x10\x020\x01:\x16\n" +
-	"\x12mfa.device_revoked\x10\x02@\x01H\bP\x03X\x03`\x01\x82\xd3\xe4\x93\x02\x16*\x14/v1/mfa/devices/{id}\x12\xc7\x01\n" +
-	"\x13GenerateBackupCodes\x12,.saas.accounts.v1.GenerateBackupCodesRequest\x1a-.saas.accounts.v1.GenerateBackupCodesResponse\"S\xc2\xf3\x180\b\x02\x10\x020\x01:\x1e\n" +
-	"\x1amfa.backup_codes_generated\x10\x02@\x01H\bP\x04X\x04`\x01\x82\xd3\xe4\x93\x02\x19:\x01*\"\x14/v1/mfa/backup-codesB\xb0\x01\n" +
+	"VerifyTOTP\x12#.saas.accounts.v1.VerifyTOTPRequest\x1a$.saas.accounts.v1.VerifyTOTPResponse\"L\xc2\xf3\x18*\b\x02\x10\x020\x01:\x18\n" +
+	"\x14mfa.totp_verified.v1\x10\x02@\x01H\bP\x04X\x03`\x01\x82\xd3\xe4\x93\x02\x18:\x01*\"\x13/v1/mfa/totp/verify\x12\x91\x01\n" +
+	"\vListDevices\x12'.saas.accounts.v1.ListMFADevicesRequest\x1a(.saas.accounts.v1.ListMFADevicesResponse\"/\xc2\xf3\x18\x14\b\x02\x10\x020\x01:\x02\x10\x01@\x01H\bP\x03X\x03`\x01\x82\xd3\xe4\x93\x02\x11\x12\x0f/v1/mfa/devices\x12\x9d\x01\n" +
+	"\fRevokeDevice\x12(.saas.accounts.v1.RevokeMFADeviceRequest\x1a\x16.google.protobuf.Empty\"K\xc2\xf3\x18+\b\x02\x10\x020\x01:\x19\n" +
+	"\x15mfa.device_revoked.v1\x10\x02@\x01H\bP\x03X\x03`\x01\x82\xd3\xe4\x93\x02\x16*\x14/v1/mfa/devices/{id}\x12\xca\x01\n" +
+	"\x13GenerateBackupCodes\x12,.saas.accounts.v1.GenerateBackupCodesRequest\x1a-.saas.accounts.v1.GenerateBackupCodesResponse\"V\xc2\xf3\x183\b\x02\x10\x020\x01:!\n" +
+	"\x1dmfa.backup_codes_generated.v1\x10\x02@\x01H\bP\x04X\x04`\x01\x82\xd3\xe4\x93\x02\x19:\x01*\"\x14/v1/mfa/backup-codesB\xb0\x01\n" +
 	"\x14com.saas.accounts.v1B\bMfaProtoP\x01Z,accounts/pkg/gen/saas/accounts/v1;accountsv1\xa2\x02\x03SAX\xaa\x02\x10Saas.Accounts.V1\xca\x02\x10Saas\\Accounts\\V1\xe2\x02\x1cSaas\\Accounts\\V1\\GPBMetadata\xea\x02\x12Saas::Accounts::V1b\x06proto3"
 
 var (

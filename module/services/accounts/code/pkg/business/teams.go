@@ -40,7 +40,7 @@ func (s *Service) AddTeamMember(ctx context.Context, actorID string, req *gen.Ad
 		return w.Wrapf(err, "cannot add team member")
 	}
 
-	s.emit(ctx, actorID, "user", "team.member_added", "team", req.TeamId, orgID)
+	s.emit(ctx, actorID, "user", EventTeamMemberAdded, "team", req.TeamId, orgID)
 	return nil
 }
 
@@ -73,7 +73,7 @@ func (s *Service) RemoveTeamMember(ctx context.Context, actorID string, req *gen
 		return w.Wrapf(err, "cannot remove team member")
 	}
 
-	s.emit(ctx, actorID, "user", "team.member_removed", "team", req.TeamId, orgID)
+	s.emit(ctx, actorID, "user", EventTeamMemberRemoved, "team", req.TeamId, orgID)
 	return nil
 }
 
@@ -95,7 +95,7 @@ func (s *Service) UpdateTeam(ctx context.Context, actorID string, req *gen.Updat
 		return nil, w.Wrapf(err, "cannot update team")
 	}
 
-	s.emit(ctx, actorID, "user", "team.updated", "team", req.TeamId, orgID)
+	s.emit(ctx, actorID, "user", EventTeamUpdated, "team", req.TeamId, orgID)
 	return &gen.UpdateTeamResponse{Team: team}, nil
 }
 
@@ -114,7 +114,7 @@ func (s *Service) DeleteTeam(ctx context.Context, actorID string, req *gen.Delet
 		return w.Wrapf(err, "cannot delete team")
 	}
 
-	s.emit(ctx, actorID, "user", "team.deleted", "team", req.TeamId, orgID)
+	s.emit(ctx, actorID, "user", EventTeamDeleted, "team", req.TeamId, orgID)
 	return nil
 }
 

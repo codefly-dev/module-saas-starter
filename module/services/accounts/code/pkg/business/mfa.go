@@ -148,7 +148,7 @@ func (s *Service) SetupTOTP(ctx context.Context, userID string) (secret string, 
 	uri := fmt.Sprintf("otpauth://totp/%s:%s?secret=%s&issuer=%s&digits=%d&period=%d",
 		mfaAppName, user.PrimaryEmail, secretB32, mfaAppName, totpDigits, totpPeriod)
 
-	s.emit(ctx, userID, "user", "mfa.totp_setup_started", "mfa_device", device.ID, "")
+	s.emit(ctx, userID, "user", EventMFATOTPSetupStarted, "mfa_device", device.ID, "")
 
 	return secretB32, uri, nil
 }
@@ -197,7 +197,7 @@ func (s *Service) VerifyTOTP(ctx context.Context, userID, code string) error {
 				if err := mfaStore.UpdateMFADevice(ctx, device); err != nil {
 					return w.Wrapf(err, "cannot mark device as verified")
 				}
-				s.emit(ctx, userID, "user", "mfa.totp_verified", "mfa_device", device.ID, "")
+				s.emit(ctx, userID, "user", EventMFATOTPVerified, "mfa_device", device.ID, "")
 				return nil
 			}
 		}
@@ -252,7 +252,7 @@ func (s *Service) RevokeMFADevice(ctx context.Context, userID, deviceID string) 
 		return w.Wrapf(err, "cannot delete MFA device")
 	}
 
-	s.emit(ctx, userID, "user", "mfa.device_revoked", "mfa_device", deviceID, "")
+	s.emit(ctx, userID, "user", EventMFADeviceRevoked, "mfa_device", deviceID, "")
 	return nil
 }
 
@@ -295,7 +295,7 @@ func (s *Service) GenerateBackupCodes(ctx context.Context, userID string) ([]str
 		return nil, w.Wrapf(err, "cannot create backup codes")
 	}
 
-	s.emit(ctx, userID, "user", "mfa.backup_codes_generated", "user", userID, "")
+	s.emit(ctx, userID, "user", EventMFABackupGenerated, "user", userID, "")
 	return plaintextCodes, nil
 }
 
@@ -322,7 +322,7 @@ func (s *Service) ValidateMFACode(ctx context.Context, userID, code string) (boo
 		return false, err
 	}
 	if ok2 && method == "backup_code" {
-		s.emit(ctx, userID, "user", "mfa.backup_code_used", "user", userID, "")
+		s.emit(ctx, userID, "user", EventMFABackupUsed, "user", userID, "")
 	}
 	return ok2, nil
 }

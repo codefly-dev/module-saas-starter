@@ -32,7 +32,7 @@
         "mfa": "MFA_REQUIREMENT_NONE",
         "audit": {
           "events": [
-            "api_key.created"
+            "api_key.created.v1"
           ],
           "emission": "AUDIT_EMISSION_SUCCESS"
         },
@@ -50,7 +50,7 @@
         "service": "accounts"
       },
       "source_proto": "saas/accounts/v1/api_keys.proto",
-      "policy_sha256": "3378c4e842354ec4b93afd76a32186213d4c61a3611c0e06f0c9acedd29fcfe4",
+      "policy_sha256": "432ab3f9ce656ec7ec45960046d16dbe176c102ccf30963db1f0e485039af911",
       "rate_limit_backend_failure_mode": "RATE_LIMIT_BACKEND_FAILURE_MODE_FAIL_OPEN"
     },
     {
@@ -126,7 +126,7 @@
         "mfa": "MFA_REQUIREMENT_NONE",
         "audit": {
           "events": [
-            "api_key.revoked"
+            "api_key.revoked.v1"
           ],
           "emission": "AUDIT_EMISSION_SUCCESS"
         },
@@ -144,7 +144,7 @@
         "service": "accounts"
       },
       "source_proto": "saas/accounts/v1/api_keys.proto",
-      "policy_sha256": "6c1d0a9c4ce08ae4ab41d10756f2b9b26e2e9be26b6128664153648d760f9a07",
+      "policy_sha256": "0aaca841c0af324318dfab97b668eea13079c9a50f06ac27a706b47ce4c7378f",
       "rate_limit_backend_failure_mode": "RATE_LIMIT_BACKEND_FAILURE_MODE_FAIL_OPEN"
     },
     {
@@ -378,8 +378,8 @@
         "mfa": "MFA_REQUIREMENT_NONE",
         "audit": {
           "events": [
-            "auth.login",
-            "auth.mfa_challenge_started"
+            "auth.login.v1",
+            "auth.mfa_challenge_started.v1"
           ],
           "emission": "AUDIT_EMISSION_SUCCESS"
         },
@@ -397,7 +397,7 @@
         "service": "accounts"
       },
       "source_proto": "saas/accounts/v1/authentication.proto",
-      "policy_sha256": "6ddba6621d8fc2e31b1bb065d0c735f086d6e0758ad7ba42763408a51cec4139",
+      "policy_sha256": "fc985ddcec6df0651e54563377c8e5f9f207f2af723261ae25fccebfd1021f33",
       "rate_limit_backend_failure_mode": "RATE_LIMIT_BACKEND_FAILURE_MODE_FAIL_CLOSED"
     },
     {
@@ -489,9 +489,9 @@
         "mfa": "MFA_REQUIREMENT_NONE",
         "audit": {
           "events": [
-            "auth.login",
-            "auth.mfa_challenge_completed",
-            "mfa.backup_code_used"
+            "auth.login.v1",
+            "auth.mfa_challenge_completed.v1",
+            "mfa.backup_code_used.v1"
           ],
           "emission": "AUDIT_EMISSION_SUCCESS"
         },
@@ -509,7 +509,7 @@
         "service": "accounts"
       },
       "source_proto": "saas/accounts/v1/authentication.proto",
-      "policy_sha256": "48a874a4afd05ade8065870e61d35cb4c901833d13a25e97b99b24bfc4d3e98c",
+      "policy_sha256": "2981429760848852adb9b5b376099efa48ee49b7de1c9f521478f41a408ba4d7",
       "rate_limit_backend_failure_mode": "RATE_LIMIT_BACKEND_FAILURE_MODE_FAIL_CLOSED"
     },
     {
@@ -529,9 +529,9 @@
         "mfa": "MFA_REQUIREMENT_NONE",
         "audit": {
           "events": [
-            "auth.login",
-            "auth.mfa_challenge_completed",
-            "mfa.webauthn_used"
+            "auth.login.v1",
+            "auth.mfa_challenge_completed.v1",
+            "mfa.webauthn_used.v1"
           ],
           "emission": "AUDIT_EMISSION_SUCCESS"
         },
@@ -549,7 +549,7 @@
         "service": "accounts"
       },
       "source_proto": "saas/accounts/v1/authentication.proto",
-      "policy_sha256": "8a041f49a568358f32bb2edc8a7dddeed0bf52a2d61d6b7ad75ac2e6d06a3c17",
+      "policy_sha256": "aea9579306b8816f33e1316d806d4f7d2699e63702952a43955bbc3538bb7e5a",
       "rate_limit_backend_failure_mode": "RATE_LIMIT_BACKEND_FAILURE_MODE_FAIL_CLOSED"
     },
     {
@@ -677,7 +677,7 @@
         "mfa": "MFA_REQUIREMENT_NONE",
         "audit": {
           "events": [
-            "auth.organization_switched"
+            "auth.organization_switched.v1"
           ],
           "emission": "AUDIT_EMISSION_SUCCESS"
         },
@@ -695,7 +695,7 @@
         "service": "accounts"
       },
       "source_proto": "saas/accounts/v1/authentication.proto",
-      "policy_sha256": "85dd8c5cf2285cf8cf6cf1a2764a124f702685d8bd2f92099c73d82dbe3c5831",
+      "policy_sha256": "53e2eb305d32916b9b33ddb1300a111b55357fb8335177dc7ea87d6f0a6fdef0",
       "rate_limit_backend_failure_mode": "RATE_LIMIT_BACKEND_FAILURE_MODE_FAIL_OPEN"
     },
     {
@@ -807,7 +807,7 @@
         "mfa": "MFA_REQUIREMENT_RECENT_STEP_UP",
         "audit": {
           "events": [
-            "billing.portal_opened"
+            "billing.portal_opened.v1"
           ],
           "emission": "AUDIT_EMISSION_SUCCESS"
         },
@@ -825,7 +825,7 @@
         "service": "accounts"
       },
       "source_proto": "saas/accounts/v1/billing.proto",
-      "policy_sha256": "0257e1ea2bfab11becdf9d922118990896267a15434606fc8414b5676184938e",
+      "policy_sha256": "7907e014eeeac31fd3ea995bfc4305110fdb424134458f1c1b7ef7ab0edacc1d",
       "rate_limit_backend_failure_mode": "RATE_LIMIT_BACKEND_FAILURE_MODE_FAIL_OPEN"
     },
     {
@@ -845,7 +845,7 @@
         "mfa": "MFA_REQUIREMENT_NONE",
         "audit": {
           "events": [
-            "consent.terms_accepted"
+            "consent.terms_accepted.v1"
           ],
           "emission": "AUDIT_EMISSION_SUCCESS"
         },
@@ -863,7 +863,7 @@
         "service": "accounts"
       },
       "source_proto": "saas/accounts/v1/consent.proto",
-      "policy_sha256": "05d8281b6fa6bd839031fedd718d93eb5a3c47eca481273aef2e5f05426e536e",
+      "policy_sha256": "8f009e4f56a64b4cfbee315620d2b7562b61b4558a421da2b492d05370864a76",
       "rate_limit_backend_failure_mode": "RATE_LIMIT_BACKEND_FAILURE_MODE_FAIL_OPEN"
     },
     {
@@ -919,7 +919,7 @@
         "mfa": "MFA_REQUIREMENT_NONE",
         "audit": {
           "events": [
-            "consent.preferences_updated"
+            "consent.preferences_updated.v1"
           ],
           "emission": "AUDIT_EMISSION_SUCCESS"
         },
@@ -937,7 +937,7 @@
         "service": "accounts"
       },
       "source_proto": "saas/accounts/v1/consent.proto",
-      "policy_sha256": "447abaf2b329fac28e0e220777083853fd13101338aec198ef05a5960161aa8f",
+      "policy_sha256": "9fbb778016468b8e97f81a3b7230747374f712ca79daa4eed9db26ccf1a9087e",
       "rate_limit_backend_failure_mode": "RATE_LIMIT_BACKEND_FAILURE_MODE_FAIL_OPEN"
     },
     {
@@ -963,7 +963,7 @@
         "mfa": "MFA_REQUIREMENT_NONE",
         "audit": {
           "events": [
-            "datasource.source.added"
+            "datasource.source.added.v1"
           ],
           "emission": "AUDIT_EMISSION_SUCCESS"
         },
@@ -981,7 +981,7 @@
         "service": "accounts"
       },
       "source_proto": "saas/accounts/v1/datasource.proto",
-      "policy_sha256": "d543220909bb1a24157be2f1615ff99de7a1e1a21a136c78b339143783b5a530",
+      "policy_sha256": "45d054bb2c5880c3931bf54d561c372a7c0b966a25c0b3e2d67db88889207db1",
       "rate_limit_backend_failure_mode": "RATE_LIMIT_BACKEND_FAILURE_MODE_FAIL_OPEN"
     },
     {
@@ -1007,7 +1007,7 @@
         "mfa": "MFA_REQUIREMENT_NONE",
         "audit": {
           "events": [
-            "datasource.source.removed"
+            "datasource.source.removed.v1"
           ],
           "emission": "AUDIT_EMISSION_SUCCESS"
         },
@@ -1025,7 +1025,7 @@
         "service": "accounts"
       },
       "source_proto": "saas/accounts/v1/datasource.proto",
-      "policy_sha256": "7b43c680c9bad239ca653f58f7c92b68aaba38a1324926a4bf662fb96d654f3f",
+      "policy_sha256": "2550a1ecb3573814dbfd7472d6eb9db37d0bc611defafed461b07eca851219ef",
       "rate_limit_backend_failure_mode": "RATE_LIMIT_BACKEND_FAILURE_MODE_FAIL_OPEN"
     },
     {
@@ -1135,7 +1135,7 @@
         "mfa": "MFA_REQUIREMENT_NONE",
         "audit": {
           "events": [
-            "datasource.source.synced"
+            "datasource.source.synced.v1"
           ],
           "emission": "AUDIT_EMISSION_SUCCESS"
         },
@@ -1153,7 +1153,7 @@
         "service": "accounts"
       },
       "source_proto": "saas/accounts/v1/datasource.proto",
-      "policy_sha256": "9a873bd78771b31c85cc9cf397568a474a81d699cd1f7879241a91e3f488441b",
+      "policy_sha256": "daf65d9fb61a0874532b2974b15466da4341f53c514bbac89f556088ab00dfdd",
       "rate_limit_backend_failure_mode": "RATE_LIMIT_BACKEND_FAILURE_MODE_FAIL_OPEN"
     },
     {
@@ -1179,8 +1179,8 @@
         "mfa": "MFA_REQUIREMENT_NONE",
         "audit": {
           "events": [
-            "delegation.approved",
-            "delegation.denied"
+            "delegation.approved.v1",
+            "delegation.denied.v1"
           ],
           "emission": "AUDIT_EMISSION_SUCCESS"
         },
@@ -1198,7 +1198,7 @@
         "service": "accounts"
       },
       "source_proto": "saas/accounts/v1/delegations.proto",
-      "policy_sha256": "58d4c29036082df543dbf3556c3f2d50481efd32509d8d9d395c4d9348e7ea1f",
+      "policy_sha256": "f4f68f7343925f131848a43e9d932cce865feb8af50b674ca931dc49e562d9b5",
       "rate_limit_backend_failure_mode": "RATE_LIMIT_BACKEND_FAILURE_MODE_FAIL_OPEN"
     },
     {
@@ -1266,8 +1266,8 @@
         "mfa": "MFA_REQUIREMENT_NONE",
         "audit": {
           "events": [
-            "delegation.requested",
-            "delegation.auto_approved"
+            "delegation.requested.v1",
+            "delegation.auto_approved.v1"
           ],
           "emission": "AUDIT_EMISSION_SUCCESS"
         },
@@ -1285,7 +1285,7 @@
         "service": "accounts"
       },
       "source_proto": "saas/accounts/v1/delegations.proto",
-      "policy_sha256": "c83eb16bdc99577d625021ac1cb72e48e16b4239c03e3f550a764a54e4e5345c",
+      "policy_sha256": "71d40904aa8eed03e465f33d277c7a81c87a23636cb4365d224474421e3179de",
       "rate_limit_backend_failure_mode": "RATE_LIMIT_BACKEND_FAILURE_MODE_FAIL_OPEN"
     },
     {
@@ -1419,7 +1419,7 @@
         "mfa": "MFA_REQUIREMENT_IF_ENROLLED_RECENT_STEP_UP",
         "audit": {
           "events": [
-            "gdpr.deletion_requested"
+            "gdpr.deletion_requested.v1"
           ],
           "emission": "AUDIT_EMISSION_SUCCESS"
         },
@@ -1437,7 +1437,7 @@
         "service": "accounts"
       },
       "source_proto": "saas/accounts/v1/privacy.proto",
-      "policy_sha256": "8f01a9f6c677ddc292f4855208e3569a8695219d9b2ba317be0e6d2ab6679b28",
+      "policy_sha256": "d59d698b5fc3e6ef02a8b358296befed839ac82983f8761c74c9c792405f1930",
       "rate_limit_backend_failure_mode": "RATE_LIMIT_BACKEND_FAILURE_MODE_FAIL_OPEN"
     },
     {
@@ -1457,7 +1457,7 @@
         "mfa": "MFA_REQUIREMENT_NONE",
         "audit": {
           "events": [
-            "gdpr.export_requested"
+            "gdpr.export_requested.v1"
           ],
           "emission": "AUDIT_EMISSION_SUCCESS"
         },
@@ -1475,7 +1475,7 @@
         "service": "accounts"
       },
       "source_proto": "saas/accounts/v1/privacy.proto",
-      "policy_sha256": "37add94d2bde15dfc59482d8e78c2844faa28025baf39d17adda58f954ad413f",
+      "policy_sha256": "60b7d41c6f4c57c25c28692700cf3ff438f519a2abefb11dc0566603351ba69d",
       "rate_limit_backend_failure_mode": "RATE_LIMIT_BACKEND_FAILURE_MODE_FAIL_OPEN"
     },
     {
@@ -1567,7 +1567,7 @@
         "mfa": "MFA_REQUIREMENT_NONE",
         "audit": {
           "events": [
-            "invitation.accepted"
+            "invitation.accepted.v1"
           ],
           "emission": "AUDIT_EMISSION_SUCCESS"
         },
@@ -1585,7 +1585,7 @@
         "service": "accounts"
       },
       "source_proto": "saas/accounts/v1/invitations.proto",
-      "policy_sha256": "88fa51958e6bffe6d138330a337fd7a0b62ce7607547bc94a109755b729d35d9",
+      "policy_sha256": "5d184abe2c1c7ab39a8b7b318c54878ae45bd5432b90c3df31ab31da7af90e9f",
       "rate_limit_backend_failure_mode": "RATE_LIMIT_BACKEND_FAILURE_MODE_FAIL_OPEN"
     },
     {
@@ -1615,7 +1615,7 @@
         "mfa": "MFA_REQUIREMENT_NONE",
         "audit": {
           "events": [
-            "invitation.created"
+            "invitation.created.v1"
           ],
           "emission": "AUDIT_EMISSION_SUCCESS"
         },
@@ -1633,7 +1633,7 @@
         "service": "accounts"
       },
       "source_proto": "saas/accounts/v1/invitations.proto",
-      "policy_sha256": "e5eaa42a2e74ed06bdb4db8e198949605ba38cc685ca8921db960434b2684e92",
+      "policy_sha256": "90746a2125dac2c601ba0974f2c628a03051340e2d0d372df838e4b8c22c87b1",
       "rate_limit_backend_failure_mode": "RATE_LIMIT_BACKEND_FAILURE_MODE_FAIL_OPEN"
     },
     {
@@ -1781,7 +1781,7 @@
         "mfa": "MFA_REQUIREMENT_NONE",
         "audit": {
           "events": [
-            "invitation.resent"
+            "invitation.resent.v1"
           ],
           "emission": "AUDIT_EMISSION_SUCCESS"
         },
@@ -1799,7 +1799,7 @@
         "service": "accounts"
       },
       "source_proto": "saas/accounts/v1/invitations.proto",
-      "policy_sha256": "aaaa735c57f7259d194b30012ec9fa94e39330c24b24e7653fe932ba63a3d114",
+      "policy_sha256": "a22dd3c6f2b43699ba2c2bc2d7176d462148c1d0bcf9b0d8c52935f4c0bac6de",
       "rate_limit_backend_failure_mode": "RATE_LIMIT_BACKEND_FAILURE_MODE_FAIL_OPEN"
     },
     {
@@ -1829,7 +1829,7 @@
         "mfa": "MFA_REQUIREMENT_NONE",
         "audit": {
           "events": [
-            "invitation.revoked"
+            "invitation.revoked.v1"
           ],
           "emission": "AUDIT_EMISSION_SUCCESS"
         },
@@ -1847,7 +1847,7 @@
         "service": "accounts"
       },
       "source_proto": "saas/accounts/v1/invitations.proto",
-      "policy_sha256": "f86e45e1dbc3cf9d422a3c5eb05c406915cd3528c09f1089aed41500002d2dac",
+      "policy_sha256": "37cab0be58c637c46c638b33bba29d07a206a4bebea02a7a94fd1876142756bb",
       "rate_limit_backend_failure_mode": "RATE_LIMIT_BACKEND_FAILURE_MODE_FAIL_OPEN"
     },
     {
@@ -1867,7 +1867,7 @@
         "mfa": "MFA_REQUIREMENT_NONE",
         "audit": {
           "events": [
-            "mfa.webauthn_registration_started"
+            "mfa.webauthn_registration_started.v1"
           ],
           "emission": "AUDIT_EMISSION_SUCCESS"
         },
@@ -1885,7 +1885,7 @@
         "service": "accounts"
       },
       "source_proto": "saas/accounts/v1/mfa.proto",
-      "policy_sha256": "1b6b49b0d05512b43245079f27a6d6cfa2f35b577d36c93b52c8e4fcd72ba98b",
+      "policy_sha256": "75357319ed2341d694f6dc9cd9099cfaf3c532b6a2a7aa7ab418d2d1d91fc27a",
       "rate_limit_backend_failure_mode": "RATE_LIMIT_BACKEND_FAILURE_MODE_FAIL_CLOSED"
     },
     {
@@ -1905,7 +1905,7 @@
         "mfa": "MFA_REQUIREMENT_NONE",
         "audit": {
           "events": [
-            "mfa.webauthn_registered"
+            "mfa.webauthn_registered.v1"
           ],
           "emission": "AUDIT_EMISSION_SUCCESS"
         },
@@ -1923,7 +1923,7 @@
         "service": "accounts"
       },
       "source_proto": "saas/accounts/v1/mfa.proto",
-      "policy_sha256": "108e8a44a5f85b6093c409500f05fbf254870880899b81691d56db2456bc76d2",
+      "policy_sha256": "421038f04083f64601f94165a1c93f35c66012433cf2ab589bf6ee108bb4066e",
       "rate_limit_backend_failure_mode": "RATE_LIMIT_BACKEND_FAILURE_MODE_FAIL_CLOSED"
     },
     {
@@ -1943,7 +1943,7 @@
         "mfa": "MFA_REQUIREMENT_NONE",
         "audit": {
           "events": [
-            "mfa.backup_codes_generated"
+            "mfa.backup_codes_generated.v1"
           ],
           "emission": "AUDIT_EMISSION_SUCCESS"
         },
@@ -1961,7 +1961,7 @@
         "service": "accounts"
       },
       "source_proto": "saas/accounts/v1/mfa.proto",
-      "policy_sha256": "ad01285733b57c7564da4dafd5fa4960766755a30de18a414dd296d1e5402c24",
+      "policy_sha256": "370dfcd99f53c2537f6c16c25501ae90bffef0cd054cdc1dc59631fb68e09094",
       "rate_limit_backend_failure_mode": "RATE_LIMIT_BACKEND_FAILURE_MODE_FAIL_CLOSED"
     },
     {
@@ -2017,7 +2017,7 @@
         "mfa": "MFA_REQUIREMENT_NONE",
         "audit": {
           "events": [
-            "mfa.device_revoked"
+            "mfa.device_revoked.v1"
           ],
           "emission": "AUDIT_EMISSION_SUCCESS"
         },
@@ -2035,7 +2035,7 @@
         "service": "accounts"
       },
       "source_proto": "saas/accounts/v1/mfa.proto",
-      "policy_sha256": "2822601dca4b40403e33ef7e68e0b387ea88821ba52429c07bed0682f4500d8e",
+      "policy_sha256": "6fcaaed525de1682bfac94733ae86918018d029a6decbe1d625aa528c77d085f",
       "rate_limit_backend_failure_mode": "RATE_LIMIT_BACKEND_FAILURE_MODE_FAIL_CLOSED"
     },
     {
@@ -2055,7 +2055,7 @@
         "mfa": "MFA_REQUIREMENT_NONE",
         "audit": {
           "events": [
-            "mfa.totp_setup_started"
+            "mfa.totp_setup_started.v1"
           ],
           "emission": "AUDIT_EMISSION_SUCCESS"
         },
@@ -2073,7 +2073,7 @@
         "service": "accounts"
       },
       "source_proto": "saas/accounts/v1/mfa.proto",
-      "policy_sha256": "b14fff1f316e4cff7deb5afa95db3abf73659bd443458b395bda16e784b304d7",
+      "policy_sha256": "832a9edf615961e6a0cb2c0f43dd5b2f6285ca7c7b815d6211ef8ea64322d25c",
       "rate_limit_backend_failure_mode": "RATE_LIMIT_BACKEND_FAILURE_MODE_FAIL_CLOSED"
     },
     {
@@ -2093,7 +2093,7 @@
         "mfa": "MFA_REQUIREMENT_NONE",
         "audit": {
           "events": [
-            "mfa.totp_verified"
+            "mfa.totp_verified.v1"
           ],
           "emission": "AUDIT_EMISSION_SUCCESS"
         },
@@ -2111,7 +2111,7 @@
         "service": "accounts"
       },
       "source_proto": "saas/accounts/v1/mfa.proto",
-      "policy_sha256": "07342ac84c340f16f6a3983be35eae3b422118b120a7f67b8547e3ddb3738e50",
+      "policy_sha256": "f8f20b74576b831a8ba6b336ebfc83f6d7e14dfc41fa812b521a896ff61fd116",
       "rate_limit_backend_failure_mode": "RATE_LIMIT_BACKEND_FAILURE_MODE_FAIL_CLOSED"
     },
     {
@@ -2317,7 +2317,7 @@
         "mfa": "MFA_REQUIREMENT_NONE",
         "audit": {
           "events": [
-            "onboarding.step_completed"
+            "onboarding.step_completed.v1"
           ],
           "emission": "AUDIT_EMISSION_SUCCESS"
         },
@@ -2335,7 +2335,7 @@
         "service": "accounts"
       },
       "source_proto": "saas/accounts/v1/onboarding.proto",
-      "policy_sha256": "c5fe91ef95a299a36a6c96dcc0bc05adbc90f2fe629baf270d497c359d6b36ef",
+      "policy_sha256": "9372a3b6e2f1e44b901bfa18c786ddf29bb7beeeba724441a001df626fccfedc",
       "rate_limit_backend_failure_mode": "RATE_LIMIT_BACKEND_FAILURE_MODE_FAIL_OPEN"
     },
     {
@@ -2403,7 +2403,7 @@
         "mfa": "MFA_REQUIREMENT_NONE",
         "audit": {
           "events": [
-            "onboarding.step_skipped"
+            "onboarding.step_skipped.v1"
           ],
           "emission": "AUDIT_EMISSION_SUCCESS"
         },
@@ -2421,7 +2421,7 @@
         "service": "accounts"
       },
       "source_proto": "saas/accounts/v1/onboarding.proto",
-      "policy_sha256": "c27e0a42287926d6d2de05a66a71b12277228a82b9297f8d6b0a87f82e970156",
+      "policy_sha256": "e5c83aac9ded20992e8feed289ac27f4aa2a2d8e921e24d8b97d79fdbc7cc9f2",
       "rate_limit_backend_failure_mode": "RATE_LIMIT_BACKEND_FAILURE_MODE_FAIL_OPEN"
     },
     {
@@ -2447,7 +2447,7 @@
         "mfa": "MFA_REQUIREMENT_NONE",
         "audit": {
           "events": [
-            "org.member_added"
+            "org.member_added.v1"
           ],
           "emission": "AUDIT_EMISSION_SUCCESS"
         },
@@ -2465,7 +2465,7 @@
         "service": "accounts"
       },
       "source_proto": "saas/accounts/v1/organizations.proto",
-      "policy_sha256": "5a1a5faa93ad80e0d9c1dde31b40b0332450c34749479c71ec7b38956be944a7",
+      "policy_sha256": "31cd609ea95107590ea3ceab4d44d9135a2f3ec3423baf7ab1440449328588e3",
       "rate_limit_backend_failure_mode": "RATE_LIMIT_BACKEND_FAILURE_MODE_FAIL_OPEN"
     },
     {
@@ -2485,7 +2485,7 @@
         "mfa": "MFA_REQUIREMENT_NONE",
         "audit": {
           "events": [
-            "org.created"
+            "org.created.v1"
           ],
           "emission": "AUDIT_EMISSION_SUCCESS"
         },
@@ -2503,7 +2503,7 @@
         "service": "accounts"
       },
       "source_proto": "saas/accounts/v1/organizations.proto",
-      "policy_sha256": "78fd2fa1c13d4ac971d8ef75bedccd504ca6473bea5bc7d6a1d11d600cc2bbfc",
+      "policy_sha256": "233369d4746bb48e202a1253820497d0839585065fcce04b05ca85ded2c339ec",
       "rate_limit_backend_failure_mode": "RATE_LIMIT_BACKEND_FAILURE_MODE_FAIL_OPEN"
     },
     {
@@ -2733,7 +2733,7 @@
         "mfa": "MFA_REQUIREMENT_NONE",
         "audit": {
           "events": [
-            "org.member_removed"
+            "org.member_removed.v1"
           ],
           "emission": "AUDIT_EMISSION_SUCCESS"
         },
@@ -2751,7 +2751,7 @@
         "service": "accounts"
       },
       "source_proto": "saas/accounts/v1/organizations.proto",
-      "policy_sha256": "85d46943c63818a3a2dfbdfd15d14d0eaca522177c189c96b188d04d974b2aba",
+      "policy_sha256": "03c8764a42d88dd9ab5b478e845bfa861336be54e79746b238599500ccbb1882",
       "rate_limit_backend_failure_mode": "RATE_LIMIT_BACKEND_FAILURE_MODE_FAIL_OPEN"
     },
     {
@@ -2777,7 +2777,7 @@
         "mfa": "MFA_REQUIREMENT_NONE",
         "audit": {
           "events": [
-            "org.settings_updated"
+            "org.settings_updated.v1"
           ],
           "emission": "AUDIT_EMISSION_SUCCESS"
         },
@@ -2795,7 +2795,7 @@
         "service": "accounts"
       },
       "source_proto": "saas/accounts/v1/organizations.proto",
-      "policy_sha256": "9aefc84ce3f85228aa98b10f9dfa4bc480ca1498ea0183ff5087b90cd9815a79",
+      "policy_sha256": "15544af7f11c84ebafcca06e0f24479a55a6dc52a57e3605eaa826588c4c2baa",
       "rate_limit_backend_failure_mode": "RATE_LIMIT_BACKEND_FAILURE_MODE_FAIL_OPEN"
     },
     {
@@ -2821,7 +2821,7 @@
         "mfa": "MFA_REQUIREMENT_NONE",
         "audit": {
           "events": [
-            "org.generic_settings_updated"
+            "org.generic_settings_updated.v1"
           ],
           "emission": "AUDIT_EMISSION_SUCCESS"
         },
@@ -2839,7 +2839,7 @@
         "service": "accounts"
       },
       "source_proto": "saas/accounts/v1/organizations.proto",
-      "policy_sha256": "8de4a57dd33af5bfe064b18fd33868d9f89a14b5ed591f3eb2855ef7b971be0c",
+      "policy_sha256": "f2a5d6834820676152f33aaa9c88805c9f05a24ebfa9c85f3c39248a5ceb6553",
       "rate_limit_backend_failure_mode": "RATE_LIMIT_BACKEND_FAILURE_MODE_FAIL_OPEN"
     },
     {
@@ -2859,7 +2859,7 @@
         "mfa": "MFA_REQUIREMENT_NONE",
         "audit": {
           "events": [
-            "role.assigned"
+            "role.assigned.v1"
           ],
           "emission": "AUDIT_EMISSION_SUCCESS"
         },
@@ -2877,7 +2877,7 @@
         "service": "accounts"
       },
       "source_proto": "saas/accounts/v1/authorization.proto",
-      "policy_sha256": "ee4738e971692df46c723c02eb8fd90c906782f774a0bb3a484587b4b62f7f21",
+      "policy_sha256": "8fd6ba2d43d82599dd5fc6babb46ce800b3014f96443da4dce81ce8df544c4bb",
       "rate_limit_backend_failure_mode": "RATE_LIMIT_BACKEND_FAILURE_MODE_FAIL_OPEN"
     },
     {
@@ -2969,7 +2969,7 @@
         "mfa": "MFA_REQUIREMENT_NONE",
         "audit": {
           "events": [
-            "role.created"
+            "role.created.v1"
           ],
           "emission": "AUDIT_EMISSION_SUCCESS"
         },
@@ -2987,7 +2987,7 @@
         "service": "accounts"
       },
       "source_proto": "saas/accounts/v1/authorization.proto",
-      "policy_sha256": "3510060851582493172aff19b3b5bb1e79e4d98d387d15bd96706f7889a83ecb",
+      "policy_sha256": "c8dd8eb73381e7d601d4e7e3a58acab36911d4f4132e1be5adeb388209702395",
       "rate_limit_backend_failure_mode": "RATE_LIMIT_BACKEND_FAILURE_MODE_FAIL_OPEN"
     },
     {
@@ -3043,7 +3043,7 @@
         "mfa": "MFA_REQUIREMENT_NONE",
         "audit": {
           "events": [
-            "role.deleted"
+            "role.deleted.v1"
           ],
           "emission": "AUDIT_EMISSION_SUCCESS"
         },
@@ -3061,7 +3061,7 @@
         "service": "accounts"
       },
       "source_proto": "saas/accounts/v1/authorization.proto",
-      "policy_sha256": "bcccb107fcd8ac60bc8687019d40f1e1dd7d820ad1ed1e72e75708ea49f73fbe",
+      "policy_sha256": "8dfd2f282d5d29296878a0b6c169ae121c740717ddf371791008ea99341a36d8",
       "rate_limit_backend_failure_mode": "RATE_LIMIT_BACKEND_FAILURE_MODE_FAIL_OPEN"
     },
     {
@@ -3087,7 +3087,7 @@
         "mfa": "MFA_REQUIREMENT_NONE",
         "audit": {
           "events": [
-            "scope.granted"
+            "scope.granted.v1"
           ],
           "emission": "AUDIT_EMISSION_SUCCESS"
         },
@@ -3105,7 +3105,7 @@
         "service": "accounts"
       },
       "source_proto": "saas/accounts/v1/authorization.proto",
-      "policy_sha256": "a026f7cac87a44b70b4627e5fa4a7cb343ef846490bc71eff4befa12a556f59e",
+      "policy_sha256": "d77cda3271a101a7b03c59b36047b4dda754e9e37825e2d95b29bb1d8f7a5de3",
       "rate_limit_backend_failure_mode": "RATE_LIMIT_BACKEND_FAILURE_MODE_FAIL_OPEN"
     },
     {
@@ -3245,7 +3245,7 @@
         "mfa": "MFA_REQUIREMENT_NONE",
         "audit": {
           "events": [
-            "scope.node_registered"
+            "scope.node_registered.v1"
           ],
           "emission": "AUDIT_EMISSION_SUCCESS"
         },
@@ -3263,7 +3263,7 @@
         "service": "accounts"
       },
       "source_proto": "saas/accounts/v1/authorization.proto",
-      "policy_sha256": "2c2c3b916702e9ff933b6d603e935569cb72b886337582cb7610d233ce1a1846",
+      "policy_sha256": "2c4abe7a973df8af38258c93ed27c88542ee9942989545cb040df2b55079ddc6",
       "rate_limit_backend_failure_mode": "RATE_LIMIT_BACKEND_FAILURE_MODE_FAIL_OPEN"
     },
     {
@@ -3283,7 +3283,7 @@
         "mfa": "MFA_REQUIREMENT_NONE",
         "audit": {
           "events": [
-            "role.revoked"
+            "role.revoked.v1"
           ],
           "emission": "AUDIT_EMISSION_SUCCESS"
         },
@@ -3301,7 +3301,7 @@
         "service": "accounts"
       },
       "source_proto": "saas/accounts/v1/authorization.proto",
-      "policy_sha256": "b7dce08eb946497cc748050fc0d5b13fd43395a10435cc04b5b0f446bfa442db",
+      "policy_sha256": "eaa901d85955a1ec3e5201d40681ea8225517f709aca759461062b9b5ae4a100",
       "rate_limit_backend_failure_mode": "RATE_LIMIT_BACKEND_FAILURE_MODE_FAIL_OPEN"
     },
     {
@@ -3327,7 +3327,7 @@
         "mfa": "MFA_REQUIREMENT_NONE",
         "audit": {
           "events": [
-            "scope.revoked"
+            "scope.revoked.v1"
           ],
           "emission": "AUDIT_EMISSION_SUCCESS"
         },
@@ -3345,7 +3345,7 @@
         "service": "accounts"
       },
       "source_proto": "saas/accounts/v1/authorization.proto",
-      "policy_sha256": "baf25c6ba9f34fe33ea60d2bff0f7c75da5fec39b41d103b2ddce5fd205bc37d",
+      "policy_sha256": "8d27325d684452937afa5c87a53a3f0fc76dc9f1ba69bb4d8707a0332ff5ad67",
       "rate_limit_backend_failure_mode": "RATE_LIMIT_BACKEND_FAILURE_MODE_FAIL_OPEN"
     },
     {
@@ -3371,7 +3371,7 @@
         "mfa": "MFA_REQUIREMENT_NONE",
         "audit": {
           "events": [
-            "record.share_revoked"
+            "record.share_revoked.v1"
           ],
           "emission": "AUDIT_EMISSION_SUCCESS"
         },
@@ -3389,7 +3389,7 @@
         "service": "accounts"
       },
       "source_proto": "saas/accounts/v1/authorization.proto",
-      "policy_sha256": "63f5e3cb011eeb6aa78663d126d9e63a14f19ce5a7aa7f8ae925ca028932133e",
+      "policy_sha256": "8b1f8f24e96718d756415f609e5dafd4975d4c344c09f333af24e41dfef2abfa",
       "rate_limit_backend_failure_mode": "RATE_LIMIT_BACKEND_FAILURE_MODE_FAIL_OPEN"
     },
     {
@@ -3415,7 +3415,7 @@
         "mfa": "MFA_REQUIREMENT_NONE",
         "audit": {
           "events": [
-            "record.shared"
+            "record.shared.v1"
           ],
           "emission": "AUDIT_EMISSION_SUCCESS"
         },
@@ -3433,7 +3433,7 @@
         "service": "accounts"
       },
       "source_proto": "saas/accounts/v1/authorization.proto",
-      "policy_sha256": "1d0f1077f514347f089bc900006fe6b22ac01ea37de95b1342d11555d5f14350",
+      "policy_sha256": "3b4210f9fac59cc6285f99b805bf7e2c84ed58c780273c5d4003301436a17787",
       "rate_limit_backend_failure_mode": "RATE_LIMIT_BACKEND_FAILURE_MODE_FAIL_OPEN"
     },
     {
@@ -3567,7 +3567,7 @@
         "mfa": "MFA_REQUIREMENT_IF_ENROLLED_RECENT_STEP_UP",
         "audit": {
           "events": [
-            "platform.role_granted"
+            "platform.role_granted.v1"
           ],
           "emission": "AUDIT_EMISSION_SUCCESS"
         },
@@ -3585,7 +3585,7 @@
         "service": "accounts"
       },
       "source_proto": "saas/accounts/v1/platform_admin.proto",
-      "policy_sha256": "4ddbb5578ac2fe174f3cf16abc9e908e0760b4c7313e7a00b4c1ea3ef950446a",
+      "policy_sha256": "c096edda286e874ca6c82e7caa02d5cfb511dd68392ebf0e83c1e5c2611c988c",
       "rate_limit_backend_failure_mode": "RATE_LIMIT_BACKEND_FAILURE_MODE_FAIL_OPEN"
     },
     {
@@ -3605,7 +3605,7 @@
         "mfa": "MFA_REQUIREMENT_IF_ENROLLED_RECENT_STEP_UP",
         "audit": {
           "events": [
-            "platform.user_impersonated"
+            "platform.user_impersonated.v1"
           ],
           "emission": "AUDIT_EMISSION_SUCCESS"
         },
@@ -3623,7 +3623,7 @@
         "service": "accounts"
       },
       "source_proto": "saas/accounts/v1/platform_admin.proto",
-      "policy_sha256": "89f4acdda01fc7978db0a793958f91fd45e536885b6c4c2e2e555c18045d3ff9",
+      "policy_sha256": "2e4a839420a2d8e9d53058e56ace12c1f95bcd7de8839e5d485c01f7efb3e0d0",
       "rate_limit_backend_failure_mode": "RATE_LIMIT_BACKEND_FAILURE_MODE_FAIL_OPEN"
     },
     {
@@ -3787,7 +3787,7 @@
         "mfa": "MFA_REQUIREMENT_NONE",
         "audit": {
           "events": [
-            "entitlement.override"
+            "entitlement.override.v1"
           ],
           "emission": "AUDIT_EMISSION_SUCCESS"
         },
@@ -3805,7 +3805,7 @@
         "service": "accounts"
       },
       "source_proto": "saas/accounts/v1/platform_admin.proto",
-      "policy_sha256": "e54aeb0a69050f7f786709b15dcf5ac322fb521a26585d8a1b539fa1e6bc802d",
+      "policy_sha256": "1db6fba76bae02c75b9cbd5b2028343c94fb10aee88691864636ede1a28a971a",
       "rate_limit_backend_failure_mode": "RATE_LIMIT_BACKEND_FAILURE_MODE_FAIL_OPEN"
     },
     {
@@ -3825,7 +3825,7 @@
         "mfa": "MFA_REQUIREMENT_RECENT_STEP_UP",
         "audit": {
           "events": [
-            "job.replayed"
+            "job.replayed.v1"
           ],
           "emission": "AUDIT_EMISSION_SUCCESS"
         },
@@ -3843,7 +3843,7 @@
         "service": "accounts"
       },
       "source_proto": "saas/accounts/v1/platform_admin.proto",
-      "policy_sha256": "63b90ce0d13675f314c7a2a3f66714732930f22343d5ade51fc7c8091de755e0",
+      "policy_sha256": "e5f30207d718c0b6dd1a1a42a43fdf47234170d3c95e7d057fca074589b19237",
       "rate_limit_backend_failure_mode": "RATE_LIMIT_BACKEND_FAILURE_MODE_FAIL_OPEN"
     },
     {
@@ -3863,7 +3863,7 @@
         "mfa": "MFA_REQUIREMENT_IF_ENROLLED_RECENT_STEP_UP",
         "audit": {
           "events": [
-            "platform.role_revoked"
+            "platform.role_revoked.v1"
           ],
           "emission": "AUDIT_EMISSION_SUCCESS"
         },
@@ -3881,7 +3881,7 @@
         "service": "accounts"
       },
       "source_proto": "saas/accounts/v1/platform_admin.proto",
-      "policy_sha256": "3270a8a6f34ede21a9424e2b72efd0ca27f95f7f6a47b2396cb6f7356b3ddd82",
+      "policy_sha256": "534e4cb918e258b1975f7e4904c4d0575d9a19255d38df0be4fbb9a347ad13fc",
       "rate_limit_backend_failure_mode": "RATE_LIMIT_BACKEND_FAILURE_MODE_FAIL_OPEN"
     },
     {
@@ -3901,7 +3901,7 @@
         "mfa": "MFA_REQUIREMENT_NONE",
         "audit": {
           "events": [
-            "session.revoked"
+            "session.revoked.v1"
           ],
           "emission": "AUDIT_EMISSION_SUCCESS"
         },
@@ -3919,7 +3919,7 @@
         "service": "accounts"
       },
       "source_proto": "saas/accounts/v1/platform_admin.proto",
-      "policy_sha256": "4d2c33f42ce604df1b2690e679f631ae4935a73b92cc35153989fe46fdb92323",
+      "policy_sha256": "c97724234d939afb22f1cab73d14a80c7d9e1ed195ff4b408fe97e2d66314dff",
       "rate_limit_backend_failure_mode": "RATE_LIMIT_BACKEND_FAILURE_MODE_FAIL_OPEN"
     },
     {
@@ -3975,7 +3975,7 @@
         "mfa": "MFA_REQUIREMENT_NONE",
         "audit": {
           "events": [
-            "user.suspended"
+            "user.suspended.v1"
           ],
           "emission": "AUDIT_EMISSION_SUCCESS"
         },
@@ -3993,7 +3993,7 @@
         "service": "accounts"
       },
       "source_proto": "saas/accounts/v1/platform_admin.proto",
-      "policy_sha256": "a9a033810e8aa620c1322407b7cd72fcf8cfd2d26ed2dcf4d3578fb76ed6e57f",
+      "policy_sha256": "e62d000e5d7f650da6104965e514f22c89178a49f5829d99e7607c177cb874e5",
       "rate_limit_backend_failure_mode": "RATE_LIMIT_BACKEND_FAILURE_MODE_FAIL_OPEN"
     },
     {
@@ -4013,7 +4013,7 @@
         "mfa": "MFA_REQUIREMENT_NONE",
         "audit": {
           "events": [
-            "user.unsuspended"
+            "user.unsuspended.v1"
           ],
           "emission": "AUDIT_EMISSION_SUCCESS"
         },
@@ -4031,7 +4031,7 @@
         "service": "accounts"
       },
       "source_proto": "saas/accounts/v1/platform_admin.proto",
-      "policy_sha256": "a336d102a74348798e2ee3dc7814f71eab63a211221c163220bf7877a7185fa3",
+      "policy_sha256": "9cd95c4337202b06d5a1a9d261a4b43f8a210da64b08725c21152d58906ce58c",
       "rate_limit_backend_failure_mode": "RATE_LIMIT_BACKEND_FAILURE_MODE_FAIL_OPEN"
     },
     {
@@ -4051,7 +4051,7 @@
         "mfa": "MFA_REQUIREMENT_NONE",
         "audit": {
           "events": [
-            "feature_flag.updated"
+            "feature_flag.updated.v1"
           ],
           "emission": "AUDIT_EMISSION_SUCCESS"
         },
@@ -4069,7 +4069,7 @@
         "service": "accounts"
       },
       "source_proto": "saas/accounts/v1/platform_admin.proto",
-      "policy_sha256": "093eeb3d5c0a9a848380977461907c3c39f42c032057757129c4d189db453dc1",
+      "policy_sha256": "8cca00ff6e371a609252ab4a91cf93eff8d6e0edf65157d172cf7ff54ee184df",
       "rate_limit_backend_failure_mode": "RATE_LIMIT_BACKEND_FAILURE_MODE_FAIL_OPEN"
     },
     {
@@ -4095,7 +4095,7 @@
         "mfa": "MFA_REQUIREMENT_NONE",
         "audit": {
           "events": [
-            "principal.created"
+            "principal.created.v1"
           ],
           "emission": "AUDIT_EMISSION_SUCCESS"
         },
@@ -4113,7 +4113,7 @@
         "service": "accounts"
       },
       "source_proto": "saas/accounts/v1/authorization.proto",
-      "policy_sha256": "ef95fbceb087892f3019ea3f3a1069a917771ff3b30f066467bc057dd35910fd",
+      "policy_sha256": "12493ee92d3f93a387d86757503af46c4add8db58064f4ad7a346046daae1e4c",
       "rate_limit_backend_failure_mode": "RATE_LIMIT_BACKEND_FAILURE_MODE_FAIL_OPEN"
     },
     {
@@ -4253,7 +4253,7 @@
         "mfa": "MFA_REQUIREMENT_NONE",
         "audit": {
           "events": [
-            "principal.revoked"
+            "principal.revoked.v1"
           ],
           "emission": "AUDIT_EMISSION_SUCCESS"
         },
@@ -4271,7 +4271,7 @@
         "service": "accounts"
       },
       "source_proto": "saas/accounts/v1/authorization.proto",
-      "policy_sha256": "d54f8aeb658ec5dbfecef434f4e89771e20768609df4299f1c6df12c4dc939ec",
+      "policy_sha256": "25cca4e6f67cf60e68913c331fa08abe805cd52c5be542b1e5bdd7244ec9460f",
       "rate_limit_backend_failure_mode": "RATE_LIMIT_BACKEND_FAILURE_MODE_FAIL_OPEN"
     },
     {
@@ -4297,7 +4297,7 @@
         "mfa": "MFA_REQUIREMENT_NONE",
         "audit": {
           "events": [
-            "sso.disabled"
+            "sso.disabled.v1"
           ],
           "emission": "AUDIT_EMISSION_SUCCESS"
         },
@@ -4315,7 +4315,7 @@
         "service": "accounts"
       },
       "source_proto": "saas/accounts/v1/sso.proto",
-      "policy_sha256": "0c84ce9d07e01efaa0ff8292232e4666a05c681a2b8f5194d81a7b7d199f8553",
+      "policy_sha256": "47db1d5a8370ffc47261a651622de6327bbbc7d1c954cf725d314d8c6d345931",
       "rate_limit_backend_failure_mode": "RATE_LIMIT_BACKEND_FAILURE_MODE_FAIL_OPEN"
     },
     {
@@ -4383,7 +4383,7 @@
         "mfa": "MFA_REQUIREMENT_NONE",
         "audit": {
           "events": [
-            "sso.setup.started"
+            "sso.setup.started.v1"
           ],
           "emission": "AUDIT_EMISSION_SUCCESS"
         },
@@ -4401,7 +4401,7 @@
         "service": "accounts"
       },
       "source_proto": "saas/accounts/v1/sso.proto",
-      "policy_sha256": "d843e9f3e50aad62df4a3244bba96d160132a30e67888cc92c76c3f62b610145",
+      "policy_sha256": "3cf7897b3aa6456630acf339f27c945136fa13204643b99f2f1de405bc02cdd4",
       "rate_limit_backend_failure_mode": "RATE_LIMIT_BACKEND_FAILURE_MODE_FAIL_OPEN"
     },
     {
@@ -4427,7 +4427,7 @@
         "mfa": "MFA_REQUIREMENT_NONE",
         "audit": {
           "events": [
-            "team.member_added"
+            "team.member_added.v1"
           ],
           "emission": "AUDIT_EMISSION_SUCCESS"
         },
@@ -4445,7 +4445,7 @@
         "service": "accounts"
       },
       "source_proto": "saas/accounts/v1/teams.proto",
-      "policy_sha256": "17897a1abc6d285538373057b0f84ad79ad7adfdc4fe2caf6ef7c9e3721e0dd4",
+      "policy_sha256": "86ddeb817a9126633890de610a1f67062c413932c56f9b8778eb3ef9dfe55aaf",
       "rate_limit_backend_failure_mode": "RATE_LIMIT_BACKEND_FAILURE_MODE_FAIL_OPEN"
     },
     {
@@ -4471,7 +4471,7 @@
         "mfa": "MFA_REQUIREMENT_NONE",
         "audit": {
           "events": [
-            "team.created"
+            "team.created.v1"
           ],
           "emission": "AUDIT_EMISSION_SUCCESS"
         },
@@ -4489,7 +4489,7 @@
         "service": "accounts"
       },
       "source_proto": "saas/accounts/v1/teams.proto",
-      "policy_sha256": "941ea132403c307e974c702fa1bcfc8eeb1a5f3790a5b65cfcddf55ca7568b73",
+      "policy_sha256": "92bcfa18754a06f6c002bbf0705f069932ba3f2f7b84cc0fee4626dd40971633",
       "rate_limit_backend_failure_mode": "RATE_LIMIT_BACKEND_FAILURE_MODE_FAIL_OPEN"
     },
     {
@@ -4515,7 +4515,7 @@
         "mfa": "MFA_REQUIREMENT_NONE",
         "audit": {
           "events": [
-            "team.deleted"
+            "team.deleted.v1"
           ],
           "emission": "AUDIT_EMISSION_SUCCESS"
         },
@@ -4533,7 +4533,7 @@
         "service": "accounts"
       },
       "source_proto": "saas/accounts/v1/teams.proto",
-      "policy_sha256": "851b65ccea4565472926987577d042b4915b4a3bdf273855308f076b15febc6d",
+      "policy_sha256": "2b7128f616a23741d818a78dbbacf90496d896e0ae2f621223cb1b8d94c2683d",
       "rate_limit_backend_failure_mode": "RATE_LIMIT_BACKEND_FAILURE_MODE_FAIL_OPEN"
     },
     {
@@ -4643,7 +4643,7 @@
         "mfa": "MFA_REQUIREMENT_NONE",
         "audit": {
           "events": [
-            "team.member_removed"
+            "team.member_removed.v1"
           ],
           "emission": "AUDIT_EMISSION_SUCCESS"
         },
@@ -4661,7 +4661,7 @@
         "service": "accounts"
       },
       "source_proto": "saas/accounts/v1/teams.proto",
-      "policy_sha256": "bebf123398c8c5001d6d8fdc290ab56eebaa205f04dc79a78ac42af87c37dd61",
+      "policy_sha256": "cd1b9b84e85f77c8d70889f435a64f5ea60c70696faaabb8a22cea77d3611d0c",
       "rate_limit_backend_failure_mode": "RATE_LIMIT_BACKEND_FAILURE_MODE_FAIL_OPEN"
     },
     {
@@ -4687,7 +4687,7 @@
         "mfa": "MFA_REQUIREMENT_NONE",
         "audit": {
           "events": [
-            "team.updated"
+            "team.updated.v1"
           ],
           "emission": "AUDIT_EMISSION_SUCCESS"
         },
@@ -4705,7 +4705,7 @@
         "service": "accounts"
       },
       "source_proto": "saas/accounts/v1/teams.proto",
-      "policy_sha256": "c7f5769250159f51e28cadaa1e87222b28d9254d774bd4625d77acc2d2de4286",
+      "policy_sha256": "1d77fdef70b2daa53ef3eee43f770528e9e3c6db235be4efab8f3c774de2e543",
       "rate_limit_backend_failure_mode": "RATE_LIMIT_BACKEND_FAILURE_MODE_FAIL_OPEN"
     },
     {
@@ -4899,7 +4899,7 @@
         "mfa": "MFA_REQUIREMENT_NONE",
         "audit": {
           "events": [
-            "user.identity_added"
+            "user.identity_added.v1"
           ],
           "emission": "AUDIT_EMISSION_SUCCESS"
         },
@@ -4917,7 +4917,7 @@
         "service": "accounts"
       },
       "source_proto": "saas/accounts/v1/identity.proto",
-      "policy_sha256": "93d3050bb36c254db610b28ae4f4a210a7a4300a92580fd2804b66e0d463dc54",
+      "policy_sha256": "fb00147bc68c379e273ef0bc69e69123ec6b26aa91126df2eb616ff4e4851269",
       "rate_limit_backend_failure_mode": "RATE_LIMIT_BACKEND_FAILURE_MODE_FAIL_OPEN"
     },
     {
@@ -4941,7 +4941,7 @@
         "mfa": "MFA_REQUIREMENT_NONE",
         "audit": {
           "events": [
-            "user.deleted"
+            "user.deleted.v1"
           ],
           "emission": "AUDIT_EMISSION_SUCCESS"
         },
@@ -4959,7 +4959,7 @@
         "service": "accounts"
       },
       "source_proto": "saas/accounts/v1/identity.proto",
-      "policy_sha256": "dba86c534bff7e4582c3a45371b6ca644cd757c93d4b0efc9c33a4f561c53417",
+      "policy_sha256": "af6345db8cfed8e43f993876d1f717aeb748023ed50e9f43881ab24b2d5f7d85",
       "rate_limit_backend_failure_mode": "RATE_LIMIT_BACKEND_FAILURE_MODE_FAIL_OPEN"
     },
     {
@@ -5163,7 +5163,7 @@
         "mfa": "MFA_REQUIREMENT_NONE",
         "audit": {
           "events": [
-            "user.registered"
+            "user.registered.v1"
           ],
           "emission": "AUDIT_EMISSION_SUCCESS"
         },
@@ -5181,7 +5181,7 @@
         "service": "accounts"
       },
       "source_proto": "saas/accounts/v1/identity.proto",
-      "policy_sha256": "4a85e5428fac60524b8193d2a70036428389d61be1502497b06c9137b8f16a48",
+      "policy_sha256": "d6809d6f6eb0b4a55157450cb46f5848460b93af1feee7faddc468f396cf21a8",
       "rate_limit_backend_failure_mode": "RATE_LIMIT_BACKEND_FAILURE_MODE_FAIL_CLOSED"
     },
     {
@@ -5205,7 +5205,7 @@
         "mfa": "MFA_REQUIREMENT_NONE",
         "audit": {
           "events": [
-            "user.updated"
+            "user.updated.v1"
           ],
           "emission": "AUDIT_EMISSION_SUCCESS"
         },
@@ -5223,7 +5223,7 @@
         "service": "accounts"
       },
       "source_proto": "saas/accounts/v1/identity.proto",
-      "policy_sha256": "e278d05b88672006b156178ee1c4da60bea1016913a6d579cee53b0f8c9cf7f2",
+      "policy_sha256": "6d443b4199813ae3ab39c35b82ea4adebd8516683f8ad872cb69727f106a82d3",
       "rate_limit_backend_failure_mode": "RATE_LIMIT_BACKEND_FAILURE_MODE_FAIL_OPEN"
     },
     {
@@ -5315,7 +5315,7 @@
         "mfa": "MFA_REQUIREMENT_NONE",
         "audit": {
           "events": [
-            "settings.updated"
+            "settings.updated.v1"
           ],
           "emission": "AUDIT_EMISSION_SUCCESS"
         },
@@ -5333,7 +5333,7 @@
         "service": "accounts"
       },
       "source_proto": "saas/accounts/v1/user_settings.proto",
-      "policy_sha256": "658fd1cd9e2bb6160a13acfafb756ae332533f6006c4d6cea0e898fc8f768b1c",
+      "policy_sha256": "e934af129d6a33fc13bc2e6cfdfec67a397fcf435e1b557df7a08efbb78569c4",
       "rate_limit_backend_failure_mode": "RATE_LIMIT_BACKEND_FAILURE_MODE_FAIL_OPEN"
     },
     {
@@ -5389,7 +5389,7 @@
         "mfa": "MFA_REQUIREMENT_IF_ENROLLED_RECENT_STEP_UP",
         "audit": {
           "events": [
-            "waitlist.invited"
+            "waitlist.invited.v1"
           ],
           "emission": "AUDIT_EMISSION_SUCCESS"
         },
@@ -5407,7 +5407,7 @@
         "service": "accounts"
       },
       "source_proto": "saas/accounts/v1/waitlist.proto",
-      "policy_sha256": "4c6b826c5550f1e8538440cf52126adc09da2fb7583286eceb65b3216a76215c",
+      "policy_sha256": "ccd6137dbd62d78fe3ba8469ff21b2bf6bceb2a3d3d4f45ff004888334d85a3b",
       "rate_limit_backend_failure_mode": "RATE_LIMIT_BACKEND_FAILURE_MODE_FAIL_OPEN"
     },
     {
@@ -5499,7 +5499,7 @@
         "mfa": "MFA_REQUIREMENT_IF_ENROLLED_RECENT_STEP_UP",
         "audit": {
           "events": [
-            "waitlist.reviewed"
+            "waitlist.reviewed.v1"
           ],
           "emission": "AUDIT_EMISSION_SUCCESS"
         },
@@ -5517,7 +5517,7 @@
         "service": "accounts"
       },
       "source_proto": "saas/accounts/v1/waitlist.proto",
-      "policy_sha256": "207faf3a417eac82f816dab9a34fac1de3be2fbbcc9f38547fef721fa22b34b2",
+      "policy_sha256": "86a61724a119f9c594eb314a0994f7fd5c9064c4d01dde6cee07c993524375e9",
       "rate_limit_backend_failure_mode": "RATE_LIMIT_BACKEND_FAILURE_MODE_FAIL_OPEN"
     },
     {
@@ -5583,7 +5583,7 @@
         "mfa": "MFA_REQUIREMENT_NONE",
         "audit": {
           "events": [
-            "webhook.created"
+            "webhook.created.v1"
           ],
           "emission": "AUDIT_EMISSION_SUCCESS"
         },
@@ -5601,7 +5601,7 @@
         "service": "accounts"
       },
       "source_proto": "saas/accounts/v1/webhooks.proto",
-      "policy_sha256": "a68075fd8079d4fc31fdad5867fe2c366241330526d86912333eaa08aff51a20",
+      "policy_sha256": "ab0880cf38e90b80bc3ed90a4a986ccdb77263683b78574d4bbeea8521a6cb5f",
       "rate_limit_backend_failure_mode": "RATE_LIMIT_BACKEND_FAILURE_MODE_FAIL_OPEN"
     },
     {
@@ -5631,7 +5631,7 @@
         "mfa": "MFA_REQUIREMENT_NONE",
         "audit": {
           "events": [
-            "webhook.deleted"
+            "webhook.deleted.v1"
           ],
           "emission": "AUDIT_EMISSION_SUCCESS"
         },
@@ -5649,7 +5649,7 @@
         "service": "accounts"
       },
       "source_proto": "saas/accounts/v1/webhooks.proto",
-      "policy_sha256": "d4fcb79e873f092b9478b50bc2f48faf8bdb764b088712d00a3aab52f54ec8cb",
+      "policy_sha256": "76f7e2096431143a8f0ce57c8cf6af8210373a1ddec860bcba6ac146f76a1d22",
       "rate_limit_backend_failure_mode": "RATE_LIMIT_BACKEND_FAILURE_MODE_FAIL_OPEN"
     },
     {
@@ -5817,7 +5817,7 @@
         "mfa": "MFA_REQUIREMENT_NONE",
         "audit": {
           "events": [
-            "webhook.replayed"
+            "webhook.replayed.v1"
           ],
           "emission": "AUDIT_EMISSION_SUCCESS"
         },
@@ -5835,7 +5835,7 @@
         "service": "accounts"
       },
       "source_proto": "saas/accounts/v1/webhooks.proto",
-      "policy_sha256": "69b6d26f7e90803043dec1b6d1fffd3a34fdf1e774b140b9c1cff55f58f5f90d",
+      "policy_sha256": "88e08c500d56db268464e25af62f78db592f6546b2109d8fb4885f4e3cad28fd",
       "rate_limit_backend_failure_mode": "RATE_LIMIT_BACKEND_FAILURE_MODE_FAIL_OPEN"
     },
     {
@@ -5865,7 +5865,7 @@
         "mfa": "MFA_REQUIREMENT_RECENT_STEP_UP",
         "audit": {
           "events": [
-            "webhook.secret_rotated"
+            "webhook.secret_rotated.v1"
           ],
           "emission": "AUDIT_EMISSION_SUCCESS"
         },
@@ -5883,7 +5883,7 @@
         "service": "accounts"
       },
       "source_proto": "saas/accounts/v1/webhooks.proto",
-      "policy_sha256": "5bcb3fee05cb589b8ac533759a878527c31dcda2f357c052c17d750c1c1c89db",
+      "policy_sha256": "7a52203bdc76e1e91e9ff73c50240b1fc69ca82cb4ba4ea7fd86a81b710a097f",
       "rate_limit_backend_failure_mode": "RATE_LIMIT_BACKEND_FAILURE_MODE_FAIL_OPEN"
     },
     {
@@ -6027,7 +6027,7 @@
         "mfa": "MFA_REQUIREMENT_NONE",
         "audit": {
           "events": [
-            "work_context.audience_exchanged"
+            "work_context.audience_exchanged.v1"
           ],
           "emission": "AUDIT_EMISSION_SUCCESS"
         },
@@ -6045,7 +6045,7 @@
         "service": "accounts"
       },
       "source_proto": "saas/accounts/v1/work_contexts.proto",
-      "policy_sha256": "71fa0526a27eaa69bf6cd296965636eb1abc969272b5b7a40f850ed89b4d4ed0",
+      "policy_sha256": "5fdc29c79ba5c56f7386c628d84325b1eda6c4dedb92c0a085c235b4aa229ea4",
       "rate_limit_backend_failure_mode": "RATE_LIMIT_BACKEND_FAILURE_MODE_FAIL_OPEN"
     },
     {
@@ -6071,7 +6071,7 @@
         "mfa": "MFA_REQUIREMENT_NONE",
         "audit": {
           "events": [
-            "work_context.child_session_started"
+            "work_context.child_session_started.v1"
           ],
           "emission": "AUDIT_EMISSION_SUCCESS"
         },
@@ -6089,7 +6089,7 @@
         "service": "accounts"
       },
       "source_proto": "saas/accounts/v1/work_contexts.proto",
-      "policy_sha256": "d7dce2d5de2ae9f9704f90467e5ce092c85ec152c7aa1fc85197c80f931a893c",
+      "policy_sha256": "4ccc96c3dc47811e5e7d141e2bfe3cdd83f86248e86224e923e9bfeebc2da7d8",
       "rate_limit_backend_failure_mode": "RATE_LIMIT_BACKEND_FAILURE_MODE_FAIL_OPEN"
     },
     {
@@ -6115,7 +6115,7 @@
         "mfa": "MFA_REQUIREMENT_NONE",
         "audit": {
           "events": [
-            "work_context.root_session_started"
+            "work_context.root_session_started.v1"
           ],
           "emission": "AUDIT_EMISSION_SUCCESS"
         },
@@ -6133,7 +6133,7 @@
         "service": "accounts"
       },
       "source_proto": "saas/accounts/v1/work_contexts.proto",
-      "policy_sha256": "72cf1ff58c718b569b081fd94fdab94cd539123c9dccd44ebc93c2c44937d075",
+      "policy_sha256": "6795957f0c8a3d92a1e809be774b7d05afa0978af99248d340cc1dc51a290413",
       "rate_limit_backend_failure_mode": "RATE_LIMIT_BACKEND_FAILURE_MODE_FAIL_OPEN"
     },
     {
@@ -6159,7 +6159,7 @@
         "mfa": "MFA_REQUIREMENT_NONE",
         "audit": {
           "events": [
-            "work_context.task_started"
+            "work_context.task_started.v1"
           ],
           "emission": "AUDIT_EMISSION_SUCCESS"
         },
@@ -6177,7 +6177,7 @@
         "service": "accounts"
       },
       "source_proto": "saas/accounts/v1/work_contexts.proto",
-      "policy_sha256": "ade874693fca0881500a158a8da0d7275cf4a1cc48c94a7cf6e6e5ae0f42bebc",
+      "policy_sha256": "e33c3f6d875526395c3295abb4798038c3cc166bf43bf367cf680e9644017c45",
       "rate_limit_backend_failure_mode": "RATE_LIMIT_BACKEND_FAILURE_MODE_FAIL_OPEN"
     }
   ]

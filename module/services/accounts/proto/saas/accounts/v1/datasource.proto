@@ -155,7 +155,7 @@ service DatasourceService {
       }
       mfa: MFA_REQUIREMENT_NONE
       audit: {
-        events: "datasource.source.added"
+        events: "datasource.source.added.v1"
         emission: AUDIT_EMISSION_SUCCESS
       }
       idempotency: IDEMPOTENCY_REQUIREMENT_FORBIDDEN
@@ -216,7 +216,7 @@ service DatasourceService {
       }
       mfa: MFA_REQUIREMENT_NONE
       audit: {
-        events: "datasource.source.synced"
+        events: "datasource.source.synced.v1"
         emission: AUDIT_EMISSION_SUCCESS
       }
       idempotency: IDEMPOTENCY_REQUIREMENT_FORBIDDEN
@@ -238,7 +238,7 @@ service DatasourceService {
       }
       mfa: MFA_REQUIREMENT_NONE
       audit: {
-        events: "datasource.source.removed"
+        events: "datasource.source.removed.v1"
         emission: AUDIT_EMISSION_SUCCESS
       }
       idempotency: IDEMPOTENCY_REQUIREMENT_FORBIDDEN

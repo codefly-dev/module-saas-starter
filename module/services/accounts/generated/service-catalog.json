@@ -361,7 +361,7 @@
         "mfa": "MFA_REQUIREMENT_NONE",
         "audit": {
           "events": [
-            "api_key.created"
+            "api_key.created.v1"
           ],
           "emission": "AUDIT_EMISSION_SUCCESS"
         },
@@ -483,7 +483,7 @@
         "mfa": "MFA_REQUIREMENT_NONE",
         "audit": {
           "events": [
-            "api_key.revoked"
+            "api_key.revoked.v1"
           ],
           "emission": "AUDIT_EMISSION_SUCCESS"
         },
@@ -811,8 +811,8 @@
         "mfa": "MFA_REQUIREMENT_NONE",
         "audit": {
           "events": [
-            "auth.login",
-            "auth.mfa_challenge_started"
+            "auth.login.v1",
+            "auth.mfa_challenge_started.v1"
           ],
           "emission": "AUDIT_EMISSION_SUCCESS"
         },
@@ -964,9 +964,9 @@
         "mfa": "MFA_REQUIREMENT_NONE",
         "audit": {
           "events": [
-            "auth.login",
-            "auth.mfa_challenge_completed",
-            "mfa.backup_code_used"
+            "auth.login.v1",
+            "auth.mfa_challenge_completed.v1",
+            "mfa.backup_code_used.v1"
           ],
           "emission": "AUDIT_EMISSION_SUCCESS"
         },
@@ -1018,9 +1018,9 @@
         "mfa": "MFA_REQUIREMENT_NONE",
         "audit": {
           "events": [
-            "auth.login",
-            "auth.mfa_challenge_completed",
-            "mfa.webauthn_used"
+            "auth.login.v1",
+            "auth.mfa_challenge_completed.v1",
+            "mfa.webauthn_used.v1"
           ],
           "emission": "AUDIT_EMISSION_SUCCESS"
         },
@@ -1222,7 +1222,7 @@
         "mfa": "MFA_REQUIREMENT_NONE",
         "audit": {
           "events": [
-            "auth.organization_switched"
+            "auth.organization_switched.v1"
           ],
           "emission": "AUDIT_EMISSION_SUCCESS"
         },
@@ -1394,7 +1394,7 @@
         "mfa": "MFA_REQUIREMENT_RECENT_STEP_UP",
         "audit": {
           "events": [
-            "billing.portal_opened"
+            "billing.portal_opened.v1"
           ],
           "emission": "AUDIT_EMISSION_SUCCESS"
         },
@@ -1446,7 +1446,7 @@
         "mfa": "MFA_REQUIREMENT_NONE",
         "audit": {
           "events": [
-            "consent.terms_accepted"
+            "consent.terms_accepted.v1"
           ],
           "emission": "AUDIT_EMISSION_SUCCESS"
         },
@@ -1548,7 +1548,7 @@
         "mfa": "MFA_REQUIREMENT_NONE",
         "audit": {
           "events": [
-            "consent.preferences_updated"
+            "consent.preferences_updated.v1"
           ],
           "emission": "AUDIT_EMISSION_SUCCESS"
         },
@@ -1598,7 +1598,7 @@
         "mfa": "MFA_REQUIREMENT_NONE",
         "audit": {
           "events": [
-            "datasource.source.added"
+            "datasource.source.added.v1"
           ],
           "emission": "AUDIT_EMISSION_SUCCESS"
         },
@@ -1648,7 +1648,7 @@
         "mfa": "MFA_REQUIREMENT_NONE",
         "audit": {
           "events": [
-            "datasource.source.removed"
+            "datasource.source.removed.v1"
           ],
           "emission": "AUDIT_EMISSION_SUCCESS"
         },
@@ -1794,7 +1794,7 @@
         "mfa": "MFA_REQUIREMENT_NONE",
         "audit": {
           "events": [
-            "datasource.source.synced"
+            "datasource.source.synced.v1"
           ],
           "emission": "AUDIT_EMISSION_SUCCESS"
         },
@@ -1852,8 +1852,8 @@
         "mfa": "MFA_REQUIREMENT_NONE",
         "audit": {
           "events": [
-            "delegation.approved",
-            "delegation.denied"
+            "delegation.approved.v1",
+            "delegation.denied.v1"
           ],
           "emission": "AUDIT_EMISSION_SUCCESS"
         },
@@ -1967,8 +1967,8 @@
         "mfa": "MFA_REQUIREMENT_NONE",
         "audit": {
           "events": [
-            "delegation.requested",
-            "delegation.auto_approved"
+            "delegation.requested.v1",
+            "delegation.auto_approved.v1"
           ],
           "emission": "AUDIT_EMISSION_SUCCESS"
         },
@@ -2176,7 +2176,7 @@
         "mfa": "MFA_REQUIREMENT_IF_ENROLLED_RECENT_STEP_UP",
         "audit": {
           "events": [
-            "gdpr.deletion_requested"
+            "gdpr.deletion_requested.v1"
           ],
           "emission": "AUDIT_EMISSION_SUCCESS"
         },
@@ -2228,7 +2228,7 @@
         "mfa": "MFA_REQUIREMENT_NONE",
         "audit": {
           "events": [
-            "gdpr.export_requested"
+            "gdpr.export_requested.v1"
           ],
           "emission": "AUDIT_EMISSION_SUCCESS"
         },
@@ -2372,7 +2372,7 @@
         "mfa": "MFA_REQUIREMENT_NONE",
         "audit": {
           "events": [
-            "invitation.accepted"
+            "invitation.accepted.v1"
           ],
           "emission": "AUDIT_EMISSION_SUCCESS"
         },
@@ -2434,7 +2434,7 @@
         "mfa": "MFA_REQUIREMENT_NONE",
         "audit": {
           "events": [
-            "invitation.created"
+            "invitation.created.v1"
           ],
           "emission": "AUDIT_EMISSION_SUCCESS"
         },
@@ -2656,7 +2656,7 @@
         "mfa": "MFA_REQUIREMENT_NONE",
         "audit": {
           "events": [
-            "invitation.resent"
+            "invitation.resent.v1"
           ],
           "emission": "AUDIT_EMISSION_SUCCESS"
         },
@@ -2718,7 +2718,7 @@
         "mfa": "MFA_REQUIREMENT_NONE",
         "audit": {
           "events": [
-            "invitation.revoked"
+            "invitation.revoked.v1"
           ],
           "emission": "AUDIT_EMISSION_SUCCESS"
         },
@@ -2770,7 +2770,7 @@
         "mfa": "MFA_REQUIREMENT_NONE",
         "audit": {
           "events": [
-            "mfa.webauthn_registration_started"
+            "mfa.webauthn_registration_started.v1"
           ],
           "emission": "AUDIT_EMISSION_SUCCESS"
         },
@@ -2822,7 +2822,7 @@
         "mfa": "MFA_REQUIREMENT_NONE",
         "audit": {
           "events": [
-            "mfa.webauthn_registered"
+            "mfa.webauthn_registered.v1"
           ],
           "emission": "AUDIT_EMISSION_SUCCESS"
         },
@@ -2874,7 +2874,7 @@
         "mfa": "MFA_REQUIREMENT_NONE",
         "audit": {
           "events": [
-            "mfa.backup_codes_generated"
+            "mfa.backup_codes_generated.v1"
           ],
           "emission": "AUDIT_EMISSION_SUCCESS"
         },
@@ -2976,7 +2976,7 @@
         "mfa": "MFA_REQUIREMENT_NONE",
         "audit": {
           "events": [
-            "mfa.device_revoked"
+            "mfa.device_revoked.v1"
           ],
           "emission": "AUDIT_EMISSION_SUCCESS"
         },
@@ -3028,7 +3028,7 @@
         "mfa": "MFA_REQUIREMENT_NONE",
         "audit": {
           "events": [
-            "mfa.totp_setup_started"
+            "mfa.totp_setup_started.v1"
           ],
           "emission": "AUDIT_EMISSION_SUCCESS"
         },
@@ -3080,7 +3080,7 @@
         "mfa": "MFA_REQUIREMENT_NONE",
         "audit": {
           "events": [
-            "mfa.totp_verified"
+            "mfa.totp_verified.v1"
           ],
           "emission": "AUDIT_EMISSION_SUCCESS"
         },
@@ -3388,7 +3388,7 @@
         "mfa": "MFA_REQUIREMENT_NONE",
         "audit": {
           "events": [
-            "onboarding.step_completed"
+            "onboarding.step_completed.v1"
           ],
           "emission": "AUDIT_EMISSION_SUCCESS"
         },
@@ -3502,7 +3502,7 @@
         "mfa": "MFA_REQUIREMENT_NONE",
         "audit": {
           "events": [
-            "onboarding.step_skipped"
+            "onboarding.step_skipped.v1"
           ],
           "emission": "AUDIT_EMISSION_SUCCESS"
         },
@@ -3560,7 +3560,7 @@
         "mfa": "MFA_REQUIREMENT_NONE",
         "audit": {
           "events": [
-            "org.member_added"
+            "org.member_added.v1"
           ],
           "emission": "AUDIT_EMISSION_SUCCESS"
         },
@@ -3612,7 +3612,7 @@
         "mfa": "MFA_REQUIREMENT_NONE",
         "audit": {
           "events": [
-            "org.created"
+            "org.created.v1"
           ],
           "emission": "AUDIT_EMISSION_SUCCESS"
         },
@@ -3944,7 +3944,7 @@
         "mfa": "MFA_REQUIREMENT_NONE",
         "audit": {
           "events": [
-            "org.member_removed"
+            "org.member_removed.v1"
           ],
           "emission": "AUDIT_EMISSION_SUCCESS"
         },
@@ -4002,7 +4002,7 @@
         "mfa": "MFA_REQUIREMENT_NONE",
         "audit": {
           "events": [
-            "org.settings_updated"
+            "org.settings_updated.v1"
           ],
           "emission": "AUDIT_EMISSION_SUCCESS"
         },
@@ -4060,7 +4060,7 @@
         "mfa": "MFA_REQUIREMENT_NONE",
         "audit": {
           "events": [
-            "org.generic_settings_updated"
+            "org.generic_settings_updated.v1"
           ],
           "emission": "AUDIT_EMISSION_SUCCESS"
         },
@@ -4112,7 +4112,7 @@
         "mfa": "MFA_REQUIREMENT_NONE",
         "audit": {
           "events": [
-            "role.assigned"
+            "role.assigned.v1"
           ],
           "emission": "AUDIT_EMISSION_SUCCESS"
         },
@@ -4248,7 +4248,7 @@
         "mfa": "MFA_REQUIREMENT_NONE",
         "audit": {
           "events": [
-            "role.created"
+            "role.created.v1"
           ],
           "emission": "AUDIT_EMISSION_SUCCESS"
         },
@@ -4342,7 +4342,7 @@
         "mfa": "MFA_REQUIREMENT_NONE",
         "audit": {
           "events": [
-            "role.deleted"
+            "role.deleted.v1"
           ],
           "emission": "AUDIT_EMISSION_SUCCESS"
         },
@@ -4400,7 +4400,7 @@
         "mfa": "MFA_REQUIREMENT_NONE",
         "audit": {
           "events": [
-            "scope.granted"
+            "scope.granted.v1"
           ],
           "emission": "AUDIT_EMISSION_SUCCESS"
         },
@@ -4614,7 +4614,7 @@
         "mfa": "MFA_REQUIREMENT_NONE",
         "audit": {
           "events": [
-            "scope.node_registered"
+            "scope.node_registered.v1"
           ],
           "emission": "AUDIT_EMISSION_SUCCESS"
         },
@@ -4666,7 +4666,7 @@
         "mfa": "MFA_REQUIREMENT_NONE",
         "audit": {
           "events": [
-            "role.revoked"
+            "role.revoked.v1"
           ],
           "emission": "AUDIT_EMISSION_SUCCESS"
         },
@@ -4724,7 +4724,7 @@
         "mfa": "MFA_REQUIREMENT_NONE",
         "audit": {
           "events": [
-            "scope.revoked"
+            "scope.revoked.v1"
           ],
           "emission": "AUDIT_EMISSION_SUCCESS"
         },
@@ -4782,7 +4782,7 @@
         "mfa": "MFA_REQUIREMENT_NONE",
         "audit": {
           "events": [
-            "record.share_revoked"
+            "record.share_revoked.v1"
           ],
           "emission": "AUDIT_EMISSION_SUCCESS"
         },
@@ -4840,7 +4840,7 @@
         "mfa": "MFA_REQUIREMENT_NONE",
         "audit": {
           "events": [
-            "record.shared"
+            "record.shared.v1"
           ],
           "emission": "AUDIT_EMISSION_SUCCESS"
         },
@@ -5048,7 +5048,7 @@
         "mfa": "MFA_REQUIREMENT_IF_ENROLLED_RECENT_STEP_UP",
         "audit": {
           "events": [
-            "platform.role_granted"
+            "platform.role_granted.v1"
           ],
           "emission": "AUDIT_EMISSION_SUCCESS"
         },
@@ -5100,7 +5100,7 @@
         "mfa": "MFA_REQUIREMENT_IF_ENROLLED_RECENT_STEP_UP",
         "audit": {
           "events": [
-            "platform.user_impersonated"
+            "platform.user_impersonated.v1"
           ],
           "emission": "AUDIT_EMISSION_SUCCESS"
         },
@@ -5352,7 +5352,7 @@
         "mfa": "MFA_REQUIREMENT_NONE",
         "audit": {
           "events": [
-            "entitlement.override"
+            "entitlement.override.v1"
           ],
           "emission": "AUDIT_EMISSION_SUCCESS"
         },
@@ -5404,7 +5404,7 @@
         "mfa": "MFA_REQUIREMENT_RECENT_STEP_UP",
         "audit": {
           "events": [
-            "job.replayed"
+            "job.replayed.v1"
           ],
           "emission": "AUDIT_EMISSION_SUCCESS"
         },
@@ -5456,7 +5456,7 @@
         "mfa": "MFA_REQUIREMENT_IF_ENROLLED_RECENT_STEP_UP",
         "audit": {
           "events": [
-            "platform.role_revoked"
+            "platform.role_revoked.v1"
           ],
           "emission": "AUDIT_EMISSION_SUCCESS"
         },
@@ -5508,7 +5508,7 @@
         "mfa": "MFA_REQUIREMENT_NONE",
         "audit": {
           "events": [
-            "session.revoked"
+            "session.revoked.v1"
           ],
           "emission": "AUDIT_EMISSION_SUCCESS"
         },
@@ -5610,7 +5610,7 @@
         "mfa": "MFA_REQUIREMENT_NONE",
         "audit": {
           "events": [
-            "user.suspended"
+            "user.suspended.v1"
           ],
           "emission": "AUDIT_EMISSION_SUCCESS"
         },
@@ -5662,7 +5662,7 @@
         "mfa": "MFA_REQUIREMENT_NONE",
         "audit": {
           "events": [
-            "user.unsuspended"
+            "user.unsuspended.v1"
           ],
           "emission": "AUDIT_EMISSION_SUCCESS"
         },
@@ -5714,7 +5714,7 @@
         "mfa": "MFA_REQUIREMENT_NONE",
         "audit": {
           "events": [
-            "feature_flag.updated"
+            "feature_flag.updated.v1"
           ],
           "emission": "AUDIT_EMISSION_SUCCESS"
         },
@@ -5772,7 +5772,7 @@
         "mfa": "MFA_REQUIREMENT_NONE",
         "audit": {
           "events": [
-            "principal.created"
+            "principal.created.v1"
           ],
           "emission": "AUDIT_EMISSION_SUCCESS"
         },
@@ -5970,7 +5970,7 @@
         "mfa": "MFA_REQUIREMENT_NONE",
         "audit": {
           "events": [
-            "principal.revoked"
+            "principal.revoked.v1"
           ],
           "emission": "AUDIT_EMISSION_SUCCESS"
         },
@@ -6028,7 +6028,7 @@
         "mfa": "MFA_REQUIREMENT_NONE",
         "audit": {
           "events": [
-            "sso.disabled"
+            "sso.disabled.v1"
           ],
           "emission": "AUDIT_EMISSION_SUCCESS"
         },
@@ -6142,7 +6142,7 @@
         "mfa": "MFA_REQUIREMENT_NONE",
         "audit": {
           "events": [
-            "sso.setup.started"
+            "sso.setup.started.v1"
           ],
           "emission": "AUDIT_EMISSION_SUCCESS"
         },
@@ -6200,7 +6200,7 @@
         "mfa": "MFA_REQUIREMENT_NONE",
         "audit": {
           "events": [
-            "team.member_added"
+            "team.member_added.v1"
           ],
           "emission": "AUDIT_EMISSION_SUCCESS"
         },
@@ -6258,7 +6258,7 @@
         "mfa": "MFA_REQUIREMENT_NONE",
         "audit": {
           "events": [
-            "team.created"
+            "team.created.v1"
           ],
           "emission": "AUDIT_EMISSION_SUCCESS"
         },
@@ -6316,7 +6316,7 @@
         "mfa": "MFA_REQUIREMENT_NONE",
         "audit": {
           "events": [
-            "team.deleted"
+            "team.deleted.v1"
           ],
           "emission": "AUDIT_EMISSION_SUCCESS"
         },
@@ -6486,7 +6486,7 @@
         "mfa": "MFA_REQUIREMENT_NONE",
         "audit": {
           "events": [
-            "team.member_removed"
+            "team.member_removed.v1"
           ],
           "emission": "AUDIT_EMISSION_SUCCESS"
         },
@@ -6544,7 +6544,7 @@
         "mfa": "MFA_REQUIREMENT_NONE",
         "audit": {
           "events": [
-            "team.updated"
+            "team.updated.v1"
           ],
           "emission": "AUDIT_EMISSION_SUCCESS"
         },
@@ -6818,7 +6818,7 @@
         "mfa": "MFA_REQUIREMENT_NONE",
         "audit": {
           "events": [
-            "user.identity_added"
+            "user.identity_added.v1"
           ],
           "emission": "AUDIT_EMISSION_SUCCESS"
         },
@@ -6874,7 +6874,7 @@
         "mfa": "MFA_REQUIREMENT_NONE",
         "audit": {
           "events": [
-            "user.deleted"
+            "user.deleted.v1"
           ],
           "emission": "AUDIT_EMISSION_SUCCESS"
         },
@@ -7186,7 +7186,7 @@
         "mfa": "MFA_REQUIREMENT_NONE",
         "audit": {
           "events": [
-            "user.registered"
+            "user.registered.v1"
           ],
           "emission": "AUDIT_EMISSION_SUCCESS"
         },
@@ -7242,7 +7242,7 @@
         "mfa": "MFA_REQUIREMENT_NONE",
         "audit": {
           "events": [
-            "user.updated"
+            "user.updated.v1"
           ],
           "emission": "AUDIT_EMISSION_SUCCESS"
         },
@@ -7394,7 +7394,7 @@
         "mfa": "MFA_REQUIREMENT_NONE",
         "audit": {
           "events": [
-            "settings.updated"
+            "settings.updated.v1"
           ],
           "emission": "AUDIT_EMISSION_SUCCESS"
         },
@@ -7496,7 +7496,7 @@
         "mfa": "MFA_REQUIREMENT_IF_ENROLLED_RECENT_STEP_UP",
         "audit": {
           "events": [
-            "waitlist.invited"
+            "waitlist.invited.v1"
           ],
           "emission": "AUDIT_EMISSION_SUCCESS"
         },
@@ -7648,7 +7648,7 @@
         "mfa": "MFA_REQUIREMENT_IF_ENROLLED_RECENT_STEP_UP",
         "audit": {
           "events": [
-            "waitlist.reviewed"
+            "waitlist.reviewed.v1"
           ],
           "emission": "AUDIT_EMISSION_SUCCESS"
         },
@@ -7760,7 +7760,7 @@
         "mfa": "MFA_REQUIREMENT_NONE",
         "audit": {
           "events": [
-            "webhook.created"
+            "webhook.created.v1"
           ],
           "emission": "AUDIT_EMISSION_SUCCESS"
         },
@@ -7822,7 +7822,7 @@
         "mfa": "MFA_REQUIREMENT_NONE",
         "audit": {
           "events": [
-            "webhook.deleted"
+            "webhook.deleted.v1"
           ],
           "emission": "AUDIT_EMISSION_SUCCESS"
         },
@@ -8064,7 +8064,7 @@
         "mfa": "MFA_REQUIREMENT_NONE",
         "audit": {
           "events": [
-            "webhook.replayed"
+            "webhook.replayed.v1"
           ],
           "emission": "AUDIT_EMISSION_SUCCESS"
         },
@@ -8126,7 +8126,7 @@
         "mfa": "MFA_REQUIREMENT_RECENT_STEP_UP",
         "audit": {
           "events": [
-            "webhook.secret_rotated"
+            "webhook.secret_rotated.v1"
           ],
           "emission": "AUDIT_EMISSION_SUCCESS"
         },
@@ -8328,7 +8328,7 @@
         "mfa": "MFA_REQUIREMENT_NONE",
         "audit": {
           "events": [
-            "work_context.audience_exchanged"
+            "work_context.audience_exchanged.v1"
           ],
           "emission": "AUDIT_EMISSION_SUCCESS"
         },
@@ -8386,7 +8386,7 @@
         "mfa": "MFA_REQUIREMENT_NONE",
         "audit": {
           "events": [
-            "work_context.child_session_started"
+            "work_context.child_session_started.v1"
           ],
           "emission": "AUDIT_EMISSION_SUCCESS"
         },
@@ -8444,7 +8444,7 @@
         "mfa": "MFA_REQUIREMENT_NONE",
         "audit": {
           "events": [
-            "work_context.root_session_started"
+            "work_context.root_session_started.v1"
           ],
           "emission": "AUDIT_EMISSION_SUCCESS"
         },
@@ -8502,7 +8502,7 @@
         "mfa": "MFA_REQUIREMENT_NONE",
         "audit": {
           "events": [
-            "work_context.task_started"
+            "work_context.task_started.v1"
           ],
           "emission": "AUDIT_EMISSION_SUCCESS"
         },

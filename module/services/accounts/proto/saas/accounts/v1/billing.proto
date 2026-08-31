@@ -110,7 +110,7 @@ service BillingService {
       }
       mfa: MFA_REQUIREMENT_RECENT_STEP_UP
       audit: {
-        events: "billing.portal_opened"
+        events: "billing.portal_opened.v1"
         emission: AUDIT_EMISSION_SUCCESS
       }
       idempotency: IDEMPOTENCY_REQUIREMENT_FORBIDDEN

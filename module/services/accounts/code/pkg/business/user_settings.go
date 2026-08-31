@@ -80,7 +80,7 @@ func (s *Service) UpdateUserSettings(
 	}); err != nil {
 		return nil, err
 	}
-	s.emit(ctx, userID, "user", "settings.updated", "user", userID, "")
+	s.emit(ctx, userID, "user", EventSettingsUpdated, "user", userID, "")
 	resolved, err := usersettings.Resolve(settings)
 	if err != nil {
 		return nil, status.Error(codes.Internal, "resolve user settings")

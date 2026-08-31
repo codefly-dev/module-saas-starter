@@ -195,7 +195,7 @@ service WaitlistService {
       tenant: TENANT_REQUIREMENT_NONE
       mfa: MFA_REQUIREMENT_IF_ENROLLED_RECENT_STEP_UP
       audit: {
-        events: "waitlist.reviewed"
+        events: "waitlist.reviewed.v1"
         emission: AUDIT_EMISSION_SUCCESS
       }
       idempotency: IDEMPOTENCY_REQUIREMENT_FORBIDDEN
@@ -216,7 +216,7 @@ service WaitlistService {
       tenant: TENANT_REQUIREMENT_NONE
       mfa: MFA_REQUIREMENT_IF_ENROLLED_RECENT_STEP_UP
       audit: {
-        events: "waitlist.invited"
+        events: "waitlist.invited.v1"
         emission: AUDIT_EMISSION_SUCCESS
       }
       idempotency: IDEMPOTENCY_REQUIREMENT_FORBIDDEN

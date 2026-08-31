@@ -221,8 +221,8 @@ service AuthService {
       tenant: TENANT_REQUIREMENT_NONE
       mfa: MFA_REQUIREMENT_NONE
       audit: {
-        events: "auth.login"
-        events: "auth.mfa_challenge_started"
+        events: "auth.login.v1"
+        events: "auth.mfa_challenge_started.v1"
         emission: AUDIT_EMISSION_SUCCESS
       }
       idempotency: IDEMPOTENCY_REQUIREMENT_FORBIDDEN
@@ -246,9 +246,9 @@ service AuthService {
       tenant: TENANT_REQUIREMENT_NONE
       mfa: MFA_REQUIREMENT_NONE
       audit: {
-        events: "auth.login"
-        events: "auth.mfa_challenge_completed"
-        events: "mfa.backup_code_used"
+        events: "auth.login.v1"
+        events: "auth.mfa_challenge_completed.v1"
+        events: "mfa.backup_code_used.v1"
         emission: AUDIT_EMISSION_SUCCESS
       }
       idempotency: IDEMPOTENCY_REQUIREMENT_FORBIDDEN
@@ -290,9 +290,9 @@ service AuthService {
       tenant: TENANT_REQUIREMENT_NONE
       mfa: MFA_REQUIREMENT_NONE
       audit: {
-        events: "auth.login"
-        events: "auth.mfa_challenge_completed"
-        events: "mfa.webauthn_used"
+        events: "auth.login.v1"
+        events: "auth.mfa_challenge_completed.v1"
+        events: "mfa.webauthn_used.v1"
         emission: AUDIT_EMISSION_SUCCESS
       }
       idempotency: IDEMPOTENCY_REQUIREMENT_FORBIDDEN
@@ -335,7 +335,7 @@ service AuthService {
       tenant: TENANT_REQUIREMENT_NONE
       mfa: MFA_REQUIREMENT_NONE
       audit: {
-        events: "auth.organization_switched"
+        events: "auth.organization_switched.v1"
         emission: AUDIT_EMISSION_SUCCESS
       }
       idempotency: IDEMPOTENCY_REQUIREMENT_FORBIDDEN

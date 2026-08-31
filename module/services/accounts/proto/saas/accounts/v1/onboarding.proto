@@ -114,7 +114,7 @@ service OnboardingService {
       }
       mfa: MFA_REQUIREMENT_NONE
       audit: {
-        events: "onboarding.step_completed"
+        events: "onboarding.step_completed.v1"
         emission: AUDIT_EMISSION_SUCCESS
       }
       idempotency: IDEMPOTENCY_REQUIREMENT_FORBIDDEN
@@ -140,7 +140,7 @@ service OnboardingService {
       }
       mfa: MFA_REQUIREMENT_NONE
       audit: {
-        events: "onboarding.step_skipped"
+        events: "onboarding.step_skipped.v1"
         emission: AUDIT_EMISSION_SUCCESS
       }
       idempotency: IDEMPOTENCY_REQUIREMENT_FORBIDDEN

@@ -976,22 +976,22 @@ const file_saas_accounts_v1_work_contexts_proto_rawDesc = "" +
 	"\x17WorkContextReplayPolicy\x12*\n" +
 	"&WORK_CONTEXT_REPLAY_POLICY_UNSPECIFIED\x10\x00\x12)\n" +
 	"%WORK_CONTEXT_REPLAY_POLICY_IDEMPOTENT\x10\x01\x12)\n" +
-	"%WORK_CONTEXT_REPLAY_POLICY_SINGLE_USE\x10\x022\x8e\t\n" +
+	"%WORK_CONTEXT_REPLAY_POLICY_SINGLE_USE\x10\x022\x9a\t\n" +
 	"\x12WorkContextService\x12\x83\x01\n" +
 	"\x1aCheckAuthorizationRevision\x123.saas.accounts.v1.CheckAuthorizationRevisionRequest\x1a\x16.google.protobuf.Empty\"\x18\xc2\xf3\x18\x14\b\x03\x10\x010\x01:\x02\x10\x01@\x01H\aP\x03X\x03`\x01\x12y\n" +
-	"\x15AuthorizeEvidenceRead\x12..saas.accounts.v1.AuthorizeEvidenceReadRequest\x1a\x16.google.protobuf.Empty\"\x18\xc2\xf3\x18\x14\b\x03\x10\x010\x01:\x02\x10\x01@\x01H\aP\x03X\x03`\x01\x12\xc3\x01\n" +
-	"\tStartTask\x12-.saas.accounts.v1.StartTaskWorkContextRequest\x1a#.saas.accounts.v1.IssuedWorkContext\"b\xc2\xf3\x18=\b\x02\x10\x03*\f\n" +
-	"\x06org_id\x10\x02\x18\x010\x01:\x1d\n" +
-	"\x19work_context.task_started\x10\x02@\x01H\x05P\x03X\x04`\x01\x82\xd3\xe4\x93\x02\x1b:\x01*\"\x16/v1/work-contexts:task\x12\xe1\x01\n" +
-	"\x10StartRootSession\x124.saas.accounts.v1.StartRootSessionWorkContextRequest\x1a#.saas.accounts.v1.IssuedWorkContext\"r\xc2\xf3\x18E\b\x02\x10\x03*\f\n" +
-	"\x06org_id\x10\x02\x18\x010\x01:%\n" +
-	"!work_context.root_session_started\x10\x02@\x01H\x05P\x04X\x04`\x01\x82\xd3\xe4\x93\x02#:\x01*\"\x1e/v1/work-contexts:root-session\x12\xe4\x01\n" +
-	"\x10ExchangeAudience\x124.saas.accounts.v1.ExchangeWorkContextAudienceRequest\x1a#.saas.accounts.v1.IssuedWorkContext\"u\xc2\xf3\x18C\b\x02\x10\x03*\f\n" +
-	"\x06org_id\x10\x02\x18\x010\x01:#\n" +
-	"\x1fwork_context.audience_exchanged\x10\x02@\x01H\x05P\x04X\x04`\x01\x82\xd3\xe4\x93\x02(:\x01*\"#/v1/work-contexts:exchange-audience\x12\xe5\x01\n" +
-	"\x11StartChildSession\x125.saas.accounts.v1.StartChildSessionWorkContextRequest\x1a#.saas.accounts.v1.IssuedWorkContext\"t\xc2\xf3\x18F\b\x02\x10\x03*\f\n" +
+	"\x15AuthorizeEvidenceRead\x12..saas.accounts.v1.AuthorizeEvidenceReadRequest\x1a\x16.google.protobuf.Empty\"\x18\xc2\xf3\x18\x14\b\x03\x10\x010\x01:\x02\x10\x01@\x01H\aP\x03X\x03`\x01\x12\xc6\x01\n" +
+	"\tStartTask\x12-.saas.accounts.v1.StartTaskWorkContextRequest\x1a#.saas.accounts.v1.IssuedWorkContext\"e\xc2\xf3\x18@\b\x02\x10\x03*\f\n" +
+	"\x06org_id\x10\x02\x18\x010\x01: \n" +
+	"\x1cwork_context.task_started.v1\x10\x02@\x01H\x05P\x03X\x04`\x01\x82\xd3\xe4\x93\x02\x1b:\x01*\"\x16/v1/work-contexts:task\x12\xe4\x01\n" +
+	"\x10StartRootSession\x124.saas.accounts.v1.StartRootSessionWorkContextRequest\x1a#.saas.accounts.v1.IssuedWorkContext\"u\xc2\xf3\x18H\b\x02\x10\x03*\f\n" +
+	"\x06org_id\x10\x02\x18\x010\x01:(\n" +
+	"$work_context.root_session_started.v1\x10\x02@\x01H\x05P\x04X\x04`\x01\x82\xd3\xe4\x93\x02#:\x01*\"\x1e/v1/work-contexts:root-session\x12\xe7\x01\n" +
+	"\x10ExchangeAudience\x124.saas.accounts.v1.ExchangeWorkContextAudienceRequest\x1a#.saas.accounts.v1.IssuedWorkContext\"x\xc2\xf3\x18F\b\x02\x10\x03*\f\n" +
 	"\x06org_id\x10\x02\x18\x010\x01:&\n" +
-	"\"work_context.child_session_started\x10\x02@\x01H\x05P\x04X\x04`\x01\x82\xd3\xe4\x93\x02$:\x01*\"\x1f/v1/work-contexts:child-sessionB\xb9\x01\n" +
+	"\"work_context.audience_exchanged.v1\x10\x02@\x01H\x05P\x04X\x04`\x01\x82\xd3\xe4\x93\x02(:\x01*\"#/v1/work-contexts:exchange-audience\x12\xe8\x01\n" +
+	"\x11StartChildSession\x125.saas.accounts.v1.StartChildSessionWorkContextRequest\x1a#.saas.accounts.v1.IssuedWorkContext\"w\xc2\xf3\x18I\b\x02\x10\x03*\f\n" +
+	"\x06org_id\x10\x02\x18\x010\x01:)\n" +
+	"%work_context.child_session_started.v1\x10\x02@\x01H\x05P\x04X\x04`\x01\x82\xd3\xe4\x93\x02$:\x01*\"\x1f/v1/work-contexts:child-sessionB\xb9\x01\n" +
 	"\x14com.saas.accounts.v1B\x11WorkContextsProtoP\x01Z,accounts/pkg/gen/saas/accounts/v1;accountsv1\xa2\x02\x03SAX\xaa\x02\x10Saas.Accounts.V1\xca\x02\x10Saas\\Accounts\\V1\xe2\x02\x1cSaas\\Accounts\\V1\\GPBMetadata\xea\x02\x12Saas::Accounts::V1b\x06proto3"
 
 var (

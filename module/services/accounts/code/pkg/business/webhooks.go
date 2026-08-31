@@ -149,7 +149,7 @@ func (s *Service) CreateSubscription(ctx context.Context, orgID, rawURL string, 
 		return nil, w.Wrapf(err, "cannot create webhook subscription")
 	}
 
-	s.emit(ctx, orgID, "system", "webhook.created", "webhook_subscription", sub.ID, orgID)
+	s.emit(ctx, orgID, "system", EventWebhookCreated, "webhook_subscription", sub.ID, orgID)
 
 	return sub, nil
 }
@@ -181,7 +181,7 @@ func (s *Service) DeleteSubscription(ctx context.Context, orgID, id string) erro
 		return err
 	}
 
-	s.emit(ctx, orgID, "system", "webhook.deleted", "webhook_subscription", id, orgID)
+	s.emit(ctx, orgID, "system", EventWebhookDeleted, "webhook_subscription", id, orgID)
 
 	return nil
 }
@@ -336,7 +336,7 @@ func (s *Service) ReplayWebhookDelivery(ctx context.Context, orgID, originalID s
 		return nil, err
 	}
 
-	s.emit(ctx, sub.OrgID, "system", "webhook.replayed", "webhook_delivery", replay.ID, sub.OrgID)
+	s.emit(ctx, sub.OrgID, "system", EventWebhookReplayed, "webhook_delivery", replay.ID, sub.OrgID)
 	return replay, nil
 }
 
@@ -385,7 +385,7 @@ func (s *Service) RotateWebhookSecret(ctx context.Context, orgID, subscriptionID
 		return "", nil, err
 	}
 
-	s.emit(ctx, orgID, "system", "webhook.secret_rotated", "webhook_subscription", subscriptionID, orgID)
+	s.emit(ctx, orgID, "system", EventWebhookSecretRotated, "webhook_subscription", subscriptionID, orgID)
 	return newSecret, oldSecretExpiresAt, nil
 }
 
