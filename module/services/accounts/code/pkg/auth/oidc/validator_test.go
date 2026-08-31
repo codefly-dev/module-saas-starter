@@ -166,6 +166,32 @@ func TestValidate_Happy(t *testing.T) {
 	require.False(t, claims.ExpiresAt.IsZero())
 }
 
+func TestValidate_NameClaimMapping(t *testing.T) {
+	ctx := context.Background()
+	fi := newFakeIdP(t)
+	v := newValidator(t, fi)
+
+	// The standard `name` claim populates the display name.
+	withName := fi.validClaims()
+	withName["name"] = "Alice Example"
+	claims, err := v.Validate(ctx, fi.sign(t, withName))
+	require.NoError(t, err)
+	require.Equal(t, "Alice Example", claims.DisplayName)
+
+	// When `name` is absent, `given_name` is the fallback.
+	withGiven := fi.validClaims()
+	withGiven["given_name"] = "Alice"
+	claims, err = v.Validate(ctx, fi.sign(t, withGiven))
+	require.NoError(t, err)
+	require.Equal(t, "Alice", claims.DisplayName)
+
+	// A provider that asserts no name leaves the display name empty rather than
+	// failing — it is purely presentational.
+	claims, err = v.Validate(ctx, fi.sign(t, fi.validClaims()))
+	require.NoError(t, err)
+	require.Empty(t, claims.DisplayName)
+}
+
 func TestValidate_EmailVerifiedClaimMapping(t *testing.T) {
 	ctx := context.Background()
 	fi := newFakeIdP(t)

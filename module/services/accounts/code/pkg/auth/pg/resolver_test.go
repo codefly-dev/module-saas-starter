@@ -180,6 +180,22 @@ func TestResolver_Signup_NewUser_Provisioning(t *testing.T) {
 	require.Equal(t, 1, count)
 }
 
+func TestResolver_CarriesPresentationalIdentity(t *testing.T) {
+	resetAuthTables(t)
+	ctx := context.Background()
+	r := pgauth.NewResolver(testStore)
+
+	c := claims("Alice@Test.Local", "dev-alice")
+	c.DisplayName = "Alice Example"
+
+	id, err := r.Resolve(ctx, c, auth.SignupIntent{})
+	require.NoError(t, err)
+	// Email is normalised to lower case; the display name flows through so the
+	// minted token can render the person by name rather than by uuid.
+	require.Equal(t, "alice@test.local", id.Email)
+	require.Equal(t, "Alice Example", id.DisplayName)
+}
+
 func TestResolver_Login_UnknownIdentity_ReturnsNoAccount(t *testing.T) {
 	resetAuthTables(t)
 	ctx := context.Background()

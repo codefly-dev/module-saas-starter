@@ -72,6 +72,7 @@ func (b oidcProviderStackBuilder) Build(ctx context.Context, provider *business.
 		ClientID:     provider.ClientID,
 		OrgClaim:     claimOrDefault(provider.ClaimMap, "org", "organization_id"),
 		EmailClaim:   claimOrDefault(provider.ClaimMap, "email", ""),
+		NameClaim:    claimOrDefault(provider.ClaimMap, "name", "name"),
 	}
 	validator, err := oidc.New(cfg)
 	if err != nil {

@@ -70,6 +70,13 @@ export function detectImpersonation(accessToken: string): ImpersonationInfo {
 
 const REFRESH_TOKEN_KEY = "codefly_refresh_token";
 const USER_EMAIL_KEY = "codefly_user_email";
+const USER_NAME_KEY = "codefly_user_name";
+
+export interface SessionUser {
+	id: string;
+	email?: string;
+	name?: string;
+}
 
 export function getStoredRefreshToken(): string | null {
 	return null;
@@ -84,6 +91,7 @@ export function clearRefreshToken(): void {
 	if (typeof window === "undefined") return;
 	localStorage.removeItem(REFRESH_TOKEN_KEY);
 	localStorage.removeItem(USER_EMAIL_KEY);
+	localStorage.removeItem(USER_NAME_KEY);
 }
 
 export function getStoredUserEmail(): string | null {
@@ -94,4 +102,48 @@ export function getStoredUserEmail(): string | null {
 export function storeUserEmail(email: string): void {
 	if (typeof window === "undefined") return;
 	localStorage.setItem(USER_EMAIL_KEY, email);
+}
+
+export function getStoredUserName(): string | null {
+	if (typeof window === "undefined") return null;
+	return localStorage.getItem(USER_NAME_KEY);
+}
+
+export function storeUserName(name: string): void {
+	if (typeof window === "undefined") return;
+	localStorage.setItem(USER_NAME_KEY, name);
+}
+
+// resolveSessionUser derives the presentational identity for a session. Email
+// and name each resolve by the same precedence: an explicit value from the
+// login response > the JWT claim minted by accounts > a value persisted on a
+// previous login (surviving a refresh-token round-trip after page reload). The
+// id is only ever the raw subject and is the last-resort label.
+export function resolveSessionUser(
+	accessToken: string,
+	overrides: { userId?: string; email?: string; name?: string } = {},
+): SessionUser {
+	const payload = decodeJWTPayload(accessToken);
+	const email =
+		overrides.email ||
+		(typeof payload.email === "string" ? payload.email : undefined) ||
+		getStoredUserEmail() ||
+		undefined;
+	const name =
+		overrides.name ||
+		(typeof payload.name === "string" ? payload.name : undefined) ||
+		getStoredUserName() ||
+		undefined;
+	return {
+		id: overrides.userId || String(payload.sub ?? ""),
+		email,
+		name,
+	};
+}
+
+// sessionDisplayLabel is the human-facing label for a signed-in user: the name
+// when known, otherwise the email, and only the raw id when neither exists.
+export function sessionDisplayLabel(user: SessionUser | null): string {
+	if (!user) return "";
+	return user.name || user.email || user.id;
 }

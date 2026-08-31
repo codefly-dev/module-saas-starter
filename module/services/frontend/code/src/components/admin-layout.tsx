@@ -36,6 +36,7 @@ import { Toaster } from "@/components/ui/sonner";
 import { NotificationBell } from "@/features/notifications/ui/notification-bell";
 import { useAppearance } from "@/lib/appearance-provider";
 import { useAuth } from "@/lib/auth";
+import { sessionDisplayLabel } from "@/lib/auth-session";
 import { getNavigationIcon } from "@/lib/navigation-icons";
 import { canPresent, selectNavigation } from "@/lib/plugins/presentation";
 import { useRegisteredSolutions } from "@/solutions/SolutionsMenu";
@@ -142,9 +143,11 @@ export function AdminLayout({ children }: { children: React.ReactNode }) {
 	const userMenu = selectNavigation(config, "user_menu", principal);
 	const registeredSolutions = useRegisteredSolutions();
 
-	const userInitials = user?.email
-		? user.email.slice(0, 2).toUpperCase()
-		: (user?.id?.slice(0, 2).toUpperCase() ?? "U");
+	const userLabel = sessionDisplayLabel(user);
+	const userInitials =
+		user?.name || user?.email
+			? (user.name ?? user.email ?? "").slice(0, 2).toUpperCase()
+			: (user?.id?.slice(0, 2).toUpperCase() ?? "U");
 
 	return (
 		<SidebarProvider>
@@ -267,9 +270,7 @@ export function AdminLayout({ children }: { children: React.ReactNode }) {
 										<AvatarFallback>{userInitials}</AvatarFallback>
 									</Avatar>
 									<div className="flex flex-col gap-0.5 leading-none">
-										<span className="text-sm font-medium">
-											{user?.email || user?.id}
-										</span>
+										<span className="text-sm font-medium">{userLabel}</span>
 										{platformRole && (
 											<span className="text-xs text-muted-foreground">
 												{platformRole}

@@ -205,6 +205,8 @@ func (r *Resolver) resolveInTx(
 		ScopedRoles:          scopedRoles,
 		ScopedRolesTruncated: scopedRolesTruncated,
 		SessionID:            business.NewID(),
+		Email:                strings.ToLower(c.Email),
+		DisplayName:          strings.TrimSpace(c.DisplayName),
 	}, nil
 }
 

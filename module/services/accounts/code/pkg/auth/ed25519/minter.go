@@ -116,6 +116,11 @@ type accessClaims struct {
 	ScopedRoles          map[string][]string `json:"sr,omitempty"`
 	ScopedRolesTruncated bool                `json:"srt,omitempty"`
 	SessionID            string              `json:"sid"`
+	// Email and Name are presentational identity for the client to render the
+	// signed-in person. They are never consulted for authorization; the sidecar
+	// authorizes on sub/org/roles alone.
+	Email                string              `json:"email,omitempty"`
+	Name                 string              `json:"name,omitempty"`
 	ActingAsUserID       string              `json:"acting,omitempty"`
 	// Act carries the RFC 8693 on-behalf-of delegation chain. sub stays the end
 	// user; act names the service (or admin) acting for them, nesting outward.
@@ -616,6 +621,8 @@ func (m *Minter) VerifyAccess(tokenString string) (*auth.Identity, error) {
 		ScopedRoles:           claims.ScopedRoles,
 		ScopedRolesTruncated:  claims.ScopedRolesTruncated,
 		SessionID:             sessionID,
+		Email:                 claims.Email,
+		DisplayName:           claims.Name,
 		ActingAsUserID:        actingAs,
 		Actor:                 claims.Act,
 		MFASatisfied:          claims.MFASatisfied,
@@ -708,6 +715,8 @@ func (m *Minter) signAccess(identity *auth.Identity, sessionID uuid.UUID, now ti
 			ID:        jti,
 		},
 		SessionID: sessionID.String(),
+		Email:     identity.Email,
+		Name:      identity.DisplayName,
 	}
 	if identity.OrgID != uuid.Nil {
 		claims.OrgID = identity.OrgID.String()
