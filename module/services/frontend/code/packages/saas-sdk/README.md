@@ -122,5 +122,13 @@ The package is versioned (`version` in `package.json`) and consumed today as an
 `@codefly/saas-sdk` directly. It is npm-ready (`publishConfig.access: public`,
 `files: ["dist"]`); publishing to a public registry is gated on registry
 credentials and is not wired here. Until that lands, treat this workspace package
-as the codefly-internal library. Bump `version` on any client- or facade-surface
-change.
+as the codefly-internal library.
+
+The frontend app pins this package at an **exact** version
+(`"@codefly/saas-sdk": "0.1.0"` in `module/services/frontend/code/package.json`),
+and `npm ci` refuses to install if the workspace version no longer satisfies that
+pin. So a `version` bump is not self-contained: bump it only together with the
+matching pin bump in the app's `package.json` and a regenerated `package-lock.json`,
+in the same change — otherwise `npm ci` (and the workspace-install-graph CI gate)
+fails. Additive, backward-compatible surface changes therefore stay on the current
+version until a release actually needs to move it.

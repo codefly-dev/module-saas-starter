@@ -10,20 +10,30 @@ import {
 } from "../src/gen/saas/accounts/v1/datasource_pb.js";
 import { WebhookService } from "../src/gen/saas/accounts/v1/webhooks_pb.js";
 
+interface Call {
+	service: "datasource" | "webhook" | "audit";
+	method: string;
+	orgId?: string;
+	repo?: string;
+}
+
 /**
- * A gateway that answers `AddGitHubSource` and records the org/repo it saw, so a
- * test proves the facade routes a call to the right procedure against a running
- * server rather than merely constructing an object.
+ * A gateway that answers one method on each public service and records which
+ * handler ran. Registering all three services means a facade bound to the wrong
+ * service reaches the wrong handler (or none), so the recorded `service` proves
+ * routing rather than mere object construction.
  */
-function gateway(): {
-	transport: Transport;
-	calls: Array<{ orgId: string; repo: string }>;
-} {
-	const calls: Array<{ orgId: string; repo: string }> = [];
+function gateway(): { transport: Transport; calls: Call[] } {
+	const calls: Call[] = [];
 	const transport = createRouterTransport(({ service }) => {
 		service(DatasourceService, {
 			addGitHubSource(req) {
-				calls.push({ orgId: req.orgId, repo: req.repo });
+				calls.push({
+					service: "datasource",
+					method: "addGitHubSource",
+					orgId: req.orgId,
+					repo: req.repo,
+				});
 				return {
 					datasource: {
 						id: "src_1",
@@ -32,6 +42,18 @@ function gateway(): {
 						github: { repo: req.repo },
 					},
 				};
+			},
+		});
+		service(WebhookService, {
+			listSubscriptions() {
+				calls.push({ service: "webhook", method: "listSubscriptions" });
+				return {};
+			},
+		});
+		service(AuditService, {
+			aggregateAuditLog() {
+				calls.push({ service: "audit", method: "aggregateAuditLog" });
+				return {};
 			},
 		});
 	});
@@ -47,35 +69,36 @@ describe("facade", () => {
 			repo: "acme/widgets",
 		});
 
-		expect(calls).toEqual([{ orgId: "org_1", repo: "acme/widgets" }]);
+		expect(calls).toEqual([
+			{
+				service: "datasource",
+				method: "addGitHubSource",
+				orgId: "org_1",
+				repo: "acme/widgets",
+			},
+		]);
 		expect(res.datasource?.id).toBe("src_1");
 		expect(res.datasource?.provider).toBe(DatasourceProvider.GITHUB);
 		expect(res.datasource?.github?.repo).toBe("acme/widgets");
 	});
 
-	it("exposes each public service under its own gateway-bound facade", () => {
-		const { transport } = gateway();
+	it("routes each facade to its own service, never another", async () => {
+		const { transport, calls } = gateway();
 
-		expect(datasource.New(transport)).toHaveProperty("addGitHubSource");
-		expect(webhooks.New(transport)).toHaveProperty("createSubscription");
-		expect(audit.New(transport)).toHaveProperty("aggregateAuditLog");
-	});
+		// A call per facade. If, say, webhooks.New bound DatasourceService, its
+		// call would land on the datasource handler (or on a method that does not
+		// exist), so the recorded service would be wrong or the call would throw.
+		await datasource.New(transport).addGitHubSource({
+			orgId: "org_1",
+			repo: "acme/widgets",
+		});
+		await webhooks.New(transport).listSubscriptions({ orgId: "org_1" });
+		await audit.New(transport).aggregateAuditLog({ orgId: "org_1" });
 
-	it("keeps facades distinct — a call never crosses services", async () => {
-		const { transport } = gateway();
-
-		// The gateway only registers DatasourceService; a WebhookService call has
-		// no handler and must surface as an error, not silently hit datasource.
-		await expect(
-			webhooks.New(transport).listSubscriptions({ orgId: "org_1" }),
-		).rejects.toThrow();
-	});
-
-	it("wires the generated service descriptors", () => {
-		expect(DatasourceService.typeName).toBe(
-			"saas.accounts.v1.DatasourceService",
-		);
-		expect(WebhookService.typeName).toBe("saas.accounts.v1.WebhookService");
-		expect(AuditService.typeName).toBe("saas.accounts.v1.AuditService");
+		expect(calls.map((call) => [call.service, call.method])).toEqual([
+			["datasource", "addGitHubSource"],
+			["webhook", "listSubscriptions"],
+			["audit", "aggregateAuditLog"],
+		]);
 	});
 });
