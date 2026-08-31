@@ -229,6 +229,35 @@ describe("runDataGraph", () => {
 		expect(resolved.total.points).toEqual([{ key: "all", value: 8 }]);
 	});
 
+	it("fails a whole graph closed when no viewer org is bound, issuing no query", async () => {
+		const { client, calls } = fakeAuditClient(() => [{ key: "all", count: 1 }]);
+		const graph = graphWith(
+			{
+				id: "logins",
+				kind: "source",
+				filter: { event: "signed_in", actor: "a" },
+				groupBy: "event_type",
+				aggregation: "count",
+			},
+			{
+				id: "signups",
+				kind: "source",
+				filter: { event: "signed_in", actor: "b" },
+				groupBy: "event_type",
+				aggregation: "count",
+			},
+		);
+
+		// A spec that would otherwise reach the audit trail is inert without a
+		// bound org: every source metric rejects before its request is sent — no
+		// sibling metric fires either — so it can never widen past the viewer's org
+		// into an org-wide read.
+		await expect(runDataGraph(client, graph, { orgId: "" })).rejects.toThrow(
+			/without a viewer org/,
+		);
+		expect(calls).toHaveLength(0);
+	});
+
 	it("rejects a metric filtering an undeclared event", async () => {
 		const { client } = fakeAuditClient(() => []);
 		const graph: DataGraph = {

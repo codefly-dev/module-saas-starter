@@ -13,6 +13,34 @@ export type EventTypeResolver = (eventName: string) => string;
 export const METRIC_VALUE_ALIAS = "value";
 
 /**
+ * The org a compiled query is bound to. A source metric carries no org of its
+ * own — the org comes only from the trusted render context — so this guard owns
+ * the context side of that contract: refuse to compile when no viewer org is
+ * present, rather than emit an org-unscoped (org-wide) audit read. A caller that
+ * forgets to withhold resolution until the org is known therefore fails closed
+ * instead of widening the read.
+ *
+ * A spec cannot inject an org to begin with: the metric shape has no org field
+ * and the graph validator rejects unknown ones — that structural check, not this
+ * function, is what makes a hostile spec inert. This guard is the complementary
+ * context-side check.
+ *
+ * The org is coerced before trimming so a missing/blank context org fails closed
+ * with this message rather than a raw `TypeError`, and the trimmed value is what
+ * gets emitted — a padded org must not be judged present here yet miss the
+ * server's exact-id org lookup.
+ */
+function scopedOrgId(context: MetricContext): string {
+	const orgId = context.orgId?.trim() ?? "";
+	if (orgId === "") {
+		throw new Error(
+			"cannot compile an org-scoped audit query without a viewer org",
+		);
+	}
+	return orgId;
+}
+
+/**
  * Turn a source metric plus its render context into the bound audit query. The
  * metric declares *what* to measure — its filter names an event, which the
  * resolver maps to the registered audit event type, and its aggregation selects
@@ -26,7 +54,7 @@ export function compileMetric(
 	context: MetricContext,
 ): AuditAggregateQuery {
 	return {
-		orgId: context.orgId,
+		orgId: scopedOrgId(context),
 		eventType: resolveEventType(metric.filter.event),
 		category: "",
 		actorId: metric.filter.actor ?? "",

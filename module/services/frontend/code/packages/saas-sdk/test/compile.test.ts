@@ -127,6 +127,63 @@ describe("compileMetric", () => {
 		]);
 	});
 
+	it("refuses to compile an org-unscoped query, failing closed", () => {
+		const metric: SourceMetric = {
+			id: "logins",
+			kind: "source",
+			filter: { event: "signed_in" },
+			groupBy: "event_type",
+			aggregation: "count",
+		};
+
+		// A blank org would compile to an org-wide audit read: fail closed so a
+		// caller that never bound a viewer org can't widen the read. A missing org
+		// fails closed with the same message, not a raw TypeError.
+		expect(() => compileMetric(metric, resolve, { orgId: "" })).toThrow(
+			/without a viewer org/,
+		);
+		expect(() => compileMetric(metric, resolve, { orgId: "   " })).toThrow(
+			/without a viewer org/,
+		);
+		expect(() =>
+			compileMetric(metric, resolve, {
+				orgId: undefined as unknown as string,
+			}),
+		).toThrow(/without a viewer org/);
+	});
+
+	it("trims the bound org so a padded context org still hits the exact-id lookup", () => {
+		const metric: SourceMetric = {
+			id: "logins",
+			kind: "source",
+			filter: { event: "signed_in" },
+			groupBy: "event_type",
+			aggregation: "count",
+		};
+
+		expect(compileMetric(metric, resolve, { orgId: "  org_1  " }).orgId).toBe(
+			"org_1",
+		);
+	});
+
+	it("ignores an org injected onto the spec, binding only the context org", () => {
+		// A spec parsed from untrusted JSON could carry an extra orgId; the compiler
+		// binds the org from context alone, so an attempt to escape the viewer's org
+		// through the spec is inert.
+		const metric = {
+			id: "logins",
+			kind: "source",
+			filter: { event: "signed_in" },
+			groupBy: "event_type",
+			aggregation: "count",
+			orgId: "victim_org",
+		} as unknown as SourceMetric;
+
+		expect(compileMetric(metric, resolve, { orgId: "viewer_org" }).orgId).toBe(
+			"viewer_org",
+		);
+	});
+
 	it("passes a payload group dimension straight through", () => {
 		const metric: SourceMetric = {
 			id: "by_plan",
