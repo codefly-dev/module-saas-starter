@@ -1,7 +1,9 @@
 "use client";
 
-import { type ReactNode, useState } from "react";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { type ReactNode, useMemo, useState } from "react";
 import { ConnectGitHubForm } from "./connect-github-form.js";
+import { createDatasourceClient, type GatewayBinding } from "./gateway.js";
 import {
 	useAddGitHubSource,
 	useDeleteSource,
@@ -12,12 +14,59 @@ import type { ConnectGitHubValues } from "./schema.js";
 import type { DatasourceClient, DatasourceView } from "./types.js";
 import { cn, formatSyncedAt, parsePaths } from "./util.js";
 
-export interface DatasourcesPanelProps {
-	client: DatasourceClient;
+interface DatasourcesPanelBaseProps {
 	orgId: string;
 	/** Called with the durable job id after a sync is enqueued. */
 	onSyncEnqueued?: (jobId: string) => void;
 	className?: string;
+}
+
+/**
+ * Either drive the panel with an injected `client` (the portal adapts its own
+ * transport, keeping its ambient `QueryClientProvider`), or hand it a `gateway`
+ * binding and it self-wires: it builds the `@codefly/saas-sdk` client and a
+ * scoped React-Query provider from that binding, so a solution remote drops it
+ * in with only `{ apiBase, getAccessToken }` and no query/auth context.
+ */
+export type DatasourcesPanelProps = DatasourcesPanelBaseProps &
+	(
+		| { client: DatasourceClient; gateway?: never }
+		| { gateway: GatewayBinding; client?: never }
+	);
+
+export function DatasourcesPanel(props: DatasourcesPanelProps) {
+	if (props.gateway) {
+		const { gateway, ...rest } = props;
+		return <GatewayBoundPanel gateway={gateway} {...rest} />;
+	}
+	const { client, ...rest } = props;
+	return <DatasourcesPanelView client={client} {...rest} />;
+}
+
+function GatewayBoundPanel({
+	gateway,
+	...rest
+}: DatasourcesPanelBaseProps & { gateway: GatewayBinding }) {
+	// The interceptor reads the token at request time, so the client only needs
+	// rebuilding when the binding itself changes — not on every render.
+	const { apiBase, getAccessToken, refreshAccessToken } = gateway;
+	const client = useMemo(
+		() =>
+			createDatasourceClient({ apiBase, getAccessToken, refreshAccessToken }),
+		[apiBase, getAccessToken, refreshAccessToken],
+	);
+	const [queryClient] = useState(
+		() => new QueryClient({ defaultOptions: { queries: { retry: 1 } } }),
+	);
+	return (
+		<QueryClientProvider client={queryClient}>
+			<DatasourcesPanelView client={client} {...rest} />
+		</QueryClientProvider>
+	);
+}
+
+interface DatasourcesPanelViewProps extends DatasourcesPanelBaseProps {
+	client: DatasourceClient;
 }
 
 const buttonClass =
@@ -26,12 +75,12 @@ const buttonClass =
 const rowActionClass =
 	"inline-flex h-8 items-center rounded-md border px-3 text-sm font-medium shadow-sm hover:bg-accent disabled:opacity-50";
 
-export function DatasourcesPanel({
+function DatasourcesPanelView({
 	client,
 	orgId,
 	onSyncEnqueued,
 	className,
-}: DatasourcesPanelProps) {
+}: DatasourcesPanelViewProps) {
 	const [showConnect, setShowConnect] = useState(false);
 	// Per-row pending sets, not the shared mutation's single `isPending`, so two
 	// rows can sync/delete at once without one clearing the other's spinner and

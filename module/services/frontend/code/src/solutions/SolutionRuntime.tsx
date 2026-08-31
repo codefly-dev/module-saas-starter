@@ -38,7 +38,10 @@ export function SolutionRuntime({
 	pageProps,
 }: {
 	remote: SolutionRemote;
-	pageProps: Omit<SolutionPageProps, "getAccessToken" | "dashboardAuthoring">;
+	pageProps: Omit<
+		SolutionPageProps,
+		"getAccessToken" | "refreshAccessToken" | "dashboardAuthoring"
+	>;
 }) {
 	const { user, organizationId } = useAuth();
 	const draftKey = scopedDashboardDraftKey(USER_DASHBOARD_DRAFT_KEY, {

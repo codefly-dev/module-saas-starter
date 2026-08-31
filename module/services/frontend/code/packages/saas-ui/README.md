@@ -5,22 +5,36 @@ there is one `<DatasourcesPanel>`, not a per-consumer copy. Components are built
 `@codefly/ui` primitives, styled with the shared token classes so they render
 identically in the host app and in a Module-Federation remote.
 
-The components own no transport. They drive an injected `DatasourceClient` — the
-consumer adapts its generated `DatasourceService` Connect client (or, once it lands,
-`@codefly/saas-sdk`) to that contract. This keeps the package free of generated
-protobuf and lets any app wire its own auth/transport.
+The components drive a `DatasourceClient` contract. There are two ways to bind it:
+
+- **Gateway binding** (solution remotes) — pass
+  `gateway={{ apiBase, getAccessToken, refreshAccessToken }}` and the panel self-wires:
+  it builds a `@codefly/saas-sdk` client over a scoped transport that stamps the host's
+  bearer token on every request and, on an `Unauthenticated` response, calls
+  `refreshAccessToken` and retries once — so a data call survives the short-lived token
+  expiring mid-session. It also mounts its own `@tanstack/react-query` provider. A
+  Module-Federation remote gets the full UI from `SolutionPageProps` alone — no ambient
+  query/auth context, no re-implemented fetch.
+- **Injected client** (the portal) — pass `client={…}` built with
+  `datasourceClientOverTransport(transport)` over the app's own transport, and provide
+  the surrounding `QueryClientProvider`. Use this when the app already owns
+  auth/transport (e.g. its own token-refresh interceptors) — one adapter, shared with
+  the gateway path.
 
 ## Datasources
 
-- `<DatasourcesPanel client={…} orgId={…} />` — lists an org's connected sources
+- `<DatasourcesPanel gateway={{ apiBase, getAccessToken }} orgId={…} />` or
+  `<DatasourcesPanel client={…} orgId={…} />` — lists an org's connected sources
   (repo · paths · branch · webhook · last sync) with per-row **Sync**/**Delete** and
   a **Connect GitHub** action. Loading/error/empty are first-class.
 - `<ConnectGitHubForm onSubmit={…} … />` — the connect form (repo, paths, branch,
   target collection, access token, webhook secret).
-- Hooks over the injected client: `useListSources`, `useAddGitHubSource`,
+- `createDatasourceClient({ apiBase, getAccessToken, refreshAccessToken })` — builds the
+  gateway-bound `DatasourceClient` (with 401 refresh-and-retry) directly, for driving the
+  hooks outside the panel. `datasourceClientOverTransport(transport)` does the same over a
+  transport you already own.
+- Hooks over a `DatasourceClient`: `useListSources`, `useAddGitHubSource`,
   `useSyncSource`, `useDeleteSource`.
-
-The consumer provides a `@tanstack/react-query` `QueryClientProvider`.
 
 ## Styling
 
