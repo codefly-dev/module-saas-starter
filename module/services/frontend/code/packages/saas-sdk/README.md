@@ -1,11 +1,33 @@
 # @codefly/saas-sdk
 
-The TypeScript SDK a saas-starter consumer imports to build dashboards: a typed
-Connect client for the accounts audit surface plus the **data-graph tooling**
-that turns a metric declaration into a bound audit query and produces the
-`data={…}` a `<Dashboard>` renders.
+The TypeScript SDK a saas-starter consumer imports to reach the saas public API
+— the TS twin of the Go `saas-sdk`. Two layers:
+
+1. **Generated Connect client** — `connect-es` clients generated from the public
+   accounts proto (`AuditService`, `DatasourceService`, `WebhookService`).
+2. **Gateway-bound facade** — a thin `svc.New(gw)` per service that binds the
+   generated client to a transport (the gateway seam), mirroring the Go facade's
+   `svc.New(gw).method(...)`.
+
+```ts
+import { datasource } from "@codefly/saas-sdk";
+
+// gw is a connect-es Transport pointed at the running gateway.
+const { datasource: source } = await datasource.New(gw).addGitHubSource({
+  orgId,
+  repo: "acme/widgets",
+});
+```
+
+`audit`, `datasource`, and `webhooks` each export `New(gw)`. The generated
+service descriptors (`AuditService`, `DatasourceService`, `WebhookService`) are
+re-exported for consumers that build their own clients.
 
 ## The data graph
+
+On top of the audit facade, the SDK ships **data-graph tooling** that turns a
+metric declaration into a bound audit query and produces the `data={…}` a
+`<Dashboard>` renders.
 
 The declaration is the contract-first data graph — named audit **events**,
 **metrics** computed over them, and **dashboards** that lay metrics out as
@@ -79,10 +101,11 @@ lands.
 
 ## Regenerating the client
 
-The Connect client under `src/gen` is generated from the accounts audit proto:
+The Connect client under `src/gen` is generated from the public accounts proto —
+`audit`, `datasource`, and `webhooks`, plus their transitive imports:
 
 ```bash
-npm run generate   # buf generate, audit.proto + its transitive imports only
+npm run generate   # buf generate, reproducible from the accounts proto
 ```
 
 ## Building and testing
@@ -91,3 +114,13 @@ npm run generate   # buf generate, audit.proto + its transitive imports only
 npm run build
 npm test
 ```
+
+## Publishing and versioning
+
+The package is versioned (`version` in `package.json`) and consumed today as an
+**npm workspace** package — the frontend app and any in-repo solution import
+`@codefly/saas-sdk` directly. It is npm-ready (`publishConfig.access: public`,
+`files: ["dist"]`); publishing to a public registry is gated on registry
+credentials and is not wired here. Until that lands, treat this workspace package
+as the codefly-internal library. Bump `version` on any client- or facade-surface
+change.

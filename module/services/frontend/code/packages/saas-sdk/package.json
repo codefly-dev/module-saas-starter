@@ -1,7 +1,7 @@
 {
 	"name": "@codefly/saas-sdk",
 	"version": "0.1.0",
-	"description": "Typed Connect client and audit data-graph tooling for building saas-starter dashboards.",
+	"description": "Typed Connect client, gateway-bound facades, and audit data-graph tooling for the saas-starter public API.",
 	"type": "module",
 	"sideEffects": false,
 	"files": [
@@ -17,7 +17,7 @@
 	},
 	"scripts": {
 		"build": "tsc -p tsconfig.json",
-		"generate": "cd ../../../../accounts/proto && buf generate --template ../../frontend/code/packages/saas-sdk/buf.gen.yaml --path saas/accounts/v1/audit.proto -o ../../frontend/code/packages/saas-sdk",
+		"generate": "cd ../../../../accounts/proto && buf generate --template ../../frontend/code/packages/saas-sdk/buf.gen.yaml --path saas/accounts/v1/audit.proto --path saas/accounts/v1/datasource.proto --path saas/accounts/v1/webhooks.proto -o ../../frontend/code/packages/saas-sdk",
 		"test": "vitest run --config vitest.config.ts"
 	},
 	"dependencies": {
