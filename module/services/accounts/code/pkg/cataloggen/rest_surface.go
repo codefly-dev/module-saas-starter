@@ -326,9 +326,9 @@ func exportedIdentifier(value string) string {
 	return strings.ToUpper(value[:1]) + value[1:]
 }
 
-// RenderAuthSidecarRESTRoutes emits the descriptor-owned edge whitelist. The
+// RenderAuthGatewayRESTRoutes emits the descriptor-owned edge whitelist. The
 // separate YAML source contributes only non-protobuf extension routes.
-func RenderAuthSidecarRESTRoutes(surface *catalogv1.RESTSurfaceCatalog) ([]byte, error) {
+func RenderAuthGatewayRESTRoutes(surface *catalogv1.RESTSurfaceCatalog) ([]byte, error) {
 	if err := ValidateRESTSurfaceCatalog(surface); err != nil {
 		return nil, err
 	}
@@ -347,7 +347,7 @@ func generatedCatalogRESTRoutes() []*RouteEntry {
 	source.WriteString("\t}\n}\n")
 	formatted, err := format.Source([]byte(source.String()))
 	if err != nil {
-		return nil, fmt.Errorf("format auth-sidecar REST routes: %w", err)
+		return nil, fmt.Errorf("format auth-gateway REST routes: %w", err)
 	}
 	return formatted, nil
 }

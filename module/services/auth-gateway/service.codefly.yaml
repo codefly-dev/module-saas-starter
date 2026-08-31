@@ -1,0 +1,42 @@
+# Code generated from deployment/topology.bindings.codefly.yaml. DO NOT EDIT.
+name: auth-gateway
+version: 0.0.0
+description: |
+    Single ingress + auth brain. Hosts two listeners:
+      - gRPC ext_authz for Envoy
+      - private HTTP API gateway behind the frontend entry
+agent:
+    kind: codefly:service
+    name: go-grpc
+    version: 0.1.36
+    publisher: codefly.dev
+service-dependencies:
+    - name: accounts
+      endpoints:
+        - name: connect
+        - name: grpc
+        - name: rest
+    - name: cache
+      endpoints:
+        - name: write
+    - name: telemetry
+      endpoints:
+        - name: grpc
+workspace-configuration-dependencies:
+    - gateway
+    - internal-auth
+    - observability
+    - security
+endpoints:
+    - name: grpc
+      visibility: module
+    - name: rest
+spec:
+    hot-reload: true
+    protocol-output-dirs:
+        - code/pkg/gen
+    rest-endpoint: true
+    runtime-assets:
+        - routing
+    service-account:
+        name: auth-gateway

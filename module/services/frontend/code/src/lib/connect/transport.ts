@@ -4,7 +4,7 @@ import { rateLimitInterceptor } from "./rate-limit-tracker";
 import { getToken, refreshToken } from "./token-store";
 
 /**
- * Connect transport for the API backend, going through the auth-sidecar
+ * Connect transport for the API backend, going through the auth-gateway
  * gateway. All Connect RPC calls go through this single entry point.
  *
  * The auth interceptor automatically injects the Bearer token from the

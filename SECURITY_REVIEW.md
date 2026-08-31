@@ -53,7 +53,7 @@ mesh), and layered test strategy live in
 
 ### H1 — Access-token revocation is not enforced on the browser (gateway) path
 
-- **Location:** `module/services/auth-sidecar/code/sidecar.go` — `checkJWT`
+- **Location:** `module/services/auth-gateway/code/sidecar.go` — `checkJWT`
   (`:139`). The sidecar validates the session JWT with pure local Ed25519 crypto
   and holds **no revoker**. Revocation is only consulted in the accounts
   `Minter.VerifyAccess` (`module/services/accounts/code/pkg/auth/ed25519/minter.go:495`),
@@ -116,7 +116,7 @@ mesh), and layered test strategy live in
 
 ### H4 — Envoy un-restamped trust headers are not stripped from the upstream request
 
-- **Location:** `module/services/auth-sidecar/code/sidecar.go` — `allow` (`:234`).
+- **Location:** `module/services/auth-gateway/code/sidecar.go` — `allow` (`:234`).
 - **Exploit:** on an `allow` decision the sidecar stamped its own trust headers
   but did not instruct Envoy to remove client-supplied trust headers it chose
   *not* to restamp, so a spoofed trust header could survive to the upstream.
@@ -203,7 +203,7 @@ Tracked historically as #209 (closed).
 
 ### M6 — Header-strip set drifted from the stamped headers
 
-- **Location:** `module/services/auth-sidecar/code/gateway.go` —
+- **Location:** `module/services/auth-gateway/code/gateway.go` —
   `untrustedAuthHeaders` (`:396`).
 - **Exploit:** the sidecar stamps `x-scoped-roles` / `x-scoped-roles-truncated`
   (`sidecar.go:196,202`) but the untrusted-header strip list did not include
@@ -288,9 +288,9 @@ the mesh (#217).
 | # | Item | Location | Fix |
 |---|------|----------|-----|
 | 1 | Revocation fail-open on cache error | `pkg/auth/revocation.go:23`, `pkg/cache/token_revoker.go:42` | `IsRevoked` returns `false` on Redis error; fail-closed for high-assurance tenants (ties to H1). |
-| 2 | No HTTP server timeouts on the gateway | `auth-sidecar/main.go:212` | Set `ReadHeaderTimeout` / `ReadTimeout` / `WriteTimeout` / `MaxHeaderBytes` (slowloris). → mesh mitigation via #217. |
+| 2 | No HTTP server timeouts on the gateway | `auth-gateway/main.go:212` | Set `ReadHeaderTimeout` / `ReadTimeout` / `WriteTimeout` / `MaxHeaderBytes` (slowloris). → mesh mitigation via #217. |
 | 3 | Non-atomic rate limiter | `pkg/cache/rate_limiter.go:63` | Use `INCR`+`EXPIRE` / Lua (ties to M8). |
-| 4 | Rate-limit XFF attribution | `auth-sidecar/ratelimit.go:194` | Require/validate `TRUSTED_PROXY_CIDRS` behind a proxy. |
+| 4 | Rate-limit XFF attribution | `auth-gateway/ratelimit.go:194` | Require/validate `TRUSTED_PROXY_CIDRS` behind a proxy. |
 | 5 | Vault `HashKey` silent SHA-256 downgrade | `pkg/infra/vault.go:76` | Fail closed instead of falling back on Vault error. |
 | 6 | `SlackNotifier` unguarded outbound HTTP (latent SSRF) | `pkg/business/slack.go:19` | Route through the hardened `WebhookEndpointPolicy` client. |
 | 7 | OAuth `state` replayable within TTL | `pkg/auth/oauth_state.go` | Add a Redis one-shot nonce, or bind to the PKCE challenge. |
@@ -300,7 +300,7 @@ the mesh (#217).
 | 11 | `DeleteRole` no org scope | `rpcs.go:538` → `business/permissions.go:45` | Add `org_id` scoping (TODO already at `rpcs.go:549`). |
 | 12 | Role/scope assignment object-id binding | `rpcs.go:560` / `:666` | Apply `requireVisibleRole` on the assignment path. |
 | 13 | API-key modulo bias | `business/api_keys.go:209` | Full-int base62 or rejection sampling. |
-| 14 | Unauthenticated `/metrics` + gRPC reflection | `telemetry_metrics.go:105` (`Handler()`), `auth-sidecar/main.go:133`, accounts `grpc_gen.go:209` | Restrict `/metrics`; gate reflection to non-prod. → mesh mitigation via #217. |
+| 14 | Unauthenticated `/metrics` + gRPC reflection | `telemetry_metrics.go:105` (`Handler()`), `auth-gateway/main.go:133`, accounts `grpc_gen.go:209` | Restrict `/metrics`; gate reflection to non-prod. → mesh mitigation via #217. |
 | 15 | OpenAPI route `Access-Control-Allow-Origin: *` | `frontend/.../api/openapi/route.ts:14` | Drop or scope to same-origin. |
 | 16 | `codefly_session` cookie not `Secure` / `SameSite=Lax` | `frontend/.../lib/auth.tsx:242` | Append `; Secure` on HTTPS. |
 | 17 | Dev/fixture provider selectable by env | `work.go:914,1081` | Hard-refuse when a production profile selects `IDENTITY_PROVIDER=dev`/`fixture`. |

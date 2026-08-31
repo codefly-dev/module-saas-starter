@@ -76,9 +76,9 @@ func TestGatewayArtifactsAreDeterministicAndCurrent(t *testing.T) {
 	require.NoError(t, (protojson.UnmarshalOptions{DiscardUnknown: false}).Unmarshal(routeJSON, parsed))
 	require.True(t, proto.Equal(routes, parsed))
 
-	goRoutes, err := cataloggen.RenderAuthSidecarConnectRoutes(routes)
+	goRoutes, err := cataloggen.RenderAuthGatewayConnectRoutes(routes)
 	require.NoError(t, err)
-	require.Equal(t, string(goRoutes), string(readFixture(t, "../../../../auth-sidecar/code/routing_catalog_gen.go")), "run: go generate ./pkg/cataloggen")
+	require.Equal(t, string(goRoutes), string(readFixture(t, "../../../../auth-gateway/code/routing_catalog_gen.go")), "run: go generate ./pkg/cataloggen")
 
 }
 

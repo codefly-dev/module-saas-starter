@@ -73,7 +73,7 @@ jobs:
           go-version: "1.27.0"
           cache: false
       - name: Enforce the sidecar header-lockstep invariant
-        working-directory: module/services/auth-sidecar/code
+        working-directory: module/services/auth-gateway/code
         run: go test -run TestUntrustedHeaders_SupersetOfStampedHeaders .
 
   provider-shim:
@@ -425,7 +425,7 @@ jobs:
         shell: bash
         run: |
           codefly audit service accounts --outdated=false --fail-on-vuln
-          codefly audit service auth-sidecar --outdated=false --fail-on-vuln
+          codefly audit service auth-gateway --outdated=false --fail-on-vuln
           npm --prefix module/services/frontend/code audit --omit=dev --audit-level=high
           npm --prefix module/services/marketing/code audit --omit=dev --audit-level=high
 

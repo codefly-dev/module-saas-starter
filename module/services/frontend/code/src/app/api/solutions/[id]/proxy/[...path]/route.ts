@@ -49,11 +49,11 @@ function sameOrigin(request: Request): boolean {
 	return !fetchSite || fetchSite === "same-origin" || fetchSite === "none";
 }
 
-/** Resolve the auth-sidecar API gateway base from the Codefly SDK. */
+/** Resolve the auth-gateway API gateway base from the Codefly SDK. */
 function gatewayBase(): string | null {
 	const endpoint = getEndpoints().find(
 		(candidate) =>
-			candidate.service === "auth-sidecar" && candidate.name === "rest",
+			candidate.service === "auth-gateway" && candidate.name === "rest",
 	);
 	if (!endpoint?.address) {
 		return null;

@@ -110,7 +110,7 @@ ingress:
       - www.example.com
       - docs.example.com
   - name: product
-    service: auth-sidecar
+    service: auth-gateway
     endpoint: rest
     hosts:
       - app.example.com

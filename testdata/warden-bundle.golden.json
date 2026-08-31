@@ -2,7 +2,7 @@
   "schemaVersion": "codefly.dev/module-bundle/v1",
   "module": "identity",
   "namespace": "identity",
-  "serviceEntry": "auth-sidecar",
+  "serviceEntry": "auth-gateway",
   "environments": [
     {
       "name": "local",
@@ -11,7 +11,7 @@
       "resourcePath": "overlays/local",
       "services": [
         "accounts",
-        "auth-sidecar",
+        "auth-gateway",
         "cache",
         "frontend",
         "object-storage",
@@ -21,7 +21,7 @@
       "ingress": [
         {
           "name": "product",
-          "service": "auth-sidecar",
+          "service": "auth-gateway",
           "endpoint": "http",
           "port": 8080,
           "hosts": [
@@ -37,13 +37,13 @@
       "resourcePath": "overlays/aws",
       "services": [
         "accounts",
-        "auth-sidecar",
+        "auth-gateway",
         "frontend"
       ],
       "ingress": [
         {
           "name": "product",
-          "service": "auth-sidecar",
+          "service": "auth-gateway",
           "endpoint": "http",
           "port": 8080,
           "hosts": [

@@ -1,17 +1,17 @@
 # Accounts trust boundary
 
 The authenticated product has one public entry: `frontend/http`. The frontend
-same-origin proxy reaches the private `auth-sidecar/rest` gateway, which then
+same-origin proxy reaches the private `auth-gateway/rest` gateway, which then
 reaches private Accounts REST/Connect endpoints. Accounts transports and the
-auth-sidecar HTTP endpoint are not publicly exported by `module.codefly.yaml`.
+auth-gateway HTTP endpoint are not publicly exported by `module.codefly.yaml`.
 
 ## Listener contract
 
 | Listener | Callers | Admitted RPCs | Credential |
 |---|---|---|---|
 | `grpc` | Private module services and diagnostics | Public and tenant RPCs | JWT, or gateway-stamped identity with `CODEFLY_GATEWAY_TOKEN` |
-| `rest` | `auth-sidecar` | Public and tenant HTTP routes; internal gRPC multiplexed over h2c | REST uses tenant policy; gRPC admits internal-tier RPCs only with `CODEFLY_INTERNAL_TOKEN` |
-| `connect` | `auth-sidecar` | Public and tenant Connect RPCs | JWT, or gateway-stamped identity with `CODEFLY_GATEWAY_TOKEN` |
+| `rest` | `auth-gateway` | Public and tenant HTTP routes; internal gRPC multiplexed over h2c | REST uses tenant policy; gRPC admits internal-tier RPCs only with `CODEFLY_INTERNAL_TOKEN` |
+| `connect` | `auth-gateway` | Public and tenant Connect RPCs | JWT, or gateway-stamped identity with `CODEFLY_GATEWAY_TOKEN` |
 
 Tenant gRPC, Connect, and the REST-to-gRPC backend reject internal-tier RPCs
 even when an internal token is present. On the private REST listener, HTTP/2
@@ -37,19 +37,19 @@ gate only. `requireInternalCredential` remains the app-layer *identity* gate
 The mixed private listener is an in-module implementation detail, not a product
 integration endpoint. It is intentionally absent from the module interface.
 Cross-module installed product services must wait for the generated named
-internal gRPC endpoint in `P1-NET-007`; the public auth-sidecar never exposes
+internal gRPC endpoint in `P1-NET-007`; the public auth-gateway never exposes
 internal methods such as `ConsumeUsage`.
 
 ## Forwarded identity
 
 The frontend removes caller-supplied origin trust headers, stamps the actual
 browser origin with `CODEFLY_INTERNAL_TOKEN`, and forwards only API routes to
-auth-sidecar. Auth-sidecar accepts that origin only after constant-time token
+auth-gateway. Auth-sidecar accepts that origin only after constant-time token
 validation.
 
 The gateway removes all caller-supplied identity, organization, role, scope,
 MFA/assurance, gateway-token, and internal-token headers before authorization.
-After a successful JWT or API-key check, auth-sidecar emits canonical identity
+After a successful JWT or API-key check, auth-gateway emits canonical identity
 headers, signed authentication evidence (`amr`, `auth_time`, `acr`, and the
 last MFA verification time), and `X-Codefly-Gateway-Token`.
 
@@ -60,8 +60,8 @@ Bearer JWT itself. `CODEFLY_GATEWAY_TOKEN` is deliberately different from
 access to internal RPCs.
 
 Both values are secret Codefly workspace configuration dependencies.
-`CODEFLY_INTERNAL_TOKEN` is shared by frontend, accounts, and auth-sidecar;
-`CODEFLY_GATEWAY_TOKEN` is shared only by accounts and auth-sidecar. Production
+`CODEFLY_INTERNAL_TOKEN` is shared by frontend, accounts, and auth-gateway;
+`CODEFLY_GATEWAY_TOKEN` is shared only by accounts and auth-gateway. Production
 environments must supply independent, high-entropy values and rotate them
 together across their consumers.
 

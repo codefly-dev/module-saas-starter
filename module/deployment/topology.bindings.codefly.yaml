@@ -5,7 +5,7 @@ module:
   service_entry: frontend
   description: "SaaS foundation — auth, multi-tenancy, generated RPC policy, RBAC, impersonation, audit"
 interface:
-  - service: auth-sidecar
+  - service: auth-gateway
     endpoint: grpc
     visibility: module
   - service: frontend
@@ -70,7 +70,7 @@ services:
       protocol-output-dirs:
         - code/pkg/gen
         - generated/openapi-raw
-  - name: auth-sidecar
+  - name: auth-gateway
     version: 0.0.0
     description: |
       Single ingress + auth brain. Hosts two listeners:
@@ -113,7 +113,7 @@ services:
       runtime-assets:
         - routing
       service-account:
-        name: auth-sidecar
+        name: auth-gateway
       protocol-output-dirs:
         - code/pkg/gen
   - name: cache
@@ -157,7 +157,7 @@ services:
         visibility: public
         port: 3000
     dependencies:
-      - service: auth-sidecar
+      - service: auth-gateway
         endpoints:
           - rest
     public_egress_ports:

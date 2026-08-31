@@ -15,7 +15,7 @@
 // workers, so starting the graph per file would start one graph per file.
 //
 // withDependencies passes --exclude-root: it brings up the frontend's
-// dependencies (auth-sidecar, Accounts, Postgres, Vault, Redis, storage,
+// dependencies (auth-gateway, Accounts, Postgres, Vault, Redis, storage,
 // telemetry) without the Next server the frontend itself would run. The
 // pipeline tier addresses the gateway directly, so the root service is dead
 // weight — and leaving it out means these tests can run alongside a
@@ -44,7 +44,7 @@ export default async function setup(): Promise<(() => Promise<void>) | void> {
 			service: "frontend",
 			// --exclude-root means the frontend is not started; probe a
 			// dependency that is.
-			readyService: "auth-sidecar",
+			readyService: "auth-gateway",
 			scope,
 			fixture: "dev-admin",
 			silents: ["store", "cache", "telemetry"],

@@ -459,7 +459,7 @@ Connect registration and compile-time handler-interface assertion. Runtime mux
 parity proves all 125 catalog procedures resolve through 25 Connect service
 patterns; the former handwritten registration block is gone. The gateway
 compiler emits a typed 355-route public-edge inventory, generated
-auth-sidecar/Envoy Connect whitelist, and exact/path-template Istio manifest
+auth-gateway/Envoy Connect whitelist, and exact/path-template Istio manifest
 with Codefly ownership and named endpoints. Internal methods are omitted and
 public/protected behavior is descriptor-derived. Istio activation waits for the
 frontend/static route catalog so deployment cannot regress to an API-only
@@ -469,7 +469,7 @@ edge limiter behavior. Auth-sidecar joins Connect and known REST routes to its
 generated policy lookup; parity repaired stale registration exposure and URL
 classification is gone from limiter failure handling. The generated
 `saas.rest.surface.v1` projection now drives 119 opt-in descriptor routes,
-accounts registration/allowlisting, auth-sidecar routing, and verified public
+accounts registration/allowlisting, auth-gateway routing, and verified public
 OpenAPI; internal RPCs have no HTTP annotations and five non-protobuf routes
 remain explicit extensions. The frontend projection now generates typed
 Connect clients for all 25 accounts services plus finite permission, API-key
@@ -505,7 +505,7 @@ two module-interface exports, and finite public egress. Generation writes the
 runtime `module.codefly.yaml`/`service.codefly.yaml` files and removes the broad
 intra-namespace allow policy in favor of dependency-specific ingress/egress.
 DNS, Istio control-plane/ingress, and HTTPS egress remain explicit exceptions.
-The same source declares `auth-sidecar` as the module service entry. Because the
+The same source declares `auth-gateway` as the module service entry. Because the
 sidecar depends on the frontend, accounts, and cache—and those dependencies pull
 in the remaining infrastructure—Codefly resolves the complete eight-service
 graph from either the module directory or the repository's single-module

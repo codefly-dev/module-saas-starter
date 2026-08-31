@@ -9,7 +9,7 @@ import "saas/policy/v1/options.proto";
 
 // ============================================================================
 // Billing — Connect-RPC surface (the REST endpoint exists too, used
-// by the auth-sidecar passthrough in production. The Connect path
+// by the auth-gateway passthrough in production. The Connect path
 // works without the sidecar so direct-to-api dev/test setups can
 // hit billing flows from the FE.)
 // ============================================================================

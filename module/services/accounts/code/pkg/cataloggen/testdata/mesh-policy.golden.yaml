@@ -23,7 +23,7 @@ spec:
     - from:
         - source:
             principals:
-              - cluster.local/ns/saas-starter/sa/auth-sidecar
+              - cluster.local/ns/saas-starter/sa/auth-gateway
       to:
         - operation:
             paths:

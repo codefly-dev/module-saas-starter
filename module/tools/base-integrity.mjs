@@ -530,7 +530,7 @@ export function productionTruthErrors(
 
 // A consumer may compose a SUBSET of the base's services (e.g. mind takes the
 // backend — api/store/vault/cache/object-storage — and brings its own gateway, so
-// it omits auth-sidecar + the frontend console). Files under an omitted service's
+// it omits auth-gateway + the frontend console). Files under an omitted service's
 // directory are then legitimately absent and must NOT count as "missing". The
 // composed set is the `services:` list in module.codefly.yaml; null = enforce
 // everything (canonical itself, or a consumer with no explicit list).

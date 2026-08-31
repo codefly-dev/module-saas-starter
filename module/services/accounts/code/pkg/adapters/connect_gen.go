@@ -58,7 +58,7 @@ func (s *ConnectServer) Run(ctx context.Context) error {
 	// reads on every authenticated handler. No-ops for /Authenticate,
 	// /Refresh, /Logout, /JWKS. Required when the api is reached
 	// directly (e.g. saas-starter frontend → api Connect endpoint with
-	// no auth-sidecar in between).
+	// no auth-gateway in between).
 	//
 	// The generated entrypoint completes work.go before constructing any
 	// listener, and NewConnectServer fails fast if that lifecycle contract is
@@ -91,7 +91,7 @@ func (s *ConnectServer) Run(ctx context.Context) error {
 	registerCatalogConnectServices(mux, s, auth)
 
 	// CORS — required when the FE talks directly to this api (no
-	// auth-sidecar in front). Connect-Web preflights every POST
+	// auth-gateway in front). Connect-Web preflights every POST
 	// because it sends Authorization + Connect-Protocol-Version
 	// headers and a non-standard application/connect+* content type;
 	// without explicit CORS the browser drops the preflight at 405

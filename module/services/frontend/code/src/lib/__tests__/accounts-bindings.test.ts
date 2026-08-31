@@ -20,14 +20,14 @@ describe("server-only accounts bindings", () => {
 	});
 	const gatewayEndpoint = (address: string) => ({
 		module: "saas",
-		service: "auth-sidecar",
+		service: "auth-gateway",
 		name: "rest",
 		protocol: "REST" as const,
 		address,
 		routes: [],
 	});
 
-	it("uses auth-sidecar as the REST and Connect gateway in a module run", () => {
+	it("uses auth-gateway as the REST and Connect gateway in a module run", () => {
 		expect(
 			resolveAccountsBindings({
 				currentModule: "saas",
@@ -43,12 +43,12 @@ describe("server-only accounts bindings", () => {
 						"CONNECT",
 						"http://accounts-connect.internal/",
 					),
-					gatewayEndpoint("http://auth-sidecar.internal/"),
+					gatewayEndpoint("http://auth-gateway.internal/"),
 				],
 			}),
 		).toEqual({
-			rest: "http://auth-sidecar.internal",
-			connect: "http://auth-sidecar.internal",
+			rest: "http://auth-gateway.internal",
+			connect: "http://auth-gateway.internal",
 		});
 	});
 

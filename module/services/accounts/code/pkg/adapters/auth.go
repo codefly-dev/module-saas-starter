@@ -386,7 +386,7 @@ func requirePlatformRole(ctx context.Context, actorID, minRole string) error {
 	return nil
 }
 
-// internalToken is the shared secret the auth-sidecar (and other
+// internalToken is the shared secret the auth-gateway (and other
 // trusted internal callers) carry to hit privileged-internal RPCs
 // like CheckPermission. Set at startup from CODEFLY_INTERNAL_TOKEN.
 // Empty = unset, and internal calls fail closed.
@@ -394,7 +394,7 @@ func requirePlatformRole(ctx context.Context, actorID, minRole string) error {
 // Why a shared secret rather than mTLS: the codefly mesh today
 // terminates network identity at the host level; per-process certs
 // would require a substantial codefly-side change. A shared secret
-// lets us draw a "auth-sidecar can call CheckPermission, anonymous
+// lets us draw a "auth-gateway can call CheckPermission, anonymous
 // cannot" line without that overhaul. mTLS is the eventual fix.
 var (
 	internalToken string
@@ -425,7 +425,7 @@ func SetInternalTokenRotation(tokens ...string) {
 }
 
 // SetGatewayToken installs the credential used to authenticate identity
-// headers stamped by auth-sidecar. Unlike the internal token, this credential
+// headers stamped by auth-gateway. Unlike the internal token, this credential
 // never grants access to internal-only RPCs; it only proves the provenance of
 // X-User-Id/X-Org-Id/etc. on tenant-facing transports.
 func SetGatewayToken(token string) { gatewayToken = token }
@@ -449,7 +449,7 @@ func requireInternalCredential(ctx context.Context) error {
 }
 
 // scopesCtxKey holds the comma-separated scope list forwarded by the
-// auth-sidecar (`X-Scopes`) when the caller authenticated with an API
+// auth-gateway (`X-Scopes`) when the caller authenticated with an API
 // key. Empty when the caller used a JWT (interactive session) — JWT
 // auth is gated by RBAC helpers (requireOrgAdmin etc.), not scopes.
 type scopesCtxKeyType struct{}
@@ -473,7 +473,7 @@ func scopesFromContext(ctx context.Context) []string {
 }
 
 // scopedRolesCtxKey holds the caller's per-scope role grants, forwarded by the
-// auth-sidecar as the JSON `X-Scoped-Roles` header (or read from the `sr` claim
+// auth-gateway as the JSON `X-Scoped-Roles` header (or read from the `sr` claim
 // on the direct-JWT path). It lets a handler authorize a scoped operation from
 // the request context alone, without a callback to the authorization service.
 type scopedRolesCtxKeyType struct{}

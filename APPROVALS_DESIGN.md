@@ -295,7 +295,7 @@ approval: {
 This compiles into the authz catalog (`pkg/cataloggen/authz_methods.go`) and is
 enforced in the **accounts handler layer** — the same place `requireMFA` /
 `requireRecentMFA` / `requireScope` already run (`auth.go`), as a new
-`requireApproval` gate. (The auth-sidecar does *not* decide per-method
+`requireApproval` gate. (The auth-gateway does *not* decide per-method
 permissions/MFA; it validates the token and stamps identity headers. Marking is
 declarative in the catalog; enforcement is the handler.) "How do we gate an
 action" then has exactly one answer: an annotation plus the shared gate, not
@@ -412,7 +412,7 @@ Two steps, per `module/AUTHORIZATION_CATALOG.md`:
    this vocabulary, so this must land before the annotations.
 2. Annotate each Approvals RPC with the `permissions:`/`scopes:` value above.
    Regenerate `generated/authz-methods.json` and the edge lookup
-   (`auth-sidecar/code/authz_catalog_gen.go`) via the catalog codegen.
+   (`auth-gateway/code/authz_catalog_gen.go`) via the catalog codegen.
 
 This **retires the `requireOrgAdmin` placeholder** at
 `delegation_rpcs.go:242-245`: once delegation is an approval kind (§11),

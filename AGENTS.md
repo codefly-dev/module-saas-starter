@@ -36,7 +36,7 @@ immutable module package that downstream workspaces **compose** (never fork).
 ## Running the starter locally
 
 Boots the whole dependency graph (vault → store → cache → telemetry → accounts
-→ auth-sidecar → frontend, plus marketing) with a fake-auth fixture:
+→ auth-gateway → frontend, plus marketing) with a fake-auth fixture:
 
 ```bash
 codefly run service --fixture dev-admin
@@ -75,7 +75,7 @@ names a specific solution; the seam is generic.
   optional `backend.serviceAlias`), validated in `src/solutions/registry.ts`.
   `GET` is unauthenticated and returns nav-only metadata the sidebar polls.
 - **Gateway upstream registration** — `POST /solutions/_register` on the
-  auth-sidecar (`module/services/auth-sidecar/code/gateway_solutions.go`),
+  auth-gateway (`module/services/auth-gateway/code/gateway_solutions.go`),
   gated by the same credential in the `X-Codefly-Internal-Token` header, with a
   `{id, upstream}` JSON payload. The gateway then proxies `/solutions/{id}/…`
   to the registered upstream, running the same ext_authz Check and

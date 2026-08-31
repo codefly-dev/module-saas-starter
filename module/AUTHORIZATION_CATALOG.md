@@ -14,7 +14,7 @@ walk live protobuf descriptors independently.
 | `services/accounts/proto/saas/catalog/v1/catalog.proto` | Typed `AuthorizationCatalog` and `AuthorizationMethod` schema. |
 | `services/accounts/generated/authz-methods.json` | Complete machine-readable PDP inventory for all 121 methods. |
 | `services/accounts/code/pkg/cataloggen/authz_methods.go` | Fail-closed compiler, policy validator, and deterministic renderer. |
-| `services/auth-sidecar/code/authz_catalog_gen.go` | Generated edge-safe policy lookup and REST-to-procedure joins. |
+| `services/auth-gateway/code/authz_catalog_gen.go` | Generated edge-safe policy lookup and REST-to-procedure joins. |
 | `services/accounts/AUTHZ_MATRIX.md` | Generated human review view of the same descriptor policy. |
 
 The JSON contains public, authenticated, and internal procedures. Public edge
@@ -81,7 +81,7 @@ go generate ./pkg/adapters
 go generate ./pkg/cataloggen
 ```
 
-The last command emits `authz-methods.json`, the auth-sidecar lookup, and
+The last command emits `authz-methods.json`, the auth-gateway lookup, and
 target-neutral gateway routes. Tests verify 121-method projection parity,
 policy hashes, seven internal methods, two factor-attempt methods, deterministic
 bytes, checked-in runtime source, REST joins, internal-route rejection, and

@@ -15,7 +15,7 @@ The accounts projection contains 120 descriptor routes across 24 services:
 - 12 public routes and 108 authenticated routes;
 - 100 OpenAPI paths and 120 operations;
 - zero of the seven internal RPCs;
-- five explicit non-protobuf extensions loaded by auth-sidecar: magic-link
+- five explicit non-protobuf extensions loaded by auth-gateway: magic-link
   request/verification, the billing webhook, checkout, and portal.
 
 The generated runtime therefore authorizes 125 REST routes in total. Descriptor
@@ -32,8 +32,8 @@ for a protobuf procedure or inherit policy by path similarity.
 | `services/accounts/code/pkg/adapters/rest_bindings.yaml` | Strict service-to-generated/plugin implementation binding. |
 | `services/accounts/generated/rest-surface.json` | Typed target-neutral REST catalog. |
 | `services/accounts/code/pkg/adapters/rest_registration_catalog_gen.go` | Accounts registration and exact/template allowlist. |
-| `services/auth-sidecar/code/routing_rest_catalog_gen.go` | Auth-sidecar descriptor REST inventory. |
-| `services/auth-sidecar/routing/rest/saas-starter/api/non-protobuf-extensions.rest.codefly.yaml` | Five explicit routes without protobuf ownership. |
+| `services/auth-gateway/code/routing_rest_catalog_gen.go` | Auth-sidecar descriptor REST inventory. |
+| `services/auth-gateway/routing/rest/saas-starter/api/non-protobuf-extensions.rest.codefly.yaml` | Five explicit routes without protobuf ownership. |
 | `services/accounts/openapi/api.swagger.json` | Checked-in public OpenAPI document. |
 
 The strict binding file covers every surface service exactly once. Twenty-two
@@ -82,4 +82,4 @@ go generate ./pkg/business ./pkg/adapters ./pkg/cataloggen
 Codefly generation must run first because the REST compiler deliberately reads
 the checked raw generator output instead of trusting a previous public
 artifact. CI repeats this pipeline and rejects drift in the typed catalog,
-accounts runtime, auth-sidecar runtime, and filtered OpenAPI document.
+accounts runtime, auth-gateway runtime, and filtered OpenAPI document.

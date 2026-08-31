@@ -248,7 +248,7 @@ if [[ ! "${api_key}" =~ ^sk_[A-Za-z0-9_]+$ ]]; then
   fail "API key must start with sk_ and contain only letters, digits, or underscores"
 fi
 if [[ ! "${callback_uri}" =~ ^https?://[^[:space:]]+/auth/callback$ ]]; then
-  fail "Codefly returned an invalid auth-sidecar REST endpoint: ${callback_origin}"
+  fail "Codefly returned an invalid auth-gateway REST endpoint: ${callback_origin}"
 fi
 
 configuration_dir="${workspace}/configurations/local-dogfood"

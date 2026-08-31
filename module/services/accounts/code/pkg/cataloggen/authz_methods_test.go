@@ -77,9 +77,9 @@ func TestAuthorizationArtifactsAreDeterministicAndCurrent(t *testing.T) {
 
 	service := &catalogv1.ServiceCatalog{}
 	require.NoError(t, (protojson.UnmarshalOptions{DiscardUnknown: false}).Unmarshal(serviceDocument, service))
-	goDocument, err := cataloggen.RenderAuthSidecarAuthorizationMetadata(authz, service)
+	goDocument, err := cataloggen.RenderAuthGatewayAuthorizationMetadata(authz, service)
 	require.NoError(t, err)
-	require.Equal(t, string(readFixture(t, "../../../../auth-sidecar/code/authz_catalog_gen.go")), string(goDocument), "run: go generate ./pkg/cataloggen")
+	require.Equal(t, string(readFixture(t, "../../../../auth-gateway/code/authz_catalog_gen.go")), string(goDocument), "run: go generate ./pkg/cataloggen")
 	// The byte-equality above already pins every generated line; assert only
 	// that the runtime doc keeps its two-section shape, not exact row counts.
 	runtimeSections := strings.Split(string(goDocument), "var generatedRESTProcedureByRoute")

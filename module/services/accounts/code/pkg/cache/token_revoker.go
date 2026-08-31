@@ -27,7 +27,7 @@ const tokenRevokerPrefix = "revoked-jti:"
 // sessionRevokerPrefix keys the session-revocation markers written by admin
 // session-kill. One marker under this prefix invalidates every access token
 // carrying the matching `sid` claim, so a kill needs no access token in hand.
-// The sidecar mirrors this exact layout (auth-sidecar/code/revocation.go).
+// The sidecar mirrors this exact layout (auth-gateway/code/revocation.go).
 const sessionRevokerPrefix = "revoked-session:"
 
 // Revoke marks jti as revoked for ttl. The marker value is a single
