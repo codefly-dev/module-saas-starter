@@ -67,6 +67,7 @@ export const FRONTEND_ROUTES = [
   { path: "/auth/login", sourcePath: "src/app/(auth)/auth/login/page.tsx", match: "exact", access: "public" },
   { path: "/auth/magic-link", sourcePath: "src/app/(auth)/auth/magic-link/page.tsx", match: "exact", access: "public" },
   { path: "/auth/mfa", sourcePath: "src/app/(auth)/auth/mfa/page.tsx", match: "exact", access: "public" },
+  { path: "/dashboards", sourcePath: "src/app/(dashboard)/dashboards/page.tsx", match: "exact", access: "authenticated" },
   { path: "/docs", sourcePath: "src/app/(dashboard)/docs/page.tsx", match: "exact", access: "authenticated" },
   { path: "/docs/compliance", sourcePath: "src/app/(dashboard)/docs/compliance/page.tsx", match: "exact", access: "authenticated" },
   { path: "/docs/sdks", sourcePath: "src/app/(dashboard)/docs/sdks/page.tsx", match: "exact", access: "authenticated" },
@@ -115,6 +116,7 @@ export type FrontendNavigationIcon =
 
 export const FRONTEND_NAVIGATION: readonly FrontendNavigationItem[] = [
   { id: "dashboard", plugin: "core-users", label: "Dashboard", href: "/", icon: "LayoutDashboard", access: "authenticated", surfaces: ["sidebar"], order: 10 },
+  { id: "dashboards", plugin: "core-users", label: "Dashboards", href: "/dashboards", icon: "LayoutDashboard", access: "authenticated", surfaces: ["command_palette", "plugin_registry", "sidebar"], order: 20 },
   { id: "admin-users", plugin: "core-users", label: "Users", href: "/admin/users", icon: "Users", group: "Users & Access", access: "admin", requiredRole: "admin", requiredPermission: "users:read", surfaces: ["command_palette", "plugin_registry", "sidebar"], order: 100 },
   { id: "admin-organizations", plugin: "core-users", label: "Organizations", href: "/admin/organizations", icon: "Building2", group: "Users & Access", access: "admin", requiredRole: "admin", requiredPermission: "orgs:read", surfaces: ["command_palette", "plugin_registry", "sidebar"], order: 110 },
   { id: "admin-teams", plugin: "core-users", label: "Teams", href: "/admin/teams", icon: "UsersRound", group: "Users & Access", access: "admin", requiredRole: "admin", requiredPermission: "teams:read", surfaces: ["command_palette", "plugin_registry", "sidebar"], order: 120 },
