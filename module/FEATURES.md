@@ -135,7 +135,7 @@ Required Codefly `identity` configuration keys:
 | `IDENTITY_CLIENT_SECRET`| yes      | OAuth client secret (backend only)                                |
 | `IDENTITY_JWKS_URL`     | no       | Pin the key set for IdPs whose discovery document is incomplete or unreachable |
 | `IDENTITY_TOKEN_URL`    | no       | Pin the token endpoint for the same reason                        |
-| `IDENTITY_AUDIENCE`     | no       | Enforced `aud`                                                     |
+| `IDENTITY_AUDIENCE`     | no       | Enforced `aud` (defaults to `IDENTITY_CLIENT_ID`, per standard OIDC) |
 | `IDENTITY_EMAIL_CLAIM`  | no       | Email claim name (default `email`)                                 |
 | `IDENTITY_ORG_CLAIM`    | no       | Organization-id claim name (default `organization_id`)            |
 | `NEXT_PUBLIC_IDENTITY_DISPLAY_NAME` | no | Sign-in button label (frontend)                             |
