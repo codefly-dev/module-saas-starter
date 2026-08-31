@@ -1,5 +1,12 @@
 import assert from "node:assert/strict";
-import { mkdirSync, mkdtempSync, rmSync, unlinkSync, writeFileSync } from "node:fs";
+import {
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  rmSync,
+  unlinkSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -14,6 +21,7 @@ import {
   migrationVersionErrors,
   productionTruthErrors,
   requiredAdditionsErrors,
+  verifyErrors,
   workspaceInstallGraphErrors,
 } from "./base-integrity.mjs";
 
@@ -73,7 +81,49 @@ test("committed frontend package-lock.json is in sync with its workspaces", () =
     "frontend",
     "code",
   );
+  // workspaceInstallGraphErrors returns [] when both manifest and lock are
+  // absent, so assert the files exist first — otherwise a moved or renamed
+  // frontend would let this test pass vacuously while asserting nothing.
+  assert.ok(existsSync(join(frontendCodeRoot, "package.json")));
+  assert.ok(existsSync(join(frontendCodeRoot, "package-lock.json")));
   assert.deepEqual(workspaceInstallGraphErrors(frontendCodeRoot), []);
+});
+
+// verify's checks live in one enumerated function; this proves it enforces the
+// unhashed frontend lock, not merely the hash manifest — the drift the hash
+// gate is blind to and the exact failure #359 shipped. The frontend is nested at
+// services/frontend/code because verifyErrors takes a module root, not a
+// frontend root.
+test("verifyErrors enforces the excluded frontend lock", (t) => {
+  const moduleRoot = mkdtempSync(join(tmpdir(), "saas-module-integrity-"));
+  t.after(() => rmSync(moduleRoot, { recursive: true, force: true }));
+  const frontendCodeRoot = join(moduleRoot, "services", "frontend", "code");
+  const packageRoot = join(frontendCodeRoot, "packages", "product-plugin");
+  mkdirSync(packageRoot, { recursive: true });
+  const rootManifest = {
+    name: "frontend",
+    version: "1.0.0",
+    workspaces: ["packages/*"],
+    dependencies: { react: "19.2.4" },
+  };
+  const productManifest = {
+    name: "@product/frontend-plugin",
+    version: "1.0.0",
+    dependencies: { "@codefly/saas-plugin-contract": "1.2.0" },
+    peerDependencies: { react: ">=19.2 <20" },
+  };
+  // A lock missing the workspace link — the stale shape #359 shipped.
+  const lock = {
+    name: "frontend",
+    version: "1.0.0",
+    lockfileVersion: 3,
+    packages: { "": rootManifest, "packages/product-plugin": productManifest },
+  };
+  writeJSON(join(frontendCodeRoot, "package.json"), rootManifest);
+  writeJSON(join(packageRoot, "package.json"), productManifest);
+  writeJSON(join(frontendCodeRoot, "package-lock.json"), lock);
+  const errors = verifyErrors(moduleRoot).flatMap((group) => group.errors);
+  assert.ok(errors.some((error) => error.includes("workspace link")));
 });
 
 test("excludes compiled service binaries without excluding their source", () => {
