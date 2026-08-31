@@ -53,10 +53,42 @@ describe("Codefly identity provider configuration", () => {
 				displayName: "Company login",
 				authorizeURL: "https://api.workos.com/user_management/authorize",
 				clientID: "client_123",
-				scope: undefined,
+				scope: "openid profile email",
 				authorizeParams: { provider: "authkit" },
 			},
 		]);
+	});
+
+	it("defaults the authorize scope so a minimally-configured provider returns email", () => {
+		process.env.NEXT_PUBLIC_IDENTITY_PROVIDER = "oidc";
+		process.env.NEXT_PUBLIC_IDENTITY_AUTHORIZE_URL =
+			"https://idp.example.com/authorize";
+		process.env.NEXT_PUBLIC_IDENTITY_CLIENT_ID = "client_123";
+
+		const [preset] = availableProviders();
+		// Unset NEXT_PUBLIC_IDENTITY_SCOPE must still yield the standard OIDC
+		// scopes — without `openid ... email` the id_token carries no email and
+		// accounts rejects the callback with ErrMissingEmail. `groups` stays out
+		// (WorkOS AuthKit rejects it as invalid_scope).
+		expect(preset.scope).toBe("openid profile email");
+		const url = new URL(
+			buildAuthorizeURL(
+				preset,
+				"http://localhost:21931/auth/callback",
+				"signed-state",
+			),
+		);
+		expect(url.searchParams.get("scope")).toBe("openid profile email");
+	});
+
+	it("lets an explicit scope override the default", () => {
+		process.env.NEXT_PUBLIC_IDENTITY_PROVIDER = "oidc";
+		process.env.NEXT_PUBLIC_IDENTITY_AUTHORIZE_URL =
+			"https://idp.example.com/authorize";
+		process.env.NEXT_PUBLIC_IDENTITY_CLIENT_ID = "client_123";
+		process.env.NEXT_PUBLIC_IDENTITY_SCOPE = "openid email";
+
+		expect(availableProviders()[0].scope).toBe("openid email");
 	});
 
 	it("includes provider selectors and PKCE without inventing a scope", () => {

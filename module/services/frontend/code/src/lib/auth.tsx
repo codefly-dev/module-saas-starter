@@ -96,7 +96,13 @@ function readIdentityProvider(): ProviderPreset | null {
 			id[0].toUpperCase() + id.slice(1),
 		authorizeURL,
 		clientID,
-		scope: process.env.NEXT_PUBLIC_IDENTITY_SCOPE?.trim() || undefined,
+		// Default to the standard OIDC scopes so a minimally-configured provider
+		// still returns an id_token carrying email — without it the authorize URL
+		// omits scope entirely and accounts rejects the callback with
+		// ErrMissingEmail. `groups` stays out: WorkOS AuthKit rejects it as
+		// invalid_scope.
+		scope:
+			process.env.NEXT_PUBLIC_IDENTITY_SCOPE?.trim() || "openid profile email",
 		authorizeParams,
 	};
 }

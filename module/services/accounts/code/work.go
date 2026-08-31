@@ -1054,7 +1054,12 @@ func buildOAuthRequestPolicy(provider string) (*auth.OAuthRequestPolicy, error) 
 // cannot reach the well-known endpoint — otherwise a partial pin still discovers
 // the rest, and any discovery outage fails startup closed rather than guessing.
 func buildDiscoveredOIDCStack(provider string) (auth.TokenValidator, business.CodeExchanger, error) {
-	validator, tokenURL, clientID, clientSecret, err := discoverOIDCValidator(provider)
+	// WorkOS validates its own access token, which binds to the application via a
+	// non-standard client_id claim rather than aud == client id (see the oidc
+	// validator and the WorkOS exchanger). Defaulting the audience to the client
+	// id here would reject every WorkOS access token, so the binding stays
+	// operator-configured (Audience or ClientIDClaim) as it is today.
+	validator, tokenURL, clientID, clientSecret, err := discoverOIDCValidator(provider, false)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -1084,7 +1089,10 @@ func buildDiscoveredOIDCStack(provider string) (auth.TokenValidator, business.Co
 // sends and the OAuth request policy enforces is required: authenticateWithCode
 // rejects a login whose token provider disagrees with the request provider.
 func buildGenericOIDCStack(provider string) (auth.TokenValidator, business.CodeExchanger, error) {
-	validator, tokenURL, clientID, clientSecret, err := discoverOIDCValidator(provider)
+	// The generic stack validates a standard OIDC id_token (preferred over the
+	// access token in authenticateWithCode), whose aud is the client id, so a
+	// minimally-configured provider can default its audience binding to it.
+	validator, tokenURL, clientID, clientSecret, err := discoverOIDCValidator(provider, true)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -1105,7 +1113,7 @@ func buildGenericOIDCStack(provider string) (auth.TokenValidator, business.CodeE
 // user_identities.provider) and named in error messages. It is deliberately the
 // same string the browser sends and the OAuth request policy enforces, so the
 // two can never disagree at login.
-func discoverOIDCValidator(provider string) (validator auth.TokenValidator, tokenURL, clientID, clientSecret string, err error) {
+func discoverOIDCValidator(provider string, defaultAudienceToClientID bool) (validator auth.TokenValidator, tokenURL, clientID, clientSecret string, err error) {
 	clientID = identityEnv("IDENTITY_CLIENT_ID")
 	clientSecret = identityEnv("IDENTITY_CLIENT_SECRET")
 	issuer := identityEnv("IDENTITY_ISSUER")
@@ -1152,6 +1160,18 @@ func discoverOIDCValidator(provider string) (validator auth.TokenValidator, toke
 	}
 	if claim := identityEnv("IDENTITY_EMAIL_CLAIM"); claim != "" {
 		cfg.EmailClaim = claim
+	}
+
+	// Standard OIDC binds an id_token to its relying party through `aud` ==
+	// client id. A minimally-configured provider supplies neither an explicit
+	// IDENTITY_AUDIENCE nor a non-standard IDENTITY_CLIENT_ID_CLAIM, so default
+	// the audience binding to the client id: without it oidc.New fails closed
+	// ("an audience binding is required"), and demanding the non-standard
+	// client_id claim rejects id_tokens (e.g. WorkOS AuthKit) that never carry it.
+	// Only the generic id_token path opts in — WorkOS validates an access token
+	// whose aud is not the client id, so it keeps requiring an explicit binding.
+	if defaultAudienceToClientID && !hasConfiguredValue(cfg.Audience) && !hasConfiguredValue(cfg.ClientIDClaim) {
+		cfg.Audience = clientID
 	}
 
 	v, err := oidc.New(cfg)
