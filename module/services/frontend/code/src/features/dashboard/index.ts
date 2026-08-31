@@ -36,6 +36,12 @@ export {
 	type PreconditionCode,
 	type PreviewResult,
 } from "./service/authoring";
+export {
+	createBrowserDashboardDraftStore,
+	createMemoryDashboardDraftStore,
+	type DashboardDraftChange,
+	type DashboardDraftStore,
+} from "./service/draft-store";
 export { useDashboardAuthoring } from "./service/use-dashboard-authoring";
 export {
 	type DashboardDraft,
