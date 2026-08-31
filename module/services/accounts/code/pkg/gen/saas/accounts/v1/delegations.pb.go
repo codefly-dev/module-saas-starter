@@ -790,18 +790,18 @@ const file_saas_accounts_v1_delegations_proto_rawDesc = "" +
 	"page_token\x18\x03 \x01(\tR\tpageToken\"\x83\x01\n" +
 	"\x1eListPendingDelegationsResponse\x129\n" +
 	"\x06grants\x18\x01 \x03(\v2!.saas.accounts.v1.DelegationGrantR\x06grants\x12&\n" +
-	"\x0fnext_page_token\x18\x02 \x01(\tR\rnextPageToken2\xce\x06\n" +
-	"\x11DelegationService\x12\xe4\x01\n" +
-	"\x11RequestDelegation\x12*.saas.accounts.v1.RequestDelegationRequest\x1a+.saas.accounts.v1.RequestDelegationResponse\"v\xc2\xf3\x18X\b\x02\x10\x03*\f\n" +
-	"\x06org_id\x10\x02\x18\x010\x01:8\n" +
-	"\x17delegation.requested.v1\n" +
-	"\x1bdelegation.auto_approved.v1\x10\x02@\x01H\x04P\x03X\x03`\x01\x82\xd3\xe4\x93\x02\x14:\x01*\"\x0f/v1/delegations\x12\xad\x01\n" +
+	"\x0fnext_page_token\x18\x02 \x01(\tR\rnextPageToken2\xc2\x06\n" +
+	"\x11DelegationService\x12\xde\x01\n" +
+	"\x11RequestDelegation\x12*.saas.accounts.v1.RequestDelegationRequest\x1a+.saas.accounts.v1.RequestDelegationResponse\"p\xc2\xf3\x18R\b\x02\x10\x03*\f\n" +
+	"\x06org_id\x10\x02\x18\x010\x01:2\n" +
+	"\x14delegation.requested\n" +
+	"\x18delegation.auto_approved\x10\x02@\x01H\x04P\x03X\x03`\x01\x82\xd3\xe4\x93\x02\x14:\x01*\"\x0f/v1/delegations\x12\xad\x01\n" +
 	"\x11WaitForDelegation\x12*.saas.accounts.v1.WaitForDelegationRequest\x1a!.saas.accounts.v1.DelegationEvent\"G\xc2\xf3\x18\"\b\x02\x10\x03*\f\n" +
-	"\x06org_id\x10\x02\x18\x010\x01:\x02\x10\x01@\x01H\x03P\x03X\x03`\x01\x82\xd3\xe4\x93\x02\x1b\x12\x19/v1/delegations/{id}:wait0\x01\x12\xdc\x01\n" +
-	"\x10DecideDelegation\x12).saas.accounts.v1.DecideDelegationRequest\x1a!.saas.accounts.v1.DelegationGrant\"z\xc2\xf3\x18P\b\x02\x10\x04*\f\n" +
-	"\x06org_id\x10\x02\x18\x010\x01:0\n" +
-	"\x16delegation.approved.v1\n" +
-	"\x14delegation.denied.v1\x10\x02@\x01H\x03P\x03X\x03`\x01\x82\xd3\xe4\x93\x02 :\x01*\"\x1b/v1/delegations/{id}:decide\x12\xc2\x01\n" +
+	"\x06org_id\x10\x02\x18\x010\x01:\x02\x10\x01@\x01H\x03P\x03X\x03`\x01\x82\xd3\xe4\x93\x02\x1b\x12\x19/v1/delegations/{id}:wait0\x01\x12\xd6\x01\n" +
+	"\x10DecideDelegation\x12).saas.accounts.v1.DecideDelegationRequest\x1a!.saas.accounts.v1.DelegationGrant\"t\xc2\xf3\x18J\b\x02\x10\x04*\f\n" +
+	"\x06org_id\x10\x02\x18\x010\x01:*\n" +
+	"\x13delegation.approved\n" +
+	"\x11delegation.denied\x10\x02@\x01H\x03P\x03X\x03`\x01\x82\xd3\xe4\x93\x02 :\x01*\"\x1b/v1/delegations/{id}:decide\x12\xc2\x01\n" +
 	"\x16ListPendingDelegations\x12/.saas.accounts.v1.ListPendingDelegationsRequest\x1a0.saas.accounts.v1.ListPendingDelegationsResponse\"E\xc2\xf3\x18\"\b\x02\x10\x03*\f\n" +
 	"\x06org_id\x10\x02\x18\x010\x01:\x02\x10\x01@\x01H\x03P\x03X\x03`\x01\x82\xd3\xe4\x93\x02\x19\x12\x17/v1/delegations:pendingB\xb8\x01\n" +
 	"\x14com.saas.accounts.v1B\x10DelegationsProtoP\x01Z,accounts/pkg/gen/saas/accounts/v1;accountsv1\xa2\x02\x03SAX\xaa\x02\x10Saas.Accounts.V1\xca\x02\x10Saas\\Accounts\\V1\xe2\x02\x1cSaas\\Accounts\\V1\\GPBMetadata\xea\x02\x12Saas::Accounts::V1b\x06proto3"

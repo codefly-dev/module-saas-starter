@@ -108,7 +108,7 @@ service UserSettingsService {
       tenant: TENANT_REQUIREMENT_USER
       mfa: MFA_REQUIREMENT_NONE
       audit: {
-        events: "settings.updated.v1"
+        events: "settings.updated"
         emission: AUDIT_EMISSION_SUCCESS
       }
       idempotency: IDEMPOTENCY_REQUIREMENT_FORBIDDEN

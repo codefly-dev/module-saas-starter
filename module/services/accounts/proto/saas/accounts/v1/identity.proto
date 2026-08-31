@@ -154,7 +154,7 @@ service UserService {
       tenant: TENANT_REQUIREMENT_NONE
       mfa: MFA_REQUIREMENT_NONE
       audit: {
-        events: "user.registered.v1"
+        events: "user.registered"
         emission: AUDIT_EMISSION_SUCCESS
       }
       idempotency: IDEMPOTENCY_REQUIREMENT_FORBIDDEN
@@ -212,7 +212,7 @@ service UserService {
       scopes: "users:write"
       mfa: MFA_REQUIREMENT_NONE
       audit: {
-        events: "user.updated.v1"
+        events: "user.updated"
         emission: AUDIT_EMISSION_SUCCESS
       }
       idempotency: IDEMPOTENCY_REQUIREMENT_FORBIDDEN
@@ -235,7 +235,7 @@ service UserService {
       scopes: "users:write"
       mfa: MFA_REQUIREMENT_NONE
       audit: {
-        events: "user.deleted.v1"
+        events: "user.deleted"
         emission: AUDIT_EMISSION_SUCCESS
       }
       idempotency: IDEMPOTENCY_REQUIREMENT_FORBIDDEN
@@ -253,7 +253,7 @@ service UserService {
       tenant: TENANT_REQUIREMENT_USER
       mfa: MFA_REQUIREMENT_NONE
       audit: {
-        events: "user.identity_added.v1"
+        events: "user.identity_added"
         emission: AUDIT_EMISSION_SUCCESS
       }
       idempotency: IDEMPOTENCY_REQUIREMENT_FORBIDDEN

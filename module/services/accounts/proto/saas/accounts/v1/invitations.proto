@@ -126,7 +126,7 @@ service InvitationService {
       scopes: "invitations:write"
       mfa: MFA_REQUIREMENT_NONE
       audit: {
-        events: "invitation.created.v1"
+        events: "invitation.created"
         emission: AUDIT_EMISSION_SUCCESS
       }
       idempotency: IDEMPOTENCY_REQUIREMENT_FORBIDDEN
@@ -183,7 +183,7 @@ service InvitationService {
       tenant: TENANT_REQUIREMENT_USER
       mfa: MFA_REQUIREMENT_NONE
       audit: {
-        events: "invitation.accepted.v1"
+        events: "invitation.accepted"
         emission: AUDIT_EMISSION_SUCCESS
       }
       idempotency: IDEMPOTENCY_REQUIREMENT_FORBIDDEN
@@ -233,7 +233,7 @@ service InvitationService {
       scopes: "invitations:write"
       mfa: MFA_REQUIREMENT_NONE
       audit: {
-        events: "invitation.resent.v1"
+        events: "invitation.resent"
         emission: AUDIT_EMISSION_SUCCESS
       }
       idempotency: IDEMPOTENCY_REQUIREMENT_REQUIRED
@@ -261,7 +261,7 @@ service InvitationService {
       scopes: "invitations:write"
       mfa: MFA_REQUIREMENT_NONE
       audit: {
-        events: "invitation.revoked.v1"
+        events: "invitation.revoked"
         emission: AUDIT_EMISSION_SUCCESS
       }
       idempotency: IDEMPOTENCY_REQUIREMENT_FORBIDDEN

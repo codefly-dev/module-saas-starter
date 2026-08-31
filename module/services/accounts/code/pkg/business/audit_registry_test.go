@@ -2,6 +2,7 @@ package business
 
 import (
 	"encoding/json"
+	"regexp"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -16,6 +17,23 @@ func TestAuditCatalog_NoDuplicatesAndComplete(t *testing.T) {
 		require.NotEmpty(t, d.Category, "event %q needs a category", d.Type)
 		require.NotEmpty(t, d.Owner, "event %q needs an owner", d.Type)
 		require.Positive(t, d.Version, "event %q needs a version", d.Type)
+	}
+}
+
+// The event-type identifier is the durable discriminator producers emit and
+// consumers filter/aggregate on exactly (see postgres_audit.go: `event_type = $`).
+// It must stay stable across schema revisions: the version lives on a dedicated
+// axis — AuditEventDefinition.Version, projected to the audit_events.schema_version
+// column and audit_event_types.version — never baked into the type string. A
+// version suffix like "auth.login.v1" would orphan every historical row typed
+// "auth.login" from exact-match queries and force every consumer to strip it, so
+// forbid it here.
+func TestAuditCatalog_TypesCarryNoVersionSuffix(t *testing.T) {
+	versionSuffix := regexp.MustCompile(`\.v\d+$`)
+	for _, d := range auditEventCatalog {
+		require.NotRegexp(t, versionSuffix, string(d.Type),
+			"event type %q must not encode its version in the identifier string; "+
+				"bump AuditEventDefinition.Version instead (schema_version column)", d.Type)
 	}
 }
 

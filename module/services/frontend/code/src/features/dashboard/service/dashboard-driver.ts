@@ -27,8 +27,8 @@ export interface DriverResult {
 // A tiny lexicon so the stub grounds metrics in real audit events instead of
 // inventing event names — the same job listEventTypes() does for a real agent.
 const EVENT_LEXICON: ReadonlyArray<{ match: RegExp; type: string; label: string }> = [
-	{ match: /\b(login|logins|log ?in|signed? ?in)\b/i, type: "auth.login.v1", label: "Logins" },
-	{ match: /\b(mfa|totp|2fa|two.?factor)\b/i, type: "mfa.totp_verified.v1", label: "TOTP verifications" },
+	{ match: /\b(login|logins|log ?in|signed? ?in)\b/i, type: "auth.login", label: "Logins" },
+	{ match: /\b(mfa|totp|2fa|two.?factor)\b/i, type: "mfa.totp_verified", label: "TOTP verifications" },
 	{ match: /\b(logout|log ?out|signed? ?out)\b/i, type: "auth.logout", label: "Logouts" },
 ];
 

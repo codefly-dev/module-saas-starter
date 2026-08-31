@@ -435,13 +435,13 @@ const file_saas_accounts_v1_consent_proto_rawDesc = "" +
 	"\x1bCONSENT_PURPOSE_UNSPECIFIED\x10\x00\x12\x1d\n" +
 	"\x19CONSENT_PURPOSE_NECESSARY\x10\x01\x12\x1d\n" +
 	"\x19CONSENT_PURPOSE_ANALYTICS\x10\x02\x12\x1d\n" +
-	"\x19CONSENT_PURPOSE_MARKETING\x10\x032\x8c\x04\n" +
+	"\x19CONSENT_PURPOSE_MARKETING\x10\x032\x86\x04\n" +
 	"\x0eConsentService\x12\x8b\x01\n" +
-	"\tGetStatus\x12).saas.accounts.v1.GetConsentStatusRequest\x1a\x1f.saas.accounts.v1.ConsentStatus\"2\xc2\xf3\x18\x14\b\x02\x10\x020\x01:\x02\x10\x01@\x01H\x03P\x03X\x03`\x01\x82\xd3\xe4\x93\x02\x14\x12\x12/v1/consent/status\x12\xa5\x01\n" +
-	"\vAcceptTerms\x12$.saas.accounts.v1.AcceptTermsRequest\x1a\x1f.saas.accounts.v1.ConsentStatus\"O\xc2\xf3\x18/\b\x02\x10\x020\x01:\x1d\n" +
-	"\x19consent.terms_accepted.v1\x10\x02@\x01H\x04P\x03X\x03`\x01\x82\xd3\xe4\x93\x02\x16:\x01*\"\x11/v1/consent/terms\x12\xc3\x01\n" +
-	"\x11UpdatePreferences\x121.saas.accounts.v1.UpdateConsentPreferencesRequest\x1a\x1f.saas.accounts.v1.ConsentStatus\"Z\xc2\xf3\x184\b\x02\x10\x020\x01:\"\n" +
-	"\x1econsent.preferences_updated.v1\x10\x02@\x01H\x04P\x03X\x03`\x01\x82\xd3\xe4\x93\x02\x1c:\x01*\x1a\x17/v1/consent/preferencesB\xb4\x01\n" +
+	"\tGetStatus\x12).saas.accounts.v1.GetConsentStatusRequest\x1a\x1f.saas.accounts.v1.ConsentStatus\"2\xc2\xf3\x18\x14\b\x02\x10\x020\x01:\x02\x10\x01@\x01H\x03P\x03X\x03`\x01\x82\xd3\xe4\x93\x02\x14\x12\x12/v1/consent/status\x12\xa2\x01\n" +
+	"\vAcceptTerms\x12$.saas.accounts.v1.AcceptTermsRequest\x1a\x1f.saas.accounts.v1.ConsentStatus\"L\xc2\xf3\x18,\b\x02\x10\x020\x01:\x1a\n" +
+	"\x16consent.terms_accepted\x10\x02@\x01H\x04P\x03X\x03`\x01\x82\xd3\xe4\x93\x02\x16:\x01*\"\x11/v1/consent/terms\x12\xc0\x01\n" +
+	"\x11UpdatePreferences\x121.saas.accounts.v1.UpdateConsentPreferencesRequest\x1a\x1f.saas.accounts.v1.ConsentStatus\"W\xc2\xf3\x181\b\x02\x10\x020\x01:\x1f\n" +
+	"\x1bconsent.preferences_updated\x10\x02@\x01H\x04P\x03X\x03`\x01\x82\xd3\xe4\x93\x02\x1c:\x01*\x1a\x17/v1/consent/preferencesB\xb4\x01\n" +
 	"\x14com.saas.accounts.v1B\fConsentProtoP\x01Z,accounts/pkg/gen/saas/accounts/v1;accountsv1\xa2\x02\x03SAX\xaa\x02\x10Saas.Accounts.V1\xca\x02\x10Saas\\Accounts\\V1\xe2\x02\x1cSaas\\Accounts\\V1\\GPBMetadata\xea\x02\x12Saas::Accounts::V1b\x06proto3"
 
 var (

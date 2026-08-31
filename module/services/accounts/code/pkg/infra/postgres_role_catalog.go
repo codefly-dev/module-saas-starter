@@ -233,7 +233,7 @@ func (s *PostgresStore) applyRoleCatalogPlan(ctx context.Context, plan *rolecata
 				return w.Wrapf(err, "failed to seed permission for role %q", create.Role.Name)
 			}
 		}
-		if err := s.emitCatalogAudit(ctx, "role.created.v1", roleID, map[string]string{
+		if err := s.emitCatalogAudit(ctx, "role.created", roleID, map[string]string{
 			"name":              create.Role.Name,
 			"permissions_added": strconv.Itoa(len(create.Role.Permissions)),
 		}, provenance); err != nil {
@@ -264,7 +264,7 @@ func (s *PostgresStore) applyRoleCatalogPlan(ctx context.Context, plan *rolecata
 				return w.Wrapf(err, "failed to add permission to role %q", update.Name)
 			}
 		}
-		if err := s.emitCatalogAudit(ctx, "role.updated.v1", update.RoleID, map[string]string{
+		if err := s.emitCatalogAudit(ctx, "role.updated", update.RoleID, map[string]string{
 			"name":                update.Name,
 			"permissions_added":   strconv.Itoa(len(update.AddPermissions)),
 			"permissions_removed": strconv.Itoa(len(update.RemovePermissions)),
@@ -278,7 +278,7 @@ func (s *PostgresStore) applyRoleCatalogPlan(ctx context.Context, plan *rolecata
 		if _, err := executor.Exec(ctx, `DELETE FROM roles WHERE id = $1`, remove.RoleID); err != nil {
 			return w.Wrapf(err, "failed to remove role %q", remove.Name)
 		}
-		if err := s.emitCatalogAudit(ctx, "role.deleted.v1", remove.RoleID, map[string]string{
+		if err := s.emitCatalogAudit(ctx, "role.deleted", remove.RoleID, map[string]string{
 			"name":                remove.Name,
 			"assignments_removed": strconv.Itoa(remove.AssignmentCount),
 		}, provenance); err != nil {

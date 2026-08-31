@@ -68,7 +68,7 @@ service ConsentService {
       tenant: TENANT_REQUIREMENT_USER
       mfa: MFA_REQUIREMENT_NONE
       audit: {
-        events: "consent.terms_accepted.v1"
+        events: "consent.terms_accepted"
         emission: AUDIT_EMISSION_SUCCESS
       }
       idempotency: IDEMPOTENCY_REQUIREMENT_FORBIDDEN
@@ -89,7 +89,7 @@ service ConsentService {
       tenant: TENANT_REQUIREMENT_USER
       mfa: MFA_REQUIREMENT_NONE
       audit: {
-        events: "consent.preferences_updated.v1"
+        events: "consent.preferences_updated"
         emission: AUDIT_EMISSION_SUCCESS
       }
       idempotency: IDEMPOTENCY_REQUIREMENT_FORBIDDEN

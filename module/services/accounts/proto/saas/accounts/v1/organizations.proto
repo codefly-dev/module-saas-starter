@@ -121,7 +121,7 @@ service OrganizationService {
       tenant: TENANT_REQUIREMENT_USER
       mfa: MFA_REQUIREMENT_NONE
       audit: {
-        events: "org.created.v1"
+        events: "org.created"
         emission: AUDIT_EMISSION_SUCCESS
       }
       idempotency: IDEMPOTENCY_REQUIREMENT_FORBIDDEN
@@ -182,7 +182,7 @@ service OrganizationService {
       }
       mfa: MFA_REQUIREMENT_NONE
       audit: {
-        events: "org.member_added.v1"
+        events: "org.member_added"
         emission: AUDIT_EMISSION_SUCCESS
       }
       idempotency: IDEMPOTENCY_REQUIREMENT_FORBIDDEN
@@ -208,7 +208,7 @@ service OrganizationService {
       }
       mfa: MFA_REQUIREMENT_NONE
       audit: {
-        events: "org.member_removed.v1"
+        events: "org.member_removed"
         emission: AUDIT_EMISSION_SUCCESS
       }
       idempotency: IDEMPOTENCY_REQUIREMENT_FORBIDDEN
@@ -271,7 +271,7 @@ service OrganizationService {
       }
       mfa: MFA_REQUIREMENT_NONE
       audit: {
-        events: "org.settings_updated.v1"
+        events: "org.settings_updated"
         emission: AUDIT_EMISSION_SUCCESS
       }
       idempotency: IDEMPOTENCY_REQUIREMENT_FORBIDDEN
@@ -321,7 +321,7 @@ service OrganizationService {
       }
       mfa: MFA_REQUIREMENT_NONE
       audit: {
-        events: "org.generic_settings_updated.v1"
+        events: "org.generic_settings_updated"
         emission: AUDIT_EMISSION_SUCCESS
       }
       idempotency: IDEMPOTENCY_REQUIREMENT_FORBIDDEN

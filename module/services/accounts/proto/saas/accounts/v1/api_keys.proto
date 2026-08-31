@@ -112,7 +112,7 @@ service APIKeyService {
       }
       mfa: MFA_REQUIREMENT_NONE
       audit: {
-        events: "api_key.created.v1"
+        events: "api_key.created"
         emission: AUDIT_EMISSION_SUCCESS
       }
       idempotency: IDEMPOTENCY_REQUIREMENT_FORBIDDEN
@@ -162,7 +162,7 @@ service APIKeyService {
       }
       mfa: MFA_REQUIREMENT_NONE
       audit: {
-        events: "api_key.revoked.v1"
+        events: "api_key.revoked"
         emission: AUDIT_EMISSION_SUCCESS
       }
       idempotency: IDEMPOTENCY_REQUIREMENT_FORBIDDEN

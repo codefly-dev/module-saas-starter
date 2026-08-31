@@ -103,10 +103,7 @@ export function ActivityFeed({
 				) : (
 					<ul className="space-y-2.5">
 						{events.map((e) => {
-							// Event types are versioned (…".v1"); key the icon map on the
-							// base type so a version bump doesn't fall back to the default.
-							const Icon =
-								ACTION_ICONS[e.eventType.replace(/\.v\d+$/, "")] ?? Activity;
+							const Icon = ACTION_ICONS[e.eventType] ?? Activity;
 							const isYou = !!user?.id && e.actorId === user.id;
 							return (
 								<li key={e.id} className="flex items-start gap-3 text-sm">

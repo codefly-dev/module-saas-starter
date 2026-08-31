@@ -678,13 +678,13 @@ const file_saas_accounts_v1_billing_proto_rawDesc = "" +
 	"\x16ListPublicPlansRequest\"i\n" +
 	"\x17ListPublicPlansResponse\x12\x1a\n" +
 	"\brevision\x18\x01 \x01(\tR\brevision\x122\n" +
-	"\x05plans\x18\x02 \x03(\v2\x1c.saas.accounts.v1.PublicPlanR\x05plans2\xe2\x04\n" +
+	"\x05plans\x18\x02 \x03(\v2\x1c.saas.accounts.v1.PublicPlanR\x05plans2\xdf\x04\n" +
 	"\x0eBillingService\x12\x98\x01\n" +
-	"\x0fListPublicPlans\x12(.saas.accounts.v1.ListPublicPlansRequest\x1a).saas.accounts.v1.ListPublicPlansResponse\"0\xc2\xf3\x18\x14\b\x01\x10\x010\x01:\x02\x10\x01@\x01H\x01P\x01X\x01`\x01\x82\xd3\xe4\x93\x02\x12\x12\x10/v1/public/plans\x12\xeb\x01\n" +
+	"\x0fListPublicPlans\x12(.saas.accounts.v1.ListPublicPlansRequest\x1a).saas.accounts.v1.ListPublicPlansResponse\"0\xc2\xf3\x18\x14\b\x01\x10\x010\x01:\x02\x10\x01@\x01H\x01P\x01X\x01`\x01\x82\xd3\xe4\x93\x02\x12\x12\x10/v1/public/plans\x12\xe8\x01\n" +
 	"\n" +
-	"OpenPortal\x12*.saas.accounts.v1.OpenBillingPortalRequest\x1a+.saas.accounts.v1.OpenBillingPortalResponse\"\x83\x01\xc2\xf3\x18Z\b\x02\x10\x04\x1a\rbilling:write\"\rbilling:write*\f\n" +
-	"\x06org_id\x10\x02\x18\x010\x03:\x1c\n" +
-	"\x18billing.portal_opened.v1\x10\x02@\x01H\x05P\x03X\x04`\x01\x82\xd3\xe4\x93\x02\x1f:\x01*\"\x1a/v1/billing/connect/portal\x12\xc6\x01\n" +
+	"OpenPortal\x12*.saas.accounts.v1.OpenBillingPortalRequest\x1a+.saas.accounts.v1.OpenBillingPortalResponse\"\x80\x01\xc2\xf3\x18W\b\x02\x10\x04\x1a\rbilling:write\"\rbilling:write*\f\n" +
+	"\x06org_id\x10\x02\x18\x010\x03:\x19\n" +
+	"\x15billing.portal_opened\x10\x02@\x01H\x05P\x03X\x04`\x01\x82\xd3\xe4\x93\x02\x1f:\x01*\"\x1a/v1/billing/connect/portal\x12\xc6\x01\n" +
 	"\fListInvoices\x12%.saas.accounts.v1.ListInvoicesRequest\x1a&.saas.accounts.v1.ListInvoicesResponse\"g\xc2\xf3\x18>\b\x02\x10\x04\x1a\fbilling:read\"\fbilling:read*\f\n" +
 	"\x06org_id\x10\x02\x18\x010\x01:\x02\x10\x01@\x01H\x03P\x03X\x03`\x01\x82\xd3\xe4\x93\x02\x1f\x12\x1d/v1/billing/invoices/{org_id}B\xb4\x01\n" +
 	"\x14com.saas.accounts.v1B\fBillingProtoP\x01Z,accounts/pkg/gen/saas/accounts/v1;accountsv1\xa2\x02\x03SAX\xaa\x02\x10Saas.Accounts.V1\xca\x02\x10Saas\\Accounts\\V1\xe2\x02\x1cSaas\\Accounts\\V1\\GPBMetadata\xea\x02\x12Saas::Accounts::V1b\x06proto3"

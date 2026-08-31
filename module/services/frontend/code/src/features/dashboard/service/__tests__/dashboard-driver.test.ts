@@ -15,7 +15,7 @@ describe("dashboard driver — natural language to spec", () => {
 		expect(m.chart).toBe("line");
 		expect(m.groupBy).toBe("time");
 		expect(m.bucket).toBe("day");
-		expect(m.event).toEqual({ type: "auth.login.v1" });
+		expect(m.event).toEqual({ type: "auth.login" });
 	});
 
 	it("maps a ranking request to a bar metric with a top-N limit", () => {
@@ -29,7 +29,7 @@ describe("dashboard driver — natural language to spec", () => {
 	it("maps a total request to a stat metric", () => {
 		const m = metricFromCommand("total number of TOTP verifications");
 		expect(m.chart).toBe("stat");
-		expect(m.event).toEqual({ type: "mfa.totp_verified.v1" });
+		expect(m.event).toEqual({ type: "mfa.totp_verified" });
 	});
 
 	it("scopes a security request to the security category", () => {
@@ -40,7 +40,7 @@ describe("dashboard driver — natural language to spec", () => {
 
 	it("prefers a matched event over the security category, never both", () => {
 		const m = metricFromCommand("security logins");
-		expect(m.event).toEqual({ type: "auth.login.v1" });
+		expect(m.event).toEqual({ type: "auth.login" });
 		expect(m.category).toBeUndefined();
 		expect(() =>
 			assertDashboardSpec({ version: DASHBOARD_SPEC_VERSION, metrics: [m] }),

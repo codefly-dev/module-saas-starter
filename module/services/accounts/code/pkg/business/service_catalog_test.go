@@ -54,7 +54,7 @@ func TestServiceCatalogCompilation(t *testing.T) {
 	require.Equal(t, "/v1/auth/authenticate", authenticate.GetHttpBindings()[0].GetPath())
 	require.Equal(t, "*", authenticate.GetHttpBindings()[0].GetBody())
 	require.Equal(t, policyv1.Exposure_EXPOSURE_PUBLIC, authenticate.GetPolicy().GetExposure())
-	require.ElementsMatch(t, []string{"auth.login.v1", "auth.mfa_challenge_started.v1"}, authenticate.GetPolicy().GetAudit().GetEvents())
+	require.ElementsMatch(t, []string{"auth.login", "auth.mfa_challenge_started"}, authenticate.GetPolicy().GetAudit().GetEvents())
 
 	wait := methods["/saas.accounts.v1.DelegationService/WaitForDelegation"]
 	require.NotNil(t, wait)

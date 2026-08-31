@@ -78,7 +78,7 @@ service TeamService {
       }
       mfa: MFA_REQUIREMENT_NONE
       audit: {
-        events: "team.created.v1"
+        events: "team.created"
         emission: AUDIT_EMISSION_SUCCESS
       }
       idempotency: IDEMPOTENCY_REQUIREMENT_FORBIDDEN
@@ -124,7 +124,7 @@ service TeamService {
       }
       mfa: MFA_REQUIREMENT_NONE
       audit: {
-        events: "team.member_added.v1"
+        events: "team.member_added"
         emission: AUDIT_EMISSION_SUCCESS
       }
       idempotency: IDEMPOTENCY_REQUIREMENT_FORBIDDEN
@@ -150,7 +150,7 @@ service TeamService {
       }
       mfa: MFA_REQUIREMENT_NONE
       audit: {
-        events: "team.member_removed.v1"
+        events: "team.member_removed"
         emission: AUDIT_EMISSION_SUCCESS
       }
       idempotency: IDEMPOTENCY_REQUIREMENT_FORBIDDEN
@@ -193,7 +193,7 @@ service TeamService {
       }
       mfa: MFA_REQUIREMENT_NONE
       audit: {
-        events: "team.updated.v1"
+        events: "team.updated"
         emission: AUDIT_EMISSION_SUCCESS
       }
       idempotency: IDEMPOTENCY_REQUIREMENT_FORBIDDEN
@@ -219,7 +219,7 @@ service TeamService {
       }
       mfa: MFA_REQUIREMENT_NONE
       audit: {
-        events: "team.deleted.v1"
+        events: "team.deleted"
         emission: AUDIT_EMISSION_SUCCESS
       }
       idempotency: IDEMPOTENCY_REQUIREMENT_FORBIDDEN

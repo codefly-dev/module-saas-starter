@@ -150,7 +150,7 @@ service WebhookService {
       }
       mfa: MFA_REQUIREMENT_NONE
       audit: {
-        events: "webhook.created.v1"
+        events: "webhook.created"
         emission: AUDIT_EMISSION_SUCCESS
       }
       idempotency: IDEMPOTENCY_REQUIREMENT_FORBIDDEN
@@ -177,7 +177,7 @@ service WebhookService {
       }
       mfa: MFA_REQUIREMENT_NONE
       audit: {
-        events: "webhook.deleted.v1"
+        events: "webhook.deleted"
         emission: AUDIT_EMISSION_SUCCESS
       }
       idempotency: IDEMPOTENCY_REQUIREMENT_FORBIDDEN
@@ -264,7 +264,7 @@ service WebhookService {
       }
       mfa: MFA_REQUIREMENT_NONE
       audit: {
-        events: "webhook.replayed.v1"
+        events: "webhook.replayed"
         emission: AUDIT_EMISSION_SUCCESS
       }
       idempotency: IDEMPOTENCY_REQUIREMENT_FORBIDDEN
@@ -315,7 +315,7 @@ service WebhookService {
       }
       mfa: MFA_REQUIREMENT_RECENT_STEP_UP
       audit: {
-        events: "webhook.secret_rotated.v1"
+        events: "webhook.secret_rotated"
         emission: AUDIT_EMISSION_SUCCESS
       }
       idempotency: IDEMPOTENCY_REQUIREMENT_FORBIDDEN
