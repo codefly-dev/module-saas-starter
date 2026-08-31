@@ -25,13 +25,13 @@ codefly run service --fixture dev-admin
 ```
 
 Expected graph: `vault + store + cache + telemetry → accounts →
-auth-sidecar → frontend` (plus marketing). Independent
+auth-gateway → frontend` (plus marketing). Independent
 services may start concurrently. If any service
 hangs at "waiting for ready", check that step's `--debug` output.
 
 The TUI shows green dots when each service is up. Wait for **frontend** to
 report its public HTTP URL. Open that URL; its same-origin API proxy routes
-backend traffic through auth-sidecar.
+backend traffic through auth-gateway.
 
 ---
 
@@ -208,7 +208,7 @@ Admin Portal integration; `IDENTITY_CLIENT_ID` and
 - [ ] Browser redirects to `https://api.workos.com/portal/...` admin portal.
 - [ ] Configure a connection (SAML or OIDC) using your test IdP.
 - [ ] After the portal flow, redirect back to `/admin/sso`. Status = "Active". connection_id populated.
-- [ ] (Optional, big spend) Configure your IdP to allow a test user with email matching Acme's domain. Log out, attempt login with that email — auth-sidecar should route to WorkOS via the connection_id.
+- [ ] (Optional, big spend) Configure your IdP to allow a test user with email matching Acme's domain. Log out, attempt login with that email — auth-gateway should route to WorkOS via the connection_id.
 
 ---
 

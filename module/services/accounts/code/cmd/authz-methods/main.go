@@ -15,7 +15,7 @@ import (
 func main() {
 	catalogPath := flag.String("catalog", "", "path to normalized service catalog JSON")
 	outputPath := flag.String("output", "", "path for normalized authorization catalog JSON")
-	goOutputPath := flag.String("go-output", "", "path for auth-sidecar generated authorization metadata")
+	goOutputPath := flag.String("go-output", "", "path for auth-gateway generated authorization metadata")
 	flag.Parse()
 
 	if *catalogPath == "" || *outputPath == "" || *goOutputPath == "" {
@@ -35,9 +35,9 @@ func main() {
 	if err := (protojson.UnmarshalOptions{DiscardUnknown: false}).Unmarshal(serviceDocument, serviceCatalog); err != nil {
 		fatal("decode service catalog for runtime metadata", err)
 	}
-	goDocument, err := cataloggen.RenderAuthSidecarAuthorizationMetadata(authz, serviceCatalog)
+	goDocument, err := cataloggen.RenderAuthGatewayAuthorizationMetadata(authz, serviceCatalog)
 	if err != nil {
-		fatal("render auth-sidecar authorization metadata", err)
+		fatal("render auth-gateway authorization metadata", err)
 	}
 	mustWrite(*outputPath, authzDocument)
 	mustWrite(*goOutputPath, goDocument)

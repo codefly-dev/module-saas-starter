@@ -45,7 +45,7 @@ function serviceEndpoint(
  * Server-only product API resolution through the Codefly SDK.
  *
  * In a complete module flow, the frontend reaches Accounts exclusively through
- * auth-sidecar/rest. Both REST and Connect are served by that exact HTTP
+ * auth-gateway/rest. Both REST and Connect are served by that exact HTTP
  * gateway. Direct Accounts bindings remain only as an explicit fallback for
  * isolated frontend/Playwright tests that do not start the module graph.
  */
@@ -57,14 +57,14 @@ export function resolveAccountsBindings(options = {}) {
 		serviceEndpoint(
 			endpoints,
 			currentModule,
-			"auth-sidecar",
+			"auth-gateway",
 			"rest",
 			"REST",
 		) ?? environment.PRODUCT_GATEWAY_INTERNAL;
 	if (gateway) {
 		const normalized = optionalServiceURL(
 			gateway,
-			"Codefly auth-sidecar/rest endpoint",
+			"Codefly auth-gateway/rest endpoint",
 		);
 		return Object.freeze({ rest: normalized, connect: normalized });
 	}

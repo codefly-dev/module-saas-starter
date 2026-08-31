@@ -112,10 +112,10 @@ export function productGatewayURL(
 ): string {
 	const currentModule = runtime.currentModule();
 	return resolvePipelineEndpoint(
-		"auth-sidecar/rest",
-		{ service: "auth-sidecar", apiType: "rest" },
+		"auth-gateway/rest",
+		{ service: "auth-gateway", apiType: "rest" },
 		(endpoint) =>
-			endpoint.service === "auth-sidecar" &&
+			endpoint.service === "auth-gateway" &&
 			endpoint.name === "rest" &&
 			endpoint.protocol === "REST" &&
 			(!currentModule || endpoint.module === currentModule),

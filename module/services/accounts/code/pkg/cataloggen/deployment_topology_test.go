@@ -53,8 +53,8 @@ func TestDeploymentTopologyIsDeterministicAndCurrent(t *testing.T) {
 	}
 	require.Equal(t, 12, endpointCount)
 	require.Equal(t, 8, dependencyCount)
-	privateREST := map[string]bool{"accounts": false, "auth-sidecar": false}
-	authSidecarTelemetry := false
+	privateREST := map[string]bool{"accounts": false, "auth-gateway": false}
+	authGatewayTelemetry := false
 	for _, service := range first.Catalog.GetServices() {
 		if _, ok := privateREST[service.GetName()]; !ok {
 			continue
@@ -65,27 +65,27 @@ func TestDeploymentTopologyIsDeterministicAndCurrent(t *testing.T) {
 				privateREST[service.GetName()] = true
 			}
 		}
-		if service.GetName() == "auth-sidecar" {
+		if service.GetName() == "auth-gateway" {
 			for _, dependency := range service.GetDependencies() {
 				if dependency.GetService() == "telemetry" {
 					require.Equal(t, []string{"grpc"}, dependency.GetEndpoints())
-					authSidecarTelemetry = true
+					authGatewayTelemetry = true
 				}
 			}
 		}
 	}
-	require.Equal(t, map[string]bool{"accounts": true, "auth-sidecar": true}, privateREST)
-	require.True(t, authSidecarTelemetry)
+	require.Equal(t, map[string]bool{"accounts": true, "auth-gateway": true}, privateREST)
+	require.True(t, authGatewayTelemetry)
 	for _, endpoint := range first.Catalog.GetInterfaceEndpoints() {
 		require.False(t,
 			endpoint.GetService() == "accounts" ||
-				(endpoint.GetService() == "auth-sidecar" && endpoint.GetEndpoint() == "rest"),
+				(endpoint.GetService() == "auth-gateway" && endpoint.GetEndpoint() == "rest"),
 		)
 	}
 	require.Contains(t, string(first.ServiceManifests["accounts"]), "- observability")
-	authSidecarManifest := string(first.ServiceManifests["auth-sidecar"])
-	require.Contains(t, authSidecarManifest, "- observability")
-	require.Contains(t, authSidecarManifest, "- name: telemetry")
+	authGatewayManifest := string(first.ServiceManifests["auth-gateway"])
+	require.Contains(t, authGatewayManifest, "- observability")
+	require.Contains(t, authGatewayManifest, "- name: telemetry")
 	frontendManifest := string(first.ServiceManifests["frontend"])
 	require.Contains(t, frontendManifest, "execution-profiles:")
 	require.Contains(t, frontendManifest, "local: development")
@@ -93,8 +93,8 @@ func TestDeploymentTopologyIsDeterministicAndCurrent(t *testing.T) {
 	require.Equal(t, 20, strings.Count(string(first.NetworkPolicy), "\nkind: NetworkPolicy\n"))
 	require.NotContains(t, string(first.NetworkPolicy), "allow-intra-namespace")
 	require.Contains(t, string(first.NetworkPolicy), "name: allow-accounts-from-dependents")
-	require.Contains(t, string(first.NetworkPolicy), "name: allow-auth-sidecar-from-dependents")
-	require.Contains(t, string(first.NetworkPolicy), "name: allow-auth-sidecar-to-dependencies")
+	require.Contains(t, string(first.NetworkPolicy), "name: allow-auth-gateway-from-dependents")
+	require.Contains(t, string(first.NetworkPolicy), "name: allow-auth-gateway-to-dependencies")
 	require.Contains(t, string(first.NetworkPolicy), "name: allow-frontend-to-dependencies")
 	require.Contains(t, string(first.NetworkPolicy), "name: allow-store-from-bootstrap")
 	require.Contains(t, string(first.NetworkPolicy), "name: allow-store-bootstrap-to-store")
@@ -105,14 +105,14 @@ func TestDeploymentTopologyIsDeterministicAndCurrent(t *testing.T) {
 	require.Contains(t, string(first.NetworkPolicy), "name: allow-telemetry-public-egress")
 	require.Contains(t, string(first.NetworkPolicy), "name: allow-istio-ingress-to-marketing")
 	require.Contains(t, string(first.NetworkPolicy), "name: allow-istio-ingress-to-frontend")
-	require.NotContains(t, string(first.NetworkPolicy), "name: allow-istio-ingress-to-auth-sidecar")
+	require.NotContains(t, string(first.NetworkPolicy), "name: allow-istio-ingress-to-auth-gateway")
 	require.Contains(t, string(first.NetworkPolicy), "192.175.48.0/24")
 	require.Contains(t, string(first.NetworkPolicy), "64:ff9b::/96")
 
 	// Mesh policy: STRICT mTLS baseline plus a positive ALLOW AuthorizationPolicy
 	// that gates the internal authority method paths to the target's declared
 	// callers by their per-service ServiceAccount — deny-by-default for everyone
-	// else. accounts' only caller is auth-sidecar, so only sa/auth-sidecar is
+	// else. accounts' only caller is auth-gateway, so only sa/auth-gateway is
 	// allowed; the shared sa/default and the ingress gateway SA are not.
 	mesh := string(first.MeshPolicy)
 	require.Contains(t, mesh, "kind: PeerAuthentication")
@@ -120,7 +120,7 @@ func TestDeploymentTopologyIsDeterministicAndCurrent(t *testing.T) {
 	require.Contains(t, mesh, "name: allow-accounts-internal-authority")
 	require.Contains(t, mesh, "action: ALLOW")
 	require.Contains(t, mesh, "gatewayClassName: istio-waypoint")
-	require.Contains(t, mesh, "cluster.local/ns/saas-starter/sa/auth-sidecar")
+	require.Contains(t, mesh, "cluster.local/ns/saas-starter/sa/auth-gateway")
 	require.NotContains(t, mesh, "cluster.local/ns/saas-starter/sa/default")
 	require.NotContains(t, mesh, "istio-ingressgateway-service-account")
 	for _, procedure := range []string{
@@ -378,7 +378,7 @@ func TestGeneratedCodeflyAndNetworkManifestsParseStrictly(t *testing.T) {
 	require.Len(t, names, 20)
 	require.True(t, names["allow-istio-ingress-to-marketing"])
 	require.True(t, names["allow-istio-ingress-to-frontend"])
-	require.False(t, names["allow-istio-ingress-to-auth-sidecar"])
+	require.False(t, names["allow-istio-ingress-to-auth-gateway"])
 	require.True(t, names["allow-store-from-bootstrap"])
 	require.True(t, names["allow-store-bootstrap-to-store"])
 	require.True(t, names["allow-telemetry-from-dependents"])
@@ -426,10 +426,10 @@ func TestGeneratedMeshPolicyGatesInternalAuthorityByCallerIdentity(t *testing.T)
 			rule := document.Spec["rules"].([]any)[0].(map[string]any)
 			source := rule["from"].([]any)[0].(map[string]any)["source"].(map[string]any)
 			principals := source["principals"].([]any)
-			// Positive allowlist: only accounts' declared caller (auth-sidecar),
+			// Positive allowlist: only accounts' declared caller (auth-gateway),
 			// named by its per-service SA. The shared sa/default (any namespace
 			// pod) and the ingress gateway SA are NOT admitted — deny-by-default.
-			require.Equal(t, []any{"cluster.local/ns/saas-starter/sa/auth-sidecar"}, principals)
+			require.Equal(t, []any{"cluster.local/ns/saas-starter/sa/auth-gateway"}, principals)
 			require.NotContains(t, principals, "cluster.local/ns/saas-starter/sa/default")
 			require.NotContains(t, principals, ingressGatewaySA)
 

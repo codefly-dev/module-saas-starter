@@ -12,7 +12,7 @@ export interface AccountsBindingOptions {
 }
 
 /**
- * Resolves auth-sidecar/rest for complete module runs. Direct Accounts
+ * Resolves auth-gateway/rest for complete module runs. Direct Accounts
  * endpoints are accepted only for isolated frontend tests.
  */
 export function resolveAccountsBindings(options?: AccountsBindingOptions): AccountsBindings;

@@ -247,7 +247,7 @@ Concrete implementations:
 - `pkg/auth/pg/resolver.go` — Postgres-backed resolver with JIT provisioning + bootstrap
 - `pkg/auth/ed25519/minter.go` — JWT mint + verify + refresh storage (single Ed25519 keypair from Vault)
 
-Sidecar-side (module/services/auth-sidecar/code/pkg/auth/):
+Sidecar-side (module/services/auth-gateway/code/pkg/auth/):
 - `localvalidator.go` — single-purpose Ed25519 JWT validator. Reads pubkey at startup, validates signature + exp on every request. No interfaces, no abstraction. This is the only auth code the sidecar runs on the hot path.
 
 ## Security hardening (applied throughout)
@@ -269,7 +269,7 @@ State-of-the-art, not "good enough". Every item below lands as part of the phase
 - **WebAuthn/passkeys**: registration and assertion options are generated
   server-side with required user verification. `WEBAUTHN_RP_ID` is supplied by
   Codefly's `security` configuration; the exact request origin comes from
-  auth-sidecar's SDK-injected endpoint after gateway-token verification.
+  auth-gateway's SDK-injected endpoint after gateway-token verification.
   `WEBAUTHN_RP_ORIGINS` remains an optional direct-access fallback. Full
   credentials and ceremony state are Vault-encrypted; one-use state,
   authenticator counter updates, and session creation are transactionally
@@ -393,7 +393,7 @@ Every authentication/session change must pass these Codefly-owned gates:
 3. Run the complete accounts test suite with the Go race detector, including
    real-PostgreSQL refresh, revocation, device-cap, authorization-invalidation,
    organization-switch, and switch-versus-refresh concurrency tests.
-4. Run the complete auth-sidecar suite so every generated route has matching
+4. Run the complete auth-gateway suite so every generated route has matching
    admission metadata and spoofed identity/session headers remain rejected.
 5. Run the complete frontend suite, lint, and production compile so every
    tenant-scoped query follows the signed active organization.

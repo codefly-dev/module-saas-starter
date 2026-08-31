@@ -37,7 +37,7 @@ func TestGenerateBundleGoldenShapes(t *testing.T) {
 			name:      "warden",
 			workspace: "warden-control",
 			module:    "identity",
-			services:  []string{"accounts", "auth-sidecar", "cache", "frontend", "object-storage", "store", "vault"},
+			services:  []string{"accounts", "auth-gateway", "cache", "frontend", "object-storage", "store", "vault"},
 			golden:    "testdata/warden-bundle.golden.json",
 		},
 		{
@@ -540,7 +540,7 @@ func TestGeneratedPoliciesAndGatewayMatchTopology(t *testing.T) {
 		t,
 		"policy-control",
 		"identity",
-		[]string{"accounts", "auth-sidecar", "store"},
+		[]string{"accounts", "auth-gateway", "store"},
 	)
 	workspace, err := loadWorkspaceManifest(root)
 	if err != nil {
@@ -573,12 +573,12 @@ func TestGeneratedPoliciesAndGatewayMatchTopology(t *testing.T) {
 	}
 	for _, policy := range []string{
 		"allow-ambient-hbone-transport",
-		"allow-istio-ingress-to-auth-sidecar",
+		"allow-istio-ingress-to-auth-gateway",
 		"allow-accounts-to-store",
 		"allow-store-from-accounts",
 		"allow-store-from-bootstrap",
 		"allow-store-bootstrap-to-store",
-		"allow-auth-sidecar-public-egress",
+		"allow-auth-gateway-public-egress",
 	} {
 		if !strings.Contains(string(localNetwork), "name: "+policy) {
 			t.Errorf("local network policy is missing %q", policy)
@@ -662,7 +662,7 @@ func TestGeneratedMeshBaselineIsStrictMTLSDefaultDeny(t *testing.T) {
 		t,
 		"mesh-control",
 		"identity",
-		[]string{"accounts", "auth-sidecar", "store"},
+		[]string{"accounts", "auth-gateway", "store"},
 	)
 	workspace, err := loadWorkspaceManifest(root)
 	if err != nil {
@@ -757,19 +757,19 @@ func TestGeneratedMeshBaselineIsStrictMTLSDefaultDeny(t *testing.T) {
 
 func TestGeneratedMeshPolicyGatesInternalAuthorityByCallerServiceAccount(t *testing.T) {
 	t.Parallel()
-	root, moduleDir := writeModuleFixture(t, "authority", "identity", []string{"accounts", "auth-sidecar"})
+	root, moduleDir := writeModuleFixture(t, "authority", "identity", []string{"accounts", "auth-gateway"})
 	// Realistic identity graph: accounts exposes an internal method and runs
-	// under a distinct SA; auth-sidecar is its only declared caller and also
+	// under a distinct SA; auth-gateway is its only declared caller and also
 	// runs under a distinct SA. This is what lets the policy gate by workload
 	// identity instead of the shared sa/default.
 	writeTestFile(t, filepath.Join(moduleDir, "deployment", "topology.bindings.codefly.yaml"), `version: v1
 module:
   name: identity
   namespace: identity
-  service_entry: auth-sidecar
+  service_entry: auth-gateway
   description: test
 interface:
-  - service: auth-sidecar
+  - service: auth-gateway
     endpoint: http
     visibility: public
 services:
@@ -783,7 +783,7 @@ services:
     spec:
       service-account:
         name: accounts
-  - name: auth-sidecar
+  - name: auth-gateway
     version: 0.0.0
     endpoints:
       - name: http
@@ -794,7 +794,7 @@ services:
       - 443
     spec:
       service-account:
-        name: auth-sidecar
+        name: auth-gateway
     dependencies:
       - service: accounts
         endpoints:
@@ -874,7 +874,7 @@ services:
 	}
 
 	const (
-		callerSA  = "cluster.local/ns/identity-local/sa/auth-sidecar"
+		callerSA  = "cluster.local/ns/identity-local/sa/auth-gateway"
 		defaultSA = "cluster.local/ns/identity-local/sa/default"
 		ingressSA = "cluster.local/ns/istio-system/sa/istio-ingressgateway-service-account"
 	)
@@ -890,7 +890,7 @@ services:
 	}
 	rule := spec["rules"].([]any)[0].(map[string]any)
 	principals := anyToStrings(rule["from"].([]any)[0].(map[string]any)["source"].(map[string]any)["principals"].([]any))
-	// Only accounts' declared caller (auth-sidecar), named by its per-service
+	// Only accounts' declared caller (auth-gateway), named by its per-service
 	// SA — not the shared sa/default, and not the ingress gateway.
 	if !slices.Equal(principals, []string{callerSA}) {
 		t.Errorf("internal-authority principals = %v, want only the caller SA [%s]", principals, callerSA)
@@ -976,7 +976,7 @@ func TestGeneratedMarketingIngressUsesExactEnvironmentRoutes(t *testing.T) {
 		t,
 		"website-control",
 		"identity",
-		[]string{"auth-sidecar", "marketing"},
+		[]string{"auth-gateway", "marketing"},
 	)
 	workspace, err := loadWorkspaceManifest(root)
 	if err != nil {
@@ -991,7 +991,7 @@ func TestGeneratedMarketingIngressUsesExactEnvironmentRoutes(t *testing.T) {
 		},
 		{
 			Name:     "product",
-			Service:  "auth-sidecar",
+			Service:  "auth-gateway",
 			Endpoint: "http",
 			Hosts:    []string{"app.identity.localhost", "localhost"},
 		},
@@ -1074,7 +1074,7 @@ func TestGeneratedMarketingIngressUsesExactEnvironmentRoutes(t *testing.T) {
 	assertRoute(
 		"product",
 		`^app\.identity\.localhost(:[0-9]+)?$`,
-		"auth-sidecar.identity-local.svc.cluster.local",
+		"auth-gateway.identity-local.svc.cluster.local",
 		8080,
 	)
 
@@ -1104,7 +1104,7 @@ func TestGeneratedMarketingIngressUsesExactEnvironmentRoutes(t *testing.T) {
 	if got := authorizedPorts["allow-istio-ingress-to-marketing"]; !slices.Equal(got, []any{"3000"}) {
 		t.Errorf("marketing ingress ports = %v, want [3000]", got)
 	}
-	if got := authorizedPorts["allow-istio-ingress-to-auth-sidecar"]; !slices.Equal(got, []any{"8080"}) {
+	if got := authorizedPorts["allow-istio-ingress-to-auth-gateway"]; !slices.Equal(got, []any{"8080"}) {
 		t.Errorf("product ingress ports = %v, want [8080]", got)
 	}
 	// The ingress-allow policies must admit ONLY the ingress-gateway SA — the
@@ -1113,7 +1113,7 @@ func TestGeneratedMarketingIngressUsesExactEnvironmentRoutes(t *testing.T) {
 	// from shipping green: a rule that also admitted, say, sa/default would let
 	// any in-namespace workload impersonate the gateway on public ports.
 	ingressSA := []any{"cluster.local/ns/istio-system/sa/istio-ingressgateway-service-account"}
-	for _, name := range []string{"allow-istio-ingress-to-marketing", "allow-istio-ingress-to-auth-sidecar"} {
+	for _, name := range []string{"allow-istio-ingress-to-marketing", "allow-istio-ingress-to-auth-gateway"} {
 		if got := authorizedPrincipals[name]; !slices.Equal(got, ingressSA) {
 			t.Errorf("%s principals = %v, want only the ingress-gateway SA %v", name, got, ingressSA)
 		}
@@ -1326,12 +1326,12 @@ func TestCreateGeneratesBundleAndPreservesConsumerFiles(t *testing.T) {
 name: saas-starter
 services:
   - name: accounts
-  - name: auth-sidecar
+  - name: auth-gateway
 `)
 	if err := os.MkdirAll(filepath.Join(source, "services", "accounts"), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.MkdirAll(filepath.Join(source, "services", "auth-sidecar"), 0o755); err != nil {
+	if err := os.MkdirAll(filepath.Join(source, "services", "auth-gateway"), 0o755); err != nil {
 		t.Fatal(err)
 	}
 	writeTestFile(t, filepath.Join(source, "services", "accounts", "service.codefly.yaml"), `name: accounts
@@ -1395,7 +1395,7 @@ services:
         api: http
         visibility: public
         port: 8080
-  - name: auth-sidecar
+  - name: auth-gateway
     endpoints:
       - name: http
         api: http
@@ -1422,10 +1422,10 @@ targetRevision: main
 	if strings.Contains(string(data), "name: saas-starter") || !strings.Contains(string(data), "name: identity") {
 		t.Fatalf("module name was not structurally rewritten:\n%s", data)
 	}
-	if strings.Contains(string(data), "auth-sidecar") {
+	if strings.Contains(string(data), "auth-gateway") {
 		t.Fatalf("source service inventory replaced the consumer inventory:\n%s", data)
 	}
-	if _, err := os.Stat(filepath.Join(target, "services", "auth-sidecar")); !os.IsNotExist(err) {
+	if _, err := os.Stat(filepath.Join(target, "services", "auth-gateway")); !os.IsNotExist(err) {
 		t.Fatalf("undeclared source service was copied: %v", err)
 	}
 	if data, err := os.ReadFile(filepath.Join(target, "services", "README.md")); err != nil ||
@@ -1679,7 +1679,7 @@ func writeModuleFixture(t *testing.T, workspaceName, moduleName string, services
 	root := t.TempDir()
 	moduleDir := filepath.Join(root, "modules", moduleName)
 	entry := services[0]
-	for _, candidate := range []string{"forge-edge", "auth-sidecar", "accounts", "frontend"} {
+	for _, candidate := range []string{"forge-edge", "auth-gateway", "accounts", "frontend"} {
 		if slices.Contains(services, candidate) {
 			entry = candidate
 			break

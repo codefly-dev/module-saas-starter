@@ -73,7 +73,7 @@ code, layered on the existing NetworkPolicy default-deny. The mesh baseline
 ### Mesh baseline (#217)
 
 1. **`PeerAuthentication: STRICT`** mesh-wide (at minimum accounts,
-   auth-sidecar, frontend). No `PERMISSIVE` fallback.
+   auth-gateway, frontend). No `PERMISSIVE` fallback.
 2. **Default-deny `AuthorizationPolicy`** at the namespace, then explicit allows
    per declared dependency — mirroring the existing NetworkPolicy default-deny.
 3. **Sidecar injection enforced** for all in-scope workloads (no un-injected pod
@@ -259,8 +259,8 @@ have caught the finding (tracked for Docker-backed integration/e2e verify by
 
 | Finding | Change | Test |
 |---------|--------|------|
-| **M6** header-strip drift | `x-scoped-roles` / `x-scoped-roles-truncated` added to `untrustedAuthHeaders` (`auth-sidecar/gateway.go:396`) | `TestUntrustedHeaders_SupersetOfStampedHeaders` |
-| **H4** Envoy trust-header leak | `allow()` sets `OkHttpResponse.HeadersToRemove` for un-restamped trust headers (`auth-sidecar/sidecar.go:234,259`) | `TestUnit_Allow_RemovesUnstampedTrustHeaders` |
+| **M6** header-strip drift | `x-scoped-roles` / `x-scoped-roles-truncated` added to `untrustedAuthHeaders` (`auth-gateway/gateway.go:396`) | `TestUntrustedHeaders_SupersetOfStampedHeaders` |
+| **H4** Envoy trust-header leak | `allow()` sets `OkHttpResponse.HeadersToRemove` for un-restamped trust headers (`auth-gateway/sidecar.go:234,259`) | `TestUnit_Allow_RemovesUnstampedTrustHeaders` |
 | **H3** Connect credential smuggling | `injectHeaderJWTCredential` clears `req.Authentication` before setting from the trusted header (`accounts/pkg/adapters/connect_handlers.go:400`) | `TestInjectHeaderJWTCredential/absent_header_drops_a_smuggled_client_credential` |
 | **H2 (code half)** any-JWT oracle | Retired `requireInternalOrAuth`; oracle handlers + `ConsumeUsage` require `requireInternalCredential` (`auth.go:434`); `Decide` is org-bound | `TestRequireInternalCredential_RejectsTenantCallers` |
 

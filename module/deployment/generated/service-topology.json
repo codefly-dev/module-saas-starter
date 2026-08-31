@@ -54,7 +54,7 @@
       ]
     },
     {
-      "name": "auth-sidecar",
+      "name": "auth-gateway",
       "endpoints": [
         {
           "name": "grpc",
@@ -121,7 +121,7 @@
       ],
       "dependencies": [
         {
-          "service": "auth-sidecar",
+          "service": "auth-gateway",
           "endpoints": [
             "rest"
           ]
@@ -175,7 +175,7 @@
   ],
   "interface_endpoints": [
     {
-      "service": "auth-sidecar",
+      "service": "auth-gateway",
       "endpoint": "grpc",
       "visibility": "ENDPOINT_VISIBILITY_MODULE"
     },

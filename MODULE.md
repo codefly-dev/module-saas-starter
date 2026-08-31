@@ -43,7 +43,7 @@ example.com / www.example.com             app.example.com
   ↓                                         ↓
 marketing service                         product frontend
   ├─ repository content                     ↓ same-origin API proxy
-  ├─ public plan projection                auth-sidecar
+  ├─ public plan projection                auth-gateway
   └─ fixed auth handoff                      ↓
                                            accounts service
                                              ├─ adapters/ — gRPC + Connect + REST gateway servers
@@ -54,7 +54,7 @@ Product API traffic
   ↓ Connect-ES (TS, generated from buf)
 Gateway (Envoy/KrakenD) — merges per-service REST endpoints
   ↓ Bearer JWT or X-API-Key, plus X-Scopes
-auth-sidecar — validates token, stamps x-user-id / x-org-id metadata
+auth-gateway — validates token, stamps x-user-id / x-org-id metadata
   ↓ gRPC
 accounts service
   ├─ adapters/ — gRPC + Connect + REST gateway servers
@@ -427,7 +427,7 @@ generated projections, and gates — see
 3. Import browser types from their bounded module, for example `@/gen/saas/accounts/v1/teams_pb`; do not restore the former monolithic TypeScript barrel.
 4. Implement: `pkg/business/<feature>.go` (the Service method, with `WithOrgTx`/`WithBypass` wrap), `pkg/infra/postgres_<feature>.go` (raw SQL), `pkg/adapters/rpcs.go` or a new `<feature>_rpcs.go` (handler authz + Validate + Service call), and a Connect adapter. Keep any still-manual gRPC/REST implementation wiring current.
 5. For a new service only, add its finite implementation source to `pkg/adapters/connect_bindings.yaml`; never hand-register a Connect service or procedure. If it opts into REST, also classify the service as `generated` or `plugin` in `pkg/adapters/rest_bindings.yaml`. Existing services need no binding change when an RPC is added.
-6. Add only the editorial summary to `pkg/business/introspection.go:rpcDescriptions`, then run `go generate ./pkg/business`, `go generate ./pkg/adapters`, and `go generate ./pkg/cataloggen`. This refreshes the normalized catalog, authorization catalog/matrix, auth-sidecar policy lookup, Connect registration, REST registration/allowlists, filtered OpenAPI, and target-neutral gateway route artifacts. HTTP, authz, scopes, resource bindings, MFA, audit, rate, and sensitivity must come from descriptors; do not introduce another policy map or service list.
+6. Add only the editorial summary to `pkg/business/introspection.go:rpcDescriptions`, then run `go generate ./pkg/business`, `go generate ./pkg/adapters`, and `go generate ./pkg/cataloggen`. This refreshes the normalized catalog, authorization catalog/matrix, auth-gateway policy lookup, Connect registration, REST registration/allowlists, filtered OpenAPI, and target-neutral gateway route artifacts. HTTP, authz, scopes, resource bindings, MFA, audit, rate, and sensitivity must come from descriptors; do not introduce another policy map or service list.
 7. Frontend: a `useX` hook in `src/features/<feature>/service/{queries,mutations}.ts`, called from a UI in `src/features/<feature>/ui/`.
 
 ### Adding a new RBAC permission

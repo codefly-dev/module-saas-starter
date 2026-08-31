@@ -14,7 +14,7 @@ func main() {
 	configPath := flag.String("config", "", "path to gateway bindings YAML")
 	topologyPath := flag.String("topology", "", "path to deployment topology bindings YAML")
 	routeOutput := flag.String("route-output", "", "path for normalized gateway route JSON")
-	goOutput := flag.String("go-output", "", "path for auth-sidecar generated Go routes")
+	goOutput := flag.String("go-output", "", "path for auth-gateway generated Go routes")
 	flag.Parse()
 
 	if *catalogPath == "" || *configPath == "" || *topologyPath == "" || *routeOutput == "" || *goOutput == "" {
@@ -32,9 +32,9 @@ func main() {
 	if err != nil {
 		fatal("render gateway route catalog", err)
 	}
-	goDocument, err := cataloggen.RenderAuthSidecarConnectRoutes(routes)
+	goDocument, err := cataloggen.RenderAuthGatewayConnectRoutes(routes)
 	if err != nil {
-		fatal("render auth-sidecar routes", err)
+		fatal("render auth-gateway routes", err)
 	}
 	mustWrite(*routeOutput, routeDocument)
 	mustWrite(*goOutput, goDocument)

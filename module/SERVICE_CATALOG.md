@@ -48,8 +48,8 @@ generates the `saas.catalog.v1` types. The second command compiles the loaded
 descriptor graph into `generated/service-catalog.json` and refreshes
 `AUTHZ_MATRIX.md`. The third joins the catalog with strict Connect
 implementation bindings and emits registration plus interface assertions. The
-fourth command generates typed authorization/PDP metadata, the auth-sidecar
-policy lookup, target-neutral gateway routes, auth-sidecar Connect/REST wiring,
+fourth command generates typed authorization/PDP metadata, the auth-gateway
+policy lookup, target-neutral gateway routes, auth-gateway Connect/REST wiring,
 strict accounts REST registration, filtered OpenAPI, and the frontend
 client/vocabulary catalog. It also joins descriptor protocol
 requirements with the strict module topology and writes the actual Codefly

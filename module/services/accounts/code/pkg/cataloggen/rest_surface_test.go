@@ -71,9 +71,9 @@ func TestRESTSurfaceArtifactsAreDeterministicAndCurrent(t *testing.T) {
 	require.Equal(t, string(readFixture(t, "../adapters/rest_registration_catalog_gen.go")), string(accountsRuntime), "run: go generate ./pkg/cataloggen")
 	require.Contains(t, string(accountsRuntime), `case "permissions":`)
 
-	sidecarRuntime, err := cataloggen.RenderAuthSidecarRESTRoutes(surface)
+	sidecarRuntime, err := cataloggen.RenderAuthGatewayRESTRoutes(surface)
 	require.NoError(t, err)
-	require.Equal(t, string(readFixture(t, "../../../../auth-sidecar/code/routing_rest_catalog_gen.go")), string(sidecarRuntime), "run: go generate ./pkg/cataloggen")
+	require.Equal(t, string(readFixture(t, "../../../../auth-gateway/code/routing_rest_catalog_gen.go")), string(sidecarRuntime), "run: go generate ./pkg/cataloggen")
 
 	publicOpenAPI, err := cataloggen.RenderPublicOpenAPI(rawOpenAPI, surface, service)
 	require.NoError(t, err)

@@ -34,12 +34,12 @@ generation fails.
 | `accounts` | `store/tcp` | TCP 5432 |
 | `accounts` | `telemetry/grpc` | Codefly-assigned OTLP gRPC port |
 | `accounts` | `vault/http` | TCP 8200 |
-| `auth-sidecar` | `accounts/connect`, `accounts/rest`, `accounts/grpc` | TCP 8080, 9090 |
-| `auth-sidecar` | `cache/write` | TCP 6379 |
-| `frontend` | `auth-sidecar/rest` | TCP 8080 |
+| `auth-gateway` | `accounts/connect`, `accounts/rest`, `accounts/grpc` | TCP 8080, 9090 |
+| `auth-gateway` | `cache/write` | TCP 6379 |
+| `frontend` | `auth-gateway/rest` | TCP 8080 |
 
 The Codefly module interface exposes the public `frontend/http` and
-`marketing/http` endpoints; the auth-sidecar gRPC ext-authz endpoint has module
+`marketing/http` endpoints; the auth-gateway gRPC ext-authz endpoint has module
 visibility. Istio routes apex/`www`/docs hosts to `marketing/http` and `app` to
 `frontend/http`. Accounts, frontend, marketing, and telemetry may reach
 public IP space only over TCP 443. The public rules exclude private, loopback,

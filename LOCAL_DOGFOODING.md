@@ -25,7 +25,7 @@ the onboarding application library does not import or select WorkOS.
 
 Frontend is the public product endpoint. Its same-origin proxy stamps the
 actual request origin with Codefly's internal service credential before
-forwarding an API request to auth-sidecar. Accounts uses that verified origin
+forwarding an API request to auth-gateway. Accounts uses that verified origin
 for OAuth callbacks, WebAuthn, email links, and request-driven billing
 redirects. The optional Codefly `application` origin remains only as a
 production/background fallback; a local port never belongs in product config.
@@ -184,7 +184,7 @@ Public values live in `identity.env`; secrets live in
 | `IDENTITY_ISSUER` | optional | Signed-token issuer override (expected `iss`) |
 | `IDENTITY_JWKS_URL` | optional | Signed-token JWKS override |
 | `IDENTITY_AUTHORIZE_SELECTOR` | WorkOS | `authkit` for hosted AuthKit |
-| `IDENTITY_ALLOWED_REDIRECT_URIS` | optional | Static fallback for trusted traffic that bypasses auth-sidecar |
+| `IDENTITY_ALLOWED_REDIRECT_URIS` | optional | Static fallback for trusted traffic that bypasses auth-gateway |
 | `IDENTITY_MANAGEMENT_API_KEY` | optional WorkOS adapter | WorkOS Admin Portal/SSO-management credential; secret |
 
 ### `header-jwt` provider

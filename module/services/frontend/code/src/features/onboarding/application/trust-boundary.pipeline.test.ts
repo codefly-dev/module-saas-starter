@@ -1,4 +1,4 @@
-// Fail-closed checks for the frontend → auth-sidecar → Accounts trust chain,
+// Fail-closed checks for the frontend → auth-gateway → Accounts trust chain,
 // against the real dependency graph.
 //
 // These cannot be written against a mocked fetch: the whole point is what the

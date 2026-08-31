@@ -215,10 +215,10 @@ func RenderAuthorizationCatalogJSON(catalog *catalogv1.AuthorizationCatalog) ([]
 	return formatted.Bytes(), nil
 }
 
-// RenderAuthSidecarAuthorizationMetadata emits the edge-safe subset of the
+// RenderAuthGatewayAuthorizationMetadata emits the edge-safe subset of the
 // full PDP catalog plus exact descriptor REST joins used while the legacy REST
 // overlay is being retired.
-func RenderAuthSidecarAuthorizationMetadata(authz *catalogv1.AuthorizationCatalog, service *catalogv1.ServiceCatalog) ([]byte, error) {
+func RenderAuthGatewayAuthorizationMetadata(authz *catalogv1.AuthorizationCatalog, service *catalogv1.ServiceCatalog) ([]byte, error) {
 	if err := ValidateAuthorizationCatalog(authz); err != nil {
 		return nil, err
 	}
@@ -249,11 +249,11 @@ var generatedAuthorizationByProcedure = map[string]generatedAuthorizationMetadat
 		if method.GetProcedure() != serviceMethod.GetProcedure() || !proto.Equal(method.GetPolicy(), serviceMethod.GetPolicy()) {
 			return nil, fmt.Errorf("authorization and service catalogs disagree at %q", method.GetProcedure())
 		}
-		exposure, err := authSidecarExposureConstant(method.GetPolicy().GetExposure())
+		exposure, err := authGatewayExposureConstant(method.GetPolicy().GetExposure())
 		if err != nil {
 			return nil, fmt.Errorf("%s: %w", method.GetProcedure(), err)
 		}
-		rateLimit, err := authSidecarRateLimitConstant(method.GetPolicy().GetRateLimit())
+		rateLimit, err := authGatewayRateLimitConstant(method.GetPolicy().GetRateLimit())
 		if err != nil {
 			return nil, fmt.Errorf("%s: %w", method.GetProcedure(), err)
 		}
@@ -275,12 +275,12 @@ var generatedAuthorizationByProcedure = map[string]generatedAuthorizationMetadat
 	source.WriteString("}\n")
 	formatted, err := format.Source([]byte(source.String()))
 	if err != nil {
-		return nil, fmt.Errorf("format auth-sidecar authorization metadata: %w", err)
+		return nil, fmt.Errorf("format auth-gateway authorization metadata: %w", err)
 	}
 	return formatted, nil
 }
 
-func authSidecarExposureConstant(value policyv1.Exposure) (string, error) {
+func authGatewayExposureConstant(value policyv1.Exposure) (string, error) {
 	switch value {
 	case policyv1.Exposure_EXPOSURE_UNSPECIFIED:
 		return "edgeExposureUnspecified", nil
@@ -295,7 +295,7 @@ func authSidecarExposureConstant(value policyv1.Exposure) (string, error) {
 	}
 }
 
-func authSidecarRateLimitConstant(value policyv1.RateLimitClass) (string, error) {
+func authGatewayRateLimitConstant(value policyv1.RateLimitClass) (string, error) {
 	switch value {
 	case policyv1.RateLimitClass_RATE_LIMIT_CLASS_UNSPECIFIED:
 		return "edgeRateLimitClassUnspecified", nil

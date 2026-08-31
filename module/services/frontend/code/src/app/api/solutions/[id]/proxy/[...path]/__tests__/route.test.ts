@@ -33,7 +33,7 @@ const INTERNAL_TOKEN = "trusted-internal-token";
 
 function withGateway() {
 	getEndpoints.mockReturnValue([
-		{ service: "auth-sidecar", name: "rest", address: `${GATEWAY}/rest` },
+		{ service: "auth-gateway", name: "rest", address: `${GATEWAY}/rest` },
 	]);
 }
 

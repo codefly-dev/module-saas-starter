@@ -13,7 +13,7 @@
 // aggregator just consumes the JSON shape.
 //
 // Today saas-starter has only the accounts service exposing
-// IntrospectionService. As other services (auth-sidecar, etc.) gain
+// IntrospectionService. As other services (auth-gateway, etc.) gain
 // it, add their endpoints to the input list.
 package moduleinfo
 

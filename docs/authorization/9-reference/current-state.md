@@ -16,7 +16,7 @@
 
 ## One-paragraph orientation
 Authentication normalizes every caller (WorkOS/OIDC humans, API keys, internal
-services) into one Ed25519-JWT identity behind an auth-sidecar that stamps trusted
+services) into one Ed25519-JWT identity behind an auth-gateway that stamps trusted
 identity headers the api still re-verifies. Authorization is three orthogonal
 layers: handler gates, RBAC (`CheckPermission`: `resource:action` + wildcards +
 team inheritance + a **flat** scope string), and forced Postgres RLS

@@ -6,7 +6,7 @@
 //
 //	module-info \
 //	    --service api=http://localhost:5962/v1/.well-known/service-info \
-//	    [--service auth-sidecar=http://localhost:7000/v1/.well-known/service-info]
+//	    [--service auth-gateway=http://localhost:7000/v1/.well-known/service-info]
 //
 // Today saas-starter has only the accounts service exposing
 // IntrospectionService — the loop below works on a single endpoint.

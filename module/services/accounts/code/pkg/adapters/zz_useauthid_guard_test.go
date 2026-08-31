@@ -30,7 +30,7 @@ var userAuthIDAllowlist = map[string]bool{
 
 // TestGuard_NoRawUserAuthIDInRPCHandlers keeps handlers from reading the caller
 // id straight off wool's UserAuthID() (X-Auth-Id / user.auth.id). Behind the
-// Envoy auth-sidecar the gateway stamps only X-User-Id and forwards a blank
+// Envoy auth-gateway the gateway stamps only X-User-Id and forwards a blank
 // user.auth.id, so a raw UserAuthID() read collapses to an empty actor that flows
 // into uuid-typed SQL and 500s (see #121). Handlers must resolve the actor via
 // requireAuth(ctx), which prefers UserID() and rejects empties.
@@ -74,5 +74,5 @@ func TestGuard_NoRawUserAuthIDInRPCHandlers(t *testing.T) {
 	}
 
 	require.Empty(t, offenders,
-		"RPC handlers must resolve the actor via requireAuth(ctx), not a raw w.UserAuthID() read (empty behind the auth-sidecar; see #121)")
+		"RPC handlers must resolve the actor via requireAuth(ctx), not a raw w.UserAuthID() read (empty behind the auth-gateway; see #121)")
 }

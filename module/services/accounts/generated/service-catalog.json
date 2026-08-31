@@ -4209,7 +4209,7 @@
         "conditions": []
       },
       "policy_tier": "internal",
-      "description": "Internal authz decision (auth-sidecar caller).",
+      "description": "Internal authz decision (auth-gateway caller).",
       "owner": {
         "module": "saas-starter",
         "service": "accounts"

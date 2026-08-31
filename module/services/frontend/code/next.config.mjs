@@ -81,11 +81,11 @@ const nextConfig = {
 		return [{ source: "/:path*", headers: baselineSecurityHeaders() }];
 	},
 	// The frontend is the module's public product entry. The browser only talks
-	// to this origin; Next proxies API traffic to auth-sidecar/rest, which
+	// to this origin; Next proxies API traffic to auth-gateway/rest, which
 	// enforces the generated route/auth policy before Accounts. This keeps auth
 	// cookies first-party while preserving the backend trust boundary.
 	//
-	// Complete Codefly runs resolve auth-sidecar through the SDK. Isolated
+	// Complete Codefly runs resolve auth-gateway through the SDK. Isolated
 	// Playwright runs may provide direct API_* fallbacks because they
 	// intentionally do not start the module graph.
 	async rewrites() {

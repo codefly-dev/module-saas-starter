@@ -615,7 +615,7 @@ func (s *PermServer) CheckPermission(ctx context.Context, req *gen.CheckPermissi
 		return nil, err
 	}
 	// CheckPermission is an authorization decision oracle called by
-	// internal services (auth-sidecar middleware). Anyone with access
+	// internal services (auth-gateway middleware). Anyone with access
 	// to the api's gRPC port could otherwise probe "is user X allowed
 	// to do Y?" — an information-disclosure risk especially in
 	// stand-alone dev or any deploy where the network boundary isn't

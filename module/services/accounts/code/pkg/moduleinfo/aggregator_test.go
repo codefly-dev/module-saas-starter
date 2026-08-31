@@ -43,7 +43,7 @@ func TestAggregate_MergesAcrossServices(t *testing.T) {
 	defer svcA.Close()
 
 	svcB := stubServer(t, moduleinfo.ServiceCapabilities{
-		Info: moduleinfo.ServiceInfo{Name: "auth-sidecar", Module: "saas-starter", Version: "0.0.5"},
+		Info: moduleinfo.ServiceInfo{Name: "auth-gateway", Module: "saas-starter", Version: "0.0.5"},
 		RPCs: []moduleinfo.RPCInfo{
 			{Service: "VerifyService", Method: "VerifyToken", HandlerAuthz: "public"},
 		},
@@ -56,7 +56,7 @@ func TestAggregate_MergesAcrossServices(t *testing.T) {
 
 	view, errs := moduleinfo.Aggregate(context.Background(), []moduleinfo.Endpoint{
 		{Name: "accounts", URL: svcA.URL + "/v1/.well-known/service-info"},
-		{Name: "auth-sidecar", URL: svcB.URL + "/v1/.well-known/service-info"},
+		{Name: "auth-gateway", URL: svcB.URL + "/v1/.well-known/service-info"},
 	}, 2*time.Second)
 	require.Empty(t, errs)
 	require.NotNil(t, view)
@@ -68,7 +68,7 @@ func TestAggregate_MergesAcrossServices(t *testing.T) {
 
 	// Stable ordering: aggregator sorts services by name.
 	require.Equal(t, "accounts", view.Services[0].Info.Name)
-	require.Equal(t, "auth-sidecar", view.Services[1].Info.Name)
+	require.Equal(t, "auth-gateway", view.Services[1].Info.Name)
 }
 
 // TestAggregate_DetectsModuleMismatch — if two services claim

@@ -24,7 +24,7 @@ run — no Docker in the validation sandbox):
 
 | Command | Result |
 |---|---|
-| `auth-sidecar: go vet ./... && go test ./...` | ok (2.9s) |
+| `auth-gateway: go vet ./... && go test ./...` | ok (2.9s) |
 | `accounts: go vet + go test ./pkg/adapters/ ./pkg/business/` | ok (0.7s / 28.4s) |
 | module root: `go vet . && go test .` (gitops mesh assertions) | ok (1.9s) |
 | `TestUntrustedHeaders_SupersetOfStampedHeaders` | PASS |

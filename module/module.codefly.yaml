@@ -5,7 +5,7 @@ description: SaaS foundation — auth, multi-tenancy, generated RPC policy, RBAC
 service-entry: frontend
 interface:
     endpoints:
-        - service: auth-sidecar
+        - service: auth-gateway
           endpoint: grpc
           visibility: module
         - service: frontend
@@ -16,7 +16,7 @@ interface:
           visibility: public
 services:
     - name: accounts
-    - name: auth-sidecar
+    - name: auth-gateway
     - name: cache
     - name: frontend
     - name: marketing

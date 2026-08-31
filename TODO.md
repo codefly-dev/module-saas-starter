@@ -206,7 +206,7 @@ Keep IDs stable so commits, PRs, tests, and release notes can reference them.
 - [x] `P1-GEN-005` Generate opt-in REST/OpenAPI surfaces.
   `saas.rest.surface.v1` now projects 119 explicitly annotated public-edge
   routes across 24 services. Strict generated/plugin bindings emit complete
-  grpc-gateway registration, an exact/template runtime allowlist, auth-sidecar
+  grpc-gateway registration, an exact/template runtime allowlist, auth-gateway
   routing, and a verified 119-operation OpenAPI document. Seven internal RPCs no
   longer carry HTTP annotations. Five non-protobuf routes remain explicit
   extensions; descriptor-equivalent YAML has been removed.
@@ -243,7 +243,7 @@ Keep IDs stable so commits, PRs, tests, and release notes can reference them.
 - [ ] `P1-NET-002` Make REST transcoding explicitly opt-in.
 - [x] `P1-NET-003` Keep frontend page/static/plugin routes at the frontend
   product entry instead of duplicating them in the backend gateway. The
-  auth-sidecar accepts only generated API routes; unknown page-like paths fail
+  auth-gateway accepts only generated API routes; unknown page-like paths fail
   closed.
 - [ ] `P1-NET-004` Deploy one edge data path using Istio/Envoy plus auth/PDP.
 - [x] `P1-NET-005` Repurpose the Go gateway as the private authenticated API
@@ -261,8 +261,8 @@ Keep IDs stable so commits, PRs, tests, and release notes can reference them.
 - [x] `P1-NET-008` Declare and validate `frontend` as the module service entry,
   teach Codefly to resolve it from a module or single-module workspace, and
   smoke-test the complete fixture stack from the repository root. Frontend is
-  the public product endpoint and depends on private `auth-sidecar/rest`;
-  auth-sidecar depends on Accounts and infrastructure, so the graph is acyclic
+  the public product endpoint and depends on private `auth-gateway/rest`;
+  auth-gateway depends on Accounts and infrastructure, so the graph is acyclic
   and one default command starts the whole product.
 - [ ] `P1-NET-009` Make the generated public OpenAPI document available inside
   the standalone frontend artifact and serve it through `/api/openapi`.
@@ -286,8 +286,8 @@ Keep IDs stable so commits, PRs, tests, and release notes can reference them.
 - [x] `P1-CI-002` Add generated-clean-diff checks.
   Protobuf/Go/Connect/gateway/OpenAPI/TypeScript outputs are covered by
   P1-PROTO-004; the normalized service and authorization catalogs, policy
-  documentation, generated auth-sidecar policy lookup, Connect/raw-gRPC registration,
-  gateway inventory/runtime, REST catalog/registration/auth-sidecar routing,
+  documentation, generated auth-gateway policy lookup, Connect/raw-gRPC registration,
+  gateway inventory/runtime, REST catalog/registration/auth-gateway routing,
   filtered OpenAPI, Istio matches, frontend client/vocabulary catalog, normalized
   deployment topology, module/service Codefly manifests, NetworkPolicies, and
   frontend page/plugin/navigation catalogs are also covered. New P1-GEN
@@ -688,7 +688,7 @@ Add completion records here in the form:
   classification; the descriptor-driven completeness test now passes.
 - 2026-07-12 `P0-CI-012` — replaced stale `api_rest`/`api_connect` assertions
   with the generated `accounts_rest`/`accounts_connect` cluster names; the
-  complete auth-sidecar Go suite passes.
+  complete auth-gateway Go suite passes.
 - 2026-07-12 `P0-AUTH-006` — added a real fixture-validator/business login
   integration test and passed all six `tests/e2e/login.spec.ts` journeys against
   the Codefly `dev-admin` stack and a production Next build. The gate also made
@@ -729,7 +729,7 @@ Add completion records here in the form:
   consume the transaction. PostgreSQL integration coverage proves zero
   pre-challenge sessions, cross-user rejection, expiry, replay rejection,
   exactly-one-winner concurrent completion, and MFA preservation across
-  refresh. Focused accounts, auth-sidecar, frontend typecheck, and all 205
+  refresh. Focused accounts, auth-gateway, frontend typecheck, and all 205
   frontend tests pass.
 - 2026-07-12 `P0-MFA-005`–`P0-MFA-006` — TOTP seeds now use a
   purpose-bound `cfs1` application envelope over versioned Vault Transit
@@ -753,7 +753,7 @@ Add completion records here in the form:
   step-up window and edge attempt budget with fail-fast validation. Migration
   `51_authentication_assurance` and assurance/refresh/header/rate-limit/lock
   integration tests added; accounts vet, serialized tests, and the
-  auth-sidecar test/vet suites pass (the two recurring Codefly control-socket
+  auth-gateway test/vet suites pass (the two recurring Codefly control-socket
   package failures passed immediately in isolated reruns).
 - 2026-07-13 `P0-MFA-007` and `P0-MFA-010` — added production-shaped
   WebAuthn/passkey registration and second-factor login ceremonies using
@@ -771,7 +771,7 @@ Add completion records here in the form:
   and login flows use SimpleWebAuthn with passkey/security-key UX. Added
   encrypted-at-rest, global ownership, AAL2/`amr`, cross-transaction, replay,
   configuration, generated-policy, and cleanup coverage; focused Go tests,
-  Go vet, auth-sidecar tests, TypeScript, all 205 frontend tests, and the
+  Go vet, auth-gateway tests, TypeScript, all 205 frontend tests, and the
   production Next build pass.
 - 2026-07-13 `P0-BILL-001`–`P0-BILL-003` — replaced request-scoped Stripe
   dispatch with signature-verified durable ingestion. The exact raw payload,

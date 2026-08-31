@@ -3,7 +3,7 @@
 //
 // Two ways exist to learn a caller's authority (see AUTHZ.md):
 //
-//   - The X-Scoped-Roles request header, forwarded by the auth-sidecar from
+//   - The X-Scoped-Roles request header, forwarded by the auth-gateway from
 //     the access token's `sr` claim. Zero round-trips, but only as fresh as
 //     the token (bounded by one refresh cycle; role edits revoke sessions).
 //   - This client, for callers that need an authoritative, current answer:

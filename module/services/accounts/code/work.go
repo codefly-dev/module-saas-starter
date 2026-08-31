@@ -455,7 +455,7 @@ func doWork(ctx context.Context) (Clean, error) {
 
 	// Separate shared-secret guards for internal RPC admission and forwarded
 	// gateway identity. Empty values fail closed; production deploys provide
-	// independent high-entropy values to both accounts and auth-sidecar.
+	// independent high-entropy values to both accounts and auth-gateway.
 	adapters.SetInternalToken(workspaceEnv("internal-auth", "CODEFLY_INTERNAL_TOKEN"))
 	// A previous internal token stays valid alongside the current one during an
 	// overlapping rotation window, so callers can be migrated without a flag day.

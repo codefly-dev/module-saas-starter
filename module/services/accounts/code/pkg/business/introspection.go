@@ -138,7 +138,7 @@ var rpcDescriptions = withWorkContextConsumerDescriptions(map[string]string{
 	"OrganizationService/UpdateOrgSettings":          "Update branding (logo, color, custom domain).",
 	"PermissionService/AssignRole":                   "Grant a role to a principal/team.",
 	"PermissionService/CheckAccess":                  "Internal hierarchical + per-record authz decision.",
-	"PermissionService/CheckPermission":              "Internal authz decision (auth-sidecar caller).",
+	"PermissionService/CheckPermission":              "Internal authz decision (auth-gateway caller).",
 	"PermissionService/CreateRole":                   "Create a role (org-scoped or platform).",
 	"PermissionService/Decide":                       "Internal principal-aware authz decision (successor to CheckPermission).",
 	"PermissionService/DeleteRole":                   "Delete a custom role.",

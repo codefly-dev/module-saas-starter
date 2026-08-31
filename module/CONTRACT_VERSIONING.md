@@ -12,7 +12,7 @@ composes the starter into another workspace.
 | Contract | Protobuf package | Source directory | Generated Go import | Recommended Go alias |
 | --- | --- | --- | --- | --- |
 | SaaS product API | `saas.accounts.v1` | `saas/accounts/v1` | `accounts/pkg/gen/saas/accounts/v1` | `accountsv1` |
-| Gateway auth/PDP API | `saas.gateway.auth.v1` | `saas/gateway/auth/v1` | `auth-sidecar/pkg/gen/saas/gateway/auth/v1` | `gatewayauthv1` |
+| Gateway auth/PDP API | `saas.gateway.auth.v1` | `saas/gateway/auth/v1` | `auth-gateway/pkg/gen/saas/gateway/auth/v1` | `gatewayauthv1` |
 | Shared method policy options | `saas.policy.v1` | `saas/policy/v1` | generated inside each consuming module | `policyv1` |
 | Normalized generator catalog | `saas.catalog.v1` | `saas/catalog/v1` | `accounts/pkg/gen/saas/catalog/v1` | `catalogv1` |
 | Durable job primitives | `saas.jobs.v1` | `saas/jobs/v1` | `accounts/pkg/gen/saas/jobs/v1` | `jobsv1` |
@@ -48,7 +48,7 @@ The version suffix is part of every fully qualified gRPC and Connect procedure:
 ```text
 /saas.accounts.v1.AuthService/Authenticate
 /saas.accounts.v1.WebhookService/RotateSecret
-/saas.gateway.auth.v1.AuthSidecarService/Resolve
+/saas.gateway.auth.v1.AuthGatewayService/Resolve
 ```
 
 REST paths retain their existing `/v1/...` form. They do not repeat the package
@@ -70,7 +70,7 @@ descriptor set.
   at the edge to `saas.accounts.v1.*`; they remain for at least one minor starter
   release and through 2026-10-11, whichever is later. Removal requires usage
   review. REST `/v1` paths remain compatible throughout. The unused legacy
-  auth-sidecar application contract has no public procedure alias; Envoy's
+  auth-gateway application contract has no public procedure alias; Envoy's
   ext-authz v3 contract is unchanged.
 - Once a successor major is released, the previous stable major receives
   security fixes for at least 12 months. Removal requires a dated deprecation

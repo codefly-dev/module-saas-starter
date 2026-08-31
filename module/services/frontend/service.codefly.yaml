@@ -7,7 +7,7 @@ agent:
     version: 0.0.150
     publisher: codefly.dev
 service-dependencies:
-    - name: auth-sidecar
+    - name: auth-gateway
       endpoints:
         - name: rest
 workspace-configuration-dependencies:

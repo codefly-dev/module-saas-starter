@@ -152,7 +152,7 @@ func NewGrpServer(c *Configuration, opts ...grpc.ServerOption) (*GrpcServer, err
 	opts = append(opts, wooltel.GRPCServerOptions()...)
 
 	// Auth interceptor (mirror of the Connect one in connect_gen.go).
-	// Defense-in-depth: even when an auth-sidecar is in front and
+	// Defense-in-depth: even when an auth-gateway is in front and
 	// already stamped X-User-Id headers, the api re-validates any
 	// `Authorization: Bearer …` it sees so a direct gRPC connection
 	// (dev, debugging, misconfig) cannot bypass auth. Late-bound

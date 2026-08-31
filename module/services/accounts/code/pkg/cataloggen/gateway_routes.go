@@ -319,9 +319,9 @@ func RenderGatewayRouteCatalogJSON(catalog *catalogv1.GatewayRouteCatalog) ([]by
 	return formatted.Bytes(), nil
 }
 
-// RenderAuthSidecarConnectRoutes emits the runtime Connect route inventory.
+// RenderAuthGatewayConnectRoutes emits the runtime Connect route inventory.
 // REST has a separate generated runtime artifact; custom paths stay explicit.
-func RenderAuthSidecarConnectRoutes(catalog *catalogv1.GatewayRouteCatalog) ([]byte, error) {
+func RenderAuthGatewayConnectRoutes(catalog *catalogv1.GatewayRouteCatalog) ([]byte, error) {
 	if err := ValidateGatewayRouteCatalog(catalog); err != nil {
 		return nil, err
 	}
@@ -351,7 +351,7 @@ func generatedCatalogConnectRoutes() []*RouteEntry {
 	source.WriteString("\t}\n}\n")
 	formatted, err := format.Source([]byte(source.String()))
 	if err != nil {
-		return nil, fmt.Errorf("format auth-sidecar gateway routes: %w", err)
+		return nil, fmt.Errorf("format auth-gateway gateway routes: %w", err)
 	}
 	return formatted, nil
 }

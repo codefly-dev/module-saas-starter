@@ -190,7 +190,7 @@ the access token as the compact `sr` claim:
 "sr": { "module-a": ["analyst"], "module-b": ["admin", "editor"] }
 ```
 
-The auth-sidecar forwards this to downstream services as the JSON
+The auth-gateway forwards this to downstream services as the JSON
 `X-Scoped-Roles` header (like `X-Org-Role` / `X-Platform-Role`). A service reads
 it from the request context alone — no callback to accounts:
 

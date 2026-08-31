@@ -19,7 +19,7 @@ func main() {
 	rawOpenAPIPath := flag.String("raw-openapi", "", "path to protoc-gen-openapiv2 output")
 	surfaceOutput := flag.String("surface-output", "", "path for normalized REST surface JSON")
 	accountsOutput := flag.String("accounts-go-output", "", "path for accounts generated REST runtime")
-	sidecarOutput := flag.String("sidecar-go-output", "", "path for auth-sidecar generated REST routes")
+	sidecarOutput := flag.String("sidecar-go-output", "", "path for auth-gateway generated REST routes")
 	openAPIOutput := flag.String("openapi-output", "", "path for filtered public OpenAPI")
 	flag.Parse()
 
@@ -50,9 +50,9 @@ func main() {
 	if err != nil {
 		fatal("render accounts REST runtime", err)
 	}
-	sidecarRuntime, err := cataloggen.RenderAuthSidecarRESTRoutes(surface)
+	sidecarRuntime, err := cataloggen.RenderAuthGatewayRESTRoutes(surface)
 	if err != nil {
-		fatal("render auth-sidecar REST routes", err)
+		fatal("render auth-gateway REST routes", err)
 	}
 	publicOpenAPI, err := cataloggen.RenderPublicOpenAPI(rawOpenAPI, surface, service)
 	if err != nil {

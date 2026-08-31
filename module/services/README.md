@@ -3,7 +3,7 @@
 The module contains eight first-class Codefly services. `marketing` and
 `frontend` are separate Next.js applications: marketing owns public
 apex/`www` content, while frontend remains the authenticated product behind
-`auth-sidecar`.
+`auth-gateway`.
 
 Run the complete local dependency graph from `module/`:
 

@@ -13,8 +13,8 @@ contract.
 | `services/accounts/gateway.bindings.codefly.yaml` | Dated compatibility aliases. |
 | `services/accounts/generated/gateway-routes.json` | Typed target-neutral `saas.gateway.routes.v1` inventory. |
 | `services/accounts/generated/rest-surface.json` | Strict descriptor REST projection. |
-| `services/auth-sidecar/code/routing_catalog_gen.go` | Runtime Connect whitelist consumed by the Go gateway and Envoy generator. |
-| `services/auth-sidecar/code/routing_rest_catalog_gen.go` | Runtime descriptor REST whitelist. |
+| `services/auth-gateway/code/routing_catalog_gen.go` | Runtime Connect whitelist consumed by the Go gateway and Envoy generator. |
+| `services/auth-gateway/code/routing_rest_catalog_gen.go` | Runtime descriptor REST whitelist. |
 
 Current descriptor output contains 358 public-edge routes:
 
@@ -63,7 +63,7 @@ artifacts all fail closed.
 
 ## Runtime ownership
 
-`auth-sidecar` no longer walks live descriptors or owns a handwritten public
+`auth-gateway` no longer walks live descriptors or owns a handwritten public
 Connect map. `LoadConnectRoutesFromCatalog` returns defensive copies of the
 generated whitelist, then joins every route to the generated authorization
 catalog by canonical procedure. This fixed previous drift where public `BeginOAuth`,

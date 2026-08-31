@@ -24,11 +24,11 @@ function frontendHTTP(
 	};
 }
 
-function authSidecarREST(
+function authGatewayREST(
 	overrides: Partial<ServiceEndpoint> = {},
 ): ServiceEndpoint {
 	return frontendHTTP({
-		service: "auth-sidecar",
+		service: "auth-gateway",
 		name: "rest",
 		protocol: "REST",
 		address: GATEWAY,
@@ -89,7 +89,7 @@ describe("productOrigin", () => {
 	it("ignores endpoints from other services when selecting the origin", () => {
 		const withNoise = runtime({
 			endpoints: () => [
-				authSidecarREST(),
+				authGatewayREST(),
 				frontendHTTP({
 					service: "marketing",
 					address: "http://localhost:38311",
@@ -116,22 +116,22 @@ describe("productOrigin", () => {
 });
 
 describe("productGatewayURL", () => {
-	it("returns the single injected auth-sidecar/rest address", () => {
+	it("returns the single injected auth-gateway/rest address", () => {
 		expect(
-			productGatewayURL(runtime({ endpoints: () => [authSidecarREST()] })),
+			productGatewayURL(runtime({ endpoints: () => [authGatewayREST()] })),
 		).toBe(GATEWAY);
 	});
 
-	it("fails closed when Codefly injects more than one auth-sidecar/rest endpoint", () => {
+	it("fails closed when Codefly injects more than one auth-gateway/rest endpoint", () => {
 		const ambiguous = runtime({
 			endpoints: () => [
-				authSidecarREST({ address: GATEWAY }),
-				authSidecarREST({ address: "http://localhost:30001" }),
+				authGatewayREST({ address: GATEWAY }),
+				authGatewayREST({ address: "http://localhost:30001" }),
 			],
 			resolveAddress: () => "http://localhost:9999",
 		});
 		expect(() => productGatewayURL(ambiguous)).toThrow(
-			/multiple auth-sidecar\/rest endpoints/i,
+			/multiple auth-gateway\/rest endpoints/i,
 		);
 	});
 

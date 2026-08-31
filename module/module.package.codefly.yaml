@@ -15,7 +15,7 @@ artifact-roots:
 services:
   - name: accounts
     endpoints: [connect, grpc, rest]
-  - name: auth-sidecar
+  - name: auth-gateway
     endpoints: [grpc, rest]
   - name: cache
     endpoints: [read, write]
