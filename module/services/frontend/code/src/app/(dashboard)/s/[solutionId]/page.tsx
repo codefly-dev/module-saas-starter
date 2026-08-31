@@ -1,7 +1,7 @@
 import { notFound } from "next/navigation";
 
 import { SolutionDashboards } from "@/solutions/SolutionDashboard";
-import { SolutionOutlet } from "@/solutions/SolutionOutlet";
+import { SolutionRuntime } from "@/solutions/SolutionRuntime";
 import { findSolution } from "@/solutions/registry";
 
 export const dynamic = "force-dynamic";
@@ -26,7 +26,7 @@ export default async function SolutionPage({
 					solutionId={solution.id}
 				/>
 			)}
-			<SolutionOutlet
+			<SolutionRuntime
 				remote={{
 					id: solution.id,
 					manifestUrl: solution.frontend.manifestUrl,

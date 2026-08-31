@@ -15,6 +15,7 @@ import {
 	type ReactNode,
 } from "react";
 
+import type { DashboardAuthoring } from "@/features/dashboard";
 import { getToken } from "@/lib/connect/token-store";
 
 /**
@@ -114,6 +115,17 @@ export interface SolutionPageProps {
 	apiBase: string;
 	/** Host-owned access-token getter — the remote never touches the token store. */
 	getAccessToken: () => string | null;
+	/**
+	 * The host's dashboard-authoring capability, injected into the mounted
+	 * runtime so a composing module can change the live dashboard: list the
+	 * event vocabulary, preview a metric against the viewer's audit data, and
+	 * commit a spec through validation into the host's draft. The module calls
+	 * this handle; it never learns how the host validates, persists, scopes, or
+	 * renders the result. A rejected spec comes back as a structured error the
+	 * caller can correct, not a throw — the seam that lets an external driver own
+	 * "what to change" while the host keeps "how to apply it".
+	 */
+	dashboard: DashboardAuthoring;
 }
 
 /**
@@ -148,11 +160,14 @@ class SolutionErrorBoundary extends Component<
 export function SolutionOutlet({
 	remote,
 	pageProps,
+	authoring,
 }: {
 	remote: SolutionRemote;
-	// The server route supplies everything except the client-only token getter,
-	// which the host injects here so the remote never touches the token store.
-	pageProps: Omit<SolutionPageProps, "getAccessToken">;
+	// The server route supplies everything except the client-only capabilities:
+	// the token getter and the dashboard-authoring handle, both injected here so
+	// the remote never touches the token store or constructs its own handle.
+	pageProps: Omit<SolutionPageProps, "getAccessToken" | "dashboard">;
+	authoring: DashboardAuthoring;
 }) {
 	const Remote = remoteComponent(remote);
 
@@ -160,7 +175,7 @@ export function SolutionOutlet({
 		<SolutionErrorBoundary key={remote.id}>
 			<Suspense fallback={<div className="p-6 text-sm opacity-70">Loading solution…</div>}>
 				{/* eslint-disable-next-line react-hooks/static-components -- a solution's ./Page is a Module Federation remote loaded at runtime; it cannot be a static component. It is cached at module scope (remoteComponent) so it stays stable across renders. */}
-				<Remote {...pageProps} getAccessToken={getToken} />
+				<Remote {...pageProps} getAccessToken={getToken} dashboard={authoring} />
 			</Suspense>
 		</SolutionErrorBoundary>
 	);
