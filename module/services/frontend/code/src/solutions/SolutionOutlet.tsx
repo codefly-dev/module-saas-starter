@@ -1,5 +1,8 @@
 "use client";
 
+import * as SaasSdk from "@codefly/saas-sdk";
+import * as SaasUi from "@codefly/saas-ui";
+import * as CodeflyUi from "@codefly/ui";
 import {
 	createInstance,
 	type ModuleFederation,
@@ -18,6 +21,12 @@ import {
 import type { DashboardAuthoring } from "@/features/dashboard";
 import { getToken } from "@/lib/connect/token-store";
 
+// One shared version for the co-versioned @codefly/* kit. requiredVersion is
+// left off the share config so a remote built against any release still resolves
+// to the host's single instance — the host is always the sole provider, and the
+// point of sharing them is dedup, not version negotiation.
+const CODEFLY_KIT_VERSION = "0.1.0";
+
 /**
  * Generic Module Federation host runtime.
  *
@@ -26,6 +35,11 @@ import { getToken } from "@/lib/connect/token-store";
  * instead of bundling its own (which would break hooks/context across the
  * boundary). The remote's build marks react/react-dom/jsx-runtime as shared
  * singletons and therefore ships without them.
+ *
+ * The Codefly frontend kit (`@codefly/ui`, `@codefly/saas-ui`,
+ * `@codefly/saas-sdk`) is shared the same way, so a remote imports
+ * `<DatasourcesPanel gateway={…}>` and renders it against the host's one copy —
+ * no bundling, and one React instance across the boundary.
  */
 let host: ModuleFederation | null = null;
 
@@ -51,6 +65,21 @@ function hostInstance(): ModuleFederation {
 				version: React.version,
 				lib: () => ReactJSXRuntime,
 				shareConfig: { singleton: true, requiredVersion: `^${React.version}` },
+			},
+			"@codefly/ui": {
+				version: CODEFLY_KIT_VERSION,
+				lib: () => CodeflyUi,
+				shareConfig: { singleton: true, requiredVersion: false },
+			},
+			"@codefly/saas-ui": {
+				version: CODEFLY_KIT_VERSION,
+				lib: () => SaasUi,
+				shareConfig: { singleton: true, requiredVersion: false },
+			},
+			"@codefly/saas-sdk": {
+				version: CODEFLY_KIT_VERSION,
+				lib: () => SaasSdk,
+				shareConfig: { singleton: true, requiredVersion: false },
 			},
 		},
 	});

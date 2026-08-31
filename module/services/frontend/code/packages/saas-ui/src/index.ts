@@ -4,6 +4,10 @@ export {
 	type DatasourcesPanelProps,
 } from "./datasources/datasources-panel.js";
 export {
+	createDatasourceClient,
+	type GatewayBinding,
+} from "./datasources/gateway.js";
+export {
 	useAddGitHubSource,
 	useDeleteSource,
 	useListSources,
