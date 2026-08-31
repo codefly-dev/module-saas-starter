@@ -1,5 +1,5 @@
-import { type Client, createClient, type Transport } from "@connectrpc/connect";
-import { AuditService } from "../gen/saas/accounts/v1/audit_pb.js";
+import type { Transport } from "@connectrpc/connect";
+import * as audit from "../facade/audit.js";
 
 /**
  * The typed Connect clients a consumer imports. The data-graph tooling only
@@ -8,11 +8,11 @@ import { AuditService } from "../gen/saas/accounts/v1/audit_pb.js";
  * tooling's `AuditAggregateClient`, so it drops straight into `runDashboard`.
  */
 export interface SaasClient {
-	readonly audit: Client<typeof AuditService>;
+	readonly audit: audit.Audit;
 }
 
 export function createSaasClient(transport: Transport): SaasClient {
 	return {
-		audit: createClient(AuditService, transport),
+		audit: audit.New(transport),
 	};
 }
