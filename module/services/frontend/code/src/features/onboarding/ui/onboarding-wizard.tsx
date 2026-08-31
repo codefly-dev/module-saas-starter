@@ -35,6 +35,25 @@ import {
 } from "../model/types";
 import { useOnboardingController } from "../react/use-onboarding-controller";
 
+import { useAuth } from "@/lib/auth";
+
+/**
+ * Derive workspace placeholders from the signed-in user's email domain
+ * (alice@obin.ai -> "Obin" / "obin") so the suggestion reflects the operator's
+ * org instead of a generic "Acme". Falls back to the generic sample when no
+ * email is available.
+ */
+function orgPlaceholders(email: string | undefined): {
+	name: string;
+	slug: string;
+} {
+	const label = email?.split("@")[1]?.split(".")[0]?.toLowerCase();
+	if (!label) {
+		return { name: "Acme Inc.", slug: "acme-inc" };
+	}
+	return { name: label.charAt(0).toUpperCase() + label.slice(1), slug: label };
+}
+
 const stepIcons = {
 	[OnboardingStepId.CONFIGURE_ORGANIZATION]: Building2,
 	[OnboardingStepId.INVITE_TEAM]: UsersRound,
@@ -49,6 +68,8 @@ function OrganizationAction({
 	controller: OnboardingController;
 	model: OnboardingViewModel;
 }) {
+	const { user } = useAuth();
+	const placeholders = orgPlaceholders(user?.email);
 	return (
 		<form
 			className="space-y-4"
@@ -66,7 +87,7 @@ function OrganizationAction({
 					onChange={(event) =>
 						controller.setOrganizationName(event.target.value)
 					}
-					placeholder="Acme Inc."
+					placeholder={placeholders.name}
 					required
 				/>
 			</div>
@@ -79,7 +100,7 @@ function OrganizationAction({
 						controller.setOrganizationSlug(event.target.value)
 					}
 					pattern="[a-z0-9]+(?:-[a-z0-9]+)*"
-					placeholder="acme-inc"
+					placeholder={placeholders.slug}
 					required
 				/>
 			</div>
