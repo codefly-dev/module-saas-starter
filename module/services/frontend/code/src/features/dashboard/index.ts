@@ -42,7 +42,11 @@ export {
 	type DashboardDraftChange,
 	type DashboardDraftStore,
 } from "./service/draft-store";
-export { useDashboardAuthoring } from "./service/use-dashboard-authoring";
+export {
+	USER_DASHBOARD_DRAFT_KEY,
+	scopedDashboardDraftKey,
+	useDashboardAuthoring,
+} from "./service/use-dashboard-authoring";
 export {
 	type DashboardDraft,
 	useDashboardDraft,

@@ -3,20 +3,16 @@
 import {
 	DASHBOARD_SPEC_VERSION,
 	type DashboardDef,
+	scopedDashboardDraftKey,
+	USER_DASHBOARD_DRAFT_KEY,
 	useDashboardAuthoring,
 } from "@/features/dashboard";
+import { useAuth } from "@/lib/auth";
 import {
 	SolutionOutlet,
 	type SolutionPageProps,
 	type SolutionRemote,
 } from "./SolutionOutlet";
-
-// localStorage key the viewer's dashboard draft lives under. The authoring
-// handle injected into a mounted solution commits here, so an external driver's
-// edit lands in the same draft the dashboard canvas renders from — the durable,
-// decoupled channel between a composing module and the live surface. The canvas
-// binds the same key to reflect those edits.
-export const USER_DASHBOARD_DRAFT_KEY = "dashboard:user-draft";
 
 const EMPTY_DASHBOARD: DashboardDef = {
 	version: DASHBOARD_SPEC_VERSION,
@@ -24,13 +20,16 @@ const EMPTY_DASHBOARD: DashboardDef = {
 };
 
 /**
- * Client boundary that binds the host's dashboard-authoring capability to a
- * mounted solution. It owns the viewer's draft, derives the authoring handle
- * from it, and hands that handle to the remote through SolutionOutlet. A mounted
- * module drives the live dashboard by calling the handle; the host stays
- * ignorant of how the module decides what to change.
+ * Binds the host's dashboard-authoring capability to a mounted solution and
+ * injects it into the remote. The handle commits to the viewer's own dashboard
+ * draft — the SAME viewer-scoped key the Dashboards editor renders from — so an
+ * external driver's `setDashboard` durably changes the user's dashboard and the
+ * canvas reflects it (live across tabs through the draft's storage subscription,
+ * and on next open otherwise). The channel carries no canvas of its own: the
+ * host already owns that surface, and rendering the user's dashboard on every
+ * solution page would be both redundant and intrusive.
  *
- * The draft is owned here (not inside the generic SolutionOutlet) so the outlet
+ * The draft is bound here (not inside the generic SolutionOutlet) so the outlet
  * stays pure Module Federation infra with no dependency on the app's auth,
  * audit, or query providers.
  */
@@ -39,12 +38,14 @@ export function SolutionRuntime({
 	pageProps,
 }: {
 	remote: SolutionRemote;
-	pageProps: Omit<SolutionPageProps, "getAccessToken" | "dashboard">;
+	pageProps: Omit<SolutionPageProps, "getAccessToken" | "dashboardAuthoring">;
 }) {
-	const { authoring } = useDashboardAuthoring(
-		USER_DASHBOARD_DRAFT_KEY,
-		EMPTY_DASHBOARD,
-	);
+	const { user, organizationId } = useAuth();
+	const draftKey = scopedDashboardDraftKey(USER_DASHBOARD_DRAFT_KEY, {
+		organizationId,
+		userId: user?.id,
+	});
+	const { authoring } = useDashboardAuthoring(draftKey, EMPTY_DASHBOARD);
 	return (
 		<SolutionOutlet
 			remote={remote}

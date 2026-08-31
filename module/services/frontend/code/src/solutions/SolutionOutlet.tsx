@@ -125,7 +125,7 @@ export interface SolutionPageProps {
 	 * caller can correct, not a throw — the seam that lets an external driver own
 	 * "what to change" while the host keeps "how to apply it".
 	 */
-	dashboard: DashboardAuthoring;
+	dashboardAuthoring: DashboardAuthoring;
 }
 
 /**
@@ -166,7 +166,7 @@ export function SolutionOutlet({
 	// The server route supplies everything except the client-only capabilities:
 	// the token getter and the dashboard-authoring handle, both injected here so
 	// the remote never touches the token store or constructs its own handle.
-	pageProps: Omit<SolutionPageProps, "getAccessToken" | "dashboard">;
+	pageProps: Omit<SolutionPageProps, "getAccessToken" | "dashboardAuthoring">;
 	authoring: DashboardAuthoring;
 }) {
 	const Remote = remoteComponent(remote);
@@ -175,7 +175,11 @@ export function SolutionOutlet({
 		<SolutionErrorBoundary key={remote.id}>
 			<Suspense fallback={<div className="p-6 text-sm opacity-70">Loading solution…</div>}>
 				{/* eslint-disable-next-line react-hooks/static-components -- a solution's ./Page is a Module Federation remote loaded at runtime; it cannot be a static component. It is cached at module scope (remoteComponent) so it stays stable across renders. */}
-				<Remote {...pageProps} getAccessToken={getToken} dashboard={authoring} />
+				<Remote
+					{...pageProps}
+					getAccessToken={getToken}
+					dashboardAuthoring={authoring}
+				/>
 			</Suspense>
 		</SolutionErrorBoundary>
 	);
