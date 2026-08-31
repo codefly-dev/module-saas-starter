@@ -6,6 +6,7 @@
 // ever reaching <Dashboard>, whether the spec was authored in code, restored
 // from localStorage, or set by an external driver.
 
+import { metricIdentity } from "./identity";
 import {
 	type Bucket,
 	type ChartKind,
@@ -336,6 +337,23 @@ export function assertDashboardSpec(
 	assertSpec(Array.isArray(value.metrics), "spec metrics must be an array");
 	value.metrics.forEach((entry, index) => {
 		assertMetric(entry, `metric at index ${index}`);
+	});
+
+	// Every metric is now well-formed; reject a spec that carries two metrics
+	// with the same rendered identity. <Dashboard> keys each card on
+	// metricIdentity, so a colliding pair collapses to a single card (React drops
+	// the duplicate key) — a spec that cannot render as authored. identity.ts owns
+	// that identity; this boundary is where a spec is held to it, so no producer
+	// (the editor, an external driver, a code literal, a restored draft) can reach
+	// the canvas with a collision.
+	const seenIdentities = new Set<string>();
+	value.metrics.forEach((entry, index) => {
+		const identity = metricIdentity(entry as MetricDef);
+		assertSpec(
+			!seenIdentities.has(identity),
+			`metric at index ${index} duplicates the identity of an earlier metric — two metrics identical in every field that distinguishes a rendered card (title, description, chart, grouping, time window, scope, value, and display options such as limit and span) resolve to a single React key, so one card would be silently dropped`,
+		);
+		seenIdentities.add(identity);
 	});
 }
 
