@@ -1154,6 +1154,16 @@ func discoverOIDCValidator(provider string) (validator auth.TokenValidator, toke
 		cfg.EmailClaim = claim
 	}
 
+	// Standard OIDC binds an id_token to its relying party through `aud` ==
+	// client id. A minimally-configured provider supplies neither an explicit
+	// IDENTITY_AUDIENCE nor a non-standard IDENTITY_CLIENT_ID_CLAIM, so default
+	// the audience binding to the client id: without it oidc.New fails closed
+	// ("an audience binding is required"), and demanding the non-standard
+	// client_id claim rejects id_tokens (e.g. WorkOS AuthKit) that never carry it.
+	if !hasConfiguredValue(cfg.Audience) && !hasConfiguredValue(cfg.ClientIDClaim) {
+		cfg.Audience = clientID
+	}
+
 	v, err := oidc.New(cfg)
 	if err != nil {
 		return nil, "", "", "", fmt.Errorf("initialize %s validator: %w", provider, err)

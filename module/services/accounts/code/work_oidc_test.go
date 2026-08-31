@@ -26,6 +26,7 @@ type fakeOIDCProvider struct {
 	kid           string
 	server        *httptest.Server
 	issuer        string
+	aud           string
 	discoveryHits int
 	tokenHits     int
 }
@@ -34,7 +35,7 @@ func newFakeOIDCProvider(t *testing.T) *fakeOIDCProvider {
 	t.Helper()
 	priv, err := rsa.GenerateKey(rand.Reader, 2048)
 	require.NoError(t, err)
-	f := &fakeOIDCProvider{priv: priv, kid: "kid-1"}
+	f := &fakeOIDCProvider{priv: priv, kid: "kid-1", aud: "api://generic"}
 	mux := http.NewServeMux()
 	mux.HandleFunc("/.well-known/openid-configuration", func(w http.ResponseWriter, _ *http.Request) {
 		f.discoveryHits++
@@ -74,7 +75,7 @@ func (f *fakeOIDCProvider) sign(t *testing.T) string {
 	now := time.Now()
 	token := jwt.NewWithClaims(jwt.SigningMethodRS256, jwt.MapClaims{
 		"iss":            f.issuer,
-		"aud":            "api://generic",
+		"aud":            f.aud,
 		"sub":            "user_enterprise_01",
 		"email":          "user@enterprise.example",
 		"email_verified": true,
@@ -203,4 +204,35 @@ func TestGenericOIDCStackFailsAtStartupOnMisconfiguration(t *testing.T) {
 	t.Setenv("CODEFLY__WORKSPACE_SECRET_CONFIGURATION__IDENTITY__IDENTITY_CLIENT_SECRET", "sk_generic")
 	_, _, err = buildProviderStack("oidc", "")
 	require.ErrorContains(t, err, "IDENTITY_ISSUER")
+}
+
+func TestGenericOIDCStackDefaultsAudienceToClientID(t *testing.T) {
+	clearAuthProviderEnvironment(t)
+	f := newFakeOIDCProvider(t)
+	// Standard OIDC: the id_token's aud is the client id.
+	f.aud = "client_generic"
+
+	// Minimal configuration: client id, secret and issuer only. Neither
+	// IDENTITY_AUDIENCE nor IDENTITY_CLIENT_ID_CLAIM is set, so the validator
+	// must default its audience binding to the client id rather than fail closed
+	// at startup ("an audience binding is required").
+	setIdentityConfiguration(t, "IDENTITY_CLIENT_ID", "client_generic")
+	t.Setenv("CODEFLY__WORKSPACE_SECRET_CONFIGURATION__IDENTITY__IDENTITY_CLIENT_SECRET", "sk_generic")
+	setIdentityConfiguration(t, "IDENTITY_ISSUER", f.issuer)
+
+	validator, exchanger, err := buildProviderStack("oidc", "")
+	require.NoError(t, err)
+	require.NotNil(t, validator)
+
+	tokens, err := exchanger.Exchange(t.Context(), "auth-code", "http://localhost:21931/auth/callback", "verifier")
+	require.NoError(t, err)
+	claims, err := validator.Validate(t.Context(), tokens.AccessToken)
+	require.NoError(t, err)
+	require.Equal(t, "user@enterprise.example", claims.Email)
+
+	// The default is a real binding, not an "accept any audience" fallback: a
+	// token whose aud is not the client id is still rejected.
+	f.aud = "someone-else"
+	_, err = validator.Validate(t.Context(), f.sign(t))
+	require.ErrorContains(t, err, "audience mismatch")
 }
