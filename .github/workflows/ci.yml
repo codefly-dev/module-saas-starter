@@ -29,10 +29,14 @@ jobs:
         run: node --test module/tools/base-integrity.test.mjs
       - name: Test the RLS migration gate
         run: node --test module/tools/rls-migration-gate.test.mjs
+      - name: Test the migration pairing gate
+        run: node --test module/tools/migration-pairing-gate.test.mjs
       - name: Verify the shipped manifest matches the canonical tree
         run: node module/tools/base-integrity.mjs verify
       - name: Enforce tenant RLS coverage in store migrations
         run: node module/tools/rls-migration-gate.mjs check
+      - name: Enforce up+down pairing across all migrations
+        run: node module/tools/migration-pairing-gate.mjs check
 
   authz-coverage:
     name: Authorization coverage

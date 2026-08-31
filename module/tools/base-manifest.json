@@ -1,6 +1,6 @@
 {
   "note": "Base-file integrity manifest for the saas-starter module. Generated FROM canonical by `node tools/base-integrity.mjs gen`. Consumers MUST NOT hand-edit base files — only add files on the side. Regenerated on every codefly sync from canonical.",
-  "fileCount": 1843,
+  "fileCount": 1845,
   "files": {
     "AUTHORIZATION_CATALOG.md": "b2ea5d41f0098e80315e02e7c4bdbda03b65c8eef463426242552fd3c047ca0a",
     "CONTRACT_VERSIONING.md": "02031aa87922ab5ec573ea582cf584271873481de6ceabbda52b1bfda005ffbd",
@@ -1838,6 +1838,8 @@
     "tools/go.mod": "38a2aedbda05084e5e4431c8e5b14a77cb33b27f62d5852809d4a1c43b4e2ff2",
     "tools/go.sum": "66dd7076594746052d2252d398ea5008bb57759134e72cce8d59cacb2a484c71",
     "tools/marketing-extraction.mjs": "20a7e8abd1fd04cc84aaed7333405c0813149220dd8122a70771c4917c4e0e93",
+    "tools/migration-pairing-gate.mjs": "bd3484638097ed888bfcb0197f386dac7cb9876f74a1ac177d66f68abbddcb3c",
+    "tools/migration-pairing-gate.test.mjs": "55c90a48ac163848f560bcfeeeeff38513fe399294f76cfafb3596af00650a62",
     "tools/modulepackage/archive.go": "e149cd759649190c1e2bbb50f4d814840cd197dacb0872f3953cee242fe9f709",
     "tools/modulepackage/commands.go": "4d1789a70fa78aed3b5e91a8a66c2011248917c7db587f116c228bd35077fd31",
     "tools/modulepackage/manifest.go": "10b8d38170bb17218d8aaaae2be802356e7c17f99aff4721ebd05a42d74dd525",
