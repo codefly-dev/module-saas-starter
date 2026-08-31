@@ -1431,7 +1431,7 @@
     "services/frontend/code/src/lib/appearance-provider.tsx": "7bace2c05f68b8c5eb74ea75597fdab51bd07cda5fb417b5dd0d3e6852c6efb4",
     "services/frontend/code/src/lib/appearance.ts": "eaff22c7db2c8e485941d146962fe613020eef9c828c0d4cdf025b5b76681d2b",
     "services/frontend/code/src/lib/auth-errors.ts": "0f3de8089978f0db5ead04290a44d479061fc100a250e4d44954a0e2367c3e59",
-    "services/frontend/code/src/lib/auth-provider.test.ts": "2fb8dd2a6b3b850386330382c5ea4875233ad6af366738da5137852cb88922a3",
+    "services/frontend/code/src/lib/auth-provider.test.ts": "38008455269a53894da6a1c15a9a33cd2f3f6b5179a454516ebee5cdacd1fb1c",
     "services/frontend/code/src/lib/auth-return.ts": "7b4a9a7d869984f0a868aac9bb27275dbcbd15c264d28ce671ee1a00cb4ec765",
     "services/frontend/code/src/lib/auth-session.ts": "b5221d20d10b5bb7429fabb8f5ebabdcf37c577791a0bd2c484d1ba611d23778",
     "services/frontend/code/src/lib/auth.tsx": "2d62ddd13c6537a862ead729689432ea387f3a1ac7b92615c9ba10dfddf468cf",
