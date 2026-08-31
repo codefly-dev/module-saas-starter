@@ -48,4 +48,5 @@ export {
 	useDashboardDraft,
 } from "./service/use-dashboard-draft";
 export { Dashboard } from "./ui/dashboard";
+export { DashboardEditor } from "./ui/dashboard-editor";
 export { Layout } from "./ui/layout";
