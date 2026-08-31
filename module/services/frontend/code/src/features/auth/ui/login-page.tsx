@@ -238,9 +238,18 @@ export function LoginPage() {
 											type="button"
 											key={p.id}
 											onClick={async () => {
+												setError(null);
 												try {
 													await signInWith(p.id, destination);
-												} catch {}
+												} catch (err) {
+													// A failed `begin` leaves the button on-screen with no
+													// redirect, so the click otherwise looks dead. Log the
+													// status for operators; show the user a real message.
+													console.error("Sign-in could not be started", err);
+													setError(
+														"Sign-in is temporarily misconfigured. Please try again in a few minutes.",
+													);
+												}
 											}}
 											className="w-full flex items-center justify-center gap-2.5 h-11 rounded-lg border bg-background hover:bg-accent/50 text-sm font-medium transition-colors"
 										>

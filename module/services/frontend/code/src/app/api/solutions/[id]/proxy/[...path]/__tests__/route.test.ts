@@ -219,4 +219,68 @@ describe("solution proxy passthrough", () => {
 		expect(res.headers.get("set-cookie")).toBeNull();
 		expect(res.headers.get("x-internal-trace")).toBeNull();
 	});
+
+	it("returns 502 when the resolved gateway is unreachable", async () => {
+		withGateway();
+		registerAudit();
+		fetchMock.mockRejectedValueOnce(new TypeError("fetch failed"));
+
+		const res = await GET(
+			proxyRequest("http://frontend/api/solutions/audit/proxy/records", {
+				headers: { authorization: "Bearer caller-token" },
+			}),
+			context("audit", ["records"]),
+		);
+
+		expect(res.status).toBe(502);
+		expect(await res.text()).toBe("solution gateway unreachable");
+	});
+
+	it("categorizes a forwarded auth failure and correlates it via request id", async () => {
+		withGateway();
+		registerAudit();
+		fetchMock.mockResolvedValueOnce(
+			new Response("unauthorized", {
+				status: 401,
+				headers: {
+					"content-type": "application/json",
+					"x-request-id": "req-42",
+				},
+			}),
+		);
+
+		const res = await GET(
+			proxyRequest("http://frontend/api/solutions/audit/proxy/records", {
+				headers: { authorization: "Bearer caller-token" },
+			}),
+			context("audit", ["records"]),
+		);
+
+		// Status and body pass through untouched; the host adds the category and
+		// the correlation id so an operator can tell auth from an upstream fault.
+		expect(res.status).toBe(401);
+		expect(res.headers.get("x-codefly-solution-error")).toBe("auth");
+		expect(res.headers.get("x-request-id")).toBe("req-42");
+	});
+
+	it("categorizes a forwarded solution-upstream failure", async () => {
+		withGateway();
+		registerAudit();
+		fetchMock.mockResolvedValueOnce(
+			new Response("boom", {
+				status: 503,
+				headers: { "content-type": "application/json" },
+			}),
+		);
+
+		const res = await GET(
+			proxyRequest("http://frontend/api/solutions/audit/proxy/records", {
+				headers: { authorization: "Bearer caller-token" },
+			}),
+			context("audit", ["records"]),
+		);
+
+		expect(res.status).toBe(503);
+		expect(res.headers.get("x-codefly-solution-error")).toBe("upstream");
+	});
 });

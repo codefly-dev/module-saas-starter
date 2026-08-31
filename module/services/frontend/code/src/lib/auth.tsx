@@ -13,6 +13,7 @@ import {
 	useState,
 } from "react";
 import { AuthService } from "@/gen/saas/accounts/v1/authentication_pb";
+import { authErrorFromResponse } from "@/lib/auth-errors";
 import { safePostLoginDestination } from "@/lib/public-handoff";
 import type { OrgRole, PlatformRole } from "./auth-session";
 import {
@@ -543,8 +544,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 				}),
 			});
 			if (!res.ok) {
-				const body = await res.text().catch(() => "");
-				throw new Error(`OAuth exchange failed: ${res.status} ${body}`);
+				throw await authErrorFromResponse(res);
 			}
 			const data = await res.json();
 
