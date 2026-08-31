@@ -1,10 +1,17 @@
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 
+interface ExportEntry {
+	types?: string;
+	import?: string;
+	default?: string;
+}
+
 interface Manifest {
 	name?: string;
 	dependencies?: Record<string, string>;
 	peerDependencies?: Record<string, string>;
+	exports?: Record<string, ExportEntry>;
 }
 
 // This spec runs under two Vitest projects with different cwds (the kit's own
@@ -28,6 +35,27 @@ function codeflyUiManifest(): Manifest {
 const manifest = codeflyUiManifest();
 const deps = manifest.dependencies ?? {};
 const peers = manifest.peerDependencies ?? {};
+const exportsMap = manifest.exports ?? {};
+
+// The public subpaths a consumer (host or Module-Federation remote) may import.
+// Each must resolve to a built `dist/` entry with matching types, so a subpath is
+// reachable and typed once published.
+describe("@codefly/ui public subpaths", () => {
+	for (const subpath of [
+		".",
+		"./plugin-host",
+		"./skin",
+		"./dashboard",
+		"./layout",
+	]) {
+		it(`exports ${subpath} to a typed dist entry`, () => {
+			const entry = exportsMap[subpath];
+			expect(entry, `missing exports entry for ${subpath}`).toBeDefined();
+			expect(entry.import).toMatch(/^\.\/dist\/.*\.js$/);
+			expect(entry.types).toMatch(/^\.\/dist\/.*\.d\.ts$/);
+		});
+	}
+});
 
 // The kit is the dedupe surface for the host and its Module-Federation remotes.
 // The stateful, context-bearing platform packages must be peers so exactly one

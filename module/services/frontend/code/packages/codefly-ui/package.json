@@ -38,6 +38,11 @@
 			"types": "./dist/dashboard/index.d.ts",
 			"import": "./dist/dashboard/index.js",
 			"default": "./dist/dashboard/index.js"
+		},
+		"./layout": {
+			"types": "./dist/layout/index.d.ts",
+			"import": "./dist/layout/index.js",
+			"default": "./dist/layout/index.js"
 		}
 	},
 	"scripts": {
@@ -52,7 +57,9 @@
 	"devDependencies": {
 		"@codefly/saas-plugin-contract": "2.1.0",
 		"@codefly/saas-plugin-react": "0.4.1",
+		"@testing-library/react": "^16.1.0",
 		"@types/react": "19.2.17",
+		"happy-dom": "^20.8.9",
 		"react": "^19.2.8",
 		"typescript": "5.9.3",
 		"vitest": "^3.0.0"
