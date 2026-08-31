@@ -63,16 +63,65 @@ async function handler(request: Request, context: RouteContext): Promise<Respons
 		init.body = await request.arrayBuffer();
 	}
 
-	const upstream = await fetch(target, init);
+	let upstream: Response;
+	try {
+		upstream = await fetch(target, init);
+	} catch (err) {
+		// The gateway resolved but is unreachable (DNS, refused, reset). Distinct
+		// from an unresolvable endpoint above so an operator can tell "no gateway
+		// configured" from "gateway down".
+		console.error(
+			`solution proxy: gateway unreachable solution=${id} alias=${solution.backend.serviceAlias}`,
+			err,
+		);
+		return new Response("solution gateway unreachable", { status: 502 });
+	}
+
 	const responseHeaders = new Headers();
 	const upstreamContentType = upstream.headers.get("content-type");
 	if (upstreamContentType) {
 		responseHeaders.set("content-type", upstreamContentType);
 	}
+	const upstreamRequestID = upstream.headers.get("x-request-id");
+	if (upstreamRequestID) {
+		responseHeaders.set("x-request-id", upstreamRequestID);
+	}
+
+	// A forwarded error keeps its upstream status and body (the solution's remote
+	// owns how it renders them), but the host categorizes it so an operator can
+	// tell auth (401/403) from the solution's own upstream (5xx) — and correlates
+	// each to the gateway via its request id.
+	if (!upstream.ok) {
+		const category = errorCategory(upstream.status);
+		responseHeaders.set("x-codefly-solution-error", category);
+		// A 5xx is the solution's own fault and warrants error-level attention; a
+		// 4xx is a client/auth condition (e.g. an expired token on a poll) and
+		// would only spam the log at error level.
+		const log = upstream.status >= 500 ? console.error : console.warn;
+		log(
+			`solution proxy: upstream error solution=${id} status=${upstream.status} category=${category} request_id=${upstreamRequestID ?? ""}`,
+		);
+	}
+
 	return new Response(upstream.body, {
 		status: upstream.status,
 		headers: responseHeaders,
 	});
+}
+
+/**
+ * Classify a forwarded gateway status into an operator-facing failure cause.
+ *
+ * A registration miss is caught by the host's own 404 before any upstream call
+ * (see `findSolution` above), so a *forwarded* 404 is the solution's own API
+ * reporting a missing resource — labeled `not_found`, never `not_registered`,
+ * so an operator isn't sent chasing a registration bug that isn't there.
+ */
+function errorCategory(status: number): string {
+	if (status === 401 || status === 403) return "auth";
+	if (status === 404) return "not_found";
+	if (status >= 500) return "upstream";
+	return "request";
 }
 
 export {
