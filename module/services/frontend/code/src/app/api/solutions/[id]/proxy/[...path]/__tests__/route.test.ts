@@ -74,6 +74,17 @@ function proxyRequest(
 	return new Request(url, init);
 }
 
+// `Cookie`, `Origin`, and `Sec-*` are forbidden headers a fetch Request strips
+// (happy-dom enforces this), so model the real Next server request — which does
+// carry them — with a Headers-backed object that preserves them.
+function rawRequest(
+	url: string,
+	method: string,
+	headers: Record<string, string>,
+): Request {
+	return { method, url, headers: new Headers(headers) } as unknown as Request;
+}
+
 let fetchMock: ReturnType<typeof vi.fn>;
 
 beforeEach(() => {
@@ -122,6 +133,57 @@ describe("solution proxy passthrough", () => {
 		);
 	});
 
+	it("rejects a cross-site request before reaching any upstream", async () => {
+		withGateway();
+		withTrustContext();
+		registerAudit();
+
+		const res = await POST(
+			rawRequest("http://frontend/api/solutions/audit/proxy/records", "POST", {
+				cookie: "codefly_session=1",
+				"sec-fetch-site": "cross-site",
+			}),
+			context("audit", ["records"]),
+		);
+
+		expect(res.status).toBe(403);
+		expect(fetchMock).not.toHaveBeenCalled();
+	});
+
+	it("rejects a request whose Origin is a different origin", async () => {
+		withGateway();
+		withTrustContext();
+		registerAudit();
+
+		const res = await POST(
+			rawRequest("http://frontend/api/solutions/audit/proxy/records", "POST", {
+				origin: "http://evil.example",
+			}),
+			context("audit", ["records"]),
+		);
+
+		expect(res.status).toBe(403);
+		expect(fetchMock).not.toHaveBeenCalled();
+	});
+
+	it("allows an explicit same-origin request through", async () => {
+		withGateway();
+		withTrustContext();
+		registerAudit();
+
+		const res = await GET(
+			rawRequest("http://frontend/api/solutions/audit/proxy/records", "GET", {
+				authorization: "Bearer caller-token",
+				origin: "http://frontend",
+				"sec-fetch-site": "same-origin",
+			}),
+			context("audit", ["records"]),
+		);
+
+		expect(res.status).toBe(200);
+		expect(fetchMock).toHaveBeenCalledTimes(1);
+	});
+
 	it("never leaks arbitrary caller headers to the upstream", async () => {
 		withGateway();
 		withTrustContext();
@@ -132,6 +194,7 @@ describe("solution proxy passthrough", () => {
 				headers: {
 					authorization: "Bearer caller-token",
 					"x-secret-smuggle": "leak",
+					"x-forwarded-host": "app.example",
 				},
 			}),
 			context("audit", ["records"]),
@@ -139,6 +202,9 @@ describe("solution proxy passthrough", () => {
 
 		const forwarded = fetchMock.mock.calls[0][1].headers as Headers;
 		expect(forwarded.has("x-secret-smuggle")).toBe(false);
+		// x-forwarded-host is consumed to derive the public origin, never relayed
+		// to the upstream as a raw header.
+		expect(forwarded.has("x-forwarded-host")).toBe(false);
 	});
 
 	it("replaces a caller-supplied internal token with the trusted one", async () => {
@@ -188,18 +254,12 @@ describe("solution proxy passthrough", () => {
 		withTrustContext();
 		registerAudit();
 
-		// `Cookie` is a forbidden header on a fetch Request (happy-dom strips it),
-		// so model the real Next server request with a Headers-backed object that
-		// preserves it.
-		const request = {
-			method: "GET",
-			url: "http://frontend/api/solutions/audit/proxy/records",
-			headers: new Headers({
+		await GET(
+			rawRequest("http://frontend/api/solutions/audit/proxy/records", "GET", {
 				cookie: "codefly_session=1; codefly_refresh=abc",
 			}),
-		} as unknown as Request;
-
-		await GET(request, context("audit", ["records"]));
+			context("audit", ["records"]),
+		);
 
 		const forwarded = fetchMock.mock.calls[0][1].headers as Headers;
 		expect(forwarded.get("cookie")).toBe(

@@ -31,6 +31,24 @@ function callerOrigin(request: Request): string {
 	return `${protocol}//${host}`;
 }
 
+// This route forwards the caller's cookies to the gateway under a trusted
+// internal token, so it must reject cross-site requests itself — cookies ride
+// along automatically on a forged cross-origin call, and the gateway cannot tell
+// a CSRF-driven request from a legitimate one once the internal token is
+// attached. Mirrors the same-origin guard on the sibling plugin BFF route.
+function sameOrigin(request: Request): boolean {
+	const origin = request.headers.get("origin");
+	if (origin) {
+		try {
+			if (new URL(origin).origin !== new URL(request.url).origin) return false;
+		} catch {
+			return false;
+		}
+	}
+	const fetchSite = request.headers.get("sec-fetch-site");
+	return !fetchSite || fetchSite === "same-origin" || fetchSite === "none";
+}
+
 /** Resolve the auth-sidecar API gateway base from the Codefly SDK. */
 function gatewayBase(): string | null {
 	const endpoint = getEndpoints().find(
@@ -59,6 +77,10 @@ async function handler(
 	context: RouteContext,
 ): Promise<Response> {
 	const { id, path } = await context.params;
+
+	if (!sameOrigin(request)) {
+		return new Response("cross-origin request rejected", { status: 403 });
+	}
 
 	const solution = findSolution(id);
 	if (!solution) {
