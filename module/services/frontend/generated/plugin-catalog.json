@@ -54,6 +54,12 @@
       "access": "FRONTEND_ROUTE_ACCESS_ADMIN"
     },
     {
+      "path": "/admin/datasources",
+      "source_path": "src/app/admin/datasources/page.tsx",
+      "match": "FRONTEND_ROUTE_MATCH_EXACT",
+      "access": "FRONTEND_ROUTE_ACCESS_ADMIN"
+    },
+    {
       "path": "/admin/entitlements",
       "source_path": "src/app/admin/entitlements/page.tsx",
       "match": "FRONTEND_ROUTE_MATCH_EXACT",
@@ -567,6 +573,21 @@
         "FRONTEND_NAVIGATION_SURFACE_SIDEBAR"
       ],
       "order": 400
+    },
+    {
+      "id": "admin-datasources",
+      "plugin": "core-users",
+      "label": "Data sources",
+      "path": "/admin/datasources",
+      "icon": "HardDriveDownload",
+      "group": "Integrations",
+      "access": "FRONTEND_ROUTE_ACCESS_ADMIN",
+      "surfaces": [
+        "FRONTEND_NAVIGATION_SURFACE_COMMAND_PALETTE",
+        "FRONTEND_NAVIGATION_SURFACE_PLUGIN_REGISTRY",
+        "FRONTEND_NAVIGATION_SURFACE_SIDEBAR"
+      ],
+      "order": 410
     },
     {
       "id": "admin-sso",
