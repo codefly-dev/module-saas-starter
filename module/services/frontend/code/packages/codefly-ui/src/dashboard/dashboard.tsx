@@ -8,6 +8,7 @@
 // `@codefly/saas-sdk`'s `runDashboard`; use `fromDashboardData` to bridge.
 
 import type * as React from "react";
+import { Card, Section } from "../layout/card.js";
 import { AreaChart, BarList, LineChart, StatChart } from "./charts.js";
 import { cn } from "./cn.js";
 import type { DashboardView, DashboardWidgetView } from "./types.js";
@@ -66,10 +67,9 @@ function WidgetBody({ widget }: { widget: DashboardWidgetView }) {
 function WidgetCard({ widget, columns }: { widget: DashboardWidgetView; columns: 1 | 2 | 3 | 4 }) {
 	const span = widget.span ? (Math.min(widget.span, columns) as 1 | 2 | 3 | 4) : 1;
 	return (
-		<div className={cn("rounded-lg border bg-card p-4 text-card-foreground shadow-sm", COL_SPAN[span])}>
-			{widget.title && <h3 className="mb-2 text-base font-medium">{widget.title}</h3>}
+		<Card title={widget.title} className={COL_SPAN[span]}>
 			<WidgetBody widget={widget} />
-		</div>
+		</Card>
 	);
 }
 
@@ -84,18 +84,12 @@ export function Dashboard({ data, className }: { data: DashboardView; className?
 	const isGrid = (data.layout ?? "grid") === "grid";
 
 	return (
-		<div className={cn("space-y-4", className)} style={style}>
-			{(data.title || data.description) && (
-				<div className="space-y-1">
-					{data.title && <h2 className="text-lg font-semibold tracking-tight">{data.title}</h2>}
-					{data.description && <p className="text-sm text-muted-foreground">{data.description}</p>}
-				</div>
-			)}
+		<Section title={data.title} description={data.description} className={className} style={style}>
 			<div className={isGrid ? cn("grid gap-4", GRID_COLS[columns]) : "flex flex-col gap-4"}>
 				{data.widgets.map((widget) => (
 					<WidgetCard key={widget.id} widget={widget} columns={columns} />
 				))}
 			</div>
-		</div>
+		</Section>
 	);
 }
