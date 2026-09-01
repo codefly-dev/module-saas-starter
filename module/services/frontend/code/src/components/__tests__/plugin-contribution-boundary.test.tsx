@@ -2,7 +2,7 @@ import {
 	createPluginRuntime,
 	PluginAvailabilityError,
 	PluginRuntimeProvider,
-} from "@codefly/ui/plugin-host/runtime";
+} from "@codefly-dev/ui/plugin-host/runtime";
 import { act, cleanup, render, screen } from "@testing-library/react";
 import { lazy } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";

@@ -10,7 +10,7 @@ import {
 // primitives a solution's own remote would render with, so host-rendered and
 // solution-rendered dashboards look identical and there is one charting
 // implementation to maintain.
-import { AreaChart, BarList, LineChart, StatChart } from "@codefly/ui/dashboard";
+import { AreaChart, BarList, LineChart, StatChart } from "@codefly-dev/ui/dashboard";
 import { useQuery } from "@tanstack/react-query";
 import { useAuth } from "@/lib/auth";
 import { apiTransport } from "@/lib/connect/transport";

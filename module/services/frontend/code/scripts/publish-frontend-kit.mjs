@@ -8,11 +8,11 @@ const SCRIPT_PATH = fileURLToPath(import.meta.url);
 const CODE_ROOT = join(dirname(SCRIPT_PATH), "..");
 
 // The solution-facing kit packages published to GitHub Packages on release.
-// Kept to what a solution fe-remote genuinely consumes: `@codefly/ui` carries
+// Kept to what a solution fe-remote genuinely consumes: `@codefly-dev/ui` carries
 // the peer-free `/layout` + `/dashboard` surface. Its plugin peers are optional
 // (see the package manifest), so a solution installs those subpaths without the
 // host-internal plugin packages — no need to publish them here.
-export const PACKAGES = ["@codefly/ui"];
+export const PACKAGES = ["@codefly-dev/ui"];
 
 export function workspacesByName(codeRoot = CODE_ROOT) {
 	const packagesRoot = join(codeRoot, "packages");

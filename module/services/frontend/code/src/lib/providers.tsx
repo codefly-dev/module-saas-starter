@@ -1,7 +1,7 @@
 "use client";
 
-import type { FrontendReactConfig } from "@codefly/ui/plugin-host";
-import { PluginRuntimeProvider } from "@codefly/ui/plugin-host/runtime";
+import type { FrontendReactConfig } from "@codefly-dev/ui/plugin-host";
+import { PluginRuntimeProvider } from "@codefly-dev/ui/plugin-host/runtime";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { createContext, type ReactNode, useContext, useState } from "react";
 import { ThemePreferenceProvider } from "@/features/user-settings/ui/theme-preference-provider";

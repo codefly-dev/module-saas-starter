@@ -3,7 +3,7 @@ import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { CODEFLY_KIT_VERSION } from "../SolutionOutlet";
 
-// The host shares @codefly/ui, @codefly/saas-ui, and @codefly/saas-sdk into the
+// The host shares @codefly-dev/ui, @codefly/saas-ui, and @codefly/saas-sdk into the
 // Module-Federation scope under CODEFLY_KIT_VERSION. If a package is version-
 // bumped without updating that constant, the host would under-report the shared
 // version and a remote bundling the newer copy could win singleton resolution,

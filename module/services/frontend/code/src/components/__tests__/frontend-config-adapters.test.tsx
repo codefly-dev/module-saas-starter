@@ -5,7 +5,7 @@ import {
 import {
 	defineReactFrontend,
 	defineReactPlugin,
-} from "@codefly/ui/plugin-host";
+} from "@codefly-dev/ui/plugin-host";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { lazy, type ReactNode } from "react";

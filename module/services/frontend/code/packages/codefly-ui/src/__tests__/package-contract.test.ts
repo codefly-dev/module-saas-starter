@@ -26,12 +26,12 @@ function codeflyUiManifest(): Manifest {
 	for (const path of ["package.json", "packages/codefly-ui/package.json"]) {
 		try {
 			const manifest = JSON.parse(readFileSync(path, "utf8")) as Manifest;
-			if (manifest.name === "@codefly/ui") return manifest;
+			if (manifest.name === "@codefly-dev/ui") return manifest;
 		} catch {
 			// Not this cwd — try the next candidate.
 		}
 	}
-	throw new Error("could not locate the @codefly/ui package.json");
+	throw new Error("could not locate the @codefly-dev/ui package.json");
 }
 
 // Same cwd-relative candidate trick as the manifest: find this package's `src`
@@ -40,7 +40,7 @@ function codeflyUiSrcDir(): string {
 	for (const path of ["src", "packages/codefly-ui/src"]) {
 		if (existsSync(join(path, "index.ts"))) return path;
 	}
-	throw new Error("could not locate the @codefly/ui src directory");
+	throw new Error("could not locate the @codefly-dev/ui src directory");
 }
 
 function sourceFiles(dir: string): string[] {
@@ -63,7 +63,7 @@ const exportsMap = manifest.exports ?? {};
 // The public subpaths a consumer (host or Module-Federation remote) may import.
 // Each must resolve to a built `dist/` entry with matching types, so a subpath is
 // reachable and typed once published.
-describe("@codefly/ui public subpaths", () => {
+describe("@codefly-dev/ui public subpaths", () => {
 	for (const subpath of [
 		".",
 		"./plugin-host",
@@ -85,7 +85,7 @@ describe("@codefly/ui public subpaths", () => {
 // instance is resolved by the consumer. Bundling them as `dependencies` lets a
 // remote pull a second copy of @codefly/saas-plugin-react — a second
 // PluginRuntime React context — and `usePluginRuntime` breaks in that remote.
-describe("@codefly/ui dependency contract", () => {
+describe("@codefly-dev/ui dependency contract", () => {
 	for (const shared of [
 		"react",
 		"@codefly/saas-plugin-react",
@@ -100,11 +100,11 @@ describe("@codefly/ui dependency contract", () => {
 
 // The solution-facing subpaths (`./layout`, `./dashboard`) are pure React
 // presentation and never touch the plugin runtime. Marking the plugin packages
-// optional peers lets a solution install `@codefly/ui` for those subpaths alone
+// optional peers lets a solution install `@codefly-dev/ui` for those subpaths alone
 // without npm auto-resolving the host-internal (unpublished) plugin packages —
 // while the host, which imports `.`/`./plugin-host`/`./skin`, still provides
 // them. `react` stays a required peer: every subpath needs it deduped.
-describe("@codefly/ui peer-free solution surface", () => {
+describe("@codefly-dev/ui peer-free solution surface", () => {
 	for (const optional of [
 		"@codefly/saas-plugin-react",
 		"@codefly/saas-plugin-contract",
@@ -125,7 +125,7 @@ describe("@codefly/ui peer-free solution surface", () => {
 // subpaths would resolve the (unpublished) plugin package at build time and 404 —
 // the exact failure the optional peers exist to prevent, and one the manifest
 // checks above cannot see. Guard the source directly.
-describe("@codefly/ui solution subpaths stay plugin-free", () => {
+describe("@codefly-dev/ui solution subpaths stay plugin-free", () => {
 	const srcDir = codeflyUiSrcDir();
 	for (const subpath of ["layout", "dashboard"]) {
 		it(`./${subpath} imports no @codefly/saas-plugin-* package`, () => {

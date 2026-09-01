@@ -2,7 +2,7 @@
 
 Reusable SaaS-domain frontend components the portal **and** solutions import — so
 there is one `<DatasourcesPanel>`, not a per-consumer copy. Components are built on
-`@codefly/ui` primitives, styled with the shared token classes so they render
+`@codefly-dev/ui` primitives, styled with the shared token classes so they render
 identically in the host app and in a Module-Federation remote.
 
 The components drive a `DatasourceClient` contract. There are two ways to bind it:
@@ -40,7 +40,7 @@ The components drive a `DatasourceClient` contract. There are two ways to bind i
 
 Components are styled with Tailwind utility classes against the shared shadcn
 design tokens (`bg-primary`, `text-muted-foreground`, `border-input`, …), same as
-`@codefly/ui`. They ship no compiled CSS, so **the consuming app's Tailwind must
+`@codefly-dev/ui`. They ship no compiled CSS, so **the consuming app's Tailwind must
 scan this package's source** or the utilities used only here (e.g. the modal's
 `bg-black/50` overlay) won't be generated and the components render unstyled.
 

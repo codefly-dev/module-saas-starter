@@ -1,5 +1,5 @@
 {
-	"name": "@codefly/ui",
+	"name": "@codefly-dev/ui",
 	"version": "0.1.0",
 	"description": "The shared, versioned Codefly SaaS frontend kit: the plugin host and the tokens-as-data skin mechanism, standalone so the host and Module-Federation remotes import and dedupe one copy.",
 	"repository": {

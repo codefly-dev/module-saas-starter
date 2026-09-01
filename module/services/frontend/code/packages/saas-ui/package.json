@@ -1,7 +1,7 @@
 {
 	"name": "@codefly/saas-ui",
 	"version": "0.1.0",
-	"description": "Reusable SaaS-domain frontend components (datasources, …) the portal and solutions both import, built on @codefly/ui primitives and driven by an injected typed client.",
+	"description": "Reusable SaaS-domain frontend components (datasources, …) the portal and solutions both import, built on @codefly-dev/ui primitives and driven by an injected typed client.",
 	"type": "module",
 	"sideEffects": false,
 	"files": [

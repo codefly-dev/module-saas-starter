@@ -1,4 +1,4 @@
-import type { RawSkinDescriptor, SkinSource } from "@codefly/ui/skin";
+import type { RawSkinDescriptor, SkinSource } from "@codefly-dev/ui/skin";
 
 /**
  * The delivery mechanisms, each behind the one `SkinSource` seam. They are

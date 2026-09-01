@@ -661,7 +661,7 @@ jobs:
       id-token: write
       attestations: write
     env:
-      # Token that may publish `@codefly`-scoped packages to the codefly-dev org
+      # Token that may publish `@codefly-dev`-scoped packages to the codefly-dev org
       # registry, provisioned by infra-base#604. Exported to every npm step: the
       # scope→GitHub-Packages mapping is job-wide, so any `@codefly/*` the install
       # resolves from the registry (not just the publish) authenticates with it.
@@ -674,7 +674,7 @@ jobs:
             exit 1
           fi
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
-      # registry-url + scope makes setup-node write the `@codefly` → GitHub
+      # registry-url + scope makes setup-node write the `@codefly-dev` → GitHub
       # Packages mapping and the NODE_AUTH_TOKEN line into a project .npmrc.
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
@@ -682,7 +682,7 @@ jobs:
           cache: npm
           cache-dependency-path: module/services/frontend/code/package-lock.json
           registry-url: https://npm.pkg.github.com
-          scope: "@codefly"
+          scope: "@codefly-dev"
       - name: Clean-install frontend dependencies
         run: npm ci --prefix module/services/frontend/code
       - name: Build the kit packages

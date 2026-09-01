@@ -5,7 +5,7 @@ import {
 import {
 	defineReactFrontend,
 	defineReactPlugin,
-} from "@codefly/ui/plugin-host";
+} from "@codefly-dev/ui/plugin-host";
 import { lazy } from "react";
 import { describe, expect, it } from "vitest";
 import {
