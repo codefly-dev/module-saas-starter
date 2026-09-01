@@ -1,7 +1,7 @@
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import { CODEFLY_KIT_VERSION } from "../SolutionOutlet";
+import { CODEFLY_KIT_SHARED, CODEFLY_KIT_VERSION } from "../SolutionOutlet";
 
 // The host shares @codefly-dev/ui, @codefly/saas-ui, and @codefly/saas-sdk into the
 // Module-Federation scope under CODEFLY_KIT_VERSION. If a package is version-
@@ -31,23 +31,15 @@ describe("CODEFLY_KIT_VERSION", () => {
 // complex page loads exactly one copy of each kit module (and its tokens) across
 // the host and every remote. Version pinning above only matters if singleton
 // resolution is actually in force — drop `singleton: true` and two copies can
-// coexist, splitting React context and the skin. Guard the share config source
-// directly, since it is a `.tsx` literal, not something the runtime exports.
+// coexist, splitting React context and the skin. Assert on the exported share
+// config object itself, so a dropped flag on ANY package fails that package's
+// own case (a source-text scrape can't distinguish whose block a match lands in).
 describe("shared kit packages are singletons", () => {
-	const source = readFileSync(
-		join(process.cwd(), "src", "solutions", "SolutionOutlet.tsx"),
-		"utf8",
-	);
-	for (const pkg of [
-		"@codefly-dev/ui",
-		"@codefly/saas-ui",
-		"@codefly/saas-sdk",
-	]) {
+	for (const pkg of Object.keys(CODEFLY_KIT_SHARED) as Array<
+		keyof typeof CODEFLY_KIT_SHARED
+	>) {
 		it(`${pkg} declares singleton: true`, () => {
-			const escaped = pkg.replace(/[/\\]/g, "\\$&");
-			expect(source, `${pkg} share config is missing singleton: true`).toMatch(
-				new RegExp(`"${escaped}":\\s*\\{[\\s\\S]*?singleton:\\s*true`),
-			);
+			expect(CODEFLY_KIT_SHARED[pkg].shareConfig.singleton).toBe(true);
 		});
 	}
 });

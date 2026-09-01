@@ -38,8 +38,11 @@ function layeringViolation(sourceDir: string, targetDir: string): boolean {
 	return target >= source;
 }
 
-// Every module specifier in an import/export ... from "…" or a bare side-effect
-// `import "…"`.
+// Every module specifier a file pulls in, across all forms: static
+// `import …/export … from "…"`, a bare side-effect `import "…"`, and the
+// call forms `import("…")` (incl. `lazy(() => import("…"))`) and `require("…")`.
+// The dynamic forms matter: a default-deny guard that only reads static imports
+// is bypassed by `await import("../dashboard/…")`.
 function specifiers(source: string): string[] {
 	const out: string[] = [];
 	for (const match of source.matchAll(
@@ -48,6 +51,11 @@ function specifiers(source: string): string[] {
 		out.push(match[1]);
 	}
 	for (const match of source.matchAll(/import\s*["']([^"']+)["']/g)) {
+		out.push(match[1]);
+	}
+	for (const match of source.matchAll(
+		/(?:\bimport|\brequire)\s*\(\s*["']([^"']+)["']/g,
+	)) {
 		out.push(match[1]);
 	}
 	return out;
@@ -100,6 +108,27 @@ it("scans the kit source tree", () => {
 	expect(files.length).toBeGreaterThan(0);
 });
 
+// Non-presentational src directories that legitimately sit outside the tier
+// stack (the host-facing plugin runtime surface).
+const NON_TIER_DIRS = new Set(["plugin-host"]);
+
+// The layering check below skips any directory absent from TIER_RANK. Left
+// unguarded, renaming `layout/` → `atoms/` (or adding a new `forms/` tier the
+// map spells `form`) would silently drop that whole tier from the turtles-down
+// check while the suite stayed green. Fail closed: every source directory must
+// be a ranked tier or an explicitly acknowledged non-tier surface.
+describe("every source directory is a known tier", () => {
+	for (const entry of readdirSync(srcDir, { withFileTypes: true })) {
+		if (!entry.isDirectory() || entry.name === "__tests__") continue;
+		it(`${entry.name} is ranked or an explicit non-tier surface`, () => {
+			expect(
+				TIER_RANK[entry.name] !== undefined || NON_TIER_DIRS.has(entry.name),
+				`src/${entry.name} is neither ranked in TIER_RANK nor an allowed non-tier dir — the layering guard would silently skip it; add it to TIER_RANK or NON_TIER_DIRS`,
+			).toBe(true);
+		});
+	}
+});
+
 describe("layeringViolation detector", () => {
 	it("flags an upward import", () => {
 		expect(layeringViolation("layout", "dashboard")).toBe(true);
@@ -115,6 +144,19 @@ describe("layeringViolation detector", () => {
 		expect(layeringViolation("dashboard", "dashboard")).toBe(false);
 		expect(layeringViolation("layout", "react")).toBe(false);
 		expect(layeringViolation("plugin-host", "layout")).toBe(false);
+	});
+});
+
+describe("specifiers detects every import form", () => {
+	it.each([
+		['import { X } from "../dashboard/x.js";', "static import"],
+		['export { X } from "../dashboard/x.js";', "re-export"],
+		['import "../dashboard/x.js";', "side-effect import"],
+		['const m = await import("../dashboard/x.js");', "dynamic import"],
+		['const D = lazy(() => import("../dashboard/x.js"));', "lazy import"],
+		['const d = require("../dashboard/x.js");', "require"],
+	])("captures the specifier in %s (%s)", (source) => {
+		expect(specifiers(source)).toContain("../dashboard/x.js");
 	});
 });
 

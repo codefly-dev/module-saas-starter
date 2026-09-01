@@ -31,6 +31,32 @@ import { authedFetch, getToken, refreshToken } from "@/lib/connect/token-store";
 // version negotiation.
 export const CODEFLY_KIT_VERSION = "0.1.0";
 
+// The co-versioned kit packages shared into the Module-Federation scope. Each
+// MUST be a `singleton` so an arbitrarily complex page loads exactly one copy of
+// each kit module (and its tokens) across the host and every remote — drop the
+// flag and two copies can coexist, splitting the React context and the skin.
+// This is the single source of truth the `kit-shared-version` test asserts
+// against directly, so a dropped flag fails CI. `requiredVersion: false`: the
+// host publishes this exact instance and a remote resolves to it without
+// version negotiation.
+export const CODEFLY_KIT_SHARED = {
+	"@codefly-dev/ui": {
+		version: CODEFLY_KIT_VERSION,
+		lib: () => CodeflyUi,
+		shareConfig: { singleton: true, requiredVersion: false },
+	},
+	"@codefly/saas-ui": {
+		version: CODEFLY_KIT_VERSION,
+		lib: () => SaasUi,
+		shareConfig: { singleton: true, requiredVersion: false },
+	},
+	"@codefly/saas-sdk": {
+		version: CODEFLY_KIT_VERSION,
+		lib: () => SaasSdk,
+		shareConfig: { singleton: true, requiredVersion: false },
+	},
+} as const;
+
 /**
  * Generic Module Federation host runtime.
  *
@@ -70,21 +96,7 @@ function hostInstance(): ModuleFederation {
 				lib: () => ReactJSXRuntime,
 				shareConfig: { singleton: true, requiredVersion: `^${React.version}` },
 			},
-			"@codefly-dev/ui": {
-				version: CODEFLY_KIT_VERSION,
-				lib: () => CodeflyUi,
-				shareConfig: { singleton: true, requiredVersion: false },
-			},
-			"@codefly/saas-ui": {
-				version: CODEFLY_KIT_VERSION,
-				lib: () => SaasUi,
-				shareConfig: { singleton: true, requiredVersion: false },
-			},
-			"@codefly/saas-sdk": {
-				version: CODEFLY_KIT_VERSION,
-				lib: () => SaasSdk,
-				shareConfig: { singleton: true, requiredVersion: false },
-			},
+			...CODEFLY_KIT_SHARED,
 		},
 	});
 	return host;
