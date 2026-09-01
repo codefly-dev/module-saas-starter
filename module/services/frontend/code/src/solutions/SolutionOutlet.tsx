@@ -19,7 +19,7 @@ import {
 } from "react";
 
 import type { DashboardAuthoring } from "@/features/dashboard";
-import { getToken, refreshToken } from "@/lib/connect/token-store";
+import { authedFetch, getToken, refreshToken } from "@/lib/connect/token-store";
 
 // The co-versioned @codefly/* kit ships lockstep with this host, so one version
 // covers all three. It MUST track the packages' real version — a shared module
@@ -157,6 +157,16 @@ export interface SolutionPageProps {
 	 */
 	refreshAccessToken: () => Promise<string | null>;
 	/**
+	 * Host-owned authed fetch: stamps the bearer token, and on a 401 exchanges
+	 * the session for a fresh token (single-flight) and retries the request once.
+	 * If the session is truly gone the host has already redirected to login. A
+	 * solution making raw REST calls uses this instead of hand-rolling
+	 * `fetch(..., { Authorization: Bearer getAccessToken() })`, so every solution
+	 * gets the portal's refresh-then-retry recovery — and the dead-session
+	 * auto-relogin — for free, rather than surfacing a bare `HTTP 401`.
+	 */
+	authedFetch: (input: RequestInfo | URL, init?: RequestInit) => Promise<Response>;
+	/**
 	 * The host's dashboard-authoring capability, injected into the mounted
 	 * runtime so a composing module can change the live dashboard: list the
 	 * event vocabulary, preview a metric against the viewer's audit data, and
@@ -209,7 +219,7 @@ export function SolutionOutlet({
 	// the remote never touches the token store or constructs its own handle.
 	pageProps: Omit<
 		SolutionPageProps,
-		"getAccessToken" | "refreshAccessToken" | "dashboardAuthoring"
+		"getAccessToken" | "refreshAccessToken" | "authedFetch" | "dashboardAuthoring"
 	>;
 	authoring: DashboardAuthoring;
 }) {
@@ -223,6 +233,7 @@ export function SolutionOutlet({
 					{...pageProps}
 					getAccessToken={getToken}
 					refreshAccessToken={refreshToken}
+					authedFetch={authedFetch}
 					dashboardAuthoring={authoring}
 				/>
 			</Suspense>

@@ -57,6 +57,19 @@ async function exchangeRefreshCookie(): Promise<{
 	return { accessToken: data.accessToken, refreshToken: data.refreshToken };
 }
 
+// Where an expired-session redirect sends the browser: back to login, with the
+// current location preserved in `next` so sign-in returns here — the same
+// contract the server middleware (proxy.ts) uses on a missing session cookie.
+// Returns null on an auth page, where a 401 has nothing to preserve and
+// re-entering would loop. Exported for tests; the caller performs the nav.
+export function expiredSessionLoginTarget(location: {
+	pathname: string;
+	search: string;
+}): string | null {
+	if (location.pathname.startsWith("/auth/")) return null;
+	return `/auth/login?next=${encodeURIComponent(location.pathname + location.search)}`;
+}
+
 // Identity-provider configuration is supplied by the Codefly `identity`
 // workspace configuration. The Next.js agent exposes only its non-secret
 // IDENTITY_* values to the browser as NEXT_PUBLIC_IDENTITY_*.
@@ -724,11 +737,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 	}, [setTokens]);
 
 	useEffect(() => {
-		// Mid-session recovery: the Connect transport calls this when an RPC hits
-		// 401 — the short-lived access token expired (or was revoked) while the
-		// page stayed open. A failed exchange means the session itself is gone;
-		// drop to the unauthenticated state rather than leave dead credentials
-		// installed.
+		// Mid-session recovery: the Connect transport (and the solutions'
+		// `authedFetch`) call this when a request hits 401 — the short-lived
+		// access token expired (or was revoked) while the page stayed open. A
+		// failed exchange means the session itself is gone; this single handler
+		// is where every dead-session 401 converges, so it both tears down local
+		// credentials and bounces the browser to login instead of leaving a
+		// broken page showing a bare `HTTP 401`.
 		setRefreshHandler(async () => {
 			const pair = await exchangeRefreshCookie().catch(() => null);
 			if (pair) {
@@ -747,6 +762,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 				isLoading: false,
 				isAuthenticated: false,
 			});
+			if (typeof window !== "undefined") {
+				const target = expiredSessionLoginTarget(window.location);
+				if (target) window.location.replace(target);
+			}
 			return null;
 		});
 		return () => setRefreshHandler(null);

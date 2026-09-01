@@ -41,3 +41,32 @@ export function refreshToken(): Promise<string | null> {
 	}
 	return inflightRefresh;
 }
+
+/**
+ * Fetch that carries the host's bearer token and recovers from a lapsed access
+ * token exactly as the Connect transport's interceptor does: on a 401 it
+ * exchanges the session for a fresh token (single-flight, shared with every
+ * other caller) and retries the request once. A null refresh means the session
+ * is truly gone — the registered refresh handler has already torn down local
+ * state and redirected to login — so the original 401 is returned to the
+ * caller. A solution page doing raw REST calls uses this instead of
+ * hand-rolling fetch + getToken, so it gets the same mid-session recovery.
+ */
+export async function authedFetch(
+	input: RequestInfo | URL,
+	init: RequestInit = {},
+): Promise<Response> {
+	const token = getToken();
+	const res = await fetch(input, withBearer(init, token));
+	if (res.status !== 401 || !token) return res;
+	const fresh = await refreshToken();
+	if (!fresh) return res;
+	return fetch(input, withBearer(init, fresh));
+}
+
+function withBearer(init: RequestInit, token: string | null): RequestInit {
+	if (!token) return init;
+	const headers = new Headers(init.headers);
+	headers.set("Authorization", `Bearer ${token}`);
+	return { ...init, headers };
+}

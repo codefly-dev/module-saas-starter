@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it } from "vitest";
 import {
 	availableProviders,
 	buildAuthorizeURL,
+	expiredSessionLoginTarget,
 	isHeaderInjectedProvider,
 	type ProviderPreset,
 } from "./auth";
@@ -110,5 +111,25 @@ describe("Codefly identity provider configuration", () => {
 		expect(url.searchParams.get("provider")).toBe("authkit");
 		expect(url.searchParams.get("code_challenge")).toBe("pkce-challenge");
 		expect(url.searchParams.has("scope")).toBe(false);
+	});
+});
+
+describe("expired-session login redirect", () => {
+	it("preserves the current location in `next` so sign-in returns here", () => {
+		expect(
+			expiredSessionLoginTarget({ pathname: "/s/lastlogin", search: "" }),
+		).toBe("/auth/login?next=%2Fs%2Flastlogin");
+		expect(
+			expiredSessionLoginTarget({ pathname: "/settings", search: "?tab=api" }),
+		).toBe("/auth/login?next=%2Fsettings%3Ftab%3Dapi");
+	});
+
+	it("does not redirect from an auth page, which would loop", () => {
+		expect(
+			expiredSessionLoginTarget({ pathname: "/auth/login", search: "" }),
+		).toBeNull();
+		expect(
+			expiredSessionLoginTarget({ pathname: "/auth/mfa", search: "" }),
+		).toBeNull();
 	});
 });
