@@ -69,6 +69,7 @@ describe("@codefly-dev/ui public subpaths", () => {
 		"./plugin-host",
 		"./skin",
 		"./dashboard",
+		"./chat",
 		"./layout",
 	]) {
 		it(`exports ${subpath} to a typed dist entry`, () => {
@@ -98,7 +99,7 @@ describe("@codefly-dev/ui dependency contract", () => {
 	}
 });
 
-// The solution-facing subpaths (`./layout`, `./dashboard`) are pure React
+// The solution-facing subpaths (`./layout`, `./dashboard`, `./chat`) are pure React
 // presentation and never touch the plugin runtime. Marking the plugin packages
 // optional peers lets a solution install `@codefly-dev/ui` for those subpaths alone
 // without npm auto-resolving the host-internal (unpublished) plugin packages —
@@ -121,13 +122,13 @@ describe("@codefly-dev/ui peer-free solution surface", () => {
 
 // Marking the plugin peers optional only carves a peer-free surface if the
 // solution-facing subpaths actually stay plugin-free. If a `@codefly/saas-plugin-*`
-// import creeps into ./layout or ./dashboard, a solution that installs only those
+// import creeps into ./layout, ./dashboard, or ./chat, a solution that installs only those
 // subpaths would resolve the (unpublished) plugin package at build time and 404 —
 // the exact failure the optional peers exist to prevent, and one the manifest
 // checks above cannot see. Guard the source directly.
 describe("@codefly-dev/ui solution subpaths stay plugin-free", () => {
 	const srcDir = codeflyUiSrcDir();
-	for (const subpath of ["layout", "dashboard"]) {
+	for (const subpath of ["layout", "dashboard", "chat"]) {
 		it(`./${subpath} imports no @codefly/saas-plugin-* package`, () => {
 			for (const file of sourceFiles(join(srcDir, subpath))) {
 				const source = readFileSync(file, "utf8");

@@ -91,6 +91,39 @@ metrics after their inputs) and binds each widget to its metric's series.
 `runDataGraph`, `runMetric`, and `compileMetric` are exported for finer-grained
 use.
 
+## Chat streaming
+
+The `@codefly/saas-sdk/chat` subpath ships `useChatStream`, the streaming twin of
+`runDashboard`: it owns the SSE/WS transport and produces the `messages`/`onSend`
+that `@codefly-dev/ui/chat`'s pure `<Chat>` renders. The subpath is split out so
+the SDK's main entry stays React-free; `react` is an optional peer.
+
+The hook takes a `ChatStreamSource` — any object that, given the conversation so
+far, streams the assistant reply as content deltas. An SSE reader and a
+WebSocket client both satisfy it structurally, exactly as `runDashboard` takes
+any `AuditAggregateClient`:
+
+```tsx
+import { useChatStream } from "@codefly/saas-sdk/chat";
+import { Chat } from "@codefly-dev/ui/chat";
+
+const source = {
+  async *send(messages, { signal }) {
+    const res = await fetch("/api/chat", {
+      method: "POST",
+      body: JSON.stringify({ messages }),
+      signal,
+    });
+    for await (const delta of readSse(res.body)) yield { delta };
+  },
+};
+
+function Assistant() {
+  const { messages, send, isStreaming } = useChatStream(source);
+  return <Chat messages={messages} onSend={send} busy={isStreaming} />;
+}
+```
+
 ## Scope
 
 The metric model targets the audit RPC as it exists today: `group_by ∈

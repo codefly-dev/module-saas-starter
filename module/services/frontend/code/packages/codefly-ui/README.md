@@ -18,10 +18,13 @@ downstream skin (tokens as data), never code in the kit.
   delivery `SkinSource`s (mounted ConfigMap file, env blob); the kit never
   reads the environment or the filesystem itself.
 
-- **Layout** (`@codefly-dev/ui/layout`) and **Dashboard**
-  (`@codefly-dev/ui/dashboard`) — pure, data-in presentation (Tabs/Card/Section;
-  `<Dashboard>`, charts, `fromDashboardData`). React only: no plugin runtime, no
-  host context. This is the surface a solution fe-remote consumes.
+- **Layout** (`@codefly-dev/ui/layout`), **Dashboard**
+  (`@codefly-dev/ui/dashboard`), and **Chat** (`@codefly-dev/ui/chat`) — pure,
+  data-in presentation (Tabs/Card/Section; `<Dashboard>`, charts,
+  `fromDashboardData`; `<Chat>`). React only: no plugin runtime, no host context.
+  This is the surface a solution fe-remote consumes. `<Chat>` is fed by
+  `@codefly/saas-sdk`'s `useChatStream` — the hook owns the SSE/WS transport, the
+  component stays pure, the same split as `runDashboard` → `<Dashboard>`.
 
 ## Entry points
 
@@ -34,6 +37,7 @@ downstream skin (tokens as data), never code in the kit.
 | `@codefly-dev/ui/skin`            | `resolveSkin`, skin types                           |
 | `@codefly-dev/ui/layout`          | `Tabs`, `Card`, `Section` (React-only)              |
 | `@codefly-dev/ui/dashboard`       | `Dashboard`, charts, `fromDashboardData` (React-only) |
+| `@codefly-dev/ui/chat`            | `Chat` (React-only)                                 |
 
 `react`, `@codefly/saas-plugin-react`, and `@codefly/saas-plugin-contract` are
 **peer** dependencies — the host provides them so it and its Module-Federation
@@ -43,8 +47,8 @@ second copy would split that context and break `usePluginRuntime` in a remote.
 
 The two plugin peers are **optional** (`peerDependenciesMeta`): only `.`,
 `./plugin-host`, and `./skin` touch them, and the host supplies them. The
-`./layout` and `./dashboard` subpaths reference neither, so a consumer of just
-those subpaths installs the kit without pulling the host-internal plugin
+`./layout`, `./dashboard`, and `./chat` subpaths reference neither, so a consumer
+of just those subpaths installs the kit without pulling the host-internal plugin
 packages.
 
 ## Consuming from a solution

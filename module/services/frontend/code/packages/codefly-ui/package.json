@@ -44,6 +44,11 @@
 			"import": "./dist/dashboard/index.js",
 			"default": "./dist/dashboard/index.js"
 		},
+		"./chat": {
+			"types": "./dist/chat/index.d.ts",
+			"import": "./dist/chat/index.js",
+			"default": "./dist/chat/index.js"
+		},
 		"./layout": {
 			"types": "./dist/layout/index.d.ts",
 			"import": "./dist/layout/index.js",
