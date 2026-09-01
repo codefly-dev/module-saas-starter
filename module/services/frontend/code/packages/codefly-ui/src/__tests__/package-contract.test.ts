@@ -11,6 +11,7 @@ interface Manifest {
 	name?: string;
 	dependencies?: Record<string, string>;
 	peerDependencies?: Record<string, string>;
+	peerDependenciesMeta?: Record<string, { optional?: boolean }>;
 	exports?: Record<string, ExportEntry>;
 }
 
@@ -35,6 +36,7 @@ function codeflyUiManifest(): Manifest {
 const manifest = codeflyUiManifest();
 const deps = manifest.dependencies ?? {};
 const peers = manifest.peerDependencies ?? {};
+const peersMeta = manifest.peerDependenciesMeta ?? {};
 const exportsMap = manifest.exports ?? {};
 
 // The public subpaths a consumer (host or Module-Federation remote) may import.
@@ -73,4 +75,25 @@ describe("@codefly/ui dependency contract", () => {
 			expect(deps).not.toHaveProperty(shared);
 		});
 	}
+});
+
+// The solution-facing subpaths (`./layout`, `./dashboard`) are pure React
+// presentation and never touch the plugin runtime. Marking the plugin packages
+// optional peers lets a solution install `@codefly/ui` for those subpaths alone
+// without npm auto-resolving the host-internal (unpublished) plugin packages —
+// while the host, which imports `.`/`./plugin-host`/`./skin`, still provides
+// them. `react` stays a required peer: every subpath needs it deduped.
+describe("@codefly/ui peer-free solution surface", () => {
+	for (const optional of [
+		"@codefly/saas-plugin-react",
+		"@codefly/saas-plugin-contract",
+	]) {
+		it(`marks ${optional} as an optional peer`, () => {
+			expect(peersMeta[optional]?.optional).toBe(true);
+		});
+	}
+
+	it("keeps react a required peer", () => {
+		expect(peersMeta.react?.optional).not.toBe(true);
+	});
 });

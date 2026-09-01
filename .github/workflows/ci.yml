@@ -641,3 +641,45 @@ jobs:
           gh release edit "${GITHUB_REF_NAME}" --draft=false
           draft_created=false
           gh release verify "${GITHUB_REF_NAME}"
+
+  publish-frontend-kit:
+    name: Publish frontend kit to GitHub Packages
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs:
+      - base-integrity
+      - module-package
+      - codefly-quality
+      - codefly-supply-chain
+      - codefly-build
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      # registry-url + scope makes setup-node write the `@codefly` → GitHub
+      # Packages mapping and the NODE_AUTH_TOKEN line into a project .npmrc.
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: module/services/frontend/code/package-lock.json
+          registry-url: https://npm.pkg.github.com
+          scope: "@codefly"
+      - name: Clean-install frontend dependencies
+        run: npm ci --prefix module/services/frontend/code
+      - name: Build the kit packages
+        run: npm --prefix module/services/frontend/code run build:plugin-packages
+      - name: Publish the kit to GitHub Packages
+        working-directory: module/services/frontend/code
+        # Token that may publish `@codefly`-scoped packages to the codefly-dev
+        # org registry, provisioned by infra-base#604. Fails closed if unset.
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.CODEFLY_PACKAGES_TOKEN }}
+        run: |
+          if [[ -z "${NODE_AUTH_TOKEN}" ]]; then
+            echo "CODEFLY_PACKAGES_TOKEN is required to publish the kit (infra-base#604)" >&2
+            exit 1
+          fi
+          node scripts/publish-frontend-kit.mjs

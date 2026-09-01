@@ -18,8 +18,10 @@ downstream skin (tokens as data), never code in the kit.
   delivery `SkinSource`s (mounted ConfigMap file, env blob); the kit never
   reads the environment or the filesystem itself.
 
-The dashboard surface — Layout, the `<Dashboard>` component, chat, tiles, and
-charts — lands in this package through its own follow-up issues.
+- **Layout** (`@codefly/ui/layout`) and **Dashboard**
+  (`@codefly/ui/dashboard`) — pure, data-in presentation (Tabs/Card/Section;
+  `<Dashboard>`, charts, `fromDashboardData`). React only: no plugin runtime, no
+  host context. This is the surface a solution fe-remote consumes.
 
 ## Entry points
 
@@ -30,12 +32,44 @@ charts — lands in this package through its own follow-up issues.
 | `@codefly/ui/plugin-host/runtime` | Client runtime adapters (`PluginRuntimeProvider`) |
 | `@codefly/ui/plugin-host/ui`  | Client UI adapters (`PluginErrorBoundary`)          |
 | `@codefly/ui/skin`            | `resolveSkin`, skin types                           |
+| `@codefly/ui/layout`          | `Tabs`, `Card`, `Section` (React-only)              |
+| `@codefly/ui/dashboard`       | `Dashboard`, charts, `fromDashboardData` (React-only) |
 
 `react`, `@codefly/saas-plugin-react`, and `@codefly/saas-plugin-contract` are
 **peer** dependencies — the host provides them so it and its Module-Federation
 remotes resolve one shared instance each. This matters most for
 `@codefly/saas-plugin-react`, which carries the plugin-runtime React context: a
 second copy would split that context and break `usePluginRuntime` in a remote.
+
+The two plugin peers are **optional** (`peerDependenciesMeta`): only `.`,
+`./plugin-host`, and `./skin` touch them, and the host supplies them. The
+`./layout` and `./dashboard` subpaths reference neither, so a consumer of just
+those subpaths installs the kit without pulling the host-internal plugin
+packages.
+
+## Consuming from a solution
+
+A solution fe-remote imports `@codefly/ui/layout` + `@codefly/ui/dashboard` and
+shares them as Module-Federation singletons served by the host. Because the
+plugin peers are optional, the solution only needs an `.npmrc` pointing the
+`@codefly` scope at the GitHub Packages registry (with a read token) plus a
+`react` peer it already has:
+
+```
+@codefly:registry=https://npm.pkg.github.com
+//npm.pkg.github.com/:_authToken=${GITHUB_PACKAGES_TOKEN}
+```
+
+`npm ci` then resolves `@codefly/ui` with no reference to the unpublished
+`@codefly/saas-plugin-*` packages.
+
+**Version discipline.** The kit is a Module-Federation singleton: at runtime the
+solution shares the host's single instance. A solution must therefore pin an
+`@codefly/ui` that is semver-compatible with the version this host ships.
+`@codefly/ui`'s own `version` is the coupling point — it bumps when the kit's
+public surface changes, and CI publishes that exact version from the release
+commit, so the published bytes are the bytes the host serves. Pin the version
+the host module release ships (the two move together on every release tag).
 
 ## Skin resolution
 
