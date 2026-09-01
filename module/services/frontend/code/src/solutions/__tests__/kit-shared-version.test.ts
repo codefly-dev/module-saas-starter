@@ -1,7 +1,7 @@
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import { CODEFLY_KIT_VERSION } from "../SolutionOutlet";
+import { CODEFLY_KIT_SHARED, CODEFLY_KIT_VERSION } from "../SolutionOutlet";
 
 // The host shares @codefly-dev/ui, @codefly/saas-ui, and @codefly/saas-sdk into the
 // Module-Federation scope under CODEFLY_KIT_VERSION. If a package is version-
@@ -24,4 +24,22 @@ describe("CODEFLY_KIT_VERSION", () => {
 			expect(packageVersion(dir)).toBe(CODEFLY_KIT_VERSION);
 		},
 	);
+});
+
+// Invariant 2 of the kit architecture (see packages/codefly-ui/ARCHITECTURE.md):
+// every shared kit package is a Module-Federation SINGLETON, so an arbitrarily
+// complex page loads exactly one copy of each kit module (and its tokens) across
+// the host and every remote. Version pinning above only matters if singleton
+// resolution is actually in force — drop `singleton: true` and two copies can
+// coexist, splitting React context and the skin. Assert on the exported share
+// config object itself, so a dropped flag on ANY package fails that package's
+// own case (a source-text scrape can't distinguish whose block a match lands in).
+describe("shared kit packages are singletons", () => {
+	for (const pkg of Object.keys(CODEFLY_KIT_SHARED) as Array<
+		keyof typeof CODEFLY_KIT_SHARED
+	>) {
+		it(`${pkg} declares singleton: true`, () => {
+			expect(CODEFLY_KIT_SHARED[pkg].shareConfig.singleton).toBe(true);
+		});
+	}
 });
