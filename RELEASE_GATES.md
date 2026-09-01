@@ -121,8 +121,28 @@ maintainer decision that the current base tree is a good pin, not a scheduled
 event. Consumers that need to move faster than tags are cut should open an issue
 rather than pin an untagged revision.
 
-To cut a release:
+Two independent tag tracks share this repository, keyed to two different
+version sources. They are not interchangeable:
+
+- **Deploy counter** — `v0.0.x`, sourced from `agent.codefly.yaml`'s `version:`.
+  This is the counter lodestar and the per-environment deploy jobs adopt via
+  `codefly sync module --to <tag>`.
+- **Immutable module package** — `module-package/vX.Y.Z`, sourced from
+  `module/module.package.codefly.yaml`'s `version:` (the module semver). Only
+  this track triggers the immutable-package publication job (strict manifest
+  validation, SBOM, provenance signing). The two axes are genuinely different;
+  do not conflate them (that mismatch was [#405]).
+
+To cut a deploy-counter tag:
 
 1. Bump `version:` in the root `agent.codefly.yaml`.
-2. Commit it as `release: vX.Y.Z`.
-3. Tag that commit with an annotated `vX.Y.Z` tag and push the tag.
+2. Commit it as `release: v0.0.N`.
+3. Tag that commit with an annotated `v0.0.N` tag and push the tag.
+
+To cut an immutable module-package release:
+
+1. Bump `version:` in `module/module.package.codefly.yaml`.
+2. Commit it as `release: module-package/vX.Y.Z`.
+3. Tag that commit with an annotated `module-package/vX.Y.Z` tag and push it.
+
+[#405]: https://github.com/codefly-dev/module-saas-starter/issues/405

@@ -127,7 +127,7 @@ func TestSignedReleaseVerifiesAndMaterializesThroughCore(t *testing.T) {
 	if _, err := SignRelease(SignOptions{
 		ModuleRoot:        filepath.Join(repository, "module"),
 		ReleaseDir:        releaseDir,
-		Ref:               "v" + manifest.Version,
+		Ref:               ReleaseTag(manifest.Version),
 		Commit:            commit,
 		SignatureIdentity: "test-signer",
 		PrivateKey:        []byte(base64.StdEncoding.EncodeToString(privateKey)),
@@ -140,7 +140,7 @@ func TestSignedReleaseVerifiesAndMaterializesThroughCore(t *testing.T) {
 	signature := mustRead(t, filepath.Join(releaseDir, SignatureName))
 	verified, err := corecomposition.VerifyRelease(&corecomposition.Release{
 		Repository: PackageRepository,
-		Ref:        "v" + manifest.Version,
+		Ref:        ReleaseTag(manifest.Version),
 		Commit:     commit,
 		Artifact:   artifact,
 		Provenance: provenance,
@@ -185,7 +185,7 @@ func TestSignReleaseRejectsArtifactMetadataDrift(t *testing.T) {
 	}
 	_, err = SignRelease(SignOptions{
 		ModuleRoot: filepath.Join(repository, "module"), ReleaseDir: releaseDir,
-		Ref: "v1.2.3", Commit: commit,
+		Ref: ReleaseTag("1.2.3"), Commit: commit,
 		PrivateKey: []byte(base64.StdEncoding.EncodeToString(privateKey)), ExpectedPublicKey: []byte(base64.StdEncoding.EncodeToString(publicKey)),
 	})
 	if err == nil || !strings.Contains(err.Error(), "does not describe") {
@@ -210,7 +210,7 @@ func TestSignReleaseRejectsKeyOutsideCoreTrustPolicy(t *testing.T) {
 	}
 	_, err = SignRelease(SignOptions{
 		ModuleRoot: filepath.Join(repository, "module"), ReleaseDir: releaseDir,
-		Ref: "v1.2.3", Commit: commit,
+		Ref: ReleaseTag("1.2.3"), Commit: commit,
 		PrivateKey: []byte(base64.StdEncoding.EncodeToString(privateKey)), ExpectedPublicKey: []byte(base64.StdEncoding.EncodeToString(otherPublicKey)),
 	})
 	if err == nil || !strings.Contains(err.Error(), "does not match") {
@@ -265,15 +265,22 @@ func TestValidateImmutableReleaseSettingsAcceptsDocumentedResponse(t *testing.T)
 
 func TestValidateReleaseRefRejectsMovedAndMismatchedTags(t *testing.T) {
 	manifest := Manifest{Version: "0.1.0"}
+	tag := ReleaseTag(manifest.Version)
 	commit := strings.Repeat("a", 40)
-	annotated := strings.Repeat("b", 40) + "\trefs/tags/v0.1.0\n" + commit + "\trefs/tags/v0.1.0^{}\n"
-	if err := ValidateReleaseRef(manifest, "v0.1.0", commit, annotated); err != nil {
+	annotated := strings.Repeat("b", 40) + "\trefs/tags/" + tag + "\n" + commit + "\trefs/tags/" + tag + "^{}\n"
+	if err := ValidateReleaseRef(manifest, tag, commit, annotated); err != nil {
 		t.Fatal(err)
 	}
-	for _, refs := range []string{"", strings.Repeat("c", 40) + "\trefs/tags/v0.1.0\n"} {
-		if err := ValidateReleaseRef(manifest, "v0.1.0", commit, refs); err == nil {
+	for _, refs := range []string{"", strings.Repeat("c", 40) + "\trefs/tags/" + tag + "\n"} {
+		if err := ValidateReleaseRef(manifest, tag, commit, refs); err == nil {
 			t.Fatal("ValidateReleaseRef() accepted a missing or moved tag")
 		}
+	}
+	// A bare v0.1.0 tag is the v0.0.x deploy-counter namespace, not the
+	// module-package track; it must never be accepted as a package release.
+	deployRefs := commit + "\trefs/tags/v0.1.0\n"
+	if err := ValidateReleaseRef(manifest, "v0.1.0", commit, deployRefs); err == nil {
+		t.Fatal("ValidateReleaseRef() accepted a deploy-counter tag as a module-package release")
 	}
 }
 

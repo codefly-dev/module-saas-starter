@@ -27,7 +27,17 @@ const (
 	SignatureName            = "provenance.sig"
 	PackageRepository        = "https://github.com/codefly-dev/module-saas-starter.git"
 	ReleaseSignatureIdentity = "https://github.com/codefly-dev/module-saas-starter/.github/workflows/ci.yml@refs/heads/main"
+	// ReleaseTagPrefix namespaces immutable module-package releases onto a track
+	// independent of the repository's v0.0.x deploy counter. The package semver
+	// is owned by module.package.codefly.yaml, a different axis than the deploy
+	// counter, so the two must never share a tag namespace.
+	ReleaseTagPrefix = "module-package/v"
 )
+
+// ReleaseTag is the canonical git tag and provenance ref for a package version.
+func ReleaseTag(version string) string {
+	return ReleaseTagPrefix + version
+}
 
 type ArtifactMetadata struct {
 	Schema   string         `json:"schema"`
@@ -232,8 +242,8 @@ func SignRelease(options SignOptions) (*corecomposition.Provenance, error) {
 	if identity == "" {
 		identity = ReleaseSignatureIdentity
 	}
-	if options.Ref != "v"+manifest.Version {
-		return nil, fmt.Errorf("provenance ref %q does not match package version %q", options.Ref, manifest.Version)
+	if options.Ref != ReleaseTag(manifest.Version) {
+		return nil, fmt.Errorf("provenance ref %q does not match release tag %q", options.Ref, ReleaseTag(manifest.Version))
 	}
 	if len(options.Commit) != 40 || strings.Trim(options.Commit, "0123456789abcdef") != "" {
 		return nil, fmt.Errorf("provenance commit must be a lowercase full SHA")
@@ -441,9 +451,9 @@ func gitOutput(directory string, arguments ...string) (string, error) {
 }
 
 func ValidateReleaseRef(manifest Manifest, tag, commit, remoteRefs string) error {
-	wantedTag := "v" + manifest.Version
+	wantedTag := ReleaseTag(manifest.Version)
 	if tag != wantedTag {
-		return fmt.Errorf("release tag %q does not match package version %q", tag, manifest.Version)
+		return fmt.Errorf("release tag %q does not match expected module-package tag %q", tag, wantedTag)
 	}
 	if len(commit) != 40 || strings.Trim(commit, "0123456789abcdef") != "" {
 		return fmt.Errorf("release commit must be a lowercase full SHA")
