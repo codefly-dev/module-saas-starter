@@ -1,5 +1,6 @@
 // @vitest-environment happy-dom
 import { cleanup, render, screen } from "@testing-library/react";
+import type { CSSProperties } from "react";
 import { afterEach, describe, expect, it } from "vitest";
 import { Card, Section } from "../card.js";
 
@@ -48,5 +49,15 @@ describe("Section", () => {
 		);
 		expect(screen.queryByRole("heading")).toBeNull();
 		expect(screen.getByText("bare")).toBeTruthy();
+	});
+
+	it("applies an inline style to the section root", () => {
+		const { container } = render(
+			<Section style={{ "--primary": "hotpink" } as CSSProperties}>
+				<p>accented</p>
+			</Section>,
+		);
+		const section = container.querySelector("section") as HTMLElement;
+		expect(section.style.getPropertyValue("--primary")).toBe("hotpink");
 	});
 });
