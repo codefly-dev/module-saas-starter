@@ -3,7 +3,7 @@ import {
 	type FrontendBranding,
 	resolveFrontendAppearance,
 } from "@codefly/saas-plugin-contract";
-import type { ResolvedSkinBase, SkinSource } from "@codefly/ui/skin";
+import type { ResolvedSkinBase, SkinSource } from "@codefly-dev/ui/skin";
 import { beforeEach, describe, expect, it } from "vitest";
 import { clearSkinCache, resolveSkin } from "..";
 import { fileSkinSource } from "../sources";

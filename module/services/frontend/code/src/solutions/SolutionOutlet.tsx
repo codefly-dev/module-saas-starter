@@ -2,7 +2,7 @@
 
 import * as SaasSdk from "@codefly/saas-sdk";
 import * as SaasUi from "@codefly/saas-ui";
-import * as CodeflyUi from "@codefly/ui";
+import * as CodeflyUi from "@codefly-dev/ui";
 import {
 	createInstance,
 	type ModuleFederation,
@@ -40,7 +40,7 @@ export const CODEFLY_KIT_VERSION = "0.1.0";
  * boundary). The remote's build marks react/react-dom/jsx-runtime as shared
  * singletons and therefore ships without them.
  *
- * The Codefly frontend kit (`@codefly/ui`, `@codefly/saas-ui`,
+ * The Codefly frontend kit (`@codefly-dev/ui`, `@codefly/saas-ui`,
  * `@codefly/saas-sdk`) is shared the same way, so a remote imports
  * `<DatasourcesPanel gateway={…}>` and renders it against the host's one copy —
  * no bundling, and one React instance across the boundary.
@@ -70,7 +70,7 @@ function hostInstance(): ModuleFederation {
 				lib: () => ReactJSXRuntime,
 				shareConfig: { singleton: true, requiredVersion: `^${React.version}` },
 			},
-			"@codefly/ui": {
+			"@codefly-dev/ui": {
 				version: CODEFLY_KIT_VERSION,
 				lib: () => CodeflyUi,
 				shareConfig: { singleton: true, requiredVersion: false },

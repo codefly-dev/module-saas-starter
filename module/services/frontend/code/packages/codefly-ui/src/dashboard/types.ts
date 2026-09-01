@@ -5,7 +5,7 @@
 //
 // `@codefly/saas-sdk`'s `runDashboard` produces `DashboardData`/`ResolvedWidget`,
 // which map onto these shapes one-to-one (see `fromDashboardData`); keeping our
-// own types here is what lets `@codefly/ui` stay a pure component library with no
+// own types here is what lets `@codefly-dev/ui` stay a pure component library with no
 // dependency on the SDK's transport stack.
 
 /** How a widget draws its series. */

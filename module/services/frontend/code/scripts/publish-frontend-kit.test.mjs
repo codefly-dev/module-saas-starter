@@ -7,8 +7,8 @@ import {
 } from "./publish-frontend-kit.mjs";
 
 describe("frontend kit publish set", () => {
-	it("publishes @codefly/ui — the solution-facing kit", () => {
-		expect(PACKAGES).toContain("@codefly/ui");
+	it("publishes @codefly-dev/ui — the solution-facing kit", () => {
+		expect(PACKAGES).toContain("@codefly-dev/ui");
 	});
 
 	it("only publishes packages that exist as workspaces", () => {
@@ -21,7 +21,7 @@ describe("frontend kit publish set", () => {
 });
 
 describe("decidePublish", () => {
-	const base = { name: "@codefly/ui", version: "0.1.0" };
+	const base = { name: "@codefly-dev/ui", version: "0.1.0" };
 
 	it("publishes a version that is not on the registry", () => {
 		expect(
@@ -52,6 +52,6 @@ describe("decidePublish", () => {
 				localIntegrity: "sha512-new",
 				remoteIntegrity: "sha512-old",
 			}),
-		).toThrow(/bump @codefly\/ui's version/);
+		).toThrow(/bump @codefly-dev\/ui's version/);
 	});
 });

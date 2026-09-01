@@ -41,7 +41,7 @@
 		"@codefly/saas-sdk": "0.1.0",
 		"@codefly/saas-settings": "0.1.0",
 		"@codefly/saas-ui": "0.1.0",
-		"@codefly/ui": "0.1.0",
+		"@codefly-dev/ui": "0.1.0",
 		"@connectrpc/connect": "^2.1.1",
 		"@connectrpc/connect-web": "^2.1.1",
 		"@hookform/resolvers": "^3.9.0",

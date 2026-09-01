@@ -1,5 +1,5 @@
 /**
- * @codefly/ui — the shared, versioned Codefly SaaS frontend kit.
+ * @codefly-dev/ui — the shared, versioned Codefly SaaS frontend kit.
  *
  * The top-level entry carries the server-safe surface: the plugin host's
  * contribution composition and the tokens-as-data skin mechanism. The client

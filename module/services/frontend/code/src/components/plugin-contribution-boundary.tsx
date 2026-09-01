@@ -1,10 +1,10 @@
 "use client";
 
-import { usePluginRuntime } from "@codefly/ui/plugin-host/runtime";
+import { usePluginRuntime } from "@codefly-dev/ui/plugin-host/runtime";
 import {
 	PluginErrorBoundary,
 	type PluginFailure,
-} from "@codefly/ui/plugin-host/ui";
+} from "@codefly-dev/ui/plugin-host/ui";
 import { AlertTriangle, CloudOff, RefreshCcw, Wrench } from "lucide-react";
 import { type ReactNode, Suspense, use } from "react";
 import { Button } from "@/components/ui/button";

@@ -7,7 +7,7 @@ import type {
 import type {
 	FrontendReactConfig,
 	ReactPluginRoute,
-} from "@codefly/ui/plugin-host";
+} from "@codefly-dev/ui/plugin-host";
 import { isPermission } from "@/gen/saas/accounts/v1/frontend_catalog";
 import type { OrgRole, PlatformRole } from "@/lib/auth-session";
 import { hasPermission, isAdmin, isSuperAdmin } from "@/lib/permissions";
