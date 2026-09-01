@@ -3,7 +3,9 @@ name: ci
 on:
   push:
     branches: [main]
-    tags: ["v*"]
+    # v* is the v0.0.x deploy counter; module-package/v* is the independent
+    # immutable-package release track keyed to module.package.codefly.yaml.
+    tags: ["v*", "module-package/v*"]
   pull_request:
     branches: [main]
   workflow_dispatch:
@@ -283,7 +285,7 @@ jobs:
     needs: codefly-plan
     # Always run on release tags: the publish job needs this gate, and a
     # skipped dependency would skip publish silently rather than fail.
-    if: ${{ needs.codefly-plan.outputs.has_work == 'true' || startsWith(github.ref, 'refs/tags/v') }}
+    if: ${{ needs.codefly-plan.outputs.has_work == 'true' || startsWith(github.ref, 'refs/tags/v') || startsWith(github.ref, 'refs/tags/module-package/v') }}
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
@@ -363,7 +365,7 @@ jobs:
     needs: codefly-plan
     # Always run on release tags: the publish job needs this gate, and a
     # skipped dependency would skip publish silently rather than fail.
-    if: ${{ needs.codefly-plan.outputs.has_work == 'true' || startsWith(github.ref, 'refs/tags/v') }}
+    if: ${{ needs.codefly-plan.outputs.has_work == 'true' || startsWith(github.ref, 'refs/tags/v') || startsWith(github.ref, 'refs/tags/module-package/v') }}
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
@@ -434,7 +436,7 @@ jobs:
     needs: codefly-plan
     # Always run on release tags: the publish job needs this gate, and a
     # skipped dependency would skip publish silently rather than fail.
-    if: ${{ needs.codefly-plan.outputs.has_work == 'true' || startsWith(github.ref, 'refs/tags/v') }}
+    if: ${{ needs.codefly-plan.outputs.has_work == 'true' || startsWith(github.ref, 'refs/tags/v') || startsWith(github.ref, 'refs/tags/module-package/v') }}
     runs-on: ubuntu-latest
     timeout-minutes: 60
     steps:
@@ -507,7 +509,9 @@ jobs:
 
   publish-module-package:
     name: Publish immutable module package
-    if: startsWith(github.ref, 'refs/tags/v')
+    # Only the dedicated module-package/v* track publishes the immutable
+    # package; the v0.0.x deploy counter never triggers a package release.
+    if: startsWith(github.ref, 'refs/tags/module-package/v')
     needs:
       - base-integrity
       - provider-shim

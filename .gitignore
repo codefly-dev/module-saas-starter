@@ -23,6 +23,9 @@ module/services/*/code/*.tsbuildinfo
 module/services/store/code/store-migrator
 module/services/*/.cache/
 
+# `go build ./cmd/module-package` drops this binary next to the sources.
+module/tools/module-package
+
 # nix caches + materialized per-service nix envs (machine-local, regenerated)
 **/.nix-cache/
 module/services/*/nix/
