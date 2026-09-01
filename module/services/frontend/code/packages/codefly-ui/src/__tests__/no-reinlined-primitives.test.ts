@@ -49,6 +49,10 @@ function nonLayoutSourceFiles(dir: string): string[] {
 	return out;
 }
 
+// Matching is byte-identical and order-sensitive (`String.includes`): it catches a
+// verbatim copy of a primitive's class string but not a reordered or re-spaced
+// variant. That is deliberate — the guard stops the exact silent duplication, and
+// `<Card>`/`<Section>` are the way to avoid writing the string at all.
 function reInlinedPrimitive(
 	source: string,
 ): { owner: string; class: string } | undefined {
@@ -58,9 +62,23 @@ function reInlinedPrimitive(
 }
 
 const srcDir = codeflyUiSrcDir();
+const scannedFiles = nonLayoutSourceFiles(srcDir);
 
 describe("no re-inlined layout primitives outside the layout tier", () => {
-	for (const file of nonLayoutSourceFiles(srcDir)) {
+	// A green run must mean "scanned real files and found nothing", never "scanned
+	// nothing". If a refactor moves non-layout code under an excluded path the walk
+	// would silently empty; anchor it to a known non-layout file so coverage cannot
+	// vanish unnoticed.
+	it("scans a non-empty set that includes the dashboard renderer", () => {
+		expect(scannedFiles.length).toBeGreaterThan(0);
+		expect(
+			scannedFiles.some((file) =>
+				file.endsWith(join("dashboard", "dashboard.tsx")),
+			),
+		).toBe(true);
+	});
+
+	for (const file of scannedFiles) {
 		it(`${file} composes the primitive instead of copying its class string`, () => {
 			const hit = reInlinedPrimitive(readFileSync(file, "utf8"));
 			expect(
@@ -83,4 +101,20 @@ describe("no re-inlined layout primitives outside the layout tier", () => {
 		const clean = `import { Card } from "../layout/card.js";\nexport const x = <Card />;`;
 		expect(reInlinedPrimitive(clean)).toBeUndefined();
 	});
+});
+
+// The registry above is a hand-copied snapshot of the primitives' class strings.
+// If a primitive changes but the registry does not, the guard would keep matching a
+// string that no longer exists and miss re-inlines of the new one. Tie the two
+// together so any edit to the primitive trips this test.
+describe("guarded strings stay in lockstep with the primitive that owns them", () => {
+	const cardSource = readFileSync(join(srcDir, "layout", "card.tsx"), "utf8");
+	for (const primitive of GUARDED_PRIMITIVES) {
+		it(`${primitive.owner} still defines its guarded class string`, () => {
+			expect(
+				cardSource.includes(primitive.class),
+				`${primitive.owner} no longer contains "${primitive.class}" — the primitive changed but GUARDED_PRIMITIVES did not; update the registry to match`,
+			).toBe(true);
+		});
+	}
 });
