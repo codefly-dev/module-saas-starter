@@ -13,6 +13,11 @@
 			"types": "./dist/index.d.ts",
 			"import": "./dist/index.js",
 			"default": "./dist/index.js"
+		},
+		"./chat": {
+			"types": "./dist/chat/index.d.ts",
+			"import": "./dist/chat/index.js",
+			"default": "./dist/chat/index.js"
 		}
 	},
 	"scripts": {
@@ -24,7 +29,19 @@
 		"@bufbuild/protobuf": "^2.11.0",
 		"@connectrpc/connect": "^2.1.1"
 	},
+	"peerDependencies": {
+		"react": ">=19.2 <20"
+	},
+	"peerDependenciesMeta": {
+		"react": {
+			"optional": true
+		}
+	},
 	"devDependencies": {
+		"@testing-library/react": "^16.1.0",
+		"@types/react": "19.2.17",
+		"happy-dom": "^20.8.9",
+		"react": "^19.2.8",
 		"typescript": "5.9.3",
 		"vitest": "^3.0.0"
 	},
