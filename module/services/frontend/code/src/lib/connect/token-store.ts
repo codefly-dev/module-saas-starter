@@ -46,9 +46,10 @@ export function refreshToken(): Promise<string | null> {
  * Fetch that carries the host's bearer token and recovers from a lapsed access
  * token exactly as the Connect transport's interceptor does: on a 401 it
  * exchanges the session for a fresh token (single-flight, shared with every
- * other caller) and retries the request once. A null refresh means the session
- * is truly gone — the registered refresh handler has already torn down local
- * state and redirected to login — so the original 401 is returned to the
+ * other caller) and retries the request once. A null refresh yields no retry —
+ * either the session is gone (the registered handler has already torn down
+ * local state and redirected to login) or the refresh endpoint was transiently
+ * unavailable (the session is kept) — so the original 401 is returned to the
  * caller. A solution page doing raw REST calls uses this instead of
  * hand-rolling fetch + getToken, so it gets the same mid-session recovery.
  */
@@ -57,16 +58,16 @@ export async function authedFetch(
 	init: RequestInit = {},
 ): Promise<Response> {
 	const token = getToken();
-	const res = await fetch(input, withBearer(init, token));
+	const request = new Request(input, init);
+	if (token) request.headers.set("Authorization", `Bearer ${token}`);
+	// Clone before the body is consumed so the retry can replay a one-shot body
+	// (a ReadableStream, or a `Request` passed as `input`); reusing the sent
+	// request would throw "body already used" on the second fetch.
+	const retry = request.clone();
+	const res = await fetch(request);
 	if (res.status !== 401 || !token) return res;
 	const fresh = await refreshToken();
 	if (!fresh) return res;
-	return fetch(input, withBearer(init, fresh));
-}
-
-function withBearer(init: RequestInit, token: string | null): RequestInit {
-	if (!token) return init;
-	const headers = new Headers(init.headers);
-	headers.set("Authorization", `Bearer ${token}`);
-	return { ...init, headers };
+	retry.headers.set("Authorization", `Bearer ${fresh}`);
+	return fetch(retry);
 }

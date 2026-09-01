@@ -109,8 +109,9 @@ describe("authInterceptor 401 recovery", () => {
 	});
 });
 
-function bearerOf(init: RequestInit | undefined): string | null {
-	return new Headers(init?.headers).get("Authorization");
+// authedFetch always dispatches a Request object, so read the bearer off it.
+function bearerOf(input: RequestInfo | URL): string | null {
+	return input instanceof Request ? input.headers.get("Authorization") : null;
 }
 
 describe("authedFetch 401 recovery", () => {
@@ -127,7 +128,7 @@ describe("authedFetch 401 recovery", () => {
 
 		expect(res.status).toBe(200);
 		expect(fetchMock).toHaveBeenCalledTimes(1);
-		expect(bearerOf(fetchMock.mock.calls[0][1])).toBe("Bearer access-token");
+		expect(bearerOf(fetchMock.mock.calls[0][0])).toBe("Bearer access-token");
 		expect(handler).not.toHaveBeenCalled();
 	});
 
@@ -144,10 +145,32 @@ describe("authedFetch 401 recovery", () => {
 
 		expect(res.status).toBe(200);
 		expect(fetchMock).toHaveBeenCalledTimes(2);
-		expect(bearerOf(fetchMock.mock.calls[0][1])).toBe("Bearer stale-token");
-		expect(bearerOf(fetchMock.mock.calls[1][1])).toBe("Bearer fresh-token");
+		expect(bearerOf(fetchMock.mock.calls[0][0])).toBe("Bearer stale-token");
+		expect(bearerOf(fetchMock.mock.calls[1][0])).toBe("Bearer fresh-token");
 		// The retry preserves the caller's request init.
-		expect(fetchMock.mock.calls[1][1]?.method).toBe("POST");
+		expect((fetchMock.mock.calls[1][0] as Request).method).toBe("POST");
+	});
+
+	it("replays a one-shot request body on the retry after refresh", async () => {
+		setToken("stale-token");
+		setRefreshHandler(async () => "fresh-token");
+		const bodies: string[] = [];
+		const fetchMock = vi.fn<typeof fetch>().mockImplementation(async (req) => {
+			bodies.push(await (req as Request).text());
+			return new Response(null, { status: bodies.length === 1 ? 401 : 200 });
+		});
+		vi.stubGlobal("fetch", fetchMock);
+
+		// A Request's body is a one-shot stream — reusing the sent request on the
+		// retry (the pre-fix behavior) threw "body already used"; cloning before
+		// the first dispatch lets the refreshed retry replay it.
+		const res = await authedFetch(
+			new Request("/api/upload", { method: "POST", body: "payload" }),
+		);
+
+		expect(res.status).toBe(200);
+		expect(bodies).toEqual(["payload", "payload"]);
+		expect(bearerOf(fetchMock.mock.calls[1][0])).toBe("Bearer fresh-token");
 	});
 
 	it("returns the 401 when the refresh fails (session gone)", async () => {
@@ -176,7 +199,7 @@ describe("authedFetch 401 recovery", () => {
 
 		expect(res.status).toBe(401);
 		expect(fetchMock).toHaveBeenCalledTimes(1);
-		expect(bearerOf(fetchMock.mock.calls[0][1])).toBeNull();
+		expect(bearerOf(fetchMock.mock.calls[0][0])).toBeNull();
 		expect(handler).not.toHaveBeenCalled();
 	});
 });
