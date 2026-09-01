@@ -71,6 +71,12 @@ public surface changes, and CI publishes that exact version from the release
 commit, so the published bytes are the bytes the host serves. Pin the version
 the host module release ships (the two move together on every release tag).
 
+The release publish enforces this rather than trusting it: it compares the
+freshly built tarball's integrity against the version already on the registry. A
+release that didn't touch the kit re-publishes nothing (same bytes → skip); a
+release that changed the kit *without* bumping `version` fails the publish, so a
+stale `@codefly/ui` can never silently ship to solutions.
+
 ## Skin resolution
 
 ```ts

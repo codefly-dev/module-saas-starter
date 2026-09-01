@@ -1,4 +1,5 @@
-import { readFileSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync } from "node:fs";
+import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 
 interface ExportEntry {
@@ -31,6 +32,26 @@ function codeflyUiManifest(): Manifest {
 		}
 	}
 	throw new Error("could not locate the @codefly/ui package.json");
+}
+
+// Same cwd-relative candidate trick as the manifest: find this package's `src`
+// under either Vitest project's cwd.
+function codeflyUiSrcDir(): string {
+	for (const path of ["src", "packages/codefly-ui/src"]) {
+		if (existsSync(join(path, "index.ts"))) return path;
+	}
+	throw new Error("could not locate the @codefly/ui src directory");
+}
+
+function sourceFiles(dir: string): string[] {
+	const out: string[] = [];
+	for (const entry of readdirSync(dir, { withFileTypes: true })) {
+		if (entry.name === "__tests__") continue;
+		const full = join(dir, entry.name);
+		if (entry.isDirectory()) out.push(...sourceFiles(full));
+		else if (/\.tsx?$/.test(entry.name)) out.push(full);
+	}
+	return out;
 }
 
 const manifest = codeflyUiManifest();
@@ -96,4 +117,24 @@ describe("@codefly/ui peer-free solution surface", () => {
 	it("keeps react a required peer", () => {
 		expect(peersMeta.react?.optional).not.toBe(true);
 	});
+});
+
+// Marking the plugin peers optional only carves a peer-free surface if the
+// solution-facing subpaths actually stay plugin-free. If a `@codefly/saas-plugin-*`
+// import creeps into ./layout or ./dashboard, a solution that installs only those
+// subpaths would resolve the (unpublished) plugin package at build time and 404 —
+// the exact failure the optional peers exist to prevent, and one the manifest
+// checks above cannot see. Guard the source directly.
+describe("@codefly/ui solution subpaths stay plugin-free", () => {
+	const srcDir = codeflyUiSrcDir();
+	for (const subpath of ["layout", "dashboard"]) {
+		it(`./${subpath} imports no @codefly/saas-plugin-* package`, () => {
+			for (const file of sourceFiles(join(srcDir, subpath))) {
+				const source = readFileSync(file, "utf8");
+				expect(source, `${file} imports the plugin runtime`).not.toMatch(
+					/from\s+["']@codefly\/saas-plugin/,
+				);
+			}
+		});
+	}
 });
