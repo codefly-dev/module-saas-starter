@@ -62,9 +62,13 @@ function MessageBubble({ message }: { message: ChatMessage }) {
 				>
 					{message.content}
 					{message.pending && (
+						// Decorative: the log's `aria-busy` already tells assistive tech a
+						// reply is in flight. A `role="status"`/`aria-label` here would be a
+						// second live region nested in the log, announcing "typing" on top
+						// of the streamed text.
 						<span
-							role="status"
-							aria-label="typing"
+							aria-hidden="true"
+							data-testid="typing-indicator"
 							className="ml-0.5 inline-block h-4 w-1.5 animate-pulse bg-current align-text-bottom"
 						/>
 					)}
@@ -179,9 +183,12 @@ export function Chat({
 					)}
 				</div>
 			)}
+			{/* `role="log"` already implies `aria-live="polite"`, so it is not
+			    repeated. `aria-busy` while a reply streams tells assistive tech to
+			    hold announcements until the token-by-token text settles, then read
+			    the finished message once instead of on every delta. */}
 			<div
 				role="log"
-				aria-live="polite"
 				aria-busy={busy}
 				className="flex flex-1 flex-col gap-4 overflow-y-auto p-4"
 			>
@@ -195,10 +202,16 @@ export function Chat({
 							<MessageBubble key={message.id} message={message} />
 						))}
 			</div>
-			{composer ??
-				(onSend && (
-					<Composer onSend={onSend} busy={busy} placeholder={placeholder} />
-				))}
+			{/* An explicitly-passed `composer` always wins — including `null`/`false`
+			    to render no composer at all. The default composer appears only when
+			    the prop is omitted and there is an `onSend` to drive it. (Using `??`
+			    here would let `composer={null}` fall through to the default, while
+			    `composer={false}` suppressed it — an inconsistent sentinel.) */}
+			{composer === undefined
+				? onSend && (
+						<Composer onSend={onSend} busy={busy} placeholder={placeholder} />
+					)
+				: composer}
 		</div>
 	);
 }

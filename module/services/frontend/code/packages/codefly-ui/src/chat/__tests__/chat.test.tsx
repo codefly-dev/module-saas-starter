@@ -52,8 +52,27 @@ describe("Chat", () => {
 				busy
 			/>,
 		);
-		expect(screen.getByRole("log").getAttribute("aria-busy")).toBe("true");
-		expect(screen.getByLabelText("typing")).toBeTruthy();
+		const log = screen.getByRole("log");
+		expect(log.getAttribute("aria-busy")).toBe("true");
+		// `aria-busy` is the streaming signal; the caret is decoration only, so it
+		// carries no second live region (no role/aria-label) that would announce
+		// over the streamed text.
+		const caret = screen.getByTestId("typing-indicator");
+		expect(caret.getAttribute("aria-hidden")).toBe("true");
+		expect(caret.getAttribute("role")).toBeNull();
+		expect(caret.getAttribute("aria-label")).toBeNull();
+	});
+
+	it("does not repeat aria-live on the log (role=log already implies polite)", () => {
+		render(<Chat messages={transcript} />);
+		expect(screen.getByRole("log").getAttribute("aria-live")).toBeNull();
+	});
+
+	it("renders no typing indicator once a message is no longer pending", () => {
+		render(
+			<Chat messages={[{ id: "1", role: "assistant", content: "done" }]} />,
+		);
+		expect(screen.queryByTestId("typing-indicator")).toBeNull();
 	});
 
 	describe("default composer", () => {
@@ -116,4 +135,17 @@ describe("Chat", () => {
 		expect(screen.getByText("custom composer")).toBeTruthy();
 		expect(screen.queryByLabelText("Message")).toBeNull();
 	});
+
+	// An explicitly-passed falsy composer means "no composer", consistently —
+	// `null` and `false` both suppress the default even when `onSend` is present.
+	it.each([null, false] as const)(
+		"suppresses the default composer when composer=%s despite onSend",
+		(composer) => {
+			const onSend = vi.fn();
+			render(
+				<Chat messages={transcript} onSend={onSend} composer={composer} />,
+			);
+			expect(screen.queryByLabelText("Message")).toBeNull();
+		},
+	);
 });

@@ -65,12 +65,35 @@ export function useChatStream(
 	const [isStreaming, setIsStreaming] = useState(false);
 	const [error, setError] = useState<Error | undefined>();
 
-	// A ref, not `messages.length`, so ids stay unique across a component that
-	// trims history: two messages must never collide on an id or React reconciles
-	// them into one and the transcript corrupts.
+	// Latch the latest messages and source so `send` is a stable identity with no
+	// dependencies — otherwise it would be rebuilt on every streamed token (each
+	// delta changes `messages`), defeating a consumer that memoizes on `onSend`.
+	// The refs sync in an effect (a render-phase ref write is disallowed); `send`
+	// only fires from events, which run after the effect has committed.
+	const messagesRef = useRef(messages);
+	const sourceRef = useRef(source);
+	useEffect(() => {
+		messagesRef.current = messages;
+		sourceRef.current = source;
+	});
+
+	// Every id ever placed in the transcript. A minted id is checked against it so
+	// it can never collide with a caller-supplied `initial` id (which need not
+	// follow the `msg-N` scheme) or a prior minted id — a duplicate React key
+	// silently fuses two messages into one and corrupts the transcript.
+	const usedIds = useRef<Set<string>>(new Set(initial.map((m) => m.id)));
 	const nextId = useRef(0);
 	const abort = useRef<AbortController | null>(null);
 	const streaming = useRef(false);
+
+	const mintId = useCallback((): string => {
+		let candidate: string;
+		do {
+			candidate = `msg-${nextId.current++}`;
+		} while (usedIds.current.has(candidate));
+		usedIds.current.add(candidate);
+		return candidate;
+	}, []);
 
 	const send = useCallback(
 		(content: string) => {
@@ -82,12 +105,12 @@ export function useChatStream(
 			if (text === "") return;
 
 			const userMessage: ChatMessage = {
-				id: `msg-${nextId.current++}`,
+				id: mintId(),
 				role: "user",
 				content: text,
 			};
-			const replyId = `msg-${nextId.current++}`;
-			const conversation = [...messages, userMessage];
+			const replyId = mintId();
+			const conversation = [...messagesRef.current, userMessage];
 
 			setMessages([
 				...conversation,
@@ -102,7 +125,7 @@ export function useChatStream(
 
 			void (async () => {
 				try {
-					for await (const chunk of source.send(conversation, {
+					for await (const chunk of sourceRef.current.send(conversation, {
 						signal: controller.signal,
 					})) {
 						setMessages((current) =>
@@ -134,7 +157,7 @@ export function useChatStream(
 				}
 			})();
 		},
-		[messages, source],
+		[mintId],
 	);
 
 	// Abort an in-flight stream when the component unmounts so a resolved delta
