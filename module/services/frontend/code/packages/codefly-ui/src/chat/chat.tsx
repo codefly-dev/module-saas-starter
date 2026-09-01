@@ -13,6 +13,7 @@ import {
 	type ReactNode,
 	useState,
 } from "react";
+import { Section } from "../layout/card.js";
 import { cn } from "./cn.js";
 import type { ChatMessage, ChatRole } from "./types.js";
 
@@ -173,15 +174,15 @@ export function Chat({
 				className,
 			)}
 		>
+			{/* The header is a titled block, so compose `Section` rather than
+			    re-inline its heading class string; the outer guard keeps the
+			    bordered bar from rendering empty when no title/description is set. */}
 			{(title || description) && (
-				<div className="space-y-1 border-b p-4">
-					{title && (
-						<h2 className="text-lg font-semibold tracking-tight">{title}</h2>
-					)}
-					{description && (
-						<p className="text-sm text-muted-foreground">{description}</p>
-					)}
-				</div>
+				<Section
+					title={title}
+					description={description}
+					className="border-b p-4"
+				/>
 			)}
 			{/* `role="log"` already implies `aria-live="polite"`, so it is not
 			    repeated. `aria-busy` while a reply streams tells assistive tech to

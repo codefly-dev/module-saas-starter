@@ -43,6 +43,19 @@ describe("Chat", () => {
 		expect(screen.queryByText("No messages yet.")).toBeNull();
 	});
 
+	it("renders the title/description header via the shared Section", () => {
+		render(
+			<Chat messages={transcript} title="Assistant" description="Ask away" />,
+		);
+		expect(screen.getByRole("heading", { name: "Assistant" })).toBeTruthy();
+		expect(screen.getByText("Ask away")).toBeTruthy();
+	});
+
+	it("omits the header entirely when no title or description is set", () => {
+		render(<Chat messages={transcript} />);
+		expect(screen.queryByRole("heading")).toBeNull();
+	});
+
 	it("marks the transcript busy while a reply streams", () => {
 		render(
 			<Chat
