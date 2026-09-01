@@ -4,48 +4,107 @@
 // (and a dashboard accent flows through the `--primary`-backed `text-primary`);
 // bars and the sparkline default to the `--primary` token. No charting library,
 // no data fetching — pure presentation.
+//
+// LineChart/AreaChart are thin compositions of the chart atoms (Svg + Scale +
+// Axis + path). By default they draw axis-less — the sparkline floor, so a
+// StatChart tile stays clean — and opt into real, tokens-driven axes via the
+// `axes` prop, which a dashboard widget turns on.
 
 import type * as React from "react";
+import { Axis, Gridline, Svg } from "./atoms.js";
 import { cn } from "./cn.js";
-import { areaPath, linePath, VIEW_H, VIEW_W } from "./geometry.js";
+import {
+	areaPath,
+	AXIS_MARGIN,
+	linearScale,
+	linePath,
+	niceTicks,
+	PAD,
+	plot,
+	sparkPlot,
+	valueDomain,
+	VIEW_H,
+	VIEW_W,
+} from "./geometry.js";
 import type { SeriesPoint } from "./types.js";
+
+// Opt-in axes: `true` for both, or per-axis toggles (each defaults on when the
+// object form is used, so `{ y: false }` keeps only the x/time axis).
+export type ChartAxes = boolean | { x?: boolean; y?: boolean };
+
+function resolveAxes(axes: ChartAxes | undefined): { x: boolean; y: boolean } {
+	if (!axes) return { x: false, y: false };
+	if (axes === true) return { x: true, y: true };
+	return { x: axes.x ?? true, y: axes.y ?? true };
+}
 
 interface ChartProps {
 	points: SeriesPoint[];
 	className?: string;
 	height?: number;
+	axes?: ChartAxes;
 }
 
-export function LineChart({ points, className, height = VIEW_H }: ChartProps) {
-	const d = linePath(points, height);
+// The shared cartesian body for line and area. `fill` adds the area band under
+// the line. With no axes it draws the full-bleed sparkline (unchanged); with an
+// axis it grows the matching gutter, builds one tick-based scale, and lines the
+// path, gridlines, and labels up against it. A plain function (not a component)
+// so LineChart/AreaChart return the Svg tree directly — the path stays a direct
+// child, which keeps the chart's drawn geometry inspectable without a DOM.
+function cartesian({
+	points,
+	className,
+	height,
+	axes,
+	fill,
+	label,
+}: Required<Pick<ChartProps, "points" | "height">> &
+	Pick<ChartProps, "className" | "axes"> & { fill: boolean; label: string }) {
+	const { x: showX, y: showY } = resolveAxes(axes);
+
+	if (!showX && !showY) {
+		const p = sparkPlot(height);
+		return (
+			<Svg height={height} stretch className={className} ariaLabel={label}>
+				{fill && <path d={areaPath(points, p)} fill="currentColor" fillOpacity={0.15} stroke="none" />}
+				<path d={linePath(points, p)} fill="none" stroke="currentColor" strokeWidth={2} vectorEffect="non-scaling-stroke" />
+			</Svg>
+		);
+	}
+
+	const [min, max] = valueDomain(points.map((pt) => pt.value));
+	const ticks = niceTicks(min, max);
+	const p = plot(VIEW_W, height, {
+		top: PAD,
+		right: PAD,
+		bottom: showX ? AXIS_MARGIN.bottom : PAD,
+		left: showY ? AXIS_MARGIN.left : PAD,
+	});
+	const y = linearScale(ticks[0], ticks[ticks.length - 1], p.bottom, p.top);
+	// A lone bucket draws a flat line; anchor it at its own value so it reads
+	// true against the y axis (the sparkline's centred default would misplace it).
+	const singleY = points.length === 1 ? y(points[0].value) : undefined;
+
 	return (
-		<svg
-			className={cn("w-full", className)}
-			viewBox={`0 0 ${VIEW_W} ${height}`}
-			preserveAspectRatio="none"
-			role="img"
-			aria-label="line chart"
-		>
-			<path d={d} fill="none" stroke="currentColor" strokeWidth={2} vectorEffect="non-scaling-stroke" />
-		</svg>
+		<Svg height={height} stretch={false} className={className} ariaLabel={label}>
+			{showY && <Gridline plot={p} ys={ticks.map(y)} />}
+			{fill && <path d={areaPath(points, p, y, singleY)} fill="currentColor" fillOpacity={0.15} stroke="none" />}
+			<path d={linePath(points, p, y, singleY)} fill="none" stroke="currentColor" strokeWidth={2} vectorEffect="non-scaling-stroke" />
+			<Axis
+				plot={p}
+				y={showY ? { ticks, scale: y } : undefined}
+				x={showX ? { keys: points.map((pt) => pt.key) } : undefined}
+			/>
+		</Svg>
 	);
 }
 
-export function AreaChart({ points, className, height = VIEW_H }: ChartProps) {
-	const area = areaPath(points, height);
-	const line = linePath(points, height);
-	return (
-		<svg
-			className={cn("w-full", className)}
-			viewBox={`0 0 ${VIEW_W} ${height}`}
-			preserveAspectRatio="none"
-			role="img"
-			aria-label="area chart"
-		>
-			<path d={area} fill="currentColor" fillOpacity={0.15} stroke="none" />
-			<path d={line} fill="none" stroke="currentColor" strokeWidth={2} vectorEffect="non-scaling-stroke" />
-		</svg>
-	);
+export function LineChart({ points, className, height = VIEW_H, axes }: ChartProps) {
+	return cartesian({ points, className, height, axes, fill: false, label: "line chart" });
+}
+
+export function AreaChart({ points, className, height = VIEW_H, axes }: ChartProps) {
+	return cartesian({ points, className, height, axes, fill: true, label: "area chart" });
 }
 
 // A ranked horizontal bar list — the categorical counterpart to the line/area
@@ -80,7 +139,9 @@ export function BarList({
 	);
 }
 
-// A single headline number with an inline sparkline — the KPI tile.
+// A single headline number with an inline sparkline — the KPI tile. The
+// sparkline stays axis-less by construction (no `axes` prop), so the tile reads
+// as one number, not a chart.
 export function StatChart({
 	total,
 	points,
