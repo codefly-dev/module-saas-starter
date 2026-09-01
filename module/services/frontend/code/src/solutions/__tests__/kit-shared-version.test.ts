@@ -25,3 +25,29 @@ describe("CODEFLY_KIT_VERSION", () => {
 		},
 	);
 });
+
+// Invariant 2 of the kit architecture (see packages/codefly-ui/ARCHITECTURE.md):
+// every shared kit package is a Module-Federation SINGLETON, so an arbitrarily
+// complex page loads exactly one copy of each kit module (and its tokens) across
+// the host and every remote. Version pinning above only matters if singleton
+// resolution is actually in force — drop `singleton: true` and two copies can
+// coexist, splitting React context and the skin. Guard the share config source
+// directly, since it is a `.tsx` literal, not something the runtime exports.
+describe("shared kit packages are singletons", () => {
+	const source = readFileSync(
+		join(process.cwd(), "src", "solutions", "SolutionOutlet.tsx"),
+		"utf8",
+	);
+	for (const pkg of [
+		"@codefly-dev/ui",
+		"@codefly/saas-ui",
+		"@codefly/saas-sdk",
+	]) {
+		it(`${pkg} declares singleton: true`, () => {
+			const escaped = pkg.replace(/[/\\]/g, "\\$&");
+			expect(source, `${pkg} share config is missing singleton: true`).toMatch(
+				new RegExp(`"${escaped}":\\s*\\{[\\s\\S]*?singleton:\\s*true`),
+			);
+		});
+	}
+});

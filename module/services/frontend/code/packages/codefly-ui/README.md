@@ -6,6 +6,10 @@ import — and dedupe — a single copy of the kit rather than each vendoring th
 own. Generic by design: no consumer branding lives here. Look-and-feel is a
 downstream skin (tokens as data), never code in the kit.
 
+The layered design every primitive is checked against — the tier stack, the
+compose-don't-re-inline / singleton / pure-data-in invariants, and the guard
+that enforces them — lives in [ARCHITECTURE.md](./ARCHITECTURE.md).
+
 ## What ships here
 
 - **Plugin host** (`@codefly-dev/ui/plugin-host`) — product-neutral React
