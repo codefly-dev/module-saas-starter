@@ -121,12 +121,13 @@ maintainer decision that the current base tree is a good pin, not a scheduled
 event. Consumers that need to move faster than tags are cut should open an issue
 rather than pin an untagged revision.
 
-Two independent tag tracks share this repository, keyed to two different
-version sources. They are not interchangeable:
+Two independent tag tracks share this repository, on two different version
+axes. They are not interchangeable:
 
-- **Deploy counter** — `v0.0.x`, sourced from `agent.codefly.yaml`'s `version:`.
-  This is the counter lodestar and the per-environment deploy jobs adopt via
-  `codefly sync module --to <tag>`.
+- **Deploy counter** — the `v0.0.x` tag series lodestar and the per-environment
+  deploy jobs adopt via `codefly sync module --to <tag>`. The tag itself is the
+  counter; `agent.codefly.yaml`'s `version:` is the module agent's own version
+  and may lag the tags (it is bumped when the agent changes, not on every tag).
 - **Immutable module package** — `module-package/vX.Y.Z`, sourced from
   `module/module.package.codefly.yaml`'s `version:` (the module semver). Only
   this track triggers the immutable-package publication job (strict manifest
@@ -135,7 +136,8 @@ version sources. They are not interchangeable:
 
 To cut a deploy-counter tag:
 
-1. Bump `version:` in the root `agent.codefly.yaml`.
+1. If the module agent itself changed, bump `version:` in the root
+   `agent.codefly.yaml`.
 2. Commit it as `release: v0.0.N`.
 3. Tag that commit with an annotated `v0.0.N` tag and push the tag.
 

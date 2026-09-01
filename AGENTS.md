@@ -145,11 +145,12 @@ git worktree remove /tmp/bm-clean --force
 ## Cutting a release
 
 Two tag tracks live here on separate version axes (see
-[RELEASE_GATES.md](./RELEASE_GATES.md)):
+[RELEASE_GATES.md](./RELEASE_GATES.md) for the recipes):
 
-- The **deploy counter** — a `version: 0.0.N` bump on `agent.codefly.yaml` and a
-  matching `v0.0.N` tag. This is the counter consumers adopt via
-  `codefly sync module`.
+- The **deploy counter** — the `v0.0.N` tag series consumers adopt via
+  `codefly sync module`. The counter advances per release; it is not derived
+  from `agent.codefly.yaml`'s `version:` (that field carries the module agent's
+  own version and can lag the tags).
 - The **immutable module package** — a `version:` bump on
   `module/module.package.codefly.yaml` and a `module-package/vX.Y.Z` tag. Only
   this track triggers the immutable module-package publication job (strict
