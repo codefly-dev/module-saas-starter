@@ -38,23 +38,66 @@ const authClient = createClient(AuthService, apiTransport);
 // Browser REST is always same-origin. Next/gateway resolves the accounts
 // service server-side from Codefly bindings (CONV-004).
 
+// The result of a refresh-cookie exchange. `expired` and `unavailable` are
+// deliberately distinct: a revoked/absent session (the backend actively says
+// "no") must tear down local state and bounce to login, but a transient outage
+// (gateway 5xx, network blip) must NOT — the httpOnly refresh cookie is still
+// valid, so logging the user out over a hiccup would be a spurious forced
+// re-login. A refresh call cannot tell these apart from a single `null`.
+type RefreshOutcome =
+	| { status: "ok"; accessToken: string; refreshToken: string }
+	| { status: "expired" }
+	| { status: "unavailable" };
+
+// Classifies a /v1/auth/refresh response (null = the fetch threw, i.e. network
+// failure). Only an explicit 401/403 means the session is gone; every other
+// non-2xx (5xx, 429, gateway errors) and a network failure is transient.
+// Exported for tests.
+export function classifyRefreshStatus(
+	res: { ok: boolean; status: number } | null,
+): "ok" | "expired" | "unavailable" {
+	if (!res) return "unavailable";
+	if (res.status === 401 || res.status === 403) return "expired";
+	if (!res.ok) return "unavailable";
+	return "ok";
+}
+
 // Exchanges the httpOnly refresh cookie for a fresh token pair. The body
-// carries no token — the backend reads it from the cookie. Resolves null when
-// the session is gone (cookie absent/expired/revoked).
-async function exchangeRefreshCookie(): Promise<{
-	accessToken: string;
-	refreshToken: string;
-} | null> {
+// carries no token — the backend reads it from the cookie. Never rejects: a
+// network failure and a malformed success both resolve to `unavailable` so the
+// caller keeps the (still-valid) session rather than treating a hiccup as a
+// logout.
+async function exchangeRefreshCookie(): Promise<RefreshOutcome> {
 	const res = await fetch("/v1/auth/refresh", {
 		method: "POST",
 		credentials: "include",
 		headers: { "Content-Type": "application/json" },
 		body: JSON.stringify({}),
-	});
-	if (!res.ok) return null;
-	const data = await res.json();
-	if (!data.accessToken) return null;
-	return { accessToken: data.accessToken, refreshToken: data.refreshToken };
+	}).catch(() => null);
+	const status = classifyRefreshStatus(res);
+	if (status !== "ok") return { status };
+	const data = await res!.json().catch(() => null);
+	// A 2xx with no token is anomalous, not an authoritative "session gone";
+	// treat it as transient so we don't log the user out on a malformed reply.
+	if (!data?.accessToken) return { status: "unavailable" };
+	return {
+		status: "ok",
+		accessToken: data.accessToken,
+		refreshToken: data.refreshToken,
+	};
+}
+
+// Where an expired-session redirect sends the browser: back to login, with the
+// current location preserved in `next` so sign-in returns here — the same
+// contract the server middleware (proxy.ts) uses on a missing session cookie.
+// Returns null on an auth page, where a 401 has nothing to preserve and
+// re-entering would loop. Exported for tests; the caller performs the nav.
+export function expiredSessionLoginTarget(location: {
+	pathname: string;
+	search: string;
+}): string | null {
+	if (location.pathname.startsWith("/auth/")) return null;
+	return `/auth/login?next=${encodeURIComponent(location.pathname + location.search)}`;
 }
 
 // Identity-provider configuration is supplied by the Codefly `identity`
@@ -711,30 +754,38 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 		// Always attempt a refresh on load: the refresh token lives in an httpOnly
 		// cookie the browser sends automatically (credentials: "include"). If the
 		// cookie is absent/expired the request fails and we land unauthenticated.
-		exchangeRefreshCookie()
-			.catch(() => null)
-			.then((pair) => {
-				if (pair) {
-					setTokens(pair.accessToken, pair.refreshToken);
-					return;
-				}
-				clearRefreshToken();
-				setState((s) => ({ ...s, isLoading: false }));
-			});
+		exchangeRefreshCookie().then((outcome) => {
+			if (outcome.status === "ok") {
+				setTokens(outcome.accessToken, outcome.refreshToken);
+				return;
+			}
+			clearRefreshToken();
+			setState((s) => ({ ...s, isLoading: false }));
+		});
 	}, [setTokens]);
 
 	useEffect(() => {
-		// Mid-session recovery: the Connect transport calls this when an RPC hits
-		// 401 — the short-lived access token expired (or was revoked) while the
-		// page stayed open. A failed exchange means the session itself is gone;
-		// drop to the unauthenticated state rather than leave dead credentials
-		// installed.
+		// Mid-session recovery: the Connect transport (and the solutions'
+		// `authedFetch`) call this when a request hits 401 — the short-lived
+		// access token expired (or was revoked) while the page stayed open. This
+		// single handler is where every dead-session 401 converges.
 		setRefreshHandler(async () => {
-			const pair = await exchangeRefreshCookie().catch(() => null);
-			if (pair) {
-				setTokens(pair.accessToken, pair.refreshToken);
-				return pair.accessToken;
+			const outcome = await exchangeRefreshCookie();
+			if (outcome.status === "ok") {
+				setTokens(outcome.accessToken, outcome.refreshToken);
+				return outcome.accessToken;
 			}
+			if (outcome.status === "unavailable") {
+				// Transient failure (gateway 5xx, network). The httpOnly refresh
+				// cookie is untouched, so the session is almost certainly still
+				// valid — fail only this one request and leave the user where they
+				// are; a later call can refresh successfully. Tearing down state or
+				// redirecting here would log the user out over a hiccup.
+				return null;
+			}
+			// status === "expired": the backend actively rejected the session
+			// (revoked/expired). Tear down local credentials and bounce to login
+			// rather than leave a broken page showing a bare `HTTP 401`.
 			clearRefreshToken();
 			setConnectToken(null);
 			if (typeof document !== "undefined") {
@@ -747,6 +798,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 				isLoading: false,
 				isAuthenticated: false,
 			});
+			if (typeof window !== "undefined") {
+				const target = expiredSessionLoginTarget(window.location);
+				if (target) window.location.replace(target);
+			}
 			return null;
 		});
 		return () => setRefreshHandler(null);

@@ -1,6 +1,7 @@
 import { Code, ConnectError } from "@connectrpc/connect";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
+	authedFetch,
 	refreshToken,
 	setRefreshHandler,
 	setToken,
@@ -10,6 +11,7 @@ import { authInterceptor } from "../transport";
 afterEach(() => {
 	setToken(null);
 	setRefreshHandler(null);
+	vi.unstubAllGlobals();
 });
 
 describe("token-store refresh coordination", () => {
@@ -103,6 +105,101 @@ describe("authInterceptor 401 recovery", () => {
 
 		const next = vi.fn().mockRejectedValue(unauthenticated);
 		await expect(intercept(next)(fakeRequest())).rejects.toBe(unauthenticated);
+		expect(handler).not.toHaveBeenCalled();
+	});
+});
+
+// authedFetch always dispatches a Request object, so read the bearer off it.
+function bearerOf(input: RequestInfo | URL): string | null {
+	return input instanceof Request ? input.headers.get("Authorization") : null;
+}
+
+describe("authedFetch 401 recovery", () => {
+	it("stamps the bearer token and returns a healthy response without refreshing", async () => {
+		setToken("access-token");
+		const handler = vi.fn(async () => "fresh-token");
+		setRefreshHandler(handler);
+		const fetchMock = vi
+			.fn<typeof fetch>()
+			.mockResolvedValue(new Response("ok", { status: 200 }));
+		vi.stubGlobal("fetch", fetchMock);
+
+		const res = await authedFetch("/api/thing");
+
+		expect(res.status).toBe(200);
+		expect(fetchMock).toHaveBeenCalledTimes(1);
+		expect(bearerOf(fetchMock.mock.calls[0][0])).toBe("Bearer access-token");
+		expect(handler).not.toHaveBeenCalled();
+	});
+
+	it("refreshes once and retries with the fresh token on a 401", async () => {
+		setToken("stale-token");
+		setRefreshHandler(async () => "fresh-token");
+		const fetchMock = vi
+			.fn<typeof fetch>()
+			.mockResolvedValueOnce(new Response(null, { status: 401 }))
+			.mockResolvedValueOnce(new Response("ok", { status: 200 }));
+		vi.stubGlobal("fetch", fetchMock);
+
+		const res = await authedFetch("/api/thing", { method: "POST" });
+
+		expect(res.status).toBe(200);
+		expect(fetchMock).toHaveBeenCalledTimes(2);
+		expect(bearerOf(fetchMock.mock.calls[0][0])).toBe("Bearer stale-token");
+		expect(bearerOf(fetchMock.mock.calls[1][0])).toBe("Bearer fresh-token");
+		// The retry preserves the caller's request init.
+		expect((fetchMock.mock.calls[1][0] as Request).method).toBe("POST");
+	});
+
+	it("replays a one-shot request body on the retry after refresh", async () => {
+		setToken("stale-token");
+		setRefreshHandler(async () => "fresh-token");
+		const bodies: string[] = [];
+		const fetchMock = vi.fn<typeof fetch>().mockImplementation(async (req) => {
+			bodies.push(await (req as Request).text());
+			return new Response(null, { status: bodies.length === 1 ? 401 : 200 });
+		});
+		vi.stubGlobal("fetch", fetchMock);
+
+		// A Request's body is a one-shot stream — reusing the sent request on the
+		// retry (the pre-fix behavior) threw "body already used"; cloning before
+		// the first dispatch lets the refreshed retry replay it.
+		const res = await authedFetch(
+			new Request("/api/upload", { method: "POST", body: "payload" }),
+		);
+
+		expect(res.status).toBe(200);
+		expect(bodies).toEqual(["payload", "payload"]);
+		expect(bearerOf(fetchMock.mock.calls[1][0])).toBe("Bearer fresh-token");
+	});
+
+	it("returns the 401 when the refresh fails (session gone)", async () => {
+		setToken("stale-token");
+		setRefreshHandler(async () => null);
+		const fetchMock = vi
+			.fn<typeof fetch>()
+			.mockResolvedValue(new Response(null, { status: 401 }));
+		vi.stubGlobal("fetch", fetchMock);
+
+		const res = await authedFetch("/api/thing");
+
+		expect(res.status).toBe(401);
+		expect(fetchMock).toHaveBeenCalledTimes(1);
+	});
+
+	it("does not refresh when no token was installed", async () => {
+		const handler = vi.fn(async () => "fresh-token");
+		setRefreshHandler(handler);
+		const fetchMock = vi
+			.fn<typeof fetch>()
+			.mockResolvedValue(new Response(null, { status: 401 }));
+		vi.stubGlobal("fetch", fetchMock);
+
+		const res = await authedFetch("/api/thing");
+
+		expect(res.status).toBe(401);
+		expect(fetchMock).toHaveBeenCalledTimes(1);
+		expect(bearerOf(fetchMock.mock.calls[0][0])).toBeNull();
 		expect(handler).not.toHaveBeenCalled();
 	});
 });

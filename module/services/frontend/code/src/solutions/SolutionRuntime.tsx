@@ -40,7 +40,7 @@ export function SolutionRuntime({
 	remote: SolutionRemote;
 	pageProps: Omit<
 		SolutionPageProps,
-		"getAccessToken" | "refreshAccessToken" | "dashboardAuthoring"
+		"getAccessToken" | "refreshAccessToken" | "authedFetch" | "dashboardAuthoring"
 	>;
 }) {
 	const { user, organizationId } = useAuth();

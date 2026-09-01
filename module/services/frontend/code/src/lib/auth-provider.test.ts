@@ -2,6 +2,8 @@ import { afterEach, describe, expect, it } from "vitest";
 import {
 	availableProviders,
 	buildAuthorizeURL,
+	classifyRefreshStatus,
+	expiredSessionLoginTarget,
 	isHeaderInjectedProvider,
 	type ProviderPreset,
 } from "./auth";
@@ -110,5 +112,51 @@ describe("Codefly identity provider configuration", () => {
 		expect(url.searchParams.get("provider")).toBe("authkit");
 		expect(url.searchParams.get("code_challenge")).toBe("pkce-challenge");
 		expect(url.searchParams.has("scope")).toBe(false);
+	});
+});
+
+describe("expired-session login redirect", () => {
+	it("preserves the current location in `next` so sign-in returns here", () => {
+		expect(
+			expiredSessionLoginTarget({ pathname: "/s/lastlogin", search: "" }),
+		).toBe("/auth/login?next=%2Fs%2Flastlogin");
+		expect(
+			expiredSessionLoginTarget({ pathname: "/settings", search: "?tab=api" }),
+		).toBe("/auth/login?next=%2Fsettings%3Ftab%3Dapi");
+	});
+
+	it("does not redirect from an auth page, which would loop", () => {
+		expect(
+			expiredSessionLoginTarget({ pathname: "/auth/login", search: "" }),
+		).toBeNull();
+		expect(
+			expiredSessionLoginTarget({ pathname: "/auth/mfa", search: "" }),
+		).toBeNull();
+	});
+});
+
+describe("refresh status classification", () => {
+	it("treats an explicit 401/403 as an expired (gone) session", () => {
+		expect(classifyRefreshStatus({ ok: false, status: 401 })).toBe("expired");
+		expect(classifyRefreshStatus({ ok: false, status: 403 })).toBe("expired");
+	});
+
+	it("treats a 5xx / rate-limit / network failure as transient, not expired", () => {
+		// The session is still valid behind a hiccup; classifying these as
+		// `expired` would log the user out (and redirect) over an outage.
+		expect(classifyRefreshStatus({ ok: false, status: 500 })).toBe(
+			"unavailable",
+		);
+		expect(classifyRefreshStatus({ ok: false, status: 503 })).toBe(
+			"unavailable",
+		);
+		expect(classifyRefreshStatus({ ok: false, status: 429 })).toBe(
+			"unavailable",
+		);
+		expect(classifyRefreshStatus(null)).toBe("unavailable");
+	});
+
+	it("treats a 2xx as ok", () => {
+		expect(classifyRefreshStatus({ ok: true, status: 200 })).toBe("ok");
 	});
 });
