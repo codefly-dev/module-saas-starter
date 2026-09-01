@@ -49,8 +49,12 @@ function nonLayoutSourceFiles(dir: string): string[] {
 	return out;
 }
 
-function reInlinedPrimitive(source: string): { owner: string; class: string } | undefined {
-	return GUARDED_PRIMITIVES.find((primitive) => source.includes(primitive.class));
+function reInlinedPrimitive(
+	source: string,
+): { owner: string; class: string } | undefined {
+	return GUARDED_PRIMITIVES.find((primitive) =>
+		source.includes(primitive.class),
+	);
 }
 
 const srcDir = codeflyUiSrcDir();
@@ -61,7 +65,8 @@ describe("no re-inlined layout primitives outside the layout tier", () => {
 			const hit = reInlinedPrimitive(readFileSync(file, "utf8"));
 			expect(
 				hit,
-				hit && `${file} re-inlines the ${hit.owner} class string; import the primitive instead`,
+				hit &&
+					`${file} re-inlines the ${hit.owner} class string; import the primitive instead`,
 			).toBeUndefined();
 		});
 	}
