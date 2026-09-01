@@ -1,4 +1,5 @@
-import { readFileSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync } from "node:fs";
+import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 
 interface ExportEntry {
@@ -11,6 +12,7 @@ interface Manifest {
 	name?: string;
 	dependencies?: Record<string, string>;
 	peerDependencies?: Record<string, string>;
+	peerDependenciesMeta?: Record<string, { optional?: boolean }>;
 	exports?: Record<string, ExportEntry>;
 }
 
@@ -32,9 +34,30 @@ function codeflyUiManifest(): Manifest {
 	throw new Error("could not locate the @codefly/ui package.json");
 }
 
+// Same cwd-relative candidate trick as the manifest: find this package's `src`
+// under either Vitest project's cwd.
+function codeflyUiSrcDir(): string {
+	for (const path of ["src", "packages/codefly-ui/src"]) {
+		if (existsSync(join(path, "index.ts"))) return path;
+	}
+	throw new Error("could not locate the @codefly/ui src directory");
+}
+
+function sourceFiles(dir: string): string[] {
+	const out: string[] = [];
+	for (const entry of readdirSync(dir, { withFileTypes: true })) {
+		if (entry.name === "__tests__") continue;
+		const full = join(dir, entry.name);
+		if (entry.isDirectory()) out.push(...sourceFiles(full));
+		else if (/\.tsx?$/.test(entry.name)) out.push(full);
+	}
+	return out;
+}
+
 const manifest = codeflyUiManifest();
 const deps = manifest.dependencies ?? {};
 const peers = manifest.peerDependencies ?? {};
+const peersMeta = manifest.peerDependenciesMeta ?? {};
 const exportsMap = manifest.exports ?? {};
 
 // The public subpaths a consumer (host or Module-Federation remote) may import.
@@ -71,6 +94,47 @@ describe("@codefly/ui dependency contract", () => {
 		it(`declares ${shared} as a peer, not a bundled dependency`, () => {
 			expect(peers).toHaveProperty(shared);
 			expect(deps).not.toHaveProperty(shared);
+		});
+	}
+});
+
+// The solution-facing subpaths (`./layout`, `./dashboard`) are pure React
+// presentation and never touch the plugin runtime. Marking the plugin packages
+// optional peers lets a solution install `@codefly/ui` for those subpaths alone
+// without npm auto-resolving the host-internal (unpublished) plugin packages —
+// while the host, which imports `.`/`./plugin-host`/`./skin`, still provides
+// them. `react` stays a required peer: every subpath needs it deduped.
+describe("@codefly/ui peer-free solution surface", () => {
+	for (const optional of [
+		"@codefly/saas-plugin-react",
+		"@codefly/saas-plugin-contract",
+	]) {
+		it(`marks ${optional} as an optional peer`, () => {
+			expect(peersMeta[optional]?.optional).toBe(true);
+		});
+	}
+
+	it("keeps react a required peer", () => {
+		expect(peersMeta.react?.optional).not.toBe(true);
+	});
+});
+
+// Marking the plugin peers optional only carves a peer-free surface if the
+// solution-facing subpaths actually stay plugin-free. If a `@codefly/saas-plugin-*`
+// import creeps into ./layout or ./dashboard, a solution that installs only those
+// subpaths would resolve the (unpublished) plugin package at build time and 404 —
+// the exact failure the optional peers exist to prevent, and one the manifest
+// checks above cannot see. Guard the source directly.
+describe("@codefly/ui solution subpaths stay plugin-free", () => {
+	const srcDir = codeflyUiSrcDir();
+	for (const subpath of ["layout", "dashboard"]) {
+		it(`./${subpath} imports no @codefly/saas-plugin-* package`, () => {
+			for (const file of sourceFiles(join(srcDir, subpath))) {
+				const source = readFileSync(file, "utf8");
+				expect(source, `${file} imports the plugin runtime`).not.toMatch(
+					/from\s+["']@codefly\/saas-plugin/,
+				);
+			}
 		});
 	}
 });

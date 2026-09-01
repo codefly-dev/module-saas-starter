@@ -641,3 +641,58 @@ jobs:
           gh release edit "${GITHUB_REF_NAME}" --draft=false
           draft_created=false
           gh release verify "${GITHUB_REF_NAME}"
+
+  publish-frontend-kit:
+    name: Publish frontend kit to GitHub Packages
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs:
+      - base-integrity
+      - module-package
+      - codefly-quality
+      - codefly-supply-chain
+      - codefly-build
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      packages: write
+      # Sigstore provenance for the published tarball, matching the module.tar
+      # attestation the release already produces.
+      id-token: write
+      attestations: write
+    env:
+      # Token that may publish `@codefly`-scoped packages to the codefly-dev org
+      # registry, provisioned by infra-base#604. Exported to every npm step: the
+      # scope→GitHub-Packages mapping is job-wide, so any `@codefly/*` the install
+      # resolves from the registry (not just the publish) authenticates with it.
+      NODE_AUTH_TOKEN: ${{ secrets.CODEFLY_PACKAGES_TOKEN }}
+    steps:
+      - name: Require the publish token
+        run: |
+          if [[ -z "${NODE_AUTH_TOKEN}" ]]; then
+            echo "CODEFLY_PACKAGES_TOKEN is required to publish the kit (infra-base#604)" >&2
+            exit 1
+          fi
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      # registry-url + scope makes setup-node write the `@codefly` → GitHub
+      # Packages mapping and the NODE_AUTH_TOKEN line into a project .npmrc.
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: module/services/frontend/code/package-lock.json
+          registry-url: https://npm.pkg.github.com
+          scope: "@codefly"
+      - name: Clean-install frontend dependencies
+        run: npm ci --prefix module/services/frontend/code
+      - name: Build the kit packages
+        run: npm --prefix module/services/frontend/code run build:plugin-packages
+      - name: Publish the kit to GitHub Packages
+        id: publish
+        working-directory: module/services/frontend/code
+        run: node scripts/publish-frontend-kit.mjs
+      - name: Attest the published tarball provenance
+        if: steps.publish.outputs.tarballs != ''
+        uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
+        with:
+          subject-path: ${{ steps.publish.outputs.tarballs }}

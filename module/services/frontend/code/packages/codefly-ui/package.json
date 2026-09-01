@@ -2,6 +2,11 @@
 	"name": "@codefly/ui",
 	"version": "0.1.0",
 	"description": "The shared, versioned Codefly SaaS frontend kit: the plugin host and the tokens-as-data skin mechanism, standalone so the host and Module-Federation remotes import and dedupe one copy.",
+	"repository": {
+		"type": "git",
+		"url": "git+https://github.com/codefly-dev/module-saas-starter.git",
+		"directory": "module/services/frontend/code/packages/codefly-ui"
+	},
 	"type": "module",
 	"sideEffects": false,
 	"files": [
@@ -53,6 +58,14 @@
 		"@codefly/saas-plugin-contract": "2.1.0",
 		"@codefly/saas-plugin-react": "0.4.1",
 		"react": ">=19.2 <20"
+	},
+	"peerDependenciesMeta": {
+		"@codefly/saas-plugin-contract": {
+			"optional": true
+		},
+		"@codefly/saas-plugin-react": {
+			"optional": true
+		}
 	},
 	"devDependencies": {
 		"@codefly/saas-plugin-contract": "2.1.0",
