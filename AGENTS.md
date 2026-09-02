@@ -181,7 +181,9 @@ Deep references live under `module/` — authorization
 [AUTHZ.md](./AUTHZ.md), the authority-checking epic scoping record
 [AUTHORITY_CHECKING_PLAN.md](./AUTHORITY_CHECKING_PLAN.md)), database/RLS
 ([module/DATABASE_AUTHORITY.md](./module/DATABASE_AUTHORITY.md)), the approval
-primitive design ([APPROVALS_DESIGN.md](./APPROVALS_DESIGN.md)), the dashboard
+primitive design ([APPROVALS_DESIGN.md](./APPROVALS_DESIGN.md)), the per-org
+non-human Principal registration decision for delegated Work Context flows
+([DELEGATION_PRINCIPAL_DESIGN.md](./DELEGATION_PRINCIPAL_DESIGN.md)), the dashboard
 authoring API design decisions
 ([DASHBOARD_AUTHORING_DESIGN.md](./DASHBOARD_AUTHORING_DESIGN.md)), deployment
 topology ([module/DEPLOYMENT_TOPOLOGY.md](./module/DEPLOYMENT_TOPOLOGY.md)),
