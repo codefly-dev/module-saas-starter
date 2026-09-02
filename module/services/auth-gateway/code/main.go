@@ -232,6 +232,10 @@ func main() {
 			WithAuthenticationAttemptLimit(authenticationAttemptLimit),
 		) // 1000 req/min per org/IP; stricter MFA budget is configured separately.
 		gateway := NewGateway(sidecar, matcher, upstreams, rateLimiter)
+		if apiHTTPURL != "" {
+			gateway.workContext = newWorkContextVerifier(apiHTTPURL)
+			warmWorkContextKeys(ctx, gateway.workContext)
+		}
 		httpServer = &http.Server{
 			Addr:    fmt.Sprintf(":%d", httpPort),
 			Handler: newGatewayHTTPHandler(gateway, otelMetricProvider),
@@ -350,6 +354,24 @@ func configuredAuthenticationAttemptLimit() (int, error) {
 		return 0, fmt.Errorf("MFA_COMPLETION_RATE_LIMIT_PER_MINUTE must be an integer between 1 and 1000")
 	}
 	return limit, nil
+}
+
+// warmWorkContextKeys pulls the published JWKS at boot so Work Context
+// verification fails closed from the first request instead of racing the first
+// fetch. accounts may still be starting, so it retries briefly; a persistent
+// failure is logged rather than fatal — per-request verification lazily
+// refreshes and still fails closed, and requests without a Work Context are
+// unaffected either way.
+func warmWorkContextKeys(ctx context.Context, verifier *workContextVerifier) {
+	var err error
+	for i := 0; i < 30; i++ {
+		if err = verifier.Refresh(ctx); err == nil {
+			log.Printf("Work Context verification keys warmed from published JWKS")
+			return
+		}
+		time.Sleep(500 * time.Millisecond)
+	}
+	log.Printf("WARNING: could not warm Work Context keys: %v (presented Work Contexts fail closed until keys load)", err)
 }
 
 // fetchPublicKey calls api's GetJWKS to get the Ed25519 public key.
