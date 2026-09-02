@@ -16,22 +16,24 @@ permissions:
   contents: write
   pull-requests: write
 
+# Serialize runs so an on-demand dispatch overlapping the daily schedule can't
+# double-force-push the branch and race `gh pr create`. Never cancel a run
+# mid-push; let the newer run wait.
+concurrency:
+  group: dep-audit-remediation
+  cancel-in-progress: false
+
 jobs:
   remediate:
     runs-on: ubuntu-latest
     timeout-minutes: 15
     env:
       GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-      # @codefly-dev-scoped deps resolve from GitHub Packages; `audit fix`
-      # re-resolves the frontend tree and needs that registry auth.
-      NODE_AUTH_TOKEN: ${{ secrets.CODEFLY_PACKAGES_TOKEN }}
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
           node-version: 24
-          registry-url: https://npm.pkg.github.com
-          scope: "@codefly-dev"
       - name: Remediate transitive advisories in the lockfiles
         shell: bash
         run: |
@@ -50,6 +52,13 @@ jobs:
             echo "No transitive advisories to remediate; lockfiles unchanged."
             exit 0
           fi
+          # The marketing lockfile is base-integrity-tracked, so a bumped lock
+          # leaves base-manifest.json stale and the PR would fail the base
+          # integrity gate. Regenerate the manifest to absorb the new hash, then
+          # verify — verify also re-checks the frontend workspace install graph,
+          # so a non-conforming lock from `audit fix` fails here, not on the PR.
+          node module/tools/base-integrity.mjs gen
+          node module/tools/base-integrity.mjs verify
           branch="chore/dep-audit-remediation"
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
