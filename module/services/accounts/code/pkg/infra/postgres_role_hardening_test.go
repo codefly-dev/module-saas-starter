@@ -375,6 +375,11 @@ func TestControlPlaneRelationGrantsAreExact(t *testing.T) {
 			if relation == "approval_decisions" {
 				want = relationPrivileges{selectRows: true, insertRows: true}
 			}
+			// work_context_replay is claim-once: the control plane reads, inserts,
+			// and deletes (the expiry sweep) but never updates a consumed marker.
+			if relation == "work_context_replay" {
+				want = relationPrivileges{selectRows: true, insertRows: true, deleteRows: true}
+			}
 
 			var got relationPrivileges
 			var truncateRows bool
