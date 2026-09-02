@@ -86,5 +86,20 @@ func (s *Service) RunRetention(ctx context.Context) (map[string]int64, error) {
 		}
 	}
 
+	// Single-use Work Context replay markers are operational security state, not
+	// customer retention data. A marker only needs to outlive its own capability:
+	// once the token is expired the verifier rejects it on time grounds, so
+	// reclaiming markers at expiry keeps the store bounded to live tokens.
+	if replayStore, ok := s.store.(WorkContextReplayStore); ok {
+		bypassErr := s.store.WithControlPlane(ctx, func(ctx context.Context) error {
+			count, err := replayStore.PurgeExpiredWorkContextReplays(ctx, time.Now())
+			deleted["work_context_replay"] = count
+			return err
+		})
+		if bypassErr != nil {
+			w.Warn("work context replay cleanup failed", wool.ErrField(bypassErr))
+		}
+	}
+
 	return deleted, nil
 }

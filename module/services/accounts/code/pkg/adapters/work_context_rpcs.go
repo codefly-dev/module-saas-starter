@@ -41,6 +41,7 @@ type WorkContextAuthorityServer struct {
 	authority    business.WorkContextAuthorityStore
 	consumer     business.WorkContextConsumerAuthorityStore
 	journal      business.ActorChainJournal
+	replay       business.WorkContextReplayStore
 	configureErr error
 }
 
@@ -51,6 +52,7 @@ func (s *WorkContextAuthorityServer) Configure(config WorkContextAuthorityConfig
 	s.authority = nil
 	s.consumer = nil
 	s.journal = nil
+	s.replay = nil
 	s.configureErr = nil
 
 	if s.issuer == "" || strings.TrimSpace(config.KeyID) == "" {
@@ -92,6 +94,7 @@ func (s *WorkContextAuthorityServer) Configure(config WorkContextAuthorityConfig
 	s.authority = config.Authority
 	s.consumer, _ = config.Authority.(business.WorkContextConsumerAuthorityStore)
 	s.journal, _ = config.Authority.(business.ActorChainJournal)
+	s.replay, _ = config.Authority.(business.WorkContextReplayStore)
 }
 
 func (s *WorkContextAuthorityServer) CheckAuthorizationRevision(
@@ -179,6 +182,43 @@ func (s *WorkContextAuthorityServer) AuthorizeEvidenceRead(
 		return nil, mapConsumerAuthorityError(err)
 	}
 	return &emptypb.Empty{}, nil
+}
+
+// ConsumeSingleUse claims a SINGLE_USE Work Context exactly once. The consumer
+// calls it after cryptographically verifying the capability, passing the token's
+// own nonce as the context id; the first claim wins and every replay fails closed
+// with AlreadyExists.
+func (s *WorkContextAuthorityServer) ConsumeSingleUse(
+	ctx context.Context,
+	req *gen.ConsumeSingleUseWorkContextRequest,
+) (*emptypb.Empty, error) {
+	if err := Validate(req); err != nil {
+		return nil, err
+	}
+	if err := requireInternalCredential(ctx); err != nil {
+		return nil, err
+	}
+	if s == nil || s.replay == nil {
+		return nil, status.Error(codes.Unavailable, "Work Context replay store is unavailable")
+	}
+	err := s.replay.ConsumeSingleUseWorkContext(
+		ctx,
+		req.GetOrgId(),
+		req.GetContextId(),
+		req.GetExpiresAt().AsTime(),
+	)
+	switch {
+	case err == nil:
+		return &emptypb.Empty{}, nil
+	case errors.Is(err, business.ErrWorkContextAlreadyConsumed):
+		return nil, status.Error(codes.AlreadyExists, business.ErrWorkContextAlreadyConsumed.Error())
+	case errors.Is(err, context.Canceled):
+		return nil, status.Error(codes.Canceled, "work context consume canceled")
+	case errors.Is(err, context.DeadlineExceeded):
+		return nil, status.Error(codes.DeadlineExceeded, "work context consume timed out")
+	default:
+		return nil, status.Error(codes.Internal, "cannot consume single-use Work Context")
+	}
 }
 
 func mapConsumerAuthorityError(err error) error {

@@ -193,6 +193,24 @@ message AuthorizeEvidenceReadRequest {
   ];
 }
 
+// ConsumeSingleUseWorkContextRequest claims a SINGLE_USE Work Context exactly
+// once. A consumer calls it after cryptographically verifying the capability;
+// the first call for a context_id wins and every replay fails closed.
+message ConsumeSingleUseWorkContextRequest {
+  string org_id = 1 [(buf.validate.field).string.uuid = true];
+  // context_id is the signed capability's own per-token nonce, read from the
+  // verified Work Context. It is the replay-store key: unique per issuance,
+  // stable across the consumer's own retries of the same token.
+  string context_id = 2 [
+    (buf.validate.field).string.min_len = 1,
+    (buf.validate.field).string.max_len = 512
+  ];
+  // expires_at is the capability's sealed expiry. The consumed marker is
+  // retained until then and reclaimed by GC afterwards: once the token itself
+  // is expired the verifier rejects it on time grounds, so the marker is moot.
+  google.protobuf.Timestamp expires_at = 3 [(buf.validate.field).required = true];
+}
+
 // WorkContextService is owned by the permissions plugin. It turns current SaaS
 // identity/RBAC facts into a short-lived Codefly Work Context; it does not own
 // product Task or Session lifecycle storage.
@@ -217,6 +235,24 @@ service WorkContextService {
   // AuthorizeEvidenceRead is deliberately Evidence-specific. It prevents a
   // consumer from acquiring a generic Accounts permission oracle.
   rpc AuthorizeEvidenceRead(AuthorizeEvidenceReadRequest) returns (google.protobuf.Empty) {
+    option (saas.policy.v1.method_policy) = {
+      exposure: EXPOSURE_INTERNAL
+      tenant: TENANT_REQUIREMENT_NONE
+      mfa: MFA_REQUIREMENT_NONE
+      audit: {emission: AUDIT_EMISSION_NONE}
+      idempotency: IDEMPOTENCY_REQUIREMENT_FORBIDDEN
+      rate_limit: RATE_LIMIT_CLASS_INTERNAL
+      request_sensitivity: SENSITIVITY_CONFIDENTIAL
+      response_sensitivity: SENSITIVITY_CONFIDENTIAL
+      platform_role: PLATFORM_ROLE_REQUIREMENT_NONE
+    };
+  }
+
+  // ConsumeSingleUse is the durable replay store behind the SINGLE_USE replay
+  // policy. It records a context_id as consumed on first call and rejects every
+  // later call for the same id, so a single-use capability is redeemable exactly
+  // once across all consumers regardless of instance or retry.
+  rpc ConsumeSingleUse(ConsumeSingleUseWorkContextRequest) returns (google.protobuf.Empty) {
     option (saas.policy.v1.method_policy) = {
       exposure: EXPOSURE_INTERNAL
       tenant: TENANT_REQUIREMENT_NONE

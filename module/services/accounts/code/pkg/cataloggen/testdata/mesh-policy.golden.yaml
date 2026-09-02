@@ -37,6 +37,7 @@ spec:
               - /saas.accounts.v1.UsageService/ConsumeUsage
               - /saas.accounts.v1.WorkContextService/AuthorizeEvidenceRead
               - /saas.accounts.v1.WorkContextService/CheckAuthorizationRevision
+              - /saas.accounts.v1.WorkContextService/ConsumeSingleUse
 ---
 apiVersion: gateway.networking.k8s.io/v1
 kind: Gateway

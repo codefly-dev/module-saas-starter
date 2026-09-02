@@ -6,6 +6,7 @@ import (
 	"crypto/rand"
 	"errors"
 	"testing"
+	"time"
 
 	accountsauth "accounts/pkg/auth"
 	"accounts/pkg/business"
@@ -17,6 +18,7 @@ import (
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/status"
+	"google.golang.org/protobuf/types/known/timestamppb"
 )
 
 type workContextAuthorityFake struct {
@@ -81,6 +83,108 @@ func (fake *workContextConsumerAuthorityFake) AuthorizeEvidenceRead(
 	fake.readSession = sessionID
 	fake.verifiedTenant, fake.verifiedUser, _ = accountsauth.VerifiedDatabaseIdentity(ctx)
 	return fake.readErr
+}
+
+type workContextReplayFake struct {
+	workContextAuthorityFake
+	consumedOrg     string
+	consumedContext string
+	consumedExpiry  time.Time
+	consumeErr      error
+}
+
+func (f *workContextReplayFake) ConsumeSingleUseWorkContext(
+	_ context.Context,
+	orgID string,
+	contextID string,
+	expiresAt time.Time,
+) error {
+	f.consumedOrg = orgID
+	f.consumedContext = contextID
+	f.consumedExpiry = expiresAt
+	return f.consumeErr
+}
+
+func (f *workContextReplayFake) PurgeExpiredWorkContextReplays(
+	_ context.Context,
+	_ time.Time,
+) (int64, error) {
+	return 0, nil
+}
+
+func TestWorkContextConsumeSingleUseEnforcesReplayFailClosed(t *testing.T) {
+	_, privateKey, err := ed25519.GenerateKey(rand.Reader)
+	require.NoError(t, err)
+	replay := &workContextReplayFake{}
+	server := &WorkContextAuthorityServer{}
+	server.Configure(WorkContextAuthorityConfiguration{
+		Issuer:     "accounts.test",
+		KeyID:      "accounts-test-key",
+		PrivateKey: privateKey,
+		Authority:  replay,
+	})
+	require.NoError(t, server.configureErr)
+
+	orgID := "019fec91-2000-7000-8000-000000000001"
+	expiresAt := time.Now().Add(5 * time.Minute).UTC().Truncate(time.Second)
+	request := &gen.ConsumeSingleUseWorkContextRequest{
+		OrgId:     orgID,
+		ContextId: "nonce-abc",
+		ExpiresAt: timestamppb.New(expiresAt),
+	}
+
+	_, err = server.ConsumeSingleUse(context.Background(), request)
+	require.Equal(t, codes.Unauthenticated, status.Code(err))
+
+	SetInternalToken("consume-single-use-test-token")
+	t.Cleanup(func() { SetInternalToken("") })
+	internalContext := metadata.NewIncomingContext(
+		context.Background(),
+		metadata.Pairs("x-codefly-internal-token", "consume-single-use-test-token"),
+	)
+
+	_, err = server.ConsumeSingleUse(internalContext, request)
+	require.NoError(t, err)
+	require.Equal(t, orgID, replay.consumedOrg)
+	require.Equal(t, "nonce-abc", replay.consumedContext)
+	require.Equal(t, expiresAt, replay.consumedExpiry)
+
+	replay.consumeErr = business.ErrWorkContextAlreadyConsumed
+	_, err = server.ConsumeSingleUse(internalContext, request)
+	require.Equal(t, codes.AlreadyExists, status.Code(err))
+
+	replay.consumeErr = errors.New("database unavailable")
+	_, err = server.ConsumeSingleUse(internalContext, request)
+	require.Equal(t, codes.Internal, status.Code(err))
+}
+
+func TestWorkContextConsumeSingleUseUnavailableWithoutReplayStore(t *testing.T) {
+	_, privateKey, err := ed25519.GenerateKey(rand.Reader)
+	require.NoError(t, err)
+	// A store that resolves authority but does not back the replay seam leaves
+	// single-use unavailable rather than silently unenforced.
+	server := &WorkContextAuthorityServer{}
+	server.Configure(WorkContextAuthorityConfiguration{
+		Issuer:     "accounts.test",
+		KeyID:      "accounts-test-key",
+		PrivateKey: privateKey,
+		Authority:  &workContextAuthorityFake{},
+	})
+	require.NoError(t, server.configureErr)
+	require.Nil(t, server.replay)
+
+	SetInternalToken("consume-single-use-test-token")
+	t.Cleanup(func() { SetInternalToken("") })
+	internalContext := metadata.NewIncomingContext(
+		context.Background(),
+		metadata.Pairs("x-codefly-internal-token", "consume-single-use-test-token"),
+	)
+	_, err = server.ConsumeSingleUse(internalContext, &gen.ConsumeSingleUseWorkContextRequest{
+		OrgId:     "019fec91-2000-7000-8000-000000000001",
+		ContextId: "nonce-abc",
+		ExpiresAt: timestamppb.New(time.Now().Add(time.Minute)),
+	})
+	require.Equal(t, codes.Unavailable, status.Code(err))
 }
 
 func TestWorkContextScopesMapExactPermissionChecks(t *testing.T) {

@@ -41,6 +41,9 @@ const (
 	// WorkContextServiceAuthorizeEvidenceReadProcedure is the fully-qualified name of the
 	// WorkContextService's AuthorizeEvidenceRead RPC.
 	WorkContextServiceAuthorizeEvidenceReadProcedure = "/saas.accounts.v1.WorkContextService/AuthorizeEvidenceRead"
+	// WorkContextServiceConsumeSingleUseProcedure is the fully-qualified name of the
+	// WorkContextService's ConsumeSingleUse RPC.
+	WorkContextServiceConsumeSingleUseProcedure = "/saas.accounts.v1.WorkContextService/ConsumeSingleUse"
 	// WorkContextServiceStartTaskProcedure is the fully-qualified name of the WorkContextService's
 	// StartTask RPC.
 	WorkContextServiceStartTaskProcedure = "/saas.accounts.v1.WorkContextService/StartTask"
@@ -64,6 +67,11 @@ type WorkContextServiceClient interface {
 	// AuthorizeEvidenceRead is deliberately Evidence-specific. It prevents a
 	// consumer from acquiring a generic Accounts permission oracle.
 	AuthorizeEvidenceRead(context.Context, *connect.Request[v1.AuthorizeEvidenceReadRequest]) (*connect.Response[emptypb.Empty], error)
+	// ConsumeSingleUse is the durable replay store behind the SINGLE_USE replay
+	// policy. It records a context_id as consumed on first call and rejects every
+	// later call for the same id, so a single-use capability is redeemable exactly
+	// once across all consumers regardless of instance or retry.
+	ConsumeSingleUse(context.Context, *connect.Request[v1.ConsumeSingleUseWorkContextRequest]) (*connect.Response[emptypb.Empty], error)
 	StartTask(context.Context, *connect.Request[v1.StartTaskWorkContextRequest]) (*connect.Response[v1.IssuedWorkContext], error)
 	StartRootSession(context.Context, *connect.Request[v1.StartRootSessionWorkContextRequest]) (*connect.Response[v1.IssuedWorkContext], error)
 	// ExchangeAudience derives a least-privilege, audience-bound capability
@@ -93,6 +101,12 @@ func NewWorkContextServiceClient(httpClient connect.HTTPClient, baseURL string, 
 			httpClient,
 			baseURL+WorkContextServiceAuthorizeEvidenceReadProcedure,
 			connect.WithSchema(workContextServiceMethods.ByName("AuthorizeEvidenceRead")),
+			connect.WithClientOptions(opts...),
+		),
+		consumeSingleUse: connect.NewClient[v1.ConsumeSingleUseWorkContextRequest, emptypb.Empty](
+			httpClient,
+			baseURL+WorkContextServiceConsumeSingleUseProcedure,
+			connect.WithSchema(workContextServiceMethods.ByName("ConsumeSingleUse")),
 			connect.WithClientOptions(opts...),
 		),
 		startTask: connect.NewClient[v1.StartTaskWorkContextRequest, v1.IssuedWorkContext](
@@ -126,6 +140,7 @@ func NewWorkContextServiceClient(httpClient connect.HTTPClient, baseURL string, 
 type workContextServiceClient struct {
 	checkAuthorizationRevision *connect.Client[v1.CheckAuthorizationRevisionRequest, emptypb.Empty]
 	authorizeEvidenceRead      *connect.Client[v1.AuthorizeEvidenceReadRequest, emptypb.Empty]
+	consumeSingleUse           *connect.Client[v1.ConsumeSingleUseWorkContextRequest, emptypb.Empty]
 	startTask                  *connect.Client[v1.StartTaskWorkContextRequest, v1.IssuedWorkContext]
 	startRootSession           *connect.Client[v1.StartRootSessionWorkContextRequest, v1.IssuedWorkContext]
 	exchangeAudience           *connect.Client[v1.ExchangeWorkContextAudienceRequest, v1.IssuedWorkContext]
@@ -140,6 +155,11 @@ func (c *workContextServiceClient) CheckAuthorizationRevision(ctx context.Contex
 // AuthorizeEvidenceRead calls saas.accounts.v1.WorkContextService.AuthorizeEvidenceRead.
 func (c *workContextServiceClient) AuthorizeEvidenceRead(ctx context.Context, req *connect.Request[v1.AuthorizeEvidenceReadRequest]) (*connect.Response[emptypb.Empty], error) {
 	return c.authorizeEvidenceRead.CallUnary(ctx, req)
+}
+
+// ConsumeSingleUse calls saas.accounts.v1.WorkContextService.ConsumeSingleUse.
+func (c *workContextServiceClient) ConsumeSingleUse(ctx context.Context, req *connect.Request[v1.ConsumeSingleUseWorkContextRequest]) (*connect.Response[emptypb.Empty], error) {
+	return c.consumeSingleUse.CallUnary(ctx, req)
 }
 
 // StartTask calls saas.accounts.v1.WorkContextService.StartTask.
@@ -172,6 +192,11 @@ type WorkContextServiceHandler interface {
 	// AuthorizeEvidenceRead is deliberately Evidence-specific. It prevents a
 	// consumer from acquiring a generic Accounts permission oracle.
 	AuthorizeEvidenceRead(context.Context, *connect.Request[v1.AuthorizeEvidenceReadRequest]) (*connect.Response[emptypb.Empty], error)
+	// ConsumeSingleUse is the durable replay store behind the SINGLE_USE replay
+	// policy. It records a context_id as consumed on first call and rejects every
+	// later call for the same id, so a single-use capability is redeemable exactly
+	// once across all consumers regardless of instance or retry.
+	ConsumeSingleUse(context.Context, *connect.Request[v1.ConsumeSingleUseWorkContextRequest]) (*connect.Response[emptypb.Empty], error)
 	StartTask(context.Context, *connect.Request[v1.StartTaskWorkContextRequest]) (*connect.Response[v1.IssuedWorkContext], error)
 	StartRootSession(context.Context, *connect.Request[v1.StartRootSessionWorkContextRequest]) (*connect.Response[v1.IssuedWorkContext], error)
 	// ExchangeAudience derives a least-privilege, audience-bound capability
@@ -197,6 +222,12 @@ func NewWorkContextServiceHandler(svc WorkContextServiceHandler, opts ...connect
 		WorkContextServiceAuthorizeEvidenceReadProcedure,
 		svc.AuthorizeEvidenceRead,
 		connect.WithSchema(workContextServiceMethods.ByName("AuthorizeEvidenceRead")),
+		connect.WithHandlerOptions(opts...),
+	)
+	workContextServiceConsumeSingleUseHandler := connect.NewUnaryHandler(
+		WorkContextServiceConsumeSingleUseProcedure,
+		svc.ConsumeSingleUse,
+		connect.WithSchema(workContextServiceMethods.ByName("ConsumeSingleUse")),
 		connect.WithHandlerOptions(opts...),
 	)
 	workContextServiceStartTaskHandler := connect.NewUnaryHandler(
@@ -229,6 +260,8 @@ func NewWorkContextServiceHandler(svc WorkContextServiceHandler, opts ...connect
 			workContextServiceCheckAuthorizationRevisionHandler.ServeHTTP(w, r)
 		case WorkContextServiceAuthorizeEvidenceReadProcedure:
 			workContextServiceAuthorizeEvidenceReadHandler.ServeHTTP(w, r)
+		case WorkContextServiceConsumeSingleUseProcedure:
+			workContextServiceConsumeSingleUseHandler.ServeHTTP(w, r)
 		case WorkContextServiceStartTaskProcedure:
 			workContextServiceStartTaskHandler.ServeHTTP(w, r)
 		case WorkContextServiceStartRootSessionProcedure:
@@ -252,6 +285,10 @@ func (UnimplementedWorkContextServiceHandler) CheckAuthorizationRevision(context
 
 func (UnimplementedWorkContextServiceHandler) AuthorizeEvidenceRead(context.Context, *connect.Request[v1.AuthorizeEvidenceReadRequest]) (*connect.Response[emptypb.Empty], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("saas.accounts.v1.WorkContextService.AuthorizeEvidenceRead is not implemented"))
+}
+
+func (UnimplementedWorkContextServiceHandler) ConsumeSingleUse(context.Context, *connect.Request[v1.ConsumeSingleUseWorkContextRequest]) (*connect.Response[emptypb.Empty], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("saas.accounts.v1.WorkContextService.ConsumeSingleUse is not implemented"))
 }
 
 func (UnimplementedWorkContextServiceHandler) StartTask(context.Context, *connect.Request[v1.StartTaskWorkContextRequest]) (*connect.Response[v1.IssuedWorkContext], error) {
