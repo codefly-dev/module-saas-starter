@@ -2,9 +2,12 @@
 // Kept out of the geometry (which only knows numbers) because labels are a
 // presentation concern the Axis atom owns; callers can override either.
 
-// Compact value labels for the y axis: "1.2K", "3", "0.5". Compact notation
-// keeps a tick from blowing out the left gutter once counts reach the thousands.
-const valueFormat = new Intl.NumberFormat(undefined, { notation: "compact", maximumFractionDigits: 1 });
+// Compact value labels for the y axis: "1.2K", "3", "0.5", "0.02". Compact
+// notation keeps a tick from blowing out the left gutter once counts reach the
+// thousands. Bounding *significant* digits (not fraction digits) is what keeps a
+// small fractional metric legible: `avg`/`ratio`/`percentile` series can tick in
+// the hundredths, and a fraction-digit cap would round every such tick to "0".
+const valueFormat = new Intl.NumberFormat(undefined, { notation: "compact", maximumSignificantDigits: 3 });
 
 export function formatAxisValue(value: number): string {
 	return valueFormat.format(value);

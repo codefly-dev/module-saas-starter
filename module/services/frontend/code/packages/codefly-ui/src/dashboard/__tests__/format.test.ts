@@ -7,6 +7,15 @@ describe("formatAxisValue", () => {
 		expect(formatAxisValue(0.5)).toBe("0.5");
 		expect(formatAxisValue(1200)).toBe("1.2K");
 	});
+
+	// Regression: a fraction-digit cap rounded any tick below 0.05 to "0", so an
+	// avg/ratio series in the hundredths drew a y axis of all-zero labels. Distinct
+	// small ticks must stay distinct and non-zero.
+	it("keeps sub-unit fractional ticks distinct and non-zero", () => {
+		expect(formatAxisValue(0.02)).toBe("0.02");
+		expect(formatAxisValue(0.04)).toBe("0.04");
+		expect(formatAxisValue(0.02)).not.toBe(formatAxisValue(0.04));
+	});
 });
 
 describe("formatAxisKey", () => {
