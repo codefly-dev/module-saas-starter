@@ -3,6 +3,8 @@ package business
 import (
 	"testing"
 
+	policyv1 "accounts/pkg/gen/saas/policy/v1"
+
 	"github.com/stretchr/testify/require"
 )
 
@@ -20,6 +22,54 @@ func TestClassifyCentralCoverageIsExhaustiveAndNeverBroadening(t *testing.T) {
 		case CoverageOK, CoverageGap, CoverageUnsupported:
 		default:
 			t.Fatalf("%s classified as %q", policy.FullMethod, coverage)
+		}
+	}
+}
+
+// A method that binds an organization or team resource requires the
+// interceptor to resolve and check that binding, which it cannot do yet — so
+// even with a self-service tenant and no declared permission it is a gap, not
+// ok. Without this the classifier would report "safe to enforce centrally" for
+// a method whose bound org/team field the interceptor never validates.
+func TestBoundOrgResourceIsNeverFalselyOK(t *testing.T) {
+	policy := RPCPolicy{MethodPolicy: &policyv1.MethodPolicy{
+		Exposure: policyv1.Exposure_EXPOSURE_AUTHENTICATED,
+		Tenant:   policyv1.TenantRequirement_TENANT_REQUIREMENT_USER,
+		ResourceBindings: []*policyv1.ResourceBinding{{
+			RequestField: "org_id",
+			Target:       policyv1.ResourceTarget_RESOURCE_TARGET_ORGANIZATION,
+			Lookup:       policyv1.ResourceLookup_RESOURCE_LOOKUP_DIRECT_ID,
+		}},
+	}}
+	require.Equal(t, CoverageGap, ClassifyCentralCoverage(policy))
+
+	// The same shape with an owned-resource binding cannot even resolve the org.
+	policy.MethodPolicy.ResourceBindings[0].Target = policyv1.ResourceTarget_RESOURCE_TARGET_OWNED_RESOURCE
+	require.Equal(t, CoverageUnsupported, ClassifyCentralCoverage(policy))
+}
+
+// Across the real catalog, no method carrying an organization/team/owned
+// resource binding may classify ok: such a binding always implies a
+// server-side resolution the interceptor does not perform. This guards the
+// invariant that today holds only because every bound method also carries an
+// org tenant — a future method that drops the tenant must not slip to ok.
+func TestResourceBoundMethodsAreNeverOK(t *testing.T) {
+	for _, policy := range RPCPolicies() {
+		if !policy.Tier.Valid() || policy.PolicyError != "" {
+			continue
+		}
+		bound := false
+		for _, binding := range policy.MethodPolicy.GetResourceBindings() {
+			switch binding.GetTarget() {
+			case policyv1.ResourceTarget_RESOURCE_TARGET_ORGANIZATION,
+				policyv1.ResourceTarget_RESOURCE_TARGET_TEAM,
+				policyv1.ResourceTarget_RESOURCE_TARGET_OWNED_RESOURCE:
+				bound = true
+			}
+		}
+		if bound {
+			require.NotEqualf(t, CoverageOK, ClassifyCentralCoverage(policy),
+				"%s binds a resource but classifies ok", policy.FullMethod)
 		}
 	}
 }

@@ -40,10 +40,11 @@ const (
 // Public and internal methods are fully covered by exposure gating alone. An
 // authenticated method is fully covered only when its floor reduces to "a
 // verified user" — tenant NONE or USER with no permission, platform-role, MFA,
-// or owned-resource requirement — because the interceptor establishes a
+// or bound org/team/owned resource — because the interceptor establishes a
 // verified identity and the RLS floor scopes rows to it. A stronger tenant,
-// any declared permission, a platform-role, or an MFA requirement is a gap
-// until the interceptor learns to resolve it; an owned-resource binding is
+// any declared permission, a platform-role, an MFA requirement, or a resource
+// binding that names an organization or team the caller must relate to is a
+// gap until the interceptor learns to resolve it; an owned-resource binding is
 // unsupported until an ownership resolver exists. Scopes are the API-key
 // ceiling enforced separately by requireScope and are not part of this floor.
 func ClassifyCentralCoverage(policy RPCPolicy) CentralCoverage {
@@ -55,14 +56,19 @@ func ClassifyCentralCoverage(policy RPCPolicy) CentralCoverage {
 	case policyv1.Exposure_EXPOSURE_PUBLIC, policyv1.Exposure_EXPOSURE_INTERNAL:
 		return CoverageOK
 	}
+	requiresBoundResource := false
 	for _, binding := range p.GetResourceBindings() {
-		if binding.GetTarget() == policyv1.ResourceTarget_RESOURCE_TARGET_OWNED_RESOURCE {
+		switch binding.GetTarget() {
+		case policyv1.ResourceTarget_RESOURCE_TARGET_OWNED_RESOURCE:
 			return CoverageUnsupported
+		case policyv1.ResourceTarget_RESOURCE_TARGET_ORGANIZATION,
+			policyv1.ResourceTarget_RESOURCE_TARGET_TEAM:
+			requiresBoundResource = true
 		}
 	}
 	requiresPlatformRole := p.GetPlatformRole() != policyv1.PlatformRoleRequirement_PLATFORM_ROLE_REQUIREMENT_NONE
 	requiresMFA := p.GetMfa() != policyv1.MFARequirement_MFA_REQUIREMENT_NONE
-	if requiresOrgTenant(p.GetTenant()) || len(p.GetPermissions()) > 0 || requiresPlatformRole || requiresMFA {
+	if requiresOrgTenant(p.GetTenant()) || len(p.GetPermissions()) > 0 || requiresPlatformRole || requiresMFA || requiresBoundResource {
 		return CoverageGap
 	}
 	return CoverageOK

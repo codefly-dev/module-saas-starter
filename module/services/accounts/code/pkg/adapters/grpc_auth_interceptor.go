@@ -5,7 +5,11 @@ import (
 	"crypto/subtle"
 	"errors"
 	"strings"
+	"sync"
 
+	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/metric"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/metadata"
@@ -77,26 +81,51 @@ func grpcStreamAuthInterceptor(getMinter func() auth.JWTMinter, exposure rpcExpo
 	}
 }
 
+var (
+	coverageCounterOnce sync.Once
+	coverageCounter     metric.Int64Counter
+)
+
+// rpcPolicyCoverageCounter lazily binds the shadow-coverage counter. It is
+// created on first use — after startup has installed the real meter provider —
+// so the instrument is not a permanent no-op. A creation error leaves the
+// counter nil and shadowPolicyCoverage skips recording rather than failing a
+// request.
+func rpcPolicyCoverageCounter() metric.Int64Counter {
+	coverageCounterOnce.Do(func() {
+		counter, err := otel.Meter("github.com/codefly-dev/module-saas-starter/accounts").Int64Counter(
+			"saas.accounts.rpc_policy.coverage",
+			metric.WithDescription("Central authorization coverage classification per admitted RPC call (shadow mode)."),
+		)
+		if err != nil {
+			return
+		}
+		coverageCounter = counter
+	})
+	return coverageCounter
+}
+
 // shadowPolicyCoverage classifies how completely the central interceptor could
-// enforce the method's declared policy floor and records the outcome for calls
-// the interceptor does not yet fully cover. It changes no admission decision:
-// this is the measurement half of the shadow-mode rollout, surfacing the
-// gap/unsupported traffic that must reach zero before enforcement is turned on.
-// Fully covered (ok) calls are the steady state and emit nothing.
+// enforce the method's declared policy floor and records the outcome on a
+// counter for every admitted call. It changes no admission decision: this is
+// the measurement half of the shadow-mode rollout. Every outcome — including
+// ok — is recorded so that the absence of gap/unsupported over real traffic is
+// provably "no such traffic" rather than a silent instrument, which is the
+// precondition for turning enforcement on.
 func shadowPolicyCoverage(ctx context.Context, fullMethod string) {
 	policy, ok := business.LookupRPCPolicy(fullMethod)
 	if !ok {
 		return
 	}
-	coverage := business.ClassifyCentralCoverage(policy)
-	if coverage == business.CoverageOK {
+	counter := rpcPolicyCoverageCounter()
+	if counter == nil {
 		return
 	}
-	wool.Get(ctx).In("rpcPolicyShadow").Info("central authorization coverage below enforce threshold",
-		wool.Field("method", fullMethod),
-		wool.Field("tier", string(policy.Tier)),
-		wool.Field("coverage", string(coverage)),
-	)
+	coverage := business.ClassifyCentralCoverage(policy)
+	counter.Add(ctx, 1, metric.WithAttributes(
+		attribute.String("method", fullMethod),
+		attribute.String("coverage", string(coverage)),
+	))
 }
 
 type contextServerStream struct {
