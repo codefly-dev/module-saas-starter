@@ -1,6 +1,6 @@
 {
   "note": "Base-file integrity manifest for the saas-starter module. Generated FROM canonical by `node tools/base-integrity.mjs gen`. Consumers MUST NOT hand-edit base files — only add files on the side. Regenerated on every codefly sync from canonical.",
-  "fileCount": 1929,
+  "fileCount": 1930,
   "files": {
     "AUTHORIZATION_CATALOG.md": "28d0b238a637c8c27e1e5d1e88fef868f57a92f0f566c4e17c2d6f8b119025d5",
     "CONTRACT_VERSIONING.md": "04b26fa6b1fc30d14bba63807aa55e5291175d1e2817b75826defc053f77927e",
@@ -55,6 +55,7 @@
     "docs/adr/0004-authoring-vocabulary-caching.md": "4108deb7681a0e9bb9b5e59face8b95e98cbfb1073c7d8fc96b658cda736ff22",
     "docs/adr/0005-python-settings-delivery.md": "d68681f6c3f3ed14b3035fb30b546648458189b49387a49055e841a8055b2b29",
     "docs/adr/0006-audit-sink-and-retention-tiers.md": "9f7bc5ed95d0f22b98ab701ec7f4c21028d22f8e4fcf56a2b4354828b52a1997",
+    "docs/adr/0007-dashboard-storage-and-ownership.md": "6b32049ad3bde50487a2e22abdef811caf7a2ce3a69f2ee19691a44ee5f66260",
     "docs/composition-v2-migration.md": "667398399d801ce310b1e34b954ce8ae85d1978d7f2f77dbad567adb669b06ba",
     "docs/frontend-plugin-architecture.md": "35759568f7c30bedd5ff88119a4a2e384a58711f72bc9d331d0db74a73329d17",
     "docs/frontend-plugin-auth-tenant-matrix.md": "60c70b8abad4f3d420eb7de0e8ca7fecc9b8901ba94fa43bfb9d2ead846a90e9",
