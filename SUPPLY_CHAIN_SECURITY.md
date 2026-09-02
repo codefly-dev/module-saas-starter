@@ -20,6 +20,35 @@ When a security capability is absent, add it to the universal Core contract and
 implement it in the applicable generic plugin. Do not compensate with bespoke
 GitHub Actions steps in the SaaS Starter.
 
+## Known agent-image findings tracked upstream
+
+Some `codefly ci run` / `codefly audit workspace` findings originate in a
+resolved **service agent's container image** (its base OS packages or the Go
+modules compiled into the agent binary), not in this repository's own
+`go.mod`/`package.json` sources. This module pins each service's agent version in
+`module/deployment/topology.bindings.codefly.yaml`; when the pinned agent is
+already the latest published release, such a finding cannot be remediated here by
+a pin bump and must be fixed upstream in the agent's own repository, after which
+the pin is raised.
+
+Currently tracked (agents already at their latest published versions):
+
+- **`vault`** (vault agent `0.0.27`) — CVE-2026-56854 (CRITICAL):
+  `golang.org/x/crypto` `v0.53.0`, fixed in `0.55.0`; CVE-2026-84304 (HIGH):
+  `google.golang.org/grpc` `v1.82.1`, fixed in `1.83.1`. Upstream:
+  codefly-dev/service-vault#42.
+
+Resolved upstream and now remediated here by a pin bump:
+
+- **`store`** (postgres agent) — CVE-2026-14456 (HIGH), Alpine
+  `libcrypto3`/`libssl3` `3.5.7-r0` → `3.5.8-r0`. Fixed upstream in
+  codefly-dev/service-postgres#74 and shipped as postgres agent `0.0.130`; the
+  `store` pin is raised to `0.0.130` in this repo.
+
+When an upstream release ships, bump the pin (see AGENTS.md "Agent version
+pins"), verify the graph still boots (`codefly run service`), refresh the base
+manifest, and re-run `codefly audit workspace` to confirm the finding clears.
+
 ## Immutable module releases
 
 `module/module.package.codefly.yaml` is the composition-v2 package contract.
