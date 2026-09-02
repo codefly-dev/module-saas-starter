@@ -1248,7 +1248,7 @@
     "services/frontend/code/src/features/dashboard/ui/dashboard.tsx": "f5a95947f5f2ccfbf20f986233dc272659d573f657d6755450c83086b3f5d5cb",
     "services/frontend/code/src/features/dashboard/ui/layout.tsx": "4629abef742a687819506bb0f2900ab224e60d478bf779402eb229ec8f0e9848",
     "services/frontend/code/src/features/dashboard/ui/metric-card.tsx": "c8bc8d3f1f2371ee1af3cc5217dc794ddae3b4451e50685dcd5eb91b2b0009d0",
-    "services/frontend/code/src/features/dashboard/ui/my-dashboards.tsx": "44b3147c50dcaa17d6dc6369d7191cb1506deb3156c3e4e459807d83d49af0ba",
+    "services/frontend/code/src/features/dashboard/ui/my-dashboards.tsx": "d7c5425977c11437eeeb2172f9d40a067ea50c0bd74449cb522de28e4319a8fe",
     "services/frontend/code/src/features/datasources/datasource-client.ts": "462c88e5e86bb69dacc29236b9860d5e4426160d580e5a58c97b6e42bfd86531",
     "services/frontend/code/src/features/datasources/datasources-admin.tsx": "096e58ea3e54ef80f45d3dd315265baabf9ae790660f864da7dba28c99dd8382",
     "services/frontend/code/src/features/gdpr/model/types.ts": "228c5fcbb0b012c3b64391d27e298087fa0c6b174d2e8c2beb08255a2ee194e5",
