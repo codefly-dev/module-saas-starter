@@ -61,9 +61,9 @@ function WidgetBody({ widget }: { widget: ResolvedWidget }) {
 	}
 	switch (visualization) {
 		case "line":
-			return <LineChart points={series.points} className="text-primary/70" />;
+			return <LineChart points={series.points} className="text-primary/70" axes />;
 		case "area":
-			return <AreaChart points={series.points} className="text-primary/70" />;
+			return <AreaChart points={series.points} className="text-primary/70" axes />;
 		case "bar":
 			return <BarList points={series.points} />;
 		case "number":

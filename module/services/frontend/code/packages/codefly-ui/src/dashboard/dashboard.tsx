@@ -37,9 +37,9 @@ function WidgetBody({ widget }: { widget: DashboardWidgetView }) {
 	}
 	switch (visualization) {
 		case "line":
-			return <LineChart points={series.points} className="text-primary" />;
+			return <LineChart points={series.points} className="text-primary" axes />;
 		case "area":
-			return <AreaChart points={series.points} className="text-primary" />;
+			return <AreaChart points={series.points} className="text-primary" axes />;
 		case "bar":
 			return <BarList points={series.points} />;
 		case "number":
