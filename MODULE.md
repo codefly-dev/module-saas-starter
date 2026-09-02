@@ -30,6 +30,7 @@ A codefly **module** is a collection of **services**; each service owns its own 
 - Typed public brand and site configuration: `module/public/site.config.json`
 - Generated PDP input: `module/services/accounts/generated/authz-methods.json`
 - Authorization catalog and enforcement boundary: `module/AUTHORIZATION_CATALOG.md`
+- Authority-checking epic scoping (enforcement/verification/delegation gaps): `AUTHORITY_CHECKING_PLAN.md`
 - Platform-functionality reference (external audit mapped to shipped/partial/gap): `PLATFORM_REFERENCE.md`
 - Generated gateway inventory: `module/services/accounts/generated/gateway-routes.json`
 - Gateway route contract and rollout boundary: `module/GATEWAY_ROUTES.md`
