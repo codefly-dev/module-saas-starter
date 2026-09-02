@@ -241,9 +241,11 @@ First, disambiguate two "catalogs" the issue elides:
   runtime DB-seeding concern, documented only in
   [`AUTHZ.md`](AUTHZ.md) "Built-in role catalog import".
 
-The importer is **genuinely manual**: a repo-wide search for invocations of
-`role-catalog-import` / `ImportRoleCatalog` finds only its own `main.go`, unit
-tests, and docs — no Makefile target, CI job, k8s Job, or gitops wiring.
+The importer is **genuinely manual**: a repo-wide search for
+`role-catalog-import` / `ImportRoleCatalog` finds only its own `main.go`, the
+`pkg/infra` definition and its unit tests, one in-code comment
+(`pkg/infra/postgres.go:191`), and docs — no Makefile target, CI job, k8s Job,
+or gitops wiring **invokes** it.
 
 **There is no generic `DeployStep` framework**; `gitops.go` is a per-environment
 Kubernetes/Istio YAML renderer, not a step registry. The deploy-time DB
