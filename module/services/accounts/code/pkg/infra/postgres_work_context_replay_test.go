@@ -2,6 +2,8 @@ package infra_test
 
 import (
 	"context"
+	"errors"
+	"sync"
 	"testing"
 	"time"
 
@@ -33,6 +35,43 @@ func TestWorkContextReplay_FirstConsumeWinsReplayFailsClosed(t *testing.T) {
 	require.NoError(t,
 		testStore.ConsumeSingleUseWorkContext(testCtx, orgID, "ctx-"+business.NewIDString(), expiresAt),
 		"a distinct context id is unaffected")
+}
+
+// The exactly-once guarantee has to hold when consumers race, not just in
+// sequence: the insert-once path is the whole security property. Fire many
+// concurrent claims of one context id and require exactly one to win.
+func TestWorkContextReplay_ConcurrentConsumeAdmitsExactlyOne(t *testing.T) {
+	owner := seedUser(t)
+	orgID := seedOrg(t, owner)
+	contextID := "ctx-" + business.NewIDString()
+	expiresAt := time.Now().Add(time.Hour)
+
+	const racers = 8
+	var wg sync.WaitGroup
+	results := make(chan error, racers)
+	wg.Add(racers)
+	for i := 0; i < racers; i++ {
+		go func() {
+			defer wg.Done()
+			results <- testStore.ConsumeSingleUseWorkContext(testCtx, orgID, contextID, expiresAt)
+		}()
+	}
+	wg.Wait()
+	close(results)
+
+	var wins, replays int
+	for err := range results {
+		switch {
+		case err == nil:
+			wins++
+		case errors.Is(err, business.ErrWorkContextAlreadyConsumed):
+			replays++
+		default:
+			t.Fatalf("unexpected consume error: %v", err)
+		}
+	}
+	require.Equal(t, 1, wins, "exactly one concurrent claim may win")
+	require.Equal(t, racers-1, replays, "every other racer must fail closed as a replay")
 }
 
 func TestWorkContextReplay_ContextIDsAreOrgIsolated(t *testing.T) {

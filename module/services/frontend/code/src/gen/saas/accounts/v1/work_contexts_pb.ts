@@ -536,6 +536,11 @@ export const WorkContextService: GenService<{
    * later call for the same id, so a single-use capability is redeemable exactly
    * once across all consumers regardless of instance or retry.
    *
+   * The redemption is deliberately not retry-safe: because the key is the token's
+   * own stable id, a second call after a lost response is indistinguishable from
+   * a replay and returns ALREADY_EXISTS. A caller must treat that as the
+   * capability being spent and fail the operation closed, not retry it.
+   *
    * @generated from rpc saas.accounts.v1.WorkContextService.ConsumeSingleUse
    */
   consumeSingleUse: {

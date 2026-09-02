@@ -158,6 +158,35 @@ func TestWorkContextConsumeSingleUseEnforcesReplayFailClosed(t *testing.T) {
 	require.Equal(t, codes.Internal, status.Code(err))
 }
 
+func TestWorkContextConsumeSingleUseRejectsFarFutureExpiry(t *testing.T) {
+	_, privateKey, err := ed25519.GenerateKey(rand.Reader)
+	require.NoError(t, err)
+	replay := &workContextReplayFake{}
+	server := &WorkContextAuthorityServer{}
+	server.Configure(WorkContextAuthorityConfiguration{
+		Issuer:     "accounts.test",
+		KeyID:      "accounts-test-key",
+		PrivateKey: privateKey,
+		Authority:  replay,
+	})
+	require.NoError(t, server.configureErr)
+
+	SetInternalToken("consume-single-use-test-token")
+	t.Cleanup(func() { SetInternalToken("") })
+	internalContext := metadata.NewIncomingContext(
+		context.Background(),
+		metadata.Pairs("x-codefly-internal-token", "consume-single-use-test-token"),
+	)
+
+	_, err = server.ConsumeSingleUse(internalContext, &gen.ConsumeSingleUseWorkContextRequest{
+		OrgId:     "019fec91-2000-7000-8000-000000000001",
+		ContextId: "nonce-abc",
+		ExpiresAt: timestamppb.New(time.Now().Add(48 * time.Hour)),
+	})
+	require.Equal(t, codes.InvalidArgument, status.Code(err))
+	require.Empty(t, replay.consumedContext, "a capability with an implausible expiry must never reach the store")
+}
+
 func TestWorkContextConsumeSingleUseUnavailableWithoutReplayStore(t *testing.T) {
 	_, privateKey, err := ed25519.GenerateKey(rand.Reader)
 	require.NoError(t, err)

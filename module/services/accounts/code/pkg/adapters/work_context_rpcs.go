@@ -22,6 +22,12 @@ import (
 	gen "accounts/pkg/gen/saas/accounts/v1"
 )
 
+// maxWorkContextReplayHorizon bounds how far into the future a consumer may
+// declare a single-use capability's expiry. It sits well above the 900s issuance
+// TTL cap (with ample room for clock skew) so it never rejects a real token,
+// while still keeping a miswired caller from pinning a replay marker for long.
+const maxWorkContextReplayHorizon = time.Hour
+
 type WorkContextAuthorityConfiguration struct {
 	Issuer     string
 	KeyID      string
@@ -201,11 +207,18 @@ func (s *WorkContextAuthorityServer) ConsumeSingleUse(
 	if s == nil || s.replay == nil {
 		return nil, status.Error(codes.Unavailable, "Work Context replay store is unavailable")
 	}
+	expiresAt := req.GetExpiresAt().AsTime()
+	// A Work Context TTL is capped at 900s at issuance, so a real capability's
+	// expiry is always minutes out. Reject an expiry beyond a generous horizon so
+	// a miswired consumer cannot pin a replay marker past its purge cadence.
+	if expiresAt.After(time.Now().Add(maxWorkContextReplayHorizon)) {
+		return nil, status.Error(codes.InvalidArgument, "expires_at is too far in the future for a Work Context")
+	}
 	err := s.replay.ConsumeSingleUseWorkContext(
 		ctx,
 		req.GetOrgId(),
 		req.GetContextId(),
-		req.GetExpiresAt().AsTime(),
+		expiresAt,
 	)
 	switch {
 	case err == nil:

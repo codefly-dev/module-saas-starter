@@ -9,8 +9,10 @@
 --
 -- A marker only needs to outlive its own capability. expires_at is the token's
 -- sealed expiry; once the token is past it the verifier rejects it on time
--- grounds, so the marker is moot and retention (see RunRetention) reclaims it.
--- That bounds the store to live tokens, whose TTL is capped at 15 minutes.
+-- grounds, so the marker is moot. A short sweep (PurgeExpiredWorkContextReplays,
+-- run hourly — well under the 15-minute max token TTL) reclaims expired markers,
+-- so the table holds roughly the live tokens plus at most one sweep interval of
+-- expired ones, never a full retention day's worth.
 --
 -- Org-scoped and RLS-isolated like connector_credentials (migration 103):
 -- visible/writable only when acting in the row's org; the control plane reaches

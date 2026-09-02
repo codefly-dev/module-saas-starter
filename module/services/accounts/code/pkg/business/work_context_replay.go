@@ -11,13 +11,15 @@ import (
 // hard denial: the capability was already spent.
 var ErrWorkContextAlreadyConsumed = errors.New("work context already consumed")
 
-// WorkContextReplayStore is the durable replay store that makes the SINGLE_USE
-// replay policy a real guarantee rather than a label. Enforcement sits on the
-// consumer/verifier side: after a consumer cryptographically verifies a signed
-// Work Context it claims the context id here, and the store admits exactly one
-// claim per id. It stays a seam of its own — separate from issuance and from the
-// consumer authority checks — so a deployment wires replay durability
-// independently and no caller gains a broader mutation oracle.
+// WorkContextReplayStore is the durable mechanism the SINGLE_USE replay policy
+// needs: it admits exactly one claim per context id. Enforcement sits on the
+// consumer/verifier side — after a consumer cryptographically verifies a signed
+// Work Context it claims the context id here — so single-use becomes a real
+// guarantee only once a consumer redeems through this store; the store on its
+// own does not make an unclaimed token single-use. It stays a seam of its own —
+// separate from issuance and from the consumer authority checks — so a
+// deployment wires replay durability independently and no caller gains a broader
+// mutation oracle.
 type WorkContextReplayStore interface {
 	// ConsumeSingleUseWorkContext records contextID as consumed and returns nil
 	// on the first claim. Every later claim of the same id returns
