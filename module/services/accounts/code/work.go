@@ -646,33 +646,44 @@ func doWork(ctx context.Context) (Clean, error) {
 	retentionCtx, retentionCancel := context.WithCancel(ctx)
 	go func() {
 		rw := wool.Get(retentionCtx).In("retention")
-		// Run once immediately on startup.
-		if deleted, err := service.RunRetention(retentionCtx); err != nil {
-			rw.Warn("startup run failed", wool.ErrField(err))
-		} else {
-			for k, v := range deleted {
-				if v > 0 {
-					rw.Info("deleted records", wool.Field("count", v), wool.Field("kind", k))
+		runRetention := func() {
+			if deleted, err := service.RunRetention(retentionCtx); err != nil {
+				rw.Warn("scheduled run failed", wool.ErrField(err))
+			} else {
+				for k, v := range deleted {
+					if v > 0 {
+						rw.Info("deleted records", wool.Field("count", v), wool.Field("kind", k))
+					}
 				}
 			}
 		}
+		// Single-use replay markers expire with their token (≤ 15 min), so they
+		// are swept far more often than the daily retention pass or they would
+		// pile up for a day before reclamation.
+		sweepReplay := func() {
+			if n, err := service.PurgeExpiredWorkContextReplays(retentionCtx); err != nil {
+				rw.Warn("replay marker sweep failed", wool.ErrField(err))
+			} else if n > 0 {
+				rw.Info("deleted records", wool.Field("count", n), wool.Field("kind", "work_context_replay"))
+			}
+		}
 
-		ticker := time.NewTicker(24 * time.Hour)
-		defer ticker.Stop()
+		// Run once immediately on startup.
+		runRetention()
+		sweepReplay()
+
+		retentionTicker := time.NewTicker(24 * time.Hour)
+		replayTicker := time.NewTicker(time.Hour)
+		defer retentionTicker.Stop()
+		defer replayTicker.Stop()
 		for {
 			select {
 			case <-retentionCtx.Done():
 				return
-			case <-ticker.C:
-				if deleted, err := service.RunRetention(retentionCtx); err != nil {
-					rw.Warn("scheduled run failed", wool.ErrField(err))
-				} else {
-					for k, v := range deleted {
-						if v > 0 {
-							rw.Info("deleted records", wool.Field("count", v), wool.Field("kind", k))
-						}
-					}
-				}
+			case <-retentionTicker.C:
+				runRetention()
+			case <-replayTicker.C:
+				sweepReplay()
 			}
 		}
 	}()

@@ -74,6 +74,7 @@ var relationsByScope = map[relationScope][]string{
 		"usage_totals",
 		"webhook_deliveries",
 		"webhook_subscriptions",
+		"work_context_replay",
 	},
 	relationScopeUser: {
 		"gdpr_requests",
@@ -163,6 +164,7 @@ var appTenantRelationPrivileges = map[string]relationPrivileges{
 	"usage_totals":                         {selectRows: true, insertRows: true, updateRows: true},
 	"webhook_deliveries":                   {selectRows: true, insertRows: true, updateRows: true},
 	"webhook_subscriptions":                {selectRows: true, insertRows: true, updateRows: true, deleteRows: true},
+	"work_context_replay":                  {selectRows: true, insertRows: true}, // claim-once; GC deletes run under app_control_plane
 
 	// User-scoped and pre-auth relations.
 	"gdpr_requests":          {selectRows: true, insertRows: true, updateRows: true},
@@ -372,6 +374,11 @@ func TestControlPlaneRelationGrantsAreExact(t *testing.T) {
 			// insert, never update or delete (an immutable trigger rejects those).
 			if relation == "approval_decisions" {
 				want = relationPrivileges{selectRows: true, insertRows: true}
+			}
+			// work_context_replay is claim-once: the control plane reads, inserts,
+			// and deletes (the expiry sweep) but never updates a consumed marker.
+			if relation == "work_context_replay" {
+				want = relationPrivileges{selectRows: true, insertRows: true, deleteRows: true}
 			}
 
 			var got relationPrivileges

@@ -2,7 +2,7 @@
 
 > Generated from protobuf service descriptors and `saas.policy.v1.method_policy`; only the prose description is joined from `pkg/business/introspection.go`. Do not edit by hand. Run `go generate ./pkg/business` from `module/services/accounts/code`.
 
-Inventory: **153 RPCs** across **26 services**. Missing, invalid, or unclassified procedures are denied by both Connect and gRPC interceptors.
+Inventory: **154 RPCs** across **26 services**. Missing, invalid, or unclassified procedures are denied by both Connect and gRPC interceptors.
 
 The compact tier is retained for compatibility. Guards, resource bindings, audit events, limiter class, and data sensitivity are descriptor-authoritative. Domain handlers may enforce stronger state-dependent rules but may not weaken this floor.
 
@@ -157,6 +157,7 @@ The compact tier is retained for compatibility. Guards, resource bindings, audit
 | `/saas.accounts.v1.WebhookService/TestWebhook` | unary | `POST /v1/webhooks/{id}:test` | `org_admin` | exposure=AUTHENTICATED; tenant=ORG_ADMIN | perm=webhooks:write; scope=webhooks:write | id → OWNED_RESOURCE/RESOURCE_TO_ORGANIZATION | — | FORBIDDEN / STANDARD_WRITE | CONFIDENTIAL → CONFIDENTIAL | Send a test ping. |
 | `/saas.accounts.v1.WorkContextService/AuthorizeEvidenceRead` | unary | `—` | `internal` | exposure=INTERNAL; tenant=NONE | — | — | — | FORBIDDEN / INTERNAL | CONFIDENTIAL → CONFIDENTIAL | Authorize a filtered Evidence read from current tenant membership and RBAC facts. |
 | `/saas.accounts.v1.WorkContextService/CheckAuthorizationRevision` | unary | `—` | `internal` | exposure=INTERNAL; tenant=NONE | — | — | — | FORBIDDEN / INTERNAL | CONFIDENTIAL → CONFIDENTIAL | Revalidate every subject and scope in a signed Work Context against current authority. |
+| `/saas.accounts.v1.WorkContextService/ConsumeSingleUse` | unary | `—` | `internal` | exposure=INTERNAL; tenant=NONE | — | — | — | FORBIDDEN / INTERNAL | CONFIDENTIAL → CONFIDENTIAL | Claim a single-use Work Context exactly once; replays of the same context id fail closed. |
 | `/saas.accounts.v1.WorkContextService/ExchangeAudience` | unary | `POST /v1/work-contexts:exchange-audience` | `org_member` | exposure=AUTHENTICATED; tenant=ORG_MEMBER | — | org_id → ORGANIZATION/DIRECT_ID | SUCCESS: work_context.audience_exchanged | FORBIDDEN / SENSITIVE | SECRET → SECRET | Reissue one Task and Session lineage for another audience with attenuated authority. |
 | `/saas.accounts.v1.WorkContextService/StartChildSession` | unary | `POST /v1/work-contexts:child-session` | `org_member` | exposure=AUTHENTICATED; tenant=ORG_MEMBER | — | org_id → ORGANIZATION/DIRECT_ID | SUCCESS: work_context.child_session_started | FORBIDDEN / SENSITIVE | SECRET → SECRET | Exchange a current Work Context for an attenuated child-agent Session. |
 | `/saas.accounts.v1.WorkContextService/StartRootSession` | unary | `POST /v1/work-contexts:root-session` | `org_member` | exposure=AUTHENTICATED; tenant=ORG_MEMBER | — | org_id → ORGANIZATION/DIRECT_ID | SUCCESS: work_context.root_session_started | FORBIDDEN / SENSITIVE | SECRET → SECRET | Exchange a current Work Context for another root Session under the same Task. |
@@ -165,7 +166,7 @@ The compact tier is retained for compatibility. Guards, resource bindings, audit
 ## Tier totals
 
 - `auth`: 38
-- `internal`: 10
+- `internal`: 11
 - `mfa`: 3
 - `org_admin`: 35
 - `org_member`: 29

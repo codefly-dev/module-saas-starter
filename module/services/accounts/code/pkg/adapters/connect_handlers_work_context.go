@@ -30,6 +30,13 @@ func (h *workContextConnectHandler) AuthorizeEvidenceRead(
 	return unary(ctx, req, h.inner.AuthorizeEvidenceRead)
 }
 
+func (h *workContextConnectHandler) ConsumeSingleUse(
+	ctx context.Context,
+	req *connect.Request[gen.ConsumeSingleUseWorkContextRequest],
+) (*connect.Response[emptypb.Empty], error) {
+	return unary(ctx, req, h.inner.ConsumeSingleUse)
+}
+
 func (h *workContextConnectHandler) StartTask(
 	ctx context.Context,
 	req *connect.Request[gen.StartTaskWorkContextRequest],

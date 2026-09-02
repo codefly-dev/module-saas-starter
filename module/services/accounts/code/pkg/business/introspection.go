@@ -224,6 +224,8 @@ func withWorkContextConsumerDescriptions(descriptions map[string]string) map[str
 		"Authorize a filtered Evidence read from current tenant membership and RBAC facts."
 	descriptions["WorkContextService/CheckAuthorizationRevision"] =
 		"Revalidate every subject and scope in a signed Work Context against current authority."
+	descriptions["WorkContextService/ConsumeSingleUse"] =
+		"Claim a single-use Work Context exactly once; replays of the same context id fail closed."
 	return descriptions
 }
 

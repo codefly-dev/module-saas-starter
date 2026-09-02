@@ -23,6 +23,7 @@ const _ = grpc.SupportPackageIsVersion9
 const (
 	WorkContextService_CheckAuthorizationRevision_FullMethodName = "/saas.accounts.v1.WorkContextService/CheckAuthorizationRevision"
 	WorkContextService_AuthorizeEvidenceRead_FullMethodName      = "/saas.accounts.v1.WorkContextService/AuthorizeEvidenceRead"
+	WorkContextService_ConsumeSingleUse_FullMethodName           = "/saas.accounts.v1.WorkContextService/ConsumeSingleUse"
 	WorkContextService_StartTask_FullMethodName                  = "/saas.accounts.v1.WorkContextService/StartTask"
 	WorkContextService_StartRootSession_FullMethodName           = "/saas.accounts.v1.WorkContextService/StartRootSession"
 	WorkContextService_ExchangeAudience_FullMethodName           = "/saas.accounts.v1.WorkContextService/ExchangeAudience"
@@ -44,6 +45,16 @@ type WorkContextServiceClient interface {
 	// AuthorizeEvidenceRead is deliberately Evidence-specific. It prevents a
 	// consumer from acquiring a generic Accounts permission oracle.
 	AuthorizeEvidenceRead(ctx context.Context, in *AuthorizeEvidenceReadRequest, opts ...grpc.CallOption) (*emptypb.Empty, error)
+	// ConsumeSingleUse is the durable replay store behind the SINGLE_USE replay
+	// policy. It records a context_id as consumed on first call and rejects every
+	// later call for the same id, so a single-use capability is redeemable exactly
+	// once across all consumers regardless of instance or retry.
+	//
+	// The redemption is deliberately not retry-safe: because the key is the token's
+	// own stable id, a second call after a lost response is indistinguishable from
+	// a replay and returns ALREADY_EXISTS. A caller must treat that as the
+	// capability being spent and fail the operation closed, not retry it.
+	ConsumeSingleUse(ctx context.Context, in *ConsumeSingleUseWorkContextRequest, opts ...grpc.CallOption) (*emptypb.Empty, error)
 	StartTask(ctx context.Context, in *StartTaskWorkContextRequest, opts ...grpc.CallOption) (*IssuedWorkContext, error)
 	StartRootSession(ctx context.Context, in *StartRootSessionWorkContextRequest, opts ...grpc.CallOption) (*IssuedWorkContext, error)
 	// ExchangeAudience derives a least-privilege, audience-bound capability
@@ -74,6 +85,16 @@ func (c *workContextServiceClient) AuthorizeEvidenceRead(ctx context.Context, in
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(emptypb.Empty)
 	err := c.cc.Invoke(ctx, WorkContextService_AuthorizeEvidenceRead_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *workContextServiceClient) ConsumeSingleUse(ctx context.Context, in *ConsumeSingleUseWorkContextRequest, opts ...grpc.CallOption) (*emptypb.Empty, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(emptypb.Empty)
+	err := c.cc.Invoke(ctx, WorkContextService_ConsumeSingleUse_FullMethodName, in, out, cOpts...)
 	if err != nil {
 		return nil, err
 	}
@@ -135,6 +156,16 @@ type WorkContextServiceServer interface {
 	// AuthorizeEvidenceRead is deliberately Evidence-specific. It prevents a
 	// consumer from acquiring a generic Accounts permission oracle.
 	AuthorizeEvidenceRead(context.Context, *AuthorizeEvidenceReadRequest) (*emptypb.Empty, error)
+	// ConsumeSingleUse is the durable replay store behind the SINGLE_USE replay
+	// policy. It records a context_id as consumed on first call and rejects every
+	// later call for the same id, so a single-use capability is redeemable exactly
+	// once across all consumers regardless of instance or retry.
+	//
+	// The redemption is deliberately not retry-safe: because the key is the token's
+	// own stable id, a second call after a lost response is indistinguishable from
+	// a replay and returns ALREADY_EXISTS. A caller must treat that as the
+	// capability being spent and fail the operation closed, not retry it.
+	ConsumeSingleUse(context.Context, *ConsumeSingleUseWorkContextRequest) (*emptypb.Empty, error)
 	StartTask(context.Context, *StartTaskWorkContextRequest) (*IssuedWorkContext, error)
 	StartRootSession(context.Context, *StartRootSessionWorkContextRequest) (*IssuedWorkContext, error)
 	// ExchangeAudience derives a least-privilege, audience-bound capability
@@ -156,6 +187,9 @@ func (UnimplementedWorkContextServiceServer) CheckAuthorizationRevision(context.
 }
 func (UnimplementedWorkContextServiceServer) AuthorizeEvidenceRead(context.Context, *AuthorizeEvidenceReadRequest) (*emptypb.Empty, error) {
 	return nil, status.Error(codes.Unimplemented, "method AuthorizeEvidenceRead not implemented")
+}
+func (UnimplementedWorkContextServiceServer) ConsumeSingleUse(context.Context, *ConsumeSingleUseWorkContextRequest) (*emptypb.Empty, error) {
+	return nil, status.Error(codes.Unimplemented, "method ConsumeSingleUse not implemented")
 }
 func (UnimplementedWorkContextServiceServer) StartTask(context.Context, *StartTaskWorkContextRequest) (*IssuedWorkContext, error) {
 	return nil, status.Error(codes.Unimplemented, "method StartTask not implemented")
@@ -222,6 +256,24 @@ func _WorkContextService_AuthorizeEvidenceRead_Handler(srv interface{}, ctx cont
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
 		return srv.(WorkContextServiceServer).AuthorizeEvidenceRead(ctx, req.(*AuthorizeEvidenceReadRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _WorkContextService_ConsumeSingleUse_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ConsumeSingleUseWorkContextRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(WorkContextServiceServer).ConsumeSingleUse(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: WorkContextService_ConsumeSingleUse_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(WorkContextServiceServer).ConsumeSingleUse(ctx, req.(*ConsumeSingleUseWorkContextRequest))
 	}
 	return interceptor(ctx, in, info, handler)
 }
@@ -312,6 +364,10 @@ var WorkContextService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "AuthorizeEvidenceRead",
 			Handler:    _WorkContextService_AuthorizeEvidenceRead_Handler,
+		},
+		{
+			MethodName: "ConsumeSingleUse",
+			Handler:    _WorkContextService_ConsumeSingleUse_Handler,
 		},
 		{
 			MethodName: "StartTask",
