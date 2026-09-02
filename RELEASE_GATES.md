@@ -97,6 +97,24 @@ artifact hashes.
 The report directory is machine-local output and is not committed. A CI
 provider may retain it without interpreting or reconstructing its contents.
 
+## Staying ahead of newly-published advisories
+
+The vulnerability audit (phase 6, and the first-party gate in `ci.yml`) fails
+closed on every high-severity finding in the production dependency tree. Because
+that check reads the live advisory database, a freshly published advisory on an
+already-pinned transitive can redden an otherwise-clean release at tag time even
+though the lockfile never changed (browserslist did exactly this before #400).
+
+`.github/workflows/dep-audit.yml` keeps main ahead of that. On a daily schedule
+(and on demand via `workflow_dispatch`) it runs `npm audit fix
+--package-lock-only --omit=dev` across the frontend and marketing lockfiles,
+rolls whatever it can safely remediate into a single standing pull request
+(`chore/dep-audit-remediation`), and then re-runs the gate's own
+`--audit-level=high` audit. If an advisory cannot be auto-fixed — it needs a
+major bump or an explicit `overrides` pin — that final step fails the run so a
+maintainer acts before the next tag. The job never weakens the gate: it moves
+the same policy earlier so tags cut from an already-remediated tree.
+
 ## Local use
 
 Run the same release gate from the workspace root:

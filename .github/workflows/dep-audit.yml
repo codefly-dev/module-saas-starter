@@ -1,0 +1,83 @@
+name: Dependency audit auto-remediation
+
+# Keeps transitive security bumps flowing into main ahead of release. A
+# newly-published advisory can redden an otherwise-clean release at tag time
+# even when the lockfile never changed (#406, browserslist in #400). This job
+# runs the same `npm audit` policy the release gate enforces, remediates what
+# it safely can into a rolling pull request, and fails loudly when an advisory
+# needs manual attention — so tags cut from an already-remediated tree.
+
+on:
+  schedule:
+    - cron: "17 6 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pull-requests: write
+
+# Serialize runs so an on-demand dispatch overlapping the daily schedule can't
+# double-force-push the branch and race `gh pr create`. Never cancel a run
+# mid-push; let the newer run wait.
+concurrency:
+  group: dep-audit-remediation
+  cancel-in-progress: false
+
+jobs:
+  remediate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: 24
+      - name: Remediate transitive advisories in the lockfiles
+        shell: bash
+        run: |
+          for dir in \
+            module/services/frontend/code \
+            module/services/marketing/code; do
+            # `audit fix` exits non-zero when advisories remain after the safe
+            # fixes; the residual gate below is the authoritative check, so a
+            # partial fix here must not abort the run before the PR is opened.
+            npm --prefix "$dir" audit fix --package-lock-only --omit=dev || true
+          done
+      - name: Open or update the remediation pull request
+        shell: bash
+        run: |
+          if git diff --quiet; then
+            echo "No transitive advisories to remediate; lockfiles unchanged."
+            exit 0
+          fi
+          # The marketing lockfile is base-integrity-tracked, so a bumped lock
+          # leaves base-manifest.json stale and the PR would fail the base
+          # integrity gate. Regenerate the manifest to absorb the new hash, then
+          # verify — verify also re-checks the frontend workspace install graph,
+          # so a non-conforming lock from `audit fix` fails here, not on the PR.
+          node module/tools/base-integrity.mjs gen
+          node module/tools/base-integrity.mjs verify
+          branch="chore/dep-audit-remediation"
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git switch -C "$branch"
+          git commit -am "chore(deps): remediate transitive security advisories"
+          git push --force origin "$branch"
+          if [[ -z "$(gh pr list --head "$branch" --state open --json number --jq '.[].number')" ]]; then
+            gh pr create \
+              --base main \
+              --head "$branch" \
+              --title "chore(deps): auto-remediate transitive security advisories (#406)" \
+              --body "Automated \`npm audit fix --package-lock-only --omit=dev\` remediation of newly-published advisories against the pinned dependency tree. Review the lockfile diff and let the release gate confirm the audit is clean before merging."
+          fi
+      - name: Fail if high-severity advisories remain after auto-fix
+        shell: bash
+        run: |
+          # Mirrors the first-party vulnerability gate in ci.yml. A failure here
+          # means `audit fix` could not fully remediate (e.g. the fix needs a
+          # major bump or an explicit override) and a maintainer must act before
+          # the next release tag.
+          npm --prefix module/services/frontend/code audit --omit=dev --audit-level=high
+          npm --prefix module/services/marketing/code audit --omit=dev --audit-level=high
