@@ -36,7 +36,7 @@ every authenticatable thing uniformly:
 | kind      | org scope        | how it is born                                                                 | is it a Work Context actor? |
 | --------- | ---------------- | ------------------------------------------------------------------------------ | --------------------------- |
 | `human`   | `org_id IS NULL` | backfilled from `users`, or at registration (cross-org)                        | no (owner, not actor)       |
-| `service` | org-scoped       | **data** — backfilled from `api_keys`, one row per key (migration 37)          | **no**                      |
+| `service` | org-scoped       | **data** — seeded from `api_keys` once at backfill (migration 37); no ongoing sync | **no**                  |
 | `agent`   | org-scoped       | **code** — `PrincipalService.CreateAgentPrincipal` RPC, one row per install    | **yes**                     |
 
 The "automated runtime acting for a user within an org" is the **`agent`**
@@ -45,11 +45,17 @@ principal — a per-org, org-scoped, revocable identity keyed by a canonical
 Work Context path accepts as an actor (§4).
 
 The `service` kind is deliberately *not* a Work Context actor: a service
-principal is derived data (one row per `api_keys` row, born and revoked with the
-key's own lifecycle — `37_backfill_principals.up.sql`). A bare API-key credential
-does not carry delegated Work Context authority; delegated execution flows
-through a registered agent instead. Keeping these separate is the point of the
-two kinds.
+principal is derived data, seeded once from `api_keys` at the migration-37
+backfill (`37_backfill_principals.up.sql`). Unlike humans — kept in step with
+their `users` row by the `users_sync_human_principal` trigger (migration 78) —
+`api_keys` has **no** sync trigger, and `RevokeAPIKey`
+(`pkg/infra/postgres_api_keys.go:152`) touches only `api_keys`. So after backfill
+a service principal's row does not track its key: revoking the key does not
+revoke the principal (the credential is dead, but the row stays active), and a
+key created later has no principal at all. This is a non-issue for delegation
+precisely because a bare API-key credential does not carry delegated Work Context
+authority — delegated execution flows through a registered agent instead. Keeping
+these separate is the point of the two kinds.
 
 ## 3. The registration surface (code)
 
@@ -124,8 +130,12 @@ of a delegated Work Context **must** be:
 2. of **`kind = 'agent'`** (a `service` or unknown id fails closed),
 3. in the **owner's org** (`org_id` bound to the RLS-verified tenant), and
 4. **not revoked** — `RevokePrincipal` (`pkg/business/principals.go:343`) flips
-   `revoked_at`, and revocation also bumps the org/principal authorization
-   revision (migration 99 lineage) so already-signed contexts go stale.
+   `revoked_at`, and the `principals_bump_authorization_revision` trigger
+   (`module/services/store/migrations/78_authorization_revisions.up.sql`, firing
+   `BEFORE UPDATE OF … revoked_at … ON principals`) bumps the org/principal
+   authorization revision so already-signed contexts go stale. (Migration 99's
+   `actor_chain_revocations_bump_authorization` is a distinct path — explicit
+   actor-chain-hop revocation — not principal revocation.)
 
 The delegation-grant mint path is consistent: `DecideDelegation` /
 `RequestDelegation` load the actor via `Service.GetPrincipal`
