@@ -56,6 +56,9 @@ const (
 	// WorkContextServiceStartChildSessionProcedure is the fully-qualified name of the
 	// WorkContextService's StartChildSession RPC.
 	WorkContextServiceStartChildSessionProcedure = "/saas.accounts.v1.WorkContextService/StartChildSession"
+	// WorkContextServiceRenewWorkContextProcedure is the fully-qualified name of the
+	// WorkContextService's RenewWorkContext RPC.
+	WorkContextServiceRenewWorkContextProcedure = "/saas.accounts.v1.WorkContextService/RenewWorkContext"
 )
 
 // WorkContextServiceClient is a client for the saas.accounts.v1.WorkContextService service.
@@ -83,6 +86,13 @@ type WorkContextServiceClient interface {
 	// without changing the Task, Session, owner, or delegation identity.
 	ExchangeAudience(context.Context, *connect.Request[v1.ExchangeWorkContextAudienceRequest]) (*connect.Response[v1.IssuedWorkContext], error)
 	StartChildSession(context.Context, *connect.Request[v1.StartChildSessionWorkContextRequest]) (*connect.Response[v1.IssuedWorkContext], error)
+	// RenewWorkContext is the actor-authorized exchange path. Unlike the
+	// owner-bound RPCs, the caller is the current actor of the parent context,
+	// letting a delegated task extend its own authority past the TTL cap while
+	// the originating user is offline. Renewal re-resolves current authority and
+	// fails closed on a stale revision or a revoked chain hop, and can only
+	// attenuate the actor's scopes.
+	RenewWorkContext(context.Context, *connect.Request[v1.RenewWorkContextRequest]) (*connect.Response[v1.IssuedWorkContext], error)
 }
 
 // NewWorkContextServiceClient constructs a client for the saas.accounts.v1.WorkContextService
@@ -138,6 +148,12 @@ func NewWorkContextServiceClient(httpClient connect.HTTPClient, baseURL string, 
 			connect.WithSchema(workContextServiceMethods.ByName("StartChildSession")),
 			connect.WithClientOptions(opts...),
 		),
+		renewWorkContext: connect.NewClient[v1.RenewWorkContextRequest, v1.IssuedWorkContext](
+			httpClient,
+			baseURL+WorkContextServiceRenewWorkContextProcedure,
+			connect.WithSchema(workContextServiceMethods.ByName("RenewWorkContext")),
+			connect.WithClientOptions(opts...),
+		),
 	}
 }
 
@@ -150,6 +166,7 @@ type workContextServiceClient struct {
 	startRootSession           *connect.Client[v1.StartRootSessionWorkContextRequest, v1.IssuedWorkContext]
 	exchangeAudience           *connect.Client[v1.ExchangeWorkContextAudienceRequest, v1.IssuedWorkContext]
 	startChildSession          *connect.Client[v1.StartChildSessionWorkContextRequest, v1.IssuedWorkContext]
+	renewWorkContext           *connect.Client[v1.RenewWorkContextRequest, v1.IssuedWorkContext]
 }
 
 // CheckAuthorizationRevision calls saas.accounts.v1.WorkContextService.CheckAuthorizationRevision.
@@ -187,6 +204,11 @@ func (c *workContextServiceClient) StartChildSession(ctx context.Context, req *c
 	return c.startChildSession.CallUnary(ctx, req)
 }
 
+// RenewWorkContext calls saas.accounts.v1.WorkContextService.RenewWorkContext.
+func (c *workContextServiceClient) RenewWorkContext(ctx context.Context, req *connect.Request[v1.RenewWorkContextRequest]) (*connect.Response[v1.IssuedWorkContext], error) {
+	return c.renewWorkContext.CallUnary(ctx, req)
+}
+
 // WorkContextServiceHandler is an implementation of the saas.accounts.v1.WorkContextService
 // service.
 type WorkContextServiceHandler interface {
@@ -213,6 +235,13 @@ type WorkContextServiceHandler interface {
 	// without changing the Task, Session, owner, or delegation identity.
 	ExchangeAudience(context.Context, *connect.Request[v1.ExchangeWorkContextAudienceRequest]) (*connect.Response[v1.IssuedWorkContext], error)
 	StartChildSession(context.Context, *connect.Request[v1.StartChildSessionWorkContextRequest]) (*connect.Response[v1.IssuedWorkContext], error)
+	// RenewWorkContext is the actor-authorized exchange path. Unlike the
+	// owner-bound RPCs, the caller is the current actor of the parent context,
+	// letting a delegated task extend its own authority past the TTL cap while
+	// the originating user is offline. Renewal re-resolves current authority and
+	// fails closed on a stale revision or a revoked chain hop, and can only
+	// attenuate the actor's scopes.
+	RenewWorkContext(context.Context, *connect.Request[v1.RenewWorkContextRequest]) (*connect.Response[v1.IssuedWorkContext], error)
 }
 
 // NewWorkContextServiceHandler builds an HTTP handler from the service implementation. It returns
@@ -264,6 +293,12 @@ func NewWorkContextServiceHandler(svc WorkContextServiceHandler, opts ...connect
 		connect.WithSchema(workContextServiceMethods.ByName("StartChildSession")),
 		connect.WithHandlerOptions(opts...),
 	)
+	workContextServiceRenewWorkContextHandler := connect.NewUnaryHandler(
+		WorkContextServiceRenewWorkContextProcedure,
+		svc.RenewWorkContext,
+		connect.WithSchema(workContextServiceMethods.ByName("RenewWorkContext")),
+		connect.WithHandlerOptions(opts...),
+	)
 	return "/saas.accounts.v1.WorkContextService/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case WorkContextServiceCheckAuthorizationRevisionProcedure:
@@ -280,6 +315,8 @@ func NewWorkContextServiceHandler(svc WorkContextServiceHandler, opts ...connect
 			workContextServiceExchangeAudienceHandler.ServeHTTP(w, r)
 		case WorkContextServiceStartChildSessionProcedure:
 			workContextServiceStartChildSessionHandler.ServeHTTP(w, r)
+		case WorkContextServiceRenewWorkContextProcedure:
+			workContextServiceRenewWorkContextHandler.ServeHTTP(w, r)
 		default:
 			http.NotFound(w, r)
 		}
@@ -315,4 +352,8 @@ func (UnimplementedWorkContextServiceHandler) ExchangeAudience(context.Context, 
 
 func (UnimplementedWorkContextServiceHandler) StartChildSession(context.Context, *connect.Request[v1.StartChildSessionWorkContextRequest]) (*connect.Response[v1.IssuedWorkContext], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("saas.accounts.v1.WorkContextService.StartChildSession is not implemented"))
+}
+
+func (UnimplementedWorkContextServiceHandler) RenewWorkContext(context.Context, *connect.Request[v1.RenewWorkContextRequest]) (*connect.Response[v1.IssuedWorkContext], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("saas.accounts.v1.WorkContextService.RenewWorkContext is not implemented"))
 }

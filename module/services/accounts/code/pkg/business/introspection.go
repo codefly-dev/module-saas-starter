@@ -198,6 +198,7 @@ var rpcDescriptions = withWorkContextConsumerDescriptions(map[string]string{
 	"UsageService/GetUsage":                          "Current monthly meter total and effective limit.",
 	"UsageService/ListUsageMeters":                   "Customer-visible meter catalog with current totals and limits.",
 	"WorkContextService/ExchangeAudience":            "Reissue one Task and Session lineage for another audience with attenuated authority.",
+	"WorkContextService/RenewWorkContext":            "Let the current delegated actor extend its own Work Context past the TTL cap, attenuation-preserving.",
 	"WorkContextService/StartChildSession":           "Exchange a current Work Context for an attenuated child-agent Session.",
 	"WorkContextService/StartRootSession":            "Exchange a current Work Context for another root Session under the same Task.",
 	"WorkContextService/StartTask":                   "Issue a signed Work Context for a new Task and root Session.",

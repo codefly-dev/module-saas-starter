@@ -312,6 +312,7 @@
         "/saas.accounts.v1.WorkContextService/CheckAuthorizationRevision",
         "/saas.accounts.v1.WorkContextService/ConsumeSingleUse",
         "/saas.accounts.v1.WorkContextService/ExchangeAudience",
+        "/saas.accounts.v1.WorkContextService/RenewWorkContext",
         "/saas.accounts.v1.WorkContextService/StartChildSession",
         "/saas.accounts.v1.WorkContextService/StartRootSession",
         "/saas.accounts.v1.WorkContextService/StartTask"
@@ -8385,6 +8386,64 @@
       },
       "policy_tier": "org_member",
       "description": "Reissue one Task and Session lineage for another audience with attenuated authority.",
+      "owner": {
+        "module": "saas-starter",
+        "service": "accounts"
+      }
+    },
+    {
+      "procedure": "/saas.accounts.v1.WorkContextService/RenewWorkContext",
+      "service": "WorkContextService",
+      "full_service": "saas.accounts.v1.WorkContextService",
+      "method": "RenewWorkContext",
+      "input_type": "saas.accounts.v1.RenewWorkContextRequest",
+      "output_type": "saas.accounts.v1.IssuedWorkContext",
+      "client_streaming": false,
+      "server_streaming": false,
+      "deprecated": false,
+      "source_proto": "saas/accounts/v1/work_contexts.proto",
+      "protocols": [
+        "PROTOCOL_GRPC",
+        "PROTOCOL_CONNECT",
+        "PROTOCOL_REST"
+      ],
+      "http_bindings": [
+        {
+          "method": "POST",
+          "path": "/v1/work-contexts:renew",
+          "body": "*",
+          "response_body": ""
+        }
+      ],
+      "policy": {
+        "exposure": "EXPOSURE_AUTHENTICATED",
+        "tenant": "TENANT_REQUIREMENT_ORG_MEMBER",
+        "permissions": [],
+        "scopes": [],
+        "resource_bindings": [
+          {
+            "request_field": "org_id",
+            "target": "RESOURCE_TARGET_ORGANIZATION",
+            "lookup": "RESOURCE_LOOKUP_DIRECT_ID"
+          }
+        ],
+        "mfa": "MFA_REQUIREMENT_NONE",
+        "audit": {
+          "events": [
+            "work_context.renewed"
+          ],
+          "emission": "AUDIT_EMISSION_SUCCESS"
+        },
+        "idempotency": "IDEMPOTENCY_REQUIREMENT_FORBIDDEN",
+        "rate_limit": "RATE_LIMIT_CLASS_SENSITIVE",
+        "request_sensitivity": "SENSITIVITY_SECRET",
+        "response_sensitivity": "SENSITIVITY_SECRET",
+        "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
+        "authentication_factor_attempt": false,
+        "conditions": []
+      },
+      "policy_tier": "org_member",
+      "description": "Let the current delegated actor extend its own Work Context past the TTL cap, attenuation-preserving.",
       "owner": {
         "module": "saas-starter",
         "service": "accounts"

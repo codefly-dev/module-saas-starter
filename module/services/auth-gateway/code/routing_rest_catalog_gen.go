@@ -138,6 +138,7 @@ func generatedCatalogRESTRoutes() []*RouteEntry {
 		{Service: "accounts", Method: "POST", Path: "/v1/webhooks/{id}:test", Procedure: "/saas.accounts.v1.WebhookService/TestWebhook"},
 		{Service: "accounts", Method: "POST", Path: "/v1/work-contexts:child-session", Procedure: "/saas.accounts.v1.WorkContextService/StartChildSession"},
 		{Service: "accounts", Method: "POST", Path: "/v1/work-contexts:exchange-audience", Procedure: "/saas.accounts.v1.WorkContextService/ExchangeAudience"},
+		{Service: "accounts", Method: "POST", Path: "/v1/work-contexts:renew", Procedure: "/saas.accounts.v1.WorkContextService/RenewWorkContext"},
 		{Service: "accounts", Method: "POST", Path: "/v1/work-contexts:root-session", Procedure: "/saas.accounts.v1.WorkContextService/StartRootSession"},
 		{Service: "accounts", Method: "POST", Path: "/v1/work-contexts:task", Procedure: "/saas.accounts.v1.WorkContextService/StartTask"},
 		{Service: "accounts", Method: "PUT", Path: "/v1/consent/preferences", Procedure: "/saas.accounts.v1.ConsentService/UpdatePreferences"},

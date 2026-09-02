@@ -436,6 +436,67 @@ func (s *WorkContextAuthorityServer) StartChildSession(
 	return issuedWorkContext(token, signed), nil
 }
 
+// RenewWorkContext lets the current actor of a delegated context re-issue it
+// with a fresh TTL while the originating user is offline. It preserves the
+// Task, Session, owner, and delegation lineage and appends no new actor hop; it
+// only refreshes the lifetime and, optionally, the audience. Renewed authority
+// is bounded by the current actor's granted scopes and can only be attenuated,
+// so it can never widen the original grant.
+func (s *WorkContextAuthorityServer) RenewWorkContext(
+	ctx context.Context,
+	req *gen.RenewWorkContextRequest,
+) (*gen.IssuedWorkContext, error) {
+	if err := Validate(req); err != nil {
+		return nil, err
+	}
+	if s == nil || s.configureErr != nil || s.signer == nil || s.verifier == nil || s.authority == nil {
+		return nil, status.Error(codes.FailedPrecondition, "Work Context authority is not configured")
+	}
+	actorID, err := requireAuth(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if err := requireOrgMember(ctx, actorID, req.GetOrgId()); err != nil {
+		return nil, err
+	}
+	parentToken, parent, err := s.verifyActorParent(
+		ctx, req.GetOrgId(), actorID, req.GetParentWorkContextToken(),
+	)
+	if err != nil {
+		return nil, err
+	}
+	var scopes []*basev0.WorkScopeV1
+	if len(req.GetAttenuatedScopes()) > 0 {
+		if _, scopes, err = workContextScopes(req.GetAttenuatedScopes()); err != nil {
+			return nil, status.Error(codes.InvalidArgument, err.Error())
+		}
+	}
+	audience := req.GetAudience()
+	if audience == "" {
+		audience = parent.GetAudience()
+	}
+	// A renewal must not silently loosen replay protection: an unspecified
+	// policy inherits the parent's, so a SINGLE_USE context stays SINGLE_USE
+	// rather than degrading to idempotent.
+	replayPolicy := parent.GetReplayPolicy()
+	if req.GetReplayPolicy() != gen.WorkContextReplayPolicy_WORK_CONTEXT_REPLAY_POLICY_UNSPECIFIED {
+		replayPolicy = workContextReplayPolicy(req.GetReplayPolicy())
+	}
+	token, signed, err := s.signer.ExchangeWorkContextAudience(
+		parentToken,
+		codefly.ExchangeWorkContextAudienceInput{
+			Audience:         audience,
+			ReplayPolicy:     replayPolicy,
+			TTL:              workContextTTL(req.GetTtlSeconds()),
+			AttenuatedScopes: scopes,
+		},
+	)
+	if err != nil {
+		return nil, mapWorkContextError(err)
+	}
+	return issuedWorkContext(token, signed), nil
+}
+
 // journalActorHop durably records the newest on-behalf-of hop of a freshly
 // signed Work Context, content-addressed and chained to the hop it narrows from.
 // The hop id equals the token's per-hop delegation_id, so the durable record and
@@ -558,42 +619,96 @@ func (s *WorkContextAuthorityServer) verifyParent(
 	if err != nil {
 		return codefly.WorkContextToken{}, nil, status.Error(codes.PermissionDenied, "parent Work Context is not valid for caller")
 	}
-
-	if len(parent.GetActorChain()) == 0 {
-		permissions := permissionsFromCoreScopes(parent.GetAuthorityScopes())
-		facts, resolveErr := s.resolveAuthority(ctx, orgID, ownerID, "", permissions)
-		if resolveErr != nil {
-			return codefly.WorkContextToken{}, nil, resolveErr
-		}
-		if facts.EffectiveRevision() != parent.GetAuthorizationRevision() {
-			return codefly.WorkContextToken{}, nil, status.Error(
-				codes.FailedPrecondition,
-				"parent Work Context authorization revision is stale",
-			)
-		}
-		return token, parent, nil
-	}
-
-	if err := s.requireChainNotRevoked(ctx, orgID, parent.GetActorChain()); err != nil {
+	if err := s.requireCurrentAuthority(ctx, orgID, parent); err != nil {
 		return codefly.WorkContextToken{}, nil, err
 	}
+	return token, parent, nil
+}
 
-	for _, actor := range parent.GetActorChain() {
-		permissions := permissionsFromCoreScopes(actor.GetGrantedScopes())
-		facts, resolveErr := s.resolveAuthority(
-			ctx, orgID, ownerID, actor.GetPrincipalId(), permissions,
+// verifyActorParent is the actor-authorized counterpart of verifyParent. The
+// token is bound to the org and issuer but NOT to the caller as owner: the
+// caller must instead be the current (outermost) actor of a delegated chain, so
+// an in-flight actor can renew its own authority without the owner present. A
+// direct owner-only context has no actor chain and cannot be renewed this way.
+func (s *WorkContextAuthorityServer) verifyActorParent(
+	ctx context.Context,
+	orgID string,
+	actorID string,
+	encoded string,
+) (codefly.WorkContextToken, *basev0.WorkContextV1, error) {
+	token, err := codefly.ParseWorkContextToken(encoded)
+	if err != nil {
+		return codefly.WorkContextToken{}, nil, status.Error(codes.InvalidArgument, "invalid parent Work Context")
+	}
+	parent, err := s.verifier.Verify(token, codefly.WorkContextExpectations{
+		Issuer:   s.issuer,
+		TenantID: orgID,
+	})
+	if err != nil {
+		return codefly.WorkContextToken{}, nil, status.Error(codes.PermissionDenied, "parent Work Context is not valid")
+	}
+	actors := parent.GetActorChain()
+	if len(actors) == 0 {
+		return codefly.WorkContextToken{}, nil, status.Error(
+			codes.PermissionDenied,
+			"only a delegated actor may renew a Work Context",
 		)
-		if resolveErr != nil {
-			return codefly.WorkContextToken{}, nil, resolveErr
+	}
+	if actors[len(actors)-1].GetPrincipalId() != actorID {
+		return codefly.WorkContextToken{}, nil, status.Error(
+			codes.PermissionDenied,
+			"caller is not the current actor of this Work Context",
+		)
+	}
+	if err := s.requireCurrentAuthority(ctx, orgID, parent); err != nil {
+		return codefly.WorkContextToken{}, nil, err
+	}
+	return token, parent, nil
+}
+
+// requireCurrentAuthority fails closed unless the parent's sealed authorization
+// revision still matches every subject's current RBAC authority and no chain
+// hop has been revoked. The owner and actor exchange paths share it so a
+// renewal is subject to the same revocation checks as an owner-driven exchange.
+func (s *WorkContextAuthorityServer) requireCurrentAuthority(
+	ctx context.Context,
+	orgID string,
+	parent *basev0.WorkContextV1,
+) error {
+	ownerID := parent.GetOwnerPrincipalId()
+	if len(parent.GetActorChain()) == 0 {
+		permissions := permissionsFromCoreScopes(parent.GetAuthorityScopes())
+		facts, err := s.resolveAuthority(ctx, orgID, ownerID, "", permissions)
+		if err != nil {
+			return err
 		}
 		if facts.EffectiveRevision() != parent.GetAuthorizationRevision() {
-			return codefly.WorkContextToken{}, nil, status.Error(
+			return status.Error(
+				codes.FailedPrecondition,
+				"parent Work Context authorization revision is stale",
+			)
+		}
+		return nil
+	}
+	if err := s.requireChainNotRevoked(ctx, orgID, parent.GetActorChain()); err != nil {
+		return err
+	}
+	for _, actor := range parent.GetActorChain() {
+		permissions := permissionsFromCoreScopes(actor.GetGrantedScopes())
+		facts, err := s.resolveAuthority(
+			ctx, orgID, ownerID, actor.GetPrincipalId(), permissions,
+		)
+		if err != nil {
+			return err
+		}
+		if facts.EffectiveRevision() != parent.GetAuthorizationRevision() {
+			return status.Error(
 				codes.FailedPrecondition,
 				"parent Work Context authorization revision is stale",
 			)
 		}
 	}
-	return token, parent, nil
+	return nil
 }
 
 func (s *WorkContextAuthorityServer) resolveAuthority(

@@ -28,6 +28,7 @@ const (
 	WorkContextService_StartRootSession_FullMethodName           = "/saas.accounts.v1.WorkContextService/StartRootSession"
 	WorkContextService_ExchangeAudience_FullMethodName           = "/saas.accounts.v1.WorkContextService/ExchangeAudience"
 	WorkContextService_StartChildSession_FullMethodName          = "/saas.accounts.v1.WorkContextService/StartChildSession"
+	WorkContextService_RenewWorkContext_FullMethodName           = "/saas.accounts.v1.WorkContextService/RenewWorkContext"
 )
 
 // WorkContextServiceClient is the client API for WorkContextService service.
@@ -61,6 +62,13 @@ type WorkContextServiceClient interface {
 	// without changing the Task, Session, owner, or delegation identity.
 	ExchangeAudience(ctx context.Context, in *ExchangeWorkContextAudienceRequest, opts ...grpc.CallOption) (*IssuedWorkContext, error)
 	StartChildSession(ctx context.Context, in *StartChildSessionWorkContextRequest, opts ...grpc.CallOption) (*IssuedWorkContext, error)
+	// RenewWorkContext is the actor-authorized exchange path. Unlike the
+	// owner-bound RPCs, the caller is the current actor of the parent context,
+	// letting a delegated task extend its own authority past the TTL cap while
+	// the originating user is offline. Renewal re-resolves current authority and
+	// fails closed on a stale revision or a revoked chain hop, and can only
+	// attenuate the actor's scopes.
+	RenewWorkContext(ctx context.Context, in *RenewWorkContextRequest, opts ...grpc.CallOption) (*IssuedWorkContext, error)
 }
 
 type workContextServiceClient struct {
@@ -141,6 +149,16 @@ func (c *workContextServiceClient) StartChildSession(ctx context.Context, in *St
 	return out, nil
 }
 
+func (c *workContextServiceClient) RenewWorkContext(ctx context.Context, in *RenewWorkContextRequest, opts ...grpc.CallOption) (*IssuedWorkContext, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(IssuedWorkContext)
+	err := c.cc.Invoke(ctx, WorkContextService_RenewWorkContext_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // WorkContextServiceServer is the server API for WorkContextService service.
 // All implementations must embed UnimplementedWorkContextServiceServer
 // for forward compatibility.
@@ -172,6 +190,13 @@ type WorkContextServiceServer interface {
 	// without changing the Task, Session, owner, or delegation identity.
 	ExchangeAudience(context.Context, *ExchangeWorkContextAudienceRequest) (*IssuedWorkContext, error)
 	StartChildSession(context.Context, *StartChildSessionWorkContextRequest) (*IssuedWorkContext, error)
+	// RenewWorkContext is the actor-authorized exchange path. Unlike the
+	// owner-bound RPCs, the caller is the current actor of the parent context,
+	// letting a delegated task extend its own authority past the TTL cap while
+	// the originating user is offline. Renewal re-resolves current authority and
+	// fails closed on a stale revision or a revoked chain hop, and can only
+	// attenuate the actor's scopes.
+	RenewWorkContext(context.Context, *RenewWorkContextRequest) (*IssuedWorkContext, error)
 	mustEmbedUnimplementedWorkContextServiceServer()
 }
 
@@ -202,6 +227,9 @@ func (UnimplementedWorkContextServiceServer) ExchangeAudience(context.Context, *
 }
 func (UnimplementedWorkContextServiceServer) StartChildSession(context.Context, *StartChildSessionWorkContextRequest) (*IssuedWorkContext, error) {
 	return nil, status.Error(codes.Unimplemented, "method StartChildSession not implemented")
+}
+func (UnimplementedWorkContextServiceServer) RenewWorkContext(context.Context, *RenewWorkContextRequest) (*IssuedWorkContext, error) {
+	return nil, status.Error(codes.Unimplemented, "method RenewWorkContext not implemented")
 }
 func (UnimplementedWorkContextServiceServer) mustEmbedUnimplementedWorkContextServiceServer() {}
 func (UnimplementedWorkContextServiceServer) testEmbeddedByValue()                            {}
@@ -350,6 +378,24 @@ func _WorkContextService_StartChildSession_Handler(srv interface{}, ctx context.
 	return interceptor(ctx, in, info, handler)
 }
 
+func _WorkContextService_RenewWorkContext_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(RenewWorkContextRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(WorkContextServiceServer).RenewWorkContext(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: WorkContextService_RenewWorkContext_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(WorkContextServiceServer).RenewWorkContext(ctx, req.(*RenewWorkContextRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // WorkContextService_ServiceDesc is the grpc.ServiceDesc for WorkContextService service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -384,6 +430,10 @@ var WorkContextService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "StartChildSession",
 			Handler:    _WorkContextService_StartChildSession_Handler,
+		},
+		{
+			MethodName: "RenewWorkContext",
+			Handler:    _WorkContextService_RenewWorkContext_Handler,
 		},
 	},
 	Streams:  []grpc.StreamDesc{},
