@@ -64,3 +64,10 @@ func (h *workContextConnectHandler) StartChildSession(
 ) (*connect.Response[gen.IssuedWorkContext], error) {
 	return unary(ctx, req, h.inner.StartChildSession)
 }
+
+func (h *workContextConnectHandler) RenewWorkContext(
+	ctx context.Context,
+	req *connect.Request[gen.RenewWorkContextRequest],
+) (*connect.Response[gen.IssuedWorkContext], error) {
+	return unary(ctx, req, h.inner.RenewWorkContext)
+}

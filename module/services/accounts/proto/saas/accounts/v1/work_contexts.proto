@@ -137,6 +137,36 @@ message StartChildSessionWorkContextRequest {
   ];
 }
 
+// RenewWorkContextRequest extends an in-flight delegated capability past the
+// signing TTL cap without the originating user present. The caller is the
+// current (outermost) actor of the parent context, not its owner, so a
+// long-running delegated task can keep itself alive. Renewal preserves the
+// Task, Session, owner, and delegation lineage; it may attenuate but can never
+// widen the current actor's authority.
+message RenewWorkContextRequest {
+  string org_id = 1 [(buf.validate.field).string.uuid = true];
+  string parent_work_context_token = 2 [
+    (buf.validate.field).string.min_len = 1,
+    (buf.validate.field).string.max_len = 32768
+  ];
+  // Optional new audience. Empty keeps the parent context's audience, the
+  // common renewal case where only the TTL is refreshed.
+  optional string audience = 3 [
+    (buf.validate.field).string.min_len = 1,
+    (buf.validate.field).string.max_len = 512
+  ];
+  // Optional narrowed scopes. Empty keeps the current actor's effective
+  // authority unchanged; when present they must attenuate it.
+  repeated WorkContextScope attenuated_scopes = 4 [
+    (buf.validate.field).repeated.max_items = 64
+  ];
+  WorkContextReplayPolicy replay_policy = 5;
+  int32 ttl_seconds = 6 [
+    (buf.validate.field).int32.gte = 0,
+    (buf.validate.field).int32.lte = 900
+  ];
+}
+
 // IssuedWorkContext is the opaque signed capability plus safe correlation
 // fields useful to an SDK caller. Consumers must verify the token rather than
 // trusting these duplicated display fields.
@@ -373,6 +403,38 @@ service WorkContextService {
     };
     option (google.api.http) = {
       post: "/v1/work-contexts:child-session"
+      body: "*"
+    };
+  }
+
+  // RenewWorkContext is the actor-authorized exchange path. Unlike the
+  // owner-bound RPCs, the caller is the current actor of the parent context,
+  // letting a delegated task extend its own authority past the TTL cap while
+  // the originating user is offline. Renewal re-resolves current authority and
+  // fails closed on a stale revision or a revoked chain hop, and can only
+  // attenuate the actor's scopes.
+  rpc RenewWorkContext(RenewWorkContextRequest) returns (IssuedWorkContext) {
+    option (saas.policy.v1.method_policy) = {
+      exposure: EXPOSURE_AUTHENTICATED
+      tenant: TENANT_REQUIREMENT_ORG_MEMBER
+      resource_bindings: {
+        request_field: "org_id"
+        target: RESOURCE_TARGET_ORGANIZATION
+        lookup: RESOURCE_LOOKUP_DIRECT_ID
+      }
+      mfa: MFA_REQUIREMENT_NONE
+      audit: {
+        events: "work_context.renewed"
+        emission: AUDIT_EMISSION_SUCCESS
+      }
+      idempotency: IDEMPOTENCY_REQUIREMENT_FORBIDDEN
+      rate_limit: RATE_LIMIT_CLASS_SENSITIVE
+      request_sensitivity: SENSITIVITY_SECRET
+      response_sensitivity: SENSITIVITY_SECRET
+      platform_role: PLATFORM_ROLE_REQUIREMENT_NONE
+    };
+    option (google.api.http) = {
+      post: "/v1/work-contexts:renew"
       body: "*"
     };
   }

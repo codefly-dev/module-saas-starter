@@ -369,3 +369,252 @@ func TestWorkContextConsumerAuthorityRequiresInternalCredentialAndProjectsExactF
 	})
 	require.Equal(t, codes.PermissionDenied, status.Code(err))
 }
+
+const (
+	renewOrgID   = "019f6bf7-5b4b-74e5-8c17-092259bb1671"
+	renewOwnerID = "019f6bf7-5b1c-730d-9687-fe6d4aff3201"
+	renewActorID = "019f6bf7-5b1c-730d-9687-fe6d4aff3202"
+	renewTaskID  = "019f6bf7-1111-7111-8111-111111111171"
+	renewSession = "019f6bf7-2222-7222-8222-222222222271"
+)
+
+// renewMembershipStore is the minimal Store an actor-authorized renewal reads:
+// requireOrgMember resolves the caller's membership and nothing else.
+type renewMembershipStore struct {
+	business.Store
+}
+
+func (renewMembershipStore) WithOrgTx(ctx context.Context, _ string, fn func(context.Context) error) error {
+	return fn(ctx)
+}
+
+func (renewMembershipStore) GetPlatformRole(context.Context, string) (string, error) {
+	return "", nil
+}
+
+func (renewMembershipStore) GetOrgMembership(_ context.Context, orgID, userID string) (*gen.OrgMembership, error) {
+	if orgID == renewOrgID && userID == renewActorID {
+		return &gen.OrgMembership{UserId: userID, Role: gen.OrgRole_ORG_ROLE_MEMBER}, nil
+	}
+	return nil, nil
+}
+
+func newRenewTestServer(t *testing.T) *WorkContextAuthorityServer {
+	t.Helper()
+	_, privateKey, err := ed25519.GenerateKey(rand.Reader)
+	require.NoError(t, err)
+	server := &WorkContextAuthorityServer{}
+	server.Configure(WorkContextAuthorityConfiguration{
+		Issuer:     "accounts.test",
+		KeyID:      "accounts-test-key",
+		PrivateKey: privateKey,
+		Authority: &workContextAuthorityFake{facts: &business.WorkContextAuthorityFacts{
+			OrganizationRevision: 12,
+			Actor:                &business.Principal{ID: renewActorID, Kind: "agent"},
+		}},
+	})
+	require.NoError(t, server.configureErr)
+	return server
+}
+
+// mintDelegatedContext issues a Work Context whose current actor is renewActorID,
+// modelling a context an in-flight agent holds while acting for the owner.
+func mintDelegatedContext(t *testing.T, server *WorkContextAuthorityServer) codefly.WorkContextToken {
+	t.Helper()
+	token, _, err := server.signer.StartTask(codefly.StartTaskInput{
+		Audience:              "tool.test",
+		TenantID:              renewOrgID,
+		OwnerPrincipalID:      renewOwnerID,
+		TaskID:                renewTaskID,
+		SessionID:             renewSession,
+		AuthorizationRevision: 12,
+		ReplayPolicy:          codefly.WorkContextReplayIdempotent,
+		AuthorityScopes: []*basev0.WorkScopeV1{{
+			ResourceKind: "evidence",
+			Actions:      []string{"append", "read"},
+		}},
+		ActorChain: []*basev0.WorkActorV1{{
+			PrincipalId:   renewActorID,
+			PrincipalKind: "agent",
+			DelegationId:  "019f6bf7-3333-7333-8333-333333333371",
+			GrantedScopes: []*basev0.WorkScopeV1{{
+				ResourceKind: "evidence",
+				Actions:      []string{"append", "read"},
+			}},
+		}},
+	})
+	require.NoError(t, err)
+	return token
+}
+
+func TestRenewWorkContextExtendsDelegatedAuthorityForCurrentActor(t *testing.T) {
+	server := newRenewTestServer(t)
+	parent := mintDelegatedContext(t, server)
+	parentClaims, err := server.verifier.Verify(parent, codefly.WorkContextExpectations{
+		Issuer:   "accounts.test",
+		TenantID: renewOrgID,
+	})
+	require.NoError(t, err)
+
+	previous := service
+	svc, err := business.NewService(renewMembershipStore{})
+	require.NoError(t, err)
+	service = svc
+	t.Cleanup(func() { service = previous })
+
+	ctx := stampVerifiedIdentity(context.Background(), renewActorID, renewOrgID, accountsauth.Assurance{})
+	issued, err := server.RenewWorkContext(ctx, &gen.RenewWorkContextRequest{
+		OrgId:                  renewOrgID,
+		ParentWorkContextToken: parent.Encoded(),
+		TtlSeconds:             900,
+	})
+	require.NoError(t, err)
+
+	require.Equal(t, renewTaskID, issued.GetTaskId())
+	require.Equal(t, renewSession, issued.GetSessionId())
+	require.Equal(t, renewOwnerID, issued.GetOwnerPrincipalId())
+	require.Equal(t, renewActorID, issued.GetCurrentActorPrincipalId())
+	require.Equal(t, uint64(12), issued.GetAuthorizationRevision())
+	// The whole point of the RPC: the renewed capability outlives the parent's
+	// TTL cap without the owner present.
+	require.True(t,
+		issued.GetExpiresAt().AsTime().After(time.Unix(parentClaims.GetExpiresAtUnix(), 0)),
+		"renewed Work Context must expire later than its parent",
+	)
+
+	renewed, err := codefly.ParseWorkContextToken(issued.GetToken())
+	require.NoError(t, err)
+	renewedClaims, err := server.verifier.Verify(renewed, codefly.WorkContextExpectations{
+		Issuer:   "accounts.test",
+		TenantID: renewOrgID,
+	})
+	require.NoError(t, err)
+	require.Len(t, renewedClaims.GetActorChain(), 1)
+	require.Equal(t, "tool.test", renewedClaims.GetAudience())
+}
+
+func TestRenewWorkContextRejectsScopeWidening(t *testing.T) {
+	server := newRenewTestServer(t)
+	parent := mintDelegatedContext(t, server)
+
+	previous := service
+	svc, err := business.NewService(renewMembershipStore{})
+	require.NoError(t, err)
+	service = svc
+	t.Cleanup(func() { service = previous })
+
+	ctx := stampVerifiedIdentity(context.Background(), renewActorID, renewOrgID, accountsauth.Assurance{})
+	_, err = server.RenewWorkContext(ctx, &gen.RenewWorkContextRequest{
+		OrgId:                  renewOrgID,
+		ParentWorkContextToken: parent.Encoded(),
+		AttenuatedScopes: []*gen.WorkContextScope{{
+			ResourceKind: "evidence",
+			Actions:      []string{"append", "read", "delete"},
+		}},
+	})
+	require.Equal(t, codes.InvalidArgument, status.Code(err))
+}
+
+func TestRenewWorkContextPreservesSingleUseReplayPolicy(t *testing.T) {
+	server := newRenewTestServer(t)
+	parent, _, err := server.signer.StartTask(codefly.StartTaskInput{
+		Audience:              "tool.test",
+		TenantID:              renewOrgID,
+		OwnerPrincipalID:      renewOwnerID,
+		TaskID:                renewTaskID,
+		SessionID:             renewSession,
+		AuthorizationRevision: 12,
+		ReplayPolicy:          codefly.WorkContextReplaySingleUse,
+		AuthorityScopes: []*basev0.WorkScopeV1{{
+			ResourceKind: "evidence",
+			Actions:      []string{"append"},
+		}},
+		ActorChain: []*basev0.WorkActorV1{{
+			PrincipalId:   renewActorID,
+			PrincipalKind: "agent",
+			DelegationId:  "019f6bf7-3333-7333-8333-333333333372",
+			GrantedScopes: []*basev0.WorkScopeV1{{
+				ResourceKind: "evidence",
+				Actions:      []string{"append"},
+			}},
+		}},
+	})
+	require.NoError(t, err)
+
+	previous := service
+	svc, err := business.NewService(renewMembershipStore{})
+	require.NoError(t, err)
+	service = svc
+	t.Cleanup(func() { service = previous })
+
+	ctx := stampVerifiedIdentity(context.Background(), renewActorID, renewOrgID, accountsauth.Assurance{})
+	// No replay_policy in the request: renewal must inherit SINGLE_USE, not
+	// silently drop to idempotent.
+	issued, err := server.RenewWorkContext(ctx, &gen.RenewWorkContextRequest{
+		OrgId:                  renewOrgID,
+		ParentWorkContextToken: parent.Encoded(),
+	})
+	require.NoError(t, err)
+
+	renewed, err := codefly.ParseWorkContextToken(issued.GetToken())
+	require.NoError(t, err)
+	renewedClaims, err := server.verifier.Verify(renewed, codefly.WorkContextExpectations{
+		Issuer:   "accounts.test",
+		TenantID: renewOrgID,
+	})
+	require.NoError(t, err)
+	require.Equal(t, codefly.WorkContextReplaySingleUse, renewedClaims.GetReplayPolicy())
+}
+
+func TestVerifyActorParentBindsCallerToCurrentActor(t *testing.T) {
+	server := newRenewTestServer(t)
+	parent := mintDelegatedContext(t, server)
+
+	_, claims, err := server.verifyActorParent(
+		context.Background(), renewOrgID, renewActorID, parent.Encoded(),
+	)
+	require.NoError(t, err)
+	require.Equal(t, renewActorID, claims.GetActorChain()[0].GetPrincipalId())
+
+	_, _, err = server.verifyActorParent(
+		context.Background(), renewOrgID, renewOwnerID, parent.Encoded(),
+	)
+	require.Equal(t, codes.PermissionDenied, status.Code(err))
+}
+
+func TestVerifyActorParentRejectsOwnerOnlyContext(t *testing.T) {
+	server := newRenewTestServer(t)
+	token, _, err := server.signer.StartTask(codefly.StartTaskInput{
+		Audience:              "tool.test",
+		TenantID:              renewOrgID,
+		OwnerPrincipalID:      renewOwnerID,
+		TaskID:                renewTaskID,
+		SessionID:             renewSession,
+		AuthorizationRevision: 12,
+		ReplayPolicy:          codefly.WorkContextReplayIdempotent,
+		AuthorityScopes: []*basev0.WorkScopeV1{{
+			ResourceKind: "evidence",
+			Actions:      []string{"append"},
+		}},
+	})
+	require.NoError(t, err)
+
+	_, _, err = server.verifyActorParent(
+		context.Background(), renewOrgID, renewOwnerID, token.Encoded(),
+	)
+	require.Equal(t, codes.PermissionDenied, status.Code(err))
+}
+
+func TestVerifyActorParentRejectsStaleRevision(t *testing.T) {
+	server := newRenewTestServer(t)
+	server.authority = &workContextAuthorityFake{facts: &business.WorkContextAuthorityFacts{
+		OrganizationRevision: 13,
+		Actor:                &business.Principal{ID: renewActorID, Kind: "agent"},
+	}}
+	parent := mintDelegatedContext(t, server)
+
+	_, _, err := server.verifyActorParent(
+		context.Background(), renewOrgID, renewActorID, parent.Encoded(),
+	)
+	require.Equal(t, codes.FailedPrecondition, status.Code(err))
+}

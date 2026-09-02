@@ -2,7 +2,7 @@
 
 > Generated from protobuf service descriptors and `saas.policy.v1.method_policy`; only the prose description is joined from `pkg/business/introspection.go`. Do not edit by hand. Run `go generate ./pkg/business` from `module/services/accounts/code`.
 
-Inventory: **154 RPCs** across **26 services**. Missing, invalid, or unclassified procedures are denied by both Connect and gRPC interceptors.
+Inventory: **155 RPCs** across **26 services**. Missing, invalid, or unclassified procedures are denied by both Connect and gRPC interceptors.
 
 The compact tier is retained for compatibility. Guards, resource bindings, audit events, limiter class, and data sensitivity are descriptor-authoritative. Domain handlers may enforce stronger state-dependent rules but may not weaken this floor.
 
@@ -159,6 +159,7 @@ The compact tier is retained for compatibility. Guards, resource bindings, audit
 | `/saas.accounts.v1.WorkContextService/CheckAuthorizationRevision` | unary | `—` | `internal` | exposure=INTERNAL; tenant=NONE | — | — | — | FORBIDDEN / INTERNAL | CONFIDENTIAL → CONFIDENTIAL | Revalidate every subject and scope in a signed Work Context against current authority. |
 | `/saas.accounts.v1.WorkContextService/ConsumeSingleUse` | unary | `—` | `internal` | exposure=INTERNAL; tenant=NONE | — | — | — | FORBIDDEN / INTERNAL | CONFIDENTIAL → CONFIDENTIAL | Claim a single-use Work Context exactly once; replays of the same context id fail closed. |
 | `/saas.accounts.v1.WorkContextService/ExchangeAudience` | unary | `POST /v1/work-contexts:exchange-audience` | `org_member` | exposure=AUTHENTICATED; tenant=ORG_MEMBER | — | org_id → ORGANIZATION/DIRECT_ID | SUCCESS: work_context.audience_exchanged | FORBIDDEN / SENSITIVE | SECRET → SECRET | Reissue one Task and Session lineage for another audience with attenuated authority. |
+| `/saas.accounts.v1.WorkContextService/RenewWorkContext` | unary | `POST /v1/work-contexts:renew` | `org_member` | exposure=AUTHENTICATED; tenant=ORG_MEMBER | — | org_id → ORGANIZATION/DIRECT_ID | SUCCESS: work_context.renewed | FORBIDDEN / SENSITIVE | SECRET → SECRET | Let the current delegated actor extend its own Work Context past the TTL cap, attenuation-preserving. |
 | `/saas.accounts.v1.WorkContextService/StartChildSession` | unary | `POST /v1/work-contexts:child-session` | `org_member` | exposure=AUTHENTICATED; tenant=ORG_MEMBER | — | org_id → ORGANIZATION/DIRECT_ID | SUCCESS: work_context.child_session_started | FORBIDDEN / SENSITIVE | SECRET → SECRET | Exchange a current Work Context for an attenuated child-agent Session. |
 | `/saas.accounts.v1.WorkContextService/StartRootSession` | unary | `POST /v1/work-contexts:root-session` | `org_member` | exposure=AUTHENTICATED; tenant=ORG_MEMBER | — | org_id → ORGANIZATION/DIRECT_ID | SUCCESS: work_context.root_session_started | FORBIDDEN / SENSITIVE | SECRET → SECRET | Exchange a current Work Context for another root Session under the same Task. |
 | `/saas.accounts.v1.WorkContextService/StartTask` | unary | `POST /v1/work-contexts:task` | `org_member` | exposure=AUTHENTICATED; tenant=ORG_MEMBER | — | org_id → ORGANIZATION/DIRECT_ID | SUCCESS: work_context.task_started | FORBIDDEN / SENSITIVE | CONFIDENTIAL → SECRET | Issue a signed Work Context for a new Task and root Session. |
@@ -169,6 +170,6 @@ The compact tier is retained for compatibility. Guards, resource bindings, audit
 - `internal`: 11
 - `mfa`: 3
 - `org_admin`: 35
-- `org_member`: 29
+- `org_member`: 30
 - `platform_admin`: 22
 - `public`: 16

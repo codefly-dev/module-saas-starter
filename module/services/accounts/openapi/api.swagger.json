@@ -3074,6 +3074,37 @@
       },
       "type": "object"
     },
+    "v1RenewWorkContextRequest": {
+      "description": "RenewWorkContextRequest extends an in-flight delegated capability past the\nsigning TTL cap without the originating user present. The caller is the\ncurrent (outermost) actor of the parent context, not its owner, so a\nlong-running delegated task can keep itself alive. Renewal preserves the\nTask, Session, owner, and delegation lineage; it may attenuate but can never\nwiden the current actor's authority.",
+      "properties": {
+        "attenuatedScopes": {
+          "description": "Optional narrowed scopes. Empty keeps the current actor's effective\nauthority unchanged; when present they must attenuate it.",
+          "items": {
+            "$ref": "#/definitions/v1WorkContextScope",
+            "type": "object"
+          },
+          "type": "array"
+        },
+        "audience": {
+          "description": "Optional new audience. Empty keeps the parent context's audience, the\ncommon renewal case where only the TTL is refreshed.",
+          "type": "string"
+        },
+        "orgId": {
+          "type": "string"
+        },
+        "parentWorkContextToken": {
+          "type": "string"
+        },
+        "replayPolicy": {
+          "$ref": "#/definitions/v1WorkContextReplayPolicy"
+        },
+        "ttlSeconds": {
+          "format": "int32",
+          "type": "integer"
+        }
+      },
+      "type": "object"
+    },
     "v1ReplayJobResponse": {
       "properties": {
         "disposition": {
@@ -9206,6 +9237,40 @@
           }
         },
         "summary": "ExchangeAudience derives a least-privilege, audience-bound capability\nwithout changing the Task, Session, owner, or delegation identity.",
+        "tags": [
+          "WorkContextService"
+        ]
+      }
+    },
+    "/v1/work-contexts:renew": {
+      "post": {
+        "operationId": "WorkContextService_RenewWorkContext",
+        "parameters": [
+          {
+            "description": "RenewWorkContextRequest extends an in-flight delegated capability past the\nsigning TTL cap without the originating user present. The caller is the\ncurrent (outermost) actor of the parent context, not its owner, so a\nlong-running delegated task can keep itself alive. Renewal preserves the\nTask, Session, owner, and delegation lineage; it may attenuate but can never\nwiden the current actor's authority.",
+            "in": "body",
+            "name": "body",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/v1RenewWorkContextRequest"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1IssuedWorkContext"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/rpcStatus"
+            }
+          }
+        },
+        "summary": "RenewWorkContext is the actor-authorized exchange path. Unlike the\nowner-bound RPCs, the caller is the current actor of the parent context,\nletting a delegated task extend its own authority past the TTL cap while\nthe originating user is offline. Renewal re-resolves current authority and\nfails closed on a stale revision or a revoked chain hop, and can only\nattenuate the actor's scopes.",
         "tags": [
           "WorkContextService"
         ]

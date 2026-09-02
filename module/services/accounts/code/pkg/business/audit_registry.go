@@ -137,6 +137,7 @@ const (
 	EventWorkContextRootSession  EventType = "work_context.root_session_started"
 	EventWorkContextChildSession EventType = "work_context.child_session_started"
 	EventWorkContextAudienceExch EventType = "work_context.audience_exchanged"
+	EventWorkContextRenewed      EventType = "work_context.renewed"
 
 	EventAuthLogin             EventType = "auth.login"
 	EventAuthMagicLinkLogin    EventType = "auth.magic_link_login"
@@ -247,6 +248,7 @@ var auditEventCatalog = []AuditEventDefinition{
 	def(EventWorkContextRootSession, CategoryAccess, "A new root agent session was started under an existing task."),
 	def(EventWorkContextChildSession, CategoryAccess, "An attenuated child agent session was started."),
 	def(EventWorkContextAudienceExch, CategoryAccess, "A Work Context task and session lineage was reissued for another audience."),
+	def(EventWorkContextRenewed, CategoryAccess, "A delegated actor renewed its Work Context past the signing TTL cap."),
 
 	def(EventAuthLogin, CategorySecurity, "A user authenticated.", str("method")),
 	def(EventAuthMagicLinkLogin, CategorySecurity, "A user authenticated via magic link."),

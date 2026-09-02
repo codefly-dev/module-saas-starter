@@ -177,6 +177,7 @@ var catalogRESTExactRoutes = map[string]struct{}{
 	"POST /v1/webhooks":                        {},
 	"POST /v1/work-contexts:child-session":     {},
 	"POST /v1/work-contexts:exchange-audience": {},
+	"POST /v1/work-contexts:renew":             {},
 	"POST /v1/work-contexts:root-session":      {},
 	"POST /v1/work-contexts:task":              {},
 	"PUT /v1/consent/preferences":              {},
