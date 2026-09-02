@@ -428,10 +428,14 @@ A consuming solution does not hand-write the catalog. It ships a
    (`role_permissions` has no standalone permission registry), so the bridge
    materializes one built-in role per contributing namespace —
    `name: "<namespace>:catalog"`, `scope: "<namespace>"` — granting that
-   namespace's full permission set. This is the same authority the Work Context
-   layer reads as `WorkContextScope{resource_kind: "<namespace>:<resource>",
-   actions: ["<action>", …]}`; finer-grained roles remain an org's own custom
-   roles, which the importer never touches.
+   namespace's full permission set. Each grant is stored verbatim as the
+   contributed `{resource, action}` (the `resource` is namespace-qualified,
+   e.g. `reference.console`). This is the authority the Work Context layer
+   reads as a `WorkContextScope` (`resource_kind` + `actions`); mapping the
+   stored grant onto that scope shape is the enforcement layer's concern
+   (#415/#416) — this bridge lands the grants, it does not itself transform
+   them. Finer-grained roles remain an org's own custom roles, which the
+   importer never touches.
 3. Both generated files are **base** — base-manifest-tracked
    (`module/tools/base-manifest.json`). A consumer cannot hand-edit them: a
    permission or role reaches a deployment only through contribution →
@@ -440,10 +444,21 @@ A consuming solution does not hand-write the catalog. It ships a
 
 The composed `contributed-roles.json` is applied by `role-catalog-import` as a
 bring-up step that runs **after** the store migration Job, under the same
-`app_control_plane` connection — the deploy slot that seeds built-in roles
-automatically instead of by the manual `go run` above. A module with no
-contributions emits an empty catalog (`{"version": 1, "roles": []}`); the
-empty-catalog guard means that step is simply skipped, never run with `-force`.
+`app_control_plane` connection — seeding the contributed roles automatically
+instead of by the manual `go run` above. Its interaction with the importer's
+empty-catalog guard is deliberate, not incidental:
+
+- A module with **no** contributions emits `{"version": 1, "roles": []}`.
+  Applied to a deployment that holds no catalog-managed roles yet, that is a
+  clean no-op — nothing to create, nothing to remove — and exits `0`.
+- Once contributions have seeded `<namespace>:catalog` roles, **regenerating
+  back down to an empty catalog** (the last contributing solution was removed)
+  makes the importer *refuse* rather than silently wipe them: an empty document
+  is indistinguishable from a truncated file, so the guard demands `-force`.
+  That transition is a genuine role removal, so the deploy step passes `-force`
+  for it. The guard is not weakened for a generated catalog — emptying
+  contributed authority is exactly the destructive step `-force` exists to
+  confirm.
 
 > Scheduling the bootstrap Job is the promotion driver's concern, not the
 > module's. This repo emits a transport-neutral bundle
