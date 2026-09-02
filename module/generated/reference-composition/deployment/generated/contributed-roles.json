@@ -1,0 +1,16 @@
+{
+  "version": 1,
+  "roles": [
+    {
+      "name": "reference:catalog",
+      "description": "Full contributed permission catalog for the reference namespace.",
+      "scope": "reference",
+      "permissions": [
+        {
+          "resource": "reference.console",
+          "action": "read"
+        }
+      ]
+    }
+  ]
+}

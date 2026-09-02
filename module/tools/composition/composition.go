@@ -31,6 +31,7 @@ const (
 	OrgSettingsTypeScriptOut = "services/frontend/code/src/gen/saas/org_settings/v1/field_catalog.ts"
 	SettingsPythonOutput     = "services/accounts/code/python/gen/saas/settings/v1/field_catalog.py"
 	PermissionsOutput        = "deployment/generated/contributed-permissions.json"
+	RolesOutput              = "deployment/generated/contributed-roles.json"
 	FixturesOutput           = "deployment/generated/contributed-fixtures.json"
 	TopologyBindingsOutput   = "deployment/generated/contributed-topology.json"
 	PermissionGoOutput       = "services/accounts/code/pkg/permissioncatalog/catalog_gen.go"
@@ -154,6 +155,28 @@ type FrontendServiceTarget struct {
 type permissionCatalog struct {
 	Schema      string       `json:"schema"`
 	Permissions []Permission `json:"permissions"`
+}
+
+// roleCatalog is the deploy-time artifact consumed by the accounts
+// role-catalog-import step. Its shape is byte-compatible with the importer's
+// versioned document (rolecatalog.Catalog): a consumer never hand-edits it —
+// it is regenerated from the composed PermissionsContribution set, and the
+// generated file is base-manifest-tracked.
+type roleCatalog struct {
+	Version uint32            `json:"version"`
+	Roles   []roleCatalogRole `json:"roles"`
+}
+
+type roleCatalogRole struct {
+	Name        string      `json:"name"`
+	Description string      `json:"description"`
+	Scope       string      `json:"scope"`
+	Permissions []roleGrant `json:"permissions"`
+}
+
+type roleGrant struct {
+	Resource string `json:"resource"`
+	Action   string `json:"action"`
 }
 
 type fixtureCatalog struct {
@@ -990,6 +1013,10 @@ func render(frontends []FrontendContribution, settings []SettingsContribution, p
 	if err != nil {
 		return nil, err
 	}
+	roleBody, err := marshalJSON(roleCatalogFromContributions(permissions))
+	if err != nil {
+		return nil, err
+	}
 	fixtureBody, err := marshalJSON(fixtureCatalog{Schema: "codefly/saas/fixtures-catalog/v1", Fixtures: allFixtures})
 	if err != nil {
 		return nil, err
@@ -1024,6 +1051,7 @@ func render(frontends []FrontendContribution, settings []SettingsContribution, p
 		OrgSettingsTypeScriptOut: []byte(renderSettingsTypeScript("ORG_SETTINGS_FIELDS", orgSettings)),
 		SettingsPythonOutput:     []byte(renderSettingsPython("SETTINGS_FIELDS", userSettings)),
 		PermissionsOutput:        permissionBody,
+		RolesOutput:              roleBody,
 		PermissionGoOutput:       permissionGo,
 		FixturesOutput:           fixtureBody,
 		TopologyBindingsOutput:   topologyBody,
@@ -1124,6 +1152,36 @@ func renderPermissionsGo(contributions []PermissionsContribution) string {
 	}
 	body.WriteString("}\n\nfunc Permissions() []Permission {\n\treturn append([]Permission(nil), permissions[:]...)\n}\n")
 	return body.String()
+}
+
+// roleCatalogFromContributions bridges the composed permission vocabulary into
+// the role catalog the deploy-time importer applies. Because permissions exist
+// in the RBAC schema only as grants inside a role, each contributing namespace
+// yields one built-in role scoped to that namespace granting its full permission
+// set. The result is deterministic regardless of contribution or permission
+// ordering, so an unchanged input produces byte-identical output.
+func roleCatalogFromContributions(contributions []PermissionsContribution) roleCatalog {
+	roles := make([]roleCatalogRole, 0, len(contributions))
+	for _, contribution := range contributions {
+		grants := make([]roleGrant, 0, len(contribution.Permissions))
+		for _, permission := range contribution.Permissions {
+			grants = append(grants, roleGrant{Resource: permission.Resource, Action: permission.Action})
+		}
+		sort.Slice(grants, func(i, j int) bool {
+			if grants[i].Resource != grants[j].Resource {
+				return grants[i].Resource < grants[j].Resource
+			}
+			return grants[i].Action < grants[j].Action
+		})
+		roles = append(roles, roleCatalogRole{
+			Name:        contribution.Namespace + ":catalog",
+			Description: "Full contributed permission catalog for the " + contribution.Namespace + " namespace.",
+			Scope:       contribution.Namespace,
+			Permissions: grants,
+		})
+	}
+	sort.Slice(roles, func(i, j int) bool { return roles[i].Name < roles[j].Name })
+	return roleCatalog{Version: 1, Roles: roles}
 }
 
 func marshalJSON(value any) ([]byte, error) {

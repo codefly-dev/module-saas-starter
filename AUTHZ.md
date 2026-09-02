@@ -412,6 +412,45 @@ go run ./cmd/role-catalog-import -catalog roles.json -database-url "$DATABASE_UR
 Domain core is `pkg/rolecatalog` (parse + diff + deterministic plan, no DB);
 `pkg/infra` snapshots current state and applies the plan in one transaction.
 
+### Composed contribution catalog (deploy step)
+
+A consuming solution does not hand-write the catalog. It ships a
+`PermissionsContribution` (`codefly/saas/permissions-contribution/v1`), and
+`module-compose` regenerates the catalog the importer applies:
+
+1. The contribution declares `resource:action` permissions under a namespace
+   reserved to that solution. `module-compose` merges every contribution into
+   the permission vocabulary (`deployment/generated/contributed-permissions.json`,
+   `pkg/permissioncatalog/catalog_gen.go`) and, from the same input, emits the
+   role catalog `deployment/generated/contributed-roles.json` in the versioned
+   format above (`module/tools/composition/composition.go`).
+2. A permission exists in the RBAC schema only as a grant inside a role
+   (`role_permissions` has no standalone permission registry), so the bridge
+   materializes one built-in role per contributing namespace —
+   `name: "<namespace>:catalog"`, `scope: "<namespace>"` — granting that
+   namespace's full permission set. This is the same authority the Work Context
+   layer reads as `WorkContextScope{resource_kind: "<namespace>:<resource>",
+   actions: ["<action>", …]}`; finer-grained roles remain an org's own custom
+   roles, which the importer never touches.
+3. Both generated files are **base** — base-manifest-tracked
+   (`module/tools/base-manifest.json`). A consumer cannot hand-edit them: a
+   permission or role reaches a deployment only through contribution →
+   regeneration, and editing the generated file without regenerating fails the
+   base-integrity gate.
+
+The composed `contributed-roles.json` is applied by `role-catalog-import` as a
+bring-up step that runs **after** the store migration Job, under the same
+`app_control_plane` connection — the deploy slot that seeds built-in roles
+automatically instead of by the manual `go run` above. A module with no
+contributions emits an empty catalog (`{"version": 1, "roles": []}`); the
+empty-catalog guard means that step is simply skipped, never run with `-force`.
+
+> Scheduling the bootstrap Job is the promotion driver's concern, not the
+> module's. This repo emits a transport-neutral bundle
+> ([`deployment/README.md`](module/deployment/README.md)) plus the composed
+> catalog the step applies; the driver wires the Job that invokes the importer
+> against it, alongside the store migration Job it already schedules.
+
 ## Anti-patterns to avoid
 
 - **Don't replace L1+L2 with L3.** RLS is defense-in-depth; it's not
