@@ -412,6 +412,60 @@ go run ./cmd/role-catalog-import -catalog roles.json -database-url "$DATABASE_UR
 Domain core is `pkg/rolecatalog` (parse + diff + deterministic plan, no DB);
 `pkg/infra` snapshots current state and applies the plan in one transaction.
 
+### Composed contribution catalog (deploy step)
+
+A consuming solution does not hand-write the catalog. It ships a
+`PermissionsContribution` (`codefly/saas/permissions-contribution/v1`), and
+`module-compose` regenerates the catalog the importer applies:
+
+1. The contribution declares `resource:action` permissions under a namespace
+   reserved to that solution. `module-compose` merges every contribution into
+   the permission vocabulary (`deployment/generated/contributed-permissions.json`,
+   `pkg/permissioncatalog/catalog_gen.go`) and, from the same input, emits the
+   role catalog `deployment/generated/contributed-roles.json` in the versioned
+   format above (`module/tools/composition/composition.go`).
+2. A permission exists in the RBAC schema only as a grant inside a role
+   (`role_permissions` has no standalone permission registry), so the bridge
+   materializes one built-in role per contributing namespace —
+   `name: "<namespace>:catalog"`, `scope: "<namespace>"` — granting that
+   namespace's full permission set. Each grant is stored verbatim as the
+   contributed `{resource, action}` (the `resource` is namespace-qualified,
+   e.g. `reference.console`). This is the authority the Work Context layer
+   reads as a `WorkContextScope` (`resource_kind` + `actions`); mapping the
+   stored grant onto that scope shape is the enforcement layer's concern
+   (#415/#416) — this bridge lands the grants, it does not itself transform
+   them. Finer-grained roles remain an org's own custom roles, which the
+   importer never touches.
+3. Both generated files are **base** — base-manifest-tracked
+   (`module/tools/base-manifest.json`). A consumer cannot hand-edit them: a
+   permission or role reaches a deployment only through contribution →
+   regeneration, and editing the generated file without regenerating fails the
+   base-integrity gate.
+
+The composed `contributed-roles.json` is applied by `role-catalog-import` as a
+bring-up step that runs **after** the store migration Job, under the same
+`app_control_plane` connection — seeding the contributed roles automatically
+instead of by the manual `go run` above. Its interaction with the importer's
+empty-catalog guard is deliberate, not incidental:
+
+- A module with **no** contributions emits `{"version": 1, "roles": []}`.
+  Applied to a deployment that holds no catalog-managed roles yet, that is a
+  clean no-op — nothing to create, nothing to remove — and exits `0`.
+- Once contributions have seeded `<namespace>:catalog` roles, **regenerating
+  back down to an empty catalog** (the last contributing solution was removed)
+  makes the importer *refuse* rather than silently wipe them: an empty document
+  is indistinguishable from a truncated file, so the guard demands `-force`.
+  That transition is a genuine role removal, so the deploy step passes `-force`
+  for it. The guard is not weakened for a generated catalog — emptying
+  contributed authority is exactly the destructive step `-force` exists to
+  confirm.
+
+> Scheduling the bootstrap Job is the promotion driver's concern, not the
+> module's. This repo emits a transport-neutral bundle
+> ([`deployment/README.md`](module/deployment/README.md)) plus the composed
+> catalog the step applies; the driver wires the Job that invokes the importer
+> against it, alongside the store migration Job it already schedules.
+
 ## Anti-patterns to avoid
 
 - **Don't replace L1+L2 with L3.** RLS is defense-in-depth; it's not

@@ -3,9 +3,11 @@ package composition
 import (
 	"bytes"
 	"encoding/json"
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 
@@ -73,6 +75,13 @@ func TestGenerateConsumesCoreInputAndPublishesCompleteCatalog(t *testing.T) {
 	permissionGo := string(readOutput(t, fixture.projection, PermissionGoOutput))
 	if !strings.Contains(permissionGo, `Name: "reference.console:read"`) {
 		t.Fatalf("permission contribution was not emitted for Accounts runtime:\n%s", permissionGo)
+	}
+	roles := readOutput(t, fixture.projection, RolesOutput)
+	if !bytes.Contains(roles, []byte(`"name": "reference:catalog"`)) || !bytes.Contains(roles, []byte(`"scope": "reference"`)) || !bytes.Contains(roles, []byte(`"resource": "reference.console"`)) {
+		t.Fatalf("permission contribution was not bridged into the deploy-time role catalog:\n%s", roles)
+	}
+	if err := assertImporterConsumable(roles); err != nil {
+		t.Fatalf("generated role catalog is not importer-consumable: %v\n%s", err, roles)
 	}
 	fixtureBody := readOutput(t, fixture.projection, "fixtures/reference-local.yaml")
 	if !bytes.Contains(fixtureBody, []byte("users:")) {
@@ -182,6 +191,75 @@ func TestGenerateRejectsUnknownCoreInputFields(t *testing.T) {
 	if err := Generate(Options{ModuleRoot: findModuleRoot(t), InputPath: fixture.inputPath}); err == nil || !strings.Contains(err.Error(), "unrecognized") {
 		t.Fatalf("Generate() error = %v, want strict Core input rejection", err)
 	}
+}
+
+func TestRoleCatalogFromContributionsBridgesPermissionsDeterministically(t *testing.T) {
+	catalog := roleCatalogFromContributions([]PermissionsContribution{
+		{Namespace: "beta", Permissions: []Permission{
+			{Name: "beta.reports:write", Resource: "beta.reports", Action: "write"},
+			{Name: "beta.reports:read", Resource: "beta.reports", Action: "read"},
+		}},
+		{Namespace: "alpha", Permissions: []Permission{
+			{Name: "alpha.console:read", Resource: "alpha.console", Action: "read"},
+		}},
+	})
+	if catalog.Version != 1 {
+		t.Fatalf("version = %d, want 1", catalog.Version)
+	}
+	names := []string{catalog.Roles[0].Name, catalog.Roles[1].Name}
+	if !reflect.DeepEqual(names, []string{"alpha:catalog", "beta:catalog"}) {
+		t.Fatalf("roles must be one per namespace, sorted by name: %v", names)
+	}
+	if catalog.Roles[0].Scope != "alpha" || catalog.Roles[1].Scope != "beta" {
+		t.Fatalf("each role's scope must be its namespace: %q, %q", catalog.Roles[0].Scope, catalog.Roles[1].Scope)
+	}
+	wantBeta := []roleGrant{{Resource: "beta.reports", Action: "read"}, {Resource: "beta.reports", Action: "write"}}
+	if !reflect.DeepEqual(catalog.Roles[1].Permissions, wantBeta) {
+		t.Fatalf("grants must be canonically sorted regardless of source order: %+v", catalog.Roles[1].Permissions)
+	}
+}
+
+func TestRoleCatalogFromContributionsEmitsEmptyRoleArray(t *testing.T) {
+	body, err := marshalJSON(roleCatalogFromContributions(nil))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Contains(body, []byte(`"roles": []`)) {
+		t.Fatalf("a module with no contributions must emit an empty role array, not null:\n%s", body)
+	}
+	if err := assertImporterConsumable(body); err != nil {
+		t.Fatalf("empty role catalog is not importer-consumable: %v", err)
+	}
+}
+
+// importerCatalog mirrors the exact JSON shape accounts' rolecatalog.Catalog
+// accepts. Decoding a generated document into it with DisallowUnknownFields
+// proves the composed catalog is consumable by role-catalog-import without a
+// cross-module import of the accounts code.
+type importerCatalog struct {
+	Version uint32 `json:"version"`
+	Roles   []struct {
+		Name        string `json:"name"`
+		Description string `json:"description"`
+		Scope       string `json:"scope"`
+		Permissions []struct {
+			Resource string `json:"resource"`
+			Action   string `json:"action"`
+		} `json:"permissions"`
+	} `json:"roles"`
+}
+
+func assertImporterConsumable(document []byte) error {
+	decoder := json.NewDecoder(bytes.NewReader(document))
+	decoder.DisallowUnknownFields()
+	var catalog importerCatalog
+	if err := decoder.Decode(&catalog); err != nil {
+		return err
+	}
+	if catalog.Version != 1 {
+		return fmt.Errorf("unsupported catalog version %d", catalog.Version)
+	}
+	return nil
 }
 
 type coreCompositionFixture struct {
