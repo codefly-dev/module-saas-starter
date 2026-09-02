@@ -163,6 +163,61 @@ func TestWorkContextAuthorityRejectsCallerSelectedTenantAndRevokedActor(t *testi
 	require.Equal(t, business.ErrTypeNotFound, notFound.StoreErrorType)
 }
 
+// TestWorkContextAuthorityResolvesOnlyRegisteredAgentActor pins the #419
+// owner-binding invariant: the delegated actor a mint/exchange resolves must be
+// a *registered* agent principal in the owner's org. An id that was never
+// registered through CreateAgentPrincipal, and a registered principal of the
+// wrong kind (a service principal derived from an api_key), both fail closed —
+// so registration through PrincipalService is the single source of truth the
+// owner-binding checks against.
+func TestWorkContextAuthorityResolvesOnlyRegisteredAgentActor(t *testing.T) {
+	ownerID := seedUser(t)
+	orgID := seedOrg(t, ownerID)
+	require.NoError(t, testStore.As(business.Identity{OrgID: orgID}).AddOrgMember(
+		testCtx, ownerID, "owner",
+	))
+
+	verified := auth.WithVerifiedDatabaseIdentity(testCtx, ownerID, orgID)
+
+	// An id that never went through CreateAgentPrincipal is not an actor.
+	_, err := testStore.ResolveWorkContextAuthority(
+		verified, orgID, ownerID, business.NewIDString(), nil,
+	)
+	require.Error(t, err, "an unregistered principal id must not resolve as an actor")
+	var unregistered *business.StoreError
+	require.ErrorAs(t, err, &unregistered)
+	require.Equal(t, business.ErrTypeNotFound, unregistered.StoreErrorType)
+
+	// A registered principal of kind=service (the api_key-derived kind) is a
+	// real row in the owner's org, but it is not a delegated-execution actor.
+	serviceID := business.NewIDString()
+	require.NoError(t, testStore.As(business.System()).Within(testCtx, func(ctx context.Context) error {
+		tx := ctx.Value("tx").(pgx.Tx) //nolint:staticcheck // shared transaction key
+		_, insertErr := tx.Exec(ctx, `
+			INSERT INTO principals (id, kind, display_name, org_id, agent_identifier, created_at)
+			VALUES ($1, 'service', 'test service principal', $2, NULL, CURRENT_TIMESTAMP)`,
+			serviceID, orgID,
+		)
+		return insertErr
+	}))
+	_, err = testStore.ResolveWorkContextAuthority(
+		verified, orgID, ownerID, serviceID, nil,
+	)
+	require.Error(t, err, "a service principal must not resolve as a Work Context actor")
+	var wrongKind *business.StoreError
+	require.ErrorAs(t, err, &wrongKind)
+	require.Equal(t, business.ErrTypeNotFound, wrongKind.StoreErrorType)
+
+	// The registered agent principal in the same org does resolve.
+	agent := seedAgentPrincipal(t, orgID, "test.codefly.dev/registered-actor:0.1.0")
+	facts, err := testStore.ResolveWorkContextAuthority(
+		verified, orgID, ownerID, agent.ID, nil,
+	)
+	require.NoError(t, err)
+	require.Equal(t, agent.ID, facts.Actor.ID)
+	require.Equal(t, business.PrincipalKindAgent, facts.Actor.Kind)
+}
+
 func TestWorkContextConsumerAuthorityUsesCurrentRevisionAndExactEvidenceRead(t *testing.T) {
 	ownerID := seedUser(t)
 	readerID := seedUser(t)
