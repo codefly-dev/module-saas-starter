@@ -4,7 +4,7 @@ version: 0.0.0
 agent:
     kind: codefly:service
     name: redis
-    version: 0.0.84
+    version: 0.0.85
     publisher: codefly.dev
 endpoints:
     - name: read

@@ -123,7 +123,7 @@ services:
       name: redis
       # 0.0.82: read-replica runtime-load fix (two tcp endpoints on one port),
       # codefly-dev/service-redis#16 — resolved, hold lifted.
-      version: 0.0.84
+      version: 0.0.85
       publisher: codefly.dev
     endpoints:
       - name: read
