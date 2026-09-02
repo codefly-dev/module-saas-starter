@@ -288,7 +288,7 @@ function DashboardListItem({
 					<AlertDialogHeader>
 						<AlertDialogTitle>Delete “{record.name}”?</AlertDialogTitle>
 						<AlertDialogDescription>
-							This removes the dashboard and its saved widgets. It can't be
+							This removes the dashboard and its saved widgets. It can’t be
 							undone.
 						</AlertDialogDescription>
 					</AlertDialogHeader>
