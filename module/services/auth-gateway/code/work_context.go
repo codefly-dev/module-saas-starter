@@ -48,6 +48,28 @@ type workContextVerifier struct {
 	keyIDs        map[string]struct{}
 	expiresAt     time.Time
 	unknownProbed bool
+	// inflight coalesces concurrent JWKS fetches into a single network
+	// round-trip. Without it, a burst of Work Context requests against a cold
+	// cache — or a stream of requests during an accounts outage, where each
+	// fetch fails and leaves the cache cold — would each issue their own fetch;
+	// the shared call means at most one is in flight at a time. The fetch itself
+	// runs without holding mu, so verification never blocks on network I/O while
+	// the lock is held.
+	inflight *jwksFetch
+}
+
+// jwksFetch is one shared, in-flight JWKS fetch. Waiters block on done and then
+// read result/err, which the leader publishes before closing done.
+type jwksFetch struct {
+	done   chan struct{}
+	result *jwksSnapshot
+	err    error
+}
+
+// jwksSnapshot is an immutable verifier built from one fetched key set.
+type jwksSnapshot struct {
+	verifier *codefly.WorkContextVerifier
+	keyIDs   map[string]struct{}
 }
 
 func newWorkContextVerifier(accountsBaseURL string) *workContextVerifier {
@@ -67,9 +89,15 @@ func newWorkContextVerifier(accountsBaseURL string) *workContextVerifier {
 // Refresh warms the cached key set. A callee calls it at boot so verification
 // fails closed from the first request rather than racing the first fetch.
 func (v *workContextVerifier) Refresh(ctx context.Context) error {
+	if _, err := v.coalescedFetch(ctx); err != nil {
+		return err
+	}
+	// A full refresh installs the current key set, so restore the probe budget:
+	// the next unknown key id may legitimately be a freshly rotated-in key.
 	v.mu.Lock()
-	defer v.mu.Unlock()
-	return v.refreshLocked(ctx)
+	v.unknownProbed = false
+	v.mu.Unlock()
+	return nil
 }
 
 // Verify establishes trust for a presented Work Context. It confirms the
@@ -95,44 +123,89 @@ func (v *workContextVerifier) verifierForKey(
 	keyID string,
 ) (*codefly.WorkContextVerifier, error) {
 	v.mu.Lock()
-	defer v.mu.Unlock()
-	refreshed := false
-	if v.verifier == nil || !v.now().Before(v.expiresAt) {
-		if err := v.refreshLocked(ctx); err != nil {
-			return nil, err
+	if v.verifier != nil && v.now().Before(v.expiresAt) {
+		if _, known := v.keyIDs[keyID]; known || v.unknownProbed {
+			verifier := v.verifier
+			v.mu.Unlock()
+			return verifier, nil
 		}
-		refreshed = true
-	}
-	if _, known := v.keyIDs[keyID]; !known && !refreshed && !v.unknownProbed {
-		if err := v.refreshLocked(ctx); err != nil {
-			return nil, err
-		}
+		// Fresh cache, unknown key id, probe budget available: spend it now,
+		// before releasing the lock, so concurrent unknown-key requests don't
+		// each schedule a probe.
 		v.unknownProbed = true
+		v.mu.Unlock()
+		snapshot, err := v.coalescedFetch(ctx)
+		if err != nil {
+			return nil, err
+		}
+		return snapshot.verifier, nil
 	}
-	return v.verifier, nil
+	v.mu.Unlock()
+
+	// Cold or expired cache: refresh and open a fresh probe window.
+	snapshot, err := v.coalescedFetch(ctx)
+	if err != nil {
+		return nil, err
+	}
+	v.mu.Lock()
+	v.unknownProbed = false
+	v.mu.Unlock()
+	return snapshot.verifier, nil
 }
 
-func (v *workContextVerifier) refreshLocked(ctx context.Context) error {
+// coalescedFetch performs one JWKS fetch shared across concurrent callers and
+// installs the result as the current key set. The network round-trip runs
+// without holding mu; the cache swap and the inflight hand-off happen under one
+// locked section, so a caller that arrives after the leader finishes sees the
+// fresh cache rather than starting a second fetch.
+func (v *workContextVerifier) coalescedFetch(ctx context.Context) (*jwksSnapshot, error) {
+	v.mu.Lock()
+	if call := v.inflight; call != nil {
+		v.mu.Unlock()
+		select {
+		case <-call.done:
+			return call.result, call.err
+		case <-ctx.Done():
+			return nil, invalidWorkContext(ctx.Err())
+		}
+	}
+	call := &jwksFetch{done: make(chan struct{})}
+	v.inflight = call
+	v.mu.Unlock()
+
+	snapshot, err := v.fetchSnapshot(ctx)
+
+	v.mu.Lock()
+	v.inflight = nil
+	if err == nil {
+		v.verifier = snapshot.verifier
+		v.keyIDs = snapshot.keyIDs
+		v.expiresAt = v.now().Add(v.cacheTTL)
+	}
+	v.mu.Unlock()
+
+	call.result, call.err = snapshot, err
+	close(call.done)
+	return snapshot, err
+}
+
+func (v *workContextVerifier) fetchSnapshot(ctx context.Context) (*jwksSnapshot, error) {
 	keys, err := v.fetch(ctx)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	verifier, err := codefly.NewWorkContextVerifier(codefly.WorkContextVerifierOptions{
 		PublicKeys: keys,
 		Now:        v.now,
 	})
 	if err != nil {
-		return invalidWorkContext(err)
+		return nil, invalidWorkContext(err)
 	}
 	keyIDs := make(map[string]struct{}, len(keys))
 	for keyID := range keys {
 		keyIDs[keyID] = struct{}{}
 	}
-	v.verifier = verifier
-	v.keyIDs = keyIDs
-	v.expiresAt = v.now().Add(v.cacheTTL)
-	v.unknownProbed = false
-	return nil
+	return &jwksSnapshot{verifier: verifier, keyIDs: keyIDs}, nil
 }
 
 func (v *workContextVerifier) fetch(ctx context.Context) (map[string]ed25519.PublicKey, error) {

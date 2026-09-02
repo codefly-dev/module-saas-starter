@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -161,6 +162,44 @@ func TestWorkContextVerifier_PicksUpRotatedKey(t *testing.T) {
 	rotated := jwksDocument(map[string]ed25519.PublicKey{"key-1": current, "key-2": next})
 	document.Store(&rotated)
 	require.NoError(t, verifier.Verify(ctx, mintWorkContext(t, "key-2", nextPriv, nil)))
+}
+
+func TestWorkContextVerifier_ConcurrentColdRequestsShareOneFetch(t *testing.T) {
+	pub, priv := mustEd25519(t)
+	const kid = "key-1"
+	document := jwksDocument(map[string]ed25519.PublicKey{kid: pub})
+
+	var hits int64
+	// A deliberate delay widens the window so every goroutine reaches the fetch
+	// while the cache is still cold; without single-flight each would issue its
+	// own request (and, on the outage path, its own serialized 2s round-trip).
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		atomic.AddInt64(&hits, 1)
+		time.Sleep(50 * time.Millisecond)
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(document))
+	}))
+	t.Cleanup(server.Close)
+
+	verifier := newWorkContextVerifier(server.URL)
+	token := mintWorkContext(t, kid, priv, nil)
+
+	const workers = 20
+	var wg sync.WaitGroup
+	errs := make(chan error, workers)
+	for i := 0; i < workers; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			errs <- verifier.Verify(context.Background(), token)
+		}()
+	}
+	wg.Wait()
+	close(errs)
+	for err := range errs {
+		require.NoError(t, err)
+	}
+	require.Equal(t, int64(1), atomic.LoadInt64(&hits), "concurrent cold requests must coalesce into one JWKS fetch")
 }
 
 func TestWorkContextVerifier_RefreshWarmsKeys(t *testing.T) {

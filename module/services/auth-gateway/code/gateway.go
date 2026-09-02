@@ -410,6 +410,10 @@ func (g *Gateway) rejectInvalidWorkContext(w http.ResponseWriter, r *http.Reques
 		err = g.workContext.Verify(r.Context(), token)
 	}
 	if err != nil {
+		// Log the cause (not the token) so a wall of 401s can be told apart:
+		// a bad/forged capability reads differently here from a JWKS the edge
+		// cannot reach, which the static 401 body deliberately does not reveal.
+		log.Printf("WARN: blocked request: method=%s path=%s reason=invalid_work_context err=%v", r.Method, r.URL.Path, err)
 		httpError(w, http.StatusUnauthorized, "invalid work context")
 		return true
 	}
