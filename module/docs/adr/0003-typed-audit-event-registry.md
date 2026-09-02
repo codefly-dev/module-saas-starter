@@ -128,6 +128,11 @@ generated TypeScript. Adopt the **analytics half of Direction E strictly inside
 Postgres** — and only when volume demands it — via materialized rollups in the
 existing `measurement` schema. Reject B, C, and D. Do **not** add Timescale or
 any external OLAP store; that stays a documented escape hatch, not the plan.
+(Refined for the **audit sink and retention** dimension by
+[ADR 0006](./0006-audit-sink-and-retention-tiers.md): audit archival gets a
+swappable compliance sink + tiered retention fed asynchronously from the durable
+outbox, with Postgres remaining the atomic hot source of truth. The analytics
+*query* stance here — SQL over the same Postgres — is unchanged.)
 
 In one line: **A now, E-in-Postgres later, no new infra.**
 

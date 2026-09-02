@@ -189,7 +189,11 @@ Gated by tenant-admin or platform role (`src/components/auth/role-gate.tsx`).
   hash.
 - **Retention/redaction, 🟡:** `RunRetention` deletes per
   `data_retention_policies`; export payloads are PII-redacted. The audit's named
-  two-tier (7-year content-free / 90-day full) split is not a distinct construct.
+  two-tier (7-year content-free / 90-day full) split is not a distinct construct
+  yet — it is the compliance tier planned under
+  [ADR 0006](./module/docs/adr/0006-audit-sink-and-retention-tiers.md) (tiered
+  retention + a swappable compliance sink; note today's `RunRetention` is a
+  no-op because it collides with the immutability trigger).
 - **Read auditing, ⬜:** bulk reads are RLS-scoped but not themselves logged as
   audit events. The audit's "audit the access set (IDs, capped, dedupe window)"
   pattern — and its 11k-rows-from-a-poller cautionary tale — is unbuilt.
@@ -244,8 +248,8 @@ there.
 | Workload / service identity | Port + adapters | ✅ Codefly internal + gateway tokens; Istio reach policy generated from `authz-methods.json` |
 | Token signing | Port + KMS/local | ✅ Ed25519 via Vault-held keypair, rotation with previous-key overlap |
 | Member/tenant directory | Firestore/Dynamo port | ✅ ↔ Postgres + RLS (no port abstraction; single first-class store) |
-| Object storage | GCS/S3 port | ❌ none — the audit-export S3 sink was removed; no object-storage surface remains |
-| Audit **emission** | stdout JSON | ↔ Postgres `audit_events` + typed registry (see §1.8) |
+| Object storage | GCS/S3 port | ❌ none today — the per-org audit-export S3 sink was removed; a swappable audit **compliance sink** (WORM/object storage as one backend) is planned under [ADR 0006](./module/docs/adr/0006-audit-sink-and-retention-tiers.md) |
+| Audit **emission** | stdout JSON | ↔ Postgres `audit_events` + typed registry (see §1.8); async tee to a swappable compliance sink + tiered retention planned ([ADR 0006](./module/docs/adr/0006-audit-sink-and-retention-tiers.md)) |
 | Audit/analytics **query** | Hand-written BigQuery SQL (❌ lock-in) | ✅ SQL over the same Postgres — no warehouse dialect to lock into |
 | Document/DB store | Firestore-first (❌) | ✅ Postgres-first |
 | Eventing | Pub/Sub only (❌) | 🟡 Durable Postgres jobs (inbox/outbox); no external broker adapter |
