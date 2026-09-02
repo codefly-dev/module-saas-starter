@@ -16,6 +16,24 @@ immutable module package that downstream workspaces **compose** (never fork).
 - Feature inventory: [module/FEATURES.md](./module/FEATURES.md)
 - First-run walkthrough: [module/GETTING_STARTED.md](./module/GETTING_STARTED.md)
 
+## Naming and confidentiality
+
+Everything in this repository — issues, PRs, docs, specs, code, comments, tests,
+fixtures, commit messages — must use **only generic placeholder names** for any
+company, product, person, team, or dataset: `Acme`, `ExampleCorp`, `Example
+Solution`, `Jane Doe`, `user@example.com`, and the like. Never write the name of
+a real customer, partner, employer, or downstream consumer of this module, and
+never describe the module as a dependency of any specific named product.
+
+This is a hard boundary, not a style preference. This module sits **below** its
+consumers in the dependency graph: consumers depend on it, never the reverse, so
+it must carry no build-time or documentation-level knowledge of who consumes it.
+Describe any consumer generically — "a consuming solution", "the downstream
+product", "the agent runtime". Capabilities belong here in their **generic**
+form (RBAC, delegation, Work Contexts, permission enforcement, audit) so every
+consumer reuses them; consumer-specific wiring stays in the consumer's own repo.
+The rule holds for public **and** private files alike.
+
 ## Repository layout
 
 - `module/` — the canonical module source that ships to consumers. **This is
