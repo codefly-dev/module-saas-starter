@@ -872,7 +872,7 @@
     "services/frontend/code/instrumentation-client.ts": "f523db1ab7275c868635813feaa310a4755f99ef6cefddecf99cc222c3ca0426",
     "services/frontend/code/instrumentation.ts": "9ecaeb05f04955dcfec68a0275381daa86cb3072ef8b4a4e2798798304516c98",
     "services/frontend/code/next.config.mjs": "1b1d7f364b8f7f1614c119ab92016a4fe722b7da9b7dae26d7d237dff52f0d91",
-    "services/frontend/code/package.json": "1fd5a794731763015e004a16be4597da8898a3a9d7a68db6a2a4a5db0eb25c20",
+    "services/frontend/code/package.json": "56fc2ea7fedfe3912ba369c6aae1df4d7801abe4665a8b924566400b68b5c4e9",
     "services/frontend/code/packages/codefly-ui/ARCHITECTURE.md": "f3efa79e73019b291bde895ecb60c685ccc5841db82622cfe7c22a2ee88836b9",
     "services/frontend/code/packages/codefly-ui/README.md": "aca5a70176e6eb4cd05d9615f0207fad6150abcfcc5453628278af28b2cf8668",
     "services/frontend/code/packages/codefly-ui/package.json": "85910a239a6a6fa2fe10b1f1e83f6ebefd56c0d35a9ee3276b6cbb3479f6bca8",
