@@ -638,7 +638,7 @@
     "services/accounts/code/pkg/infra/postgres_retention.go": "afaa16c81a4ee3d9e0227ff6d6009a43ded55bb761d9cc57a58afdd008f8ca91",
     "services/accounts/code/pkg/infra/postgres_role_catalog.go": "486228fbfb2d2dcf4cf783f4325660cde90e024733a756b35bbc2afbcbeb13ce",
     "services/accounts/code/pkg/infra/postgres_role_catalog_test.go": "d7ec07d6d3032e26726a9ecad6fe50bd019b1ac8877e62925c02bb1315a633bd",
-    "services/accounts/code/pkg/infra/postgres_role_hardening_test.go": "d646ca2d01f18f7171f2a37ecc1ac82acc3bbefadec5ef94c83f38cb075bfc91",
+    "services/accounts/code/pkg/infra/postgres_role_hardening_test.go": "6278aa5f22e1a80367fc601e7c3390cac8a1263852f18de040ca639ae678432f",
     "services/accounts/code/pkg/infra/postgres_sessions.go": "085e2290e3405f5a3cbeb114a0a85fe35f8a4e9d79b6daea700795ad8d68fdc8",
     "services/accounts/code/pkg/infra/postgres_sso.go": "77cc105773442c40cfc7141f03eab8fd9a7a7c29ed6a5280abdf55e7943ff103",
     "services/accounts/code/pkg/infra/postgres_stripe_jobs_test.go": "8f9eda3d82c4cdb82f4166e3f53b6d4f39f902e698484fa27ef7fc22549c8ae7",
