@@ -6866,9 +6866,7 @@
       "policy": {
         "exposure": "EXPOSURE_AUTHENTICATED",
         "tenant": "TENANT_REQUIREMENT_USER",
-        "permissions": [
-          "users:write"
-        ],
+        "permissions": [],
         "scopes": [
           "users:write"
         ],
@@ -7234,9 +7232,7 @@
       "policy": {
         "exposure": "EXPOSURE_AUTHENTICATED",
         "tenant": "TENANT_REQUIREMENT_USER",
-        "permissions": [
-          "users:write"
-        ],
+        "permissions": [],
         "scopes": [
           "users:write"
         ],

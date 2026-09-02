@@ -208,7 +208,6 @@ service UserService {
     option (saas.policy.v1.method_policy) = {
       exposure: EXPOSURE_AUTHENTICATED
       tenant: TENANT_REQUIREMENT_USER
-      permissions: "users:write"
       scopes: "users:write"
       mfa: MFA_REQUIREMENT_NONE
       audit: {
@@ -231,7 +230,6 @@ service UserService {
     option (saas.policy.v1.method_policy) = {
       exposure: EXPOSURE_AUTHENTICATED
       tenant: TENANT_REQUIREMENT_USER
-      permissions: "users:write"
       scopes: "users:write"
       mfa: MFA_REQUIREMENT_NONE
       audit: {

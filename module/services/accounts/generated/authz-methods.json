@@ -4931,9 +4931,7 @@
       "policy": {
         "exposure": "EXPOSURE_AUTHENTICATED",
         "tenant": "TENANT_REQUIREMENT_USER",
-        "permissions": [
-          "users:write"
-        ],
+        "permissions": [],
         "scopes": [
           "users:write"
         ],
@@ -4959,7 +4957,7 @@
         "service": "accounts"
       },
       "source_proto": "saas/accounts/v1/identity.proto",
-      "policy_sha256": "dba86c534bff7e4582c3a45371b6ca644cd757c93d4b0efc9c33a4f561c53417",
+      "policy_sha256": "f9e7940bce708224ac48d293a32b25995a1751c7dbedfc7473e6262234af0d99",
       "rate_limit_backend_failure_mode": "RATE_LIMIT_BACKEND_FAILURE_MODE_FAIL_OPEN"
     },
     {
@@ -5195,9 +5193,7 @@
       "policy": {
         "exposure": "EXPOSURE_AUTHENTICATED",
         "tenant": "TENANT_REQUIREMENT_USER",
-        "permissions": [
-          "users:write"
-        ],
+        "permissions": [],
         "scopes": [
           "users:write"
         ],
@@ -5223,7 +5219,7 @@
         "service": "accounts"
       },
       "source_proto": "saas/accounts/v1/identity.proto",
-      "policy_sha256": "e278d05b88672006b156178ee1c4da60bea1016913a6d579cee53b0f8c9cf7f2",
+      "policy_sha256": "a4dd7218553862c835e57ccd222aae60571bedaeb14d9fc879c9d2c4987b1ab4",
       "rate_limit_backend_failure_mode": "RATE_LIMIT_BACKEND_FAILURE_MODE_FAIL_OPEN"
     },
     {
