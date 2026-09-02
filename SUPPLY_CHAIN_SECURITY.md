@@ -33,10 +33,9 @@ the pin is raised.
 
 Currently tracked (agents already at their latest published versions):
 
-- **`vault`** (vault agent `0.0.27`) — CVE-2026-56854 (CRITICAL):
-  `golang.org/x/crypto` `v0.53.0`, fixed in `0.55.0`; CVE-2026-84304 (HIGH):
-  `google.golang.org/grpc` `v1.82.1`, fixed in `1.83.1`. Upstream:
-  codefly-dev/service-vault#42.
+- **`cache`** (redis agent `0.0.84`) — CVE-2026-14456 (HIGH), Alpine
+  `libcrypto3`/`libssl3` `3.5.7-r0` → `3.5.8-r0` (the same OpenSSL rebuild
+  postgres shipped in `0.0.130`). Upstream: codefly-dev/service-redis#26.
 
 Resolved upstream and now remediated here by a pin bump:
 
@@ -44,6 +43,11 @@ Resolved upstream and now remediated here by a pin bump:
   `libcrypto3`/`libssl3` `3.5.7-r0` → `3.5.8-r0`. Fixed upstream in
   codefly-dev/service-postgres#74 and shipped as postgres agent `0.0.130`; the
   `store` pin is raised to `0.0.130` in this repo.
+- **`vault`** (vault agent) — CVE-2026-56854 (CRITICAL,
+  `golang.org/x/crypto` `v0.53.0` → `0.55.0`) + CVE-2026-84304 (HIGH,
+  `google.golang.org/grpc` `v1.82.1` → `1.83.1`). Fixed upstream in
+  codefly-dev/service-vault#42 and shipped as vault agent `0.0.28`; the `vault`
+  pin is raised to `0.0.28` in this repo.
 
 When an upstream release ships, bump the pin (see AGENTS.md "Agent version
 pins"), verify the graph still boots (`codefly run service`), refresh the base

@@ -272,7 +272,10 @@ services:
     agent:
       kind: codefly:service
       name: vault
-      version: 0.0.27
+      # 0.0.28: go deps bumped for CVE-2026-56854 (golang.org/x/crypto ssh
+      # auth-bypass, CRITICAL) + CVE-2026-84304 (google.golang.org/grpc),
+      # codefly-dev/service-vault#42 — resolved.
+      version: 0.0.28
       publisher: codefly.dev
     secret_service_configurations:
       - name: vault
